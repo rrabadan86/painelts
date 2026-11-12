@@ -451,11 +451,31 @@ app.get('/api/fechamento', async (req, res) => {
   } catch (e) { res.status(500).json({ erro: e.message }); }
 });
 
+// ---------- estoque e custo (só admin e franqueado) ----------
+const podeContabilidade = (req) => req.perfil === 'admin' || req.perfil === 'franqueado';
+const ES = require('./src/estoque');
+app.get('/api/estoque', (req, res) => {
+  if (!podeContabilidade(req)) return res.status(403).json({ erro: 'Sem permissão.' });
+  const loja = req.lojas.find((l) => l.id === String(req.query.loja || ''));
+  if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  res.json({ estoque: ES.atual(loja.id), cfg: ES.cfg(C.get().lojas.find((l) => l.id === loja.id)) });
+});
+app.put('/api/estoque/cfg', express.json({ limit: '20kb' }), (req, res) => {
+  if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
+  if (!podeContabilidade(req)) return res.status(403).json({ erro: 'Sem permissão.' });
+  const loja = req.lojas.find((l) => l.id === String(req.query.loja || ''));
+  if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  const v = ES.validarCfg(req.body || {});
+  if (v.erro) return res.status(400).json({ erro: v.erro });
+  C.alterar((cfg) => { cfg.lojas.find((l) => l.id === loja.id).estoqueCfg = v.ok; });
+  C.auditar(req.user, 'alterou configuração de estoque', loja.id, { loja: loja.id, entregaDias: v.ok.entregaDias, coberturaDias: v.ok.coberturaDias });
+  res.json({ ok: true, cfg: v.ok });
+});
+
 // ---------- envios para a contabilidade (só admin e franqueado; saem do Gmail da loja) ----------
 // 1) fechamento do mês (comissões) com o PDF anexado  2) faturamento do mês com os XMLs das notas
 const XA = require('./src/xmlarquivos');
 const EMAIL_OK = /^[^\s@<>,;"]+@[^\s@<>,;"]+\.[^\s@<>,;"]+$/;
-const podeContabilidade = (req) => req.perfil === 'admin' || req.perfil === 'franqueado';
 /** confere o pedido; devolve { loja, lista, sub, corpo, smtp, ym } ou responde o erro */
 function pedidoContabilidade(req, res) {
   if (req.get('X-Painel') !== '1') { res.status(403).json({ erro: 'Pedido inválido.' }); return null; }
@@ -711,7 +731,10 @@ app.use(express.static(pub, { index: 'index.html', maxAge: 0 }));
 
 // processa planilhas que chegam na entrada (coletor) sem esperar alguém abrir o painel
 setInterval(() => {
-  for (const l of C.get().lojas) if (B.pendentes(l.id).length || XB.pendentes(l.id).length) dadosLoja(l, true).catch((e) => console.error(`[base] ${l.id}:`, e.message));
+  for (const l of C.get().lojas) {
+    if (B.pendentes(l.id).length || XB.pendentes(l.id).length) dadosLoja(l, true).catch((e) => console.error(`[base] ${l.id}:`, e.message));
+    if (ES.pendentes(l.id).length) ES.processar(l.id).then((r) => r && console.log(`[estoque] ${l.id}: ${r.itens} itens (${r.zerados} zerados)`)).catch((e) => console.error(`[estoque] ${l.id}:`, e.message));
+  }
 }, 30e3);
 
 // resumo diário (Telegram / e-mail) no horário configurado

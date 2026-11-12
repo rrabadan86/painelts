@@ -244,7 +244,7 @@ function pack(data, info = {}) {
       return i;
     };
   };
-  const textCols = ['loja', 'vendedor', 'descricao', 'produto', 'grupo', 'grupoC', 'cat', 'subgrupo'];
+  const textCols = ['loja', 'vendedor', 'descricao', 'produto', 'grupo', 'grupoC', 'cat', 'subgrupo', 'cod'];
   const numCols = ['cupom', 'qtd', 'soNumeros', 'qtdCha', 'vu', 'du', 'vt', 'min'];
   const encs = Object.fromEntries(textCols.map((c) => [c, enc(c)]));
   const v = { data: [] };

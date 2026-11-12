@@ -41,6 +41,9 @@ DATA_DIR = Path(os.getenv("DATA_DIR", "/data"))
 WORK_DIR = Path(os.getenv("COLETOR_WORK", "/work"))
 SCRIPT = Path(os.getenv("COLETOR_SCRIPT", Path(__file__).with_name("nextsoft_export_to_drive.py")))
 SCRIPT_XML = Path(os.getenv("COLETOR_SCRIPT_XML", Path(__file__).with_name("nextsoft_xml.py")))
+SCRIPT_ESTOQUE = Path(os.getenv("COLETOR_SCRIPT_ESTOQUE", Path(__file__).with_name("nextsoft_estoque.py")))
+# estoque atual e custos junto da rotina e do botão do painel: 1 = sim
+ESTOQUE_ROTINA = os.getenv("COLETOR_ESTOQUE", "1") != "0"
 # XML das notas (CPF dos clientes) junto da rotina: 1 = sim
 XML_ROTINA = os.getenv("COLETOR_XML", "1") != "0"
 TIPOS = ("ambos", "vendas", "xml")
@@ -254,10 +257,16 @@ def rodar(job):
         xml = {"ok": cx == 0, "codigo": cx}
         if tipo == "xml":
             ok, codigo = cx == 0, cx
+    estoque = None
+    if job["gatilho"] != "historico" and ESTOQUE_ROTINA and SCRIPT_ESTOQUE.exists():
+        # o estoque é uma foto de agora: só nas atualizações (não no histórico); falha aqui não derruba a coleta
+        saida_est = str(DATA_DIR / loja / "estoque" / "entrada" / f"{carimbo}_estoque.xlsx")
+        ce = executar(SCRIPT_ESTOQUE, {"SAIDA_ESTOQUE": saida_est, "SAIDA_ARQUIVO": str(pasta / "_nao_usado.xlsx")})
+        estoque = {"ok": ce == 0, "codigo": ce}
     cauda = [l for t in trechos for l in t] or (log_path.read_text(encoding="utf-8", errors="replace").splitlines()[-25:] if log_path.exists() else [])
     with lock:
         e = _estado(loja)
-        e["ultima"] = {**job, "tipo": tipo, "xml": xml, "fim": datetime.now(TZ).isoformat(), "ok": ok, "codigo": codigo,
+        e["ultima"] = {**job, "tipo": tipo, "xml": xml, "estoque": estoque, "fim": datetime.now(TZ).isoformat(), "ok": ok, "codigo": codigo,
                        "duracao_s": round(time.time() - inicio), "log": cauda}
         lote = e.get("lote")
         if job["gatilho"] == "historico" and lote and not lote.get("fim"):

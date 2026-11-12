@@ -205,6 +205,9 @@
       document.body.classList.add('perfil-vendedor');
     }
     if (eu.pode?.configurar) {
+      // custo, margem e estoque: só admin e franqueado
+      PAGES = [...PAGES, 'estoque'];
+      tabs.append(h('a', { href: '#estoque', 'data-page': 'estoque' }, 'Estoque e margem'));
       PAGES = [...PAGES, 'config'];
       tabs.append(h('a', { href: '#config', 'data-page': 'config', class: 'tab-config', title: 'Configurações', 'aria-label': 'Configurações' }, '⚙'));
     }

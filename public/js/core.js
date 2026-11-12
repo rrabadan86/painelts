@@ -71,7 +71,7 @@ TS.decode = function (raw) {
   const db = {
     n, iso: v.data, day, ym, year, wd,
     cupom: v.cupom, min: v.min || [], qtd: v.qtd, so: v.soNumeros, cha: v.qtdCha, vu: v.vu, du: v.du, vt: v.vt,
-    loja: v.loja, vend: v.vendedor, desc: v.descricao, prod: v.produto, grupo: v.grupo, grupoC: v.grupoC, cat: v.cat,
+    loja: v.loja, vend: v.vendedor, cod: v.cod || [], desc: v.descricao, prod: v.produto, grupo: v.grupo, grupoC: v.grupoC, cat: v.cat,
     D: dict,
     meta: raw.meta,
     metas: raw.metas || [],

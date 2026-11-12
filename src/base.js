@@ -16,7 +16,7 @@ const path = require('path');
 const zlib = require('zlib');
 const C = require('./config');
 
-const CAMPOS = ['data', 'cupom', 'loja', 'vendedor', 'descricao', 'produto', 'grupo', 'grupoC', 'cat', 'subgrupo', 'qtd', 'soNumeros', 'qtdCha', 'vu', 'du', 'vt', 'min'];
+const CAMPOS = ['data', 'cupom', 'loja', 'vendedor', 'descricao', 'produto', 'grupo', 'grupoC', 'cat', 'subgrupo', 'qtd', 'soNumeros', 'qtdCha', 'vu', 'du', 'vt', 'min', 'cod'];
 
 const pastaBase = (id) => path.join(C.pastaLoja(id), 'base');
 const pastaEntrada = (id) => path.join(C.pastaLoja(id), 'entrada');

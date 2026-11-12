@@ -13,6 +13,7 @@ const C = require('./config');
 const B = require('./base');
 const XB = require('./xmlbase');
 const CAD = require('./cadastro');
+const ES = require('./estoque');
 const COL = require('./coletor');
 
 const NOME_OK = /^[a-z0-9._-]{2,30}$/;
@@ -342,11 +343,19 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
   });
 
   // ---------- envio de planilhas ----------
-  const TIPOS = { vendas: null, Xml: 'Xml', Dados_Clientes: 'Dados_Clientes', Meta: 'Meta' };
+  const TIPOS = { vendas: null, Xml: 'Xml', Dados_Clientes: 'Dados_Clientes', Meta: 'Meta', Estoque: null };
   r.post('/lojas/:id/upload/:tipo', lojaPermitida, express.raw({ type: () => true, limit: `${MAX_UPLOAD_MB}mb` }), async (req, res) => {
     const tipo = req.params.tipo;
     if (!(tipo in TIPOS)) return res.status(400).json({ erro: 'Tipo de planilha inválido.' });
     const buf = req.body;
+    if (tipo === 'Estoque') {
+      if (req.perfil !== 'admin' && req.perfil !== 'franqueado') return res.status(403).json({ erro: 'Só admin e franqueado.' });
+      try {
+        const r = await ES.importar(req.loja.id, buf);
+        aud(req, 'enviou estoque', req.loja.id, { loja: req.loja.id, arquivo: semQuebra(req.get('X-Arquivo') || '').slice(0, 80), itens: r.itens });
+        return res.json({ ok: true, estoque: r });
+      } catch (e) { return res.status(400).json({ erro: e.message }); }
+    }
     if (tipo === 'Dados_Clientes' && Buffer.isBuffer(buf) && buf.length >= 100) {
       // cadastro: modelo do painel ou exportação do FIXE; junta com o que já existe
       try {

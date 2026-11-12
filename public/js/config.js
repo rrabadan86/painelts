@@ -307,13 +307,16 @@
   function blocoPlanilhas(l) {
     const tipo = h('select', { class: 'f-input' },
       h('option', { value: 'vendas' }, 'Vendas (relatório do AppNext)'), h('option', { value: 'Xml' }, 'Cupons com CPF (Xml)'),
-      h('option', { value: 'Dados_Clientes' }, 'Cadastro de clientes (modelo do painel ou FIXE)'), h('option', { value: 'Meta' }, 'Meta (planilha antiga)'));
+      h('option', { value: 'Dados_Clientes' }, 'Cadastro de clientes (modelo do painel ou FIXE)'), h('option', { value: 'Meta' }, 'Meta (planilha antiga)'),
+      h('option', { value: 'Estoque' }, 'Estoque atual e custos (AppNext → Estoque → Estoque Atual → Excel)'));
     const arq = h('input', { type: 'file', accept: '.xlsx,.xls', class: 'f-input' });
     const dica = h('p', { class: 'muted cfg-dica-cad' });
     const pintaDica = () => {
       dica.textContent = tipo.value === 'Dados_Clientes'
         ? 'Pode enviar o modelo do painel (CPF, NOME, CELULAR, DATA NASC., EMAIL, CIDADE) ou a exportação de contatos do FIXE do jeito que sai do sistema. O painel reconhece sozinho, junta com o cadastro que já existe (CPF novo entra, CPF conhecido é atualizado, campo vazio não apaga) e ignora o que não usa (Data Cadastro, Loja, Saldo, Estado).'
-        : '';
+        : tipo.value === 'Estoque'
+          ? 'No AppNext: Estoque → Estoque Atual → botão verde "Exportar para Excel". Envie o arquivo do jeito que baixar. O coletor também baixa sozinho em cada atualização; o envio manual serve para a primeira carga ou para conferir.'
+          : '';
       dica.hidden = !dica.textContent;
     };
     tipo.addEventListener('change', pintaDica); pintaDica();
@@ -341,6 +344,13 @@
         const r = await api('POST', `/lojas/${l.id}/upload/${tipo.value}`, f, { 'X-Arquivo': encodeURIComponent(f.name) });
         arq.value = '';
         setTimeout(() => TS.recarregar && TS.recarregar(true), 4000);
+        if (r && r.estoque) {
+          resultado.replaceChildren(h('div', { class: 'cfg-cad-res' }, h('b', null, `Estoque importado: ${fmt.int(r.estoque.itens)} produtos.`),
+            h('ul', null, r.estoque.zerados ? h('li', null, `${fmt.int(r.estoque.zerados)} produto(s) que não vieram agora ficaram com estoque zero`) : null,
+              r.estoque.semCusto ? h('li', null, `${fmt.int(r.estoque.semCusto)} produto(s) sem custo no AppNext`) : null),
+            h('div', null, 'Veja na aba Estoque e margem.')));
+          return 'Estoque importado.';
+        }
         const c = r && r.cadastro;
         if (c) {
           cadastroRes.set(l.id, c); mostrarCad(c);

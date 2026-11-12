@@ -127,8 +127,16 @@ const GRUPO_COPIAR = [
  * rows: linhas brutas da aba "Sheet1" (1ª linha = título do relatório, 2ª = cabeçalhos)
  * origem: rótulo só para diagnóstico
  */
+// coluna com o código do produto (o nome varia: "Código", "Cód. Produto", "Código do Produto"...)
+const RE_COD = /^c[oó]d(igo|\.)?\s*(do\s+)?(produto|item|prod\.?)?$/i;
+function colunaCodigo(rows, headerIndex) {
+  const header = (rows[headerIndex] || []).map((h) => (toText(h) || '').trim());
+  return header.find((h) => RE_COD.test(h)) || null;
+}
+
 function transformVendas(rows, origem) {
   const base = promote(rows, 1); // Table.Skip(1) + PromoteHeaders
+  const colCod = colunaCodigo(rows, 1);
   const out = [];
   for (const r of base) {
     const data = toISODate(r['Data']);
@@ -186,6 +194,8 @@ function transformVendas(rows, origem) {
       data, cupom, loja, vendedor: vendedor ?? '', descricao, produto, grupo, grupoC, cat: cat ?? '',
       subgrupo: toText(r['Sub-Grupo']) ?? '', qtdRaw, qtd: qtdP, qtdItensCupom: qtdItensP, soNumeros, qtdCha, vu, du, vt,
       min: minutosDe(r['Hora']),
+      // código do produto no AppNext (casa com a planilha de estoque/custo)
+      cod: colCod && !isBlank(r[colCod]) ? String(toText(r[colCod])).trim() : null,
       origem,
     });
   }
