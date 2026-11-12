@@ -770,11 +770,13 @@ def trocar_loja(page, loja_nome=None):
     Troca a loja pelo menu do topo e CONFERE se a troca valeu (lendo o nome no topo).
     Se não conseguir confirmar depois de 3 tentativas, para com erro: nunca baixa dados de outra loja.
     """
-    alvo = (
-        loja_nome
-        or os.getenv("APPNEXT_LOJA_DESTINO")
-        or "GOIANIA - TEA SHOP FLAMBOYANT"
-    )
+    alvo = (loja_nome or os.getenv("APPNEXT_LOJA_DESTINO") or "").strip()
+    if not alvo:
+        # sem "Loja no AppNext" cadastrada: usa a loja que o usuário do AppNext já abre (contas de uma loja só)
+        step("2) Loja no AppNext")
+        log(f"Sem loja de destino cadastrada no painel: seguindo na loja que abriu ({loja_atual(page) or '?'}). "
+            "Cadastre a 'Loja no AppNext' em Configurações para o coletor conferir a loja.")
+        return True
     alvo_n = _sem_acento(alvo)
     step(f"2) Trocando loja → {alvo}")
     atual = loja_atual(page)
@@ -795,26 +797,28 @@ def trocar_loja(page, loja_nome=None):
             )
             if not opened:
                 raise RuntimeError("não achei o seletor de loja no topo")
-            page.wait_for_timeout(800)
-            # opções do menu: compara sem acento e sem o ponto final
-            itens = page.locator("[role='menuitem'] >> visible=true, .dropdown-menu.show a, .dropdown-menu.show button, .dropdown-menu.show li")
-            escolhido = None
-            nomes = []
-            for k in range(min(itens.count(), 80)):
-                el = itens.nth(k)
-                try:
-                    txt = el.inner_text(timeout=1000).strip()
-                except Exception:
-                    continue
-                if not txt:
-                    continue
-                nomes.append(txt)
-                if _sem_acento(txt) == alvo_n:
-                    escolhido = el
-                    break
-            if escolhido is None:
-                raise RuntimeError(f"a opção '{alvo}' não está no menu (opções: {', '.join(nomes[:12]) or 'nenhuma'})")
-            escolhido.click(timeout=6000, force=True)
+            page.wait_for_timeout(1000)
+            # procura na tela qualquer elemento visível cujo texto (sem acento e sem ponto final) seja a loja;
+            # o menu do AppNext não usa sempre a mesma marcação, então marca o alvo e clica nele
+            r = page.evaluate(r"""(alvo) => {
+                const sem = (t) => (t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\x20-\x7e]/g, ' ').replace(/\s+/g, ' ').trim().replace(/\.$/, '').toUpperCase();
+                const vis = (el) => { const r = el.getBoundingClientRect(); const st = getComputedStyle(el); return r.width > 0 && r.height > 0 && st.visibility !== 'hidden' && st.display !== 'none'; };
+                const nomes = new Set(); let achou = null;
+                for (const el of document.querySelectorAll('body *')) {
+                    if (!vis(el) || el.closest('button[aria-expanded], .dropdown-toggle') === el) continue;
+                    const t = sem(el.innerText);
+                    if (!t || t.length > 80 || !/TEA SHOP/.test(t)) continue;
+                    if ([...el.children].some((c) => sem(c.innerText) === t)) continue; // fica com o mais interno
+                    nomes.add(t);
+                    if (t === alvo && !achou) achou = el;
+                }
+                document.querySelectorAll('[data-ts-alvo]').forEach((e) => e.removeAttribute('data-ts-alvo'));
+                if (achou) achou.setAttribute('data-ts-alvo', '1');
+                return { achou: !!achou, nomes: [...nomes].slice(0, 15) };
+            }""", alvo_n)
+            if not r["achou"]:
+                raise RuntimeError(f"a opção '{alvo}' não apareceu na tela (lojas visíveis: {', '.join(r['nomes']) or 'nenhuma'})")
+            page.locator("[data-ts-alvo='1']").first.click(timeout=6000, force=True)
             try:
                 page.wait_for_load_state("networkidle", timeout=12000)
             except Exception:
