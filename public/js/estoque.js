@@ -69,6 +69,69 @@
     return { casar, custo, consumo, taxa, porCod };
   }
 
+  /** motor de custos da loja escolhida (ou null se não houver estoque / permissão) */
+  const motores = new WeakMap();
+  TS.custosLoja = async function () {
+    if (!TS.podeContabilidade || !TS.podeContabilidade() || TS.demo || !state.loja || state.loja === 'todas') return null;
+    const x = await buscar(state.loja);
+    if (!x.estoque || !x.estoque.itens || !x.estoque.itens.length) return null;
+    let m = motores.get(TS.db);
+    if (!m || m.est !== x.estoque) { m = { est: x.estoque, M: motor(x.estoque, x.cfg) }; motores.set(TS.db, m); }
+    return m.M;
+  };
+
+  /** cartão "Lucro da promoção": antes × durante × depois (só admin e franqueado) */
+  TS.cartaoLucroPromo = function ({ antes, durante, depois, diasAntes, diasDurante, diasDepois }) {
+    const corpo = h('div', null, h('div', { class: 'muted' }, 'Calculando o lucro…'));
+    const card = TS.card('Lucro da promoção', 'Com o custo de cada produto (planilha de estoque do AppNext). Lucro por dia, para comparar períodos de tamanhos diferentes.', corpo);
+    TS.custosLoja().then((M) => {
+      if (!M) { card.remove(); return; }
+      const db = TS.db;
+      const calc = (idx, dias) => {
+        let vt = 0, custo = 0, comCusto = 0, desc = 0;
+        const prod = new Map();
+        for (const i of idx) {
+          if (M.taxa(i)) continue;
+          const v = db.vt[i] || 0; vt += v; desc += (db.du[i] || 0) * (db.qtd[i] || 0);
+          const c = M.custo(i);
+          if (c == null) continue;
+          comCusto += v; custo += c;
+          const cs = M.casar(i);
+          const k = cs && cs.kg ? cs.it.desc : db.D.descricao[db.desc[i]];
+          const p = prod.get(k) || { vt: 0, lucro: 0 }; p.vt += v; p.lucro += v - c; prod.set(k, p);
+        }
+        const lucro = comCusto - custo;
+        return { dias, vt, desc, lucro, margem: comCusto ? lucro / comCusto : null, lucroDia: dias ? lucro / dias : null, vtDia: dias ? vt / dias : null, prod };
+      };
+      const A = calc(antes, diasAntes), D = calc(durante, diasDurante), P = diasDepois > 0 ? calc(depois, diasDepois) : null;
+      const delta = A.lucroDia ? D.lucroDia / A.lucroDia - 1 : null;
+      const col = (t, x, destaque) => h('div', { class: 'promo-col' + (destaque ? ' on' : '') }, h('div', { class: 'promo-col-t' }, t, h('small', null, `${x ? fmt.int(x.dias) : 0} dias`)),
+        x ? [h('div', { class: 'promo-lucro' }, fmt.brl0(x.lucroDia), h('small', null, ' de lucro por dia')),
+          h('div', null, `Faturamento ${fmt.brl0(x.vtDia)}/dia`), h('div', null, `Margem ${fmt.pct(x.margem)}`), h('div', null, `Descontos ${fmt.brl0(x.desc)} no período`)]
+          : h('div', { class: 'muted' }, 'Ainda não há dias depois da promoção.'));
+      const veredito = delta == null ? null : delta > 0.03
+        ? h('div', { class: 'notice ok-n' }, h('b', null, 'A promoção se pagou: '), `o lucro por dia subiu ${fmt.pct(delta, 0)} em relação aos ${fmt.int(diasAntes)} dias antes, mesmo com ${fmt.brl0(D.desc)} em descontos.`)
+        : delta < -0.03
+          ? h('div', { class: 'notice err' }, h('b', null, 'A promoção não se pagou: '), `o lucro por dia caiu ${fmt.pct(-delta, 0)} em relação aos ${fmt.int(diasAntes)} dias antes. O desconto (${fmt.brl0(D.desc)}) custou mais do que a venda a mais trouxe.`)
+          : h('div', { class: 'notice' }, h('b', null, 'Empate: '), 'o lucro por dia ficou praticamente igual ao de antes. A promoção trouxe movimento, mas não lucro a mais.');
+      const nomes = new Set([...A.prod.keys(), ...D.prod.keys()]);
+      const linhas = [...nomes].map((n) => {
+        const a = A.prod.get(n), d = D.prod.get(n);
+        const la = a ? a.lucro / diasAntes : 0, ld = d ? d.lucro / diasDurante : 0;
+        return { produto: n, antes: la, durante: ld, dif: ld - la };
+      }).filter((r) => Math.abs(r.dif) > 0.005).sort((x, y) => Math.abs(y.dif) - Math.abs(x.dif)).slice(0, 15);
+      corpo.replaceChildren(veredito || '',
+        h('div', { class: 'promo-cols' }, col('Antes', A), col('Durante', D, true), col('Depois', P)),
+        P && A.lucroDia ? h('p', { class: 'muted', style: { fontSize: '12.5px' } }, P.lucroDia >= A.lucroDia * 1.03 ? `Depois da promoção o lucro por dia seguiu ${fmt.pct(P.lucroDia / A.lucroDia - 1, 0)} acima de antes: a campanha deixou efeito.` : P.lucroDia <= A.lucroDia * 0.97 ? `Depois da promoção o lucro por dia ficou ${fmt.pct(1 - P.lucroDia / A.lucroDia, 0)} abaixo de antes: parte da venda foi só antecipada.` : 'Depois da promoção o lucro por dia voltou ao nível de antes.') : null,
+        linhas.length ? h('div', { class: 'mt' }, h('div', { class: 'f-label' }, 'Produtos que mais mudaram o lucro por dia'), TS.table({
+          cols: [{ key: 'produto', label: 'Produto', align: 'l', wrap: true }, { key: 'antes', label: 'Antes /dia', fmt: fmt.brl }, { key: 'durante', label: 'Durante /dia', fmt: fmt.brl },
+            { key: 'dif', label: 'Diferença', fmt: (v) => (v > 0 ? '+' : '') + fmt.brl(v), cls: (r) => (r.dif > 0 ? 'pos' : 'neg') }],
+          rows: linhas, sortKey: 'dif', maxHeight: '360px', cls: 'est-t',
+        })) : null);
+    }).catch(() => card.remove());
+    return card;
+  };
+
   const TIPO_ITEM = (it) => (it.un === 'Kg' && it.tipo === 'IN' ? 'Chá a granel' : it.tipo === 'PN' ? 'Produto' : 'Insumo / embalagem');
   const qtdTxt = (v, it) => (v == null ? '—' : it.un === 'Kg' ? `${fmt.kg(v)} kg` : `${fmt.int(v)} ${it.un ? it.un.toLowerCase() : ''}`);
 
@@ -128,53 +191,75 @@
     const tamTxt = (m) => [...m].sort((a, b) => a[0] - b[0]).map(([g, q]) => `${fmt.int(q)}× ${g >= 1000 ? g / 1000 + ' kg' : g + 'g'}`).join(' · ');
     const prods = [...porProd.values()].filter((p) => p.vt > 0).map((p) => ({ ...p, lucro: p.vt - p.custo, margem: (p.vt - p.custo) / p.vt, giro: p.granel ? p.kg : p.qtd, tamanhos: p.granel ? tamTxt(p.tam) : '' }));
 
-    // ---------- reposição: últimos 30 dias da loja, sem os filtros ----------
+    // ---------- reposição: últimos 30 dias da loja (sem os filtros) + sazonalidade do ano passado ----------
+    const ent = cfg.entregaDias, cob = cfg.coberturaDias, seg = cfg.segurancaPct ?? 50;
+    const H = ent + cob; // horizonte do pedido
     const fim = db.maxDay, ini = fim - 29;
-    const cons = new Map(), ultimaVenda = new Map();
+    // ano passado: os 30 dias equivalentes aos de agora e os H dias seguintes (o que vem pela frente)
+    const lyB0 = fim - 364 - 29, lyB1 = fim - 364, lyN0 = fim - 363, lyN1 = fim - 364 + H;
+    const temAnoPassado = db.minDay <= lyB0;
+    const cons = new Map(), ultimaVenda = new Map(), lyB = new Map(), lyN = new Map(), lyDias = new Map();
+    const tot = { kg: { b: 0, n: 0, r: 0 }, un: { b: 0, n: 0, r: 0 } };
     for (let i = 0; i < db.n; i++) {
+      const d = db.day[i];
       for (const [it, q] of M.consumo(i)) {
-        if (db.day[i] >= ini) cons.set(it.cod, (cons.get(it.cod) || 0) + q);
-        if (!ultimaVenda.has(it.cod) || db.day[i] > ultimaVenda.get(it.cod)) ultimaVenda.set(it.cod, db.day[i]);
+        const g = it.un === 'Kg' ? tot.kg : tot.un;
+        if (d >= ini) { cons.set(it.cod, (cons.get(it.cod) || 0) + q); g.r += q; }
+        if (d >= lyB0 && d <= lyB1) { lyB.set(it.cod, (lyB.get(it.cod) || 0) + q); g.b += q; (lyDias.get(it.cod) || lyDias.set(it.cod, new Set()).get(it.cod)).add(d); }
+        else if (d >= lyN0 && d <= lyN1) { lyN.set(it.cod, (lyN.get(it.cod) || 0) + q); g.n += q; }
+        if (!ultimaVenda.has(it.cod) || d > ultimaVenda.get(it.cod)) ultimaVenda.set(it.cod, d);
       }
     }
-    const ent = cfg.entregaDias, cob = cfg.coberturaDias, seg = cfg.segurancaPct ?? 50;
+    const lim = (f) => Math.min(3, Math.max(0.4, f));
+    // fator da loja (chá a granel e produtos à parte): ritmo dos próximos H dias ÷ ritmo dos 30 dias, no ano passado
+    const fatLoja = (g) => (temAnoPassado && g.b > 0 && g.n > 0 ? lim((g.n / H) / (g.b / 30)) : 1);
+    const FL = { kg: fatLoja(tot.kg), un: fatLoja(tot.un) };
+    /** fator de sazonalidade do item: do próprio item quando vendeu o bastante no ano passado; senão, o da loja */
+    function sazonal(it) {
+      if (!temAnoPassado) return { f: 1, origem: 'sem' };
+      const b = lyB.get(it.cod) || 0, n = lyN.get(it.cod) || 0, dias = (lyDias.get(it.cod) || new Set()).size;
+      if (dias >= 6 && b > 0) return { f: lim((n / H) / (b / 30)), origem: 'item' };
+      return { f: FL[it.un === 'Kg' ? 'kg' : 'un'], origem: 'loja' };
+    }
     const repo = [];
     let valorEstoque = 0, valorParado = 0;
     const parados = [];
     for (const it of estoque.itens) {
       const vel = (cons.get(it.cod) || 0) / 30;
+      const sz = sazonal(it);
+      const prev = vel * sz.f; // venda por dia esperada nos próximos dias
       const qtd = Math.max(0, it.qtd || 0);
       if (it.custo && qtd > 0) valorEstoque += qtd * it.custo;
-      const dias = vel > 0 ? qtd / vel : null;
-      let pedir = Math.max(0, vel * (ent + cob) - qtd, (it.min || 0) - qtd);
+      const dias = prev > 0 ? qtd / prev : null;
+      let pedir = Math.max(0, prev * H - qtd, (it.min || 0) - qtd);
       pedir = it.un === 'Kg' ? Math.ceil(pedir * 10) / 10 : Math.ceil(pedir);
       let sit = 'ok';
-      if (vel > 0 && qtd <= 0) sit = 'acabou';
+      if (prev > 0 && qtd <= 0) sit = 'acabou';
       else if (dias != null && dias < ent) sit = 'falta';
       else if (it.min && qtd < it.min) sit = 'minimo';
-      else if (dias != null && dias < ent + cob) sit = 'pedir';
+      else if (dias != null && dias < H) sit = 'pedir';
       const ult = ultimaVenda.get(it.cod);
       const vendeuAlgumaVez = ult != null;
       if (qtd > 0 && it.custo && (vendeuAlgumaVez || (temCod && it.tipo === 'PN')) && (!vendeuAlgumaVez || fim - ult >= cfg.paradoDias)) {
         const v = qtd * it.custo; valorParado += v;
         parados.push({ cod: it.cod, produto: it.desc, tipo: TIPO_ITEM(it), qtd, it, valor: v, ultima: vendeuAlgumaVez ? TS.dayToIso(ult) : null, dias: vendeuAlgumaVez ? fim - ult : null });
       }
-      // mínimo sugerido: o que vende durante a entrega + margem de segurança
-      let sug = vel * ent * (1 + seg / 100);
+      // mínimo sugerido: o que deve vender durante a entrega + margem de segurança
+      let sug = prev * ent * (1 + seg / 100);
       sug = sug <= 0 ? null : it.un === 'Kg' ? Math.ceil(sug * 10) / 10 : Math.ceil(sug);
       const minSit = sug == null ? null : !it.min ? 'sem' : it.min > sug * 2 ? 'alto' : it.min < sug * 0.7 ? 'baixo' : 'ok';
-      if (vel > 0 || (it.min && qtd < it.min)) repo.push({ cod: it.cod, produto: it.desc, tipo: TIPO_ITEM(it), it, qtd, min: it.min, sug, minSit, vel, dias, pedir, custoPedido: pedir * (it.custo || 0), sit });
+      if (vel > 0 || (it.min && qtd < it.min)) repo.push({ cod: it.cod, produto: it.desc, tipo: TIPO_ITEM(it), it, qtd, min: it.min, sug, minSit, vel, prev, fator: sz.f, origem: sz.origem, dias, pedir, custoPedido: pedir * (it.custo || 0), sit });
     }
     const diasTxt = (d) => (d == null ? '—' : `${fmt.int(d)} ${Math.round(d) === 1 ? 'dia' : 'dias'}`);
     const porque = (r) => ({
-      acabou: `Estoque zerado e o produto vende ${qtdTxt(r.vel, r.it)} por dia.`,
+      acabou: `Estoque zerado e a previsão é vender ${qtdTxt(r.prev, r.it)} por dia.`,
       falta: `O estoque dura ${diasTxt(r.dias)} e a entrega leva ${ent} dias: acaba antes de o pedido chegar.`,
       minimo: `Estoque de ${qtdTxt(r.qtd, r.it)} abaixo do mínimo de ${qtdTxt(r.min, r.it)} cadastrado no AppNext.`,
       pedir: `O estoque dura ${diasTxt(r.dias)}: menos que a entrega (${ent} dias) + o período do pedido (${cob} dias). Hora de pedir.`,
       ok: `O estoque dura ${diasTxt(r.dias)}: dá para a entrega e o período do pedido.`,
     })[r.sit];
     const sugTxt = (r) => {
-      const base = `Venda/dia ${qtdTxt(r.vel, r.it)} × ${ent} dias de entrega = ${qtdTxt(r.vel * ent, r.it)}, + ${seg}% de segurança = ${qtdTxt(r.sug, r.it)}.`;
+      const base = `Previsão ${qtdTxt(r.prev, r.it)}/dia × ${ent} dias de entrega = ${qtdTxt(r.prev * ent, r.it)}, + ${seg}% de segurança = ${qtdTxt(r.sug, r.it)}.`;
       return base + ({
         sem: ' Este produto não tem mínimo no AppNext: vale cadastrar.',
         alto: ` O mínimo do AppNext (${qtdTxt(r.min, r.it)}) está bem acima: prende dinheiro em estoque.`,
@@ -182,9 +267,16 @@
         ok: ` O mínimo do AppNext (${qtdTxt(r.min, r.it)}) está adequado.`,
       })[r.minSit];
     };
+    const prevTxt = (r) => {
+      if (r.origem === 'sem') return 'A loja ainda não tem um ano de histórico: a previsão é o ritmo dos últimos 30 dias.';
+      const var_ = r.fator >= 1 ? `${fmt.int((r.fator - 1) * 100)}% a mais` : `${fmt.int((1 - r.fator) * 100)}% a menos`;
+      return r.origem === 'item'
+        ? `No ano passado, nos ${H} dias que vêm agora, este produto vendeu ${var_} por dia do que nos 30 dias anteriores. Ritmo de agora ${qtdTxt(r.vel, r.it)}/dia × ${fmt.n2(r.fator)} = ${qtdTxt(r.prev, r.it)}/dia.`
+        : `Este produto vendeu pouco no ano passado; usei o movimento da loja toda nessa época (${var_} por dia). Ritmo de agora ${qtdTxt(r.vel, r.it)}/dia × ${fmt.n2(r.fator)} = ${qtdTxt(r.prev, r.it)}/dia.`;
+    };
     const contaPedido = (r) => {
-      const precisa = r.vel * (ent + cob);
-      const pelaVenda = `Venda/dia ${qtdTxt(r.vel, r.it)} × (${ent} dias de entrega + ${cob} dias de pedido) = ${qtdTxt(precisa, r.it)} − estoque ${qtdTxt(r.qtd, r.it)}`;
+      const precisa = r.prev * (ent + cob);
+      const pelaVenda = `Previsão ${qtdTxt(r.prev, r.it)}/dia × (${ent} dias de entrega + ${cob} dias de pedido) = ${qtdTxt(precisa, r.it)} − estoque ${qtdTxt(r.qtd, r.it)}`;
       const peloMin = r.min && r.min - r.qtd > precisa - r.qtd ? ` · o mínimo do AppNext pede mais: ${qtdTxt(r.min, r.it)} − estoque = ${qtdTxt(r.min - r.qtd, r.it)}` : '';
       return `${pelaVenda}${peloMin}. Arredondado para ${qtdTxt(r.pedir, r.it)}.`;
     };
@@ -280,13 +372,110 @@
       rows: vends, sortKey: 'lucro', maxHeight: 'free',
     }))));
 
+    // ---------- kits: produtos que saem juntos no mesmo cupom ----------
+    corpo.append(TS.section('Combos e kits'));
+    corpo.append(h('div', { class: 'mt' }, cartaoKits()));
+    function cartaoKits() {
+      const DESC_KIT = (state.estKitDesc ?? 10);
+      const cupons = new Map(); // cupom → Set(produto)
+      const preco = new Map(); // produto → { vt, qtd, custo, qtdC }
+      for (const i of base) {
+        if (M.taxa(i) || !(db.vt[i] > 0)) continue;
+        const cs = M.casar(i);
+        const nome = cs && cs.kg ? cs.it.desc : db.D.descricao[db.desc[i]];
+        const k = db.day[i] + '|' + db.cupom[i];
+        (cupons.get(k) || cupons.set(k, new Set()).get(k)).add(nome);
+        const p = preco.get(nome) || { vt: 0, qtd: 0, custo: 0, qtdC: 0, granel: !!(cs && cs.kg) };
+        const q = db.qtd[i] || 1; p.vt += db.vt[i]; p.qtd += q;
+        const c = M.custo(i); if (c != null) { p.custo += c; p.qtdC += q; }
+        preco.set(nome, p);
+      }
+      const nCup = cupons.size, cnt = new Map(), par = new Map();
+      for (const set of cupons.values()) {
+        const xs = [...set].sort();
+        for (const a of xs) cnt.set(a, (cnt.get(a) || 0) + 1);
+        if (xs.length < 2 || xs.length > 12) continue;
+        for (let x = 0; x < xs.length; x++) for (let y = x + 1; y < xs.length; y++) { const k = xs[x] + '\u0001' + xs[y]; par.set(k, (par.get(k) || 0) + 1); }
+      }
+      const minJuntos = Math.max(3, Math.round(nCup * 0.002));
+      const media = (n) => { const p = preco.get(n); return { preco: p.qtd ? p.vt / p.qtd : 0, custo: p.qtdC ? p.custo / p.qtdC : null, granel: p.granel }; };
+      const kits = [];
+      for (const [k, n] of par) {
+        if (n < minJuntos) continue;
+        const [a, b] = k.split('\u0001');
+        const lift = (n * nCup) / (cnt.get(a) * cnt.get(b));
+        if (lift < 1.2) continue;
+        const A = media(a), B = media(b);
+        const soma = A.preco + B.preco, custo = A.custo != null && B.custo != null ? A.custo + B.custo : null;
+        const comDesc = soma * (1 - DESC_KIT / 100);
+        kits.push({ kit: `${a} + ${b}`, a, b, juntos: n, confA: n / cnt.get(a), confB: n / cnt.get(b), lift, soma, custo, margem: custo != null && soma ? (soma - custo) / soma : null, precoKit: comDesc, margemKit: custo != null && comDesc ? (comDesc - custo) / comDesc : null, granel: A.granel || B.granel });
+      }
+      kits.sort((x, y) => y.lift * Math.log(1 + y.juntos) - x.lift * Math.log(1 + x.juntos));
+      const top = kits.slice(0, 25);
+      const descIn = h('input', { class: 'f-input', type: 'number', min: 0, max: 50, value: DESC_KIT, style: { width: '70px' } });
+      descIn.addEventListener('change', () => { state.estKitDesc = Math.max(0, Math.min(50, Math.round(+descIn.value) || 0)); TS.render(); });
+      return TS.cardWithTools('Kits sugeridos', `Pares de produtos que saem juntos no mesmo cupom mais do que o acaso explicaria (${fmt.int(nCup)} cupons no período). Chá a granel conta como o chá, qualquer tamanho; o preço dele é o do pacote médio vendido.`,
+        h('label', { class: 'est-kit-desc' }, 'Desconto do kit ', descIn, ' %'),
+        top.length ? TS.table({
+          cols: [
+            { key: 'kit', label: 'Kit', align: 'l', wrap: true, sticky: true },
+            { key: 'juntos', label: 'Juntos', fmt: fmt.int, title: 'Em quantos cupons os dois saíram juntos no período' },
+            { key: 'confA', label: 'Quem leva o 1º leva o 2º', fmt: (v) => fmt.pct(v, 0), title: 'De quem comprou o primeiro produto, quantos também levaram o segundo' },
+            { key: 'lift', label: 'Afinidade', fmt: (v) => `${fmt.n1(v)}×`, title: 'Quantas vezes mais eles saem juntos do que sairiam por acaso. Acima de 2× é uma ligação forte' },
+            { key: 'soma', label: 'Preço somado', fmt: fmt.brl, title: 'Preço médio do primeiro + do segundo, como vendidos hoje' },
+            { key: 'precoKit', label: 'Preço do kit', fmt: fmt.brl, title: `Preço somado com ${DESC_KIT}% de desconto` },
+            { key: 'margemKit', label: 'Margem do kit', fmt: (v) => fmt.pct(v), cls: (r) => (r.margemKit != null && r.margemKit < 0.3 ? 'miss' : ''), title: 'Margem do kit já com o desconto (custo do AppNext; chá a granel com saco e etiquetas)' },
+          ],
+          rows: top, sortKey: 'lift', maxHeight: '520px', cls: 'est-t', search: 'Buscar produto…', searchKeys: ['kit'],
+        }) : h('p', { class: 'muted' }, `Ainda não há pares que saiam juntos em pelo menos ${minJuntos} cupons. Escolha um período maior (por exemplo, 12 meses).`),
+        h('p', { class: 'muted est-kit-dica' }, 'Como usar: monte o kit com os pares de maior afinidade e margem boa, deixe-o na vitrine e treine as vendedoras para oferecer o segundo produto a quem leva o primeiro.'));
+    }
+
     // ---------- reposição ----------
     corpo.append(TS.section('Reposição'));
+    corpo.append(h('div', { class: 'mt' }, cartaoSazonal()));
+    function cartaoSazonal() {
+      if (!temAnoPassado) return TS.card('Próximas semanas', null, h('p', { class: 'muted' }, 'A previsão por época do ano aparece quando a loja tiver mais de um ano de vendas no painel. Até lá, a reposição usa o ritmo dos últimos 30 dias.'));
+      // faturamento por semana (sem taxas): 8 semanas passadas e as 8 que vêm, este ano e o ano passado
+      const fatDia = new Map();
+      for (let i = 0; i < db.n; i++) { if (M.taxa(i)) continue; fatDia.set(db.day[i], (fatDia.get(db.day[i]) || 0) + (db.vt[i] || 0)); }
+      const somaDias = (d0, n) => { let t = 0; for (let d = d0; d < d0 + n; d++) t += fatDia.get(d) || 0; return t; };
+      const ini8 = fim - 55; // 8 semanas até o último dia com venda
+      const agora8 = somaDias(ini8, 56), ly8 = somaDias(ini8 - 364, 56);
+      const cresc = ly8 > 0 ? Math.min(2, Math.max(0.5, agora8 / ly8)) : 1;
+      const labels = [], antes = [], lyFut = [], prevFut = [], atual = [];
+      for (let w = -8; w < 8; w++) {
+        const d0 = fim + 1 + w * 7;
+        labels.push(fmt.date(TS.dayToIso(d0)).slice(0, 5));
+        const ly = somaDias(d0 - 364, 7);
+        if (w < 0) { atual.push(somaDias(d0, 7)); antes.push(ly); lyFut.push(null); prevFut.push(null); }
+        else { atual.push(null); antes.push(null); lyFut.push(ly); prevFut.push(ly * cresc); }
+      }
+      const proxLy = lyFut.reduce((t, v) => t + (v || 0), 0), passLy = antes.reduce((t, v) => t + (v || 0), 0);
+      const varEpoca = passLy ? proxLy / passLy - 1 : null;
+      const picos = repo.filter((r) => r.origem === 'item' && r.vel > 0 && r.fator >= 1.3).sort((a, b) => (b.prev - b.vel) * (b.it.custo || 1) - (a.prev - a.vel) * (a.it.custo || 1)).slice(0, 8);
+      const quedas = repo.filter((r) => r.origem === 'item' && r.vel > 0 && r.fator <= 0.75).sort((a, b) => a.fator - b.fator).slice(0, 6);
+      const item = (r) => h('li', null, h('b', null, r.produto), ` · ${r.fator > 1 ? '+' : '−'}${fmt.int(Math.abs(r.fator - 1) * 100)}% por dia · prever ${qtdTxt(r.prev * H, r.it)} em ${H} dias`);
+      return TS.card('Próximas semanas', `Movimento da loja nas próximas 8 semanas pelo que aconteceu na mesma época do ano passado, corrigido pelo crescimento atual da loja (${cresc >= 1 ? '+' : ''}${fmt.pct(cresc - 1, 0)} nas últimas 8 semanas em relação ao ano passado).`,
+        h('div', { class: 'est-saz-res' }, varEpoca == null ? null : h('span', null, 'No ano passado, as 8 semanas seguintes venderam ', h('b', { class: varEpoca >= 0 ? 'pos' : 'neg' }, `${varEpoca >= 0 ? '+' : ''}${fmt.pct(varEpoca, 0)}`), ' em relação às 8 anteriores.')),
+        TS.chart({
+          type: 'bar',
+          data: { labels, datasets: [
+            { type: 'bar', label: 'Este ano', data: atual, backgroundColor: '#2C5234', borderRadius: 4 },
+            { type: 'bar', label: 'Ano passado', data: antes.map((v, k) => v ?? lyFut[k]), backgroundColor: '#D9D2C2', borderRadius: 4 },
+            { type: 'line', label: 'Previsão', data: prevFut, borderColor: '#C9A227', backgroundColor: '#C9A227', borderDash: [6, 4], pointRadius: 3, tension: 0.25, spanGaps: false },
+          ] },
+          options: { plugins: { legend: { display: true }, tooltip: { callbacks: { title: (c) => `Semana de ${c[0].label}`, label: (c) => `${c.dataset.label}: ${fmt.brl0(c.raw)}` } } }, scales: { y: TS.axisNum(fmt.brl0), x: TS.axisCat } },
+        }),
+        h('div', { class: 'est-saz-g' },
+          h('div', null, h('div', { class: 'f-label' }, 'Vão vender mais nas próximas semanas: compre antes'), picos.length ? h('ul', { class: 'est-saz-l' }, picos.map(item)) : h('p', { class: 'muted' }, 'Nenhum produto com alta forte nessa época no ano passado.')),
+          h('div', null, h('div', { class: 'f-label' }, 'Vão vender menos: segure a compra'), quedas.length ? h('ul', { class: 'est-saz-l' }, quedas.map(item)) : h('p', { class: 'muted' }, 'Nenhum produto com queda forte nessa época no ano passado.'))));
+    }
     const sitSel = state.estSit || 'repor';
     const linhasRepo = sitSel === 'repor' ? repor : repo;
     const csv = h('button', { type: 'button', class: 'btn', onclick: () => baixarPedido(repor) }, '⬇ Baixar pedido (CSV)');
     corpo.append(h('div', { class: 'mt' }, TS.cardWithTools('O que repor',
-      h('span', null, `Ritmo de venda dos últimos 30 dias · entrega em ${ent} dias · pedido para ${cob} dias de venda. Chás a granel em kg (inclui o consumo de saco kraft e etiquetas).`,
+      h('span', null, `Ritmo dos últimos 30 dias ajustado pela época do ano (coluna Previsão/dia) · entrega em ${ent} dias · pedido para ${cob} dias de venda. Chás a granel em kg (inclui o consumo de saco kraft e etiquetas).`,
         h('span', { class: 'est-minres' }, ` Mínimo do AppNext comparado com o sugerido (em "Tudo que vende"): `,
           h('b', { class: 'est-sug est-sug-baixo' }, `${fmt.int(repo.filter((r) => r.minSit === 'baixo').length)} baixos`), ' · ',
           h('b', { class: 'est-sug est-sug-alto' }, `${fmt.int(repo.filter((r) => r.minSit === 'alto').length)} altos`), ' · ',
@@ -302,6 +491,8 @@
           { key: 'sug', label: 'Mín. sugerido', title: `Mínimo calculado pela venda: venda por dia × ${ent} dias de entrega + ${seg}% de segurança. Azul = o mínimo do AppNext está bom; vermelho = muito baixo (vai faltar); amarelo = muito alto (dinheiro parado). Use para corrigir o cadastro no AppNext`,
             render: (r) => (r.sug == null ? '—' : h('span', { class: 'est-sug est-sug-' + r.minSit, title: sugTxt(r) }, qtdTxt(r.sug, r.it))), sortVal: (r) => r.sug },
           { key: 'vel', label: 'Venda/dia', title: 'Média por dia nos últimos 30 dias. No chá a granel soma todos os tamanhos; em saco kraft e etiqueta, o que os pacotes de chá consumiram', render: (r) => (r.it.un === 'Kg' ? `${fmt.kg(r.vel)} kg` : fmt.n1(r.vel)) },
+          { key: 'prev', label: 'Previsão/dia', title: `Venda por dia esperada para os próximos ${H} dias (entrega + pedido): o ritmo de agora ajustado pelo que aconteceu nessa mesma época do ano passado. É ela que decide Dura, Pedir e o mínimo sugerido`,
+            render: (r) => (!(r.prev > 0) ? '—' : h('span', { class: 'est-prev' + (r.fator >= 1.15 ? ' sobe' : r.fator <= 0.87 ? ' desce' : ''), title: prevTxt(r) }, `${r.it.un === 'Kg' ? fmt.kg(r.prev) + ' kg' : fmt.n1(r.prev)}`, r.fator >= 1.15 || r.fator <= 0.87 ? h('small', null, ` ${r.fator > 1 ? '▲' : '▼'}${fmt.int(Math.abs(r.fator - 1) * 100)}%`) : null)), sortVal: (r) => r.prev },
           { key: 'dias', label: 'Dura', title: 'Quantos dias o estoque atual aguenta no ritmo de venda (estoque ÷ venda por dia)', fmt: (v) => (v == null ? '—' : v > 365 ? '+1 ano' : `${fmt.int(v)} ${Math.round(v) === 1 ? "dia" : "dias"}`) },
           { key: 'pedir', label: 'Pedir', title: 'Quanto pedir para chegar em tempo e durar o período escolhido. Passe o mouse no número para ver a conta', render: (r) => (r.pedir > 0 ? h('b', { title: contaPedido(r), class: 'est-dica' }, qtdTxt(r.pedir, r.it)) : '—') },
           { key: 'custoPedido', label: 'Custo', title: 'Quantidade a pedir × custo unitário do AppNext', fmt: (v) => (v ? fmt.brl(v) : '—') },

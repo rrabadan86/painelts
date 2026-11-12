@@ -902,3 +902,20 @@ body.com-camada { overflow: hidden; }
 .est-sug-baixo { color: #B5452B; background: #F6DCD3; }
 .est-sug-alto { color: #8A6A00; background: #FBF1D3; }
 .est-sug-sem { color: var(--muted); border: 1px dashed #C9C2B2; }
+.est-prev { cursor: help; white-space: nowrap; }
+.est-prev small { font-size: 10.5px; font-weight: 700; }
+.est-prev.sobe small { color: #1F5FBF; }
+.est-prev.desce small { color: #B5452B; }
+.est-saz-res { font-size: 13px; margin: 2px 0 8px; }
+.est-saz-g { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; margin-top: 12px; }
+.est-saz-l { margin: 6px 0 0 18px; padding: 0; display: grid; gap: 4px; font-size: 13px; }
+.promo-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-top: 10px; }
+.promo-col { border: 1px solid var(--line, #E2DCCF); border-radius: 12px; padding: 10px 12px; font-size: 13px; display: grid; gap: 3px; }
+.promo-col.on { border-color: #C9A227; background: #FFFCF2; }
+.promo-col-t { font-weight: 700; color: var(--green); display: flex; justify-content: space-between; }
+.promo-col-t small { font-weight: 400; color: var(--muted); }
+.promo-lucro { font-size: 20px; font-weight: 700; color: var(--dark); }
+.promo-lucro small { font-size: 12px; font-weight: 400; color: var(--muted); }
+.notice.ok-n { background: #E3EDF9; border-color: #B9CFEC; color: #1F3D6B; }
+.est-kit-desc { display: flex; align-items: center; gap: 6px; font-size: 13px; margin-left: auto; }
+.est-kit-dica { font-size: 12.5px; margin-top: 8px; }

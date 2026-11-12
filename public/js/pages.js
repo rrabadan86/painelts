@@ -764,6 +764,14 @@
       card('TKM', a.tkm, p.tkm, fmt.brl), card('PMA', a.pma, p.pma, fmt.brl), card('IPA', a.ipa, p.ipa, fmt.n2),
       card('Atendimentos', a.cupons, p.cupons, fmt.int), card('Faturamento', a.vt, p.vt, fmt.brl0)));
 
+    // lucro antes × durante × depois (custo do estoque; só admin e franqueado com uma loja escolhida)
+    if (TS.cartaoLucroPromo && TS.podeContabilidade && TS.podeContabilidade() && state.loja && state.loja !== 'todas') {
+      const fimP = f.ate ?? db.maxDay;
+      const diasDur = fimP - f.de + 1;
+      const fimDepois = Math.min(db.maxDay, fimP + N);
+      const depois = fimDepois > fimP ? excl(TS.filtrar({ de: fimP + 1, ate: fimDepois })) : [];
+      root.append(h('div', { class: 'mt' }, TS.cartaoLucroPromo({ antes: ant, durante: atual, depois, diasAntes: N, diasDurante: diasDur, diasDepois: fimDepois - fimP })));
+    }
     const vendA = TS.agrupar(atual, (i) => db.vend[i]), vendP = TS.agrupar(ant, (i) => db.vend[i]);
     const ids = new Set([...vendA.keys(), ...vendP.keys()]);
     const rows = [...ids].map((v) => {
