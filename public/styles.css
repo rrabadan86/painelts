@@ -882,3 +882,4 @@ body.com-camada { overflow: hidden; }
 .t.est-t th, .t.est-t td { padding: 7px 8px; }
 .t.est-t td.wrap { min-width: 210px; white-space: normal; }
 .t.est-t td:not(.l) { white-space: nowrap; }
+.est-tam { display: block; color: var(--muted); font-size: 11px; }

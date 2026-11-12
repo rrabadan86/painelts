@@ -111,15 +111,22 @@
         continue;
       }
       fatCusto += vt; custoTot += c;
-      const p = porProd.get(d) || { produto: d, grupo: db.D.grupoC[db.grupoC[i]], qtd: 0, vt: 0, custo: 0 };
-      p.qtd += db.qtd[i] || 0; p.vt += vt; p.custo += c; porProd.set(d, p);
+      const cs = M.casar(i);
+      const granel = cs.kg;
+      const chave = granel ? 'kg:' + cs.it.cod : d;
+      const p = porProd.get(chave) || { produto: granel ? cs.it.desc : d, granel, qtd: 0, kg: 0, tam: new Map(), vt: 0, custo: 0 };
+      const q = db.qtd[i] || 0;
+      p.qtd += q; p.vt += vt; p.custo += c;
+      if (granel) { p.kg += (q * cs.g) / 1000; p.tam.set(cs.g, (p.tam.get(cs.g) || 0) + q); }
+      porProd.set(chave, p);
       const vn = db.D.vendedor[db.vend[i]] || '—';
       const v = porVend.get(vn) || { vendedor: vn, vt: 0, custo: 0, fat: 0 };
       v.vt += vt; v.custo += c; porVend.set(vn, v);
     }
     for (const i of base) { if (M.taxa(i)) continue; const v = porVend.get(db.D.vendedor[db.vend[i]] || '—'); if (v) v.fat += db.vt[i] || 0; }
     const lucro = fatCusto - custoTot;
-    const prods = [...porProd.values()].filter((p) => p.vt > 0).map((p) => ({ ...p, lucro: p.vt - p.custo, margem: (p.vt - p.custo) / p.vt }));
+    const tamTxt = (m) => [...m].sort((a, b) => a[0] - b[0]).map(([g, q]) => `${fmt.int(q)}× ${g >= 1000 ? g / 1000 + ' kg' : g + 'g'}`).join(' · ');
+    const prods = [...porProd.values()].filter((p) => p.vt > 0).map((p) => ({ ...p, lucro: p.vt - p.custo, margem: (p.vt - p.custo) / p.vt, giro: p.granel ? p.kg : p.qtd, tamanhos: p.granel ? tamTxt(p.tam) : '' }));
 
     // ---------- reposição: últimos 30 dias da loja, sem os filtros ----------
     const fim = db.maxDay, ini = fim - 29;
@@ -168,9 +175,16 @@
 
     // ---------- matriz giro × margem ----------
     const med = (xs) => { const s = [...xs].sort((a, b) => a - b); return s.length ? s[Math.floor(s.length / 2)] : 0; };
-    const mQ = med(prods.map((p) => p.qtd)), mM = med(prods.map((p) => p.margem));
     const CLASSE = { estrela: ['Estrela', '#1F5FBF'], volume: ['Volume', '#C9A227'], joia: ['Joia', '#2C5234'], peso: ['Peso morto', '#B5452B'] };
-    for (const p of prods) p.classe = p.qtd >= mQ ? (p.margem >= mM ? 'estrela' : 'volume') : (p.margem >= mM ? 'joia' : 'peso');
+    // chá a granel compara com chá (kg, somando 50g, 100g, 250g…); acessórios e envasados entre si (unidades)
+    const MED = {};
+    for (const gr of [true, false]) {
+      const xs = prods.filter((p) => p.granel === gr);
+      MED[gr] = { q: med(xs.map((p) => p.giro)), m: med(xs.map((p) => p.margem)) };
+      for (const p of xs) p.classe = p.giro >= MED[gr].q ? (p.margem >= MED[gr].m ? 'estrela' : 'volume') : (p.margem >= MED[gr].m ? 'joia' : 'peso');
+    }
+    const grSel = state.estGrupo === 'un' ? false : true;
+    const prodsG = prods.filter((p) => p.granel === grSel);
     // curva ABC por lucro
     const ord = [...prods].sort((a, b) => b.lucro - a.lucro);
     const lucroPos = ord.reduce((s, p) => s + Math.max(0, p.lucro), 0);
@@ -178,30 +192,35 @@
     for (const p of ord) { ac += Math.max(0, p.lucro); p.abc = !lucroPos ? 'C' : ac / lucroPos <= 0.8 ? 'A' : ac / lucroPos <= 0.95 ? 'B' : 'C'; }
 
     corpo.append(TS.section('Rentabilidade'));
-    const conta = Object.fromEntries(Object.keys(CLASSE).map((k) => [k, prods.filter((p) => p.classe === k).length]));
-    corpo.append(h('div', { class: 'mt' }, TS.card('Giro × margem', `Cada ponto é um produto do período. Linhas = mediana (${fmt.int(mQ)} un. · ${fmt.pct(mM, 0)} de margem).`,
+    const conta = Object.fromEntries(Object.keys(CLASSE).map((k) => [k, prodsG.filter((p) => p.classe === k).length]));
+    const un = grSel ? 'kg' : 'un.';
+    const fq = (v) => (grSel ? `${fmt.kg(v)} kg` : `${fmt.int(v)} un.`);
+    corpo.append(h('div', { class: 'mt' }, TS.cardWithTools('Giro × margem', grSel
+      ? `Cada ponto é um chá, somando todas as gramaturas (50g, 100g, 250g…) em kg. Comparado só com os outros chás: mediana de ${fq(MED[true].q)} e ${fmt.pct(MED[true].m, 0)} de margem.`
+      : `Cada ponto é um acessório ou envasado, em unidades. Comparado só com eles: mediana de ${fq(MED[false].q)} e ${fmt.pct(MED[false].m, 0)} de margem.`,
+      TS.seg([['Chás a granel', 'kg'], ['Acessórios e envasados', 'un']], grSel ? 'kg' : 'un', (v) => { state.estGrupo = v; TS.render(); }),
       h('div', { class: 'est-leg' }, Object.entries(CLASSE).map(([k, [n, c]]) => h('span', null, h('i', { style: { background: c } }), `${n} (${conta[k]})`)),
         h('small', { class: 'muted' }, 'Estrela: vende muito e dá margem · Volume: vende muito, margem baixa · Joia: margem boa, vende pouco · Peso morto: pouco das duas')),
-      prods.length ? TS.chart({
+      prodsG.length ? TS.chart({
         type: 'scatter',
-        data: { datasets: Object.entries(CLASSE).map(([k, [n, c]]) => ({ label: n, data: prods.filter((p) => p.classe === k).map((p) => ({ x: Math.max(1, p.qtd), y: p.margem * 100, p })), backgroundColor: c + 'CC', pointRadius: 4, pointHoverRadius: 6 })) },
-        options: { plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => `${c.raw.p.produto}: ${fmt.int(c.raw.p.qtd)} un. · margem ${fmt.pct(c.raw.p.margem)} · lucro ${fmt.brl(c.raw.p.lucro)}` } } },
-          scales: { x: { type: 'logarithmic', title: { display: true, text: 'Unidades vendidas (escala log)' }, ticks: { callback: (v) => ([1, 10, 100, 1000, 10000].includes(v) ? fmt.int(v) : '') } }, y: { title: { display: true, text: 'Margem (%)' }, ticks: { callback: (v) => v + '%' } } } },
+        data: { datasets: Object.entries(CLASSE).map(([k, [n, c]]) => ({ label: n, data: prodsG.filter((p) => p.classe === k).map((p) => ({ x: Math.max(grSel ? 0.01 : 1, p.giro), y: p.margem * 100, p })), backgroundColor: c + 'CC', pointRadius: 4, pointHoverRadius: 6 })) },
+        options: { plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => `${c.raw.p.produto}: ${fq(c.raw.p.giro)}${c.raw.p.tamanhos ? ' (' + c.raw.p.tamanhos + ')' : ''} · margem ${fmt.pct(c.raw.p.margem)} · lucro ${fmt.brl(c.raw.p.lucro)}` } } },
+          scales: { x: { type: 'logarithmic', title: { display: true, text: `${grSel ? 'Kg vendidos' : 'Unidades vendidas'} (escala log)` }, ticks: { callback: (v) => (Math.abs(Math.log10(v) - Math.round(Math.log10(v))) < 1e-9 ? (v < 1 ? String(v).replace('.', ',') : fmt.int(v)) : '') } }, y: { title: { display: true, text: 'Margem (%)' }, ticks: { callback: (v) => v + '%' } } } },
       }, 'tall') : TS.empty())));
 
-    corpo.append(h('div', { class: 'mt' }, TS.card('Produtos por lucro', 'Curva ABC: A = produtos que fazem 80% do lucro (nunca podem faltar).', TS.table({
+    corpo.append(h('div', { class: 'mt' }, TS.card('Produtos por lucro', 'Curva ABC: A = produtos que fazem 80% do lucro (nunca podem faltar). Chá a granel aparece uma vez só, somando todas as gramaturas. O grupo (Estrela, Volume…) compara chá com chá e acessório com acessório.', TS.table({
       cols: [
-        { key: 'produto', label: 'Produto', align: 'l', sticky: true, wrap: true },
+        { key: 'produto', label: 'Produto', align: 'l', sticky: true, wrap: true, render: (r) => (r.granel ? h('span', null, r.produto, h('small', { class: 'est-tam' }, r.tamanhos)) : r.produto) },
         { key: 'abc', label: 'ABC', cls: (r) => (r.abc === 'A' ? 'hit' : '') },
         { key: 'classe', label: 'Grupo', align: 'l', fmt: (v) => CLASSE[v][0], sortVal: (r) => r.classe },
-        { key: 'qtd', label: 'Unid.', fmt: fmt.int },
+        { key: 'giro', label: 'Vendido', render: (r) => (r.granel ? `${fmt.kg(r.giro)} kg` : `${fmt.int(r.giro)} un.`), sortVal: (r) => r.giro },
         { key: 'vt', label: 'Faturamento', fmt: fmt.brl },
         { key: 'custo', label: 'Custo', fmt: fmt.brl },
         { key: 'lucro', label: 'Lucro', fmt: fmt.brl, cls: (r) => (r.lucro < 0 ? 'miss' : '') },
         { key: 'margem', label: 'Margem', fmt: (v) => fmt.pct(v), cls: (r) => (r.margem < 0.3 ? 'miss' : '') },
       ],
       rows: prods, sortKey: 'lucro', maxHeight: '520px', search: 'Buscar produto…', searchKeys: ['produto'], cls: 'est-t',
-      total: { produto: 'Total', qtd: prods.reduce((s, p) => s + p.qtd, 0), vt: fatCusto, custo: custoTot, lucro, margem: fatCusto ? lucro / fatCusto : null },
+      total: { produto: 'Total', vt: fatCusto, custo: custoTot, lucro, margem: fatCusto ? lucro / fatCusto : null },
     }))));
 
     const vends = [...porVend.values()].filter((v) => v.vt > 0).map((v) => ({ ...v, lucro: v.vt - v.custo, margem: (v.vt - v.custo) / v.vt, cobre: v.fat ? v.vt / v.fat : null }));
