@@ -148,6 +148,10 @@ app.post('/login', express.urlencoded({ extended: false }), (req, res) => {
   const user = String(req.body.usuario || '').trim().toLowerCase();
   const pass = String(req.body.senha || '');
   const u = cfg.usuarios[user] || (cfg.usuarios['*'] ? cfg.usuarios['*'] : null);
+  if (u && u.ativo && C.expirado(u) && C.confereSenha(pass, u.senha)) {
+    attempts.delete(ip);
+    return res.redirect('/login?e=expirou&ate=' + u.acessoAte);
+  }
   if (u && u.ativo && C.confereSenha(pass, u.senha) && (C.lojasDoUsuario(cfg.usuarios[user] ? user : '*').length || u.perfil === 'admin')) {
     attempts.delete(ip);
     C.registrarAcesso(cfg.usuarios[user] ? user : '*');
@@ -251,7 +255,7 @@ app.use((req, res, next) => {
   const s = readToken(cookies(req).ts_sess);
   const lojas = s ? C.lojasDoUsuario(s.u) : [];
   const uS = s ? C.usuario(s.u) : null;
-  if (s && (lojas.length || (uS && uS.ativo && uS.perfil === 'admin'))) {
+  if (s && (lojas.length || (uS && uS.ativo && !C.expirado(uS) && uS.perfil === 'admin'))) {
     req.user = s.u; req.lojas = lojas;
     const u = C.usuario(s.u);
     req.perfil = u ? u.perfil : 'admin';

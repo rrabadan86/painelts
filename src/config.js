@@ -85,6 +85,8 @@ function normalizar(cfg) {
       telas: Array.isArray(v.telas) && v.telas.length ? v.telas.filter((t) => TELAS.includes(t)) : null,
       ativo: v.ativo !== false,
       criadoEm: v.criadoEm || null,
+      // último dia de acesso (AAAA-MM-DD, horário de Brasília); null = sem prazo
+      acessoAte: /^\d{4}-\d{2}-\d{2}$/.test(v.acessoAte || '') ? v.acessoAte : null,
     };
   }
   return { lojas, usuarios, uploadToken: cfg.uploadToken || process.env.UPLOAD_TOKEN || null };
@@ -130,10 +132,23 @@ function confereSenha(senha, guardada) {
 }
 
 /** Lojas que um usuário pode ver */
+/** hoje no horário de Brasília (AAAA-MM-DD) */
+const hojeBR = () => new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
+/** o prazo de acesso do usuário já passou? (o último dia ainda vale) */
+const expirado = (u) => !!(u && u.acessoAte && hojeBR() > u.acessoAte);
+/** hoje + n meses (o dia é ajustado no fim do mês: 31/01 + 1 = 28/02) */
+function somaMeses(iso, n) {
+  const [a, m, d] = iso.split('-').map(Number);
+  const alvo = new Date(Date.UTC(a, m - 1 + n, 1));
+  const ult = new Date(Date.UTC(alvo.getUTCFullYear(), alvo.getUTCMonth() + 1, 0)).getUTCDate();
+  alvo.setUTCDate(Math.min(d, ult));
+  return alvo.toISOString().slice(0, 10);
+}
+
 function lojasDoUsuario(user) {
   const cfg = get();
   const u = cfg.usuarios[user] || cfg.usuarios['*'];
-  if (!u || !u.ativo) return [];
+  if (!u || !u.ativo || expirado(u)) return [];
   if (u.lojas.includes('*')) return cfg.lojas;
   return cfg.lojas.filter((l) => u.lojas.includes(l.id));
 }
@@ -213,5 +228,5 @@ function metaDoMes(loja, ym) {
 
 module.exports = {
   get, hashSenha, confereSenha, lojasDoUsuario, pastaLoja, usuario, alterar, gravarAtomico, auditar, lerAuditoria,
-  registrarAcesso, lerAcessos, metaDoMes, PERFIS, TELAS, TELAS_GERENTE_PADRAO, telasDo, ARQUIVOS, CONFIG_FILE, CONFIG_DIR, COLETOR_DIR, DATA_DIR,
+  registrarAcesso, lerAcessos, expirado, hojeBR, somaMeses, metaDoMes, PERFIS, TELAS, TELAS_GERENTE_PADRAO, telasDo, ARQUIVOS, CONFIG_FILE, CONFIG_DIR, COLETOR_DIR, DATA_DIR,
 };

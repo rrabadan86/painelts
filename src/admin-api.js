@@ -139,7 +139,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
       if (nome === '*') return false;
       if (req.perfil === 'admin') return true;
       return ['gerente', 'vendedor'].includes(u.perfil) && u.lojas.length && u.lojas.every((l) => minhas.has(l));
-    }).map(([nome, u]) => ({ nome, perfil: u.perfil, lojas: u.lojas, vendedor: u.vendedor, telas: u.telas, ativo: u.ativo, criadoEm: u.criadoEm, ultimoAcesso: acessos[nome] || null }))
+    }).map(([nome, u]) => ({ nome, perfil: u.perfil, lojas: u.lojas, vendedor: u.vendedor, telas: u.telas, ativo: u.ativo, acessoAte: u.acessoAte || null, expirado: C.expirado(u), criadoEm: u.criadoEm, ultimoAcesso: acessos[nome] || null }))
       .sort((a, b) => a.nome.localeCompare(b.nome));
   }
 
@@ -499,7 +499,15 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     vendedor: b.perfil === 'vendedor' ? semQuebra(b.vendedor).toUpperCase() : '',
     telas: b.perfil === 'gerente' && Array.isArray(b.telas) ? [...new Set(b.telas.map(String))].filter((t) => C.TELAS.includes(t)) : undefined,
     ativo: b.ativo !== false,
+    acessoAte: b.acessoAte || null,
   });
+  /** acessoMeses: n ≥ 1 = acesso até hoje + n meses; 0 = sem prazo; ausente = mantém */
+  function prazo(b, atual) {
+    if (b.acessoMeses == null || b.acessoMeses === '') return { ok: atual || null };
+    const n = Number(b.acessoMeses);
+    if (!Number.isInteger(n) || n < 0 || n > 120) return { erro: 'Prazo de acesso inválido: informe de 1 a 120 meses (0 = sem prazo).' };
+    return { ok: n === 0 ? null : C.somaMeses(C.hojeBR(), n) };
+  }
 
   r.post('/usuarios', json, (req, res) => {
     const nome = String(req.body.nome || '').trim().toLowerCase();
@@ -509,13 +517,16 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     const d = limparDados(req.body);
     const erro = validarUsuario(req, d, null);
     if (erro) return res.status(400).json({ erro });
+    const pz = prazo(req.body, null);
+    if (pz.erro) return res.status(400).json({ erro: pz.erro });
+    d.acessoAte = pz.ok;
     try {
       C.alterar((cfg) => {
         if (cfg.usuarios[nome]) throw new Error(`O usuário "${nome}" já existe.`);
         cfg.usuarios[nome] = { senha: C.hashSenha(senha), ...d, criadoEm: new Date().toISOString() };
       });
     } catch (e) { return res.status(400).json({ erro: e.message }); }
-    aud(req, 'criou usuário', nome, { perfil: d.perfil, lojas: d.lojas, loja: d.lojas[0] });
+    aud(req, 'criou usuário', nome, { perfil: d.perfil, lojas: d.lojas, acessoAte: d.acessoAte || 'sem prazo', loja: d.lojas[0] });
     res.json({ ok: true });
   });
 
@@ -525,7 +536,11 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     if (!alvo || nome === '*') return res.status(404).json({ erro: 'Usuário não encontrado.' });
     if (!usuariosVisiveis(req).some((u) => u.nome === nome)) return res.status(403).json({ erro: 'Sem permissão para alterar este usuário.' });
     const d = limparDados({ ...alvo, ...req.body });
+    const pz = prazo(req.body, alvo.acessoAte);
+    if (pz.erro) return res.status(400).json({ erro: pz.erro });
+    d.acessoAte = pz.ok;
     if (nome === req.user && (d.perfil !== alvo.perfil || !d.ativo)) return res.status(400).json({ erro: 'Você não pode mudar o próprio perfil nem se desativar.' });
+    if (nome === req.user && d.acessoAte && d.acessoAte !== (alvo.acessoAte || null)) return res.status(400).json({ erro: 'Você não pode colocar prazo no próprio acesso.' });
     const erro = validarUsuario(req, d, alvo);
     if (erro) return res.status(400).json({ erro });
     const senha = req.body.senha ? String(req.body.senha) : null;
@@ -535,7 +550,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
       Object.assign(u, d);
       if (senha) u.senha = C.hashSenha(senha);
     });
-    aud(req, 'alterou usuário', nome, { perfil: d.perfil, lojas: d.lojas, telas: d.telas, ativo: d.ativo, senha: senha ? 'redefinida' : undefined, loja: d.lojas[0] });
+    aud(req, 'alterou usuário', nome, { perfil: d.perfil, lojas: d.lojas, telas: d.telas, ativo: d.ativo, acessoAte: d.acessoAte !== (alvo.acessoAte || null) ? d.acessoAte || 'sem prazo' : undefined, senha: senha ? 'redefinida' : undefined, loja: d.lojas[0] });
     pacoteLimpar();
     res.json({ ok: true });
   });

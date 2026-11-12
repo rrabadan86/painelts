@@ -3,7 +3,10 @@
   var e = q.get('e');
   if (e) {
     var p = document.getElementById('err');
-    p.textContent = e === 'limite' ? 'Muitas tentativas. Aguarde 15 minutos e tente de novo.' : 'Usuário ou senha incorretos.';
+    var ate = (q.get('ate') || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    p.textContent = e === 'limite' ? 'Muitas tentativas. Aguarde 15 minutos e tente de novo.'
+      : e === 'expirou' ? 'Seu acesso terminou' + (ate ? ' em ' + ate[3] + '/' + ate[2] + '/' + ate[1] : '') + '. Fale com o responsável pela loja para renovar.'
+      : 'Usuário ou senha incorretos.';
     p.hidden = false;
   }
   // link próprio da loja: /login?loja=<id> mostra o logo e o nome dela

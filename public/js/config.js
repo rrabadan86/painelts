@@ -470,7 +470,9 @@
         h('td', { class: 'l wrap' }, u.lojas.includes('*') ? 'Todas' : u.lojas.map((id) => nomeLoja.get(id) || id).join(', ')),
         h('td', { class: 'l' }, u.vendedor || '—'),
         h('td', { class: 'l' }, u.ultimoAcesso ? dt(u.ultimoAcesso) : h('span', { class: 'muted' }, 'nunca')),
-        h('td', { class: 'l' }, u.ativo ? 'Ativo' : h('span', { class: 'neg' }, 'Desativado')),
+        h('td', { class: 'l' }, !u.ativo ? h('span', { class: 'neg' }, 'Desativado')
+          : u.expirado ? h('span', { class: 'neg' }, `Acesso terminou em ${dataBr(u.acessoAte)}`)
+            : u.acessoAte ? h('span', null, 'Ativo', h('div', { class: diasAte(u.acessoAte) <= 7 ? 'neg cfg-prazo' : 'muted cfg-prazo' }, `até ${dataBr(u.acessoAte)}${diasAte(u.acessoAte) <= 7 ? ` (${diasAte(u.acessoAte)} dia(s))` : ''}`)) : 'Ativo'),
         h('td', null, h('button', { type: 'button', class: 'btn', onclick: () => { state.cfgEdit = state.cfgEdit === u.nome ? null : u.nome; abertos.delete('novoUser'); pintar(); } }, state.cfgEdit === u.nome ? 'Fechar' : 'Editar')));
       return state.cfgEdit === u.nome ? [tr, h('tr', { class: 'cfg-edit-row' }, h('td', { colspan: 7 }, formUsuario(u)))] : [tr];
     }).flat();
@@ -478,6 +480,17 @@
       h('thead', null, h('tr', null, ['Usuário', 'Perfil', 'Lojas', 'Vendedor', 'Último acesso', 'Situação', ''].map((t, i) => h('th', { class: i < 6 ? 'l' : '' }, t)))),
       h('tbody', null, linhas.length ? linhas : h('tr', null, h('td', { colspan: 7, class: 'l muted' }, 'Nenhum usuário.')))))));
     box.append(h('div', { class: 'cfg-perfis' }, Object.entries(PERFIL_DESC).filter(([p]) => est.perfil === 'admin' || ['gerente', 'vendedor'].includes(p)).map(([p, d]) => h('div', null, h('span', { class: 'badge p-' + p }, PERFIL_NOME[p]), ' ', d))));
+  }
+
+  const dataBr = (iso) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : '');
+  const hojeBR = () => new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
+  const diasAte = (iso) => Math.round((Date.parse(iso + 'T12:00:00Z') - Date.parse(hojeBR() + 'T12:00:00Z')) / 864e5);
+  function somaMeses(iso, n) {
+    const [a, m, d] = iso.split('-').map(Number);
+    const alvo = new Date(Date.UTC(a, m - 1 + n, 1));
+    const ult = new Date(Date.UTC(alvo.getUTCFullYear(), alvo.getUTCMonth() + 1, 0)).getUTCDate();
+    alvo.setUTCDate(Math.min(d, ult));
+    return alvo.toISOString().slice(0, 10);
   }
 
   function senhaAleatoria() {
@@ -497,6 +510,22 @@
     const senha = inp({ type: 'text', autocomplete: 'new-password', placeholder: novo ? 'mínimo 8 caracteres' : 'em branco = mantém a atual' });
     const ativo = h('input', { type: 'checkbox', checked: !u || u.ativo || null, disabled: (u && u.nome === est.usuario) || null });
     const campoLojas = campo('Lojas', lojasBox);
+    // prazo de acesso, em meses a partir de hoje
+    const proprio = u && u.nome === est.usuario;
+    const meses = inp({ type: 'number', min: 0, max: 120, step: 1, placeholder: novo ? 'sem prazo' : 'mantém', style: { maxWidth: '110px' }, disabled: proprio || null });
+    const atalhos = h('div', { class: 'chips cfg-meses' }, [1, 2, 3, 4, 5].map((n) => h('button', { type: 'button', class: 'chip', onclick: () => { meses.value = n; dicaPrazo(); } }, `${n} ${n === 1 ? 'mês' : 'meses'}`)),
+      !novo && u.acessoAte ? h('button', { type: 'button', class: 'chip', onclick: () => { meses.value = 0; dicaPrazo(); } }, 'Sem prazo') : null);
+    const prazoTxt = h('small', null);
+    const dicaPrazo = () => {
+      const v = meses.value.trim();
+      const atual = u && u.acessoAte ? `Hoje: ${u.expirado ? 'terminou em' : 'até'} ${dataBr(u.acessoAte)}.` : 'Hoje: sem prazo.';
+      if (proprio) prazoTxt.textContent = 'Você não pode colocar prazo no próprio acesso.';
+      else if (v === '') prazoTxt.textContent = novo ? 'Em branco = sem prazo.' : `${atual} Em branco = mantém.`;
+      else if (+v === 0) prazoTxt.textContent = 'Sem prazo: acesso até ser desativado.';
+      else prazoTxt.textContent = `Acesso até ${dataBr(somaMeses(hojeBR(), Math.round(+v)))} (último dia).`;
+    };
+    meses.addEventListener('input', dicaPrazo); dicaPrazo();
+    const campoPrazo = h('label', { class: 'cfg-campo', style: { marginBottom: '12px' } }, h('span', null, 'Acesso por (meses)'), h('div', { class: 'cfg-inline' }, meses, atalhos), prazoTxt);
     const telasSel = new Set(u && u.telas ? u.telas : TELAS_PADRAO);
     const telasBox = h('div', { class: 'cfg-checks' }, TELAS_NOME.map(([k, nomeT]) => {
       const cb = h('input', { type: 'checkbox', value: k, checked: telasSel.has(k) || null });
@@ -534,10 +563,10 @@
       h('div', { class: 'cfg-grid' }, campo('Usuário (login)', nome), campo('Perfil', perfil),
         campo(novo ? 'Senha' : 'Nova senha', h('div', { class: 'cfg-inline' }, senha, gerar), 'Anote e envie para a pessoa: ela não aparece de novo.'),
         h('label', { class: 'cfg-campo cfg-check' }, ativo, h('span', null, 'Usuário ativo (pode entrar)'))),
-      campoLojas, campoVend, campoTelas,
+      campoPrazo, campoLojas, campoVend, campoTelas,
       h('div', { class: 'cfg-acoes' },
         acao(novo ? 'Criar usuário' : 'Salvar', async () => {
-          const corpo = { perfil: perfil.value, lojas: [...marcadas], vendedor: vendSel.value, ativo: ativo.checked, senha: senha.value || undefined, telas: perfil.value === 'gerente' ? TELAS_NOME.map(([k]) => k).filter((k) => telasSel.has(k)) : undefined };
+          const corpo = { perfil: perfil.value, lojas: [...marcadas], vendedor: vendSel.value, ativo: ativo.checked, senha: senha.value || undefined, acessoMeses: meses.value.trim() === '' || proprio ? undefined : Math.round(+meses.value), telas: perfil.value === 'gerente' ? TELAS_NOME.map(([k]) => k).filter((k) => telasSel.has(k)) : undefined };
           if (novo) { await api('POST', '/usuarios', { nome: nome.value.trim().toLowerCase(), ...corpo }); abertos.delete('novoUser'); }
           else { await api('PUT', `/usuarios/${encodeURIComponent(u.nome)}`, corpo); state.cfgEdit = null; }
           return novo ? `Usuário criado.${corpo.senha ? ' Envie a senha para a pessoa.' : ''}` : 'Usuário atualizado.';

@@ -700,3 +700,6 @@ body.perfil-vendedor #btnScript { display: none !important; }
 }
 .aj-repetir { display: grid; gap: 4px; margin: 8px 0 4px; padding-top: 8px; border-top: 1px dashed var(--line, #E2DCCF); }
 .aj-repetir .btn { justify-self: start; }
+.cfg-prazo { font-size: 11.5px; }
+.cfg-meses { display: flex; flex-wrap: wrap; gap: 6px; }
+.cfg-meses .chip { cursor: pointer; }
