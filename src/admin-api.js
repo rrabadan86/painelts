@@ -69,6 +69,7 @@ function validarOperacao(o) {
   if (!(typeof e.capacidade === 'number' && e.capacidade > 0 && e.capacidade <= 100)) return 'Atendimentos por pessoa por hora inválido.';
   if (e.nomes != null && (!Array.isArray(e.nomes) || e.nomes.length > 40 || e.nomes.some((n) => typeof n !== 'string' || n.length > 40))) return 'Nomes inválidos.';
   if (e.modelo != null && !['livre', 'rodizio'].includes(e.modelo)) return 'Modelo de escala inválido.';
+  if (e.inicioRodizio != null && !/^\d{4}-\d{2}-\d{2}$/.test(e.inicioRodizio)) return 'Data de início do rodízio inválida.';
   if (e.minimoDia != null) {
     if (typeof e.minimoDia !== 'object') return 'Mínimo por dia inválido.';
     for (const d of DIAS_SEMANA) if (e.minimoDia[d] != null && !int(e.minimoDia[d], 0, 20)) return `Mínimo de pessoas de ${d} inválido.`;

@@ -317,6 +317,8 @@
       h('option', { value: 'livre', selected: e.modelo !== 'rodizio' || null }, 'Livre: o painel escolhe as folgas'),
       h('option', { value: 'rodizio', selected: e.modelo === 'rodizio' || null }, 'Rodízio de domingo (folga no domingo puxa a segunda)'));
     modelo.addEventListener('change', () => { e.modelo = modelo.value; aoMudar && aoMudar(); });
+    const inicio = h('input', { class: 'f-input', type: 'date', value: e.inicioRodizio || '2026-01-04' });
+    inicio.addEventListener('change', () => { if (inicio.value) { e.inicioRodizio = inicio.value; aoMudar && aoMudar(); } });
     const ordemSemana = [6, 0, 1, 2, 3, 4, 5]; // domingo a sábado
     e.minimoDia = e.minimoDia || {};
     const minimos = h('div', { class: 'op-minimos' }, ordemSemana.map((i) => {
@@ -352,7 +354,8 @@
         campo('Intervalo (min)', num('intervalo', { min: 0, max: 180, step: 15 }), 'Para jornadas acima de 6h.'),
         campo('Atendimentos por pessoa por hora', num('capacidade', { min: 1, max: 100, step: 1 }), 'Acima disso, precisa de mais uma pessoa.')),
       h('div', { class: 'f-label', style: { marginTop: '14px' } }, 'Regras da escala'),
-      h('div', { class: 'cfg-grid' }, campo('Modelo', modelo, e.modelo === 'rodizio' ? 'Semana de domingo a sábado. As folgas de domingo giram igualmente entre a equipe.' : null)),
+      h('div', { class: 'cfg-grid' }, campo('Modelo', modelo, e.modelo === 'rodizio' ? 'Semana de domingo a sábado. As folgas de domingo giram igualmente entre a equipe.' : null),
+        e.modelo === 'rodizio' ? campo('A "Semana 1" do rodízio começa no domingo', inicio, 'Use um domingo em que a Pessoa 1 folgou. A escala do mês segue a partir dele.') : null),
       h('div', { class: 'f-label', style: { marginTop: '10px' } }, 'Mínimo de pessoas na loja, por dia'),
       minimos,
       h('small', { class: 'muted' }, 'Ex.: domingo 2 = nunca fica uma pessoa sozinha no domingo.'),
@@ -460,7 +463,13 @@
         trechos.length ? h('p', { class: 'mapa-trechos' }, h('b', null, 'Precisa de 2+ pessoas: '), trechos.join(' · ')) : h('p', { class: 'muted' }, 'Uma pessoa dá conta em todos os horários com essa capacidade.')),
       cartaoAjustes(opInfo)));
 
-    if (rodizio) { root.append(h('div', { class: 'mt' }, cartaoRodizio(need, op, horas, ideal))); return; }
+    const cfgLoja = (db.metas || []).find((m) => m.id === opInfo.id) || null;
+    if (rodizio) {
+      root.append(h('div', { class: 'mt' }, cartaoRodizio(need, op, horas, ideal)));
+      const rr = montarRodizio(need, op, pessoasDe(op.equipe));
+      root.append(h('div', { class: 'mt' }, cartaoMes({ op, cfg: cfgLoja, semanas: rr.semanas, L: rr.L, need, lojaNome: opInfo.nome })));
+      return;
+    }
     // escala
     const linhasEsc = esc.pessoas.map((turnos, i) => h('tr', null, h('th', { class: 'l' }, nomesEq(i)), turnos.map((t) => h('td', { class: t ? 'trab' : 'folga' },
       t ? [h('b', null, `${hhmm(t.ini)}–${hhmm(t.fim)}`), t.pausa ? h('small', null, `intervalo ${hhmm(t.pausa[0])}–${hhmm(t.pausa[1])}`) : null] : 'Folga'))));
@@ -484,7 +493,114 @@
       h('div', { class: 'f-label', style: { marginTop: '16px' } }, 'Cobertura da escala'),
       h('div', { class: 'table-wrap free mapa-wrap' }, cobertura),
       h('div', { class: 'mapa-leg' }, h('span', { class: 'ok' }, 'na medida'), h('span', { class: 'sobra' }, 'sobra gente'), h('span', { class: 'falta' }, 'falta gente no pico'), h('span', { class: 'vazio' }, 'loja sozinha')))));
+    root.append(h('div', { class: 'mt' }, cartaoMes({ op, cfg: cfgLoja, semanas: [{ turnosP: esc.pessoas, motivos: null }], L: 1, need, lojaNome: opInfo.nome })));
   };
+
+  // ---------- escala do mês (datas reais, feriados e férias) ----------
+  const ORD = [6, 0, 1, 2, 3, 4, 5]; // índice interno (seg=0..dom=6) a partir do getUTCDay()
+  const wdDe = (iso) => (new Date(iso + 'T12:00:00Z').getUTCDay() + 6) % 7;
+  const diaMs = (iso) => Date.parse(iso + 'T12:00:00Z');
+  /** domingo da semana (semana de domingo a sábado) */
+  const domingoDe = (iso) => { const d = new Date(iso + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() - d.getUTCDay()); return d.toISOString().slice(0, 10); };
+  const INICIO_PADRAO = '2026-01-04';
+
+  /** monta a escala de cada dia do mês: { dias:[iso], pessoas:[nome], cel[i][k] = {tipo, ini, fim, pausa, motivo} } */
+  function escalaDoMes({ op, cfg, semanas, L, ym }) {
+    const pessoas = pessoasDe(op.equipe);
+    const nD = new Date(Date.UTC(+ym.slice(0, 4), +ym.slice(5, 7), 0)).getUTCDate();
+    const dias = Array.from({ length: nD }, (_, k) => `${ym}-${String(k + 1).padStart(2, '0')}`);
+    const ancora = domingoDe(op.equipe.inicioRodizio || INICIO_PADRAO);
+    const feriados = new Map(TS.feriadosDoMes ? TS.feriadosDoMes(cfg, ym).map((f) => [f.data, f]) : []);
+    const ferias = (cfg && cfg.ferias) || [];
+    const cel = pessoas.map((p) => dias.map((iso) => {
+      const wd = wdDe(iso);
+      const w = L > 1 ? (((Math.round((diaMs(domingoDe(iso)) - diaMs(ancora)) / (7 * 86400000)) % L) + L) % L) : 0;
+      const sem = semanas[w];
+      const i = pessoas.indexOf(p);
+      const fer = feriados.get(iso);
+      const emFerias = ferias.some((f) => String(f.vendedor).trim().toUpperCase() === p.nome.trim().toUpperCase() && f.de <= iso && f.ate >= iso);
+      if (emFerias) return { tipo: 'ferias', motivo: 'Férias', semana: w };
+      if (fer) {
+        const hf = TS.horarioFeriado ? TS.horarioFeriado({ ...(cfg || {}), operacao: op }, iso) : null;
+        if (hf && hf.fechado) return { tipo: 'fechado', motivo: `Fechado (${fer.nome})`, semana: w };
+        const t = sem.turnosP[i][wd];
+        if (!t) return { tipo: 'folga', motivo: (sem.motivos && sem.motivos[i][wd]) || 'Folga', feriado: fer.nome, semana: w };
+        if (hf && !hf.fechado) {
+          const ini = Math.max(t.ini, hm(hf.abre)), fim = Math.min(t.fim, hm(hf.fecha));
+          if (fim - ini < 60) return { tipo: 'folga', motivo: 'Folga (feriado)', feriado: fer.nome, semana: w };
+          return { tipo: 'trab', ini, fim, pausa: fim - ini > 360 ? t.pausa : null, feriado: fer.nome, semana: w };
+        }
+        return { tipo: 'trab', ...t, feriado: fer.nome, semana: w };
+      }
+      if (op.funcionamento[DIAS[wd]].fechado) return { tipo: 'fechado', motivo: 'Fechado', semana: w };
+      const t = sem.turnosP[i][wd];
+      return t ? { tipo: 'trab', ...t, semana: w } : { tipo: 'folga', motivo: (sem.motivos && sem.motivos[i][wd]) || 'Folga', semana: w };
+    }));
+    return { dias, pessoas, cel, feriados };
+  }
+
+  function cartaoMes({ op, cfg, semanas, L, need, lojaNome }) {
+    const hoje = new Date();
+    const meses = [];
+    for (let k = -1; k <= 3; k++) { const d = new Date(Date.UTC(hoje.getFullYear(), hoje.getMonth() + k, 1)); meses.push(d.toISOString().slice(0, 7)); }
+    const ym = meses.includes(state.escMesYm) ? state.escMesYm : meses[1];
+    const sel = h('select', { class: 'f-input mes-sel' }, meses.map((m) => h('option', { value: m, selected: m === ym || null }, `${TS.MESES_LONGOS[+m.slice(5, 7) - 1]} de ${m.slice(0, 4)}`)));
+    sel.addEventListener('change', () => { state.escMesYm = sel.value; TS.render(); });
+    const E = escalaDoMes({ op, cfg, semanas, L, ym });
+    const DS = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
+    const curto = (m) => (m % 60 ? hhmm(m) : `${Math.floor(m / 60)}h`);
+    const minimoDia = (iso) => { const wd = wdDe(iso); return Math.max(0, ...need[wd]); };
+    // alertas por dia: menos gente que o mínimo/necessário
+    const alertas = [];
+    E.dias.forEach((iso, k) => {
+      const n = E.cel.filter((row) => row[k].tipo === 'trab').length;
+      const fechado = E.cel.every((row) => row[k].tipo === 'fechado');
+      const min = minimoDia(iso);
+      if (!fechado && min && n < min) alertas.push(`${iso.slice(8)}/${iso.slice(5, 7)}: ${n} pessoa(s) na loja, mínimo ${min}${E.cel.some((row) => row[k].tipo === 'ferias') ? ' (férias)' : ''}`);
+    });
+    const totais = E.cel.map((row) => {
+      let min = 0, dTrab = 0;
+      row.forEach((c) => { if (c.tipo === 'trab') { dTrab++; min += c.fim - c.ini - (c.pausa ? c.pausa[1] - c.pausa[0] : 0); } });
+      return { min, dTrab };
+    });
+    const tabela = (paraPdf) => h('table', { class: 'mes-t' + (paraPdf ? ' pdf' : '') },
+      h('thead', null,
+        h('tr', null, h('th', { class: 'l' }, ''), E.dias.map((iso) => h('th', { class: (wdDe(iso) === 6 ? 'dom' : '') + (E.feriados.has(iso) ? ' fer' : ''), title: E.feriados.get(iso)?.nome || '' }, String(+iso.slice(8)))), h('th', null, 'Dias'), h('th', null, 'Horas')),
+        h('tr', null, h('th', { class: 'l' }, ''), E.dias.map((iso) => h('th', { class: 'ds' + (wdDe(iso) === 6 ? ' dom' : '') + (E.feriados.has(iso) ? ' fer' : '') }, E.feriados.has(iso) ? 'F' : DS[new Date(iso + 'T12:00:00Z').getUTCDay()])), h('th'), h('th'))),
+      h('tbody', null, E.pessoas.map((p, i) => h('tr', null, h('th', { class: 'l' }, p.nome), E.cel[i].map((c) => {
+        if (c.tipo === 'trab') return h('td', { class: 'trab' + (c.feriado ? ' fer' : ''), title: `${hhmm(c.ini)}–${hhmm(c.fim)}${c.pausa ? ` · intervalo ${hhmm(c.pausa[0])}–${hhmm(c.pausa[1])}` : ''}${c.feriado ? ` · ${c.feriado}` : ''}` }, h('span', null, curto(c.ini)), h('span', null, curto(c.fim)));
+        const sig = c.tipo === 'ferias' ? 'Fér' : c.tipo === 'fechado' ? '—' : /rodízio|após/.test(c.motivo) ? 'FR' : 'F';
+        return h('td', { class: c.tipo + (/rodízio|após/.test(c.motivo || '') ? ' rod' : ''), title: c.motivo + (c.feriado ? ` · ${c.feriado}` : '') }, sig);
+      }), h('td', { class: 'tot' }, String(totais[i].dTrab)), h('td', { class: 'tot' }, TS.horasTxt ? TS.horasTxt(totais[i].min) : curto(totais[i].min))))),
+      h('tfoot', null, h('tr', null, h('th', { class: 'l' }, 'Na loja'), E.dias.map((iso, k) => {
+        const n = E.cel.filter((row) => row[k].tipo === 'trab').length;
+        const min = minimoDia(iso);
+        const fechado = E.cel.every((row) => row[k].tipo === 'fechado');
+        return h('td', { class: !fechado && min && n < min ? 'neg' : '' }, fechado ? '—' : String(n));
+      }), h('td'), h('td'))));
+    const legenda = () => h('div', { class: 'mes-leg' }, h('span', { class: 'l-trab' }, 'entrada / saída'), h('span', { class: 'l-folga' }, 'F = folga'), h('span', { class: 'l-rod' }, 'FR = folga do rodízio (domingo e segunda)'),
+      h('span', { class: 'l-ferias' }, 'Fér = férias'), h('span', { class: 'l-fer' }, 'F no cabeçalho = feriado'), h('span', null, '— = loja fechada'));
+    const ferMes = [...E.feriados.values()];
+    const imprimir = () => {
+      document.getElementById('impressao')?.remove();
+      const el = h('div', { id: 'impressao' }, h('section', { class: 'imp-pag imp-escala' },
+        h('div', { class: 'imp-cab' }, h('div', null, h('div', { class: 'imp-marca' }, 'Tea Shop'), h('div', null, lojaNome || '')),
+          h('div', { class: 'imp-dir' }, h('div', { class: 'imp-tit' }, 'Escala de trabalho'), h('div', null, `${TS.MESES_LONGOS[+ym.slice(5, 7) - 1]} de ${ym.slice(0, 4)}`), h('div', null, `Escala ${op.equipe.escala}${op.equipe.modelo === 'rodizio' ? ' · rodízio de domingo' : ''}`))),
+        tabela(true), legenda(),
+        ferMes.length ? h('p', { class: 'imp-obs' }, 'Feriados: ' + ferMes.map((f) => `${f.data.slice(8)}/${f.data.slice(5, 7)} ${f.nome}`).join(' · ')) : null,
+        alertas.length ? h('p', { class: 'imp-obs' }, 'Atenção: ' + alertas.join(' · ')) : null,
+        h('p', { class: 'imp-obs' }, `Intervalo de ${op.equipe.intervalo || 0} min nas jornadas acima de 6h. Emitido em ${new Date().toLocaleString('pt-BR')}.`),
+        h('div', { class: 'imp-ass' }, h('div', null, h('span'), 'Responsável pela loja'), h('div', null, h('span'), 'Ciente da equipe'))));
+      document.body.append(el);
+      const limpar = () => { el.remove(); window.removeEventListener('afterprint', limpar); };
+      window.addEventListener('afterprint', limpar);
+      setTimeout(() => window.print(), 100);
+    };
+    return TS.cardWithTools('Escala do mês', `Dia a dia com feriados e férias. ${L > 1 ? `O rodízio de ${L} semanas começa a contar no domingo ${TS.fmt.date(domingoDe(op.equipe.inicioRodizio || INICIO_PADRAO))} (ajuste em "Horário e equipe").` : 'A semana sugerida se repete todas as semanas.'} Passe o mouse para ver intervalo e feriado.`,
+      h('div', { class: 'table-tools' }, sel, h('button', { type: 'button', class: 'btn primary', onclick: imprimir }, '⎙ Exportar PDF')),
+      alertas.length ? h('div', { class: 'notice' }, h('b', null, 'Atenção: '), alertas.slice(0, 6).join(' · '), alertas.length > 6 ? ` e mais ${alertas.length - 6}` : '') : null,
+      h('div', { class: 'table-wrap free' }, tabela(false)), legenda());
+  }
 
   /** escala em rodízio de domingo: ciclo de semanas (domingo a sábado) */
   function cartaoRodizio(need, op, horas, ideal) {
