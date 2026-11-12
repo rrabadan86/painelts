@@ -737,3 +737,10 @@ body.com-camada { overflow: hidden; }
 .mapa-como summary { cursor: pointer; font-weight: 600; color: var(--green); }
 .mapa-como ol { margin: 8px 0 6px 18px; padding: 0; display: grid; gap: 4px; line-height: 1.45; }
 .g-kpi > .mapa-como { grid-column: 1 / -1; }
+/* últimas importações: cabe na coluna (rola só a tabela, se precisar) */
+.cfg-imp { max-width: 100%; }
+.cfg-imp-wrap { overflow-x: auto; max-width: 100%; margin-top: 6px; border-radius: 8px; }
+.cfg-imp .cfg-t { width: 100%; font-size: 11.5px; }
+.cfg-imp .cfg-t th, .cfg-imp .cfg-t td { padding: 5px 6px; }
+.cfg-imp .cfg-t td.l { white-space: normal; word-break: break-word; }
+.cfg-imp .cfg-t td:nth-child(2) { min-width: 120px; }
