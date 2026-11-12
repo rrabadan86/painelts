@@ -161,6 +161,20 @@
       }
       if (vel > 0 || (it.min && qtd < it.min)) repo.push({ cod: it.cod, produto: it.desc, tipo: TIPO_ITEM(it), it, qtd, min: it.min, vel, dias, pedir, custoPedido: pedir * (it.custo || 0), sit });
     }
+    const diasTxt = (d) => (d == null ? '—' : `${fmt.int(d)} ${Math.round(d) === 1 ? 'dia' : 'dias'}`);
+    const porque = (r) => ({
+      acabou: `Estoque zerado e o produto vende ${qtdTxt(r.vel, r.it)} por dia.`,
+      falta: `O estoque dura ${diasTxt(r.dias)} e a entrega leva ${ent} dias: acaba antes de o pedido chegar.`,
+      minimo: `Estoque de ${qtdTxt(r.qtd, r.it)} abaixo do mínimo de ${qtdTxt(r.min, r.it)} cadastrado no AppNext.`,
+      pedir: `O estoque dura ${diasTxt(r.dias)}: menos que a entrega (${ent} dias) + o período do pedido (${cob} dias). Hora de pedir.`,
+      ok: `O estoque dura ${diasTxt(r.dias)}: dá para a entrega e o período do pedido.`,
+    })[r.sit];
+    const contaPedido = (r) => {
+      const precisa = r.vel * (ent + cob);
+      const pelaVenda = `Venda/dia ${qtdTxt(r.vel, r.it)} × (${ent} dias de entrega + ${cob} dias de pedido) = ${qtdTxt(precisa, r.it)} − estoque ${qtdTxt(r.qtd, r.it)}`;
+      const peloMin = r.min && r.min - r.qtd > precisa - r.qtd ? ` · o mínimo do AppNext pede mais: ${qtdTxt(r.min, r.it)} − estoque = ${qtdTxt(r.min - r.qtd, r.it)}` : '';
+      return `${pelaVenda}${peloMin}. Arredondado para ${qtdTxt(r.pedir, r.it)}.`;
+    };
     const SIT = { acabou: ['Acabou', 'erro', 0], falta: ['Falta antes da entrega', 'erro', 1], minimo: ['Abaixo do mínimo', 'erro', 2], pedir: ['Pedir', 'warn', 3], ok: ['OK', 'ok', 4] };
     const repor = repo.filter((r) => r.sit !== 'ok' && r.pedir > 0);
     const urgentes = repor.filter((r) => r.sit === 'acabou' || r.sit === 'falta').length;
@@ -229,13 +243,13 @@
     corpo.append(h('div', { class: 'mt' }, TS.card('Produtos por lucro', 'Curva ABC: A = produtos que fazem 80% do lucro (nunca podem faltar). Chá a granel aparece uma vez só, somando todas as gramaturas. O grupo (Estrela, Volume…) compara chá com chá e acessório com acessório.', TS.table({
       cols: [
         { key: 'produto', label: 'Produto', align: 'l', sticky: true, wrap: true, render: (r) => (r.granel ? h('span', null, r.produto, h('small', { class: 'est-tam' }, r.tamanhos)) : r.produto) },
-        { key: 'abc', label: 'ABC', cls: (r) => (r.abc === 'A' ? 'hit' : '') },
+        { key: 'abc', label: 'ABC', title: 'Curva ABC pelo lucro: A = produtos que somam 80% do lucro do período; B = os próximos 15%; C = o resto', cls: (r) => (r.abc === 'A' ? 'hit' : '') },
         { key: 'classe', label: 'Grupo', align: 'l', render: (r) => h('span', { class: 'est-tag', style: { '--cor': CLASSE[r.classe][1] } }, CLASSE[r.classe][0]), sortVal: (r) => r.classe },
-        { key: 'giro', label: 'Vendido', render: (r) => (r.granel ? `${fmt.kg(r.giro)} kg` : `${fmt.int(r.giro)} un.`), sortVal: (r) => r.giro },
-        { key: 'vt', label: 'Faturamento', fmt: fmt.brl },
-        { key: 'custo', label: 'Custo', fmt: fmt.brl },
-        { key: 'lucro', label: 'Lucro', fmt: fmt.brl, cls: (r) => (r.lucro < 0 ? 'miss' : '') },
-        { key: 'margem', label: 'Margem', fmt: (v) => fmt.pct(v), cls: (r) => (r.margem < 0.3 ? 'miss' : '') },
+        { key: 'giro', label: 'Vendido', title: 'Quanto saiu no período. Chá a granel em kg, somando todos os tamanhos; os outros em unidades', render: (r) => (r.granel ? `${fmt.kg(r.giro)} kg` : `${fmt.int(r.giro)} un.`), sortVal: (r) => r.giro },
+        { key: 'vt', label: 'Faturamento', title: 'Valor vendido no período (sem taxa de serviço)', fmt: fmt.brl },
+        { key: 'custo', label: 'Custo', title: 'Custo do AppNext × quantidade vendida. No chá a granel: kg × custo do kg + saco kraft e etiquetas de cada pacote', fmt: fmt.brl },
+        { key: 'lucro', label: 'Lucro', title: 'Faturamento − custo', fmt: fmt.brl, cls: (r) => (r.lucro < 0 ? 'miss' : '') },
+        { key: 'margem', label: 'Margem', title: 'Lucro ÷ faturamento. Em vermelho quando fica abaixo de 30%', fmt: (v) => fmt.pct(v), cls: (r) => (r.margem < 0.3 ? 'miss' : '') },
       ],
       rows: sel ? prods.filter((p) => p.classe === sel) : prods, sortKey: 'lucro', maxHeight: '520px', search: 'Buscar produto…', searchKeys: ['produto'], cls: 'est-t',
       total: { produto: 'Total', vt: fatCusto, custo: custoTot, lucro, margem: fatCusto ? lucro / fatCusto : null },
@@ -245,9 +259,9 @@
     corpo.append(h('div', { class: 'mt' }, TS.card('Lucro por vendedora', 'Quem vende mais nem sempre é quem deixa mais lucro.', TS.table({
       cols: [
         { key: 'vendedor', label: 'Vendedora', align: 'l', sticky: true },
-        { key: 'fat', label: 'Faturamento', fmt: fmt.brl },
-        { key: 'lucro', label: 'Lucro bruto', fmt: fmt.brl },
-        { key: 'margem', label: 'Margem', fmt: (v) => fmt.pct(v) },
+        { key: 'fat', label: 'Faturamento', title: 'Tudo que a vendedora vendeu no período (sem taxa de serviço)', fmt: fmt.brl },
+        { key: 'lucro', label: 'Lucro bruto', title: 'Faturamento − custo, só das vendas que têm custo', fmt: fmt.brl },
+        { key: 'margem', label: 'Margem', title: 'Lucro ÷ faturamento das vendas com custo', fmt: (v) => fmt.pct(v) },
         { key: 'cobre', label: 'Com custo', fmt: (v) => fmt.pct(v, 0), title: 'Parte das vendas da vendedora cujo custo foi encontrado' },
       ],
       rows: vends, sortKey: 'lucro', maxHeight: 'free',
@@ -264,14 +278,14 @@
       TS.table({
         cols: [
           { key: 'produto', label: 'Produto', align: 'l', sticky: true, wrap: true },
-          { key: 'tipo', label: 'Tipo', align: 'l' },
-          { key: 'sit', label: 'Situação', align: 'l', render: (r) => h('span', { class: 'badge ' + SIT[r.sit][1] }, SIT[r.sit][0]), sortVal: (r) => -SIT[r.sit][2] },
-          { key: 'qtd', label: 'Estoque', render: (r) => qtdTxt(r.qtd, r.it) },
-          { key: 'min', label: 'Mínimo', render: (r) => (r.min ? qtdTxt(r.min, r.it) : '—') },
-          { key: 'vel', label: 'Venda/dia', render: (r) => (r.it.un === 'Kg' ? `${fmt.kg(r.vel)} kg` : fmt.n1(r.vel)) },
-          { key: 'dias', label: 'Dura', fmt: (v) => (v == null ? '—' : v > 365 ? '+1 ano' : `${fmt.int(v)} ${Math.round(v) === 1 ? "dia" : "dias"}`) },
-          { key: 'pedir', label: 'Pedir', render: (r) => (r.pedir > 0 ? h('b', null, qtdTxt(r.pedir, r.it)) : '—') },
-          { key: 'custoPedido', label: 'Custo', fmt: (v) => (v ? fmt.brl(v) : '—') },
+          { key: 'tipo', label: 'Tipo', align: 'l', title: 'Chá a granel (em kg, vendido em pacotes de vários tamanhos), produto pronto ou insumo/embalagem (saco kraft, etiqueta…)' },
+          { key: 'sit', label: 'Situação', align: 'l', title: 'Passe o mouse na etiqueta de cada linha para ver o motivo', render: (r) => h('span', { class: 'badge ' + SIT[r.sit][1], title: porque(r) }, SIT[r.sit][0]), sortVal: (r) => -SIT[r.sit][2] },
+          { key: 'qtd', label: 'Estoque', title: 'Saldo de agora, da última planilha de estoque do AppNext', render: (r) => qtdTxt(r.qtd, r.it) },
+          { key: 'min', label: 'Mínimo', title: 'Estoque mínimo cadastrado no AppNext (— = sem mínimo)', render: (r) => (r.min ? qtdTxt(r.min, r.it) : '—') },
+          { key: 'vel', label: 'Venda/dia', title: 'Média por dia nos últimos 30 dias. No chá a granel soma todos os tamanhos; em saco kraft e etiqueta, o que os pacotes de chá consumiram', render: (r) => (r.it.un === 'Kg' ? `${fmt.kg(r.vel)} kg` : fmt.n1(r.vel)) },
+          { key: 'dias', label: 'Dura', title: 'Quantos dias o estoque atual aguenta no ritmo de venda (estoque ÷ venda por dia)', fmt: (v) => (v == null ? '—' : v > 365 ? '+1 ano' : `${fmt.int(v)} ${Math.round(v) === 1 ? "dia" : "dias"}`) },
+          { key: 'pedir', label: 'Pedir', title: 'Quanto pedir para chegar em tempo e durar o período escolhido. Passe o mouse no número para ver a conta', render: (r) => (r.pedir > 0 ? h('b', { title: contaPedido(r), class: 'est-dica' }, qtdTxt(r.pedir, r.it)) : '—') },
+          { key: 'custoPedido', label: 'Custo', title: 'Quantidade a pedir × custo unitário do AppNext', fmt: (v) => (v ? fmt.brl(v) : '—') },
         ],
         rows: linhasRepo, sortKey: 'sit', maxHeight: '560px', search: 'Buscar…', searchKeys: ['produto', 'cod'], cls: 'est-t', empty: 'Nada para repor agora.',
       }))));
@@ -280,9 +294,9 @@
       cols: [
         { key: 'produto', label: 'Produto', align: 'l', sticky: true, wrap: true },
         { key: 'tipo', label: 'Tipo', align: 'l' },
-        { key: 'qtd', label: 'Estoque', render: (r) => qtdTxt(r.qtd, r.it) },
-        { key: 'valor', label: 'Valor a custo', fmt: fmt.brl },
-        { key: 'ultima', label: 'Última venda', fmt: (v) => (v ? fmt.date(v) : 'sem venda no histórico'), sortVal: (r) => r.dias ?? 1e9 },
+        { key: 'qtd', label: 'Estoque', title: 'Saldo de agora no AppNext', render: (r) => qtdTxt(r.qtd, r.it) },
+        { key: 'valor', label: 'Valor a custo', title: 'Dinheiro parado: estoque × custo unitário', fmt: fmt.brl },
+        { key: 'ultima', label: 'Última venda', title: 'Última vez que este produto vendeu no histórico do painel', fmt: (v) => (v ? fmt.date(v) : 'sem venda no histórico'), sortVal: (r) => r.dias ?? 1e9 },
       ],
       rows: parados, sortKey: 'valor', maxHeight: '420px', cls: 'est-t', empty: 'Nada parado. 👏',
     }))));
@@ -291,7 +305,7 @@
     const sc = [...semCusto.values()].sort((a, b) => b.vt - a.vt);
     if (sc.length) corpo.append(h('details', { class: 'card est-sem' }, h('summary', null, `Vendas sem custo: ${fmt.brl0(sc.reduce((s, x) => s + x.vt, 0))} em ${fmt.int(sc.length)} produtos (ficam fora da margem)`),
       h('p', { class: 'muted' }, 'Corrija no AppNext o custo dos itens com "custo zero". Os "não achados" ficam certos quando as vendas trazem o código do produto (Configurações → Atualização automática → Importar histórico, "Só vendas", para refazer os meses). Itens do Espaço Gourmet preparados na loja não têm custo no estoque.'),
-      TS.table({ cols: [{ key: 'produto', label: 'Produto vendido', align: 'l', wrap: true }, { key: 'cod', label: 'Código', align: 'l' }, { key: 'motivo', label: 'Motivo', align: 'l' }, { key: 'qtd', label: 'Unid.', fmt: fmt.int }, { key: 'vt', label: 'Faturamento', fmt: fmt.brl }], rows: sc, sortKey: 'vt', maxHeight: '360px', cls: 'est-t' })));
+      TS.table({ cols: [{ key: 'produto', label: 'Produto vendido', align: 'l', wrap: true }, { key: 'cod', label: 'Código', align: 'l' }, { key: 'motivo', label: 'Motivo', align: 'l', title: '"custo zero no AppNext": o produto existe mas está sem custo lá. "não achado no estoque": o painel não encontrou o produto na planilha de estoque' }, { key: 'qtd', label: 'Unid.', fmt: fmt.int }, { key: 'vt', label: 'Faturamento', fmt: fmt.brl }], rows: sc, sortKey: 'vt', maxHeight: '360px', cls: 'est-t' })));
 
     corpo.append(cartaoCfg(cfg, M.porCod));
   }
