@@ -169,8 +169,7 @@
 
   // ======================= FECHAMENTO EM PDF =======================
   /** monta as páginas de impressão (Salvar como PDF no navegador) */
-  TS.imprimirFechamento = function ({ res, eg, meta, periodo, loja, feriados }) {
-    document.getElementById('impressao')?.remove();
+  TS.paginasFechamento = function ({ res, eg, meta, periodo, loja, feriados }) {
     const rg = res.regras;
     const gorj = new Map(eg.rows.map((r) => [r.vendedor, r.gorjeta]));
     const linhas = res.rows.filter((r) => (r.total > 0 || r.aPagar > 0) && !/^SEM VENDEDOR$/i.test(String(r.vendedor).trim())).sort((a, b) => a.vendedor.localeCompare(b.vendedor, 'pt-BR'));
@@ -218,7 +217,13 @@
         h('div', { class: 'imp-ass' }, h('div', null, h('span'), r.vendedor), h('div', null, h('span'), 'Responsável pela loja')),
         h('p', { class: 'imp-obs' }, `Emitido em ${emitido}.`)));
     }
-    const el = h('div', { id: 'impressao' }, pg);
+    // dados usados também no e-mail da contabilidade
+    pg.dados = { rg, gorj, linhas, totalDe, ferDe, minTot, temFeriado: !!temFeriado, emitido };
+    return pg;
+  };
+  TS.imprimirFechamento = function (args) {
+    document.getElementById('impressao')?.remove();
+    const el = h('div', { id: 'impressao' }, TS.paginasFechamento(args));
     document.body.append(el);
     const limpar = () => { el.remove(); window.removeEventListener('afterprint', limpar); };
     window.addEventListener('afterprint', limpar);

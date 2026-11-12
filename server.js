@@ -105,7 +105,7 @@ async function pacote(lojas, force, perfilDados = 'completo') {
   const metaCfgs = lojas.map((l, i) => {
     const atual = cfgLojas.find((x) => x.id === l.id) || l;
     const r = entradas[i].raw;
-    return { id: l.id, nome: atual.nome, nomesVenda: r.metaCfg?.nomesVenda || [], padrao: atual.meta ?? r.metaPlanilha ?? null, meses: atual.metas || {}, metaAuto: atual.metaAuto || null, regras: atual.regras || null, operacao: atual.operacao || null, ferias: atual.ferias || [], feriadosLocais: atual.feriadosLocais || [], feriadosHoras: atual.feriadosHoras || {}, feriadosHorario: atual.feriadosHorario || {}, escalaAjustes: atual.escalaAjustes || {}, wpp: atual.wppModelos || null };
+    return { id: l.id, nome: atual.nome, nomesVenda: r.metaCfg?.nomesVenda || [], padrao: atual.meta ?? r.metaPlanilha ?? null, meses: atual.metas || {}, metaAuto: atual.metaAuto || null, regras: atual.regras || null, operacao: atual.operacao || null, ferias: atual.ferias || [], feriadosLocais: atual.feriadosLocais || [], feriadosHoras: atual.feriadosHoras || {}, feriadosHorario: atual.feriadosHorario || {}, escalaAjustes: atual.escalaAjustes || {}, wpp: atual.wppModelos || null, contabilidade: atual.contabilidade || [] };
   });
   const k = entradas.map((e, i) => `${lojas[i].id}@${e.at}`).join('|') + '#' + JSON.stringify(metaCfgs) + '#' + perfilDados;
   const chave = lojas.map((l) => l.id).join(',') + '|' + perfilDados;
@@ -141,6 +141,11 @@ app.get('/login', (req, res) => res.sendFile(path.join(pub, 'login.html')));
 ['login.css', 'login.js', 'favicon.svg', 'trocar-senha.js'].forEach((f) => app.get('/' + f, (req, res) => res.sendFile(path.join(pub, f))));
 const CHART_JS = path.join(path.dirname(require.resolve('chart.js')), 'chart.umd.min.js');
 app.get('/vendor/chart.umd.js', (req, res) => res.sendFile(CHART_JS));
+// PDF no navegador (fechamento do mês que vai anexado ao e-mail da contabilidade)
+const H2C_JS = path.join(path.dirname(require.resolve('html2canvas/package.json')), 'dist', 'html2canvas.min.js');
+const JSPDF_JS = path.join(path.dirname(require.resolve('jspdf/package.json')), 'dist', 'jspdf.umd.min.js');
+app.get('/vendor/html2canvas.js', (req, res) => res.sendFile(H2C_JS));
+app.get('/vendor/jspdf.js', (req, res) => res.sendFile(JSPDF_JS));
 
 app.post('/login', express.urlencoded({ extended: false }), (req, res) => {
   const ip = req.ip;
@@ -411,6 +416,46 @@ app.get('/api/fechamento', async (req, res) => {
     const f = FECH.calcular(d, dia);
     res.json({ ...f, html: FECH.html(f) });
   } catch (e) { res.status(500).json({ erro: e.message }); }
+});
+
+// ---------- fechamento do mês para a contabilidade (e-mail com o PDF anexado) ----------
+// admin, franqueado e gerente com a tela Comissionamento; sai do Gmail da loja
+const EMAIL_OK = /^[^\s@<>,;"]+@[^\s@<>,;"]+\.[^\s@<>,;"]+$/;
+app.post('/api/contabilidade/enviar', express.json({ limit: '16mb' }), async (req, res) => {
+  if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
+  const telas = C.telasDo(C.usuario(req.user));
+  const pode = req.perfil === 'admin' || req.perfil === 'franqueado' || (req.perfil === 'gerente' && (telas || []).includes('comissionamento'));
+  if (!pode) return res.status(403).json({ erro: 'Sem permissão.' });
+  const loja = req.lojas.find((l) => l.id === String((req.body || {}).loja || ''));
+  if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  const { para, assunto, html, pdf, nomePdf, ym } = req.body || {};
+  const lista = [...new Set((Array.isArray(para) ? para : String(para || '').split(/[,;\s]+/)).map((e) => String(e).trim().toLowerCase()).filter(Boolean))];
+  if (!lista.length) return res.status(400).json({ erro: 'Informe o e-mail da contabilidade.' });
+  if (lista.length > 10) return res.status(400).json({ erro: 'No máximo 10 destinatários.' });
+  const ruim = lista.find((e) => !EMAIL_OK.test(e) || e.length > 120);
+  if (ruim) return res.status(400).json({ erro: `E-mail inválido: ${ruim}` });
+  const sub = String(assunto || '').replace(/[\r\n]/g, ' ').trim().slice(0, 200);
+  if (!sub) return res.status(400).json({ erro: 'Informe o assunto.' });
+  if (typeof html !== 'string' || !html || html.length > 400000) return res.status(400).json({ erro: 'Corpo do e-mail inválido.' });
+  let anexo = null;
+  if (pdf) {
+    const buf = Buffer.from(String(pdf), 'base64');
+    if (buf.length > 12 * 1024 * 1024 || buf.subarray(0, 5).toString() !== '%PDF-') return res.status(400).json({ erro: 'PDF inválido.' });
+    anexo = { filename: String(nomePdf || 'fechamento.pdf').replace(/[^\w.\-]+/g, '_').slice(0, 80).replace(/(?<!\.pdf)$/i, '.pdf'), content: buf, contentType: 'application/pdf' };
+  }
+  const NOTIF = require('./src/notificacoes');
+  const nc = NOTIF.ler();
+  const x = NOTIF.cfgLoja(nc, loja.id);
+  const smtp = x.email && x.email.host && x.email.from ? x.email : nc.email && nc.email.host && nc.email.from ? nc.email : null;
+  if (!smtp) return res.status(400).json({ erro: 'A loja ainda não tem o Gmail configurado (Configurações → Lojas → Fechamento do dia).' });
+  // tira scripts e eventos do corpo (vai como e-mail; nada disso funciona lá)
+  const corpo = html.replace(/<script[\s\S]*?<\/script>/gi, '').replace(/\son\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '');
+  try {
+    await NOTIF.enviarEmail(lista.join(', '), sub, sub, corpo, smtp, anexo ? [anexo] : null);
+  } catch (e) { return res.status(502).json({ erro: `Não foi possível enviar: ${e.message}` }); }
+  C.alterar((cfg) => { const l = cfg.lojas.find((y) => y.id === loja.id); if (l) l.contabilidade = lista; });
+  C.auditar(req.user, 'enviou fechamento do mês para a contabilidade', loja.id, { loja: loja.id, ym: /^\d{4}-\d{2}$/.test(ym || '') ? ym : undefined, para: lista });
+  res.json({ ok: true, para: lista });
 });
 
 // ---------- feriados trabalhados (horas por pessoa; vão para o PDF do fechamento) ----------

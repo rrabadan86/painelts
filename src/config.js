@@ -70,6 +70,7 @@ function normalizar(cfg) {
     feriadosHorario: l.feriadosHorario && typeof l.feriadosHorario === 'object' ? l.feriadosHorario : {},
     escalaAjustes: l.escalaAjustes && typeof l.escalaAjustes === 'object' ? l.escalaAjustes : {},
     wppModelos: Array.isArray(l.wppModelos) ? l.wppModelos : null,
+    contabilidade: Array.isArray(l.contabilidade) ? l.contabilidade.map(String).slice(0, 10) : [],
     criadaEm: l.criadaEm || null,
     uploadToken: l.uploadToken || null,
     github: l.github && l.github.repo ? { repo: l.github.repo, workflow: l.github.workflow || 'run.yml', ref: l.github.ref || 'main' } : null,

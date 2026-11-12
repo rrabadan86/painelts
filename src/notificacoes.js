@@ -91,14 +91,14 @@ async function enviarTelegram(chatId, texto) {
 }
 
 // ---------- e-mail ----------
-async function enviarEmail(para, assunto, texto, htmlPronto, smtp) {
+async function enviarEmail(para, assunto, texto, htmlPronto, smtp, anexos) {
   const c = smtp || ler().email;
   if (!c.host || !c.from) throw new Error('Configure o servidor de e-mail.');
   const nodemailer = require('nodemailer');
   const t = nodemailer.createTransport({ host: c.host, port: +c.port || 587, secure: !!c.secure, auth: c.user ? { user: c.user, pass: c.pass } : undefined, connectionTimeout: 15000 });
   const esc = (s) => String(s).replace(/[&<>]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch]));
   const html = `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5;color:#1d2b22">${texto.split('\n').map((l) => (l.startsWith('━') ? '<hr style="border:0;border-top:2px solid #2C5234">' : l ? `<div>${esc(l)}</div>` : '<br>')).join('')}</div>`;
-  await t.sendMail({ from: c.from, to: para, subject: assunto, text: texto, html: htmlPronto || html });
+  await t.sendMail({ from: c.from, to: para, subject: assunto, text: texto, html: htmlPronto || html, ...(anexos ? { attachments: anexos } : {}) });
 }
 
 // ---------- montagem ----------
@@ -237,4 +237,4 @@ function agendar(obter) {
   }, 30e3);
 }
 
-module.exports = { ler, gravar, publico, publicoLoja, cfgLoja, conversasTelegram, enviarTodos, montarTexto, agendar, montarFechamento, enviarFechamento, enviarFechamentoLoja };
+module.exports = { enviarEmail, ler, gravar, publico, publicoLoja, cfgLoja, conversasTelegram, enviarTodos, montarTexto, agendar, montarFechamento, enviarFechamento, enviarFechamentoLoja };

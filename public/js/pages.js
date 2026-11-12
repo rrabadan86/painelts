@@ -560,8 +560,9 @@
     const cfgLoja = res.loja ? (db.metas || []).find((m) => (m.nomesVenda || []).includes(res.loja)) : null;
     const lojaTxt = res.loja ? (TS.lojas || []).find((l) => (db.metas.find((m) => m.id === l.id)?.nomesVenda || []).includes(res.loja))?.nome || res.loja : 'Várias lojas';
     root.append(h('div', { class: 'acoes-pagina' },
-      h('button', { type: 'button', class: 'btn primary', disabled: res.lojasNoPeriodo > 1 || null, title: res.lojasNoPeriodo > 1 ? 'Escolha uma loja' : 'Abre a impressão: escolha "Salvar como PDF"',
-        onclick: () => TS.imprimirFechamento({ res, eg, meta, periodo: TS.periodoTexto(), loja: lojaTxt, feriados: cfgLoja && mensal ? TS.feriadosParaPdf(cfgLoja, ymMeta) : null }) }, '⎙ Fechamento em PDF'),
+      h('button', { type: 'button', class: 'btn primary', disabled: res.lojasNoPeriodo > 1 || !cfgLoja || !mensal || null,
+        title: res.lojasNoPeriodo > 1 || !cfgLoja ? 'Escolha uma loja' : !mensal ? 'Escolha um mês no período' : 'Mostra o e-mail com o PDF anexado antes de enviar',
+        onclick: () => TS.abrirContabilidade({ cfg: cfgLoja, ym: ymMeta, args: { res, eg, meta, periodo: TS.periodoTexto(), loja: lojaTxt, feriados: TS.feriadosParaPdf(cfgLoja, ymMeta) } }) }, '✉ Enviar fechamento do mês para a contabilidade'),
       h('a', { class: 'btn', href: '#minha' }, 'Ver como o vendedor vê')));
 
     const hitCls = (vk, mk) => (r) => (r[mk] > 0 ? (r[vk] >= r[mk] ? 'hit' : 'miss') : '');
