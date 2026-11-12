@@ -163,7 +163,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
         metaAuto: l.metaAuto, totaisSemEG: totaisSemEG(l.id),
         id: l.id, nome: l.nome, appnext: l.appnext, meta: l.meta, metas: l.metas, criadaEm: l.criadaEm, regras: l.regras, marca: l.marca,
         nomesVenda: (() => { const raw = rawDe(l.id); return raw ? [...new Set(raw.vendas.slice(-500).map((v) => v.loja).filter(Boolean))] : []; })(),
-        base: B.resumo(l.id), xml: XB.resumo(l.id), fontes, vendedores: vendedoresDe(l.id),
+        base: B.resumo(l.id), xml: XB.resumo(l.id), fechEmail: NOTIF.publicoLoja(l.id), fontes, vendedores: vendedoresDe(l.id),
         coletor: env ? { configurado: true, rede: env.APPNEXT_REDE || '', usuario: env.APPNEXT_USER || '', temSenha: !!env.APPNEXT_PASS, lojaDestino: env.APPNEXT_LOJA_DESTINO || '', lojaIdDestino: env.APPNEXT_LOJA_ID_DESTINO || '' } : { configurado: false },
         status,
       };
@@ -479,6 +479,55 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
       res.json({ ok: true });
     } catch (e) { res.status(500).json({ erro: e.message }); }
   });
+  // ---------- fechamento do dia por loja (Gmail e destinatários da própria franquia) ----------
+  const EMAIL_OK = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+  r.put('/lojas/:id/fechamento-email', lojaPermitida, json, (req, res) => {
+    const b = req.body || {};
+    const c = NOTIF.ler();
+    const x = NOTIF.cfgLoja(c, req.loja.id);
+    if (b.email) {
+      const e = b.email;
+      for (const k of ['host', 'user', 'from']) if (e[k] != null) x.email[k] = semQuebra(e[k]).slice(0, 200);
+      if (e.port != null) x.email.port = +e.port || 587;
+      if (e.secure != null) x.email.secure = !!e.secure;
+      if (e.pass) x.email.pass = String(e.pass).replace(/[\r\n]/g, '');
+      if (x.email.user && !EMAIL_OK.test(x.email.user)) return res.status(400).json({ erro: 'Usuário: informe o endereço completo do Gmail.' });
+    }
+    if (b.fechamento) {
+      if (b.fechamento.horario != null) { if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(b.fechamento.horario)) return res.status(400).json({ erro: 'Horário inválido.' }); x.fechamento.horario = b.fechamento.horario; }
+      if (b.fechamento.ativo != null) x.fechamento.ativo = !!b.fechamento.ativo;
+    }
+    NOTIF.gravar(c);
+    aud(req, 'alterou fechamento por e-mail', req.loja.id, { loja: req.loja.id, servidor: b.email ? x.email.host : undefined, usuario: b.email ? x.email.user : undefined, senha: b.email && b.email.pass ? 'trocada' : undefined, ativo: b.fechamento ? x.fechamento.ativo : undefined, horario: b.fechamento ? x.fechamento.horario : undefined });
+    res.json({ ok: true, fechEmail: NOTIF.publicoLoja(req.loja.id) });
+  });
+  r.post('/lojas/:id/fechamento-email/destinos', lojaPermitida, json, (req, res) => {
+    const { email, nome, remover } = req.body || {};
+    const ident = semQuebra(email).toLowerCase();
+    if (!EMAIL_OK.test(ident)) return res.status(400).json({ erro: 'E-mail inválido.' });
+    const c = NOTIF.ler();
+    const x = NOTIF.cfgLoja(c, req.loja.id);
+    const i = x.destinos.findIndex((d) => d.email.toLowerCase() === ident);
+    if (remover) { if (i >= 0) x.destinos.splice(i, 1); }
+    else {
+      if (x.destinos.length >= 30 && i < 0) return res.status(400).json({ erro: 'Máximo de 30 destinatários por loja.' });
+      const d = { email: ident, nome: semQuebra(nome).slice(0, 60) };
+      if (i >= 0) x.destinos[i] = d; else x.destinos.push(d);
+    }
+    NOTIF.gravar(c);
+    aud(req, remover ? 'removeu destinatário do fechamento' : 'salvou destinatário do fechamento', req.loja.id, { loja: req.loja.id, para: ident });
+    res.json({ ok: true, fechEmail: NOTIF.publicoLoja(req.loja.id) });
+  });
+  r.post('/lojas/:id/fechamento-email/enviar', lojaPermitida, json, async (req, res) => {
+    try {
+      const soPara = req.body && req.body.para ? String(req.body.para) : undefined;
+      const r2 = await NOTIF.enviarFechamentoLoja(obterIndicadores, req.loja.id, { soPara });
+      if (!r2.length) return res.status(400).json({ erro: soPara ? 'Destinatário não encontrado.' : 'Nenhum destinatário para esta loja (ou sem vendas para montar o fechamento).' });
+      aud(req, soPara ? 'testou fechamento' : 'enviou fechamento do dia agora', req.loja.id, { loja: req.loja.id, envios: r2.length, falhas: r2.filter((y) => !y.ok).map((y) => `${y.para}: ${y.erro}`) });
+      res.json({ ok: true, envios: r2 });
+    } catch (e) { res.status(500).json({ erro: e.message }); }
+  });
+
   // fechamento do dia: enviar agora para todos os destinatários (com os dados de hoje)
   r.post('/notif/fechamento/enviar', soAdmin, async (req, res) => {
     try {

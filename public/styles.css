@@ -786,3 +786,5 @@ body.com-camada { overflow: hidden; }
 .t.t-compacta th .arrow { margin-left: 2px; }
 .card-cheio .t.t-compacta { table-layout: auto; font-size: 13px; }
 .cfg-form input.f-input::placeholder { color: #A9A397; font-style: italic; }
+.cfg-dest-lista { list-style: none; margin: 6px 0 10px; padding: 0; display: grid; gap: 6px; }
+.cfg-dest-lista li { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; background: var(--cream-2); border-radius: 8px; padding: 6px 10px; font-size: 13px; }

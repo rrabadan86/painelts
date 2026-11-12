@@ -151,7 +151,7 @@
     const grid = h('div', { class: 'cfg-loja-corpo' });
     grid.append(blocoDados(l));
     if (est.perfil === 'admin') grid.append(blocoAppNext(l));
-    grid.append(blocoMetas(l), blocoFerias(l), blocoPlanilhas(l), blocoOperacao(l), blocoMarca(l));
+    grid.append(blocoMetas(l), blocoFerias(l), blocoFechamento(l), blocoPlanilhas(l), blocoOperacao(l), blocoMarca(l));
     if (est.perfil === 'admin') grid.append(blocoRegras(l), blocoEditar(l));
     card.append(grid);
     return card;
@@ -350,6 +350,58 @@
         return 'Planilha recebida. Os dados se atualizam em alguns segundos.';
       }, 'btn primary')), resultado,
       h('div', { class: 'f-label', style: { marginTop: '12px' } }, 'Outras planilhas da loja'), lista);
+  }
+
+  // ---- fechamento do dia por e-mail (Gmail e destinatários da própria franquia)
+  function blocoFechamento(l) {
+    const f = l.fechEmail;
+    const sec0 = h('section', { class: 'cfg-bloco cfg-form cfg-fech' }, h('h3', null, 'Fechamento do dia por e-mail'));
+    if (!f) return sec0;
+    const e = f.email;
+    const ativo = h('input', { type: 'checkbox', checked: f.fechamento.ativo || null });
+    const hora = inp({ type: 'time', value: f.fechamento.horario || '23:30', style: { maxWidth: '140px' } });
+    const host = inp({ value: e.host, placeholder: 'ex.: smtp.gmail.com' }), port = inp({ type: 'number', value: e.port || 587 }), user = inp({ value: e.user, autocomplete: 'off', placeholder: 'ex.: teashop.loja@gmail.com' });
+    const pass = inp({ type: 'password', autocomplete: 'new-password', placeholder: e.temSenha ? '•••••••• (guardada)' : 'senha de app (16 letras)' });
+    const from = inp({ value: e.from, placeholder: `ex.: ${l.nome} <teashop.loja@gmail.com>` });
+    const sec = h('input', { type: 'checkbox', checked: e.secure || null });
+    const novoEmail = inp({ type: 'email', placeholder: 'pessoa@email.com' }), novoNome = inp({ placeholder: 'Nome' });
+    const envios = (r) => {
+      const ok = r.envios.filter((x) => x.ok), falhas = r.envios.filter((x) => !x.ok);
+      if (falhas.length) throw new Error(`Enviado para ${ok.length}; falhou: ${falhas.map((x) => `${x.para} (${x.erro})`).join('; ')}`);
+      return `Fechamento de hoje enviado para ${ok.length}: ${ok.map((x) => x.para).join(', ')}.`;
+    };
+    sec0.append(...[
+      h('p', { class: 'muted' }, `Todo dia, no horário escolhido, a ${l.nome} envia o fechamento de HOJE pelo Gmail dela para as pessoas da lista abaixo${f.gerais.length ? ' e para quem acompanha a loja pela rede' : ''}. É o mesmo conteúdo da planilha de fechamento, preenchido sozinho.`),
+      h('label', { class: 'cfg-check-l' }, ativo, ' Enviar o fechamento todos os dias'),
+      h('div', { class: 'cfg-grid' }, campo('Horário (Brasília)', hora, 'Depois da última coleta do dia (ex.: coleta 23:00 → 23:30).')),
+      f.fechamento.ultimoEnvio ? h('p', { class: 'muted' }, `Último envio automático: ${dIso(f.fechamento.ultimoEnvio)}`) : null,
+      h('div', { class: 'f-label', style: { marginTop: '10px' } }, 'Gmail que envia (da franquia)'),
+      !e.configurado && f.servidorGeral ? h('p', { class: 'muted' }, 'Enquanto o Gmail da loja não for cadastrado, o envio usa o e-mail geral do painel.') : null,
+      passoGmail('gmail:' + l.id, { host, port, sec, from, user }),
+      h('div', { class: 'cfg-grid' }, campo('Servidor (SMTP)', host), campo('Porta', port), campo('Usuário (Gmail)', user), campo('Senha de app', pass), campo('Remetente', from)),
+      h('label', { class: 'cfg-check-l' }, sec, ' Conexão segura direta (porta 465)'),
+      h('div', { class: 'cfg-acoes' }, acao('Salvar', async () => {
+        if (!host.value.trim() && /@gmail\.com$/i.test(user.value.trim())) host.value = 'smtp.gmail.com';
+        if (user.value.trim() && !from.value.trim()) from.value = `${l.nome} <${user.value.trim()}>`;
+        if (user.value.trim() && !host.value.trim()) throw new Error('Preencha o Servidor (SMTP). Para Gmail: smtp.gmail.com.');
+        await api('PUT', `/lojas/${l.id}/fechamento-email`, { fechamento: { ativo: ativo.checked, horario: hora.value }, email: { host: host.value, port: port.value, user: user.value, pass: pass.value || undefined, from: from.value, secure: sec.checked } });
+        return 'Fechamento salvo.';
+      }, 'btn primary'),
+        h('button', { type: 'button', class: 'btn', onclick: () => TS.abrirFechamento([{ id: l.id, nome: l.nome }], l.id) }, 'Ver mensagem'),
+        acao('Enviar agora', async () => {
+          if (!f.destinos.length && !f.gerais.length) throw new Error('Cadastre pelo menos um destinatário logo abaixo.');
+          if (!confirm(`Enviar agora o fechamento de hoje da ${l.nome}?`)) return null;
+          return envios(await api('POST', `/lojas/${l.id}/fechamento-email/enviar`, {}));
+        })),
+      h('div', { class: 'f-label', style: { marginTop: '14px' } }, 'Quem recebe'),
+      f.destinos.length ? h('ul', { class: 'cfg-dest-lista' }, f.destinos.map((d) => h('li', null, h('span', null, h('b', null, d.nome || d.email), d.nome ? h('span', { class: 'muted' }, ' ' + d.email) : null),
+        h('span', { class: 'cfg-inline' },
+          acao('Testar', async () => envios(await api('POST', `/lojas/${l.id}/fechamento-email/enviar`, { para: d.email }))),
+          acao('Remover', async () => { await api('POST', `/lojas/${l.id}/fechamento-email/destinos`, { email: d.email, remover: true }); return 'Removido.'; }, 'btn ghost-danger'))))) : h('p', { class: 'muted' }, 'Ninguém ainda.'),
+      h('div', { class: 'cfg-grid' }, campo('E-mail', novoEmail), campo('Nome', novoNome)),
+      h('div', { class: 'cfg-acoes' }, acao('Adicionar destinatário', async () => { await api('POST', `/lojas/${l.id}/fechamento-email/destinos`, { email: novoEmail.value, nome: novoNome.value }); return 'Destinatário adicionado.'; })),
+      f.gerais.length ? h('p', { class: 'muted' }, h('b', null, 'Também recebem (acompanham a loja pela rede): '), f.gerais.map((g) => g.nome || g.email).join(', '), '.') : null].filter(Boolean));
+    return sec0;
   }
 
   // ---- férias
@@ -686,26 +738,19 @@
         acao('Ver prévia da mensagem', async () => { previa = (await api('GET', '/notif/previa?loja=*')).texto; }))));
     if (previa) box.append(h('div', { class: 'card' }, h('div', { class: 'card-title' }, 'Prévia'), h('pre', { class: 'cfg-msg' }, previa)));
 
-    // fechamento do dia (substitui a planilha de fechamento)
-    const fe = n.fechamento || { ativo: false, horario: '23:30' };
-    const feAtivo = h('input', { type: 'checkbox', checked: fe.ativo || null });
-    const feHora = inp({ type: 'time', value: fe.horario || '23:30', style: { maxWidth: '140px' } });
+    // fechamento do dia: configurado em cada loja
     box.append(h('div', { class: 'card cfg-form' }, h('div', { class: 'card-title' }, 'Fechamento do dia'),
-      h('p', { class: 'muted' }, 'Substitui a planilha de fechamento preenchida à mão: no horário escolhido, cada pessoa recebe o fechamento de HOJE das lojas dela (meta do dia, histórico, vendas, clientes, TKM, IPA, PMA, recálculo da meta e Espaço Gourmet). Vai para os mesmos destinatários abaixo; no e-mail chega como tabela. Escolha um horário depois da última coleta do dia.'),
-      h('label', { class: 'cfg-check-l' }, feAtivo, ' Enviar o fechamento todos os dias'),
-      h('div', { class: 'cfg-grid' }, campo('Horário (Brasília)', feHora, 'Ex.: coleta às 23:00 → envio às 23:30.')),
-      fe.ultimoEnvio ? h('p', { class: 'muted' }, `Último envio: ${dIso(fe.ultimoEnvio)}`) : null,
-      h('div', { class: 'cfg-acoes' }, acao('Salvar', async () => { await api('PUT', '/notif', { fechamento: { ativo: feAtivo.checked, horario: feHora.value } }); await recarregar(); return 'Salvo.'; }, 'btn primary'),
+      h('p', null, 'O fechamento do dia (que substitui a planilha) é configurado ', h('b', null, 'em cada loja'), ': Configurações → Lojas → abra a loja → ', h('b', null, 'Fechamento do dia por e-mail'), '. Lá cada franquia cadastra o Gmail dela, quem recebe e o horário.'),
+      h('p', { class: 'muted' }, 'Os destinatários de e-mail desta tela (abaixo) recebem também o fechamento de cada loja que acompanham: um e-mail por loja, enviado pelo Gmail daquela loja. Use "Testar fechamento" ao lado de cada um para conferir.'),
+      h('div', { class: 'cfg-acoes' },
         h('button', { type: 'button', class: 'btn', onclick: () => TS.abrirFechamento(est.lojas.map((l) => ({ id: l.id, nome: l.nome })), state.loja && state.loja !== 'todas' ? state.loja : null) }, 'Ver mensagem'),
-        acao('Enviar agora', async () => {
-          const qtd = (n.email.configurado ? n.email.destinos.length : 0) + (n.telegram.configurado ? n.telegram.destinos.length : 0);
-          if (!qtd) throw new Error('Cadastre pelo menos um destinatário (e-mail ou Telegram) abaixo.');
-          if (!confirm(`Enviar agora o fechamento de hoje para ${qtd} destinatário(s)?`)) return null;
+        acao('Enviar agora (todas as lojas)', async () => {
+          if (!confirm('Enviar agora o fechamento de hoje de todas as lojas, cada uma pelo Gmail dela, para os destinatários de cada loja e os gerais?')) return null;
           const r = await api('POST', '/notif/fechamento/enviar');
           const ok = r.envios.filter((x) => x.ok), falhas = r.envios.filter((x) => !x.ok);
-          if (falhas.length) throw new Error(`Enviado para ${ok.length}; falhou para ${falhas.map((x) => `${x.para} (${x.erro})`).join(', ')}`);
-          return `Fechamento de hoje enviado para ${ok.length} destinatário(s): ${ok.map((x) => x.para).join(', ')}.`;
-        }, 'btn'))));
+          if (falhas.length) throw new Error(`Enviados ${ok.length}; falharam: ${falhas.map((x) => `${x.loja} → ${x.para} (${x.erro})`).join('; ')}`);
+          return `Fechamento enviado: ${ok.length} e-mail(s)/mensagem(ns).`;
+        }))));
 
     // Telegram
     const token = inp({ type: 'password', autocomplete: 'off', placeholder: n.telegram.configurado ? '•••••••• (guardado — preencha só para trocar)' : '123456789:ABC…' });
@@ -734,8 +779,30 @@
     const pass = inp({ type: 'password', autocomplete: 'new-password', placeholder: e.temSenha ? '•••••••• (guardada)' : '' }), from = inp({ value: e.from, placeholder: 'ex.: Tea Shop <seuemail@gmail.com>' });
     const sec = h('input', { type: 'checkbox', checked: e.secure || null });
     const novoEmail = inp({ type: 'email', placeholder: 'pessoa@email.com' }), novoNome = inp({ placeholder: 'Nome' }), novoLojas = selLojas(['*']);
-    const em = h('div', { class: 'card cfg-form' }, h('div', { class: 'card-title' }, 'E-mail'),
-      detalhes('gmail', { class: 'cfg-gmail' }, h('summary', null, 'Passo a passo: enviar pelo Gmail'),
+    const em = h('div', { class: 'card cfg-form' }, h('div', { class: 'card-title' }, 'E-mail geral (resumo diário e franqueador)'), h('p', { class: 'muted' }, 'Servidor usado no resumo diário. Cada loja pode ter o próprio Gmail para o fechamento do dia (em Lojas); a loja que ainda não tiver usa este.'),
+      passoGmail('gmail', { host, port, sec, from, user }),
+      h('div', { class: 'cfg-grid' }, campo('Servidor (SMTP)', host), campo('Porta', port), campo('Usuário', user), campo('Senha', pass), campo('Remetente', from)),
+      h('label', { class: 'cfg-check-l' }, sec, ' Conexão segura direta (porta 465)'),
+      h('div', { class: 'cfg-acoes' }, acao('Salvar servidor', async () => {
+        // Gmail sem servidor preenchido: completa sozinho (o cinza no campo é só um exemplo)
+        if (!host.value.trim() && /@gmail\.com$/i.test(user.value.trim())) { host.value = 'smtp.gmail.com'; if (!port.value) port.value = 587; }
+        if (!host.value.trim()) throw new Error('Preencha o Servidor (SMTP). Para Gmail: smtp.gmail.com (ou clique em "Preencher para Gmail").');
+        if (!from.value.trim()) { if (user.value.trim()) from.value = `Tea Shop <${user.value.trim()}>`; else throw new Error('Preencha o Remetente.'); }
+        await api('PUT', '/notif', { email: { host: host.value, port: port.value, user: user.value, pass: pass.value || undefined, from: from.value, secure: sec.checked } }); await recarregar();
+        return 'Servidor salvo. Agora cadastre os destinatários logo abaixo.';
+      }, 'btn primary')));
+    if (!e.configurado) em.append(h('div', { class: 'notice', style: { marginTop: '14px' } }, h('b', null, 'Destinatários: '), e.host ? 'preencha também o Remetente e clique em "Salvar servidor".' : 'o Servidor (SMTP) ainda está vazio. Preencha (Gmail: smtp.gmail.com) e clique em "Salvar servidor"; logo depois aparece aqui o campo para adicionar quem recebe.'));
+    if (e.configurado) {
+      em.append(h('div', { class: 'f-label', style: { marginTop: '14px' } }, 'Adicionar destinatário geral (ex.: franqueador)'),
+        h('div', { class: 'cfg-grid' }, campo('E-mail', novoEmail), campo('Nome', novoNome)), campo('Recebe as lojas', novoLojas),
+        h('div', { class: 'cfg-acoes' }, acao('Adicionar', async () => { await api('POST', '/notif/destinos', { canal: 'email', id: novoEmail.value, nome: novoNome.value, lojas: novoLojas.valor() }); await recarregar(); return 'Adicionado.'; }, 'btn primary')));
+      if (e.destinos.length) em.append(tabelaDestinos('email', e.destinos, 'email', lojasTxt, recarregar));
+    }
+    box.append(em);
+  }
+  /** passo a passo do Gmail (usado no e-mail geral e no de cada loja) */
+  function passoGmail(chave, { host, port, sec, from, user }) {
+    return detalhes(chave, { class: 'cfg-gmail' }, h('summary', null, 'Passo a passo: enviar pelo Gmail'),
         h('p', null, 'O painel envia os e-mails por uma conta do Gmail. Use de preferência uma conta só para isso (ex.: teashop.painel@gmail.com) e não o seu e-mail pessoal. Leva uns 5 minutos.'),
         h('ol', null,
           h('li', null, h('b', null, 'Entre na conta do Gmail'), ' que vai enviar os e-mails e abra ', h('b', null, 'myaccount.google.com'), ' (ou clique na sua foto → "Gerenciar sua Conta do Google").'),
@@ -750,26 +817,9 @@
               h('li', null, h('b', null, 'Remetente'), ': como o e-mail vai aparecer, ex.: ', h('code', null, 'Tea Shop Flamboyant <teashop.painel@gmail.com>'), ' (o endereço entre < > precisa ser o mesmo do usuário).'))),
           h('li', null, 'Clique em ', h('b', null, 'Salvar servidor'), '. Depois, em "Adicionar destinatário", cadastre quem vai receber e use ', h('b', null, 'Testar fechamento'), ' para conferir.')),
         h('p', { class: 'muted' }, 'Se o teste der erro "Username and Password not accepted": a senha usada não é a senha de app, ou a verificação em duas etapas não está ativa. Se o e-mail cair no spam, peça para quem recebe marcar "Não é spam" uma vez. Para trocar a senha de app depois, crie outra no passo 5 e cole aqui; a antiga pode ser apagada no Google.'),
-        h('button', { type: 'button', class: 'btn', onclick: () => { host.value = 'smtp.gmail.com'; port.value = 587; sec.checked = false; if (!from.value && user.value) from.value = `Tea Shop <${user.value}>`; user.focus(); toast('Servidor e porta do Gmail preenchidos. Complete usuário, senha de app e remetente.'); } }, 'Preencher para Gmail')),
-      h('div', { class: 'cfg-grid' }, campo('Servidor (SMTP)', host), campo('Porta', port), campo('Usuário', user), campo('Senha', pass), campo('Remetente', from)),
-      h('label', { class: 'cfg-check-l' }, sec, ' Conexão segura direta (porta 465)'),
-      h('div', { class: 'cfg-acoes' }, acao('Salvar servidor', async () => {
-        // Gmail sem servidor preenchido: completa sozinho (o cinza no campo é só um exemplo)
-        if (!host.value.trim() && /@gmail\.com$/i.test(user.value.trim())) { host.value = 'smtp.gmail.com'; if (!port.value) port.value = 587; }
-        if (!host.value.trim()) throw new Error('Preencha o Servidor (SMTP). Para Gmail: smtp.gmail.com (ou clique em "Preencher para Gmail").');
-        if (!from.value.trim()) { if (user.value.trim()) from.value = `Tea Shop <${user.value.trim()}>`; else throw new Error('Preencha o Remetente.'); }
-        await api('PUT', '/notif', { email: { host: host.value, port: port.value, user: user.value, pass: pass.value || undefined, from: from.value, secure: sec.checked } }); await recarregar();
-        return 'Servidor salvo. Agora cadastre os destinatários logo abaixo.';
-      }, 'btn primary')));
-    if (!e.configurado) em.append(h('div', { class: 'notice', style: { marginTop: '14px' } }, h('b', null, 'Destinatários: '), e.host ? 'preencha também o Remetente e clique em "Salvar servidor".' : 'o Servidor (SMTP) ainda está vazio. Preencha (Gmail: smtp.gmail.com) e clique em "Salvar servidor"; logo depois aparece aqui o campo para adicionar quem recebe.'));
-    if (e.configurado) {
-      em.append(h('div', { class: 'f-label', style: { marginTop: '14px' } }, 'Adicionar destinatário'),
-        h('div', { class: 'cfg-grid' }, campo('E-mail', novoEmail), campo('Nome', novoNome)), campo('Recebe as lojas', novoLojas),
-        h('div', { class: 'cfg-acoes' }, acao('Adicionar', async () => { await api('POST', '/notif/destinos', { canal: 'email', id: novoEmail.value, nome: novoNome.value, lojas: novoLojas.valor() }); await recarregar(); return 'Adicionado.'; }, 'btn primary')));
-      if (e.destinos.length) em.append(tabelaDestinos('email', e.destinos, 'email', lojasTxt, recarregar));
-    }
-    box.append(em);
+        h('button', { type: 'button', class: 'btn', onclick: () => { host.value = 'smtp.gmail.com'; port.value = 587; sec.checked = false; if (!from.value && user.value) from.value = `Tea Shop <${user.value}>`; user.focus(); toast('Servidor e porta do Gmail preenchidos. Complete usuário, senha de app e remetente.'); } }, 'Preencher para Gmail'));
   }
+
   function tabelaDestinos(canal, lista, chave, lojasTxt, recarregar) {
     return h('div', { class: 'table-wrap free', style: { marginTop: '12px' } }, h('table', { class: 't cfg-t' },
       h('thead', null, h('tr', null, h('th', { class: 'l' }, 'Quem'), h('th', { class: 'l' }, 'Lojas'), h('th', null, ''))),
