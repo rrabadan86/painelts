@@ -232,7 +232,8 @@
         sel.addEventListener('change', () => {
           state.loja = sel.value;
           try { localStorage.setItem(TS.demo ? 'teashop.demo.loja' : 'teashop.loja', state.loja); } catch { /* ok */ }
-          content.replaceChildren(h('div', { class: 'loading' }, h('div', null, h('div', { class: 'spinner' }), h('p', null, 'Carregando a loja…'))));
+          // nas Configurações (todas as lojas) a tela fica; a loja escolhida vale para as outras telas
+          if (state.page !== 'config') content.replaceChildren(h('div', { class: 'loading' }, h('div', null, h('div', { class: 'spinner' }), h('p', null, 'Carregando a loja…'))));
           carregar(false);
           TS.scriptLoja();
         });

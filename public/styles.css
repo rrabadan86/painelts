@@ -315,7 +315,6 @@ table.t { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 
 /* ---------- Configurações ---------- */
 body.pg-config .layout { grid-template-columns: 1fr; }
 body.pg-config .sidebar, body.pg-config #btnFiltros { display: none; }
-body.pg-config #lojaSel { visibility: hidden; }
 .tabs a.tab-config { margin-left: 6px; }
 .cfg-abas { margin: 4px 0 16px; }
 .cfg-corpo { display: flex; flex-direction: column; gap: 14px; }
