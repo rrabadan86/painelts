@@ -11,6 +11,7 @@ const path = require('path');
 const express = require('express');
 const C = require('./config');
 const B = require('./base');
+const XB = require('./xmlbase');
 const COL = require('./coletor');
 
 const NOME_OK = /^[a-z0-9._-]{2,30}$/;
@@ -161,7 +162,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
         metaAuto: l.metaAuto, totaisSemEG: totaisSemEG(l.id),
         id: l.id, nome: l.nome, appnext: l.appnext, meta: l.meta, metas: l.metas, criadaEm: l.criadaEm, regras: l.regras, marca: l.marca,
         nomesVenda: (() => { const raw = rawDe(l.id); return raw ? [...new Set(raw.vendas.slice(-500).map((v) => v.loja).filter(Boolean))] : []; })(),
-        base: B.resumo(l.id), fontes, vendedores: vendedoresDe(l.id),
+        base: B.resumo(l.id), xml: XB.resumo(l.id), fontes, vendedores: vendedoresDe(l.id),
         coletor: env ? { configurado: true, rede: env.APPNEXT_REDE || '', usuario: env.APPNEXT_USER || '', temSenha: !!env.APPNEXT_PASS, lojaDestino: env.APPNEXT_LOJA_DESTINO || '', lojaIdDestino: env.APPNEXT_LOJA_ID_DESTINO || '' } : { configurado: false },
         status,
       };
@@ -310,6 +311,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     if (!lerEnv(req.loja.id)) return res.status(400).json({ erro: 'Cadastre primeiro o acesso ao AppNext desta loja.' });
     const { de, ate } = req.body || {};
     const passo = Math.max(1, Math.min(12, +req.body.mesesPorParte || 3));
+    const tipo = ['ambos', 'vendas', 'xml'].includes(req.body.tipo) ? req.body.tipo : 'ambos';
     if (!YM_OK.test(de || '') || !YM_OK.test(ate || '') || de > ate) return res.status(400).json({ erro: 'Período inválido.' });
     const meses = B.mesesEntre(de + '-01', ate + '-01');
     if (meses.length > 120) return res.status(400).json({ erro: 'Período longo demais (máximo 10 anos).' });
@@ -323,9 +325,9 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
       if (`${ini}-01` <= ult) partes.push({ de: `${ini}-01`, ate: ult });
     }
     try {
-      const x = await COL.historico(req.loja.id, partes, req.user);
+      const x = await COL.historico(req.loja.id, partes, req.user, tipo);
       if (x.status !== 200) return res.status(x.status).json({ erro: x.json.erro || 'Falha no coletor.' });
-      aud(req, 'importou histórico', req.loja.id, { loja: req.loja.id, de, ate, partes: partes.length });
+      aud(req, 'importou histórico', req.loja.id, { loja: req.loja.id, de, ate, partes: partes.length, tipo });
       res.json({ ok: true, partes: partes.length });
     } catch (e) { res.status(502).json({ erro: e.message }); }
   });

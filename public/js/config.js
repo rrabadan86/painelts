@@ -163,7 +163,14 @@
         : ex.estado === 'na_fila' ? `Na fila${per}`
           : ex.estado === 'ok' ? `Última coleta OK em ${dt(ex.fim)}${per}` : `Última coleta FALHOU em ${dt(ex.fim)}${per}`;
       b.append(h('p', { class: ex.estado === 'falhou' ? 'neg' : '' }, linha));
-      if (ex.estado === 'falhou' && ex.log && ex.log.length) b.append(h('details', null, h('summary', null, 'Ver o final do log'), h('pre', { class: 'script-log' }, ex.log.join('\n'))));
+      if (ex.xml && ex.estado !== 'rodando' && ex.estado !== 'na_fila') b.append(h('p', { class: ex.xml.ok ? 'muted' : 'neg' }, ex.xml.ok ? 'XML das notas (CPF): baixado junto.' : 'XML das notas (CPF): falhou nesta coleta. As vendas não foram afetadas.'));
+      if ((ex.estado === 'falhou' || (ex.xml && !ex.xml.ok)) && ex.log && ex.log.length) b.append(h('details', null, h('summary', null, 'Ver o final do log'), h('pre', { class: 'script-log' }, ex.log.join('\n'))));
+    }
+    if (l.xml) {
+      const x = l.xml;
+      b.append(h('p', { class: 'muted' }, x.existe
+        ? `XML das notas: ${fmt.int(x.notas)} notas com CPF/CNPJ, de ${dIso(x.de)} a ${dIso(x.ate)}${x.importacoes[0] ? ` · última importação em ${dt(x.importacoes[0].em)}` : ''}.`
+        : 'XML das notas: ainda não importado. Use "Importar histórico" com "Só XML" de 06/2025 até hoje para a primeira carga.'));
     }
     if (lote && (!lote.fim || Date.now() - new Date(lote.fim).getTime() < 86400e3)) {
       const pct = Math.round((lote.feitas / lote.total) * 100);
@@ -197,12 +204,14 @@
     const de = inp({ type: 'month', value: `${hoje.getFullYear() - 2}-01`, max: ymHoje });
     const ate = inp({ type: 'month', value: ymHoje, max: ymHoje });
     const passo = h('select', { class: 'f-input' }, [1, 2, 3, 6].map((n) => h('option', { value: n, selected: n === 3 || null }, n === 1 ? '1 mês' : `${n} meses`)));
+    const tipo = h('select', { class: 'f-input' }, [['ambos', 'Vendas e XML das notas (CPF)'], ['vendas', 'Só vendas'], ['xml', 'Só XML das notas (CPF dos clientes)']].map(([v, t]) => h('option', { value: v }, t)));
     const aberto = abertos.has('hist:' + l.id);
     const det = h('details', { class: 'cfg-hist', open: aberto || null }, h('summary', null, 'Importar histórico de um período'),
       h('p', { class: 'muted' }, 'Baixa do AppNext em partes (uma de cada vez) e junta no histórico. Use na primeira carga de uma loja ou para refazer meses.'),
       h('div', { class: 'cfg-grid c3' }, campo('De', de), campo('Até', ate), campo('Tamanho de cada parte', passo, 'Partes menores demoram mais no total, mas falham menos.')),
+      h('div', { class: 'cfg-grid' }, campo('O que importar', tipo, 'XML = Fiscal → Gerar XML do AppNext (Tipo Todos, Situação Ativos). Traz o CPF de cada cupom para a aba Clientes. Para a primeira carga, use de 06/2025 até hoje.')),
       h('div', { class: 'cfg-acoes' }, acao('Importar', async () => {
-        const r = await api('POST', `/lojas/${l.id}/historico`, { de: de.value, ate: ate.value, mesesPorParte: +passo.value });
+        const r = await api('POST', `/lojas/${l.id}/historico`, { de: de.value, ate: ate.value, mesesPorParte: +passo.value, tipo: tipo.value });
         abertos.delete('hist:' + l.id);
         return `Importação na fila: ${r.partes} parte(s). Pode fechar o painel; ela continua sozinha.`;
       }, 'btn primary')));

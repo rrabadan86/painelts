@@ -27,7 +27,9 @@ function resolverFontes(loja) {
 /** Assinatura dos arquivos locais: muda quando o script grava um arquivo novo */
 function assinatura(loja) {
   const B = require('./base');
-  return resolverFontes(loja).map((f) => `${f.nome}:${f.origem}:${f.mtime || f.id || ''}`).join('|') + '#' + B.assinatura(loja.id) + '#' + B.pendentes(loja.id).join(',');
+  const XB = require('./xmlbase');
+  return resolverFontes(loja).map((f) => `${f.nome}:${f.origem}:${f.mtime || f.id || ''}`).join('|') + '#' + B.assinatura(loja.id) + '#' + B.pendentes(loja.id).join(',')
+    + '#xml:' + XB.assinatura(loja.id) + ':' + XB.pendentes(loja.id).join(',');
 }
 
 async function fetchWithTimeout(url, ms = 60000) {
@@ -102,6 +104,8 @@ const VENDAS = Object.entries(C.ARQUIVOS).filter(([, d]) => d.tipo === 'vendas')
 async function atualizarBase(loja, fontes, avisos) {
   const id = loja.id;
   const vendasFontes = fontes.filter((f) => f.tipo === 'vendas' && f.origem);
+  // XML das notas (CPF por cupom) que o coletor baixou
+  avisos.push(...require('./xmlbase').processar(id, loja.nome));
   if (!B.existe(id)) {
     if (!vendasFontes.length && !B.pendentes(id).length) return; // loja nova, aguardando a 1ª coleta
     const todas = [];
@@ -190,10 +194,21 @@ async function loadLoja(loja) {
       avisos.push(`${loja.nome} · ${f.nome}: ${e.message}`);
     }
   }));
+  // XML baixado pelo coletor (vale mais que a planilha Xml do Drive para os mesmos cupons)
+  const XB = require('./xmlbase');
+  if (XB.existe(loja.id)) {
+    const x = XB.ler(loja.id);
+    const doColetor = new Set(x.xml.map((r) => r.cupom));
+    out.xml = [...x.xml, ...out.xml.filter((r) => !doColetor.has(r.cupom))];
+    // clientes sem cadastro ganham pelo menos o nome que veio na nota
+    const conhecidos = new Set(out.clientes.map((c) => c.cpf));
+    for (const [cpf, nome] of x.nomes) if (!conhecidos.has(cpf) && cpf.length === 11) out.clientes.push({ cpf, nome, celular: '', nascimento: null, email: '', cidade: '' });
+  }
   // Cada loja tem a própria planilha Xml: se as vendas são de uma loja só, os cupons com CPF
   // são dessa loja, qualquer que seja a cidade escrita no Xml.
   const nomesLoja = [...new Set(out.vendas.map((v) => v.loja).filter(Boolean))];
   if (nomesLoja.length === 1) out.xml.forEach((x) => { x.loja = nomesLoja[0]; });
+  else if (nomesLoja.length) out.xml.forEach((x) => { if (!x.loja) x.loja = nomesLoja[0]; });
   // metas: padrão (lojas.json ou planilha Meta) + metas por mês
   if (out.meta == null) out.meta = out.metaPlanilha ?? null;
   out.metaCfg = { id: loja.id, nome: loja.nome, nomesVenda: nomesLoja, padrao: out.meta, meses: loja.metas || {} };

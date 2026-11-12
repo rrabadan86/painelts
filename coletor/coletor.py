@@ -13,6 +13,9 @@ Coletor Tea Shop — roda o script de exportação do AppNext de cada loja na pr
 - Cada execução grava /data/<loja>/entrada/<carimbo>_<de>_<ate>_<gatilho>.xlsx; o painel junta no histórico
   mês a mês (substitui só aquele período).
 - A rotina baixa só os últimos COLETOR_JANELA dias (padrão 45): rápido e sem risco de tempo esgotado.
+- Depois das vendas, baixa também os XMLs das notas do mesmo período (Fiscal → Gerar XML) e grava
+  /data/<loja>/entrada/<carimbo>_<de>_<ate>_xml.json com o CPF de cada cupom (COLETOR_XML=0 desliga).
+  No histórico dá para escolher "tipo": "vendas", "xml" ou "ambos".
 - Horários: /config/horarios.txt (editado pelo painel) ou COLETOR_HORARIOS.
 """
 import hmac
@@ -33,6 +36,10 @@ CONFIG_DIR = Path(os.getenv("COLETOR_CONFIG", "/config"))
 DATA_DIR = Path(os.getenv("DATA_DIR", "/data"))
 WORK_DIR = Path(os.getenv("COLETOR_WORK", "/work"))
 SCRIPT = Path(os.getenv("COLETOR_SCRIPT", Path(__file__).with_name("nextsoft_export_to_drive.py")))
+SCRIPT_XML = Path(os.getenv("COLETOR_SCRIPT_XML", Path(__file__).with_name("nextsoft_xml.py")))
+# XML das notas (CPF dos clientes) junto da rotina: 1 = sim
+XML_ROTINA = os.getenv("COLETOR_XML", "1") != "0"
+TIPOS = ("ambos", "vendas", "xml")
 TOKEN = os.getenv("COLETOR_TOKEN", "")
 HORARIOS_ENV = [h.strip() for h in os.getenv("COLETOR_HORARIOS", "13:30,23:00").split(",") if h.strip()]
 JANELA = int(os.getenv("COLETOR_JANELA", "45"))
@@ -110,14 +117,14 @@ def enfileirar(loja, gatilho, por=None, de=None, ate=None):
     return True
 
 
-def enfileirar_historico(loja, partes, por=None):
+def enfileirar_historico(loja, partes, por=None, tipo="ambos"):
     with lock:
         e = _estado(loja)
         if e["estado"] in ("na_fila", "rodando") or pendentes(loja):
             return False
         agora = datetime.now(TZ).isoformat()
-        jobs = [{"loja": loja, "gatilho": "historico", "por": por, "de": p["de"], "ate": p["ate"], "criado": agora, "inicio": None} for p in partes]
-        e["lote"] = {"total": len(jobs), "feitas": 0, "falhas": [], "de": partes[0]["de"], "ate": partes[-1]["ate"], "por": por, "criado": agora, "fim": None}
+        jobs = [{"loja": loja, "gatilho": "historico", "tipo": tipo, "por": por, "de": p["de"], "ate": p["ate"], "criado": agora, "inicio": None} for p in partes]
+        e["lote"] = {"total": len(jobs), "feitas": 0, "falhas": [], "de": partes[0]["de"], "ate": partes[-1]["ate"], "por": por, "criado": agora, "fim": None, "tipo": tipo}
         e["estado"] = "na_fila"
         e["atual"] = jobs[0]
         fila.extend(jobs)
@@ -175,25 +182,41 @@ def rodar(job):
         e["estado"] = "rodando"
         job["inicio"] = datetime.now(TZ).isoformat()
         e["atual"] = job
-    log(f"{loja}: rodando {script.name} ({de} a {ate})")
-    ok, codigo = False, None
-    try:
-        with open(log_path, "w", encoding="utf-8") as out:
-            out.write(f"### período {br(de)} a {br(ate)} ({job['gatilho']}) ###\n")
-            out.flush()
-            p = subprocess.run([sys.executable, str(script)], cwd=pasta, env=env, stdout=out, stderr=subprocess.STDOUT, timeout=TEMPO_MAX)
-            codigo = p.returncode
-            ok = codigo == 0
-    except subprocess.TimeoutExpired:
-        codigo = "timeout"
-        with open(log_path, "a", encoding="utf-8") as out:
-            out.write(f"\n### coletor: tempo máximo de {TEMPO_MAX}s excedido ###\n")
-    except Exception as e:  # noqa: BLE001
-        codigo = str(e)
+    tipo = job.get("tipo") or ("ambos" if XML_ROTINA else "vendas")
+    if tipo not in TIPOS:
+        tipo = "vendas"
+    log(f"{loja}: rodando {tipo} ({de} a {ate})")
+    log_path.write_text(f"### período {br(de)} a {br(ate)} ({job['gatilho']}, {tipo}) ###\n", encoding="utf-8")
+
+    def executar(arquivo, env_extra):
+        """roda um script e devolve o código de saída (ou 'timeout'/erro)"""
+        try:
+            with open(log_path, "a", encoding="utf-8") as out:
+                out.write(f"\n### {arquivo.name} ###\n")
+                out.flush()
+                p = subprocess.run([sys.executable, str(arquivo)], cwd=pasta, env={**env, **env_extra}, stdout=out, stderr=subprocess.STDOUT, timeout=TEMPO_MAX)
+                return p.returncode
+        except subprocess.TimeoutExpired:
+            with open(log_path, "a", encoding="utf-8") as out:
+                out.write(f"\n### coletor: tempo máximo de {TEMPO_MAX}s excedido ###\n")
+            return "timeout"
+        except Exception as e:  # noqa: BLE001
+            return str(e)
+
+    ok, codigo, xml = True, 0, None
+    if tipo in ("ambos", "vendas"):
+        codigo = executar(script, {})
+        ok = codigo == 0
+    if tipo in ("ambos", "xml") and SCRIPT_XML.exists():
+        saida_xml = str(DATA_DIR / loja / "entrada" / f"{carimbo}_{de}_{ate}_xml.json")
+        cx = executar(SCRIPT_XML, {"SAIDA_XML": saida_xml, "SAIDA_ARQUIVO": str(pasta / "_nao_usado.xlsx")})
+        xml = {"ok": cx == 0, "codigo": cx}
+        if tipo == "xml":
+            ok, codigo = cx == 0, cx
     cauda = log_path.read_text(encoding="utf-8", errors="replace").splitlines()[-25:] if log_path.exists() else []
     with lock:
         e = _estado(loja)
-        e["ultima"] = {**job, "fim": datetime.now(TZ).isoformat(), "ok": ok, "codigo": codigo,
+        e["ultima"] = {**job, "tipo": tipo, "xml": xml, "fim": datetime.now(TZ).isoformat(), "ok": ok, "codigo": codigo,
                        "duracao_s": round(time.time() - inicio), "log": cauda}
         lote = e.get("lote")
         if job["gatilho"] == "historico" and lote and not lote.get("fim"):
@@ -206,7 +229,7 @@ def rodar(job):
         e["atual"] = prox
         e["estado"] = "na_fila" if prox else "parado"
     (pasta / "ultima.json").write_text(json.dumps({"ultima": e["ultima"], "lote": e.get("lote")}, ensure_ascii=False, indent=1), encoding="utf-8")
-    log(f"{loja}: {'OK' if ok else 'FALHOU'} em {round(time.time() - inicio)}s (código {codigo})")
+    log(f"{loja}: {'OK' if ok else 'FALHOU'} em {round(time.time() - inicio)}s (código {codigo}{'' if xml is None else ', xml ' + ('ok' if xml['ok'] else 'falhou')})")
 
 
 def trabalhador():
@@ -302,11 +325,14 @@ class API(BaseHTTPRequestHandler):
                 n = int(self.headers.get("Content-Length", "0") or 0)
                 corpo = json.loads(self.rfile.read(min(n, 100000)) or b"{}")
                 partes = [{"de": p["de"], "ate": p["ate"]} for p in corpo.get("partes", [])]
+                tipo = corpo.get("tipo") or "ambos"
             except Exception:  # noqa: BLE001
                 return self._json(400, {"erro": "pedido inválido"})
+            if tipo not in TIPOS:
+                return self._json(400, {"erro": "tipo inválido"})
             if not partes or len(partes) > 120 or not all(DATA_OK.match(p["de"]) and DATA_OK.match(p["ate"]) and p["de"] <= p["ate"] for p in partes):
                 return self._json(400, {"erro": "períodos inválidos"})
-            if not enfileirar_historico(loja, partes, por):
+            if not enfileirar_historico(loja, partes, por, tipo):
                 return self._json(409, {"erro": "Esta loja já tem uma coleta na fila ou rodando."})
             return self._json(200, {"ok": True, "partes": len(partes)})
         if self.path.startswith("/cancelar/"):

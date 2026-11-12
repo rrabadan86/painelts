@@ -10,6 +10,7 @@ const GH = require('./src/github');
 const COL = require('./src/coletor');
 const DEMO = require('./src/demo');
 const B = require('./src/base');
+const XB = require('./src/xmlbase');
 const ADMIN = require('./src/admin-api');
 const IND = require('./src/indicadores');
 const NOTIF = require('./src/notificacoes');
@@ -516,7 +517,7 @@ app.use(express.static(pub, { index: 'index.html', maxAge: 0 }));
 
 // processa planilhas que chegam na entrada (coletor) sem esperar alguém abrir o painel
 setInterval(() => {
-  for (const l of C.get().lojas) if (B.pendentes(l.id).length) dadosLoja(l, true).catch((e) => console.error(`[base] ${l.id}:`, e.message));
+  for (const l of C.get().lojas) if (B.pendentes(l.id).length || XB.pendentes(l.id).length) dadosLoja(l, true).catch((e) => console.error(`[base] ${l.id}:`, e.message));
 }, 30e3);
 
 // resumo diário (Telegram / e-mail) no horário configurado

@@ -32,8 +32,8 @@ function execucao(s, comLog) {
   if (!u) return null;
   return {
     estado: u.ok ? 'ok' : 'falhou', conclusao: u.ok ? 'success' : String(u.codigo), gatilho: u.gatilho, por: u.por,
-    inicio: u.inicio, criado: u.criado, fim: u.fim, duracao: u.duracao_s, de: u.de, ate: u.ate,
-    log: !u.ok && comLog ? u.log : undefined,
+    inicio: u.inicio, criado: u.criado, fim: u.fim, duracao: u.duracao_s, de: u.de, ate: u.ate, tipo: u.tipo, xml: u.xml || null,
+    log: (!u.ok || (u.xml && !u.xml.ok)) && comLog ? u.log : undefined,
   };
 }
 
@@ -48,8 +48,8 @@ async function rodar(lojaId, por) {
   return chamar(`/rodar/${encodeURIComponent(lojaId)}`, { method: 'POST', por });
 }
 
-async function historico(lojaId, partes, por) {
-  return chamar(`/historico/${encodeURIComponent(lojaId)}`, { method: 'POST', por, body: { partes } });
+async function historico(lojaId, partes, por, tipo = 'ambos') {
+  return chamar(`/historico/${encodeURIComponent(lojaId)}`, { method: 'POST', por, body: { partes, tipo } });
 }
 async function cancelar(lojaId, por) {
   return chamar(`/cancelar/${encodeURIComponent(lojaId)}`, { method: 'POST', por });
