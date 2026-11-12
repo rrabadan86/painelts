@@ -749,3 +749,5 @@ body.com-camada { overflow: hidden; }
 .cfg-dica-cad { margin: 6px 0 0; font-size: 12px; }
 .cfg-cad-res { margin-top: 10px; background: #E9F1E6; border: 1px solid #C9DCC3; border-radius: 10px; padding: 10px 12px; font-size: 12.5px; }
 .cfg-cad-res ul { margin: 6px 0 4px 18px; padding: 0; display: grid; gap: 3px; }
+.cfg-senha-pend { color: #9A6B00; }
+.cfg-user-form .cfg-campo > .cfg-check { justify-content: flex-start; text-align: left; margin: 2px 0; }

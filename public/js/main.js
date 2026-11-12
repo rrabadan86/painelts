@@ -135,6 +135,7 @@
       const res = await fetch(TS.api('dados?' + qs), { credentials: 'same-origin' });
       if (res.status === 401 && !TS.demo) { location.href = '/login'; return; }
       const body = await res.json();
+      if (res.status === 403 && body.erro === 'trocar-senha') { location.href = '/trocar-senha?primeiro=1'; return; }
       if (body.semLojas) { TS.db = null; if (TS.eu?.pode?.configurar) { location.hash = '#config'; rota(); } else content.replaceChildren(h('div', { class: 'notice' }, body.erro)); return; }
       if (!res.ok) throw new Error(body.erro || res.statusText);
       const primeira = !TS.db || TS.lojaCarregada !== state.loja;
@@ -171,10 +172,15 @@
   setInterval(() => { if (document.visibilityState === 'visible') carregar(false); }, 15 * 60e3);
 
   // ---------- apresentação: faixa de aviso e sem botões de conta/script ----------
+  if (!TS.demo && new URLSearchParams(location.search).get('senha') === 'ok') {
+    history.replaceState(null, '', location.pathname + location.hash);
+    setTimeout(() => { const t = h('div', { class: 'toast', role: 'status' }, 'Senha alterada. Use a nova senha nos próximos acessos.'); document.body.append(t); setTimeout(() => t.remove(), 6000); }, 600);
+  }
   if (TS.demo) {
     document.body.classList.add('demo');
     document.title = 'Tea Shop · Apresentação do painel';
     document.querySelector('.logout-form')?.remove();
+    document.getElementById('btnSenha')?.remove();
     document.getElementById('btnScript')?.remove();
     document.getElementById('btnAtualizar').title = 'Recarregar';
     document.querySelector('.layout').before(h('div', { class: 'demo-bar', role: 'note' },

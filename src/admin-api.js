@@ -141,7 +141,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
       if (nome === '*') return false;
       if (req.perfil === 'admin') return true;
       return ['gerente', 'vendedor'].includes(u.perfil) && u.lojas.length && u.lojas.every((l) => minhas.has(l));
-    }).map(([nome, u]) => ({ nome, perfil: u.perfil, lojas: u.lojas, vendedor: u.vendedor, telas: u.telas, ativo: u.ativo, acessoAte: u.acessoAte || null, expirado: C.expirado(u), criadoEm: u.criadoEm, ultimoAcesso: acessos[nome] || null }))
+    }).map(([nome, u]) => ({ nome, perfil: u.perfil, lojas: u.lojas, vendedor: u.vendedor, telas: u.telas, ativo: u.ativo, acessoAte: u.acessoAte || null, expirado: C.expirado(u), trocarSenha: !!u.trocarSenha, senhaTrocadaEm: u.senhaTrocadaEm || null, criadoEm: u.criadoEm, ultimoAcesso: acessos[nome] || null }))
       .sort((a, b) => a.nome.localeCompare(b.nome));
   }
 
@@ -535,10 +535,10 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     try {
       C.alterar((cfg) => {
         if (cfg.usuarios[nome]) throw new Error(`O usuário "${nome}" já existe.`);
-        cfg.usuarios[nome] = { senha: C.hashSenha(senha), ...d, criadoEm: new Date().toISOString() };
+        cfg.usuarios[nome] = { senha: C.hashSenha(senha), ...d, trocarSenha: req.body.trocarSenha !== false, criadoEm: new Date().toISOString() };
       });
     } catch (e) { return res.status(400).json({ erro: e.message }); }
-    aud(req, 'criou usuário', nome, { perfil: d.perfil, lojas: d.lojas, acessoAte: d.acessoAte || 'sem prazo', loja: d.lojas[0] });
+    aud(req, 'criou usuário', nome, { perfil: d.perfil, lojas: d.lojas, acessoAte: d.acessoAte || 'sem prazo', trocarSenha: req.body.trocarSenha !== false, loja: d.lojas[0] });
     res.json({ ok: true });
   });
 
@@ -561,8 +561,9 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
       const u = cfg.usuarios[nome];
       Object.assign(u, d);
       if (senha) u.senha = C.hashSenha(senha);
+      if (typeof req.body.trocarSenha === 'boolean' && nome !== req.user) u.trocarSenha = req.body.trocarSenha;
     });
-    aud(req, 'alterou usuário', nome, { perfil: d.perfil, lojas: d.lojas, telas: d.telas, ativo: d.ativo, acessoAte: d.acessoAte !== (alvo.acessoAte || null) ? d.acessoAte || 'sem prazo' : undefined, senha: senha ? 'redefinida' : undefined, loja: d.lojas[0] });
+    aud(req, 'alterou usuário', nome, { perfil: d.perfil, lojas: d.lojas, telas: d.telas, ativo: d.ativo, acessoAte: d.acessoAte !== (alvo.acessoAte || null) ? d.acessoAte || 'sem prazo' : undefined, senha: senha ? 'redefinida' : undefined, trocarSenha: typeof req.body.trocarSenha === 'boolean' && req.body.trocarSenha !== !!alvo.trocarSenha ? req.body.trocarSenha : undefined, loja: d.lojas[0] });
     pacoteLimpar();
     res.json({ ok: true });
   });

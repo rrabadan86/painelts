@@ -87,6 +87,9 @@ function normalizar(cfg) {
       criadoEm: v.criadoEm || null,
       // último dia de acesso (AAAA-MM-DD, horário de Brasília); null = sem prazo
       acessoAte: /^\d{4}-\d{2}-\d{2}$/.test(v.acessoAte || '') ? v.acessoAte : null,
+      // senha provisória: no próximo login a pessoa cria a própria senha antes de usar o painel
+      trocarSenha: v.trocarSenha === true,
+      senhaTrocadaEm: typeof v.senhaTrocadaEm === 'string' ? v.senhaTrocadaEm : null,
     };
   }
   return { lojas, usuarios, uploadToken: cfg.uploadToken || process.env.UPLOAD_TOKEN || null };

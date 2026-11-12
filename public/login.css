@@ -16,3 +16,13 @@ button { height: 42px; border: 0; border-radius: 8px; background: #2C5234; color
 button:hover { background: #1F3D2B; }
 .err { margin: 0; color: #B5452B; font-size: 13px; }
 .logo-loja { max-height: 72px; max-width: 220px; object-fit: contain; display: block; margin: 0 auto 6px; }
+/* trocar senha */
+.regras { list-style: none; margin: 0; padding: 0; font-size: 12px; color: #6B7A70; display: grid; gap: 3px; }
+.regras li::before { content: '○ '; }
+.regras li.ok { color: #2C5234; }
+.regras li.ok::before { content: '✓ '; }
+form.sair { display: block; margin-top: 10px; text-align: center; }
+button.link { background: none; color: #6B7A70; height: auto; font-weight: 500; font-size: 13px; text-decoration: underline; margin: 0; padding: 0; }
+button.link:hover { background: none; color: #1F3D2B; }
+.voltar { margin: 8px 0 0; font-size: 13px; }
+.voltar a { color: #2C5234; }

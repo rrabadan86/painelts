@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Trocar senha · Tea Shop</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/login.css">
+</head>
+<body>
+  <main class="box">
+    <svg viewBox="0 0 32 32" width="44" height="44" aria-hidden="true"><path d="M5 12h18v5a8 8 0 0 1-8 8h-2a8 8 0 0 1-8-8z" fill="#C9A227"/><path d="M23 14h2.5a3 3 0 0 1 0 6H22" stroke="#C9A227" stroke-width="2" fill="none"/><path d="M11 4c-1.5 2 1.5 3 0 5M15 3c-1.5 2 1.5 3 0 5" stroke="#7FA37A" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg>
+    <h1 id="titulo">Trocar senha</h1>
+    <p class="sub" id="sub">Escolha uma senha nova para entrar no painel.</p>
+    <form method="post" action="/trocar-senha" id="form">
+      <label><span id="rotAtual">Senha atual</span><input name="atual" type="password" autocomplete="current-password" required></label>
+      <label>Nova senha<input name="nova" id="nova" type="password" autocomplete="new-password" minlength="8" required></label>
+      <label>Repita a nova senha<input name="confirma" id="confirma" type="password" autocomplete="new-password" minlength="8" required></label>
+      <ul class="regras" id="regras">
+        <li id="r-tam">Pelo menos 8 caracteres</li>
+        <li id="r-igual">As duas senhas novas iguais</li>
+      </ul>
+      <p class="err" id="err" hidden></p>
+      <button type="submit">Salvar senha</button>
+    </form>
+    <form method="post" action="/logout" class="sair"><button type="submit" class="link">Sair</button></form>
+    <p class="voltar" id="voltar" hidden><a href="/">Voltar ao painel</a></p>
+  </main>
+  <script src="/trocar-senha.js"></script>
+</body>
+</html>

@@ -138,7 +138,7 @@ app.use((req, res, next) => {
 const pub = path.join(__dirname, 'public');
 app.get('/health', (req, res) => res.json({ ok: true, lojasEmCache: [...cacheLoja.entries()].filter(([, e]) => e.at).map(([id, e]) => ({ id, em: new Date(e.at).toISOString() })) }));
 app.get('/login', (req, res) => res.sendFile(path.join(pub, 'login.html')));
-['login.css', 'login.js', 'favicon.svg'].forEach((f) => app.get('/' + f, (req, res) => res.sendFile(path.join(pub, f))));
+['login.css', 'login.js', 'favicon.svg', 'trocar-senha.js'].forEach((f) => app.get('/' + f, (req, res) => res.sendFile(path.join(pub, f))));
 const CHART_JS = path.join(path.dirname(require.resolve('chart.js')), 'chart.umd.min.js');
 app.get('/vendor/chart.umd.js', (req, res) => res.sendFile(CHART_JS));
 
@@ -157,7 +157,7 @@ app.post('/login', express.urlencoded({ extended: false }), (req, res) => {
     attempts.delete(ip);
     C.registrarAcesso(cfg.usuarios[user] ? user : '*');
     res.cookie('ts_sess', makeToken(cfg.usuarios[user] ? user : '*'), { httpOnly: true, sameSite: 'lax', secure: SECURE_COOKIE, maxAge: SESSION_HOURS * 3600e3 });
-    return res.redirect('/');
+    return res.redirect(cfg.usuarios[user] && u.trocarSenha ? '/trocar-senha?primeiro=1' : '/');
   }
   attempts.get(ip).push(Date.now());
   const lojaQ = String(req.body.loja || '').toLowerCase().replace(/[^a-z0-9_-]/g, '');
@@ -261,10 +261,34 @@ app.use((req, res, next) => {
     const u = C.usuario(s.u);
     req.perfil = u ? u.perfil : 'admin';
     req.vendedor = u ? u.vendedor : '';
+    // senha provisória: só pode trocar a senha (ou sair) até criar a própria
+    if (u && u.trocarSenha && !['/trocar-senha', '/logout'].includes(req.path)) {
+      if (req.path.startsWith('/api/')) return res.status(403).json({ erro: 'trocar-senha' });
+      return res.redirect('/trocar-senha?primeiro=1');
+    }
     return next();
   }
   if (req.path.startsWith('/api/')) return res.status(401).json({ erro: 'login' });
   res.redirect('/login');
+});
+
+// ---------- trocar a própria senha ----------
+app.get('/trocar-senha', (req, res) => res.sendFile(path.join(pub, 'trocar-senha.html')));
+app.post('/trocar-senha', express.urlencoded({ extended: false }), (req, res) => {
+  const ip = req.ip;
+  const volta = (e) => res.redirect('/trocar-senha?e=' + e + (C.usuario(req.user)?.trocarSenha ? '&primeiro=1' : ''));
+  if (req.user === '*' || !C.get().usuarios[req.user]) return volta('usuario');
+  if (tooMany(ip)) return volta('limite');
+  const u = C.get().usuarios[req.user];
+  const atual = String(req.body.atual || ''), nova = String(req.body.nova || ''), confirma = String(req.body.confirma || '');
+  if (!C.confereSenha(atual, u.senha)) { attempts.get(ip).push(Date.now()); return volta('atual'); }
+  if (nova.length < 8) return volta('curta');
+  if (nova !== confirma) return volta('confirma');
+  if (nova === atual) return volta('igual');
+  if (nova.toLowerCase().includes(req.user.toLowerCase())) return volta('usuario-na-senha');
+  C.alterar((cfg) => { const x = cfg.usuarios[req.user]; x.senha = C.hashSenha(nova); x.trocarSenha = false; x.senhaTrocadaEm = new Date().toISOString(); });
+  C.auditar(req.user, 'trocou a própria senha', req.user, { obrigatoria: !!u.trocarSenha });
+  res.redirect('/?senha=ok');
 });
 
 app.get('/api/eu', (req, res) => {

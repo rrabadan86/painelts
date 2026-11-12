@@ -520,7 +520,9 @@
         h('td', { class: 'l' }, u.ultimoAcesso ? dt(u.ultimoAcesso) : h('span', { class: 'muted' }, 'nunca')),
         h('td', { class: 'l' }, !u.ativo ? h('span', { class: 'neg' }, 'Desativado')
           : u.expirado ? h('span', { class: 'neg' }, `Acesso terminou em ${dataBr(u.acessoAte)}`)
-            : u.acessoAte ? h('span', null, 'Ativo', h('div', { class: diasAte(u.acessoAte) <= 7 ? 'neg cfg-prazo' : 'muted cfg-prazo' }, `até ${dataBr(u.acessoAte)}${diasAte(u.acessoAte) <= 7 ? ` (${diasAte(u.acessoAte)} dia(s))` : ''}`)) : 'Ativo'),
+            : u.acessoAte ? h('span', null, 'Ativo', h('div', { class: diasAte(u.acessoAte) <= 7 ? 'neg cfg-prazo' : 'muted cfg-prazo' }, `até ${dataBr(u.acessoAte)}${diasAte(u.acessoAte) <= 7 ? ` (${diasAte(u.acessoAte)} dia(s))` : ''}`)) : 'Ativo',
+          u.trocarSenha ? h('div', { class: 'cfg-prazo cfg-senha-pend', title: 'No próximo login a pessoa cria a própria senha' }, '🔑 aguardando troca da senha')
+            : u.senhaTrocadaEm ? h('div', { class: 'muted cfg-prazo' }, `senha trocada em ${dt(u.senhaTrocadaEm)}`) : null),
         h('td', null, h('button', { type: 'button', class: 'btn', onclick: () => { state.cfgEdit = state.cfgEdit === u.nome ? null : u.nome; abertos.delete('novoUser'); pintar(); } }, state.cfgEdit === u.nome ? 'Fechar' : 'Editar')));
       return state.cfgEdit === u.nome ? [tr, h('tr', { class: 'cfg-edit-row' }, h('td', { colspan: 7 }, formUsuario(u)))] : [tr];
     }).flat();
@@ -606,15 +608,20 @@
     }
     perfil.addEventListener('change', () => { if (perfil.value === 'vendedor' && marcadas.size > 1) { const f = [...marcadas][0]; marcadas.clear(); marcadas.add(f); } pintarLojas(); });
     pintarLojas();
-    const gerar = h('button', { type: 'button', class: 'btn', onclick: () => { senha.value = senhaAleatoria(); senha.select(); } }, 'Gerar senha');
+    const trocar = h('input', { type: 'checkbox', checked: (novo ? true : !!u.trocarSenha) || null, disabled: (u && u.nome === est.usuario) || null });
+    const gerar = h('button', { type: 'button', class: 'btn', onclick: () => { senha.value = senhaAleatoria(); senha.select(); trocar.checked = true; } }, 'Gerar senha');
+    senha.addEventListener('input', () => { if (senha.value) trocar.checked = true; });
     return h('div', { class: 'card cfg-form cfg-user-form' }, h('div', { class: 'card-title' }, novo ? 'Novo usuário' : `Editar ${u.nome}`),
       h('div', { class: 'cfg-grid' }, campo('Usuário (login)', nome), campo('Perfil', perfil),
         campo(novo ? 'Senha' : 'Nova senha', h('div', { class: 'cfg-inline' }, senha, gerar), 'Anote e envie para a pessoa: ela não aparece de novo.'),
-        h('label', { class: 'cfg-campo cfg-check' }, ativo, h('span', null, 'Usuário ativo (pode entrar)'))),
+        h('div', { class: 'cfg-campo' },
+          h('label', { class: 'cfg-check' }, ativo, h('span', null, 'Usuário ativo (pode entrar)')),
+          h('label', { class: 'cfg-check', title: 'No próximo login a pessoa precisa criar a própria senha antes de usar o painel.' }, trocar, h('span', null, 'Trocar a senha no próximo login')),
+          !novo && u.senhaTrocadaEm ? h('small', null, `Trocou a senha em ${dt(u.senhaTrocadaEm)}.`) : null)),
       campoPrazo, campoLojas, campoVend, campoTelas,
       h('div', { class: 'cfg-acoes' },
         acao(novo ? 'Criar usuário' : 'Salvar', async () => {
-          const corpo = { perfil: perfil.value, lojas: [...marcadas], vendedor: vendSel.value, ativo: ativo.checked, senha: senha.value || undefined, acessoMeses: meses.value.trim() === '' || proprio ? undefined : Math.round(+meses.value), telas: perfil.value === 'gerente' ? TELAS_NOME.map(([k]) => k).filter((k) => telasSel.has(k)) : undefined };
+          const corpo = { perfil: perfil.value, lojas: [...marcadas], vendedor: vendSel.value, ativo: ativo.checked, trocarSenha: trocar.disabled ? undefined : trocar.checked, senha: senha.value || undefined, acessoMeses: meses.value.trim() === '' || proprio ? undefined : Math.round(+meses.value), telas: perfil.value === 'gerente' ? TELAS_NOME.map(([k]) => k).filter((k) => telasSel.has(k)) : undefined };
           if (novo) { await api('POST', '/usuarios', { nome: nome.value.trim().toLowerCase(), ...corpo }); abertos.delete('novoUser'); }
           else { await api('PUT', `/usuarios/${encodeURIComponent(u.nome)}`, corpo); state.cfgEdit = null; }
           return novo ? `Usuário criado.${corpo.senha ? ' Envie a senha para a pessoa.' : ''}` : 'Usuário atualizado.';
