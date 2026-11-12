@@ -195,31 +195,49 @@
     const conta = Object.fromEntries(Object.keys(CLASSE).map((k) => [k, prodsG.filter((p) => p.classe === k).length]));
     const un = grSel ? 'kg' : 'un.';
     const fq = (v) => (grSel ? `${fmt.kg(v)} kg` : `${fmt.int(v)} un.`);
+    const DESC = {
+      estrela: 'Vende muito e tem margem boa. Não pode faltar.',
+      volume: 'Vende muito, mas a margem é menor. Vale rever preço ou custo.',
+      joia: 'Margem boa, mas vende pouco. Merece vitrine, degustação e indicação.',
+      peso: 'Vende pouco e a margem é menor. Candidato a promoção ou a sair do mix.',
+    };
+    const sel = CLASSE[state.estClasse] ? state.estClasse : null;
+    const mq = MED[grSel];
+    const legenda = h('div', { class: 'est-classes' }, Object.entries(CLASSE).map(([k, [n, c]]) => h('button', {
+      type: 'button', class: 'est-classe' + (sel === k ? ' on' : sel ? ' off' : ''), style: { '--cor': c }, 'aria-pressed': sel === k ? 'true' : 'false',
+      title: sel === k ? 'Clique de novo para ver todos' : `Mostrar só ${n}`,
+      onclick: () => { state.estClasse = sel === k ? null : k; TS.render(); },
+    }, h('span', { class: 'est-classe-tit' }, h('i'), h('b', null, n), h('em', null, conta[k])), h('span', { class: 'est-classe-txt' }, DESC[k]))));
+    const linhaMed = (pts) => ({ type: 'line', data: pts, borderColor: '#9AA59D', borderDash: [5, 4], borderWidth: 1, pointRadius: 0, pointHoverRadius: 0, fill: false, showLine: true });
+    const ys = prodsG.map((p) => p.margem * 100), xs = prodsG.map((p) => Math.max(grSel ? 0.01 : 1, p.giro));
+    const yMin = Math.min(...ys, mq.m * 100) - 1, yMax = Math.max(...ys, mq.m * 100) + 1, xMin = Math.min(...xs, mq.q), xMax = Math.max(...xs, mq.q);
     corpo.append(h('div', { class: 'mt' }, TS.cardWithTools('Giro × margem', grSel
-      ? `Cada ponto é um chá, somando todas as gramaturas (50g, 100g, 250g…) em kg. Comparado só com os outros chás: mediana de ${fq(MED[true].q)} e ${fmt.pct(MED[true].m, 0)} de margem.`
-      : `Cada ponto é um acessório ou envasado, em unidades. Comparado só com eles: mediana de ${fq(MED[false].q)} e ${fmt.pct(MED[false].m, 0)} de margem.`,
+      ? `Cada ponto é um chá a granel, somando todos os tamanhos (50g, 100g, 250g…). Quanto mais à direita, mais kg vendidos no período; quanto mais alto, maior a margem. As linhas tracejadas dividem os chás ao meio: metade vendeu mais de ${fq(mq.q)} e metade tem margem acima de ${fmt.pct(mq.m, 0)}. Chá é comparado só com chá.`
+      : `Cada ponto é um acessório ou envasado. Quanto mais à direita, mais unidades vendidas no período; quanto mais alto, maior a margem. As linhas tracejadas dividem os produtos ao meio: metade vendeu mais de ${fq(mq.q)} e metade tem margem acima de ${fmt.pct(mq.m, 0)}.`,
       TS.seg([['Chás a granel', 'kg'], ['Acessórios e envasados', 'un']], grSel ? 'kg' : 'un', (v) => { state.estGrupo = v; TS.render(); }),
-      h('div', { class: 'est-leg' }, Object.entries(CLASSE).map(([k, [n, c]]) => h('span', null, h('i', { style: { background: c } }), `${n} (${conta[k]})`)),
-        h('small', { class: 'muted' }, 'Estrela: vende muito e dá margem · Volume: vende muito, margem baixa · Joia: margem boa, vende pouco · Peso morto: pouco das duas')),
+      legenda,
+      sel ? h('div', { class: 'est-filtro' }, `Mostrando só ${CLASSE[sel][0]} no gráfico e na tabela abaixo. `, h('button', { type: 'button', class: 'link-btn', onclick: () => { state.estClasse = null; TS.render(); } }, 'Ver todos')) : null,
       prodsG.length ? TS.chart({
         type: 'scatter',
-        data: { datasets: Object.entries(CLASSE).map(([k, [n, c]]) => ({ label: n, data: prodsG.filter((p) => p.classe === k).map((p) => ({ x: Math.max(grSel ? 0.01 : 1, p.giro), y: p.margem * 100, p })), backgroundColor: c + 'CC', pointRadius: 4, pointHoverRadius: 6 })) },
-        options: { plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => `${c.raw.p.produto}: ${fq(c.raw.p.giro)}${c.raw.p.tamanhos ? ' (' + c.raw.p.tamanhos + ')' : ''} · margem ${fmt.pct(c.raw.p.margem)} · lucro ${fmt.brl(c.raw.p.lucro)}` } } },
-          scales: { x: { type: 'logarithmic', title: { display: true, text: `${grSel ? 'Kg vendidos' : 'Unidades vendidas'} (escala log)` }, ticks: { callback: (v) => (Math.abs(Math.log10(v) - Math.round(Math.log10(v))) < 1e-9 ? (v < 1 ? String(v).replace('.', ',') : fmt.int(v)) : '') } }, y: { title: { display: true, text: 'Margem (%)' }, ticks: { callback: (v) => v + '%' } } } },
+        data: { datasets: [
+          ...Object.entries(CLASSE).filter(([k]) => !sel || k === sel).map(([k, [n, c]]) => ({ label: n, data: prodsG.filter((p) => p.classe === k).map((p) => ({ x: Math.max(grSel ? 0.01 : 1, p.giro), y: p.margem * 100, p })), backgroundColor: c + 'CC', pointRadius: 5, pointHoverRadius: 7 })),
+          linhaMed([{ x: mq.q, y: yMin }, { x: mq.q, y: yMax }]), linhaMed([{ x: xMin, y: mq.m * 100 }, { x: xMax, y: mq.m * 100 }]),
+        ] },
+        options: { plugins: { legend: { display: false }, tooltip: { filter: (c) => !!c.raw.p, callbacks: { label: (c) => `${c.raw.p.produto}: ${fq(c.raw.p.giro)}${c.raw.p.tamanhos ? ' (' + c.raw.p.tamanhos + ')' : ''} · margem ${fmt.pct(c.raw.p.margem)} · lucro ${fmt.brl(c.raw.p.lucro)}` } } },
+          scales: { x: { type: 'logarithmic', title: { display: true, text: `${grSel ? 'Kg vendidos' : 'Unidades vendidas'} no período` }, ticks: { callback: (v) => (Math.abs(Math.log10(v) - Math.round(Math.log10(v))) < 1e-9 ? (v < 1 ? String(v).replace('.', ',') : fmt.int(v)) : '') } }, y: { min: Math.floor(yMin), max: Math.ceil(yMax), title: { display: true, text: 'Margem (%)' }, ticks: { callback: (v) => v + '%' } } } },
       }, 'tall') : TS.empty())));
-
     corpo.append(h('div', { class: 'mt' }, TS.card('Produtos por lucro', 'Curva ABC: A = produtos que fazem 80% do lucro (nunca podem faltar). Chá a granel aparece uma vez só, somando todas as gramaturas. O grupo (Estrela, Volume…) compara chá com chá e acessório com acessório.', TS.table({
       cols: [
         { key: 'produto', label: 'Produto', align: 'l', sticky: true, wrap: true, render: (r) => (r.granel ? h('span', null, r.produto, h('small', { class: 'est-tam' }, r.tamanhos)) : r.produto) },
         { key: 'abc', label: 'ABC', cls: (r) => (r.abc === 'A' ? 'hit' : '') },
-        { key: 'classe', label: 'Grupo', align: 'l', fmt: (v) => CLASSE[v][0], sortVal: (r) => r.classe },
+        { key: 'classe', label: 'Grupo', align: 'l', render: (r) => h('span', { class: 'est-tag', style: { '--cor': CLASSE[r.classe][1] } }, CLASSE[r.classe][0]), sortVal: (r) => r.classe },
         { key: 'giro', label: 'Vendido', render: (r) => (r.granel ? `${fmt.kg(r.giro)} kg` : `${fmt.int(r.giro)} un.`), sortVal: (r) => r.giro },
         { key: 'vt', label: 'Faturamento', fmt: fmt.brl },
         { key: 'custo', label: 'Custo', fmt: fmt.brl },
         { key: 'lucro', label: 'Lucro', fmt: fmt.brl, cls: (r) => (r.lucro < 0 ? 'miss' : '') },
         { key: 'margem', label: 'Margem', fmt: (v) => fmt.pct(v), cls: (r) => (r.margem < 0.3 ? 'miss' : '') },
       ],
-      rows: prods, sortKey: 'lucro', maxHeight: '520px', search: 'Buscar produto…', searchKeys: ['produto'], cls: 'est-t',
+      rows: sel ? prods.filter((p) => p.classe === sel) : prods, sortKey: 'lucro', maxHeight: '520px', search: 'Buscar produto…', searchKeys: ['produto'], cls: 'est-t',
       total: { produto: 'Total', vt: fatCusto, custo: custoTot, lucro, margem: fatCusto ? lucro / fatCusto : null },
     }))));
 
