@@ -151,7 +151,7 @@
     const grid = h('div', { class: 'cfg-loja-corpo' });
     grid.append(blocoDados(l));
     if (est.perfil === 'admin') grid.append(blocoAppNext(l));
-    grid.append(blocoMetas(l), blocoFerias(l), blocoFechamento(l), blocoPlanilhas(l), blocoOperacao(l), blocoMarca(l));
+    grid.append(blocoMetas(l), blocoFerias(l), blocoFechamento(l), blocoWpp(l), blocoPlanilhas(l), blocoOperacao(l), blocoMarca(l));
     if (est.perfil === 'admin') grid.append(blocoRegras(l), blocoEditar(l));
     card.append(grid);
     return card;
@@ -401,6 +401,30 @@
       h('div', { class: 'cfg-grid' }, campo('E-mail', novoEmail), campo('Nome', novoNome)),
       h('div', { class: 'cfg-acoes' }, acao('Adicionar destinatário', async () => { await api('POST', `/lojas/${l.id}/fechamento-email/destinos`, { email: novoEmail.value, nome: novoNome.value }); return 'Destinatário adicionado.'; })),
       f.gerais.length ? h('p', { class: 'muted' }, h('b', null, 'Também recebem (acompanham a loja pela rede): '), f.gerais.map((g) => g.nome || g.email).join(', '), '.') : null].filter(Boolean));
+    return sec0;
+  }
+
+  // ---- modelos de mensagem de WhatsApp (tela Clientes)
+  function blocoWpp(l) {
+    const lista = (l.wppModelos && l.wppModelos.length ? l.wppModelos : TS.WPP_PADRAO || []).map((m) => ({ ...m }));
+    const sec0 = h('section', { class: 'cfg-bloco cfg-form' }, h('h3', null, 'Mensagens de WhatsApp'));
+    const corpo = h('div', { class: 'cfg-wpp' });
+    const pintarW = () => {
+      corpo.replaceChildren(...lista.map((m, k) => {
+        const nome = inp({ value: m.nome, maxlength: 40 });
+        const txt = h('textarea', { class: 'f-input', rows: 3, maxlength: 700 }, m.texto);
+        nome.addEventListener('input', () => { m.nome = nome.value; });
+        txt.addEventListener('input', () => { m.texto = txt.value; });
+        return h('div', { class: 'cfg-wpp-item' }, h('div', { class: 'cfg-inline' }, nome, h('button', { type: 'button', class: 'btn ghost-danger', onclick: () => { lista.splice(k, 1); pintarW(); } }, 'Remover')), txt);
+      }));
+    };
+    pintarW();
+    sec0.append(h('p', { class: 'muted' }, 'Textos que aparecem prontos ao abrir o WhatsApp de um cliente na tela Clientes. Use {nome} (primeiro nome), {loja} e {cha} (chá favorito do cliente).'),
+      corpo,
+      h('div', { class: 'cfg-acoes' },
+        h('button', { type: 'button', class: 'btn', onclick: () => { if (lista.length >= 12) return; lista.push({ nome: 'Nova mensagem', texto: 'Oi, {nome}! ' }); pintarW(); } }, '+ Mensagem'),
+        h('button', { type: 'button', class: 'btn', onclick: () => { lista.splice(0, lista.length, ...(TS.WPP_PADRAO || []).map((m) => ({ ...m }))); pintarW(); } }, 'Voltar ao padrão'),
+        acao('Salvar mensagens', async () => { await api('PUT', `/lojas/${l.id}/wpp-modelos`, { modelos: lista }); return 'Mensagens salvas.'; }, 'btn primary')));
     return sec0;
   }
 

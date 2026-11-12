@@ -55,18 +55,123 @@
     const hoje = TS.todayDay();
     const lista = [];
     let soSemVenda = 0;
+    const cuponsCPF = new Map(); // "cupom|lojaId" → cliente (para a % de vendas com CPF)
+    const cha = TS.rules.ids.chaTotal;
     for (const c of porCPF.values()) {
       if (!c.cupons.length) { soSemVenda++; continue; } // nenhuma compra encontrada nas vendas
       c.cupons.sort((a, b) => b.day - a.day);
       c.visitas = new Set(c.cupons.map((k) => k.cupom + '|' + k.loja)).size;
       c.ultima = c.cupons[0].day;
+      c.primeira = c.cupons[c.cupons.length - 1].day;
       c.ausencia = hoje - c.ultima;
       c.idade = idade(c.nascimento);
       c.aniv = c.nascimento ? c.nascimento.slice(8, 10) + '/' + c.nascimento.slice(5, 7) : '';
+      // ficha: frequência, chá favorito, pacote, vendedora, gasto 12 meses
+      const dias = [...new Set(c.cupons.map((k) => k.day))].sort((a, b) => a - b);
+      c.intervalo = dias.length >= 2 ? (dias[dias.length - 1] - dias[0]) / (dias.length - 1) : null;
+      const diasCha = new Set(), porCha = new Map(), porTam = new Map(), porVend = new Map();
+      c.gasto12 = 0; c.gasto12ant = 0;
+      for (const k of c.cupons) {
+        cuponsCPF.set(k.cupom + '|' + k.lojaId, c);
+        if (k.day > hoje - 365) c.gasto12 += k.vt; else if (k.day > hoje - 730) c.gasto12ant += k.vt;
+        for (const i of k.itens) {
+          if (taxas.has(db.desc[i])) continue;
+          const v = db.D.vendedor[db.vend[i]];
+          if (v) porVend.set(v, (porVend.get(v) || 0) + (db.vt[i] || 0));
+          if (!cha.has(db.grupo[i])) continue;
+          diasCha.add(k.day);
+          porCha.set(db.prod[i], (porCha.get(db.prod[i]) || 0) + (db.qtd[i] || 0));
+          if (db.so[i]) porTam.set(db.so[i], (porTam.get(db.so[i]) || 0) + (db.qtd[i] || 0));
+        }
+      }
+      const maior = (m) => { let b = null; for (const [k, v] of m) if (!b || v > b[1]) b = [k, v]; return b ? b[0] : null; };
+      const fav = maior(porCha);
+      c.chaFavorito = fav != null ? db.D.produto[fav] : null;
+      c.pacote = maior(porTam);
+      c.vendedora = maior(porVend);
+      const dc = [...diasCha].sort((a, b) => a - b);
+      c.intervaloCha = dc.length >= 2 ? (dc[dc.length - 1] - dc[0]) / (dc.length - 1) : null;
+      c.ultimaCha = dc.length ? dc[dc.length - 1] : null;
+      c.proxCha = c.intervaloCha ? Math.round(c.ultimaCha + c.intervaloCha) : null;
       lista.push(c);
     }
-    TS.cli = { lista, semVendaTotal, soSemVenda, cuponsXml: db.xml.length, cidades: [...new Set(db.clientes.map((c) => c.cidade).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR')) };
+    // segmentos (sobre o histórico todo)
+    const gastos = lista.map((c) => c.gasto12).filter((v) => v > 0).sort((a, b) => b - a);
+    const corteVip = gastos.length >= 10 ? gastos[Math.floor(gastos.length * 0.1) - 1] : Infinity;
+    const hojeD = new Date(), mesHoje = hojeD.getUTCMonth(), anoHoje = hojeD.getUTCFullYear();
+    const proximos7 = new Set(Array.from({ length: 8 }, (_, k) => { const d = new Date(Date.now() + k * 864e5); return String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }));
+    for (const c of lista) {
+      const t = new Set();
+      const p = new Date(c.primeira * 864e5);
+      if (p.getUTCMonth() === mesHoje && p.getUTCFullYear() === anoHoje) t.add('novo');
+      if (c.cupons.filter((k) => k.day > hoje - 365).length >= 5) t.add('fiel');
+      if (c.gasto12 > 0 && c.gasto12 >= corteVip) t.add('vip');
+      if (c.visitas === 1 && c.ausencia >= 30) t.add('uma');
+      if (c.visitas >= 3 && c.intervalo && c.ausencia > Math.max(2 * c.intervalo, 60)) t.add('sumido');
+      if (c.proxCha != null && hoje >= c.proxCha - 3 && hoje <= c.proxCha + 45) t.add('repor');
+      if (c.nascimento && proximos7.has(c.nascimento.slice(5, 10))) t.add('aniv');
+      c.tags = t;
+    }
+    TS.cli = { lista, semVendaTotal, soSemVenda, cuponsXml: db.xml.length, cuponsCPF, contatos: (TS.cli && TS.cli.contatos) || null, cidades: [...new Set(db.clientes.map((c) => c.cidade).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR')) };
   };
+  // ---------- contatos (contatado / não quer mensagens), guardados por loja no servidor ----------
+  const NOMES_SEG = { hoje: 'Contatar hoje', aniv: 'Aniversário (7 dias)', sumido: 'Sumidos', repor: 'Hora de repor', novo: 'Novos do mês', fiel: 'Fiéis', vip: 'VIP', uma: 'Uma compra só' };
+  const DICA_SEG = {
+    hoje: 'Aniversariantes da semana, sumidos e quem está na hora de repor — sem quem já foi contatado nos últimos 30 dias ou não quer mensagens.',
+    aniv: 'Fazem aniversário nos próximos 7 dias.',
+    sumido: 'Compraram 3 vezes ou mais e estão sem vir há mais que o dobro do intervalo de costume (e mais de 60 dias).',
+    repor: 'Pelo intervalo entre as compras de chá da própria pessoa, o pacote deve estar acabando.',
+    novo: 'Primeira compra neste mês.', fiel: '5 compras ou mais nos últimos 12 meses.', vip: 'Os 10% que mais gastaram nos últimos 12 meses.', uma: 'Compraram uma vez só (há 30 dias ou mais) e não voltaram.',
+  };
+  const lojaIdDe = (c) => {
+    const nomeVenda = TS.db.D.loja[c.cupons[0].lojaId];
+    const m = (TS.db.metas || []).find((x) => (x.nomesVenda || []).includes(nomeVenda));
+    return m ? m.id : (TS.db.metas[0] && TS.db.metas[0].id);
+  };
+  const contatoDe = (c) => (TS.cli.contatos ? TS.cli.contatos[c.cpf] : null);
+  let carregandoContatos = false;
+  function carregarContatos() {
+    if (TS.cli.contatos || carregandoContatos) return;
+    if (TS.demo) { TS.cli.contatos = {}; return; }
+    carregandoContatos = true;
+    fetch('/api/contatos?loja=' + encodeURIComponent(state.loja || ''), { credentials: 'same-origin' }).then((r) => r.json())
+      .then((j) => { TS.cli.contatos = j.contatos || {}; if (state.page === 'clientes') TS.render(); })
+      .catch(() => { TS.cli.contatos = {}; }).finally(() => { carregandoContatos = false; });
+  }
+  async function marcar(c, acao, motivo) {
+    const loja = lojaIdDe(c);
+    let novo;
+    if (TS.demo) {
+      const a = { ...(TS.cli.contatos[c.cpf] || {}) };
+      if (acao === 'contatado') Object.assign(a, { em: new Date().toISOString(), por: 'você', motivo });
+      if (acao === 'optout') a.optout = true;
+      if (acao === 'aceita') delete a.optout;
+      if (acao === 'limpar') { delete a.em; delete a.motivo; }
+      novo = a;
+    } else {
+      const r = await fetch('/api/contatos', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-Painel': '1' }, body: JSON.stringify({ loja, cpf: c.cpf, acao, motivo }) });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.erro || 'Falha ao salvar.');
+      novo = j.contato ? { ...j.contato, loja } : null;
+    }
+    if (novo && Object.keys(novo).length) TS.cli.contatos[c.cpf] = novo; else delete TS.cli.contatos[c.cpf];
+  }
+  // modelos de mensagem (editáveis em Configurações → Lojas → Mensagens de WhatsApp)
+  TS.WPP_PADRAO = [
+    { nome: 'Aniversário', texto: 'Oi, {nome}! A equipe da {loja} deseja um feliz aniversário 🎉 Que tal passar aqui esta semana para comemorar com um chá?' },
+    { nome: 'Sentimos sua falta', texto: 'Oi, {nome}! Faz um tempinho que você não passa na {loja}. Chegaram novidades que têm a sua cara — vem provar! 🍵' },
+    { nome: 'Hora de repor', texto: 'Oi, {nome}! Seu {cha} já deve estar acabando 🍵 Quer que a gente separe um pacote para você na {loja}?' },
+    { nome: 'Novidades', texto: 'Oi, {nome}! Temos novidades na {loja} e lembrei de você. Posso te mandar as opções?' },
+  ];
+  const modelosDe = (lojaId) => { const m = (TS.db.metas || []).find((x) => x.id === lojaId); return (m && m.wpp && m.wpp.length ? m.wpp : TS.WPP_PADRAO); };
+  const primeiroNome = (n) => { const p = String(n || '').trim().split(/\s+/)[0] || ''; return p ? p[0].toUpperCase() + p.slice(1).toLowerCase() : ''; };
+  function textoWpp(modelo, c) {
+    const lid = lojaIdDe(c);
+    const loja = ((TS.lojas || []).find((l) => l.id === lid) || {}).nome || 'Tea Shop';
+    return modelo.texto.replace(/\{nome\}/g, primeiroNome(c.nome) || 'tudo bem').replace(/\{loja\}/g, loja).replace(/\{cha\}/g, c.chaFavorito || 'chá');
+  }
+  const linkWpp = (c, txt) => (TS.demo ? '#demo' : c.wpp + '?text=' + encodeURIComponent(txt));
+
   const digits = (s) => String(s || '').replace(/\D/g, '');
   function idade(iso) {
     if (!iso) return null;
@@ -140,6 +245,13 @@
       if (aMin != null && c.ausencia < aMin) continue;
       if (aMax != null && c.ausencia > aMax) continue;
       if (s.aniv && (!c.nascimento || c.nascimento.slice(5, 7) !== s.aniv)) continue;
+      if (s.seg) {
+        const ct = contatoDe(c);
+        if (s.seg === 'hoje') {
+          if (!(c.tags.has('aniv') || c.tags.has('sumido') || c.tags.has('repor'))) continue;
+          if (ct && (ct.optout || (ct.em && Date.now() - Date.parse(ct.em) < 30 * 864e5))) continue;
+        } else if (!c.tags.has(s.seg)) continue;
+      }
       if (s.cidade.size && !s.cidade.has(c.cidade)) continue;
       let cupons = c.cupons;
       if (dDe != null || dAte != null) cupons = cupons.filter((k) => (dDe == null || k.day >= dDe) && (dAte == null || k.day <= dAte));
@@ -170,6 +282,7 @@
     const db = TS.db, s = state.cli;
     root.append(h('div', { class: 'page-head' }, h('div', null, h('h1', { class: 'page-title' }, 'Clientes'), h('div', { class: 'page-sub' }, 'Cupons identificados por CPF, com histórico de compras e contato'))));
     if (!db.xml.length) { root.append(h('div', { class: 'notice' }, 'A planilha "Xml" (cupons com CPF) não foi carregada.')); return; }
+    carregarContatos();
     const lista = filtrar();
     if (TS.cli.semVendaTotal) {
       const pct = TS.cli.semVendaTotal / TS.cli.cuponsXml;
@@ -209,10 +322,14 @@
     mais.addEventListener('click', paint);
     paint();
 
+    const segBar = h('div', { class: 'cli-segs' }, h('span', { class: 'f-label' }, 'Segmentos:'),
+      Object.entries(NOMES_SEG).map(([k, nome]) => h('button', { type: 'button', class: 'chip' + (s.seg === k ? ' on' : '') + (k === 'hoje' ? ' chip-destaque' : ''), title: DICA_SEG[k], onclick: () => { s.seg = s.seg === k ? '' : k; TS.render(); } }, nome)),
+      s.seg ? h('small', { class: 'muted cli-seg-dica' }, DICA_SEG[s.seg]) : null);
     const ordSel = TS.seg([['Mais recentes', 'recente'], ['Maior valor', 'valor'], ['Mais visitas', 'visitas'], ['Mais tempo sem vir', 'ausencia'], ['Nome', 'nome']], ordem, (v) => { s.ordem = v; TS.render(); });
     const csv = h('button', { class: 'btn', type: 'button', onclick: () => baixarCSV(lista) }, 'Baixar lista (CSV)');
-    const listaCard = TS.cardWithTools('Lista de clientes', 'Clique num cliente para ver os cupons e os itens', h('div', { class: 'table-tools' }, ordSel, csv),
-      lista.length ? listBox : TS.empty('Nenhum cliente com esses filtros.'), mais);
+    const csvWpp = h('button', { class: 'btn', type: 'button', title: 'Só nome e celular de quem tem WhatsApp e não pediu para não receber mensagens', onclick: () => baixarCSVWpp(lista) }, 'Lista para WhatsApp (CSV)');
+    const listaCard = TS.cardWithTools('Lista de clientes', 'Clique num cliente para ver a ficha, os cupons e os itens', h('div', { class: 'table-tools' }, ordSel, csv, csvWpp),
+      segBar, lista.length ? listBox : TS.empty('Nenhum cliente com esses filtros.'), mais);
 
     // ---- painéis laterais
     const lado = h('div', { class: 'grid', style: { alignContent: 'start' } });
@@ -248,7 +365,10 @@
       options: { plugins: { legend: { display: false }, valueLabels: { display: true, format: (v) => `${v} (${fmt.pct(v / comData, 0)})` } }, scales: { y: { display: false, grace: '15%' }, x: TS.axisCat } },
     }, 'short') : TS.empty()));
 
+    const junto = cartaoLevamJunto();
+    if (junto) lado.prepend(junto);
     root.append(h('div', { class: 'grid g-2-1 mt', style: { alignItems: 'start' } }, listaCard, lado));
+    root.append(...baseDeClientes(lista));
   };
 
   function clienteCard(r) {
@@ -264,6 +384,8 @@
           c.idade != null ? h('span', null, `${c.idade} anos`) : null,
           c.aniv ? h('span', null, '🎂 ' + c.aniv) : null,
           c.cidade ? h('span', null, c.cidade) : null,
+          ...[...(c.tags || [])].map((t) => h('span', { class: 'cli-tag t-' + t, title: DICA_SEG[t] }, NOMES_SEG[t])),
+          (() => { const ct = contatoDe(c); return ct && ct.optout ? h('span', { class: 'cli-tag t-optout', title: 'Pediu para não receber mensagens' }, 'não quer mensagens') : ct && ct.em ? h('span', { class: 'cli-tag t-contato', title: `Contatado por ${ct.por || '?'}${ct.motivo ? ' · ' + ct.motivo : ''}` }, 'contatado ' + fmt.date(ct.em.slice(0, 10))) : null; })(),
           c.wpp ? h('a', { class: 'wpp', href: c.wpp, target: TS.demo ? null : '_blank', rel: 'noopener', title: TS.demo ? 'Na apresentação o WhatsApp não abre (número fictício)' : null, onclick: (e) => { e.stopPropagation(); if (TS.demo) e.preventDefault(); } }, '● WhatsApp') : null)),
       h('div', { class: 'cli-stat' }, fmt.int(r.visitas), h('small', null, 'visitas')),
       h('div', { class: 'cli-stat' }, fmt.brl0(r.vt), h('small', null, 'total')),
@@ -279,6 +401,7 @@
       head.setAttribute('aria-expanded', String(aberto));
       if (aberto && !body.childElementCount) {
         const pma = r.qtd ? r.vt / r.qtd : null, ipa = r.visitas ? r.qtd / r.visitas : null;
+        body.append(fichaCliente(c), acoesCliente(c));
         body.append(h('div', { class: 'cli-meta', style: { margin: '4px 0 2px' } },
           h('span', null, `PMA ${fmt.brl(pma)}`), h('span', null, `IPA ${fmt.n2(ipa)}`), h('span', null, `${fmt.int(r.qtd)} itens`),
           c.celular ? h('span', null, `Tel. ${c.celular}`) : null, c.email ? h('span', null, c.email) : null,
@@ -300,15 +423,195 @@
     card.append(head, body);
     return card;
   }
+  // ---------- quem leva X também leva ----------
+  function cartaoLevamJunto() {
+    const s = state.cli, db = TS.db;
+    const q = TS.norm(s.produto);
+    if (!q) return null;
+    const dDe = s.de ? TS.isoToDay(s.de) : -Infinity, dAte = s.ate ? TS.isoToDay(s.ate) : Infinity;
+    const taxas = TS.rules.ids.taxas;
+    const alvo = new Uint8Array(db.D.descricao.length);
+    db.D.descricao.forEach((t, i) => { if (TS.norm(t).includes(q)) alvo[i] = 1; });
+    const porCupom = new Map(); // cupons do período que têm o produto
+    for (let i = 0; i < db.n; i++) {
+      if (db.day[i] < dDe || db.day[i] > dAte) continue;
+      if (alvo[db.desc[i]]) porCupom.set(db.cupom[i] + '|' + db.loja[i], true);
+    }
+    if (!porCupom.size) return TS.card(`Quem leva "${s.produto}"`, 'também leva…', TS.empty('Nenhuma venda desse produto no período.'));
+    const cont = new Map();
+    const vistos = new Set();
+    for (let i = 0; i < db.n; i++) {
+      const k = db.cupom[i] + '|' + db.loja[i];
+      if (!porCupom.has(k) || alvo[db.desc[i]] || taxas.has(db.desc[i])) continue;
+      const kp = k + '#' + db.prod[i];
+      if (vistos.has(kp)) continue;
+      vistos.add(kp);
+      cont.set(db.prod[i], (cont.get(db.prod[i]) || 0) + 1);
+    }
+    const top = [...cont].sort((a, b) => b[1] - a[1]).slice(0, 8);
+    return TS.card(`Quem leva "${s.produto}"`, `também leva… (${fmt.int(porCupom.size)} cupons com o produto, de todas as vendas do período)`,
+      top.length ? h('ul', { class: 'cli-junto' }, top.map(([p, n]) => h('li', null, h('span', null, db.D.produto[p]), h('b', null, fmt.pct(n / porCupom.size, 0))))) : TS.empty('Sempre comprado sozinho.'));
+  }
+
+  // ---------- indicadores da base e vendedoras ----------
+  function baseDeClientes(lista) {
+    const s = state.cli, db = TS.db;
+    const dDe = s.de ? TS.isoToDay(s.de) : -Infinity, dAte = s.ate ? TS.isoToDay(s.ate) : Infinity;
+    const taxas = TS.rules.ids.taxas;
+    const lojasOk = s.lojas.size ? s.lojas : null;
+    // todas as vendas do período: cupons por vendedora e com/sem CPF
+    const cupons = new Map(); // "cupom|loja" → { vt, vends:Set }
+    for (let i = 0; i < db.n; i++) {
+      if (db.day[i] < dDe || db.day[i] > dAte) continue;
+      if (lojasOk && !lojasOk.has(db.loja[i])) continue;
+      const v = db.D.vendedor[db.vend[i]];
+      if (!v || /^sem vendedor$/i.test(v)) continue;
+      const k = db.cupom[i] + '|' + db.loja[i];
+      let x = cupons.get(k);
+      if (!x) cupons.set(k, (x = { vt: 0, vends: new Set() }));
+      if (!taxas.has(db.desc[i])) x.vt += db.vt[i] || 0;
+      x.vends.add(v);
+    }
+    let nTot = 0, vtTot = 0, nCpf = 0, vtCpf = 0;
+    const porVend = new Map();
+    const pv = (v) => { let a = porVend.get(v); if (!a) porVend.set(v, (a = { nome: v, cupons: 0, cpf: 0, novos: 0, voltaram: 0 })); return a; };
+    for (const [k, x] of cupons) {
+      const temCpf = TS.cli.cuponsCPF.has(k);
+      nTot++; vtTot += x.vt;
+      if (temCpf) { nCpf++; vtCpf += x.vt; }
+      for (const v of x.vends) { const a = pv(v); a.cupons++; if (temCpf) a.cpf++; }
+    }
+    // clientes novos no período: a primeira compra foi atendida por quem?
+    for (const c of TS.cli.lista) {
+      if (c.primeira < dDe || c.primeira > dAte) continue;
+      const k1 = c.cupons[c.cupons.length - 1];
+      if (lojasOk && !lojasOk.has(k1.lojaId)) continue;
+      for (const v of new Set(k1.itens.map((i) => db.D.vendedor[db.vend[i]]).filter((v) => v && !/^sem vendedor$/i.test(v)))) {
+        const a = pv(v); a.novos++; if (c.visitas >= 2) a.voltaram++;
+      }
+    }
+    const recompra = lista.length ? lista.filter((r) => r.visitas >= 2).length / lista.length : null;
+    const kpis = h('div', { class: 'grid g-kpi' },
+      TS.kpi('Vendas com CPF', fmt.pct(nTot ? nCpf / nTot : null, 1), `${fmt.int(nCpf)} de ${fmt.int(nTot)} cupons do período`, 'Cupons de venda em que o cliente informou o CPF (e a nota foi encontrada)'),
+      TS.kpi('Ticket do cliente identificado', fmt.brl(nCpf ? vtCpf / nCpf : null), h('span', null, 'geral: ', fmt.brl(nTot ? vtTot / nTot : null))),
+      TS.kpi('Recompra', fmt.pct(recompra, 0), 'dos clientes da lista compraram 2 vezes ou mais no período'),
+      TS.kpi('Clientes novos no período', fmt.int(TS.cli.lista.filter((c) => c.primeira >= dDe && c.primeira <= dAte).length), 'primeira compra identificada'));
+    // novos × recorrentes por mês (últimos 12 meses do período)
+    const fim = Number.isFinite(dAte) ? dAte : TS.todayDay();
+    const meses = [];
+    { const f = new Date(fim * 864e5); for (let k = 11; k >= 0; k--) { const d = new Date(Date.UTC(f.getUTCFullYear(), f.getUTCMonth() - k, 1)); meses.push(d.toISOString().slice(0, 7)); } }
+    const ymDe = (day) => new Date(day * 864e5).toISOString().slice(0, 7);
+    const nov = Object.fromEntries(meses.map((m) => [m, 0])), rec = Object.fromEntries(meses.map((m) => [m, 0]));
+    for (const c of TS.cli.lista) {
+      const ymPrim = ymDe(c.primeira);
+      const noMes = new Set();
+      for (const k of c.cupons) { if (lojasOk && !lojasOk.has(k.lojaId)) continue; const ym = ymDe(k.day); if (ym in nov) noMes.add(ym); }
+      for (const ym of noMes) { if (ym === ymPrim) nov[ym]++; else rec[ym]++; }
+    }
+    const grafico = TS.card('Clientes por mês', 'Novos (primeira compra no mês) × recorrentes — clientes identificados por CPF', TS.chart({
+      type: 'bar',
+      data: { labels: meses.map(TS.ymLabel), datasets: [
+        { label: 'Novos', data: meses.map((m) => nov[m]), backgroundColor: '#C9A227', borderRadius: 3 },
+        { label: 'Recorrentes', data: meses.map((m) => rec[m]), backgroundColor: '#2C5234', borderRadius: 3 }] },
+      options: { plugins: { tooltip: { mode: 'index', intersect: false } }, scales: { x: { stacked: true, ...TS.axisCat }, y: { stacked: true, ...TS.axisNum(fmt.int) } } },
+    }));
+    const rows = [...porVend.values()].filter((a) => a.cupons > 0).map((a) => ({ ...a, pct: a.cupons ? a.cpf / a.cupons : null, pctVolta: a.novos ? a.voltaram / a.novos : null }));
+    const tab = TS.table({
+      cols: [
+        { key: 'nome', label: 'Vendedora', align: 'l' },
+        { key: 'cupons', label: 'Cupons', fmt: fmt.int },
+        { key: 'cpf', label: 'Com CPF', fmt: fmt.int },
+        { key: 'pct', label: '% com CPF', fmt: (v) => fmt.pct(v, 0) },
+        { key: 'novos', label: 'Clientes novos', fmt: fmt.int },
+        { key: 'voltaram', label: 'Voltaram', fmt: fmt.int },
+        { key: 'pctVolta', label: '% voltaram', fmt: (v) => (v == null ? '—' : fmt.pct(v, 0)) },
+      ],
+      rows, sortKey: 'pct',
+      total: { nome: 'Total', cupons: nTot, cpf: nCpf, pct: nTot ? nCpf / nTot : null, novos: rows.reduce((t, r) => t + r.novos, 0), voltaram: rows.reduce((t, r) => t + r.voltaram, 0) },
+    });
+    return [TS.section('Base de clientes'), kpis,
+      h('div', { class: 'grid mt', style: { alignItems: 'start' } }, grafico,
+        TS.card('Vendedoras e clientes', '% de vendas com CPF (pedir o CPF faz a base crescer) · clientes novos = primeira compra atendida por ela · voltaram = compraram de novo depois', tab))];
+  }
+
+  // ---------- ficha e ações ----------
+  function fichaCliente(c) {
+    const hoje = TS.todayDay();
+    const d = (day) => fmt.date(TS.dayToIso(day));
+    const varia = c.gasto12ant > 0 ? c.gasto12 / c.gasto12ant - 1 : null;
+    const linhas = [
+      ['Cliente desde', d(c.primeira)],
+      ['Vem a cada', c.intervalo ? `${fmt.int(Math.round(c.intervalo))} dias, em média` : 'uma compra só'],
+      ['Próxima visita esperada', c.intervalo ? (() => { const p = Math.round(c.ultima + c.intervalo); return p < hoje ? `${d(p)} (atrasada ${fmt.int(hoje - p)} d)` : d(p); })() : '—'],
+      ['Chá favorito', c.chaFavorito || '—'],
+      ['Pacote preferido', c.pacote ? `${c.pacote} g` : '—'],
+      ['Hora de repor o chá', c.proxCha ? (c.proxCha <= hoje ? `já passou (${d(c.proxCha)})` : `por volta de ${d(c.proxCha)}`) : '—'],
+      ['Mais atendida por', c.vendedora || '—'],
+      ['Gasto últimos 12 meses', [fmt.brl(c.gasto12), varia != null ? h('em', { class: varia >= 0 ? 'pos' : 'neg' }, ` (${fmt.delta(varia)} vs. 12 meses antes)`) : null]],
+    ];
+    return h('div', { class: 'cli-ficha' }, linhas.map(([k, v]) => h('div', null, h('span', null, k), h('b', null, v))));
+  }
+  function acoesCliente(c) {
+    const box = h('div', { class: 'cli-acoes' });
+    const pintar = () => {
+      const ct = contatoDe(c) || {};
+      box.replaceChildren();
+      if (ct.optout) {
+        box.append(h('span', { class: 'muted' }, 'Pediu para não receber mensagens. '), h('button', { type: 'button', class: 'btn', onclick: () => agir('aceita') }, 'Voltou a aceitar'));
+        return;
+      }
+      if (c.wpp) {
+        const mods = modelosDe(lojaIdDe(c));
+        const sugerido = c.tags.has('aniv') ? 'Aniversário' : c.tags.has('repor') ? 'Hora de repor' : c.tags.has('sumido') || c.tags.has('uma') ? 'Sentimos sua falta' : 'Novidades';
+        const sel = h('select', { class: 'f-input', 'aria-label': 'Modelo de mensagem' }, mods.map((m, k) => h('option', { value: k, selected: m.nome === sugerido || null }, m.nome)));
+        const prev = h('div', { class: 'cli-msg' });
+        const atual = () => mods[+sel.value];
+        const pv = () => { prev.textContent = textoWpp(atual(), c); };
+        sel.addEventListener('change', pv); pv();
+        box.append(h('div', { class: 'cli-wpp' }, h('span', { class: 'f-label' }, 'Mensagem pronta'), sel, prev,
+          h('div', { class: 'cfg-inline' },
+            h('a', { class: 'btn primary', href: '#', onclick: async (e) => {
+              e.preventDefault();
+              if (TS.demo) { alert('Na apresentação o WhatsApp não abre (número fictício). A mensagem seria:\n\n' + textoWpp(atual(), c)); }
+              else window.open(linkWpp(c, textoWpp(atual(), c)), '_blank', 'noopener');
+              try { await marcar(c, 'contatado', atual().nome); pintar(); } catch (er) { alert(er.message); }
+            } }, 'Abrir no WhatsApp'),
+            h('small', { class: 'muted' }, 'Ao abrir, o cliente fica marcado como contatado.'))));
+      }
+      box.append(h('div', { class: 'cfg-inline cli-botoes' },
+        ct.em ? h('span', { class: 'muted' }, `Contatado em ${fmt.date(ct.em.slice(0, 10))}${ct.por ? ' por ' + ct.por : ''}${ct.motivo ? ' (' + ct.motivo + ')' : ''}.`) : null,
+        h('button', { type: 'button', class: 'btn', onclick: () => agir('contatado', 'ligação/outro') }, ct.em ? 'Marcar contato de novo' : 'Marcar como contatado'),
+        ct.em ? h('button', { type: 'button', class: 'btn', onclick: () => agir('limpar') }, 'Desfazer contato') : null,
+        h('button', { type: 'button', class: 'btn ghost-danger', title: 'LGPD: a pessoa sai das listas de contato e da exportação para WhatsApp', onclick: () => { if (confirm('Marcar que este cliente NÃO quer receber mensagens?')) agir('optout'); } }, 'Não quer mensagens')));
+    };
+    const agir = async (acao, motivo) => { try { await marcar(c, acao, motivo); pintar(); } catch (e) { alert(e.message); } };
+    pintar();
+    return box;
+  }
+
   const fmtCPF = (s) => (s && s.length === 11 ? `${s.slice(0, 3)}.${s.slice(3, 6)}.${s.slice(6, 9)}-${s.slice(9)}`
     : s && s.length === 14 ? `${s.slice(0, 2)}.${s.slice(2, 5)}.${s.slice(5, 8)}/${s.slice(8, 12)}-${s.slice(12)}` : s || '');
 
+  /** para lista de transmissão / campanha: só quem tem WhatsApp e não pediu para não receber mensagens */
+  function baixarCSVWpp(lista) {
+    const ok = lista.filter((r) => r.c.wpp && !(contatoDe(r.c) || {}).optout);
+    if (!ok.length) { alert('Nenhum cliente da lista tem WhatsApp (ou todos pediram para não receber mensagens).'); return; }
+    const esc = (v) => { const s = v == null ? '' : String(v); return /[;"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+    const cel = (c) => { const d = c.celular.replace(/\D/g, ''); return d.startsWith('55') && d.length >= 12 ? '+' + d : '+55' + d; };
+    const linhas = [['Nome', 'Celular'].join(';'), ...ok.map((r) => [r.c.nome, TS.demo ? '' : cel(r.c)].map(esc).join(';'))];
+    const blob = new Blob(['\ufeff' + linhas.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+    const a = h('a', { href: URL.createObjectURL(blob), download: `whatsapp-teashop-${new Date().toISOString().slice(0, 10)}.csv` });
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+
   function baixarCSV(lista) {
     const esc = (v) => { const s = v == null ? '' : String(v); return /[;"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
-    const linhas = [['Nome', 'CPF', 'Celular', 'WhatsApp', 'E-mail', 'Cidade', 'Nascimento', 'Visitas', 'Total (R$)', 'Última compra', 'Dias sem comprar'].join(';')];
+    const linhas = [['Nome', 'CPF', 'Celular', 'WhatsApp', 'E-mail', 'Cidade', 'Nascimento', 'Visitas', 'Total (R$)', 'Última compra', 'Dias sem comprar', 'Segmentos', 'Chá favorito', 'Aceita mensagens', 'Último contato'].join(';')];
     for (const r of lista) {
-      const c = r.c;
-      linhas.push([c.nome, fmtCPF(c.cpf), c.celular, TS.demo ? '' : c.wpp || '', c.email, c.cidade, c.nascimento ? fmt.date(c.nascimento) : '', r.visitas, r.vt.toFixed(2).replace('.', ','), c.ultima != null ? fmt.date(TS.dayToIso(c.ultima)) : '', c.ausencia ?? ''].map(esc).join(';'));
+      const c = r.c, ct = contatoDe(c) || {};
+      linhas.push([c.nome, fmtCPF(c.cpf), c.celular, TS.demo ? '' : c.wpp || '', c.email, c.cidade, c.nascimento ? fmt.date(c.nascimento) : '', r.visitas, r.vt.toFixed(2).replace('.', ','), c.ultima != null ? fmt.date(TS.dayToIso(c.ultima)) : '', c.ausencia ?? '',
+        [...(c.tags || [])].map((t) => NOMES_SEG[t]).join(', '), c.chaFavorito || '', ct.optout ? 'Não' : 'Sim', ct.em ? fmt.date(ct.em.slice(0, 10)) : ''].map(esc).join(';'));
     }
     const blob = new Blob(['﻿' + linhas.join('\r\n')], { type: 'text/csv;charset=utf-8' });
     const a = h('a', { href: URL.createObjectURL(blob), download: `clientes-teashop-${new Date().toISOString().slice(0, 10)}.csv` });

@@ -161,7 +161,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
       return {
         logo: !!arquivoLogo(l.id), operacao: l.operacao, ferias: l.ferias,
         metaAuto: l.metaAuto, totaisSemEG: totaisSemEG(l.id),
-        id: l.id, nome: l.nome, appnext: l.appnext, meta: l.meta, metas: l.metas, criadaEm: l.criadaEm, regras: l.regras, marca: l.marca,
+        id: l.id, nome: l.nome, appnext: l.appnext, meta: l.meta, metas: l.metas, criadaEm: l.criadaEm, regras: l.regras, marca: l.marca, wppModelos: l.wppModelos,
         nomesVenda: (() => { const raw = rawDe(l.id); return raw ? [...new Set(raw.vendas.slice(-500).map((v) => v.loja).filter(Boolean))] : []; })(),
         base: B.resumo(l.id), xml: XB.resumo(l.id), fechEmail: NOTIF.publicoLoja(l.id), fontes, vendedores: vendedoresDe(l.id),
         coletor: env ? { configurado: true, rede: env.APPNEXT_REDE || '', usuario: env.APPNEXT_USER || '', temSenha: !!env.APPNEXT_PASS, lojaDestino: env.APPNEXT_LOJA_DESTINO || '', lojaIdDestino: env.APPNEXT_LOJA_ID_DESTINO || '' } : { configurado: false },
@@ -392,6 +392,17 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     C.alterar((cfg) => { cfg.lojas.find((x) => x.id === req.loja.id).ferias = limpa; });
     aud(req, 'alterou férias', req.loja.id, { loja: req.loja.id, periodos: limpa.map((f) => `${f.vendedor} ${f.de}→${f.ate}`) });
     depois();
+    res.json({ ok: true });
+  });
+
+  // ---------- modelos de mensagem de WhatsApp (tela Clientes) ----------
+  r.put('/lojas/:id/wpp-modelos', lojaPermitida, json, (req, res) => {
+    const lista = Array.isArray(req.body.modelos) ? req.body.modelos : null;
+    if (!lista || lista.length > 12) return res.status(400).json({ erro: 'Lista de modelos inválida (até 12).' });
+    const limpos = lista.map((m) => ({ nome: semQuebra(m.nome).slice(0, 40), texto: String(m.texto || '').replace(/\r/g, '').slice(0, 700) })).filter((m) => m.nome && m.texto);
+    C.alterar((cfg) => { cfg.lojas.find((x) => x.id === req.loja.id).wppModelos = limpos; });
+    aud(req, 'alterou modelos de WhatsApp', req.loja.id, { loja: req.loja.id, modelos: limpos.length });
+    pacoteLimpar();
     res.json({ ok: true });
   });
 

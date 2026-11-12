@@ -790,3 +790,31 @@ body.com-camada { overflow: hidden; }
 .cfg-dest-lista li { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; background: var(--cream-2); border-radius: 8px; padding: 6px 10px; font-size: 13px; }
 .cupom-items tr.taxa td { color: #8a948d; font-style: italic; }
 .cli-emp { background: #E7EEF7; color: #1F4E8C; border-radius: 6px; padding: 0 6px; font-size: 11px; font-weight: 600; }
+/* ---------- clientes: segmentos, ficha, ações ---------- */
+.cli-segs { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 2px 0 12px; }
+.cli-segs .f-label { margin: 0 4px 0 0; }
+.cli-segs .chip-destaque { border-color: #C9A227; font-weight: 700; }
+.cli-seg-dica { flex-basis: 100%; }
+.cli-tag { border-radius: 6px; padding: 0 6px; font-size: 11px; font-weight: 600; background: #EEE9DF; color: #5b4a12; }
+.cli-tag.t-sumido { background: #F6DCD3; color: #8E321C; }
+.cli-tag.t-repor { background: #E3EDE1; color: #2C5234; }
+.cli-tag.t-aniv { background: #F3EBCF; color: #7a5a00; }
+.cli-tag.t-vip, .cli-tag.t-fiel { background: #E7EEF7; color: #1F4E8C; }
+.cli-tag.t-optout { background: #F6DCD3; color: #8E321C; }
+.cli-tag.t-contato { background: #E9F1E6; color: #2C5234; }
+.cli-ficha { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px 14px; margin: 8px 0 10px; font-size: 12.5px; }
+.cli-ficha > div { display: flex; flex-direction: column; background: #fff; border: 1px solid var(--line, #E2DCCF); border-radius: 8px; padding: 6px 9px; }
+.cli-ficha span { color: var(--muted); font-size: 11px; }
+.cli-acoes { display: grid; gap: 8px; margin: 4px 0 12px; }
+.cli-wpp { display: grid; gap: 6px; background: #F1F7EF; border-radius: 10px; padding: 9px 11px; }
+.cli-wpp select { max-width: 260px; }
+.cli-msg { background: #fff; border-radius: 8px; padding: 8px 10px; font-size: 13px; white-space: pre-wrap; border: 1px solid #D5E3D1; }
+.cli-botoes { flex-wrap: wrap; gap: 6px; align-items: center; }
+.cli-junto { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; }
+.cli-junto li { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; border-bottom: 1px dashed #EEE9DF; padding-bottom: 4px; }
+.cfg-wpp { display: grid; gap: 10px; margin: 8px 0; }
+.cfg-wpp-item { display: grid; gap: 5px; }
+.cfg-wpp-item textarea { min-height: 64px; font: inherit; font-size: 13px; padding: 8px; resize: vertical; }
+.cli-ficha em { font-style: normal; font-weight: 600; }
+.g-1-2 { grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr); }
+@media (max-width: 1200px) { .g-1-2 { grid-template-columns: 1fr; } }

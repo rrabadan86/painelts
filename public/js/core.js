@@ -11,7 +11,7 @@ const TS = (window.TS = {
     },
     com: { meta: null, vendBonus: '', cupom: '' },
     promo: { dias: 30 },
-    cli: { nome: '', cpf: '', cupom: '', produto: '', aniv: '', cidade: new Set(), grupos: new Set(), lojas: new Set(), visMin: '', visMax: '', ausMin: '', ausMax: '', de: '', ate: '', ordem: 'recente' },
+    cli: { nome: '', cpf: '', cupom: '', produto: '', aniv: '', cidade: new Set(), grupos: new Set(), lojas: new Set(), visMin: '', visMax: '', ausMin: '', ausMax: '', de: '', ate: '', seg: '', ordem: 'recente' },
   },
 });
 

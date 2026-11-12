@@ -105,7 +105,7 @@ async function pacote(lojas, force, perfilDados = 'completo') {
   const metaCfgs = lojas.map((l, i) => {
     const atual = cfgLojas.find((x) => x.id === l.id) || l;
     const r = entradas[i].raw;
-    return { id: l.id, nome: atual.nome, nomesVenda: r.metaCfg?.nomesVenda || [], padrao: atual.meta ?? r.metaPlanilha ?? null, meses: atual.metas || {}, metaAuto: atual.metaAuto || null, regras: atual.regras || null, operacao: atual.operacao || null, ferias: atual.ferias || [], feriadosLocais: atual.feriadosLocais || [], feriadosHoras: atual.feriadosHoras || {}, feriadosHorario: atual.feriadosHorario || {}, escalaAjustes: atual.escalaAjustes || {} };
+    return { id: l.id, nome: atual.nome, nomesVenda: r.metaCfg?.nomesVenda || [], padrao: atual.meta ?? r.metaPlanilha ?? null, meses: atual.metas || {}, metaAuto: atual.metaAuto || null, regras: atual.regras || null, operacao: atual.operacao || null, ferias: atual.ferias || [], feriadosLocais: atual.feriadosLocais || [], feriadosHoras: atual.feriadosHoras || {}, feriadosHorario: atual.feriadosHorario || {}, escalaAjustes: atual.escalaAjustes || {}, wpp: atual.wppModelos || null };
   });
   const k = entradas.map((e, i) => `${lojas[i].id}@${e.at}`).join('|') + '#' + JSON.stringify(metaCfgs) + '#' + perfilDados;
   const chave = lojas.map((l) => l.id).join(',') + '|' + perfilDados;
@@ -298,6 +298,44 @@ app.post('/trocar-senha', express.urlencoded({ extended: false }), (req, res) =>
   C.alterar((cfg) => { const x = cfg.usuarios[req.user]; x.senha = C.hashSenha(nova); x.trocarSenha = false; x.senhaTrocadaEm = new Date().toISOString(); });
   C.auditar(req.user, 'trocou a própria senha', req.user, { obrigatoria: !!u.trocarSenha });
   res.redirect('/?senha=ok');
+});
+
+// ---------- contatos com clientes (lista do dia, "contatado", não quer receber mensagens) ----------
+// dados/<loja>/contatos.json = { <cpf>: { em, por, motivo, optout, optoutEm } }
+const CPF_OK = /^\d{11}(\d{3})?$/;
+const arqContatos = (id) => path.join(C.pastaLoja(id), 'contatos.json');
+function lerContatos(id) { try { return JSON.parse(fs.readFileSync(arqContatos(id), 'utf8')); } catch { return {}; } }
+app.get('/api/contatos', (req, res) => {
+  if (!podeClientes(req)) return res.status(403).json({ erro: 'Sem permissão.' });
+  const ids = String(req.query.loja || '') === 'todas' ? req.lojas.map((l) => l.id) : [String(req.query.loja || '')];
+  const out = {};
+  for (const id of ids) {
+    if (!req.lojas.some((l) => l.id === id)) continue;
+    for (const [cpf, c] of Object.entries(lerContatos(id))) {
+      const a = out[cpf];
+      out[cpf] = !a ? { ...c, loja: id } : { ...a, ...(c.em > (a.em || '') ? { em: c.em, por: c.por, motivo: c.motivo } : {}), optout: a.optout || c.optout };
+    }
+  }
+  res.json({ contatos: out });
+});
+app.post('/api/contatos', express.json({ limit: '4kb' }), (req, res) => {
+  if (!podeClientes(req)) return res.status(403).json({ erro: 'Sem permissão.' });
+  if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
+  const { loja, cpf, acao, motivo } = req.body || {};
+  if (!req.lojas.some((l) => l.id === loja)) return res.status(400).json({ erro: 'Loja inválida.' });
+  if (!CPF_OK.test(String(cpf || ''))) return res.status(400).json({ erro: 'CPF inválido.' });
+  if (!['contatado', 'optout', 'aceita', 'limpar'].includes(acao)) return res.status(400).json({ erro: 'Ação inválida.' });
+  const todos = lerContatos(loja);
+  const c = todos[cpf] || {};
+  const agora = new Date().toISOString();
+  if (acao === 'contatado') Object.assign(c, { em: agora, por: req.user, motivo: String(motivo || '').slice(0, 40) });
+  else if (acao === 'optout') Object.assign(c, { optout: true, optoutEm: agora, optoutPor: req.user });
+  else if (acao === 'aceita') { delete c.optout; delete c.optoutEm; delete c.optoutPor; }
+  else { delete c.em; delete c.por; delete c.motivo; }
+  if (Object.keys(c).length) todos[cpf] = c; else delete todos[cpf];
+  C.gravarAtomico(arqContatos(loja), JSON.stringify(todos), 0o640);
+  if (acao === 'optout' || acao === 'aceita') C.auditar(req.user, acao === 'optout' ? 'cliente não quer contato' : 'cliente voltou a aceitar contato', loja, { loja, cpf: cpf.slice(0, 3) + '…' + cpf.slice(-2) });
+  res.json({ ok: true, contato: todos[cpf] || null });
 });
 
 app.get('/api/eu', (req, res) => {
