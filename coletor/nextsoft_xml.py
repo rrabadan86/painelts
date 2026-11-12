@@ -10,6 +10,7 @@
 #   5) Lê os XMLs e grava SAIDA_XML (JSON) com cupom, data, CPF/CNPJ e nome do destinatário
 #
 # Variáveis: as mesmas do script de vendas (APPNEXT_*, DATA_INICIO, DATA_FIM) + SAIDA_XML.
+import base64
 import io
 import json
 import os
@@ -200,6 +201,39 @@ def trocar_datas(texto, ini: date, fim: date):
     return "".join(out)
 
 
+def desembrulhar(page, dados: bytes) -> bytes:
+    """O AppNext devolve o .zip em base64 dentro de um JSON ("UEsDB..." = "PK..."),
+    às vezes direto como texto e às vezes num campo; também aceita um endereço para baixar."""
+    try:
+        j = json.loads(dados.decode("utf-8", "replace"))
+    except Exception:  # noqa: BLE001
+        j = dados.decode("latin-1").strip().strip('"')
+    textos = []
+    def coletar(v):
+        if isinstance(v, str):
+            textos.append(v)
+        elif isinstance(v, dict):
+            for x in v.values():
+                coletar(x)
+        elif isinstance(v, list):
+            for x in v:
+                coletar(x)
+    coletar(j)
+    for t in textos:
+        t = t.strip()
+        if t.startswith("data:") and "," in t:
+            t = t.split(",", 1)[1]
+        if t.startswith("UEsDB") or t.startswith("UEsFB"):
+            try:
+                return base64.b64decode(t + "=" * (-len(t) % 4))
+            except Exception:  # noqa: BLE001
+                pass
+    for t in textos:
+        if t.startswith("http"):
+            return page.request.get(t, timeout=300_000).body()
+    return dados
+
+
 def main():
     nx.start_watchdog(int(os.getenv("MAX_RUNTIME_SECONDS", "900")))
     notas, ok = {}, False
@@ -289,14 +323,7 @@ def main():
                 if not resp.ok:
                     raise RuntimeError(f"{a:%m/%Y}: AppNext respondeu {resp.status}")
                 if not dados.startswith(b"PK"):
-                    # algumas telas devolvem um JSON com o endereço do arquivo
-                    try:
-                        j = json.loads(dados.decode("utf-8", "replace"))
-                        link = next((v for v in (j.values() if isinstance(j, dict) else []) if isinstance(v, str) and v.startswith("http")), None)
-                    except Exception:
-                        link = None
-                    if link:
-                        dados = page.request.get(link, timeout=300_000).body()
+                    dados = desembrulhar(page, dados)
                     if not dados.startswith(b"PK"):
                         # não aceita "sem notas" às cegas: pode ser o pedido errado
                         raise RuntimeError(f"{a:%m/%Y}: a resposta não é um .zip ({resp.headers.get('content-type', '')}): {dados[:200]!r}")
