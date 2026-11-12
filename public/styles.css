@@ -713,3 +713,7 @@ body.perfil-vendedor #btnScript { display: none !important; }
 .sis-lista li { display: flex; gap: 8px; justify-content: space-between; font-size: 12.5px; line-height: 1.35; background: var(--cream-2); border-radius: 8px; padding: 7px 10px; }
 .sis-lista li small { color: var(--muted); flex: none; }
 .sis-pop .link-btn { font-size: 12px; }
+.t.tree.multi tr.lv2 td, .t.tree.multi tr.lv2 td.sticky-col { background: #FAF8F2; font-weight: 600; font-size: 13px; }
+.t.tree.multi td.tree-l.n2 { font-weight: 600; }
+.t.tree td.tree-l.n3 { padding-left: 82px; font-weight: 400; color: var(--ink); }
+.t.tree tr.lv3 td, .t.tree tr.lv3 td.sticky-col { background: var(--cream-2); font-size: 12.5px; }

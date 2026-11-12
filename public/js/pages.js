@@ -182,8 +182,10 @@
       if (idx && filtro) idx = idx.filter(filtro);
       return idx && idx.length ? ind(idx) : null;
     };
+    // várias lojas: Mês → Ano → Loja → Vendedor
+    const multiLoja = new Set(base.map((i) => db.loja[i])).size > 1;
     const cols = [['cupons', 'Cupons', fmt.int], ['tkm', 'TKM', fmt.brl], ['pma', 'PMA', fmt.brl], ['ipa', 'IPA', fmt.n2], ['vt', 'Faturamento', fmt.brl]];
-    const tbl = h('table', { class: 't tree' });
+    const tbl = h('table', { class: 't tree' + (multiLoja ? ' multi' : '') });
     const wrap = h('div', { class: 'table-wrap' }, tbl);
     wrap.style.maxHeight = '420px';
 
@@ -210,7 +212,7 @@
 
     function paint() {
       tbl.textContent = '';
-      const trh = h('tr', null, h('th', { class: 'l sticky-col' }, 'Mês / Ano / Vendedor'));
+      const trh = h('tr', null, h('th', { class: 'l sticky-col' }, multiLoja ? 'Mês / Ano / Loja / Vendedor' : 'Mês / Ano / Vendedor'));
       for (const [, lab] of cols) trh.append(h('th', null, lab), h('th', { title: 'Variação contra o mesmo mês do ano anterior' }, 'vs. ano ant.'));
       tbl.append(h('thead', null, trh));
       const tb = h('tbody');
@@ -223,8 +225,17 @@
           const idxY = anos.get(y), ym = `${y}-${String(m).padStart(2, '0')}`, kY = `${kM}|${y}`;
           tb.append(linha(1, kY, String(y), ind(idxY), prevDe(ym), true));
           if (!aberto.has(kY)) continue;
-          const vends = [...TS.agrupar(idxY, (i) => db.vend[i])].map(([v, vi]) => ({ v, a: ind(vi) })).sort((x, z) => z.a.vt - x.a.vt);
-          for (const { v, a } of vends) tb.append(linha(2, `${kY}|${v}`, db.D.vendedor[v], a, prevDe(ym, (i) => db.vend[i] === v), false));
+          const vendedores = (idx, nivel, chavePai, filtroPai) => {
+            const vends = [...TS.agrupar(idx, (i) => db.vend[i])].map(([v, vi]) => ({ v, a: ind(vi) })).sort((x, z) => z.a.vt - x.a.vt);
+            for (const { v, a } of vends) tb.append(linha(nivel, `${chavePai}|${v}`, db.D.vendedor[v], a, prevDe(ym, (i) => db.vend[i] === v && (!filtroPai || filtroPai(i))), false));
+          };
+          if (!multiLoja) { vendedores(idxY, 2, kY, null); continue; }
+          const lojas = [...TS.agrupar(idxY, (i) => db.loja[i])].map(([l, li]) => ({ l, li, a: ind(li) })).sort((x, z) => z.a.vt - x.a.vt);
+          for (const { l, li, a } of lojas) {
+            const kL = `${kY}|L${l}`;
+            tb.append(linha(2, kL, db.D.loja[l], a, prevDe(ym, (i) => db.loja[i] === l), true));
+            if (aberto.has(kL)) vendedores(li, 3, kL, (i) => db.loja[i] === l);
+          }
         }
       }
       if (!meses.length) tb.append(h('tr', null, h('td', { colspan: 11, class: 'l muted' }, 'Sem dados.')));
@@ -237,7 +248,10 @@
     const expandir = () => {
       for (const m of meses) {
         aberto.add('m' + m);
-        for (const y of new Set(porMes.get(m).map((i) => db.year[i]))) aberto.add(`m${m}|${y}`);
+        for (const y of new Set(porMes.get(m).map((i) => db.year[i]))) {
+          aberto.add(`m${m}|${y}`);
+          if (multiLoja) for (const i of porMes.get(m)) if (db.year[i] === y) aberto.add(`m${m}|${y}|L${db.loja[i]}`);
+        }
       }
       paint();
     };
@@ -445,7 +459,7 @@
       },
     });
     root.append(h('div', { class: 'mt' },
-      TS.cardWithTools('Evolução mensal', 'Clique em + no mês para ver os anos e no ano para ver os vendedores · variação contra o mesmo mês do ano anterior',
+      TS.cardWithTools('Evolução mensal', `Clique em + no mês para ver os anos e no ano para ver ${new Set(base.map((i) => db.loja[i])).size > 1 ? 'as lojas e, na loja, os vendedores' : 'os vendedores'} · variação contra o mesmo mês do ano anterior`,
         tabM.tools, tabM)));
     root.append(h('div', { class: 'mt' }, TS.card('Mix de vendas por vendedor', '% do faturamento de chás e acessórios · última barra = média da loja', mixChart)));
 
