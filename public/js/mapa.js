@@ -366,7 +366,7 @@
       const ab = h('input', { class: 'f-input', type: 'time', value: f.abre, disabled: f.fechado || null });
       const fe = h('input', { class: 'f-input', type: 'time', value: f.fecha, disabled: f.fechado || null });
       const upd = () => { f.fechado = fech.checked; f.abre = ab.value || f.abre; f.fecha = fe.value || f.fecha; ab.disabled = fe.disabled = f.fechado; aoMudar && aoMudar(); };
-      [fech, ab, fe].forEach((x) => x.addEventListener('change', upd));
+      fech.addEventListener('change', upd); [ab, fe].forEach((x) => TS.aoConfirmar(x, upd));
       return h('tr', null, h('td', { class: 'l' }, DIAS_NOME[i]), h('td', null, ab), h('td', null, fe), h('td', null, h('label', { class: 'cfg-check-l' }, fech, ' fechado')));
     });
     // feriados: horário próprio (padrão) ou igual ao dia da semana
@@ -376,11 +376,11 @@
     const fAb = h('input', { class: 'f-input', type: 'time', value: fer.abre, disabled: fer.mesmoDoDia || fer.fechado || null });
     const fFe = h('input', { class: 'f-input', type: 'time', value: fer.fecha, disabled: fer.mesmoDoDia || fer.fechado || null });
     const fUpd = () => { fer.mesmoDoDia = fMesmo.checked; fer.fechado = fFech.checked; fer.abre = fAb.value || fer.abre; fer.fecha = fFe.value || fer.fecha; fFech.disabled = fer.mesmoDoDia; fAb.disabled = fFe.disabled = fer.mesmoDoDia || fer.fechado; aoMudar && aoMudar(); };
-    [fMesmo, fFech, fAb, fFe].forEach((x) => x.addEventListener('change', fUpd));
+    [fMesmo, fFech].forEach((x) => x.addEventListener('change', fUpd)); [fAb, fFe].forEach((x) => TS.aoConfirmar(x, fUpd));
     linhas.push(h('tr', { class: 'linha-feriado' }, h('td', { class: 'l' }, 'Feriados'), h('td', null, fAb), h('td', null, fFe),
       h('td', null, h('label', { class: 'cfg-check-l' }, fFech, ' fechado'), h('label', { class: 'cfg-check-l' }, fMesmo, ' igual ao dia da semana'))));
     const e = op.equipe;
-    const num = (k, attrs) => { const x = h('input', { class: 'f-input', type: 'number', value: e[k], ...attrs }); x.addEventListener('change', () => { e[k] = +x.value; aoMudar && aoMudar(); }); return x; };
+    const num = (k, attrs) => { const x = h('input', { class: 'f-input', type: 'number', value: e[k], ...attrs }); TS.aoConfirmar(x, () => { e[k] = +x.value; aoMudar && aoMudar(); }); return x; };
     const esc = h('select', { class: 'f-input' }, h('option', { value: '5x2', selected: e.escala === '5x2' || null }, '5x2 (5 dias, 2 folgas)'), h('option', { value: '6x1', selected: e.escala === '6x1' || null }, '6x1 (6 dias, 1 folga)'));
     esc.addEventListener('change', () => { e.escala = esc.value; aoMudar && aoMudar(); });
     const modelo = h('select', { class: 'f-input' },
@@ -388,14 +388,14 @@
       h('option', { value: 'rodizio', selected: e.modelo === 'rodizio' || null }, 'Rodízio de domingo (folga no domingo puxa a segunda)'));
     modelo.addEventListener('change', () => { e.modelo = modelo.value; aoMudar && aoMudar(); });
     const inicio = h('input', { class: 'f-input', type: 'date', value: e.inicioRodizio || '2026-01-04' });
-    inicio.addEventListener('change', () => { if (inicio.value) { e.inicioRodizio = inicio.value; aoMudar && aoMudar(); } });
+    TS.aoConfirmar(inicio, () => { if (inicio.value) { e.inicioRodizio = inicio.value; aoMudar && aoMudar(); } });
     const ordemSemana = [6, 0, 1, 2, 3, 4, 5]; // domingo a sábado
     e.minimoDia = e.minimoDia || {};
     if (e.maxFolgaDia == null) e.maxFolgaDia = 1;
     const minimos = h('div', { class: 'op-minimos' }, ordemSemana.map((i) => {
       const d = DIAS[i];
       const x = h('input', { class: 'f-input', type: 'number', min: 1, max: 20, value: e.minimoDia[d] || 1 });
-      x.addEventListener('change', () => { e.minimoDia[d] = Math.max(1, +x.value || 1); aoMudar && aoMudar(); });
+      TS.aoConfirmar(x, () => { e.minimoDia[d] = Math.max(1, +x.value || 1); aoMudar && aoMudar(); });
       return h('label', null, h('span', null, DIAS_CURTO[i]), x);
     }));
     const pessoas = pessoasDe(e);
@@ -404,7 +404,7 @@
     const salvarPessoas = () => { e.pessoas = pessoas.map((p) => ({ ...p })); e.nomes = pessoas.map((p) => p.nome); };
     const linhasP = pessoas.map((p) => {
       const nome = h('input', { class: 'f-input', value: p.nome, maxlength: 40 });
-      nome.addEventListener('change', () => { p.nome = nome.value.trim() || p.nome; salvarPessoas(); aoMudar && aoMudar(); });
+      TS.aoConfirmar(nome, () => { p.nome = nome.value.trim() || p.nome; salvarPessoas(); aoMudar && aoMudar(); });
       const f1 = h('select', { class: 'f-input' }, optsDia(p.folga, true));
       f1.addEventListener('change', () => { p.folga = f1.value; salvarPessoas(); aoMudar && aoMudar(); });
       const f2 = h('select', { class: 'f-input' }, optsDia(p.folga2, true));

@@ -60,14 +60,14 @@
     const s = state.cli, db = TS.db, box = h('div'), rerender = () => TS.render();
     const txt = (label, key, ph, mode) => {
       const i = h('input', { class: 'f-input', type: 'search', placeholder: ph, value: s[key], inputmode: mode || null });
-      i.addEventListener('input', TS.debounce(() => { s[key] = i.value.trim(); rerender(); }, 350));
+      i.addEventListener('input', TS.debounce(() => { s[key] = i.value.trim(); rerender(); }, 500));
       return h('div', { class: 'f-group' }, h('span', { class: 'f-label' }, label), i);
     };
     const faixaNum = (label, kMin, kMax, chips) => {
       const a = h('input', { class: 'f-input', type: 'number', min: 0, placeholder: 'de', value: s[kMin] });
       const b = h('input', { class: 'f-input', type: 'number', min: 0, placeholder: 'até', value: s[kMax] });
-      a.addEventListener('change', () => { s[kMin] = a.value; rerender(); });
-      b.addEventListener('change', () => { s[kMax] = b.value; rerender(); });
+      TS.aoConfirmar(a, () => { s[kMin] = a.value; rerender(); });
+      TS.aoConfirmar(b, () => { s[kMax] = b.value; rerender(); });
       return h('div', { class: 'f-group' }, h('span', { class: 'f-label' }, label), h('div', { class: 'f-row' }, a, b),
         chips ? h('div', { class: 'chips' }, chips.map(([lab, mi, ma]) => h('button', { type: 'button', class: 'chip' + (String(s[kMin]) === String(mi) && String(s[kMax]) === String(ma) ? ' on' : ''), onclick: () => { s[kMin] = String(mi); s[kMax] = String(ma); rerender(); } }, lab))) : null);
     };

@@ -60,7 +60,7 @@
     const de = h('input', { class: 'f-input', type: 'date', min: TS.dayToIso(db.minDay), max: TS.dayToIso(db.maxDay), value: f.de != null ? TS.dayToIso(f.de) : '' });
     const ate = h('input', { class: 'f-input', type: 'date', min: TS.dayToIso(db.minDay), max: TS.dayToIso(db.maxDay), value: f.ate != null ? TS.dayToIso(f.ate) : '' });
     const onDate = () => { f.de = de.value ? TS.isoToDay(de.value) : null; f.ate = ate.value ? TS.isoToDay(ate.value) : null; f.preset = 'custom'; f.ano = null; f.mes = null; rerender(); };
-    de.addEventListener('change', onDate); ate.addEventListener('change', onDate);
+    TS.aoConfirmar(de, onDate); TS.aoConfirmar(ate, onDate);
     const chips = h('div', { class: 'chips' }, PRESETS.map(([lab, p]) => h('button', { type: 'button', class: 'chip' + (f.preset === p ? ' on' : ''), onclick: () => { TS.aplicarPreset(p); rerender(); } }, lab)));
     const anos = [];
     for (let y = new Date(db.maxDay * 86400000).getUTCFullYear(); y >= new Date(db.minDay * 86400000).getUTCFullYear(); y--) anos.push(y);
@@ -81,7 +81,7 @@
     box.append(TS.multiSelect({ label: 'Grupo', options: opts(db.opts.grupos), selected: f.grupos, onChange: rerender }));
     box.append(TS.multiSelect({ label: 'Categoria', options: opts(db.opts.cats), selected: f.cats, onChange: rerender, placeholder: 'Todas' }));
     const prod = h('input', { class: 'f-input', type: 'search', placeholder: 'Ex.: earl grey', value: f.produto });
-    prod.addEventListener('input', TS.debounce(() => { f.produto = prod.value.trim(); rerender(); }, 350));
+    prod.addEventListener('input', TS.debounce(() => { f.produto = prod.value.trim(); rerender(); }, 500));
     box.append(h('div', { class: 'f-group' }, h('span', { class: 'f-label' }, 'Produto contém'), prod));
 
     // filtros específicos de cada página
@@ -101,7 +101,7 @@
         db.opts.vendedores.filter(([s]) => s.toUpperCase() !== 'SEM VENDEDOR').map(([s]) => h('option', { value: s, selected: c.vendBonus === s || null }, s)));
       sel.addEventListener('change', () => { c.vendBonus = sel.value; rerender(); });
       const cup = h('input', { class: 'f-input', type: 'search', inputmode: 'numeric', placeholder: 'Nº do cupom', value: c.cupom });
-      cup.addEventListener('input', TS.debounce(() => { c.cupom = cup.value.trim(); rerender(); }, 350));
+      cup.addEventListener('input', TS.debounce(() => { c.cupom = cup.value.trim(); rerender(); }, 500));
       box.append(h('div', { class: 'f-sep' }), h('div', { class: 'f-section' }, 'Comissionamento'),
         h('div', { class: 'f-group' }, h('span', { class: 'f-label' }, 'Meta da loja (R$)'), meta,
           h('div', { class: 'f-hint' }, mp.valor != null ? `Meta de ${TS.ymLabel(mp.ym)}${{ mes: '', auto: ' (automática: ano anterior + %)', padrao: ' (padrão da loja)', misto: '' }[mp.origem] || ''}: ${fmt.brl(mp.valor)}${c.meta != null ? ' · você está simulando outro valor' : ''}` : 'Meta não cadastrada (Configurações → Lojas).')),
@@ -395,11 +395,13 @@
     const set = (I.tipos.find(([n]) => n === tipoAtual) || I.tipos[0])[1];
     const rowsT = somaPor(base.filter((i) => set.has(db.grupo[i])), (i) => db.cha[i] || 0);
     const totT = rowsT.reduce((s, r) => s + r.v, 0);
+    const totTipos = resumoTipos.reduce((s, [, v]) => s + v, 0);
     const tiposChart = TS.chart({
       type: 'bar',
       data: { labels: resumoTipos.map(([n]) => n), datasets: [{ data: resumoTipos.map(([, v]) => v), backgroundColor: resumoTipos.map(([n]) => (n === tipoAtual ? '#C9A227' : '#7FA37A')), borderRadius: 6 }] },
       options: {
-        plugins: { legend: { display: false }, valueLabels: { display: true, format: (v) => fmt.kg(v) }, tooltip: { callbacks: { label: (c) => fmt.kg(c.raw) + ' kg' } } },
+        plugins: { legend: { display: false }, valueLabels: { display: true, format: (v) => (v ? fmt.pct(totTipos ? v / totTipos : null, 0) : "") },
+          tooltip: { callbacks: { label: (c) => `${fmt.kg(c.raw)} kg · ${fmt.pct(totTipos ? c.raw / totTipos : null)} do total de chá (${fmt.kg(totTipos)} kg)` } } },
         scales: { y: { ...TS.axisNum((v) => fmt.kg(v).replace(/0+$/, '').replace(/,$/, '')), title: { display: true, text: 'kg' } }, x: TS.axisCat },
         onClick: (_e, els) => { if (els.length) { state.tipoCha = resumoTipos[els[0].index][0]; TS.render(); } },
       },
@@ -409,7 +411,7 @@
         TS.cardWithTools(`Chá ${tipoAtual}`, rowsT.length ? `${rowsT.length} produtos · ${fmt.kg(totT)} kg` : '',
           TS.seg(I.tipos.map(([n]) => [n, n]), tipoAtual, (v) => { state.tipoCha = v; TS.render(); }),
           rowsT.length ? topBar(rowsT.slice(0, 15), (v) => fmt.kg(v) + ' kg', '#2C5234', (v) => `${fmt.kg(v)} (${fmt.pct(v / totT)})`) : TS.empty()),
-        TS.card('Kg por tipo', 'Clique numa barra para ver os produtos', tiposChart)));
+        TS.card('Kg por tipo', 'Kg e % do total de chá · clique numa barra para ver os produtos', tiposChart)));
   };
 
   // ======================= COMPARATIVOS =======================

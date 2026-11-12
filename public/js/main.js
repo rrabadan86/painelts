@@ -6,7 +6,51 @@
   let PAGES = ['resumo', 'comparativos', 'comissionamento', 'promocao', 'mapa', 'clientes', 'minha'];
   TS.paginas = () => PAGES;
 
+  // ---- manter o campo em que a pessoa está digitando quando a tela é redesenhada ----
+  const ehCampo = (el) => el && el !== document.body && /^(INPUT|TEXTAREA)$/.test(el.tagName) && !/^(checkbox|radio|button|submit|file)$/.test(el.type);
+  function caminho(el) {
+    const p = [];
+    for (let n = el; n && n !== document.body; n = n.parentElement) { const pai = n.parentElement; if (!pai) return null; p.unshift(Array.prototype.indexOf.call(pai.children, n)); }
+    return p;
+  }
+  function seguir(p) { let n = document.body; for (const k of p) { n = n && n.children[k]; } return n; }
+  function capturar(el) {
+    let ini = null, fim = null;
+    try { ini = el.selectionStart; fim = el.selectionEnd; } catch { /* number/time não têm seleção */ }
+    return { el, p: caminho(el), tag: el.tagName, type: el.type, ph: el.placeholder || '', valor: el.value, ini, fim, scroll: window.scrollY };
+  }
+  function restaurar(g) {
+    if (!g.p || g.el.isConnected) return; // o mesmo campo continua na tela
+    const n = seguir(g.p);
+    if (!n || n.tagName !== g.tag || n.type !== g.type || (n.placeholder || '') !== g.ph) return;
+    if (n.value !== g.valor && n.value === g.valor.trim()) n.value = g.valor; // mantém o espaço que a pessoa acabou de digitar
+    try { n.focus({ preventScroll: true }); } catch { n.focus(); }
+    if (g.ini != null) { try { n.setSelectionRange(g.ini, g.fim); } catch { /* ok */ } }
+    if (Math.abs(window.scrollY - g.scroll) > 2) window.scrollTo(0, g.scroll);
+  }
+  /** Para campos que redesenham a tela ao mudar (hora, número, data): aplica quando a pessoa sai do campo,
+      não a cada dígito — senão o campo some no meio da digitação. */
+  TS.aoConfirmar = function (x, fn) {
+    let pendente = false;
+    x.addEventListener('change', () => {
+      // no celular, data e hora vêm de um seletor (não se digita): aplica na hora
+      const seletor = /^(date|time|month|datetime-local)$/.test(x.type) && matchMedia('(pointer: coarse)').matches;
+      if (!seletor && document.activeElement === x && x.type !== 'checkbox' && x.tagName !== 'SELECT') {
+        if (pendente) return;
+        pendente = true;
+        x.addEventListener('blur', () => { pendente = false; setTimeout(fn, 0); }, { once: true }); // depois que o foco já foi para o próximo campo
+      } else fn();
+    });
+    x.addEventListener('keydown', (e) => { if (e.key === 'Enter' && pendente) x.blur(); });
+  };
+
   TS.render = function () {
+    const ae = document.activeElement;
+    const g = ehCampo(ae) ? capturar(ae) : null;
+    renderTela();
+    if (g) restaurar(g);
+  };
+  function renderTela() {
     document.querySelectorAll('#tabs a').forEach((a) => a.classList.toggle('active', a.dataset.page === state.page));
     const ativa = document.querySelector('#tabs a.active');
     if (ativa && ativa.scrollIntoView) { const t = document.getElementById('tabs'); if (t.scrollWidth > t.clientWidth) t.scrollTo({ left: ativa.offsetLeft - 12, behavior: 'smooth' }); }
@@ -42,7 +86,7 @@
     }
     content.replaceChildren(root);
     salvarEstado();
-  };
+  }
 
   // ---------- estado na URL/localStorage (filtros lembrados) ----------
   const keyFiltros = () => 'teashop.filtros.v2.' + (TS.demo ? 'demo.' : '') + (state.loja || 'padrao');
