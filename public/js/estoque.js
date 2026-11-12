@@ -137,7 +137,7 @@
         if (!ultimaVenda.has(it.cod) || db.day[i] > ultimaVenda.get(it.cod)) ultimaVenda.set(it.cod, db.day[i]);
       }
     }
-    const ent = cfg.entregaDias, cob = cfg.coberturaDias;
+    const ent = cfg.entregaDias, cob = cfg.coberturaDias, seg = cfg.segurancaPct ?? 50;
     const repo = [];
     let valorEstoque = 0, valorParado = 0;
     const parados = [];
@@ -159,7 +159,11 @@
         const v = qtd * it.custo; valorParado += v;
         parados.push({ cod: it.cod, produto: it.desc, tipo: TIPO_ITEM(it), qtd, it, valor: v, ultima: vendeuAlgumaVez ? TS.dayToIso(ult) : null, dias: vendeuAlgumaVez ? fim - ult : null });
       }
-      if (vel > 0 || (it.min && qtd < it.min)) repo.push({ cod: it.cod, produto: it.desc, tipo: TIPO_ITEM(it), it, qtd, min: it.min, vel, dias, pedir, custoPedido: pedir * (it.custo || 0), sit });
+      // mínimo sugerido: o que vende durante a entrega + margem de segurança
+      let sug = vel * ent * (1 + seg / 100);
+      sug = sug <= 0 ? null : it.un === 'Kg' ? Math.ceil(sug * 10) / 10 : Math.ceil(sug);
+      const minSit = sug == null ? null : !it.min ? 'sem' : it.min > sug * 2 ? 'alto' : it.min < sug * 0.7 ? 'baixo' : 'ok';
+      if (vel > 0 || (it.min && qtd < it.min)) repo.push({ cod: it.cod, produto: it.desc, tipo: TIPO_ITEM(it), it, qtd, min: it.min, sug, minSit, vel, dias, pedir, custoPedido: pedir * (it.custo || 0), sit });
     }
     const diasTxt = (d) => (d == null ? '—' : `${fmt.int(d)} ${Math.round(d) === 1 ? 'dia' : 'dias'}`);
     const porque = (r) => ({
@@ -169,6 +173,15 @@
       pedir: `O estoque dura ${diasTxt(r.dias)}: menos que a entrega (${ent} dias) + o período do pedido (${cob} dias). Hora de pedir.`,
       ok: `O estoque dura ${diasTxt(r.dias)}: dá para a entrega e o período do pedido.`,
     })[r.sit];
+    const sugTxt = (r) => {
+      const base = `Venda/dia ${qtdTxt(r.vel, r.it)} × ${ent} dias de entrega = ${qtdTxt(r.vel * ent, r.it)}, + ${seg}% de segurança = ${qtdTxt(r.sug, r.it)}.`;
+      return base + ({
+        sem: ' Este produto não tem mínimo no AppNext: vale cadastrar.',
+        alto: ` O mínimo do AppNext (${qtdTxt(r.min, r.it)}) está bem acima: prende dinheiro em estoque.`,
+        baixo: ` O mínimo do AppNext (${qtdTxt(r.min, r.it)}) está baixo: o produto pode acabar antes do pedido chegar.`,
+        ok: ` O mínimo do AppNext (${qtdTxt(r.min, r.it)}) está adequado.`,
+      })[r.minSit];
+    };
     const contaPedido = (r) => {
       const precisa = r.vel * (ent + cob);
       const pelaVenda = `Venda/dia ${qtdTxt(r.vel, r.it)} × (${ent} dias de entrega + ${cob} dias de pedido) = ${qtdTxt(precisa, r.it)} − estoque ${qtdTxt(r.qtd, r.it)}`;
@@ -273,7 +286,11 @@
     const linhasRepo = sitSel === 'repor' ? repor : repo;
     const csv = h('button', { type: 'button', class: 'btn', onclick: () => baixarPedido(repor) }, '⬇ Baixar pedido (CSV)');
     corpo.append(h('div', { class: 'mt' }, TS.cardWithTools('O que repor',
-      `Ritmo de venda dos últimos 30 dias · entrega em ${ent} dias · pedido para ${cob} dias de venda. Chás a granel em kg (inclui o consumo de saco kraft e etiquetas).`,
+      h('span', null, `Ritmo de venda dos últimos 30 dias · entrega em ${ent} dias · pedido para ${cob} dias de venda. Chás a granel em kg (inclui o consumo de saco kraft e etiquetas).`,
+        h('span', { class: 'est-minres' }, ` Mínimo do AppNext comparado com o sugerido (em "Tudo que vende"): `,
+          h('b', { class: 'est-sug est-sug-baixo' }, `${fmt.int(repo.filter((r) => r.minSit === 'baixo').length)} baixos`), ' · ',
+          h('b', { class: 'est-sug est-sug-alto' }, `${fmt.int(repo.filter((r) => r.minSit === 'alto').length)} altos`), ' · ',
+          h('b', { class: 'est-sug est-sug-sem' }, `${fmt.int(repo.filter((r) => r.minSit === 'sem').length)} sem mínimo`))),
       h('div', { class: 'est-tools' }, TS.seg([['Só o que repor', 'repor'], ['Tudo que vende', 'todos']], sitSel, (v) => { state.estSit = v; TS.render(); }), csv),
       TS.table({
         cols: [
@@ -282,6 +299,8 @@
           { key: 'sit', label: 'Situação', align: 'l', title: 'Passe o mouse na etiqueta de cada linha para ver o motivo', render: (r) => h('span', { class: 'badge ' + SIT[r.sit][1], title: porque(r) }, SIT[r.sit][0]), sortVal: (r) => -SIT[r.sit][2] },
           { key: 'qtd', label: 'Estoque', title: 'Saldo de agora, da última planilha de estoque do AppNext', render: (r) => qtdTxt(r.qtd, r.it) },
           { key: 'min', label: 'Mínimo', title: 'Estoque mínimo cadastrado no AppNext (— = sem mínimo)', render: (r) => (r.min ? qtdTxt(r.min, r.it) : '—') },
+          { key: 'sug', label: 'Mín. sugerido', title: `Mínimo calculado pela venda: venda por dia × ${ent} dias de entrega + ${seg}% de segurança. Azul = o mínimo do AppNext está bom; vermelho = muito baixo (vai faltar); amarelo = muito alto (dinheiro parado). Use para corrigir o cadastro no AppNext`,
+            render: (r) => (r.sug == null ? '—' : h('span', { class: 'est-sug est-sug-' + r.minSit, title: sugTxt(r) }, qtdTxt(r.sug, r.it))), sortVal: (r) => r.sug },
           { key: 'vel', label: 'Venda/dia', title: 'Média por dia nos últimos 30 dias. No chá a granel soma todos os tamanhos; em saco kraft e etiqueta, o que os pacotes de chá consumiram', render: (r) => (r.it.un === 'Kg' ? `${fmt.kg(r.vel)} kg` : fmt.n1(r.vel)) },
           { key: 'dias', label: 'Dura', title: 'Quantos dias o estoque atual aguenta no ritmo de venda (estoque ÷ venda por dia)', fmt: (v) => (v == null ? '—' : v > 365 ? '+1 ano' : `${fmt.int(v)} ${Math.round(v) === 1 ? "dia" : "dias"}`) },
           { key: 'pedir', label: 'Pedir', title: 'Quanto pedir para chegar em tempo e durar o período escolhido. Passe o mouse no número para ver a conta', render: (r) => (r.pedir > 0 ? h('b', { title: contaPedido(r), class: 'est-dica' }, qtdTxt(r.pedir, r.it)) : '—') },
@@ -324,7 +343,7 @@
 
   function cartaoCfg(cfg, porCod) {
     const num = (v, min, max) => h('input', { class: 'f-input', type: 'number', min, max, value: v, style: { maxWidth: '110px' } });
-    const ent = num(cfg.entregaDias, 0, 120), cob = num(cfg.coberturaDias, 1, 365), par = num(cfg.paradoDias, 7, 730);
+    const ent = num(cfg.entregaDias, 0, 120), cob = num(cfg.coberturaDias, 1, 365), par = num(cfg.paradoDias, 7, 730), seg = num(cfg.segurancaPct ?? 50, 0, 300);
     const tams = ['50', '100', '250', '500', '1000'];
     const txtEmb = (l) => (l || []).map((x) => `${x.cod}×${x.qtd}`).join(', ');
     const nomeEmb = (l) => (l || []).map((x) => `${x.qtd}× ${porCod.get(String(x.cod))?.desc || '(código ' + x.cod + ' não está no estoque)'}`).join(' + ');
@@ -336,17 +355,18 @@
       try {
         const embalagens = Object.fromEntries(embs.map(([g, i]) => [g, i.value.split(',').map((s) => s.trim()).filter(Boolean).map((s) => { const [cod, q] = s.split(/[×x*]/i); return { cod: (cod || '').trim(), qtd: +(q || 1) }; })]));
         const r = await fetch(`/api/estoque/cfg?loja=${encodeURIComponent(state.loja)}`, { method: 'PUT', credentials: 'same-origin', headers: { 'X-Painel': '1', 'Content-Type': 'application/json' },
-          body: JSON.stringify({ entregaDias: +ent.value, coberturaDias: +cob.value, paradoDias: +par.value, embalagens }) });
+          body: JSON.stringify({ entregaDias: +ent.value, coberturaDias: +cob.value, paradoDias: +par.value, segurancaPct: +seg.value, embalagens }) });
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j.erro || 'Falha ao salvar.');
         cache.delete(state.loja); TS.render();
       } catch (e) { msg.textContent = e.message; salvar.disabled = false; }
     });
-    return h('details', { class: 'card est-cfg' }, h('summary', null, 'Ajustes: prazo de entrega, cobertura e embalagem dos chás'),
+    return h('details', { class: 'card est-cfg' }, h('summary', null, 'Ajustes: prazo de entrega, período do pedido, segurança do mínimo e embalagem dos chás'),
       h('div', { class: 'est-cfg-g' },
         h('label', null, h('span', null, 'Entrega do fornecedor'), h('div', null, ent, ' dias')),
         h('label', null, h('span', null, 'Pedir para'), h('div', null, cob, ' dias de venda')),
-        h('label', null, h('span', null, 'Parado depois de'), h('div', null, par, ' dias sem venda'))),
+        h('label', null, h('span', null, 'Parado depois de'), h('div', null, par, ' dias sem venda')),
+        h('label', null, h('span', null, 'Segurança do mínimo sugerido'), h('div', null, seg, ' %'))),
       h('div', { class: 'f-label', style: { marginTop: '10px' } }, 'Embalagem de cada pacote de chá a granel (entra no custo e no consumo)'),
       h('div', { class: 'est-emb' }, embs.map(([g, i]) => h('label', null, h('span', null, g === '1000' ? '1 kg' : g + ' g'), i, h('small', { class: 'muted' }, nomeEmb(cfg.embalagens[g]))))),
       h('div', { class: 'cfg-acoes' }, salvar, msg));

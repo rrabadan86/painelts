@@ -109,20 +109,21 @@ const EMB_PADRAO = {
   500: [{ cod: '80151', qtd: 1 }, { cod: '81010', qtd: 2 }],
   1000: [{ cod: '80152', qtd: 1 }, { cod: '81010', qtd: 2 }],
 };
-const PADRAO = { entregaDias: 10, coberturaDias: 30, paradoDias: 60, embalagens: EMB_PADRAO };
+const PADRAO = { entregaDias: 10, coberturaDias: 30, paradoDias: 60, segurancaPct: 50, embalagens: EMB_PADRAO };
 function cfg(loja) {
   const c = (loja && loja.estoqueCfg) || {};
   return {
     entregaDias: Number.isInteger(c.entregaDias) ? c.entregaDias : PADRAO.entregaDias,
     coberturaDias: Number.isInteger(c.coberturaDias) ? c.coberturaDias : PADRAO.coberturaDias,
     paradoDias: Number.isInteger(c.paradoDias) ? c.paradoDias : PADRAO.paradoDias,
+    segurancaPct: Number.isInteger(c.segurancaPct) ? c.segurancaPct : PADRAO.segurancaPct,
     embalagens: c.embalagens && typeof c.embalagens === 'object' ? c.embalagens : EMB_PADRAO,
   };
 }
 function validarCfg(b) {
   const n = (v, a, z) => { const x = Math.round(+v); return x >= a && x <= z ? x : null; };
-  const out = { entregaDias: n(b.entregaDias, 0, 120), coberturaDias: n(b.coberturaDias, 1, 365), paradoDias: n(b.paradoDias, 7, 730) };
-  if (Object.values(out).some((v) => v == null)) return { erro: 'Confira os dias (entrega 0–120, cobertura 1–365, parado 7–730).' };
+  const out = { entregaDias: n(b.entregaDias, 0, 120), coberturaDias: n(b.coberturaDias, 1, 365), paradoDias: n(b.paradoDias, 7, 730), segurancaPct: n(b.segurancaPct ?? PADRAO.segurancaPct, 0, 300) };
+  if (Object.values(out).some((v) => v == null)) return { erro: 'Confira os números (entrega 0–120 dias, pedido 1–365 dias, parado 7–730 dias, segurança 0–300%).' };
   const emb = {};
   for (const [g, lista] of Object.entries(b.embalagens || {})) {
     if (!/^\d{1,4}$/.test(g) || !Array.isArray(lista) || lista.length > 6) return { erro: 'Embalagens inválidas.' };

@@ -897,3 +897,8 @@ body.com-camada { overflow: hidden; }
 .est-tag { display: inline-block; padding: 1px 8px; border-radius: 99px; font-size: 11.5px; font-weight: 700; color: var(--cor); background: color-mix(in srgb, var(--cor) 12%, #fff); }
 .est-dica { cursor: help; text-decoration: underline dotted; text-underline-offset: 3px; }
 .t.est-t .badge[title] { cursor: help; }
+.est-sug { cursor: help; padding: 1px 6px; border-radius: 6px; font-weight: 600; }
+.est-sug-ok { color: #1F5FBF; }
+.est-sug-baixo { color: #B5452B; background: #F6DCD3; }
+.est-sug-alto { color: #8A6A00; background: #FBF1D3; }
+.est-sug-sem { color: var(--muted); border: 1px dashed #C9C2B2; }
