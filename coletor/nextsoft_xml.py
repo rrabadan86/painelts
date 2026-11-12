@@ -131,16 +131,31 @@ def _tela_xml_visivel(page):
     return page.locator("text=/Filtros\\s*:/ >> visible=true").count() > 0 or page.locator("button:has-text('Gerar') >> visible=true").count() > 0
 
 
+def fazer_login(page):
+    if "/#/login" in page.url:
+        page.fill(nx.SEL["rede"], nx.REDE)
+        page.fill(nx.SEL["email"], nx.USER)
+        page.fill(nx.SEL["senha"], nx.PASS)
+        page.click(nx.SEL["entrar"])
+    page.wait_for_url("**/#/loja/**", timeout=120_000)
+
+
+def ir_para_xml(page):
+    """troca só o '#' do endereço: a página não recarrega e o login continua valendo
+    (um goto para www.appnext.com.br quando o login abriu em appnext.com.br recarrega e desloga)"""
+    page.evaluate("() => { location.hash = '#/fiscal/gerador-xml'; }")
+
+
 def abrir_tela_xml(page):
-    """abre Fiscal → Gerar XML; tenta pelo endereço, recarregando, e pelo menu"""
+    """abre Fiscal → Gerar XML; se o AppNext tiver voltado para o login, entra de novo"""
     for tentativa in range(1, 4):
         try:
-            if tentativa == 1:
-                page.goto(URL_XML)
-            elif tentativa == 2:
-                log("Tela não abriu; recarregando…")
-                page.goto(URL_XML)
-                page.reload(wait_until="load")
+            if "/#/login" in page.url:
+                log("O AppNext voltou para o login; entrando de novo…")
+                fazer_login(page)
+                nx.trocar_loja(page, os.getenv("APPNEXT_LOJA_DESTINO"))
+            if tentativa < 3:
+                ir_para_xml(page)
             else:
                 log("Tentando pelo menu Fiscal → Gerar XML…")
                 nx._click_first(page, ["text=/^\\s*Fiscal\\s*$/ >> visible=true", "a:has-text('Fiscal') >> visible=true"])
@@ -254,12 +269,7 @@ def main():
         try:
             step("1) Login")
             nx.goto_login_with_retries(page, nx.LOGIN_URL)
-            if "/#/login" in page.url:
-                page.fill(nx.SEL["rede"], nx.REDE)
-                page.fill(nx.SEL["email"], nx.USER)
-                page.fill(nx.SEL["senha"], nx.PASS)
-                page.click(nx.SEL["entrar"])
-            page.wait_for_url("**/#/loja/**", timeout=120_000)
+            fazer_login(page)
             nx.trocar_loja(page, os.getenv("APPNEXT_LOJA_DESTINO"))
 
             step("2) Fiscal → Gerar XML")
@@ -314,10 +324,13 @@ def main():
                 raise RuntimeError("Sem o pedido de referência não dá para escolher o período. Veja os pedidos listados acima.")
             cab = {k: v for k, v in ref.headers.items() if k.lower() not in ("content-length", "host", "cookie", "accept-encoding")}
             for a, b in janelas(INI, FIM):
-                url = trocar_datas(ref.url, a, b) or ref.url
+                url_nova = trocar_datas(ref.url, a, b)
                 corpo = trocar_datas(ref.post_data, a, b) if ref.post_data else None
-                if url == ref.url and corpo in (None, ref.post_data):
-                    raise RuntimeError("Não consegui trocar as datas no pedido do Gerar.")
+                if url_nova is None and corpo is None:
+                    raise RuntimeError("Não achei as datas no pedido do Gerar para trocar.")
+                url = url_nova or ref.url
+                if corpo is None:
+                    corpo = ref.post_data
                 resp = page.request.fetch(url, method=ref.method, headers=cab, data=corpo, timeout=300_000)
                 dados = resp.body()
                 if not resp.ok:
