@@ -80,6 +80,7 @@ function validarOperacao(o) {
     for (const p of e.pessoas) {
       if (!p || typeof p.nome !== 'string' || p.nome.length > 40) return 'Nome de pessoa inválido.';
       if (!dia(p.folga || 'auto') || !dia(p.folga2 || 'auto')) return `Folga fixa de ${p.nome || 'uma pessoa'} inválida.`;
+      if (p.turno != null && !['tanto', 'manha', 'noite'].includes(p.turno)) return `Preferência de turno de ${p.nome || 'uma pessoa'} inválida.`;
       if (p.folga === 'dom' || p.folga2 === 'dom') return 'O domingo segue o rodízio: escolha outro dia fixo.';
     }
   }

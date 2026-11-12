@@ -89,6 +89,7 @@
     const abertura = DIAS.map((d) => { const f = op.funcionamento[d]; return f && !f.fechado ? [Math.ceil(hm(f.abre) / 30), Math.floor(hm(f.fecha) / 30)] : null; });
     const cob = Array.from({ length: 7 }, () => Array(48).fill(0));
     const pessoas = [];
+    const prefs = Array.from({ length: nFunc }, (_, i) => ((e.pessoas && e.pessoas[i]) || {}).turno);
     for (let p = 0; p < nFunc; p++) {
       const opcoes = [];
       for (let wd = 0; wd < 7; wd++) {
@@ -116,6 +117,7 @@
             const falta = slotsNeed[wd][x] - cob[wd][x];
             ganho += falta > 0 ? (cob[wd][x] === 0 ? 3 : 1) : 0; // cobrir horário vazio vale mais
           }
+          ganho += 2 * encaixe(prefs[p], s, len, ab); // preferência de turno (menos que cobrir horário vazio)
           if (!melhor || ganho > melhor.ganho) melhor = { ganho, s, len, pausa, intSlots };
         }
         opcoes.push(melhor);
@@ -129,6 +131,14 @@
         return { ini: o.s * 30, fim: (o.s + o.len) * 30, pausa: o.pausa != null && o.intSlots ? [o.pausa * 30, (o.pausa + o.intSlots) * 30] : null };
       });
       pessoas.push(turnos);
+    }
+    // troca turnos do mesmo dia entre pessoas quando respeita melhor as preferências
+    for (let wd = 0; wd < 7; wd++) {
+      const ab = abertura[wd];
+      if (!ab) continue;
+      const lista = pessoas.map((t, i) => (t[wd] ? { i, pref: prefs[i], o: { s: t[wd].ini / 30, len: (t[wd].fim - t[wd].ini) / 30, t: t[wd] } } : null)).filter(Boolean);
+      trocarPorPreferencia(lista, ab);
+      lista.forEach((x) => { pessoas[x.i][wd] = x.o.t; });
     }
     // faltas
     let descoberto = 0, abaixo = 0;
@@ -156,14 +166,38 @@
   function pessoasDe(e) {
     return Array.from({ length: e.funcionarios || 1 }, (_, i) => {
       const p = (e.pessoas && e.pessoas[i]) || {};
-      return { nome: p.nome || (e.nomes && e.nomes[i]) || `Pessoa ${i + 1}`, folga: p.folga || 'auto', folga2: p.folga2 || 'auto' };
+      return { nome: p.nome || (e.nomes && e.nomes[i]) || `Pessoa ${i + 1}`, folga: p.folga || 'auto', folga2: p.folga2 || 'auto', turno: p.turno === 'manha' || p.turno === 'noite' ? p.turno : 'tanto' };
     });
+  }
+  /** quanto um turno combina com a preferência (0 a 1): manhã = começar cedo, noite = terminar no fechamento */
+  function encaixe(pref, s0, len, ab) {
+    if (!ab || (pref !== 'manha' && pref !== 'noite')) return 0;
+    const vao = ab[1] - len - ab[0];
+    if (vao <= 0) return 0;
+    const t = Math.min(1, Math.max(0, (s0 - ab[0]) / vao));
+    return pref === 'manha' ? 1 - t : t;
+  }
+  const PESO_PREF = 6; // vale menos que deixar a loja sozinha, mais que reforço de pico
+  /** troca turnos entre duas pessoas do mesmo dia quando a troca respeita melhor as preferências (a cobertura não muda) */
+  function trocarPorPreferencia(lista, ab) {
+    // lista: [{ pref, o: {s,len,...} }]
+    for (let r = 0; r < 3; r++) {
+      let mudou = false;
+      for (let a = 0; a < lista.length; a++) for (let b = a + 1; b < lista.length; b++) {
+        const A = lista[a], B = lista[b];
+        if (!A.o || !B.o) continue;
+        const agora = encaixe(A.pref, A.o.s, A.o.len, ab) + encaixe(B.pref, B.o.s, B.o.len, ab);
+        const trocado = encaixe(A.pref, B.o.s, B.o.len, ab) + encaixe(B.pref, A.o.s, A.o.len, ab);
+        if (trocado > agora + 1e-9) { const t = A.o; A.o = B.o; B.o = t; mudou = true; }
+      }
+      if (!mudou) break;
+    }
   }
   TS.pessoasEquipe = pessoasDe;
   const mdc = (a, b) => (b ? mdc(b, a % b) : a);
 
   /** melhor turno de uma pessoa num dia, dada a cobertura atual (blocos de 30 min) */
-  function melhorTurno(wd, cob, slotsNeed, abertura, trabMin, intervalo) {
+  function melhorTurno(wd, cob, slotsNeed, abertura, trabMin, intervalo, pref) {
     const ab = abertura[wd];
     if (!ab) return null;
     const [a, b] = ab;
@@ -190,6 +224,7 @@
         const falta = slotsNeed[wd][x] - cob[wd][x];
         ganho += falta > 0 ? (cob[wd][x] === 0 ? 10 * raro(x) : 1) : 0;
       }
+      ganho += PESO_PREF * encaixe(pref, s0, len, ab);
       if (!melhor || ganho > melhor.ganho) melhor = { ganho, s: s0, len, pausa, intSlots };
     }
     return melhor;
@@ -260,13 +295,14 @@
         const doDia = [];
         pessoas.forEach((_, i) => {
           if (!trabalha[i].includes(wd)) return;
-          const o = melhorTurno(wd, cob, slotsNeed, abertura, trabMin, intervalo);
+          const o = melhorTurno(wd, cob, slotsNeed, abertura, trabMin, intervalo, pessoas[i].turno);
           if (!o) return;
           aplica(wd, o, 1); doDia.push([i, o]);
         });
         for (let rodada = 0; rodada < 3; rodada++) {
-          for (const par of doDia) { aplica(wd, par[1], -1); par[1] = melhorTurno(wd, cob, slotsNeed, abertura, trabMin, intervalo); aplica(wd, par[1], 1); }
+          for (const par of doDia) { aplica(wd, par[1], -1); par[1] = melhorTurno(wd, cob, slotsNeed, abertura, trabMin, intervalo, pessoas[par[0]].turno); aplica(wd, par[1], 1); }
         }
+        { const lista = doDia.map(([i, o]) => ({ pref: pessoas[i].turno, o })); trocarPorPreferencia(lista, abertura[wd]); lista.forEach((x, k) => { doDia[k][1] = x.o; }); }
         for (const [i, o] of doDia) turnosP[i][wd] = { ini: o.s * 30, fim: (o.s + o.len) * 30, pausa: o.pausa != null && o.intSlots ? [o.pausa * 30, (o.pausa + o.intSlots) * 30] : null };
       }
       let descoberto = 0, abaixo = 0;
@@ -338,10 +374,12 @@
       f1.addEventListener('change', () => { p.folga = f1.value; salvarPessoas(); aoMudar && aoMudar(); });
       const f2 = h('select', { class: 'f-input' }, optsDia(p.folga2, true));
       f2.addEventListener('change', () => { p.folga2 = f2.value; salvarPessoas(); aoMudar && aoMudar(); });
-      return h('tr', null, h('td', null, nome), h('td', { class: 'so-rodizio' }, f1), h('td', { class: 'so-rodizio so-5x2' }, f2));
+      const tu = h('select', { class: 'f-input' }, [['tanto', 'Tanto faz'], ['manha', 'Manhã'], ['noite', 'Noite']].map(([v, t]) => h('option', { value: v, selected: p.turno === v || null }, t)));
+      tu.addEventListener('change', () => { p.turno = tu.value; salvarPessoas(); aoMudar && aoMudar(); });
+      return h('tr', null, h('td', null, nome), h('td', null, tu), h('td', { class: 'so-rodizio' }, f1), h('td', { class: 'so-rodizio so-5x2' }, f2));
     });
     const tabP = h('table', { class: 'op-pessoas' + (e.modelo === 'rodizio' ? ' rodizio' : '') + (e.escala === '5x2' ? ' e5x2' : '') },
-      h('thead', null, h('tr', null, h('th', null, 'Nome'), h('th', { class: 'so-rodizio' }, 'Folga fixa (quando trabalha no domingo)'), h('th', { class: 'so-rodizio so-5x2' }, '2ª folga (5x2)'))), h('tbody', null, linhasP));
+      h('thead', null, h('tr', null, h('th', null, 'Nome'), h('th', { title: 'Manhã = abre a loja · Noite = fecha a loja. A escala respeita ao máximo, sem deixar a loja descoberta.' }, 'Prefere trabalhar'), h('th', { class: 'so-rodizio' }, 'Folga fixa (quando trabalha no domingo)'), h('th', { class: 'so-rodizio so-5x2' }, '2ª folga (5x2)'))), h('tbody', null, linhasP));
     const campo = (rot, el, dica) => h('label', { class: 'cfg-campo' }, h('span', null, rot), el, dica ? h('small', null, dica) : null);
     box.append(
       h('div', { class: 'f-label' }, 'Horário de funcionamento'),
@@ -570,8 +608,13 @@
         const livres = pessoas.map((p, i) => i).filter((i) => !aj[pessoas[i].nome.trim().toUpperCase()] && cel[i][k].tipo === 'trab');
         if (!ab) return;
         const turno = (o) => ({ tipo: 'trab', ini: o.s * 30, fim: (o.s + o.len) * 30, pausa: o.pausa != null && o.intSlots ? [o.pausa * 30, (o.pausa + o.intSlots) * 30] : null, feriado: fer && fer.nome, recalc: true });
-        for (const i of livres) { const o = melhorTurno(0, cob, sNeed, [ab], trabMin, intervalo); if (o) { cel[i][k] = turno(o); aplica(cel[i][k], 1); } }
-        for (let r = 0; r < 2; r++) for (const i of livres) { aplica(cel[i][k], -1); const o = melhorTurno(0, cob, sNeed, [ab], trabMin, intervalo); if (o) cel[i][k] = turno(o); aplica(cel[i][k], 1); }
+        for (const i of livres) { const o = melhorTurno(0, cob, sNeed, [ab], trabMin, intervalo, pessoas[i].turno); if (o) { cel[i][k] = turno(o); aplica(cel[i][k], 1); } }
+        for (let r = 0; r < 2; r++) for (const i of livres) { aplica(cel[i][k], -1); const o = melhorTurno(0, cob, sNeed, [ab], trabMin, intervalo, pessoas[i].turno); if (o) cel[i][k] = turno(o); aplica(cel[i][k], 1); }
+        { // troca entre os recalculados quando respeita melhor a preferência (mesma duração)
+          const lista = livres.filter((i) => cel[i][k].tipo === 'trab').map((i) => ({ i, pref: pessoas[i].turno, o: { s: cel[i][k].ini / 30, len: (cel[i][k].fim - cel[i][k].ini) / 30, c: cel[i][k] } }));
+          trocarPorPreferencia(lista, ab);
+          lista.forEach((x) => { cel[x.i][k] = x.o.c; });
+        }
       });
     }
     return { dias, pessoas, cel, feriados };
