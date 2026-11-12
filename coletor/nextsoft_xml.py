@@ -126,7 +126,7 @@ def ler_zip(dados: bytes, notas: dict):
 
 # ---------------- AppNext ----------------
 def abrir_filtros(page):
-    if page.get_by_text("Data de Emissão", exact=False).count() and page.get_by_text("Data de Emissão").first.is_visible():
+    if page.locator("text=Data de Emissão >> visible=true").count():
         return
     ok = nx._click_first(page, [
         "button:has(i[class*='filter'])", "button:has(svg[class*='filter'])", "button:has([class*='funnel'])",
@@ -135,11 +135,11 @@ def abrir_filtros(page):
     ])
     if not ok:
         raise RuntimeError("Não achei o botão de filtros (funil) na tela Gerar XML.")
-    page.get_by_text("Data de Emissão").first.wait_for(timeout=15000)
+    page.locator("text=Data de Emissão >> visible=true").first.wait_for(timeout=15000)
 
 
 def escolher(page, grupo, opcao):
-    alvo = page.locator(f"xpath=//*[normalize-space()='{grupo}']/following::*[self::button or self::label or self::a or self::span or self::div][normalize-space()='{opcao}'][1]").first
+    alvo = page.locator(f"xpath=//*[normalize-space()='{grupo}']/following::*[self::button or self::label or self::a or self::span or self::div][normalize-space()='{opcao}'][1] >> visible=true").first
     alvo.click(timeout=8000)
     log(f"{grupo}: {opcao}")
 
@@ -192,7 +192,9 @@ def main():
 
             step("2) Fiscal → Gerar XML")
             page.goto(URL_XML)
-            page.get_by_text("Gerar XML").first.wait_for(timeout=30000)
+            # "Gerar XML" também existe no menu (escondido): espera o que só existe na tela
+            page.locator("text=Filtros: >> visible=true").first.wait_for(timeout=30000)
+            log("Tela Gerar XML aberta.")
             try:
                 page.wait_for_load_state("networkidle", timeout=10000)
             except Exception:

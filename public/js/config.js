@@ -161,9 +161,9 @@
       const per = ex.de && ex.ate ? ` (${dIso(ex.de)} a ${dIso(ex.ate)})` : '';
       const linha = ex.estado === 'rodando' ? `Coletando agora${per}, desde ${dt(ex.inicio)}`
         : ex.estado === 'na_fila' ? `Na fila${per}`
-          : ex.estado === 'ok' ? `Última coleta OK em ${dt(ex.fim)}${per}` : `Última coleta FALHOU em ${dt(ex.fim)}${per}`;
+          : ex.estado === 'ok' ? `Última coleta${ex.tipo === 'xml' ? ' (só XML)' : ''} OK em ${dt(ex.fim)}${per}` : `Última coleta${ex.tipo === 'xml' ? ' (só XML)' : ex.tipo ? ' de vendas' : ''} FALHOU em ${dt(ex.fim)}${per}`;
       b.append(h('p', { class: ex.estado === 'falhou' ? 'neg' : '' }, linha));
-      if (ex.xml && ex.estado !== 'rodando' && ex.estado !== 'na_fila') b.append(h('p', { class: ex.xml.ok ? 'muted' : 'neg' }, ex.xml.ok ? 'XML das notas (CPF): baixado junto.' : 'XML das notas (CPF): falhou nesta coleta. As vendas não foram afetadas.'));
+      if (ex.xml && ex.tipo !== 'xml' && ex.estado !== 'rodando' && ex.estado !== 'na_fila') b.append(h('p', { class: ex.xml.ok ? 'muted' : 'neg' }, ex.xml.ok ? 'XML das notas (CPF): baixado junto.' : 'XML das notas (CPF): falhou nesta coleta. As vendas não foram afetadas.'));
       if ((ex.estado === 'falhou' || (ex.xml && !ex.xml.ok)) && ex.log && ex.log.length) b.append(h('details', null, h('summary', null, 'Ver o final do log'), h('pre', { class: 'script-log' }, ex.log.join('\n'))));
     }
     if (l.xml) {

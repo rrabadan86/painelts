@@ -188,8 +188,26 @@ def rodar(job):
     log(f"{loja}: rodando {tipo} ({de} a {ate})")
     log_path.write_text(f"### período {br(de)} a {br(ate)} ({job['gatilho']}, {tipo}) ###\n", encoding="utf-8")
 
+    trechos = []  # final do log de cada script (o do XML não esconde o das vendas)
+
     def executar(arquivo, env_extra):
         """roda um script e devolve o código de saída (ou 'timeout'/erro)"""
+        inicio_log = log_path.stat().st_size
+        try:
+            return _executar(arquivo, env_extra)
+        finally:
+            with open(log_path, "rb") as f:
+                f.seek(inicio_log)
+                linhas = f.read().decode("utf-8", "replace").splitlines()
+            # tira as linhas repetidas do Playwright ("locator resolved to ...")
+            enxutas = []
+            for l in linhas:
+                if enxutas and l.strip() == enxutas[-1].strip():
+                    continue
+                enxutas.append(l)
+            trechos.append(enxutas[-15:])
+
+    def _executar(arquivo, env_extra):
         try:
             with open(log_path, "a", encoding="utf-8") as out:
                 out.write(f"\n### {arquivo.name} ###\n")
@@ -213,7 +231,7 @@ def rodar(job):
         xml = {"ok": cx == 0, "codigo": cx}
         if tipo == "xml":
             ok, codigo = cx == 0, cx
-    cauda = log_path.read_text(encoding="utf-8", errors="replace").splitlines()[-25:] if log_path.exists() else []
+    cauda = [l for t in trechos for l in t] or (log_path.read_text(encoding="utf-8", errors="replace").splitlines()[-25:] if log_path.exists() else [])
     with lock:
         e = _estado(loja)
         e["ultima"] = {**job, "tipo": tipo, "xml": xml, "fim": datetime.now(TZ).isoformat(), "ok": ok, "codigo": codigo,
