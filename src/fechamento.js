@@ -144,13 +144,13 @@ function html(f) {
 <tr><td style="padding:22px 18px 0">
   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse">
     <tr>
-      <td style="font-size:11px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:${VERDE};padding-bottom:6px;border-bottom:2px solid ${OURO}">${esc(titulo)}</td>
-      ${(colunas || ['', '']).map((c) => `<td style="font-size:11px;font-weight:600;color:${CINZA};${num}padding-bottom:6px;border-bottom:2px solid ${OURO}">${esc(c)}</td>`).join('')}
+      <td style="font-size:11px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:${VERDE};padding-bottom:6px;border-bottom:2px solid ${OURO};width:40%">${esc(titulo)}</td>
+      ${(colunas || ['', '']).map((c) => `<td style="font-size:11px;font-weight:600;color:${CINZA};${num}padding-bottom:6px;border-bottom:2px solid ${OURO};width:30%">${esc(c)}</td>`).join('')}
     </tr>
     ${linhas.filter(Boolean).map(([rot, a, b, o = {}]) => `<tr>
-      <td style="${td}color:${o.forte ? ESCURO : '#3D4A42'};${o.forte ? 'font-weight:700;' : ''}">${esc(rot)}${o.sub ? `<div style="font-size:11px;color:${CINZA};font-weight:400">${esc(o.sub)}</div>` : ''}</td>
-      <td style="${td}${num}font-weight:700;color:${o.corA || ESCURO}">${esc(a ?? '')}</td>
-      <td style="${td}${num}color:${o.corB || CINZA};${o.forteB ? 'font-weight:700;' : ''}">${esc(b ?? '')}</td></tr>`).join('')}
+      <td width="40%" style="${td}width:40%;color:${o.forte ? ESCURO : '#3D4A42'};${o.forte ? 'font-weight:700;' : ''}">${esc(rot)}${o.sub ? `<div style="font-size:11px;color:${CINZA};font-weight:400">${esc(o.sub)}</div>` : ''}</td>
+      <td width="30%" style="${td}${num}width:30%;font-weight:700;color:${o.corA || ESCURO}">${esc(a ?? '')}</td>
+      <td width="30%" style="${td}${num}width:30%;color:${o.corB || CINZA};${o.forteB ? 'font-weight:700;' : ''}">${esc(b ?? '')}</td></tr>`).join('')}
   </table>
 </td></tr>`;
   // destaque: uma linha por número (empilhado, cabe em qualquer celular, mesmo com fonte ampliada)
