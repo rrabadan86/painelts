@@ -1,0 +1,342 @@
+/* Regras de negócio — tradução das medidas DAX do relatório Power BI */
+'use strict';
+(function () {
+  const LOJA_VILA = 'SÃO PAULO - TEA SHOP VILA MADALENA';
+  const LOJA_GOIANIA = 'GOIANIA - TEA SHOP FLAMBOYANT';
+  const LOJA_TORRES = 'TORRES - TEA SHOP TORRES';
+  const EG = 'ESPAÇO GOURMET';
+  const TAXA_SERVICO = 'Taxa de Serviço';
+
+  // grupos usados nas metas ([ChaAromatizado], [ChaPuro], [Acessorio])
+  const G_AROM = ['CHÁ AROMATIZADO', 'CHÁS ENVASADOS', 'INFUSÕES', 'ROOIBOS AROMATIZADO', 'SACHÊS PIRAMIDAIS', 'TEA MOMENTS'];
+  const G_PURO = ['CHÁ PURO', 'CHÁS ENVASADOS PUROS'];
+  const G_ACESS = ['ACESSÓRIOS', 'ALIMENTAÇÃO', 'CONSUMÍVEIS - COM CONTROLE DE ESTOQUE', 'COSMÉTICOS'];
+  // vendedores que não recebem meta individual (comparação sem diferenciar maiúsculas, como no DAX)
+  const SEM_META = ['amanda oliveira', 'corporativo', 'adriane puccini', 'sem vendedor'];
+
+  // tipos de chá (medidas Qtd Chá X) — por [Grupo]
+  const TIPOS_CHA = [
+    ['Infusões', ['INFUSÕES']],
+    ['Rooibos', ['ROOIBOS PURO', 'ROOIBOS AROMATIZADO']],
+    ['Branco', ['CHÁ BRANCO PURO', 'CHÁ BRANCO AROMATIZADO']],
+    ['Oolong', ['CHÁ OOLONG PURO', 'CHÁ OOLONG AROMATIZADO']],
+    ['Preto', ['CHÁ PRETO PURO', 'CHÁ PRETO AROMATIZADO']],
+    ['Verde', ['CHÁ VERDE PURO', 'CHÁ VERDE AROMATIZADO']],
+    ['Vermelho', ['CHÁ VERMELHO PURO', 'CHÁ VERMELHO AROMATIZADO']],
+    ['Amarelo', ['CHÁ AMARELO PURO', 'CHÁ AMARELO']],
+  ];
+  const CHA_TOTAL = ['CHÁS PARA MINITINS', 'ROOIBOS PURO', 'ROOIBOS AROMATIZADO', 'CHÁ BRANCO PURO', 'CHÁ BRANCO AROMATIZADO', 'INFUSÕES', 'CHÁ OOLONG PURO', 'CHÁ OOLONG AROMATIZADO', 'CHÁ PRETO PURO', 'CHÁ PRETO AROMATIZADO', 'CHÁ VERDE PURO', 'CHÁ VERDE AROMATIZADO', 'CHÁ VERMELHO PURO', 'CHÁ VERMELHO AROMATIZADO'];
+  // categorias usadas no "mix" (% aromatizado / % puro) e nos gráficos de kg
+  const CAT_AROM_PCT = ['Chás aromatizados, Chás, Rooibos e Infusões Aromatizados, LOJA', 'Chás aromatizados, Chás Envasados Aromatizados, LOJA', 'Chás aromatizados, LOJA, SACHÊS PIRAMIDAIS'];
+  const CAT_PURO_PCT = ['Chás Envasados Puros, Chás Puros, LOJA', 'Chás Puros, Chás, Rooibos e Infusões Puros, LOJA'];
+  const CAT_CHA_KG = ['Chás aromatizados, Chás, Rooibos e Infusões Aromatizados, LOJA', 'Chás Puros, Chás, Rooibos e Infusões Puros, LOJA'];
+
+  const R = (TS.rules = { LOJA_VILA, LOJA_GOIANIA, LOJA_TORRES, EG, TAXA_SERVICO, TIPOS_CHA, CAT_CHA_KG });
+
+  // ---------- regras de comissão por loja (configuráveis em Configurações → Lojas) ----------
+  // modelos = regras que estavam no relatório original; cada loja parte de um e pode ajustar
+  const PADRAO = {
+    divisaoMeta: { arom: 0.55, puro: 0.15, acess: 0.30 },
+    comissao: { modo: 'faixas', arom: { acima120: 0.05, bate: 0.04, abaixo: 0.02 }, puro: { acima120: 0.06, bate: 0.05, abaixo: 0.025 }, acess: { acima120: 0.025, bate: 0.02, abaixo: 0.01 } },
+    premiacao: { ativa: true, valor: 50, tkm: 260, ipa: 3, pma: 86.66, minimo: 2 },
+    bonus: { abaixo: 0.005, bate: 0.01, acima120: 0.015 },
+    rateio: { ativo: false, exclui: [] },
+    gorjeta: { modo: 'proporcional', percentual: 0.8 },
+    royalties: { loja: 0.06, mkt: 0.02, eg: 0.02, egMkt: 0.02 },
+    semMeta: ['amanda oliveira', 'corporativo', 'adriane puccini'],
+  };
+  const clone = (o) => JSON.parse(JSON.stringify(o));
+  const fundir = (a, b) => {
+    const out = clone(a);
+    for (const [k, v] of Object.entries(b || {})) out[k] = v && typeof v === 'object' && !Array.isArray(v) && out[k] && typeof out[k] === 'object' ? fundir(out[k], v) : v;
+    return out;
+  };
+  R.MODELOS = {
+    padrao: { nome: 'Padrão da rede', regras: PADRAO },
+    torres: { nome: 'Torres', regras: fundir(PADRAO, { bonus: { abaixo: 0.01, bate: 0.01, acima120: 0.01 }, gorjeta: { modo: 'igual', percentual: 1 }, royalties: { loja: 0.04 } }) },
+    vila: { nome: 'Vila Madalena', regras: fundir(PADRAO, {
+      comissao: { modo: 'simples', arom: { acima120: 0.05, bate: 0.05, abaixo: 0.04 }, puro: { acima120: 0.06, bate: 0.06, abaixo: 0.05 }, acess: { acima120: 0.025, bate: 0.025, abaixo: 0.02 } },
+      premiacao: { ativa: false }, rateio: { ativo: true, exclui: ['adriane puccini'] }, gorjeta: { modo: 'proporcional', percentual: 1 },
+    }) },
+    goiania: { nome: 'Goiânia', regras: fundir(PADRAO, { divisaoMeta: { arom: 0.55, puro: 0.10, acess: 0.35 } }) },
+  };
+  R.fundir = fundir;
+  const modeloPorNome = (nome) => (nome === LOJA_TORRES ? 'torres' : nome === LOJA_VILA ? 'vila' : nome === LOJA_GOIANIA ? 'goiania' : 'padrao');
+  R.modeloPorNome = modeloPorNome;
+  /** regras efetivas de uma loja (pelo nome que aparece nas vendas) */
+  R.regrasDe = function (nomeLoja) {
+    const cfg = nomeLoja && TS.db && (TS.db.metas || []).find((m) => (m.nomesVenda || []).includes(nomeLoja));
+    const r = cfg && cfg.regras;
+    const modelo = (r && R.MODELOS[r.modelo]) ? r.modelo : modeloPorNome(nomeLoja);
+    return r ? fundir(R.MODELOS[modelo].regras, r) : R.MODELOS[modelo].regras;
+  };
+
+  /** Converte listas de textos em conjuntos de ids do dicionário */
+  R.prepare = function () {
+    const D = TS.db.D;
+    const ids = (field, list, ci = false) => {
+      const s = new Set();
+      const want = ci ? list.map((x) => x.toLowerCase()) : list;
+      D[field].forEach((t, i) => { if ((ci ? want.includes(t.toLowerCase()) : want.includes(t))) s.add(i); });
+      return s;
+    };
+    R.ids = {
+      arom: ids('grupoC', G_AROM), puro: ids('grupoC', G_PURO), acess: ids('grupoC', G_ACESS),
+      semMeta: ids('vendedor', [...new Set([...SEM_META, 'sem vendedor', ...(TS.db.metas || []).flatMap((m) => (m.regras && m.regras.semMeta) || [])])], true),
+      semVendedor: ids('vendedor', ['SEM VENDEDOR', ''], true),
+      excluiComparativos: ids('vendedor', ['', 'Adriane Puccini', 'SEM VENDEDOR'], true),
+      excluiVila: ids('vendedor', ['SEM VENDEDOR', 'ADRIANE PUCCINI'], true),
+      eg: ids('cat', [EG]),
+      egGrupoC: ids('grupoC', [EG]),
+      taxaServico: ids('descricao', [TAXA_SERVICO]),
+      taxas: ids('descricao', ['Taxa de Serviço', 'Taxa Delivery']),
+      tipos: TIPOS_CHA.map(([n, gs]) => [n, ids('grupo', gs)]),
+      chaTotal: ids('grupo', CHA_TOTAL),
+      catAromPct: ids('cat', CAT_AROM_PCT),
+      catPuroPct: ids('cat', CAT_PURO_PCT),
+      grupoAcessPct: ids('grupo', ['ACESSÓRIOS', 'ALIMENTAÇÃO']),
+      catChaKg: ids('cat', CAT_CHA_KG),
+      grupoAcessQtd: ids('grupo', ['ACESSÓRIOS', 'ALIMENTAÇÃO']),
+      lojaVila: ids('loja', [LOJA_VILA]), lojaGoiania: ids('loja', [LOJA_GOIANIA]), lojaTorres: ids('loja', [LOJA_TORRES]),
+    };
+  };
+
+  const lojaNome = (id) => (id == null ? null : TS.db.D.loja[id]);
+
+  /** [ChaAromatizado], [ChaPuro], [Acessorio] e [Total] */
+  R.mix = function (idx) {
+    const db = TS.db, I = R.ids;
+    let arom = 0, puro = 0, acess = 0, nA = 0, nP = 0, nC = 0;
+    for (const i of idx) {
+      const g = db.grupoC[i], v = db.vt[i] || 0;
+      if (I.arom.has(g)) { arom += v; nA++; } else if (I.puro.has(g)) { puro += v; nP++; } else if (I.acess.has(g)) { acess += v; nC++; }
+    }
+    const tem = nA + nP + nC > 0;
+    return { arom, puro, acess, total: arom + puro + acess, tem };
+  };
+
+  // ---------- comissões ($) ----------
+  /** faixas: ≥120% da meta / ≥100% / abaixo; modo "simples": bateu ou não bateu */
+  function comissao(valor, meta, modo, f) {
+    if (modo === 'simples') return valor >= meta ? valor * f.bate : valor * f.abaixo;
+    if (valor >= meta * 1.2) return valor * f.acima120;
+    if (valor >= meta) return valor * f.bate;
+    return valor * f.abaixo;
+  }
+
+  /** [PremiacaoFuncionario] */
+  R.premiacao = function (ind, rg) {
+    const p = rg.premiacao;
+    if (!p || !p.ativa) return 0;
+    const tkm = ind.tkm >= p.tkm ? p.valor : 0, ipa = ind.ipa >= p.ipa ? p.valor : 0, pma = ind.pma >= p.pma ? p.valor : 0;
+    const ok = (tkm > 0) + (ipa > 0) + (pma > 0);
+    return ok >= p.minimo ? tkm + ipa + pma : 0;
+  };
+
+  /** Loja do contexto: só existe quando há exatamente uma (como SELECTEDVALUE) */
+  function lojaUnica(idx) {
+    const db = TS.db;
+    let l = null;
+    for (const i of idx) {
+      if (l === null) l = db.loja[i];
+      else if (l !== db.loja[i]) return null;
+    }
+    return lojaNome(l);
+  }
+  R.lojaUnica = lojaUnica;
+
+  /**
+   * Página Comissionamento — tabela principal.
+   * base: vendas com todos os filtros; baseSemVend: idem, sem o filtro de vendedor.
+   * O visual do Power BI exclui a categoria ESPAÇO GOURMET.
+   */
+  /** férias cadastradas para a loja (pelo nome nas vendas) */
+  R.feriasDe = function (nomeLoja) {
+    const cfg = nomeLoja && TS.db && (TS.db.metas || []).find((m) => (m.nomesVenda || []).includes(nomeLoja));
+    return (cfg && cfg.ferias) || [];
+  };
+  /**
+   * Meta individual com férias: meta diária (meta ÷ dias do mês) dividida, em cada dia, só entre quem
+   * está trabalhando. Sem férias no mês = meta ÷ quantidade de vendedores.
+   * nomes: vendedores que dividem a meta; devolve Map(nomeMaiúsculo → meta) e as férias do mês.
+   */
+  R.metasIndividuais = function (metaLoja, ym, nomes, ferias) {
+    const out = new Map();
+    const N = nomes.map((n) => String(n).trim().toUpperCase());
+    if (!N.length) return { metas: out, feriasMes: [] };
+    const nDias = new Date(Date.UTC(+ym.slice(0, 4), +ym.slice(5, 7), 0)).getUTCDate();
+    const ini = ym + '-01', fim = `${ym}-${String(nDias).padStart(2, '0')}`;
+    const fm = (ferias || []).filter((f) => f.de <= fim && f.ate >= ini && N.includes(String(f.vendedor).trim().toUpperCase()));
+    if (!fm.length || !ym) { N.forEach((n) => out.set(n, metaLoja / N.length)); return { metas: out, feriasMes: [] }; }
+    const diaria = metaLoja / nDias;
+    N.forEach((n) => out.set(n, 0));
+    for (let d = 1; d <= nDias; d++) {
+      const iso = `${ym}-${String(d).padStart(2, '0')}`;
+      const fora = new Set(fm.filter((f) => f.de <= iso && f.ate >= iso).map((f) => String(f.vendedor).trim().toUpperCase()));
+      const ativos = N.filter((n) => !fora.has(n));
+      if (!ativos.length) continue;
+      ativos.forEach((n) => out.set(n, out.get(n) + diaria / ativos.length));
+    }
+    return { metas: out, feriasMes: fm };
+  };
+
+  R.comissionamento = function ({ base, baseSemVend, metaLoja, vendBonus, ym }) {
+    const db = TS.db, I = R.ids;
+    const semEG = (idx) => idx.filter((i) => !I.eg.has(db.cat[i]));
+    const b = semEG(base), bAll = semEG(baseSemVend);
+
+    // quantidade de vendedores que dividem a meta
+    const elegiveis = new Set();
+    for (const i of bAll) if ((db.vt[i] || 0) > 0 && !I.semMeta.has(db.vend[i])) elegiveis.add(db.vend[i]);
+    const qtdVend = elegiveis.size;
+
+    const porVend = TS.agrupar(b, (i) => db.vend[i]);
+    const vendBonusId = vendBonus === '' ? null : db.D.vendedor.indexOf(vendBonus);
+    const lojaFerias = lojaUnica(bAll.length ? bAll : b);
+    const mInd = R.metasIndividuais(metaLoja, ym || '', [...elegiveis].map((v) => db.D.vendedor[v]), lojaFerias ? R.feriasDe(lojaFerias) : []);
+
+    const rows = [];
+    for (const [v, idx] of porVend) {
+      const m = R.mix(idx);
+      if (!m.tem) continue; // visual filtra [Total] em branco
+      const loja = lojaUnica(idx);
+      const rg = R.regrasDe(loja);
+      const mi = I.semMeta.has(v) ? 0 : (mInd.metas.get(String(db.D.vendedor[v]).trim().toUpperCase()) ?? (qtdVend ? metaLoja / qtdVend : 0));
+      const metaArom = mi * rg.divisaoMeta.arom;
+      const metaPuro = mi * rg.divisaoMeta.puro;
+      const metaAcess = mi * rg.divisaoMeta.acess;
+      const cm = rg.comissao;
+      const cArom = comissao(m.arom, metaArom, cm.modo, cm.arom);
+      const cPuro = comissao(m.puro, metaPuro, cm.modo, cm.puro);
+      const cAcess = comissao(m.acess, metaAcess, cm.modo, cm.acess);
+      const ind = TS.indicadores(idx);
+      const prem = R.premiacao(ind, rg);
+
+      // [BonusSobreOutrosVendedores] — só na linha do vendedor escolhido
+      let bonus = null;
+      if (vendBonusId !== null && v === vendBonusId) {
+        const lojaId = loja == null ? null : db.D.loja.indexOf(loja);
+        let totLoja = 0, totVend = 0;
+        if (lojaId !== null) {
+          for (const i of bAll) {
+            if (db.loja[i] !== lojaId || I.taxaServico.has(db.desc[i])) continue;
+            totLoja += db.vt[i] || 0;
+            if (db.vend[i] === v) totVend += db.vt[i] || 0;
+          }
+        }
+        const aliq = totLoja >= metaLoja * 1.2 ? rg.bonus.acima120 : totLoja >= metaLoja ? rg.bonus.bate : rg.bonus.abaixo;
+        bonus = Math.max(0, totLoja - totVend) * aliq;
+      }
+      rows.push({
+        vendedorId: v, vendedor: db.D.vendedor[v] || '(sem nome)', loja,
+        metaInd: mi, total: m.total,
+        metaArom, arom: m.arom, cArom, metaPuro, puro: m.puro, cPuro, metaAcess, acess: m.acess, cAcess,
+        tkm: ind.tkm, pma: ind.pma, ipa: ind.ipa, premiacao: prem, bonus,
+        base: cArom + cPuro + cAcess + (bonus || 0),
+      });
+    }
+
+    // [TotalAPagar] — Vila Madalena faz rateio igual entre os vendedores
+    const lojaCtx = lojaUnica(b);
+    const rgCtx = R.regrasDe(lojaCtx);
+    if (rgCtx.rateio && rgCtx.rateio.ativo) {
+      const exclui = new Set((rgCtx.rateio.exclui || []).map((x) => x.toLowerCase()));
+      const fora = (v) => I.semVendedor.has(v) || exclui.has(String(db.D.vendedor[v] || '').toLowerCase());
+      const montante = rows.reduce((s, r) => s + r.base + r.premiacao, 0);
+      const recebedores = new Set(bAll.map((i) => db.vend[i]).filter((v) => !fora(v))).size;
+      rows.forEach((r) => { r.aPagar = fora(r.vendedorId) ? 0 : (recebedores ? montante / recebedores : 0); });
+    } else {
+      rows.forEach((r) => { r.aPagar = r.base; });
+    }
+    const sum = (k) => rows.reduce((s, r) => s + (r[k] || 0), 0);
+    const total = {
+      vendedor: 'Total', metaInd: metaLoja, total: sum('total'), arom: sum('arom'), cArom: sum('cArom'), puro: sum('puro'), cPuro: sum('cPuro'),
+      acess: sum('acess'), cAcess: sum('cAcess'), premiacao: sum('premiacao'), bonus: sum('bonus'), aPagar: sum('aPagar'),
+      metaArom: metaLoja * rgCtx.divisaoMeta.arom, metaPuro: metaLoja * rgCtx.divisaoMeta.puro, metaAcess: metaLoja * rgCtx.divisaoMeta.acess,
+      ...(() => { const ind = TS.indicadores(b); return { tkm: ind.tkm, pma: ind.pma, ipa: ind.ipa }; })(),
+    };
+    return { rows, total, qtdVend, feriasMes: mInd.feriasMes, loja: lojaCtx, regras: rgCtx, lojasNoPeriodo: new Set(b.map((i) => db.loja[i])).size };
+  };
+
+  /** Página Comissionamento — Espaço Gourmet (gorjeta/taxa de serviço) */
+  R.espacoGourmet = function ({ base, baseSemVend }) {
+    const db = TS.db, I = R.ids;
+    const lojas = [...new Set(base.map((i) => db.loja[i]))];
+    // por loja: faturamento EG por vendedor, total EG, taxa de serviço, vendedores ativos
+    const L = new Map();
+    for (const l of lojas) L.set(l, { fatEG: new Map(), fatEGTot: 0, gorjeta: 0, vendAtivos: new Set() });
+    for (const i of baseSemVend) {
+      const st = L.get(db.loja[i]);
+      if (!st) continue;
+      const v = db.vend[i];
+      if (!I.semVendedor.has(v)) st.vendAtivos.add(v);
+      if (I.taxaServico.has(db.desc[i])) { st.gorjeta += db.vt[i] || 0; continue; }
+      if (I.eg.has(db.cat[i])) {
+        st.fatEGTot += db.vt[i] || 0;
+        st.fatEG.set(v, (st.fatEG.get(v) || 0) + (db.vt[i] || 0));
+      }
+    }
+    const porVend = TS.agrupar(baseSemVend, (i) => db.vend[i]);
+    const rows = [];
+    for (const [v, idx] of porVend) {
+      if (I.semVendedor.has(v)) continue;
+      let fat = 0, gorjeta = 0, temEG = false;
+      for (const [l, st] of L) {
+        const f = st.fatEG.get(v);
+        if (f !== undefined) { fat += f; temEG = true; }
+        const prop = st.fatEGTot ? (f || 0) / st.fatEGTot : 0;
+        const gj = R.regrasDe(lojaNome(l)).gorjeta;
+        if (gj.modo === 'igual') gorjeta += st.vendAtivos.size && f !== undefined ? (st.gorjeta * gj.percentual) / st.vendAtivos.size : 0;
+        else gorjeta += prop * st.gorjeta * gj.percentual;
+      }
+      if (!temEG) continue;
+      const ind = TS.indicadores(idx);
+      rows.push({ vendedor: db.D.vendedor[v], gorjeta, fatEG: fat, tkmEG: ind.cupons ? fat / ind.cupons : null, pmaEG: ind.pma, ipaEG: ind.ipa });
+    }
+    let gTot = 0, fTot = 0;
+    for (const [l, st] of L) {
+      gTot += st.gorjeta * R.regrasDe(lojaNome(l)).gorjeta.percentual;
+      fTot += st.fatEGTot;
+    }
+    return { rows, total: { vendedor: 'Total', gorjeta: gTot, fatEG: fTot } };
+  };
+
+  /** Royalties por loja */
+  R.royalties = function (base) {
+    const db = TS.db, I = R.ids;
+    const porLoja = TS.agrupar(base, (i) => db.loja[i]);
+    const rows = [];
+    for (const [l, idx] of porLoja) {
+      const nome = lojaNome(l);
+      const m = R.mix(idx);
+      let fatEG = 0;
+      for (const i of idx) if (I.eg.has(db.cat[i]) && !I.taxaServico.has(db.desc[i])) fatEG += db.vt[i] || 0;
+      const ry = R.regrasDe(nome).royalties;
+      const taxa = ry.loja;
+      const r = { loja: nome, total: m.total, royLoja: m.total * taxa, royMkt: m.total * ry.mkt, fatEG, royEG: fatEG * ry.eg, royEGMkt: fatEG * ry.egMkt, taxa };
+      r.royTotal = r.royLoja + r.royMkt + r.royEG + r.royEGMkt;
+      rows.push(r);
+    }
+    return rows;
+  };
+
+  /** % EG e mix de vendas */
+  R.pctEG = function (idx) {
+    const db = TS.db, I = R.ids;
+    let eg = 0, tot = 0;
+    for (const i of idx) { tot += db.vt[i] || 0; if (I.egGrupoC.has(db.grupoC[i])) eg += db.vt[i] || 0; }
+    return tot > 0 ? eg / tot : null;
+  };
+  R.mixPct = function (idx) {
+    const db = TS.db, I = R.ids;
+    let a = 0, p = 0, c = 0;
+    for (const i of idx) {
+      const v = db.vt[i] || 0;
+      if (I.catAromPct.has(db.cat[i])) a += v;
+      if (I.catPuroPct.has(db.cat[i])) p += v;
+      if (I.grupoAcessPct.has(db.grupo[i])) c += v;
+    }
+    const t = R.mix(idx).total;
+    return t ? { arom: a / t, puro: p / t, acess: c / t } : { arom: null, puro: null, acess: null };
+  };
+})();

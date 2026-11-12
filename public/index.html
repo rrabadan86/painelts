@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tea Shop · Painel de vendas</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css?v=20261112o">
+</head>
+<body>
+  <header class="topbar">
+    <button class="icon-btn only-mobile" id="btnFiltros" aria-label="Abrir filtros">
+      <svg viewBox="0 0 24 24" width="22" height="22"><path d="M3 5h18M6 12h12M10 19h4" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></svg>
+    </button>
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 32 32" width="28" height="28"><path d="M5 12h18v5a8 8 0 0 1-8 8h-2a8 8 0 0 1-8-8z" fill="#C9A227"/><path d="M23 14h2.5a3 3 0 0 1 0 6H22" stroke="#C9A227" stroke-width="2" fill="none"/><path d="M11 4c-1.5 2 1.5 3 0 5M15 3c-1.5 2 1.5 3 0 5" stroke="#BFD3C1" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg>
+      </span>
+      <div>
+        <div class="brand-name">Tea Shop</div>
+        <div class="brand-sub">Painel de vendas</div>
+      </div>
+    </div>
+    <nav class="tabs" id="tabs" aria-label="Páginas">
+      <a href="#resumo" data-page="resumo">Resumo</a>
+      <a href="#comparativos" data-page="comparativos">Comparativos</a>
+      <a href="#comissionamento" data-page="comissionamento">Comissionamento</a>
+      <a href="#promocao" data-page="promocao">Promoção</a>
+      <a href="#mapa" data-page="mapa">Mapa de calor</a>
+      <a href="#clientes" data-page="clientes">Clientes</a>
+    </nav>
+    <div class="topbar-right">
+      <select class="loja-sel" id="lojaSel" aria-label="Loja" hidden></select>
+      <div class="updated" id="updated" title="Quando os dados foram lidos do Google Drive">—</div>
+      <button class="icon-btn" id="btnAtualizar" title="Buscar dados novos no Drive" aria-label="Atualizar dados">
+        <svg viewBox="0 0 24 24" width="20" height="20"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v5h-5" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <div class="script-wrap">
+        <button class="icon-btn" id="btnScript" title="Buscar dados novos no sistema (roda o script da loja)" aria-label="Rodar o script de atualização da loja" aria-haspopup="dialog" hidden>
+          <svg viewBox="0 0 24 24" width="20" height="20"><path d="M7 18a5 5 0 0 1-.6-9.96A6 6 0 0 1 18 9a4 4 0 0 1-.5 7.97" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/><path d="M12 12v8M9 17l3 3 3-3" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span class="dot" hidden></span>
+        </button>
+        <div class="script-pop" id="scriptPop" role="dialog" aria-label="Atualizar dados do sistema" hidden></div>
+      </div>
+      <form method="post" action="/logout" class="logout-form">
+        <button class="icon-btn" title="Sair" aria-label="Sair">
+          <svg viewBox="0 0 24 24" width="20" height="20"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 16l-4-4 4-4M6 12h10" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </form>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar" id="sidebar" aria-label="Filtros">
+      <div class="sidebar-head">
+        <span>Filtros</span>
+        <button class="link-btn" id="btnLimpar">Limpar</button>
+        <button class="icon-btn only-mobile dark" id="btnFecharFiltros" aria-label="Fechar filtros">✕</button>
+      </div>
+      <div id="filtros"></div>
+    </aside>
+    <div class="scrim" id="scrim"></div>
+
+    <main class="content" id="content">
+      <div class="loading" id="loading">
+        <div class="spinner"></div>
+        <p>Lendo as planilhas do Google Drive…</p>
+      </div>
+    </main>
+  </div>
+
+  <div class="tooltip" id="tooltip" role="tooltip"></div>
+
+  <script src="/vendor/chart.umd.js"></script>
+  <script src="/js/core.js?v=20261112o"></script>
+  <script src="/js/components.js?v=20261112o"></script>
+  <script src="/js/rules.js?v=20261112o"></script>
+  <script src="/js/pages.js?v=20261112o"></script>
+  <script src="/js/clientes.js?v=20261112o"></script>
+  <script src="/js/extras.js?v=20261112o"></script>
+  <script src="/js/mapa.js?v=20261112o"></script>
+  <script src="/js/config.js?v=20261112o"></script>
+  <script src="/js/script.js?v=20261112o"></script>
+  <script src="/js/main.js?v=20261112o"></script>
+</body>
+</html>

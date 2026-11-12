@@ -1,0 +1,14 @@
+{
+  "lojas": [
+    {
+      "id": "minhaloja",
+      "nome": "Tea Shop Minha Loja",
+      "meta": null,
+      "drive": {
+        "importacaoA": "ID_DO_ARQUIVO_NO_DRIVE"
+      }
+    }
+  ],
+  "usuarios": {},
+  "uploadToken": null
+}

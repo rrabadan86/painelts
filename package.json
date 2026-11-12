@@ -1,0 +1,22 @@
+{
+  "name": "teashop-painel",
+  "version": "1.0.0",
+  "description": "Painel de vendas Tea Shop — lê as planilhas do Google Drive e substitui o relatório Power BI",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "license": "UNLICENSED",
+  "dependencies": {
+    "chart.js": "^4.6.1",
+    "compression": "^1.8.2",
+    "exceljs": "^4.4.0",
+    "express": "^4.22.3",
+    "nodemailer": "^6.10.1"
+  },
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  }
+}

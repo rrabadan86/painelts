@@ -1,0 +1,15 @@
+node_modules
+.env
+*.log
+dados/
+config/lojas.json
+config/coletor/*.env
+coletor-work/
+config/acessos.json
+config/notificacoes.json
+config/auditoria.jsonl
+config/backups/
+config/coletor/*.env.removida-*
+config/coletor/horarios.txt
+config/coletor/*.py
+*.zip

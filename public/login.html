@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Entrar · Tea Shop</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/login.css">
+</head>
+<body>
+  <main class="box">
+    <svg viewBox="0 0 32 32" width="44" height="44" aria-hidden="true"><path d="M5 12h18v5a8 8 0 0 1-8 8h-2a8 8 0 0 1-8-8z" fill="#C9A227"/><path d="M23 14h2.5a3 3 0 0 1 0 6H22" stroke="#C9A227" stroke-width="2" fill="none"/><path d="M11 4c-1.5 2 1.5 3 0 5M15 3c-1.5 2 1.5 3 0 5" stroke="#7FA37A" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg>
+    <h1>Tea Shop</h1>
+    <p class="sub">Painel de vendas</p>
+    <form method="post" action="/login">
+      <label>Usuário<input name="usuario" autocomplete="username" autocapitalize="none"></label>
+      <label>Senha<input name="senha" type="password" autocomplete="current-password" required></label>
+      <p class="err" id="err" hidden></p>
+      <button type="submit">Entrar</button>
+    </form>
+  </main>
+  <noscript><p class="sub" style="text-align:center">Ative o JavaScript para usar o painel.</p></noscript>
+  <script src="/login.js"></script>
+</body>
+</html>

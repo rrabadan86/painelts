@@ -1,0 +1,18 @@
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  font-family: "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
+  background: radial-gradient(circle at 20% 10%, #2C5234 0, #1F3D2B 55%, #172E20 100%);
+  display: grid; place-items: center; color: #24302A; padding: 16px;
+}
+.box { width: min(360px, 100%); background: #fff; border-radius: 16px; padding: 30px 28px 26px; box-shadow: 0 20px 60px rgba(0,0,0,.25); text-align: center; }
+h1 { margin: 8px 0 0; font-size: 24px; color: #1F3D2B; }
+.sub { margin: 2px 0 20px; color: #6B7A70; font-size: 13px; }
+form { text-align: left; display: grid; gap: 12px; }
+label { font-size: 12px; font-weight: 600; color: #1F3D2B; display: grid; gap: 5px; }
+input { height: 40px; border: 1px solid #DCD5C6; border-radius: 8px; padding: 0 12px; font: inherit; font-size: 14px; background: #F7F4EC; outline: none; }
+input:focus { border-color: #2C5234; background: #fff; box-shadow: 0 0 0 3px rgba(44,82,52,.12); }
+button { height: 42px; border: 0; border-radius: 8px; background: #2C5234; color: #fff; font: inherit; font-weight: 600; font-size: 14px; cursor: pointer; margin-top: 4px; }
+button:hover { background: #1F3D2B; }
+.err { margin: 0; color: #B5452B; font-size: 13px; }
+.logo-loja { max-height: 72px; max-width: 220px; object-fit: contain; display: block; margin: 0 auto 6px; }

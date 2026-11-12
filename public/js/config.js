@@ -1,0 +1,673 @@
+/* Página Configurações: lojas, acesso ao AppNext, metas por mês, planilhas, usuários, horários e histórico */
+'use strict';
+(function () {
+  const { h, fmt, state } = TS;
+  const TELAS_NOME = [['resumo', 'Resumo'], ['comparativos', 'Comparativos'], ['comissionamento', 'Comissionamento'], ['promocao', 'Promoção'], ['mapa', 'Mapa de calor'], ['clientes', 'Clientes (CPF e telefone)'], ['minha', 'Comissão de cada vendedor']];
+  const TELAS_PADRAO = ['resumo', 'comparativos', 'comissionamento', 'promocao', 'mapa', 'minha'];
+  const PERFIL_NOME = { admin: 'Administrador', franqueado: 'Franqueado', gerente: 'Gerente', vendedor: 'Vendedor' };
+  const PERFIL_DESC = {
+    admin: 'Tudo: todas as lojas, acessos, horários e usuários.',
+    franqueado: 'Tudo das lojas dele, inclusive criar gerentes e vendedores.',
+    gerente: 'As telas que você liberar (padrão: todas, menos Clientes).',
+    vendedor: 'Só a própria comissão e o andamento da meta.',
+  };
+  let est = null;          // último /api/admin/estado
+  let timer = null;
+  let raiz = null;
+  const abertos = new Set(); // formulários abertos (sobrevivem à atualização)
+
+  async function api(metodo, url, corpo, extras = {}) {
+    const raw = corpo instanceof Blob || corpo instanceof ArrayBuffer;
+    const res = await fetch('/api/admin' + url, {
+      method: metodo, credentials: 'same-origin',
+      headers: { 'X-Painel': '1', ...(corpo && !raw ? { 'Content-Type': 'application/json' } : {}), ...extras },
+      body: corpo == null ? undefined : raw ? corpo : JSON.stringify(corpo),
+    });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(j.erro || `Erro ${res.status}`);
+    return j;
+  }
+  function toast(msg, erro) {
+    document.querySelectorAll('.toast').forEach((x) => x.remove());
+    const t = h('div', { class: 'toast' + (erro ? ' err' : ''), role: 'status' }, msg);
+    document.body.append(t);
+    setTimeout(() => t.remove(), erro ? 7000 : 4000);
+  }
+  /** botão que mostra "…" enquanto a ação roda */
+  function acao(rotulo, fn, cls = 'btn') {
+    const b = h('button', { type: 'button', class: cls }, rotulo);
+    b.addEventListener('click', async () => {
+      b.disabled = true; const txt = b.textContent; b.textContent = '…';
+      try { const msg = await fn(); if (msg) toast(msg); await carregar(); } catch (e) { toast(e.message, true); } finally { b.disabled = false; b.textContent = txt; }
+    });
+    return b;
+  }
+  const dt = (iso) => (iso ? new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—');
+  const dIso = (iso) => (iso ? fmt.date(iso) : '—');
+  const ymLongo = (ym) => `${TS.MESES_LONGOS[+ym.slice(5, 7) - 1]}/${ym.slice(0, 4)}`;
+  const campo = (rotulo, el, dica) => h('label', { class: 'cfg-campo' }, h('span', null, rotulo), el, dica ? h('small', null, dica) : null);
+  const inp = (attrs) => h('input', { class: 'f-input', ...attrs });
+
+  let sujo = false; // há campo editado e não salvo: a atualização automática não redesenha a tela
+  async function carregar(auto) {
+    try { est = await api('GET', '/estado'); } catch (e) { if (auto) return; est = { erro: e.message }; }
+    if (state.page === 'config' && raiz && raiz.isConnected && !(auto && sujo)) pintar();
+    clearTimeout(timer);
+    const ocupado = est.lojas && est.lojas.some((l) => l.status && l.status.execucao && ['rodando', 'na_fila'].includes(l.status.execucao.estado));
+    timer = setTimeout(() => { if (state.page === 'config' && raiz && raiz.isConnected) carregar(true); }, ocupado ? 5000 : 60000);
+  }
+
+  TS.pages.config = function (root) {
+    raiz = root;
+    root.addEventListener('input', () => { sujo = true; });
+    root.addEventListener('change', (e) => { if (e.target.matches('input,select')) sujo = true; });
+    if (!est) { root.append(h('div', { class: 'loading' }, h('div', { class: 'spinner' }), h('p', null, 'Carregando configurações…'))); carregar(); return; }
+    pintar();
+    carregar();
+  };
+
+  function pintar() {
+    const root = raiz;
+    sujo = false;
+    const scroll = window.scrollY;
+    root.textContent = '';
+    root.append(h('div', { class: 'page-head' }, h('div', null, h('h1', { class: 'page-title' }, 'Configurações'),
+      h('div', { class: 'page-sub' }, est.perfil === 'admin' ? 'Lojas, acesso ao AppNext, metas, usuários e horários' : 'Metas, planilhas e usuários das suas lojas'))));
+    if (est.erro) { root.append(h('div', { class: 'notice err' }, est.erro)); return; }
+    const abas = [['Lojas', 'lojas'], ['Usuários', 'usuarios']];
+    if (est.perfil === 'admin') abas.push(['Atualização automática', 'coletor'], ['Resumo diário', 'resumo']);
+    abas.push(['Histórico de alterações', 'historico']);
+    state.cfgAba = abas.some(([, v]) => v === state.cfgAba) ? state.cfgAba : 'lojas';
+    root.append(h('div', { class: 'cfg-abas' }, TS.seg(abas, state.cfgAba, (v) => { state.cfgAba = v; pintar(); })));
+    const corpo = h('div', { class: 'cfg-corpo' });
+    root.append(corpo);
+    ({ lojas: abaLojas, usuarios: abaUsuarios, coletor: abaColetor, resumo: abaResumo, historico: abaHistorico })[state.cfgAba](corpo);
+    window.scrollTo({ top: scroll });
+  }
+
+  // ======================= LOJAS =======================
+  function abaLojas(box) {
+    if (est.perfil === 'admin') {
+      const aberto = abertos.has('nova');
+      box.append(h('div', { class: 'cfg-barra' },
+        h('button', { type: 'button', class: 'btn primary', onclick: () => { aberto ? abertos.delete('nova') : abertos.add('nova'); pintar(); } }, aberto ? 'Fechar' : '+ Nova loja')));
+      if (aberto) box.append(formNovaLoja());
+    }
+    if (!est.lojas.length) box.append(h('div', { class: 'card' }, TS.empty('Nenhuma loja cadastrada ainda.')));
+    for (const l of est.lojas) box.append(cartaoLoja(l));
+  }
+
+  function formNovaLoja() {
+    const nome = inp({ placeholder: 'Ex.: Tea Shop Campinas' });
+    const id = inp({ placeholder: 'gerado do nome', maxlength: 40 });
+    const appnext = inp({ placeholder: 'Ex.: CAMPINAS - TEA SHOP CAMBUÍ' });
+    const meta = inp({ type: 'number', min: 0, step: 500, placeholder: 'Ex.: 60000' });
+    nome.addEventListener('input', () => { id.placeholder = TS.norm(nome.value).replace(/^tea\s*shop\s*/, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'gerado do nome'; });
+    return h('div', { class: 'card cfg-form' }, h('div', { class: 'card-title' }, 'Nova loja'),
+      h('div', { class: 'cfg-grid' },
+        campo('Nome da loja', nome),
+        campo('Identificador', id, 'Usado nos endereços e pastas. Não muda depois.'),
+        campo('Nome da loja no AppNext', appnext, 'Exatamente como aparece na coluna "Loja" do relatório.'),
+        campo('Meta mensal padrão (R$)', meta)),
+      h('div', { class: 'cfg-acoes' }, acao('Criar loja', async () => {
+        const r = await api('POST', '/lojas', { nome: nome.value, id: id.value || undefined, appnext: appnext.value, meta: meta.value });
+        abertos.delete('nova'); abertos.add('loja:' + r.id);
+        return 'Loja criada. Agora cadastre o acesso ao AppNext dela.';
+      }, 'btn primary')));
+  }
+
+  function situacao(l) {
+    const ex = l.status && l.status.execucao;
+    if (ex && ex.estado === 'rodando') return ['rodando', 'Coletando agora…'];
+    if (ex && ex.estado === 'na_fila') return ['rodando', 'Na fila'];
+    if (!l.base.existe || !l.base.linhas) return l.coletor.configurado ? ['espera', 'Aguardando a 1ª coleta'] : ['espera', 'Sem dados'];
+    if (ex && ex.estado === 'falhou') return ['erro', 'Última coleta falhou'];
+    const dias = l.base.ultimaVenda ? Math.floor((Date.now() - new Date(l.base.ultimaVenda + 'T12:00:00').getTime()) / 86400e3) : null;
+    if (dias != null && dias > 2) return ['erro', `Sem vendas novas desde ${dIso(l.base.ultimaVenda)}`];
+    if (!l.coletor.configurado) return ['espera', 'Sem atualização automática'];
+    return ['ok', 'Em dia'];
+  }
+
+  function cartaoLoja(l) {
+    const chave = 'loja:' + l.id;
+    const aberto = abertos.has(chave) || est.lojas.length === 1;
+    const [cls, txt] = situacao(l);
+    const ult = l.base.importacoes[0];
+    const cab = h('button', { type: 'button', class: 'cfg-loja-cab', 'aria-expanded': String(aberto), onclick: () => { aberto ? abertos.delete(chave) : abertos.add(chave); pintar(); } },
+      h('div', null, h('div', { class: 'cfg-loja-nome' }, l.nome), h('div', { class: 'cfg-loja-sub' }, `${l.id}${l.appnext ? ' · ' + l.appnext : ''}`)),
+      h('div', { class: 'cfg-loja-info' },
+        l.base.linhas ? h('span', null, `${fmt.int(l.base.linhas)} vendas · ${ymLongo(l.base.de)} a ${dIso(l.base.ultimaVenda)}`) : null,
+        ult ? h('span', { class: 'muted' }, `atualizado ${dt(ult.em)}`) : null),
+      h('span', { class: 'badge ' + cls }, txt), h('span', { class: 'cfg-seta' }, aberto ? '▴' : '▾'));
+    const card = h('div', { class: 'card cfg-loja' }, cab);
+    if (!aberto) return card;
+    const grid = h('div', { class: 'cfg-loja-corpo' });
+    grid.append(blocoDados(l));
+    if (est.perfil === 'admin') grid.append(blocoAppNext(l));
+    grid.append(blocoMetas(l), blocoFerias(l), blocoPlanilhas(l), blocoOperacao(l), blocoMarca(l));
+    if (est.perfil === 'admin') grid.append(blocoRegras(l), blocoEditar(l));
+    card.append(grid);
+    return card;
+  }
+
+  // ---- dados e coleta
+  function blocoDados(l) {
+    const b = h('section', { class: 'cfg-bloco' }, h('h3', null, 'Dados e atualização'));
+    const ex = l.status && l.status.execucao;
+    const lote = l.status && l.status.lote;
+    if (!est.coletorAtivo) b.append(h('p', { class: 'muted' }, 'O coletor (atualização automática) não está ligado nesta VPS.'));
+    else if (!l.coletor.configurado) b.append(h('p', { class: 'muted' }, est.perfil === 'admin' ? 'Cadastre o acesso ao AppNext (ao lado) para a loja atualizar sozinha.' : 'O administrador ainda não cadastrou o acesso ao AppNext desta loja.'));
+    if (ex) {
+      const per = ex.de && ex.ate ? ` (${dIso(ex.de)} a ${dIso(ex.ate)})` : '';
+      const linha = ex.estado === 'rodando' ? `Coletando agora${per}, desde ${dt(ex.inicio)}`
+        : ex.estado === 'na_fila' ? `Na fila${per}`
+          : ex.estado === 'ok' ? `Última coleta OK em ${dt(ex.fim)}${per}` : `Última coleta FALHOU em ${dt(ex.fim)}${per}`;
+      b.append(h('p', { class: ex.estado === 'falhou' ? 'neg' : '' }, linha));
+      if (ex.estado === 'falhou' && ex.log && ex.log.length) b.append(h('details', null, h('summary', null, 'Ver o final do log'), h('pre', { class: 'script-log' }, ex.log.join('\n'))));
+    }
+    if (lote && (!lote.fim || Date.now() - new Date(lote.fim).getTime() < 86400e3)) {
+      const pct = Math.round((lote.feitas / lote.total) * 100);
+      b.append(h('div', { class: 'cfg-lote' },
+        h('div', null, `Importação do histórico ${dIso(lote.de)} a ${dIso(lote.ate)}: ${lote.feitas} de ${lote.total} partes${lote.cancelado ? ' (cancelada)' : lote.fim ? ' — concluída' : ''}`),
+        h('div', { class: 'cfg-barra-prog' }, h('div', { style: { width: pct + '%' } })),
+        lote.falhas && lote.falhas.length ? h('div', { class: 'neg' }, `Falharam: ${lote.falhas.map((f) => `${dIso(f.de)} a ${dIso(f.ate)}`).join(', ')}. Rode de novo só esses períodos.`) : null));
+    }
+    if (l.base.pendentes) b.append(h('p', { class: 'muted' }, `${l.base.pendentes} planilha(s) sendo processada(s)…`));
+    const ocupado = ex && ['rodando', 'na_fila'].includes(ex.estado);
+    if (est.coletorAtivo && l.coletor.configurado) {
+      const acoes = h('div', { class: 'cfg-acoes' });
+      if (ocupado) acoes.append(acao('Cancelar o que está na fila', async () => { await api('POST', `/lojas/${l.id}/cancelar`); return 'Fila cancelada (a parte que já está rodando termina).'; }));
+      else acoes.append(acao('Atualizar agora', async () => { await api('POST', `/lojas/${l.id}/rodar`); return 'Atualização na fila. Leva alguns minutos.'; }, 'btn primary'));
+      b.append(acoes);
+      if (!ocupado) b.append(formHistorico(l));
+    }
+    // últimas importações
+    if (l.base.importacoes.length) {
+      b.append(h('details', { class: 'cfg-imp' }, h('summary', null, 'Últimas importações'),
+        h('table', { class: 't cfg-t' }, h('thead', null, h('tr', null, h('th', { class: 'l' }, 'Quando'), h('th', { class: 'l' }, 'Origem'), h('th', { class: 'l' }, 'Período'), h('th', null, 'Linhas'))),
+          h('tbody', null, l.base.importacoes.map((i) => h('tr', null, h('td', { class: 'l' }, dt(i.em)), h('td', { class: 'l' }, i.origem || '—'), h('td', { class: 'l' }, `${dIso(i.de)} a ${dIso(i.ate)}`), h('td', null, fmt.int(i.linhas))))))));
+    }
+    return b;
+  }
+
+  function formHistorico(l) {
+    const hoje = new Date();
+    const ymHoje = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}`;
+    const de = inp({ type: 'month', value: `${hoje.getFullYear() - 2}-01`, max: ymHoje });
+    const ate = inp({ type: 'month', value: ymHoje, max: ymHoje });
+    const passo = h('select', { class: 'f-input' }, [1, 2, 3, 6].map((n) => h('option', { value: n, selected: n === 3 || null }, n === 1 ? '1 mês' : `${n} meses`)));
+    const aberto = abertos.has('hist:' + l.id);
+    const det = h('details', { class: 'cfg-hist', open: aberto || null }, h('summary', null, 'Importar histórico de um período'),
+      h('p', { class: 'muted' }, 'Baixa do AppNext em partes (uma de cada vez) e junta no histórico. Use na primeira carga de uma loja ou para refazer meses.'),
+      h('div', { class: 'cfg-grid c3' }, campo('De', de), campo('Até', ate), campo('Tamanho de cada parte', passo, 'Partes menores demoram mais no total, mas falham menos.')),
+      h('div', { class: 'cfg-acoes' }, acao('Importar', async () => {
+        const r = await api('POST', `/lojas/${l.id}/historico`, { de: de.value, ate: ate.value, mesesPorParte: +passo.value });
+        abertos.delete('hist:' + l.id);
+        return `Importação na fila: ${r.partes} parte(s). Pode fechar o painel; ela continua sozinha.`;
+      }, 'btn primary')));
+    det.addEventListener('toggle', () => { det.open ? abertos.add('hist:' + l.id) : abertos.delete('hist:' + l.id); });
+    return det;
+  }
+
+  // ---- AppNext
+  function blocoAppNext(l) {
+    const c = l.coletor;
+    const rede = inp({ value: c.rede || 'teashop', autocomplete: 'off' });
+    const usuario = inp({ value: c.usuario || '', autocomplete: 'off' });
+    const senha = inp({ type: 'password', autocomplete: 'new-password', placeholder: c.temSenha ? '•••••••• (guardada — preencha só para trocar)' : '' });
+    const destino = inp({ value: c.lojaDestino || l.appnext || '', placeholder: 'Ex.: TORRES - TEA SHOP TORRES' });
+    const idDest = inp({ value: c.lojaIdDestino || '', placeholder: 'opcional' });
+    return h('section', { class: 'cfg-bloco cfg-form' }, h('h3', null, 'Acesso ao AppNext'),
+      h('div', { class: 'cfg-grid' }, campo('Rede', rede), campo('Usuário', usuario), campo('Senha', senha, 'Fica só na VPS e nunca aparece de volta aqui.'),
+        campo('Nome da loja no AppNext', destino, 'Trava de segurança: a planilha só entra se todas as vendas forem desta loja.'), campo('Código da loja no AppNext', idDest, 'Só se o usuário tiver acesso a várias lojas.')),
+      h('div', { class: 'cfg-acoes' }, acao('Salvar acesso', async () => {
+        await api('PUT', `/lojas/${l.id}/appnext`, { rede: rede.value, usuario: usuario.value, senha: senha.value || undefined, lojaDestino: destino.value, lojaIdDestino: idDest.value });
+        return c.configurado ? 'Acesso atualizado.' : 'Acesso salvo. Use "Importar histórico" para a primeira carga.';
+      }, 'btn primary')));
+  }
+
+  // ---- metas
+  function blocoMetas(l) {
+    const padrao = inp({ type: 'number', min: 0, step: 500, value: l.meta ?? '' });
+    const auto = l.metaAuto || { ativo: false, pct: 10 };
+    const autoOn = h('input', { type: 'checkbox', checked: auto.ativo || null });
+    const pct = inp({ type: 'number', step: 0.5, min: -90, max: 500, value: auto.pct ?? 10, style: { maxWidth: '110px' } });
+    const tot = l.totaisSemEG || {};
+    const ymAnt = (ym) => `${+ym.slice(0, 4) - 1}${ym.slice(4)}`;
+    const valorAuto = (ym) => { const b = tot[ymAnt(ym)]; return autoOn.checked && b > 0 ? Math.round(b * (1 + (+pct.value || 0) / 100)) : null; };
+    const hoje = new Date();
+    const ymHoje = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}`;
+    const meses = [];
+    for (let k = -12; k <= 2; k++) { const d = new Date(hoje.getFullYear(), hoje.getMonth() + k, 1); meses.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`); }
+    Object.keys(l.metas || {}).forEach((ym) => { if (!meses.includes(ym)) meses.push(ym); });
+    meses.sort();
+    const campos = new Map(), dicas = new Map();
+    const grade = h('div', { class: 'cfg-metas' }, meses.map((ym) => {
+      const i = inp({ type: 'number', min: 0, step: 500, value: l.metas[ym] ?? '' });
+      const dica = h('small', { class: 'cfg-meta-dica' });
+      campos.set(ym, i); dicas.set(ym, dica);
+      return h('label', { class: 'cfg-meta' + (ym === ymHoje ? ' atual' : '') }, h('span', null, TS.ymLabel(ym)), i, dica);
+    }));
+    const atualizarDicas = () => {
+      for (const [ym, i] of campos) {
+        const v = valorAuto(ym);
+        i.placeholder = v != null ? fmt.int(v) : padrao.value ? fmt.int(+padrao.value) : '—';
+        const d = dicas.get(ym);
+        d.textContent = i.value ? 'digitada' : v != null ? `auto (${ymAnt(ym).slice(5)}/${ymAnt(ym).slice(2, 4)}: ${fmt.compact(tot[ymAnt(ym)])})` : 'padrão';
+        d.className = 'cfg-meta-dica ' + (i.value ? 'dig' : v != null ? 'auto' : '');
+      }
+    };
+    [autoOn, pct, padrao].forEach((x) => x.addEventListener('input', atualizarDicas));
+    autoOn.addEventListener('change', atualizarDicas);
+    campos.forEach((i) => i.addEventListener('input', atualizarDicas));
+    atualizarDicas();
+    return h('section', { class: 'cfg-bloco cfg-form' }, h('h3', null, 'Metas'),
+      h('div', { class: 'cfg-auto' },
+        h('label', { class: 'cfg-check-l' }, autoOn, h('b', null, ' Meta automática pelo ano anterior')),
+        h('div', { class: 'cfg-inline' }, h('span', null, 'Vendas do mesmo mês do ano anterior (sem Espaço Gourmet) +'), pct, h('span', null, '%')),
+        h('small', { class: 'muted' }, 'Ex.: vendeu R$ 100.000 em nov/25 e o percentual é 10% → meta de nov/26 = R$ 110.000. Os meses sem venda no ano anterior usam a meta padrão.')),
+      campo('Meta padrão (R$)', padrao, 'Usada quando o mês não tem meta digitada nem venda no ano anterior.'),
+      h('div', { class: 'f-label', style: { marginTop: '10px' } }, 'Meta de cada mês'),
+      h('p', { class: 'muted', style: { margin: '2px 0 8px' } }, 'Digite só para mudar um mês específico: a meta digitada vale mais que a automática. Em cinza, o valor que será usado.'),
+      grade,
+      h('div', { class: 'cfg-acoes' }, acao('Salvar metas', async () => {
+        const metas = {};
+        for (const [ym, i] of campos) { const v = i.value.trim(); if (v !== String(l.metas[ym] ?? '')) metas[ym] = v === '' ? null : +v; }
+        if (padrao.value !== String(l.meta ?? '')) await api('PUT', `/lojas/${l.id}`, { meta: padrao.value });
+        if (autoOn.checked !== !!auto.ativo || +pct.value !== +auto.pct) await api('PUT', `/lojas/${l.id}/metaauto`, { ativo: autoOn.checked, pct: +pct.value || 0 });
+        if (Object.keys(metas).length) await api('PUT', `/lojas/${l.id}/metas`, { metas });
+        TS.recarregar && TS.recarregar(true);
+        return 'Metas salvas.';
+      }, 'btn primary')));
+  }
+
+  // ---- planilhas
+  function blocoPlanilhas(l) {
+    const tipo = h('select', { class: 'f-input' },
+      h('option', { value: 'vendas' }, 'Vendas (relatório do AppNext)'), h('option', { value: 'Xml' }, 'Cupons com CPF (Xml)'),
+      h('option', { value: 'Dados_Clientes' }, 'Cadastro de clientes'), h('option', { value: 'Meta' }, 'Meta (planilha antiga)'));
+    const arq = h('input', { type: 'file', accept: '.xlsx', class: 'f-input' });
+    const lista = h('ul', { class: 'cfg-fontes' }, l.fontes.map((f) => h('li', null, h('b', null, f.desc), ' — ',
+      f.origem === 'vps' ? `na VPS, ${dt(f.modificado)}` : f.origem === 'drive' ? 'no Google Drive' : h('span', { class: 'muted' }, 'não enviada'))));
+    return h('section', { class: 'cfg-bloco' }, h('h3', null, 'Enviar planilha'),
+      h('p', { class: 'muted' }, 'Vendas: entram no histórico substituindo só os dias que a planilha cobre. As outras substituem a anterior.'),
+      h('div', { class: 'cfg-grid' }, campo('Tipo', tipo), campo('Arquivo (.xlsx)', arq)),
+      h('div', { class: 'cfg-acoes' }, acao('Enviar', async () => {
+        const f = arq.files[0];
+        if (!f) throw new Error('Escolha o arquivo.');
+        await api('POST', `/lojas/${l.id}/upload/${tipo.value}`, f, { 'X-Arquivo': encodeURIComponent(f.name) });
+        arq.value = '';
+        setTimeout(() => TS.recarregar && TS.recarregar(true), 4000);
+        return 'Planilha recebida. Os dados se atualizam em alguns segundos.';
+      }, 'btn primary')),
+      h('div', { class: 'f-label', style: { marginTop: '12px' } }, 'Outras planilhas da loja'), lista);
+  }
+
+  // ---- férias
+  function blocoFerias(l) {
+    const lista = (l.ferias || []).map((f) => ({ ...f }));
+    const nomes = [...new Set([...(l.vendedores || []).map((v) => v.nome.trim().toUpperCase()), ...lista.map((f) => f.vendedor)])].sort();
+    const corpo = h('div', { class: 'ferias-lista' });
+    const dias = (f) => (f.de && f.ate && f.de <= f.ate ? Math.round((Date.parse(f.ate) - Date.parse(f.de)) / 86400e3) + 1 : null);
+    const pintarF = () => {
+      corpo.textContent = '';
+      if (!lista.length) corpo.append(h('p', { class: 'muted' }, 'Nenhuma férias cadastrada.'));
+      lista.forEach((f, i) => {
+        const sel = h('select', { class: 'f-input' }, h('option', { value: '' }, '— escolha —'), nomes.map((n) => h('option', { value: n, selected: f.vendedor === n || null }, n)));
+        sel.addEventListener('change', () => { f.vendedor = sel.value; sujo = true; });
+        const de = inp({ type: 'date', value: f.de || '' }), ate = inp({ type: 'date', value: f.ate || '' });
+        const nd = h('span', { class: 'muted' }, dias(f) ? `${dias(f)} dias` : '');
+        const upd = () => { f.de = de.value; f.ate = ate.value; nd.textContent = dias(f) ? `${dias(f)} dias` : ''; sujo = true; };
+        de.addEventListener('change', upd); ate.addEventListener('change', upd);
+        const hoje = new Date().toISOString().slice(0, 10);
+        corpo.append(h('div', { class: 'ferias-item' + (f.ate && f.ate < hoje ? ' passada' : '') },
+          h('label', { class: 'cfg-campo fi-nome' }, h('span', null, 'Vendedora'), sel),
+          h('label', { class: 'cfg-campo' }, h('span', null, 'De'), de), h('label', { class: 'cfg-campo' }, h('span', null, 'Até'), ate),
+          h('div', { class: 'fi-rodape' }, nd, h('button', { type: 'button', class: 'btn ghost-danger', onclick: () => { lista.splice(i, 1); pintarF(); } }, 'Remover'))));
+      });
+    };
+    pintarF();
+    return h('section', { class: 'cfg-bloco cfg-form' }, h('h3', null, 'Férias'),
+      h('p', { class: 'muted' }, 'A meta do mês vira meta diária (meta ÷ dias do mês). Em cada dia, ela é dividida só entre quem está trabalhando: quem está de férias fica com a meta menor e as colegas assumem a parte dela nesses dias.'),
+      corpo,
+      h('div', { class: 'cfg-acoes' },
+        h('button', { type: 'button', class: 'btn', onclick: () => { lista.push({ vendedor: '', de: '', ate: '' }); pintarF(); } }, '+ Adicionar férias'),
+        acao('Salvar férias', async () => { await api('PUT', `/lojas/${l.id}/ferias`, { ferias: lista.filter((f) => f.vendedor || f.de || f.ate) }); TS.recarregar && TS.recarregar(true); return 'Férias salvas. As metas individuais já foram recalculadas.'; }, 'btn primary')));
+  }
+
+  // ---- horário de funcionamento e equipe
+  function blocoOperacao(l) {
+    const op = JSON.parse(JSON.stringify(l.operacao || TS.operacaoPadrao()));
+    return h('section', { class: 'cfg-bloco cfg-form' }, h('h3', null, 'Horário e equipe'),
+      h('p', { class: 'muted' }, 'Usados no Mapa de calor para calcular quantas pessoas cada horário precisa e sugerir a escala.'),
+      TS.editorOperacao(op, () => { sujo = true; }),
+      h('div', { class: 'cfg-acoes' }, acao('Salvar horário e equipe', async () => { await api('PUT', `/lojas/${l.id}/operacao`, { operacao: op }); TS.recarregar && TS.recarregar(true); return 'Salvo.'; }, 'btn primary')));
+  }
+
+  // ---- marca
+  function blocoMarca(l) {
+    const nome = inp({ value: (l.marca && l.marca.nome) || '', placeholder: l.nome });
+    const arq = h('input', { type: 'file', accept: 'image/png,image/jpeg,image/webp', class: 'f-input' });
+    const link = `${location.origin}/login?loja=${l.id}`;
+    return h('section', { class: 'cfg-bloco cfg-form' }, h('h3', null, 'Logo e nome'),
+      h('p', { class: 'muted' }, 'Aparecem no topo do painel e na tela de entrada pelo link próprio da loja.'),
+      l.logo ? h('img', { class: 'cfg-logo-prev', src: `/marca/${l.id}/logo?v=${Date.now() % 1e6}`, alt: 'Logo atual' }) : h('p', { class: 'muted' }, 'Sem logo (usa o ícone do Tea Shop).'),
+      h('div', { class: 'cfg-grid' }, campo('Nome exibido', nome), campo('Logo (PNG, JPG ou WEBP, até 500 KB)', arq)),
+      campo('Link de entrada da loja', h('div', { class: 'cfg-inline' }, inp({ value: link, readonly: true }), h('button', { type: 'button', class: 'btn', onclick: () => { navigator.clipboard?.writeText(link); toast('Link copiado.'); } }, 'Copiar'))),
+      h('div', { class: 'cfg-acoes' },
+        acao('Salvar', async () => {
+          await api('PUT', `/lojas/${l.id}/marca`, { nome: nome.value });
+          const f = arq.files[0];
+          if (f) { if (f.size > 500 * 1024) throw new Error('Imagem grande demais (máx. 500 KB).'); await api('POST', `/lojas/${l.id}/logo`, f); }
+          return 'Marca salva. Recarregue o painel para ver no topo.';
+        }, 'btn primary'),
+        l.logo ? acao('Remover logo', async () => { await api('DELETE', `/lojas/${l.id}/logo`); return 'Logo removido.'; }, 'btn ghost-danger') : null));
+  }
+
+  // ---- regras de comissão
+  function blocoRegras(l) {
+    const R = TS.rules;
+    const modeloAuto = R.modeloPorNome((l.nomesVenda || [])[0]);
+    const efetivas = () => (l.regras ? R.fundir(R.MODELOS[l.regras.modelo] ? R.MODELOS[l.regras.modelo].regras : R.MODELOS.padrao.regras, l.regras) : { ...R.MODELOS[modeloAuto].regras, modelo: modeloAuto });
+    let rg = efetivas(); rg.modelo = rg.modelo || (l.regras && l.regras.modelo) || modeloAuto;
+    const sec = h('section', { class: 'cfg-bloco cfg-form cfg-regras' });
+    const pctIn = (v) => inp({ type: 'number', min: 0, max: 100, step: 0.1, value: +(v * 100).toFixed(3) });
+    const numIn = (v, step = 1) => inp({ type: 'number', min: 0, step, value: v });
+    const lePct = (i) => Math.round(+i.value * 1000) / 100000;
+    function pintarR() {
+      sec.textContent = '';
+      const modelo = h('select', { class: 'f-input' }, Object.entries(R.MODELOS).map(([k, m]) => h('option', { value: k, selected: rg.modelo === k || null }, m.nome)));
+      modelo.addEventListener('change', () => { rg = { ...JSON.parse(JSON.stringify(R.MODELOS[modelo.value].regras)), modelo: modelo.value }; pintarR(); });
+      const dv = { arom: pctIn(rg.divisaoMeta.arom), puro: pctIn(rg.divisaoMeta.puro), acess: pctIn(rg.divisaoMeta.acess) };
+      const modo = h('select', { class: 'f-input' }, h('option', { value: 'faixas', selected: rg.comissao.modo === 'faixas' || null }, 'Por faixas (≥120%, bateu, abaixo)'), h('option', { value: 'simples', selected: rg.comissao.modo === 'simples' || null }, 'Simples (bateu / não bateu)'));
+      const cm = {};
+      const linhas = [['arom', 'Chá aromatizado'], ['puro', 'Chá puro'], ['acess', 'Acessórios']].map(([k, nome]) => {
+        cm[k] = { acima120: pctIn(rg.comissao[k].acima120), bate: pctIn(rg.comissao[k].bate), abaixo: pctIn(rg.comissao[k].abaixo) };
+        return h('tr', null, h('td', { class: 'l' }, nome), h('td', { class: 'c120' }, cm[k].acima120), h('td', null, cm[k].bate), h('td', null, cm[k].abaixo));
+      });
+      const tabCom = h('table', { class: 'cfg-rt' + (rg.comissao.modo === 'simples' ? ' simples' : '') }, h('thead', null, h('tr', null, h('th', { class: 'l' }, '% de comissão'), h('th', { class: 'c120' }, '≥ 120% da meta'), h('th', null, 'Bateu a meta'), h('th', null, 'Abaixo da meta'))), h('tbody', null, linhas));
+      modo.addEventListener('change', () => tabCom.classList.toggle('simples', modo.value === 'simples'));
+      const pr = rg.premiacao;
+      const prAtiva = h('input', { type: 'checkbox', checked: pr.ativa || null });
+      const prV = numIn(pr.valor, 5), prT = numIn(pr.tkm, 1), prI = numIn(pr.ipa, 0.1), prP = numIn(pr.pma, 0.01);
+      const prMin = h('select', { class: 'f-input' }, [1, 2, 3].map((n) => h('option', { value: n, selected: pr.minimo === n || null }, `${n} de 3`)));
+      const bn = { acima120: pctIn(rg.bonus.acima120), bate: pctIn(rg.bonus.bate), abaixo: pctIn(rg.bonus.abaixo) };
+      const rtAtivo = h('input', { type: 'checkbox', checked: rg.rateio.ativo || null });
+      const rtExc = inp({ value: (rg.rateio.exclui || []).join(', '), placeholder: 'nomes separados por vírgula' });
+      const gjModo = h('select', { class: 'f-input' }, h('option', { value: 'proporcional', selected: rg.gorjeta.modo === 'proporcional' || null }, 'Proporcional ao faturamento no Espaço Gourmet'), h('option', { value: 'igual', selected: rg.gorjeta.modo === 'igual' || null }, 'Igual entre os vendedores ativos'));
+      const gjPct = pctIn(rg.gorjeta.percentual);
+      const ry = { loja: pctIn(rg.royalties.loja), mkt: pctIn(rg.royalties.mkt), eg: pctIn(rg.royalties.eg), egMkt: pctIn(rg.royalties.egMkt) };
+      const semMeta = inp({ value: (rg.semMeta || []).join(', '), placeholder: 'nomes separados por vírgula' });
+      sec.append(h('h3', null, 'Regras de comissão'),
+        h('p', { class: 'muted' }, l.regras ? 'Regras próprias desta loja.' : `Usando o modelo "${R.MODELOS[modeloAuto].nome}" (padrão para esta loja). Ajuste e salve para ter regras próprias.`),
+        h('div', { class: 'cfg-grid' }, campo('Modelo de partida', modelo, 'Trocar o modelo preenche os campos com os valores dele.'), campo('Tipo de comissão', modo)),
+        h('div', { class: 'f-label', style: { marginTop: '12px' } }, 'Divisão da meta de cada vendedor (soma 100%)'),
+        h('div', { class: 'cfg-grid c3' }, campo('Chá aromatizado %', dv.arom), campo('Chá puro %', dv.puro), campo('Acessórios %', dv.acess)),
+        h('div', { class: 'table-wrap free', style: { marginTop: '12px' } }, tabCom),
+        h('div', { class: 'f-label', style: { marginTop: '14px' } }, 'Premiação por indicadores'),
+        h('label', { class: 'cfg-check-l' }, prAtiva, ' Pagar premiação'),
+        h('div', { class: 'cfg-grid c3' }, campo('Valor por critério (R$)', prV), campo('TKM mínimo (R$)', prT), campo('IPA mínimo', prI), campo('PMA mínimo (R$)', prP), campo('Critérios necessários', prMin)),
+        h('div', { class: 'f-label', style: { marginTop: '14px' } }, 'Bônus sobre as vendas dos outros vendedores (vendedor escolhido nos filtros)'),
+        h('div', { class: 'cfg-grid c3' }, campo('Loja abaixo da meta %', bn.abaixo), campo('Loja bateu a meta %', bn.bate), campo('Loja ≥ 120% %', bn.acima120)),
+        h('div', { class: 'f-label', style: { marginTop: '14px' } }, 'Rateio'),
+        h('label', { class: 'cfg-check-l' }, rtAtivo, ' Dividir o total de comissões igualmente entre os vendedores'),
+        campo('Não entram no rateio', rtExc),
+        h('div', { class: 'f-label', style: { marginTop: '14px' } }, 'Gorjeta (taxa de serviço)'),
+        h('div', { class: 'cfg-grid' }, campo('Como divide', gjModo), campo('% da taxa repassada aos vendedores', gjPct)),
+        h('div', { class: 'f-label', style: { marginTop: '14px' } }, 'Royalties'),
+        h('div', { class: 'cfg-grid c3' }, campo('Loja %', ry.loja), campo('Marketing %', ry.mkt), campo('Espaço Gourmet %', ry.eg), campo('EG marketing %', ry.egMkt)),
+        campo('Vendedores sem meta individual', semMeta, 'Não dividem a meta da loja (ex.: corporativo, gerente).'),
+        h('div', { class: 'cfg-acoes' },
+          acao('Salvar regras', async () => {
+            const lista = (i) => i.value.split(',').map((x) => x.trim().toLowerCase()).filter(Boolean);
+            const regras = {
+              modelo: modelo.value,
+              divisaoMeta: { arom: lePct(dv.arom), puro: lePct(dv.puro), acess: lePct(dv.acess) },
+              comissao: { modo: modo.value, ...Object.fromEntries(Object.entries(cm).map(([k, o]) => [k, { acima120: lePct(o.acima120), bate: lePct(o.bate), abaixo: lePct(o.abaixo) }])) },
+              premiacao: { ativa: prAtiva.checked, valor: +prV.value, tkm: +prT.value, ipa: +prI.value, pma: +prP.value, minimo: +prMin.value },
+              bonus: { abaixo: lePct(bn.abaixo), bate: lePct(bn.bate), acima120: lePct(bn.acima120) },
+              rateio: { ativo: rtAtivo.checked, exclui: lista(rtExc) },
+              gorjeta: { modo: gjModo.value, percentual: lePct(gjPct) },
+              royalties: { loja: lePct(ry.loja), mkt: lePct(ry.mkt), eg: lePct(ry.eg), egMkt: lePct(ry.egMkt) },
+              semMeta: lista(semMeta),
+            };
+            await api('PUT', `/lojas/${l.id}/regras`, { regras });
+            TS.recarregar && TS.recarregar(true);
+            return 'Regras salvas. A tela Comissionamento já usa os novos valores.';
+          }, 'btn primary'),
+          l.regras ? acao('Voltar ao modelo padrão da loja', async () => { await api('PUT', `/lojas/${l.id}/regras`, { regras: null }); TS.recarregar && TS.recarregar(true); return 'Regras próprias removidas.'; }) : null));
+    }
+    pintarR();
+    return sec;
+  }
+
+  // ---- editar / remover
+  function blocoEditar(l) {
+    const nome = inp({ value: l.nome });
+    const appnext = inp({ value: l.appnext || '' });
+    const conf = abertos.has('rem:' + l.id);
+    return h('section', { class: 'cfg-bloco cfg-form' }, h('h3', null, 'Dados da loja'),
+      h('div', { class: 'cfg-grid' }, campo('Nome', nome), campo('Nome no AppNext', appnext), campo('Identificador', inp({ value: l.id, disabled: true }))),
+      h('div', { class: 'cfg-acoes' }, acao('Salvar', async () => { await api('PUT', `/lojas/${l.id}`, { nome: nome.value, appnext: appnext.value }); return 'Loja atualizada.'; }, 'btn primary'),
+        conf ? acao(`Confirmar: remover ${l.nome}`, async () => { await api('DELETE', `/lojas/${l.id}`); abertos.delete('rem:' + l.id); return 'Loja removida (os dados continuam guardados na VPS).'; }, 'btn danger')
+          : h('button', { type: 'button', class: 'btn ghost-danger', onclick: () => { abertos.add('rem:' + l.id); pintar(); } }, 'Remover loja…')),
+      conf ? h('p', { class: 'muted' }, 'Os usuários perdem o acesso a ela e a atualização automática para. As planilhas e o histórico ficam guardados na VPS.') : null);
+  }
+
+  // ======================= USUÁRIOS =======================
+  function abaUsuarios(box) {
+    const aberto = abertos.has('novoUser');
+    box.append(h('div', { class: 'cfg-barra' },
+      h('button', { type: 'button', class: 'btn primary', onclick: () => { aberto ? abertos.delete('novoUser') : abertos.add('novoUser'); state.cfgEdit = null; pintar(); } }, aberto ? 'Fechar' : '+ Novo usuário')));
+    if (aberto) box.append(formUsuario(null));
+    const nomeLoja = new Map(est.todasLojas.map((l) => [l.id, l.nome]));
+    const linhas = est.usuarios.map((u) => {
+      const tr = h('tr', { class: u.ativo ? '' : 'inativo' },
+        h('td', { class: 'l' }, h('b', null, u.nome), u.nome === est.usuario ? h('span', { class: 'muted' }, ' (você)') : null),
+        h('td', { class: 'l' }, h('span', { class: 'badge p-' + u.perfil }, PERFIL_NOME[u.perfil]),
+          u.perfil === 'gerente' ? h('div', { class: 'muted cfg-telas-resumo' }, u.telas ? `${u.telas.length} tela(s)${u.telas.includes('clientes') ? ' · vê clientes' : ''}` : 'telas padrão') : null),
+        h('td', { class: 'l wrap' }, u.lojas.includes('*') ? 'Todas' : u.lojas.map((id) => nomeLoja.get(id) || id).join(', ')),
+        h('td', { class: 'l' }, u.vendedor || '—'),
+        h('td', { class: 'l' }, u.ultimoAcesso ? dt(u.ultimoAcesso) : h('span', { class: 'muted' }, 'nunca')),
+        h('td', { class: 'l' }, u.ativo ? 'Ativo' : h('span', { class: 'neg' }, 'Desativado')),
+        h('td', null, h('button', { type: 'button', class: 'btn', onclick: () => { state.cfgEdit = state.cfgEdit === u.nome ? null : u.nome; abertos.delete('novoUser'); pintar(); } }, state.cfgEdit === u.nome ? 'Fechar' : 'Editar')));
+      return state.cfgEdit === u.nome ? [tr, h('tr', { class: 'cfg-edit-row' }, h('td', { colspan: 7 }, formUsuario(u)))] : [tr];
+    }).flat();
+    box.append(h('div', { class: 'card' }, h('div', { class: 'table-wrap free' }, h('table', { class: 't cfg-t' },
+      h('thead', null, h('tr', null, ['Usuário', 'Perfil', 'Lojas', 'Vendedor', 'Último acesso', 'Situação', ''].map((t, i) => h('th', { class: i < 6 ? 'l' : '' }, t)))),
+      h('tbody', null, linhas.length ? linhas : h('tr', null, h('td', { colspan: 7, class: 'l muted' }, 'Nenhum usuário.')))))));
+    box.append(h('div', { class: 'cfg-perfis' }, Object.entries(PERFIL_DESC).filter(([p]) => est.perfil === 'admin' || ['gerente', 'vendedor'].includes(p)).map(([p, d]) => h('div', null, h('span', { class: 'badge p-' + p }, PERFIL_NOME[p]), ' ', d))));
+  }
+
+  function senhaAleatoria() {
+    const c = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789';
+    const a = new Uint32Array(10); crypto.getRandomValues(a);
+    return [...a].map((x) => c[x % c.length]).join('');
+  }
+
+  function formUsuario(u) {
+    const novo = !u;
+    const perfis = est.perfil === 'admin' ? ['admin', 'franqueado', 'gerente', 'vendedor'] : ['gerente', 'vendedor'];
+    const nome = inp({ value: u ? u.nome : '', disabled: !novo || null, placeholder: 'ex.: maria.torres', autocomplete: 'off' });
+    const perfil = h('select', { class: 'f-input', disabled: (u && u.nome === est.usuario) || null }, perfis.map((p) => h('option', { value: p, selected: (u ? u.perfil : 'gerente') === p || null }, PERFIL_NOME[p])));
+    const marcadas = new Set(u ? u.lojas : est.todasLojas.length === 1 ? [est.todasLojas[0].id] : []);
+    const lojasBox = h('div', { class: 'cfg-checks' });
+    const vendSel = h('select', { class: 'f-input' });
+    const senha = inp({ type: 'text', autocomplete: 'new-password', placeholder: novo ? 'mínimo 8 caracteres' : 'em branco = mantém a atual' });
+    const ativo = h('input', { type: 'checkbox', checked: !u || u.ativo || null, disabled: (u && u.nome === est.usuario) || null });
+    const campoLojas = campo('Lojas', lojasBox);
+    const telasSel = new Set(u && u.telas ? u.telas : TELAS_PADRAO);
+    const telasBox = h('div', { class: 'cfg-checks' }, TELAS_NOME.map(([k, nomeT]) => {
+      const cb = h('input', { type: 'checkbox', value: k, checked: telasSel.has(k) || null });
+      cb.addEventListener('change', () => { cb.checked ? telasSel.add(k) : telasSel.delete(k); });
+      return h('label', null, cb, ' ', nomeT);
+    }));
+    const campoTelas = campo('Telas que o gerente pode ver', telasBox, 'Clientes mostra CPF, telefone e histórico de compras: libere só para quem precisa.');
+    const campoVend = campo('Quem é no sistema (nome do vendedor)', vendSel, 'Liga o usuário às vendas dele.');
+    function pintarLojas() {
+      const p = perfil.value;
+      lojasBox.textContent = '';
+      campoLojas.hidden = p === 'admin';
+      campoVend.hidden = p !== 'vendedor';
+      campoTelas.hidden = p !== 'gerente';
+      for (const l of est.todasLojas) {
+        const cb = h('input', { type: p === 'vendedor' ? 'radio' : 'checkbox', name: 'lojas-' + (u ? u.nome : 'novo'), value: l.id, checked: marcadas.has(l.id) || null });
+        cb.addEventListener('change', () => { if (p === 'vendedor') marcadas.clear(); cb.checked ? marcadas.add(l.id) : marcadas.delete(l.id); pintarVend(); });
+        lojasBox.append(h('label', null, cb, ' ', l.nome));
+      }
+      pintarVend();
+    }
+    function pintarVend() {
+      const loja = est.lojas.find((l) => marcadas.has(l.id));
+      const lista = loja ? loja.vendedores : [];
+      vendSel.textContent = '';
+      vendSel.append(h('option', { value: '' }, loja ? '— escolha —' : 'escolha a loja primeiro'));
+      const atual = u && u.vendedor;
+      if (atual && !lista.some((v) => v.nome.toUpperCase() === atual)) vendSel.append(h('option', { value: atual, selected: true }, atual));
+      for (const v of lista) vendSel.append(h('option', { value: v.nome, selected: (atual && v.nome.toUpperCase() === atual) || null }, `${v.nome} (última venda ${dIso(v.ultima)})`));
+    }
+    perfil.addEventListener('change', () => { if (perfil.value === 'vendedor' && marcadas.size > 1) { const f = [...marcadas][0]; marcadas.clear(); marcadas.add(f); } pintarLojas(); });
+    pintarLojas();
+    const gerar = h('button', { type: 'button', class: 'btn', onclick: () => { senha.value = senhaAleatoria(); senha.select(); } }, 'Gerar senha');
+    return h('div', { class: 'card cfg-form cfg-user-form' }, h('div', { class: 'card-title' }, novo ? 'Novo usuário' : `Editar ${u.nome}`),
+      h('div', { class: 'cfg-grid' }, campo('Usuário (login)', nome), campo('Perfil', perfil),
+        campo(novo ? 'Senha' : 'Nova senha', h('div', { class: 'cfg-inline' }, senha, gerar), 'Anote e envie para a pessoa: ela não aparece de novo.'),
+        h('label', { class: 'cfg-campo cfg-check' }, ativo, h('span', null, 'Usuário ativo (pode entrar)'))),
+      campoLojas, campoVend, campoTelas,
+      h('div', { class: 'cfg-acoes' },
+        acao(novo ? 'Criar usuário' : 'Salvar', async () => {
+          const corpo = { perfil: perfil.value, lojas: [...marcadas], vendedor: vendSel.value, ativo: ativo.checked, senha: senha.value || undefined, telas: perfil.value === 'gerente' ? TELAS_NOME.map(([k]) => k).filter((k) => telasSel.has(k)) : undefined };
+          if (novo) { await api('POST', '/usuarios', { nome: nome.value.trim().toLowerCase(), ...corpo }); abertos.delete('novoUser'); }
+          else { await api('PUT', `/usuarios/${encodeURIComponent(u.nome)}`, corpo); state.cfgEdit = null; }
+          return novo ? `Usuário criado.${corpo.senha ? ' Envie a senha para a pessoa.' : ''}` : 'Usuário atualizado.';
+        }, 'btn primary'),
+        !novo && u.nome !== est.usuario ? (abertos.has('delu:' + u.nome)
+          ? acao(`Confirmar: excluir ${u.nome}`, async () => { await api('DELETE', `/usuarios/${encodeURIComponent(u.nome)}`); state.cfgEdit = null; abertos.delete('delu:' + u.nome); return 'Usuário excluído.'; }, 'btn danger')
+          : h('button', { type: 'button', class: 'btn ghost-danger', onclick: () => { abertos.add('delu:' + u.nome); pintar(); } }, 'Excluir…')) : null));
+  }
+
+  // ======================= COLETOR =======================
+  function abaColetor(box) {
+    if (!est.coletorAtivo) { box.append(h('div', { class: 'notice' }, 'O coletor não está ligado nesta VPS (falta COLETOR_URL/COLETOR_TOKEN no .env).')); return; }
+    const hs = [...est.horarios];
+    const lista = h('div', { class: 'chips' });
+    const pintarHs = () => { lista.textContent = ''; hs.sort().forEach((x, i) => lista.append(h('span', { class: 'chip on' }, x, ' ', h('button', { type: 'button', class: 'chip-x', 'aria-label': 'Remover ' + x, onclick: () => { hs.splice(i, 1); pintarHs(); } }, '×')))); };
+    pintarHs();
+    const novo = inp({ type: 'time', value: '12:00', style: { maxWidth: '140px' } });
+    box.append(h('div', { class: 'card cfg-form' }, h('div', { class: 'card-title' }, 'Horários da atualização automática'),
+      h('p', { class: 'muted' }, 'Em cada horário o coletor atualiza todas as lojas, uma de cada vez, baixando os últimos 45 dias do AppNext. Horário de Brasília.'),
+      est.coletorOk === false ? h('div', { class: 'notice err' }, 'O coletor não está respondendo.') : null,
+      lista,
+      h('div', { class: 'cfg-inline', style: { marginTop: '10px' } }, novo, h('button', { type: 'button', class: 'btn', onclick: () => { if (novo.value && !hs.includes(novo.value)) { hs.push(novo.value); pintarHs(); } } }, 'Adicionar horário')),
+      h('div', { class: 'cfg-acoes' }, acao('Salvar horários', async () => { await api('PUT', '/horarios', { horarios: hs }); return 'Horários salvos. Valem a partir do próximo minuto.'; }, 'btn primary'))));
+    // resumo das lojas
+    box.append(h('div', { class: 'card' }, h('div', { class: 'card-title' }, 'Situação de cada loja'),
+      h('div', { class: 'table-wrap free' }, h('table', { class: 't cfg-t' },
+        h('thead', null, h('tr', null, ['Loja', 'Acesso AppNext', 'Última coleta', 'Situação', 'Dados até'].map((t) => h('th', { class: 'l' }, t)))),
+        h('tbody', null, est.lojas.map((l) => {
+          const ex = l.status && l.status.execucao;
+          const [cls, txt] = situacao(l);
+          return h('tr', null, h('td', { class: 'l' }, l.nome), h('td', { class: 'l' }, l.coletor.configurado ? `${l.coletor.usuario}` : h('span', { class: 'muted' }, 'não cadastrado')),
+            h('td', { class: 'l' }, ex && ex.fim ? dt(ex.fim) : '—'), h('td', { class: 'l' }, h('span', { class: 'badge ' + cls }, txt)), h('td', { class: 'l' }, l.base.ate ? ymLongo(l.base.ate) : '—'));
+        }))))));
+  }
+
+  // ======================= RESUMO DIÁRIO =======================
+  let notif = null, conversas = null, previa = null;
+  function abaResumo(box) {
+    if (!notif) { box.append(h('div', { class: 'muted' }, 'Carregando…')); api('GET', '/notif').then((n) => { notif = n; pintar(); }).catch((e) => toast(e.message, true)); return; }
+    const n = notif;
+    const recarregar = async () => { notif = await api('GET', '/notif'); };
+    const nomeLoja = new Map(est.todasLojas.map((l) => [l.id, l.nome]));
+    const lojasTxt = (ls) => (ls.includes('*') ? 'Todas as lojas' : ls.map((x) => nomeLoja.get(x) || x).join(', '));
+    const selLojas = (atual) => {
+      const marc = new Set(atual || ['*']);
+      const el = h('div', { class: 'cfg-checks' }, h('label', null, h('input', { type: 'checkbox', value: '*', checked: marc.has('*') || null }), ' Todas'),
+        est.todasLojas.map((l) => h('label', null, h('input', { type: 'checkbox', value: l.id, checked: marc.has(l.id) || null }), ' ', l.nome)));
+      el.valor = () => { const v = [...el.querySelectorAll('input:checked')].map((i) => i.value); return v.includes('*') || !v.length ? ['*'] : v; };
+      return el;
+    };
+    // geral
+    const ativo = h('input', { type: 'checkbox', checked: n.ativo || null });
+    const horario = inp({ type: 'time', value: n.horario, style: { maxWidth: '140px' } });
+    const alertas = h('input', { type: 'checkbox', checked: n.alertas || null });
+    box.append(h('div', { class: 'card cfg-form' }, h('div', { class: 'card-title' }, 'Resumo diário'),
+      h('p', { class: 'muted' }, 'Todo dia, no horário escolhido, cada pessoa recebe o resumo do dia anterior das lojas dela: faturamento, atendimentos, ticket médio, andamento da meta, projeção do mês e alertas.'),
+      h('label', { class: 'cfg-check-l' }, ativo, ' Enviar o resumo todos os dias'),
+      h('label', { class: 'cfg-check-l' }, alertas, ' Incluir alertas e destaques'),
+      h('div', { class: 'cfg-grid' }, campo('Horário (Brasília)', horario)),
+      n.ultimoEnvio ? h('p', { class: 'muted' }, `Último envio: ${dIso(n.ultimoEnvio)}`) : null,
+      h('div', { class: 'cfg-acoes' }, acao('Salvar', async () => { await api('PUT', '/notif', { ativo: ativo.checked, horario: horario.value, alertas: alertas.checked }); await recarregar(); return 'Salvo.'; }, 'btn primary'),
+        acao('Ver prévia da mensagem', async () => { previa = (await api('GET', '/notif/previa?loja=*')).texto; }))));
+    if (previa) box.append(h('div', { class: 'card' }, h('div', { class: 'card-title' }, 'Prévia'), h('pre', { class: 'cfg-msg' }, previa)));
+
+    // Telegram
+    const token = inp({ type: 'password', autocomplete: 'off', placeholder: n.telegram.configurado ? '•••••••• (guardado — preencha só para trocar)' : '123456789:ABC…' });
+    const tg = h('div', { class: 'card cfg-form' }, h('div', { class: 'card-title' }, 'Telegram'),
+      h('details', null, h('summary', null, 'Como criar o robô (2 minutos)'), h('ol', { class: 'cfg-passos' },
+        h('li', null, 'No Telegram, abra o @BotFather e envie /newbot.'), h('li', null, 'Escolha um nome (ex.: Tea Shop Resumo) e um usuário terminado em "bot".'),
+        h('li', null, 'Copie o token que ele mostra e cole aqui.'), h('li', null, 'Cada pessoa que vai receber abre o robô e toca em "Iniciar".'), h('li', null, 'Clique em "Buscar quem falou com o robô" e adicione a pessoa.'))),
+      h('div', { class: 'cfg-grid' }, campo('Token do robô', token)),
+      h('div', { class: 'cfg-acoes' }, acao('Salvar token', async () => { await api('PUT', '/notif', { telegram: { token: token.value } }); await recarregar(); return 'Token salvo.'; }, 'btn primary'),
+        n.telegram.configurado ? acao('Buscar quem falou com o robô', async () => { conversas = (await api('GET', '/notif/telegram/conversas')).conversas; return conversas.length ? null : 'Ninguém novo. Peça para a pessoa abrir o robô e tocar em "Iniciar".'; }) : null));
+    if (conversas && conversas.length) {
+      tg.append(h('div', { class: 'f-label', style: { marginTop: '12px' } }, 'Novas conversas'));
+      for (const c of conversas) {
+        const sl = selLojas(['*']);
+        const nm = inp({ value: c.nome || c.usuario });
+        tg.append(h('div', { class: 'cfg-dest' }, h('div', { class: 'cfg-grid' }, campo('Nome', nm), campo('Usuário Telegram', inp({ value: c.usuario ? '@' + c.usuario : c.chatId, disabled: true }))), campo('Recebe as lojas', sl),
+          h('div', { class: 'cfg-acoes' }, acao('Adicionar', async () => { await api('POST', '/notif/destinos', { canal: 'telegram', id: c.chatId, nome: nm.value, lojas: sl.valor() }); conversas = conversas.filter((x) => x !== c); await recarregar(); return 'Adicionado.'; }, 'btn primary'))));
+      }
+    }
+    if (n.telegram.destinos.length) tg.append(tabelaDestinos('telegram', n.telegram.destinos, 'chatId', lojasTxt, recarregar));
+    box.append(tg);
+
+    // e-mail
+    const e = n.email;
+    const host = inp({ value: e.host, placeholder: 'smtp.gmail.com' }), port = inp({ type: 'number', value: e.port || 587 }), user = inp({ value: e.user, autocomplete: 'off' });
+    const pass = inp({ type: 'password', autocomplete: 'new-password', placeholder: e.temSenha ? '•••••••• (guardada)' : '' }), from = inp({ value: e.from, placeholder: 'Tea Shop <seuemail@gmail.com>' });
+    const sec = h('input', { type: 'checkbox', checked: e.secure || null });
+    const novoEmail = inp({ type: 'email', placeholder: 'pessoa@email.com' }), novoNome = inp({ placeholder: 'Nome' }), novoLojas = selLojas(['*']);
+    const em = h('div', { class: 'card cfg-form' }, h('div', { class: 'card-title' }, 'E-mail'),
+      h('details', null, h('summary', null, 'Usando um Gmail'), h('p', { class: 'muted' }, 'Servidor smtp.gmail.com, porta 587. No Gmail, ative a verificação em duas etapas e crie uma "senha de app" (Conta Google → Segurança → Senhas de app). Use essa senha aqui, não a senha normal.')),
+      h('div', { class: 'cfg-grid' }, campo('Servidor (SMTP)', host), campo('Porta', port), campo('Usuário', user), campo('Senha', pass), campo('Remetente', from)),
+      h('label', { class: 'cfg-check-l' }, sec, ' Conexão segura direta (porta 465)'),
+      h('div', { class: 'cfg-acoes' }, acao('Salvar servidor', async () => { await api('PUT', '/notif', { email: { host: host.value, port: port.value, user: user.value, pass: pass.value || undefined, from: from.value, secure: sec.checked } }); await recarregar(); return 'Servidor salvo.'; }, 'btn primary')));
+    if (e.configurado) {
+      em.append(h('div', { class: 'f-label', style: { marginTop: '14px' } }, 'Adicionar destinatário'),
+        h('div', { class: 'cfg-grid' }, campo('E-mail', novoEmail), campo('Nome', novoNome)), campo('Recebe as lojas', novoLojas),
+        h('div', { class: 'cfg-acoes' }, acao('Adicionar', async () => { await api('POST', '/notif/destinos', { canal: 'email', id: novoEmail.value, nome: novoNome.value, lojas: novoLojas.valor() }); await recarregar(); return 'Adicionado.'; }, 'btn primary')));
+      if (e.destinos.length) em.append(tabelaDestinos('email', e.destinos, 'email', lojasTxt, recarregar));
+    }
+    box.append(em);
+  }
+  function tabelaDestinos(canal, lista, chave, lojasTxt, recarregar) {
+    return h('div', { class: 'table-wrap free', style: { marginTop: '12px' } }, h('table', { class: 't cfg-t' },
+      h('thead', null, h('tr', null, h('th', { class: 'l' }, 'Quem'), h('th', { class: 'l' }, 'Lojas'), h('th', null, ''))),
+      h('tbody', null, lista.map((d) => h('tr', null, h('td', { class: 'l' }, h('b', null, d.nome || d[chave]), canal === 'email' ? h('div', { class: 'muted' }, d.email) : null), h('td', { class: 'l' }, lojasTxt(d.lojas)),
+        h('td', null, h('div', { class: 'cfg-inline', style: { justifyContent: 'flex-end' } },
+          acao('Enviar teste', async () => { await api('POST', '/notif/teste', { canal, id: d[chave] }); return 'Mensagem de teste enviada.'; }),
+          acao('Remover', async () => { await api('POST', '/notif/destinos', { canal, id: d[chave], remover: true }); await recarregar(); return 'Removido.'; }, 'btn ghost-danger'))))))));
+  }
+
+  // ======================= HISTÓRICO =======================
+  function abaHistorico(box) {
+    const fmtDet = (d) => {
+      if (!d) return '';
+      const val = (v) => (Array.isArray(v) ? v.join(', ') : typeof v === 'object' ? Object.entries(v).map(([a, b]) => `${a} = ${b ?? 'padrão'}`).join(', ') : v === true ? 'sim' : v === false ? 'não' : v);
+      return Object.entries(d).filter(([k, v]) => k !== 'loja' && v != null && v !== '').map(([k, v]) => `${k}: ${val(v)}`).join(' · ');
+    };
+    const tab = TS.table({
+      cols: [
+        { key: 'em', label: 'Quando', align: 'l', fmt: (v) => dt(v) },
+        { key: 'por', label: 'Quem', align: 'l' },
+        { key: 'acao', label: 'O quê', align: 'l' },
+        { key: 'alvo', label: 'Onde', align: 'l' },
+        { key: 'det', label: 'Detalhes', align: 'l', wrap: true },
+      ],
+      rows: est.auditoria.map((e) => ({ ...e, det: fmtDet(e.detalhe) })),
+      sortKey: 'em', sortDir: 'desc', maxHeight: '620px', search: 'Buscar…', searchKeys: ['por', 'acao', 'alvo', 'det'], empty: 'Nenhuma alteração registrada ainda.',
+    });
+    box.append(TS.cardWithTools('Histórico de alterações', 'Quem mudou o quê e quando', tab.searchBox, tab));
+  }
+})();

@@ -1,0 +1,10 @@
+node_modules
+.env
+*.log
+.git
+dados
+config/lojas.json
+config/coletor
+coletor
+coletor-work
+README.md
