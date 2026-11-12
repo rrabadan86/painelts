@@ -125,6 +125,41 @@ def ler_zip(dados: bytes, notas: dict):
 
 
 # ---------------- AppNext ----------------
+def _tela_xml_visivel(page):
+    # "Gerar XML" também existe no menu (escondido): confere o que só existe na tela
+    return page.locator("text=/Filtros\\s*:/ >> visible=true").count() > 0 or page.locator("button:has-text('Gerar') >> visible=true").count() > 0
+
+
+def abrir_tela_xml(page):
+    """abre Fiscal → Gerar XML; tenta pelo endereço, recarregando, e pelo menu"""
+    for tentativa in range(1, 4):
+        try:
+            if tentativa == 1:
+                page.goto(URL_XML)
+            elif tentativa == 2:
+                log("Tela não abriu; recarregando…")
+                page.goto(URL_XML)
+                page.reload(wait_until="load")
+            else:
+                log("Tentando pelo menu Fiscal → Gerar XML…")
+                nx._click_first(page, ["text=/^\\s*Fiscal\\s*$/ >> visible=true", "a:has-text('Fiscal') >> visible=true"])
+                page.wait_for_timeout(800)
+                page.locator("a[href*='gerador-xml'] >> visible=true").first.click(timeout=8000)
+            for _ in range(25):
+                if _tela_xml_visivel(page):
+                    log(f"Tela Gerar XML aberta ({page.url}).")
+                    return
+                page.wait_for_timeout(1000)
+        except Exception as e:  # noqa: BLE001
+            log(f"Tentativa {tentativa}: {str(e).splitlines()[0][:200]}")
+        try:
+            texto = page.evaluate("() => document.body.innerText.slice(0, 400)").replace("\n", " | ")
+        except Exception:  # noqa: BLE001
+            texto = "?"
+        log(f"Ainda não abriu. Endereço: {page.url} · na tela: {texto}")
+    raise RuntimeError("Não consegui abrir a tela Fiscal → Gerar XML.")
+
+
 def abrir_filtros(page):
     if page.locator("text=Data de Emissão >> visible=true").count():
         return
@@ -194,10 +229,7 @@ def main():
             nx.trocar_loja(page, os.getenv("APPNEXT_LOJA_DESTINO"))
 
             step("2) Fiscal → Gerar XML")
-            page.goto(URL_XML)
-            # "Gerar XML" também existe no menu (escondido): espera o que só existe na tela
-            page.locator("text=Filtros: >> visible=true").first.wait_for(timeout=30000)
-            log("Tela Gerar XML aberta.")
+            abrir_tela_xml(page)
             try:
                 page.wait_for_load_state("networkidle", timeout=10000)
             except Exception:
