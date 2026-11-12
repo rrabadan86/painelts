@@ -65,6 +65,8 @@ function normalizar(cfg) {
     marca: l.marca && typeof l.marca === 'object' ? l.marca : null,
     operacao: l.operacao && typeof l.operacao === 'object' ? l.operacao : null,
     ferias: Array.isArray(l.ferias) ? l.ferias : [],
+    feriadosLocais: Array.isArray(l.feriadosLocais) ? l.feriadosLocais : [],
+    feriadosHoras: l.feriadosHoras && typeof l.feriadosHoras === 'object' ? l.feriadosHoras : {},
     criadaEm: l.criadaEm || null,
     uploadToken: l.uploadToken || null,
     github: l.github && l.github.repo ? { repo: l.github.repo, workflow: l.github.workflow || 'run.yml', ref: l.github.ref || 'main' } : null,

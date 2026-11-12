@@ -576,3 +576,22 @@ body.perfil-vendedor #btnScript { display: none !important; }
 .ferias-item.passada { opacity: .6; }
 .ferias-item .fi-nome, .ferias-item .fi-rodape { grid-column: 1 / -1; }
 .ferias-item .fi-rodape { display: flex; justify-content: space-between; align-items: center; font-size: 12px; }
+
+/* ---------- feriados do mês ---------- */
+.feriado-chips { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0 12px; }
+.feriado-chip { font-size: 12px; padding: 4px 10px; border-radius: 8px; background: #E7EEF7; color: #1F4E8C; display: inline-flex; align-items: center; gap: 4px; }
+.feriado-chip.local { background: #F3EBCF; color: #6D5814; }
+.feriado-chip.facultativo { background: #ECE7DB; color: var(--dark); }
+.feriado-form { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+.feriado-form[hidden] { display: none; }
+.feriado-form .f-input { height: 36px; width: auto; }
+.feriados-t td, .feriados-t th { text-align: center; }
+.feriados-t td.l, .feriados-t th.l { text-align: left; }
+.feriados-t td.b { font-weight: 700; }
+.hora-in { width: 76px; height: 32px; text-align: center; padding: 0 4px; }
+.hora-in.erro { border-color: var(--bad); background: #FBEDE8; }
+.hora-dica { font-size: 10.5px; margin-top: 2px; }
+.hora-dica.ok { color: var(--good); }
+.hora-dica.falta { color: #A0640C; font-weight: 600; }
+.feriado-rodape { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 10px; font-size: 12px; }
+@media print { .imp-fer { margin-top: 6px; } .imp-sub { font-weight: 700; margin: 6px 0 4px; } }

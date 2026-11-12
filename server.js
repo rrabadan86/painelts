@@ -104,7 +104,7 @@ async function pacote(lojas, force, perfilDados = 'completo') {
   const metaCfgs = lojas.map((l, i) => {
     const atual = cfgLojas.find((x) => x.id === l.id) || l;
     const r = entradas[i].raw;
-    return { id: l.id, nome: atual.nome, nomesVenda: r.metaCfg?.nomesVenda || [], padrao: atual.meta ?? r.metaPlanilha ?? null, meses: atual.metas || {}, metaAuto: atual.metaAuto || null, regras: atual.regras || null, operacao: atual.operacao || null, ferias: atual.ferias || [] };
+    return { id: l.id, nome: atual.nome, nomesVenda: r.metaCfg?.nomesVenda || [], padrao: atual.meta ?? r.metaPlanilha ?? null, meses: atual.metas || {}, metaAuto: atual.metaAuto || null, regras: atual.regras || null, operacao: atual.operacao || null, ferias: atual.ferias || [], feriadosLocais: atual.feriadosLocais || [], feriadosHoras: atual.feriadosHoras || {} };
   });
   const k = entradas.map((e, i) => `${lojas[i].id}@${e.at}`).join('|') + '#' + JSON.stringify(metaCfgs) + '#' + perfilDados;
   const chave = lojas.map((l) => l.id).join(',') + '|' + perfilDados;
@@ -319,6 +319,50 @@ app.get('/api/alertas', async (req, res) => {
   const loja = req.lojas.find((l) => l.id === String(req.query.loja || ''));
   if (!loja) return res.json({ alertas: [] });
   try { res.json({ alertas: IND.alertas(await dadosParaIndicadores(loja)) }); } catch (e) { res.status(500).json({ erro: e.message }); }
+});
+
+// ---------- feriados trabalhados (horas por pessoa; vão para o PDF do fechamento) ----------
+// admin, franqueado e gerente com a tela Comissionamento
+app.put('/api/feriados', express.json({ limit: '200kb' }), (req, res) => {
+  if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
+  const telas = C.telasDo(C.usuario(req.user));
+  const pode = req.perfil === 'admin' || req.perfil === 'franqueado' || (req.perfil === 'gerente' && (telas || []).includes('comissionamento'));
+  if (!pode) return res.status(403).json({ erro: 'Sem permissão.' });
+  const loja = req.lojas.find((l) => l.id === String(req.query.loja || ''));
+  if (!loja) return res.status(404).json({ erro: 'Loja não encontrada.' });
+  const { ym, horas, locais } = req.body || {};
+  const DATA = /^\d{4}-\d{2}-\d{2}$/;
+  if (!/^\d{4}-\d{2}$/.test(ym || '')) return res.status(400).json({ erro: 'Mês inválido.' });
+  if (!horas || typeof horas !== 'object') return res.status(400).json({ erro: 'Horas inválidas.' });
+  const limpo = {};
+  for (const [data, porPessoa] of Object.entries(horas)) {
+    if (!DATA.test(data) || !data.startsWith(ym) || typeof porPessoa !== 'object') return res.status(400).json({ erro: `Data inválida: ${data}` });
+    for (const [nome, min] of Object.entries(porPessoa)) {
+      if (min == null || min === '') continue;
+      const m = Number(min);
+      if (!Number.isInteger(m) || m < 0 || m > 24 * 60) return res.status(400).json({ erro: `Horas inválidas para ${nome} em ${data}.` });
+      if (m > 0) (limpo[data] ||= {})[String(nome).trim().toUpperCase().slice(0, 60)] = m;
+    }
+  }
+  let locaisLimpos = null;
+  if (Array.isArray(locais)) {
+    if (locais.length > 60) return res.status(400).json({ erro: 'Feriados locais demais.' });
+    locaisLimpos = [];
+    for (const f of locais) {
+      const nome = String((f && f.nome) || '').replace(/[\r\n]/g, '').trim().slice(0, 60);
+      if (!nome || !DATA.test((f && f.data) || '')) return res.status(400).json({ erro: 'Confira data e nome dos feriados locais.' });
+      locaisLimpos.push({ data: f.data, nome, anual: f.anual !== false });
+    }
+  }
+  C.alterar((cfg) => {
+    const l = cfg.lojas.find((x) => x.id === loja.id);
+    l.feriadosHoras = l.feriadosHoras || {};
+    if (Object.keys(limpo).length) l.feriadosHoras[ym] = limpo; else delete l.feriadosHoras[ym];
+    if (locaisLimpos) l.feriadosLocais = locaisLimpos;
+  });
+  C.auditar(req.user, 'alterou feriados trabalhados', loja.id, { loja: loja.id, mes: ym, dias: Object.keys(limpo).length });
+  packCache.clear();
+  res.json({ ok: true });
 });
 
 // ---------- configurações (lojas, usuários, coletor) ----------

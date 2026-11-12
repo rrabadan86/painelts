@@ -524,10 +524,11 @@
       pr.ativa ? TS.kpi('Premiações', fmt.brl0(res.total.premiacao), `TKM ≥ ${fmt.n2(pr.tkm)}, IPA ≥ ${fmt.n2(pr.ipa)}, PMA ≥ ${fmt.n2(pr.pma)}`) : null,
       TS.kpi('Na meta individual', `${naMeta} de ${comMeta}`, 'vendedores')));
     const eg = R().espacoGourmet({ base, baseSemVend });
+    const cfgLoja = res.loja ? (db.metas || []).find((m) => (m.nomesVenda || []).includes(res.loja)) : null;
     const lojaTxt = res.loja ? (TS.lojas || []).find((l) => (db.metas.find((m) => m.id === l.id)?.nomesVenda || []).includes(res.loja))?.nome || res.loja : 'Várias lojas';
     root.append(h('div', { class: 'acoes-pagina' },
       h('button', { type: 'button', class: 'btn primary', disabled: res.lojasNoPeriodo > 1 || null, title: res.lojasNoPeriodo > 1 ? 'Escolha uma loja' : 'Abre a impressão: escolha "Salvar como PDF"',
-        onclick: () => TS.imprimirFechamento({ res, eg, meta, periodo: TS.periodoTexto(), loja: lojaTxt }) }, '⎙ Fechamento em PDF'),
+        onclick: () => TS.imprimirFechamento({ res, eg, meta, periodo: TS.periodoTexto(), loja: lojaTxt, feriados: cfgLoja && mensal ? TS.feriadosParaPdf(cfgLoja, ymMeta) : null }) }, '⎙ Fechamento em PDF'),
       h('a', { class: 'btn', href: '#minha' }, 'Ver como o vendedor vê')));
 
     const hitCls = (vk, mk) => (r) => (r[mk] > 0 ? (r[vk] >= r[mk] ? 'hit' : 'miss') : '');
@@ -556,6 +557,12 @@
     });
     root.append(TS.section('Comissão por vendedor'), TS.card('Comissão por vendedor',
       h('span', null, 'Sem Espaço Gourmet. ', h('b', { class: 'hit', style: { color: '#1F5FBF' } }, 'Azul'), ' = meta batida, ', h('b', { style: { color: '#B5452B' } }, 'vermelho'), ' = abaixo da meta. A linha Total soma os vendedores.'), tab));
+
+    // feriados do mês (horas trabalhadas por pessoa → PDF do fechamento)
+    if (cfgLoja && mensal && res.lojasNoPeriodo === 1) {
+      const pessoas = res.rows.map((r) => r.vendedor).filter((n) => n && !/^SEM VENDEDOR$/i.test(n));
+      root.append(h('div', { class: 'mt' }, TS.cartaoFeriados({ cfg: cfgLoja, pessoas, ym: ymMeta })));
+    }
 
     // EG + royalties
     const tabEG = TS.table({

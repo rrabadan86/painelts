@@ -169,22 +169,32 @@
 
   // ======================= FECHAMENTO EM PDF =======================
   /** monta as páginas de impressão (Salvar como PDF no navegador) */
-  TS.imprimirFechamento = function ({ res, eg, meta, periodo, loja }) {
+  TS.imprimirFechamento = function ({ res, eg, meta, periodo, loja, feriados }) {
     document.getElementById('impressao')?.remove();
     const rg = res.regras;
     const gorj = new Map(eg.rows.map((r) => [r.vendedor, r.gorjeta]));
-    const linhas = res.rows.filter((r) => r.total > 0 || r.aPagar > 0).sort((a, b) => a.vendedor.localeCompare(b.vendedor, 'pt-BR'));
+    const linhas = res.rows.filter((r) => (r.total > 0 || r.aPagar > 0) && !/^SEM VENDEDOR$/i.test(String(r.vendedor).trim())).sort((a, b) => a.vendedor.localeCompare(b.vendedor, 'pt-BR'));
     const totalDe = (r) => (r.aPagar || 0) + (rg.rateio && rg.rateio.ativo ? 0 : r.premiacao || 0) + (gorj.get(r.vendedor) || 0);
     const emitido = new Date().toLocaleString('pt-BR');
+    // feriados trabalhados: { NOME: [{ data, nome, min }] }
+    const fer = new Map();
+    if (feriados) for (const f of feriados.lista) for (const [nome, min] of Object.entries(feriados.horas[f.data] || {})) {
+      if (!fer.has(nome)) fer.set(nome, []);
+      fer.get(nome).push({ data: f.data, nome: f.nome, min });
+    }
+    const ferDe = (vend) => fer.get(String(vend).trim().toUpperCase()) || [];
+    const minTot = (vend) => ferDe(vend).reduce((s, x) => s + x.min, 0);
+    const temFeriado = feriados && feriados.lista.length;
+    const DSEM = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
     const cab = (sub) => h('div', { class: 'imp-cab' }, h('div', null, h('div', { class: 'imp-marca' }, 'Tea Shop'), h('div', null, loja)), h('div', { class: 'imp-dir' }, h('div', { class: 'imp-tit' }, 'Fechamento de comissão'), h('div', null, periodo), sub ? h('div', null, sub) : null));
     const pg = [];
     // resumo
     pg.push(h('section', { class: 'imp-pag' }, cab('Resumo'),
-      h('table', { class: 'imp-t' }, h('thead', null, h('tr', null, ['Vendedor', 'Vendido', 'Meta ind.', 'Comissão', 'Premiação', 'Gorjeta', 'Total'].map((t, i) => h('th', { class: i ? 'r' : '' }, t)))),
+      h('table', { class: 'imp-t' }, h('thead', null, h('tr', null, ['Vendedor', 'Vendido', 'Meta ind.', 'Comissão', 'Premiação', 'Gorjeta', 'Total', ...(temFeriado ? ['Horas em feriados'] : [])].map((t, i) => h('th', { class: i ? 'r' : '' }, t)))),
         h('tbody', null, linhas.map((r) => h('tr', null, h('td', null, r.vendedor), h('td', { class: 'r' }, fmt.brl(r.total)), h('td', { class: 'r' }, fmt.brl0(r.metaInd)), h('td', { class: 'r' }, fmt.brl(r.aPagar)),
-          h('td', { class: 'r' }, fmt.brl(rg.rateio && rg.rateio.ativo ? 0 : r.premiacao)), h('td', { class: 'r' }, fmt.brl(gorj.get(r.vendedor) || 0)), h('td', { class: 'r b' }, fmt.brl(totalDe(r)))))),
+          h('td', { class: 'r' }, fmt.brl(rg.rateio && rg.rateio.ativo ? 0 : r.premiacao)), h('td', { class: 'r' }, fmt.brl(gorj.get(r.vendedor) || 0)), h('td', { class: 'r b' }, fmt.brl(totalDe(r))), temFeriado ? h('td', { class: 'r' }, TS.horasTxt(minTot(r.vendedor))) : null))),
         h('tfoot', null, h('tr', null, h('td', null, 'Total'), h('td', { class: 'r' }, fmt.brl(res.total.total)), h('td', { class: 'r' }, fmt.brl0(meta)), h('td', { class: 'r' }, fmt.brl(res.total.aPagar)),
-          h('td', { class: 'r' }, fmt.brl(rg.rateio && rg.rateio.ativo ? 0 : res.total.premiacao)), h('td', { class: 'r' }, fmt.brl(linhas.reduce((s, r) => s + (gorj.get(r.vendedor) || 0), 0))), h('td', { class: 'r b' }, fmt.brl(linhas.reduce((s, r) => s + totalDe(r), 0)))))),
+          h('td', { class: 'r' }, fmt.brl(rg.rateio && rg.rateio.ativo ? 0 : res.total.premiacao)), h('td', { class: 'r' }, fmt.brl(linhas.reduce((s, r) => s + (gorj.get(r.vendedor) || 0), 0))), h('td', { class: 'r b' }, fmt.brl(linhas.reduce((s, r) => s + totalDe(r), 0))), temFeriado ? h('td', { class: 'r' }, TS.horasTxt(linhas.reduce((s, r) => s + minTot(r.vendedor), 0))) : null))),
       h('p', { class: 'imp-obs' }, `Meta da loja: ${fmt.brl0(meta)} · ${res.qtdVend} vendedores dividem a meta${res.feriasMes && res.feriasMes.length ? ` · férias no mês: ${res.feriasMes.map((f) => `${f.vendedor} (${fmt.date(f.de)} a ${fmt.date(f.ate)})`).join(', ')} — nesses dias a meta diária foi dividida entre quem estava trabalhando` : ''}. Vendas sem Espaço Gourmet. Emitido em ${emitido}.`)));
     // um por vendedor
     for (const r of linhas) {
@@ -200,6 +210,11 @@
           rg.rateio && rg.rateio.ativo ? null : h('tr', null, h('td', null, `Premiação (TKM ${fmt.brl(r.tkm)} · IPA ${fmt.n2(r.ipa)} · PMA ${fmt.brl(r.pma)})`), h('td', { class: 'r' }, fmt.brl(r.premiacao))),
           h('tr', null, h('td', null, 'Gorjeta (taxa de serviço)'), h('td', { class: 'r' }, fmt.brl(gorj.get(r.vendedor) || 0))),
           h('tr', { class: 'tot' }, h('td', null, 'Total a receber'), h('td', { class: 'r' }, fmt.brl(totalDe(r)))))),
+        temFeriado ? h('div', { class: 'imp-fer' }, h('div', { class: 'imp-sub' }, 'Feriados trabalhados'),
+          ferDe(r.vendedor).length ? h('table', { class: 'imp-t' }, h('thead', null, h('tr', null, h('th', null, 'Data'), h('th', null, 'Feriado'), h('th', { class: 'r' }, 'Horas'))),
+            h('tbody', null, ferDe(r.vendedor).map((x) => h('tr', null, h('td', null, `${fmt.date(x.data)} (${DSEM[new Date(x.data + 'T12:00:00Z').getUTCDay()]})`), h('td', null, x.nome), h('td', { class: 'r' }, TS.horasTxt(x.min))))),
+            h('tfoot', null, h('tr', null, h('td', { colspan: 2 }, 'Total em feriados'), h('td', { class: 'r' }, TS.horasTxt(minTot(r.vendedor))))))
+            : h('p', { class: 'imp-obs' }, 'Não trabalhou em feriados neste período.')) : null,
         h('div', { class: 'imp-ass' }, h('div', null, h('span'), r.vendedor), h('div', null, h('span'), 'Responsável pela loja')),
         h('p', { class: 'imp-obs' }, `Emitido em ${emitido}.`)));
     }
