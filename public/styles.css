@@ -698,3 +698,5 @@ body.perfil-vendedor #btnScript { display: none !important; }
   .imp-escala .sem-t thead th b { font-size: 7.5pt; }
   .imp-escala .sem-t.resumo { max-width: none; }
 }
+.aj-repetir { display: grid; gap: 4px; margin: 8px 0 4px; padding-top: 8px; border-top: 1px dashed var(--line, #E2DCCF); }
+.aj-repetir .btn { justify-self: start; }

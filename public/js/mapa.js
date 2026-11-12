@@ -784,13 +784,37 @@
         else if (modo.value === 'trab') { if (!ini.value || !fim.value || ini.value >= fim.value) { erro.textContent = 'A entrada precisa ser antes da saída.'; return; } d[N] = { tipo: 'trab', ini: ini.value, fim: fim.value }; }
         else { const j = +com.value; const outra = E.pessoas[j].nome.trim().toUpperCase(); d[N] = comoAjuste(E.cel[j][k]); d[outra] = comoAjuste(atual); }
         if (!Object.keys(d).length) delete AJ.dados[iso];
-        AJ.sujo = true; AJ.sel = null; TS.render();
+        AJ.sujo = true; AJ.sel = null; AJ.msg = ''; TS.render();
       };
       const DSN = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
+      const DSP = ['domingos', 'segundas', 'terças', 'quartas', 'quintas', 'sextas', 'sábados'];
+      // repetir os ajustes deste dia nos mesmos dias da semana seguintes (no mês), menos feriados
+      const wdSel = new Date(iso + 'T12:00:00Z').getUTCDay();
+      const ajDia = AJ.dados[iso] || {};
+      const proximos = E.dias.filter((d) => d > iso && new Date(d + 'T12:00:00Z').getUTCDay() === wdSel && !E.feriados.has(d));
+      const repetir = () => {
+        let n = 0;
+        for (const d of proximos) {
+          const k2 = E.dias.indexOf(d);
+          const alvo = (AJ.dados[d] ||= {});
+          for (const [nome, aj] of Object.entries(ajDia)) {
+            const j = E.pessoas.findIndex((q) => q.nome.trim().toUpperCase() === nome);
+            if (j >= 0 && E.cel[j][k2].tipo === 'ferias') continue; // férias prevalecem
+            alvo[nome] = { ...aj }; n++;
+          }
+          if (!Object.keys(alvo).length) delete AJ.dados[d];
+        }
+        AJ.sujo = true; AJ.sel = null; AJ.msg = `${n} ajuste(s) repetido(s) em ${proximos.length} ${DSP[wdSel]}.`; TS.render();
+      };
+      const nAjDia = Object.keys(ajDia).length;
+      const blocoRepetir = nAjDia && proximos.length ? h('div', { class: 'aj-repetir' },
+        h('button', { type: 'button', class: 'btn', onclick: repetir }, `↻ Repetir os ajustes deste dia nos próximos ${DSP[wdSel]}`),
+        h('small', { class: 'muted' }, `${nAjDia} ajuste(s) de ${iso.slice(8)}/${iso.slice(5, 7)} (${Object.keys(ajDia).map((nm) => (E.pessoas.find((q) => q.nome.trim().toUpperCase() === nm) || { nome: nm }).nome).join(', ')}) vão para ${proximos.map((d) => `${d.slice(8)}/${d.slice(5, 7)}`).join(', ')}. Feriados e férias ficam de fora.`)) : null;
       return h('div', { class: 'aj-editor' },
         h('div', { class: 'aj-tit' }, `${p.nome} · ${iso.slice(8)}/${iso.slice(5, 7)} (${DSN[new Date(iso + 'T12:00:00Z').getUTCDay()]})`, h('small', null, ` — hoje: ${atual.tipo === 'trab' ? `${hhmm(atual.ini)}–${hhmm(atual.fim)}` : atual.motivo || 'folga'}`)),
         h('div', { class: 'aj-linha' }, modo), blocoHora, blocoTroca,
         h('div', { class: 'aj-linha' }, h('button', { type: 'button', class: 'btn primary', onclick: aplicar }, 'Aplicar'), h('button', { type: 'button', class: 'btn', onclick: () => { AJ.sel = null; TS.render(); } }, 'Cancelar'), erro),
+        blocoRepetir,
         h('small', { class: 'muted' }, 'O painel trava a sua escolha e refaz os turnos das outras pessoas nesse dia para manter a loja coberta.'));
     })();
     const salvarAj = async (btn) => {
@@ -800,11 +824,11 @@
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j.erro || 'Falha ao salvar.');
         cfg.escalaAjustes = { ...(cfg.escalaAjustes || {}), [ym]: JSON.parse(JSON.stringify(AJ.dados)) };
-        AJ.sujo = false; TS.render();
+        AJ.sujo = false; AJ.msg = ''; TS.render();
       } catch (e) { btn.textContent = e.message; btn.disabled = false; }
     };
     const barraAj = h('div', { class: 'aj-barra' },
-      h('span', { class: 'muted' }, nAj ? `${nAj} ajuste(s) manual(is) neste mês${AJ.sujo ? ' — não salvos' : ''}.` : 'Toque num dia de uma pessoa para ajustar (folga, horário ou troca).'),
+      h('span', { class: 'muted' }, nAj ? `${nAj} ajuste(s) manual(is) neste mês${AJ.sujo ? ' — não salvos' : ''}.${AJ.msg ? ' ' + AJ.msg : ''}` : 'Toque num dia de uma pessoa para ajustar (folga, horário ou troca).'),
       pode && AJ.sujo ? (() => { const b = h('button', { type: 'button', class: 'btn primary' }, 'Salvar ajustes'); b.addEventListener('click', () => salvarAj(b)); return b; })() : null,
       nAj ? h('button', { type: 'button', class: 'btn ghost-danger', onclick: () => { AJ.dados = {}; AJ.sujo = true; AJ.sel = null; TS.render(); } }, 'Desfazer ajustes do mês') : null,
       TS.demo && AJ.sujo ? h('span', { class: 'muted' }, '(na apresentação os ajustes não são salvos)') : null);
