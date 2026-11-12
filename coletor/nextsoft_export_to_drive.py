@@ -737,70 +737,104 @@ def write_excel_from_json(data, out_path: Path):
     log(f"Arquivo salvo no layout do modelo: {out_path.name} ({len(registros)} linhas de dados)")
 
 # -------------- TROCAR LOJA --------------
+def _sem_acento(t):
+    import unicodedata
+    t = unicodedata.normalize("NFD", str(t or "")).encode("ascii", "ignore").decode()
+    return re.sub(r"\s+", " ", t).strip().rstrip(".").upper()
+
+
+def loja_atual(page):
+    """texto da loja que aparece no topo do AppNext (botão com 'TEA SHOP'), ou None"""
+    for sel in ["button:has-text('TEA SHOP') >> visible=true", "[data-bs-toggle='dropdown']:has-text('TEA SHOP') >> visible=true",
+                ".dropdown-toggle:has-text('TEA SHOP') >> visible=true"]:
+        try:
+            loc = page.locator(sel).first
+            if loc.count():
+                return loc.inner_text(timeout=3000).strip()
+        except Exception:
+            pass
+    return None
+
+
+def _confere(texto, alvo):
+    """o topo às vezes vem cortado ('SÃO PAULO - TEA SHOP ...'): compara o pedaço visível"""
+    t = _sem_acento(texto).replace("…", "...")
+    if "..." in t:
+        t = t.split("...")[0].strip()
+    a = _sem_acento(alvo)
+    return bool(t) and (t == a or (len(t) >= 12 and a.startswith(t)))
+
+
 def trocar_loja(page, loja_nome=None):
     """
-    Tenta trocar a loja pelo menu superior.
-    Estratégia: procurar qualquer botão/área com 'TEA SHOP' ou nome da cidade e clicar.
-    Depois selecionar o item do menu pelo texto (aceita ponto final).
-    Retorna True/False indicando sucesso.
+    Troca a loja pelo menu do topo e CONFERE se a troca valeu (lendo o nome no topo).
+    Se não conseguir confirmar depois de 3 tentativas, para com erro: nunca baixa dados de outra loja.
     """
     alvo = (
         loja_nome
         or os.getenv("APPNEXT_LOJA_DESTINO")
         or "GOIANIA - TEA SHOP FLAMBOYANT"
     )
-    alvo_regex = re.compile(rf"^{re.escape(alvo)}\.?$", re.IGNORECASE)
-
+    alvo_n = _sem_acento(alvo)
     step(f"2) Trocando loja → {alvo}")
-    try:
-        opened = _click_first(
-            page,
-            [
-                "button:has-text('TEA SHOP')",
-                "button:has-text('VILA MADALENA')",
-                "button:has-text('FLAMBOYANT')",
-                "text=/S[ÂA]O PAULO - TEA SHOP|GOI[ÂA]NIA - TEA SHOP/i",
-                "[data-bs-toggle='dropdown']",
-                ".dropdown-toggle",
-                "xpath=(//*[contains(translate(normalize-space(.),'áãéíóúâêô','aaeiouaeo'),'TEA SHOP')])[1]",
-            ],
-        )
-
-        if not opened:
-            # último recurso: clicar em algo com ícone de loja (emoji/mdi) + caret
+    atual = loja_atual(page)
+    if atual and _confere(atual, alvo):
+        log(f"Já está na loja certa: {atual}")
+        return True
+    for tentativa in range(1, 4):
+        try:
             opened = _click_first(
                 page,
                 [
-                    "xpath=(//i[contains(@class,'store') or contains(@class,'shop')]/ancestor::*[self::button or self::a])[1]"
+                    "button:has-text('TEA SHOP') >> visible=true",
+                    "[data-bs-toggle='dropdown']:has-text('TEA SHOP') >> visible=true",
+                    ".dropdown-toggle:has-text('TEA SHOP') >> visible=true",
+                    "[data-bs-toggle='dropdown']",
+                    ".dropdown-toggle",
                 ],
             )
-
-        # Seleciona a opção pelo texto
-        try:
-            page.get_by_role("menuitem", name=alvo_regex).first.click(timeout=6000, force=True)
-        except Exception:
-            clicked = _click_first(
-                page,
-                [
-                    f"text=^{alvo}$",
-                    f"text=^{re.escape(alvo)}",
-                    f"xpath=//*[normalize-space()='{alvo}'] | //*[starts-with(normalize-space(), '{alvo}')]",
-                ],
-            )
-            if not clicked:
-                raise RuntimeError("Não encontrei a opção da loja no dropdown.")
-
-        log(f"Loja selecionada: {alvo}")
-        try:
-            page.wait_for_load_state("networkidle", timeout=12000)
-        except Exception:
-            pass
-
-        return True
-
-    except Exception as e:
-        log(f"Falha ao trocar loja: {e}")
-        return False
+            if not opened:
+                raise RuntimeError("não achei o seletor de loja no topo")
+            page.wait_for_timeout(800)
+            # opções do menu: compara sem acento e sem o ponto final
+            itens = page.locator("[role='menuitem'] >> visible=true, .dropdown-menu.show a, .dropdown-menu.show button, .dropdown-menu.show li")
+            escolhido = None
+            nomes = []
+            for k in range(min(itens.count(), 80)):
+                el = itens.nth(k)
+                try:
+                    txt = el.inner_text(timeout=1000).strip()
+                except Exception:
+                    continue
+                if not txt:
+                    continue
+                nomes.append(txt)
+                if _sem_acento(txt) == alvo_n:
+                    escolhido = el
+                    break
+            if escolhido is None:
+                raise RuntimeError(f"a opção '{alvo}' não está no menu (opções: {', '.join(nomes[:12]) or 'nenhuma'})")
+            escolhido.click(timeout=6000, force=True)
+            try:
+                page.wait_for_load_state("networkidle", timeout=12000)
+            except Exception:
+                pass
+            for _ in range(10):
+                atual = loja_atual(page)
+                if atual and _confere(atual, alvo):
+                    log(f"Loja selecionada e conferida: {atual}")
+                    return True
+                page.wait_for_timeout(1000)
+            raise RuntimeError(f"depois do clique o topo mostra '{atual or '?'}'")
+        except Exception as e:
+            log(f"Troca de loja, tentativa {tentativa}: {str(e).splitlines()[0][:300]}")
+            try:
+                page.keyboard.press("Escape")
+            except Exception:
+                pass
+            page.wait_for_timeout(1500)
+    raise RuntimeError(f"Não consegui trocar para a loja {alvo} no AppNext (o topo mostra '{loja_atual(page) or '?'}'). "
+                       "Parei para não baixar dados de outra loja.")
 
 # -------- Navegação resiliente: goto com retries --------
 def goto_login_with_retries(page, url, tries=3):
