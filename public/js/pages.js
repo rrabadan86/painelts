@@ -321,9 +321,11 @@
       for (const i of idx) arr[db.wd[i]] += db.vt[i] || 0;
       return { label: db.D.loja[l], data: arr, borderColor: TS.color(k), backgroundColor: TS.alpha(TS.color(k), .12), fill: lojasIdx.size === 1, tension: .35, pointRadius: 4 };
     });
+    if (dsSemana.length > 1) dsSemana.push(TS.dsMedia('Média das lojas', TS.mediaSeries(dsSemana.map((d) => d.data))));
+    else if (dsSemana.length === 1) { const m = TS.mediaPontos(dsSemana[0].data); dsSemana.push(TS.dsMedia('Média dos dias', dsSemana[0].data.map(() => m), { tension: 0 })); }
     const chSemana = TS.chart({
       type: 'line', data: { labels: TS.DIAS_SEMANA, datasets: dsSemana },
-      options: { plugins: { legend: { display: dsSemana.length > 1 }, tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${fmt.brl(c.raw)}` } } }, scales: { y: TS.axisBRL, x: TS.axisCat } },
+      options: { plugins: { legend: { display: true }, tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${fmt.brl(c.raw)}` } } }, scales: { y: TS.axisBRL, x: TS.axisCat } },
     });
 
     const prodIdx = base.filter((i) => !I.taxas.has(db.desc[i]));
@@ -423,26 +425,29 @@
     const tabM = arvoreMensal(base, porMesAll);
     // ---- mix por vendedor
     const porVend = [...TS.agrupar(base, (i) => db.vend[i])].map(([v, idx]) => ({ nome: db.D.vendedor[v], ...R().mixPct(idx), vt: TS.soma(idx, 'vt') })).filter((r) => r.arom != null).sort((a, b) => b.vt - a.vt);
+    const mixLoja = R().mixPct(base);
+    if (porVend.length > 1 && mixLoja.arom != null) porVend.push({ nome: 'Média da loja', ...mixLoja, media: true });
+    const corMix = (cor) => porVend.map((r) => (r.media ? TS.alpha(cor, .5) : cor));
     const mixChart = TS.chart({
       type: 'bar',
       data: {
         labels: porVend.map((r) => r.nome),
         datasets: [
-          { label: 'Chá aromatizado', data: porVend.map((r) => r.arom), backgroundColor: '#2C5234' },
-          { label: 'Chá puro', data: porVend.map((r) => r.puro), backgroundColor: '#7FA37A' },
-          { label: 'Acessórios', data: porVend.map((r) => r.acess), backgroundColor: '#C9A227' },
+          { label: 'Chá aromatizado', data: porVend.map((r) => r.arom), backgroundColor: corMix('#2C5234') },
+          { label: 'Chá puro', data: porVend.map((r) => r.puro), backgroundColor: corMix('#7FA37A') },
+          { label: 'Acessórios', data: porVend.map((r) => r.acess), backgroundColor: corMix('#C9A227') },
         ],
       },
       options: {
         indexAxis: 'y',
-        plugins: { legend: { position: 'top' }, tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${fmt.pct(c.raw)}` } } },
+        plugins: { legend: { position: 'top', labels: { generateLabels: (ch) => ch.data.datasets.map((d, i) => ({ text: d.label, fillStyle: d.backgroundColor[0], strokeStyle: d.backgroundColor[0], lineWidth: 0, datasetIndex: i, hidden: !ch.isDatasetVisible(i) })) } }, tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${fmt.pct(c.raw)}` } } },
         scales: { x: { stacked: true, max: 1, ticks: { callback: (v) => fmt.pct(v, 0) }, grid: { color: '#EEE9DF' } }, y: { stacked: true, grid: { display: false } } },
       },
     });
     root.append(h('div', { class: 'mt' },
       TS.cardWithTools('Evolução mensal', 'Clique em + no mês para ver os anos e no ano para ver os vendedores · variação contra o mesmo mês do ano anterior',
         tabM.tools, tabM)));
-    root.append(h('div', { class: 'mt' }, TS.card('Mix de vendas por vendedor', '% do faturamento de chás e acessórios', mixChart)));
+    root.append(h('div', { class: 'mt' }, TS.card('Mix de vendas por vendedor', '% do faturamento de chás e acessórios · última barra = média da loja', mixChart)));
 
     // ---- histórico de faturamento por loja
     const meses = [...new Set(base.map((i) => db.ym[i]))].sort();
@@ -451,9 +456,11 @@
       const m = new Map(); for (const i of idx) m.set(db.ym[i], (m.get(db.ym[i]) || 0) + (db.vt[i] || 0));
       return { label: db.D.loja[l], data: meses.map((x) => m.get(x) ?? null), borderColor: TS.color(k), backgroundColor: TS.alpha(TS.color(k), .12), fill: porLoja.size === 1, tension: .3, pointRadius: 3 };
     });
-    root.append(h('div', { class: 'mt' }, TS.card('Histórico de faturamento', 'Por mês e loja', TS.chart({
+    if (dsLoja.length > 1) dsLoja.push(TS.dsMedia('Média das lojas', TS.mediaSeries(dsLoja.map((d) => d.data))));
+    else if (dsLoja.length === 1) { const m = TS.mediaPontos(dsLoja[0].data); dsLoja.push(TS.dsMedia('Média mensal', dsLoja[0].data.map(() => m), { tension: 0 })); }
+    root.append(h('div', { class: 'mt' }, TS.card('Histórico de faturamento', 'Por mês e loja · tracejado = média', TS.chart({
       type: 'line', data: { labels: meses.map(TS.ymLabel), datasets: dsLoja },
-      options: { plugins: { legend: { display: dsLoja.length > 1 }, tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${fmt.brl(c.raw)}` } } }, scales: { y: TS.axisBRL, x: TS.axisCat } },
+      options: { plugins: { legend: { display: true }, tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${fmt.brl(c.raw)}` } } }, scales: { y: TS.axisBRL, x: TS.axisCat } },
     }))));
 
     // ---- sua loja × rede (anônimo)
@@ -476,7 +483,12 @@
       const pm = TS.agrupar(idx, (i) => db.ym[i]);
       return { label: db.D.vendedor[v], data: meses.map((m) => (pm.get(m) ? valMes(pm.get(m)) : null)), borderColor: TS.color(k), backgroundColor: TS.color(k), tension: .3, pointRadius: 3, spanGaps: true };
     });
-    root.append(TS.section('Indicadores por vendedor'), TS.cardWithTools('Mês a mês por vendedor', met.startsWith('p') ? 'Quantidade de pacotes de chá (linhas de venda)' : '',
+    // média da loja: TKM/PMA/IPA da loja inteira no mês; contagens = média por vendedor que vendeu no mês
+    const porMesV = TS.agrupar(baseV, (i) => db.ym[i]);
+    const contagem = met === 'cupons' || met === 'p50' || met === 'p100';
+    const mediaLoja = contagem ? TS.mediaSeries(dsV.map((d) => d.data)) : meses.map((m) => (porMesV.get(m) ? TS.indicadores(porMesV.get(m))[met] : null));
+    if (dsV.length) dsV.push(TS.dsMedia('Média da loja', mediaLoja));
+    root.append(TS.section('Indicadores por vendedor'), TS.cardWithTools('Mês a mês por vendedor', `${met.startsWith('p') ? 'Quantidade de pacotes de chá (linhas de venda). ' : ''}Tracejado = média da loja${contagem ? ' (por vendedor)' : ''}.`,
       TS.seg(METRICAS, met, (v) => { state.compMetrica = v; TS.render(); }),
       TS.chart({
         type: 'line', data: { labels: meses.map(TS.ymLabel), datasets: dsV },
@@ -487,10 +499,15 @@
     const tams = [50, 100, 250, 500];
     const baseP = baseV.filter((i) => I.catChaKg.has(db.cat[i]) && tams.includes(db.so[i]));
     const vendP = [...TS.agrupar(baseP, (i) => db.vend[i])].sort((a, b) => b[1].length - a[1].length);
-    const dsP = tams.map((t, k) => ({ label: `${t}g`, data: vendP.map(([, idx]) => idx.reduce((s, i) => s + (db.so[i] === t ? db.qtd[i] || 0 : 0), 0)), backgroundColor: ['#A9C5A0', '#2C5234', '#C9A227', '#8B5E3C'][k], borderRadius: 4 }));
-    root.append(h('div', { class: 'mt' }, TS.card('Pacotes por tamanho', 'Unidades vendidas por vendedor no período', vendP.length ? TS.chart({
-      type: 'bar', data: { labels: vendP.map(([v]) => db.D.vendedor[v]), datasets: dsP },
-      options: { plugins: { tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${fmt.int(c.raw)} un.` } } }, scales: { y: TS.axisNum(fmt.int), x: TS.axisCat } },
+    const dsP = tams.map((t, k) => {
+      const d = vendP.map(([, idx]) => idx.reduce((s, i) => s + (db.so[i] === t ? db.qtd[i] || 0 : 0), 0));
+      const cor = ['#A9C5A0', '#2C5234', '#C9A227', '#8B5E3C'][k];
+      d.push(d.length ? d.reduce((a, b) => a + b, 0) / d.length : 0); // média da loja (por vendedor)
+      return { label: `${t}g`, data: d, backgroundColor: d.map((_, j) => (j === d.length - 1 ? TS.alpha(cor, .45) : cor)), borderColor: cor, borderWidth: d.map((_, j) => (j === d.length - 1 ? 1.5 : 0)), borderRadius: 4 };
+    });
+    root.append(h('div', { class: 'mt' }, TS.card('Pacotes por tamanho', 'Unidades vendidas por vendedor no período · última coluna = média da loja por vendedor', vendP.length ? TS.chart({
+      type: 'bar', data: { labels: [...vendP.map(([v]) => db.D.vendedor[v]), 'Média da loja'], datasets: dsP },
+      options: { plugins: { legend: { labels: { generateLabels: (ch) => ch.data.datasets.map((d, i) => ({ text: d.label, fillStyle: d.borderColor, strokeStyle: d.borderColor, lineWidth: 0, datasetIndex: i, hidden: !ch.isDatasetVisible(i) })) } }, tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${c.dataIndex === c.dataset.data.length - 1 ? fmt.n1(c.raw) : fmt.int(c.raw)} un.` } } }, scales: { y: TS.axisNum(fmt.int), x: TS.axisCat } },
     }) : TS.empty())));
   };
 
@@ -748,11 +765,13 @@
     root.append(TS.section('Por vendedor'), TS.card('Período atual × anterior', '"Antes" = os dias imediatamente anteriores ao período', tab));
 
     const rowsS = rows.filter((r) => r.tkm != null || r.tkmP != null).sort((x, y) => (y.vt || 0) - (x.vt || 0));
-    root.append(h('div', { class: 'mt' }, TS.card('TKM antes e durante', 'Por vendedor', TS.chart({
+    if (rowsS.length > 1) rowsS.push({ vendedor: 'Média da loja', tkm: a.tkm, tkmP: p.tkm, media: true });
+    const corS = (cor) => rowsS.map((r) => (r.media ? TS.alpha(cor, .5) : cor));
+    root.append(h('div', { class: 'mt' }, TS.card('TKM antes e durante', 'Por vendedor · última coluna = TKM da loja', TS.chart({
       type: 'bar',
       data: { labels: rowsS.map((r) => r.vendedor), datasets: [
-        { label: 'Antes', data: rowsS.map((r) => r.tkmP), backgroundColor: '#A9C5A0', borderRadius: 4 },
-        { label: 'Período', data: rowsS.map((r) => r.tkm), backgroundColor: '#2C5234', borderRadius: 4 },
+        { label: 'Antes', data: rowsS.map((r) => r.tkmP), backgroundColor: corS('#A9C5A0'), borderColor: '#A9C5A0', borderWidth: rowsS.map((r) => (r.media ? 1.5 : 0)), borderRadius: 4 },
+        { label: 'Período', data: rowsS.map((r) => r.tkm), backgroundColor: corS('#2C5234'), borderColor: '#2C5234', borderWidth: rowsS.map((r) => (r.media ? 1.5 : 0)), borderRadius: 4 },
       ] },
       options: { plugins: { tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${fmt.brl(c.raw)}` } } }, scales: { y: TS.axisNum(fmt.brl0), x: TS.axisCat } },
     }))));

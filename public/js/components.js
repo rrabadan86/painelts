@@ -242,6 +242,12 @@
     return box;
   };
 
+  /** linha tracejada de média (para pôr junto das séries de vendedores/lojas) */
+  TS.dsMedia = (label, data, extra = {}) => ({ type: 'line', label, data, borderColor: '#6B6B6B', backgroundColor: '#6B6B6B', borderDash: [6, 4], borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, pointStyle: 'line', fill: false, tension: .3, spanGaps: true, order: -1, ...extra });
+  /** média por posição entre várias séries (ignora vazios) */
+  TS.mediaSeries = (series) => (series[0] || []).map((_, k) => { let s = 0, n = 0; for (const d of series) { const v = d[k]; if (v != null && !Number.isNaN(v)) { s += v; n++; } } return n ? s / n : null; });
+  /** média dos pontos de uma série (para uma linha reta) */
+  TS.mediaPontos = (d) => { const v = d.filter((x) => x != null && x !== 0); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
   TS.axisBRL = { ticks: { callback: (v) => fmt.compact(v) }, grid: { color: '#EEE9DF' }, border: { display: false } };
   TS.axisNum = (f) => ({ ticks: { callback: (v) => f(v) }, grid: { color: '#EEE9DF' }, border: { display: false } });
   TS.axisCat = { grid: { display: false }, border: { display: false } };
