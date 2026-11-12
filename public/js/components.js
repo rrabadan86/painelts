@@ -80,6 +80,61 @@
   document.addEventListener('click', (e) => { if (!e.target.closest('.ms')) fecharTodos(); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') fecharTodos(); });
 
+  // ---------- expandir tabela em tela cheia ----------
+  // Todo cartão com tabela ganha o botão ⤢: o próprio cartão vai para uma camada por cima da tela
+  // (mesmos elementos, então ordenar/abrir/buscar continua funcionando) e volta ao fechar.
+  let expandido = null; // { titulo, card, marcador, camada }
+  function fecharExpandido(lembrar) {
+    if (!expandido) return;
+    const { card, marcador, camada } = expandido;
+    card.classList.remove('card-cheio');
+    card.querySelectorAll('.table-wrap table').forEach((t) => { t.style.fontSize = ''; t.classList.remove('quebra-th'); });
+    expandido.fechar.remove();
+    if (marcador.isConnected) marcador.replaceWith(card); else card.remove();
+    camada.remove();
+    document.body.classList.remove('com-camada');
+    TS.expandidoTitulo = lembrar ? expandido.titulo : null;
+    expandido = null;
+  }
+  function expandir(card) {
+    fecharExpandido(false);
+    const titulo = card.querySelector('.card-title')?.textContent || '';
+    const marcador = document.createComment('cartão expandido');
+    card.replaceWith(marcador);
+    const fechar = h('button', { type: 'button', class: 'icon-btn exp-fechar', title: 'Fechar (Esc)', 'aria-label': 'Fechar', onclick: () => fecharExpandido(false) }, '✕');
+    const camada = h('div', { class: 'camada-cheia', role: 'dialog', 'aria-modal': 'true', 'aria-label': titulo, onclick: (e) => { if (e.target === camada) fecharExpandido(false); } }, card);
+    card.classList.add('card-cheio');
+    card.prepend(fechar);
+    document.body.append(camada);
+    document.body.classList.add('com-camada');
+    expandido = { titulo, card, marcador, camada, fechar };
+    // cabe na largura sem rolar para o lado: diminui a letra aos poucos (até 10px) e quebra os títulos
+    requestAnimationFrame(() => {
+      for (const w of card.querySelectorAll('.table-wrap')) {
+        const t = w.querySelector('table');
+        if (!t) continue;
+        let fs = 12.5;
+        while (t.scrollWidth > w.clientWidth + 1 && fs > 10) { fs -= .5; t.style.fontSize = fs + 'px'; if (fs <= 11.5) t.classList.add('quebra-th'); }
+      }
+    });
+    TS.expandidoTitulo = titulo;
+  }
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && expandido && !document.querySelector('.ms.open')) fecharExpandido(false); });
+  TS.botoesExpandir = function (root) {
+    // a tela foi redesenhada: a camada antiga ficou com o cartão velho
+    const reabrir = TS.expandidoTitulo;
+    if (expandido) { const { camada } = expandido; camada.remove(); document.body.classList.remove('com-camada'); expandido = null; }
+    for (const card of root.querySelectorAll('.card')) {
+      if (card.classList.contains('kpi') || !card.querySelector('.table-wrap') || card.querySelector(':scope > .card-head .exp-btn')) continue;
+      let head = card.querySelector(':scope > .card-head');
+      if (!head) { head = h('div', { class: 'card-head' }, h('div')); card.prepend(head); }
+      const b = h('button', { type: 'button', class: 'exp-btn', title: 'Expandir em tela cheia', 'aria-label': 'Expandir em tela cheia', onclick: () => expandir(card) },
+        '⤢', h('span', null, 'Expandir'));
+      head.append(b);
+      if (reabrir && card.querySelector('.card-title')?.textContent === reabrir) requestAnimationFrame(() => expandir(card));
+    }
+  };
+
   // ---------- cartões ----------
   TS.card = (title, sub, ...body) => h('div', { class: 'card' },
     (title || sub) ? h('div', { class: 'card-head' }, h('div', null, h('div', { class: 'card-title' }, title), sub ? h('div', { class: 'card-sub' }, sub) : null)) : null,

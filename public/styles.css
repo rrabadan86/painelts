@@ -717,3 +717,19 @@ body.perfil-vendedor #btnScript { display: none !important; }
 .t.tree.multi td.tree-l.n2 { font-weight: 600; }
 .t.tree td.tree-l.n3 { padding-left: 82px; font-weight: 400; color: var(--ink); }
 .t.tree tr.lv3 td, .t.tree tr.lv3 td.sticky-col { background: var(--cream-2); font-size: 12.5px; }
+/* ---------- expandir tabela em tela cheia ---------- */
+.card-head .exp-btn { margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--line, #E2DCCF); background: #fff; color: var(--green); border-radius: 8px; padding: 5px 10px; font: 600 12px/1 inherit; cursor: pointer; }
+.card-head .exp-btn:hover { background: var(--cream-2); }
+.card-head .exp-btn span { font-size: 12px; }
+@media (max-width: 640px) { .card-head .exp-btn span { display: none; } }
+body.com-camada { overflow: hidden; }
+.camada-cheia { position: fixed; inset: 0; z-index: 900; background: rgba(20, 35, 24, .55); display: flex; align-items: center; padding: 1.5vh 1vw; }
+.camada-cheia .card.card-cheio { position: relative; flex: 1; max-height: 100%; margin: 0; display: flex; flex-direction: column; min-height: 0; padding-top: 14px; overflow: hidden; }
+.card-cheio .exp-btn { display: none; }
+.card-cheio .exp-fechar { position: absolute; top: 8px; right: 10px; z-index: 3; background: var(--green); color: #fff; width: 34px; height: 34px; border-radius: 50%; font-size: 16px; }
+.card-cheio > .card-head { padding-right: 48px; }
+.card-cheio .table-wrap { flex: 1; min-height: 0; max-height: none !important; height: auto; }
+.card-cheio .table-wrap table { font-size: 12.5px; }
+.card-cheio .table-wrap th, .card-cheio .table-wrap td { padding-top: 6px; padding-bottom: 6px; }
+.card-cheio table.quebra-th th { white-space: normal; line-height: 1.15; vertical-align: bottom; }
+.card-cheio table.quebra-th td { padding-left: 6px; padding-right: 6px; }

@@ -48,6 +48,7 @@
     const ae = document.activeElement;
     const g = ehCampo(ae) ? capturar(ae) : null;
     renderTela();
+    TS.botoesExpandir && TS.botoesExpandir(content);
     if (g) restaurar(g);
   };
   function renderTela() {
