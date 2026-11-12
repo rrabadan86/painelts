@@ -39,6 +39,31 @@
     return [...nac, ...loc].filter((f) => (vistos.has(f.data) ? false : vistos.add(f.data))).sort((a, b) => (a.data < b.data ? -1 : 1));
   };
 
+  const hm2 = (x) => +x.slice(0, 2) * 60 + +x.slice(3, 5);
+  /**
+   * Horário da loja num feriado: 1º) o definido para aquela data; 2º) o horário padrão de feriados da loja;
+   * 3º) o horário normal do dia da semana. origem = 'data' | 'feriados' | 'semana'
+   */
+  TS.horarioFeriado = function (cfg, data) {
+    const esp = cfg && cfg.feriadosHorario && cfg.feriadosHorario[data];
+    if (esp) return { ...esp, origem: 'data' };
+    const func = cfg && cfg.operacao && cfg.operacao.funcionamento;
+    const pad = func && func.feriado;
+    if (pad && !pad.mesmoDoDia) return { abre: pad.abre, fecha: pad.fecha, fechado: !!pad.fechado, origem: 'feriados' };
+    const dia = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab'][new Date(data + 'T12:00:00Z').getUTCDay()];
+    const f = func && func[dia];
+    return f ? { abre: f.abre, fecha: f.fecha, fechado: !!f.fechado, origem: 'semana' } : null;
+  };
+  /** datas de feriado (para tirar do Mapa de calor) entre dois anos */
+  TS.datasFeriado = function (cfg, anoIni, anoFim) {
+    const s = new Set();
+    for (let a = anoIni; a <= anoFim; a++) {
+      TS.feriadosNacionais(a).forEach((f) => s.add(f.data));
+      ((cfg && cfg.feriadosLocais) || []).forEach((f) => s.add(f.anual !== false ? `${a}${f.data.slice(4)}` : f.data));
+    }
+    return s;
+  };
+
   const horasTxt = (m) => (m ? `${Math.floor(m / 60)}h${String(m % 60).padStart(2, '0')}` : '—');
   const campoTxt = (m) => (m ? `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}` : '');
   /** aceita 07:20, 7:20, 7h20, 7h, 7, 7,5 */
@@ -68,6 +93,8 @@
     const editavel = pode || TS.demo; // na apresentação dá para testar, sem salvar
     const locais = ((cfg && cfg.feriadosLocais) || []).map((f) => ({ ...f }));
     const horas = JSON.parse(JSON.stringify((cfg && cfg.feriadosHoras && cfg.feriadosHoras[ym]) || {}));
+    const horarios = Object.fromEntries(Object.entries((cfg && cfg.feriadosHorario) || {}).filter(([d]) => d.startsWith(ym)).map(([d, v]) => [d, { ...v }]));
+    const cfgVivo = () => ({ ...cfg, feriadosHorario: { ...((cfg && cfg.feriadosHorario) || {}), ...horarios } });
     const nomes = [...new Set([...pessoas.map((n) => n.trim().toUpperCase()), ...Object.values(horas).flatMap((o) => Object.keys(o))])].sort((a, b) => a.localeCompare(b, 'pt-BR'));
     const rotulo = new Map(pessoas.map((n) => [n.trim().toUpperCase(), n]));
     // quem vendeu em cada dia do mês
@@ -84,6 +111,30 @@
     const card = h('div', { class: 'card feriados-card' });
     let sujoF = false;
 
+    /** horário da loja no feriado: padrão (da loja) ou personalizado para a data, ou fechado */
+    function celulaHorario(data) {
+      const ef = TS.horarioFeriado(cfgVivo(), data);
+      const txt = !ef ? 'sem horário cadastrado' : ef.fechado ? 'fechada' : `${ef.abre}–${ef.fecha}`;
+      const origem = !ef ? 'Mapa de calor → Horário e equipe' : ef.origem === 'data' ? 'deste feriado' : ef.origem === 'feriados' ? 'padrão de feriados' : 'dia normal';
+      if (!editavel) return h('div', { class: 'hor-txt' }, txt, h('small', null, origem));
+      const modo = horarios[data] ? (horarios[data].fechado ? 'fechado' : 'proprio') : 'padrao';
+      const sel = h('select', { class: 'f-input hor-sel' }, h('option', { value: 'padrao', selected: modo === 'padrao' || null }, 'Padrão'), h('option', { value: 'proprio', selected: modo === 'proprio' || null }, 'Outro horário'), h('option', { value: 'fechado', selected: modo === 'fechado' || null }, 'Fechada'));
+      sel.addEventListener('change', () => {
+        if (sel.value === 'padrao') delete horarios[data];
+        else if (sel.value === 'fechado') horarios[data] = { fechado: true };
+        else { const b = TS.horarioFeriado({ ...cfg, feriadosHorario: {} }, data); horarios[data] = { abre: (b && !b.fechado && b.abre) || '10:00', fecha: (b && !b.fechado && b.fecha) || '18:00', fechado: false }; }
+        sujoF = true; pintar();
+      });
+      const box = h('div', { class: 'hor-cel' }, sel);
+      if (modo === 'proprio') {
+        const a = h('input', { class: 'f-input hor-t', type: 'time', value: horarios[data].abre }), b = h('input', { class: 'f-input hor-t', type: 'time', value: horarios[data].fecha });
+        const upd = () => { horarios[data] = { abre: a.value, fecha: b.value, fechado: false }; sujoF = true; };
+        a.addEventListener('change', upd); b.addEventListener('change', () => { upd(); pintar(); });
+        box.append(a, b);
+      } else box.append(h('small', null, `${txt} · ${origem}`));
+      return box;
+    }
+
     function pintar() {
       const lista = TS.feriadosDoMes({ feriadosLocais: locais }, ym);
       card.textContent = '';
@@ -94,10 +145,11 @@
         salvar.addEventListener('click', async () => {
           salvar.disabled = true;
           try {
-            const r = await fetch(`/api/feriados?loja=${encodeURIComponent(cfg.id)}`, { method: 'PUT', credentials: 'same-origin', headers: { 'X-Painel': '1', 'Content-Type': 'application/json' }, body: JSON.stringify({ ym, horas, locais }) });
+            const r = await fetch(`/api/feriados?loja=${encodeURIComponent(cfg.id)}`, { method: 'PUT', credentials: 'same-origin', headers: { 'X-Painel': '1', 'Content-Type': 'application/json' }, body: JSON.stringify({ ym, horas, locais, horarios }) });
             const j = await r.json().catch(() => ({}));
             if (!r.ok) throw new Error(j.erro || 'Falha ao salvar.');
             cfg.feriadosHoras = { ...(cfg.feriadosHoras || {}), [ym]: horas }; cfg.feriadosLocais = locais;
+            cfg.feriadosHorario = { ...Object.fromEntries(Object.entries(cfg.feriadosHorario || {}).filter(([d]) => !d.startsWith(ym))), ...horarios };
             sujoF = false; salvar.textContent = 'Salvo ✓';
           } catch (e) { salvar.textContent = e.message; } finally { salvar.disabled = false; }
         });
@@ -136,18 +188,30 @@
           if (v) (horas[f.data] ||= {})[nome] = v; else if (horas[f.data]) delete horas[f.data][nome];
           sujoF = true; pintar();
         });
-        return h('td', null, inp, vend ? h('div', { class: 'hora-dica ' + (m ? 'ok' : 'falta') }, m ? 'vendeu' : 'vendeu, sem horas') : null);
+        const ef = TS.horarioFeriado(cfgVivo(), f.data);
+        const dica = ef && ef.fechado && m ? h('div', { class: 'hora-dica falta' }, 'loja marcada como fechada')
+          : vend ? h('div', { class: 'hora-dica ' + (m ? 'ok' : 'falta') }, m ? 'vendeu' : 'vendeu, sem horas') : null;
+        return h('td', null, inp, dica);
       }), h('td', { class: 'b' }, horasTxt(tot(nome))))));
       card.append(h('div', { class: 'table-wrap free' }, h('table', { class: 't feriados-t' },
-        h('thead', null, h('tr', null, h('th', { class: 'l' }, 'Pessoa'), lista.map((f) => h('th', { title: f.nome }, `${f.data.slice(8)}/${f.data.slice(5, 7)}`)), h('th', null, 'Total'))),
+        h('thead', null, h('tr', null, h('th', { class: 'l' }, 'Pessoa'), lista.map((f) => h('th', { title: f.nome }, `${f.data.slice(8)}/${f.data.slice(5, 7)}`)), h('th', null, 'Total')),
+          h('tr', { class: 'linha-horario' }, h('td', { class: 'l' }, 'Loja abre'), lista.map((f) => h('td', null, celulaHorario(f.data))), h('td'))),
         tb, h('tfoot', null, h('tr', null, h('td', { class: 'l' }, 'Total'), lista.map((f) => h('td', null, horasTxt(totDia(f.data)))), h('td', null, horasTxt(lista.reduce((s, f) => s + totDia(f.data), 0))))))));
       if (editavel) {
         card.append(h('div', { class: 'feriado-rodape' },
           h('button', { type: 'button', class: 'btn', onclick: () => {
-            for (const f of lista) for (const nome of vendeu.get(f.data) || []) if (nomes.includes(nome) && !(horas[f.data] || {})[nome]) (horas[f.data] ||= {})[nome] = jornada;
+            const intervalo = (eq.intervalo ?? 60);
+            for (const f of lista) {
+              const ef = TS.horarioFeriado(cfgVivo(), f.data);
+              if (ef && ef.fechado) continue;
+              const aberto = ef ? hm2(ef.fecha) - hm2(ef.abre) : jornada;
+              const util = aberto > 360 ? aberto - intervalo : aberto; // acima de 6h desconta o intervalo
+              const horasDia = Math.max(0, Math.min(jornada, util));
+              for (const nome of vendeu.get(f.data) || []) if (nomes.includes(nome) && !(horas[f.data] || {})[nome]) (horas[f.data] ||= {})[nome] = horasDia;
+            }
             sujoF = true; pintar();
-          } }, `Preencher quem vendeu (${horasTxt(jornada)})`),
-          h('span', { class: 'muted' }, '"vendeu" = teve venda nesse dia, para ajudar a conferir. Formato: 07:20, 7h20 ou 7,5.')));
+          } }, 'Preencher quem vendeu'),
+          h('span', { class: 'muted' }, `"vendeu" = teve venda nesse dia. "Preencher" usa o horário da loja no feriado (até a jornada de ${horasTxt(jornada)}; acima de 6h desconta o intervalo). Formato: 07:20, 7h20 ou 7,5.`)));
       }
     }
     pintar();

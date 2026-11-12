@@ -55,6 +55,11 @@ function validarOperacao(o) {
     if (!f || typeof f.fechado !== 'boolean') return `Horário de ${d} inválido.`;
     if (!f.fechado && (!hm(f.abre) || !hm(f.fecha) || f.abre >= f.fecha)) return `Confira o horário de ${d} (abertura antes do fechamento).`;
   }
+  const fer = o.funcionamento.feriado;
+  if (fer != null) {
+    if (typeof fer !== 'object' || typeof fer.fechado !== 'boolean' || typeof fer.mesmoDoDia !== 'boolean') return 'Horário de feriados inválido.';
+    if (!fer.mesmoDoDia && !fer.fechado && (!hm(fer.abre) || !hm(fer.fecha) || fer.abre >= fer.fecha)) return 'Confira o horário dos feriados (abertura antes do fechamento).';
+  }
   const e = o.equipe;
   const int = (x, a, b) => Number.isInteger(x) && x >= a && x <= b;
   if (!int(e.funcionarios, 1, 40)) return 'Quantidade de funcionários inválida (1 a 40).';

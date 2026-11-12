@@ -22,8 +22,8 @@ const LOJAS = [
 const H = (abre, fecha) => ({ abre, fecha, fechado: false });
 const FECHADO = { abre: '09:00', fecha: '18:00', fechado: true };
 const OPERACAO = {
-  'demo-centro': { funcionamento: { seg: H('09:00', '19:00'), ter: H('09:00', '19:00'), qua: H('09:00', '19:00'), qui: H('09:00', '19:00'), sex: H('09:00', '19:00'), sab: H('09:00', '17:00'), dom: FECHADO }, equipe: { funcionarios: 3, cargaSemanal: 44, escala: '5x2', intervalo: 60, capacidade: 3 } },
-  'demo-parque': { funcionamento: { seg: H('10:00', '22:00'), ter: H('10:00', '22:00'), qua: H('10:00', '22:00'), qui: H('10:00', '22:00'), sex: H('10:00', '22:00'), sab: H('10:00', '22:00'), dom: H('14:00', '20:00') }, equipe: { funcionarios: 4, cargaSemanal: 44, escala: '6x1', intervalo: 60, capacidade: 3, modelo: 'rodizio', minimoDia: { dom: 2 },
+  'demo-centro': { funcionamento: { seg: H('09:00', '19:00'), ter: H('09:00', '19:00'), qua: H('09:00', '19:00'), qui: H('09:00', '19:00'), sex: H('09:00', '19:00'), sab: H('09:00', '17:00'), dom: FECHADO, feriado: { mesmoDoDia: false, fechado: true, abre: '10:00', fecha: '14:00' } }, equipe: { funcionarios: 3, cargaSemanal: 44, escala: '5x2', intervalo: 60, capacidade: 3 } },
+  'demo-parque': { funcionamento: { seg: H('10:00', '22:00'), ter: H('10:00', '22:00'), qua: H('10:00', '22:00'), qui: H('10:00', '22:00'), sex: H('10:00', '22:00'), sab: H('10:00', '22:00'), dom: H('14:00', '20:00'), feriado: { mesmoDoDia: false, fechado: false, abre: '14:00', fecha: '20:00' } }, equipe: { funcionarios: 4, cargaSemanal: 44, escala: '6x1', intervalo: 60, capacidade: 3, modelo: 'rodizio', minimoDia: { dom: 2 },
     pessoas: [{ nome: 'Lívia', folga: 'qua', folga2: 'auto' }, { nome: 'Gabi', folga: 'qui', folga2: 'auto' }, { nome: 'Renata', folga: 'sex', folga2: 'auto' }, { nome: 'Bia', folga: 'ter', folga2: 'auto' }] } },
   'demo-orla': { funcionamento: { seg: H('10:00', '20:00'), ter: H('10:00', '20:00'), qua: H('10:00', '20:00'), qui: H('10:00', '20:00'), sex: H('10:00', '22:00'), sab: H('09:00', '22:00'), dom: H('09:00', '21:00') }, equipe: { funcionarios: 3, cargaSemanal: 44, escala: '5x2', intervalo: 60, capacidade: 3 } },
 };

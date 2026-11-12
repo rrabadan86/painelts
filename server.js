@@ -104,7 +104,7 @@ async function pacote(lojas, force, perfilDados = 'completo') {
   const metaCfgs = lojas.map((l, i) => {
     const atual = cfgLojas.find((x) => x.id === l.id) || l;
     const r = entradas[i].raw;
-    return { id: l.id, nome: atual.nome, nomesVenda: r.metaCfg?.nomesVenda || [], padrao: atual.meta ?? r.metaPlanilha ?? null, meses: atual.metas || {}, metaAuto: atual.metaAuto || null, regras: atual.regras || null, operacao: atual.operacao || null, ferias: atual.ferias || [], feriadosLocais: atual.feriadosLocais || [], feriadosHoras: atual.feriadosHoras || {} };
+    return { id: l.id, nome: atual.nome, nomesVenda: r.metaCfg?.nomesVenda || [], padrao: atual.meta ?? r.metaPlanilha ?? null, meses: atual.metas || {}, metaAuto: atual.metaAuto || null, regras: atual.regras || null, operacao: atual.operacao || null, ferias: atual.ferias || [], feriadosLocais: atual.feriadosLocais || [], feriadosHoras: atual.feriadosHoras || {}, feriadosHorario: atual.feriadosHorario || {} };
   });
   const k = entradas.map((e, i) => `${lojas[i].id}@${e.at}`).join('|') + '#' + JSON.stringify(metaCfgs) + '#' + perfilDados;
   const chave = lojas.map((l) => l.id).join(',') + '|' + perfilDados;
@@ -330,7 +330,7 @@ app.put('/api/feriados', express.json({ limit: '200kb' }), (req, res) => {
   if (!pode) return res.status(403).json({ erro: 'Sem permissão.' });
   const loja = req.lojas.find((l) => l.id === String(req.query.loja || ''));
   if (!loja) return res.status(404).json({ erro: 'Loja não encontrada.' });
-  const { ym, horas, locais } = req.body || {};
+  const { ym, horas, locais, horarios } = req.body || {};
   const DATA = /^\d{4}-\d{2}-\d{2}$/;
   if (!/^\d{4}-\d{2}$/.test(ym || '')) return res.status(400).json({ erro: 'Mês inválido.' });
   if (!horas || typeof horas !== 'object') return res.status(400).json({ erro: 'Horas inválidas.' });
@@ -354,8 +354,23 @@ app.put('/api/feriados', express.json({ limit: '200kb' }), (req, res) => {
       locaisLimpos.push({ data: f.data, nome, anual: f.anual !== false });
     }
   }
+  // horário de abertura de cada feriado do mês: { data: { abre, fecha, fechado } } (vazio = padrão da loja)
+  const HM = /^([01]\d|2[0-3]):[0-5]\d$/;
+  const horLimpos = {};
+  if (horarios && typeof horarios === 'object') {
+    for (const [data, hr] of Object.entries(horarios)) {
+      if (!DATA.test(data) || !data.startsWith(ym) || !hr || typeof hr !== 'object') return res.status(400).json({ erro: `Horário inválido em ${data}.` });
+      if (hr.fechado) { horLimpos[data] = { fechado: true }; continue; }
+      if (!HM.test(hr.abre || '') || !HM.test(hr.fecha || '') || hr.abre >= hr.fecha) return res.status(400).json({ erro: `Confira o horário do feriado de ${data} (abertura antes do fechamento).` });
+      horLimpos[data] = { abre: hr.abre, fecha: hr.fecha, fechado: false };
+    }
+  }
   C.alterar((cfg) => {
     const l = cfg.lojas.find((x) => x.id === loja.id);
+    if (horarios && typeof horarios === 'object') {
+      l.feriadosHorario = Object.fromEntries(Object.entries(l.feriadosHorario || {}).filter(([d]) => !d.startsWith(ym)));
+      Object.assign(l.feriadosHorario, horLimpos);
+    }
     l.feriadosHoras = l.feriadosHoras || {};
     if (Object.keys(limpo).length) l.feriadosHoras[ym] = limpo; else delete l.feriadosHoras[ym];
     if (locaisLimpos) l.feriadosLocais = locaisLimpos;

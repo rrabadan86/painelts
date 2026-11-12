@@ -67,6 +67,7 @@ function normalizar(cfg) {
     ferias: Array.isArray(l.ferias) ? l.ferias : [],
     feriadosLocais: Array.isArray(l.feriadosLocais) ? l.feriadosLocais : [],
     feriadosHoras: l.feriadosHoras && typeof l.feriadosHoras === 'object' ? l.feriadosHoras : {},
+    feriadosHorario: l.feriadosHorario && typeof l.feriadosHorario === 'object' ? l.feriadosHorario : {},
     criadaEm: l.criadaEm || null,
     uploadToken: l.uploadToken || null,
     github: l.github && l.github.repo ? { repo: l.github.repo, workflow: l.github.workflow || 'run.yml', ref: l.github.ref || 'main' } : null,

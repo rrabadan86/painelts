@@ -40,11 +40,11 @@
   }
 
   /** grade [dia 0-6][hora 0-23] com média por dia, total e percentil 80 (para dimensionar a equipe) */
-  function grade(cs, de, ate, metrica) {
+  function grade(cs, de, ate, metrica, ehFeriado) {
     const val = (c) => (metrica === 'vt' ? c.vt : metrica === 'qtd' ? c.qtd : 1);
     // quantos dias de cada dia da semana existem no período
     const nDias = Array(7).fill(0), datas = Array.from({ length: 7 }, () => []);
-    for (let d = de; d <= ate; d++) { const wd = (new Date(d * 86400000).getUTCDay() + 6) % 7; nDias[wd]++; datas[wd].push(d); }
+    for (let d = de; d <= ate; d++) { if (ehFeriado && ehFeriado(d)) continue; const wd = (new Date(d * 86400000).getUTCDay() + 6) % 7; nDias[wd]++; datas[wd].push(d); }
     const tot = Array.from({ length: 7 }, () => Array(24).fill(0));
     const porData = new Map(); // "day|hora" -> cupons (sempre contagem, para a equipe)
     for (const c of cs) {
@@ -299,6 +299,16 @@
       [fech, ab, fe].forEach((x) => x.addEventListener('change', upd));
       return h('tr', null, h('td', { class: 'l' }, DIAS_NOME[i]), h('td', null, ab), h('td', null, fe), h('td', null, h('label', { class: 'cfg-check-l' }, fech, ' fechado')));
     });
+    // feriados: horário próprio (padrão) ou igual ao dia da semana
+    const fer = (op.funcionamento.feriado ||= { mesmoDoDia: true, abre: '14:00', fecha: '20:00', fechado: false });
+    const fMesmo = h('input', { type: 'checkbox', checked: fer.mesmoDoDia || null });
+    const fFech = h('input', { type: 'checkbox', checked: fer.fechado || null, disabled: fer.mesmoDoDia || null });
+    const fAb = h('input', { class: 'f-input', type: 'time', value: fer.abre, disabled: fer.mesmoDoDia || fer.fechado || null });
+    const fFe = h('input', { class: 'f-input', type: 'time', value: fer.fecha, disabled: fer.mesmoDoDia || fer.fechado || null });
+    const fUpd = () => { fer.mesmoDoDia = fMesmo.checked; fer.fechado = fFech.checked; fer.abre = fAb.value || fer.abre; fer.fecha = fFe.value || fer.fecha; fFech.disabled = fer.mesmoDoDia; fAb.disabled = fFe.disabled = fer.mesmoDoDia || fer.fechado; aoMudar && aoMudar(); };
+    [fMesmo, fFech, fAb, fFe].forEach((x) => x.addEventListener('change', fUpd));
+    linhas.push(h('tr', { class: 'linha-feriado' }, h('td', { class: 'l' }, 'Feriados'), h('td', null, fAb), h('td', null, fFe),
+      h('td', null, h('label', { class: 'cfg-check-l' }, fFech, ' fechado'), h('label', { class: 'cfg-check-l' }, fMesmo, ' igual ao dia da semana'))));
     const e = op.equipe;
     const num = (k, attrs) => { const x = h('input', { class: 'f-input', type: 'number', value: e[k], ...attrs }); x.addEventListener('change', () => { e[k] = +x.value; aoMudar && aoMudar(); }); return x; };
     const esc = h('select', { class: 'f-input' }, h('option', { value: '5x2', selected: e.escala === '5x2' || null }, '5x2 (5 dias, 2 folgas)'), h('option', { value: '6x1', selected: e.escala === '6x1' || null }, '6x1 (6 dias, 1 folga)'));
@@ -357,7 +367,12 @@
     const base = TS.filtrar();
     root.append(h('div', { class: 'page-head' }, h('div', null, h('h1', { class: 'page-title' }, 'Mapa de calor'), h('div', { class: 'page-sub' }, 'Movimento por dia da semana e hora, para montar a escala')),
       h('div', { class: 'active-filters' }, h('span', { class: 'af' }, TS.periodoTexto()))));
-    const { lista, total, semHora } = cupons(base);
+    const cfgMapa = state.loja && state.loja !== 'todas' ? (db.metas || []).find((m) => m.id === state.loja) : null;
+    const anoI = +TS.dayToIso(db.minDay).slice(0, 4), anoF = +TS.dayToIso(db.maxDay).slice(0, 4);
+    const feriadosSet = TS.datasFeriado ? TS.datasFeriado(cfgMapa, anoI, anoF) : new Set();
+    const ehFeriado = (day) => feriadosSet.has(TS.dayToIso(day));
+    const { lista: lista0, total, semHora } = cupons(base);
+    const lista = lista0.filter((c) => !ehFeriado(c.day));
     if (!total) { root.append(TS.card(null, null, TS.empty())); return; }
     if (!lista.length) {
       root.append(h('div', { class: 'card vazio-loja' }, h('h2', null, 'Ainda sem o horário das vendas'),
@@ -369,7 +384,7 @@
     for (const c of lista) { if (c.day < primHora) primHora = c.day; if (c.day > ultHora) ultHora = c.day; }
     const de = Math.max(state.f.de ?? db.minDay, db.minDay, primHora), ate = Math.min(state.f.ate ?? db.maxDay, db.maxDay, ultHora);
     const met = state.mapaMetrica || 'cupons';
-    const g = grade(lista, de, ate, met);
+    const g = grade(lista, de, ate, met, ehFeriado);
     const opInfo = operacaoDaLoja();
     if (opInfo && (!state.mapaOp || state.mapaOp.id !== opInfo.id)) state.mapaOp = opInfo;
     const op = state.mapaOp && opInfo ? state.mapaOp.op : null;
@@ -399,7 +414,7 @@
         }), h('td', { class: 'tot' }, fv(somaDia)));
       })));
     const seg = TS.seg([['Atendimentos', 'cupons'], ['Faturamento', 'vt'], ['Itens', 'qtd']], met, (v) => { state.mapaMetrica = v; TS.render(); });
-    root.append(TS.cardWithTools('Movimento médio por hora', `Média por dia no período (${g.nDias.reduce((s, x) => s + x, 0)} dias). Passe o mouse para ver o pico de cada horário.${op ? ' Hachurado = loja fechada.' : ''}`, seg,
+    root.append(TS.cardWithTools('Movimento médio por hora', `Média por dia no período (${g.nDias.reduce((s, x) => s + x, 0)} dias, sem os feriados, que têm movimento e horário diferentes). Passe o mouse para ver o pico de cada horário.${op ? ' Hachurado = loja fechada.' : ''}`, seg,
       h('div', { class: 'table-wrap free mapa-wrap' }, tab)));
 
     // ---- equipe e escala
