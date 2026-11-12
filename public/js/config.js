@@ -184,8 +184,9 @@
     // últimas importações
     if (l.base.importacoes.length) {
       b.append(h('details', { class: 'cfg-imp' }, h('summary', null, 'Últimas importações'),
-        h('table', { class: 't cfg-t' }, h('thead', null, h('tr', null, h('th', { class: 'l' }, 'Quando'), h('th', { class: 'l' }, 'Origem'), h('th', { class: 'l' }, 'Período'), h('th', null, 'Linhas'))),
-          h('tbody', null, l.base.importacoes.map((i) => h('tr', null, h('td', { class: 'l' }, dt(i.em)), h('td', { class: 'l' }, i.origem || '—'), h('td', { class: 'l' }, `${dIso(i.de)} a ${dIso(i.ate)}`), h('td', null, fmt.int(i.linhas))))))));
+        h('table', { class: 't cfg-t' }, h('thead', null, h('tr', null, h('th', { class: 'l' }, 'Quando'), h('th', { class: 'l' }, 'Origem'), h('th', { class: 'l' }, 'Período'), h('th', null, 'Linhas'), h('th', null, 'Com hora'))),
+          h('tbody', null, l.base.importacoes.map((i) => h('tr', null, h('td', { class: 'l' }, dt(i.em)), h('td', { class: 'l' }, i.origem || '—'), h('td', { class: 'l' }, `${dIso(i.de)} a ${dIso(i.ate)}`), h('td', null, fmt.int(i.linhas)),
+            h('td', { title: i.horasMantidas ? `A planilha veio sem hora; ${i.horasMantidas} linhas mantiveram a hora que já tinham` : '' }, i.comHora == null ? '—' : i.linhas ? fmt.pct(i.comHora / i.linhas, 0) + (i.horasMantidas ? ' *' : '') : '—')))))));
     }
     return b;
   }

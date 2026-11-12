@@ -79,12 +79,27 @@ function importar(id, vendas, { de, ate, origem, por } = {}) {
     porMes.get(ym).push(v);
   }
   const meses = mesesEntre(de, ate);
+  let horasMantidas = 0;
   for (const ym of meses) {
-    const fica = lerMes(id, ym).filter((v) => v.data < de || v.data > ate);
-    gravarMes(id, ym, fica.concat(porMes.get(ym) || []));
+    const antigas = lerMes(id, ym);
+    const fica = antigas.filter((v) => v.data < de || v.data > ate);
+    const novas = porMes.get(ym) || [];
+    // planilha sem a hora (script antigo, Drive, envio manual): mantém a hora que o cupom já tinha
+    if (novas.some((v) => v.min == null)) {
+      const horaDe = new Map();
+      for (const v of antigas) if (v.min != null && v.data >= de && v.data <= ate) horaDe.set(`${v.data}|${v.cupom}|${v.loja}`, v.min);
+      if (horaDe.size) for (const v of novas) {
+        if (v.min != null) continue;
+        const m = horaDe.get(`${v.data}|${v.cupom}|${v.loja}`);
+        if (m != null) { v.min = m; horasMantidas++; }
+      }
+    }
+    gravarMes(id, ym, fica.concat(novas));
   }
   const linhas = [...porMes.values()].reduce((s, a) => s + a.length, 0);
-  registrar(id, { em: new Date().toISOString(), origem: origem || '', por: por || '', de, ate, linhas });
+  const comHora = [...porMes.values()].reduce((s, a) => s + a.filter((v) => v.min != null).length, 0);
+  registrar(id, { em: new Date().toISOString(), origem: origem || '', por: por || '', de, ate, linhas, comHora, horasMantidas });
+  if (horasMantidas) console.log(`[base] ${id}: planilha sem hora (${origem}) — mantidas as horas de ${horasMantidas} linhas`);
   return { linhas, de, ate, meses: meses.length };
 }
 
