@@ -95,7 +95,7 @@ async function montarTexto(lojasIds, obter, comAlertas = true) {
     } catch (e) { blocos.push(`━━ ${id} ━━\nNão foi possível montar o resumo: ${e.message}`); }
   }
   if (!blocos.length) return null;
-  return `☕ Tea Shop · resumo diário\n\n${blocos.join('\n\n')}`;
+  return `☕ Tea Shop · resumo diário\n\n${blocos.join('\n\n')}\n\n— Desenvolvido por Rodrigo Rabadan`;
 }
 
 /** envia para todos (ou só para um destino, no teste) */
@@ -135,8 +135,8 @@ async function montarFechamento(lojasIds, obter, dia) {
   }
   if (!textos.length) return null;
   return {
-    texto: `☕ Tea Shop · fechamento do dia\n\n${textos.join('\n\n')}`,
-    html: `<div style="font-family:Arial,sans-serif">${htmls.join('<div style="height:18px"></div>')}<p style="color:#7a857d;font-size:12px">Gerado automaticamente pelo painel com as vendas do AppNext.</p></div>`,
+    texto: `☕ Tea Shop · fechamento do dia\n\n${textos.join('\n\n')}\n\n— Desenvolvido por Rodrigo Rabadan`,
+    html: `<div style="font-family:Arial,sans-serif">${htmls.join('<div style="height:18px"></div>')}<p style="color:#7a857d;font-size:12px">Gerado automaticamente pelo painel com as vendas do AppNext · Desenvolvido por Rodrigo Rabadan</p></div>`,
   };
 }
 async function enviarFechamento(obter, { soDestino, dia } = {}) {

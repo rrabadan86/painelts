@@ -44,6 +44,8 @@
     x.addEventListener('keydown', (e) => { if (e.key === 'Enter' && pendente) x.blur(); });
   };
 
+  /** crédito no rodapé de todas as telas */
+  TS.credito = () => h('footer', { class: 'credito' }, 'Desenvolvido por ', h('b', null, 'Rodrigo Rabadan'));
   TS.render = function () {
     const ae = document.activeElement;
     const g = ehCampo(ae) ? capturar(ae) : null;
@@ -60,7 +62,7 @@
     if (state.page === 'config') {
       TS.destroyCharts();
       const root = h('div');
-      content.replaceChildren(root);
+      content.replaceChildren(root, TS.credito());
       TS.pages.config(root);
       return;
     }
@@ -85,7 +87,7 @@
       console.error(e);
       root.append(h('div', { class: 'notice err' }, 'Erro ao montar a página: ' + e.message));
     }
-    content.replaceChildren(root);
+    content.replaceChildren(root, TS.credito());
     salvarEstado();
   }
 

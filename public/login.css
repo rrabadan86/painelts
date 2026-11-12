@@ -1,6 +1,7 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
 body {
+  grid-auto-flow: row; align-content: center; gap: 14px;
   font-family: "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
   background: radial-gradient(circle at 20% 10%, #2C5234 0, #1F3D2B 55%, #172E20 100%);
   display: grid; place-items: center; color: #24302A; padding: 16px;
@@ -26,3 +27,6 @@ button.link { background: none; color: #6B7A70; height: auto; font-weight: 500; 
 button.link:hover { background: none; color: #1F3D2B; }
 .voltar { margin: 8px 0 0; font-size: 13px; }
 .voltar a { color: #2C5234; }
+
+.credito { margin: 0; text-align: center; font-size: 12px; color: rgba(255,255,255,.55); letter-spacing: .2px; }
+.credito b { color: rgba(255,255,255,.8); font-weight: 600; }
