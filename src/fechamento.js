@@ -10,7 +10,7 @@
  *  - % = realizado acumulado no mês ÷ histórico acumulado até o mesmo dia
  *  - Recálculo da meta = meta acumulada até hoje − realizado acumulado (super meta = meta × 1,2)
  *  - TKM = vendas ÷ clientes; IPA = itens ÷ clientes; PMA = vendas ÷ itens
- * O contador de "clientes que entraram na loja" não existe no sistema: fica em branco.
+ *  - Clientes: só o total do dia e o total do histórico (mesma data do ano anterior).
  */
 const I = require('./indicadores');
 
@@ -120,7 +120,7 @@ function texto(f) {
     `💰 Vendas realizadas: ${brl(f.vendas.realizadas)}${f.vendas.pctMeta != null ? ` (${pct(f.vendas.pctMeta)} da meta do dia)` : ''}`,
     `📈 Acumulado no mês: ${brl(f.acumulado.realizado)} · histórico ${brl(f.acumulado.historico)} (${pct(f.acumulado.pct)})`,
     '',
-    `👤 Clientes: ${f.clientes.total} (loja ${f.clientes.loja} · omni/corp ${f.clientes.omni} · delivery ${f.clientes.delivery})`,
+    `👤 Clientes: ${f.clientes.total} · histórico ${f.clientes.historico || '—'}`,
     `🛍️ Itens: ${f.itens} · TKM ${brl(f.tkm)} · IPA ${num(f.ipa)} · PMA ${brl(f.pma)}`,
     f.recalculo ? `🔁 Recálculo da meta: ${f.recalculo.meta > 0 ? '🔴 -' + brl(f.recalculo.meta) : '🔵 ' + brl(-f.recalculo.meta)} · super meta: ${f.recalculo.superMeta > 0 ? '🔴 -' + brl(f.recalculo.superMeta) : '🔵 ' + brl(-f.recalculo.superMeta)}` : null,
     f.porDia ? `➡️ Para bater a meta do mês: ${brl(f.porDia.valor)} por dia nos ${f.porDia.dias} dias que faltam` : null,
@@ -182,11 +182,8 @@ ${secao('Vendas', ['Dia', 'Acumulado'], [
     [`Histórico (${dataBr(f.diaHistorico)})`, brl(f.vendas.historico), brl(f.acumulado.historico)],
     ['Realizado', brl(f.vendas.realizadas), brl(f.acumulado.realizado), { forte: true, corA: cor(pctMetaDia == null ? null : pctMetaDia >= 1), corB: cor(f.acumulado.pctMeta == null ? null : f.acumulado.pctMeta >= 1) }],
   ])}
-${secao('Clientes', null, [
-    ['Total', f.clientes.total, '', { forte: true }],
-    ['Loja', f.clientes.loja, ''],
-    ['Omnichannel / corporativo', f.clientes.omni, ''],
-    ['Delivery', f.clientes.delivery, ''],
+${secao('Clientes', ['Hoje', 'Histórico'], [
+    ['Total', f.clientes.total, f.clientes.historico || '—', { forte: true }],
   ])}
 ${secao('Indicadores', ['Hoje', 'Histórico'], [
     ['Itens vendidos', fmtNum(f.itens, 0), f.itensHist ? fmtNum(f.itensHist, 0) : '—'],
