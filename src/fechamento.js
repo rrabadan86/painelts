@@ -28,7 +28,7 @@ const semVendedor = (v) => !v || /^sem vendedor$/i.test(String(v).trim());
 const ehCorp = (v) => /corporativ/i.test(v || '');
 const ehOmni = (v) => /omni|e-?commerce|loja virtual|online|site|ifood|rappi/i.test(v || '');
 const ehTaxa = (v) => /^taxa /i.test(String(v.descricao || '').trim());
-const ehDelivery = (v) => /delivery|entrega/i.test(String(v.descricao || ''));
+const ehDelivery = (v) => /delivery|entrega/i.test(String(v.descricao || '')) || /delivery|entrega/i.test(String(v.vendedor || ''));
 
 /** números de um conjunto de linhas de venda de um dia (ou período) */
 function numeros(linhas) {
@@ -45,7 +45,7 @@ function numeros(linhas) {
     if (!ehTaxa(v)) itens += v.qtd || 0;
     if (ehDelivery(v)) cupons.delivery.add(ch);
     else cupons.loja.add(ch);
-    if (!semVendedor(v.vendedor)) porVend.set(v.vendedor, (porVend.get(v.vendedor) || 0) + x);
+    if (!semVendedor(v.vendedor) && !/delivery|entrega/i.test(v.vendedor)) porVend.set(v.vendedor, (porVend.get(v.vendedor) || 0) + x);
   }
   for (const c of cupons.delivery) cupons.loja.delete(c);
   const cliLoja = cupons.loja.size, cliOmni = cupons.omni.size, cliDel = cupons.delivery.size;
@@ -111,6 +111,7 @@ const nomeDia = (iso) => new Date(iso + 'T12:00:00Z').toLocaleDateString('pt-BR'
 function texto(f) {
   const l = [
     `━━ ${f.loja.nome} ━━`,
+    `📊 Fechamento automático do Painel Tea Shop (vendas do AppNext)`,
     `🧾 Fechamento de ${nomeDia(f.dia)}, ${dataBr(f.dia)}`,
     f.vendedoras.length ? `👥 ${f.vendedoras.map((v) => v.nome).join(', ')}` : null,
     '',
@@ -138,6 +139,7 @@ function html(f) {
     `<tr><td style="padding:5px 10px;${forte ? 'font-weight:700;' : 'padding-left:24px;'}">${esc(rot)}</td><td style="padding:5px 10px;text-align:right;font-weight:700;color:${corVal || '#1d2b22'}">${esc(val)}</td><td style="padding:5px 10px;text-align:right;color:${corExtra || '#1d2b22'}">${esc(extra)}</td></tr>`;
   const r = f.recalculo;
   return `<table cellspacing="0" style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:13px;color:#1d2b22;min-width:440px;border:1px solid #D9D4C7">
+<tr><td colspan="3" style="background:#F3EBCF;color:#5b4a12;padding:7px 10px;font-size:12px">📊 Fechamento <b>automático</b> do <b>Painel Tea Shop</b>, com as vendas registradas no AppNext · desenvolvido por <b>Rodrigo Rabadan</b></td></tr>
 <tr><td colspan="3" style="background:#2C5234;color:#fff;padding:9px 10px;font-weight:700">${esc(f.loja.nome)} · fechamento de ${esc(nomeDia(f.dia))}, ${dataBr(f.dia)}</td></tr>
 ${f.vendedoras.length ? `<tr><td colspan="3" style="padding:6px 10px;color:#5b6b60">Vendedoras do dia: ${esc(f.vendedoras.map((v) => v.nome).join(', '))}</td></tr>` : ''}
 ${lin('Meta do Dia', brl(f.meta.dia), pct(f.acumulado.pct), { forte: true, corExtra: cor(f.acumulado.pct == null ? null : f.acumulado.pct >= 1) })}

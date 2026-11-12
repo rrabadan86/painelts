@@ -767,3 +767,21 @@ body.com-camada { overflow: hidden; }
   .content > footer.credito { display: none; }
 }
 @media print { .imp-fech, .imp-fech * { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+.cfg-gmail { margin: 6px 0 12px; background: var(--cream-2); border-radius: 10px; padding: 8px 12px; font-size: 13px; line-height: 1.5; }
+.cfg-gmail summary { cursor: pointer; font-weight: 600; color: var(--green); }
+.cfg-gmail ol { margin: 8px 0 8px 20px; padding: 0; display: grid; gap: 6px; }
+.cfg-gmail ul { margin: 4px 0 0 18px; padding: 0; display: grid; gap: 3px; }
+.cfg-gmail code { background: #fff; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+.fech-modal { overflow: auto !important; max-width: 900px; margin: 0 auto !important; }
+.fech-modal-topo { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding-right: 48px; margin-bottom: 10px; }
+.fech-modal-topo select { width: auto; }
+.fech-modal .fech-card { box-shadow: none; border: 0; padding: 0; }
+/* tabela estreita (ex.: Vendas por produto ao lado do gráfico): cabe sem rolar para o lado */
+.t.t-compacta { width: 100%; table-layout: fixed; font-size: 12.5px; }
+.t.t-compacta th, .t.t-compacta td { padding: 7px 6px; }
+.t.t-compacta th:first-child, .t.t-compacta td:first-child { width: auto; white-space: normal; overflow-wrap: break-word; padding-left: 10px; }
+.t.t-compacta th:nth-child(2), .t.t-compacta td:nth-child(2) { width: 13%; }
+.t.t-compacta th:nth-child(3), .t.t-compacta td:nth-child(3) { width: 15%; }
+.t.t-compacta th:nth-child(4), .t.t-compacta td:nth-child(4) { width: 33%; padding-right: 10px; }
+.t.t-compacta th .arrow { margin-left: 2px; }
+.card-cheio .t.t-compacta { table-layout: auto; font-size: 13px; }

@@ -5,9 +5,10 @@
   const { h, state } = TS;
   const cache = new Map(); // loja|dia → resposta
 
-  TS.cartaoFechamento = function () {
+  /** cartão do fechamento de uma loja (usado na prévia de Configurações → Resumo diário) */
+  TS.cartaoFechamento = function (lojaId) {
     if (TS.eu && TS.eu.perfil === 'vendedor') return null;
-    const loja = state.loja;
+    const loja = lojaId || state.loja;
     const card = h('div', { class: 'card fech-card' });
     if (!loja || loja === 'todas') {
       card.append(h('div', { class: 'card-head' }, h('div', null, h('div', { class: 'card-title' }, 'Fechamento do dia'), h('div', { class: 'card-sub' }, 'Escolha uma loja no topo para ver o fechamento.'))));
@@ -57,5 +58,27 @@
     }
     carregar();
     return card;
+  };
+
+  /** abre o fechamento por cima da tela, com escolha da loja */
+  TS.abrirFechamento = function (lojas, lojaInicial) {
+    document.querySelector('.camada-fech')?.remove();
+    let lojaAtual = lojaInicial || (lojas[0] && lojas[0].id);
+    const fechar = () => { camada.remove(); document.body.classList.remove('com-camada'); document.removeEventListener('keydown', esc); };
+    const esc = (e) => { if (e.key === 'Escape') fechar(); };
+    const sel = h('select', { class: 'f-input', 'aria-label': 'Loja' }, lojas.map((l) => h('option', { value: l.id, selected: l.id === lojaAtual || null }, l.nome)));
+    const lugar = h('div');
+    const pintar = () => { lugar.replaceChildren(TS.cartaoFechamento(lojaAtual)); };
+    sel.addEventListener('change', () => { lojaAtual = sel.value; pintar(); });
+    const caixa = h('div', { class: 'card card-cheio fech-modal' },
+      h('button', { type: 'button', class: 'icon-btn exp-fechar', title: 'Fechar (Esc)', 'aria-label': 'Fechar', onclick: fechar }, '✕'),
+      h('div', { class: 'fech-modal-topo' }, h('b', null, 'Prévia do fechamento do dia'), lojas.length > 1 ? sel : null,
+        h('span', { class: 'muted' }, 'É exatamente o que chega por e-mail (no Telegram vai em texto).')),
+      lugar);
+    const camada = h('div', { class: 'camada-cheia camada-fech', role: 'dialog', 'aria-modal': 'true', onclick: (e) => { if (e.target === camada) fechar(); } }, caixa);
+    document.body.append(camada);
+    document.body.classList.add('com-camada');
+    document.addEventListener('keydown', esc);
+    pintar();
   };
 })();

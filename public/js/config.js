@@ -695,7 +695,8 @@
       h('label', { class: 'cfg-check-l' }, feAtivo, ' Enviar o fechamento todos os dias'),
       h('div', { class: 'cfg-grid' }, campo('Horário (Brasília)', feHora, 'Ex.: coleta às 23:00 → envio às 23:30.')),
       fe.ultimoEnvio ? h('p', { class: 'muted' }, `Último envio: ${dIso(fe.ultimoEnvio)}`) : null,
-      h('div', { class: 'cfg-acoes' }, acao('Salvar', async () => { await api('PUT', '/notif', { fechamento: { ativo: feAtivo.checked, horario: feHora.value } }); await recarregar(); return 'Salvo.'; }, 'btn primary'))));
+      h('div', { class: 'cfg-acoes' }, acao('Salvar', async () => { await api('PUT', '/notif', { fechamento: { ativo: feAtivo.checked, horario: feHora.value } }); await recarregar(); return 'Salvo.'; }, 'btn primary'),
+        h('button', { type: 'button', class: 'btn', onclick: () => TS.abrirFechamento(est.lojas.map((l) => ({ id: l.id, nome: l.nome })), state.loja && state.loja !== 'todas' ? state.loja : null) }, 'Ver mensagem'))));
 
     // Telegram
     const token = inp({ type: 'password', autocomplete: 'off', placeholder: n.telegram.configurado ? '•••••••• (guardado — preencha só para trocar)' : '123456789:ABC…' });
@@ -725,7 +726,22 @@
     const sec = h('input', { type: 'checkbox', checked: e.secure || null });
     const novoEmail = inp({ type: 'email', placeholder: 'pessoa@email.com' }), novoNome = inp({ placeholder: 'Nome' }), novoLojas = selLojas(['*']);
     const em = h('div', { class: 'card cfg-form' }, h('div', { class: 'card-title' }, 'E-mail'),
-      h('details', null, h('summary', null, 'Usando um Gmail'), h('p', { class: 'muted' }, 'Servidor smtp.gmail.com, porta 587. No Gmail, ative a verificação em duas etapas e crie uma "senha de app" (Conta Google → Segurança → Senhas de app). Use essa senha aqui, não a senha normal.')),
+      detalhes('gmail', { class: 'cfg-gmail' }, h('summary', null, 'Passo a passo: enviar pelo Gmail'),
+        h('p', null, 'O painel envia os e-mails por uma conta do Gmail. Use de preferência uma conta só para isso (ex.: teashop.painel@gmail.com) e não o seu e-mail pessoal. Leva uns 5 minutos.'),
+        h('ol', null,
+          h('li', null, h('b', null, 'Entre na conta do Gmail'), ' que vai enviar os e-mails e abra ', h('b', null, 'myaccount.google.com'), ' (ou clique na sua foto → "Gerenciar sua Conta do Google").'),
+          h('li', null, 'No menu, clique em ', h('b', null, 'Segurança'), ' (no celular: "Segurança e login").'),
+          h('li', null, 'Em "Como você faz login no Google", ative a ', h('b', null, 'Verificação em duas etapas'), '. O Google pede o seu celular e manda um código por SMS. Sem isso, o passo 5 não aparece.'),
+          h('li', null, 'Volte para Segurança e, na busca do topo, digite ', h('b', null, 'Senhas de app'), ' (ou abra direto ', h('b', null, 'myaccount.google.com/apppasswords'), ').'),
+          h('li', null, 'Em "Nome do app", escreva ', h('b', null, 'Painel Tea Shop'), ' e clique em ', h('b', null, 'Criar'), '. O Google mostra uma senha de ', h('b', null, '16 letras'), ' (ex.: abcd efgh ijkl mnop). ', h('b', null, 'Copie agora'), ': ela não aparece de novo.'),
+          h('li', null, 'Aqui no painel, clique em ', h('b', null, 'Preencher para Gmail'), ' (abaixo) e complete:',
+            h('ul', null,
+              h('li', null, h('b', null, 'Usuário'), ': o endereço completo do Gmail (ex.: teashop.painel@gmail.com).'),
+              h('li', null, h('b', null, 'Senha'), ': a senha de 16 letras do passo 5 (com ou sem espaços). ', h('b', null, 'Não'), ' é a senha normal do Gmail.'),
+              h('li', null, h('b', null, 'Remetente'), ': como o e-mail vai aparecer, ex.: ', h('code', null, 'Tea Shop Flamboyant <teashop.painel@gmail.com>'), ' (o endereço entre < > precisa ser o mesmo do usuário).'))),
+          h('li', null, 'Clique em ', h('b', null, 'Salvar servidor'), '. Depois, em "Adicionar destinatário", cadastre quem vai receber e use ', h('b', null, 'Testar fechamento'), ' para conferir.')),
+        h('p', { class: 'muted' }, 'Se o teste der erro "Username and Password not accepted": a senha usada não é a senha de app, ou a verificação em duas etapas não está ativa. Se o e-mail cair no spam, peça para quem recebe marcar "Não é spam" uma vez. Para trocar a senha de app depois, crie outra no passo 5 e cole aqui; a antiga pode ser apagada no Google.'),
+        h('button', { type: 'button', class: 'btn', onclick: () => { host.value = 'smtp.gmail.com'; port.value = 587; sec.checked = false; if (!from.value && user.value) from.value = `Tea Shop <${user.value}>`; user.focus(); toast('Servidor e porta do Gmail preenchidos. Complete usuário, senha de app e remetente.'); } }, 'Preencher para Gmail')),
       h('div', { class: 'cfg-grid' }, campo('Servidor (SMTP)', host), campo('Porta', port), campo('Usuário', user), campo('Senha', pass), campo('Remetente', from)),
       h('label', { class: 'cfg-check-l' }, sec, ' Conexão segura direta (porta 465)'),
       h('div', { class: 'cfg-acoes' }, acao('Salvar servidor', async () => { await api('PUT', '/notif', { email: { host: host.value, port: port.value, user: user.value, pass: pass.value || undefined, from: from.value, secure: sec.checked } }); await recarregar(); return 'Servidor salvo.'; }, 'btn primary')));

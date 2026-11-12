@@ -161,10 +161,10 @@
    * cols: [{key, label, fmt, align:'l'|'r', cls:(row)=>string, sticky, title}]
    * rows: objetos; total: objeto opcional; sort: {key, dir}
    */
-  TS.table = function ({ cols, rows, total, sortKey, sortDir = 'desc', maxHeight, pageSize, search, searchKeys, onRowClick, empty }) {
+  TS.table = function ({ cols, rows, total, sortKey, sortDir = 'desc', maxHeight, pageSize, search, searchKeys, onRowClick, empty, cls }) {
     let sk = sortKey, sd = sortDir, page = 0, q = '';
     const wrap = h('div');
-    const tbl = h('table', { class: 't' });
+    const tbl = h('table', { class: 't' + (cls ? ' ' + cls : '') });
     const tw = h('div', { class: 'table-wrap' + (maxHeight === 'free' ? ' free' : '') }, tbl);
     if (maxHeight && maxHeight !== 'free') tw.style.maxHeight = maxHeight;
     const pager = h('div', { class: 'pager' });

@@ -294,8 +294,6 @@
 
     const al = TS.cartaoAlertas && TS.cartaoAlertas();
     if (al) root.append(al);
-    const fe = TS.cartaoFechamento && TS.cartaoFechamento();
-    if (fe) root.append(h('div', { class: 'mt' }, fe));
 
     // ---- tabela por vendedor
     const porVend = TS.agrupar(base, (i) => db.vend[i]);
@@ -358,7 +356,7 @@
         { key: 'kg', label: 'Kg', fmt: kgFmt },
         { key: 'vt', label: 'Faturamento', fmt: fmt.brl },
       ],
-      rows: rowsP, sortKey: 'vt', maxHeight: '300px', search: 'Buscar produto…', searchKeys: ['produto'],
+      rows: rowsP, sortKey: 'vt', maxHeight: '300px', search: 'Buscar produto…', searchKeys: ['produto'], cls: 't-compacta',
       total: { produto: 'Total', qtd: rowsP.reduce((s, r) => s + r.qtd, 0), kg: rowsP.reduce((s, r) => s + r.kg, 0), vt: rowsP.reduce((s, r) => s + r.vt, 0) },
     });
     root.append(h('div', { class: 'grid g-3-2 mt' },
