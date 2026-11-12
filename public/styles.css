@@ -746,3 +746,6 @@ body.com-camada { overflow: hidden; }
 .cfg-imp .cfg-t td.quebra { white-space: normal; overflow-wrap: break-word; }
 .cfg-imp .cfg-t td:nth-child(2) { min-width: 90px; }
 .cfg-log { margin: 6px 0; } .cfg-log summary { cursor: pointer; font-size: 12.5px; } .cfg-log .script-log { max-height: 320px; overflow: auto; white-space: pre-wrap; font-size: 11px; }
+.cfg-dica-cad { margin: 6px 0 0; font-size: 12px; }
+.cfg-cad-res { margin-top: 10px; background: #E9F1E6; border: 1px solid #C9DCC3; border-radius: 10px; padding: 10px 12px; font-size: 12.5px; }
+.cfg-cad-res ul { margin: 6px 0 4px 18px; padding: 0; display: grid; gap: 3px; }

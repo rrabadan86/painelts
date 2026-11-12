@@ -12,6 +12,7 @@ const express = require('express');
 const C = require('./config');
 const B = require('./base');
 const XB = require('./xmlbase');
+const CAD = require('./cadastro');
 const COL = require('./coletor');
 
 const NOME_OK = /^[a-z0-9._-]{2,30}$/;
@@ -342,10 +343,19 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
 
   // ---------- envio de planilhas ----------
   const TIPOS = { vendas: null, Xml: 'Xml', Dados_Clientes: 'Dados_Clientes', Meta: 'Meta' };
-  r.post('/lojas/:id/upload/:tipo', lojaPermitida, express.raw({ type: () => true, limit: `${MAX_UPLOAD_MB}mb` }), (req, res) => {
+  r.post('/lojas/:id/upload/:tipo', lojaPermitida, express.raw({ type: () => true, limit: `${MAX_UPLOAD_MB}mb` }), async (req, res) => {
     const tipo = req.params.tipo;
     if (!(tipo in TIPOS)) return res.status(400).json({ erro: 'Tipo de planilha inválido.' });
     const buf = req.body;
+    if (tipo === 'Dados_Clientes' && Buffer.isBuffer(buf) && buf.length >= 100) {
+      // cadastro: modelo do painel ou exportação do FIXE; junta com o que já existe
+      try {
+        const r = await CAD.importar(req.loja.id, buf);
+        aud(req, 'enviou cadastro de clientes', req.loja.id, { loja: req.loja.id, formato: r.formato, arquivo: semQuebra(req.get('X-Arquivo') || '').slice(0, 80), novos: r.novos, atualizados: r.atualizados, total: r.total });
+        depois(req.loja.id);
+        return res.json({ ok: true, cadastro: r });
+      } catch (e) { return res.status(400).json({ erro: e.message }); }
+    }
     if (!Buffer.isBuffer(buf) || buf.length < 100 || buf[0] !== 0x50 || buf[1] !== 0x4b) return res.status(400).json({ erro: 'O arquivo não é uma planilha .xlsx.' });
     const nomeOrig = semQuebra(req.get('X-Arquivo') || '').slice(0, 80);
     if (tipo === 'vendas') B.receber(req.loja.id, buf, { origem: 'painel' });

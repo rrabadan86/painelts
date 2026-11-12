@@ -51,7 +51,8 @@
     const n = new Date(), y = +iso.slice(0, 4), m = +iso.slice(5, 7), d = +iso.slice(8, 10);
     let a = n.getFullYear() - y;
     if (n.getMonth() + 1 < m || (n.getMonth() + 1 === m && n.getDate() < d)) a--;
-    return a >= 0 && a < 120 ? a : null;
+    // ano de mentira (1900) ou data do cadastro no lugar do nascimento: mantém o aniversário, sem idade
+    return a >= 12 && a <= 105 ? a : null;
   }
   const faixa = (a) => (a == null ? null : a < 20 ? 'até 19' : a <= 29 ? '20 a 29' : a <= 39 ? '30 a 39' : a <= 49 ? '40 a 49' : a <= 59 ? '50 a 59' : '60+');
 

@@ -15,6 +15,7 @@
   let timer = null;
   let raiz = null;
   const abertos = new Set(); // formulários abertos (sobrevivem à atualização)
+  const cadastroRes = new Map(); // loja → resultado do último envio de cadastro (sobrevive à atualização da tela)
   /** <details> que continua aberto quando a tela se atualiza sozinha */
   const detalhes = (chave, attrs, ...filhos) => {
     const d = h('details', { ...attrs, open: abertos.has(chave) || null }, ...filhos);
@@ -306,21 +307,48 @@
   function blocoPlanilhas(l) {
     const tipo = h('select', { class: 'f-input' },
       h('option', { value: 'vendas' }, 'Vendas (relatório do AppNext)'), h('option', { value: 'Xml' }, 'Cupons com CPF (Xml)'),
-      h('option', { value: 'Dados_Clientes' }, 'Cadastro de clientes'), h('option', { value: 'Meta' }, 'Meta (planilha antiga)'));
-    const arq = h('input', { type: 'file', accept: '.xlsx', class: 'f-input' });
+      h('option', { value: 'Dados_Clientes' }, 'Cadastro de clientes (modelo do painel ou FIXE)'), h('option', { value: 'Meta' }, 'Meta (planilha antiga)'));
+    const arq = h('input', { type: 'file', accept: '.xlsx,.xls', class: 'f-input' });
+    const dica = h('p', { class: 'muted cfg-dica-cad' });
+    const pintaDica = () => {
+      dica.textContent = tipo.value === 'Dados_Clientes'
+        ? 'Pode enviar o modelo do painel (CPF, NOME, CELULAR, DATA NASC., EMAIL, CIDADE) ou a exportação de contatos do FIXE do jeito que sai do sistema. O painel reconhece sozinho, junta com o cadastro que já existe (CPF novo entra, CPF conhecido é atualizado, campo vazio não apaga) e ignora o que não usa (Data Cadastro, Loja, Saldo, Estado).'
+        : '';
+      dica.hidden = !dica.textContent;
+    };
+    tipo.addEventListener('change', pintaDica); pintaDica();
+    const resultado = h('div');
+    const mostrarCad = (c) => {
+      const pct = (n) => (c.noArquivo ? ` (${fmt.pct(n / c.noArquivo, 0)})` : '');
+      resultado.replaceChildren(h('div', { class: 'cfg-cad-res' },
+        h('b', null, `Arquivo ${c.formato === 'FIXE' ? 'do FIXE' : 'no modelo do painel'} reconhecido: ${fmt.int(c.noArquivo)} clientes.`),
+        h('ul', null,
+          h('li', null, `${fmt.int(c.novos)} novos e ${fmt.int(c.atualizados)} atualizados · cadastro da loja agora com ${fmt.int(c.total)} clientes`),
+          h('li', null, `Com celular: ${fmt.int(c.comCelular)}${pct(c.comCelular)} · aniversário: ${fmt.int(c.comAniversario)}${pct(c.comAniversario)} · e-mail: ${fmt.int(c.comEmail)}${pct(c.comEmail)} · cidade: ${fmt.int(c.comCidade)}${pct(c.comCidade)}`),
+          c.semCPF ? h('li', null, `${fmt.int(c.semCPF)} linha(s) sem CPF válido ficaram de fora`) : null,
+          c.ignoradas.length ? h('li', { class: 'muted' }, `Colunas que o painel não usa (ignoradas): ${c.ignoradas.join(', ')}`) : null),
+        h('button', { type: 'button', class: 'link-btn', onclick: () => { cadastroRes.delete(l.id); resultado.replaceChildren(); } }, 'Fechar')));
+    };
+    if (cadastroRes.has(l.id)) mostrarCad(cadastroRes.get(l.id));
     const lista = h('ul', { class: 'cfg-fontes' }, l.fontes.map((f) => h('li', null, h('b', null, f.desc), ' — ',
       f.origem === 'vps' ? `na VPS, ${dt(f.modificado)}` : f.origem === 'drive' ? 'no Google Drive' : h('span', { class: 'muted' }, 'não enviada'))));
     return h('section', { class: 'cfg-bloco' }, h('h3', null, 'Enviar planilha'),
-      h('p', { class: 'muted' }, 'Vendas: entram no histórico substituindo só os dias que a planilha cobre. As outras substituem a anterior.'),
-      h('div', { class: 'cfg-grid' }, campo('Tipo', tipo), campo('Arquivo (.xlsx)', arq)),
+      h('p', { class: 'muted' }, 'Vendas: entram no histórico substituindo só os dias que a planilha cobre. Cadastro de clientes: junta com o que já existe. As outras substituem a anterior.'),
+      h('div', { class: 'cfg-grid' }, campo('Tipo', tipo), campo('Arquivo (.xlsx ou .xls)', arq)), dica,
       h('div', { class: 'cfg-acoes' }, acao('Enviar', async () => {
         const f = arq.files[0];
         if (!f) throw new Error('Escolha o arquivo.');
-        await api('POST', `/lojas/${l.id}/upload/${tipo.value}`, f, { 'X-Arquivo': encodeURIComponent(f.name) });
+        const r = await api('POST', `/lojas/${l.id}/upload/${tipo.value}`, f, { 'X-Arquivo': encodeURIComponent(f.name) });
         arq.value = '';
         setTimeout(() => TS.recarregar && TS.recarregar(true), 4000);
+        const c = r && r.cadastro;
+        if (c) {
+          cadastroRes.set(l.id, c); mostrarCad(c);
+          return 'Cadastro importado. A aba Clientes se atualiza em alguns segundos.';
+        }
+        resultado.replaceChildren();
         return 'Planilha recebida. Os dados se atualizam em alguns segundos.';
-      }, 'btn primary')),
+      }, 'btn primary')), resultado,
       h('div', { class: 'f-label', style: { marginTop: '12px' } }, 'Outras planilhas da loja'), lista);
   }
 
