@@ -751,3 +751,10 @@ body.com-camada { overflow: hidden; }
 .cfg-cad-res ul { margin: 6px 0 4px 18px; padding: 0; display: grid; gap: 3px; }
 .cfg-senha-pend { color: #9A6B00; }
 .cfg-user-form .cfg-campo > .cfg-check { justify-content: flex-start; text-align: left; margin: 2px 0; }
+/* ---------- fechamento do dia ---------- */
+.fech-tools { display: flex; gap: 8px; align-items: center; margin-left: auto; flex-wrap: wrap; }
+.fech-tools .fech-data { width: auto; }
+.fech-tabela { overflow-x: auto; }
+.fech-tabela table { width: 100%; max-width: 620px; }
+.fech-nota { font-size: 12px; margin-top: 8px; }
+@media print { .imp-fech table { width: 100%; font-size: 11pt; } }

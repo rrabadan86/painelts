@@ -220,6 +220,15 @@ app.get('/api/demo/dados', (req, res) => {
 app.get('/api/demo/rede', (req, res) => {
   try { res.json(IND.rede(DEMO.partes(), String(req.query.ym || ''), String(req.query.loja || ''), 3)); } catch (e) { res.status(500).json({ erro: e.message }); }
 });
+app.get('/api/demo/fechamento', (req, res) => {
+  const p = DEMO.partes().find((x) => x.id === String(req.query.loja || ''));
+  if (!p) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  const F2 = require('./src/fechamento');
+  const dia = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.dia || '')) ? req.query.dia : F2.ultimoDia(p.vendas, IND.hojeSP().iso);
+  if (!dia) return res.json({ vazio: true });
+  const f = F2.calcular(p, dia);
+  res.json({ ...f, html: F2.html(f) });
+});
 app.get('/api/demo/alertas', (req, res) => {
   const p = DEMO.partes().find((x) => x.id === String(req.query.loja || ''));
   res.json({ alertas: p ? IND.alertas(p) : [] });
@@ -348,6 +357,22 @@ app.get('/api/alertas', async (req, res) => {
   const loja = req.lojas.find((l) => l.id === String(req.query.loja || ''));
   if (!loja) return res.json({ alertas: [] });
   try { res.json({ alertas: IND.alertas(await dadosParaIndicadores(loja)) }); } catch (e) { res.status(500).json({ erro: e.message }); }
+});
+
+// ---------- fechamento do dia (substitui a planilha preenchida à mão) ----------
+const FECH = require('./src/fechamento');
+const DIA_OK = /^\d{4}-\d{2}-\d{2}$/;
+app.get('/api/fechamento', async (req, res) => {
+  if (req.perfil === 'vendedor') return res.status(403).json({ erro: 'Sem permissão.' });
+  const loja = req.lojas.find((l) => l.id === String(req.query.loja || ''));
+  if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  try {
+    const d = await dadosParaIndicadores(loja);
+    const dia = DIA_OK.test(String(req.query.dia || '')) ? req.query.dia : FECH.ultimoDia(d.vendas, IND.hojeSP().iso);
+    if (!dia) return res.json({ vazio: true });
+    const f = FECH.calcular(d, dia);
+    res.json({ ...f, html: FECH.html(f) });
+  } catch (e) { res.status(500).json({ erro: e.message }); }
 });
 
 // ---------- feriados trabalhados (horas por pessoa; vão para o PDF do fechamento) ----------

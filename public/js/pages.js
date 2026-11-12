@@ -294,6 +294,8 @@
 
     const al = TS.cartaoAlertas && TS.cartaoAlertas();
     if (al) root.append(al);
+    const fe = TS.cartaoFechamento && TS.cartaoFechamento();
+    if (fe) root.append(h('div', { class: 'mt' }, fe));
 
     // ---- tabela por vendedor
     const porVend = TS.agrupar(base, (i) => db.vend[i]);

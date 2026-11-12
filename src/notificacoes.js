@@ -11,12 +11,13 @@ const fs = require('fs');
 const path = require('path');
 const C = require('./config');
 const I = require('./indicadores');
+const F = require('./fechamento');
 
 const ARQ = path.join(C.CONFIG_DIR, 'notificacoes.json');
-const PADRAO = { ativo: false, horario: '08:00', ultimoEnvio: null, alertas: true, telegram: { token: '', destinos: [] }, email: { host: '', port: 587, secure: false, user: '', pass: '', from: '', destinos: [] } };
+const PADRAO = { ativo: false, horario: '08:00', ultimoEnvio: null, alertas: true, fechamento: { ativo: false, horario: '23:30', ultimoEnvio: null }, telegram: { token: '', destinos: [] }, email: { host: '', port: 587, secure: false, user: '', pass: '', from: '', destinos: [] } };
 
 function ler() {
-  try { const j = JSON.parse(fs.readFileSync(ARQ, 'utf8')); return { ...PADRAO, ...j, telegram: { ...PADRAO.telegram, ...(j.telegram || {}) }, email: { ...PADRAO.email, ...(j.email || {}) } }; } catch { return JSON.parse(JSON.stringify(PADRAO)); }
+  try { const j = JSON.parse(fs.readFileSync(ARQ, 'utf8')); return { ...PADRAO, ...j, fechamento: { ...PADRAO.fechamento, ...(j.fechamento || {}) }, telegram: { ...PADRAO.telegram, ...(j.telegram || {}) }, email: { ...PADRAO.email, ...(j.email || {}) } }; } catch { return JSON.parse(JSON.stringify(PADRAO)); }
 }
 function gravar(cfg) { C.gravarAtomico(ARQ, JSON.stringify(cfg, null, 2), 0o600); }
 
@@ -24,7 +25,7 @@ function gravar(cfg) { C.gravarAtomico(ARQ, JSON.stringify(cfg, null, 2), 0o600)
 function publico() {
   const c = ler();
   return {
-    ativo: c.ativo, horario: c.horario, ultimoEnvio: c.ultimoEnvio, alertas: c.alertas,
+    ativo: c.ativo, horario: c.horario, ultimoEnvio: c.ultimoEnvio, alertas: c.alertas, fechamento: c.fechamento,
     telegram: { configurado: !!c.telegram.token, destinos: c.telegram.destinos },
     email: { host: c.email.host, port: c.email.port, secure: c.email.secure, user: c.email.user, from: c.email.from, temSenha: !!c.email.pass, configurado: !!(c.email.host && c.email.from), destinos: c.email.destinos },
   };
@@ -65,14 +66,14 @@ async function enviarTelegram(chatId, texto) {
 }
 
 // ---------- e-mail ----------
-async function enviarEmail(para, assunto, texto) {
+async function enviarEmail(para, assunto, texto, htmlPronto) {
   const c = ler().email;
   if (!c.host || !c.from) throw new Error('Configure o servidor de e-mail.');
   const nodemailer = require('nodemailer');
   const t = nodemailer.createTransport({ host: c.host, port: +c.port || 587, secure: !!c.secure, auth: c.user ? { user: c.user, pass: c.pass } : undefined, connectionTimeout: 15000 });
   const esc = (s) => String(s).replace(/[&<>]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch]));
   const html = `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5;color:#1d2b22">${texto.split('\n').map((l) => (l.startsWith('━') ? '<hr style="border:0;border-top:2px solid #2C5234">' : l ? `<div>${esc(l)}</div>` : '<br>')).join('')}</div>`;
-  await t.sendMail({ from: c.from, to: para, subject: assunto, text: texto, html });
+  await t.sendMail({ from: c.from, to: para, subject: assunto, text: texto, html: htmlPronto || html });
 }
 
 // ---------- montagem ----------
@@ -117,12 +118,61 @@ async function enviarTodos(obter, { soDestino } = {}) {
   return res;
 }
 
+// ---------- fechamento do dia (substitui a planilha preenchida à mão) ----------
+/** fechamento de hoje de cada loja do destino → { texto, html } (null se nenhuma loja vendeu) */
+async function montarFechamento(lojasIds, obter, dia) {
+  const cfg = C.get();
+  const ids = lojasIds.includes('*') ? cfg.lojas.map((l) => l.id) : lojasIds;
+  const textos = [], htmls = [];
+  for (const id of ids) {
+    try {
+      const d = await obter(id);
+      if (!d) continue;
+      const f = F.calcular(d, dia);
+      if (!f.temVendas) { textos.push(`━━ ${f.loja.nome} ━━\nSem vendas registradas em ${dia.split('-').reverse().join('/')} (a coleta da noite já rodou?).`); htmls.push(`<p><b>${f.loja.nome}</b>: sem vendas registradas no dia.</p>`); continue; }
+      textos.push(F.texto(f)); htmls.push(F.html(f));
+    } catch (e) { textos.push(`━━ ${id} ━━\nNão foi possível montar o fechamento: ${e.message}`); }
+  }
+  if (!textos.length) return null;
+  return {
+    texto: `☕ Tea Shop · fechamento do dia\n\n${textos.join('\n\n')}`,
+    html: `<div style="font-family:Arial,sans-serif">${htmls.join('<div style="height:18px"></div>')}<p style="color:#7a857d;font-size:12px">Gerado automaticamente pelo painel com as vendas do AppNext.</p></div>`,
+  };
+}
+async function enviarFechamento(obter, { soDestino, dia } = {}) {
+  const c = ler();
+  const d = dia || I.hojeSP().iso;
+  const res = [];
+  const assunto = `Tea Shop · fechamento de ${d.split('-').reverse().join('/')}`;
+  if (c.telegram.token) {
+    for (const x of c.telegram.destinos) {
+      if (soDestino && !(soDestino.canal === 'telegram' && String(soDestino.id) === String(x.chatId))) continue;
+      try { const m = await montarFechamento(x.lojas, obter, d); if (m) { await enviarTelegram(x.chatId, m.texto); res.push({ canal: 'telegram', para: x.nome || x.chatId, ok: true }); } } catch (e) { res.push({ canal: 'telegram', para: x.nome || x.chatId, ok: false, erro: e.message }); }
+    }
+  }
+  if (c.email.host) {
+    for (const x of c.email.destinos) {
+      if (soDestino && !(soDestino.canal === 'email' && soDestino.id === x.email)) continue;
+      try { const m = await montarFechamento(x.lojas, obter, d); if (m) { await enviarEmail(x.email, assunto, m.texto, m.html); res.push({ canal: 'email', para: x.email, ok: true }); } } catch (e) { res.push({ canal: 'email', para: x.email, ok: false, erro: e.message }); }
+    }
+  }
+  return res;
+}
+
 /** agenda: confere a cada 30 s se chegou o horário (Brasília) */
 function agendar(obter) {
   setInterval(async () => {
     const c = ler();
-    if (!c.ativo) return;
     const { iso, hhmm } = I.hojeSP();
+    // fechamento do dia (hoje), no horário dele
+    if (c.fechamento.ativo && c.fechamento.ultimoEnvio !== iso && hhmm >= c.fechamento.horario) {
+      c.fechamento.ultimoEnvio = iso; gravar(c);
+      try {
+        const r = await enviarFechamento(obter, { dia: iso });
+        C.auditar('sistema', 'enviou fechamento do dia', 'notificações', { envios: r.length, falhas: r.filter((x) => !x.ok).map((x) => `${x.para}: ${x.erro}`) });
+      } catch (e) { console.error('[fechamento] erro:', e.message); }
+    }
+    if (!c.ativo) return;
     if (c.ultimoEnvio === iso || hhmm < c.horario) return;
     c.ultimoEnvio = iso; gravar(c); // marca antes: nunca envia duas vezes no mesmo dia
     try {
@@ -133,4 +183,4 @@ function agendar(obter) {
   }, 30e3);
 }
 
-module.exports = { ler, gravar, publico, conversasTelegram, enviarTodos, montarTexto, agendar };
+module.exports = { ler, gravar, publico, conversasTelegram, enviarTodos, montarTexto, agendar, montarFechamento, enviarFechamento };

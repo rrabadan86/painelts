@@ -425,6 +425,10 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     const c = NOTIF.ler();
     if (b.horario != null) { if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(b.horario)) return res.status(400).json({ erro: 'Horário inválido.' }); c.horario = b.horario; }
     if (b.ativo != null) c.ativo = !!b.ativo;
+    if (b.fechamento) {
+      if (b.fechamento.horario != null) { if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(b.fechamento.horario)) return res.status(400).json({ erro: 'Horário do fechamento inválido.' }); c.fechamento.horario = b.fechamento.horario; }
+      if (b.fechamento.ativo != null) c.fechamento.ativo = !!b.fechamento.ativo;
+    }
     if (b.alertas != null) c.alertas = !!b.alertas;
     if (b.telegram && b.telegram.token != null) {
       const t = semQuebra(b.telegram.token);
@@ -468,7 +472,8 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
   });
   r.post('/notif/teste', soAdmin, json, async (req, res) => {
     try {
-      const r2 = await NOTIF.enviarTodos(obterIndicadores, { soDestino: { canal: req.body.canal, id: String(req.body.id || '') } });
+      const soDestino = { canal: req.body.canal, id: String(req.body.id || '') };
+      const r2 = req.body.tipo === 'fechamento' ? await NOTIF.enviarFechamento(obterIndicadores, { soDestino }) : await NOTIF.enviarTodos(obterIndicadores, { soDestino });
       if (!r2.length) return res.status(400).json({ erro: 'Destinatário não encontrado ou canal não configurado.' });
       if (!r2[0].ok) return res.status(502).json({ erro: r2[0].erro });
       res.json({ ok: true });

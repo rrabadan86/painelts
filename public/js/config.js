@@ -686,6 +686,17 @@
         acao('Ver prévia da mensagem', async () => { previa = (await api('GET', '/notif/previa?loja=*')).texto; }))));
     if (previa) box.append(h('div', { class: 'card' }, h('div', { class: 'card-title' }, 'Prévia'), h('pre', { class: 'cfg-msg' }, previa)));
 
+    // fechamento do dia (substitui a planilha de fechamento)
+    const fe = n.fechamento || { ativo: false, horario: '23:30' };
+    const feAtivo = h('input', { type: 'checkbox', checked: fe.ativo || null });
+    const feHora = inp({ type: 'time', value: fe.horario || '23:30', style: { maxWidth: '140px' } });
+    box.append(h('div', { class: 'card cfg-form' }, h('div', { class: 'card-title' }, 'Fechamento do dia'),
+      h('p', { class: 'muted' }, 'Substitui a planilha de fechamento preenchida à mão: no horário escolhido, cada pessoa recebe o fechamento de HOJE das lojas dela (meta do dia, histórico, vendas, clientes, TKM, IPA, PMA, recálculo da meta e Espaço Gourmet). Vai para os mesmos destinatários abaixo; no e-mail chega como tabela. Escolha um horário depois da última coleta do dia.'),
+      h('label', { class: 'cfg-check-l' }, feAtivo, ' Enviar o fechamento todos os dias'),
+      h('div', { class: 'cfg-grid' }, campo('Horário (Brasília)', feHora, 'Ex.: coleta às 23:00 → envio às 23:30.')),
+      fe.ultimoEnvio ? h('p', { class: 'muted' }, `Último envio: ${dIso(fe.ultimoEnvio)}`) : null,
+      h('div', { class: 'cfg-acoes' }, acao('Salvar', async () => { await api('PUT', '/notif', { fechamento: { ativo: feAtivo.checked, horario: feHora.value } }); await recarregar(); return 'Salvo.'; }, 'btn primary'))));
+
     // Telegram
     const token = inp({ type: 'password', autocomplete: 'off', placeholder: n.telegram.configurado ? '•••••••• (guardado — preencha só para trocar)' : '123456789:ABC…' });
     const tg = h('div', { class: 'card cfg-form' }, h('div', { class: 'card-title' }, 'Telegram'),
@@ -731,7 +742,8 @@
       h('thead', null, h('tr', null, h('th', { class: 'l' }, 'Quem'), h('th', { class: 'l' }, 'Lojas'), h('th', null, ''))),
       h('tbody', null, lista.map((d) => h('tr', null, h('td', { class: 'l' }, h('b', null, d.nome || d[chave]), canal === 'email' ? h('div', { class: 'muted' }, d.email) : null), h('td', { class: 'l' }, lojasTxt(d.lojas)),
         h('td', null, h('div', { class: 'cfg-inline', style: { justifyContent: 'flex-end' } },
-          acao('Enviar teste', async () => { await api('POST', '/notif/teste', { canal, id: d[chave] }); return 'Mensagem de teste enviada.'; }),
+          acao('Testar resumo', async () => { await api('POST', '/notif/teste', { canal, id: d[chave] }); return 'Resumo de teste enviado.'; }),
+          acao('Testar fechamento', async () => { await api('POST', '/notif/teste', { canal, id: d[chave], tipo: 'fechamento' }); return 'Fechamento de hoje enviado.'; }),
           acao('Remover', async () => { await api('POST', '/notif/destinos', { canal, id: d[chave], remover: true }); await recarregar(); return 'Removido.'; }, 'btn ghost-danger'))))))));
   }
 
