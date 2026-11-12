@@ -5,17 +5,26 @@
 
   // ---------- seleção múltipla ----------
   /** options: [[label, value]], selected: Set, onChange(Set) */
-  TS.multiSelect = function ({ label, options, selected, onChange, placeholder = 'Todos' }) {
+  // Vazio = sem filtro (todos). Na lista, "sem filtro" aparece com tudo marcado.
+  // O popup continua aberto enquanto a pessoa marca: a tela é redesenhada a cada mudança,
+  // então guardamos qual filtro estava aberto (e a busca/rolagem) e reabrimos o novo igual.
+  let msAberto = null; // { key, q, scroll, nenhum }
+  TS.multiSelect = function ({ label, options, selected, onChange, placeholder = 'Todos', key }) {
+    const chave = key || label || placeholder;
     const wrap = h('div', { class: 'ms' });
     const btnText = h('span');
     const btn = h('button', { class: 'ms-btn', type: 'button', 'aria-haspopup': 'listbox' }, btnText);
     const search = h('input', { class: 'f-input ms-search', placeholder: 'Buscar…', type: 'search' });
     const list = h('div', { class: 'ms-list', role: 'listbox' });
+    let nenhum = false; // depois de "Limpar": mostra tudo desmarcado (o filtro continua "todos" até marcar algo)
+    const todos = () => options.map(([, v]) => v);
+    const marcado = (v) => (nenhum ? false : !selected.size || selected.has(v));
+    const guardar = () => { msAberto = { key: chave, q: search.value, scroll: list.scrollTop, nenhum }; };
     const pop = h('div', { class: 'ms-pop' },
       options.length > 7 ? search : null,
       h('div', { class: 'ms-actions' },
-        h('button', { class: 'link-btn', type: 'button', onclick: () => { options.forEach(([, v]) => selected.add(v)); refresh(true); } }, 'Marcar todos'),
-        h('button', { class: 'link-btn', type: 'button', onclick: () => { selected.clear(); refresh(true); } }, 'Limpar')),
+        h('button', { class: 'link-btn', type: 'button', onclick: () => { nenhum = false; const mudou = selected.size > 0; selected.clear(); refresh(mudou); } }, 'Marcar todos'),
+        h('button', { class: 'link-btn', type: 'button', onclick: () => { nenhum = true; const mudou = selected.size > 0; selected.clear(); refresh(mudou); } }, 'Limpar')),
       list);
     wrap.append(btn, pop);
 
@@ -26,31 +35,50 @@
     }
     function paintList() {
       const q = TS.norm(search.value);
+      const sc = list.scrollTop;
       list.textContent = '';
       for (const [lab, val] of options) {
         if (q && !TS.norm(lab).includes(q)) continue;
         const cb = h('input', { type: 'checkbox' });
-        cb.checked = selected.has(val);
-        cb.addEventListener('change', () => { cb.checked ? selected.add(val) : selected.delete(val); refresh(true); });
+        cb.checked = marcado(val);
+        cb.addEventListener('change', () => {
+          // parte do que está marcado na tela
+          const atual = new Set(nenhum ? [] : selected.size ? selected : todos());
+          cb.checked ? atual.add(val) : atual.delete(val);
+          nenhum = false;
+          selected.clear();
+          if (atual.size && atual.size < options.length) atual.forEach((v) => selected.add(v));
+          else if (!atual.size) nenhum = true; // desmarcou tudo: sem filtro, mas a lista fica vazia
+          refresh(true);
+        });
         list.append(h('label', { class: 'ms-item' }, cb, h('span', null, lab || '(vazio)')));
       }
+      list.scrollTop = sc;
     }
     function refresh(changed) {
       if (selected.size === options.length) selected.clear();
       paintBtn(); paintList();
-      if (changed) onChange(selected);
+      if (changed) { if (wrap.classList.contains('open')) guardar(); onChange(selected); }
     }
-    btn.addEventListener('click', () => {
+    const abrir = (restaurar) => {
       document.querySelectorAll('.ms.open').forEach((m) => m !== wrap && m.classList.remove('open'));
-      wrap.classList.toggle('open');
-      if (wrap.classList.contains('open')) { search.value = ''; paintList(); search.focus(); }
+      wrap.classList.add('open');
+      if (restaurar) { search.value = restaurar.q || ''; nenhum = !!restaurar.nenhum && !selected.size; paintList(); list.scrollTop = restaurar.scroll || 0; }
+      else { search.value = ''; nenhum = false; paintList(); if (!matchMedia('(pointer: coarse)').matches) search.focus(); }
+    };
+    btn.addEventListener('click', () => {
+      if (wrap.classList.contains('open')) { wrap.classList.remove('open'); msAberto = null; } else { abrir(null); msAberto = { key: chave, q: '', scroll: 0 }; }
     });
-    search.addEventListener('input', paintList);
+    search.addEventListener('input', () => { paintList(); guardar(); });
+    list.addEventListener('scroll', () => { if (wrap.classList.contains('open')) guardar(); });
     refresh(false);
+    // estava aberto antes de a tela ser redesenhada: reabre
+    if (msAberto && msAberto.key === chave) { const r = msAberto; queueMicrotask(() => { if (wrap.isConnected) abrir(r); else setTimeout(() => wrap.isConnected && abrir(r), 0); }); }
     return h('div', { class: 'f-group' }, label ? h('span', { class: 'f-label' }, label) : null, wrap);
   };
-  document.addEventListener('click', (e) => { if (!e.target.closest('.ms')) document.querySelectorAll('.ms.open').forEach((m) => m.classList.remove('open')); });
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') document.querySelectorAll('.ms.open').forEach((m) => m.classList.remove('open')); });
+  const fecharTodos = () => { document.querySelectorAll('.ms.open').forEach((m) => m.classList.remove('open')); msAberto = null; };
+  document.addEventListener('click', (e) => { if (!e.target.closest('.ms')) fecharTodos(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') fecharTodos(); });
 
   // ---------- cartões ----------
   TS.card = (title, sub, ...body) => h('div', { class: 'card' },
