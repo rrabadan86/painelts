@@ -788,3 +788,5 @@ body.com-camada { overflow: hidden; }
 .cfg-form input.f-input::placeholder { color: #A9A397; font-style: italic; }
 .cfg-dest-lista { list-style: none; margin: 6px 0 10px; padding: 0; display: grid; gap: 6px; }
 .cfg-dest-lista li { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; background: var(--cream-2); border-radius: 8px; padding: 6px 10px; font-size: 13px; }
+.cupom-items tr.taxa td { color: #8a948d; font-style: italic; }
+.cli-emp { background: #E7EEF7; color: #1F4E8C; border-radius: 6px; padding: 0 6px; font-size: 11px; font-weight: 600; }

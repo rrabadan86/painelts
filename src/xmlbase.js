@@ -82,10 +82,10 @@ function ler(id) {
     if (!doc) continue;
     // NFC-e (65) é o cupom do caixa; se o número repetir numa NF-e (55), fica a NFC-e
     const atual = porCupom.get(n.c);
-    if (!atual || (atual.m !== '65' && n.m === '65')) porCupom.set(n.c, { cpf: doc, cupom: n.c, m: n.m });
+    if (!atual || (atual.m !== '65' && n.m === '65')) porCupom.set(n.c, { cpf: doc, cupom: n.c, m: n.m, data: n.d });
     if (n.n && !nomes.has(doc)) nomes.set(doc, n.n);
   }
-  return { xml: [...porCupom.values()].map(({ cpf, cupom }) => ({ cpf, cupom, loja: '' })), nomes, importacoes: b.importacoes || [] };
+  return { xml: [...porCupom.values()].map(({ cpf, cupom, data }) => ({ cpf, cupom, data, loja: '' })), nomes, importacoes: b.importacoes || [] };
 }
 
 function resumo(id) {
