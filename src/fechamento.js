@@ -137,49 +137,50 @@ function html(f) {
   const cor = (bom) => (bom == null ? ESCURO : bom ? AZUL : VERM);
   // sobra = positivo (azul); falta = negativo (vermelho): R$ -16.884,60
   const sinal = (v) => (v == null || !isFinite(v) ? '—' : v < 0 ? `R$\u00a0-${brl(-v).replace('R$\u00a0', '')}` : brl(v));
-  const td = 'padding:9px 0;border-bottom:1px solid ' + LINHA + ';font-size:14px;';
-  const num = 'text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums;';
+  const td = 'padding:9px 0;border-bottom:1px solid ' + LINHA + ';font-size:13px;';
+  const num = 'text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums;padding-left:14px;';
   // tabela de uma seção: [rótulo, valor, valor 2] com cabeçalho opcional das colunas
   const secao = (titulo, colunas, linhas) => `
-<tr><td style="padding:22px 24px 0">
+<tr><td style="padding:22px 18px 0">
   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse">
     <tr>
       <td style="font-size:11px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:${VERDE};padding-bottom:6px;border-bottom:2px solid ${OURO}">${esc(titulo)}</td>
-      ${(colunas || ['', '']).map((c) => `<td style="font-size:11px;font-weight:600;color:${CINZA};${num}padding-bottom:6px;border-bottom:2px solid ${OURO};width:108px">${esc(c)}</td>`).join('')}
+      ${(colunas || ['', '']).map((c) => `<td style="font-size:11px;font-weight:600;color:${CINZA};${num}padding-bottom:6px;border-bottom:2px solid ${OURO}">${esc(c)}</td>`).join('')}
     </tr>
     ${linhas.filter(Boolean).map(([rot, a, b, o = {}]) => `<tr>
-      <td style="${td}color:${o.forte ? ESCURO : '#3D4A42'};${o.forte ? 'font-weight:700;' : ''}">${esc(rot)}</td>
+      <td style="${td}color:${o.forte ? ESCURO : '#3D4A42'};${o.forte ? 'font-weight:700;' : ''}">${esc(rot)}${o.sub ? `<div style="font-size:11px;color:${CINZA};font-weight:400">${esc(o.sub)}</div>` : ''}</td>
       <td style="${td}${num}font-weight:700;color:${o.corA || ESCURO}">${esc(a ?? '')}</td>
-      <td style="${td}${num}color:${o.corB || CINZA}">${esc(b ?? '')}</td></tr>`).join('')}
+      <td style="${td}${num}color:${o.corB || CINZA};${o.forteB ? 'font-weight:700;' : ''}">${esc(b ?? '')}</td></tr>`).join('')}
   </table>
 </td></tr>`;
-  const card = (rot, valor, sub, corValor, corSub) => `
-<td width="33%" valign="top" style="padding:0 3px">
-  <div style="background:${CREME};border-radius:12px;padding:10px 9px">
-    <div style="font-size:10px;color:${CINZA};text-transform:uppercase;letter-spacing:.6px">${esc(rot)}</div>
-    <div style="font-size:16px;font-weight:700;color:${corValor || ESCURO};margin-top:4px">${esc(valor)}</div>
-    <div style="font-size:12px;color:${corSub || CINZA};margin-top:2px">${esc(sub)}</div>
-  </div>
-</td>`;
+  // destaque: uma linha por número (empilhado, cabe em qualquer celular, mesmo com fonte ampliada)
+  const card = (rot, valor, sub, corValor, corSub, ultimo) => `
+    <tr>
+      <td style="padding:12px 14px;${ultimo ? '' : 'border-bottom:1px solid ' + LINHA + ';'}">
+        <div style="font-size:11px;color:${CINZA};text-transform:uppercase;letter-spacing:.6px">${esc(rot)}</div>
+        <div style="font-size:12px;color:${corSub || CINZA};margin-top:2px">${esc(sub)}</div>
+      </td>
+      <td style="padding:12px 14px;text-align:right;white-space:nowrap;font-size:20px;font-weight:700;color:${corValor || ESCURO};${ultimo ? '' : 'border-bottom:1px solid ' + LINHA + ';'}">${esc(valor)}</td>
+    </tr>`;
   const r = f.recalculo;
   const pctMetaDia = f.vendas.pctMeta, pctAcum = f.acumulado.pct;
   return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:620px;margin:0 auto;border-collapse:separate;background:#ffffff;border:1px solid ${LINHA};border-radius:16px;font-family:Arial,Helvetica,sans-serif;color:${ESCURO}">
-<tr><td style="padding:22px 24px 4px">
+<tr><td style="padding:22px 18px 4px">
   <div style="font-size:11px;font-weight:700;letter-spacing:1.4px;color:${OURO};text-transform:uppercase">Fechamento do dia</div>
   <div style="font-size:22px;font-weight:700;color:${ESCURO};margin-top:4px">${esc(f.loja.nome)}</div>
   <div style="font-size:14px;color:${CINZA};margin-top:2px">${esc(nomeDia(f.dia))}, ${dataBr(f.dia)}${f.vendedoras.length ? ` · ${esc(f.vendedoras.map((v) => v.nome).join(', '))}` : ''}</div>
   <div style="font-size:11px;color:${CINZA};margin-top:8px">Gerado automaticamente pelo <b style="color:${VERDE}">Painel Tea Shop</b> com as vendas do AppNext · desenvolvido por <b style="color:${VERDE}">Rodrigo Rabadan</b></div>
 </td></tr>
 <tr><td style="padding:14px 18px 0">
-  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="table-layout:fixed"><tr>
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:separate;background:${CREME};border-radius:12px">
     ${card('Vendas do dia', brl(f.vendas.realizadas), pctMetaDia != null ? `${pct(pctMetaDia)} da meta do dia` : 'sem meta', cor(pctMetaDia == null ? null : pctMetaDia >= 1), cor(pctMetaDia == null ? null : pctMetaDia >= 1))}
     ${card('Meta do dia', brl(f.meta.dia), f.meta.mes ? `meta do mês ${brl(f.meta.mes)}` : '')}
-    ${card('Acumulado no mês', brl(f.acumulado.realizado), pctAcum != null ? `${pct(pctAcum)} do histórico` : '', null, cor(pctAcum == null ? null : pctAcum >= 1))}
-  </tr></table>
+    ${card('Acumulado no mês', brl(f.acumulado.realizado), pctAcum != null ? `${pct(pctAcum)} do histórico` : '', null, cor(pctAcum == null ? null : pctAcum >= 1), true)}
+  </table>
 </td></tr>
 ${secao('Vendas', ['Dia', 'Acumulado'], [
     ['Meta', brl(f.meta.dia), brl(f.meta.acumulada)],
-    [`Histórico (${dataBr(f.diaHistorico)})`, brl(f.vendas.historico), brl(f.acumulado.historico)],
+    ['Histórico', brl(f.vendas.historico), brl(f.acumulado.historico), { sub: dataBr(f.diaHistorico) }],
     ['Realizado', brl(f.vendas.realizadas), brl(f.acumulado.realizado), { forte: true, corA: cor(pctMetaDia == null ? null : pctMetaDia >= 1), corB: cor(f.acumulado.pctMeta == null ? null : f.acumulado.pctMeta >= 1) }],
   ])}
 ${secao('Clientes', ['Hoje', 'Histórico'], [
@@ -192,9 +193,9 @@ ${secao('Indicadores', ['Hoje', 'Histórico'], [
     ['PMA', brl(f.pma), f.pmaHist ? brl(f.pmaHist) : '—'],
   ])}
 ${r ? secao('Meta do mês', null, [
-    ['Recálculo da meta', sinal(-r.meta), '', { forte: true, corA: cor(r.meta <= 0) }],
-    ['Recálculo da super meta', sinal(-r.superMeta), '', { forte: true, corA: cor(r.superMeta <= 0) }],
-    f.porDia ? ['Para bater a meta do mês', `${brl(f.porDia.valor)}/dia`, `${f.porDia.dias} dias`] : null,
+    ['Recálculo da meta', '', sinal(-r.meta), { forte: true, forteB: true, corB: cor(r.meta <= 0) }],
+    ['Recálculo da super meta', '', sinal(-r.superMeta), { forte: true, forteB: true, corB: cor(r.superMeta <= 0) }],
+    f.porDia ? ['Para bater a meta', '', `${brl(f.porDia.valor)}/dia`, { forteB: true, corB: ESCURO, sub: `${f.porDia.dias} dias restantes` }] : null,
   ]) : ''}
 ${secao('Espaço Gourmet', ['Hoje', 'Histórico'], [
     ['Vendas', brl(f.eg.realizadas), brl(f.eg.historico), { forte: true, corA: cor(f.eg.pct == null ? null : f.eg.pct >= 1) }],
@@ -203,9 +204,9 @@ ${secao('Espaço Gourmet', ['Hoje', 'Histórico'], [
     ['TKM', brl(f.eg.tkm), ''],
   ])}
 ${secao('Total do dia', ['Hoje', 'Histórico'], [
-    ['Loja + corporativo + Espaço Gourmet', brl(f.total.hoje), brl(f.total.historico), { forte: true }],
+    ['Total', brl(f.total.hoje), brl(f.total.historico), { forte: true, sub: 'loja + corporativo + Espaço Gourmet' }],
   ])}
-<tr><td style="padding:20px 24px 22px;font-size:11px;line-height:1.5;color:${CINZA}">
+<tr><td style="padding:20px 18px 22px;font-size:11px;line-height:1.5;color:${CINZA}">
   Azul = acima da meta · vermelho = abaixo · histórico = mesma data do ano anterior.
 </td></tr>
 </table>`;
