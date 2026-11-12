@@ -390,9 +390,11 @@
         acRows.length ? topBar(acRows.slice(0, TOP), (v) => fmt.int(v) + ' un.', '#C9A227', (v) => `${fmt.int(v)} (${fmt.pct(v / acTot)})`) : TS.empty())));
 
     // ---- por tipo de chá
-    const tipoAtual = state.tipoCha || 'Infusões';
+    // nenhum tipo marcado = todos os tipos; clicar no tipo já marcado desmarca
+    const tipoAtual = I.tipos.some(([n]) => n === state.tipoCha) ? state.tipoCha : null;
+    const alternar = (v) => { state.tipoCha = state.tipoCha === v ? null : v; TS.render(); };
     const resumoTipos = I.tipos.map(([n, set]) => [n, base.reduce((s, i) => s + (set.has(db.grupo[i]) ? db.cha[i] || 0 : 0), 0)]);
-    const set = (I.tipos.find(([n]) => n === tipoAtual) || I.tipos[0])[1];
+    const set = tipoAtual ? I.tipos.find(([n]) => n === tipoAtual)[1] : new Set(I.tipos.flatMap(([, st]) => [...st]));
     const rowsT = somaPor(base.filter((i) => set.has(db.grupo[i])), (i) => db.cha[i] || 0);
     const totT = rowsT.reduce((s, r) => s + r.v, 0);
     const totTipos = resumoTipos.reduce((s, [, v]) => s + v, 0);
@@ -403,15 +405,15 @@
         plugins: { legend: { display: false }, valueLabels: { display: true, format: (v) => (v ? fmt.pct(totTipos ? v / totTipos : null, 0) : "") },
           tooltip: { callbacks: { label: (c) => `${fmt.kg(c.raw)} kg · ${fmt.pct(totTipos ? c.raw / totTipos : null)} do total de chá (${fmt.kg(totTipos)} kg)` } } },
         scales: { y: { ...TS.axisNum((v) => fmt.kg(v).replace(/0+$/, '').replace(/,$/, '')), title: { display: true, text: 'kg' } }, x: TS.axisCat },
-        onClick: (_e, els) => { if (els.length) { state.tipoCha = resumoTipos[els[0].index][0]; TS.render(); } },
+        onClick: (_e, els) => { if (els.length) alternar(resumoTipos[els[0].index][0]); },
       },
     }, 'short');
     root.append(TS.section('Vendas por tipo de chá'),
       h('div', { class: 'grid g-2-1' },
-        TS.cardWithTools(`Chá ${tipoAtual}`, rowsT.length ? `${rowsT.length} produtos · ${fmt.kg(totT)} kg` : '',
-          TS.seg(I.tipos.map(([n]) => [n, n]), tipoAtual, (v) => { state.tipoCha = v; TS.render(); }),
+        TS.cardWithTools(tipoAtual ? `Chá ${tipoAtual}` : 'Chás de todos os tipos', `${rowsT.length ? `${rowsT.length} produtos · ${fmt.kg(totT)} kg · ` : ''}${tipoAtual ? 'clique de novo no tipo para ver todos' : 'clique num tipo para filtrar'}`,
+          TS.seg(I.tipos.map(([n]) => [n, n]), tipoAtual, alternar),
           rowsT.length ? topBar(rowsT.slice(0, 15), (v) => fmt.kg(v) + ' kg', '#2C5234', (v) => `${fmt.kg(v)} (${fmt.pct(v / totT)})`) : TS.empty()),
-        TS.card('Kg por tipo', 'Kg e % do total de chá · clique numa barra para ver os produtos', tiposChart)));
+        TS.card('Kg por tipo', 'Kg e % do total de chá · clique numa barra para ver os produtos (de novo para desmarcar)', tiposChart)));
   };
 
   // ======================= COMPARATIVOS =======================
