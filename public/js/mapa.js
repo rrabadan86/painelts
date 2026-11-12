@@ -505,7 +505,7 @@
   const INICIO_PADRAO = '2026-01-04';
 
   /** monta a escala de cada dia do mês: { dias:[iso], pessoas:[nome], cel[i][k] = {tipo, ini, fim, pausa, motivo} } */
-  function escalaDoMes({ op, cfg, semanas, L, ym }) {
+  function escalaDoMes({ op, cfg, semanas, L, ym, need, ajustes }) {
     const pessoas = pessoasDe(op.equipe);
     const nD = new Date(Date.UTC(+ym.slice(0, 4), +ym.slice(5, 7), 0)).getUTCDate();
     const dias = Array.from({ length: nD }, (_, k) => `${ym}-${String(k + 1).padStart(2, '0')}`);
@@ -536,6 +536,44 @@
       const t = sem.turnosP[i][wd];
       return t ? { tipo: 'trab', ...t, semana: w } : { tipo: 'folga', motivo: (sem.motivos && sem.motivos[i][wd]) || 'Folga', semana: w };
     }));
+    // ajustes manuais: travam a escolha e recalculam os turnos das outras pessoas naquele dia
+    if (ajustes && need) {
+      const e = op.equipe;
+      const diasBase = e.escala === '6x1' ? 6 : 5;
+      const trabMin = Math.round(((e.cargaSemanal * 60) / diasBase) / 30) * 30;
+      const intervalo = trabMin > 360 ? Math.max(0, Math.round((e.intervalo || 0) / 30) * 30) : trabMin > 240 ? 30 : 0;
+      dias.forEach((iso, k) => {
+        const aj = ajustes[iso];
+        if (!aj || !Object.keys(aj).length) return;
+        const wd = wdDe(iso);
+        const fer = feriados.get(iso);
+        const hf = fer && TS.horarioFeriado ? TS.horarioFeriado({ ...(cfg || {}), operacao: op }, iso) : null;
+        const f = op.funcionamento[DIAS[wd]];
+        const ab = hf && !hf.fechado ? [Math.ceil(hm(hf.abre) / 30), Math.floor(hm(hf.fecha) / 30)] : !f.fechado ? [Math.ceil(hm(f.abre) / 30), Math.floor(hm(f.fecha) / 30)] : null;
+        const sNeed = [Array.from({ length: 48 }, (_, x) => (ab && x >= ab[0] && x < ab[1] ? need[wd][Math.floor(x / 2)] || 1 : 0))];
+        const cob = [Array(48).fill(0)];
+        const aplica = (c, sinal) => { if (c && c.tipo === 'trab') for (let x = Math.floor(c.ini / 30); x < Math.ceil(c.fim / 30); x++) if (!(c.pausa && x * 30 >= c.pausa[0] && x * 30 < c.pausa[1])) cob[0][x] += sinal; };
+        // travados
+        pessoas.forEach((p, i) => {
+          const a = aj[p.nome.trim().toUpperCase()];
+          if (!a) return;
+          if (a.tipo === 'folga') cel[i][k] = { tipo: 'folga', motivo: 'Folga (ajuste)', aj: true, feriado: fer && fer.nome };
+          else {
+            const ini = hm(a.ini), fim = hm(a.fim), dur = fim - ini;
+            let pausa = null;
+            if (dur > 360 && e.intervalo) { const m = Math.round((ini + (dur - e.intervalo) / 2) / 30) * 30; pausa = [m, m + e.intervalo]; }
+            cel[i][k] = { tipo: 'trab', ini, fim, pausa, aj: true, feriado: fer && fer.nome };
+          }
+          aplica(cel[i][k], 1);
+        });
+        // os demais que trabalham no dia: refazem o turno vendo os travados
+        const livres = pessoas.map((p, i) => i).filter((i) => !aj[pessoas[i].nome.trim().toUpperCase()] && cel[i][k].tipo === 'trab');
+        if (!ab) return;
+        const turno = (o) => ({ tipo: 'trab', ini: o.s * 30, fim: (o.s + o.len) * 30, pausa: o.pausa != null && o.intSlots ? [o.pausa * 30, (o.pausa + o.intSlots) * 30] : null, feriado: fer && fer.nome, recalc: true });
+        for (const i of livres) { const o = melhorTurno(0, cob, sNeed, [ab], trabMin, intervalo); if (o) { cel[i][k] = turno(o); aplica(cel[i][k], 1); } }
+        for (let r = 0; r < 2; r++) for (const i of livres) { aplica(cel[i][k], -1); const o = melhorTurno(0, cob, sNeed, [ab], trabMin, intervalo); if (o) cel[i][k] = turno(o); aplica(cel[i][k], 1); }
+      });
+    }
     return { dias, pessoas, cel, feriados };
   }
 
@@ -546,7 +584,13 @@
     const ym = meses.includes(state.escMesYm) ? state.escMesYm : meses[1];
     const sel = h('select', { class: 'f-input mes-sel' }, meses.map((m) => h('option', { value: m, selected: m === ym || null }, `${TS.MESES_LONGOS[+m.slice(5, 7) - 1]} de ${m.slice(0, 4)}`)));
     sel.addEventListener('change', () => { state.escMesYm = sel.value; TS.render(); });
-    const E = escalaDoMes({ op, cfg, semanas, L, ym });
+    // ajustes manuais do mês (cópia de trabalho até salvar)
+    const chaveAj = `${(cfg && cfg.id) || 'loja'}|${ym}`;
+    if (!state.escAj || state.escAj.chave !== chaveAj) state.escAj = { chave: chaveAj, dados: JSON.parse(JSON.stringify(((cfg && cfg.escalaAjustes) || {})[ym] || {})), sujo: false, sel: null };
+    const AJ = state.escAj;
+    const pode = !TS.demo && (TS.eu?.pode?.configurar || (TS.eu?.perfil === 'gerente' && (TS.eu.telas || []).includes('mapa')));
+    const E = escalaDoMes({ op, cfg, semanas, L, ym, need, ajustes: AJ.dados });
+    const nAj = Object.values(AJ.dados).reduce((s, o) => s + Object.keys(o).length, 0);
     const DS = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
     const curto = (m) => (m % 60 ? hhmm(m) : `${Math.floor(m / 60)}h`);
     const minimoDia = (iso) => { const wd = wdDe(iso); return Math.max(0, ...need[wd]); };
@@ -568,9 +612,14 @@
         h('tr', null, h('th', { class: 'l' }, ''), E.dias.map((iso) => h('th', { class: (wdDe(iso) === 6 ? 'dom' : '') + (E.feriados.has(iso) ? ' fer' : ''), title: E.feriados.get(iso)?.nome || '' }, String(+iso.slice(8)))), h('th', null, 'Dias'), h('th', null, 'Horas')),
         h('tr', null, h('th', { class: 'l' }, ''), E.dias.map((iso) => h('th', { class: 'ds' + (wdDe(iso) === 6 ? ' dom' : '') + (E.feriados.has(iso) ? ' fer' : '') }, E.feriados.has(iso) ? 'F' : DS[new Date(iso + 'T12:00:00Z').getUTCDay()])), h('th'), h('th'))),
       h('tbody', null, E.pessoas.map((p, i) => h('tr', null, h('th', { class: 'l' }, p.nome), E.cel[i].map((c) => {
-        if (c.tipo === 'trab') return h('td', { class: 'trab' + (c.feriado ? ' fer' : ''), title: `${hhmm(c.ini)}–${hhmm(c.fim)}${c.pausa ? ` · intervalo ${hhmm(c.pausa[0])}–${hhmm(c.pausa[1])}` : ''}${c.feriado ? ` · ${c.feriado}` : ''}` }, h('span', null, curto(c.ini)), h('span', null, curto(c.fim)));
+        const k = E.cel[i].indexOf(c), iso = E.dias[k];
+        const sel = !paraPdf && AJ.sel && AJ.sel.iso === iso && AJ.sel.i === i;
+        const extra = (c.aj ? ' aj' : '') + (c.recalc ? ' recalc' : '') + (sel ? ' sel' : '') + (paraPdf ? '' : ' clicavel');
+        const clique = paraPdf || c.tipo === 'ferias' || c.tipo === 'fechado' ? null : () => { AJ.sel = { iso, i }; TS.render(); };
+        const marca = c.aj ? (paraPdf ? '*' : '•') : '';
+        if (c.tipo === 'trab') return h('td', { class: 'trab' + (c.feriado ? ' fer' : '') + extra, onclick: clique, title: `${hhmm(c.ini)}–${hhmm(c.fim)}${c.pausa ? ` · intervalo ${hhmm(c.pausa[0])}–${hhmm(c.pausa[1])}` : ''}${c.feriado ? ` · ${c.feriado}` : ''}${c.aj ? ' · ajuste manual' : c.recalc ? ' · recalculado por causa de um ajuste' : ''}` }, h('span', null, curto(c.ini) + marca), h('span', null, curto(c.fim)));
         const sig = c.tipo === 'ferias' ? 'Fér' : c.tipo === 'fechado' ? '—' : /rodízio|após/.test(c.motivo) ? 'FR' : 'F';
-        return h('td', { class: c.tipo + (/rodízio|após/.test(c.motivo || '') ? ' rod' : ''), title: c.motivo + (c.feriado ? ` · ${c.feriado}` : '') }, sig);
+        return h('td', { class: c.tipo + (/rodízio|após/.test(c.motivo || '') ? ' rod' : '') + extra, onclick: clique, title: c.motivo + (c.feriado ? ` · ${c.feriado}` : '') }, sig + marca);
       }), h('td', { class: 'tot' }, String(totais[i].dTrab)), h('td', { class: 'tot' }, TS.horasTxt ? TS.horasTxt(totais[i].min) : curto(totais[i].min))))),
       h('tfoot', null, h('tr', null, h('th', { class: 'l' }, 'Na loja'), E.dias.map((iso, k) => {
         const n = E.cel.filter((row) => row[k].tipo === 'trab').length;
@@ -579,7 +628,7 @@
         return h('td', { class: !fechado && min && n < min ? 'neg' : '' }, fechado ? '—' : String(n));
       }), h('td'), h('td'))));
     const legenda = () => h('div', { class: 'mes-leg' }, h('span', { class: 'l-trab' }, 'entrada / saída'), h('span', { class: 'l-folga' }, 'F = folga'), h('span', { class: 'l-rod' }, 'FR = folga do rodízio (domingo e segunda)'),
-      h('span', { class: 'l-ferias' }, 'Fér = férias'), h('span', { class: 'l-fer' }, 'F no cabeçalho = feriado'), h('span', null, '— = loja fechada'));
+      h('span', { class: 'l-ferias' }, 'Fér = férias'), h('span', { class: 'l-fer' }, 'F no cabeçalho = feriado'), h('span', null, '— = loja fechada'), h('span', null, '• ou * = ajuste manual'));
     const ferMes = [...E.feriados.values()];
     const imprimir = () => {
       document.getElementById('impressao')?.remove();
@@ -596,9 +645,61 @@
       window.addEventListener('afterprint', limpar);
       setTimeout(() => window.print(), 100);
     };
+    // editor do dia selecionado
+    const editor = (() => {
+      if (!AJ.sel || !E.dias.includes(AJ.sel.iso) || !E.pessoas[AJ.sel.i]) return null;
+      const { iso, i } = AJ.sel;
+      const k = E.dias.indexOf(iso);
+      const p = E.pessoas[i], N = p.nome.trim().toUpperCase();
+      const atual = E.cel[i][k];
+      const ajAtual = (AJ.dados[iso] || {})[N];
+      const modo = h('select', { class: 'f-input' }, h('option', { value: 'auto', selected: !ajAtual || null }, 'Automático (sem ajuste)'), h('option', { value: 'folga', selected: ajAtual?.tipo === 'folga' || null }, 'Folga'),
+        h('option', { value: 'trab', selected: ajAtual?.tipo === 'trab' || null }, 'Trabalha'), h('option', { value: 'troca' }, 'Trocar o dia com…'));
+      const ini = h('input', { class: 'f-input', type: 'time', value: ajAtual?.ini || (atual.tipo === 'trab' ? hhmm(atual.ini) : '10:00') });
+      const fim = h('input', { class: 'f-input', type: 'time', value: ajAtual?.fim || (atual.tipo === 'trab' ? hhmm(atual.fim) : '18:00') });
+      const com = h('select', { class: 'f-input' }, E.pessoas.map((q, j) => (j === i ? null : h('option', { value: j }, `${q.nome} (${E.cel[j][k].tipo === 'trab' ? `${hhmm(E.cel[j][k].ini)}–${hhmm(E.cel[j][k].fim)}` : E.cel[j][k].motivo || 'folga'})`))).filter(Boolean));
+      const blocoHora = h('div', { class: 'aj-linha' }, h('span', null, 'Entrada'), ini, h('span', null, 'Saída'), fim);
+      const blocoTroca = h('div', { class: 'aj-linha' }, h('span', null, 'Com'), com);
+      const mostrar = () => { blocoHora.hidden = modo.value !== 'trab'; blocoTroca.hidden = modo.value !== 'troca'; };
+      modo.addEventListener('change', mostrar); mostrar();
+      const comoAjuste = (c) => (c.tipo === 'trab' ? { tipo: 'trab', ini: hhmm(c.ini), fim: hhmm(c.fim) } : { tipo: 'folga' });
+      const erro = h('span', { class: 'neg' });
+      const aplicar = () => {
+        const d = (AJ.dados[iso] ||= {});
+        if (modo.value === 'auto') delete d[N];
+        else if (modo.value === 'folga') d[N] = { tipo: 'folga' };
+        else if (modo.value === 'trab') { if (!ini.value || !fim.value || ini.value >= fim.value) { erro.textContent = 'A entrada precisa ser antes da saída.'; return; } d[N] = { tipo: 'trab', ini: ini.value, fim: fim.value }; }
+        else { const j = +com.value; const outra = E.pessoas[j].nome.trim().toUpperCase(); d[N] = comoAjuste(E.cel[j][k]); d[outra] = comoAjuste(atual); }
+        if (!Object.keys(d).length) delete AJ.dados[iso];
+        AJ.sujo = true; AJ.sel = null; TS.render();
+      };
+      const DSN = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
+      return h('div', { class: 'aj-editor' },
+        h('div', { class: 'aj-tit' }, `${p.nome} · ${iso.slice(8)}/${iso.slice(5, 7)} (${DSN[new Date(iso + 'T12:00:00Z').getUTCDay()]})`, h('small', null, ` — hoje: ${atual.tipo === 'trab' ? `${hhmm(atual.ini)}–${hhmm(atual.fim)}` : atual.motivo || 'folga'}`)),
+        h('div', { class: 'aj-linha' }, modo), blocoHora, blocoTroca,
+        h('div', { class: 'aj-linha' }, h('button', { type: 'button', class: 'btn primary', onclick: aplicar }, 'Aplicar'), h('button', { type: 'button', class: 'btn', onclick: () => { AJ.sel = null; TS.render(); } }, 'Cancelar'), erro),
+        h('small', { class: 'muted' }, 'O painel trava a sua escolha e refaz os turnos das outras pessoas nesse dia para manter a loja coberta.'));
+    })();
+    const salvarAj = async (btn) => {
+      btn.disabled = true;
+      try {
+        const r = await fetch(`/api/escala-ajustes?loja=${encodeURIComponent(cfg.id)}&ym=${ym}`, { method: 'PUT', credentials: 'same-origin', headers: { 'X-Painel': '1', 'Content-Type': 'application/json' }, body: JSON.stringify({ ajustes: AJ.dados }) });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.erro || 'Falha ao salvar.');
+        cfg.escalaAjustes = { ...(cfg.escalaAjustes || {}), [ym]: JSON.parse(JSON.stringify(AJ.dados)) };
+        AJ.sujo = false; TS.render();
+      } catch (e) { btn.textContent = e.message; btn.disabled = false; }
+    };
+    const barraAj = h('div', { class: 'aj-barra' },
+      h('span', { class: 'muted' }, nAj ? `${nAj} ajuste(s) manual(is) neste mês${AJ.sujo ? ' — não salvos' : ''}.` : 'Toque num dia de uma pessoa para ajustar (folga, horário ou troca).'),
+      pode && AJ.sujo ? (() => { const b = h('button', { type: 'button', class: 'btn primary' }, 'Salvar ajustes'); b.addEventListener('click', () => salvarAj(b)); return b; })() : null,
+      nAj ? h('button', { type: 'button', class: 'btn ghost-danger', onclick: () => { AJ.dados = {}; AJ.sujo = true; AJ.sel = null; TS.render(); } }, 'Desfazer ajustes do mês') : null,
+      TS.demo && AJ.sujo ? h('span', { class: 'muted' }, '(na apresentação os ajustes não são salvos)') : null);
+
     return TS.cardWithTools('Escala do mês', `Dia a dia com feriados e férias. ${L > 1 ? `O rodízio de ${L} semanas começa a contar no domingo ${TS.fmt.date(domingoDe(op.equipe.inicioRodizio || INICIO_PADRAO))} (ajuste em "Horário e equipe").` : 'A semana sugerida se repete todas as semanas.'} Passe o mouse para ver intervalo e feriado.`,
       h('div', { class: 'table-tools' }, sel, h('button', { type: 'button', class: 'btn primary', onclick: imprimir }, '⎙ Exportar PDF')),
       alertas.length ? h('div', { class: 'notice' }, h('b', null, 'Atenção: '), alertas.slice(0, 6).join(' · '), alertas.length > 6 ? ` e mais ${alertas.length - 6}` : '') : null,
+      barraAj, editor,
       h('div', { class: 'table-wrap free' }, tabela(false)), legenda());
   }
 

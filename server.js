@@ -104,7 +104,7 @@ async function pacote(lojas, force, perfilDados = 'completo') {
   const metaCfgs = lojas.map((l, i) => {
     const atual = cfgLojas.find((x) => x.id === l.id) || l;
     const r = entradas[i].raw;
-    return { id: l.id, nome: atual.nome, nomesVenda: r.metaCfg?.nomesVenda || [], padrao: atual.meta ?? r.metaPlanilha ?? null, meses: atual.metas || {}, metaAuto: atual.metaAuto || null, regras: atual.regras || null, operacao: atual.operacao || null, ferias: atual.ferias || [], feriadosLocais: atual.feriadosLocais || [], feriadosHoras: atual.feriadosHoras || {}, feriadosHorario: atual.feriadosHorario || {} };
+    return { id: l.id, nome: atual.nome, nomesVenda: r.metaCfg?.nomesVenda || [], padrao: atual.meta ?? r.metaPlanilha ?? null, meses: atual.metas || {}, metaAuto: atual.metaAuto || null, regras: atual.regras || null, operacao: atual.operacao || null, ferias: atual.ferias || [], feriadosLocais: atual.feriadosLocais || [], feriadosHoras: atual.feriadosHoras || {}, feriadosHorario: atual.feriadosHorario || {}, escalaAjustes: atual.escalaAjustes || {} };
   });
   const k = entradas.map((e, i) => `${lojas[i].id}@${e.at}`).join('|') + '#' + JSON.stringify(metaCfgs) + '#' + perfilDados;
   const chave = lojas.map((l) => l.id).join(',') + '|' + perfilDados;
@@ -376,6 +376,39 @@ app.put('/api/feriados', express.json({ limit: '200kb' }), (req, res) => {
     if (locaisLimpos) l.feriadosLocais = locaisLimpos;
   });
   C.auditar(req.user, 'alterou feriados trabalhados', loja.id, { loja: loja.id, mes: ym, dias: Object.keys(limpo).length });
+  packCache.clear();
+  res.json({ ok: true });
+});
+
+// ---------- ajustes manuais na escala do mês ----------
+// admin, franqueado e gerente com o Mapa de calor
+app.put('/api/escala-ajustes', express.json({ limit: '200kb' }), (req, res) => {
+  if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
+  const telas = C.telasDo(C.usuario(req.user));
+  const pode = req.perfil === 'admin' || req.perfil === 'franqueado' || (req.perfil === 'gerente' && (telas || []).includes('mapa'));
+  if (!pode) return res.status(403).json({ erro: 'Sem permissão.' });
+  const loja = req.lojas.find((l) => l.id === String(req.query.loja || ''));
+  const ym = String(req.query.ym || '');
+  if (!loja || !/^\d{4}-\d{2}$/.test(ym)) return res.status(400).json({ erro: 'Escolha a loja e o mês.' });
+  const aj = (req.body && req.body.ajustes) || {};
+  if (typeof aj !== 'object') return res.status(400).json({ erro: 'Ajustes inválidos.' });
+  const HM = /^([01]\d|2[0-3]):[0-5]\d$/;
+  const limpo = {};
+  for (const [data, porPessoa] of Object.entries(aj)) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(data) || !data.startsWith(ym) || typeof porPessoa !== 'object') return res.status(400).json({ erro: `Data inválida: ${data}` });
+    for (const [nome, a] of Object.entries(porPessoa)) {
+      const n = String(nome).trim().toUpperCase().slice(0, 40);
+      if (!a || !['folga', 'trab'].includes(a.tipo)) return res.status(400).json({ erro: `Ajuste inválido de ${nome} em ${data}.` });
+      if (a.tipo === 'trab' && (!HM.test(a.ini || '') || !HM.test(a.fim || '') || a.ini >= a.fim)) return res.status(400).json({ erro: `Confira o horário de ${nome} em ${data} (entrada antes da saída).` });
+      (limpo[data] ||= {})[n] = a.tipo === 'trab' ? { tipo: 'trab', ini: a.ini, fim: a.fim } : { tipo: 'folga' };
+    }
+  }
+  C.alterar((cfg) => {
+    const l = cfg.lojas.find((x) => x.id === loja.id);
+    l.escalaAjustes = l.escalaAjustes || {};
+    if (Object.keys(limpo).length) l.escalaAjustes[ym] = limpo; else delete l.escalaAjustes[ym];
+  });
+  C.auditar(req.user, 'ajustou escala do mês', loja.id, { loja: loja.id, mes: ym, dias: Object.keys(limpo).length });
   packCache.clear();
   res.json({ ok: true });
 });
