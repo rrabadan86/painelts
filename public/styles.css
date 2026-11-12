@@ -733,3 +733,7 @@ body.com-camada { overflow: hidden; }
 .card-cheio .table-wrap th, .card-cheio .table-wrap td { padding-top: 6px; padding-bottom: 6px; }
 .card-cheio table.quebra-th th { white-space: normal; line-height: 1.15; vertical-align: bottom; }
 .card-cheio table.quebra-th td { padding-left: 6px; padding-right: 6px; }
+.mapa-como { margin-top: 10px; font-size: 13px; color: var(--ink); background: #fff; border: 1px solid var(--line, #E2DCCF); border-radius: 10px; padding: 8px 14px; }
+.mapa-como summary { cursor: pointer; font-weight: 600; color: var(--green); }
+.mapa-como ol { margin: 8px 0 6px 18px; padding: 0; display: grid; gap: 4px; line-height: 1.45; }
+.g-kpi > .mapa-como { grid-column: 1 / -1; }
