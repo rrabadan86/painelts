@@ -13,3 +13,5 @@ config/coletor/*.env.removida-*
 config/coletor/horarios.txt
 config/coletor/*.py
 *.zip
+__pycache__/
+*.pyc
