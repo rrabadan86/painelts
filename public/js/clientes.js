@@ -69,7 +69,7 @@
       // ficha: frequência, chá favorito, pacote, vendedora, gasto 12 meses
       const dias = [...new Set(c.cupons.map((k) => k.day))].sort((a, b) => a - b);
       c.intervalo = dias.length >= 2 ? (dias[dias.length - 1] - dias[0]) / (dias.length - 1) : null;
-      const diasCha = new Set(), porCha = new Map(), porTam = new Map(), porVend = new Map();
+      const diasCha = new Set(), porCha = new Map(), porTam = new Map(), porVend = new Map(), gramas = new Map();
       c.gasto12 = 0; c.gasto12ant = 0;
       for (const k of c.cupons) {
         cuponsCPF.set(k.cupom + '|' + k.lojaId, c);
@@ -78,9 +78,11 @@
           if (taxas.has(db.desc[i])) continue;
           const v = db.D.vendedor[db.vend[i]];
           if (v) porVend.set(v, (porVend.get(v) || 0) + (db.vt[i] || 0));
-          if (!cha.has(db.grupo[i])) continue;
+          // chá a granel/pacote (tem kg); xícaras e bebidas não contam
+          if (!cha.has(db.grupo[i]) || !(db.cha[i] > 0)) continue;
           diasCha.add(k.day);
-          porCha.set(db.prod[i], (porCha.get(db.prod[i]) || 0) + (db.qtd[i] || 0));
+          gramas.set(k.day, (gramas.get(k.day) || 0) + db.cha[i] * 1000);
+          porCha.set(db.prod[i], (porCha.get(db.prod[i]) || 0) + db.cha[i]);
           if (db.so[i]) porTam.set(db.so[i], (porTam.get(db.so[i]) || 0) + (db.qtd[i] || 0));
         }
       }
@@ -90,9 +92,20 @@
       c.pacote = maior(porTam);
       c.vendedora = maior(porVend);
       const dc = [...diasCha].sort((a, b) => a - b);
-      c.intervaloCha = dc.length >= 2 ? (dc[dc.length - 1] - dc[0]) / (dc.length - 1) : null;
       c.ultimaCha = dc.length ? dc[dc.length - 1] : null;
-      c.proxCha = c.intervaloCha ? Math.round(c.ultimaCha + c.intervaloCha) : null;
+      c.gramasUltima = c.ultimaCha != null ? Math.round(gramas.get(c.ultimaCha) || 0) : 0;
+      // quando o chá da última compra deve acabar = gramas da última compra ÷ consumo por dia.
+      // Consumo: pelo histórico da pessoa (chá comprado antes da última compra ÷ dias entre a 1ª e a última),
+      // quando há pelo menos 60 dias de histórico; senão, ~3 g por dia (1 xícara). Fica entre 15 e 180 dias.
+      c.gDia = null; c.reporEstimado = true;
+      if (dc.length >= 2 && dc[dc.length - 1] - dc[0] >= 60) {
+        let antes = 0; for (const [dia, g] of gramas) if (dia < c.ultimaCha) antes += g;
+        const gd = antes / (dc[dc.length - 1] - dc[0]);
+        if (gd > 0.3) { c.gDia = gd; c.reporEstimado = false; }
+      }
+      const gd = c.gDia || 3;
+      c.intervaloCha = c.gramasUltima > 0 ? Math.min(180, Math.max(15, Math.round(c.gramasUltima / gd))) : null;
+      c.proxCha = c.intervaloCha ? c.ultimaCha + c.intervaloCha : null;
       lista.push(c);
     }
     // segmentos (sobre o histórico todo)
@@ -120,7 +133,7 @@
     hoje: 'Aniversariantes da semana, sumidos e quem está na hora de repor — sem quem já foi contatado nos últimos 30 dias ou não quer mensagens.',
     aniv: 'Fazem aniversário nos próximos 7 dias.',
     sumido: 'Compraram 3 vezes ou mais e estão sem vir há mais que o dobro do intervalo de costume (e mais de 60 dias).',
-    repor: 'Pelo intervalo entre as compras de chá da própria pessoa, o pacote deve estar acabando.',
+    repor: 'O chá a granel da última compra deve estar acabando: gramas levadas ÷ consumo por dia (pelo histórico da pessoa; sem histórico, ~3 g por dia).',
     novo: 'Primeira compra neste mês.', fiel: '5 compras ou mais nos últimos 12 meses.', vip: 'Os 10% que mais gastaram nos últimos 12 meses.', uma: 'Compraram uma vez só (há 30 dias ou mais) e não voltaram.',
   };
   const lojaIdDe = (c) => {
@@ -400,12 +413,8 @@
       card.classList.toggle('open', aberto);
       head.setAttribute('aria-expanded', String(aberto));
       if (aberto && !body.childElementCount) {
-        const pma = r.qtd ? r.vt / r.qtd : null, ipa = r.visitas ? r.qtd / r.visitas : null;
-        body.append(fichaCliente(c), acoesCliente(c));
-        body.append(h('div', { class: 'cli-meta', style: { margin: '4px 0 2px' } },
-          h('span', null, `PMA ${fmt.brl(pma)}`), h('span', null, `IPA ${fmt.n2(ipa)}`), h('span', null, `${fmt.int(r.qtd)} itens`),
-          c.celular ? h('span', null, `Tel. ${c.celular}`) : null, c.email ? h('span', null, c.email) : null,
-          c.semVenda ? h('span', { class: 'muted', title: 'Cupons com o CPF desta pessoa que não foram encontrados nas vendas (não entram nas contas)' }, `+ ${c.semVenda} cupom(ns) sem venda encontrada`) : null));
+        body.append(fichaCliente(c, r), acoesCliente(c));
+        if (c.semVenda) body.append(h('p', { class: 'muted', style: { margin: '0 0 8px', fontSize: '12px' } }, `+ ${c.semVenda} cupom(ns) com o CPF desta pessoa não foram encontrados nas vendas (não entram nas contas).`));
         for (const k of r.cupons) {
           const itens = k.itensFiltrados || k.itens;
           const tb = h('table', { class: 'cupom-items' });
@@ -413,7 +422,7 @@
           if (!itens.length) tb.append(h('tr', null, h('td', { style: { color: '#6B7A70' } }, 'Cupom sem itens na planilha de vendas.')));
           body.append(h('div', { class: 'cupom' },
             h('div', { class: 'cupom-head' }, h('span', null, h('b', null, `Cupom ${k.cupom}`), ' · ', k.day != null ? fmt.date(TS.dayToIso(k.day)) : 'sem data', TS.db.opts.lojas.length > 1 ? ' · ' + k.loja : ''),
-              h('span', null, `${fmt.int(k.qtd)} itens · `, h('b', null, fmt.brl(k.vt)))),
+              h('span', null, `${fmt.int(k.qtd)} ${k.qtd === 1 ? 'item' : 'itens'} · `, h('b', null, fmt.brl(k.vt)))),
             tb));
         }
       }
@@ -535,22 +544,52 @@
   }
 
   // ---------- ficha e ações ----------
-  function fichaCliente(c) {
+  function fichaCliente(c, r) {
     const hoje = TS.todayDay();
     const d = (day) => fmt.date(TS.dayToIso(day));
     const varia = c.gasto12ant > 0 ? c.gasto12 / c.gasto12ant - 1 : null;
-    const linhas = [
-      ['Cliente desde', d(c.primeira)],
-      ['Vem a cada', c.intervalo ? `${fmt.int(Math.round(c.intervalo))} dias, em média` : 'uma compra só'],
-      ['Próxima visita esperada', c.intervalo ? (() => { const p = Math.round(c.ultima + c.intervalo); return p < hoje ? `${d(p)} (atrasada ${fmt.int(hoje - p)} d)` : d(p); })() : '—'],
-      ['Chá favorito', c.chaFavorito || '—'],
-      ['Pacote preferido', c.pacote ? `${c.pacote} g` : '—'],
-      ['Hora de repor o chá', c.proxCha ? (c.proxCha <= hoje ? `já passou (${d(c.proxCha)})` : `por volta de ${d(c.proxCha)}`) : '—'],
-      ['Mais atendida por', c.vendedora || '—'],
-      ['Gasto últimos 12 meses', [fmt.brl(c.gasto12), varia != null ? h('em', { class: varia >= 0 ? 'pos' : 'neg' }, ` (${fmt.delta(varia)} vs. 12 meses antes)`) : null]],
-    ];
-    return h('div', { class: 'cli-ficha' }, linhas.map(([k, v]) => h('div', null, h('span', null, k), h('b', null, v))));
+    const item = (rot, val, dica) => (val == null || val === '' ? null : h('div', { class: 'fi', title: dica || null }, h('span', null, rot), h('b', null, val)));
+    const bloco = (titulo, ...itens) => { const v = itens.filter(Boolean); return v.length ? h('div', { class: 'fi-bloco' }, h('div', { class: 'fi-tit' }, titulo), ...v) : null; };
+    const tel = fmtTel(c.celular);
+    const prox = c.intervalo ? Math.round(c.ultima + c.intervalo) : null;
+    const repor = c.proxCha == null ? null
+      : c.proxCha < hoje - 45 ? null
+        : c.proxCha <= hoje ? `já deve ter acabado (${d(c.proxCha)})` : `por volta de ${d(c.proxCha)}`;
+    const dicaRepor = c.proxCha == null ? null : c.reporEstimado
+      ? `Na última compra de chá (${d(c.ultimaCha)}) levou ${c.gramasUltima} g. Sem histórico suficiente, o painel considera ~3 g por dia (1 xícara): dura ~${c.intervaloCha} dias.`
+      : `Na última compra de chá (${d(c.ultimaCha)}) levou ${c.gramasUltima} g. Pelo histórico, consome ~${fmt.n1(c.gDia)} g por dia: dura ~${c.intervaloCha} dias.`;
+    return h('div', { class: 'cli-ficha' }, ...[
+      bloco('Contato',
+        tel ? h('div', { class: 'fi' }, h('span', null, 'Celular'), h('b', null, tel, c.wpp ? h('a', { class: 'wpp', href: TS.demo ? '#' : c.wpp, target: '_blank', rel: 'noopener', onclick: (e) => { if (TS.demo) e.preventDefault(); } }, ' WhatsApp') : null)) : null,
+        item('E-mail', c.email || null),
+        item('Cidade', c.cidade || null),
+        item('Aniversário', c.aniv ? `${c.aniv}${c.idade != null ? ` · ${c.idade} anos` : ''}` : null)),
+      bloco('Histórico',
+        item('Cliente desde', d(c.primeira)),
+        item('Compras', `${fmt.int(c.visitas)}${r.visitas !== c.visitas ? ` (${fmt.int(r.visitas)} no período)` : ''}`),
+        item('Frequência', c.intervalo ? `a cada ~${fmt.int(Math.round(c.intervalo))} dias` : 'comprou uma vez'),
+        item('Última compra', `${d(c.ultima)} · ${c.ausencia === 0 ? 'hoje' : `há ${fmt.int(c.ausencia)} dias`}`),
+        prox ? item('Próxima visita esperada', prox < hoje ? `${d(prox)} (atrasada ${fmt.int(hoje - prox)} dias)` : d(prox), 'Última compra + intervalo médio entre as compras') : null),
+      bloco('Preferências',
+        item('Chá favorito (a granel)', c.chaFavorito),
+        item('Pacote preferido', c.pacote ? `${c.pacote} g` : null),
+        item('Chá deve acabar', repor, dicaRepor),
+        c.proxCha != null ? h('div', { class: 'fi-nota' }, dicaRepor) : null,
+        item('Mais atendida por', c.vendedora)),
+      bloco('Valores',
+        h('div', { class: 'fi' }, h('span', null, 'Gasto em 12 meses'), h('b', null, fmt.brl(c.gasto12), varia != null ? h('em', { class: varia >= 0 ? 'pos' : 'neg' }, ` ${fmt.delta(varia)}`) : null)),
+        item('Ticket médio', fmt.brl(r.tkm)),
+        item('PMA · IPA', `${fmt.brl(r.qtd ? r.vt / r.qtd : null)} · ${fmt.n2(r.visitas ? r.qtd / r.visitas : null)}`),
+        item('Itens', fmt.int(r.qtd))),
+    ].filter(Boolean));
   }
+  const fmtTel = (cel) => {
+    let d = String(cel || '').replace(/\D/g, '');
+    if (d.length >= 12 && d.startsWith('55')) d = d.slice(2);
+    if (d.length === 11) return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
+    if (d.length === 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
+    return d || null;
+  };
   function acoesCliente(c) {
     const box = h('div', { class: 'cli-acoes' });
     const pintar = () => {
