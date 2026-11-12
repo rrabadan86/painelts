@@ -89,6 +89,8 @@
     const abertura = DIAS.map((d) => { const f = op.funcionamento[d]; return f && !f.fechado ? [Math.ceil(hm(f.abre) / 30), Math.floor(hm(f.fecha) / 30)] : null; });
     const cob = Array.from({ length: 7 }, () => Array(48).fill(0));
     const pessoas = [];
+    const maxF = Math.max(1, Math.min(10, Math.round(+e.maxFolgaDia || 1)));
+    const folgasDia = Array(7).fill(0);
     const prefs = Array.from({ length: nFunc }, (_, i) => ((e.pessoas && e.pessoas[i]) || {}).turno);
     for (let p = 0; p < nFunc; p++) {
       const opcoes = [];
@@ -124,7 +126,12 @@
       }
       // trabalha nos dias de maior ganho; folga nos demais
       const ordem = opcoes.map((o, wd) => [o ? o.ganho : -1, wd]).filter(([g]) => g >= 0).sort((a, b) => b[0] - a[0] || a[1] - b[1]);
-      const trab = new Set(ordem.slice(0, diasTrab).map(([, wd]) => wd));
+      // folga nos dias de menor ganho, sem passar do limite de folgas no mesmo dia
+      const nOff = Math.max(0, ordem.length - diasTrab);
+      const porFolga = ordem.slice().sort((x, y) => ((folgasDia[x[1]] >= maxF) - (folgasDia[y[1]] >= maxF)) || x[0] - y[0] || folgasDia[x[1]] - folgasDia[y[1]]);
+      const off = new Set(porFolga.slice(0, nOff).map(([, wd]) => wd));
+      off.forEach((wd) => { folgasDia[wd]++; });
+      const trab = new Set(ordem.filter(([, wd]) => !off.has(wd)).map(([, wd]) => wd));
       const turnos = opcoes.map((o, wd) => {
         if (!o || !trab.has(wd)) return null;
         for (let x = o.s; x < o.s + o.len; x++) if (!(o.pausa != null && x >= o.pausa && x < o.pausa + o.intSlots)) cob[wd][x]++;
@@ -249,7 +256,9 @@
     const DOM = 6, SEG = 0;
     const domAberto = !!abertura[DOM];
     // quantas pessoas no domingo
-    const kDom = domAberto ? Math.min(N, Math.max(...need[DOM])) : 0;
+    // no máximo maxF pessoas de folga no mesmo dia (domingo incluído)
+    const maxF = Math.max(1, Math.min(10, Math.round(+e.maxFolgaDia || 1)));
+    const kDom = domAberto ? Math.min(N, Math.max(Math.max(...need[DOM]), N - maxF)) : 0;
     const folgamDom = N - kDom;
     const L = folgamDom > 0 && kDom > 0 ? Math.min(8, N / mdc(N, folgamDom)) : 1;
     // dias fixos automáticos: espalha nos dias de menor movimento (ter a sáb; segunda já recebe quem folga no domingo)
@@ -280,14 +289,39 @@
       const cob = Array.from({ length: 7 }, () => Array(48).fill(0));
       const turnosP = pessoas.map(() => Array(7).fill(null));
       const motivos = pessoas.map(() => Array(7).fill(''));
-      // dias de trabalho de cada pessoa nesta semana
-      const trabalha = pessoas.map((_, i) => {
-        const off = new Set();
-        if (folgaDom.has(i)) { off.add(DOM); if (domAberto) off.add(SEG); motivos[i][DOM] = domAberto ? 'Folga (rodízio)' : 'Fechado'; if (domAberto) motivos[i][SEG] = 'Folga (após domingo)'; }
-        else { const [f1, f2] = fixos[i]; off.add(f1); motivos[i][f1] = 'Folga fixa'; if (f2 != null) { off.add(f2); motivos[i][f2] = 'Folga fixa'; } }
-        if (!domAberto && !seis) { const [f1] = fixos[i]; off.add(f1); motivos[i][f1] = 'Folga fixa'; }
-        return [0, 1, 2, 3, 4, 5, 6].filter((wd) => !off.has(wd) && abertura[wd]);
+      // folgas da semana: quem folga no domingo folga também na segunda; os demais folgam no(s) dia(s) fixo(s).
+      // Dia "automático" é escolhido semana a semana, sem passar do limite de folgas no mesmo dia.
+      const cont = Array(7).fill(0);
+      const offs = pessoas.map(() => new Set());
+      const folgasSem = pessoas.map(() => []);
+      pessoas.forEach((_, i) => {
+        if (!domAberto) { offs[i].add(DOM); motivos[i][DOM] = 'Fechado'; return; }
+        if (folgaDom.has(i)) { offs[i].add(DOM); offs[i].add(SEG); cont[DOM]++; cont[SEG]++; motivos[i][DOM] = 'Folga (rodízio)'; motivos[i][SEG] = 'Folga (após domingo)'; }
       });
+      const precisa = (i) => (domAberto ? (folgaDom.has(i) ? 0 : seis ? 1 : 2) : seis ? 0 : 1);
+      const manuais = (i) => [pessoas[i].folga, pessoas[i].folga2].filter((f) => f && f !== 'auto').length;
+      const ordemP = pessoas.map((_, i) => i).sort((x, y) => manuais(y) - manuais(x) || ((x - w + N * 9) % N) - ((y - w + N * 9) % N));
+      for (const i of ordemP) {
+        const cfgDias = [pessoas[i].folga, pessoas[i].folga2];
+        for (let j = 0; j < precisa(i); j++) {
+          let d = cfgDias[j] && cfgDias[j] !== 'auto' ? DIAS.indexOf(cfgDias[j]) : -1;
+          const manual = d >= 0 && !offs[i].has(d);
+          if (!manual) {
+            let best = null;
+            for (let wd = 0; wd <= 5; wd++) {
+              if (offs[i].has(wd) || !abertura[wd]) continue;
+              const custo = (cont[wd] >= maxF ? 1e6 : 0) + (wd === fixos[i][j] ? 0 : 100) + somaDia[wd] + cont[wd] * 20;
+              if (!best || custo < best[0]) best = [custo, wd];
+            }
+            if (!best) continue;
+            d = best[1];
+          }
+          offs[i].add(d); cont[d]++; folgasSem[i].push(d);
+          motivos[i][d] = manual ? 'Folga fixa' : 'Folga';
+        }
+      }
+      const excesso = [0, 1, 2, 3, 4, 5, 6].filter((wd) => abertura[wd] && cont[wd] > maxF);
+      const trabalha = pessoas.map((_, i) => [0, 1, 2, 3, 4, 5, 6].filter((wd) => !offs[i].has(wd) && abertura[wd]));
       // primeiro o domingo (garante o mínimo), depois os outros dias; cada dia, pessoa por pessoa,
       // e depois algumas rodadas de ajuste (cada pessoa refaz o turno vendo os colegas) para fechar buracos
       const aplica = (wd, o, sinal) => { for (let x = o.s; x < o.s + o.len; x++) if (!(o.pausa != null && x >= o.pausa && x < o.pausa + o.intSlots)) cob[wd][x] += sinal; };
@@ -316,9 +350,9 @@
           if (!falta && ini != null) { problemas.push({ wd, ini: ini * 30, fim: x * 30, c: pior.c, n: pior.n }); ini = null; }
         }
       }
-      semanas.push({ turnosP, motivos, cob, descoberto, abaixo, problemas, folgaDom });
+      semanas.push({ turnosP, motivos, cob, descoberto, abaixo, problemas, folgaDom, folgasSem, excesso });
     }
-    return { semanas, L, kDom, folgamDom, trabMin, jornada, intervalo, diasBase, fixos };
+    return { semanas, L, kDom, folgamDom, trabMin, jornada, intervalo, diasBase, fixos, maxF };
   }
   TS._escala = { montarRodizio: (...a) => montarRodizio(...a) };
   const resumoRodizio = (r) => ({ descoberto: r.semanas.reduce((s, w) => s + w.descoberto, 0), abaixo: r.semanas.reduce((s, w) => s + w.abaixo, 0) });
@@ -357,6 +391,7 @@
     inicio.addEventListener('change', () => { if (inicio.value) { e.inicioRodizio = inicio.value; aoMudar && aoMudar(); } });
     const ordemSemana = [6, 0, 1, 2, 3, 4, 5]; // domingo a sábado
     e.minimoDia = e.minimoDia || {};
+    if (e.maxFolgaDia == null) e.maxFolgaDia = 1;
     const minimos = h('div', { class: 'op-minimos' }, ordemSemana.map((i) => {
       const d = DIAS[i];
       const x = h('input', { class: 'f-input', type: 'number', min: 1, max: 20, value: e.minimoDia[d] || 1 });
@@ -394,6 +429,7 @@
       h('div', { class: 'f-label', style: { marginTop: '14px' } }, 'Regras da escala'),
       h('div', { class: 'cfg-grid' }, campo('Modelo', modelo, e.modelo === 'rodizio' ? 'Semana de domingo a sábado. As folgas de domingo giram igualmente entre a equipe.' : null),
         e.modelo === 'rodizio' ? campo('A "Semana 1" do rodízio começa no domingo', inicio, 'Use um domingo em que a Pessoa 1 folgou. A escala do mês segue a partir dele.') : null),
+      h('div', { class: 'cfg-grid', style: { marginTop: '10px' } }, campo('Máximo de pessoas de folga no mesmo dia', num('maxFolgaDia', { min: 1, max: 10, step: 1 }), 'Vale para todos os dias, inclusive domingo. Padrão: 1.')),
       h('div', { class: 'f-label', style: { marginTop: '10px' } }, 'Mínimo de pessoas na loja, por dia'),
       minimos,
       h('small', { class: 'muted' }, 'Ex.: domingo 2 = nunca fica uma pessoa sozinha no domingo.'),
@@ -787,7 +823,15 @@
     const ORDEM = [6, 0, 1, 2, 3, 4, 5]; // dom..sáb
     const tot = resumoRodizio(r);
     const sem = Math.min(state.escSemana || 0, r.L - 1);
-    const fixosTxt = r.fixos.map(([f1, f2], i) => `${pessoas[i].nome}: ${DIAS_NOME[f1]}${f2 != null ? ' e ' + DIAS_NOME[f2] : ''}${pessoas[i].folga === 'auto' ? ' (automático)' : ''}`).join(' · ');
+    const fixosTxt = pessoas.map((p, i) => {
+      const porSem = r.semanas.map((w, k) => [k, w.folgasSem[i].slice().sort((a, b) => a - b)]).filter(([, d]) => d.length);
+      if (!porSem.length) return null;
+      const chave = (d) => d.join(',');
+      const iguais = porSem.every(([, d]) => chave(d) === chave(porSem[0][1]));
+      const nomes = (d) => d.map((x) => DIAS_NOME[x]).join(' e ');
+      return `${p.nome}: ${iguais ? nomes(porSem[0][1]) : porSem.map(([k, d]) => `sem. ${k + 1} ${d.map((x) => DIAS_CURTO[x]).join('/')}`).join(', ')}${p.folga === 'auto' ? ' (automático)' : ''}`;
+    }).filter(Boolean).join(' · ');
+    const excessos = r.semanas.map((w, k) => [k, w.excesso]).filter(([, x]) => x.length);
     const tabelaSemana = (w, idx) => h('div', { class: 'rod-semana' },
       h('div', { class: 'rod-tit' }, `Semana ${idx + 1}`, w.problemas.length ? h('span', { class: 'badge erro' }, `${w.problemas.length} alerta(s)`) : h('span', { class: 'badge ok' }, 'ok')),
       h('div', { class: 'table-wrap free' }, h('table', { class: 'escala-t' },
@@ -822,7 +866,8 @@
     return TS.cardWithTools(`Escala sugerida · rodízio de domingo (${op.equipe.escala})`,
       `Semana de domingo a sábado. ${r.kDom ? `${r.kDom} pessoa(s) trabalham em cada domingo; ${r.folgamDom} folga(m) — e folga(m) também na segunda.` : 'Loja fechada no domingo.'} O ciclo se repete a cada ${r.L} semana(s). Jornada de ${Math.floor(r.jornada / 60)}h${String(Math.round(r.jornada % 60)).padStart(2, '0')} por dia${r.intervalo ? ` + ${r.intervalo} min de intervalo` : ''}. Confira a CLT e a convenção coletiva.`,
       seg, aviso,
-      h('p', { class: 'muted rod-fixos' }, h('b', null, 'Folgas fixas (semanas em que trabalha no domingo): '), fixosTxt),
+      excessos.length ? h('div', { class: 'notice err' }, `Não deu para manter no máximo ${r.maxF} pessoa(s) de folga por dia em: ${excessos.map(([k, x]) => `semana ${k + 1} (${x.map((wd) => DIAS_NOME[wd]).join(', ')})`).join('; ')}. Revise as folgas fixas escolhidas à mão ou o limite em "Horário e equipe".`) : null,
+      h('p', { class: 'muted rod-fixos' }, h('b', null, `Folgas nas semanas em que trabalha no domingo (no máximo ${r.maxF} de folga por dia): `), fixosTxt),
       tabelaSemana(w, sem),
       h('div', { class: 'f-label', style: { marginTop: '16px' } }, `Cobertura da semana ${sem + 1}`),
       h('div', { class: 'table-wrap free mapa-wrap' }, cobertura),

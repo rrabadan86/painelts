@@ -74,6 +74,7 @@ function validarOperacao(o) {
     if (typeof e.minimoDia !== 'object') return 'Mínimo por dia inválido.';
     for (const d of DIAS_SEMANA) if (e.minimoDia[d] != null && !int(e.minimoDia[d], 0, 20)) return `Mínimo de pessoas de ${d} inválido.`;
   }
+  if (e.maxFolgaDia != null && !int(e.maxFolgaDia, 1, 10)) return 'Máximo de folgas no mesmo dia inválido (1 a 10).';
   if (e.pessoas != null) {
     if (!Array.isArray(e.pessoas) || e.pessoas.length > 40) return 'Equipe inválida.';
     const dia = (x) => x === 'auto' || DIAS_SEMANA.includes(x);
