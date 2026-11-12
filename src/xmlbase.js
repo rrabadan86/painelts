@@ -22,7 +22,7 @@ function lerBase(id) {
 }
 function gravarBase(id, b) {
   fs.mkdirSync(path.dirname(arqBase(id)), { recursive: true });
-  C.gravarAtomico(arqBase(id), zlib.gzipSync(Buffer.from(JSON.stringify(b))), 0o644);
+  C.gravarAtomico(arqBase(id), zlib.gzipSync(Buffer.from(JSON.stringify(b))), 0o640);
 }
 const existe = (id) => fs.existsSync(arqBase(id));
 function assinatura(id) { try { return String(fs.statSync(arqBase(id)).mtimeMs); } catch { return '-'; } }

@@ -21,6 +21,8 @@ Coletor Tea Shop — roda o script de exportação do AppNext de cada loja na pr
 import hmac
 import json
 import os
+
+os.umask(0o027)  # arquivos novos (vendas, XMLs com CPF) sem leitura para outros usuários da VPS
 import re
 import subprocess
 import sys

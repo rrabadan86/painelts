@@ -193,7 +193,7 @@
     }
     if (l.base.pendentes) b.append(h('p', { class: 'muted' }, `${l.base.pendentes} planilha(s) sendo processada(s)…`));
     const ocupado = ex && ['rodando', 'na_fila'].includes(ex.estado);
-    if (est.coletorAtivo && l.coletor.configurado) {
+    if (est.coletorAtivo && l.coletor.configurado && est.perfil === 'admin') { // só o admin roda o coletor
       const acoes = h('div', { class: 'cfg-acoes' });
       if (ocupado) acoes.append(acao('Cancelar o que está na fila', async () => { await api('POST', `/lojas/${l.id}/cancelar`); return 'Fila cancelada (a parte que já está rodando termina).'; }));
       else acoes.append(acao('Atualizar agora', async () => { await api('POST', `/lojas/${l.id}/rodar`); return 'Atualização na fila. Leva alguns minutos.'; }, 'btn primary'));
@@ -702,6 +702,7 @@
           else { await api('PUT', `/usuarios/${encodeURIComponent(u.nome)}`, corpo); state.cfgEdit = null; }
           return novo ? `Usuário criado.${corpo.senha ? ' Envie a senha para a pessoa.' : ''}` : 'Usuário atualizado.';
         }, 'btn primary'),
+        !novo && u.nome !== est.usuario ? acao('Encerrar sessões', async () => { await api('POST', `/usuarios/${encodeURIComponent(u.nome)}/encerrar-sessoes`); return `${u.nome} vai precisar entrar de novo em todos os aparelhos.`; }, 'btn') : null,
         !novo && u.nome !== est.usuario ? (abertos.has('delu:' + u.nome)
           ? acao(`Confirmar: excluir ${u.nome}`, async () => { await api('DELETE', `/usuarios/${encodeURIComponent(u.nome)}`); state.cfgEdit = null; abertos.delete('delu:' + u.nome); return 'Usuário excluído.'; }, 'btn danger')
           : h('button', { type: 'button', class: 'btn ghost-danger', onclick: () => { abertos.add('delu:' + u.nome); pintar(); } }, 'Excluir…')) : null));

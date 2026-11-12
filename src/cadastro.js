@@ -111,7 +111,7 @@ async function gravar(id, lista) {
     ws.addRow({ cpf: c.cpf, nome: c.nome, celular: c.celular, nasc: c.nascimento ? new Date(c.nascimento + 'T00:00:00Z') : null, email: c.email, cidade: c.cidade });
   }
   ws.getColumn('cpf').numFmt = '@';
-  C.gravarAtomico(arquivo(id), Buffer.from(await wb.xlsx.writeBuffer()), 0o644);
+  C.gravarAtomico(arquivo(id), Buffer.from(await wb.xlsx.writeBuffer()), 0o640);
 }
 
 /** junta o arquivo enviado com o cadastro atual e grava; devolve o resumo para mostrar na tela */

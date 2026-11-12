@@ -44,7 +44,7 @@ function gravarMes(id, ym, vendas) {
   if (!vendas.length) { try { fs.unlinkSync(f); } catch { /* ok */ } return; }
   vendas.sort((a, b) => (a.data < b.data ? -1 : a.data > b.data ? 1 : (a.cupom || 0) - (b.cupom || 0)));
   const json = JSON.stringify(vendas.map((v) => CAMPOS.map((c) => v[c] ?? null)));
-  C.gravarAtomico(f, zlib.gzipSync(json, { level: 6 }), 0o644);
+  C.gravarAtomico(f, zlib.gzipSync(json, { level: 6 }), 0o640);
 }
 
 /** todas as vendas da loja (em ordem de data) */
@@ -119,7 +119,7 @@ function registrar(id, item) {
   let lista = [];
   try { lista = JSON.parse(fs.readFileSync(f, 'utf8')); } catch { /* novo */ }
   lista.unshift(item);
-  C.gravarAtomico(f, JSON.stringify(lista.slice(0, 60), null, 1), 0o644);
+  C.gravarAtomico(f, JSON.stringify(lista.slice(0, 60), null, 1), 0o640);
 }
 function importacoes(id) {
   try { return JSON.parse(fs.readFileSync(path.join(pastaBase(id), 'importacoes.json'), 'utf8')); } catch { return []; }
@@ -164,7 +164,7 @@ const carimbo = () => new Date().toISOString().replace(/[-:]/g, '').replace('T',
 function receber(id, buf, { de, ate, origem } = {}) {
   const nome = `${carimbo()}${de && ate ? `_${de}_${ate}` : ''}_${(origem || 'upload').replace(/[^a-z0-9-]/gi, '')}.xlsx`;
   const f = path.join(pastaEntrada(id), nome);
-  C.gravarAtomico(f, buf, 0o644);
+  C.gravarAtomico(f, buf, 0o640);
   return nome;
 }
 

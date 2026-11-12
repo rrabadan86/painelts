@@ -37,9 +37,11 @@
     else if (e && e.estado === 'ok') { ic = 'ok'; txt = 'Última atualização concluída'; sub = `${hora(e.fim)} · ${e.gatilho === 'agendado' ? 'automática' : 'manual' + (e.por ? ' (' + e.por + ')' : '')}${e.duracao ? ' · ' + (e.duracao < 90 ? e.duracao + ' s' : Math.round(e.duracao / 60) + ' min') : ''}`; }
     else if (e && e.estado === 'falhou') { ic = 'falhou'; txt = 'A última execução falhou'; sub = `${hora(e.fim)} · ${e.conclusao === 'cancelled' ? 'cancelada' : 'veja o log abaixo ou avise o administrador'}`; }
     if (ic) pop.append(h('div', { class: 'script-status' }, h('span', { class: 'ic ' + ic }, ic === 'ok' ? '✓' : ic === 'falhou' ? '!' : '…'), h('span', null, txt, sub ? h('small', null, sub) : null)));
-    const rodar = h('button', { class: 'btn primary', type: 'button', disabled: ativo() || null }, ativo() ? 'Atualização em andamento' : 'Rodar agora');
-    rodar.addEventListener('click', disparar);
-    pop.append(rodar);
+    if (TS.eu && TS.eu.perfil === 'admin') { // só o admin roda a coleta
+      const rodar = h('button', { class: 'btn primary', type: 'button', disabled: ativo() || null }, ativo() ? 'Atualização em andamento' : 'Rodar agora');
+      rodar.addEventListener('click', disparar);
+      pop.append(rodar);
+    }
     if (e && e.url && e.estado === 'falhou') pop.append(h('div', { class: 'aviso' }, 'Detalhes no GitHub: ', h('a', { href: e.url, target: '_blank', rel: 'noopener' }, 'abrir execução')));
     if (e && e.log && e.log.length) pop.append(h('details', { class: 'aviso' }, h('summary', null, 'Ver o final do log'), h('pre', { class: 'script-log' }, e.log.join('\n'))));
     const hs = info.horarios && info.horarios.length ? info.horarios.join(' e ') : null;
@@ -80,7 +82,7 @@
     const b = pop.querySelector('.btn.primary');
     if (b) { b.disabled = true; b.textContent = 'Acionando…'; }
     try {
-      const r = await fetch('/api/script?loja=' + encodeURIComponent(state.loja), { method: 'POST', credentials: 'same-origin' });
+      const r = await fetch('/api/script?loja=' + encodeURIComponent(state.loja), { method: 'POST', credentials: 'same-origin', headers: { 'X-Painel': '1' } });
       const j = await r.json().catch(() => ({}));
       if (r.ok) { acompanhando = true; toast('Script acionado. Você pode continuar usando o painel.'); }
       else if (r.status === 409) { acompanhando = true; toast(j.erro || 'O script já está rodando.'); }

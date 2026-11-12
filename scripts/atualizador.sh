@@ -17,7 +17,8 @@ export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
 SIS="$DIR/dados/_sistema"
 mkdir -p "$SIS" || exit 1
-chmod 777 "$SIS" 2>/dev/null   # o painel (usuário 1000 no container) grava os pedidos aqui
+# o painel (usuário 1000 no container) grava os pedidos aqui: grupo 1000 em vez de liberar para todos
+if chgrp 1000 "$SIS" 2>/dev/null; then chmod 2770 "$SIS" 2>/dev/null; else chmod 777 "$SIS" 2>/dev/null; fi
 exec 9>"$SIS/.lock"
 flock -n 9 || exit 0           # já tem uma atualização rodando
 cd "$DIR" || exit 1

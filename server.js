@@ -1,4 +1,6 @@
 'use strict';
+// arquivos novos sem leitura para outros usuários da VPS (dados de clientes)
+process.umask(0o027);
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
@@ -32,26 +34,44 @@ if (!process.env.SESSION_SECRET) console.warn('⚠️  SESSION_SECRET não defin
 // ---------- sessão (cookie assinado) ----------
 const sign = (v) => crypto.createHmac('sha256', SECRET).update(v).digest('base64url');
 function makeToken(user) {
-  const payload = Buffer.from(JSON.stringify({ u: user, exp: Date.now() + SESSION_HOURS * 3600e3 })).toString('base64url');
+  const payload = Buffer.from(JSON.stringify({ u: user, exp: Date.now() + SESSION_HOURS * 3600e3, k: C.chaveSessao(C.get().usuarios[user]) })).toString('base64url');
   return `${payload}.${sign(payload)}`;
 }
+// cookies de quem clicou em "Sair" (valem até expirar; a lista se limpa sozinha)
+const encerrados = new Map(); // assinatura -> exp
 function readToken(tok) {
   if (!tok || !tok.includes('.')) return null;
   const [payload, sig] = tok.split('.');
   const good = sign(payload);
   if (sig.length !== good.length || !crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(good))) return null;
-  try { const p = JSON.parse(Buffer.from(payload, 'base64url').toString()); return p.exp > Date.now() ? p : null; } catch { return null; }
+  if (encerrados.has(sig)) return null;
+  try {
+    const p = JSON.parse(Buffer.from(payload, 'base64url').toString());
+    if (!(p.exp > Date.now())) return null;
+    // senha trocada, sessões encerradas pelo admin ou usuário recriado: o cookie antigo não vale mais
+    const u = C.get().usuarios[p.u];
+    if (!u || p.k !== C.chaveSessao(u)) return null;
+    return { ...p, sig };
+  } catch { return null; }
 }
 const cookies = (req) => Object.fromEntries((req.headers.cookie || '').split(';').map((c) => c.trim().split('=')).filter((x) => x[0]).map(([k, ...v]) => [k, decodeURIComponent(v.join('='))]));
 const safeEq = (a, b) => crypto.timingSafeEqual(crypto.createHash('sha256').update(String(a)).digest(), crypto.createHash('sha256').update(String(b)).digest());
 
+// tentativas de login erradas: por IP (10 em 15 min) e por usuário (8 em 15 min, de qualquer IP)
 const attempts = new Map();
-function tooMany(ip) {
+const JANELA = 15 * 60e3;
+function tooMany(chave, limite = 10) {
   const now = Date.now();
-  const a = (attempts.get(ip) || []).filter((t) => now - t < 15 * 60e3);
-  attempts.set(ip, a);
-  return a.length >= 10;
+  const a = (attempts.get(chave) || []).filter((t) => now - t < JANELA);
+  attempts.set(chave, a);
+  return a.length >= limite;
 }
+const falhou = (chave) => { const a = attempts.get(chave) || []; a.push(Date.now()); attempts.set(chave, a); };
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, a] of attempts) if (!a.length || now - a[a.length - 1] > JANELA) attempts.delete(k);
+  for (const [s, exp] of encerrados) if (exp < now) encerrados.delete(s);
+}, 5 * 60e3).unref();
 
 // ---------- cache por loja ----------
 const cacheLoja = new Map(); // id -> { sig, at, raw, loading }
@@ -130,7 +150,11 @@ app.use(compression());
 app.use((req, res, next) => {
   res.set({
     'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY', 'Referrer-Policy': 'same-origin',
-    'Content-Security-Policy': "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'",
+    'Content-Security-Policy': "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'",
+    'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), payment=()',
+    'Cross-Origin-Opener-Policy': 'same-origin',
+    // HTTPS sempre (só quando o painel roda atrás do HTTPS, COOKIE_SECURE=true)
+    ...(SECURE_COOKIE ? { 'Strict-Transport-Security': 'max-age=31536000; includeSubDomains' } : {}),
   });
   next();
 });
@@ -149,26 +173,33 @@ app.get('/vendor/jspdf.js', (req, res) => res.sendFile(JSPDF_JS));
 
 app.post('/login', express.urlencoded({ extended: false }), (req, res) => {
   const ip = req.ip;
-  if (tooMany(ip)) return res.redirect('/login?e=limite');
   const cfg = C.get();
-  const user = String(req.body.usuario || '').trim().toLowerCase();
-  const pass = String(req.body.senha || '');
-  const u = cfg.usuarios[user] || (cfg.usuarios['*'] ? cfg.usuarios['*'] : null);
-  if (u && u.ativo && C.expirado(u) && C.confereSenha(pass, u.senha)) {
-    attempts.delete(ip);
-    return res.redirect('/login?e=expirou&ate=' + u.acessoAte);
+  const user = String(req.body.usuario || '').trim().toLowerCase().slice(0, 80);
+  const pass = String(req.body.senha || '').slice(0, 200);
+  const chaveU = 'u:' + user;
+  if (tooMany(ip) || tooMany(chaveU, 8)) return res.redirect('/login?e=limite');
+  const u = user && user !== '*' ? cfg.usuarios[user] : null;
+  if (u && u.ativo && C.confereSenha(pass, u.senha)) {
+    if (C.expirado(u)) { attempts.delete(ip); attempts.delete(chaveU); return res.redirect('/login?e=expirou&ate=' + u.acessoAte); }
+    if (C.lojasDoUsuario(user).length || u.perfil === 'admin') {
+      attempts.delete(ip); attempts.delete(chaveU);
+      // senha antiga ainda em texto puro: passa a ser guardada com scrypt
+      if (String(u.senha).startsWith('plain$')) C.alterar((c) => { c.usuarios[user].senha = C.hashSenha(pass); });
+      C.registrarAcesso(user);
+      res.cookie('ts_sess', makeToken(user), { httpOnly: true, sameSite: 'lax', secure: SECURE_COOKIE, maxAge: SESSION_HOURS * 3600e3 });
+      return res.redirect(u.trocarSenha ? '/trocar-senha?primeiro=1' : '/');
+    }
   }
-  if (u && u.ativo && C.confereSenha(pass, u.senha) && (C.lojasDoUsuario(cfg.usuarios[user] ? user : '*').length || u.perfil === 'admin')) {
-    attempts.delete(ip);
-    C.registrarAcesso(cfg.usuarios[user] ? user : '*');
-    res.cookie('ts_sess', makeToken(cfg.usuarios[user] ? user : '*'), { httpOnly: true, sameSite: 'lax', secure: SECURE_COOKIE, maxAge: SESSION_HOURS * 3600e3 });
-    return res.redirect(cfg.usuarios[user] && u.trocarSenha ? '/trocar-senha?primeiro=1' : '/');
-  }
-  attempts.get(ip).push(Date.now());
+  falhou(ip); falhou(chaveU);
   const lojaQ = String(req.body.loja || '').toLowerCase().replace(/[^a-z0-9_-]/g, '');
   res.redirect('/login?e=1' + (lojaQ ? '&loja=' + lojaQ : ''));
 });
-app.post('/logout', (req, res) => { res.clearCookie('ts_sess'); res.redirect('/login'); });
+app.post('/logout', (req, res) => {
+  const s = readToken(cookies(req).ts_sess);
+  if (s) encerrados.set(s.sig, s.exp);
+  res.clearCookie('ts_sess', { httpOnly: true, sameSite: 'lax', secure: SECURE_COOKIE });
+  res.redirect('/login');
+});
 
 // ---------- upload do script diário (token, sem login) ----------
 app.post('/api/upload/:loja/:arquivo', express.raw({ type: () => true, limit: `${MAX_UPLOAD_MB}mb` }), async (req, res) => {
@@ -187,7 +218,7 @@ app.post('/api/upload/:loja/:arquivo', express.raw({ type: () => true, limit: `$
     if (C.ARQUIVOS[nome].tipo === 'vendas') {
       B.receber(loja.id, buf, { origem: 'api-' + nome }); // entra na base mês a mês (período = datas da planilha)
     } else {
-      C.gravarAtomico(path.join(C.pastaLoja(loja.id), `${nome}.xlsx`), buf, 0o644); // troca atômica
+      C.gravarAtomico(path.join(C.pastaLoja(loja.id), `${nome}.xlsx`), buf, 0o640); // troca atômica
     }
     console.log(`[upload] ${loja.id}/${nome}.xlsx (${(buf.length / 1024).toFixed(0)} KB)`);
     // já processa em segundo plano para o próximo acesso ser rápido
@@ -295,13 +326,15 @@ app.post('/trocar-senha', express.urlencoded({ extended: false }), (req, res) =>
   if (tooMany(ip)) return volta('limite');
   const u = C.get().usuarios[req.user];
   const atual = String(req.body.atual || ''), nova = String(req.body.nova || ''), confirma = String(req.body.confirma || '');
-  if (!C.confereSenha(atual, u.senha)) { attempts.get(ip).push(Date.now()); return volta('atual'); }
+  if (!C.confereSenha(atual, u.senha)) { falhou(ip); return volta('atual'); }
   if (nova.length < 8) return volta('curta');
   if (nova !== confirma) return volta('confirma');
   if (nova === atual) return volta('igual');
   if (nova.toLowerCase().includes(req.user.toLowerCase())) return volta('usuario-na-senha');
   C.alterar((cfg) => { const x = cfg.usuarios[req.user]; x.senha = C.hashSenha(nova); x.trocarSenha = false; x.senhaTrocadaEm = new Date().toISOString(); });
   C.auditar(req.user, 'trocou a própria senha', req.user, { obrigatoria: !!u.trocarSenha });
+  // a senha nova encerra as outras sessões; esta continua com um cookie novo
+  res.cookie('ts_sess', makeToken(req.user), { httpOnly: true, sameSite: 'lax', secure: SECURE_COOKIE, maxAge: SESSION_HOURS * 3600e3 });
   res.redirect('/?senha=ok');
 });
 
@@ -638,6 +671,8 @@ app.get('/api/script', async (req, res) => {
 });
 
 app.post('/api/script', async (req, res) => {
+  if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
+  if (req.perfil !== 'admin') return res.status(403).json({ erro: 'Só o administrador pode rodar a coleta.' });
   const loja = lojaDoPedido(req);
   if (!loja) return res.status(400).json({ erro: 'Loja inválida.' });
   if (COL.ativo()) {

@@ -161,7 +161,7 @@ async function atualizarBase(loja, fontes, avisos) {
 }
 const shaFile = (id) => path.join(C.pastaLoja(id), 'base', 'drive.json');
 function lerShas(id) { try { return JSON.parse(fs.readFileSync(shaFile(id), 'utf8')); } catch { return {}; } }
-function gravarShas(id, shas) { if (fs.existsSync(path.dirname(shaFile(id)))) C.gravarAtomico(shaFile(id), JSON.stringify(shas), 0o644); }
+function gravarShas(id, shas) { if (fs.existsSync(path.dirname(shaFile(id)))) C.gravarAtomico(shaFile(id), JSON.stringify(shas), 0o640); }
 
 async function linhasDeBuffer(buf, aba) {
   const wb = new ExcelJS.Workbook();

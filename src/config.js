@@ -43,13 +43,10 @@ function fromEnv() {
     Xml: e.FILE_XML, Dados_Clientes: e.FILE_CLIENTES, Meta: e.FILE_META,
   };
   for (const k of Object.keys(drive)) if (!drive[k] || drive[k] === '-') delete drive[k];
-  const usuarios = {};
-  (e.APP_USERS || '').split(',').map((s) => s.trim()).filter(Boolean).forEach((p) => {
-    const i = p.indexOf(':');
-    if (i > 0) usuarios[p.slice(0, i).trim().toLowerCase()] = { senha: 'plain$' + p.slice(i + 1), lojas: ['*'] };
-  });
-  if (e.APP_PASSWORD) usuarios['*'] = { senha: 'plain$' + e.APP_PASSWORD, lojas: ['*'] };
-  return { lojas: [{ id: 'loja', nome: 'Tea Shop', drive, meta: null }], usuarios, uploadToken: e.UPLOAD_TOKEN || null };
+  // usuários e senhas nunca vêm do .env (o antigo APP_USERS/APP_PASSWORD guardava senha em texto):
+  // crie com "node scripts/admin.js usuario <nome> <loja>"
+  if (e.APP_USERS || e.APP_PASSWORD) console.warn('⚠️  APP_USERS/APP_PASSWORD no .env não são mais usados: crie os usuários com scripts/admin.js.');
+  return { lojas: [{ id: 'loja', nome: 'Tea Shop', drive, meta: null }], usuarios: {}, uploadToken: e.UPLOAD_TOKEN || null };
 }
 
 function normalizar(cfg) {
@@ -92,6 +89,8 @@ function normalizar(cfg) {
       // senha provisória: no próximo login a pessoa cria a própria senha antes de usar o painel
       trocarSenha: v.trocarSenha === true,
       senhaTrocadaEm: typeof v.senhaTrocadaEm === 'string' ? v.senhaTrocadaEm : null,
+      // aumenta quando a senha muda ou o admin encerra as sessões: os cookies antigos deixam de valer
+      sessao: Number.isInteger(v.sessao) && v.sessao >= 0 ? v.sessao : 0,
     };
   }
   return { lojas, usuarios, uploadToken: cfg.uploadToken || process.env.UPLOAD_TOKEN || null };
@@ -150,9 +149,14 @@ function somaMeses(iso, n) {
   return alvo.toISOString().slice(0, 10);
 }
 
+/** chave da sessão: muda quando a senha muda, o admin encerra as sessões ou o usuário é recriado */
+function chaveSessao(u) {
+  return u ? crypto.createHash('sha256').update(`${u.criadoEm || ''}|${u.sessao || 0}|${u.senha || ''}`).digest('base64url').slice(0, 16) : '';
+}
+
 function lojasDoUsuario(user) {
   const cfg = get();
-  const u = cfg.usuarios[user] || cfg.usuarios['*'];
+  const u = cfg.usuarios[user];
   if (!u || !u.ativo || expirado(u)) return [];
   if (u.lojas.includes('*')) return cfg.lojas;
   return cfg.lojas.filter((l) => u.lojas.includes(l.id));
@@ -232,6 +236,6 @@ function metaDoMes(loja, ym) {
 }
 
 module.exports = {
-  get, hashSenha, confereSenha, lojasDoUsuario, pastaLoja, usuario, alterar, gravarAtomico, auditar, lerAuditoria,
+  get, hashSenha, confereSenha, chaveSessao, lojasDoUsuario, pastaLoja, usuario, alterar, gravarAtomico, auditar, lerAuditoria,
   registrarAcesso, lerAcessos, expirado, hojeBR, somaMeses, metaDoMes, PERFIS, TELAS, TELAS_GERENTE_PADRAO, telasDo, ARQUIVOS, CONFIG_FILE, CONFIG_DIR, COLETOR_DIR, DATA_DIR,
 };

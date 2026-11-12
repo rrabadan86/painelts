@@ -296,7 +296,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     res.json({ ok: true });
   });
 
-  r.post('/lojas/:id/rodar', lojaPermitida, async (req, res) => {
+  r.post('/lojas/:id/rodar', soAdmin, lojaPermitida, async (req, res) => {
     if (!COL.ativo()) return res.status(400).json({ erro: 'O coletor não está ligado nesta VPS.' });
     if (!lerEnv(req.loja.id)) return res.status(400).json({ erro: 'Cadastre primeiro o acesso ao AppNext desta loja.' });
     try {
@@ -307,7 +307,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     } catch (e) { res.status(502).json({ erro: e.message }); }
   });
 
-  r.post('/lojas/:id/historico', lojaPermitida, json, async (req, res) => {
+  r.post('/lojas/:id/historico', soAdmin, lojaPermitida, json, async (req, res) => {
     if (!COL.ativo()) return res.status(400).json({ erro: 'O coletor não está ligado nesta VPS.' });
     if (!lerEnv(req.loja.id)) return res.status(400).json({ erro: 'Cadastre primeiro o acesso ao AppNext desta loja.' });
     const { de, ate } = req.body || {};
@@ -333,7 +333,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     } catch (e) { res.status(502).json({ erro: e.message }); }
   });
 
-  r.post('/lojas/:id/cancelar', lojaPermitida, async (req, res) => {
+  r.post('/lojas/:id/cancelar', soAdmin, lojaPermitida, async (req, res) => {
     try {
       const x = await COL.cancelar(req.loja.id, req.user);
       aud(req, 'cancelou coleta', req.loja.id, { loja: req.loja.id });
@@ -359,7 +359,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     if (!Buffer.isBuffer(buf) || buf.length < 100 || buf[0] !== 0x50 || buf[1] !== 0x4b) return res.status(400).json({ erro: 'O arquivo não é uma planilha .xlsx.' });
     const nomeOrig = semQuebra(req.get('X-Arquivo') || '').slice(0, 80);
     if (tipo === 'vendas') B.receber(req.loja.id, buf, { origem: 'painel' });
-    else C.gravarAtomico(path.join(C.pastaLoja(req.loja.id), `${TIPOS[tipo]}.xlsx`), buf, 0o644);
+    else C.gravarAtomico(path.join(C.pastaLoja(req.loja.id), `${TIPOS[tipo]}.xlsx`), buf, 0o640);
     aud(req, 'enviou planilha', req.loja.id, { loja: req.loja.id, tipo, arquivo: nomeOrig, kb: Math.round(buf.length / 1024) });
     depois(req.loja.id);
     res.json({ ok: true });
@@ -639,6 +639,16 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     });
     aud(req, 'alterou usuário', nome, { perfil: d.perfil, lojas: d.lojas, telas: d.telas, ativo: d.ativo, acessoAte: d.acessoAte !== (alvo.acessoAte || null) ? d.acessoAte || 'sem prazo' : undefined, senha: senha ? 'redefinida' : undefined, trocarSenha: typeof req.body.trocarSenha === 'boolean' && req.body.trocarSenha !== !!alvo.trocarSenha ? req.body.trocarSenha : undefined, loja: d.lojas[0] });
     pacoteLimpar();
+    res.json({ ok: true });
+  });
+
+  // derruba todos os logins abertos da pessoa (ex.: celular perdido, saiu da empresa)
+  r.post('/usuarios/:nome/encerrar-sessoes', (req, res) => {
+    const nome = String(req.params.nome).toLowerCase();
+    if (!C.get().usuarios[nome]) return res.status(404).json({ erro: 'Usuário não encontrado.' });
+    if (!usuariosVisiveis(req).some((u) => u.nome === nome)) return res.status(403).json({ erro: 'Sem permissão.' });
+    C.alterar((cfg) => { const u = cfg.usuarios[nome]; u.sessao = (u.sessao || 0) + 1; });
+    aud(req, 'encerrou as sessões', nome, { loja: C.get().usuarios[nome].lojas[0] });
     res.json({ ok: true });
   });
 
