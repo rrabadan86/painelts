@@ -14,6 +14,7 @@ Coletor Tea Shop — roda o script de exportação do AppNext de cada loja na pr
   mês a mês (substitui só aquele período).
 - A rotina baixa só os últimos dias (padrão 7; /config/janela.txt, editado pelo painel, ou COLETOR_JANELA).
   Do dia 1 ao 5 de cada mês ela refaz também o mês anterior inteiro (fechamento de comissão e faturamento).
+  O botão do painel (atualização manual) baixa só ontem e hoje: é a atualização imediata.
 - Depois das vendas, baixa também os XMLs das notas do mesmo período (Fiscal → Gerar XML) e grava
   /data/<loja>/entrada/<carimbo>_<de>_<ate>_xml.json com o CPF de cada cupom (COLETOR_XML=0 desliga).
   No histórico dá para escolher "tipo": "vendas", "xml" ou "ambos".
@@ -178,9 +179,13 @@ def rodar(job):
     if job.get("de") and job.get("ate"):
         de, ate = job["de"], job["ate"]
     else:
-        ini = hoje - timedelta(days=janela())
-        if hoje.day <= 5:
-            ini = min(ini, (hoje.replace(day=1) - timedelta(days=1)).replace(day=1))
+        if job.get("gatilho") == "manual":
+            # botão do painel: atualização imediata, só ontem e hoje
+            ini = hoje - timedelta(days=1)
+        else:
+            ini = hoje - timedelta(days=janela())
+            if hoje.day <= 5:
+                ini = min(ini, (hoje.replace(day=1) - timedelta(days=1)).replace(day=1))
         de, ate = ini.isoformat(), hoje.isoformat()
     env.pop("DIAS_JANELA", None)
     env["DATA_INICIO"], env["DATA_FIM"] = br(de), br(ate)

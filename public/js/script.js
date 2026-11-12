@@ -25,7 +25,7 @@
     if (pop.hidden) return;
     pop.replaceChildren();
     pop.append(h('h3', null, 'Atualizar dados do sistema'),
-      h('p', null, 'Roda agora o script desta loja, que busca as vendas no AppNext e atualiza as planilhas. Leva alguns minutos; o painel recarrega sozinho quando terminar.'));
+      h('p', null, 'Busca agora no AppNext as vendas e as notas de ontem e de hoje desta loja. Leva poucos minutos; o painel recarrega sozinho quando terminar. As atualizações automáticas dos horários programados baixam os últimos dias inteiros.'));
     if (!info) { pop.append(h('p', null, 'Carregando…')); return; }
     if (!info.disponivel) { pop.append(h('div', { class: 'script-status' }, h('span', null, info.motivo))); return; }
     if (info.erro) pop.append(h('div', { class: 'script-status' }, h('span', { class: 'ic falhou' }, '!'), h('span', null, 'Não consegui consultar o GitHub.', h('small', null, info.erro))));
