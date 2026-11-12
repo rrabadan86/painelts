@@ -479,6 +479,15 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
       res.json({ ok: true });
     } catch (e) { res.status(500).json({ erro: e.message }); }
   });
+  // fechamento do dia: enviar agora para todos os destinatários (com os dados de hoje)
+  r.post('/notif/fechamento/enviar', soAdmin, async (req, res) => {
+    try {
+      const r2 = await NOTIF.enviarFechamento(obterIndicadores);
+      if (!r2.length) return res.status(400).json({ erro: 'Nenhum destinatário cadastrado (ou e-mail/Telegram não configurado).' });
+      aud(req, 'enviou fechamento do dia agora', 'notificações', { envios: r2.length, falhas: r2.filter((x) => !x.ok).map((x) => `${x.para}: ${x.erro}`) });
+      res.json({ ok: true, envios: r2 });
+    } catch (e) { res.status(500).json({ erro: e.message }); }
+  });
   r.get('/notif/previa', soAdmin, async (req, res) => {
     try { res.json({ texto: (await NOTIF.montarTexto([String(req.query.loja || '*')], obterIndicadores, NOTIF.ler().alertas)) || 'Sem dados.' }); } catch (e) { res.status(500).json({ erro: e.message }); }
   });

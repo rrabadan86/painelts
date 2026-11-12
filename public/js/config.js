@@ -696,7 +696,16 @@
       h('div', { class: 'cfg-grid' }, campo('Horário (Brasília)', feHora, 'Ex.: coleta às 23:00 → envio às 23:30.')),
       fe.ultimoEnvio ? h('p', { class: 'muted' }, `Último envio: ${dIso(fe.ultimoEnvio)}`) : null,
       h('div', { class: 'cfg-acoes' }, acao('Salvar', async () => { await api('PUT', '/notif', { fechamento: { ativo: feAtivo.checked, horario: feHora.value } }); await recarregar(); return 'Salvo.'; }, 'btn primary'),
-        h('button', { type: 'button', class: 'btn', onclick: () => TS.abrirFechamento(est.lojas.map((l) => ({ id: l.id, nome: l.nome })), state.loja && state.loja !== 'todas' ? state.loja : null) }, 'Ver mensagem'))));
+        h('button', { type: 'button', class: 'btn', onclick: () => TS.abrirFechamento(est.lojas.map((l) => ({ id: l.id, nome: l.nome })), state.loja && state.loja !== 'todas' ? state.loja : null) }, 'Ver mensagem'),
+        acao('Enviar agora', async () => {
+          const qtd = (n.email.configurado ? n.email.destinos.length : 0) + (n.telegram.configurado ? n.telegram.destinos.length : 0);
+          if (!qtd) throw new Error('Cadastre pelo menos um destinatário (e-mail ou Telegram) abaixo.');
+          if (!confirm(`Enviar agora o fechamento de hoje para ${qtd} destinatário(s)?`)) return null;
+          const r = await api('POST', '/notif/fechamento/enviar');
+          const ok = r.envios.filter((x) => x.ok), falhas = r.envios.filter((x) => !x.ok);
+          if (falhas.length) throw new Error(`Enviado para ${ok.length}; falhou para ${falhas.map((x) => `${x.para} (${x.erro})`).join(', ')}`);
+          return `Fechamento de hoje enviado para ${ok.length} destinatário(s): ${ok.map((x) => x.para).join(', ')}.`;
+        }, 'btn'))));
 
     // Telegram
     const token = inp({ type: 'password', autocomplete: 'off', placeholder: n.telegram.configurado ? '•••••••• (guardado — preencha só para trocar)' : '123456789:ABC…' });
