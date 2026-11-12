@@ -102,7 +102,7 @@ function ultimoDia(vendas, ate) {
 }
 
 // ---------- formatos para e-mail e Telegram ----------
-const brl = (x) => (x == null || !isFinite(x) ? '—' : 'R$ ' + x.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+const brl = (x) => (x == null || !isFinite(x) ? '—' : 'R$\u00a0' + x.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 const num = (x, c = 2) => (x == null || !isFinite(x) ? '—' : x.toLocaleString('pt-BR', { minimumFractionDigits: c, maximumFractionDigits: c }));
 const pct = (x) => (x == null || !isFinite(x) ? '—' : (x * 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%');
 const dataBr = (iso) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
@@ -136,9 +136,9 @@ function html(f) {
   const cor = (bom) => (bom == null ? '#1d2b22' : bom ? '#1F5FBF' : '#B5452B');
   const sec = (t) => `<tr><td colspan="3" style="background:#D9D4C7;font-weight:700;padding:6px 10px">${esc(t)}</td></tr>`;
   const lin = (rot, val, extra = '', { forte, corVal, corExtra } = {}) =>
-    `<tr><td style="padding:5px 10px;${forte ? 'font-weight:700;' : 'padding-left:24px;'}">${esc(rot)}</td><td style="padding:5px 10px;text-align:right;font-weight:700;color:${corVal || '#1d2b22'}">${esc(val)}</td><td style="padding:5px 10px;text-align:right;color:${corExtra || '#1d2b22'}">${esc(extra)}</td></tr>`;
+    `<tr><td style="padding:5px 10px;${forte ? 'font-weight:700;' : 'padding-left:24px;'}">${esc(rot)}</td><td style="padding:5px 10px;text-align:right;font-weight:700;white-space:nowrap;color:${corVal || '#1d2b22'}">${esc(val)}</td><td style="padding:5px 10px;text-align:right;color:${corExtra || '#1d2b22'}">${esc(extra)}</td></tr>`;
   const r = f.recalculo;
-  return `<table cellspacing="0" style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:13px;color:#1d2b22;min-width:440px;border:1px solid #D9D4C7">
+  return `<table cellspacing="0" style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:13px;color:#1d2b22;width:100%;max-width:620px;border:1px solid #D9D4C7">
 <tr><td colspan="3" style="background:#F3EBCF;color:#5b4a12;padding:7px 10px;font-size:12px">📊 Fechamento <b>automático</b> do <b>Painel Tea Shop</b>, com as vendas registradas no AppNext · desenvolvido por <b>Rodrigo Rabadan</b></td></tr>
 <tr><td colspan="3" style="background:#2C5234;color:#fff;padding:9px 10px;font-weight:700">${esc(f.loja.nome)} · fechamento de ${esc(nomeDia(f.dia))}, ${dataBr(f.dia)}</td></tr>
 ${f.vendedoras.length ? `<tr><td colspan="3" style="padding:6px 10px;color:#5b6b60">Vendedoras do dia: ${esc(f.vendedoras.map((v) => v.nome).join(', '))}</td></tr>` : ''}
@@ -156,7 +156,7 @@ ${lin('Itens Vendidos', f.itens, f.itensHist ? `hist. ${f.itensHist}` : '')}
 ${lin('TKM', brl(f.tkm), f.tkmHist ? `hist. ${brl(f.tkmHist)}` : '')}
 ${lin('IPA', num(f.ipa), f.ipaHist ? `hist. ${num(f.ipaHist)}` : '')}
 ${lin('PMA', brl(f.pma), f.pmaHist ? `hist. ${brl(f.pmaHist)}` : '')}
-${r ? sec('Meta do mês (acumulada até o dia)') + lin('Recálculo da Meta', brl(Math.abs(r.meta)), r.meta > 0 ? 'falta' : 'acima da meta', { forte: true, corVal: cor(r.meta <= 0) }) + lin('Recálculo da Super Meta', brl(Math.abs(r.superMeta)), r.superMeta > 0 ? 'falta' : 'acima da super meta', { forte: true, corVal: cor(r.superMeta <= 0) }) : ''}
+${r ? sec('Meta do mês (acumulada até o dia)') + lin('Recálculo da Meta', brl(Math.abs(r.meta)), r.meta > 0 ? 'falta' : 'acima', { forte: true, corVal: cor(r.meta <= 0) }) + lin('Recálculo da Super Meta', brl(Math.abs(r.superMeta)), r.superMeta > 0 ? 'falta' : 'acima', { forte: true, corVal: cor(r.superMeta <= 0) }) : ''}
 ${f.porDia ? lin('Para bater a meta do mês', `${brl(f.porDia.valor)}/dia`, `${f.porDia.dias} dias`) : ''}
 ${sec('Espaço Gourmet')}
 ${lin('Meta do dia EG', brl(f.eg.metaDia), pct(f.eg.pct), { forte: true })}

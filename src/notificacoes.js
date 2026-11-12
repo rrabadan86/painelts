@@ -136,7 +136,7 @@ async function montarFechamento(lojasIds, obter, dia) {
   if (!textos.length) return null;
   return {
     texto: `☕ Tea Shop · fechamento do dia\nGerado automaticamente pelo Painel Tea Shop com as vendas do AppNext · desenvolvido por Rodrigo Rabadan\n\n${textos.join('\n\n')}`,
-    html: `<div style="font-family:Arial,sans-serif"><p style="font-size:13px;color:#3d4a42;margin:0 0 12px">Este é o <b>fechamento automático do dia</b>, gerado pelo <b>Painel Tea Shop</b> com as vendas registradas no AppNext (não precisa preencher planilha). Desenvolvido por <b>Rodrigo Rabadan</b>.</p>${htmls.join('<div style="height:18px"></div>')}<p style="color:#7a857d;font-size:12px">Gerado automaticamente pelo painel com as vendas do AppNext · Desenvolvido por Rodrigo Rabadan</p></div>`,
+    html: `<div style="font-family:Arial,sans-serif">${htmls.join('<div style="height:18px"></div>')}<p style="color:#7a857d;font-size:12px">Não precisa responder: este e-mail é enviado todo dia pelo painel, no horário configurado.</p></div>`,
   };
 }
 async function enviarFechamento(obter, { soDestino, dia } = {}) {
