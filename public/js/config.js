@@ -15,6 +15,12 @@
   let timer = null;
   let raiz = null;
   const abertos = new Set(); // formulários abertos (sobrevivem à atualização)
+  /** <details> que continua aberto quando a tela se atualiza sozinha */
+  const detalhes = (chave, attrs, ...filhos) => {
+    const d = h('details', { ...attrs, open: abertos.has(chave) || null }, ...filhos);
+    d.addEventListener('toggle', () => { d.open ? abertos.add(chave) : abertos.delete(chave); });
+    return d;
+  };
 
   async function api(metodo, url, corpo, extras = {}) {
     const raw = corpo instanceof Blob || corpo instanceof ArrayBuffer;
@@ -164,20 +170,25 @@
           : ex.estado === 'ok' ? `Última coleta${ex.tipo === 'xml' ? ' (só XML)' : ''} OK em ${dt(ex.fim)}${per}` : `Última coleta${ex.tipo === 'xml' ? ' (só XML)' : ex.tipo ? ' de vendas' : ''} FALHOU em ${dt(ex.fim)}${per}`;
       b.append(h('p', { class: ex.estado === 'falhou' ? 'neg' : '' }, linha));
       if (ex.xml && ex.tipo !== 'xml' && ex.estado !== 'rodando' && ex.estado !== 'na_fila') b.append(h('p', { class: ex.xml.ok ? 'muted' : 'neg' }, ex.xml.ok ? 'XML das notas (CPF): baixado junto.' : 'XML das notas (CPF): falhou nesta coleta. As vendas não foram afetadas.'));
-      if ((ex.estado === 'falhou' || (ex.xml && !ex.xml.ok)) && ex.log && ex.log.length) b.append(h('details', null, h('summary', null, 'Ver o final do log'), h('pre', { class: 'script-log' }, ex.log.join('\n'))));
+      if (ex.log && ex.log.length && ex.estado !== 'rodando' && ex.estado !== 'na_fila') b.append(detalhes('log:' + l.id, { class: 'cfg-log' }, h('summary', null, 'Ver o final do log da última coleta'), h('pre', { class: 'script-log' }, ex.log.join('\n'))));
     }
     if (l.xml) {
       const x = l.xml;
       b.append(h('p', { class: 'muted' }, x.existe
         ? `XML das notas: ${fmt.int(x.notas)} notas com CPF/CNPJ, de ${dIso(x.de)} a ${dIso(x.ate)}${x.importacoes[0] ? ` · última importação em ${dt(x.importacoes[0].em)}` : ''}.`
         : 'XML das notas: ainda não importado. Use "Importar histórico" com "Só XML" de 06/2025 até hoje para a primeira carga.'));
+      const ui = x.importacoes && x.importacoes[0];
+      if (ui) b.append(h('p', { class: 'muted' }, `Última importação de XML: ${dIso(ui.de)} a ${dIso(ui.ate)} · ${ui.total == null ? '?' : fmt.int(ui.total)} notas, ${fmt.int(ui.comDoc)} com CPF/CNPJ.`));
+      if (x.pendentes) b.append(h('p', { class: 'muted' }, `${x.pendentes} arquivo(s) de XML sendo processado(s)…`));
+      if (x.erros && x.erros.length) b.append(h('p', { class: 'neg' }, `Arquivo(s) de XML com erro: ${x.erros.join(', ')}`));
     }
     if (lote && (!lote.fim || Date.now() - new Date(lote.fim).getTime() < 86400e3)) {
       const pct = Math.round((lote.feitas / lote.total) * 100);
       b.append(h('div', { class: 'cfg-lote' },
         h('div', null, `Importação do histórico ${dIso(lote.de)} a ${dIso(lote.ate)}: ${lote.feitas} de ${lote.total} partes${lote.cancelado ? ' (cancelada)' : lote.fim ? ' — concluída' : ''}`),
         h('div', { class: 'cfg-barra-prog' }, h('div', { style: { width: pct + '%' } })),
-        lote.falhas && lote.falhas.length ? h('div', { class: 'neg' }, `Falharam: ${lote.falhas.map((f) => `${dIso(f.de)} a ${dIso(f.ate)}`).join(', ')}. Rode de novo só esses períodos.`) : null));
+        lote.falhas && lote.falhas.length ? h('div', { class: 'neg' }, `Falharam: ${lote.falhas.map((f) => `${dIso(f.de)} a ${dIso(f.ate)}`).join(', ')}. Rode de novo só esses períodos.`) : null,
+        ...(lote.falhas || []).filter((f) => f.log && f.log.length).map((f) => detalhes(`falha:${l.id}:${f.de}`, { class: 'cfg-log' }, h('summary', null, `Ver o log da parte ${dIso(f.de)} a ${dIso(f.ate)}`), h('pre', { class: 'script-log' }, f.log.join('\n'))))));
     }
     if (l.base.pendentes) b.append(h('p', { class: 'muted' }, `${l.base.pendentes} planilha(s) sendo processada(s)…`));
     const ocupado = ex && ['rodando', 'na_fila'].includes(ex.estado);
@@ -190,9 +201,9 @@
     }
     // últimas importações
     if (l.base.importacoes.length) {
-      b.append(h('details', { class: 'cfg-imp' }, h('summary', null, 'Últimas importações'), h('div', { class: 'cfg-imp-wrap' },
+      b.append(detalhes('imp:' + l.id, { class: 'cfg-imp' }, h('summary', null, 'Últimas importações'), h('div', { class: 'cfg-imp-wrap' },
         h('table', { class: 't cfg-t' }, h('thead', null, h('tr', null, h('th', { class: 'l' }, 'Quando'), h('th', { class: 'l' }, 'Origem'), h('th', { class: 'l' }, 'Período'), h('th', null, 'Linhas'), h('th', null, 'Com hora'))),
-          h('tbody', null, l.base.importacoes.map((i) => h('tr', null, h('td', { class: 'l' }, dt(i.em)), h('td', { class: 'l' }, i.origem || '—'), h('td', { class: 'l' }, `${dIso(i.de)} a ${dIso(i.ate)}`), h('td', null, fmt.int(i.linhas)),
+          h('tbody', null, l.base.importacoes.map((i) => h('tr', null, h('td', { class: 'l nw' }, dt(i.em)), h('td', { class: 'l quebra' }, (i.origem || '—').replace(/_/g, ' ')), h('td', { class: 'l nw' }, dIso(i.de), h('br'), 'a ' + dIso(i.ate)), h('td', null, fmt.int(i.linhas)),
             h('td', { title: i.horasMantidas ? `A planilha veio sem hora; ${i.horasMantidas} linhas mantiveram a hora que já tinham` : '' }, i.comHora == null ? '—' : i.linhas ? fmt.pct(i.comHora / i.linhas, 0) + (i.horasMantidas ? ' *' : '') : '—'))))))));
     }
     return b;

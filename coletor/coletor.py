@@ -240,7 +240,7 @@ def rodar(job):
         if job["gatilho"] == "historico" and lote and not lote.get("fim"):
             lote["feitas"] += 1
             if not ok:
-                lote["falhas"].append({"de": de, "ate": ate, "codigo": str(codigo)})
+                lote["falhas"].append({"de": de, "ate": ate, "codigo": str(codigo), "log": cauda[-30:]})
             if lote["feitas"] >= lote["total"]:
                 lote["fim"] = datetime.now(TZ).isoformat()
         prox = next((j for j in fila if j["loja"] == loja), None)

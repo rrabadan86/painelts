@@ -93,7 +93,9 @@ function resumo(id) {
   const notas = Object.values(b.notas);
   let de = null, ate = null;
   for (const n of notas) { if (!de || n.d < de) de = n.d; if (!ate || n.d > ate) ate = n.d; }
-  return { existe: existe(id), notas: notas.length, de, ate, importacoes: (b.importacoes || []).slice(0, 10), pendentes: pendentes(id).length };
+  let erros = [];
+  try { erros = fs.readdirSync(pastaEntrada(id)).filter((f) => /_xml\.json\.erro$/i.test(f)).sort().slice(-5); } catch { /* ok */ }
+  return { existe: existe(id), notas: notas.length, de, ate, importacoes: (b.importacoes || []).slice(0, 10), pendentes: pendentes(id).length, erros };
 }
 
 module.exports = { existe, assinatura, pendentes, processar, ler, resumo, importar };

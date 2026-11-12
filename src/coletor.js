@@ -33,7 +33,7 @@ function execucao(s, comLog) {
   return {
     estado: u.ok ? 'ok' : 'falhou', conclusao: u.ok ? 'success' : String(u.codigo), gatilho: u.gatilho, por: u.por,
     inicio: u.inicio, criado: u.criado, fim: u.fim, duracao: u.duracao_s, de: u.de, ate: u.ate, tipo: u.tipo, xml: u.xml || null,
-    log: (!u.ok || (u.xml && !u.xml.ok)) && comLog ? u.log : undefined,
+    log: comLog ? u.log : undefined,
   };
 }
 
