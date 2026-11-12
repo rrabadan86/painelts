@@ -730,8 +730,8 @@
 
     // e-mail
     const e = n.email;
-    const host = inp({ value: e.host, placeholder: 'smtp.gmail.com' }), port = inp({ type: 'number', value: e.port || 587 }), user = inp({ value: e.user, autocomplete: 'off' });
-    const pass = inp({ type: 'password', autocomplete: 'new-password', placeholder: e.temSenha ? '•••••••• (guardada)' : '' }), from = inp({ value: e.from, placeholder: 'Tea Shop <seuemail@gmail.com>' });
+    const host = inp({ value: e.host, placeholder: 'ex.: smtp.gmail.com' }), port = inp({ type: 'number', value: e.port || 587 }), user = inp({ value: e.user, autocomplete: 'off' });
+    const pass = inp({ type: 'password', autocomplete: 'new-password', placeholder: e.temSenha ? '•••••••• (guardada)' : '' }), from = inp({ value: e.from, placeholder: 'ex.: Tea Shop <seuemail@gmail.com>' });
     const sec = h('input', { type: 'checkbox', checked: e.secure || null });
     const novoEmail = inp({ type: 'email', placeholder: 'pessoa@email.com' }), novoNome = inp({ placeholder: 'Nome' }), novoLojas = selLojas(['*']);
     const em = h('div', { class: 'card cfg-form' }, h('div', { class: 'card-title' }, 'E-mail'),
@@ -753,7 +753,15 @@
         h('button', { type: 'button', class: 'btn', onclick: () => { host.value = 'smtp.gmail.com'; port.value = 587; sec.checked = false; if (!from.value && user.value) from.value = `Tea Shop <${user.value}>`; user.focus(); toast('Servidor e porta do Gmail preenchidos. Complete usuário, senha de app e remetente.'); } }, 'Preencher para Gmail')),
       h('div', { class: 'cfg-grid' }, campo('Servidor (SMTP)', host), campo('Porta', port), campo('Usuário', user), campo('Senha', pass), campo('Remetente', from)),
       h('label', { class: 'cfg-check-l' }, sec, ' Conexão segura direta (porta 465)'),
-      h('div', { class: 'cfg-acoes' }, acao('Salvar servidor', async () => { await api('PUT', '/notif', { email: { host: host.value, port: port.value, user: user.value, pass: pass.value || undefined, from: from.value, secure: sec.checked } }); await recarregar(); return 'Servidor salvo.'; }, 'btn primary')));
+      h('div', { class: 'cfg-acoes' }, acao('Salvar servidor', async () => {
+        // Gmail sem servidor preenchido: completa sozinho (o cinza no campo é só um exemplo)
+        if (!host.value.trim() && /@gmail\.com$/i.test(user.value.trim())) { host.value = 'smtp.gmail.com'; if (!port.value) port.value = 587; }
+        if (!host.value.trim()) throw new Error('Preencha o Servidor (SMTP). Para Gmail: smtp.gmail.com (ou clique em "Preencher para Gmail").');
+        if (!from.value.trim()) { if (user.value.trim()) from.value = `Tea Shop <${user.value.trim()}>`; else throw new Error('Preencha o Remetente.'); }
+        await api('PUT', '/notif', { email: { host: host.value, port: port.value, user: user.value, pass: pass.value || undefined, from: from.value, secure: sec.checked } }); await recarregar();
+        return 'Servidor salvo. Agora cadastre os destinatários logo abaixo.';
+      }, 'btn primary')));
+    if (!e.configurado) em.append(h('div', { class: 'notice', style: { marginTop: '14px' } }, h('b', null, 'Destinatários: '), e.host ? 'preencha também o Remetente e clique em "Salvar servidor".' : 'o Servidor (SMTP) ainda está vazio. Preencha (Gmail: smtp.gmail.com) e clique em "Salvar servidor"; logo depois aparece aqui o campo para adicionar quem recebe.'));
     if (e.configurado) {
       em.append(h('div', { class: 'f-label', style: { marginTop: '14px' } }, 'Adicionar destinatário'),
         h('div', { class: 'cfg-grid' }, campo('E-mail', novoEmail), campo('Nome', novoNome)), campo('Recebe as lojas', novoLojas),

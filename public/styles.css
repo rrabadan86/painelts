@@ -785,3 +785,4 @@ body.com-camada { overflow: hidden; }
 .t.t-compacta th:nth-child(4), .t.t-compacta td:nth-child(4) { width: 33%; padding-right: 10px; }
 .t.t-compacta th .arrow { margin-left: 2px; }
 .card-cheio .t.t-compacta { table-layout: auto; font-size: 13px; }
+.cfg-form input.f-input::placeholder { color: #A9A397; font-style: italic; }
