@@ -418,44 +418,71 @@ app.get('/api/fechamento', async (req, res) => {
   } catch (e) { res.status(500).json({ erro: e.message }); }
 });
 
-// ---------- fechamento do mês para a contabilidade (e-mail com o PDF anexado) ----------
-// admin, franqueado e gerente com a tela Comissionamento; sai do Gmail da loja
+// ---------- envios para a contabilidade (só admin e franqueado; saem do Gmail da loja) ----------
+// 1) fechamento do mês (comissões) com o PDF anexado  2) faturamento do mês com os XMLs das notas
+const XA = require('./src/xmlarquivos');
 const EMAIL_OK = /^[^\s@<>,;"]+@[^\s@<>,;"]+\.[^\s@<>,;"]+$/;
-app.post('/api/contabilidade/enviar', express.json({ limit: '16mb' }), async (req, res) => {
-  if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
-  const telas = C.telasDo(C.usuario(req.user));
-  const pode = req.perfil === 'admin' || req.perfil === 'franqueado' || (req.perfil === 'gerente' && (telas || []).includes('comissionamento'));
-  if (!pode) return res.status(403).json({ erro: 'Sem permissão.' });
-  const loja = req.lojas.find((l) => l.id === String((req.body || {}).loja || ''));
-  if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
-  const { para, assunto, html, pdf, nomePdf, ym } = req.body || {};
-  const lista = [...new Set((Array.isArray(para) ? para : String(para || '').split(/[,;\s]+/)).map((e) => String(e).trim().toLowerCase()).filter(Boolean))];
-  if (!lista.length) return res.status(400).json({ erro: 'Informe o e-mail da contabilidade.' });
-  if (lista.length > 10) return res.status(400).json({ erro: 'No máximo 10 destinatários.' });
+const podeContabilidade = (req) => req.perfil === 'admin' || req.perfil === 'franqueado';
+/** confere o pedido; devolve { loja, lista, sub, corpo, smtp, ym } ou responde o erro */
+function pedidoContabilidade(req, res) {
+  if (req.get('X-Painel') !== '1') { res.status(403).json({ erro: 'Pedido inválido.' }); return null; }
+  if (!podeContabilidade(req)) { res.status(403).json({ erro: 'Só admin e franqueado enviam para a contabilidade.' }); return null; }
+  const b = req.body || {};
+  const loja = req.lojas.find((l) => l.id === String(b.loja || ''));
+  if (!loja) { res.status(400).json({ erro: 'Escolha uma loja.' }); return null; }
+  const lista = [...new Set((Array.isArray(b.para) ? b.para : String(b.para || '').split(/[,;\s]+/)).map((e) => String(e).trim().toLowerCase()).filter(Boolean))];
+  if (!lista.length) { res.status(400).json({ erro: 'Informe o e-mail da contabilidade.' }); return null; }
+  if (lista.length > 10) { res.status(400).json({ erro: 'No máximo 10 destinatários.' }); return null; }
   const ruim = lista.find((e) => !EMAIL_OK.test(e) || e.length > 120);
-  if (ruim) return res.status(400).json({ erro: `E-mail inválido: ${ruim}` });
-  const sub = String(assunto || '').replace(/[\r\n]/g, ' ').trim().slice(0, 200);
-  if (!sub) return res.status(400).json({ erro: 'Informe o assunto.' });
-  if (typeof html !== 'string' || !html || html.length > 400000) return res.status(400).json({ erro: 'Corpo do e-mail inválido.' });
-  let anexo = null;
-  if (pdf) {
-    const buf = Buffer.from(String(pdf), 'base64');
-    if (buf.length > 12 * 1024 * 1024 || buf.subarray(0, 5).toString() !== '%PDF-') return res.status(400).json({ erro: 'PDF inválido.' });
-    anexo = { filename: String(nomePdf || 'fechamento.pdf').replace(/[^\w.\-]+/g, '_').slice(0, 80).replace(/(?<!\.pdf)$/i, '.pdf'), content: buf, contentType: 'application/pdf' };
-  }
+  if (ruim) { res.status(400).json({ erro: `E-mail inválido: ${ruim}` }); return null; }
+  const sub = String(b.assunto || '').replace(/[\r\n]/g, ' ').trim().slice(0, 200);
+  if (!sub) { res.status(400).json({ erro: 'Informe o assunto.' }); return null; }
+  if (typeof b.html !== 'string' || !b.html || b.html.length > 400000) { res.status(400).json({ erro: 'Corpo do e-mail inválido.' }); return null; }
+  const ym = /^\d{4}-\d{2}$/.test(b.ym || '') ? b.ym : null;
   const NOTIF = require('./src/notificacoes');
   const nc = NOTIF.ler();
   const x = NOTIF.cfgLoja(nc, loja.id);
   const smtp = x.email && x.email.host && x.email.from ? x.email : nc.email && nc.email.host && nc.email.from ? nc.email : null;
-  if (!smtp) return res.status(400).json({ erro: 'A loja ainda não tem o Gmail configurado (Configurações → Lojas → Fechamento do dia).' });
+  if (!smtp) { res.status(400).json({ erro: 'A loja ainda não tem o Gmail configurado (Configurações → Lojas → Fechamento do dia).' }); return null; }
   // tira scripts e eventos do corpo (vai como e-mail; nada disso funciona lá)
-  const corpo = html.replace(/<script[\s\S]*?<\/script>/gi, '').replace(/\son\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '');
-  try {
-    await NOTIF.enviarEmail(lista.join(', '), sub, sub, corpo, smtp, anexo ? [anexo] : null);
-  } catch (e) { return res.status(502).json({ erro: `Não foi possível enviar: ${e.message}` }); }
-  C.alterar((cfg) => { const l = cfg.lojas.find((y) => y.id === loja.id); if (l) l.contabilidade = lista; });
-  C.auditar(req.user, 'enviou fechamento do mês para a contabilidade', loja.id, { loja: loja.id, ym: /^\d{4}-\d{2}$/.test(ym || '') ? ym : undefined, para: lista });
-  res.json({ ok: true, para: lista });
+  const corpo = b.html.replace(/<script[\s\S]*?<\/script>/gi, '').replace(/\son\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '');
+  return { loja, lista, sub, corpo, smtp, ym, NOTIF };
+}
+async function enviarContabilidade(req, res, p, anexos, acao) {
+  try { await p.NOTIF.enviarEmail(p.lista.join(', '), p.sub, p.sub, p.corpo, p.smtp, anexos); }
+  catch (e) { return res.status(502).json({ erro: `Não foi possível enviar: ${e.message}` }); }
+  C.alterar((cfg) => { const l = cfg.lojas.find((y) => y.id === p.loja.id); if (l) l.contabilidade = p.lista; });
+  C.auditar(req.user, acao, p.loja.id, { loja: p.loja.id, ym: p.ym || undefined, para: p.lista });
+  res.json({ ok: true, para: p.lista });
+}
+const nomeArq = (n, ext) => String(n || 'arquivo').replace(/[^\w.\-]+/g, '_').replace(new RegExp(`(\\.${ext})?$`, 'i'), '').slice(0, 80) + '.' + ext;
+app.post('/api/contabilidade/enviar', express.json({ limit: '16mb' }), async (req, res) => {
+  const p = pedidoContabilidade(req, res);
+  if (!p) return;
+  let anexos = null;
+  if (req.body.pdf) {
+    const buf = Buffer.from(String(req.body.pdf), 'base64');
+    if (buf.length > 12 * 1024 * 1024 || buf.subarray(0, 5).toString() !== '%PDF-') return res.status(400).json({ erro: 'PDF inválido.' });
+    anexos = [{ filename: nomeArq(req.body.nomePdf || 'fechamento', 'pdf'), content: buf, contentType: 'application/pdf' }];
+  }
+  await enviarContabilidade(req, res, p, anexos, 'enviou fechamento do mês para a contabilidade');
+});
+// faturamento: resumo dos XMLs guardados e envio com o .zip
+app.get('/api/xmls/resumo', (req, res) => {
+  if (!podeContabilidade(req)) return res.status(403).json({ erro: 'Sem permissão.' });
+  const loja = req.lojas.find((l) => l.id === String(req.query.loja || ''));
+  if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  try { res.json(XA.resumo(loja.id, String(req.query.ym || ''))); } catch (e) { res.status(400).json({ erro: e.message }); }
+});
+app.post('/api/faturamento/enviar', express.json({ limit: '1mb' }), async (req, res) => {
+  const p = pedidoContabilidade(req, res);
+  if (!p) return;
+  if (!p.ym) return res.status(400).json({ erro: 'Mês inválido.' });
+  const r = XA.resumo(p.loja.id, p.ym);
+  if (!r.ativos.notas && !r.cancelados.notas) return res.status(400).json({ erro: 'Ainda não há XMLs guardados deste mês. Importe o XML do mês em Configurações → Coletor → Histórico ("Só XML").' });
+  const zip = await XA.zipar(p.loja.id, p.ym);
+  if (zip.length > 24 * 1024 * 1024) return res.status(400).json({ erro: `O .zip ficou com ${Math.round(zip.length / 1024 / 1024)} MB; o Gmail aceita até 25 MB.` });
+  await enviarContabilidade(req, res, p, [{ filename: nomeArq(req.body.nomeZip || `xml-${p.loja.id}-${p.ym}`, 'zip'), content: zip, contentType: 'application/zip' }], 'enviou faturamento do mês (XML) para a contabilidade');
 });
 
 // ---------- feriados trabalhados (horas por pessoa; vão para o PDF do fechamento) ----------

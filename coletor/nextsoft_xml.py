@@ -4,6 +4,7 @@
 #   1) Login e troca de loja (mesmas funções do nextsoft_export_to_drive.py)
 #   2) Fiscal → Gerar XML (https://www.appnext.com.br/#/fiscal/gerador-xml)
 #   3) Abre os filtros (funil), escolhe Tipo "Todos" e Situação "Ativos" e clica em Gerar
+#      (os cancelados vêm repetindo o pedido com cancelado:true; os XMLs ficam em dados/<loja>/xmls/AAAA-MM/)
 #      → o AppNext baixa um .zip com um XML por nota
 #   4) O pedido que o botão Gerar fez é repetido mês a mês para o período pedido
 #      (DATA_INICIO a DATA_FIM), assim não é preciso clicar no calendário
@@ -113,16 +114,73 @@ def ler_nota(conteudo: bytes):
     }
 
 
-def ler_zip(dados: bytes, notas: dict):
+def ler_zip(dados: bytes, notas: dict, brutos: list = None):
+    """notas: chave -> dados da nota; brutos (opcional): [(nome, bytes, nota ou None)] com todos os XMLs"""
     with zipfile.ZipFile(io.BytesIO(dados)) as z:
         for nome in z.namelist():
             b = z.read(nome)
             if nome.lower().endswith(".zip"):
-                ler_zip(b, notas)
+                ler_zip(b, notas, brutos)
             elif nome.lower().endswith(".xml"):
                 n = ler_nota(b)
                 if n:
                     notas[n["chave"] or f"{n['mod']}-{n['serie']}-{n['cupom']}"] = n
+                if brutos is not None:
+                    brutos.append((nome, b, n))
+
+
+# ---------------- XMLs originais (vão para a contabilidade) ----------------
+# dados/<loja>/xmls/AAAA-MM/{ativos,cancelados}/AAAAMMDD_<chave>.xml
+PASTA_XMLS = Path(os.getenv("PASTA_XMLS") or (Path(SAIDA_XML).parent.parent / "xmls"))
+RE_CHAVE = re.compile(rb"<chNFe>(\d{44})</chNFe>")
+RE_DH = re.compile(rb"<(?:dhEvento|dhRegEvento|dhEmi)>(\d{4})-(\d{2})-(\d{2})")
+
+
+def guardar_xmls(brutos, situacao: str, ini: date, fim: date):
+    """grava os XMLs do período; quando o período começa no dia 1, substitui o que havia até 'fim'"""
+    meses = {}
+    for nome, b, n in brutos:
+        if n:
+            dia, chave = n["data"].replace("-", ""), n["chave"] or f"{n['mod']}-{n['serie']}-{n['cupom']}"
+        else:  # evento (cancelamento etc.): chave da nota + data do evento
+            m, d = RE_CHAVE.search(b), RE_DH.search(b)
+            dia = b"".join(d.groups()).decode() if d else ini.strftime("%Y%m%d")
+            chave = "evento_" + (m.group(1).decode() if m else re.sub(r"[^\w.-]+", "_", Path(nome).stem)[:60])
+        meses.setdefault(f"{dia[:4]}-{dia[4:6]}", []).append((f"{dia}_{chave}.xml", b))
+    if ini.day == 1:
+        meses.setdefault(ini.strftime("%Y-%m"), [])
+    for ym, arqs in meses.items():
+        pasta = PASTA_XMLS / ym / situacao
+        pasta.mkdir(parents=True, exist_ok=True)
+        if ini.day == 1 and ym == ini.strftime("%Y-%m"):
+            limite = fim.strftime("%Y%m%d")
+            for velho in pasta.glob("*.xml"):
+                if velho.name[:8] <= limite:
+                    velho.unlink()
+        for nome, b in arqs:
+            tmp = pasta / (nome + ".tmp")
+            tmp.write_bytes(b)
+            tmp.replace(pasta / nome)
+
+
+def pedir_zip(page, ref, cab, a, b, corpo_base):
+    url_nova = trocar_datas(ref.url, a, b)
+    corpo = trocar_datas(corpo_base, a, b) if corpo_base else None
+    if url_nova is None and corpo is None:
+        raise RuntimeError("Não achei as datas no pedido do Gerar para trocar.")
+    url = url_nova or ref.url
+    if corpo is None:
+        corpo = corpo_base
+    resp = page.request.fetch(url, method=ref.method, headers=cab, data=corpo, timeout=300_000)
+    dados = resp.body()
+    if not resp.ok:
+        raise RuntimeError(f"{a:%m/%Y}: AppNext respondeu {resp.status}")
+    if not dados.startswith(b"PK"):
+        dados = desembrulhar(page, dados)
+        if not dados.startswith(b"PK"):
+            # não aceita "sem notas" às cegas: pode ser o pedido errado
+            raise RuntimeError(f"{a:%m/%Y}: a resposta não é um .zip ({resp.headers.get('content-type', '')}): {dados[:200]!r}")
+    return dados
 
 
 # ---------------- AppNext ----------------
@@ -323,26 +381,28 @@ def main():
             if not ref:
                 raise RuntimeError("Sem o pedido de referência não dá para escolher o período. Veja os pedidos listados acima.")
             cab = {k: v for k, v in ref.headers.items() if k.lower() not in ("content-length", "host", "cookie", "accept-encoding")}
+            # o pedido de referência é o de "Ativos" (cancelado:false); os cancelados vêm do mesmo pedido com cancelado:true
+            corpo_canc = None
+            if ref.post_data and re.search(r'"cancelado"\s*:\s*false', ref.post_data):
+                corpo_canc = re.sub(r'"cancelado"\s*:\s*false', '"cancelado":true', ref.post_data)
+            else:
+                log("Aviso: não achei 'cancelado' no pedido do Gerar; só os XMLs ativos serão guardados.")
             for a, b in janelas(INI, FIM):
-                url_nova = trocar_datas(ref.url, a, b)
-                corpo = trocar_datas(ref.post_data, a, b) if ref.post_data else None
-                if url_nova is None and corpo is None:
-                    raise RuntimeError("Não achei as datas no pedido do Gerar para trocar.")
-                url = url_nova or ref.url
-                if corpo is None:
-                    corpo = ref.post_data
-                resp = page.request.fetch(url, method=ref.method, headers=cab, data=corpo, timeout=300_000)
-                dados = resp.body()
-                if not resp.ok:
-                    raise RuntimeError(f"{a:%m/%Y}: AppNext respondeu {resp.status}")
-                if not dados.startswith(b"PK"):
-                    dados = desembrulhar(page, dados)
-                    if not dados.startswith(b"PK"):
-                        # não aceita "sem notas" às cegas: pode ser o pedido errado
-                        raise RuntimeError(f"{a:%m/%Y}: a resposta não é um .zip ({resp.headers.get('content-type', '')}): {dados[:200]!r}")
+                dados = pedir_zip(page, ref, cab, a, b, ref.post_data)
                 antes_n = len(notas)
-                ler_zip(dados, notas)
-                log(f"{a:%m/%Y}: {len(notas) - antes_n} notas ({len(dados) // 1024} KB)")
+                brutos = []
+                ler_zip(dados, notas, brutos)
+                guardar_xmls(brutos, "ativos", a, b)
+                txt = f"{a:%m/%Y}: {len(notas) - antes_n} notas ativas ({len(dados) // 1024} KB)"
+                if corpo_canc:
+                    dc = pedir_zip(page, ref, cab, a, b, corpo_canc)
+                    canc, bc = {}, []
+                    ler_zip(dc, canc, bc)
+                    # se o AppNext devolver todas, fica só o que não está entre as ativas
+                    bc = [x for x in bc if not (x[2] and (x[2]["chave"] or "") in notas)]
+                    guardar_xmls(bc, "cancelados", a, b)
+                    txt += f" · {sum(1 for x in bc if x[2])} canceladas ({len(bc)} XMLs)"
+                log(txt)
             # o zip baixado pelo clique é do período que estava na tela (não do pedido): só serve de conferência
             if ref_bytes.startswith(b"PK"):
                 conf = {}
