@@ -166,6 +166,7 @@
       TS.eu = eu;
       TS.lojas = eu.lojas || [];
       configurarAbas(eu);
+      TS.sistemaInit && TS.sistemaInit(eu);
       const salvo = localStorage.getItem(TS.demo ? 'teashop.demo.loja' : 'teashop.loja');
       const ids = TS.lojas.map((l) => l.id);
       if (TS.lojas.length > 1) ids.push('todas');

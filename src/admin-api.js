@@ -565,6 +565,39 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     res.json({ ok: true });
   });
 
+  // ---------- atualização do sistema (o atualizador roda na VPS, fora do container) ----------
+  const SIS = path.join(C.DATA_DIR, '_sistema');
+  const lerTxt = (f) => { try { return fs.readFileSync(path.join(SIS, f), 'utf8'); } catch { return null; } };
+  function sistema() {
+    const v = lerTxt('versao.txt');
+    const st = lerTxt('status.txt');
+    const out = { instalado: false, verificado: null, atual: null, novidades: [], status: null, pedido: fs.existsSync(path.join(SIS, 'atualizar.pedido')) };
+    if (v) {
+      out.instalado = true;
+      for (const linha of v.split('\n')) {
+        const c = linha.split('\t');
+        if (c[0] === 'verificado') out.verificado = c[1] || null;
+        else if (c[0] === 'atual') out.atual = { sha: c[1], data: c[2], msg: (c.slice(3).join('\t') || '').slice(0, 300) };
+        else if (c[0] === 'novo' && out.novidades.length < 60) out.novidades.push({ sha: c[1], data: c[2], msg: (c.slice(3).join('\t') || '').slice(0, 300) });
+      }
+      // sem verificação há mais de 20 min: o cron do atualizador parou
+      out.parado = !out.verificado || Date.now() - Date.parse(out.verificado) > 20 * 60e3;
+    }
+    if (st) { const c = st.trim().split('\t'); out.status = { estado: c[0], em: c[1], msg: (c[2] || '').slice(0, 300) }; }
+    return out;
+  }
+  r.get('/sistema', soAdmin, (req, res) => res.json(sistema()));
+  r.post('/sistema/:acao', soAdmin, (req, res) => {
+    const acao = req.params.acao;
+    if (!['atualizar', 'verificar'].includes(acao)) return res.status(404).json({ erro: 'Ação inválida.' });
+    const s = sistema();
+    if (!s.instalado) return res.status(400).json({ erro: 'O atualizador ainda não foi instalado na VPS.' });
+    if (acao === 'atualizar' && s.status && s.status.estado === 'atualizando') return res.status(409).json({ erro: 'Já tem uma atualização em andamento.' });
+    try { fs.writeFileSync(path.join(SIS, `${acao}.pedido`), `${req.user} ${new Date().toISOString()}\n`); } catch (e) { return res.status(500).json({ erro: 'Não consegui gravar o pedido: ' + e.message }); }
+    if (acao === 'atualizar') aud(req, 'pediu atualização do painel', 'sistema', { de: s.atual && s.atual.sha, novidades: s.novidades.length });
+    res.json({ ok: true });
+  });
+
   app.use('/api/admin', r);
 }
 

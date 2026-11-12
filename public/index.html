@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Tea Shop · Painel de vendas</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/styles.css?v=20261112za">
+  <link rel="stylesheet" href="/styles.css?v=20261112zb">
 </head>
 <body>
   <header class="topbar">
@@ -31,8 +31,8 @@
     </nav>
     <div class="topbar-right">
       <select class="loja-sel" id="lojaSel" aria-label="Loja" hidden></select>
-      <div class="updated" id="updated" title="Quando os dados foram lidos do Google Drive">—</div>
-      <button class="icon-btn" id="btnAtualizar" title="Buscar dados novos no Drive" aria-label="Atualizar dados">
+      <div class="updated" id="updated" title="Quando os dados foram carregados">—</div>
+      <button class="icon-btn" id="btnAtualizar" title="Recarregar os dados" aria-label="Recarregar os dados">
         <svg viewBox="0 0 24 24" width="20" height="20"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v5h-5" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>
       <div class="script-wrap">
@@ -41,6 +41,13 @@
           <span class="dot" hidden></span>
         </button>
         <div class="script-pop" id="scriptPop" role="dialog" aria-label="Atualizar dados do sistema" hidden></div>
+      </div>
+      <div class="script-wrap sis-wrap">
+        <button class="icon-btn" id="btnSistema" title="Atualizações do painel" aria-label="Atualizações do painel" aria-haspopup="dialog" hidden>
+          <svg viewBox="0 0 24 24" width="20" height="20"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2" fill="none"/><path d="M12 16V8M8.5 11.5 12 8l3.5 3.5" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span class="sis-n" hidden></span>
+        </button>
+        <div class="script-pop sis-pop" id="sistemaPop" role="dialog" aria-label="Atualizações do painel" hidden></div>
       </div>
       <form method="post" action="/logout" class="logout-form">
         <button class="icon-btn" title="Sair" aria-label="Sair">
@@ -72,16 +79,17 @@
   <div class="tooltip" id="tooltip" role="tooltip"></div>
 
   <script src="/vendor/chart.umd.js"></script>
-  <script src="/js/core.js?v=20261112za"></script>
-  <script src="/js/components.js?v=20261112za"></script>
-  <script src="/js/rules.js?v=20261112za"></script>
-  <script src="/js/pages.js?v=20261112za"></script>
-  <script src="/js/clientes.js?v=20261112za"></script>
-  <script src="/js/extras.js?v=20261112za"></script>
-  <script src="/js/mapa.js?v=20261112za"></script>
-  <script src="/js/feriados.js?v=20261112za"></script>
-  <script src="/js/config.js?v=20261112za"></script>
-  <script src="/js/script.js?v=20261112za"></script>
-  <script src="/js/main.js?v=20261112za"></script>
+  <script src="/js/core.js?v=20261112zb"></script>
+  <script src="/js/components.js?v=20261112zb"></script>
+  <script src="/js/rules.js?v=20261112zb"></script>
+  <script src="/js/pages.js?v=20261112zb"></script>
+  <script src="/js/clientes.js?v=20261112zb"></script>
+  <script src="/js/extras.js?v=20261112zb"></script>
+  <script src="/js/mapa.js?v=20261112zb"></script>
+  <script src="/js/feriados.js?v=20261112zb"></script>
+  <script src="/js/config.js?v=20261112zb"></script>
+  <script src="/js/script.js?v=20261112zb"></script>
+  <script src="/js/sistema.js?v=20261112zb"></script>
+  <script src="/js/main.js?v=20261112zb"></script>
 </body>
 </html>

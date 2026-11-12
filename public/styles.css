@@ -703,3 +703,13 @@ body.perfil-vendedor #btnScript { display: none !important; }
 .cfg-prazo { font-size: 11.5px; }
 .cfg-meses { display: flex; flex-wrap: wrap; gap: 6px; }
 .cfg-meses .chip { cursor: pointer; }
+#btnSistema { position: relative; }
+#btnSistema[hidden] { display: none; }
+#btnSistema .sis-n { position: absolute; top: 2px; right: 0; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px; background: var(--gold); color: var(--dark); font-size: 10px; font-weight: 800; line-height: 16px; text-align: center; box-shadow: 0 0 0 2px var(--dark); }
+#btnSistema .sis-n[hidden] { display: none; }
+#btnSistema.rodando svg { animation: pulse 1.2s ease-in-out infinite; }
+.sis-pop { width: min(400px, 94vw); }
+.sis-lista { list-style: none; margin: 0 0 12px; padding: 0; max-height: 260px; overflow: auto; display: grid; gap: 6px; }
+.sis-lista li { display: flex; gap: 8px; justify-content: space-between; font-size: 12.5px; line-height: 1.35; background: var(--cream-2); border-radius: 8px; padding: 7px 10px; }
+.sis-lista li small { color: var(--muted); flex: none; }
+.sis-pop .link-btn { font-size: 12px; }
