@@ -177,8 +177,11 @@ def main():
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         page.set_default_timeout(30_000)
         page.set_default_navigation_timeout(60_000)
-        pedidos = []
-        page.on("request", lambda r: pedidos.append(r) if r.resource_type in ("xhr", "fetch", "document", "other") else None)
+        pedidos, respostas = [], []
+        # só pedidos do próprio AppNext (telemetria como Sentry/Google também manda datas no corpo)
+        do_appnext = lambda u: re.search(r"https?://([^/]*\.)?(appnext\.com\.br|nextsoft[^/]*)(/|$)", u, re.I) is not None
+        page.on("request", lambda r: pedidos.append(r) if r.resource_type in ("xhr", "fetch", "document", "other") and do_appnext(r.url) else None)
+        page.on("response", lambda r: respostas.append(r) if r.request.resource_type in ("xhr", "fetch", "document", "other") and do_appnext(r.url) else None)
         try:
             step("1) Login")
             nx.goto_login_with_retries(page, nx.LOGIN_URL)
@@ -206,27 +209,39 @@ def main():
             escolher(page, "Situação", "Ativos")
 
             step("4) Gerar (pedido de referência com o período que está na tela)")
-            antes = len(pedidos)
+            antes, antes_r = len(pedidos), len(respostas)
             with page.expect_download(timeout=180_000) as dl:
                 page.get_by_role("button", name=re.compile(r"^\s*Gerar\s*$", re.I)).last.click()
             arq = dl.value
             ref_bytes = Path(arq.path()).read_bytes() if arq.path() else b""
-            # o pedido que gerou o zip: o último com data no endereço ou no corpo
-            cand = [r for r in pedidos[antes:] if "appnext" in r.url or "nextsoft" in r.url or r.url.startswith("http")]
+            page.wait_for_timeout(1500)
+            cand = pedidos[antes:]
             ref = None
-            for r in reversed(cand):
-                corpo = r.post_data or ""
-                if len(RE_DATA.findall(unquote(r.url) + corpo)) >= 2 or len(RE_DATA.findall(r.url + corpo)) >= 2:
-                    ref = r
+            # 1º: a resposta que trouxe o arquivo (zip / download)
+            for resp in reversed(respostas[antes_r:]):
+                h = {k.lower(): v for k, v in resp.headers.items()}
+                tipo = h.get("content-type", "")
+                if "zip" in tipo or "octet-stream" in tipo or "attachment" in h.get("content-disposition", ""):
+                    ref = resp.request
+                    log(f"Resposta com o arquivo: {resp.status} {tipo} {h.get('content-disposition', '')[:120]}")
                     break
+            # 2º: o último pedido do AppNext com as duas datas no endereço ou no corpo
+            if ref is None:
+                for r in reversed(cand):
+                    corpo = r.post_data or ""
+                    if len(RE_DATA.findall(unquote(r.url) + corpo)) >= 2:
+                        ref = r
+                        break
             if ref:
                 log(f"Pedido de referência: {ref.method} {ref.url[:300]}")
                 if ref.post_data:
                     log(f"Corpo: {ref.post_data[:500]}")
             else:
                 log("Não identifiquei o pedido do Gerar com datas. Pedidos vistos:")
-                for r in cand[-12:]:
+                for r in cand[-15:]:
                     log(f"  {r.method} {r.url[:200]} {(r.post_data or '')[:200]}")
+                for resp in respostas[antes_r:][-15:]:
+                    log(f"  resposta {resp.status} {resp.url[:160]} {resp.headers.get('content-type', '')}")
 
             step(f"5) Baixando {INI:%d/%m/%Y} a {FIM:%d/%m/%Y} mês a mês")
             if not ref:
@@ -251,15 +266,17 @@ def main():
                     if link:
                         dados = page.request.get(link, timeout=300_000).body()
                     if not dados.startswith(b"PK"):
-                        if len(dados) < 400:  # mês sem notas
-                            log(f"{a:%m/%Y}: sem notas ({dados[:120]!r})")
-                            continue
-                        raise RuntimeError(f"{a:%m/%Y}: resposta não é um .zip ({dados[:120]!r})")
+                        # não aceita "sem notas" às cegas: pode ser o pedido errado
+                        raise RuntimeError(f"{a:%m/%Y}: a resposta não é um .zip ({resp.headers.get('content-type', '')}): {dados[:200]!r}")
                 antes_n = len(notas)
                 ler_zip(dados, notas)
                 log(f"{a:%m/%Y}: {len(notas) - antes_n} notas ({len(dados) // 1024} KB)")
-            if not notas and ref_bytes.startswith(b"PK"):
-                ler_zip(ref_bytes, notas)
+            # o zip baixado pelo clique é do período que estava na tela (não do pedido): só serve de conferência
+            if ref_bytes.startswith(b"PK"):
+                conf = {}
+                ler_zip(ref_bytes, conf)
+                dias = sorted({n["data"] for n in conf.values()})
+                log(f"Conferência: o clique em Gerar trouxe {len(conf)} notas ({dias[0] if dias else '-'} a {dias[-1] if dias else '-'}); não entram na importação")
             ok = True
         except Exception:
             log("### ERRO DURANTE O FLUXO DO XML ###")
