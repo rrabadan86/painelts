@@ -122,7 +122,7 @@ function texto(f) {
     '',
     `👤 Clientes: ${f.clientes.total} (loja ${f.clientes.loja} · omni/corp ${f.clientes.omni} · delivery ${f.clientes.delivery})`,
     `🛍️ Itens: ${f.itens} · TKM ${brl(f.tkm)} · IPA ${num(f.ipa)} · PMA ${brl(f.pma)}`,
-    f.recalculo ? `🔁 Recálculo da meta: ${f.recalculo.meta > 0 ? 'faltam ' + brl(f.recalculo.meta) : brl(-f.recalculo.meta) + ' acima'} · super meta: ${f.recalculo.superMeta > 0 ? 'faltam ' + brl(f.recalculo.superMeta) : brl(-f.recalculo.superMeta) + ' acima'}` : null,
+    f.recalculo ? `🔁 Recálculo da meta: ${f.recalculo.meta > 0 ? '🔴 -' + brl(f.recalculo.meta) : '🔵 ' + brl(-f.recalculo.meta)} · super meta: ${f.recalculo.superMeta > 0 ? '🔴 -' + brl(f.recalculo.superMeta) : '🔵 ' + brl(-f.recalculo.superMeta)}` : null,
     f.porDia ? `➡️ Para bater a meta do mês: ${brl(f.porDia.valor)} por dia nos ${f.porDia.dias} dias que faltam` : null,
     '',
     `☕ Espaço Gourmet: ${brl(f.eg.realizadas)} (meta ${brl(f.eg.metaDia)} · histórico ${brl(f.eg.historico)}) · ${f.eg.clientes} clientes · TKM ${brl(f.eg.tkm)}`,
@@ -132,42 +132,88 @@ function texto(f) {
 }
 
 function html(f) {
-  const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-  const cor = (bom) => (bom == null ? '#1d2b22' : bom ? '#1F5FBF' : '#B5452B');
-  const sec = (t) => `<tr><td colspan="3" style="background:#D9D4C7;font-weight:700;padding:6px 10px">${esc(t)}</td></tr>`;
-  const lin = (rot, val, extra = '', { forte, corVal, corExtra } = {}) =>
-    `<tr><td style="padding:5px 10px;${forte ? 'font-weight:700;' : 'padding-left:24px;'}">${esc(rot)}</td><td style="padding:5px 10px;text-align:right;font-weight:700;white-space:nowrap;color:${corVal || '#1d2b22'}">${esc(val)}</td><td style="padding:5px 10px;text-align:right;color:${corExtra || '#1d2b22'}">${esc(extra)}</td></tr>`;
+  const esc = (x) => String(x ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const VERDE = '#2C5234', ESCURO = '#1F3D2B', OURO = '#C9A227', CREME = '#F7F4EC', LINHA = '#ECE7DB', CINZA = '#7A857D', AZUL = '#1F5FBF', VERM = '#B5452B';
+  const cor = (bom) => (bom == null ? ESCURO : bom ? AZUL : VERM);
+  // sobra = positivo (azul); falta = negativo (vermelho): R$ -16.884,60
+  const sinal = (v) => (v == null || !isFinite(v) ? '—' : v < 0 ? `R$\u00a0-${brl(-v).replace('R$\u00a0', '')}` : brl(v));
+  const td = 'padding:9px 0;border-bottom:1px solid ' + LINHA + ';font-size:14px;';
+  const num = 'text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums;';
+  // tabela de uma seção: [rótulo, valor, valor 2] com cabeçalho opcional das colunas
+  const secao = (titulo, colunas, linhas) => `
+<tr><td style="padding:22px 24px 0">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse">
+    <tr>
+      <td style="font-size:11px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:${VERDE};padding-bottom:6px;border-bottom:2px solid ${OURO}">${esc(titulo)}</td>
+      ${(colunas || ['', '']).map((c) => `<td style="font-size:11px;font-weight:600;color:${CINZA};${num}padding-bottom:6px;border-bottom:2px solid ${OURO};width:108px">${esc(c)}</td>`).join('')}
+    </tr>
+    ${linhas.filter(Boolean).map(([rot, a, b, o = {}]) => `<tr>
+      <td style="${td}color:${o.forte ? ESCURO : '#3D4A42'};${o.forte ? 'font-weight:700;' : ''}">${esc(rot)}</td>
+      <td style="${td}${num}font-weight:700;color:${o.corA || ESCURO}">${esc(a ?? '')}</td>
+      <td style="${td}${num}color:${o.corB || CINZA}">${esc(b ?? '')}</td></tr>`).join('')}
+  </table>
+</td></tr>`;
+  const card = (rot, valor, sub, corValor, corSub) => `
+<td width="33%" valign="top" style="padding:0 3px">
+  <div style="background:${CREME};border-radius:12px;padding:10px 9px">
+    <div style="font-size:10px;color:${CINZA};text-transform:uppercase;letter-spacing:.6px">${esc(rot)}</div>
+    <div style="font-size:16px;font-weight:700;color:${corValor || ESCURO};margin-top:4px">${esc(valor)}</div>
+    <div style="font-size:12px;color:${corSub || CINZA};margin-top:2px">${esc(sub)}</div>
+  </div>
+</td>`;
   const r = f.recalculo;
-  return `<table cellspacing="0" style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:13px;color:#1d2b22;width:100%;max-width:620px;border:1px solid #D9D4C7">
-<tr><td colspan="3" style="background:#F3EBCF;color:#5b4a12;padding:7px 10px;font-size:12px">📊 Fechamento <b>automático</b> do <b>Painel Tea Shop</b>, com as vendas registradas no AppNext · desenvolvido por <b>Rodrigo Rabadan</b></td></tr>
-<tr><td colspan="3" style="background:#2C5234;color:#fff;padding:9px 10px;font-weight:700">${esc(f.loja.nome)} · fechamento de ${esc(nomeDia(f.dia))}, ${dataBr(f.dia)}</td></tr>
-${f.vendedoras.length ? `<tr><td colspan="3" style="padding:6px 10px;color:#5b6b60">Vendedoras do dia: ${esc(f.vendedoras.map((v) => v.nome).join(', '))}</td></tr>` : ''}
-${lin('Meta do Dia', brl(f.meta.dia), pct(f.acumulado.pct), { forte: true, corExtra: cor(f.acumulado.pct == null ? null : f.acumulado.pct >= 1) })}
-${lin(`Vendas Histórico (${dataBr(f.diaHistorico)})`, brl(f.vendas.historico), brl(f.acumulado.historico))}
-${lin('Vendas Realizadas', brl(f.vendas.realizadas), brl(f.acumulado.realizado), { forte: true, corVal: cor(f.vendas.pctMeta == null ? null : f.vendas.pctMeta >= 1), corExtra: cor(f.acumulado.pctMeta == null ? null : f.acumulado.pctMeta >= 1) })}
-${sec('Clientes')}
-${lin('Clientes Total de Loja', f.clientes.total, '', { forte: true, corVal: '#1F5FBF' })}
-${lin('Clientes de Omnichannel / Corporativo', f.clientes.omni)}
-${lin('Clientes de Delivery', f.clientes.delivery)}
-${lin('Clientes de Loja', f.clientes.loja, '', { forte: true })}
-${lin('Clientes que entraram na loja', '—', 'sem contador')}
-${sec('Indicadores')}
-${lin('Itens Vendidos', f.itens, f.itensHist ? `hist. ${f.itensHist}` : '')}
-${lin('TKM', brl(f.tkm), f.tkmHist ? `hist. ${brl(f.tkmHist)}` : '')}
-${lin('IPA', num(f.ipa), f.ipaHist ? `hist. ${num(f.ipaHist)}` : '')}
-${lin('PMA', brl(f.pma), f.pmaHist ? `hist. ${brl(f.pmaHist)}` : '')}
-${r ? sec('Meta do mês (acumulada até o dia)') + lin('Recálculo da Meta', brl(Math.abs(r.meta)), r.meta > 0 ? 'falta' : 'acima', { forte: true, corVal: cor(r.meta <= 0) }) + lin('Recálculo da Super Meta', brl(Math.abs(r.superMeta)), r.superMeta > 0 ? 'falta' : 'acima', { forte: true, corVal: cor(r.superMeta <= 0) }) : ''}
-${f.porDia ? lin('Para bater a meta do mês', `${brl(f.porDia.valor)}/dia`, `${f.porDia.dias} dias`) : ''}
-${sec('Espaço Gourmet')}
-${lin('Meta do dia EG', brl(f.eg.metaDia), pct(f.eg.pct), { forte: true })}
-${lin('Vendas Histórico', brl(f.eg.historico))}
-${lin('Vendas Realizadas', brl(f.eg.realizadas), '', { forte: true, corVal: '#1F5FBF' })}
-${lin('Clientes em Venda', f.eg.clientes)}
-${lin('TKM', brl(f.eg.tkm))}
-${sec('Total')}
-${lin('Venda Total Diária (Loja + Corp. + EG)', brl(f.total.hoje), '', { forte: true })}
-${lin('Venda Total Diária (Loja + EG) Hist.', brl(f.total.historico), '', { forte: true })}
+  const pctMetaDia = f.vendas.pctMeta, pctAcum = f.acumulado.pct;
+  return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:620px;margin:0 auto;border-collapse:separate;background:#ffffff;border:1px solid ${LINHA};border-radius:16px;font-family:Arial,Helvetica,sans-serif;color:${ESCURO}">
+<tr><td style="padding:22px 24px 4px">
+  <div style="font-size:11px;font-weight:700;letter-spacing:1.4px;color:${OURO};text-transform:uppercase">Fechamento do dia</div>
+  <div style="font-size:22px;font-weight:700;color:${ESCURO};margin-top:4px">${esc(f.loja.nome)}</div>
+  <div style="font-size:14px;color:${CINZA};margin-top:2px">${esc(nomeDia(f.dia))}, ${dataBr(f.dia)}${f.vendedoras.length ? ` · ${esc(f.vendedoras.map((v) => v.nome).join(', '))}` : ''}</div>
+  <div style="font-size:11px;color:${CINZA};margin-top:8px">Gerado automaticamente pelo <b style="color:${VERDE}">Painel Tea Shop</b> com as vendas do AppNext · desenvolvido por <b style="color:${VERDE}">Rodrigo Rabadan</b></div>
+</td></tr>
+<tr><td style="padding:14px 18px 0">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="table-layout:fixed"><tr>
+    ${card('Vendas do dia', brl(f.vendas.realizadas), pctMetaDia != null ? `${pct(pctMetaDia)} da meta do dia` : 'sem meta', cor(pctMetaDia == null ? null : pctMetaDia >= 1), cor(pctMetaDia == null ? null : pctMetaDia >= 1))}
+    ${card('Meta do dia', brl(f.meta.dia), f.meta.mes ? `meta do mês ${brl(f.meta.mes)}` : '')}
+    ${card('Acumulado no mês', brl(f.acumulado.realizado), pctAcum != null ? `${pct(pctAcum)} do histórico` : '', null, cor(pctAcum == null ? null : pctAcum >= 1))}
+  </tr></table>
+</td></tr>
+${secao('Vendas', ['Dia', 'Acumulado'], [
+    ['Meta', brl(f.meta.dia), brl(f.meta.acumulada)],
+    [`Histórico (${dataBr(f.diaHistorico)})`, brl(f.vendas.historico), brl(f.acumulado.historico)],
+    ['Realizado', brl(f.vendas.realizadas), brl(f.acumulado.realizado), { forte: true, corA: cor(pctMetaDia == null ? null : pctMetaDia >= 1), corB: cor(f.acumulado.pctMeta == null ? null : f.acumulado.pctMeta >= 1) }],
+  ])}
+${secao('Clientes', null, [
+    ['Total', f.clientes.total, '', { forte: true }],
+    ['Loja', f.clientes.loja, ''],
+    ['Omnichannel / corporativo', f.clientes.omni, ''],
+    ['Delivery', f.clientes.delivery, ''],
+  ])}
+${secao('Indicadores', ['Hoje', 'Histórico'], [
+    ['Itens vendidos', fmtNum(f.itens, 0), f.itensHist ? fmtNum(f.itensHist, 0) : '—'],
+    ['TKM', brl(f.tkm), f.tkmHist ? brl(f.tkmHist) : '—'],
+    ['IPA', num2(f.ipa), f.ipaHist ? num2(f.ipaHist) : '—'],
+    ['PMA', brl(f.pma), f.pmaHist ? brl(f.pmaHist) : '—'],
+  ])}
+${r ? secao('Meta do mês', null, [
+    ['Recálculo da meta', sinal(-r.meta), '', { forte: true, corA: cor(r.meta <= 0) }],
+    ['Recálculo da super meta', sinal(-r.superMeta), '', { forte: true, corA: cor(r.superMeta <= 0) }],
+    f.porDia ? ['Para bater a meta do mês', `${brl(f.porDia.valor)}/dia`, `${f.porDia.dias} dias`] : null,
+  ]) : ''}
+${secao('Espaço Gourmet', ['Hoje', 'Histórico'], [
+    ['Vendas', brl(f.eg.realizadas), brl(f.eg.historico), { forte: true, corA: cor(f.eg.pct == null ? null : f.eg.pct >= 1) }],
+    ['Meta do dia', brl(f.eg.metaDia), f.eg.pct != null ? pct(f.eg.pct) : ''],
+    ['Clientes', f.eg.clientes, ''],
+    ['TKM', brl(f.eg.tkm), ''],
+  ])}
+${secao('Total do dia', ['Hoje', 'Histórico'], [
+    ['Loja + corporativo + Espaço Gourmet', brl(f.total.hoje), brl(f.total.historico), { forte: true }],
+  ])}
+<tr><td style="padding:20px 24px 22px;font-size:11px;line-height:1.5;color:${CINZA}">
+  Azul = acima da meta · vermelho = abaixo · histórico = mesma data do ano anterior.
+</td></tr>
 </table>`;
 }
+const fmtNum = (x, c) => num(x, c);
+const num2 = (x) => num(x, 2);
 
 module.exports = { calcular, ultimoDia, texto, html, anoAntes };
