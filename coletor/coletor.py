@@ -12,7 +12,8 @@ Coletor Tea Shop — roda o script de exportação do AppNext de cada loja na pr
     POST /cancelar/<loja>  → tira da fila as partes que ainda não rodaram
 - Cada execução grava /data/<loja>/entrada/<carimbo>_<de>_<ate>_<gatilho>.xlsx; o painel junta no histórico
   mês a mês (substitui só aquele período).
-- A rotina baixa só os últimos COLETOR_JANELA dias (padrão 45): rápido e sem risco de tempo esgotado.
+- A rotina baixa só os últimos dias (padrão 7; /config/janela.txt, editado pelo painel, ou COLETOR_JANELA).
+  Do dia 1 ao 5 de cada mês ela refaz também o mês anterior inteiro (fechamento de comissão e faturamento).
 - Depois das vendas, baixa também os XMLs das notas do mesmo período (Fiscal → Gerar XML) e grava
   /data/<loja>/entrada/<carimbo>_<de>_<ate>_xml.json com o CPF de cada cupom (COLETOR_XML=0 desliga).
   No histórico dá para escolher "tipo": "vendas", "xml" ou "ambos".
@@ -44,8 +45,19 @@ XML_ROTINA = os.getenv("COLETOR_XML", "1") != "0"
 TIPOS = ("ambos", "vendas", "xml")
 TOKEN = os.getenv("COLETOR_TOKEN", "")
 HORARIOS_ENV = [h.strip() for h in os.getenv("COLETOR_HORARIOS", "13:30,23:00").split(",") if h.strip()]
-JANELA = int(os.getenv("COLETOR_JANELA", "45"))
+JANELA_ENV = int(os.getenv("COLETOR_JANELA", "7"))
 HHMM = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+
+
+def janela():
+    """dias baixados em cada atualização automática: /config/janela.txt (editado pelo painel) ou COLETOR_JANELA"""
+    try:
+        n = int((CONFIG_DIR / "janela.txt").read_text(encoding="utf-8").strip())
+        if 1 <= n <= 90:
+            return n
+    except (OSError, ValueError):
+        pass
+    return JANELA_ENV
 
 
 def horarios():
@@ -160,12 +172,16 @@ def rodar(job):
     pasta.mkdir(parents=True, exist_ok=True)
     env = {k: v for k, v in os.environ.items() if not k.startswith("COLETOR_")}
     env.update(ler_env(cfg))
-    # período: histórico = o pedido; rotina = últimos JANELA dias
+    # período: histórico = o pedido; rotina = últimos dias da janela.
+    # Do dia 1 ao 5 a rotina também refaz o mês anterior inteiro (correções do fechamento: comissão e faturamento).
     hoje = datetime.now(TZ).date()
     if job.get("de") and job.get("ate"):
         de, ate = job["de"], job["ate"]
     else:
-        de, ate = (hoje - timedelta(days=JANELA)).isoformat(), hoje.isoformat()
+        ini = hoje - timedelta(days=janela())
+        if hoje.day <= 5:
+            ini = min(ini, (hoje.replace(day=1) - timedelta(days=1)).replace(day=1))
+        de, ate = ini.isoformat(), hoje.isoformat()
     env.pop("DIAS_JANELA", None)
     env["DATA_INICIO"], env["DATA_FIM"] = br(de), br(ate)
     carimbo = datetime.now(TZ).strftime("%Y%m%d-%H%M%S")
@@ -314,7 +330,7 @@ class API(BaseHTTPRequestHandler):
 
     def do_GET(self):  # noqa: N802
         if self.path == "/saude":
-            return self._json(200, {"ok": True, "lojas": lojas_configuradas(), "horarios": horarios()})
+            return self._json(200, {"ok": True, "lojas": lojas_configuradas(), "horarios": horarios(), "janela": janela()})
         if not self._autorizado():
             return self._json(401, {"erro": "token"})
         if self.path.startswith("/status/"):
@@ -323,7 +339,7 @@ class API(BaseHTTPRequestHandler):
                 return self._json(200, {"configurada": False})
             with lock:
                 fila_n = pendentes(loja)
-            return self._json(200, {"configurada": True, "horarios": horarios(), "janela": JANELA, "fila": fila_n, **info_loja(loja)})
+            return self._json(200, {"configurada": True, "horarios": horarios(), "janela": janela(), "fila": fila_n, **info_loja(loja)})
         self._json(404, {"erro": "rota"})
 
     def do_POST(self):  # noqa: N802
@@ -372,7 +388,7 @@ def main():
         sys.exit(1)
     WORK_DIR.mkdir(parents=True, exist_ok=True)
     carregar_ultimas()
-    log(f"Coletor pronto. Lojas: {', '.join(lojas_configuradas()) or 'nenhuma'} · horários: {', '.join(horarios())} · janela {JANELA} dias")
+    log(f"Coletor pronto. Lojas: {', '.join(lojas_configuradas()) or 'nenhuma'} · horários: {', '.join(horarios())} · janela {janela()} dias")
     threading.Thread(target=trabalhador, daemon=True).start()
     threading.Thread(target=agendador, daemon=True).start()
     ThreadingHTTPServer(("0.0.0.0", PORTA), API).serve_forever()

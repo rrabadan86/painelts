@@ -717,11 +717,16 @@
     pintarHs();
     const novo = inp({ type: 'time', value: '12:00', style: { maxWidth: '140px' } });
     box.append(h('div', { class: 'card cfg-form' }, h('div', { class: 'card-title' }, 'Horários da atualização automática'),
-      h('p', { class: 'muted' }, 'Em cada horário o coletor atualiza todas as lojas, uma de cada vez, baixando os últimos 45 dias do AppNext. Horário de Brasília.'),
+      h('p', { class: 'muted' }, `Em cada horário o coletor atualiza todas as lojas, uma de cada vez, baixando os últimos ${est.janela || 7} dias do AppNext (vendas e XML). Do dia 1 ao 5 de cada mês ele refaz também o mês anterior inteiro, para o fechamento pegar correções de última hora. Horário de Brasília.`),
       est.coletorOk === false ? h('div', { class: 'notice err' }, 'O coletor não está respondendo.') : null,
       lista,
       h('div', { class: 'cfg-inline', style: { marginTop: '10px' } }, novo, h('button', { type: 'button', class: 'btn', onclick: () => { if (novo.value && !hs.includes(novo.value)) { hs.push(novo.value); pintarHs(); } } }, 'Adicionar horário')),
       h('div', { class: 'cfg-acoes' }, acao('Salvar horários', async () => { await api('PUT', '/horarios', { horarios: hs }); return 'Horários salvos. Valem a partir do próximo minuto.'; }, 'btn primary'))));
+    const dias = inp({ type: 'number', min: 1, max: 90, value: est.janela || 7, style: { maxWidth: '110px' } });
+    box.append(h('div', { class: 'card cfg-form' }, h('div', { class: 'card-title' }, 'Quantos dias baixar em cada atualização'),
+      h('p', { class: 'muted' }, 'O histórico completo entra uma vez, pelo "Importar histórico". Depois, cada atualização só precisa dos dias recentes: quanto menos dias, mais rápido. Use mais dias se a loja costuma corrigir vendas antigas no AppNext (cancelamento, troca de vendedor).'),
+      h('div', { class: 'cfg-inline' }, dias, h('span', { class: 'muted' }, 'dias (recomendado: 7)')),
+      h('div', { class: 'cfg-acoes' }, acao('Salvar', async () => { const r = await api('PUT', '/janela', { dias: +dias.value }); est.janela = r.dias; return `Pronto: cada atualização baixa os últimos ${r.dias} dias.`; }, 'btn primary'))));
     // resumo das lojas
     box.append(h('div', { class: 'card' }, h('div', { class: 'card-title' }, 'Situação de cada loja'),
       h('div', { class: 'table-wrap free' }, h('table', { class: 't cfg-t' },

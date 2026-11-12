@@ -146,7 +146,7 @@ SESSION_SECRET=dev node server.js            # http://localhost:3000
   regras de comissão, logo e nome, envio de planilhas, usuários e perfis, horários, resumo diário e histórico de alterações.
   O `scripts/admin.js` continua funcionando como plano B.
 - **Histórico mês a mês** em `dados/<loja>/base/`: cada planilha que chega substitui só os dias que ela cobre.
-  A rotina do coletor baixa os últimos `COLETOR_JANELA` dias (45). Na primeira vez, as planilhas antigas são
+  A rotina do coletor baixa os últimos 7 dias (ajustável em Configurações → Atualização automática; do dia 1 ao 5 refaz também o mês anterior). Na primeira vez, as planilhas antigas são
   somadas automaticamente na base e movidas para `dados/<loja>/processados/`.
 - **Perfis**: administrador, franqueado, gerente (sem dados de clientes) e vendedor (só "Minha comissão").
 - **Resumo diário** por Telegram e/ou e-mail, com alertas.

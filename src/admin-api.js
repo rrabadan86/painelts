@@ -171,7 +171,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     const minhas = new Set(lojas.map((l) => l.id));
     const auditoria = C.lerAuditoria(400).filter((e) => req.perfil === 'admin' || e.por === req.user || (e.detalhe && minhas.has(e.detalhe.loja)) || minhas.has(e.alvo)).slice(0, 200);
     res.json({
-      perfil: req.perfil, usuario: req.user, coletorAtivo: COL.ativo(), horarios: saude?.horarios || [], coletorOk: saude ? saude.ok !== false : null,
+      perfil: req.perfil, usuario: req.user, coletorAtivo: COL.ativo(), horarios: saude?.horarios || [], janela: saude?.janela || null, coletorOk: saude ? saude.ok !== false : null,
       lojas: itens, usuarios: usuariosVisiveis(req), auditoria,
       todasLojas: C.get().lojas.map((l) => ({ id: l.id, nome: l.nome })).filter((l) => req.perfil === 'admin' || minhas.has(l.id)),
     });
@@ -559,6 +559,14 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     C.gravarAtomico(path.join(C.COLETOR_DIR, 'horarios.txt'), hs.join('\n') + '\n', 0o644);
     aud(req, 'alterou horários', 'coletor', { horarios: hs });
     res.json({ ok: true, horarios: hs });
+  });
+
+  r.put('/janela', soAdmin, json, (req, res) => {
+    const n = Math.round(+(req.body || {}).dias);
+    if (!(n >= 1 && n <= 90)) return res.status(400).json({ erro: 'Informe de 1 a 90 dias.' });
+    C.gravarAtomico(path.join(C.COLETOR_DIR, 'janela.txt'), n + '\n', 0o640);
+    aud(req, 'alterou dias da atualização automática', 'coletor', { dias: n });
+    res.json({ ok: true, dias: n });
   });
 
   // ---------- usuários ----------
