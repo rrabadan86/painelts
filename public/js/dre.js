@@ -40,7 +40,9 @@
       // custo dos produtos: o das vendas com custo + as sem custo pelo mesmo % (estimado)
       const cmvPct = m.fatCusto ? m.custo / m.fatCusto : null;
       const cmv = cmvPct == null ? null : m.custo + (m.fat - m.fatCusto) * cmvPct;
-      const fixosMes = fixos.map((x) => ({ nome: x.nome, cat: D.catDe ? D.catDe(x) : 'outros', valor: x.valor * frac }));
+      // custos fixos do mês (proporcionais no mês em andamento) + despesas de um mês só (valor cheio no mês delas)
+      const fixosMes = [...fixos.map((x) => ({ nome: x.nome, cat: D.catDe ? D.catDe(x) : 'outros', valor: x.valor * frac })),
+        ...(D.pontuaisDoMes ? D.pontuaisDoMes(ym) : []).map((x) => ({ nome: x.nome, cat: D.catDe(x), valor: x.valor, pontual: true }))];
       const fixoTot = fixosMes.reduce((a, x) => a + x.valor, 0);
       const impostos = m.imp + m.maq + m.roy;
       const recLiq = m.fat - impostos;
@@ -66,8 +68,9 @@
     ['− Outros custos em %', (m) => m.varPct, 'menos', 'Custos da loja cadastrados como % das vendas'],
     ['= Margem de contribuição', (m) => m.contrib, 'sub', 'O que sobra para pagar os custos fixos'],
     ...grupos.flatMap((g) => [
-      [`− ${g.nome}`, (m) => g.itens.reduce((a, k) => a + m.fixosMes[k].valor, 0), 'grupo', `${g.itens.length} ${g.itens.length === 1 ? 'custo' : 'custos'}: ${g.itens.map((k) => g.nomes[k]).join(', ')}. Clique para ${abertos.has(g.id) ? 'fechar' : 'abrir'}.`, g.id],
-      ...(abertos.has(g.id) ? g.itens.map((k) => [g.nomes[k], (m) => m.fixosMes[k].valor, 'filho', 'Custo fixo cadastrado (valor do mês; no mês em andamento, só a parte dos dias que já passaram)']) : []),
+      [`− ${g.nome}`, (m) => m.fixosMes.filter((x) => x.cat === g.id).reduce((a, x) => a + x.valor, 0), 'grupo', `${g.nomes.length} ${g.nomes.length === 1 ? 'custo' : 'custos'}: ${g.nomes.map((n) => n.nome + (n.pontual ? ' (pontual)' : '')).join(', ')}. Clique para ${abertos.has(g.id) ? 'fechar' : 'abrir'}.`, g.id],
+      ...(abertos.has(g.id) ? g.nomes.map((n) => [n.pontual ? `${n.nome} · pontual` : n.nome, (m) => { const l = m.fixosMes.filter((x) => x.cat === g.id && x.nome === n.nome && !!x.pontual === n.pontual); return l.length ? l.reduce((a, x) => a + x.valor, 0) : null; }, 'filho',
+        n.pontual ? 'Despesa de um mês só: entra cheia no mês dela' : 'Custo fixo cadastrado (valor do mês; no mês em andamento, só a parte dos dias que já passaram)']) : []),
     ]),
     ['= Resultado do mês', (m) => m.resultado, 'tot', 'Margem de contribuição − custos fixos'],
   ];
@@ -93,7 +96,12 @@
     const fixos = M.ded.OUTROS.filter((x) => x.tipo === 'mes');
     const fixosNomes = fixos.map((x) => x.nome);
     const cats = M.ded.CATS || [{ id: 'outros', nome: 'Outros' }];
-    const grupos = cats.map((c) => ({ id: c.id, nome: c.nome, nomes: fixosNomes, itens: fixos.map((x, k) => (M.ded.catDe(x) === c.id ? k : -1)).filter((k) => k >= 0) })).filter((g) => g.itens.length);
+    // cada categoria lista os custos que aparecem em algum mês (fixos e pontuais)
+    const grupos = cats.map((c) => {
+      const vistos = new Map();
+      for (const mm of meses) for (const x of mm.fixosMes) if (x.cat === c.id) vistos.set(`${x.pontual ? 'p' : 'f'}|${x.nome}`, { nome: x.nome, pontual: !!x.pontual });
+      return { id: c.id, nome: c.nome, nomes: [...vistos.values()].sort((a, b) => a.pontual - b.pontual) };
+    }).filter((g) => g.nomes.length);
     const abertos = state.dreAbertos || (state.dreAbertos = new Set());
     const linhas = LINHAS(grupos, abertos);
     const sel = state.dreMes && meses.some((m) => m.ym === state.dreMes) ? state.dreMes : meses[meses.length - 1].ym;
@@ -109,7 +117,7 @@
     const opMes = h('select', { class: 'f-input', style: { width: 'auto' } }, [...meses].reverse().map((x) => h('option', { value: x.ym, selected: x.ym === sel || null }, `${TS.ymLabel(x.ym)}${x.parcial ? ' (em andamento)' : ''}`)));
     opMes.addEventListener('change', () => { state.dreMes = opMes.value; TS.render(); });
     const avisos = [];
-    if (!fixosNomes.length) avisos.push('Cadastre os custos fixos (aluguel, salários, energia…) em Configurações → Lojas → Estoque e margem → Outros custos da loja para o resultado ficar completo.');
+    if (!fixosNomes.length && !(M.ded.PONTUAIS || []).length) avisos.push('Cadastre os custos fixos (aluguel, salários, energia…) em Configurações → Lojas → Estoque e margem → Outros custos da loja para o resultado ficar completo.');
     if (m.cobre < 0.95) avisos.push(`${fmt.pct(1 - m.cobre, 0)} das vendas de ${TS.ymLabel(sel)} não têm custo no estoque: o custo delas foi estimado pelo mesmo % das outras (${fmt.pct(m.cmvPct)}).`);
     if (m.parcial) avisos.push(`${TS.ymLabel(sel)} está em andamento (vendas até ${fmt.date(TS.dayToIso(m.ultimo))}): os custos fixos entram só pela parte dos dias que já passaram (${fmt.pct(m.frac, 0)} do mês).`);
 

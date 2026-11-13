@@ -182,7 +182,10 @@
     // categorias dos custos (Funcionários, Imóvel, Sistemas…), na ordem cadastrada; "outros" recebe o que não tem
     const CATS = (cfg.categorias && cfg.categorias.length ? cfg.categorias : [{ id: 'outros', nome: 'Outros' }]);
     const catDe = (x) => (CATS.some((c) => c.id === x.cat) ? x.cat : 'outros');
-    return { deducoes, OUTROS, taxaOutro, dicaOutro, mediaFat, ONDE_FAT, pSimples, pCartao, CATS, catDe };
+    // despesas de um mês só: as que caem no mês ym (as "todo ano" repetem no mesmo mês dos anos seguintes)
+    const PONTUAIS = (cfg.pontuais || []).filter((x) => x.valor > 0 && x.ym);
+    const pontuaisDoMes = (ym) => PONTUAIS.filter((x) => x.ym === ym || (x.anual && x.ym.slice(5) === ym.slice(5) && ym > x.ym));
+    return { deducoes, OUTROS, taxaOutro, dicaOutro, mediaFat, ONDE_FAT, pSimples, pCartao, CATS, catDe, PONTUAIS, pontuaisDoMes };
   }
 
   TS.estoqueBuscar = buscar;
@@ -1080,6 +1083,28 @@
           h('tfoot', null, h('tr', null, h('td', { colspan: 6 }, h('b', null, 'Total: '), geral))))),
         h('div', { class: 'cfg-acoes' }, novaCat));
       atualizarTotais();
+      pintarPontuais();
+    }
+    // ---------- despesas de um mês só (ex.: IPTU em janeiro, 13º em dezembro) ----------
+    const pont = (cfg.pontuais || []).map((x) => ({ ...x }));
+    const pontBox = h('div', { class: 'est-outros' });
+    function pintarPontuais() {
+      const tb = h('tbody');
+      const ordem = [...pont].sort((a, b) => (a.ym || '9').localeCompare(b.ym || '9'));
+      for (const x of ordem) {
+        const nome = h('input', { class: 'f-input', value: x.nome, placeholder: 'Ex.: IPTU', maxlength: 40, oninput: (e) => { x.nome = e.target.value; } });
+        const mes = h('input', { class: 'f-input', type: 'month', value: x.ym || '', onchange: (e) => { x.ym = e.target.value; } });
+        const valor = h('input', { class: 'f-input', type: 'number', min: 0, step: '0.01', value: x.valor, placeholder: '0', oninput: (e) => { x.valor = e.target.value; } });
+        const cat = h('select', { class: 'f-input', onchange: (e) => { x.cat = e.target.value; } }, cats.map((c) => h('option', { value: c.id, selected: x.cat === c.id || null }, c.nome)));
+        const anual = h('label', { class: 'est-pont-anual', title: 'Lança também no mesmo mês dos anos seguintes' }, h('input', { type: 'checkbox', checked: x.anual || null, onchange: (e) => { x.anual = e.target.checked; } }), ' todo ano');
+        const rem = h('button', { type: 'button', class: 'est-outro-rem', title: 'Remover', onclick: () => { pont.splice(pont.indexOf(x), 1); pintarPontuais(); sujo(); } }, '✕');
+        tb.append(h('tr', null, h('td', null, nome), h('td', null, mes), h('td', null, valor), h('td', null, cat), h('td', null, anual), h('td', null, rem)));
+      }
+      if (!pont.length) tb.append(h('tr', null, h('td', { colspan: 6, class: 'muted', style: { padding: '8px 10px' } }, 'Nenhuma despesa pontual.')));
+      const add = h('button', { type: 'button', class: 'btn', onclick: () => { const d = new Date(); pont.push({ nome: '', ym: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`, valor: '', cat: 'outros', anual: false }); pintarPontuais(); sujo(); } }, '+ Despesa pontual');
+      pontBox.replaceChildren(h('div', { class: 'table-wrap free' }, h('table', { class: 't est-cat-t' },
+        h('thead', null, h('tr', null, ['Despesa', 'Mês', 'Valor (R$)', 'Categoria', 'Repete', ''].map((t) => h('th', { class: 'l' }, t)))), tb)),
+        h('div', { class: 'cfg-acoes' }, add));
     }
     pintarOutros();
     const tams = ['50', '100', '250', '500', '1000'];
@@ -1099,7 +1124,7 @@
       try {
         const embalagens = Object.fromEntries(embs.map(([g, i]) => [g, i.value.split(',').map((s) => s.trim()).filter(Boolean).map((s) => { const [cod, q] = s.split(/[×x*]/i); return { cod: (cod || '').trim(), qtd: +(q || 1) }; })]));
         const r = await fetch(`/api/estoque/cfg?loja=${encodeURIComponent(lojaId)}`, { method: 'PUT', credentials: 'same-origin', headers: { 'X-Painel': '1', 'Content-Type': 'application/json' },
-          body: JSON.stringify({ entregaDias: +ent.value, coberturaDias: +cob.value, paradoDias: +par.value, segurancaPct: +seg.value, simplesPct: simp.value, cartaoPct: maq.value, margemMin: mMin.value, margemAlvo: mAlvo.value, outros: itens.map((x) => ({ nome: x.nome, tipo: x.tipo, valor: x.valor, aplica: x.aplica, cat: x.cat })), categorias: cats.map((c) => ({ id: c.id, nome: c.nome })), embalagens }) });
+          body: JSON.stringify({ entregaDias: +ent.value, coberturaDias: +cob.value, paradoDias: +par.value, segurancaPct: +seg.value, simplesPct: simp.value, cartaoPct: maq.value, margemMin: mMin.value, margemAlvo: mAlvo.value, outros: itens.map((x) => ({ nome: x.nome, tipo: x.tipo, valor: x.valor, aplica: x.aplica, cat: x.cat })), categorias: cats.map((c) => ({ id: c.id, nome: c.nome })), pontuais: pont.map((x) => ({ nome: x.nome, ym: x.ym, valor: x.valor, cat: x.cat, anual: !!x.anual })), embalagens }) });
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j.erro || 'Falha ao salvar.');
         cache.delete(lojaId);
@@ -1108,7 +1133,7 @@
       salvar.disabled = salvar2.disabled = false;
     });
     const ouvir = (el) => { el.addEventListener('input', sujo); el.addEventListener('change', sujo); return el; };
-    [ent, cob, par, seg, simp, maq, mMin, mAlvo, outrosBox].forEach(ouvir);
+    [ent, cob, par, seg, simp, maq, mMin, mAlvo, outrosBox, pontBox].forEach(ouvir);
     embs.forEach(([, i]) => ouvir(i));
     outrosBox.addEventListener('click', (e) => { if (e.target.closest('.est-outro-rem')) sujo(); });
     return [
@@ -1123,6 +1148,9 @@
       h('div', { class: 'f-label', style: { marginTop: '14px' } }, 'Outros custos da loja'),
       h('small', { class: 'muted' }, '% das vendas (ex.: aluguel percentual do shopping, app de delivery) ou R$ por mês (ex.: aluguel fixo, energia, salários). O valor em R$ por mês vira um %: valor ÷ média do faturamento dos últimos 3 meses fechados (ex.: R$ 16.000 ÷ média de R$ 200.000 = 8% de cada venda). Esse % é volátil: muda quando um mês fecha e entra na média.'),
       outrosBox,
+      h('div', { class: 'f-label', style: { marginTop: '14px' } }, 'Despesas de um mês só'),
+      h('small', { class: 'muted' }, 'Gastos que caem num mês específico, como IPTU e IPVA no começo do ano, 13º salário ou uma manutenção. Entram no Resultado do mês escolhido, dentro da categoria. Marque "todo ano" para repetir no mesmo mês dos anos seguintes. Não entram no rateio da margem de cada produto.'),
+      pontBox,
       h('div', { class: 'cfg-acoes' }, salvar2, msg2),
       h('div', { class: 'f-label', style: { marginTop: '14px' } }, 'Reposição'),
       h('div', { class: 'est-cfg-g' },

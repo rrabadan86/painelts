@@ -153,6 +153,8 @@ function cfg(loja) {
     // outros custos da loja: % das vendas ou R$ por mês (dividido pelas vendas do mês), em tudo, só loja ou só EG
     outros: (Array.isArray(c.outros) ? c.outros : []).map((x) => ({ ...x, cat: x.cat || 'outros' })),
     categorias: Array.isArray(c.categorias) && c.categorias.length ? c.categorias : CATEGORIAS,
+    // despesas de um mês só (ex.: IPVA/IPTU em janeiro); anual = repete no mesmo mês todo ano
+    pontuais: Array.isArray(c.pontuais) ? c.pontuais : [],
     margemMin: Number.isFinite(c.margemMin) ? c.margemMin : PADRAO.margemMin,
     margemAlvo: Number.isFinite(c.margemAlvo) ? c.margemAlvo : PADRAO.margemAlvo,
     embalagens: c.embalagens && typeof c.embalagens === 'object' ? c.embalagens : EMB_PADRAO,
@@ -193,6 +195,18 @@ function validarCfg(b) {
     if (!['tudo', 'loja', 'eg'].includes(x.aplica)) return { erro: `Custo "${nome}": escolha onde se aplica.` };
     if (!(valor >= 0) || (x.tipo === 'pct' ? valor > 100 : valor > 10000000)) return { erro: `Custo "${nome}": valor inválido.` };
     out.outros.push({ nome, tipo: x.tipo, valor, aplica: x.aplica, cat: idsCat.has(x.cat) ? x.cat : 'outros' });
+  }
+  const pontuais = Array.isArray(b.pontuais) ? b.pontuais : [];
+  if (pontuais.length > 60) return { erro: 'No máximo 60 despesas pontuais.' };
+  out.pontuais = [];
+  for (const x of pontuais) {
+    const nome = String(x.nome || '').replace(/[\r\n]/g, ' ').trim().slice(0, 40);
+    const valor = Math.round(Number(String(x.valor ?? '').replace(',', '.')) * 100) / 100;
+    if (!nome && !(valor > 0)) continue;
+    if (!nome) return { erro: 'Dê um nome a cada despesa pontual.' };
+    if (!/^20\d\d-(0[1-9]|1[0-2])$/.test(String(x.ym || ''))) return { erro: `Despesa "${nome}": escolha o mês.` };
+    if (!(valor > 0 && valor <= 10000000)) return { erro: `Despesa "${nome}": valor inválido.` };
+    out.pontuais.push({ nome, valor, ym: x.ym, anual: !!x.anual, cat: idsCat.has(x.cat) ? x.cat : 'outros' });
   }
   const emb = {};
   for (const [g, lista] of Object.entries(b.embalagens || {})) {
