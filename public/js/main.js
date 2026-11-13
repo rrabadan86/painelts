@@ -72,6 +72,7 @@
   };
   function renderTela() {
     document.querySelectorAll('#tabs a').forEach((a) => a.classList.toggle('active', a.dataset.page === state.page || (a.dataset.grupo || '').split(',').includes(state.page)));
+    ajustarTopo();
     const ativa = document.querySelector('#tabs a.active');
     if (ativa && ativa.scrollIntoView) { const t = document.getElementById('tabs'); if (t.scrollWidth > t.clientWidth) t.scrollTo({ left: ativa.offsetLeft - 12, behavior: 'smooth' }); }
     document.body.classList.toggle('pg-config', state.page === 'config');
@@ -212,6 +213,16 @@
     document.querySelector('.layout').before(h('div', { class: 'demo-bar', role: 'note' },
       h('b', null, 'Apresentação'), ' · Todos os dados desta página são fictícios: lojas, vendedores, clientes e valores foram inventados para demonstração. Fique à vontade para clicar e filtrar.'));
   }
+
+  /** as abas não cabem ao lado da marca e dos botões? descem para a segunda linha (nada fica escondido) */
+  function ajustarTopo() {
+    const t = document.getElementById('tabs');
+    if (!t) return;
+    document.body.classList.remove('tabs-2l');
+    if (t.scrollWidth > t.clientWidth + 2) document.body.classList.add('tabs-2l');
+  }
+  TS.ajustarTopo = ajustarTopo;
+  window.addEventListener('resize', TS.debounce ? TS.debounce(ajustarTopo, 120) : ajustarTopo);
 
   /** abas conforme o perfil */
   function configurarAbas(eu) {

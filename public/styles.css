@@ -529,6 +529,13 @@ body.perfil-vendedor #btnScript { display: none !important; }
 @media (max-width: 860px) {
   :root { --topo: 100px; }
 }
+/* abas que não cabem na linha do topo (muitas abas, zoom ou janela média): descem para a segunda linha */
+body.tabs-2l { --topo: 104px; }
+body.tabs-2l .topbar { flex-wrap: wrap; height: auto; min-height: 60px; row-gap: 0; padding-top: 8px; padding-bottom: 8px; }
+body.tabs-2l .topbar .brand { min-width: 0; }
+body.tabs-2l .topbar-right { margin-left: auto; }
+body.tabs-2l .tabs { order: 3; flex: 1 0 100%; padding: 8px 0 0; border-top: 1px solid rgba(255,255,255,.08); margin-top: 8px; }
+body.tabs-2l .tabs a { padding: 7px 14px; }
 .cfg-auto { background: var(--cream-2); border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; display: grid; gap: 6px; font-size: 13px; }
 .cfg-auto .cfg-inline { flex-wrap: wrap; }
 .cfg-auto .f-input { height: 34px; }
