@@ -172,7 +172,9 @@
   TS.paginasFechamento = function ({ res, eg, meta, periodo, loja, feriados }) {
     const rg = res.regras;
     const gorj = new Map(eg.rows.map((r) => [r.vendedor, r.gorjeta]));
-    const linhas = res.rows.filter((r) => (r.total > 0 || r.aPagar > 0) && !/^SEM VENDEDOR$/i.test(String(r.vendedor).trim())).sort((a, b) => a.vendedor.localeCompare(b.vendedor, 'pt-BR'));
+    // quem está em "Não entram no rateio" não aparece no fechamento (sem comissão e sem gorjeta)
+    const fora = new Set(rg.rateio && rg.rateio.ativo ? (rg.rateio.exclui || []).map((x) => String(x).trim().toLowerCase()) : []);
+    const linhas = res.rows.filter((r) => (r.total > 0 || r.aPagar > 0) && !/^SEM VENDEDOR$/i.test(String(r.vendedor).trim()) && !fora.has(String(r.vendedor).trim().toLowerCase())).sort((a, b) => a.vendedor.localeCompare(b.vendedor, 'pt-BR'));
     const totalDe = (r) => (r.aPagar || 0) + (rg.rateio && rg.rateio.ativo ? 0 : r.premiacao || 0) + (gorj.get(r.vendedor) || 0);
     const emitido = new Date().toLocaleString('pt-BR');
     // feriados trabalhados: { NOME: [{ data, nome, min }] }

@@ -264,16 +264,19 @@
     const lojas = [...new Set(base.map((i) => db.loja[i]))];
     // por loja: faturamento EG por vendedor, total EG, taxa de serviço, vendedores ativos
     const L = new Map();
-    for (const l of lojas) L.set(l, { fatEG: new Map(), fatEGTot: 0, gorjeta: 0, vendAtivos: new Set() });
+    // quem está em "Não entram no rateio" também não recebe gorjeta: a parte dele fica com os outros
+    const foraDe = (l) => { const rt = R.regrasDe(lojaNome(l)).rateio; return rt && rt.ativo ? new Set((rt.exclui || []).map((x) => String(x).trim().toLowerCase())) : new Set(); };
+    for (const l of lojas) L.set(l, { fatEG: new Map(), fatEGTot: 0, gorjeta: 0, vendAtivos: new Set(), fora: foraDe(l) });
+    const ehFora = (st, v) => st.fora.has(String(db.D.vendedor[v] || '').trim().toLowerCase());
     for (const i of baseSemVend) {
       const st = L.get(db.loja[i]);
       if (!st) continue;
       const v = db.vend[i];
-      if (!I.semVendedor.has(v)) st.vendAtivos.add(v);
+      if (!I.semVendedor.has(v) && !ehFora(st, v)) st.vendAtivos.add(v);
       if (I.taxaServico.has(db.desc[i])) { st.gorjeta += db.vt[i] || 0; continue; }
       if (I.eg.has(db.cat[i])) {
-        st.fatEGTot += db.vt[i] || 0;
         st.fatEG.set(v, (st.fatEG.get(v) || 0) + (db.vt[i] || 0));
+        if (!ehFora(st, v)) st.fatEGTot += db.vt[i] || 0; // base da divisão proporcional, sem quem está fora
       }
     }
     const porVend = TS.agrupar(baseSemVend, (i) => db.vend[i]);
@@ -284,6 +287,7 @@
       for (const [l, st] of L) {
         const f = st.fatEG.get(v);
         if (f !== undefined) { fat += f; temEG = true; }
+        if (ehFora(st, v)) continue; // fora do rateio: sem gorjeta
         const prop = st.fatEGTot ? (f || 0) / st.fatEGTot : 0;
         const gj = R.regrasDe(lojaNome(l)).gorjeta;
         if (gj.modo === 'igual') gorjeta += st.vendAtivos.size && f !== undefined ? (st.gorjeta * gj.percentual) / st.vendAtivos.size : 0;
@@ -296,7 +300,7 @@
     let gTot = 0, fTot = 0;
     for (const [l, st] of L) {
       gTot += st.gorjeta * R.regrasDe(lojaNome(l)).gorjeta.percentual;
-      fTot += st.fatEGTot;
+      fTot += [...st.fatEG.values()].reduce((a, b) => a + b, 0);
     }
     return { rows, total: { vendedor: 'Total', gorjeta: gTot, fatEG: fTot } };
   };
