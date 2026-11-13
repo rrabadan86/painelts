@@ -109,7 +109,7 @@ const EMB_PADRAO = {
   500: [{ cod: '80151', qtd: 1 }, { cod: '81010', qtd: 2 }],
   1000: [{ cod: '80152', qtd: 1 }, { cod: '81010', qtd: 2 }],
 };
-const PADRAO = { entregaDias: 10, coberturaDias: 30, paradoDias: 60, segurancaPct: 50, simplesPct: 0, cartaoPct: 0, embalagens: EMB_PADRAO };
+const PADRAO = { entregaDias: 10, coberturaDias: 30, paradoDias: 60, segurancaPct: 50, simplesPct: 0, cartaoPct: 0, outros: [], embalagens: EMB_PADRAO };
 function cfg(loja) {
   const c = (loja && loja.estoqueCfg) || {};
   return {
@@ -120,6 +120,8 @@ function cfg(loja) {
     // margem líquida: % do Simples Nacional e da taxa da maquininha sobre o valor vendido
     simplesPct: Number.isFinite(c.simplesPct) ? c.simplesPct : PADRAO.simplesPct,
     cartaoPct: Number.isFinite(c.cartaoPct) ? c.cartaoPct : PADRAO.cartaoPct,
+    // outros custos da loja: % das vendas ou R$ por mês (dividido pelas vendas do mês), em tudo, só loja ou só EG
+    outros: Array.isArray(c.outros) ? c.outros : [],
     embalagens: c.embalagens && typeof c.embalagens === 'object' ? c.embalagens : EMB_PADRAO,
   };
 }
@@ -130,6 +132,19 @@ function validarCfg(b) {
   const pct = (v) => { const x = Math.round(Number(String(v ?? 0).replace(',', '.')) * 100) / 100; return Number.isFinite(x) && x >= 0 && x <= 50 ? x : null; };
   out.simplesPct = pct(b.simplesPct); out.cartaoPct = pct(b.cartaoPct);
   if (out.simplesPct == null || out.cartaoPct == null) return { erro: 'Simples Nacional e maquininha: use um percentual entre 0 e 50.' };
+  const outros = Array.isArray(b.outros) ? b.outros : [];
+  if (outros.length > 20) return { erro: 'No máximo 20 custos.' };
+  out.outros = [];
+  for (const x of outros) {
+    const nome = String(x.nome || '').replace(/[\r\n]/g, ' ').trim().slice(0, 40);
+    const valor = Math.round(Number(String(x.valor ?? '').replace(',', '.')) * 100) / 100;
+    if (!nome && !(valor > 0)) continue; // linha vazia
+    if (!nome) return { erro: 'Dê um nome a cada custo.' };
+    if (!['pct', 'mes'].includes(x.tipo)) return { erro: `Custo "${nome}": escolha % das vendas ou R$ por mês.` };
+    if (!['tudo', 'loja', 'eg'].includes(x.aplica)) return { erro: `Custo "${nome}": escolha onde se aplica.` };
+    if (!(valor >= 0) || (x.tipo === 'pct' ? valor > 100 : valor > 10000000)) return { erro: `Custo "${nome}": valor inválido.` };
+    out.outros.push({ nome, tipo: x.tipo, valor, aplica: x.aplica });
+  }
   const emb = {};
   for (const [g, lista] of Object.entries(b.embalagens || {})) {
     if (!/^\d{1,4}$/.test(g) || !Array.isArray(lista) || lista.length > 6) return { erro: 'Embalagens inválidas.' };

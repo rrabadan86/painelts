@@ -210,24 +210,53 @@
     };
     const rgLoja = RR.regrasDe(db.D.loja[db.loja[0]]);
     const pSimples = (cfg.simplesPct || 0) / 100, pCartao = (cfg.cartaoPct || 0) / 100;
+    // outros custos da loja (Configurações): % das vendas, ou R$ por mês dividido pelas vendas do mês
+    // (no mês em andamento, só a parte dos dias que já passaram: o custo fica proporcional às vendas até agora)
+    const OUTROS = (cfg.outros || []).filter((x) => x.valor > 0);
+    const fatMes = new Map();
+    const fatDoMes = (ym, aplica) => {
+      const k = ym + '|' + aplica;
+      if (fatMes.has(k)) return fatMes.get(k);
+      let t = 0;
+      for (let i = 0; i < db.n; i++) {
+        if (db.ym[i] !== ym || M.taxa(i)) continue;
+        const eg = I.eg.has(db.cat[i]);
+        if (aplica === 'tudo' || (aplica === 'eg') === eg) t += db.vt[i] || 0;
+      }
+      fatMes.set(k, t);
+      return t;
+    };
+    const fracMes = (ym) => {
+      const ini = TS.isoToDay(ym + '-01'), dias = new Date(Date.UTC(+ym.slice(0, 4), +ym.slice(5, 7), 0)).getUTCDate();
+      return Math.min(1, Math.max(0, (db.maxDay - ini + 1) / dias));
+    };
+    const taxaOutro = (x, ym) => {
+      if (x.tipo === 'pct') return x.valor / 100;
+      const f = fatDoMes(ym, x.aplica);
+      return f > 0 ? (x.valor * fracMes(ym)) / f : 0;
+    };
     /** deduções da linha de venda: { com, roy, imp, maq } em R$ */
     function deducoes(i) {
       const vt = db.vt[i] || 0, g = db.grupoC[i];
       const ehEG = I.eg.has(db.cat[i]);
       const cat = ehEG ? null : I.arom.has(g) ? 'arom' : I.puro.has(g) ? 'puro' : I.acess.has(g) ? 'acess' : null;
       const ry = rgLoja.royalties;
+      const outros = OUTROS.map((x) => (x.aplica === 'tudo' || (x.aplica === 'eg') === ehEG ? vt * taxaOutro(x, db.ym[i]) : 0));
       return {
         com: cat ? vt * (comDoMes(db.ym[i])[cat] || 0) : 0,
         roy: ehEG ? vt * (ry.eg + ry.egMkt) : cat ? vt * (ry.loja + ry.mkt) : 0,
         imp: vt * pSimples,
         maq: vt * pCartao,
+        out: outros.reduce((a, b) => a + b, 0),
+        outros,
       };
     }
 
     // ---------- rentabilidade no período e filtros escolhidos ----------
     const base = TS.filtrar();
     let fat = 0, fatCusto = 0, custoTot = 0;
-    const dedTot = { com: 0, roy: 0, imp: 0, maq: 0 };
+    const dedTot = { com: 0, roy: 0, imp: 0, maq: 0, out: 0 };
+    const outrosTot = OUTROS.map(() => 0);
     const porProd = new Map(), porVend = new Map(), semCusto = new Map();
     for (const i of base) {
       if (M.taxa(i)) continue;
@@ -251,13 +280,15 @@
       fatCusto += vt; custoTot += c;
       const dd = deducoes(i);
       for (const k in dedTot) dedTot[k] += dd[k];
+      dd.outros.forEach((v, k) => { outrosTot[k] += v; });
       const cs = M.casar(i);
       const granel = cs.kg;
       const chave = granel ? 'kg:' + cs.it.cod : d;
-      const p = porProd.get(chave) || { produto: granel ? cs.it.desc : d, granel, qtd: 0, kg: 0, tam: new Map(), vt: 0, custo: 0, com: 0, roy: 0, imp: 0, maq: 0 };
+      const p = porProd.get(chave) || { produto: granel ? cs.it.desc : d, granel, qtd: 0, kg: 0, tam: new Map(), vt: 0, custo: 0, com: 0, roy: 0, imp: 0, maq: 0, out: 0, outros: OUTROS.map(() => 0) };
       const q = db.qtd[i] || 0;
       p.qtd += q; p.vt += vt; p.custo += c;
-      p.com += dd.com; p.roy += dd.roy; p.imp += dd.imp; p.maq += dd.maq;
+      p.com += dd.com; p.roy += dd.roy; p.imp += dd.imp; p.maq += dd.maq; p.out += dd.out;
+      dd.outros.forEach((v, k) => { p.outros[k] += v; });
       if (granel) { p.kg += (q * cs.g) / 1000; p.tam.set(cs.g, (p.tam.get(cs.g) || 0) + q); }
       porProd.set(chave, p);
       const vn = db.D.vendedor[db.vend[i]] || '—';
@@ -268,18 +299,21 @@
     const lucro = fatCusto - custoTot;
     const tamTxt = (m) => [...m].sort((a, b) => a[0] - b[0]).map(([g, q]) => `${fmt.int(q)}× ${g >= 1000 ? g / 1000 + ' kg' : g + 'g'}`).join(' · ');
     const prods = [...porProd.values()].filter((p) => p.vt > 0).map((p) => {
-      const ded = p.com + p.roy + p.imp + p.maq, liq = p.vt - p.custo - ded;
+      const ded = p.com + p.roy + p.imp + p.maq + p.out, liq = p.vt - p.custo - ded;
       return { ...p, lucro: p.vt - p.custo, margem: (p.vt - p.custo) / p.vt, ded, lucroLiq: liq, margemLiq: liq / p.vt, giro: p.granel ? p.kg : p.qtd, tamanhos: p.granel ? tamTxt(p.tam) : '' };
     });
-    const dedSoma = dedTot.com + dedTot.roy + dedTot.imp + dedTot.maq;
+    const dedSoma = dedTot.com + dedTot.roy + dedTot.imp + dedTot.maq + dedTot.out;
     const lucroLiqTot = fatCusto - custoTot - dedSoma;
     const pctDe = (v, r) => (r.vt ? fmt.pct(v / r.vt) : '');
-    const NOTA_DED = `Comissão: o que a loja pagou no mês (comissões, premiação e bônus) ÷ vendas do tipo do produto; Espaço Gourmet não tem comissão. Royalties pelas regras da loja. Simples ${fmt.pct(pSimples)} e maquininha ${fmt.pct(pCartao)} sobre o valor vendido (Configurações → Lojas → Estoque e margem).`;
+    const ONDE = { tudo: '', loja: ' (só loja)', eg: ' (só EG)' };
+    const rotOutro = (x) => `${x.nome}${x.tipo === 'mes' ? ` (R$ ${fmt.int(x.valor)}/mês)` : ''}${ONDE[x.aplica] || ''}`;
+    const NOTA_DED = `Comissão: o que a loja pagou no mês (comissões, premiação e bônus) ÷ vendas do tipo do produto; Espaço Gourmet não tem comissão. Royalties pelas regras da loja. Simples ${fmt.pct(pSimples)} e maquininha ${fmt.pct(pCartao)} sobre o valor vendido.${OUTROS.some((x) => x.tipo === 'mes') ? ' Custos mensais (R$/mês) são divididos pelas vendas do mês; no mês em andamento, só a parte dos dias que já passaram.' : ''} Ajuste em Configurações → Lojas → Estoque e margem.`;
     const linhasDed = (r) => [
       ['Comissão paga', fmt.brl(r.com), pctDe(r.com, r)],
       ['Royalties (com marketing)', fmt.brl(r.roy), pctDe(r.roy, r)],
       ['Simples Nacional', fmt.brl(r.imp), pctDe(r.imp, r)],
       ['Maquininha', fmt.brl(r.maq), pctDe(r.maq, r)],
+      ...OUTROS.map((x, k) => [rotOutro(x), fmt.brl(r.outros[k]), pctDe(r.outros[k], r)]),
       ['Total de deduções', fmt.brl(r.ded), pctDe(r.ded, r), 'tot'],
     ];
     const abrirDed = (e, r) => { e.stopPropagation(); popConta(e.currentTarget, `Deduções · ${r.produto}`, linhasDed(r), NOTA_DED); };
@@ -293,6 +327,7 @@
         ['− Royalties (com marketing)', fmt.brl(r.roy), pctDe(r.roy, r)],
         ['− Simples Nacional', fmt.brl(r.imp), pctDe(r.imp, r)],
         ['− Maquininha', fmt.brl(r.maq), pctDe(r.maq, r)],
+        ...OUTROS.map((x, k) => ['− ' + rotOutro(x), fmt.brl(r.outros[k]), pctDe(r.outros[k], r)]),
         ['= Lucro líquido', fmt.brl(r.lucroLiq), pctDe(r.lucroLiq, r), 'tot'],
       ], r.granel ? `Custo: kg × custo do kg da matéria-prima + saco kraft e etiquetas de cada pacote. ${NOTA_DED}` : NOTA_DED);
     };
@@ -392,9 +427,9 @@
 
     // ---------- KPIs ----------
     const kLiq = TS.kpi('Lucro líquido', fmt.brl0(lucroLiqTot), h('span', null, `margem de ${fmt.pct(fatCusto ? lucroLiqTot / fatCusto : null)}`),
-        `Lucro bruto − comissão ${fmt.brl0(dedTot.com)} − royalties ${fmt.brl0(dedTot.roy)} − Simples ${fmt.brl0(dedTot.imp)} (${fmt.pct(pSimples)}) − maquininha ${fmt.brl0(dedTot.maq)} (${fmt.pct(pCartao)}). Sem aluguel, salários e outras despesas fixas.${!pSimples && !pCartao ? ' Configure o % do Simples e da maquininha em Configurações → Lojas → Estoque e margem.' : ''}`);
+        `Lucro bruto − comissão ${fmt.brl0(dedTot.com)} − royalties ${fmt.brl0(dedTot.roy)} − Simples ${fmt.brl0(dedTot.imp)} (${fmt.pct(pSimples)}) − maquininha ${fmt.brl0(dedTot.maq)} (${fmt.pct(pCartao)})${OUTROS.length ? ` − outros custos ${fmt.brl0(dedTot.out)}` : ''}. Clique para ver a conta.${!pSimples && !pCartao ? ' Configure o % do Simples e da maquininha em Configurações → Lojas → Estoque e margem.' : ''}`);
     kLiq.classList.add('est-kpi-click');
-    kLiq.addEventListener('click', (e) => abrirLiq(e, { produto: 'todos os produtos com custo', vt: fatCusto, custo: custoTot, lucro, ...dedTot, ded: dedSoma, lucroLiq: lucroLiqTot }));
+    kLiq.addEventListener('click', (e) => abrirLiq(e, { produto: 'todos os produtos com custo', vt: fatCusto, custo: custoTot, lucro, ...dedTot, outros: outrosTot, ded: dedSoma, lucroLiq: lucroLiqTot }));
     corpo.append(h('div', { class: 'grid g-kpi' },
       TS.kpi('Lucro bruto', fmt.brl0(lucro), h('span', null, `margem de ${fmt.pct(fatCusto ? lucro / fatCusto : null)}`), 'Faturamento − custo dos produtos (com embalagem nos chás a granel), só das vendas que têm custo'),
       kLiq,
@@ -653,6 +688,21 @@
     const ent = num(cfg.entregaDias, 0, 120), cob = num(cfg.coberturaDias, 1, 365), par = num(cfg.paradoDias, 7, 730), seg = num(cfg.segurancaPct ?? 50, 0, 300);
     const simp = h('input', { class: 'f-input', type: 'number', min: 0, max: 50, step: '0.01', value: cfg.simplesPct ?? 0, style: { maxWidth: '110px' } });
     const maq = h('input', { class: 'f-input', type: 'number', min: 0, max: 50, step: '0.01', value: cfg.cartaoPct ?? 0, style: { maxWidth: '110px' } });
+    const outrosLinhas = [];
+    const outrosBox = h('div', { class: 'est-outros' });
+    const linhaOutro = (x = { nome: '', tipo: 'pct', valor: '', aplica: 'tudo' }) => {
+      const nome = h('input', { class: 'f-input', value: x.nome, placeholder: 'Ex.: Aluguel', maxlength: 40 });
+      const tipo = h('select', { class: 'f-input' }, h('option', { value: 'pct', selected: x.tipo === 'pct' || null }, '% das vendas'), h('option', { value: 'mes', selected: x.tipo === 'mes' || null }, 'R$ por mês'));
+      const valor = h('input', { class: 'f-input', type: 'number', min: 0, step: '0.01', value: x.valor, placeholder: '0' });
+      const aplica = h('select', { class: 'f-input' }, h('option', { value: 'tudo', selected: x.aplica === 'tudo' || null }, 'Todas as vendas'), h('option', { value: 'loja', selected: x.aplica === 'loja' || null }, 'Só loja'), h('option', { value: 'eg', selected: x.aplica === 'eg' || null }, 'Só Espaço Gourmet'));
+      const o = { nome, tipo, valor, aplica };
+      const rem = h('button', { type: 'button', class: 'est-outro-rem', title: 'Remover este custo', onclick: () => { outrosLinhas.splice(outrosLinhas.indexOf(o), 1); el.remove(); } }, '✕ Remover');
+      const el = h('div', { class: 'est-outro' }, nome, tipo, valor, aplica, rem);
+      outrosLinhas.push(o);
+      outrosBox.append(el);
+    };
+    (cfg.outros || []).forEach(linhaOutro);
+    const addOutro = h('button', { type: 'button', class: 'btn', style: { marginTop: '6px' }, onclick: () => linhaOutro() }, '+ Adicionar custo');
     const tams = ['50', '100', '250', '500', '1000'];
     const txtEmb = (l) => (l || []).map((x) => `${x.cod}×${x.qtd}`).join(', ');
     const nomeEmb = (l) => (l || []).map((x) => `${x.qtd}× ${porCod.get(String(x.cod))?.desc || '(código ' + x.cod + ' não está no estoque)'}`).join(' + ');
@@ -664,7 +714,7 @@
       try {
         const embalagens = Object.fromEntries(embs.map(([g, i]) => [g, i.value.split(',').map((s) => s.trim()).filter(Boolean).map((s) => { const [cod, q] = s.split(/[×x*]/i); return { cod: (cod || '').trim(), qtd: +(q || 1) }; })]));
         const r = await fetch(`/api/estoque/cfg?loja=${encodeURIComponent(lojaId)}`, { method: 'PUT', credentials: 'same-origin', headers: { 'X-Painel': '1', 'Content-Type': 'application/json' },
-          body: JSON.stringify({ entregaDias: +ent.value, coberturaDias: +cob.value, paradoDias: +par.value, segurancaPct: +seg.value, simplesPct: simp.value, cartaoPct: maq.value, embalagens }) });
+          body: JSON.stringify({ entregaDias: +ent.value, coberturaDias: +cob.value, paradoDias: +par.value, segurancaPct: +seg.value, simplesPct: simp.value, cartaoPct: maq.value, outros: outrosLinhas.map((o) => ({ nome: o.nome.value, tipo: o.tipo.value, valor: o.valor.value, aplica: o.aplica.value })), embalagens }) });
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j.erro || 'Falha ao salvar.');
         cache.delete(lojaId);
@@ -678,6 +728,9 @@
         h('label', null, h('span', null, 'Simples Nacional'), h('div', null, simp, ' %')),
         h('label', null, h('span', null, 'Taxa da maquininha'), h('div', null, maq, ' %'))),
       h('small', { class: 'muted' }, 'Comissão e royalties vêm das regras da loja (Comissionamento). Use a taxa média da maquininha (débito, crédito e Pix juntos).'),
+      h('div', { class: 'f-label', style: { marginTop: '14px' } }, 'Outros custos da loja'),
+      h('small', { class: 'muted' }, '% das vendas (ex.: aluguel percentual do shopping, app de delivery) ou R$ por mês (ex.: aluguel fixo, energia, salários): o valor do mês é dividido pelas vendas do mês, então cada produto paga a parte dele.'),
+      outrosBox, addOutro,
       h('div', { class: 'f-label', style: { marginTop: '14px' } }, 'Reposição'),
       h('div', { class: 'est-cfg-g' },
         h('label', null, h('span', null, 'Entrega do fornecedor'), h('div', null, ent, ' dias')),
@@ -692,7 +745,7 @@
   /** bloco de Configurações → Lojas (admin e franqueado) */
   TS.blocoEstoqueCfg = function (lojaId) {
     const b = h('section', { class: 'cfg-bloco' }, h('h3', null, 'Estoque e margem'),
-      h('p', { class: 'muted' }, 'Impostos e maquininha para a margem líquida, prazos da reposição e a embalagem dos chás a granel.'));
+      h('p', { class: 'muted' }, 'Impostos, maquininha e outros custos para a margem líquida, prazos da reposição e a embalagem dos chás a granel.'));
     const corpo = h('div', null, h('p', { class: 'muted' }, 'Carregando…'));
     b.append(corpo);
     buscar(lojaId).then(({ estoque, cfg }) => {
