@@ -1,5 +1,5 @@
 /* Favorito "Carrinho Tea Shop": roda DENTRO do Sistema de Pedidos (grnteashop.nextsoft.com.br), na sessão de quem
- * está logado, e coloca no carrinho a lista que o painel gerou (Estoque → Pedido → "Montar carrinho no site").
+ * está logado, e coloca no carrinho a lista que o painel gerou (Estoque e Margem → Pedido → "Montar carrinho no site").
  * - A lista vem do painel por um código de uso único (#teashop=… no endereço, 30 min).
  * - Trabalha num quadro escondido (mesmo site), produto por produto: busca pelo nome, confere o nome exato,
  *   ajusta ao múltiplo, coloca no carrinho e confere o topo ("N Itens - R$ …").
@@ -41,7 +41,7 @@
   const msg = (t, cls) => { el.msgs.innerHTML = ''; if (t) { const d = document.createElement('div'); d.className = 'msg ' + (cls || ''); d.innerHTML = t; el.msgs.append(d); } };
   window.__teashopCarrinho = { mostrar: () => box.scrollIntoView() };
 
-  if (!PAINEL || !codigo) { msg('Abra o site pelo painel: <b>Estoque → Pedido → Montar carrinho no site</b>. Depois clique neste favorito.', 'er'); el.topo.textContent = ''; return; }
+  if (!PAINEL || !codigo) { msg('Abra o site pelo painel: <b>Estoque e Margem → Pedido → Montar carrinho no site</b>. Depois clique neste favorito.', 'er'); el.topo.textContent = ''; return; }
   if (document.getElementById('UserName')) { msg('Entre no site com o login da loja e clique no favorito de novo.', 'er'); el.topo.textContent = ''; return; }
 
   // ---------- quadro escondido onde o trabalho acontece (a página da pessoa não recarrega) ----------

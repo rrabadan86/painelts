@@ -233,9 +233,8 @@
       PAGES = [...PAGES, 'estoque'];
       // menu Estoque com duas telas: Estoque e margem · Pedido (submenu no topo da página)
       PAGES = [...PAGES, 'pedido'];
-      tabs.append(h('a', { href: '#estoque', 'data-page': 'estoque', 'data-grupo': 'estoque,pedido' }, 'Estoque'));
       PAGES = [...PAGES, 'dre'];
-      tabs.append(h('a', { href: '#dre', 'data-page': 'dre' }, 'Resultado'));
+      tabs.append(h('a', { href: '#estoque', 'data-page': 'estoque', 'data-grupo': 'estoque,pedido,dre' }, 'Estoque e Margem'));
       PAGES = [...PAGES, 'config'];
       tabs.append(h('a', { href: '#config', 'data-page': 'config', class: 'tab-config', title: 'Configurações', 'aria-label': 'Configurações' }, '⚙'));
     }
