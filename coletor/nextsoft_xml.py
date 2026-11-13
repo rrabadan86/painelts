@@ -163,6 +163,31 @@ def guardar_xmls(brutos, situacao: str, ini: date, fim: date):
             tmp.replace(pasta / nome)
 
 
+class ErroAppNext(RuntimeError):
+    """o AppNext recusou o pedido: guarda o código e o texto da resposta (o motivo)"""
+    def __init__(self, a, status, texto):
+        self.status, self.texto = status, texto
+        super().__init__(f"{a:%m/%Y}: AppNext respondeu {status}{(': ' + texto) if texto else ''}")
+
+
+# "nada para baixar" (ex.: mês sem nota cancelada ainda): o AppNext responde 400/404 em vez de um .zip vazio
+RE_VAZIO = re.compile(r"nenhum|nenhuma|n[ãa]o (h[áa]|existe|foi encontrad|encontr)|sem (nota|xml|arquivo|registro)|not found|no (data|content|records)", re.I)
+
+
+def texto_resposta(resp):
+    try:
+        t = resp.text()
+    except Exception:  # noqa: BLE001
+        return ""
+    try:
+        j = json.loads(t)
+        if isinstance(j, dict):
+            t = j.get("message") or j.get("mensagem") or j.get("error") or j.get("erro") or j.get("title") or json.dumps(j, ensure_ascii=False)
+    except Exception:  # noqa: BLE001
+        pass
+    return re.sub(r"\s+", " ", str(t)).strip()[:300]
+
+
 def pedir_zip(page, ref, cab, a, b, corpo_base):
     url_nova = trocar_datas(ref.url, a, b)
     corpo = trocar_datas(corpo_base, a, b) if corpo_base else None
@@ -174,7 +199,7 @@ def pedir_zip(page, ref, cab, a, b, corpo_base):
     resp = page.request.fetch(url, method=ref.method, headers=cab, data=corpo, timeout=300_000)
     dados = resp.body()
     if not resp.ok:
-        raise RuntimeError(f"{a:%m/%Y}: AppNext respondeu {resp.status}")
+        raise ErroAppNext(a, resp.status, texto_resposta(resp))
     if not dados.startswith(b"PK"):
         dados = desembrulhar(page, dados)
         if not dados.startswith(b"PK"):
@@ -388,19 +413,37 @@ def main():
             else:
                 log("Aviso: não achei 'cancelado' no pedido do Gerar; só os XMLs ativos serão guardados.")
             for a, b in janelas(INI, FIM):
-                dados = pedir_zip(page, ref, cab, a, b, ref.post_data)
+                try:
+                    dados = pedir_zip(page, ref, cab, a, b, ref.post_data)
+                except ErroAppNext as e:
+                    # mês sem nota nenhuma: segue; outro motivo: para, com o texto do AppNext no log
+                    if e.status in (400, 404) and RE_VAZIO.search(e.texto or ""):
+                        log(f"{a:%m/%Y}: sem notas ativas no período (AppNext: {e.texto})")
+                        dados = None
+                    else:
+                        raise
                 antes_n = len(notas)
                 brutos = []
-                ler_zip(dados, notas, brutos)
-                guardar_xmls(brutos, "ativos", a, b)
-                txt = f"{a:%m/%Y}: {len(notas) - antes_n} notas ativas ({len(dados) // 1024} KB)"
+                if dados:
+                    ler_zip(dados, notas, brutos)
+                    guardar_xmls(brutos, "ativos", a, b)  # sem resposta não apaga o que já estava guardado
+                txt = f"{a:%m/%Y}: {len(notas) - antes_n} notas ativas ({len(dados or b'') // 1024} KB)"
                 if corpo_canc:
-                    dc = pedir_zip(page, ref, cab, a, b, corpo_canc)
+                    # cancelados: mês sem nenhuma cancelada é comum (o AppNext responde 400): conta como zero
+                    try:
+                        dc = pedir_zip(page, ref, cab, a, b, corpo_canc)
+                    except ErroAppNext as e:
+                        if e.status not in (400, 404):
+                            raise
+                        log(f"{a:%m/%Y}: nenhuma nota cancelada (AppNext respondeu {e.status}{': ' + e.texto if e.texto else ''})")
+                        dc = None
                     canc, bc = {}, []
-                    ler_zip(dc, canc, bc)
+                    if dc:
+                        ler_zip(dc, canc, bc)
                     # se o AppNext devolver todas, fica só o que não está entre as ativas
                     bc = [x for x in bc if not (x[2] and (x[2]["chave"] or "") in notas)]
-                    guardar_xmls(bc, "cancelados", a, b)
+                    if dc:
+                        guardar_xmls(bc, "cancelados", a, b)
                     txt += f" · {sum(1 for x in bc if x[2])} canceladas ({len(bc)} XMLs)"
                 log(txt)
             # o zip baixado pelo clique é do período que estava na tela (não do pedido): só serve de conferência
