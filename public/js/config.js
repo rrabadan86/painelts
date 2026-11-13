@@ -135,6 +135,8 @@
     return ['ok', 'Em dia'];
   }
 
+  // aba aberta de cada loja (lembrada enquanto a aba do navegador estiver aberta)
+  const secaoLoja = (() => { try { return new Map(JSON.parse(sessionStorage.getItem('cfgSecao') || '[]')); } catch { return new Map(); } })();
   function cartaoLoja(l) {
     const chave = 'loja:' + l.id;
     const aberto = abertos.has(chave) || est.lojas.length === 1;
@@ -148,14 +150,23 @@
       h('span', { class: 'badge ' + cls }, txt), h('span', { class: 'cfg-seta' }, aberto ? '▴' : '▾'));
     const card = h('div', { class: 'card cfg-loja' }, cab);
     if (!aberto) return card;
-    const grid = h('div', { class: 'cfg-loja-corpo' });
-    grid.append(blocoDados(l));
-    if (est.perfil === 'admin') grid.append(blocoAppNext(l));
-    grid.append(blocoMetas(l), blocoFerias(l), blocoFechamento(l), blocoWpp(l), blocoFixe(l), blocoPlanilhas(l), blocoOperacao(l), blocoMarca(l));
-    if ((est.perfil === 'admin' || est.perfil === 'franqueado') && TS.blocoEstoqueCfg) grid.append(TS.blocoEstoqueCfg(l.id));
-    if (est.perfil === 'admin' && TS.blocoPedidoAcesso) grid.append(TS.blocoPedidoAcesso(l.id));
-    if (est.perfil === 'admin') grid.append(blocoRegras(l), blocoEditar(l));
-    card.append(grid);
+    // seções da loja em abas (mesmo submenu do Estoque e Margem); só monta os blocos da aba aberta
+    const admin = est.perfil === 'admin', gestor = admin || est.perfil === 'franqueado';
+    const SECOES = [
+      ['dados', 'Dados e atualização', 'Situação dos dados, coleta automática e envio de planilhas', () => [blocoDados(l), blocoPlanilhas(l)]],
+      ['metas', 'Metas e comissão', 'Meta do mês, regras de comissão e férias da equipe', () => [blocoMetas(l), blocoFerias(l), admin ? blocoRegras(l) : null]],
+      ['loja', 'Loja e equipe', 'Horário de funcionamento, equipe, logo e dados da loja', () => [blocoOperacao(l), blocoMarca(l), admin ? blocoEditar(l) : null]],
+      gestor && TS.blocoEstoqueCfg ? ['estoque', 'Estoque e margem', 'Impostos, maquininha, custos da loja por categoria, reposição e embalagens', () => [TS.blocoEstoqueCfg(l.id)]] : null,
+      ['integracoes', 'Integrações', 'AppNext, Sistema de Pedidos e FIXE', () => [admin ? blocoAppNext(l) : null, admin && TS.blocoPedidoAcesso ? TS.blocoPedidoAcesso(l.id) : null, blocoFixe(l)]],
+      ['avisos', 'Mensagens', 'Fechamento do dia por e-mail e mensagens de WhatsApp', () => [blocoFechamento(l), blocoWpp(l)]],
+    ].filter(Boolean);
+    const atual = SECOES.some((x) => x[0] === secaoLoja.get(l.id)) ? secaoLoja.get(l.id) : SECOES[0][0];
+    const sec = SECOES.find((x) => x[0] === atual);
+    const nav = h('nav', { class: 'submenu cfg-sub', 'aria-label': 'Seções da loja' },
+      SECOES.map(([id, rot]) => h('a', { href: '#config', class: id === atual ? 'on' : null, 'aria-current': id === atual ? 'page' : null,
+        onclick: (e) => { e.preventDefault(); secaoLoja.set(l.id, id); try { sessionStorage.setItem('cfgSecao', JSON.stringify([...secaoLoja])); } catch { /* ok */ } pintar(); } }, rot)));
+    const grid = h('div', { class: 'cfg-loja-corpo' }, ...sec[3]().filter(Boolean));
+    card.append(h('div', { class: 'cfg-loja-nav' }, nav, h('div', { class: 'muted cfg-sub-d' }, sec[2])), grid);
     return card;
   }
 
