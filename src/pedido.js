@@ -122,7 +122,7 @@ const crypto = require('crypto');
 const SITE = (process.env.PEDIDO_SITE || 'https://grnteashop.nextsoft.com.br/Pedidos/').replace(/\/?$/, '/');
 const ORIGENS = new Set([new URL(SITE).origin, new URL(SITE).origin.replace(/^https:/, 'http:')]);
 const codigos = new Map(); // código → { loja, itens, por, expira }
-const STATUS = new Set(['ok', 'indisponivel', 'nao_encontrado', 'acima_do_maximo', 'sem_confirmacao', 'erro']);
+const STATUS = new Set(['ok', 'sem_estoque', 'recusado', 'indisponivel', 'nao_encontrado', 'acima_do_maximo', 'sem_confirmacao', 'erro']);
 function limparCodigos() { const t = Date.now(); for (const [k, v] of codigos) if (v.expira < t) codigos.delete(k); }
 function criarCodigo(id, itens, por) {
   limparCodigos();

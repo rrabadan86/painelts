@@ -7,6 +7,7 @@
 (function () {
   const { h, fmt, state } = TS;
   const DIA = 86400e3;
+  const CLASSES = { estrela: 'Estrela', volume: 'Volume', joia: 'Joia', peso: 'Peso morto' };
   const GRUPOS = { cha: 'Chás a granel', env: 'Envasados', acess: 'Acessórios', insumo: 'Embalagens e insumos' };
   const ordemG = ['cha', 'env', 'acess', 'insumo'];
   const qtdPorLoja = new Map(); // loja|modo → Map(cod → quantidade editada)
@@ -69,7 +70,7 @@
     const d30 = fim - 29, dN = fim - N + 1, d90 = fim - 89;
     const cons = new Map(), lyB = new Map(), lyN = new Map(), lyDias = new Map(), lyEv = new Map();
     const tot = { kg: { b: 0, n: 0 }, un: { b: 0, n: 0 } };
-    const contrib = new Map(), vendaItem = new Map(), grupoVt = new Map();
+    const contrib = new Map(), vendaItem = new Map(), grupoVt = new Map(), bruto = new Map();
     const fatG = { cha: 0, env: 0, acess: 0 };
     let vendasN = 0, cmvVt = 0, cmvCusto = 0, cresA = 0, cresB = 0, evLyVt = 0;
     const lim0 = Math.min(lyB0, evLy0 ?? Infinity, d90 - 365);
@@ -98,6 +99,11 @@
           if (k === 0) gm[grupoLinha(i, c)] += vt || 0.001; else gm.insumo += 0.001;
         }
       });
+      // giro e margem bruta dos últimos 90 dias (classe: estrela, volume, joia, peso morto)
+      if (loja && d >= d90 && cs.length) {
+        const cu = M.custo(i);
+        if (cu != null) { const k = cs[0][0].cod; const b = bruto.get(k) || bruto.set(k, { vt: 0, custo: 0, giro: 0, kg: cs[0][0].un === 'Kg' }).get(k); b.vt += vt; b.custo += cu; b.giro += cs[0][1]; }
+      }
       // lucro sem fixos por item (o principal da linha), últimos 30 dias, só loja
       if (loja && d >= d30 && cs.length) {
         const cu = M.custo(i);
@@ -133,6 +139,15 @@
       return Math.round(x * 1000) / 1000;
     };
 
+    // mesma regra da matriz do Estoque e margem: giro × margem bruta comparados com a mediana
+    // (chá a granel entre chás, em kg; acessórios e envasados entre si, em unidades)
+    const med = (xs) => { const s = [...xs].sort((a, b) => a - b); return s.length ? s[Math.floor(s.length / 2)] : 0; };
+    const classe = new Map();
+    for (const kg of [true, false]) {
+      const xs = [...bruto.entries()].filter(([, b]) => b.kg === kg && b.vt > 0);
+      const mq = med(xs.map(([, b]) => b.giro)), mm = med(xs.map(([, b]) => (b.vt - b.custo) / b.vt));
+      for (const [k, b] of xs) { const m = (b.vt - b.custo) / b.vt; classe.set(k, b.giro >= mq ? (m >= mm ? 'estrela' : 'volume') : (m >= mm ? 'joia' : 'peso')); }
+    }
     const linhas = [];
     for (const it of estoque.itens) {
       const vel = (cons.get(it.cod) || 0) / 30;
@@ -163,6 +178,7 @@
       const site = !catalogo ? 'sem' : !c ? 'fora' : !c.disp ? 'indisp' : 'ok';
       const unidadeEstranha = c && c.disp && it.custo > 0 && (c.preco / it.custo > 4 || c.preco / it.custo < 0.25);
       linhas.push({ cod: it.cod, produto: it.desc, it, c, grupo: g, grupoTxt: GRUPOS[g], qtd, prev, dias, urgente, precisa, sugerido, conta, preco, lucroDia, site, unidadeEstranha,
+        classe: classe.get(it.cod) || null,
         margem: vendaItem.get(it.cod) ? (contrib.get(it.cod) || 0) / vendaItem.get(it.cod) : null, pedir: 0, motivo: '' });
     }
 
@@ -357,6 +373,7 @@
       fora: ['Ficou de fora', (r) => !(r.pedir > 0) && (r.site === 'ok' || r.site === 'sem')],
       indisp: ['Indisponível no site', (r) => r.site === 'indisp'],
       cat: ['Fora do catálogo', (r) => r.site === 'fora'],
+      todos: ['Todos', () => true],
     };
     const cont = (k) => R.linhas.filter(FILTROS[k][1]).length;
     const linhas = R.linhas.filter(FILTROS[filtro][1]);
@@ -365,6 +382,8 @@
       cols: [
         { key: 'produto', label: 'Produto', align: 'l', sticky: true, wrap: true, render: (r) => h('span', null, r.produto, h('small', { class: 'est-tam' }, `cód. ${r.cod}`)) },
         { key: 'grupoTxt', label: 'Grupo', align: 'l' },
+        { key: 'classe', label: 'Classe', align: 'l', title: 'Giro × margem bruta dos últimos 90 dias, comparados com a mediana (mesma regra do Estoque e margem). Estrela: vende muito e tem margem boa. Volume: vende muito, margem menor. Joia: margem boa, vende pouco. Peso morto: vende pouco e margem baixa',
+          render: (r) => (r.classe ? h('span', { class: 'ped-cl ped-cl-' + r.classe }, CLASSES[r.classe]) : h('span', { class: 'muted' }, '—')), sortVal: (r) => ({ estrela: 4, volume: 3, joia: 2, peso: 1 })[r.classe] || 0 },
         { key: 'sit', label: 'Situação', align: 'l', render: (r) => { const [t, c] = SITU(r); return h('span', { class: 'badge ' + c }, t); }, sortVal: (r) => (r.qtd <= 0 ? 3 : r.urgente ? 2 : 1) },
         { key: 'qtd', label: 'Estoque', render: (r) => qtdTxt(r.qtd, r.it) },
         { key: 'dias', label: 'Dura', fmt: (v) => (v == null ? '—' : v > 365 ? '+1 ano' : `${fmt.int(v)} dias`) },
@@ -376,7 +395,7 @@
         { key: 'motivo', label: 'Obs.', align: 'l', render: (r) => obs(r) },
       ],
       rows: linhas, sortKey: filtro === 'pedido' ? 'lucroDia' : 'lucroDia', maxHeight: '620px', search: 'Buscar produto…', searchKeys: ['produto', 'cod'], cls: 'est-t ped-t',
-      empty: { pedido: 'Nada no pedido.', fora: 'Nada ficou de fora.', indisp: 'Nenhum produto necessário está indisponível no site.', cat: 'Todos os produtos necessários estão no catálogo.' }[filtro],
+      empty: { pedido: 'Nada no pedido.', fora: 'Nada ficou de fora.', indisp: 'Nenhum produto necessário está indisponível no site.', cat: 'Todos os produtos necessários estão no catálogo.', todos: 'Nenhum produto precisa de reposição.' }[filtro],
     });
     function obs(r) {
       if (r.site === 'indisp') return h('span', { class: 'neg' }, 'indisponível no site (R$ 0,01)');
@@ -388,16 +407,28 @@
       if (r.site !== 'ok' && r.site !== 'sem') return '—';
       const passo = (r.c && r.c.mult) || (r.it.un === 'Kg' ? 0.1 : 1);
       const i = h('input', { class: 'f-input ped-q', type: 'number', min: 0, step: String(passo), value: r.pedir || 0 });
-      i.addEventListener('change', () => {
-        let v = Math.max(0, +i.value || 0);
+      // ＋ põe no pedido (a quantidade que precisa, sem olhar o valor); × tira do pedido
+      const b = h('button', { type: 'button', class: 'ped-ab' });
+      const pintarB = () => {
+        const tem = r.pedir > 0;
+        b.className = 'ped-ab ' + (tem ? 'tira' : 'poe');
+        b.textContent = tem ? '×' : '＋';
+        b.title = tem ? 'Tirar do pedido' : `Adicionar ao pedido (${qtdTxt(r.sugerido, r.it)}), mesmo passando do valor`;
+        b.setAttribute('aria-label', b.title);
+      };
+      const definir = (v) => {
         if (v > 0) v = Math.round(Math.ceil(v / passo - 1e-9) * passo * 1000) / 1000;
         i.value = v;
         r.pedir = v;
         if (v === r.sugeridoPedir) editados.delete(String(r.cod)); else editados.set(String(r.cod), v);
         if (r._tot) r._tot.textContent = v > 0 ? fmt.brl(v * (r.preco || 0)) : '—';
+        pintarB();
         pintarTotal();
-      });
-      return h('span', { class: 'ped-q-w' }, i, h('small', null, unid(r.it)));
+      };
+      i.addEventListener('change', () => definir(Math.max(0, +i.value || 0)));
+      b.addEventListener('click', () => definir(r.pedir > 0 ? 0 : (r.sugerido || passo)));
+      pintarB();
+      return h('span', { class: 'ped-q-w' }, i, h('small', null, unid(r.it)), b);
     }
     const catInfo = p.catalogo
       ? `Preços e disponibilidade do Sistema de Pedidos de ${new Date(p.catalogo.em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}.`
@@ -406,9 +437,23 @@
       ? `Compra só o que precisa para ${R.ent} dias de entrega + ${R.N} dias até o próximo pedido, com a época do ano. Urgentes primeiro; depois quem deixa mais lucro sem fixos por dia. ${catInfo}`
       : `O que vendeu no ${R.ev.nome} do ano passado × crescimento, + o consumo normal até lá − estoque. Sem limite de valor: ajuste as quantidades. ${catInfo}`;
     const btnCsv = h('button', { type: 'button', class: 'btn', onclick: () => baixarCsv(R.linhas.filter((r) => r.pedir > 0), loja) }, '⬇ CSV');
+    // Limpar: zera as quantidades do pedido (tudo ou um grupo); "Voltar à sugestão" desfaz
+    const zerar = (g) => {
+      for (const r of R.linhas) if ((r.site === 'ok' || r.site === 'sem') && (!g || r.grupo === g)) { if (r.sugeridoPedir === 0) editados.delete(String(r.cod)); else editados.set(String(r.cod), 0); }
+      pintar(corpo, loja, M, e, p);
+    };
+    const noGrupo = (g) => R.linhas.filter((r) => r.pedir > 0 && (!g || r.grupo === g));
+    const opLimpar = (rot, g) => { const l = noGrupo(g); return h('button', { type: 'button', disabled: !l.length || null, onclick: () => zerar(g) }, rot, h('small', null, l.length ? `${fmt.int(l.length)} · ${fmt.brl0(l.reduce((s, r) => s + r.pedir * (r.preco || 0), 0))}` : 'vazio')); };
+    const menuLimpar = h('details', { class: 'ped-menu' }, h('summary', { class: 'btn' }, 'Limpar ▾'),
+      h('div', { class: 'ped-menu-l' },
+        opLimpar('Limpar tudo', null),
+        ...['cha', 'env', 'acess', 'insumo'].filter((g) => R.linhas.some((r) => r.grupo === g)).map((g) => opLimpar(`Limpar ${GRUPOS[g].toLowerCase()}`, g)),
+        h('button', { type: 'button', class: 'ped-menu-volta', disabled: !editados.size || null, onclick: () => { editados.clear(); pintar(corpo, loja, M, e, p); } }, 'Voltar à sugestão', h('small', null, editados.size ? `${editados.size} alterado(s)` : 'nada alterado'))));
+    const foraMenu = (x) => { if (!menuLimpar.contains(x.target)) menuLimpar.open = false; };
+    menuLimpar.addEventListener('toggle', () => { if (menuLimpar.open) document.addEventListener('mousedown', foraMenu); else document.removeEventListener('mousedown', foraMenu); });
     corpo.append(h('div', { class: 'mt' }, TS.cardWithTools('Produtos', sub,
       h('div', { class: 'est-tools' }, tab.searchBox && (tab.searchBox.classList.add('est-busca'), tab.searchBox),
-        TS.seg(Object.entries(FILTROS).map(([k, [t]]) => [`${t} (${cont(k)})`, k]), filtro, (v) => { state.pedFiltro = v; pintar(corpo, loja, M, e, p); }), btnCsv),
+        TS.seg(Object.entries(FILTROS).map(([k, [t]]) => [`${t} (${cont(k)})`, k]), filtro, (v) => { state.pedFiltro = v; pintar(corpo, loja, M, e, p); }), menuLimpar, btnCsv),
       tab)));
     if (editados.size) corpo.append(h('p', { class: 'muted' }, `${editados.size} quantidade(s) alterada(s) à mão. `, h('a', { href: '#', onclick: (x) => { x.preventDefault(); editados.clear(); pintar(corpo, loja, M, e, p); } }, 'Voltar à sugestão')));
 
@@ -583,7 +628,7 @@
 
   function resultadoCarrinho(c) {
     if (!c || !Array.isArray(c.itens) || (c.modo === 'navegador' && !c.itens.length)) return null;
-    const ST = { ok: ['No carrinho', 'ok'], indisponivel: ['Indisponível', 'erro'], nao_encontrado: ['Não achou no site', 'erro'], acima_do_maximo: ['Acima do máximo', 'warn'], sem_confirmacao: ['Sem confirmação', 'warn'], erro: ['Erro', 'erro'] };
+    const ST = { ok: ['No carrinho', 'ok'], sem_estoque: ['Sem estoque no fornecedor', 'erro'], recusado: ['O site recusou', 'erro'], indisponivel: ['Indisponível', 'erro'], nao_encontrado: ['Não achou no site', 'erro'], acima_do_maximo: ['Acima do máximo', 'warn'], sem_confirmacao: ['Sem confirmação', 'warn'], erro: ['Erro', 'erro'] };
     const ok = c.itens.filter((x) => x.status === 'ok').length, prob = c.itens.length - ok;
     const site = c.site ? `${c.site.replace(/Abertura\.aspx.*$/, '')}Abertura.aspx` : null;
     const fimTxt = c.fim
@@ -598,9 +643,9 @@
       TS.table({
         cols: [
           { key: 'nome', label: 'Produto', align: 'l', wrap: true },
-          { key: 'status', label: 'Resultado', align: 'l', render: (r) => { const s = ST[r.status] || [r.status, '']; return h('span', { class: 'badge ' + s[1], title: r.erro || null }, s[0]); } },
+          { key: 'status', label: 'Resultado', align: 'l', render: (r) => { const s = ST[r.status] || [r.status, '']; return h('span', null, h('span', { class: 'badge ' + s[1], title: r.erro || null }, s[0]), r.erro && (r.status === 'sem_estoque' || r.status === 'recusado') ? h('small', { class: 'est-tam' }, r.erro) : null); } },
           { key: 'pedido', label: 'Pedido', fmt: fmt.n2 },
-          { key: 'qtd', label: 'No carrinho', fmt: (v) => (v ? fmt.n2(v) : '—') },
+          { key: 'qtd', label: 'No carrinho', fmt: (v, r) => (v && r.status === 'ok' ? fmt.n2(v) : '—') },
           { key: 'preco', label: 'Preço', fmt: (v) => (v ? fmt.brl(v) : '—') },
         ],
         rows: c.itens, sortKey: 'status', sortDir: 'asc', maxHeight: '360px', cls: 'est-t',

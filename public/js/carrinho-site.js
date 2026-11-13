@@ -29,7 +29,7 @@
 #tsc ul{list-style:none;margin:8px 0 0;padding:0}#tsc li{display:flex;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid #F0EBDF;font-size:13px}#tsc li span{flex:1}
 #tsc .st{font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;white-space:nowrap}.tsc-ok{background:#E3EFE3;color:#22603A}.tsc-er{background:#F8E1DB;color:#9A3420}.tsc-av{background:#F6EBC4;color:#7A5E0E}.tsc-pe{background:#EEE;color:#666}
 #tsc button.tb{border:1px solid #2C5234;background:#fff;color:#2C5234;border-radius:8px;padding:3px 8px;font-size:12px;cursor:pointer}#tsc button.pr{background:#2C5234;color:#fff;border:0;border-radius:8px;padding:8px 12px;font-size:13px;cursor:pointer;margin-top:10px}
-#tsc .msg{padding:10px;border-radius:8px;margin-top:8px}#tsc .ok{background:#E3EFE3;color:#22603A}#tsc .er{background:#F8E1DB;color:#7A2B18}`;
+#tsc .tsc-av-t{color:#9A3420}#tsc .msg{padding:10px;border-radius:8px;margin-top:8px}#tsc .ok{background:#E3EFE3;color:#22603A}#tsc .er{background:#F8E1DB;color:#7A2B18}`;
   const st = document.createElement('style'); st.textContent = css; document.head.append(st);
   const box = document.createElement('div'); box.id = 'tsc';
   box.innerHTML = '<header><b>🛒 Carrinho Tea Shop</b><button type="button" title="Fechar">✕</button></header><div class="c"><div class="topo">Preparando…</div><div class="bar"><i style="width:0"></i></div><div class="msgs"></div><ul></ul></div>';
@@ -65,6 +65,18 @@
       const min = g(/Pedido M[ií]nimo:\s*([^\n]+)/i);
       return { q, nome: (iMin > 0 ? linhas.slice(0, iMin).filter((s) => !/^NOVIDADE$/i.test(s)).pop() : linhas[0]) || '', preco: num(g(/R\$\s*([\d.,]+)/)), min: min && !/livre/i.test(min) ? num(min) : null, max: num(g(/Pedido M[áa]ximo:\s*([^\n]+)/i)), mult: num(g(/M[úu]ltiplo de\s*([\d.,]+)/i)) || 1 };
     });
+  }
+  /** aviso do site depois do clique (janela "Atenção", ex.: "O produto X não possui estoque suficiente.") */
+  function avisoDoSite(d) {
+    const vis = (e) => { const s = d.defaultView.getComputedStyle(e); return s.display !== 'none' && s.visibility !== 'hidden' && e.offsetHeight > 0; };
+    const m = [...d.querySelectorAll('.modal')].find((e) => e.id !== 'modalCarregamentoAjax' && e.id !== 'modalCarrinho' && vis(e));
+    if (!m) return null;
+    const corpo = m.querySelector('.modal-body') || m;
+    const txt = corpo.textContent.replace(/\s+/g, ' ').trim();
+    // fecha a janela para seguir com o próximo produto
+    const fechar = [...m.querySelectorAll('button,a')].find((b) => /fechar|ok|×/i.test(b.textContent.trim()));
+    try { fechar ? fechar.click() : m.querySelector('[data-dismiss]')?.click(); } catch { /* ok */ }
+    return txt || 'O site mostrou um aviso.';
   }
   const ajustar = (qtd, c) => { let q = Math.max(qtd, c.min || 0); q = Math.round(Math.ceil(q / c.mult - 1e-9) * c.mult * 1000) / 1000; if (c.max && q > c.max) q = Math.floor(c.max / c.mult + 1e-9) * c.mult; return q; };
 
@@ -104,9 +116,11 @@
       if (!botao) return { ...r, status: 'erro', erro: 'botão "Colocar no Carrinho" não encontrado' };
       // o clique pode recarregar o quadro ou só atualizar o topo: espera um dos dois
       const recarregou = agir(() => botao.click()).catch(() => null);
-      let depois = antes;
-      for (let k = 0; k < 30 && depois === antes; k++) { await Promise.race([recarregou, espera(500)]); depois = topoCarrinho(doc()); }
-      return { ...r, qtd: q, preco: alvo.preco, status: depois !== antes ? 'ok' : 'sem_confirmacao' };
+      let depois = antes, aviso = null;
+      for (let k = 0; k < 30 && depois === antes && !aviso; k++) { await Promise.race([recarregou, espera(500)]); depois = topoCarrinho(doc()); aviso = avisoDoSite(doc()); }
+      if (depois !== antes) return { ...r, qtd: q, preco: alvo.preco, status: 'ok' };
+      if (aviso) return { ...r, qtd: q, preco: alvo.preco, status: /estoque/i.test(aviso) ? 'sem_estoque' : 'recusado', erro: aviso };
+      return { ...r, qtd: q, preco: alvo.preco, status: 'sem_confirmacao' };
     } catch (e) {
       return { ...r, status: 'erro', erro: String(e.message || e).slice(0, 200) };
     }
@@ -114,7 +128,7 @@
 
   // ---------- estado e tela ----------
   let itens = [], res = new Map(), atual = null;
-  const ROT = { ok: ['no carrinho', 'tsc-ok'], indisponivel: ['indisponível', 'tsc-er'], nao_encontrado: ['não achou', 'tsc-er'], acima_do_maximo: ['acima do máximo', 'tsc-av'], sem_confirmacao: ['sem confirmação', 'tsc-av'], erro: ['erro', 'tsc-er'] };
+  const ROT = { ok: ['no carrinho', 'tsc-ok'], sem_estoque: ['sem estoque no fornecedor', 'tsc-er'], recusado: ['o site recusou', 'tsc-er'], indisponivel: ['indisponível', 'tsc-er'], nao_encontrado: ['não achou', 'tsc-er'], acima_do_maximo: ['acima do máximo', 'tsc-av'], sem_confirmacao: ['sem confirmação', 'tsc-av'], erro: ['erro', 'tsc-er'] };
   function pintar() {
     const feitos = itens.filter((i) => res.has(i.cod)).length, ok = [...res.values()].filter((x) => x.status === 'ok').length;
     el.bar.style.width = `${itens.length ? Math.round((feitos / itens.length) * 100) : 0}%`;
@@ -124,8 +138,9 @@
       const x = res.get(it.cod);
       const li = document.createElement('li');
       const [t, c] = x ? ROT[x.status] : it.nome === atual ? ['colocando…', 'tsc-pe'] : ['na fila', 'tsc-pe'];
-      li.innerHTML = `<span>${it.nome.replace(/</g, '&lt;')}${x && x.qtd ? ` <small>(${br(x.qtd, x.qtd % 1 ? 2 : 0)})</small>` : ''}</span><em class="st ${c}" title="${x && x.erro ? x.erro.replace(/"/g, '') : ''}">${t}</em>`;
-      if (x && x.status !== 'ok' && x.status !== 'indisponivel' && !rodando) {
+      const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+      li.innerHTML = `<span>${esc(it.nome)}${x && x.qtd ? ` <small>(${br(x.qtd, x.qtd % 1 ? 2 : 0)})</small>` : ''}${x && x.erro && (x.status === 'sem_estoque' || x.status === 'recusado') ? `<br><small class="tsc-av-t">Site: ${esc(x.erro)}</small>` : ''}</span><em class="st ${c}" title="${x && x.erro ? esc(x.erro) : ''}">${t}</em>`;
+      if (x && !['ok', 'indisponivel', 'sem_estoque'].includes(x.status) && !rodando) {
         const b = document.createElement('button'); b.className = 'tb'; b.textContent = 'Tentar de novo';
         b.title = x.status === 'sem_confirmacao' ? 'O site não confirmou. Ele pode já estar no carrinho: confira antes para não dobrar.' : '';
         b.onclick = () => rodar([it]);
