@@ -386,7 +386,7 @@
     const rede = inp({ value: c.rede || 'teashop', autocomplete: 'off' });
     const usuario = inp({ value: c.usuario || '', autocomplete: 'off' });
     const senha = inp({ type: 'password', autocomplete: 'new-password', placeholder: c.temSenha ? '•••••••• (guardada — preencha só para trocar)' : '' });
-    const destino = inp({ value: c.lojaDestino || l.appnext || '', placeholder: 'Ex.: TORRES - TEA SHOP TORRES' });
+    const destino = inp({ value: (c.configurado ? c.lojaDestino : l.appnext) || '', placeholder: 'Ex.: TORRES - TEA SHOP TORRES' });
     const idDest = inp({ value: c.lojaIdDestino || '', placeholder: 'opcional' });
     return h('section', { class: 'cfg-bloco cfg-form' }, h('h3', null, 'Acesso ao AppNext'),
       h('div', { class: 'cfg-grid' }, campo('Rede', rede), campo('Usuário', usuario), campo('Senha', senha, 'Fica só na VPS e nunca aparece de volta aqui.'),
@@ -470,6 +470,7 @@
       campo('E-mail que recebe a exportação', email, gmail ? `Use o Gmail da loja (${gmail}): é nele que o painel procura o e-mail do FIXE.` : 'Configure antes o Gmail da loja em "Fechamento do dia": é nele que o painel procura o e-mail do FIXE.')),
       h('div', { class: 'cfg-acoes' },
         acao('Salvar acesso ao FIXE', async () => { await api('PUT', `/lojas/${l.id}/fixe`, { url: url.value, usuario: usuario.value, senha: senha.value, email: email.value }); senha.value = ''; return 'Acesso ao FIXE salvo.'; }, 'btn primary'),
+        fx.url ? acao('Remover acesso', async () => { if (!confirm('Remover o acesso desta loja ao FIXE (endereço, usuário, senha e e-mail)? O cadastro de clientes que já está no painel continua.')) return null; await api('DELETE', `/lojas/${l.id}/fixe`); return 'Acesso ao FIXE removido.'; }) : null,
         est.perfil === 'admin' && est.coletorAtivo && fx.url ? acao('Importar agora', async () => { await api('POST', `/lojas/${l.id}/fixe/rodar`); return 'Pedido enviado ao FIXE. Em alguns minutos o e-mail chega e o cadastro é atualizado.'; }) : null));
     // regras de pontos
     if (est.perfil === 'admin' || est.perfil === 'franqueado') {
@@ -594,7 +595,10 @@
         if (!host.value.trim() && /@gmail\.com$/i.test(user.value.trim())) host.value = 'smtp.gmail.com';
         if (user.value.trim() && !from.value.trim()) from.value = `${l.nome} <${user.value.trim()}>`;
         if (user.value.trim() && !host.value.trim()) throw new Error('Preencha o Servidor (SMTP). Para Gmail: smtp.gmail.com.');
-        await api('PUT', `/lojas/${l.id}/fechamento-email`, { fechamento: { ativo: ativo.checked, horario: hora.value }, email: { host: host.value, port: port.value, user: user.value, pass: pass.value || undefined, from: from.value, secure: sec.checked } });
+        // usuário e servidor apagados = tirar o Gmail desta loja (a senha guardada sai junto)
+        const semGmail = !user.value.trim() && !host.value.trim();
+        await api('PUT', `/lojas/${l.id}/fechamento-email`, { fechamento: { ativo: ativo.checked, horario: hora.value }, email: semGmail ? { remover: true } : { host: host.value, port: port.value, user: user.value, pass: pass.value || undefined, from: from.value, secure: sec.checked } });
+        if (semGmail) { from.value = ''; return 'Fechamento salvo. O Gmail desta loja foi removido.'; }
         return 'Fechamento salvo.';
       }, 'btn primary'),
         h('button', { type: 'button', class: 'btn', onclick: () => TS.abrirFechamento([{ id: l.id, nome: l.nome }], l.id) }, 'Ver mensagem'),

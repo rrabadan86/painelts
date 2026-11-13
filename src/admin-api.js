@@ -216,6 +216,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
       mud.meta = m;
     }
     C.alterar((cfg) => { const l = cfg.lojas.find((x) => x.id === req.loja.id); Object.assign(l, mud); });
+    if (mud.appnext !== undefined && lerEnv(req.loja.id)) gravarEnv(req.loja.id, { APPNEXT_LOJA_DESTINO: mud.appnext });
     aud(req, 'alterou loja', req.loja.id, { loja: req.loja.id, ...mud });
     depois();
     res.json({ ok: true });
@@ -294,7 +295,8 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     };
     if (b.senha) valores.APPNEXT_PASS = String(b.senha).replace(/[\r\n]/g, '');
     gravarEnv(req.loja.id, valores);
-    if (valores.APPNEXT_LOJA_DESTINO) C.alterar((cfg) => { const l = cfg.lojas.find((x) => x.id === req.loja.id); l.appnext = valores.APPNEXT_LOJA_DESTINO; });
+    // o mesmo nome aparece em "Dados da loja": ficam sempre iguais (inclusive quando apagado)
+    C.alterar((cfg) => { const l = cfg.lojas.find((x) => x.id === req.loja.id); l.appnext = valores.APPNEXT_LOJA_DESTINO; });
     aud(req, 'alterou acesso ao AppNext', req.loja.id, { loja: req.loja.id, rede, usuario, senha: b.senha ? 'trocada' : 'mantida', lojaDestino: valores.APPNEXT_LOJA_DESTINO });
     res.json({ ok: true });
   });
@@ -313,6 +315,12 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     if (b.senha) valores.FIXE_PASS = String(b.senha).replace(/[\r\n]/g, '');
     gravarEnv(req.loja.id, valores);
     aud(req, 'alterou acesso ao FIXE', req.loja.id, { loja: req.loja.id, usuario, email, senha: b.senha ? 'trocada' : 'mantida' });
+    res.json({ ok: true });
+  });
+  r.delete('/lojas/:id/fixe', lojaPermitida, (req, res) => {
+    if (!lerEnv(req.loja.id)) return res.json({ ok: true });
+    gravarEnv(req.loja.id, { FIXE_URL: null, FIXE_USER: null, FIXE_EMAIL: null, FIXE_PASS: null });
+    aud(req, 'removeu acesso ao FIXE', req.loja.id, { loja: req.loja.id });
     res.json({ ok: true });
   });
   // regras do programa de fidelidade (hoje a franquia usa R$ 50 = 1 ponto, validade de 12 meses)
@@ -575,7 +583,9 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     const b = req.body || {};
     const c = NOTIF.ler();
     const x = NOTIF.cfgLoja(c, req.loja.id);
-    if (b.email) {
+    if (b.email && b.email.remover) {
+      x.email = { ...x.email, host: '', user: '', from: '', pass: '' };
+    } else if (b.email) {
       const e = b.email;
       for (const k of ['host', 'user', 'from']) if (e[k] != null) x.email[k] = semQuebra(e[k]).slice(0, 200);
       if (e.port != null) x.email.port = +e.port || 587;
