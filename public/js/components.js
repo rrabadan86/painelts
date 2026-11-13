@@ -124,8 +124,13 @@
     // a tela foi redesenhada: a camada antiga ficou com o cartão velho
     const reabrir = TS.expandidoTitulo;
     if (expandido) { const { camada } = expandido; camada.remove(); document.body.classList.remove('com-camada'); expandido = null; }
+    adicionarBotoes(root, reabrir);
+    vigiar(root);
+  };
+  /** põe o botão ⤢ nos cartões com tabela que ainda não têm (não mexe no que está expandido) */
+  function adicionarBotoes(root, reabrir) {
     for (const card of root.querySelectorAll('.card')) {
-      if (card.classList.contains('kpi') || !card.querySelector('.table-wrap') || card.querySelector(':scope > .card-head .exp-btn')) continue;
+      if (card.classList.contains('kpi') || card.tagName === 'DETAILS' || !card.querySelector('.table-wrap') || card.querySelector(':scope > .card-head .exp-btn')) continue;
       let head = card.querySelector(':scope > .card-head');
       if (!head) { head = h('div', { class: 'card-head' }, h('div')); card.prepend(head); }
       const b = h('button', { type: 'button', class: 'exp-btn', title: 'Expandir em tela cheia', 'aria-label': 'Expandir em tela cheia', onclick: () => expandir(card) },
@@ -133,7 +138,19 @@
       head.append(b);
       if (reabrir && card.querySelector('.card-title')?.textContent === reabrir) requestAnimationFrame(() => expandir(card));
     }
-  };
+  }
+  // telas que terminam de montar depois (estoque, alertas, cartões que buscam dados): o botão aparece quando a tabela chega
+  let observador = null;
+  function vigiar(root) {
+    if (observador || typeof MutationObserver === 'undefined') return;
+    let pendente = false;
+    observador = new MutationObserver(() => {
+      if (pendente) return;
+      pendente = true;
+      requestAnimationFrame(() => { pendente = false; adicionarBotoes(root, null); });
+    });
+    observador.observe(root, { childList: true, subtree: true });
+  }
 
   // ---------- cartões ----------
   TS.card = (title, sub, ...body) => h('div', { class: 'card' },
