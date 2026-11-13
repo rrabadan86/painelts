@@ -161,8 +161,8 @@
    * cols: [{key, label, fmt, align:'l'|'r', cls:(row)=>string, sticky, title}]
    * rows: objetos; total: objeto opcional; sort: {key, dir}
    */
-  TS.table = function ({ cols, rows, total, sortKey, sortDir = 'desc', maxHeight, pageSize, search, searchKeys, onRowClick, empty, cls }) {
-    let sk = sortKey, sd = sortDir, page = 0, q = '';
+  TS.table = function ({ cols, rows, total, sortKey, sortDir = 'desc', maxHeight, pageSize, search, searchKeys, searchInit, onSearch, onRowClick, empty, cls }) {
+    let sk = sortKey, sd = sortDir, page = 0, q = searchInit ? TS.norm(searchInit) : '';
     const wrap = h('div');
     const tbl = h('table', { class: 't' + (cls ? ' ' + cls : '') });
     const tw = h('div', { class: 'table-wrap' + (maxHeight === 'free' ? ' free' : '') }, tbl);
@@ -170,8 +170,8 @@
     const pager = h('div', { class: 'pager' });
     let searchBox = null;
     if (search) {
-      searchBox = h('input', { class: 'f-input', type: 'search', placeholder: search });
-      searchBox.addEventListener('input', TS.debounce(() => { q = TS.norm(searchBox.value); page = 0; paint(); }, 200));
+      searchBox = h('input', { class: 'f-input', type: 'search', placeholder: search, value: searchInit || '' });
+      searchBox.addEventListener('input', TS.debounce(() => { q = TS.norm(searchBox.value); page = 0; if (onSearch) onSearch(searchBox.value); paint(); }, 200));
     }
     function sorted() {
       let r = rows;

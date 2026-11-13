@@ -1010,3 +1010,4 @@ body.com-camada { overflow: hidden; }
 .fx-soltas-tit { margin: 14px 0 6px; }
 .cupom.cupom-fixe .cupom-head { background: #EEF2F6; }
 .cupom-rodape { font-size: 12px; color: var(--muted); padding: 6px 10px 8px; border-top: 1px dashed #E2DCCF; }
+.est-tools .est-busca { width: 240px; max-width: 100%; }

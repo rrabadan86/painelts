@@ -17,6 +17,7 @@
     return x;
   }
 
+  const TAM_DIGITO = { 1: 50, 2: 100, 3: 250, 4: 500, 5: 1000 };
   /** casa cada linha de venda com o item do estoque e calcula o custo */
   function motor(estoque, cfg) {
     const db = TS.db, I = TS.rules.ids;
@@ -40,6 +41,8 @@
       let r = null, it = cod && porCod.get(cod);
       if (it) r = { it, kg: it.un === 'Kg', g, via: 'código' };
       if (!r && cod && cod.includes('.')) { it = porCod.get(cod.split('.')[0]); if (it && it.un === 'Kg' && g) r = { it, kg: true, g, via: 'código' }; }
+      // pacote de chá: código da matéria-prima + 1 dígito do tamanho (27010 Valeriana Garden → 270101 = 50g, 270102 = 100g…)
+      if (!r && /^\d{6,}$/.test(cod)) { it = porCod.get(cod.slice(0, -1)); const gg = g || TAM_DIGITO[cod.slice(-1)]; if (it && it.un === 'Kg' && gg) r = { it, kg: true, g: gg, via: 'código' }; }
       if (!r) {
         const nP = ESQ(db.D.produto[db.prod[i]]), nD = ESQ(db.D.descricao[db.desc[i]]);
         it = g ? porNomeKg.get(nP) : null;
@@ -66,7 +69,15 @@
       if (!c.kg) return [[c.it, q]];
       return [[c.it, (q * c.g) / 1000], ...(emb[c.g] || []).map((x) => [x.it, q * x.qtd])];
     }
-    return { casar, custo, consumo, taxa, porCod };
+    /** chá em pacote sem matéria-prima no estoque: { cod, nome } da matéria-prima esperada (para agrupar e explicar) */
+    function materiaPrima(i) {
+      const cod = db.D.cod ? String(db.D.cod[db.cod[i]] ?? '') : '';
+      const g = db.so[i] || gramasDoCod(cod);
+      if (!g || !(db.cha[i] > 0 || I.chaTotal.has(db.grupo[i]))) return null;
+      const base = cod.includes('.') ? cod.split('.')[0] : /^\d{6,}$/.test(cod) ? cod.slice(0, -1) : '';
+      return { cod: base, nome: db.D.produto[db.prod[i]] || db.D.descricao[db.desc[i]], g };
+    }
+    return { casar, custo, consumo, taxa, porCod, materiaPrima };
   }
 
   /** motor de custos da loja escolhida (ou null se não houver estoque / permissão) */
@@ -169,8 +180,16 @@
       const c = M.custo(i);
       const d = db.D.descricao[db.desc[i]];
       if (c == null) {
-        const s = semCusto.get(d) || { produto: d, cod: db.D.cod ? db.D.cod[db.cod[i]] : '', vt: 0, qtd: 0, motivo: M.casar(i) ? 'custo zero no AppNext' : 'não achado no estoque' };
-        s.vt += vt; s.qtd += db.qtd[i] || 0; semCusto.set(d, s);
+        const cs0 = M.casar(i);
+        // chá a granel: todos os tamanhos saem da mesma matéria-prima, então aparece uma linha só
+        const mp = cs0 && cs0.kg ? { cod: cs0.it.cod, nome: cs0.it.desc, g: cs0.g } : !cs0 ? M.materiaPrima(i) : null;
+        const chave = mp ? 'mp:' + (mp.cod || mp.nome) : d;
+        const s = semCusto.get(chave) || (mp
+          ? { produto: mp.nome, granel: true, tam: new Map(), cod: mp.cod || '—', vt: 0, qtd: 0, motivo: cs0 ? 'matéria-prima com custo zero no AppNext' : `matéria-prima${mp.cod ? ` (cód. ${mp.cod})` : ''} não está na planilha de estoque` }
+          : { produto: d, cod: db.D.cod ? db.D.cod[db.cod[i]] : '', vt: 0, qtd: 0, motivo: cs0 ? 'custo zero no AppNext' : 'não achado no estoque' });
+        s.vt += vt; s.qtd += db.qtd[i] || 0;
+        if (mp) s.tam.set(mp.g, (s.tam.get(mp.g) || 0) + (db.qtd[i] || 0));
+        semCusto.set(chave, s);
         continue;
       }
       fatCusto += vt; custoTot += c;
@@ -473,15 +492,7 @@
     }
     const sitSel = state.estSit || 'repor';
     const linhasRepo = sitSel === 'repor' ? repor : repo;
-    const csv = h('button', { type: 'button', class: 'btn', onclick: () => baixarPedido(repor) }, '⬇ Baixar pedido (CSV)');
-    corpo.append(h('div', { class: 'mt' }, TS.cardWithTools('O que repor',
-      h('span', null, `Ritmo dos últimos 30 dias ajustado pela época do ano (coluna Previsão/dia) · entrega em ${ent} dias · pedido para ${cob} dias de venda. Chás a granel em kg (inclui o consumo de saco kraft e etiquetas).`,
-        h('span', { class: 'est-minres' }, ` Mínimo do AppNext comparado com o sugerido (em "Tudo que vende"): `,
-          h('b', { class: 'est-sug est-sug-baixo' }, `${fmt.int(repo.filter((r) => r.minSit === 'baixo').length)} baixos`), ' · ',
-          h('b', { class: 'est-sug est-sug-alto' }, `${fmt.int(repo.filter((r) => r.minSit === 'alto').length)} altos`), ' · ',
-          h('b', { class: 'est-sug est-sug-sem' }, `${fmt.int(repo.filter((r) => r.minSit === 'sem').length)} sem mínimo`))),
-      h('div', { class: 'est-tools' }, TS.seg([['Só o que repor', 'repor'], ['Tudo que vende', 'todos']], sitSel, (v) => { state.estSit = v; TS.render(); }), csv),
-      TS.table({
+    const tabRepo = TS.table({
         cols: [
           { key: 'produto', label: 'Produto', align: 'l', sticky: true, wrap: true },
           { key: 'tipo', label: 'Tipo', align: 'l', title: 'Chá a granel (em kg, vendido em pacotes de vários tamanhos), produto pronto ou insumo/embalagem (saco kraft, etiqueta…)' },
@@ -497,8 +508,17 @@
           { key: 'pedir', label: 'Pedir', title: 'Quanto pedir para chegar em tempo e durar o período escolhido. Passe o mouse no número para ver a conta', render: (r) => (r.pedir > 0 ? h('b', { title: contaPedido(r), class: 'est-dica' }, qtdTxt(r.pedir, r.it)) : '—') },
           { key: 'custoPedido', label: 'Custo', title: 'Quantidade a pedir × custo unitário do AppNext', fmt: (v) => (v ? fmt.brl(v) : '—') },
         ],
-        rows: linhasRepo, sortKey: 'sit', maxHeight: '560px', search: 'Buscar…', searchKeys: ['produto', 'cod'], cls: 'est-t', empty: 'Nada para repor agora.',
-      }))));
+        rows: linhasRepo, sortKey: 'sit', maxHeight: '560px', search: 'Buscar produto…', searchKeys: ['produto', 'cod'], searchInit: state.estBusca || '', onSearch: (v) => { state.estBusca = v; }, cls: 'est-t', empty: 'Nada para repor agora.',
+    });
+    const csv = h('button', { type: 'button', class: 'btn', onclick: () => baixarPedido(repor) }, '⬇ Baixar pedido (CSV)');
+    corpo.append(h('div', { class: 'mt' }, TS.cardWithTools('O que repor',
+      h('span', null, `Ritmo dos últimos 30 dias ajustado pela época do ano (coluna Previsão/dia) · entrega em ${ent} dias · pedido para ${cob} dias de venda. Chás a granel em kg (inclui o consumo de saco kraft e etiquetas).`,
+        h('span', { class: 'est-minres' }, ` Mínimo do AppNext comparado com o sugerido (em "Tudo que vende"): `,
+          h('b', { class: 'est-sug est-sug-baixo' }, `${fmt.int(repo.filter((r) => r.minSit === 'baixo').length)} baixos`), ' · ',
+          h('b', { class: 'est-sug est-sug-alto' }, `${fmt.int(repo.filter((r) => r.minSit === 'alto').length)} altos`), ' · ',
+          h('b', { class: 'est-sug est-sug-sem' }, `${fmt.int(repo.filter((r) => r.minSit === 'sem').length)} sem mínimo`))),
+      h('div', { class: 'est-tools' }, tabRepo.searchBox && (tabRepo.searchBox.classList.add('est-busca'), tabRepo.searchBox), TS.seg([['Só o que repor', 'repor'], ['Tudo que vende', 'todos']], sitSel, (v) => { state.estSit = v; TS.render(); }), csv),
+      tabRepo)));
 
     corpo.append(h('div', { class: 'mt' }, TS.card('Estoque parado', `Produtos com saldo e sem venda há ${cfg.paradoDias} dias ou mais: dinheiro empatado. Pense em vitrine, degustação, kit ou promoção.`, TS.table({
       cols: [
@@ -512,10 +532,10 @@
     }))));
 
     // ---------- conferência ----------
-    const sc = [...semCusto.values()].sort((a, b) => b.vt - a.vt);
+    const sc = [...semCusto.values()].map((x) => (x.granel ? { ...x, tamanhos: tamTxt(x.tam) } : x)).sort((a, b) => b.vt - a.vt);
     if (sc.length) corpo.append(h('details', { class: 'card est-sem' }, h('summary', null, `Vendas sem custo: ${fmt.brl0(sc.reduce((s, x) => s + x.vt, 0))} em ${fmt.int(sc.length)} produtos (ficam fora da margem)`),
-      h('p', { class: 'muted' }, 'Corrija no AppNext o custo dos itens com "custo zero". Os "não achados" ficam certos quando as vendas trazem o código do produto (Configurações → Atualização automática → Importar histórico, "Só vendas", para refazer os meses). Itens do Espaço Gourmet preparados na loja não têm custo no estoque.'),
-      TS.table({ cols: [{ key: 'produto', label: 'Produto vendido', align: 'l', wrap: true }, { key: 'cod', label: 'Código', align: 'l' }, { key: 'motivo', label: 'Motivo', align: 'l', title: '"custo zero no AppNext": o produto existe mas está sem custo lá. "não achado no estoque": o painel não encontrou o produto na planilha de estoque' }, { key: 'qtd', label: 'Unid.', fmt: fmt.int }, { key: 'vt', label: 'Faturamento', fmt: fmt.brl }], rows: sc, sortKey: 'vt', maxHeight: '360px', cls: 'est-t' })));
+      h('p', { class: 'muted' }, 'Chá a granel aparece uma vez, somando todos os tamanhos (50g, 100g, 250g…), porque todos saem da mesma matéria-prima: o custo vem do kg dela. Se a matéria-prima "não está na planilha de estoque", normalmente é porque está com saldo zero no AppNext (o relatório esconde item zerado) — assim que ela tiver saldo e a planilha for atualizada, o custo entra. Corrija no AppNext os itens com "custo zero". Itens do Espaço Gourmet preparados na loja não têm custo no estoque.'),
+      TS.table({ cols: [{ key: 'produto', label: 'Produto vendido', align: 'l', wrap: true, render: (r) => (r.granel ? h('span', null, r.produto, h('small', { class: 'est-tam' }, r.tamanhos)) : r.produto) }, { key: 'cod', label: 'Código', align: 'l' }, { key: 'motivo', label: 'Motivo', align: 'l', title: '"custo zero no AppNext": o produto existe mas está sem custo lá. "não achado no estoque": o painel não encontrou o produto na planilha de estoque' }, { key: 'qtd', label: 'Unid.', fmt: fmt.int }, { key: 'vt', label: 'Faturamento', fmt: fmt.brl }], rows: sc, sortKey: 'vt', maxHeight: '360px', cls: 'est-t' })));
 
     corpo.append(cartaoCfg(cfg, M.porCod));
   }
