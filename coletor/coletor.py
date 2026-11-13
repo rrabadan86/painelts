@@ -152,7 +152,10 @@ def pendentes(loja):
     return sum(1 for j in fila if j["loja"] == loja)
 
 
-def enfileirar(loja, gatilho, por=None, de=None, ate=None, fixe=False, tipo=None):
+ITENS = ("vendas", "xml", "estoque", "fixe")
+
+
+def enfileirar(loja, gatilho, por=None, de=None, ate=None, fixe=False, tipo=None, itens=None):
     """Rotina/manual: recusa se a loja já tem algo na fila ou rodando.
     fixe=True: pede também a exportação do cadastro de clientes ao FIXE (coleta da noite)."""
     with lock:
@@ -162,6 +165,8 @@ def enfileirar(loja, gatilho, por=None, de=None, ate=None, fixe=False, tipo=None
         job = {"loja": loja, "gatilho": gatilho, "por": por, "de": de, "ate": ate, "criado": datetime.now(TZ).isoformat(), "inicio": None, "fixe": fixe}
         if tipo:
             job["tipo"] = tipo
+        if itens:
+            job["itens"] = list(itens)  # "Rodar agora" com o que foi marcado
         e["estado"] = "na_fila"
         e["atual"] = job
         fila.append(job)
@@ -245,6 +250,14 @@ def rodar(job):
     tipo = job.get("tipo") or ("ambos" if XML_ROTINA else "vendas")
     if tipo not in TIPOS and tipo != "fixe":
         tipo = "vendas"
+    itens = job.get("itens")
+    if itens:  # escolha do "Rodar agora": cada parte só se marcada
+        quer = set(itens)
+        tipo = "ambos" if {"vendas", "xml"} <= quer else "vendas" if "vendas" in quer else "xml" if "xml" in quer else "nada"
+        if "fixe" in quer:
+            job["fixe"] = True
+    else:
+        quer = None
     log(f"{loja}: rodando {tipo} ({de} a {ate})")
     log_path.write_text(f"### período {br(de)} a {br(ate)} ({job['gatilho']}, {tipo}) ###\n", encoding="utf-8")
 
@@ -282,28 +295,33 @@ def rodar(job):
             return str(e)
 
     ok, codigo, xml = True, 0, None
+    principal = None  # o resultado da coleta é o do primeiro script que rodou
     if tipo in ("ambos", "vendas"):
         codigo = executar(script, {})
         ok = codigo == 0
+        principal = "vendas"
     if tipo in ("ambos", "xml") and SCRIPT_XML.exists():
         saida_xml = str(DATA_DIR / loja / "entrada" / f"{carimbo}_{de}_{ate}_xml.json")
         cx = executar(SCRIPT_XML, {"SAIDA_XML": saida_xml, "SAIDA_ARQUIVO": str(pasta / "_nao_usado.xlsx")})
         xml = {"ok": cx == 0, "codigo": cx}
-        if tipo == "xml":
-            ok, codigo = cx == 0, cx
+        if principal is None:
+            ok, codigo, principal = cx == 0, cx, "xml"
     estoque = None
     fixe = None
     if (job.get("fixe") or tipo == "fixe") and SCRIPT_FIXE.exists():
         # cadastro de clientes: só pede a exportação; o painel lê o e-mail do FIXE e importa
         cf = executar(SCRIPT_FIXE, {"SAIDA_FIXE": str(DATA_DIR / loja / "fixe" / "pedido.json")})
         fixe = {"ok": cf == 0, "codigo": cf}
-        if tipo == "fixe":
-            ok, codigo = cf == 0, cf
-    if tipo != "fixe" and job["gatilho"] != "historico" and ESTOQUE_ROTINA and SCRIPT_ESTOQUE.exists():
+        if principal is None:
+            ok, codigo, principal = cf == 0, cf, "fixe"
+    quer_estoque = ("estoque" in quer) if quer is not None else (tipo != "fixe" and job["gatilho"] != "historico" and ESTOQUE_ROTINA)
+    if quer_estoque and SCRIPT_ESTOQUE.exists():
         # o estoque é uma foto de agora: só nas atualizações (não no histórico); falha aqui não derruba a coleta
         saida_est = str(DATA_DIR / loja / "estoque" / "entrada" / f"{carimbo}_estoque.xlsx")
         ce = executar(SCRIPT_ESTOQUE, {"SAIDA_ESTOQUE": saida_est, "SAIDA_ARQUIVO": str(pasta / "_nao_usado.xlsx")})
         estoque = {"ok": ce == 0, "codigo": ce}
+        if principal is None:
+            ok, codigo, principal = ce == 0, ce, "estoque"
     cauda = [l for t in trechos for l in t] or (log_path.read_text(encoding="utf-8", errors="replace").splitlines()[-25:] if log_path.exists() else [])
     with lock:
         e = _estado(loja)
@@ -399,7 +417,9 @@ class API(BaseHTTPRequestHandler):
             info = info_loja(loja)
             if info.get("estado") == "rodando":
                 info["ao_vivo"] = ao_vivo(loja)
-            return self._json(200, {"configurada": True, "horarios": horarios(), "janela": janela(), "fila": fila_n, **info})
+            env = ler_env(CONFIG_DIR / f"{loja}.env")
+            tem_fixe = bool(env.get("FIXE_URL") and env.get("FIXE_PASS") and SCRIPT_FIXE.exists())
+            return self._json(200, {"configurada": True, "horarios": horarios(), "janela": janela(), "fila": fila_n, "temFixe": tem_fixe, **info})
         self._json(404, {"erro": "rota"})
 
     def do_POST(self):  # noqa: N802
@@ -410,7 +430,17 @@ class API(BaseHTTPRequestHandler):
             loja = self._loja("/rodar/")
             if not loja or loja not in lojas_configuradas():
                 return self._json(404, {"erro": "Loja sem acesso ao AppNext configurado."})
-            if not enfileirar(loja, "manual", por):
+            itens = None
+            try:
+                n = int(self.headers.get("Content-Length", "0") or 0)
+                corpo = json.loads(self.rfile.read(min(n, 10000)) or b"{}") if n else {}
+                if corpo.get("itens") is not None:
+                    itens = [i for i in corpo["itens"] if i in ITENS]
+                    if not itens:
+                        return self._json(400, {"erro": "Marque pelo menos um item para buscar."})
+            except Exception:  # noqa: BLE001
+                return self._json(400, {"erro": "pedido inválido"})
+            if not enfileirar(loja, "manual", por, itens=itens):
                 return self._json(409, {"erro": "O script desta loja já está na fila ou rodando.", **info_loja(loja)})
             return self._json(200, {"ok": True})
         if self.path.startswith("/fixe/"):

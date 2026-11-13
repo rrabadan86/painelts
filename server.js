@@ -694,7 +694,7 @@ app.get('/api/script', async (req, res) => {
   if (COL.ativo()) {
     try {
       const s = await COL.status(loja.id, admin);
-      if (s.configurada) return res.json({ disponivel: true, origem: 'vps', horarios: s.horarios, janela: s.janela, execucao: s.execucao });
+      if (s.configurada) return res.json({ disponivel: true, origem: 'vps', horarios: s.horarios, janela: s.janela, temFixe: s.temFixe, execucao: s.execucao });
     } catch (e) {
       console.error(`[script] coletor: ${e.message}`);
       return res.json({ disponivel: true, origem: 'vps', erro: e.message });
@@ -720,7 +720,7 @@ app.get('/api/script', async (req, res) => {
   }
 });
 
-app.post('/api/script', async (req, res) => {
+app.post('/api/script', express.json({ limit: '2kb' }), async (req, res) => {
   if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
   if (req.perfil !== 'admin') return res.status(403).json({ erro: 'Só o administrador pode rodar a coleta.' });
   const loja = lojaDoPedido(req);
@@ -729,7 +729,10 @@ app.post('/api/script', async (req, res) => {
     try {
       const s = await COL.status(loja.id);
       if (s.configurada) {
-        const r = await COL.rodar(loja.id, req.user);
+        const ITENS = ['vendas', 'xml', 'estoque', 'fixe'];
+        const itens = Array.isArray(req.body && req.body.itens) ? req.body.itens.filter((i) => ITENS.includes(i)) : null;
+        if (itens && !itens.length) return res.status(400).json({ erro: 'Marque pelo menos um item para buscar.' });
+        const r = await COL.rodar(loja.id, req.user, itens);
         if (r.status === 200) console.log(`[script] ${req.user} acionou o script de ${loja.id} (VPS)`);
         return res.status(r.status === 200 ? 200 : r.status).json(r.status === 200 ? { ok: true } : { erro: r.json.erro || 'Falha no coletor.' });
       }

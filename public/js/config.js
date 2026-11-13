@@ -213,7 +213,7 @@
       if (av && av.linhas && av.linhas.length) b.__aoVivo = detalhes('aovivo:' + l.id, { class: 'cfg-log' }, h('summary', null, 'Ver o log ao vivo'), logBonito(av.linhas));
     }
     // vendas
-    const exV = ex && !ocupado && ex.tipo !== 'xml' && ex.tipo !== 'fixe' ? ex : null;
+    const exV = ex && !ocupado && !['xml', 'fixe', 'nada'].includes(ex.tipo) ? ex : null; // coleta sem vendas não diz nada das vendas
     sit.append(linha(exV ? (exV.estado === 'ok' ? 'ok' : 'erro') : l.base.ate ? 'ok' : 'nada', 'Vendas',
       exV ? (exV.estado === 'ok' ? 'última coleta deu certo' : h('span', { class: 'neg' }, 'a última coleta falhou')) : l.base.ate ? null : 'ainda sem vendas',
       exV ? `${dt(exV.fim)} · coleta ${quem(exV)}${periodo(exV) ? ` · ${periodo(exV)}` : ''}` : null,

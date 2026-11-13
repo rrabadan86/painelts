@@ -19,18 +19,22 @@
     setTimeout(() => t.remove(), 5000);
   }
 
+  // o que o "Rodar agora" busca (vem tudo marcado; a escolha vale até recarregar a página)
+  const ITENS = [
+    { id: 'vendas', nome: 'Vendas', dica: 'de ontem e de hoje' },
+    { id: 'xml', nome: 'XML das notas', dica: 'de ontem e de hoje (CPF dos clientes, notas ativas)' },
+    { id: 'estoque', nome: 'Estoque e custos', dica: 'de agora, com os itens zerados' },
+    { id: 'fixe', nome: 'FIXE (clientes e pontos)', dica: 'chega por e-mail alguns minutos depois' },
+  ];
+  const desmarcados = new Set();
+
   function pintar() {
     btn.classList.toggle('rodando', !!ativo());
     dot.hidden = !ativo();
     if (pop.hidden) return;
     pop.replaceChildren();
     pop.append(h('h3', null, 'Atualizar dados do sistema'),
-      h('p', null, 'Busca agora no AppNext, desta loja:'),
-      h('ul', { class: 'script-itens' },
-        h('li', null, h('b', null, 'Vendas'), ' de ontem e de hoje'),
-        h('li', null, h('b', null, 'XML das notas'), ' de ontem e de hoje (CPF dos clientes e notas ativas)'),
-        h('li', null, h('b', null, 'Estoque e custos'), ' de agora (inclui os itens zerados)')),
-      h('p', null, 'Leva poucos minutos; o painel recarrega sozinho quando terminar.'));
+      h('p', null, 'Escolha o que buscar agora desta loja. Leva poucos minutos; o painel recarrega sozinho quando terminar.'));
     if (!info) { pop.append(h('p', null, 'Carregando…')); return; }
     if (!info.disponivel) { pop.append(h('div', { class: 'script-status' }, h('span', null, info.motivo))); return; }
     if (info.erro) pop.append(h('div', { class: 'script-status' }, h('span', { class: 'ic falhou' }, '!'), h('span', null, 'Não consegui consultar o GitHub.', h('small', null, info.erro))));
@@ -43,7 +47,18 @@
     else if (e && e.estado === 'falhou') { ic = 'falhou'; txt = 'A última execução falhou'; sub = `${hora(e.fim)} · ${e.conclusao === 'cancelled' ? 'cancelada' : 'veja o log abaixo ou avise o administrador'}`; }
     if (ic) pop.append(h('div', { class: 'script-status' }, h('span', { class: 'ic ' + ic }, ic === 'ok' ? '✓' : ic === 'falhou' ? '!' : '…'), h('span', null, txt, sub ? h('small', null, sub) : null)));
     if (TS.eu && TS.eu.perfil === 'admin') { // só o admin roda a coleta
-      const rodar = h('button', { class: 'btn primary', type: 'button', disabled: ativo() || null }, ativo() ? 'Atualização em andamento' : 'Rodar agora');
+      let escolhidos = null;
+      if (info.origem === 'vps') {
+        const opcoes = ITENS.filter((it) => it.id !== 'fixe' || info.temFixe);
+        pop.append(h('div', { class: 'script-escolha' }, opcoes.map((it) => {
+          const cb = h('input', { type: 'checkbox', checked: !desmarcados.has(it.id) || null, disabled: ativo() || null });
+          cb.addEventListener('change', () => { if (cb.checked) desmarcados.delete(it.id); else desmarcados.add(it.id); pintar(); });
+          return h('label', { class: 'script-op' }, cb, h('span', null, h('b', null, it.nome), h('small', null, it.dica)));
+        })));
+        escolhidos = opcoes.map((it) => it.id).filter((id) => !desmarcados.has(id));
+      }
+      const nenhum = escolhidos && !escolhidos.length;
+      const rodar = h('button', { class: 'btn primary', type: 'button', disabled: ativo() || nenhum || null }, ativo() ? 'Atualização em andamento' : nenhum ? 'Marque o que buscar' : 'Rodar agora');
       rodar.addEventListener('click', disparar);
       pop.append(rodar);
     }
@@ -90,7 +105,9 @@
     const b = pop.querySelector('.btn.primary');
     if (b) { b.disabled = true; b.textContent = 'Acionando…'; }
     try {
-      const r = await fetch('/api/script?loja=' + encodeURIComponent(state.loja), { method: 'POST', credentials: 'same-origin', headers: { 'X-Painel': '1' } });
+      const opcoes = ITENS.filter((it) => it.id !== 'fixe' || (info && info.temFixe)).map((it) => it.id);
+      const itens = info && info.origem === 'vps' ? opcoes.filter((id) => !desmarcados.has(id)) : null;
+      const r = await fetch('/api/script?loja=' + encodeURIComponent(state.loja), { method: 'POST', credentials: 'same-origin', headers: { 'X-Painel': '1', 'Content-Type': 'application/json' }, body: JSON.stringify(itens ? { itens } : {}) });
       const j = await r.json().catch(() => ({}));
       if (r.ok) { acompanhando = true; toast('Script acionado. Você pode continuar usando o painel.'); }
       else if (r.status === 409) { acompanhando = true; toast(j.erro || 'O script já está rodando.'); }

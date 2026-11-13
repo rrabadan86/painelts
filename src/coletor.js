@@ -41,11 +41,11 @@ async function status(lojaId, comLog) {
   const { status: st, json } = await chamar(`/status/${encodeURIComponent(lojaId)}`);
   if (st === 401) throw new Error('COLETOR_TOKEN diferente entre o painel e o coletor');
   if (!json.configurada) return { configurada: false };
-  return { configurada: true, horarios: json.horarios, janela: json.janela, fila: json.fila || 0, lote: json.lote || null, execucao: execucao(json, comLog) };
+  return { configurada: true, horarios: json.horarios, janela: json.janela, temFixe: !!json.temFixe, fila: json.fila || 0, lote: json.lote || null, execucao: execucao(json, comLog) };
 }
 
-async function rodar(lojaId, por) {
-  return chamar(`/rodar/${encodeURIComponent(lojaId)}`, { method: 'POST', por });
+async function rodar(lojaId, por, itens) {
+  return chamar(`/rodar/${encodeURIComponent(lojaId)}`, { method: 'POST', por, body: itens ? { itens } : undefined });
 }
 
 async function historico(lojaId, partes, por, tipo = 'ambos') {
