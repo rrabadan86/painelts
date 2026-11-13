@@ -86,10 +86,10 @@
 
     // filtros específicos de cada página
     if (state.page === 'comparativos') {
-      const tamanhos = [50, 100, 250, 500];
+      const tamanhos = [50, 100, 250, 500, 1000];
       box.append(h('div', { class: 'f-sep' }), h('div', { class: 'f-section' }, 'Comparativos'),
         h('div', { class: 'f-group' }, h('span', { class: 'f-label' }, 'Tamanho do pacote'),
-          h('div', { class: 'chips' }, tamanhos.map((t) => h('button', { type: 'button', class: 'chip' + (f.tamanhos.has(t) ? ' on' : ''), onclick: () => { f.tamanhos.has(t) ? f.tamanhos.delete(t) : f.tamanhos.add(t); rerender(); } }, `${t}g`)))),
+          h('div', { class: 'chips' }, tamanhos.map((t) => h('button', { type: 'button', class: 'chip' + (f.tamanhos.has(t) ? ' on' : ''), onclick: () => { f.tamanhos.has(t) ? f.tamanhos.delete(t) : f.tamanhos.add(t); rerender(); } }, t >= 1000 ? '1 kg' : `${t}g`)))),
         h('div', { class: 'f-hint' }, 'Sem seleção = todos os produtos.'));
     }
     if (state.page === 'comissionamento') {
@@ -500,13 +500,15 @@
 
     // ---- indicadores mensais por vendedor
     const met = state.compMetrica || 'tkm';
-    const METRICAS = [['TKM', 'tkm'], ['Atendimentos', 'cupons'], ['PMA', 'pma'], ['IPA', 'ipa'], ['Pacotes 50g', 'p50'], ['Pacotes 100g', 'p100']];
+    const TAMS = [50, 100, 250, 500, 1000];
+    const rotTam = (t) => (t >= 1000 ? `${t / 1000} kg` : `${t}g`);
+    const METRICAS = [['TKM', 'tkm'], ['Atendimentos', 'cupons'], ['PMA', 'pma'], ['IPA', 'ipa'], ...TAMS.map((t) => [`Pacotes ${rotTam(t)}`, 'p' + t])];
     const baseV = base.filter((i) => !I.excluiComparativos.has(db.vend[i]));
     const porV = TS.agrupar(baseV, (i) => db.vend[i]);
     const valMes = (idx) => {
-      if (met === 'p50' || met === 'p100') {
-        const alvo = met === 'p50' ? 50 : 100;
-        return idx.reduce((s, i) => s + (db.so[i] === alvo && I.catChaKg.has(db.cat[i]) ? 1 : 0), 0) || null;
+      if (/^p\d+$/.test(met)) {
+        const alvo = +met.slice(1);
+        return idx.reduce((s, i) => s + (db.so[i] === alvo && I.catChaKg.has(db.cat[i]) ? db.qtd[i] || 0 : 0), 0) || null;
       }
       return TS.indicadores(idx)[met];
     };
@@ -517,10 +519,10 @@
     });
     // média da loja: TKM/PMA/IPA da loja inteira no mês; contagens = média por vendedor que vendeu no mês
     const porMesV = TS.agrupar(baseV, (i) => db.ym[i]);
-    const contagem = met === 'cupons' || met === 'p50' || met === 'p100';
+    const contagem = met === 'cupons' || /^p\d+$/.test(met);
     const mediaLoja = contagem ? TS.mediaSeries(dsV.map((d) => d.data)) : meses.map((m) => (porMesV.get(m) ? TS.indicadores(porMesV.get(m))[met] : null));
     if (dsV.length) dsV.push(TS.dsMedia('Média da loja', mediaLoja));
-    root.append(TS.section('Indicadores por vendedor'), TS.cardWithTools('Mês a mês por vendedor', `${met.startsWith('p') ? 'Quantidade de pacotes de chá (linhas de venda). ' : ''}Tracejado = média da loja${contagem ? ' (por vendedor)' : ''}.`,
+    root.append(TS.section('Indicadores por vendedor'), TS.cardWithTools('Mês a mês por vendedor', `${/^p\d+$/.test(met) ? 'Pacotes de chá vendidos (unidades). ' : ''}Tracejado = média da loja${contagem ? ' (por vendedor)' : ''}.`,
       TS.seg(METRICAS, met, (v) => { state.compMetrica = v; TS.render(); }),
       TS.chart({
         type: 'line', data: { labels: meses.map(TS.ymLabel), datasets: dsV },
@@ -528,14 +530,14 @@
       }, 'tall')));
 
     // ---- pacotes por tamanho
-    const tams = [50, 100, 250, 500];
+    const tams = TAMS;
     const baseP = baseV.filter((i) => I.catChaKg.has(db.cat[i]) && tams.includes(db.so[i]));
     const vendP = [...TS.agrupar(baseP, (i) => db.vend[i])].sort((a, b) => b[1].length - a[1].length);
     const dsP = tams.map((t, k) => {
       const d = vendP.map(([, idx]) => idx.reduce((s, i) => s + (db.so[i] === t ? db.qtd[i] || 0 : 0), 0));
-      const cor = ['#A9C5A0', '#2C5234', '#C9A227', '#8B5E3C'][k];
+      const cor = ['#A9C5A0', '#2C5234', '#C9A227', '#8B5E3C', '#2F6F6A'][k];
       d.push(d.length ? d.reduce((a, b) => a + b, 0) / d.length : 0); // média da loja (por vendedor)
-      return { label: `${t}g`, data: d, backgroundColor: d.map((_, j) => (j === d.length - 1 ? TS.alpha(cor, .45) : cor)), borderColor: cor, borderWidth: d.map((_, j) => (j === d.length - 1 ? 1.5 : 0)), borderRadius: 4 };
+      return { label: rotTam(t), data: d, backgroundColor: d.map((_, j) => (j === d.length - 1 ? TS.alpha(cor, .45) : cor)), borderColor: cor, borderWidth: d.map((_, j) => (j === d.length - 1 ? 1.5 : 0)), borderRadius: 4 };
     });
     root.append(h('div', { class: 'mt' }, TS.card('Pacotes por tamanho', 'Unidades vendidas por vendedor no período · última coluna = média da loja por vendedor', vendP.length ? TS.chart({
       type: 'bar', data: { labels: [...vendP.map(([v]) => db.D.vendedor[v]), 'Média da loja'], datasets: dsP },
