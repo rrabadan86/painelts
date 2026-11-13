@@ -649,9 +649,15 @@
     if (ativo) acompanhar(corpo, loja, M, e);
 
     // 1) montar: gera o código e abre o site em outra aba (aberta já no clique, para o navegador não bloquear)
-    const itens = R.linhas.filter((r) => r.pedir > 0 && r.site === 'ok');
-    const btnCarrinho = h('button', { type: 'button', class: 'btn primary', disabled: !itens.length || null }, `Montar carrinho no site (${itens.length} produtos)`);
+    // a lista é lida NA HORA do clique: vale o que está no pedido agora (com o que você pôs, tirou ou limpou)
+    const doPedido = () => R.linhas.filter((r) => r.pedir > 0 && r.site === 'ok');
+    const n0 = doPedido().length;
+    const btnCarrinho = h('button', { type: 'button', class: 'btn primary', disabled: !n0 || null }, `Montar carrinho no site (${n0} produtos)`);
     btnCarrinho.addEventListener('click', async () => {
+      const itens = doPedido();
+      if (!itens.length) { msg.className = 'neg'; msg.textContent = 'Nada no pedido.'; return; }
+      const semCat = R.linhas.filter((r) => r.pedir > 0 && r.site === 'sem').length;
+      if (!confirm(`Vão para o carrinho ${itens.length} produtos, ${fmt.brl(itens.reduce((s, r) => s + r.pedir * (r.preco || 0), 0))} (o pedido como está agora na tela).${semCat ? `\n${semCat} sem catálogo ficam de fora.` : ''}\n\nContinuar?`)) return;
       const aba = window.open('about:blank', '_blank');
       btnCarrinho.disabled = true; msg.className = 'muted'; msg.textContent = 'Preparando…';
       try {
@@ -660,7 +666,8 @@
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j.erro || 'Falha.');
         if (aba) aba.location.href = j.url; else window.open(j.url, '_blank');
-        msg.textContent = '';
+        msg.className = j.fora && j.fora.length ? 'neg' : 'muted';
+        msg.textContent = j.fora && j.fora.length ? `${j.fora.length} produto(s) não estão disponíveis no catálogo e ficaram de fora: atualize o catálogo.` : '';
         statusBox.replaceChildren(progresso({ modo: 'navegador', aguardando: true, total: itens.length, itens: [], site: j.url }));
         acompanhar(corpo, loja, M, e);
       } catch (err) { if (aba) aba.close(); msg.className = 'neg'; msg.textContent = err.message; }
