@@ -44,13 +44,14 @@ SCRIPT_XML = Path(os.getenv("COLETOR_SCRIPT_XML", Path(__file__).with_name("next
 SCRIPT_ESTOQUE = Path(os.getenv("COLETOR_SCRIPT_ESTOQUE", Path(__file__).with_name("nextsoft_estoque.py")))
 SCRIPT_FIXE = Path(os.getenv("COLETOR_SCRIPT_FIXE", Path(__file__).with_name("fixe_export.py")))
 # estoque atual e custos junto da rotina e do botão do painel: 1 = sim
-ESTOQUE_ROTINA = os.getenv("COLETOR_ESTOQUE", "1") != "0"
+ESTOQUE_ROTINA = (os.getenv("COLETOR_ESTOQUE") or "1") != "0"
 # XML das notas (CPF dos clientes) junto da rotina: 1 = sim
-XML_ROTINA = os.getenv("COLETOR_XML", "1") != "0"
+XML_ROTINA = (os.getenv("COLETOR_XML") or "1") != "0"
 TIPOS = ("ambos", "vendas", "xml")
 TOKEN = os.getenv("COLETOR_TOKEN", "")
-HORARIOS_ENV = [h.strip() for h in os.getenv("COLETOR_HORARIOS", "13:30,23:00").split(",") if h.strip()]
-JANELA_ENV = int(os.getenv("COLETOR_JANELA", "7"))
+# variável vazia (o docker-compose repassa só as do coletor; as que não existem no .env chegam vazias) = padrão
+HORARIOS_ENV = [h.strip() for h in (os.getenv("COLETOR_HORARIOS") or "13:30,23:00").split(",") if h.strip()]
+JANELA_ENV = int(os.getenv("COLETOR_JANELA") or "7")
 HHMM = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 
 
@@ -75,8 +76,8 @@ def horarios():
         pass
     return HORARIOS_ENV
 TZ = ZoneInfo(os.getenv("TZ", "America/Sao_Paulo"))
-TEMPO_MAX = int(os.getenv("COLETOR_TEMPO_MAX", "900"))  # segundos por loja
-PORTA = int(os.getenv("COLETOR_PORTA", "8000"))
+TEMPO_MAX = int(os.getenv("COLETOR_TEMPO_MAX") or "900")  # segundos por loja
+PORTA = int(os.getenv("COLETOR_PORTA") or "8000")
 ID_OK = re.compile(r"^[a-z0-9_-]{1,40}$")
 
 fila = deque()
@@ -213,7 +214,9 @@ def rodar(job):
     cfg = CONFIG_DIR / f"{loja}.env"
     pasta = WORK_DIR / loja
     pasta.mkdir(parents=True, exist_ok=True)
-    env = {k: v for k, v in os.environ.items() if not k.startswith("COLETOR_")}
+    # scripts recebem só o ambiente do sistema + as credenciais da própria loja (nada de segredos do painel)
+    SEGREDO = re.compile(r"(SECRET|TOKEN|PASS|SENHA|SMTP|GITHUB|KEY)", re.I)
+    env = {k: v for k, v in os.environ.items() if not k.startswith("COLETOR_") and not SEGREDO.search(k)}
     env.update(ler_env(cfg))
     # período: histórico = o pedido; rotina = últimos dias da janela.
     # Do dia 1 ao 5 a rotina também refaz o mês anterior inteiro (correções do fechamento: comissão e faturamento).

@@ -880,6 +880,19 @@
       h('p', { class: 'muted' }, 'O histórico completo entra uma vez, pelo "Importar histórico". Depois, cada atualização só precisa dos dias recentes: quanto menos dias, mais rápido. Use mais dias se a loja costuma corrigir vendas antigas no AppNext (cancelamento, troca de vendedor).'),
       h('div', { class: 'cfg-inline' }, dias, h('span', { class: 'muted' }, 'dias (recomendado: 7)')),
       h('div', { class: 'cfg-acoes' }, acao('Salvar', async () => { const r = await api('PUT', '/janela', { dias: +dias.value }); est.janela = r.dias; return `Pronto: cada atualização baixa os últimos ${r.dias} dias.`; }, 'btn primary'))));
+    // avisos de falha por e-mail
+    {
+      const card = h('div', { class: 'card cfg-form' }, h('div', { class: 'card-title' }, 'Avisos de falha por e-mail'), h('div', { class: 'muted' }, 'Carregando…'));
+      box.append(card);
+      const montar = (n) => {
+        const em = inp({ type: 'email', value: (n.avisos && n.avisos.email) || '', placeholder: 'ex.: seu e-mail', autocomplete: 'email' });
+        card.replaceChildren(h('div', { class: 'card-title' }, 'Avisos de falha por e-mail'),
+          h('p', { class: 'muted' }, 'O painel manda um e-mail quando: a coleta de vendas, XML, estoque ou o pedido ao FIXE falha duas vezes seguidas; a importação do e-mail do FIXE falha duas vezes seguidas; ou uma loja chega às 10h sem as vendas de ontem (se ela costuma vender nesse dia da semana). Um aviso por problema, e outro quando volta ao normal. Usa o servidor de e-mail do Resumo diário ou, se não houver, o Gmail de uma das lojas.'),
+          h('div', { class: 'cfg-grid' }, campo('E-mail que recebe os avisos', em, 'Deixe vazio para não receber avisos.')),
+          h('div', { class: 'cfg-acoes' }, acao('Salvar', async () => { await api('PUT', '/notif', { avisos: { email: em.value } }); notif = null; return em.value ? 'Pronto: os avisos vão para ' + em.value + '.' : 'Avisos desligados.'; }, 'btn primary')));
+      };
+      api('GET', '/notif').then(montar).catch((e) => card.replaceChildren(h('div', { class: 'card-title' }, 'Avisos de falha por e-mail'), h('p', { class: 'neg' }, e.message)));
+    }
     // resumo das lojas
     box.append(h('div', { class: 'card' }, h('div', { class: 'card-title' }, 'Situação de cada loja'),
       h('div', { class: 'table-wrap free' }, h('table', { class: 't cfg-t' },

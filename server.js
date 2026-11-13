@@ -771,6 +771,11 @@ setInterval(() => {
   }
 }, 30e3);
 
+// avisos de falha para o administrador (coleta, FIXE, loja sem vendas de ontem): a cada 5 minutos
+setInterval(() => {
+  require('./src/avisos').verificar({ COL, FX, B, NOTIF: require('./src/notificacoes') }).catch((e) => console.error('[avisos]', e.message));
+}, 5 * 60e3);
+
 // resumo diário (Telegram / e-mail) no horário configurado
 NOTIF.agendar(async (id) => { const l = C.get().lojas.find((x) => x.id === id); return l ? dadosParaIndicadores(l) : null; });
 

@@ -515,6 +515,11 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
       if (b.fechamento.ativo != null) c.fechamento.ativo = !!b.fechamento.ativo;
     }
     if (b.alertas != null) c.alertas = !!b.alertas;
+    if (b.avisos && b.avisos.email != null) {
+      const em = semQuebra(b.avisos.email).toLowerCase();
+      if (em && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) return res.status(400).json({ erro: 'E-mail dos avisos inválido.' });
+      c.avisos = { ...(c.avisos || {}), email: em };
+    }
     if (b.telegram && b.telegram.token != null) {
       const t = semQuebra(b.telegram.token);
       if (t && !/^\d{5,}:[A-Za-z0-9_-]{20,}$/.test(t)) return res.status(400).json({ erro: 'Token do robô inválido (formato 123456789:ABC...).' });

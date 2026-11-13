@@ -20,10 +20,10 @@ const F = require('./fechamento');
 
 const ARQ = path.join(C.CONFIG_DIR, 'notificacoes.json');
 const PADRAO_LOJA = { email: { host: '', port: 587, secure: false, user: '', pass: '', from: '' }, destinos: [], fechamento: { ativo: false, horario: '23:30', ultimoEnvio: null } };
-const PADRAO = { lojas: {}, ativo: false, horario: '08:00', ultimoEnvio: null, alertas: true, fechamento: { ativo: false, horario: '23:30', ultimoEnvio: null }, telegram: { token: '', destinos: [] }, email: { host: '', port: 587, secure: false, user: '', pass: '', from: '', destinos: [] } };
+const PADRAO = { lojas: {}, avisos: { email: '' }, ativo: false, horario: '08:00', ultimoEnvio: null, alertas: true, fechamento: { ativo: false, horario: '23:30', ultimoEnvio: null }, telegram: { token: '', destinos: [] }, email: { host: '', port: 587, secure: false, user: '', pass: '', from: '', destinos: [] } };
 
 function ler() {
-  try { const j = JSON.parse(fs.readFileSync(ARQ, 'utf8')); return { ...PADRAO, ...j, fechamento: { ...PADRAO.fechamento, ...(j.fechamento || {}) }, telegram: { ...PADRAO.telegram, ...(j.telegram || {}) }, email: { ...PADRAO.email, ...(j.email || {}) } }; } catch { return JSON.parse(JSON.stringify(PADRAO)); }
+  try { const j = JSON.parse(fs.readFileSync(ARQ, 'utf8')); return { ...PADRAO, ...j, avisos: { ...PADRAO.avisos, ...(j.avisos || {}) }, fechamento: { ...PADRAO.fechamento, ...(j.fechamento || {}) }, telegram: { ...PADRAO.telegram, ...(j.telegram || {}) }, email: { ...PADRAO.email, ...(j.email || {}) } }; } catch { return JSON.parse(JSON.stringify(PADRAO)); }
 }
 /** configuração do fechamento de uma loja (com padrões) — altera o objeto c quando criar */
 function cfgLoja(c, id) {
@@ -50,7 +50,7 @@ function gravar(cfg) { C.gravarAtomico(ARQ, JSON.stringify(cfg, null, 2), 0o600)
 function publico() {
   const c = ler();
   return {
-    ativo: c.ativo, horario: c.horario, ultimoEnvio: c.ultimoEnvio, alertas: c.alertas, fechamento: c.fechamento,
+    ativo: c.ativo, horario: c.horario, ultimoEnvio: c.ultimoEnvio, alertas: c.alertas, fechamento: c.fechamento, avisos: c.avisos,
     telegram: { configurado: !!c.telegram.token, destinos: c.telegram.destinos },
     email: { host: c.email.host, port: c.email.port, secure: c.email.secure, user: c.email.user, from: c.email.from, temSenha: !!c.email.pass, configurado: !!(c.email.host && c.email.from), destinos: c.email.destinos },
   };
