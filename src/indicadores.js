@@ -184,7 +184,7 @@ function alertas({ loja, vendas, metaPlanilha }) {
     } else if (mes.lojaVend >= meta) out.push({ tipo: 'alta', gravidade: 0, texto: `Meta do mês batida: ${brl(mes.lojaVend)} de ${brl(meta)}.` });
   }
   // 4) vendedores abaixo da meta individual nos 3 últimos meses fechados
-  const semMeta = new Set([...SEM_META_PADRAO, ...((loja.regras && loja.regras.semMeta) || [])].map((x) => x.toLowerCase()));
+  const semMeta = new Set([...(loja.regras && Array.isArray(loja.regras.semMeta) ? loja.regras.semMeta : SEM_META_PADRAO), 'sem vendedor'].map((x) => x.toLowerCase()));
   const fechados = [];
   for (let k = 1; k <= 3; k++) { const d = new Date(Date.UTC(+ym.slice(0, 4), +ym.slice(5, 7) - 1 - k, 1)); fechados.push(d.toISOString().slice(0, 7)); }
   const abaixo = new Map();

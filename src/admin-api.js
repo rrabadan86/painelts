@@ -111,6 +111,7 @@ function validarRegras(g) {
   const ry = g.royalties;
   if (!ry || ![ry.loja, ry.mkt, ry.eg, ry.egMkt].every(pct)) return 'Royalties inválidos.';
   if (!Array.isArray(g.semMeta) || g.semMeta.some((x) => typeof x !== 'string' || x.length > 60) || g.semMeta.length > 50) return 'Lista de vendedores sem meta inválida.';
+  if (g.semComissao != null && (!Array.isArray(g.semComissao) || g.semComissao.some((x) => typeof x !== 'string' || x.length > 60) || g.semComissao.length > 50)) return 'Lista de quem não recebe comissão inválida.';
   return null;
 }
 

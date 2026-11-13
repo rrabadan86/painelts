@@ -44,6 +44,7 @@
     gorjeta: { modo: 'proporcional', percentual: 0.8 },
     royalties: { loja: 0.06, mkt: 0.02, eg: 0.02, egMkt: 0.02 },
     semMeta: ['amanda oliveira', 'corporativo', 'adriane puccini'],
+    semComissao: [], // vendedores que não recebem comissão (nem premiação)
   };
   const clone = (o) => JSON.parse(JSON.stringify(o));
   const fundir = (a, b) => {
@@ -217,11 +218,16 @@
       const metaPuro = mi * rg.divisaoMeta.puro;
       const metaAcess = mi * rg.divisaoMeta.acess;
       const cm = rg.comissao;
-      const cArom = comissao(m.arom, metaArom, cm.modo, cm.arom);
-      const cPuro = comissao(m.puro, metaPuro, cm.modo, cm.puro);
-      const cAcess = comissao(m.acess, metaAcess, cm.modo, cm.acess);
+      // sem meta individual: recebe a comissão mínima (taxa "abaixo da meta") sobre o que vendeu;
+      // em "Não recebem comissão": não recebe comissão nem premiação
+      const SC = new Set((rg.semComissao || []).map((x) => String(x).trim().toLowerCase()));
+      const naoRecebe = SC.has(nomeV(v));
+      const comV = (valor, meta, f) => (naoRecebe ? 0 : semMeta(v) ? valor * f.abaixo : comissao(valor, meta, cm.modo, f));
+      const cArom = comV(m.arom, metaArom, cm.arom);
+      const cPuro = comV(m.puro, metaPuro, cm.puro);
+      const cAcess = comV(m.acess, metaAcess, cm.acess);
       const ind = TS.indicadores(idx);
-      const prem = R.premiacao(ind, rg);
+      const prem = naoRecebe ? 0 : R.premiacao(ind, rg);
 
       // [BonusSobreOutrosVendedores] — só na linha do vendedor escolhido
       let bonus = null;
@@ -240,7 +246,7 @@
       }
       todas.push({
         vendedorId: v, vendedor: db.D.vendedor[v] || '(sem nome)', loja,
-        metaInd: mi, total: m.total, semMeta: semMeta(v),
+        metaInd: mi, total: m.total, semMeta: semMeta(v), naoRecebe,
         metaArom, arom: m.arom, cArom, metaPuro, puro: m.puro, cPuro, metaAcess, acess: m.acess, cAcess,
         tkm: ind.tkm, pma: ind.pma, ipa: ind.ipa, premiacao: prem, bonus,
         base: cArom + cPuro + cAcess + (bonus || 0),
@@ -250,7 +256,8 @@
     // [TotalAPagar] — rateio: o total de comissões da loja dividido igualmente entre quem recebe
     if (rgCtx.rateio && rgCtx.rateio.ativo) {
       const exclui = new Set((rgCtx.rateio.exclui || []).map((x) => String(x).trim().toLowerCase()));
-      const fora = (v) => I.semVendedor.has(v) || exclui.has(nomeV(v));
+      const SCc = new Set((rgCtx.semComissao || []).map((x) => String(x).trim().toLowerCase()));
+      const fora = (v) => I.semVendedor.has(v) || exclui.has(nomeV(v)) || SCc.has(nomeV(v));
       const montante = todas.reduce((s, r) => s + r.base + r.premiacao, 0);
       // só quem aparece na tabela: assim a soma do que cada um recebe é igual ao montante
       const recebedores = todas.filter((r) => !fora(r.vendedorId)).length;

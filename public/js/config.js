@@ -594,6 +594,7 @@
       const gjPct = pctIn(rg.gorjeta.percentual);
       const ry = { loja: pctIn(rg.royalties.loja), mkt: pctIn(rg.royalties.mkt), eg: pctIn(rg.royalties.eg), egMkt: pctIn(rg.royalties.egMkt) };
       const semMeta = inp({ value: (rg.semMeta || []).join(', '), placeholder: 'nomes separados por vírgula' });
+      const semCom = inp({ value: (rg.semComissao || []).join(', '), placeholder: 'nomes separados por vírgula' });
       sec.append(h('h3', null, 'Regras de comissão'),
         h('p', { class: 'muted' }, l.regras ? 'Regras próprias desta loja.' : `Usando o modelo "${R.MODELOS[modeloAuto].nome}" (padrão para esta loja). Ajuste e salve para ter regras próprias.`),
         h('div', { class: 'cfg-grid' }, campo('Modelo de partida', modelo, 'Trocar o modelo preenche os campos com os valores dele.'), campo('Tipo de comissão', modo)),
@@ -612,7 +613,8 @@
         h('div', { class: 'cfg-grid' }, campo('Como divide', gjModo), campo('% da taxa repassada aos vendedores', gjPct)),
         h('div', { class: 'f-label', style: { marginTop: '14px' } }, 'Royalties'),
         h('div', { class: 'cfg-grid c3' }, campo('Loja %', ry.loja), campo('Marketing %', ry.mkt), campo('Espaço Gourmet %', ry.eg), campo('EG marketing %', ry.egMkt)),
-        campo('Vendedores sem meta individual', semMeta, 'Não dividem a meta da loja (ex.: corporativo, gerente).'),
+        campo('Vendedores sem meta individual', semMeta, 'Não dividem a meta da loja (ex.: corporativo, gerente) e recebem a comissão mínima (a taxa "abaixo da meta") sobre o que venderam.'),
+        campo('Não recebem comissão', semCom, 'Ficam sem comissão e sem premiação (a gorjeta continua). Ex.: corporativo, sócio.'),
         h('div', { class: 'cfg-acoes' },
           acao('Salvar regras', async () => {
             const lista = (i) => i.value.split(',').map((x) => x.trim().toLowerCase()).filter(Boolean);
@@ -626,6 +628,7 @@
               gorjeta: { modo: gjModo.value, percentual: lePct(gjPct) },
               royalties: { loja: lePct(ry.loja), mkt: lePct(ry.mkt), eg: lePct(ry.eg), egMkt: lePct(ry.egMkt) },
               semMeta: lista(semMeta),
+              semComissao: lista(semCom),
             };
             await api('PUT', `/lojas/${l.id}/regras`, { regras });
             TS.recarregar && TS.recarregar(true);
