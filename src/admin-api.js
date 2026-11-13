@@ -386,7 +386,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
   });
 
   // ---------- envio de planilhas ----------
-  const TIPOS = { vendas: null, Xml: 'Xml', Dados_Clientes: 'Dados_Clientes', Meta: 'Meta', Estoque: null };
+  const TIPOS = { vendas: null, historico: null, Xml: 'Xml', Dados_Clientes: 'Dados_Clientes', Meta: 'Meta', Estoque: null };
   r.post('/lojas/:id/upload/:tipo', lojaPermitida, express.raw({ type: () => true, limit: `${MAX_UPLOAD_MB}mb` }), async (req, res) => {
     const tipo = req.params.tipo;
     if (!(tipo in TIPOS)) return res.status(400).json({ erro: 'Tipo de planilha inválido.' });
@@ -417,6 +417,20 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
       } catch (e) { return res.status(400).json({ erro: e.message }); }
     }
     if (!Buffer.isBuffer(buf) || buf.length < 100 || buf[0] !== 0x50 || buf[1] !== 0x4b) return res.status(400).json({ erro: 'O arquivo não é uma planilha .xlsx.' });
+    if (tipo === 'historico') {
+      // vendas do sistema antigo (antes do AppNext): só os dias anteriores à primeira venda que o painel já tem
+      if (req.perfil !== 'admin' && req.perfil !== 'franqueado') return res.status(403).json({ erro: 'Só admin e franqueado.' });
+      try {
+        const T = require('./transform');
+        const { linhasDeBuffer } = require('./sources');
+        const vendas = T.transformVendas(await linhasDeBuffer(buf, 'Sheet1'), 'historico');
+        if (!vendas.length) throw new Error('Não achei vendas na planilha (ela precisa ter as colunas Data, Número Cupom, Descrição… como o relatório de vendas).');
+        const r = B.completarAntes(req.loja.id, vendas, { origem: 'histórico do sistema antigo', por: req.user });
+        aud(req, 'enviou histórico antigo de vendas', req.loja.id, { loja: req.loja.id, arquivo: semQuebra(req.get('X-Arquivo') || '').slice(0, 80), linhas: r.linhas, de: r.de, ate: r.ate });
+        depois(req.loja.id);
+        return res.json({ ok: true, historico: r });
+      } catch (e) { return res.status(400).json({ erro: e.message }); }
+    }
     const nomeOrig = semQuebra(req.get('X-Arquivo') || '').slice(0, 80);
     if (tipo === 'vendas') B.receber(req.loja.id, buf, { origem: 'painel' });
     else C.gravarAtomico(path.join(C.pastaLoja(req.loja.id), `${TIPOS[tipo]}.xlsx`), buf, 0o640);

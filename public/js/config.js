@@ -426,7 +426,8 @@
 
   function blocoPlanilhas(l) {
     const tipo = h('select', { class: 'f-input' },
-      h('option', { value: 'vendas' }, 'Vendas (relatório do AppNext)'), h('option', { value: 'Xml' }, 'Cupons com CPF (Xml)'),
+      h('option', { value: 'vendas' }, 'Vendas (relatório do AppNext)'),
+      (est.perfil === 'admin' || est.perfil === 'franqueado') ? h('option', { value: 'historico' }, 'Histórico de vendas do sistema antigo (antes do AppNext)') : null, h('option', { value: 'Xml' }, 'Cupons com CPF (Xml)'),
       h('option', { value: 'Dados_Clientes' }, 'Cadastro de clientes (modelo do painel ou FIXE)'), h('option', { value: 'Meta' }, 'Meta (planilha antiga)'),
       h('option', { value: 'Estoque' }, 'Estoque atual e custos (AppNext → Estoque → Estoque Atual → Excel)'));
     const arq = h('input', { type: 'file', accept: '.xlsx,.xls', class: 'f-input' });
@@ -434,6 +435,8 @@
     const pintaDica = () => {
       dica.textContent = tipo.value === 'Dados_Clientes'
         ? 'Pode enviar o modelo do painel (CPF, NOME, CELULAR, DATA NASC., EMAIL, CIDADE), a exportação de contatos do FIXE ou a exportação de Logs do FIXE (pontos e compras), do jeito que sai do sistema. O painel reconhece sozinho, junta com o cadastro que já existe (CPF novo entra, CPF conhecido é atualizado, campo vazio não apaga) e ignora o que não usa (Data Cadastro, Loja, Saldo, Estado).'
+        : tipo.value === 'historico'
+          ? 'A planilha de vendas antiga (a "importacaoB" que o Power BI usava). Entram só os dias ANTERIORES à primeira venda que o painel já tem: nada do que já está no painel é apagado ou trocado, e o período em que o AppNext começou continua com os dados do AppNext. Pode enviar de novo sem medo de duplicar.'
         : tipo.value === 'Estoque'
           ? 'No AppNext: Estoque → Estoque Atual → botão verde "Exportar para Excel". Envie o arquivo do jeito que baixar. O coletor também baixa sozinho em cada atualização; o envio manual serve para a primeira carga ou para conferir.'
           : '';
@@ -470,6 +473,16 @@
               r.estoque.semCusto ? h('li', null, `${fmt.int(r.estoque.semCusto)} produto(s) sem custo no AppNext`) : null),
             h('div', null, 'Veja na aba Estoque e margem.')));
           return 'Estoque importado.';
+        }
+        if (r && r.historico) {
+          const g = r.historico;
+          resultado.replaceChildren(h('div', { class: 'cfg-cad-res' }, g.linhas
+            ? h('b', null, `Histórico importado: ${fmt.int(g.linhas)} linhas de venda de ${dIso(g.de)} a ${dIso(g.ate)}.`)
+            : h('b', null, 'Nada novo para importar.'),
+            h('ul', null,
+              h('li', null, `Arquivo de ${dIso(g.arquivoDe)} a ${dIso(g.arquivoAte)}`),
+              g.corte ? h('li', null, `O painel já tinha vendas a partir de ${dIso(g.corte)}: ${fmt.int(g.descartadas)} linha(s) do arquivo nesse período ficaram de fora (valem as do AppNext)`) : null)));
+          return g.linhas ? 'Histórico importado. O painel recarrega em alguns segundos.' : 'Nada novo: o painel já tinha esse período.';
         }
         if (r && r.logs) {
           const g = r.logs;

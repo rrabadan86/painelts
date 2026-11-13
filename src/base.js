@@ -116,6 +116,27 @@ function importar(id, vendas, { de, ate, origem, por } = {}) {
   return { linhas, de, ate, meses: meses.length };
 }
 
+/** primeiro dia com venda na base (ou null) */
+function primeiroDia(id) {
+  const meses = arquivosMes(id).map((f) => f.slice(0, 7)).sort();
+  for (const ym of meses) { const d = lerMes(id, ym).map((v) => v.data).filter(Boolean).sort()[0]; if (d) return d; }
+  return null;
+}
+/**
+ * Histórico do sistema antigo: entra só o que é ANTERIOR à primeira venda que o painel já tem
+ * (nenhum dia existente é tocado; o período em que o sistema novo começou fica com o sistema novo).
+ */
+function completarAntes(id, vendas, { origem, por } = {}) {
+  const corte = primeiroDia(id);
+  const antes = corte ? vendas.filter((v) => v.data && v.data < corte) : vendas.filter((v) => v.data);
+  const datas = vendas.map((v) => v.data).filter(Boolean).sort();
+  const descartadas = vendas.length - antes.length;
+  if (!antes.length) return { linhas: 0, de: null, ate: null, corte, descartadas, arquivoDe: datas[0] || null, arquivoAte: datas[datas.length - 1] || null };
+  const d = antes.map((v) => v.data).sort();
+  const r = importar(id, antes, { de: d[0], ate: d[d.length - 1], origem: origem || 'histórico do sistema antigo', por });
+  return { ...r, corte, descartadas, arquivoDe: datas[0], arquivoAte: datas[datas.length - 1] };
+}
+
 /** primeira carga: grava tudo de uma vez (planilhas antigas somadas) */
 function substituirTudo(id, vendas, info = {}) {
   fs.mkdirSync(pastaBase(id), { recursive: true });
@@ -181,4 +202,4 @@ function receber(id, buf, { de, ate, origem } = {}) {
   return nome;
 }
 
-module.exports = { ler, importar, substituirTudo, resumo, assinatura, existe, pendentes, periodoDoNome, arquivar, receber, pastaEntrada, importacoes, mesesEntre };
+module.exports = { ler, importar, completarAntes, primeiroDia, substituirTudo, resumo, assinatura, existe, pendentes, periodoDoNome, arquivar, receber, pastaEntrada, importacoes, mesesEntre };
