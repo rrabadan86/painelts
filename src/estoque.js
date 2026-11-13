@@ -137,7 +137,9 @@ const EMB_PADRAO = {
   500: [{ cod: '80151', qtd: 1 }, { cod: '81010', qtd: 2 }],
   1000: [{ cod: '80152', qtd: 1 }, { cod: '81010', qtd: 2 }],
 };
-const PADRAO = { entregaDias: 10, coberturaDias: 30, paradoDias: 60, segurancaPct: 50, simplesPct: 0, cartaoPct: 0, outros: [], margemMin: 15, margemAlvo: 30, embalagens: EMB_PADRAO };
+// categorias dos outros custos (editáveis); "outros" sempre existe e recebe o que não tem categoria
+const CATEGORIAS = [{ id: 'func', nome: 'Funcionários' }, { id: 'imovel', nome: 'Imóvel' }, { id: 'sistemas', nome: 'Sistemas' }, { id: 'outros', nome: 'Outros' }];
+const PADRAO = { categorias: CATEGORIAS, entregaDias: 10, coberturaDias: 30, paradoDias: 60, segurancaPct: 50, simplesPct: 0, cartaoPct: 0, outros: [], margemMin: 15, margemAlvo: 30, embalagens: EMB_PADRAO };
 function cfg(loja) {
   const c = (loja && loja.estoqueCfg) || {};
   return {
@@ -149,7 +151,8 @@ function cfg(loja) {
     simplesPct: Number.isFinite(c.simplesPct) ? c.simplesPct : PADRAO.simplesPct,
     cartaoPct: Number.isFinite(c.cartaoPct) ? c.cartaoPct : PADRAO.cartaoPct,
     // outros custos da loja: % das vendas ou R$ por mês (dividido pelas vendas do mês), em tudo, só loja ou só EG
-    outros: Array.isArray(c.outros) ? c.outros : [],
+    outros: (Array.isArray(c.outros) ? c.outros : []).map((x) => ({ ...x, cat: x.cat || 'outros' })),
+    categorias: Array.isArray(c.categorias) && c.categorias.length ? c.categorias : CATEGORIAS,
     margemMin: Number.isFinite(c.margemMin) ? c.margemMin : PADRAO.margemMin,
     margemAlvo: Number.isFinite(c.margemAlvo) ? c.margemAlvo : PADRAO.margemAlvo,
     embalagens: c.embalagens && typeof c.embalagens === 'object' ? c.embalagens : EMB_PADRAO,
@@ -165,8 +168,21 @@ function validarCfg(b) {
   const mm = (v, d) => { const x = Math.round(Number(String(v ?? d).replace(',', '.')) * 10) / 10; return Number.isFinite(x) && x >= -50 && x <= 95 ? x : null; };
   out.margemMin = mm(b.margemMin, PADRAO.margemMin); out.margemAlvo = mm(b.margemAlvo, PADRAO.margemAlvo);
   if (out.margemMin == null || out.margemAlvo == null) return { erro: 'Margens: use um percentual entre −50 e 95.' };
+  // categorias: nome curto; "outros" sempre fica
+  const cats = Array.isArray(b.categorias) ? b.categorias : CATEGORIAS;
+  if (cats.length > 12) return { erro: 'No máximo 12 categorias.' };
+  out.categorias = [];
+  for (const c of cats) {
+    const nome = String(c.nome || '').replace(/[\r\n]/g, ' ').trim().slice(0, 30);
+    const id = String(c.id || '').toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 20);
+    if (!nome || !id) return { erro: 'Dê um nome a cada categoria.' };
+    if (out.categorias.some((x) => x.id === id)) continue;
+    out.categorias.push({ id, nome });
+  }
+  if (!out.categorias.some((x) => x.id === 'outros')) out.categorias.push({ id: 'outros', nome: 'Outros' });
+  const idsCat = new Set(out.categorias.map((x) => x.id));
   const outros = Array.isArray(b.outros) ? b.outros : [];
-  if (outros.length > 20) return { erro: 'No máximo 20 custos.' };
+  if (outros.length > 40) return { erro: 'No máximo 40 custos.' };
   out.outros = [];
   for (const x of outros) {
     const nome = String(x.nome || '').replace(/[\r\n]/g, ' ').trim().slice(0, 40);
@@ -176,7 +192,7 @@ function validarCfg(b) {
     if (!['pct', 'mes'].includes(x.tipo)) return { erro: `Custo "${nome}": escolha % das vendas ou R$ por mês.` };
     if (!['tudo', 'loja', 'eg'].includes(x.aplica)) return { erro: `Custo "${nome}": escolha onde se aplica.` };
     if (!(valor >= 0) || (x.tipo === 'pct' ? valor > 100 : valor > 10000000)) return { erro: `Custo "${nome}": valor inválido.` };
-    out.outros.push({ nome, tipo: x.tipo, valor, aplica: x.aplica });
+    out.outros.push({ nome, tipo: x.tipo, valor, aplica: x.aplica, cat: idsCat.has(x.cat) ? x.cat : 'outros' });
   }
   const emb = {};
   for (const [g, lista] of Object.entries(b.embalagens || {})) {

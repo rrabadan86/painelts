@@ -179,7 +179,10 @@
     }
 
 
-    return { deducoes, OUTROS, taxaOutro, dicaOutro, mediaFat, ONDE_FAT, pSimples, pCartao };
+    // categorias dos custos (Funcionários, Imóvel, Sistemas…), na ordem cadastrada; "outros" recebe o que não tem
+    const CATS = (cfg.categorias && cfg.categorias.length ? cfg.categorias : [{ id: 'outros', nome: 'Outros' }]);
+    const catDe = (x) => (CATS.some((c) => c.id === x.cat) ? x.cat : 'outros');
+    return { deducoes, OUTROS, taxaOutro, dicaOutro, mediaFat, ONDE_FAT, pSimples, pCartao, CATS, catDe };
   }
 
   TS.estoqueBuscar = buscar;
@@ -294,7 +297,7 @@
     corpo.append(h('div', { class: 'muted est-origem' }, `Estoque e custos do AppNext de ${new Date(estoque.em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })} · ${fmt.int(estoque.itens.length)} produtos`,
       temCod ? '' : ' · as vendas ainda não têm o código do produto: o casamento está sendo feito pelo nome (veja "Vendas sem custo" no fim)'));
 
-    const { deducoes, OUTROS, taxaOutro, mediaFat, ONDE_FAT, pSimples, pCartao } = criarDeducoes(M, cfg);
+    const { deducoes, OUTROS, taxaOutro, mediaFat, ONDE_FAT, pSimples, pCartao, CATS, catDe } = criarDeducoes(M, cfg);
 
     // ---------- rentabilidade no período e filtros escolhidos ----------
     const base = TS.filtrar();
@@ -397,8 +400,16 @@
       ], `Simples ${fmt.pct(pSimples)} · maquininha ${fmt.pct(pCartao)} · royalties e comissão pelas regras da loja`));
       if (fixosK.length) {
         const m = mediaFat(OUTROS[fixosK[0]].aplica);
+        // agrupados por categoria: subtotal da categoria e, embaixo, cada custo
+        const linhasFix = [];
+        for (const c of CATS) {
+          const ks = fixosK.filter((k) => catDe(OUTROS[k]) === c.id);
+          if (!ks.length) continue;
+          linhasFix.push(linha(c.nome, somaK(ks), 'est-det-sub', `Soma dos custos de ${c.nome}`));
+          for (const k of ks) { const x = OUTROS[k], mm = mediaFat(x.aplica); linhasFix.push(linha('  ' + x.nome, r.outros[k], 'est-det-filho', mm.media ? `R$ ${fmt.int(x.valor)} por mês ÷ ${fmt.brl0(mm.media)} (média) = ${fmt.pct(x.valor / mm.media)} de cada venda` : 'Sem mês fechado para calcular')); }
+        }
         cards.push(cupom('Custos fixos da loja', 'rateio', [
-          ...fixosK.map((k) => { const x = OUTROS[k], mm = mediaFat(x.aplica); return linha(x.nome, r.outros[k], null, mm.media ? `R$ ${fmt.int(x.valor)} por mês ÷ ${fmt.brl0(mm.media)} (média) = ${fmt.pct(x.valor / mm.media)} de cada venda` : 'Sem mês fechado para calcular'); }),
+          ...linhasFix,
           linha('Total', fixTot, 'est-det-tot'),
         ], m.media ? `Valor por mês ÷ média do faturamento de ${m.meses.map(TS.ymLabel).join(', ')} (${fmt.brl0(m.media)}/mês)` : null));
       }
@@ -1017,21 +1028,60 @@
     const maq = h('input', { class: 'f-input', type: 'number', min: 0, max: 50, step: '0.01', value: cfg.cartaoPct ?? 0, style: { maxWidth: '110px' } });
     const mMin = h('input', { class: 'f-input', type: 'number', min: -50, max: 95, step: '0.5', value: cfg.margemMin ?? 15, style: { maxWidth: '110px' } });
     const mAlvo = h('input', { class: 'f-input', type: 'number', min: -50, max: 95, step: '0.5', value: cfg.margemAlvo ?? 30, style: { maxWidth: '110px' } });
-    const outrosLinhas = [];
+    // ---------- outros custos, agrupados por categoria (Funcionários, Imóvel, Sistemas, Outros…) ----------
+    const cats = (cfg.categorias || []).map((c) => ({ ...c }));
+    if (!cats.some((c) => c.id === 'outros')) cats.push({ id: 'outros', nome: 'Outros' });
+    const itens = (cfg.outros || []).map((x) => ({ ...x, cat: cats.some((c) => c.id === x.cat) ? x.cat : 'outros' }));
     const outrosBox = h('div', { class: 'est-outros' });
-    const linhaOutro = (x = { nome: '', tipo: 'pct', valor: '', aplica: 'tudo' }) => {
-      const nome = h('input', { class: 'f-input', value: x.nome, placeholder: 'Ex.: Aluguel', maxlength: 40 });
-      const tipo = h('select', { class: 'f-input' }, h('option', { value: 'pct', selected: x.tipo === 'pct' || null }, '% das vendas'), h('option', { value: 'mes', selected: x.tipo === 'mes' || null }, 'R$ por mês'));
-      const valor = h('input', { class: 'f-input', type: 'number', min: 0, step: '0.01', value: x.valor, placeholder: '0' });
-      const aplica = h('select', { class: 'f-input' }, h('option', { value: 'tudo', selected: x.aplica === 'tudo' || null }, 'Todas as vendas'), h('option', { value: 'loja', selected: x.aplica === 'loja' || null }, 'Só loja'), h('option', { value: 'eg', selected: x.aplica === 'eg' || null }, 'Só Espaço Gourmet'));
-      const o = { nome, tipo, valor, aplica };
-      const rem = h('button', { type: 'button', class: 'est-outro-rem', title: 'Remover este custo', onclick: () => { outrosLinhas.splice(outrosLinhas.indexOf(o), 1); el.remove(); } }, '✕ Remover');
-      const el = h('div', { class: 'est-outro' }, nome, tipo, valor, aplica, rem);
-      outrosLinhas.push(o);
-      outrosBox.append(el);
-    };
-    (cfg.outros || []).forEach(linhaOutro);
-    const addOutro = h('button', { type: 'button', class: 'btn', style: { marginTop: '6px' }, onclick: () => linhaOutro() }, '+ Adicionar custo');
+    const totais = new Map();
+    const brl = (v) => fmt.brl0(v);
+    function atualizarTotais() {
+      let mesTot = 0, pctTot = 0;
+      for (const c of cats) {
+        const l = itens.filter((x) => x.cat === c.id);
+        const mes = l.filter((x) => x.tipo === 'mes').reduce((a, x) => a + (+String(x.valor).replace(',', '.') || 0), 0);
+        const pct = l.filter((x) => x.tipo === 'pct').reduce((a, x) => a + (+String(x.valor).replace(',', '.') || 0), 0);
+        mesTot += mes; pctTot += pct;
+        const el = totais.get(c.id);
+        if (el) el.textContent = [mes ? `${brl(mes)}/mês` : '', pct ? `${fmt.n1(pct)}% das vendas` : ''].filter(Boolean).join(' + ') || 'vazio';
+      }
+      const g = totais.get('*');
+      if (g) g.textContent = [mesTot ? `${brl(mesTot)}/mês` : '', pctTot ? `${fmt.n1(pctTot)}% das vendas` : ''].filter(Boolean).join(' + ') || '—';
+    }
+    function pintarOutros() {
+      totais.clear();
+      const linhaItem = (x) => {
+        const nome = h('input', { class: 'f-input', value: x.nome, placeholder: 'Ex.: Aluguel', maxlength: 40, oninput: (e) => { x.nome = e.target.value; } });
+        const tipo = h('select', { class: 'f-input', onchange: (e) => { x.tipo = e.target.value; atualizarTotais(); } }, h('option', { value: 'mes', selected: x.tipo === 'mes' || null }, 'R$ por mês'), h('option', { value: 'pct', selected: x.tipo === 'pct' || null }, '% das vendas'));
+        const valor = h('input', { class: 'f-input', type: 'number', min: 0, step: '0.01', value: x.valor, placeholder: '0', oninput: (e) => { x.valor = e.target.value; atualizarTotais(); } });
+        const aplica = h('select', { class: 'f-input', onchange: (e) => { x.aplica = e.target.value; } }, [['tudo', 'Todas as vendas'], ['loja', 'Só loja'], ['eg', 'Só Espaço Gourmet']].map(([v, t]) => h('option', { value: v, selected: x.aplica === v || null }, t)));
+        const cat = h('select', { class: 'f-input', title: 'Mudar de categoria', onchange: (e) => { x.cat = e.target.value; pintarOutros(); sujo(); } }, cats.map((c) => h('option', { value: c.id, selected: x.cat === c.id || null }, c.nome)));
+        const rem = h('button', { type: 'button', class: 'est-outro-rem', title: 'Remover este custo', onclick: () => { itens.splice(itens.indexOf(x), 1); pintarOutros(); sujo(); } }, '✕');
+        return h('tr', null, h('td', null, nome), h('td', null, tipo), h('td', null, valor), h('td', null, aplica), h('td', null, cat), h('td', null, rem));
+      };
+      const corpoT = h('tbody');
+      for (const c of cats) {
+        const l = itens.filter((x) => x.cat === c.id);
+        const tot = h('span', { class: 'est-cat-tot' });
+        totais.set(c.id, tot);
+        const nomeCat = h('input', { class: 'f-input est-cat-nome', value: c.nome, maxlength: 30, title: 'Nome da categoria (clique para mudar)', oninput: (e) => { c.nome = e.target.value; } });
+        const add = h('button', { type: 'button', class: 'btn est-cat-add', onclick: () => { itens.push({ nome: '', tipo: 'mes', valor: '', aplica: 'tudo', cat: c.id }); pintarOutros(); sujo(); const ins = outrosBox.querySelectorAll(`tr[data-cat="${c.id}"] input`); } }, '+ Custo');
+        const remCat = c.id !== 'outros' && !l.length ? h('button', { type: 'button', class: 'est-outro-rem', title: 'Apagar esta categoria (vazia)', onclick: () => { cats.splice(cats.indexOf(c), 1); pintarOutros(); sujo(); } }, '✕ categoria') : null;
+        corpoT.append(h('tr', { class: 'est-cat-cab' }, h('td', { colspan: 6 }, h('div', { class: 'est-cat-l' }, nomeCat, tot, add, remCat))));
+        if (!l.length) corpoT.append(h('tr', { class: 'est-cat-vazia' }, h('td', { colspan: 6, class: 'muted' }, 'Nenhum custo nesta categoria.')));
+        l.forEach((x) => { const tr = linhaItem(x); tr.dataset.cat = c.id; corpoT.append(tr); });
+      }
+      const geral = h('span');
+      totais.set('*', geral);
+      const novaCat = h('button', { type: 'button', class: 'btn', onclick: () => { const nome = prompt('Nome da nova categoria (ex.: Marketing):'); if (!nome || !nome.trim()) return; let id = nome.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 20) || 'cat'; while (cats.some((c) => c.id === id)) id += '1'; cats.splice(cats.length - 1, 0, { id, nome: nome.trim().slice(0, 30) }); pintarOutros(); sujo(); } }, '+ Nova categoria');
+      outrosBox.replaceChildren(
+        h('div', { class: 'table-wrap free' }, h('table', { class: 't est-cat-t' },
+          h('thead', null, h('tr', null, ['Custo', 'Tipo', 'Valor', 'Onde se aplica', 'Categoria', ''].map((t) => h('th', { class: 'l' }, t)))), corpoT,
+          h('tfoot', null, h('tr', null, h('td', { colspan: 6 }, h('b', null, 'Total: '), geral))))),
+        h('div', { class: 'cfg-acoes' }, novaCat));
+      atualizarTotais();
+    }
+    pintarOutros();
     const tams = ['50', '100', '250', '500', '1000'];
     const txtEmb = (l) => (l || []).map((x) => `${x.cod}×${x.qtd}`).join(', ');
     const nomeEmb = (l) => (l || []).map((x) => `${x.qtd}× ${porCod.get(String(x.cod))?.desc || '(código ' + x.cod + ' não está no estoque)'}`).join(' + ');
@@ -1049,7 +1099,7 @@
       try {
         const embalagens = Object.fromEntries(embs.map(([g, i]) => [g, i.value.split(',').map((s) => s.trim()).filter(Boolean).map((s) => { const [cod, q] = s.split(/[×x*]/i); return { cod: (cod || '').trim(), qtd: +(q || 1) }; })]));
         const r = await fetch(`/api/estoque/cfg?loja=${encodeURIComponent(lojaId)}`, { method: 'PUT', credentials: 'same-origin', headers: { 'X-Painel': '1', 'Content-Type': 'application/json' },
-          body: JSON.stringify({ entregaDias: +ent.value, coberturaDias: +cob.value, paradoDias: +par.value, segurancaPct: +seg.value, simplesPct: simp.value, cartaoPct: maq.value, margemMin: mMin.value, margemAlvo: mAlvo.value, outros: outrosLinhas.map((o) => ({ nome: o.nome.value, tipo: o.tipo.value, valor: o.valor.value, aplica: o.aplica.value })), embalagens }) });
+          body: JSON.stringify({ entregaDias: +ent.value, coberturaDias: +cob.value, paradoDias: +par.value, segurancaPct: +seg.value, simplesPct: simp.value, cartaoPct: maq.value, margemMin: mMin.value, margemAlvo: mAlvo.value, outros: itens.map((x) => ({ nome: x.nome, tipo: x.tipo, valor: x.valor, aplica: x.aplica, cat: x.cat })), categorias: cats.map((c) => ({ id: c.id, nome: c.nome })), embalagens }) });
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j.erro || 'Falha ao salvar.');
         cache.delete(lojaId);
@@ -1060,7 +1110,6 @@
     const ouvir = (el) => { el.addEventListener('input', sujo); el.addEventListener('change', sujo); return el; };
     [ent, cob, par, seg, simp, maq, mMin, mAlvo, outrosBox].forEach(ouvir);
     embs.forEach(([, i]) => ouvir(i));
-    addOutro.addEventListener('click', sujo);
     outrosBox.addEventListener('click', (e) => { if (e.target.closest('.est-outro-rem')) sujo(); });
     return [
       h('div', { class: 'f-label' }, 'Margem líquida (sobre o valor vendido)'),
@@ -1073,7 +1122,7 @@
       h('small', { class: 'muted' }, 'Comissão e royalties vêm das regras da loja (Comissionamento). Use a taxa média da maquininha (débito, crédito e Pix juntos).'),
       h('div', { class: 'f-label', style: { marginTop: '14px' } }, 'Outros custos da loja'),
       h('small', { class: 'muted' }, '% das vendas (ex.: aluguel percentual do shopping, app de delivery) ou R$ por mês (ex.: aluguel fixo, energia, salários). O valor em R$ por mês vira um %: valor ÷ média do faturamento dos últimos 3 meses fechados (ex.: R$ 16.000 ÷ média de R$ 200.000 = 8% de cada venda). Esse % é volátil: muda quando um mês fecha e entra na média.'),
-      outrosBox, addOutro,
+      outrosBox,
       h('div', { class: 'cfg-acoes' }, salvar2, msg2),
       h('div', { class: 'f-label', style: { marginTop: '14px' } }, 'Reposição'),
       h('div', { class: 'est-cfg-g' },
@@ -1088,7 +1137,7 @@
   }
   /** bloco de Configurações → Lojas (admin e franqueado) */
   TS.blocoEstoqueCfg = function (lojaId) {
-    const b = h('section', { class: 'cfg-bloco' }, h('h3', null, 'Estoque e margem'),
+    const b = h('section', { class: 'cfg-bloco cfg-bloco-largo' }, h('h3', null, 'Estoque e margem'),
       h('p', { class: 'muted' }, 'Impostos, maquininha e outros custos para a margem líquida, prazos da reposição e a embalagem dos chás a granel.'));
     const corpo = h('div', null, h('p', { class: 'muted' }, 'Carregando…'));
     b.append(corpo);

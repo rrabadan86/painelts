@@ -40,7 +40,7 @@
       // custo dos produtos: o das vendas com custo + as sem custo pelo mesmo % (estimado)
       const cmvPct = m.fatCusto ? m.custo / m.fatCusto : null;
       const cmv = cmvPct == null ? null : m.custo + (m.fat - m.fatCusto) * cmvPct;
-      const fixosMes = fixos.map((x) => ({ nome: x.nome, valor: x.valor * frac }));
+      const fixosMes = fixos.map((x) => ({ nome: x.nome, cat: D.catDe ? D.catDe(x) : 'outros', valor: x.valor * frac }));
       const fixoTot = fixosMes.reduce((a, x) => a + x.valor, 0);
       const impostos = m.imp + m.maq + m.roy;
       const recLiq = m.fat - impostos;
@@ -53,7 +53,8 @@
   }
 
   // linhas da DRE: [rótulo, chave/função, tipo] tipo: 'sub' (subtotal), 'tot' (resultado), 'menos', 'info'
-  const LINHAS = (fixosNomes) => [
+  /** grupos: [{ id, nome, itens:[índice em fixosMes] }] — cada categoria vira uma linha com o subtotal, que abre os custos */
+  const LINHAS = (grupos, abertos) => [
     ['Faturamento', (m) => m.fat, 'base', 'Vendas da loja (com Espaço Gourmet), já com os descontos, sem taxa de serviço e entrega'],
     ['− Simples Nacional', (m) => m.imp, 'menos', '% do Simples (Configurações → Lojas → Estoque e margem) sobre as vendas'],
     ['− Maquininha', (m) => m.maq, 'menos', 'Taxa média da maquininha sobre as vendas'],
@@ -64,7 +65,10 @@
     ['− Comissões e premiações', (m) => m.com, 'menos', 'O que a loja pagou no mês (comissões, premiação e bônus), como no Comissionamento'],
     ['− Outros custos em %', (m) => m.varPct, 'menos', 'Custos da loja cadastrados como % das vendas'],
     ['= Margem de contribuição', (m) => m.contrib, 'sub', 'O que sobra para pagar os custos fixos'],
-    ...fixosNomes.map((n, k) => [`− ${n}`, (m) => m.fixosMes[k].valor, 'menos', 'Custo fixo cadastrado (valor do mês; no mês em andamento, só a parte dos dias que já passaram)']),
+    ...grupos.flatMap((g) => [
+      [`− ${g.nome}`, (m) => g.itens.reduce((a, k) => a + m.fixosMes[k].valor, 0), 'grupo', `${g.itens.length} ${g.itens.length === 1 ? 'custo' : 'custos'}: ${g.itens.map((k) => g.nomes[k]).join(', ')}. Clique para ${abertos.has(g.id) ? 'fechar' : 'abrir'}.`, g.id],
+      ...(abertos.has(g.id) ? g.itens.map((k) => [g.nomes[k], (m) => m.fixosMes[k].valor, 'filho', 'Custo fixo cadastrado (valor do mês; no mês em andamento, só a parte dos dias que já passaram)']) : []),
+    ]),
     ['= Resultado do mês', (m) => m.resultado, 'tot', 'Margem de contribuição − custos fixos'],
   ];
 
@@ -86,8 +90,12 @@
     corpo.replaceChildren();
     const meses = calcular(M);
     if (!meses.length) { corpo.append(TS.empty()); return; }
-    const fixosNomes = M.ded.OUTROS.filter((x) => x.tipo === 'mes').map((x) => x.nome);
-    const linhas = LINHAS(fixosNomes);
+    const fixos = M.ded.OUTROS.filter((x) => x.tipo === 'mes');
+    const fixosNomes = fixos.map((x) => x.nome);
+    const cats = M.ded.CATS || [{ id: 'outros', nome: 'Outros' }];
+    const grupos = cats.map((c) => ({ id: c.id, nome: c.nome, nomes: fixosNomes, itens: fixos.map((x, k) => (M.ded.catDe(x) === c.id ? k : -1)).filter((k) => k >= 0) })).filter((g) => g.itens.length);
+    const abertos = state.dreAbertos || (state.dreAbertos = new Set());
+    const linhas = LINHAS(grupos, abertos);
     const sel = state.dreMes && meses.some((m) => m.ym === state.dreMes) ? state.dreMes : meses[meses.length - 1].ym;
     const m = meses.find((x) => x.ym === sel);
     const ymAnt = `${+sel.slice(0, 4) - 1}${sel.slice(4)}`;
@@ -120,12 +128,13 @@
     const tb = h('table', { class: 't dre-t' });
     tb.append(h('thead', null, h('tr', null, h('th', { class: 'l' }, ''), h('th', null, TS.ymLabel(sel)), h('th', null, '%'), h('th', null, a ? rotAnt : 'Ano anterior'), h('th', null, '%'), h('th', null, 'Variação'))));
     const body = h('tbody');
-    for (const [rot, f, tipo, dica] of linhas) {
+    const alternar = (id) => { if (abertos.has(id)) abertos.delete(id); else abertos.add(id); TS.render(); };
+    for (const [rot, f, tipo, dica, gid] of linhas) {
       const v = f(m), va = a ? f(a) : null;
       const d = v != null && va ? v / va - 1 : null;
-      const bom = tipo === 'menos' ? d < 0 : d > 0;
-      body.append(h('tr', { class: 'dre-' + tipo, title: dica },
-        h('td', { class: 'l' }, rot), h('td', null, v == null ? '—' : fmt.brl(v)), h('td', { class: 'muted' }, pc(v, m.fat)),
+      const bom = tipo === 'menos' || tipo === 'grupo' || tipo === 'filho' ? d < 0 : d > 0;
+      body.append(h('tr', { class: 'dre-' + tipo, title: dica, onclick: gid ? () => alternar(gid) : null },
+        h('td', { class: 'l' }, gid ? h('span', { class: 'dre-seta' }, abertos.has(gid) ? '▾ ' : '▸ ') : null, rot), h('td', null, v == null ? '—' : fmt.brl(v)), h('td', { class: 'muted' }, pc(v, m.fat)),
         h('td', null, va == null ? '—' : fmt.brl(va)), h('td', { class: 'muted' }, a ? pc(va, a.fat) : '—'),
         h('td', { class: d == null || Math.abs(d) < 0.0005 ? 'muted' : bom ? 'pos' : 'neg' }, d == null ? '—' : fmt.delta(d))));
     }
@@ -151,7 +160,7 @@
     const t2 = h('table', { class: 't dre-t' });
     t2.append(h('thead', null, h('tr', null, h('th', { class: 'l sticky-col' }, ''), ult12.map((x) => h('th', null, TS.ymLabel(x.ym) + (x.parcial ? '*' : ''))))));
     const b2 = h('tbody');
-    for (const [rot, f, tipo, dica] of linhas) b2.append(h('tr', { class: 'dre-' + tipo, title: dica }, h('td', { class: 'l sticky-col' }, rot), ult12.map((x) => { const v = f(x); return h('td', { class: tipo === 'tot' && v < 0 ? 'neg' : null }, v == null ? '—' : fmt.brl0(v)); })));
+    for (const [rot, f, tipo, dica, gid] of linhas) b2.append(h('tr', { class: 'dre-' + tipo, title: dica, onclick: gid ? () => alternar(gid) : null }, h('td', { class: 'l sticky-col' }, gid ? h('span', { class: 'dre-seta' }, abertos.has(gid) ? '▾ ' : '▸ ') : null, rot), ult12.map((x) => { const v = f(x); return h('td', { class: tipo === 'tot' && v < 0 ? 'neg' : null }, v == null ? '—' : fmt.brl0(v)); })));
     b2.append(h('tr', { class: 'dre-info' }, h('td', { class: 'l sticky-col' }, 'Resultado em % do faturamento'), ult12.map((x) => h('td', { class: x.resultado < 0 ? 'neg' : null }, pc(x.resultado, x.fat)))));
     t2.append(b2);
     corpo.append(h('div', { class: 'mt' }, TS.card('Mês a mês', '* mês em andamento (custos fixos proporcionais aos dias que já passaram)', h('div', { class: 'table-wrap' }, t2))));
