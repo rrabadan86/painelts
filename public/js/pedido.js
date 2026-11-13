@@ -431,6 +431,15 @@
       if (r.pedir !== r.sugeridoPedir) return h('span', { class: 'muted' }, `alterado (sugestão ${qtdTxt(r.sugeridoPedir, r.it)})`);
       return h('span', { class: r.motivo === 'completo' ? 'muted' : 'warn-t' }, { completo: 'completo', parcial: 'parte (o valor acabou)', 'fora do valor': 'o valor acabou' }[r.motivo] || '');
     }
+    /** redesenha mantendo a rolagem da tabela e da página */
+    function repintar() {
+      const tw = corpo.querySelector('.ped-t')?.closest('.table-wrap');
+      const st = tw ? tw.scrollTop : 0, y = window.scrollY;
+      pintar(corpo, loja, M, e, p);
+      const tw2 = corpo.querySelector('.ped-t')?.closest('.table-wrap');
+      if (tw2) tw2.scrollTop = st;
+      window.scrollTo(0, y);
+    }
     function campoQtd(r) {
       if (r.site !== 'ok' && r.site !== 'sem') return '—';
       const passo = (r.c && r.c.mult) || (r.it.un === 'Kg' ? 0.1 : 1);
@@ -452,6 +461,13 @@
         if (r._tot) r._tot.textContent = v > 0 ? fmt.brl(v * (r.preco || 0)) : '—';
         pintarB();
         pintarTotal();
+        // saiu da aba (ex.: tirou em "No pedido", pôs em "Ficou de fora"): some na hora e os números das abas se atualizam
+        if (!FILTROS[filtro][1](r)) {
+          const tr = i.closest('tr');
+          if (tr) tr.classList.add('ped-sai');
+          clearTimeout(repintar.t);
+          repintar.t = setTimeout(repintar, 260);
+        }
       };
       i.addEventListener('change', () => definir(Math.max(0, +i.value || 0)));
       b.addEventListener('click', () => definir(r.pedir > 0 ? 0 : (r.sugerido || passo)));
