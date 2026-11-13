@@ -351,38 +351,50 @@
     const ONDE = { tudo: '', loja: ' (só loja)', eg: ' (só EG)' };
     const rotOutro = (x) => `${x.nome}${x.tipo === 'mes' ? ` (R$ ${fmt.int(x.valor)}/mês) ⓘ` : ''}${ONDE[x.aplica] || ''}`;
     const NOTA_DED = `Comissão: o que a loja pagou no mês (comissões, premiação e bônus) ÷ vendas do tipo do produto; Espaço Gourmet não tem comissão. Royalties pelas regras da loja. Simples ${fmt.pct(pSimples)} e maquininha ${fmt.pct(pCartao)} sobre o valor vendido.${OUTROS.some((x) => x.tipo === 'mes') ? ' Custos em R$ por mês viram % pela média do faturamento dos últimos 3 meses fechados (passe o mouse no nome para ver a conta).' : ''} Ajuste em Configurações → Lojas → Estoque e margem.`;
-    /** cartão no visual dos cupons com a conta do lucro (modo 'liq') ou só as deduções (modo 'ded') */
-    const cartaoConta = (r, modo) => {
-      const tb = h('table', { class: 'cupom-items' });
-      const lin = (rot, val, cls, sub) => tb.append(h('tr', { class: cls || null }, h('td', null, rot, sub ? h('small', { class: 'est-conta-sub' }, sub) : null), h('td', { class: 'r' }, fmt.brl(val)), h('td', { class: 'r est-det-pct' }, pctDe(val, r) || '')));
-      const subOutro = (x) => {
-        if (x.tipo === 'pct') return `${fmt.pct(x.valor / 100)} de cada venda${x.aplica !== 'tudo' ? ' · ' + ONDE_FAT[x.aplica] : ''}`;
-        const m = mediaFat(x.aplica);
-        return m.media ? `R$ ${fmt.int(x.valor)}/mês ÷ ${fmt.brl0(m.media)} (média) = ${fmt.pct(x.valor / m.media)}${x.aplica !== 'tudo' ? ' · ' + ONDE_FAT[x.aplica] : ''}` : 'sem mês fechado para calcular';
-      };
-      const p = modo === 'liq' ? '− ' : '';
+    /** conta do lucro em cartões no mesmo visual dos pacotes: resultado, deduções variáveis e custos fixos.
+     *  modo 'liq' = os três; 'ded' = só as deduções */
+    const cartoesConta = (r, modo) => {
+      const linha = (rot, val, cls, dica) => h('tr', { class: cls || null, title: dica || null }, h('td', null, rot), h('td', { class: 'r' }, fmt.brl(val)), h('td', { class: 'r est-det-pct' }, pctDe(val, r) || ''));
+      const cupom = (titulo, dir, linhas, rodape, cls) => h('div', { class: 'cupom' + (cls ? ' ' + cls : '') },
+        h('div', { class: 'cupom-head' }, h('span', null, h('b', null, titulo)), h('span', null, dir)), h('table', { class: 'cupom-items' }, ...linhas), rodape ? h('div', { class: 'cupom-rodape' }, rodape) : null);
+      const fixosK = OUTROS.map((x, k) => (x.tipo === 'mes' ? k : -1)).filter((k) => k >= 0);
+      const pctK = OUTROS.map((x, k) => (x.tipo === 'pct' ? k : -1)).filter((k) => k >= 0);
+      const somaK = (ks) => ks.reduce((a, k) => a + r.outros[k], 0);
+      const varTot = r.com + r.roy + r.imp + r.maq + somaK(pctK), fixTot = somaK(fixosK);
+      const cards = [];
       if (modo === 'liq') {
-        lin('Faturamento', r.vt);
-        lin('− Custo dos produtos', r.custo, null, r.granel ? 'chá pelo kg da matéria-prima + saco e etiquetas' : null);
-        lin('= Lucro bruto', r.lucro, 'est-det-sub');
+        const un = r.granel ? r.kg : r.qtd;
+        cards.push(cupom('Do faturamento ao lucro', 'no período', [
+          linha('Faturamento', r.vt),
+          linha('− Custo dos produtos', r.custo, null, r.granel ? 'Chá pelo kg da matéria-prima + saco kraft e etiquetas de cada pacote' : 'Custo do AppNext × quantidade'),
+          linha('= Lucro bruto', r.lucro, 'est-det-sub'),
+          linha('− Deduções variáveis', varTot),
+          fixosK.length ? linha('− Custos fixos (rateio)', fixTot) : null,
+          linha('= Lucro líquido', r.lucroLiq, 'est-det-tot' + (r.lucroLiq < 0 ? ' neg' : '')),
+        ].filter(Boolean), un ? `${r.granel ? `${fmt.kg(un)} kg vendidos` : `${fmt.int(un)} un. vendidas`}: preço ${fmt.brl(r.vt / un)} e custo ${fmt.brl(r.custo / un)} por ${r.granel ? 'kg' : 'unidade'}` : null, 'est-det-total'));
       }
-      lin(p + 'Comissão paga', r.com, null, 'média do que a loja pagou no mês ÷ vendas do tipo do produto');
-      lin(p + 'Royalties (com marketing)', r.roy, null, 'regras da loja');
-      lin(p + 'Simples Nacional', r.imp, null, `${fmt.pct(pSimples)} de cada venda`);
-      lin(p + 'Maquininha', r.maq, null, `${fmt.pct(pCartao)} de cada venda`);
-      OUTROS.forEach((x, k) => lin(p + x.nome, r.outros[k], null, subOutro(x)));
-      if (modo === 'liq') lin('= Lucro líquido', r.lucroLiq, 'est-det-tot' + (r.lucroLiq < 0 ? ' neg' : ''));
-      else lin('Total de deduções', r.ded, 'est-det-tot');
-      const fixos = OUTROS.filter((x) => x.tipo === 'mes');
-      const m = fixos.length ? mediaFat(fixos[0].aplica) : null;
-      const nota = fixos.length && m && m.media
-        ? `Custos em R$ por mês viram % pela média do faturamento dos últimos ${m.meses.length === 1 ? 'mês fechado' : m.meses.length + ' meses fechados'} (${m.meses.map(TS.ymLabel).join(', ')}). Esse % é volátil: muda quando um mês fecha e entra na média, e sobe quando a loja vende menos. Num mês abaixo da média, esses custos pesam mais do que o mostrado; acima, pesam menos.`
-        : null;
-      return h('div', { class: 'cupom est-conta-card' },
-        h('div', { class: 'cupom-head' }, h('span', null, h('b', null, modo === 'liq' ? 'Lucro líquido' : 'Deduções'), ` · ${r.produto}`), h('span', null, 'no período')),
-        tb, nota ? h('div', { class: 'cupom-rodape' }, nota) : null,
-        h('div', { class: 'cupom-rodape' }, 'Ajuste em Configurações → Lojas → Estoque e margem.'));
+      cards.push(cupom('Deduções variáveis', 'acompanham a venda', [
+        linha('Comissão paga', r.com, null, 'Média do que a loja pagou no mês (comissões, premiação e bônus) ÷ vendas do tipo do produto. Espaço Gourmet não tem comissão.'),
+        linha('Royalties + marketing', r.roy, null, 'Regras da loja (loja + marketing; no Espaço Gourmet, EG + marketing EG)'),
+        linha('Simples Nacional', r.imp, null, `${fmt.pct(pSimples)} de cada venda`),
+        linha('Maquininha', r.maq, null, `${fmt.pct(pCartao)} de cada venda`),
+        ...pctK.map((k) => linha(OUTROS[k].nome, r.outros[k], null, `${fmt.pct(OUTROS[k].valor / 100)} de cada venda${OUTROS[k].aplica !== 'tudo' ? ' · ' + ONDE_FAT[OUTROS[k].aplica] : ''}`)),
+        linha('Total', varTot, 'est-det-tot'),
+      ], `Simples ${fmt.pct(pSimples)} · maquininha ${fmt.pct(pCartao)} · royalties e comissão pelas regras da loja`));
+      if (fixosK.length) {
+        const m = mediaFat(OUTROS[fixosK[0]].aplica);
+        cards.push(cupom('Custos fixos da loja', 'rateio', [
+          ...fixosK.map((k) => { const x = OUTROS[k], mm = mediaFat(x.aplica); return linha(x.nome, r.outros[k], null, mm.media ? `R$ ${fmt.int(x.valor)} por mês ÷ ${fmt.brl0(mm.media)} (média) = ${fmt.pct(x.valor / mm.media)} de cada venda` : 'Sem mês fechado para calcular'); }),
+          linha('Total', fixTot, 'est-det-tot'),
+        ], m.media ? `Valor por mês ÷ média do faturamento de ${m.meses.map(TS.ymLabel).join(', ')} (${fmt.brl0(m.media)}/mês)` : null));
+      }
+      const fixosTxt = fixosK.length ? ' Custos fixos: cada um vira um % pela média do faturamento dos últimos 3 meses fechados; esse % é volátil (muda quando um mês fecha e sobe quando a loja vende menos).' : '';
+      return h('div', null,
+        h('div', { class: 'est-det-grid' }, ...cards),
+        h('div', { class: 'est-det-nota' }, `Passe o mouse em cada linha para ver de onde vem o valor.${fixosTxt} Ajuste em Configurações → Lojas → Estoque e margem.`));
     };
+    /** compatibilidade: o cartão único (janelinha do cartão do topo) */
+    const cartaoConta = (r) => cartoesConta(r, 'liq');
     /** abre (ou fecha) embaixo da linha da tabela um conteúdo; uma linha aberta por produto */
     const expandirLinha = (e, chave, conteudo) => {
       e.stopPropagation();
@@ -397,11 +409,11 @@
       det.dataset.chave = chave;
       tr.after(det);
     };
-    const abrirDed = (e, r) => expandirLinha(e, 'ded', () => h('div', { class: 'est-det-grid est-det-1' }, cartaoConta(r, 'ded')));
+    const abrirDed = (e, r) => expandirLinha(e, 'ded', () => cartoesConta(r, 'ded'));
     const abrirLiq = (e, r) => {
       // o cartão do topo não é linha de tabela: abre a janelinha com o mesmo cartão
-      if (!e.currentTarget.closest('tr')) { e.stopPropagation(); popCartao(e.currentTarget, cartaoConta(r, 'liq')); return; }
-      expandirLinha(e, 'liq', () => h('div', { class: 'est-det-grid est-det-1' }, cartaoConta(r, 'liq')));
+      if (!e.currentTarget.closest('tr')) { e.stopPropagation(); popCartao(e.currentTarget, cartaoConta(r)); return; }
+      expandirLinha(e, 'liq', () => cartoesConta(r, 'liq'));
     };
 
     /** abre embaixo da linha do chá um cartão por tamanho de pacote (mesmo visual dos cupons na tela Clientes) */
@@ -450,7 +462,7 @@
         h('div', { class: 'est-det-nota' }, `Custo = chá pelo kg da matéria-prima + saco kraft e etiquetas. Deduções = comissão, royalties, Simples, maquininha e os outros custos da loja (clique em "Deduções" na linha para ver cada um). Simular preço: digite um preço e veja a margem nova (as deduções acompanham o preço; o custo não muda). O botão "Para ${fmt.pct(margemAlvo, 0)} líquida" mostra o preço que chega na meta da loja. "Mais rentável" = o tamanho que deixa mais lucro líquido por grama de chá.`));
     });
 
-    const margemMin = (cfg.margemMin ?? 15) / 100, margemAlvo = (cfg.margemAlvo ?? 40) / 100;
+    const margemMin = (cfg.margemMin ?? 15) / 100, margemAlvo = (cfg.margemAlvo ?? 30) / 100;
 
     // ---------- ponto de equilíbrio do mês (sem os filtros: mês corrente inteiro da loja) ----------
     function cartaoEquilibrio() {
@@ -512,15 +524,18 @@
         let k = PARTES.map(([k]) => k).sort((a, b) => (parte[b] - media[b]) - (parte[a] - media[a]))[0];
         let motivo = `${PARTES.find((x) => x[0] === k)[1]}: ${fmt.pct(parte[k])} do preço (média da loja ${fmt.pct(media[k])})`;
         if (descPct >= 0.05 && descPct - 0.02 > parte[k] - media[k]) motivo = `Desconto: ${fmt.pct(descPct)} do preço cheio`;
-        return { ...p, motivo };
+        const un = p.granel ? p.kg : p.qtd;
+        return { ...p, motivo, pv: un ? p.vt / un : null, pc: un ? p.custo / un : null };
       }).sort((a, b) => a.lucroLiq - b.lucroLiq);
       if (!baixos.length) return TS.card(`Margem líquida abaixo de ${fmt.pct(margemMin, 0)}`, null, h('p', { class: 'muted' }, `Nenhum produto abaixo da margem mínima no período. 👏 (Mude o mínimo em Configurações → Lojas → Estoque e margem.)`));
       return TS.card(`Margem líquida abaixo de ${fmt.pct(margemMin, 0)}`, `${fmt.int(baixos.length)} produto(s) no período. Motivo = o que mais pesa no preço desse produto comparado com a média da loja. A margem mínima é ajustável em Configurações.`, TS.table({
         cols: [
           { key: 'produto', label: 'Produto', align: 'l', sticky: true, wrap: true, render: (r) => (r.granel ? h('span', null, r.produto, h('small', { class: 'est-tam' }, r.tamanhos)) : r.produto) },
+          { key: 'pv', label: 'Preço de venda', title: 'Preço médio vendido no período (chá a granel: por kg; o resto: por unidade)', render: (r) => h('span', null, fmt.brl(r.pv), h('small', { class: 'est-tam' }, r.granel ? 'por kg' : 'por un.')), sortVal: (r) => r.pv },
+          { key: 'pc', label: 'Preço de custo', title: 'Custo médio no período (chá a granel: por kg, com saco e etiquetas; o resto: por unidade)', render: (r) => h('span', null, fmt.brl(r.pc), h('small', { class: 'est-tam' }, r.granel ? 'por kg' : 'por un.')), sortVal: (r) => r.pc },
           { key: 'vt', label: 'Faturamento', fmt: fmt.brl },
           { key: 'margem', label: 'Margem bruta', fmt: (v) => fmt.pct(v) },
-          { key: 'margemLiq', label: 'Margem líquida', fmt: (v) => fmt.pct(v), cls: () => 'miss' },
+          { key: 'margemLiq', label: 'Margem líquida', title: 'Clique para ver toda a conta', fmt: (v) => fmt.pct(v), render: (r) => h('button', { type: 'button', class: 'est-conta neg', title: 'Clique para ver toda a conta', onclick: (e) => abrirLiq(e, r) }, fmt.pct(r.margemLiq)), sortVal: (r) => r.margemLiq },
           { key: 'lucroLiq', label: 'Lucro líquido', fmt: fmt.brl, cls: (r) => (r.lucroLiq < 0 ? 'miss' : '') },
           { key: 'motivo', label: 'Principal motivo', align: 'l', wrap: true },
         ],
@@ -967,7 +982,7 @@
     const simp = h('input', { class: 'f-input', type: 'number', min: 0, max: 50, step: '0.01', value: cfg.simplesPct ?? 0, style: { maxWidth: '110px' } });
     const maq = h('input', { class: 'f-input', type: 'number', min: 0, max: 50, step: '0.01', value: cfg.cartaoPct ?? 0, style: { maxWidth: '110px' } });
     const mMin = h('input', { class: 'f-input', type: 'number', min: -50, max: 95, step: '0.5', value: cfg.margemMin ?? 15, style: { maxWidth: '110px' } });
-    const mAlvo = h('input', { class: 'f-input', type: 'number', min: -50, max: 95, step: '0.5', value: cfg.margemAlvo ?? 40, style: { maxWidth: '110px' } });
+    const mAlvo = h('input', { class: 'f-input', type: 'number', min: -50, max: 95, step: '0.5', value: cfg.margemAlvo ?? 30, style: { maxWidth: '110px' } });
     const outrosLinhas = [];
     const outrosBox = h('div', { class: 'est-outros' });
     const linhaOutro = (x = { nome: '', tipo: 'pct', valor: '', aplica: 'tudo' }) => {
