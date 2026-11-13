@@ -143,6 +143,22 @@
     return card;
   };
 
+  /** janelinha com a conta, aberta ao clicar num valor (fecha clicando fora ou com Esc) */
+  function popConta(alvo, titulo, linhas, nota) {
+    document.querySelector('.est-pop')?.remove();
+    const pop = h('div', { class: 'est-pop', role: 'dialog' },
+      h('div', { class: 'est-pop-tit' }, titulo),
+      h('table', null, linhas.map(([rot, val, extra, cls]) => h('tr', { class: cls || null }, h('td', null, rot), h('td', { class: 'pct' }, extra || ''), h('td', { class: 'v' }, val)))),
+      nota ? h('div', { class: 'est-pop-nota' }, nota) : null);
+    document.body.append(pop);
+    const r = alvo.getBoundingClientRect(), w = pop.offsetWidth, hh = pop.offsetHeight;
+    pop.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, r.right - w)) + 'px';
+    pop.style.top = (r.bottom + 6 + hh > window.innerHeight ? Math.max(8, r.top - hh - 6) : r.bottom + 6) + 'px';
+    const fechar = (e) => { if (e.type === 'keydown' ? e.key === 'Escape' : !pop.contains(e.target)) { pop.remove(); document.removeEventListener('mousedown', fechar, true); document.removeEventListener('keydown', fechar); window.removeEventListener('scroll', sair, true); } };
+    const sair = () => { pop.remove(); document.removeEventListener('mousedown', fechar, true); document.removeEventListener('keydown', fechar); window.removeEventListener('scroll', sair, true); };
+    setTimeout(() => { document.addEventListener('mousedown', fechar, true); document.addEventListener('keydown', fechar); window.addEventListener('scroll', sair, true); }, 0);
+  }
+
   const TIPO_ITEM = (it) => (it.un === 'Kg' && it.tipo === 'IN' ? 'Chá a granel' : it.tipo === 'PN' ? 'Produto' : 'Insumo / embalagem');
   const qtdTxt = (v, it) => (v == null ? '—' : it.un === 'Kg' ? `${fmt.kg(v)} kg` : `${fmt.int(v)} ${it.un ? it.un.toLowerCase() : ''}`);
 
@@ -257,7 +273,29 @@
     });
     const dedSoma = dedTot.com + dedTot.roy + dedTot.imp + dedTot.maq;
     const lucroLiqTot = fatCusto - custoTot - dedSoma;
-    const contaLiq = (r) => `Faturamento ${fmt.brl(r.vt)} − custo ${fmt.brl(r.custo)} − comissão ${fmt.brl(r.com)} − royalties ${fmt.brl(r.roy)} − Simples ${fmt.brl(r.imp)} − maquininha ${fmt.brl(r.maq)} = ${fmt.brl(r.vt - r.custo - r.com - r.roy - r.imp - r.maq)}`;
+    const pctDe = (v, r) => (r.vt ? fmt.pct(v / r.vt) : '');
+    const NOTA_DED = `Comissão: o que a loja pagou no mês (comissões, premiação e bônus) ÷ vendas do tipo do produto; Espaço Gourmet não tem comissão. Royalties pelas regras da loja. Simples ${fmt.pct(pSimples)} e maquininha ${fmt.pct(pCartao)} sobre o valor vendido (Ajustes, no fim da página).`;
+    const linhasDed = (r) => [
+      ['Comissão paga', fmt.brl(r.com), pctDe(r.com, r)],
+      ['Royalties (com marketing)', fmt.brl(r.roy), pctDe(r.roy, r)],
+      ['Simples Nacional', fmt.brl(r.imp), pctDe(r.imp, r)],
+      ['Maquininha', fmt.brl(r.maq), pctDe(r.maq, r)],
+      ['Total de deduções', fmt.brl(r.ded), pctDe(r.ded, r), 'tot'],
+    ];
+    const abrirDed = (e, r) => { e.stopPropagation(); popConta(e.currentTarget, `Deduções · ${r.produto}`, linhasDed(r), NOTA_DED); };
+    const abrirLiq = (e, r) => {
+      e.stopPropagation();
+      popConta(e.currentTarget, `Lucro líquido · ${r.produto}`, [
+        ['Faturamento', fmt.brl(r.vt), '100%'],
+        ['− Custo dos produtos', fmt.brl(r.custo), pctDe(r.custo, r)],
+        ['= Lucro bruto', fmt.brl(r.lucro), pctDe(r.lucro, r), 'sub'],
+        ['− Comissão paga', fmt.brl(r.com), pctDe(r.com, r)],
+        ['− Royalties (com marketing)', fmt.brl(r.roy), pctDe(r.roy, r)],
+        ['− Simples Nacional', fmt.brl(r.imp), pctDe(r.imp, r)],
+        ['− Maquininha', fmt.brl(r.maq), pctDe(r.maq, r)],
+        ['= Lucro líquido', fmt.brl(r.lucroLiq), pctDe(r.lucroLiq, r), 'tot'],
+      ], r.granel ? `Custo: kg × custo do kg da matéria-prima + saco kraft e etiquetas de cada pacote. ${NOTA_DED}` : NOTA_DED);
+    };
 
     // ---------- reposição: últimos 30 dias da loja (sem os filtros) + sazonalidade do ano passado ----------
     const ent = cfg.entregaDias, cob = cfg.coberturaDias, seg = cfg.segurancaPct ?? 50;
@@ -353,10 +391,13 @@
     const urgentes = repor.filter((r) => r.sit === 'acabou' || r.sit === 'falta').length;
 
     // ---------- KPIs ----------
+    const kLiq = TS.kpi('Lucro líquido', fmt.brl0(lucroLiqTot), h('span', null, `margem de ${fmt.pct(fatCusto ? lucroLiqTot / fatCusto : null)}`),
+        `Lucro bruto − comissão ${fmt.brl0(dedTot.com)} − royalties ${fmt.brl0(dedTot.roy)} − Simples ${fmt.brl0(dedTot.imp)} (${fmt.pct(pSimples)}) − maquininha ${fmt.brl0(dedTot.maq)} (${fmt.pct(pCartao)}). Sem aluguel, salários e outras despesas fixas.${!pSimples && !pCartao ? ' Configure o % do Simples e da maquininha em Ajustes, no fim da página.' : ''}`);
+    kLiq.classList.add('est-kpi-click');
+    kLiq.addEventListener('click', (e) => abrirLiq(e, { produto: 'todos os produtos com custo', vt: fatCusto, custo: custoTot, lucro, ...dedTot, ded: dedSoma, lucroLiq: lucroLiqTot }));
     corpo.append(h('div', { class: 'grid g-kpi' },
       TS.kpi('Lucro bruto', fmt.brl0(lucro), h('span', null, `margem de ${fmt.pct(fatCusto ? lucro / fatCusto : null)}`), 'Faturamento − custo dos produtos (com embalagem nos chás a granel), só das vendas que têm custo'),
-      TS.kpi('Lucro líquido', fmt.brl0(lucroLiqTot), h('span', null, `margem de ${fmt.pct(fatCusto ? lucroLiqTot / fatCusto : null)}`),
-        `Lucro bruto − comissão ${fmt.brl0(dedTot.com)} − royalties ${fmt.brl0(dedTot.roy)} − Simples ${fmt.brl0(dedTot.imp)} (${fmt.pct(pSimples)}) − maquininha ${fmt.brl0(dedTot.maq)} (${fmt.pct(pCartao)}). Sem aluguel, salários e outras despesas fixas.${!pSimples && !pCartao ? ' Configure o % do Simples e da maquininha em Ajustes, no fim da página.' : ''}`),
+      kLiq,
       TS.kpi('Vendas com custo', fmt.pct(fat ? fatCusto / fat : null, 0), `${fmt.brl0(fatCusto)} de ${fmt.brl0(fat)}`, 'Parte do faturamento (sem taxas) cujo custo o painel encontrou'),
       TS.kpi('Estoque a custo', fmt.brl0(valorEstoque), `${fmt.int(estoque.itens.filter((i) => i.qtd > 0).length)} produtos com saldo`),
       TS.kpi('Para repor', fmt.int(repor.length), h('span', { class: urgentes ? 'down' : '' }, `${fmt.int(urgentes)} ${urgentes === 1 ? 'urgente' : 'urgentes'} · pedido ${fmt.brl0(repor.reduce((s, r) => s + r.custoPedido, 0))}`), 'Urgente = acabou ou acaba antes de o pedido chegar'),
@@ -425,8 +466,8 @@
         { key: 'custo', label: 'Custo', title: 'Custo do AppNext × quantidade vendida. No chá a granel: kg × custo do kg + saco kraft e etiquetas de cada pacote', fmt: fmt.brl },
         { key: 'lucro', label: 'Lucro bruto', title: 'Faturamento − custo', fmt: fmt.brl, cls: (r) => (r.lucro < 0 ? 'miss' : '') },
         { key: 'margem', label: 'Margem bruta', title: 'Lucro bruto ÷ faturamento. Em vermelho quando fica abaixo de 30%', fmt: (v) => fmt.pct(v), cls: (r) => (r.margem < 0.3 ? 'miss' : '') },
-        { key: 'ded', label: 'Deduções', fmt: fmt.brl, title: 'Comissão paga + royalties + Simples Nacional + maquininha. Passe o mouse no valor para ver cada um', render: (r) => (r.ded == null ? '' : h('span', { class: 'est-dica', title: r.com != null ? `Comissão ${fmt.brl(r.com)} · royalties ${fmt.brl(r.roy)} · Simples ${fmt.brl(r.imp)} · maquininha ${fmt.brl(r.maq)}` : null }, fmt.brl(r.ded))), sortVal: (r) => r.ded },
-        { key: 'lucroLiq', label: 'Lucro líquido', fmt: fmt.brl, title: 'Lucro bruto − deduções. Passe o mouse para ver a conta', render: (r) => (r.lucroLiq == null ? '' : h('span', { class: 'est-dica' + (r.lucroLiq < 0 ? ' neg' : ''), title: r.com != null ? contaLiq(r) : null }, fmt.brl(r.lucroLiq))), sortVal: (r) => r.lucroLiq },
+        { key: 'ded', label: 'Deduções', fmt: fmt.brl, title: 'Comissão paga + royalties + Simples Nacional + maquininha. Clique no valor para ver cada um', render: (r) => (r.ded == null ? '' : h('button', { type: 'button', class: 'est-conta', title: 'Clique para ver o detalhamento', onclick: (e) => abrirDed(e, r) }, fmt.brl(r.ded))), sortVal: (r) => r.ded },
+        { key: 'lucroLiq', label: 'Lucro líquido', fmt: fmt.brl, title: 'Lucro bruto − deduções. Clique no valor para ver a conta', render: (r) => (r.lucroLiq == null ? '' : h('button', { type: 'button', class: 'est-conta' + (r.lucroLiq < 0 ? ' neg' : ''), title: 'Clique para ver a conta', onclick: (e) => abrirLiq(e, r) }, fmt.brl(r.lucroLiq))), sortVal: (r) => r.lucroLiq },
         { key: 'margemLiq', label: 'Margem líquida', title: 'Lucro líquido ÷ faturamento', fmt: (v) => (v == null ? '' : fmt.pct(v)), cls: (r) => (r.margemLiq != null && r.margemLiq < 0.1 ? 'miss' : '') },
       ],
       rows: sel ? prods.filter((p) => p.classe === sel) : prods, sortKey: 'lucro', maxHeight: '520px', search: 'Buscar produto…', searchKeys: ['produto'], cls: 'est-t',

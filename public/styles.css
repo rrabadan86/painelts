@@ -1019,3 +1019,17 @@ body.com-camada { overflow: hidden; }
 .script-op small { color: var(--muted); font-size: 11.5px; }
 .tree-var { line-height: 1.2; }
 .tree-var .tree-ant { display: block; font-size: 11px; font-weight: 400; color: var(--muted); }
+.est-conta { background: none; border: 0; padding: 0; font: inherit; color: inherit; cursor: pointer; border-bottom: 1px dashed currentColor; }
+.est-conta:hover { color: #1F4E8C; }
+.est-conta.neg { color: #8E321C; }
+.est-kpi-click { cursor: pointer; }
+.est-kpi-click:hover { box-shadow: 0 0 0 2px #C9A227 inset; }
+.est-pop { position: fixed; z-index: 950; background: #fff; border: 1px solid var(--line, #E2DCCF); border-radius: 12px; box-shadow: 0 10px 30px rgba(20, 35, 24, .18); padding: 12px 14px; width: 340px; max-width: calc(100vw - 16px); font-size: 13px; }
+.est-pop-tit { font-weight: 700; color: var(--green, #2C5234); margin-bottom: 8px; }
+.est-pop table { width: 100%; border-collapse: collapse; }
+.est-pop td { padding: 4px 0; border-bottom: 1px dashed #EEE9DF; }
+.est-pop td.pct { text-align: right; color: var(--muted); font-size: 12px; padding-right: 10px; white-space: nowrap; }
+.est-pop td.v { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.est-pop tr.sub td { font-weight: 600; }
+.est-pop tr.tot td { font-weight: 700; border-bottom: 0; border-top: 2px solid var(--green, #2C5234); color: var(--green, #2C5234); }
+.est-pop-nota { margin-top: 8px; font-size: 11px; color: var(--muted); line-height: 1.4; }
