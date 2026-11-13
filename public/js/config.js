@@ -391,13 +391,13 @@
     const b = h('section', { class: 'cfg-bloco' }, h('h3', null, 'Cadastro de clientes pelo FIXE'),
       h('p', { class: 'muted' }, 'Toda noite, na última atualização automática, o coletor entra no FIXE, pede a exportação da "Base de leads" para o Gmail da loja, e o painel lê esse e-mail (na caixa de entrada ou no spam), baixa a planilha e junta com o cadastro de clientes. Nada precisa ser feito à mão.'));
     { const f = sitFixe(l); if (f) b.append(h('div', { class: 'cfg-sit' }, f)); }
-    const url = inp({ value: fx.url || '', placeholder: 'ex.: https://dash.epossible.com.br/loja/…/leads' });
+    const url = inp({ value: fx.url || (est.lojas || []).map((x) => x.fixe && x.fixe.url).find(Boolean) || '', placeholder: 'ex.: https://dash.epossible.com.br/loja/…/leads' });
     const usuario = inp({ value: fx.usuario || '', placeholder: 'ex.: e-mail de acesso ao FIXE', autocomplete: 'off' });
     const senha = inp({ type: 'password', placeholder: fx.temSenha ? 'guardada (deixe em branco para manter)' : 'senha do FIXE', autocomplete: 'new-password' });
     const email = inp({ type: 'email', value: fx.email || gmail, placeholder: 'ex.: o Gmail da loja' });
     b.append(h('div', { class: 'cfg-grid' },
-      campo('Página de Leads da loja no FIXE', url, 'No FIXE, abra Leads e copie o endereço da barra do navegador.'),
-      campo('Usuário do FIXE', usuario), campo('Senha do FIXE', senha, 'Fica guardada só na VPS, como a do AppNext.'),
+      campo('Página de Leads no FIXE', url, 'É o mesmo endereço para todas as lojas da rede. O que separa a base de cada loja é o usuário e a senha abaixo.'),
+      campo('Usuário do FIXE', usuario, 'O login desta loja no FIXE: é ele que define de qual loja vem a base de clientes.'), campo('Senha do FIXE', senha, 'Fica guardada só na VPS, como a do AppNext.'),
       campo('E-mail que recebe a exportação', email, gmail ? `Use o Gmail da loja (${gmail}): é nele que o painel procura o e-mail do FIXE.` : 'Configure antes o Gmail da loja em "Fechamento do dia": é nele que o painel procura o e-mail do FIXE.')),
       h('div', { class: 'cfg-acoes' },
         acao('Salvar acesso ao FIXE', async () => { await api('PUT', `/lojas/${l.id}/fixe`, { url: url.value, usuario: usuario.value, senha: senha.value, email: email.value }); senha.value = ''; return 'Acesso ao FIXE salvo.'; }, 'btn primary'),
