@@ -372,40 +372,36 @@
       ], r.granel ? `Custo: kg × custo do kg da matéria-prima + saco kraft e etiquetas de cada pacote. ${NOTA_DED}` : NOTA_DED);
     };
 
-    /** janela com bruto e líquido de cada tamanho de pacote de um chá */
+    /** abre embaixo da linha do chá um cartão por tamanho de pacote (mesmo visual dos cupons na tela Clientes) */
     const abrirTamanhos = (e, r) => {
       e.stopPropagation();
-      document.querySelector('.est-pop')?.remove();
+      const tr = e.currentTarget.closest('tr');
+      const prox = tr.nextElementSibling;
+      if (prox && prox.classList.contains('est-det')) { prox.remove(); tr.classList.remove('est-aberto'); return; }
       const tams = [...r.porTam.values()].sort((a, b) => a.g - b.g);
       const rotG = (g) => (g >= 1000 ? `${g / 1000} kg` : `${g}g`);
       const pc = (v, base) => (base ? fmt.pct(v / base) : '—');
-      const linha = (t, tot) => {
-        const lb = t.vt - t.custo, ll = lb - t.ded, un = t.qtd || 1;
-        return h('tr', { class: tot ? 'tot' : null },
-          h('td', null, tot ? 'Total' : h('b', null, rotG(t.g)), h('small', null, ` ${fmt.int(t.qtd)} un.`)),
-          h('td', { class: 'v' }, tot ? '' : fmt.brl(t.vt / un)),
-          h('td', { class: 'v' }, tot ? '' : fmt.brl(t.custo / un)),
-          h('td', { class: 'v' }, tot ? fmt.brl(lb) : fmt.brl(lb / un)), h('td', { class: 'v' }, pc(lb, t.vt)),
-          h('td', { class: 'v' }, tot ? fmt.brl(ll) : fmt.brl(ll / un)), h('td', { class: 'v' + (ll < 0 ? ' neg' : '') }, pc(ll, t.vt)));
+      const card = (t, total) => {
+        const lb = t.vt - t.custo, ll = lb - t.ded, un = t.qtd || 1, f = total ? 1 : 1 / un;
+        const lin = (rot, val, pct, cls) => h('tr', { class: cls || null }, h('td', null, rot), h('td', { class: 'r' }, fmt.brl(val * f)), h('td', { class: 'r est-det-pct' }, pct));
+        return h('div', { class: 'cupom' + (total ? ' est-det-total' : '') },
+          h('div', { class: 'cupom-head' }, h('span', null, h('b', null, total ? 'Todos os tamanhos' : rotG(t.g)), ` · ${fmt.int(t.qtd)} ${t.qtd === 1 ? 'pacote' : 'pacotes'}`),
+            h('span', null, total ? 'no período' : 'por pacote')),
+          h('table', { class: 'cupom-items' },
+            lin(total ? 'Faturamento' : 'Preço médio', t.vt, '100%'),
+            lin('− Custo', t.custo, pc(t.custo, t.vt)),
+            lin('= Lucro bruto', lb, pc(lb, t.vt), 'est-det-sub'),
+            lin('− Deduções', t.ded, pc(t.ded, t.vt)),
+            lin('= Lucro líquido', ll, pc(ll, t.vt), 'est-det-tot' + (ll < 0 ? ' neg' : ''))),
+          total ? null : h('div', { class: 'cupom-rodape' }, `No período: lucro bruto ${fmt.brl(lb)} · líquido ${fmt.brl(ll)}`));
       };
       const tot = tams.reduce((a, t) => ({ qtd: a.qtd + t.qtd, vt: a.vt + t.vt, custo: a.custo + t.custo, ded: a.ded + t.ded }), { qtd: 0, vt: 0, custo: 0, ded: 0 });
-      const pop = h('div', { class: 'est-pop est-pop-tam', role: 'dialog' },
-        h('div', { class: 'est-pop-tit' }, `${r.produto} · por tamanho de pacote`),
-        h('div', { class: 'est-pop-scroll' }, h('table', null,
-          h('thead', null, h('tr', null, h('th', null, 'Pacote'), h('th', null, 'Preço'), h('th', null, 'Custo'), h('th', null, 'Lucro bruto'), h('th', null, 'Margem bruta'), h('th', null, 'Lucro líquido'), h('th', null, 'Margem líquida'))),
-          h('tbody', null, tams.map((t) => linha(t)), linha(tot, true)))),
-        h('div', { class: 'est-pop-nota' }, 'Valores por pacote (média do período): preço vendido, custo (chá pelo kg da matéria-prima + saco kraft e etiquetas) e lucro. Na linha Total, o lucro de todos os pacotes juntos. O líquido desconta comissão, royalties, Simples, maquininha e os outros custos da loja, no mesmo % de cada venda. Pacote pequeno costuma ter margem menor porque a embalagem pesa mais no custo.'));
-      document.body.append(pop);
-      const alvo = e.currentTarget.getBoundingClientRect(), w = pop.offsetWidth, hh = pop.offsetHeight;
-      pop.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, alvo.left)) + 'px';
-      pop.style.top = (alvo.bottom + 6 + hh > window.innerHeight ? Math.max(8, alvo.top - hh - 6) : alvo.bottom + 6) + 'px';
-      const sair = (ev) => {
-        if (ev && ev.type === 'mousedown' && pop.contains(ev.target)) return;
-        if (ev && ev.type === 'keydown' && ev.key !== 'Escape') return;
-        pop.remove(); document.removeEventListener('mousedown', sair, true); document.removeEventListener('keydown', sair); window.removeEventListener('scroll', sairScroll, true);
-      };
-      const sairScroll = (ev) => { if (!pop.contains(ev.target)) sair(); };
-      setTimeout(() => { document.addEventListener('mousedown', sair, true); document.addEventListener('keydown', sair); window.addEventListener('scroll', sairScroll, true); }, 0);
+      const wrap = tr.closest('.table-wrap');
+      const caixa = h('div', { class: 'est-det-box', style: { width: Math.max(260, (wrap ? wrap.clientWidth : 600) - 24) + 'px' } },
+        h('div', { class: 'est-det-grid' }, tams.map((t) => card(t)), tams.length > 1 ? card(tot, true) : null),
+        h('div', { class: 'est-det-nota' }, 'Custo = chá pelo kg da matéria-prima + saco kraft e etiquetas. Deduções = comissão, royalties, Simples, maquininha e os outros custos da loja (clique em "Deduções" na linha para ver cada um). Pacote pequeno costuma ter margem menor porque a embalagem pesa mais no custo.'));
+      tr.classList.add('est-aberto');
+      tr.after(h('tr', { class: 'est-det' }, h('td', { colspan: tr.children.length }, caixa)));
     };
 
     // ---------- reposição: últimos 30 dias da loja (sem os filtros) + sazonalidade do ano passado ----------
@@ -569,7 +565,7 @@
       }, 'tall') : TS.empty())));
     corpo.append(h('div', { class: 'mt' }, TS.card('Produtos por lucro', 'Curva ABC: A = produtos que fazem 80% do lucro (nunca podem faltar). Chá a granel aparece uma vez só, somando todas as gramaturas. O grupo (Estrela, Volume…) compara chá com chá e acessório com acessório.', TS.table({
       cols: [
-        { key: 'produto', label: 'Produto', align: 'l', sticky: true, wrap: true, render: (r) => (r.granel && r.porTam ? h('button', { type: 'button', class: 'est-prod-btn', title: 'Clique para ver a margem de cada tamanho de pacote', onclick: (e) => abrirTamanhos(e, r) }, r.produto, h('small', { class: 'est-tam' }, r.tamanhos)) : r.granel ? h('span', null, r.produto, h('small', { class: 'est-tam' }, r.tamanhos)) : r.produto) },
+        { key: 'produto', label: 'Produto', align: 'l', sticky: true, wrap: true, render: (r) => (r.granel && r.porTam ? h('button', { type: 'button', class: 'est-prod-btn', title: 'Ver lucro e margem de cada tamanho de pacote', onclick: (e) => abrirTamanhos(e, r) }, h('span', { class: 'est-seta', 'aria-hidden': 'true' }, '▸'), h('span', null, h('span', { class: 'est-prod-nome' }, r.produto), h('small', { class: 'est-tam' }, r.tamanhos, h('span', { class: 'est-ver' }, ' · ver por pacote')))) : r.granel ? h('span', null, r.produto, h('small', { class: 'est-tam' }, r.tamanhos)) : r.produto) },
         { key: 'abc', label: 'ABC', title: 'Curva ABC pelo lucro: A = produtos que somam 80% do lucro do período; B = os próximos 15%; C = o resto', cls: (r) => (r.abc === 'A' ? 'hit' : '') },
         { key: 'classe', label: 'Grupo', align: 'l', render: (r) => h('span', { class: 'est-tag', style: { '--cor': CLASSE[r.classe][1] } }, CLASSE[r.classe][0]), sortVal: (r) => r.classe },
         { key: 'giro', label: 'Vendido', title: 'Quanto saiu no período. Chá a granel em kg, somando todos os tamanhos; os outros em unidades', render: (r) => (r.granel ? `${fmt.kg(r.giro)} kg` : `${fmt.int(r.giro)} un.`), sortVal: (r) => r.giro },
