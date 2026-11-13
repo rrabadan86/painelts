@@ -269,23 +269,32 @@
     const iDias = num(par.dias, { min: 3, max: 60 });
     const iFolga = num(par.folgaPct, { min: 0, max: 100 });
     const iCresc = num(par.crescimentoPct, { min: -80, max: 300, placeholder: fmt.n1((R.crescLoja - 1) * 100) });
-    const aplicar = () => {
+    const ler = () => {
       const v = (i) => (i.value === '' ? null : +i.value);
       Object.assign(par, { cmvPct: v(iPct), dias: Math.max(3, Math.min(60, Math.round(+iDias.value || p.cfg.dias))), folgaPct: v(iFolga) ?? 10, crescimentoPct: v(iCresc) });
-      editados.clear();
-      pintar(corpo, loja, M, e, p);
     };
-    [iPct, iDias, iFolga, iCresc].forEach((i) => i.addEventListener('change', aplicar));
-    const msg = h('span', { class: 'muted' });
+    // recalcula ao sair do campo; espera um instante para não redesenhar a tela no meio do clique em "Salvar"
+    let pendente = null;
+    const aplicar = () => { ler(); editados.clear(); pintar(corpo, loja, M, e, p); };
+    [iPct, iDias, iFolga, iCresc].forEach((i) => i.addEventListener('change', () => { clearTimeout(pendente); pendente = setTimeout(aplicar, 250); }));
+    const msg = h('span', { class: state.pedMsg ? state.pedMsg[0] : 'muted' }, state.pedMsg ? state.pedMsg[1] : '');
+    state.pedMsg = null;
     const salvar = h('button', { type: 'button', class: 'btn' }, 'Salvar como padrão da loja');
+    salvar.addEventListener('pointerdown', () => { clearTimeout(pendente); pendente = null; });
     salvar.addEventListener('click', async () => {
+      clearTimeout(pendente); pendente = null;
+      ler();
       salvar.disabled = true; msg.className = 'muted'; msg.textContent = 'Salvando…';
       try {
         const r = await fetch(`/api/pedido/cfg?loja=${encodeURIComponent(loja)}`, { method: 'PUT', credentials: 'same-origin', headers: { 'X-Painel': '1', 'Content-Type': 'application/json' },
           body: JSON.stringify({ cmvPct: par.cmvPct, dias: par.dias, folgaPct: par.folgaPct, crescimentoPct: par.crescimentoPct, eventos }) });
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j.erro || 'Falha ao salvar.');
-        p.cfg = j.cfg; msg.className = 'pos'; msg.textContent = 'Salvo.';
+        p.cfg = j.cfg;
+        state.pedMsg = ['pos', `Salvo como padrão da loja: ${par.cmvPct != null ? fmt.n1(par.cmvPct) + '% das vendas' : 'CMV real'}, ${par.dias} dias.`];
+        editados.clear();
+        pintar(corpo, loja, M, e, p);
+        return;
       } catch (err) { msg.className = 'neg'; msg.textContent = err.message; }
       salvar.disabled = false;
     });
