@@ -388,8 +388,9 @@
     const SITS = { acabou: ['Acabou', 'erro'], falta: ['Falta antes da entrega', 'erro'], pedir: ['Pedir', 'warn'], ok: ['OK', 'ok'] };
     const SITU = (r) => SITS[SITK(r)];
     // filtros extras (valem em qualquer aba): grupo, situação e classe
-    const fx = state.pedFx || (state.pedFx = { g: '', s: '', c: '' });
-    const passa = (r, sem) => (sem === 'g' || !fx.g || r.grupo === fx.g) && (sem === 's' || !fx.s || SITK(r) === fx.s) && (sem === 'c' || !fx.c || (r.classe || 'sem') === fx.c);
+    const fx = state.pedFx || (state.pedFx = { g: '', s: '', c: '', m: '' });
+    const multDe = (r) => (r.c && r.c.mult > 1 ? r.c.mult : 0);
+    const passa = (r, sem) => (sem === 'm' || !fx.m || (fx.m === 'sim') === (multDe(r) > 0)) && (sem === 'g' || !fx.g || r.grupo === fx.g) && (sem === 's' || !fx.s || SITK(r) === fx.s) && (sem === 'c' || !fx.c || (r.classe || 'sem') === fx.c);
     const cont = (k) => R.linhas.filter((r) => FILTROS[k][1](r) && passa(r)).length;
     const linhas = R.linhas.filter((r) => FILTROS[filtro][1](r) && passa(r));
     const naAba = R.linhas.filter(FILTROS[filtro][1]);
@@ -404,7 +405,8 @@
       seletor('g', 'Grupo', 'todos', ordemG.map((g) => [g, GRUPOS[g]]), (r) => r.grupo),
       seletor('s', 'Situação', 'todas', Object.entries(SITS).map(([k, [t]]) => [k, t]), SITK),
       seletor('c', 'Classe', 'todas', [...Object.entries(CLASSES), ['sem', 'sem classe']], (r) => r.classe || 'sem'),
-      fx.g || fx.s || fx.c ? h('button', { type: 'button', class: 'btn ped-fx-limpa', onclick: () => { state.pedFx = { g: '', s: '', c: '' }; pintar(corpo, loja, M, e, p); } }, '✕ Tirar filtros') : null,
+      seletor('m', 'Múltiplo', 'todos', [['sim', 'vende em múltiplos'], ['nao', 'unidade']], (r) => (multDe(r) ? 'sim' : 'nao')),
+      fx.g || fx.s || fx.c || fx.m ? h('button', { type: 'button', class: 'btn ped-fx-limpa', onclick: () => { state.pedFx = { g: '', s: '', c: '', m: '' }; pintar(corpo, loja, M, e, p); } }, '✕ Tirar filtros') : null,
       h('span', { class: 'muted ped-fx-n' }, `${fmt.int(linhas.length)} ${linhas.length === 1 ? 'produto' : 'produtos'}`));
     const tab = TS.table({
       cols: [
@@ -415,9 +417,9 @@
         { key: 'sit', label: 'Situação', align: 'l', render: (r) => { const [t, c] = SITU(r); return h('span', { class: 'badge ' + c }, t); }, sortVal: (r) => (r.qtd <= 0 ? 3 : r.urgente ? 2 : 1) },
         { key: 'qtd', label: 'Estoque', render: (r) => qtdTxt(r.qtd, r.it) },
         { key: 'dias', label: 'Dura', fmt: (v) => (v == null ? '—' : v > 365 ? '+1 ano' : `${fmt.int(v)} dias`) },
-        { key: 'sugerido', label: 'Precisa', title: 'Quanto precisa (arredondado ao múltiplo do site). Passe o mouse para ver a conta', render: (r) => h('span', { class: 'est-dica', title: r.conta }, qtdTxt(r.sugerido, r.it)) },
+        { key: 'sugerido', label: 'Precisa', title: 'Quanto precisa, arredondado ao múltiplo do site. Passe o mouse para ver a conta', render: (r) => h('span', { class: 'est-dica', title: r.conta }, qtdTxt(r.sugerido, r.it), (() => { const pv = r.it.un === 'Kg' ? r.precisa : Math.ceil(r.precisa - 1e-9); return multDe(r) && pv < r.sugerido - 1e-9 ? h('small', { class: 'est-tam' }, `pela venda: ${qtdTxt(pv, r.it)}`) : null; })()) },
         { key: 'pedir', label: 'Pedir', title: 'Quantidade do pedido: altere à vontade (0 tira do pedido). O total e a proporção se atualizam', render: (r) => campoQtd(r), sortVal: (r) => r.pedir },
-        { key: 'preco', label: 'Preço', title: 'Preço no Sistema de Pedidos (FRANQUIAS); sem catálogo, o custo do AppNext', render: (r) => (r.preco ? h('span', { class: r.unidadeEstranha ? 'neg' : null, title: r.unidadeEstranha ? `Preço do site muito diferente do custo do AppNext (${fmt.brl(r.it.custo)}): confira a unidade.` : null }, fmt.brl(r.preco), r.c && r.c.mult && r.c.mult !== 1 ? h('small', { class: 'est-tam' }, `múltiplo de ${fmt.n2(r.c.mult)}`) : null) : '—'), sortVal: (r) => r.preco },
+        { key: 'preco', label: 'Preço', title: 'Preço no Sistema de Pedidos (FRANQUIAS); sem catálogo, o custo do AppNext', render: (r) => (r.preco ? h('span', { class: r.unidadeEstranha ? 'neg' : null, title: r.unidadeEstranha ? `Preço do site muito diferente do custo do AppNext (${fmt.brl(r.it.custo)}): confira a unidade.` : null }, fmt.brl(r.preco)) : '—'), sortVal: (r) => r.preco },
         { key: 'total', label: 'Total', render: (r) => { const s = h('span', { class: 'ped-tot' }, r.pedir > 0 ? fmt.brl(r.pedir * (r.preco || 0)) : '—'); r._tot = s; return s; }, sortVal: (r) => r.pedir * (r.preco || 0) },
         { key: 'lucroDia', label: 'Lucro sem fixos/dia', title: 'O que o produto deixou por dia nos últimos 30 dias depois do custo e das deduções variáveis (comissão, royalties, Simples, maquininha). É a prioridade do pedido: urgentes primeiro, depois quem deixa mais lucro', fmt: (v) => (v ? fmt.brl(v) : '—') },
         { key: 'motivo', label: 'Obs.', align: 'l', render: (r) => obs(r) },
@@ -472,7 +474,9 @@
       i.addEventListener('change', () => definir(Math.max(0, +i.value || 0)));
       b.addEventListener('click', () => definir(r.pedir > 0 ? 0 : (r.sugerido || passo)));
       pintarB();
-      return h('span', { class: 'ped-q-w' }, i, h('small', null, unid(r.it)), b);
+      const mult = multDe(r);
+      const chip = mult ? h('span', { class: 'ped-mult', title: `No site só dá para pedir de ${fmt.n2(mult).replace(/,00$/, '')} em ${fmt.n2(mult).replace(/,00$/, '')}${r.c.max ? ` (máximo ${fmt.n2(r.c.max).replace(/,00$/, '')})` : ''}. A quantidade é arredondada para cima.` }, `×${fmt.n2(mult).replace(/,00$/, '')}`) : null;
+      return h('span', { class: 'ped-q-w' }, i, h('small', null, unid(r.it)), chip, b);
     }
     const catInfo = p.catalogo
       ? `Preços e disponibilidade do Sistema de Pedidos de ${new Date(p.catalogo.em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}.`
@@ -722,8 +726,8 @@
     if (!lista.length) { alert('Nada no pedido.'); return; }
     const esc = (v) => { const s = v == null ? '' : String(v); return /[;"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
     const n = (v, d) => (v == null ? '' : v.toFixed(d).replace('.', ','));
-    const linhas = [['Código', 'Produto', 'Grupo', 'Unidade', 'Estoque', 'Pedir', 'Preço', 'Total', 'Site'].join(';'),
-      ...lista.map((r) => [r.cod, r.produto, r.grupoTxt, r.it.un, n(r.qtd, 3), n(r.pedir, 3), n(r.preco || 0, 2), n(r.pedir * (r.preco || 0), 2), { ok: 'disponível', sem: 'sem catálogo', indisp: 'indisponível', fora: 'fora do catálogo' }[r.site]].map(esc).join(';'))];
+    const linhas = [['Código', 'Produto', 'Grupo', 'Unidade', 'Múltiplo', 'Estoque', 'Pedir', 'Preço', 'Total', 'Site'].join(';'),
+      ...lista.map((r) => [r.cod, r.produto, r.grupoTxt, r.it.un, r.c && r.c.mult > 1 ? n(r.c.mult, 0) : '', n(r.qtd, 3), n(r.pedir, 3), n(r.preco || 0, 2), n(r.pedir * (r.preco || 0), 2), { ok: 'disponível', sem: 'sem catálogo', indisp: 'indisponível', fora: 'fora do catálogo' }[r.site]].map(esc).join(';'))];
     const blob = new Blob(['﻿' + linhas.join('\r\n')], { type: 'text/csv;charset=utf-8' });
     const a = h('a', { href: URL.createObjectURL(blob), download: `pedido-sugerido-${loja}-${new Date().toISOString().slice(0, 10)}.csv` });
     document.body.append(a); a.click(); a.remove();
