@@ -1201,3 +1201,5 @@ tr.est-det > td { padding: 0 !important; background: #FBF9F4 !important; }
 .ped-cat-log { display: inline-block; margin-left: 6px; }
 .ped-cat-st { flex-basis: 100%; }
 .ped-cat-st .ped-prog { margin-top: 4px; }
+.ped-i { margin-left: 4px; font-weight: 400; color: var(--muted); cursor: help; }
+.ped-nota { display: block; font-size: 11.5px; color: var(--muted); margin-top: 2px; }

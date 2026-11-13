@@ -229,7 +229,7 @@
       r.sugeridoPedir = r.pedir;
       if (editados && editados.has(String(r.cod)) && (r.site === 'ok' || r.site === 'sem')) r.pedir = editados.get(String(r.cod));
     }
-    return { linhas, vendasN, cmvReal, pct, orcamento, share, fatG, crescLoja, cresc, evInfo, ev, evLyVt, temAnoPassado, N, ent, hoje };
+    return { linhas, vendasN, cmvReal, cmvVt, cmvCusto, cmvMeses: [...meses].sort(), pct, orcamento, share, fatG, crescLoja, cresc, evInfo, ev, evLyVt, temAnoPassado, N, ent, hoje };
   }
 
   // ---------- tela ----------
@@ -299,7 +299,11 @@
       } catch (err) { msg.className = 'neg'; msg.textContent = err.message; }
       salvar.disabled = false;
     });
-    const lbl = (t, el, suf, dica) => h('label', { title: dica || null }, h('span', null, t), h('div', null, el, suf ? ' ' + suf : ''));
+    const lbl = (t, el, suf, dica, nota) => h('label', { title: dica || null }, h('span', null, t, dica ? h('span', { class: 'ped-i', 'aria-hidden': 'true' }, 'ⓘ') : null), h('div', null, el, suf ? ' ' + suf : ''), nota || null);
+    const mesTxt = (ym) => new Date(ym + '-15T12:00:00Z').toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' }).replace('. de ', '/').replace('.', '');
+    const dicaCmv = R.cmvReal == null ? 'Percentual do faturamento da loja (sem Espaço Gourmet) que vira pedido. Ainda não dá para calcular o CMV real: faltam vendas com custo nos 3 últimos meses fechados.'
+      : `Percentual do faturamento da loja (sem Espaço Gourmet) que vira pedido.\n\nCom o campo vazio, o painel usa o CMV real: ${fmt.pct(R.cmvReal)}.\nCMV = custo dos produtos vendidos ÷ faturamento, só loja, nos 3 últimos meses fechados (${R.cmvMeses.map(mesTxt).join(', ')}):\n${fmt.brl0(R.cmvCusto)} de custo ÷ ${fmt.brl0(R.cmvVt)} vendidos = ${fmt.pct(R.cmvReal)}.\n\nOu seja: o pedido repõe o que saiu da loja. Digite outro % para pedir mais ou menos.`;
+    const notaCmv = h('small', { class: 'ped-nota' }, par.cmvPct == null ? `usando o CMV real (${fmt.pct(R.cmvReal)})` : `CMV real: ${fmt.pct(R.cmvReal)}`);
     const cat = blocoCatalogo(corpo, loja, M, e, p);
     const controles = h('div', { class: 'card ped-ctl' },
       h('div', { class: 'ped-ctl-l' },
@@ -307,7 +311,7 @@
         modo === 'evento' ? h('select', { class: 'f-input', onchange: (x) => { state.pedEvento = x.target.value; pintar(corpo, loja, M, e, p); } },
           eventos.map((x) => h('option', { value: x.id, selected: ev && x.id === ev.id || null }, x.nome))) : null),
       h('div', { class: 'est-cfg-g ped-ctl-g' },
-        modo === 'repor' ? lbl('Valor do pedido', iPct, '% das vendas', `Percentual do faturamento da loja (sem Espaço Gourmet) que vira pedido. Vazio = CMV real dos 3 últimos meses fechados (${fmt.pct(R.cmvReal)}): o custo do que foi vendido, ou seja, repor o que saiu.`) : null,
+        modo === 'repor' ? lbl('Valor do pedido', iPct, '% das vendas', dicaCmv, notaCmv) : null,
         modo === 'repor' ? lbl('Vendas de', iDias, 'dias', 'Período de vendas usado no valor e intervalo até o próximo pedido (ex.: 7 para pedido semanal, 14 para quinzenal).') : null,
         modo === 'repor' ? lbl('Folga da proporção', iFolga, '%', 'Quanto cada grupo (chás, envasados, acessórios) pode passar da sua parte antes de o valor ir para os outros.') : null,
         modo === 'evento' ? lbl('Crescimento', iCresc, '%', `Quanto a mais (ou a menos) que no ano passado. Vazio = o da loja: últimos 90 dias contra os mesmos 90 do ano anterior (${fmt.pct(R.crescLoja - 1)}).`) : null),
