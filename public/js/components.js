@@ -291,9 +291,20 @@
             if (v == null) return;
             const txt = opts.format ? opts.format(v, i, di) : String(v);
             const horiz = chart.options.indexAxis === 'y';
+            const area = chart.chartArea, w = ctx.measureText(txt).width;
+            const barra = el.base != null && Number.isFinite(el.base);
             ctx.fillStyle = '#24302A';
-            if (horiz) { ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillText(txt, el.x + 6, el.y); }
-            else { ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.fillText(txt, el.x, el.y - 4); }
+            if (horiz) {
+              ctx.textBaseline = 'middle';
+              // não cabe à direita da barra: vai para dentro dela, em branco
+              if (barra && el.x + 6 + w > area.right && Math.abs(el.x - el.base) > w + 10) { ctx.textAlign = 'right'; ctx.fillStyle = '#fff'; ctx.fillText(txt, el.x - 6, el.y); }
+              else { ctx.textAlign = 'left'; ctx.fillText(txt, Math.min(el.x + 6, area.right - w), el.y); }
+            } else {
+              ctx.textAlign = 'center';
+              // não cabe acima da barra (passa do topo do gráfico): vai para dentro dela, em branco
+              if (barra && el.y - 4 - 13 < area.top && Math.abs(el.base - el.y) > 18) { ctx.textBaseline = 'top'; ctx.fillStyle = '#fff'; ctx.fillText(txt, el.x, el.y + 4); }
+              else { ctx.textBaseline = 'bottom'; ctx.fillText(txt, el.x, Math.max(el.y - 4, area.top + 13)); }
+            }
           });
         });
         ctx.restore();
