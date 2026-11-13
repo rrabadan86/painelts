@@ -118,7 +118,7 @@ function filtrarPorPerfil(data, perfilDados) {
   return out;
 }
 const packCache = new Map(); // chave -> { k, body }
-async function pacote(lojas, force, perfilDados = 'completo') {
+async function pacote(lojas, force, perfilDados = 'completo', desde = null) {
   const entradas = await Promise.all(lojas.map((l) => dadosLoja(l, force)));
   // metas vêm sempre da configuração atual (mudam pelo painel sem recarregar as planilhas)
   const cfgLojas = C.get().lojas;
@@ -127,19 +127,27 @@ async function pacote(lojas, force, perfilDados = 'completo') {
     const r = entradas[i].raw;
     return { id: l.id, nome: atual.nome, nomesVenda: r.metaCfg?.nomesVenda || [], padrao: atual.meta ?? r.metaPlanilha ?? null, meses: atual.metas || {}, metaAuto: atual.metaAuto || null, regras: atual.regras || null, operacao: atual.operacao || null, ferias: atual.ferias || [], feriadosLocais: atual.feriadosLocais || [], feriadosHoras: atual.feriadosHoras || {}, feriadosHorario: atual.feriadosHorario || {}, escalaAjustes: atual.escalaAjustes || {}, wpp: atual.wppModelos || null, contabilidade: atual.contabilidade || [] };
   });
-  const k = entradas.map((e, i) => `${lojas[i].id}@${e.at}`).join('|') + '#' + JSON.stringify(metaCfgs) + '#' + perfilDados;
-  const chave = lojas.map((l) => l.id).join(',') + '|' + perfilDados;
+  const k = entradas.map((e, i) => `${lojas[i].id}@${e.at}`).join('|') + '#' + JSON.stringify(metaCfgs) + '#' + perfilDados + '#' + (desde || '');
+  const chave = lojas.map((l) => l.id).join(',') + '|' + perfilDados + '|' + (desde || '');
   const pc = packCache.get(chave);
   const stale = entradas.map((e) => e.stale).filter(Boolean).join(' | ') || null;
   const at = Math.min(...entradas.map((e) => e.at));
-  if (pc && pc.k === k) return { body: pc.body, at, stale };
+  if (pc && pc.k === k) return { body: pc.body, etag: pc.etag, at, stale };
   let data = lojas.length === 1 ? { ...entradas[0].raw } : juntar(entradas.map((e) => e.raw));
   data.metaCfgs = metaCfgs;
   data.meta = metaCfgs.some((m) => m.padrao != null) ? metaCfgs.reduce((s, m) => s + (m.padrao || 0), 0) : null;
   data = filtrarPorPerfil(data, perfilDados);
-  const body = JSON.stringify(pack(data, { lojas: lojas.map((l) => ({ id: l.id, nome: l.nome })), perfil: perfilDados.split(':')[0] }));
-  packCache.set(chave, { k, body });
-  return { body, at, stale };
+  // histórico parcial (mais leve): só as vendas a partir de "desde"; o painel pede o resto quando precisa
+  let inicio = null;
+  for (const v of data.vendas) if (v.data && (!inicio || v.data < inicio)) inicio = v.data;
+  if (desde) {
+    data = { ...data, vendas: data.vendas.filter((v) => v.data >= desde), xml: (data.xml || []).filter((x) => !x.data || x.data >= desde) };
+  }
+  const body = JSON.stringify(pack(data, { lojas: lojas.map((l) => ({ id: l.id, nome: l.nome })), perfil: perfilDados.split(':')[0], desde: desde && inicio && inicio < desde ? desde : null, inicio }));
+  const etag = '"' + require('crypto').createHash('sha1').update(body).digest('base64').slice(0, 27) + '"';
+  if (packCache.size > 40) packCache.clear();
+  packCache.set(chave, { k, body, etag });
+  return { body, etag, at, stale };
 }
 
 // ---------- app ----------
@@ -395,8 +403,12 @@ app.get('/api/dados', async (req, res) => {
   if (!lojas.length) return res.status(404).json({ erro: 'Nenhuma loja cadastrada ainda. Crie a primeira em Configurações.', semLojas: true });
   try {
     const perfilDados = req.perfil === 'vendedor' ? `vendedor:${req.vendedor}` : podeClientes(req) ? 'completo' : 'gerente';
-    const d = await pacote(lojas, req.query.atualizar === '1', perfilDados);
+    const desde = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.desde || '')) ? String(req.query.desde) : null;
+    const d = await pacote(lojas, req.query.atualizar === '1', perfilDados, desde);
     res.set('Cache-Control', 'no-store');
+    res.set('ETag', d.etag);
+    // nada mudou desde o último pedido: não manda tudo de novo
+    if (req.get('If-None-Match') === d.etag) { res.set('X-Dados-Em', new Date(d.at).toISOString()); return res.status(304).end(); }
     res.set('X-Dados-Em', new Date(d.at).toISOString());
     if (d.stale) res.set('X-Dados-Aviso', encodeURIComponent(d.stale));
     res.type('application/json').send(d.body);

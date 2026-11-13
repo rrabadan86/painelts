@@ -81,6 +81,8 @@ TS.decode = function (raw) {
     xml: raw.xml,
     clientes: raw.clientes,
     fidelidade: raw.fidelidade || [],
+    desde: raw.desde || null,   // histórico parcial: vendas só a partir desta data
+    inicio: raw.inicio || null, // primeira venda que existe (histórico completo)
   };
   // laço em vez de Math.min(...day): com muitas vendas (todas as lojas) o "..." estoura a pilha
   let mn = Infinity, mx = -Infinity;

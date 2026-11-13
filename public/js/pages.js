@@ -63,7 +63,8 @@
     TS.aoConfirmar(de, onDate); TS.aoConfirmar(ate, onDate);
     const chips = h('div', { class: 'chips' }, PRESETS.map(([lab, p]) => h('button', { type: 'button', class: 'chip' + (f.preset === p ? ' on' : ''), onclick: () => { TS.aplicarPreset(p); rerender(); } }, lab)));
     const anos = [];
-    for (let y = new Date(db.maxDay * 86400000).getUTCFullYear(); y >= new Date(db.minDay * 86400000).getUTCFullYear(); y--) anos.push(y);
+    const anoIni = db.inicio ? +db.inicio.slice(0, 4) : new Date(db.minDay * 86400000).getUTCFullYear();
+    for (let y = new Date(db.maxDay * 86400000).getUTCFullYear(); y >= anoIni; y--) anos.push(y);
     const selAno = h('select', { class: 'f-input', 'aria-label': 'Ano' }, h('option', { value: '' }, 'Todos'),
       anos.map((y) => h('option', { value: y, selected: f.ano === y || null }, String(y))));
     const selMes = h('select', { class: 'f-input', 'aria-label': 'Mês' }, h('option', { value: '' }, 'Todos'),
@@ -73,7 +74,8 @@
     box.append(h('div', { class: 'f-group' }, h('span', { class: 'f-label' }, 'Período'), h('div', { class: 'f-row' }, de, ate), chips));
     box.append(h('div', { class: 'f-group' }, h('span', { class: 'f-label' }, 'Ano e mês'),
       h('div', { class: 'f-row anomes' }, h('label', null, h('span', null, 'Ano'), selAno), h('label', null, h('span', null, 'Mês'), selMes)),
-      h('div', { class: 'f-hint' }, 'Só o mês = aquele mês em todos os anos.')));
+      h('div', { class: 'f-hint' }, 'Só o mês = aquele mês em todos os anos.'),
+      db.desde && !TS.historicoCompleto ? h('div', { class: 'f-hint' }, `Carregado desde ${fmt.date(db.desde)} (mais leve). `, h('button', { type: 'button', class: 'link-btn', onclick: () => TS.carregarTudo() }, `Carregar desde ${fmt.date(db.inicio)}`)) : null));
 
     const opts = (list) => list.map(([s, i]) => [s, i]);
     if (db.opts.lojas.length > 1) box.append(TS.multiSelect({ label: 'Loja', options: opts(db.opts.lojas), selected: f.lojas, onChange: rerender, placeholder: 'Todas as lojas' }));

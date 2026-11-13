@@ -46,7 +46,24 @@
 
   /** crédito no rodapé de todas as telas */
   TS.credito = () => h('footer', { class: 'credito' }, 'Desenvolvido por ', h('b', null, 'Rodrigo Rabadan'));
+  // histórico parcial: o painel carrega os últimos 24 meses (+ o mês atual) e busca o resto só quando precisa
+  // (Clientes, "Tudo", "só o mês" em todos os anos, ou um período cujo ano anterior fica antes do que veio)
+  TS.historicoCompleto = false;
+  let buscandoCompleto = false;
+  const desdeParcial = () => { const n = new Date(); return new Date(Date.UTC(n.getFullYear(), n.getMonth() - 24, 1)).toISOString().slice(0, 10); };
+  function precisaCompleto() {
+    const db = TS.db, f = state.f;
+    if (!db || !db.desde || TS.historicoCompleto) return false;
+    const d0 = TS.isoToDay(db.desde);
+    return state.page === 'clientes' || f.de == null || f.de - 366 < d0 || (f.mes && !f.ano) || (f.ano && f.ano - 1 < +db.desde.slice(0, 4));
+  }
+  TS.carregarTudo = function () {
+    if (TS.historicoCompleto || buscandoCompleto) return;
+    TS.historicoCompleto = true; buscandoCompleto = true;
+    carregar(false).finally(() => { buscandoCompleto = false; });
+  };
   TS.render = function () {
+    if (precisaCompleto()) TS.carregarTudo();
     const ae = document.activeElement;
     const g = ehCampo(ae) ? capturar(ae) : null;
     renderTela();
@@ -133,15 +150,22 @@
     btn.classList.add('spin');
     try {
       const qs = new URLSearchParams({ loja: state.loja || '' });
+      if (TS.lojaCarregada !== state.loja) TS.historicoCompleto = false; // loja nova: começa pelo parcial
+      if (!TS.historicoCompleto) qs.set('desde', desdeParcial());
+      const chave = qs.toString();
       if (forcar) qs.set('atualizar', '1');
-      const res = await fetch(TS.api('dados?' + qs), { credentials: 'same-origin' });
+      // mesmo pedido de antes: o servidor responde 304 se nada mudou (não baixa tudo de novo)
+      const headers = !forcar && TS.etag && TS.etagChave === chave && TS.db ? { 'If-None-Match': TS.etag } : {};
+      const res = await fetch(TS.api('dados?' + qs), { credentials: 'same-origin', headers });
+      if (res.status === 304) return;
       if (res.status === 401 && !TS.demo) { location.href = '/login'; return; }
       const body = await res.json();
       if (res.status === 403 && body.erro === 'trocar-senha') { location.href = '/trocar-senha?primeiro=1'; return; }
       if (body.semLojas) { TS.db = null; if (TS.eu?.pode?.configurar) { location.hash = '#config'; rota(); } else content.replaceChildren(h('div', { class: 'notice' }, body.erro)); return; }
       if (!res.ok) throw new Error(body.erro || res.statusText);
       const primeira = !TS.db || TS.lojaCarregada !== state.loja;
-      if (!primeira && !forcar && body.geradoEm === TS.db.geradoEm) return; // nada mudou
+      if (!primeira && !forcar && body.geradoEm === TS.db.geradoEm && (body.desde || null) === (TS.db.desde || null)) return; // nada mudou
+      TS.etag = res.headers.get('ETag'); TS.etagChave = chave;
       if (primeira && TS.db) TS.resetFiltros();
       TS.lojaCarregada = state.loja;
       TS.db = TS.decode(body);
