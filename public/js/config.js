@@ -144,6 +144,33 @@
     TS.cfgAncora = ancora || null;
     location.hash = '#config';
   };
+  /** cabeçalho da loja: até quando estão vendas, XML e estoque (verde em dia, amarelo atrasado, cinza sem dados) */
+  function infoCabecalho(l, ult) {
+    const DIA = 86400e3, hoje = Date.now();
+    const diasDesde = (iso) => (iso ? Math.floor((hoje - new Date(iso.length === 10 ? iso + 'T12:00:00' : iso).getTime()) / DIA) : null);
+    const curto = (iso) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(2, 4)}` : '');
+    const item = (rot, st, txt, dica) => h('span', { class: 'cfg-per', title: dica || null }, h('i', { class: 'cfg-per-p ' + st }), h('b', null, rot), ' ', txt);
+    const out = [];
+    // vendas
+    if (l.base.linhas) {
+      const d = diasDesde(l.base.ultimaVenda);
+      out.push(item('Vendas', d != null && d > 2 ? 'atr' : 'ok', `${curto(l.base.de + '-01')} a ${curto(l.base.ultimaVenda)}`,
+        `${fmt.int(l.base.linhas)} vendas de ${ymLongo(l.base.de)} a ${dIso(l.base.ultimaVenda)}${ult ? ` · atualizado ${dt(ult.em)}` : ''}${d != null && d > 2 ? ` · sem vendas novas há ${d} dias` : ''}`));
+    } else out.push(item('Vendas', 'nada', 'sem dados'));
+    // XML (CPF dos cupons)
+    const x = l.xml;
+    if (x && x.existe) {
+      const atras = l.base.ultimaVenda && x.ate ? Math.round((new Date(l.base.ultimaVenda) - new Date(x.ate)) / DIA) : null;
+      out.push(item('XML', atras != null && atras > 7 ? 'atr' : 'ok', `${curto(x.de)} a ${curto(x.ate)}`,
+        `${fmt.int(x.notas)} notas com CPF/CNPJ de ${dIso(x.de)} a ${dIso(x.ate)}${atras != null && atras > 7 ? ` · ${atras} dias atrás das vendas: rode "Importar histórico" com "Só XML"` : ''}`));
+    } else if (x) out.push(item('XML', 'nada', 'não importado', 'Use "Importar histórico" com "Só XML" de 06/2025 até hoje'));
+    // estoque (foto)
+    if (l.estoque) {
+      const d = diasDesde(l.estoque.em);
+      out.push(item('Estoque', d != null && d > 2 ? 'atr' : 'ok', dt(l.estoque.em), `${fmt.int(l.estoque.itens)} produtos${d != null && d > 2 ? ` · foto de ${d} dias atrás` : ''}`));
+    } else out.push(item('Estoque', 'nada', 'não importado', 'Use "Importar histórico" → "Estoque e custos" ou "Rodar agora"'));
+    return h('div', { class: 'cfg-loja-info' }, ...out);
+  }
   function cartaoLoja(l) {
     const chave = 'loja:' + l.id;
     const aberto = abertos.has(chave) || est.lojas.length === 1;
@@ -151,9 +178,7 @@
     const ult = l.base.importacoes[0];
     const cab = h('button', { type: 'button', class: 'cfg-loja-cab', 'aria-expanded': String(aberto), onclick: () => { aberto ? abertos.delete(chave) : abertos.add(chave); pintar(); } },
       h('div', null, h('div', { class: 'cfg-loja-nome' }, l.nome), h('div', { class: 'cfg-loja-sub' }, `${l.id}${l.appnext ? ' · ' + l.appnext : ''}`)),
-      h('div', { class: 'cfg-loja-info' },
-        l.base.linhas ? h('span', null, `${fmt.int(l.base.linhas)} vendas · ${ymLongo(l.base.de)} a ${dIso(l.base.ultimaVenda)}`) : null,
-        ult ? h('span', { class: 'muted' }, `atualizado ${dt(ult.em)}`) : null),
+      infoCabecalho(l, ult),
       h('span', { class: 'badge ' + cls }, txt), h('span', { class: 'cfg-seta' }, aberto ? '▴' : '▾'));
     const card = h('div', { class: 'card cfg-loja' }, cab);
     if (!aberto) return card;

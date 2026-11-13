@@ -1252,3 +1252,9 @@ tr.est-det > td { padding: 0 !important; background: #FBF9F4 !important; }
 .t.tree tr.lv0 td.tree-var.pos { color: var(--good); }
 .t.tree tr.lv0 td.tree-var.neg { color: var(--bad); }
 .t.tree tr.lv0 td.tree-var .tree-ant { font-weight: 400; }
+.cfg-loja-info .cfg-per { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; color: var(--ink); }
+.cfg-loja-info .cfg-per b { font-weight: 600; color: var(--muted); }
+.cfg-per-p { width: 7px; height: 7px; border-radius: 50%; display: inline-block; background: #BBB; }
+.cfg-per-p.ok { background: #2C8A4B; }
+.cfg-per-p.atr { background: #D9A21B; }
+.cfg-per-p.nada { background: #C9C2B4; }
