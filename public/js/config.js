@@ -164,35 +164,55 @@
     const lote = l.status && l.status.lote;
     if (!est.coletorAtivo) b.append(h('p', { class: 'muted' }, 'O coletor (atualização automática) não está ligado nesta VPS.'));
     else if (!l.coletor.configurado) b.append(h('p', { class: 'muted' }, est.perfil === 'admin' ? 'Cadastre o acesso ao AppNext (ao lado) para a loja atualizar sozinha.' : 'O administrador ainda não cadastrou o acesso ao AppNext desta loja.'));
-    if (ex) {
-      const per = ex.de && ex.ate ? ` (${dIso(ex.de)} a ${dIso(ex.ate)})` : '';
-      const linha = ex.estado === 'rodando' ? `Coletando agora${per}, desde ${dt(ex.inicio)}`
-        : ex.estado === 'na_fila' ? `Na fila${per}`
-          : ex.estado === 'ok' ? `Última coleta${ex.tipo === 'xml' ? ' (só XML)' : ''} OK em ${dt(ex.fim)}${per}` : `Última coleta${ex.tipo === 'xml' ? ' (só XML)' : ex.tipo ? ' de vendas' : ''} FALHOU em ${dt(ex.fim)}${per}`;
-      b.append(h('p', { class: ex.estado === 'falhou' ? 'neg' : '' }, linha));
-      if (ex.xml && ex.tipo !== 'xml' && ex.estado !== 'rodando' && ex.estado !== 'na_fila') b.append(h('p', { class: ex.xml.ok ? 'muted' : 'neg' }, ex.xml.ok ? 'XML das notas (CPF): baixado junto.' : 'XML das notas (CPF): falhou nesta coleta. As vendas não foram afetadas.'));
-      if (ex.log && ex.log.length && ex.estado !== 'rodando' && ex.estado !== 'na_fila') b.append(detalhes('log:' + l.id, { class: 'cfg-log' }, h('summary', null, 'Ver o final do log da última coleta'), h('pre', { class: 'script-log' }, ex.log.join('\n'))));
+    const ocupado = ex && ['rodando', 'na_fila'].includes(ex.estado);
+    const GATILHO = { agendado: 'automática', manual: 'manual', historico: 'do histórico' };
+    const quem = (e) => `${GATILHO[e.gatilho] || ''}${e.por && e.gatilho === 'manual' ? ` (${e.por})` : ''}`;
+    const periodo = (e) => (e.de && e.ate ? `${dIso(e.de)} a ${dIso(e.ate)}` : '');
+    // ---- situação: uma linha por tipo de dado
+    const linha = (st, titulo, principal, ...extra) => h('div', { class: 'cfg-sit-l' },
+      h('span', { class: 'cfg-sit-ic ' + st }, { ok: '✓', erro: '!', rodando: '…', nada: '–' }[st]),
+      h('div', null, h('div', { class: 'cfg-sit-t' }, h('b', null, titulo), principal ? h('span', null, ' · ', principal) : null), ...extra.filter(Boolean).map((x) => h('div', { class: 'cfg-sit-d' }, x))));
+    const sit = h('div', { class: 'cfg-sit' });
+    if (ocupado) {
+      sit.append(linha('rodando', ex.estado === 'rodando' ? 'Coletando agora' : 'Na fila', `${quem(ex)}${periodo(ex) ? ' · ' + periodo(ex) : ''}`, ex.estado === 'rodando' ? `começou ${dt(ex.inicio)}` : null));
     }
+    // vendas
+    const exV = ex && !ocupado && ex.tipo !== 'xml' ? ex : null;
+    sit.append(linha(exV ? (exV.estado === 'ok' ? 'ok' : 'erro') : l.base.ate ? 'ok' : 'nada', 'Vendas',
+      exV ? (exV.estado === 'ok' ? 'última coleta deu certo' : h('span', { class: 'neg' }, 'a última coleta falhou')) : l.base.ate ? null : 'ainda sem vendas',
+      exV ? `${dt(exV.fim)} · coleta ${quem(exV)}${periodo(exV) ? ` · ${periodo(exV)}` : ''}` : null,
+      l.base.ultimaVenda ? `Vendas no painel até ${dIso(l.base.ultimaVenda)}` : null,
+      exV && exV.estado !== 'ok' ? 'As vendas que já estavam no painel continuam valendo. Veja o motivo no log abaixo.' : null));
+    // XML
     if (l.xml) {
-      const x = l.xml;
-      b.append(h('p', { class: 'muted' }, x.existe
-        ? `XML das notas: ${fmt.int(x.notas)} notas com CPF/CNPJ, de ${dIso(x.de)} a ${dIso(x.ate)}${x.importacoes[0] ? ` · última importação em ${dt(x.importacoes[0].em)}` : ''}.`
-        : 'XML das notas: ainda não importado. Use "Importar histórico" com "Só XML" de 06/2025 até hoje para a primeira carga.'));
-      const ui = x.importacoes && x.importacoes[0];
-      if (ui) b.append(h('p', { class: 'muted' }, `Última importação de XML: ${dIso(ui.de)} a ${dIso(ui.ate)} · ${ui.total == null ? '?' : fmt.int(ui.total)} notas, ${fmt.int(ui.comDoc)} com CPF/CNPJ.`));
-      if (x.pendentes) b.append(h('p', { class: 'muted' }, `${x.pendentes} arquivo(s) de XML sendo processado(s)…`));
-      if (x.erros && x.erros.length) b.append(h('p', { class: 'neg' }, `Arquivo(s) de XML com erro: ${x.erros.join(', ')}`));
+      const x = l.xml, ui = x.importacoes && x.importacoes[0];
+      const falhou = ex && !ocupado && ex.xml && !ex.xml.ok;
+      sit.append(linha(falhou ? 'erro' : x.existe ? 'ok' : 'nada', 'XML das notas (CPF dos clientes)',
+        falhou ? h('span', { class: 'neg' }, 'falhou na última coleta') : x.existe ? 'em dia' : 'ainda não importado',
+        falhou ? `Falhou em ${dt(ex.fim)}. A base de XML que já estava no painel continua valendo.` : null,
+        x.existe ? `No painel: ${fmt.int(x.notas)} ${x.notas === 1 ? 'nota' : 'notas'} com CPF/CNPJ, de ${dIso(x.de)} a ${dIso(x.ate)}` : 'Use "Importar histórico" com "Só XML" de 06/2025 até hoje para a primeira carga.',
+        ui ? `Última importação que deu certo: ${dt(ui.em)} · ${dIso(ui.de)} a ${dIso(ui.ate)} · ${ui.total == null ? '?' : fmt.int(ui.total)} ${ui.total === 1 ? 'nota' : 'notas'}, ${fmt.int(ui.comDoc)} com CPF/CNPJ` : null,
+        x.pendentes ? `${x.pendentes} arquivo(s) de XML sendo processado(s)…` : null,
+        x.erros && x.erros.length ? h('span', { class: 'neg' }, `Arquivo(s) com erro: ${x.erros.join(', ')}`) : null));
     }
+    // estoque
+    const exE = ex && !ocupado && ex.estoque;
+    sit.append(linha(exE && !exE.ok ? 'erro' : l.estoque ? 'ok' : 'nada', 'Estoque e custos',
+      exE && !exE.ok ? h('span', { class: 'neg' }, 'falhou na última coleta') : l.estoque ? 'em dia' : 'ainda não importado',
+      l.estoque ? `Estoque de ${dt(l.estoque.em)} · ${fmt.int(l.estoque.itens)} produtos${l.estoque.origem === 'coletor' ? ' · baixado pelo coletor' : l.estoque.origem ? ' · planilha enviada' : ''}` : 'Vem em cada atualização (automática ou pelo botão) ou pela planilha em "Enviar planilha".'));
+    if (l.base.pendentes) sit.append(h('div', { class: 'cfg-sit-d muted' }, `${l.base.pendentes} planilha(s) de vendas sendo processada(s)…`));
+    b.append(sit);
+    // ---- importação do histórico (enquanto roda, ou nas 24 h seguintes)
     if (lote && (!lote.fim || Date.now() - new Date(lote.fim).getTime() < 86400e3)) {
       const pct = Math.round((lote.feitas / lote.total) * 100);
-      b.append(h('div', { class: 'cfg-lote' },
-        h('div', null, `Importação do histórico ${dIso(lote.de)} a ${dIso(lote.ate)}: ${lote.feitas} de ${lote.total} partes${lote.cancelado ? ' (cancelada)' : lote.fim ? ' — concluída' : ''}`),
-        h('div', { class: 'cfg-barra-prog' }, h('div', { style: { width: pct + '%' } })),
-        lote.falhas && lote.falhas.length ? h('div', { class: 'neg' }, `Falharam: ${lote.falhas.map((f) => `${dIso(f.de)} a ${dIso(f.ate)}`).join(', ')}. Rode de novo só esses períodos.`) : null,
-        ...(lote.falhas || []).filter((f) => f.log && f.log.length).map((f) => detalhes(`falha:${l.id}:${f.de}`, { class: 'cfg-log' }, h('summary', null, `Ver o log da parte ${dIso(f.de)} a ${dIso(f.ate)}`), h('pre', { class: 'script-log' }, f.log.join('\n'))))));
+      const falhas = lote.falhas || [];
+      const estado = lote.cancelado ? 'cancelada' : !lote.fim ? `${lote.feitas} de ${lote.total} partes` : falhas.length ? `terminou com ${falhas.length} parte(s) com erro` : 'concluída sem erros';
+      b.append(h('div', { class: 'cfg-lote' + (lote.fim && falhas.length ? ' erro' : '') },
+        h('div', null, h('b', null, 'Importação do histórico '), `${dIso(lote.de)} a ${dIso(lote.ate)} · ${estado}`),
+        !lote.fim ? h('div', { class: 'cfg-barra-prog' }, h('div', { style: { width: pct + '%' } })) : null,
+        falhas.length ? h('div', { class: 'neg' }, `Com erro: ${falhas.map((f) => `${dIso(f.de)} a ${dIso(f.ate)}`).join(', ')}. Rode de novo só esses períodos.`) : null,
+        ...falhas.filter((f) => f.log && f.log.length).map((f) => detalhes(`falha:${l.id}:${f.de}`, { class: 'cfg-log' }, h('summary', null, `Por que a parte ${dIso(f.de)} a ${dIso(f.ate)} falhou`), logBonito(f.log)))));
     }
-    if (l.base.pendentes) b.append(h('p', { class: 'muted' }, `${l.base.pendentes} planilha(s) sendo processada(s)…`));
-    const ocupado = ex && ['rodando', 'na_fila'].includes(ex.estado);
     if (est.coletorAtivo && l.coletor.configurado && est.perfil === 'admin') { // só o admin roda o coletor
       const acoes = h('div', { class: 'cfg-acoes' });
       if (ocupado) acoes.append(acao('Cancelar o que está na fila', async () => { await api('POST', `/lojas/${l.id}/cancelar`); return 'Fila cancelada (a parte que já está rodando termina).'; }));
@@ -200,14 +220,44 @@
       b.append(acoes);
       if (!ocupado) b.append(formHistorico(l));
     }
-    // últimas importações
+    if (ex && ex.log && ex.log.length && !ocupado) b.append(detalhes('log:' + l.id, { class: 'cfg-log' }, h('summary', null, 'Log técnico da última coleta'), logBonito(ex.log)));
+    // últimas importações de vendas
     if (l.base.importacoes.length) {
-      b.append(detalhes('imp:' + l.id, { class: 'cfg-imp' }, h('summary', null, 'Últimas importações'), h('div', { class: 'cfg-imp-wrap' },
-        h('table', { class: 't cfg-t' }, h('thead', null, h('tr', null, h('th', { class: 'l' }, 'Quando'), h('th', { class: 'l' }, 'Origem'), h('th', { class: 'l' }, 'Período'), h('th', null, 'Linhas'), h('th', null, 'Com hora'))),
-          h('tbody', null, l.base.importacoes.map((i) => h('tr', null, h('td', { class: 'l nw' }, dt(i.em)), h('td', { class: 'l quebra' }, (i.origem || '—').replace(/_/g, ' ')), h('td', { class: 'l nw' }, dIso(i.de), h('br'), 'a ' + dIso(i.ate)), h('td', null, fmt.int(i.linhas)),
+      const TIPO_IMP = (o) => {
+        const s = String(o || '').toLowerCase();
+        if (s.endsWith('historico')) return 'Histórico';
+        if (s.endsWith('agendado')) return 'Automática';
+        if (s.endsWith('manual')) return 'Manual (botão)';
+        if (s.includes('painel')) return 'Planilha enviada';
+        if (s.startsWith('api')) return 'Envio por script';
+        if (s.includes('migra')) return 'Migração';
+        return o ? o.replace(/_/g, ' ') : '—';
+      };
+      b.append(detalhes('imp:' + l.id, { class: 'cfg-imp' }, h('summary', null, 'Últimas importações de vendas'), h('div', { class: 'cfg-imp-wrap' },
+        h('table', { class: 't cfg-t' }, h('thead', null, h('tr', null, h('th', { class: 'l' }, 'Quando'), h('th', { class: 'l' }, 'Tipo'), h('th', { class: 'l' }, 'Período'), h('th', null, 'Linhas'), h('th', { title: 'Parte das linhas que veio com o horário da venda (usado no Mapa de calor)' }, 'Com hora'))),
+          h('tbody', null, l.base.importacoes.map((i) => h('tr', null, h('td', { class: 'l nw' }, dt(i.em)), h('td', { class: 'l' }, TIPO_IMP(i.origem)), h('td', { class: 'l nw' }, `${dIso(i.de)} a ${dIso(i.ate)}`), h('td', null, fmt.int(i.linhas)),
             h('td', { title: i.horasMantidas ? `A planilha veio sem hora; ${i.horasMantidas} linhas mantiveram a hora que já tinham` : '' }, i.comHora == null ? '—' : i.linhas ? fmt.pct(i.comHora / i.linhas, 0) + (i.horasMantidas ? ' *' : '') : '—'))))))));
     }
     return b;
+  }
+
+  /** log do coletor mais legível: destaca erros, etapas e o resumo; esconde as linhas de ===== e o traceback */
+  function logBonito(linhas) {
+    const pre = h('div', { class: 'script-log log-bonito' });
+    const erros = [];
+    for (const raw of linhas) {
+      const t = String(raw);
+      if (/^=+$/.test(t.replace(/^\[[\d:]+\]\s*/, '').trim())) continue;
+      if (/^(Traceback|\s+File "|\s+raise |\s{2,}\S)/.test(t)) continue;
+      const sem = t.replace(/^\[[\d:]+\]\s*/, '');
+      let cls = '';
+      if (/erro|falh|não consegui|RuntimeError|Exception|timeout/i.test(sem)) { cls = 'e'; erros.push(sem.replace(/^RuntimeError:\s*/, '')); }
+      else if (/^\d+\)\s/.test(sem)) cls = 'p';
+      else if (/OK|conferida|notas|KB|→/.test(sem)) cls = 'k';
+      pre.append(h('div', { class: 'll ' + cls }, t));
+    }
+    const motivo = erros.filter((e) => !/^#+/.test(e)).pop();
+    return h('div', null, motivo ? h('div', { class: 'log-motivo' }, h('b', null, 'Motivo: '), motivo) : null, pre);
   }
 
   function formHistorico(l) {

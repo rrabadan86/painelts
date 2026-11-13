@@ -164,7 +164,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
         metaAuto: l.metaAuto, totaisSemEG: totaisSemEG(l.id),
         id: l.id, nome: l.nome, appnext: l.appnext, meta: l.meta, metas: l.metas, criadaEm: l.criadaEm, regras: l.regras, marca: l.marca, wppModelos: l.wppModelos,
         nomesVenda: (() => { const raw = rawDe(l.id); return raw ? [...new Set(raw.vendas.slice(-500).map((v) => v.loja).filter(Boolean))] : []; })(),
-        base: B.resumo(l.id), xml: XB.resumo(l.id), fechEmail: NOTIF.publicoLoja(l.id), fontes, vendedores: vendedoresDe(l.id),
+        base: B.resumo(l.id), xml: XB.resumo(l.id), estoque: (() => { const e = ES.atual(l.id); return e ? { em: e.em, itens: e.itens.length, origem: e.origem || '' } : null; })(), fechEmail: NOTIF.publicoLoja(l.id), fontes, vendedores: vendedoresDe(l.id),
         coletor: env ? { configurado: true, rede: env.APPNEXT_REDE || '', usuario: env.APPNEXT_USER || '', temSenha: !!env.APPNEXT_PASS, lojaDestino: env.APPNEXT_LOJA_DESTINO || '', lojaIdDestino: env.APPNEXT_LOJA_ID_DESTINO || '' } : { configurado: false },
         status,
       };
