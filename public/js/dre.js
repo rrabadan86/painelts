@@ -148,8 +148,8 @@
     }
     tb.append(body);
     const linkCustos = h('div', { class: 'dre-links' },
-      h('a', { href: '#config', onclick: (e) => { e.preventDefault(); TS.abrirCfg(state.loja, 'estoque', 'cfg-custos'); } }, '+ Adicionar ou editar custos da loja'),
-      h('a', { href: '#config', onclick: (e) => { e.preventDefault(); TS.abrirCfg(state.loja, 'estoque', 'cfg-pontuais'); } }, '+ Despesa de um mês só (ex.: IPTU, 13º)'));
+      h('a', { href: '#config', onclick: (e) => { e.preventDefault(); TS.editarCustos(state.loja); } }, '+ Adicionar ou editar custos da loja'),
+      h('a', { href: '#config', onclick: (e) => { e.preventDefault(); TS.editarCustos(state.loja, 'cfg-pontuais'); } }, '+ Despesa de um mês só (ex.: IPTU, 13º)'));
     const memo = h('div', { class: 'dre-memo muted' },
       `Fora do resultado (informativo): taxa de serviço recebida ${fmt.brl(m.gorjeta)} (repassada à equipe) · descontos dados ${fmt.brl(m.desc)} · Espaço Gourmet ${fmt.brl(m.eg)} (${pc(m.eg, m.fat)} do faturamento). Passe o mouse em cada linha para ver de onde vem o valor.`);
     corpo.append(h('div', { class: 'mt' }, TS.card(`Resultado de ${TS.ymLabel(sel)}`, a ? `Comparado com ${rotAnt}${m.parcial ? ' (mesmos dias, mesma parte dos custos fixos)' : ''}` : 'Sem o mesmo mês do ano anterior para comparar', h('div', { class: 'table-wrap free' }, tb), memo, linkCustos)));

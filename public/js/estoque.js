@@ -1008,7 +1008,10 @@
       h('p', { class: 'muted' }, 'Chá a granel aparece uma vez, somando todos os tamanhos (50g, 100g, 250g…), porque todos saem da mesma matéria-prima: o custo vem do kg dela. Se a matéria-prima "não está na planilha de estoque", normalmente é porque está com saldo zero no AppNext (o relatório esconde item zerado) — assim que ela tiver saldo e a planilha for atualizada, o custo entra. Corrija no AppNext os itens com "custo zero". Itens do Espaço Gourmet preparados na loja não têm custo no estoque.'),
       TS.table({ cols: [{ key: 'produto', label: 'Produto vendido', align: 'l', wrap: true, render: (r) => (r.granel ? h('span', null, r.produto, h('small', { class: 'est-tam' }, r.tamanhos)) : r.produto) }, { key: 'cod', label: 'Código', align: 'l' }, { key: 'motivo', label: 'Motivo', align: 'l', title: '"custo zero no AppNext": o produto existe mas está sem custo lá. "não achado no estoque": o painel não encontrou o produto na planilha de estoque' }, { key: 'qtd', label: 'Unid.', fmt: fmt.int }, { key: 'vt', label: 'Faturamento', fmt: fmt.brl }], rows: sc, sortKey: 'vt', maxHeight: '360px', cls: 'est-t' })));
 
-    corpo.append(h('p', { class: 'muted est-cfg-link' }, 'Simples Nacional, maquininha, prazos da reposição e embalagem dos chás: ', h('a', { href: '#config' }, 'Configurações → Lojas → Estoque e margem'), '.'));
+    corpo.append(h('p', { class: 'muted est-cfg-link' },
+      h('a', { href: '#', onclick: (e) => { e.preventDefault(); TS.editarCustos(state.loja); } }, 'Editar custos da loja'), ' · ',
+      h('a', { href: '#', onclick: (e) => { e.preventDefault(); TS.editarCustos(state.loja, 'cfg-pontuais'); } }, 'despesas de um mês só'),
+      ' · Simples Nacional, maquininha, prazos da reposição e embalagem dos chás: ', h('a', { href: '#config', onclick: (e) => { e.preventDefault(); TS.abrirCfg ? TS.abrirCfg(state.loja, 'estoque') : (location.hash = '#config'); } }, 'Configurações → Lojas → Estoque e margem'), '.'));
   }
 
   function baixarPedido(lista) {
@@ -1024,7 +1027,8 @@
   }
 
   /** formulário dos ajustes de estoque e margem de uma loja (fica em Configurações → Lojas) */
-  function formCfg(lojaId, cfg, porCod) {
+  /** opts.so = 'custos': só os custos da loja (popup do Resultado e do Estoque e margem); opts.aoSalvar: depois de salvar */
+  function formCfg(lojaId, cfg, porCod, opts = {}) {
     const num = (v, min, max) => h('input', { class: 'f-input', type: 'number', min, max, value: v, style: { maxWidth: '110px' } });
     const ent = num(cfg.entregaDias, 0, 120), cob = num(cfg.coberturaDias, 1, 365), par = num(cfg.paradoDias, 7, 730), seg = num(cfg.segurancaPct ?? 50, 0, 300);
     const simp = h('input', { class: 'f-input', type: 'number', min: 0, max: 50, step: '0.01', value: cfg.simplesPct ?? 0, style: { maxWidth: '110px' } });
@@ -1129,6 +1133,7 @@
         if (!r.ok) throw new Error(j.erro || 'Falha ao salvar.');
         cache.delete(lojaId);
         status('pos', 'Salvo. A aba Estoque e margem já usa os valores novos.');
+        if (opts.aoSalvar) opts.aoSalvar();
       } catch (e) { status('neg', e.message); }
       salvar.disabled = salvar2.disabled = false;
     });
@@ -1136,6 +1141,17 @@
     [ent, cob, par, seg, simp, maq, mMin, mAlvo, outrosBox, pontBox].forEach(ouvir);
     embs.forEach(([, i]) => ouvir(i));
     outrosBox.addEventListener('click', (e) => { if (e.target.closest('.est-outro-rem')) sujo(); });
+    if (opts.so === 'custos') {
+      return [
+        h('div', { class: 'f-label', id: `cfg-custos-${lojaId}` }, 'Custos da loja por categoria'),
+        h('small', { class: 'muted' }, 'R$ por mês (aluguel, salários, energia…) ou % das vendas (aluguel percentual do shopping, app de delivery). O valor por mês vira um % pela média do faturamento dos últimos 3 meses fechados.'),
+        outrosBox,
+        h('div', { class: 'f-label', style: { marginTop: '14px' }, id: `cfg-pontuais-${lojaId}` }, 'Despesas de um mês só'),
+        h('small', { class: 'muted' }, 'IPTU e IPVA no começo do ano, 13º salário, uma manutenção… Entram cheias no Resultado do mês escolhido, dentro da categoria. "Todo ano" repete no mesmo mês dos anos seguintes.'),
+        pontBox,
+        h('div', { class: 'cfg-acoes' }, salvar2, msg2),
+      ];
+    }
     return [
       h('div', { class: 'f-label' }, 'Margem líquida (sobre o valor vendido)'),
       h('div', { class: 'est-cfg-g' },
@@ -1163,6 +1179,29 @@
       h('div', { class: 'cfg-acoes' }, salvar, msg),
     ];
   }
+  /** popup "Custos da loja": edita os custos por categoria e as despesas de um mês só sem sair da tela.
+   *  Ao salvar, fecha e redesenha a tela (Resultado, margens e ponto de equilíbrio com os valores novos). */
+  TS.editarCustos = function (lojaId, ancora) {
+    document.querySelector('.camada-custos')?.remove();
+    const fechar = () => { camada.remove(); document.body.classList.remove('com-camada'); document.removeEventListener('keydown', esc); };
+    const esc = (e) => { if (e.key === 'Escape') fechar(); };
+    const corpo = h('div', null, h('p', { class: 'muted' }, 'Carregando…'));
+    const card = h('div', { class: 'card card-cheio cfg-popup' },
+      h('button', { type: 'button', class: 'icon-btn exp-fechar', title: 'Fechar (Esc)', 'aria-label': 'Fechar', onclick: fechar }, '✕'),
+      h('div', { class: 'card-head' }, h('div', null, h('div', { class: 'card-title' }, 'Custos da loja'), h('div', { class: 'card-sub' }, 'Os mesmos de Configurações → Lojas → Estoque e margem. Ao salvar, a tela se atualiza com os valores novos.'))),
+      corpo);
+    const camada = h('div', { class: 'camada-cheia camada-custos', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Custos da loja', onmousedown: (e) => { if (e.target === camada) fechar(); } }, card);
+    document.body.append(camada);
+    document.body.classList.add('com-camada');
+    document.addEventListener('keydown', esc);
+    buscar(lojaId, true).then(({ estoque, cfg }) => {
+      const porCod = new Map(((estoque && estoque.itens) || []).map((it) => [String(it.cod), it]));
+      corpo.replaceChildren(...formCfg(lojaId, cfg, porCod, { so: 'custos', aoSalvar: () => { setTimeout(() => { fechar(); TS.render(); }, 500); } }));
+      const alvo = ancora && document.getElementById(`${ancora}-${lojaId}`);
+      if (alvo) requestAnimationFrame(() => alvo.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+    }).catch((e) => corpo.replaceChildren(h('p', { class: 'neg' }, e.message)));
+  };
+
   /** bloco de Configurações → Lojas (admin e franqueado) */
   TS.blocoEstoqueCfg = function (lojaId) {
     const b = h('section', { class: 'cfg-bloco cfg-bloco-largo' }, h('h3', null, 'Estoque e margem'),
