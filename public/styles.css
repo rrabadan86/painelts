@@ -1117,3 +1117,15 @@ tr.est-det > td { padding: 0 !important; background: #FBF9F4 !important; }
 .est-det-grid .cupom-items td { padding: 5px 8px; }
 .est-det-grid .cupom-head { flex-wrap: nowrap; }
 .est-det-grid .cupom-head > span:last-child { white-space: nowrap; color: var(--muted); font-size: 12px; }
+/* resultado do mês (DRE) */
+.dre-topo { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin-bottom: 10px; font-size: 13px; }
+.dre-topo label { display: flex; align-items: center; gap: 6px; font-weight: 600; }
+.dre-t td, .dre-t th { white-space: nowrap; }
+.dre-t tr[title] td:first-child { cursor: help; }
+.dre-t tr.dre-base td { font-weight: 700; }
+.dre-t tr.dre-menos td:first-child { padding-left: 18px; color: #3D4A42; }
+.dre-t tr.dre-sub td { font-weight: 700; background: #F1F5FA !important; color: #1F4E8C; }
+.dre-t tr.dre-tot td { font-weight: 800; background: #E9F1E6 !important; color: #2C5234; border-top: 2px solid #2C5234; }
+.dre-t tr.dre-tot td.neg, .dre-t td.neg { color: #8E321C; }
+.dre-t tr.dre-info td { color: var(--muted); font-size: 12px; }
+.dre-memo { font-size: 12px; margin-top: 8px; }
