@@ -157,6 +157,26 @@
     return card;
   }
 
+  /** linha de situação (ícone + título + detalhes), o mesmo padrão em todo o painel */
+  const linhaSit = (st, titulo, principal, ...extra) => h('div', { class: 'cfg-sit-l' },
+    h('span', { class: 'cfg-sit-ic ' + st }, { ok: '✓', erro: '!', rodando: '…', nada: '–' }[st]),
+    h('div', null, h('div', { class: 'cfg-sit-t' }, h('b', null, titulo), principal ? h('span', null, ' · ', principal) : null), ...extra.filter(Boolean).map((x) => h('div', { class: 'cfg-sit-d' }, x))));
+  /** situação do cadastro de clientes pelo FIXE */
+  function sitFixe(l) {
+    const fx = l.fixe || {};
+    const exF = l.status && l.status.execucao && l.status.execucao.fixe;
+    const u = fx.ultimo;
+    if (fx.pedido) return linhaSit('rodando', 'Cadastro de clientes (FIXE)', 'aguardando o e-mail do FIXE', `Pedido feito em ${dt(fx.pedido.em)}. O painel olha o Gmail da loja a cada 2 minutos, inclusive no spam.`);
+    if (exF && !exF.ok && (!u || (l.status.execucao.fim && l.status.execucao.fim > u.em))) return linhaSit('erro', 'Cadastro de clientes (FIXE)', h('span', { class: 'neg' }, 'o pedido no FIXE falhou'), 'O coletor não conseguiu pedir a exportação no FIXE. Veja o motivo no log técnico de "Dados e atualização".', u && u.ok ? `Última importação que deu certo: ${dt(u.em)}` : null);
+    if (u && !u.ok) return linhaSit('erro', 'Cadastro de clientes (FIXE)', h('span', { class: 'neg' }, 'a última importação falhou'), `${dt(u.em)} · ${u.erro}`);
+    if (u && u.ok) {
+      const r = u.resultado || {};
+      return linhaSit('ok', 'Cadastro de clientes (FIXE)', 'em dia', `Importado em ${dt(u.em)}${u.recebido ? ` (e-mail recebido ${dt(u.recebido)}${u.doSpam ? ', estava no spam e foi movido para a caixa de entrada' : ''})` : ''}`,
+        `${fmt.int(r.noArquivo || 0)} clientes no arquivo · ${fmt.int(r.novos || 0)} novos · ${fmt.int(r.atualizados || 0)} atualizados · ${fmt.int(r.total || 0)} no cadastro`);
+    }
+    return fx.url ? linhaSit('nada', 'Cadastro de clientes (FIXE)', 'ainda não importado', 'A primeira importação acontece na atualização da noite (ou em "Importar agora").') : null;
+  }
+
   // ---- dados e coleta
   function blocoDados(l) {
     const b = h('section', { class: 'cfg-bloco' }, h('h3', null, 'Dados e atualização'));
@@ -169,9 +189,7 @@
     const quem = (e) => `${GATILHO[e.gatilho] || ''}${e.por && e.gatilho === 'manual' ? ` (${e.por})` : ''}`;
     const periodo = (e) => (e.de && e.ate ? `${dIso(e.de)} a ${dIso(e.ate)}` : '');
     // ---- situação: uma linha por tipo de dado
-    const linha = (st, titulo, principal, ...extra) => h('div', { class: 'cfg-sit-l' },
-      h('span', { class: 'cfg-sit-ic ' + st }, { ok: '✓', erro: '!', rodando: '…', nada: '–' }[st]),
-      h('div', null, h('div', { class: 'cfg-sit-t' }, h('b', null, titulo), principal ? h('span', null, ' · ', principal) : null), ...extra.filter(Boolean).map((x) => h('div', { class: 'cfg-sit-d' }, x))));
+    const linha = linhaSit;
     const sit = h('div', { class: 'cfg-sit' });
     if (ocupado) {
       const av = ex.estado === 'rodando' ? ex.aoVivo : null;
@@ -187,7 +205,7 @@
       if (av && av.linhas && av.linhas.length) b.__aoVivo = detalhes('aovivo:' + l.id, { class: 'cfg-log' }, h('summary', null, 'Ver o log ao vivo'), logBonito(av.linhas));
     }
     // vendas
-    const exV = ex && !ocupado && ex.tipo !== 'xml' ? ex : null;
+    const exV = ex && !ocupado && ex.tipo !== 'xml' && ex.tipo !== 'fixe' ? ex : null;
     sit.append(linha(exV ? (exV.estado === 'ok' ? 'ok' : 'erro') : l.base.ate ? 'ok' : 'nada', 'Vendas',
       exV ? (exV.estado === 'ok' ? 'última coleta deu certo' : h('span', { class: 'neg' }, 'a última coleta falhou')) : l.base.ate ? null : 'ainda sem vendas',
       exV ? `${dt(exV.fim)} · coleta ${quem(exV)}${periodo(exV) ? ` · ${periodo(exV)}` : ''}` : null,
@@ -210,6 +228,7 @@
     sit.append(linha(exE && !exE.ok ? 'erro' : l.estoque ? 'ok' : 'nada', 'Estoque e custos',
       exE && !exE.ok ? h('span', { class: 'neg' }, 'falhou na última coleta') : l.estoque ? 'em dia' : 'ainda não importado',
       l.estoque ? `Estoque de ${dt(l.estoque.em)} · ${fmt.int(l.estoque.itens)} produtos${l.estoque.origem === 'coletor' ? ' · baixado pelo coletor' : l.estoque.origem ? ' · planilha enviada' : ''}` : 'Vem em cada atualização (automática ou pelo botão) ou pela planilha em "Enviar planilha".'));
+    { const f = sitFixe(l); if (f) sit.append(f); }
     if (l.base.pendentes) sit.append(h('div', { class: 'cfg-sit-d muted' }, `${l.base.pendentes} planilha(s) de vendas sendo processada(s)…`));
     b.append(sit);
     if (b.__aoVivo) b.append(b.__aoVivo);
@@ -371,21 +390,7 @@
     const gmail = (l.fechEmail && l.fechEmail.email && l.fechEmail.email.user) || '';
     const b = h('section', { class: 'cfg-bloco' }, h('h3', null, 'Cadastro de clientes pelo FIXE'),
       h('p', { class: 'muted' }, 'Toda noite, na última atualização automática, o coletor entra no FIXE, pede a exportação da "Base de leads" para o Gmail da loja, e o painel lê esse e-mail (na caixa de entrada ou no spam), baixa a planilha e junta com o cadastro de clientes. Nada precisa ser feito à mão.'));
-    // situação
-    const sit = [];
-    if (fx.pedido) sit.push(h('p', null, h('b', null, 'Aguardando o e-mail do FIXE '), `desde ${dt(fx.pedido.em)} (o painel olha a cada 2 minutos, inclusive no spam).`));
-    if (fx.ultimo) {
-      const u = fx.ultimo;
-      if (u.ok) {
-        const r = u.resultado || {};
-        sit.push(h('p', null, h('b', null, 'Última importação: '), `${dt(u.em)} · ${fmt.int(r.noArquivo || 0)} clientes no arquivo, ${fmt.int(r.novos || 0)} novos, ${fmt.int(r.atualizados || 0)} atualizados · ${fmt.int(r.total || 0)} no cadastro`,
-          u.doSpam ? h('span', { class: 'muted' }, ' · o e-mail estava no spam e foi movido para a caixa de entrada') : null));
-      } else sit.push(h('p', { class: 'neg' }, h('b', null, 'Última tentativa falhou: '), `${dt(u.em)} · ${u.erro}`));
-    }
-    const exF = l.status && l.status.execucao && l.status.execucao.fixe;
-    if (exF && !exF.ok && !fx.pedido) sit.push(h('p', { class: 'neg' }, 'O pedido de exportação no FIXE falhou na última coleta: veja o log técnico em "Dados e atualização".'));
-    if (!sit.length && fx.url) sit.push(h('p', { class: 'muted' }, 'Ainda não houve importação pelo FIXE. A primeira acontece na próxima atualização da noite (ou em "Importar agora").'));
-    b.append(...sit);
+    { const f = sitFixe(l); if (f) b.append(h('div', { class: 'cfg-sit' }, f)); }
     const url = inp({ value: fx.url || '', placeholder: 'ex.: https://dash.epossible.com.br/loja/…/leads' });
     const usuario = inp({ value: fx.usuario || '', placeholder: 'ex.: e-mail de acesso ao FIXE', autocomplete: 'off' });
     const senha = inp({ type: 'password', placeholder: fx.temSenha ? 'guardada (deixe em branco para manter)' : 'senha do FIXE', autocomplete: 'new-password' });
