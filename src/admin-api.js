@@ -686,7 +686,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
   function sistema() {
     const v = lerTxt('versao.txt');
     const st = lerTxt('status.txt');
-    const out = { instalado: false, verificado: null, atual: null, novidades: [], status: null, pedido: fs.existsSync(path.join(SIS, 'atualizar.pedido')) };
+    const out = { instalado: false, verificado: null, atual: null, novidades: [], recentes: [], status: null, pedido: fs.existsSync(path.join(SIS, 'atualizar.pedido')) };
     if (v) {
       out.instalado = true;
       for (const linha of v.split('\n')) {
@@ -694,6 +694,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
         if (c[0] === 'verificado') out.verificado = c[1] || null;
         else if (c[0] === 'atual') out.atual = { sha: c[1], data: c[2], msg: (c.slice(3).join('\t') || '').slice(0, 300) };
         else if (c[0] === 'novo' && out.novidades.length < 60) out.novidades.push({ sha: c[1], data: c[2], msg: (c.slice(3).join('\t') || '').slice(0, 300) });
+        else if (c[0] === 'recente' && out.recentes.length < 12) out.recentes.push({ sha: c[1], data: c[2], msg: (c.slice(3).join('\t') || '').slice(0, 300) });
       }
       // sem verificação há mais de 20 min: o cron do atualizador parou
       out.parado = !out.verificado || Date.now() - Date.parse(out.verificado) > 20 * 60e3;

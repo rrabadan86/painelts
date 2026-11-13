@@ -940,3 +940,24 @@ body.com-camada { overflow: hidden; }
 .cfg-pulso { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #1F5FBF; animation: pulso 1.4s infinite; flex: none; transform: translateY(-1px); }
 @keyframes pulso { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
 .cfg-travado { display: block; color: #8A6A00; background: #FBF1D3; border-radius: 6px; padding: 5px 8px; margin-top: 3px; }
+
+/* atualizações do painel: painel fixo (folha de baixo no celular) */
+.sis-pop { position: fixed; top: 64px; right: 16px; left: auto; width: min(440px, calc(100vw - 32px)); max-height: calc(100vh - 88px); display: flex; flex-direction: column; padding: 0; overflow: hidden; }
+.sis-topo { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px 8px; border-bottom: 1px solid #EEE9DF; }
+.sis-topo h3 { margin: 0; }
+.sis-x { border: 0; background: transparent; font-size: 16px; color: var(--muted); cursor: pointer; padding: 4px 6px; }
+.sis-corpo { padding: 12px 16px; overflow: auto; flex: 1; }
+.sis-sec { font-size: 11.5px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; color: var(--green); margin: 4px 0 6px; }
+.sis-lista { max-height: none; overflow: visible; }
+.sis-lista li { display: block; cursor: default; }
+.sis-lista li.tem-det { cursor: pointer; }
+.sis-l1 { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.sis-l1 b { font-size: 13px; color: var(--dark); }
+.sis-det { font-size: 12px; color: var(--muted); margin-top: 3px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.sis-lista li.aberto .sis-det { -webkit-line-clamp: unset; display: block; }
+.sis-rec li { background: #fff; border: 1px solid #EEE9DF; }
+.sis-acao { position: sticky; bottom: -12px; background: #fff; padding: 8px 0 4px; }
+.sis-rodape { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 10px; font-size: 11.5px; color: var(--muted); padding: 8px 16px 12px; border-top: 1px solid #EEE9DF; }
+@media (max-width: 640px) {
+  .sis-pop { left: 8px; right: 8px; width: auto; top: auto; bottom: 8px; max-height: 82vh; border-radius: 16px; }
+}

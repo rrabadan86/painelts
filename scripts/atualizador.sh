@@ -36,6 +36,7 @@ versao() { # grava a versão instalada e as novidades disponíveis
     printf 'verificado\t%s\n' "$(agora)"
     printf 'atual\t%s\t%s\t%s\n' "$(G rev-parse --short HEAD)" "$(G log -1 --format=%cI HEAD)" "$(G log -1 --format=%s HEAD)"
     G log HEAD..origin/main --format='novo%x09%h%x09%cI%x09%s' 2>/dev/null
+    G log -12 HEAD --format='recente%x09%h%x09%cI%x09%s' 2>/dev/null
   } > "$SIS/versao.txt.tmp" && mv -f "$SIS/versao.txt.tmp" "$SIS/versao.txt"
   chmod 644 "$SIS/versao.txt" 2>/dev/null
 }

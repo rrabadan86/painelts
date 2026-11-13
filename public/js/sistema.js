@@ -19,6 +19,24 @@
   };
   function toast(msg) { const t = h('div', { class: 'toast', role: 'status' }, msg); document.body.append(t); setTimeout(() => t.remove(), 6000); }
 
+  /** "Estoque e margem: importa…" → título "Estoque e margem" + detalhe; sem título, a 1ª frase vira o título */
+  function partes(msg) {
+    const m = String(msg || '').trim();
+    const i = m.indexOf(': ');
+    if (i > 0 && i < 60) return { t: m.slice(0, i), d: m.slice(i + 2) };
+    const j = m.search(/[;.] /);
+    return j > 0 && j < 90 ? { t: m.slice(0, j), d: m.slice(j + 2) } : { t: m, d: '' };
+  }
+  const maiuscula = (t) => (t ? t[0].toUpperCase() + t.slice(1) : t);
+  function itemLista(c) {
+    const p = partes(c.msg);
+    const det = p.d ? h('div', { class: 'sis-det' }, maiuscula(p.d)) : null;
+    const li = h('li', { class: det ? 'tem-det' : '', title: det ? 'Toque para ver tudo' : '' },
+      h('div', { class: 'sis-l1' }, h('b', null, maiuscula(p.t)), h('small', null, dia(c.data))), det);
+    if (det) li.addEventListener('click', () => li.classList.toggle('aberto'));
+    return li;
+  }
+
   function pintar() {
     const n = info && info.instalado ? info.novidades.length : 0;
     nEl.hidden = !(n || atualizando());
@@ -26,7 +44,8 @@
     btn.classList.toggle('rodando', !!atualizando());
     btn.title = n ? `${n} novidade(s) para instalar` : 'Atualizações do painel';
     if (pop.hidden) return;
-    pop.replaceChildren(h('h3', null, 'Atualizações do painel'));
+    const fechar = h('button', { type: 'button', class: 'sis-x', 'aria-label': 'Fechar', onclick: () => { pop.hidden = true; } }, '✕');
+    pop.replaceChildren(h('div', { class: 'sis-topo' }, h('h3', null, 'Atualizações do painel'), fechar));
     if (!info) { pop.append(h('p', null, 'Carregando…')); return; }
     if (!info.instalado) {
       pop.append(h('p', null, 'Para atualizar por aqui, instale uma vez o atualizador na VPS (com o mesmo usuário que roda o git pull):'),
@@ -34,28 +53,33 @@
         h('div', { class: 'aviso' }, 'Em até 1 minuto as novidades aparecem aqui.'));
       return;
     }
+    const corpo = h('div', { class: 'sis-corpo' });
     const st = info.status;
-    if (atualizando()) pop.append(h('div', { class: 'script-status' }, h('span', { class: 'ic rodando' }, '…'), h('span', null, info.pedido ? 'Pedido enviado, começando em até 1 minuto…' : 'Atualizando…', h('small', null, 'Leva de 1 a 3 minutos. O painel fica fora do ar alguns segundos e recarrega sozinho.'))));
-    else if (st && st.estado === 'erro') pop.append(h('div', { class: 'script-status' }, h('span', { class: 'ic falhou' }, '!'), h('span', null, st.msg, h('small', null, quando(st.em)))));
-    if (info.parado) pop.append(h('div', { class: 'notice err' }, 'O atualizador da VPS não verifica há mais de 20 minutos. Confira o cron na VPS (crontab -l).'));
+    // situação
+    if (atualizando()) corpo.append(h('div', { class: 'script-status' }, h('span', { class: 'ic rodando' }, '…'), h('span', null, info.pedido ? 'Pedido enviado, começando em até 1 minuto…' : 'Atualizando…', h('small', null, 'Leva de 1 a 3 minutos. O painel fica fora do ar alguns segundos e recarrega sozinho.'))));
+    else if (st && st.estado === 'erro') corpo.append(h('div', { class: 'script-status' }, h('span', { class: 'ic falhou' }, '!'), h('span', null, st.msg, h('small', null, quando(st.em)))));
+    else if (!info.novidades.length) corpo.append(h('div', { class: 'script-status' }, h('span', { class: 'ic ok' }, '✓'), h('span', null, 'O painel está na versão mais recente.')));
+    if (info.parado) corpo.append(h('div', { class: 'notice err' }, 'O atualizador da VPS não verifica há mais de 20 minutos. Confira o cron na VPS (crontab -l).'));
+    // para instalar
     if (info.novidades.length) {
-      pop.append(h('p', null, `${info.novidades.length} novidade(s) para instalar:`),
-        h('ul', { class: 'sis-lista' }, info.novidades.map((c) => h('li', null, h('span', null, c.msg), h('small', null, dia(c.data))))));
-      const b = h('button', { class: 'btn primary', type: 'button', disabled: atualizando() || null }, atualizando() ? 'Atualização em andamento' : 'Atualizar agora');
+      corpo.append(h('div', { class: 'sis-sec' }, `Para instalar · ${info.novidades.length}`),
+        h('ul', { class: 'sis-lista' }, info.novidades.map(itemLista)));
+      const b = h('button', { class: 'btn primary', type: 'button', disabled: atualizando() || null }, atualizando() ? 'Atualização em andamento' : `Instalar ${info.novidades.length === 1 ? 'a novidade' : `as ${info.novidades.length} novidades`}`);
       b.addEventListener('click', async () => {
         b.disabled = true; b.textContent = 'Enviando…';
         try { await api('POST', '/sistema/atualizar'); acompanhando = true; versaoAntes = info.atual && info.atual.sha; toast('Atualização pedida. O painel recarrega sozinho quando terminar.'); }
         catch (e) { toast(e.message); }
         consultar();
       });
-      pop.append(b);
-    } else if (!atualizando()) {
-      pop.append(h('div', { class: 'script-status' }, h('span', { class: 'ic ok' }, '✓'), h('span', null, 'O painel está na versão mais recente.', h('small', null, info.atual ? `${info.atual.sha} · ${quando(info.atual.data)}` : ''))));
+      corpo.append(h('div', { class: 'sis-acao' }, b));
     }
+    // instaladas recentemente
+    const rec = (info.recentes && info.recentes.length ? info.recentes : info.atual ? [info.atual] : []).slice(0, 8);
+    if (rec.length) corpo.append(h('div', { class: 'sis-sec' }, 'Instaladas recentemente'), h('ul', { class: 'sis-lista sis-rec' }, rec.map(itemLista)));
+    pop.append(corpo);
     const verificar = h('button', { class: 'link-btn', type: 'button' }, 'Verificar agora');
     verificar.addEventListener('click', async () => { verificar.textContent = 'Verificando…'; try { await api('POST', '/sistema/verificar'); setTimeout(consultar, 65e3); } catch (e) { toast(e.message); } });
-    pop.append(h('div', { class: 'aviso' }, `Última verificação: ${quando(info.verificado)} · `, verificar,
-      info.atual ? h('div', null, `Instalada: ${info.atual.sha} — ${info.atual.msg}`) : null));
+    pop.append(h('div', { class: 'sis-rodape' }, h('span', null, info.atual ? `Versão ${info.atual.sha} · ${quando(info.atual.data)}` : ''), h('span', null, `Verificado ${quando(info.verificado)} · `, verificar)));
   }
 
   async function consultar() {
