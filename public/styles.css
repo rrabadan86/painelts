@@ -1047,3 +1047,14 @@ body.com-camada { overflow: hidden; }
 .est-pop-dicas { margin-top: 8px; padding: 8px 10px; background: var(--cream-2, #F6F2EA); border-radius: 8px; font-size: 11.5px; line-height: 1.45; color: #3D4A42; }
 .est-pop-dicas p { margin: 0 0 6px; } .est-pop-dicas p:last-child { margin: 0; }
 .est-sujo { color: #8E4A1C; font-weight: 600; }
+.est-prod-btn { background: none; border: 0; padding: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.est-prod-btn:hover { color: #1F4E8C; text-decoration: underline; text-underline-offset: 2px; }
+.est-prod-btn .est-tam { text-decoration: none; }
+.est-pop.est-pop-tam { width: 640px; }
+.est-pop-scroll { overflow-x: auto; }
+.est-pop-tam th { font-size: 11px; font-weight: 600; color: var(--muted); text-align: right; padding: 0 0 6px 8px; white-space: nowrap; border-bottom: 1px solid var(--line, #E2DCCF); }
+.est-pop-tam th:first-child { text-align: left; padding-left: 0; }
+.est-pop-tam td { white-space: nowrap; padding: 6px 0 6px 8px; }
+.est-pop-tam td:first-child { padding-left: 0; }
+.est-pop-tam td small { color: var(--muted); font-size: 11px; }
+.est-pop-tam td.neg { color: #8E321C; }

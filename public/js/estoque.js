@@ -322,7 +322,14 @@
       p.qtd += q; p.vt += vt; p.custo += c;
       p.com += dd.com; p.roy += dd.roy; p.imp += dd.imp; p.maq += dd.maq; p.out += dd.out;
       dd.outros.forEach((v, k) => { p.outros[k] += v; });
-      if (granel) { p.kg += (q * cs.g) / 1000; p.tam.set(cs.g, (p.tam.get(cs.g) || 0) + q); }
+      if (granel) {
+        p.kg += (q * cs.g) / 1000; p.tam.set(cs.g, (p.tam.get(cs.g) || 0) + q);
+        // por tamanho de pacote (50g, 100g…): para ver a margem de cada um
+        p.porTam = p.porTam || new Map();
+        const t = p.porTam.get(cs.g) || { g: cs.g, qtd: 0, vt: 0, custo: 0, ded: 0 };
+        t.qtd += q; t.vt += vt; t.custo += c; t.ded += dd.com + dd.roy + dd.imp + dd.maq + dd.out;
+        p.porTam.set(cs.g, t);
+      }
       porProd.set(chave, p);
       const vn = db.D.vendedor[db.vend[i]] || '—';
       const v = porVend.get(vn) || { vendedor: vn, vt: 0, custo: 0, fat: 0, ded: 0 };
@@ -363,6 +370,42 @@
         ...OUTROS.map((x, k) => ['− ' + rotOutro(x), fmt.brl(r.outros[k]), pctDe(r.outros[k], r), null, dicaOutro(x)]),
         ['= Lucro líquido', fmt.brl(r.lucroLiq), pctDe(r.lucroLiq, r), 'tot'],
       ], r.granel ? `Custo: kg × custo do kg da matéria-prima + saco kraft e etiquetas de cada pacote. ${NOTA_DED}` : NOTA_DED);
+    };
+
+    /** janela com bruto e líquido de cada tamanho de pacote de um chá */
+    const abrirTamanhos = (e, r) => {
+      e.stopPropagation();
+      document.querySelector('.est-pop')?.remove();
+      const tams = [...r.porTam.values()].sort((a, b) => a.g - b.g);
+      const rotG = (g) => (g >= 1000 ? `${g / 1000} kg` : `${g}g`);
+      const pc = (v, base) => (base ? fmt.pct(v / base) : '—');
+      const linha = (t, tot) => {
+        const lb = t.vt - t.custo, ll = lb - t.ded, un = t.qtd || 1;
+        return h('tr', { class: tot ? 'tot' : null },
+          h('td', null, tot ? 'Total' : h('b', null, rotG(t.g)), h('small', null, ` ${fmt.int(t.qtd)} un.`)),
+          h('td', { class: 'v' }, tot ? '' : fmt.brl(t.vt / un)),
+          h('td', { class: 'v' }, tot ? '' : fmt.brl(t.custo / un)),
+          h('td', { class: 'v' }, tot ? fmt.brl(lb) : fmt.brl(lb / un)), h('td', { class: 'v' }, pc(lb, t.vt)),
+          h('td', { class: 'v' }, tot ? fmt.brl(ll) : fmt.brl(ll / un)), h('td', { class: 'v' + (ll < 0 ? ' neg' : '') }, pc(ll, t.vt)));
+      };
+      const tot = tams.reduce((a, t) => ({ qtd: a.qtd + t.qtd, vt: a.vt + t.vt, custo: a.custo + t.custo, ded: a.ded + t.ded }), { qtd: 0, vt: 0, custo: 0, ded: 0 });
+      const pop = h('div', { class: 'est-pop est-pop-tam', role: 'dialog' },
+        h('div', { class: 'est-pop-tit' }, `${r.produto} · por tamanho de pacote`),
+        h('div', { class: 'est-pop-scroll' }, h('table', null,
+          h('thead', null, h('tr', null, h('th', null, 'Pacote'), h('th', null, 'Preço'), h('th', null, 'Custo'), h('th', null, 'Lucro bruto'), h('th', null, 'Margem bruta'), h('th', null, 'Lucro líquido'), h('th', null, 'Margem líquida'))),
+          h('tbody', null, tams.map((t) => linha(t)), linha(tot, true)))),
+        h('div', { class: 'est-pop-nota' }, 'Valores por pacote (média do período): preço vendido, custo (chá pelo kg da matéria-prima + saco kraft e etiquetas) e lucro. Na linha Total, o lucro de todos os pacotes juntos. O líquido desconta comissão, royalties, Simples, maquininha e os outros custos da loja, no mesmo % de cada venda. Pacote pequeno costuma ter margem menor porque a embalagem pesa mais no custo.'));
+      document.body.append(pop);
+      const alvo = e.currentTarget.getBoundingClientRect(), w = pop.offsetWidth, hh = pop.offsetHeight;
+      pop.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, alvo.left)) + 'px';
+      pop.style.top = (alvo.bottom + 6 + hh > window.innerHeight ? Math.max(8, alvo.top - hh - 6) : alvo.bottom + 6) + 'px';
+      const sair = (ev) => {
+        if (ev && ev.type === 'mousedown' && pop.contains(ev.target)) return;
+        if (ev && ev.type === 'keydown' && ev.key !== 'Escape') return;
+        pop.remove(); document.removeEventListener('mousedown', sair, true); document.removeEventListener('keydown', sair); window.removeEventListener('scroll', sairScroll, true);
+      };
+      const sairScroll = (ev) => { if (!pop.contains(ev.target)) sair(); };
+      setTimeout(() => { document.addEventListener('mousedown', sair, true); document.addEventListener('keydown', sair); window.addEventListener('scroll', sairScroll, true); }, 0);
     };
 
     // ---------- reposição: últimos 30 dias da loja (sem os filtros) + sazonalidade do ano passado ----------
@@ -526,7 +569,7 @@
       }, 'tall') : TS.empty())));
     corpo.append(h('div', { class: 'mt' }, TS.card('Produtos por lucro', 'Curva ABC: A = produtos que fazem 80% do lucro (nunca podem faltar). Chá a granel aparece uma vez só, somando todas as gramaturas. O grupo (Estrela, Volume…) compara chá com chá e acessório com acessório.', TS.table({
       cols: [
-        { key: 'produto', label: 'Produto', align: 'l', sticky: true, wrap: true, render: (r) => (r.granel ? h('span', null, r.produto, h('small', { class: 'est-tam' }, r.tamanhos)) : r.produto) },
+        { key: 'produto', label: 'Produto', align: 'l', sticky: true, wrap: true, render: (r) => (r.granel && r.porTam ? h('button', { type: 'button', class: 'est-prod-btn', title: 'Clique para ver a margem de cada tamanho de pacote', onclick: (e) => abrirTamanhos(e, r) }, r.produto, h('small', { class: 'est-tam' }, r.tamanhos)) : r.granel ? h('span', null, r.produto, h('small', { class: 'est-tam' }, r.tamanhos)) : r.produto) },
         { key: 'abc', label: 'ABC', title: 'Curva ABC pelo lucro: A = produtos que somam 80% do lucro do período; B = os próximos 15%; C = o resto', cls: (r) => (r.abc === 'A' ? 'hit' : '') },
         { key: 'classe', label: 'Grupo', align: 'l', render: (r) => h('span', { class: 'est-tag', style: { '--cor': CLASSE[r.classe][1] } }, CLASSE[r.classe][0]), sortVal: (r) => r.classe },
         { key: 'giro', label: 'Vendido', title: 'Quanto saiu no período. Chá a granel em kg, somando todos os tamanhos; os outros em unidades', render: (r) => (r.granel ? `${fmt.kg(r.giro)} kg` : `${fmt.int(r.giro)} un.`), sortVal: (r) => r.giro },
