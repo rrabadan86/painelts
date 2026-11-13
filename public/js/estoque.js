@@ -274,7 +274,7 @@
     const dedSoma = dedTot.com + dedTot.roy + dedTot.imp + dedTot.maq;
     const lucroLiqTot = fatCusto - custoTot - dedSoma;
     const pctDe = (v, r) => (r.vt ? fmt.pct(v / r.vt) : '');
-    const NOTA_DED = `Comissão: o que a loja pagou no mês (comissões, premiação e bônus) ÷ vendas do tipo do produto; Espaço Gourmet não tem comissão. Royalties pelas regras da loja. Simples ${fmt.pct(pSimples)} e maquininha ${fmt.pct(pCartao)} sobre o valor vendido (Ajustes, no fim da página).`;
+    const NOTA_DED = `Comissão: o que a loja pagou no mês (comissões, premiação e bônus) ÷ vendas do tipo do produto; Espaço Gourmet não tem comissão. Royalties pelas regras da loja. Simples ${fmt.pct(pSimples)} e maquininha ${fmt.pct(pCartao)} sobre o valor vendido (Configurações → Lojas → Estoque e margem).`;
     const linhasDed = (r) => [
       ['Comissão paga', fmt.brl(r.com), pctDe(r.com, r)],
       ['Royalties (com marketing)', fmt.brl(r.roy), pctDe(r.roy, r)],
@@ -392,7 +392,7 @@
 
     // ---------- KPIs ----------
     const kLiq = TS.kpi('Lucro líquido', fmt.brl0(lucroLiqTot), h('span', null, `margem de ${fmt.pct(fatCusto ? lucroLiqTot / fatCusto : null)}`),
-        `Lucro bruto − comissão ${fmt.brl0(dedTot.com)} − royalties ${fmt.brl0(dedTot.roy)} − Simples ${fmt.brl0(dedTot.imp)} (${fmt.pct(pSimples)}) − maquininha ${fmt.brl0(dedTot.maq)} (${fmt.pct(pCartao)}). Sem aluguel, salários e outras despesas fixas.${!pSimples && !pCartao ? ' Configure o % do Simples e da maquininha em Ajustes, no fim da página.' : ''}`);
+        `Lucro bruto − comissão ${fmt.brl0(dedTot.com)} − royalties ${fmt.brl0(dedTot.roy)} − Simples ${fmt.brl0(dedTot.imp)} (${fmt.pct(pSimples)}) − maquininha ${fmt.brl0(dedTot.maq)} (${fmt.pct(pCartao)}). Sem aluguel, salários e outras despesas fixas.${!pSimples && !pCartao ? ' Configure o % do Simples e da maquininha em Configurações → Lojas → Estoque e margem.' : ''}`);
     kLiq.classList.add('est-kpi-click');
     kLiq.addEventListener('click', (e) => abrirLiq(e, { produto: 'todos os produtos com custo', vt: fatCusto, custo: custoTot, lucro, ...dedTot, ded: dedSoma, lucroLiq: lucroLiqTot }));
     corpo.append(h('div', { class: 'grid g-kpi' },
@@ -632,7 +632,7 @@
       h('p', { class: 'muted' }, 'Chá a granel aparece uma vez, somando todos os tamanhos (50g, 100g, 250g…), porque todos saem da mesma matéria-prima: o custo vem do kg dela. Se a matéria-prima "não está na planilha de estoque", normalmente é porque está com saldo zero no AppNext (o relatório esconde item zerado) — assim que ela tiver saldo e a planilha for atualizada, o custo entra. Corrija no AppNext os itens com "custo zero". Itens do Espaço Gourmet preparados na loja não têm custo no estoque.'),
       TS.table({ cols: [{ key: 'produto', label: 'Produto vendido', align: 'l', wrap: true, render: (r) => (r.granel ? h('span', null, r.produto, h('small', { class: 'est-tam' }, r.tamanhos)) : r.produto) }, { key: 'cod', label: 'Código', align: 'l' }, { key: 'motivo', label: 'Motivo', align: 'l', title: '"custo zero no AppNext": o produto existe mas está sem custo lá. "não achado no estoque": o painel não encontrou o produto na planilha de estoque' }, { key: 'qtd', label: 'Unid.', fmt: fmt.int }, { key: 'vt', label: 'Faturamento', fmt: fmt.brl }], rows: sc, sortKey: 'vt', maxHeight: '360px', cls: 'est-t' })));
 
-    corpo.append(cartaoCfg(cfg, M.porCod));
+    corpo.append(h('p', { class: 'muted est-cfg-link' }, 'Simples Nacional, maquininha, prazos da reposição e embalagem dos chás: ', h('a', { href: '#config' }, 'Configurações → Lojas → Estoque e margem'), '.'));
   }
 
   function baixarPedido(lista) {
@@ -647,7 +647,8 @@
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   }
 
-  function cartaoCfg(cfg, porCod) {
+  /** formulário dos ajustes de estoque e margem de uma loja (fica em Configurações → Lojas) */
+  function formCfg(lojaId, cfg, porCod) {
     const num = (v, min, max) => h('input', { class: 'f-input', type: 'number', min, max, value: v, style: { maxWidth: '110px' } });
     const ent = num(cfg.entregaDias, 0, 120), cob = num(cfg.coberturaDias, 1, 365), par = num(cfg.paradoDias, 7, 730), seg = num(cfg.segurancaPct ?? 50, 0, 300);
     const simp = h('input', { class: 'f-input', type: 'number', min: 0, max: 50, step: '0.01', value: cfg.simplesPct ?? 0, style: { maxWidth: '110px' } });
@@ -657,31 +658,47 @@
     const nomeEmb = (l) => (l || []).map((x) => `${x.qtd}× ${porCod.get(String(x.cod))?.desc || '(código ' + x.cod + ' não está no estoque)'}`).join(' + ');
     const embs = tams.map((g) => { const i = h('input', { class: 'f-input', value: txtEmb(cfg.embalagens[g]), placeholder: 'código×quantidade, ...' }); return [g, i]; });
     const msg = h('span', { class: 'muted' });
-    const salvar = h('button', { type: 'button', class: 'btn primary' }, 'Salvar');
+    const salvar = h('button', { type: 'button', class: 'btn primary' }, 'Salvar ajustes de estoque e margem');
     salvar.addEventListener('click', async () => {
-      salvar.disabled = true; msg.textContent = 'Salvando…';
+      salvar.disabled = true; msg.className = 'muted'; msg.textContent = 'Salvando…';
       try {
         const embalagens = Object.fromEntries(embs.map(([g, i]) => [g, i.value.split(',').map((s) => s.trim()).filter(Boolean).map((s) => { const [cod, q] = s.split(/[×x*]/i); return { cod: (cod || '').trim(), qtd: +(q || 1) }; })]));
-        const r = await fetch(`/api/estoque/cfg?loja=${encodeURIComponent(state.loja)}`, { method: 'PUT', credentials: 'same-origin', headers: { 'X-Painel': '1', 'Content-Type': 'application/json' },
+        const r = await fetch(`/api/estoque/cfg?loja=${encodeURIComponent(lojaId)}`, { method: 'PUT', credentials: 'same-origin', headers: { 'X-Painel': '1', 'Content-Type': 'application/json' },
           body: JSON.stringify({ entregaDias: +ent.value, coberturaDias: +cob.value, paradoDias: +par.value, segurancaPct: +seg.value, simplesPct: simp.value, cartaoPct: maq.value, embalagens }) });
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j.erro || 'Falha ao salvar.');
-        cache.delete(state.loja); TS.render();
-      } catch (e) { msg.textContent = e.message; salvar.disabled = false; }
+        cache.delete(lojaId);
+        msg.className = 'pos'; msg.textContent = 'Salvo. A aba Estoque e margem já usa os valores novos.';
+      } catch (e) { msg.className = 'neg'; msg.textContent = e.message; }
+      salvar.disabled = false;
     });
-    return h('details', { class: 'card est-cfg' }, h('summary', null, 'Ajustes: prazo de entrega, período do pedido, segurança do mínimo, embalagem dos chás e impostos/maquininha'),
+    return [
+      h('div', { class: 'f-label' }, 'Margem líquida (sobre o valor vendido)'),
+      h('div', { class: 'est-cfg-g' },
+        h('label', null, h('span', null, 'Simples Nacional'), h('div', null, simp, ' %')),
+        h('label', null, h('span', null, 'Taxa da maquininha'), h('div', null, maq, ' %'))),
+      h('small', { class: 'muted' }, 'Comissão e royalties vêm das regras da loja (Comissionamento). Use a taxa média da maquininha (débito, crédito e Pix juntos).'),
+      h('div', { class: 'f-label', style: { marginTop: '14px' } }, 'Reposição'),
       h('div', { class: 'est-cfg-g' },
         h('label', null, h('span', null, 'Entrega do fornecedor'), h('div', null, ent, ' dias')),
         h('label', null, h('span', null, 'Pedir para'), h('div', null, cob, ' dias de venda')),
         h('label', null, h('span', null, 'Parado depois de'), h('div', null, par, ' dias sem venda')),
         h('label', null, h('span', null, 'Segurança do mínimo sugerido'), h('div', null, seg, ' %'))),
-      h('div', { class: 'f-label', style: { marginTop: '10px' } }, 'Margem líquida (sobre o valor vendido)'),
-      h('div', { class: 'est-cfg-g' },
-        h('label', null, h('span', null, 'Simples Nacional'), h('div', null, simp, ' %')),
-        h('label', null, h('span', null, 'Taxa da maquininha'), h('div', null, maq, ' %'))),
-      h('small', { class: 'muted' }, 'Comissão e royalties vêm das regras da loja (Comissionamento). Use a taxa média da maquininha (débito, crédito e Pix juntos).'),
-      h('div', { class: 'f-label', style: { marginTop: '10px' } }, 'Embalagem de cada pacote de chá a granel (entra no custo e no consumo)'),
+      h('div', { class: 'f-label', style: { marginTop: '14px' } }, 'Embalagem de cada pacote de chá a granel (entra no custo e no consumo)'),
       h('div', { class: 'est-emb' }, embs.map(([g, i]) => h('label', null, h('span', null, g === '1000' ? '1 kg' : g + ' g'), i, h('small', { class: 'muted' }, nomeEmb(cfg.embalagens[g]))))),
-      h('div', { class: 'cfg-acoes' }, salvar, msg));
+      h('div', { class: 'cfg-acoes' }, salvar, msg),
+    ];
   }
+  /** bloco de Configurações → Lojas (admin e franqueado) */
+  TS.blocoEstoqueCfg = function (lojaId) {
+    const b = h('section', { class: 'cfg-bloco' }, h('h3', null, 'Estoque e margem'),
+      h('p', { class: 'muted' }, 'Impostos e maquininha para a margem líquida, prazos da reposição e a embalagem dos chás a granel.'));
+    const corpo = h('div', null, h('p', { class: 'muted' }, 'Carregando…'));
+    b.append(corpo);
+    buscar(lojaId).then(({ estoque, cfg }) => {
+      const porCod = new Map(((estoque && estoque.itens) || []).map((it) => [String(it.cod), it]));
+      corpo.replaceChildren(...formCfg(lojaId, cfg, porCod));
+    }).catch((e) => corpo.replaceChildren(h('p', { class: 'neg' }, e.message)));
+    return b;
+  };
 })();
