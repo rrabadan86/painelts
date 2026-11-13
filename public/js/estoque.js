@@ -729,9 +729,15 @@
     const nomeEmb = (l) => (l || []).map((x) => `${x.qtd}× ${porCod.get(String(x.cod))?.desc || '(código ' + x.cod + ' não está no estoque)'}`).join(' + ');
     const embs = tams.map((g) => { const i = h('input', { class: 'f-input', value: txtEmb(cfg.embalagens[g]), placeholder: 'código×quantidade, ...' }); return [g, i]; });
     const msg = h('span', { class: 'muted' });
+    // dois botões (depois dos custos e no fim) com o mesmo efeito; aviso de alteração não salva
     const salvar = h('button', { type: 'button', class: 'btn primary' }, 'Salvar ajustes de estoque e margem');
+    const salvar2 = h('button', { type: 'button', class: 'btn primary' }, 'Salvar');
+    const msg2 = h('span', { class: 'muted' });
+    const status = (cls, txt) => { msg.className = msg2.className = cls; msg.textContent = msg2.textContent = txt; };
+    const sujo = () => status('est-sujo', 'Alterações ainda não salvas: clique em Salvar.');
+    salvar2.addEventListener('click', () => salvar.click());
     salvar.addEventListener('click', async () => {
-      salvar.disabled = true; msg.className = 'muted'; msg.textContent = 'Salvando…';
+      salvar.disabled = salvar2.disabled = true; status('muted', 'Salvando…');
       try {
         const embalagens = Object.fromEntries(embs.map(([g, i]) => [g, i.value.split(',').map((s) => s.trim()).filter(Boolean).map((s) => { const [cod, q] = s.split(/[×x*]/i); return { cod: (cod || '').trim(), qtd: +(q || 1) }; })]));
         const r = await fetch(`/api/estoque/cfg?loja=${encodeURIComponent(lojaId)}`, { method: 'PUT', credentials: 'same-origin', headers: { 'X-Painel': '1', 'Content-Type': 'application/json' },
@@ -739,10 +745,15 @@
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j.erro || 'Falha ao salvar.');
         cache.delete(lojaId);
-        msg.className = 'pos'; msg.textContent = 'Salvo. A aba Estoque e margem já usa os valores novos.';
-      } catch (e) { msg.className = 'neg'; msg.textContent = e.message; }
-      salvar.disabled = false;
+        status('pos', 'Salvo. A aba Estoque e margem já usa os valores novos.');
+      } catch (e) { status('neg', e.message); }
+      salvar.disabled = salvar2.disabled = false;
     });
+    const ouvir = (el) => { el.addEventListener('input', sujo); el.addEventListener('change', sujo); return el; };
+    [ent, cob, par, seg, simp, maq, outrosBox].forEach(ouvir);
+    embs.forEach(([, i]) => ouvir(i));
+    addOutro.addEventListener('click', sujo);
+    outrosBox.addEventListener('click', (e) => { if (e.target.closest('.est-outro-rem')) sujo(); });
     return [
       h('div', { class: 'f-label' }, 'Margem líquida (sobre o valor vendido)'),
       h('div', { class: 'est-cfg-g' },
@@ -752,6 +763,7 @@
       h('div', { class: 'f-label', style: { marginTop: '14px' } }, 'Outros custos da loja'),
       h('small', { class: 'muted' }, '% das vendas (ex.: aluguel percentual do shopping, app de delivery) ou R$ por mês (ex.: aluguel fixo, energia, salários). O valor em R$ por mês vira um %: valor ÷ média do faturamento dos últimos 3 meses fechados (ex.: R$ 16.000 ÷ média de R$ 200.000 = 8% de cada venda). Esse % é volátil: muda quando um mês fecha e entra na média.'),
       outrosBox, addOutro,
+      h('div', { class: 'cfg-acoes' }, salvar2, msg2),
       h('div', { class: 'f-label', style: { marginTop: '14px' } }, 'Reposição'),
       h('div', { class: 'est-cfg-g' },
         h('label', null, h('span', null, 'Entrega do fornecedor'), h('div', null, ent, ' dias')),

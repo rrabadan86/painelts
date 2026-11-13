@@ -1046,3 +1046,4 @@ body.com-camada { overflow: hidden; }
 .est-pop tr.com-dica td:first-child { cursor: help; }
 .est-pop-dicas { margin-top: 8px; padding: 8px 10px; background: var(--cream-2, #F6F2EA); border-radius: 8px; font-size: 11.5px; line-height: 1.45; color: #3D4A42; }
 .est-pop-dicas p { margin: 0 0 6px; } .est-pop-dicas p:last-child { margin: 0; }
+.est-sujo { color: #8E4A1C; font-weight: 600; }
