@@ -413,7 +413,7 @@ app.get('/api/eu', (req, res) => {
   const u = C.get().usuarios[req.user];
   res.json({
     usuario: req.user === '*' ? '' : req.user, nome: u?.nome || req.user, perfil: req.perfil, vendedor: req.vendedor || '',
-    pode: { configurar: req.perfil === 'admin' || req.perfil === 'franqueado', admin: req.perfil === 'admin', clientes: podeClientes(req) },
+    pode: { configurar: req.perfil === 'admin' || req.perfil === 'franqueado', admin: req.perfil === 'admin', clientes: podeClientes(req), custos: podeTela(req, 'estoque', 'pedido', 'dre') },
     telas: C.telasDo(u),
     lojas: req.lojas.map((l) => ({ id: l.id, nome: l.nome, marca: { nome: (l.marca && l.marca.nome) || l.nome, logo: !!arquivoLogo(l.id) } })),
   });
@@ -490,9 +490,11 @@ app.get('/api/fechamento', async (req, res) => {
 
 // ---------- estoque e custo (só admin e franqueado) ----------
 const podeContabilidade = (req) => req.perfil === 'admin' || req.perfil === 'franqueado';
+/** gerente com a tela liberada em Configurações → Usuários (Estoque e margem, Pedido, Resultado) */
+const podeTela = (req, ...telas) => podeContabilidade(req) || (req.perfil === 'gerente' && (C.telasDo(C.usuario(req.user)) || []).some((t) => telas.includes(t)));
 const ES = require('./src/estoque');
 app.get('/api/estoque', (req, res) => {
-  if (!podeContabilidade(req)) return res.status(403).json({ erro: 'Sem permissão.' });
+  if (!podeTela(req, 'estoque', 'pedido', 'dre')) return res.status(403).json({ erro: 'Sem permissão.' });
   const loja = req.lojas.find((l) => l.id === String(req.query.loja || ''));
   if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
   res.json({ estoque: ES.atual(loja.id), cfg: ES.cfg(C.get().lojas.find((l) => l.id === loja.id)), historico: ES.historico(loja.id) });
@@ -512,7 +514,7 @@ app.put('/api/estoque/cfg', express.json({ limit: '20kb' }), (req, res) => {
 // ---------- pedido sugerido e Sistema de Pedidos da franqueadora (só admin e franqueado; robô só admin) ----------
 const PED = require('./src/pedido');
 app.get('/api/pedido', async (req, res) => {
-  if (!podeContabilidade(req)) return res.status(403).json({ erro: 'Sem permissão.' });
+  if (!podeTela(req, 'pedido')) return res.status(403).json({ erro: 'Sem permissão.' });
   const loja = req.lojas.find((l) => l.id === String(req.query.loja || ''));
   if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
   let robo = { disponivel: false };
@@ -530,7 +532,7 @@ app.get('/api/pedido', async (req, res) => {
 });
 app.put('/api/pedido/cfg', express.json({ limit: '20kb' }), (req, res) => {
   if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
-  if (!podeContabilidade(req)) return res.status(403).json({ erro: 'Sem permissão.' });
+  if (!podeTela(req, 'pedido')) return res.status(403).json({ erro: 'Sem permissão.' });
   const loja = req.lojas.find((l) => l.id === String(req.query.loja || ''));
   if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
   const v = PED.validarCfg(req.body || {});
@@ -559,7 +561,7 @@ app.put('/api/pedido/acesso', express.json({ limit: '4kb' }), (req, res) => {
 // carrinho no navegador: gera o código e o link do site (admin e franqueado)
 app.post('/api/pedido/carrinho', express.json({ limit: '200kb' }), (req, res) => {
   if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
-  if (!podeContabilidade(req)) return res.status(403).json({ erro: 'Sem permissão.' });
+  if (!podeTela(req, 'pedido')) return res.status(403).json({ erro: 'Sem permissão.' });
   const loja = req.lojas.find((l) => l.id === String(req.query.loja || ''));
   if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
   const v = PED.validarItens(loja.id, (req.body || {}).itens);

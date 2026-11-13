@@ -190,7 +190,7 @@
 
   TS.estoqueBuscar = buscar;
   TS.custosLoja = async function () {
-    if (!TS.podeContabilidade || !TS.podeContabilidade() || TS.demo || !state.loja || state.loja === 'todas') return null;
+    if (!(TS.eu && TS.eu.pode && (TS.eu.pode.configurar || TS.eu.pode.custos)) || TS.demo || !state.loja || state.loja === 'todas') return null;
     const x = await buscar(state.loja);
     if (!x.estoque || !x.estoque.itens || !x.estoque.itens.length) return null;
     let m = motores.get(TS.db);
@@ -275,7 +275,7 @@
 
   /** submenu do menu Estoque e Margem */
   TS.subEstoque = (atual) => h('nav', { class: 'submenu', 'aria-label': 'Estoque' },
-    [['estoque', 'Estoque e margem'], ['pedido', 'Pedido'], ['dre', 'Resultado']].map(([p, t]) => h('a', { href: '#' + p, class: p === atual ? 'on' : null, 'aria-current': p === atual ? 'page' : null }, t)));
+    [['estoque', 'Estoque e margem'], ['pedido', 'Pedido'], ['dre', 'Resultado']].filter(([p]) => !TS.telasEstoque || TS.telasEstoque.includes(p)).map(([p, t]) => h('a', { href: '#' + p, class: p === atual ? 'on' : null, 'aria-current': p === atual ? 'page' : null }, t)));
   TS.pages.estoque = function (root) {
     root.append(TS.subEstoque('estoque'));
     root.append(h('div', { class: 'page-head' }, h('div', null, h('h1', { class: 'page-title' }, 'Estoque e margem'),
@@ -1008,7 +1008,7 @@
       h('p', { class: 'muted' }, 'Chá a granel aparece uma vez, somando todos os tamanhos (50g, 100g, 250g…), porque todos saem da mesma matéria-prima: o custo vem do kg dela. Se a matéria-prima "não está na planilha de estoque", normalmente é porque está com saldo zero no AppNext (o relatório esconde item zerado) — assim que ela tiver saldo e a planilha for atualizada, o custo entra. Corrija no AppNext os itens com "custo zero". Itens do Espaço Gourmet preparados na loja não têm custo no estoque.'),
       TS.table({ cols: [{ key: 'produto', label: 'Produto vendido', align: 'l', wrap: true, render: (r) => (r.granel ? h('span', null, r.produto, h('small', { class: 'est-tam' }, r.tamanhos)) : r.produto) }, { key: 'cod', label: 'Código', align: 'l' }, { key: 'motivo', label: 'Motivo', align: 'l', title: '"custo zero no AppNext": o produto existe mas está sem custo lá. "não achado no estoque": o painel não encontrou o produto na planilha de estoque' }, { key: 'qtd', label: 'Unid.', fmt: fmt.int }, { key: 'vt', label: 'Faturamento', fmt: fmt.brl }], rows: sc, sortKey: 'vt', maxHeight: '360px', cls: 'est-t' })));
 
-    corpo.append(h('p', { class: 'muted est-cfg-link' },
+    if (TS.eu && TS.eu.pode && TS.eu.pode.configurar) corpo.append(h('p', { class: 'muted est-cfg-link' },
       h('a', { href: '#', onclick: (e) => { e.preventDefault(); TS.editarCustos(state.loja); } }, 'Editar custos da loja'), ' · ',
       h('a', { href: '#', onclick: (e) => { e.preventDefault(); TS.editarCustos(state.loja, 'cfg-pontuais'); } }, 'despesas de um mês só'),
       ' · Simples Nacional, maquininha, prazos da reposição e embalagem dos chás: ', h('a', { href: '#config', onclick: (e) => { e.preventDefault(); TS.abrirCfg ? TS.abrirCfg(state.loja, 'estoque') : (location.hash = '#config'); } }, 'Configurações → Lojas → Estoque e margem'), '.'));

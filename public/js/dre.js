@@ -147,7 +147,7 @@
         h('td', { class: d == null || Math.abs(d) < 0.0005 ? 'muted' : bom ? 'pos' : 'neg' }, d == null ? '—' : fmt.delta(d))));
     }
     tb.append(body);
-    const linkCustos = h('div', { class: 'dre-links' },
+    const linkCustos = !(TS.eu && TS.eu.pode && TS.eu.pode.configurar) ? null : h('div', { class: 'dre-links' },
       h('a', { href: '#config', onclick: (e) => { e.preventDefault(); TS.editarCustos(state.loja); } }, '+ Adicionar ou editar custos da loja'),
       h('a', { href: '#config', onclick: (e) => { e.preventDefault(); TS.editarCustos(state.loja, 'cfg-pontuais'); } }, '+ Despesa de um mês só (ex.: IPTU, 13º)'));
     const memo = h('div', { class: 'dre-memo muted' },

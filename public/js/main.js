@@ -239,13 +239,15 @@
     if (eu.perfil === 'vendedor') {
       document.body.classList.add('perfil-vendedor');
     }
+    // menu Estoque e Margem (Estoque e margem · Pedido · Resultado): admin e franqueado veem tudo;
+    // gerente só as telas liberadas em Configurações → Usuários
+    const grupoEst = eu.pode?.configurar ? ['estoque', 'pedido', 'dre'] : ['estoque', 'pedido', 'dre'].filter((p) => (eu.telas || []).includes(p));
+    TS.telasEstoque = grupoEst;
+    if (grupoEst.length) {
+      PAGES = [...PAGES.filter((p) => !grupoEst.includes(p)), ...grupoEst];
+      tabs.append(h('a', { href: '#' + grupoEst[0], 'data-page': grupoEst[0], 'data-grupo': grupoEst.join(',') }, 'Estoque e Margem'));
+    }
     if (eu.pode?.configurar) {
-      // custo, margem e estoque: só admin e franqueado
-      PAGES = [...PAGES, 'estoque'];
-      // menu Estoque com duas telas: Estoque e margem · Pedido (submenu no topo da página)
-      PAGES = [...PAGES, 'pedido'];
-      PAGES = [...PAGES, 'dre'];
-      tabs.append(h('a', { href: '#estoque', 'data-page': 'estoque', 'data-grupo': 'estoque,pedido,dre' }, 'Estoque e Margem'));
       PAGES = [...PAGES, 'config'];
       tabs.append(h('a', { href: '#config', 'data-page': 'config', class: 'tab-config', title: 'Configurações', 'aria-label': 'Configurações' }, '⚙'));
     }
