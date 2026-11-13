@@ -110,7 +110,7 @@
     const pares = [];
     for (const m of alvos) {
       const lista = cupons.get(m.lojaId + '|' + m.day);
-      if (!lista) continue;
+      if (!lista) { m.motivo = 'periodo'; continue; }
       const rpp = m.base.regras.reaisPorPonto;
       const cands = [];
       for (const c of lista.values()) {
@@ -124,7 +124,12 @@
         const score = (ps ?? 0) * 2 + (ptsOk ? 1 : 0) + (dt != null ? 1 - dt / JANELA_MIN : 0);
         cands.push({ c, score });
       }
-      if (!cands.length) continue;
+      if (!cands.length) {
+        m.motivo = 'nenhum';
+        // para conferir à mão: os cupons do dia mais perto do horário do FIXE
+        if (m.min != null) m.cands = [...lista.values()].filter((c) => c.min != null).sort((a, b) => Math.abs(a.min - m.min) - Math.abs(b.min - m.min)).slice(0, 2).map((c) => ({ cupom: c.cupom, min: c.min, vt: c.vt }));
+        continue;
+      }
       cands.sort((a, b) => b.score - a.score);
       pares.push({ m, cands });
     }
@@ -133,8 +138,9 @@
     const usados = new Set(), lig = [];
     for (const p of pares) {
       const livres = p.cands.filter((x) => !usados.has(x.c.lojaId + '|' + x.c.day + '|' + x.c.cupom));
-      if (!livres.length) continue;
-      if (livres.length > 1 && livres[0].score - livres[1].score < 0.3) { p.m.ambiguo = true; continue; }
+      const resumo = (x) => ({ cupom: x.c.cupom, min: x.c.min, vt: x.c.vt });
+      if (!livres.length) { p.m.motivo = 'usado'; p.m.cands = p.cands.slice(0, 3).map(resumo); continue; }
+      if (livres.length > 1 && livres[0].score - livres[1].score < 0.3) { p.m.ambiguo = true; p.m.motivo = 'ambiguo'; p.m.cands = livres.slice(0, 3).map(resumo); continue; }
       const c = livres[0].c;
       usados.add(c.lojaId + '|' + c.day + '|' + c.cupom);
       p.m.cupom = c;

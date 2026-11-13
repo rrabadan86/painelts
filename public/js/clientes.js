@@ -522,11 +522,30 @@
         tb);
       out.push(el);
     }
-    // compras da pessoa (pelo FIXE) que o painel não ligou a nenhum cupom: ajuda a comparar na janela
+    // compras da pessoa (pelo FIXE) que o painel não ligou a nenhum cupom: mesmo formato dos cupons, com o motivo
     if (destaque && c.fx) {
-      const soltas = c.fx.movs.filter((m) => (m.tipo === 'pontos' || m.tipo === 'compra') && !m.cupom && !m.anulado && m.propria).slice(0, 8);
-      if (soltas.length) out.push(h('div', { class: 'fi-bloco', style: { marginTop: '8px' } }, h('div', { class: 'fi-tit' }, 'Compras no FIXE sem cupom ligado'),
-        h('ul', { class: 'fi-lista' }, soltas.map((m) => h('li', null, h('b', null, fmt.date(TS.dayToIso(m.day))), hm(m), ` · +${m.pontos} · `, h('small', null, m.produtos.slice(0, 4).join(', ')))))));
+      const soltas = c.fx.movs.filter((m) => (m.tipo === 'pontos' || m.tipo === 'compra') && !m.cupom && !m.anulado && m.propria);
+      if (soltas.length) out.push(h('div', { class: 'fi-tit fx-soltas-tit' }, `Compras no FIXE sem cupom ligado (${soltas.length})`));
+      const hhmm = (min) => `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
+      const cand = (x) => `${x.cupom}${x.min != null ? ` (${hhmm(x.min)}` : ' ('}${x.min != null ? ' · ' : ''}${fmt.brl(x.vt)})`;
+      for (const m of soltas.slice(0, 20)) {
+        const motivo = m.motivo === 'periodo' ? 'Sem vendas deste dia no painel (fora do período importado).'
+          : m.motivo === 'ambiguo' ? `Mais de um cupom parecido no dia: ${m.cands.map(cand).join(', ')}. Confira qual é.`
+            : m.motivo === 'usado' ? `O cupom mais parecido já foi ligado a outra compra do FIXE: ${m.cands.map(cand).join(', ')}.`
+              : m.tipo === 'compra' ? 'Compra antiga importada no FIXE, só com a data: nenhum cupom do dia com esses produtos.'
+                : `Nenhum cupom do dia com esses produtos e horário.${m.cands && m.cands.length ? ` Mais perto do horário: ${m.cands.map(cand).join(', ')}.` : ''}`;
+        const tb = h('table', { class: 'cupom-items' });
+        for (const p of m.produtos) tb.append(h('tr', null, h('td', null, p), h('td', { class: 'r', style: { color: '#6B7A70' } }, '—')));
+        if (!m.produtos.length) tb.append(h('tr', null, h('td', { style: { color: '#6B7A70' } }, 'O FIXE não informou os produtos.')));
+        out.push(h('div', { class: 'cupom cupom-fixe' },
+          h('div', { class: 'cupom-head' },
+            h('span', null, h('b', null, 'Cupom não identificado'), ' · ', fmt.date(TS.dayToIso(m.day)), m.min != null ? ' ' + hhmm(m.min) : '',
+              h('span', { class: 'cli-tag t-forafixe', style: { marginLeft: '6px' }, title: motivo }, m.tipo === 'compra' ? 'Compra antiga no FIXE' : 'Só no FIXE')),
+            h('span', null, m.tipo === 'pontos' ? h('b', null, `+${fmt.int(m.pontos)} pts`) : h('span', { class: 'muted' }, 'sem pontos'))),
+          tb,
+          h('div', { class: 'cupom-rodape' }, motivo)));
+      }
+      if (soltas.length > 20) out.push(h('p', { class: 'muted', style: { fontSize: '12px' } }, `+ ${soltas.length - 20} compras mais antigas no FIXE.`));
     }
     return out.filter(Boolean);
   }
