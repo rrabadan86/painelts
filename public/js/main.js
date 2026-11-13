@@ -232,6 +232,8 @@
       // custo, margem e estoque: só admin e franqueado
       PAGES = [...PAGES, 'estoque'];
       tabs.append(h('a', { href: '#estoque', 'data-page': 'estoque' }, 'Estoque e margem'));
+      PAGES = [...PAGES, 'pedido'];
+      tabs.append(h('a', { href: '#pedido', 'data-page': 'pedido' }, 'Pedido'));
       PAGES = [...PAGES, 'dre'];
       tabs.append(h('a', { href: '#dre', 'data-page': 'dre' }, 'Resultado'));
       PAGES = [...PAGES, 'config'];

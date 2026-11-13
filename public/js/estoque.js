@@ -182,6 +182,7 @@
     return { deducoes, OUTROS, taxaOutro, dicaOutro, mediaFat, ONDE_FAT, pSimples, pCartao };
   }
 
+  TS.estoqueBuscar = buscar;
   TS.custosLoja = async function () {
     if (!TS.podeContabilidade || !TS.podeContabilidade() || TS.demo || !state.loja || state.loja === 'todas') return null;
     const x = await buscar(state.loja);

@@ -43,6 +43,8 @@ SCRIPT = Path(os.getenv("COLETOR_SCRIPT", Path(__file__).with_name("nextsoft_exp
 SCRIPT_XML = Path(os.getenv("COLETOR_SCRIPT_XML", Path(__file__).with_name("nextsoft_xml.py")))
 SCRIPT_ESTOQUE = Path(os.getenv("COLETOR_SCRIPT_ESTOQUE", Path(__file__).with_name("nextsoft_estoque.py")))
 SCRIPT_FIXE = Path(os.getenv("COLETOR_SCRIPT_FIXE", Path(__file__).with_name("fixe_export.py")))
+# Sistema de Pedidos da franqueadora: catálogo (toda noite) e montar o carrinho (pelo painel)
+SCRIPT_PEDIDO = Path(os.getenv("COLETOR_SCRIPT_PEDIDO", Path(__file__).with_name("nextsoft_pedido.py")))
 # estoque atual e custos junto da rotina e do botão do painel: 1 = sim
 ESTOQUE_ROTINA = (os.getenv("COLETOR_ESTOQUE") or "1") != "0"
 # XML das notas (CPF dos clientes) junto da rotina: 1 = sim
@@ -83,6 +85,7 @@ ID_OK = re.compile(r"^[a-z0-9_-]{1,40}$")
 fila = deque()
 lock = threading.Lock()
 estado = {}  # loja -> dict
+pedido_est = {}  # loja -> {"estado", "acao", "criado", "inicio", "fim", "ok", "codigo", "log"} (Sistema de Pedidos)
 DATA_OK = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
@@ -150,7 +153,7 @@ def _estado(loja):
 
 
 def pendentes(loja):
-    return sum(1 for j in fila if j["loja"] == loja)
+    return sum(1 for j in fila if j["loja"] == loja and j.get("gatilho") != "pedido")
 
 
 ITENS = ("vendas", "xml", "estoque", "fixe")
@@ -175,6 +178,69 @@ def enfileirar(loja, gatilho, por=None, de=None, ate=None, fixe=False, tipo=None
     return True
 
 
+def tem_pedido(loja):
+    try:
+        env = ler_env(CONFIG_DIR / f"{loja}.env")
+    except OSError:
+        return False
+    return bool(env.get("PEDIDO_USER") and env.get("PEDIDO_PASS") and SCRIPT_PEDIDO.exists())
+
+
+def enfileirar_pedido(loja, acao, por=None, somar=False):
+    """catálogo ou carrinho no Sistema de Pedidos: vai para a mesma fila (um navegador por vez),
+    mas tem estado próprio e não mexe no da coleta"""
+    with lock:
+        p = pedido_est.get(loja) or {}
+        if p.get("estado") in ("na_fila", "rodando"):
+            return False
+        job = {"loja": loja, "gatilho": "pedido", "acao": acao, "por": por, "somar": bool(somar), "criado": datetime.now(TZ).isoformat()}
+        pedido_est[loja] = {**{k: v for k, v in p.items() if k == "ultima"}, "estado": "na_fila", "acao": acao, "por": por, "criado": job["criado"]}
+        fila.append(job)
+    log(f"{loja}: pedido/{acao} na fila{' por ' + por if por else ''}")
+    return True
+
+
+def rodar_pedido(job):
+    loja, acao = job["loja"], job["acao"]
+    pasta = WORK_DIR / loja
+    pasta.mkdir(parents=True, exist_ok=True)
+    SEGREDO = re.compile(r"(SECRET|TOKEN|PASS|SENHA|SMTP|GITHUB|KEY)", re.I)
+    env = {k: v for k, v in os.environ.items() if not k.startswith("COLETOR_") and not SEGREDO.search(k)}
+    env.update(ler_env(CONFIG_DIR / f"{loja}.env"))
+    destino = DATA_DIR / loja / "pedido"
+    env.update({"MODO": acao, "PYTHONUNBUFFERED": "1", "SAIDA_CATALOGO": str(destino / "catalogo.json"),
+                "ENTRADA_PEDIDO": str(destino / "entrada.json"), "SAIDA_RESULTADO": str(destino / "carrinho.json"),
+                "CARRINHO_SOMAR": "1" if job.get("somar") else "0"})
+    env.setdefault("MAX_RUNTIME_SECONDS", "900")
+    log_path = pasta / "pedido.log"
+    inicio = time.time()
+    with lock:
+        pedido_est[loja] = {**pedido_est.get(loja, {}), "estado": "rodando", "inicio": datetime.now(TZ).isoformat()}
+    log(f"{loja}: pedido/{acao} rodando")
+    try:
+        with open(log_path, "w", encoding="utf-8") as out:
+            p = subprocess.run([sys.executable, str(SCRIPT_PEDIDO)], cwd=pasta, env=env, stdout=out, stderr=subprocess.STDOUT, timeout=TEMPO_MAX)
+            codigo = p.returncode
+    except subprocess.TimeoutExpired:
+        codigo = "timeout"
+    except Exception as e:  # noqa: BLE001
+        codigo = str(e)
+    try:
+        cauda = log_path.read_text(encoding="utf-8", errors="replace").splitlines()[-25:]
+    except OSError:
+        cauda = []
+    with lock:
+        p = pedido_est.get(loja, {})
+        ultima = {"acao": acao, "por": job.get("por"), "criado": job["criado"], "inicio": p.get("inicio"), "fim": datetime.now(TZ).isoformat(),
+                  "ok": codigo == 0, "codigo": codigo, "duracao_s": round(time.time() - inicio), "log": cauda}
+        pedido_est[loja] = {"estado": "parado", "ultima": ultima}
+    try:
+        (pasta / "pedido.json").write_text(json.dumps(ultima, ensure_ascii=False), encoding="utf-8")
+    except OSError:
+        pass
+    log(f"{loja}: pedido/{acao} {'OK' if codigo == 0 else 'FALHOU (' + str(codigo) + ')'}")
+
+
 def enfileirar_historico(loja, partes, por=None, tipo="ambos"):
     with lock:
         e = _estado(loja)
@@ -193,7 +259,7 @@ def enfileirar_historico(loja, partes, por=None, tipo="ambos"):
 def cancelar(loja):
     with lock:
         antes = len(fila)
-        resto = [j for j in fila if j["loja"] != loja]
+        resto = [j for j in fila if j["loja"] != loja or j.get("gatilho") == "pedido"]
         fila.clear()
         fila.extend(resto)
         e = _estado(loja)
@@ -337,7 +403,7 @@ def rodar(job):
                 lote["falhas"].append({"de": de, "ate": ate, "codigo": str(codigo), "log": cauda[-30:]})
             if lote["feitas"] >= lote["total"]:
                 lote["fim"] = datetime.now(TZ).isoformat()
-        prox = next((j for j in fila if j["loja"] == loja), None)
+        prox = next((j for j in fila if j["loja"] == loja and j.get("gatilho") != "pedido"), None)
         e["atual"] = prox
         e["estado"] = "na_fila" if prox else "parado"
     (pasta / "ultima.json").write_text(json.dumps({"ultima": e["ultima"], "lote": e.get("lote")}, ensure_ascii=False, indent=1), encoding="utf-8")
@@ -352,11 +418,17 @@ def trabalhador():
                 job = fila.popleft()
         if job:
             try:
-                rodar(job)
+                if job.get("gatilho") == "pedido":
+                    rodar_pedido(job)
+                else:
+                    rodar(job)
             except Exception as e:  # noqa: BLE001
                 log(f"{job['loja']}: erro inesperado {e}")
                 with lock:
-                    _estado(job["loja"])["estado"] = "parado"
+                    if job.get("gatilho") == "pedido":
+                        pedido_est[job["loja"]] = {**pedido_est.get(job["loja"], {}), "estado": "parado"}
+                    else:
+                        _estado(job["loja"])["estado"] = "parado"
         else:
             time.sleep(2)
 
@@ -373,11 +445,19 @@ def agendador():
             noite = hhmm == max(hs)  # a última do dia também pede o cadastro de clientes ao FIXE
             for loja in lojas_configuradas():
                 enfileirar(loja, "agendado", fixe=noite)
+                if noite and tem_pedido(loja):
+                    enfileirar_pedido(loja, "catalogo", "rotina")
         time.sleep(20)
 
 
 def carregar_ultimas():
     for loja in lojas_configuradas():
+        fp = WORK_DIR / loja / "pedido.json"
+        if fp.exists():
+            try:
+                pedido_est[loja] = {"estado": "parado", "ultima": json.loads(fp.read_text(encoding="utf-8"))}
+            except Exception:  # noqa: BLE001
+                pass
         f = WORK_DIR / loja / "ultima.json"
         if f.exists():
             try:
@@ -422,7 +502,10 @@ class API(BaseHTTPRequestHandler):
                 info["ao_vivo"] = ao_vivo(loja)
             env = ler_env(CONFIG_DIR / f"{loja}.env")
             tem_fixe = bool(env.get("FIXE_URL") and env.get("FIXE_PASS") and SCRIPT_FIXE.exists())
-            return self._json(200, {"configurada": True, "horarios": horarios(), "janela": janela(), "fila": fila_n, "temFixe": tem_fixe, **info})
+            with lock:
+                ped = json.loads(json.dumps(pedido_est.get(loja) or {}))
+            return self._json(200, {"configurada": True, "horarios": horarios(), "janela": janela(), "fila": fila_n, "temFixe": tem_fixe,
+                                    "temPedido": tem_pedido(loja), "pedido": ped, **info})
         self._json(404, {"erro": "rota"})
 
     def do_POST(self):  # noqa: N802
@@ -445,6 +528,25 @@ class API(BaseHTTPRequestHandler):
                 return self._json(400, {"erro": "pedido inválido"})
             if not enfileirar(loja, "manual", por, itens=itens):
                 return self._json(409, {"erro": "O script desta loja já está na fila ou rodando.", **info_loja(loja)})
+            return self._json(200, {"ok": True})
+        if self.path.startswith("/pedido/"):
+            loja = self._loja("/pedido/")
+            if not loja or loja not in lojas_configuradas():
+                return self._json(404, {"erro": "Loja sem acesso configurado."})
+            if not tem_pedido(loja):
+                return self._json(400, {"erro": "Falta o login do Sistema de Pedidos (PEDIDO_USER e PEDIDO_PASS) no arquivo da loja na VPS."})
+            try:
+                n = int(self.headers.get("Content-Length", "0") or 0)
+                corpo = json.loads(self.rfile.read(min(n, 10000)) or b"{}") if n else {}
+            except Exception:  # noqa: BLE001
+                return self._json(400, {"erro": "pedido inválido"})
+            acao = corpo.get("acao")
+            if acao not in ("catalogo", "carrinho"):
+                return self._json(400, {"erro": "ação inválida"})
+            if acao == "carrinho" and not (DATA_DIR / loja / "pedido" / "entrada.json").exists():
+                return self._json(400, {"erro": "Sem a lista de produtos para o carrinho."})
+            if not enfileirar_pedido(loja, acao, por, bool(corpo.get("somar"))):
+                return self._json(409, {"erro": "Já há uma tarefa do Sistema de Pedidos na fila ou rodando para esta loja."})
             return self._json(200, {"ok": True})
         if self.path.startswith("/fixe/"):
             loja = self._loja("/fixe/")

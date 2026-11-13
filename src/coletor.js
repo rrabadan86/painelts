@@ -41,7 +41,7 @@ async function status(lojaId, comLog) {
   const { status: st, json } = await chamar(`/status/${encodeURIComponent(lojaId)}`);
   if (st === 401) throw new Error('COLETOR_TOKEN diferente entre o painel e o coletor');
   if (!json.configurada) return { configurada: false };
-  return { configurada: true, horarios: json.horarios, janela: json.janela, temFixe: !!json.temFixe, fila: json.fila || 0, lote: json.lote || null, execucao: execucao(json, comLog) };
+  return { configurada: true, horarios: json.horarios, janela: json.janela, temFixe: !!json.temFixe, temPedido: !!json.temPedido, pedido: json.pedido || null, fila: json.fila || 0, lote: json.lote || null, execucao: execucao(json, comLog) };
 }
 
 async function rodar(lojaId, por, itens) {
@@ -54,6 +54,10 @@ async function historico(lojaId, partes, por, tipo = 'ambos') {
 async function fixe(lojaId, por) {
   return chamar(`/fixe/${encodeURIComponent(lojaId)}`, { method: 'POST', por });
 }
+/** Sistema de Pedidos: { acao: 'catalogo' | 'carrinho', somar } */
+async function pedido(lojaId, por, body) {
+  return chamar(`/pedido/${encodeURIComponent(lojaId)}`, { method: 'POST', por, body });
+}
 async function cancelar(lojaId, por) {
   return chamar(`/cancelar/${encodeURIComponent(lojaId)}`, { method: 'POST', por });
 }
@@ -61,4 +65,4 @@ async function saude() {
   try { const r = await chamar('/saude'); return r.json; } catch (e) { return { ok: false, erro: e.message }; }
 }
 
-module.exports = { fixe, ativo, status, rodar, historico, cancelar, saude };
+module.exports = { pedido, fixe, ativo, status, rodar, historico, cancelar, saude };

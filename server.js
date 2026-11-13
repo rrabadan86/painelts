@@ -484,6 +484,58 @@ app.put('/api/estoque/cfg', express.json({ limit: '20kb' }), (req, res) => {
   res.json({ ok: true, cfg: v.ok });
 });
 
+// ---------- pedido sugerido e Sistema de Pedidos da franqueadora (só admin e franqueado; robô só admin) ----------
+const PED = require('./src/pedido');
+app.get('/api/pedido', async (req, res) => {
+  if (!podeContabilidade(req)) return res.status(403).json({ erro: 'Sem permissão.' });
+  const loja = req.lojas.find((l) => l.id === String(req.query.loja || ''));
+  if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  let robo = { disponivel: false };
+  if (COL.ativo()) {
+    try {
+      const s = await COL.status(loja.id);
+      if (s.configurada) {
+        const p = s.pedido || {};
+        const u = p.ultima ? { ...p.ultima, log: req.perfil === 'admin' ? p.ultima.log : undefined } : null;
+        robo = { disponivel: true, temLogin: s.temPedido, estado: p.estado || 'parado', acao: p.acao || null, ultima: u };
+      }
+    } catch (e) { robo = { disponivel: false, erro: e.message }; }
+  }
+  res.json({ catalogo: PED.catalogo(loja.id), carrinho: PED.carrinho(loja.id), cfg: PED.cfg(C.get().lojas.find((l) => l.id === loja.id)), robo, podeRobo: req.perfil === 'admin' });
+});
+app.put('/api/pedido/cfg', express.json({ limit: '20kb' }), (req, res) => {
+  if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
+  if (!podeContabilidade(req)) return res.status(403).json({ erro: 'Sem permissão.' });
+  const loja = req.lojas.find((l) => l.id === String(req.query.loja || ''));
+  if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  const v = PED.validarCfg(req.body || {});
+  if (v.erro) return res.status(400).json({ erro: v.erro });
+  C.alterar((cfg) => { cfg.lojas.find((l) => l.id === loja.id).pedidoCfg = v.ok; });
+  C.auditar(req.user, 'alterou configuração do pedido', loja.id, { loja: loja.id, cmvPct: v.ok.cmvPct, dias: v.ok.dias });
+  res.json({ ok: true, cfg: v.ok });
+});
+app.post('/api/pedido/robo', express.json({ limit: '200kb' }), async (req, res) => {
+  if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
+  if (req.perfil !== 'admin') return res.status(403).json({ erro: 'Só o administrador aciona o robô do Sistema de Pedidos.' });
+  const loja = req.lojas.find((l) => l.id === String(req.query.loja || ''));
+  if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  if (!COL.ativo()) return res.status(400).json({ erro: 'O coletor da VPS não está ativo.' });
+  const b = req.body || {};
+  let fora = [];
+  if (b.acao === 'carrinho') {
+    const v = PED.validarItens(loja.id, b.itens);
+    if (v.erro) return res.status(400).json({ erro: v.erro });
+    fora = v.fora;
+    PED.gravarEntrada(loja.id, v.ok, req.user);
+  } else if (b.acao !== 'catalogo') return res.status(400).json({ erro: 'Ação inválida.' });
+  try {
+    const r = await COL.pedido(loja.id, req.user, { acao: b.acao, somar: !!b.somar });
+    if (r.status !== 200) return res.status(r.status).json({ erro: r.json.erro || 'Falha no coletor.' });
+    C.auditar(req.user, b.acao === 'carrinho' ? 'mandou montar o carrinho do pedido' : 'pediu o catálogo do Sistema de Pedidos', loja.id, { loja: loja.id, itens: Array.isArray(b.itens) ? b.itens.length : 0 });
+    res.json({ ok: true, fora });
+  } catch (e) { res.status(502).json({ erro: e.message }); }
+});
+
 // ---------- cadastro de clientes do FIXE: lê o e-mail da exportação (Gmail da loja) e importa ----------
 const FX = require('./src/fixemail');
 const CADX = require('./src/cadastro');

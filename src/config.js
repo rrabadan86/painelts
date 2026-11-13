@@ -68,6 +68,7 @@ function normalizar(cfg) {
     escalaAjustes: l.escalaAjustes && typeof l.escalaAjustes === 'object' ? l.escalaAjustes : {},
     wppModelos: Array.isArray(l.wppModelos) ? l.wppModelos : null,
     estoqueCfg: l.estoqueCfg && typeof l.estoqueCfg === 'object' ? l.estoqueCfg : null,
+    pedidoCfg: l.pedidoCfg && typeof l.pedidoCfg === 'object' ? l.pedidoCfg : null,
     contabilidade: Array.isArray(l.contabilidade) ? l.contabilidade.map(String).slice(0, 10) : [],
     criadaEm: l.criadaEm || null,
     uploadToken: l.uploadToken || null,
