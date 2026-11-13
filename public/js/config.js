@@ -324,13 +324,29 @@
     const de = inp({ type: 'month', value: `${hoje.getFullYear() - 2}-01`, max: ymHoje });
     const ate = inp({ type: 'month', value: ymHoje, max: ymHoje });
     const passo = h('select', { class: 'f-input' }, [1, 2, 3, 6].map((n) => h('option', { value: n, selected: n === 3 || null }, n === 1 ? '1 mês' : `${n} meses`)));
-    const tipo = h('select', { class: 'f-input' }, [['ambos', 'Vendas e XML das notas (CPF)'], ['vendas', 'Só vendas'], ['xml', 'Só XML das notas (CPF dos clientes)']].map(([v, t]) => h('option', { value: v }, t)));
+    const tipo = h('select', { class: 'f-input' }, [['ambos', 'Vendas e XML das notas (CPF)'], ['vendas', 'Só vendas'], ['xml', 'Só XML das notas (CPF dos clientes)'], ['estoque', 'Estoque e custos (foto de agora)']].map(([v, t]) => h('option', { value: v }, t)));
+    // estoque é uma foto do momento: o período não se aplica
+    const dicaTipo = h('small', { class: 'muted' });
+    const ajustarTipo = () => {
+      const est = tipo.value === 'estoque';
+      [de, ate, passo].forEach((x) => { x.disabled = est; });
+      dicaTipo.textContent = est ? 'O AppNext só dá o estoque de agora (quantidade, mínimo e custo de cada produto): o período acima não se aplica. Leva 1 a 2 minutos.' : '';
+    };
+    tipo.addEventListener('change', ajustarTipo);
     const aberto = abertos.has('hist:' + l.id);
     const det = h('details', { class: 'cfg-hist', open: aberto || null }, h('summary', null, 'Importar histórico de um período'),
       h('p', { class: 'muted' }, 'Baixa do AppNext em partes (uma de cada vez) e junta no histórico. Use na primeira carga de uma loja ou para refazer meses.'),
       h('div', { class: 'cfg-grid c3' }, campo('De', de), campo('Até', ate), campo('Tamanho de cada parte', passo, 'Partes menores demoram mais no total, mas falham menos.')),
       h('div', { class: 'cfg-grid' }, campo('O que importar', tipo, 'XML = Fiscal → Gerar XML do AppNext (Tipo Todos, Situação Ativos). Traz o CPF de cada cupom para a aba Clientes. Para a primeira carga, use de 06/2025 até hoje.')),
+      dicaTipo,
       h('div', { class: 'cfg-acoes' }, acao('Importar', async () => {
+        if (tipo.value === 'estoque') {
+          const rr = await fetch(`/api/script?loja=${encodeURIComponent(l.id)}`, { method: 'POST', credentials: 'same-origin', headers: { 'X-Painel': '1', 'Content-Type': 'application/json' }, body: JSON.stringify({ itens: ['estoque'] }) });
+          const j = await rr.json().catch(() => ({}));
+          if (!rr.ok) throw new Error(j.erro || 'Falha ao pedir o estoque.');
+          abertos.delete('hist:' + l.id);
+          return 'Estoque na fila do coletor. Em 1 a 2 minutos ele aparece em "Estoque e custos".';
+        }
         const r = await api('POST', `/lojas/${l.id}/historico`, { de: de.value, ate: ate.value, mesesPorParte: +passo.value, tipo: tipo.value });
         abertos.delete('hist:' + l.id);
         return `Importação na fila: ${r.partes} parte(s). Pode fechar o painel; ela continua sozinha.`;
