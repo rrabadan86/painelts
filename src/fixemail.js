@@ -47,15 +47,22 @@ async function baixar(url) {
 }
 
 /**
- * Procura o e-mail do FIXE e importa. Devolve null se ainda não chegou.
- * importar(buf) → resultado do CAD.importar; smtp = { host, user, pass } da loja
+ * Procura os e-mails do FIXE (Base de leads e Logs) e importa cada um. Devolve null enquanto falta algum.
+ * importar(buf) → { tipo: 'leads' | 'logs', ... } (quem chama decide pelo conteúdo da planilha)
+ * smtp = { host, user, pass } da loja
  */
 async function verificar(id, smtp, importar) {
   const { pedido } = situacao(id);
   if (!pedido) return null;
+  const esperados = Array.isArray(pedido.tipos) && pedido.tipos.length ? pedido.tipos : ['leads'];
+  const feitos = pedido.feitos || {};
   const desde = new Date(Date.parse(pedido.em) - 10 * 60e3);
   const fim = (r) => { gravar(id, 'ultimo.json', { em: new Date().toISOString(), pedidoEm: pedido.em, ...r }); try { fs.unlinkSync(arq(id, 'pedido.json')); } catch { /* ok */ } return r; };
-  if (Date.now() - Date.parse(pedido.em) > ESPERA_MAX) return fim({ ok: false, erro: 'O e-mail do FIXE não chegou em 3 horas (procurei na caixa de entrada e no spam).' });
+  const resumo = () => ({ ok: !!feitos.leads, resultado: feitos.leads ? feitos.leads.resultado : null, recebido: feitos.leads ? feitos.leads.recebido : null, doSpam: !!(feitos.leads && feitos.leads.doSpam), logs: feitos.logs || null });
+  if (Date.now() - Date.parse(pedido.em) > ESPERA_MAX) {
+    const falta = esperados.filter((t) => !feitos[t]).map((t) => (t === 'logs' ? 'dos Logs' : 'da Base de leads'));
+    return fim({ ...resumo(), ok: !!feitos.leads, erro: `O e-mail ${falta.join(' e ')} do FIXE não chegou em 3 horas (procurei na caixa de entrada e no spam).` });
+  }
   const cfg = imapDe(smtp);
   if (!cfg) return fim({ ok: false, erro: 'A loja não tem o Gmail configurado (Configurações → Lojas → Fechamento do dia): é por ele que o painel lê o e-mail do FIXE.' });
   const { ImapFlow } = require('imapflow');
@@ -68,12 +75,13 @@ async function verificar(id, smtp, importar) {
     const caixas = await cli.list();
     const spam = caixas.find((c) => c.specialUse === '\\Junk');
     const inbox = caixas.find((c) => c.specialUse === '\\Inbox' || c.path.toUpperCase() === 'INBOX');
-    let achado = null;
+    const achados = [];
     for (const cx of [inbox, spam].filter(Boolean)) {
       const lock = await cli.getMailboxLock(cx.path);
       try {
         const uids = (await cli.search({ from: REMETENTE, since: desde }, { uid: true })) || [];
-        for (const uid of uids.slice(-10).reverse()) {
+        const daCaixa = [];
+        for (const uid of uids.slice(-10)) {
           const msg = await cli.fetchOne(uid, { source: true, envelope: true, internalDate: true }, { uid: true });
           if (!msg || !msg.source) continue;
           const mid = (msg.envelope && msg.envelope.messageId) || `${cx.path}:${uid}`;
@@ -81,27 +89,29 @@ async function verificar(id, smtp, importar) {
           const p = await simpleParser(msg.source);
           if (!/export/i.test(p.subject || '')) continue;
           const link = linkDoEmail(p.html || p.textAsHtml || '');
-          if (!link) continue;
-          achado = { uid, caixa: cx.path, spam: cx === spam, mid, link, recebido: msg.internalDate };
-          break;
+          if (link) daCaixa.push({ uid, spam: cx === spam, mid, link, recebido: msg.internalDate });
         }
-        if (achado) {
-          await cli.messageFlagsAdd(String(achado.uid), ['\\Seen'], { uid: true });
-          if (achado.spam && inbox) await cli.messageMove(String(achado.uid), inbox.path, { uid: true }).catch(() => {}); // tira do spam
+        for (const x of daCaixa) {
+          await cli.messageFlagsAdd(String(x.uid), ['\\Seen'], { uid: true });
+          if (x.spam && inbox) await cli.messageMove(String(x.uid), inbox.path, { uid: true }).catch(() => {}); // tira do spam
         }
+        achados.push(...daCaixa);
       } finally { lock.release(); }
-      if (achado) break;
     }
-    if (!achado) return null; // ainda não chegou: tenta de novo daqui a pouco
-    vistos.add(achado.mid);
-    gravar(id, 'vistos.json', [...vistos].slice(-200));
-    const buf = await baixar(achado.link);
-    const r = await importar(buf);
-    return fim({ ok: true, recebido: new Date(achado.recebido).toISOString(), doSpam: achado.spam, resultado: r });
+    for (const x of achados.sort((a, b) => new Date(a.recebido) - new Date(b.recebido))) {
+      vistos.add(x.mid);
+      gravar(id, 'vistos.json', [...vistos].slice(-200));
+      const buf = await baixar(x.link);
+      const r = await importar(buf);
+      feitos[r.tipo || 'leads'] = { recebido: new Date(x.recebido).toISOString(), doSpam: x.spam, resultado: r };
+    }
+    if (esperados.every((t) => feitos[t])) return fim(resumo());
+    if (achados.length) gravar(id, 'pedido.json', { ...pedido, feitos }); // chegou um, falta o outro
+    return null;
   } catch (e) {
     const m = String(e && (e.responseText || e.message) || e);
     if (/auth|credentials|login/i.test(m)) return fim({ ok: false, erro: 'O Gmail recusou o acesso para ler e-mails. Confira a senha de app em Configurações → Lojas → Fechamento do dia.' });
-    if (/planilha|cliente|arquivo|link|respondeu|grande/i.test(m)) return fim({ ok: false, erro: m });
+    if (/planilha|cliente|arquivo|link|respondeu|grande|Logs|movimento/i.test(m)) return fim({ ...resumo(), ok: false, erro: m });
     console.error(`[fixe] ${id}: ${m}`);
     return null; // falha de rede: tenta de novo
   } finally {

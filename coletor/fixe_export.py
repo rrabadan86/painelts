@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Pede ao FIXE (dash.epossible.com.br) a exportação da "Base de leads" (cadastro de clientes).
+# Pede ao FIXE (dash.epossible.com.br) a exportação da "Base de leads" (cadastro) e dos "Logs" (compras, pontos e resgates).
 # O FIXE manda um e-mail com o link "Baixar agora"; o PAINEL lê esse e-mail (IMAP do Gmail da loja),
 # baixa a planilha e importa no cadastro. Aqui só fazemos o pedido e deixamos um aviso para o painel.
 # Variáveis: FIXE_URL (página de Leads da loja), FIXE_USER, FIXE_PASS, FIXE_EMAIL (para onde mandar), SAIDA_FIXE (aviso .json)
@@ -81,28 +81,36 @@ def main():
                 if "/leads" not in page.url:
                     page.goto(URL, wait_until="domcontentloaded", timeout=60000)
                     page.wait_for_timeout(2500)
-            log("3) Leads → Exportar")
-            exp = primeiro(page, ["button:has-text('Exportar')", "a:has-text('Exportar')"], 20000)
-            if not exp:
-                raise RuntimeError(f"não achei o botão Exportar. Na tela: {tela(page)}")
-            exp.click()
-            page.wait_for_timeout(1200)
-            base = primeiro(page, ["[role=dialog] >> text=Base de leads", "text=Base de leads"], 8000)
-            if base:
-                base.click()
-            campo = primeiro(page, ["[role=dialog] input[type=email]", "[role=dialog] input", "input[placeholder*='@']", "input[type=email]"], 8000)
-            if not campo:
-                raise RuntimeError(f"não achei o campo de e-mail da exportação. Na tela: {tela(page)}")
-            campo.fill(EMAIL)
-            ok = primeiro(page, ["[role=dialog] button:has-text('Exportar')", "button:has-text('Exportar') >> nth=-1"], 5000)
-            if not ok:
-                raise RuntimeError("não achei o botão Exportar da janela")
-            ok.click()
-            page.wait_for_timeout(3500)
-            log(f"4) Exportação pedida: o FIXE vai mandar o arquivo para {EMAIL}")
+            feitos = []
+            for rotulo, tipo in (("Base de leads", "leads"), ("Logs", "logs")):
+                log(f"3) Leads → Exportar → {rotulo}")
+                exp = primeiro(page, ["button:has-text('Exportar')", "a:has-text('Exportar')"], 20000)
+                if not exp:
+                    raise RuntimeError(f"não achei o botão Exportar. Na tela: {tela(page)}")
+                exp.click()
+                page.wait_for_timeout(1200)
+                opc = primeiro(page, [f"[role=dialog] >> text={rotulo}", f"text={rotulo}"], 8000)
+                if not opc:
+                    raise RuntimeError(f"não achei a opção '{rotulo}' na janela de exportação. Na tela: {tela(page)}")
+                opc.click()
+                campo = primeiro(page, ["[role=dialog] input[type=email]", "[role=dialog] input", "input[placeholder*='@']", "input[type=email]"], 8000)
+                if not campo:
+                    raise RuntimeError(f"não achei o campo de e-mail da exportação. Na tela: {tela(page)}")
+                campo.fill(EMAIL)
+                ok = primeiro(page, ["[role=dialog] button:has-text('Exportar')", "button:has-text('Exportar') >> nth=-1"], 5000)
+                if not ok:
+                    raise RuntimeError("não achei o botão Exportar da janela")
+                ok.click()
+                page.wait_for_timeout(3500)
+                # fecha a janela se ficou aberta
+                if primeiro(page, ["[role=dialog]"], 800):
+                    page.keyboard.press("Escape")
+                    page.wait_for_timeout(600)
+                feitos.append(tipo)
+                log(f"4) {rotulo}: exportação pedida para {EMAIL}")
             destino = Path(SAIDA)
             destino.parent.mkdir(parents=True, exist_ok=True)
-            destino.write_text(json.dumps({"em": datetime.now(TZ).isoformat(), "email": EMAIL}), encoding="utf-8")
+            destino.write_text(json.dumps({"em": datetime.now(TZ).isoformat(), "email": EMAIL, "tipos": feitos}), encoding="utf-8")
             return 0
         except Exception:  # noqa: BLE001
             log("### ERRO NO FIXE ###")

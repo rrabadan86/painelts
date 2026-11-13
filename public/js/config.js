@@ -176,6 +176,14 @@
     }
     return fx.url ? linhaSit('nada', 'Cadastro de clientes (FIXE)', 'ainda não importado', 'A primeira importação acontece na atualização da noite (ou em "Importar agora").') : null;
   }
+  /** movimentos do programa de fidelidade (exportação "Logs" do FIXE) */
+  function sitLogs(l) {
+    const fx = l.fixe || {};
+    const g = fx.logs;
+    if (g) return linhaSit('ok', 'Fidelidade (Logs do FIXE)', 'em dia', `Importado em ${dt(g.em)}`,
+      `${fmt.int(g.movimentos || 0)} movimentos · ${fmt.int(g.clientes || 0)} clientes · ${fmt.int(g.compras || 0)} compras · ${fmt.int(g.resgates || 0)} resgates · ${fmt.int(g.expirados || 0)} expirações`);
+    return fx.url ? linhaSit('nada', 'Fidelidade (Logs do FIXE)', 'ainda não importado', 'Vem junto com o cadastro, na atualização da noite. Também dá para enviar a planilha de Logs em "Enviar planilha" → Cadastro de clientes.') : null;
+  }
 
   // ---- dados e coleta
   function blocoDados(l) {
@@ -388,9 +396,9 @@
   function blocoFixe(l) {
     const fx = l.fixe || {};
     const gmail = (l.fechEmail && l.fechEmail.email && l.fechEmail.email.user) || '';
-    const b = h('section', { class: 'cfg-bloco' }, h('h3', null, 'Cadastro de clientes pelo FIXE'),
-      h('p', { class: 'muted' }, 'Toda noite, na última atualização automática, o coletor entra no FIXE, pede a exportação da "Base de leads" para o Gmail da loja, e o painel lê esse e-mail (na caixa de entrada ou no spam), baixa a planilha e junta com o cadastro de clientes. Nada precisa ser feito à mão.'));
-    { const f = sitFixe(l); if (f) b.append(h('div', { class: 'cfg-sit' }, f)); }
+    const b = h('section', { class: 'cfg-bloco' }, h('h3', null, 'Clientes e fidelidade pelo FIXE'),
+      h('p', { class: 'muted' }, 'Toda noite, na última atualização automática, o coletor entra no FIXE e pede duas exportações para o Gmail da loja: a "Base de leads" (cadastro) e os "Logs" (pontos, compras e resgates). O painel lê os e-mails (na caixa de entrada ou no spam), baixa as planilhas, junta com o cadastro e liga as compras do FIXE aos cupons. Nada precisa ser feito à mão.'));
+    { const f = sitFixe(l), g = sitLogs(l); if (f || g) b.append(h('div', { class: 'cfg-sit' }, f, g)); }
     const url = inp({ value: fx.url || (est.lojas || []).map((x) => x.fixe && x.fixe.url).find(Boolean) || '', placeholder: 'ex.: https://dash.epossible.com.br/loja/…/leads' });
     const usuario = inp({ value: fx.usuario || '', placeholder: 'ex.: e-mail de acesso ao FIXE', autocomplete: 'off' });
     const senha = inp({ type: 'password', placeholder: fx.temSenha ? 'guardada (deixe em branco para manter)' : 'senha do FIXE', autocomplete: 'new-password' });
@@ -402,6 +410,16 @@
       h('div', { class: 'cfg-acoes' },
         acao('Salvar acesso ao FIXE', async () => { await api('PUT', `/lojas/${l.id}/fixe`, { url: url.value, usuario: usuario.value, senha: senha.value, email: email.value }); senha.value = ''; return 'Acesso ao FIXE salvo.'; }, 'btn primary'),
         est.perfil === 'admin' && est.coletorAtivo && fx.url ? acao('Importar agora', async () => { await api('POST', `/lojas/${l.id}/fixe/rodar`); return 'Pedido enviado ao FIXE. Em alguns minutos o e-mail chega e o cadastro é atualizado.'; }) : null));
+    // regras de pontos
+    if (est.perfil === 'admin' || est.perfil === 'franqueado') {
+      const rg = fx.fidelidade || { reaisPorPonto: 50, validadeMeses: 12 };
+      const rpp = inp({ type: 'number', min: 1, step: '0.01', value: rg.reaisPorPonto }), val = inp({ type: 'number', min: 1, max: 120, step: 1, value: rg.validadeMeses });
+      b.append(h('h4', { class: 'cfg-sub' }, 'Regras dos pontos'),
+        h('div', { class: 'cfg-grid' },
+          campo('Reais por ponto (R$)', rpp, 'Quanto a compra precisa somar para ganhar 1 ponto. Usado para conferir se um cupom é a compra lançada no FIXE.'),
+          campo('Validade dos pontos (meses)', val, 'Depois disso o ponto vence. Usado no saldo e no aviso "Pontos vencendo" da tela Clientes.')),
+        h('div', { class: 'cfg-acoes' }, acao('Salvar regras', async () => { await api('PUT', `/lojas/${l.id}/fidelidade`, { reaisPorPonto: rpp.value, validadeMeses: val.value }); return 'Regras salvas. O painel recalcula na próxima carga.'; })));
+    }
     return b;
   }
 
@@ -414,7 +432,7 @@
     const dica = h('p', { class: 'muted cfg-dica-cad' });
     const pintaDica = () => {
       dica.textContent = tipo.value === 'Dados_Clientes'
-        ? 'Pode enviar o modelo do painel (CPF, NOME, CELULAR, DATA NASC., EMAIL, CIDADE) ou a exportação de contatos do FIXE do jeito que sai do sistema. O painel reconhece sozinho, junta com o cadastro que já existe (CPF novo entra, CPF conhecido é atualizado, campo vazio não apaga) e ignora o que não usa (Data Cadastro, Loja, Saldo, Estado).'
+        ? 'Pode enviar o modelo do painel (CPF, NOME, CELULAR, DATA NASC., EMAIL, CIDADE), a exportação de contatos do FIXE ou a exportação de Logs do FIXE (pontos e compras), do jeito que sai do sistema. O painel reconhece sozinho, junta com o cadastro que já existe (CPF novo entra, CPF conhecido é atualizado, campo vazio não apaga) e ignora o que não usa (Data Cadastro, Loja, Saldo, Estado).'
         : tipo.value === 'Estoque'
           ? 'No AppNext: Estoque → Estoque Atual → botão verde "Exportar para Excel". Envie o arquivo do jeito que baixar. O coletor também baixa sozinho em cada atualização; o envio manual serve para a primeira carga ou para conferir.'
           : '';
@@ -451,6 +469,13 @@
               r.estoque.semCusto ? h('li', null, `${fmt.int(r.estoque.semCusto)} produto(s) sem custo no AppNext`) : null),
             h('div', null, 'Veja na aba Estoque e margem.')));
           return 'Estoque importado.';
+        }
+        if (r && r.logs) {
+          const g = r.logs;
+          resultado.replaceChildren(h('div', { class: 'cfg-cad-res' }, h('b', null, `Logs do FIXE importados: ${fmt.int(g.movimentos)} movimentos de ${fmt.int(g.clientes)} clientes.`),
+            h('ul', null, h('li', null, `${fmt.int(g.compras)} compras · ${fmt.int(g.resgates)} resgates · ${fmt.int(g.expirados)} expirações`)),
+            h('div', null, 'Saldo de pontos, vencimentos e compras ligadas aos cupons aparecem na aba Clientes.')));
+          return 'Logs do FIXE importados.';
         }
         const c = r && r.cadastro;
         if (c) {

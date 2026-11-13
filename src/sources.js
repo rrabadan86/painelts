@@ -29,7 +29,8 @@ function assinatura(loja) {
   const B = require('./base');
   const XB = require('./xmlbase');
   return resolverFontes(loja).map((f) => `${f.nome}:${f.origem}:${f.mtime || f.id || ''}`).join('|') + '#' + B.assinatura(loja.id) + '#' + B.pendentes(loja.id).join(',')
-    + '#xml:' + XB.assinatura(loja.id) + ':' + XB.pendentes(loja.id).join(',');
+    + '#xml:' + XB.assinatura(loja.id) + ':' + XB.pendentes(loja.id).join(',')
+    + '#fx:' + require('./fidelidade').assinatura(loja.id) + ':' + JSON.stringify(loja.fidelidade || {});
 }
 
 async function fetchWithTimeout(url, ms = 60000) {
@@ -209,6 +210,10 @@ async function loadLoja(loja) {
   const nomesLoja = [...new Set(out.vendas.map((v) => v.loja).filter(Boolean))];
   if (nomesLoja.length === 1) out.xml.forEach((x) => { x.loja = nomesLoja[0]; });
   else if (nomesLoja.length) out.xml.forEach((x) => { if (!x.loja) x.loja = nomesLoja[0]; });
+  // fidelidade (logs do FIXE): os movimentos vão para o painel, que liga as compras aos cupons
+  const FI = require('./fidelidade');
+  const fx = FI.eventos(loja.id);
+  out.fidelidade = fx ? [FI.paraPainel(fx, loja, nomesLoja)] : [];
   // metas: padrão (lojas.json ou planilha Meta) + metas por mês
   if (out.meta == null) out.meta = out.metaPlanilha ?? null;
   out.metaCfg = { id: loja.id, nome: loja.nome, nomesVenda: nomesLoja, padrao: out.meta, meses: loja.metas || {} };
@@ -225,6 +230,7 @@ function juntar(partes) {
     vendas: partes.flatMap((p) => p.vendas),
     xml: partes.flatMap((p) => p.xml),
     clientes: (() => { const m = new Map(); partes.forEach((p) => p.clientes.forEach((c) => m.set(c.cpf, c))); return [...m.values()]; })(),
+    fidelidade: partes.flatMap((p) => p.fidelidade || []),
     meta: metas.length ? metas.reduce((s, m) => s + m, 0) : null,
     metaCfgs: partes.map((p) => p.metaCfg).filter(Boolean),
     avisos: partes.flatMap((p) => p.avisos),
@@ -266,6 +272,7 @@ function pack(data, info = {}) {
     vendas: v,
     xml: data.xml,
     clientes: data.clientes,
+    fidelidade: data.fidelidade || [],
   };
 }
 

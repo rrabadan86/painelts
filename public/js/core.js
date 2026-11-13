@@ -80,6 +80,7 @@ TS.decode = function (raw) {
     geradoEm: raw.geradoEm,
     xml: raw.xml,
     clientes: raw.clientes,
+    fidelidade: raw.fidelidade || [],
   };
   // laço em vez de Math.min(...day): com muitas vendas (todas as lojas) o "..." estoura a pilha
   let mn = Infinity, mx = -Infinity;

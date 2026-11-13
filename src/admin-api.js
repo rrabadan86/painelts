@@ -166,7 +166,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
         id: l.id, nome: l.nome, appnext: l.appnext, meta: l.meta, metas: l.metas, criadaEm: l.criadaEm, regras: l.regras, marca: l.marca, wppModelos: l.wppModelos,
         nomesVenda: (() => { const raw = rawDe(l.id); return raw ? [...new Set(raw.vendas.slice(-500).map((v) => v.loja).filter(Boolean))] : []; })(),
         base: B.resumo(l.id), xml: XB.resumo(l.id), estoque: (() => { const e = ES.atual(l.id); return e ? { em: e.em, itens: e.itens.length, origem: e.origem || '' } : null; })(), fechEmail: NOTIF.publicoLoja(l.id), fontes, vendedores: vendedoresDe(l.id),
-        fixe: { url: (env && env.FIXE_URL) || '', usuario: (env && env.FIXE_USER) || '', email: (env && env.FIXE_EMAIL) || '', temSenha: !!(env && env.FIXE_PASS), ...require('./fixemail').situacao(l.id) },
+        fixe: { url: (env && env.FIXE_URL) || '', usuario: (env && env.FIXE_USER) || '', email: (env && env.FIXE_EMAIL) || '', temSenha: !!(env && env.FIXE_PASS), ...require('./fixemail').situacao(l.id), logs: require('./fidelidade').resumo(l.id), fidelidade: require('./fidelidade').regrasDe(l) },
         coletor: env ? { configurado: true, rede: env.APPNEXT_REDE || '', usuario: env.APPNEXT_USER || '', temSenha: !!env.APPNEXT_PASS, lojaDestino: env.APPNEXT_LOJA_DESTINO || '', lojaIdDestino: env.APPNEXT_LOJA_ID_DESTINO || '' } : { configurado: false },
         status,
       };
@@ -315,6 +315,18 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     aud(req, 'alterou acesso ao FIXE', req.loja.id, { loja: req.loja.id, usuario, email, senha: b.senha ? 'trocada' : 'mantida' });
     res.json({ ok: true });
   });
+  // regras do programa de fidelidade (hoje a franquia usa R$ 50 = 1 ponto, validade de 12 meses)
+  r.put('/lojas/:id/fidelidade', lojaPermitida, json, (req, res) => {
+    if (req.perfil !== 'admin' && req.perfil !== 'franqueado') return res.status(403).json({ erro: 'Só o administrador ou o franqueado pode alterar.' });
+    const b = req.body || {};
+    const rpp = Number(String(b.reaisPorPonto ?? '').replace(',', '.')), val = Number(b.validadeMeses);
+    if (!(rpp > 0 && rpp <= 10000)) return res.status(400).json({ erro: 'Informe quantos reais valem 1 ponto.' });
+    if (!(Number.isInteger(val) && val >= 1 && val <= 120)) return res.status(400).json({ erro: 'Informe a validade dos pontos em meses (1 a 120).' });
+    C.alterar((cfg) => { const l = cfg.lojas.find((x) => x.id === req.loja.id); l.fidelidade = { reaisPorPonto: Math.round(rpp * 100) / 100, validadeMeses: val }; });
+    aud(req, 'alterou regras da fidelidade', req.loja.id, { loja: req.loja.id, reaisPorPonto: rpp, validadeMeses: val });
+    depois(req.loja.id);
+    res.json({ ok: true });
+  });
   r.post('/lojas/:id/fixe/rodar', soAdmin, lojaPermitida, async (req, res) => {
     if (!COL.ativo()) return res.status(400).json({ erro: 'O coletor não está ligado nesta VPS.' });
     const env = lerEnv(req.loja.id);
@@ -390,6 +402,14 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     if (tipo === 'Dados_Clientes' && Buffer.isBuffer(buf) && buf.length >= 100) {
       // cadastro: modelo do painel ou exportação do FIXE; junta com o que já existe
       try {
+        const FI = require('./fidelidade');
+        const { linhasDeBuffer } = require('./sources');
+        if (FI.ehLogs(await linhasDeBuffer(buf))) { // Logs do FIXE (compras, pontos e resgates)
+          const r = await FI.importar(req.loja.id, buf);
+          aud(req, 'enviou logs do FIXE', req.loja.id, { loja: req.loja.id, movimentos: r.movimentos, clientes: r.clientes });
+          depois(req.loja.id);
+          return res.json({ ok: true, logs: r });
+        }
         const r = await CAD.importar(req.loja.id, buf);
         aud(req, 'enviou cadastro de clientes', req.loja.id, { loja: req.loja.id, formato: r.formato, arquivo: semQuebra(req.get('X-Arquivo') || '').slice(0, 80), novos: r.novos, atualizados: r.atualizados, total: r.total });
         depois(req.loja.id);

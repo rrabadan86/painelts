@@ -108,7 +108,7 @@ function podeClientes(req) {
 /** o que cada perfil recebe: gerente e vendedor não recebem dados de clientes; vendedor não vê o nome dos colegas */
 function filtrarPorPerfil(data, perfilDados) {
   if (perfilDados === 'completo') return data;
-  const out = { ...data, xml: [], clientes: [] };
+  const out = { ...data, xml: [], clientes: [], fidelidade: [] };
   if (perfilDados.startsWith('vendedor:')) {
     const eu = perfilDados.slice(9).trim().toUpperCase();
     const outros = [...new Set(data.vendas.map((v) => v.vendedor))].filter((n) => n && n.trim().toUpperCase() !== eu).sort();
@@ -483,12 +483,21 @@ async function verificarFixe(l) {
     const nc = NOTIF.ler(), x = NOTIF.cfgLoja(nc, l.id);
     const smtp = x.email && x.email.user && x.email.pass ? x.email : nc.email;
     const r = await FX.verificar(l.id, smtp, async (buf) => {
-      const res = await CADX.importar(l.id, buf);
-      C.auditar('coletor', 'importou cadastro de clientes do FIXE', l.id, { loja: l.id, novos: res.novos, atualizados: res.atualizados, total: res.total });
+      // Logs (movimentos do programa de fidelidade) ou Base de leads (cadastro): decide pelo conteúdo
+      const FI = require('./src/fidelidade');
+      const { linhasDeBuffer } = require('./src/sources');
+      let res;
+      if (FI.ehLogs(await linhasDeBuffer(buf))) {
+        res = await FI.importar(l.id, buf);
+        C.auditar('coletor', 'importou logs do FIXE', l.id, { loja: l.id, movimentos: res.movimentos, clientes: res.clientes });
+      } else {
+        res = { tipo: 'leads', ...(await CADX.importar(l.id, buf)) };
+        C.auditar('coletor', 'importou cadastro de clientes do FIXE', l.id, { loja: l.id, novos: res.novos, atualizados: res.atualizados, total: res.total });
+      }
       packCache.clear(); dadosLoja(l, true).catch(() => {});
       return res;
     });
-    if (r) console.log(`[fixe] ${l.id}: ${r.ok ? `importado (${r.resultado.novos} novos, ${r.resultado.atualizados} atualizados)` : r.erro}`);
+    if (r) console.log(`[fixe] ${l.id}: ${r.ok ? 'importado' : r.erro}`);
   } catch (e) { console.error(`[fixe] ${l.id}:`, e.message); }
   finally { fixeOcupado.delete(l.id); }
 }
