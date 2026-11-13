@@ -42,7 +42,7 @@
         corpo.replaceChildren(...[
           !j.temVendas ? h('div', { class: 'notice' }, 'Nenhuma venda registrada neste dia (a coleta da noite já rodou?).') : null,
           caixa,
-          h('p', { class: 'muted fech-nota' }, 'Vendas realizadas = caixa da loja, sem Espaço Gourmet e sem corporativo/omnichannel. Histórico = mesma data do ano anterior. "Clientes que entraram na loja" depende de contador de pessoas, que o sistema não tem.')].filter(Boolean));
+          h('p', { class: 'muted fech-nota' }, 'Vendas realizadas = caixa da loja, sem Espaço Gourmet, sem corporativo/omnichannel e sem taxas de serviço e entrega. Histórico = mesmo dia da semana do ano anterior (sexta com sexta, 52 semanas antes); em 24, 25 e 31/12 vale a mesma data.')].filter(Boolean));
       } catch (e) { corpo.replaceChildren(h('div', { class: 'notice err' }, e.message)); }
     };
     dataIn.addEventListener('change', () => { state.fechDia = dataIn.value; carregar(); });

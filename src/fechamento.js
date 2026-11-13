@@ -10,7 +10,7 @@
  *  - % = realizado acumulado no mês ÷ histórico acumulado até o mesmo dia
  *  - Recálculo da meta = meta acumulada até hoje − realizado acumulado (super meta = meta × 1,2)
  *  - TKM = vendas ÷ clientes; IPA = itens ÷ clientes; PMA = vendas ÷ itens
- *  - Clientes: só o total do dia e o total do histórico (mesma data do ano anterior).
+ *  - Clientes: só o total do dia e o total do histórico (mesmo dia da semana do ano anterior).
  */
 const I = require('./indicadores');
 
@@ -24,6 +24,18 @@ const anoAntes = (iso) => {
   const d = Math.min(+iso.slice(8, 10), diasNoMes(`${y}-${m}`)); // 29/02 → 28/02
   return `${y}-${m}-${String(d).padStart(2, '0')}`;
 };
+const isoMenos = (iso, dias) => new Date(Date.parse(iso + 'T00:00:00Z') - dias * DIA).toISOString().slice(0, 10);
+/** dia do histórico: o mesmo dia da semana 52 semanas antes (sexta com sexta);
+ *  em 24, 25 e 31/12 vale a mesma data do ano anterior (a data importa mais que o dia da semana) */
+const DATAS_FIXAS = ['12-24', '12-25', '12-31'];
+function historicoDe(dia) {
+  if (DATAS_FIXAS.includes(dia.slice(5))) return { dia: anoAntes(dia), ini: anoAntes(dia).slice(0, 7) + '-01', modo: 'data' };
+  const h = isoMenos(dia, 364);
+  // acumulado: o mesmo número de dias, alinhado pela semana (1º do mês − 364 dias até o dia do histórico)
+  return { dia: h, ini: isoMenos(dia.slice(0, 7) + '-01', 364), modo: 'semana' };
+}
+const DIA_SEM = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
+const diaSemCurto = (iso) => DIA_SEM[new Date(iso + 'T12:00:00Z').getUTCDay()];
 const semVendedor = (v) => !v || /^sem vendedor$/i.test(String(v).trim());
 const ehCorp = (v) => /corporativ/i.test(v || '');
 const ehOmni = (v) => /omni|e-?commerce|loja virtual|online|site|ifood|rappi/i.test(v || '');
@@ -64,13 +76,14 @@ function numeros(linhas) {
 /** fechamento de uma loja num dia (AAAA-MM-DD) */
 function calcular({ loja, vendas, metaPlanilha }, dia) {
   const ym = dia.slice(0, 7), n = diasNoMes(ym), dm = +dia.slice(8, 10);
-  const hist = anoAntes(dia);
+  const H = historicoDe(dia);
+  const hist = H.dia;
   const doDia = (d) => vendas.filter((v) => v.data === d);
   const doPeriodo = (de, ate) => vendas.filter((v) => v.data >= de && v.data <= ate);
   const hoje = numeros(doDia(dia));
   const ant = numeros(doDia(hist));
   const acum = numeros(doPeriodo(ym + '-01', dia));
-  const acumHist = numeros(doPeriodo(hist.slice(0, 7) + '-01', hist));
+  const acumHist = numeros(doPeriodo(H.ini, hist));
   const metaMes = I.metaMes(loja, ym, metaPlanilha, vendas);
   const metaDia = metaMes ? metaMes / n : null;
   const metaAcum = metaDia != null ? metaDia * dm : null;
@@ -80,7 +93,7 @@ function calcular({ loja, vendas, metaPlanilha }, dia) {
   const egMetaDia = egMesAnt > 0 ? (egMesAnt * (1 + pctAuto)) / n : null;
   const restantes = n - dm;
   return {
-    loja: { id: loja.id, nome: loja.nome }, dia, diaHistorico: hist, temVendas: hoje.total > 0,
+    loja: { id: loja.id, nome: loja.nome }, dia, diaHistorico: hist, historicoModo: H.modo, historicoIni: H.ini, temVendas: hoje.total > 0,
     vendedoras: hoje.vendedoras,
     meta: { mes: metaMes, dia: metaDia, acumulada: metaAcum },
     vendas: { historico: ant.loja, realizadas: hoje.loja, pctDia: ant.loja ? hoje.loja / ant.loja : null, pctMeta: metaDia ? hoje.loja / metaDia : null },
@@ -118,7 +131,7 @@ function texto(f) {
     f.vendedoras.length ? `👥 ${f.vendedoras.map((v) => v.nome).join(', ')}` : null,
     '',
     `🎯 Meta do dia: ${brl(f.meta.dia)}`,
-    `📜 Vendas histórico (${dataBr(f.diaHistorico)}): ${brl(f.vendas.historico)}`,
+    `📜 Vendas histórico (${diaSemCurto(f.diaHistorico)} ${dataBr(f.diaHistorico)}): ${brl(f.vendas.historico)}`,
     `💰 Vendas realizadas: ${brl(f.vendas.realizadas)}${f.vendas.pctMeta != null ? ` (${pct(f.vendas.pctMeta)} da meta do dia)` : ''}`,
     `📈 Acumulado no mês: ${brl(f.acumulado.realizado)} · histórico ${brl(f.acumulado.historico)} (${pct(f.acumulado.pct)})`,
     '',
@@ -182,7 +195,7 @@ function html(f) {
 </td></tr>
 ${secao('Vendas', ['Dia', 'Acumulado'], [
     ['Meta', brl(f.meta.dia), brl(f.meta.acumulada)],
-    ['Histórico', brl(f.vendas.historico), brl(f.acumulado.historico), { sub: dataBr(f.diaHistorico) }],
+    ['Histórico', brl(f.vendas.historico), brl(f.acumulado.historico), { sub: `${diaSemCurto(f.diaHistorico)} ${dataBr(f.diaHistorico)}${f.historicoIni ? ` · acum. desde ${dataBr(f.historicoIni)}` : ''}` }],
     ['Realizado', brl(f.vendas.realizadas), brl(f.acumulado.realizado), { forte: true, corA: cor(pctMetaDia == null ? null : pctMetaDia >= 1), corB: cor(f.acumulado.pctMeta == null ? null : f.acumulado.pctMeta >= 1) }],
   ])}
 ${secao('Clientes', ['Hoje', 'Histórico'], [
@@ -209,7 +222,7 @@ ${secao('Total do dia', ['Hoje', 'Histórico'], [
     ['Total', brl(f.total.hoje), brl(f.total.historico), { forte: true, sub: 'loja + corporativo + Espaço Gourmet' }],
   ])}
 <tr><td style="padding:20px 18px 22px;font-size:11px;line-height:1.5;color:${CINZA}">
-  Azul = acima da meta · vermelho = abaixo · histórico = mesma data do ano anterior.
+  Azul = acima da meta · vermelho = abaixo · histórico = mesmo dia da semana do ano anterior (sexta com sexta); em 24, 25 e 31/12, a mesma data.
 </td></tr>
 </table>`;
 }
