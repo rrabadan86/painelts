@@ -171,18 +171,29 @@
   }
 
   /** tabela em árvore Mês (todos os anos) → Ano → Vendedor */
-  function arvoreMensal(base, porMesAll) {
+  function arvoreMensal(base, porMesAll, periodo) {
     const db = TS.db;
     const aberto = (state.compAberto ||= new Set());
     const porMes = TS.agrupar(base, (i) => +db.ym[i].slice(5, 7));
     const meses = [...porMes.keys()].sort((x, y) => x - y);
     const ind = (idx) => TS.indicadores(idx);
+    /** dias do mês que entram na conta: o período escolhido, sem passar de hoje/da última venda.
+     *  Mês pela metade (ex.: 1 a 12/11) compara com os mesmos dias do ano anterior, não com o mês inteiro. */
+    const diasDoMes = (ym) => {
+      const ini = TS.isoToDay(ym + '-01');
+      const fim = TS.isoToDay(new Date(Date.UTC(+ym.slice(0, 4), +ym.slice(5, 7), 0)).toISOString().slice(0, 10));
+      const lo = Math.max(ini, periodo.de) - ini + 1, hi = Math.min(fim, periodo.ate) - ini + 1;
+      return { lo, hi, parcial: lo > 1 || hi < fim - ini + 1 };
+    };
     const prevDe = (ym, filtro) => {
       const k = `${+ym.slice(0, 4) - 1}${ym.slice(4)}`;
       let idx = porMesAll.get(k);
+      const d = diasDoMes(ym);
+      if (idx && d.parcial) idx = idx.filter((i) => { const dia = +db.iso[i].slice(8, 10); return dia >= d.lo && dia <= d.hi; });
       if (idx && filtro) idx = idx.filter(filtro);
       return idx && idx.length ? ind(idx) : null;
     };
+    const rotAno = (y, ym) => { const d = diasDoMes(ym); return d.parcial ? `${y} (dias ${d.lo} a ${d.hi})` : String(y); };
     // várias lojas: Mês → Ano → Loja → Vendedor
     const multiLoja = new Set(base.map((i) => db.loja[i])).size > 1;
     const cols = [['cupons', 'Cupons', fmt.int], ['tkm', 'TKM', fmt.brl], ['pma', 'PMA', fmt.brl], ['ipa', 'IPA', fmt.n2], ['vt', 'Faturamento', fmt.brl]];
@@ -214,7 +225,7 @@
     function paint() {
       tbl.textContent = '';
       const trh = h('tr', null, h('th', { class: 'l sticky-col' }, multiLoja ? 'Mês / Ano / Loja / Vendedor' : 'Mês / Ano / Vendedor'));
-      for (const [, lab] of cols) trh.append(h('th', null, lab), h('th', { title: 'Variação contra o mesmo mês do ano anterior' }, 'vs. ano ant.'));
+      for (const [, lab] of cols) trh.append(h('th', null, lab), h('th', { title: 'Variação contra o mesmo mês do ano anterior. Mês incompleto (o atual, ou um período que corta o mês) compara só os mesmos dias' }, 'vs. ano ant.'));
       tbl.append(h('thead', null, trh));
       const tb = h('tbody');
       for (const m of meses) {
@@ -224,7 +235,7 @@
         if (!aberto.has(kM)) continue;
         for (const y of [...anos.keys()].sort((x, z) => z - x)) {
           const idxY = anos.get(y), ym = `${y}-${String(m).padStart(2, '0')}`, kY = `${kM}|${y}`;
-          tb.append(linha(1, kY, String(y), ind(idxY), prevDe(ym), true));
+          tb.append(linha(1, kY, rotAno(y, ym), ind(idxY), prevDe(ym), true));
           if (!aberto.has(kY)) continue;
           const vendedores = (idx, nivel, chavePai, filtroPai) => {
             const vends = [...TS.agrupar(idx, (i) => db.vend[i])].map(([v, vi]) => ({ v, a: ind(vi) })).sort((x, z) => z.a.vt - x.a.vt);
@@ -441,7 +452,7 @@
     // ---- evolução mensal em árvore: Mês → Ano → Vendedor (variação contra o mesmo mês do ano anterior)
     const prevAll = semSemVendedor(TS.filtrar({ usarTamanho: true, ignorar: ['datas'] }));
     const porMesAll = TS.agrupar(prevAll, (i) => db.ym[i]);
-    const tabM = arvoreMensal(base, porMesAll);
+    const tabM = arvoreMensal(base, porMesAll, { de, ate: Math.min(ate, db.maxDay) });
     // ---- mix por vendedor
     const porVend = [...TS.agrupar(base, (i) => db.vend[i])].map(([v, idx]) => ({ nome: db.D.vendedor[v], ...R().mixPct(idx), vt: TS.soma(idx, 'vt') })).filter((r) => r.arom != null).sort((a, b) => b.vt - a.vt);
     const mixLoja = R().mixPct(base);
@@ -464,7 +475,7 @@
       },
     });
     root.append(h('div', { class: 'mt' },
-      TS.cardWithTools('Evolução mensal', `Clique em + no mês para ver os anos e no ano para ver ${new Set(base.map((i) => db.loja[i])).size > 1 ? 'as lojas e, na loja, os vendedores' : 'os vendedores'} · variação contra o mesmo mês do ano anterior`,
+      TS.cardWithTools('Evolução mensal', `Clique em + no mês para ver os anos e no ano para ver ${new Set(base.map((i) => db.loja[i])).size > 1 ? 'as lojas e, na loja, os vendedores' : 'os vendedores'} · variação contra o mesmo mês do ano anterior (mês incompleto: mesmos dias)`,
         tabM.tools, tabM)));
     root.append(h('div', { class: 'mt' }, TS.card('Mix de vendas por vendedor', '% do faturamento de chás e acessórios · última barra = média da loja', mixChart)));
 
