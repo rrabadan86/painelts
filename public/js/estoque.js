@@ -148,7 +148,8 @@
     document.querySelector('.est-pop')?.remove();
     const pop = h('div', { class: 'est-pop', role: 'dialog' },
       h('div', { class: 'est-pop-tit' }, titulo),
-      h('table', null, linhas.map(([rot, val, extra, cls]) => h('tr', { class: cls || null }, h('td', null, rot), h('td', { class: 'pct' }, extra || ''), h('td', { class: 'v' }, val)))),
+      h('table', null, linhas.map(([rot, val, extra, cls, dica]) => h('tr', { class: [cls, dica ? 'com-dica' : ''].filter(Boolean).join(' ') || null, title: dica || null }, h('td', null, rot), h('td', { class: 'pct' }, extra || ''), h('td', { class: 'v' }, val)))),
+      linhas.some((l) => l[4]) ? h('div', { class: 'est-pop-dicas' }, linhas.filter((l) => l[4]).map((l) => h('p', null, l[4]))) : null,
       nota ? h('div', { class: 'est-pop-nota' }, nota) : null);
     document.body.append(pop);
     const r = alvo.getBoundingClientRect(), w = pop.offsetWidth, hh = pop.offsetHeight;
@@ -226,14 +227,34 @@
       fatMes.set(k, t);
       return t;
     };
-    const fracMes = (ym) => {
-      const ini = TS.isoToDay(ym + '-01'), dias = new Date(Date.UTC(+ym.slice(0, 4), +ym.slice(5, 7), 0)).getUTCDate();
-      return Math.min(1, Math.max(0, (db.maxDay - ini + 1) / dias));
+    // custo em R$ por mês: valor ÷ média do faturamento dos últimos 3 meses fechados = % fixo usado em todas as vendas
+    // (mais estável que dividir pelo mês da venda; muda quando entra um mês fechado novo)
+    const ymHoje = TS.dayToIso(TS.todayDay()).slice(0, 7);
+    const mesesFechados = (() => {
+      const set = new Set();
+      for (let i = 0; i < db.n; i++) if (db.ym[i] < ymHoje) set.add(db.ym[i]);
+      return [...set].sort().slice(-3);
+    })();
+    const baseMensal = new Map();
+    const mediaFat = (aplica) => {
+      if (baseMensal.has(aplica)) return baseMensal.get(aplica);
+      const vals = mesesFechados.map((ym) => fatDoMes(ym, aplica)).filter((v) => v > 0);
+      const r = { media: vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0, meses: mesesFechados.filter((ym) => fatDoMes(ym, aplica) > 0) };
+      baseMensal.set(aplica, r);
+      return r;
     };
-    const taxaOutro = (x, ym) => {
+    const taxaOutro = (x) => {
       if (x.tipo === 'pct') return x.valor / 100;
-      const f = fatDoMes(ym, x.aplica);
-      return f > 0 ? (x.valor * fracMes(ym)) / f : 0;
+      const m = mediaFat(x.aplica);
+      return m.media > 0 ? x.valor / m.media : 0;
+    };
+    const ONDE_FAT = { tudo: 'loja + Espaço Gourmet', loja: 'só loja', eg: 'só Espaço Gourmet' };
+    const dicaOutro = (x) => {
+      if (x.tipo === 'pct') return `${x.nome}: ${fmt.pct(x.valor / 100)} sobre o valor de cada venda${x.aplica !== 'tudo' ? ` (${ONDE_FAT[x.aplica]})` : ''}.`;
+      const m = mediaFat(x.aplica);
+      if (!m.media) return `${x.nome}: ainda não há mês fechado com vendas para calcular o %.`;
+      return `${x.nome}: R$ ${fmt.int(x.valor)} por mês ÷ média do faturamento (${ONDE_FAT[x.aplica]}, sem taxas) dos últimos ${m.meses.length === 1 ? 'mês fechado' : m.meses.length + ' meses fechados'} (${m.meses.map(TS.ymLabel).join(', ')}: ${fmt.brl0(m.media)} por mês) = ${fmt.pct(x.valor / m.media)} de cada venda. `
+        + 'Esse % é volátil: muda quando um mês fecha e entra na média, e sobe quando a loja vende menos. Num mês que vender abaixo da média, o aluguel de verdade pesa mais do que o mostrado; acima da média, pesa menos.';
     };
     /** deduções da linha de venda: { com, roy, imp, maq } em R$ */
     function deducoes(i) {
@@ -241,7 +262,7 @@
       const ehEG = I.eg.has(db.cat[i]);
       const cat = ehEG ? null : I.arom.has(g) ? 'arom' : I.puro.has(g) ? 'puro' : I.acess.has(g) ? 'acess' : null;
       const ry = rgLoja.royalties;
-      const outros = OUTROS.map((x) => (x.aplica === 'tudo' || (x.aplica === 'eg') === ehEG ? vt * taxaOutro(x, db.ym[i]) : 0));
+      const outros = OUTROS.map((x) => (x.aplica === 'tudo' || (x.aplica === 'eg') === ehEG ? vt * taxaOutro(x) : 0));
       return {
         com: cat ? vt * (comDoMes(db.ym[i])[cat] || 0) : 0,
         roy: ehEG ? vt * (ry.eg + ry.egMkt) : cat ? vt * (ry.loja + ry.mkt) : 0,
@@ -306,14 +327,14 @@
     const lucroLiqTot = fatCusto - custoTot - dedSoma;
     const pctDe = (v, r) => (r.vt ? fmt.pct(v / r.vt) : '');
     const ONDE = { tudo: '', loja: ' (só loja)', eg: ' (só EG)' };
-    const rotOutro = (x) => `${x.nome}${x.tipo === 'mes' ? ` (R$ ${fmt.int(x.valor)}/mês)` : ''}${ONDE[x.aplica] || ''}`;
-    const NOTA_DED = `Comissão: o que a loja pagou no mês (comissões, premiação e bônus) ÷ vendas do tipo do produto; Espaço Gourmet não tem comissão. Royalties pelas regras da loja. Simples ${fmt.pct(pSimples)} e maquininha ${fmt.pct(pCartao)} sobre o valor vendido.${OUTROS.some((x) => x.tipo === 'mes') ? ' Custos mensais (R$/mês) são divididos pelas vendas do mês; no mês em andamento, só a parte dos dias que já passaram.' : ''} Ajuste em Configurações → Lojas → Estoque e margem.`;
+    const rotOutro = (x) => `${x.nome}${x.tipo === 'mes' ? ` (R$ ${fmt.int(x.valor)}/mês) ⓘ` : ''}${ONDE[x.aplica] || ''}`;
+    const NOTA_DED = `Comissão: o que a loja pagou no mês (comissões, premiação e bônus) ÷ vendas do tipo do produto; Espaço Gourmet não tem comissão. Royalties pelas regras da loja. Simples ${fmt.pct(pSimples)} e maquininha ${fmt.pct(pCartao)} sobre o valor vendido.${OUTROS.some((x) => x.tipo === 'mes') ? ' Custos em R$ por mês viram % pela média do faturamento dos últimos 3 meses fechados (passe o mouse no nome para ver a conta).' : ''} Ajuste em Configurações → Lojas → Estoque e margem.`;
     const linhasDed = (r) => [
       ['Comissão paga', fmt.brl(r.com), pctDe(r.com, r)],
       ['Royalties (com marketing)', fmt.brl(r.roy), pctDe(r.roy, r)],
       ['Simples Nacional', fmt.brl(r.imp), pctDe(r.imp, r)],
       ['Maquininha', fmt.brl(r.maq), pctDe(r.maq, r)],
-      ...OUTROS.map((x, k) => [rotOutro(x), fmt.brl(r.outros[k]), pctDe(r.outros[k], r)]),
+      ...OUTROS.map((x, k) => [rotOutro(x), fmt.brl(r.outros[k]), pctDe(r.outros[k], r), null, dicaOutro(x)]),
       ['Total de deduções', fmt.brl(r.ded), pctDe(r.ded, r), 'tot'],
     ];
     const abrirDed = (e, r) => { e.stopPropagation(); popConta(e.currentTarget, `Deduções · ${r.produto}`, linhasDed(r), NOTA_DED); };
@@ -327,7 +348,7 @@
         ['− Royalties (com marketing)', fmt.brl(r.roy), pctDe(r.roy, r)],
         ['− Simples Nacional', fmt.brl(r.imp), pctDe(r.imp, r)],
         ['− Maquininha', fmt.brl(r.maq), pctDe(r.maq, r)],
-        ...OUTROS.map((x, k) => ['− ' + rotOutro(x), fmt.brl(r.outros[k]), pctDe(r.outros[k], r)]),
+        ...OUTROS.map((x, k) => ['− ' + rotOutro(x), fmt.brl(r.outros[k]), pctDe(r.outros[k], r), null, dicaOutro(x)]),
         ['= Lucro líquido', fmt.brl(r.lucroLiq), pctDe(r.lucroLiq, r), 'tot'],
       ], r.granel ? `Custo: kg × custo do kg da matéria-prima + saco kraft e etiquetas de cada pacote. ${NOTA_DED}` : NOTA_DED);
     };
@@ -729,7 +750,7 @@
         h('label', null, h('span', null, 'Taxa da maquininha'), h('div', null, maq, ' %'))),
       h('small', { class: 'muted' }, 'Comissão e royalties vêm das regras da loja (Comissionamento). Use a taxa média da maquininha (débito, crédito e Pix juntos).'),
       h('div', { class: 'f-label', style: { marginTop: '14px' } }, 'Outros custos da loja'),
-      h('small', { class: 'muted' }, '% das vendas (ex.: aluguel percentual do shopping, app de delivery) ou R$ por mês (ex.: aluguel fixo, energia, salários): o valor do mês é dividido pelas vendas do mês, então cada produto paga a parte dele.'),
+      h('small', { class: 'muted' }, '% das vendas (ex.: aluguel percentual do shopping, app de delivery) ou R$ por mês (ex.: aluguel fixo, energia, salários). O valor em R$ por mês vira um %: valor ÷ média do faturamento dos últimos 3 meses fechados (ex.: R$ 16.000 ÷ média de R$ 200.000 = 8% de cada venda). Esse % é volátil: muda quando um mês fecha e entra na média.'),
       outrosBox, addOutro,
       h('div', { class: 'f-label', style: { marginTop: '14px' } }, 'Reposição'),
       h('div', { class: 'est-cfg-g' },

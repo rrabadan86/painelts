@@ -1043,3 +1043,6 @@ body.com-camada { overflow: hidden; }
 .est-outro { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 8px; border: 1px solid var(--line, #E2DCCF); border-radius: 10px; background: #fff; }
 .est-outro-rem { grid-column: 1 / -1; justify-self: end; background: none; border: 0; padding: 2px 4px; font: inherit; font-size: 12px; color: #8E321C; cursor: pointer; }
 .est-outro-rem:hover { text-decoration: underline; }
+.est-pop tr.com-dica td:first-child { cursor: help; }
+.est-pop-dicas { margin-top: 8px; padding: 8px 10px; background: var(--cream-2, #F6F2EA); border-radius: 8px; font-size: 11.5px; line-height: 1.45; color: #3D4A42; }
+.est-pop-dicas p { margin: 0 0 6px; } .est-pop-dicas p:last-child { margin: 0; }
