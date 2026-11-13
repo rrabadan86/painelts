@@ -174,7 +174,17 @@
       h('div', null, h('div', { class: 'cfg-sit-t' }, h('b', null, titulo), principal ? h('span', null, ' · ', principal) : null), ...extra.filter(Boolean).map((x) => h('div', { class: 'cfg-sit-d' }, x))));
     const sit = h('div', { class: 'cfg-sit' });
     if (ocupado) {
-      sit.append(linha('rodando', ex.estado === 'rodando' ? 'Coletando agora' : 'Na fila', `${quem(ex)}${periodo(ex) ? ' · ' + periodo(ex) : ''}`, ex.estado === 'rodando' ? `começou ${dt(ex.inicio)}` : null));
+      const av = ex.estado === 'rodando' ? ex.aoVivo : null;
+      const min = (iso) => Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
+      const ha = (iso) => { const m = min(iso); return m < 1 ? 'agora há pouco' : `há ${m} min`; };
+      const parado = av && av.atividade ? min(av.atividade) : null;
+      const ultima = av && av.linhas && av.linhas.length ? av.linhas[av.linhas.length - 1].replace(/^\[[\d:]+\]\s*/, '') : null;
+      sit.append(linha('rodando', ex.estado === 'rodando' ? 'Coletando agora' : 'Na fila', `${quem(ex)}${periodo(ex) ? ' · ' + periodo(ex) : ''}`,
+        ex.estado === 'rodando' ? `Começou ${dt(ex.inicio)} (${ha(ex.inicio).replace('há ', 'faz ')})` : null,
+        av && av.parte ? h('span', null, 'Baixando agora: ', h('b', null, av.parte), av.etapa ? ` · etapa ${av.etapa}` : '') : null,
+        ultima ? h('span', { class: 'cfg-ao-vivo' }, h('i', { class: 'cfg-pulso' }), `${ultima} · ${ha(av.atividade)}`) : null,
+        parado != null && parado >= 6 ? h('span', { class: 'cfg-travado' }, `Nada de novo no log há ${parado} min. Pode estar esperando o AppNext gerar o relatório (períodos longos demoram) ou travado: cada parte é encerrada sozinha depois de 15 min sem terminar.`) : null));
+      if (av && av.linhas && av.linhas.length) b.__aoVivo = detalhes('aovivo:' + l.id, { class: 'cfg-log' }, h('summary', null, 'Ver o log ao vivo'), logBonito(av.linhas));
     }
     // vendas
     const exV = ex && !ocupado && ex.tipo !== 'xml' ? ex : null;
@@ -202,6 +212,7 @@
       l.estoque ? `Estoque de ${dt(l.estoque.em)} · ${fmt.int(l.estoque.itens)} produtos${l.estoque.origem === 'coletor' ? ' · baixado pelo coletor' : l.estoque.origem ? ' · planilha enviada' : ''}` : 'Vem em cada atualização (automática ou pelo botão) ou pela planilha em "Enviar planilha".'));
     if (l.base.pendentes) sit.append(h('div', { class: 'cfg-sit-d muted' }, `${l.base.pendentes} planilha(s) de vendas sendo processada(s)…`));
     b.append(sit);
+    if (b.__aoVivo) b.append(b.__aoVivo);
     // ---- importação do histórico (enquanto roda, ou nas 24 h seguintes)
     if (lote && (!lote.fim || Date.now() - new Date(lote.fim).getTime() < 86400e3)) {
       const pct = Math.round((lote.feitas / lote.total) * 100);

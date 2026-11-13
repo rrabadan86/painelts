@@ -113,6 +113,36 @@ def info_loja(loja):
         return json.loads(json.dumps(_estado(loja)))
 
 
+RE_RUIDO = re.compile(r"^\s*(=+|Traceback|File \"|\s{2,}\S|-\s|locator|waiting for|navigated to|\[pid=)")
+
+
+def ao_vivo(loja):
+    """últimas linhas úteis do log da coleta em andamento + quando o log mexeu pela última vez"""
+    f = WORK_DIR / loja / "ultimo.log"
+    try:
+        st = f.stat()
+        with open(f, "rb") as fh:
+            fh.seek(max(0, st.st_size - 20000))
+            linhas = fh.read().decode("utf-8", "replace").splitlines()
+    except OSError:
+        return None
+    uteis, etapa, script = [], None, None
+    for l in linhas:
+        t = l.strip()
+        if not t or RE_RUIDO.match(l) or re.fullmatch(r"\[[\d:]+\]\s*=+", t):
+            continue
+        if t.startswith("### ") and t.endswith(" ###") and t[4:-4].endswith(".py"):
+            script = t[4:-4]
+        m = re.match(r"^\[[\d:]+\]\s*(\d+\)\s.*)$", t)
+        if m:
+            etapa = m.group(1)
+        if not uteis or uteis[-1] != t:
+            uteis.append(t)
+    nomes = {"nextsoft_export_to_drive.py": "vendas", "nextsoft_xml.py": "XML das notas", "nextsoft_estoque.py": "estoque"}
+    return {"linhas": uteis[-12:], "etapa": etapa, "parte": nomes.get(script, script),
+            "atividade": datetime.fromtimestamp(st.st_mtime, TZ).isoformat()}
+
+
 def _estado(loja):
     return estado.setdefault(loja, {"estado": "parado", "ultima": None, "atual": None, "lote": None})
 
@@ -353,7 +383,10 @@ class API(BaseHTTPRequestHandler):
                 return self._json(200, {"configurada": False})
             with lock:
                 fila_n = pendentes(loja)
-            return self._json(200, {"configurada": True, "horarios": horarios(), "janela": janela(), "fila": fila_n, **info_loja(loja)})
+            info = info_loja(loja)
+            if info.get("estado") == "rodando":
+                info["ao_vivo"] = ao_vivo(loja)
+            return self._json(200, {"configurada": True, "horarios": horarios(), "janela": janela(), "fila": fila_n, **info})
         self._json(404, {"erro": "rota"})
 
     def do_POST(self):  # noqa: N802

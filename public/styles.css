@@ -936,3 +936,7 @@ body.com-camada { overflow: hidden; }
 .log-bonito .ll.e { color: #FFB4A0; }
 .log-bonito .ll.p { color: #F2D27A; font-weight: 700; margin-top: 4px; }
 .log-bonito .ll.k { color: #A9D9A9; }
+.cfg-ao-vivo { display: inline-flex; align-items: baseline; gap: 6px; color: var(--ink, #1F3D2B); font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
+.cfg-pulso { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #1F5FBF; animation: pulso 1.4s infinite; flex: none; transform: translateY(-1px); }
+@keyframes pulso { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+.cfg-travado { display: block; color: #8A6A00; background: #FBF1D3; border-radius: 6px; padding: 5px 8px; margin-top: 3px; }

@@ -27,7 +27,7 @@ async function chamar(path, { method = 'GET', por, body } = {}) {
 /** Converte o estado do coletor no mesmo formato usado para o GitHub */
 function execucao(s, comLog) {
   if (s.estado === 'na_fila' && s.atual) return { estado: 'na_fila', criado: s.atual.criado, gatilho: s.atual.gatilho, por: s.atual.por, de: s.atual.de, ate: s.atual.ate };
-  if (s.estado === 'rodando' && s.atual) return { estado: 'rodando', inicio: s.atual.inicio, criado: s.atual.criado, gatilho: s.atual.gatilho, por: s.atual.por, de: s.atual.de, ate: s.atual.ate };
+  if (s.estado === 'rodando' && s.atual) return { estado: 'rodando', inicio: s.atual.inicio, criado: s.atual.criado, gatilho: s.atual.gatilho, por: s.atual.por, de: s.atual.de, ate: s.atual.ate, aoVivo: s.ao_vivo || null };
   const u = s.ultima;
   if (!u) return null;
   return {

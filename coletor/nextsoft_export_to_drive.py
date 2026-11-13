@@ -31,8 +31,16 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment
 
 # ================= LOG =================
+try:
+    from zoneinfo import ZoneInfo
+    _TZ_LOG = ZoneInfo(os.getenv("TZ") or "America/Sao_Paulo")
+except Exception:  # noqa: BLE001
+    _TZ_LOG = None
+
+
 def log(msg: str):
-    now = datetime.now().strftime("%H:%M:%S")
+    # horário de Brasília no log (o container pode estar em UTC)
+    now = datetime.now(_TZ_LOG).strftime("%H:%M:%S")
     print(f"[{now}] {msg}", flush=True)
 
 
