@@ -514,6 +514,23 @@ app.put('/api/pedido/cfg', express.json({ limit: '20kb' }), (req, res) => {
   C.auditar(req.user, 'alterou configuração do pedido', loja.id, { loja: loja.id, cmvPct: v.ok.cmvPct, dias: v.ok.dias });
   res.json({ ok: true, cfg: v.ok });
 });
+app.get('/api/pedido/acesso', (req, res) => {
+  if (req.perfil !== 'admin') return res.status(403).json({ erro: 'Só o administrador.' });
+  const loja = req.lojas.find((l) => l.id === String(req.query.loja || ''));
+  if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  res.json(PED.acesso(loja.id));
+});
+app.put('/api/pedido/acesso', express.json({ limit: '4kb' }), (req, res) => {
+  if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
+  if (req.perfil !== 'admin') return res.status(403).json({ erro: 'Só o administrador.' });
+  const loja = req.lojas.find((l) => l.id === String(req.query.loja || ''));
+  if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  const b = req.body || {};
+  const r = PED.gravarAcesso(loja.id, { usuario: b.usuario, senha: b.senha, apagar: !!b.apagar }, req.user);
+  if (r.erro) return res.status(400).json({ erro: r.erro });
+  C.auditar(req.user, b.apagar ? 'removeu o login do Sistema de Pedidos' : 'alterou o login do Sistema de Pedidos', loja.id, { loja: loja.id });
+  res.json(PED.acesso(loja.id));
+});
 app.post('/api/pedido/robo', express.json({ limit: '200kb' }), async (req, res) => {
   if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
   if (req.perfil !== 'admin') return res.status(403).json({ erro: 'Só o administrador aciona o robô do Sistema de Pedidos.' });

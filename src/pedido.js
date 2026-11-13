@@ -91,4 +91,26 @@ function validarItens(id, itens) {
   return { ok: out, fora };
 }
 
-module.exports = { catalogo, carrinho, gravarEntrada, cfg, validarCfg, validarItens, EVENTOS };
+// ---------- login da loja no Sistema de Pedidos (Configurações → Lojas; só o admin) ----------
+// dados/_sistema/acesso-pedido/<loja>.json, só leitura do dono (o coletor roda com o mesmo usuário e lê daqui).
+// A senha nunca volta para a tela: o painel só diz se existe.
+const arqAcesso = (id) => path.join(C.pastaLoja('_sistema'), 'acesso-pedido', `${id}.json`);
+function acesso(id) {
+  const a = ler(arqAcesso(id));
+  return { usuario: (a && a.usuario) || '', temSenha: !!(a && a.senha), em: (a && a.em) || null, por: (a && a.por) || null };
+}
+function gravarAcesso(id, { usuario, senha, apagar }, por) {
+  const f = arqAcesso(id);
+  if (apagar) { try { fs.unlinkSync(f); } catch { /* já não havia */ } return { ok: true }; }
+  const u = String(usuario || '').trim();
+  if (!u || u.length > 80 || /[\r\n]/.test(u)) return { erro: 'Informe o usuário do Sistema de Pedidos.' };
+  const antes = ler(f) || {};
+  const s = senha == null || senha === '' ? antes.senha : String(senha);
+  if (!s) return { erro: 'Informe a senha.' };
+  if (s.length > 120 || /[\r\n]/.test(s)) return { erro: 'Senha inválida.' };
+  fs.mkdirSync(path.dirname(f), { recursive: true, mode: 0o700 });
+  C.gravarAtomico(f, JSON.stringify({ usuario: u, senha: s, em: new Date().toISOString(), por }), 0o600);
+  return { ok: true };
+}
+
+module.exports = { acesso, gravarAcesso, catalogo, carrinho, gravarEntrada, cfg, validarCfg, validarItens, EVENTOS };

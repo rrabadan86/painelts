@@ -153,6 +153,7 @@
     if (est.perfil === 'admin') grid.append(blocoAppNext(l));
     grid.append(blocoMetas(l), blocoFerias(l), blocoFechamento(l), blocoWpp(l), blocoFixe(l), blocoPlanilhas(l), blocoOperacao(l), blocoMarca(l));
     if ((est.perfil === 'admin' || est.perfil === 'franqueado') && TS.blocoEstoqueCfg) grid.append(TS.blocoEstoqueCfg(l.id));
+    if (est.perfil === 'admin' && TS.blocoPedidoAcesso) grid.append(TS.blocoPedidoAcesso(l.id));
     if (est.perfil === 'admin') grid.append(blocoRegras(l), blocoEditar(l));
     card.append(grid);
     return card;

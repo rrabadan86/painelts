@@ -456,6 +456,41 @@
     return d;
   }
 
+  /** bloco de Configurações → Lojas (só admin): login da loja no Sistema de Pedidos */
+  TS.blocoPedidoAcesso = function (lojaId) {
+    const b = h('section', { class: 'cfg-bloco' }, h('h3', null, 'Sistema de Pedidos'),
+      h('p', { class: 'muted' }, 'Login desta loja no site de pedidos da franqueadora (grnteashop.nextsoft.com.br/Pedidos). Com ele, o robô lê o catálogo toda noite e monta o carrinho pela aba Pedido. Ele nunca finaliza o pedido.'));
+    const corpo = h('div', null, h('p', { class: 'muted' }, 'Carregando…'));
+    b.append(corpo);
+    const api = `/api/pedido/acesso?loja=${encodeURIComponent(lojaId)}`;
+    const pintarForm = (a) => {
+      const usuario = h('input', { class: 'f-input', value: a.usuario || '', placeholder: 'ex.: flamboyant', autocomplete: 'off', style: { maxWidth: '220px' } });
+      const senha = h('input', { class: 'f-input', type: 'password', autocomplete: 'new-password', placeholder: a.temSenha ? '•••••• (salva)' : 'senha do site', style: { maxWidth: '260px' } });
+      const msg = h('span', { class: 'muted' });
+      const enviar = async (body, btn) => {
+        btn.disabled = true; msg.className = 'muted'; msg.textContent = 'Salvando…';
+        try {
+          const r = await fetch(api, { method: 'PUT', credentials: 'same-origin', headers: { 'X-Painel': '1', 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+          const j = await r.json().catch(() => ({}));
+          if (!r.ok) throw new Error(j.erro || 'Falha ao salvar.');
+          pintarForm(j);
+          corpo.querySelector('.cfg-acoes span').className = 'pos';
+          corpo.querySelector('.cfg-acoes span').textContent = body.apagar ? 'Login removido.' : 'Salvo. Na aba Pedido, clique em "Atualizar catálogo" para testar.';
+        } catch (err) { msg.className = 'neg'; msg.textContent = err.message; btn.disabled = false; }
+      };
+      const salvar = h('button', { type: 'button', class: 'btn primary' }, 'Salvar login');
+      salvar.addEventListener('click', () => enviar({ usuario: usuario.value, senha: senha.value }, salvar));
+      const remover = a.temSenha ? h('button', { type: 'button', class: 'btn' }, 'Remover') : null;
+      if (remover) remover.addEventListener('click', () => { if (confirm('Remover o login desta loja no Sistema de Pedidos?')) enviar({ apagar: true }, remover); });
+      corpo.replaceChildren(
+        h('div', { class: 'est-cfg-g' }, h('label', null, h('span', null, 'Usuário'), h('div', null, usuario)), h('label', null, h('span', null, 'Senha'), h('div', null, senha))),
+        h('small', { class: 'muted' }, a.temSenha ? `Senha salva${a.em ? ` em ${new Date(a.em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}${a.por ? ' por ' + a.por : ''}` : ''}. Ela fica só no servidor e não aparece mais aqui.` : 'A senha fica só no servidor e não aparece mais depois de salva. O site usa http (sem criptografia): não reaproveite essa senha em outro lugar.'),
+        h('div', { class: 'cfg-acoes' }, salvar, remover, msg));
+    };
+    fetch(api, { credentials: 'same-origin' }).then((r) => r.json()).then(pintarForm).catch((e) => corpo.replaceChildren(h('p', { class: 'neg' }, e.message)));
+    return b;
+  };
+
   // ---------- robô do Sistema de Pedidos ----------
   function cartaoRobo(corpo, loja, M, e, p, R) {
     const robo = p.robo || {};
@@ -488,8 +523,7 @@
       !u.ok && u.log ? h('details', null, h('summary', null, 'ver o log'), h('pre', { class: 'ped-log' }, u.log.join('\n'))) : null) : null;
     let corpoRobo;
     if (!robo.disponivel) corpoRobo = h('p', { class: 'muted' }, robo.erro ? `Coletor indisponível: ${robo.erro}` : 'O robô roda no coletor da VPS, que não está ativo para esta loja. Dá para baixar o CSV e lançar no site.');
-    else if (!robo.temLogin) corpoRobo = h('div', null, h('p', null, 'Falta o login desta loja no Sistema de Pedidos. Na VPS, acrescente ao arquivo da loja (config/coletor/<loja>.env):'),
-      h('pre', { class: 'ped-log' }, 'PEDIDO_USER=usuário do site\nPEDIDO_PASS=senha do site'), h('p', { class: 'muted' }, 'Não precisa reiniciar nada. A senha fica só na VPS. Depois clique em "Atualizar catálogo".'));
+    else if (!robo.temLogin) corpoRobo = h('p', null, 'Falta o login desta loja no Sistema de Pedidos: ', p.podeRobo ? h('a', { href: '#config' }, 'Configurações → Lojas → Sistema de Pedidos') : 'peça ao administrador', '. Depois clique em "Atualizar catálogo".');
     else if (!p.podeRobo) corpoRobo = h('p', { class: 'muted' }, 'Só o administrador aciona o robô. Você pode baixar o CSV.');
     else corpoRobo = h('div', null, h('div', { class: 'cfg-acoes' }, btnCarrinho, btnCat), msg, estadoTxt, ultima);
     return TS.card('Carrinho no Sistema de Pedidos', 'O robô entra com o login da loja, escolhe FRANQUIAS, procura cada produto pelo nome, confere o nome exato, ajusta ao múltiplo e coloca no carrinho. Ele para na etapa 2: pagamento, entrega e finalização ficam com você. O catálogo é lido sozinho toda noite.',

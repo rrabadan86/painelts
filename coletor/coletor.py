@@ -178,12 +178,26 @@ def enfileirar(loja, gatilho, por=None, de=None, ate=None, fixe=False, tipo=None
     return True
 
 
-def tem_pedido(loja):
+def acesso_pedido(loja):
+    """login do Sistema de Pedidos: o salvo pelo painel (Configurações → Lojas) ou, se não houver, o do arquivo da loja"""
+    out = {}
     try:
         env = ler_env(CONFIG_DIR / f"{loja}.env")
+        out = {k: env[k] for k in ("PEDIDO_USER", "PEDIDO_PASS", "PEDIDO_URL") if env.get(k)}
     except OSError:
-        return False
-    return bool(env.get("PEDIDO_USER") and env.get("PEDIDO_PASS") and SCRIPT_PEDIDO.exists())
+        pass
+    try:
+        a = json.loads((DATA_DIR / "_sistema" / "acesso-pedido" / f"{loja}.json").read_text(encoding="utf-8"))
+        if a.get("usuario") and a.get("senha"):
+            out["PEDIDO_USER"], out["PEDIDO_PASS"] = a["usuario"], a["senha"]
+    except (OSError, ValueError):
+        pass
+    return out
+
+
+def tem_pedido(loja):
+    a = acesso_pedido(loja)
+    return bool(a.get("PEDIDO_USER") and a.get("PEDIDO_PASS") and SCRIPT_PEDIDO.exists())
 
 
 def enfileirar_pedido(loja, acao, por=None, somar=False):
@@ -207,6 +221,7 @@ def rodar_pedido(job):
     SEGREDO = re.compile(r"(SECRET|TOKEN|PASS|SENHA|SMTP|GITHUB|KEY)", re.I)
     env = {k: v for k, v in os.environ.items() if not k.startswith("COLETOR_") and not SEGREDO.search(k)}
     env.update(ler_env(CONFIG_DIR / f"{loja}.env"))
+    env.update(acesso_pedido(loja))
     destino = DATA_DIR / loja / "pedido"
     env.update({"MODO": acao, "PYTHONUNBUFFERED": "1", "SAIDA_CATALOGO": str(destino / "catalogo.json"),
                 "ENTRADA_PEDIDO": str(destino / "entrada.json"), "SAIDA_RESULTADO": str(destino / "carrinho.json"),
@@ -534,7 +549,7 @@ class API(BaseHTTPRequestHandler):
             if not loja or loja not in lojas_configuradas():
                 return self._json(404, {"erro": "Loja sem acesso configurado."})
             if not tem_pedido(loja):
-                return self._json(400, {"erro": "Falta o login do Sistema de Pedidos (PEDIDO_USER e PEDIDO_PASS) no arquivo da loja na VPS."})
+                return self._json(400, {"erro": "Falta o login do Sistema de Pedidos: Configurações → Lojas → Sistema de Pedidos."})
             try:
                 n = int(self.headers.get("Content-Length", "0") or 0)
                 corpo = json.loads(self.rfile.read(min(n, 10000)) or b"{}") if n else {}
