@@ -979,3 +979,31 @@ body.com-camada { overflow: hidden; }
 }
 
 .cfg-sub { font-size: 13px; margin: 14px 0 6px; color: var(--green, #2C5234); }
+
+/* fidelidade (FIXE) */
+.fx-card { margin-bottom: 16px; }
+.fx-grupo { margin-top: 12px; }
+.fx-grupo-tit { font-size: 11px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+.fx-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; }
+.fx-stat { display: flex; flex-direction: column; gap: 2px; padding: 12px 14px; border-radius: 10px; background: var(--cream-2, #F6F2EA); border-left: 4px solid #C9A227; }
+.fx-stat > span { font-size: 12px; color: var(--muted); }
+.fx-stat > b { font-size: 24px; line-height: 1.15; color: var(--green, #2C5234); }
+.fx-stat > small { font-size: 11.5px; color: var(--muted); line-height: 1.3; }
+.fx-stat.ok { border-left-color: #2C5234; }
+.fx-stat.alerta { border-left-color: #B5532E; }
+.fx-stat.alerta > b { color: #8E321C; }
+.fx-dets { margin-top: 14px; border-top: 1px solid var(--line, #E2DCCF); padding-top: 4px; }
+.fx-dets .fx-det { margin-top: 8px; }
+.fx-det .table-wrap tbody tr { cursor: pointer; }
+.cpf-link { background: none; border: 0; padding: 0; font: inherit; color: #1F4E8C; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.cpf-link:hover { color: #2C5234; }
+.cupom.cupom-destaque { outline: 2px solid #C9A227; border-radius: 8px; }
+.cli-janela { max-width: 980px !important; }
+.cli-janela.dupla { max-width: 1400px !important; }
+.cli-janela-cols { display: grid; gap: 18px; grid-template-columns: 1fr; }
+.cli-janela.dupla .cli-janela-cols { grid-template-columns: 1fr 1fr; }
+@media (max-width: 900px) { .cli-janela.dupla .cli-janela-cols { grid-template-columns: 1fr; } }
+.cli-janela-col { min-width: 0; }
+.cli-janela-rot { display: inline-block; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: #fff; background: var(--green, #2C5234); border-radius: 6px; padding: 2px 8px; margin-bottom: 6px; }
+.cli-janela-cab { padding: 8px 0 10px; border-bottom: 1px solid var(--line, #E2DCCF); margin-bottom: 10px; }
+.cli-janela-cab .cli-meta { margin-top: 4px; }
