@@ -210,7 +210,9 @@
         tds.push(h('td', null, fm(a[k])));
         if (nivel === 0) continue;
         const d = p && p[k] ? a[k] / p[k] - 1 : null;
-        tds.push(h('td', { class: d == null ? 'muted' : d > 0 ? 'pos' : d < 0 ? 'neg' : 'muted' }, d == null ? '—' : fmt.delta(d)));
+        // variação e, embaixo, o valor do ano anterior (no mesmo recorte de dias)
+        tds.push(h('td', { class: 'tree-var ' + (d == null ? 'muted' : d > 0 ? 'pos' : d < 0 ? 'neg' : 'muted'), title: p && p[k] != null ? `Ano anterior: ${fm(p[k])}` : null },
+          d == null ? '—' : fmt.delta(d), p && p[k] != null ? h('small', { class: 'tree-ant' }, fm(p[k])) : null));
       }
       if (nivel === 0) {
         // mês raiz: sem variação (soma de anos); preenche as colunas de variação vazias

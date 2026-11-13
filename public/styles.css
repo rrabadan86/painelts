@@ -1017,3 +1017,5 @@ body.com-camada { overflow: hidden; }
 .script-op input { margin-top: 3px; accent-color: #2C5234; width: 16px; height: 16px; flex: none; }
 .script-op span { display: flex; flex-direction: column; font-size: 13px; line-height: 1.3; }
 .script-op small { color: var(--muted); font-size: 11.5px; }
+.tree-var { line-height: 1.2; }
+.tree-var .tree-ant { display: block; font-size: 11px; font-weight: 400; color: var(--muted); }
