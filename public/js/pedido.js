@@ -375,9 +375,28 @@
       cat: ['Fora do catálogo', (r) => r.site === 'fora'],
       todos: ['Todos', () => true],
     };
-    const cont = (k) => R.linhas.filter(FILTROS[k][1]).length;
-    const linhas = R.linhas.filter(FILTROS[filtro][1]);
-    const SITU = (r) => (r.qtd <= 0 ? ['Acabou', 'erro'] : r.urgente ? ['Falta antes da entrega', 'erro'] : r.dias != null && r.dias < R.ent + R.N ? ['Pedir', 'warn'] : ['OK', 'ok']);
+    const SITK = (r) => (r.qtd <= 0 ? 'acabou' : r.urgente ? 'falta' : r.dias != null && r.dias < R.ent + R.N ? 'pedir' : 'ok');
+    const SITS = { acabou: ['Acabou', 'erro'], falta: ['Falta antes da entrega', 'erro'], pedir: ['Pedir', 'warn'], ok: ['OK', 'ok'] };
+    const SITU = (r) => SITS[SITK(r)];
+    // filtros extras (valem em qualquer aba): grupo, situação e classe
+    const fx = state.pedFx || (state.pedFx = { g: '', s: '', c: '' });
+    const passa = (r, sem) => (sem === 'g' || !fx.g || r.grupo === fx.g) && (sem === 's' || !fx.s || SITK(r) === fx.s) && (sem === 'c' || !fx.c || (r.classe || 'sem') === fx.c);
+    const cont = (k) => R.linhas.filter((r) => FILTROS[k][1](r) && passa(r)).length;
+    const linhas = R.linhas.filter((r) => FILTROS[filtro][1](r) && passa(r));
+    const naAba = R.linhas.filter(FILTROS[filtro][1]);
+    const seletor = (chave, rot, todos, opcoes, valorDe) => {
+      const n = (v) => naAba.filter((r) => passa(r, chave) && valorDe(r) === v).length;
+      const s = h('select', { class: 'f-input ped-fx' + (fx[chave] ? ' on' : ''), 'aria-label': rot, onchange: (x) => { fx[chave] = x.target.value; pintar(corpo, loja, M, e, p); } },
+        h('option', { value: '' }, `${rot}: ${todos}`),
+        opcoes.filter(([v]) => n(v) || fx[chave] === v).map(([v, t]) => h('option', { value: v, selected: fx[chave] === v || null }, `${rot}: ${t} (${n(v)})`)));
+      return s;
+    };
+    const filtrosExtra = h('div', { class: 'ped-fxs' },
+      seletor('g', 'Grupo', 'todos', ordemG.map((g) => [g, GRUPOS[g]]), (r) => r.grupo),
+      seletor('s', 'Situação', 'todas', Object.entries(SITS).map(([k, [t]]) => [k, t]), SITK),
+      seletor('c', 'Classe', 'todas', [...Object.entries(CLASSES), ['sem', 'sem classe']], (r) => r.classe || 'sem'),
+      fx.g || fx.s || fx.c ? h('button', { type: 'button', class: 'btn ped-fx-limpa', onclick: () => { state.pedFx = { g: '', s: '', c: '' }; pintar(corpo, loja, M, e, p); } }, '✕ Tirar filtros') : null,
+      h('span', { class: 'muted ped-fx-n' }, `${fmt.int(linhas.length)} ${linhas.length === 1 ? 'produto' : 'produtos'}`));
     const tab = TS.table({
       cols: [
         { key: 'produto', label: 'Produto', align: 'l', sticky: true, wrap: true, render: (r) => h('span', null, r.produto, h('small', { class: 'est-tam' }, `cód. ${r.cod}`)) },
@@ -454,7 +473,7 @@
     corpo.append(h('div', { class: 'mt' }, TS.cardWithTools('Produtos', sub,
       h('div', { class: 'est-tools' }, tab.searchBox && (tab.searchBox.classList.add('est-busca'), tab.searchBox),
         TS.seg(Object.entries(FILTROS).map(([k, [t]]) => [`${t} (${cont(k)})`, k]), filtro, (v) => { state.pedFiltro = v; pintar(corpo, loja, M, e, p); }), menuLimpar, btnCsv),
-      tab)));
+      filtrosExtra, tab)));
     if (editados.size) corpo.append(h('p', { class: 'muted' }, `${editados.size} quantidade(s) alterada(s) à mão. `, h('a', { href: '#', onclick: (x) => { x.preventDefault(); editados.clear(); pintar(corpo, loja, M, e, p); } }, 'Voltar à sugestão')));
 
     corpo.append(h('div', { class: 'mt' }, cartaoRobo(corpo, loja, M, e, p, R)));

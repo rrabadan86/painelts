@@ -1188,3 +1188,8 @@ tr.est-det > td { padding: 0 !important; background: #FBF9F4 !important; }
 .ped-cl-volume { background: #F6EBC4; color: #7A5E0E; }
 .ped-cl-joia { background: #E3EFE3; color: #2C5234; }
 .ped-cl-peso { background: #F8E1DB; color: #B5452B; }
+.ped-fxs { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 10px; }
+.ped-fx { width: auto; max-width: 260px; padding: 6px 10px; font-size: 13px; }
+.ped-fx.on { border-color: var(--green); background: #EAF2EA; font-weight: 600; }
+.ped-fx-limpa { padding: 5px 10px; font-size: 12.5px; }
+.ped-fx-n { font-size: 12.5px; margin-left: 4px; }
