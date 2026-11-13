@@ -1075,3 +1075,34 @@ tr.est-det > td { padding: 0 !important; background: #FBF9F4 !important; }
 .est-det-grid .cupom-items td { text-align: right; padding: 5px 10px; white-space: nowrap; }
 .est-det-grid .cupom-items td:first-child { text-align: left; }
 .est-det-grid .cupom-rodape { text-align: left; }
+/* ponto de equilíbrio */
+.est-eq-nums { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+.est-eq-nums > div { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; background: var(--cream-2, #F6F2EA); border-radius: 10px; }
+.est-eq-nums span { font-size: 12px; color: var(--muted); }
+.est-eq-nums b { font-size: 22px; color: var(--green, #2C5234); }
+.est-eq-nums b.neg { color: #8E321C; } .est-eq-nums b.pos { color: #2C5234; }
+.est-eq-nums small { font-size: 11.5px; color: var(--muted); }
+.est-eq-barra { position: relative; height: 12px; background: #EEE9DF; border-radius: 6px; margin: 14px 0 6px; overflow: visible; }
+.est-eq-barra i { position: absolute; left: 0; top: 0; bottom: 0; background: linear-gradient(90deg, #C9A227, #2C5234); border-radius: 6px; }
+.est-eq-barra em { position: absolute; top: -4px; bottom: -4px; width: 2px; background: #8E321C; }
+.est-eq-nota { font-size: 11.5px; margin: 6px 0 0; }
+/* simulador nos cartões por pacote */
+.est-sim { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; padding: 6px 10px; border-top: 1px dashed #E2DCCF; font-size: 12px; }
+.est-sim label { display: flex; align-items: center; gap: 4px; }
+.est-sim-in { width: 90px; padding: 4px 6px; font-size: 12px; }
+.est-sim-alvo { background: none; border: 0; padding: 0; font: inherit; font-size: 12px; color: #1F4E8C; text-decoration: underline; cursor: pointer; }
+.cupom.est-simulando { outline: 2px solid #C9A227; }
+.cupom.est-melhor { border-color: #2C5234; }
+.est-det-1 { grid-template-columns: minmax(280px, 560px); }
+.est-conta-sub { display: block; font-size: 11px; color: var(--muted); font-weight: 400; white-space: normal; }
+.est-conta-card .cupom-items td:first-child { white-space: normal; }
+.est-pop.est-pop-card { width: 440px; padding: 0; border: 0; background: transparent; box-shadow: 0 10px 30px rgba(20, 35, 24, .22); border-radius: 8px; }
+.est-pop-card .cupom { margin: 0; background: #fff; }
+.est-pop-card .cupom-items td { text-align: right; padding: 5px 10px; }
+.est-pop-card .cupom-items td:first-child { text-align: left; }
+.est-eq-barra u { position: absolute; top: -4px; bottom: -4px; width: 0; border-left: 2px dashed #1F4E8C; }
+.est-eq-leg { display: flex; gap: 14px; font-size: 11px; color: var(--muted); }
+.est-eq-leg i { display: inline-block; width: 12px; height: 8px; margin-right: 4px; vertical-align: middle; }
+.est-eq-leg .l-v { background: linear-gradient(90deg, #C9A227, #2C5234); border-radius: 3px; }
+.est-eq-leg .l-e { width: 2px; background: #8E321C; }
+.est-eq-leg .l-p { width: 0; border-left: 2px dashed #1F4E8C; }

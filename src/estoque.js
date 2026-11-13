@@ -68,6 +68,31 @@ function ler(rows) {
   return { em: dataDoTitulo(titulo), itens };
 }
 
+const arqHist = (id) => path.join(pasta(id), 'custos.json');
+/** histórico de custo por código: { cod: [[AAAA-MM-DD, custo], …] } — um ponto novo só quando o custo muda */
+function historico(id) {
+  try { return JSON.parse(fs.readFileSync(arqHist(id), 'utf8')); } catch { /* ainda não existe */ }
+  const a = atual(id); // começa pelo estoque que já está no painel
+  if (a && a.itens) { registrarCustos(id, a.itens, a.em); try { return JSON.parse(fs.readFileSync(arqHist(id), 'utf8')); } catch { /* sem custos */ } }
+  return {};
+}
+const lerHist = (id) => { try { return JSON.parse(fs.readFileSync(arqHist(id), 'utf8')); } catch { return {}; } };
+function registrarCustos(id, itens, quando) {
+  const h = lerHist(id);
+  const dia = String(quando || new Date().toISOString()).slice(0, 10);
+  let mudou = false;
+  for (const it of itens) {
+    if (!(it.custo > 0)) continue;
+    const l = h[it.cod] || (h[it.cod] = []);
+    const ult = l[l.length - 1];
+    if (ult && Math.abs(ult[1] - it.custo) < 0.005) continue;
+    if (ult && ult[0] === dia) ult[1] = it.custo; else l.push([dia, it.custo]);
+    if (l.length > 60) l.splice(0, l.length - 60);
+    mudou = true;
+  }
+  if (mudou) C.gravarAtomico(arqHist(id), JSON.stringify(h), 0o640);
+}
+
 function atual(id) {
   try { return JSON.parse(fs.readFileSync(arqAtual(id), 'utf8')); } catch { return null; }
 }
@@ -82,6 +107,9 @@ async function importar(id, buf, origem = 'painel') {
   const dados = { em: novo.em || new Date().toISOString(), importadoEm: new Date().toISOString(), origem, itens: [...novo.itens, ...zerados] };
   fs.mkdirSync(pasta(id), { recursive: true });
   C.gravarAtomico(arqAtual(id), JSON.stringify(dados), 0o640);
+  // primeira vez: o estoque que já existia vira o ponto de partida do histórico
+  if (antes && !fs.existsSync(arqHist(id))) registrarCustos(id, antes.itens, antes.em);
+  registrarCustos(id, novo.itens, dados.em);
   return { itens: novo.itens.length, zerados: zerados.length, semCusto: novo.itens.filter((i) => !i.custo).length, em: dados.em };
 }
 
@@ -109,7 +137,7 @@ const EMB_PADRAO = {
   500: [{ cod: '80151', qtd: 1 }, { cod: '81010', qtd: 2 }],
   1000: [{ cod: '80152', qtd: 1 }, { cod: '81010', qtd: 2 }],
 };
-const PADRAO = { entregaDias: 10, coberturaDias: 30, paradoDias: 60, segurancaPct: 50, simplesPct: 0, cartaoPct: 0, outros: [], embalagens: EMB_PADRAO };
+const PADRAO = { entregaDias: 10, coberturaDias: 30, paradoDias: 60, segurancaPct: 50, simplesPct: 0, cartaoPct: 0, outros: [], margemMin: 15, margemAlvo: 40, embalagens: EMB_PADRAO };
 function cfg(loja) {
   const c = (loja && loja.estoqueCfg) || {};
   return {
@@ -122,6 +150,8 @@ function cfg(loja) {
     cartaoPct: Number.isFinite(c.cartaoPct) ? c.cartaoPct : PADRAO.cartaoPct,
     // outros custos da loja: % das vendas ou R$ por mês (dividido pelas vendas do mês), em tudo, só loja ou só EG
     outros: Array.isArray(c.outros) ? c.outros : [],
+    margemMin: Number.isFinite(c.margemMin) ? c.margemMin : PADRAO.margemMin,
+    margemAlvo: Number.isFinite(c.margemAlvo) ? c.margemAlvo : PADRAO.margemAlvo,
     embalagens: c.embalagens && typeof c.embalagens === 'object' ? c.embalagens : EMB_PADRAO,
   };
 }
@@ -132,6 +162,9 @@ function validarCfg(b) {
   const pct = (v) => { const x = Math.round(Number(String(v ?? 0).replace(',', '.')) * 100) / 100; return Number.isFinite(x) && x >= 0 && x <= 50 ? x : null; };
   out.simplesPct = pct(b.simplesPct); out.cartaoPct = pct(b.cartaoPct);
   if (out.simplesPct == null || out.cartaoPct == null) return { erro: 'Simples Nacional e maquininha: use um percentual entre 0 e 50.' };
+  const mm = (v, d) => { const x = Math.round(Number(String(v ?? d).replace(',', '.')) * 10) / 10; return Number.isFinite(x) && x >= -50 && x <= 95 ? x : null; };
+  out.margemMin = mm(b.margemMin, PADRAO.margemMin); out.margemAlvo = mm(b.margemAlvo, PADRAO.margemAlvo);
+  if (out.margemMin == null || out.margemAlvo == null) return { erro: 'Margens: use um percentual entre −50 e 95.' };
   const outros = Array.isArray(b.outros) ? b.outros : [];
   if (outros.length > 20) return { erro: 'No máximo 20 custos.' };
   out.outros = [];
@@ -154,4 +187,4 @@ function validarCfg(b) {
   return { ok: out };
 }
 
-module.exports = { ler, atual, importar, pendentes, processar, cfg, validarCfg, quantidade, PADRAO };
+module.exports = { ler, atual, historico, importar, pendentes, processar, cfg, validarCfg, quantidade, PADRAO };
