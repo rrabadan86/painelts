@@ -35,6 +35,9 @@ function importar(id, arquivo) {
   const j = JSON.parse(fs.readFileSync(arquivo, 'utf8'));
   if (!DATA.test(j.de || '') || !DATA.test(j.ate || '') || !Array.isArray(j.notas)) throw new Error('arquivo de XML inválido');
   const b = lerBase(id);
+  // não apaga um período com um arquivo vazio (exportação incompleta)
+  const naJanela = Object.values(b.notas).filter((n) => n.d >= j.de && n.d <= j.ate).length;
+  if (!j.notas.length && (j.total === 0 || j.total == null) && naJanela) throw new Error(`o XML de ${j.de} a ${j.ate} veio sem notas, mas o painel já tem ${naJanela} nesse período; nada foi apagado`);
   let removidas = 0;
   for (const [k, n] of Object.entries(b.notas)) if (n.d >= j.de && n.d <= j.ate) { delete b.notas[k]; removidas++; }
   let novas = 0;
@@ -81,8 +84,10 @@ function ler(id) {
     const doc = n.cpf || n.cnpj;
     if (!doc) continue;
     // NFC-e (65) é o cupom do caixa; se o número repetir numa NF-e (55), fica a NFC-e
-    const atual = porCupom.get(n.c);
-    if (!atual || (atual.m !== '65' && n.m === '65')) porCupom.set(n.c, { cpf: doc, cupom: n.c, m: n.m, data: n.d });
+    // número + data: o mesmo número pode voltar em outro caixa/série ou outro dia (a venda casa pela data ±1)
+    const k = n.c + '|' + n.d;
+    const atual = porCupom.get(k);
+    if (!atual || (atual.m !== '65' && n.m === '65')) porCupom.set(k, { cpf: doc, cupom: n.c, m: n.m, data: n.d });
     if (n.n && !nomes.has(doc)) nomes.set(doc, n.n);
   }
   return { xml: [...porCupom.values()].map(({ cpf, cupom, data }) => ({ cpf, cupom, data, loja: '' })), nomes, importacoes: b.importacoes || [] };

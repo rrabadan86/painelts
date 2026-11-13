@@ -37,12 +37,14 @@ function numeros(linhas) {
   const porVend = new Map();
   for (const v of linhas) {
     const x = v.vt || 0;
-    total += x;
     const ch = v.cupom + '|' + v.loja;
+    // taxa de serviço (gorjeta) e taxa de entrega não são venda: não entram em nenhum valor
+    if (ehTaxa(v)) { if (ehDelivery(v)) cupons.delivery.add(ch); continue; }
+    total += x;
     if (v.grupoC === EG || v.cat === EG) { eg += x; cupons.eg.add(ch); continue; }
     if (ehCorp(v.vendedor) || ehOmni(v.vendedor)) { corpOmni += x; cupons.omni.add(ch); continue; }
     loja += x;
-    if (!ehTaxa(v)) itens += v.qtd || 0;
+    itens += v.qtd || 0;
     if (ehDelivery(v)) cupons.delivery.add(ch);
     else cupons.loja.add(ch);
     if (!semVendedor(v.vendedor) && !/delivery|entrega/i.test(v.vendedor)) porVend.set(v.vendedor, (porVend.get(v.vendedor) || 0) + x);

@@ -180,28 +180,39 @@
     return { metas: out, feriasMes: fm };
   };
 
+  /** vendedores sem meta individual da loja (lista configurada nas regras + "sem vendedor") */
+  const semMetaDe = (rg) => new Set([...((rg && rg.semMeta) || []), 'sem vendedor', ''].map((x) => String(x).trim().toLowerCase()));
+  R.semMetaDe = semMetaDe;
+
   R.comissionamento = function ({ base, baseSemVend, metaLoja, vendBonus, ym }) {
     const db = TS.db, I = R.ids;
     const semEG = (idx) => idx.filter((i) => !I.eg.has(db.cat[i]));
     const b = semEG(base), bAll = semEG(baseSemVend);
+    const nomeV = (v) => String(db.D.vendedor[v] || '').trim().toLowerCase();
+    // regras da loja do contexto (a lista "sem meta" e o rateio são da loja, não da rede inteira)
+    const lojaCtx = lojaUnica(bAll.length ? bAll : b);
+    const rgCtx = R.regrasDe(lojaCtx);
+    const SM = semMetaDe(rgCtx);
+    const semMeta = (v) => SM.has(nomeV(v));
 
     // quantidade de vendedores que dividem a meta
     const elegiveis = new Set();
-    for (const i of bAll) if ((db.vt[i] || 0) > 0 && !I.semMeta.has(db.vend[i])) elegiveis.add(db.vend[i]);
+    for (const i of bAll) if ((db.vt[i] || 0) > 0 && !semMeta(db.vend[i])) elegiveis.add(db.vend[i]);
     const qtdVend = elegiveis.size;
 
-    const porVend = TS.agrupar(b, (i) => db.vend[i]);
+    // calcula TODOS os vendedores (o rateio precisa do total da loja) e depois mostra só os do filtro
+    const porVend = TS.agrupar(bAll, (i) => db.vend[i]);
+    const noFiltro = new Set(b.map((i) => db.vend[i]));
     const vendBonusId = vendBonus === '' ? null : db.D.vendedor.indexOf(vendBonus);
-    const lojaFerias = lojaUnica(bAll.length ? bAll : b);
-    const mInd = R.metasIndividuais(metaLoja, ym || '', [...elegiveis].map((v) => db.D.vendedor[v]), lojaFerias ? R.feriasDe(lojaFerias) : []);
+    const mInd = R.metasIndividuais(metaLoja, ym || '', [...elegiveis].map((v) => db.D.vendedor[v]), lojaCtx ? R.feriasDe(lojaCtx) : []);
 
-    const rows = [];
+    const todas = [];
     for (const [v, idx] of porVend) {
       const m = R.mix(idx);
       if (!m.tem) continue; // visual filtra [Total] em branco
       const loja = lojaUnica(idx);
       const rg = R.regrasDe(loja);
-      const mi = I.semMeta.has(v) ? 0 : (mInd.metas.get(String(db.D.vendedor[v]).trim().toUpperCase()) ?? (qtdVend ? metaLoja / qtdVend : 0));
+      const mi = semMeta(v) ? 0 : (mInd.metas.get(String(db.D.vendedor[v]).trim().toUpperCase()) ?? (qtdVend ? metaLoja / qtdVend : 0));
       const metaArom = mi * rg.divisaoMeta.arom;
       const metaPuro = mi * rg.divisaoMeta.puro;
       const metaAcess = mi * rg.divisaoMeta.acess;
@@ -227,27 +238,27 @@
         const aliq = totLoja >= metaLoja * 1.2 ? rg.bonus.acima120 : totLoja >= metaLoja ? rg.bonus.bate : rg.bonus.abaixo;
         bonus = Math.max(0, totLoja - totVend) * aliq;
       }
-      rows.push({
+      todas.push({
         vendedorId: v, vendedor: db.D.vendedor[v] || '(sem nome)', loja,
-        metaInd: mi, total: m.total,
+        metaInd: mi, total: m.total, semMeta: semMeta(v),
         metaArom, arom: m.arom, cArom, metaPuro, puro: m.puro, cPuro, metaAcess, acess: m.acess, cAcess,
         tkm: ind.tkm, pma: ind.pma, ipa: ind.ipa, premiacao: prem, bonus,
         base: cArom + cPuro + cAcess + (bonus || 0),
       });
     }
 
-    // [TotalAPagar] — Vila Madalena faz rateio igual entre os vendedores
-    const lojaCtx = lojaUnica(b);
-    const rgCtx = R.regrasDe(lojaCtx);
+    // [TotalAPagar] — rateio: o total de comissões da loja dividido igualmente entre quem recebe
     if (rgCtx.rateio && rgCtx.rateio.ativo) {
-      const exclui = new Set((rgCtx.rateio.exclui || []).map((x) => x.toLowerCase()));
-      const fora = (v) => I.semVendedor.has(v) || exclui.has(String(db.D.vendedor[v] || '').toLowerCase());
-      const montante = rows.reduce((s, r) => s + r.base + r.premiacao, 0);
-      const recebedores = new Set(bAll.map((i) => db.vend[i]).filter((v) => !fora(v))).size;
-      rows.forEach((r) => { r.aPagar = fora(r.vendedorId) ? 0 : (recebedores ? montante / recebedores : 0); });
+      const exclui = new Set((rgCtx.rateio.exclui || []).map((x) => String(x).trim().toLowerCase()));
+      const fora = (v) => I.semVendedor.has(v) || exclui.has(nomeV(v));
+      const montante = todas.reduce((s, r) => s + r.base + r.premiacao, 0);
+      // só quem aparece na tabela: assim a soma do que cada um recebe é igual ao montante
+      const recebedores = todas.filter((r) => !fora(r.vendedorId)).length;
+      todas.forEach((r) => { r.aPagar = fora(r.vendedorId) ? 0 : (recebedores ? montante / recebedores : 0); });
     } else {
-      rows.forEach((r) => { r.aPagar = r.base; });
+      todas.forEach((r) => { r.aPagar = r.base; });
     }
+    const rows = todas.filter((r) => noFiltro.has(r.vendedorId));
     const sum = (k) => rows.reduce((s, r) => s + (r[k] || 0), 0);
     const total = {
       vendedor: 'Total', metaInd: metaLoja, total: sum('total'), arom: sum('arom'), cArom: sum('cArom'), puro: sum('puro'), cPuro: sum('cPuro'),
@@ -267,7 +278,8 @@
     // quem está em "Não entram no rateio" também não recebe gorjeta: a parte dele fica com os outros
     const foraDe = (l) => { const rt = R.regrasDe(lojaNome(l)).rateio; return rt && rt.ativo ? new Set((rt.exclui || []).map((x) => String(x).trim().toLowerCase())) : new Set(); };
     for (const l of lojas) L.set(l, { fatEG: new Map(), fatEGTot: 0, gorjeta: 0, vendAtivos: new Set(), fora: foraDe(l) });
-    const ehFora = (st, v) => st.fora.has(String(db.D.vendedor[v] || '').trim().toLowerCase());
+    // "sem vendedor" também fica de fora: a gorjeta dele seria perdida (ninguém recebe)
+    const ehFora = (st, v) => I.semVendedor.has(v) || st.fora.has(String(db.D.vendedor[v] || '').trim().toLowerCase());
     for (const i of baseSemVend) {
       const st = L.get(db.loja[i]);
       if (!st) continue;
@@ -290,11 +302,13 @@
         if (ehFora(st, v)) continue; // fora do rateio: sem gorjeta
         const prop = st.fatEGTot ? (f || 0) / st.fatEGTot : 0;
         const gj = R.regrasDe(lojaNome(l)).gorjeta;
-        if (gj.modo === 'igual') gorjeta += st.vendAtivos.size && f !== undefined ? (st.gorjeta * gj.percentual) / st.vendAtivos.size : 0;
+        // igual: divide entre todos os vendedores ativos da loja no período (vendeu algo), com ou sem venda no EG
+        if (gj.modo === 'igual') gorjeta += st.vendAtivos.has(v) && st.vendAtivos.size ? (st.gorjeta * gj.percentual) / st.vendAtivos.size : 0;
         else gorjeta += prop * st.gorjeta * gj.percentual;
       }
-      if (!temEG) continue;
-      const ind = TS.indicadores(idx);
+      if (!temEG && !(gorjeta > 0)) continue;
+      // indicadores só com as vendas do Espaço Gourmet (sem a taxa de serviço)
+      const ind = TS.indicadores(idx.filter((i) => I.eg.has(db.cat[i]) && !I.taxaServico.has(db.desc[i])));
       rows.push({ vendedor: db.D.vendedor[v], gorjeta, fatEG: fat, tkmEG: ind.cupons ? fat / ind.cupons : null, pmaEG: ind.pma, ipaEG: ind.ipa });
     }
     let gTot = 0, fTot = 0;

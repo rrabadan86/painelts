@@ -79,6 +79,19 @@ function importar(id, vendas, { de, ate, origem, por } = {}) {
     porMes.get(ym).push(v);
   }
   const meses = mesesEntre(de, ate);
+  // travas: não apaga um período inteiro com uma planilha vazia, nem mistura vendas de outra loja
+  {
+    const velhas = meses.flatMap((ym) => lerMes(id, ym));
+    const naJanela = velhas.filter((v) => v.data >= de && v.data <= ate).length;
+    const totalNovas = [...porMes.values()].reduce((s, a) => s + a.length, 0);
+    if (!totalNovas && naJanela) throw new Error(`A planilha não trouxe vendas de ${de} a ${ate}, mas o painel já tem ${naJanela} linhas nesse período. Nada foi apagado (pode ter sido uma exportação incompleta).`);
+    let nomesBase = new Set(velhas.map((v) => v.loja).filter(Boolean));
+    if (!nomesBase.size) { const ult = arquivosMes(id).sort().pop(); if (ult) nomesBase = new Set(lerMes(id, ult.slice(0, 7)).map((v) => v.loja).filter(Boolean)); }
+    const nomesNovos = new Set([...porMes.values()].flat().map((v) => v.loja).filter(Boolean));
+    if (nomesBase.size && nomesNovos.size && ![...nomesNovos].some((n) => nomesBase.has(n))) {
+      throw new Error(`A planilha é de outra loja (${[...nomesNovos].join(', ')}); esta loja vende como ${[...nomesBase].join(', ')}. Nada foi gravado.`);
+    }
+  }
   let horasMantidas = 0;
   for (const ym of meses) {
     const antigas = lerMes(id, ym);

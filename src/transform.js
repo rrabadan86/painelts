@@ -137,6 +137,16 @@ function colunaCodigo(rows, headerIndex) {
 function transformVendas(rows, origem) {
   const base = promote(rows, 1); // Table.Skip(1) + PromoteHeaders
   const colCod = colunaCodigo(rows, 1);
+  // O AppNext exporta a quantidade multiplicada por 1.000 (1 un = 1000; 0,5 kg = 500). Planilhas antigas vêm
+  // com a quantidade normal. Decide pela planilha inteira: se quase todas as quantidades são múltiplos de 1.000,
+  // divide TODAS por 1.000 (assim 500 vira 0,5 e não 500 unidades).
+  // texto com vírgula ("9.152,000") já é a quantidade de verdade; a escala ×1000 vale para os números
+  const ehTextoReal = (v) => typeof v === 'string' && /,\d+$/.test(v.trim());
+  const brutas = base.filter((r) => !ehTextoReal(r['Quantidade'])).map((r) => toNumber(r['Quantidade'])).filter((n) => n != null && n !== 0);
+  // (venda normal tem 1, 2, 3… unidades; na escala do AppNext, 1000, 2000… — de 100 para cima é a escala ×1000)
+  const grandes = brutas.filter((n) => Math.abs(n) >= 100).length;
+  const escalaMil = brutas.length > 0 && grandes / brutas.length >= 0.9;
+  const qtdDe = (n) => (n == null ? null : escalaMil ? Math.round(n) / 1000 : toInt64(Math.abs(n) >= 1000 ? n / 1000 : n));
   const out = [];
   for (const r of base) {
     const data = toISODate(r['Data']);
@@ -146,7 +156,9 @@ function transformVendas(rows, origem) {
     let loja = toText(r['Loja']) || '';
     loja = replaceAll(loja, 'GOIANIA - TEA SHOP FLAMBOYANT.', 'GOIANIA - TEA SHOP FLAMBOYANT');
     const descricao = toText(r['Descrição']) || '';
-    const qtdRaw = toInt64(r['Quantidade']);
+    const qtdNum = toNumber(r['Quantidade']);
+    const qtdRaw = toInt64(qtdNum);
+    const qtdTexto = ehTextoReal(r['Quantidade']);
     const vu = toNumber(r['Valor Unitário']);
     const du = toNumber(r['Desconto Unitário']);
     const vt = toNumber(r['Valor Total']);
@@ -154,9 +166,8 @@ function transformVendas(rows, origem) {
     const qtdItensCupom = toInt64(r['Qtd. Itens no Cupom']);
 
     // Quantidade Personalizado
-    let qtdP = qtdRaw === null ? null : (qtdRaw >= 1000 ? qtdRaw / 1000 : qtdRaw);
-    qtdP = qtdP === null ? null : toInt64(qtdP);
-    let qtdItensP = qtdItensCupom === null ? null : toInt64(qtdItensCupom >= 1000 ? qtdItensCupom / 1000 : qtdItensCupom);
+    const qtdP = qtdTexto ? qtdNum : qtdDe(qtdNum);
+    const qtdItensP = qtdItensCupom === null ? null : escalaMil ? Math.round(qtdItensCupom / 1000) : toInt64(Math.abs(qtdItensCupom) >= 1000 ? qtdItensCupom / 1000 : qtdItensCupom);
 
     // Grupo: correções
     let grupo = toText(r['Grupo']) || '';

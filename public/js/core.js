@@ -242,8 +242,9 @@ TS.indicadores = function (idx) {
   return { vt, qtd, cupons: cup, tkm: cup ? vt / cup : null, pma: qtd ? vt / qtd : null, ipa: cup ? qtd / cup : null };
 };
 
-/** cupom + loja: o número do cupom pode se repetir entre lojas */
-TS.chaveCupom = (i) => TS.db.cupom[i] * 64 + TS.db.loja[i];
+/** cupom + loja + dia: o número do cupom pode se repetir entre lojas e, em períodos longos,
+ *  entre caixas/séries diferentes; um cupom nunca passa de um dia para o outro */
+TS.chaveCupom = (i) => (TS.db.cupom[i] * 64 + TS.db.loja[i]) * 50000 + (TS.db.day[i] || 0);
 
 TS.soma = (idx, col) => { let s = 0; const a = TS.db[col]; for (const i of idx) s += a[i] || 0; return s; };
 

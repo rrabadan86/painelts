@@ -542,6 +542,20 @@
     if (res.feriasMes.length) root.append(h('div', { class: 'notice' }, h('b', null, 'Férias no mês: '),
       res.feriasMes.map((f) => `${f.vendedor} (${fmt.date(f.de)} a ${fmt.date(f.ate)})`).join(' · '),
       '. Nesses dias a meta diária é dividida só entre quem está trabalhando.'));
+    // vendas de grupos que não entram em meta, comissão e royalties (aviso para conferir o cadastro de grupos)
+    {
+      const I = R().ids, fora = new Map();
+      for (const i of base) {
+        if (I.eg.has(db.cat[i]) || I.taxas.has(db.desc[i]) || db.D.cat[db.cat[i]] === 'FIDELIDADE' || !(db.vt[i] > 0)) continue;
+        const g = db.grupoC[i];
+        if (I.arom.has(g) || I.puro.has(g) || I.acess.has(g)) continue;
+        const n = db.D.grupoC[g] || '(sem grupo)';
+        fora.set(n, (fora.get(n) || 0) + db.vt[i]);
+      }
+      const tot = [...fora.values()].reduce((a, b) => a + b, 0);
+      if (tot >= 1) root.append(h('div', { class: 'notice' }, h('b', null, `${fmt.brl(tot)} em vendas ficaram fora da meta, da comissão e dos royalties`),
+        ` porque o grupo do produto não é chá aromatizado, chá puro nem acessório: ${[...fora].sort((a, b) => b[1] - a[1]).map(([n, v]) => `${n} (${fmt.brl(v)})`).join(', ')}. Se algum deveria contar, peça ao administrador do painel para incluir o grupo.`));
+    }
     if (res.lojasNoPeriodo > 1) root.append(h('div', { class: 'notice' }, 'Há mais de uma loja no filtro. As regras de comissão mudam por loja, então selecione uma loja para ver os valores corretos.'));
     const mensal = ['mes', 'mesAnt', 'custom'].includes(state.f.preset) || (state.f.preset === 'anomes' && state.f.ano && state.f.mes);
     if (!mensal) root.append(h('div', { class: 'notice' }, 'A meta é mensal. Para fechar a comissão, use "Mês atual", "Mês anterior" ou escolha Ano + Mês no período.'));
