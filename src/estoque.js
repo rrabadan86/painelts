@@ -109,7 +109,7 @@ const EMB_PADRAO = {
   500: [{ cod: '80151', qtd: 1 }, { cod: '81010', qtd: 2 }],
   1000: [{ cod: '80152', qtd: 1 }, { cod: '81010', qtd: 2 }],
 };
-const PADRAO = { entregaDias: 10, coberturaDias: 30, paradoDias: 60, segurancaPct: 50, embalagens: EMB_PADRAO };
+const PADRAO = { entregaDias: 10, coberturaDias: 30, paradoDias: 60, segurancaPct: 50, simplesPct: 0, cartaoPct: 0, embalagens: EMB_PADRAO };
 function cfg(loja) {
   const c = (loja && loja.estoqueCfg) || {};
   return {
@@ -117,6 +117,9 @@ function cfg(loja) {
     coberturaDias: Number.isInteger(c.coberturaDias) ? c.coberturaDias : PADRAO.coberturaDias,
     paradoDias: Number.isInteger(c.paradoDias) ? c.paradoDias : PADRAO.paradoDias,
     segurancaPct: Number.isInteger(c.segurancaPct) ? c.segurancaPct : PADRAO.segurancaPct,
+    // margem líquida: % do Simples Nacional e da taxa da maquininha sobre o valor vendido
+    simplesPct: Number.isFinite(c.simplesPct) ? c.simplesPct : PADRAO.simplesPct,
+    cartaoPct: Number.isFinite(c.cartaoPct) ? c.cartaoPct : PADRAO.cartaoPct,
     embalagens: c.embalagens && typeof c.embalagens === 'object' ? c.embalagens : EMB_PADRAO,
   };
 }
@@ -124,6 +127,9 @@ function validarCfg(b) {
   const n = (v, a, z) => { const x = Math.round(+v); return x >= a && x <= z ? x : null; };
   const out = { entregaDias: n(b.entregaDias, 0, 120), coberturaDias: n(b.coberturaDias, 1, 365), paradoDias: n(b.paradoDias, 7, 730), segurancaPct: n(b.segurancaPct ?? PADRAO.segurancaPct, 0, 300) };
   if (Object.values(out).some((v) => v == null)) return { erro: 'Confira os números (entrega 0–120 dias, pedido 1–365 dias, parado 7–730 dias, segurança 0–300%).' };
+  const pct = (v) => { const x = Math.round(Number(String(v ?? 0).replace(',', '.')) * 100) / 100; return Number.isFinite(x) && x >= 0 && x <= 50 ? x : null; };
+  out.simplesPct = pct(b.simplesPct); out.cartaoPct = pct(b.cartaoPct);
+  if (out.simplesPct == null || out.cartaoPct == null) return { erro: 'Simples Nacional e maquininha: use um percentual entre 0 e 50.' };
   const emb = {};
   for (const [g, lista] of Object.entries(b.embalagens || {})) {
     if (!/^\d{1,4}$/.test(g) || !Array.isArray(lista) || lista.length > 6) return { erro: 'Embalagens inválidas.' };
