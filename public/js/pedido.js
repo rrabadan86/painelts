@@ -460,7 +460,7 @@
   /** bloco de Configurações → Lojas (só admin): login da loja no Sistema de Pedidos */
   TS.blocoPedidoAcesso = function (lojaId) {
     const b = h('section', { class: 'cfg-bloco' }, h('h3', null, 'Sistema de Pedidos'),
-      h('p', { class: 'muted' }, 'Login desta loja no site de pedidos da franqueadora (grnteashop.nextsoft.com.br/Pedidos). Com ele, o robô lê o catálogo toda noite e monta o carrinho pela aba Pedido. Ele nunca finaliza o pedido.'));
+      h('p', { class: 'muted' }, 'Login desta loja no site de pedidos da franqueadora (grnteashop.nextsoft.com.br/Pedidos). Com ele, o robô lê o catálogo toda noite e monta o carrinho em Estoque → Pedido. Ele nunca finaliza o pedido.'));
     const corpo = h('div', null, h('p', { class: 'muted' }, 'Carregando…'));
     b.append(corpo);
     const api = `/api/pedido/acesso?loja=${encodeURIComponent(lojaId)}`;
@@ -476,7 +476,7 @@
           if (!r.ok) throw new Error(j.erro || 'Falha ao salvar.');
           pintarForm(j);
           corpo.querySelector('.cfg-acoes span').className = 'pos';
-          corpo.querySelector('.cfg-acoes span').textContent = body.apagar ? 'Login removido.' : 'Salvo. Na aba Pedido, clique em "Atualizar catálogo" para testar.';
+          corpo.querySelector('.cfg-acoes span').textContent = body.apagar ? 'Login removido.' : 'Salvo. Em Estoque → Pedido, clique em "Atualizar catálogo" para testar.';
         } catch (err) { msg.className = 'neg'; msg.textContent = err.message; btn.disabled = false; }
       };
       const salvar = h('button', { type: 'button', class: 'btn primary' }, 'Salvar login');
