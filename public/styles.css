@@ -1108,3 +1108,12 @@ tr.est-det > td { padding: 0 !important; background: #FBF9F4 !important; }
 .est-eq-leg .l-p { width: 0; border-left: 2px dashed #1F4E8C; }
 .est-det-grid .cupom-items tr[title] td:first-child { cursor: help; }
 .est-det-nota { text-align: left; }
+.est-det-con td { color: #1F4E8C; background: #F1F5FA; }
+.est-det-con.neg td { color: #8E321C; }
+.est-liq-neg { color: #8E4A1C; }
+.est-det-aviso { background: #EEF4EC; border: 1px solid #CFE0CA; color: #2C5234; border-radius: 8px; padding: 8px 12px; font-size: 12.5px; margin-bottom: 10px; }
+.est-det-grid { grid-template-columns: repeat(auto-fill, minmax(275px, 1fr)); }
+.est-det-grid .cupom-items td:first-child { white-space: normal; }
+.est-det-grid .cupom-items td { padding: 5px 8px; }
+.est-det-grid .cupom-head { flex-wrap: nowrap; }
+.est-det-grid .cupom-head > span:last-child { white-space: nowrap; color: var(--muted); font-size: 12px; }
