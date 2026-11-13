@@ -347,7 +347,7 @@
     const kpis = [];
     if (modo === 'repor') {
       kpis.push(TS.kpi(`Vendas da loja · ${R.N} dias`, fmt.brl0(R.vendasN), `até ${fmt.date(TS.dayToIso(R.hoje - 1))} · sem Espaço Gourmet`));
-      kpis.push(TS.kpi('Valor para o pedido', fmt.brl0(R.orcamento), `${fmt.pct(R.pct)} das vendas${par.cmvPct == null ? ' (CMV real)' : ` · CMV real ${fmt.pct(R.cmvReal)}`}`,
+      kpis.push(TS.kpi('Limite do pedido', fmt.brl0(R.orcamento), `${fmt.pct(R.pct)} das vendas${par.cmvPct == null ? ' (CMV real)' : ` · CMV real ${fmt.pct(R.cmvReal)}`}`,
         `CMV real = custo dos produtos vendidos ÷ faturamento, só loja, nos 3 últimos meses fechados: ${fmt.pct(R.cmvReal)}.`));
     } else {
       const [a0, a1] = R.evInfo.atual, [l0, l1] = R.evInfo.anterior;
@@ -439,7 +439,12 @@
         { key: 'lucroDia', label: 'Lucro sem fixos/dia', title: 'O que o produto deixou por dia nos últimos 30 dias depois do custo e das deduções variáveis (comissão, royalties, Simples, maquininha). É a prioridade do pedido: urgentes primeiro, depois quem deixa mais lucro', fmt: (v) => (v ? fmt.brl(v) : '—') },
         { key: 'motivo', label: 'Obs.', align: 'l', render: (r) => obs(r) },
       ],
-      rows: linhas, sortKey: filtro === 'pedido' ? 'lucroDia' : 'lucroDia', maxHeight: '620px', search: 'Buscar produto…', searchKeys: ['produto', 'cod'], cls: 'est-t ped-t',
+      rows: linhas, total: (() => {
+        const ped = linhas.filter((r) => r.pedir > 0);
+        if (!ped.length) return null;
+        const un = ped.filter((r) => r.it.un !== 'Kg').reduce((s, r) => s + r.pedir, 0), kg = ped.filter((r) => r.it.un === 'Kg').reduce((s, r) => s + r.pedir, 0);
+        return { produto: `Total · ${fmt.int(ped.length)} ${ped.length === 1 ? 'produto' : 'produtos'}`, pedir: [kg ? `${fmt.kg(kg)} kg` : '', un ? `${fmt.int(un)} un` : ''].filter(Boolean).join(' + '), total: fmt.brl(ped.reduce((s, r) => s + r.pedir * (r.preco || 0), 0)) };
+      })(), sortKey: 'lucroDia', maxHeight: '620px', search: 'Buscar produto…', searchKeys: ['produto', 'cod'], cls: 'est-t ped-t',
       empty: { pedido: 'Nada no pedido.', fora: 'Nada ficou de fora.', indisp: 'Nenhum produto necessário está indisponível no site.', cat: 'Todos os produtos necessários estão no catálogo.', todos: 'Nenhum produto precisa de reposição.' }[filtro],
     });
     // observação de cada linha, conforme o pedido de agora (muda quando você põe, tira ou limpa)
@@ -494,7 +499,14 @@
         repintar.t = setTimeout(repintar, sai ? 260 : 0);
       };
       i.addEventListener('change', () => definir(Math.max(0, +i.value || 0)));
-      b.addEventListener('click', () => definir(r.pedir > 0 ? 0 : (r.sugerido || passo)));
+      // mousedown sem tirar o foco do campo: assim o número digitado não é aplicado antes e o botão faz o que mostra
+      b.addEventListener('mousedown', (ev) => ev.preventDefault());
+      b.addEventListener('click', () => {
+        const digitado = Math.max(0, +i.value || 0);
+        if (digitado > 0 && digitado !== r.pedir) definir(digitado); // digitou e clicou: coloca a quantidade digitada
+        else definir(r.pedir > 0 ? 0 : (r.sugerido || passo));
+      });
+      i.addEventListener('input', () => { const d = Math.max(0, +i.value || 0); if (d > 0 && d !== r.pedir) { b.className = 'ped-ab poe'; b.textContent = '＋'; b.title = `Colocar ${i.value} no pedido`; } else pintarB(); });
       pintarB();
       const mult = multDe(r);
       const chip = mult ? h('span', { class: 'ped-mult', title: `No site só dá para pedir de ${fmt.n2(mult).replace(/,00$/, '')} em ${fmt.n2(mult).replace(/,00$/, '')}${r.c.max ? ` (máximo ${fmt.n2(r.c.max).replace(/,00$/, '')})` : ''}. A quantidade é arredondada para cima.` }, `×${fmt.n2(mult).replace(/,00$/, '')}`) : null;
@@ -512,10 +524,36 @@
       for (const r of R.linhas) if ((r.site === 'ok' || r.site === 'sem') && (!g || r.grupo === g) && r.pedir > 0) { r.pedir = 0; if (r.sugeridoPedir === 0) editados.delete(String(r.cod)); else editados.set(String(r.cod), 0); }
       repintar();
     };
+    // usa o que sobrou do valor nos produtos que ainda precisam, na mesma prioridade da sugestão
+    // (não mexe no que você tirou à mão nem nos grupos que você limpou)
+    function completarCandidatos() {
+      return R.linhas.filter((r) => (r.site === 'ok' || r.site === 'sem') && r.preco > 0 && r.pedir < r.sugerido && !(editados.has(String(r.cod)) && editados.get(String(r.cod)) === 0));
+    }
+    function completar() {
+      if (sobra == null) return;
+      let livre = sobra;
+      const prio = (a, b) => (b.urgente - a.urgente) || (b.lucroDia - a.lucroDia);
+      for (const r of completarCandidatos().sort(prio)) {
+        if (livre <= 0.5) break;
+        const passo = (r.c && r.c.mult) || (r.it.un === 'Kg' ? 0.1 : 1);
+        const falta = r.sugerido - r.pedir;
+        let q = falta * r.preco <= livre + 0.005 ? falta : Math.floor(livre / (passo * r.preco) + 1e-9) * passo;
+        if (q <= 0) continue;
+        r.pedir = Math.round((r.pedir + q) * 1000) / 1000;
+        livre -= q * r.preco;
+        if (r.pedir === r.sugeridoPedir) editados.delete(String(r.cod)); else editados.set(String(r.cod), r.pedir);
+      }
+      repintar();
+    }
     const noGrupo = (g) => R.linhas.filter((r) => r.pedir > 0 && (!g || r.grupo === g));
     const opLimpar = (rot, g) => { const l = noGrupo(g); return h('button', { type: 'button', disabled: !l.length || null, onclick: () => zerar(g) }, rot, h('small', null, l.length ? `${fmt.int(l.length)} · ${fmt.brl0(l.reduce((s, r) => s + r.pedir * (r.preco || 0), 0))}` : 'vazio')); };
     const menuLimpar = h('details', { class: 'ped-menu' }, h('summary', { class: 'btn' }, 'Limpar ▾'),
       h('div', { class: 'ped-menu-l' },
+        (() => {
+          const cand = completarCandidatos();
+          return h('button', { type: 'button', class: 'ped-menu-completa', disabled: !(sobra > 1 && cand.length) || null, onclick: completar },
+            'Completar com a sobra', h('small', null, sobra > 1 ? `${fmt.brl0(sobra)} livres` : 'sem sobra'));
+        })(),
         opLimpar('Limpar tudo', null),
         ...['cha', 'env', 'acess', 'insumo'].filter((g) => R.linhas.some((r) => r.grupo === g)).map((g) => opLimpar(`Limpar ${GRUPOS[g].toLowerCase()}`, g)),
         h('button', { type: 'button', class: 'ped-menu-volta', disabled: !editados.size || null, onclick: () => { editados.clear(); pintar(corpo, loja, M, e, p); } }, 'Voltar à sugestão', h('small', null, editados.size ? `${editados.size} alterado(s)` : 'nada alterado'))));
