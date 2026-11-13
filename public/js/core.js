@@ -115,9 +115,11 @@ TS.totaisSemEG = function () {
   const db = TS.db;
   if (db._totSemEG) return db._totSemEG;
   const eg = db.D.grupoC.indexOf('ESPAÇO GOURMET');
+  // taxas (serviço e entrega) não são venda: não entram na base da meta automática
+  const taxa = new Set(['Taxa de Serviço', 'Taxa Delivery'].map((t) => db.D.descricao.indexOf(t)).filter((x) => x >= 0));
   const m = new Map();
   for (let i = 0; i < db.n; i++) {
-    if (db.grupoC[i] === eg) continue;
+    if (db.grupoC[i] === eg || taxa.has(db.desc[i])) continue;
     const l = db.D.loja[db.loja[i]];
     let t = m.get(l); if (!t) m.set(l, (t = {}));
     t[db.ym[i]] = (t[db.ym[i]] || 0) + (db.vt[i] || 0);
@@ -198,7 +200,7 @@ TS.metricas = function (idx) {
     vt += db.vt[i] || 0;
     qtd += db.qtd[i] || 0;
     cha += db.cha[i] || 0;
-    du += db.du[i] || 0;
+    du += (db.du[i] || 0) * (TS.descontoPorUnidade() ? db.qtd[i] || 0 : 1);
     cupons.add(TS.chaveCupom(i));
   }
   return { vt, qtd, cha, du, cupons: cupons.size, linhas: idx.length };
@@ -247,6 +249,27 @@ TS.indicadores = function (idx) {
 TS.chaveCupom = (i) => (TS.db.cupom[i] * 64 + TS.db.loja[i]) * 50000 + (TS.db.day[i] || 0);
 
 TS.soma = (idx, col) => { let s = 0; const a = TS.db[col]; for (const i of idx) s += a[i] || 0; return s; };
+
+/** "Desconto Unitário" do AppNext: por unidade (total = desconto × quantidade) ou já o total da linha?
+ *  Decide pelos próprios dados: qual das duas contas fecha com o Valor Total. */
+TS.descontoPorUnidade = function () {
+  const db = TS.db;
+  if (db._descUn != null) return db._descUn;
+  let erroUn = 0, erroLinha = 0, n = 0;
+  for (let i = 0; i < db.n && n < 20000; i++) {
+    const q = db.qtd[i], du = db.du[i], vu = db.vu[i], vt = db.vt[i];
+    if (!(du > 0) || !(q > 1) || vu == null || vt == null) continue; // só linhas que diferenciam as duas contas
+    erroUn += Math.abs(vt - (vu - du) * q); erroLinha += Math.abs(vt - (vu * q - du)); n++;
+  }
+  return (db._descUn = n ? erroUn <= erroLinha : true);
+};
+/** desconto total das linhas */
+TS.descontos = function (idx) {
+  const db = TS.db, un = TS.descontoPorUnidade();
+  let s = 0;
+  for (const i of idx) s += (db.du[i] || 0) * (un ? db.qtd[i] || 0 : 1);
+  return s;
+};
 
 // ---------- utilidades de DOM ----------
 TS.h = function (tag, attrs, ...kids) {

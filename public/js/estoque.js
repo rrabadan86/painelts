@@ -92,7 +92,7 @@
         const prod = new Map();
         for (const i of idx) {
           if (M.taxa(i)) continue;
-          const v = db.vt[i] || 0; vt += v; desc += (db.du[i] || 0) * (db.qtd[i] || 0);
+          const v = db.vt[i] || 0; vt += v; desc += TS.descontos([i]);
           const c = M.custo(i);
           if (c == null) continue;
           comCusto += v; custo += c;

@@ -153,7 +153,8 @@
   function periodoAnterior() {
     const f = state.f;
     if (f.de == null) return null;
-    const fim = f.ate ?? TS.db.maxDay;
+    // período que ainda não acabou (ex.: mês atual até o dia 30): compara só até o último dia com vendas
+    const fim = Math.max(f.de, Math.min(f.ate ?? TS.db.maxDay, TS.db.maxDay));
     const shift = (day, meses) => {
       const d = new Date(day * 86400000), y = d.getUTCFullYear(), m = d.getUTCMonth() + meses;
       const ult = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
@@ -772,7 +773,7 @@
     const atual = excl(TS.filtrar());
     const ant = excl(TS.filtrar({ de: f.de - N, ate: f.de - 1 }));
     const a = TS.indicadores(atual), p = TS.indicadores(ant);
-    const desc = (idx) => TS.soma(idx, 'du');
+    const desc = (idx) => TS.descontos(idx);
     const rel = (x, y) => (y ? x / y - 1 : null);
     const card = (lab, va, vp, fm) => TS.kpi(lab, fm(va), h('span', null, TS.deltaSpan(rel(va, vp)), ` · antes ${fm(vp)}`));
     root.append(h('div', { class: 'grid g-kpi' },

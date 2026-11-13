@@ -46,7 +46,7 @@ function totaisSemEG(vendas) {
   let t = cacheTotais.get(vendas);
   if (!t) {
     t = {};
-    for (const v of vendas) { if (v.grupoC === EG || !v.data) continue; const ym = v.data.slice(0, 7); t[ym] = (t[ym] || 0) + (v.vt || 0); }
+    for (const v of vendas) { if (v.grupoC === EG || !v.data || /^taxa (de servi|delivery)/i.test(String(v.descricao || '').trim())) continue; const ym = v.data.slice(0, 7); t[ym] = (t[ym] || 0) + (v.vt || 0); }
     cacheTotais.set(vendas, t);
   }
   return t;
