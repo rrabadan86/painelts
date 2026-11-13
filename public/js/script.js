@@ -25,7 +25,12 @@
     if (pop.hidden) return;
     pop.replaceChildren();
     pop.append(h('h3', null, 'Atualizar dados do sistema'),
-      h('p', null, 'Busca agora no AppNext as vendas e as notas de ontem e de hoje desta loja. Leva poucos minutos; o painel recarrega sozinho quando terminar. As atualizações automáticas dos horários programados baixam os últimos dias inteiros.'));
+      h('p', null, 'Busca agora no AppNext, desta loja:'),
+      h('ul', { class: 'script-itens' },
+        h('li', null, h('b', null, 'Vendas'), ' de ontem e de hoje'),
+        h('li', null, h('b', null, 'XML das notas'), ' de ontem e de hoje (CPF dos clientes e notas ativas)'),
+        h('li', null, h('b', null, 'Estoque e custos'), ' de agora (inclui os itens zerados)')),
+      h('p', null, 'Leva poucos minutos; o painel recarrega sozinho quando terminar.'));
     if (!info) { pop.append(h('p', null, 'Carregando…')); return; }
     if (!info.disponivel) { pop.append(h('div', { class: 'script-status' }, h('span', null, info.motivo))); return; }
     if (info.erro) pop.append(h('div', { class: 'script-status' }, h('span', { class: 'ic falhou' }, '!'), h('span', null, 'Não consegui consultar o GitHub.', h('small', null, info.erro))));
@@ -45,7 +50,10 @@
     if (e && e.url && e.estado === 'falhou') pop.append(h('div', { class: 'aviso' }, 'Detalhes no GitHub: ', h('a', { href: e.url, target: '_blank', rel: 'noopener' }, 'abrir execução')));
     if (e && e.log && e.log.length) pop.append(h('details', { class: 'aviso' }, h('summary', null, 'Ver o final do log'), h('pre', { class: 'script-log' }, e.log.join('\n'))));
     const hs = info.horarios && info.horarios.length ? info.horarios.join(' e ') : null;
-    pop.append(h('div', { class: 'aviso' }, hs ? `Também roda sozinho às ${hs}.` : 'O script também roda sozinho duas vezes por dia.'));
+    const ult = info.horarios && info.horarios.length ? [...info.horarios].sort().pop() : null;
+    const dias = info.janela || 7;
+    pop.append(h('div', { class: 'aviso' }, hs ? `Também roda sozinho às ${hs}: vendas e XML dos últimos ${dias} dias e o estoque.` : 'O script também roda sozinho duas vezes por dia.',
+      ult ? h('div', null, `Às ${ult} pede também ao FIXE o cadastro de clientes e os pontos (Logs), que chegam por e-mail.`) : null));
   }
 
   async function consultar() {

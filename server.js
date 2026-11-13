@@ -694,7 +694,7 @@ app.get('/api/script', async (req, res) => {
   if (COL.ativo()) {
     try {
       const s = await COL.status(loja.id, admin);
-      if (s.configurada) return res.json({ disponivel: true, origem: 'vps', horarios: s.horarios, execucao: s.execucao });
+      if (s.configurada) return res.json({ disponivel: true, origem: 'vps', horarios: s.horarios, janela: s.janela, execucao: s.execucao });
     } catch (e) {
       console.error(`[script] coletor: ${e.message}`);
       return res.json({ disponivel: true, origem: 'vps', erro: e.message });
