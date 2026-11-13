@@ -117,7 +117,7 @@
     const opMes = h('select', { class: 'f-input', style: { width: 'auto' } }, [...meses].reverse().map((x) => h('option', { value: x.ym, selected: x.ym === sel || null }, `${TS.ymLabel(x.ym)}${x.parcial ? ' (em andamento)' : ''}`)));
     opMes.addEventListener('change', () => { state.dreMes = opMes.value; TS.render(); });
     const avisos = [];
-    if (!fixosNomes.length && !(M.ded.PONTUAIS || []).length) avisos.push('Cadastre os custos fixos (aluguel, salários, energia…) em Configurações → Lojas → Estoque e margem → Outros custos da loja para o resultado ficar completo.');
+    if (!fixosNomes.length && !(M.ded.PONTUAIS || []).length) avisos.push('Cadastre os custos fixos (aluguel, salários, energia…) pelo link "+ Adicionar ou editar custos da loja", logo abaixo da tabela, para o resultado ficar completo.');
     if (m.cobre < 0.95) avisos.push(`${fmt.pct(1 - m.cobre, 0)} das vendas de ${TS.ymLabel(sel)} não têm custo no estoque: o custo delas foi estimado pelo mesmo % das outras (${fmt.pct(m.cmvPct)}).`);
     if (m.parcial) avisos.push(`${TS.ymLabel(sel)} está em andamento (vendas até ${fmt.date(TS.dayToIso(m.ultimo))}): os custos fixos entram só pela parte dos dias que já passaram (${fmt.pct(m.frac, 0)} do mês).`);
 
@@ -147,9 +147,12 @@
         h('td', { class: d == null || Math.abs(d) < 0.0005 ? 'muted' : bom ? 'pos' : 'neg' }, d == null ? '—' : fmt.delta(d))));
     }
     tb.append(body);
+    const linkCustos = h('div', { class: 'dre-links' },
+      h('a', { href: '#config', onclick: (e) => { e.preventDefault(); TS.abrirCfg(state.loja, 'estoque', 'cfg-custos'); } }, '+ Adicionar ou editar custos da loja'),
+      h('a', { href: '#config', onclick: (e) => { e.preventDefault(); TS.abrirCfg(state.loja, 'estoque', 'cfg-pontuais'); } }, '+ Despesa de um mês só (ex.: IPTU, 13º)'));
     const memo = h('div', { class: 'dre-memo muted' },
       `Fora do resultado (informativo): taxa de serviço recebida ${fmt.brl(m.gorjeta)} (repassada à equipe) · descontos dados ${fmt.brl(m.desc)} · Espaço Gourmet ${fmt.brl(m.eg)} (${pc(m.eg, m.fat)} do faturamento). Passe o mouse em cada linha para ver de onde vem o valor.`);
-    corpo.append(h('div', { class: 'mt' }, TS.card(`Resultado de ${TS.ymLabel(sel)}`, a ? `Comparado com ${rotAnt}${m.parcial ? ' (mesmos dias, mesma parte dos custos fixos)' : ''}` : 'Sem o mesmo mês do ano anterior para comparar', h('div', { class: 'table-wrap free' }, tb), memo)));
+    corpo.append(h('div', { class: 'mt' }, TS.card(`Resultado de ${TS.ymLabel(sel)}`, a ? `Comparado com ${rotAnt}${m.parcial ? ' (mesmos dias, mesma parte dos custos fixos)' : ''}` : 'Sem o mesmo mês do ano anterior para comparar', h('div', { class: 'table-wrap free' }, tb), memo, linkCustos)));
 
     // gráfico: resultado mês a mês
     const ult = meses.slice(-13);

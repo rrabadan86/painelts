@@ -1145,10 +1145,10 @@
         h('label', null, h('span', null, 'Meta de margem (sem fixos)'), h('div', null, mAlvo, ' %'))),
       h('small', { class: 'muted' }, 'Margem sem fixos = lucro bruto − deduções variáveis, antes do aluguel e outros custos fixos. Abaixo da mínima o produto aparece em vermelho e no alerta. A meta é usada no simulador de preço ("Para X% sem fixos").'),
       h('small', { class: 'muted' }, 'Comissão e royalties vêm das regras da loja (Comissionamento). Use a taxa média da maquininha (débito, crédito e Pix juntos).'),
-      h('div', { class: 'f-label', style: { marginTop: '14px' } }, 'Outros custos da loja'),
+      h('div', { class: 'f-label', style: { marginTop: '14px' }, id: `cfg-custos-${lojaId}` }, 'Outros custos da loja'),
       h('small', { class: 'muted' }, '% das vendas (ex.: aluguel percentual do shopping, app de delivery) ou R$ por mês (ex.: aluguel fixo, energia, salários). O valor em R$ por mês vira um %: valor ÷ média do faturamento dos últimos 3 meses fechados (ex.: R$ 16.000 ÷ média de R$ 200.000 = 8% de cada venda). Esse % é volátil: muda quando um mês fecha e entra na média.'),
       outrosBox,
-      h('div', { class: 'f-label', style: { marginTop: '14px' } }, 'Despesas de um mês só'),
+      h('div', { class: 'f-label', style: { marginTop: '14px' }, id: `cfg-pontuais-${lojaId}` }, 'Despesas de um mês só'),
       h('small', { class: 'muted' }, 'Gastos que caem num mês específico, como IPTU e IPVA no começo do ano, 13º salário ou uma manutenção. Entram no Resultado do mês escolhido, dentro da categoria. Marque "todo ano" para repetir no mesmo mês dos anos seguintes. Não entram no rateio da margem de cada produto.'),
       pontBox,
       h('div', { class: 'cfg-acoes' }, salvar2, msg2),
@@ -1172,6 +1172,12 @@
     buscar(lojaId).then(({ estoque, cfg }) => {
       const porCod = new Map(((estoque && estoque.itens) || []).map((it) => [String(it.cod), it]));
       corpo.replaceChildren(...formCfg(lojaId, cfg, porCod));
+      // veio de um atalho (ex.: Resultado → "Adicionar custos"): rola até o trecho e destaca
+      if (TS.cfgAncora) {
+        const alvo = document.getElementById(`${TS.cfgAncora}-${lojaId}`);
+        TS.cfgAncora = null;
+        if (alvo) requestAnimationFrame(() => { alvo.scrollIntoView({ behavior: 'smooth', block: 'start' }); alvo.classList.add('cfg-destaque'); setTimeout(() => alvo.classList.remove('cfg-destaque'), 2500); });
+      }
     }).catch((e) => corpo.replaceChildren(h('p', { class: 'neg' }, e.message)));
     return b;
   };

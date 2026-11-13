@@ -137,6 +137,13 @@
 
   // aba aberta de cada loja (lembrada enquanto a aba do navegador estiver aberta)
   const secaoLoja = (() => { try { return new Map(JSON.parse(sessionStorage.getItem('cfgSecao') || '[]')); } catch { return new Map(); } })();
+  /** atalho de outras telas: abre Configurações já na loja e na aba certa (e rola até um trecho, se pedido) */
+  TS.abrirCfg = function (lojaId, secao, ancora) {
+    abertos.add('loja:' + lojaId);
+    if (secao) { secaoLoja.set(lojaId, secao); try { sessionStorage.setItem('cfgSecao', JSON.stringify([...secaoLoja])); } catch { /* ok */ } }
+    TS.cfgAncora = ancora || null;
+    location.hash = '#config';
+  };
   function cartaoLoja(l) {
     const chave = 'loja:' + l.id;
     const aberto = abertos.has(chave) || est.lojas.length === 1;
