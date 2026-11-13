@@ -67,13 +67,13 @@
       [ev0, ev1] = evInfo.atual; [evLy0, evLy1] = evInfo.anterior;
     }
     const temAnoPassado = db.minDay <= lyB0;
-    const d30 = fim - 29, dN = fim - N + 1, d90 = fim - 89;
+    const d30 = fim - 29, dN = fim - N + 1, d90 = fim - 89, d56 = fim - 55;
     const cons = new Map(), lyB = new Map(), lyN = new Map(), lyDias = new Map(), lyEv = new Map();
     const tot = { kg: { b: 0, n: 0 }, un: { b: 0, n: 0 } };
     const contrib = new Map(), vendaItem = new Map(), grupoVt = new Map(), bruto = new Map();
     const fatG = { cha: 0, env: 0, acess: 0 };
     let vendasN = 0, cmvVt = 0, cmvCusto = 0, cresA = 0, cresB = 0, evLyVt = 0;
-    const lim0 = Math.min(lyB0, evLy0 ?? Infinity, d90 - 365);
+    const lim0 = Math.min(lyB0, evLy0 ?? Infinity, d90 - 365, d56 - 365);
     for (let i = 0; i < db.n; i++) {
       const d = db.day[i];
       if (d < lim0) continue;
@@ -81,7 +81,8 @@
       const c = M.casar(i);
       if (loja) {
         if (d >= dN) { vendasN += vt; fatG[grupoLinha(i, c)] += vt; }
-        if (d >= d90) cresA += vt; else if (d >= d90 - 364 && d <= fim - 364) cresB += vt;
+        // crescimento: últimas 8 semanas × as mesmas 8 do ano passado (igual ao card "Próximas semanas")
+        if (d >= d56) cresA += vt; else if (d >= d56 - 364 && d <= fim - 364) cresB += vt;
         if (evLy0 != null && d >= evLy0 && d <= evLy1) evLyVt += vt;
         if (meses.has(ymDe(i))) { const cu = M.custo(i); if (cu != null) { cmvVt += vt; cmvCusto += cu; } }
       }
@@ -266,12 +267,15 @@
 
     // ---------- controles ----------
     const num = (v, attrs) => h('input', { class: 'f-input', type: 'number', value: v ?? '', style: { maxWidth: '96px' }, ...attrs });
-    const iPct = num(par.cmvPct, { min: 1, max: 90, step: '0.5', placeholder: R.cmvReal != null ? fmt.n1(R.cmvReal * 100) : '' });
+    // campos automáticos (CMV real, crescimento da loja) já vêm preenchidos; se você digitar, vira manual
+    const auto = (el, ativo) => { el.dataset.auto = ativo ? '1' : '0'; if (ativo) el.classList.add('ped-auto'); el.addEventListener('input', () => { el.dataset.auto = '0'; el.classList.remove('ped-auto'); }); return el; };
+    const um = (x) => Math.round(x * 10) / 10;
+    const iPct = auto(num(par.cmvPct ?? (R.cmvReal != null ? um(R.cmvReal * 100) : null), { min: 1, max: 90, step: '0.5' }), par.cmvPct == null);
     const iDias = num(par.dias, { min: 3, max: 60 });
     const iFolga = num(par.folgaPct, { min: 0, max: 100 });
-    const iCresc = num(par.crescimentoPct, { min: -80, max: 300, placeholder: fmt.n1((R.crescLoja - 1) * 100) });
+    const iCresc = auto(num(par.crescimentoPct ?? um((R.crescLoja - 1) * 100), { min: -80, max: 300, step: '0.1' }), par.crescimentoPct == null);
     const ler = () => {
-      const v = (i) => (i.value === '' ? null : +i.value);
+      const v = (i) => (i.dataset.auto === '1' || i.value === '' ? null : +i.value);
       Object.assign(par, { cmvPct: v(iPct), dias: Math.max(3, Math.min(60, Math.round(+iDias.value || p.cfg.dias))), folgaPct: v(iFolga) ?? 10, crescimentoPct: v(iCresc) });
     };
     // recalcula ao sair do campo; espera um instante para não redesenhar a tela no meio do clique em "Salvar"
@@ -302,8 +306,10 @@
     const lbl = (t, el, suf, dica, nota) => h('label', { title: dica || null }, h('span', null, t, dica ? h('span', { class: 'ped-i', 'aria-hidden': 'true' }, 'ⓘ') : null), h('div', null, el, suf ? ' ' + suf : ''), nota || null);
     const mesTxt = (ym) => new Date(ym + '-15T12:00:00Z').toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' }).replace('. de ', '/').replace('.', '');
     const dicaCmv = R.cmvReal == null ? 'Percentual do faturamento da loja (sem Espaço Gourmet) que vira pedido. Ainda não dá para calcular o CMV real: faltam vendas com custo nos 3 últimos meses fechados.'
-      : `Percentual do faturamento da loja (sem Espaço Gourmet) que vira pedido.\n\nCom o campo vazio, o painel usa o CMV real: ${fmt.pct(R.cmvReal)}.\nCMV = custo dos produtos vendidos ÷ faturamento, só loja, nos 3 últimos meses fechados (${R.cmvMeses.map(mesTxt).join(', ')}):\n${fmt.brl0(R.cmvCusto)} de custo ÷ ${fmt.brl0(R.cmvVt)} vendidos = ${fmt.pct(R.cmvReal)}.\n\nOu seja: o pedido repõe o que saiu da loja. Digite outro % para pedir mais ou menos.`;
-    const notaCmv = h('small', { class: 'ped-nota' }, par.cmvPct == null ? `usando o CMV real (${fmt.pct(R.cmvReal)})` : `CMV real: ${fmt.pct(R.cmvReal)}`);
+      : `Percentual do faturamento da loja (sem Espaço Gourmet) que vira pedido.\n\nAutomático: o CMV real: ${fmt.pct(R.cmvReal)}.\nCMV = custo dos produtos vendidos ÷ faturamento, só loja, nos 3 últimos meses fechados (${R.cmvMeses.map(mesTxt).join(', ')}):\n${fmt.brl0(R.cmvCusto)} de custo ÷ ${fmt.brl0(R.cmvVt)} vendidos = ${fmt.pct(R.cmvReal)}.\n\nOu seja: o pedido repõe o que saiu da loja. Digite outro % para pedir mais ou menos (vira manual; "voltar ao automático" desfaz).`;
+    const voltar = (campo) => h('a', { href: '#', onclick: (x) => { x.preventDefault(); par[campo] = null; editados.clear(); pintar(corpo, loja, M, e, p); } }, 'voltar ao automático');
+    const notaCmv = h('small', { class: 'ped-nota' }, par.cmvPct == null ? 'automático: CMV real' : h('span', null, `manual · CMV real ${fmt.pct(R.cmvReal)} · `, voltar('cmvPct')));
+    const notaCresc = h('small', { class: 'ped-nota' }, par.crescimentoPct == null ? 'automático: últimas 8 semanas' : h('span', null, `manual · da loja ${fmt.pct(R.crescLoja - 1)} · `, voltar('crescimentoPct')));
     const cat = blocoCatalogo(corpo, loja, M, e, p);
     const controles = h('div', { class: 'card ped-ctl' },
       h('div', { class: 'ped-ctl-l' },
@@ -314,7 +320,7 @@
         modo === 'repor' ? lbl('Valor do pedido', iPct, '% das vendas', dicaCmv, notaCmv) : null,
         modo === 'repor' ? lbl('Vendas de', iDias, 'dias', 'Período de vendas usado no valor e intervalo até o próximo pedido (ex.: 7 para pedido semanal, 14 para quinzenal).') : null,
         modo === 'repor' ? lbl('Folga da proporção', iFolga, '%', 'Quanto cada grupo (chás, envasados, acessórios) pode passar da sua parte antes de o valor ir para os outros.') : null,
-        modo === 'evento' ? lbl('Crescimento', iCresc, '%', `Quanto a mais (ou a menos) que no ano passado. Vazio = o da loja: últimos 90 dias contra os mesmos 90 do ano anterior (${fmt.pct(R.crescLoja - 1)}).`) : null),
+        modo === 'evento' ? lbl('Crescimento', iCresc, '%', `Quanto a mais (ou a menos) que no ano passado se vende na data.\n\nAutomático: o crescimento da loja nas últimas 8 semanas contra as mesmas 8 semanas do ano passado (${fmt.pct(R.crescLoja - 1)}), o mesmo do card "Próximas semanas" em Estoque e margem.\n\nDigite outro valor se espera mais ou menos movimento.`, notaCresc) : null),
       h('div', { class: 'cfg-acoes' }, salvar, cat.acao, msg), h('div', { class: 'ped-cat' }, cat.info, cat.st));
     corpo.append(controles);
     if (modo === 'evento') corpo.append(editorEventos(loja, p, par, () => pintar(corpo, loja, M, e, p)));
