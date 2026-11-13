@@ -187,14 +187,15 @@
       const lo = Math.max(ini, periodo.de) - ini + 1, hi = Math.min(fim, periodo.ate) - ini + 1;
       return { lo, hi, parcial: lo > 1 || hi < fim - ini + 1 };
     };
-    const prevDe = (ym, filtro) => {
+    const prevIdx = (ym, filtro) => {
       const k = `${+ym.slice(0, 4) - 1}${ym.slice(4)}`;
       let idx = porMesAll.get(k);
       const d = diasDoMes(ym);
       if (idx && d.parcial) idx = idx.filter((i) => { const dia = +db.iso[i].slice(8, 10); return dia >= d.lo && dia <= d.hi; });
       if (idx && filtro) idx = idx.filter(filtro);
-      return idx && idx.length ? ind(idx) : null;
+      return idx && idx.length ? idx : null;
     };
+    const prevDe = (ym, filtro) => { const idx = prevIdx(ym, filtro); return idx ? ind(idx) : null; };
     const rotAno = (y, ym) => { const d = diasDoMes(ym); return d.parcial ? `${y} (dias ${d.lo} a ${d.hi})` : String(y); };
     // várias lojas: Mês → Ano → Loja → Vendedor
     const multiLoja = new Set(base.map((i) => db.loja[i])).size > 1;
@@ -203,7 +204,8 @@
     const wrap = h('div', { class: 'table-wrap' }, tbl);
     wrap.style.maxHeight = '420px';
 
-    function linha(nivel, chave, rotulo, a, p, temFilhos) {
+    /** cmp (só no mês e no total): { a, p, dica } — variação do ano mais recente contra o anterior */
+    function linha(nivel, chave, rotulo, a, p, temFilhos, cmp) {
       const open = aberto.has(chave);
       const btn = temFilhos ? h('button', { type: 'button', class: 'tree-btn', 'aria-expanded': String(open), 'aria-label': (open ? 'Recolher ' : 'Expandir ') + rotulo,
         onclick: () => { open ? fechar(chave) : aberto.add(chave); paint(); } }, open ? '−' : '+') : h('span', { class: 'tree-sp' });
@@ -217,12 +219,19 @@
           d == null ? '—' : fmt.delta(d), p && p[k] != null ? h('small', { class: 'tree-ant' }, fm(p[k])) : null));
       }
       if (nivel === 0) {
-        // mês raiz: sem variação (soma de anos); preenche as colunas de variação vazias
+        // mês: o resumo do ano mais recente contra o anterior (mesmos dias se o mês está incompleto)
         const out = [tds[0]];
-        tds.slice(1).forEach((td) => out.push(td, h('td', { class: 'muted' }, '')));
+        tds.slice(1).forEach((td, j) => out.push(td, celVar(cols[j], cmp)));
         return h('tr', { class: `lv${nivel}` }, out);
       }
       return h('tr', { class: `lv${nivel}` }, tds);
+    }
+    function celVar([k, , fm], cmp) {
+      if (!cmp || !cmp.p) return h('td', { class: 'muted' }, '');
+      const a = cmp.a[k], pv = cmp.p[k];
+      const d = pv ? a / pv - 1 : null;
+      return h('td', { class: 'tree-var ' + (d == null ? 'muted' : d > 0 ? 'pos' : d < 0 ? 'neg' : 'muted'), title: `${cmp.dica}: ${fm(a)} contra ${fm(pv)}` },
+        d == null ? '—' : fmt.delta(d), pv != null ? h('small', { class: 'tree-ant' }, fm(pv)) : null);
     }
     const fechar = (chave) => { for (const k of [...aberto]) if (k === chave || k.startsWith(chave + '|')) aberto.delete(k); };
 
@@ -235,7 +244,10 @@
       for (const m of meses) {
         const idxM = porMes.get(m), kM = 'm' + m;
         const anos = TS.agrupar(idxM, (i) => db.year[i]);
-        tb.append(linha(0, kM, `${TS.MESES_LONGOS[m - 1]}`, ind(idxM), null, true));
+        const yMax = Math.max(...anos.keys()), ymMax = `${yMax}-${String(m).padStart(2, '0')}`;
+        const pM = prevDe(ymMax);
+        const cmpM = pM ? { a: ind(anos.get(yMax)), p: pM, dica: `${rotAno(yMax, ymMax)} contra ${yMax - 1}${diasDoMes(ymMax).parcial ? ' (mesmos dias)' : ''}` } : null;
+        tb.append(linha(0, kM, `${TS.MESES_LONGOS[m - 1]}`, ind(idxM), null, true, cmpM));
         if (!aberto.has(kM)) continue;
         for (const y of [...anos.keys()].sort((x, z) => z - x)) {
           const idxY = anos.get(y), ym = `${y}-${String(m).padStart(2, '0')}`, kY = `${kM}|${y}`;
@@ -257,7 +269,15 @@
       if (!meses.length) tb.append(h('tr', null, h('td', { colspan: 11, class: 'l muted' }, 'Sem dados.')));
       tbl.append(tb);
       const t = ind(base), tf = h('tr', null, h('td', { class: 'l sticky-col' }, 'Total'));
-      for (const [k, , fm] of cols) tf.append(h('td', null, fm(t[k])), h('td'));
+      // total contra o mesmo período do ano anterior (só quando o período não inclui o próprio ano anterior)
+      const yms = new Set(base.map((i) => db.ym[i]));
+      const antYms = [...yms].map((ym) => `${+ym.slice(0, 4) - 1}${ym.slice(4)}`);
+      let cmpT = null;
+      if (!antYms.some((x) => yms.has(x))) {
+        const idxAnt = [...yms].flatMap((ym) => prevIdx(ym) || []);
+        if (idxAnt.length) cmpT = { a: t, p: ind(idxAnt), dica: 'Período escolhido contra o mesmo período do ano anterior' };
+      }
+      for (const col of cols) tf.append(h('td', null, col[2](t[col[0]])), celVar(col, cmpT));
       tbl.append(h('tfoot', null, tf));
     }
     paint();

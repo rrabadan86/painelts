@@ -1249,3 +1249,6 @@ tr.est-det > td { padding: 0 !important; background: #FBF9F4 !important; }
 .camada-custos { justify-content: center; }
 .camada-cheia .card.cfg-popup { max-width: 1180px; margin: 0 auto; padding: 18px 22px; overflow-y: auto; display: block; }
 .cfg-popup > .card-head { padding-right: 48px; margin-bottom: 8px; }
+.t.tree tr.lv0 td.tree-var.pos { color: var(--good); }
+.t.tree tr.lv0 td.tree-var.neg { color: var(--bad); }
+.t.tree tr.lv0 td.tree-var .tree-ant { font-weight: 400; }
