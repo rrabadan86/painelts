@@ -298,6 +298,31 @@ app.get('/marca/:id/logo', (req, res) => {
   fs.createReadStream(a.f).pipe(res);
 });
 
+// ---------- carrinho do Sistema de Pedidos montado no navegador (favorito "Carrinho Tea Shop") ----------
+// sem login: só com o código de uso único que o painel gerou; responde apenas ao site de pedidos (CORS)
+{
+  const PEDx = require('./src/pedido');
+  const cors = (req, res) => {
+    const o = req.get('Origin');
+    if (o && PEDx.ORIGENS.has(o)) res.set({ 'Access-Control-Allow-Origin': o, Vary: 'Origin' });
+    res.set('Cache-Control', 'no-store');
+  };
+  app.get('/api/pedido-site/lista', (req, res) => {
+    cors(req, res);
+    const x = PEDx.lerCodigo(req.query.c);
+    if (!x) return res.status(404).json({ erro: 'Este link venceu. Volte ao painel e clique em "Montar carrinho no site" de novo.' });
+    const loja = C.get().lojas.find((l) => l.id === x.loja);
+    res.json({ loja: loja ? loja.nome : x.loja, itens: x.itens });
+  });
+  // corpo em text/plain (sem pré-requisição CORS)
+  app.post('/api/pedido-site/progresso', express.text({ limit: '200kb', type: '*/*' }), (req, res) => {
+    cors(req, res);
+    let b; try { b = JSON.parse(req.body || '{}'); } catch { return res.status(400).json({ erro: 'inválido' }); }
+    const r = PEDx.progresso(req.query.c, b);
+    res.status(r.erro ? 404 : 200).json(r);
+  });
+}
+
 // ---------- tudo abaixo exige login ----------
 app.use((req, res, next) => {
   const cfg = C.get();
@@ -531,6 +556,18 @@ app.put('/api/pedido/acesso', express.json({ limit: '4kb' }), (req, res) => {
   C.auditar(req.user, b.apagar ? 'removeu o login do Sistema de Pedidos' : 'alterou o login do Sistema de Pedidos', loja.id, { loja: loja.id });
   res.json(PED.acesso(loja.id));
 });
+// carrinho no navegador: gera o código e o link do site (admin e franqueado)
+app.post('/api/pedido/carrinho', express.json({ limit: '200kb' }), (req, res) => {
+  if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
+  if (!podeContabilidade(req)) return res.status(403).json({ erro: 'Sem permissão.' });
+  const loja = req.lojas.find((l) => l.id === String(req.query.loja || ''));
+  if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  const v = PED.validarItens(loja.id, (req.body || {}).itens);
+  if (v.erro) return res.status(400).json({ erro: v.erro });
+  const r = PED.criarCodigo(loja.id, v.ok, req.user);
+  C.auditar(req.user, 'gerou o carrinho do Sistema de Pedidos', loja.id, { loja: loja.id, itens: v.ok.length });
+  res.json({ ok: true, ...r, fora: v.fora });
+});
 app.post('/api/pedido/robo', express.json({ limit: '200kb' }), async (req, res) => {
   if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
   if (req.perfil !== 'admin') return res.status(403).json({ erro: 'Só o administrador aciona o robô do Sistema de Pedidos.' });
@@ -543,10 +580,10 @@ app.post('/api/pedido/robo', express.json({ limit: '200kb' }), async (req, res) 
     const v = PED.validarItens(loja.id, b.itens);
     if (v.erro) return res.status(400).json({ erro: v.erro });
     fora = v.fora;
-    PED.gravarEntrada(loja.id, v.ok, req.user);
+    PED.gravarEntrada(loja.id, v.ok, req.user, !!b.refazer);
   } else if (b.acao !== 'catalogo') return res.status(400).json({ erro: 'Ação inválida.' });
   try {
-    const r = await COL.pedido(loja.id, req.user, { acao: b.acao, somar: !!b.somar });
+    const r = await COL.pedido(loja.id, req.user, { acao: b.acao, somar: !!(b.somar || b.refazer) });
     if (r.status !== 200) return res.status(r.status).json({ erro: r.json.erro || 'Falha no coletor.' });
     C.auditar(req.user, b.acao === 'carrinho' ? 'mandou montar o carrinho do pedido' : 'pediu o catálogo do Sistema de Pedidos', loja.id, { loja: loja.id, itens: Array.isArray(b.itens) ? b.itens.length : 0 });
     res.json({ ok: true, fora });

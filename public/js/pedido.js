@@ -11,6 +11,8 @@
   const ordemG = ['cha', 'env', 'acess', 'insumo'];
   const qtdPorLoja = new Map(); // loja|modo → Map(cod → quantidade editada)
   let poll = null;
+  const tituloOriginal = document.title;
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && document.title.startsWith('✓')) document.title = tituloOriginal; });
 
   async function buscar(loja) {
     const r = await fetch(TS.api(`pedido?loja=${encodeURIComponent(loja)}`), { credentials: 'same-origin' });
@@ -493,53 +495,107 @@
   };
 
   // ---------- robô do Sistema de Pedidos ----------
+  /** o carrinho está sendo montado no navegador? (código válido e ainda não terminou) */
+  const carrinhoAtivo = (c) => !!(c && c.modo === 'navegador' && !c.fim && c.expira && Date.parse(c.expira) > Date.now());
+  const linkFavorito = () => `javascript:(function(){var s=document.createElement('script');s.src='${location.origin}/js/carrinho-site.js?v='+Date.now();document.body.appendChild(s);})();`;
+
+  // ---------- carrinho no Sistema de Pedidos ----------
   function cartaoRobo(corpo, loja, M, e, p, R) {
     const robo = p.robo || {};
-    const ocupado = robo.estado === 'na_fila' || robo.estado === 'rodando';
+    const catOcupado = robo.estado === 'na_fila' || robo.estado === 'rodando';
+    const ativo = carrinhoAtivo(p.carrinho);
     const msg = h('div', { class: 'muted' });
-    const acionar = async (body, btn) => {
-      btn.disabled = true; msg.className = 'muted'; msg.textContent = 'Enviando…';
+    const statusBox = h('div', { class: 'ped-status' }, ativo ? progresso(p.carrinho) : catOcupado ? progressoCat(robo) : null);
+    if (ativo || catOcupado) acompanhar(corpo, loja, M, e);
+
+    // 1) montar: gera o código e abre o site em outra aba (aberta já no clique, para o navegador não bloquear)
+    const itens = R.linhas.filter((r) => r.pedir > 0 && r.site === 'ok');
+    const btnCarrinho = h('button', { type: 'button', class: 'btn primary', disabled: !itens.length || null }, `Montar carrinho no site (${itens.length} produtos)`);
+    btnCarrinho.addEventListener('click', async () => {
+      const aba = window.open('about:blank', '_blank');
+      btnCarrinho.disabled = true; msg.className = 'muted'; msg.textContent = 'Preparando…';
       try {
-        const r = await fetch(`/api/pedido/robo?loja=${encodeURIComponent(loja)}`, { method: 'POST', credentials: 'same-origin', headers: { 'X-Painel': '1', 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        const r = await fetch(`/api/pedido/carrinho?loja=${encodeURIComponent(loja)}`, { method: 'POST', credentials: 'same-origin', headers: { 'X-Painel': '1', 'Content-Type': 'application/json' },
+          body: JSON.stringify({ itens: itens.map((x) => ({ cod: x.cod, qtd: x.pedir })) }) });
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j.erro || 'Falha.');
-        msg.className = 'pos'; msg.textContent = 'Na fila do coletor. Esta tela se atualiza sozinha.';
+        if (aba) aba.location.href = j.url; else window.open(j.url, '_blank');
+        msg.textContent = '';
+        statusBox.replaceChildren(progresso({ modo: 'navegador', aguardando: true, total: itens.length, itens: [], site: j.url }));
+        acompanhar(corpo, loja, M, e);
+      } catch (err) { if (aba) aba.close(); msg.className = 'neg'; msg.textContent = err.message; }
+      btnCarrinho.disabled = false;
+    });
+    const fav = h('a', { class: 'ped-fav', href: linkFavorito(), title: 'Arraste para a barra de favoritos', onclick: (ev) => { ev.preventDefault(); alert('Arraste este botão para a barra de favoritos do navegador (Ctrl+Shift+B mostra a barra). Depois, use-o dentro do Sistema de Pedidos.'); } }, '🛒 Carrinho Tea Shop');
+    const passos = h('ol', { class: 'ped-passos' },
+      h('li', null, h('b', null, 'Uma vez só: '), 'arraste o botão ', fav, ' para a barra de favoritos do navegador.'),
+      h('li', null, 'Clique em ', h('b', null, 'Montar carrinho no site'), '. O Sistema de Pedidos abre em outra aba (entre com o login da loja, se pedir).'),
+      h('li', null, 'Lá, clique no favorito ', h('b', null, '🛒 Carrinho Tea Shop'), '. Ele coloca os produtos no carrinho da sua sessão e mostra o andamento, que também aparece aqui.'),
+      h('li', null, 'Confira o carrinho e finalize no site. O painel nunca finaliza o pedido.'));
+
+    // 2) catálogo: robô do coletor (preço, disponível, múltiplo)
+    const acionarCat = async (btn) => {
+      btn.disabled = true; msg.className = 'muted'; msg.textContent = 'Enviando…';
+      try {
+        const r = await fetch(`/api/pedido/robo?loja=${encodeURIComponent(loja)}`, { method: 'POST', credentials: 'same-origin', headers: { 'X-Painel': '1', 'Content-Type': 'application/json' }, body: JSON.stringify({ acao: 'catalogo' }) });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.erro || 'Falha.');
+        msg.textContent = '';
+        statusBox.replaceChildren(progressoCat({ estado: 'na_fila' }));
         acompanhar(corpo, loja, M, e);
       } catch (err) { msg.className = 'neg'; msg.textContent = err.message; btn.disabled = false; }
     };
-    const itens = R.linhas.filter((r) => r.pedir > 0 && r.site === 'ok');
-    const btnCarrinho = h('button', { type: 'button', class: 'btn primary', disabled: ocupado || !itens.length || null }, `Montar carrinho no site (${itens.length} produtos)`);
-    btnCarrinho.addEventListener('click', () => {
-      const semCat = R.linhas.filter((r) => r.pedir > 0 && r.site === 'sem').length;
-      if (!confirm(`O robô vai entrar no Sistema de Pedidos e colocar ${itens.length} produtos no carrinho (${fmt.brl0(itens.reduce((s, r) => s + r.pedir * r.preco, 0))}).${semCat ? ` ${semCat} sem catálogo ficam de fora.` : ''}\n\nEle NÃO finaliza o pedido: depois você revisa e finaliza no site. Se o carrinho do site já tiver itens, ele não mexe.\n\nContinuar?`)) return;
-      acionar({ acao: 'carrinho', itens: itens.map((r) => ({ cod: r.cod, qtd: r.pedir })) }, btnCarrinho);
-    });
-    const btnCat = h('button', { type: 'button', class: 'btn', disabled: ocupado || null }, 'Atualizar catálogo');
-    btnCat.addEventListener('click', () => acionar({ acao: 'catalogo' }, btnCat));
-    const estadoTxt = ocupado ? h('div', { class: 'notice' }, h('span', { class: 'spinner sm' }), ` ${robo.acao === 'carrinho' ? 'Montando o carrinho' : 'Lendo o catálogo'}… (${robo.estado === 'na_fila' ? 'na fila' : 'rodando'})`) : null;
-    if (ocupado) acompanhar(corpo, loja, M, e);
+    const btnCat = h('button', { type: 'button', class: 'btn', disabled: catOcupado || null }, 'Atualizar catálogo');
+    btnCat.addEventListener('click', () => acionarCat(btnCat));
     const u = robo.ultima;
-    const ultima = u ? h('div', { class: 'muted ped-ult' }, `Última tarefa: ${u.acao === 'carrinho' ? 'carrinho' : 'catálogo'} em ${new Date(u.fim).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })} · `,
+    const ultima = u ? h('div', { class: 'muted ped-ult' }, `Catálogo: última leitura em ${new Date(u.fim).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })} · `,
       h('span', { class: u.ok ? 'pos' : 'neg' }, u.ok ? 'ok' : `falhou (${u.codigo})`),
       !u.ok && u.log ? h('details', null, h('summary', null, 'ver o log'), h('pre', { class: 'ped-log' }, u.log.join('\n'))) : null) : null;
-    let corpoRobo;
-    if (!robo.disponivel) corpoRobo = h('p', { class: 'muted' }, robo.erro ? `Coletor indisponível: ${robo.erro}` : 'O robô roda no coletor da VPS, que não está ativo para esta loja. Dá para baixar o CSV e lançar no site.');
-    else if (!robo.temLogin) corpoRobo = h('p', null, 'Falta o login desta loja no Sistema de Pedidos: ', p.podeRobo ? h('a', { href: '#config' }, 'Configurações → Lojas → Sistema de Pedidos') : 'peça ao administrador', '. Depois clique em "Atualizar catálogo".');
-    else if (!p.podeRobo) corpoRobo = h('p', { class: 'muted' }, 'Só o administrador aciona o robô. Você pode baixar o CSV.');
-    else corpoRobo = h('div', null, h('div', { class: 'cfg-acoes' }, btnCarrinho, btnCat), msg, estadoTxt, ultima);
-    return TS.card('Carrinho no Sistema de Pedidos', 'O robô entra com o login da loja, escolhe FRANQUIAS, procura cada produto pelo nome, confere o nome exato, ajusta ao múltiplo e coloca no carrinho. Ele para na etapa 2: pagamento, entrega e finalização ficam com você. O catálogo é lido sozinho toda noite.',
-      corpoRobo, h('div', { class: 'ped-andamento' }, resultadoCarrinho(p.carrinho)));
+    let catTxt = null;
+    if (!robo.disponivel) catTxt = h('p', { class: 'muted' }, robo.erro ? `Coletor indisponível: ${robo.erro}` : 'O catálogo é lido pelo coletor da VPS, que não está ativo para esta loja.');
+    else if (!robo.temLogin) catTxt = h('p', null, 'Para ler o catálogo, falta o login desta loja no Sistema de Pedidos: ', p.podeRobo ? h('a', { href: '#config' }, 'Configurações → Lojas → Sistema de Pedidos') : 'peça ao administrador', '.');
+
+    const semCatalogo = !p.catalogo;
+    return TS.card('Carrinho no Sistema de Pedidos', 'O carrinho do site vale só para a sessão de quem entrou; por isso ele é montado no seu navegador, com o seu login. O favorito procura cada produto pelo nome, confere o nome exato, ajusta ao múltiplo e coloca no carrinho. Ele para na etapa 2.',
+      semCatalogo ? h('div', { class: 'notice' }, 'Leia o catálogo primeiro (botão "Atualizar catálogo"): só vão para o carrinho os produtos disponíveis no site.') : null,
+      passos,
+      h('div', { class: 'cfg-acoes' }, btnCarrinho, p.podeRobo && robo.disponivel && robo.temLogin ? btnCat : null), msg, statusBox, catTxt, ultima,
+      h('div', { class: 'ped-andamento' }, ativo ? null : resultadoCarrinho(p.carrinho)));
+  }
+
+  const progressoCat = (robo) => h('div', { class: 'notice ped-prog' }, h('span', { class: 'spinner sm' }),
+    robo.estado === 'na_fila' ? [h('b', null, 'Catálogo na fila do coletor. '), 'Começa assim que a coleta em andamento terminar.'] : [h('b', null, 'Lendo o catálogo do site… '), 'Leva 1 a 2 minutos.']);
+
+  /** andamento do carrinho: esperando o favorito, "3/25 produtos" com barra */
+  function progresso(c) {
+    const caixa = (...filhos) => h('div', { class: 'notice ped-prog' }, h('span', { class: 'spinner sm' }), ...filhos);
+    if (!c || c.aguardando || !c.itens.length && !c.atual) {
+      return caixa(h('b', null, 'Esperando o favorito no site. '), 'Na aba do Sistema de Pedidos, clique em "🛒 Carrinho Tea Shop". ',
+        c && c.site ? h('a', { href: /#teashop=/.test(c.site) ? c.site : `${c.site}Abertura.aspx`, target: '_blank', rel: 'noopener' }, 'Abrir o site de novo') : null);
+    }
+    const feitos = c.itens.length, ok = c.itens.filter((x) => x.status === 'ok').length, prob = feitos - ok;
+    return caixa(
+      h('b', null, `${fmt.int(feitos)}/${fmt.int(c.total)} produtos processados`),
+      ` · ${fmt.int(ok)} ${ok === 1 ? 'adicionado' : 'adicionados'} ao carrinho${prob ? ` · ${fmt.int(prob)} com problema` : ''}`,
+      h('div', { class: 'ped-prog-b' }, h('span', { style: { width: `${Math.round((feitos / c.total) * 100)}%` } })),
+      c.atual ? h('small', null, `Agora: ${c.atual}`) : null);
   }
 
   function resultadoCarrinho(c) {
-    if (!c || !Array.isArray(c.itens)) return null;
+    if (!c || !Array.isArray(c.itens) || (c.modo === 'navegador' && !c.itens.length)) return null;
     const ST = { ok: ['No carrinho', 'ok'], indisponivel: ['Indisponível', 'erro'], nao_encontrado: ['Não achou no site', 'erro'], acima_do_maximo: ['Acima do máximo', 'warn'], sem_confirmacao: ['Sem confirmação', 'warn'], erro: ['Erro', 'erro'] };
-    const ok = c.itens.filter((x) => x.status === 'ok').length;
+    const ok = c.itens.filter((x) => x.status === 'ok').length, prob = c.itens.length - ok;
+    const site = c.site ? `${c.site.replace(/Abertura\.aspx.*$/, '')}Abertura.aspx` : null;
+    const fimTxt = c.fim
+      ? h('div', { class: 'notice ok' }, h('b', null, `Carrinho pronto: ${ok} de ${c.total || c.itens.length} produtos.`), c.carrinhoDepois && c.carrinhoDepois.texto ? ` No site: ${c.carrinhoDepois.texto}.` : '',
+        prob ? ` ${prob} com problema: no quadro do favorito, no site, cada um tem "Tentar de novo".` : '', ' Confira e finalize no site. ',
+        site ? h('a', { href: site, target: '_blank', rel: 'noopener' }, 'Abrir o Sistema de Pedidos ↗') : null)
+      : h('div', { class: 'notice warn' }, `O carrinho parou em ${c.itens.length} de ${c.total} produtos (a aba do site foi fechada ou o link venceu). Clique em "Montar carrinho no site" de novo para refazer.`);
     return h('div', { class: 'mt' },
       h('div', { class: 'f-label' }, `Último carrinho: ${new Date(c.inicio).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}${c.por ? ` · por ${c.por}` : ''}`),
       c.erro ? h('div', { class: 'notice err' }, c.erro) : null,
-      c.carrinhoDepois ? h('p', null, h('b', null, `${ok} de ${c.itens.length} produtos no carrinho`), ` · no site: ${c.carrinhoDepois.texto || '—'}. `, h('span', { class: 'muted' }, 'Revise e finalize no Sistema de Pedidos.')) : (c.fim ? null : h('p', { class: 'muted' }, `Em andamento: ${c.itens.length} produtos até agora…`)),
-      c.itens.length ? TS.table({
+      c.modo === 'navegador' ? fimTxt : null,
+      TS.table({
         cols: [
           { key: 'nome', label: 'Produto', align: 'l', wrap: true },
           { key: 'status', label: 'Resultado', align: 'l', render: (r) => { const s = ST[r.status] || [r.status, '']; return h('span', { class: 'badge ' + s[1], title: r.erro || null }, s[0]); } },
@@ -548,7 +604,7 @@
           { key: 'preco', label: 'Preço', fmt: (v) => (v ? fmt.brl(v) : '—') },
         ],
         rows: c.itens, sortKey: 'status', sortDir: 'asc', maxHeight: '360px', cls: 'est-t',
-      }) : null);
+      }));
   }
 
   function acompanhar(corpo, loja, M, e) {
@@ -558,15 +614,19 @@
       if (!corpo.isConnected || state.page !== 'pedido' || state.loja !== loja) return;
       try {
         const p = await buscar(loja);
-        const ocupado = p.robo && (p.robo.estado === 'na_fila' || p.robo.estado === 'rodando');
-        if (!ocupado) { pintar(corpo, loja, M, e, p); return; }
-        // durante o carrinho, mostra o andamento
-        const box = corpo.querySelector('.ped-andamento');
-        if (p.carrinho && box) box.replaceChildren(resultadoCarrinho(p.carrinho) || '');
+        const cat = p.robo && (p.robo.estado === 'na_fila' || p.robo.estado === 'rodando');
+        const car = carrinhoAtivo(p.carrinho);
+        if (!cat && !car) {
+          if (p.carrinho && p.carrinho.fim && document.hidden) document.title = '✓ Carrinho pronto · Tea Shop';
+          pintar(corpo, loja, M, e, p); return;
+        }
+        // andamento: "3/25 produtos processados" e a barra
+        const box = corpo.querySelector('.ped-status');
+        if (box) box.replaceChildren(car ? progresso(p.carrinho) : progressoCat(p.robo));
       } catch { /* tenta de novo */ }
-      poll = setTimeout(tic, 5000);
+      poll = setTimeout(tic, 3000);
     };
-    poll = setTimeout(tic, 5000);
+    poll = setTimeout(tic, 3000);
   }
 
   function baixarCsv(lista, loja) {

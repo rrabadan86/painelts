@@ -239,7 +239,19 @@ def modo_carrinho(page):
         raise RuntimeError("defina ENTRADA_PEDIDO e SAIDA_RESULTADO")
     pedido = json.loads(Path(entrada).read_text(encoding="utf-8"))
     itens = [i for i in pedido.get("itens", []) if i.get("nome") and float(i.get("qtd") or 0) > 0]
-    res = {"inicio": datetime.now(TZ).isoformat(), "por": pedido.get("por"), "itens": [], "ok": False}
+    res = {"inicio": datetime.now(TZ).isoformat(), "por": pedido.get("por"), "itens": [], "ok": False, "site": BASE}
+    if pedido.get("refazer"):
+        # "tentar de novo": mantém o resultado anterior e refaz só estes produtos
+        try:
+            antes_res = json.loads(Path(destino).read_text(encoding="utf-8"))
+            refazer = {str(i.get("cod")) for i in itens}
+            res.update({k: antes_res[k] for k in ("inicio", "por") if antes_res.get(k)})
+            res["itens"] = [i for i in antes_res.get("itens", []) if str(i.get("cod")) not in refazer]
+            res["refeito"] = datetime.now(TZ).isoformat()
+        except (OSError, ValueError):
+            pass
+    base = len(res["itens"])
+    res["base"] = base
 
     def salvar():
         res["fim"] = datetime.now(TZ).isoformat()
@@ -261,7 +273,11 @@ def modo_carrinho(page):
         salvar()
         return 3
     step(f"3) Colocando {len(itens)} produtos no carrinho")
+    res["total"] = base + len(itens)
+    salvar()  # o painel mostra o andamento: "3 de 25 produtos"
     for n, it in enumerate(itens, 1):
+        res["atual"] = it["nome"]
+        salvar()
         r = {"cod": it.get("cod"), "nome": it["nome"], "pedido": float(it["qtd"])}
         try:
             page.fill(f"#{L}txtBusca", it["nome"])
@@ -301,9 +317,16 @@ def modo_carrinho(page):
             r["erro"] = str(e).splitlines()[0][:200]
         res["itens"].append(r)
         log(f"{n}/{len(itens)} {it['nome']}: {r['status']}{' ' + str(r.get('qtd')) if r.get('qtd') else ''}")
-        if n % 5 == 0:
-            salvar()  # o painel acompanha o andamento
+        salvar()
+    res.pop("atual", None)
     res["carrinhoDepois"] = carrinho_info(page)
+    # link do carrinho no topo do site (quando tem itens), para abrir direto
+    try:
+        href = page.evaluate("""() => { const a = [...document.querySelectorAll('a[href]')].find(a => /Ite(m|ns)\\s*-\\s*R\\$/i.test(a.textContent) && !/^javascript/i.test(a.getAttribute('href'))); return a ? a.href : null }""")
+        if href:
+            res["linkCarrinho"] = href
+    except Exception:  # noqa: BLE001
+        pass
     res["ok"] = True
     log(f"Carrinho no fim: {res['carrinhoDepois']['texto']}. O pedido NÃO foi finalizado: revise no site e finalize.")
     salvar()

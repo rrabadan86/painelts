@@ -16,10 +16,11 @@ const ler = (f) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catc
 const catalogo = (id) => ler(path.join(pasta(id), 'catalogo.json'));
 const carrinho = (id) => ler(path.join(pasta(id), 'carrinho.json'));
 
-function gravarEntrada(id, itens, por) {
+function gravarEntrada(id, itens, por, refazer) {
   fs.mkdirSync(pasta(id), { recursive: true });
-  C.gravarAtomico(path.join(pasta(id), 'entrada.json'), JSON.stringify({ em: new Date().toISOString(), por, itens }), 0o640);
-  try { fs.unlinkSync(path.join(pasta(id), 'carrinho.json')); } catch { /* não havia */ }
+  C.gravarAtomico(path.join(pasta(id), 'entrada.json'), JSON.stringify({ em: new Date().toISOString(), por, itens, refazer: !!refazer }), 0o640);
+  // carrinho novo: apaga o resultado anterior; "tentar de novo": o robô mantém o anterior e refaz só os itens pedidos
+  if (!refazer) { try { fs.unlinkSync(path.join(pasta(id), 'carrinho.json')); } catch { /* não havia */ } }
 }
 
 const EVENTOS = [
@@ -113,4 +114,50 @@ function gravarAcesso(id, { usuario, senha, apagar }, por) {
   return { ok: true };
 }
 
-module.exports = { acesso, gravarAcesso, catalogo, carrinho, gravarEntrada, cfg, validarCfg, validarItens, EVENTOS };
+// ---------- carrinho montado no navegador de quem pede ----------
+// O carrinho do Sistema de Pedidos vale só para a sessão de quem entrou no site; por isso ele é montado
+// no navegador da pessoa: o painel gera um código de uso único (30 min) com a lista, abre o site e o
+// favorito "Carrinho Tea Shop" (public/js/carrinho-site.js) lê a lista, coloca no carrinho e devolve o andamento.
+const crypto = require('crypto');
+const SITE = (process.env.PEDIDO_SITE || 'https://grnteashop.nextsoft.com.br/Pedidos/').replace(/\/?$/, '/');
+const ORIGENS = new Set([new URL(SITE).origin, new URL(SITE).origin.replace(/^https:/, 'http:')]);
+const codigos = new Map(); // código → { loja, itens, por, expira }
+const STATUS = new Set(['ok', 'indisponivel', 'nao_encontrado', 'acima_do_maximo', 'sem_confirmacao', 'erro']);
+function limparCodigos() { const t = Date.now(); for (const [k, v] of codigos) if (v.expira < t) codigos.delete(k); }
+function criarCodigo(id, itens, por) {
+  limparCodigos();
+  for (const [k, v] of codigos) if (v.loja === id) codigos.delete(k); // um carrinho por loja de cada vez
+  const c = crypto.randomBytes(18).toString('hex');
+  const cat = catalogo(id) || { itens: [] };
+  const porCod = new Map(cat.itens.map((x) => [String(x.cod), x]));
+  const lista = itens.map((x) => { const k = porCod.get(String(x.cod)) || {}; return { cod: x.cod, nome: x.nome, qtd: x.qtd, mult: k.mult || null, min: k.min || null, max: k.max || null }; });
+  const expira = Date.now() + 30 * 60e3;
+  codigos.set(c, { loja: id, itens: lista, por, expira });
+  fs.mkdirSync(pasta(id), { recursive: true });
+  C.gravarAtomico(path.join(pasta(id), 'carrinho.json'), JSON.stringify({ modo: 'navegador', inicio: new Date().toISOString(), por, total: lista.length, itens: [], site: SITE, expira: new Date(expira).toISOString(), aguardando: true }), 0o640);
+  return { codigo: c, url: `${SITE}Abertura.aspx#teashop=${c}`, expira: new Date(expira).toISOString() };
+}
+function lerCodigo(c) {
+  const x = codigos.get(String(c || ''));
+  if (!x || x.expira < Date.now()) return null;
+  return x;
+}
+/** andamento enviado pelo favorito: { itens:[…], atual, fim, carrinhoDepois:{texto} } */
+function progresso(c, b) {
+  const x = lerCodigo(c);
+  if (!x) return { erro: 'Código vencido. Gere o carrinho de novo no painel.' };
+  const f = path.join(pasta(x.loja), 'carrinho.json');
+  const atual = ler(f) || { modo: 'navegador', inicio: new Date().toISOString(), por: x.por, total: x.itens.length, site: SITE };
+  const txt = (v, n) => String(v ?? '').replace(/[\r\n<>]/g, ' ').slice(0, n);
+  const num = (v) => (Number.isFinite(+v) ? Math.round(+v * 1000) / 1000 : null);
+  const cods = new Set(x.itens.map((i) => String(i.cod)));
+  const itens = (Array.isArray(b.itens) ? b.itens : []).slice(0, 400).filter((i) => cods.has(String(i.cod)) && STATUS.has(i.status))
+    .map((i) => ({ cod: String(i.cod), nome: txt(i.nome, 120), pedido: num(i.pedido), qtd: num(i.qtd), preco: num(i.preco), status: i.status, erro: i.erro ? txt(i.erro, 200) : undefined }));
+  x.expira = Math.max(x.expira, Date.now() + 15 * 60e3); // em uso: não vence no meio
+  const novo = { ...atual, aguardando: false, itens, total: x.itens.length, atual: b.atual ? txt(b.atual, 120) : undefined, expira: new Date(x.expira).toISOString(),
+    fim: b.fim ? new Date().toISOString() : undefined, carrinhoDepois: b.carrinhoDepois ? { texto: txt(b.carrinhoDepois.texto, 80) } : atual.carrinhoDepois, ok: !!b.fim };
+  C.gravarAtomico(f, JSON.stringify(novo), 0o640);
+  return { ok: true };
+}
+
+module.exports = { ORIGENS, criarCodigo, lerCodigo, progresso, acesso, gravarAcesso, catalogo, carrinho, gravarEntrada, cfg, validarCfg, validarItens, EVENTOS };
