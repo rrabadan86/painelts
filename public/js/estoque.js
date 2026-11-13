@@ -82,110 +82,9 @@
 
   /** motor de custos da loja escolhida (ou null se não houver estoque / permissão) */
   const motores = new WeakMap();
-  TS.custosLoja = async function () {
-    if (!TS.podeContabilidade || !TS.podeContabilidade() || TS.demo || !state.loja || state.loja === 'todas') return null;
-    const x = await buscar(state.loja);
-    if (!x.estoque || !x.estoque.itens || !x.estoque.itens.length) return null;
-    let m = motores.get(TS.db);
-    if (!m || m.est !== x.estoque) { m = { est: x.estoque, M: motor(x.estoque, x.cfg) }; motores.set(TS.db, m); }
-    return m.M;
-  };
-
-  /** cartão "Lucro da promoção": antes × durante × depois (só admin e franqueado) */
-  TS.cartaoLucroPromo = function ({ antes, durante, depois, diasAntes, diasDurante, diasDepois }) {
-    const corpo = h('div', null, h('div', { class: 'muted' }, 'Calculando o lucro…'));
-    const card = TS.card('Lucro da promoção', 'Com o custo de cada produto (planilha de estoque do AppNext). Lucro por dia, para comparar períodos de tamanhos diferentes.', corpo);
-    TS.custosLoja().then((M) => {
-      if (!M) { card.remove(); return; }
-      const db = TS.db;
-      const calc = (idx, dias) => {
-        let vt = 0, custo = 0, comCusto = 0, desc = 0;
-        const prod = new Map();
-        for (const i of idx) {
-          if (M.taxa(i)) continue;
-          const v = db.vt[i] || 0; vt += v; desc += TS.descontos([i]);
-          const c = M.custo(i);
-          if (c == null) continue;
-          comCusto += v; custo += c;
-          const cs = M.casar(i);
-          const k = cs && cs.kg ? cs.it.desc : db.D.descricao[db.desc[i]];
-          const p = prod.get(k) || { vt: 0, lucro: 0 }; p.vt += v; p.lucro += v - c; prod.set(k, p);
-        }
-        const lucro = comCusto - custo;
-        return { dias, vt, desc, lucro, margem: comCusto ? lucro / comCusto : null, lucroDia: dias ? lucro / dias : null, vtDia: dias ? vt / dias : null, prod };
-      };
-      const A = calc(antes, diasAntes), D = calc(durante, diasDurante), P = diasDepois > 0 ? calc(depois, diasDepois) : null;
-      const delta = A.lucroDia ? D.lucroDia / A.lucroDia - 1 : null;
-      const col = (t, x, destaque) => h('div', { class: 'promo-col' + (destaque ? ' on' : '') }, h('div', { class: 'promo-col-t' }, t, h('small', null, `${x ? fmt.int(x.dias) : 0} dias`)),
-        x ? [h('div', { class: 'promo-lucro' }, fmt.brl0(x.lucroDia), h('small', null, ' de lucro por dia')),
-          h('div', null, `Faturamento ${fmt.brl0(x.vtDia)}/dia`), h('div', null, `Margem ${fmt.pct(x.margem)}`), h('div', null, `Descontos ${fmt.brl0(x.desc)} no período`)]
-          : h('div', { class: 'muted' }, 'Ainda não há dias depois da promoção.'));
-      const veredito = delta == null ? null : delta > 0.03
-        ? h('div', { class: 'notice ok-n' }, h('b', null, 'A promoção se pagou: '), `o lucro por dia subiu ${fmt.pct(delta, 0)} em relação aos ${fmt.int(diasAntes)} dias antes, mesmo com ${fmt.brl0(D.desc)} em descontos.`)
-        : delta < -0.03
-          ? h('div', { class: 'notice err' }, h('b', null, 'A promoção não se pagou: '), `o lucro por dia caiu ${fmt.pct(-delta, 0)} em relação aos ${fmt.int(diasAntes)} dias antes. O desconto (${fmt.brl0(D.desc)}) custou mais do que a venda a mais trouxe.`)
-          : h('div', { class: 'notice' }, h('b', null, 'Empate: '), 'o lucro por dia ficou praticamente igual ao de antes. A promoção trouxe movimento, mas não lucro a mais.');
-      const nomes = new Set([...A.prod.keys(), ...D.prod.keys()]);
-      const linhas = [...nomes].map((n) => {
-        const a = A.prod.get(n), d = D.prod.get(n);
-        const la = a ? a.lucro / diasAntes : 0, ld = d ? d.lucro / diasDurante : 0;
-        return { produto: n, antes: la, durante: ld, dif: ld - la };
-      }).filter((r) => Math.abs(r.dif) > 0.005).sort((x, y) => Math.abs(y.dif) - Math.abs(x.dif)).slice(0, 15);
-      corpo.replaceChildren(veredito || '',
-        h('div', { class: 'promo-cols' }, col('Antes', A), col('Durante', D, true), col('Depois', P)),
-        P && A.lucroDia ? h('p', { class: 'muted', style: { fontSize: '12.5px' } }, P.lucroDia >= A.lucroDia * 1.03 ? `Depois da promoção o lucro por dia seguiu ${fmt.pct(P.lucroDia / A.lucroDia - 1, 0)} acima de antes: a campanha deixou efeito.` : P.lucroDia <= A.lucroDia * 0.97 ? `Depois da promoção o lucro por dia ficou ${fmt.pct(1 - P.lucroDia / A.lucroDia, 0)} abaixo de antes: parte da venda foi só antecipada.` : 'Depois da promoção o lucro por dia voltou ao nível de antes.') : null,
-        linhas.length ? h('div', { class: 'mt' }, h('div', { class: 'f-label' }, 'Produtos que mais mudaram o lucro por dia'), TS.table({
-          cols: [{ key: 'produto', label: 'Produto', align: 'l', wrap: true }, { key: 'antes', label: 'Antes /dia', fmt: fmt.brl }, { key: 'durante', label: 'Durante /dia', fmt: fmt.brl },
-            { key: 'dif', label: 'Diferença', fmt: (v) => (v > 0 ? '+' : '') + fmt.brl(v), cls: (r) => (r.dif > 0 ? 'pos' : 'neg') }],
-          rows: linhas, sortKey: 'dif', maxHeight: '360px', cls: 'est-t',
-        })) : null);
-    }).catch(() => card.remove());
-    return card;
-  };
-
-  /** janelinha com a conta, aberta ao clicar num valor (fecha clicando fora ou com Esc) */
-  function popConta(alvo, titulo, linhas, nota) {
-    document.querySelector('.est-pop')?.remove();
-    const pop = h('div', { class: 'est-pop', role: 'dialog' },
-      h('div', { class: 'est-pop-tit' }, titulo),
-      h('table', null, linhas.map(([rot, val, extra, cls, dica]) => h('tr', { class: [cls, dica ? 'com-dica' : ''].filter(Boolean).join(' ') || null, title: dica || null }, h('td', null, rot), h('td', { class: 'pct' }, extra || ''), h('td', { class: 'v' }, val)))),
-      linhas.some((l) => l[4]) ? h('div', { class: 'est-pop-dicas' }, linhas.filter((l) => l[4]).map((l) => h('p', null, l[4]))) : null,
-      nota ? h('div', { class: 'est-pop-nota' }, nota) : null);
-    document.body.append(pop);
-    const r = alvo.getBoundingClientRect(), w = pop.offsetWidth, hh = pop.offsetHeight;
-    pop.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, r.right - w)) + 'px';
-    pop.style.top = (r.bottom + 6 + hh > window.innerHeight ? Math.max(8, r.top - hh - 6) : r.bottom + 6) + 'px';
-    const fechar = (e) => { if (e.type === 'keydown' ? e.key === 'Escape' : !pop.contains(e.target)) { pop.remove(); document.removeEventListener('mousedown', fechar, true); document.removeEventListener('keydown', fechar); window.removeEventListener('scroll', sair, true); } };
-    const sair = () => { pop.remove(); document.removeEventListener('mousedown', fechar, true); document.removeEventListener('keydown', fechar); window.removeEventListener('scroll', sair, true); };
-    setTimeout(() => { document.addEventListener('mousedown', fechar, true); document.addEventListener('keydown', fechar); window.addEventListener('scroll', sair, true); }, 0);
-  }
-
-  const TIPO_ITEM = (it) => (it.un === 'Kg' && it.tipo === 'IN' ? 'Chá a granel' : it.tipo === 'PN' ? 'Produto' : 'Insumo / embalagem');
-  const qtdTxt = (v, it) => (v == null ? '—' : it.un === 'Kg' ? `${fmt.kg(v)} kg` : `${fmt.int(v)} ${it.un ? it.un.toLowerCase() : ''}`);
-
-  TS.pages.estoque = function (root) {
-    root.append(h('div', { class: 'page-head' }, h('div', null, h('h1', { class: 'page-title' }, 'Estoque e margem'),
-      h('div', { class: 'page-sub' }, 'Custo de cada venda, produtos mais rentáveis, o que repor e o que está parado')),
-      h('div', { class: 'active-filters' }, h('span', { class: 'af' }, TS.periodoTexto()))));
-    if (!state.loja || state.loja === 'todas') { root.append(h('div', { class: 'notice' }, 'O estoque é de cada loja: escolha uma loja no seletor do topo.')); return; }
-    const corpo = h('div', null, h('div', { class: 'loading' }, h('div', null, h('div', { class: 'spinner' }), h('p', null, 'Lendo o estoque…'))));
-    root.append(corpo);
-    buscar(state.loja).then((x) => { if (corpo.isConnected) pintar(corpo, x); }).catch((e) => corpo.replaceChildren(h('div', { class: 'notice err' }, e.message)));
-  };
-
-  function pintar(corpo, { estoque, cfg }) {
-    corpo.replaceChildren();
-    if (!estoque || !estoque.itens || !estoque.itens.length) {
-      corpo.append(h('div', { class: 'card' }, h('div', { class: 'card-title' }, 'Ainda não há estoque desta loja'),
-        h('p', null, 'No AppNext: Estoque → Estoque Atual → botão verde "Exportar para Excel". Envie o arquivo em Configurações → Lojas → Enviar planilha → "Estoque atual e custos". Depois disso o coletor baixa sozinho em cada atualização.')));
-      return;
-    }
+  /** deduções da margem líquida de cada linha de venda (comissão, royalties, Simples, maquininha, outros custos) */
+  function criarDeducoes(M, cfg) {
     const db = TS.db;
-    const M = motor(estoque, cfg);
-    const temCod = db.D.cod && db.D.cod.some((c) => c);
-    corpo.append(h('div', { class: 'muted est-origem' }, `Estoque e custos do AppNext de ${new Date(estoque.em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })} · ${fmt.int(estoque.itens.length)} produtos`,
-      temCod ? '' : ' · as vendas ainda não têm o código do produto: o casamento está sendo feito pelo nome (veja "Vendas sem custo" no fim)'));
-
     // ---------- deduções da margem líquida ----------
     // comissão: o que a loja pagou no mês (comissões + premiação + bônus, como no Comissionamento) ÷ vendas de cada
     // tipo (aromatizado, puro, acessório) = % efetivo por tipo; Espaço Gourmet não tem comissão (a gorjeta vem da taxa de serviço).
@@ -273,6 +172,119 @@
       };
     }
 
+
+    return { deducoes, OUTROS, taxaOutro, dicaOutro, pSimples, pCartao };
+  }
+
+  TS.custosLoja = async function () {
+    if (!TS.podeContabilidade || !TS.podeContabilidade() || TS.demo || !state.loja || state.loja === 'todas') return null;
+    const x = await buscar(state.loja);
+    if (!x.estoque || !x.estoque.itens || !x.estoque.itens.length) return null;
+    let m = motores.get(TS.db);
+    if (!m || m.est !== x.estoque || m.cfg !== x.cfg) { m = { est: x.estoque, cfg: x.cfg, M: motor(x.estoque, x.cfg) }; m.M.ded = criarDeducoes(m.M, x.cfg); motores.set(TS.db, m); }
+    return m.M;
+  };
+
+  /** cartão "Lucro da promoção": antes × durante × depois (só admin e franqueado) */
+  TS.cartaoLucroPromo = function ({ antes, durante, depois, diasAntes, diasDurante, diasDepois }) {
+    const corpo = h('div', null, h('div', { class: 'muted' }, 'Calculando o lucro…'));
+    const card = TS.card('Lucro da promoção', 'Com o custo de cada produto (planilha de estoque do AppNext). Lucro por dia, para comparar períodos de tamanhos diferentes.', corpo);
+    TS.custosLoja().then((M) => {
+      if (!M) { card.remove(); return; }
+      const db = TS.db;
+      const DD = M.ded;
+      const calc = (idx, dias) => {
+        let vt = 0, custo = 0, comCusto = 0, desc = 0, ded = 0;
+        const prod = new Map();
+        for (const i of idx) {
+          if (M.taxa(i)) continue;
+          const v = db.vt[i] || 0; vt += v; desc += TS.descontos([i]);
+          const c = M.custo(i);
+          if (c == null) continue;
+          comCusto += v; custo += c;
+          if (DD) { const dd = DD.deducoes(i); ded += dd.com + dd.roy + dd.imp + dd.maq + dd.out; }
+          const cs = M.casar(i);
+          const k = cs && cs.kg ? cs.it.desc : db.D.descricao[db.desc[i]];
+          const p = prod.get(k) || { vt: 0, lucro: 0 }; p.vt += v; p.lucro += v - c; prod.set(k, p);
+        }
+        const lucro = comCusto - custo, liq = lucro - ded;
+        return { dias, vt, desc, lucro, liq, margem: comCusto ? lucro / comCusto : null, margemLiq: comCusto ? liq / comCusto : null, lucroDia: dias ? lucro / dias : null, liqDia: dias ? liq / dias : null, vtDia: dias ? vt / dias : null, prod };
+      };
+      const A = calc(antes, diasAntes), D = calc(durante, diasDurante), P = diasDepois > 0 ? calc(depois, diasDepois) : null;
+      const delta = A.lucroDia ? D.lucroDia / A.lucroDia - 1 : null;
+      const col = (t, x, destaque) => h('div', { class: 'promo-col' + (destaque ? ' on' : '') }, h('div', { class: 'promo-col-t' }, t, h('small', null, `${x ? fmt.int(x.dias) : 0} dias`)),
+        x ? [h('div', { class: 'promo-lucro' }, fmt.brl0(x.lucroDia), h('small', null, ' de lucro bruto por dia')),
+          h('div', null, `Lucro líquido ${fmt.brl0(x.liqDia)}/dia`),
+          h('div', null, `Faturamento ${fmt.brl0(x.vtDia)}/dia`), h('div', null, `Margem bruta ${fmt.pct(x.margem)} · líquida ${fmt.pct(x.margemLiq)}`), h('div', null, `Descontos ${fmt.brl0(x.desc)} no período`)]
+          : h('div', { class: 'muted' }, 'Ainda não há dias depois da promoção.'));
+      const veredito = delta == null ? null : delta > 0.03
+        ? h('div', { class: 'notice ok-n' }, h('b', null, 'A promoção se pagou: '), `o lucro por dia subiu ${fmt.pct(delta, 0)} em relação aos ${fmt.int(diasAntes)} dias antes, mesmo com ${fmt.brl0(D.desc)} em descontos.`)
+        : delta < -0.03
+          ? h('div', { class: 'notice err' }, h('b', null, 'A promoção não se pagou: '), `o lucro por dia caiu ${fmt.pct(-delta, 0)} em relação aos ${fmt.int(diasAntes)} dias antes. O desconto (${fmt.brl0(D.desc)}) custou mais do que a venda a mais trouxe.`)
+          : h('div', { class: 'notice' }, h('b', null, 'Empate: '), 'o lucro por dia ficou praticamente igual ao de antes. A promoção trouxe movimento, mas não lucro a mais.');
+      const nomes = new Set([...A.prod.keys(), ...D.prod.keys()]);
+      const linhas = [...nomes].map((n) => {
+        const a = A.prod.get(n), d = D.prod.get(n);
+        const la = a ? a.lucro / diasAntes : 0, ld = d ? d.lucro / diasDurante : 0;
+        return { produto: n, antes: la, durante: ld, dif: ld - la };
+      }).filter((r) => Math.abs(r.dif) > 0.005).sort((x, y) => Math.abs(y.dif) - Math.abs(x.dif)).slice(0, 15);
+      corpo.replaceChildren(...[veredito,
+        h('div', { class: 'promo-cols' }, col('Antes', A), col('Durante', D, true), col('Depois', P)),
+        P && A.lucroDia ? h('p', { class: 'muted', style: { fontSize: '12.5px' } }, P.lucroDia >= A.lucroDia * 1.03 ? `Depois da promoção o lucro por dia seguiu ${fmt.pct(P.lucroDia / A.lucroDia - 1, 0)} acima de antes: a campanha deixou efeito.` : P.lucroDia <= A.lucroDia * 0.97 ? `Depois da promoção o lucro por dia ficou ${fmt.pct(1 - P.lucroDia / A.lucroDia, 0)} abaixo de antes: parte da venda foi só antecipada.` : 'Depois da promoção o lucro por dia voltou ao nível de antes.') : null,
+        linhas.length ? h('div', { class: 'mt' }, h('div', { class: 'f-label' }, 'Produtos que mais mudaram o lucro bruto por dia'), TS.table({
+          cols: [{ key: 'produto', label: 'Produto', align: 'l', wrap: true }, { key: 'antes', label: 'Antes /dia', fmt: fmt.brl }, { key: 'durante', label: 'Durante /dia', fmt: fmt.brl },
+            { key: 'dif', label: 'Diferença', fmt: (v) => (v > 0 ? '+' : '') + fmt.brl(v), cls: (r) => (r.dif > 0 ? 'pos' : 'neg') }],
+          rows: linhas, sortKey: 'dif', maxHeight: '360px', cls: 'est-t',
+        })) : null].filter(Boolean));
+    }).catch(() => card.remove());
+    return card;
+  };
+
+  /** janelinha com a conta, aberta ao clicar num valor (fecha clicando fora ou com Esc) */
+  function popConta(alvo, titulo, linhas, nota) {
+    document.querySelector('.est-pop')?.remove();
+    const pop = h('div', { class: 'est-pop', role: 'dialog' },
+      h('div', { class: 'est-pop-tit' }, titulo),
+      h('table', null, linhas.map(([rot, val, extra, cls, dica]) => h('tr', { class: [cls, dica ? 'com-dica' : ''].filter(Boolean).join(' ') || null, title: dica || null }, h('td', null, rot), h('td', { class: 'pct' }, extra || ''), h('td', { class: 'v' }, val)))),
+      linhas.some((l) => l[4]) ? h('div', { class: 'est-pop-dicas' }, linhas.filter((l) => l[4]).map((l) => h('p', null, l[4]))) : null,
+      nota ? h('div', { class: 'est-pop-nota' }, nota) : null);
+    document.body.append(pop);
+    const r = alvo.getBoundingClientRect(), w = pop.offsetWidth, hh = pop.offsetHeight;
+    pop.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, r.right - w)) + 'px';
+    pop.style.top = (r.bottom + 6 + hh > window.innerHeight ? Math.max(8, r.top - hh - 6) : r.bottom + 6) + 'px';
+    const fechar = (e) => { if (e.type === 'keydown' ? e.key === 'Escape' : !pop.contains(e.target)) { pop.remove(); document.removeEventListener('mousedown', fechar, true); document.removeEventListener('keydown', fechar); window.removeEventListener('scroll', sair, true); } };
+    const sair = () => { pop.remove(); document.removeEventListener('mousedown', fechar, true); document.removeEventListener('keydown', fechar); window.removeEventListener('scroll', sair, true); };
+    setTimeout(() => { document.addEventListener('mousedown', fechar, true); document.addEventListener('keydown', fechar); window.addEventListener('scroll', sair, true); }, 0);
+  }
+
+  const TIPO_ITEM = (it) => (it.un === 'Kg' && it.tipo === 'IN' ? 'Chá a granel' : it.tipo === 'PN' ? 'Produto' : 'Insumo / embalagem');
+  const qtdTxt = (v, it) => (v == null ? '—' : it.un === 'Kg' ? `${fmt.kg(v)} kg` : `${fmt.int(v)} ${it.un ? it.un.toLowerCase() : ''}`);
+
+  TS.pages.estoque = function (root) {
+    root.append(h('div', { class: 'page-head' }, h('div', null, h('h1', { class: 'page-title' }, 'Estoque e margem'),
+      h('div', { class: 'page-sub' }, 'Custo de cada venda, produtos mais rentáveis, o que repor e o que está parado')),
+      h('div', { class: 'active-filters' }, h('span', { class: 'af' }, TS.periodoTexto()))));
+    if (!state.loja || state.loja === 'todas') { root.append(h('div', { class: 'notice' }, 'O estoque é de cada loja: escolha uma loja no seletor do topo.')); return; }
+    const corpo = h('div', null, h('div', { class: 'loading' }, h('div', null, h('div', { class: 'spinner' }), h('p', null, 'Lendo o estoque…'))));
+    root.append(corpo);
+    buscar(state.loja).then((x) => { if (corpo.isConnected) pintar(corpo, x); }).catch((e) => corpo.replaceChildren(h('div', { class: 'notice err' }, e.message)));
+  };
+
+  function pintar(corpo, { estoque, cfg }) {
+    corpo.replaceChildren();
+    if (!estoque || !estoque.itens || !estoque.itens.length) {
+      corpo.append(h('div', { class: 'card' }, h('div', { class: 'card-title' }, 'Ainda não há estoque desta loja'),
+        h('p', null, 'No AppNext: Estoque → Estoque Atual → botão verde "Exportar para Excel". Envie o arquivo em Configurações → Lojas → Enviar planilha → "Estoque atual e custos". Depois disso o coletor baixa sozinho em cada atualização.')));
+      return;
+    }
+    const db = TS.db;
+    const M = motor(estoque, cfg);
+    const temCod = db.D.cod && db.D.cod.some((c) => c);
+    corpo.append(h('div', { class: 'muted est-origem' }, `Estoque e custos do AppNext de ${new Date(estoque.em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })} · ${fmt.int(estoque.itens.length)} produtos`,
+      temCod ? '' : ' · as vendas ainda não têm o código do produto: o casamento está sendo feito pelo nome (veja "Vendas sem custo" no fim)'));
+
+    const { deducoes, OUTROS, taxaOutro, dicaOutro, pSimples, pCartao } = criarDeducoes(M, cfg);
+
     // ---------- rentabilidade no período e filtros escolhidos ----------
     const base = TS.filtrar();
     let fat = 0, fatCusto = 0, custoTot = 0;
@@ -313,8 +325,8 @@
       if (granel) { p.kg += (q * cs.g) / 1000; p.tam.set(cs.g, (p.tam.get(cs.g) || 0) + q); }
       porProd.set(chave, p);
       const vn = db.D.vendedor[db.vend[i]] || '—';
-      const v = porVend.get(vn) || { vendedor: vn, vt: 0, custo: 0, fat: 0 };
-      v.vt += vt; v.custo += c; porVend.set(vn, v);
+      const v = porVend.get(vn) || { vendedor: vn, vt: 0, custo: 0, fat: 0, ded: 0 };
+      v.vt += vt; v.custo += c; v.ded += dd.com + dd.roy + dd.imp + dd.maq + dd.out; porVend.set(vn, v);
     }
     for (const i of base) { if (M.taxa(i)) continue; const v = porVend.get(db.D.vendedor[db.vend[i]] || '—'); if (v) v.fat += db.vt[i] || 0; }
     const lucro = fatCusto - custoTot;
@@ -530,13 +542,15 @@
       total: { produto: 'Total', vt: fatCusto, custo: custoTot, lucro, margem: fatCusto ? lucro / fatCusto : null, ded: dedSoma, lucroLiq: lucroLiqTot, margemLiq: fatCusto ? lucroLiqTot / fatCusto : null },
     }))));
 
-    const vends = [...porVend.values()].filter((v) => v.vt > 0).map((v) => ({ ...v, lucro: v.vt - v.custo, margem: (v.vt - v.custo) / v.vt, cobre: v.fat ? v.vt / v.fat : null }));
+    const vends = [...porVend.values()].filter((v) => v.vt > 0).map((v) => ({ ...v, lucro: v.vt - v.custo, margem: (v.vt - v.custo) / v.vt, lucroLiq: v.vt - v.custo - v.ded, margemLiq: (v.vt - v.custo - v.ded) / v.vt, cobre: v.fat ? v.vt / v.fat : null }));
     corpo.append(h('div', { class: 'mt' }, TS.card('Lucro por vendedora', 'Quem vende mais nem sempre é quem deixa mais lucro.', TS.table({
       cols: [
         { key: 'vendedor', label: 'Vendedora', align: 'l', sticky: true },
         { key: 'fat', label: 'Faturamento', title: 'Tudo que a vendedora vendeu no período (sem taxa de serviço)', fmt: fmt.brl },
         { key: 'lucro', label: 'Lucro bruto', title: 'Faturamento − custo, só das vendas que têm custo', fmt: fmt.brl },
-        { key: 'margem', label: 'Margem', title: 'Lucro ÷ faturamento das vendas com custo', fmt: (v) => fmt.pct(v) },
+        { key: 'margem', label: 'Margem bruta', title: 'Lucro bruto ÷ faturamento das vendas com custo', fmt: (v) => fmt.pct(v) },
+        { key: 'lucroLiq', label: 'Lucro líquido', title: 'Lucro bruto − comissão, royalties, Simples, maquininha e outros custos da loja', fmt: fmt.brl },
+        { key: 'margemLiq', label: 'Margem líquida', title: 'Lucro líquido ÷ faturamento das vendas com custo', fmt: (v) => fmt.pct(v) },
         { key: 'cobre', label: 'Com custo', fmt: (v) => fmt.pct(v, 0), title: 'Parte das vendas da vendedora cujo custo foi encontrado' },
       ],
       rows: vends, sortKey: 'lucro', maxHeight: 'free',
@@ -555,8 +569,9 @@
         const nome = cs && cs.kg ? cs.it.desc : db.D.descricao[db.desc[i]];
         const k = db.day[i] + '|' + db.cupom[i];
         (cupons.get(k) || cupons.set(k, new Set()).get(k)).add(nome);
-        const p = preco.get(nome) || { vt: 0, qtd: 0, custo: 0, qtdC: 0, granel: !!(cs && cs.kg) };
+        const p = preco.get(nome) || { vt: 0, qtd: 0, custo: 0, qtdC: 0, ded: 0, granel: !!(cs && cs.kg) };
         const q = db.qtd[i] || 1; p.vt += db.vt[i]; p.qtd += q;
+        const dd = deducoes(i); p.ded += dd.com + dd.roy + dd.imp + dd.maq + dd.out;
         const c = M.custo(i); if (c != null) { p.custo += c; p.qtdC += q; }
         preco.set(nome, p);
       }
@@ -568,7 +583,8 @@
         for (let x = 0; x < xs.length; x++) for (let y = x + 1; y < xs.length; y++) { const k = xs[x] + '\u0001' + xs[y]; par.set(k, (par.get(k) || 0) + 1); }
       }
       const minJuntos = Math.max(3, Math.round(nCup * 0.002));
-      const media = (n) => { const p = preco.get(n); return { preco: p.qtd ? p.vt / p.qtd : 0, custo: p.qtdC ? p.custo / p.qtdC : null, granel: p.granel }; };
+      // deduções em % do valor vendido de cada produto (comissão, royalties, impostos… acompanham o preço com desconto)
+      const media = (n) => { const p = preco.get(n); return { preco: p.qtd ? p.vt / p.qtd : 0, custo: p.qtdC ? p.custo / p.qtdC : null, granel: p.granel, txDed: p.vt ? p.ded / p.vt : 0 }; };
       const kits = [];
       for (const [k, n] of par) {
         if (n < minJuntos) continue;
@@ -578,7 +594,9 @@
         const A = media(a), B = media(b);
         const soma = A.preco + B.preco, custo = A.custo != null && B.custo != null ? A.custo + B.custo : null;
         const comDesc = soma * (1 - DESC_KIT / 100);
-        kits.push({ kit: `${a} + ${b}`, a, b, juntos: n, confA: n / cnt.get(a), confB: n / cnt.get(b), lift, soma, custo, margem: custo != null && soma ? (soma - custo) / soma : null, precoKit: comDesc, margemKit: custo != null && comDesc ? (comDesc - custo) / comDesc : null, granel: A.granel || B.granel });
+        const txDed = soma ? (A.preco * A.txDed + B.preco * B.txDed) / soma : 0;
+        const dedKit = comDesc * txDed;
+        kits.push({ dedKit, txDed, margemKitLiq: custo != null && comDesc ? (comDesc - custo - dedKit) / comDesc : null, kit: `${a} + ${b}`, a, b, juntos: n, confA: n / cnt.get(a), confB: n / cnt.get(b), lift, soma, custo, margem: custo != null && soma ? (soma - custo) / soma : null, precoKit: comDesc, margemKit: custo != null && comDesc ? (comDesc - custo) / comDesc : null, granel: A.granel || B.granel });
       }
       kits.sort((x, y) => y.lift * Math.log(1 + y.juntos) - x.lift * Math.log(1 + x.juntos));
       const top = kits.slice(0, 25);
@@ -594,7 +612,8 @@
             { key: 'lift', label: 'Afinidade', fmt: (v) => `${fmt.n1(v)}×`, title: 'Quantas vezes mais eles saem juntos do que sairiam por acaso. Acima de 2× é uma ligação forte' },
             { key: 'soma', label: 'Preço somado', fmt: fmt.brl, title: 'Preço médio do primeiro + do segundo, como vendidos hoje' },
             { key: 'precoKit', label: 'Preço do kit', fmt: fmt.brl, title: `Preço somado com ${DESC_KIT}% de desconto` },
-            { key: 'margemKit', label: 'Margem do kit', fmt: (v) => fmt.pct(v), cls: (r) => (r.margemKit != null && r.margemKit < 0.3 ? 'miss' : ''), title: 'Margem do kit já com o desconto (custo do AppNext; chá a granel com saco e etiquetas)' },
+            { key: 'margemKit', label: 'Margem bruta', fmt: (v) => fmt.pct(v), cls: (r) => (r.margemKit != null && r.margemKit < 0.3 ? 'miss' : ''), title: 'Margem bruta do kit já com o desconto: (preço do kit − custo) ÷ preço do kit. Custo do AppNext; chá a granel com saco e etiquetas' },
+            { key: 'margemKitLiq', label: 'Margem líquida', fmt: (v) => fmt.pct(v), cls: (r) => (r.margemKitLiq != null && r.margemKitLiq < 0.1 ? 'miss' : ''), title: 'Margem bruta − comissão, royalties, Simples, maquininha e outros custos (em % do preço do kit, como cada produto paga hoje)' },
           ],
           rows: top, sortKey: 'lift', maxHeight: '520px', cls: 'est-t', search: 'Buscar produto…', searchKeys: ['kit'],
         }) : h('p', { class: 'muted' }, `Ainda não há pares que saiam juntos em pelo menos ${minJuntos} cupons. Escolha um período maior (por exemplo, 12 meses).`),
