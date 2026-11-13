@@ -1195,3 +1195,9 @@ tr.est-det > td { padding: 0 !important; background: #FBF9F4 !important; }
 .ped-fx-n { font-size: 12.5px; margin-left: 4px; }
 .ped-t tr.ped-sai td { opacity: .25; transition: opacity .25s; }
 .ped-mult { display: inline-block; font-size: 11px; font-weight: 700; color: #7A5E0E; background: #F6EBC4; border-radius: 6px; padding: 2px 6px; cursor: help; white-space: nowrap; }
+.ped-cat { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin-top: -4px; }
+.ped-cat-info { font-size: 12.5px; color: var(--muted); }
+.ped-cat-info b { color: var(--ink); }
+.ped-cat-log { display: inline-block; margin-left: 6px; }
+.ped-cat-st { flex-basis: 100%; }
+.ped-cat-st .ped-prog { margin-top: 4px; }

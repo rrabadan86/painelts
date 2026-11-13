@@ -252,7 +252,7 @@
     }).catch((err) => corpo.replaceChildren(h('div', { class: 'notice err' }, err.message)));
   };
 
-  function pintar(corpo, loja, M, e, p) {
+  function pintar(corpo, loja, M, e, p, Rpronto) {
     corpo.replaceChildren();
     const modo = state.pedModo || 'repor';
     const eventos = p.cfg.eventos || [];
@@ -261,7 +261,8 @@
     const par = state.pedPar && state.pedPar.loja === loja ? state.pedPar : (state.pedPar = { loja, ...p.cfg });
     const chave = `${loja}|${modo}|${ev ? ev.id : ''}`;
     const editados = qtdPorLoja.get(chave) || qtdPorLoja.set(chave, new Map()).get(chave);
-    const R = calcular(M, e.estoque, e.cfg, p.catalogo, par, modo, ev, editados);
+    // Rpronto: redesenho depois de pôr/tirar um produto (não refaz a conta; as quantidades já estão nas linhas)
+    const R = Rpronto || calcular(M, e.estoque, e.cfg, p.catalogo, par, modo, ev, editados);
 
     // ---------- controles ----------
     const num = (v, attrs) => h('input', { class: 'f-input', type: 'number', value: v ?? '', style: { maxWidth: '96px' }, ...attrs });
@@ -299,6 +300,7 @@
       salvar.disabled = false;
     });
     const lbl = (t, el, suf, dica) => h('label', { title: dica || null }, h('span', null, t), h('div', null, el, suf ? ' ' + suf : ''));
+    const cat = blocoCatalogo(corpo, loja, M, e, p);
     const controles = h('div', { class: 'card ped-ctl' },
       h('div', { class: 'ped-ctl-l' },
         TS.seg([['Reposição', 'repor'], ['Data comemorativa', 'evento']], modo, (v) => { state.pedModo = v; pintar(corpo, loja, M, e, p); }),
@@ -309,7 +311,7 @@
         modo === 'repor' ? lbl('Vendas de', iDias, 'dias', 'Período de vendas usado no valor e intervalo até o próximo pedido (ex.: 7 para pedido semanal, 14 para quinzenal).') : null,
         modo === 'repor' ? lbl('Folga da proporção', iFolga, '%', 'Quanto cada grupo (chás, envasados, acessórios) pode passar da sua parte antes de o valor ir para os outros.') : null,
         modo === 'evento' ? lbl('Crescimento', iCresc, '%', `Quanto a mais (ou a menos) que no ano passado. Vazio = o da loja: últimos 90 dias contra os mesmos 90 do ano anterior (${fmt.pct(R.crescLoja - 1)}).`) : null),
-      h('div', { class: 'cfg-acoes' }, salvar, msg));
+      h('div', { class: 'cfg-acoes' }, salvar, cat.acao, msg), h('div', { class: 'ped-cat' }, cat.info, cat.st));
     corpo.append(controles);
     if (modo === 'evento') corpo.append(editorEventos(loja, p, par, () => pintar(corpo, loja, M, e, p)));
 
@@ -328,7 +330,8 @@
     const pintarTotal = () => {
       const t = total(), n = R.linhas.filter((r) => r.pedir > 0).length;
       kTotal.textContent = fmt.brl0(t);
-      kTotalFoot.replaceChildren(`${fmt.int(n)} ${n === 1 ? 'produto' : 'produtos'}`, R.orcamento ? h('span', { class: t > R.orcamento * 1.02 ? 'down' : '' }, ` · ${fmt.pct(t / R.orcamento, 0)} do valor`) : '');
+      kTotalFoot.replaceChildren(`${fmt.int(n)} ${n === 1 ? 'produto' : 'produtos'}`,
+        R.orcamento ? h('span', { class: t > R.orcamento * 1.02 ? 'down' : '' }, ` · ${fmt.pct(t / R.orcamento, 0)} do valor · ${t <= R.orcamento ? `sobram ${fmt.brl0(R.orcamento - t)}` : `passa ${fmt.brl0(t - R.orcamento)}`}`) : '');
       mix && pintarMix();
     };
     const kpis = [];
@@ -343,7 +346,7 @@
         `Para chegar a tempo, peça até ${R.ent} dias (a entrega) antes de começar.`));
       kpis.push(TS.kpi('Vendas no ano passado', fmt.brl0(R.evLyVt), `${fmt.date(TS.dayToIso(l0))} a ${fmt.date(TS.dayToIso(l1))} · previsão ${fmt.brl0(R.evLyVt * R.cresc)}`, `Só loja (sem Espaço Gourmet). Previsão = ano passado × crescimento ${fmt.n2(R.cresc)}.`));
     }
-    const kT = h('div', { class: 'card kpi' }, h('div', { class: 'kpi-label' }, 'Pedido sugerido'), kTotal, kTotalFoot);
+    const kT = h('div', { class: 'card kpi' }, h('div', { class: 'kpi-label' }, editados.size ? 'Seu pedido (com alterações)' : 'Pedido sugerido'), kTotal, kTotalFoot);
     kpis.push(kT);
     if (modo === 'repor') kpis.push(TS.kpi('Tudo que precisa', fmt.brl0(necessidade), 'sem limite de valor', 'Custo de comprar toda a necessidade dos produtos disponíveis, sem o limite do valor do pedido.'));
     else {
@@ -408,6 +411,8 @@
       seletor('m', 'Múltiplo', 'todos', [['sim', 'vende em múltiplos'], ['nao', 'unidade']], (r) => (multDe(r) ? 'sim' : 'nao')),
       fx.g || fx.s || fx.c || fx.m ? h('button', { type: 'button', class: 'btn ped-fx-limpa', onclick: () => { state.pedFx = { g: '', s: '', c: '', m: '' }; pintar(corpo, loja, M, e, p); } }, '✕ Tirar filtros') : null,
       h('span', { class: 'muted ped-fx-n' }, `${fmt.int(linhas.length)} ${linhas.length === 1 ? 'produto' : 'produtos'}`));
+    const totalAgora = R.linhas.reduce((s, r) => s + r.pedir * (r.preco || 0), 0);
+    const sobra = R.orcamento != null ? R.orcamento - totalAgora : null;
     const tab = TS.table({
       cols: [
         { key: 'produto', label: 'Produto', align: 'l', sticky: true, wrap: true, render: (r) => h('span', null, r.produto, h('small', { class: 'est-tam' }, `cód. ${r.cod}`)) },
@@ -427,17 +432,26 @@
       rows: linhas, sortKey: filtro === 'pedido' ? 'lucroDia' : 'lucroDia', maxHeight: '620px', search: 'Buscar produto…', searchKeys: ['produto', 'cod'], cls: 'est-t ped-t',
       empty: { pedido: 'Nada no pedido.', fora: 'Nada ficou de fora.', indisp: 'Nenhum produto necessário está indisponível no site.', cat: 'Todos os produtos necessários estão no catálogo.', todos: 'Nenhum produto precisa de reposição.' }[filtro],
     });
+    // observação de cada linha, conforme o pedido de agora (muda quando você põe, tira ou limpa)
     function obs(r) {
       if (r.site === 'indisp') return h('span', { class: 'neg' }, 'indisponível no site (R$ 0,01)');
       if (r.site === 'fora') return h('span', { class: 'muted' }, 'não está no catálogo FRANQUIAS');
-      if (r.pedir !== r.sugeridoPedir) return h('span', { class: 'muted' }, `alterado (sugestão ${qtdTxt(r.sugeridoPedir, r.it)})`);
-      return h('span', { class: r.motivo === 'completo' ? 'muted' : 'warn-t' }, { completo: 'completo', parcial: 'parte (o valor acabou)', 'fora do valor': 'o valor acabou' }[r.motivo] || '');
+      if (editados.has(String(r.cod))) {
+        if (!(r.pedir > 0)) return h('span', { class: 'muted' }, 'tirado por você');
+        return h('span', { class: 'pos' }, r.sugeridoPedir > 0 ? `alterado por você (sugestão ${qtdTxt(r.sugeridoPedir, r.it)})` : 'adicionado por você');
+      }
+      if (r.pedir > 0) return h('span', { class: r.motivo === 'parcial' ? 'warn-t' : 'muted' }, r.motivo === 'parcial' ? `parte da necessidade (precisa ${qtdTxt(r.sugerido, r.it)})` : 'sugerido');
+      if (sobra == null) return '';
+      const custo = r.sugerido * (r.preco || 0);
+      return sobra >= custo
+        ? h('span', { class: 'pos' }, `cabe no valor (sobram ${fmt.brl0(sobra)}): use ＋`)
+        : h('span', { class: 'warn-t' }, `passa do valor em ${fmt.brl0(custo - Math.max(0, sobra))}`);
     }
     /** redesenha mantendo a rolagem da tabela e da página */
     function repintar() {
       const tw = corpo.querySelector('.ped-t')?.closest('.table-wrap');
       const st = tw ? tw.scrollTop : 0, y = window.scrollY;
-      pintar(corpo, loja, M, e, p);
+      pintar(corpo, loja, M, e, p, R);
       const tw2 = corpo.querySelector('.ped-t')?.closest('.table-wrap');
       if (tw2) tw2.scrollTop = st;
       window.scrollTo(0, y);
@@ -463,13 +477,11 @@
         if (r._tot) r._tot.textContent = v > 0 ? fmt.brl(v * (r.preco || 0)) : '—';
         pintarB();
         pintarTotal();
-        // saiu da aba (ex.: tirou em "No pedido", pôs em "Ficou de fora"): some na hora e os números das abas se atualizam
-        if (!FILTROS[filtro][1](r)) {
-          const tr = i.closest('tr');
-          if (tr) tr.classList.add('ped-sai');
-          clearTimeout(repintar.t);
-          repintar.t = setTimeout(repintar, 260);
-        }
+        // redesenha: valor do pedido, sobra, abas, proporção e observações. Se saiu da aba, a linha some
+        const sai = !FILTROS[filtro][1](r);
+        if (sai) { const tr = i.closest('tr'); if (tr) tr.classList.add('ped-sai'); }
+        clearTimeout(repintar.t);
+        repintar.t = setTimeout(repintar, sai ? 260 : 0);
       };
       i.addEventListener('change', () => definir(Math.max(0, +i.value || 0)));
       b.addEventListener('click', () => definir(r.pedir > 0 ? 0 : (r.sugerido || passo)));
@@ -487,8 +499,8 @@
     const btnCsv = h('button', { type: 'button', class: 'btn', onclick: () => baixarCsv(R.linhas.filter((r) => r.pedir > 0), loja) }, '⬇ CSV');
     // Limpar: zera as quantidades do pedido (tudo ou um grupo); "Voltar à sugestão" desfaz
     const zerar = (g) => {
-      for (const r of R.linhas) if ((r.site === 'ok' || r.site === 'sem') && (!g || r.grupo === g)) { if (r.sugeridoPedir === 0) editados.delete(String(r.cod)); else editados.set(String(r.cod), 0); }
-      pintar(corpo, loja, M, e, p);
+      for (const r of R.linhas) if ((r.site === 'ok' || r.site === 'sem') && (!g || r.grupo === g) && r.pedir > 0) { r.pedir = 0; if (r.sugeridoPedir === 0) editados.delete(String(r.cod)); else editados.set(String(r.cod), 0); }
+      repintar();
     };
     const noGrupo = (g) => R.linhas.filter((r) => r.pedir > 0 && (!g || r.grupo === g));
     const opLimpar = (rot, g) => { const l = noGrupo(g); return h('button', { type: 'button', disabled: !l.length || null, onclick: () => zerar(g) }, rot, h('small', null, l.length ? `${fmt.int(l.length)} · ${fmt.brl0(l.reduce((s, r) => s + r.pedir * (r.preco || 0), 0))}` : 'vazio')); };
@@ -592,14 +604,45 @@
   const carrinhoAtivo = (c) => !!(c && c.modo === 'navegador' && !c.fim && c.expira && Date.parse(c.expira) > Date.now());
   const linkFavorito = () => `javascript:(function(){var s=document.createElement('script');s.src='${location.origin}/js/carrinho-site.js?v='+Date.now();document.body.appendChild(s);})();`;
 
+  /** topo da tela: "Atualizar catálogo" + data da última leitura (preço, disponível e múltiplo do site) */
+  function blocoCatalogo(corpo, loja, M, e, p) {
+    const robo = p.robo || {};
+    const ocupado = robo.estado === 'na_fila' || robo.estado === 'rodando';
+    const quando = (iso) => new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+    const st = h('div', { class: 'ped-cat-st' }, ocupado ? progressoCat(robo) : null);
+    if (ocupado) acompanhar(corpo, loja, M, e);
+    const u = robo.ultima;
+    const info = h('div', { class: 'ped-cat-info' },
+      p.catalogo ? h('span', null, 'Catálogo do site: ', h('b', null, quando(p.catalogo.em))) : h('span', { class: 'neg' }, 'Ainda não há catálogo do site'),
+      u && !u.ok ? h('span', { class: 'neg' }, ` · a última leitura (${quando(u.fim)}) falhou`) : null,
+      u && !u.ok && u.log ? h('details', { class: 'ped-cat-log' }, h('summary', null, 'ver o log'), h('pre', { class: 'ped-log' }, u.log.join('\n'))) : null);
+    let acao = null;
+    if (!robo.disponivel) acao = h('small', { class: 'muted' }, robo.erro ? `Coletor indisponível: ${robo.erro}` : 'O catálogo é lido pelo coletor da VPS.');
+    else if (!robo.temLogin) acao = h('small', null, 'Falta o login do Sistema de Pedidos: ', p.podeRobo ? h('a', { href: '#config' }, 'Configurações → Lojas') : 'peça ao administrador');
+    else if (p.podeRobo) {
+      const btn = h('button', { type: 'button', class: 'btn primary', disabled: ocupado || null, title: 'Lê de novo no site o preço, o que está disponível e o múltiplo de cada produto. Também é lido sozinho toda noite.' }, '↻ Atualizar catálogo');
+      btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        try {
+          const r = await fetch(`/api/pedido/robo?loja=${encodeURIComponent(loja)}`, { method: 'POST', credentials: 'same-origin', headers: { 'X-Painel': '1', 'Content-Type': 'application/json' }, body: JSON.stringify({ acao: 'catalogo' }) });
+          const j = await r.json().catch(() => ({}));
+          if (!r.ok) throw new Error(j.erro || 'Falha.');
+          st.replaceChildren(progressoCat({ estado: 'na_fila' }));
+          acompanhar(corpo, loja, M, e);
+        } catch (err) { st.replaceChildren(h('span', { class: 'neg' }, err.message)); btn.disabled = false; }
+      });
+      acao = btn;
+    }
+    return { acao, info, st };
+  }
+
   // ---------- carrinho no Sistema de Pedidos ----------
   function cartaoRobo(corpo, loja, M, e, p, R) {
     const robo = p.robo || {};
-    const catOcupado = robo.estado === 'na_fila' || robo.estado === 'rodando';
     const ativo = carrinhoAtivo(p.carrinho);
     const msg = h('div', { class: 'muted' });
-    const statusBox = h('div', { class: 'ped-status' }, ativo ? progresso(p.carrinho) : catOcupado ? progressoCat(robo) : null);
-    if (ativo || catOcupado) acompanhar(corpo, loja, M, e);
+    const statusBox = h('div', { class: 'ped-status' }, ativo ? progresso(p.carrinho) : null);
+    if (ativo) acompanhar(corpo, loja, M, e);
 
     // 1) montar: gera o código e abre o site em outra aba (aberta já no clique, para o navegador não bloquear)
     const itens = R.linhas.filter((r) => r.pedir > 0 && r.site === 'ok');
@@ -626,33 +669,11 @@
       h('li', null, 'Lá, clique no favorito ', h('b', null, '🛒 Carrinho Tea Shop'), '. Ele coloca os produtos no carrinho da sua sessão e mostra o andamento, que também aparece aqui.'),
       h('li', null, 'Confira o carrinho e finalize no site. O painel nunca finaliza o pedido.'));
 
-    // 2) catálogo: robô do coletor (preço, disponível, múltiplo)
-    const acionarCat = async (btn) => {
-      btn.disabled = true; msg.className = 'muted'; msg.textContent = 'Enviando…';
-      try {
-        const r = await fetch(`/api/pedido/robo?loja=${encodeURIComponent(loja)}`, { method: 'POST', credentials: 'same-origin', headers: { 'X-Painel': '1', 'Content-Type': 'application/json' }, body: JSON.stringify({ acao: 'catalogo' }) });
-        const j = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(j.erro || 'Falha.');
-        msg.textContent = '';
-        statusBox.replaceChildren(progressoCat({ estado: 'na_fila' }));
-        acompanhar(corpo, loja, M, e);
-      } catch (err) { msg.className = 'neg'; msg.textContent = err.message; btn.disabled = false; }
-    };
-    const btnCat = h('button', { type: 'button', class: 'btn', disabled: catOcupado || null }, 'Atualizar catálogo');
-    btnCat.addEventListener('click', () => acionarCat(btnCat));
-    const u = robo.ultima;
-    const ultima = u ? h('div', { class: 'muted ped-ult' }, `Catálogo: última leitura em ${new Date(u.fim).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })} · `,
-      h('span', { class: u.ok ? 'pos' : 'neg' }, u.ok ? 'ok' : `falhou (${u.codigo})`),
-      !u.ok && u.log ? h('details', null, h('summary', null, 'ver o log'), h('pre', { class: 'ped-log' }, u.log.join('\n'))) : null) : null;
-    let catTxt = null;
-    if (!robo.disponivel) catTxt = h('p', { class: 'muted' }, robo.erro ? `Coletor indisponível: ${robo.erro}` : 'O catálogo é lido pelo coletor da VPS, que não está ativo para esta loja.');
-    else if (!robo.temLogin) catTxt = h('p', null, 'Para ler o catálogo, falta o login desta loja no Sistema de Pedidos: ', p.podeRobo ? h('a', { href: '#config' }, 'Configurações → Lojas → Sistema de Pedidos') : 'peça ao administrador', '.');
-
     const semCatalogo = !p.catalogo;
     return TS.card('Carrinho no Sistema de Pedidos', 'O carrinho do site vale só para a sessão de quem entrou; por isso ele é montado no seu navegador, com o seu login. O favorito procura cada produto pelo nome, confere o nome exato, ajusta ao múltiplo e coloca no carrinho. Ele para na etapa 2.',
-      semCatalogo ? h('div', { class: 'notice' }, 'Leia o catálogo primeiro (botão "Atualizar catálogo"): só vão para o carrinho os produtos disponíveis no site.') : null,
+      semCatalogo ? h('div', { class: 'notice' }, 'Leia o catálogo primeiro (botão "Atualizar catálogo", no topo): só vão para o carrinho os produtos disponíveis no site.') : null,
       passos,
-      h('div', { class: 'cfg-acoes' }, btnCarrinho, p.podeRobo && robo.disponivel && robo.temLogin ? btnCat : null), msg, statusBox, catTxt, ultima,
+      h('div', { class: 'cfg-acoes' }, btnCarrinho), msg, statusBox,
       h('div', { class: 'ped-andamento' }, ativo ? null : resultadoCarrinho(p.carrinho)));
   }
 
@@ -715,7 +736,9 @@
         }
         // andamento: "3/25 produtos processados" e a barra
         const box = corpo.querySelector('.ped-status');
-        if (box) box.replaceChildren(car ? progresso(p.carrinho) : progressoCat(p.robo));
+        if (box && car) box.replaceChildren(progresso(p.carrinho));
+        const bc = corpo.querySelector('.ped-cat-st');
+        if (bc && cat) bc.replaceChildren(progressoCat(p.robo));
       } catch { /* tenta de novo */ }
       poll = setTimeout(tic, 3000);
     };
