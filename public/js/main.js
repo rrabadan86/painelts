@@ -71,7 +71,7 @@
     if (g) restaurar(g);
   };
   function renderTela() {
-    document.querySelectorAll('#tabs a').forEach((a) => a.classList.toggle('active', a.dataset.page === state.page));
+    document.querySelectorAll('#tabs a').forEach((a) => a.classList.toggle('active', a.dataset.page === state.page || (a.dataset.grupo || '').split(',').includes(state.page)));
     const ativa = document.querySelector('#tabs a.active');
     if (ativa && ativa.scrollIntoView) { const t = document.getElementById('tabs'); if (t.scrollWidth > t.clientWidth) t.scrollTo({ left: ativa.offsetLeft - 12, behavior: 'smooth' }); }
     document.body.classList.toggle('pg-config', state.page === 'config');
@@ -231,9 +231,9 @@
     if (eu.pode?.configurar) {
       // custo, margem e estoque: só admin e franqueado
       PAGES = [...PAGES, 'estoque'];
-      tabs.append(h('a', { href: '#estoque', 'data-page': 'estoque' }, 'Estoque e margem'));
+      // menu Estoque com duas telas: Estoque e margem · Pedido (submenu no topo da página)
       PAGES = [...PAGES, 'pedido'];
-      tabs.append(h('a', { href: '#pedido', 'data-page': 'pedido' }, 'Pedido'));
+      tabs.append(h('a', { href: '#estoque', 'data-page': 'estoque', 'data-grupo': 'estoque,pedido' }, 'Estoque'));
       PAGES = [...PAGES, 'dre'];
       tabs.append(h('a', { href: '#dre', 'data-page': 'dre' }, 'Resultado'));
       PAGES = [...PAGES, 'config'];

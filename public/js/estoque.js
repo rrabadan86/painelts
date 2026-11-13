@@ -267,7 +267,11 @@
   const TIPO_ITEM = (it) => (it.un === 'Kg' && it.tipo === 'IN' ? 'Chá a granel' : it.tipo === 'PN' ? 'Produto' : 'Insumo / embalagem');
   const qtdTxt = (v, it) => (v == null ? '—' : it.un === 'Kg' ? `${fmt.kg(v)} kg` : `${fmt.int(v)} ${it.un ? it.un.toLowerCase() : ''}`);
 
+  /** submenu do menu Estoque */
+  TS.subEstoque = (atual) => h('nav', { class: 'submenu', 'aria-label': 'Estoque' },
+    [['estoque', 'Estoque e margem'], ['pedido', 'Pedido']].map(([p, t]) => h('a', { href: '#' + p, class: p === atual ? 'on' : null, 'aria-current': p === atual ? 'page' : null }, t)));
   TS.pages.estoque = function (root) {
+    root.append(TS.subEstoque('estoque'));
     root.append(h('div', { class: 'page-head' }, h('div', null, h('h1', { class: 'page-title' }, 'Estoque e margem'),
       h('div', { class: 'page-sub' }, 'Custo de cada venda, produtos mais rentáveis, o que repor e o que está parado')),
       h('div', { class: 'active-filters' }, h('span', { class: 'af' }, TS.periodoTexto()))));

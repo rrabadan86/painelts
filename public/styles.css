@@ -1156,3 +1156,8 @@ tr.est-det > td { padding: 0 !important; background: #FBF9F4 !important; }
 .ped-ev { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .ped-ev > .f-input { max-width: 220px; }
 .ped-ev-c { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
+/* submenu (menu Estoque: Estoque e margem · Pedido) */
+.submenu { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin: -4px 0 16px; overflow-x: auto; }
+.submenu a { padding: 8px 14px; font-size: 14px; font-weight: 600; color: var(--muted); text-decoration: none; border-bottom: 3px solid transparent; margin-bottom: -1px; white-space: nowrap; }
+.submenu a:hover { color: var(--green); }
+.submenu a.on { color: var(--green); border-bottom-color: var(--gold, #C9A227); }

@@ -217,6 +217,7 @@
   // ---------- tela ----------
   TS.pages.pedido = function (root) {
     if (poll) { clearTimeout(poll); poll = null; }
+    root.append(TS.subEstoque('pedido'));
     root.append(h('div', { class: 'page-head' }, h('div', null, h('h1', { class: 'page-title' }, 'Pedido'),
       h('div', { class: 'page-sub' }, 'Pedido sugerido para a franqueadora e o robô que monta o carrinho no Sistema de Pedidos'))));
     if (!state.loja || state.loja === 'todas') { root.append(h('div', { class: 'notice' }, 'O pedido é de cada loja: escolha uma loja no seletor do topo.')); return; }
@@ -226,7 +227,7 @@
     Promise.all([TS.estoqueBuscar(loja), buscar(loja), TS.custosLoja()]).then(([e, p, M]) => {
       if (!corpo.isConnected) return;
       if (!e.estoque || !e.estoque.itens || !e.estoque.itens.length || !M) {
-        corpo.replaceChildren(h('div', { class: 'notice' }, 'Ainda não há estoque desta loja no painel. O pedido usa o estoque e o custo do AppNext: veja a aba Estoque e margem.'));
+        corpo.replaceChildren(h('div', { class: 'notice' }, 'Ainda não há estoque desta loja no painel. O pedido usa o estoque e o custo do AppNext: veja Estoque → Estoque e margem.'));
         return;
       }
       pintar(corpo, loja, M, e, p);
