@@ -151,7 +151,7 @@
     const grid = h('div', { class: 'cfg-loja-corpo' });
     grid.append(blocoDados(l));
     if (est.perfil === 'admin') grid.append(blocoAppNext(l));
-    grid.append(blocoMetas(l), blocoFerias(l), blocoFechamento(l), blocoWpp(l), blocoPlanilhas(l), blocoOperacao(l), blocoMarca(l));
+    grid.append(blocoMetas(l), blocoFerias(l), blocoFechamento(l), blocoWpp(l), blocoFixe(l), blocoPlanilhas(l), blocoOperacao(l), blocoMarca(l));
     if (est.perfil === 'admin') grid.append(blocoRegras(l), blocoEditar(l));
     card.append(grid);
     return card;
@@ -365,6 +365,41 @@
   }
 
   // ---- planilhas
+  // ---- cadastro de clientes pelo FIXE (exportação por e-mail, lida no Gmail da loja)
+  function blocoFixe(l) {
+    const fx = l.fixe || {};
+    const gmail = (l.fechEmail && l.fechEmail.email && l.fechEmail.email.user) || '';
+    const b = h('section', { class: 'cfg-bloco' }, h('h3', null, 'Cadastro de clientes pelo FIXE'),
+      h('p', { class: 'muted' }, 'Toda noite, na última atualização automática, o coletor entra no FIXE, pede a exportação da "Base de leads" para o Gmail da loja, e o painel lê esse e-mail (na caixa de entrada ou no spam), baixa a planilha e junta com o cadastro de clientes. Nada precisa ser feito à mão.'));
+    // situação
+    const sit = [];
+    if (fx.pedido) sit.push(h('p', null, h('b', null, 'Aguardando o e-mail do FIXE '), `desde ${dt(fx.pedido.em)} (o painel olha a cada 2 minutos, inclusive no spam).`));
+    if (fx.ultimo) {
+      const u = fx.ultimo;
+      if (u.ok) {
+        const r = u.resultado || {};
+        sit.push(h('p', null, h('b', null, 'Última importação: '), `${dt(u.em)} · ${fmt.int(r.noArquivo || 0)} clientes no arquivo, ${fmt.int(r.novos || 0)} novos, ${fmt.int(r.atualizados || 0)} atualizados · ${fmt.int(r.total || 0)} no cadastro`,
+          u.doSpam ? h('span', { class: 'muted' }, ' · o e-mail estava no spam e foi movido para a caixa de entrada') : null));
+      } else sit.push(h('p', { class: 'neg' }, h('b', null, 'Última tentativa falhou: '), `${dt(u.em)} · ${u.erro}`));
+    }
+    const exF = l.status && l.status.execucao && l.status.execucao.fixe;
+    if (exF && !exF.ok && !fx.pedido) sit.push(h('p', { class: 'neg' }, 'O pedido de exportação no FIXE falhou na última coleta: veja o log técnico em "Dados e atualização".'));
+    if (!sit.length && fx.url) sit.push(h('p', { class: 'muted' }, 'Ainda não houve importação pelo FIXE. A primeira acontece na próxima atualização da noite (ou em "Importar agora").'));
+    b.append(...sit);
+    const url = inp({ value: fx.url || '', placeholder: 'ex.: https://dash.epossible.com.br/loja/…/leads' });
+    const usuario = inp({ value: fx.usuario || '', placeholder: 'ex.: e-mail de acesso ao FIXE', autocomplete: 'off' });
+    const senha = inp({ type: 'password', placeholder: fx.temSenha ? 'guardada (deixe em branco para manter)' : 'senha do FIXE', autocomplete: 'new-password' });
+    const email = inp({ type: 'email', value: fx.email || gmail, placeholder: 'ex.: o Gmail da loja' });
+    b.append(h('div', { class: 'cfg-grid' },
+      campo('Página de Leads da loja no FIXE', url, 'No FIXE, abra Leads e copie o endereço da barra do navegador.'),
+      campo('Usuário do FIXE', usuario), campo('Senha do FIXE', senha, 'Fica guardada só na VPS, como a do AppNext.'),
+      campo('E-mail que recebe a exportação', email, gmail ? `Use o Gmail da loja (${gmail}): é nele que o painel procura o e-mail do FIXE.` : 'Configure antes o Gmail da loja em "Fechamento do dia": é nele que o painel procura o e-mail do FIXE.')),
+      h('div', { class: 'cfg-acoes' },
+        acao('Salvar acesso ao FIXE', async () => { await api('PUT', `/lojas/${l.id}/fixe`, { url: url.value, usuario: usuario.value, senha: senha.value, email: email.value }); senha.value = ''; return 'Acesso ao FIXE salvo.'; }, 'btn primary'),
+        est.perfil === 'admin' && est.coletorAtivo && fx.url ? acao('Importar agora', async () => { await api('POST', `/lojas/${l.id}/fixe/rodar`); return 'Pedido enviado ao FIXE. Em alguns minutos o e-mail chega e o cadastro é atualizado.'; }) : null));
+    return b;
+  }
+
   function blocoPlanilhas(l) {
     const tipo = h('select', { class: 'f-input' },
       h('option', { value: 'vendas' }, 'Vendas (relatório do AppNext)'), h('option', { value: 'Xml' }, 'Cupons com CPF (Xml)'),

@@ -472,6 +472,27 @@ app.put('/api/estoque/cfg', express.json({ limit: '20kb' }), (req, res) => {
   res.json({ ok: true, cfg: v.ok });
 });
 
+// ---------- cadastro de clientes do FIXE: lê o e-mail da exportação (Gmail da loja) e importa ----------
+const FX = require('./src/fixemail');
+const CADX = require('./src/cadastro');
+const fixeOcupado = new Set(), fixeUltimo = new Map();
+async function verificarFixe(l) {
+  fixeOcupado.add(l.id); fixeUltimo.set(l.id, Date.now());
+  try {
+    const NOTIF = require('./src/notificacoes');
+    const nc = NOTIF.ler(), x = NOTIF.cfgLoja(nc, l.id);
+    const smtp = x.email && x.email.user && x.email.pass ? x.email : nc.email;
+    const r = await FX.verificar(l.id, smtp, async (buf) => {
+      const res = await CADX.importar(l.id, buf);
+      C.auditar('coletor', 'importou cadastro de clientes do FIXE', l.id, { loja: l.id, novos: res.novos, atualizados: res.atualizados, total: res.total });
+      packCache.clear(); dadosLoja(l, true).catch(() => {});
+      return res;
+    });
+    if (r) console.log(`[fixe] ${l.id}: ${r.ok ? `importado (${r.resultado.novos} novos, ${r.resultado.atualizados} atualizados)` : r.erro}`);
+  } catch (e) { console.error(`[fixe] ${l.id}:`, e.message); }
+  finally { fixeOcupado.delete(l.id); }
+}
+
 // ---------- envios para a contabilidade (só admin e franqueado; saem do Gmail da loja) ----------
 // 1) fechamento do mês (comissões) com o PDF anexado  2) faturamento do mês com os XMLs das notas
 const XA = require('./src/xmlarquivos');
@@ -733,6 +754,7 @@ app.use(express.static(pub, { index: 'index.html', maxAge: 0 }));
 setInterval(() => {
   for (const l of C.get().lojas) {
     if (B.pendentes(l.id).length || XB.pendentes(l.id).length) dadosLoja(l, true).catch((e) => console.error(`[base] ${l.id}:`, e.message));
+    if (FX.situacao(l.id).pedido && !fixeOcupado.has(l.id) && Date.now() - (fixeUltimo.get(l.id) || 0) > 110e3) verificarFixe(l);
     if (ES.pendentes(l.id).length) ES.processar(l.id).then((r) => r && console.log(`[estoque] ${l.id}: ${r.itens} itens (${r.zerados} zerados)`)).catch((e) => console.error(`[estoque] ${l.id}:`, e.message));
   }
 }, 30e3);

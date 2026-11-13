@@ -42,6 +42,7 @@ WORK_DIR = Path(os.getenv("COLETOR_WORK", "/work"))
 SCRIPT = Path(os.getenv("COLETOR_SCRIPT", Path(__file__).with_name("nextsoft_export_to_drive.py")))
 SCRIPT_XML = Path(os.getenv("COLETOR_SCRIPT_XML", Path(__file__).with_name("nextsoft_xml.py")))
 SCRIPT_ESTOQUE = Path(os.getenv("COLETOR_SCRIPT_ESTOQUE", Path(__file__).with_name("nextsoft_estoque.py")))
+SCRIPT_FIXE = Path(os.getenv("COLETOR_SCRIPT_FIXE", Path(__file__).with_name("fixe_export.py")))
 # estoque atual e custos junto da rotina e do botão do painel: 1 = sim
 ESTOQUE_ROTINA = os.getenv("COLETOR_ESTOQUE", "1") != "0"
 # XML das notas (CPF dos clientes) junto da rotina: 1 = sim
@@ -151,13 +152,16 @@ def pendentes(loja):
     return sum(1 for j in fila if j["loja"] == loja)
 
 
-def enfileirar(loja, gatilho, por=None, de=None, ate=None):
-    """Rotina/manual: recusa se a loja já tem algo na fila ou rodando."""
+def enfileirar(loja, gatilho, por=None, de=None, ate=None, fixe=False, tipo=None):
+    """Rotina/manual: recusa se a loja já tem algo na fila ou rodando.
+    fixe=True: pede também a exportação do cadastro de clientes ao FIXE (coleta da noite)."""
     with lock:
         e = _estado(loja)
         if e["estado"] in ("na_fila", "rodando") or pendentes(loja):
             return False
-        job = {"loja": loja, "gatilho": gatilho, "por": por, "de": de, "ate": ate, "criado": datetime.now(TZ).isoformat(), "inicio": None}
+        job = {"loja": loja, "gatilho": gatilho, "por": por, "de": de, "ate": ate, "criado": datetime.now(TZ).isoformat(), "inicio": None, "fixe": fixe}
+        if tipo:
+            job["tipo"] = tipo
         e["estado"] = "na_fila"
         e["atual"] = job
         fila.append(job)
@@ -239,7 +243,7 @@ def rodar(job):
         job["inicio"] = datetime.now(TZ).isoformat()
         e["atual"] = job
     tipo = job.get("tipo") or ("ambos" if XML_ROTINA else "vendas")
-    if tipo not in TIPOS:
+    if tipo not in TIPOS and tipo != "fixe":
         tipo = "vendas"
     log(f"{loja}: rodando {tipo} ({de} a {ate})")
     log_path.write_text(f"### período {br(de)} a {br(ate)} ({job['gatilho']}, {tipo}) ###\n", encoding="utf-8")
@@ -288,7 +292,14 @@ def rodar(job):
         if tipo == "xml":
             ok, codigo = cx == 0, cx
     estoque = None
-    if job["gatilho"] != "historico" and ESTOQUE_ROTINA and SCRIPT_ESTOQUE.exists():
+    fixe = None
+    if (job.get("fixe") or tipo == "fixe") and SCRIPT_FIXE.exists():
+        # cadastro de clientes: só pede a exportação; o painel lê o e-mail do FIXE e importa
+        cf = executar(SCRIPT_FIXE, {"SAIDA_FIXE": str(DATA_DIR / loja / "fixe" / "pedido.json")})
+        fixe = {"ok": cf == 0, "codigo": cf}
+        if tipo == "fixe":
+            ok, codigo = cf == 0, cf
+    if tipo != "fixe" and job["gatilho"] != "historico" and ESTOQUE_ROTINA and SCRIPT_ESTOQUE.exists():
         # o estoque é uma foto de agora: só nas atualizações (não no histórico); falha aqui não derruba a coleta
         saida_est = str(DATA_DIR / loja / "estoque" / "entrada" / f"{carimbo}_estoque.xlsx")
         ce = executar(SCRIPT_ESTOQUE, {"SAIDA_ESTOQUE": saida_est, "SAIDA_ARQUIVO": str(pasta / "_nao_usado.xlsx")})
@@ -296,7 +307,7 @@ def rodar(job):
     cauda = [l for t in trechos for l in t] or (log_path.read_text(encoding="utf-8", errors="replace").splitlines()[-25:] if log_path.exists() else [])
     with lock:
         e = _estado(loja)
-        e["ultima"] = {**job, "tipo": tipo, "xml": xml, "estoque": estoque, "fim": datetime.now(TZ).isoformat(), "ok": ok, "codigo": codigo,
+        e["ultima"] = {**job, "tipo": tipo, "xml": xml, "estoque": estoque, "fixe": fixe, "fim": datetime.now(TZ).isoformat(), "ok": ok, "codigo": codigo,
                        "duracao_s": round(time.time() - inicio), "log": cauda}
         lote = e.get("lote")
         if job["gatilho"] == "historico" and lote and not lote.get("fim"):
@@ -335,10 +346,12 @@ def agendador():
         agora = datetime.now(TZ)
         hhmm = agora.strftime("%H:%M")
         chave = agora.strftime("%Y-%m-%d ") + hhmm
-        if hhmm in horarios() and chave not in feitos:
+        hs = horarios()
+        if hhmm in hs and chave not in feitos:
             feitos.add(chave)
+            noite = hhmm == max(hs)  # a última do dia também pede o cadastro de clientes ao FIXE
             for loja in lojas_configuradas():
-                enfileirar(loja, "agendado")
+                enfileirar(loja, "agendado", fixe=noite)
         time.sleep(20)
 
 
@@ -399,6 +412,13 @@ class API(BaseHTTPRequestHandler):
                 return self._json(404, {"erro": "Loja sem acesso ao AppNext configurado."})
             if not enfileirar(loja, "manual", por):
                 return self._json(409, {"erro": "O script desta loja já está na fila ou rodando.", **info_loja(loja)})
+            return self._json(200, {"ok": True})
+        if self.path.startswith("/fixe/"):
+            loja = self._loja("/fixe/")
+            if not loja or loja not in lojas_configuradas():
+                return self._json(404, {"erro": "Loja sem acesso configurado."})
+            if not enfileirar(loja, "manual", por, tipo="fixe"):
+                return self._json(409, {"erro": "Esta loja já tem uma coleta na fila ou rodando."})
             return self._json(200, {"ok": True})
         if self.path.startswith("/historico/"):
             loja = self._loja("/historico/")

@@ -32,7 +32,7 @@ function execucao(s, comLog) {
   if (!u) return null;
   return {
     estado: u.ok ? 'ok' : 'falhou', conclusao: u.ok ? 'success' : String(u.codigo), gatilho: u.gatilho, por: u.por,
-    inicio: u.inicio, criado: u.criado, fim: u.fim, duracao: u.duracao_s, de: u.de, ate: u.ate, tipo: u.tipo, xml: u.xml || null, estoque: u.estoque || null,
+    inicio: u.inicio, criado: u.criado, fim: u.fim, duracao: u.duracao_s, de: u.de, ate: u.ate, tipo: u.tipo, xml: u.xml || null, estoque: u.estoque || null, fixe: u.fixe || null,
     log: comLog ? u.log : undefined,
   };
 }
@@ -51,6 +51,9 @@ async function rodar(lojaId, por) {
 async function historico(lojaId, partes, por, tipo = 'ambos') {
   return chamar(`/historico/${encodeURIComponent(lojaId)}`, { method: 'POST', por, body: { partes, tipo } });
 }
+async function fixe(lojaId, por) {
+  return chamar(`/fixe/${encodeURIComponent(lojaId)}`, { method: 'POST', por });
+}
 async function cancelar(lojaId, por) {
   return chamar(`/cancelar/${encodeURIComponent(lojaId)}`, { method: 'POST', por });
 }
@@ -58,4 +61,4 @@ async function saude() {
   try { const r = await chamar('/saude'); return r.json; } catch (e) { return { ok: false, erro: e.message }; }
 }
 
-module.exports = { ativo, status, rodar, historico, cancelar, saude };
+module.exports = { fixe, ativo, status, rodar, historico, cancelar, saude };
