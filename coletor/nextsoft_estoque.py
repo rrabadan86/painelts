@@ -62,6 +62,31 @@ def abrir_tela(page):
     raise RuntimeError(f"Não abriu a tela Estoque Atual. Na tela: {texto}")
 
 
+def mostrar_zerados(page):
+    """Filtros (funil) → "Mostrar item com Quantidade Zero" = Sim → Atualizar Filtros.
+    Sem isso o relatório esconde o que está zerado (ex.: a matéria-prima de um chá que acabou) e o painel perde o custo."""
+    rotulo = "text=/Mostrar item com Quantidade Zero/i >> visible=true"
+    if not page.locator(rotulo).count():
+        ok = nx._click_first(page, [
+            "button:has(i[class*='filter'])", "button:has(svg[class*='filter'])", "button:has([class*='funnel'])",
+            "[title*='iltro']", "[aria-label*='iltro']",
+            "xpath=//*[normalize-space()='Filtros:']/ancestor::*[.//button][1]//button[last()]",
+        ])
+        if not ok:
+            raise RuntimeError("Não achei o botão de filtros (funil) na tela Estoque Atual.")
+        page.locator(rotulo).first.wait_for(timeout=15000)
+    sim = page.locator("xpath=//*[contains(normalize-space(), 'Mostrar item com Quantidade Zero')]/following::*[self::button or self::label or self::a or self::span or self::div][normalize-space()='Sim'][1] >> visible=true").first
+    sim.click(timeout=8000)
+    page.get_by_role("button", name=re.compile(r"Atualizar\s+Filtros", re.I)).first.click(timeout=8000)
+    try:
+        page.wait_for_load_state("networkidle", timeout=20000)
+    except Exception:  # noqa: BLE001
+        pass
+    page.wait_for_timeout(1500)
+    chip = page.locator("text=/quantidade zero:\\s*Sim/i").count()
+    log("Filtro: itens com quantidade zero = Sim" + ("" if chip else " (não confirmei na etiqueta do filtro)"))
+
+
 def main():
     nx.start_watchdog(int(os.getenv("MAX_RUNTIME_SECONDS", "600")))
     with sync_playwright() as pw:
@@ -84,7 +109,12 @@ def main():
                 page.wait_for_load_state("networkidle", timeout=15000)
             except Exception:  # noqa: BLE001
                 pass
-            step("3) Exportar para Excel")
+            step("3) Filtro: mostrar itens com quantidade zero")
+            try:
+                mostrar_zerados(page)
+            except Exception as e:  # noqa: BLE001
+                log(f"Aviso: não consegui ligar 'Mostrar item com Quantidade Zero' ({str(e).splitlines()[0][:160]}); o relatório sai sem os itens zerados.")
+            step("4) Exportar para Excel")
             botao = next(page.locator(s).first for s in BOTAO_EXCEL if page.locator(s).count())
             with page.expect_download(timeout=180_000) as dl:
                 botao.click()
