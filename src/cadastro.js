@@ -49,7 +49,7 @@ function detectar(rows) {
     const cab = (rows[i] || []).map((c) => norm(txt(c)));
     const tem = (n) => cab.indexOf(n);
     if (tem('cpf') >= 0 && tem('nome') >= 0 && (tem('telefone') >= 0 || tem('aniversario') >= 0)) {
-      return { formato: 'FIXE', linha: i, col: { cpf: tem('cpf'), nome: tem('nome'), celular: tem('telefone'), nasc: tem('aniversario'), email: tem('email'), cidade: tem('cidade') }, cab };
+      return { formato: 'FIXE', linha: i, col: { cpf: tem('cpf'), nome: tem('nome'), celular: tem('telefone'), nasc: tem('aniversario'), email: tem('email'), cidade: tem('cidade'), cadastro: tem('data cadastro') }, cab };
     }
     if (tem('cpf') >= 0 && tem('nome') >= 0) {
       return { formato: 'modelo do painel', linha: i, col: { cpf: tem('cpf'), nome: tem('nome'), celular: tem('celular'), nasc: tem('data nasc.'), email: tem('email'), cidade: tem('cidade') }, cab };
@@ -77,6 +77,7 @@ function lerClientes(rows) {
       nascimento: nasc == null || txt(nasc).trim() === '' ? null : d.formato === 'FIXE' ? dataDMY(nasc) : T.toISODate(nasc, { preferMDY: true }),
       email: txt(pega(r, 'email')).trim().slice(0, 120),
       cidade: txt(pega(r, 'cidade')).trim().slice(0, 80),
+      ...(d.formato === 'FIXE' ? { cadastroFixe: (() => { const v = pega(r, 'cadastro'); return v == null || txt(v).trim() === '' ? null : dataDMY(v); })() } : {}),
     });
   }
   const usadas = new Set(Object.values(d.col).filter((j) => j >= 0));
@@ -125,14 +126,17 @@ async function importar(id, buf) {
   let novos = 0, atualizados = 0;
   for (const c of novo.clientes) {
     const a = porCPF.get(c.cpf);
-    if (!a) { porCPF.set(c.cpf, c); novos++; continue; }
+    if (!a) { const { cadastroFixe, ...so } = c; porCPF.set(c.cpf, so); novos++; continue; }
     const junto = { ...a };
     for (const k of ['nome', 'celular', 'nascimento', 'email', 'cidade']) if (c[k]) junto[k] = c[k]; // vazio não apaga
+    delete junto.cadastroFixe;
     if (JSON.stringify(junto) !== JSON.stringify(a)) atualizados++;
     porCPF.set(c.cpf, junto);
   }
   await gravar(id, [...porCPF.values()]);
   const l = novo.clientes;
+  // a base de leads do FIXE é a lista inteira de quem está no programa: guarda quem é membro e desde quando
+  if (novo.formato === 'FIXE') require('./fidelidade').gravarMembros(id, l.map((c) => [c.cpf, c.cadastroFixe || null]));
   return {
     formato: novo.formato, noArquivo: l.length, novos, atualizados, total: porCPF.size, semCPF: novo.semCPF,
     comCelular: l.filter((c) => c.celular.length >= 10).length, comAniversario: l.filter((c) => c.nascimento).length,
@@ -140,4 +144,4 @@ async function importar(id, buf) {
   };
 }
 
-module.exports = { importar, lerClientes, detectar };
+module.exports = { importar, lerClientes, detectar, dataDMY };

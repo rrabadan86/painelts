@@ -52,13 +52,17 @@ function ler(rows) {
   if (iCab < 0) throw new Error('Não é a planilha de Logs do FIXE (falta a coluna Histórico).');
   const cab = rows[iCab].map(ESQ);
   const col = (n) => cab.indexOf(n);
-  const k = { nome: col('nome'), cpf: col('cpf'), loja: col('loja'), hist: col('historico'), email: col('email') };
+  const k = { nome: col('nome'), cpf: col('cpf'), loja: col('loja'), hist: col('historico'), email: col('email'), cad: col('data cadastro') };
+  const { dataDMY } = require('./cadastro');
+  const cadastros = {};
   if (k.cpf < 0) throw new Error('A planilha de Logs precisa da coluna CPF.');
   const out = [];
   for (const r of rows.slice(iCab + 1)) {
     if (!r) continue;
     const cpf = String(r[k.cpf] ?? '').replace(/\D/g, '').padStart(11, '0');
     if (!/^\d{11}$/.test(cpf) || /^0+$/.test(cpf)) continue;
+    if (k.cad >= 0 && r[k.cad] != null && String(r[k.cad]).trim() !== '') { let d = null; try { d = dataDMY(r[k.cad]); } catch { /* data ruim */ } if (d && (!cadastros[cpf] || d < cadastros[cpf])) cadastros[cpf] = d; }
+    else if (!(cpf in cadastros)) cadastros[cpf] = null;
     // um campo Histórico pode ter vários movimentos (um por linha com data no começo)
     const blocos = String(r[k.hist] ?? '').split(/\n(?=\d{2}\/\d{2}\/\d{4}\s)/);
     for (const b of blocos) {
@@ -70,14 +74,16 @@ function ler(rows) {
   if (!out.length) throw new Error('Nenhum movimento na planilha de Logs.');
   // sem repetidos (o mesmo movimento pode vir em duas linhas)
   const vistos = new Set();
-  return out.filter((e) => { const c = [e.cpf, e.data, e.min, e.tipo, e.pontos, e.produtos.join('|')].join('#'); if (vistos.has(c)) return false; vistos.add(c); return true; });
+  const ev = out.filter((e) => { const c = [e.cpf, e.data, e.min, e.tipo, e.pontos, e.produtos.join('|')].join('#'); if (vistos.has(c)) return false; vistos.add(c); return true; });
+  ev.cadastros = cadastros;
+  return ev;
 }
 
 async function importar(id, buf) {
   const { linhasDeBuffer } = require('./sources');
   const ev = ler(await linhasDeBuffer(buf));
   fs.mkdirSync(path.dirname(arq(id)), { recursive: true });
-  C.gravarAtomico(arq(id), zlib.gzipSync(JSON.stringify({ em: new Date().toISOString(), eventos: ev })), 0o640);
+  C.gravarAtomico(arq(id), zlib.gzipSync(JSON.stringify({ em: new Date().toISOString(), eventos: ev, cadastros: ev.cadastros || {} })), 0o640);
   const cont = (t) => ev.filter((e) => e.tipo === t).length;
   const r = { tipo: 'logs', movimentos: ev.length, clientes: new Set(ev.map((e) => e.cpf)).size, compras: cont('pontos') + cont('compra'), resgates: cont('resgate'), expirados: cont('expirou') };
   C.gravarAtomico(path.join(path.dirname(arq(id)), 'logs.json'), JSON.stringify({ em: new Date().toISOString(), ...r }), 0o640);
@@ -92,8 +98,18 @@ function eventos(id) {
   try { return JSON.parse(zlib.gunzipSync(fs.readFileSync(arq(id))).toString('utf8')); } catch { return null; }
 }
 
+const arqMembros = (id) => path.join(C.pastaLoja(id), 'fixe', 'membros.json.gz');
 function assinatura(id) {
-  try { return String(fs.statSync(arq(id)).mtimeMs); } catch { return ''; }
+  const m = (f) => { try { return String(fs.statSync(f).mtimeMs); } catch { return ''; } };
+  return m(arq(id)) + '/' + m(arqMembros(id));
+}
+/** quem está no programa (base de leads do FIXE): [[cpf, data de cadastro], …] — a exportação é a base inteira, substitui */
+function gravarMembros(id, lista) {
+  fs.mkdirSync(path.dirname(arqMembros(id)), { recursive: true });
+  C.gravarAtomico(arqMembros(id), zlib.gzipSync(JSON.stringify({ em: new Date().toISOString(), membros: lista })), 0o640);
+}
+function membros(id) {
+  try { return JSON.parse(zlib.gunzipSync(fs.readFileSync(arqMembros(id))).toString('utf8')); } catch { return null; }
 }
 
 const REGRAS_PADRAO = { reaisPorPonto: 50, validadeMeses: 12 };
@@ -125,13 +141,19 @@ function nomesProprios(eventos) {
  *   [cpf, iNome, iLoja, data, min, tipo, pontos, "produto|produto"]
  * propria[i] diz se a loja i do FIXE é esta loja do painel; vendaLoja é o nome dessa loja nas vendas.
  */
-function paraPainel(fx, loja, nomesVenda) {
+function paraPainel(fx, loja, nomesVenda, mb) {
   const ev = (fx && fx.eventos) || [];
+  // membros: base de leads + quem aparece nos Logs; a data de cadastro mais antiga que houver
+  const cad = new Map();
+  const poe = (cpf, d) => { if (!cad.has(cpf)) cad.set(cpf, d || null); else if (d && (!cad.get(cpf) || d < cad.get(cpf))) cad.set(cpf, d); };
+  for (const [cpf, d] of (mb && mb.membros) || []) poe(cpf, d);
+  for (const [cpf, d] of Object.entries((fx && fx.cadastros) || {})) poe(cpf, d);
+  for (const e of ev) poe(e.cpf, null);
   const proprios = nomesProprios(ev);
   const nomes = [], iNome = new Map(), lojas = [], iLoja = new Map();
   const idx = (m, l, v) => { let i = m.get(v); if (i === undefined) { i = l.length; l.push(v); m.set(v, i); } return i; };
   const linhas = ev.map((e) => [e.cpf, idx(iNome, nomes, e.nome || ''), idx(iLoja, lojas, e.loja || ''), e.data, e.min, e.tipo, e.pontos || 0, (e.produtos || []).join('|')]);
-  return { id: loja.id, nome: loja.nome, em: fx && fx.em, vendaLoja: (nomesVenda || [])[0] || null, regras: regrasDe(loja), nomes, lojas, propria: lojas.map((n) => proprios.has(n)), ev: linhas };
+  return { id: loja.id, nome: loja.nome, em: fx && fx.em, membrosEm: mb && mb.em, membros: [...cad], vendaLoja: (nomesVenda || [])[0] || null, regras: regrasDe(loja), nomes, lojas, propria: lojas.map((n) => proprios.has(n)), ev: linhas };
 }
 
-module.exports = { ehLogs, ler, importar, eventos, evento, assinatura, resumo, regrasDe, nomesProprios, paraPainel, REGRAS_PADRAO };
+module.exports = { ehLogs, ler, importar, eventos, evento, assinatura, resumo, gravarMembros, membros, regrasDe, nomesProprios, paraPainel, REGRAS_PADRAO };

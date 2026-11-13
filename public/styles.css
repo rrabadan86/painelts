@@ -803,6 +803,8 @@ body.com-camada { overflow: hidden; }
 .cli-tag.t-contato { background: #E9F1E6; color: #2C5234; }
 .cli-tag.t-vence { background: #F3E3F2; color: #7A2D74; }
 .cli-tag.t-fixe { background: #E7EEF7; color: #1F4E8C; margin-left: 6px; }
+.cli-tag.t-semfixe { background: #F6DCD3; color: #8E321C; margin-left: 6px; }
+.cli-tag.t-forafixe { background: #EEE9DF; color: #5b4a12; }
 .cli-tag.t-fixe-ok { background: #E3EDE1; color: #2C5234; margin-left: 6px; }
 .cli-pts { color: #7A2D74; font-weight: 600; }
 .cupom-aviso { background: #FDF1E7; color: #8E4A1C; border: 1px solid #F1D3BB; border-radius: 8px; padding: 6px 10px; font-size: 12px; margin: 0 0 6px; }

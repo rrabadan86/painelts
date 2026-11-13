@@ -83,6 +83,30 @@
         fixe.porFixe++;
       }
     }
+    // vendas sem FIXE: nota no CPF de quem está no programa, depois do cadastro, e nenhum movimento no FIXE nesse dia
+    // (o cliente pode ter esquecido de falar ou a loja não lançou: serve para rastrear e corrigir)
+    if (fixe) {
+      fixe.temLeads = (fx.bases || []).some((b) => b.membrosEm);
+      fixe.temLogs = fx.logsAte != null;
+      fixe.logsAte = fx.logsAte;
+      fixe.semFixe = [];
+      const rpp = ((fx.bases || [])[0] || {}).regras ? fx.bases[0].regras.reaisPorPonto : 50;
+      for (const c of porCPF.values()) {
+        if (c.empresa) continue;
+        c.membroFixe = fx.membros.has(c.cpf);
+        c.cadastroFixe = c.membroFixe ? fx.membros.get(c.cpf) : null;
+        if (!c.membroFixe || !fixe.temLogs) continue;
+        for (const k of c.cupons) {
+          if (k.origem === 'fixe' || k.fixeOk || k.cpfFixe || k.day == null) continue;
+          if (k.day >= fx.logsAte) continue;                               // depois da exportação dos Logs: ainda não dá para saber
+          if (c.cadastroFixe != null && k.day <= c.cadastroFixe) continue; // antes de entrar no programa
+          if (fx.movDia.has(c.cpf + '|' + k.day)) continue;
+          k.semFixe = true;
+          k.ptsPerdidos = Math.floor(k.vt / rpp + 1e-6);
+          fixe.semFixe.push({ c, k });
+        }
+      }
+    }
     const hoje = TS.todayDay();
     const lista = [];
     let soSemVenda = 0;
@@ -156,15 +180,19 @@
       if (c.nascimento && proximos7.has(c.nascimento.slice(5, 10))) t.add('aniv');
       c.fx = fx ? fx.porCpf.get(c.cpf) || null : null;
       if (c.fx && c.fx.em30 > 0) t.add('vence');
+      if (c.cupons.some((k) => k.semFixe)) t.add('semfixe');
+      if (fixe && fixe.temLeads && !c.empresa && !c.membroFixe) t.add('forafixe');
       c.tags = t;
     }
     TS.cli = { lista, fixe, semVendaTotal, soSemVenda, cuponsXml: db.xml.length, cuponsCPF, contatos: (TS.cli && TS.cli.contatos) || null, cidades: [...new Set(db.clientes.map((c) => c.cidade).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR')) };
   };
   // ---------- contatos (contatado / não quer mensagens), guardados por loja no servidor ----------
-  const NOMES_SEG = { hoje: 'Contatar hoje', aniv: 'Aniversário (7 dias)', sumido: 'Sumidos', repor: 'Hora de repor', vence: 'Pontos vencendo', novo: 'Novos do mês', fiel: 'Fiéis', vip: 'VIP', uma: 'Uma compra só' };
+  const NOMES_SEG = { hoje: 'Contatar hoje', aniv: 'Aniversário (7 dias)', sumido: 'Sumidos', repor: 'Hora de repor', vence: 'Pontos vencendo', semfixe: 'Compras sem FIXE', forafixe: 'Fora do FIXE', novo: 'Novos do mês', fiel: 'Fiéis', vip: 'VIP', uma: 'Uma compra só' };
   const DICA_SEG = {
     hoje: 'Aniversariantes da semana, sumidos, quem está na hora de repor e quem tem pontos do FIXE vencendo — sem quem já foi contatado nos últimos 30 dias ou não quer mensagens.',
     vence: 'Têm pontos do programa de fidelidade (FIXE) que vencem nos próximos 30 dias.',
+    semfixe: 'Estão no FIXE, mas têm compra com CPF na nota sem nenhum lançamento no FIXE naquele dia (não informou ou não foi lançado).',
+    forafixe: 'Deram o CPF na nota, mas não estão na base do FIXE desta loja: dá para convidar a se cadastrar.',
     aniv: 'Fazem aniversário nos próximos 7 dias.',
     sumido: 'Compraram 3 vezes ou mais e estão sem vir há mais que o dobro do intervalo de costume (e mais de 60 dias).',
     repor: 'O chá a granel da última compra deve estar acabando: gramas levadas ÷ consumo por dia (pelo histórico da pessoa; sem histórico, ~3 g por dia).',
@@ -375,7 +403,7 @@
     paint();
 
     const segBar = h('div', { class: 'cli-segs' }, h('span', { class: 'f-label' }, 'Segmentos:'),
-      Object.entries(NOMES_SEG).map(([k, nome]) => h('button', { type: 'button', class: 'chip' + (s.seg === k ? ' on' : '') + (k === 'hoje' ? ' chip-destaque' : ''), title: DICA_SEG[k], onclick: () => { s.seg = s.seg === k ? '' : k; TS.render(); } }, nome)),
+      Object.entries(NOMES_SEG).filter(([k]) => !['vence', 'semfixe', 'forafixe'].includes(k) || TS.cli.fixe).map(([k, nome]) => h('button', { type: 'button', class: 'chip' + (s.seg === k ? ' on' : '') + (k === 'hoje' ? ' chip-destaque' : ''), title: DICA_SEG[k], onclick: () => { s.seg = s.seg === k ? '' : k; TS.render(); } }, nome)),
       s.seg ? h('small', { class: 'muted cli-seg-dica' }, DICA_SEG[s.seg]) : null);
     const ordSel = TS.seg([['Mais recentes', 'recente'], ['Maior valor', 'valor'], ['Mais visitas', 'visitas'], ['Mais tempo sem vir', 'ausencia'], ['Nome', 'nome']], ordem, (v) => { s.ordem = v; TS.render(); });
     const csv = h('button', { class: 'btn', type: 'button', onclick: () => baixarCSV(lista) }, 'Baixar lista (CSV)');
@@ -465,7 +493,8 @@
           body.append(h('div', { class: 'cupom' + (k.cpfFixe ? ' cupom-div' : '') }, aviso,
             h('div', { class: 'cupom-head' }, h('span', null, h('b', null, `Cupom ${k.cupom}`), ' · ', k.day != null ? fmt.date(TS.dayToIso(k.day)) : 'sem data', TS.db.opts.lojas.length > 1 ? ' · ' + k.loja : '',
                 k.origem === 'fixe' ? h('span', { class: 'cli-tag t-fixe', title: 'A nota saiu sem CPF; a compra foi ligada a este cliente pelos pontos lançados no FIXE (mesmo dia, hora e produtos).' }, 'CPF pelo FIXE') : null,
-                k.fixeOk ? h('span', { class: 'cli-tag t-fixe-ok', title: 'Os pontos desta compra foram para o mesmo CPF da nota.' }, 'FIXE ✓') : null),
+                k.fixeOk ? h('span', { class: 'cli-tag t-fixe-ok', title: 'Os pontos desta compra foram para o mesmo CPF da nota.' }, 'FIXE ✓') : null,
+                k.semFixe ? h('span', { class: 'cli-tag t-semfixe', title: `Cliente do FIXE, nota com o CPF, mas nenhum lançamento no FIXE neste dia (não informou ou não foi lançado).${k.ptsPerdidos ? ` Deixou de ganhar ${k.ptsPerdidos} pt(s).` : ''}` }, 'Sem FIXE') : null),
               h('span', null, `${fmt.int(k.qtd)} ${k.qtd === 1 ? 'item' : 'itens'} · `, h('b', null, fmt.brl(k.vt)))),
             tb));
         }
@@ -527,7 +556,7 @@
     }
     let nTot = 0, vtTot = 0, nCpf = 0, vtCpf = 0;
     const porVend = new Map();
-    const pv = (v) => { let a = porVend.get(v); if (!a) porVend.set(v, (a = { nome: v, cupons: 0, cpf: 0, novos: 0, voltaram: 0 })); return a; };
+    const pv = (v) => { let a = porVend.get(v); if (!a) porVend.set(v, (a = { nome: v, cupons: 0, cpf: 0, novos: 0, voltaram: 0, cliFixe: 0, semFixe: 0 })); return a; };
     for (const [k, x] of cupons) {
       const temCpf = TS.cli.cuponsCPF.has(k);
       nTot++; vtTot += x.vt;
@@ -541,6 +570,19 @@
       if (lojasOk && !lojasOk.has(k1.lojaId)) continue;
       for (const v of new Set(k1.itens.map((i) => db.D.vendedor[db.vend[i]]).filter((v) => v && !/^sem vendedor$/i.test(v)))) {
         const a = pv(v); a.novos++; if (c.visitas >= 2) a.voltaram++;
+      }
+    }
+    // compras de clientes do FIXE (entre o cadastro e a data dos Logs) e quantas passaram sem FIXE
+    const fxi = TS.cli.fixe;
+    const comFixe = !!(fxi && fxi.temLogs);
+    if (comFixe) {
+      for (const c of TS.cli.lista) {
+        if (!c.membroFixe) continue;
+        for (const k of c.cupons) {
+          if (k.day < dDe || k.day > dAte || k.day >= fxi.logsAte || (c.cadastroFixe != null && k.day <= c.cadastroFixe)) continue;
+          if (lojasOk && !lojasOk.has(k.lojaId)) continue;
+          for (const v of new Set(k.itens.map((i) => db.D.vendedor[db.vend[i]]).filter((v) => v && !/^sem vendedor$/i.test(v)))) { const a = pv(v); a.cliFixe++; if (k.semFixe) a.semFixe++; }
+        }
       }
     }
     const recompra = lista.length ? lista.filter((r) => r.visitas >= 2).length / lista.length : null;
@@ -568,7 +610,7 @@
         { label: 'Recorrentes', data: meses.map((m) => rec[m]), backgroundColor: '#2C5234', borderRadius: 3 }] },
       options: { plugins: { tooltip: { mode: 'index', intersect: false } }, scales: { x: { stacked: true, ...TS.axisCat }, y: { stacked: true, ...TS.axisNum(fmt.int) } } },
     }));
-    const rows = [...porVend.values()].filter((a) => a.cupons > 0).map((a) => ({ ...a, pct: a.cupons ? a.cpf / a.cupons : null, pctVolta: a.novos ? a.voltaram / a.novos : null }));
+    const rows = [...porVend.values()].filter((a) => a.cupons > 0).map((a) => ({ ...a, pct: a.cupons ? a.cpf / a.cupons : null, pctVolta: a.novos ? a.voltaram / a.novos : null, pctSemFixe: a.cliFixe ? a.semFixe / a.cliFixe : null }));
     const tab = TS.table({
       cols: [
         { key: 'nome', label: 'Vendedora', align: 'l' },
@@ -578,13 +620,18 @@
         { key: 'novos', label: 'Clientes novos', fmt: fmt.int },
         { key: 'voltaram', label: 'Voltaram', fmt: fmt.int },
         { key: 'pctVolta', label: '% voltaram', fmt: (v) => (v == null ? '—' : fmt.pct(v, 0)) },
+        ...(comFixe ? [
+          { key: 'semFixe', label: 'Sem FIXE', fmt: fmt.int },
+          { key: 'pctSemFixe', label: '% sem FIXE', fmt: (v) => (v == null ? '—' : fmt.pct(v, 0)) },
+        ] : []),
       ],
       rows, sortKey: 'pct',
-      total: { nome: 'Total', cupons: nTot, cpf: nCpf, pct: nTot ? nCpf / nTot : null, novos: rows.reduce((t, r) => t + r.novos, 0), voltaram: rows.reduce((t, r) => t + r.voltaram, 0) },
+      total: { nome: 'Total', cupons: nTot, cpf: nCpf, pct: nTot ? nCpf / nTot : null, novos: rows.reduce((t, r) => t + r.novos, 0), voltaram: rows.reduce((t, r) => t + r.voltaram, 0),
+        ...(comFixe ? (() => { const cf = rows.reduce((t, r) => t + r.cliFixe, 0), sf = rows.reduce((t, r) => t + r.semFixe, 0); return { semFixe: sf, pctSemFixe: cf ? sf / cf : null }; })() : {}) },
     });
     return [TS.section('Base de clientes'), kpis,
       h('div', { class: 'grid mt', style: { alignItems: 'start' } }, grafico,
-        TS.card('Vendedoras e clientes', '% de vendas com CPF (pedir o CPF faz a base crescer) · clientes novos = primeira compra atendida por ela · voltaram = compraram de novo depois', tab))];
+        TS.card('Vendedoras e clientes', '% de vendas com CPF (pedir o CPF faz a base crescer) · clientes novos = primeira compra atendida por ela · voltaram = compraram de novo depois' + (comFixe ? ' · sem FIXE = compras de clientes do FIXE sem lançamento no dia (o cliente pode não ter informado)' : ''), tab))];
   }
 
   // ---------- ficha e ações ----------
@@ -632,9 +679,16 @@
   const TIPO_MOV = { pontos: 'Pontos da compra', compra: 'Compra (histórico antigo)', resgate: 'Resgate', expirou: 'Pontos expirados', cancelado: 'Operação cancelada', boasvindas: 'Boas-vindas', outro: 'Outro' };
   function blocoFidelidade(c) {
     const f = c.fx;
-    if (!f) return null;
     const d = (day) => fmt.date(TS.dayToIso(day));
     const item = (rot, val, dica) => (val == null || val === '' ? null : h('div', { class: 'fi', title: dica || null }, h('span', null, rot), h('b', null, val)));
+    const sem = c.cupons.filter((k) => k.semFixe);
+    const linhaSem = sem.length ? item('Compras sem FIXE', `${fmt.int(sem.length)}${sem.reduce((t, k) => t + k.ptsPerdidos, 0) ? ` · ${fmt.int(sem.reduce((t, k) => t + k.ptsPerdidos, 0))} pts não lançados` : ''}`, 'Compras com o CPF na nota sem lançamento no FIXE no dia. Os cupons estão marcados "Sem FIXE" abaixo.') : null;
+    if (!f) {
+      if (c.tags && c.tags.has('forafixe')) return h('div', { class: 'fi-bloco fi-largo' }, h('div', { class: 'fi-tit' }, 'Fidelidade (FIXE)'), h('div', { class: 'fi-nota' }, 'Não está na base do FIXE desta loja. Dá para convidar a se cadastrar e começar a pontuar.'));
+      if (c.membroFixe) return h('div', { class: 'fi-bloco fi-largo' }, h('div', { class: 'fi-tit' }, 'Fidelidade (FIXE)'),
+        item('No programa desde', c.cadastroFixe != null ? d(c.cadastroFixe) : 'cadastrado'), item('Saldo de pontos', '0 (sem movimentos nos Logs)'), linhaSem);
+      return null;
+    }
     const outras = f.movs.filter((m) => (m.tipo === 'pontos' || m.tipo === 'compra') && !m.propria && !m.anulado);
     const ult = f.movs.slice(0, 5);
     const regras = (f.movs[0] && f.movs[0].base.regras) || { reaisPorPonto: 50, validadeMeses: 12 };
@@ -643,6 +697,8 @@
       f.prox != null ? item('Próximo vencimento', `${fmt.int(f.proxPts)} pts em ${d(f.prox)}`) : null,
       f.em30 ? item('Vencem em 30 dias', `${fmt.int(f.em30)} pts`) : null,
       item('Ganhos · resgatados · expirados', `${fmt.int(f.ganhos)} · ${fmt.int(f.resgatados)} · ${fmt.int(f.expirados)}`),
+      c.cadastroFixe != null ? item('No programa desde', d(c.cadastroFixe)) : null,
+      linhaSem,
       f.vencidosSemBaixa ? h('div', { class: 'fi-nota' }, `${fmt.int(f.vencidosSemBaixa)} pts já passaram da validade e ainda não aparecem como expirados no FIXE (não entram no saldo).`) : null,
       outras.length ? h('div', { class: 'fi-sub' }, h('div', { class: 'fi-tit2' }, `Compras em outras lojas da rede (${outras.length})`),
         h('ul', { class: 'fi-lista' }, outras.slice(0, 6).map((m) => h('li', null, h('b', null, d(m.day)), ' · ', m.loja, m.produtos.length ? h('small', null, ' — ' + m.produtos.slice(0, 3).join(', ') + (m.produtos.length > 3 ? '…' : '')) : null)))) : null,
@@ -652,29 +708,66 @@
           m.pontos ? h('strong', { class: m.tipo === 'resgate' || m.tipo === 'expirou' ? 'neg' : 'pos' }, ` ${m.tipo === 'resgate' || m.tipo === 'expirou' ? '−' : '+'}${m.pontos}`) : null,
           m.propria ? '' : h('small', null, ' · ' + m.loja))))) : null);
   }
+  function csv(nome, cab, linhas) {
+    const esc = (v) => { const t = v == null ? '' : String(v); return /[;"\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
+    const blob = new Blob(['﻿' + [cab, ...linhas].map((l) => l.map(esc).join(';')).join('\r\n')], { type: 'text/csv;charset=utf-8' });
+    const a = h('a', { href: URL.createObjectURL(blob), download: `${nome}-${new Date().toISOString().slice(0, 10)}.csv` });
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
   function cartaoFixe(fx) {
     const em = (fx.bases || []).map((b) => b.em).filter(Boolean).sort()[0];
     const nomes = (fx.bases || []).map((b) => b.lojas.filter((n, i) => b.propria[i]).join(' / ')).filter(Boolean).join(' · ');
     const sem = fx.alvos - fx.ligadas;
-    const det = h('details', { class: 'fx-det' }, h('summary', null, fx.divergencias.length ? `Ver as ${fmt.int(fx.divergencias.length)} compras com CPF diferente` : 'Como funciona'),
+    const d = (day) => fmt.date(TS.dayToIso(day));
+    const semFixe = (fx.semFixe || []).slice().sort((a, b) => b.k.day - a.k.day);
+    const ptsSem = semFixe.reduce((t, x) => t + x.k.ptsPerdidos, 0);
+    const fora = fx.temLeads ? TS.cli.lista.filter((c) => c.tags.has('forafixe')).sort((a, b) => b.ultima - a.ultima) : [];
+    const detalhe = (titulo, ...corpo) => h('details', { class: 'fx-det' }, h('summary', null, titulo), ...corpo);
+    const blocos = [];
+    if (fx.divergencias.length) blocos.push(detalhe(`Ver as ${fmt.int(fx.divergencias.length)} compras com CPF diferente`, TS.table({
+      cols: [
+        { key: 'data', label: 'Data', align: 'l' }, { key: 'cupom', label: 'Cupom', align: 'l' },
+        { key: 'nota', label: 'CPF da nota', align: 'l' }, { key: 'fixe', label: 'CPF no FIXE', align: 'l' }, { key: 'nome', label: 'Nome no FIXE', align: 'l' }, { key: 'vt', label: 'Valor', fmt: fmt.brl },
+      ],
+      rows: fx.divergencias.map((x) => ({ data: d(x.day), dia: x.day, cupom: String(x.cupom), nota: fmtCPF(x.cpfNota), fixe: fmtCPF(x.cpfFixe), nome: x.nomeFixe || '—', vt: x.vt })),
+      sortKey: 'dia',
+    })));
+    if (semFixe.length) {
+      const linhas = semFixe.map(({ c, k }) => ({ data: d(k.day), dia: k.day, cupom: String(k.cupom), nome: c.nome || '—', cpf: fmtCPF(c.cpf), vt: k.vt, pts: k.ptsPerdidos, vend: k.vendedores || '—' }));
+      blocos.push(detalhe(`Ver as ${fmt.int(semFixe.length)} vendas sem FIXE`,
+        h('p', { class: 'muted' }, 'A nota saiu com o CPF de quem está no FIXE (depois do cadastro), mas o FIXE não tem nenhum movimento desse CPF no dia. Pode ser que o cliente não tenha informado ou que a compra não tenha sido lançada. Serve para conferir e, se o FIXE permitir, lançar os pontos.'),
+        h('div', { class: 'cfg-acoes' }, h('button', { type: 'button', class: 'btn', onclick: () => csv('vendas-sem-fixe', ['Data', 'Cupom', 'Cliente', 'CPF', 'Valor (R$)', 'Pontos não lançados', 'Vendedora'], linhas.map((r) => [r.data, r.cupom, r.nome, r.cpf, r.vt.toFixed(2).replace('.', ','), r.pts, r.vend])) }, 'Baixar lista (CSV)')),
+        TS.table({
+          cols: [{ key: 'data', label: 'Data', align: 'l' }, { key: 'cupom', label: 'Cupom', align: 'l' }, { key: 'nome', label: 'Cliente', align: 'l' }, { key: 'cpf', label: 'CPF', align: 'l' },
+            { key: 'vt', label: 'Valor', fmt: fmt.brl }, { key: 'pts', label: 'Pontos', fmt: fmt.int }, { key: 'vend', label: 'Vendedora', align: 'l' }],
+          rows: linhas, sortKey: 'dia',
+        })));
+    }
+    if (fora.length) {
+      const linhas = fora.map((c) => { const ct = contatoDe(c) || {}; return { nome: c.nome || '—', cpf: fmtCPF(c.cpf), cel: ct.optout ? 'não quer mensagens' : fmtTel(c.celular) || '—', compras: c.visitas, ultima: d(c.ultima), dia: c.ultima, vend: c.vendedora || '—' }; });
+      blocos.push(detalhe(`Ver os ${fmt.int(fora.length)} clientes fora do FIXE`,
+        h('p', { class: 'muted' }, 'Deram o CPF na nota, mas não estão na base do FIXE desta loja (Base de leads). Se o cliente se cadastrou em outra loja da rede com outra base, também aparece aqui.'),
+        h('div', { class: 'cfg-acoes' }, h('button', { type: 'button', class: 'btn', onclick: () => csv('clientes-fora-do-fixe', ['Cliente', 'CPF', 'Celular', 'Compras', 'Última compra', 'Mais atendida por'], linhas.map((r) => [r.nome, r.cpf, TS.demo ? '' : r.cel, r.compras, r.ultima, r.vend])) }, 'Baixar lista (CSV)')),
+        TS.table({
+          cols: [{ key: 'nome', label: 'Cliente', align: 'l' }, { key: 'cpf', label: 'CPF', align: 'l' }, { key: 'cel', label: 'Celular', align: 'l' }, { key: 'compras', label: 'Compras', fmt: fmt.int }, { key: 'ultima', label: 'Última compra', align: 'l' }, { key: 'vend', label: 'Mais atendida por', align: 'l' }],
+          rows: linhas, sortKey: 'dia',
+        })));
+    }
+    blocos.push(detalhe('Como funciona',
       h('p', { class: 'muted' }, 'O FIXE não guarda o número do cupom. O painel procura, na mesma loja e no mesmo dia, o cupom com hora próxima (até 2 h), os mesmos produtos e o valor que daria os pontos lançados. Só liga quando um cupom é claramente o melhor; na dúvida, deixa sem ligar.'),
-      nomes ? h('p', { class: 'muted' }, `Lojas do FIXE consideradas desta loja: ${nomes}. As outras aparecem como "outras lojas da rede" na ficha do cliente.`) : null,
-      fx.divergencias.length ? TS.table({
-        cols: [
-          { key: 'data', label: 'Data', align: 'l' }, { key: 'cupom', label: 'Cupom', align: 'l' },
-          { key: 'nota', label: 'CPF da nota', align: 'l' }, { key: 'fixe', label: 'CPF no FIXE', align: 'l' }, { key: 'nome', label: 'Nome no FIXE', align: 'l' }, { key: 'vt', label: 'Valor', fmt: fmt.brl },
-        ],
-        rows: fx.divergencias.map((d) => ({ data: fmt.date(TS.dayToIso(d.day)), dia: d.day, cupom: String(d.cupom), nota: fmtCPF(d.cpfNota), fixe: fmtCPF(d.cpfFixe), nome: d.nomeFixe || '—', vt: d.vt })),
-        sortKey: 'dia',
-      }) : null);
+      h('p', { class: 'muted' }, `"Venda sem FIXE" só olha compras entre o cadastro do cliente no FIXE e a data dos Logs${fx.logsAte != null ? ` (${d(fx.logsAte)})` : ''}; qualquer movimento do CPF no FIXE no mesmo dia conta como venda que passou pelo FIXE.`),
+      nomes ? h('p', { class: 'muted' }, `Lojas do FIXE consideradas desta loja: ${nomes}. As outras aparecem como "outras lojas da rede" na ficha do cliente.`) : null));
     return TS.card('Fidelidade (FIXE)', `Compras do programa de fidelidade ligadas aos cupons de venda${em ? ` · logs de ${fmt.date(em.slice(0, 10))}` : ''}`,
       h('div', { class: 'grid g-kpi' },
-        TS.kpi('Compras no FIXE', fmt.int(fx.alvos), 'nesta loja, no período das vendas', 'Movimentos de compra do FIXE desta loja em dias que têm vendas no painel'),
-        TS.kpi('Cupom confirmado', fmt.int(fx.confirmadas), 'mesmo CPF na nota e no FIXE'),
-        TS.kpi('Cliente achado pelo FIXE', fmt.int(fx.porFixe), 'cupons sem CPF na nota', 'A nota saiu sem CPF: a compra passou a contar para o cliente do FIXE'),
-        TS.kpi('CPF diferente', fmt.int(fx.divergencias.length), 'nota num CPF, pontos em outro', 'Compra feita num CPF, mas foi usado outro CPF no FIXE'),
-        TS.kpi('Sem cupom', fmt.int(sem), sem && fx.alvos ? fmt.pct(sem / fx.alvos, 0) + ' das compras do FIXE' : null, 'Não achou um cupom claramente igual (vendas fora do período, hora ou produtos diferentes, ou mais de um parecido)')),
-      det);
+        fx.temLogs ? TS.kpi('Compras no FIXE', fmt.int(fx.alvos), 'nesta loja, no período das vendas', 'Movimentos de compra do FIXE desta loja em dias que têm vendas no painel') : null,
+        fx.temLogs ? TS.kpi('Cupom confirmado', fmt.int(fx.confirmadas), 'mesmo CPF na nota e no FIXE') : null,
+        fx.temLogs ? TS.kpi('Cliente achado pelo FIXE', fmt.int(fx.porFixe), 'cupons sem CPF na nota', 'A nota saiu sem CPF: a compra passou a contar para o cliente do FIXE') : null,
+        fx.temLogs ? TS.kpi('CPF diferente', fmt.int(fx.divergencias.length), 'nota num CPF, pontos em outro', 'Compra feita num CPF, mas foi usado outro CPF no FIXE') : null,
+        fx.temLogs ? TS.kpi('Sem cupom', fmt.int(sem), sem && fx.alvos ? fmt.pct(sem / fx.alvos, 0) + ' das compras do FIXE' : null, 'Não achou um cupom claramente igual (vendas fora do período, hora ou produtos diferentes, ou mais de um parecido)') : null,
+        fx.temLogs ? TS.kpi('Vendas sem FIXE', fmt.int(semFixe.length), ptsSem ? `${fmt.int(ptsSem)} pts não lançados` : 'cliente do FIXE, sem lançamento', 'Nota no CPF de quem está no FIXE e nenhum movimento no FIXE no dia') : null,
+        fx.temLeads ? TS.kpi('Fora do FIXE', fmt.int(fora.length), 'deram CPF, não estão na base', 'Clientes com CPF na nota que não estão na Base de leads do FIXE desta loja') : null),
+      ...blocos);
   }
   const fmtTel = (cel) => {
     let d = String(cel || '').replace(/\D/g, '');

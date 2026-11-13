@@ -145,13 +145,30 @@
     return { lig, alvos: noPeriodo.length, semCupom: noPeriodo.filter((m) => !m.cupom).length };
   }
 
+  /** quem está no programa (base de leads + Logs) e desde quando; até que dia os Logs vão */
+  function membros() {
+    const m = new Map();
+    let logsAte = null;
+    for (const base of TS.db.fidelidade || []) {
+      for (const [cpf, d] of base.membros || []) {
+        const day = d ? TS.isoToDay(d) : null;
+        if (!m.has(cpf) || (day != null && (m.get(cpf) == null || day < m.get(cpf)))) m.set(cpf, day);
+      }
+      if (base.ev && base.ev.length && base.em) { const d = TS.isoToDay(base.em.slice(0, 10)); if (logsAte == null || d > logsAte) logsAte = d; }
+    }
+    return { membros: m, logsAte };
+  }
+
   TS.fx = {
-    tem: () => !!(TS.db.fidelidade && TS.db.fidelidade.some((b) => b.ev && b.ev.length)),
+    tem: () => !!(TS.db.fidelidade && TS.db.fidelidade.some((b) => (b.ev && b.ev.length) || (b.membros && b.membros.length))),
     preparar() {
       const movs = movimentos();
       const porCpf = saldos(movs);
       const r = ligar(movs);
-      return { movs, porCpf, ...r, bases: TS.db.fidelidade };
+      // dias em que o CPF teve movimento no FIXE (qualquer loja): a venda desse dia passou pelo FIXE
+      const movDia = new Set();
+      for (const m of movs) if (!m.anulado && m.tipo !== 'expirou') movDia.add(m.cpf + '|' + m.day);
+      return { movs, porCpf, ...r, ...membros(), movDia, bases: TS.db.fidelidade };
     },
     addMeses,
   };
