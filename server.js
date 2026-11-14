@@ -409,6 +409,56 @@ app.post('/api/contatos', express.json({ limit: '4kb' }), (req, res) => {
   res.json({ ok: true, contato: todos[cpf] || null });
 });
 
+// ---------- campanhas de WhatsApp (Clientes → Campanhas): admin, franqueado e gerente com a tela Clientes ----------
+const CAMP = require('./src/campanhas');
+const lojaCamp = (req) => { const id = String((req.body && req.body.loja) || req.query.loja || ''); return req.lojas.some((l) => l.id === id) ? id : null; };
+const respCamp = (res, r) => (r.erro ? res.status(400).json({ erro: r.erro }) : res.json({ ok: true, campanha: r.ok }));
+app.get('/api/campanhas', (req, res) => {
+  if (!podeClientes(req)) return res.status(403).json({ erro: 'Sem permissão.' });
+  const id = lojaCamp(req);
+  if (!id) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  res.json({ campanhas: CAMP.ler(id) });
+});
+app.use('/api/campanhas', (req, res, next) => {
+  if (req.method === 'GET') return next();
+  if (!podeClientes(req)) return res.status(403).json({ erro: 'Sem permissão.' });
+  if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
+  next();
+});
+app.post('/api/campanhas', express.json({ limit: '600kb' }), (req, res) => {
+  const id = lojaCamp(req);
+  if (!id) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  const r = CAMP.criar(id, req.body || {}, req.user);
+  if (r.ok) C.auditar(req.user, 'criou campanha', id, { loja: id, nome: r.ok.nome, clientes: r.ok.rodadas[0].lista.length });
+  respCamp(res, r);
+});
+app.put('/api/campanhas/:id', express.json({ limit: '20kb' }), (req, res) => {
+  const id = lojaCamp(req);
+  if (!id) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  respCamp(res, CAMP.alterar(id, req.params.id, req.body || {}));
+});
+app.post('/api/campanhas/:id/rodadas', express.json({ limit: '600kb' }), (req, res) => {
+  const id = lojaCamp(req);
+  if (!id) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  respCamp(res, CAMP.novaRodada(id, req.params.id, (req.body || {}).lista, req.user));
+});
+app.post('/api/campanhas/:id/marcar', express.json({ limit: '4kb' }), (req, res) => {
+  const id = lojaCamp(req);
+  if (!id) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  const b = req.body || {};
+  const r = CAMP.marcar(id, req.params.id, String(b.rodada || ''), String(b.cpf || ''), String(b.st || ''), req.user);
+  if (r.erro) return res.status(400).json({ erro: r.erro });
+  res.json({ ok: true, item: r.ok });
+});
+app.delete('/api/campanhas/:id', (req, res) => {
+  const id = lojaCamp(req);
+  if (!id) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  const r = CAMP.apagar(id, req.params.id);
+  if (r.erro) return res.status(400).json({ erro: r.erro });
+  C.auditar(req.user, 'apagou campanha', id, { loja: id });
+  res.json({ ok: true });
+});
+
 app.get('/api/eu', (req, res) => {
   const u = C.get().usuarios[req.user];
   res.json({

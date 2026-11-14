@@ -206,7 +206,7 @@
    * cols: [{key, label, fmt, align:'l'|'r', cls:(row)=>string, sticky, title}]
    * rows: objetos; total: objeto opcional; sort: {key, dir}
    */
-  TS.table = function ({ cols, rows, total, sortKey, sortDir = 'desc', maxHeight, pageSize, search, searchKeys, searchInit, onSearch, onRowClick, empty, cls }) {
+  TS.table = function ({ cols, rows, total, sortKey, sortDir = 'desc', maxHeight, pageSize, search, searchKeys, searchInit, onSearch, onRowClick, rowClass, empty, cls }) {
     let sk = sortKey, sd = sortDir, page = 0, q = searchInit ? TS.norm(searchInit) : '';
     const wrap = h('div');
     const tbl = h('table', { class: 't' + (cls ? ' ' + cls : '') });
@@ -248,7 +248,7 @@
       const start = pageSize ? page * pageSize : 0;
       const slice = pageSize ? all.slice(start, start + pageSize) : all;
       for (const row of slice) {
-        const tr = h('tr');
+        const tr = h('tr', { class: rowClass ? rowClass(row) || null : null });
         if (onRowClick) { tr.style.cursor = 'pointer'; tr.addEventListener('click', () => onRowClick(row)); }
         cols.forEach((c) => {
           const v = row[c.key];

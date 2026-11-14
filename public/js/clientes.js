@@ -184,7 +184,8 @@
       if (fixe && fixe.temLeads && !c.empresa && !c.membroFixe) t.add('forafixe');
       c.tags = t;
     }
-    TS.cli = { lista, fixe, porCPF, fxPorCpf: fx ? fx.porCpf : null, semVendaTotal, soSemVenda, cuponsXml: db.xml.length, cuponsCPF, contatos: (TS.cli && TS.cli.contatos) || null, cidades: [...new Set(db.clientes.map((c) => c.cidade).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR')) };
+    // quem tem pontos no FIXE mas nenhum cupom com CPF: entra nas campanhas pelo cadastro (nome e celular)
+    TS.cli = { cad, lista, fixe, porCPF, fxPorCpf: fx ? fx.porCpf : null, semVendaTotal, soSemVenda, cuponsXml: db.xml.length, cuponsCPF, contatos: (TS.cli && TS.cli.contatos) || null, cidades: [...new Set(db.clientes.map((c) => c.cidade).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR')) };
   };
   // ---------- contatos (contatado / não quer mensagens), guardados por loja no servidor ----------
   const NOMES_SEG = { hoje: 'Contatar hoje', aniv: 'Aniversário (7 dias)', sumido: 'Sumidos', repor: 'Hora de repor', vence: 'Pontos vencendo', semfixe: 'Compras sem FIXE', forafixe: 'Fora do FIXE', novo: 'Novos do mês', fiel: 'Fiéis', vip: 'VIP', uma: 'Uma compra só' };
@@ -199,6 +200,7 @@
     novo: 'Primeira compra neste mês.', fiel: '5 compras ou mais nos últimos 12 meses.', vip: 'Os 10% que mais gastaram nos últimos 12 meses.', uma: 'Compraram uma vez só (há 30 dias ou mais) e não voltaram.',
   };
   const lojaIdDe = (c) => {
+    if (!c.cupons || !c.cupons.length) return state.loja && state.loja !== 'todas' ? state.loja : TS.db.metas[0] && TS.db.metas[0].id;
     const nomeVenda = TS.db.D.loja[c.cupons[0].lojaId];
     const m = (TS.db.metas || []).find((x) => (x.nomesVenda || []).includes(nomeVenda));
     return m ? m.id : (TS.db.metas[0] && TS.db.metas[0].id);
@@ -361,6 +363,7 @@
   // ---------- página ----------
   TS.pages.clientes = function (root) {
     const db = TS.db, s = state.cli;
+    if (TS.subClientes) root.append(TS.subClientes('clientes'));
     root.append(h('div', { class: 'page-head' }, h('div', null, h('h1', { class: 'page-title' }, 'Clientes'), h('div', { class: 'page-sub' }, 'Cupons identificados por CPF, com histórico de compras e contato'))));
     if (!db.xml.length && !(TS.fx && TS.fx.tem())) { root.append(h('div', { class: 'notice' }, 'A planilha "Xml" (cupons com CPF) não foi carregada.')); return; }
     carregarContatos();
@@ -1065,6 +1068,27 @@
     card.classList.add('fx-card');
     return card;
   }
+  // usado pela tela Campanhas
+  TS.cliApi = {
+    abrirClientes: (cpfs) => abrirClientes(cpfs), contatoDe: (c) => contatoDe(c), marcar: (c, acao, motivo) => marcar(c, acao, motivo),
+    carregarContatos: () => carregarContatos(), modelos: () => modelosDe(state.loja), fmtTel: (x) => fmtTel(x), fmtCPF: (x) => fmtCPF(x), csv: (a, b, c) => csv(a, b, c),
+    texto: (txt, c, extra = {}) => { let t = textoWpp({ texto: txt }, c); for (const [k, v] of Object.entries(extra)) t = t.split('{' + k + '}').join(v); return t; },
+    linkWpp: (c, txt) => linkWpp(c, txt),
+    /** todos os clientes que podem entrar numa campanha: os da lista + quem só aparece no FIXE (com cadastro) */
+    universo() {
+      const out = [...TS.cli.lista];
+      const vistos = new Set(out.map((c) => c.cpf));
+      for (const [cpf, f] of TS.cli.fxPorCpf || []) {
+        if (vistos.has(cpf)) continue;
+        const info = (TS.cli.cad && TS.cli.cad.get(cpf)) || {};
+        const cel = digits(info.celular);
+        const local = cel.length >= 12 && cel.startsWith('55') ? cel.slice(2) : cel;
+        out.push({ cpf, nome: (info.nome || f.nome || '').trim(), celular: cel, wpp: local.length >= 10 && local.length <= 11 ? 'https://wa.me/55' + local : null,
+          nascimento: info.nascimento || null, cupons: [], visitas: 0, ultima: null, ausencia: null, tags: new Set(f.em30 > 0 ? ['vence'] : []), fx: f, soFixe: true });
+      }
+      return out;
+    },
+  };
   const fmtTel = (cel) => {
     let d = String(cel || '').replace(/\D/g, '');
     if (d.length >= 12 && d.startsWith('55')) d = d.slice(2);

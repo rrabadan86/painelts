@@ -55,7 +55,7 @@
     const db = TS.db, f = state.f;
     if (!db || !db.desde || TS.historicoCompleto) return false;
     const d0 = TS.isoToDay(db.desde);
-    return state.page === 'clientes' || f.de == null || f.de - 366 < d0 || (f.mes && !f.ano) || (f.ano && f.ano - 1 < +db.desde.slice(0, 4));
+    return state.page === 'clientes' || state.page === 'campanhas' || f.de == null || f.de - 366 < d0 || (f.mes && !f.ano) || (f.ano && f.ano - 1 < +db.desde.slice(0, 4));
   }
   TS.carregarTudo = function () {
     if (TS.historicoCompleto || buscandoCompleto) return;
@@ -226,7 +226,11 @@
 
   /** abas conforme o perfil */
   function configurarAbas(eu) {
-    if (TS.demo || !eu.perfil) return;
+    if (TS.demo || !eu.perfil) {
+      // apresentação: Clientes também tem o submenu Campanhas
+      if (!PAGES.includes('campanhas')) { PAGES.splice(PAGES.indexOf('clientes') + 1, 0, 'campanhas'); const a = document.querySelector('#tabs a[data-page="clientes"]'); if (a) a.dataset.grupo = 'clientes,campanhas'; }
+      return;
+    }
     const tabs = document.getElementById('tabs');
     if (eu.perfil === 'vendedor') PAGES = TS.PAGINAS_VENDEDOR;
     else if (Array.isArray(eu.telas)) PAGES = PAGES.filter((p) => eu.telas.includes(p) && (p !== 'clientes' || eu.pode?.clientes));
@@ -238,6 +242,11 @@
     }
     if (eu.perfil === 'vendedor') {
       document.body.classList.add('perfil-vendedor');
+    }
+    // menu Clientes: Clientes · Campanhas
+    if (PAGES.includes('clientes')) {
+      PAGES.splice(PAGES.indexOf('clientes') + 1, 0, 'campanhas');
+      const a = tabs.querySelector('a[data-page="clientes"]'); if (a) a.dataset.grupo = 'clientes,campanhas';
     }
     // menu Estoque e Margem (Estoque e margem · Pedido · Resultado): admin e franqueado veem tudo;
     // gerente só as telas liberadas em Configurações → Usuários
