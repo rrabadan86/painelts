@@ -277,15 +277,10 @@
       return h('div', { class: 'f-group' }, h('span', { class: 'f-label' }, label), h('div', { class: 'f-row' }, a, b),
         chips ? h('div', { class: 'chips' }, chips.map(([lab, mi, ma]) => h('button', { type: 'button', class: 'chip' + (String(s[kMin]) === String(mi) && String(s[kMax]) === String(ma) ? ' on' : ''), onclick: () => { s[kMin] = String(mi); s[kMax] = String(ma); rerender(); } }, lab))) : null);
     };
-    // período das compras (vazio = todo o histórico)
-    const de = h('input', { class: 'f-input', type: 'date', value: s.de || '' }), ate = h('input', { class: 'f-input', type: 'date', value: s.ate || '' });
-    TS.aoConfirmar(de, () => { s.de = de.value; rerender(); });
-    TS.aoConfirmar(ate, () => { s.ate = ate.value; rerender(); });
-    const hojeIso = TS.dayToIso(TS.todayDay());
-    const atalho = (lab, dias) => h('button', { type: 'button', class: 'chip' + (s.ate === '' && s.de === (dias ? TS.dayToIso(TS.todayDay() - dias) : '') ? ' on' : ''), onclick: () => { s.de = dias ? TS.dayToIso(TS.todayDay() - dias) : ''; s.ate = ''; rerender(); } }, lab);
-    box.append(h('div', { class: 'f-group' }, h('span', { class: 'f-label' }, 'Compras entre'), h('div', { class: 'f-row' }, de, ate),
-      h('div', { class: 'chips' }, atalho('Tudo', 0), atalho('90 dias', 90), atalho('12 meses', 365)),
-      h('small', { class: 'muted' }, s.de || s.ate ? 'Valores, visitas e ticket só desse período. "Dias sem comprar" olha a última compra de verdade.' : `Todo o histórico (até ${fmt.date(hojeIso)}).`)));
+    // período das compras: o mesmo bloco das outras telas, mas guardado à parte (aqui o padrão é todo o histórico)
+    const p = s.per;
+    box.append(...TS.blocoPeriodo(p, rerender, { padrao: 'tudo', rotulo: 'Período',
+      dica: h('small', { class: 'muted' }, p.de != null || p.ate != null || p.mes ? 'Valores, visitas e ticket só desse período. "Dias sem comprar" olha a última compra de verdade.' : `Todo o histórico (até ${fmt.date(TS.dayToIso(TS.todayDay()))}).`) }));
     box.append(
       txt('Nome', 'nome', 'Nome do cliente'),
       txt('CPF', 'cpf', 'Somente números', 'numeric'),
@@ -305,6 +300,14 @@
     return box;
   };
 
+  /** o dia está no período escolhido nos Clientes? (só o mês = aquele mês em todos os anos) */
+  function noPeriodoCli() {
+    const p = state.cli.per;
+    const de = p.de ?? -Infinity, ate = p.ate ?? Infinity, soMes = p.mes && !p.ano ? p.mes : null;
+    if (de === -Infinity && ate === Infinity && !soMes) return null;
+    return (day) => day >= de && day <= ate && (!soMes || new Date(day * 86400000).getUTCMonth() + 1 === soMes);
+  }
+
   // ---------- aplicação dos filtros ----------
   function filtrar() {
     const s = state.cli, db = TS.db;
@@ -314,7 +317,7 @@
     const filtraItens = prod || s.grupos.size;
     let prodOk = null;
     if (prod) { prodOk = new Uint8Array(db.D.descricao.length); db.D.descricao.forEach((t, i) => { if (TS.norm(t).includes(prod)) prodOk[i] = 1; }); }
-    const dDe = s.de ? TS.isoToDay(s.de) : null, dAte = s.ate ? TS.isoToDay(s.ate) : null;
+    const noPer = noPeriodoCli();
     const out = [];
     for (const c of TS.cli.lista) {
       if (nome && !TS.norm(c.nome).includes(nome)) continue;
@@ -332,7 +335,7 @@
       }
       if (s.cidade.size && !s.cidade.has(c.cidade)) continue;
       let cupons = c.cupons;
-      if (dDe != null || dAte != null) cupons = cupons.filter((k) => (dDe == null || k.day >= dDe) && (dAte == null || k.day <= dAte));
+      if (noPer) cupons = cupons.filter((k) => noPer(k.day));
       if (s.lojas.size) cupons = cupons.filter((k) => s.lojas.has(k.lojaId));
       if (cupom) cupons = cupons.filter((k) => String(k.cupom).includes(cupom));
       if (filtraItens) {
@@ -601,13 +604,13 @@
     const s = state.cli, db = TS.db;
     const q = TS.norm(s.produto);
     if (!q) return null;
-    const dDe = s.de ? TS.isoToDay(s.de) : -Infinity, dAte = s.ate ? TS.isoToDay(s.ate) : Infinity;
+    const noPer = noPeriodoCli() || (() => true);
     const taxas = TS.rules.ids.taxas;
     const alvo = new Uint8Array(db.D.descricao.length);
     db.D.descricao.forEach((t, i) => { if (TS.norm(t).includes(q)) alvo[i] = 1; });
     const porCupom = new Map(); // cupons do período que têm o produto
     for (let i = 0; i < db.n; i++) {
-      if (db.day[i] < dDe || db.day[i] > dAte) continue;
+      if (!noPer(db.day[i])) continue;
       if (alvo[db.desc[i]]) porCupom.set(db.cupom[i] + '|' + db.loja[i], true);
     }
     if (!porCupom.size) return TS.card(`Quem leva "${s.produto}"`, 'também leva…', TS.empty('Nenhuma venda desse produto no período.'));
@@ -629,13 +632,13 @@
   // ---------- indicadores da base e vendedoras ----------
   function baseDeClientes(lista) {
     const s = state.cli, db = TS.db;
-    const dDe = s.de ? TS.isoToDay(s.de) : -Infinity, dAte = s.ate ? TS.isoToDay(s.ate) : Infinity;
+    const noPer = noPeriodoCli() || (() => true);
     const taxas = TS.rules.ids.taxas;
     const lojasOk = s.lojas.size ? s.lojas : null;
     // todas as vendas do período: cupons por vendedora e com/sem CPF
     const cupons = new Map(); // "cupom|loja" → { vt, vends:Set }
     for (let i = 0; i < db.n; i++) {
-      if (db.day[i] < dDe || db.day[i] > dAte) continue;
+      if (!noPer(db.day[i])) continue;
       if (lojasOk && !lojasOk.has(db.loja[i])) continue;
       const v = db.D.vendedor[db.vend[i]];
       if (!v || /^sem vendedor$/i.test(v)) continue;
@@ -656,7 +659,7 @@
     }
     // clientes novos no período: a primeira compra foi atendida por quem?
     for (const c of TS.cli.lista) {
-      if (c.primeira < dDe || c.primeira > dAte) continue;
+      if (c.primeira == null || !noPer(c.primeira)) continue;
       const k1 = c.cupons[c.cupons.length - 1];
       if (lojasOk && !lojasOk.has(k1.lojaId)) continue;
       for (const v of new Set(k1.itens.map((i) => db.D.vendedor[db.vend[i]]).filter((v) => v && !/^sem vendedor$/i.test(v)))) {
@@ -670,7 +673,7 @@
       for (const c of TS.cli.lista) {
         if (!c.membroFixe) continue;
         for (const k of c.cupons) {
-          if (k.day < dDe || k.day > dAte || k.day >= fxi.logsAte || (c.cadastroFixe != null && k.day <= c.cadastroFixe)) continue;
+          if (!noPer(k.day) || k.day >= fxi.logsAte || (c.cadastroFixe != null && k.day <= c.cadastroFixe)) continue;
           if (lojasOk && !lojasOk.has(k.lojaId)) continue;
           for (const v of new Set(k.itens.map((i) => db.D.vendedor[db.vend[i]]).filter((v) => v && !/^sem vendedor$/i.test(v)))) { const a = pv(v); a.cliFixe++; if (k.semFixe) a.semFixe++; }
         }
@@ -681,9 +684,9 @@
       TS.kpi('Vendas com CPF', fmt.pct(nTot ? nCpf / nTot : null, 1), `${fmt.int(nCpf)} de ${fmt.int(nTot)} cupons do período`, 'Cupons de venda em que o cliente informou o CPF (e a nota foi encontrada)'),
       TS.kpi('Ticket do cliente identificado', fmt.brl(nCpf ? vtCpf / nCpf : null), h('span', null, 'geral: ', fmt.brl(nTot ? vtTot / nTot : null))),
       TS.kpi('Recompra', fmt.pct(recompra, 0), 'dos clientes da lista compraram 2 vezes ou mais no período'),
-      TS.kpi('Clientes novos no período', fmt.int(TS.cli.lista.filter((c) => c.primeira >= dDe && c.primeira <= dAte).length), 'primeira compra identificada'));
+      TS.kpi('Clientes novos no período', fmt.int(TS.cli.lista.filter((c) => c.primeira != null && noPer(c.primeira)).length), 'primeira compra identificada'));
     // novos × recorrentes por mês (últimos 12 meses do período)
-    const fim = Number.isFinite(dAte) ? dAte : TS.todayDay();
+    const fim = state.cli.per.ate ?? TS.todayDay();
     const meses = [];
     { const f = new Date(fim * 864e5); for (let k = 11; k >= 0; k--) { const d = new Date(Date.UTC(f.getUTCFullYear(), f.getUTCMonth() - k, 1)); meses.push(d.toISOString().slice(0, 7)); } }
     const ymDe = (day) => new Date(day * 864e5).toISOString().slice(0, 7);
