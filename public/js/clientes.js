@@ -372,7 +372,10 @@
         ` e ficaram de fora das contas${TS.cli.soSemVenda ? ` (${fmt.int(TS.cli.soSemVenda)} CPFs só têm cupons assim)` : ''}. Normalmente são vendas fora do período importado ou números de cupom que não batem com o relatório de vendas.`));
     }
 
-    if (TS.cli.fixe) { const cr = cartaoResgate(TS.cli.fixe); if (cr) root.append(cr); root.append(cartaoFixe(TS.cli.fixe)); }
+    // ordem: base de clientes → fidelidade → lista (a lista é longa: fica por último)
+    root.append(...baseDeClientes(lista));
+    if (TS.cli.fixe) { root.append(TS.section('Fidelidade')); const cr = cartaoResgate(TS.cli.fixe); if (cr) root.append(cr); root.append(cartaoFixe(TS.cli.fixe)); }
+    root.append(TS.section('Lista de clientes'));
 
     const ordem = s.ordem;
     const ORD = { recente: (a, b) => (b.c.ultima ?? -1) - (a.c.ultima ?? -1), valor: (a, b) => b.vt - a.vt, visitas: (a, b) => b.visitas - a.visitas, ausencia: (a, b) => (b.c.ausencia ?? -1) - (a.c.ausencia ?? -1), nome: (a, b) => (a.c.nome || 'zzz').localeCompare(b.c.nome || 'zzz', 'pt-BR') };
@@ -451,7 +454,6 @@
     const junto = cartaoLevamJunto();
     if (junto) lado.prepend(junto);
     root.append(h('div', { class: 'grid g-2-1 mt', style: { alignItems: 'start' } }, listaCard, lado));
-    root.append(...baseDeClientes(lista));
   };
 
   function clienteCard(r) {
@@ -885,15 +887,24 @@
     const curto = diasPer < 180;
     const custoBox = h('b', null, '…'), custoSub = h('small', null, 'calculando o custo dos prêmios');
     const custoPctFat = h('small', null);
-    const retornoGrupo = premios.length ? h('div', { class: 'fx-grupo' }, h('div', { class: 'fx-grupo-tit' }, 'Retorno do programa (prêmios entregues no período)'),
-      curto ? h('div', { class: 'notice rs-aviso' }, `Período curto (${fmt.int(diasPer)} dias): os resgates de agora vêm de pontos ganhos meses antes, então o retorno oscila. Para um número confiável use 12 meses.`) : null,
+    const retornoGrupo = premios.length ? h('div', { class: 'fx-grupo' }, h('div', { class: 'fx-grupo-tit' }, 'Retorno do programa'),
       h('div', { class: 'fx-stats' },
         stat('Prometido no resgate', prometido == null ? '—' : fmt.pct(prometido, 1), `valor do prêmio ÷ gasto de R$ ${fmt.int(rpp)} por ponto`, `Quanto o cliente recebe quando resgata: valor dos prêmios ÷ (pontos resgatados × R$ ${rpp}). Comparável à tabela de prêmios da franquia.`),
         stat('Retorno efetivo ao cliente', compras ? fmt.pct(valorPremios / compras, 1) : '—', fat ? `${fmt.pct(valorPremios / fat, 1)} do faturamento total` : null, `Valor de venda dos prêmios entregues ÷ compras que geraram pontos no período (pontos ganhos × R$ ${rpp}). Menor que o prometido porque nem todos resgatam e pontos vencem. Abaixo: o mesmo valor sobre todo o faturamento da loja.`, 'ok'),
         h('div', { class: 'fx-stat ok' }, h('span', null, 'Custo real para a loja', TS.dica('Custo dos produtos dados como prêmio (o que a loja gastou de fato) ÷ compras que geraram pontos. Abaixo: sobre todo o faturamento.')), custoBox, custoSub, custoPctFat)),
-      h('small', { class: 'muted' }, `${fmt.int(nPremios)} prêmios saíram no caixa (R$ 0,01 com o nome de um produto vendido normalmente ou com "Fidelidade" no nome; valor de venda ${fmt.brl0(valorPremios)}${semPar ? `, ${fmt.int(semPar)} sem produto correspondente para dar preço` : ''}) · ${fmt.int(resg)} pontos resgatados no FIXE · compras que geraram pontos: ${fmt.brl0(compras)} · faturamento: ${fmt.brl0(fat)}.`)) : null;
+      null) : null;
+    // "Como é calculado": as contas com os números do período
+    const brl = fmt.brl0, linhaCusto = h('li', null, 'Custo real para a loja: calculando…');
+    const conta = h('details', { class: 'rs-conta' }, h('summary', null, 'Como é calculado'),
+      h('ul', null,
+        h('li', null, h('b', null, 'Resgatam: '), `dos ${fmt.int(cs.length)} clientes que chegaram a ${fmt.int(min)} pontos no período, ${fmt.int(sim.length)} resgataram em até ${fmt.int(prazo)} dias e ${fmt.int(nao.length)} não; os ${fmt.int(ab.length)} que ainda estão no prazo ficam fora. ${fmt.int(sim.length)} ÷ ${fmt.int(fechados)} = ${taxa == null ? '—' : fmt.pct(taxa, 0)}. Cada cliente conta uma vez (a primeira vez no período em que o saldo válido chegou ao mínimo).`),
+        premios.length ? h('li', null, h('b', null, 'Prêmios: '), `${fmt.int(nPremios)} itens saíram no caixa a R$ 0,01 com o nome de um produto vendido normalmente (ou com "Fidelidade" no nome). Pelo preço normal desses produtos, valem ${brl(valorPremios)}${semPar ? ` (${fmt.int(semPar)} sem produto correspondente ficaram fora)` : ''}. Itens a R$ 0,01 com outro nome (promoções) não entram.`) : null,
+        premios.length ? h('li', null, h('b', null, 'Prometido no resgate: '), `${brl(valorPremios)} ÷ (${fmt.int(resg)} pontos resgatados × R$ ${fmt.int(rpp)} = ${brl(resg * rpp)}) = ${prometido == null ? '—' : fmt.pct(prometido, 1)}. É o que o cliente recebe quando resgata; comparável à tabela de prêmios.`) : null,
+        premios.length ? h('li', null, h('b', null, 'Retorno efetivo ao cliente: '), `${brl(valorPremios)} ÷ (${fmt.int(ganhos)} pontos ganhos × R$ ${fmt.int(rpp)} = ${brl(compras)} em compras que geraram pontos) = ${compras ? fmt.pct(valorPremios / compras, 1) : '—'}. Sobre todo o faturamento (${brl(fat)}): ${fat ? fmt.pct(valorPremios / fat, 1) : '—'}. Fica abaixo do prometido porque nem todos resgatam e pontos vencem.`) : null,
+        premios.length ? linhaCusto : null,
+        h('li', null, `Mínimo (${fmt.int(min)} pontos) e prazo (${fmt.int(prazo)} dias) ficam em Configurações → Lojas → Integrações → Regras dos pontos.`)));
     if (retornoGrupo) {
-      const semAcesso = () => { custoBox.textContent = '—'; custoSub.textContent = 'sem acesso ao estoque e custos'; };
+      const semAcesso = () => { custoBox.textContent = '—'; custoSub.textContent = 'sem acesso ao estoque e custos'; linhaCusto.replaceChildren(h('b', null, 'Custo real para a loja: '), 'aparece para quem tem acesso a Estoque e margem.'); };
       if (TS.custosLoja) TS.custosLoja().then((M) => {
         if (!M) return semAcesso();
         let c = 0, sem = 0;
@@ -906,6 +917,7 @@
         custoBox.textContent = compras ? fmt.pct(c / compras, 1) : '—';
         custoSub.textContent = `${fmt.brl0(c)} em prêmios${sem ? ` (${fmt.int(sem)} sem custo, fora)` : ''}`;
         custoPctFat.textContent = fat ? `${fmt.pct(c / fat, 1)} do faturamento total` : '';
+        linhaCusto.replaceChildren(h('b', null, 'Custo real para a loja: '), `custo dos prêmios ${fmt.brl0(c)} ÷ ${fmt.brl0(compras)} = ${compras ? fmt.pct(c / compras, 1) : '—'}; sobre o faturamento: ${fat ? fmt.pct(c / fat, 1) : '—'}. Custo do próprio prêmio no estoque ou, sem ele, o do produto normal${sem ? `; ${fmt.int(sem)} sem custo ficaram fora` : ''}.`);
       }).catch(semAcesso); else semAcesso();
     }
     const card = TS.card('Resgate de pontos', `Clientes que chegaram a ${fmt.int(min)} pontos (o mínimo para resgatar) no período · resgatou = fez um resgate em até ${fmt.int(prazo)} dias${fx.logsAte != null ? ` · logs do FIXE até ${fmt.date(TS.dayToIso(fx.logsAte))}` : ''}`,
@@ -914,16 +926,18 @@
           h('div', { class: 'rs-num' }, h('b', null, taxa == null ? '—' : fmt.pct(taxa, 0)), h('span', null, 'resgatam')),
           h('p', null, fechados ? `${fmt.int(sim.length)} de ${fmt.int(fechados)} clientes que chegaram a ${fmt.int(min)} pontos resgataram em até ${fmt.int(prazo)} dias.` : `Ninguém completou ainda os ${fmt.int(prazo)} dias de prazo.`,
             ab.length ? h('span', { class: 'muted' }, ` ${fmt.int(ab.length)} ${ab.length === 1 ? 'cliente ainda está' : 'clientes ainda estão'} no prazo e não entram na conta.`) : null)),
+        premios.length && curto ? h('div', { class: 'notice rs-aviso' }, `Período curto (${fmt.int(diasPer)} dias): os resgates de agora vêm de pontos ganhos meses antes, então o retorno do programa oscila. Para um número confiável use 12 meses.`) : null,
+        h('div', { class: 'rs-grupos' },
         grupo('Clientes',
-          stat('Resgataram', fmt.int(sim.length), mediana != null ? `em ${fmt.int(Math.round(mediana))} dias (mediana)` : null, `Fizeram um resgate até ${prazo} dias depois de chegar a ${min} pontos`, 'ok'),
+          stat('Resgataram', fmt.int(sim.length), mediana != null ? (mediana < 1 ? 'a maioria no mesmo dia em que chegou ao mínimo' : `metade em até ${fmt.int(Math.round(mediana))} dias`) : null, `Fizeram um resgate até ${prazo} dias depois de chegar a ${min} pontos`, 'ok'),
           stat('Não resgataram', fmt.int(nao.length), `passaram ${fmt.int(prazo)} dias sem resgate`, 'Chegaram ao mínimo e não resgataram dentro do prazo (alguns podem ter resgatado depois)', nao.length ? 'alerta' : null),
           stat('Ainda no prazo', fmt.int(ab.length), 'ficam fora do %', 'Chegaram ao mínimo há menos dias que o prazo: ainda podem resgatar')),
         grupo('Pontos no período',
           stat('Ganhos', fmt.int(ganhos), 'compras e boas-vindas'),
           stat('Resgatados', fmt.int(resg), ganhos ? `${fmt.pct(resg / ganhos, 0)} dos ganhos` : null),
           stat('Expirados', fmt.int(exp), ganhos ? `${fmt.pct(exp / ganhos, 0)} dos ganhos` : null, 'Pontos que venceram sem uso', exp ? 'alerta' : null)),
-        retornoGrupo,
-        h('small', { class: 'muted' }, `Cada cliente conta uma vez: a primeira vez no período em que o saldo válido chegou a ${min} pontos. Mínimo e prazo ficam em Configurações → Lojas → Integrações (regras dos pontos).`))
+        retornoGrupo),
+        conta)
         : TS.empty(`Nenhum cliente chegou a ${min} pontos no período.`));
     card.classList.add('fx-card');
     return card;
