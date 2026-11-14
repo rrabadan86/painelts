@@ -512,11 +512,16 @@
     for (const k of r.cupons) {
       const itens = k.itensFiltrados || k.itens;
       const tb = h('table', { class: 'cupom-items' });
-      for (const i of itens) tb.append(h('tr', { class: TS.rules.ids.taxas.has(db.desc[i]) ? 'taxa' : null, title: TS.rules.ids.taxas.has(db.desc[i]) ? 'Taxa: não soma no valor do cliente' : null }, h('td', null, db.D.descricao[db.desc[i]]), h('td', { class: 'r' }, `${fmt.int(db.qtd[i])} un.`), h('td', { class: 'r' }, fmt.brl(db.vt[i])), h('td', { class: 'r', style: { color: '#6B7A70' } }, db.D.vendedor[db.vend[i]])));
+      // item a R$ 0,01 = prêmio do programa de fidelidade (resgate)
+      const ehPremio = (i) => db.vu[i] != null && Math.abs(db.vu[i] - 0.01) < 1e-7;
+      for (const i of itens) tb.append(h('tr', { class: TS.rules.ids.taxas.has(db.desc[i]) ? 'taxa' : ehPremio(i) ? 'premio' : null, title: TS.rules.ids.taxas.has(db.desc[i]) ? 'Taxa: não soma no valor do cliente' : null },
+        h('td', null, db.D.descricao[db.desc[i]], ehPremio(i) ? h('span', { class: 'cli-tag t-premio' }, 'Resgate') : null), h('td', { class: 'r' }, `${fmt.int(db.qtd[i])} un.`), h('td', { class: 'r' }, fmt.brl(db.vt[i])), h('td', { class: 'r', style: { color: '#6B7A70' } }, db.D.vendedor[db.vend[i]])));
+      const temPremio = k.itens.some(ehPremio);
       if (!itens.length) tb.append(h('tr', null, h('td', { style: { color: '#6B7A70' } }, 'Cupom sem itens na planilha de vendas.')));
       const aviso = k.cpfFixe ? h('div', { class: 'cupom-aviso' }, 'Compra feita no CPF ', fmtCPF(c.cpf), ', mas foi usado o CPF ', cpfLink(k.cpfFixe, { cupom: k.cupom, day: k.day, cpfNota: c.cpf }), ' no FIXE. Clique no CPF para comparar os dois históricos.') : null;
       const el = h('div', { class: 'cupom' + (k.cpfFixe ? ' cupom-div' : '') + (destaque && destaque.cupom === k.cupom && destaque.day === k.day ? ' cupom-destaque' : '') }, aviso,
         h('div', { class: 'cupom-head' }, h('span', null, h('b', null, `Cupom ${k.cupom}`), ' · ', k.day != null ? fmt.date(TS.dayToIso(k.day)) : 'sem data', TS.db.opts.lojas.length > 1 ? ' · ' + k.loja : '',
+          temPremio ? h('span', { class: 'cli-tag t-premio', title: 'Cupom com prêmio do programa de fidelidade (item a R$ 0,01)' }, '★ Resgate') : null,
           k.origem === 'fixe' ? h('span', { class: 'cli-tag t-fixe', title: 'A nota saiu sem CPF; a compra foi ligada a este cliente pelos pontos lançados no FIXE (mesmo dia, hora e produtos).' }, 'CPF pelo FIXE') : null,
           k.fixeOk ? h('span', { class: 'cli-tag t-fixe-ok', title: 'Os pontos desta compra foram para o mesmo CPF da nota.' }, 'FIXE ✓') : null,
           k.cpfFixe ? h('span', { class: 'cli-tag t-semfixe', title: `Os pontos desta compra foram para outro CPF no FIXE (${fmtCPF(k.cpfFixe)}).` }, 'CPF diferente no FIXE') : null,
