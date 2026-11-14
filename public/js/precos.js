@@ -247,6 +247,46 @@
         tb, tf)));
   }
 
+  // ---------- venda: as mesmas informações do custo (antes → agora) + vendas mês a mês ----------
+  function blocoVenda(r) {
+    const db = TS.db;
+    const diaAt = r.ate, diaAnt = r.de != null ? r.de - 1 : r.custoEv[0]?.dia ?? diaAt;
+    const cAnt = r.custoNoDia(diaAnt).v, cAt = r.custoNoDia(diaAt).v;
+    const vAnt = r.vAnt ?? r.vAt, vAt = r.vAt;
+    const kgUn = r.comp.filter(([it]) => String(it.un || '').toLowerCase() === 'kg').reduce((a, [, q]) => a + q, 0);
+    const mudou = (a, b) => a != null && b != null && Math.abs(a - b) >= 0.005;
+    const linha = (rot, a, b, f, bomSobe = true, dica) => h('tr', null,
+      h('td', { class: 'l' }, h('div', null, rot), dica ? h('small', { class: 'muted' }, dica) : null),
+      h('td', null, h('span', { class: 'prc-aa' }, mudou(a, b) ? h('s', { class: 'muted' }, f(a)) : null, h('b', null, b == null ? '—' : f(b)),
+        mudou(a, b) && a ? h('span', { class: 'prc-badge ' + ((bomSobe ? b < a : b > a) ? 'prc-ruim' : 'prc-bom') }, f === fmt.pct ? `${b > a ? '+' : ''}${fmt.n1((b - a) * 100)} p.p.` : pctTxt(b / a - 1)) : null)));
+    const lb = (v, c) => (v != null && c != null ? v - c : null), mg = (v, c) => (v > 0 && c != null ? (v - c) / v : null);
+    const tab = h('table', { class: 'prc-comp' }, h('thead', null, h('tr', null, h('th', { class: 'l' }, 'Venda (1 unidade)'), h('th', null, 'Antes → agora'))), h('tbody', null,
+      linha('Preço de venda', vAnt, vAt, fmt.brl, true, 'preço de tabela praticado'),
+      kgUn > 0 ? linha('Preço de venda do kg', vAnt / kgUn, vAt / kgUn, fmt.brl, true, `${fmt.int(Math.round(kgUn * 1000))} g por unidade`) : null,
+      linha('Lucro bruto por unidade', lb(vAnt, cAnt), lb(vAt, cAt), fmt.brl, true, 'venda − custo'),
+      linha('Margem bruta', mg(vAnt, cAnt), mg(vAt, cAt), fmt.pct, true)));
+    // vendas mês a mês (últimos 6 meses com venda): unidades, preço médio pago, faturamento e margem bruta com o custo do mês
+    const meses = new Map();
+    for (let i = 0; i < db.n; i++) {
+      if (db.D.descricao[db.desc[i]] !== r.nome || !(db.qtd[i] > 0)) continue;
+      const m = meses.get(db.ym[i]) || meses.set(db.ym[i], { q: 0, vt: 0, ult: 0 }).get(db.ym[i]);
+      m.q += db.qtd[i]; m.vt += db.vt[i] || 0; if (db.day[i] > m.ult) m.ult = db.day[i];
+    }
+    const ult6 = [...meses.entries()].sort((a, b) => (a[0] < b[0] ? 1 : -1)).slice(0, 6);
+    const nomeMes = (ym) => `${['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'][+ym.slice(5) - 1]}/${ym.slice(2, 4)}`;
+    const tabM = ult6.length ? h('table', { class: 'prc-comp' },
+      h('thead', null, h('tr', null, h('th', { class: 'l' }, 'Mês'), h('th', null, 'Unidades'), h('th', { title: 'Faturamento ÷ unidades (com desconto)' }, 'Preço médio'), h('th', null, 'Faturamento'), h('th', { title: 'Com o custo de cada mês' }, 'Margem'))),
+      h('tbody', null, ...ult6.map(([ym, m]) => { const c = r.custoNoDia(m.ult).v; const pm = m.q ? m.vt / m.q : null; return h('tr', null,
+        h('td', { class: 'l' }, nomeMes(ym)), h('td', null, Number.isInteger(m.q) ? fmt.int(m.q) : fmt.n2(m.q)), h('td', null, fmt.brl(pm)), h('td', null, fmt.brl(m.vt)),
+        h('td', null, pm && c != null ? fmt.pct((pm - c) / pm) : '—')); }))) : null;
+    return h('div', null,
+      h('div', { class: 'f-label mt' }, 'Venda'),
+      h('div', { class: 'prc-comp-w' }, tab),
+      tabM ? h('div', { class: 'f-label mt' }, 'Vendas por mês') : null,
+      tabM ? h('div', { class: 'muted prc-nota' }, 'Últimos 6 meses com venda deste produto. Preço médio = o que foi pago de fato (com desconto); margem com o custo de cada mês.') : null,
+      tabM ? h('div', { class: 'prc-comp-w' }, tabM) : null);
+  }
+
   // ---------- painel lateral: gráfico + linha do tempo + simulador ----------
   function abrirProduto(r) {
     document.querySelector('.prc-drawer-camada')?.remove();
@@ -305,6 +345,7 @@
       h('div', { class: 'prc-graf' }, graf),
       h('div', { class: 'muted prc-nota' }, r.custoEv.some((e) => e.est) || !r.custoEv.some((e) => !e.inicio) ? 'O histórico de custo começa na primeira nota de compra (ou importação de estoque) que o painel tem; antes disso a linha de custo é estimada.' : ''),
       composicao(r),
+      blocoVenda(r),
       h('div', { class: 'f-label mt' }, 'Simular preço de venda'),
       h('div', { class: 'prc-sim' }, h('span', null, 'R$ '), inp, manter && Math.abs(manter - venda) > 0.01 ? h('button', { type: 'button', class: 'btn', onclick: () => { inp.value = (Math.ceil(manter * 10) / 10).toFixed(2); sim(); } }, `Voltar à margem de antes (${fmt.pct(r.mAnt)}): ${fmt.brl(Math.ceil(manter * 10) / 10)}`) : null),
       out, h('small', { class: 'muted' }, 'O painel só simula: o preço é alterado no AppNext.'),
