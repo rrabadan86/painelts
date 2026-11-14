@@ -242,6 +242,8 @@
     // menu Estoque e Margem (Estoque e margem · Pedido · Resultado): admin e franqueado veem tudo;
     // gerente só as telas liberadas em Configurações → Usuários
     const grupoEst = eu.pode?.configurar ? ['estoque', 'pedido', 'dre'] : ['estoque', 'pedido', 'dre'].filter((p) => (eu.telas || []).includes(p));
+    // Preços acompanha o Estoque e margem (mesma permissão)
+    if (grupoEst.includes('estoque')) grupoEst.splice(grupoEst.indexOf('estoque') + 1, 0, 'precos');
     TS.telasEstoque = grupoEst;
     if (grupoEst.length) {
       PAGES = [...PAGES.filter((p) => !grupoEst.includes(p)), ...grupoEst];

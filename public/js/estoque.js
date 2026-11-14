@@ -275,7 +275,7 @@
 
   /** submenu do menu Estoque e Margem */
   TS.subEstoque = (atual) => h('nav', { class: 'submenu', 'aria-label': 'Estoque' },
-    [['estoque', 'Estoque e margem'], ['pedido', 'Pedido'], ['dre', 'Resultado']].filter(([p]) => !TS.telasEstoque || TS.telasEstoque.includes(p)).map(([p, t]) => h('a', { href: '#' + p, class: p === atual ? 'on' : null, 'aria-current': p === atual ? 'page' : null }, t)));
+    [['estoque', 'Estoque e margem'], ['precos', 'Preços'], ['pedido', 'Pedido'], ['dre', 'Resultado']].filter(([p]) => !TS.telasEstoque || TS.telasEstoque.includes(p)).map(([p, t]) => h('a', { href: '#' + p, class: p === atual ? 'on' : null, 'aria-current': p === atual ? 'page' : null }, t)));
   TS.pages.estoque = function (root) {
     root.append(TS.subEstoque('estoque'));
     root.append(h('div', { class: 'page-head' }, h('div', null, h('h1', { class: 'page-title' }, 'Estoque e margem'),
@@ -1000,7 +1000,7 @@
       rows: parados, sortKey: 'valor', maxHeight: '420px', cls: 'est-t', empty: 'Nada parado. 👏',
     }))));
 
-    { const c = cartaoCustos(); if (c) corpo.append(h('div', { class: 'mt' }, c)); }
+    corpo.append(h('p', { class: 'muted mt' }, 'Reajustes de custo e de venda e o efeito na margem de cada produto: ', h('a', { href: '#precos' }, 'Estoque e Margem → Preços'), '.'));
 
     // ---------- conferência ----------
     const sc = [...semCusto.values()].map((x) => (x.granel ? { ...x, tamanhos: tamTxt(x.tam) } : x)).sort((a, b) => b.vt - a.vt);
