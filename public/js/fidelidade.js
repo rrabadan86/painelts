@@ -165,7 +165,43 @@
     return { membros: m, logsAte };
   }
 
+  /**
+   * Resgate dos clientes que juntaram pontos suficientes. Para cada CPF, em ordem de data:
+   * fica "elegível" no dia em que o saldo válido chega ao mínimo de resgate; "resgatou" se fizer um resgate até
+   * `prazo` dias depois; "em aberto" se o prazo ainda não acabou na data dos Logs; senão "não resgatou".
+   * Depois de um resgate o cliente pode ficar elegível de novo (novo ciclo).
+   */
+  function resgates(movs, { min, prazo, ate }) {
+    const porChave = new Map();
+    for (const m of movs) { if (m.anulado) continue; const k = m.base.id + '|' + m.cpf; let a = porChave.get(k); if (!a) porChave.set(k, (a = [])); a.push(m); }
+    const ciclos = []; // { cpf, E, fim, res: 'sim'|'nao'|'aberto', dias }
+    for (const lista of porChave.values()) {
+      const { validadeMeses } = lista[0].base.regras;
+      lista.sort((a, b) => a.day - b.day || (a.min ?? 0) - (b.min ?? 0));
+      const lotes = [];
+      const valido = (day) => lotes.reduce((s, l) => s + (l.vence > day ? l.resta : 0), 0);
+      let aberto = null, podeAbrir = true; // depois de um ciclo sem resgate, só abre outro após resgatar ou o saldo cair abaixo do mínimo
+      const fecha = (res, day) => { ciclos.push({ cpf: lista[0].cpf, E: aberto, res, dias: day != null ? day - aberto : null }); aberto = null; };
+      for (const m of lista) {
+        // prazo vencido antes deste movimento: o ciclo fecha sem resgate
+        if (aberto != null && m.day - aberto > prazo) { fecha('nao'); podeAbrir = false; }
+        if ((m.tipo === 'pontos' || m.tipo === 'boasvindas') && m.pontos > 0) lotes.push({ vence: addMeses(m.day, validadeMeses), resta: m.pontos });
+        else if (m.tipo === 'resgate' || m.tipo === 'expirou') {
+          if (m.tipo === 'resgate') { if (aberto != null) fecha('sim', m.day); podeAbrir = true; }
+          let falta = m.pontos;
+          for (const l of lotes) { if (!falta) break; const t = Math.min(l.resta, falta); l.resta -= t; falta -= t; }
+        }
+        const v = valido(m.day);
+        if (v < min) podeAbrir = true;
+        else if (aberto == null && podeAbrir) aberto = m.day;
+      }
+      if (aberto != null) fecha(ate - aberto > prazo ? 'nao' : 'aberto');
+    }
+    return ciclos;
+  }
+
   TS.fx = {
+    resgates,
     tem: () => !!(TS.db.fidelidade && TS.db.fidelidade.some((b) => (b.ev && b.ev.length) || (b.membros && b.membros.length))),
     preparar() {
       const movs = movimentos();

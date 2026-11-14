@@ -330,8 +330,12 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     const rpp = Number(String(b.reaisPorPonto ?? '').replace(',', '.')), val = Number(b.validadeMeses);
     if (!(rpp > 0 && rpp <= 10000)) return res.status(400).json({ erro: 'Informe quantos reais valem 1 ponto.' });
     if (!(Number.isInteger(val) && val >= 1 && val <= 120)) return res.status(400).json({ erro: 'Informe a validade dos pontos em meses (1 a 120).' });
-    C.alterar((cfg) => { const l = cfg.lojas.find((x) => x.id === req.loja.id); l.fidelidade = { reaisPorPonto: Math.round(rpp * 100) / 100, validadeMeses: val }; });
-    aud(req, 'alterou regras da fidelidade', req.loja.id, { loja: req.loja.id, reaisPorPonto: rpp, validadeMeses: val });
+    const atual = require('./fidelidade').regrasDe(req.loja);
+    const minR = b.minResgate == null || b.minResgate === '' ? atual.minResgate : Number(b.minResgate), prazo = b.prazoResgate == null || b.prazoResgate === '' ? atual.prazoResgate : Number(b.prazoResgate);
+    if (!(Number.isInteger(minR) && minR >= 1 && minR <= 1000)) return res.status(400).json({ erro: 'Mínimo para resgatar: de 1 a 1000 pontos.' });
+    if (!(Number.isInteger(prazo) && prazo >= 7 && prazo <= 730)) return res.status(400).json({ erro: 'Prazo para resgatar: de 7 a 730 dias.' });
+    C.alterar((cfg) => { const l = cfg.lojas.find((x) => x.id === req.loja.id); l.fidelidade = { reaisPorPonto: Math.round(rpp * 100) / 100, validadeMeses: val, minResgate: minR, prazoResgate: prazo }; });
+    aud(req, 'alterou regras da fidelidade', req.loja.id, { loja: req.loja.id, reaisPorPonto: rpp, validadeMeses: val, minResgate: minR, prazoResgate: prazo });
     depois(req.loja.id);
     res.json({ ok: true });
   });

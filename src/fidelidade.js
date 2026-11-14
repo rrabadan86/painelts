@@ -112,12 +112,15 @@ function membros(id) {
   try { return JSON.parse(zlib.gunzipSync(fs.readFileSync(arqMembros(id))).toString('utf8')); } catch { return null; }
 }
 
-const REGRAS_PADRAO = { reaisPorPonto: 50, validadeMeses: 12 };
+// minResgate: pontos para poder resgatar; prazoResgate: dias que o cliente tem para resgatar (indicador da tela Clientes)
+const REGRAS_PADRAO = { reaisPorPonto: 50, validadeMeses: 12, minResgate: 6, prazoResgate: 90 };
 function regrasDe(loja) {
   const r = (loja && loja.fidelidade) || {};
   return {
     reaisPorPonto: r.reaisPorPonto > 0 ? +r.reaisPorPonto : REGRAS_PADRAO.reaisPorPonto,
     validadeMeses: r.validadeMeses > 0 ? Math.round(+r.validadeMeses) : REGRAS_PADRAO.validadeMeses,
+    minResgate: r.minResgate > 0 ? Math.round(+r.minResgate) : REGRAS_PADRAO.minResgate,
+    prazoResgate: r.prazoResgate > 0 ? Math.round(+r.prazoResgate) : REGRAS_PADRAO.prazoResgate,
   };
 }
 

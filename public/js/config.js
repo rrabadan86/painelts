@@ -476,11 +476,14 @@
     if (est.perfil === 'admin' || est.perfil === 'franqueado') {
       const rg = fx.fidelidade || { reaisPorPonto: 50, validadeMeses: 12 };
       const rpp = inp({ type: 'number', min: 1, step: '0.01', value: rg.reaisPorPonto }), val = inp({ type: 'number', min: 1, max: 120, step: 1, value: rg.validadeMeses });
+      const minR = inp({ type: 'number', min: 1, max: 1000, step: 1, value: rg.minResgate ?? 6 }), prazoR = inp({ type: 'number', min: 7, max: 730, step: 1, value: rg.prazoResgate ?? 90 });
       b.append(h('h4', { class: 'cfg-sub' }, 'Regras dos pontos'),
         h('div', { class: 'cfg-grid' },
           campo('Reais por ponto (R$)', rpp, 'Quanto a compra precisa somar para ganhar 1 ponto. Usado para conferir se um cupom é a compra lançada no FIXE.'),
-          campo('Validade dos pontos (meses)', val, 'Depois disso o ponto vence. Usado no saldo e no aviso "Pontos vencendo" da tela Clientes.')),
-        h('div', { class: 'cfg-acoes' }, acao('Salvar regras', async () => { await api('PUT', `/lojas/${l.id}/fidelidade`, { reaisPorPonto: rpp.value, validadeMeses: val.value }); return 'Regras salvas. O painel recalcula na próxima carga.'; })));
+          campo('Validade dos pontos (meses)', val, 'Depois disso o ponto vence. Usado no saldo e no aviso "Pontos vencendo" da tela Clientes.'),
+          campo('Mínimo para resgatar (pontos)', minR, 'A partir de quantos pontos o cliente pode resgatar. Define quem entra no indicador "Resgate de pontos" da tela Clientes.'),
+          campo('Prazo para resgatar (dias)', prazoR, 'Quantos dias depois de chegar ao mínimo o resgate ainda conta como "resgatou" no indicador.')),
+        h('div', { class: 'cfg-acoes' }, acao('Salvar regras', async () => { await api('PUT', `/lojas/${l.id}/fidelidade`, { reaisPorPonto: rpp.value, validadeMeses: val.value, minResgate: +minR.value, prazoResgate: +prazoR.value }); return 'Regras salvas. O painel recalcula na próxima carga.'; })));
     }
     return b;
   }

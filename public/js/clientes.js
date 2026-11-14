@@ -64,7 +64,7 @@
     }
     // FIXE: compras do programa de fidelidade ligadas aos cupons (o FIXE não tem o número do cupom)
     const fx = TS.fx && TS.fx.tem() ? TS.fx.preparar() : null;
-    const fixe = fx ? { alvos: fx.alvos, ligadas: fx.lig.length, confirmadas: 0, porFixe: 0, divergencias: [], semCupom: fx.semCupom, bases: fx.bases } : null;
+    const fixe = fx ? { alvos: fx.alvos, ligadas: fx.lig.length, confirmadas: 0, porFixe: 0, divergencias: [], semCupom: fx.semCupom, bases: fx.bases, movs: fx.movs } : null;
     if (fx) {
       for (const { m, c: cv } of fx.lig) {
         const x = cupomXml.get(cv.lojaId + '|' + cv.day + '|' + cv.cupom);
@@ -372,7 +372,7 @@
         ` e ficaram de fora das contas${TS.cli.soSemVenda ? ` (${fmt.int(TS.cli.soSemVenda)} CPFs só têm cupons assim)` : ''}. Normalmente são vendas fora do período importado ou números de cupom que não batem com o relatório de vendas.`));
     }
 
-    if (TS.cli.fixe) root.append(cartaoFixe(TS.cli.fixe));
+    if (TS.cli.fixe) { const cr = cartaoResgate(TS.cli.fixe); if (cr) root.append(cr); root.append(cartaoFixe(TS.cli.fixe)); }
 
     const ordem = s.ordem;
     const ORD = { recente: (a, b) => (b.c.ultima ?? -1) - (a.c.ultima ?? -1), valor: (a, b) => b.vt - a.vt, visitas: (a, b) => b.visitas - a.visitas, ausencia: (a, b) => (b.c.ausencia ?? -1) - (a.c.ausencia ?? -1), nome: (a, b) => (a.c.nome || 'zzz').localeCompare(b.c.nome || 'zzz', 'pt-BR') };
@@ -809,6 +809,52 @@
     document.body.append(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   }
+  // ---------- resgate de pontos: dos clientes que chegaram ao mínimo para resgatar, quantos resgataram no prazo ----------
+  function cartaoResgate(fx) {
+    if (!fx.movs || !fx.movs.length) return null;
+    const rg = (fx.bases.find((b) => b.ev && b.ev.length) || {}).regras || {};
+    const min = rg.minResgate || 6, prazo = rg.prazoResgate || 90;
+    const ate = fx.logsAte ?? TS.todayDay();
+    const noPer = noPeriodoCli() || (() => true);
+    // um ciclo por cliente: o primeiro em que ficou elegível dentro do período
+    const porCpf = new Map();
+    for (const c of TS.fx.resgates(fx.movs, { min, prazo, ate })) if (noPer(c.E) && !porCpf.has(c.cpf)) porCpf.set(c.cpf, c);
+    const cs = [...porCpf.values()];
+    const sim = cs.filter((c) => c.res === 'sim'), nao = cs.filter((c) => c.res === 'nao'), ab = cs.filter((c) => c.res === 'aberto');
+    const fechados = sim.length + nao.length;
+    const dias = sim.map((c) => c.dias).sort((a, b) => a - b);
+    const mediana = dias.length ? (dias.length % 2 ? dias[(dias.length - 1) / 2] : (dias[dias.length / 2 - 1] + dias[dias.length / 2]) / 2) : null;
+    // pontos que se moveram no período (ganhos, resgatados, expirados)
+    let ganhos = 0, resg = 0, exp = 0;
+    for (const m of fx.movs) {
+      if (m.anulado || !noPer(m.day)) continue;
+      if ((m.tipo === 'pontos' || m.tipo === 'boasvindas') && m.pontos > 0) ganhos += m.pontos;
+      else if (m.tipo === 'resgate') resg += m.pontos;
+      else if (m.tipo === 'expirou') exp += m.pontos;
+    }
+    const stat = (rot, val, sub, dica, cls) => h('div', { class: 'fx-stat' + (cls ? ' ' + cls : ''), title: dica || null }, h('span', null, rot), h('b', null, val), sub ? h('small', null, sub) : null);
+    const grupo = (titulo, ...itens) => h('div', { class: 'fx-grupo' }, h('div', { class: 'fx-grupo-tit' }, titulo), h('div', { class: 'fx-stats' }, ...itens.filter(Boolean)));
+    const taxa = fechados ? sim.length / fechados : null;
+    const card = TS.card('Resgate de pontos', `Clientes que chegaram a ${fmt.int(min)} pontos (o mínimo para resgatar) no período · resgatou = fez um resgate em até ${fmt.int(prazo)} dias${fx.logsAte != null ? ` · logs do FIXE até ${fmt.date(TS.dayToIso(fx.logsAte))}` : ''}`,
+      cs.length ? h('div', null,
+        h('div', { class: 'rs-topo' },
+          h('div', { class: 'rs-num' }, h('b', null, taxa == null ? '—' : fmt.pct(taxa, 0)), h('span', null, 'resgatam')),
+          h('p', null, fechados ? `${fmt.int(sim.length)} de ${fmt.int(fechados)} clientes que chegaram a ${fmt.int(min)} pontos resgataram em até ${fmt.int(prazo)} dias.` : `Ninguém completou ainda os ${fmt.int(prazo)} dias de prazo.`,
+            ab.length ? h('span', { class: 'muted' }, ` ${fmt.int(ab.length)} ${ab.length === 1 ? 'cliente ainda está' : 'clientes ainda estão'} no prazo e não entram na conta.`) : null)),
+        grupo('Clientes',
+          stat('Resgataram', fmt.int(sim.length), mediana != null ? `em ${fmt.int(Math.round(mediana))} dias (mediana)` : null, `Fizeram um resgate até ${prazo} dias depois de chegar a ${min} pontos`, 'ok'),
+          stat('Não resgataram', fmt.int(nao.length), `passaram ${fmt.int(prazo)} dias sem resgate`, 'Chegaram ao mínimo e não resgataram dentro do prazo (alguns podem ter resgatado depois)', nao.length ? 'alerta' : null),
+          stat('Ainda no prazo', fmt.int(ab.length), 'ficam fora do %', 'Chegaram ao mínimo há menos dias que o prazo: ainda podem resgatar')),
+        grupo('Pontos no período',
+          stat('Ganhos', fmt.int(ganhos), 'compras e boas-vindas'),
+          stat('Resgatados', fmt.int(resg), ganhos ? `${fmt.pct(resg / ganhos, 0)} dos ganhos` : null),
+          stat('Expirados', fmt.int(exp), ganhos ? `${fmt.pct(exp / ganhos, 0)} dos ganhos` : null, 'Pontos que venceram sem uso', exp ? 'alerta' : null)),
+        h('small', { class: 'muted' }, `Cada cliente conta uma vez: a primeira vez no período em que o saldo válido chegou a ${min} pontos. Mínimo e prazo ficam em Configurações → Lojas → Integrações (regras dos pontos).`))
+        : TS.empty(`Nenhum cliente chegou a ${min} pontos no período.`));
+    card.classList.add('fx-card');
+    return card;
+  }
+
   function cartaoFixe(fx) {
     const em = (fx.bases || []).map((b) => b.em).filter(Boolean).sort()[0];
     const nomes = (fx.bases || []).map((b) => b.lojas.filter((n, i) => b.propria[i]).join(' / ')).filter(Boolean).join(' · ');
