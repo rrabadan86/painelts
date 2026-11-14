@@ -733,7 +733,7 @@
     const hoje = TS.todayDay();
     const d = (day) => fmt.date(TS.dayToIso(day));
     const varia = c.gasto12ant > 0 ? c.gasto12 / c.gasto12ant - 1 : null;
-    const item = (rot, val, dica) => (val == null || val === '' ? null : h('div', { class: 'fi', title: dica || null }, h('span', null, rot), h('b', null, val)));
+    const item = (rot, val, dica) => (val == null || val === '' ? null : h('div', { class: 'fi' }, h('span', null, rot, TS.dica(dica)), h('b', null, val)));
     const bloco = (titulo, ...itens) => { const v = itens.filter(Boolean); return v.length ? h('div', { class: 'fi-bloco' }, h('div', { class: 'fi-tit' }, titulo), ...v) : null; };
     const tel = fmtTel(c.celular);
     const prox = c.intervalo ? Math.round(c.ultima + c.intervalo) : null;
@@ -774,7 +774,7 @@
   function blocoFidelidade(c) {
     const f = c.fx;
     const d = (day) => fmt.date(TS.dayToIso(day));
-    const item = (rot, val, dica) => (val == null || val === '' ? null : h('div', { class: 'fi', title: dica || null }, h('span', null, rot), h('b', null, val)));
+    const item = (rot, val, dica) => (val == null || val === '' ? null : h('div', { class: 'fi' }, h('span', null, rot, TS.dica(dica)), h('b', null, val)));
     const sem = c.cupons.filter((k) => k.semFixe);
     const linhaSem = sem.length ? item('Compras sem FIXE', `${fmt.int(sem.length)}${sem.reduce((t, k) => t + k.ptsPerdidos, 0) ? ` · ${fmt.int(sem.reduce((t, k) => t + k.ptsPerdidos, 0))} pts não lançados` : ''}`, 'Compras com o CPF na nota sem lançamento no FIXE no dia. Os cupons estão marcados "Sem FIXE" abaixo.') : null;
     if (!f) {
@@ -832,9 +832,56 @@
       else if (m.tipo === 'resgate') resg += m.pontos;
       else if (m.tipo === 'expirou') exp += m.pontos;
     }
-    const stat = (rot, val, sub, dica, cls) => h('div', { class: 'fx-stat' + (cls ? ' ' + cls : ''), title: dica || null }, h('span', null, rot), h('b', null, val), sub ? h('small', null, sub) : null);
+    const stat = (rot, val, sub, dica, cls) => h('div', { class: 'fx-stat' + (cls ? ' ' + cls : '') }, h('span', null, rot, TS.dica(dica)), h('b', null, val), sub ? h('small', null, sub) : null);
     const grupo = (titulo, ...itens) => h('div', { class: 'fx-grupo' }, h('div', { class: 'fx-grupo-tit' }, titulo), h('div', { class: 'fx-stats' }, ...itens.filter(Boolean)));
     const taxa = fechados ? sim.length / fechados : null;
+    // ---- retorno do programa: o que a loja devolveu em prêmios (no caixa os prêmios saem a R$ 0,01)
+    const db = TS.db, rpp = rg.reaisPorPonto || 50;
+    const precoNormal = new Map(); // descrição → preço de tabela mais comum (vendas normais do último ano)
+    const premios = [];
+    let fat = 0;
+    const desdeAno = TS.todayDay() - 365;
+    for (let i = 0; i < db.n; i++) {
+      const vu = db.vu[i];
+      if (vu != null && Math.abs(vu - 0.01) < 1e-7) { if (noPer(db.day[i]) && db.qtd[i] > 0) premios.push(i); continue; }
+      if (noPer(db.day[i]) && !TS.rules.ids.taxas.has(db.desc[i])) fat += db.vt[i] || 0;
+      if (vu >= 0.05 && db.qtd[i] > 0) {
+        // preço do último ano; produto que só vendeu antes disso usa o preço mais antigo (peso menor)
+        let m = precoNormal.get(db.desc[i]); if (!m) precoNormal.set(db.desc[i], (m = new Map()));
+        const k = Math.round(vu * 100) / 100; m.set(k, (m.get(k) || 0) + db.qtd[i] * (db.day[i] >= desdeAno ? 1000 : 1));
+      }
+    }
+    const moda = (m) => { let b = null, n = -1; for (const [v, q] of m) if (q > n) { b = v; n = q; } return b; };
+    let valorPremios = 0, semPreco = 0, nPremios = 0;
+    for (const i of premios) {
+      nPremios += db.qtd[i];
+      const m = precoNormal.get(db.desc[i]);
+      if (m) valorPremios += moda(m) * db.qtd[i]; else semPreco += db.qtd[i];
+    }
+    const compras = ganhos * rpp; // compras que geraram pontos
+    const prometido = resg ? valorPremios / (resg * rpp) : null; // valor do prêmio ÷ gasto que os pontos representam
+    const diasPer = (() => { const pp = state.cli.per; const de = pp.de ?? db.minDay, a = pp.ate ?? db.maxDay; return pp.mes && !pp.ano ? 31 : a - de + 1; })();
+    const curto = diasPer < 180;
+    const custoBox = h('b', null, '…'), custoSub = h('small', null, 'calculando o custo dos prêmios');
+    const custoPctFat = h('small', null);
+    const retornoGrupo = premios.length ? h('div', { class: 'fx-grupo' }, h('div', { class: 'fx-grupo-tit' }, 'Retorno do programa (prêmios entregues no período)'),
+      curto ? h('div', { class: 'notice rs-aviso' }, `Período curto (${fmt.int(diasPer)} dias): os resgates de agora vêm de pontos ganhos meses antes, então o retorno oscila. Para um número confiável use 12 meses.`) : null,
+      h('div', { class: 'fx-stats' },
+        stat('Prometido no resgate', prometido == null ? '—' : fmt.pct(prometido, 1), `valor do prêmio ÷ gasto de R$ ${fmt.int(rpp)} por ponto`, `Quanto o cliente recebe quando resgata: valor dos prêmios ÷ (pontos resgatados × R$ ${rpp}). Comparável à tabela de prêmios da franquia.`),
+        stat('Retorno efetivo ao cliente', compras ? fmt.pct(valorPremios / compras, 1) : '—', fat ? `${fmt.pct(valorPremios / fat, 1)} do faturamento total` : null, `Valor de venda dos prêmios entregues ÷ compras que geraram pontos no período (pontos ganhos × R$ ${rpp}). Menor que o prometido porque nem todos resgatam e pontos vencem. Abaixo: o mesmo valor sobre todo o faturamento da loja.`, 'ok'),
+        h('div', { class: 'fx-stat ok' }, h('span', null, 'Custo real para a loja', TS.dica('Custo dos produtos dados como prêmio (o que a loja gastou de fato) ÷ compras que geraram pontos. Abaixo: sobre todo o faturamento.')), custoBox, custoSub, custoPctFat)),
+      h('small', { class: 'muted' }, `${fmt.int(nPremios)} prêmios saíram no caixa a R$ 0,01 (valor de venda ${fmt.brl0(valorPremios)})${semPreco ? `; ${fmt.int(semPreco)} sem preço de venda conhecido ficaram fora` : ''} · ${fmt.int(resg)} pontos resgatados no FIXE · compras que geraram pontos: ${fmt.brl0(compras)} · faturamento: ${fmt.brl0(fat)}.`)) : null;
+    if (retornoGrupo) {
+      const semAcesso = () => { custoBox.textContent = '—'; custoSub.textContent = 'sem acesso ao estoque e custos'; };
+      if (TS.custosLoja) TS.custosLoja().then((M) => {
+        if (!M) return semAcesso();
+        let c = 0, sem = 0;
+        for (const i of premios) { const x = M.custo(i); if (x == null) sem += db.qtd[i]; else c += x; }
+        custoBox.textContent = compras ? fmt.pct(c / compras, 1) : '—';
+        custoSub.textContent = `${fmt.brl0(c)} em prêmios${sem ? ` (${fmt.int(sem)} sem custo, fora)` : ''}`;
+        custoPctFat.textContent = fat ? `${fmt.pct(c / fat, 1)} do faturamento total` : '';
+      }).catch(semAcesso); else semAcesso();
+    }
     const card = TS.card('Resgate de pontos', `Clientes que chegaram a ${fmt.int(min)} pontos (o mínimo para resgatar) no período · resgatou = fez um resgate em até ${fmt.int(prazo)} dias${fx.logsAte != null ? ` · logs do FIXE até ${fmt.date(TS.dayToIso(fx.logsAte))}` : ''}`,
       cs.length ? h('div', null,
         h('div', { class: 'rs-topo' },
@@ -849,6 +896,7 @@
           stat('Ganhos', fmt.int(ganhos), 'compras e boas-vindas'),
           stat('Resgatados', fmt.int(resg), ganhos ? `${fmt.pct(resg / ganhos, 0)} dos ganhos` : null),
           stat('Expirados', fmt.int(exp), ganhos ? `${fmt.pct(exp / ganhos, 0)} dos ganhos` : null, 'Pontos que venceram sem uso', exp ? 'alerta' : null)),
+        retornoGrupo,
         h('small', { class: 'muted' }, `Cada cliente conta uma vez: a primeira vez no período em que o saldo válido chegou a ${min} pontos. Mínimo e prazo ficam em Configurações → Lojas → Integrações (regras dos pontos).`))
         : TS.empty(`Nenhum cliente chegou a ${min} pontos no período.`));
     card.classList.add('fx-card');
@@ -899,7 +947,7 @@
       h('p', { class: 'muted' }, 'O FIXE não guarda o número do cupom. O painel procura, na mesma loja e no mesmo dia, o cupom com hora próxima (até 2 h), os mesmos produtos e o valor que daria os pontos lançados. Só liga quando um cupom é claramente o melhor; na dúvida, deixa sem ligar.'),
       h('p', { class: 'muted' }, `"Venda sem FIXE" só olha compras entre o cadastro do cliente no FIXE e a data dos Logs${fx.logsAte != null ? ` (${d(fx.logsAte)})` : ''}; qualquer movimento do CPF no FIXE no mesmo dia conta como venda que passou pelo FIXE.`),
       nomes ? h('p', { class: 'muted' }, `Lojas do FIXE consideradas desta loja: ${nomes}. As outras aparecem como "outras lojas da rede" na ficha do cliente.`) : null));
-    const stat = (rot, val, sub, dica, cls) => h('div', { class: 'fx-stat' + (cls ? ' ' + cls : ''), title: dica || null }, h('span', null, rot), h('b', null, val), sub ? h('small', null, sub) : null);
+    const stat = (rot, val, sub, dica, cls) => h('div', { class: 'fx-stat' + (cls ? ' ' + cls : '') }, h('span', null, rot, TS.dica(dica)), h('b', null, val), sub ? h('small', null, sub) : null);
     const grupo = (titulo, ...itens) => { const v = itens.filter(Boolean); return v.length ? h('div', { class: 'fx-grupo' }, h('div', { class: 'fx-grupo-tit' }, titulo), h('div', { class: 'fx-stats' }, ...v)) : null; };
     const card = TS.card('Fidelidade (FIXE)', `Compras do programa de fidelidade ligadas aos cupons de venda${em ? ` · logs de ${fmt.date(em.slice(0, 10))}` : ''} · clique num CPF para ver o histórico`,
       fx.temLogs ? grupo('Ligação das compras do FIXE aos cupons',

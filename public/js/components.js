@@ -153,14 +153,42 @@
   }
 
   // ---------- cartões ----------
+  // ⓘ: explicação do cartão (passa o mouse ou toca); o texto vem do próprio cartão ou de TS.DICAS pelo título
+  let balao = null;
+  const fecharBalao = () => { if (balao) { balao.remove(); balao = null; } };
+  const abrirBalao = (alvo, texto) => {
+    fecharBalao();
+    balao = h('div', { class: 'dica-balao', role: 'tooltip' }, texto);
+    balao._alvo = alvo; balao._em = Date.now();
+    document.body.append(balao);
+    const r = alvo.getBoundingClientRect(), b = balao.getBoundingClientRect(), m = 8;
+    let x = r.left + r.width / 2 - b.width / 2; x = Math.max(m, Math.min(x, window.innerWidth - b.width - m));
+    let y = r.bottom + 6; if (y + b.height > window.innerHeight - m) y = Math.max(m, r.top - b.height - 6);
+    balao.style.left = x + 'px'; balao.style.top = y + 'px';
+  };
+  document.addEventListener('scroll', fecharBalao, true);
+  document.addEventListener('pointerdown', (e) => { if (balao && !e.target.closest('.dica-i')) fecharBalao(); });
+  TS.dica = (texto) => {
+    if (!texto) return null;
+    const el = h('button', { type: 'button', class: 'dica-i', 'aria-label': 'O que é isto: ' + texto }, 'i');
+    // passar o mouse abre; no toque (celular) só o clique abre e fecha
+    el.addEventListener('pointerenter', (e) => { if (e.pointerType === 'mouse') abrirBalao(el, texto); });
+    el.addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse') fecharBalao(); });
+    // no celular o toque também dispara o "mouseenter": o clique logo depois não pode fechar o balão
+    el.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); if (balao && balao._alvo === el && Date.now() - balao._em > 400) fecharBalao(); else if (!balao || balao._alvo !== el) abrirBalao(el, texto); });
+    return el;
+  };
+  const tituloCom = (title, cls) => { const d = TS.dicaDe && typeof title === 'string' ? TS.dica(TS.dicaDe(title)) : null; return h('div', { class: cls }, title, d); };
   TS.card = (title, sub, ...body) => h('div', { class: 'card' },
-    (title || sub) ? h('div', { class: 'card-head' }, h('div', null, h('div', { class: 'card-title' }, title), sub ? h('div', { class: 'card-sub' }, sub) : null)) : null,
+    (title || sub) ? h('div', { class: 'card-head' }, h('div', null, tituloCom(title, 'card-title'), sub ? h('div', { class: 'card-sub' }, sub) : null)) : null,
     ...body);
   TS.cardWithTools = (title, sub, tools, ...body) => h('div', { class: 'card' },
-    h('div', { class: 'card-head' }, h('div', null, h('div', { class: 'card-title' }, title), sub ? h('div', { class: 'card-sub' }, sub) : null), tools),
+    h('div', { class: 'card-head' }, h('div', null, tituloCom(title, 'card-title'), sub ? h('div', { class: 'card-sub' }, sub) : null), tools),
     ...body);
-  TS.kpi = (label, value, foot, title) => h('div', { class: 'card kpi', title: title || null },
-    h('div', { class: 'kpi-label' }, label), h('div', { class: 'kpi-value' }, value), foot ? h('div', { class: 'kpi-foot' }, foot) : null);
+  // explicação do indicador: a que veio no código; se for curta (ex.: "Faturamento ÷ cupons"), a do dicionário, mais completa
+  const dicaKpi = (label, title) => { const d = TS.dicaDe && TS.dicaDe(label); return title && (title.length >= 40 || !d) ? title : d || title; };
+  TS.kpi = (label, value, foot, title) => h('div', { class: 'card kpi' },
+    h('div', { class: 'kpi-label' }, label, TS.dica(dicaKpi(label, title))), h('div', { class: 'kpi-value' }, value), foot ? h('div', { class: 'kpi-foot' }, foot) : null);
   TS.deltaSpan = (v) => h('span', { class: v > 0 ? 'up' : v < 0 ? 'down' : '' }, fmt.delta(v));
   TS.section = (t) => h('div', { class: 'section-label' }, t);
   TS.empty = (t = 'Sem dados para os filtros escolhidos.') => h('div', { class: 'empty' }, t);
