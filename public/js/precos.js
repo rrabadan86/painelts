@@ -216,7 +216,7 @@
       return { it, q, cAnt, cAt, tAnt: cAnt != null ? cAnt * q : null, tAt: cAt != null ? cAt * q : null, o };
     });
     const totAt = linhas.reduce((a, l) => a + (l.tAt || 0), 0), totAnt = linhas.reduce((a, l) => a + (l.tAnt || 0), 0);
-    const venda = r.vAt, vendaAnt = r.vAnt ?? r.vAt;
+    const venda = r.vAt;
     const mudou = (a, b) => a != null && b != null && Math.abs(a - b) >= 0.005;
     // custo subindo = vermelho; venda subindo = verde
     const badge = (a, b, venda) => (mudou(a, b) && a ? h('span', { class: 'prc-badge ' + ((venda ? b < a : b > a) ? 'prc-ruim' : 'prc-bom') }, pctTxt(b / a - 1)) : null);
@@ -227,12 +227,9 @@
       h('td', null, antesAgora(l.tAnt, l.tAt)),
       h('td', null, totAt ? fmt.pct((l.tAt || 0) / totAt) : '—'),
       h('td', null, venda ? fmt.pct((l.tAt || 0) / venda) : '—'))));
-    const mAnt = vendaAnt ? (vendaAnt - totAnt) / vendaAnt : null, mAt = venda ? (venda - totAt) / venda : null;
+    // a venda e a margem ficam no bloco Venda, logo abaixo (sem repetir aqui)
     const tf = h('tfoot', null, h('tr', null,
-      h('td', { class: 'l' }, h('b', null, 'Custo da unidade')), h('td'), h('td', null, antesAgora(totAnt, totAt)), h('td', null, '100%'), h('td', null, venda ? fmt.pct(totAt / venda) : '—')),
-      h('tr', null, h('td', { class: 'l' }, h('b', null, 'Venda · margem bruta')), h('td'),
-        h('td', null, antesAgora(vendaAnt, venda, '', true)), h('td'),
-        h('td', null, mAt == null ? '—' : h('span', { class: 'prc-aa' }, mudou(mAnt, mAt) && Math.abs(mAt - mAnt) >= 0.0005 ? h('s', { class: 'muted' }, fmt.pct(mAnt)) : null, h('b', { class: mAnt != null && mAt < mAnt - 0.0005 ? 'neg' : null }, fmt.pct(mAt))))));
+      h('td', { class: 'l' }, h('b', null, 'Custo da unidade')), h('td'), h('td', null, antesAgora(totAnt, totAt)), h('td', null, '100%'), h('td', null, venda ? fmt.pct(totAt / venda) : '—')));
     // quem explica a variação do custo
     const dif = totAt - totAnt;
     const maior = linhas.filter((l) => mudou(l.tAnt, l.tAt)).sort((a, b) => Math.abs(b.tAt - b.tAnt) - Math.abs(a.tAt - a.tAnt))[0];
