@@ -93,6 +93,27 @@ function registrarCustos(id, itens, quando) {
   if (mudou) C.gravarAtomico(arqHist(id), JSON.stringify(h), 0o640);
 }
 
+const arqCompras = (id) => path.join(pasta(id), 'compras.json');
+/** notas de compra que o coletor guarda (Estoque → Entrada de Produtos do AppNext), por código:
+ *  { cod: [[AAAA-MM-DD da entrada, custo unitário, nº da NF, quantidade, fornecedor], …] } — só compras (sem devolução/troca)
+ *  + atualizado. Chás chegam em kg: custo por kg, como no estoque. */
+function compras(id) {
+  let j;
+  try { j = JSON.parse(fs.readFileSync(arqCompras(id), 'utf8')); } catch { return null; }
+  const out = {};
+  for (const n of j.notas || []) {
+    if (!/compra/i.test(n.motivo || '') || !/^conclu/i.test(n.status || '')) continue;
+    const dia = String(n.entrada || n.emissao || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dia)) continue;
+    for (const it of n.itens || []) {
+      if (!it.cod || !(it.custo > 0) || !(it.qtd > 0)) continue;
+      (out[it.cod] || (out[it.cod] = [])).push([dia, Math.round(it.custo * 100) / 100, n.nf, it.qtd, n.fornecedor || '']);
+    }
+  }
+  for (const l of Object.values(out)) l.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+  return { atualizado: j.atualizado || null, notas: (j.notas || []).length, itens: out };
+}
+
 function atual(id) {
   try { return JSON.parse(fs.readFileSync(arqAtual(id), 'utf8')); } catch { return null; }
 }
@@ -217,4 +238,4 @@ function validarCfg(b) {
   return { ok: out };
 }
 
-module.exports = { ler, atual, historico, importar, pendentes, processar, cfg, validarCfg, quantidade, PADRAO };
+module.exports = { ler, atual, historico, compras, importar, pendentes, processar, cfg, validarCfg, quantidade, PADRAO };

@@ -1,5 +1,6 @@
 /* Estoque e Margem → Preços: histórico de reajustes de custo e de venda de cada produto vendido e o efeito na margem bruta.
- * - Custo: histórico do custo do AppNext que o painel guarda a cada importação de estoque (custos.json). Para os chás,
+ * - Custo: notas de compra do AppNext (Entrada de Produtos, guardadas pelo coletor em compras.json) + o custo de cada
+ *   importação de estoque (custos.json). Para os chás,
  *   custo do pacote = kg do chá × tamanho + embalagem (a mesma conta do Estoque e margem). Antes do primeiro registro,
  *   o custo é "estimado" (o mais antigo que se conhece).
  * - Venda: preço praticado nas vendas (preço de tabela da linha, sem desconto): o preço mais comum de cada semana; uma
@@ -13,11 +14,28 @@
   const pctTxt = (v) => (v == null ? '—' : `${v > 0 ? '+' : ''}${fmt.n1(v * 100)}%`);
 
   /** monta o histórico de cada produto vendido */
-  function calcular(M, historico) {
+  function calcular(M, historico, compras) {
     const db = TS.db;
     const semana = (d) => Math.floor((d + 3) / 7); // semanas começando na segunda
     // ---- custo de cada item do estoque ao longo do tempo
-    const hist = new Map(Object.entries(historico || {}).map(([cod, l]) => [cod, [...l].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([d, v]) => [TS.isoToDay(d), v])]));
+    // notas de compra (Entrada de Produtos) + fotos do estoque (custos.json), em ordem de data. Na mesma data vale a nota;
+    // uma foto do estoque só vira ponto se mudar o custo em 1% ou mais (o "custo último" do AppNext é o da última nota)
+    const hist = new Map();
+    const cods = new Set([...Object.keys(historico || {}), ...Object.keys(compras?.itens || {})]);
+    for (const cod of cods) {
+      const pts = [
+        ...(compras?.itens?.[cod] || []).map(([d, v, nf, q, forn]) => ({ d: TS.isoToDay(d), v, o: { nf, q, forn } })),
+        ...(historico?.[cod] || []).map(([d, v]) => ({ d: TS.isoToDay(d), v, o: null })),
+      ].sort((a, b) => a.d - b.d || (a.o ? 1 : 0) - (b.o ? 1 : 0));
+      const l = [];
+      for (const x of pts) {
+        const ult = l[l.length - 1];
+        if (ult && ult[0] === x.d) { if (x.o || !ult[2]) { ult[1] = x.v; ult[2] = x.o || ult[2]; } continue; }
+        if (!x.o && ult && Math.abs(x.v / ult[1] - 1) < 0.01) continue;
+        l.push([x.d, x.v, x.o]);
+      }
+      hist.set(cod, l);
+    }
     const custoEm = (it, dia) => {
       const l = hist.get(String(it.cod));
       if (!l || !l.length) return { v: it.custo || null, est: true };
@@ -70,15 +88,17 @@
       for (const d of [...dias].sort((a, b) => a - b)) {
         const c = custoNoDia(d);
         if (c.v == null) continue;
-        if (antC == null) { custoEv.push({ dia: d, v: c.v, inicio: true }); antC = c.v; continue; }
+        // de onde veio o custo do dia: notas de compra dos componentes que mudaram nessa data
+        const nfs = comp.map(([it]) => (hist.get(String(it.cod)) || []).find((x) => x[0] === d)?.[2]).filter(Boolean);
+        if (antC == null) { custoEv.push({ dia: d, v: c.v, inicio: true, nfs }); antC = c.v; continue; }
         if (Math.abs(c.v - antC) < 0.005) continue;
-        custoEv.push({ dia: d, v: c.v, de: antC });
+        custoEv.push({ dia: d, v: c.v, de: antC, nfs });
         antC = c.v;
       }
       if (!custoEv.length) { const c = custoNoDia(TS.todayDay()); if (c.v != null) custoEv.push({ dia: null, v: c.v, inicio: true, est: true }); }
       lista.push({ nome: p.nome, cat: p.cat, comp, custoNoDia, vendaEv, custoEv, vt: p.vt, qtd: p.qtd, kg: comp.some(([it]) => it.un === 'Kg') });
     }
-    return { lista, inicioCusto: Math.min(...[...hist.values()].map((l) => (l.length ? l[0][0] : Infinity))) };
+    return { lista, temCompras: !!(compras && Object.keys(compras.itens || {}).length), inicioCusto: Math.min(...[...hist.values()].map((l) => (l.length ? l[0][0] : Infinity))) };
   }
 
   /** valores antes do período e no fim dele */
@@ -110,7 +130,7 @@
     Promise.all([TS.estoqueBuscar(loja), TS.custosLoja()]).then(([e, M]) => {
       if (!corpo.isConnected) return;
       if (!M || !e.estoque) { corpo.replaceChildren(h('div', { class: 'notice' }, 'Ainda não há estoque e custos desta loja no painel.')); return; }
-      pintar(corpo, calcular(M, e.historico));
+      pintar(corpo, calcular(M, e.historico, e.compras));
     }).catch((err) => corpo.replaceChildren(h('div', { class: 'notice err' }, err.message)));
   };
 
@@ -142,7 +162,7 @@
           'Preço de tabela praticado nas vendas (sem desconto): conta quando o preço novo se mantém.'),
         TS.kpi('Perderam margem', fmt.int(perda.length), perda.length ? h('span', { class: 'neg' }, 'custo subiu mais que a venda') : 'nenhum no período',
           'Margem bruta no fim do período menor que antes dele.'),
-        TS.kpi('Histórico de custo desde', inicioCusto ? quando(inicioCusto) : '—', 'o painel guarda o custo a cada importação de estoque',
+        TS.kpi('Histórico de custo desde', inicioCusto ? quando(inicioCusto) : '—', D.temCompras ? 'notas de compra do AppNext + importações de estoque' : 'o painel guarda o custo a cada importação de estoque',
           'O AppNext só informa o custo de hoje. Antes desta data, o custo é estimado pelo mais antigo conhecido.')),
       h('div', { class: 'mt' }, tabela(linhas, FIL, filtro, corpo, D)));
   }
@@ -199,7 +219,7 @@
         { label: 'Custo', data: serieC, borderColor: '#C77F12', backgroundColor: '#C77F12', stepped: 'before', pointRadius: 3, borderWidth: 2 },
       ] },
       options: { plugins: { legend: { display: true, position: 'bottom' }, tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${fmt.brl(c.raw)}`, afterBody: (it) => { const v = serieV[it[0].dataIndex], c = serieC[it[0].dataIndex]; return v && c != null ? `Margem bruta: ${fmt.pct((v - c) / v)}` : ''; } } } },
-        scales: { y: { ...TS.axisNum((v) => fmt.brl0(v)), beginAtZero: true }, x: TS.axisCat } },
+        scales: { y: { ...TS.axisNum((v) => (Math.abs(v) < 20 ? fmt.brl(v) : fmt.brl0(v))), beginAtZero: true }, x: TS.axisCat } },
     }, 'short');
     // linha do tempo (mais recente primeiro)
     const ev = [
@@ -216,9 +236,9 @@
         ...es.map((x) => h('div', { class: 'prc-tl-l' }, h('b', null, x.tipo === 'custo' ? 'Custo ' : 'Venda '), `${fmt.brl(x.de)} → ${fmt.brl(x.v)} `,
           h('span', { class: 'prc-badge ' + ((x.tipo === 'custo' ? x.v > x.de : x.v < x.de) ? 'prc-ruim' : 'prc-bom') }, pctTxt(x.v / x.de - 1)))),
         h('div', { class: 'prc-tl-m muted' }, `Margem bruta depois: ${v && c != null ? fmt.pct((v - c) / v) : '—'}${cR == null && c != null ? ' (custo estimado)' : ''}`),
-        h('div', { class: 'prc-tl-o muted' }, es.map((x) => (x.tipo === 'custo' ? 'Origem: custo do estoque do AppNext (coletor)' : `Origem: preço praticado nas vendas (primeira venda a ${fmt.brl(x.v)})`)).join(' · ')));
+        h('div', { class: 'prc-tl-o muted' }, es.map((x) => (x.tipo === 'custo' ? (x.nfs && x.nfs.length ? `Origem: entrada NF nº ${[...new Set(x.nfs.map((o) => o.nf))].join(', ')}${x.nfs[0].forn ? ` (${x.nfs[0].forn})` : ''}` : 'Origem: custo do estoque do AppNext (coletor)') : `Origem: preço praticado nas vendas (primeira venda a ${fmt.brl(x.v)})`)).join(' · ')));
     });
-    if (!itens.length) itens.push(h('li', { class: 'muted' }, 'Nenhum reajuste registrado. O histórico de custo cresce a cada importação de estoque; o de venda vem das vendas desde o início da base.'));
+    if (!itens.length) itens.push(h('li', { class: 'muted' }, 'Nenhum reajuste registrado. O custo vem das notas de compra e das importações de estoque; a venda, das vendas desde o início da base.'));
     // simulador rápido: novo preço → margem bruta (o preço é alterado no AppNext)
     const custo = r.cAt, venda = r.vAt;
     const inp = h('input', { class: 'f-input', type: 'number', min: 0, step: '0.10', value: venda, style: { maxWidth: '120px' } });
@@ -238,7 +258,7 @@
         h('div', null, h('small', null, 'Margem bruta'), h('b', { class: r.perdeu ? 'neg' : null }, fmt.pct(r.mAt)))),
       h('div', { class: 'f-label mt' }, 'Evolução: custo × venda'),
       h('div', { class: 'prc-graf' }, graf),
-      h('div', { class: 'muted prc-nota' }, r.custoEv.some((e) => e.est) || !r.custoEv.some((e) => !e.inicio) ? 'O histórico de custo começa na primeira importação de estoque guardada pelo painel; antes disso a linha de custo é estimada.' : ''),
+      h('div', { class: 'muted prc-nota' }, r.custoEv.some((e) => e.est) || !r.custoEv.some((e) => !e.inicio) ? 'O histórico de custo começa na primeira nota de compra (ou importação de estoque) que o painel tem; antes disso a linha de custo é estimada.' : ''),
       h('div', { class: 'f-label mt' }, 'Simular preço de venda'),
       h('div', { class: 'prc-sim' }, h('span', null, 'R$ '), inp, manter && Math.abs(manter - venda) > 0.01 ? h('button', { type: 'button', class: 'btn', onclick: () => { inp.value = (Math.ceil(manter * 10) / 10).toFixed(2); sim(); } }, `Voltar à margem de antes (${fmt.pct(r.mAnt)}): ${fmt.brl(Math.ceil(manter * 10) / 10)}`) : null),
       out, h('small', { class: 'muted' }, 'O painel só simula: o preço é alterado no AppNext.'),

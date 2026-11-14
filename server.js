@@ -497,7 +497,7 @@ app.get('/api/estoque', (req, res) => {
   if (!podeTela(req, 'estoque', 'pedido', 'dre')) return res.status(403).json({ erro: 'Sem permissão.' });
   const loja = req.lojas.find((l) => l.id === String(req.query.loja || ''));
   if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
-  res.json({ estoque: ES.atual(loja.id), cfg: ES.cfg(C.get().lojas.find((l) => l.id === loja.id)), historico: ES.historico(loja.id) });
+  res.json({ estoque: ES.atual(loja.id), cfg: ES.cfg(C.get().lojas.find((l) => l.id === loja.id)), historico: ES.historico(loja.id), compras: ES.compras(loja.id) });
 });
 app.put('/api/estoque/cfg', express.json({ limit: '20kb' }), (req, res) => {
   if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });

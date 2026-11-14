@@ -12,7 +12,7 @@
     const r = await fetch(TS.api(`estoque?loja=${encodeURIComponent(loja)}`), { credentials: 'same-origin' });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.erro || 'Falha ao ler o estoque.');
-    const x = { at: Date.now(), estoque: j.estoque, cfg: j.cfg, historico: j.historico || {} };
+    const x = { at: Date.now(), estoque: j.estoque, cfg: j.cfg, historico: j.historico || {}, compras: j.compras || null };
     cache.set(loja, x);
     return x;
   }
