@@ -512,8 +512,8 @@
     for (const k of r.cupons) {
       const itens = k.itensFiltrados || k.itens;
       const tb = h('table', { class: 'cupom-items' });
-      // item a R$ 0,01 = prêmio do programa de fidelidade (resgate)
-      const ehPremio = (i) => db.vu[i] != null && Math.abs(db.vu[i] - 0.01) < 1e-7;
+      // item a R$ 0,01 com o mesmo nome de um produto vendido normalmente = prêmio do programa de fidelidade (resgate)
+      const ehPremio = TS.ehResgate;
       for (const i of itens) tb.append(h('tr', { class: TS.rules.ids.taxas.has(db.desc[i]) ? 'taxa' : ehPremio(i) ? 'premio' : null, title: TS.rules.ids.taxas.has(db.desc[i]) ? 'Taxa: não soma no valor do cliente' : null },
         h('td', null, db.D.descricao[db.desc[i]], ehPremio(i) ? h('span', { class: 'cli-tag t-premio' }, 'Resgate') : null), h('td', { class: 'r' }, `${fmt.int(db.qtd[i])} un.`), h('td', { class: 'r' }, fmt.brl(db.vt[i])), h('td', { class: 'r', style: { color: '#6B7A70' } }, db.D.vendedor[db.vend[i]])));
       const temPremio = k.itens.some(ehPremio);
@@ -842,8 +842,8 @@
     const taxa = fechados ? sim.length / fechados : null;
     // ---- retorno do programa: o que a loja devolveu em prêmios (no caixa os prêmios saem a R$ 0,01)
     const db = TS.db, rpp = rg.reaisPorPonto || 50;
-    // o prêmio sai com "Fidelidade" no nome (ex.: "Medida Inox Fidelidade"); o produto normal tem o mesmo nome sem essa palavra
-    const chaveNome = (t) => TS.norm(t).replace(/\bfidelidade\b/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim();
+    // o prêmio sai a R$ 0,01 com o mesmo nome do produto normal; a R$ 0,01 com outro nome (ex.: brinde de promoção) não é resgate
+    const chaveNome = TS.nomeChave;
     const precoNormal = new Map(); // nome sem "fidelidade" → Map(preço → peso) das vendas normais
     const linhaNormal = new Map(); // nome sem "fidelidade" → última linha vendida normalmente (para o custo)
     const premios = [];
@@ -851,7 +851,7 @@
     const desdeAno = TS.todayDay() - 365;
     for (let i = 0; i < db.n; i++) {
       const vu = db.vu[i];
-      if (vu != null && Math.abs(vu - 0.01) < 1e-7) { if (noPer(db.day[i]) && db.qtd[i] > 0) premios.push(i); continue; }
+      if (vu != null && Math.abs(vu - 0.01) < 1e-7) { if (noPer(db.day[i]) && db.qtd[i] > 0 && TS.ehResgate(i)) premios.push(i); continue; }
       if (noPer(db.day[i]) && !TS.rules.ids.taxas.has(db.desc[i])) fat += db.vt[i] || 0;
       if (vu >= 0.05 && db.qtd[i] > 0) {
         const k = chaveNome(db.D.descricao[db.desc[i]]);
@@ -862,12 +862,22 @@
       }
     }
     const moda = (m) => { let b = null, n = -1; for (const [v, q] of m) if (q > n) { b = v; n = q; } return b; };
-    let valorPremios = 0, semPreco = 0, nPremios = 0;
-    const semPrecoNomes = new Set();
+    // produto normal do prêmio: mesmo nome; se o prêmio vem sem o tamanho ("Pu Erh Original Fidelidade"), o mais barato
+    // dos produtos que começam com esse nome ("Pu Erh Original 50G")
+    const parDe = new Map();
+    const par = (i) => {
+      const k = chaveNome(db.D.descricao[db.desc[i]]);
+      if (parDe.has(k)) return parDe.get(k);
+      let r = precoNormal.has(k) ? k : null;
+      if (!r) { let best = null; for (const [kk, m] of precoNormal) if (kk.startsWith(k + ' ')) { const v = moda(m); if (best == null || v < best[1]) best = [kk, v]; } r = best && best[0]; }
+      parDe.set(k, r);
+      return r;
+    };
+    let valorPremios = 0, nPremios = 0, semPar = 0;
     for (const i of premios) {
       nPremios += db.qtd[i];
-      const m = precoNormal.get(chaveNome(db.D.descricao[db.desc[i]]));
-      if (m) valorPremios += moda(m) * db.qtd[i]; else { semPreco += db.qtd[i]; semPrecoNomes.add(db.D.descricao[db.desc[i]]); }
+      const k = par(i);
+      if (k) valorPremios += moda(precoNormal.get(k)) * db.qtd[i]; else semPar += db.qtd[i];
     }
     const compras = ganhos * rpp; // compras que geraram pontos
     const prometido = resg ? valorPremios / (resg * rpp) : null; // valor do prêmio ÷ gasto que os pontos representam
@@ -881,7 +891,7 @@
         stat('Prometido no resgate', prometido == null ? '—' : fmt.pct(prometido, 1), `valor do prêmio ÷ gasto de R$ ${fmt.int(rpp)} por ponto`, `Quanto o cliente recebe quando resgata: valor dos prêmios ÷ (pontos resgatados × R$ ${rpp}). Comparável à tabela de prêmios da franquia.`),
         stat('Retorno efetivo ao cliente', compras ? fmt.pct(valorPremios / compras, 1) : '—', fat ? `${fmt.pct(valorPremios / fat, 1)} do faturamento total` : null, `Valor de venda dos prêmios entregues ÷ compras que geraram pontos no período (pontos ganhos × R$ ${rpp}). Menor que o prometido porque nem todos resgatam e pontos vencem. Abaixo: o mesmo valor sobre todo o faturamento da loja.`, 'ok'),
         h('div', { class: 'fx-stat ok' }, h('span', null, 'Custo real para a loja', TS.dica('Custo dos produtos dados como prêmio (o que a loja gastou de fato) ÷ compras que geraram pontos. Abaixo: sobre todo o faturamento.')), custoBox, custoSub, custoPctFat)),
-      h('small', { class: 'muted' }, `${fmt.int(nPremios)} prêmios saíram no caixa a R$ 0,01 (valor de venda ${fmt.brl0(valorPremios)})${semPreco ? `; ${fmt.int(semPreco)} sem produto normal correspondente ficaram fora (${[...semPrecoNomes].slice(0, 3).join(', ')}${semPrecoNomes.size > 3 ? '…' : ''})` : ''} · ${fmt.int(resg)} pontos resgatados no FIXE · compras que geraram pontos: ${fmt.brl0(compras)} · faturamento: ${fmt.brl0(fat)}.`)) : null;
+      h('small', { class: 'muted' }, `${fmt.int(nPremios)} prêmios saíram no caixa (R$ 0,01 com o nome de um produto vendido normalmente ou com "Fidelidade" no nome; valor de venda ${fmt.brl0(valorPremios)}${semPar ? `, ${fmt.int(semPar)} sem produto correspondente para dar preço` : ''}) · ${fmt.int(resg)} pontos resgatados no FIXE · compras que geraram pontos: ${fmt.brl0(compras)} · faturamento: ${fmt.brl0(fat)}.`)) : null;
     if (retornoGrupo) {
       const semAcesso = () => { custoBox.textContent = '—'; custoSub.textContent = 'sem acesso ao estoque e custos'; };
       if (TS.custosLoja) TS.custosLoja().then((M) => {
@@ -890,7 +900,7 @@
         for (const i of premios) {
           // custo do próprio prêmio no estoque; se não tiver, o custo unitário do produto normal (mesmo nome sem "fidelidade")
           let x = M.custo(i);
-          if (x == null) { const j = linhaNormal.get(chaveNome(db.D.descricao[db.desc[i]])); const cj = j != null ? M.custo(j) : null; if (cj != null && db.qtd[j] > 0) x = (cj / db.qtd[j]) * db.qtd[i]; }
+          if (x == null) { const pk = par(i), j = pk ? linhaNormal.get(pk) : null; const cj = j != null ? M.custo(j) : null; if (cj != null && db.qtd[j] > 0) x = (cj / db.qtd[j]) * db.qtd[i]; }
           if (x == null) sem += db.qtd[i]; else c += x;
         }
         custoBox.textContent = compras ? fmt.pct(c / compras, 1) : '—';

@@ -70,7 +70,7 @@ TS.DICAS = {
   'Quem leva': 'Produtos que mais aparecem no mesmo cupom do produto buscado, em % dos cupons com ele.',
   'Clientes por mês': 'Clientes novos (primeira compra no mês) e recorrentes (já tinham comprado antes), identificados por CPF.',
   'Vendedoras e clientes': 'Por vendedora: % das vendas com CPF, clientes novos que ela atendeu na primeira compra e quantos voltaram depois.',
-  'Resgate de pontos': 'Dos clientes que chegaram ao mínimo de pontos para resgatar no período, quantos resgataram dentro do prazo. Quem ainda está no prazo fica fora do %. Retorno do programa: valor e custo dos prêmios entregues (saem no caixa a R$ 0,01) sobre as compras que geraram pontos e sobre o faturamento.',
+  'Resgate de pontos': 'Dos clientes que chegaram ao mínimo de pontos para resgatar no período, quantos resgataram dentro do prazo. Quem ainda está no prazo fica fora do %. Retorno do programa: valor e custo dos prêmios entregues (saem no caixa a R$ 0,01 com o mesmo nome do produto vendido normalmente; R$ 0,01 com outro nome, como brinde de promoção, fica fora) sobre as compras que geraram pontos e sobre o faturamento.',
   'Fidelidade (FIXE)': 'Liga as compras lançadas no FIXE aos cupons de venda (mesmo dia, hora próxima e mesmos produtos) e mostra o que precisa ser conferido: CPF diferente, vendas sem pontos e clientes fora do programa.',
   // ---------- Estoque e margem ----------
   'Estoque a custo': 'Quantidade em estoque × custo de cada produto (planilha Estoque Atual do AppNext).',

@@ -250,6 +250,23 @@ TS.qtdItem = function (i) {
   return db._semItem.grupoC.has(db.grupoC[i]) ? 0 : db.qtd[i] || 0;
 };
 
+/** item a R$ 0,01 que é prêmio do programa de fidelidade: quando existe venda normal (preço de verdade) de um produto
+ *  com o mesmo nome, ou quando o nome tem "Fidelidade". A R$ 0,01 com outro nome (ex.: "Promo Chaveiro") não é resgate. */
+// alguns prêmios saem com "Fidelidade" no nome (ex.: "Sunny Peach 50G Fidelidade"): a palavra é ignorada na comparação
+TS.nomeChave = (t) => TS.norm(t).replace(/\bfidelidade\b/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim();
+TS.ehResgate = function (i) {
+  const db = TS.db;
+  if (!(db.vu[i] != null && Math.abs(db.vu[i] - 0.01) < 1e-7)) return false;
+  if (!db._nomesVendidos) {
+    const comVenda = new Uint8Array(db.D.descricao.length);
+    for (let j = 0; j < db.n; j++) if (db.vu[j] >= 0.05 && db.qtd[j] > 0) comVenda[db.desc[j]] = 1;
+    const chaves = new Set();
+    db.D.descricao.forEach((t, k) => { if (comVenda[k]) chaves.add(TS.nomeChave(t)); });
+    db._nomesVendidos = db.D.descricao.map((t) => chaves.has(TS.nomeChave(t)));
+  }
+  return !!db._nomesVendidos[db.desc[i]] || /\bfidelidade\b/.test(TS.norm(db.D.descricao[db.desc[i]]));
+};
+
 /** TKM, PMA e IPA como no relatório */
 TS.indicadores = function (idx) {
   const db = TS.db;
