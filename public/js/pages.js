@@ -462,7 +462,10 @@
     // ---- dados do ano anterior para o YoY
     const f = state.f;
     const de = f.de ?? db.minDay, ate = f.ate ?? db.maxDay;
-    const prevIdx = semSemVendedor(TS.filtrar({ usarTamanho: true, de: de - 366, ate: ate - 365 }));
+    // mesmo período do ano anterior pelas MESMAS DATAS do calendário (01/11 a 13/11 → 01/11 a 13/11 do ano anterior),
+    // até o último dia com vendas — a mesma regra da tabela "Evolução mensal" (antes: de − 366 dias, um dia a mais)
+    const anoAntes = (d) => { const iso = TS.dayToIso(d); const y = +iso.slice(0, 4) - 1; const md = iso.slice(5) === '02-29' ? '02-28' : iso.slice(5); return TS.isoToDay(`${y}-${md}`); };
+    const prevIdx = semSemVendedor(TS.filtrar({ usarTamanho: true, de: anoAntes(de), ate: anoAntes(Math.min(ate, db.maxDay)) }));
     const pctEG = R().pctEG(base);
     const indAll = TS.indicadores(base);
     const indPrev = prevIdx.length ? TS.indicadores(prevIdx) : null;
