@@ -481,12 +481,8 @@
       h('div', { class: 'cli-caret' }, '›'));
     const body = h('div', { class: 'cli-body' });
     let aberto = false;
-    const toggle = () => {
-      aberto = !aberto;
-      card.classList.toggle('open', aberto);
-      head.setAttribute('aria-expanded', String(aberto));
-      if (aberto && !body.childElementCount) body.append(...corpoCliente(c, r));
-    };
+    // clicar no cliente abre a mesma janela usada em todo o painel (ficha, contato, cupons e fidelidade)
+    const toggle = () => abrirClientes([c.cpf]);
     head.addEventListener('click', toggle);
     head.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
     card.append(head, body);
@@ -576,9 +572,43 @@
     return h('button', { type: 'button', class: 'cpf-link', title: comparar ? 'Ver o histórico dos dois CPFs lado a lado' : 'Ver o histórico deste CPF',
       onclick: (e) => { e.stopPropagation(); if (comparar) abrirClientes([comparar.cpfNota, cpfFixe || cpf], comparar); else abrirClientes([cpf]); } }, fmtCPF(cpf));
   }
+  /** janela com uma lista (mesmo visual da janela do cliente); clicar numa linha abre o cliente por cima */
+  function abrirLista(titulo, ...corpo) {
+    document.querySelector('.camada-lista')?.remove();
+    const fechar = () => { camada.remove(); if (!document.querySelector('.camada-cheia')) document.body.classList.remove('com-camada'); document.removeEventListener('keydown', esc); };
+    const esc = (e) => { if (e.key === 'Escape' && !document.querySelector('.camada-cli')) fechar(); };
+    const caixa = h('div', { class: 'card card-cheio fech-modal cli-janela' },
+      h('button', { type: 'button', class: 'icon-btn exp-fechar', title: 'Fechar (Esc)', 'aria-label': 'Fechar', onclick: fechar }, '✕'),
+      h('div', { class: 'fech-modal-topo' }, h('b', null, titulo)), ...corpo.filter(Boolean));
+    const camada = h('div', { class: 'camada-cheia camada-lista', role: 'dialog', 'aria-modal': 'true', onclick: (e) => { if (e.target === camada) fechar(); } }, caixa);
+    document.body.append(camada);
+    document.body.classList.add('com-camada');
+    document.addEventListener('keydown', esc);
+  }
+  /** lista de clientes em janela: nome, CPF, contato e o que importa para aquela lista; clicar abre o cliente */
+  function listaClientesJanela(titulo, explicacao, itens, colsExtra = [], arquivo) {
+    const d = (day) => (day == null ? '—' : fmt.date(TS.dayToIso(day)));
+    const linhas = itens.map((x) => {
+      const { c } = clientePorCpf(x.cpf);
+      const ct = contatoDe(c) || {};
+      return { ...x, nome: c.nome || '—', cpfN: x.cpf, cpf: fmtCPF(x.cpf), cel: ct.optout ? 'não quer mensagens' : fmtTel(c.celular) || '—', wpp: !ct.optout && c.wpp, saldo: c.fx ? c.fx.saldo : null, ultima: c.ultima, ultimaTxt: d(c.ultima) };
+    });
+    const cols = [
+      { key: 'nome', label: 'Cliente', align: 'l', render: (r) => h('span', null, r.nome, r.wpp ? h('a', { class: 'wpp', href: TS.demo ? '#' : r.wpp, target: '_blank', rel: 'noopener', onclick: (e) => { e.stopPropagation(); if (TS.demo) e.preventDefault(); } }, ' ● WhatsApp') : null) },
+      { key: 'cpf', label: 'CPF', align: 'l', render: (r) => cpfLink(r.cpfN) },
+      { key: 'cel', label: 'Celular', align: 'l' },
+      ...colsExtra,
+      { key: 'saldo', label: 'Pontos hoje', fmt: (v) => (v == null ? '—' : fmt.int(v)) },
+      { key: 'ultima', label: 'Última compra', align: 'l', render: (r) => r.ultimaTxt },
+    ];
+    abrirLista(`${titulo} (${fmt.int(linhas.length)})`,
+      explicacao ? h('p', { class: 'muted' }, explicacao) : null,
+      arquivo ? h('div', { class: 'cfg-acoes' }, h('button', { type: 'button', class: 'btn', onclick: () => csv(arquivo, cols.map((c) => c.label), linhas.map((r) => cols.map((c) => (c.key === 'nome' ? r.nome : c.key === 'cel' ? (TS.demo ? '' : r.cel) : c.key === 'ultima' ? r.ultimaTxt : c.csv ? c.csv(r) : r[c.key] ?? '')))) }, 'Baixar lista (CSV)')) : null,
+      TS.table({ cols, rows: linhas, sortKey: 'ultima', onRowClick: (r) => abrirClientes([r.cpfN]) }));
+  }
   function abrirClientes(cpfs, destaque) {
     document.querySelector('.camada-cli')?.remove();
-    const fechar = () => { camada.remove(); document.body.classList.remove('com-camada'); document.removeEventListener('keydown', esc); };
+    const fechar = () => { camada.remove(); if (!document.querySelector('.camada-cheia')) document.body.classList.remove('com-camada'); document.removeEventListener('keydown', esc); };
     const esc = (e) => { if (e.key === 'Escape') fechar(); };
     const rot = cpfs.length === 2 ? ['CPF da nota', 'CPF no FIXE'] : [null];
     const colunas = cpfs.map((cpf, j) => {
@@ -728,6 +758,7 @@
       ],
       rows, sortKey: 'pct',
       total: { nome: 'Total', cupons: nTot, cpf: nCpf, pct: nTot ? nCpf / nTot : null, novos: rows.reduce((t, r) => t + r.novos, 0), voltaram: rows.reduce((t, r) => t + r.voltaram, 0),
+        pctVolta: (() => { const n = rows.reduce((t, r) => t + r.novos, 0); return n ? rows.reduce((t, r) => t + r.voltaram, 0) / n : null; })(),
         ...(comFixe ? (() => { const cf = rows.reduce((t, r) => t + r.cliFixe, 0), sf = rows.reduce((t, r) => t + r.semFixe, 0); return { semFixe: sf, pctSemFixe: cf ? sf / cf : null }; })() : {}) },
     });
     return [TS.section('Base de clientes'), kpis,
@@ -768,6 +799,17 @@
         item('Chá deve acabar', repor, dicaRepor),
         c.proxCha != null ? h('div', { class: 'fi-nota' }, dicaRepor) : null,
         item('Mais atendida por', c.vendedora)),
+      (() => {
+        // produtos que mais compra (quantidade, sem taxas e prêmios)
+        const db = TS.db, cont = new Map();
+        for (const k of c.cupons) for (const i of k.itens) {
+          if (TS.rules.ids.taxas.has(db.desc[i]) || TS.ehResgate(i)) continue;
+          const p = cont.get(db.prod[i]) || cont.set(db.prod[i], { q: 0, vt: 0, n: 0 }).get(db.prod[i]);
+          p.q += db.qtd[i] || 0; p.vt += db.vt[i] || 0; p.n++;
+        }
+        const top = [...cont].sort((a, b) => b[1].n - a[1].n || b[1].vt - a[1].vt).slice(0, 5);
+        return top.length ? bloco('Mais compra', ...top.map(([pid, x]) => h('div', { class: 'fi fi-top' }, h('span', null, db.D.produto[pid]), h('b', null, `${fmt.int(x.n)}×`, h('small', null, fmt.brl0(x.vt)))))) : null;
+      })(),
       bloco('Valores',
         h('div', { class: 'fi' }, h('span', null, 'Gasto em 12 meses'), h('b', null, fmt.brl(c.gasto12), varia != null ? h('em', { class: varia >= 0 ? 'pos' : 'neg' }, ` ${fmt.delta(varia)}`) : null)),
         item('Ticket médio', fmt.brl(r.tkm)),
@@ -816,7 +858,18 @@
     document.body.append(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   }
+  /** caixinha de indicador dos cartões de fidelidade; com abrir(), vira botão que abre a lista */
+  function statFx(rot, val, sub, dica, cls, abrir) {
+    const el = h('div', { class: 'fx-stat' + (cls ? ' ' + cls : '') + (abrir ? ' fx-stat-click' : '') }, h('span', null, rot, TS.dica(dica)), h('b', null, val), sub ? h('small', null, sub) : null, abrir ? h('small', { class: 'fx-ver' }, 'ver lista ›') : null);
+    if (abrir) { el.setAttribute('role', 'button'); el.tabIndex = 0; el.addEventListener('click', (e) => { if (!e.target.closest('.dica-i')) abrir(); }); el.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); abrir(); } }); }
+    return el;
+  }
+
   // ---------- resgate de pontos: dos clientes que chegaram ao mínimo para resgatar, quantos resgataram no prazo ----------
+  const colsResgate = (comDias) => [
+    { key: 'eleg', label: 'Chegou ao mínimo', align: 'l', render: (r) => fmt.date(TS.dayToIso(r.eleg)), csv: (r) => fmt.date(TS.dayToIso(r.eleg)) },
+    ...(comDias ? [{ key: 'dias', label: 'Resgatou em', render: (r) => (r.dias === 0 ? 'no mesmo dia' : `${fmt.int(r.dias)} dias`), csv: (r) => r.dias }] : []),
+  ];
   function cartaoResgate(fx) {
     if (!fx.movs || !fx.movs.length) return null;
     const rg = (fx.bases.find((b) => b.ev && b.ev.length) || {}).regras || {};
@@ -839,7 +892,7 @@
       else if (m.tipo === 'resgate') resg += m.pontos;
       else if (m.tipo === 'expirou') exp += m.pontos;
     }
-    const stat = (rot, val, sub, dica, cls) => h('div', { class: 'fx-stat' + (cls ? ' ' + cls : '') }, h('span', null, rot, TS.dica(dica)), h('b', null, val), sub ? h('small', null, sub) : null);
+    const stat = statFx;
     const grupo = (titulo, ...itens) => h('div', { class: 'fx-grupo' }, h('div', { class: 'fx-grupo-tit' }, titulo), h('div', { class: 'fx-stats' }, ...itens.filter(Boolean)));
     const taxa = fechados ? sim.length / fechados : null;
     // ---- retorno do programa: o que a loja devolveu em prêmios (no caixa os prêmios saem a R$ 0,01)
@@ -929,13 +982,16 @@
         premios.length && curto ? h('div', { class: 'notice rs-aviso' }, `Período curto (${fmt.int(diasPer)} dias): os resgates de agora vêm de pontos ganhos meses antes, então o retorno do programa oscila. Para um número confiável use 12 meses.`) : null,
         h('div', { class: 'rs-grupos' },
         grupo('Clientes',
-          stat('Resgataram', fmt.int(sim.length), mediana != null ? (mediana < 1 ? 'a maioria no mesmo dia em que chegou ao mínimo' : `metade em até ${fmt.int(Math.round(mediana))} dias`) : null, `Fizeram um resgate até ${prazo} dias depois de chegar a ${min} pontos`, 'ok'),
-          stat('Não resgataram', fmt.int(nao.length), `passaram ${fmt.int(prazo)} dias sem resgate`, 'Chegaram ao mínimo e não resgataram dentro do prazo (alguns podem ter resgatado depois)', nao.length ? 'alerta' : null),
-          stat('Ainda no prazo', fmt.int(ab.length), 'ficam fora do %', 'Chegaram ao mínimo há menos dias que o prazo: ainda podem resgatar')),
+          stat('Resgataram', fmt.int(sim.length), mediana != null ? (mediana < 1 ? 'a maioria no mesmo dia em que chegou ao mínimo' : `metade em até ${fmt.int(Math.round(mediana))} dias`) : null, `Fizeram um resgate até ${prazo} dias depois de chegar a ${min} pontos. Clique para ver quem.`, 'ok',
+            sim.length ? () => listaClientesJanela('Resgataram', `Chegaram a ${min} pontos no período e resgataram em até ${prazo} dias.`, sim.map((x) => ({ cpf: x.cpf, eleg: x.E, dias: x.dias })), colsResgate(true), 'resgataram') : null),
+          stat('Não resgataram', fmt.int(nao.length), `passaram ${fmt.int(prazo)} dias sem resgate`, `Chegaram a ${min} pontos e não resgataram em ${prazo} dias (alguns podem estar juntando para um prêmio maior). Clique para ver quem e chamar para resgatar.`, nao.length ? 'alerta' : null,
+            nao.length ? () => listaClientesJanela('Não resgataram', `Chegaram a ${min} pontos no período e passaram ${prazo} dias sem resgatar. Bons para um convite: "você tem pontos para trocar por um prêmio".`, nao.map((x) => ({ cpf: x.cpf, eleg: x.E })), colsResgate(false), 'nao-resgataram') : null),
+          stat('Ainda no prazo', fmt.int(ab.length), 'ficam fora do %', `Chegaram a ${min} pontos há menos de ${prazo} dias: ainda podem resgatar. Clique para ver quem.`, null,
+            ab.length ? () => listaClientesJanela('Ainda no prazo', `Chegaram a ${min} pontos há menos de ${prazo} dias.`, ab.map((x) => ({ cpf: x.cpf, eleg: x.E })), colsResgate(false), 'no-prazo') : null)),
         grupo('Pontos no período',
-          stat('Ganhos', fmt.int(ganhos), 'compras e boas-vindas'),
-          stat('Resgatados', fmt.int(resg), ganhos ? `${fmt.pct(resg / ganhos, 0)} dos ganhos` : null),
-          stat('Expirados', fmt.int(exp), ganhos ? `${fmt.pct(exp / ganhos, 0)} dos ganhos` : null, 'Pontos que venceram sem uso', exp ? 'alerta' : null)),
+          stat('Ganhos', fmt.int(ganhos), 'compras e boas-vindas', 'Pontos lançados no FIXE no período: compras (R$ ' + fmt.int(rpp) + ' = 1 ponto) e pontos de boas-vindas. Cancelamentos no caixa são descontados.'),
+          stat('Resgatados', fmt.int(resg), ganhos ? `${fmt.pct(resg / ganhos, 0)} dos ganhos` : null, 'Pontos trocados por prêmios no período. A % compara com os pontos ganhos no mesmo período (os resgatados podem ter sido ganhos antes).'),
+          stat('Expirados', fmt.int(exp), ganhos ? `${fmt.pct(exp / ganhos, 0)} dos ganhos` : null, `Pontos que venceram sem uso no período (cada ponto vale ${fmt.int(rg.validadeMeses || 12)} meses).`, exp ? 'alerta' : null)),
         retornoGrupo),
         conta)
         : TS.empty(`Nenhum cliente chegou a ${min} pontos no período.`));
@@ -951,9 +1007,9 @@
     const semFixe = (fx.semFixe || []).slice().sort((a, b) => b.k.day - a.k.day);
     const ptsSem = semFixe.reduce((t, x) => t + x.k.ptsPerdidos, 0);
     const fora = fx.temLeads ? TS.cli.lista.filter((c) => c.tags.has('forafixe')).sort((a, b) => b.ultima - a.ultima) : [];
-    const detalhe = (titulo, ...corpo) => h('details', { class: 'fx-det' }, h('summary', null, titulo), ...corpo);
-    const blocos = [];
-    if (fx.divergencias.length) blocos.push(detalhe(`Ver as ${fmt.int(fx.divergencias.length)} compras com CPF diferente`, TS.table({
+    // cada lista abre numa janela ao clicar no indicador correspondente
+    const janelas = {};
+    if (fx.divergencias.length) janelas.div = () => abrirLista(`Compras com CPF diferente (${fmt.int(fx.divergencias.length)})`, h('p', { class: 'muted' }, 'Compra feita num CPF, mas os pontos foram para outro CPF no FIXE. Clique numa linha para ver os dois históricos lado a lado.'), TS.table({
       cols: [
         { key: 'data', label: 'Data', align: 'l' }, { key: 'cupom', label: 'Cupom', align: 'l' },
         { key: 'nota', label: 'CPF da nota', align: 'l', render: (r) => cpfLink(r.x.cpfNota, { cupom: r.x.cupom, day: r.x.day, cpfNota: r.x.cpfNota }, r.x.cpfFixe) }, { key: 'fixe', label: 'CPF no FIXE', align: 'l', render: (r) => cpfLink(r.x.cpfFixe, { cupom: r.x.cupom, day: r.x.day, cpfNota: r.x.cpfNota }) }, { key: 'nome', label: 'Nome no FIXE', align: 'l' }, { key: 'vt', label: 'Valor', fmt: fmt.brl },
@@ -961,45 +1017,44 @@
       rows: fx.divergencias.map((x) => ({ data: d(x.day), dia: x.day, cupom: String(x.cupom), nota: fmtCPF(x.cpfNota), fixe: fmtCPF(x.cpfFixe), nome: x.nomeFixe || '—', vt: x.vt, x })),
       sortKey: 'dia',
       onRowClick: (row) => abrirClientes([row.x.cpfNota, row.x.cpfFixe], { cupom: row.x.cupom, day: row.x.day, cpfNota: row.x.cpfNota }),
-    })));
+    }));
     if (semFixe.length) {
       const linhas = semFixe.map(({ c, k }) => ({ data: d(k.day), dia: k.day, cupom: String(k.cupom), nome: c.nome || '—', cpf: fmtCPF(c.cpf), cpfN: c.cpf, vt: k.vt, pts: k.ptsPerdidos, vend: k.vendedores || '—', k }));
-      blocos.push(detalhe(`Ver as ${fmt.int(semFixe.length)} vendas sem FIXE`,
+      janelas.sem = () => abrirLista(`Vendas sem FIXE (${fmt.int(semFixe.length)})`,
         h('p', { class: 'muted' }, 'A nota saiu com o CPF de quem está no FIXE (depois do cadastro), mas o FIXE não tem nenhum movimento desse CPF no dia. Pode ser que o cliente não tenha informado ou que a compra não tenha sido lançada. Serve para conferir e, se o FIXE permitir, lançar os pontos.'),
         h('div', { class: 'cfg-acoes' }, h('button', { type: 'button', class: 'btn', onclick: () => csv('vendas-sem-fixe', ['Data', 'Cupom', 'Cliente', 'CPF', 'Valor (R$)', 'Pontos não lançados', 'Vendedora'], linhas.map((r) => [r.data, r.cupom, r.nome, r.cpf, r.vt.toFixed(2).replace('.', ','), r.pts, r.vend])) }, 'Baixar lista (CSV)')),
         TS.table({
           cols: [{ key: 'data', label: 'Data', align: 'l' }, { key: 'cupom', label: 'Cupom', align: 'l' }, { key: 'nome', label: 'Cliente', align: 'l' }, { key: 'cpf', label: 'CPF', align: 'l', render: (r) => cpfLink(r.cpfN) },
             { key: 'vt', label: 'Valor', fmt: fmt.brl }, { key: 'pts', label: 'Pontos', fmt: fmt.int }, { key: 'vend', label: 'Vendedora', align: 'l' }],
           rows: linhas, sortKey: 'dia', onRowClick: (r) => abrirClientes([r.cpfN], { cupom: r.k.cupom, day: r.k.day }),
-        })));
+        }));
     }
     if (fora.length) {
       const linhas = fora.map((c) => { const ct = contatoDe(c) || {}; return { nome: c.nome || '—', cpf: fmtCPF(c.cpf), cpfN: c.cpf, cel: ct.optout ? 'não quer mensagens' : fmtTel(c.celular) || '—', compras: c.visitas, ultima: d(c.ultima), dia: c.ultima, vend: c.vendedora || '—' }; });
-      blocos.push(detalhe(`Ver os ${fmt.int(fora.length)} clientes fora do FIXE`,
+      janelas.fora = () => abrirLista(`Clientes fora do FIXE (${fmt.int(fora.length)})`,
         h('p', { class: 'muted' }, 'Deram o CPF na nota, mas não estão na base do FIXE desta loja (Base de leads). Se o cliente se cadastrou em outra loja da rede com outra base, também aparece aqui.'),
         h('div', { class: 'cfg-acoes' }, h('button', { type: 'button', class: 'btn', onclick: () => csv('clientes-fora-do-fixe', ['Cliente', 'CPF', 'Celular', 'Compras', 'Última compra', 'Mais atendida por'], linhas.map((r) => [r.nome, r.cpf, TS.demo ? '' : r.cel, r.compras, r.ultima, r.vend])) }, 'Baixar lista (CSV)')),
         TS.table({
           cols: [{ key: 'nome', label: 'Cliente', align: 'l' }, { key: 'cpf', label: 'CPF', align: 'l', render: (r) => cpfLink(r.cpfN) }, { key: 'cel', label: 'Celular', align: 'l' }, { key: 'compras', label: 'Compras', fmt: fmt.int }, { key: 'ultima', label: 'Última compra', align: 'l' }, { key: 'vend', label: 'Mais atendida por', align: 'l' }],
           rows: linhas, sortKey: 'dia', onRowClick: (r) => abrirClientes([r.cpfN]),
-        })));
+        }));
     }
-    blocos.push(detalhe('Como funciona',
-      h('p', { class: 'muted' }, 'O FIXE não guarda o número do cupom. O painel procura, na mesma loja e no mesmo dia, o cupom com hora próxima (até 2 h), os mesmos produtos e o valor que daria os pontos lançados. Só liga quando um cupom é claramente o melhor; na dúvida, deixa sem ligar.'),
-      h('p', { class: 'muted' }, `"Venda sem FIXE" só olha compras entre o cadastro do cliente no FIXE e a data dos Logs${fx.logsAte != null ? ` (${d(fx.logsAte)})` : ''}; qualquer movimento do CPF no FIXE no mesmo dia conta como venda que passou pelo FIXE.`),
-      nomes ? h('p', { class: 'muted' }, `Lojas do FIXE consideradas desta loja: ${nomes}. As outras aparecem como "outras lojas da rede" na ficha do cliente.`) : null));
-    const stat = (rot, val, sub, dica, cls) => h('div', { class: 'fx-stat' + (cls ? ' ' + cls : '') }, h('span', null, rot, TS.dica(dica)), h('b', null, val), sub ? h('small', null, sub) : null);
+    const comoFunciona = `O FIXE não guarda o número do cupom. O painel procura, na mesma loja e no mesmo dia, o cupom com hora próxima (até 2 h), os mesmos produtos e o valor que daria os pontos lançados. Só liga quando um cupom é claramente o melhor; na dúvida, deixa sem ligar. "Venda sem FIXE" só olha compras entre o cadastro do cliente no FIXE e a data dos Logs${fx.logsAte != null ? ` (${d(fx.logsAte)})` : ''}.${nomes ? ` Lojas do FIXE consideradas desta loja: ${nomes}.` : ''} Clique nos indicadores marcados com "ver lista" para abrir os clientes.`;
+    const stat = statFx;
     const grupo = (titulo, ...itens) => { const v = itens.filter(Boolean); return v.length ? h('div', { class: 'fx-grupo' }, h('div', { class: 'fx-grupo-tit' }, titulo), h('div', { class: 'fx-stats' }, ...v)) : null; };
-    const card = TS.card('Fidelidade (FIXE)', `Compras do programa de fidelidade ligadas aos cupons de venda${em ? ` · logs de ${fmt.date(em.slice(0, 10))}` : ''} · clique num CPF para ver o histórico`,
+    const card = TS.card('Fidelidade (FIXE)', `Compras do programa de fidelidade ligadas aos cupons de venda${em ? ` · logs de ${fmt.date(em.slice(0, 10))}` : ''} · clique nos indicadores com "ver lista"`,
       fx.temLogs ? grupo('Ligação das compras do FIXE aos cupons',
         stat('Compras no FIXE', fmt.int(fx.alvos), 'nesta loja, no período das vendas', 'Movimentos de compra do FIXE desta loja em dias que têm vendas no painel'),
-        stat('Cupom confirmado', fmt.int(fx.confirmadas), 'mesmo CPF na nota e no FIXE', null, 'ok'),
+        stat('Cupom confirmado', fmt.int(fx.confirmadas), 'mesmo CPF na nota e no FIXE', 'Compras do FIXE ligadas a um cupom que saiu com o mesmo CPF na nota: tudo certo.', 'ok'),
         stat('Cliente achado pelo FIXE', fmt.int(fx.porFixe), 'nota sem CPF', 'A nota saiu sem CPF: a compra passou a contar para o cliente do FIXE', 'ok'),
         stat('Sem cupom', fmt.int(sem), sem && fx.alvos ? fmt.pct(sem / fx.alvos, 0) + ' das compras do FIXE' : null, 'Não achou um cupom claramente igual (hora ou produtos diferentes, ou mais de um parecido)')) : null,
       grupo('Para conferir e corrigir',
-        fx.temLogs ? stat('CPF diferente', fmt.int(fx.divergencias.length), 'nota num CPF, pontos em outro', 'Compra feita num CPF, mas foi usado outro CPF no FIXE', 'alerta') : null,
-        fx.temLogs ? stat('Vendas sem FIXE', fmt.int(semFixe.length), ptsSem ? `${fmt.int(ptsSem)} pts não lançados` : 'sem lançamento no dia', 'Nota no CPF de quem está no FIXE e nenhum movimento no FIXE no dia', 'alerta') : null,
-        fx.temLeads ? stat('Fora do FIXE', fmt.int(fora.length), 'deram CPF, não estão na base', 'Clientes com CPF na nota que não estão na Base de leads do FIXE desta loja') : null),
-      h('div', { class: 'fx-dets' }, ...blocos));
+        fx.temLogs ? stat('CPF diferente', fmt.int(fx.divergencias.length), 'nota num CPF, pontos em outro', 'Compra feita num CPF, mas foi usado outro CPF no FIXE. Clique para ver as compras.', 'alerta', janelas.div) : null,
+        fx.temLogs ? stat('Vendas sem FIXE', fmt.int(semFixe.length), ptsSem ? `${fmt.int(ptsSem)} pts não lançados` : 'sem lançamento no dia', 'Nota no CPF de quem está no FIXE e nenhum movimento no FIXE no dia. Clique para ver as vendas.', 'alerta', janelas.sem) : null,
+        fx.temLeads ? stat('Fora do FIXE', fmt.int(fora.length), 'deram CPF, não estão na base', 'Clientes com CPF na nota que não estão na Base de leads do FIXE desta loja: dá para convidar a se cadastrar. Clique para ver quem.', null, janelas.fora) : null));
+    // "Como funciona" vai para o ⓘ do título (texto com as lojas desta base)
+    const ic = card.querySelector('.card-title .dica-i');
+    if (ic) ic.replaceWith(TS.dica(comoFunciona));
     card.classList.add('fx-card');
     return card;
   }
