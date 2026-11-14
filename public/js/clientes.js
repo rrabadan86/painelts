@@ -837,7 +837,10 @@
     const taxa = fechados ? sim.length / fechados : null;
     // ---- retorno do programa: o que a loja devolveu em prêmios (no caixa os prêmios saem a R$ 0,01)
     const db = TS.db, rpp = rg.reaisPorPonto || 50;
-    const precoNormal = new Map(); // descrição → preço de tabela mais comum (vendas normais do último ano)
+    // o prêmio sai com "Fidelidade" no nome (ex.: "Medida Inox Fidelidade"); o produto normal tem o mesmo nome sem essa palavra
+    const chaveNome = (t) => TS.norm(t).replace(/\bfidelidade\b/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim();
+    const precoNormal = new Map(); // nome sem "fidelidade" → Map(preço → peso) das vendas normais
+    const linhaNormal = new Map(); // nome sem "fidelidade" → última linha vendida normalmente (para o custo)
     const premios = [];
     let fat = 0;
     const desdeAno = TS.todayDay() - 365;
@@ -846,17 +849,20 @@
       if (vu != null && Math.abs(vu - 0.01) < 1e-7) { if (noPer(db.day[i]) && db.qtd[i] > 0) premios.push(i); continue; }
       if (noPer(db.day[i]) && !TS.rules.ids.taxas.has(db.desc[i])) fat += db.vt[i] || 0;
       if (vu >= 0.05 && db.qtd[i] > 0) {
+        const k = chaveNome(db.D.descricao[db.desc[i]]);
         // preço do último ano; produto que só vendeu antes disso usa o preço mais antigo (peso menor)
-        let m = precoNormal.get(db.desc[i]); if (!m) precoNormal.set(db.desc[i], (m = new Map()));
-        const k = Math.round(vu * 100) / 100; m.set(k, (m.get(k) || 0) + db.qtd[i] * (db.day[i] >= desdeAno ? 1000 : 1));
+        let m = precoNormal.get(k); if (!m) precoNormal.set(k, (m = new Map()));
+        const pv = Math.round(vu * 100) / 100; m.set(pv, (m.get(pv) || 0) + db.qtd[i] * (db.day[i] >= desdeAno ? 1000 : 1));
+        const u = linhaNormal.get(k); if (u == null || db.day[i] >= db.day[u]) linhaNormal.set(k, i);
       }
     }
     const moda = (m) => { let b = null, n = -1; for (const [v, q] of m) if (q > n) { b = v; n = q; } return b; };
     let valorPremios = 0, semPreco = 0, nPremios = 0;
+    const semPrecoNomes = new Set();
     for (const i of premios) {
       nPremios += db.qtd[i];
-      const m = precoNormal.get(db.desc[i]);
-      if (m) valorPremios += moda(m) * db.qtd[i]; else semPreco += db.qtd[i];
+      const m = precoNormal.get(chaveNome(db.D.descricao[db.desc[i]]));
+      if (m) valorPremios += moda(m) * db.qtd[i]; else { semPreco += db.qtd[i]; semPrecoNomes.add(db.D.descricao[db.desc[i]]); }
     }
     const compras = ganhos * rpp; // compras que geraram pontos
     const prometido = resg ? valorPremios / (resg * rpp) : null; // valor do prêmio ÷ gasto que os pontos representam
@@ -870,13 +876,18 @@
         stat('Prometido no resgate', prometido == null ? '—' : fmt.pct(prometido, 1), `valor do prêmio ÷ gasto de R$ ${fmt.int(rpp)} por ponto`, `Quanto o cliente recebe quando resgata: valor dos prêmios ÷ (pontos resgatados × R$ ${rpp}). Comparável à tabela de prêmios da franquia.`),
         stat('Retorno efetivo ao cliente', compras ? fmt.pct(valorPremios / compras, 1) : '—', fat ? `${fmt.pct(valorPremios / fat, 1)} do faturamento total` : null, `Valor de venda dos prêmios entregues ÷ compras que geraram pontos no período (pontos ganhos × R$ ${rpp}). Menor que o prometido porque nem todos resgatam e pontos vencem. Abaixo: o mesmo valor sobre todo o faturamento da loja.`, 'ok'),
         h('div', { class: 'fx-stat ok' }, h('span', null, 'Custo real para a loja', TS.dica('Custo dos produtos dados como prêmio (o que a loja gastou de fato) ÷ compras que geraram pontos. Abaixo: sobre todo o faturamento.')), custoBox, custoSub, custoPctFat)),
-      h('small', { class: 'muted' }, `${fmt.int(nPremios)} prêmios saíram no caixa a R$ 0,01 (valor de venda ${fmt.brl0(valorPremios)})${semPreco ? `; ${fmt.int(semPreco)} sem preço de venda conhecido ficaram fora` : ''} · ${fmt.int(resg)} pontos resgatados no FIXE · compras que geraram pontos: ${fmt.brl0(compras)} · faturamento: ${fmt.brl0(fat)}.`)) : null;
+      h('small', { class: 'muted' }, `${fmt.int(nPremios)} prêmios saíram no caixa a R$ 0,01 (valor de venda ${fmt.brl0(valorPremios)})${semPreco ? `; ${fmt.int(semPreco)} sem produto normal correspondente ficaram fora (${[...semPrecoNomes].slice(0, 3).join(', ')}${semPrecoNomes.size > 3 ? '…' : ''})` : ''} · ${fmt.int(resg)} pontos resgatados no FIXE · compras que geraram pontos: ${fmt.brl0(compras)} · faturamento: ${fmt.brl0(fat)}.`)) : null;
     if (retornoGrupo) {
       const semAcesso = () => { custoBox.textContent = '—'; custoSub.textContent = 'sem acesso ao estoque e custos'; };
       if (TS.custosLoja) TS.custosLoja().then((M) => {
         if (!M) return semAcesso();
         let c = 0, sem = 0;
-        for (const i of premios) { const x = M.custo(i); if (x == null) sem += db.qtd[i]; else c += x; }
+        for (const i of premios) {
+          // custo do próprio prêmio no estoque; se não tiver, o custo unitário do produto normal (mesmo nome sem "fidelidade")
+          let x = M.custo(i);
+          if (x == null) { const j = linhaNormal.get(chaveNome(db.D.descricao[db.desc[i]])); const cj = j != null ? M.custo(j) : null; if (cj != null && db.qtd[j] > 0) x = (cj / db.qtd[j]) * db.qtd[i]; }
+          if (x == null) sem += db.qtd[i]; else c += x;
+        }
         custoBox.textContent = compras ? fmt.pct(c / compras, 1) : '—';
         custoSub.textContent = `${fmt.brl0(c)} em prêmios${sem ? ` (${fmt.int(sem)} sem custo, fora)` : ''}`;
         custoPctFat.textContent = fat ? `${fmt.pct(c / fat, 1)} do faturamento total` : '';
