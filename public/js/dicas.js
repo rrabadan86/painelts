@@ -4,13 +4,14 @@
 'use strict';
 TS.DICAS = {
   // ---------- Resumo ----------
-  'Faturamento': 'Soma do valor das vendas no período (com desconto, sem taxa de serviço e de entrega), sem as vendas "SEM VENDEDOR". A variação compara com o período equivalente escrito abaixo do número.',
+  'Faturamento': 'Soma do valor das vendas no período (com desconto, sem taxa de serviço e de entrega), sem as vendas "SEM VENDEDOR". Abaixo do número: a variação contra o período equivalente e contra as mesmas datas do ano anterior.',
   'Atendimentos (cupons)': 'Quantidade de cupons diferentes no período. Um cupom com vários itens conta uma vez.',
   'Ticket médio (TKM)': 'Faturamento ÷ cupons: quanto, em média, cada cliente gastou por atendimento.',
-  'TKM': 'Ticket médio = faturamento ÷ cupons, comparado com o mesmo período do ano anterior.',
+  'TKM': 'Ticket médio = faturamento ÷ cupons. Comparado com as mesmas datas do ano anterior e do mês anterior.',
+  'PMA': 'Preço médio por item = faturamento ÷ itens (consumíveis sem controle de estoque não contam como item). Comparado com as mesmas datas do ano anterior e do mês anterior.',
   'Preço médio (PMA)': 'Faturamento ÷ itens vendidos: preço médio de cada item. Consumíveis sem controle de estoque (ex.: sacos de amostra) não contam como item.',
   'Itens por atendimento (IPA)': 'Itens ÷ cupons: quantos itens cada cliente leva, em média. Consumíveis sem controle de estoque não contam como item.',
-  'IPA': 'Itens por atendimento = itens ÷ cupons, comparado com o mesmo período do ano anterior. Consumíveis sem controle de estoque não contam como item.',
+  'IPA': 'Itens por atendimento = itens ÷ cupons (consumíveis sem controle de estoque não contam como item). Comparado com as mesmas datas do ano anterior e do mês anterior.',
   'Chá vendido': 'Quilos de chá vendidos no período: gramatura do pacote × quantidade (granel, envasados e sachês).',
   'Espaço Gourmet': 'Parte do faturamento que veio do Espaço Gourmet (tea room) no período.',
   'Loja (sem EG)': 'Parte do faturamento que veio da loja (chás, acessórios e alimentação), sem o Espaço Gourmet.',

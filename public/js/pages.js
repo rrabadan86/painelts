@@ -180,6 +180,21 @@
     return { de: f.de - len, ate: f.de - 1, txt: `vs. ${len} dias anteriores` };
   }
 
+  /** mesmas datas no ano anterior e no mês anterior (até o último dia com vendas): usado no Resumo e nos Comparativos */
+  TS.periodosIguais = function (de, ate) {
+    const db = TS.db;
+    if (de == null) return null;
+    const fim = Math.max(de, Math.min(ate ?? db.maxDay, db.maxDay));
+    const anoAntes = (d) => { const iso = TS.dayToIso(d); const y = +iso.slice(0, 4) - 1; const md = iso.slice(5) === '02-29' ? '02-28' : iso.slice(5); return TS.isoToDay(`${y}-${md}`); };
+    const mesAntes = (day) => { const d = new Date(day * 86400000), y = d.getUTCFullYear(), m = d.getUTCMonth() - 1; const ult = new Date(Date.UTC(y, m + 1, 0)).getUTCDate(); return Math.floor(Date.UTC(y, m, Math.min(d.getUTCDate(), ult)) / 86400000); };
+    return { ano: { de: anoAntes(de), ate: anoAntes(fim) }, mes: { de: mesAntes(de), ate: mesAntes(fim) } };
+  };
+  /** linhas de variação de um cartão: [[valor atual, valor anterior, 'vs. …'], …] (sem dado anterior a linha some) */
+  TS.linhasVar = (...ls) => {
+    const v = ls.filter((l) => l && l[1] != null && l[1] !== 0 && l[0] != null);
+    return v.length ? h('span', { class: 'kpi-vars' }, ...v.map(([a, b, txt]) => h('span', null, TS.deltaSpan(a / b - 1), ' ' + txt))) : null;
+  };
+
   /** tabela em árvore Mês (todos os anos) → Ano → Vendedor */
   function arvoreMensal(base, porMesAll, periodo) {
     const db = TS.db;
@@ -323,14 +338,21 @@
       const pidx = semSemVendedor(TS.filtrar({ de: pa.de, ate: pa.ate }));
       if (pidx.length) prev = { ...TS.indicadores(pidx), kg: pidx.reduce((s, i) => s + (I.chaTotal.has(db.grupo[i]) ? db.cha[i] || 0 : 0), 0) };
     }
-    const d = (a, b) => (prev && b ? TS.h('span', null, TS.deltaSpan(a / b - 1), ' ' + pa.txt) : null);
+    // segunda linha: mesmo período do ano anterior (quando a primeira já não é ela)
+    const pi = TS.periodosIguais(state.f.de, state.f.ate);
+    let prevAno = null;
+    if (pi && !/ano anterior/.test(pa?.txt || '')) {
+      const ia = semSemVendedor(TS.filtrar({ de: pi.ano.de, ate: pi.ano.ate }));
+      if (ia.length) prevAno = { ...TS.indicadores(ia), kg: ia.reduce((s, i) => s + (I.chaTotal.has(db.grupo[i]) ? db.cha[i] || 0 : 0), 0) };
+    }
+    const d = (a, b, k) => TS.linhasVar(prev && b ? [a, b, pa.txt.replace('mesmo período do ', '')] : null, prevAno && k ? [a, prevAno[k], 'vs. ano anterior'] : null);
     root.append(h('div', { class: 'grid g-kpi' },
-      TS.kpi('Faturamento', fmt.brl0(ind.vt), d(ind.vt, prev?.vt)),
-      TS.kpi('Atendimentos (cupons)', fmt.int(ind.cupons), d(ind.cupons, prev?.cupons)),
-      TS.kpi('Ticket médio (TKM)', fmt.brl(ind.tkm), d(ind.tkm, prev?.tkm), 'Faturamento ÷ cupons'),
-      TS.kpi('Preço médio (PMA)', fmt.brl(ind.pma), d(ind.pma, prev?.pma), 'Faturamento ÷ itens'),
-      TS.kpi('Itens por atendimento (IPA)', fmt.n2(ind.ipa), d(ind.ipa, prev?.ipa), 'Itens ÷ cupons'),
-      TS.kpi('Chá vendido', fmt.kg(kgTotal) + ' kg', d(kgTotal, prev?.kg)),
+      TS.kpi('Faturamento', fmt.brl0(ind.vt), d(ind.vt, prev?.vt, 'vt')),
+      TS.kpi('Atendimentos (cupons)', fmt.int(ind.cupons), d(ind.cupons, prev?.cupons, 'cupons')),
+      TS.kpi('Ticket médio (TKM)', fmt.brl(ind.tkm), d(ind.tkm, prev?.tkm, 'tkm'), 'Faturamento ÷ cupons'),
+      TS.kpi('Preço médio (PMA)', fmt.brl(ind.pma), d(ind.pma, prev?.pma, 'pma'), 'Faturamento ÷ itens'),
+      TS.kpi('Itens por atendimento (IPA)', fmt.n2(ind.ipa), d(ind.ipa, prev?.ipa, 'ipa'), 'Itens ÷ cupons'),
+      TS.kpi('Chá vendido', fmt.kg(kgTotal) + ' kg', d(kgTotal, prev?.kg, 'kg')),
       TS.kpi('Espaço Gourmet', fmt.pct(R().pctEG(base)), 'do faturamento'),
       // projeção: só quando o período é o mês em andamento
       (['mes', 'anomes'].includes(state.f.preset) || state.f.preset === 'custom') && state.f.de != null && TS.dayToIso(state.f.de).slice(8) === '01'
@@ -477,12 +499,18 @@
     const pctEG = R().pctEG(base);
     const indAll = TS.indicadores(base);
     const indPrev = prevIdx.length ? TS.indicadores(prevIdx) : null;
+    // mês anterior: as mesmas datas um mês antes (a mesma conta do Resumo com "Mês atual")
+    const pi = f.de != null ? TS.periodosIguais(de, ate) : null;
+    const mesIdx = pi ? semSemVendedor(TS.filtrar({ usarTamanho: true, de: pi.mes.de, ate: pi.mes.ate })) : [];
+    const indMes = mesIdx.length ? TS.indicadores(mesIdx) : null;
+    const vars = (k) => TS.linhasVar(indPrev ? [indAll[k], indPrev[k], 'vs. ano anterior'] : null, indMes ? [indAll[k], indMes[k], 'vs. mês anterior'] : null) || 'sem dados para comparar';
     root.append(h('div', { class: 'grid g-kpi' },
-      TS.kpi('Faturamento', fmt.brl0(indAll.vt), indPrev ? h('span', null, TS.deltaSpan(indAll.vt / indPrev.vt - 1), ' vs. mesmo período do ano anterior') : 'sem dados do ano anterior'),
+      TS.kpi('Faturamento', fmt.brl0(indAll.vt), vars('vt')),
+      TS.kpi('TKM', fmt.brl(indAll.tkm), vars('tkm')),
+      TS.kpi('PMA', fmt.brl(indAll.pma), vars('pma')),
+      TS.kpi('IPA', fmt.n2(indAll.ipa), vars('ipa')),
       TS.kpi('Espaço Gourmet', fmt.pct(pctEG), 'do faturamento'),
-      TS.kpi('Loja (sem EG)', fmt.pct(pctEG == null ? null : 1 - pctEG), 'do faturamento'),
-      TS.kpi('TKM', fmt.brl(indAll.tkm), indPrev ? h('span', null, TS.deltaSpan(indAll.tkm / indPrev.tkm - 1), ' ano contra ano') : null),
-      TS.kpi('IPA', fmt.n2(indAll.ipa), indPrev ? h('span', null, TS.deltaSpan(indAll.ipa / indPrev.ipa - 1), ' ano contra ano') : null)));
+      TS.kpi('Loja (sem EG)', fmt.pct(pctEG == null ? null : 1 - pctEG), 'do faturamento')));
 
     // ---- evolução mensal em árvore: Mês → Ano → Vendedor (variação contra o mesmo mês do ano anterior)
     const prevAll = semSemVendedor(TS.filtrar({ usarTamanho: true, ignorar: ['datas'] }));
