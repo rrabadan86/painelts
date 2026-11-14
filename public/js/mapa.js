@@ -31,7 +31,7 @@
       const k = TS.chaveCupom(i);
       let c = m.get(k);
       if (!c) { c = { day: db.day[i], wd: db.wd[i], min: db.min[i] ?? null, vt: 0, qtd: 0 }; m.set(k, c); }
-      c.vt += db.vt[i] || 0; c.qtd += db.qtd[i] || 0;
+      c.vt += db.vt[i] || 0; c.qtd += TS.qtdItem(i);
       if (c.min == null && db.min[i] != null) c.min = db.min[i];
     }
     const lista = [...m.values()];

@@ -201,7 +201,7 @@ TS.metricas = function (idx) {
   const cupons = new Set();
   for (const i of idx) {
     vt += db.vt[i] || 0;
-    qtd += db.qtd[i] || 0;
+    qtd += TS.qtdItem(i);
     cha += db.cha[i] || 0;
     du += (db.du[i] || 0) * (TS.descontoPorUnidade() ? db.qtd[i] || 0 : 1);
     cupons.add(TS.chaveCupom(i));
@@ -238,11 +238,23 @@ TS.cuponsUnicos = function (idx) {
   return t;
 };
 
+/** quantidade que conta como item no PMA e no IPA: "CONSUMÍVEIS - SEM CONTROLE DE ESTOQUE" (ex.: 200 sacos de amostra
+ *  num cupom) entra no faturamento, mas não como item — senão um cupom desses derruba o PMA e infla o IPA */
+TS.qtdItem = function (i) {
+  const db = TS.db;
+  if (!db._semItem || db._semItemN !== db.D.grupoC.length) {
+    const sem = (n) => /^CONSUM[IÍ]VEIS\b.*SEM CONTROLE/i.test(String(n || '').trim());
+    db._semItem = { grupoC: new Set(db.D.grupoC.map((n, k) => (sem(n) ? k : -1)).filter((k) => k >= 0)) };
+    db._semItemN = db.D.grupoC.length;
+  }
+  return db._semItem.grupoC.has(db.grupoC[i]) ? 0 : db.qtd[i] || 0;
+};
+
 /** TKM, PMA e IPA como no relatório */
 TS.indicadores = function (idx) {
   const db = TS.db;
   let vt = 0, qtd = 0;
-  for (const i of idx) { vt += db.vt[i] || 0; qtd += db.qtd[i] || 0; }
+  for (const i of idx) { vt += db.vt[i] || 0; qtd += TS.qtdItem(i); }
   const cup = TS.cuponsUnicos(idx);
   return { vt, qtd, cupons: cup, tkm: cup ? vt / cup : null, pma: qtd ? vt / qtd : null, ipa: cup ? qtd / cup : null };
 };

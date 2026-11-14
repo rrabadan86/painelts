@@ -22,6 +22,9 @@ function hojeSP() {
   return { iso: `${p.year}-${p.month}-${p.day}`, hhmm: `${p.hour === '24' ? '00' : p.hour}:${p.minute}` };
 }
 
+/** "CONSUMÍVEIS - SEM CONTROLE DE ESTOQUE" (ex.: sacos de amostra) entra no faturamento, mas não conta como item (PMA/IPA) */
+const semItem = (v) => /^CONSUM[IÍ]VEIS\b.*SEM CONTROLE/i.test(String(v.grupoC || v.grupo || '').trim());
+
 /** indicadores de um conjunto de vendas (sem "SEM VENDEDOR", como no Resumo) */
 function metricas(vendas) {
   let vt = 0, qtd = 0, kg = 0, eg = 0, arom = 0, puro = 0, acess = 0;
@@ -29,7 +32,7 @@ function metricas(vendas) {
   for (const v of vendas) {
     if (semVendedor(v.vendedor)) continue;
     const x = v.vt || 0;
-    vt += x; qtd += v.qtd || 0;
+    vt += x; qtd += semItem(v) ? 0 : v.qtd || 0;
     cupons.add(v.cupom + '|' + v.loja);
     if (CHA_TOTAL.has(v.grupo)) kg += v.qtdCha || 0;
     if (v.grupoC === EG) eg += x;

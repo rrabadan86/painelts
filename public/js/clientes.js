@@ -43,7 +43,7 @@
       for (const i of itens) {
         if (day === null || db.day[i] > day) day = db.day[i];
         if (taxas.has(db.desc[i])) continue;
-        vt += db.vt[i] || 0; qtd += db.qtd[i] || 0; vends.add(db.D.vendedor[db.vend[i]]);
+        vt += db.vt[i] || 0; qtd += TS.qtdItem(i); vends.add(db.D.vendedor[db.vend[i]]);
       }
       return { day, vt, qtd, vendedores: [...vends].filter(Boolean).join(', ') };
     };
@@ -347,7 +347,7 @@
       if (vMax != null && visitas > vMax) continue;
       const taxas = TS.rules.ids.taxas;
       // com filtro de produto/grupo, o valor é só dos itens filtrados
-      const somaItens = (k) => { let v = 0, q = 0; for (const i of k.itensFiltrados) { if (taxas.has(db.desc[i])) continue; v += db.vt[i] || 0; q += db.qtd[i] || 0; } return [v, q]; };
+      const somaItens = (k) => { let v = 0, q = 0; for (const i of k.itensFiltrados) { if (taxas.has(db.desc[i])) continue; v += db.vt[i] || 0; q += TS.qtdItem(i); } return [v, q]; };
       let vt = 0, qtd = 0;
       for (const k of cupons) { const [v, q] = k.itensFiltrados ? somaItens(k) : [k.vt, k.qtd]; vt += v; qtd += q; }
       out.push({ c, cupons, visitas, vt, qtd, tkm: vt / visitas });

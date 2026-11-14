@@ -56,7 +56,7 @@ function numeros(linhas) {
     if (v.grupoC === EG || v.cat === EG) { eg += x; cupons.eg.add(ch); continue; }
     if (ehCorp(v.vendedor) || ehOmni(v.vendedor)) { corpOmni += x; cupons.omni.add(ch); continue; }
     loja += x;
-    itens += v.qtd || 0;
+    if (!/^CONSUM[IÍ]VEIS\b.*SEM CONTROLE/i.test(String(v.grupoC || v.grupo || '').trim())) itens += v.qtd || 0; // consumíveis não contam como item
     if (ehDelivery(v)) cupons.delivery.add(ch);
     else cupons.loja.add(ch);
     if (!semVendedor(v.vendedor) && !/delivery|entrega/i.test(v.vendedor)) porVend.set(v.vendedor, (porVend.get(v.vendedor) || 0) + x);
