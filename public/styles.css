@@ -1294,3 +1294,17 @@ tr.est-det > td { padding: 0 !important; background: #FBF9F4 !important; }
 .prc-tl-m, .prc-tl-o { font-size: 12px; }
 @media (max-width: 600px) { .prc-drawer { border-radius: 0; } }
 .prc-drawer > .exp-fechar { position: absolute; top: 14px; right: 14px; width: 34px; height: 34px; border-radius: 50%; background: var(--green); color: #fff; border: 0; font-size: 16px; cursor: pointer; opacity: 1; }
+
+/* Preços: composição do custo no painel lateral */
+.prc-comp-w { overflow-x: auto; margin-top: 6px; border: 1px solid var(--line); border-radius: 10px; }
+.prc-comp { width: 100%; border-collapse: collapse; font-size: 13px; }
+.prc-comp th { background: #F6F3EC; color: var(--muted); font-weight: 600; font-size: 11.5px; padding: 7px 8px; text-align: right; white-space: nowrap; }
+.prc-comp td { padding: 7px 8px; text-align: right; border-top: 1px solid var(--line); vertical-align: top; }
+.prc-comp .l { text-align: left; }
+.prc-comp td small { display: block; font-size: 11.5px; }
+.prc-comp tfoot td { background: #FBFAF6; }
+.prc-aa { display: inline-flex; flex-direction: column; align-items: flex-end; gap: 1px; white-space: nowrap; }
+.prc-aa s { font-size: 11.5px; }
+.prc-comp td.l { min-width: 140px; }
+.prc-comp td.l > div { font-weight: 600; }
+@media (max-width: 600px) { .prc-comp th:nth-child(4), .prc-comp td:nth-child(4) { display: none; } .prc-comp td, .prc-comp th { padding: 6px 5px; } .prc-comp td.l { min-width: 110px; } }

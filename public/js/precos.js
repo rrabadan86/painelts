@@ -36,6 +36,8 @@
       }
       hist.set(cod, l);
     }
+    // nota de compra que valia num dia (o último ponto do histórico até o dia, se veio de uma NF)
+    const origemEm = (it, dia) => { let o = null; for (const [d, , x] of hist.get(String(it.cod)) || []) { if (d <= dia) o = x; else break; } return o; };
     const custoEm = (it, dia) => {
       const l = hist.get(String(it.cod));
       if (!l || !l.length) return { v: it.custo || null, est: true };
@@ -96,7 +98,7 @@
         antC = c.v;
       }
       if (!custoEv.length) { const c = custoNoDia(TS.todayDay()); if (c.v != null) custoEv.push({ dia: null, v: c.v, inicio: true, est: true }); }
-      lista.push({ nome: p.nome, cat: p.cat, comp, custoNoDia, vendaEv, custoEv, vt: p.vt, qtd: p.qtd, kg: comp.some(([it]) => it.un === 'Kg') });
+      lista.push({ nome: p.nome, cat: p.cat, comp, custoNoDia, custoEm, origemEm, vendaEv, custoEv, vt: p.vt, qtd: p.qtd, kg: comp.some(([it]) => it.un === 'Kg') });
     }
     return { lista, temCompras: !!(compras && Object.keys(compras.itens || {}).length), inicioCusto: Math.min(...[...hist.values()].map((l) => (l.length ? l[0][0] : Infinity))) };
   }
@@ -137,7 +139,7 @@
   function pintar(corpo, D) {
     const f = state.f, db = TS.db;
     const de = f.de ?? null, ate = Math.min(f.ate ?? db.maxDay, TS.todayDay());
-    const linhas = D.lista.map((p) => ({ ...p, ...noPeriodo(p, de, ate) })).filter((r) => r.vAt != null);
+    const linhas = D.lista.map((p) => ({ ...p, de, ate, ...noPeriodo(p, de, ate) })).filter((r) => r.vAt != null);
     for (const r of linhas) {
       r.status = r.nC && r.nV ? 'ambos' : r.nC ? 'custo' : r.nV ? 'venda' : 'nada';
       r.perdeu = r.mAnt != null && r.mAt != null && r.mAt < r.mAnt - 0.0005;
@@ -202,6 +204,49 @@
       tab);
   }
 
+  // ---------- composição: o que forma o custo de 1 unidade (chá: matéria-prima por kg + saco + etiquetas) ----------
+  function composicao(r) {
+    if (!r.comp || !r.comp.length) return null;
+    const diaAt = r.ate, diaAnt = r.de != null ? r.de - 1 : r.custoEv[0]?.dia ?? diaAt; // sem início no filtro: desde o primeiro custo conhecido
+    const un = (it) => String(it.un || '').toLowerCase();
+    const qtdTxt = (it, q) => (un(it) === 'kg' ? (q < 1 ? `${fmt.int(Math.round(q * 1000))} g` : `${fmt.n2(q)} kg`) : `${Number.isInteger(q) ? fmt.int(q) : fmt.n2(q)} ${it.un || 'un'}`);
+    const linhas = r.comp.map(([it, q]) => {
+      const cAt = r.custoEm(it, diaAt).v, cAnt = r.custoEm(it, diaAnt).v;
+      const o = r.origemEm(it, diaAt);
+      return { it, q, cAnt, cAt, tAnt: cAnt != null ? cAnt * q : null, tAt: cAt != null ? cAt * q : null, o };
+    });
+    const totAt = linhas.reduce((a, l) => a + (l.tAt || 0), 0), totAnt = linhas.reduce((a, l) => a + (l.tAnt || 0), 0);
+    const venda = r.vAt, vendaAnt = r.vAnt ?? r.vAt;
+    const mudou = (a, b) => a != null && b != null && Math.abs(a - b) >= 0.005;
+    // custo subindo = vermelho; venda subindo = verde
+    const badge = (a, b, venda) => (mudou(a, b) && a ? h('span', { class: 'prc-badge ' + ((venda ? b < a : b > a) ? 'prc-ruim' : 'prc-bom') }, pctTxt(b / a - 1)) : null);
+    const antesAgora = (a, b, sufixo = '', venda = false) => h('span', { class: 'prc-aa' }, mudou(a, b) ? h('s', { class: 'muted' }, fmt.brl(a) + sufixo) : null, h('b', null, b == null ? '—' : fmt.brl(b) + sufixo), badge(a, b, venda));
+    const tb = h('tbody', null, ...linhas.map((l) => h('tr', null,
+      h('td', { class: 'l' }, h('div', null, l.it.desc || l.it.cod), h('small', { class: 'muted' }, `${qtdTxt(l.it, l.q)} por unidade${l.o ? ` · NF ${l.o.nf}` : ''}`)),
+      h('td', null, antesAgora(l.cAnt, l.cAt, un(l.it) === 'kg' ? '/kg' : '')),
+      h('td', null, antesAgora(l.tAnt, l.tAt)),
+      h('td', null, totAt ? fmt.pct((l.tAt || 0) / totAt) : '—'),
+      h('td', null, venda ? fmt.pct((l.tAt || 0) / venda) : '—'))));
+    const mAnt = vendaAnt ? (vendaAnt - totAnt) / vendaAnt : null, mAt = venda ? (venda - totAt) / venda : null;
+    const tf = h('tfoot', null, h('tr', null,
+      h('td', { class: 'l' }, h('b', null, 'Custo da unidade')), h('td'), h('td', null, antesAgora(totAnt, totAt)), h('td', null, '100%'), h('td', null, venda ? fmt.pct(totAt / venda) : '—')),
+      h('tr', null, h('td', { class: 'l' }, h('b', null, 'Venda · margem bruta')), h('td'),
+        h('td', null, antesAgora(vendaAnt, venda, '', true)), h('td'),
+        h('td', null, mAt == null ? '—' : h('span', { class: 'prc-aa' }, mudou(mAnt, mAt) && Math.abs(mAt - mAnt) >= 0.0005 ? h('s', { class: 'muted' }, fmt.pct(mAnt)) : null, h('b', { class: mAnt != null && mAt < mAnt - 0.0005 ? 'neg' : null }, fmt.pct(mAt))))));
+    // quem explica a variação do custo
+    const dif = totAt - totAnt;
+    const maior = linhas.filter((l) => mudou(l.tAnt, l.tAt)).sort((a, b) => Math.abs(b.tAt - b.tAnt) - Math.abs(a.tAt - a.tAnt))[0];
+    const resumo = Math.abs(dif) >= 0.005 && maior
+      ? `No período o custo da unidade ${dif > 0 ? 'subiu' : 'caiu'} ${fmt.brl(Math.abs(dif))}; ${fmt.brl(Math.abs(maior.tAt - maior.tAnt))} disso por ${maior.it.desc || maior.it.cod}${un(maior.it) === 'kg' ? ` (${fmt.brl(maior.cAnt)} → ${fmt.brl(maior.cAt)} o kg)` : ''}.`
+      : 'Nenhum componente mudou de custo no período.';
+    return h('div', null,
+      h('div', { class: 'f-label mt' }, r.kg ? 'Composição do custo (chá a granel)' : 'Composição do custo'),
+      h('div', { class: 'muted prc-nota' }, `Antes = ${quando(TS.dayToIso(diaAnt))} · agora = ${quando(TS.dayToIso(r.ate))} (período do filtro). ${resumo}`),
+      h('div', { class: 'prc-comp-w' }, h('table', { class: 'prc-comp' },
+        h('thead', null, h('tr', null, h('th', { class: 'l' }, 'Item'), h('th', null, 'Custo do item'), h('th', null, 'Na unidade'), h('th', { title: 'Parte do custo da unidade' }, '% custo'), h('th', { title: 'Parte do preço de venda' }, '% venda'))),
+        tb, tf)));
+  }
+
   // ---------- painel lateral: gráfico + linha do tempo + simulador ----------
   function abrirProduto(r) {
     document.querySelector('.prc-drawer-camada')?.remove();
@@ -259,6 +304,7 @@
       h('div', { class: 'f-label mt' }, 'Evolução: custo × venda'),
       h('div', { class: 'prc-graf' }, graf),
       h('div', { class: 'muted prc-nota' }, r.custoEv.some((e) => e.est) || !r.custoEv.some((e) => !e.inicio) ? 'O histórico de custo começa na primeira nota de compra (ou importação de estoque) que o painel tem; antes disso a linha de custo é estimada.' : ''),
+      composicao(r),
       h('div', { class: 'f-label mt' }, 'Simular preço de venda'),
       h('div', { class: 'prc-sim' }, h('span', null, 'R$ '), inp, manter && Math.abs(manter - venda) > 0.01 ? h('button', { type: 'button', class: 'btn', onclick: () => { inp.value = (Math.ceil(manter * 10) / 10).toFixed(2); sim(); } }, `Voltar à margem de antes (${fmt.pct(r.mAnt)}): ${fmt.brl(Math.ceil(manter * 10) / 10)}`) : null),
       out, h('small', { class: 'muted' }, 'O painel só simula: o preço é alterado no AppNext.'),
