@@ -13,6 +13,7 @@
  *  - Clientes: só o total do dia e o total do histórico (mesmo dia da semana do ano anterior).
  */
 const I = require('./indicadores');
+const CX = require('./caixa');
 
 const EG = 'ESPAÇO GOURMET';
 const DIA = 86400000;
@@ -106,7 +107,14 @@ function calcular({ loja, vendas, metaPlanilha }, dia) {
     corpOmni: hoje.corpOmni,
     eg: { metaDia: egMetaDia, historico: ant.eg, realizadas: hoje.eg, clientes: hoje.clientes.eg, tkm: hoje.egTkm, pct: egMetaDia ? hoje.eg / egMetaDia : null },
     total: { hoje: hoje.total, historico: ant.total },
+    caixa: caixaDe(loja, dia),
   };
+}
+
+/** fechamento de caixa do dia (AppNext → Fechamentos de PDV); null se a loja nunca teve o caixa coletado */
+function caixaDe(loja, dia) {
+  if (loja.caixaDemo) return loja.caixaDemo;
+  try { const c = CX.doDia(loja.id, dia); return c.vazio && !c.atualizado ? null : c; } catch { return null; }
 }
 
 /** último dia com vendas até "ate" */
@@ -142,8 +150,21 @@ function texto(f) {
     '',
     `☕ Espaço Gourmet: ${brl(f.eg.realizadas)} (meta ${brl(f.eg.metaDia)} · histórico ${brl(f.eg.historico)}) · ${f.eg.clientes} clientes · TKM ${brl(f.eg.tkm)}`,
     `🏪 Venda total do dia (loja + corp. + EG): ${brl(f.total.hoje)} · histórico ${brl(f.total.historico)}`,
+    ...textoCaixa(f.caixa),
   ];
   return l.filter((x) => x != null).join('\n');
+}
+
+function textoCaixa(c) {
+  if (!c) return [];
+  if (c.vazio) return ['', '🧾 Fechamento de caixa: o caixa do dia ainda não foi fechado no AppNext (ou a coleta ainda não o leu).'];
+  const dif = c.diferenca;
+  return ['', '🧾 Fechamento de caixa',
+    ...c.formas.map((x) => `• ${x.rot}: ${brl(x.valor)}${x.dif ? ` (dif. informada ${brl(x.dif)})` : ''}`),
+    `• Suprimento: ${brl(c.suprimento)} · Sangria: ${brl(c.sangria)}`,
+    `• Abertura do caixa: ${brl(c.abertura)} · Fechamento do caixa: ${brl(c.fechamento)}`,
+    `• Deveria ter em caixa: ${brl(c.deveria)}`,
+    `${dif === 0 ? '✅' : dif > 0 ? '🔵' : '🔴'} Diferença: ${dif < 0 ? '-' + brl(-dif) : brl(dif)}${dif > 0 ? ' (sobrou)' : dif < 0 ? ' (faltou)' : ''}`];
 }
 
 function html(f) {
@@ -177,6 +198,24 @@ function html(f) {
       </td>
       <td style="padding:12px 14px;text-align:right;white-space:nowrap;font-size:20px;font-weight:700;color:${corValor || ESCURO};${ultimo ? '' : 'border-bottom:1px solid ' + LINHA + ';'}">${esc(valor)}</td>
     </tr>`;
+  const hora = (iso) => (iso || '').slice(11, 16);
+  const htmlCaixa = (c) => {
+    if (!c) return '';
+    if (c.vazio) return secao('Fechamento de caixa', null, [['Caixa do dia', '', 'ainda não fechado', { sub: 'o caixa ainda não foi fechado no AppNext, ou a última coleta foi antes do fechamento' }]]);
+    const caixas = c.caixas.map((x) => `PDV ${x.pdv ?? '—'}${x.turno ? ' · ' + x.turno : ''} · ${hora(x.abertura)} às ${hora(x.fechamento)}${x.operador ? ' · ' + x.operador : ''}`).join(' | ');
+    const d = c.diferenca;
+    return secao('Fechamento de caixa', ['Valor', ''], [
+      ...c.formas.map((x) => [x.rot, brl(x.valor), x.dif ? `dif. ${sinal(x.dif)}` : '', x.dif ? { corB: VERM } : {}]),
+      ['Total vendido', brl(c.totalVendas), '', { forte: true, sub: caixas }],
+    ]) + secao('Conferência do caixa', ['Valor', ''], [
+      ['Suprimento', brl(c.suprimento), ''],
+      ['Sangria', brl(c.sangria), '', c.sangria ? { corA: VERM } : {}],
+      ['Abertura do caixa', brl(c.abertura), ''],
+      ['Fechamento do caixa', brl(c.fechamento), ''],
+      ['Deveria ter em caixa', brl(c.deveria), '', { sub: 'abertura + vendas em dinheiro + suprimento − sangria', corA: AZUL }],
+      ['Diferença', sinal(d), d > 0 ? 'sobrou' : d < 0 ? 'faltou' : 'caixa batido', { forte: true, corA: d === 0 ? ESCURO : cor(d > 0), corB: d === 0 ? AZUL : cor(d > 0) }],
+    ]);
+  };
   const r = f.recalculo;
   const pctMetaDia = f.vendas.pctMeta, pctAcum = f.acumulado.pct;
   return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:620px;margin:0 auto;border-collapse:separate;background:#ffffff;border:1px solid ${LINHA};border-radius:16px;font-family:Arial,Helvetica,sans-serif;color:${ESCURO}">
@@ -221,6 +260,7 @@ ${secao('Espaço Gourmet', ['Hoje', 'Histórico'], [
 ${secao('Total do dia', ['Hoje', 'Histórico'], [
     ['Total', brl(f.total.hoje), brl(f.total.historico), { forte: true, sub: 'loja + corporativo + Espaço Gourmet' }],
   ])}
+${htmlCaixa(f.caixa)}
 <tr><td style="padding:20px 18px 22px;font-size:11px;line-height:1.5;color:${CINZA}">
   Azul = acima da meta · vermelho = abaixo · histórico = mesmo dia da semana do ano anterior (sexta com sexta); em 24, 25 e 31/12, a mesma data.
 </td></tr>

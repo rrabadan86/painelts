@@ -271,6 +271,13 @@ app.get('/api/demo/fechamento', (req, res) => {
   const dia = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.dia || '')) ? req.query.dia : F2.ultimoDia(p.vendas, IND.hojeSP().iso);
   if (!dia) return res.json({ vazio: true });
   const f = F2.calcular(p, dia);
+  // caixa fictício: as vendas do dia repartidas nas formas de pagamento
+  const t = Math.round((f.total.hoje || 0) * 100) / 100, parte = (x) => Math.round(t * x * 100) / 100;
+  const formas = [['credito', 'Cartão de crédito', parte(0.52)], ['debito', 'Cartão de débito', parte(0.21)], ['dinheiro', 'Dinheiro', parte(0.05)], ['ecommerce', 'Ecommerce', 0], ['troca', 'Troca', 0]];
+  formas.push(['pix', 'Pix', Math.round((t - formas.reduce((s, x) => s + x[2], 0)) * 100) / 100]);
+  const din = formas[2][2], deveria = Math.round((300 + din - 20) * 100) / 100;
+  f.caixa = { dia, vazio: false, caixas: [{ numero: 1, pdv: 1, turno: 'Manhã', abertura: dia + 'T10:00:00', fechamento: dia + 'T22:02:00', operador: 'Vendedora fictícia' }],
+    formas: formas.map(([k, rot, valor]) => ({ k, rot, valor, informado: valor, dif: 0 })), totalVendas: t, suprimento: 0, sangria: 20, abertura: 300, fechamento: deveria + 1, deveria, diferenca: 1, movimentos: [] };
   res.json({ ...f, html: F2.html(f) });
 });
 app.get('/api/demo/alertas', (req, res) => {

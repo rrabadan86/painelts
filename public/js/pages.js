@@ -404,11 +404,11 @@
     const tabVend = TS.table({
       cols: [
         { key: 'vendedor', label: 'Vendedor', align: 'l', sticky: true },
+        { key: 'vt', label: 'Faturamento', fmt: fmt.brl },
         { key: 'cupons', label: 'Cupons', fmt: fmt.int },
         { key: 'tkm', label: 'TKM', fmt: fmt.brl, title: 'Ticket médio' },
         { key: 'pma', label: 'PMA', fmt: fmt.brl, title: 'Preço médio por item' },
         { key: 'ipa', label: 'IPA', fmt: fmt.n2, title: 'Itens por atendimento' },
-        { key: 'vt', label: 'Faturamento', fmt: fmt.brl },
         { key: 'kg', label: 'Chá (kg)', fmt: kgFmt },
         ...tipoCols.map((n) => ({ key: 'kg_' + n, label: n, fmt: kgFmt, title: `Chá ${n} em kg` })),
       ],
@@ -909,12 +909,12 @@
     const tab = TS.table({
       cols: [
         { key: 'vendedor', label: 'Vendedor', align: 'l', sticky: true },
+        { key: 'vt', label: 'Faturamento', fmt: fmt.brl }, { key: 'vtP', label: 'Antes', fmt: fmt.brl, ...ant_ }, dcol('dVt'),
         { key: 'cup', label: 'Cupons', fmt: fmt.int }, { key: 'cupP', label: 'Antes', fmt: fmt.int, ...ant_ },
         { key: 'tkm', label: 'TKM', fmt: fmt.brl }, { key: 'tkmP', label: 'Antes', fmt: fmt.brl, ...ant_ }, dcol('dTkm'),
         { key: 'pma', label: 'PMA', fmt: fmt.brl }, { key: 'pmaP', label: 'Antes', fmt: fmt.brl, ...ant_ }, dcol('dPma'),
         { key: 'ipa', label: 'IPA', fmt: fmt.n2 }, { key: 'ipaP', label: 'Antes', fmt: fmt.n2, ...ant_ }, dcol('dIpa'),
         { key: 'desc', label: 'Descontos', fmt: fmt.brl }, { key: 'descP', label: 'Antes', fmt: fmt.brl, ...ant_ },
-        { key: 'vt', label: 'Faturamento', fmt: fmt.brl }, { key: 'vtP', label: 'Antes', fmt: fmt.brl, ...ant_ }, dcol('dVt'),
       ],
       rows, sortKey: 'vt',
       total: { vendedor: 'Total', cup: a.cupons, cupP: p.cupons, tkm: a.tkm, tkmP: p.tkm, dTkm: rel(a.tkm, p.tkm), pma: a.pma, pmaP: p.pma, dPma: rel(a.pma, p.pma), ipa: a.ipa, ipaP: p.ipa, dIpa: rel(a.ipa, p.ipa), desc: desc(atual), descP: desc(ant), vt: a.vt, vtP: p.vt, dVt: rel(a.vt, p.vt) },

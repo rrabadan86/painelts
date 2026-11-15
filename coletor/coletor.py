@@ -44,6 +44,8 @@ SCRIPT_XML = Path(os.getenv("COLETOR_SCRIPT_XML", Path(__file__).with_name("next
 SCRIPT_ESTOQUE = Path(os.getenv("COLETOR_SCRIPT_ESTOQUE", Path(__file__).with_name("nextsoft_estoque.py")))
 # notas de entrada (compras): histórico de custo desde a primeira compra; roda junto do estoque
 SCRIPT_COMPRAS = Path(os.getenv("COLETOR_SCRIPT_COMPRAS", Path(__file__).with_name("nextsoft_compras.py")))
+# fechamentos de caixa (Fechamentos de PDV): vão no e-mail do fechamento do dia; rodam junto das vendas
+SCRIPT_CAIXA = Path(os.getenv("COLETOR_SCRIPT_CAIXA", Path(__file__).with_name("nextsoft_caixa.py")))
 SCRIPT_FIXE = Path(os.getenv("COLETOR_SCRIPT_FIXE", Path(__file__).with_name("fixe_export.py")))
 # Sistema de Pedidos da franqueadora: catálogo (toda noite) e montar o carrinho (pelo painel)
 SCRIPT_PEDIDO = Path(os.getenv("COLETOR_SCRIPT_PEDIDO", Path(__file__).with_name("nextsoft_pedido.py")))
@@ -145,7 +147,7 @@ def ao_vivo(loja):
             etapa = m.group(1)
         if not uteis or uteis[-1] != t:
             uteis.append(t)
-    nomes = {"nextsoft_export_to_drive.py": "vendas", "nextsoft_xml.py": "XML das notas", "nextsoft_estoque.py": "estoque", "nextsoft_compras.py": "notas de compra"}
+    nomes = {"nextsoft_export_to_drive.py": "vendas", "nextsoft_xml.py": "XML das notas", "nextsoft_estoque.py": "estoque", "nextsoft_compras.py": "notas de compra", "nextsoft_caixa.py": "fechamento de caixa"}
     return {"linhas": uteis[-12:], "etapa": etapa, "parte": nomes.get(script, script),
             "atividade": datetime.fromtimestamp(st.st_mtime, TZ).isoformat()}
 
@@ -392,6 +394,11 @@ def rodar(job):
         xml = {"ok": cx == 0, "codigo": cx}
         if principal is None:
             ok, codigo, principal = cx == 0, cx, "xml"
+    caixa = None
+    if tipo in ("ambos", "vendas") and job.get("gatilho") != "historico" and SCRIPT_CAIXA.exists():
+        # fechamento de caixa: só acrescenta os novos; falha aqui não muda o resultado da coleta
+        cx2 = executar(SCRIPT_CAIXA, {"SAIDA_CAIXA": str(DATA_DIR / loja / "caixa" / "fechamentos.json"), "SAIDA_ARQUIVO": str(pasta / "_nao_usado.xlsx")})
+        caixa = {"ok": cx2 == 0, "codigo": cx2}
     estoque = None
     fixe = None
     if (job.get("fixe") or tipo == "fixe") and SCRIPT_FIXE.exists():
@@ -415,7 +422,7 @@ def rodar(job):
     cauda = [l for t in trechos for l in t] or (log_path.read_text(encoding="utf-8", errors="replace").splitlines()[-25:] if log_path.exists() else [])
     with lock:
         e = _estado(loja)
-        e["ultima"] = {**job, "tipo": tipo, "xml": xml, "estoque": estoque, "fixe": fixe, "fim": datetime.now(TZ).isoformat(), "ok": ok, "codigo": codigo,
+        e["ultima"] = {**job, "tipo": tipo, "xml": xml, "caixa": caixa, "estoque": estoque, "fixe": fixe, "fim": datetime.now(TZ).isoformat(), "ok": ok, "codigo": codigo,
                        "duracao_s": round(time.time() - inicio), "log": cauda}
         lote = e.get("lote")
         if job["gatilho"] == "historico" and lote and not lote.get("fim"):
