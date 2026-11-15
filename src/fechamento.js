@@ -114,7 +114,7 @@ function calcular({ loja, vendas, metaPlanilha }, dia) {
 /** fechamento de caixa do dia (AppNext → Fechamentos de PDV); null se a loja nunca teve o caixa coletado */
 function caixaDe(loja, dia) {
   if (loja.caixaDemo) return loja.caixaDemo;
-  try { const c = CX.doDia(loja.id, dia); return c.vazio && !c.atualizado ? null : c; } catch { return null; }
+  try { const c = CX.doDia(loja.id, dia); return c.vazio && !c.atualizado ? { dia, vazio: true, nunca: true } : c; } catch { return null; }
 }
 
 /** último dia com vendas até "ate" */
@@ -157,7 +157,7 @@ function texto(f) {
 
 function textoCaixa(c) {
   if (!c) return [];
-  if (c.vazio) return ['', '🧾 Fechamento de caixa: o caixa do dia ainda não foi fechado no AppNext (ou a coleta ainda não o leu).'];
+  if (c.vazio) return ['', c.nunca ? '🧾 Fechamento de caixa: o robô ainda não leu os Fechamentos de PDV desta loja (aparece depois da próxima coleta das vendas).' : '🧾 Fechamento de caixa: o caixa do dia ainda não estava fechado no AppNext na última leitura.'];
   const dif = c.diferenca;
   return ['', '🧾 Fechamento de caixa',
     ...c.formas.map((x) => `• ${x.rot}: ${brl(x.valor)}${x.dif ? ` (dif. informada ${brl(x.dif)})` : ''}`),
@@ -201,7 +201,11 @@ function html(f) {
   const hora = (iso) => (iso || '').slice(11, 16);
   const htmlCaixa = (c) => {
     if (!c) return '';
-    if (c.vazio) return secao('Fechamento de caixa', null, [['Caixa do dia', '', 'ainda não fechado', { sub: 'o caixa ainda não foi fechado no AppNext, ou a última coleta foi antes do fechamento' }]]);
+    if (c.vazio) {
+      const lido = c.atualizado ? new Date(c.atualizado).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : null;
+      return secao('Fechamento de caixa', null, [['Caixa do dia', '', c.nunca ? 'ainda não lido' : 'ainda não fechado',
+        { sub: c.nunca ? 'o robô ainda não leu os Fechamentos de PDV do AppNext desta loja; aparece depois da próxima coleta das vendas' : `o caixa deste dia não estava fechado no AppNext na última leitura (${lido})` }]]);
+    }
     const caixas = c.caixas.map((x) => `PDV ${x.pdv ?? '—'}${x.turno ? ' · ' + x.turno : ''} · ${hora(x.abertura)} às ${hora(x.fechamento)}${x.operador ? ' · ' + x.operador : ''}`).join(' | ');
     const d = c.diferenca;
     return secao('Fechamento de caixa', ['Valor', ''], [
