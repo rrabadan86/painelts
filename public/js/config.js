@@ -220,7 +220,9 @@
       const falta = tipos.filter((t) => !feitos[t]);
       return linhaSit('rodando', 'Cadastro de clientes (FIXE)', falta.length === tipos.length ? `aguardando ${tipos.length === 1 ? 'o e-mail' : `os ${tipos.length} e-mails`} do FIXE` : `chegou ${tipos.length - falta.length} de ${tipos.length} e-mails`,
         h('ul', { class: 'cfg-fx-emails' }, ...tipos.map((t) => h('li', { class: feitos[t] ? 'ok' : 'espera' }, feitos[t] ? '✓ ' : '… ', NOME[t] || t, feitos[t] ? ` · chegou ${dt(feitos[t].recebido)}${feitos[t].doSpam ? ' (estava no spam)' : ''}` : ' · aguardando'))),
-        `Pedido feito em ${dt(fx.pedido.em)}. O painel olha o Gmail da loja a cada 2 minutos, inclusive no spam; se não chegar em 3 horas, avisa aqui.`);
+        `Pedido feito em ${dt(fx.pedido.em)}. O painel olha o Gmail da loja a cada 2 minutos, inclusive no spam; se não chegar em 3 horas, avisa aqui.`,
+        // enquanto espera, o que está valendo no painel
+        u && u.ok ? `Última atualização que deu certo: Base de leads em ${dt(u.em)}${fx.logs && fx.logs.em ? ` · Logs em ${dt(fx.logs.em)}` : ''}.` : fx.logs && fx.logs.em ? `Logs importados em ${dt(fx.logs.em)}.` : null);
     }
     if (exF && !exF.ok && (!u || (l.status.execucao.fim && l.status.execucao.fim > u.em))) return linhaSit('erro', 'Cadastro de clientes (FIXE)', h('span', { class: 'neg' }, 'o pedido no FIXE falhou'), 'O coletor não conseguiu pedir a exportação no FIXE. Veja o motivo no log técnico de "Dados e atualização".', u && u.ok ? `Última importação que deu certo: ${dt(u.em)}` : null);
     if (u && !u.ok) return linhaSit('erro', 'Cadastro de clientes (FIXE)', h('span', { class: 'neg' }, 'a última importação falhou'), `${dt(u.em)} · ${u.erro}`);
