@@ -1426,3 +1426,4 @@ tr.cp-enviada td { background: #EEF5EC !important; }
 .fi-extrato .pos { color: #2C5234; } .fi-extrato .neg { color: #7A2D74; }
 .cfg-fx-emails { list-style: none; margin: 2px 0; padding: 0; display: grid; gap: 2px; }
 .cfg-fx-emails li.ok { color: #2C5234; } .cfg-fx-emails li.espera { color: var(--muted); }
+.cfg-per-p.rod { background: #4A7FC1; }

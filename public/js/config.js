@@ -170,6 +170,17 @@
       const d = diasDesde(l.estoque.em);
       out.push(item('Estoque', d != null && d > 2 ? 'atr' : 'ok', dt(l.estoque.em), `${fmt.int(l.estoque.itens)} produtos${d != null && d > 2 ? ` · foto de ${d} dias atrás` : ''}`));
     } else out.push(item('Estoque', 'nada', 'não importado', 'Use "Importar histórico" → "Estoque e custos" ou "Rodar agora"'));
+    // FIXE (cadastro e pontos): data da última importação que deu certo; aguardando o e-mail = azul
+    const fx = l.fixe || {};
+    if (fx.url || fx.ultimo || fx.logs) {
+      const u = fx.ultimo && fx.ultimo.ok ? fx.ultimo : null;
+      const em = [u && u.em, fx.logs && fx.logs.em].filter(Boolean).sort().pop() || null;
+      const d = diasDesde(em);
+      if (fx.pedido) out.push(item('FIXE', 'rod', 'aguardando e-mail', `Pedido feito em ${dt(fx.pedido.em)}${em ? ` · última importação ${dt(em)}` : ''}`));
+      else if (fx.ultimo && !fx.ultimo.ok) out.push(item('FIXE', 'atr', em ? dt(em) : 'falhou', `A última importação falhou: ${fx.ultimo.erro || ''}`));
+      else if (em) out.push(item('FIXE', d != null && d > 2 ? 'atr' : 'ok', dt(em), `Base de leads ${u ? dt(u.em) : '—'} · Logs ${fx.logs && fx.logs.em ? dt(fx.logs.em) : '—'}${d != null && d > 2 ? ` · ${d} dias sem atualizar` : ''}`));
+      else out.push(item('FIXE', 'nada', 'não importado', 'Vem na atualização da noite ou em "Atualizar agora" com FIXE marcado'));
+    }
     return h('div', { class: 'cfg-loja-info' }, ...out);
   }
   function cartaoLoja(l) {
