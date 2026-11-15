@@ -219,7 +219,9 @@
       const NOME = { leads: 'Base de leads (cadastro e saldo de pontos)', logs: 'Logs (movimentos de pontos)' };
       const falta = tipos.filter((t) => !feitos[t]);
       return linhaSit('rodando', 'Cadastro de clientes (FIXE)', falta.length === tipos.length ? `aguardando ${tipos.length === 1 ? 'o e-mail' : `os ${tipos.length} e-mails`} do FIXE` : `chegou ${tipos.length - falta.length} de ${tipos.length} e-mails`,
-        h('ul', { class: 'cfg-fx-emails' }, ...tipos.map((t) => h('li', { class: feitos[t] ? 'ok' : 'espera' }, feitos[t] ? '✓ ' : '… ', NOME[t] || t, feitos[t] ? ` · chegou ${dt(feitos[t].recebido)}${feitos[t].doSpam ? ' (estava no spam)' : ''}` : ' · aguardando'))),
+        h('ul', { class: 'cfg-fx-emails' }, ...tipos.map((t) => h('li', { class: feitos[t] ? 'ok' : 'espera' }, feitos[t] ? '✓ ' : '… ', NOME[t] || t, feitos[t] ? ` · chegou ${dt(feitos[t].recebido)}${feitos[t].doSpam ? ' (estava no spam)' : ''}` : ' · aguardando',
+          fx.pedido.respostas && fx.pedido.respostas[t] ? h('small', { class: 'muted' }, ` — o FIXE mostrou: "${fx.pedido.respostas[t]}"`) : null))),
+        fx.pedido.email ? `Exportação pedida pelo robô para ${fx.pedido.email}.` : null,
         `Pedido feito em ${dt(fx.pedido.em)}. O painel olha o Gmail da loja a cada 2 minutos, inclusive no spam; se não chegar em 3 horas, avisa aqui.`,
         // enquanto espera, o que está valendo no painel
         u && u.ok ? `Última atualização que deu certo: Base de leads em ${dt(u.em)}${fx.logs && fx.logs.em ? ` · Logs em ${dt(fx.logs.em)}` : ''}.` : fx.logs && fx.logs.em ? `Logs importados em ${dt(fx.logs.em)}.` : null);

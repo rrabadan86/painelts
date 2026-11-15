@@ -4,6 +4,7 @@
 # baixa a planilha e importa no cadastro. Aqui só fazemos o pedido e deixamos um aviso para o painel.
 # Variáveis: FIXE_URL (página de Leads da loja), FIXE_USER, FIXE_PASS, FIXE_EMAIL (para onde mandar), SAIDA_FIXE (aviso .json)
 import json
+import re
 import os
 import sys
 import traceback
@@ -82,6 +83,7 @@ def main():
                     page.goto(URL, wait_until="domcontentloaded", timeout=60000)
                     page.wait_for_timeout(2500)
             feitos = []
+            respostas = {}
             for rotulo, tipo in (("Base de leads", "leads"), ("Logs", "logs")):
                 log(f"3) Leads → Exportar → {rotulo}")
                 exp = primeiro(page, ["button:has-text('Exportar')", "a:has-text('Exportar')"], 20000)
@@ -100,8 +102,31 @@ def main():
                 ok = primeiro(page, ["[role=dialog] button:has-text('Exportar')", "button:has-text('Exportar') >> nth=-1"], 5000)
                 if not ok:
                     raise RuntimeError("não achei o botão Exportar da janela")
+                antes = page.evaluate("() => document.body.innerText")
                 ok.click()
                 page.wait_for_timeout(3500)
+                # o que o FIXE respondeu (aviso na tela): ajuda a saber se o problema é do FIXE ou do robô
+                resposta = ""
+                for sel in ["[role=alert]", "[role=status]", ".Toastify__toast", ".toast", ".MuiSnackbar-root", ".swal2-popup", ".notification", ".ant-message", ".v-snack"]:
+                    try:
+                        el = page.locator(sel).first
+                        if el.count() and el.is_visible():
+                            resposta = " ".join(el.inner_text().split())[:200]
+                            if resposta:
+                                break
+                    except Exception:  # noqa: BLE001
+                        pass
+                if not resposta:
+                    try:
+                        depois = page.evaluate("() => document.body.innerText")
+                        novas = [l.strip() for l in depois.splitlines() if l.strip() and l.strip() not in antes]
+                        resposta = " | ".join(novas)[:200]
+                    except Exception:  # noqa: BLE001
+                        pass
+                respostas[tipo] = resposta
+                log(f"   O FIXE mostrou: {resposta or '(nenhum aviso na tela)'}")
+                if re.search(r"erro|falha|inválid|invalid|não foi possível|tente novamente", resposta, re.I):
+                    raise RuntimeError(f"o FIXE recusou a exportação de {rotulo}: {resposta}")
                 # fecha a janela se ficou aberta
                 if primeiro(page, ["[role=dialog]"], 800):
                     page.keyboard.press("Escape")
@@ -110,7 +135,7 @@ def main():
                 log(f"4) {rotulo}: exportação pedida para {EMAIL}")
             destino = Path(SAIDA)
             destino.parent.mkdir(parents=True, exist_ok=True)
-            destino.write_text(json.dumps({"em": datetime.now(TZ).isoformat(), "email": EMAIL, "tipos": feitos}), encoding="utf-8")
+            destino.write_text(json.dumps({"em": datetime.now(TZ).isoformat(), "email": EMAIL, "tipos": feitos, "respostas": respostas}), encoding="utf-8")
             return 0
         except Exception:  # noqa: BLE001
             log("### ERRO NO FIXE ###")
