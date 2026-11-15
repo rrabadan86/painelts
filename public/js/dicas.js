@@ -17,7 +17,7 @@ TS.DICAS = {
   'Loja (sem EG)': 'Parte do faturamento que veio da loja (chás, acessórios e alimentação), sem o Espaço Gourmet.',
   'Projeção do faturamento': 'Faturamento até agora ÷ dias que já passaram × dias do mês. Considera o ritmo atual; feriados e datas fortes no fim do mês mudam o resultado.',
   'Desempenho por vendedor': 'Indicadores de cada vendedor no período. Cupons de mais de um vendedor contam para cada um. Clique no título de uma coluna para ordenar.',
-  'Faturamento por dia da semana': 'Soma do faturamento de cada dia da semana no período. Períodos longos mostram o padrão da semana; curtos podem ter mais segundas que sábados, por exemplo.',
+  'Faturamento por dia da semana': 'Total: soma do faturamento de cada dia da semana no período. Média por dia: o total dividido pelo número daquele dia da semana com venda no período (ex.: 4 sextas). A média corrige períodos que têm mais segundas que sábados, por exemplo.',
   'Vendas por produto': 'Quantidade, quilos e faturamento de cada produto no período, sem as taxas de serviço e entrega.',
   'Chá em kg': 'Os chás que mais venderam em quilos no período.',
   'Acessórios e alimentação': 'Os acessórios e itens de alimentação que mais venderam em unidades no período.',

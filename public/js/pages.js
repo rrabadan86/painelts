@@ -417,10 +417,14 @@
     root.append(TS.section('Visão geral'), TS.card('Desempenho por vendedor', 'Clique no título de uma coluna para ordenar', tabVend));
 
     // ---- dia da semana + produtos
+    // total do período ou média por dia (total ÷ quantos daquele dia da semana tiveram venda no período)
+    const modoSem = state.semModo === 'media' ? 'media' : 'total';
     const lojasIdx = TS.agrupar(base.filter((i) => db.D.grupoC[db.grupoC[i]] !== ''), (i) => db.loja[i]);
     const dsSemana = [...lojasIdx].map(([l, idx], k) => {
       const arr = new Array(7).fill(0);
-      for (const i of idx) arr[db.wd[i]] += db.vt[i] || 0;
+      const dias = Array.from({ length: 7 }, () => new Set());
+      for (const i of idx) { arr[db.wd[i]] += db.vt[i] || 0; dias[db.wd[i]].add(db.day[i]); }
+      if (modoSem === 'media') for (let w = 0; w < 7; w++) arr[w] = dias[w].size ? arr[w] / dias[w].size : 0;
       return { label: db.D.loja[l], data: arr, borderColor: TS.color(k), backgroundColor: TS.alpha(TS.color(k), .12), fill: lojasIdx.size === 1, tension: .35, pointRadius: 4 };
     });
     if (dsSemana.length > 1) dsSemana.push(TS.dsMedia('Média das lojas', TS.mediaSeries(dsSemana.map((d) => d.data))));
@@ -448,7 +452,8 @@
       total: { produto: 'Total', qtd: rowsP.reduce((s, r) => s + r.qtd, 0), kg: rowsP.reduce((s, r) => s + r.kg, 0), vt: rowsP.reduce((s, r) => s + r.vt, 0) },
     });
     root.append(h('div', { class: 'grid g-3-2 mt' },
-      TS.card('Faturamento por dia da semana', 'Soma do período, por loja', chSemana),
+      TS.cardWithTools('Faturamento por dia da semana', modoSem === 'media' ? 'Média por dia com venda no período (ex.: total das sextas ÷ número de sextas), por loja' : 'Soma do período, por loja',
+        TS.seg([['Total', 'total'], ['Média por dia', 'media']], modoSem, (v) => { state.semModo = v; TS.render(); }), chSemana),
       TS.cardWithTools('Vendas por produto', 'Sem taxa de serviço/entrega', tabProd.searchBox, tabProd)));
 
     // ---- volume por produto
