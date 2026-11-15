@@ -244,7 +244,7 @@
     const rotAno = (y, ym) => { const d = diasDoMes(ym); return d.parcial ? `${y} (dias ${d.lo} a ${d.hi})` : String(y); };
     // várias lojas: Mês → Ano → Loja → Vendedor
     const multiLoja = new Set(base.map((i) => db.loja[i])).size > 1;
-    const cols = [['cupons', 'Cupons', fmt.int], ['tkm', 'TKM', fmt.brl], ['pma', 'PMA', fmt.brl], ['ipa', 'IPA', fmt.n2], ['vt', 'Faturamento', fmt.brl]];
+    const cols = [['vt', 'Faturamento', fmt.brl], ['cupons', 'Cupons', fmt.int], ['tkm', 'TKM', fmt.brl], ['pma', 'PMA', fmt.brl], ['ipa', 'IPA', fmt.n2]];
     const tbl = h('table', { class: 't tree' + (multiLoja ? ' multi' : '') });
     const wrap = h('div', { class: 'table-wrap' }, tbl);
     wrap.style.maxHeight = '420px';
@@ -533,6 +533,7 @@
     const vars = (k) => TS.linhasVar(indPrev ? [indAll[k], indPrev[k], 'vs. ano anterior'] : null, indMes ? [indAll[k], indMes[k], 'vs. mês anterior'] : null) || 'sem dados para comparar';
     root.append(h('div', { class: 'grid g-kpi' },
       TS.kpi('Faturamento', fmt.brl0(indAll.vt), vars('vt')),
+      TS.kpi('Cupons', fmt.int(indAll.cupons), vars('cupons')),
       TS.kpi('TKM', fmt.brl(indAll.tkm), vars('tkm')),
       TS.kpi('PMA', fmt.brl(indAll.pma), vars('pma')),
       TS.kpi('IPA', fmt.n2(indAll.ipa), vars('ipa')),

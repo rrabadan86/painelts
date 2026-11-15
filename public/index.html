@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Tea Shop · Painel de vendas</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/styles.css?v=20261115n">
+  <link rel="stylesheet" href="/styles.css?v=20261115o">
 </head>
 <body>
   <header class="topbar">
@@ -22,19 +22,10 @@
       </div>
     </div>
     <nav class="tabs" id="tabs" aria-label="Páginas">
-      <a href="#resumo" data-page="resumo">Resumo</a>
-      <a href="#comparativos" data-page="comparativos">Comparativos</a>
-      <a href="#comissionamento" data-page="comissionamento">Comissionamento</a>
-      <a href="#promocao" data-page="promocao">Promoção</a>
-      <a href="#mapa" data-page="mapa">Mapa de calor</a>
-      <a href="#clientes" data-page="clientes">Clientes</a>
     </nav>
     <div class="topbar-right">
       <select class="loja-sel" id="lojaSel" aria-label="Loja" hidden></select>
       <div class="updated" id="updated" title="Quando os dados foram carregados">—</div>
-      <button class="icon-btn" id="btnAtualizar" title="Recarregar os dados" aria-label="Recarregar os dados">
-        <svg viewBox="0 0 24 24" width="20" height="20"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v5h-5" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      </button>
       <div class="script-wrap">
         <button class="icon-btn" id="btnScript" title="Buscar dados novos no sistema (roda o script da loja)" aria-label="Rodar o script de atualização da loja" aria-haspopup="dialog" hidden>
           <svg viewBox="0 0 24 24" width="20" height="20"><path d="M7 18a5 5 0 0 1-.6-9.96A6 6 0 0 1 18 9a4 4 0 0 1-.5 7.97" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/><path d="M12 12v8M9 17l3 3 3-3" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -49,14 +40,15 @@
         </button>
         <div class="script-pop sis-pop" id="sistemaPop" role="dialog" aria-label="Atualizações do painel" hidden></div>
       </div>
-      <a class="icon-btn" id="btnSenha" href="/trocar-senha" title="Trocar minha senha" aria-label="Trocar minha senha">
-        <svg viewBox="0 0 24 24" width="20" height="20"><circle cx="8" cy="15" r="4" stroke="currentColor" stroke-width="2" fill="none"/><path d="M11 12l9-9M17 6l3 3M15 8l2 2" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
-      </a>
-      <form method="post" action="/logout" class="logout-form">
-        <button class="icon-btn" title="Sair" aria-label="Sair">
-          <svg viewBox="0 0 24 24" width="20" height="20"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 16l-4-4 4-4M6 12h10" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <div class="script-wrap user-wrap">
+        <button class="user-btn" id="btnUsuario" aria-haspopup="menu" aria-expanded="false" title="Minha conta">
+          <span class="user-ini" id="userIni">?</span><span class="user-nome" id="userNome"></span><span aria-hidden="true">▾</span>
         </button>
-      </form>
+        <div class="script-pop user-pop" id="userPop" role="menu" hidden>
+          <a class="user-item" id="btnSenha" href="/trocar-senha" role="menuitem">Trocar minha senha</a>
+          <form method="post" action="/logout" class="logout-form"><button class="user-item" role="menuitem">Sair</button></form>
+        </div>
+      </div>
     </div>
   </header>
 
@@ -82,26 +74,26 @@
   <div class="tooltip" id="tooltip" role="tooltip"></div>
 
   <script src="/vendor/chart.umd.js"></script>
-  <script src="/js/core.js?v=20261115n"></script>
-  <script src="/js/components.js?v=20261115n"></script>
-  <script src="/js/dicas.js?v=20261115n"></script>
-  <script src="/js/rules.js?v=20261115n"></script>
-  <script src="/js/pages.js?v=20261115n"></script>
-  <script src="/js/fidelidade.js?v=20261115n"></script>
-  <script src="/js/clientes.js?v=20261115n"></script>
-  <script src="/js/campanhas.js?v=20261115n"></script>
-  <script src="/js/extras.js?v=20261115n"></script>
-  <script src="/js/contabilidade.js?v=20261115n"></script>
-  <script src="/js/estoque.js?v=20261115n"></script>
-  <script src="/js/precos.js?v=20261115n"></script>
-  <script src="/js/pedido.js?v=20261115n"></script>
-  <script src="/js/dre.js?v=20261115n"></script>
-  <script src="/js/mapa.js?v=20261115n"></script>
-  <script src="/js/feriados.js?v=20261115n"></script>
-  <script src="/js/config.js?v=20261115n"></script>
-  <script src="/js/script.js?v=20261115n"></script>
-  <script src="/js/fechamento.js?v=20261115n"></script>
-  <script src="/js/sistema.js?v=20261115n"></script>
-  <script src="/js/main.js?v=20261115n"></script>
+  <script src="/js/core.js?v=20261115o"></script>
+  <script src="/js/components.js?v=20261115o"></script>
+  <script src="/js/dicas.js?v=20261115o"></script>
+  <script src="/js/rules.js?v=20261115o"></script>
+  <script src="/js/pages.js?v=20261115o"></script>
+  <script src="/js/fidelidade.js?v=20261115o"></script>
+  <script src="/js/clientes.js?v=20261115o"></script>
+  <script src="/js/campanhas.js?v=20261115o"></script>
+  <script src="/js/extras.js?v=20261115o"></script>
+  <script src="/js/contabilidade.js?v=20261115o"></script>
+  <script src="/js/estoque.js?v=20261115o"></script>
+  <script src="/js/precos.js?v=20261115o"></script>
+  <script src="/js/pedido.js?v=20261115o"></script>
+  <script src="/js/dre.js?v=20261115o"></script>
+  <script src="/js/mapa.js?v=20261115o"></script>
+  <script src="/js/feriados.js?v=20261115o"></script>
+  <script src="/js/config.js?v=20261115o"></script>
+  <script src="/js/script.js?v=20261115o"></script>
+  <script src="/js/fechamento.js?v=20261115o"></script>
+  <script src="/js/sistema.js?v=20261115o"></script>
+  <script src="/js/main.js?v=20261115o"></script>
 </body>
 </html>

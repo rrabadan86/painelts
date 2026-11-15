@@ -2,7 +2,7 @@
 'use strict';
 (function () {
   const { h, fmt, state } = TS;
-  const TELAS_NOME = [['resumo', 'Resumo'], ['comparativos', 'Comparativos'], ['comissionamento', 'Comissionamento'], ['promocao', 'Promoção'], ['mapa', 'Mapa de calor'], ['clientes', 'Clientes (CPF e telefone)'], ['minha', 'Comissão de cada vendedor'], ['estoque', 'Estoque e margem'], ['pedido', 'Pedido'], ['dre', 'Resultado (DRE)']];
+  const TELAS_NOME = [['resumo', 'Resumo'], ['comparativos', 'Comparativos'], ['comissionamento', 'Comissionamento'], ['promocao', 'Promoção'], ['mapa', 'Movimento e escala (mapa de calor)'], ['clientes', 'Clientes (CPF e telefone)'], ['minha', 'Comissão de cada vendedor'], ['estoque', 'Estoque e margem'], ['pedido', 'Pedido'], ['dre', 'Resultado (DRE)']];
   const TELAS_PADRAO = ['resumo', 'comparativos', 'comissionamento', 'promocao', 'mapa', 'minha'];
   const PERFIL_NOME = { admin: 'Administrador', franqueado: 'Franqueado', gerente: 'Gerente', vendedor: 'Vendedor' };
   const PERFIL_DESC = {
@@ -706,7 +706,7 @@
   function blocoOperacao(l) {
     const op = JSON.parse(JSON.stringify(l.operacao || TS.operacaoPadrao()));
     return h('section', { class: 'cfg-bloco cfg-form' }, h('h3', null, 'Horário e equipe'),
-      h('p', { class: 'muted' }, 'Usados no Mapa de calor para calcular quantas pessoas cada horário precisa e sugerir a escala.'),
+      h('p', { class: 'muted' }, 'Usados em Equipe → Movimento e escala para calcular quantas pessoas cada horário precisa e sugerir a escala.'),
       TS.editorOperacao(op, () => { sujo = true; }),
       h('div', { class: 'cfg-acoes' }, acao('Salvar horário e equipe', async () => { await api('PUT', `/lojas/${l.id}/operacao`, { operacao: op }); TS.recarregar && TS.recarregar(true); return 'Salvo.'; }, 'btn primary')));
   }

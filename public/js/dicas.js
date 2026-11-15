@@ -7,6 +7,7 @@ TS.DICAS = {
   'Faturamento': 'Soma do valor das vendas no período (com desconto, sem taxa de serviço e de entrega), sem as vendas "SEM VENDEDOR". Abaixo do número: a variação contra o período equivalente e contra as mesmas datas do ano anterior.',
   'Atendimentos (cupons)': 'Quantidade de cupons diferentes no período. Um cupom com vários itens conta uma vez.',
   'Ticket médio (TKM)': 'Faturamento ÷ cupons: quanto, em média, cada cliente gastou por atendimento.',
+  'Cupons': 'Atendimentos (cupons diferentes) no período. Comparado com as mesmas datas do ano anterior e do mês anterior.',
   'TKM': 'Ticket médio = faturamento ÷ cupons. Comparado com as mesmas datas do ano anterior e do mês anterior.',
   'PMA': 'Preço médio por item = faturamento ÷ itens (consumíveis sem controle de estoque não contam como item). Comparado com as mesmas datas do ano anterior e do mês anterior.',
   'Preço médio (PMA)': 'Faturamento ÷ itens vendidos: preço médio de cada item. Consumíveis sem controle de estoque (ex.: sacos de amostra) não contam como item.',

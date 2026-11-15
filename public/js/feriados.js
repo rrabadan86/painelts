@@ -115,7 +115,7 @@
     function celulaHorario(data) {
       const ef = TS.horarioFeriado(cfgVivo(), data);
       const txt = !ef ? 'sem horário cadastrado' : ef.fechado ? 'fechada' : `${ef.abre}–${ef.fecha}`;
-      const origem = !ef ? 'Mapa de calor → Horário e equipe' : ef.origem === 'data' ? 'deste feriado' : ef.origem === 'feriados' ? 'padrão de feriados' : 'dia normal';
+      const origem = !ef ? 'Movimento e escala → Horário e equipe' : ef.origem === 'data' ? 'deste feriado' : ef.origem === 'feriados' ? 'padrão de feriados' : 'dia normal';
       if (!editavel) return h('div', { class: 'hor-txt' }, txt, h('small', null, origem));
       const modo = horarios[data] ? (horarios[data].fechado ? 'fechado' : 'proprio') : 'padrao';
       const sel = h('select', { class: 'f-input hor-sel' }, h('option', { value: 'padrao', selected: modo === 'padrao' || null }, 'Padrão'), h('option', { value: 'proprio', selected: modo === 'proprio' || null }, 'Outro horário'), h('option', { value: 'fechado', selected: modo === 'fechado' || null }, 'Fechada'));

@@ -274,8 +274,7 @@
   const qtdTxt = (v, it) => (v == null ? '—' : it.un === 'Kg' ? `${fmt.kg(v)} kg` : `${fmt.int(v)} ${it.un ? it.un.toLowerCase() : ''}`);
 
   /** submenu do menu Estoque e Margem */
-  TS.subEstoque = (atual) => h('nav', { class: 'submenu', 'aria-label': 'Estoque' },
-    [['estoque', 'Estoque e margem'], ['precos', 'Preços'], ['pedido', 'Pedido'], ['dre', 'Resultado']].filter(([p]) => !TS.telasEstoque || TS.telasEstoque.includes(p)).map(([p, t]) => h('a', { href: '#' + p, class: p === atual ? 'on' : null, 'aria-current': p === atual ? 'page' : null }, t)));
+  TS.subEstoque = (atual) => TS.subGrupo(atual);
   TS.pages.estoque = function (root) {
     root.append(TS.subEstoque('estoque'));
     root.append(h('div', { class: 'page-head' }, h('div', null, h('h1', { class: 'page-title' }, 'Estoque e margem'),

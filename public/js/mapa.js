@@ -442,7 +442,7 @@
   TS.pages.mapa = function (root) {
     const db = TS.db;
     const base = TS.filtrar();
-    root.append(h('div', { class: 'page-head' }, h('div', null, h('h1', { class: 'page-title' }, 'Mapa de calor'), h('div', { class: 'page-sub' }, 'Movimento por dia da semana e hora, para montar a escala')),
+    root.append(h('div', { class: 'page-head' }, h('div', null, h('h1', { class: 'page-title' }, 'Movimento e escala'), h('div', { class: 'page-sub' }, 'Movimento por dia da semana e hora, para montar a escala')),
       h('div', { class: 'active-filters' }, h('span', { class: 'af' }, TS.periodoTexto()))));
     const cfgMapa = state.loja && state.loja !== 'todas' ? (db.metas || []).find((m) => m.id === state.loja) : null;
     const anoI = +TS.dayToIso(db.minDay).slice(0, 4), anoF = +TS.dayToIso(db.maxDay).slice(0, 4);

@@ -67,6 +67,8 @@
     const ae = document.activeElement;
     const g = ehCampo(ae) ? capturar(ae) : null;
     renderTela();
+    // submenu do grupo (Vendas, Clientes, Equipe, Estoque e Margem): as telas que já desenham o seu não ganham outro
+    if (state.page !== 'config' && !content.querySelector('.submenu')) { const sm = TS.subGrupo && TS.subGrupo(state.page); if (sm) content.prepend(sm); }
     TS.botoesExpandir && TS.botoesExpandir(content);
     if (g) restaurar(g);
   };
@@ -147,8 +149,8 @@
 
   // ---------- dados ----------
   async function carregar(forcar) {
-    const btn = document.getElementById('btnAtualizar');
-    btn.classList.add('spin');
+    const btn = document.getElementById('updated');
+    btn.classList.add('carregando');
     try {
       const qs = new URLSearchParams({ loja: state.loja || '' });
       if (TS.lojaCarregada !== state.loja) TS.historicoCompleto = false; // loja nova: começa pelo parcial
@@ -185,12 +187,19 @@
       if (!TS.db) content.replaceChildren(h('div', { class: 'notice err' }, 'Não foi possível carregar os dados: ' + e.message, h('div', { style: { marginTop: '8px' } }, h('button', { class: 'btn', onclick: () => carregar(true) }, 'Tentar de novo'))));
       else { TS.aviso = 'Falha ao atualizar: ' + e.message; TS.render(); }
     } finally {
-      btn.classList.remove('spin');
+      btn.classList.remove('carregando');
     }
   }
 
   TS.recarregar = carregar;
-  document.getElementById('btnAtualizar').addEventListener('click', () => carregar(true));
+  // menu da conta (trocar senha, sair)
+  {
+    const b = document.getElementById('btnUsuario'), pop = document.getElementById('userPop');
+    const fechar = () => { pop.hidden = true; b.setAttribute('aria-expanded', 'false'); };
+    b.addEventListener('click', (e) => { e.stopPropagation(); pop.hidden = !pop.hidden; b.setAttribute('aria-expanded', String(!pop.hidden)); });
+    document.addEventListener('click', (e) => { if (!pop.hidden && !e.target.closest('.user-wrap')) fechar(); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') fechar(); });
+  }
   document.getElementById('btnLimpar').addEventListener('click', () => { TS.limparFiltros(); TS.render(); });
   document.getElementById('btnFiltros').addEventListener('click', () => document.body.classList.add('filters-open'));
   document.getElementById('btnFecharFiltros').addEventListener('click', () => document.body.classList.remove('filters-open'));
@@ -206,10 +215,8 @@
   if (TS.demo) {
     document.body.classList.add('demo');
     document.title = 'Tea Shop · Apresentação do painel';
-    document.querySelector('.logout-form')?.remove();
-    document.getElementById('btnSenha')?.remove();
+    document.querySelector('.user-wrap')?.remove();
     document.getElementById('btnScript')?.remove();
-    document.getElementById('btnAtualizar').title = 'Recarregar';
     document.querySelector('.layout').before(h('div', { class: 'demo-bar', role: 'note' },
       h('b', null, 'Apresentação'), ' · Todos os dados desta página são fictícios: lojas, vendedores, clientes e valores foram inventados para demonstração. Fique à vontade para clicar e filtrar.'));
   }
@@ -224,44 +231,65 @@
   TS.ajustarTopo = ajustarTopo;
   window.addEventListener('resize', TS.debounce ? TS.debounce(ajustarTopo, 120) : ajustarTopo);
 
+  /**
+   * Menu por assunto: Vendas · Clientes · Equipe · Estoque e Margem · ⚙. Cada grupo mostra só as telas que a pessoa pode ver;
+   * grupo com uma tela só vira uma aba com o nome da tela; com mais de uma, a tela tem um submenu no topo.
+   */
+  const ROTULO = { resumo: 'Resumo', comparativos: 'Comparativos', promocao: 'Promoção', clientes: 'Clientes', campanhas: 'Campanhas',
+    comissionamento: 'Comissionamento', minha: 'Minha comissão', mapa: 'Movimento e escala', estoque: 'Estoque e margem', precos: 'Preços', pedido: 'Pedido', dre: 'Resultado' };
+  TS.GRUPOS = [];
+  function montarMenu(grupoEst, temConfig) {
+    const tabs = document.getElementById('tabs');
+    const G = [
+      ['Vendas', ['resumo', 'comparativos', 'promocao']],
+      ['Clientes', ['clientes', 'campanhas']],
+      ['Equipe', ['comissionamento', 'minha', 'mapa']],
+      ['Estoque e Margem', grupoEst],
+    ].map(([nome, ps]) => [nome, ps.filter((p) => PAGES.includes(p))]).filter(([, ps]) => ps.length);
+    TS.GRUPOS = G;
+    tabs.replaceChildren(...G.map(([nome, ps]) => h('a', { href: '#' + ps[0], 'data-page': ps[0], 'data-grupo': ps.join(',') }, ps.length === 1 ? ROTULO[ps[0]] : nome)));
+    if (temConfig) tabs.append(h('a', { href: '#config', 'data-page': 'config', class: 'tab-config', title: 'Configurações', 'aria-label': 'Configurações' }, '⚙'));
+    // ordem das telas = ordem do menu
+    const ordem = G.flatMap(([, ps]) => ps);
+    PAGES = [...ordem, ...PAGES.filter((p) => !ordem.includes(p))];
+  }
+  /** submenu do grupo da tela (quando o grupo tem mais de uma tela) */
+  TS.subGrupo = (atual) => {
+    const g = TS.GRUPOS.find(([, ps]) => ps.includes(atual));
+    if (!g || g[1].length < 2) return document.createDocumentFragment();
+    return h('nav', { class: 'submenu', 'aria-label': g[0] }, g[1].map((p) => h('a', { href: '#' + p, class: p === atual ? 'on' : null, 'aria-current': p === atual ? 'page' : null }, ROTULO[p])));
+  };
+
   /** abas conforme o perfil */
   function configurarAbas(eu) {
     if (TS.demo || !eu.perfil) {
-      // apresentação: Clientes também tem o submenu Campanhas
-      if (!PAGES.includes('campanhas')) { PAGES.splice(PAGES.indexOf('clientes') + 1, 0, 'campanhas'); const a = document.querySelector('#tabs a[data-page="clientes"]'); if (a) a.dataset.grupo = 'clientes,campanhas'; }
+      if (!PAGES.includes('campanhas')) PAGES.splice(PAGES.indexOf('clientes') + 1, 0, 'campanhas');
+      PAGES = PAGES.filter((p) => p !== 'minha');
+      montarMenu([], false);
       return;
     }
-    const tabs = document.getElementById('tabs');
     if (eu.perfil === 'vendedor') PAGES = TS.PAGINAS_VENDEDOR;
     else if (Array.isArray(eu.telas)) PAGES = PAGES.filter((p) => eu.telas.includes(p) && (p !== 'clientes' || eu.pode?.clientes));
     else if (!eu.pode?.clientes) PAGES = PAGES.filter((p) => p !== 'clientes');
     if (!PAGES.length) PAGES = ['resumo'];
-    tabs.querySelectorAll('a').forEach((a) => { if (!PAGES.includes(a.dataset.page)) a.remove(); });
-    if (eu.perfil === 'vendedor' || (eu.perfil === 'gerente' && PAGES.includes('minha') && !PAGES.includes('comissionamento'))) {
-      tabs.append(h('a', { href: '#minha', 'data-page': 'minha' }, eu.perfil === 'vendedor' ? 'Minha comissão' : 'Comissão por vendedor'));
-    }
-    if (eu.perfil === 'vendedor') {
-      document.body.classList.add('perfil-vendedor');
-    }
-    // menu Clientes: Clientes · Campanhas
-    if (PAGES.includes('clientes')) {
-      PAGES.splice(PAGES.indexOf('clientes') + 1, 0, 'campanhas');
-      const a = tabs.querySelector('a[data-page="clientes"]'); if (a) a.dataset.grupo = 'clientes,campanhas';
-    }
-    // menu Estoque e Margem (Estoque e margem · Pedido · Resultado): admin e franqueado veem tudo;
-    // gerente só as telas liberadas em Configurações → Usuários
+    // "minha" (comissão do próprio vendedor / por vendedor para o gerente sem o Comissionamento completo)
+    const comMinha = eu.perfil === 'vendedor' || (eu.perfil === 'gerente' && PAGES.includes('minha') && !PAGES.includes('comissionamento'));
+    if (!comMinha) PAGES = PAGES.filter((p) => p !== 'minha');
+    else if (!PAGES.includes('minha')) PAGES.push('minha');
+    ROTULO.minha = eu.perfil === 'vendedor' ? 'Minha comissão' : 'Comissão por vendedor';
+    if (eu.perfil === 'vendedor') document.body.classList.add('perfil-vendedor');
+    if (PAGES.includes('clientes')) PAGES.splice(PAGES.indexOf('clientes') + 1, 0, 'campanhas');
+    // Estoque e Margem: admin e franqueado veem tudo; gerente só as telas liberadas em Configurações → Usuários
     const grupoEst = eu.pode?.configurar ? ['estoque', 'pedido', 'dre'] : ['estoque', 'pedido', 'dre'].filter((p) => (eu.telas || []).includes(p));
-    // Preços acompanha o Estoque e margem (mesma permissão)
-    if (grupoEst.includes('estoque')) grupoEst.splice(grupoEst.indexOf('estoque') + 1, 0, 'precos');
+    if (grupoEst.includes('estoque')) grupoEst.splice(grupoEst.indexOf('estoque') + 1, 0, 'precos'); // Preços acompanha o Estoque e margem
     TS.telasEstoque = grupoEst;
-    if (grupoEst.length) {
-      PAGES = [...PAGES.filter((p) => !grupoEst.includes(p)), ...grupoEst];
-      tabs.append(h('a', { href: '#' + grupoEst[0], 'data-page': grupoEst[0], 'data-grupo': grupoEst.join(',') }, 'Estoque e Margem'));
-    }
-    if (eu.pode?.configurar) {
-      PAGES = [...PAGES, 'config'];
-      tabs.append(h('a', { href: '#config', 'data-page': 'config', class: 'tab-config', title: 'Configurações', 'aria-label': 'Configurações' }, '⚙'));
-    }
+    PAGES = [...PAGES.filter((p) => !grupoEst.includes(p)), ...grupoEst];
+    if (eu.pode?.configurar) PAGES = [...PAGES, 'config'];
+    montarMenu(grupoEst, !!eu.pode?.configurar);
+    // nome no menu da conta
+    const nome = String(eu.nome || eu.usuario || '').trim();
+    document.getElementById('userNome').textContent = nome.split(/\s+/)[0] || 'Conta';
+    document.getElementById('userIni').textContent = (nome[0] || '?').toUpperCase();
   }
 
   // ---------- lojas do usuário ----------

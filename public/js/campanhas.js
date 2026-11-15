@@ -9,8 +9,7 @@
   const d = (day) => (day == null ? '—' : fmt.date(TS.dayToIso(day)));
   const isoDia = (iso) => TS.isoToDay(String(iso).slice(0, 10));
 
-  TS.subClientes = (atual) => h('nav', { class: 'submenu', 'aria-label': 'Clientes' },
-    [['clientes', 'Clientes'], ['campanhas', 'Campanhas']].map(([p, t]) => h('a', { href: '#' + p, class: p === atual ? 'on' : null, 'aria-current': p === atual ? 'page' : null }, t)));
+  TS.subClientes = (atual) => TS.subGrupo(atual);
 
   // ---------- servidor (na apresentação fica só na memória) ----------
   const demo = { lista: [] };
