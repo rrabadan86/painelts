@@ -183,7 +183,7 @@
       const c0 = sel_[0] && sel_[0].c;
       exemplo.replaceChildren(h('small', { class: 'muted' }, c0 ? `Como fica para ${c0.nome || 'o primeiro cliente'}:` : 'Exemplo:'), h('div', null, c0 ? A().texto(msg.value, c0, extras({ filtros: f })) : msg.value));
       por(previa, sel_.length ? TS.table({
-        cols: [{ key: 'nome', label: 'Cliente', align: 'l', render: (r) => h('span', null, r.nome, h('small', { class: 'muted cp-cel' }, r.cel)) }, { key: 'saldo', label: 'Pontos', fmt: fmt.int }, { key: 'vence', label: 'Vencem', align: 'l' }, { key: 'ultima', label: 'Última compra', align: 'l', render: (r) => d(r.ult) }],
+        cols: [{ key: 'nome', label: 'Cliente', align: 'l', render: (r) => h('span', null, r.nome, h('small', { class: 'muted cp-cel' }, `${r.cel} · CPF ${A().fmtCPF(r.cpf)}`)) }, { key: 'saldo', label: 'Pontos', fmt: fmt.int }, { key: 'vence', label: 'Vencem', align: 'l' }, { key: 'ultima', label: 'Última compra', align: 'l', render: (r) => d(r.ult) }],
         rows: sel_.slice(0, 300).map(({ c, saldo }) => ({ cpf: c.cpf, nome: c.nome || '—', cel: A().fmtTel(c.celular), saldo, vence: c.fx && c.fx.prox != null ? `${fmt.int(c.fx.proxPts)} em ${d(c.fx.prox)}` : '—', ult: c.ultima, ultima: c.ultima ?? -1 })),
         sortKey: 'saldo', onRowClick: (r) => A().abrirClientes([r.cpf]),
       }) : TS.empty('Nenhum cliente com celular atende a esses critérios.'), sel_.length > 300 ? h('small', { class: 'muted' }, `Mostrando 300 de ${fmt.int(sel_.length)}. A campanha guarda todos.`) : null);
@@ -281,7 +281,7 @@
         h('div', { class: 'cp-fila' },
           h('div', { class: 'cp-fila-cli' },
             h('div', { class: 'cj-nome' }, c.nome || 'Cliente'),
-            h('div', { class: 'cli-meta' }, h('span', null, A().fmtTel(c.celular) || 'sem celular'), c.fx ? h('span', { class: 'cli-pts' }, `★ ${fmt.int(c.fx.saldo || 0)} pts`) : null,
+            h('div', { class: 'cli-meta' }, h('span', null, 'CPF ' + A().fmtCPF(c.cpf)), h('span', null, A().fmtTel(c.celular) || 'sem celular'), c.fx ? h('span', { class: 'cli-pts' }, `★ ${fmt.int(c.fx.saldo || 0)} pts`) : null,
               c.fx && c.fx.prox != null ? h('span', null, `${fmt.int(c.fx.proxPts)} vencem em ${d(c.fx.prox)}`) : null,
               c.ultima != null ? h('span', null, `última compra ${d(c.ultima)}`) : null,
               ct && ct.em ? h('span', { class: 'cli-tag t-contato' }, 'contatado ' + fmt.date(ct.em.slice(0, 10))) : null),
@@ -302,13 +302,13 @@
     });
     const tab = TS.table({
       cols: [
-        { key: 'nome', label: 'Cliente', align: 'l' },
+        { key: 'nome', label: 'Cliente', align: 'l', render: (x) => h('span', null, x.nome, h('small', { class: 'muted cp-cel' }, 'CPF ' + A().fmtCPF(x.cpf))) },
         { key: 'cel', label: 'Celular', align: 'l' },
         { key: 'st', label: 'Situação', align: 'l', render: (x) => h('span', { class: 'cp-st ' + ST[x.st][1] }, ST[x.st][0], x.em != null ? h('small', null, ` ${d(x.em)}${x.por ? ' · ' + x.por : ''}`) : null), sortVal: (x) => ({ e: 3, x: 2, o: 1, p: 0 })[x.st] },
         { key: 'voltou', label: `Voltou em ${camp.janela} dias`, align: 'l', render: (x) => (!x.ret ? '—' : x.ret.voltou ? h('span', { class: 'cp-st ok' }, `Sim · ${d(x.ret.primeira)} · ${fmt.brl0(x.ret.vt)}`) : x.ret.aberto ? h('span', { class: 'muted' }, 'ainda no prazo') : h('span', { class: 'muted' }, 'não')) },
         { key: 'acao', label: '', align: 'l', render: (x) => (x.st !== 'p' ? h('button', { type: 'button', class: 'link-btn', onclick: async (e) => { e.stopPropagation(); await marcarSt(x.it, 'p').catch((er) => alert(er.message)); repintar(); } }, 'voltar para a fila') : null), sortVal: () => 0 },
       ],
-      rows: linhas, sortKey: 'st', sortDir: 'asc', rowClass: (x) => (x.st === 'e' ? 'cp-enviada' : null), onRowClick: (x) => A().abrirClientes([x.cpf]),
+      rows: linhas.map((x) => ({ ...x, cpfTxt: A().fmtCPF(x.cpf) + ' ' + x.cpf })), search: 'Buscar por nome, CPF ou celular', searchKeys: ['nome', 'cpfTxt', 'cel'], sortKey: 'st', sortDir: 'asc', rowClass: (x) => (x.st === 'e' ? 'cp-enviada' : null), onRowClick: (x) => A().abrirClientes([x.cpf]),
     });
     const csvBt = h('button', { type: 'button', class: 'btn', onclick: () => A().csv('campanha-' + camp.nome.replace(/\W+/g, '-').toLowerCase(), ['Cliente', 'CPF', 'Celular', 'Situação', 'Enviada em', 'Por', 'Voltou', 'Valor no retorno'],
       linhas.map((x) => [x.nome, A().fmtCPF(x.cpf), TS.demo ? '' : x.cel, ST[x.st][0], x.em != null ? d(x.em) : '', x.por, x.ret ? (x.ret.voltou ? 'sim' : x.ret.aberto ? 'no prazo' : 'não') : '', x.ret && x.ret.voltou ? x.ret.vt.toFixed(2).replace('.', ',') : ''])) }, 'Baixar lista (CSV)');
@@ -332,7 +332,7 @@
         kpi('Faturamento do retorno', fmt.brl0(s.vt), s.volt ? `ticket ${fmt.brl0(s.vt / s.volt)}` : null, 'Soma das compras desses clientes no prazo do retorno.'),
         kpi('Não querem', fmt.int(s.opt), 'saíram das próximas campanhas')),
       h('div', { class: 'mt' }, fila),
-      h('div', { class: 'mt' }, TS.cardWithTools('Clientes da campanha', 'Enviadas ficam em verde · clique num cliente para ver a ficha', csvBt, tab)));
+      h('div', { class: 'mt' }, TS.cardWithTools('Clientes da campanha', 'Enviadas ficam em verde · clique num cliente para ver a ficha', h('div', { class: 'cp-acoes', style: { margin: 0 } }, tab.searchBox, csvBt), tab)));
   }
 
 })();
