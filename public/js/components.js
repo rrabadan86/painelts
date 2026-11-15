@@ -207,6 +207,10 @@
    * rows: objetos; total: objeto opcional; sort: {key, dir}
    */
   TS.table = function ({ cols, rows, total, sortKey, sortDir = 'desc', maxHeight, pageSize, search, searchKeys, searchInit, onSearch, onRowClick, rowClass, empty, cls }) {
+    // a busca digitada sobrevive quando a tela se redesenha (troca de aba/filtro); some ao trocar de tela
+    const mem = TS._buscas && TS._buscas.tela === location.hash ? TS._buscas : (TS._buscas = { tela: location.hash, v: {} });
+    const chaveBusca = search ? search + '|' + (searchKeys || []).join(',') : null;
+    if (chaveBusca && searchInit == null && mem.v[chaveBusca]) searchInit = mem.v[chaveBusca];
     let sk = sortKey, sd = sortDir, page = 0, q = searchInit ? TS.norm(searchInit) : '';
     const wrap = h('div');
     const tbl = h('table', { class: 't' + (cls ? ' ' + cls : '') });
@@ -216,7 +220,7 @@
     let searchBox = null;
     if (search) {
       searchBox = h('input', { class: 'f-input', type: 'search', placeholder: search, value: searchInit || '' });
-      searchBox.addEventListener('input', TS.debounce(() => { q = TS.norm(searchBox.value); page = 0; if (onSearch) onSearch(searchBox.value); paint(); }, 200));
+      searchBox.addEventListener('input', TS.debounce(() => { q = TS.norm(searchBox.value); page = 0; if (TS._buscas && TS._buscas.tela === location.hash) TS._buscas.v[chaveBusca] = searchBox.value; if (onSearch) onSearch(searchBox.value); paint(); }, 200));
     }
     function sorted() {
       let r = rows;
