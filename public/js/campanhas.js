@@ -27,7 +27,8 @@
     const c = m[1] && demo.lista.find((x) => x.id === m[1]);
     if (met === 'GET') return { campanhas: demo.lista.slice() };
     if (met === 'POST' && !m[1]) { const n = { id: id(), nome: b.nome, mensagem: b.mensagem, janela: b.janela, recorrente: b.recorrente, ativa: true, filtros: b.filtros, criadaEm: agora, por: 'você', rodadas: [{ id: id(), em: agora, lista: b.lista.map((x) => ({ ...x, st: 'p' })) }] }; demo.lista.unshift(n); return { campanha: n }; }
-    if (met === 'PUT') { Object.assign(c, b); return { campanha: c }; }
+    if (met === 'PUT' && !m[2]) { const { loja, ...resto } = b; Object.assign(c, resto); return { campanha: c }; }
+    if (met === 'PUT' && m[2] === 'rodadas') { const r = c.rodadas[0]; const feitos = r.lista.filter((x) => x.st !== 'p'); const ja = new Set(feitos.map((x) => x.cpf)); r.lista = [...feitos, ...b.lista.filter((x) => !ja.has(x.cpf)).map((x) => ({ ...x, st: 'p' }))]; return { campanha: c }; }
     if (m[2] === 'rodadas') { c.rodadas.unshift({ id: id(), em: agora, lista: b.lista.map((x) => ({ ...x, st: 'p' })) }); return { campanha: c }; }
     if (m[2] === 'marcar') { const it = c.rodadas.find((r) => r.id === b.rodada).lista.find((x) => x.cpf === b.cpf); it.st = b.st; if (b.st === 'p') { delete it.em; delete it.por; } else { it.em = agora; it.por = 'você'; } return { item: it }; }
     if (met === 'DELETE') { demo.lista = demo.lista.filter((x) => x !== c); return { ok: true }; }
@@ -149,14 +150,14 @@
   }
 
   // ---------- criar ----------
-  function criar(corpo, lista, base) {
+  function criar(corpo, lista, base, editando) {
     const f = { ...PADRAO, ...(base ? base.filtros : {}) };
     const db = TS.db;
     const modelos = A().modelos();
     const campo = (rot, el, dica) => h('label', { class: 'cp-campo' }, h('span', null, rot, dica ? TS.dica(dica) : null), el);
     const inp = (k, ph, tipo = 'number') => { const i = h('input', { class: 'f-input', type: tipo, placeholder: ph, value: f[k] ?? '', min: tipo === 'number' ? 0 : null }); i.addEventListener('input', () => { f[k] = i.value; atualizar(); }); return i; };
     const sel = (k, opcoes) => { const s = h('select', { class: 'f-input' }, ...opcoes.map(([v, t]) => h('option', { value: v, selected: String(f[k]) === String(v) || null }, t))); s.addEventListener('change', () => { f[k] = s.value; atualizar(); }); return s; };
-    const nome = h('input', { class: 'f-input', placeholder: 'Ex.: Pontos vencendo em dezembro', value: base ? base.nome + ' (cópia)' : '' });
+    const nome = h('input', { class: 'f-input', placeholder: 'Ex.: Pontos vencendo em dezembro', value: base ? base.nome + (editando ? '' : ' (cópia)') : '' });
     const msg = h('textarea', { class: 'f-input cp-msg', rows: 4 }, base ? base.mensagem : (modelos.find((m) => /pontos/i.test(m.nome)) || modelos[0] || { texto: '' }).texto);
     const modSel = h('select', { class: 'f-input' }, h('option', { value: '' }, 'Usar um modelo…'), ...modelos.map((m, k) => h('option', { value: k }, m.nome)));
     modSel.addEventListener('change', () => { if (modSel.value !== '') { msg.value = modelos[+modSel.value].texto; atualizar(); } modSel.value = ''; });
@@ -182,13 +183,28 @@
       }) : TS.empty('Nenhum cliente com celular atende a esses critérios.'), sel_.length > 300 ? h('small', { class: 'muted' }, `Mostrando 300 de ${fmt.int(sel_.length)}. A campanha guarda todos.`) : null);
     }, 250);
     msg.addEventListener('input', atualizar);
-    const salvar = h('button', { type: 'button', class: 'btn primary' }, 'Salvar campanha');
+    const salvar = h('button', { type: 'button', class: 'btn primary' }, editando ? 'Salvar alterações' : 'Salvar campanha');
     const erro = h('span', { class: 'muted' });
+    const filtrosAntes = JSON.stringify(editando ? { ...PADRAO, ...base.filtros } : null);
+    const refazer = h('input', { type: 'checkbox', checked: true });
+    const refazerBox = editando ? h('label', { class: 'cp-campo cp-check' }, refazer, h('span', null, 'Se mudar os critérios, refazer a lista atual (quem já recebeu continua marcado)')) : null;
     salvar.addEventListener('click', async () => {
       erro.textContent = '';
       if (!nome.value.trim()) { erro.textContent = 'Dê um nome à campanha.'; nome.focus(); return; }
-      if (!sel_.length) { erro.textContent = 'Nenhum cliente na lista.'; return; }
+      if (!sel_.length && !editando) { erro.textContent = 'Nenhum cliente na lista.'; return; }
       salvar.disabled = true;
+      if (editando) {
+        try {
+          const r = await api('PUT', `/api/campanhas/${base.id}`, { loja: state.loja, nome: nome.value.trim(), mensagem: msg.value.trim(), janela: +janela.value || 30, recorrente: rec.value, filtros: f });
+          Object.assign(base, r.campanha);
+          if (refazer.checked && JSON.stringify(f) !== filtrosAntes && base.rodadas[0]) {
+            const r2 = await api('PUT', `/api/campanhas/${base.id}/rodadas/${base.rodadas[0].id}`, { loja: state.loja, lista: sel_.map(({ c }) => ({ cpf: c.cpf, nome: c.nome })) });
+            Object.assign(base, r2.campanha);
+          }
+          abrirCampanha(corpo, lista, base);
+        } catch (e) { erro.textContent = e.message; salvar.disabled = false; }
+        return;
+      }
       try {
         const r = await api('POST', '/api/campanhas', { loja: state.loja, nome: nome.value.trim(), mensagem: msg.value.trim(), janela: +janela.value || 30, recorrente: rec.value, filtros: f, lista: sel_.map(({ c }) => ({ cpf: c.cpf, nome: c.nome })) });
         lista.unshift(r.campanha);
@@ -197,9 +213,9 @@
     });
     const grupo = (titulo, ...itens) => h('div', { class: 'cp-grupo' }, h('div', { class: 'fx-grupo-tit' }, titulo), h('div', { class: 'cp-campos' }, ...itens));
     corpo.replaceChildren(
-      h('div', { class: 'cp-acoes' }, h('button', { type: 'button', class: 'btn', onclick: () => pintarLista(corpo, lista, []) }, '‹ Voltar às campanhas')),
+      h('div', { class: 'cp-acoes' }, h('button', { type: 'button', class: 'btn', onclick: () => (editando ? abrirCampanha(corpo, lista, base) : pintarLista(corpo, lista, [])) }, editando ? '‹ Voltar à campanha' : '‹ Voltar às campanhas')),
       h('div', { class: 'grid g-3-2', style: { alignItems: 'start' } },
-        TS.card('Nova campanha', 'Escolha quem entra. Só aparecem clientes com celular cadastrado que não pediram para não receber mensagens.',
+        TS.card(editando ? `Editar "${base.nome}"` : 'Nova campanha', 'Escolha quem entra. Só aparecem clientes com celular cadastrado que não pediram para não receber mensagens.',
           h('div', { class: 'cp-form' },
             campo('Nome da campanha', nome),
             grupo('Pontos (FIXE)',
@@ -209,8 +225,8 @@
               campo('Comprou o produto', inp('produto', 'ex.: earl grey', 'search'), 'Parte do nome do produto. Use {produto} na mensagem para citar.'),
               campo('ou do grupo', sel('grupo', [['', 'Qualquer grupo'], ...grupos.map((g) => [g, g])])),
               campo('nos últimos (dias)', inp('compraDias', 'vazio = qualquer época')),
-              campo('Dias sem comprar: de', inp('ausMin', 'ex.: 60')), campo('até', inp('ausMax', '')),
-              campo('Visitas: de', inp('visMin', '')), campo('até', inp('visMax', ''))),
+              campo('Dias sem comprar: de', inp('ausMin', 'ex.: 60'), 'Dias desde a última compra com CPF.'), campo('até', inp('ausMax', 'máx.')),
+              campo('Visitas (compras): de', inp('visMin', 'mín.'), 'Quantas compras o cliente já fez (cupons com CPF), em todo o histórico.'), campo('até', inp('visMax', 'máx.'))),
             grupo('Perfil',
               campo('Aniversário', sel('aniv', [['', 'Qualquer mês'], ['atual', 'Mês atual'], ['proximo', 'Próximo mês'], ...MESES]), '"Mês atual" e "Próximo mês" acompanham a data nas campanhas recorrentes.'),
               campo('Mais atendido por', sel('vendedora', [['', 'Qualquer vendedora'], ...vendedoras.map((v) => [v, v])])),
@@ -224,6 +240,7 @@
             grupo('Envio e retorno',
               campo('Medir o retorno em (dias)', janela, 'Conta como "voltou" quem comprar (cupom com CPF) do dia do envio até N dias depois.'),
               campo('Repetir', rec, 'Toda semana ou todo mês uma lista nova é montada com estes critérios quando a tela de campanhas é aberta.')),
+            refazerBox,
             h('div', { class: 'cp-salvar' }, contagem, salvar, erro))),
         TS.card('Quem entra', 'Clique num cliente para ver a ficha', previa)));
     atualizar();
@@ -295,7 +312,8 @@
         h('button', { type: 'button', class: 'btn', onclick: () => pintarLista(corpo, lista, []) }, '‹ Voltar às campanhas'),
         rodSel,
         h('span', { style: { flex: 1 } }),
-        h('button', { type: 'button', class: 'btn', onclick: () => editar(corpo, lista, camp) }, 'Editar mensagem e prazo'),
+        h('button', { type: 'button', class: 'btn', onclick: () => criar(corpo, lista, camp, true) }, 'Editar campanha'),
+        camp.recorrente ? h('button', { type: 'button', class: 'btn', onclick: async () => { try { const x = await api('PUT', `/api/campanhas/${camp.id}`, { loja: state.loja, ativa: camp.ativa === false }); Object.assign(camp, x.campanha); repintar(); } catch (e) { alert(e.message); } } }, camp.ativa === false ? 'Retomar repetição' : 'Pausar repetição') : null,
         h('button', { type: 'button', class: 'btn', onclick: () => criar(corpo, lista, camp) }, 'Duplicar'),
         h('button', { type: 'button', class: 'btn danger-txt', onclick: async () => { if (!confirm(`Apagar a campanha "${camp.nome}"? As listas e o retorno somem.`)) return; await api('DELETE', `/api/campanhas/${camp.id}?${qs()}`).catch((e) => alert(e.message)); lista.splice(lista.indexOf(camp), 1); pintarLista(corpo, lista, []); } }, 'Apagar')),
       h('div', { class: 'page-head cp-head' }, h('div', null, h('h2', { class: 'page-title' }, camp.nome),
@@ -310,24 +328,4 @@
       h('div', { class: 'mt' }, TS.cardWithTools('Clientes da campanha', 'Enviadas ficam em verde · clique num cliente para ver a ficha', csvBt, tab)));
   }
 
-  function editar(corpo, lista, camp) {
-    const msg = h('textarea', { class: 'f-input cp-msg', rows: 5 }, camp.mensagem);
-    const janela = h('input', { class: 'f-input', type: 'number', min: 1, max: 365, value: camp.janela });
-    const rec = h('select', { class: 'f-input' }, h('option', { value: '' }, 'Não (lista única)'), h('option', { value: 'semanal', selected: camp.recorrente === 'semanal' || null }, 'Toda semana'), h('option', { value: 'mensal', selected: camp.recorrente === 'mensal' || null }, 'Todo mês'));
-    const ativa = h('input', { type: 'checkbox', checked: camp.ativa !== false || null });
-    const erro = h('span', { class: 'muted' });
-    corpo.replaceChildren(
-      h('div', { class: 'cp-acoes' }, h('button', { type: 'button', class: 'btn', onclick: () => abrirCampanha(corpo, lista, camp) }, '‹ Voltar')),
-      TS.card(`Editar "${camp.nome}"`, 'Os critérios de quem entra não mudam: para outros critérios, use "Duplicar".',
-        h('div', { class: 'cp-form' },
-          h('label', { class: 'cp-campo' }, h('span', null, 'Mensagem'), msg),
-          h('small', { class: 'muted' }, 'Campos: {nome} · {pontos} · {vence} · {cha} · {produto} · {loja}'),
-          h('div', { class: 'cp-campos' },
-            h('label', { class: 'cp-campo' }, h('span', null, 'Medir o retorno em (dias)'), janela),
-            h('label', { class: 'cp-campo' }, h('span', null, 'Repetir'), rec),
-            h('label', { class: 'cp-campo cp-check' }, ativa, h('span', null, 'Ativa (recorrente monta listas novas)'))),
-          h('div', { class: 'cp-salvar' }, h('button', { type: 'button', class: 'btn primary', onclick: async () => {
-            try { const r = await api('PUT', `/api/campanhas/${camp.id}`, { loja: state.loja, mensagem: msg.value.trim(), janela: +janela.value, recorrente: rec.value, ativa: ativa.checked }); Object.assign(camp, r.campanha); abrirCampanha(corpo, lista, camp); } catch (e) { erro.textContent = e.message; }
-          } }, 'Salvar'), erro))));
-  }
 })();

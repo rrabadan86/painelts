@@ -821,10 +821,13 @@
         return top.length ? bloco('Mais compra', ...top.map(([pid, x]) => h('div', { class: 'fi fi-top' }, h('span', null, db.D.produto[pid]), h('b', null, `${fmt.int(x.n)}×`, h('small', null, fmt.brl0(x.vt)))))) : null;
       })(),
       bloco('Valores',
-        h('div', { class: 'fi' }, h('span', null, 'Gasto em 12 meses'), h('b', null, fmt.brl(c.gasto12), varia != null ? h('em', { class: varia >= 0 ? 'pos' : 'neg' }, ` ${fmt.delta(varia)}`) : null)),
-        item('Ticket médio', fmt.brl(r.tkm)),
-        item('PMA · IPA', `${fmt.brl(r.qtd ? r.vt / r.qtd : null)} · ${fmt.n2(r.visitas ? r.qtd / r.visitas : null)}`),
-        item('Itens', fmt.int(r.qtd))),
+        item('Gasto nos últimos 12 meses', fmt.brl(c.gasto12), 'Soma das compras com CPF nos últimos 365 dias.'),
+        c.gasto12ant > 0 ? item('12 meses anteriores', fmt.brl(c.gasto12ant), 'Soma das compras de 13 a 24 meses atrás, para comparar.') : null,
+        varia != null ? h('div', { class: 'fi' }, h('span', null, 'Variação', TS.dica('Quanto o cliente gastou nos últimos 12 meses comparado com os 12 meses anteriores. Positivo = está gastando mais.')), h('b', { class: varia >= 0 ? 'pos' : 'neg' }, `${fmt.delta(varia)} ${varia >= 0 ? 'a mais' : 'a menos'}`)) : null,
+        item('Ticket médio', fmt.brl(r.tkm), 'Valor médio de cada compra (no período escolhido na lateral).'),
+        item('Preço médio por item', fmt.brl(r.qtd ? r.vt / r.qtd : null), 'Valor gasto ÷ itens comprados.'),
+        item('Itens por compra', fmt.n2(r.visitas ? r.qtd / r.visitas : null), 'Quantos itens o cliente leva em média por compra.'),
+        item('Itens comprados', fmt.int(r.qtd))),
       blocoFidelidade(c),
     ].filter(Boolean));
   }

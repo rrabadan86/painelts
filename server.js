@@ -442,6 +442,11 @@ app.post('/api/campanhas/:id/rodadas', express.json({ limit: '600kb' }), (req, r
   if (!id) return res.status(400).json({ erro: 'Escolha uma loja.' });
   respCamp(res, CAMP.novaRodada(id, req.params.id, (req.body || {}).lista, req.user));
 });
+app.put('/api/campanhas/:id/rodadas/:rid', express.json({ limit: '600kb' }), (req, res) => {
+  const id = lojaCamp(req);
+  if (!id) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  respCamp(res, CAMP.refazerLista(id, req.params.id, req.params.rid, (req.body || {}).lista));
+});
 app.post('/api/campanhas/:id/marcar', express.json({ limit: '4kb' }), (req, res) => {
   const id = lojaCamp(req);
   if (!id) return res.status(400).json({ erro: 'Escolha uma loja.' });

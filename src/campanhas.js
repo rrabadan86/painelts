@@ -93,6 +93,21 @@ function novaRodada(id, cid, lista, por) {
   gravar(id, todas);
   return { ok: c };
 }
+/** critérios mudaram: a lista da rodada é refeita — quem já foi enviado, pulado ou pediu para não receber continua
+ *  como está; os pendentes passam a ser os da lista nova */
+function refazerLista(id, cid, rid, lista) {
+  const todas = ler(id);
+  const c = todas.find((x) => x.id === cid);
+  const r = c && c.rodadas.find((x) => x.id === rid);
+  if (!r) return { erro: 'Lista não encontrada.' };
+  const l = listaOk(lista);
+  if (l.erro) return l;
+  const feitos = r.lista.filter((x) => x.st !== 'p');
+  const ja = new Set(feitos.map((x) => x.cpf));
+  r.lista = [...feitos, ...l.ok.filter((x) => !ja.has(x.cpf))];
+  gravar(id, todas);
+  return { ok: c };
+}
 function marcar(id, cid, rid, cpf, st, por) {
   if (!ST.includes(st)) return { erro: 'Situação inválida.' };
   const todas = ler(id);
@@ -114,4 +129,4 @@ function apagar(id, cid) {
   return { ok: true };
 }
 
-module.exports = { ler, criar, alterar, novaRodada, marcar, apagar };
+module.exports = { ler, criar, alterar, novaRodada, refazerLista, marcar, apagar };
