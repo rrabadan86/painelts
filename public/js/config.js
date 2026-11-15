@@ -49,7 +49,7 @@
     });
     return b;
   }
-  const dt = (iso) => (iso ? new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—');
+  const dt = (iso) => { if (!iso) return '—'; const d = new Date(iso); return Number.isNaN(d.getTime()) ? String(iso) : d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }); };
   const dIso = (iso) => (iso ? fmt.date(iso) : '—');
   const ymLongo = (ym) => `${TS.MESES_LONGOS[+ym.slice(5, 7) - 1]}/${ym.slice(0, 4)}`;
   const campo = (rotulo, el, dica) => h('label', { class: 'cfg-campo' }, h('span', null, rotulo), el, dica ? h('small', null, dica) : null);
@@ -127,6 +127,7 @@
     const ex = l.status && l.status.execucao;
     if (ex && ex.estado === 'rodando') return ['rodando', 'Coletando agora…'];
     if (ex && ex.estado === 'na_fila') return ['rodando', 'Na fila'];
+    if (l.fixe && l.fixe.pedido) return ['rodando', 'Atualizando o FIXE…'];
     if (!l.base.existe || !l.base.linhas) return l.coletor.configurado ? ['espera', 'Aguardando a 1ª coleta'] : ['espera', 'Sem dados'];
     if (ex && ex.estado === 'falhou') return ['erro', 'Última coleta falhou'];
     const dias = l.base.ultimaVenda ? Math.floor((Date.now() - new Date(l.base.ultimaVenda + 'T12:00:00').getTime()) / 86400e3) : null;

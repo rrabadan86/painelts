@@ -36,8 +36,17 @@ function dinheiro(v) {
 }
 /** "NextSoft - Estoque Atual ( 12/11/2026, 19:01:05 )" → ISO */
 function dataDoTitulo(t) {
-  const m = /(\d{2})\/(\d{2})\/(\d{4}),?\s*(\d{2}):(\d{2})(?::(\d{2}))?/.exec(String(t || ''));
-  return m ? `${m[3]}-${m[2]}-${m[1]}T${m[4]}:${m[5]}:${m[6] || '00'}-03:00` : null;
+  // "14/11/2026, 22:40" (dd/mm) ou, em algumas versões do AppNext, "11/14/2026, 10:40 PM" (mm/dd, 12 h)
+  const m = /(\d{1,2})\/(\d{1,2})\/(\d{4}),?\s*(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?/i.exec(String(t || ''));
+  if (!m) return null;
+  let [a, b] = [+m[1], +m[2]], hh = +m[4];
+  if (m[7]) { if (/pm/i.test(m[7]) && hh < 12) hh += 12; if (/am/i.test(m[7]) && hh === 12) hh = 0; }
+  let dia = a, mes = b;
+  if (b > 12 || (m[7] && a <= 12)) { dia = b; mes = a; }
+  if (mes < 1 || mes > 12 || dia < 1 || dia > 31 || hh > 23) return null;
+  const p2 = (n) => String(n).padStart(2, '0');
+  const iso = `${m[3]}-${p2(mes)}-${p2(dia)}T${p2(hh)}:${m[5]}:${m[6] || '00'}-03:00`;
+  return Number.isNaN(Date.parse(iso)) ? null : iso;
 }
 
 /** linhas da planilha → { em, itens } */
@@ -70,8 +79,10 @@ function ler(rows) {
 
 const arqHist = (id) => path.join(pasta(id), 'custos.json');
 /** histórico de custo por código: { cod: [[AAAA-MM-DD, custo], …] } — um ponto novo só quando o custo muda */
+// pontos com data que não dá para ler (estoque antigo com a data do título no formato americano) ficam de fora
+const limparHist = (h) => { for (const k of Object.keys(h)) { h[k] = h[k].filter(([d]) => /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(d))); if (!h[k].length) delete h[k]; } return h; };
 function historico(id) {
-  try { return JSON.parse(fs.readFileSync(arqHist(id), 'utf8')); } catch { /* ainda não existe */ }
+  try { return limparHist(JSON.parse(fs.readFileSync(arqHist(id), 'utf8'))); } catch { /* ainda não existe */ }
   const a = atual(id); // começa pelo estoque que já está no painel
   if (a && a.itens) { registrarCustos(id, a.itens, a.em); try { return JSON.parse(fs.readFileSync(arqHist(id), 'utf8')); } catch { /* sem custos */ } }
   return {};
@@ -79,7 +90,7 @@ function historico(id) {
 const lerHist = (id) => { try { return JSON.parse(fs.readFileSync(arqHist(id), 'utf8')); } catch { return {}; } };
 function registrarCustos(id, itens, quando) {
   const h = lerHist(id);
-  const dia = String(quando || new Date().toISOString()).slice(0, 10);
+  const dia = String(quando && !Number.isNaN(Date.parse(quando)) ? quando : new Date().toISOString()).slice(0, 10);
   let mudou = false;
   for (const it of itens) {
     if (!(it.custo > 0)) continue;
@@ -115,7 +126,10 @@ function compras(id) {
 }
 
 function atual(id) {
-  try { return JSON.parse(fs.readFileSync(arqAtual(id), 'utf8')); } catch { return null; }
+  let j;
+  try { j = JSON.parse(fs.readFileSync(arqAtual(id), 'utf8')); } catch { return null; }
+  if (j && (!j.em || Number.isNaN(Date.parse(j.em)))) j.em = j.importadoEm || null; // data do título que não deu para ler
+  return j;
 }
 
 /** grava a planilha nova; o que sumiu fica com quantidade 0 (o relatório esconde itens zerados) */
