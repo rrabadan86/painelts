@@ -922,6 +922,7 @@
     const regras = (f.movs[0] && f.movs[0].base.regras) || { reaisPorPonto: 50, validadeMeses: 12 };
     return h('div', { class: 'fi-bloco fi-largo' }, h('div', { class: 'fi-tit' }, 'Fidelidade (FIXE)'),
       item('Saldo de pontos', fmt.int(f.saldo), f.saldoFixe != null ? 'Saldo informado pelo FIXE na última Base de leads importada.' : `Calculado pelos Logs: pontos ganhos que ainda valem (cada lote vale ${regras.validadeMeses} meses), menos resgates e expirações. Importe a Base de leads para ver o saldo oficial do FIXE.`),
+      f.saldoFixe == null && !(TS.db.fidelidade || []).some((b) => (b.membros || []).some((x) => x.length > 2)) ? h('div', { class: 'fi-nota' }, 'Saldo calculado pelos Logs. O saldo oficial do FIXE aparece aqui depois da próxima importação da Base de leads (Atualizar dados → FIXE).') : null,
       f.saldoFixe != null && f.saldoLogs != null && f.saldoLogs !== f.saldoFixe ? h('div', { class: 'fi-nota' }, `Pelos Logs o saldo daria ${fmt.int(f.saldoLogs)} pts (${f.saldoFixe > f.saldoLogs ? '+' : ''}${fmt.int(f.saldoFixe - f.saldoLogs)} no FIXE). A diferença costuma ser movimento que não aparece nos Logs exportados (ajuste, bônus, compra lançada depois da exportação) ou pontos vencidos que o FIXE ainda não baixou. Veja o extrato abaixo.`) : null,
       f.prox != null ? item('Próximo vencimento', `${fmt.int(f.proxPts)} pts em ${d(f.prox)}`) : null,
       f.em30 ? item('Vencem em 30 dias', `${fmt.int(f.em30)} pts`) : null,
