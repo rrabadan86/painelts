@@ -1440,3 +1440,5 @@ tr.cp-enviada td { background: #EEF5EC !important; }
 .updated.carregando b { opacity: .45; }
 .updated.carregando::after { content: ''; display: inline-block; width: 10px; height: 10px; margin-left: 6px; border: 2px solid rgba(255,255,255,.35); border-top-color: #fff; border-radius: 50%; animation: spin .8s linear infinite; vertical-align: -1px; }
 .cfg-caixa { font-size: 12px; margin: 0 6px 0 0; white-space: nowrap; }
+.user-btn.on { background: #C9A227; border-color: #C9A227; color: #1F3A2A; }
+.user-btn.on .user-ini { background: #1F3A2A; color: #C9A227; }

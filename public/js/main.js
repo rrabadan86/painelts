@@ -78,6 +78,7 @@
     const ativa = document.querySelector('#tabs a.active');
     if (ativa && ativa.scrollIntoView) { const t = document.getElementById('tabs'); if (t.scrollWidth > t.clientWidth) t.scrollTo({ left: ativa.offsetLeft - 12, behavior: 'smooth' }); }
     document.body.classList.toggle('pg-config', state.page === 'config');
+    document.getElementById('btnUsuario')?.classList.toggle('on', state.page === 'config');
     document.body.classList.toggle('pg-minha', state.page === 'minha');
     if (state.page === 'config') {
       TS.destroyCharts();
@@ -248,7 +249,10 @@
     ].map(([nome, ps]) => [nome, ps.filter((p) => PAGES.includes(p))]).filter(([, ps]) => ps.length);
     TS.GRUPOS = G;
     tabs.replaceChildren(...G.map(([nome, ps]) => h('a', { href: '#' + ps[0], 'data-page': ps[0], 'data-grupo': ps.join(',') }, ps.length === 1 ? ROTULO[ps[0]] : nome)));
-    if (temConfig) tabs.append(h('a', { href: '#config', 'data-page': 'config', class: 'tab-config', title: 'Configurações', 'aria-label': 'Configurações' }, '⚙'));
+    // Configurações fica no menu da conta (nome no canto direito)
+    if (temConfig && !document.getElementById('menuConfig')) {
+      document.getElementById('userPop').prepend(h('a', { class: 'user-item', id: 'menuConfig', href: '#config', role: 'menuitem', onclick: () => { document.getElementById('userPop').hidden = true; } }, '⚙ Configurações'));
+    }
     // ordem das telas = ordem do menu
     const ordem = G.flatMap(([, ps]) => ps);
     PAGES = [...ordem, ...PAGES.filter((p) => !ordem.includes(p))];
