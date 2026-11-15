@@ -1420,3 +1420,7 @@ tr.cp-enviada td { background: #EEF5EC !important; }
 .fi-lojas th.r { text-align: right; }
 .fi-lojas tr.nossa td { background: #EEF5EC; }
 @media (max-width: 700px) { .script-pop { position: fixed; left: 8px; right: 8px; top: 64px; width: auto; max-width: none; max-height: calc(100vh - 80px); overflow-y: auto; transform: none; } }
+.fi-extrato summary { cursor: pointer; font-weight: 600; color: var(--green); font-size: 12.5px; }
+.fi-extrato table { margin-top: 6px; font-size: 12px; }
+.fi-extrato tr.anulado td { text-decoration: line-through; color: var(--muted); }
+.fi-extrato .pos { color: #2C5234; } .fi-extrato .neg { color: #7A2D74; }

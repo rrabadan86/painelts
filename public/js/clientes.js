@@ -868,7 +868,7 @@
     ].filter(Boolean));
   }
   // ---------- fidelidade (FIXE) ----------
-  const TIPO_MOV = { pontos: 'Pontos da compra', compra: 'Compra (histórico antigo)', resgate: 'Resgate', expirou: 'Pontos expirados', cancelado: 'Operação cancelada', boasvindas: 'Boas-vindas', outro: 'Outro' };
+  const TIPO_MOV = { pontos: 'Pontos da compra', compra: 'Compra (histórico antigo)', resgate: 'Resgate', expirou: 'Pontos expirados', cancelado: 'Operação cancelada', boasvindas: 'Boas-vindas', ajuste: 'Ajuste de pontos', saida: 'Pontos retirados', outro: 'Outro' };
   /**
    * Onde o cliente compra nos últimos 12 meses: esta loja (cupons das vendas, com e sem FIXE) e as outras lojas da rede
    * (compras lançadas no FIXE; o valor é estimado pelos pontos × R$ por ponto). Loja preferida = a de mais compras;
@@ -921,7 +921,8 @@
     const ult = f.movs.slice(0, 5);
     const regras = (f.movs[0] && f.movs[0].base.regras) || { reaisPorPonto: 50, validadeMeses: 12 };
     return h('div', { class: 'fi-bloco fi-largo' }, h('div', { class: 'fi-tit' }, 'Fidelidade (FIXE)'),
-      item('Saldo de pontos', fmt.int(f.saldo), `Pontos ganhos que ainda valem (cada lote vale ${regras.validadeMeses} meses), menos resgates e expirações, do mais antigo para o mais novo.`),
+      item('Saldo de pontos', fmt.int(f.saldo), f.saldoFixe != null ? 'Saldo informado pelo FIXE na última Base de leads importada.' : `Calculado pelos Logs: pontos ganhos que ainda valem (cada lote vale ${regras.validadeMeses} meses), menos resgates e expirações. Importe a Base de leads para ver o saldo oficial do FIXE.`),
+      f.saldoFixe != null && f.saldoLogs != null && f.saldoLogs !== f.saldoFixe ? h('div', { class: 'fi-nota' }, `Pelos Logs o saldo daria ${fmt.int(f.saldoLogs)} pts (${f.saldoFixe > f.saldoLogs ? '+' : ''}${fmt.int(f.saldoFixe - f.saldoLogs)} no FIXE). A diferença costuma ser movimento que não aparece nos Logs exportados (ajuste, bônus, compra lançada depois da exportação) ou pontos vencidos que o FIXE ainda não baixou. Veja o extrato abaixo.`) : null,
       f.prox != null ? item('Próximo vencimento', `${fmt.int(f.proxPts)} pts em ${d(f.prox)}`) : null,
       f.em30 ? item('Vencem em 30 dias', `${fmt.int(f.em30)} pts`) : null,
       item('Ganhos · resgatados · expirados', `${fmt.int(f.ganhos)} · ${fmt.int(f.resgatados)} · ${fmt.int(f.expirados)}`),
@@ -930,6 +931,12 @@
       f.vencidosSemBaixa ? h('div', { class: 'fi-nota' }, `${fmt.int(f.vencidosSemBaixa)} pts já passaram da validade e ainda não aparecem como expirados no FIXE (não entram no saldo).`) : null,
       outras.length ? h('div', { class: 'fi-sub' }, h('div', { class: 'fi-tit2' }, `Compras em outras lojas da rede (${outras.length})`),
         h('ul', { class: 'fi-lista' }, outras.slice(0, 6).map((m) => h('li', null, h('b', null, d(m.day)), ' · ', m.loja, m.produtos.length ? h('small', null, ' — ' + m.produtos.slice(0, 3).join(', ') + (m.produtos.length > 3 ? '…' : '')) : null)))) : null,
+      f.movs.length > 5 ? h('details', { class: 'fi-sub fi-extrato' }, h('summary', null, `Extrato completo dos Logs (${f.movs.length} movimentos, com o saldo depois de cada um)`),
+        h('table', { class: 'cupom-items' }, h('tbody', null, ...f.movs.map((m) => h('tr', { class: m.anulado ? 'anulado' : null },
+          h('td', null, d(m.day), m.min != null ? ` ${String(Math.floor(m.min / 60)).padStart(2, '0')}:${String(m.min % 60).padStart(2, '0')}` : ''),
+          h('td', null, TIPO_MOV[m.tipo] || m.tipo, m.txt ? h('small', { class: 'muted' }, ' — ' + m.txt) : null, m.propria ? '' : h('small', { class: 'muted' }, ' · ' + m.loja), m.anulado ? h('small', { class: 'muted' }, ' (cancelado no PDV)') : null),
+          h('td', { class: 'r' }, m.pontos ? h('b', { class: ['resgate', 'expirou', 'saida'].includes(m.tipo) ? 'neg' : 'pos' }, `${['resgate', 'expirou', 'saida'].includes(m.tipo) ? '−' : '+'}${m.pontos}`) : ''),
+          h('td', { class: 'r muted' }, m.saldoApos != null && !m.anulado ? `saldo ${fmt.int(m.saldoApos)}` : '')))))) : null,
       ult.length ? h('div', { class: 'fi-sub' }, h('div', { class: 'fi-tit2' }, 'Últimos movimentos'),
         h('ul', { class: 'fi-lista' }, ult.map((m) => h('li', { class: m.anulado ? 'anulado' : null, title: m.anulado ? 'Cancelado no PDV logo depois' : null },
           h('b', null, d(m.day)), m.min != null ? ` ${String(Math.floor(m.min / 60)).padStart(2, '0')}:${String(m.min % 60).padStart(2, '0')}` : '', ' · ', TIPO_MOV[m.tipo] || m.tipo,

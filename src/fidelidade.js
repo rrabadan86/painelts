@@ -43,7 +43,13 @@ function evento(h) {
   else if (/^Opera[cç][aã]o cancelada/i.test(resto)) tipo = 'cancelado';
   else if ((k = /^Bem vindo\(a\), voc[eê] ganhou (\d+) ponto/i.exec(resto))) { tipo = 'boasvindas'; pontos = +k[1]; }
   else if (/^Bem vindo/i.test(resto)) tipo = 'boasvindas';
-  return { data, min, tipo, pontos, produtos };
+  // outros textos com pontos (ajuste, bônus, estorno…): entrada ou saída pela palavra
+  else if ((k = /(\d+)\s*pontos?/i.exec(resto))) {
+    pontos = +k[1];
+    tipo = /remov|debit|estorn|retirad|subtra|descont|cancel/i.test(resto) ? 'saida' : /adicion|credit|ganh|bonus|bônus|acresc|ajuste|transfer/i.test(resto) ? 'ajuste' : 'outro';
+  }
+  const txt = tipo === 'outro' || tipo === 'saida' || tipo === 'ajuste' ? resto.split('\n')[0].trim().slice(0, 80) : undefined;
+  return { data, min, tipo, pontos, produtos, ...(txt ? { txt } : {}) };
 }
 
 /** linhas da planilha → eventos */
@@ -149,14 +155,15 @@ function paraPainel(fx, loja, nomesVenda, mb) {
   // membros: base de leads + quem aparece nos Logs; a data de cadastro mais antiga que houver
   const cad = new Map();
   const poe = (cpf, d) => { if (!cad.has(cpf)) cad.set(cpf, d || null); else if (d && (!cad.get(cpf) || d < cad.get(cpf))) cad.set(cpf, d); };
-  for (const [cpf, d] of (mb && mb.membros) || []) poe(cpf, d);
+  const saldoOficial = new Map();
+  for (const [cpf, d, sd] of (mb && mb.membros) || []) { poe(cpf, d); if (sd != null) saldoOficial.set(cpf, sd); }
   for (const [cpf, d] of Object.entries((fx && fx.cadastros) || {})) poe(cpf, d);
   for (const e of ev) poe(e.cpf, null);
   const proprios = nomesProprios(ev);
   const nomes = [], iNome = new Map(), lojas = [], iLoja = new Map();
   const idx = (m, l, v) => { let i = m.get(v); if (i === undefined) { i = l.length; l.push(v); m.set(v, i); } return i; };
-  const linhas = ev.map((e) => [e.cpf, idx(iNome, nomes, e.nome || ''), idx(iLoja, lojas, e.loja || ''), e.data, e.min, e.tipo, e.pontos || 0, (e.produtos || []).join('|')]);
-  return { id: loja.id, nome: loja.nome, em: fx && fx.em, membrosEm: mb && mb.em, membros: [...cad], vendaLoja: (nomesVenda || [])[0] || null, regras: regrasDe(loja), nomes, lojas, propria: lojas.map((n) => proprios.has(n)), ev: linhas };
+  const linhas = ev.map((e) => [e.cpf, idx(iNome, nomes, e.nome || ''), idx(iLoja, lojas, e.loja || ''), e.data, e.min, e.tipo, e.pontos || 0, (e.produtos || []).join('|'), ...(e.txt ? [e.txt] : [])]);
+  return { id: loja.id, nome: loja.nome, em: fx && fx.em, membrosEm: mb && mb.em, membros: [...cad].map(([cpf, d]) => (saldoOficial.has(cpf) ? [cpf, d, saldoOficial.get(cpf)] : [cpf, d])), vendaLoja: (nomesVenda || [])[0] || null, regras: regrasDe(loja), nomes, lojas, propria: lojas.map((n) => proprios.has(n)), ev: linhas };
 }
 
 module.exports = { ehLogs, ler, importar, eventos, evento, assinatura, resumo, gravarMembros, membros, regrasDe, nomesProprios, paraPainel, REGRAS_PADRAO };

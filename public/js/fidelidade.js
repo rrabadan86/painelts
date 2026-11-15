@@ -15,9 +15,9 @@
       const lid = base.vendaLoja != null ? lojaId.get(base.vendaLoja) : undefined;
       const porCpf = new Map();
       for (const r of base.ev) {
-        const [cpf, iNome, iLoja, data, min, tipo, pontos, prods] = r;
+        const [cpf, iNome, iLoja, data, min, tipo, pontos, prods, txt] = r;
         const m = { base, cpf, nome: base.nomes[iNome] || '', loja: base.lojas[iLoja] || '', propria: !!base.propria[iLoja], lojaId: base.propria[iLoja] ? lid : undefined,
-          day: TS.isoToDay(data), min: min == null ? null : min, tipo, pontos: pontos || 0, produtos: prods ? prods.split('|') : [], anulado: false };
+          day: TS.isoToDay(data), min: min == null ? null : min, tipo, pontos: pontos || 0, produtos: prods ? prods.split('|') : [], txt: txt || '', anulado: false };
         out.push(m);
         let a = porCpf.get(cpf); if (!a) porCpf.set(cpf, (a = [])); a.push(m);
       }
@@ -25,8 +25,15 @@
       for (const lista of porCpf.values()) {
         for (const c of lista) {
           if (c.tipo !== 'cancelado' || c.min == null) continue;
+          // pode cancelar uma compra (pontos) ou um resgate: vale o mais recente antes dele com os mesmos produtos; sem produto, o mais recente
+          const prods = new Set(c.produtos.map((x) => TS.norm(x)));
+          const comum = (p) => (prods.size ? p.produtos.some((x) => prods.has(TS.norm(x))) : true);
           let alvo = null;
-          for (const p of lista) if (p.tipo === 'pontos' && !p.anulado && p.day === c.day && p.min != null && p.min <= c.min && c.min - p.min <= 60 && (!alvo || p.min > alvo.min)) alvo = p;
+          for (const p of lista) {
+            if ((p.tipo !== 'pontos' && p.tipo !== 'resgate') || p.anulado || p.day !== c.day || p.min == null || p.min > c.min || c.min - p.min > 60) continue;
+            const melhor = !alvo || (comum(p) && !comum(alvo)) || (comum(p) === comum(alvo) && p.min > alvo.min);
+            if (melhor) alvo = p;
+          }
           if (alvo) alvo.anulado = true;
         }
       }
@@ -49,9 +56,9 @@
       const validoEm = (day) => lotes.reduce((t, l) => t + (l.vence > day ? l.resta : 0), 0);
       for (const m of lista) {
         if (m.anulado) continue;
-        if ((m.tipo === 'pontos' || m.tipo === 'boasvindas') && m.pontos > 0) { m.vence = addMeses(m.day, validadeMeses); lotes.push({ day: m.day, vence: m.vence, resta: m.pontos }); ganhos += m.pontos; m.saldoApos = validoEm(m.day); continue; }
-        if (m.tipo !== 'resgate' && m.tipo !== 'expirou') continue;
-        if (m.tipo === 'resgate') resgatados += m.pontos; else expirados += m.pontos;
+        if ((m.tipo === 'pontos' || m.tipo === 'boasvindas' || m.tipo === 'ajuste') && m.pontos > 0) { m.vence = addMeses(m.day, validadeMeses); lotes.push({ day: m.day, vence: m.vence, resta: m.pontos }); ganhos += m.pontos; m.saldoApos = validoEm(m.day); continue; }
+        if (m.tipo !== 'resgate' && m.tipo !== 'expirou' && m.tipo !== 'saida') continue;
+        if (m.tipo === 'resgate') resgatados += m.pontos; else if (m.tipo === 'expirou') expirados += m.pontos;
         let falta = m.pontos;
         for (const l of lotes) { if (!falta) break; const t = Math.min(l.resta, falta); l.resta -= t; falta -= t; }
         m.saldoApos = validoEm(m.day);
@@ -156,16 +163,17 @@
 
   /** quem está no programa (base de leads + Logs) e desde quando; até que dia os Logs vão */
   function membros() {
-    const m = new Map();
+    const m = new Map(), saldoFixe = new Map();
     let logsAte = null;
     for (const base of TS.db.fidelidade || []) {
-      for (const [cpf, d] of base.membros || []) {
+      for (const [cpf, d, sd] of base.membros || []) {
+        if (sd != null) saldoFixe.set(cpf, Math.max(saldoFixe.get(cpf) ?? -Infinity, sd)); // o saldo do FIXE é da rede: o mesmo em todas as bases
         const day = d ? TS.isoToDay(d) : null;
         if (!m.has(cpf) || (day != null && (m.get(cpf) == null || day < m.get(cpf)))) m.set(cpf, day);
       }
       if (base.ev && base.ev.length && base.em) { const d = TS.isoToDay(base.em.slice(0, 10)); if (logsAte == null || d > logsAte) logsAte = d; }
     }
-    return { membros: m, logsAte };
+    return { membros: m, logsAte, saldoFixe };
   }
 
   /**
@@ -213,7 +221,16 @@
       // dias em que o CPF teve movimento no FIXE (qualquer loja): a venda desse dia passou pelo FIXE
       const movDia = new Set();
       for (const m of movs) if (!m.anulado && m.tipo !== 'expirou') movDia.add(m.cpf + '|' + m.day);
-      return { movs, porCpf, ...r, ...membros(), movDia, bases: TS.db.fidelidade };
+      const mb = membros();
+      // saldo oficial do FIXE (base de leads): é o que vale; a conta pelos Logs fica para comparar e para os vencimentos
+      for (const [cpf, sd] of mb.saldoFixe) {
+        let a = porCpf.get(cpf);
+        if (!a) { if (!sd) continue; porCpf.set(cpf, (a = { cpf, nome: '', saldo: 0, ganhos: 0, resgatados: 0, expirados: 0, vencidosSemBaixa: 0, prox: null, proxPts: 0, em30: 0, movs: [] })); }
+        a.saldoLogs = a.saldo;
+        a.saldoFixe = sd;
+        a.saldo = sd;
+      }
+      return { movs, porCpf, ...r, ...mb, movDia, bases: TS.db.fidelidade };
     },
     addMeses,
   };
