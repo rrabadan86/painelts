@@ -1424,3 +1424,5 @@ tr.cp-enviada td { background: #EEF5EC !important; }
 .fi-extrato table { margin-top: 6px; font-size: 12px; }
 .fi-extrato tr.anulado td { text-decoration: line-through; color: var(--muted); }
 .fi-extrato .pos { color: #2C5234; } .fi-extrato .neg { color: #7A2D74; }
+.cfg-fx-emails { list-style: none; margin: 2px 0; padding: 0; display: grid; gap: 2px; }
+.cfg-fx-emails li.ok { color: #2C5234; } .cfg-fx-emails li.espera { color: var(--muted); }
