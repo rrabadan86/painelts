@@ -606,7 +606,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     res.json({ ok: true, fechEmail: NOTIF.publicoLoja(req.loja.id) });
   });
   r.post('/lojas/:id/fechamento-email/destinos', lojaPermitida, json, (req, res) => {
-    const { email, nome, remover } = req.body || {};
+    const { email, nome, remover, caixa } = req.body || {};
     const ident = semQuebra(email).toLowerCase();
     if (!EMAIL_OK.test(ident)) return res.status(400).json({ erro: 'E-mail inválido.' });
     const c = NOTIF.ler();
@@ -615,7 +615,8 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     if (remover) { if (i >= 0) x.destinos.splice(i, 1); }
     else {
       if (x.destinos.length >= 30 && i < 0) return res.status(400).json({ erro: 'Máximo de 30 destinatários por loja.' });
-      const d = { email: ident, nome: semQuebra(nome).slice(0, 60) };
+      // só mudar o "recebe o caixa": mantém o nome que já estava
+      const d = { email: ident, nome: nome == null && i >= 0 ? x.destinos[i].nome : semQuebra(nome).slice(0, 60), caixa: caixa == null ? (i >= 0 ? x.destinos[i].caixa !== false : true) : !!caixa };
       if (i >= 0) x.destinos[i] = d; else x.destinos.push(d);
     }
     NOTIF.gravar(c);

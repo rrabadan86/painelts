@@ -603,14 +603,14 @@
     const pass = inp({ type: 'password', autocomplete: 'new-password', placeholder: e.temSenha ? '•••••••• (guardada)' : 'senha de app (16 letras)' });
     const from = inp({ value: e.from, placeholder: `ex.: ${l.nome} <teashop.loja@gmail.com>` });
     const sec = h('input', { type: 'checkbox', checked: e.secure || null });
-    const novoEmail = inp({ type: 'email', placeholder: 'pessoa@email.com' }), novoNome = inp({ placeholder: 'Nome' });
+    const novoEmail = inp({ type: 'email', placeholder: 'pessoa@email.com' }), novoNome = inp({ placeholder: 'Nome' }), novoCaixa = h('input', { type: 'checkbox', checked: true });
     const envios = (r) => {
       const ok = r.envios.filter((x) => x.ok), falhas = r.envios.filter((x) => !x.ok);
       if (falhas.length) throw new Error(`Enviado para ${ok.length}; falhou: ${falhas.map((x) => `${x.para} (${x.erro})`).join('; ')}`);
       return `Fechamento de hoje enviado para ${ok.length}: ${ok.map((x) => x.para).join(', ')}.`;
     };
     sec0.append(...[
-      h('p', { class: 'muted' }, `Todo dia, no horário escolhido, a ${l.nome} envia o fechamento de HOJE pelo Gmail dela para as pessoas da lista abaixo${f.gerais.length ? ' e para quem acompanha a loja pela rede' : ''}. É o mesmo conteúdo da planilha de fechamento, preenchido sozinho.`),
+      h('p', { class: 'muted' }, `Todo dia, no horário escolhido, a ${l.nome} envia o fechamento de HOJE pelo Gmail dela para as pessoas da lista abaixo${f.gerais.length ? ' e para quem acompanha a loja pela rede' : ''}. É o mesmo conteúdo da planilha de fechamento, preenchido sozinho. No fim do e-mail vai o fechamento de caixa do AppNext (formas de pagamento, sangria, suprimento e diferença) para quem estiver marcado com "Recebe o caixa".`),
       h('label', { class: 'cfg-check-l' }, ativo, ' Enviar o fechamento todos os dias'),
       h('div', { class: 'cfg-grid' }, campo('Horário (Brasília)', hora, 'Depois da última coleta do dia (ex.: coleta 23:00 → 23:30).')),
       f.fechamento.ultimoEnvio ? h('p', { class: 'muted' }, `Último envio automático: ${dIso(f.fechamento.ultimoEnvio)}`) : null,
@@ -638,10 +638,16 @@
       h('div', { class: 'f-label', style: { marginTop: '14px' } }, 'Quem recebe'),
       f.destinos.length ? h('ul', { class: 'cfg-dest-lista' }, f.destinos.map((d) => h('li', null, h('span', null, h('b', null, d.nome || d.email), d.nome ? h('span', { class: 'muted' }, ' ' + d.email) : null),
         h('span', { class: 'cfg-inline' },
+          h('label', { class: 'cfg-check-l cfg-caixa', title: 'Recebe também o fechamento de caixa (formas de pagamento, sangria, suprimento e diferença)' },
+            h('input', { type: 'checkbox', checked: d.caixa !== false || null, onchange: async (ev) => {
+              const cb = ev.target; cb.disabled = true;
+              try { await api('POST', `/lojas/${l.id}/fechamento-email/destinos`, { email: d.email, caixa: cb.checked }); d.caixa = cb.checked; } catch (e) { cb.checked = !cb.checked; alert(e.message); } finally { cb.disabled = false; }
+            } }), ' Recebe o caixa'),
           acao('Testar', async () => envios(await api('POST', `/lojas/${l.id}/fechamento-email/enviar`, { para: d.email }))),
           acao('Remover', async () => { await api('POST', `/lojas/${l.id}/fechamento-email/destinos`, { email: d.email, remover: true }); return 'Removido.'; }, 'btn ghost-danger'))))) : h('p', { class: 'muted' }, 'Ninguém ainda.'),
       h('div', { class: 'cfg-grid' }, campo('E-mail', novoEmail), campo('Nome', novoNome)),
-      h('div', { class: 'cfg-acoes' }, acao('Adicionar destinatário', async () => { await api('POST', `/lojas/${l.id}/fechamento-email/destinos`, { email: novoEmail.value, nome: novoNome.value }); return 'Destinatário adicionado.'; })),
+      h('label', { class: 'cfg-check-l' }, novoCaixa, ' Recebe também o fechamento de caixa'),
+      h('div', { class: 'cfg-acoes' }, acao('Adicionar destinatário', async () => { await api('POST', `/lojas/${l.id}/fechamento-email/destinos`, { email: novoEmail.value, nome: novoNome.value, caixa: novoCaixa.checked }); return 'Destinatário adicionado.'; })),
       f.gerais.length ? h('p', { class: 'muted' }, h('b', null, 'Também recebem (acompanham a loja pela rede): '), f.gerais.map((g) => g.nome || g.email).join(', '), '.') : null].filter(Boolean));
     return sec0;
   }

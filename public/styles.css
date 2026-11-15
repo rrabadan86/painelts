@@ -1439,3 +1439,4 @@ tr.cp-enviada td { background: #EEF5EC !important; }
 @media (max-width: 700px) { .user-nome { display: none; } .user-pop { position: fixed; left: auto; right: 8px; top: 64px; } }
 .updated.carregando b { opacity: .45; }
 .updated.carregando::after { content: ''; display: inline-block; width: 10px; height: 10px; margin-left: 6px; border: 2px solid rgba(255,255,255,.35); border-top-color: #fff; border-radius: 50%; animation: spin .8s linear infinite; vertical-align: -1px; }
+.cfg-caixa { font-size: 12px; margin: 0 6px 0 0; white-space: nowrap; }

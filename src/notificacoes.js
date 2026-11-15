@@ -145,7 +145,7 @@ async function enviarTodos(obter, { soDestino } = {}) {
 
 // ---------- fechamento do dia (substitui a planilha preenchida à mão) ----------
 /** fechamento de hoje de cada loja do destino → { texto, html } (null se nenhuma loja vendeu) */
-async function montarFechamento(lojasIds, obter, dia) {
+async function montarFechamento(lojasIds, obter, dia, { semCaixa } = {}) {
   const cfg = C.get();
   const ids = lojasIds.includes('*') ? cfg.lojas.map((l) => l.id) : lojasIds;
   const textos = [], htmls = [];
@@ -154,6 +154,7 @@ async function montarFechamento(lojasIds, obter, dia) {
       const d = await obter(id);
       if (!d) continue;
       const f = F.calcular(d, dia);
+      if (semCaixa) f.caixa = null;
       if (!f.temVendas) { textos.push(`━━ ${f.loja.nome} ━━\nSem vendas registradas em ${dia.split('-').reverse().join('/')} (a coleta da noite já rodou?).`); htmls.push(`<p><b>${f.loja.nome}</b>: sem vendas registradas no dia.</p>`); continue; }
       textos.push(F.texto(f)); htmls.push(F.html(f));
     } catch (e) { textos.push(`━━ ${id} ━━\nNão foi possível montar o fechamento: ${e.message}`); }
@@ -178,6 +179,9 @@ async function enviarFechamentoLoja(obter, lojaId, { dia, soPara } = {}) {
   const res = [];
   const m = await montarFechamento([lojaId], obter, d);
   if (!m) return res;
+  let mSem = null; // versão sem o fechamento de caixa (para quem não recebe o caixa)
+  const semCx = new Set(x.destinos.filter((y) => y.caixa === false).map((y) => y.email.toLowerCase()));
+  if (semCx.size) mSem = await montarFechamento([lojaId], obter, d, { semCaixa: true });
   const smtp = smtpOk(x.email) ? x.email : smtpOk(c.email) ? c.email : null;
   const assunto = `${nomeLoja} · fechamento de ${d.split('-').reverse().join('/')}`;
   const cobre = (ls) => ls.includes('*') || ls.includes(lojaId);
@@ -187,7 +191,8 @@ async function enviarFechamentoLoja(obter, lojaId, { dia, soPara } = {}) {
   for (const [email, nome] of emails) {
     if (soPara && soPara.toLowerCase() !== email) continue;
     if (!smtp) { res.push({ canal: 'email', loja: nomeLoja, para: email, ok: false, erro: 'a loja ainda não tem o Gmail configurado' }); continue; }
-    try { await enviarEmail(email, assunto, m.texto, m.html, smtp); res.push({ canal: 'email', loja: nomeLoja, para: email, nome, ok: true }); } catch (e) { res.push({ canal: 'email', loja: nomeLoja, para: email, ok: false, erro: e.message }); }
+    const mm = semCx.has(email) && mSem ? mSem : m;
+    try { await enviarEmail(email, assunto, mm.texto, mm.html, smtp); res.push({ canal: 'email', loja: nomeLoja, para: email, nome, ok: true }); } catch (e) { res.push({ canal: 'email', loja: nomeLoja, para: email, ok: false, erro: e.message }); }
   }
   if (c.telegram.token) {
     for (const y of c.telegram.destinos) {
