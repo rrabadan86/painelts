@@ -45,13 +45,16 @@
       lista.sort((a, b) => a.day - b.day || (a.min ?? 0) - (b.min ?? 0));
       const lotes = [];
       let ganhos = 0, resgatados = 0, expirados = 0;
+      // saldo válido logo depois de cada movimento (para mostrar no cupom)
+      const validoEm = (day) => lotes.reduce((t, l) => t + (l.vence > day ? l.resta : 0), 0);
       for (const m of lista) {
         if (m.anulado) continue;
-        if ((m.tipo === 'pontos' || m.tipo === 'boasvindas') && m.pontos > 0) { lotes.push({ day: m.day, vence: addMeses(m.day, validadeMeses), resta: m.pontos }); ganhos += m.pontos; continue; }
+        if ((m.tipo === 'pontos' || m.tipo === 'boasvindas') && m.pontos > 0) { m.vence = addMeses(m.day, validadeMeses); lotes.push({ day: m.day, vence: m.vence, resta: m.pontos }); ganhos += m.pontos; m.saldoApos = validoEm(m.day); continue; }
         if (m.tipo !== 'resgate' && m.tipo !== 'expirou') continue;
         if (m.tipo === 'resgate') resgatados += m.pontos; else expirados += m.pontos;
         let falta = m.pontos;
         for (const l of lotes) { if (!falta) break; const t = Math.min(l.resta, falta); l.resta -= t; falta -= t; }
+        m.saldoApos = validoEm(m.day);
       }
       let saldo = 0, vencidos = 0, prox = null, proxPts = 0, em30 = 0;
       for (const l of lotes) {

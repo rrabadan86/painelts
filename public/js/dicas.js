@@ -25,8 +25,10 @@ TS.DICAS = {
   // ---------- Comparativos ----------
   'Evolução mensal': 'Cada mês comparado com o mesmo mês do ano anterior. Mês em andamento: compara os mesmos dias (ex.: 1 a 13 com 1 a 13). Abra o mês para ver os anos e os vendedores.',
   'Mix de vendas por vendedor': 'Como o faturamento de cada vendedor se divide entre chá aromatizado, chá puro e acessórios. A última barra é a média da loja.',
-  'Histórico de faturamento': 'Faturamento de cada mês. A linha tracejada é a média dos meses mostrados.',
-  'Mês a mês por vendedor': 'O indicador escolhido, mês a mês, para cada vendedor. A linha tracejada é a média da loja.',
+  'Histórico de faturamento': 'Faturamento ao longo do período do filtro: por dia (até 45 dias), por semana (até ~6 meses) ou por mês. A linha tracejada é a média.',
+  'Mês a mês por vendedor': 'O indicador escolhido para cada vendedor, agrupado pelo período do filtro (até 45 dias: por dia; até ~6 meses: por semana; mais: por mês). A linha tracejada é a média da loja.',
+  'Semana a semana por vendedor': 'O indicador escolhido para cada vendedor, semana a semana (segunda a domingo), no período do filtro. A linha tracejada é a média da loja.',
+  'Dia a dia por vendedor': 'O indicador escolhido para cada vendedor, dia a dia, no período do filtro. A linha tracejada é a média da loja.',
   'Pacotes por tamanho': 'Quantos pacotes de cada gramatura cada vendedor vendeu. A última coluna é a média da loja por vendedor.',
   // ---------- Comissionamento ----------
   'Comissão por vendedor': 'Comissão calculada pelas regras da loja (Configurações → Lojas → Metas e comissão) sobre as vendas de cada vendedor no período.',
@@ -69,7 +71,9 @@ TS.DICAS = {
   'Lista de clientes': 'Clientes identificados por CPF com compras no período. Clique num cliente para ver a ficha, os cupons e os itens.',
   'Faixa etária': 'Clientes por faixa de idade, entre os que têm data de nascimento no cadastro.',
   'Quem leva': 'Produtos que mais aparecem no mesmo cupom do produto buscado, em % dos cupons com ele.',
-  'Clientes por mês': 'Clientes novos (primeira compra no mês) e recorrentes (já tinham comprado antes), identificados por CPF.',
+  'Clientes por mês': 'Clientes novos (primeira compra) e recorrentes (já tinham comprado antes), identificados por CPF. Agrupado pelo período: por dia, por semana ou por mês.',
+  'Clientes por dia': 'Clientes novos (primeira compra no dia) e recorrentes, identificados por CPF.',
+  'Clientes por semana': 'Clientes novos (primeira compra na semana) e recorrentes, identificados por CPF.',
   'Vendedoras e clientes': 'Por vendedora: % das vendas com CPF, clientes novos que ela atendeu na primeira compra e quantos voltaram depois.',
   'Resgate de pontos': 'Dos clientes que chegaram ao mínimo de pontos para resgatar no período, quantos resgataram dentro do prazo. Quem ainda está no prazo fica fora do %. Retorno do programa: valor e custo dos prêmios entregues (saem no caixa a R$ 0,01 com o mesmo nome do produto vendido normalmente; R$ 0,01 com outro nome, como brinde de promoção, fica fora) sobre as compras que geraram pontos e sobre o faturamento.',
   'Fidelidade (FIXE)': 'Liga as compras lançadas no FIXE aos cupons de venda (mesmo dia, hora próxima e mesmos produtos) e mostra o que precisa ser conferido: CPF diferente, vendas sem pontos e clientes fora do programa.',

@@ -69,6 +69,7 @@
       for (const { m, c: cv } of fx.lig) {
         const x = cupomXml.get(cv.lojaId + '|' + cv.day + '|' + cv.cupom);
         if (x) {
+          x.k.fxMov = m;
           if (x.cpf === m.cpf) { fixe.confirmadas++; x.k.fixeOk = true; continue; }
           // a nota saiu num CPF e os pontos foram para outro
           const dv = { cupom: cv.cupom, day: cv.day, lojaId: cv.lojaId, loja: db.D.loja[cv.lojaId], vt: x.k.vt, cpfNota: x.cpf, cpfFixe: m.cpf, nomeFixe: m.nome };
@@ -78,7 +79,7 @@
           continue;
         }
         // cupom sem CPF na nota: o cliente vem do FIXE
-        const k = { cupom: cv.cupom, loja: db.D.loja[cv.lojaId], lojaId: cv.lojaId, itens: cv.itens, origem: 'fixe', ...resumo(cv.itens) };
+        const k = { cupom: cv.cupom, loja: db.D.loja[cv.lojaId], lojaId: cv.lojaId, itens: cv.itens, origem: 'fixe', fxMov: m, ...resumo(cv.itens) };
         cliente(m.cpf, m.nome).cupons.push(k);
         fixe.porFixe++;
       }
@@ -510,6 +511,30 @@
     }
     for (const dv of c.divergencias || []) out.push(h('div', { class: 'cupom-aviso' }, h('span', { class: 'cli-tag t-semfixe', style: { marginLeft: 0, marginRight: '6px' } }, 'CPF diferente no FIXE'), `Cupom ${dv.cupom} de ${fmt.date(TS.dayToIso(dv.day))} (${fmt.brl(dv.vt)}): compra feita no CPF `, cpfLink(dv.cpfNota, { cupom: dv.cupom, day: dv.day, cpfNota: dv.cpfNota }, c.cpf), ', mas foi usado o CPF deste cliente no FIXE.'));
     if (c.semVenda) out.push(h('p', { class: 'muted', style: { margin: '0 0 8px', fontSize: '12px' } }, `+ ${c.semVenda} cupom(ns) com o CPF desta pessoa não foram encontrados nas vendas (não entram nas contas).`));
+    // filtro dos cupons: com pontos, CPF pelo FIXE, sem FIXE, resgate, CPF diferente
+    const tiposDe = (k) => { const t = []; if (k.fxMov && k.fxMov.cpf === c.cpf) t.push('pontos'); if (k.origem === 'fixe') t.push('pelofixe'); if (k.semFixe) t.push('semfixe'); if (k.cpfFixe) t.push('div'); if (k.itens.some(TS.ehResgate)) t.push('resgate'); return t; };
+    const contTipo = {};
+    for (const k of r.cupons) for (const t of tiposDe(k)) contTipo[t] = (contTipo[t] || 0) + 1;
+    const ROT = [['', 'Todos'], ['pontos', 'Com pontos no FIXE'], ['pelofixe', 'CPF pelo FIXE'], ['resgate', 'Resgate'], ['semfixe', 'Sem FIXE'], ['div', 'CPF diferente']];
+    const elsCupom = [];
+    if (r.cupons.length > 1 && Object.keys(contTipo).length) {
+      const chips = h('div', { class: 'chips cupom-filtro' });
+      const aplicar = (t) => { for (const [el, ts] of elsCupom) el.hidden = !!t && !ts.includes(t); for (const b of chips.children) b.classList.toggle('on', b.dataset.t === t); };
+      for (const [t, rot] of ROT) if (!t || contTipo[t]) chips.append(h('button', { type: 'button', class: 'chip' + (t ? '' : ' on'), 'data-t': t, onclick: () => aplicar(t) }, t ? `${rot} (${contTipo[t]})` : `${rot} (${r.cupons.length})`));
+      out.push(chips);
+    }
+    // saldo do FIXE no dia: pontos desta compra (validade) e resgates do dia, com o saldo logo depois
+    const linhaFixe = (k) => {
+      if (!c.fx || k.day == null) return null;
+      const partes = [];
+      const m = k.fxMov && k.fxMov.cpf === c.cpf ? k.fxMov : null;
+      if (m && m.tipo === 'pontos' && !m.anulado) partes.push(h('span', null, h('b', { class: 'pos' }, `+${fmt.int(m.pontos)} pts`), m.vence != null ? ` · valem até ${fmt.date(TS.dayToIso(m.vence))}` : '', m.saldoApos != null ? ` · saldo depois: ${fmt.int(m.saldoApos)} pts` : ''));
+      if (k.itens.some(TS.ehResgate)) {
+        const rs = c.fx.movs.filter((x) => x.tipo === 'resgate' && !x.anulado && x.day === k.day);
+        for (const x of rs) partes.push(h('span', null, h('b', { class: 'neg' }, `−${fmt.int(x.pontos)} pts no resgate`), x.saldoApos != null ? ` · saldo depois: ${fmt.int(x.saldoApos)} pts` : ''));
+      }
+      return partes.length ? h('div', { class: 'cupom-fixe-linha' }, h('span', { class: 'muted' }, 'FIXE: '), ...partes.flatMap((p, i) => (i ? [h('span', { class: 'muted' }, ' | '), p] : [p]))) : null;
+    };
     for (const k of r.cupons) {
       const itens = k.itensFiltrados || k.itens;
       const tb = h('table', { class: 'cupom-items' });
@@ -528,7 +553,8 @@
           k.cpfFixe ? h('span', { class: 'cli-tag t-semfixe', title: `Os pontos desta compra foram para outro CPF no FIXE (${fmtCPF(k.cpfFixe)}).` }, 'CPF diferente no FIXE') : null,
           k.semFixe ? h('span', { class: 'cli-tag t-semfixe', title: `Cliente do FIXE, nota com o CPF, mas nenhum lançamento no FIXE neste dia (não informou ou não foi lançado).${k.ptsPerdidos ? ` Deixou de ganhar ${k.ptsPerdidos} pt(s).` : ''}` }, 'Sem FIXE') : null),
           h('span', null, `${fmt.int(k.qtd)} ${k.qtd === 1 ? 'item' : 'itens'} · `, h('b', null, fmt.brl(k.vt)))),
-        tb);
+        linhaFixe(k), tb);
+      elsCupom.push([el, tiposDe(k)]);
       out.push(el);
     }
     // compras da pessoa (pelo FIXE) que o painel não ligou a nenhum cupom: mesmo formato dos cupons, com o motivo
@@ -733,10 +759,19 @@
       TS.kpi('Recompra', fmt.pct(recompra, 0), 'dos clientes da lista compraram 2 vezes ou mais no período'),
       TS.kpi('Clientes novos no período', fmt.int(TS.cli.lista.filter((c) => c.primeira != null && noPer(c.primeira)).length), 'primeira compra identificada'));
     // novos × recorrentes por mês (últimos 12 meses do período)
-    const fim = state.cli.per.ate ?? TS.todayDay();
-    const meses = [];
-    { const f = new Date(fim * 864e5); for (let k = 11; k >= 0; k--) { const d = new Date(Date.UTC(f.getUTCFullYear(), f.getUTCMonth() - k, 1)); meses.push(d.toISOString().slice(0, 7)); } }
-    const ymDe = (day) => new Date(day * 864e5).toISOString().slice(0, 7);
+    // agrupado pelo período: sem período (Tudo) = últimos 12 meses por mês; com período = por dia, semana ou mês
+    const pp = state.cli.per;
+    const fim = pp.ate ?? TS.todayDay();
+    let meses, ymDe, rot, porX = 'por mês';
+    if (pp.de == null) {
+      meses = [];
+      { const f = new Date(fim * 864e5); for (let k = 11; k >= 0; k--) { const d = new Date(Date.UTC(f.getUTCFullYear(), f.getUTCMonth() - k, 1)); meses.push(d.toISOString().slice(0, 7)); } }
+      ymDe = (day) => new Date(day * 864e5).toISOString().slice(0, 7);
+      rot = TS.ymLabel;
+    } else {
+      const B = TS.baldes(pp.de, fim);
+      meses = B.chaves; ymDe = B.chave; rot = B.rotulo; porX = B.porX;
+    }
     const nov = Object.fromEntries(meses.map((m) => [m, 0])), rec = Object.fromEntries(meses.map((m) => [m, 0]));
     for (const c of TS.cli.lista) {
       const ymPrim = ymDe(c.primeira);
@@ -744,9 +779,9 @@
       for (const k of c.cupons) { if (lojasOk && !lojasOk.has(k.lojaId)) continue; const ym = ymDe(k.day); if (ym in nov) noMes.add(ym); }
       for (const ym of noMes) { if (ym === ymPrim) nov[ym]++; else rec[ym]++; }
     }
-    const grafico = TS.card('Clientes por mês', 'Novos (primeira compra no mês) × recorrentes — clientes identificados por CPF', TS.chart({
+    const grafico = TS.card(`Clientes ${porX}`, 'Novos (primeira compra) × recorrentes — clientes identificados por CPF · acompanha o período', TS.chart({
       type: 'bar',
-      data: { labels: meses.map(TS.ymLabel), datasets: [
+      data: { labels: meses.map(rot), datasets: [
         { label: 'Novos', data: meses.map((m) => nov[m]), backgroundColor: '#C9A227', borderRadius: 3 },
         { label: 'Recorrentes', data: meses.map((m) => rec[m]), backgroundColor: '#2C5234', borderRadius: 3 }] },
       options: { plugins: { tooltip: { mode: 'index', intersect: false } }, scales: { x: { stacked: true, ...TS.axisCat }, y: { stacked: true, ...TS.axisNum(fmt.int) } } },
@@ -829,10 +864,47 @@
         item('Itens por compra', fmt.n2(r.visitas ? r.qtd / r.visitas : null), 'Quantos itens o cliente leva em média por compra.'),
         item('Itens comprados', fmt.int(r.qtd))),
       blocoFidelidade(c),
+      blocoLojas(c),
     ].filter(Boolean));
   }
   // ---------- fidelidade (FIXE) ----------
   const TIPO_MOV = { pontos: 'Pontos da compra', compra: 'Compra (histórico antigo)', resgate: 'Resgate', expirou: 'Pontos expirados', cancelado: 'Operação cancelada', boasvindas: 'Boas-vindas', outro: 'Outro' };
+  /**
+   * Onde o cliente compra nos últimos 12 meses: esta loja (cupons das vendas, com e sem FIXE) e as outras lojas da rede
+   * (compras lançadas no FIXE; o valor é estimado pelos pontos × R$ por ponto). Loja preferida = a de mais compras;
+   * empate = a de maior valor.
+   */
+  function lojasDoCliente(c) {
+    const hoje = TS.todayDay(), desde = hoje - 365;
+    const rpp = c.fx && c.fx.movs[0] ? c.fx.movs[0].base.regras.reaisPorPonto || 50 : 50;
+    const movs = c.fx ? c.fx.movs.filter((m) => !m.anulado && m.day > desde) : [];
+    const nomeNossa = (movs.find((m) => m.propria) || {}).loja || (TS.db.metas.find((m) => m.id === state.loja) || {}).nome || 'Esta loja';
+    const nossa = { nome: nomeNossa, nossa: true, compras: 0, gasto: 0, pontos: 0, resgates: 0, estimado: false };
+    for (const k of c.cupons) if (k.day != null && k.day > desde) { nossa.compras++; nossa.gasto += k.vt; }
+    const outras = new Map();
+    for (const m of movs) {
+      const l = m.propria ? nossa : outras.get(m.loja) || outras.set(m.loja, { nome: m.loja, nossa: false, compras: 0, gasto: 0, pontos: 0, resgates: 0, estimado: true }).get(m.loja);
+      if (m.tipo === 'pontos' || m.tipo === 'compra') { if (!m.propria) { l.compras++; l.gasto += (m.pontos || 0) * rpp; } l.pontos += m.pontos || 0; }
+      else if (m.tipo === 'resgate') l.resgates++;
+    }
+    const todas = [nossa, ...outras.values()].filter((l) => l.compras || l.resgates || l.nossa);
+    const pref = todas.filter((l) => l.compras).sort((a, b) => b.compras - a.compras || b.gasto - a.gasto)[0] || null;
+    return { lojas: todas.sort((a, b) => b.compras - a.compras || b.gasto - a.gasto), pref };
+  }
+  TS.lojasDoCliente = lojasDoCliente;
+  function blocoLojas(c) {
+    const { lojas, pref } = lojasDoCliente(c);
+    if (lojas.length < 2) return null;
+    const tb = h('table', { class: 'cupom-items fi-lojas' },
+      h('thead', null, h('tr', null, h('th', null, 'Loja'), h('th', { class: 'r' }, 'Compras'), h('th', { class: 'r' }, 'Gasto'), h('th', { class: 'r' }, 'Pontos'), h('th', { class: 'r' }, 'Resgates'))),
+      h('tbody', null, ...lojas.map((l) => h('tr', { class: l.nossa ? 'nossa' : null },
+        h('td', null, l === pref ? h('span', { class: 'cli-tag t-fiel', style: { marginLeft: 0, marginRight: '6px' } }, '★ preferida') : null, l.nome, l.nossa ? h('small', { class: 'muted' }, ' (esta loja)') : null),
+        h('td', { class: 'r' }, fmt.int(l.compras)), h('td', { class: 'r' }, (l.estimado ? '≈ ' : '') + fmt.brl0(l.gasto)), h('td', { class: 'r' }, fmt.int(l.pontos)), h('td', { class: 'r' }, fmt.int(l.resgates))))));
+    return h('div', { class: 'fi-bloco fi-largo' },
+      h('div', { class: 'fi-tit' }, 'Onde compra (últimos 12 meses)', TS.dica('Esta loja: cupons das vendas (com e sem FIXE). Outras lojas da rede: compras lançadas no FIXE, com o valor estimado pelos pontos (≈ pontos × R$ por ponto). Loja preferida = a de mais compras; no empate, a de maior valor.')),
+      tb, pref && !pref.nossa ? h('div', { class: 'fi-nota' }, `Compra mais em ${pref.nome} do que aqui: bom alvo para uma campanha de "volte para a nossa loja".`) : null);
+  }
+
   function blocoFidelidade(c) {
     const f = c.fx;
     const d = (day) => fmt.date(TS.dayToIso(day));

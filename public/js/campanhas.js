@@ -39,7 +39,7 @@
 
   // ---------- critérios ----------
   const SEGS = [['vip', 'VIP'], ['fiel', 'Fiéis'], ['sumido', 'Sumidos'], ['repor', 'Hora de repor'], ['vence', 'Pontos vencendo'], ['novo', 'Novos do mês'], ['uma', 'Uma compra só']];
-  const PADRAO = { ptsMin: '', ptsMax: '', venceDias: '', produto: '', grupo: '', compraDias: '', ausMin: '', ausMax: '', visMin: '', visMax: '', aniv: '', segs: [], vendedora: '', semContato: 30 };
+  const PADRAO = { ptsMin: '', ptsMax: '', venceDias: '', produto: '', grupo: '', compraDias: '', ausMin: '', ausMax: '', visMin: '', visMax: '', aniv: '', segs: [], vendedora: '', lojaPref: '', semContato: 30 };
   const num = (v) => (v === '' || v == null || Number.isNaN(+v) ? null : +v);
 
   /** clientes que atendem aos critérios: só com celular e sem "não quer mensagens" */
@@ -68,6 +68,11 @@
       if (mesAniv && !(c.nascimento && +c.nascimento.slice(5, 7) === mesAniv)) continue;
       if (f.segs && f.segs.length && !f.segs.some((t) => c.tags && c.tags.has(t))) continue;
       if (f.vendedora && c.vendedora !== f.vendedora) continue;
+      if (f.lojaPref) {
+        const pr = TS.lojasDoCliente(c).pref;
+        if (!pr) continue;
+        if (f.lojaPref === 'nossa' ? !pr.nossa : f.lojaPref === 'outra' ? pr.nossa : pr.nome !== f.lojaPref) continue;
+      }
       let qProd = null;
       if (prodOk || grupoId >= 0) {
         qProd = 0;
@@ -165,6 +170,7 @@
     const rec = h('select', { class: 'f-input' }, h('option', { value: '' }, 'Não (lista única)'), h('option', { value: 'semanal', selected: base && base.recorrente === 'semanal' || null }, 'Toda semana'), h('option', { value: 'mensal', selected: base && base.recorrente === 'mensal' || null }, 'Todo mês'));
     const segBox = h('div', { class: 'chips' }, ...SEGS.map(([k, t]) => { const b = h('button', { type: 'button', class: 'chip' + (f.segs.includes(k) ? ' on' : '') }, t); b.addEventListener('click', () => { f.segs = f.segs.includes(k) ? f.segs.filter((x) => x !== k) : [...f.segs, k]; b.classList.toggle('on'); atualizar(); }); return b; }));
     const vendedoras = [...new Set(TS.cli.lista.map((c) => c.vendedora).filter(Boolean))].sort();
+    const lojasRede = [...new Set(((TS.cli.fixe && TS.cli.fixe.movs) || []).filter((m) => !m.propria && m.loja).map((m) => m.loja))].sort();
     const grupos = db.opts.grupos.map(([nomeG]) => nomeG).filter(Boolean);
     const MESES = TS.MESES_LONGOS.map((m, k) => [k + 1, m]);
     const contagem = h('div', { class: 'cp-contagem' });
@@ -230,6 +236,7 @@
             grupo('Perfil',
               campo('Aniversário', sel('aniv', [['', 'Qualquer mês'], ['atual', 'Mês atual'], ['proximo', 'Próximo mês'], ...MESES]), '"Mês atual" e "Próximo mês" acompanham a data nas campanhas recorrentes.'),
               campo('Mais atendido por', sel('vendedora', [['', 'Qualquer vendedora'], ...vendedoras.map((v) => [v, v])])),
+              campo('Loja preferida', sel('lojaPref', [['', 'Qualquer loja'], ['nossa', 'Esta loja'], ['outra', 'Outra loja da rede'], ...lojasRede.map((l) => [l, l])]), 'Loja onde o cliente mais comprou nos últimos 12 meses (esta loja pelas vendas; as outras pelas compras lançadas no FIXE). "Outra loja da rede" = clientes que compram mais em outra loja.'),
               campo('Não incluir quem foi contatado há menos de (dias)', inp('semContato', '0 = incluir'), 'Evita mandar duas mensagens seguidas para a mesma pessoa.')),
             h('div', { class: 'cp-grupo' }, h('div', { class: 'fx-grupo-tit' }, 'Segmentos (qualquer um deles)'), segBox),
             h('div', { class: 'cp-grupo' }, h('div', { class: 'fx-grupo-tit' }, 'Mensagem'),

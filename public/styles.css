@@ -1413,3 +1413,10 @@ tr.cp-enviada td { background: #EEF5EC !important; }
 .cp-head { margin-top: 0; }
 .cp-cel { display: block; font-size: 11.5px; }
 .fi b.pos { color: #2C5234; } .fi b.neg { color: #8E321C; }
+.cupom-fixe-linha { padding: 6px 12px; font-size: 12.5px; background: #F7F2F8; border-bottom: 1px solid var(--line); }
+.cupom-fixe-linha .pos { color: #2C5234; } .cupom-fixe-linha .neg { color: #7A2D74; }
+.cupom-filtro { margin: 4px 0 10px; }
+.fi-lojas th { font-size: 11.5px; color: var(--muted); font-weight: 600; text-align: left; padding: 4px 8px; }
+.fi-lojas th.r { text-align: right; }
+.fi-lojas tr.nossa td { background: #EEF5EC; }
+@media (max-width: 700px) { .script-pop { position: fixed; left: 8px; right: 8px; top: 64px; width: auto; max-width: none; max-height: calc(100vh - 80px); overflow-y: auto; transform: none; } }

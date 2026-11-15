@@ -181,6 +181,27 @@
     return { de: f.de - len, ate: f.de - 1, txt: `vs. ${len} dias anteriores` };
   }
 
+  /**
+   * Agrupamento dos gráficos no tempo pelo período escolhido: até 45 dias = por dia; até ~6 meses = por semana
+   * (segunda a domingo); mais que isso (ano, 12 meses, tudo) = por mês.
+   */
+  TS.baldes = function (de, ate) {
+    const db = TS.db;
+    const a = de ?? db.minDay, b = Math.min(ate ?? db.maxDay, db.maxDay);
+    const n = b - a + 1;
+    const tipo = n <= 45 ? 'dia' : n <= 200 ? 'semana' : 'mes';
+    const seg = (day) => day - ((new Date(day * 864e5).getUTCDay() + 6) % 7);
+    const chave = tipo === 'dia' ? (day) => day : tipo === 'semana' ? seg : (day) => TS.dayToIso(day).slice(0, 7);
+    const chaves = [];
+    if (tipo === 'mes') { const vist = new Set(); for (let d = a; d <= b; d++) { const k = chave(d); if (!vist.has(k)) { vist.add(k); chaves.push(k); } } }
+    else for (let d = tipo === 'semana' ? seg(a) : a; d <= b; d += tipo === 'semana' ? 7 : 1) chaves.push(d);
+    const dm = (day) => { const x = TS.dayToIso(day); return `${x.slice(8, 10)}/${x.slice(5, 7)}`; };
+    const rotulo = tipo === 'mes' ? TS.ymLabel : tipo === 'semana' ? (k) => `sem. ${dm(k)}` : (k) => `${['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'][new Date(k * 864e5).getUTCDay()]} ${dm(k)}`;
+    const nome = { dia: 'Dia a dia', semana: 'Semana a semana', mes: 'Mês a mês' }[tipo];
+    const porX = { dia: 'por dia', semana: 'por semana', mes: 'por mês' }[tipo];
+    return { tipo, chave, chaves, rotulo, nome, porX };
+  };
+
   /** mesmas datas no ano anterior e no mês anterior (até o último dia com vendas): usado no Resumo e nos Comparativos */
   TS.periodosIguais = function (de, ate) {
     const db = TS.db;
@@ -544,16 +565,18 @@
     root.append(h('div', { class: 'mt' }, TS.card('Mix de vendas por vendedor', '% do faturamento de chás e acessórios · última barra = média da loja', mixChart)));
 
     // ---- histórico de faturamento por loja
-    const meses = [...new Set(base.map((i) => db.ym[i]))].sort();
+    // agrupado pelo período do filtro: semana/mês atual = por dia; até ~6 meses = por semana; ano ou mais = por mês
+    const B = TS.baldes(f.de, f.ate);
+    const meses = B.chaves;
     const porLoja = TS.agrupar(base.filter((i) => db.D.grupoC[db.grupoC[i]] !== ''), (i) => db.loja[i]);
     const dsLoja = [...porLoja].map(([l, idx], k) => {
-      const m = new Map(); for (const i of idx) m.set(db.ym[i], (m.get(db.ym[i]) || 0) + (db.vt[i] || 0));
+      const m = new Map(); for (const i of idx) { const kk = B.chave(db.day[i]); m.set(kk, (m.get(kk) || 0) + (db.vt[i] || 0)); }
       return { label: db.D.loja[l], data: meses.map((x) => m.get(x) ?? null), borderColor: TS.color(k), backgroundColor: TS.alpha(TS.color(k), .12), fill: porLoja.size === 1, tension: .3, pointRadius: 3 };
     });
     if (dsLoja.length > 1) dsLoja.push(TS.dsMedia('Média das lojas', TS.mediaSeries(dsLoja.map((d) => d.data))));
-    else if (dsLoja.length === 1) { const m = TS.mediaPontos(dsLoja[0].data); dsLoja.push(TS.dsMedia('Média mensal', dsLoja[0].data.map(() => m), { tension: 0 })); }
-    root.append(h('div', { class: 'mt' }, TS.card('Histórico de faturamento', 'Por mês e loja · tracejado = média', TS.chart({
-      type: 'line', data: { labels: meses.map(TS.ymLabel), datasets: dsLoja },
+    else if (dsLoja.length === 1) { const m = TS.mediaPontos(dsLoja[0].data); dsLoja.push(TS.dsMedia({ dia: 'Média diária', semana: 'Média semanal', mes: 'Média mensal' }[B.tipo], dsLoja[0].data.map(() => m), { tension: 0 })); }
+    root.append(h('div', { class: 'mt' }, TS.card('Histórico de faturamento', `${B.porX[0].toUpperCase() + B.porX.slice(1)} e loja · tracejado = média · acompanha o período do filtro`, TS.chart({
+      type: 'line', data: { labels: meses.map(B.rotulo), datasets: dsLoja },
       options: { plugins: { legend: { display: true }, tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${fmt.brl(c.raw)}` } } }, scales: { y: TS.axisBRL, x: TS.axisCat } },
     }))));
 
@@ -576,18 +599,18 @@
     };
     const fmtMet = met === 'tkm' || met === 'pma' ? fmt.brl : met === 'ipa' ? fmt.n2 : fmt.int;
     const dsV = [...porV].sort((a, b) => b[1].length - a[1].length).map(([v, idx], k) => {
-      const pm = TS.agrupar(idx, (i) => db.ym[i]);
-      return { label: db.D.vendedor[v], data: meses.map((m) => (pm.get(m) ? valMes(pm.get(m)) : null)), borderColor: TS.color(k), backgroundColor: TS.color(k), tension: .3, pointRadius: 3, spanGaps: true };
+      const pm = TS.agrupar(idx, (i) => B.chave(db.day[i]));
+      return { label: db.D.vendedor[v], data: meses.map((m) => (pm.get(m) ? valMes(pm.get(m)) : null)), borderColor: TS.color(k), backgroundColor: TS.color(k), tension: .3, cubicInterpolationMode: 'monotone', pointRadius: 3, spanGaps: true };
     });
     // média da loja: TKM/PMA/IPA da loja inteira no mês; contagens = média por vendedor que vendeu no mês
-    const porMesV = TS.agrupar(baseV, (i) => db.ym[i]);
+    const porMesV = TS.agrupar(baseV, (i) => B.chave(db.day[i]));
     const contagem = met === 'cupons' || /^p\d+$/.test(met);
     const mediaLoja = contagem ? TS.mediaSeries(dsV.map((d) => d.data)) : meses.map((m) => (porMesV.get(m) ? TS.indicadores(porMesV.get(m))[met] : null));
     if (dsV.length) dsV.push(TS.dsMedia('Média da loja', mediaLoja));
-    root.append(TS.section('Indicadores por vendedor'), TS.cardWithTools('Mês a mês por vendedor', `${/^p\d+$/.test(met) ? 'Pacotes de chá vendidos (unidades). ' : ''}Tracejado = média da loja${contagem ? ' (por vendedor)' : ''}.`,
+    root.append(TS.section('Indicadores por vendedor'), TS.cardWithTools(`${B.nome} por vendedor`, `${/^p\d+$/.test(met) ? 'Pacotes de chá vendidos (unidades). ' : ''}Tracejado = média da loja${contagem ? ' (por vendedor)' : ''}.`,
       TS.seg(METRICAS, met, (v) => { state.compMetrica = v; TS.render(); }),
       TS.chart({
-        type: 'line', data: { labels: meses.map(TS.ymLabel), datasets: dsV },
+        type: 'line', data: { labels: meses.map(B.rotulo), datasets: dsV },
         options: { interaction: { mode: 'index', intersect: false }, plugins: { tooltip: { itemSort: (a, b) => (b.raw ?? 0) - (a.raw ?? 0), callbacks: { label: (c) => `${c.dataset.label}: ${fmtMet(c.raw)}` } } }, scales: { y: TS.axisNum(fmtMet), x: TS.axisCat } },
       }, 'tall')));
 
