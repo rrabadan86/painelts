@@ -27,7 +27,7 @@
   const semZeros = (c) => String(c || '').trim().replace(/^0+/, '');
 
   /** nossos produtos: preço de tabela mais vendido nas últimas 4 semanas com venda de cada produto */
-  function nossos() {
+  function nossos(tabela) {
     const db = TS.db, I = TS.rules.ids;
     const prods = new Map();
     for (let i = 0; i < db.n; i++) {
@@ -48,7 +48,13 @@
       }
       let preco = null, n = -1;
       for (const [k, q] of cont) if (q > n || (q === n && k > preco)) { preco = k; n = q; }
-      out.push({ nome: p.nome, cod: p.cod, preco, ult: p.ult, tok: new Set(tokens(p.nome)), g: gramas(p.nome) });
+      const tab = tabela && p.cod ? tabela.get(p.cod) : null;
+      out.push({ nome: p.nome, cod: p.cod, preco: tab ? tab.preco : preco, fonte: tab ? 'cadastro' : 'vendas', ult: p.ult, tok: new Set(tokens(p.nome)), g: gramas(p.nome) });
+    }
+    // produtos do cadastro que não venderam: entram com o preço de tabela
+    if (tabela) {
+      const ja = new Set(out.map((p) => p.cod));
+      for (const t of tabela.values()) if (!ja.has(t.cod)) out.push({ nome: t.desc, cod: t.cod, preco: t.preco, fonte: 'cadastro', ult: null, tok: new Set(tokens(t.desc)), g: gramas(t.desc) });
     }
     return out;
   }
@@ -70,7 +76,7 @@
             if (!tk.every((t) => p.tok.has(t))) continue; // todas as palavras do nome do site no nosso nome
             if (g && p.g && g !== p.g) continue;
             if (g && !p.g) continue;
-            const sc = tk.length / p.tok.size + (p.ult / 1e6);
+            const sc = tk.length / p.tok.size + ((p.ult || 0) / 1e6);
             if (sc > bs) { bs = sc; best = p; }
           }
           if (best) { m = best; como = 'nome'; }
@@ -99,12 +105,18 @@
       h('div', { class: 'page-sub' }, 'Preços do e-commerce (teashop.com.br) comparados com os preços praticados nas lojas · consulta todo dia às 10h'))));
     const corpo = h('div', null, h('div', { class: 'loading' }, h('div', null, h('div', { class: 'spinner' }), h('p', null, 'Lendo os preços do site…'))));
     root.append(corpo);
-    buscar().then((d) => { if (corpo.isConnected) pintar(corpo, d); }).catch((e) => corpo.replaceChildren(h('div', { class: 'notice err' }, e.message)));
+    // com uma loja escolhida, "nosso preço" é o preço de tabela do cadastro do AppNext (quando o painel já tem)
+    const est = state.loja && state.loja !== 'todas' && TS.estoqueBuscar ? TS.estoqueBuscar(state.loja).catch(() => null) : Promise.resolve(null);
+    Promise.all([buscar(), est]).then(([d, e]) => {
+      if (!corpo.isConnected) return;
+      d.tabela = e && e.tabela && e.tabela.itens ? new Map(e.tabela.itens.filter((t) => t.preco > 0.011).map((t) => [t.cod, t])) : null;
+      pintar(corpo, d);
+    }).catch((e) => corpo.replaceChildren(h('div', { class: 'notice err' }, e.message)));
   };
 
   function pintar(corpo, d) {
     corpo.replaceChildren();
-    const nos = nossos();
+    const nos = nossos(d.tabela);
     const itensSite = d.demo ? demoItens(nos) : d.itens || [];
     const lojaTxt = state.loja && state.loja !== 'todas' ? 'desta loja' : 'das lojas';
     // topo: última consulta e "Consultar agora"
@@ -115,7 +127,7 @@
         const r = await fetch(TS.api('site/consultar'), { method: 'POST', credentials: 'same-origin', headers: { 'X-Painel': '1' } });
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j.erro || 'Não consegui consultar o site.');
-        pintar(corpo, await buscar());
+        pintar(corpo, { ...(await buscar()), tabela: d.tabela });
       } catch (e) { btn.disabled = false; btn.textContent = 'Consultar agora'; msg.className = 'neg'; msg.textContent = e.message; }
     } }, d.rodando ? 'Consultando…' : 'Consultar agora') : null;
     if (btn && d.rodando) btn.disabled = true;
@@ -167,8 +179,8 @@
         { key: 'nomeTxt', label: 'Produto no site', align: 'l', sticky: true, wrap: true, render: (r) => h('span', null,
           h('a', { href: r.url, target: '_blank', rel: 'noopener', class: 'site-link', title: 'Abrir no site (nova aba)', onclick: (e) => { if (r.url === '#') e.preventDefault(); } }, r.produto, ' ↗'),
           r.variante ? h('small', { class: 'est-tam' }, r.variante) : null, !r.disponivel ? h('small', { class: 'est-tam neg' }, 'esgotado no site') : null) },
-        { key: 'nossoTxt', label: 'Nas vendas', align: 'l', wrap: true, title: 'Produto das vendas que casou com o do site: pelo código (SKU) ou pelo nome e tamanho', render: (r) => (r.nos ? h('span', null, r.nos.nome, h('small', { class: 'est-tam' }, `${r.nos.cod ? 'cód. ' + r.nos.cod + ' · ' : ''}${r.como === 'sku' ? 'pelo código' : 'pelo nome'} · última venda ${fmt.date(TS.dayToIso(r.nos.ult))}`)) : h('span', { class: 'muted' }, '—')) },
-        { key: 'nosso', label: 'Nosso preço', title: 'Preço de tabela mais vendido nas últimas 4 semanas com venda (sem desconto)', fmt: (v) => (v != null ? fmt.brl(v) : '—') },
+        { key: 'nossoTxt', label: 'Nas vendas', align: 'l', wrap: true, title: 'Produto das vendas que casou com o do site: pelo código (SKU) ou pelo nome e tamanho', render: (r) => (r.nos ? h('span', null, r.nos.nome, h('small', { class: 'est-tam' }, `${r.nos.cod ? 'cód. ' + r.nos.cod + ' · ' : ''}${r.como === 'sku' ? 'pelo código' : 'pelo nome'} · ${r.nos.ult != null ? 'última venda ' + fmt.date(TS.dayToIso(r.nos.ult)) : 'sem venda'}`)) : h('span', { class: 'muted' }, '—')) },
+        { key: 'nosso', label: 'Nosso preço', title: 'Preço de tabela do cadastro do AppNext (com uma loja escolhida e o cadastro no painel); senão, o preço mais vendido nas últimas 4 semanas com venda (sem desconto)', render: (r) => (r.nosso == null ? '—' : h('span', null, fmt.brl(r.nosso), h('small', { class: 'est-tam' }, r.nos.fonte === 'cadastro' ? 'cadastro' : 'vendas'))), sortVal: (r) => r.nosso },
         { key: 'cheio', label: 'Site: preço cheio', title: 'Preço do site sem a promoção (o preço "de" quando está em promoção)', fmt: fmt.brl, cls: (r) => (r.dif ? 'site-dif' : '') },
         { key: 'preco', label: 'Site: agora', title: 'O preço que o cliente paga hoje no site', render: (r) => h('span', null, r.promo ? h('s', { class: 'muted site-de' }, fmt.brl(r.de)) : null, h('b', null, fmt.brl(r.preco))) },
         { key: 'desconto', label: 'Desconto no site', fmt: (v) => (v != null ? `−${fmt.int(v * 100)}%` : '—'), cls: (r) => (r.promo ? 'site-promo' : '') },
@@ -180,6 +192,6 @@
       imprimir: ['nomeTxt', 'nossoTxt', 'nosso', 'cheio', 'preco', 'desconto', 'difP', 'sit'], cls: 'site-t',
       empty: 'Nenhum produto nesta aba.',
     });
-    corpo.append(h('div', { class: 'mt' }, TS.card('Produtos do site', `Preço cheio do site comparado com o preço praticado ${lojaTxt} (o preço de tabela mais vendido nas últimas 4 semanas). Em promoção = o site mostra preço "de" e "por". Clique no nome para abrir o produto no site.`, seg, tab)));
+    corpo.append(h('div', { class: 'mt' }, TS.card('Produtos do site', `Preço cheio do site comparado com o nosso preço ${lojaTxt}: o preço de tabela do cadastro do AppNext quando o painel tem, senão o preço mais vendido nas últimas 4 semanas. Em promoção = o site mostra preço "de" e "por". Clique no nome para abrir o produto no site.`, seg, tab)));
   }
 })();

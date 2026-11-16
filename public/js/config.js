@@ -607,7 +607,8 @@
       h('option', { value: 'vendas' }, 'Vendas (relatório do AppNext)'),
       (est.perfil === 'admin' || est.perfil === 'franqueado') ? h('option', { value: 'historico' }, 'Histórico de vendas do sistema antigo (antes do AppNext)') : null, h('option', { value: 'Xml' }, 'Cupons com CPF (Xml)'),
       h('option', { value: 'Dados_Clientes' }, 'Cadastro de clientes (modelo do painel ou FIXE)'), h('option', { value: 'Meta' }, 'Meta (planilha antiga)'),
-      h('option', { value: 'Estoque' }, 'Estoque atual e custos (AppNext → Estoque → Estoque Atual → Excel)'));
+      h('option', { value: 'Estoque' }, 'Estoque atual e custos (AppNext → Estoque → Estoque Atual → Excel)'),
+      (est.perfil === 'admin' || est.perfil === 'franqueado') ? h('option', { value: 'Produtos' }, 'Preço de tabela (AppNext → Produtos ou Produtos Compostos → Excel)') : null);
     const arq = h('input', { type: 'file', accept: '.xlsx,.xls', class: 'f-input' });
     const dica = h('p', { class: 'muted cfg-dica-cad' });
     const pintaDica = () => {
@@ -617,6 +618,8 @@
           ? 'A planilha de vendas antiga (a "importacaoB" que o Power BI usava). Entram só os dias ANTERIORES à primeira venda que o painel já tem: nada do que já está no painel é apagado ou trocado, e o período em que o AppNext começou continua com os dados do AppNext. Pode enviar de novo sem medo de duplicar.'
         : tipo.value === 'Estoque'
           ? 'No AppNext: Estoque → Estoque Atual → botão verde "Exportar para Excel". Envie o arquivo do jeito que baixar. O coletor também baixa sozinho em cada atualização; o envio manual serve para a primeira carga ou para conferir.'
+        : tipo.value === 'Produtos'
+          ? 'Envie as DUAS listagens, uma de cada vez: AppNext → Produtos → Produtos (acessórios, envasados, Tea Room…) e Produtos → Produtos Compostos (os pacotes de chá a granel, minitins, kits), botão do Excel. O painel reconhece qual é pelo título e guarda o preço de tabela de cada produto para a Margem de tabela. O coletor também baixa as duas uma vez por dia.'
           : '';
       dica.hidden = !dica.textContent;
     };
@@ -652,6 +655,11 @@
               r.estoque.semCusto ? h('li', null, `${fmt.int(r.estoque.semCusto)} produto(s) sem custo no AppNext`) : null),
             h('div', null, 'Veja na aba Estoque e margem.')));
           return 'Estoque importado.';
+        }
+        if (r && r.tabela) {
+          resultado.replaceChildren(h('div', { class: 'cfg-cad-res' }, h('b', null, `${r.tabela.tipo === 'compostos' ? 'Produtos Compostos' : 'Produtos'} importado: ${fmt.int(r.tabela.itens)} produtos (${fmt.int(r.tabela.comPreco)} com preço).`),
+            h('div', null, r.tabela.tipo === 'compostos' ? 'Se ainda não enviou, envie também a listagem de Produtos.' : 'Se ainda não enviou, envie também a de Produtos Compostos (os chás a granel).')));
+          return 'Preço de tabela importado.';
         }
         if (r && r.historico) {
           const g = r.historico;

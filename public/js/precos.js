@@ -98,7 +98,7 @@
         antC = c.v;
       }
       if (!custoEv.length) { const c = custoNoDia(TS.todayDay()); if (c.v != null) custoEv.push({ dia: null, v: c.v, inicio: true, est: true }); }
-      lista.push({ nome: p.nome, cat: p.cat, comp, custoNoDia, custoEm, origemEm, vendaEv, custoEv, vt: p.vt, qtd: p.qtd, kg: comp.some(([it]) => it.un === 'Kg') });
+      lista.push({ nome: p.nome, cat: p.cat, cod: db.D.cod ? String(db.D.cod[db.cod[p.ult]] ?? '') : '', comp, custoNoDia, custoEm, origemEm, vendaEv, custoEv, vt: p.vt, qtd: p.qtd, kg: comp.some(([it]) => it.un === 'Kg') });
     }
     return { lista, temCompras: !!(compras && Object.keys(compras.itens || {}).length), inicioCusto: Math.min(...[...hist.values()].map((l) => (l.length ? l[0][0] : Infinity))) };
   }
@@ -132,7 +132,9 @@
     Promise.all([TS.estoqueBuscar(loja), TS.custosLoja()]).then(([e, M]) => {
       if (!corpo.isConnected) return;
       if (!M || !e.estoque) { corpo.replaceChildren(h('div', { class: 'notice' }, 'Ainda não há estoque e custos desta loja no painel.')); return; }
-      pintar(corpo, calcular(M, e.historico, e.compras));
+      const D = calcular(M, e.historico, e.compras);
+      D.tabela = new Map(((e.tabela && e.tabela.itens) || []).filter((t) => t.preco > 0.011).map((t) => [t.cod, t.preco]));
+      pintar(corpo, D);
     }).catch((err) => corpo.replaceChildren(h('div', { class: 'notice err' }, err.message)));
   };
 
@@ -144,6 +146,9 @@
       r.status = r.nC && r.nV ? 'ambos' : r.nC ? 'custo' : r.nV ? 'venda' : 'nada';
       r.perdeu = r.mAnt != null && r.mAt != null && r.mAt < r.mAnt - 0.0005;
       r.difMargem = r.mAnt != null && r.mAt != null ? r.mAt - r.mAnt : null;
+      // preço de tabela do cadastro do AppNext × o praticado nas vendas
+      r.tab = D.tabela && D.tabela.has(r.cod) ? D.tabela.get(r.cod) : null;
+      r.tabDif = r.tab != null && r.vAt != null && Math.abs(r.tab - r.vAt) >= 0.01 ? r.vAt / r.tab - 1 : null;
     }
     const FIL = {
       todos: ['Todos os itens', () => true],
@@ -151,6 +156,7 @@
       venda: ['Venda alterada', (r) => r.nV > 0],
       margem: ['Margem reduzida', (r) => r.perdeu],
       sem: ['Sem reajuste', (r) => r.status === 'nada'],
+      ...(D.tabela && D.tabela.size ? { cad: ['Diferente do cadastro', (r) => r.tabDif != null] } : {}),
     };
     const filtro = state.precoFil || 'todos';
     const media = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
@@ -187,13 +193,14 @@
         { key: 'nome', label: 'Produto', align: 'l', sticky: true, wrap: true, render: (r) => h('a', { href: '#', class: 'prc-nome', onclick: (e) => { e.preventDefault(); abrirProduto(r); } }, r.nome, h('small', { class: 'est-tam' }, r.cat)) },
         { key: 'cVar', label: 'Custo (antes → agora)', title: 'Custo de 1 unidade vendida: antes do período → no fim dele. Vermelho = subiu', render: (r) => variacao(r.cAnt, r.cAt, r.cVar, r.cDia, true), sortVal: (r) => r.cVar ?? -99 },
         { key: 'vVar', label: 'Venda (antes → agora)', title: 'Preço de tabela praticado: antes do período → no fim dele', render: (r) => variacao(r.vAnt, r.vAt, r.vVar, r.vDia, false), sortVal: (r) => r.vVar ?? -99 },
+        D.tabela && D.tabela.size ? { key: 'tab', label: 'Cadastro', title: 'Preço de tabela no cadastro do AppNext (Produtos / Produtos Compostos). Em vermelho quando o preço praticado nas vendas é diferente', render: (r) => (r.tab == null ? h('span', { class: 'muted' }, '—') : h('div', { class: 'prc-v' }, h('b', null, fmt.brl(r.tab)), r.tabDif != null ? h('span', { class: 'prc-badge prc-ruim', title: `Vendido a ${fmt.brl(r.vAt)}` }, `vendas ${pctTxt(r.tabDif)}`) : null)), sortVal: (r) => (r.tabDif == null ? -99 : Math.abs(r.tabDif)) } : null,
         { key: 'status', label: 'O que mudou', align: 'l', render: (r) => { const [t, c] = STATUS[r.status]; return h('span', { class: 'prc-st ' + c }, t); }, sortVal: (r) => ({ ambos: 3, custo: 2, venda: 1, nada: 0 })[r.status] },
         { key: 'difMargem', label: 'Margem bruta (antes → agora)', title: 'Margem bruta = (venda − custo) ÷ venda', render: (r) => (r.mAt == null ? '—' : h('div', { class: 'prc-v' },
           r.difMargem != null && Math.abs(r.difMargem) >= 0.0005 ? h('s', { class: 'muted' }, fmt.pct(r.mAnt)) : null, h('b', { class: r.perdeu ? 'neg' : null }, fmt.pct(r.mAt)),
           r.difMargem != null && Math.abs(r.difMargem) >= 0.0005 ? h('span', { class: 'prc-badge ' + (r.difMargem < 0 ? 'prc-ruim' : 'prc-bom') }, `${r.difMargem > 0 ? '+' : ''}${fmt.n1(r.difMargem * 100)} p.p.`) : null)),
           sortVal: (r) => r.difMargem ?? 0 },
         { key: 'acoes', label: '', align: 'l', render: (r) => h('button', { type: 'button', class: 'btn prc-ver', onclick: () => abrirProduto(r) }, 'Histórico'), sortVal: () => 0 },
-      ],
+      ].filter(Boolean),
       rows, sortKey: filtro === 'margem' ? 'difMargem' : 'cVar', sortDir: filtro === 'margem' ? 'asc' : 'desc', maxHeight: '640px', search: 'Buscar produto…', searchKeys: ['nome', 'cat'], cls: 'est-t prc-t',
       empty: 'Nenhum produto neste filtro no período.',
     });
@@ -259,6 +266,7 @@
     const lb = (v, c) => (v != null && c != null ? v - c : null), mg = (v, c) => (v > 0 && c != null ? (v - c) / v : null);
     const tab = h('table', { class: 'prc-comp' }, h('thead', null, h('tr', null, h('th', { class: 'l' }, 'Venda (1 unidade)'), h('th', null, 'Antes → agora'))), h('tbody', null,
       linha('Preço de venda', vAnt, vAt, fmt.brl, true, 'preço de tabela praticado'),
+      r.tab != null ? h('tr', null, h('td', { class: 'l' }, h('div', null, 'Preço no cadastro do AppNext'), h('small', { class: r.tabDif != null ? 'neg' : 'muted' }, r.tabDif != null ? `as vendas estão ${pctTxt(r.tabDif)} do cadastro` : 'igual ao praticado')), h('td', null, h('span', { class: 'prc-aa' }, h('b', null, fmt.brl(r.tab))))) : null,
       kgUn > 0 ? linha('Preço de venda do kg', vAnt / kgUn, vAt / kgUn, fmt.brl, true, `${fmt.int(Math.round(kgUn * 1000))} g por unidade`) : null,
       linha('Lucro bruto por unidade', lb(vAnt, cAnt), lb(vAt, cAt), fmt.brl, true, 'venda − custo'),
       linha('Margem bruta', mg(vAnt, cAnt), mg(vAt, cAt), fmt.pct, true)));

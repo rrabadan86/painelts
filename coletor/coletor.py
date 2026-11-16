@@ -46,6 +46,8 @@ SCRIPT_ESTOQUE = Path(os.getenv("COLETOR_SCRIPT_ESTOQUE", Path(__file__).with_na
 SCRIPT_COMPRAS = Path(os.getenv("COLETOR_SCRIPT_COMPRAS", Path(__file__).with_name("nextsoft_compras.py")))
 # fechamentos de caixa (Fechamentos de PDV): vão no e-mail do fechamento do dia; rodam junto das vendas
 SCRIPT_CAIXA = Path(os.getenv("COLETOR_SCRIPT_CAIXA", Path(__file__).with_name("nextsoft_caixa.py")))
+# preço de tabela do cadastro (Produtos e Produtos Compostos): junto do estoque, no máximo uma vez a cada 20 horas
+SCRIPT_PRODUTOS = Path(os.getenv("COLETOR_SCRIPT_PRODUTOS", Path(__file__).with_name("nextsoft_produtos.py")))
 SCRIPT_FIXE = Path(os.getenv("COLETOR_SCRIPT_FIXE", Path(__file__).with_name("fixe_export.py")))
 # Sistema de Pedidos da franqueadora: catálogo (toda noite) e montar o carrinho (pelo painel)
 SCRIPT_PEDIDO = Path(os.getenv("COLETOR_SCRIPT_PEDIDO", Path(__file__).with_name("nextsoft_pedido.py")))
@@ -176,7 +178,7 @@ def ao_vivo(loja):
             etapa = m.group(1)
         if not uteis or uteis[-1] != t:
             uteis.append(t)
-    nomes = {"nextsoft_export_to_drive.py": "vendas", "nextsoft_xml.py": "XML das notas", "nextsoft_estoque.py": "estoque", "nextsoft_compras.py": "notas de compra", "nextsoft_caixa.py": "fechamento de caixa"}
+    nomes = {"nextsoft_export_to_drive.py": "vendas", "nextsoft_xml.py": "XML das notas", "nextsoft_estoque.py": "estoque", "nextsoft_compras.py": "notas de compra", "nextsoft_caixa.py": "fechamento de caixa", "nextsoft_produtos.py": "preço de tabela (produtos)"}
     return {"linhas": uteis[-12:], "etapa": etapa, "parte": nomes.get(script, script),
             "atividade": datetime.fromtimestamp(st.st_mtime, TZ).isoformat()}
 
@@ -459,6 +461,12 @@ def rodar(job):
             # notas de compra: só acrescenta as novas; falha aqui não muda o resultado da coleta
             cc = executar(SCRIPT_COMPRAS, {"SAIDA_COMPRAS": str(DATA_DIR / loja / "estoque" / "compras.json"), "SAIDA_ARQUIVO": str(pasta / "_nao_usado.xlsx")})
             estoque["compras"] = cc == 0
+        tab = DATA_DIR / loja / "cadastro" / "tabela.json"
+        velha = not tab.exists() or (datetime.now().timestamp() - tab.stat().st_mtime) > 20 * 3600
+        if SCRIPT_PRODUTOS.exists() and (velha or "estoque" in (job.get("extras") or []) or (quer is not None and "estoque" in quer)):
+            # preço de tabela: muda pouco; falha aqui não muda o resultado da coleta
+            cp = executar(SCRIPT_PRODUTOS, {"SAIDA_PRODUTOS": str(DATA_DIR / loja / "cadastro" / "entrada"), "SAIDA_ARQUIVO": str(pasta / "_nao_usado.xlsx")})
+            estoque["produtos"] = cp == 0
     cauda = [l for t in trechos for l in t] or (log_path.read_text(encoding="utf-8", errors="replace").splitlines()[-25:] if log_path.exists() else [])
     with lock:
         e = _estado(loja)

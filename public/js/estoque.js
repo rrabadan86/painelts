@@ -12,7 +12,7 @@
     const r = await fetch(TS.api(`estoque?loja=${encodeURIComponent(loja)}`), { credentials: 'same-origin' });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.erro || 'Falha ao ler o estoque.');
-    const x = { at: Date.now(), estoque: j.estoque, cfg: j.cfg, classe: j.classe || { meses: 6, fixas: {} }, historico: j.historico || {}, compras: j.compras || null };
+    const x = { at: Date.now(), estoque: j.estoque, cfg: j.cfg, tabela: j.tabela || null, classe: j.classe || { meses: 6, fixas: {} }, historico: j.historico || {}, compras: j.compras || null };
     cache.set(loja, x);
     return x;
   }
@@ -79,7 +79,23 @@
     }
     /** parte da embalagem (saco e etiquetas) no custo da linha, em R$ */
     const custoEmbLinha = (i) => { const c = casar(i); return c && c.kg ? (db.qtd[i] || 0) * custoEmb(c.g) : 0; };
-    return { casar, custo, consumo, taxa, porCod, materiaPrima, custoEmbLinha };
+    /** custo de 1 unidade de um produto do cadastro (preço de tabela), vendido ou não:
+     *  produto do estoque pelo código; pacote de chá = código da matéria-prima + dígito do tamanho (ou os gramas no nome);
+     *  senão pelo nome. { custo, kg, g, it } ou null */
+    function custoCadastro(cod, desc) {
+      cod = String(cod || '');
+      let it = porCod.get(cod);
+      if (it && it.un !== 'Kg') return it.custo ? { custo: it.custo, kg: false, it } : null;
+      const gNome = (() => { const m = /(\d+(?:[.,]\d+)?)\s*(kg|g)\b/i.exec(desc || ''); return m ? Math.round(parseFloat(m[1].replace(',', '.')) * (/kg/i.test(m[2]) ? 1000 : 1)) : null; })();
+      if (/^\d{6,}$/.test(cod)) {
+        const mp = porCod.get(cod.slice(0, -1));
+        const g = gNome || TAM_DIGITO[cod.slice(-1)];
+        if (mp && mp.un === 'Kg' && g) return mp.custo ? { custo: (g / 1000) * mp.custo + custoEmb(g), kg: true, g, it: mp } : null;
+      }
+      it = porNome.get(ESQ(desc));
+      return it && it.custo ? { custo: it.custo, kg: false, it } : null;
+    }
+    return { casar, custo, consumo, taxa, porCod, materiaPrima, custoEmbLinha, custoCadastro };
   }
 
   /** motor de custos da loja escolhida (ou null se não houver estoque / permissão) */
@@ -330,6 +346,21 @@
 
   /** submenu do menu Estoque e Margem */
   TS.subEstoque = (atual) => TS.subGrupo(atual);
+  /** apresentação: um "cadastro" montado com os produtos vendidos (preço mais comum) e alguns do estoque sem venda */
+  function tabelaDemo(M, estoque) {
+    const db = TS.db, porCod = new Map();
+    for (let i = 0; i < db.n; i++) {
+      const c = M.casar(i);
+      const cod = (db.D.cod ? String(db.D.cod[db.cod[i]] ?? '') : '') || (c && !c.kg ? String(c.it.cod) : '');
+      if (!cod || M.taxa(i) || !(db.vu[i] > 0)) continue;
+      const x = porCod.get(cod) || porCod.set(cod, { cod, desc: db.D.descricao[db.desc[i]], grupo: String((db.D.grupo && db.D.grupo[db.grupo[i]]) || ''), precos: new Map() }).get(cod);
+      const k = Math.round(db.vu[i] * 100) / 100; x.precos.set(k, (x.precos.get(k) || 0) + 1);
+    }
+    const out = [...porCod.values()].map((x) => ({ cod: x.cod, desc: x.desc, grupo: x.grupo, sub: '', preco: [...x.precos].sort((a, b) => b[1] - a[1])[0][0] }));
+    for (const it of estoque.itens) if (it.un !== 'Kg' && it.custo > 0 && !porCod.has(String(it.cod)) && out.length < 1200) out.push({ cod: String(it.cod), desc: it.desc, grupo: 'ACESSÓRIOS', sub: '', preco: Math.round(it.custo * 24) / 10 - 0.1 });
+    return out;
+  }
+
   TS.pages.estoque = function (root) {
     root.append(TS.subEstoque('estoque'));
     root.append(h('div', { class: 'page-head' }, h('div', null, h('h1', { class: 'page-title' }, 'Estoque e margem'),
@@ -341,7 +372,7 @@
     buscar(state.loja).then((x) => { if (corpo.isConnected) pintar(corpo, x); }).catch((e) => corpo.replaceChildren(h('div', { class: 'notice err' }, e.message)));
   };
 
-  function pintar(corpo, { estoque, cfg, historico, classe: ccfg }) {
+  function pintar(corpo, { estoque, cfg, historico, classe: ccfg, tabela }) {
     corpo.replaceChildren();
     if (!estoque || !estoque.itens || !estoque.itens.length) {
       corpo.append(h('div', { class: 'card' }, h('div', { class: 'card-title' }, 'Ainda não há estoque desta loja'),
@@ -602,6 +633,75 @@
     }
 
     // ---------- margem abaixo do mínimo, com o principal motivo ----------
+    /** cadastro com preço e custo de cada produto (preço R$ 0,01 = simbólico: fica de fora) */
+    function tabelaLista() {
+      let itens = tabela && tabela.itens;
+      if (!itens && TS.demo) itens = tabelaDemo(M, estoque);
+      if (!itens) return [];
+      return itens.filter((t) => t.preco > 0.011).map((t) => {
+        const c = M.custoCadastro(t.cod, t.desc);
+        const custo = c ? Math.round(c.custo * 100) / 100 : null;
+        return { ...t, custo, kg: !!(c && c.kg), g: c ? c.g : null, it: c ? c.it : null, margem: custo != null ? (t.preco - custo) / t.preco : null };
+      });
+    }
+    /** Margem de tabela: todos os produtos do cadastro, vendidos ou não */
+    function cartaoTabela() {
+      const quem = TS.eu && TS.eu.pode && TS.eu.pode.configurar;
+      if (!TB.length) return TS.card('Margem de tabela', null, h('p', { class: 'muted' }, 'Ainda não há o preço de tabela do cadastro. ' + (quem ? 'Envie as listagens do AppNext (Produtos → Produtos e Produtos → Produtos Compostos, botão do Excel) em Configurações → Lojas → Dados e atualização → Enviar planilha → "Preço de tabela". O coletor também baixa as duas uma vez por dia.' : 'O coletor baixa uma vez por dia; peça ao administrador.')));
+      // deduções variáveis médias do período (comissão, royalties, Simples, maquininha, % da loja): chá e o resto separados
+      const dPct = {};
+      for (const gr of [true, false]) { const xs = prods.filter((p) => p.granel === gr); const vt = xs.reduce((a, p) => a + p.vt, 0); dPct[gr] = vt ? xs.reduce((a, p) => a + p.dedVar, 0) / vt : 0; }
+      // o que vendeu no período, por código do produto vendido (pacote, no chá)
+      // (pelo código; sem código nas vendas, pelo nome)
+      const real = new Map();
+      for (const i of base) {
+        if (M.taxa(i)) continue;
+        const cod = db.D.cod ? String(db.D.cod[db.cod[i]] ?? '') : '';
+        const k = cod || 'n:' + ESQ(db.D.descricao[db.desc[i]]);
+        const r = real.get(k) || real.set(k, { vt: 0, custo: 0, qtd: 0, temCusto: true }).get(k);
+        const cu = M.custo(i);
+        r.vt += db.vt[i] || 0; r.qtd += db.qtd[i] || 0;
+        if (cu == null) r.temCusto = false; else r.custo += cu;
+      }
+      const linhas = TB.map((t) => {
+        const r = real.get(t.cod) || real.get('n:' + ESQ(t.desc));
+        const mSf = t.margem != null ? t.margem - dPct[t.kg] : null;
+        const mReal = r && r.vt > 0 && r.temCusto ? (r.vt - r.custo) / r.vt : null;
+        return { ...t, nome: t.desc, mSf, vendido: r ? r.qtd : 0, mReal, desconto: mReal != null && t.margem != null ? t.margem - mReal : null, abaixo: mSf != null && mSf < margemMin, grupoTxt: (t.grupo || '') + (t.sub ? ' · ' + t.sub : '') };
+      });
+      const F = {
+        todos: ['Todos com custo', (r) => r.custo != null],
+        abaixo: [`Abaixo da mínima (${fmt.pct(margemMin, 0)})`, (r) => r.abaixo],
+        semvenda: ['Sem venda no período', (r) => r.custo != null && !r.vendido],
+        desconto: ['Vendido abaixo da tabela', (r) => r.desconto != null && r.desconto > 0.02],
+        semcusto: ['Sem custo', (r) => r.custo == null],
+      };
+      const f = F[state.estTabF] ? state.estTabF : 'todos';
+      const grupos = [...new Set(linhas.map((r) => r.grupo).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+      const gSel = grupos.includes(state.estTabG) ? state.estTabG : '';
+      const doGrupo = linhas.filter((r) => !gSel || r.grupo === gSel);
+      const conta = (k) => doGrupo.filter(F[k][1]).length;
+      const selG = h('select', { class: 'f-input est-tab-g', onchange: (e) => { state.estTabG = e.target.value; TS.render(); } },
+        h('option', { value: '' }, 'Grupo: todos'), ...grupos.map((g) => h('option', { value: g, selected: g === gSel || null }, g)));
+      const rows = doGrupo.filter(F[f][1]);
+      const datas = TS.demo ? 'na apresentação o cadastro é fictício' : [tabela.simples ? `Produtos de ${new Date(tabela.simples.em).toLocaleDateString('pt-BR')}` : 'falta a listagem de Produtos', tabela.compostos ? `Compostos de ${new Date(tabela.compostos.em).toLocaleDateString('pt-BR')}` : 'falta a de Produtos Compostos (chás a granel)'].join(' · ');
+      return TS.card('Margem de tabela', `Todos os produtos do cadastro do AppNext, vendidos ou não: preço de tabela (sem desconto) × custo atual. Margem sem fixos estimada com as deduções variáveis médias do período (${fmt.pct(dPct[true], 1)} nos chás a granel, ${fmt.pct(dPct[false], 1)} no resto). "Praticada" = a margem bruta do que vendeu no período; a diferença é o desconto. ${fmt.int(linhas.filter((r) => r.custo != null).length)} de ${fmt.int(linhas.length)} produtos com custo · ${datas}.`,
+        h('div', { class: 'est-tab-fx' }, TS.seg(Object.entries(F).map(([k, [t]]) => [`${t} (${fmt.int(conta(k))})`, k]), f, (v) => { state.estTabF = v; TS.render(); }), selG),
+        TS.table({
+          cols: [
+            { key: 'nome', label: 'Produto', align: 'l', sticky: true, wrap: true, render: (r) => h('span', null, r.nome, h('small', { class: 'est-tam' }, `cód. ${r.cod}${r.grupoTxt ? ' · ' + r.grupoTxt : ''}`)) },
+            { key: 'preco', label: 'Preço de tabela', fmt: fmt.brl },
+            { key: 'custo', label: 'Custo', title: 'Custo atual do AppNext (chá a granel: gramas × custo do kg + saco kraft e etiquetas)', fmt: (v) => (v == null ? '—' : fmt.brl(v)) },
+            { key: 'margem', label: 'Margem bruta', fmt: (v) => (v == null ? '—' : fmt.pct(v)), cls: (r) => (r.margem != null && r.margem < 0.3 ? 'miss' : '') },
+            { key: 'mSf', label: 'Margem sem fixos', title: `Margem bruta − deduções variáveis médias do período. Em vermelho abaixo da mínima da loja (${fmt.pct(margemMin, 0)})`, fmt: (v) => (v == null ? '—' : fmt.pct(v)), cls: (r) => (r.abaixo ? 'miss' : '') },
+            { key: 'vendido', label: 'Vendido no período', fmt: (v) => (v ? fmt.int(v) : '—') },
+            { key: 'mReal', label: 'Praticada', title: 'Margem bruta do que vendeu no período (com os descontos)', fmt: (v) => (v == null ? '—' : fmt.pct(v)) },
+            { key: 'desconto', label: 'Desconto', title: 'Margem de tabela − praticada, em pontos: o quanto os descontos tiraram da margem', render: (r) => (r.desconto == null ? '—' : Math.abs(r.desconto) < 0.005 ? h('span', { class: 'muted' }, '0') : h('span', { class: r.desconto > 0.02 ? 'neg' : 'muted' }, `${r.desconto > 0 ? '−' : '+'}${fmt.n1(Math.abs(r.desconto) * 100)} pts`)), sortVal: (r) => r.desconto },
+          ],
+          rows, sortKey: f === 'abaixo' ? 'mSf' : 'margem', sortDir: f === 'abaixo' ? 'asc' : 'desc', maxHeight: '520px', search: 'Buscar produto ou código…', searchKeys: ['nome', 'cod', 'grupoTxt'], cls: 'est-t', pageSize: rows.length > 400 ? 200 : undefined,
+          empty: f === 'abaixo' ? 'Nenhum produto com margem de tabela abaixo da mínima. 👏' : 'Nenhum produto aqui.',
+        }));
+    }
     function cartaoAlertaMargem() {
       const tot = prods.reduce((a, p) => ({ vt: a.vt + p.vt, custo: a.custo + p.custo - p.emb, emb: a.emb + p.emb, com: a.com + p.com, roy: a.roy + p.roy, imp: a.imp + p.imp, maq: a.maq + p.maq, out: a.out + (p.dedVar - p.com - p.roy - p.imp - p.maq) }), { vt: 0, custo: 0, emb: 0, com: 0, roy: 0, imp: 0, maq: 0, out: 0 });
       if (!tot.vt) return null;
@@ -827,6 +927,22 @@
     }
     // classe oficial (fixa, últimos 3/6/12 meses fechados) e a tendência: o que saiu por mês no período × a mediana mensal oficial
     const CO = TS.classeOficial(M, ccfg);
+    // ---------- preço de tabela (cadastro do AppNext: Produtos + Produtos Compostos) ----------
+    const TB = tabelaLista();
+    const tabPorCod = new Map(TB.map((t) => [t.cod, t]));
+    const tabPorMp = new Map(); // matéria-prima do chá → pacotes do cadastro
+    for (const t of TB) if (t.kg && t.it) (tabPorMp.get(String(t.it.cod)) || tabPorMp.set(String(t.it.cod), []).get(String(t.it.cod))).push(t);
+    for (const p of prods) {
+      if (p.granel) {
+        // chá: média dos pacotes pela quantidade vendida de cada tamanho (sem venda do tamanho, não entra)
+        let v = 0, c = 0;
+        for (const t of tabPorMp.get(p.cod) || []) { const q = p.tam.get(t.g) || 0; if (q && t.custo != null) { v += q * t.preco; c += q * t.custo; } }
+        p.margemTab = v ? (v - c) / v : null;
+      } else {
+        const t = tabPorCod.get(p.cod);
+        p.margemTab = t && t.custo != null ? t.margem : null;
+      }
+    }
     let dMin = Infinity, dMax = -Infinity;
     for (const i of base) { const d = db.day[i]; if (d < dMin) dMin = d; if (d > dMax) dMax = d; }
     const diasPer = dMax >= dMin ? dMax - dMin + 1 : 0;
@@ -927,6 +1043,7 @@
         { key: 'custo', label: 'Custo', title: 'Custo do AppNext × quantidade vendida. No chá a granel: kg × custo do kg + saco kraft e etiquetas de cada pacote', fmt: fmt.brl },
         { key: 'lucro', label: 'Lucro bruto', title: 'Faturamento − custo', fmt: fmt.brl, cls: (r) => (r.lucro < 0 ? 'miss' : '') },
         { key: 'margem', label: 'Margem bruta', title: 'Lucro bruto ÷ faturamento. Em vermelho quando fica abaixo de 30%', fmt: (v) => fmt.pct(v), cls: (r) => (r.margem < 0.3 ? 'miss' : '') },
+        { key: 'margemTab', label: 'Margem de tabela', title: 'Margem bruta pelo preço de tabela do cadastro do AppNext (sem desconto) com o custo atual. A diferença para a margem bruta praticada é o efeito dos descontos. Chá a granel: média dos pacotes pela quantidade vendida de cada tamanho', render: (r) => (r.margemTab == null ? h('span', { class: 'muted' }, '—') : h('span', { title: r.margemTab - r.margem > 0.005 ? `${fmt.n1((r.margemTab - r.margem) * 100)} pontos a mais que a praticada: é o que o desconto levou` : '' }, fmt.pct(r.margemTab))), sortVal: (r) => r.margemTab },
         { key: 'contrib', label: 'Lucro sem fixos', fmt: fmt.brl, title: 'Lucro bruto − deduções variáveis: o que o produto deixa para pagar os custos fixos. É a métrica para decidir preço, desconto e mix. Clique para ver a conta', render: (r) => (r.contrib == null ? '' : h('button', { type: 'button', class: 'est-conta' + (r.contrib < 0 ? ' neg' : ''), title: 'Clique para ver a conta', onclick: (e) => abrirLiq(e, r) }, fmt.brl(r.contrib))), sortVal: (r) => r.contrib },
         { key: 'margemContrib', label: 'Margem sem fixos', title: `Contribuição ÷ faturamento. Em vermelho abaixo da mínima da loja (${fmt.pct(margemMin, 0)})`, fmt: (v) => (v == null ? '' : fmt.pct(v)), cls: (r) => (r.margemContrib != null && r.margemContrib < margemMin ? 'miss' : '') },
         { key: 'ded', label: 'Deduções', fmt: fmt.brl, title: 'Comissão paga + royalties + Simples Nacional + maquininha. Clique no valor para ver cada um', render: (r) => (r.ded == null ? '' : h('button', { type: 'button', class: 'est-conta', title: 'Clique para ver o detalhamento', onclick: (e) => abrirDed(e, r) }, fmt.brl(r.ded))), sortVal: (r) => r.ded },
@@ -934,11 +1051,11 @@
         { key: 'margemLiq', label: 'Margem com fixos', title: 'Lucro líquido ÷ faturamento (com os custos fixos rateados). Informativa: um produto com líquida negativa e contribuição positiva continua ajudando a pagar os custos fixos', fmt: (v) => (v == null ? '' : fmt.pct(v)), cls: (r) => (r.margemLiq != null && r.margemLiq < 0 ? 'est-liq-neg' : '') },
 
       ],
-      rows: sel ? prods.filter((p) => p.classe === sel) : prods, sortKey: 'lucro', maxHeight: '520px', search: 'Buscar produto…', searchKeys: ['produto'], imprimir: ['produto', 'abc', 'oficial', 'giro', 'vt', 'lucro', 'margem', 'contrib', 'margemContrib'], cls: 'est-t',
+      rows: sel ? prods.filter((p) => p.classe === sel) : prods, sortKey: 'lucro', maxHeight: '520px', search: 'Buscar produto…', searchKeys: ['produto'], imprimir: ['produto', 'abc', 'oficial', 'giro', 'vt', 'lucro', 'margem', 'margemTab', 'contrib', 'margemContrib'], cls: 'est-t',
       total: { produto: 'Total', vt: fatCusto, custo: custoTot, lucro, margem: fatCusto ? lucro / fatCusto : null, contrib: contribTot, margemContrib: fatCusto ? contribTot / fatCusto : null, ded: dedSoma, lucroLiq: lucroLiqTot, margemLiq: fatCusto ? lucroLiqTot / fatCusto : null },
     }))));
 
-    corpo.append(...[cartaoAlertaMargem(), cartaoPacotes()].filter(Boolean).map((c) => h('div', { class: 'mt' }, c)));
+    corpo.append(...[cartaoTabela(), cartaoAlertaMargem(), cartaoPacotes()].filter(Boolean).map((c) => h('div', { class: 'mt' }, c)));
 
     const vends = [...porVend.values()].filter((v) => v.vt > 0).map((v) => ({ ...v, lucro: v.vt - v.custo, margem: (v.vt - v.custo) / v.vt, lucroLiq: v.vt - v.custo - v.ded, margemLiq: (v.vt - v.custo - v.ded) / v.vt, contrib: v.vt - v.custo - v.dedVar, margemContrib: (v.vt - v.custo - v.dedVar) / v.vt, cobre: v.fat ? v.vt / v.fat : null }));
     corpo.append(h('div', { class: 'mt' }, TS.card('Lucro por vendedora', 'Quem vende mais nem sempre é quem deixa mais lucro.', TS.table({

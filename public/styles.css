@@ -1552,3 +1552,5 @@ tr.cp-enviada td { background: #EEF5EC !important; }
 td.site-promo { color: #9a4a12; font-weight: 600; }
 td.site-dif { color: #B5452B; font-weight: 600; }
 #area-impressao td.wrap, #area-impressao th.wrap { max-width: 260px; white-space: normal; }
+.est-tab-fx { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 10px; }
+.est-tab-g { max-width: 260px; }

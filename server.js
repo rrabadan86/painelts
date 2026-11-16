@@ -579,12 +579,13 @@ const podeContabilidade = (req) => req.perfil === 'admin' || req.perfil === 'fra
 /** gerente com a tela liberada em Configurações → Usuários (Estoque e margem, Pedido, Resultado) */
 const podeTela = (req, ...telas) => podeContabilidade(req) || (req.perfil === 'gerente' && (C.telasDo(C.usuario(req.user)) || []).some((t) => telas.includes(t)));
 const ES = require('./src/estoque');
+const TAB = require('./src/tabela');
 app.get('/api/estoque', (req, res) => {
   if (!podeTela(req, 'estoque', 'pedido', 'dre')) return res.status(403).json({ erro: 'Sem permissão.' });
   const loja = req.lojas.find((l) => l.id === String(req.query.loja || ''));
   if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
   const lc = C.get().lojas.find((l) => l.id === loja.id);
-  res.json({ estoque: ES.atual(loja.id), cfg: ES.cfg(lc), classe: ES.classeCfg(lc), historico: ES.historico(loja.id), compras: ES.compras(loja.id) });
+  res.json({ estoque: ES.atual(loja.id), cfg: ES.cfg(lc), classe: ES.classeCfg(lc), tabela: TAB.resumo(loja.id), historico: ES.historico(loja.id), compras: ES.compras(loja.id) });
 });
 // classe oficial (Estrela, Volume…): janela de 3, 6 ou 12 meses e classes travadas à mão (admin e franqueado)
 app.put('/api/estoque/classe', express.json({ limit: '5kb' }), (req, res) => {
@@ -1020,6 +1021,7 @@ setInterval(() => {
   for (const l of C.get().lojas) {
     if (B.pendentes(l.id).length || XB.pendentes(l.id).length) dadosLoja(l, true).catch((e) => console.error(`[base] ${l.id}:`, e.message));
     if (FX.situacao(l.id).pedido && !fixeOcupado.has(l.id) && Date.now() - (fixeUltimo.get(l.id) || 0) > 110e3) verificarFixe(l);
+    if (TAB.pendentes(l.id).length) TAB.processar(l.id).then((r) => r.length && console.log(`[tabela] ${l.id}: ${r.map((x) => `${x.tipo} ${x.itens}`).join(', ')}`)).catch((e) => console.error(`[tabela] ${l.id}:`, e.message));
     if (ES.pendentes(l.id).length) ES.processar(l.id).then((r) => r && console.log(`[estoque] ${l.id}: ${r.itens} itens (${r.zerados} zerados)`)).catch((e) => console.error(`[estoque] ${l.id}:`, e.message));
   }
 }, 30e3);

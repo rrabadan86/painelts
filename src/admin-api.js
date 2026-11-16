@@ -401,7 +401,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
   });
 
   // ---------- envio de planilhas ----------
-  const TIPOS = { vendas: null, historico: null, Xml: 'Xml', Dados_Clientes: 'Dados_Clientes', Meta: 'Meta', Estoque: null };
+  const TIPOS = { vendas: null, historico: null, Xml: 'Xml', Dados_Clientes: 'Dados_Clientes', Meta: 'Meta', Estoque: null, Produtos: null };
   r.post('/lojas/:id/upload/:tipo', lojaPermitida, express.raw({ type: () => true, limit: `${MAX_UPLOAD_MB}mb` }), async (req, res) => {
     const tipo = req.params.tipo;
     if (!(tipo in TIPOS)) return res.status(400).json({ erro: 'Tipo de planilha inválido.' });
@@ -412,6 +412,15 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
         const r = await ES.importar(req.loja.id, buf);
         aud(req, 'enviou estoque', req.loja.id, { loja: req.loja.id, arquivo: semQuebra(req.get('X-Arquivo') || '').slice(0, 80), itens: r.itens });
         return res.json({ ok: true, estoque: r });
+      } catch (e) { return res.status(400).json({ erro: e.message }); }
+    }
+    if (tipo === 'Produtos') {
+      // preço de tabela: Produtos ou Produtos Compostos do AppNext (o painel reconhece pelo título)
+      if (req.perfil !== 'admin' && req.perfil !== 'franqueado') return res.status(403).json({ erro: 'Só admin e franqueado.' });
+      try {
+        const r = await require('./tabela').importar(req.loja.id, buf);
+        aud(req, 'enviou preço de tabela', req.loja.id, { loja: req.loja.id, tipo: r.tipo, arquivo: semQuebra(req.get('X-Arquivo') || '').slice(0, 80), itens: r.itens });
+        return res.json({ ok: true, tabela: r });
       } catch (e) { return res.status(400).json({ erro: e.message }); }
     }
     if (tipo === 'Dados_Clientes' && Buffer.isBuffer(buf) && buf.length >= 100) {
