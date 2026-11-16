@@ -18,6 +18,21 @@ const TS = (window.TS = {
 // ---------- modo apresentação (/apresentacao: dados fictícios, sem login) ----------
 TS.demo = /^\/apresentacao\/?$/.test(location.pathname);
 TS.api = (p) => (TS.demo ? '/api/demo/' : '/api/') + p;
+// na apresentação o visitante vê tudo como administrador: leituras vão para os dados fictícios e nenhuma alteração sai do navegador
+if (TS.demo && !window.__demoFetch) {
+  window.__demoFetch = true;
+  const orig = window.fetch.bind(window);
+  TS.DEMO_AVISO = 'Na apresentação nada é salvo nem enviado: é só para conhecer o painel.';
+  window.fetch = (url, opt = {}) => {
+    const u = typeof url === 'string' ? url : url && url.url;
+    if (typeof u === 'string' && /^\/api\//.test(u) && !/^\/api\/demo\//.test(u)) {
+      const m = String(opt.method || 'GET').toUpperCase();
+      if (m !== 'GET') return Promise.resolve(new Response(JSON.stringify({ erro: TS.DEMO_AVISO }), { status: 403, headers: { 'Content-Type': 'application/json' } }));
+      return orig('/api/demo/' + u.slice(5), opt);
+    }
+    return orig(url, opt);
+  };
+}
 
 // ---------- formatação ----------
 const nf = (d) => new Intl.NumberFormat('pt-BR', { minimumFractionDigits: d, maximumFractionDigits: d });

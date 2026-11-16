@@ -190,7 +190,7 @@
 
   TS.estoqueBuscar = buscar;
   TS.custosLoja = async function () {
-    if (!(TS.eu && TS.eu.pode && (TS.eu.pode.configurar || TS.eu.pode.custos)) || TS.demo || !state.loja || state.loja === 'todas') return null;
+    if (!(TS.eu && TS.eu.pode && (TS.eu.pode.configurar || TS.eu.pode.custos)) || !state.loja || state.loja === 'todas') return null;
     const x = await buscar(state.loja);
     if (!x.estoque || !x.estoque.itens || !x.estoque.itens.length) return null;
     let m = motores.get(TS.db);

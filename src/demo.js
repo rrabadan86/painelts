@@ -203,7 +203,140 @@ function partes() {
   return cache.partes.map((p, i) => ({ id: LOJAS[i].id, loja: { id: LOJAS[i].id, nome: LOJAS[i].nome, meta: p.meta, metas: {}, metaAuto: { ativo: true, pct: 10 }, operacao: OPERACAO[LOJAS[i].id] }, vendas: p.vendas, metaPlanilha: null }));
 }
 
+
+// ---------- estoque, custos, compras e catálogo de pedidos FICTÍCIOS (para a apresentação como administrador) ----------
+const hashTxt = (t) => { let x = 2166136261; for (const ch of String(t)) { x ^= ch.charCodeAt(0); x = Math.imul(x, 16777619); } return x >>> 0; };
+const FORNECEDORES = ['Distribuidora Fictícia de Chás', 'Embalagens Exemplo Ltda', 'Acessórios Modelo S.A.'];
+const cacheEst = new Map();
+function estoqueDemo(id) {
+  const i = LOJAS.findIndex((L) => L.id === id);
+  if (i < 0) return null;
+  pacoteDemo('todas');
+  const chave = cache.chave + '|' + id;
+  if (cacheEst.has(chave)) return cacheEst.get(chave);
+  const vendas = cache.partes[i].vendas;
+  const hojeIso = vendas.length ? vendas[vendas.length - 1].data : new Date().toISOString().slice(0, 10);
+  const ini90 = new Date(Date.parse(hojeIso + 'T00:00:00Z') - 90 * DAY).toISOString().slice(0, 10);
+  // por item do estoque: chá a granel (kg, pelo nome do produto) ou unidade (pela descrição)
+  const mapa = new Map();
+  for (const v of vendas) {
+    if (v.vu != null && v.vu < 0.05) continue;
+    const kg = !!v.soNumeros;
+    const nome = kg ? v.produto : v.descricao;
+    const k = (kg ? 'kg|' : 'un|') + nome;
+    let m = mapa.get(k);
+    if (!m) mapa.set(k, (m = { nome, kg, grupo: v.grupo, precos: [], q90: 0 }));
+    if (m.precos.length < 60) m.precos.push(kg ? (v.vu / v.soNumeros) * 1000 : v.vu);
+    if (v.data >= ini90) m.q90 += kg ? (v.qtd * v.soNumeros) / 1000 : v.qtd;
+  }
+  const itens = [], hist = {}, comp = {};
+  let cod = 20000 + i * 3000;
+  const dia = (n) => new Date(Date.parse(hojeIso + 'T00:00:00Z') - n * DAY).toISOString().slice(0, 10);
+  const notas = [];
+  for (const m of [...mapa.values()].sort((a, b) => a.nome.localeCompare(b.nome))) {
+    const r = rng(hashTxt(id + m.nome));
+    const pr = m.precos.sort((a, b) => a - b)[Math.floor(m.precos.length / 2)] || 10;
+    const eg = /GOURMET|CAF/i.test(m.grupo || '');
+    const custo = r2(pr * (m.kg ? 0.22 + r() * 0.1 : eg ? 0.2 + r() * 0.1 : 0.32 + r() * 0.14));
+    const porDia = m.q90 / 90;
+    const qtd = r() < 0.05 ? 0 : m.kg ? Math.round(porDia * (8 + r() * 70) * 1000) / 1000 : Math.max(0, Math.round(porDia * (6 + r() * 80)));
+    const c = String(cod++);
+    itens.push({ cod: c, tipo: m.kg ? 'MP' : 'PN', desc: m.nome, un: m.kg ? 'Kg' : 'Un', min: null, custo, qtd });
+    // custo de antes: um ou dois reajustes no último ano (para Preços e para o histórico)
+    const antes = r2(custo / (1.04 + r() * 0.12)), d1 = 120 + Math.floor(r() * 220);
+    hist[c] = [[dia(400), r2(antes / 1.05)], [dia(d1), antes], ...(r() < 0.6 ? [[dia(Math.floor(r() * 90) + 5), custo]] : [])];
+    if (hist[c][hist[c].length - 1][1] !== custo) hist[c].push([dia(3), custo]);
+    // notas de compra: última entrada com o custo atual
+    if (porDia > 0 && r() < 0.7) {
+      const nf = 1000 + (hashTxt(c) % 9000);
+      comp[c] = [[dia(10 + Math.floor(r() * 50)), custo, nf, m.kg ? Math.max(0.5, Math.round(porDia * 30 * 2) / 2) : Math.max(1, Math.round(porDia * 30)), FORNECEDORES[hashTxt(m.grupo) % FORNECEDORES.length]]];
+      notas.push(nf);
+    }
+  }
+  // embalagens do chá a granel (os códigos que a configuração usa)
+  for (const [c, desc, custo, qtd] of [['80149', 'Saco kraft pequeno', 0.62, 900], ['80150', 'Saco kraft médio', 0.85, 300], ['80151', 'Saco kraft grande', 1.1, 120], ['80152', 'Saco kraft 1 kg', 1.6, 60], ['81010', 'Etiqueta Sato', 0.09, 5000]]) {
+    itens.push({ cod: c, tipo: 'MC', desc, un: 'Un', min: null, custo, qtd });
+    hist[c] = [[dia(400), r2(custo * 0.93)], [dia(150), custo]];
+  }
+  // catálogo do Sistema de Pedidos: preço ≈ custo; alguns indisponíveis; uns poucos fora do catálogo
+  const catalogo = { em: new Date(Date.parse(hojeIso + 'T00:00:00Z') - 3 * 3600e3).toISOString(), fornecedor: 'FRANQUIAS (fictício)', itens: [] };
+  for (const it of itens) {
+    const r = rng(hashTxt('cat' + id + it.cod));
+    if (r() < 0.06) continue;
+    const disp = r() > 0.1;
+    const mult = it.un === 'Kg' ? (r() < 0.5 ? 0.5 : 1) : r() < 0.25 ? 6 : 1;
+    const preco = r2(it.custo * (0.97 + r() * 0.08));
+    catalogo.itens.push({ cod: it.cod, nome: it.desc, preco: disp ? preco : 0.01, disp, mult, min: null, max: 50, precoPedido: disp ? preco : 0.01 });
+  }
+  const em = new Date(Date.parse(hojeIso + 'T00:00:00Z') + 9 * 3600e3).toISOString();
+  const out = {
+    estoque: { em, importadoEm: em, origem: 'fictício', itens },
+    historico: hist,
+    compras: { atualizado: em, notas: notas.length, itens: comp },
+    catalogo,
+    estoqueCfg: {
+      simplesPct: 6, cartaoPct: 2.2, segurancaPct: 50,
+      outros: [
+        { nome: 'Aluguel e condomínio', tipo: 'mes', valor: Math.round((cache.partes[i].meta * 0.13) / 100) * 100, aplica: 'tudo', cat: 'imovel' },
+        { nome: 'Salários e encargos (fixo)', tipo: 'mes', valor: Math.round((cache.partes[i].meta * 0.16) / 100) * 100, aplica: 'tudo', cat: 'func' },
+        { nome: 'Sistemas', tipo: 'mes', valor: 650, aplica: 'tudo', cat: 'sistemas' },
+        { nome: 'Fundo de propaganda', tipo: 'pct', valor: 1, aplica: 'loja', cat: 'outros' },
+      ],
+      pontuais: [{ nome: 'IPTU', valor: 2400, ym: hojeIso.slice(0, 4) + '-02', anual: true, cat: 'imovel' }],
+    },
+  };
+  if (cacheEst.size > 6) cacheEst.clear();
+  cacheEst.set(chave, out);
+  return out;
+}
+
+/** tela de Configurações da apresentação: lojas fictícias, sem nenhum dado real (nada é salvo) */
+function estadoDemo() {
+  pacoteDemo('todas');
+  const agora = new Date();
+  const ha = (h) => new Date(agora.getTime() - h * 3600e3).toISOString();
+  const lojas = LOJAS.map((L, i) => {
+    const vendas = cache.partes[i].vendas;
+    const porMes = {};
+    const cup = new Set();
+    for (const v of vendas) { const k = v.data.slice(0, 7) + '|' + v.cupom; if (!cup.has(k)) { cup.add(k); porMes[v.data.slice(0, 7)] = (porMes[v.data.slice(0, 7)] || 0) + 1; } }
+    const meses = Object.keys(porMes).sort();
+    const ult = vendas.length ? vendas[vendas.length - 1].data : null;
+    const ultV = new Map();
+    for (const v of vendas) if (v.vendedor) ultV.set(v.vendedor, v.data);
+    const nomes = [...ultV].sort((a, b) => (a[1] < b[1] ? 1 : -1)).map(([nome, ultima]) => ({ nome, ultima }));
+    const est = estoqueDemo(L.id);
+    return {
+      logo: false, operacao: OPERACAO[L.id], ferias: [], metaAuto: { ativo: true, pct: 10 }, totaisSemEG: null,
+      id: L.id, nome: L.nome, appnext: L.loja, meta: cache.partes[i].meta, metas: {}, criadaEm: '2024-01-01T12:00:00.000Z', regras: null, marca: { nome: L.nome }, wppModelos: null,
+      nomesVenda: [L.loja],
+      base: { existe: true, meses, porMes, linhas: vendas.length, ultimaVenda: ult, de: meses[0], ate: meses[meses.length - 1], importacoes: [{ em: ha(2), origem: 'robô (fictício)', por: 'sistema', de: vendas[0]?.data, ate: ult, linhas: vendas.length }], pendentes: 0 },
+      xml: { existe: true, notas: cup.size, de: meses[0] + '-01', ate: ult, importacoes: [{ em: ha(2), origem: 'robô (fictício)', por: 'sistema', notas: 40 }], pendentes: 0, erros: [] },
+      estoque: { em: est.estoque.em, itens: est.estoque.itens.length, origem: 'fictício' },
+      fechEmail: { email: { host: 'smtp.exemplo.com', port: 587, secure: false, user: 'loja@exemplo.com', from: `${L.nome} <loja@exemplo.com>`, temSenha: true, configurado: true },
+        destinos: [{ email: 'franqueado@exemplo.com', nome: 'Franqueado(a)', caixa: true }, { email: 'gerente@exemplo.com', nome: 'Gerente', caixa: false }],
+        fechamento: { ativo: true, horario: '23:30', ultimoEnvio: ha(20).slice(0, 10) }, gerais: [], servidorGeral: false },
+      fontes: [], vendedores: nomes,
+      fixe: { url: 'https://fidelidade.exemplo.com', usuario: 'loja', email: 'fidelidade@exemplo.com', temSenha: true, pedido: null, ultimo: { em: ha(5), ok: true }, logs: null, fidelidade: { reaisPorPonto: 50, validadeMeses: 12, minResgate: 6, prazoResgate: 90 } },
+      coletor: { configurado: true, rede: 'exemplo', usuario: 'robo@exemplo.com', temSenha: true, lojaDestino: L.loja, lojaIdDestino: '' },
+      status: null,
+    };
+  });
+  const usuarios = [
+    { nome: 'apresentacao', perfil: 'admin', lojas: ['*'], ativo: true, criadoEm: '2024-01-01T12:00:00.000Z', ultimoAcesso: agora.toISOString() },
+    { nome: 'franqueado.exemplo', perfil: 'franqueado', lojas: LOJAS.map((L) => L.id), ativo: true, criadoEm: '2024-01-01T12:00:00.000Z', ultimoAcesso: ha(30) },
+    { nome: 'gerente.centro', perfil: 'gerente', lojas: ['demo-centro'], telas: ['resumo', 'comparativos', 'clientes', 'mapa', 'pedido'], ativo: true, criadoEm: '2024-03-01T12:00:00.000Z', ultimoAcesso: ha(4) },
+    { nome: 'vendedora.parque', perfil: 'vendedor', lojas: ['demo-parque'], vendedor: (lojas[1].vendedores[0] || {}).nome || '', ativo: true, criadoEm: '2024-05-01T12:00:00.000Z', ultimoAcesso: ha(50) },
+  ].map((u) => ({ telas: undefined, vendedor: undefined, acessoAte: null, expirado: false, trocarSenha: false, senhaTrocadaEm: null, ...u }));
+  const auditoria = [
+    { em: ha(3), por: 'apresentacao', acao: 'alterou a meta', alvo: 'demo-centro', detalhe: { loja: 'demo-centro' } },
+    { em: ha(26), por: 'franqueado.exemplo', acao: 'adicionou destinatário do fechamento', alvo: 'demo-parque', detalhe: { loja: 'demo-parque' } },
+    { em: ha(72), por: 'apresentacao', acao: 'criou usuário', alvo: 'gerente.centro', detalhe: {} },
+  ];
+  return { perfil: 'admin', usuario: 'apresentacao', coletorAtivo: false, horarios: ['13:30', '23:00'], janela: null, coletorOk: null, lojas, usuarios, auditoria, todasLojas: LOJAS.map((L) => ({ id: L.id, nome: L.nome })), demo: true };
+}
+
 const lojasDemo = () => LOJAS.map(({ id, nome }) => ({ id, nome }));
 const disponivel = () => fs.existsSync(PERFIL);
 
-module.exports = { pacoteDemo, lojasDemo, disponivel, partes };
+module.exports = { pacoteDemo, lojasDemo, disponivel, partes, estoqueDemo, estadoDemo, LOJAS, OPERACAO };

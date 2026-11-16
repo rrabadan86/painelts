@@ -45,7 +45,7 @@
     const b = h('button', { type: 'button', class: cls }, rotulo);
     b.addEventListener('click', async () => {
       b.disabled = true; const txt = b.textContent; b.textContent = '…';
-      try { const msg = await fn(); if (msg) toast(msg); await carregar(); } catch (e) { toast(e.message, true); } finally { b.disabled = false; b.textContent = txt; }
+      try { const msg = await fn(); if (msg) toast(TS.demo ? TS.DEMO_AVISO : msg); await carregar(); } catch (e) { toast(e.message, true); } finally { b.disabled = false; b.textContent = txt; }
     });
     return b;
   }

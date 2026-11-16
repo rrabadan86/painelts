@@ -247,7 +247,26 @@ app.get(['/apresentacao', '/apresentacao/'], (req, res) => {
   res.set('X-Robots-Tag', 'noindex');
   res.sendFile(path.join(pub, 'index.html'));
 });
-app.get('/api/demo/eu', (req, res) => res.json({ usuario: '', nome: 'Visitante', demo: true, lojas: DEMO.lojasDemo() }));
+// a apresentação entra como administrador (tudo visível, nada é salvo: o navegador barra qualquer alteração)
+app.get('/api/demo/eu', (req, res) => res.json({ usuario: 'apresentacao', nome: 'Visitante', demo: true, perfil: 'admin', vendedor: '',
+  pode: { configurar: true, admin: true, clientes: true, custos: true }, telas: null, lojas: DEMO.lojasDemo().map((l) => ({ ...l, marca: { nome: l.nome, logo: false } })) }));
+const ESd = require('./src/estoque'), PEDd = require('./src/pedido');
+const lojaDemo = (req) => DEMO.lojasDemo().find((l) => l.id === String(req.query.loja || ''));
+app.get('/api/demo/estoque', (req, res) => {
+  if (!lojaDemo(req)) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  try { const e = DEMO.estoqueDemo(req.query.loja); res.json({ estoque: e.estoque, cfg: ESd.cfg({ estoqueCfg: e.estoqueCfg }), historico: e.historico, compras: e.compras }); } catch (e) { res.status(500).json({ erro: e.message }); }
+});
+app.get('/api/demo/pedido', (req, res) => {
+  if (!lojaDemo(req)) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  try { const e = DEMO.estoqueDemo(req.query.loja); res.json({ catalogo: e.catalogo, carrinho: null, cfg: PEDd.cfg({}), robo: { disponivel: false }, podeRobo: false }); } catch (e) { res.status(500).json({ erro: e.message }); }
+});
+app.get('/api/demo/pedido/acesso', (req, res) => res.json({ temLogin: false, usuario: '' }));
+app.get('/api/demo/admin/estado', (req, res) => { try { res.json(DEMO.estadoDemo()); } catch (e) { res.status(500).json({ erro: e.message }); } });
+app.get('/api/demo/admin/notif', (req, res) => res.json({ ativo: true, horario: '08:00', ultimoEnvio: null, alertas: true, fechamento: { ativo: true, horario: '23:30', ultimoEnvio: null }, avisos: { email: 'admin@exemplo.com' },
+  telegram: { configurado: false, destinos: [] }, email: { host: 'smtp.exemplo.com', port: 587, secure: false, user: 'painel@exemplo.com', from: 'Painel <painel@exemplo.com>', temSenha: true, configurado: true,
+    destinos: [{ email: 'franqueado@exemplo.com', nome: 'Franqueado(a)', lojas: ['*'] }] } }));
+app.get('/api/demo/contatos', (req, res) => res.json({ contatos: {} }));
+app.get('/api/demo/xmls/resumo', (req, res) => res.json({ meses: [] }));
 app.get('/api/demo/dados', (req, res) => {
   try {
     const d = DEMO.pacoteDemo(String(req.query.loja || ''));
@@ -284,6 +303,7 @@ app.get('/api/demo/alertas', (req, res) => {
   const p = DEMO.partes().find((x) => x.id === String(req.query.loja || ''));
   res.json({ alertas: p ? IND.alertas(p) : [] });
 });
+app.all('/api/demo/*', (req, res) => res.status(404).json({ erro: 'Isto não está disponível na apresentação.' }));
 
 // ---------- marca da loja (pública: usada na tela de login com ?loja=) ----------
 const LOGO_EXT = { png: 'image/png', jpg: 'image/jpeg', webp: 'image/webp' };

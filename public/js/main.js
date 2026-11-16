@@ -216,10 +216,12 @@
   if (TS.demo) {
     document.body.classList.add('demo');
     document.title = 'Tea Shop · Apresentação do painel';
-    document.querySelector('.user-wrap')?.remove();
+    // menu da conta só com Configurações (não há senha nem sair na apresentação)
+    document.getElementById('btnSenha')?.remove();
+    document.querySelector('.user-wrap .logout-form')?.remove();
     document.getElementById('btnScript')?.remove();
     document.querySelector('.layout').before(h('div', { class: 'demo-bar', role: 'note' },
-      h('b', null, 'Apresentação'), ' · Todos os dados desta página são fictícios: lojas, vendedores, clientes e valores foram inventados para demonstração. Fique à vontade para clicar e filtrar.'));
+      h('b', null, 'Apresentação'), ' · Você está vendo o painel como administrador, com todas as telas. Todos os dados são fictícios (lojas, vendedores, clientes, estoque e valores) e nada do que você mudar é salvo.'));
   }
 
   /** as abas não cabem ao lado da marca e dos botões? descem para a segunda linha (nada fica escondido) */
@@ -266,7 +268,7 @@
 
   /** abas conforme o perfil */
   function configurarAbas(eu) {
-    if (TS.demo || !eu.perfil) {
+    if (!eu.perfil) {
       if (!PAGES.includes('campanhas')) PAGES.splice(PAGES.indexOf('clientes') + 1, 0, 'campanhas');
       PAGES = PAGES.filter((p) => p !== 'minha');
       montarMenu([], false);
