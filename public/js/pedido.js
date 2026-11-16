@@ -393,7 +393,8 @@
     const pintarTotal = () => {
       const t = total(), n = R.linhas.filter((r) => r.pedir > 0).length;
       kTotal.textContent = fmt.brl0(t);
-      kTotalFoot.replaceChildren(`${fmt.int(n)} ${n === 1 ? 'produto' : 'produtos'}${R.obTotal ? ` · inclui ${fmt.brl0(R.obTotal)} do obrigatório` : ''}`,
+      const nOb = R.linhas.filter((r) => r.obrig).length;
+      kTotalFoot.replaceChildren(R.obTotal ? h('span', null, h('b', null, `🛒 ${fmt.int(n - nOb)} no carrinho ${fmt.brl0(t - R.obTotal)}`), ` + 🔒 ${fmt.int(nOb)} obrigatório ${fmt.brl0(R.obTotal)}`) : `${fmt.int(n)} ${n === 1 ? 'produto' : 'produtos'}`,
         R.orcamento ? h('span', { class: t > R.orcamento * 1.02 ? 'down' : '' }, ` · ${fmt.pct(t / R.orcamento, 0)} do valor · ${t <= R.orcamento ? `sobram ${fmt.brl0(R.orcamento - t)}` : `passa ${fmt.brl0(t - R.orcamento)}`}`) : '');
       mix && pintarMix();
     };
@@ -484,7 +485,7 @@
     // ---------- tabela ----------
     const filtro = state.pedFiltro || 'pedido';
     const FILTROS = {
-      pedido: ['No pedido', (r) => r.pedir > 0],
+      pedido: ['No pedido', (r) => r.pedir > 0 && !r.obrig],
       fora: ['Ficou de fora', (r) => !r.extra && !(r.pedir > 0) && (r.site === 'ok' || r.site === 'sem')],
       indisp: ['Indisponível no site', (r) => !r.extra && r.site === 'indisp'],
       cat: ['Fora do catálogo', (r) => r.site === 'fora'],
@@ -528,7 +529,7 @@
     const sobra = R.orcamento != null ? R.orcamento - totalAgora : null;
     const tab = TS.table({
       cols: [
-        { key: 'produto', label: 'Produto', align: 'l', sticky: true, wrap: true, render: (r) => h('span', null, r.produto, r.prior ? h('span', { class: 'ped-prio', title: r.prior === 2 ? 'Prioridade: estoque abaixo de 500 g' : 'Prioridade: Estrela com estoque abaixo de 700 g' }, r.prior === 2 ? '< 500 g' : 'Estrela < 700 g') : null, h('small', { class: 'est-tam' }, `cód. ${r.cod}`)) },
+        { key: 'produto', label: 'Produto', align: 'l', sticky: true, wrap: true, render: (r) => h('span', null, r.produto, r.obrig ? h('span', { class: 'ped-tag-obr', title: 'Vem no pedido obrigatório: não vai para o carrinho' }, '🔒 obrigatório') : r.chega ? h('span', { class: 'ped-tag-obr', title: `O pedido obrigatório já traz ${qtdTxt(r.chega, r.it)} deste produto (já descontado do "Precisa"). O que estiver em "Pedir" é a mais e vai para o carrinho.` }, `+ ${qtdTxt(r.chega, r.it)} no obrigatório`) : null, r.prior ? h('span', { class: 'ped-prio', title: r.prior === 2 ? 'Prioridade: estoque abaixo de 500 g' : 'Prioridade: Estrela com estoque abaixo de 700 g' }, r.prior === 2 ? '< 500 g' : 'Estrela < 700 g') : null, h('small', { class: 'est-tam' }, `cód. ${r.cod}`)) },
         { key: 'grupoTxt', label: 'Grupo', align: 'l' },
         { key: 'classe', label: 'Classe', align: 'l', title: `Classe oficial: o que sai por mês (a mediana dos últimos ${R.classeMeses} meses fechados, então um mês de promoção pesa pouco) × margem bruta, comparados com a mediana dos outros produtos. Não muda com o filtro de período. 🔒 = travada à mão na Rentabilidade. Estrela: vende muito e tem margem boa. Volume: vende muito, margem menor. Joia: margem boa, vende pouco. Peso morto: vende pouco e margem baixa`,
           render: (r) => (r.classe ? h('span', { class: 'ped-cl ped-cl-' + r.classe, title: r.classeFixa ? 'Travada à mão na Rentabilidade' : null }, (r.classeFixa ? '🔒 ' : '') + CLASSES[r.classe]) : h('span', { class: 'muted' }, '—')), sortVal: (r) => ({ estrela: 4, volume: 3, joia: 2, peso: 1 })[r.classe] || 0 },
@@ -542,6 +543,7 @@
         { key: 'lucroDia', label: 'Lucro sem fixos/dia', title: 'O que o produto deixou por dia nos últimos 30 dias depois do custo e das deduções variáveis (comissão, royalties, Simples, maquininha). É a prioridade do pedido: urgentes primeiro, depois quem deixa mais lucro', fmt: (v) => (v ? fmt.brl(v) : '—') },
         { key: 'motivo', label: 'Obs.', align: 'l', render: (r) => obs(r) },
       ],
+      rowClass: (r) => (r.obrig ? 'ped-row-obr' : null),
       rows: linhas, total: (() => {
         const ped = linhas.filter((r) => r.pedir > 0);
         if (!ped.length) return null;
@@ -555,7 +557,7 @@
       if (r.obrig) return h('span', { class: 'warn-t', title: r.conta }, 'pedido obrigatório (não vai no carrinho)');
       if (r.chega) {
         const base = obsBase(r);
-        return h('span', null, base, h('small', { class: 'est-tam' }, `+ ${qtdTxt(r.chega, r.it)} no obrigatório`));
+        return h('span', null, base, h('small', { class: 'est-tam warn-t' }, r.pedir > 0 ? `a mais do que vem no obrigatório (${qtdTxt(r.chega, r.it)})` : `o obrigatório já traz ${qtdTxt(r.chega, r.it)}`));
       }
       return obsBase(r);
     }
@@ -672,10 +674,14 @@
         h('button', { type: 'button', class: 'ped-menu-volta', disabled: !editados.size || null, onclick: () => { editados.clear(); pintar(corpo, loja, M, e, p); } }, 'Voltar à sugestão', h('small', null, editados.size ? `${editados.size} alterado(s)` : 'nada alterado'))));
     const foraMenu = (x) => { if (!menuLimpar.contains(x.target)) menuLimpar.open = false; };
     menuLimpar.addEventListener('toggle', () => { if (menuLimpar.open) document.addEventListener('mousedown', foraMenu); else document.removeEventListener('mousedown', foraMenu); });
+    const obrN = R.linhas.filter((r) => r.obrig).length;
+    const avisoObr = obrN ? h('div', { class: 'ped-obr-aviso' }, h('b', null, `🔒 Pedido obrigatório: ${fmt.int(obrN)} produtos · ${fmt.brl0(R.obTotal)}`),
+      ' — a franquia manda de qualquer forma. Eles ', h('b', null, 'não vão para o carrinho'), ' (pedir de novo duplicaria). Ficam na aba "🔒 Obrigatório"; as outras abas mostram só o que você compra. ',
+      filtro !== 'obrig' ? h('button', { type: 'button', class: 'link-btn', onclick: () => { state.pedFiltro = 'obrig'; pintar(corpo, loja, M, e, p); } }, 'Ver o obrigatório') : null) : null;
     corpo.append(h('div', { class: 'mt' }, TS.cardWithTools('Produtos', sub,
       h('div', { class: 'est-tools' }, tab.searchBox && (tab.searchBox.classList.add('est-busca'), tab.searchBox),
         TS.seg(Object.entries(FILTROS).map(([k, [t]]) => [`${t} (${cont(k)})`, k]), filtro, (v) => { state.pedFiltro = v; pintar(corpo, loja, M, e, p); }), menuLimpar, btnCsv),
-      filtrosExtra, tab)));
+      avisoObr, filtrosExtra, tab)));
     if (editados.size) corpo.append(h('p', { class: 'muted' }, `${editados.size} quantidade(s) alterada(s) à mão. `, h('a', { href: '#', onclick: (x) => { x.preventDefault(); editados.clear(); pintar(corpo, loja, M, e, p); } }, 'Voltar à sugestão')));
 
     corpo.append(h('div', { class: 'mt' }, cartaoRobo(corpo, loja, M, e, p, R)));
@@ -842,6 +848,12 @@
     return TS.card('Carrinho no Sistema de Pedidos', 'O carrinho do site vale só para a sessão de quem entrou; por isso ele é montado no seu navegador, com o seu login. O favorito procura cada produto pelo nome, confere o nome exato, ajusta ao múltiplo e coloca no carrinho. Ele para na etapa 2.',
       semCatalogo ? h('div', { class: 'notice' }, 'Leia o catálogo primeiro (botão "Atualizar catálogo", no topo): só vão para o carrinho os produtos disponíveis no site.') : null,
       passos,
+      (() => {
+        const ob = R.linhas.filter((r) => r.obrig);
+        if (!ob.length) return null;
+        const v = ob.reduce((s2, r) => s2 + r.pedir * (r.preco || 0), 0);
+        return h('div', { class: 'ped-obr-aviso' }, h('b', null, `🛒 Vão para o carrinho só os ${fmt.int(n0)} produtos que você compra.`), ` O pedido obrigatório (${fmt.int(ob.length)} produtos, ${fmt.brl0(v)}) não vai: a franquia já manda e pedir de novo duplicaria. Produto que está no obrigatório e também aparece no seu pedido vai só com a quantidade a mais.`);
+      })(),
       h('div', { class: 'cfg-acoes' }, btnCarrinho), msg, statusBox,
       h('div', { class: 'ped-andamento' }, ativo ? null : resultadoCarrinho(p.carrinho)));
   }
