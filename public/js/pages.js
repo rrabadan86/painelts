@@ -649,19 +649,74 @@
     if (res.feriasMes.length) root.append(h('div', { class: 'notice' }, h('b', null, 'Férias no mês: '),
       res.feriasMes.map((f) => `${f.vendedor} (${fmt.date(f.de)} a ${fmt.date(f.ate)})`).join(' · '),
       '. Nesses dias a meta diária é dividida só entre quem está trabalhando.'));
-    // vendas de grupos que não entram em meta, comissão e royalties (aviso para conferir o cadastro de grupos)
+    // vendas de grupos que não entram em meta, comissão e royalties: o administrador classifica cada produto aqui mesmo
     {
-      const I = R().ids, fora = new Map();
+      const I = R().ids, fora = new Map(), prods = new Map();
+      const conf = TS.classificacao || {};
       for (const i of base) {
         if (I.eg.has(db.cat[i]) || I.taxas.has(db.desc[i]) || db.D.cat[db.cat[i]] === 'FIDELIDADE' || !(db.vt[i] > 0)) continue;
         const g = db.grupoC[i];
         if (I.arom.has(g) || I.puro.has(g) || I.acess.has(g)) continue;
+        const desc = db.D.descricao[db.desc[i]] || '';
+        const k = desc.trim().replace(/\s+/g, ' ').toUpperCase();
         const n = db.D.grupoC[g] || '(sem grupo)';
-        fora.set(n, (fora.get(n) || 0) + db.vt[i]);
+        let p = prods.get(k);
+        if (!p) prods.set(k, (p = { desc, grupo: n, vt: 0, qtd: 0, classe: (conf[k] || {}).classe || '' }));
+        p.vt += db.vt[i]; p.qtd += db.qtd[i] || 0;
+        if (p.classe !== 'fora') fora.set(n, (fora.get(n) || 0) + db.vt[i]);
       }
       const tot = [...fora.values()].reduce((a, b) => a + b, 0);
-      if (tot >= 1) root.append(h('div', { class: 'notice' }, h('b', null, `${fmt.brl(tot)} em vendas ficaram fora da meta, da comissão e dos royalties`),
-        ` porque o grupo do produto não é chá aromatizado, chá puro nem acessório: ${[...fora].sort((a, b) => b[1] - a[1]).map(([n, v]) => `${n} (${fmt.brl(v)})`).join(', ')}. Se algum deveria contar, peça ao administrador do painel para incluir o grupo.`));
+      const ehAdm = !!(TS.eu && TS.eu.perfil === 'admin');
+      const nRecl = Object.values(conf).filter((x) => ['arom', 'puro', 'acess'].includes(x.classe)).length;
+      if (prods.size || (ehAdm && nRecl)) {
+        const OPC = [['', 'A classificar'], ['fora', 'Fica fora (confirmado)'], ['arom', 'Chá aromatizado'], ['puro', 'Chá puro'], ['acess', 'Acessório']];
+        const lista = [...prods.values()].sort((a, b) => (a.classe === 'fora') - (b.classe === 'fora') || b.vt - a.vt);
+        const linhas = lista.map((p) => {
+          const sel = h('select', { class: 'f-input', disabled: !ehAdm || null, style: { width: 'auto', minWidth: '180px' } }, OPC.map(([v, t]) => h('option', { value: v, selected: p.classe === v || null }, t)));
+          const st = h('span', { class: 'muted', style: { marginLeft: '8px', fontSize: '12px' } });
+          sel.addEventListener('change', async () => {
+            sel.disabled = true; st.textContent = 'salvando…';
+            try {
+              const r = await fetch('/api/classificacao', { method: 'PUT', credentials: 'same-origin', headers: { 'X-Painel': '1', 'Content-Type': 'application/json' }, body: JSON.stringify({ produto: p.desc, classe: sel.value || null }) });
+              const j = await r.json().catch(() => ({}));
+              if (!r.ok) throw new Error(j.erro || 'Falha ao salvar.');
+              st.textContent = sel.value && sel.value !== 'fora' ? 'salvo · recalculando…' : 'salvo';
+              TS.classificacao = null;
+              const muda = (c) => ['arom', 'puro', 'acess'].includes(c);
+              if (muda(sel.value) || muda(p.classe)) { await TS.carregarClassificacao(); TS.recarregar && TS.recarregar(true); } else { await TS.carregarClassificacao(); TS.render(); }
+            } catch (e) { st.textContent = e.message; sel.disabled = false; }
+          });
+          return h('tr', { class: p.classe === 'fora' ? 'muted' : null }, h('td', { class: 'l' }, p.desc), h('td', { class: 'l muted' }, p.grupo), h('td', null, fmt.int(p.qtd)), h('td', null, fmt.brl(p.vt)), h('td', { class: 'l' }, sel, st));
+        });
+        // os que já foram reclassificados (contam na meta): dá para desfazer
+        const ROT = { arom: 'Chá aromatizado', puro: 'Chá puro', acess: 'Acessório' };
+        const recl = Object.entries(conf).filter(([, x]) => ROT[x.classe]);
+        const linhasRecl = recl.map(([k, x]) => {
+          const p = { desc: k, classe: x.classe };
+          const sel = h('select', { class: 'f-input', disabled: !ehAdm || null, style: { width: 'auto', minWidth: '180px' } }, OPC.map(([v, t]) => h('option', { value: v, selected: x.classe === v || null }, v === '' ? 'Voltar ao grupo do AppNext' : t)));
+          sel.addEventListener('change', async () => {
+            sel.disabled = true;
+            try {
+              const r = await fetch('/api/classificacao', { method: 'PUT', credentials: 'same-origin', headers: { 'X-Painel': '1', 'Content-Type': 'application/json' }, body: JSON.stringify({ produto: p.desc, classe: sel.value || null }) });
+              const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.erro || 'Falha ao salvar.');
+              await TS.carregarClassificacao(); TS.recarregar && TS.recarregar(true);
+            } catch (e) { alert(e.message); sel.disabled = false; }
+          });
+          return h('tr', null, h('td', { class: 'l' }, k), h('td', { class: 'l muted' }, `${x.por || ''}${x.em ? ' · ' + fmt.date(x.em.slice(0, 10)) : ''}`), h('td', { class: 'l' }, sel));
+        });
+        const det = h('details', { class: 'fora-det' }, h('summary', null, prods.size ? `Ver os ${prods.size} produto${prods.size === 1 ? '' : 's'}${ehAdm ? ' e classificar' : ''}` : `Ver os produtos reclassificados no painel (${recl.length})`),
+          h('p', { class: 'muted', style: { margin: '6px 0' } }, ehAdm
+            ? 'Escolha a classificação de cada produto: chá aromatizado, chá puro ou acessório passam a contar na meta, na comissão e nos royalties (em todas as lojas e em todos os meses, inclusive os já vendidos); "Fica fora" confirma que não conta e o aviso não aparece mais para ele. Vale até alguém mudar aqui.'
+            : 'Só o administrador do painel muda a classificação dos produtos.'),
+          prods.size ? h('div', { class: 'table-wrap free' }, h('table', { class: 't' }, h('thead', null, h('tr', null, h('th', { class: 'l' }, 'Produto'), h('th', { class: 'l' }, 'Grupo no AppNext'), h('th', null, 'Qtd'), h('th', null, 'Vendido'), h('th', { class: 'l' }, 'Classificação'))), h('tbody', null, linhas))) : null,
+          recl.length ? h('div', { style: { marginTop: '10px' } }, h('b', null, `Já reclassificados no painel (${recl.length})`), h('div', { class: 'table-wrap free' }, h('table', { class: 't' }, h('thead', null, h('tr', null, h('th', { class: 'l' }, 'Produto'), h('th', { class: 'l' }, 'Por'), h('th', { class: 'l' }, 'Conta como'))), h('tbody', null, linhasRecl)))) : null);
+        if (state.foraAberto) det.open = true;
+        det.addEventListener('toggle', () => { state.foraAberto = det.open; });
+        if (tot >= 1) root.append(h('div', { class: 'notice' }, h('b', null, `${fmt.brl(tot)} em vendas ficaram fora da meta, da comissão e dos royalties`),
+          ` porque o grupo do produto não é chá aromatizado, chá puro nem acessório: ${[...fora].sort((a, b) => b[1] - a[1]).map(([n, v]) => `${n} (${fmt.brl(v)})`).join(', ')}.${ehAdm ? '' : ' Se algum deveria contar, peça ao administrador do painel para classificar o produto.'}`, det));
+        else if (ehAdm) root.append(h('div', { class: 'fora-ok muted' }, prods.size ? 'Os produtos fora da meta deste período já foram confirmados. ' : '', det));
+      }
+      if (!TS.classificacao && !TS._clsCarregando) TS.carregarClassificacao().then(() => TS.render());
     }
     if (res.lojasNoPeriodo > 1) root.append(h('div', { class: 'notice' }, 'Há mais de uma loja no filtro. As regras de comissão mudam por loja, então selecione uma loja para ver os valores corretos.'));
     const mensal = ['mes', 'mesAnt', 'custom'].includes(state.f.preset) || (state.f.preset === 'anomes' && state.f.ano && state.f.mes);

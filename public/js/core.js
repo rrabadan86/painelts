@@ -18,6 +18,14 @@ const TS = (window.TS = {
 // ---------- modo apresentação (/apresentacao: dados fictícios, sem login) ----------
 TS.demo = /^\/apresentacao\/?$/.test(location.pathname);
 TS.api = (p) => (TS.demo ? '/api/demo/' : '/api/') + p;
+/** classificação de produtos feita no painel (Comissionamento → produtos fora da meta) */
+TS.classificacao = null;
+TS.carregarClassificacao = async () => {
+  TS._clsCarregando = true;
+  try { const r = await fetch(TS.api('classificacao'), { credentials: 'same-origin' }); TS.classificacao = r.ok ? ((await r.json()).produtos || {}) : {}; }
+  catch { TS.classificacao = {}; } finally { TS._clsCarregando = false; }
+  return TS.classificacao;
+};
 // na apresentação o visitante vê tudo como administrador: leituras vão para os dados fictícios e nenhuma alteração sai do navegador
 if (TS.demo && !window.__demoFetch) {
   window.__demoFetch = true;

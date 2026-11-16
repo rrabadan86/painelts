@@ -30,7 +30,8 @@ function assinatura(loja) {
   const XB = require('./xmlbase');
   return resolverFontes(loja).map((f) => `${f.nome}:${f.origem}:${f.mtime || f.id || ''}`).join('|') + '#' + B.assinatura(loja.id) + '#' + B.pendentes(loja.id).join(',')
     + '#xml:' + XB.assinatura(loja.id) + ':' + XB.pendentes(loja.id).join(',')
-    + '#fx:' + require('./fidelidade').assinatura(loja.id) + ':' + JSON.stringify(loja.fidelidade || {});
+    + '#fx:' + require('./fidelidade').assinatura(loja.id) + ':' + JSON.stringify(loja.fidelidade || {})
+    + '#cl:' + require('./classificacao').versao();
 }
 
 async function fetchWithTimeout(url, ms = 60000) {

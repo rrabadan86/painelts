@@ -8,6 +8,7 @@ const express = require('express');
 const compression = require('compression');
 const C = require('./src/config');
 const { loadLoja, juntar, pack, assinatura, resolverFontes } = require('./src/sources');
+const CLS = require('./src/classificacao');
 const GH = require('./src/github');
 const COL = require('./src/coletor');
 const DEMO = require('./src/demo');
@@ -87,6 +88,7 @@ async function dadosLoja(loja, force) {
       try {
         const raw = await loadLoja(loja);
         raw.lojaNome = loja.nome;
+        CLS.aplicar(raw.vendas); // produtos reclassificados pelo painel (contam na meta, comissão e royalties)
         Object.assign(e, { sig, at: Date.now(), raw, erro: null });
         console.log(`[dados] ${loja.id}: ${raw.vendas.length} vendas, ${raw.xml.length} cupons c/ CPF, ${raw.clientes.length} clientes em ${raw.ms} ms`);
         if (raw.avisos.length) console.warn(`[dados] ${loja.id} avisos:`, raw.avisos.join(' | '));
@@ -265,6 +267,7 @@ app.get('/api/demo/admin/estado', (req, res) => { try { res.json(DEMO.estadoDemo
 app.get('/api/demo/admin/notif', (req, res) => res.json({ ativo: true, horario: '08:00', ultimoEnvio: null, alertas: true, fechamento: { ativo: true, horario: '23:30', ultimoEnvio: null }, avisos: { email: 'admin@exemplo.com' },
   telegram: { configurado: false, destinos: [] }, email: { host: 'smtp.exemplo.com', port: 587, secure: false, user: 'painel@exemplo.com', from: 'Painel <painel@exemplo.com>', temSenha: true, configurado: true,
     destinos: [{ email: 'franqueado@exemplo.com', nome: 'Franqueado(a)', lojas: ['*'] }] } }));
+app.get('/api/demo/classificacao', (req, res) => res.json({ produtos: {} }));
 app.get('/api/demo/contatos', (req, res) => res.json({ contatos: {} }));
 app.get('/api/demo/xmls/resumo', (req, res) => res.json({ meses: [] }));
 app.get('/api/demo/dados', (req, res) => {
@@ -772,6 +775,19 @@ app.post('/api/faturamento/enviar', express.json({ limit: '1mb' }), async (req, 
 
 // ---------- feriados trabalhados (horas por pessoa; vão para o PDF do fechamento) ----------
 // admin, franqueado e gerente com a tela Comissionamento
+// classificação de produtos (rede): todos veem; só o administrador muda
+app.get('/api/classificacao', (req, res) => res.json({ produtos: CLS.ler().produtos }));
+app.put('/api/classificacao', express.json({ limit: '20kb' }), (req, res) => {
+  if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
+  if (req.perfil !== 'admin') return res.status(403).json({ erro: 'Só o administrador muda a classificação dos produtos.' });
+  const { produto, classe } = req.body || {};
+  try {
+    const r = CLS.definir(produto, classe || null, req.user);
+    C.auditar(req.user, r ? 'classificou produto' : 'tirou classificação de produto', 'produtos', { produto: CLS.chave(produto), classe: classe || null });
+    packCache.clear();
+    res.json({ ok: true, item: r });
+  } catch (e) { res.status(400).json({ erro: e.message }); }
+});
 app.put('/api/feriados', express.json({ limit: '200kb' }), (req, res) => {
   if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
   const telas = C.telasDo(C.usuario(req.user));
