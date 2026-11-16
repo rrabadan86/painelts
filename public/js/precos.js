@@ -24,7 +24,7 @@
     const cods = new Set([...Object.keys(historico || {}), ...Object.keys(compras?.itens || {})]);
     for (const cod of cods) {
       const pts = [
-        ...(compras?.itens?.[cod] || []).map(([d, v, nf, q, forn]) => ({ d: TS.isoToDay(d), v, o: { nf, q, forn } })),
+        ...(compras?.itens?.[cod] || []).map(([d, v, nf, q, forn]) => ({ d: TS.isoToDay(d), v, o: { nf, q, forn, data: d } })),
         ...(historico?.[cod] || []).map(([d, v]) => ({ d: TS.isoToDay(d), v, o: null })),
       ].sort((a, b) => a.d - b.d || (a.o ? 1 : 0) - (b.o ? 1 : 0));
       const l = [];
@@ -222,7 +222,7 @@
     const badge = (a, b, venda) => (mudou(a, b) && a ? h('span', { class: 'prc-badge ' + ((venda ? b < a : b > a) ? 'prc-ruim' : 'prc-bom') }, pctTxt(b / a - 1)) : null);
     const antesAgora = (a, b, sufixo = '', venda = false) => h('span', { class: 'prc-aa' }, mudou(a, b) ? h('s', { class: 'muted' }, fmt.brl(a) + sufixo) : null, h('b', null, b == null ? '—' : fmt.brl(b) + sufixo), badge(a, b, venda));
     const tb = h('tbody', null, ...linhas.map((l) => h('tr', null,
-      h('td', { class: 'l' }, h('div', null, l.it.desc || l.it.cod), h('small', { class: 'muted' }, `${qtdTxt(l.it, l.q)} por unidade${l.o ? ` · NF ${l.o.nf}` : ''}`)),
+      h('td', { class: 'l' }, h('div', null, l.it.desc || l.it.cod), h('small', { class: 'muted' }, `${qtdTxt(l.it, l.q)} por unidade${l.o ? ` · NF ${l.o.nf}${l.o.data ? ` · entrada em ${fmt.date(String(l.o.data).slice(0, 10))}` : ''}${l.o.forn ? ` · ${l.o.forn}` : ''}` : ''}`)),
       h('td', null, antesAgora(l.cAnt, l.cAt, un(l.it) === 'kg' ? '/kg' : '')),
       h('td', null, antesAgora(l.tAnt, l.tAt)),
       h('td', null, totAt ? fmt.pct((l.tAt || 0) / totAt) : '—'),
