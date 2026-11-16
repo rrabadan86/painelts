@@ -36,12 +36,14 @@
       const ini = TS.isoToDay(ym + '-01');
       const parcial = !opts.soYm && (ym === ymHoje || ym > ymHoje);
       const ultimo = Math.max(...m.dias);
-      const frac = opts.frac != null ? opts.frac : parcial ? Math.min(1, Math.max(1, ultimo - ini + 1) / diasMes) : 1;
+      // dias que já passaram (mês em andamento): base da projeção. Custos fixos entram sempre pelo valor cheio do mês
+      const decorridos = Math.min(diasMes, Math.max(1, ultimo - ini + 1));
+      const frac = parcial ? decorridos / diasMes : 1;
       // custo dos produtos: o das vendas com custo + as sem custo pelo mesmo % (estimado)
       const cmvPct = m.fatCusto ? m.custo / m.fatCusto : null;
       const cmv = cmvPct == null ? null : m.custo + (m.fat - m.fatCusto) * cmvPct;
-      // custos fixos do mês (proporcionais no mês em andamento) + despesas de um mês só (valor cheio no mês delas)
-      const fixosMes = [...fixos.map((x) => ({ nome: x.nome, cat: D.catDe ? D.catDe(x) : 'outros', valor: x.valor * frac })),
+      // custos fixos do mês (valor cheio, também no mês em andamento) + despesas de um mês só (cheias no mês delas)
+      const fixosMes = [...fixos.map((x) => ({ nome: x.nome, cat: D.catDe ? D.catDe(x) : 'outros', valor: x.valor })),
         ...(D.pontuaisDoMes ? D.pontuaisDoMes(ym) : []).map((x) => ({ nome: x.nome, cat: D.catDe(x), valor: x.valor, pontual: true }))];
       const fixoTot = fixosMes.reduce((a, x) => a + x.valor, 0);
       const impostos = m.imp + m.maq + m.roy;
@@ -49,9 +51,24 @@
       const lucroBruto = cmv == null ? null : recLiq - cmv;
       const contrib = lucroBruto == null ? null : lucroBruto - m.com - m.varPct;
       const resultado = contrib == null ? null : contrib - fixoTot;
-      out.push({ ym, parcial, frac, ultimo, ...m, dias: m.dias.size, cmv, cmvPct, cobre: m.fat ? m.fatCusto / m.fat : 0, fixosMes, fixoTot, impostos, recLiq, lucroBruto, contrib, resultado });
+      const r = { ym, parcial, frac, ultimo, diasMes, decorridos, ...m, dias: m.dias.size, cmv, cmvPct, cobre: m.fat ? m.fatCusto / m.fat : 0, fixosMes, fixoTot, impostos, recLiq, lucroBruto, contrib, resultado };
+      if (parcial) r.proj = projetar(r);
+      out.push(r);
     }
     return out;
+  }
+  /** mês em andamento no ritmo atual: o que depende das vendas cresce na mesma proporção; os custos fixos ficam iguais (já são cheios) */
+  function projetar(m) {
+    const k = m.diasMes / m.decorridos;
+    const x = (v) => (v == null ? null : v * k);
+    const p = { ...m, parcial: false, projecao: true, fat: m.fat * k, fatCusto: m.fatCusto * k, custo: m.custo * k, imp: m.imp * k, maq: m.maq * k, roy: m.roy * k, com: m.com * k, varPct: m.varPct * k,
+      gorjeta: m.gorjeta * k, desc: m.desc * k, eg: m.eg * k, cmv: x(m.cmv) };
+    p.impostos = p.imp + p.maq + p.roy;
+    p.recLiq = p.fat - p.impostos;
+    p.lucroBruto = p.cmv == null ? null : p.recLiq - p.cmv;
+    p.contrib = p.lucroBruto == null ? null : p.lucroBruto - p.com - p.varPct;
+    p.resultado = p.contrib == null ? null : p.contrib - p.fixoTot;
+    return p;
   }
 
   // linhas da DRE: [rótulo, chave/função, tipo] tipo: 'sub' (subtotal), 'tot' (resultado), 'menos', 'info'
@@ -70,7 +87,7 @@
     ...grupos.flatMap((g) => [
       [`− ${g.nome}`, (m) => m.fixosMes.filter((x) => x.cat === g.id).reduce((a, x) => a + x.valor, 0), 'grupo', `${g.nomes.length} ${g.nomes.length === 1 ? 'custo' : 'custos'}: ${g.nomes.map((n) => n.nome + (n.pontual ? ' (pontual)' : '')).join(', ')}. Clique para ${abertos.has(g.id) ? 'fechar' : 'abrir'}.`, g.id],
       ...(abertos.has(g.id) ? g.nomes.map((n) => [n.pontual ? `${n.nome} · pontual` : n.nome, (m) => { const l = m.fixosMes.filter((x) => x.cat === g.id && x.nome === n.nome && !!x.pontual === n.pontual); return l.length ? l.reduce((a, x) => a + x.valor, 0) : null; }, 'filho',
-        n.pontual ? 'Despesa de um mês só: entra cheia no mês dela' : 'Custo fixo cadastrado (valor do mês; no mês em andamento, só a parte dos dias que já passaram)']) : []),
+        n.pontual ? 'Despesa de um mês só: entra cheia no mês dela' : 'Custo fixo cadastrado: entra pelo valor cheio do mês, também no mês em andamento']) : []),
     ]),
     ['= Resultado do mês', (m) => m.resultado, 'tot', 'Margem de contribuição − custos fixos'],
   ];
@@ -107,10 +124,14 @@
     const sel = state.dreMes && meses.some((m) => m.ym === state.dreMes) ? state.dreMes : meses[meses.length - 1].ym;
     const m = meses.find((x) => x.ym === sel);
     const ymAnt = `${+sel.slice(0, 4) - 1}${sel.slice(4)}`;
-    // mês em andamento: compara com os mesmos dias do ano anterior (e a mesma parte dos custos fixos)
+    // mês em andamento: "até hoje" (vendas até hoje, custos fixos cheios) e "projeção" (no ritmo atual), comparada com o mesmo mês inteiro do ano anterior;
+    // o faturamento do topo também se compara com os mesmos dias do ano anterior
     const diaAte = +TS.dayToIso(m.ultimo).slice(8, 10);
-    const a = m.parcial ? (calcular(M, { soYm: ymAnt, ateDia: diaAte, frac: m.frac })[0] || null) : (meses.find((x) => x.ym === ymAnt) || null);
-    const rotAnt = m.parcial ? `${TS.ymLabel(ymAnt)} (dias 1 a ${diaAte})` : TS.ymLabel(ymAnt);
+    const a = meses.find((x) => x.ym === ymAnt) || null;
+    const aDias = m.parcial ? (calcular(M, { soYm: ymAnt, ateDia: diaAte })[0] || null) : a;
+    const rotAnt = TS.ymLabel(ymAnt);
+    const P = m.proj || null;
+    const base = P || m; // o que a coluna "Variação" compara com o ano anterior
     const pc = (v, base) => (v == null || !base ? '—' : fmt.pct(v / base));
 
     // seletor de mês e avisos
@@ -119,61 +140,73 @@
     const avisos = [];
     if (!fixosNomes.length && !(M.ded.PONTUAIS || []).length) avisos.push('Cadastre os custos fixos (aluguel, salários, energia…) pelo link "+ Adicionar ou editar custos da loja", logo abaixo da tabela, para o resultado ficar completo.');
     if (m.cobre < 0.95) avisos.push(`${fmt.pct(1 - m.cobre, 0)} das vendas de ${TS.ymLabel(sel)} não têm custo no estoque: o custo delas foi estimado pelo mesmo % das outras (${fmt.pct(m.cmvPct)}).`);
-    if (m.parcial) avisos.push(`${TS.ymLabel(sel)} está em andamento (vendas até ${fmt.date(TS.dayToIso(m.ultimo))}): os custos fixos entram só pela parte dos dias que já passaram (${fmt.pct(m.frac, 0)} do mês).`);
+    if (m.parcial) avisos.push(`${TS.ymLabel(sel)} está em andamento (vendas até ${fmt.date(TS.dayToIso(m.ultimo))}, ${m.decorridos} de ${m.diasMes} dias). "Até hoje" usa as vendas até agora e os custos fixos inteiros: enquanto der negativo, é o que ainda falta cobrir. "Projeção do mês" leva as vendas no ritmo atual até o fim do mês (impostos, custo dos produtos, comissões e custos em % acompanham as vendas; os fixos ficam iguais).`);
 
     // cartões do topo
     const kp = (rot, v, sub, cls) => TS.kpi(rot, v == null ? '—' : fmt.brl0(v), sub, null);
-    const varA = (k) => (a && a[k] ? h('span', null, TS.deltaSpan(m[k] / a[k] - 1), ` vs. ${rotAnt}`) : null);
+    const varA = (k) => (aDias && aDias[k] ? h('span', null, TS.deltaSpan(m[k] / aDias[k] - 1), ` vs. ${m.parcial ? `${rotAnt} (dias 1 a ${diaAte})` : rotAnt}`) : null);
     corpo.append(h('div', { class: 'dre-topo' }, h('label', null, 'Mês ', opMes), h('span', { class: 'muted' }, 'Todos os dias do mês, sem os filtros da lateral. Custos fixos e % com os valores cadastrados hoje.')),
       ...avisos.map((t) => h('div', { class: 'notice' }, t)),
       h('div', { class: 'grid g-kpi' },
         kp('Faturamento', m.fat, varA('fat')),
         kp('Lucro bruto', m.lucroBruto, h('span', null, `margem ${pc(m.lucroBruto, m.fat)}`)),
         kp('Margem de contribuição', m.contrib, h('span', null, `${pc(m.contrib, m.fat)} do faturamento`)),
-        TS.kpi('Resultado do mês', m.resultado == null ? '—' : fmt.brl0(m.resultado), h('span', { class: m.resultado >= 0 ? 'up' : 'down' }, `${pc(m.resultado, m.fat)} do faturamento`), 'Margem de contribuição − custos fixos')));
+        m.parcial
+          ? TS.kpi('Resultado até hoje', m.resultado == null ? '—' : fmt.brl0(m.resultado), h('span', { class: m.resultado >= 0 ? 'up' : 'down' }, m.resultado == null ? '' : m.resultado >= 0 ? 'custos fixos do mês já cobertos' : `falta cobrir ${fmt.brl0(-m.resultado)} dos custos fixos`), 'Margem de contribuição até hoje − custos fixos do mês inteiro')
+          : TS.kpi('Resultado do mês', m.resultado == null ? '—' : fmt.brl0(m.resultado), h('span', { class: m.resultado >= 0 ? 'up' : 'down' }, `${pc(m.resultado, m.fat)} do faturamento`), 'Margem de contribuição − custos fixos'),
+        P ? TS.kpi('Projeção do mês', P.resultado == null ? '—' : fmt.brl0(P.resultado), h('span', { class: P.resultado >= 0 ? 'up' : 'down' }, `vendendo ${fmt.brl0(P.fat)} no mês (ritmo atual)`), 'Resultado se as vendas seguirem no ritmo de agora até o fim do mês') : null));
 
     // DRE do mês × mesmo mês do ano anterior
     const tb = h('table', { class: 't dre-t' });
-    tb.append(h('thead', null, h('tr', null, h('th', { class: 'l' }, ''), h('th', null, TS.ymLabel(sel)), h('th', null, '%'), h('th', null, a ? rotAnt : 'Ano anterior'), h('th', null, '%'), h('th', null, 'Variação'))));
+    tb.append(h('thead', null, h('tr', null, h('th', { class: 'l' }, ''),
+      h('th', null, P ? `Até hoje (dia ${diaAte})` : TS.ymLabel(sel)), h('th', null, '%'),
+      P ? h('th', { class: 'dre-proj' }, 'Projeção do mês') : null, P ? h('th', { class: 'dre-proj' }, '%') : null,
+      h('th', null, a ? rotAnt : 'Ano anterior'), h('th', null, '%'), h('th', { title: P ? 'Projeção do mês contra o mesmo mês inteiro do ano anterior' : null }, P ? 'Variação (projeção)' : 'Variação'))));
     const body = h('tbody');
     const alternar = (id) => { if (abertos.has(id)) abertos.delete(id); else abertos.add(id); TS.render(); };
     for (const [rot, f, tipo, dica, gid] of linhas) {
-      const v = f(m), va = a ? f(a) : null;
-      const d = v != null && va ? v / va - 1 : null;
+      const v = f(m), vp = P ? f(P) : null, va = a ? f(a) : null, vb = f(base);
+      const d = vb != null && va ? vb / va - 1 : null;
       const bom = tipo === 'menos' || tipo === 'grupo' || tipo === 'filho' ? d < 0 : d > 0;
+      const rotL = tipo === 'tot' && P ? '= Resultado' : rot;
       body.append(h('tr', { class: 'dre-' + tipo, title: dica, onclick: gid ? () => alternar(gid) : null },
-        h('td', { class: 'l' }, gid ? h('span', { class: 'dre-seta' }, abertos.has(gid) ? '▾ ' : '▸ ') : null, rot), h('td', null, v == null ? '—' : fmt.brl(v)), h('td', { class: 'muted' }, pc(v, m.fat)),
+        h('td', { class: 'l' }, gid ? h('span', { class: 'dre-seta' }, abertos.has(gid) ? '▾ ' : '▸ ') : null, rotL),
+        h('td', { class: tipo === 'tot' && v < 0 ? 'neg' : null }, v == null ? '—' : fmt.brl(v)), h('td', { class: 'muted' }, pc(v, m.fat)),
+        P ? h('td', { class: 'dre-proj' + (tipo === 'tot' && vp < 0 ? ' neg' : '') }, vp == null ? '—' : fmt.brl(vp)) : null, P ? h('td', { class: 'muted dre-proj' }, pc(vp, P.fat)) : null,
         h('td', null, va == null ? '—' : fmt.brl(va)), h('td', { class: 'muted' }, a ? pc(va, a.fat) : '—'),
         h('td', { class: d == null || Math.abs(d) < 0.0005 ? 'muted' : bom ? 'pos' : 'neg' }, d == null ? '—' : fmt.delta(d))));
     }
+    if (P && m.resultado != null && m.resultado < 0) body.append(h('tr', { class: 'dre-info' }, h('td', { class: 'l' }, 'Falta cobrir dos custos fixos'), h('td', { class: 'neg' }, fmt.brl(-m.resultado)), h('td', { class: 'muted' }, ''),
+      h('td', { class: 'dre-proj muted', colspan: 2 }, P.resultado >= 0 ? 'no ritmo atual, fecha no azul' : 'no ritmo atual, fecha no vermelho'), h('td', { colspan: 3 }, '')));
     tb.append(body);
     const linkCustos = !(TS.eu && TS.eu.pode && TS.eu.pode.configurar) ? null : h('div', { class: 'dre-links' },
       h('a', { href: '#config', onclick: (e) => { e.preventDefault(); TS.editarCustos(state.loja); } }, '+ Adicionar ou editar custos da loja'),
       h('a', { href: '#config', onclick: (e) => { e.preventDefault(); TS.editarCustos(state.loja, 'cfg-pontuais'); } }, '+ Despesa de um mês só (ex.: IPTU, 13º)'));
     const memo = h('div', { class: 'dre-memo muted' },
       `Fora do resultado (informativo): taxa de serviço recebida ${fmt.brl(m.gorjeta)} (repassada à equipe) · descontos dados ${fmt.brl(m.desc)} · Espaço Gourmet ${fmt.brl(m.eg)} (${pc(m.eg, m.fat)} do faturamento). Passe o mouse em cada linha para ver de onde vem o valor.`);
-    corpo.append(h('div', { class: 'mt' }, TS.card(`Resultado de ${TS.ymLabel(sel)}`, a ? `Comparado com ${rotAnt}${m.parcial ? ' (mesmos dias, mesma parte dos custos fixos)' : ''}` : 'Sem o mesmo mês do ano anterior para comparar', h('div', { class: 'table-wrap free' }, tb), memo, linkCustos)));
+    corpo.append(h('div', { class: 'mt' }, TS.card(`Resultado de ${TS.ymLabel(sel)}`, a ? (P ? `Até hoje e projeção no ritmo atual; a variação compara a projeção com ${rotAnt} inteiro` : `Comparado com ${rotAnt}`) : 'Sem o mesmo mês do ano anterior para comparar', h('div', { class: 'table-wrap free' }, tb), memo, linkCustos)));
 
     // gráfico: resultado mês a mês
-    const ult = meses.slice(-13);
-    corpo.append(h('div', { class: 'mt' }, TS.card('Resultado mês a mês', 'Barras = resultado do mês (verde lucro, vermelho prejuízo) · linha = margem de contribuição', TS.chart({
+    const comoMes = (x) => x.proj || x; // mês em andamento entra pela projeção, para comparar com os meses fechados
+    const ult = meses.slice(-13).map(comoMes);
+    corpo.append(h('div', { class: 'mt' }, TS.card('Resultado mês a mês', 'Barras = resultado do mês (verde lucro, vermelho prejuízo) · linha = margem de contribuição · * mês em andamento pela projeção (cor clara)', TS.chart({
       type: 'bar',
-      data: { labels: ult.map((x) => TS.ymLabel(x.ym) + (x.parcial ? '*' : '')),
+      data: { labels: ult.map((x) => TS.ymLabel(x.ym) + (x.projecao ? '*' : '')),
         datasets: [
-          { type: 'bar', label: 'Resultado', data: ult.map((x) => x.resultado), backgroundColor: ult.map((x) => (x.resultado >= 0 ? '#2C5234' : '#B5452B')), borderRadius: 4, order: 2 },
+          { type: 'bar', label: 'Resultado', data: ult.map((x) => x.resultado), backgroundColor: ult.map((x) => (x.resultado >= 0 ? (x.projecao ? '#8FB39A' : '#2C5234') : x.projecao ? '#E3A595' : '#B5452B')), borderRadius: 4, order: 2 },
           { type: 'line', label: 'Margem de contribuição', data: ult.map((x) => x.contrib), borderColor: '#C9A227', backgroundColor: '#C9A227', tension: 0.3, pointRadius: 3, order: 1 },
         ] },
       options: { plugins: { tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${fmt.brl0(c.raw)}` } } }, scales: { y: TS.axisNum(fmt.brl0), x: TS.axisCat } },
     }))));
 
     // tabela mês a mês (12 meses)
-    const ult12 = meses.slice(-12);
+    const ult12 = meses.slice(-12).map(comoMes);
     const t2 = h('table', { class: 't dre-t' });
-    t2.append(h('thead', null, h('tr', null, h('th', { class: 'l sticky-col' }, ''), ult12.map((x) => h('th', null, TS.ymLabel(x.ym) + (x.parcial ? '*' : ''))))));
+    t2.append(h('thead', null, h('tr', null, h('th', { class: 'l sticky-col' }, ''), ult12.map((x) => h('th', { class: x.projecao ? 'dre-proj' : null }, TS.ymLabel(x.ym) + (x.projecao ? '*' : ''))))));
     const b2 = h('tbody');
     for (const [rot, f, tipo, dica, gid] of linhas) b2.append(h('tr', { class: 'dre-' + tipo, title: dica, onclick: gid ? () => alternar(gid) : null }, h('td', { class: 'l sticky-col' }, gid ? h('span', { class: 'dre-seta' }, abertos.has(gid) ? '▾ ' : '▸ ') : null, rot), ult12.map((x) => { const v = f(x); return h('td', { class: tipo === 'tot' && v < 0 ? 'neg' : null }, v == null ? '—' : fmt.brl0(v)); })));
     b2.append(h('tr', { class: 'dre-info' }, h('td', { class: 'l sticky-col' }, 'Resultado em % do faturamento'), ult12.map((x) => h('td', { class: x.resultado < 0 ? 'neg' : null }, pc(x.resultado, x.fat)))));
     t2.append(b2);
-    corpo.append(h('div', { class: 'mt' }, TS.card('Mês a mês', '* mês em andamento (custos fixos proporcionais aos dias que já passaram)', h('div', { class: 'table-wrap' }, t2))));
+    corpo.append(h('div', { class: 'mt' }, TS.card('Mês a mês', '* mês em andamento: projeção no ritmo atual, com os custos fixos inteiros', h('div', { class: 'table-wrap' }, t2))));
   }
 })();

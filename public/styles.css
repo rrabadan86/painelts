@@ -1462,3 +1462,6 @@ tr.cp-enviada td { background: #EEF5EC !important; }
   .t.tree tfoot tr td { background: #E4EEE1; }
   .t.tree .tree-btn { width: 24px; height: 24px; }
 }
+.dre-t td.dre-proj, .dre-t th.dre-proj { background: #FBF6E6; }
+.dre-t thead th.dre-proj { background: #6E5A12; }
+.dre-t tr.dre-info td { font-size: 12.5px; }
