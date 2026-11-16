@@ -99,16 +99,47 @@ def main():
                     page.wait_for_timeout(2500)
             feitos = []
             respostas = {}
+            def salvar_pedido():
+                # grava o que já foi pedido: o painel importa o que chegar, mesmo se outra exportação falhar
+                destino = Path(SAIDA)
+                destino.parent.mkdir(parents=True, exist_ok=True)
+                destino.write_text(json.dumps({"em": datetime.now(TZ).isoformat(), "email": EMAIL, "emailBase": EMAIL_BASE, "tipos": feitos, "respostas": respostas}), encoding="utf-8")
+
+            def abrir_opcao(rotulo):
+                """clica em Exportar e na opção; tenta de novo com a página recarregada (a janela anterior pode ter ficado aberta)"""
+                for tentativa in range(1, 4):
+                    for _ in range(2):
+                        page.keyboard.press("Escape")
+                        page.wait_for_timeout(300)
+                    if tentativa > 1:
+                        log(f"   não abriu a opção '{rotulo}'; recarregando a página (tentativa {tentativa})")
+                        page.goto(URL, wait_until="domcontentloaded", timeout=60000)
+                        page.wait_for_timeout(3500)
+                    exp = primeiro(page, ["button:has-text('Exportar')", "a:has-text('Exportar')"], 20000)
+                    if not exp:
+                        continue
+                    exp.click()
+                    page.wait_for_timeout(1500)
+                    opc = primeiro(page, [f"[role=dialog] >> text={rotulo}", f"[role=menu] >> text={rotulo}", f"text={rotulo}"], 8000)
+                    if opc:
+                        return opc
+                # o que havia no menu/janela: ajuda a saber se a opção mudou de nome ou o usuário não tem acesso
+                try:
+                    menu = page.evaluate("""() => [...document.querySelectorAll('[role=dialog],[role=menu],[role=listbox],.dropdown-menu,.MuiPopover-root,.MuiMenu-root')]
+                        .map((e) => e.innerText.trim()).filter(Boolean).join(' | ').replace(/\\s+/g, ' ').slice(0, 300)""")
+                except Exception:  # noqa: BLE001
+                    menu = ""
+                raise RuntimeError(f"não achei a opção '{rotulo}' na janela de exportação. Opções que apareceram: {menu or '(nenhuma janela aberta)'}. Na tela: {tela(page)}")
+
             for rotulo, tipo in (("Base de leads", "leads"), ("Logs", "logs")):
                 log(f"3) Leads → Exportar → {rotulo}")
-                exp = primeiro(page, ["button:has-text('Exportar')", "a:has-text('Exportar')"], 20000)
-                if not exp:
-                    raise RuntimeError(f"não achei o botão Exportar. Na tela: {tela(page)}")
-                exp.click()
-                page.wait_for_timeout(1200)
-                opc = primeiro(page, [f"[role=dialog] >> text={rotulo}", f"text={rotulo}"], 8000)
-                if not opc:
-                    raise RuntimeError(f"não achei a opção '{rotulo}' na janela de exportação. Na tela: {tela(page)}")
+                try:
+                    opc = abrir_opcao(rotulo)
+                except RuntimeError:
+                    if feitos:
+                        salvar_pedido()
+                        log(f"   A Base de leads já foi pedida e vai ser importada; só {rotulo} ficou para trás.")
+                    raise
                 opc.click()
                 campo = primeiro(page, ["[role=dialog] input[type=email]", "[role=dialog] input", "input[placeholder*='@']", "input[type=email]"], 8000)
                 if not campo:
@@ -148,9 +179,7 @@ def main():
                     page.wait_for_timeout(600)
                 feitos.append(tipo)
                 log(f"4) {rotulo}: exportação pedida para {EMAIL}")
-            destino = Path(SAIDA)
-            destino.parent.mkdir(parents=True, exist_ok=True)
-            destino.write_text(json.dumps({"em": datetime.now(TZ).isoformat(), "email": EMAIL, "emailBase": EMAIL_BASE, "tipos": feitos, "respostas": respostas}), encoding="utf-8")
+            salvar_pedido()
             return 0
         except Exception:  # noqa: BLE001
             log("### ERRO NO FIXE ###")
