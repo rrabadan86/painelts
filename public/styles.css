@@ -1513,3 +1513,5 @@ tr.cp-enviada td { background: #EEF5EC !important; }
 .cli-sv { max-width: 1000px; }
 .cli-sv-resumo { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 12px; }
 .cli-sv-resumo > div { background: var(--bg2, #f4f0e6); border-radius: 8px; padding: 6px 10px; font-size: 13px; cursor: help; }
+.ped-cl-meses { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; }
+.ped-cl-meses .seg button { padding: 4px 10px; }

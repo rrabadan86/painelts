@@ -409,7 +409,7 @@
           li('Embalagens e insumos', '(saco kraft, etiquetas) entram primeiro, fora da proporção.'),
           li('Divisão do valor:', R.propManual ? 'o resto vai para cada grupo pela proporção que você definiu; grupo com 0% fica fora (dá para pôr à mão).' : 'o resto vai para chás a granel, envasados e acessórios na mesma proporção das vendas do período.', ` Cada grupo pode passar ${fmt.int(par.folgaPct ?? 10)}% da sua parte (folga).`),
           li('Ordem dentro de cada grupo:', '1º chás a granel com estoque abaixo de 500 g (entram sempre, mesmo que a previsão não peça, desde que tenham vendido nos últimos 90 dias); 2º chás Estrela abaixo de 700 g; 3º o que acaba antes da entrega; depois quem deixa mais lucro sem fixos por dia. Produto que não cabe inteiro entra com parte da necessidade.'),
-          li('Classe (Estrela, Volume, Joia, Peso morto):', `é a classe oficial, a mesma do Estoque e margem. Usa a mediana do que o produto vendeu por mês nos últimos ${R.classeMeses} meses fechados, então um mês de promoção pesa pouco, e a margem bruta do período. Não muda com o filtro de período. A janela (3, 6 ou 12 meses) e as classes travadas à mão (🔒) ficam em Estoque e margem → Produtos por lucro.`),
+          li('Classe (Estrela, Volume, Joia, Peso morto):', `é a classe oficial, a mesma do Estoque e margem. Usa a mediana do que o produto vendeu por mês nos últimos ${R.classeMeses} meses fechados, então um mês de promoção pesa pouco, e a margem bruta do período. Não muda com o filtro de período. A janela (3, 6 ou 12 meses) muda aqui, acima da tabela ("Classe pelos últimos"), ou no Estoque e margem → Produtos por lucro; as classes travadas à mão (🔒) ficam no Estoque e margem.`),
           li('Sobra:', 'o que sobrar do valor vai para quem ainda precisa, na mesma ordem. Use "Limpar ▾ → Completar com a sobra" depois de mexer à mão.'),
           li('Fica de fora:', 'indisponível no site, fora do catálogo FRANQUIAS e o resto do catálogo (o que não precisa agora e os bens de consumo): esses você pede à mão.')));
     }
@@ -486,7 +486,15 @@
       seletor('c', 'Classe', 'todas', [...Object.entries(CLASSES), ['sem', 'sem classe']], (r) => r.classe || 'sem'),
       seletor('m', 'Múltiplo', 'todos', [['sim', 'vende em múltiplos'], ['nao', 'unidade']], (r) => (multDe(r) ? 'sim' : 'nao')),
       fx.g || fx.s || fx.c || fx.m ? h('button', { type: 'button', class: 'btn ped-fx-limpa', onclick: () => { state.pedFx = { g: '', s: '', c: '', m: '' }; pintar(corpo, loja, M, e, p); } }, '✕ Tirar filtros') : null,
-      h('span', { class: 'muted ped-fx-n' }, `${fmt.int(linhas.length)} ${linhas.length === 1 ? 'produto' : 'produtos'}`));
+      h('span', { class: 'muted ped-fx-n' }, `${fmt.int(linhas.length)} ${linhas.length === 1 ? 'produto' : 'produtos'}`),
+      // janela da classe oficial (a mesma do Estoque e margem): muda a classe e a prioridade "Estrela abaixo de 700 g"
+      TS.eu && TS.eu.pode && TS.eu.pode.configurar && modo === 'repor'
+        ? h('span', { class: 'ped-cl-meses', title: 'Classe oficial: a mediana do que cada produto vendeu por mês nestes meses fechados × a margem. Vale também no Estoque e margem' },
+          h('span', { class: 'f-label' }, 'Classe pelos últimos'),
+          TS.seg([['3', '3'], ['6', '6'], ['12 meses', '12']], String(R.classeMeses), async (v) => {
+            try { await TS.salvarClasse(loja, { meses: +v }); pintar(corpo, loja, M, e, p); } catch (err) { alert(err.message); }
+          }))
+        : h('span', { class: 'muted ped-fx-n' }, `classe pelos últimos ${R.classeMeses} meses`));
     const totalAgora = R.linhas.reduce((s, r) => s + r.pedir * (r.preco || 0), 0);
     const sobra = R.orcamento != null ? R.orcamento - totalAgora : null;
     const tab = TS.table({
