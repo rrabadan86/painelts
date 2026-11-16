@@ -281,7 +281,10 @@
    * cols: [{key, label, fmt, align:'l'|'r', cls:(row)=>string, sticky, title}]
    * rows: objetos; total: objeto opcional; sort: {key, dir}
    */
-  TS.table = function ({ cols, rows, total, sortKey, sortDir = 'desc', maxHeight, pageSize, search, searchKeys, searchInit, onSearch, onRowClick, rowClass, empty, cls, imprimir }) {
+  TS.table = function ({ cols, rows, total, sortKey, sortDir = 'desc', maxHeight, pageSize, search, searchKeys, searchInit, onSearch, onRowClick, rowClass, empty, cls, imprimir, produto }) {
+    // produto: colunas com o nome do produto — o filtro "Produto contém" da lateral também vale nesta tabela
+    const fProd = produto && TS.state.f.produto ? TS.norm(TS.state.f.produto) : '';
+    if (fProd) { const ks = [].concat(produto); rows = rows.filter((row) => ks.some((k) => TS.norm(row[k]).includes(fProd))); }
     // imprimir: as colunas principais (as outras saem na impressão)
     const sec = (c) => (imprimir && !imprimir.includes(c.key) ? ' col-sec' : '');
     // a busca digitada sobrevive quando a tela se redesenha (troca de aba/filtro); some ao trocar de tela
@@ -366,6 +369,9 @@
       else if (psGuardado) { pageSize = psGuardado; psGuardado = null; paint(); }
     };
     paint();
+    if (fProd) wrap.append(h('div', { class: 'tab-fprod' }, `Só produtos com “${TS.state.f.produto}” (filtro Produto contém, na lateral) · `, h('button', { type: 'button', class: 'link-btn', onclick: () => { TS.state.f.produto = ''; document.querySelectorAll('.sidebar input[type=search]').forEach((i) => { if (i.placeholder === 'Ex.: earl grey') i.value = ''; }); TS.render(); } }, 'tirar o filtro')));
+    // a busca aparece em cima da tabela; quem quiser pôr em outro lugar (barra de ferramentas do cartão) só move o campo
+    if (searchBox) { searchBox.classList.add('tab-busca'); wrap.prepend(searchBox); }
     wrap.append(tw, pager);
     wrap.searchBox = searchBox;
     return wrap;

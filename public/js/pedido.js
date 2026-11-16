@@ -518,7 +518,7 @@
         if (!ped.length) return null;
         const un = ped.filter((r) => r.it.un !== 'Kg').reduce((s, r) => s + r.pedir, 0), kg = ped.filter((r) => r.it.un === 'Kg').reduce((s, r) => s + r.pedir, 0);
         return { produto: `Total · ${fmt.int(ped.length)} ${ped.length === 1 ? 'produto' : 'produtos'}`, pedir: [kg ? `${fmt.kg(kg)} kg` : '', un ? `${fmt.int(un)} un` : ''].filter(Boolean).join(' + '), total: fmt.brl(ped.reduce((s, r) => s + r.pedir * (r.preco || 0), 0)) };
-      })(), sortKey: 'lucroDia', maxHeight: '620px', pageSize: linhas.length > 300 ? 200 : undefined, search: 'Buscar produto…', searchKeys: ['produto', 'cod'], imprimir: ['produto', 'grupoTxt', 'classe', 'sit', 'qtd', 'sugerido', 'pedir', 'preco', 'total'], cls: 'est-t ped-t',
+      })(), sortKey: 'lucroDia', maxHeight: '620px', pageSize: linhas.length > 300 ? 200 : undefined, search: 'Buscar produto…', searchKeys: ['produto', 'cod'], produto: 'produto', imprimir: ['produto', 'grupoTxt', 'classe', 'sit', 'qtd', 'sugerido', 'pedir', 'preco', 'total'], cls: 'est-t ped-t',
       empty: { pedido: 'Nada no pedido.', fora: 'Nada ficou de fora.', indisp: 'Nenhum produto necessário está indisponível no site.', cat: 'Todos os produtos necessários estão no catálogo.', resto: 'Sem catálogo do Sistema de Pedidos: use "Atualizar catálogo".', todos: 'Nenhum produto.' }[filtro],
     });
     // observação de cada linha, conforme o pedido de agora (muda quando você põe, tira ou limpa)

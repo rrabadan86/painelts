@@ -679,7 +679,8 @@
       const f = F[state.estTabF] ? state.estTabF : 'todos';
       const grupos = [...new Set(linhas.map((r) => r.grupo).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
       const gSel = grupos.includes(state.estTabG) ? state.estTabG : '';
-      const doGrupo = linhas.filter((r) => !gSel || r.grupo === gSel);
+      const fp = state.f.produto ? TS.norm(state.f.produto) : '';
+      const doGrupo = linhas.filter((r) => (!gSel || r.grupo === gSel) && (!fp || TS.norm(r.nome).includes(fp)));
       const conta = (k) => doGrupo.filter(F[k][1]).length;
       const selG = h('select', { class: 'f-input est-tab-g', onchange: (e) => { state.estTabG = e.target.value; TS.render(); } },
         h('option', { value: '' }, 'Grupo: todos'), ...grupos.map((g) => h('option', { value: g, selected: g === gSel || null }, g)));
@@ -698,7 +699,7 @@
             { key: 'mReal', label: 'Praticada', title: 'Margem bruta do que vendeu no período (com os descontos)', fmt: (v) => (v == null ? '—' : fmt.pct(v)) },
             { key: 'desconto', label: 'Desconto', title: 'Margem de tabela − praticada, em pontos: o quanto os descontos tiraram da margem', render: (r) => (r.desconto == null ? '—' : Math.abs(r.desconto) < 0.005 ? h('span', { class: 'muted' }, '0') : h('span', { class: r.desconto > 0.02 ? 'neg' : 'muted' }, `${r.desconto > 0 ? '−' : '+'}${fmt.n1(Math.abs(r.desconto) * 100)} pts`)), sortVal: (r) => r.desconto },
           ],
-          rows, sortKey: f === 'abaixo' ? 'mSf' : 'margem', sortDir: f === 'abaixo' ? 'asc' : 'desc', maxHeight: '520px', search: 'Buscar produto ou código…', searchKeys: ['nome', 'cod', 'grupoTxt'], cls: 'est-t', pageSize: rows.length > 400 ? 200 : undefined,
+          rows, sortKey: f === 'abaixo' ? 'mSf' : 'margem', sortDir: f === 'abaixo' ? 'asc' : 'desc', maxHeight: '520px', search: 'Buscar produto ou código…', searchKeys: ['nome', 'cod', 'grupoTxt'], produto: 'nome', cls: 'est-t', pageSize: rows.length > 400 ? 200 : undefined,
           empty: f === 'abaixo' ? 'Nenhum produto com margem de tabela abaixo da mínima. 👏' : 'Nenhum produto aqui.',
         }));
     }
@@ -762,7 +763,7 @@
           { key: 'melhor', label: 'Mais rentável', align: 'l', title: 'Tamanho que deixa mais lucro (sem fixos) por grama' },
           { key: 'dica', label: 'Diferença', align: 'l', wrap: true },
         ],
-        rows: linhas, sortKey: null, maxHeight: '420px', search: 'Buscar chá…', searchKeys: ['produto'], cls: 'est-t',
+        rows: linhas, sortKey: null, maxHeight: '420px', search: 'Buscar chá…', searchKeys: ['produto'], produto: 'produto', cls: 'est-t',
       }));
     }
 
@@ -1051,7 +1052,7 @@
         { key: 'margemLiq', label: 'Margem com fixos', title: 'Lucro líquido ÷ faturamento (com os custos fixos rateados). Informativa: um produto com líquida negativa e contribuição positiva continua ajudando a pagar os custos fixos', fmt: (v) => (v == null ? '' : fmt.pct(v)), cls: (r) => (r.margemLiq != null && r.margemLiq < 0 ? 'est-liq-neg' : '') },
 
       ],
-      rows: sel ? prods.filter((p) => p.classe === sel) : prods, sortKey: 'lucro', maxHeight: '520px', search: 'Buscar produto…', searchKeys: ['produto'], imprimir: ['produto', 'abc', 'oficial', 'giro', 'vt', 'lucro', 'margem', 'margemTab', 'contrib', 'margemContrib'], cls: 'est-t',
+      rows: sel ? prods.filter((p) => p.classe === sel) : prods, sortKey: 'lucro', maxHeight: '520px', search: 'Buscar produto…', searchKeys: ['produto'], produto: 'produto', imprimir: ['produto', 'abc', 'oficial', 'giro', 'vt', 'lucro', 'margem', 'margemTab', 'contrib', 'margemContrib'], cls: 'est-t',
       total: { produto: 'Total', vt: fatCusto, custo: custoTot, lucro, margem: fatCusto ? lucro / fatCusto : null, contrib: contribTot, margemContrib: fatCusto ? contribTot / fatCusto : null, ded: dedSoma, lucroLiq: lucroLiqTot, margemLiq: fatCusto ? lucroLiqTot / fatCusto : null },
     }))));
 
@@ -1134,7 +1135,7 @@
             { key: 'margemKitCon', label: 'Margem sem fixos', fmt: (v) => fmt.pct(v), cls: (r) => (r.margemKitCon != null && r.margemKitCon < margemMin ? 'miss' : ''), title: 'Margem bruta − deduções variáveis (comissão, royalties, Simples, maquininha e custos em %), já com o desconto do kit' },
             { key: 'margemKitLiq', label: 'Margem com fixos', fmt: (v) => fmt.pct(v), title: 'Margem de contribuição − custos fixos rateados (informativa)' },
           ],
-          rows: top, sortKey: 'lift', maxHeight: '520px', cls: 'est-t', search: 'Buscar produto…', searchKeys: ['kit'],
+          rows: top, sortKey: 'lift', maxHeight: '520px', cls: 'est-t', search: 'Buscar produto…', searchKeys: ['kit'], produto: 'kit',
         }) : h('p', { class: 'muted' }, `Ainda não há pares que saiam juntos em pelo menos ${minJuntos} cupons. Escolha um período maior (por exemplo, 12 meses).`),
         h('p', { class: 'muted est-kit-dica' }, 'Como usar: monte o kit com os pares de maior afinidade e margem boa, deixe-o na vitrine e treine as vendedoras para oferecer o segundo produto a quem leva o primeiro.'));
     }
@@ -1197,7 +1198,7 @@
           { key: 'pedir', label: 'Pedir', title: 'Quanto pedir para chegar em tempo e durar o período escolhido. Passe o mouse no número para ver a conta', render: (r) => (r.pedir > 0 ? h('b', { title: contaPedido(r), class: 'est-dica' }, qtdTxt(r.pedir, r.it)) : '—') },
           { key: 'custoPedido', label: 'Custo', title: 'Quantidade a pedir × custo unitário do AppNext', fmt: (v) => (v ? fmt.brl(v) : '—') },
         ],
-        rows: linhasRepo, sortKey: 'sit', maxHeight: '560px', imprimir: ['produto', 'sit', 'qtd', 'prev', 'dias', 'pedir', 'custoPedido'], search: 'Buscar produto…', searchKeys: ['produto', 'cod'], searchInit: state.estBusca || '', onSearch: (v) => { state.estBusca = v; }, cls: 'est-t', empty: 'Nada para repor agora.',
+        rows: linhasRepo, sortKey: 'sit', maxHeight: '560px', produto: 'produto', imprimir: ['produto', 'sit', 'qtd', 'prev', 'dias', 'pedir', 'custoPedido'], search: 'Buscar produto…', searchKeys: ['produto', 'cod'], searchInit: state.estBusca || '', onSearch: (v) => { state.estBusca = v; }, cls: 'est-t', empty: 'Nada para repor agora.',
     });
     const csv = h('button', { type: 'button', class: 'btn', onclick: () => baixarPedido(repor) }, '⬇ Baixar pedido (CSV)');
     corpo.append(h('div', { class: 'mt' }, TS.cardWithTools('O que repor',
@@ -1217,7 +1218,7 @@
         { key: 'valor', label: 'Valor a custo', title: 'Dinheiro parado: estoque × custo unitário', fmt: fmt.brl },
         { key: 'ultima', label: 'Última venda', title: 'Última vez que este produto vendeu no histórico do painel', fmt: (v) => (v ? fmt.date(v) : 'sem venda no histórico'), sortVal: (r) => r.dias ?? 1e9 },
       ],
-      rows: parados, sortKey: 'valor', maxHeight: '420px', cls: 'est-t', empty: 'Nada parado. 👏',
+      rows: parados, sortKey: 'valor', maxHeight: '420px', cls: 'est-t', search: 'Buscar produto…', searchKeys: ['produto', 'cod'], produto: 'produto', empty: 'Nada parado. 👏',
     }))));
 
     corpo.append(h('p', { class: 'muted mt' }, 'Reajustes de custo e de venda e o efeito na margem de cada produto: ', h('a', { href: '#precos' }, 'Estoque e Margem → Preços'), '.'));

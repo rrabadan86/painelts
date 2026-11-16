@@ -194,11 +194,11 @@ TS.filtrar = function (opts = {}) {
     cat: !ign.has('cats') && f.cats.size ? f.cats : null,
   };
   const tamanhos = opts.usarTamanho && f.tamanhos.size ? f.tamanhos : null;
-  const prod = !ign.has('produto') && f.produto ? f.produto.toLowerCase() : null;
+  const prod = !ign.has('produto') && f.produto ? TS.norm(f.produto) : null;
   let prodOk = null;
   if (prod) {
     prodOk = new Uint8Array(db.D.descricao.length);
-    db.D.descricao.forEach((s, i) => { if (s.toLowerCase().includes(prod)) prodOk[i] = 1; });
+    db.D.descricao.forEach((s, i) => { if (TS.norm(s).includes(prod)) prodOk[i] = 1; });
   }
   const extra = opts.extra;
   const out = [];

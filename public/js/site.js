@@ -155,6 +155,9 @@
         nomeTxt: x.produto + (x.variante ? ' ' + x.variante : ''), nossoTxt: x.nos ? x.nos.nome : '',
       };
     });
+    // filtro "Produto contém" da lateral: vale também nos números do topo e nas abas
+    const fp = state.f.produto ? TS.norm(state.f.produto) : '';
+    if (fp) for (let k = linhas.length - 1; k >= 0; k--) if (!TS.norm(linhas[k].nomeTxt + ' ' + linhas[k].nossoTxt).includes(fp)) linhas.splice(k, 1);
     const conta = (f) => linhas.filter(f).length;
     const FILTROS = {
       todos: ['Todos', () => true],
@@ -188,7 +191,7 @@
         { key: 'sit', label: 'Situação', align: 'l', render: (r) => { const [t, c] = SIT[r.sit]; return h('span', { class: 'badge ' + c }, t); }, sortVal: (r) => ({ promodif: 5, dif: 4, promo: 3, igual: 2, sem: 1 })[r.sit] },
         { key: 'mudou', label: 'Antes', title: 'Preço na consulta anterior, quando mudou', render: (r) => (r.mudou ? h('span', { class: 'warn-t', title: d.anterior ? `Consulta de ${new Date(d.anterior.em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}` : '' }, `era ${fmt.brl(r.mudou[0])}${r.mudou[1] ? ` (de ${fmt.brl(r.mudou[1])})` : ''}`) : ''), sortVal: (r) => (r.mudou ? 1 : 0) },
       ],
-      rows: linhas.filter(FILTROS[filtro][1]), sortKey: 'sit', maxHeight: '640px', search: 'Buscar produto…', searchKeys: ['nomeTxt', 'nossoTxt', 'sku'],
+      rows: linhas.filter(FILTROS[filtro][1]), sortKey: 'sit', maxHeight: '640px', search: 'Buscar produto…', searchKeys: ['nomeTxt', 'nossoTxt', 'sku'], produto: ['nomeTxt', 'nossoTxt'],
       imprimir: ['nomeTxt', 'nossoTxt', 'nosso', 'cheio', 'preco', 'desconto', 'difP', 'sit'], cls: 'site-t',
       empty: 'Nenhum produto nesta aba.',
     });

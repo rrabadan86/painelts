@@ -201,7 +201,7 @@
           sortVal: (r) => r.difMargem ?? 0 },
         { key: 'acoes', label: '', align: 'l', render: (r) => h('button', { type: 'button', class: 'btn prc-ver', onclick: () => abrirProduto(r) }, 'Histórico'), sortVal: () => 0 },
       ].filter(Boolean),
-      rows, sortKey: filtro === 'margem' ? 'difMargem' : 'cVar', sortDir: filtro === 'margem' ? 'asc' : 'desc', maxHeight: '640px', search: 'Buscar produto…', searchKeys: ['nome', 'cat'], cls: 'est-t prc-t',
+      rows, sortKey: filtro === 'margem' ? 'difMargem' : 'cVar', sortDir: filtro === 'margem' ? 'asc' : 'desc', maxHeight: '640px', search: 'Buscar produto…', searchKeys: ['nome', 'cat'], produto: 'nome', cls: 'est-t prc-t',
       empty: 'Nenhum produto neste filtro no período.',
     });
     const cont = (k) => linhas.filter(FIL[k][1]).length;
