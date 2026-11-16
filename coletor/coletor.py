@@ -73,6 +73,7 @@ def janela():
 
 
 def horarios():
+    """horários padrão (lista única, formato antigo): /config/horarios.txt ou COLETOR_HORARIOS"""
     f = CONFIG_DIR / "horarios.txt"
     try:
         hs = [h.strip() for h in f.read_text(encoding="utf-8").replace("\n", ",").split(",") if HHMM.match(h.strip())]
@@ -81,6 +82,34 @@ def horarios():
     except OSError:
         pass
     return HORARIOS_ENV
+
+
+def agenda():
+    """/config/horarios.json (editado pelo painel): {"padrao": {"0".."6": [HH:MM]}, "lojas": {loja: {"0".."6": [...]}}}
+    0 = domingo … 6 = sábado. Dia ausente no padrão = horarios(); loja sem agenda própria = padrão."""
+    try:
+        j = json.loads((CONFIG_DIR / "horarios.json").read_text(encoding="utf-8"))
+        return j if isinstance(j, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _limpa(hs):
+    return sorted({h.strip() for h in (hs or []) if isinstance(h, str) and HHMM.match(h.strip())})
+
+
+def horarios_do_dia(loja=None, quando=None):
+    """horários de atualização de um dia (da loja, se ela tem agenda própria; senão os da rede)"""
+    quando = quando or datetime.now(TZ)
+    dia = str((quando.weekday() + 1) % 7)  # 0 = domingo
+    ag = agenda()
+    propria = (ag.get("lojas") or {}).get(loja) if loja else None
+    if isinstance(propria, dict) and dia in propria:
+        return _limpa(propria[dia])
+    padrao = ag.get("padrao") or {}
+    if dia in padrao:
+        return _limpa(padrao[dia])
+    return horarios()
 TZ = ZoneInfo(os.getenv("TZ", "America/Sao_Paulo"))
 TEMPO_MAX = int(os.getenv("COLETOR_TEMPO_MAX") or "900")  # segundos por loja
 PORTA = int(os.getenv("COLETOR_PORTA") or "8000")
@@ -472,19 +501,23 @@ def trabalhador():
 
 
 def agendador():
+    """cada loja segue os horários do dia dela (da rede ou próprios; dia sem horário = sem atualização automática)"""
     feitos = set()
     while True:
         agora = datetime.now(TZ)
         hhmm = agora.strftime("%H:%M")
-        chave = agora.strftime("%Y-%m-%d ") + hhmm
-        hs = horarios()
-        if hhmm in hs and chave not in feitos:
+        for loja in lojas_configuradas():
+            hs = horarios_do_dia(loja, agora)
+            chave = f"{loja} {agora.strftime('%Y-%m-%d')} {hhmm}"
+            if hhmm not in hs or chave in feitos:
+                continue
             feitos.add(chave)
-            noite = hhmm == max(hs)  # a última do dia também pede o cadastro de clientes ao FIXE
-            for loja in lojas_configuradas():
-                enfileirar(loja, "agendado", fixe=noite, ultima_do_dia=noite)
-                if noite and tem_pedido(loja):
-                    enfileirar_pedido(loja, "catalogo", "rotina")
+            noite = hhmm == max(hs)  # a última do dia também pede o FIXE, o catálogo e dispara o fechamento
+            enfileirar(loja, "agendado", fixe=noite, ultima_do_dia=noite)
+            if noite and tem_pedido(loja):
+                enfileirar_pedido(loja, "catalogo", "rotina")
+        if len(feitos) > 5000:
+            feitos = {k for k in feitos if agora.strftime("%Y-%m-%d") in k}
         time.sleep(20)
 
 
@@ -542,7 +575,7 @@ class API(BaseHTTPRequestHandler):
             tem_fixe = bool(env.get("FIXE_URL") and env.get("FIXE_PASS") and SCRIPT_FIXE.exists())
             with lock:
                 ped = json.loads(json.dumps(pedido_est.get(loja) or {}))
-            return self._json(200, {"configurada": True, "horarios": horarios(), "janela": janela(), "fila": fila_n, "temFixe": tem_fixe,
+            return self._json(200, {"configurada": True, "horarios": horarios_do_dia(loja), "janela": janela(), "fila": fila_n, "temFixe": tem_fixe,
                                     "temPedido": tem_pedido(loja), "pedido": ped, **info})
         self._json(404, {"erro": "rota"})
 

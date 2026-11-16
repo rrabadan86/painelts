@@ -1468,3 +1468,11 @@ tr.cp-enviada td { background: #EEF5EC !important; }
 .cfg-tags { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0 4px; }
 .cfg-tags .chip { font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--line, #E6E0D2); background: #F6F2EA; cursor: pointer; font-family: ui-monospace, monospace; }
 .cfg-ex-assunto { font-size: 12.5px; margin-bottom: 8px; }
+/* editor de horários por dia da semana */
+.sem-ed { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; }
+.sem-dia { display: grid; grid-template-columns: 90px 1fr auto; gap: 10px; align-items: center; padding: 6px 10px; border: 1px solid var(--line, #E6E0D2); border-radius: 10px; background: #FCFAF5; }
+.sem-dia.vazio { background: #F4F1EA; }
+.sem-dia .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.sem-dia .chip.ultimo { background: #C9A227; color: #1F3A2A; border-color: #C9A227; }
+.sem-atalhos { margin-top: 4px; flex-wrap: wrap; gap: 6px; }
+@media (max-width: 700px) { .sem-dia { grid-template-columns: 1fr; gap: 4px; } }

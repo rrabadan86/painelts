@@ -197,7 +197,7 @@
     // seções da loja em abas (mesmo submenu do Estoque e Margem); só monta os blocos da aba aberta
     const admin = est.perfil === 'admin', gestor = admin || est.perfil === 'franqueado';
     const SECOES = [
-      ['dados', 'Dados e atualização', 'Situação dos dados, coleta automática e envio de planilhas', () => [blocoDados(l), blocoPlanilhas(l)]],
+      ['dados', 'Dados e atualização', 'Situação dos dados, coleta automática e envio de planilhas', () => [blocoDados(l), blocoHorarios(l), blocoPlanilhas(l)]],
       ['metas', 'Metas e comissão', 'Meta do mês, regras de comissão e férias da equipe', () => [blocoMetas(l), blocoFerias(l), admin ? blocoRegras(l) : null]],
       ['loja', 'Loja e equipe', 'Horário de funcionamento, equipe, logo e dados da loja', () => [blocoOperacao(l), blocoMarca(l), admin ? blocoEditar(l) : null]],
       gestor && TS.blocoEstoqueCfg ? ['estoque', 'Estoque e margem', 'Impostos, maquininha, custos da loja por categoria, reposição e embalagens', () => [TS.blocoEstoqueCfg(l.id)]] : null,
@@ -253,6 +253,28 @@
     if (g) return linhaSit('ok', 'Fidelidade (Logs do FIXE)', 'em dia', `Importado em ${dt(g.em)}`,
       `${fmt.int(g.movimentos || 0)} movimentos · ${fmt.int(g.clientes || 0)} clientes · ${fmt.int(g.compras || 0)} compras · ${fmt.int(g.resgates || 0)} resgates · ${fmt.int(g.expirados || 0)} expirações`);
     return fx.url ? linhaSit('nada', 'Fidelidade (Logs do FIXE)', 'ainda não importado', 'Vem junto com o cadastro, na atualização da noite. Também dá para enviar a planilha de Logs em "Enviar planilha" → Cadastro de clientes.') : null;
+  }
+
+  // ---- horários da atualização automática desta loja (os da rede ou próprios)
+  function blocoHorarios(l) {
+    if (!est.coletorAtivo || !l.horarios) return null;
+    const hz = l.horarios, pode = est.perfil === 'admin' || est.perfil === 'franqueado';
+    const b = h('section', { class: 'cfg-bloco' }, h('h3', null, 'Horários da atualização automática'));
+    const resumo = (sem) => [1, 2, 3, 4, 5, 6, 0].map((n) => `${NOMES_DIA[n].slice(0, 3)}: ${(sem[String(n)] || []).join(', ') || '—'}`).join(' · ');
+    b.append(h('p', { class: 'muted' }, hz.propria ? 'Esta loja tem horários próprios.' : 'Esta loja segue os horários da rede.',
+      ' Dia sem horário = sem atualização automática (ex.: loja fechada no domingo). A última do dia pede o FIXE e o catálogo de pedidos e dispara o e-mail do fechamento.'));
+    if (!pode) { b.append(h('p', null, resumo(hz.semana))); return b; }
+    const propria = h('input', { type: 'checkbox', checked: hz.propria || null });
+    const ed = editorSemana(hz.semana);
+    const caixa = h('div', { hidden: !hz.propria || null }, ed.el);
+    const daRede = h('p', { class: 'muted', hidden: hz.propria || null }, 'Horários da rede: ', resumo(est.agenda || {}));
+    propria.addEventListener('change', () => { caixa.hidden = !propria.checked; daRede.hidden = propria.checked; });
+    b.append(h('label', { class: 'cfg-check-l' }, propria, ' Usar horários próprios nesta loja'), daRede, caixa,
+      h('div', { class: 'cfg-acoes' }, acao('Salvar horários', async () => {
+        if (!propria.checked) { await api('PUT', `/lojas/${l.id}/horarios`, { propria: false }); return 'Pronto: a loja segue os horários da rede.'; }
+        await api('PUT', `/lojas/${l.id}/horarios`, { semana: ed.valor() }); return 'Horários da loja salvos. Valem a partir do próximo minuto.';
+      }, 'btn primary')));
+    return b;
   }
 
   // ---- dados e coleta
@@ -641,8 +663,8 @@
       h('p', { class: 'muted' }, `Todo dia, ${l.coletor && l.coletor.configurado && est.coletorAtivo ? 'logo depois da última atualização automática' : 'no horário escolhido'}, a ${l.nome} envia o fechamento do dia pelo Gmail dela para as pessoas da lista abaixo${f.gerais.length ? ' e para quem acompanha a loja pela rede' : ''}. É o mesmo conteúdo da planilha de fechamento, preenchido sozinho. No fim do e-mail vai o fechamento de caixa do AppNext (formas de pagamento, sangria, suprimento e diferença) para quem estiver marcado com "Recebe o caixa".`),
       h('label', { class: 'cfg-check-l' }, ativo, ' Enviar o fechamento todos os dias'),
       l.coletor && l.coletor.configurado && est.coletorAtivo
-        ? h('p', { class: 'muted' }, h('b', null, `Envio: logo depois da última atualização automática do dia${(est.horarios || []).length ? ` (${[...est.horarios].sort().slice(-1)[0]})` : ''}.`),
-          ' As atualizações manuais ("Rodar agora") não disparam o envio. Se a última do dia não acontecer, o fechamento sai às 6h do dia seguinte.')
+        ? h('p', { class: 'muted' }, h('b', null, `Envio: logo depois da última atualização automática do dia${l.horarios && l.horarios.hoje && l.horarios.hoje.length ? ` (hoje às ${l.horarios.hoje[l.horarios.hoje.length - 1]})` : ''}.`),
+          ' Os horários de cada dia ficam em Dados e atualização. As atualizações manuais ("Rodar agora") não disparam o envio. Num dia sem atualização automática (ou se ela não acontecer), o fechamento sai às 6h do dia seguinte.')
         : h('div', { class: 'cfg-grid' }, campo('Horário (Brasília)', hora, 'Esta loja não tem atualização automática: o fechamento sai neste horário.')),
       f.fechamento.ultimoEnvio ? h('p', { class: 'muted' }, `Último envio automático: ${dIso(f.fechamento.ultimoEnvio)}`) : null,
       campo('Assunto do e-mail', assunto, 'A data é a do fechamento (o dia das vendas). Clique numa etiqueta para colocar no assunto.'),
@@ -992,20 +1014,44 @@
           : h('button', { type: 'button', class: 'btn ghost-danger', onclick: () => { abertos.add('delu:' + u.nome); pintar(); } }, 'Excluir…')) : null));
   }
 
+  /** editor da semana: um horário ou mais por dia; dia vazio = sem atualização automática */
+  const NOMES_DIA = { 1: 'Segunda', 2: 'Terça', 3: 'Quarta', 4: 'Quinta', 5: 'Sexta', 6: 'Sábado', 0: 'Domingo' };
+  function editorSemana(semana) {
+    const sem = {};
+    for (const d of ['0', '1', '2', '3', '4', '5', '6']) sem[d] = [...((semana && semana[d]) || [])];
+    const corpo = h('div', { class: 'sem-ed' });
+    const pintarSem = () => {
+      corpo.replaceChildren(...[1, 2, 3, 4, 5, 6, 0].map((n) => {
+        const d = String(n), hs = sem[d].sort();
+        const novo = inp({ type: 'time', value: '', style: { maxWidth: '120px' }, 'aria-label': 'Novo horário de ' + NOMES_DIA[n] });
+        const add = () => { if (novo.value && !hs.includes(novo.value)) { hs.push(novo.value); pintarSem(); } };
+        novo.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } });
+        const ultimo = hs.length ? hs[hs.length - 1] : null;
+        return h('div', { class: 'sem-dia' + (hs.length ? '' : ' vazio') },
+          h('b', { class: 'sem-nome' }, NOMES_DIA[n]),
+          h('div', { class: 'chips' }, hs.length ? hs.map((x, i) => h('span', { class: 'chip on' + (x === ultimo ? ' ultimo' : ''), title: x === ultimo ? 'Última do dia: pede o FIXE e o catálogo e envia o fechamento' : null }, x, x === ultimo ? ' ★' : '', ' ',
+            h('button', { type: 'button', class: 'chip-x', 'aria-label': 'Remover ' + x, onclick: () => { hs.splice(i, 1); pintarSem(); } }, '×'))) : h('span', { class: 'muted' }, 'sem atualização automática')),
+          h('span', { class: 'cfg-inline' }, novo, h('button', { type: 'button', class: 'btn', onclick: add }, '+')));
+      }), h('div', { class: 'cfg-inline sem-atalhos' },
+        h('button', { type: 'button', class: 'btn', onclick: () => { for (const d of ['2', '3', '4', '5', '6']) sem[d] = [...sem['1']]; pintarSem(); } }, 'Copiar segunda para terça a sábado'),
+        h('button', { type: 'button', class: 'btn', onclick: () => { sem['0'] = []; pintarSem(); } }, 'Sem atualização no domingo')),
+      h('p', { class: 'muted', style: { margin: '6px 0 0' } }, '★ = última do dia: nela o robô pede as exportações do FIXE e o catálogo de pedidos, e depois sai o e-mail do fechamento.'));
+    };
+    pintarSem();
+    return { el: corpo, valor: () => sem };
+  }
+
   // ======================= COLETOR =======================
   function abaColetor(box) {
     if (!est.coletorAtivo) { box.append(h('div', { class: 'notice' }, 'O coletor não está ligado nesta VPS (falta COLETOR_URL/COLETOR_TOKEN no .env).')); return; }
-    const hs = [...est.horarios];
-    const lista = h('div', { class: 'chips' });
-    const pintarHs = () => { lista.textContent = ''; hs.sort().forEach((x, i) => lista.append(h('span', { class: 'chip on' }, x, ' ', h('button', { type: 'button', class: 'chip-x', 'aria-label': 'Remover ' + x, onclick: () => { hs.splice(i, 1); pintarHs(); } }, '×')))); };
-    pintarHs();
-    const novo = inp({ type: 'time', value: '12:00', style: { maxWidth: '140px' } });
-    box.append(h('div', { class: 'card cfg-form' }, h('div', { class: 'card-title' }, 'Horários da atualização automática'),
-      h('p', { class: 'muted' }, `Em cada horário o coletor atualiza todas as lojas, uma de cada vez, baixando os últimos ${est.janela || 7} dias do AppNext (vendas e XML). Do dia 1 ao 5 de cada mês ele refaz também o mês anterior inteiro, para o fechamento pegar correções de última hora. O botão de buscar dados no topo (e o "Atualizar agora") baixa só ontem e hoje. Horário de Brasília.`),
+    const ed = editorSemana(est.agenda);
+    const proprias = (est.lojas || []).filter((x) => x.horarios && x.horarios.propria).map((x) => x.nome);
+    box.append(h('div', { class: 'card cfg-form' }, h('div', { class: 'card-title' }, 'Horários da atualização automática (rede)'),
+      h('p', { class: 'muted' }, `Em cada horário o coletor atualiza as lojas, uma de cada vez, baixando os últimos ${est.janela || 7} dias do AppNext (vendas e XML). Do dia 1 ao 5 de cada mês ele refaz também o mês anterior inteiro, para o fechamento pegar correções de última hora. O botão de buscar dados no topo (e o "Atualizar agora") baixa só ontem e hoje. Horário de Brasília.`),
+      h('p', { class: 'muted' }, 'Estes são os horários padrão da rede. Cada loja pode ter os seus em Lojas → a loja → Dados e atualização (o franqueado também pode mudar os da loja dele).' + (proprias.length ? ` Com horários próprios: ${proprias.join(', ')}.` : '')),
       est.coletorOk === false ? h('div', { class: 'notice err' }, 'O coletor não está respondendo.') : null,
-      lista,
-      h('div', { class: 'cfg-inline', style: { marginTop: '10px' } }, novo, h('button', { type: 'button', class: 'btn', onclick: () => { if (novo.value && !hs.includes(novo.value)) { hs.push(novo.value); pintarHs(); } } }, 'Adicionar horário')),
-      h('div', { class: 'cfg-acoes' }, acao('Salvar horários', async () => { await api('PUT', '/horarios', { horarios: hs }); return 'Horários salvos. Valem a partir do próximo minuto.'; }, 'btn primary'))));
+      ed.el,
+      h('div', { class: 'cfg-acoes' }, acao('Salvar horários da rede', async () => { const r = await api('PUT', '/horarios', { semana: ed.valor() }); est.agenda = r.semana; return 'Horários salvos. Valem a partir do próximo minuto.'; }, 'btn primary'))));
     const dias = inp({ type: 'number', min: 1, max: 90, value: est.janela || 7, style: { maxWidth: '110px' } });
     box.append(h('div', { class: 'card cfg-form' }, h('div', { class: 'card-title' }, 'Quantos dias baixar em cada atualização'),
       h('p', { class: 'muted' }, 'O histórico completo entra uma vez, pelo "Importar histórico". Depois, cada atualização só precisa dos dias recentes: quanto menos dias, mais rápido. Use mais dias se a loja costuma corrigir vendas antigas no AppNext (cancelamento, troca de vendedor).'),

@@ -115,6 +115,7 @@ function validarRegras(g) {
   return null;
 }
 
+const AG = require('./agenda');
 function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSemEG, MAX_UPLOAD_MB, NOTIF, obterIndicadores, arquivoLogo, LOGO_EXT }) {
   const r = express.Router();
   const json = express.json({ limit: '200kb' });
@@ -165,7 +166,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
         metaAuto: l.metaAuto, totaisSemEG: totaisSemEG(l.id),
         id: l.id, nome: l.nome, appnext: l.appnext, meta: l.meta, metas: l.metas, criadaEm: l.criadaEm, regras: l.regras, marca: l.marca, wppModelos: l.wppModelos,
         nomesVenda: (() => { const raw = rawDe(l.id); return raw ? [...new Set(raw.vendas.slice(-500).map((v) => v.loja).filter(Boolean))] : []; })(),
-        base: B.resumo(l.id), xml: XB.resumo(l.id), estoque: (() => { const e = ES.atual(l.id); return e ? { em: e.em, itens: e.itens.length, origem: e.origem || '' } : null; })(), fechEmail: NOTIF.publicoLoja(l.id), fontes, vendedores: vendedoresDe(l.id),
+        base: B.resumo(l.id), xml: XB.resumo(l.id), estoque: (() => { const e = ES.atual(l.id); return e ? { em: e.em, itens: e.itens.length, origem: e.origem || '' } : null; })(), fechEmail: NOTIF.publicoLoja(l.id), horarios: (() => { const a = AG.ler(); return { propria: !!a.lojas[l.id], semana: a.lojas[l.id] || a.padrao, hoje: AG.doDia(l.id) }; })(), fontes, vendedores: vendedoresDe(l.id),
         fixe: { url: (env && env.FIXE_URL) || '', usuario: (env && env.FIXE_USER) || '', email: (env && env.FIXE_EMAIL) || '', temSenha: !!(env && env.FIXE_PASS), apelido: !(env && env.FIXE_APELIDO_USAR === '0'), enderecoPedido: env && env.FIXE_EMAIL ? (env.FIXE_APELIDO_USAR === '0' ? env.FIXE_EMAIL : require('./fixemail').comApelido(env.FIXE_EMAIL, l.id)) : '', ...require('./fixemail').situacao(l.id), logs: require('./fidelidade').resumo(l.id), fidelidade: require('./fidelidade').regrasDe(l) },
         coletor: env ? { configurado: true, rede: env.APPNEXT_REDE || '', usuario: env.APPNEXT_USER || '', temSenha: !!env.APPNEXT_PASS, lojaDestino: env.APPNEXT_LOJA_DESTINO || '', lojaIdDestino: env.APPNEXT_LOJA_ID_DESTINO || '' } : { configurado: false },
         status,
@@ -174,7 +175,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     const minhas = new Set(lojas.map((l) => l.id));
     const auditoria = C.lerAuditoria(400).filter((e) => req.perfil === 'admin' || e.por === req.user || (e.detalhe && minhas.has(e.detalhe.loja)) || minhas.has(e.alvo)).slice(0, 200);
     res.json({
-      perfil: req.perfil, usuario: req.user, coletorAtivo: COL.ativo(), horarios: saude?.horarios || [], janela: saude?.janela || null, coletorOk: saude ? saude.ok !== false : null,
+      perfil: req.perfil, usuario: req.user, coletorAtivo: COL.ativo(), horarios: saude?.horarios || [], agenda: AG.ler().padrao, janela: saude?.janela || null, coletorOk: saude ? saude.ok !== false : null,
       lojas: itens, usuarios: usuariosVisiveis(req), auditoria,
       todasLojas: C.get().lojas.map((l) => ({ id: l.id, nome: l.nome })).filter((l) => req.perfil === 'admin' || minhas.has(l.id)),
     });
@@ -653,12 +654,23 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
   });
 
   // ---------- horários do coletor ----------
+  // horários da rede por dia da semana (só o administrador)
   r.put('/horarios', soAdmin, json, (req, res) => {
-    const hs = [...new Set((req.body.horarios || []).map((h) => String(h).trim()).filter((h) => /^([01]\d|2[0-3]):[0-5]\d$/.test(h)))].sort();
-    if (!hs.length) return res.status(400).json({ erro: 'Informe pelo menos um horário (HH:MM).' });
-    C.gravarAtomico(path.join(C.COLETOR_DIR, 'horarios.txt'), hs.join('\n') + '\n', 0o644);
-    aud(req, 'alterou horários', 'coletor', { horarios: hs });
-    res.json({ ok: true, horarios: hs });
+    try {
+      const sem = AG.gravarPadrao(req.body.semana);
+      if (!Object.values(sem).some((x) => x.length)) return res.status(400).json({ erro: 'Deixe pelo menos um dia com horário.' });
+      aud(req, 'alterou horários da rede', 'coletor', { semana: sem });
+      res.json({ ok: true, semana: sem });
+    } catch (e) { res.status(400).json({ erro: e.message }); }
+  });
+  // horários próprios de uma loja (administrador ou franqueado da loja); { semana } ou { propria: false } para voltar aos da rede
+  r.put('/lojas/:id/horarios', lojaPermitida, json, (req, res) => {
+    if (req.perfil !== 'admin' && req.perfil !== 'franqueado') return res.status(403).json({ erro: 'Só o administrador ou o franqueado pode alterar.' });
+    try {
+      const sem = req.body.propria === false ? AG.gravarLoja(req.loja.id, null) : AG.gravarLoja(req.loja.id, req.body.semana);
+      aud(req, sem ? 'alterou horários da loja' : 'voltou aos horários da rede', req.loja.id, { loja: req.loja.id, semana: sem || undefined });
+      res.json({ ok: true, semana: sem });
+    } catch (e) { res.status(400).json({ erro: e.message }); }
   });
 
   r.put('/janela', soAdmin, json, (req, res) => {
