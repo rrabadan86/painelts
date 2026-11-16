@@ -2,7 +2,7 @@
 'use strict';
 (function () {
   const { h, fmt, state } = TS;
-  const TELAS_NOME = [['resumo', 'Resumo'], ['comparativos', 'Comparativos'], ['comissionamento', 'Comissionamento'], ['promocao', 'Promoção'], ['mapa', 'Movimento e escala (mapa de calor)'], ['clientes', 'Clientes (CPF e telefone)'], ['minha', 'Comissão de cada vendedor'], ['estoque', 'Estoque e margem'], ['precos', 'Preços'], ['site', 'Site (preços do e-commerce)'], ['pedido', 'Pedido'], ['dre', 'Resultado (DRE)']];
+  const TELAS_NOME = [['resumo', 'Resumo'], ['comparativos', 'Comparativos'], ['comissionamento', 'Comissionamento'], ['promocao', 'Promoção'], ['mapa', 'Movimento e escala (mapa de calor)'], ['clientes', 'Clientes (CPF e telefone)'], ['minha', 'Comissão de cada vendedor'], ['rentab', 'Produtos → Rentabilidade'], ['precos', 'Produtos → Preços'], ['site', 'Produtos → Site (preços do e-commerce)'], ['estoque', 'Estoque → Estoque'], ['pedido', 'Estoque → Pedido'], ['notas', 'Estoque → Notas fiscais'], ['dre', 'Resultado (DRE)']];
   const TELAS_PADRAO = ['resumo', 'comparativos', 'comissionamento', 'promocao', 'mapa', 'minha'];
   const PERFIL_NOME = { admin: 'Administrador', franqueado: 'Franqueado', gerente: 'Gerente', vendedor: 'Vendedor' };
   const PERFIL_DESC = {
@@ -357,53 +357,82 @@
       if (!ocupado) b.append(formHistorico(l));
     }
     if (ex && ex.log && ex.log.length && !ocupado) b.append(detalhes('log:' + l.id, { class: 'cfg-log' }, h('summary', null, 'Log técnico da última coleta'), logBonito(ex.log)));
-    // histórico das atualizações: vendas e XML importados + coletas de estoque, notas de compra, caixa e FIXE (com as falhas)
     {
-      const TIPO_IMP = (o) => {
-        const s = String(o || '').toLowerCase();
-        if (s.endsWith('historico')) return 'Histórico';
-        if (s.endsWith('agendado') || s === 'automatico') return 'Automática';
-        if (s.endsWith('manual')) return 'Manual (botão)';
-        if (s.includes('painel')) return 'Planilha enviada';
-        if (s.startsWith('api')) return 'Envio por script';
-        if (s.includes('migra')) return 'Migração';
-        return o ? o.replace(/_/g, ' ') : '—';
-      };
-      const PARTE = { vendas: 'Vendas', xml: 'XML', estoque: 'Estoque', compras: 'Notas de compra', caixa: 'Fechamento de caixa', fixe: 'FIXE · pedido no site', fixeEmail: 'FIXE · e-mail importado' };
-      const GRUPO = { vendas: 'vendas', xml: 'xml', estoque: 'estoque', compras: 'estoque', caixa: 'caixa', fixe: 'fixe', fixeEmail: 'fixe' };
-      const per = (de, ate) => (de && ate ? `${dIso(de)} a ${dIso(ate)}` : '—');
-      const linhas = [
-        ...(l.base.importacoes || []).map((i) => ({ em: i.em, parte: 'vendas', ok: true, tipo: TIPO_IMP(i.origem), periodo: per(i.de, i.ate),
-          detalhe: `${fmt.int(i.linhas)} linhas${i.comHora != null && i.linhas ? ` · ${fmt.pct(i.comHora / i.linhas, 0)} com hora` : ''}` })),
-        ...((l.xml && l.xml.importacoes) || []).map((i) => ({ em: i.em, parte: 'xml', ok: true, tipo: '—', periodo: per(i.de, i.ate),
-          detalhe: `${i.total == null ? '?' : fmt.int(i.total)} notas · ${fmt.int(i.comDoc)} com CPF/CNPJ` })),
-        ...(l.eventos || []).map((e) => ({ em: e.em, parte: e.parte, ok: e.ok, tipo: TIPO_IMP(e.gatilho) + (e.por && e.gatilho === 'manual' ? ` · ${e.por}` : ''), periodo: ['vendas', 'xml'].includes(e.parte) ? per(e.de, e.ate) : '—',
-          detalhe: e.ok ? e.detalhe || '' : e.erro || 'falhou (veja o log técnico)' })),
-        // pedido ao FIXE ainda sem os e-mails: linha "aguardando" (vira ✓ ou ✗ quando o e-mail chegar ou passar de 3 h)
-        ...(l.fixe && l.fixe.pedido && l.fixe.pedido.em ? [(() => {
-          const pd = l.fixe.pedido, esp = Array.isArray(pd.tipos) && pd.tipos.length ? pd.tipos : ['leads'], feitos = pd.feitos || {};
-          const nome = (t) => (t === 'logs' ? 'Logs' : 'Base de leads');
-          return { em: pd.em, parte: 'fixeEmail', ok: null, tipo: '—', periodo: '—',
-            detalhe: `aguardando o e-mail do FIXE${pd.email ? ` em ${pd.email}` : ''}: ${esp.map((t) => `${nome(t)} ${feitos[t] ? 'chegou' : 'aguardando'}`).join(' · ')}` };
-        })()] : []),
-      ].filter((x) => x.em).sort((a, b) => Date.parse(b.em) - Date.parse(a.em));
-      if (linhas.length) {
-        const fil = ((state.cfgHist ||= {})[l.id]) || 'todos';
-        const cont = (k) => linhas.filter((x) => k === 'todos' || GRUPO[x.parte] === k).length;
-        const OPS = [['todos', 'Todos'], ['vendas', 'Vendas'], ['xml', 'XML'], ['estoque', 'Estoque'], ['fixe', 'FIXE'], ['caixa', 'Caixa']].filter(([k]) => k === 'todos' || cont(k));
-        const vis = linhas.filter((x) => fil === 'todos' || GRUPO[x.parte] === fil).slice(0, 80);
-        // dentro de um cartão (com o botão ⤢ Expandir, como os outros cartões com tabela)
-        b.append(detalhes('imp:' + l.id, { class: 'cfg-imp' }, h('summary', null, 'Histórico das atualizações'), h('div', { class: 'card cfg-hist-card' },
-          h('div', { class: 'card-head' }, h('div', null, h('div', { class: 'card-title' }, `Histórico das atualizações · ${l.nome}`))),
-          TS.seg(OPS.map(([k, t]) => [`${t} (${cont(k)})`, k]), fil, (v) => { state.cfgHist[l.id] = v; pintar(); }),
-          h('div', { class: 'cfg-imp-wrap table-wrap' }, h('table', { class: 't cfg-t' },
-            h('thead', null, h('tr', null, h('th', { class: 'l' }, 'Quando'), h('th', { class: 'l' }, 'O quê'), h('th', { class: 'l' }, 'Resultado'), h('th', { class: 'l' }, 'Tipo'), h('th', { class: 'l' }, 'Período'), h('th', { class: 'l' }, 'Detalhe'))),
-            h('tbody', null, vis.map((x) => h('tr', null, h('td', { class: 'l nw' }, dt(x.em)), h('td', { class: 'l nw' }, PARTE[x.parte] || x.parte),
-              h('td', { class: 'l nw ' + (x.ok == null ? 'muted' : x.ok ? 'pos' : 'neg') }, x.ok == null ? '⏳ aguardando' : !x.ok ? '✗ falhou' : x.parte === 'fixe' ? '✓ pedido feito' : '✓ ok'), h('td', { class: 'l nw' }, x.tipo), h('td', { class: 'l nw' }, x.periodo), h('td', { class: 'l' }, x.detalhe)))))))));
-      }
+      const c = cartaoHistAtualizacoes(l, () => pintar());
+      if (c) b.append(detalhes('imp:' + l.id, { class: 'cfg-imp' }, h('summary', null, 'Histórico das atualizações'), c));
     }
     return b;
   }
+
+  /** histórico das atualizações de uma loja (vendas e XML importados + coletas de estoque, notas, caixa e FIXE, com as falhas):
+   *  nas Configurações e na janela que abre ao clicar em "Atualizado" no topo */
+  function cartaoHistAtualizacoes(l, repintar) {
+      const TIPO_IMP = (o) => {
+      const s = String(o || '').toLowerCase();
+      if (s.endsWith('historico')) return 'Histórico';
+      if (s.endsWith('agendado') || s === 'automatico') return 'Automática';
+      if (s.endsWith('manual')) return 'Manual (botão)';
+      if (s.includes('painel')) return 'Planilha enviada';
+      if (s.startsWith('api')) return 'Envio por script';
+      if (s.includes('migra')) return 'Migração';
+      return o ? o.replace(/_/g, ' ') : '—';
+    };
+    const PARTE = { vendas: 'Vendas', xml: 'XML', estoque: 'Estoque', compras: 'Notas de compra', caixa: 'Fechamento de caixa', fixe: 'FIXE · pedido no site', fixeEmail: 'FIXE · e-mail importado' };
+    const GRUPO = { vendas: 'vendas', xml: 'xml', estoque: 'estoque', compras: 'estoque', caixa: 'caixa', fixe: 'fixe', fixeEmail: 'fixe' };
+    const per = (de, ate) => (de && ate ? `${dIso(de)} a ${dIso(ate)}` : '—');
+    const linhas = [
+      ...(l.base.importacoes || []).map((i) => ({ em: i.em, parte: 'vendas', ok: true, tipo: TIPO_IMP(i.origem), periodo: per(i.de, i.ate),
+        detalhe: `${fmt.int(i.linhas)} linhas${i.comHora != null && i.linhas ? ` · ${fmt.pct(i.comHora / i.linhas, 0)} com hora` : ''}` })),
+      ...((l.xml && l.xml.importacoes) || []).map((i) => ({ em: i.em, parte: 'xml', ok: true, tipo: '—', periodo: per(i.de, i.ate),
+        detalhe: `${i.total == null ? '?' : fmt.int(i.total)} notas · ${fmt.int(i.comDoc)} com CPF/CNPJ` })),
+      ...(l.eventos || []).map((e) => ({ em: e.em, parte: e.parte, ok: e.ok, tipo: TIPO_IMP(e.gatilho) + (e.por && e.gatilho === 'manual' ? ` · ${e.por}` : ''), periodo: ['vendas', 'xml'].includes(e.parte) ? per(e.de, e.ate) : '—',
+        detalhe: e.ok ? e.detalhe || '' : e.erro || 'falhou (veja o log técnico)' })),
+      // pedido ao FIXE ainda sem os e-mails: linha "aguardando" (vira ✓ ou ✗ quando o e-mail chegar ou passar de 3 h)
+      ...(l.fixe && l.fixe.pedido && l.fixe.pedido.em ? [(() => {
+        const pd = l.fixe.pedido, esp = Array.isArray(pd.tipos) && pd.tipos.length ? pd.tipos : ['leads'], feitos = pd.feitos || {};
+        const nome = (t) => (t === 'logs' ? 'Logs' : 'Base de leads');
+        return { em: pd.em, parte: 'fixeEmail', ok: null, tipo: '—', periodo: '—',
+          detalhe: `aguardando o e-mail do FIXE${pd.email ? ` em ${pd.email}` : ''}: ${esp.map((t) => `${nome(t)} ${feitos[t] ? 'chegou' : 'aguardando'}`).join(' · ')}` };
+      })()] : []),
+    ].filter((x) => x.em).sort((a, b) => Date.parse(b.em) - Date.parse(a.em));
+    if (linhas.length) {
+      const fil = ((state.cfgHist ||= {})[l.id]) || 'todos';
+      const cont = (k) => linhas.filter((x) => k === 'todos' || GRUPO[x.parte] === k).length;
+      const OPS = [['todos', 'Todos'], ['vendas', 'Vendas'], ['xml', 'XML'], ['estoque', 'Estoque'], ['fixe', 'FIXE'], ['caixa', 'Caixa']].filter(([k]) => k === 'todos' || cont(k));
+      const vis = linhas.filter((x) => fil === 'todos' || GRUPO[x.parte] === fil).slice(0, 80);
+      // dentro de um cartão (com o botão ⤢ Expandir, como os outros cartões com tabela)
+        return h('div', { class: 'card cfg-hist-card' },
+        h('div', { class: 'card-head' }, h('div', null, h('div', { class: 'card-title' }, `Histórico das atualizações · ${l.nome}`))),
+        TS.seg(OPS.map(([k, t]) => [`${t} (${cont(k)})`, k]), fil, (v) => { state.cfgHist[l.id] = v; repintar(); }),
+        h('div', { class: 'cfg-imp-wrap table-wrap' }, h('table', { class: 't cfg-t' },
+          h('thead', null, h('tr', null, h('th', { class: 'l' }, 'Quando'), h('th', { class: 'l' }, 'O quê'), h('th', { class: 'l' }, 'Resultado'), h('th', { class: 'l' }, 'Tipo'), h('th', { class: 'l' }, 'Período'), h('th', { class: 'l' }, 'Detalhe'))),
+          h('tbody', null, vis.map((x) => h('tr', null, h('td', { class: 'l nw' }, dt(x.em)), h('td', { class: 'l nw' }, PARTE[x.parte] || x.parte),
+            h('td', { class: 'l nw ' + (x.ok == null ? 'muted' : x.ok ? 'pos' : 'neg') }, x.ok == null ? '⏳ aguardando' : !x.ok ? '✗ falhou' : x.parte === 'fixe' ? '✓ pedido feito' : '✓ ok'), h('td', { class: 'l nw' }, x.tipo), h('td', { class: 'l nw' }, x.periodo), h('td', { class: 'l' }, x.detalhe)))))));
+    }
+        return null;
+  }
+
+  /** janela do histórico das atualizações (clique em "Atualizado", no topo) — admin e franqueado */
+  TS.abrirHistAtualizacoes = async function () {
+    document.querySelector('.camada-hist-at')?.remove();
+    const corpo = h('div', null, h('div', { class: 'loading' }, h('div', null, h('div', { class: 'spinner' }), h('p', null, 'Lendo o histórico…'))));
+    const fechar = () => { camada.remove(); if (!document.querySelector('.camada-cheia')) document.body.classList.remove('com-camada'); document.removeEventListener('keydown', esc); };
+    const esc = (e) => { if (e.key === 'Escape') fechar(); };
+    const caixa = h('div', { class: 'card card-cheio fech-modal hist-at' }, h('button', { type: 'button', class: 'icon-btn exp-fechar', title: 'Fechar (Esc)', 'aria-label': 'Fechar', onclick: fechar }, '✕'), corpo);
+    const camada = h('div', { class: 'camada-cheia camada-hist-at', role: 'dialog', 'aria-modal': 'true', onclick: (e) => { if (e.target === camada) fechar(); } }, caixa);
+    document.body.append(camada); document.body.classList.add('com-camada'); document.addEventListener('keydown', esc);
+    try {
+      const e = await api('GET', '/estado');
+      const lojas = (e.lojas || []).filter((l) => !state.loja || state.loja === 'todas' || l.id === state.loja);
+      let atual = lojas[0];
+      const desenhar = () => {
+        const sel = lojas.length > 1 ? h('select', { class: 'f-input hist-at-sel', onchange: (ev) => { atual = lojas.find((l) => l.id === ev.target.value); desenhar(); } }, lojas.map((l) => h('option', { value: l.id, selected: l === atual || null }, l.nome))) : null;
+        const c = atual && cartaoHistAtualizacoes(atual, desenhar);
+        corpo.replaceChildren(...[sel, c || TS.empty('Ainda não há atualizações registradas.'), h('p', { class: 'muted' }, 'Rodar uma atualização, importar o histórico e ver o log técnico: ', h('a', { href: '#config', onclick: () => fechar() }, 'Configurações → Lojas → Dados e atualização'), '.')].filter(Boolean));
+      };
+      desenhar();
+    } catch (err) { corpo.replaceChildren(h('div', { class: 'notice err' }, err.message)); }
+  };
 
   /** log do coletor mais legível: destaca erros, etapas e o resumo; esconde as linhas de ===== e o traceback */
   function logBonito(linhas) {
@@ -1035,7 +1064,7 @@
       cb.addEventListener('change', () => { cb.checked ? telasSel.add(k) : telasSel.delete(k); });
       return h('label', null, cb, ' ', nomeT);
     }));
-    const campoTelas = campo('Telas que o gerente pode ver', telasBox, 'Clientes mostra CPF, telefone e histórico de compras. Estoque e margem, Preços, Pedido e Resultado mostram custos, margens e o lucro da loja. Site mostra só os preços do e-commerce comparados com os da loja (sem custos). Libere só para quem precisa. Os custos e as configurações continuam só com admin e franqueado.');
+    const campoTelas = campo('Telas que o gerente pode ver', telasBox, 'Clientes mostra CPF, telefone e histórico de compras. Rentabilidade, Preços, Estoque, Pedido, Notas fiscais e Resultado mostram custos, margens e o lucro da loja. Site mostra só os preços do e-commerce comparados com os da loja (sem custos). Libere só para quem precisa. Os custos e as configurações continuam só com admin e franqueado.');
     const campoVend = campo('Quem é no sistema (nome do vendedor)', vendSel, 'Liga o usuário às vendas dele.');
     function pintarLojas() {
       const p = perfil.value;

@@ -103,6 +103,8 @@
       if (!corpo.isConnected) return;
       if (!M) { corpo.replaceChildren(h('div', { class: 'notice' }, 'Ainda não há estoque desta loja: o resultado precisa do custo dos produtos. Envie a planilha de estoque em Configurações → Lojas.')); return; }
       pintar(corpo, M);
+      // ponto de equilíbrio do mês (quanto vender para pagar os fixos) logo depois dos números do topo
+      if (TS.cartaoEquilibrio) { const eq = TS.cartaoEquilibrio(state.loja); const ref = corpo.children[1]; ref ? corpo.insertBefore(eq, ref) : corpo.append(eq); }
     }).catch((e) => corpo.replaceChildren(h('div', { class: 'notice err' }, e.message)));
   };
 

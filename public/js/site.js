@@ -1,4 +1,4 @@
-/* Estoque e Margem → Site: preços do e-commerce (www.teashop.com.br) × os preços praticados nas lojas.
+/* Produtos → Site: preços do e-commerce (www.teashop.com.br) × os preços praticados nas lojas.
  * - Site: o catálogo público é lido todo dia às 10h (e em "Consultar agora"): produto, variante, preço, preço "de"
  *   (promoção) e o link.
  * - Nosso preço: o preço de tabela mais vendido nas últimas 4 semanas com venda (o mesmo "preço praticado" da tela Preços).

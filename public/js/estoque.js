@@ -361,19 +361,39 @@
     return out;
   }
 
-  TS.pages.estoque = function (root) {
-    root.append(TS.subEstoque('estoque'));
-    root.append(h('div', { class: 'page-head' }, h('div', null, h('h1', { class: 'page-title' }, 'Estoque e margem'),
-      h('div', { class: 'page-sub' }, 'Custo de cada venda, produtos mais rentáveis, o que repor e o que está parado')),
-      h('div', { class: 'active-filters' }, h('span', { class: 'af' }, TS.periodoTexto()))));
-    if (!state.loja || state.loja === 'todas') { root.append(h('div', { class: 'notice' }, 'O estoque é de cada loja: escolha uma loja no seletor do topo.')); return; }
+  /** Produtos → Rentabilidade e Estoque → Estoque: a mesma conta, cada tela mostra a sua parte */
+  function telaEstoque(root, modo) {
+    root.append(TS.subEstoque(modo));
+    const T = modo === 'rentab'
+      ? ['Rentabilidade', 'Quais produtos dão lucro: giro × margem, curva ABC, margem de tabela, kits e lucro por vendedora']
+      : ['Estoque', 'O que repor, o que está parado e quanto vale o estoque'];
+    root.append(h('div', { class: 'page-head' }, h('div', null, h('h1', { class: 'page-title' }, T[0]), h('div', { class: 'page-sub' }, T[1])),
+      modo === 'rentab' ? h('div', { class: 'active-filters' }, h('span', { class: 'af' }, TS.periodoTexto())) : null));
+    if (!state.loja || state.loja === 'todas') { root.append(h('div', { class: 'notice' }, 'É de cada loja: escolha uma loja no seletor do topo.')); return; }
     const corpo = h('div', null, h('div', { class: 'loading' }, h('div', null, h('div', { class: 'spinner' }), h('p', null, 'Lendo o estoque…'))));
     root.append(corpo);
-    buscar(state.loja).then((x) => { if (corpo.isConnected) pintar(corpo, x); }).catch((e) => corpo.replaceChildren(h('div', { class: 'notice err' }, e.message)));
+    buscar(state.loja).then((x) => { if (corpo.isConnected) pintar(corpo, x, modo); }).catch((e) => corpo.replaceChildren(h('div', { class: 'notice err' }, e.message)));
+  }
+  TS.pages.estoque = (root) => telaEstoque(root, 'estoque');
+  /** abre o Pedido na aba "Todos" já buscando o produto */
+  TS.irParaPedido = (nome) => {
+    TS._buscas = { tela: '#pedido', v: { 'Buscar produto…|produto,cod': nome } };
+    state.pedFiltro = 'todos';
+    location.hash = '#pedido';
+  };
+  TS.pages.rentab = (root) => telaEstoque(root, 'rentab');
+  /** cartão do ponto de equilíbrio (fica no Resultado) */
+  TS.cartaoEquilibrio = function (loja) {
+    const box = h('div', { class: 'mt' });
+    buscar(loja).then((x) => { if (box.isConnected || true) pintar(box, x, 'equilibrio'); }).catch(() => box.replaceChildren());
+    return box;
   };
 
-  function pintar(corpo, { estoque, cfg, historico, classe: ccfg, tabela }) {
+  function pintar(corpo, { estoque, cfg, historico, classe: ccfg, tabela }, modo = 'estoque') {
     corpo.replaceChildren();
+    // cada tela põe só a sua parte (a conta é a mesma)
+    const R = modo === 'rentab', E = modo === 'estoque', EQ = modo === 'equilibrio';
+    const put = (vale, ...els) => { if (vale) corpo.append(...els.filter(Boolean)); };
     if (!estoque || !estoque.itens || !estoque.itens.length) {
       corpo.append(h('div', { class: 'card' }, h('div', { class: 'card-title' }, 'Ainda não há estoque desta loja'),
         h('p', null, 'No AppNext: Estoque → Estoque Atual → botão verde "Exportar para Excel". Envie o arquivo em Configurações → Lojas → Enviar planilha → "Estoque atual e custos". Depois disso o coletor baixa sozinho em cada atualização.')));
@@ -382,7 +402,7 @@
     const db = TS.db;
     const M = motor(estoque, cfg);
     const temCod = db.D.cod && db.D.cod.some((c) => c);
-    corpo.append(h('div', { class: 'muted est-origem' }, `Estoque e custos do AppNext de ${new Date(estoque.em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })} · ${fmt.int(estoque.itens.length)} produtos`,
+    put(!EQ, h('div', { class: 'muted est-origem' }, `Estoque e custos do AppNext de ${new Date(estoque.em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })} · ${fmt.int(estoque.itens.length)} produtos`,
       temCod ? '' : ' · as vendas ainda não têm o código do produto: o casamento está sendo feito pelo nome (veja "Vendas sem custo" no fim)'));
 
     const { deducoes, OUTROS, taxaOutro, mediaFat, ONDE_FAT, pSimples, pCartao, CATS, catDe } = criarDeducoes(M, cfg);
@@ -906,15 +926,16 @@
     kCon.classList.add('est-kpi-click');
     kCon.addEventListener('click', (e) => abrirLiq(e, { produto: 'todos os produtos com custo', vt: fatCusto, custo: custoTot, lucro, ...dedTot, outros: outrosTot, ded: dedSoma, lucroLiq: lucroLiqTot }));
     kLiq.addEventListener('click', (e) => abrirLiq(e, { produto: 'todos os produtos com custo', vt: fatCusto, custo: custoTot, lucro, ...dedTot, outros: outrosTot, ded: dedSoma, lucroLiq: lucroLiqTot }));
-    corpo.append(h('div', { class: 'grid g-kpi' },
+    put(R, h('div', { class: 'grid g-kpi' },
       TS.kpi('Lucro bruto', fmt.brl0(lucro), h('span', null, `margem de ${fmt.pct(fatCusto ? lucro / fatCusto : null)}`), 'Faturamento − custo dos produtos (com embalagem nos chás a granel), só das vendas que têm custo'),
       kCon, kLiq,
-      TS.kpi('Vendas com custo', fmt.pct(fat ? fatCusto / fat : null, 0), `${fmt.brl0(fatCusto)} de ${fmt.brl0(fat)}`, 'Parte do faturamento (sem taxas) cujo custo o painel encontrou'),
+      TS.kpi('Vendas com custo', fmt.pct(fat ? fatCusto / fat : null, 0), `${fmt.brl0(fatCusto)} de ${fmt.brl0(fat)}`, 'Parte do faturamento (sem taxas) cujo custo o painel encontrou')));
+    put(E, h('div', { class: 'grid g-kpi' },
       TS.kpi('Estoque a custo', fmt.brl0(valorEstoque), `${fmt.int(estoque.itens.filter((i) => i.qtd > 0).length)} produtos com saldo`),
       TS.kpi('Para repor', fmt.int(repor.length), h('span', { class: urgentes ? 'down' : '' }, `${fmt.int(urgentes)} ${urgentes === 1 ? 'urgente' : 'urgentes'} · pedido ${fmt.brl0(repor.reduce((s, r) => s + r.custoPedido, 0))}`), 'Urgente = acabou ou acaba antes de o pedido chegar'),
       TS.kpi('Estoque parado', fmt.brl0(valorParado), `${fmt.int(parados.length)} produtos sem venda há ${cfg.paradoDias}+ dias`)));
 
-    corpo.append(h('div', { class: 'mt' }, cartaoEquilibrio()));
+    if (EQ) { corpo.append(cartaoEquilibrio()); return; }
 
     // ---------- matriz giro × margem ----------
     const med = (xs) => { const s = [...xs].sort((a, b) => a - b); return s.length ? s[Math.floor(s.length / 2)] : 0; };
@@ -997,7 +1018,7 @@
     let ac = 0;
     for (const p of ord) { ac += Math.max(0, p.lucro); p.abc = !lucroPos ? 'C' : ac / lucroPos <= 0.8 ? 'A' : ac / lucroPos <= 0.95 ? 'B' : 'C'; }
 
-    corpo.append(TS.section('Rentabilidade'));
+    if (R) {
     const conta = Object.fromEntries(Object.keys(CLASSE).map((k) => [k, prodsG.filter((p) => p.classe === k).length]));
     const un = grSel ? 'kg' : 'un.';
     const fq = (v) => (grSel ? `${fmt.kg(v)} kg` : `${fmt.int(v)} un.`);
@@ -1034,7 +1055,7 @@
       }, 'tall') : TS.empty())));
     corpo.append(h('div', { class: 'mt' }, TS.card('Produtos por lucro', 'Curva ABC: A = produtos que fazem 80% do lucro (nunca podem faltar). Chá a granel aparece uma vez só, somando todas as gramaturas. A classe (Estrela, Volume…) compara chá com chá e acessório com acessório: "No período" usa o filtro; "Oficial" é fixa e é a que o Pedido usa; "Tendência" mostra se o produto está saindo acima ou abaixo do normal.', ctlMeses, TS.table({
       cols: [
-        { key: 'produto', label: 'Produto', align: 'l', sticky: true, wrap: true, render: (r) => (r.granel && r.porTam ? h('button', { type: 'button', class: 'est-prod-btn', title: 'Ver lucro e margem de cada tamanho de pacote', onclick: (e) => abrirTamanhos(e, r) }, h('span', { class: 'est-seta', 'aria-hidden': 'true' }, '▸'), h('span', null, h('span', { class: 'est-prod-nome' }, r.produto), h('small', { class: 'est-tam' }, r.tamanhos, h('span', { class: 'est-ver' }, ' · ver por pacote')))) : r.granel ? h('span', null, r.produto, h('small', { class: 'est-tam' }, r.tamanhos)) : r.produto) },
+        { key: 'produto', label: 'Produto', align: 'l', sticky: true, wrap: true, render: (r) => h('span', null, (r.granel && r.porTam ? h('button', { type: 'button', class: 'est-prod-btn', title: 'Ver lucro e margem de cada tamanho de pacote', onclick: (e) => abrirTamanhos(e, r) }, h('span', { class: 'est-seta', 'aria-hidden': 'true' }, '▸'), h('span', null, h('span', { class: 'est-prod-nome' }, r.produto), h('small', { class: 'est-tam' }, r.tamanhos, h('span', { class: 'est-ver' }, ' · ver por pacote')))) : r.granel ? h('span', null, r.produto, h('small', { class: 'est-tam' }, r.tamanhos)) : r.produto), (TS.telasEstoque || []).includes('pedido') ? h('a', { href: '#pedido', class: 'est-ir', title: 'Abrir o Pedido já buscando este produto', onclick: (e) => { e.preventDefault(); TS.irParaPedido(r.produto); } }, 'no pedido ›') : null) },
         { key: 'abc', label: 'ABC', title: 'Curva ABC pelo lucro: A = produtos que somam 80% do lucro do período; B = os próximos 15%; C = o resto', cls: (r) => (r.abc === 'A' ? 'hit' : '') },
         { key: 'classe', label: 'No período', align: 'l', title: 'Classe só com as vendas do filtro de período (a do gráfico acima). Mostra o momento: uma promoção pode puxar um produto para cima aqui', render: (r) => tagCl(r.classe), sortVal: (r) => ORD_CL[r.classe] || 0 },
         { key: 'oficial', label: 'Oficial', align: 'l', title: `Classe oficial: a mediana do que saiu por mês nos últimos ${CO.meses} meses fechados × a margem bruta. Um mês de promoção pesa pouco. Não muda com o filtro e é a que o Pedido usa. ${podeTravar ? 'Escolha uma classe para travar à mão (🔒); "Automática" volta para a conta.' : '🔒 = travada à mão.'}`, render: (r) => celOficial(r), sortVal: (r) => ORD_CL[r.oficial] || 0 },
@@ -1077,6 +1098,7 @@
     // ---------- kits: produtos que saem juntos no mesmo cupom ----------
     corpo.append(TS.section('Combos e kits'));
     corpo.append(h('div', { class: 'mt' }, cartaoKits()));
+    }
     function cartaoKits() {
       const DESC_KIT = (state.estKitDesc ?? 10);
       const cupons = new Map(); // cupom → Set(produto)
@@ -1141,8 +1163,7 @@
     }
 
     // ---------- reposição ----------
-    corpo.append(TS.section('Reposição'));
-    corpo.append(h('div', { class: 'mt' }, cartaoSazonal()));
+    put(E, h('div', { class: 'mt' }, cartaoSazonal()));
     function cartaoSazonal() {
       if (!temAnoPassado) return TS.card('Próximas semanas', null, h('p', { class: 'muted' }, 'A previsão por época do ano aparece quando a loja tiver mais de um ano de vendas no painel. Até lá, a reposição usa o ritmo dos últimos 30 dias.'));
       // faturamento por semana (sem taxas): 8 semanas passadas e as 8 que vêm, este ano e o ano passado
@@ -1182,9 +1203,10 @@
     }
     const sitSel = state.estSit || 'repor';
     const linhasRepo = sitSel === 'repor' ? repor : repo;
+    const podePed = (TS.telasEstoque || []).includes('pedido');
     const tabRepo = TS.table({
         cols: [
-          { key: 'produto', label: 'Produto', align: 'l', sticky: true, wrap: true },
+          { key: 'produto', label: 'Produto', align: 'l', sticky: true, wrap: true, render: (r) => h('span', null, r.produto, podePed ? h('a', { href: '#pedido', class: 'est-ir', title: 'Abrir o Pedido já buscando este produto', onclick: (e) => { e.preventDefault(); TS.irParaPedido(r.produto); } }, 'no pedido ›') : null) },
           { key: 'tipo', label: 'Tipo', align: 'l', title: 'Chá a granel (em kg, vendido em pacotes de vários tamanhos), produto pronto ou insumo/embalagem (saco kraft, etiqueta…)' },
           { key: 'sit', label: 'Situação', align: 'l', title: 'Passe o mouse na etiqueta de cada linha para ver o motivo', render: (r) => h('span', { class: 'badge ' + SIT[r.sit][1], title: porque(r) }, SIT[r.sit][0]), sortVal: (r) => -SIT[r.sit][2] },
           { key: 'qtd', label: 'Estoque', title: 'Saldo de agora, da última planilha de estoque do AppNext', render: (r) => qtdTxt(r.qtd, r.it) },
@@ -1201,7 +1223,7 @@
         rows: linhasRepo, sortKey: 'sit', maxHeight: '560px', produto: 'produto', imprimir: ['produto', 'sit', 'qtd', 'prev', 'dias', 'pedir', 'custoPedido'], search: 'Buscar produto…', searchKeys: ['produto', 'cod'], searchInit: state.estBusca || '', onSearch: (v) => { state.estBusca = v; }, cls: 'est-t', empty: 'Nada para repor agora.',
     });
     const csv = h('button', { type: 'button', class: 'btn', onclick: () => baixarPedido(repor) }, '⬇ Baixar pedido (CSV)');
-    corpo.append(h('div', { class: 'mt' }, TS.cardWithTools('O que repor',
+    put(E, h('div', { class: 'mt' }, TS.cardWithTools('O que repor',
       h('span', null, `Ritmo dos últimos 30 dias ajustado pela época do ano (coluna Previsão/dia) · entrega em ${ent} dias · pedido para ${cob} dias de venda. Chás a granel em kg (inclui o consumo de saco kraft e etiquetas).`,
         h('span', { class: 'est-minres' }, ` Mínimo do AppNext comparado com o sugerido (em "Tudo que vende"): `,
           h('b', { class: 'est-sug est-sug-baixo' }, `${fmt.int(repo.filter((r) => r.minSit === 'baixo').length)} baixos`), ' · ',
@@ -1210,7 +1232,7 @@
       h('div', { class: 'est-tools' }, tabRepo.searchBox && (tabRepo.searchBox.classList.add('est-busca'), tabRepo.searchBox), TS.seg([['Só o que repor', 'repor'], ['Tudo que vende', 'todos']], sitSel, (v) => { state.estSit = v; TS.render(); }), csv),
       tabRepo)));
 
-    corpo.append(h('div', { class: 'mt' }, TS.card('Estoque parado', `Produtos com saldo e sem venda há ${cfg.paradoDias} dias ou mais: dinheiro empatado. Pense em vitrine, degustação, kit ou promoção.`, TS.table({
+    put(E, h('div', { class: 'mt' }, TS.card('Estoque parado', `Produtos com saldo e sem venda há ${cfg.paradoDias} dias ou mais: dinheiro empatado. Pense em vitrine, degustação, kit ou promoção.`, TS.table({
       cols: [
         { key: 'produto', label: 'Produto', align: 'l', sticky: true, wrap: true },
         { key: 'tipo', label: 'Tipo', align: 'l' },
@@ -1221,11 +1243,12 @@
       rows: parados, sortKey: 'valor', maxHeight: '420px', cls: 'est-t', search: 'Buscar produto…', searchKeys: ['produto', 'cod'], produto: 'produto', empty: 'Nada parado. 👏',
     }))));
 
-    corpo.append(h('p', { class: 'muted mt' }, 'Reajustes de custo e de venda e o efeito na margem de cada produto: ', h('a', { href: '#precos' }, 'Estoque e Margem → Preços'), '.'));
+    put(R, h('p', { class: 'muted mt' }, 'Reajustes de custo e de venda e o efeito na margem de cada produto: ', h('a', { href: '#precos' }, 'Produtos → Preços'), '.'));
+    put(E, h('p', { class: 'muted mt' }, 'Margem e lucro de cada produto: ', h('a', { href: '#rentab' }, 'Produtos → Rentabilidade'), ' · notas de entrada: ', h('a', { href: '#notas' }, 'Estoque → Notas fiscais'), '.'));
 
     // ---------- conferência ----------
     const sc = [...semCusto.values()].map((x) => (x.granel ? { ...x, tamanhos: tamTxt(x.tam) } : x)).sort((a, b) => b.vt - a.vt);
-    if (sc.length) corpo.append(h('details', { class: 'card est-sem' }, h('summary', null, `Vendas sem custo: ${fmt.brl0(sc.reduce((s, x) => s + x.vt, 0))} em ${fmt.int(sc.length)} produtos (ficam fora da margem)`),
+    if (sc.length && R) corpo.append(h('details', { class: 'card est-sem' }, h('summary', null, `Vendas sem custo: ${fmt.brl0(sc.reduce((s, x) => s + x.vt, 0))} em ${fmt.int(sc.length)} produtos (ficam fora da margem)`),
       h('p', { class: 'muted' }, 'Chá a granel aparece uma vez, somando todos os tamanhos (50g, 100g, 250g…), porque todos saem da mesma matéria-prima: o custo vem do kg dela. Se a matéria-prima "não está na planilha de estoque", normalmente é porque está com saldo zero no AppNext (o relatório esconde item zerado) — assim que ela tiver saldo e a planilha for atualizada, o custo entra. Corrija no AppNext os itens com "custo zero". Itens do Espaço Gourmet preparados na loja não têm custo no estoque.'),
       TS.table({ cols: [{ key: 'produto', label: 'Produto vendido', align: 'l', wrap: true, render: (r) => (r.granel ? h('span', null, r.produto, h('small', { class: 'est-tam' }, r.tamanhos)) : r.produto) }, { key: 'cod', label: 'Código', align: 'l' }, { key: 'motivo', label: 'Motivo', align: 'l', title: '"custo zero no AppNext": o produto existe mas está sem custo lá. "não achado no estoque": o painel não encontrou o produto na planilha de estoque' }, { key: 'qtd', label: 'Unid.', fmt: fmt.int }, { key: 'vt', label: 'Faturamento', fmt: fmt.brl }], rows: sc, sortKey: 'vt', maxHeight: '360px', cls: 'est-t' })));
 
@@ -1353,7 +1376,7 @@
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j.erro || 'Falha ao salvar.');
         cache.delete(lojaId);
-        status('pos', 'Salvo. A aba Estoque e margem já usa os valores novos.');
+        status('pos', 'Salvo. As telas de Produtos, Estoque e Resultado já usam os valores novos.');
         if (opts.aoSalvar) opts.aoSalvar();
       } catch (e) { status('neg', e.message); }
       salvar.disabled = salvar2.disabled = false;

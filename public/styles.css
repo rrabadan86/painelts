@@ -1563,3 +1563,21 @@ td.site-dif { color: #B5452B; font-weight: 600; }
 .prc-drawer.prc-drawer-largo { width: min(900px, 96vw); }
 .prc-nota-info { font-size: 12px; margin-top: 6px; }
 .prc-nf-prt { float: right; margin-top: -4px; }
+.f-uso { background: #FFF8E1; border-radius: 8px; padding: 8px 10px; margin-bottom: 12px; color: #6b5a2a; }
+.updated.clicavel { cursor: pointer; border-radius: 8px; }
+.updated.clicavel:hover { background: rgba(255,255,255,.08); }
+.hist-at { max-width: 1100px; }
+.hist-at-sel { max-width: 300px; margin-bottom: 10px; }
+.est-ir { display: block; font-size: 11px; color: var(--green, #2C5234); text-decoration: none; margin-top: 2px; }
+.est-ir:hover { text-decoration: underline; }
+/* Início */
+.ini-avisos { display: grid; gap: 8px; margin-top: 10px; }
+.ini-aviso { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line, #E2DCCF); background: #fff; }
+.ini-aviso[role=button] { cursor: pointer; }
+.ini-aviso[role=button]:hover { border-color: var(--green, #2C5234); }
+.ini-aviso > div { flex: 1; min-width: 0; }
+.ini-aviso .muted { font-size: 12px; margin-top: 2px; }
+.ini-ico { flex: none; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; color: #fff; background: #9AA59D; }
+.ini-erro .ini-ico { background: #B5452B; } .ini-warn .ini-ico { background: #C9A227; } .ini-info .ini-ico { background: #4E7D96; } .ini-ok .ini-ico { background: #2C5234; }
+.ini-ir { flex: none; font-size: 12px; font-weight: 600; color: var(--green, #2C5234); }
+.ini-pend { margin-top: 10px; font-size: 12px; }

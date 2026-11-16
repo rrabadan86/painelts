@@ -3,7 +3,7 @@
 (function () {
   const { h, fmt, state } = TS;
   const content = document.getElementById('content');
-  let PAGES = ['resumo', 'comparativos', 'comissionamento', 'promocao', 'mapa', 'clientes', 'minha'];
+  let PAGES = ['inicio', 'resumo', 'comparativos', 'comissionamento', 'promocao', 'mapa', 'clientes', 'minha'];
   TS.paginas = () => PAGES;
 
   // ---- manter o campo em que a pessoa está digitando quando a tela é redesenhada ----
@@ -184,8 +184,11 @@
       TS.aviso = aviso ? 'Não consegui atualizar agora; mostrando os dados anteriores. Motivo: ' + decodeURIComponent(aviso) : null;
       const em = new Date(res.headers.get('X-Dados-Em') || body.geradoEm);
       document.getElementById('updated').replaceChildren('Atualizado', h('b', null, em.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })));
-      const fontes = (body.fontes || []).filter((f) => f.origem).map((f) => `${f.loja ? f.loja + ' · ' : ''}${f.nome}: ${f.origem === 'vps' ? 'VPS, arquivo de ' + new Date(f.modificado).toLocaleString('pt-BR') : 'Google Drive'}${f.ok === false ? ' (FALHOU)' : ''}`);
-      document.getElementById('updated').title = `Dados processados em ${em.toLocaleString('pt-BR')}. Vendas até ${fmt.date(TS.dayToIso(TS.db.maxDay))}.\n\nFontes:\n${fontes.join('\n')}`;
+      const upd = document.getElementById('updated');
+      const podeHist = TS.eu && TS.eu.pode && TS.eu.pode.configurar && TS.abrirHistAtualizacoes && !TS.demo;
+      upd.title = `Dados processados em ${em.toLocaleString('pt-BR')}. Vendas até ${fmt.date(TS.dayToIso(TS.db.maxDay))}.${podeHist ? '\n\nClique para ver o histórico das atualizações.' : ''}`;
+      upd.classList.toggle('clicavel', !!podeHist);
+      if (podeHist && !upd.dataset.ligado) { upd.dataset.ligado = '1'; upd.setAttribute('role', 'button'); upd.tabIndex = 0; upd.addEventListener('click', () => TS.abrirHistAtualizacoes()); upd.addEventListener('keydown', (e) => { if (e.key === 'Enter') TS.abrirHistAtualizacoes(); }); }
       if (primeira) { if (!lerEstado()) TS.aplicarPreset('30d'); rota(); } else if (state.page !== 'config') TS.render();
     } catch (e) {
       console.error(e);
@@ -242,16 +245,19 @@
    * Menu por assunto: Vendas · Clientes · Equipe · Estoque e Margem · ⚙. Cada grupo mostra só as telas que a pessoa pode ver;
    * grupo com uma tela só vira uma aba com o nome da tela; com mais de uma, a tela tem um submenu no topo.
    */
-  const ROTULO = { resumo: 'Resumo', comparativos: 'Comparativos', promocao: 'Promoção', clientes: 'Clientes', campanhas: 'Campanhas',
-    comissionamento: 'Comissionamento', minha: 'Minha comissão', mapa: 'Movimento e escala', estoque: 'Estoque e margem', precos: 'Preços', site: 'Site', pedido: 'Pedido', dre: 'Resultado' };
+  const ROTULO = { inicio: 'Início', resumo: 'Resumo', comparativos: 'Comparativos', promocao: 'Promoção', clientes: 'Clientes', campanhas: 'Campanhas',
+    comissionamento: 'Comissionamento', minha: 'Minha comissão', mapa: 'Movimento e escala', rentab: 'Rentabilidade', precos: 'Preços', site: 'Site', estoque: 'Estoque', pedido: 'Pedido', notas: 'Notas fiscais', dre: 'Resultado' };
   TS.GRUPOS = [];
   function montarMenu(grupoEst, temConfig) {
     const tabs = document.getElementById('tabs');
     const G = [
+      ['Início', ['inicio']],
       ['Vendas', ['resumo', 'comparativos', 'promocao']],
       ['Clientes', ['clientes', 'campanhas']],
       ['Equipe', ['comissionamento', 'minha', 'mapa']],
-      ['Estoque e Margem', grupoEst],
+      ['Produtos', grupoEst.filter((p) => ['rentab', 'precos', 'site'].includes(p))],
+      ['Estoque', grupoEst.filter((p) => ['estoque', 'pedido', 'notas'].includes(p))],
+      ['Resultado', grupoEst.filter((p) => p === 'dre')],
     ].map(([nome, ps]) => [nome, ps.filter((p) => PAGES.includes(p))]).filter(([, ps]) => ps.length);
     TS.GRUPOS = G;
     tabs.replaceChildren(...G.map(([nome, ps]) => h('a', { href: '#' + ps[0], 'data-page': ps[0], 'data-grupo': ps.join(',') }, ps.length === 1 ? ROTULO[ps[0]] : nome)));
@@ -279,7 +285,7 @@
       return;
     }
     if (eu.perfil === 'vendedor') PAGES = TS.PAGINAS_VENDEDOR;
-    else if (Array.isArray(eu.telas)) PAGES = PAGES.filter((p) => eu.telas.includes(p) && (p !== 'clientes' || eu.pode?.clientes));
+    else if (Array.isArray(eu.telas)) PAGES = PAGES.filter((p) => p === 'inicio' || (eu.telas.includes(p) && (p !== 'clientes' || eu.pode?.clientes))); // Início: todos (só mostra o que a pessoa pode ver)
     else if (!eu.pode?.clientes) PAGES = PAGES.filter((p) => p !== 'clientes');
     if (!PAGES.length) PAGES = ['resumo'];
     // "minha" (comissão do próprio vendedor / por vendedor para o gerente sem o Comissionamento completo)
@@ -290,7 +296,8 @@
     if (eu.perfil === 'vendedor') document.body.classList.add('perfil-vendedor');
     if (PAGES.includes('clientes')) PAGES.splice(PAGES.indexOf('clientes') + 1, 0, 'campanhas');
     // Estoque e Margem: admin e franqueado veem tudo; gerente só as telas liberadas em Configurações → Usuários
-    const EST = ['estoque', 'precos', 'site', 'pedido', 'dre'];
+    // Produtos (Rentabilidade, Preços, Site), Estoque (Estoque, Pedido, Notas fiscais) e Resultado
+    const EST = ['rentab', 'precos', 'site', 'estoque', 'pedido', 'notas', 'dre'];
     const grupoEst = eu.pode?.configurar ? EST : EST.filter((p) => (eu.telas || []).includes(p));
     TS.telasEstoque = grupoEst;
     PAGES = [...PAGES.filter((p) => !grupoEst.includes(p)), ...grupoEst];

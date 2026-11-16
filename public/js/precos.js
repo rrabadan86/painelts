@@ -1,4 +1,4 @@
-/* Estoque e Margem → Preços: histórico de reajustes de custo e de venda de cada produto vendido e o efeito na margem bruta.
+/* Produtos → Preços: histórico de reajustes de custo e de venda de cada produto vendido e o efeito na margem bruta.
  * - Custo: notas de compra do AppNext (Entrada de Produtos, guardadas pelo coletor em compras.json) + o custo de cada
  *   importação de estoque (custos.json). Para os chás,
  *   custo do pacote = kg do chá × tamanho + embalagem (a mesma conta do Estoque e margem). Antes do primeiro registro,
@@ -174,7 +174,7 @@
         TS.kpi('Histórico de custo desde', inicioCusto ? quando(inicioCusto) : '—', D.temCompras ? 'notas de compra do AppNext + importações de estoque' : 'o painel guarda o custo a cada importação de estoque',
           'O AppNext só informa o custo de hoje. Antes desta data, o custo é estimado pelo mais antigo conhecido.')),
       h('div', { class: 'mt' }, tabela(linhas, FIL, filtro, corpo, D)),
-      h('div', { class: 'prc-notas' }, cartaoNotas(D)));
+      h('p', { class: 'muted mt' }, 'As notas de entrada, com os produtos e valores de cada uma, ficam em ', h('a', { href: '#notas' }, 'Estoque → Notas fiscais'), '.'));
   }
 
   function variacao(ant, at, v, dia, ehCusto, kg) {
@@ -328,7 +328,7 @@
         ...es.map((x) => h('div', { class: 'prc-tl-l' }, h('b', null, x.tipo === 'custo' ? 'Custo ' : 'Venda '), `${fmt.brl(x.de)} → ${fmt.brl(x.v)} `,
           h('span', { class: 'prc-badge ' + ((x.tipo === 'custo' ? x.v > x.de : x.v < x.de) ? 'prc-ruim' : 'prc-bom') }, pctTxt(x.v / x.de - 1)))),
         h('div', { class: 'prc-tl-m muted' }, `Margem bruta depois: ${v && c != null ? fmt.pct((v - c) / v) : '—'}${cR == null && c != null ? ' (custo estimado)' : ''}`),
-        h('div', { class: 'prc-tl-o muted' }, es.map((x) => (x.tipo === 'custo' ? (x.nfs && x.nfs.length ? `Origem: entrada NF nº ${[...new Set(x.nfs.map((o) => o.nf))].join(', ')}${x.nfs[0].forn ? ` (${x.nfs[0].forn})` : ''}` : 'Origem: custo do estoque do AppNext (coletor)') : `Origem: preço praticado nas vendas (primeira venda a ${fmt.brl(x.v)})`)).join(' · ')));
+        h('div', { class: 'prc-tl-o muted' }, ...es.map((x, k) => [k ? ' · ' : '', x.tipo === 'custo' ? (x.nfs && x.nfs.length ? h('span', null, 'Origem: entrada NF nº ', ...[...new Set(x.nfs.map((o) => o.nf))].map((nf, j) => [j ? ', ' : '', h('a', { href: '#notas', title: 'Abrir a nota', onclick: () => { state.abrirNF = nf; } }, String(nf))]).flat(), x.nfs[0].forn ? ` (${x.nfs[0].forn})` : '') : 'Origem: custo do estoque do AppNext (coletor)') : `Origem: preço praticado nas vendas (primeira venda a ${fmt.brl(x.v)})`]).flat()));
     });
     if (!itens.length) itens.push(h('li', { class: 'muted' }, 'Nenhum reajuste registrado. O custo vem das notas de compra e das importações de estoque; a venda, das vendas desde o início da base.'));
     // simulador rápido: novo preço → margem bruta (o preço é alterado no AppNext)
@@ -363,14 +363,31 @@
     document.body.classList.add('com-camada');
     document.addEventListener('keydown', esc);
   }
-  // ---------- notas fiscais de entrada (Estoque → Entrada de Produtos do AppNext) ----------
+  // ---------- Estoque → Notas fiscais: notas de entrada (Estoque → Entrada de Produtos do AppNext) ----------
+  TS.pages.notas = function (root) {
+    if (TS.subEstoque) root.append(TS.subEstoque('notas'));
+    root.append(h('div', { class: 'page-head' }, h('div', null, h('h1', { class: 'page-title' }, 'Notas fiscais'),
+      h('div', { class: 'page-sub' }, 'Notas de entrada do AppNext: produtos, quantidades, valores e o que mudou no custo'))));
+    if (!state.loja || state.loja === 'todas') { root.append(h('div', { class: 'notice' }, 'As notas são de cada loja: escolha uma loja no seletor do topo.')); return; }
+    const corpo = h('div', { class: 'prc-notas' }, h('div', { class: 'loading' }, h('div', null, h('div', { class: 'spinner' }), h('p', null, 'Lendo as notas…'))));
+    root.append(corpo);
+    const loja = state.loja;
+    TS.estoqueBuscar(loja).then((e) => {
+      if (!corpo.isConnected) return;
+      corpo.replaceChildren(cartaoNotas({ loja, hist: e.historico || {}, comprasItens: (e.compras && e.compras.itens) || {} }));
+    }).catch((err) => corpo.replaceChildren(h('div', { class: 'notice err' }, err.message)));
+  };
   const cacheNotas = new Map();
   function cartaoNotas(D) {
     const box = h('div', { class: 'mt' }, h('div', { class: 'card' }, h('div', { class: 'loading' }, h('div', null, h('div', { class: 'spinner' }), h('p', null, 'Lendo as notas fiscais…')))));
     const loja = D.loja;
     const p = cacheNotas.get(loja) || fetch(TS.api(`estoque/notas?loja=${encodeURIComponent(loja)}`), { credentials: 'same-origin' }).then(async (r) => { const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.erro || 'Falha ao ler as notas.'); return j; });
     cacheNotas.set(loja, p);
-    p.then((j) => box.replaceChildren(listaNotas(D, j))).catch((e) => { cacheNotas.delete(loja); box.replaceChildren(h('div', { class: 'notice err' }, e.message)); });
+    p.then((j) => {
+      box.replaceChildren(listaNotas(D, j));
+      // veio de um link ("NF nº …" no histórico de um produto): abre a nota
+      if (state.abrirNF != null) { const n = (j.notas || []).find((x) => String(x.nf) === String(state.abrirNF)); state.abrirNF = null; if (n) abrirNota(D, { ...n, dia: TS.isoToDay(n.entrada || n.emissao), nfTxt: `${n.nf ?? '—'}${n.serie ? ' / ' + n.serie : ''}` }); }
+    }).catch((e) => { cacheNotas.delete(loja); box.replaceChildren(h('div', { class: 'notice err' }, e.message)); });
     return box;
   }
   function listaNotas(D, j) {

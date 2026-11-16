@@ -409,7 +409,7 @@
           li('Embalagens e insumos', '(saco kraft, etiquetas) entram primeiro, fora da proporção.'),
           li('Divisão do valor:', R.propManual ? 'o resto vai para cada grupo pela proporção que você definiu; grupo com 0% fica fora (dá para pôr à mão).' : 'o resto vai para chás a granel, envasados e acessórios na mesma proporção das vendas do período.', ` Cada grupo pode passar ${fmt.int(par.folgaPct ?? 10)}% da sua parte (folga).`),
           li('Ordem dentro de cada grupo:', '1º chás a granel com estoque abaixo de 500 g (entram sempre, mesmo que a previsão não peça, desde que tenham vendido nos últimos 90 dias); 2º chás Estrela abaixo de 700 g; 3º o que acaba antes da entrega; depois quem deixa mais lucro sem fixos por dia. Produto que não cabe inteiro entra com parte da necessidade.'),
-          li('Classe (Estrela, Volume, Joia, Peso morto):', `é a classe oficial, a mesma do Estoque e margem. Usa a mediana do que o produto vendeu por mês nos últimos ${R.classeMeses} meses fechados, então um mês de promoção pesa pouco, e a margem bruta do período. Não muda com o filtro de período. A janela (3, 6 ou 12 meses) muda aqui, acima da tabela ("Classe pelos últimos"), ou no Estoque e margem → Produtos por lucro; as classes travadas à mão (🔒) ficam no Estoque e margem.`),
+          li('Classe (Estrela, Volume, Joia, Peso morto):', `é a classe oficial, a mesma da Rentabilidade. Usa a mediana do que o produto vendeu por mês nos últimos ${R.classeMeses} meses fechados, então um mês de promoção pesa pouco, e a margem bruta do período. Não muda com o filtro de período. A janela (3, 6 ou 12 meses) muda aqui, acima da tabela ("Classe pelos últimos"), ou em Produtos → Rentabilidade → Produtos por lucro; as classes travadas à mão (🔒) ficam na Rentabilidade.`),
           li('Sobra:', 'o que sobrar do valor vai para quem ainda precisa, na mesma ordem. Use "Limpar ▾ → Completar com a sobra" depois de mexer à mão.'),
           li('Fica de fora:', 'indisponível no site, fora do catálogo FRANQUIAS e o resto do catálogo (o que não precisa agora e os bens de consumo): esses você pede à mão.')));
     }
@@ -489,7 +489,7 @@
       h('span', { class: 'muted ped-fx-n' }, `${fmt.int(linhas.length)} ${linhas.length === 1 ? 'produto' : 'produtos'}`),
       // janela da classe oficial (a mesma do Estoque e margem): muda a classe e a prioridade "Estrela abaixo de 700 g"
       TS.eu && TS.eu.pode && TS.eu.pode.configurar && modo === 'repor'
-        ? h('span', { class: 'ped-cl-meses', title: 'Classe oficial: a mediana do que cada produto vendeu por mês nestes meses fechados × a margem. Vale também no Estoque e margem' },
+        ? h('span', { class: 'ped-cl-meses', title: 'Classe oficial: a mediana do que cada produto vendeu por mês nestes meses fechados × a margem. Vale também na Rentabilidade' },
           h('span', { class: 'f-label' }, 'Classe pelos últimos'),
           TS.seg([['3', '3'], ['6', '6'], ['12 meses', '12']], String(R.classeMeses), async (v) => {
             try { await TS.salvarClasse(loja, { meses: +v }); pintar(corpo, loja, M, e, p); } catch (err) { alert(err.message); }
@@ -501,8 +501,8 @@
       cols: [
         { key: 'produto', label: 'Produto', align: 'l', sticky: true, wrap: true, render: (r) => h('span', null, r.produto, r.prior ? h('span', { class: 'ped-prio', title: r.prior === 2 ? 'Prioridade: estoque abaixo de 500 g' : 'Prioridade: Estrela com estoque abaixo de 700 g' }, r.prior === 2 ? '< 500 g' : 'Estrela < 700 g') : null, h('small', { class: 'est-tam' }, `cód. ${r.cod}`)) },
         { key: 'grupoTxt', label: 'Grupo', align: 'l' },
-        { key: 'classe', label: 'Classe', align: 'l', title: `Classe oficial: o que sai por mês (a mediana dos últimos ${R.classeMeses} meses fechados, então um mês de promoção pesa pouco) × margem bruta, comparados com a mediana dos outros produtos. Não muda com o filtro de período. 🔒 = travada à mão no Estoque e margem. Estrela: vende muito e tem margem boa. Volume: vende muito, margem menor. Joia: margem boa, vende pouco. Peso morto: vende pouco e margem baixa`,
-          render: (r) => (r.classe ? h('span', { class: 'ped-cl ped-cl-' + r.classe, title: r.classeFixa ? 'Travada à mão no Estoque e margem' : null }, (r.classeFixa ? '🔒 ' : '') + CLASSES[r.classe]) : h('span', { class: 'muted' }, '—')), sortVal: (r) => ({ estrela: 4, volume: 3, joia: 2, peso: 1 })[r.classe] || 0 },
+        { key: 'classe', label: 'Classe', align: 'l', title: `Classe oficial: o que sai por mês (a mediana dos últimos ${R.classeMeses} meses fechados, então um mês de promoção pesa pouco) × margem bruta, comparados com a mediana dos outros produtos. Não muda com o filtro de período. 🔒 = travada à mão na Rentabilidade. Estrela: vende muito e tem margem boa. Volume: vende muito, margem menor. Joia: margem boa, vende pouco. Peso morto: vende pouco e margem baixa`,
+          render: (r) => (r.classe ? h('span', { class: 'ped-cl ped-cl-' + r.classe, title: r.classeFixa ? 'Travada à mão na Rentabilidade' : null }, (r.classeFixa ? '🔒 ' : '') + CLASSES[r.classe]) : h('span', { class: 'muted' }, '—')), sortVal: (r) => ({ estrela: 4, volume: 3, joia: 2, peso: 1 })[r.classe] || 0 },
         { key: 'sit', label: 'Situação', align: 'l', render: (r) => { const [t, c] = SITU(r); return h('span', { class: 'badge ' + c }, t); }, sortVal: (r) => (r.qtd <= 0 ? 3 : r.urgente ? 2 : 1) },
         { key: 'qtd', label: 'Estoque', render: (r) => qtdTxt(r.qtd, r.it) },
         { key: 'dias', label: 'Dura', fmt: (v) => (v == null ? '—' : v > 365 ? '+1 ano' : `${fmt.int(v)} dias`) },
@@ -690,7 +690,7 @@
   /** bloco de Configurações → Lojas (só admin): login da loja no Sistema de Pedidos */
   TS.blocoPedidoAcesso = function (lojaId) {
     const b = h('section', { class: 'cfg-bloco' }, h('h3', null, 'Sistema de Pedidos'),
-      h('p', { class: 'muted' }, 'Login desta loja no site de pedidos da franqueadora (grnteashop.nextsoft.com.br/Pedidos). Com ele, o robô lê o catálogo toda noite e monta o carrinho em Estoque e Margem → Pedido. Ele nunca finaliza o pedido.'));
+      h('p', { class: 'muted' }, 'Login desta loja no site de pedidos da franqueadora (grnteashop.nextsoft.com.br/Pedidos). Com ele, o robô lê o catálogo toda noite e monta o carrinho em Estoque → Pedido. Ele nunca finaliza o pedido.'));
     const corpo = h('div', null, h('p', { class: 'muted' }, 'Carregando…'));
     b.append(corpo);
     const api = `/api/pedido/acesso?loja=${encodeURIComponent(lojaId)}`;
@@ -706,7 +706,7 @@
           if (!r.ok) throw new Error(j.erro || 'Falha ao salvar.');
           pintarForm(j);
           corpo.querySelector('.cfg-acoes span').className = 'pos';
-          corpo.querySelector('.cfg-acoes span').textContent = body.apagar ? 'Login removido.' : 'Salvo. Em Estoque e Margem → Pedido, clique em "Atualizar catálogo" para testar.';
+          corpo.querySelector('.cfg-acoes span').textContent = body.apagar ? 'Login removido.' : 'Salvo. Em Estoque → Pedido, clique em "Atualizar catálogo" para testar.';
         } catch (err) { msg.className = 'neg'; msg.textContent = err.message; btn.disabled = false; }
       };
       const salvar = h('button', { type: 'button', class: 'btn primary' }, 'Salvar login');

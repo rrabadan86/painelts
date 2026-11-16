@@ -80,18 +80,32 @@
     if (state.page === 'clientes') { box.append(TS.filtrosClientes()); return; }
     if (state.page === 'campanhas') { box.append(h('div', { class: 'f-hint' }, 'Nas campanhas os critérios ficam na própria campanha (Criar campanha). Os clientes considerados são de todo o histórico.')); return; }
     const db = TS.db, f = state.f, rerender = () => TS.render();
+    // só os filtros que a tela usa (os outros somem e uma frase diz por quê)
+    const USO = {
+      precos: [['periodo', 'produto'], 'Preços: o período marca o "antes" e o "agora" dos reajustes.'],
+      site: [['produto'], 'Site: mostra os preços da última consulta ao site (não usa o período).'],
+      estoque: [['produto'], 'Estoque de agora; a reposição usa o ritmo das últimas semanas (não usa o período).'],
+      pedido: [['produto'], 'Pedido: estoque de agora e a previsão de venda (não usa o período). O produto só filtra a tabela.'],
+      notas: [['periodo'], 'Notas fiscais: o período vale na aba "No período".'],
+      dre: [[], 'O Resultado mostra mês a mês e não usa estes filtros.'],
+      inicio: [[], 'O Início mostra o que pede atenção hoje e não usa estes filtros.'],
+    }[state.page];
+    const usa = (k) => !USO || USO[0].includes(k);
+    if (USO) box.append(h('div', { class: 'f-hint f-uso' }, USO[1]));
 
     // período
-    box.append(...TS.blocoPeriodo(f, rerender));
+    if (usa('periodo')) box.append(...TS.blocoPeriodo(f, rerender));
 
     const opts = (list) => list.map(([s, i]) => [s, i]);
-    if (db.opts.lojas.length > 1) box.append(TS.multiSelect({ label: 'Loja', options: opts(db.opts.lojas), selected: f.lojas, onChange: rerender, placeholder: 'Todas as lojas' }));
-    box.append(TS.multiSelect({ label: 'Vendedor', options: opts(db.opts.vendedores), selected: f.vendedores, onChange: rerender }));
-    box.append(TS.multiSelect({ label: 'Grupo', options: opts(db.opts.grupos), selected: f.grupos, onChange: rerender }));
-    box.append(TS.multiSelect({ label: 'Categoria', options: opts(db.opts.cats), selected: f.cats, onChange: rerender, placeholder: 'Todas' }));
-    const prod = h('input', { class: 'f-input', type: 'search', placeholder: 'Ex.: earl grey', value: f.produto });
-    prod.addEventListener('input', TS.debounce(() => { f.produto = prod.value.trim(); rerender(); }, 500));
-    box.append(h('div', { class: 'f-group' }, h('span', { class: 'f-label' }, 'Produto contém'), prod));
+    if (usa('lojas') && db.opts.lojas.length > 1) box.append(TS.multiSelect({ label: 'Loja', options: opts(db.opts.lojas), selected: f.lojas, onChange: rerender, placeholder: 'Todas as lojas' }));
+    if (usa('vendedor')) box.append(TS.multiSelect({ label: 'Vendedor', options: opts(db.opts.vendedores), selected: f.vendedores, onChange: rerender }));
+    if (usa('grupo')) box.append(TS.multiSelect({ label: 'Grupo', options: opts(db.opts.grupos), selected: f.grupos, onChange: rerender }));
+    if (usa('categoria')) box.append(TS.multiSelect({ label: 'Categoria', options: opts(db.opts.cats), selected: f.cats, onChange: rerender, placeholder: 'Todas' }));
+    if (usa('produto')) {
+      const prod = h('input', { class: 'f-input', type: 'search', placeholder: 'Ex.: earl grey', value: f.produto });
+      prod.addEventListener('input', TS.debounce(() => { f.produto = prod.value.trim(); rerender(); }, 500));
+      box.append(h('div', { class: 'f-group' }, h('span', { class: 'f-label' }, 'Produto contém'), prod));
+    }
 
     // filtros específicos de cada página
     if (state.page === 'comparativos') {
