@@ -48,8 +48,8 @@ async function rodar(lojaId, por, itens) {
   return chamar(`/rodar/${encodeURIComponent(lojaId)}`, { method: 'POST', por, body: itens ? { itens } : undefined });
 }
 
-async function historico(lojaId, partes, por, tipo = 'ambos') {
-  return chamar(`/historico/${encodeURIComponent(lojaId)}`, { method: 'POST', por, body: { partes, tipo } });
+async function historico(lojaId, partes, por, tipo = 'ambos', extras = []) {
+  return chamar(`/historico/${encodeURIComponent(lojaId)}`, { method: 'POST', por, body: { partes, tipo, extras } });
 }
 async function fixe(lojaId, por) {
   return chamar(`/fixe/${encodeURIComponent(lojaId)}`, { method: 'POST', por });

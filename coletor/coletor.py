@@ -294,13 +294,17 @@ def rodar_pedido(job):
     log(f"{loja}: pedido/{acao} {'OK' if codigo == 0 else 'FALHOU (' + str(codigo) + ')'}")
 
 
-def enfileirar_historico(loja, partes, por=None, tipo="ambos"):
+def enfileirar_historico(loja, partes, por=None, tipo="ambos", extras=None):
     with lock:
         e = _estado(loja)
         if e["estado"] in ("na_fila", "rodando") or pendentes(loja):
             return False
         agora = datetime.now(TZ).isoformat()
         jobs = [{"loja": loja, "gatilho": "historico", "tipo": tipo, "por": por, "de": p["de"], "ate": p["ate"], "criado": agora, "inicio": None} for p in partes]
+        if extras:  # estoque (foto de agora) e FIXE vão junto da última parte
+            jobs[-1]["extras"] = [x for x in extras if x in ("estoque", "fixe")]
+            if "fixe" in jobs[-1]["extras"]:
+                jobs[-1]["fixe"] = True
         e["lote"] = {"total": len(jobs), "feitas": 0, "falhas": [], "de": partes[0]["de"], "ate": partes[-1]["ate"], "por": por, "criado": agora, "fim": None, "tipo": tipo}
         e["estado"] = "na_fila"
         e["atual"] = jobs[0]
@@ -442,6 +446,8 @@ def rodar(job):
         if principal is None:
             ok, codigo, principal = cf == 0, cf, "fixe"
     quer_estoque = ("estoque" in quer) if quer is not None else (tipo != "fixe" and job["gatilho"] != "historico" and ESTOQUE_ROTINA)
+    if "estoque" in (job.get("extras") or []):
+        quer_estoque = True
     if quer_estoque and SCRIPT_ESTOQUE.exists():
         # o estoque é uma foto de agora: só nas atualizações (não no histórico); falha aqui não derruba a coleta
         saida_est = str(DATA_DIR / loja / "estoque" / "entrada" / f"{carimbo}_estoque.xlsx")
@@ -635,13 +641,14 @@ class API(BaseHTTPRequestHandler):
                 corpo = json.loads(self.rfile.read(min(n, 100000)) or b"{}")
                 partes = [{"de": p["de"], "ate": p["ate"]} for p in corpo.get("partes", [])]
                 tipo = corpo.get("tipo") or "ambos"
+                extras = [x for x in (corpo.get("extras") or []) if x in ("estoque", "fixe")]
             except Exception:  # noqa: BLE001
                 return self._json(400, {"erro": "pedido inválido"})
             if tipo not in TIPOS:
                 return self._json(400, {"erro": "tipo inválido"})
             if not partes or len(partes) > 120 or not all(DATA_OK.match(p["de"]) and DATA_OK.match(p["ate"]) and p["de"] <= p["ate"] for p in partes):
                 return self._json(400, {"erro": "períodos inválidos"})
-            if not enfileirar_historico(loja, partes, por, tipo):
+            if not enfileirar_historico(loja, partes, por, tipo, extras):
                 return self._json(409, {"erro": "Esta loja já tem uma coleta na fila ou rodando."})
             return self._json(200, {"ok": True, "partes": len(partes)})
         if self.path.startswith("/cancelar/"):

@@ -421,33 +421,47 @@
     const de = inp({ type: 'month', value: `${hoje.getFullYear() - 2}-01`, max: ymHoje });
     const ate = inp({ type: 'month', value: ymHoje, max: ymHoje });
     const passo = h('select', { class: 'f-input' }, [1, 2, 3, 6].map((n) => h('option', { value: n, selected: n === 3 || null }, n === 1 ? '1 mês' : `${n} meses`)));
-    const tipo = h('select', { class: 'f-input' }, [['ambos', 'Vendas e XML das notas (CPF)'], ['vendas', 'Só vendas'], ['xml', 'Só XML das notas (CPF dos clientes)'], ['estoque', 'Estoque e custos (foto de agora)']].map(([v, t]) => h('option', { value: v }, t)));
-    // estoque é uma foto do momento: o período não se aplica
+    // o que importar: como no "Atualizar dados" do topo. Vendas e XML usam o período; estoque e FIXE são de agora
+    const temFixe = !!(l.fixe && l.fixe.url && l.fixe.temSenha);
+    const OPS = [['vendas', 'Vendas', 'do período escolhido', true], ['xml', 'XML das notas', 'do período escolhido (CPF dos clientes)', true],
+      ['estoque', 'Estoque e custos', 'foto de agora (o período não se aplica)', false], ...(temFixe ? [['fixe', 'FIXE (clientes e pontos)', 'de agora; chega por e-mail alguns minutos depois', false]] : [])];
+    const marcados = new Set(['vendas', 'xml']);
+    const caixas = OPS.map(([k, t, sub]) => {
+      const cb = h('input', { type: 'checkbox', checked: marcados.has(k) || null });
+      cb.addEventListener('change', () => { cb.checked ? marcados.add(k) : marcados.delete(k); ajustar(); });
+      return h('label', { class: 'hist-op' }, cb, h('span', null, h('b', null, t), h('small', null, sub)));
+    });
     const dicaTipo = h('small', { class: 'muted' });
-    const ajustarTipo = () => {
-      const est = tipo.value === 'estoque';
-      [de, ate, passo].forEach((x) => { x.disabled = est; });
-      dicaTipo.textContent = est ? 'O AppNext só dá o estoque de agora (quantidade, mínimo e custo de cada produto): o período acima não se aplica. Leva 1 a 2 minutos.' : '';
+    const ajustar = () => {
+      const comPeriodo = marcados.has('vendas') || marcados.has('xml');
+      [de, ate, passo].forEach((x) => { x.disabled = !comPeriodo; });
+      dicaTipo.textContent = !marcados.size ? 'Marque pelo menos um item.' : !comPeriodo ? 'Só estoque/FIXE: o período não se aplica (é a situação de agora).'
+        : marcados.has('estoque') || marcados.has('fixe') ? 'O estoque e o FIXE vão junto da última parte do período.' : '';
     };
-    tipo.addEventListener('change', ajustarTipo);
     const aberto = abertos.has('hist:' + l.id);
     const det = h('details', { class: 'cfg-hist', open: aberto || null }, h('summary', null, 'Importar histórico de um período'),
       h('p', { class: 'muted' }, 'Baixa do AppNext em partes (uma de cada vez) e junta no histórico. Use na primeira carga de uma loja ou para refazer meses.'),
       h('div', { class: 'cfg-grid c3' }, campo('De', de), campo('Até', ate), campo('Tamanho de cada parte', passo, 'Partes menores demoram mais no total, mas falham menos.')),
-      h('div', { class: 'cfg-grid' }, campo('O que importar', tipo, 'XML = Fiscal → Gerar XML do AppNext (Tipo Todos, Situação Ativos). Traz o CPF de cada cupom para a aba Clientes. Para a primeira carga, use de 06/2025 até hoje.')),
+      h('div', { class: 'f-label', style: { marginTop: '8px' } }, 'O que importar'),
+      h('div', { class: 'hist-ops' }, caixas),
+      h('small', { class: 'muted' }, 'XML = Fiscal → Gerar XML do AppNext (Tipo Todos, Situação Ativos): traz o CPF de cada cupom para a aba Clientes. Para a primeira carga, use de 06/2025 até hoje.'),
       dicaTipo,
       h('div', { class: 'cfg-acoes' }, acao('Importar', async () => {
-        if (tipo.value === 'estoque') {
-          const rr = await fetch(`/api/script?loja=${encodeURIComponent(l.id)}`, { method: 'POST', credentials: 'same-origin', headers: { 'X-Painel': '1', 'Content-Type': 'application/json' }, body: JSON.stringify({ itens: ['estoque'] }) });
+        if (!marcados.size) throw new Error('Marque o que importar.');
+        const extras = ['estoque', 'fixe'].filter((k) => marcados.has(k));
+        if (!marcados.has('vendas') && !marcados.has('xml')) {
+          const rr = await fetch(`/api/script?loja=${encodeURIComponent(l.id)}`, { method: 'POST', credentials: 'same-origin', headers: { 'X-Painel': '1', 'Content-Type': 'application/json' }, body: JSON.stringify({ itens: extras }) });
           const j = await rr.json().catch(() => ({}));
-          if (!rr.ok) throw new Error(j.erro || 'Falha ao pedir o estoque.');
+          if (!rr.ok) throw new Error(j.erro || 'Falha ao pedir ao coletor.');
           abertos.delete('hist:' + l.id);
-          return 'Estoque na fila do coletor. Em 1 a 2 minutos ele aparece em "Estoque e custos".';
+          return `${extras.map((k) => (k === 'fixe' ? 'FIXE' : 'Estoque')).join(' e ')} na fila do coletor. Leva alguns minutos${extras.includes('fixe') ? ' (o FIXE chega por e-mail depois)' : ''}.`;
         }
-        const r = await api('POST', `/lojas/${l.id}/historico`, { de: de.value, ate: ate.value, mesesPorParte: +passo.value, tipo: tipo.value });
+        const tipo = marcados.has('vendas') && marcados.has('xml') ? 'ambos' : marcados.has('vendas') ? 'vendas' : 'xml';
+        const r = await api('POST', `/lojas/${l.id}/historico`, { de: de.value, ate: ate.value, mesesPorParte: +passo.value, tipo, extras });
         abertos.delete('hist:' + l.id);
-        return `Importação na fila: ${r.partes} parte(s). Pode fechar o painel; ela continua sozinha.`;
+        return `Importação na fila: ${r.partes} parte(s)${extras.length ? ` + ${extras.map((k) => (k === 'fixe' ? 'FIXE' : 'estoque')).join(' e ')} no fim` : ''}. Pode fechar o painel; ela continua sozinha.`;
       }, 'btn primary')));
+    ajustar();
     det.addEventListener('toggle', () => { det.open ? abertos.add('hist:' + l.id) : abertos.delete('hist:' + l.id); });
     return det;
   }

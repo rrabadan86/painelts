@@ -384,9 +384,10 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
       if (`${ini}-01` <= ult) partes.push({ de: `${ini}-01`, ate: ult });
     }
     try {
-      const x = await COL.historico(req.loja.id, partes, req.user, tipo);
+      const extras = (Array.isArray(req.body.extras) ? req.body.extras : []).filter((x) => ['estoque', 'fixe'].includes(x));
+      const x = await COL.historico(req.loja.id, partes, req.user, tipo, extras);
       if (x.status !== 200) return res.status(x.status).json({ erro: x.json.erro || 'Falha no coletor.' });
-      aud(req, 'importou histórico', req.loja.id, { loja: req.loja.id, de, ate, partes: partes.length, tipo });
+      aud(req, 'importou histórico', req.loja.id, { loja: req.loja.id, de, ate, partes: partes.length, tipo, extras: req.body.extras || undefined });
       res.json({ ok: true, partes: partes.length });
     } catch (e) { res.status(502).json({ erro: e.message }); }
   });
