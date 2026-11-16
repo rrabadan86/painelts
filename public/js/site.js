@@ -139,6 +139,16 @@
     if (d.demo) corpo.append(h('div', { class: 'notice' }, 'Na apresentação os preços do site são fictícios, montados a partir das vendas.'));
     if (!itensSite.length) { if (!d.erro) corpo.append(TS.empty(d.podeConsultar ? 'Ainda não há preços do site: clique em "Consultar agora" ou espere a consulta das 10h.' : 'Ainda não há preços do site: a consulta automática é às 10h.')); return; }
 
+    if (d.demo && !d.historico) {
+      // apresentação: algumas mudanças fictícias nas últimas semanas
+      d.historico = {};
+      const t = Date.parse(d.em), dia = 86400e3, iso = (ms) => new Date(ms).toISOString();
+      itensSite.forEach((x, k) => {
+        const cheio = x.de ?? x.preco;
+        if (k % 3 === 0) d.historico[x.id] = [[iso(t - 40 * dia), Math.round(cheio * 0.94 * 10) / 10, null, 1], [iso(t - 12 * dia), cheio, null, 1], ...(x.de ? [[iso(t - 3 * dia), x.preco, x.de, 1]] : [])];
+        else d.historico[x.id] = [[iso(t - 40 * dia), x.preco, x.de ?? null, x.disponivel ? 1 : 0]];
+      });
+    }
     const ant = (d.anterior && d.anterior.precos) || {};
     const linhas = casar(itensSite, nos).map((x) => {
       const cheio = x.de ?? x.preco;
@@ -147,8 +157,12 @@
       const dif = nosso != null && Math.abs(cheio - nosso) >= 0.01;
       const a = ant[x.id];
       const mudou = a && (Math.abs(a[0] - x.preco) >= 0.01 || (a[1] ?? null) !== (x.de ?? null)) ? a : null;
+      // histórico guardado: a última mudança de preço ou promoção no site
+      const pts = (d.historico && d.historico[x.id]) || [[d.em, x.preco, x.de ?? null, x.disponivel ? 1 : 0]];
+      let ultMud = null;
+      for (let k = pts.length - 1; k >= 1; k--) { const ms = mudancas(pts[k - 1], pts[k]).filter((m) => !/estoque|Esgotou/.test(m.t)); if (ms.length) { ultMud = { em: pts[k][0], txt: ms.map((m) => m.t).join(' · ') }; break; } }
       return {
-        ...x, cheio, nosso, promo, dif, mudou,
+        ...x, cheio, nosso, promo, dif, mudou, pts, ultMud, desde: pts[0][0],
         desconto: promo ? 1 - x.preco / x.de : null,
         difV: nosso != null ? cheio - nosso : null, difP: nosso ? cheio / nosso - 1 : null,
         sit: !x.nos ? 'sem' : promo && dif ? 'promodif' : promo ? 'promo' : dif ? 'dif' : 'igual',
@@ -189,12 +203,108 @@
         { key: 'desconto', label: 'Desconto no site', fmt: (v) => (v != null ? `−${fmt.int(v * 100)}%` : '—'), cls: (r) => (r.promo ? 'site-promo' : '') },
         { key: 'difP', label: 'Diferença', title: 'Preço cheio do site − nosso preço', render: (r) => (r.difV == null ? '—' : !r.dif ? h('span', { class: 'muted' }, 'igual') : h('span', { class: r.difV > 0 ? 'pos' : 'neg' }, `${r.difV > 0 ? '+' : '−'}${fmt.brl(Math.abs(r.difV))} (${r.difV > 0 ? '+' : '−'}${fmt.n1(Math.abs(r.difP) * 100)}%)`)), sortVal: (r) => r.difP },
         { key: 'sit', label: 'Situação', align: 'l', render: (r) => { const [t, c] = SIT[r.sit]; return h('span', { class: 'badge ' + c }, t); }, sortVal: (r) => ({ promodif: 5, dif: 4, promo: 3, igual: 2, sem: 1 })[r.sit] },
-        { key: 'mudou', label: 'Antes', title: 'Preço na consulta anterior, quando mudou', render: (r) => (r.mudou ? h('span', { class: 'warn-t', title: d.anterior ? `Consulta de ${new Date(d.anterior.em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}` : '' }, `era ${fmt.brl(r.mudou[0])}${r.mudou[1] ? ` (de ${fmt.brl(r.mudou[1])})` : ''}`) : ''), sortVal: (r) => (r.mudou ? 1 : 0) },
+        { key: 'ultMud', label: 'Última mudança no site', align: 'l', wrap: true, title: 'A última vez que o site mudou o preço ou a promoção deste produto (o painel guarda o preço a cada consulta). Clique em Histórico para ver tudo', render: (r) => (r.ultMud ? h('span', { class: r.mudou ? 'warn-t' : null, title: r.ultMud.txt }, h('b', null, dataTxt(r.ultMud.em)), h('small', { class: 'est-tam' }, r.ultMud.txt)) : h('span', { class: 'muted' }, `sem mudança desde ${dataTxt(r.desde)}`)), sortVal: (r) => (r.ultMud ? Date.parse(r.ultMud.em) : 0) },
+        { key: 'hist', label: '', align: 'l', render: (r) => h('button', { type: 'button', class: 'btn prc-ver', onclick: () => abrirHistorico(r, r.pts) }, 'Histórico'), sortVal: () => 0 },
       ],
       rows: linhas.filter(FILTROS[filtro][1]), sortKey: 'sit', maxHeight: '640px', search: 'Buscar produto…', searchKeys: ['nomeTxt', 'nossoTxt', 'sku'], produto: ['nomeTxt', 'nossoTxt'],
       imprimir: ['nomeTxt', 'nossoTxt', 'nosso', 'cheio', 'preco', 'desconto', 'difP', 'sit'], cls: 'site-t',
       empty: 'Nenhum produto nesta aba.',
     });
     corpo.append(h('div', { class: 'mt' }, TS.card('Produtos do site', `Preço cheio do site comparado com o nosso preço ${lojaTxt}: o preço de tabela do cadastro do AppNext quando o painel tem, senão o preço mais vendido nas últimas 4 semanas. Em promoção = o site mostra preço "de" e "por". Clique no nome para abrir o produto no site.`, seg, tab)));
+  }
+  // ---------- histórico de um produto do site ----------
+  const dataTxt = (iso) => new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' });
+  const diaDe = (iso) => TS.isoToDay(new Date(iso).toLocaleDateString('en-CA')); // dia no horário local (a consulta é gravada em UTC)
+  /** mudanças entre dois pontos do histórico, em palavras */
+  function mudancas(a, b) {
+    const out = [];
+    if (b[1] == null) return [{ t: 'Saiu do site', cls: 'prc-st-c' }];
+    if (a[1] == null) out.push({ t: 'Voltou ao site', cls: 'prc-st-v' });
+    const cheioA = a[2] ?? a[1], cheioB = b[2] ?? b[1];
+    if (a[1] != null && Math.abs(cheioA - cheioB) >= 0.01) out.push({ t: `Preço cheio ${fmt.brl(cheioA)} → ${fmt.brl(cheioB)}`, v: cheioB / cheioA - 1, cls: 'prc-st-a' });
+    if (a[1] != null && a[2] == null && b[2] != null) out.push({ t: `Entrou em promoção: de ${fmt.brl(b[2])} por ${fmt.brl(b[1])} (−${fmt.int((1 - b[1] / b[2]) * 100)}%)`, cls: 'prc-st-v' });
+    else if (a[1] != null && a[2] != null && b[2] == null) out.push({ t: `Saiu da promoção: volta a ${fmt.brl(b[1])}`, cls: 'prc-st-c' });
+    else if (a[1] != null && a[2] != null && b[2] != null && Math.abs(a[1] - b[1]) >= 0.01) out.push({ t: `Promoção mudou: por ${fmt.brl(a[1])} → ${fmt.brl(b[1])} (−${fmt.int((1 - b[1] / b[2]) * 100)}%)`, cls: 'prc-st-v' });
+    if (a[1] != null && a[3] !== b[3]) out.push({ t: b[3] ? 'Voltou a ter estoque' : 'Esgotou', cls: 'prc-st-n' });
+    return out;
+  }
+  /** nosso preço praticado num dia: o preço de tabela mais vendido nos 28 dias até ele */
+  function nossoNoDia(nome, dia) {
+    const db = TS.db;
+    const cont = new Map();
+    for (let i = 0; i < db.n; i++) {
+      if (db.day[i] > dia || db.day[i] < dia - 27 || db.D.descricao[db.desc[i]] !== nome || !(db.vu[i] > 0)) continue;
+      const k = Math.round(db.vu[i] * 100) / 100; cont.set(k, (cont.get(k) || 0) + db.qtd[i]);
+    }
+    let best = null, n = -1;
+    for (const [k, q] of cont) if (q > n) { best = k; n = q; }
+    return best;
+  }
+  function abrirHistorico(r, pts) {
+    document.querySelector('.prc-drawer-camada')?.remove();
+    const fechar = () => { camada.remove(); document.body.classList.remove('com-camada'); document.removeEventListener('keydown', esc); };
+    const esc = (e) => { if (e.key === 'Escape') fechar(); };
+    const titulo = r.produto + (r.variante ? ' · ' + r.variante : '');
+    // gráfico em degrau: cada ponto do histórico + hoje
+    const dias = [...pts.map((p) => diaDe(p[0])), TS.todayDay()];
+    const labels = dias.map((d) => dataTxt(TS.dayToIso(d)));
+    const em = (k) => pts[Math.min(k, pts.length - 1)];
+    const sAgora = dias.map((_, k) => em(k)[1]), sCheio = dias.map((_, k) => (em(k)[1] == null ? null : em(k)[2] ?? em(k)[1]));
+    const sNosso = r.nos && r.nos.ult != null ? dias.map((d) => nossoNoDia(r.nos.nome, d)) : dias.map(() => r.nosso);
+    const graf = TS.chart({
+      type: 'line',
+      data: { labels, datasets: [
+        { label: 'Site: agora', data: sAgora, borderColor: '#B5452B', backgroundColor: '#B5452B', stepped: 'before', pointRadius: 3, borderWidth: 2 },
+        { label: 'Site: preço cheio', data: sCheio, borderColor: '#C77F12', backgroundColor: '#C77F12', stepped: 'before', pointRadius: 2, borderWidth: 1.5, borderDash: [5, 4] },
+        r.nos ? { label: 'Nosso preço', data: sNosso, borderColor: '#2C5234', backgroundColor: '#2C5234', stepped: 'before', pointRadius: 3, borderWidth: 2 } : null,
+      ].filter(Boolean) },
+      options: { plugins: { legend: { display: true, position: 'bottom' }, tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${c.raw == null ? '—' : fmt.brl(c.raw)}` } } },
+        scales: { y: { ...TS.axisNum((v) => fmt.brl0(v)), beginAtZero: false }, x: TS.axisCat } },
+    }, 'short');
+    // linha do tempo (mais recente primeiro)
+    const itens = [];
+    for (let k = pts.length - 1; k >= 1; k--) {
+      const ms = mudancas(pts[k - 1], pts[k]);
+      if (!ms.length) continue;
+      const dia = diaDe(pts[k][0]);
+      const nosso = r.nos ? (r.nos.ult != null ? nossoNoDia(r.nos.nome, dia) : r.nosso) : null;
+      itens.push(h('li', { class: 'prc-tl-i' },
+        h('div', { class: 'prc-tl-d' }, dataTxt(pts[k][0]), h('span', { class: 'muted' }, ` (consulta das ${new Date(pts[k][0]).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })})`)),
+        ...ms.map((m) => h('div', { class: 'prc-tl-l' }, h('span', { class: 'prc-st ' + m.cls }, m.t), m.v != null ? h('span', { class: 'prc-badge ' + (m.v > 0 ? 'prc-ruim' : 'prc-bom') }, `${m.v > 0 ? '+' : ''}${fmt.n1(m.v * 100)}%`) : null)),
+        nosso != null && pts[k][1] != null ? h('div', { class: 'prc-tl-m muted' }, `Nesse dia: site ${fmt.brl(pts[k][1])}${pts[k][2] ? ` (cheio ${fmt.brl(pts[k][2])})` : ''} · nosso ${fmt.brl(nosso)}`) : null));
+    }
+    if (!itens.length) itens.push(h('li', { class: 'muted' }, `Nenhuma mudança desde ${dataTxt(pts[0][0])}, quando o painel começou a guardar o preço deste produto.`));
+    // texto pronto para falar com a franquia
+    const resumoTxt = [
+      `${titulo} (site Tea Shop)`,
+      `• Site hoje: ${r.promo ? `de ${fmt.brl(r.de)} por ${fmt.brl(r.preco)} (−${fmt.int(r.desconto * 100)}%)` : fmt.brl(r.preco)}`,
+      r.nosso != null ? `• Na loja: ${fmt.brl(r.nosso)}${r.dif ? ` (preço cheio do site ${r.difV > 0 ? '+' : '−'}${fmt.n1(Math.abs(r.difP) * 100)}%)` : ' (igual ao preço cheio do site)'}` : '',
+      ...pts.slice(1).map((p, k) => mudancas(pts[k], p).map((m) => `• ${dataTxt(p[0])}: ${m.t}`).join('\n')).filter(Boolean).reverse(),
+      `• Link: ${r.url}`,
+    ].filter(Boolean).join('\n');
+    const msg = h('small', { class: 'muted' });
+    const copiar = h('button', { type: 'button', class: 'btn', onclick: async () => {
+      try { await navigator.clipboard.writeText(resumoTxt); msg.textContent = 'Copiado: cole no WhatsApp ou e-mail da franquia.'; } catch { msg.textContent = 'Não consegui copiar: selecione o texto abaixo.'; }
+    } }, '📋 Copiar resumo para a franquia');
+    const card = h('aside', { class: 'card prc-drawer', role: 'dialog', 'aria-modal': 'true', 'aria-label': titulo },
+      h('button', { type: 'button', class: 'icon-btn exp-fechar', title: 'Fechar (Esc)', 'aria-label': 'Fechar', onclick: fechar }, '✕'),
+      h('div', { class: 'card-title' }, h('a', { href: r.url, target: '_blank', rel: 'noopener', class: 'site-link' }, titulo, ' ↗')),
+      h('div', { class: 'card-sub' }, r.nos ? `Nas vendas: ${r.nos.nome}${r.nos.cod ? ' · cód. ' + r.nos.cod : ''}` : 'Sem correspondência nas vendas'),
+      h('div', { class: 'prc-resumo' },
+        h('div', null, h('small', null, 'Site: preço cheio'), h('b', null, fmt.brl(r.cheio))),
+        h('div', null, h('small', null, 'Site: agora'), h('b', { class: r.promo ? 'neg' : null }, fmt.brl(r.preco)), r.promo ? h('em', { class: 'muted' }, ` −${fmt.int(r.desconto * 100)}%`) : null),
+        h('div', null, h('small', null, 'Nosso preço'), h('b', null, r.nosso != null ? fmt.brl(r.nosso) : '—'))),
+      h('div', { class: 'f-label mt' }, 'Evolução: site × nosso preço'),
+      h('div', { class: 'prc-graf' }, graf),
+      h('div', { class: 'muted prc-nota' }, `O painel guarda o preço do site a cada consulta (todo dia às 10h) desde ${dataTxt(pts[0][0])}. "Nosso preço" ao longo do tempo = o preço mais vendido nas 4 semanas até cada data.`),
+      h('div', { class: 'f-label mt' }, 'Mudanças no site (mais recente primeiro)'),
+      h('ul', { class: 'prc-tl' }, itens),
+      h('div', { class: 'f-label mt' }, 'Para falar com a franquia'),
+      h('div', { class: 'site-copiar' }, copiar, msg),
+      h('pre', { class: 'site-resumo' }, resumoTxt));
+    const camada = h('div', { class: 'prc-drawer-camada', onmousedown: (e) => { if (e.target === camada) fechar(); } }, card);
+    document.body.append(camada);
+    document.body.classList.add('com-camada');
+    document.addEventListener('keydown', esc);
   }
 })();

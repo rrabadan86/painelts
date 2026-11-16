@@ -619,7 +619,10 @@ const SITE = require('./src/site');
 app.get('/api/site', (req, res) => {
   if (!podeTela(req, 'estoque', 'pedido', 'dre')) return res.status(403).json({ erro: 'Sem permissão.' });
   const d = SITE.ler();
-  res.json({ ...(d || { itens: [] }), rodando: SITE.rodando(), podeConsultar: podeContabilidade(req) });
+  let hist = SITE.lerHist();
+  // ainda sem histórico (consultas de antes desta versão): começa pela consulta atual
+  if (!hist) hist = SITE.semear(d);
+  res.json({ ...(d || { itens: [] }), historico: hist || {}, rodando: SITE.rodando(), podeConsultar: podeContabilidade(req) });
 });
 let siteUltimoManual = 0;
 app.post('/api/site/consultar', async (req, res) => {

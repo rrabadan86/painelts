@@ -9,10 +9,36 @@ const C = require('./config');
 const SITE = 'https://www.teashop.com.br';
 const pasta = () => path.join(C.DATA_DIR, 'site');
 const arq = () => path.join(pasta(), 'precos.json');
+// histórico: só os pontos em que algo mudou em cada variante — { id: [[data ISO, preço, preço "de" ou null, disponível 1/0], …] }
+// preço null = o produto saiu do site naquela consulta
+const arqHist = () => path.join(pasta(), 'historico.json');
 let rodando = null;
 
 function ler() {
   try { return JSON.parse(fs.readFileSync(arq(), 'utf8')); } catch { return null; }
+}
+function lerHist() {
+  try { return JSON.parse(fs.readFileSync(arqHist(), 'utf8')); } catch { return null; }
+}
+/** histórico inicial a partir do que já existia: a consulta anterior guardada (se houver) e a atual */
+function semear(d) {
+  const hist = {};
+  if (!d || !d.em || !d.itens || !d.itens.length) return hist;
+  if (d.anterior && d.anterior.em) for (const [id, [preco, de]] of Object.entries(d.anterior.precos || {})) hist[id] = [[d.anterior.em, preco, de ?? null, 1]];
+  registrar(hist, d.em, d.itens);
+  return hist;
+}
+/** acrescenta ao histórico os pontos que mudaram nesta consulta */
+function registrar(hist, em, itens) {
+  const vistos = new Set();
+  for (const x of itens) {
+    vistos.add(x.id);
+    const l = hist[x.id] || (hist[x.id] = []);
+    const u = l[l.length - 1];
+    const p = [em, x.preco, x.de ?? null, x.disponivel ? 1 : 0];
+    if (!u || u[1] !== p[1] || (u[2] ?? null) !== p[2] || u[3] !== p[3]) l.push(p);
+  }
+  for (const [id, l] of Object.entries(hist)) { const u = l[l.length - 1]; if (!vistos.has(id) && u && u[1] != null) l.push([em, null, null, 0]); }
 }
 
 const num = (v) => { const x = Number(v); return Number.isFinite(x) ? Math.round(x * 100) / 100 : null; };
@@ -54,6 +80,12 @@ async function atualizar(origem, quem) {
       if (antes && antes.itens) for (const x of antes.itens) ant[x.id] = [x.preco, x.de];
       const out = { em: new Date().toISOString(), origem, quem: quem || '', itens, anterior: antes && antes.em ? { em: antes.em, precos: ant } : null };
       fs.mkdirSync(pasta(), { recursive: true });
+      // histórico: começa pela consulta que já existia (a primeira, antes do histórico) e soma esta
+      let hist = lerHist();
+      if (!hist) hist = semear(antes);
+      registrar(hist, out.em, itens);
+      fs.writeFileSync(arqHist() + '.tmp', JSON.stringify(hist));
+      fs.renameSync(arqHist() + '.tmp', arqHist());
       fs.writeFileSync(arq() + '.tmp', JSON.stringify(out));
       fs.renameSync(arq() + '.tmp', arq());
       console.log(`[site] ${itens.length} variantes lidas (${origem})`);
@@ -91,4 +123,4 @@ function agendar() {
   setInterval(tick, 60e3);
 }
 
-module.exports = { ler, atualizar, agendar, rodando: () => !!rodando };
+module.exports = { ler, lerHist, atualizar, agendar, rodando: () => !!rodando, semear };
