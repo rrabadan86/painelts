@@ -22,7 +22,22 @@ from playwright.sync_api import sync_playwright
 URL = os.getenv("FIXE_URL", "").strip()
 USER = os.getenv("FIXE_USER", "").strip()
 PASS = os.getenv("FIXE_PASS", "")
-EMAIL = os.getenv("FIXE_EMAIL", "").strip()
+EMAIL_BASE = os.getenv("FIXE_EMAIL", "").strip()
+
+
+def com_apelido(email, tag):
+    """Gmail: usuario+tag@gmail.com cai na mesma caixa, mas chega endereçado ao apelido da loja.
+    Assim várias lojas podem usar o mesmo Gmail sem misturar as exportações do FIXE."""
+    tag = re.sub(r"[^a-z0-9]", "", (tag or "").lower())[:30]
+    if not tag or "@" not in email or "+" in email.split("@")[0]:
+        return email
+    usuario, dominio = email.rsplit("@", 1)
+    if dominio.lower() not in ("gmail.com", "googlemail.com"):
+        return email
+    return f"{usuario}+{tag}@{dominio}"
+
+
+EMAIL = EMAIL_BASE if os.getenv("FIXE_APELIDO_USAR", "1") == "0" else com_apelido(EMAIL_BASE, os.getenv("FIXE_APELIDO", ""))
 SAIDA = os.getenv("SAIDA_FIXE", "").strip()
 
 
@@ -135,7 +150,7 @@ def main():
                 log(f"4) {rotulo}: exportação pedida para {EMAIL}")
             destino = Path(SAIDA)
             destino.parent.mkdir(parents=True, exist_ok=True)
-            destino.write_text(json.dumps({"em": datetime.now(TZ).isoformat(), "email": EMAIL, "tipos": feitos, "respostas": respostas}), encoding="utf-8")
+            destino.write_text(json.dumps({"em": datetime.now(TZ).isoformat(), "email": EMAIL, "emailBase": EMAIL_BASE, "tipos": feitos, "respostas": respostas}), encoding="utf-8")
             return 0
         except Exception:  # noqa: BLE001
             log("### ERRO NO FIXE ###")

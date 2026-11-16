@@ -489,12 +489,29 @@
     const usuario = inp({ value: fx.usuario || '', placeholder: 'ex.: e-mail de acesso ao FIXE', autocomplete: 'off' });
     const senha = inp({ type: 'password', placeholder: fx.temSenha ? 'guardada (deixe em branco para manter)' : 'senha do FIXE', autocomplete: 'new-password' });
     const email = inp({ type: 'email', value: fx.email || gmail, placeholder: 'ex.: o Gmail da loja' });
+    // apelido do Gmail (+loja): separa as lojas que usam o mesmo Gmail
+    const apelido = h('input', { type: 'checkbox', checked: fx.apelido !== false || null });
+    const tag = String(l.id).toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 30);
+    const enderecoDe = () => {
+      const e = email.value.trim().toLowerCase(), [u, d] = e.split('@');
+      return apelido.checked && tag && d && !u.includes('+') && ['gmail.com', 'googlemail.com'].includes(d) ? `${u}+${tag}@${d}` : e;
+    };
+    const mesmoGmail = (est.lojas || []).filter((x) => x.id !== l.id && gmail && x.fechEmail && x.fechEmail.email && String(x.fechEmail.email.user || '').toLowerCase() === gmail.toLowerCase());
+    const infoEnd = h('div', { class: 'cfg-ex-assunto' });
+    const verEnd = () => {
+      const end = enderecoDe(), comTag = end.includes('+');
+      infoEnd.replaceChildren(...[end ? h('span', null, 'O robô pede as exportações ao FIXE para ', h('b', null, end), comTag ? ' — chega na mesma caixa do Gmail, mas só esta loja lê o que vier para esse endereço.' : '.') : null,
+        mesmoGmail.length && !comTag ? h('div', { class: 'neg', style: { marginTop: '4px' } }, `Atenção: ${mesmoGmail.map((x) => x.nome).join(', ')} usa o mesmo Gmail. Sem o apelido, as exportações das lojas podem se misturar. Ligue "Separar esta loja com um apelido do Gmail".`) : null,
+        mesmoGmail.length && comTag ? h('div', { class: 'muted', style: { marginTop: '4px' } }, `Este Gmail também é usado por ${mesmoGmail.map((x) => x.nome).join(', ')}; com o apelido cada loja lê só as suas exportações.`) : null].filter(Boolean));
+    };
+    email.addEventListener('input', verEnd); apelido.addEventListener('change', verEnd); verEnd();
     b.append(h('div', { class: 'cfg-grid' },
       campo('Página de Leads no FIXE', url, 'É o mesmo endereço para todas as lojas da rede. O que separa a base de cada loja é o usuário e a senha abaixo.'),
       campo('Usuário do FIXE', usuario, 'O login desta loja no FIXE: é ele que define de qual loja vem a base de clientes.'), campo('Senha do FIXE', senha, 'Fica guardada só na VPS, como a do AppNext.'),
       campo('E-mail que recebe a exportação', email, gmail ? `Use o Gmail da loja (${gmail}): é nele que o painel procura o e-mail do FIXE.` : 'Configure antes o Gmail da loja em "Fechamento do dia": é nele que o painel procura o e-mail do FIXE.')),
+      h('label', { class: 'cfg-check-l' }, apelido, ' Separar esta loja com um apelido do Gmail (+', tag, ')'), infoEnd,
       h('div', { class: 'cfg-acoes' },
-        acao('Salvar acesso ao FIXE', async () => { await api('PUT', `/lojas/${l.id}/fixe`, { url: url.value, usuario: usuario.value, senha: senha.value, email: email.value }); senha.value = ''; return 'Acesso ao FIXE salvo.'; }, 'btn primary'),
+        acao('Salvar acesso ao FIXE', async () => { await api('PUT', `/lojas/${l.id}/fixe`, { url: url.value, usuario: usuario.value, senha: senha.value, email: email.value, apelido: apelido.checked }); senha.value = ''; return 'Acesso ao FIXE salvo.'; }, 'btn primary'),
         fx.url ? acao('Remover acesso', async () => { if (!confirm('Remover o acesso desta loja ao FIXE (endereço, usuário, senha e e-mail)? O cadastro de clientes que já está no painel continua.')) return null; await api('DELETE', `/lojas/${l.id}/fixe`); return 'Acesso ao FIXE removido.'; }) : null,
         est.perfil === 'admin' && est.coletorAtivo && fx.url ? acao('Importar agora', async () => { await api('POST', `/lojas/${l.id}/fixe/rodar`); return 'Pedido enviado ao FIXE. Em alguns minutos o e-mail chega e o cadastro é atualizado.'; }) : null));
     // regras de pontos

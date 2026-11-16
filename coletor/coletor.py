@@ -408,7 +408,7 @@ def rodar(job):
     fixe = None
     if (job.get("fixe") or tipo == "fixe") and SCRIPT_FIXE.exists():
         # cadastro de clientes: só pede a exportação; o painel lê o e-mail do FIXE e importa
-        cf = executar(SCRIPT_FIXE, {"SAIDA_FIXE": str(DATA_DIR / loja / "fixe" / "pedido.json")})
+        cf = executar(SCRIPT_FIXE, {"SAIDA_FIXE": str(DATA_DIR / loja / "fixe" / "pedido.json"), "FIXE_APELIDO": loja})  # apelido do Gmail: separa as lojas que usam o mesmo Gmail
         fixe = {"ok": cf == 0, "codigo": cf}
         if principal is None:
             ok, codigo, principal = cf == 0, cf, "fixe"

@@ -29,6 +29,25 @@ function situacao(id) {
   return { pedido: lerJson(arq(id, 'pedido.json'), null), ultimo: lerJson(arq(id, 'ultimo.json'), null) };
 }
 
+/** todos os endereços a quem o e-mail foi mandado (Para, Cc e os cabeçalhos de entrega do Gmail) */
+function destinatarios(p) {
+  const out = [];
+  for (const k of ['to', 'cc']) for (const g of [].concat(p[k] || [])) for (const v of g.value || []) if (v.address) out.push(v.address.toLowerCase());
+  for (const k of ['delivered-to', 'x-original-to']) for (const v of [].concat(p.headers && p.headers.get(k) || [])) {
+    const t = typeof v === 'string' ? v : (v && (v.text || (v.value || []).map((x) => x.address).join(' '))) || '';
+    for (const m of t.matchAll(/[^\s<>,;"]+@[^\s<>,;"]+/g)) out.push(m[0].toLowerCase());
+  }
+  return out;
+}
+
+/** endereço que o robô usa no FIXE para a loja (igual ao do coletor): Gmail ganha o apelido +loja */
+function comApelido(email, lojaId) {
+  const e = String(email || '').trim().toLowerCase(), tag = String(lojaId || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 30);
+  const [u, d] = e.split('@');
+  if (!tag || !d || u.includes('+') || !['gmail.com', 'googlemail.com'].includes(d)) return e;
+  return `${u}+${tag}@${d}`;
+}
+
 /** link "Baixar agora" do e-mail */
 function linkDoEmail(html) {
   const as = [...String(html || '').matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)];
@@ -63,6 +82,7 @@ async function verificar(id, smtp, importar) {
     const falta = esperados.filter((t) => !feitos[t]).map((t) => (t === 'logs' ? 'dos Logs' : 'da Base de leads'));
     return fim({ ...resumo(), ok: !!feitos.leads, erro: `O e-mail ${falta.join(' e ')} do FIXE não chegou em 3 horas (procurei na caixa de entrada e no spam).` });
   }
+  const apelido = /\+[^@]+@/.test(pedido.email || '') ? String(pedido.email).toLowerCase() : null;
   const cfg = imapDe(smtp);
   if (!cfg) return fim({ ok: false, erro: 'A loja não tem o Gmail configurado (Configurações → Lojas → Fechamento do dia): é por ele que o painel lê o e-mail do FIXE.' });
   const { ImapFlow } = require('imapflow');
@@ -88,6 +108,8 @@ async function verificar(id, smtp, importar) {
           if (vistos.has(mid) || new Date(msg.internalDate) < desde) continue;
           const p = await simpleParser(msg.source);
           if (!/export/i.test(p.subject || '')) continue;
+          // pedido para o apelido da loja (usuario+loja@gmail.com): só vale o e-mail endereçado a ele — outra loja pode usar o mesmo Gmail
+          if (apelido && !destinatarios(p).includes(apelido)) continue;
           const link = linkDoEmail(p.html || p.textAsHtml || '');
           if (link) daCaixa.push({ uid, spam: cx === spam, mid, link, recebido: msg.internalDate });
         }
@@ -119,4 +141,4 @@ async function verificar(id, smtp, importar) {
   }
 }
 
-module.exports = { verificar, situacao, linkDoEmail };
+module.exports = { verificar, situacao, linkDoEmail, destinatarios, comApelido };

@@ -166,7 +166,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
         id: l.id, nome: l.nome, appnext: l.appnext, meta: l.meta, metas: l.metas, criadaEm: l.criadaEm, regras: l.regras, marca: l.marca, wppModelos: l.wppModelos,
         nomesVenda: (() => { const raw = rawDe(l.id); return raw ? [...new Set(raw.vendas.slice(-500).map((v) => v.loja).filter(Boolean))] : []; })(),
         base: B.resumo(l.id), xml: XB.resumo(l.id), estoque: (() => { const e = ES.atual(l.id); return e ? { em: e.em, itens: e.itens.length, origem: e.origem || '' } : null; })(), fechEmail: NOTIF.publicoLoja(l.id), fontes, vendedores: vendedoresDe(l.id),
-        fixe: { url: (env && env.FIXE_URL) || '', usuario: (env && env.FIXE_USER) || '', email: (env && env.FIXE_EMAIL) || '', temSenha: !!(env && env.FIXE_PASS), ...require('./fixemail').situacao(l.id), logs: require('./fidelidade').resumo(l.id), fidelidade: require('./fidelidade').regrasDe(l) },
+        fixe: { url: (env && env.FIXE_URL) || '', usuario: (env && env.FIXE_USER) || '', email: (env && env.FIXE_EMAIL) || '', temSenha: !!(env && env.FIXE_PASS), apelido: !(env && env.FIXE_APELIDO_USAR === '0'), enderecoPedido: env && env.FIXE_EMAIL ? (env.FIXE_APELIDO_USAR === '0' ? env.FIXE_EMAIL : require('./fixemail').comApelido(env.FIXE_EMAIL, l.id)) : '', ...require('./fixemail').situacao(l.id), logs: require('./fidelidade').resumo(l.id), fidelidade: require('./fidelidade').regrasDe(l) },
         coletor: env ? { configurado: true, rede: env.APPNEXT_REDE || '', usuario: env.APPNEXT_USER || '', temSenha: !!env.APPNEXT_PASS, lojaDestino: env.APPNEXT_LOJA_DESTINO || '', lojaIdDestino: env.APPNEXT_LOJA_ID_DESTINO || '' } : { configurado: false },
         status,
       };
@@ -312,14 +312,15 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     if (!atual) return res.status(400).json({ erro: 'Cadastre primeiro o acesso ao AppNext desta loja (o coletor usa o mesmo arquivo).' });
     if (!b.senha && !atual.FIXE_PASS) return res.status(400).json({ erro: 'Informe a senha do FIXE.' });
     const valores = { FIXE_URL: url, FIXE_USER: usuario, FIXE_EMAIL: email };
+    if (b.apelido != null) valores.FIXE_APELIDO_USAR = b.apelido ? null : '0'; // padrão: usa o apelido +loja no Gmail
     if (b.senha) valores.FIXE_PASS = String(b.senha).replace(/[\r\n]/g, '');
     gravarEnv(req.loja.id, valores);
-    aud(req, 'alterou acesso ao FIXE', req.loja.id, { loja: req.loja.id, usuario, email, senha: b.senha ? 'trocada' : 'mantida' });
+    aud(req, 'alterou acesso ao FIXE', req.loja.id, { loja: req.loja.id, usuario, email, apelido: b.apelido == null ? undefined : !!b.apelido, senha: b.senha ? 'trocada' : 'mantida' });
     res.json({ ok: true });
   });
   r.delete('/lojas/:id/fixe', lojaPermitida, (req, res) => {
     if (!lerEnv(req.loja.id)) return res.json({ ok: true });
-    gravarEnv(req.loja.id, { FIXE_URL: null, FIXE_USER: null, FIXE_EMAIL: null, FIXE_PASS: null });
+    gravarEnv(req.loja.id, { FIXE_URL: null, FIXE_USER: null, FIXE_EMAIL: null, FIXE_PASS: null, FIXE_APELIDO_USAR: null });
     aud(req, 'removeu acesso ao FIXE', req.loja.id, { loja: req.loja.id });
     res.json({ ok: true });
   });
