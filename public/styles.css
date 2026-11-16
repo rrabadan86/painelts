@@ -1616,3 +1616,7 @@ td.site-dif { color: #B5452B; font-weight: 600; }
 .ped-ult { border: 1px dashed var(--line, #D9D2C2); border-radius: 10px; padding: 8px 12px; background: #FAF8F3; }
 .ped-ult > summary { cursor: pointer; font-size: 13px; }
 .ped-ult-nota { font-size: 12px; margin: 8px 0; }
+.ped-cel { margin: 8px 0; border: 1px solid var(--line, #E2DCCF); border-radius: 10px; padding: 8px 12px; background: #FAF8F3; }
+.ped-cel > summary { cursor: pointer; font-weight: 600; }
+.ped-cel-c p, .ped-cel-c li { font-size: 13px; line-height: 1.5; }
+.ped-cel-cod { width: 100%; font-size: 11px; font-family: monospace; }

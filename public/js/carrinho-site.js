@@ -22,7 +22,7 @@
   if (m) { sessionStorage.setItem('teashopCodigo', codigo); history.replaceState(null, '', location.pathname + location.search); }
 
   // ---------- quadro na tela ----------
-  const css = `#tsc{position:fixed;right:16px;bottom:16px;width:420px;max-height:80vh;z-index:2147483000;background:#fff;border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.25);font:14px/1.4 Arial,sans-serif;color:#1F2A22;display:flex;flex-direction:column;overflow:hidden}
+  const css = `#tsc{position:fixed;right:12px;bottom:12px;width:420px;max-width:calc(100vw - 24px);max-height:80vh;z-index:2147483000;background:#fff;border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.25);font:14px/1.4 Arial,sans-serif;color:#1F2A22;display:flex;flex-direction:column;overflow:hidden}
 #tsc header{background:#2C5234;color:#fff;padding:12px 14px;display:flex;align-items:center;gap:8px}#tsc header b{flex:1;font-size:15px}
 #tsc header button{background:transparent;border:0;color:#fff;font-size:18px;cursor:pointer}
 #tsc .c{padding:12px 14px;overflow:auto}#tsc .bar{height:8px;background:#ECE6D8;border-radius:4px;margin:8px 0;overflow:hidden}#tsc .bar i{display:block;height:100%;background:#2C5234;transition:width .3s}

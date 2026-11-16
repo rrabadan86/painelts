@@ -866,11 +866,24 @@
       h('li', null, 'Clique em ', h('b', null, 'Montar carrinho no site'), '. O Sistema de Pedidos abre em outra aba (entre com o login da loja, se pedir).'),
       h('li', null, 'Lá, clique no favorito ', h('b', null, '🛒 Carrinho Tea Shop'), '. Ele coloca os produtos no carrinho da sua sessão e mostra o andamento, que também aparece aqui.'),
       h('li', null, 'Confira o carrinho e finalize no site. O painel nunca finaliza o pedido.'));
+    // no celular não dá para arrastar: copia o código e cria o favorito à mão (uma vez só)
+    const msgCel = h('span', { class: 'muted' });
+    const celular = h('details', { class: 'ped-cel', open: matchMedia('(max-width: 760px)').matches || null },
+      h('summary', null, '📱 No celular (Chrome no Android ou Safari no iPhone)'),
+      h('div', { class: 'ped-cel-c' },
+        h('p', null, h('b', null, 'Uma vez só, criar o favorito: '),
+          h('button', { type: 'button', class: 'btn', onclick: async () => { try { await navigator.clipboard.writeText(linkFavorito()); msgCel.textContent = 'Copiado.'; } catch { msgCel.textContent = 'Não consegui copiar: segure o dedo no texto abaixo e copie.'; } } }, '📋 Copiar o código do favorito'), ' ', msgCel),
+        h('ol', null,
+          h('li', null, h('b', null, 'Android (Chrome): '), 'abra qualquer página, toque em ⋮ → ☆ (favoritar) → Editar. Troque o nome para ', h('b', null, 'carrinhots'), ' e cole o código no lugar do endereço. Salve.'),
+          h('li', null, h('b', null, 'iPhone (Safari): '), 'toque em Compartilhar → Adicionar Favorito → Salvar. Depois abra os Favoritos, toque em Editar, abra esse favorito, troque o nome para ', h('b', null, 'carrinhots'), ' e cole o código no endereço.')),
+        h('p', null, h('b', null, 'Para montar: '), 'toque em "Montar carrinho no site". Na aba do Sistema de Pedidos, ', h('b', null, 'Android:'), ' digite ', h('b', null, 'carrinhots'), ' na barra de endereço e toque no favorito que aparece (com a estrela). ', h('b', null, 'iPhone:'), ' abra os Favoritos e toque em carrinhots.'),
+        h('p', { class: 'muted' }, 'Funciona igual ao computador: coloca os produtos no carrinho da sua sessão e para na etapa 2. A tela do Sistema de Pedidos é pequena no celular: confira o carrinho com calma antes de finalizar.'),
+        h('textarea', { class: 'f-input ped-cel-cod', rows: 3, readonly: true, onclick: (ev) => ev.target.select() }, linkFavorito())));
 
     const semCatalogo = !p.catalogo;
     return TS.card('Carrinho no Sistema de Pedidos', 'O carrinho do site vale só para a sessão de quem entrou; por isso ele é montado no seu navegador, com o seu login. O favorito procura cada produto pelo nome, confere o nome exato, ajusta ao múltiplo e coloca no carrinho. Ele para na etapa 2.',
       semCatalogo ? h('div', { class: 'notice' }, 'Leia o catálogo primeiro (botão "Atualizar catálogo", no topo): só vão para o carrinho os produtos disponíveis no site.') : null,
-      passos,
+      passos, celular,
       (() => {
         const ob = R.linhas.filter((r) => r.obrig);
         if (!ob.length) return null;
