@@ -1488,3 +1488,4 @@ tr.cp-enviada td { background: #EEF5EC !important; }
 .hist-op span { display: flex; flex-direction: column; } .hist-op small { color: var(--muted); font-size: 11.5px; }
 .cfg-hist-card { padding: 10px 12px; margin-top: 8px; box-shadow: none; }
 .cfg-hist-card .card-title { font-size: 13px; }
+.cfg-usu-filtros { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 0 0 10px; } .cfg-usu-filtros .f-input { width: auto; min-width: 170px; }

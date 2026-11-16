@@ -943,13 +943,25 @@
       h('button', { type: 'button', class: 'btn primary', onclick: () => { aberto ? abertos.delete('novoUser') : abertos.add('novoUser'); state.cfgEdit = null; pintar(); } }, aberto ? 'Fechar' : '+ Novo usuário')));
     if (aberto) box.append(formUsuario(null));
     const nomeLoja = new Map(est.todasLojas.map((l) => [l.id, l.nome]));
-    const linhas = est.usuarios.map((u) => {
+    // filtros: perfil, loja e situação (guardados enquanto a tela está aberta)
+    const fu = (state.cfgUsuFiltro ||= { perfil: '', loja: '', situacao: '' });
+    const situacaoDe = (u) => (!u.ativo ? 'desativado' : u.expirado ? 'expirado' : u.acessoAte && diasAte(u.acessoAte) <= 7 ? 'vence' : !u.ultimoAcesso ? 'nunca' : 'ativo');
+    const passa = (u) => (!fu.perfil || u.perfil === fu.perfil) && (!fu.loja || u.lojas.includes('*') || u.lojas.includes(fu.loja)) && (!fu.situacao || situacaoDe(u) === fu.situacao || (fu.situacao === 'ativo' && ['ativo', 'vence', 'nunca'].includes(situacaoDe(u))));
+    const selF = (k, rot, ops) => { const s = h('select', { class: 'f-input', 'aria-label': rot }, h('option', { value: '' }, rot), ops.map(([v, t]) => h('option', { value: v, selected: fu[k] === v || null }, t))); s.addEventListener('change', () => { fu[k] = s.value; pintar(); }); return s; };
+    const usados = est.usuarios.filter(passa);
+    box.append(h('div', { class: 'cfg-usu-filtros' },
+      selF('perfil', 'Todos os perfis', Object.keys(PERFIL_NOME).filter((p) => est.usuarios.some((u) => u.perfil === p)).map((p) => [p, PERFIL_NOME[p]])),
+      est.todasLojas.length > 1 ? selF('loja', 'Todas as lojas', est.todasLojas.map((l) => [l.id, l.nome])) : null,
+      selF('situacao', 'Todas as situações', [['ativo', 'Ativos'], ['nunca', 'Nunca acessaram'], ['vence', 'Acesso vence em até 7 dias'], ['expirado', 'Acesso terminou'], ['desativado', 'Desativados']]),
+      fu.perfil || fu.loja || fu.situacao ? h('button', { type: 'button', class: 'link-btn', onclick: () => { Object.assign(fu, { perfil: '', loja: '', situacao: '' }); pintar(); } }, 'Limpar') : null,
+      h('span', { class: 'muted' }, `${usados.length} de ${est.usuarios.length} usuário(s)`)));
+    const linhas = usados.map((u) => {
       const tr = h('tr', { class: u.ativo ? '' : 'inativo' },
         h('td', { class: 'l' }, h('b', null, u.nome), u.nome === est.usuario ? h('span', { class: 'muted' }, ' (você)') : null),
         h('td', { class: 'l' }, h('span', { class: 'badge p-' + u.perfil }, PERFIL_NOME[u.perfil]),
-          u.perfil === 'gerente' ? h('div', { class: 'muted cfg-telas-resumo' }, u.telas ? `${u.telas.length} tela(s)${u.telas.includes('clientes') ? ' · vê clientes' : ''}` : 'telas padrão') : null),
+          u.perfil === 'gerente' ? h('div', { class: 'muted cfg-telas-resumo' }, u.telas ? `${u.telas.length} tela(s)${u.telas.includes('clientes') ? ' · vê clientes' : ''}` : 'telas padrão') : null,
+          u.perfil === 'vendedor' ? h('div', { class: 'muted cfg-telas-resumo' }, u.vendedor ? `nas vendas: ${u.vendedor}` : h('span', { class: 'neg' }, 'sem o nome nas vendas')) : null),
         h('td', { class: 'l wrap' }, u.lojas.includes('*') ? 'Todas' : u.lojas.map((id) => nomeLoja.get(id) || id).join(', ')),
-        h('td', { class: 'l' }, u.vendedor || '—'),
         h('td', { class: 'l' }, u.ultimoAcesso ? dt(u.ultimoAcesso) : h('span', { class: 'muted' }, 'nunca')),
         h('td', { class: 'l' }, !u.ativo ? h('span', { class: 'neg' }, 'Desativado')
           : u.expirado ? h('span', { class: 'neg' }, `Acesso terminou em ${dataBr(u.acessoAte)}`)
@@ -957,11 +969,11 @@
           u.trocarSenha ? h('div', { class: 'cfg-prazo cfg-senha-pend', title: 'No próximo login a pessoa cria a própria senha' }, '🔑 aguardando troca da senha')
             : u.senhaTrocadaEm ? h('div', { class: 'muted cfg-prazo' }, `senha trocada em ${dt(u.senhaTrocadaEm)}`) : null),
         h('td', null, h('button', { type: 'button', class: 'btn', onclick: () => { state.cfgEdit = state.cfgEdit === u.nome ? null : u.nome; abertos.delete('novoUser'); pintar(); } }, state.cfgEdit === u.nome ? 'Fechar' : 'Editar')));
-      return state.cfgEdit === u.nome ? [tr, h('tr', { class: 'cfg-edit-row' }, h('td', { colspan: 7 }, formUsuario(u)))] : [tr];
+      return state.cfgEdit === u.nome ? [tr, h('tr', { class: 'cfg-edit-row' }, h('td', { colspan: 6 }, formUsuario(u)))] : [tr];
     }).flat();
     box.append(h('div', { class: 'card' }, h('div', { class: 'table-wrap free' }, h('table', { class: 't cfg-t' },
-      h('thead', null, h('tr', null, ['Usuário', 'Perfil', 'Lojas', 'Vendedor', 'Último acesso', 'Situação', ''].map((t, i) => h('th', { class: i < 6 ? 'l' : '' }, t)))),
-      h('tbody', null, linhas.length ? linhas : h('tr', null, h('td', { colspan: 7, class: 'l muted' }, 'Nenhum usuário.')))))));
+      h('thead', null, h('tr', null, ['Usuário', 'Perfil', 'Lojas', 'Último acesso', 'Situação', ''].map((t, i) => h('th', { class: i < 5 ? 'l' : '' }, t)))),
+      h('tbody', null, linhas.length ? linhas : h('tr', null, h('td', { colspan: 6, class: 'l muted' }, est.usuarios.length ? 'Nenhum usuário com esses filtros.' : 'Nenhum usuário.')))))));
     box.append(h('div', { class: 'cfg-perfis' }, Object.entries(PERFIL_DESC).filter(([p]) => est.perfil === 'admin' || ['gerente', 'vendedor'].includes(p)).map(([p, d]) => h('div', null, h('span', { class: 'badge p-' + p }, PERFIL_NOME[p]), ' ', d))));
   }
 
