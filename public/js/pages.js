@@ -670,22 +670,41 @@
       const nRecl = Object.values(conf).filter((x) => ['arom', 'puro', 'acess'].includes(x.classe)).length;
       if (prods.size || (ehAdm && nRecl)) {
         const OPC = [['', 'A classificar'], ['fora', 'Fica fora (confirmado)'], ['arom', 'Chá aromatizado'], ['puro', 'Chá puro'], ['acess', 'Acessório']];
+        // as escolhas só valem depois de "Salvar classificação" (dá para conferir antes de recalcular)
+        const pend = new Map(); // produto -> { de, para }
+        const ROTC = Object.fromEntries(OPC);
+        const barra = h('div', { class: 'cls-barra', hidden: true });
+        const pintarBarra = () => {
+          barra.hidden = !pend.size;
+          if (!pend.size) return;
+          barra.replaceChildren(h('div', null, h('b', null, `${pend.size} alteração${pend.size === 1 ? '' : 'ões'} para salvar: `),
+            [...pend].map(([k, x]) => `${k} → ${x.para === '' ? 'volta ao grupo do AppNext' : ROTC[x.para]}`).join(' · ')),
+          h('div', { class: 'cfg-inline', style: { marginTop: '6px', gap: '8px' } },
+            h('button', { type: 'button', class: 'btn primary', onclick: salvarPend }, 'Salvar classificação'),
+            h('button', { type: 'button', class: 'btn', onclick: () => { state.foraAberto = true; TS.render(); } }, 'Cancelar'),
+            h('span', { class: 'muted', style: { fontSize: '12px' } }, 'Ao salvar, meta, comissão e royalties são recalculados (em todas as lojas e meses).')));
+        };
+        const marcar = (prod, de, para, st) => {
+          if ((para || '') === (de || '')) { pend.delete(prod); st.textContent = ''; } else { pend.set(prod, { de, para }); st.textContent = 'não salvo'; }
+          pintarBarra();
+        };
+        async function salvarPend(ev) {
+          const b = ev.currentTarget; b.disabled = true; b.textContent = 'Salvando…';
+          try {
+            for (const [prod, x] of pend) {
+              const r = await fetch('/api/classificacao', { method: 'PUT', credentials: 'same-origin', headers: { 'X-Painel': '1', 'Content-Type': 'application/json' }, body: JSON.stringify({ produto: prod, classe: x.para || null }) });
+              const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.erro || 'Falha ao salvar.');
+            }
+            const recalc = [...pend.values()].some((x) => ['arom', 'puro', 'acess'].includes(x.para) || ['arom', 'puro', 'acess'].includes(x.de));
+            await TS.carregarClassificacao();
+            if (recalc) TS.recarregar && TS.recarregar(true); else TS.render();
+          } catch (e) { b.disabled = false; b.textContent = 'Salvar classificação'; alert(e.message); }
+        }
         const lista = [...prods.values()].sort((a, b) => (a.classe === 'fora') - (b.classe === 'fora') || b.vt - a.vt);
         const linhas = lista.map((p) => {
           const sel = h('select', { class: 'f-input', disabled: !ehAdm || null, style: { width: 'auto', minWidth: '180px' } }, OPC.map(([v, t]) => h('option', { value: v, selected: p.classe === v || null }, t)));
           const st = h('span', { class: 'muted', style: { marginLeft: '8px', fontSize: '12px' } });
-          sel.addEventListener('change', async () => {
-            sel.disabled = true; st.textContent = 'salvando…';
-            try {
-              const r = await fetch('/api/classificacao', { method: 'PUT', credentials: 'same-origin', headers: { 'X-Painel': '1', 'Content-Type': 'application/json' }, body: JSON.stringify({ produto: p.desc, classe: sel.value || null }) });
-              const j = await r.json().catch(() => ({}));
-              if (!r.ok) throw new Error(j.erro || 'Falha ao salvar.');
-              st.textContent = sel.value && sel.value !== 'fora' ? 'salvo · recalculando…' : 'salvo';
-              TS.classificacao = null;
-              const muda = (c) => ['arom', 'puro', 'acess'].includes(c);
-              if (muda(sel.value) || muda(p.classe)) { await TS.carregarClassificacao(); TS.recarregar && TS.recarregar(true); } else { await TS.carregarClassificacao(); TS.render(); }
-            } catch (e) { st.textContent = e.message; sel.disabled = false; }
-          });
+          sel.addEventListener('change', () => marcar(p.desc, p.classe, sel.value, st));
           return h('tr', { class: p.classe === 'fora' ? 'muted' : null }, h('td', { class: 'l' }, p.desc), h('td', { class: 'l muted' }, p.grupo), h('td', null, fmt.int(p.qtd)), h('td', null, fmt.brl(p.vt)), h('td', { class: 'l' }, sel, st));
         });
         // os que já foram reclassificados (contam na meta): dá para desfazer
@@ -694,21 +713,16 @@
         const linhasRecl = recl.map(([k, x]) => {
           const p = { desc: k, classe: x.classe };
           const sel = h('select', { class: 'f-input', disabled: !ehAdm || null, style: { width: 'auto', minWidth: '180px' } }, OPC.map(([v, t]) => h('option', { value: v, selected: x.classe === v || null }, v === '' ? 'Voltar ao grupo do AppNext' : t)));
-          sel.addEventListener('change', async () => {
-            sel.disabled = true;
-            try {
-              const r = await fetch('/api/classificacao', { method: 'PUT', credentials: 'same-origin', headers: { 'X-Painel': '1', 'Content-Type': 'application/json' }, body: JSON.stringify({ produto: p.desc, classe: sel.value || null }) });
-              const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.erro || 'Falha ao salvar.');
-              await TS.carregarClassificacao(); TS.recarregar && TS.recarregar(true);
-            } catch (e) { alert(e.message); sel.disabled = false; }
-          });
-          return h('tr', null, h('td', { class: 'l' }, k), h('td', { class: 'l muted' }, `${x.por || ''}${x.em ? ' · ' + fmt.date(x.em.slice(0, 10)) : ''}`), h('td', { class: 'l' }, sel));
+          const st = h('span', { class: 'muted', style: { marginLeft: '8px', fontSize: '12px' } });
+          sel.addEventListener('change', () => marcar(p.desc, p.classe, sel.value, st));
+          return h('tr', null, h('td', { class: 'l' }, k), h('td', { class: 'l muted' }, `${x.por || ''}${x.em ? ' · ' + fmt.date(x.em.slice(0, 10)) : ''}`), h('td', { class: 'l' }, sel, st));
         });
         const det = h('details', { class: 'fora-det' }, h('summary', null, prods.size ? `Ver os ${prods.size} produto${prods.size === 1 ? '' : 's'}${ehAdm ? ' e classificar' : ''}` : `Ver os produtos reclassificados no painel (${recl.length})`),
           h('p', { class: 'muted', style: { margin: '6px 0' } }, ehAdm
-            ? 'Escolha a classificação de cada produto: chá aromatizado, chá puro ou acessório passam a contar na meta, na comissão e nos royalties (em todas as lojas e em todos os meses, inclusive os já vendidos); "Fica fora" confirma que não conta e o aviso não aparece mais para ele. Vale até alguém mudar aqui.'
+            ? 'Escolha a classificação de cada produto e clique em "Salvar classificação": chá aromatizado, chá puro ou acessório passam a contar na meta, na comissão e nos royalties (em todas as lojas e em todos os meses, inclusive os já vendidos); "Fica fora" confirma que não conta e o aviso não aparece mais para ele. Vale até alguém mudar aqui.'
             : 'Só o administrador do painel muda a classificação dos produtos.'),
           prods.size ? h('div', { class: 'table-wrap free' }, h('table', { class: 't' }, h('thead', null, h('tr', null, h('th', { class: 'l' }, 'Produto'), h('th', { class: 'l' }, 'Grupo no AppNext'), h('th', null, 'Qtd'), h('th', null, 'Vendido'), h('th', { class: 'l' }, 'Classificação'))), h('tbody', null, linhas))) : null,
+          barra,
           recl.length ? h('div', { style: { marginTop: '10px' } }, h('b', null, `Já reclassificados no painel (${recl.length})`), h('div', { class: 'table-wrap free' }, h('table', { class: 't' }, h('thead', null, h('tr', null, h('th', { class: 'l' }, 'Produto'), h('th', { class: 'l' }, 'Por'), h('th', { class: 'l' }, 'Conta como'))), h('tbody', null, linhasRecl)))) : null);
         if (state.foraAberto) det.open = true;
         det.addEventListener('toggle', () => { state.foraAberto = det.open; });
