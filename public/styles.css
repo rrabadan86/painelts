@@ -1493,3 +1493,8 @@ tr.cp-enviada td { background: #EEF5EC !important; }
 .ped-prop-ins { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
 .ped-prop-ins label { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; }
 .ped-prop small { flex-basis: 100%; }
+/* pedido: prioridade dos chás e explicação de como o pedido é montado */
+.ped-prio { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 8px; font-size: 11px; font-weight: 600; background: #fde8d7; color: #9a4a12; white-space: nowrap; }
+.ped-como { margin-top: 12px; border-top: 1px solid var(--line, #e5e0d5); padding-top: 8px; font-size: 13px; }
+.ped-como summary { cursor: pointer; font-weight: 600; color: var(--green, #2d5a3d); }
+.ped-como ol { margin: 8px 0 0 18px; padding: 0; display: grid; gap: 4px; line-height: 1.45; }

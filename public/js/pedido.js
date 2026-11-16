@@ -23,6 +23,10 @@
   }
 
   const unid = (it) => (it.un === 'Kg' ? 'kg' : (it.un || 'un').toLowerCase());
+  /** passo de compra: chá a granel (kg) só em quilo inteiro; o resto, o múltiplo do site (ou 1 unidade) */
+  const passoDe = (c, it) => (it.un === 'Kg' ? Math.max(1, Math.ceil(((c && c.mult) || 1) - 1e-9)) : (c && c.mult) || 1);
+  // prioridade dos chás a granel: estoque abaixo de 500 g (sempre) e Estrela abaixo de 700 g
+  const PISO = 0.5, PISO_ESTRELA = 0.7;
   const qtdTxt = (v, it) => (v == null ? '—' : it.un === 'Kg' ? `${fmt.kg(v)} kg` : `${fmt.int(v)} ${unid(it)}`);
   const segundoDomingoMaio = (ano) => { const d = new Date(Date.UTC(ano, 4, 1)); const dom = (7 - d.getUTCDay()) % 7; return Math.floor(d.getTime() / DIA) + dom + 7; };
   const diaDe = (ano, mmdd) => TS.isoToDay(`${ano}-${mmdd}`);
@@ -133,7 +137,7 @@
     };
     const grupoDe = (cod) => { const g = grupoVt.get(cod); if (!g) return null; return ordemG.reduce((a, k) => (g[k] > (g[a] || 0) ? k : a), 'insumo'); };
     const arred = (q, c, it) => {
-      const mult = (c && c.mult) || (it.un === 'Kg' ? 0.1 : 1);
+      const mult = passoDe(c, it);
       let x = Math.ceil(q / mult - 1e-9) * mult;
       if (c && c.min && x > 0 && x < c.min) x = Math.ceil(c.min / mult - 1e-9) * mult;
       if (c && c.max && x > c.max) x = Math.floor(c.max / mult + 1e-9) * mult;
@@ -154,7 +158,7 @@
       const vel = (cons.get(it.cod) || 0) / 30;
       const prev = vel * (modo === 'evento' ? 1 : sazonal(it));
       const qtd = Math.max(0, it.qtd || 0);
-      let precisa, conta;
+      let precisa, conta, prior = 0;
       if (modo === 'evento') {
         const ly = lyEv.get(it.cod) || 0;
         if (!(ly > 0)) continue;
@@ -164,9 +168,15 @@
         precisa = noEvento + antes - qtd;
         conta = `No ${ev.nome} do ano passado: ${qtdTxt(ly, it)} × crescimento ${fmt.n2(cresc)} = ${qtdTxt(noEvento, it)}. Consumo normal até lá (${fmt.int(ate)} dias × ${qtdTxt(prev, it)}/dia) = ${qtdTxt(antes, it)}. Menos o estoque de ${qtdTxt(qtd, it)}.`;
       } else {
-        if (!(prev > 0) && !(it.min && qtd < it.min)) continue;
-        precisa = Math.max(prev * H - qtd, (it.min || 0) - qtd);
-        conta = `Previsão ${qtdTxt(prev, it)}/dia × (${ent} dias de entrega + ${N} dias até o próximo pedido) = ${qtdTxt(prev * H, it)} − estoque ${qtdTxt(qtd, it)}${it.min && it.min - qtd > prev * H - qtd ? ` · o mínimo do AppNext pede ${qtdTxt(it.min - qtd, it)}` : ''}.`;
+        // chá a granel que vendeu nos últimos 90 dias e está abaixo do piso: entra sempre, na frente
+        const cl = classe.get(it.cod);
+        const ehCha = it.un === 'Kg' && (grupoDe(it.cod) || 'cha') === 'cha' && (prev > 0 || !!cl);
+        prior = ehCha && qtd < PISO ? 2 : ehCha && cl === 'estrela' && qtd < PISO_ESTRELA ? 1 : 0;
+        if (!(prev > 0) && !(it.min && qtd < it.min) && !prior) continue;
+        precisa = Math.max(prev * H - qtd, (it.min || 0) - qtd, prior ? 1e-6 : 0);
+        conta = `Previsão ${qtdTxt(prev, it)}/dia × (${ent} dias de entrega + ${N} dias até o próximo pedido) = ${qtdTxt(prev * H, it)} − estoque ${qtdTxt(qtd, it)}${it.min && it.min - qtd > prev * H - qtd ? ` · o mínimo do AppNext pede ${qtdTxt(it.min - qtd, it)}` : ''}.`
+          + (prior === 2 ? ' Prioridade: estoque abaixo de 500 g.' : prior === 1 ? ' Prioridade: Estrela com estoque abaixo de 700 g.' : '')
+          + (it.un === 'Kg' ? ' Chá a granel só em quilo inteiro.' : '');
       }
       if (!(precisa > 0)) continue;
       const c = catPorCod.get(String(it.cod));
@@ -179,7 +189,7 @@
       const site = !catalogo ? 'sem' : !c ? 'fora' : !c.disp ? 'indisp' : 'ok';
       const unidadeEstranha = c && c.disp && it.custo > 0 && (c.preco / it.custo > 4 || c.preco / it.custo < 0.25);
       linhas.push({ cod: it.cod, produto: it.desc, it, c, grupo: g, grupoTxt: GRUPOS[g], qtd, prev, dias, urgente, precisa, sugerido, conta, preco, lucroDia, site, unidadeEstranha,
-        classe: classe.get(it.cod) || null,
+        classe: classe.get(it.cod) || null, prior,
         margem: vendaItem.get(it.cod) ? (contrib.get(it.cod) || 0) / vendaItem.get(it.cod) : null, pedir: 0, motivo: '' });
     }
 
@@ -203,7 +213,7 @@
 
     // ---------- distribuição do valor ----------
     const compraveis = linhas.filter((r) => !r.extra && (r.site === 'ok' || r.site === 'sem'));
-    const prioridade = (a, b) => (b.urgente - a.urgente) || (b.lucroDia - a.lucroDia) || (b.prev * (b.preco || 0) - a.prev * (a.preco || 0));
+    const prioridade = (a, b) => ((b.prior || 0) - (a.prior || 0)) || (b.urgente - a.urgente) || (b.lucroDia - a.lucroDia) || (b.prev * (b.preco || 0) - a.prev * (a.preco || 0));
     const fatSoma = fatG.cha + fatG.env + fatG.acess;
     const shareVendas = { cha: fatSoma ? fatG.cha / fatSoma : 0, env: fatSoma ? fatG.env / fatSoma : 0, acess: fatSoma ? fatG.acess / fatSoma : 0 };
     // proporção definida por você (ex.: 100% chás a granel): grupo com 0% não entra no pedido sugerido
@@ -221,7 +231,7 @@
       const alvo = { cha: resto * share.cha, env: resto * share.env, acess: resto * share.acess };
       const folga = 1 + pcfg.folgaPct / 100;
       const usado = { cha: 0, env: 0, acess: 0 };
-      const mult = (r) => (r.c && r.c.mult) || (r.it.un === 'Kg' ? 0.1 : 1);
+      const mult = (r) => passoDe(r.c, r.it);
       const encaixar = (r, cabe) => {
         const falta = r.sugerido - r.pedir;
         if (falta <= 0 || !(r.preco > 0)) return 0;
@@ -392,6 +402,22 @@
     if (modo === 'evento' && R.evInfo.atual[0] - R.hoje > R.ent + R.N) corpo.append(h('div', { class: 'notice mt' }, `Faltam ${fmt.int(R.evInfo.atual[0] - R.hoje)} dias para o ${R.ev.nome}: isto é uma prévia. O consumo normal até lá foi limitado a ${R.ent + R.N} dias (entrega + intervalo de pedidos), porque as reposições normais cobrem o resto. Refaça perto da data, com o estoque de então.`));
     if (modo === 'evento' && R.evInfo.atual[0] - R.hoje < R.ent) corpo.append(h('div', { class: 'notice warn mt' }, `A entrega leva ${R.ent} dias e o ${R.ev.nome} começa antes disso: o pedido pode chegar atrasado.`));
 
+    // ---------- como o pedido é montado (fica abaixo do gráfico) ----------
+    function comoFeito() {
+      const li = (t, ...x) => h('li', null, h('b', null, t), ' ', ...x);
+      return h('details', { class: 'ped-como', open: state.pedComoAberto || null, ontoggle: (ev) => { state.pedComoAberto = ev.target.open; } },
+        h('summary', null, 'Como o pedido é montado'),
+        h('ol', null,
+          li('Valor do pedido:', R.orcamento != null ? `${fmt.pct(R.pct, 1)} do faturamento dos últimos ${R.N} dias (sem Espaço Gourmet) = ${fmt.brl0(R.orcamento)}.` : 'sem limite de valor.'),
+          li('Quanto cada produto precisa:', `previsão de venda por dia (últimos 30 dias, ajustada pela época do ano) × (${R.ent} dias de entrega + ${R.N} dias até o próximo pedido) − o estoque. Se o mínimo do AppNext pedir mais, vale o mínimo.`),
+          li('Arredondamento:', 'chá a granel só em quilo inteiro (1 kg, 2 kg…); os outros no múltiplo do site, sempre para cima, respeitando mínimo e máximo do site.'),
+          li('Embalagens e insumos', '(saco kraft, etiquetas) entram primeiro, fora da proporção.'),
+          li('Divisão do valor:', R.propManual ? 'o resto vai para cada grupo pela proporção que você definiu; grupo com 0% fica fora (dá para pôr à mão).' : 'o resto vai para chás a granel, envasados e acessórios na mesma proporção das vendas do período.', ` Cada grupo pode passar ${fmt.int(par.folgaPct ?? 10)}% da sua parte (folga).`),
+          li('Ordem dentro de cada grupo:', '1º chás a granel com estoque abaixo de 500 g (entram sempre, mesmo que a previsão não peça); 2º chás Estrela abaixo de 700 g; 3º o que acaba antes da entrega; depois quem deixa mais lucro sem fixos por dia. Produto que não cabe inteiro entra com parte da necessidade.'),
+          li('Sobra:', 'o que sobrar do valor vai para quem ainda precisa, na mesma ordem. Use "Limpar ▾ → Completar com a sobra" depois de mexer à mão.'),
+          li('Fica de fora:', 'indisponível no site, fora do catálogo FRANQUIAS e o resto do catálogo (o que não precisa agora e os bens de consumo): esses você pede à mão.')));
+    }
+
     // ---------- proporção ----------
     let mix = null;
     const pintarMix = () => {
@@ -427,7 +453,7 @@
           h('button', { type: 'button', class: 'chip', onclick: () => aplicarP({ cha: 100, env: 0, acess: 0 }) }, '100% chás'),
           h('button', { type: 'button', class: 'chip', onclick: () => aplicarP({ cha: 0, env: 0, acess: 100 }) }, '100% acessórios')) : null,
         h('small', { class: 'muted' }, R.propManual ? 'Grupo com 0% fica fora do pedido sugerido (dá para pôr à mão). "Salvar como padrão da loja" guarda esta proporção.' : 'Automático: a parte de cada grupo nas vendas do período.'));
-      corpo.append(h('div', { class: 'mt' }, TS.card('Proporção do pedido', `Parte de cada grupo ${R.propManual ? 'definida por você' : `nas vendas dos últimos ${R.N} dias`} (cinza) e no pedido (verde). Embalagens e insumos (saco kraft, etiquetas) entram antes, fora da proporção.`, ctlP, mix)));
+      corpo.append(h('div', { class: 'mt' }, TS.card('Proporção do pedido', `Parte de cada grupo ${R.propManual ? 'definida por você' : `nas vendas dos últimos ${R.N} dias`} (cinza) e no pedido (verde). Embalagens e insumos (saco kraft, etiquetas) entram antes, fora da proporção.`, ctlP, mix, comoFeito())));
     }
     pintarTotal();
 
@@ -469,14 +495,14 @@
     const sobra = R.orcamento != null ? R.orcamento - totalAgora : null;
     const tab = TS.table({
       cols: [
-        { key: 'produto', label: 'Produto', align: 'l', sticky: true, wrap: true, render: (r) => h('span', null, r.produto, h('small', { class: 'est-tam' }, `cód. ${r.cod}`)) },
+        { key: 'produto', label: 'Produto', align: 'l', sticky: true, wrap: true, render: (r) => h('span', null, r.produto, r.prior ? h('span', { class: 'ped-prio', title: r.prior === 2 ? 'Prioridade: estoque abaixo de 500 g' : 'Prioridade: Estrela com estoque abaixo de 700 g' }, r.prior === 2 ? '< 500 g' : 'Estrela < 700 g') : null, h('small', { class: 'est-tam' }, `cód. ${r.cod}`)) },
         { key: 'grupoTxt', label: 'Grupo', align: 'l' },
         { key: 'classe', label: 'Classe', align: 'l', title: 'Giro × margem bruta dos últimos 90 dias, comparados com a mediana (mesma regra do Estoque e margem). Estrela: vende muito e tem margem boa. Volume: vende muito, margem menor. Joia: margem boa, vende pouco. Peso morto: vende pouco e margem baixa',
           render: (r) => (r.classe ? h('span', { class: 'ped-cl ped-cl-' + r.classe }, CLASSES[r.classe]) : h('span', { class: 'muted' }, '—')), sortVal: (r) => ({ estrela: 4, volume: 3, joia: 2, peso: 1 })[r.classe] || 0 },
         { key: 'sit', label: 'Situação', align: 'l', render: (r) => { const [t, c] = SITU(r); return h('span', { class: 'badge ' + c }, t); }, sortVal: (r) => (r.qtd <= 0 ? 3 : r.urgente ? 2 : 1) },
         { key: 'qtd', label: 'Estoque', render: (r) => qtdTxt(r.qtd, r.it) },
         { key: 'dias', label: 'Dura', fmt: (v) => (v == null ? '—' : v > 365 ? '+1 ano' : `${fmt.int(v)} dias`) },
-        { key: 'sugerido', label: 'Precisa', title: 'Quanto precisa, arredondado ao múltiplo do site. Passe o mouse para ver a conta', render: (r) => h('span', { class: 'est-dica', title: r.conta }, qtdTxt(r.sugerido, r.it), (() => { const pv = r.it.un === 'Kg' ? r.precisa : Math.ceil(r.precisa - 1e-9); return multDe(r) && pv < r.sugerido - 1e-9 ? h('small', { class: 'est-tam' }, `pela venda: ${qtdTxt(pv, r.it)}`) : null; })()) },
+        { key: 'sugerido', label: 'Precisa', title: 'Quanto precisa, arredondado ao múltiplo do site (chá a granel em quilo inteiro). Passe o mouse para ver a conta', render: (r) => h('span', { class: 'est-dica', title: r.conta }, qtdTxt(r.sugerido, r.it), (() => { const pv = r.it.un === 'Kg' ? r.precisa : Math.ceil(r.precisa - 1e-9); return (multDe(r) || r.it.un === 'Kg') && pv > 1e-3 && pv < r.sugerido - 1e-9 ? h('small', { class: 'est-tam' }, `pela venda: ${qtdTxt(pv, r.it)}`) : null; })()) },
         { key: 'pedir', label: 'Pedir', title: 'Quantidade do pedido: altere à vontade (0 tira do pedido). O total e a proporção se atualizam', render: (r) => campoQtd(r), sortVal: (r) => r.pedir },
         { key: 'preco', label: 'Preço', title: 'Preço no Sistema de Pedidos (FRANQUIAS); sem catálogo, o custo do AppNext', render: (r) => (r.preco ? h('span', { class: r.unidadeEstranha ? 'neg' : null, title: r.unidadeEstranha ? `Preço do site muito diferente do custo do AppNext (${fmt.brl(r.it.custo)}): confira a unidade.` : null }, fmt.brl(r.preco)) : '—'), sortVal: (r) => r.preco },
         { key: 'total', label: 'Total', render: (r) => { const s = h('span', { class: 'ped-tot' }, r.pedir > 0 ? fmt.brl(r.pedir * (r.preco || 0)) : '—'); r._tot = s; return s; }, sortVal: (r) => r.pedir * (r.preco || 0) },
@@ -518,7 +544,7 @@
     }
     function campoQtd(r) {
       if (r.site !== 'ok' && r.site !== 'sem') return '—';
-      const passo = (r.c && r.c.mult) || (r.it.un === 'Kg' ? 0.1 : 1);
+      const passo = passoDe(r.c, r.it);
       const i = h('input', { class: 'f-input ped-q', type: 'number', min: 0, step: String(passo), value: r.pedir || 0 });
       // ＋ põe no pedido (a quantidade que precisa, sem olhar o valor); × tira do pedido
       const b = h('button', { type: 'button', class: 'ped-ab' });
@@ -577,10 +603,10 @@
     function completar() {
       if (sobra == null) return;
       let livre = sobra;
-      const prio = (a, b) => (b.urgente - a.urgente) || (b.lucroDia - a.lucroDia);
+      const prio = (a, b) => ((b.prior || 0) - (a.prior || 0)) || (b.urgente - a.urgente) || (b.lucroDia - a.lucroDia);
       for (const r of completarCandidatos().sort(prio)) {
         if (livre <= 0.5) break;
-        const passo = (r.c && r.c.mult) || (r.it.un === 'Kg' ? 0.1 : 1);
+        const passo = passoDe(r.c, r.it);
         const falta = r.sugerido - r.pedir;
         let q = falta * r.preco <= livre + 0.005 ? falta : Math.floor(livre / (passo * r.preco) + 1e-9) * passo;
         if (q <= 0) continue;
