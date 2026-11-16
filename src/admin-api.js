@@ -167,7 +167,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
         id: l.id, nome: l.nome, appnext: l.appnext, meta: l.meta, metas: l.metas, criadaEm: l.criadaEm, regras: l.regras, marca: l.marca, wppModelos: l.wppModelos,
         nomesVenda: (() => { const raw = rawDe(l.id); return raw ? [...new Set(raw.vendas.slice(-500).map((v) => v.loja).filter(Boolean))] : []; })(),
         base: B.resumo(l.id), xml: XB.resumo(l.id), estoque: (() => { const e = ES.atual(l.id); return e ? { em: e.em, itens: e.itens.length, origem: e.origem || '' } : null; })(), fechEmail: NOTIF.publicoLoja(l.id), eventos: require('./eventos').lista(l.id), horarios: (() => { const a = AG.ler(); return { propria: !!a.lojas[l.id], semana: a.lojas[l.id] || a.padrao, hoje: AG.doDia(l.id) }; })(), fontes, vendedores: vendedoresDe(l.id),
-        fixe: { url: (env && env.FIXE_URL) || '', usuario: (env && env.FIXE_USER) || '', email: (env && env.FIXE_EMAIL) || '', temSenha: !!(env && env.FIXE_PASS), apelido: !(env && env.FIXE_APELIDO_USAR === '0'), enderecoPedido: env && env.FIXE_EMAIL ? (env.FIXE_APELIDO_USAR === '0' ? env.FIXE_EMAIL : require('./fixemail').comApelido(env.FIXE_EMAIL, l.id)) : '', ...require('./fixemail').situacao(l.id), logs: require('./fidelidade').resumo(l.id), fidelidade: require('./fidelidade').regrasDe(l) },
+        fixe: { url: (env && env.FIXE_URL) || '', usuario: (env && env.FIXE_USER) || '', email: (env && env.FIXE_EMAIL) || '', temSenha: !!(env && env.FIXE_PASS), apelido: !(env && env.FIXE_APELIDO_USAR === '0'), enderecoPedido: env && env.FIXE_EMAIL ? (env.FIXE_APELIDO_USAR === '0' ? env.FIXE_EMAIL : require('./fixemail').comApelido(env.FIXE_EMAIL, l.id)) : '', ...require('./fixemail').situacao(l.id), logs: require('./fidelidade').resumo(l.id), saldos: require('./fidelidade').resumoSaldos(l.id), fidelidade: require('./fidelidade').regrasDe(l) },
         coletor: env ? { configurado: true, rede: env.APPNEXT_REDE || '', usuario: env.APPNEXT_USER || '', temSenha: !!env.APPNEXT_PASS, lojaDestino: env.APPNEXT_LOJA_DESTINO || '', lojaIdDestino: env.APPNEXT_LOJA_ID_DESTINO || '' } : { configurado: false },
         status,
       };
@@ -350,6 +350,19 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
       if (x.status === 409) return res.status(409).json({ erro: (x.json && x.json.erro) || 'Já tem uma coleta na fila ou rodando.' });
       if (x.status >= 400) return res.status(400).json({ erro: (x.json && x.json.erro) || 'Falha ao pedir.' });
       aud(req, 'pediu cadastro de clientes do FIXE', req.loja.id, { loja: req.loja.id });
+      res.json({ ok: true });
+    } catch (e) { res.status(502).json({ erro: e.message }); }
+  });
+
+  r.post('/lojas/:id/fixe/saldos', soAdmin, lojaPermitida, async (req, res) => {
+    if (!COL.ativo()) return res.status(400).json({ erro: 'O coletor não está ligado nesta VPS.' });
+    const env = lerEnv(req.loja.id);
+    if (!env || !env.FIXE_URL || !env.FIXE_PASS) return res.status(400).json({ erro: 'Cadastre primeiro o acesso ao FIXE desta loja.' });
+    try {
+      const x = await COL.fixeSaldos(req.loja.id, req.user);
+      if (x.status === 409) return res.status(409).json({ erro: (x.json && x.json.erro) || 'Já tem uma coleta na fila ou rodando.' });
+      if (x.status >= 400) return res.status(400).json({ erro: (x.json && x.json.erro) || 'Falha ao pedir.' });
+      aud(req, 'sincronizou saldos de pontos com o FIXE', req.loja.id, { loja: req.loja.id });
       res.json({ ok: true });
     } catch (e) { res.status(502).json({ erro: e.message }); }
   });

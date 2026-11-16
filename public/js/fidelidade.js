@@ -165,9 +165,18 @@
   function membros() {
     const m = new Map(), saldoFixe = new Map();
     let logsAte = null;
+    // saldo oficial do FIXE com a hora em que foi lido: { pts, em, origem }. Vale o mais recente.
+    // (a sincronização do robô lê o saldo direto no FIXE; a Base de leads pode trazer a coluna de saldo)
+    const oficial = (cpf, pts, em, origem) => {
+      const a = saldoFixe.get(cpf);
+      if (!a || (em || '') > (a.em || '') || ((em || '') === (a.em || '') && pts > a.pts)) saldoFixe.set(cpf, { pts, em: em || null, origem });
+    };
+    for (const base of TS.db.fidelidade || []) {
+      if (base.saldosFixe && base.saldosFixe.em) for (const [cpf, pts] of base.saldosFixe.s || []) oficial(cpf, pts, base.saldosFixe.em, 'sinc');
+    }
     for (const base of TS.db.fidelidade || []) {
       for (const [cpf, d, sd] of base.membros || []) {
-        if (sd != null) saldoFixe.set(cpf, Math.max(saldoFixe.get(cpf) ?? -Infinity, sd)); // o saldo do FIXE é da rede: o mesmo em todas as bases
+        if (sd != null) oficial(cpf, sd, base.membrosEm, 'leads'); // o saldo do FIXE é da rede: o mesmo em todas as bases
         const day = d ? TS.isoToDay(d) : null;
         if (!m.has(cpf) || (day != null && (m.get(cpf) == null || day < m.get(cpf)))) m.set(cpf, day);
       }
@@ -222,13 +231,26 @@
       const movDia = new Set();
       for (const m of movs) if (!m.anulado && m.tipo !== 'expirou') movDia.add(m.cpf + '|' + m.day);
       const mb = membros();
-      // saldo oficial do FIXE (base de leads): é o que vale; a conta pelos Logs fica para comparar e para os vencimentos
-      for (const [cpf, sd] of mb.saldoFixe) {
+      // saldo oficial do FIXE: é o que vale. Depois da leitura, soma o que os Logs trazem de novo
+      // (pontos ganhos, resgates, expirações). A conta só pelos Logs fica para comparar e para os vencimentos.
+      const quando = (iso) => { if (!iso) return null; const d = new Date(iso); if (isNaN(d)) return null; const p2 = (n) => String(n).padStart(2, '0'); return { day: TS.isoToDay(`${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`), min: d.getHours() * 60 + d.getMinutes() }; };
+      const SINAL = { pontos: 1, boasvindas: 1, ajuste: 1, resgate: -1, expirou: -1, saida: -1 };
+      for (const [cpf, of] of mb.saldoFixe) {
         let a = porCpf.get(cpf);
-        if (!a) { if (!sd) continue; porCpf.set(cpf, (a = { cpf, nome: '', saldo: 0, ganhos: 0, resgatados: 0, expirados: 0, vencidosSemBaixa: 0, prox: null, proxPts: 0, em30: 0, movs: [] })); }
+        if (!a) { if (!of.pts) continue; porCpf.set(cpf, (a = { cpf, nome: '', saldo: 0, ganhos: 0, resgatados: 0, expirados: 0, vencidosSemBaixa: 0, prox: null, proxPts: 0, em30: 0, movs: [] })); }
+        const q = quando(of.em), vistos = new Set();
+        let depois = 0;
+        if (q) for (const m of a.movs) {
+          if (m.anulado || !SINAL[m.tipo] || !(m.day > q.day || (m.day === q.day && m.min != null && m.min > q.min))) continue;
+          const k = m.day + '|' + m.min + '|' + m.tipo + '|' + m.pontos; // o mesmo movimento nos Logs de duas lojas conta uma vez
+          if (vistos.has(k)) continue;
+          vistos.add(k);
+          depois += SINAL[m.tipo] * (m.pontos || 0);
+        }
         a.saldoLogs = a.saldo;
-        a.saldoFixe = sd;
-        a.saldo = sd;
+        a.saldoFixe = Math.max(0, of.pts + depois);
+        a.saldoFixeLido = of.pts; a.saldoFixeEm = of.em; a.saldoFixeOrigem = of.origem; a.saldoFixeDepois = depois;
+        a.saldo = a.saldoFixe;
       }
       return { movs, porCpf, ...r, ...mb, movDia, bases: TS.db.fidelidade };
     },

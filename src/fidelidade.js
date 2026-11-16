@@ -105,9 +105,19 @@ function eventos(id) {
 }
 
 const arqMembros = (id) => path.join(C.pastaLoja(id), 'fixe', 'membros.json.gz');
+const arqSaldos = (id) => path.join(C.pastaLoja(id), 'fixe', 'saldos.json');
 function assinatura(id) {
   const m = (f) => { try { return String(fs.statSync(f).mtimeMs); } catch { return ''; } };
-  return m(arq(id)) + '/' + m(arqMembros(id));
+  return m(arq(id)) + '/' + m(arqMembros(id)) + '/' + m(arqSaldos(id));
+}
+/** saldo oficial de pontos lido no FIXE pelo robô ("Sincronizar saldos com o FIXE"): { em, total, saldos: [[cpf, pontos]] } */
+function saldosFixe(id) {
+  try { const j = JSON.parse(fs.readFileSync(arqSaldos(id), 'utf8')); return j && Array.isArray(j.saldos) ? j : null; } catch { return null; }
+}
+/** para Configurações: quando foi a última sincronização e quantos clientes */
+function resumoSaldos(id) {
+  const j = saldosFixe(id);
+  return j ? { em: j.em, clientes: j.saldos.length, comPontos: j.saldos.filter((x) => x[1] > 0).length } : null;
 }
 /** quem está no programa (base de leads do FIXE): [[cpf, data de cadastro], …] — a exportação é a base inteira, substitui */
 function gravarMembros(id, lista) {
@@ -150,7 +160,7 @@ function nomesProprios(eventos) {
  *   [cpf, iNome, iLoja, data, min, tipo, pontos, "produto|produto"]
  * propria[i] diz se a loja i do FIXE é esta loja do painel; vendaLoja é o nome dessa loja nas vendas.
  */
-function paraPainel(fx, loja, nomesVenda, mb) {
+function paraPainel(fx, loja, nomesVenda, mb, sf) {
   const ev = (fx && fx.eventos) || [];
   // membros: base de leads + quem aparece nos Logs; a data de cadastro mais antiga que houver
   const cad = new Map();
@@ -163,7 +173,7 @@ function paraPainel(fx, loja, nomesVenda, mb) {
   const nomes = [], iNome = new Map(), lojas = [], iLoja = new Map();
   const idx = (m, l, v) => { let i = m.get(v); if (i === undefined) { i = l.length; l.push(v); m.set(v, i); } return i; };
   const linhas = ev.map((e) => [e.cpf, idx(iNome, nomes, e.nome || ''), idx(iLoja, lojas, e.loja || ''), e.data, e.min, e.tipo, e.pontos || 0, (e.produtos || []).join('|'), ...(e.txt ? [e.txt] : [])]);
-  return { id: loja.id, nome: loja.nome, em: fx && fx.em, membrosEm: mb && mb.em, membros: [...cad].map(([cpf, d]) => (saldoOficial.has(cpf) ? [cpf, d, saldoOficial.get(cpf)] : [cpf, d])), vendaLoja: (nomesVenda || [])[0] || null, regras: regrasDe(loja), nomes, lojas, propria: lojas.map((n) => proprios.has(n)), ev: linhas };
+  return { id: loja.id, nome: loja.nome, em: fx && fx.em, membrosEm: mb && mb.em, saldosFixe: sf ? { em: sf.em, s: sf.saldos } : null, membros: [...cad].map(([cpf, d]) => (saldoOficial.has(cpf) ? [cpf, d, saldoOficial.get(cpf)] : [cpf, d])), vendaLoja: (nomesVenda || [])[0] || null, regras: regrasDe(loja), nomes, lojas, propria: lojas.map((n) => proprios.has(n)), ev: linhas };
 }
 
-module.exports = { ehLogs, ler, importar, eventos, evento, assinatura, resumo, gravarMembros, membros, regrasDe, nomesProprios, paraPainel, REGRAS_PADRAO };
+module.exports = { saldosFixe, resumoSaldos, ehLogs, ler, importar, eventos, evento, assinatura, resumo, gravarMembros, membros, regrasDe, nomesProprios, paraPainel, REGRAS_PADRAO };

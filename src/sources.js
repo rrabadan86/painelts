@@ -213,8 +213,8 @@ async function loadLoja(loja) {
   else if (nomesLoja.length) out.xml.forEach((x) => { if (!x.loja) x.loja = nomesLoja[0]; });
   // fidelidade (logs do FIXE): os movimentos vão para o painel, que liga as compras aos cupons
   const FI = require('./fidelidade');
-  const fx = FI.eventos(loja.id), mb = FI.membros(loja.id);
-  out.fidelidade = fx || mb ? [FI.paraPainel(fx, loja, nomesLoja, mb)] : [];
+  const fx = FI.eventos(loja.id), mb = FI.membros(loja.id), sf = FI.saldosFixe(loja.id);
+  out.fidelidade = fx || mb || sf ? [FI.paraPainel(fx, loja, nomesLoja, mb, sf)] : [];
   // metas: padrão (lojas.json ou planilha Meta) + metas por mês
   if (out.meta == null) out.meta = out.metaPlanilha ?? null;
   out.metaCfg = { id: loja.id, nome: loja.nome, nomesVenda: nomesLoja, padrao: out.meta, meses: loja.metas || {} };

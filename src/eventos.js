@@ -35,7 +35,7 @@ function registrar(id, { execucao, fixeUltimo }) {
     const erroDe = (parte) => motivo(e.log, parte) || 'falhou (veja o log técnico)';
     const novos = [];
     // vendas e XML que deram certo já aparecem pelas importações; aqui só as falhas
-    if (!['xml', 'fixe', 'nada'].includes(e.tipo) && e.estado !== 'ok') novos.push({ ...base, parte: 'vendas', ok: false, erro });
+    if (!['xml', 'fixe', 'saldos', 'nada'].includes(e.tipo) && e.estado !== 'ok') novos.push({ ...base, parte: 'vendas', ok: false, erro });
     if (e.xml && !e.xml.ok) novos.push({ ...base, parte: 'xml', ok: false, erro });
     if (e.estoque) {
       novos.push({ ...base, parte: 'estoque', ok: !!e.estoque.ok, erro: e.estoque.ok ? null : erroDe('estoque') });
@@ -43,6 +43,7 @@ function registrar(id, { execucao, fixeUltimo }) {
     }
     if (e.caixa) novos.push({ ...base, parte: 'caixa', ok: !!e.caixa.ok, erro: e.caixa.ok ? null : erroDe('caixa') });
     if (e.fixe) novos.push({ ...base, parte: 'fixe', ok: !!e.fixe.ok, detalhe: e.fixe.ok ? 'exportação pedida ao FIXE' : null, erro: e.fixe.ok ? null : erroDe('fixe') });
+    if (e.saldos) novos.push({ ...base, parte: 'saldos', ok: !!e.saldos.ok, detalhe: e.saldos.ok ? 'saldos de pontos lidos no FIXE' : null, erro: e.saldos.ok ? null : erroDe('saldos') });
     j.eventos.unshift(...novos.reverse());
   }
   const u = fixeUltimo;

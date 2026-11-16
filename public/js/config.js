@@ -255,6 +255,17 @@
     return fx.url ? linhaSit('nada', 'Fidelidade (Logs do FIXE)', 'ainda não importado', 'Vem junto com o cadastro, na atualização da noite. Também dá para enviar a planilha de Logs em "Enviar planilha" → Cadastro de clientes.') : null;
   }
 
+  /** saldo oficial de pontos lido no FIXE (botão "Sincronizar saldos com o FIXE") */
+  function sitSaldos(l) {
+    const fx = l.fixe || {}, sd = fx.saldos;
+    const ex = l.status && l.status.execucao;
+    const exS = ex && ex.tipo === 'saldos' ? ex : null;
+    if (ex && ['na_fila', 'rodando'].includes(ex.estado) && ex.tipo === 'saldos') return linhaSit('rodando', 'Saldos de pontos (FIXE)', 'sincronizando…', 'O robô está lendo o saldo de cada cliente no FIXE. Leva um ou dois minutos.');
+    if (exS && exS.saldos && !exS.saldos.ok && (!sd || exS.fim > sd.em)) return linhaSit('erro', 'Saldos de pontos (FIXE)', h('span', { class: 'neg' }, 'a sincronização falhou'), 'Veja o motivo no log técnico de "Dados e atualização".', sd ? `Última que deu certo: ${dt(sd.em)}` : null);
+    if (sd) return linhaSit('ok', 'Saldos de pontos (FIXE)', `sincronizados em ${dt(sd.em)}`, `${fmt.int(sd.comPontos)} clientes com pontos (de ${fmt.int(sd.clientes)} na base). Depois disso, o saldo de cada cliente segue pelos Logs de todo dia.`);
+    return fx.url ? linhaSit('nada', 'Saldos de pontos (FIXE)', 'ainda não sincronizados', 'Os Logs não detalham os pontos de compras antigas; sem sincronizar, o saldo de alguns clientes fica menor que o do FIXE.') : null;
+  }
+
   // ---- horários da atualização automática desta loja (os da rede ou próprios)
   function blocoHorarios(l) {
     if (!est.coletorAtivo || !l.horarios) return null;
@@ -305,7 +316,7 @@
       if (av && av.linhas && av.linhas.length) b.__aoVivo = detalhes('aovivo:' + l.id, { class: 'cfg-log' }, h('summary', null, 'Ver o log ao vivo'), logBonito(av.linhas));
     }
     // vendas
-    const exV = ex && !ocupado && !['xml', 'fixe', 'nada'].includes(ex.tipo) ? ex : null; // coleta sem vendas não diz nada das vendas
+    const exV = ex && !ocupado && !['xml', 'fixe', 'saldos', 'nada'].includes(ex.tipo) ? ex : null; // coleta sem vendas não diz nada das vendas
     sit.append(linha(exV ? (exV.estado === 'ok' ? 'ok' : 'erro') : l.base.ate ? 'ok' : 'nada', 'Vendas',
       exV ? (exV.estado === 'ok' ? 'última coleta deu certo' : h('span', { class: 'neg' }, 'a última coleta falhou')) : l.base.ate ? null : 'ainda sem vendas',
       exV ? `${dt(exV.fim)} · coleta ${quem(exV)}${periodo(exV) ? ` · ${periodo(exV)}` : ''}` : null,
@@ -377,8 +388,8 @@
       if (s.includes('migra')) return 'Migração';
       return o ? o.replace(/_/g, ' ') : '—';
     };
-    const PARTE = { vendas: 'Vendas', xml: 'XML', estoque: 'Estoque', compras: 'Notas de compra', caixa: 'Fechamento de caixa', fixe: 'FIXE · pedido no site', fixeEmail: 'FIXE · e-mail importado' };
-    const GRUPO = { vendas: 'vendas', xml: 'xml', estoque: 'estoque', compras: 'estoque', caixa: 'caixa', fixe: 'fixe', fixeEmail: 'fixe' };
+    const PARTE = { vendas: 'Vendas', xml: 'XML', estoque: 'Estoque', compras: 'Notas de compra', caixa: 'Fechamento de caixa', fixe: 'FIXE · pedido no site', fixeEmail: 'FIXE · e-mail importado', saldos: 'FIXE · saldos de pontos' };
+    const GRUPO = { vendas: 'vendas', xml: 'xml', estoque: 'estoque', compras: 'estoque', caixa: 'caixa', fixe: 'fixe', fixeEmail: 'fixe', saldos: 'fixe' };
     const per = (de, ate) => (de && ate ? `${dIso(de)} a ${dIso(ate)}` : '—');
     const linhas = [
       ...(l.base.importacoes || []).map((i) => ({ em: i.em, parte: 'vendas', ok: true, tipo: TIPO_IMP(i.origem), periodo: per(i.de, i.ate),
@@ -585,7 +596,7 @@
       h('p', { class: 'muted' }, 'O coletor entra no FIXE e pede duas exportações para o Gmail da loja: a "Base de leads" (cadastro) e os "Logs" (pontos, compras e resgates). O painel lê os e-mails (na caixa de entrada ou no spam), baixa as planilhas, junta com o cadastro e liga as compras do FIXE aos cupons. Nada precisa ser feito à mão.'),
       h('div', { class: 'notice' }, h('b', null, 'Quando o FIXE é atualizado: '),
         `uma vez por dia, só na última atualização automática da loja${l.horarios && l.horarios.hoje && l.horarios.hoje.length ? ` (hoje às ${l.horarios.hoje[l.horarios.hoje.length - 1]})` : ''} — a marcada com ★ nos horários (Dados e atualização). As outras atualizações do dia trazem só vendas, XML e estoque, porque o cadastro e os pontos do FIXE não precisam de mais de uma leitura por dia e cada pedido gera dois e-mails. Num dia sem atualização automática (ex.: loja fechada), o FIXE não é pedido. Fora desse horário, o administrador pode pedir na hora pelo botão "Importar agora" (as atualizações manuais de vendas não pedem o FIXE).`));
-    { const f = sitFixe(l), g = sitLogs(l); if (f || g) b.append(h('div', { class: 'cfg-sit' }, f, g)); }
+    { const f = sitFixe(l), g = sitLogs(l), sd = sitSaldos(l); if (f || g || sd) b.append(h('div', { class: 'cfg-sit' }, f, g, sd)); }
     const url = inp({ value: fx.url || (est.lojas || []).map((x) => x.fixe && x.fixe.url).find(Boolean) || '', placeholder: 'ex.: https://dash.epossible.com.br/loja/…/leads' });
     const usuario = inp({ value: fx.usuario || '', placeholder: 'ex.: e-mail de acesso ao FIXE', autocomplete: 'off' });
     const senha = inp({ type: 'password', placeholder: fx.temSenha ? 'guardada (deixe em branco para manter)' : 'senha do FIXE', autocomplete: 'new-password' });
@@ -614,7 +625,12 @@
       h('div', { class: 'cfg-acoes' },
         acao('Salvar acesso ao FIXE', async () => { await api('PUT', `/lojas/${l.id}/fixe`, { url: url.value, usuario: usuario.value, senha: senha.value, email: email.value, apelido: apelido.checked }); senha.value = ''; return 'Acesso ao FIXE salvo.'; }, 'btn primary'),
         fx.url ? acao('Remover acesso', async () => { if (!confirm('Remover o acesso desta loja ao FIXE (endereço, usuário, senha e e-mail)? O cadastro de clientes que já está no painel continua.')) return null; await api('DELETE', `/lojas/${l.id}/fixe`); return 'Acesso ao FIXE removido.'; }) : null,
-        est.perfil === 'admin' && est.coletorAtivo && fx.url ? acao('Importar agora', async () => { await api('POST', `/lojas/${l.id}/fixe/rodar`); return 'Pedido enviado ao FIXE. Em alguns minutos o e-mail chega e o cadastro é atualizado.'; }) : null));
+        est.perfil === 'admin' && est.coletorAtivo && fx.url ? acao('Importar agora', async () => { await api('POST', `/lojas/${l.id}/fixe/rodar`); return 'Pedido enviado ao FIXE. Em alguns minutos o e-mail chega e o cadastro é atualizado.'; }) : null,
+        est.perfil === 'admin' && est.coletorAtivo && fx.url && fx.temSenha ? acao('Sincronizar saldos com o FIXE', async () => {
+          if (!confirm('O robô entra no FIXE e lê o saldo de pontos de cada cliente (só leitura, não muda nada no FIXE). Esse saldo passa a ser o ponto de partida; depois, os Logs de todo dia atualizam. Continuar?')) return null;
+          await api('POST', `/lojas/${l.id}/fixe/saldos`); return 'Sincronização na fila do coletor. Leva um ou dois minutos; a situação aparece acima.';
+        }) : null),
+      fx.url ? h('p', { class: 'muted', style: { marginTop: '6px' } }, 'Sincronizar saldos: use uma vez para acertar os pontos antigos que os Logs não trazem. Repita só se notar diferença entre o painel e o FIXE em algum cliente.') : null);
     // regras de pontos
     if (est.perfil === 'admin' || est.perfil === 'franqueado') {
       const rg = fx.fidelidade || { reaisPorPonto: 50, validadeMeses: 12 };

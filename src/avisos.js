@@ -66,7 +66,7 @@ async function verificar({ COL, FX, B, NOTIF }) {
         const e = s.configurada && s.execucao;
         if (e && e.fim && e.gatilho !== 'historico' && (e.estado === 'ok' || e.estado === 'falhou')) {
           const partes = [];
-          if (!['xml', 'fixe', 'nada'].includes(e.tipo)) partes.push(['vendas', e.estado === 'ok']);
+          if (!['xml', 'fixe', 'saldos', 'nada'].includes(e.tipo)) partes.push(['vendas', e.estado === 'ok']);
           if (e.xml) partes.push(['xml', e.xml.ok]);
           if (e.estoque) partes.push(['estoque', e.estoque.ok]);
           if (e.fixe) partes.push(['fixe', e.fixe.ok]);

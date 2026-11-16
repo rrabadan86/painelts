@@ -49,6 +49,8 @@ SCRIPT_CAIXA = Path(os.getenv("COLETOR_SCRIPT_CAIXA", Path(__file__).with_name("
 # preço de tabela do cadastro (Produtos e Produtos Compostos): junto do estoque, no máximo uma vez a cada 20 horas
 SCRIPT_PRODUTOS = Path(os.getenv("COLETOR_SCRIPT_PRODUTOS", Path(__file__).with_name("nextsoft_produtos.py")))
 SCRIPT_FIXE = Path(os.getenv("COLETOR_SCRIPT_FIXE", Path(__file__).with_name("fixe_export.py")))
+# saldo oficial de pontos de cada cliente (só pelo botão "Sincronizar saldos com o FIXE")
+SCRIPT_SALDOS = Path(os.getenv("COLETOR_SCRIPT_SALDOS", Path(__file__).with_name("fixe_saldos.py")))
 # Sistema de Pedidos da franqueadora: catálogo (toda noite) e montar o carrinho (pelo painel)
 SCRIPT_PEDIDO = Path(os.getenv("COLETOR_SCRIPT_PEDIDO", Path(__file__).with_name("nextsoft_pedido.py")))
 # estoque atual e custos junto da rotina e do botão do painel: 1 = sim
@@ -376,7 +378,7 @@ def rodar(job):
         job["inicio"] = datetime.now(TZ).isoformat()
         e["atual"] = job
     tipo = job.get("tipo") or ("ambos" if XML_ROTINA else "vendas")
-    if tipo not in TIPOS and tipo != "fixe":
+    if tipo not in TIPOS and tipo not in ("fixe", "saldos"):
         tipo = "vendas"
     itens = job.get("itens")
     if itens:  # escolha do "Rodar agora": cada parte só se marcada
@@ -447,7 +449,12 @@ def rodar(job):
         fixe = {"ok": cf == 0, "codigo": cf}
         if principal is None:
             ok, codigo, principal = cf == 0, cf, "fixe"
-    quer_estoque = ("estoque" in quer) if quer is not None else (tipo != "fixe" and job["gatilho"] != "historico" and ESTOQUE_ROTINA)
+    saldos = None
+    if tipo == "saldos" and SCRIPT_SALDOS.exists():
+        cs = executar(SCRIPT_SALDOS, {"SAIDA_SALDOS": str(DATA_DIR / loja / "fixe" / "saldos.json")})
+        saldos = {"ok": cs == 0, "codigo": cs}
+        ok, codigo, principal = cs == 0, cs, "saldos"
+    quer_estoque = ("estoque" in quer) if quer is not None else (tipo not in ("fixe", "saldos") and job["gatilho"] != "historico" and ESTOQUE_ROTINA)
     if "estoque" in (job.get("extras") or []):
         quer_estoque = True
     if quer_estoque and SCRIPT_ESTOQUE.exists():
@@ -475,7 +482,7 @@ def rodar(job):
             marca = e.pop("marcar_ultima_do_dia")
             if not job.get("ultimaDoDia") and marca >= (datetime.now(TZ) - timedelta(hours=6)).strftime("%Y-%m-%d"):
                 job = {**job, "ultimaDoDia": marca}
-        e["ultima"] = {**job, "tipo": tipo, "xml": xml, "caixa": caixa, "estoque": estoque, "fixe": fixe, "fim": datetime.now(TZ).isoformat(), "ok": ok, "codigo": codigo,
+        e["ultima"] = {**job, "tipo": tipo, "xml": xml, "caixa": caixa, "estoque": estoque, "fixe": fixe, "saldos": saldos, "fim": datetime.now(TZ).isoformat(), "ok": ok, "codigo": codigo,
                        "duracao_s": round(time.time() - inicio), "log": cauda}
         lote = e.get("lote")
         if job["gatilho"] == "historico" and lote and not lote.get("fim"):
@@ -633,11 +640,12 @@ class API(BaseHTTPRequestHandler):
             if not enfileirar_pedido(loja, acao, por, bool(corpo.get("somar"))):
                 return self._json(409, {"erro": "Já há uma tarefa do Sistema de Pedidos na fila ou rodando para esta loja."})
             return self._json(200, {"ok": True})
-        if self.path.startswith("/fixe/"):
-            loja = self._loja("/fixe/")
+        if self.path.startswith("/fixe/") or self.path.startswith("/fixe-saldos/"):
+            saldos = self.path.startswith("/fixe-saldos/")
+            loja = self._loja("/fixe-saldos/" if saldos else "/fixe/")
             if not loja or loja not in lojas_configuradas():
                 return self._json(404, {"erro": "Loja sem acesso configurado."})
-            if not enfileirar(loja, "manual", por, tipo="fixe"):
+            if not enfileirar(loja, "manual", por, tipo="saldos" if saldos else "fixe"):
                 return self._json(409, {"erro": "Esta loja já tem uma coleta na fila ou rodando."})
             return self._json(200, {"ok": True})
         if self.path.startswith("/historico/"):

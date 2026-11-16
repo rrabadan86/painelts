@@ -26,13 +26,13 @@ async function chamar(path, { method = 'GET', por, body } = {}) {
 
 /** Converte o estado do coletor no mesmo formato usado para o GitHub */
 function execucao(s, comLog) {
-  if (s.estado === 'na_fila' && s.atual) return { estado: 'na_fila', criado: s.atual.criado, gatilho: s.atual.gatilho, por: s.atual.por, de: s.atual.de, ate: s.atual.ate };
-  if (s.estado === 'rodando' && s.atual) return { estado: 'rodando', inicio: s.atual.inicio, criado: s.atual.criado, gatilho: s.atual.gatilho, por: s.atual.por, de: s.atual.de, ate: s.atual.ate, aoVivo: s.ao_vivo || null };
+  if (s.estado === 'na_fila' && s.atual) return { estado: 'na_fila', tipo: s.atual.tipo || null, criado: s.atual.criado, gatilho: s.atual.gatilho, por: s.atual.por, de: s.atual.de, ate: s.atual.ate };
+  if (s.estado === 'rodando' && s.atual) return { estado: 'rodando', tipo: s.atual.tipo || null, inicio: s.atual.inicio, criado: s.atual.criado, gatilho: s.atual.gatilho, por: s.atual.por, de: s.atual.de, ate: s.atual.ate, aoVivo: s.ao_vivo || null };
   const u = s.ultima;
   if (!u) return null;
   return {
     estado: u.ok ? 'ok' : 'falhou', conclusao: u.ok ? 'success' : String(u.codigo), gatilho: u.gatilho, por: u.por,
-    inicio: u.inicio, criado: u.criado, fim: u.fim, duracao: u.duracao_s, ultimaDoDia: u.ultimaDoDia || null, de: u.de, ate: u.ate, tipo: u.tipo, xml: u.xml || null, estoque: u.estoque || null, fixe: u.fixe || null, caixa: u.caixa || null,
+    inicio: u.inicio, criado: u.criado, fim: u.fim, duracao: u.duracao_s, ultimaDoDia: u.ultimaDoDia || null, de: u.de, ate: u.ate, tipo: u.tipo, xml: u.xml || null, estoque: u.estoque || null, fixe: u.fixe || null, saldos: u.saldos || null, caixa: u.caixa || null,
     log: comLog ? u.log : undefined,
   };
 }
@@ -54,6 +54,10 @@ async function historico(lojaId, partes, por, tipo = 'ambos', extras = []) {
 async function fixe(lojaId, por) {
   return chamar(`/fixe/${encodeURIComponent(lojaId)}`, { method: 'POST', por });
 }
+/** saldo oficial de pontos dos clientes (só leitura no FIXE) */
+async function fixeSaldos(lojaId, por) {
+  return chamar(`/fixe-saldos/${encodeURIComponent(lojaId)}`, { method: 'POST', por });
+}
 /** Sistema de Pedidos: { acao: 'catalogo' | 'carrinho', somar } */
 async function pedido(lojaId, por, body) {
   return chamar(`/pedido/${encodeURIComponent(lojaId)}`, { method: 'POST', por, body });
@@ -65,4 +69,4 @@ async function saude() {
   try { const r = await chamar('/saude'); return r.json; } catch (e) { return { ok: false, erro: e.message }; }
 }
 
-module.exports = { pedido, fixe, ativo, status, rodar, historico, cancelar, saude };
+module.exports = { pedido, fixe, fixeSaldos, ativo, status, rodar, historico, cancelar, saude };
