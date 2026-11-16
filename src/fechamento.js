@@ -110,6 +110,11 @@ function calcular({ loja, vendas, metaPlanilha }, dia) {
     corpOmni: hoje.corpOmni,
     eg: { metaDia: egMetaDia, historico: ant.eg, realizadas: hoje.eg, clientes: hoje.clientes.eg, tkm: hoje.egTkm, pct: egMetaDia ? hoje.eg / egMetaDia : null },
     total: { hoje: hoje.total, historico: ant.total },
+    // destaque do topo: loja + Espaço Gourmet (sem corporativo/omni e sem taxas)
+    destaque: {
+      dia: hoje.loja + hoje.eg, diaLoja: hoje.loja, diaEg: hoje.eg, diaHist: ant.loja + ant.eg,
+      acum: acum.loja + acum.eg, acumLoja: acum.loja, acumEg: acum.eg, acumHist: acumHist.loja + acumHist.eg,
+    },
     caixa: caixaDe(loja, dia),
   };
 }
@@ -141,10 +146,13 @@ function texto(f) {
     `🧾 Fechamento de ${nomeDia(f.dia)}, ${dataBr(f.dia)}`,
     f.vendedoras.length ? `👥 ${f.vendedoras.map((v) => v.nome).join(', ')}` : null,
     '',
+    f.destaque ? `🏷️ Vendas do dia (loja + EG): ${brl(f.destaque.dia)} · loja ${brl(f.destaque.diaLoja)} + EG ${brl(f.destaque.diaEg)}` : null,
+    f.destaque ? `📆 Acumulado no mês (loja + EG): ${brl(f.destaque.acum)}${f.destaque.acumHist ? ` · histórico ${brl(f.destaque.acumHist)} (${pct(f.destaque.acum / f.destaque.acumHist)})` : ''}` : null,
+    '',
     `🎯 Meta do dia: ${brl(f.meta.dia)}`,
     `📜 Vendas histórico (${diaSemCurto(f.diaHistorico)} ${dataBr(f.diaHistorico)}): ${brl(f.vendas.historico)}`,
     `💰 Vendas realizadas: ${brl(f.vendas.realizadas)}${f.vendas.pctMeta != null ? ` (${pct(f.vendas.pctMeta)} da meta do dia)` : ''}`,
-    `📈 Acumulado no mês: ${brl(f.acumulado.realizado)} · histórico ${brl(f.acumulado.historico)} (${pct(f.acumulado.pct)})`,
+    `📈 Acumulado no mês (loja): ${brl(f.acumulado.realizado)} · histórico ${brl(f.acumulado.historico)} (${pct(f.acumulado.pct)})`,
     '',
     `👤 Clientes: ${f.clientes.total} · histórico ${f.clientes.historico || '—'}`,
     `🛍️ Itens: ${f.itens} · TKM ${brl(f.tkm)} · IPA ${num(f.ipa)} · PMA ${brl(f.pma)}`,
@@ -224,7 +232,10 @@ function html(f) {
     ]);
   };
   const r = f.recalculo;
-  const pctMetaDia = f.vendas.pctMeta, pctAcum = f.acumulado.pct;
+  const pctMetaDia = f.vendas.pctMeta, pctAcum = f.acumulado.pct; // eslint-disable-line no-unused-vars
+  // fechamentos antigos (sem "destaque"): monta com loja + EG
+  const D = f.destaque || { dia: f.vendas.realizadas + (f.eg.realizadas || 0), diaLoja: f.vendas.realizadas, diaEg: f.eg.realizadas || 0, diaHist: null, acum: f.acumulado.realizado, acumLoja: f.acumulado.realizado, acumEg: 0, acumHist: null };
+  const pctDiaD = D.diaHist ? D.dia / D.diaHist : null, pctAcumD = D.acumHist ? D.acum / D.acumHist : null;
   return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:620px;margin:0 auto;border-collapse:separate;background:#ffffff;border:1px solid ${LINHA};border-radius:16px;font-family:Arial,Helvetica,sans-serif;color:${ESCURO}">
 <tr><td style="padding:22px 18px 4px">
   <div style="font-size:11px;font-weight:700;letter-spacing:1.4px;color:${OURO};text-transform:uppercase">Fechamento do dia</div>
@@ -234,9 +245,8 @@ function html(f) {
 </td></tr>
 <tr><td style="padding:14px 18px 0">
   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:separate;background:${CREME};border-radius:12px">
-    ${card('Vendas do dia', brl(f.vendas.realizadas), pctMetaDia != null ? `${pct(pctMetaDia)} da meta do dia` : 'sem meta', cor(pctMetaDia == null ? null : pctMetaDia >= 1), cor(pctMetaDia == null ? null : pctMetaDia >= 1))}
-    ${card('Meta do dia', brl(f.meta.dia), f.meta.mes ? `meta do mês ${brl(f.meta.mes)}` : '')}
-    ${card('Acumulado no mês', brl(f.acumulado.realizado), pctAcum != null ? `${pct(pctAcum)} do histórico` : '', null, cor(pctAcum == null ? null : pctAcum >= 1), true)}
+    ${card('Vendas do dia · loja + EG', brl(D.dia), `loja ${brl(D.diaLoja)} + EG ${brl(D.diaEg)}${pctDiaD != null ? ` · ${pct(pctDiaD)} do histórico` : ''}`, null, cor(pctDiaD == null ? null : pctDiaD >= 1))}
+    ${card('Acumulado no mês · loja + EG', brl(D.acum), `loja ${brl(D.acumLoja)} + EG ${brl(D.acumEg)}${pctAcumD != null ? ` · ${pct(pctAcumD)} do histórico` : ''}`, null, cor(pctAcumD == null ? null : pctAcumD >= 1), true)}
   </table>
 </td></tr>
 ${secao('Vendas', ['Dia', 'Acumulado'], [
