@@ -1010,5 +1010,11 @@ NOTIF.agendar(async (id) => { const l = C.get().lojas.find((x) => x.id === id); 
 
 app.listen(PORT, () => {
   console.log(`Tea Shop painel em http://localhost:${PORT}`);
+  // Google Drive desativado: tira os IDs antigos do lojas.json (uma vez; fica cópia em config/backups)
+  try {
+    const tinham = [];
+    C.alterar((cfg) => { for (const l of cfg.lojas) if (l.drive && Object.keys(l.drive).length) { tinham.push(l.id); l.drive = {}; } });
+    if (tinham.length) { C.auditar('sistema', 'desativou o Google Drive', 'lojas', { lojas: tinham }); console.log(`[config] Google Drive desativado em: ${tinham.join(', ')}`); }
+  } catch (e) { console.error('[config] não consegui limpar o Google Drive:', e.message); }
   for (const l of C.get().lojas) dadosLoja(l).catch((e) => console.error(`[dados] ${l.id}: primeira carga falhou:`, e.message));
 });

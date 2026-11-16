@@ -3,7 +3,7 @@
 Painel web que substitui o relatório Power BI "Tea Shop - Igor". Ele aplica as mesmas transformações do Power Query e as mesmas regras das medidas DAX.
 
 - Várias lojas no mesmo endereço: cada usuário vê só a(s) loja(s) dele, e o admin troca de loja ou vê "Todas as lojas".
-- Os dados ficam na VPS (`dados/<loja>/`), enviados pelo script diário. O que não estiver lá é lido do Google Drive.
+- Os dados ficam na VPS (`dados/<loja>/`), trazidos pelo robô do AppNext (coletor). O Google Drive não é mais usado.
 - 5 páginas: Resumo, Comparativos, Comissionamento, Promoção e Clientes. Funciona no celular.
 
 ## Estrutura
@@ -29,7 +29,7 @@ teashop-painel/
 | `Dados_Clientes` | Cadastro de clientes | `Planilha1` |
 | `Meta` | Meta mensal (primeiro número da planilha) | primeira aba |
 
-Para cada arquivo, o painel usa `dados/<loja>/<nome>.xlsx` se existir. Se não existir, usa o ID do Drive que estiver em `lojas.json`. Quando um arquivo novo chega na pasta, a loja é reprocessada no próximo acesso, sem esperar o cache.
+Para cada arquivo, o painel usa `dados/<loja>/<nome>.xlsx` se existir (o Google Drive foi desativado; IDs antigos em `lojas.json` são removidos ao iniciar). Quando um arquivo novo chega na pasta, a loja é reprocessada no próximo acesso, sem esperar o cache.
 
 As planilhas de vendas precisam ter o mesmo formato do relatório atual: 1ª linha com o título, 2ª linha com os cabeçalhos (`Loja`, `CNPJ`, `Data`, `Número Cupom`, ...).
 
@@ -45,7 +45,6 @@ $A usuario igor torres                      # pede a senha; acesso só a Torres
 $A usuario rodrigo '*'                      # admin: todas as lojas
 $A usuario gerente torres,palmas            # mais de uma loja
 $A remover-usuario igor
-$A drive palmas Xml <id-do-drive>           # fonte no Drive para um arquivo que não vem do script
 $A token                                    # gera um novo token de upload
 $A listar                                   # mostra lojas, origem de cada arquivo e usuários
 ```

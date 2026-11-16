@@ -39,11 +39,8 @@ let cache = { mtime: 0, cfg: null };
 function fromEnv() {
   const e = process.env;
   // IDs das planilhas no Google Drive vêm só do .env (nunca deixe IDs reais no código)
-  const drive = {
-    importacaoA: e.FILE_VENDAS_A, importacaoB: e.FILE_VENDAS_B, NFA: e.FILE_VENDAS_NFA,
-    Xml: e.FILE_XML, Dados_Clientes: e.FILE_CLIENTES, Meta: e.FILE_META,
-  };
-  for (const k of Object.keys(drive)) if (!drive[k] || drive[k] === '-') delete drive[k];
+  // Google Drive desativado: as vendas vêm do robô do AppNext (FILE_* do .env não são mais lidos)
+  const drive = {};
   // usuários e senhas nunca vêm do .env (o antigo APP_USERS/APP_PASSWORD guardava senha em texto):
   // crie com "node scripts/admin.js usuario <nome> <loja>"
   if (e.APP_USERS || e.APP_PASSWORD) console.warn('⚠️  APP_USERS/APP_PASSWORD no .env não são mais usados: crie os usuários com scripts/admin.js.');
@@ -54,7 +51,7 @@ function normalizar(cfg) {
   const lojas = (cfg.lojas || []).map((l) => ({
     id: String(l.id).toLowerCase().replace(/[^a-z0-9_-]/g, ''),
     nome: l.nome || l.id,
-    drive: l.drive || {},
+    drive: {}, // Google Drive desativado em todas as lojas: o painel não lê mais planilhas de lá
     meta: l.meta ?? null,
     metas: l.metas && typeof l.metas === 'object' ? l.metas : {},
     metaAuto: l.metaAuto && typeof l.metaAuto === 'object' ? { ativo: !!l.metaAuto.ativo, pct: +l.metaAuto.pct || 0 } : null,

@@ -7,11 +7,9 @@
  *   node scripts/admin.js iniciar            (cria o lojas.json com a loja de Torres)
  *   node scripts/admin.js listar
  *   node scripts/admin.js loja <id> "<Nome da loja>" [meta]
- *   node scripts/admin.js drive <loja> <arquivo> <id-do-drive | ->
  *   node scripts/admin.js usuario <nome> <loja1,loja2 | *> [--senha XYZ]
  *   node scripts/admin.js remover-usuario <nome>
  *   node scripts/admin.js remover-loja <id>
- *   node scripts/admin.js copiar-drive <loja> [--todas]   (copia as planilhas do Drive para a VPS)
  *   node scripts/admin.js github <loja> <dono/repositorio | -> [workflow] [branch]
  *   node scripts/admin.js token [loja]       (sem loja: token geral; com loja: só envia para ela)
  */
@@ -98,6 +96,7 @@ function perguntarSenha(prompt) {
     return;
   }
 
+  if (cmd === 'drive' || cmd === 'copiar-drive') sair('O Google Drive foi desativado: as vendas vêm do robô do AppNext. Planilhas avulsas: Configurações → loja → Enviar planilha.');
   if (cmd === 'drive') {
     const [id, arq, driveId] = args;
     const l = cfg.lojas.find((x) => normId(x.id) === normId(id));
