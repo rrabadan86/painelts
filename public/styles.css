@@ -1544,3 +1544,11 @@ tr.cp-enviada td { background: #EEF5EC !important; }
 @media (max-width: 640px) { .prt-btn span { display: none; } }
 .card-head .prt-btn + .exp-btn { margin-left: 0; }
 .card-cheio .prt-btn { display: inline-flex; }
+/* Estoque e Margem → Site */
+.site-topo { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.site-link { color: var(--green, #2C5234); font-weight: 600; text-decoration: none; }
+.site-link:hover { text-decoration: underline; }
+.site-de { margin-right: 6px; font-size: 11px; }
+td.site-promo { color: #9a4a12; font-weight: 600; }
+td.site-dif { color: #B5452B; font-weight: 600; }
+#area-impressao td.wrap, #area-impressao th.wrap { max-width: 260px; white-space: normal; }

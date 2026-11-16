@@ -243,7 +243,7 @@
    * grupo com uma tela só vira uma aba com o nome da tela; com mais de uma, a tela tem um submenu no topo.
    */
   const ROTULO = { resumo: 'Resumo', comparativos: 'Comparativos', promocao: 'Promoção', clientes: 'Clientes', campanhas: 'Campanhas',
-    comissionamento: 'Comissionamento', minha: 'Minha comissão', mapa: 'Movimento e escala', estoque: 'Estoque e margem', precos: 'Preços', pedido: 'Pedido', dre: 'Resultado' };
+    comissionamento: 'Comissionamento', minha: 'Minha comissão', mapa: 'Movimento e escala', estoque: 'Estoque e margem', precos: 'Preços', site: 'Site', pedido: 'Pedido', dre: 'Resultado' };
   TS.GRUPOS = [];
   function montarMenu(grupoEst, temConfig) {
     const tabs = document.getElementById('tabs');
@@ -291,7 +291,7 @@
     if (PAGES.includes('clientes')) PAGES.splice(PAGES.indexOf('clientes') + 1, 0, 'campanhas');
     // Estoque e Margem: admin e franqueado veem tudo; gerente só as telas liberadas em Configurações → Usuários
     const grupoEst = eu.pode?.configurar ? ['estoque', 'pedido', 'dre'] : ['estoque', 'pedido', 'dre'].filter((p) => (eu.telas || []).includes(p));
-    if (grupoEst.includes('estoque')) grupoEst.splice(grupoEst.indexOf('estoque') + 1, 0, 'precos'); // Preços acompanha o Estoque e margem
+    if (grupoEst.includes('estoque')) grupoEst.splice(grupoEst.indexOf('estoque') + 1, 0, 'precos', 'site'); // Preços e Site acompanham o Estoque e margem
     TS.telasEstoque = grupoEst;
     PAGES = [...PAGES.filter((p) => !grupoEst.includes(p)), ...grupoEst];
     if (eu.pode?.configurar) PAGES = [...PAGES, 'config'];

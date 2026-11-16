@@ -171,6 +171,7 @@
     });
     // o que é de tela sai; campos viram texto
     copia.querySelectorAll('details').forEach((d) => { if (d.querySelector(':scope > summary.btn')) d.remove(); else d.open = true; }); // menus (Limpar ▾) saem
+    copia.querySelectorAll('.col-sec').forEach((el) => el.remove()); // só as colunas principais
     copia.querySelectorAll('.exp-btn, .exp-fechar, .dica-i, .pager, input[type=search], .seg button:not(.on), .ped-ab, button.chip, button.btn, .est-cl-sel').forEach((el) => el.remove());
     copia.querySelectorAll('select').forEach((el) => el.replaceWith(h('span', { class: 'prt-campo' }, el.selectedOptions[0] ? el.selectedOptions[0].textContent : '')));
     copia.querySelectorAll('input').forEach((el) => {
@@ -192,11 +193,12 @@
     // mede a largura natural das tabelas para escolher a folha e o quanto encolher
     area.classList.add('prt-medindo');
     const tabs = [...copia.querySelectorAll('table')];
-    const larg = Math.max(0, ...tabs.map((t) => t.scrollWidth));
+    const largs = tabs.map((t) => t.scrollWidth);
+    const larg = Math.max(0, ...largs);
     area.classList.remove('prt-medindo');
     const orient = copia.querySelector('.prt-graf') || larg > LARG.portrait ? 'landscape' : 'portrait';
     const cabe = LARG[orient] - 4;
-    for (const t of tabs) { const w = t.scrollWidth || larg; if (w > cabe) t.style.zoom = String(Math.max(0.3, cabe / w)); }
+    tabs.forEach((t, k) => { const w = largs[k] || larg; if (w > cabe) t.style.zoom = String(Math.max(0.3, cabe / w)); });
     const pagina = h('style', { id: 'pagina-impressao' }, `@page { size: A4 ${orient}; margin: 10mm; }`);
     document.head.append(pagina);
     document.body.classList.add('imprimindo');
@@ -279,7 +281,9 @@
    * cols: [{key, label, fmt, align:'l'|'r', cls:(row)=>string, sticky, title}]
    * rows: objetos; total: objeto opcional; sort: {key, dir}
    */
-  TS.table = function ({ cols, rows, total, sortKey, sortDir = 'desc', maxHeight, pageSize, search, searchKeys, searchInit, onSearch, onRowClick, rowClass, empty, cls }) {
+  TS.table = function ({ cols, rows, total, sortKey, sortDir = 'desc', maxHeight, pageSize, search, searchKeys, searchInit, onSearch, onRowClick, rowClass, empty, cls, imprimir }) {
+    // imprimir: as colunas principais (as outras saem na impressão)
+    const sec = (c) => (imprimir && !imprimir.includes(c.key) ? ' col-sec' : '');
     // a busca digitada sobrevive quando a tela se redesenha (troca de aba/filtro); some ao trocar de tela
     const mem = TS._buscas && TS._buscas.tela === location.hash ? TS._buscas : (TS._buscas = { tela: location.hash, v: {} });
     const chaveBusca = search ? search + '|' + (searchKeys || []).join(',') : null;
@@ -314,7 +318,7 @@
       tbl.textContent = '';
       const thead = h('thead'), trh = h('tr');
       cols.forEach((c) => {
-        const th = h('th', { class: [c.align === 'l' ? 'l' : '', c.sticky ? 'sticky-col' : '', sk === c.key ? 'sorted' : ''].join(' '), title: c.title || null, scope: 'col' },
+        const th = h('th', { class: [c.align === 'l' ? 'l' : '', c.sticky ? 'sticky-col' : '', sk === c.key ? 'sorted' : ''].join(' ') + sec(c), title: c.title || null, scope: 'col' },
           c.label, h('span', { class: 'arrow' }, sk === c.key ? (sd === 'asc' ? '▲' : '▼') : '↕'));
         th.addEventListener('click', () => { if (sk === c.key) sd = sd === 'asc' ? 'desc' : 'asc'; else { sk = c.key; sd = c.align === 'l' ? 'asc' : 'desc'; } paint(); });
         trh.append(th);
@@ -331,7 +335,7 @@
           const v = row[c.key];
           const extra = c.cls ? c.cls(row) : '';
           const content = c.render ? c.render(row) : (c.fmt ? c.fmt(v, row) : (v ?? ''));
-          tr.append(h('td', { class: [c.align === 'l' ? 'l' : '', c.sticky ? 'sticky-col' : '', c.wrap ? 'wrap' : '', extra].join(' ') }, content));
+          tr.append(h('td', { class: [c.align === 'l' ? 'l' : '', c.sticky ? 'sticky-col' : '', c.wrap ? 'wrap' : '', extra].join(' ') + sec(c) }, content));
         });
         tb.append(tr);
       }
@@ -341,7 +345,7 @@
         const tf = h('tfoot'), tr = h('tr');
         cols.forEach((c, j) => {
           const v = total[c.key];
-          tr.append(h('td', { class: [c.align === 'l' ? 'l' : '', c.sticky ? 'sticky-col' : ''].join(' ') }, j === 0 && v == null ? 'Total' : (v == null ? '' : (c.fmt ? c.fmt(v, total) : v))));
+          tr.append(h('td', { class: [c.align === 'l' ? 'l' : '', c.sticky ? 'sticky-col' : ''].join(' ') + sec(c) }, j === 0 && v == null ? 'Total' : (v == null ? '' : (c.fmt ? c.fmt(v, total) : v))));
         });
         tf.append(tr); tbl.append(tf);
       }

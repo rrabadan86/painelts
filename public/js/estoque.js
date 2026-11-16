@@ -934,7 +934,7 @@
         { key: 'margemLiq', label: 'Margem com fixos', title: 'Lucro líquido ÷ faturamento (com os custos fixos rateados). Informativa: um produto com líquida negativa e contribuição positiva continua ajudando a pagar os custos fixos', fmt: (v) => (v == null ? '' : fmt.pct(v)), cls: (r) => (r.margemLiq != null && r.margemLiq < 0 ? 'est-liq-neg' : '') },
 
       ],
-      rows: sel ? prods.filter((p) => p.classe === sel) : prods, sortKey: 'lucro', maxHeight: '520px', search: 'Buscar produto…', searchKeys: ['produto'], cls: 'est-t',
+      rows: sel ? prods.filter((p) => p.classe === sel) : prods, sortKey: 'lucro', maxHeight: '520px', search: 'Buscar produto…', searchKeys: ['produto'], imprimir: ['produto', 'abc', 'oficial', 'giro', 'vt', 'lucro', 'margem', 'contrib', 'margemContrib'], cls: 'est-t',
       total: { produto: 'Total', vt: fatCusto, custo: custoTot, lucro, margem: fatCusto ? lucro / fatCusto : null, contrib: contribTot, margemContrib: fatCusto ? contribTot / fatCusto : null, ded: dedSoma, lucroLiq: lucroLiqTot, margemLiq: fatCusto ? lucroLiqTot / fatCusto : null },
     }))));
 
@@ -1080,7 +1080,7 @@
           { key: 'pedir', label: 'Pedir', title: 'Quanto pedir para chegar em tempo e durar o período escolhido. Passe o mouse no número para ver a conta', render: (r) => (r.pedir > 0 ? h('b', { title: contaPedido(r), class: 'est-dica' }, qtdTxt(r.pedir, r.it)) : '—') },
           { key: 'custoPedido', label: 'Custo', title: 'Quantidade a pedir × custo unitário do AppNext', fmt: (v) => (v ? fmt.brl(v) : '—') },
         ],
-        rows: linhasRepo, sortKey: 'sit', maxHeight: '560px', search: 'Buscar produto…', searchKeys: ['produto', 'cod'], searchInit: state.estBusca || '', onSearch: (v) => { state.estBusca = v; }, cls: 'est-t', empty: 'Nada para repor agora.',
+        rows: linhasRepo, sortKey: 'sit', maxHeight: '560px', imprimir: ['produto', 'sit', 'qtd', 'prev', 'dias', 'pedir', 'custoPedido'], search: 'Buscar produto…', searchKeys: ['produto', 'cod'], searchInit: state.estBusca || '', onSearch: (v) => { state.estBusca = v; }, cls: 'est-t', empty: 'Nada para repor agora.',
     });
     const csv = h('button', { type: 'button', class: 'btn', onclick: () => baixarPedido(repor) }, '⬇ Baixar pedido (CSV)');
     corpo.append(h('div', { class: 'mt' }, TS.cardWithTools('O que repor',

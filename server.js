@@ -268,6 +268,7 @@ app.get('/api/demo/admin/notif', (req, res) => res.json({ ativo: true, horario: 
   telegram: { configurado: false, destinos: [] }, email: { host: 'smtp.exemplo.com', port: 587, secure: false, user: 'painel@exemplo.com', from: 'Painel <painel@exemplo.com>', temSenha: true, configurado: true,
     destinos: [{ email: 'franqueado@exemplo.com', nome: 'Franqueado(a)', lojas: ['*'] }] } }));
 app.get('/api/demo/classificacao', (req, res) => res.json({ produtos: {} }));
+app.get('/api/demo/site', (req, res) => res.json({ demo: true, em: new Date().toISOString(), origem: 'agendada', itens: [] }));
 app.get('/api/demo/contatos', (req, res) => res.json({ contatos: {} }));
 app.get('/api/demo/xmls/resumo', (req, res) => res.json({ meses: [] }));
 app.get('/api/demo/dados', (req, res) => {
@@ -610,6 +611,24 @@ app.put('/api/estoque/cfg', express.json({ limit: '20kb' }), (req, res) => {
   C.alterar((cfg) => { cfg.lojas.find((l) => l.id === loja.id).estoqueCfg = v.ok; });
   C.auditar(req.user, 'alterou configuração de estoque', loja.id, { loja: loja.id, entregaDias: v.ok.entregaDias, coberturaDias: v.ok.coberturaDias });
   res.json({ ok: true, cfg: v.ok });
+});
+
+// ---------- preços do e-commerce (www.teashop.com.br): consulta às 10h e "Consultar agora" ----------
+const SITE = require('./src/site');
+app.get('/api/site', (req, res) => {
+  if (!podeTela(req, 'estoque', 'pedido', 'dre')) return res.status(403).json({ erro: 'Sem permissão.' });
+  const d = SITE.ler();
+  res.json({ ...(d || { itens: [] }), rodando: SITE.rodando(), podeConsultar: podeContabilidade(req) });
+});
+let siteUltimoManual = 0;
+app.post('/api/site/consultar', async (req, res) => {
+  if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
+  if (!podeContabilidade(req)) return res.status(403).json({ erro: 'Sem permissão.' });
+  if (!SITE.rodando() && Date.now() - siteUltimoManual < 60e3) return res.status(429).json({ erro: 'Acabou de consultar: espere um minuto.' });
+  siteUltimoManual = Date.now();
+  const r = await SITE.atualizar('manual', req.user);
+  if (!r.ok) return res.status(502).json({ erro: 'Não consegui ler o site: ' + r.erro });
+  res.json(r);
 });
 
 // ---------- pedido sugerido e Sistema de Pedidos da franqueadora (só admin e franqueado; robô só admin) ----------
@@ -1026,6 +1045,7 @@ NOTIF.agendar(async (id) => { const l = C.get().lojas.find((x) => x.id === id); 
 
 app.listen(PORT, () => {
   console.log(`Tea Shop painel em http://localhost:${PORT}`);
+  SITE.agendar(); // preços do e-commerce: todo dia às 10h
   // Google Drive desativado: tira os IDs antigos do lojas.json (uma vez; fica cópia em config/backups)
   try {
     const tinham = [];

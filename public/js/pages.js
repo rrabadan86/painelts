@@ -800,7 +800,7 @@
         { key: 'ipa', label: 'IPA', fmt: fmt.n2, cls: (r) => (pr.ativa && r.ipa >= pr.ipa ? 'hit' : '') },
         { key: 'bonus', label: 'Bônus', fmt: (v) => (v == null ? '—' : fmt.brl(v)), title: 'Bônus sobre outros vendedores' },
       ],
-      rows: res.rows, total: res.total, sortKey: 'aPagar',
+      rows: res.rows, total: res.total, sortKey: 'aPagar', imprimir: ['vendedor', 'aPagar', 'premiacao', 'metaInd', 'total', 'arom', 'puro', 'acess', 'tkm', 'pma', 'ipa', 'bonus'],
     });
     root.append(TS.section('Comissão por vendedor'), TS.card('Comissão por vendedor',
       h('span', null, 'Sem Espaço Gourmet. ', h('b', { class: 'hit', style: { color: '#1F5FBF' } }, 'Azul'), ' = meta batida, ', h('b', { style: { color: '#B5452B' } }, 'vermelho'), ' = abaixo da meta. A linha Total soma os vendedores.'), tab));
