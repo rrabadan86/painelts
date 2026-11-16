@@ -515,7 +515,7 @@ app.get('/api/eu', (req, res) => {
   const u = C.get().usuarios[req.user];
   res.json({
     usuario: req.user === '*' ? '' : req.user, nome: u?.nome || req.user, perfil: req.perfil, vendedor: req.vendedor || '',
-    pode: { configurar: req.perfil === 'admin' || req.perfil === 'franqueado', admin: req.perfil === 'admin', clientes: podeClientes(req), custos: podeTela(req, 'estoque', 'pedido', 'dre') },
+    pode: { configurar: req.perfil === 'admin' || req.perfil === 'franqueado', admin: req.perfil === 'admin', clientes: podeClientes(req), custos: podeTela(req, 'estoque', 'precos', 'pedido', 'dre') },
     telas: C.telasDo(u),
     lojas: req.lojas.map((l) => ({ id: l.id, nome: l.nome, marca: { nome: (l.marca && l.marca.nome) || l.nome, logo: !!arquivoLogo(l.id) } })),
   });
@@ -597,7 +597,7 @@ const podeTela = (req, ...telas) => podeContabilidade(req) || (req.perfil === 'g
 const ES = require('./src/estoque');
 const TAB = require('./src/tabela');
 app.get('/api/estoque', (req, res) => {
-  if (!podeTela(req, 'estoque', 'pedido', 'dre')) return res.status(403).json({ erro: 'Sem permissão.' });
+  if (!podeTela(req, 'estoque', 'precos', 'pedido', 'dre')) return res.status(403).json({ erro: 'Sem permissão.' });
   const loja = req.lojas.find((l) => l.id === String(req.query.loja || ''));
   if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
   const lc = C.get().lojas.find((l) => l.id === loja.id);
@@ -605,7 +605,7 @@ app.get('/api/estoque', (req, res) => {
 });
 // notas de entrada (compras) do AppNext, inteiras: lista e detalhe na tela Preços
 app.get('/api/estoque/notas', (req, res) => {
-  if (!podeTela(req, 'estoque', 'pedido', 'dre')) return res.status(403).json({ erro: 'Sem permissão.' });
+  if (!podeTela(req, 'estoque', 'precos', 'pedido', 'dre')) return res.status(403).json({ erro: 'Sem permissão.' });
   const loja = req.lojas.find((l) => l.id === String(req.query.loja || ''));
   if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
   res.json(ES.notas(loja.id) || { notas: [] });
@@ -640,12 +640,15 @@ app.put('/api/estoque/cfg', express.json({ limit: '20kb' }), (req, res) => {
 // ---------- preços do e-commerce (www.teashop.com.br): consulta às 10h e "Consultar agora" ----------
 const SITE = require('./src/site');
 app.get('/api/site', (req, res) => {
-  if (!podeTela(req, 'estoque', 'pedido', 'dre')) return res.status(403).json({ erro: 'Sem permissão.' });
+  if (!podeTela(req, 'site')) return res.status(403).json({ erro: 'Sem permissão.' });
   const d = SITE.ler();
+  // preço de tabela do cadastro da loja escolhida (sem custos): é o "nosso preço"
+  const lojaT = req.lojas.find((l) => l.id === String(req.query.loja || ''));
+  const tabela = lojaT ? TAB.resumo(lojaT.id) : null;
   let hist = SITE.lerHist();
   // ainda sem histórico (consultas de antes desta versão): começa pela consulta atual
   if (!hist) hist = SITE.semear(d);
-  res.json({ ...(d || { itens: [] }), historico: hist || {}, rodando: SITE.rodando(), podeConsultar: podeContabilidade(req) });
+  res.json({ ...(d || { itens: [] }), historico: hist || {}, tabela: tabela ? tabela.itens.filter((t) => t.preco > 0.011).map((t) => ({ cod: t.cod, desc: t.desc, preco: t.preco })) : null, rodando: SITE.rodando(), podeConsultar: podeContabilidade(req) });
 });
 let siteUltimoManual = 0;
 app.post('/api/site/consultar', async (req, res) => {
@@ -1080,5 +1083,17 @@ app.listen(PORT, () => {
     C.alterar((cfg) => { for (const l of cfg.lojas) if (l.drive && Object.keys(l.drive).length) { tinham.push(l.id); l.drive = {}; } });
     if (tinham.length) { C.auditar('sistema', 'desativou o Google Drive', 'lojas', { lojas: tinham }); console.log(`[config] Google Drive desativado em: ${tinham.join(', ')}`); }
   } catch (e) { console.error('[config] não consegui limpar o Google Drive:', e.message); }
+  // Preços e Site viraram telas próprias: o gerente que já via o Estoque e margem continua vendo as duas (uma vez)
+  try {
+    const mig = [];
+    C.alterar((cfg) => {
+      for (const [nome, u] of Object.entries(cfg.usuarios || {})) {
+        if (u.telasV >= 2) continue;
+        if (u.perfil === 'gerente' && Array.isArray(u.telas) && u.telas.includes('estoque')) { for (const t of ['precos', 'site']) if (!u.telas.includes(t)) u.telas.push(t); mig.push(nome); }
+        u.telasV = 2;
+      }
+    });
+    if (mig.length) C.auditar('sistema', 'separou as telas Preços e Site', 'usuarios', { usuarios: mig });
+  } catch (e) { console.error('[config] telas Preços e Site:', e.message); }
   for (const l of C.get().lojas) dadosLoja(l).catch((e) => console.error(`[dados] ${l.id}: primeira carga falhou:`, e.message));
 });

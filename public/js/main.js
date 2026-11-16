@@ -290,8 +290,8 @@
     if (eu.perfil === 'vendedor') document.body.classList.add('perfil-vendedor');
     if (PAGES.includes('clientes')) PAGES.splice(PAGES.indexOf('clientes') + 1, 0, 'campanhas');
     // Estoque e Margem: admin e franqueado veem tudo; gerente só as telas liberadas em Configurações → Usuários
-    const grupoEst = eu.pode?.configurar ? ['estoque', 'pedido', 'dre'] : ['estoque', 'pedido', 'dre'].filter((p) => (eu.telas || []).includes(p));
-    if (grupoEst.includes('estoque')) grupoEst.splice(grupoEst.indexOf('estoque') + 1, 0, 'precos', 'site'); // Preços e Site acompanham o Estoque e margem
+    const EST = ['estoque', 'precos', 'site', 'pedido', 'dre'];
+    const grupoEst = eu.pode?.configurar ? EST : EST.filter((p) => (eu.telas || []).includes(p));
     TS.telasEstoque = grupoEst;
     PAGES = [...PAGES.filter((p) => !grupoEst.includes(p)), ...grupoEst];
     if (eu.pode?.configurar) PAGES = [...PAGES, 'config'];

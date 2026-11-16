@@ -2,7 +2,7 @@
 'use strict';
 (function () {
   const { h, fmt, state } = TS;
-  const TELAS_NOME = [['resumo', 'Resumo'], ['comparativos', 'Comparativos'], ['comissionamento', 'Comissionamento'], ['promocao', 'Promoção'], ['mapa', 'Movimento e escala (mapa de calor)'], ['clientes', 'Clientes (CPF e telefone)'], ['minha', 'Comissão de cada vendedor'], ['estoque', 'Estoque e margem'], ['pedido', 'Pedido'], ['dre', 'Resultado (DRE)']];
+  const TELAS_NOME = [['resumo', 'Resumo'], ['comparativos', 'Comparativos'], ['comissionamento', 'Comissionamento'], ['promocao', 'Promoção'], ['mapa', 'Movimento e escala (mapa de calor)'], ['clientes', 'Clientes (CPF e telefone)'], ['minha', 'Comissão de cada vendedor'], ['estoque', 'Estoque e margem'], ['precos', 'Preços'], ['site', 'Site (preços do e-commerce)'], ['pedido', 'Pedido'], ['dre', 'Resultado (DRE)']];
   const TELAS_PADRAO = ['resumo', 'comparativos', 'comissionamento', 'promocao', 'mapa', 'minha'];
   const PERFIL_NOME = { admin: 'Administrador', franqueado: 'Franqueado', gerente: 'Gerente', vendedor: 'Vendedor' };
   const PERFIL_DESC = {
@@ -1035,7 +1035,7 @@
       cb.addEventListener('change', () => { cb.checked ? telasSel.add(k) : telasSel.delete(k); });
       return h('label', null, cb, ' ', nomeT);
     }));
-    const campoTelas = campo('Telas que o gerente pode ver', telasBox, 'Clientes mostra CPF, telefone e histórico de compras. Estoque e margem, Pedido e Resultado mostram custos, margens e o lucro da loja. Libere só para quem precisa. Os custos e as configurações continuam só com admin e franqueado.');
+    const campoTelas = campo('Telas que o gerente pode ver', telasBox, 'Clientes mostra CPF, telefone e histórico de compras. Estoque e margem, Preços, Pedido e Resultado mostram custos, margens e o lucro da loja. Site mostra só os preços do e-commerce comparados com os da loja (sem custos). Libere só para quem precisa. Os custos e as configurações continuam só com admin e franqueado.');
     const campoVend = campo('Quem é no sistema (nome do vendedor)', vendSel, 'Liga o usuário às vendas dele.');
     function pintarLojas() {
       const p = perfil.value;

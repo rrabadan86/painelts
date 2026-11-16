@@ -7,8 +7,10 @@
 (function () {
   const { h, fmt, state } = TS;
 
+  const comTabela = (d) => ({ ...d, tabela: Array.isArray(d.tabela) && d.tabela.length ? new Map(d.tabela.map((t) => [t.cod, t])) : null });
   async function buscar() {
-    const r = await fetch(TS.api('site'), { credentials: 'same-origin' });
+    const loja = state.loja && state.loja !== 'todas' ? state.loja : '';
+    const r = await fetch(TS.api(`site${loja ? '?loja=' + encodeURIComponent(loja) : ''}`), { credentials: 'same-origin' });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.erro || 'Falha ao ler os preços do site.');
     return j;
@@ -105,13 +107,8 @@
       h('div', { class: 'page-sub' }, 'Preços do e-commerce (teashop.com.br) comparados com os preços praticados nas lojas · consulta todo dia às 10h'))));
     const corpo = h('div', null, h('div', { class: 'loading' }, h('div', null, h('div', { class: 'spinner' }), h('p', null, 'Lendo os preços do site…'))));
     root.append(corpo);
-    // com uma loja escolhida, "nosso preço" é o preço de tabela do cadastro do AppNext (quando o painel já tem)
-    const est = state.loja && state.loja !== 'todas' && TS.estoqueBuscar ? TS.estoqueBuscar(state.loja).catch(() => null) : Promise.resolve(null);
-    Promise.all([buscar(), est]).then(([d, e]) => {
-      if (!corpo.isConnected) return;
-      d.tabela = e && e.tabela && e.tabela.itens ? new Map(e.tabela.itens.filter((t) => t.preco > 0.011).map((t) => [t.cod, t])) : null;
-      pintar(corpo, d);
-    }).catch((e) => corpo.replaceChildren(h('div', { class: 'notice err' }, e.message)));
+    // com uma loja escolhida, "nosso preço" é o preço de tabela do cadastro do AppNext (vem junto, sem custos)
+    buscar().then((d) => { if (corpo.isConnected) pintar(corpo, comTabela(d)); }).catch((e) => corpo.replaceChildren(h('div', { class: 'notice err' }, e.message)));
   };
 
   function pintar(corpo, d) {
@@ -127,7 +124,7 @@
         const r = await fetch(TS.api('site/consultar'), { method: 'POST', credentials: 'same-origin', headers: { 'X-Painel': '1' } });
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j.erro || 'Não consegui consultar o site.');
-        pintar(corpo, { ...(await buscar()), tabela: d.tabela });
+        pintar(corpo, comTabela(await buscar()));
       } catch (e) { btn.disabled = false; btn.textContent = 'Consultar agora'; msg.className = 'neg'; msg.textContent = e.message; }
     } }, d.rodando ? 'Consultando…' : 'Consultar agora') : null;
     if (btn && d.rodando) btn.disabled = true;

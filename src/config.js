@@ -24,7 +24,7 @@ const ARQUIVOS = {
 const PERFIS = ['admin', 'franqueado', 'gerente', 'vendedor'];
 // telas que podem ser liberadas para o gerente (padrão: todas menos Clientes)
 // estoque, pedido e dre mostram custo e margem: para gerente só quando liberadas uma a uma
-const TELAS = ['resumo', 'comparativos', 'comissionamento', 'promocao', 'mapa', 'clientes', 'minha', 'estoque', 'pedido', 'dre'];
+const TELAS = ['resumo', 'comparativos', 'comissionamento', 'promocao', 'mapa', 'clientes', 'minha', 'estoque', 'precos', 'site', 'pedido', 'dre'];
 const TELAS_GERENTE_PADRAO = ['resumo', 'comparativos', 'comissionamento', 'promocao', 'mapa', 'minha'];
 /** telas que o usuário vê (null = todas as do perfil) */
 function telasDo(u) {
