@@ -38,8 +38,9 @@ function historicoDe(dia) {
 const DIA_SEM = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
 const diaSemCurto = (iso) => DIA_SEM[new Date(iso + 'T12:00:00Z').getUTCDay()];
 const semVendedor = (v) => !v || /^sem vendedor$/i.test(String(v).trim());
-const ehCorp = (v) => /corporativ/i.test(v || '');
-const ehOmni = (v) => /omni|e-?commerce|loja virtual|online|site|ifood|rappi/i.test(v || '');
+// pela palavra inteira no nome do vendedor (uma vendedora "Rosite" não é "site")
+const ehCorp = (v) => /(^|[^a-zà-ú])corporativ[oa]s?([^a-zà-ú]|$)/i.test(v || '');
+const ehOmni = (v) => /(^|[^a-zà-ú])(omni\w*|e-?commerce|loja virtual|online|site|ifood|rappi)([^a-zà-ú]|$)/i.test(v || '');
 const ehTaxa = (v) => /^taxa /i.test(String(v.descricao || '').trim());
 const ehDelivery = (v) => /delivery|entrega/i.test(String(v.descricao || '')) || /delivery|entrega/i.test(String(v.vendedor || ''));
 
