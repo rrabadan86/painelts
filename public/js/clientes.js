@@ -228,7 +228,7 @@
     if (TS.demo) { TS.cli.contatos = {}; return; }
     carregandoContatos = true;
     fetch('/api/contatos?loja=' + encodeURIComponent(state.loja || ''), { credentials: 'same-origin' }).then((r) => r.json())
-      .then((j) => { TS.cli.contatos = j.contatos || {}; if (state.page === 'clientes') TS.render(); })
+      .then((j) => { TS.cli.contatos = j.contatos || {}; if (state.page === 'clientes' || state.page === 'clilista') TS.render(); })
       .catch(() => { TS.cli.contatos = {}; }).finally(() => { carregandoContatos = false; });
   }
   async function marcar(c, acao, motivo) {
@@ -377,14 +377,22 @@
   }
 
   // ---------- página ----------
-  TS.pages.clientes = function (root) {
-    const db = TS.db, s = state.cli;
-    if (TS.subClientes) root.append(TS.subClientes('clientes'));
-    root.append(h('div', { class: 'page-head' }, h('div', null, h('h1', { class: 'page-title' }, 'Clientes'), h('div', { class: 'page-sub' }, 'Cupons identificados por CPF, com histórico de compras e contato'))));
+  // Clientes → Lista de clientes (só a lista, com segmentos) e Indicadores (base, fidelidade, números e gráficos)
+  TS.pages.clilista = (root) => telaClientes(root, 'lista');
+  TS.pages.clientes = (root) => telaClientes(root, 'indicadores');
+  function telaClientes(root, modo) {
+    const db = TS.db, s = state.cli, ehLista = modo === 'lista';
+    if (TS.subClientes) root.append(TS.subClientes(ehLista ? 'clilista' : 'clientes'));
+    root.append(h('div', { class: 'page-head' }, h('div', null, h('h1', { class: 'page-title' }, ehLista ? 'Lista de clientes' : 'Indicadores de clientes'),
+      h('div', { class: 'page-sub' }, ehLista ? 'Cada cliente com a ficha, os cupons e os itens; segmentos para saber quem contatar' : 'Base de clientes, fidelidade e o perfil de quem compra (cupons identificados por CPF)'))));
     if (!db.xml.length && !(TS.fx && TS.fx.tem())) { root.append(h('div', { class: 'notice' }, 'A planilha "Xml" (cupons com CPF) não foi carregada.')); return; }
     carregarContatos();
+    // os segmentos (Contatar hoje, VIP…) são da lista: nos indicadores valem só os filtros da barra lateral
+    const segSalvo = s.seg;
+    if (!ehLista) s.seg = '';
     const lista = filtrar();
-    if (TS.cli.semVendaTotal) {
+    s.seg = segSalvo;
+    if (!ehLista && TS.cli.semVendaTotal) {
       const pct = TS.cli.semVendaTotal / TS.cli.cuponsXml;
       root.append(h('div', { class: 'notice cli-semvenda' + (pct > 0.2 ? ' err' : ''), role: 'button', tabindex: '0', title: 'Clique para ver a lista', onclick: abrirSemVenda, onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); abrirSemVenda(); } } },
         h('b', null, `${fmt.int(TS.cli.semVendaTotal)} cupons com CPF (${fmt.pct(pct, 0)}) não foram encontrados nas vendas`),
@@ -392,10 +400,11 @@
         h('span', { class: 'link-btn' }, 'Ver a lista ›')));
     }
 
-    // ordem: base de clientes → fidelidade → lista (a lista é longa: fica por último)
-    root.append(...baseDeClientes(lista));
-    if (TS.cli.fixe) { root.append(TS.section('Fidelidade')); const cr = cartaoResgate(TS.cli.fixe); if (cr) root.append(cr); root.append(cartaoFixe(TS.cli.fixe)); }
-    root.append(TS.section('Lista de clientes'));
+    if (!ehLista) {
+      root.append(...baseDeClientes(lista));
+      if (TS.cli.fixe) { root.append(TS.section('Fidelidade')); const cr = cartaoResgate(TS.cli.fixe); if (cr) root.append(cr); root.append(cartaoFixe(TS.cli.fixe)); }
+      root.append(TS.section('Perfil dos clientes'));
+    }
 
     const ordem = s.ordem;
     const ORD = { recente: (a, b) => (b.c.ultima ?? -1) - (a.c.ultima ?? -1), valor: (a, b) => b.vt - a.vt, visitas: (a, b) => b.visitas - a.visitas, ausencia: (a, b) => (b.c.ausencia ?? -1) - (a.c.ausencia ?? -1), nome: (a, b) => (a.c.nome || 'zzz').localeCompare(b.c.nome || 'zzz', 'pt-BR') };
@@ -406,11 +415,11 @@
     const visMed = lista.length ? lista.reduce((t, r) => t + r.visitas, 0) / lista.length : null;
     const mesAtual = String(new Date().getMonth() + 1).padStart(2, '0');
     const anivMes = lista.filter((r) => r.c.nascimento && r.c.nascimento.slice(5, 7) === mesAtual).length;
-    root.append(h('div', { class: 'grid g-kpi' },
+    if (!ehLista) root.append(h('div', { class: 'grid g-kpi' },
       TS.kpi('Clientes', fmt.int(lista.length), `de ${fmt.int(TS.cli.lista.length)} com compra identificada`),
       TS.kpi('Faturamento desses clientes', fmt.brl0(tot)),
       TS.kpi('Visitas por cliente', fmt.n1(visMed), 'média'),
-      TS.kpi('Com WhatsApp', fmt.int(comWpp), lista.length ? fmt.pct(comWpp / lista.length, 0) + ' da lista' : null),
+      TS.kpi('Com WhatsApp', fmt.int(comWpp), lista.length ? fmt.pct(comWpp / lista.length, 0) + ' do filtro' : null),
       TS.kpi('Aniversariantes do mês', fmt.int(anivMes), TS.MESES[+mesAtual - 1])));
 
     // ---- lista
@@ -434,11 +443,12 @@
     const ordSel = TS.seg([['Mais recentes', 'recente'], ['Maior valor', 'valor'], ['Mais visitas', 'visitas'], ['Mais tempo sem vir', 'ausencia'], ['Nome', 'nome']], ordem, (v) => { s.ordem = v; TS.render(); });
     const csv = h('button', { class: 'btn', type: 'button', onclick: () => baixarCSV(lista) }, 'Baixar lista (CSV)');
     const csvWpp = h('button', { class: 'btn', type: 'button', title: 'Só nome e celular de quem tem WhatsApp e não pediu para não receber mensagens', onclick: () => baixarCSVWpp(lista) }, 'Lista para WhatsApp (CSV)');
-    const listaCard = TS.cardWithTools('Lista de clientes', 'Clique num cliente para ver a ficha, os cupons e os itens', h('div', { class: 'table-tools' }, ordSel, csv, csvWpp),
+    const listaCard = TS.cardWithTools(ehLista ? `${fmt.int(lista.length)} ${lista.length === 1 ? 'cliente' : 'clientes'}` : 'Lista de clientes', 'Clique num cliente para ver a ficha, os cupons e os itens', h('div', { class: 'table-tools' }, ordSel, csv, csvWpp),
       segBar, lista.length ? listBox : TS.empty('Nenhum cliente com esses filtros.'), mais);
 
-    // ---- painéis laterais
-    const lado = h('div', { class: 'grid', style: { alignContent: 'start' } });
+    if (ehLista) { root.append(listaCard); return; }
+    // ---- gráficos do perfil dos clientes
+    const lado = h('div', { class: 'grid g-2 mt', style: { alignItems: 'start' } });
     // top chás desses clientes
     const prodVal = new Map();
     for (const r of lista) for (const k of r.cupons) for (const i of (k.itensFiltrados || k.itens)) {
@@ -446,7 +456,7 @@
       prodVal.set(db.prod[i], (prodVal.get(db.prod[i]) || 0) + (db.vt[i] || 0));
     }
     const topCha = [...prodVal].sort((a, b) => b[1] - a[1]).slice(0, 5);
-    lado.append(TS.card('Chás mais comprados', lista.length === 1 ? 'por este cliente' : 'pelos clientes da lista (R$)', topCha.length ? TS.chart({
+    lado.append(TS.card('Chás mais comprados', lista.length === 1 ? 'por este cliente' : 'pelos clientes do filtro (R$)', topCha.length ? TS.chart({
       type: 'doughnut',
       data: { labels: topCha.map(([p]) => db.D.produto[p]), datasets: [{ data: topCha.map(([, v]) => v), backgroundColor: TS.cores.slice(0, 5), borderWidth: 2, borderColor: '#fff' }] },
       options: { cutout: '58%', plugins: { legend: { position: 'bottom', labels: { font: { size: 11 } } }, tooltip: { callbacks: { label: (c) => `${c.label}: ${fmt.brl(c.raw)}` } } } },
@@ -459,7 +469,7 @@
         options: { indexAxis: 'y', layout: { padding: { left: 8, right: 80 } }, plugins: { legend: { display: false }, valueLabels: { display: true, format: fm }, tooltip: { callbacks: { label: (c) => fm(c.raw) } } }, scales: { x: { display: false }, y: { grid: { display: false }, ticks: { font: { size: 11 }, crossAlign: 'far' } } } },
       }, 'short') : TS.empty());
     };
-    lado.append(top(lista, 'vt', fmt.brl0, 'Top 5 em faturamento', 'Clientes da lista'));
+    lado.append(top(lista, 'vt', fmt.brl0, 'Top 5 em faturamento', 'Clientes do filtro'));
     lado.append(top(lista.filter((r) => r.cupons.length >= 2), 'tkm', fmt.brl, 'Top 5 em ticket médio', 'Clientes com 2 ou mais compras'));
     const faixas = ['até 19', '20 a 29', '30 a 39', '40 a 49', '50 a 59', '60+'];
     const cont = Object.fromEntries(faixas.map((f) => [f, 0]));
@@ -473,8 +483,8 @@
 
     const junto = cartaoLevamJunto();
     if (junto) lado.prepend(junto);
-    root.append(h('div', { class: 'grid g-2-1 mt', style: { alignItems: 'start' } }, listaCard, lado));
-  };
+    root.append(lado);
+  }
 
   function clienteCard(r) {
     const db = TS.db, c = r.c;
@@ -810,7 +820,7 @@
     const kpis = h('div', { class: 'grid g-kpi' },
       TS.kpi('Vendas com CPF', fmt.pct(nTot ? nCpf / nTot : null, 1), `${fmt.int(nCpf)} de ${fmt.int(nTot)} cupons do período`, 'Cupons de venda em que o cliente informou o CPF (e a nota foi encontrada)'),
       TS.kpi('Ticket do cliente identificado', fmt.brl(nCpf ? vtCpf / nCpf : null), h('span', null, 'geral: ', fmt.brl(nTot ? vtTot / nTot : null))),
-      TS.kpi('Recompra', fmt.pct(recompra, 0), 'dos clientes da lista compraram 2 vezes ou mais no período'),
+      TS.kpi('Recompra', fmt.pct(recompra, 0), 'dos clientes do filtro compraram 2 vezes ou mais no período'),
       TS.kpi('Clientes novos no período', fmt.int(TS.cli.lista.filter((c) => c.primeira != null && noPer(c.primeira)).length), 'primeira compra identificada'));
     // novos × recorrentes por mês (últimos 12 meses do período)
     // agrupado pelo período: sem período (Tudo) = últimos 12 meses por mês; com período = por dia, semana ou mês

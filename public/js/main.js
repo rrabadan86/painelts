@@ -55,7 +55,7 @@
     const db = TS.db, f = state.f;
     if (!db || !db.desde || TS.historicoCompleto) return false;
     const d0 = TS.isoToDay(db.desde);
-    return state.page === 'clientes' || state.page === 'campanhas' || f.de == null || f.de - 366 < d0 || (f.mes && !f.ano) || (f.ano && f.ano - 1 < +db.desde.slice(0, 4));
+    return state.page === 'clientes' || state.page === 'clilista' || state.page === 'campanhas' || f.de == null || f.de - 366 < d0 || (f.mes && !f.ano) || (f.ano && f.ano - 1 < +db.desde.slice(0, 4));
   }
   TS.carregarTudo = function () {
     if (TS.historicoCompleto || buscandoCompleto) return;
@@ -245,7 +245,7 @@
    * Menu por assunto: Vendas · Clientes · Equipe · Estoque e Margem · ⚙. Cada grupo mostra só as telas que a pessoa pode ver;
    * grupo com uma tela só vira uma aba com o nome da tela; com mais de uma, a tela tem um submenu no topo.
    */
-  const ROTULO = { inicio: 'Início', resumo: 'Resumo', comparativos: 'Comparativos', promocao: 'Promoção', clientes: 'Clientes', campanhas: 'Campanhas',
+  const ROTULO = { inicio: 'Início', resumo: 'Resumo', comparativos: 'Comparativos', promocao: 'Promoção', clilista: 'Lista de clientes', clientes: 'Indicadores', campanhas: 'Campanhas',
     comissionamento: 'Comissionamento', minha: 'Minha comissão', mapa: 'Movimento e escala', rentab: 'Rentabilidade', precos: 'Preços', site: 'Site', estoque: 'Estoque', pedido: 'Pedido', notas: 'Notas fiscais', dre: 'Resultado' };
   TS.GRUPOS = [];
   function montarMenu(grupoEst, temConfig) {
@@ -253,7 +253,7 @@
     const G = [
       ['Início', ['inicio']],
       ['Vendas', ['resumo', 'comparativos', 'promocao']],
-      ['Clientes', ['clientes', 'campanhas']],
+      ['Clientes', ['clilista', 'clientes', 'campanhas']],
       ['Equipe', ['comissionamento', 'minha', 'mapa']],
       ['Produtos', grupoEst.filter((p) => ['rentab', 'precos', 'site'].includes(p))],
       ['Estoque', grupoEst.filter((p) => ['estoque', 'pedido', 'notas'].includes(p))],
@@ -279,7 +279,7 @@
   /** abas conforme o perfil */
   function configurarAbas(eu) {
     if (!eu.perfil) {
-      if (!PAGES.includes('campanhas')) PAGES.splice(PAGES.indexOf('clientes') + 1, 0, 'campanhas');
+      if (!PAGES.includes('campanhas')) PAGES.splice(PAGES.indexOf('clientes'), 1, 'clilista', 'clientes', 'campanhas');
       PAGES = PAGES.filter((p) => p !== 'minha');
       montarMenu([], false);
       return;
@@ -294,7 +294,7 @@
     else if (!PAGES.includes('minha')) PAGES.push('minha');
     ROTULO.minha = eu.perfil === 'vendedor' ? 'Minha comissão' : 'Comissão por vendedor';
     if (eu.perfil === 'vendedor') document.body.classList.add('perfil-vendedor');
-    if (PAGES.includes('clientes')) PAGES.splice(PAGES.indexOf('clientes') + 1, 0, 'campanhas');
+    if (PAGES.includes('clientes')) PAGES.splice(PAGES.indexOf('clientes'), 1, 'clilista', 'clientes', 'campanhas');
     // Estoque e Margem: admin e franqueado veem tudo; gerente só as telas liberadas em Configurações → Usuários
     // Produtos (Rentabilidade, Preços, Site), Estoque (Estoque, Pedido, Notas fiscais) e Resultado
     const EST = ['rentab', 'precos', 'site', 'estoque', 'pedido', 'notas', 'dre'];

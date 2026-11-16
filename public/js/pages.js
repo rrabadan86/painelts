@@ -77,7 +77,7 @@
   TS.renderFiltros = function () {
     const box = document.getElementById('filtros');
     box.textContent = '';
-    if (state.page === 'clientes') { box.append(TS.filtrosClientes()); return; }
+    if (state.page === 'clientes' || state.page === 'clilista') { box.append(TS.filtrosClientes()); return; }
     if (state.page === 'campanhas') { box.append(h('div', { class: 'f-hint' }, 'Nas campanhas os critérios ficam na própria campanha (Criar campanha). Os clientes considerados são de todo o histórico.')); return; }
     const db = TS.db, f = state.f, rerender = () => TS.render();
     // só os filtros que a tela usa (os outros somem e uma frase diz por quê)
