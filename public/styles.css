@@ -1481,3 +1481,4 @@ tr.cp-enviada td { background: #EEF5EC !important; }
 .fora-det { margin-top: 8px; } .fora-det summary { cursor: pointer; font-weight: 600; color: #1F4E8C; }
 .fora-ok { margin: 6px 0 10px; font-size: 13px; }
 .cls-barra { margin-top: 10px; padding: 10px 12px; border: 1px solid #C9A227; background: #FFF8E1; border-radius: 10px; font-size: 13px; }
+.cfg-imp .seg { margin: 8px 0; flex-wrap: wrap; }

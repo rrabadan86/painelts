@@ -32,7 +32,7 @@ function execucao(s, comLog) {
   if (!u) return null;
   return {
     estado: u.ok ? 'ok' : 'falhou', conclusao: u.ok ? 'success' : String(u.codigo), gatilho: u.gatilho, por: u.por,
-    inicio: u.inicio, criado: u.criado, fim: u.fim, duracao: u.duracao_s, ultimaDoDia: u.ultimaDoDia || null, de: u.de, ate: u.ate, tipo: u.tipo, xml: u.xml || null, estoque: u.estoque || null, fixe: u.fixe || null,
+    inicio: u.inicio, criado: u.criado, fim: u.fim, duracao: u.duracao_s, ultimaDoDia: u.ultimaDoDia || null, de: u.de, ate: u.ate, tipo: u.tipo, xml: u.xml || null, estoque: u.estoque || null, fixe: u.fixe || null, caixa: u.caixa || null,
     log: comLog ? u.log : undefined,
   };
 }

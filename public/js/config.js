@@ -357,22 +357,41 @@
       if (!ocupado) b.append(formHistorico(l));
     }
     if (ex && ex.log && ex.log.length && !ocupado) b.append(detalhes('log:' + l.id, { class: 'cfg-log' }, h('summary', null, 'Log técnico da última coleta'), logBonito(ex.log)));
-    // últimas importações de vendas
-    if (l.base.importacoes.length) {
+    // histórico das atualizações: vendas e XML importados + coletas de estoque, notas de compra, caixa e FIXE (com as falhas)
+    {
       const TIPO_IMP = (o) => {
         const s = String(o || '').toLowerCase();
         if (s.endsWith('historico')) return 'Histórico';
-        if (s.endsWith('agendado')) return 'Automática';
+        if (s.endsWith('agendado') || s === 'automatico') return 'Automática';
         if (s.endsWith('manual')) return 'Manual (botão)';
         if (s.includes('painel')) return 'Planilha enviada';
         if (s.startsWith('api')) return 'Envio por script';
         if (s.includes('migra')) return 'Migração';
         return o ? o.replace(/_/g, ' ') : '—';
       };
-      b.append(detalhes('imp:' + l.id, { class: 'cfg-imp' }, h('summary', null, 'Últimas importações de vendas'), h('div', { class: 'cfg-imp-wrap' },
-        h('table', { class: 't cfg-t' }, h('thead', null, h('tr', null, h('th', { class: 'l' }, 'Quando'), h('th', { class: 'l' }, 'Tipo'), h('th', { class: 'l' }, 'Período'), h('th', null, 'Linhas'), h('th', { title: 'Parte das linhas que veio com o horário da venda (usado no Mapa de calor)' }, 'Com hora'))),
-          h('tbody', null, l.base.importacoes.map((i) => h('tr', null, h('td', { class: 'l nw' }, dt(i.em)), h('td', { class: 'l' }, TIPO_IMP(i.origem)), h('td', { class: 'l nw' }, `${dIso(i.de)} a ${dIso(i.ate)}`), h('td', null, fmt.int(i.linhas)),
-            h('td', { title: i.horasMantidas ? `A planilha veio sem hora; ${i.horasMantidas} linhas mantiveram a hora que já tinham` : '' }, i.comHora == null ? '—' : i.linhas ? fmt.pct(i.comHora / i.linhas, 0) + (i.horasMantidas ? ' *' : '') : '—'))))))));
+      const PARTE = { vendas: 'Vendas', xml: 'XML', estoque: 'Estoque', compras: 'Notas de compra', caixa: 'Fechamento de caixa', fixe: 'FIXE (pedido)', fixeEmail: 'FIXE (importação)' };
+      const GRUPO = { vendas: 'vendas', xml: 'xml', estoque: 'estoque', compras: 'estoque', caixa: 'caixa', fixe: 'fixe', fixeEmail: 'fixe' };
+      const per = (de, ate) => (de && ate ? `${dIso(de)} a ${dIso(ate)}` : '—');
+      const linhas = [
+        ...(l.base.importacoes || []).map((i) => ({ em: i.em, parte: 'vendas', ok: true, tipo: TIPO_IMP(i.origem), periodo: per(i.de, i.ate),
+          detalhe: `${fmt.int(i.linhas)} linhas${i.comHora != null && i.linhas ? ` · ${fmt.pct(i.comHora / i.linhas, 0)} com hora` : ''}` })),
+        ...((l.xml && l.xml.importacoes) || []).map((i) => ({ em: i.em, parte: 'xml', ok: true, tipo: '—', periodo: per(i.de, i.ate),
+          detalhe: `${i.total == null ? '?' : fmt.int(i.total)} notas · ${fmt.int(i.comDoc)} com CPF/CNPJ` })),
+        ...(l.eventos || []).map((e) => ({ em: e.em, parte: e.parte, ok: e.ok, tipo: TIPO_IMP(e.gatilho) + (e.por && e.gatilho === 'manual' ? ` · ${e.por}` : ''), periodo: ['vendas', 'xml'].includes(e.parte) ? per(e.de, e.ate) : '—',
+          detalhe: e.ok ? e.detalhe || '' : e.erro || 'falhou (veja o log técnico)' })),
+      ].filter((x) => x.em).sort((a, b) => Date.parse(b.em) - Date.parse(a.em));
+      if (linhas.length) {
+        const fil = ((state.cfgHist ||= {})[l.id]) || 'todos';
+        const cont = (k) => linhas.filter((x) => k === 'todos' || GRUPO[x.parte] === k).length;
+        const OPS = [['todos', 'Todos'], ['vendas', 'Vendas'], ['xml', 'XML'], ['estoque', 'Estoque'], ['fixe', 'FIXE'], ['caixa', 'Caixa']].filter(([k]) => k === 'todos' || cont(k));
+        const vis = linhas.filter((x) => fil === 'todos' || GRUPO[x.parte] === fil).slice(0, 80);
+        b.append(detalhes('imp:' + l.id, { class: 'cfg-imp' }, h('summary', null, 'Histórico das atualizações'),
+          TS.seg(OPS.map(([k, t]) => [`${t} (${cont(k)})`, k]), fil, (v) => { state.cfgHist[l.id] = v; pintar(); }),
+          h('div', { class: 'cfg-imp-wrap' }, h('table', { class: 't cfg-t' },
+            h('thead', null, h('tr', null, h('th', { class: 'l' }, 'Quando'), h('th', { class: 'l' }, 'O quê'), h('th', { class: 'l' }, 'Resultado'), h('th', { class: 'l' }, 'Tipo'), h('th', { class: 'l' }, 'Período'), h('th', { class: 'l' }, 'Detalhe'))),
+            h('tbody', null, vis.map((x) => h('tr', null, h('td', { class: 'l nw' }, dt(x.em)), h('td', { class: 'l nw' }, PARTE[x.parte] || x.parte),
+              h('td', { class: 'l nw ' + (x.ok ? 'pos' : 'neg') }, x.ok ? '✓ ok' : '✗ falhou'), h('td', { class: 'l nw' }, x.tipo), h('td', { class: 'l nw' }, x.periodo), h('td', { class: 'l' }, x.detalhe))))))));
+      }
     }
     return b;
   }

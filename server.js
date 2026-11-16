@@ -989,6 +989,17 @@ setInterval(() => {
   }
 }, 30e3);
 
+// histórico das atualizações de cada loja (coletas, estoque, caixa, FIXE): a cada minuto
+setInterval(async () => {
+  const EV = require('./src/eventos');
+  for (const l of C.get().lojas) {
+    try {
+      const s = COL.ativo() ? await COL.status(l.id, true).catch(() => null) : null;
+      EV.registrar(l.id, { execucao: s && s.configurada ? s.execucao : null, fixeUltimo: FX.situacao(l.id).ultimo });
+    } catch (e) { console.error(`[eventos] ${l.id}:`, e.message); }
+  }
+}, 60e3);
+
 // avisos de falha para o administrador (coleta, FIXE, loja sem vendas de ontem): a cada 5 minutos
 setInterval(() => {
   require('./src/avisos').verificar({ COL, FX, B, NOTIF: require('./src/notificacoes') }).catch((e) => console.error('[avisos]', e.message));
