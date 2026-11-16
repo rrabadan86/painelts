@@ -201,12 +201,12 @@
     tabs.forEach((t, k) => { const w = largs[k] || larg; if (w > cabe) t.style.zoom = String(Math.max(0.3, cabe / w)); });
     const pagina = h('style', { id: 'pagina-impressao' }, `@page { size: A4 ${orient}; margin: 10mm; }`);
     document.head.append(pagina);
-    document.body.classList.add('imprimindo');
-    const limpar = () => { document.body.classList.remove('imprimindo'); area.remove(); pagina.remove(); window.removeEventListener('afterprint', limpar); };
+    document.body.classList.add('imprimindo-cartao');
+    const limpar = () => { document.body.classList.remove('imprimindo-cartao'); area.remove(); pagina.remove(); window.removeEventListener('afterprint', limpar); };
     window.addEventListener('afterprint', limpar);
     // espera as imagens dos gráficos antes de abrir a impressão
     Promise.all([...area.querySelectorAll('img')].map((im) => (im.complete ? 0 : new Promise((ok) => { im.onload = im.onerror = ok; }))))
-      .then(() => setTimeout(() => { window.print(); setTimeout(() => { if (document.body.classList.contains('imprimindo') && !window.matchMedia('print').matches) limpar(); }, 1000); }, 50));
+      .then(() => setTimeout(() => { window.print(); setTimeout(() => { if (document.body.classList.contains('imprimindo-cartao') && !window.matchMedia('print').matches) limpar(); }, 1000); }, 50));
   };
   // telas que terminam de montar depois (estoque, alertas, cartões que buscam dados): o botão aparece quando a tabela chega
   let observador = null;
