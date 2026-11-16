@@ -600,9 +600,14 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     if (b.fechamento) {
       if (b.fechamento.horario != null) { if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(b.fechamento.horario)) return res.status(400).json({ erro: 'Horário inválido.' }); x.fechamento.horario = b.fechamento.horario; }
       if (b.fechamento.ativo != null) x.fechamento.ativo = !!b.fechamento.ativo;
+      if (b.fechamento.assunto != null) {
+        const t = String(b.fechamento.assunto).replace(/[\r\n]+/g, ' ').trim().slice(0, 150);
+        if (t && !NOTIF.assuntoValido(t)) return res.status(400).json({ erro: 'O assunto precisa ter a data do fechamento: use {data} (ou {dia}, {mes} e {ano}).' });
+        x.fechamento.assunto = t || null;
+      }
     }
     NOTIF.gravar(c);
-    aud(req, 'alterou fechamento por e-mail', req.loja.id, { loja: req.loja.id, servidor: b.email ? x.email.host : undefined, usuario: b.email ? x.email.user : undefined, senha: b.email && b.email.pass ? 'trocada' : undefined, ativo: b.fechamento ? x.fechamento.ativo : undefined, horario: b.fechamento ? x.fechamento.horario : undefined });
+    aud(req, 'alterou fechamento por e-mail', req.loja.id, { loja: req.loja.id, servidor: b.email ? x.email.host : undefined, usuario: b.email ? x.email.user : undefined, senha: b.email && b.email.pass ? 'trocada' : undefined, ativo: b.fechamento ? x.fechamento.ativo : undefined, horario: b.fechamento ? x.fechamento.horario : undefined, assunto: b.fechamento && b.fechamento.assunto != null ? x.fechamento.assunto : undefined });
     res.json({ ok: true, fechEmail: NOTIF.publicoLoja(req.loja.id) });
   });
   r.post('/lojas/:id/fechamento-email/destinos', lojaPermitida, json, (req, res) => {

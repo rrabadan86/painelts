@@ -599,6 +599,17 @@
     const e = f.email;
     const ativo = h('input', { type: 'checkbox', checked: f.fechamento.ativo || null });
     const hora = inp({ type: 'time', value: f.fechamento.horario || '23:30', style: { maxWidth: '140px' } });
+    const ASSUNTO_PADRAO = '{loja} · fechamento de {data}';
+    const assunto = inp({ value: f.fechamento.assunto || ASSUNTO_PADRAO, maxlength: 150, placeholder: ASSUNTO_PADRAO });
+    const exAssunto = h('div', { class: 'muted cfg-ex-assunto' });
+    const verAssunto = () => {
+      const hj = new Date(), dd = String(hj.getDate()).padStart(2, '0'), mm = String(hj.getMonth() + 1).padStart(2, '0'), aa = String(hj.getFullYear());
+      const t = (assunto.value.trim() || ASSUNTO_PADRAO).replace(/\{(data|dia|mes|mês|ano|loja)\}/gi, (_, k) => ({ data: `${dd}/${mm}/${aa}`, dia: dd, mes: mm, 'mês': mm, ano: aa, loja: l.nome })[k.toLowerCase()]);
+      const temData = /\{data\}/i.test(assunto.value) || (/\{dia\}/i.test(assunto.value) && /\{m[eê]s\}/i.test(assunto.value) && /\{ano\}/i.test(assunto.value));
+      exAssunto.replaceChildren(temData ? h('span', null, 'Fica assim: ', h('b', null, t)) : h('span', { class: 'neg' }, 'Falta a data: coloque {data} (ou {dia}, {mes} e {ano}).'));
+    };
+    assunto.addEventListener('input', verAssunto); verAssunto();
+    const tag = (t) => h('button', { type: 'button', class: 'chip', onclick: () => { const i = assunto.selectionStart ?? assunto.value.length; assunto.value = assunto.value.slice(0, i) + t + assunto.value.slice(assunto.selectionEnd ?? i); assunto.focus(); verAssunto(); } }, t);
     const host = inp({ value: e.host, placeholder: 'ex.: smtp.gmail.com' }), port = inp({ type: 'number', value: e.port || 587 }), user = inp({ value: e.user, autocomplete: 'off', placeholder: 'ex.: teashop.loja@gmail.com' });
     const pass = inp({ type: 'password', autocomplete: 'new-password', placeholder: e.temSenha ? '•••••••• (guardada)' : 'senha de app (16 letras)' });
     const from = inp({ value: e.from, placeholder: `ex.: ${l.nome} <teashop.loja@gmail.com>` });
@@ -617,6 +628,8 @@
           ' As atualizações manuais ("Rodar agora") não disparam o envio. Se a última do dia não acontecer, o fechamento sai às 6h do dia seguinte.')
         : h('div', { class: 'cfg-grid' }, campo('Horário (Brasília)', hora, 'Esta loja não tem atualização automática: o fechamento sai neste horário.')),
       f.fechamento.ultimoEnvio ? h('p', { class: 'muted' }, `Último envio automático: ${dIso(f.fechamento.ultimoEnvio)}`) : null,
+      campo('Assunto do e-mail', assunto, 'A data é a do fechamento (o dia das vendas). Clique numa etiqueta para colocar no assunto.'),
+      h('div', { class: 'cfg-tags' }, ['{data}', '{dia}', '{mes}', '{ano}', '{loja}'].map(tag)), exAssunto,
       h('div', { class: 'f-label', style: { marginTop: '10px' } }, 'Gmail que envia (da franquia)'),
       !e.configurado && f.servidorGeral ? h('p', { class: 'muted' }, 'Enquanto o Gmail da loja não for cadastrado, o envio usa o e-mail geral do painel.') : null,
       passoGmail('gmail:' + l.id, { host, port, sec, from, user }),
@@ -628,7 +641,7 @@
         if (user.value.trim() && !host.value.trim()) throw new Error('Preencha o Servidor (SMTP). Para Gmail: smtp.gmail.com.');
         // usuário e servidor apagados = tirar o Gmail desta loja (a senha guardada sai junto)
         const semGmail = !user.value.trim() && !host.value.trim();
-        await api('PUT', `/lojas/${l.id}/fechamento-email`, { fechamento: { ativo: ativo.checked, horario: hora.value }, email: semGmail ? { remover: true } : { host: host.value, port: port.value, user: user.value, pass: pass.value || undefined, from: from.value, secure: sec.checked } });
+        await api('PUT', `/lojas/${l.id}/fechamento-email`, { fechamento: { ativo: ativo.checked, horario: hora.value, assunto: assunto.value.trim() === ASSUNTO_PADRAO ? '' : assunto.value }, email: semGmail ? { remover: true } : { host: host.value, port: port.value, user: user.value, pass: pass.value || undefined, from: from.value, secure: sec.checked } });
         if (semGmail) { from.value = ''; return 'Fechamento salvo. O Gmail desta loja foi removido.'; }
         return 'Fechamento salvo.';
       }, 'btn primary'),

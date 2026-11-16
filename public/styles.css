@@ -1465,3 +1465,6 @@ tr.cp-enviada td { background: #EEF5EC !important; }
 .dre-t td.dre-proj, .dre-t th.dre-proj { background: #FBF6E6; }
 .dre-t thead th.dre-proj { background: #6E5A12; }
 .dre-t tr.dre-info td { font-size: 12.5px; }
+.cfg-tags { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0 4px; }
+.cfg-tags .chip { font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--line, #E6E0D2); background: #F6F2EA; cursor: pointer; font-family: ui-monospace, monospace; }
+.cfg-ex-assunto { font-size: 12.5px; margin-bottom: 8px; }

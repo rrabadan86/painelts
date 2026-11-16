@@ -183,7 +183,7 @@ async function enviarFechamentoLoja(obter, lojaId, { dia, soPara } = {}) {
   const semCx = new Set(x.destinos.filter((y) => y.caixa === false).map((y) => y.email.toLowerCase()));
   if (semCx.size) mSem = await montarFechamento([lojaId], obter, d, { semCaixa: true });
   const smtp = smtpOk(x.email) ? x.email : smtpOk(c.email) ? c.email : null;
-  const assunto = `${nomeLoja} · fechamento de ${d.split('-').reverse().join('/')}`;
+  const assunto = assuntoFechamento(x.fechamento.assunto, nomeLoja, d);
   const cobre = (ls) => ls.includes('*') || ls.includes(lojaId);
   const emails = new Map();
   for (const y of x.destinos) emails.set(y.email.toLowerCase(), y.nome || y.email);
@@ -215,6 +215,16 @@ async function enviarFechamento(obter, { soDestino, dia } = {}) {
   }
   return res;
 }
+
+/** assunto do e-mail do fechamento: modelo da loja com as tags {data} {dia} {mes} {ano} {loja} */
+const ASSUNTO_PADRAO = '{loja} · fechamento de {data}';
+function assuntoFechamento(modelo, nomeLoja, iso) {
+  const [a, m, d] = iso.split('-');
+  const t = String(modelo || '').trim() || ASSUNTO_PADRAO;
+  return t.replace(/\{(data|dia|mes|mês|ano|loja)\}/gi, (_, k) => ({ data: `${d}/${m}/${a}`, dia: d, mes: m, 'mês': m, ano: a, loja: nomeLoja })[k.toLowerCase()]).slice(0, 200);
+}
+/** o modelo precisa levar a data do fechamento ({data}, ou {dia}, {mes} e {ano}) */
+const assuntoValido = (t) => /\{data\}/i.test(t) || (/\{dia\}/i.test(t) && /\{m[eê]s\}/i.test(t) && /\{ano\}/i.test(t));
 
 /** qual dia de fechamento enviar agora (ou nenhum) */
 function quandoFechamento(st, { ult, iso, ontem, hhmm, horario }) {
@@ -266,4 +276,4 @@ function agendar(obter) {
   }, 30e3);
 }
 
-module.exports = { quandoFechamento, enviarEmail, ler, gravar, publico, publicoLoja, cfgLoja, conversasTelegram, enviarTodos, montarTexto, agendar, montarFechamento, enviarFechamento, enviarFechamentoLoja };
+module.exports = { quandoFechamento, assuntoFechamento, assuntoValido, ASSUNTO_PADRAO, enviarEmail, ler, gravar, publico, publicoLoja, cfgLoja, conversasTelegram, enviarTodos, montarTexto, agendar, montarFechamento, enviarFechamento, enviarFechamentoLoja };
