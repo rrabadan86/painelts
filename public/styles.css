@@ -426,7 +426,7 @@ body.perfil-vendedor #btnScript { display: none !important; }
 #impressao { display: none; }
 @media print {
   @page { size: A4; margin: 14mm; }
-  body > *:not(#impressao) { display: none !important; }
+  body:not(.imprimindo) > *:not(#impressao) { display: none !important; }
   body { background: #fff !important; }
   #impressao { display: block; font-family: Inter, Arial, sans-serif; color: #1d2b22; font-size: 11pt; }
   .imp-pag { page-break-after: always; }
@@ -1515,3 +1515,32 @@ tr.cp-enviada td { background: #EEF5EC !important; }
 .cli-sv-resumo > div { background: var(--bg2, #f4f0e6); border-radius: 8px; padding: 6px 10px; font-size: 13px; cursor: help; }
 .ped-cl-meses { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; }
 .ped-cl-meses .seg button { padding: 4px 10px; }
+/* ---------- impressão de um cartão (botão 🖨 Imprimir) ---------- */
+#area-impressao { position: absolute; left: -30000px; top: 0; width: max-content; background: #fff; color: #1d2a22; font-size: 12px; }
+#area-impressao.prt-medindo .table-wrap { max-height: none !important; overflow: visible !important; }
+#area-impressao.prt-medindo table { width: max-content !important; }
+.prt-cab { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; border-bottom: 2px solid #2C5234; padding-bottom: 4px; margin-bottom: 8px; font-size: 11px; color: #444; }
+.prt-cab b { color: #2C5234; font-size: 13px; }
+.prt-campo { font-weight: 600; }
+@media print {
+  body.imprimindo > *:not(#area-impressao) { display: none !important; }
+  body.imprimindo { background: #fff !important; padding: 0 !important; margin: 0 !important; }
+  body.imprimindo #area-impressao { position: static; left: auto; width: auto; }
+  #area-impressao * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  #area-impressao .card { break-inside: auto !important; page-break-inside: auto !important; box-shadow: none !important; border: none !important; padding: 0 !important; margin: 0 !important; background: #fff !important; max-width: none !important; }
+  #area-impressao .card-head { display: block; }
+  #area-impressao .table-wrap { max-height: none !important; overflow: visible !important; border: none !important; }
+  #area-impressao table { width: 100% !important; border-collapse: collapse; font-size: 10.5px; }
+  #area-impressao th, #area-impressao td { position: static !important; padding: 3px 5px !important; }
+  #area-impressao th .arrow { display: none; }
+  #area-impressao thead { display: table-header-group; }
+  #area-impressao tfoot { display: table-row-group; }
+  #area-impressao tr, #area-impressao .prt-graf, #area-impressao .kpi, #area-impressao .notice, #area-impressao li { break-inside: avoid; page-break-inside: avoid; }
+  #area-impressao .chart-box { height: auto !important; break-inside: avoid; }
+  #area-impressao .prt-graf { display: block; width: 100%; height: auto; max-height: 175mm; object-fit: contain; margin: 6px 0; }
+  #area-impressao .card-title, #area-impressao .card-sub { break-after: avoid; }
+}
+.prt-btn span { margin-left: 4px; }
+@media (max-width: 640px) { .prt-btn span { display: none; } }
+.card-head .prt-btn + .exp-btn { margin-left: 0; }
+.card-cheio .prt-btn { display: inline-flex; }

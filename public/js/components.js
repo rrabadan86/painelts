@@ -130,15 +130,82 @@
   /** põe o botão ⤢ nos cartões com tabela que ainda não têm (não mexe no que está expandido) */
   function adicionarBotoes(root, reabrir) {
     for (const card of root.querySelectorAll('.card')) {
-      if (card.classList.contains('kpi') || card.tagName === 'DETAILS' || ![...card.querySelectorAll('.table-wrap')].some((t) => t.closest('.card') === card) || card.querySelector(':scope > .card-head .exp-btn')) continue; // só a tabela do próprio cartão (não a de um cartão dentro dele)
+      if (card.classList.contains('kpi') || card.tagName === 'DETAILS') continue;
+      // só a tabela/gráfico do próprio cartão (não a de um cartão dentro dele)
+      const temTab = [...card.querySelectorAll('.table-wrap')].some((t) => t.closest('.card') === card);
+      const temGraf = [...card.querySelectorAll('.chart-box')].some((t) => t.closest('.card') === card);
+      if (!temTab && !temGraf) continue;
+      const temExp = !!card.querySelector(':scope > .card-head .exp-btn'), temPrt = !!card.querySelector(':scope > .card-head .prt-btn');
+      if ((temExp || !temTab) && temPrt) continue;
       let head = card.querySelector(':scope > .card-head');
       if (!head) { head = h('div', { class: 'card-head' }, h('div')); card.prepend(head); }
-      const b = h('button', { type: 'button', class: 'exp-btn', title: 'Expandir em tela cheia', 'aria-label': 'Expandir em tela cheia', onclick: () => expandir(card) },
-        '⤢', h('span', null, 'Expandir'));
-      head.append(b);
-      if (reabrir && card.querySelector('.card-title')?.textContent === reabrir) requestAnimationFrame(() => expandir(card));
+      if (!temPrt) head.append(h('button', { type: 'button', class: 'exp-btn prt-btn', title: 'Imprimir (ou salvar em PDF)', 'aria-label': 'Imprimir', onclick: () => TS.imprimir(card) }, '🖨', h('span', null, 'Imprimir')));
+      if (temTab && !temExp) {
+        head.append(h('button', { type: 'button', class: 'exp-btn', title: 'Expandir em tela cheia', 'aria-label': 'Expandir em tela cheia', onclick: () => expandir(card) }, '⤢', h('span', null, 'Expandir')));
+        if (reabrir && card.querySelector('.card-title')?.textContent === reabrir) requestAnimationFrame(() => expandir(card));
+      }
     }
   }
+
+  // ---------- impressão de um cartão (tabela e/ou gráfico) ----------
+  // Copia o cartão (com todas as linhas da tabela), troca os gráficos por imagem e escolhe a folha:
+  // em pé quando a tabela cabe na largura de um A4 em pé; deitada quando é larga ou tem gráfico.
+  // A tabela encolhe para caber na largura (nunca corta coluna); linhas, gráficos e cartões não se partem entre páginas,
+  // e o cabeçalho da tabela se repete em cada página.
+  const LARG = { portrait: 718, landscape: 1047 }; // A4 menos 10 mm de margem de cada lado, em px (96 dpi)
+  TS.imprimir = function (card) {
+    document.getElementById('area-impressao')?.remove();
+    document.getElementById('pagina-impressao')?.remove();
+    const wraps = [...card.querySelectorAll('.table-wrap')];
+    wraps.forEach((t) => t._tudo && t._tudo(true));
+    const copia = card.cloneNode(true);
+    wraps.forEach((t) => t._tudo && t._tudo(false));
+    // gráficos viram imagem (o canvas copiado vem em branco)
+    const orig = card.querySelectorAll('canvas'), cop = copia.querySelectorAll('canvas');
+    orig.forEach((c, k) => {
+      let src = '';
+      try { src = c.toDataURL('image/png'); } catch { /* ok */ }
+      const img = h('img', { class: 'prt-graf', src, alt: c.getAttribute('aria-label') || 'Gráfico' });
+      if (c.width && c.height) img.style.aspectRatio = `${c.width} / ${c.height}`;
+      cop[k] && cop[k].replaceWith(img);
+    });
+    // o que é de tela sai; campos viram texto
+    copia.querySelectorAll('details').forEach((d) => { if (d.querySelector(':scope > summary.btn')) d.remove(); else d.open = true; }); // menus (Limpar ▾) saem
+    copia.querySelectorAll('.exp-btn, .exp-fechar, .dica-i, .pager, input[type=search], .seg button:not(.on), .ped-ab, button.chip, button.btn, .est-cl-sel').forEach((el) => el.remove());
+    copia.querySelectorAll('select').forEach((el) => el.replaceWith(h('span', { class: 'prt-campo' }, el.selectedOptions[0] ? el.selectedOptions[0].textContent : '')));
+    copia.querySelectorAll('input').forEach((el) => {
+      if (el.type === 'checkbox' || el.type === 'radio') el.replaceWith(el.checked ? '☑ ' : '☐ ');
+      else el.replaceWith(h('span', { class: 'prt-campo' }, el.value));
+    });
+    copia.classList.remove('card-cheio');
+    // cabeçalho: tela, loja, período e quando foi impresso
+    const f = TS.state.f;
+    const lojaSel = document.getElementById('lojaSel');
+    const loja = lojaSel && lojaSel.selectedOptions[0] ? lojaSel.selectedOptions[0].textContent : '';
+    const per = f.de != null || f.ate != null ? `${f.de != null ? fmt.date(TS.dayToIso(f.de)) : 'início'} a ${f.ate != null ? fmt.date(TS.dayToIso(f.ate)) : 'hoje'}` : 'todo o histórico';
+    const tela = document.querySelector('.page-title')?.textContent || '';
+    const area = h('div', { id: 'area-impressao' },
+      h('div', { class: 'prt-cab' }, h('b', null, ['Tea Shop', loja, tela].filter(Boolean).join(' · ')),
+        h('span', null, `Período: ${per} · impresso em ${new Date().toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}`)),
+      copia);
+    document.body.append(area);
+    // mede a largura natural das tabelas para escolher a folha e o quanto encolher
+    area.classList.add('prt-medindo');
+    const tabs = [...copia.querySelectorAll('table')];
+    const larg = Math.max(0, ...tabs.map((t) => t.scrollWidth));
+    area.classList.remove('prt-medindo');
+    const orient = copia.querySelector('.prt-graf') || larg > LARG.portrait ? 'landscape' : 'portrait';
+    const cabe = LARG[orient] - 4;
+    for (const t of tabs) { const w = t.scrollWidth || larg; if (w > cabe) t.style.zoom = String(Math.max(0.3, cabe / w)); }
+    const pagina = h('style', { id: 'pagina-impressao' }, `@page { size: A4 ${orient}; margin: 10mm; }`);
+    document.head.append(pagina);
+    document.body.classList.add('imprimindo');
+    const limpar = () => { document.body.classList.remove('imprimindo'); area.remove(); pagina.remove(); window.removeEventListener('afterprint', limpar); };
+    window.addEventListener('afterprint', limpar);
+    // espera as imagens dos gráficos antes de abrir a impressão
+    Promise.all([...area.querySelectorAll('img')].map((im) => (im.complete ? 0 : new Promise((ok) => { im.onload = im.onerror = ok; }))))
+      .then(() => setTimeout(() => { window.print(); setTimeout(() => { if (document.body.classList.contains('imprimindo') && !window.matchMedia('print').matches) limpar(); }, 1000); }, 50));
+  };
   // telas que terminam de montar depois (estoque, alertas, cartões que buscam dados): o botão aparece quando a tabela chega
   let observador = null;
   function vigiar(root) {
@@ -288,6 +355,12 @@
       }
     }
     const NF = (n) => fmt.int(n);
+    // impressão: mostra todas as linhas (sem páginas) enquanto copia a tabela, depois volta
+    let psGuardado = null;
+    tw._tudo = (on) => {
+      if (on) { if (!pageSize) return; psGuardado = pageSize; pageSize = 0; paint(); }
+      else if (psGuardado) { pageSize = psGuardado; psGuardado = null; paint(); }
+    };
     paint();
     wrap.append(tw, pager);
     wrap.searchBox = searchBox;
