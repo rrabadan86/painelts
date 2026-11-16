@@ -110,6 +110,8 @@ async function verificar(id, smtp, importar) {
           if (!/export/i.test(p.subject || '')) continue;
           // pedido para o apelido da loja (usuario+loja@gmail.com): só vale o e-mail endereçado a ele — outra loja pode usar o mesmo Gmail
           if (apelido && !destinatarios(p).includes(apelido)) continue;
+          // pedido para o endereço normal: ignora o que foi mandado ao apelido de outra loja (usuario+outra@gmail.com)
+          if (!apelido) { const ds = destinatarios(p); if (ds.length && ds.every((x) => /\+[^@]+@/.test(x))) continue; }
           const link = linkDoEmail(p.html || p.textAsHtml || '');
           if (link) daCaixa.push({ uid, spam: cx === spam, mid, link, recebido: msg.internalDate });
         }
