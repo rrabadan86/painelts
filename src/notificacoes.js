@@ -216,19 +216,43 @@ async function enviarFechamento(obter, { soDestino, dia } = {}) {
   return res;
 }
 
+/** qual dia de fechamento enviar agora (ou nenhum) */
+function quandoFechamento(st, { ult, iso, ontem, hhmm, horario }) {
+  if (st && st.configurada) {
+    const e = st.execucao;
+    if (e && e.ultimaDoDia && e.fim && e.ultimaDoDia > ult && e.ultimaDoDia >= ontem) return { dia: e.ultimaDoDia, motivo: 'depois da última atualização automática' };
+    if (hhmm >= '06:00' && ult < ontem && !(e && ['na_fila', 'rodando'].includes(e.estado))) return { dia: ontem, motivo: 'sem a última atualização automática de ontem (enviado às 6h)' };
+    return {};
+  }
+  if (ult !== iso && hhmm >= horario) return { dia: iso, motivo: 'no horário' };
+  return {};
+}
+
+/** situação do coletor da loja (null se não há coletor ou ele não respondeu) */
+async function statusColetor(id) {
+  const COL = require('./coletor');
+  if (!COL.ativo()) return null;
+  try { return await COL.status(id); } catch { return null; }
+}
+
 /** agenda: confere a cada 30 s se chegou o horário (Brasília) */
 function agendar(obter) {
   setInterval(async () => {
     const c = ler();
     const { iso, hhmm } = I.hojeSP();
-    // fechamento do dia de cada loja, no horário da loja
+    // fechamento do dia de cada loja: logo depois da última atualização automática do dia (as manuais não disparam);
+    // loja sem atualização automática: no horário escolhido. Se a última do dia não acontecer, sai às 6h do dia seguinte.
+    const ontem = new Date(Date.parse(iso + 'T12:00:00Z') - 86400e3).toISOString().slice(0, 10);
     for (const l of C.get().lojas) {
       const x = c.lojas && c.lojas[l.id] && cfgLoja(c, l.id);
-      if (!x || !x.fechamento.ativo || x.fechamento.ultimoEnvio === iso || hhmm < x.fechamento.horario) continue;
-      x.fechamento.ultimoEnvio = iso; gravar(c); // marca antes: nunca envia duas vezes no mesmo dia
+      if (!x || !x.fechamento.ativo) continue;
+      const ult = x.fechamento.ultimoEnvio || '';
+      const { dia, motivo } = quandoFechamento(await statusColetor(l.id), { ult, iso, ontem, hhmm, horario: x.fechamento.horario });
+      if (!dia) continue;
+      x.fechamento.ultimoEnvio = dia; gravar(c); // marca antes: nunca envia duas vezes o mesmo dia
       try {
-        const r = await enviarFechamentoLoja(obter, l.id, { dia: iso });
-        C.auditar('sistema', 'enviou fechamento do dia', l.id, { loja: l.id, envios: r.length, falhas: r.filter((y) => !y.ok).map((y) => `${y.para}: ${y.erro}`) });
+        const r = await enviarFechamentoLoja(obter, l.id, { dia });
+        C.auditar('sistema', 'enviou fechamento do dia', l.id, { loja: l.id, dia, motivo, envios: r.length, falhas: r.filter((y) => !y.ok).map((y) => `${y.para}: ${y.erro}`) });
       } catch (e) { console.error(`[fechamento] ${l.id}:`, e.message); }
     }
     if (!c.ativo) return;
@@ -242,4 +266,4 @@ function agendar(obter) {
   }, 30e3);
 }
 
-module.exports = { enviarEmail, ler, gravar, publico, publicoLoja, cfgLoja, conversasTelegram, enviarTodos, montarTexto, agendar, montarFechamento, enviarFechamento, enviarFechamentoLoja };
+module.exports = { quandoFechamento, enviarEmail, ler, gravar, publico, publicoLoja, cfgLoja, conversasTelegram, enviarTodos, montarTexto, agendar, montarFechamento, enviarFechamento, enviarFechamentoLoja };

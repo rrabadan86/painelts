@@ -610,9 +610,12 @@
       return `Fechamento de hoje enviado para ${ok.length}: ${ok.map((x) => x.para).join(', ')}.`;
     };
     sec0.append(...[
-      h('p', { class: 'muted' }, `Todo dia, no horário escolhido, a ${l.nome} envia o fechamento de HOJE pelo Gmail dela para as pessoas da lista abaixo${f.gerais.length ? ' e para quem acompanha a loja pela rede' : ''}. É o mesmo conteúdo da planilha de fechamento, preenchido sozinho. No fim do e-mail vai o fechamento de caixa do AppNext (formas de pagamento, sangria, suprimento e diferença) para quem estiver marcado com "Recebe o caixa".`),
+      h('p', { class: 'muted' }, `Todo dia, ${l.coletor && l.coletor.configurado && est.coletorAtivo ? 'logo depois da última atualização automática' : 'no horário escolhido'}, a ${l.nome} envia o fechamento do dia pelo Gmail dela para as pessoas da lista abaixo${f.gerais.length ? ' e para quem acompanha a loja pela rede' : ''}. É o mesmo conteúdo da planilha de fechamento, preenchido sozinho. No fim do e-mail vai o fechamento de caixa do AppNext (formas de pagamento, sangria, suprimento e diferença) para quem estiver marcado com "Recebe o caixa".`),
       h('label', { class: 'cfg-check-l' }, ativo, ' Enviar o fechamento todos os dias'),
-      h('div', { class: 'cfg-grid' }, campo('Horário (Brasília)', hora, 'Depois da última coleta do dia (ex.: coleta 23:00 → 23:30).')),
+      l.coletor && l.coletor.configurado && est.coletorAtivo
+        ? h('p', { class: 'muted' }, h('b', null, `Envio: logo depois da última atualização automática do dia${(est.horarios || []).length ? ` (${[...est.horarios].sort().slice(-1)[0]})` : ''}.`),
+          ' As atualizações manuais ("Rodar agora") não disparam o envio. Se a última do dia não acontecer, o fechamento sai às 6h do dia seguinte.')
+        : h('div', { class: 'cfg-grid' }, campo('Horário (Brasília)', hora, 'Esta loja não tem atualização automática: o fechamento sai neste horário.')),
       f.fechamento.ultimoEnvio ? h('p', { class: 'muted' }, `Último envio automático: ${dIso(f.fechamento.ultimoEnvio)}`) : null,
       h('div', { class: 'f-label', style: { marginTop: '10px' } }, 'Gmail que envia (da franquia)'),
       !e.configurado && f.servidorGeral ? h('p', { class: 'muted' }, 'Enquanto o Gmail da loja não for cadastrado, o envio usa o e-mail geral do painel.') : null,

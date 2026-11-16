@@ -163,14 +163,19 @@ def pendentes(loja):
 ITENS = ("vendas", "xml", "estoque", "fixe")
 
 
-def enfileirar(loja, gatilho, por=None, de=None, ate=None, fixe=False, tipo=None, itens=None):
+def enfileirar(loja, gatilho, por=None, de=None, ate=None, fixe=False, tipo=None, itens=None, ultima_do_dia=False):
     """Rotina/manual: recusa se a loja já tem algo na fila ou rodando.
     fixe=True: pede também a exportação do cadastro de clientes ao FIXE (coleta da noite)."""
     with lock:
         e = _estado(loja)
         if e["estado"] in ("na_fila", "rodando") or pendentes(loja):
+            if ultima_do_dia:
+                # a loja já está atualizando: a coleta que está em andamento passa a valer como a última do dia
+                e["marcar_ultima_do_dia"] = datetime.now(TZ).strftime("%Y-%m-%d")
             return False
         job = {"loja": loja, "gatilho": gatilho, "por": por, "de": de, "ate": ate, "criado": datetime.now(TZ).isoformat(), "inicio": None, "fixe": fixe}
+        if ultima_do_dia:
+            job["ultimaDoDia"] = datetime.now(TZ).strftime("%Y-%m-%d")  # o painel envia o fechamento do dia quando esta terminar
         if tipo:
             job["tipo"] = tipo
         if itens:
@@ -422,6 +427,11 @@ def rodar(job):
     cauda = [l for t in trechos for l in t] or (log_path.read_text(encoding="utf-8", errors="replace").splitlines()[-25:] if log_path.exists() else [])
     with lock:
         e = _estado(loja)
+        # pedido de "última do dia" que chegou com a loja ocupada: vale para esta coleta (o histórico em lotes passa adiante)
+        if job.get("gatilho") != "historico" and e.get("marcar_ultima_do_dia"):
+            marca = e.pop("marcar_ultima_do_dia")
+            if not job.get("ultimaDoDia") and marca >= (datetime.now(TZ) - timedelta(hours=6)).strftime("%Y-%m-%d"):
+                job = {**job, "ultimaDoDia": marca}
         e["ultima"] = {**job, "tipo": tipo, "xml": xml, "caixa": caixa, "estoque": estoque, "fixe": fixe, "fim": datetime.now(TZ).isoformat(), "ok": ok, "codigo": codigo,
                        "duracao_s": round(time.time() - inicio), "log": cauda}
         lote = e.get("lote")
@@ -472,7 +482,7 @@ def agendador():
             feitos.add(chave)
             noite = hhmm == max(hs)  # a última do dia também pede o cadastro de clientes ao FIXE
             for loja in lojas_configuradas():
-                enfileirar(loja, "agendado", fixe=noite)
+                enfileirar(loja, "agendado", fixe=noite, ultima_do_dia=noite)
                 if noite and tem_pedido(loja):
                     enfileirar_pedido(loja, "catalogo", "rotina")
         time.sleep(20)
