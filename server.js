@@ -623,7 +623,7 @@ app.put('/api/pedido/cfg', express.json({ limit: '20kb' }), (req, res) => {
   const v = PED.validarCfg(req.body || {});
   if (v.erro) return res.status(400).json({ erro: v.erro });
   C.alterar((cfg) => { cfg.lojas.find((l) => l.id === loja.id).pedidoCfg = v.ok; });
-  C.auditar(req.user, 'alterou configuração do pedido', loja.id, { loja: loja.id, cmvPct: v.ok.cmvPct, dias: v.ok.dias });
+  C.auditar(req.user, 'alterou configuração do pedido', loja.id, { loja: loja.id, cmvPct: v.ok.cmvPct, dias: v.ok.dias, proporcao: v.ok.proporcao ? `${v.ok.proporcao.cha}/${v.ok.proporcao.env}/${v.ok.proporcao.acess}%` : 'pelas vendas' });
   res.json({ ok: true, cfg: v.ok });
 });
 app.get('/api/pedido/acesso', (req, res) => {

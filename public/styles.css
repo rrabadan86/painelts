@@ -1489,3 +1489,7 @@ tr.cp-enviada td { background: #EEF5EC !important; }
 .cfg-hist-card { padding: 10px 12px; margin-top: 8px; box-shadow: none; }
 .cfg-hist-card .card-title { font-size: 13px; }
 .cfg-usu-filtros { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 0 0 10px; } .cfg-usu-filtros .f-input { width: auto; min-width: 170px; }
+.ped-prop { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 10px; }
+.ped-prop-ins { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.ped-prop-ins label { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; }
+.ped-prop small { flex-basis: 100%; }

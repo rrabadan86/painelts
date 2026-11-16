@@ -8,8 +8,8 @@
   const { h, fmt, state } = TS;
   const DIA = 86400e3;
   const CLASSES = { estrela: 'Estrela', volume: 'Volume', joia: 'Joia', peso: 'Peso morto' };
-  const GRUPOS = { cha: 'Chás a granel', env: 'Envasados', acess: 'Acessórios', insumo: 'Embalagens e insumos' };
-  const ordemG = ['cha', 'env', 'acess', 'insumo'];
+  const GRUPOS = { cha: 'Chás a granel', env: 'Envasados', acess: 'Acessórios', insumo: 'Embalagens e insumos', outros: 'Outros (bens de consumo)' };
+  const ordemG = ['cha', 'env', 'acess', 'insumo', 'outros'];
   const qtdPorLoja = new Map(); // loja|modo → Map(cod → quantidade editada)
   let poll = null;
   const tituloOriginal = document.title;
@@ -183,11 +183,33 @@
         margem: vendaItem.get(it.cod) ? (contrib.get(it.cod) || 0) / vendaItem.get(it.cod) : null, pedir: 0, motivo: '' });
     }
 
+    // ---------- o resto do catálogo: produtos que não precisam de reposição pela previsão, ou que nem estão no estoque
+    // (bens de consumo da operação: etiquetas, sacolas…). Ficam fora da conta do valor; você pede à mão se quiser.
+    if (catalogo && catalogo.itens) {
+      const ja = new Set(linhas.map((r) => String(r.cod)));
+      for (const c of catalogo.itens) {
+        const cod = String(c.cod);
+        if (ja.has(cod)) continue;
+        ja.add(cod);
+        const doEst = M.porCod.get(cod);
+        const it = doEst || { cod, desc: c.nome, un: 'Un', custo: null, qtd: 0 };
+        const g = grupoDe(cod) || (doEst ? (doEst.un === 'Kg' ? 'cha' : doEst.tipo === 'PN' ? 'acess' : 'insumo') : 'outros');
+        linhas.push({ cod, produto: doEst ? doEst.desc : c.nome, it, c, grupo: g, grupoTxt: GRUPOS[g], qtd: Math.max(0, it.qtd || 0), prev: 0, dias: null, urgente: false, precisa: 0, sugerido: 0,
+          conta: doEst ? 'Pela previsão não precisa de reposição agora. Peça à mão se quiser.' : 'Não está no estoque do AppNext (bem de consumo da operação ou produto novo). Peça à mão se precisar.',
+          preco: c.disp ? c.preco : null, lucroDia: (contrib.get(cod) || 0) / 30, site: c.disp ? 'ok' : 'indisp', unidadeEstranha: false, classe: classe.get(cod) || null, margem: null,
+          pedir: 0, motivo: '', extra: true, semEstoque: !doEst });
+      }
+    }
+
     // ---------- distribuição do valor ----------
-    const compraveis = linhas.filter((r) => r.site === 'ok' || r.site === 'sem');
+    const compraveis = linhas.filter((r) => !r.extra && (r.site === 'ok' || r.site === 'sem'));
     const prioridade = (a, b) => (b.urgente - a.urgente) || (b.lucroDia - a.lucroDia) || (b.prev * (b.preco || 0) - a.prev * (a.preco || 0));
     const fatSoma = fatG.cha + fatG.env + fatG.acess;
-    const share = { cha: fatSoma ? fatG.cha / fatSoma : 0, env: fatSoma ? fatG.env / fatSoma : 0, acess: fatSoma ? fatG.acess / fatSoma : 0 };
+    const shareVendas = { cha: fatSoma ? fatG.cha / fatSoma : 0, env: fatSoma ? fatG.env / fatSoma : 0, acess: fatSoma ? fatG.acess / fatSoma : 0 };
+    // proporção definida por você (ex.: 100% chás a granel): grupo com 0% não entra no pedido sugerido
+    const pm = pcfg.proporcao;
+    const manual = !!(pm && pm.cha + pm.env + pm.acess > 0);
+    const share = manual ? { cha: pm.cha / 100, env: pm.env / 100, acess: pm.acess / 100 } : shareVendas;
     const custoDe = (r, q) => q * (r.preco || 0);
     if (orcamento == null) {
       for (const r of compraveis) { r.pedir = r.sugerido; r.motivo = 'completo'; }
@@ -219,7 +241,7 @@
         }
       }
       // 2ª passada: o que sobrou do valor vai para quem ainda precisa, na mesma prioridade
-      for (const r of compraveis.filter((x) => x.grupo !== 'insumo').sort(prioridade)) {
+      for (const r of compraveis.filter((x) => x.grupo !== 'insumo' && (!manual || share[x.grupo] > 0)).sort(prioridade)) {
         const cabe = resto - usado.cha - usado.env - usado.acess;
         if (cabe <= 0.5) break;
         usado[r.grupo] += encaixar(r, cabe);
@@ -230,7 +252,7 @@
       r.sugeridoPedir = r.pedir;
       if (editados && editados.has(String(r.cod)) && (r.site === 'ok' || r.site === 'sem')) r.pedir = editados.get(String(r.cod));
     }
-    return { linhas, vendasN, cmvReal, cmvVt, cmvCusto, cmvMeses: [...meses].sort(), pct, orcamento, share, fatG, crescLoja, cresc, evInfo, ev, evLyVt, temAnoPassado, N, ent, hoje };
+    return { linhas, vendasN, cmvReal, cmvVt, cmvCusto, cmvMeses: [...meses].sort(), pct, orcamento, share, shareVendas, propManual: manual, fatG, crescLoja, cresc, evInfo, ev, evLyVt, temAnoPassado, N, ent, hoje };
   }
 
   // ---------- tela ----------
@@ -292,11 +314,11 @@
       salvar.disabled = true; msg.className = 'muted'; msg.textContent = 'Salvando…';
       try {
         const r = await fetch(`/api/pedido/cfg?loja=${encodeURIComponent(loja)}`, { method: 'PUT', credentials: 'same-origin', headers: { 'X-Painel': '1', 'Content-Type': 'application/json' },
-          body: JSON.stringify({ cmvPct: par.cmvPct, dias: par.dias, folgaPct: par.folgaPct, crescimentoPct: par.crescimentoPct, eventos }) });
+          body: JSON.stringify({ cmvPct: par.cmvPct, dias: par.dias, folgaPct: par.folgaPct, crescimentoPct: par.crescimentoPct, proporcao: par.proporcao || null, eventos }) });
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j.erro || 'Falha ao salvar.');
         p.cfg = j.cfg;
-        state.pedMsg = ['pos', `Salvo como padrão da loja: ${par.cmvPct != null ? fmt.n1(par.cmvPct) + '% das vendas' : 'CMV real'}, ${par.dias} dias.`];
+        state.pedMsg = ['pos', `Salvo como padrão da loja: ${par.cmvPct != null ? fmt.n1(par.cmvPct) + '% das vendas' : 'CMV real'}, ${par.dias} dias${par.proporcao ? `, proporção ${par.proporcao.cha}/${par.proporcao.env}/${par.proporcao.acess}%` : ''}.`];
         editados.clear();
         pintar(corpo, loja, M, e, p);
         return;
@@ -379,12 +401,33 @@
       mix.replaceChildren(...['cha', 'env', 'acess'].map((g) => h('div', { class: 'ped-mix-i' },
         h('div', { class: 'ped-mix-t' }, GRUPOS[g]),
         h('div', { class: 'ped-mix-b' }, h('span', { class: 'ped-mix-alvo', style: { width: `${Math.round((R.share[g] || 0) * 100)}%` } }), h('span', { class: 'ped-mix-ped', style: { width: `${soma ? Math.round((gasto[g] / soma) * 100) : 0}%` } })),
-        h('div', { class: 'ped-mix-n' }, `vendas ${fmt.pct(R.share[g], 0)} · pedido ${soma ? fmt.pct(gasto[g] / soma, 0) : '—'} (${fmt.brl0(gasto[g])})`))));
+        h('div', { class: 'ped-mix-n' }, `${R.propManual ? 'definido' : 'vendas'} ${fmt.pct(R.share[g], 0)} · pedido ${soma ? fmt.pct(gasto[g] / soma, 0) : '—'} (${fmt.brl0(gasto[g])})`))));
     };
     if (modo === 'repor') {
       mix = h('div', { class: 'ped-mix' });
       pintarMix();
-      corpo.append(h('div', { class: 'mt' }, TS.card('Proporção do pedido', `Parte de cada grupo nas vendas dos últimos ${R.N} dias (cinza) e no pedido (verde). Embalagens e insumos (saco kraft, etiquetas) entram antes, fora da proporção.`, mix)));
+      // proporção: pelas vendas (automático) ou definida por você (ex.: 100% chás); vale para o pedido sugerido
+      const pm = par.proporcao || { cha: Math.round(R.shareVendas.cha * 100), env: Math.round(R.shareVendas.env * 100), acess: 100 - Math.round(R.shareVendas.cha * 100) - Math.round(R.shareVendas.env * 100) };
+      const iP = Object.fromEntries(['cha', 'env', 'acess'].map((g) => [g, num(pm[g], { min: 0, max: 100, step: 1, style: { maxWidth: '76px' } })]));
+      const somaP = h('span', { class: 'muted' });
+      const verSoma = () => { const t = ['cha', 'env', 'acess'].reduce((a, g) => a + (+iP[g].value || 0), 0); somaP.textContent = `soma ${t}%`; somaP.className = t === 100 ? 'muted' : 'neg'; return t; };
+      const aplicarP = (val) => {
+        if (val) Object.entries(val).forEach(([g, v]) => { iP[g].value = v; });
+        if (verSoma() !== 100) return;
+        par.proporcao = { cha: +iP.cha.value || 0, env: +iP.env.value || 0, acess: +iP.acess.value || 0 };
+        editados.clear(); pintar(corpo, loja, M, e, p);
+      };
+      Object.values(iP).forEach((i) => { i.addEventListener('input', verSoma); i.addEventListener('change', () => aplicarP()); });
+      verSoma();
+      const ctlP = h('div', { class: 'ped-prop' },
+        h('span', { class: 'f-label' }, 'Proporção do pedido'),
+        TS.seg([['Pelas vendas', 'auto'], ['Definir', 'manual']], R.propManual ? 'manual' : 'auto', (v) => { if (v === 'auto') { par.proporcao = null; editados.clear(); pintar(corpo, loja, M, e, p); } else aplicarP(); }),
+        R.propManual || state.pedPropAberta ? h('span', { class: 'ped-prop-ins' },
+          ...['cha', 'env', 'acess'].map((g) => h('label', null, h('span', null, GRUPOS[g]), iP[g], '%')), somaP,
+          h('button', { type: 'button', class: 'chip', onclick: () => aplicarP({ cha: 100, env: 0, acess: 0 }) }, '100% chás'),
+          h('button', { type: 'button', class: 'chip', onclick: () => aplicarP({ cha: 0, env: 0, acess: 100 }) }, '100% acessórios')) : null,
+        h('small', { class: 'muted' }, R.propManual ? 'Grupo com 0% fica fora do pedido sugerido (dá para pôr à mão). "Salvar como padrão da loja" guarda esta proporção.' : 'Automático: a parte de cada grupo nas vendas do período.'));
+      corpo.append(h('div', { class: 'mt' }, TS.card('Proporção do pedido', `Parte de cada grupo ${R.propManual ? 'definida por você' : `nas vendas dos últimos ${R.N} dias`} (cinza) e no pedido (verde). Embalagens e insumos (saco kraft, etiquetas) entram antes, fora da proporção.`, ctlP, mix)));
     }
     pintarTotal();
 
@@ -392,13 +435,14 @@
     const filtro = state.pedFiltro || 'pedido';
     const FILTROS = {
       pedido: ['No pedido', (r) => r.pedir > 0],
-      fora: ['Ficou de fora', (r) => !(r.pedir > 0) && (r.site === 'ok' || r.site === 'sem')],
-      indisp: ['Indisponível no site', (r) => r.site === 'indisp'],
+      fora: ['Ficou de fora', (r) => !r.extra && !(r.pedir > 0) && (r.site === 'ok' || r.site === 'sem')],
+      indisp: ['Indisponível no site', (r) => !r.extra && r.site === 'indisp'],
       cat: ['Fora do catálogo', (r) => r.site === 'fora'],
+      resto: ['Resto do catálogo', (r) => r.extra],
       todos: ['Todos', () => true],
     };
-    const SITK = (r) => (r.qtd <= 0 ? 'acabou' : r.urgente ? 'falta' : r.dias != null && r.dias < R.ent + R.N ? 'pedir' : 'ok');
-    const SITS = { acabou: ['Acabou', 'erro'], falta: ['Falta antes da entrega', 'erro'], pedir: ['Pedir', 'warn'], ok: ['OK', 'ok'] };
+    const SITK = (r) => (r.extra ? (r.semEstoque ? 'semest' : 'semnec') : r.qtd <= 0 ? 'acabou' : r.urgente ? 'falta' : r.dias != null && r.dias < R.ent + R.N ? 'pedir' : 'ok');
+    const SITS = { acabou: ['Acabou', 'erro'], falta: ['Falta antes da entrega', 'erro'], pedir: ['Pedir', 'warn'], ok: ['OK', 'ok'], semnec: ['Não precisa agora', 'ok'], semest: ['Fora do estoque', 'muted'] };
     const SITU = (r) => SITS[SITK(r)];
     // filtros extras (valem em qualquer aba): grupo, situação e classe
     const fx = state.pedFx || (state.pedFx = { g: '', s: '', c: '', m: '' });
@@ -444,8 +488,8 @@
         if (!ped.length) return null;
         const un = ped.filter((r) => r.it.un !== 'Kg').reduce((s, r) => s + r.pedir, 0), kg = ped.filter((r) => r.it.un === 'Kg').reduce((s, r) => s + r.pedir, 0);
         return { produto: `Total · ${fmt.int(ped.length)} ${ped.length === 1 ? 'produto' : 'produtos'}`, pedir: [kg ? `${fmt.kg(kg)} kg` : '', un ? `${fmt.int(un)} un` : ''].filter(Boolean).join(' + '), total: fmt.brl(ped.reduce((s, r) => s + r.pedir * (r.preco || 0), 0)) };
-      })(), sortKey: 'lucroDia', maxHeight: '620px', search: 'Buscar produto…', searchKeys: ['produto', 'cod'], cls: 'est-t ped-t',
-      empty: { pedido: 'Nada no pedido.', fora: 'Nada ficou de fora.', indisp: 'Nenhum produto necessário está indisponível no site.', cat: 'Todos os produtos necessários estão no catálogo.', todos: 'Nenhum produto precisa de reposição.' }[filtro],
+      })(), sortKey: 'lucroDia', maxHeight: '620px', pageSize: linhas.length > 300 ? 200 : undefined, search: 'Buscar produto…', searchKeys: ['produto', 'cod'], cls: 'est-t ped-t',
+      empty: { pedido: 'Nada no pedido.', fora: 'Nada ficou de fora.', indisp: 'Nenhum produto necessário está indisponível no site.', cat: 'Todos os produtos necessários estão no catálogo.', resto: 'Sem catálogo do Sistema de Pedidos: use "Atualizar catálogo".', todos: 'Nenhum produto.' }[filtro],
     });
     // observação de cada linha, conforme o pedido de agora (muda quando você põe, tira ou limpa)
     function obs(r) {
@@ -455,6 +499,7 @@
         if (!(r.pedir > 0)) return h('span', { class: 'muted' }, 'tirado por você');
         return h('span', { class: 'pos' }, r.sugeridoPedir > 0 ? `alterado por você (sugestão ${qtdTxt(r.sugeridoPedir, r.it)})` : 'adicionado por você');
       }
+      if (r.extra) return h('span', { class: 'muted', title: r.conta }, r.pedir > 0 ? 'adicionado por você' : r.semEstoque ? 'não está no estoque: peça à mão' : 'não precisa agora: peça à mão se quiser');
       if (r.pedir > 0) return h('span', { class: r.motivo === 'parcial' ? 'warn-t' : 'muted' }, r.motivo === 'parcial' ? `parte da necessidade (precisa ${qtdTxt(r.sugerido, r.it)})` : 'sugerido');
       if (sobra == null) return '';
       const custo = r.sugerido * (r.preco || 0);

@@ -38,6 +38,7 @@ function cfg(loja) {
     dias: Number.isInteger(c.dias) ? c.dias : PADRAO.dias,
     folgaPct: Number.isFinite(c.folgaPct) ? c.folgaPct : PADRAO.folgaPct,
     crescimentoPct: Number.isFinite(c.crescimentoPct) ? c.crescimentoPct : null, // null = o da loja (3 meses × ano anterior)
+    proporcao: c.proporcao && typeof c.proporcao === 'object' ? c.proporcao : null, // null = pelas vendas; { cha, env, acess } em %
     eventos: Array.isArray(c.eventos) && c.eventos.length ? c.eventos : EVENTOS,
   };
 }
@@ -54,6 +55,12 @@ function validarCfg(b) {
   if (!(out.folgaPct >= 0 && out.folgaPct <= 100)) return { erro: 'Folga da proporção: entre 0 e 100%.' };
   out.crescimentoPct = dec(b.crescimentoPct);
   if (out.crescimentoPct != null && !(out.crescimentoPct >= -80 && out.crescimentoPct <= 300)) return { erro: 'Crescimento: entre −80% e 300% (ou vazio para usar o da loja).' };
+  out.proporcao = null;
+  if (b.proporcao) {
+    const p = Object.fromEntries(['cha', 'env', 'acess'].map((g) => [g, Math.round(+b.proporcao[g] || 0)]));
+    if (Object.values(p).some((v) => v < 0 || v > 100) || p.cha + p.env + p.acess !== 100) return { erro: 'Proporção do pedido: os três grupos precisam somar 100%.' };
+    out.proporcao = p;
+  }
   const evs = Array.isArray(b.eventos) ? b.eventos : EVENTOS;
   if (evs.length > 12) return { erro: 'No máximo 12 datas.' };
   out.eventos = [];
