@@ -173,7 +173,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
       };
     }));
     const minhas = new Set(lojas.map((l) => l.id));
-    const auditoria = C.lerAuditoria(400).filter((e) => req.perfil === 'admin' || e.por === req.user || (e.detalhe && minhas.has(e.detalhe.loja)) || minhas.has(e.alvo)).slice(0, 200);
+    const auditoria = C.lerAuditoria(4000).filter((e) => req.perfil === 'admin' || e.por === req.user || (e.detalhe && minhas.has(e.detalhe.loja)) || minhas.has(e.alvo)).slice(0, 3000);
     res.json({
       perfil: req.perfil, usuario: req.user, coletorAtivo: COL.ativo(), horarios: saude?.horarios || [], agenda: AG.ler().padrao, janela: saude?.janela || null, coletorOk: saude ? saude.ok !== false : null,
       lojas: itens, usuarios: usuariosVisiveis(req), auditoria,

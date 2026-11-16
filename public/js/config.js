@@ -1273,17 +1273,36 @@
       const val = (v) => (Array.isArray(v) ? v.join(', ') : typeof v === 'object' ? Object.entries(v).map(([a, b]) => `${a} = ${b ?? 'padrão'}`).join(', ') : v === true ? 'sim' : v === false ? 'não' : v);
       return Object.entries(d).filter(([k, v]) => k !== 'loja' && v != null && v !== '').map(([k, v]) => `${k}: ${val(v)}`).join(' · ');
     };
+    // loja de cada alteração: a do detalhe ou o próprio "onde" quando ele é uma loja
+    const nomeLoja = new Map((est.todasLojas || []).map((l) => [l.id, l.nome]));
+    const lojaDe = (e) => (e.detalhe && nomeLoja.has(e.detalhe.loja) ? e.detalhe.loja : nomeLoja.has(e.alvo) ? e.alvo : '');
+    const todas = est.auditoria.map((e) => { const lj = lojaDe(e); return { ...e, lojaId: lj, loja: lj ? nomeLoja.get(lj) : '—', onde: lj && e.alvo === lj ? '—' : e.alvo || '—', dia: String(new Date(e.em).toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' })), det: fmtDet(e.detalhe) }; });
+    // filtros: período, quem, onde e loja
+    const fa = (state.cfgAud ||= { de: '', ate: '', por: '', onde: '', loja: '' });
+    const unicos = (k) => [...new Set(todas.map((x) => x[k]).filter((v) => v && v !== '—'))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+    const data = (k) => { const i = inp({ type: 'date', value: fa[k], style: { maxWidth: '160px' } }); i.addEventListener('change', () => { fa[k] = i.value; pintar(); }); return i; };
+    const sel = (k, rot, ops) => { const x = h('select', { class: 'f-input', 'aria-label': rot }, h('option', { value: '' }, rot), ops.map(([v, t]) => h('option', { value: v, selected: fa[k] === v || null }, t))); x.addEventListener('change', () => { fa[k] = x.value; pintar(); }); return x; };
+    const rows = todas.filter((x) => (!fa.de || x.dia >= fa.de) && (!fa.ate || x.dia <= fa.ate) && (!fa.por || x.por === fa.por) && (!fa.onde || x.onde === fa.onde) && (!fa.loja || x.lojaId === fa.loja));
+    const algum = fa.de || fa.ate || fa.por || fa.onde || fa.loja;
+    const filtros = h('div', { class: 'cfg-usu-filtros' },
+      h('label', { class: 'cfg-inline' }, h('span', { class: 'muted' }, 'De'), data('de')), h('label', { class: 'cfg-inline' }, h('span', { class: 'muted' }, 'até'), data('ate')),
+      sel('por', 'Quem: todos', unicos('por').map((v) => [v, v])),
+      nomeLoja.size > 1 ? sel('loja', 'Loja: todas', [...nomeLoja].filter(([id]) => todas.some((x) => x.lojaId === id)).map(([id, n]) => [id, n])) : null,
+      sel('onde', 'Onde: todos', unicos('onde').map((v) => [v, v])),
+      algum ? h('button', { type: 'button', class: 'link-btn', onclick: () => { Object.assign(fa, { de: '', ate: '', por: '', onde: '', loja: '' }); pintar(); } }, 'Limpar') : null,
+      h('span', { class: 'muted' }, `${rows.length} de ${todas.length} alteração(ões)`));
     const tab = TS.table({
       cols: [
         { key: 'em', label: 'Quando', align: 'l', fmt: (v) => dt(v) },
         { key: 'por', label: 'Quem', align: 'l' },
         { key: 'acao', label: 'O quê', align: 'l' },
-        { key: 'alvo', label: 'Onde', align: 'l' },
+        { key: 'loja', label: 'Loja', align: 'l' },
+        { key: 'onde', label: 'Onde', align: 'l' },
         { key: 'det', label: 'Detalhes', align: 'l', wrap: true },
       ],
-      rows: est.auditoria.map((e) => ({ ...e, det: fmtDet(e.detalhe) })),
-      sortKey: 'em', sortDir: 'desc', maxHeight: '620px', search: 'Buscar…', searchKeys: ['por', 'acao', 'alvo', 'det'], empty: 'Nenhuma alteração registrada ainda.',
+      rows,
+      sortKey: 'em', sortDir: 'desc', maxHeight: '620px', search: 'Buscar…', searchKeys: ['por', 'acao', 'loja', 'onde', 'det'], empty: algum ? 'Nenhuma alteração com esses filtros.' : 'Nenhuma alteração registrada ainda.',
     });
-    box.append(TS.cardWithTools('Histórico de alterações', 'Quem mudou o quê e quando', tab.searchBox, tab));
+    box.append(TS.cardWithTools('Histórico de alterações', 'Quem mudou o quê e quando', h('div', null, filtros, tab.searchBox), tab));
   }
 })();
