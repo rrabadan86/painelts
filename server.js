@@ -258,6 +258,22 @@ app.get('/api/demo/estoque', (req, res) => {
   if (!lojaDemo(req)) return res.status(400).json({ erro: 'Escolha uma loja.' });
   try { const e = DEMO.estoqueDemo(req.query.loja); res.json({ estoque: e.estoque, cfg: ESd.cfg({ estoqueCfg: e.estoqueCfg }), classe: ESd.classeCfg({}), historico: e.historico, compras: e.compras }); } catch (e) { res.status(500).json({ erro: e.message }); }
 });
+app.get('/api/demo/estoque/notas', (req, res) => {
+  if (!lojaDemo(req)) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  try {
+    // notas fictícias: as entradas da apresentação agrupadas pelo número da nota
+    const e = DEMO.estoqueDemo(req.query.loja);
+    const nome = new Map(e.estoque.itens.map((i) => [i.cod, i]));
+    const porNf = new Map();
+    for (const [cod, l] of Object.entries(e.compras.itens || {})) for (const [dia, custo, nf, qtd, forn] of l) {
+      const n = porNf.get(nf) || porNf.set(nf, { id: nf, nf, serie: '1', emissao: dia, entrada: dia, status: 'Concluída', motivo: 'Compra', cfop: '1102', fornecedor: forn, total: 0, itens: [] }).get(nf);
+      const it = nome.get(cod) || {};
+      n.itens.push({ cod, nome: it.desc || cod, un: it.un || 'Un', qtd, vu: custo, custo, grupo: '' });
+      n.total = Math.round((n.total + custo * qtd) * 100) / 100;
+    }
+    res.json({ atualizado: e.compras.atualizado, notas: [...porNf.values()].sort((a, b) => (a.entrada < b.entrada ? -1 : 1)) });
+  } catch (err) { res.status(500).json({ erro: err.message }); }
+});
 app.get('/api/demo/pedido', (req, res) => {
   if (!lojaDemo(req)) return res.status(400).json({ erro: 'Escolha uma loja.' });
   try { const e = DEMO.estoqueDemo(req.query.loja); res.json({ catalogo: e.catalogo, carrinho: null, cfg: PEDd.cfg({}), robo: { disponivel: false }, podeRobo: false }); } catch (e) { res.status(500).json({ erro: e.message }); }
@@ -586,6 +602,13 @@ app.get('/api/estoque', (req, res) => {
   if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
   const lc = C.get().lojas.find((l) => l.id === loja.id);
   res.json({ estoque: ES.atual(loja.id), cfg: ES.cfg(lc), classe: ES.classeCfg(lc), tabela: TAB.resumo(loja.id), historico: ES.historico(loja.id), compras: ES.compras(loja.id) });
+});
+// notas de entrada (compras) do AppNext, inteiras: lista e detalhe na tela Preços
+app.get('/api/estoque/notas', (req, res) => {
+  if (!podeTela(req, 'estoque', 'pedido', 'dre')) return res.status(403).json({ erro: 'Sem permissão.' });
+  const loja = req.lojas.find((l) => l.id === String(req.query.loja || ''));
+  if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  res.json(ES.notas(loja.id) || { notas: [] });
 });
 // classe oficial (Estrela, Volume…): janela de 3, 6 ou 12 meses e classes travadas à mão (admin e franqueado)
 app.put('/api/estoque/classe', express.json({ limit: '5kb' }), (req, res) => {

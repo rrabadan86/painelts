@@ -1560,3 +1560,6 @@ td.site-dif { color: #B5452B; font-weight: 600; }
 .tab-fprod { font-size: 12px; color: var(--muted, #6b6b6b); margin: 0 0 8px; background: #FFF8E1; border-radius: 6px; padding: 4px 8px; display: inline-block; }
 .site-copiar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .site-resumo { white-space: pre-wrap; font-family: inherit; font-size: 12px; line-height: 1.5; background: var(--cream-2, #F6F2E9); border-radius: 8px; padding: 10px 12px; margin-top: 8px; user-select: all; }
+.prc-drawer.prc-drawer-largo { width: min(900px, 96vw); }
+.prc-nota-info { font-size: 12px; margin-top: 6px; }
+.prc-nf-prt { float: right; margin-top: -4px; }

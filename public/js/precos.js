@@ -133,6 +133,7 @@
       if (!corpo.isConnected) return;
       if (!M || !e.estoque) { corpo.replaceChildren(h('div', { class: 'notice' }, 'Ainda não há estoque e custos desta loja no painel.')); return; }
       const D = calcular(M, e.historico, e.compras);
+      D.loja = loja; D.hist = e.historico || {}; D.comprasItens = (e.compras && e.compras.itens) || {};
       D.tabela = new Map(((e.tabela && e.tabela.itens) || []).filter((t) => t.preco > 0.011).map((t) => [t.cod, t.preco]));
       pintar(corpo, D);
     }).catch((err) => corpo.replaceChildren(h('div', { class: 'notice err' }, err.message)));
@@ -172,7 +173,8 @@
           'Margem bruta no fim do período menor que antes dele.'),
         TS.kpi('Histórico de custo desde', inicioCusto ? quando(inicioCusto) : '—', D.temCompras ? 'notas de compra do AppNext + importações de estoque' : 'o painel guarda o custo a cada importação de estoque',
           'O AppNext só informa o custo de hoje. Antes desta data, o custo é estimado pelo mais antigo conhecido.')),
-      h('div', { class: 'mt' }, tabela(linhas, FIL, filtro, corpo, D)));
+      h('div', { class: 'mt' }, tabela(linhas, FIL, filtro, corpo, D)),
+      h('div', { class: 'prc-notas' }, cartaoNotas(D)));
   }
 
   function variacao(ant, at, v, dia, ehCusto, kg) {
@@ -356,6 +358,93 @@
       out, h('small', { class: 'muted' }, 'O painel só simula: o preço é alterado no AppNext.'),
       h('div', { class: 'f-label mt' }, 'Reajustes (mais recente primeiro)'),
       h('ul', { class: 'prc-tl' }, itens));
+    const camada = h('div', { class: 'prc-drawer-camada', onmousedown: (e) => { if (e.target === camada) fechar(); } }, card);
+    document.body.append(camada);
+    document.body.classList.add('com-camada');
+    document.addEventListener('keydown', esc);
+  }
+  // ---------- notas fiscais de entrada (Estoque → Entrada de Produtos do AppNext) ----------
+  const cacheNotas = new Map();
+  function cartaoNotas(D) {
+    const box = h('div', { class: 'mt' }, h('div', { class: 'card' }, h('div', { class: 'loading' }, h('div', null, h('div', { class: 'spinner' }), h('p', null, 'Lendo as notas fiscais…')))));
+    const loja = D.loja;
+    const p = cacheNotas.get(loja) || fetch(TS.api(`estoque/notas?loja=${encodeURIComponent(loja)}`), { credentials: 'same-origin' }).then(async (r) => { const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.erro || 'Falha ao ler as notas.'); return j; });
+    cacheNotas.set(loja, p);
+    p.then((j) => box.replaceChildren(listaNotas(D, j))).catch((e) => { cacheNotas.delete(loja); box.replaceChildren(h('div', { class: 'notice err' }, e.message)); });
+    return box;
+  }
+  function listaNotas(D, j) {
+    const f = state.f;
+    const todas = (j.notas || []).map((n) => {
+      const dia = TS.isoToDay(n.entrada || n.emissao);
+      // busca: também acha a nota pelo nome ou código de um produto dela
+      return { ...n, dia, nfTxt: `${n.nf ?? '—'}${n.serie ? ' / ' + n.serie : ''}`, nItens: n.itens.length, compra: /compra/i.test(n.motivo || ''), busca: n.itens.map((i) => i.nome + ' ' + i.cod).join(' ') };
+    });
+    if (!todas.length) return TS.card('Notas fiscais de entrada', null, h('p', { class: 'muted' }, 'Nenhuma nota de entrada no painel ainda. O coletor lê as notas concluídas de Estoque → Entrada de Produtos do AppNext junto com o estoque.'));
+    const noPer = (n) => (f.de == null || n.dia >= f.de) && (f.ate == null || n.dia <= f.ate);
+    const FIL = { per: ['No período', noPer], todas: ['Todas', () => true] };
+    const fil = FIL[state.prcNotasFil] ? state.prcNotasFil : 'per';
+    const rows = todas.filter(FIL[fil][1]);
+    const tab = TS.table({
+      cols: [
+        { key: 'dia', label: 'Entrada', align: 'l', render: (r) => (r.entrada ? quando(r.entrada) : '—'), sortVal: (r) => r.dia ?? 0 },
+        { key: 'emissao', label: 'Emissão', align: 'l', render: (r) => (r.emissao ? quando(r.emissao) : '—') },
+        { key: 'nfTxt', label: 'NF / série', align: 'l', render: (r) => h('a', { href: '#', class: 'prc-nome', onclick: (e) => { e.preventDefault(); abrirNota(D, r); } }, r.nfTxt), sortVal: (r) => +r.nf || 0 },
+        { key: 'fornecedor', label: 'Fornecedor', align: 'l', wrap: true },
+        { key: 'motivo', label: 'Tipo', align: 'l', render: (r) => h('span', { class: 'prc-st ' + (r.compra ? 'prc-st-v' : 'prc-st-n') }, r.motivo || '—') },
+        { key: 'nItens', label: 'Itens', fmt: fmt.int },
+        { key: 'total', label: 'Total da nota', fmt: (v) => (v == null ? '—' : fmt.brl(v)) },
+        { key: 'ver', label: '', align: 'l', render: (r) => h('button', { type: 'button', class: 'btn prc-ver', onclick: () => abrirNota(D, r) }, 'Ver nota'), sortVal: () => 0 },
+      ],
+      rows, sortKey: 'dia', maxHeight: '520px', search: 'Buscar NF, fornecedor ou produto…', searchKeys: ['nfTxt', 'fornecedor', 'motivo', 'busca'], cls: 'est-t',
+      total: { nfTxt: `${fmt.int(rows.length)} notas`, nItens: rows.reduce((a, r) => a + r.nItens, 0), total: rows.reduce((a, r) => a + (r.total || 0), 0) },
+      imprimir: ['dia', 'emissao', 'nfTxt', 'fornecedor', 'motivo', 'nItens', 'total'],
+      empty: fil === 'per' ? 'Nenhuma nota no período do filtro. Veja "Todas".' : 'Nenhuma nota.',
+    });
+    return TS.cardWithTools('Notas fiscais de entrada', `Notas de entrada concluídas no AppNext (Estoque → Entrada de Produtos), lidas pelo coletor${j.atualizado ? ' · atualizado em ' + new Date(j.atualizado).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : ''}. Clique na nota para ver os produtos, quantidades, valores e o que mudou no custo.`,
+      h('div', { class: 'est-tools' }, tab.searchBox && (tab.searchBox.classList.add('est-busca'), tab.searchBox),
+        TS.seg(Object.entries(FIL).map(([k, [t, fn]]) => [`${t} (${fmt.int(todas.filter(fn).length)})`, k]), fil, (v) => { state.prcNotasFil = v; const c = document.querySelector('.prc-notas > .mt'); if (c) c.replaceChildren(listaNotas(D, j)); })),
+      tab);
+  }
+  /** custo de um item antes da nota: a entrada anterior (outra nota) ou a importação de estoque anterior */
+  function custoAntes(D, cod, dia, nf) {
+    let v = null, d0 = -Infinity, origem = '';
+    for (const [d, c, n] of (D.comprasItens && D.comprasItens[cod]) || []) { const dd = TS.isoToDay(d); if ((dd < dia || (dd === dia && n !== nf)) && dd >= d0) { v = c; d0 = dd; origem = `NF ${n} de ${quando(d)}`; } }
+    for (const [d, c] of (D.hist && D.hist[cod]) || []) { const dd = TS.isoToDay(d); if (dd < dia && dd > d0) { v = c; d0 = dd; origem = `estoque de ${quando(d)}`; } }
+    return v == null ? null : { v, origem };
+  }
+  function abrirNota(D, n) {
+    document.querySelector('.prc-drawer-camada')?.remove();
+    const fechar = () => { camada.remove(); document.body.classList.remove('com-camada'); document.removeEventListener('keydown', esc); };
+    const esc = (e) => { if (e.key === 'Escape') fechar(); };
+    const linhas = n.itens.map((i) => {
+      const a = custoAntes(D, i.cod, n.dia, n.nf);
+      return { ...i, total: Math.round(i.custo * i.qtd * 100) / 100, antes: a ? a.v : null, origemAntes: a ? a.origem : '', varC: a && a.v ? i.custo / a.v - 1 : null };
+    });
+    const unTxt = (u) => String(u || 'un').toLowerCase();
+    const tab = TS.table({
+      cols: [
+        { key: 'nome', label: 'Produto', align: 'l', sticky: true, wrap: true, render: (r) => h('span', null, r.nome, h('small', { class: 'est-tam' }, `cód. ${r.cod}${r.grupo ? ' · ' + r.grupo : ''}`)) },
+        { key: 'qtd', label: 'Qtd', render: (r) => `${unTxt(r.un) === 'kg' ? fmt.kg(r.qtd) : fmt.n2(r.qtd).replace(/,00$/, '')} ${unTxt(r.un)}` },
+        { key: 'vu', label: 'Valor unit. (nota)', title: 'Valor unitário escrito na nota (sem IPI e rateios)', fmt: (v) => (v == null ? '—' : fmt.brl(v)) },
+        { key: 'custo', label: 'Custo unit.', title: 'Valor líquido do item ÷ quantidade (com IPI e rateios): é o "custo último" que o AppNext usa', fmt: fmt.brl },
+        { key: 'total', label: 'Total', fmt: fmt.brl },
+        { key: 'varC', label: 'Custo antes', title: 'Custo do mesmo produto antes desta nota (entrada anterior ou importação de estoque) e a variação', render: (r) => (r.antes == null ? h('span', { class: 'muted' }, 'primeira entrada') : h('div', { class: 'prc-v', title: r.origemAntes }, h('span', null, fmt.brl(r.antes)), r.varC != null && Math.abs(r.varC) >= 0.0005 ? h('span', { class: 'prc-badge ' + (r.varC > 0 ? 'prc-ruim' : 'prc-bom') }, pctTxt(r.varC)) : h('span', { class: 'muted' }, 'igual'))), sortVal: (r) => r.varC ?? -99 },
+      ],
+      rows: linhas, sortKey: 'total', maxHeight: '60vh', search: 'Buscar produto…', searchKeys: ['nome', 'cod'], cls: 'est-t',
+      total: { nome: `${fmt.int(linhas.length)} itens`, total: linhas.reduce((a, r) => a + r.total, 0) },
+    });
+    const subiu = linhas.filter((r) => r.varC != null && r.varC > 0.0005).length, desceu = linhas.filter((r) => r.varC != null && r.varC < -0.0005).length;
+    const card = h('aside', { class: 'card prc-drawer prc-drawer-largo', role: 'dialog', 'aria-modal': 'true', 'aria-label': `Nota ${n.nfTxt}` },
+      h('button', { type: 'button', class: 'icon-btn exp-fechar', title: 'Fechar (Esc)', 'aria-label': 'Fechar', onclick: fechar }, '✕'),
+      h('div', { class: 'card-title' }, `NF ${n.nfTxt}`), h('div', { class: 'card-sub' }, n.fornecedor || 'Fornecedor não informado'),
+      h('div', { class: 'prc-resumo' },
+        h('div', null, h('small', null, 'Emissão'), h('b', null, n.emissao ? quando(n.emissao) : '—')),
+        h('div', null, h('small', null, 'Entrada'), h('b', null, n.entrada ? quando(n.entrada) : '—')),
+        h('div', null, h('small', null, 'Total da nota'), h('b', null, n.total != null ? fmt.brl(n.total) : '—'))),
+      h('div', { class: 'prc-nota-info muted' }, [n.motivo && `Tipo: ${n.motivo}`, n.status && `Situação: ${n.status}`, n.cfop && `CFOP ${n.cfop}`, `${fmt.int(linhas.length)} itens`, subiu || desceu ? `custo subiu em ${fmt.int(subiu)} e caiu em ${fmt.int(desceu)}` : ''].filter(Boolean).join(' · ')),
+      h('div', { class: 'f-label mt' }, 'Produtos da nota', h('button', { type: 'button', class: 'exp-btn prt-btn prc-nf-prt', title: 'Imprimir a nota', onclick: () => TS.imprimir(card) }, '🖨', h('span', null, 'Imprimir'))),
+      tab);
     const camada = h('div', { class: 'prc-drawer-camada', onmousedown: (e) => { if (e.target === camada) fechar(); } }, card);
     document.body.append(camada);
     document.body.classList.add('com-camada');

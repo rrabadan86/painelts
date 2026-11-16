@@ -125,6 +125,16 @@ function compras(id) {
   return { atualizado: j.atualizado || null, notas: (j.notas || []).length, itens: out };
 }
 
+/** notas de entrada guardadas pelo coletor, inteiras (para a lista e o detalhe na tela Preços) */
+function notas(id) {
+  let j;
+  try { j = JSON.parse(fs.readFileSync(arqCompras(id), 'utf8')); } catch { return null; }
+  return { atualizado: j.atualizado || null, desde: j.desde || null, notas: (j.notas || []).map((n) => ({
+    id: n.id, nf: n.nf, serie: n.serie, emissao: n.emissao || '', entrada: n.entrada || '', status: n.status || '', motivo: n.motivo || '', cfop: n.cfop || '',
+    fornecedor: n.fornecedor || '', total: n.total, itens: (n.itens || []).map((i) => ({ cod: i.cod, nome: i.nome, un: i.un, qtd: i.qtd, vu: i.vu, custo: i.custo, grupo: i.grupo })),
+  })) };
+}
+
 function atual(id) {
   let j;
   try { j = JSON.parse(fs.readFileSync(arqAtual(id), 'utf8')); } catch { return null; }
@@ -280,4 +290,4 @@ function alterarClasse(atual, b, quem) {
   return { ok: c };
 }
 
-module.exports = { ler, atual, historico, compras, importar, pendentes, processar, cfg, validarCfg, quantidade, PADRAO, classeCfg, alterarClasse };
+module.exports = { ler, atual, historico, compras, notas, importar, pendentes, processar, cfg, validarCfg, quantidade, PADRAO, classeCfg, alterarClasse };
