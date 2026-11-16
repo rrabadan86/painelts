@@ -163,7 +163,7 @@
     if (x && x.existe) {
       const atras = l.base.ultimaVenda && x.ate ? Math.round((new Date(l.base.ultimaVenda) - new Date(x.ate)) / DIA) : null;
       out.push(item('XML', atras != null && atras > 7 ? 'atr' : 'ok', `${curto(x.de)} a ${curto(x.ate)}`,
-        `${fmt.int(x.notas)} notas com CPF/CNPJ de ${dIso(x.de)} a ${dIso(x.ate)}${atras != null && atras > 7 ? ` · ${atras} dias atrás das vendas: rode "Importar histórico" com "Só XML"` : ''}`));
+        `${fmt.int(x.notas)} notas com CPF/CNPJ; XML importado de ${dIso(x.de)} a ${dIso(x.ate)}${x.ultimaComDoc && x.ultimaComDoc < x.ate ? ` (última nota com CPF/CNPJ em ${dIso(x.ultimaComDoc)})` : ''}${atras != null && atras > 7 ? ` · ${atras} dias atrás das vendas: rode "Importar histórico" com "Só XML"` : ''}`));
     } else if (x) out.push(item('XML', 'nada', 'não importado', 'Use "Importar histórico" com "Só XML" de 06/2025 até hoje'));
     // estoque (foto)
     if (l.estoque) {
@@ -320,6 +320,12 @@
         falhou ? `Falhou em ${dt(ex.fim)}. A base de XML que já estava no painel continua valendo.` : null,
         x.existe ? `No painel: ${fmt.int(x.notas)} ${x.notas === 1 ? 'nota' : 'notas'} com CPF/CNPJ, de ${dIso(x.de)} a ${dIso(x.ate)}` : 'Use "Importar histórico" com "Só XML" de 06/2025 até hoje para a primeira carga.',
         ui ? `Última importação que deu certo: ${dt(ui.em)} · ${dIso(ui.de)} a ${dIso(ui.ate)} · ${ui.total == null ? '?' : fmt.int(ui.total)} ${ui.total === 1 ? 'nota' : 'notas'}, ${fmt.int(ui.comDoc)} com CPF/CNPJ` : null,
+        (() => { // poucas notas com CPF na última importação, comparado com as anteriores: vale conferir no AppNext
+          const ims = (x.importacoes || []).filter((y) => y.total >= 20);
+          if (!ui || !(ui.total >= 30) || ims.length < 2) return null;
+          const taxa = ui.comDoc / ui.total, ant = ims.slice(1).reduce((a, y) => a + y.comDoc, 0) / Math.max(1, ims.slice(1).reduce((a, y) => a + y.total, 0));
+          return ant > 0.05 && taxa < ant / 3 ? h('span', { class: 'neg' }, `Atenção: só ${fmt.pct(taxa, 0)} das notas da última importação têm CPF/CNPJ (antes eram ${fmt.pct(ant, 0)}). Confira no AppNext se o CPF está saindo na nota.`) : null;
+        })(),
         x.pendentes ? `${x.pendentes} arquivo(s) de XML sendo processado(s)…` : null,
         x.erros && x.erros.length ? h('span', { class: 'neg' }, `Arquivo(s) com erro: ${x.erros.join(', ')}`) : null));
     }

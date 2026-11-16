@@ -98,9 +98,13 @@ function resumo(id) {
   const notas = Object.values(b.notas);
   let de = null, ate = null;
   for (const n of notas) { if (!de || n.d < de) de = n.d; if (!ate || n.d > ate) ate = n.d; }
+  // a base guarda só as notas com CPF/CNPJ: o "até" é o período que as importações cobriram (com ou sem CPF),
+  // senão uns dias sem cliente identificado pareciam XML atrasado
+  const ultimaComDoc = ate;
+  for (const im of b.importacoes || []) if (im.ate && (!ate || im.ate > ate)) ate = im.ate;
   let erros = [];
   try { erros = fs.readdirSync(pastaEntrada(id)).filter((f) => /_xml\.json\.erro$/i.test(f)).sort().slice(-5); } catch { /* ok */ }
-  return { existe: existe(id), notas: notas.length, de, ate, importacoes: (b.importacoes || []).slice(0, 10), pendentes: pendentes(id).length, erros };
+  return { existe: existe(id), notas: notas.length, de, ate, ultimaComDoc, importacoes: (b.importacoes || []).slice(0, 10), pendentes: pendentes(id).length, erros };
 }
 
 module.exports = { existe, assinatura, pendentes, processar, ler, resumo, importar };

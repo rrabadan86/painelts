@@ -171,8 +171,12 @@
       if (!primeira && !forcar && body.geradoEm === TS.db.geradoEm && (body.desde || null) === (TS.db.desde || null)) return; // nada mudou
       TS.etag = res.headers.get('ETag'); TS.etagChave = chave;
       if (primeira && TS.db) TS.resetFiltros();
+      // os filtros guardam o número de cada texto no dicionário; numa recarga (atualização automática, "carregar todo o
+      // histórico", produto reclassificado) a ordem do dicionário pode mudar: guarda os textos e remonta depois
+      const textos = !primeira && TS.db ? TS.filtrosEmTexto() : null;
       TS.lojaCarregada = state.loja;
       TS.db = TS.decode(body);
+      if (textos) TS.filtrosDeTexto(textos);
       TS.aplicarMarca && TS.aplicarMarca();
       TS.rules.prepare();
       TS.prepararClientes();

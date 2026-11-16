@@ -46,6 +46,7 @@
     const db = TS.db, hoje = dia();
     const prod = TS.norm(f.produto || '').trim();
     const grupoId = f.grupo ? db.D.grupoC.indexOf(f.grupo) : -1;
+    if (f.grupo && grupoId < 0) return []; // grupo que não existe mais nas vendas: ninguém (antes o filtro era ignorado e entrava todo mundo)
     const desde = num(f.compraDias) != null ? hoje - num(f.compraDias) : -Infinity;
     let prodOk = null;
     if (prod) { prodOk = new Uint8Array(db.D.descricao.length); db.D.descricao.forEach((t, i) => { if (TS.norm(t).includes(prod)) prodOk[i] = 1; }); }

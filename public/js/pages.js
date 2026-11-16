@@ -134,7 +134,17 @@
     const f = state.f;
     f.lojas.clear(); f.vendedores.clear(); f.grupos.clear(); f.cats.clear();
     state.cli.cidade.clear(); state.cli.grupos.clear(); state.cli.lojas.clear();
-    state.com.vendBonus = ''; state.com.meta = null;
+    state.com.vendBonus = ''; state.com.meta = null; state.com.cupom = '';
+  };
+  /** filtros que guardam números do dicionário → textos (e de volta), para sobreviver a uma recarga dos dados */
+  const SETS_DIC = () => [[state.f.lojas, 'loja'], [state.f.vendedores, 'vendedor'], [state.f.grupos, 'grupoC'], [state.f.cats, 'cat'], [state.cli.grupos, 'grupoC'], [state.cli.lojas, 'loja']];
+  TS.filtrosEmTexto = function () {
+    const D = TS.db.D;
+    return SETS_DIC().map(([set, campo]) => [...set].map((i) => D[campo][i]).filter((t) => t != null));
+  };
+  TS.filtrosDeTexto = function (textos) {
+    const D = TS.db.D;
+    SETS_DIC().forEach(([set, campo], k) => { set.clear(); for (const t of textos[k] || []) { const i = D[campo].indexOf(t); if (i >= 0) set.add(i); } });
   };
   TS.limparFiltros = function () {
     const f = state.f;
@@ -145,6 +155,7 @@
     Object.assign(state.cli, { nome: '', cpf: '', cupom: '', produto: '', aniv: '', visMin: '', visMax: '', ausMin: '', ausMax: '', seg: '' });
     Object.assign(state.cli.per, { preset: 'tudo', de: null, ate: null, ano: null, mes: null });
     state.cli.cidade.clear(); state.cli.grupos.clear(); state.cli.lojas.clear();
+    TS._buscas = null; // buscas digitadas nas tabelas também
   };
 
   function cabecalho(titulo, sub) {
@@ -522,7 +533,8 @@
     // mesmo período do ano anterior pelas MESMAS DATAS do calendário (01/11 a 13/11 → 01/11 a 13/11 do ano anterior),
     // até o último dia com vendas — a mesma regra da tabela "Evolução mensal" (antes: de − 366 dias, um dia a mais)
     const anoAntes = (d) => { const iso = TS.dayToIso(d); const y = +iso.slice(0, 4) - 1; const md = iso.slice(5) === '02-29' ? '02-28' : iso.slice(5); return TS.isoToDay(`${y}-${md}`); };
-    const prevIdx = semSemVendedor(TS.filtrar({ usarTamanho: true, de: anoAntes(de), ate: anoAntes(Math.min(ate, db.maxDay)) }));
+    // sem data de início ("Tudo" ou só o mês) não existe "mesmo período do ano anterior": não compara
+    const prevIdx = f.de == null ? [] : semSemVendedor(TS.filtrar({ usarTamanho: true, de: anoAntes(de), ate: anoAntes(Math.min(ate, db.maxDay)) }));
     const pctEG = R().pctEG(base);
     const indAll = TS.indicadores(base);
     const indPrev = prevIdx.length ? TS.indicadores(prevIdx) : null;
@@ -951,10 +963,14 @@
     const desc = (idx) => TS.descontos(idx);
     const rel = (x, y) => (y ? x / y - 1 : null);
     const card = (lab, va, vp, fm) => TS.kpi(lab, fm(va), h('span', null, TS.deltaSpan(rel(va, vp)), ` · antes ${fm(vp)}`));
+    // totais (faturamento, atendimentos) com períodos de tamanhos diferentes: a variação é pela média por dia
+    const diasAtual = Math.max(1, Math.min(f.ate ?? db.maxDay, db.maxDay) - f.de + 1);
+    const cardDia = (lab, va, vp, fm) => TS.kpi(lab, fm(va), h('span', null, TS.deltaSpan(rel(va / diasAtual, vp / N)), ` por dia · antes ${fm(vp)} em ${N} dias`),
+      `Variação da média por dia: ${fm(va / diasAtual)}/dia em ${diasAtual} dia(s) contra ${fm(vp / N)}/dia nos ${N} dias anteriores`);
     root.append(h('div', { class: 'grid g-kpi' },
       h('div', { class: 'card kpi' }, h('div', { class: 'kpi-label' }, 'Período comparado'), h('div', { class: 'kpi-value', style: { fontSize: '15px', whiteSpace: 'normal' } }, `${fmt.date(TS.dayToIso(f.de - N))} a ${fmt.date(TS.dayToIso(f.de - 1))}`), h('div', { class: 'kpi-foot' }, `${N} dias antes de ${fmt.date(TS.dayToIso(f.de))}`)),
       card('TKM', a.tkm, p.tkm, fmt.brl), card('PMA', a.pma, p.pma, fmt.brl), card('IPA', a.ipa, p.ipa, fmt.n2),
-      card('Atendimentos', a.cupons, p.cupons, fmt.int), card('Faturamento', a.vt, p.vt, fmt.brl0)));
+      cardDia('Atendimentos', a.cupons, p.cupons, fmt.int), cardDia('Faturamento', a.vt, p.vt, fmt.brl0)));
 
     // lucro antes × durante × depois (custo do estoque; só admin e franqueado com uma loja escolhida)
     if (TS.cartaoLucroPromo && TS.podeContabilidade && TS.podeContabilidade() && state.loja && state.loja !== 'todas') {
@@ -970,7 +986,7 @@
       const x = TS.indicadores(vendA.get(v) || []), y = TS.indicadores(vendP.get(v) || []);
       return {
         vendedor: db.D.vendedor[v], cup: x.cupons, cupP: y.cupons, tkm: x.tkm, tkmP: y.tkm, dTkm: rel(x.tkm, y.tkm), pma: x.pma, pmaP: y.pma, dPma: rel(x.pma, y.pma),
-        ipa: x.ipa, ipaP: y.ipa, dIpa: rel(x.ipa, y.ipa), desc: desc(vendA.get(v) || []), descP: desc(vendP.get(v) || []), vt: x.vt, vtP: y.vt, dVt: rel(x.vt, y.vt),
+        ipa: x.ipa, ipaP: y.ipa, dIpa: rel(x.ipa, y.ipa), desc: desc(vendA.get(v) || []), descP: desc(vendP.get(v) || []), vt: x.vt, vtP: y.vt, dVt: rel(x.vt / diasAtual, y.vt / N),
       };
     });
     const dcol = (k) => ({ key: k, label: 'Var.', fmt: (v) => (v == null ? '—' : fmt.delta(v)), cls: (r) => (r[k] > 0 ? 'pos' : r[k] < 0 ? 'neg' : 'muted') });
@@ -986,9 +1002,9 @@
         { key: 'desc', label: 'Descontos', fmt: fmt.brl }, { key: 'descP', label: 'Antes', fmt: fmt.brl, ...ant_ },
       ],
       rows, sortKey: 'vt',
-      total: { vendedor: 'Total', cup: a.cupons, cupP: p.cupons, tkm: a.tkm, tkmP: p.tkm, dTkm: rel(a.tkm, p.tkm), pma: a.pma, pmaP: p.pma, dPma: rel(a.pma, p.pma), ipa: a.ipa, ipaP: p.ipa, dIpa: rel(a.ipa, p.ipa), desc: desc(atual), descP: desc(ant), vt: a.vt, vtP: p.vt, dVt: rel(a.vt, p.vt) },
+      total: { vendedor: 'Total', cup: a.cupons, cupP: p.cupons, tkm: a.tkm, tkmP: p.tkm, dTkm: rel(a.tkm, p.tkm), pma: a.pma, pmaP: p.pma, dPma: rel(a.pma, p.pma), ipa: a.ipa, ipaP: p.ipa, dIpa: rel(a.ipa, p.ipa), desc: desc(atual), descP: desc(ant), vt: a.vt, vtP: p.vt, dVt: rel(a.vt / diasAtual, p.vt / N) },
     });
-    root.append(TS.section('Por vendedor'), TS.card('Período atual × anterior', '"Antes" = os dias imediatamente anteriores ao período', tab));
+    root.append(TS.section('Por vendedor'), TS.card('Período atual × anterior', `"Antes" = os ${N} dias imediatamente anteriores ao período · a variação do faturamento é pela média por dia (${diasAtual} dia(s) agora × ${N} antes)`, tab));
 
     const rowsS = rows.filter((r) => r.tkm != null || r.tkmP != null).sort((x, y) => (y.vt || 0) - (x.vt || 0));
     if (rowsS.length > 1) rowsS.push({ vendedor: 'Média da loja', tkm: a.tkm, tkmP: p.tkm, media: true });
