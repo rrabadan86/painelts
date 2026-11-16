@@ -130,7 +130,7 @@
   /** põe o botão ⤢ nos cartões com tabela que ainda não têm (não mexe no que está expandido) */
   function adicionarBotoes(root, reabrir) {
     for (const card of root.querySelectorAll('.card')) {
-      if (card.classList.contains('kpi') || card.tagName === 'DETAILS' || !card.querySelector('.table-wrap') || card.querySelector(':scope > .card-head .exp-btn')) continue;
+      if (card.classList.contains('kpi') || card.tagName === 'DETAILS' || ![...card.querySelectorAll('.table-wrap')].some((t) => t.closest('.card') === card) || card.querySelector(':scope > .card-head .exp-btn')) continue; // só a tabela do próprio cartão (não a de um cartão dentro dele)
       let head = card.querySelector(':scope > .card-head');
       if (!head) { head = h('div', { class: 'card-head' }, h('div')); card.prepend(head); }
       const b = h('button', { type: 'button', class: 'exp-btn', title: 'Expandir em tela cheia', 'aria-label': 'Expandir em tela cheia', onclick: () => expandir(card) },

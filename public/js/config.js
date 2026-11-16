@@ -369,7 +369,7 @@
         if (s.includes('migra')) return 'Migração';
         return o ? o.replace(/_/g, ' ') : '—';
       };
-      const PARTE = { vendas: 'Vendas', xml: 'XML', estoque: 'Estoque', compras: 'Notas de compra', caixa: 'Fechamento de caixa', fixe: 'FIXE (pedido)', fixeEmail: 'FIXE (importação)' };
+      const PARTE = { vendas: 'Vendas', xml: 'XML', estoque: 'Estoque', compras: 'Notas de compra', caixa: 'Fechamento de caixa', fixe: 'FIXE · pedido no site', fixeEmail: 'FIXE · e-mail importado' };
       const GRUPO = { vendas: 'vendas', xml: 'xml', estoque: 'estoque', compras: 'estoque', caixa: 'caixa', fixe: 'fixe', fixeEmail: 'fixe' };
       const per = (de, ate) => (de && ate ? `${dIso(de)} a ${dIso(ate)}` : '—');
       const linhas = [
@@ -379,18 +379,27 @@
           detalhe: `${i.total == null ? '?' : fmt.int(i.total)} notas · ${fmt.int(i.comDoc)} com CPF/CNPJ` })),
         ...(l.eventos || []).map((e) => ({ em: e.em, parte: e.parte, ok: e.ok, tipo: TIPO_IMP(e.gatilho) + (e.por && e.gatilho === 'manual' ? ` · ${e.por}` : ''), periodo: ['vendas', 'xml'].includes(e.parte) ? per(e.de, e.ate) : '—',
           detalhe: e.ok ? e.detalhe || '' : e.erro || 'falhou (veja o log técnico)' })),
+        // pedido ao FIXE ainda sem os e-mails: linha "aguardando" (vira ✓ ou ✗ quando o e-mail chegar ou passar de 3 h)
+        ...(l.fixe && l.fixe.pedido && l.fixe.pedido.em ? [(() => {
+          const pd = l.fixe.pedido, esp = Array.isArray(pd.tipos) && pd.tipos.length ? pd.tipos : ['leads'], feitos = pd.feitos || {};
+          const nome = (t) => (t === 'logs' ? 'Logs' : 'Base de leads');
+          return { em: pd.em, parte: 'fixeEmail', ok: null, tipo: '—', periodo: '—',
+            detalhe: `aguardando o e-mail do FIXE${pd.email ? ` em ${pd.email}` : ''}: ${esp.map((t) => `${nome(t)} ${feitos[t] ? 'chegou' : 'aguardando'}`).join(' · ')}` };
+        })()] : []),
       ].filter((x) => x.em).sort((a, b) => Date.parse(b.em) - Date.parse(a.em));
       if (linhas.length) {
         const fil = ((state.cfgHist ||= {})[l.id]) || 'todos';
         const cont = (k) => linhas.filter((x) => k === 'todos' || GRUPO[x.parte] === k).length;
         const OPS = [['todos', 'Todos'], ['vendas', 'Vendas'], ['xml', 'XML'], ['estoque', 'Estoque'], ['fixe', 'FIXE'], ['caixa', 'Caixa']].filter(([k]) => k === 'todos' || cont(k));
         const vis = linhas.filter((x) => fil === 'todos' || GRUPO[x.parte] === fil).slice(0, 80);
-        b.append(detalhes('imp:' + l.id, { class: 'cfg-imp' }, h('summary', null, 'Histórico das atualizações'),
+        // dentro de um cartão (com o botão ⤢ Expandir, como os outros cartões com tabela)
+        b.append(detalhes('imp:' + l.id, { class: 'cfg-imp' }, h('summary', null, 'Histórico das atualizações'), h('div', { class: 'card cfg-hist-card' },
+          h('div', { class: 'card-head' }, h('div', null, h('div', { class: 'card-title' }, `Histórico das atualizações · ${l.nome}`))),
           TS.seg(OPS.map(([k, t]) => [`${t} (${cont(k)})`, k]), fil, (v) => { state.cfgHist[l.id] = v; pintar(); }),
-          h('div', { class: 'cfg-imp-wrap' }, h('table', { class: 't cfg-t' },
+          h('div', { class: 'cfg-imp-wrap table-wrap' }, h('table', { class: 't cfg-t' },
             h('thead', null, h('tr', null, h('th', { class: 'l' }, 'Quando'), h('th', { class: 'l' }, 'O quê'), h('th', { class: 'l' }, 'Resultado'), h('th', { class: 'l' }, 'Tipo'), h('th', { class: 'l' }, 'Período'), h('th', { class: 'l' }, 'Detalhe'))),
             h('tbody', null, vis.map((x) => h('tr', null, h('td', { class: 'l nw' }, dt(x.em)), h('td', { class: 'l nw' }, PARTE[x.parte] || x.parte),
-              h('td', { class: 'l nw ' + (x.ok ? 'pos' : 'neg') }, x.ok ? '✓ ok' : '✗ falhou'), h('td', { class: 'l nw' }, x.tipo), h('td', { class: 'l nw' }, x.periodo), h('td', { class: 'l' }, x.detalhe))))))));
+              h('td', { class: 'l nw ' + (x.ok == null ? 'muted' : x.ok ? 'pos' : 'neg') }, x.ok == null ? '⏳ aguardando' : !x.ok ? '✗ falhou' : x.parte === 'fixe' ? '✓ pedido feito' : '✓ ok'), h('td', { class: 'l nw' }, x.tipo), h('td', { class: 'l nw' }, x.periodo), h('td', { class: 'l' }, x.detalhe)))))))));
       }
     }
     return b;

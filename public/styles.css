@@ -1486,3 +1486,5 @@ tr.cp-enviada td { background: #EEF5EC !important; }
 .hist-op { display: flex; gap: 10px; align-items: flex-start; padding: 9px 11px; border: 1px solid var(--line, #E6E0D2); border-radius: 10px; background: #fff; cursor: pointer; }
 .hist-op input { margin-top: 3px; accent-color: #2C5234; width: 16px; height: 16px; }
 .hist-op span { display: flex; flex-direction: column; } .hist-op small { color: var(--muted); font-size: 11.5px; }
+.cfg-hist-card { padding: 10px 12px; margin-top: 8px; box-shadow: none; }
+.cfg-hist-card .card-title { font-size: 13px; }
