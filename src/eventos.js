@@ -23,7 +23,7 @@ function motivo(log, parte) {
 }
 
 /** registra uma execução do coletor (uma vez por fim) e o resultado do e-mail do FIXE (uma vez por em) */
-function registrar(id, { execucao, fixeUltimo }) {
+function registrar(id, { execucao, fixeUltimo, saldos }) {
   const j = ler(id);
   j.marcas = j.marcas || {};
   let mudou = false;
@@ -43,8 +43,15 @@ function registrar(id, { execucao, fixeUltimo }) {
     }
     if (e.caixa) novos.push({ ...base, parte: 'caixa', ok: !!e.caixa.ok, erro: e.caixa.ok ? null : erroDe('caixa') });
     if (e.fixe) novos.push({ ...base, parte: 'fixe', ok: !!e.fixe.ok, detalhe: e.fixe.ok ? 'exportação pedida ao FIXE' : null, erro: e.fixe.ok ? null : erroDe('fixe') });
-    if (e.saldos) novos.push({ ...base, parte: 'saldos', ok: !!e.saldos.ok, detalhe: e.saldos.ok ? 'saldos de pontos lidos no FIXE' : null, erro: e.saldos.ok ? null : erroDe('saldos') });
     j.eventos.unshift(...novos.reverse());
+  }
+  // sincronização de saldos de pontos com o FIXE (fila própria no coletor)
+  const sd = saldos;
+  if (sd && sd.fim && j.marcas.saldos !== sd.fim) {
+    j.marcas.saldos = sd.fim; mudou = true;
+    const linha = (sd.log || []).map(String).reverse().find((t) => /Saldos gravados/.test(t));
+    j.eventos.unshift({ em: new Date(sd.fim).toISOString(), parte: 'saldos', ok: !!sd.ok, gatilho: 'manual', por: sd.por || null, duracao: sd.duracao_s ?? null,
+      detalhe: sd.ok ? (linha ? linha.replace(/^\[[\d:]+\]\s*4\)\s*/, '') : 'saldos lidos no FIXE') : null, erro: sd.ok ? null : motivo(sd.log) || 'falhou (veja o log)' });
   }
   const u = fixeUltimo;
   if (u && u.em && j.marcas.fixeEmail !== u.em) {

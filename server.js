@@ -1079,7 +1079,7 @@ setInterval(async () => {
   for (const l of C.get().lojas) {
     try {
       const s = COL.ativo() ? await COL.status(l.id, true).catch(() => null) : null;
-      EV.registrar(l.id, { execucao: s && s.configurada ? s.execucao : null, fixeUltimo: FX.situacao(l.id).ultimo });
+      EV.registrar(l.id, { execucao: s && s.configurada ? s.execucao : null, saldos: s && s.configurada && s.saldos ? s.saldos.ultima : null, fixeUltimo: FX.situacao(l.id).ultimo });
     } catch (e) { console.error(`[eventos] ${l.id}:`, e.message); }
   }
 }, 60e3);

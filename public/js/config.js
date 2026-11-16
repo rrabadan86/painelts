@@ -60,7 +60,7 @@
     try { est = await api('GET', '/estado'); } catch (e) { if (auto) return; est = { erro: e.message }; }
     if (state.page === 'config' && raiz && raiz.isConnected && !(auto && sujo)) pintar();
     clearTimeout(timer);
-    const ocupado = est.lojas && est.lojas.some((l) => l.status && l.status.execucao && ['rodando', 'na_fila'].includes(l.status.execucao.estado));
+    const ocupado = est.lojas && est.lojas.some((l) => l.status && ((l.status.execucao && ['rodando', 'na_fila'].includes(l.status.execucao.estado)) || (l.status.saldos && ['rodando', 'na_fila'].includes(l.status.saldos.estado))));
     timer = setTimeout(() => { if (state.page === 'config' && raiz && raiz.isConnected) carregar(true); }, ocupado ? 5000 : 60000);
   }
 
@@ -255,15 +255,43 @@
     return fx.url ? linhaSit('nada', 'Fidelidade (Logs do FIXE)', 'ainda não importado', 'Vem junto com o cadastro, na atualização da noite. Também dá para enviar a planilha de Logs em "Enviar planilha" → Cadastro de clientes.') : null;
   }
 
-  /** saldo oficial de pontos lido no FIXE (botão "Sincronizar saldos com o FIXE") */
-  function sitSaldos(l) {
+  /** botão "Sincronizar saldos com o FIXE" (admin); some enquanto a sincronização está na fila ou rodando */
+  function botaoSaldos(l) {
+    const fx = l.fixe || {}, st = (l.status && l.status.saldos) || {};
+    if (!(est.perfil === 'admin' && est.coletorAtivo && fx.url && fx.temSenha) || ['na_fila', 'rodando'].includes(st.estado)) return null;
+    return acao('Sincronizar saldos com o FIXE', async () => {
+      if (!confirm('O robô entra no FIXE e lê o saldo de pontos de cada cliente (só leitura, não muda nada no FIXE). Esse saldo passa a ser o ponto de partida; depois, os Logs de todo dia atualizam. Continuar?')) return null;
+      await api('POST', `/lojas/${l.id}/fixe/saldos`);
+      return 'Sincronização pedida. Acompanhe em "Saldos de pontos (FIXE)": a situação e o log atualizam sozinhos.';
+    });
+  }
+  /** saldo oficial de pontos lido no FIXE (botão "Sincronizar saldos com o FIXE"): situação + log, ao vivo enquanto roda */
+  function sitSaldos(l, comLog = true) {
     const fx = l.fixe || {}, sd = fx.saldos;
+    const st = (l.status && l.status.saldos) || {}, u = st.ultima;
     const ex = l.status && l.status.execucao;
-    const exS = ex && ex.tipo === 'saldos' ? ex : null;
-    if (ex && ['na_fila', 'rodando'].includes(ex.estado) && ex.tipo === 'saldos') return linhaSit('rodando', 'Saldos de pontos (FIXE)', 'sincronizando…', 'O robô está lendo o saldo de cada cliente no FIXE. Leva um ou dois minutos.');
-    if (exS && exS.saldos && !exS.saldos.ok && (!sd || exS.fim > sd.em)) return linhaSit('erro', 'Saldos de pontos (FIXE)', h('span', { class: 'neg' }, 'a sincronização falhou'), 'Veja o motivo no log técnico de "Dados e atualização".', sd ? `Última que deu certo: ${dt(sd.em)}` : null);
-    if (sd) return linhaSit('ok', 'Saldos de pontos (FIXE)', `sincronizados em ${dt(sd.em)}`, `${fmt.int(sd.comPontos)} clientes com pontos (de ${fmt.int(sd.clientes)} na base). Depois disso, o saldo de cada cliente segue pelos Logs de todo dia.`);
-    return fx.url ? linhaSit('nada', 'Saldos de pontos (FIXE)', 'ainda não sincronizados', 'Os Logs não detalham os pontos de compras antigas; sem sincronizar, o saldo de alguns clientes fica menor que o do FIXE.') : null;
+    const T = 'Saldos de pontos (FIXE)';
+    const log = (linhas, chave, rot) => (comLog && linhas && linhas.length ? detalhes(chave + l.id, { class: 'cfg-log' }, h('summary', null, rot), logBonito(linhas)) : null);
+    const ha = (iso) => { const m = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000)); return m < 1 ? 'agora há pouco' : `há ${m} min`; };
+    if (st.estado === 'na_fila') {
+      const espera = ex && ['rodando', 'na_fila'].includes(ex.estado);
+      return linhaSit('rodando', T, 'na fila', `Pedido ${dt(st.criado)}${st.por ? ` por ${st.por}` : ''}.`,
+        espera ? 'Esperando a coleta que está em andamento terminar a parte atual; a sincronização roda logo depois (passa na frente das próximas partes do histórico).' : 'Começa em instantes.');
+    }
+    if (st.estado === 'rodando') {
+      const av = st.aoVivo || [], ult = av.length ? av[av.length - 1].replace(/^\[[\d:]+\]\s*/, '') : null;
+      return linhaSit('rodando', T, 'sincronizando agora', `Começou ${dt(st.inicio)}. Leva um ou dois minutos.`,
+        ult ? h('span', { class: 'cfg-ao-vivo' }, h('i', { class: 'cfg-pulso' }), ult) : null, log(av, 'sdvivo:', 'Ver o log ao vivo'));
+    }
+    if (u && !u.ok && (!sd || u.fim > sd.em)) {
+      return linhaSit('erro', T, h('span', { class: 'neg' }, 'a última sincronização falhou'), `${dt(u.fim)}${u.por ? ` · ${u.por}` : ''} · ${u.codigo === 'timeout' ? 'passou do tempo máximo' : 'veja o motivo no log'}`,
+        sd ? `Continua valendo a sincronização de ${dt(sd.em)}.` : 'Enquanto isso, o saldo segue calculado só pelos Logs.', log(u.log, 'sdlog:', 'Log da sincronização'));
+    }
+    if (sd) {
+      return linhaSit('ok', T, `sincronizados ${ha(sd.em) === 'agora há pouco' ? 'agora há pouco' : 'em ' + dt(sd.em)}`, `${fmt.int(sd.comPontos)} clientes com pontos (de ${fmt.int(sd.clientes)} na base)${u && u.duracao_s != null ? ` · levou ${u.duracao_s} s` : ''}. Depois disso, o saldo de cada cliente segue pelos Logs de todo dia.`,
+        u && u.log ? log(u.log, 'sdlog:', 'Log da sincronização') : null);
+    }
+    return fx.url ? linhaSit('nada', T, 'ainda não sincronizados', 'Os Logs não detalham os pontos de compras antigas; sem sincronizar, o saldo de alguns clientes fica menor que o do FIXE.') : null;
   }
 
   // ---- horários da atualização automática desta loja (os da rede ou próprios)
@@ -346,6 +374,7 @@
       exE && !exE.ok ? h('span', { class: 'neg' }, 'falhou na última coleta') : l.estoque ? 'em dia' : 'ainda não importado',
       l.estoque ? `Estoque de ${dt(l.estoque.em)} · ${fmt.int(l.estoque.itens)} produtos${l.estoque.origem === 'coletor' ? ' · baixado pelo coletor' : l.estoque.origem ? ' · planilha enviada' : ''}` : 'Vem em cada atualização (automática ou pelo botão) ou pela planilha em "Enviar planilha".'));
     { const f = sitFixe(l); if (f) sit.append(f); }
+    { const sd = sitSaldos(l); if (sd) sit.append(sd); }
     if (l.base.pendentes) sit.append(h('div', { class: 'cfg-sit-d muted' }, `${l.base.pendentes} planilha(s) de vendas sendo processada(s)…`));
     b.append(sit);
     if (b.__aoVivo) b.append(b.__aoVivo);
@@ -364,6 +393,7 @@
       const acoes = h('div', { class: 'cfg-acoes' });
       if (ocupado) acoes.append(acao('Cancelar o que está na fila', async () => { await api('POST', `/lojas/${l.id}/cancelar`); return 'Fila cancelada (a parte que já está rodando termina).'; }));
       else acoes.append(acao('Atualizar agora', async () => { await api('POST', `/lojas/${l.id}/rodar`); return 'Atualização na fila. Leva alguns minutos.'; }, 'btn primary'));
+      { const bs = botaoSaldos(l); if (bs) acoes.append(bs); }
       b.append(acoes);
       if (!ocupado) b.append(formHistorico(l));
     }
@@ -626,10 +656,7 @@
         acao('Salvar acesso ao FIXE', async () => { await api('PUT', `/lojas/${l.id}/fixe`, { url: url.value, usuario: usuario.value, senha: senha.value, email: email.value, apelido: apelido.checked }); senha.value = ''; return 'Acesso ao FIXE salvo.'; }, 'btn primary'),
         fx.url ? acao('Remover acesso', async () => { if (!confirm('Remover o acesso desta loja ao FIXE (endereço, usuário, senha e e-mail)? O cadastro de clientes que já está no painel continua.')) return null; await api('DELETE', `/lojas/${l.id}/fixe`); return 'Acesso ao FIXE removido.'; }) : null,
         est.perfil === 'admin' && est.coletorAtivo && fx.url ? acao('Importar agora', async () => { await api('POST', `/lojas/${l.id}/fixe/rodar`); return 'Pedido enviado ao FIXE. Em alguns minutos o e-mail chega e o cadastro é atualizado.'; }) : null,
-        est.perfil === 'admin' && est.coletorAtivo && fx.url && fx.temSenha ? acao('Sincronizar saldos com o FIXE', async () => {
-          if (!confirm('O robô entra no FIXE e lê o saldo de pontos de cada cliente (só leitura, não muda nada no FIXE). Esse saldo passa a ser o ponto de partida; depois, os Logs de todo dia atualizam. Continuar?')) return null;
-          await api('POST', `/lojas/${l.id}/fixe/saldos`); return 'Sincronização na fila do coletor. Leva um ou dois minutos; a situação aparece acima.';
-        }) : null),
+        botaoSaldos(l)),
       fx.url ? h('p', { class: 'muted', style: { marginTop: '6px' } }, 'Sincronizar saldos: use uma vez para acertar os pontos antigos que os Logs não trazem. Repita só se notar diferença entre o painel e o FIXE em algum cliente.') : null);
     // regras de pontos
     if (est.perfil === 'admin' || est.perfil === 'franqueado') {

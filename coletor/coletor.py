@@ -122,6 +122,7 @@ ID_OK = re.compile(r"^[a-z0-9_-]{1,40}$")
 fila = deque()
 lock = threading.Lock()
 estado = {}  # loja -> dict
+saldos_est = {}  # loja -> {"estado", "por", "criado", "inicio", "ultima"} (sincronizar saldos de pontos com o FIXE)
 pedido_est = {}  # loja -> {"estado", "acao", "criado", "inicio", "fim", "ok", "codigo", "log"} (Sistema de Pedidos)
 DATA_OK = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
@@ -190,7 +191,7 @@ def _estado(loja):
 
 
 def pendentes(loja):
-    return sum(1 for j in fila if j["loja"] == loja and j.get("gatilho") != "pedido")
+    return sum(1 for j in fila if j["loja"] == loja and j.get("gatilho") not in ("pedido", "saldos"))
 
 
 ITENS = ("vendas", "xml", "estoque", "fixe")
@@ -254,6 +255,68 @@ def enfileirar_pedido(loja, acao, por=None, somar=False):
         fila.append(job)
     log(f"{loja}: pedido/{acao} na fila{' por ' + por if por else ''}")
     return True
+
+
+def enfileirar_saldos(loja, por=None):
+    """saldos de pontos do FIXE: fila própria (espera a coleta em andamento, sem mexer no estado dela)"""
+    with lock:
+        p = saldos_est.get(loja) or {}
+        if p.get("estado") in ("na_fila", "rodando"):
+            return False
+        job = {"loja": loja, "gatilho": "saldos", "por": por, "criado": datetime.now(TZ).isoformat()}
+        saldos_est[loja] = {**{k: v for k, v in p.items() if k == "ultima"}, "estado": "na_fila", "por": por, "criado": job["criado"]}
+        fila.appendleft(job)  # é rápido (1 a 2 min): passa na frente das partes do histórico, logo depois do que está rodando
+    log(f"{loja}: saldos do FIXE na fila{' por ' + por if por else ''}")
+    return True
+
+
+def rodar_saldos(job):
+    loja = job["loja"]
+    pasta = WORK_DIR / loja
+    pasta.mkdir(parents=True, exist_ok=True)
+    SEGREDO = re.compile(r"(SECRET|TOKEN|PASS|SENHA|SMTP|GITHUB|KEY)", re.I)
+    env = {k: v for k, v in os.environ.items() if not k.startswith("COLETOR_") and not SEGREDO.search(k)}
+    env.update(ler_env(CONFIG_DIR / f"{loja}.env"))
+    env.update({"PYTHONUNBUFFERED": "1", "SAIDA_SALDOS": str(DATA_DIR / loja / "fixe" / "saldos.json")})
+    log_path = pasta / "saldos.log"
+    inicio = time.time()
+    with lock:
+        saldos_est[loja] = {**saldos_est.get(loja, {}), "estado": "rodando", "inicio": datetime.now(TZ).isoformat()}
+    log(f"{loja}: saldos do FIXE rodando")
+    try:
+        with open(log_path, "w", encoding="utf-8") as out:
+            p = subprocess.run([sys.executable, str(SCRIPT_SALDOS)], cwd=pasta, env=env, stdout=out, stderr=subprocess.STDOUT, timeout=900)
+            codigo = p.returncode
+    except subprocess.TimeoutExpired:
+        codigo = "timeout"
+    except Exception as e:  # noqa: BLE001
+        codigo = str(e)
+    try:
+        cauda = log_path.read_text(encoding="utf-8", errors="replace").splitlines()[-25:]
+    except OSError:
+        cauda = []
+    with lock:
+        p = saldos_est.get(loja, {})
+        ultima = {"por": job.get("por"), "criado": job["criado"], "inicio": p.get("inicio"), "fim": datetime.now(TZ).isoformat(),
+                  "ok": codigo == 0, "codigo": codigo, "duracao_s": round(time.time() - inicio), "log": cauda}
+        saldos_est[loja] = {"estado": "parado", "ultima": ultima}
+    try:
+        (pasta / "saldos.json").write_text(json.dumps(ultima, ensure_ascii=False), encoding="utf-8")
+    except OSError:
+        pass
+    log(f"{loja}: saldos do FIXE {'OK' if codigo == 0 else 'FALHOU (' + str(codigo) + ')'}")
+
+
+def info_saldos(loja):
+    """estado da sincronização de saldos; enquanto roda, as últimas linhas do log"""
+    with lock:
+        st = json.loads(json.dumps(saldos_est.get(loja) or {}))
+    if st.get("estado") == "rodando":
+        try:
+            st["aoVivo"] = (WORK_DIR / loja / "saldos.log").read_text(encoding="utf-8", errors="replace").splitlines()[-8:]
+        except OSError:
+            pass
+    return st
 
 
 def rodar_pedido(job):
@@ -320,7 +383,7 @@ def enfileirar_historico(loja, partes, por=None, tipo="ambos", extras=None):
 def cancelar(loja):
     with lock:
         antes = len(fila)
-        resto = [j for j in fila if j["loja"] != loja or j.get("gatilho") == "pedido"]
+        resto = [j for j in fila if j["loja"] != loja or j.get("gatilho") in ("pedido", "saldos")]
         fila.clear()
         fila.extend(resto)
         e = _estado(loja)
@@ -449,11 +512,6 @@ def rodar(job):
         fixe = {"ok": cf == 0, "codigo": cf}
         if principal is None:
             ok, codigo, principal = cf == 0, cf, "fixe"
-    saldos = None
-    if tipo == "saldos" and SCRIPT_SALDOS.exists():
-        cs = executar(SCRIPT_SALDOS, {"SAIDA_SALDOS": str(DATA_DIR / loja / "fixe" / "saldos.json")})
-        saldos = {"ok": cs == 0, "codigo": cs}
-        ok, codigo, principal = cs == 0, cs, "saldos"
     quer_estoque = ("estoque" in quer) if quer is not None else (tipo not in ("fixe", "saldos") and job["gatilho"] != "historico" and ESTOQUE_ROTINA)
     if "estoque" in (job.get("extras") or []):
         quer_estoque = True
@@ -482,7 +540,7 @@ def rodar(job):
             marca = e.pop("marcar_ultima_do_dia")
             if not job.get("ultimaDoDia") and marca >= (datetime.now(TZ) - timedelta(hours=6)).strftime("%Y-%m-%d"):
                 job = {**job, "ultimaDoDia": marca}
-        e["ultima"] = {**job, "tipo": tipo, "xml": xml, "caixa": caixa, "estoque": estoque, "fixe": fixe, "saldos": saldos, "fim": datetime.now(TZ).isoformat(), "ok": ok, "codigo": codigo,
+        e["ultima"] = {**job, "tipo": tipo, "xml": xml, "caixa": caixa, "estoque": estoque, "fixe": fixe, "fim": datetime.now(TZ).isoformat(), "ok": ok, "codigo": codigo,
                        "duracao_s": round(time.time() - inicio), "log": cauda}
         lote = e.get("lote")
         if job["gatilho"] == "historico" and lote and not lote.get("fim"):
@@ -491,7 +549,7 @@ def rodar(job):
                 lote["falhas"].append({"de": de, "ate": ate, "codigo": str(codigo), "log": cauda[-30:]})
             if lote["feitas"] >= lote["total"]:
                 lote["fim"] = datetime.now(TZ).isoformat()
-        prox = next((j for j in fila if j["loja"] == loja and j.get("gatilho") != "pedido"), None)
+        prox = next((j for j in fila if j["loja"] == loja and j.get("gatilho") not in ("pedido", "saldos")), None)
         e["atual"] = prox
         e["estado"] = "na_fila" if prox else "parado"
     (pasta / "ultima.json").write_text(json.dumps({"ultima": e["ultima"], "lote": e.get("lote")}, ensure_ascii=False, indent=1), encoding="utf-8")
@@ -508,6 +566,8 @@ def trabalhador():
             try:
                 if job.get("gatilho") == "pedido":
                     rodar_pedido(job)
+                elif job.get("gatilho") == "saldos":
+                    rodar_saldos(job)
                 else:
                     rodar(job)
             except Exception as e:  # noqa: BLE001
@@ -515,6 +575,8 @@ def trabalhador():
                 with lock:
                     if job.get("gatilho") == "pedido":
                         pedido_est[job["loja"]] = {**pedido_est.get(job["loja"], {}), "estado": "parado"}
+                    elif job.get("gatilho") == "saldos":
+                        saldos_est[job["loja"]] = {**saldos_est.get(job["loja"], {}), "estado": "parado"}
                     else:
                         _estado(job["loja"])["estado"] = "parado"
         else:
@@ -544,6 +606,12 @@ def agendador():
 
 def carregar_ultimas():
     for loja in lojas_configuradas():
+        fs_ = WORK_DIR / loja / "saldos.json"
+        if fs_.exists():
+            try:
+                saldos_est[loja] = {"estado": "parado", "ultima": json.loads(fs_.read_text(encoding="utf-8"))}
+            except Exception:  # noqa: BLE001
+                pass
         fp = WORK_DIR / loja / "pedido.json"
         if fp.exists():
             try:
@@ -597,7 +665,7 @@ class API(BaseHTTPRequestHandler):
             with lock:
                 ped = json.loads(json.dumps(pedido_est.get(loja) or {}))
             return self._json(200, {"configurada": True, "horarios": horarios_do_dia(loja), "janela": janela(), "fila": fila_n, "temFixe": tem_fixe,
-                                    "temPedido": tem_pedido(loja), "pedido": ped, **info})
+                                    "temPedido": tem_pedido(loja), "pedido": ped, "saldos": info_saldos(loja), **info})
         self._json(404, {"erro": "rota"})
 
     def do_POST(self):  # noqa: N802
@@ -640,12 +708,20 @@ class API(BaseHTTPRequestHandler):
             if not enfileirar_pedido(loja, acao, por, bool(corpo.get("somar"))):
                 return self._json(409, {"erro": "Já há uma tarefa do Sistema de Pedidos na fila ou rodando para esta loja."})
             return self._json(200, {"ok": True})
-        if self.path.startswith("/fixe/") or self.path.startswith("/fixe-saldos/"):
-            saldos = self.path.startswith("/fixe-saldos/")
-            loja = self._loja("/fixe-saldos/" if saldos else "/fixe/")
+        if self.path.startswith("/fixe-saldos/"):
+            loja = self._loja("/fixe-saldos/")
             if not loja or loja not in lojas_configuradas():
                 return self._json(404, {"erro": "Loja sem acesso configurado."})
-            if not enfileirar(loja, "manual", por, tipo="saldos" if saldos else "fixe"):
+            if not SCRIPT_SALDOS.exists():
+                return self._json(400, {"erro": "O coletor desta VPS ainda não tem o robô de saldos (atualize o coletor)."})
+            if not enfileirar_saldos(loja, por):
+                return self._json(409, {"erro": "A sincronização de saldos desta loja já está na fila ou rodando."})
+            return self._json(200, {"ok": True})
+        if self.path.startswith("/fixe/"):
+            loja = self._loja("/fixe/")
+            if not loja or loja not in lojas_configuradas():
+                return self._json(404, {"erro": "Loja sem acesso configurado."})
+            if not enfileirar(loja, "manual", por, tipo="fixe"):
                 return self._json(409, {"erro": "Esta loja já tem uma coleta na fila ou rodando."})
             return self._json(200, {"ok": True})
         if self.path.startswith("/historico/"):
