@@ -959,8 +959,51 @@
     return m;
   }
   const normT = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
-  /** lê a mensagem da franquia: em cada linha, o código (ou o nome) de um produto conhecido, a quantidade e, se houver, o valor */
+  /** lê a mensagem da franquia. Aceita a tabela copiada do e-mail ou do Excel (uma célula por linha, ou separada por tab)
+   *  e o texto livre (código, nome, quantidade e valor na mesma linha). */
+  const RE_COD = /^\d{3,7}(?:\.[A-Za-z0-9]{1,4})?$/;
+  const RE_PRECO = /R\$\s*([\d.]+,\d{2})/i;
+  const valorDe = (t) => { const m = String(t).match(RE_PRECO) || String(t).match(/^\s*([\d.]+,\d{2})\s*$/); return m ? +m[1].replace(/\./g, '').replace(',', '.') : null; };
+  const ehQtd = (t) => /^\d+(?:[.,]\d{1,3})?$/.test(String(t).trim()) && valorDe(t) == null;
+  function lerTabela(txt, K) {
+    const linhas = String(txt || '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    // com tab: cada linha é um produto (colado do Excel); sem tab: uma célula por linha (colado do e-mail)
+    const celulas = linhas.some((l) => l.includes('\t')) ? null : linhas;
+    const registros = [];
+    if (!celulas) {
+      for (const l of linhas) {
+        const cs = l.split('\t').map((c) => c.trim()).filter(Boolean);
+        const cod = cs.find((c) => RE_COD.test(c) && (K.has(c) || /^\d{4,7}$/.test(c)));
+        if (!cod) continue;
+        registros.push({ cod, partes: cs.filter((c) => c !== cod) });
+      }
+    } else {
+      let atual = null;
+      celulas.forEach((c, k) => {
+        // começa um produto quando a célula é um código (conhecido, ou 4 a 7 dígitos) e a próxima é o nome
+        if (RE_COD.test(c) && (K.has(c) || /^\d{4,7}$/.test(c)) && /[A-Za-zÀ-ú]/.test(celulas[k + 1] || '')) { atual = { cod: c, partes: [] }; registros.push(atual); return; }
+        if (atual) atual.partes.push(c);
+      });
+    }
+    const achados = [];
+    for (const r of registros) {
+      const nome = r.partes.filter((t) => !ehQtd(t) && valorDe(t) == null && /[A-Za-zÀ-ú]/.test(t)).join(' ').trim();
+      const qtdT = r.partes.find((t) => ehQtd(t) && valorDe(t) == null);
+      const precoT = r.partes.find((t) => valorDe(t) != null);
+      const q = qtdT != null ? +String(qtdT).replace(',', '.') : null;
+      if (!(q > 0)) continue;
+      const k = K.get(r.cod);
+      achados.push({ cod: r.cod, nome: k ? k.nome : nome, qtd: q, preco: precoT != null ? valorDe(precoT) : null, novo: !k, nomeMsg: nome });
+    }
+    return achados;
+  }
   function lerMensagem(txt, K) {
+    const tab = lerTabela(txt, K);
+    if (tab.length) return { achados: tab, nao: [] };
+    return lerLinhas(txt, K);
+  }
+  /** texto livre: em cada linha, o código (ou o nome) de um produto conhecido, a quantidade e, se houver, o valor */
+  function lerLinhas(txt, K) {
     const achados = [], nao = [];
     const nomes = [...K.values()].filter((x) => x.nome && x.nome.length >= 5).sort((a, b) => b.nome.length - a.nome.length);
     for (const bruta of String(txt || '').split(/\r?\n/)) {
@@ -1004,6 +1047,7 @@
       const t = String(txt || '').trim();
       const cod = t.split(' — ')[0].trim();
       if (K.has(cod)) return K.get(cod);
+      if (/^\d{4,7}$/.test(cod) && t.includes(' — ')) return { cod, nome: t.split(' — ').slice(1).join(' — ').trim() };
       const n = normT(t);
       const xs = [...K.values()].filter((x) => normT(x.nome).includes(n));
       return xs.length === 1 ? xs[0] : null;
@@ -1016,18 +1060,19 @@
         const iV = h('input', { class: 'f-input ped-obr-n', type: 'number', min: 0, step: '0.01', value: x.preco ?? '', placeholder: auto != null ? fmt.n2(auto) : '—', title: 'Em branco = preço do catálogo (ou o custo do AppNext)', onchange: (ev) => { x.preco = ev.target.value === '' ? null : +ev.target.value; desenhar(); } });
         const un = x.cod && K.get(x.cod) ? String(K.get(x.cod).un || '').toLowerCase() : '';
         const v = (x.preco ?? auto ?? 0) * (x.qtd || 0);
-        return h('tr', null, h('td', { class: 'l' }, iP, x.cod ? null : h('small', { class: 'neg' }, x.nome ? ' não achei este produto' : '')),
+        return h('tr', null, h('td', { class: 'l' }, iP, !x.cod ? h('small', { class: 'neg' }, x.nome ? ' não achei este produto' : '') : !K.has(x.cod) ? h('small', { class: 'warn-t' }, ' não está no catálogo nem no estoque') : null),
           h('td', null, iQ, un ? h('small', null, ' ' + un) : null), h('td', null, iV), h('td', null, fmt.brl(v)),
           h('td', null, h('button', { type: 'button', class: 'icon-btn', title: 'Tirar', onclick: () => { itens.splice(k, 1); desenhar(); } }, '×')));
       }));
       totalEl.textContent = `${fmt.int(itens.filter((x) => x.cod && x.qtd > 0).length)} produtos · ${fmt.brl(itens.reduce((s, x) => s + (x.cod ? (x.preco ?? precoDe(p, M, x.cod) ?? 0) * (x.qtd || 0) : 0), 0))}`;
     };
-    const cola = h('textarea', { class: 'f-input ped-obr-cola', rows: 5, placeholder: 'Cole aqui a mensagem da franquia (WhatsApp ou e-mail). Ex.:\n20511 Matcha Gracia Blend Green — 2 un — R$ 308,68\n65268 All In One Mug Berry 6 un' });
+    const cola = h('textarea', { class: 'f-input ped-obr-cola', rows: 5, placeholder: 'Cole aqui a mensagem ou a tabela da franquia (e-mail, WhatsApp ou Excel), do jeito que vier: código, descrição, quantidade e custo. Ex.:\n75148  COLD BREW TEA MELON STRAWBERRY  4  R$ 62,40' });
     const resCola = h('div', { class: 'muted' });
     const ler = h('button', { type: 'button', class: 'btn', onclick: () => {
       const { achados, nao } = lerMensagem(cola.value, K);
       for (const a of achados) { const j = itens.find((x) => x.cod === a.cod); if (j) { j.qtd = a.qtd; if (a.preco != null) j.preco = a.preco; } else itens.push(a); }
-      resCola.replaceChildren(`${fmt.int(achados.length)} produto(s) reconhecido(s).`, nao.length ? h('div', { class: 'neg' }, `Não reconheci ${nao.length} linha(s): `, h('small', null, nao.slice(0, 5).join(' · ') + (nao.length > 5 ? ' …' : '')), ' — inclua à mão.') : '');
+      const novos = achados.filter((x) => x.novo).length;
+      resCola.replaceChildren(`${fmt.int(achados.length)} produto(s) reconhecido(s)${novos ? ` · ${novos} não estão no catálogo nem no estoque (entram com o nome e o valor da mensagem)` : ''}.`, nao.length ? h('div', { class: 'neg' }, `Não reconheci ${nao.length} linha(s): `, h('small', null, nao.slice(0, 5).join(' · ') + (nao.length > 5 ? ' …' : '')), ' — inclua à mão.') : '');
       desenhar();
     } }, 'Ler a mensagem');
     const erro = h('span', { class: 'neg' });
