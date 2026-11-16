@@ -99,11 +99,12 @@ def main():
                     page.wait_for_timeout(2500)
             feitos = []
             respostas = {}
+            confirmacoes = {}
             def salvar_pedido():
                 # grava o que já foi pedido: o painel importa o que chegar, mesmo se outra exportação falhar
                 destino = Path(SAIDA)
                 destino.parent.mkdir(parents=True, exist_ok=True)
-                destino.write_text(json.dumps({"em": datetime.now(TZ).isoformat(), "email": EMAIL, "emailBase": EMAIL_BASE, "tipos": feitos, "respostas": respostas}), encoding="utf-8")
+                destino.write_text(json.dumps({"em": datetime.now(TZ).isoformat(), "email": EMAIL, "emailBase": EMAIL_BASE, "tipos": feitos, "respostas": respostas, "confirmados": confirmacoes}), encoding="utf-8")
 
             def abrir_opcao(rotulo):
                 """clica em Exportar e na opção; tenta de novo com a página recarregada (a janela anterior pode ter ficado aberta)"""
@@ -148,29 +149,47 @@ def main():
                 ok = primeiro(page, ["[role=dialog] button:has-text('Exportar')", "button:has-text('Exportar') >> nth=-1"], 5000)
                 if not ok:
                     raise RuntimeError("não achei o botão Exportar da janela")
+                # espera sumir o aviso da exportação anterior, para não confundir com o desta
+                for _ in range(16):
+                    try:
+                        if not page.locator("[data-sonner-toast], .Toastify__toast, [role=status]:visible, [role=alert]:visible").count():
+                            break
+                    except Exception:  # noqa: BLE001
+                        break
+                    page.wait_for_timeout(500)
                 antes = page.evaluate("() => document.body.innerText")
                 ok.click()
-                page.wait_for_timeout(3500)
-                # o que o FIXE respondeu (aviso na tela): ajuda a saber se o problema é do FIXE ou do robô
-                resposta = ""
-                for sel in ["[role=alert]", "[role=status]", ".Toastify__toast", ".toast", ".MuiSnackbar-root", ".swal2-popup", ".notification", ".ant-message", ".v-snack"]:
-                    try:
-                        el = page.locator(sel).first
-                        if el.count() and el.is_visible():
-                            resposta = " ".join(el.inner_text().split())[:200]
-                            if resposta:
-                                break
-                    except Exception:  # noqa: BLE001
-                        pass
-                if not resposta:
-                    try:
-                        depois = page.evaluate("() => document.body.innerText")
-                        novas = [l.strip() for l in depois.splitlines() if l.strip() and l.strip() not in antes]
-                        resposta = " | ".join(novas)[:200]
-                    except Exception:  # noqa: BLE001
-                        pass
+                # confirmação do FIXE: o aviso "Exportação iniciada. Você receberá o arquivo por e-mail." (some depois de alguns segundos)
+                resposta, confirmado = "", False
+                SELS = ["[data-sonner-toast]", "[role=alert]", "[role=status]", ".Toastify__toast", ".toast", ".MuiSnackbar-root", ".swal2-popup", ".notification", ".ant-message", ".v-snack", "[class*=toast i]"]
+                for _ in range(24):  # até ~12 s
+                    page.wait_for_timeout(500)
+                    for sel in SELS:
+                        try:
+                            el = page.locator(sel).first
+                            if el.count() and el.is_visible():
+                                t = " ".join(el.inner_text().split())[:200]
+                                if t:
+                                    resposta = t
+                                    break
+                        except Exception:  # noqa: BLE001
+                            pass
+                    if not resposta:
+                        try:
+                            depois = page.evaluate("() => document.body.innerText")
+                            novas = [l.strip() for l in depois.splitlines() if l.strip() and l.strip() not in antes]
+                            achou = next((l for l in novas if re.search(r"exporta|e-?mail|erro|falha", l, re.I)), "")
+                            resposta = achou[:200]
+                        except Exception:  # noqa: BLE001
+                            pass
+                    if resposta:
+                        break
+                confirmado = bool(re.search(r"exporta[çc][ãa]o iniciada|receber[áa] o arquivo", resposta, re.I))
                 respostas[tipo] = resposta
-                log(f"   O FIXE mostrou: {resposta or '(nenhum aviso na tela)'}")
+                log(f"   O FIXE mostrou: {resposta or '(nenhum aviso na tela)'}" + (" ✓ exportação confirmada" if confirmado else ""))
+                if not confirmado and not re.search(r"erro|falha|inválid|invalid|não foi possível|tente novamente", resposta, re.I):
+                    log("   Atenção: não vi a confirmação \"Exportação iniciada\" do FIXE; o painel vai esperar o e-mail mesmo assim.")
+                confirmacoes[tipo] = confirmado
                 if re.search(r"erro|falha|inválid|invalid|não foi possível|tente novamente", resposta, re.I):
                     raise RuntimeError(f"o FIXE recusou a exportação de {rotulo}: {resposta}")
                 # fecha a janela se ficou aberta
