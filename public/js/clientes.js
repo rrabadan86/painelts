@@ -25,6 +25,7 @@
     const cad = new Map(db.clientes.map((c) => [c.cpf, c]));
     const porCPF = new Map();
     let semVendaTotal = 0;
+    const semVendaLista = []; // cupons com CPF que não casaram com nenhuma venda, com o motivo provável
     const cliente = (cpf, nomeAlt) => {
       let c = porCPF.get(cpf);
       if (!c) {
@@ -57,7 +58,21 @@
         itens = itens.filter((i) => Math.abs(db.day[i] - d) <= 1);
       }
       const c = cliente(x.cpf);
-      if (!itens.length) { c.semVenda++; semVendaTotal++; continue; }
+      if (!itens.length) {
+        c.semVenda++; semVendaTotal++;
+        // por que não casou: loja sem vendas, data fora do período das vendas, número em outra data ou número inexistente
+        const d = x.data ? TS.isoToDay(x.data) : null;
+        const mesmoNum = lid === undefined ? [] : porChave.get(x.cupom + '|' + lid) || [];
+        let motivo;
+        if (lid === undefined) motivo = 'loja sem vendas importadas';
+        else if (d != null && (d < db.minDay - 1 || d > db.maxDay + 1)) motivo = 'data fora do período das vendas';
+        else if (mesmoNum.length) {
+          const outra = mesmoNum.map((i) => db.day[i]).sort((a, b) => Math.abs(a - d) - Math.abs(b - d))[0];
+          motivo = `o número existe nas vendas, mas em ${fmt.date(TS.dayToIso(outra))}`;
+        } else motivo = 'número do cupom não está no relatório de vendas';
+        semVendaLista.push({ cpf: x.cpf, cupom: x.cupom, data: x.data || '', loja: x.loja, motivo });
+        continue;
+      }
       const k = { cupom: x.cupom, loja: x.loja, lojaId: lid, itens, ...resumo(itens) };
       c.cupons.push(k);
       for (const i of itens) cupomXml.set(lid + '|' + db.day[i] + '|' + x.cupom, { cpf: x.cpf, k });
@@ -186,7 +201,7 @@
       c.tags = t;
     }
     // quem tem pontos no FIXE mas nenhum cupom com CPF: entra nas campanhas pelo cadastro (nome e celular)
-    TS.cli = { cad, lista, fixe, porCPF, fxPorCpf: fx ? fx.porCpf : null, semVendaTotal, soSemVenda, cuponsXml: db.xml.length, cuponsCPF, contatos: (TS.cli && TS.cli.contatos) || null, cidades: [...new Set(db.clientes.map((c) => c.cidade).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR')) };
+    TS.cli = { cad, lista, fixe, porCPF, fxPorCpf: fx ? fx.porCpf : null, semVendaTotal, semVendaLista, soSemVenda, cuponsXml: db.xml.length, cuponsCPF, contatos: (TS.cli && TS.cli.contatos) || null, cidades: [...new Set(db.clientes.map((c) => c.cidade).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR')) };
   };
   // ---------- contatos (contatado / não quer mensagens), guardados por loja no servidor ----------
   const NOMES_SEG = { hoje: 'Contatar hoje', aniv: 'Aniversário (7 dias)', sumido: 'Sumidos', repor: 'Hora de repor', vence: 'Pontos vencendo', semfixe: 'Compras sem FIXE', forafixe: 'Fora do FIXE', novo: 'Novos do mês', fiel: 'Fiéis', vip: 'VIP', uma: 'Uma compra só' };
@@ -371,9 +386,10 @@
     const lista = filtrar();
     if (TS.cli.semVendaTotal) {
       const pct = TS.cli.semVendaTotal / TS.cli.cuponsXml;
-      root.append(h('div', { class: 'notice' + (pct > 0.2 ? ' err' : '') },
+      root.append(h('div', { class: 'notice cli-semvenda' + (pct > 0.2 ? ' err' : ''), role: 'button', tabindex: '0', title: 'Clique para ver a lista', onclick: abrirSemVenda, onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); abrirSemVenda(); } } },
         h('b', null, `${fmt.int(TS.cli.semVendaTotal)} cupons com CPF (${fmt.pct(pct, 0)}) não foram encontrados nas vendas`),
-        ` e ficaram de fora das contas${TS.cli.soSemVenda ? ` (${fmt.int(TS.cli.soSemVenda)} CPFs só têm cupons assim)` : ''}. Normalmente são vendas fora do período importado ou números de cupom que não batem com o relatório de vendas.`));
+        ` e ficaram de fora das contas${TS.cli.soSemVenda ? ` (${fmt.int(TS.cli.soSemVenda)} CPFs só têm cupons assim)` : ''}. Normalmente são vendas fora do período importado ou números de cupom que não batem com o relatório de vendas. `,
+        h('span', { class: 'link-btn' }, 'Ver a lista ›')));
     }
 
     // ordem: base de clientes → fidelidade → lista (a lista é longa: fica por último)
@@ -635,6 +651,44 @@
       arquivo ? h('div', { class: 'cfg-acoes' }, h('button', { type: 'button', class: 'btn', onclick: () => csv(arquivo, cols.map((c) => c.label), linhas.map((r) => cols.map((c) => (c.key === 'nome' ? r.nome : c.key === 'cel' ? (TS.demo ? '' : r.cel) : c.key === 'ultima' ? r.ultimaTxt : c.csv ? c.csv(r) : r[c.key] ?? '')))) }, 'Baixar lista (CSV)')) : null,
       TS.table({ cols, rows: linhas, sortKey: 'ultima', onRowClick: (r) => abrirClientes([r.cpfN]) }));
   }
+  /** janela com os cupons com CPF que não casaram com as vendas: data, loja, cupom, cliente e o motivo provável */
+  function abrirSemVenda() {
+    document.querySelector('.camada-semvenda')?.remove();
+    const L = TS.cli.semVendaLista || [];
+    const fechar = () => { camada.remove(); if (!document.querySelector('.camada-cheia')) document.body.classList.remove('com-camada'); document.removeEventListener('keydown', esc); };
+    const esc = (e) => { if (e.key === 'Escape' && !document.querySelector('.camada-cli')) fechar(); };
+    const porMotivo = new Map();
+    for (const x of L) { const k = x.motivo.startsWith('o número existe') ? 'o número existe nas vendas, mas em outra data' : x.motivo; porMotivo.set(k, (porMotivo.get(k) || 0) + 1); }
+    const DICA = {
+      'número do cupom não está no relatório de vendas': 'O AppNext emitiu a nota, mas o número não aparece no relatório de vendas importado. Confira no AppNext se a venda foi cancelada ou se está em outra loja.',
+      'o número existe nas vendas, mas em outra data': 'O mesmo número de cupom aparece em outra data: pode ser numeração reiniciada (outro caixa ou série) ou a data da nota diferente da venda.',
+      'data fora do período das vendas': 'A nota é de uma data que o relatório de vendas ainda não cobre. Importe o histórico de vendas desse período.',
+      'loja sem vendas importadas': 'A loja da nota não tem vendas no painel.',
+    };
+    const resumo = h('div', { class: 'cli-sv-resumo' }, ...[...porMotivo].sort((a, b) => b[1] - a[1]).map(([m, n]) => h('div', { title: DICA[m] || '' }, h('b', null, fmt.int(n)), ' ', m)));
+    const linhas = L.map((x) => { const cad = TS.cli.cad.get(x.cpf) || {}; return { ...x, nome: cad.nome || '', dia: x.data ? TS.isoToDay(x.data) : null }; });
+    const tab = TS.table({
+      cols: [
+        { key: 'dia', label: 'Data', align: 'l', render: (r) => (r.data ? fmt.date(r.data) : '—'), sortVal: (r) => r.dia ?? -1 },
+        new Set(L.map((x) => x.loja)).size > 1 ? { key: 'loja', label: 'Loja', align: 'l' } : null,
+        { key: 'cupom', label: 'Cupom', align: 'l' },
+        { key: 'cpf', label: 'CPF', align: 'l', render: (r) => h('button', { type: 'button', class: 'link-btn', title: 'Abrir o histórico do cliente', onclick: () => abrirClientes([r.cpf]) }, fmtCPF(r.cpf)) },
+        { key: 'nome', label: 'Cliente', align: 'l', wrap: true, render: (r) => r.nome || h('span', { class: 'muted' }, 'sem cadastro') },
+        { key: 'motivo', label: 'Motivo provável', align: 'l', wrap: true, render: (r) => h('span', { title: DICA[r.motivo.startsWith('o número existe') ? 'o número existe nas vendas, mas em outra data' : r.motivo] || '' }, r.motivo) },
+      ].filter(Boolean),
+      rows: linhas, sortKey: 'dia', maxHeight: '60vh', search: 'Buscar cupom, CPF ou cliente…', searchKeys: ['cupom', 'cpf', 'nome', 'motivo'],
+    });
+    const caixa = h('div', { class: 'card card-cheio fech-modal cli-sv' },
+      h('button', { type: 'button', class: 'icon-btn exp-fechar', title: 'Fechar (Esc)', 'aria-label': 'Fechar', onclick: fechar }, '✕'),
+      h('div', { class: 'fech-modal-topo' }, h('b', null, `${fmt.int(L.length)} cupons com CPF que não foram encontrados nas vendas`)),
+      h('p', { class: 'muted' }, 'Notas com CPF (XML do AppNext) cujo número de cupom não casou com nenhuma venda da mesma loja até 1 dia de diferença. Passe o mouse no motivo para ver o que conferir. Clique no CPF para abrir o histórico do cliente.'),
+      resumo, tab);
+    const camada = h('div', { class: 'camada-cheia camada-semvenda', role: 'dialog', 'aria-modal': 'true', onclick: (e) => { if (e.target === camada) fechar(); } }, caixa);
+    document.body.append(camada);
+    document.body.classList.add('com-camada');
+    document.addEventListener('keydown', esc);
+  }
+
   function abrirClientes(cpfs, destaque) {
     document.querySelector('.camada-cli')?.remove();
     const fechar = () => { camada.remove(); if (!document.querySelector('.camada-cheia')) document.body.classList.remove('com-camada'); document.removeEventListener('keydown', esc); };

@@ -1507,3 +1507,9 @@ tr.cp-enviada td { background: #EEF5EC !important; }
 /* KPI: número longo encolhe para caber (container query pela largura do cartão) */
 .kpi { container-type: inline-size; min-width: 0; }
 .kpi-value[style*="--n"] { font-size: clamp(14px, calc((100cqi - 4px) / (var(--n) * 0.54)), 24px); }
+/* clientes: aviso de cupons com CPF sem venda abre a lista */
+.cli-semvenda { cursor: pointer; }
+.cli-semvenda:hover { filter: brightness(0.98); }
+.cli-sv { max-width: 1000px; }
+.cli-sv-resumo { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 12px; }
+.cli-sv-resumo > div { background: var(--bg2, #f4f0e6); border-radius: 8px; padding: 6px 10px; font-size: 13px; cursor: help; }
