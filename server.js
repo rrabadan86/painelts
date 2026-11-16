@@ -790,7 +790,7 @@ app.put('/api/feriados', express.json({ limit: '200kb' }), (req, res) => {
       if (min == null || min === '') continue;
       const m = Number(min);
       if (!Number.isInteger(m) || m < 0 || m > 24 * 60) return res.status(400).json({ erro: `Horas inválidas para ${nome} em ${data}.` });
-      if (m > 0) (limpo[data] ||= {})[String(nome).trim().toUpperCase().slice(0, 60)] = m;
+      (limpo[data] ||= {})[String(nome).trim().toUpperCase().slice(0, 60)] = m; // 0 = editado para "não trabalhou" (não volta o automático)
     }
   }
   let locaisLimpos = null;

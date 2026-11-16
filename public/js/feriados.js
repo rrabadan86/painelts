@@ -79,8 +79,48 @@
   TS.horasTxt = horasTxt;
 
   /** dados de feriados do mês para o PDF: { lista, horas: { data: { NOME: min } } } */
+  /** quem vendeu em cada dia do mês (nomes em maiúsculas) */
+  function vendeuNoMes(ym) {
+    const db = TS.db, out = new Map();
+    if (!db) return out;
+    for (let i = 0; i < db.n; i++) {
+      if (!db.iso[i].startsWith(ym)) continue;
+      const nm = String(db.D.vendedor[db.vend[i]] || '').trim().toUpperCase();
+      if (!nm) continue;
+      if (!out.has(db.iso[i])) out.set(db.iso[i], new Set());
+      out.get(db.iso[i]).add(nm);
+    }
+    return out;
+  }
+  const equipeDe = (cfg) => (cfg && cfg.operacao && cfg.operacao.equipe) || { cargaSemanal: 44, escala: '6x1' };
+  const jornadaDe = (eq) => Math.round((eq.cargaSemanal * 60) / (eq.escala === '5x2' ? 5 : 6));
+  /** horas automáticas de quem vendeu no feriado: horário da loja naquele dia (acima de 6h desconta o intervalo), até a jornada */
+  function horasAuto(cfg, data) {
+    const eq = equipeDe(cfg), jornada = jornadaDe(eq);
+    const ef = TS.horarioFeriado(cfg, data);
+    if (ef && ef.fechado) return 0;
+    const aberto = ef && ef.abre && ef.fecha ? hm2(ef.fecha) - hm2(ef.abre) : jornada;
+    const util = aberto > 360 ? aberto - (eq.intervalo ?? 60) : aberto;
+    return Math.max(0, Math.min(jornada, util));
+  }
+  /**
+   * horas de cada pessoa nos feriados do mês: o que foi editado (inclusive 0) vale; quem vendeu no feriado e não foi editado
+   * entra com as horas automáticas. Devolve { data: { NOME: min } } e, em auto, quais vieram do automático.
+   */
+  TS.horasFeriados = function (cfg, ym, vendeu) {
+    const salvas = (cfg && cfg.feriadosHoras && cfg.feriadosHoras[ym]) || {};
+    const v = vendeu || vendeuNoMes(ym);
+    const horas = {}, auto = {};
+    for (const f of TS.feriadosDoMes(cfg, ym)) {
+      const d = f.data, ed = salvas[d] || {};
+      for (const [nome, m] of Object.entries(ed)) if (m > 0) (horas[d] ||= {})[nome] = m;
+      const a = horasAuto(cfg, d);
+      if (a) for (const nome of v.get(d) || []) if (!(nome in ed)) { (horas[d] ||= {})[nome] = a; (auto[d] ||= {})[nome] = true; }
+    }
+    return { horas, auto };
+  };
   TS.feriadosParaPdf = function (cfg, ym) {
-    return { lista: TS.feriadosDoMes(cfg, ym), horas: (cfg && cfg.feriadosHoras && cfg.feriadosHoras[ym]) || {} };
+    return { lista: TS.feriadosDoMes(cfg, ym), horas: TS.horasFeriados(cfg, ym).horas };
   };
 
   /**
@@ -92,22 +132,15 @@
     const pode = !TS.demo && (TS.eu?.pode?.configurar || (TS.eu?.perfil === 'gerente' && (TS.eu.telas || []).includes('comissionamento')));
     const editavel = pode || TS.demo; // na apresentação dá para testar, sem salvar
     const locais = ((cfg && cfg.feriadosLocais) || []).map((f) => ({ ...f }));
-    const horas = JSON.parse(JSON.stringify((cfg && cfg.feriadosHoras && cfg.feriadosHoras[ym]) || {}));
+    const horas = JSON.parse(JSON.stringify((cfg && cfg.feriadosHoras && cfg.feriadosHoras[ym]) || {})); // só o que foi editado (0 = não trabalhou)
     const horarios = Object.fromEntries(Object.entries((cfg && cfg.feriadosHorario) || {}).filter(([d]) => d.startsWith(ym)).map(([d, v]) => [d, { ...v }]));
     const cfgVivo = () => ({ ...cfg, feriadosHorario: { ...((cfg && cfg.feriadosHorario) || {}), ...horarios } });
-    const nomes = [...new Set([...pessoas.map((n) => n.trim().toUpperCase()), ...Object.values(horas).flatMap((o) => Object.keys(o))])].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+    const nomes = [...new Set([...pessoas.map((n) => n.trim().toUpperCase()), ...Object.values(horas).flatMap((o) => Object.keys(o).filter((k) => o[k] > 0))])].sort((a, b) => a.localeCompare(b, 'pt-BR'));
     const rotulo = new Map(pessoas.map((n) => [n.trim().toUpperCase(), n]));
-    // quem vendeu em cada dia do mês
-    const vendeu = new Map();
-    for (let i = 0; i < db.n; i++) {
-      if (!db.iso[i].startsWith(ym)) continue;
-      const nm = String(db.D.vendedor[db.vend[i]] || '').trim().toUpperCase();
-      if (!nm) continue;
-      if (!vendeu.has(db.iso[i])) vendeu.set(db.iso[i], new Set());
-      vendeu.get(db.iso[i]).add(nm);
-    }
-    const eq = (cfg && cfg.operacao && cfg.operacao.equipe) || { cargaSemanal: 44, escala: '6x1' };
-    const jornada = Math.round((eq.cargaSemanal * 60) / (eq.escala === '5x2' ? 5 : 6));
+    const vendeu = vendeuNoMes(ym);
+    const jornada = jornadaDe(equipeDe(cfg));
+    // horas que valem (editadas + automáticas), com o horário e os feriados como estão na tela
+    const efetivas = () => TS.horasFeriados({ ...cfgVivo(), feriadosLocais: locais, feriadosHoras: { ...((cfg && cfg.feriadosHoras) || {}), [ym]: horas } }, ym, vendeu);
     const card = h('div', { class: 'card feriados-card' });
     let sujoF = false;
 
@@ -174,45 +207,38 @@
           f.tipo === 'local' && editavel ? h('button', { type: 'button', class: 'chip-x', 'aria-label': 'Remover ' + f.nome, onclick: () => { const i = locais.indexOf(f.orig); if (i >= 0) locais.splice(i, 1); sujoF = true; pintar(); } }, '×') : null);
       }) : h('span', { class: 'muted' }, 'Nenhum feriado neste mês. Use "+ Feriado local" para incluir um feriado da cidade ou do estado.')));
       if (!lista.length) return;
-      // tabela
-      const tot = (nome) => lista.reduce((s, f) => s + ((horas[f.data] || {})[nome] || 0), 0);
-      const totDia = (d) => Object.values(horas[d] || {}).reduce((s, m) => s + m, 0);
+      // tabela: quem vendeu no feriado entra sozinho com as horas do horário da loja; o que for digitado passa a valer
+      const { horas: hv, auto } = efetivas();
+      const tot = (nome) => lista.reduce((s, f) => s + ((hv[f.data] || {})[nome] || 0), 0);
+      const totDia = (d) => Object.values(hv[d] || {}).reduce((s, m) => s + m, 0);
       const tb = h('tbody', null, nomes.map((nome) => h('tr', null, h('td', { class: 'l' }, rotulo.get(nome) || nome), lista.map((f) => {
-        const m = (horas[f.data] || {})[nome] || 0;
+        const m = (hv[f.data] || {})[nome] || 0;
+        const ehAuto = !!(auto[f.data] || {})[nome];
+        const editado = horas[f.data] && nome in horas[f.data];
         const vend = vendeu.get(f.data)?.has(nome);
-        const inp = h('input', { class: 'f-input hora-in', value: campoTxt(m), placeholder: '—', disabled: !editavel || null, inputmode: 'numeric', 'aria-label': `Horas de ${nome} em ${f.data}` });
+        const inp = h('input', { class: 'f-input hora-in' + (ehAuto ? ' auto' : ''), value: campoTxt(m), placeholder: '—', disabled: !editavel || null, inputmode: 'numeric', 'aria-label': `Horas de ${nome} em ${f.data}` });
         inp.addEventListener('change', () => {
           const v = lerHoras(inp.value);
           if (Number.isNaN(v) || v > 1440) { inp.classList.add('erro'); return; }
           inp.classList.remove('erro');
-          if (v) (horas[f.data] ||= {})[nome] = v; else if (horas[f.data]) delete horas[f.data][nome];
+          (horas[f.data] ||= {})[nome] = v || 0; // apagar = não trabalhou (o automático não volta)
           sujoF = true; pintar();
         });
         const ef = TS.horarioFeriado(cfgVivo(), f.data);
+        const voltar = editado && vend && editavel ? h('button', { type: 'button', class: 'link-btn', title: 'Voltar às horas automáticas (horário da loja no feriado)', onclick: () => { delete horas[f.data][nome]; sujoF = true; pintar(); } }, '↺ automático') : null;
         const dica = ef && ef.fechado && m ? h('div', { class: 'hora-dica falta' }, 'loja marcada como fechada')
-          : vend ? h('div', { class: 'hora-dica ' + (m ? 'ok' : 'falta') }, m ? 'vendeu' : 'vendeu, sem horas') : null;
+          : ehAuto ? h('div', { class: 'hora-dica ok' }, 'vendeu · automático')
+            : editado && vend ? h('div', { class: 'hora-dica' }, m ? 'editado ' : 'editado: não trabalhou ', voltar)
+              : vend && !m ? h('div', { class: 'hora-dica falta' }, 'vendeu, sem horas')
+                : editado && m ? h('div', { class: 'hora-dica' }, 'editado') : null;
         return h('td', null, inp, dica);
       }), h('td', { class: 'b' }, horasTxt(tot(nome))))));
       card.append(h('div', { class: 'table-wrap free' }, h('table', { class: 't feriados-t' },
         h('thead', null, h('tr', null, h('th', { class: 'l' }, 'Pessoa'), lista.map((f) => h('th', { title: f.nome }, `${f.data.slice(8)}/${f.data.slice(5, 7)}`)), h('th', null, 'Total')),
           h('tr', { class: 'linha-horario' }, h('td', { class: 'l' }, 'Loja abre'), lista.map((f) => h('td', null, celulaHorario(f.data))), h('td'))),
         tb, h('tfoot', null, h('tr', null, h('td', { class: 'l' }, 'Total'), lista.map((f) => h('td', null, horasTxt(totDia(f.data)))), h('td', null, horasTxt(lista.reduce((s, f) => s + totDia(f.data), 0))))))));
-      if (editavel) {
-        card.append(h('div', { class: 'feriado-rodape' },
-          h('button', { type: 'button', class: 'btn', onclick: () => {
-            const intervalo = (eq.intervalo ?? 60);
-            for (const f of lista) {
-              const ef = TS.horarioFeriado(cfgVivo(), f.data);
-              if (ef && ef.fechado) continue;
-              const aberto = ef ? hm2(ef.fecha) - hm2(ef.abre) : jornada;
-              const util = aberto > 360 ? aberto - intervalo : aberto; // acima de 6h desconta o intervalo
-              const horasDia = Math.max(0, Math.min(jornada, util));
-              for (const nome of vendeu.get(f.data) || []) if (nomes.includes(nome) && !(horas[f.data] || {})[nome]) (horas[f.data] ||= {})[nome] = horasDia;
-            }
-            sujoF = true; pintar();
-          } }, 'Preencher quem vendeu'),
-          h('span', { class: 'muted' }, `"vendeu" = teve venda nesse dia. "Preencher" usa o horário da loja no feriado (até a jornada de ${horasTxt(jornada)}; acima de 6h desconta o intervalo). Formato: 07:20, 7h20 ou 7,5.`)));
-      }
+      card.append(h('div', { class: 'feriado-rodape' }, h('span', { class: 'muted' },
+        `Quem vendeu no feriado entra sozinho com as horas do horário da loja naquele dia (até a jornada de ${horasTxt(jornada)}; acima de 6h desconta o intervalo) — mudou o horário, as horas acompanham. Para corrigir, digite em cima (07:20, 7h20 ou 7,5); apagar = não trabalhou. "↺ automático" desfaz a correção.${editavel ? ' Clique em Salvar para guardar as correções.' : ''}`)));
     }
     pintar();
     return card;

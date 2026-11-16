@@ -1476,3 +1476,5 @@ tr.cp-enviada td { background: #EEF5EC !important; }
 .sem-dia .chip.ultimo { background: #C9A227; color: #1F3A2A; border-color: #C9A227; }
 .sem-atalhos { margin-top: 4px; flex-wrap: wrap; gap: 6px; }
 @media (max-width: 700px) { .sem-dia { grid-template-columns: 1fr; gap: 4px; } }
+.feriados-t .hora-in.auto { background: #EEF5EC; border-color: #CFE0CB; }
+.feriados-t .hora-dica .link-btn { background: none; border: 0; padding: 0; color: #1F4E8C; text-decoration: underline; cursor: pointer; font: inherit; font-size: inherit; }
