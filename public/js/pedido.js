@@ -411,8 +411,20 @@
         h('div', { class: 'ped-compo-bar' }, seg(ob, 'ob', 'Obrigatório'), seg(car, 'car', 'Carrinho'), seg(fora, 'fora', 'Fora do site'), lim != null && tot < lim ? seg(lim - tot, 'sobra', 'Sobra') : null));
     };
     R.novoCompo = () => { const el = h('div', { class: 'ped-compo' }); compos.push(el); desenharCompo(el); return el; };
+    // celular: barra fixa no rodapé com o valor do carrinho e o atalho para montar
+    const barra = matchMedia('(max-width: 760px)').matches ? h('div', { class: 'ped-barra' }) : null;
+    const pintarBarra = () => {
+      if (!barra) return;
+      const car = R.linhas.filter((r) => !r.obrig && r.pedir > 0 && r.site === 'ok');
+      const v = car.reduce((s2, r) => s2 + r.pedir * (r.preco || 0), 0), t = total();
+      barra.replaceChildren(
+        h('div', null, h('small', null, `🛒 Carrinho · ${fmt.int(car.length)} itens`), h('b', null, fmt.brl0(v)),
+          R.orcamento != null ? h('small', { class: t > R.orcamento * 1.02 ? 'down' : '' }, t <= R.orcamento ? `sobram ${fmt.brl0(R.orcamento - t)}` : `passa ${fmt.brl0(t - R.orcamento)}`) : null),
+        h('button', { type: 'button', class: 'btn primary', onclick: () => { const c = corpo.querySelector('.ped-robo'); if (c) c.scrollIntoView({ behavior: 'smooth', block: 'start' }); } }, 'Montar carrinho ›'));
+    };
     const pintarTotal = () => {
       compos.forEach(desenharCompo);
+      pintarBarra();
       const t = total(), n = R.linhas.filter((r) => r.pedir > 0).length;
       kTotal.textContent = fmt.brl0(t);
       const nOb = R.linhas.filter((r) => r.obrig).length;
@@ -550,8 +562,8 @@
         : h('span', { class: 'muted ped-fx-n' }, `classe pelos últimos ${R.classeMeses} meses`));
     const totalAgora = R.linhas.reduce((s, r) => s + r.pedir * (r.preco || 0), 0);
     const sobra = R.orcamento != null ? R.orcamento - totalAgora : null;
-    const tab = TS.table({
-      cols: [
+    const MOBILE = matchMedia('(max-width: 760px)').matches;
+    const cols = [
         { key: 'produto', label: 'Produto', align: 'l', sticky: true, wrap: true, render: (r) => h('span', null, r.produto, r.obrig ? h('span', { class: 'ped-tag-obr', title: 'Vem no pedido obrigatório: não vai para o carrinho' }, '🔒 obrigatório') : r.chega ? h('span', { class: 'ped-tag-obr', title: `O pedido obrigatório já traz ${qtdTxt(r.chega, r.it)} deste produto (já descontado do "Precisa"). O que estiver em "Pedir" é a mais e vai para o carrinho.` }, `+ ${qtdTxt(r.chega, r.it)} no obrigatório`) : null, r.prior ? h('span', { class: 'ped-prio', title: r.prior === 2 ? 'Prioridade: estoque abaixo de 500 g' : 'Prioridade: Estrela com estoque abaixo de 700 g' }, r.prior === 2 ? '< 500 g' : 'Estrela < 700 g') : null, h('small', { class: 'est-tam' }, `cód. ${r.cod}`)) },
         { key: 'grupoTxt', label: 'Grupo', align: 'l' },
         { key: 'classe', label: 'Classe', align: 'l', title: `Classe oficial: o que sai por mês (a mediana dos últimos ${R.classeMeses} meses fechados, então um mês de promoção pesa pouco) × margem bruta, comparados com a mediana dos outros produtos. Não muda com o filtro de período. 🔒 = travada à mão na Rentabilidade. Estrela: vende muito e tem margem boa. Volume: vende muito, margem menor. Joia: margem boa, vende pouco. Peso morto: vende pouco e margem baixa`,
@@ -565,7 +577,10 @@
         { key: 'total', label: 'Total', render: (r) => { const s = h('span', { class: 'ped-tot' }, r.pedir > 0 ? fmt.brl(r.pedir * (r.preco || 0)) : '—'); r._tot = s; return s; }, sortVal: (r) => r.pedir * (r.preco || 0) },
         { key: 'lucroDia', label: 'Lucro sem fixos/dia', title: 'O que o produto deixou por dia nos últimos 30 dias depois do custo e das deduções variáveis (comissão, royalties, Simples, maquininha). É a prioridade do pedido: urgentes primeiro, depois quem deixa mais lucro', fmt: (v) => (v ? fmt.brl(v) : '—') },
         { key: 'motivo', label: 'Obs.', align: 'l', render: (r) => obs(r) },
-      ],
+      ];
+    const col = (k) => cols.find((c) => c.key === k);
+    const tab = TS.table({
+      cols,
       rowClass: (r) => (r.obrig ? 'ped-row-obr' : null),
       rows: linhas, total: (() => {
         const ped = linhas.filter((r) => r.pedir > 0);
@@ -575,6 +590,38 @@
       })(), sortKey: 'lucroDia', maxHeight: '620px', pageSize: linhas.length > 300 ? 200 : undefined, search: 'Buscar produto…', searchKeys: ['produto', 'cod'], produto: 'produto', imprimir: ['produto', 'grupoTxt', 'classe', 'sit', 'qtd', 'sugerido', 'pedir', 'preco', 'total'], cls: 'est-t ped-t',
       empty: { pedido: 'Nada no pedido.', fora: 'Nada ficou de fora.', indisp: 'Nenhum produto necessário está indisponível no site.', cat: 'Todos os produtos necessários estão no catálogo.', resto: 'Sem catálogo do Sistema de Pedidos: use "Atualizar catálogo".', todos: 'Nenhum produto.' }[filtro],
     });
+    // ---------- celular: um cartão por produto, com o essencial e o − / ＋ ----------
+    function listaMobile() {
+      const box = h('div', { class: 'ped-cards' });
+      const busca = h('input', { class: 'f-input ped-cards-busca', type: 'search', placeholder: 'Buscar produto ou código…', value: state.pedBuscaMob || '' });
+      const ord = [...linhas].sort((a, b) => (b.pedir > 0) - (a.pedir > 0) || (b.prior || 0) - (a.prior || 0) || (b.qtd <= 0) - (a.qtd <= 0) || b.urgente - a.urgente || (b.lucroDia || 0) - (a.lucroDia || 0));
+      let quantos = 40;
+      const cartao = (r) => {
+        const [t, c] = SITU(r);
+        const tot = h('b', { class: 'ped-tot' }, r.pedir > 0 ? fmt.brl(r.pedir * (r.preco || 0)) : '—');
+        r._tot = tot;
+        return h('div', { class: 'ped-card' + (r.obrig ? ' obr' : r.pedir > 0 ? ' on' : '') },
+          h('div', { class: 'ped-card-top' }, h('div', { class: 'ped-card-nome' }, col('produto').render(r)), h('span', { class: 'badge ' + c }, t)),
+          h('div', { class: 'ped-card-meta' }, r.grupoTxt, r.classe ? [' · ', col('classe').render(r)] : null),
+          h('div', { class: 'ped-card-nums' },
+            h('div', null, h('small', null, 'Estoque'), h('b', null, qtdTxt(r.qtd, r.it))),
+            h('div', null, h('small', null, 'Dura'), h('b', null, r.dias == null ? '—' : r.dias > 365 ? '+1 ano' : `${fmt.int(r.dias)} d`)),
+            h('div', null, h('small', null, 'Precisa'), col('sugerido').render(r))),
+          h('div', { class: 'ped-card-ped' }, campoQtd(r), h('div', { class: 'ped-card-val' }, h('small', null, r.preco ? `${fmt.brl(r.preco)} /${unid(r.it)}` : 'sem preço'), tot)),
+          h('div', { class: 'ped-card-obs' }, obs(r)));
+      };
+      const desenhar = () => {
+        const q = TS.norm(busca.value.trim());
+        const xs = q ? ord.filter((r) => TS.norm(r.produto + ' ' + r.cod).includes(q)) : ord;
+        box.replaceChildren(...xs.slice(0, quantos).map(cartao),
+          xs.length > quantos ? h('button', { type: 'button', class: 'btn ped-cards-mais', onclick: () => { quantos += 60; desenhar(); } }, `Mostrar mais (${fmt.int(xs.length - quantos)})`) : null,
+          !xs.length ? h('p', { class: 'muted' }, 'Nenhum produto aqui.') : null);
+      };
+      busca.addEventListener('input', TS.debounce(() => { state.pedBuscaMob = busca.value; quantos = 40; desenhar(); }, 250));
+      desenhar();
+      return h('div', null, busca, box);
+    }
+
     // observação de cada linha, conforme o pedido de agora (muda quando você põe, tira ou limpa)
     function obs(r) {
       if (r.obrig) return h('span', { class: 'warn-t', title: r.conta }, 'pedido obrigatório (não vai no carrinho)');
@@ -632,7 +679,7 @@
         pintarTotal();
         // redesenha: valor do pedido, sobra, abas, proporção e observações. Se saiu da aba, a linha some
         const sai = !FILTROS[filtro][1](r);
-        if (sai) { const tr = i.closest('tr'); if (tr) tr.classList.add('ped-sai'); }
+        if (sai) { const tr = i.closest('tr, .ped-card'); if (tr) tr.classList.add('ped-sai'); }
         clearTimeout(repintar.t);
         repintar.t = setTimeout(repintar, sai ? 260 : 0);
       };
@@ -648,6 +695,13 @@
       pintarB();
       const mult = multDe(r);
       const chip = mult ? h('span', { class: 'ped-mult', title: `No site só dá para pedir de ${fmt.n2(mult).replace(/,00$/, '')} em ${fmt.n2(mult).replace(/,00$/, '')}${r.c.max ? ` (máximo ${fmt.n2(r.c.max).replace(/,00$/, '')})` : ''}. A quantidade é arredondada para cima.` }, `×${fmt.n2(mult).replace(/,00$/, '')}`) : null;
+      if (MOBILE) {
+        // celular: − e ＋ grandes (de um passo do site), o número no meio
+        const menos = h('button', { type: 'button', class: 'ped-step', 'aria-label': 'Menos', onclick: () => definir(Math.max(0, Math.round((r.pedir - passo) * 1000) / 1000)) }, '−');
+        const mais = h('button', { type: 'button', class: 'ped-step', 'aria-label': 'Mais', onclick: () => definir(r.pedir > 0 ? Math.round((r.pedir + passo) * 1000) / 1000 : (r.sugerido || passo)) }, '＋');
+        i.setAttribute('inputmode', 'decimal');
+        return h('span', { class: 'ped-q-w ped-q-mob' }, menos, i, mais, h('small', null, unid(r.it)), chip);
+      }
       return h('span', { class: 'ped-q-w' }, i, h('small', null, unid(r.it)), chip, b);
     }
     const catInfo = p.catalogo
@@ -702,12 +756,13 @@
       ' — a franquia manda de qualquer forma. Eles ', h('b', null, 'não vão para o carrinho'), ' (pedir de novo duplicaria). Ficam na aba "🔒 Obrigatório"; as outras abas mostram só o que você compra. ',
       filtro !== 'obrig' ? h('button', { type: 'button', class: 'link-btn', onclick: () => { state.pedFiltro = 'obrig'; pintar(corpo, loja, M, e, p); } }, 'Ver o obrigatório') : null) : null;
     corpo.append(h('div', { class: 'mt' }, TS.cardWithTools('Produtos', sub,
-      h('div', { class: 'est-tools' }, tab.searchBox && (tab.searchBox.classList.add('est-busca'), tab.searchBox),
+      h('div', { class: 'est-tools ped-tools' }, !MOBILE && tab.searchBox && (tab.searchBox.classList.add('est-busca'), tab.searchBox),
         TS.seg(Object.entries(FILTROS).map(([k, [t]]) => [`${t} (${cont(k)})`, k]), filtro, (v) => { state.pedFiltro = v; pintar(corpo, loja, M, e, p); }), menuLimpar, btnCsv),
-      avisoObr, filtrosExtra, tab)));
+      avisoObr, MOBILE ? h('details', { class: 'ped-fx-mob', open: (fx.g || fx.s || fx.c || fx.m) ? true : null }, h('summary', null, `Filtros${[fx.g, fx.s, fx.c, fx.m].filter(Boolean).length ? ` (${[fx.g, fx.s, fx.c, fx.m].filter(Boolean).length})` : ''} · ${fmt.int(linhas.length)} produtos`), filtrosExtra) : filtrosExtra, MOBILE ? listaMobile() : tab)));
     if (editados.size) corpo.append(h('p', { class: 'muted' }, `${editados.size} quantidade(s) alterada(s) à mão. `, h('a', { href: '#', onclick: (x) => { x.preventDefault(); editados.clear(); pintar(corpo, loja, M, e, p); } }, 'Voltar à sugestão')));
 
-    corpo.append(h('div', { class: 'mt' }, cartaoRobo(corpo, loja, M, e, p, R)));
+    corpo.append(h('div', { class: 'mt ped-robo' }, cartaoRobo(corpo, loja, M, e, p, R)));
+    if (barra) { pintarBarra(); corpo.append(barra); corpo.classList.add('com-barra'); }
   }
 
   /** datas comemorativas da loja: nome e período (Dia das Mães: dias antes do 2º domingo de maio) */
