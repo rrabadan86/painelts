@@ -9,7 +9,7 @@
  *  - Vendas realizadas = caixa da loja (sem Espaço Gourmet, sem corporativo/omnichannel)
  *  - % = realizado acumulado no mês ÷ histórico acumulado até o mesmo dia
  *  - Recálculo da meta = meta acumulada até hoje − realizado acumulado (super meta = meta × 1,2)
- *  - TKM = vendas ÷ clientes; IPA = itens ÷ clientes; PMA = vendas ÷ itens
+ *  - TKM = vendas ÷ clientes; IPA = itens ÷ clientes; PMA = vendas ÷ itens (loja + corporativo + omnichannel)
  *  - Clientes: só o total do dia e o total do histórico (mesmo dia da semana do ano anterior).
  */
 const I = require('./indicadores');
@@ -45,7 +45,7 @@ const ehDelivery = (v) => /delivery|entrega/i.test(String(v.descricao || '')) ||
 
 /** números de um conjunto de linhas de venda de um dia (ou período) */
 function numeros(linhas) {
-  let loja = 0, corpOmni = 0, eg = 0, total = 0, itens = 0;
+  let loja = 0, corpOmni = 0, eg = 0, total = 0, itens = 0, itensCorp = 0;
   const cupons = { loja: new Set(), omni: new Set(), delivery: new Set(), eg: new Set() };
   const porVend = new Map();
   for (const v of linhas) {
@@ -55,9 +55,10 @@ function numeros(linhas) {
     if (ehTaxa(v)) { if (ehDelivery(v)) cupons.delivery.add(ch); continue; }
     total += x;
     if (v.grupoC === EG || v.cat === EG) { eg += x; cupons.eg.add(ch); continue; }
-    if (ehCorp(v.vendedor) || ehOmni(v.vendedor)) { corpOmni += x; cupons.omni.add(ch); continue; }
+    const item = /^CONSUM[IÍ]VEIS\b.*SEM CONTROLE/i.test(String(v.grupoC || v.grupo || '').trim()) ? 0 : v.qtd || 0; // consumíveis não contam como item
+    if (ehCorp(v.vendedor) || ehOmni(v.vendedor)) { corpOmni += x; itensCorp += item; cupons.omni.add(ch); continue; }
     loja += x;
-    if (!/^CONSUM[IÍ]VEIS\b.*SEM CONTROLE/i.test(String(v.grupoC || v.grupo || '').trim())) itens += v.qtd || 0; // consumíveis não contam como item
+    itens += item;
     if (ehDelivery(v)) cupons.delivery.add(ch);
     else cupons.loja.add(ch);
     if (!semVendedor(v.vendedor) && !/delivery|entrega/i.test(v.vendedor)) porVend.set(v.vendedor, (porVend.get(v.vendedor) || 0) + x);
@@ -66,9 +67,10 @@ function numeros(linhas) {
   const cliLoja = cupons.loja.size, cliOmni = cupons.omni.size, cliDel = cupons.delivery.size;
   const cliTotal = cliLoja + cliOmni + cliDel;
   return {
-    loja, corpOmni, eg, total, itens,
+    loja, corpOmni, eg, total, itens: itens + itensCorp,
     clientes: { total: cliTotal, omni: cliOmni, delivery: cliDel, loja: cliLoja, eg: cupons.eg.size },
-    tkm: cliTotal ? loja / cliTotal : null, ipa: cliTotal ? itens / cliTotal : null, pma: itens ? loja / itens : null,
+    // TKM, IPA e PMA com loja + corporativo + omnichannel (os clientes também contam os três)
+    tkm: cliTotal ? (loja + corpOmni) / cliTotal : null, ipa: cliTotal ? (itens + itensCorp) / cliTotal : null, pma: itens + itensCorp ? (loja + corpOmni) / (itens + itensCorp) : null,
     egTkm: cupons.eg.size ? eg / cupons.eg.size : null,
     vendedoras: [...porVend.entries()].sort((a, b) => b[1] - a[1]).map(([nome, vt]) => ({ nome, vt })),
   };
