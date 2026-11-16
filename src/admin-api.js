@@ -156,7 +156,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
       const env = lerEnv(l.id);
       let status = null;
       if (COL.ativo() && env) { try { status = await COL.status(l.id, true); } catch (e) { status = { erro: e.message }; } }
-      const fontes = Object.entries(C.ARQUIVOS).filter(([, d]) => d.tipo !== 'vendas').map(([nome, d]) => {
+      const fontes = Object.entries(C.ARQUIVOS).filter(([nome, d]) => d.tipo !== 'vendas' || (l.drive && l.drive[nome])).map(([nome, d]) => {
         const f = path.join(C.pastaLoja(l.id), `${nome}.xlsx`);
         let st = null; try { st = fs.statSync(f); } catch { /* não existe */ }
         return { nome, desc: d.desc, origem: st ? 'vps' : l.drive[nome] ? 'drive' : null, modificado: st ? st.mtime.toISOString() : null };
@@ -480,6 +480,16 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     limpa.sort((a, b) => (a.de < b.de ? -1 : 1));
     C.alterar((cfg) => { cfg.lojas.find((x) => x.id === req.loja.id).ferias = limpa; });
     aud(req, 'alterou férias', req.loja.id, { loja: req.loja.id, periodos: limpa.map((f) => `${f.vendedor} ${f.de}→${f.ate}`) });
+    depois();
+    res.json({ ok: true });
+  });
+
+  // ---------- desligar uma planilha que vinha do Google Drive (o robô do AppNext substituiu o script antigo) ----------
+  r.delete('/lojas/:id/drive/:nome', soAdmin, lojaPermitida, (req, res) => {
+    const nome = String(req.params.nome || '');
+    if (!Object.prototype.hasOwnProperty.call(C.ARQUIVOS, nome)) return res.status(400).json({ erro: 'Planilha desconhecida.' });
+    C.alterar((cfg) => { const l = cfg.lojas.find((x) => x.id === req.loja.id); if (l.drive) delete l.drive[nome]; });
+    aud(req, 'desligou planilha do Google Drive', req.loja.id, { loja: req.loja.id, planilha: nome });
     depois();
     res.json({ ok: true });
   });

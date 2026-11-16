@@ -626,7 +626,11 @@
     };
     if (cadastroRes.has(l.id)) mostrarCad(cadastroRes.get(l.id));
     const lista = h('ul', { class: 'cfg-fontes' }, l.fontes.map((f) => h('li', null, h('b', null, f.desc), ' — ',
-      f.origem === 'vps' ? `na VPS, ${dt(f.modificado)}` : f.origem === 'drive' ? 'no Google Drive' : h('span', { class: 'muted' }, 'não enviada'))));
+      f.origem === 'vps' ? `na VPS, ${dt(f.modificado)}` : f.origem === 'drive' ? 'no Google Drive' : h('span', { class: 'muted' }, 'não enviada'),
+      f.origem === 'drive' && est.perfil === 'admin' ? h('span', null, ' ', acao('Desligar o Google Drive', async () => {
+        if (!confirm(`Parar de ler "${f.desc}" do Google Drive? O que já foi importado continua no painel; as vendas passam a vir só do robô do AppNext.`)) return null;
+        await api('DELETE', `/lojas/${l.id}/drive/${encodeURIComponent(f.nome)}`); return 'Pronto: o painel não lê mais essa planilha do Google Drive.';
+      }, 'btn btn-sm')) : null)));
     return h('section', { class: 'cfg-bloco' }, h('h3', null, 'Enviar planilha'),
       h('p', { class: 'muted' }, 'Vendas: entram no histórico substituindo só os dias que a planilha cobre. Cadastro de clientes: junta com o que já existe. As outras substituem a anterior.'),
       h('div', { class: 'cfg-grid' }, campo('Tipo', tipo), campo('Arquivo (.xlsx ou .xls)', arq)), dica,
