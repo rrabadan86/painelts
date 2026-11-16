@@ -505,7 +505,9 @@
     const fx = l.fixe || {};
     const gmail = (l.fechEmail && l.fechEmail.email && l.fechEmail.email.user) || '';
     const b = h('section', { class: 'cfg-bloco' }, h('h3', null, 'Clientes e fidelidade pelo FIXE'),
-      h('p', { class: 'muted' }, 'Toda noite, na última atualização automática, o coletor entra no FIXE e pede duas exportações para o Gmail da loja: a "Base de leads" (cadastro) e os "Logs" (pontos, compras e resgates). O painel lê os e-mails (na caixa de entrada ou no spam), baixa as planilhas, junta com o cadastro e liga as compras do FIXE aos cupons. Nada precisa ser feito à mão.'));
+      h('p', { class: 'muted' }, 'O coletor entra no FIXE e pede duas exportações para o Gmail da loja: a "Base de leads" (cadastro) e os "Logs" (pontos, compras e resgates). O painel lê os e-mails (na caixa de entrada ou no spam), baixa as planilhas, junta com o cadastro e liga as compras do FIXE aos cupons. Nada precisa ser feito à mão.'),
+      h('div', { class: 'notice' }, h('b', null, 'Quando o FIXE é atualizado: '),
+        `uma vez por dia, só na última atualização automática da loja${l.horarios && l.horarios.hoje && l.horarios.hoje.length ? ` (hoje às ${l.horarios.hoje[l.horarios.hoje.length - 1]})` : ''} — a marcada com ★ nos horários (Dados e atualização). As outras atualizações do dia trazem só vendas, XML e estoque, porque o cadastro e os pontos do FIXE não precisam de mais de uma leitura por dia e cada pedido gera dois e-mails. Num dia sem atualização automática (ex.: loja fechada), o FIXE não é pedido. Fora desse horário, o administrador pode pedir na hora pelo botão "Importar agora" (as atualizações manuais de vendas não pedem o FIXE).`));
     { const f = sitFixe(l), g = sitLogs(l); if (f || g) b.append(h('div', { class: 'cfg-sit' }, f, g)); }
     const url = inp({ value: fx.url || (est.lojas || []).map((x) => x.fixe && x.fixe.url).find(Boolean) || '', placeholder: 'ex.: https://dash.epossible.com.br/loja/…/leads' });
     const usuario = inp({ value: fx.usuario || '', placeholder: 'ex.: e-mail de acesso ao FIXE', autocomplete: 'off' });
@@ -1035,7 +1037,7 @@
       }), h('div', { class: 'cfg-inline sem-atalhos' },
         h('button', { type: 'button', class: 'btn', onclick: () => { for (const d of ['2', '3', '4', '5', '6']) sem[d] = [...sem['1']]; pintarSem(); } }, 'Copiar segunda para terça a sábado'),
         h('button', { type: 'button', class: 'btn', onclick: () => { sem['0'] = []; pintarSem(); } }, 'Sem atualização no domingo')),
-      h('p', { class: 'muted', style: { margin: '6px 0 0' } }, '★ = última do dia: nela o robô pede as exportações do FIXE e o catálogo de pedidos, e depois sai o e-mail do fechamento.'));
+      h('p', { class: 'muted', style: { margin: '6px 0 0' } }, '★ = última do dia: só nela o robô pede as exportações do FIXE (uma vez por dia) e o catálogo de pedidos, e depois sai o e-mail do fechamento. As outras atualizações trazem vendas, XML e estoque.'));
     };
     pintarSem();
     return { el: corpo, valor: () => sem };
