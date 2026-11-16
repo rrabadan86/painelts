@@ -187,8 +187,14 @@
     ...body);
   // explicação do indicador: a que veio no código; se for curta (ex.: "Faturamento ÷ cupons"), a do dicionário, mais completa
   const dicaKpi = (label, title) => { const d = TS.dicaDe && TS.dicaDe(label); return title && (title.length >= 40 || !d) ? title : d || title; };
-  TS.kpi = (label, value, foot, title) => h('div', { class: 'card kpi' },
-    h('div', { class: 'kpi-label' }, label, TS.dica(dicaKpi(label, title))), h('div', { class: 'kpi-value' }, value), foot ? h('div', { class: 'kpi-foot' }, foot) : null);
+  // número grande (R$ 9.511.881,00; 3.870,220 kg) diminui a fonte para caber no cartão (pela largura do cartão e o tamanho do texto)
+  TS.kpi = (label, value, foot, title) => {
+    const v = h('div', { class: 'kpi-value' }, value);
+    const n = (v.textContent || '').length;
+    if (n > 9) v.style.setProperty('--n', n);
+    return h('div', { class: 'card kpi' },
+      h('div', { class: 'kpi-label' }, label, TS.dica(dicaKpi(label, title))), v, foot ? h('div', { class: 'kpi-foot' }, foot) : null);
+  };
   TS.deltaSpan = (v) => h('span', { class: v > 0 ? 'up' : v < 0 ? 'down' : '' }, fmt.delta(v));
   TS.section = (t) => h('div', { class: 'section-label' }, t);
   TS.empty = (t = 'Sem dados para os filtros escolhidos.') => h('div', { class: 'empty' }, t);

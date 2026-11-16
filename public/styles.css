@@ -1504,3 +1504,6 @@ tr.cp-enviada td { background: #EEF5EC !important; }
 .est-cl-sel:focus, .est-cl-sel:hover { max-width: 170px; }
 .est-cl-meses { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 4px 0 10px; }
 .est-cl-erro { display: block; }
+/* KPI: número longo encolhe para caber (container query pela largura do cartão) */
+.kpi { container-type: inline-size; min-width: 0; }
+.kpi-value[style*="--n"] { font-size: clamp(14px, calc((100cqi - 4px) / (var(--n) * 0.54)), 24px); }
