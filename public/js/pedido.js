@@ -390,7 +390,29 @@
     const necessidade = R.linhas.filter((r) => r.site === 'ok' || r.site === 'sem').reduce((s, r) => s + r.sugerido * (r.preco || 0), 0);
     const kTotal = h('div', { class: 'kpi-value' }, fmt.brl0(total()));
     const kTotalFoot = h('div', { class: 'kpi-foot' });
+    // composição do valor (com pedido obrigatório): obrigatório + carrinho (+ fora do catálogo) e o que sobra do limite
+    const compos = [];
+    const desenharCompo = (el) => {
+      if (!R.obTotal) { el.replaceChildren(); el.hidden = true; return; }
+      el.hidden = false;
+      const ob = R.obTotal;
+      const car = R.linhas.filter((r) => !r.obrig && r.pedir > 0 && r.site === 'ok').reduce((s2, r) => s2 + r.pedir * (r.preco || 0), 0);
+      const fora = R.linhas.filter((r) => !r.obrig && r.pedir > 0 && r.site !== 'ok').reduce((s2, r) => s2 + r.pedir * (r.preco || 0), 0);
+      const tot = ob + car + fora, lim = R.orcamento;
+      const base = Math.max(tot, lim || 0) || 1;
+      const seg = (v, cls, tit) => (v > 0 ? h('span', { class: 'ped-compo-s ' + cls, style: { width: `${(v / base) * 100}%` }, title: `${tit}: ${fmt.brl(v)}` }) : null);
+      el.replaceChildren(
+        h('div', { class: 'ped-compo-t' },
+          h('span', null, '🔒 Obrigatório ', h('b', null, fmt.brl0(ob))), h('span', { class: 'ped-compo-op' }, '+'),
+          h('span', null, '🛒 Carrinho ', h('b', { class: 'ped-compo-car' }, fmt.brl0(car))),
+          fora ? [h('span', { class: 'ped-compo-op' }, '+'), h('span', { title: 'Produtos no pedido que não estão disponíveis no catálogo do site: não vão para o carrinho' }, 'fora do site ', h('b', null, fmt.brl0(fora)))] : null,
+          h('span', { class: 'ped-compo-op' }, '='), h('span', { class: 'ped-compo-tot' }, 'Total ', h('b', null, fmt.brl0(tot))),
+          lim != null ? h('span', { class: 'muted' }, ` de ${fmt.brl0(lim)} · ${tot <= lim ? `sobram ${fmt.brl0(lim - tot)}` : `passa ${fmt.brl0(tot - lim)}`}`) : null),
+        h('div', { class: 'ped-compo-bar' }, seg(ob, 'ob', 'Obrigatório'), seg(car, 'car', 'Carrinho'), seg(fora, 'fora', 'Fora do site'), lim != null && tot < lim ? seg(lim - tot, 'sobra', 'Sobra') : null));
+    };
+    R.novoCompo = () => { const el = h('div', { class: 'ped-compo' }); compos.push(el); desenharCompo(el); return el; };
     const pintarTotal = () => {
+      compos.forEach(desenharCompo);
       const t = total(), n = R.linhas.filter((r) => r.pedir > 0).length;
       kTotal.textContent = fmt.brl0(t);
       const nOb = R.linhas.filter((r) => r.obrig).length;
@@ -421,6 +443,7 @@
         `Vendas previstas: ritmo dos últimos ${R.N} dias × ${fmt.int(ate)} dias até começar + ${R.ev.nome} do ano passado × ${fmt.n2(R.cresc)}. Se o pedido sugerido passar muito disso, há estoque sobrando ou produtos de giro alto; confira as quantidades.`));
     }
     corpo.append(h('div', { class: 'grid g-kpi mt' }, kpis));
+    if (R.obTotal) corpo.append(h('div', { class: 'card mt ped-compo-card' }, h('div', { class: 'card-title' }, 'Composição do pedido'), R.novoCompo()));
     corpo.append(h('div', { class: 'mt' }, cartaoObrigatorio(corpo, loja, M, e, p, R)));
     if (modo === 'evento' && R.evInfo.atual[0] - R.hoje > R.ent + R.N) corpo.append(h('div', { class: 'notice mt' }, `Faltam ${fmt.int(R.evInfo.atual[0] - R.hoje)} dias para o ${R.ev.nome}: isto é uma prévia. O consumo normal até lá foi limitado a ${R.ent + R.N} dias (entrega + intervalo de pedidos), porque as reposições normais cobrem o resto. Refaça perto da data, com o estoque de então.`));
     if (modo === 'evento' && R.evInfo.atual[0] - R.hoje < R.ent) corpo.append(h('div', { class: 'notice warn mt' }, `A entrega leva ${R.ent} dias e o ${R.ev.nome} começa antes disso: o pedido pode chegar atrasado.`));
@@ -852,7 +875,7 @@
         const ob = R.linhas.filter((r) => r.obrig);
         if (!ob.length) return null;
         const v = ob.reduce((s2, r) => s2 + r.pedir * (r.preco || 0), 0);
-        return h('div', { class: 'ped-obr-aviso' }, h('b', null, `🛒 Vão para o carrinho só os ${fmt.int(n0)} produtos que você compra.`), ` O pedido obrigatório (${fmt.int(ob.length)} produtos, ${fmt.brl0(v)}) não vai: a franquia já manda e pedir de novo duplicaria. Produto que está no obrigatório e também aparece no seu pedido vai só com a quantidade a mais.`);
+        return h('div', { class: 'ped-obr-aviso' }, h('b', null, `🛒 Vão para o carrinho só os ${fmt.int(n0)} produtos que você compra.`), ` O pedido obrigatório (${fmt.int(ob.length)} produtos, ${fmt.brl0(v)}) não vai: a franquia já manda e pedir de novo duplicaria. Produto que está no obrigatório e também aparece no seu pedido vai só com a quantidade a mais.`, R.novoCompo ? R.novoCompo() : null);
       })(),
       h('div', { class: 'cfg-acoes' }, btnCarrinho), msg, statusBox,
       h('div', { class: 'ped-andamento' }, ativo ? null : resultadoCarrinho(p.carrinho)));
@@ -886,8 +909,13 @@
         prob ? ` ${prob} com problema: no quadro do favorito, no site, cada um tem "Tentar de novo".` : '', ' Confira e finalize no site. ',
         site ? h('a', { href: site, target: '_blank', rel: 'noopener' }, 'Abrir o Sistema de Pedidos ↗') : null)
       : h('div', { class: 'notice warn' }, `O carrinho parou em ${c.itens.length} de ${c.total} produtos (a aba do site foi fechada ou o link venceu). Clique em "Montar carrinho no site" de novo para refazer.`);
-    return h('div', { class: 'mt' },
-      h('div', { class: 'f-label' }, `Último carrinho: ${new Date(c.inicio).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}${c.por ? ` · por ${c.por}` : ''}`),
+    const quando = new Date(c.inicio).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+    // registro do carrinho anterior: fechado, para não parecer que vai junto com o pedido de agora
+    const recente = Date.now() - Date.parse(c.inicio) < 2 * 3600e3; // acabou de montar: fica aberto para conferir
+    return h('details', { class: 'ped-ult mt', open: recente || null },
+      h('summary', null, h('b', null, '🕘 Histórico: carrinho montado em ' + quando), c.por ? ` por ${c.por}` : '', ` · ${ok} de ${c.total || c.itens.length} produtos`,
+        h('small', { class: 'muted' }, ' — registro do que já foi feito: não entra no pedido de agora')),
+      h('p', { class: 'muted ped-ult-nota' }, 'É só o registro da última vez que o favorito montou o carrinho no site. O pedido de agora é o da tabela acima: ao clicar em "Montar carrinho no site", o favorito coloca esses produtos (se o carrinho do site ainda tiver itens antigos, confira lá antes de finalizar).'),
       c.erro ? h('div', { class: 'notice err' }, c.erro) : null,
       c.modo === 'navegador' ? fimTxt : null,
       TS.table({
