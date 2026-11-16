@@ -281,6 +281,9 @@
    * cols: [{key, label, fmt, align:'l'|'r', cls:(row)=>string, sticky, title}]
    * rows: objetos; total: objeto opcional; sort: {key, dir}
    */
+  /** tela de celular (até 760 px): algumas telas mudam o jeito de mostrar; o computador não muda */
+  TS.ehCelular = () => window.matchMedia('(max-width: 760px)').matches;
+
   TS.table = function ({ cols, rows, total, sortKey, sortDir = 'desc', maxHeight, pageSize, search, searchKeys, searchInit, onSearch, onRowClick, rowClass, empty, cls, imprimir, produto }) {
     // produto: colunas com o nome do produto — o filtro "Produto contém" da lateral também vale nesta tabela
     const fProd = produto && TS.state.f.produto ? TS.norm(TS.state.f.produto) : '';
@@ -292,8 +295,12 @@
     const chaveBusca = search ? search + '|' + (searchKeys || []).join(',') : null;
     if (chaveBusca && searchInit == null && mem.v[chaveBusca]) searchInit = mem.v[chaveBusca];
     let sk = sortKey, sd = sortDir, page = 0, q = searchInit ? TS.norm(searchInit) : '';
-    const wrap = h('div');
-    const tbl = h('table', { class: 't' + (cls ? ' ' + cls : '') });
+    // celular: tabela com 5 colunas ou mais vira cartões (cada linha um cartão, "rótulo: valor"); só no celular
+    const MOB = TS.ehCelular() && cols.length >= 5;
+    if (MOB && !pageSize && rows.length > 60) pageSize = 40; // cartões são altos: em páginas
+    const rotulo = (c) => (typeof c.label === 'string' ? c.label : '');
+    const wrap = h('div', { class: MOB ? 'tab-mob-w' : null });
+    const tbl = h('table', { class: 't' + (cls ? ' ' + cls : '') + (MOB ? ' t-mob' : '') });
     const tw = h('div', { class: 'table-wrap' + (maxHeight === 'free' ? ' free' : '') }, tbl);
     if (maxHeight && maxHeight !== 'free') tw.style.maxHeight = maxHeight;
     const pager = h('div', { class: 'pager' });
@@ -338,7 +345,7 @@
           const v = row[c.key];
           const extra = c.cls ? c.cls(row) : '';
           const content = c.render ? c.render(row) : (c.fmt ? c.fmt(v, row) : (v ?? ''));
-          tr.append(h('td', { class: [c.align === 'l' ? 'l' : '', c.sticky ? 'sticky-col' : '', c.wrap ? 'wrap' : '', extra].join(' ') + sec(c) }, content));
+          tr.append(h('td', { class: [c.align === 'l' ? 'l' : '', c.sticky ? 'sticky-col' : '', c.wrap ? 'wrap' : '', extra].join(' ') + sec(c) + (MOB && c === cols[0] ? ' mob-tit' : ''), 'data-l': MOB ? rotulo(c) : null }, content));
         });
         tb.append(tr);
       }
@@ -348,7 +355,7 @@
         const tf = h('tfoot'), tr = h('tr');
         cols.forEach((c, j) => {
           const v = total[c.key];
-          tr.append(h('td', { class: [c.align === 'l' ? 'l' : '', c.sticky ? 'sticky-col' : ''].join(' ') + sec(c) }, j === 0 && v == null ? 'Total' : (v == null ? '' : (c.fmt ? c.fmt(v, total) : v))));
+          tr.append(h('td', { class: [c.align === 'l' ? 'l' : '', c.sticky ? 'sticky-col' : ''].join(' ') + sec(c) + (MOB && j === 0 ? ' mob-tit' : ''), 'data-l': MOB && v != null && j ? rotulo(c) : null }, j === 0 && v == null ? 'Total' : (v == null ? '' : (c.fmt ? c.fmt(v, total) : v))));
         });
         tf.append(tr); tbl.append(tf);
       }
@@ -372,7 +379,16 @@
     if (fProd) wrap.append(h('div', { class: 'tab-fprod' }, `Só produtos com “${TS.state.f.produto}” (filtro Produto contém, na lateral) · `, h('button', { type: 'button', class: 'link-btn', onclick: () => { TS.state.f.produto = ''; document.querySelectorAll('.sidebar input[type=search]').forEach((i) => { if (i.placeholder === 'Ex.: earl grey') i.value = ''; }); TS.render(); } }, 'tirar o filtro')));
     // a busca aparece em cima da tabela; quem quiser pôr em outro lugar (barra de ferramentas do cartão) só move o campo
     if (searchBox) { searchBox.classList.add('tab-busca'); wrap.prepend(searchBox); }
+    if (MOB) {
+      // sem cabeçalho clicável no celular: "Ordenar por" no lugar
+      const ordenaveis = cols.filter((c) => rotulo(c));
+      const sel = h('select', { class: 'f-input tab-ord', 'aria-label': 'Ordenar por', onchange: () => { sk = sel.value; const c = cols.find((x) => x.key === sk); sd = c && c.align === 'l' ? 'asc' : 'desc'; dir.textContent = sd === 'asc' ? '↑' : '↓'; page = 0; paint(); } },
+        ordenaveis.map((c) => h('option', { value: c.key, selected: c.key === sk || null }, 'Ordenar: ' + rotulo(c))));
+      const dir = h('button', { type: 'button', class: 'btn tab-ord-d', 'aria-label': 'Inverter a ordem', onclick: () => { sd = sd === 'asc' ? 'desc' : 'asc'; dir.textContent = sd === 'asc' ? '↑' : '↓'; paint(); } }, sd === 'asc' ? '↑' : '↓');
+      wrap.append(h('div', { class: 'tab-ord-w' }, sel, dir));
+    }
     wrap.append(tw, pager);
+    if (MOB) tw.style.maxHeight = ''; // no celular a página rola, não a tabela
     wrap.searchBox = searchBox;
     return wrap;
   };

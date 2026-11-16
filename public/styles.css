@@ -1667,3 +1667,44 @@ td.site-dif { color: #B5452B; font-weight: 600; }
 .ped-barra .btn { padding: 12px 14px; }
 .com-barra { padding-bottom: 80px; }
 body.com-camada .ped-barra { display: none; }
+/* ---------- celular: tabelas largas viram cartões (só até 760 px; o computador não muda) ---------- */
+@media (max-width: 760px) {
+  .table-wrap:has(> .t-mob) { overflow: visible; max-height: none !important; border: 0; background: transparent; box-shadow: none; }
+  .t.t-mob { display: block; width: 100%; min-width: 0 !important; border: 0; }
+  .t.t-mob thead { display: none; }
+  .t.t-mob tbody, .t.t-mob tfoot { display: block; }
+  .t.t-mob tr { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; padding: 10px 12px; margin: 0 0 10px; border: 1px solid var(--line, #E2DCCF); border-radius: 12px; background: #fff; }
+  .t.t-mob tbody tr:nth-child(even) { background: #fff; }
+  .t.t-mob td { display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-start; gap: 1px; padding: 0 !important; border: 0 !important; text-align: left !important; white-space: normal !important; min-width: 0; position: static !important; background: transparent !important; font-size: 14px; overflow-wrap: anywhere; }
+  .t.t-mob td::before { content: attr(data-l); font-size: 11px; font-weight: 500; color: var(--muted, #7a7a7a); text-transform: none; letter-spacing: 0; }
+  .t.t-mob td:not([data-l])::before, .t.t-mob td[data-l=""]::before { content: none; }
+  .t.t-mob td.mob-tit { grid-column: 1 / -1; font-size: 15px; font-weight: 600; padding-bottom: 6px !important; border-bottom: 1px solid #F0EBE0 !important; }
+  .t.t-mob td.mob-tit::before { content: none; }
+  .t.t-mob td[data-l=""], .t.t-mob td:not([data-l]):not(.mob-tit) { grid-column: 1 / -1; }
+  .t.t-mob td:empty { display: none; }
+  .t.t-mob td[colspan] { grid-column: 1 / -1; }
+  .t.t-mob tfoot tr { background: #F4F0E6; font-weight: 700; }
+  .t.t-mob td .est-tam, .t.t-mob td small { white-space: normal; }
+  .tab-ord-w { display: flex; gap: 8px; margin: 0 0 10px; }
+  .tab-ord { flex: 1; font-size: 14px; }
+  .tab-ord-d { min-width: 44px; font-size: 18px; }
+  .tab-busca { max-width: none; width: 100%; font-size: 16px; }
+  .pager { flex-wrap: wrap; gap: 8px; }
+  .pager button { min-height: 40px; min-width: 44px; }
+  /* geral: toque confortável e nada estreito */
+  .btn, .seg button { min-height: 40px; }
+  input.f-input, select.f-input { font-size: 16px; } /* sem zoom automático no iPhone */
+  .card { padding: 14px; }
+  .page-title { font-size: 22px; }
+  .card-sub { font-size: 12px; }
+  .seg { overflow-x: auto; flex-wrap: nowrap; max-width: 100%; -webkit-overflow-scrolling: touch; }
+  .seg button { flex: none; white-space: nowrap; }
+  .est-tools, .site-topo { flex-wrap: wrap; gap: 8px; }
+  .est-tools .est-busca { flex: 1 1 100%; max-width: none; }
+  .prc-drawer, .prc-drawer.prc-drawer-largo { width: 100vw !important; max-width: 100vw; border-radius: 0; }
+  .fech-modal, .card-cheio { max-width: 100vw; }
+}
+@media (max-width: 760px) {
+  /* tabelas de grade (mapa de calor, horários, escala): rolam para o lado dentro do cartão */
+  table.mapa-t, table.op-horas, table.escala-t, table.sem-t { display: block; max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+}

@@ -635,7 +635,7 @@
     const tipo = h('select', { class: 'f-input' },
       h('option', { value: 'vendas' }, 'Vendas (relatório do AppNext)'),
       (est.perfil === 'admin' || est.perfil === 'franqueado') ? h('option', { value: 'historico' }, 'Histórico de vendas do sistema antigo (antes do AppNext)') : null, h('option', { value: 'Xml' }, 'Cupons com CPF (Xml)'),
-      h('option', { value: 'Dados_Clientes' }, 'Cadastro de clientes (modelo do painel ou FIXE)'), h('option', { value: 'Meta' }, 'Meta (planilha antiga)'),
+      h('option', { value: 'Dados_Clientes' }, 'Cadastro de clientes (modelo do painel ou FIXE)'), h('option', { value: 'FIXE_Logs' }, 'Logs do FIXE (pontos, compras e resgates)'), h('option', { value: 'Meta' }, 'Meta (planilha antiga)'),
       h('option', { value: 'Estoque' }, 'Estoque atual e custos (AppNext → Estoque → Estoque Atual → Excel)'),
       (est.perfil === 'admin' || est.perfil === 'franqueado') ? h('option', { value: 'Produtos' }, 'Preço de tabela (AppNext → Produtos ou Produtos Compostos → Excel)') : null);
     const arq = h('input', { type: 'file', accept: '.xlsx,.xls', class: 'f-input' });
@@ -643,6 +643,8 @@
     const pintaDica = () => {
       dica.textContent = tipo.value === 'Dados_Clientes'
         ? 'Pode enviar o modelo do painel (CPF, NOME, CELULAR, DATA NASC., EMAIL, CIDADE), a exportação de contatos do FIXE ou a exportação de Logs do FIXE (pontos e compras), do jeito que sai do sistema. O painel reconhece sozinho, junta com o cadastro que já existe (CPF novo entra, CPF conhecido é atualizado, campo vazio não apaga) e ignora o que não usa (Data Cadastro, Loja, Saldo, Estado).'
+        : tipo.value === 'FIXE_Logs'
+          ? 'No FIXE: Logs → exportar (a planilha com compras, pontos e resgates de cada cliente). Envie do jeito que baixar. O coletor também pede essa exportação na última atualização do dia e o painel lê do e-mail; o envio manual serve para uma carga fora de hora.'
         : tipo.value === 'historico'
           ? 'A planilha de vendas antiga (a "importacaoB" que o Power BI usava). Entram só os dias ANTERIORES à primeira venda que o painel já tem: nada do que já está no painel é apagado ou trocado, e o período em que o AppNext começou continua com os dados do AppNext. Pode enviar de novo sem medo de duplicar.'
         : tipo.value === 'Estoque'
@@ -666,16 +668,19 @@
         h('button', { type: 'button', class: 'link-btn', onclick: () => { cadastroRes.delete(l.id); resultado.replaceChildren(); } }, 'Fechar')));
     };
     if (cadastroRes.has(l.id)) mostrarCad(cadastroRes.get(l.id));
+    const lg = l.fixe && l.fixe.logs;
     const lista = h('ul', { class: 'cfg-fontes' }, l.fontes.map((f) => h('li', null, h('b', null, f.desc), ' — ',
       f.origem === 'vps' ? `na VPS, ${dt(f.modificado)}` : h('span', { class: 'muted' }, 'não enviada'),
-      null)));
+      null)),
+      h('li', null, h('b', null, 'Logs do FIXE (pontos e compras)'), ' — ', lg && lg.em ? `importados em ${dt(lg.em)}${lg.movimentos ? ` · ${fmt.int(lg.movimentos)} movimentos` : ''}` : h('span', { class: 'muted' }, 'ainda não importados')));
     return h('section', { class: 'cfg-bloco' }, h('h3', null, 'Enviar planilha'),
       h('p', { class: 'muted' }, 'Vendas: entram no histórico substituindo só os dias que a planilha cobre. Cadastro de clientes: junta com o que já existe. As outras substituem a anterior.'),
       h('div', { class: 'cfg-grid' }, campo('Tipo', tipo), campo('Arquivo (.xlsx ou .xls)', arq)), dica,
       h('div', { class: 'cfg-acoes' }, acao('Enviar', async () => {
         const f = arq.files[0];
         if (!f) throw new Error('Escolha o arquivo.');
-        const r = await api('POST', `/lojas/${l.id}/upload/${tipo.value}`, f, { 'X-Arquivo': encodeURIComponent(f.name) });
+        // Logs do FIXE vão pelo mesmo envio do cadastro: o painel reconhece pela planilha
+        const r = await api('POST', `/lojas/${l.id}/upload/${tipo.value === 'FIXE_Logs' ? 'Dados_Clientes' : tipo.value}`, f, { 'X-Arquivo': encodeURIComponent(f.name) });
         arq.value = '';
         setTimeout(() => TS.recarregar && TS.recarregar(true), 4000);
         if (r && r.estoque) {
