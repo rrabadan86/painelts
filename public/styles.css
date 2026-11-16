@@ -1718,3 +1718,11 @@ body.com-camada .ped-barra { display: none; }
   .link-btn { padding: 6px 2px; }
   .ped-menu > summary { min-height: 40px; display: inline-flex; align-items: center; }
 }
+@media (max-width: 760px) {
+  /* nada pode alargar a página: as abas (seg) rolam dentro do próprio espaço */
+  .card-head, .table-tools, .est-tools, .site-topo, .page-head { flex-wrap: wrap; min-width: 0; max-width: 100%; }
+  .card-head > *, .table-tools > *, .est-tools > *, .page-head > * { min-width: 0; max-width: 100%; }
+  .seg { min-width: 0; max-width: 100%; }
+  .card, .content, .layout { min-width: 0; max-width: 100%; }
+  .content { overflow-x: clip; }
+}
