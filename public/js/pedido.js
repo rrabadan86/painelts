@@ -47,7 +47,7 @@
   }
 
   /** o cálculo: tudo que a tela mostra */
-  function calcular(M, estoque, ecfg, catalogo, pcfg, modo, ev, editados) {
+  function calcular(M, estoque, ecfg, catalogo, pcfg, modo, ev, editados, ccfg) {
     const db = TS.db, I = TS.rules.ids;
     const fim = db.maxDay, hoje = fim + 1;
     const N = pcfg.dias, ent = ecfg.entregaDias;
@@ -104,7 +104,7 @@
           if (k === 0) gm[grupoLinha(i, c)] += vt || 0.001; else gm.insumo += 0.001;
         }
       });
-      // giro e margem bruta dos últimos 90 dias (classe: estrela, volume, joia, peso morto)
+      // vendas com custo dos últimos 90 dias (para saber se o chá ainda vende)
       if (loja && d >= d90 && cs.length) {
         const cu = M.custo(i);
         if (cu != null) { const k = cs[0][0].cod; const b = bruto.get(k) || bruto.set(k, { vt: 0, custo: 0, giro: 0, kg: cs[0][0].un === 'Kg' }).get(k); b.vt += vt; b.custo += cu; b.giro += cs[0][1]; }
@@ -144,15 +144,10 @@
       return Math.round(x * 1000) / 1000;
     };
 
-    // mesma regra da matriz do Estoque e margem: giro × margem bruta comparados com a mediana
-    // (chá a granel entre chás, em kg; acessórios e envasados entre si, em unidades)
-    const med = (xs) => { const s = [...xs].sort((a, b) => a - b); return s.length ? s[Math.floor(s.length / 2)] : 0; };
-    const classe = new Map();
-    for (const kg of [true, false]) {
-      const xs = [...bruto.entries()].filter(([, b]) => b.kg === kg && b.vt > 0);
-      const mq = med(xs.map(([, b]) => b.giro)), mm = med(xs.map(([, b]) => (b.vt - b.custo) / b.vt));
-      for (const [k, b] of xs) { const m = (b.vt - b.custo) / b.vt; classe.set(k, b.giro >= mq ? (m >= mm ? 'estrela' : 'volume') : (m >= mm ? 'joia' : 'peso')); }
-    }
+    // classe oficial (a mesma do Estoque e margem): mediana do giro mensal nos últimos 3, 6 ou 12 meses fechados × margem,
+    // independente do filtro de período; classes travadas à mão valem acima da conta
+    const CO = TS.classeOficial(M, ccfg);
+    const classe = { get: (cod) => { const x = CO.get(String(cod)); return x ? x.classe : undefined; }, fixa: (cod) => { const x = CO.get(String(cod)); return !!(x && x.fixa); } };
     const linhas = [];
     for (const it of estoque.itens) {
       const vel = (cons.get(it.cod) || 0) / 30;
@@ -170,7 +165,7 @@
       } else {
         // chá a granel que vendeu nos últimos 90 dias e está abaixo do piso: entra sempre, na frente
         const cl = classe.get(it.cod);
-        const ehCha = it.un === 'Kg' && (grupoDe(it.cod) || 'cha') === 'cha' && (prev > 0 || !!cl);
+        const ehCha = it.un === 'Kg' && (grupoDe(it.cod) || 'cha') === 'cha' && (prev > 0 || bruto.has(it.cod));
         prior = ehCha && qtd < PISO ? 2 : ehCha && cl === 'estrela' && qtd < PISO_ESTRELA ? 1 : 0;
         if (!(prev > 0) && !(it.min && qtd < it.min) && !prior) continue;
         precisa = Math.max(prev * H - qtd, (it.min || 0) - qtd, prior ? 1e-6 : 0);
@@ -189,7 +184,7 @@
       const site = !catalogo ? 'sem' : !c ? 'fora' : !c.disp ? 'indisp' : 'ok';
       const unidadeEstranha = c && c.disp && it.custo > 0 && (c.preco / it.custo > 4 || c.preco / it.custo < 0.25);
       linhas.push({ cod: it.cod, produto: it.desc, it, c, grupo: g, grupoTxt: GRUPOS[g], qtd, prev, dias, urgente, precisa, sugerido, conta, preco, lucroDia, site, unidadeEstranha,
-        classe: classe.get(it.cod) || null, prior,
+        classe: classe.get(it.cod) || null, classeFixa: classe.fixa(it.cod), prior,
         margem: vendaItem.get(it.cod) ? (contrib.get(it.cod) || 0) / vendaItem.get(it.cod) : null, pedir: 0, motivo: '' });
     }
 
@@ -206,7 +201,7 @@
         const g = grupoDe(cod) || (doEst ? (doEst.un === 'Kg' ? 'cha' : doEst.tipo === 'PN' ? 'acess' : 'insumo') : 'outros');
         linhas.push({ cod, produto: doEst ? doEst.desc : c.nome, it, c, grupo: g, grupoTxt: GRUPOS[g], qtd: Math.max(0, it.qtd || 0), prev: 0, dias: null, urgente: false, precisa: 0, sugerido: 0,
           conta: doEst ? 'Pela previsão não precisa de reposição agora. Peça à mão se quiser.' : 'Não está no estoque do AppNext (bem de consumo da operação ou produto novo). Peça à mão se precisar.',
-          preco: c.disp ? c.preco : null, lucroDia: (contrib.get(cod) || 0) / 30, site: c.disp ? 'ok' : 'indisp', unidadeEstranha: false, classe: classe.get(cod) || null, margem: null,
+          preco: c.disp ? c.preco : null, lucroDia: (contrib.get(cod) || 0) / 30, site: c.disp ? 'ok' : 'indisp', unidadeEstranha: false, classe: classe.get(cod) || null, classeFixa: classe.fixa(cod), margem: null,
           pedir: 0, motivo: '', extra: true, semEstoque: !doEst });
       }
     }
@@ -262,7 +257,7 @@
       r.sugeridoPedir = r.pedir;
       if (editados && editados.has(String(r.cod)) && (r.site === 'ok' || r.site === 'sem')) r.pedir = editados.get(String(r.cod));
     }
-    return { linhas, vendasN, cmvReal, cmvVt, cmvCusto, cmvMeses: [...meses].sort(), pct, orcamento, share, shareVendas, propManual: manual, fatG, crescLoja, cresc, evInfo, ev, evLyVt, temAnoPassado, N, ent, hoje };
+    return { linhas, vendasN, cmvReal, cmvVt, cmvCusto, cmvMeses: [...meses].sort(), pct, orcamento, share, shareVendas, propManual: manual, classeMeses: CO.meses, fatG, crescLoja, cresc, evInfo, ev, evLyVt, temAnoPassado, N, ent, hoje };
   }
 
   // ---------- tela ----------
@@ -295,7 +290,7 @@
     const chave = `${loja}|${modo}|${ev ? ev.id : ''}`;
     const editados = qtdPorLoja.get(chave) || qtdPorLoja.set(chave, new Map()).get(chave);
     // Rpronto: redesenho depois de pôr/tirar um produto (não refaz a conta; as quantidades já estão nas linhas)
-    const R = Rpronto || calcular(M, e.estoque, e.cfg, p.catalogo, par, modo, ev, editados);
+    const R = Rpronto || calcular(M, e.estoque, e.cfg, p.catalogo, par, modo, ev, editados, e.classe);
 
     // ---------- controles ----------
     const num = (v, attrs) => h('input', { class: 'f-input', type: 'number', value: v ?? '', style: { maxWidth: '96px' }, ...attrs });
@@ -413,7 +408,8 @@
           li('Arredondamento:', 'chá a granel só em quilo inteiro (1 kg, 2 kg…); os outros no múltiplo do site, sempre para cima, respeitando mínimo e máximo do site.'),
           li('Embalagens e insumos', '(saco kraft, etiquetas) entram primeiro, fora da proporção.'),
           li('Divisão do valor:', R.propManual ? 'o resto vai para cada grupo pela proporção que você definiu; grupo com 0% fica fora (dá para pôr à mão).' : 'o resto vai para chás a granel, envasados e acessórios na mesma proporção das vendas do período.', ` Cada grupo pode passar ${fmt.int(par.folgaPct ?? 10)}% da sua parte (folga).`),
-          li('Ordem dentro de cada grupo:', '1º chás a granel com estoque abaixo de 500 g (entram sempre, mesmo que a previsão não peça); 2º chás Estrela abaixo de 700 g; 3º o que acaba antes da entrega; depois quem deixa mais lucro sem fixos por dia. Produto que não cabe inteiro entra com parte da necessidade.'),
+          li('Ordem dentro de cada grupo:', '1º chás a granel com estoque abaixo de 500 g (entram sempre, mesmo que a previsão não peça, desde que tenham vendido nos últimos 90 dias); 2º chás Estrela abaixo de 700 g; 3º o que acaba antes da entrega; depois quem deixa mais lucro sem fixos por dia. Produto que não cabe inteiro entra com parte da necessidade.'),
+          li('Classe (Estrela, Volume, Joia, Peso morto):', `é a classe oficial, a mesma do Estoque e margem. Usa a mediana do que o produto vendeu por mês nos últimos ${R.classeMeses} meses fechados, então um mês de promoção pesa pouco, e a margem bruta do período. Não muda com o filtro de período. A janela (3, 6 ou 12 meses) e as classes travadas à mão (🔒) ficam em Estoque e margem → Produtos por lucro.`),
           li('Sobra:', 'o que sobrar do valor vai para quem ainda precisa, na mesma ordem. Use "Limpar ▾ → Completar com a sobra" depois de mexer à mão.'),
           li('Fica de fora:', 'indisponível no site, fora do catálogo FRANQUIAS e o resto do catálogo (o que não precisa agora e os bens de consumo): esses você pede à mão.')));
     }
@@ -497,8 +493,8 @@
       cols: [
         { key: 'produto', label: 'Produto', align: 'l', sticky: true, wrap: true, render: (r) => h('span', null, r.produto, r.prior ? h('span', { class: 'ped-prio', title: r.prior === 2 ? 'Prioridade: estoque abaixo de 500 g' : 'Prioridade: Estrela com estoque abaixo de 700 g' }, r.prior === 2 ? '< 500 g' : 'Estrela < 700 g') : null, h('small', { class: 'est-tam' }, `cód. ${r.cod}`)) },
         { key: 'grupoTxt', label: 'Grupo', align: 'l' },
-        { key: 'classe', label: 'Classe', align: 'l', title: 'Giro × margem bruta dos últimos 90 dias, comparados com a mediana (mesma regra do Estoque e margem). Estrela: vende muito e tem margem boa. Volume: vende muito, margem menor. Joia: margem boa, vende pouco. Peso morto: vende pouco e margem baixa',
-          render: (r) => (r.classe ? h('span', { class: 'ped-cl ped-cl-' + r.classe }, CLASSES[r.classe]) : h('span', { class: 'muted' }, '—')), sortVal: (r) => ({ estrela: 4, volume: 3, joia: 2, peso: 1 })[r.classe] || 0 },
+        { key: 'classe', label: 'Classe', align: 'l', title: `Classe oficial: o que sai por mês (a mediana dos últimos ${R.classeMeses} meses fechados, então um mês de promoção pesa pouco) × margem bruta, comparados com a mediana dos outros produtos. Não muda com o filtro de período. 🔒 = travada à mão no Estoque e margem. Estrela: vende muito e tem margem boa. Volume: vende muito, margem menor. Joia: margem boa, vende pouco. Peso morto: vende pouco e margem baixa`,
+          render: (r) => (r.classe ? h('span', { class: 'ped-cl ped-cl-' + r.classe, title: r.classeFixa ? 'Travada à mão no Estoque e margem' : null }, (r.classeFixa ? '🔒 ' : '') + CLASSES[r.classe]) : h('span', { class: 'muted' }, '—')), sortVal: (r) => ({ estrela: 4, volume: 3, joia: 2, peso: 1 })[r.classe] || 0 },
         { key: 'sit', label: 'Situação', align: 'l', render: (r) => { const [t, c] = SITU(r); return h('span', { class: 'badge ' + c }, t); }, sortVal: (r) => (r.qtd <= 0 ? 3 : r.urgente ? 2 : 1) },
         { key: 'qtd', label: 'Estoque', render: (r) => qtdTxt(r.qtd, r.it) },
         { key: 'dias', label: 'Dura', fmt: (v) => (v == null ? '—' : v > 365 ? '+1 ano' : `${fmt.int(v)} dias`) },

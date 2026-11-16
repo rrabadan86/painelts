@@ -256,7 +256,7 @@ const ESd = require('./src/estoque'), PEDd = require('./src/pedido');
 const lojaDemo = (req) => DEMO.lojasDemo().find((l) => l.id === String(req.query.loja || ''));
 app.get('/api/demo/estoque', (req, res) => {
   if (!lojaDemo(req)) return res.status(400).json({ erro: 'Escolha uma loja.' });
-  try { const e = DEMO.estoqueDemo(req.query.loja); res.json({ estoque: e.estoque, cfg: ESd.cfg({ estoqueCfg: e.estoqueCfg }), historico: e.historico, compras: e.compras }); } catch (e) { res.status(500).json({ erro: e.message }); }
+  try { const e = DEMO.estoqueDemo(req.query.loja); res.json({ estoque: e.estoque, cfg: ESd.cfg({ estoqueCfg: e.estoqueCfg }), classe: ESd.classeCfg({}), historico: e.historico, compras: e.compras }); } catch (e) { res.status(500).json({ erro: e.message }); }
 });
 app.get('/api/demo/pedido', (req, res) => {
   if (!lojaDemo(req)) return res.status(400).json({ erro: 'Escolha uma loja.' });
@@ -582,7 +582,23 @@ app.get('/api/estoque', (req, res) => {
   if (!podeTela(req, 'estoque', 'pedido', 'dre')) return res.status(403).json({ erro: 'Sem permissão.' });
   const loja = req.lojas.find((l) => l.id === String(req.query.loja || ''));
   if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
-  res.json({ estoque: ES.atual(loja.id), cfg: ES.cfg(C.get().lojas.find((l) => l.id === loja.id)), historico: ES.historico(loja.id), compras: ES.compras(loja.id) });
+  const lc = C.get().lojas.find((l) => l.id === loja.id);
+  res.json({ estoque: ES.atual(loja.id), cfg: ES.cfg(lc), classe: ES.classeCfg(lc), historico: ES.historico(loja.id), compras: ES.compras(loja.id) });
+});
+// classe oficial (Estrela, Volume…): janela de 3, 6 ou 12 meses e classes travadas à mão (admin e franqueado)
+app.put('/api/estoque/classe', express.json({ limit: '5kb' }), (req, res) => {
+  if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
+  if (!podeContabilidade(req)) return res.status(403).json({ erro: 'Sem permissão.' });
+  const loja = req.lojas.find((l) => l.id === String(req.query.loja || ''));
+  if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  const b = req.body || {};
+  const lc = C.get().lojas.find((l) => l.id === loja.id);
+  const v = ES.alterarClasse(lc && lc.classeCfg, b, req.user);
+  if (v.erro) return res.status(400).json({ erro: v.erro });
+  C.alterar((cfg) => { cfg.lojas.find((l) => l.id === loja.id).classeCfg = v.ok; });
+  C.auditar(req.user, b.cod != null ? (b.classe ? 'travou a classe de um produto' : 'destravou a classe de um produto') : 'mudou a janela da classe oficial', loja.id,
+    b.cod != null ? { loja: loja.id, produto: String(b.nome || b.cod).slice(0, 80), cod: String(b.cod), classe: b.classe || 'automática' } : { loja: loja.id, meses: v.ok.meses });
+  res.json({ ok: true, classe: v.ok });
 });
 app.put('/api/estoque/cfg', express.json({ limit: '20kb' }), (req, res) => {
   if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });

@@ -252,4 +252,32 @@ function validarCfg(b) {
   return { ok: out };
 }
 
-module.exports = { ler, atual, historico, compras, importar, pendentes, processar, cfg, validarCfg, quantidade, PADRAO };
+// classe oficial dos produtos (Estrela, Volume, Joia, Peso morto): janela de meses e classes travadas à mão
+const CLASSES = ['estrela', 'volume', 'joia', 'peso'];
+function classeCfg(loja) {
+  const c = (loja && loja.classeCfg) || {};
+  const fixas = {};
+  for (const [cod, x] of Object.entries(c.fixas || {})) if (x && CLASSES.includes(x.classe)) fixas[cod] = { classe: x.classe, por: x.por || '', em: x.em || '' };
+  return { meses: [3, 6, 12].includes(c.meses) ? c.meses : 6, fixas };
+}
+/** muda a janela ({meses}) ou trava/destrava um produto ({cod, classe|null}); devolve a config nova */
+function alterarClasse(atual, b, quem) {
+  const c = classeCfg({ classeCfg: atual });
+  if (b.meses != null) {
+    if (![3, 6, 12].includes(+b.meses)) return { erro: 'Escolha 3, 6 ou 12 meses.' };
+    c.meses = +b.meses;
+  }
+  if (b.cod != null) {
+    const cod = String(b.cod).trim().slice(0, 30);
+    if (!cod) return { erro: 'Produto inválido.' };
+    if (b.classe == null || b.classe === '') delete c.fixas[cod];
+    else if (!CLASSES.includes(b.classe)) return { erro: 'Classe inválida.' };
+    else {
+      if (Object.keys(c.fixas).length >= 500 && !c.fixas[cod]) return { erro: 'No máximo 500 produtos travados.' };
+      c.fixas[cod] = { classe: b.classe, por: String(quem || ''), em: new Date().toISOString() };
+    }
+  }
+  return { ok: c };
+}
+
+module.exports = { ler, atual, historico, compras, importar, pendentes, processar, cfg, validarCfg, quantidade, PADRAO, classeCfg, alterarClasse };

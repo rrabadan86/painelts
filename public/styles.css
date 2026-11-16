@@ -1498,3 +1498,9 @@ tr.cp-enviada td { background: #EEF5EC !important; }
 .ped-como { margin-top: 12px; border-top: 1px solid var(--line, #e5e0d5); padding-top: 8px; font-size: 13px; }
 .ped-como summary { cursor: pointer; font-weight: 600; color: var(--green, #2d5a3d); }
 .ped-como ol { margin: 8px 0 0 18px; padding: 0; display: grid; gap: 4px; line-height: 1.45; }
+/* classe oficial no Estoque e margem */
+.est-cl-of { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.est-cl-sel { font-size: 12px; padding: 1px 2px; border: 1px solid var(--line, #ddd6c8); border-radius: 6px; background: transparent; max-width: 26px; cursor: pointer; color: var(--muted, #777); }
+.est-cl-sel:focus, .est-cl-sel:hover { max-width: 170px; }
+.est-cl-meses { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 4px 0 10px; }
+.est-cl-erro { display: block; }

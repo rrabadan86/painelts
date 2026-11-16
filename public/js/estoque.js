@@ -12,7 +12,7 @@
     const r = await fetch(TS.api(`estoque?loja=${encodeURIComponent(loja)}`), { credentials: 'same-origin' });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.erro || 'Falha ao ler o estoque.');
-    const x = { at: Date.now(), estoque: j.estoque, cfg: j.cfg, historico: j.historico || {}, compras: j.compras || null };
+    const x = { at: Date.now(), estoque: j.estoque, cfg: j.cfg, classe: j.classe || { meses: 6, fixas: {} }, historico: j.historico || {}, compras: j.compras || null };
     cache.set(loja, x);
     return x;
   }
@@ -189,6 +189,61 @@
   }
 
   TS.estoqueBuscar = buscar;
+
+  /** Classe oficial de cada produto (Estrela, Volume, Joia, Peso morto), fixa e separada do filtro de período.
+   *  Últimos 3, 6 ou 12 meses fechados (só loja). Giro = a MEDIANA do que saiu por mês (um mês de promoção pesa pouco);
+   *  margem bruta = (venda − custo) ÷ venda no período todo. Chá a granel (kg) só se compara com chá; o resto entre si.
+   *  Classes travadas à mão valem acima da conta. Devolve Map(cod → { classe, auto, fixa, giro, margem }). */
+  const memoCl = { k: null, v: null };
+  TS.classeOficial = function (M, ccfg) {
+    const db = TS.db, I = TS.rules.ids;
+    const meses = [3, 6, 12].includes(ccfg && ccfg.meses) ? ccfg.meses : 6;
+    const fixas = (ccfg && ccfg.fixas) || {};
+    const chave = [db.n, db.maxDay, meses, JSON.stringify(fixas)].join('|');
+    if (memoCl.k === chave && memoCl.M === M) return memoCl.v;
+    const ymAtual = TS.dayToIso(db.maxDay).slice(0, 7);
+    const lista = [];
+    { let d = new Date(ymAtual + '-01T12:00:00Z'); for (let k = 0; k < meses; k++) { d = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - 1, 1)); lista.push(d.toISOString().slice(0, 7)); } }
+    const idx = new Map(lista.map((ym, k) => [ym, k]));
+    const prods = new Map();
+    for (let i = 0; i < db.n; i++) {
+      const k = idx.get(db.ym[i]);
+      if (k == null || I.eg.has(db.cat[i]) || M.taxa(i)) continue;
+      const cu = M.custo(i);
+      if (cu == null) continue;
+      const c = M.casar(i);
+      if (!c || !c.it) continue;
+      const cod = String(c.it.cod);
+      const p = prods.get(cod) || prods.set(cod, { kg: !!c.kg, vt: 0, custo: 0, mes: new Array(meses).fill(0) }).get(cod);
+      const q = db.qtd[i] || 0;
+      p.mes[k] += c.kg ? (q * c.g) / 1000 : q;
+      p.vt += db.vt[i] || 0; p.custo += cu;
+    }
+    const mediana = (xs) => { const s = [...xs].sort((a, b) => a - b); const n = s.length; return !n ? 0 : n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2; };
+    const out = new Map();
+    for (const kg of [true, false]) {
+      const xs = [...prods.entries()].filter(([, p]) => p.kg === kg && p.vt > 0).map(([cod, p]) => ({ cod, giro: mediana(p.mes), margem: (p.vt - p.custo) / p.vt }));
+      const mq = mediana(xs.map((x) => x.giro)), mm = mediana(xs.map((x) => x.margem));
+      for (const x of xs) {
+        const alto = x.giro > 0 && x.giro >= mq, boa = x.margem >= mm;
+        out.set(x.cod, { auto: alto ? (boa ? 'estrela' : 'volume') : (boa ? 'joia' : 'peso'), giro: x.giro, margem: x.margem, kg, medGiro: mq, medMargem: mm });
+      }
+    }
+    for (const [cod, x] of out) { const f = fixas[cod]; x.fixa = f ? f : null; x.classe = f ? f.classe : x.auto; }
+    for (const [cod, f] of Object.entries(fixas)) if (!out.has(cod)) out.set(cod, { auto: null, fixa: f, classe: f.classe, giro: 0, margem: null });
+    out.meses = meses; out.de = lista[lista.length - 1]; out.ate = lista[0];
+    memoCl.k = chave; memoCl.M = M; memoCl.v = out;
+    return out;
+  };
+  /** grava a janela ({meses}) ou trava/destrava a classe de um produto ({cod, nome, classe|null}) */
+  TS.salvarClasse = async function (loja, corpo) {
+    const r = await fetch(TS.api(`estoque/classe?loja=${encodeURIComponent(loja)}`), { method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-Painel': '1' }, body: JSON.stringify(corpo) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.erro || 'Não consegui salvar.');
+    const c = cache.get(loja);
+    if (c) c.classe = j.classe;
+    return j.classe;
+  };
   TS.custosLoja = async function () {
     if (!(TS.eu && TS.eu.pode && (TS.eu.pode.configurar || TS.eu.pode.custos)) || !state.loja || state.loja === 'todas') return null;
     const x = await buscar(state.loja);
@@ -286,7 +341,7 @@
     buscar(state.loja).then((x) => { if (corpo.isConnected) pintar(corpo, x); }).catch((e) => corpo.replaceChildren(h('div', { class: 'notice err' }, e.message)));
   };
 
-  function pintar(corpo, { estoque, cfg, historico }) {
+  function pintar(corpo, { estoque, cfg, historico, classe: ccfg }) {
     corpo.replaceChildren();
     if (!estoque || !estoque.itens || !estoque.itens.length) {
       corpo.append(h('div', { class: 'card' }, h('div', { class: 'card-title' }, 'Ainda não há estoque desta loja'),
@@ -333,7 +388,7 @@
       const cs = M.casar(i);
       const granel = cs.kg;
       const chave = granel ? 'kg:' + cs.it.cod : d;
-      const p = porProd.get(chave) || { produto: granel ? cs.it.desc : d, granel, qtd: 0, kg: 0, tam: new Map(), vt: 0, custo: 0, com: 0, roy: 0, imp: 0, maq: 0, out: 0, outros: OUTROS.map(() => 0), desc: 0, emb: 0 };
+      const p = porProd.get(chave) || { produto: granel ? cs.it.desc : d, cod: String(cs.it.cod), granel, qtd: 0, kg: 0, tam: new Map(), vt: 0, custo: 0, com: 0, roy: 0, imp: 0, maq: 0, out: 0, outros: OUTROS.map(() => 0), desc: 0, emb: 0 };
       p.desc += TS.descontos([i]); p.emb += M.custoEmbLinha(i);
       const q = db.qtd[i] || 0;
       p.qtd += q; p.vt += vt; p.custo += c;
@@ -770,6 +825,53 @@
       MED[gr] = { q: med(xs.map((p) => p.giro)), m: med(xs.map((p) => p.margem)) };
       for (const p of xs) p.classe = p.giro >= MED[gr].q ? (p.margem >= MED[gr].m ? 'estrela' : 'volume') : (p.margem >= MED[gr].m ? 'joia' : 'peso');
     }
+    // classe oficial (fixa, últimos 3/6/12 meses fechados) e a tendência: o que saiu por mês no período × a mediana mensal oficial
+    const CO = TS.classeOficial(M, ccfg);
+    let dMin = Infinity, dMax = -Infinity;
+    for (const i of base) { const d = db.day[i]; if (d < dMin) dMin = d; if (d > dMax) dMax = d; }
+    const diasPer = dMax >= dMin ? dMax - dMin + 1 : 0;
+    for (const p of prods) {
+      p.of = CO.get(p.cod) || null;
+      p.oficial = p.of ? p.of.classe : null;
+      p.porMes = diasPer ? (p.giro / diasPer) * 30 : null;
+      p.tend = p.of && p.of.giro > 0 && p.porMes != null ? p.porMes / p.of.giro - 1 : null;
+    }
+    const podeTravar = !!(TS.eu && TS.eu.pode && TS.eu.pode.configurar) && state.loja && state.loja !== 'todas';
+    const ORD_CL = { estrela: 4, volume: 3, joia: 2, peso: 1 };
+    const tagCl = (k, extra) => h('span', { class: 'est-tag', style: { '--cor': CLASSE[k][1] } }, (extra || '') + CLASSE[k][0]);
+    async function travar(p, valor, sel) {
+      sel.disabled = true;
+      try { await TS.salvarClasse(state.loja, { cod: p.cod, nome: p.produto, classe: valor || null }); TS.render(); }
+      catch (err) { sel.disabled = false; alertaLinha(sel, err.message); }
+    }
+    function alertaLinha(el, msg) { const m = h('small', { class: 'neg est-cl-erro' }, msg); el.after(m); setTimeout(() => m.remove(), 4000); }
+    function celOficial(p) {
+      if (!p.oficial) return h('span', { class: 'muted', title: `Sem venda com custo nos últimos ${CO.meses} meses fechados` }, '—');
+      const tag = tagCl(p.oficial, p.of.fixa ? '🔒 ' : '');
+      const dica = p.of.fixa
+        ? `Travada à mão por ${p.of.fixa.por || '—'}${p.of.fixa.em ? ' em ' + new Date(p.of.fixa.em).toLocaleDateString('pt-BR') : ''}. Pela conta seria ${p.of.auto ? CLASSE[p.of.auto][0] : '—'}.`
+        : `Pela conta: vende ${p.granel ? fmt.kg(p.of.giro) + ' kg' : fmt.n2(p.of.giro).replace(/,00$/, '') + ' un.'} por mês (mediana de ${CO.meses} meses; metade dos ${p.granel ? 'chás' : 'produtos'} vende mais de ${p.granel ? fmt.kg(p.of.medGiro) + ' kg' : fmt.n2(p.of.medGiro).replace(/,00$/, '') + ' un.'}) e margem de ${fmt.pct(p.of.margem)} (mediana ${fmt.pct(p.of.medMargem)}).`;
+      if (!podeTravar) return h('span', { title: dica }, tag);
+      const sel = h('select', { class: 'est-cl-sel', title: 'Travar a classe à mão (vale no Pedido também). "Automática" volta para a conta.' },
+        h('option', { value: '' }, `Automática${p.of.auto ? ' (' + CLASSE[p.of.auto][0] + ')' : ''}`),
+        ...Object.entries(CLASSE).map(([k, [n]]) => h('option', { value: k, selected: p.of.fixa && p.of.fixa.classe === k ? true : null }, '🔒 ' + n)));
+      sel.addEventListener('change', () => travar(p, sel.value, sel));
+      return h('span', { class: 'est-cl-of', title: dica }, tag, sel);
+    }
+    const celTend = (p) => {
+      if (p.tend == null) return h('span', { class: 'muted' }, '—');
+      const v = p.tend, txt = `${v >= 0 ? '+' : '−'}${fmt.int(Math.abs(v) * 100)}%`;
+      const cls = v >= 0.2 ? 'pos' : v <= -0.2 ? 'neg' : 'muted';
+      return h('span', { class: cls, title: `No período saiu o equivalente a ${p.granel ? fmt.kg(p.porMes) + ' kg' : fmt.n2(p.porMes).replace(/,00$/, '') + ' un.'} por mês, contra ${p.granel ? fmt.kg(p.of.giro) + ' kg' : fmt.n2(p.of.giro).replace(/,00$/, '') + ' un.'} por mês na classe oficial (mediana de ${CO.meses} meses).` }, `${v >= 0.2 ? '↑' : v <= -0.2 ? '↓' : '→'} ${txt}`);
+    };
+    const ctlMeses = h('div', { class: 'est-cl-meses' },
+      h('span', { class: 'f-label' }, 'Classe oficial:'),
+      podeTravar
+        ? TS.seg([['3 meses', '3'], ['6 meses', '6'], ['12 meses', '12']], String(CO.meses), async (v) => {
+          try { await TS.salvarClasse(state.loja, { meses: +v }); TS.render(); } catch (err) { alertaLinha(ctlMeses.lastChild, err.message); }
+        })
+        : h('b', null, `${CO.meses} meses`),
+      h('small', { class: 'muted' }, `meses fechados de ${CO.de.split('-').reverse().join('/')} a ${CO.ate.split('-').reverse().join('/')} · não muda com o filtro · vale para o Pedido`));
     const grSel = state.estGrupo === 'un' ? false : true;
     const prodsG = prods.filter((p) => p.granel === grSel);
     // curva ABC por lucro
@@ -799,8 +901,8 @@
     const ys = prodsG.map((p) => p.margem * 100), xs = prodsG.map((p) => Math.max(grSel ? 0.01 : 1, p.giro));
     const yMin = Math.min(...ys, mq.m * 100) - 1, yMax = Math.max(...ys, mq.m * 100) + 1, xMin = Math.min(...xs, mq.q), xMax = Math.max(...xs, mq.q);
     corpo.append(h('div', { class: 'mt' }, TS.cardWithTools('Giro × margem', grSel
-      ? `Cada ponto é um chá a granel, somando todos os tamanhos (50g, 100g, 250g…). Quanto mais à direita, mais kg vendidos no período; quanto mais alto, maior a margem. As linhas tracejadas dividem os chás ao meio: metade vendeu mais de ${fq(mq.q)} e metade tem margem acima de ${fmt.pct(mq.m, 0)}. Chá é comparado só com chá.`
-      : `Cada ponto é um acessório ou envasado. Quanto mais à direita, mais unidades vendidas no período; quanto mais alto, maior a margem. As linhas tracejadas dividem os produtos ao meio: metade vendeu mais de ${fq(mq.q)} e metade tem margem acima de ${fmt.pct(mq.m, 0)}.`,
+      ? `Cada ponto é um chá a granel, somando todos os tamanhos (50g, 100g, 250g…). Quanto mais à direita, mais kg vendidos no período; quanto mais alto, maior a margem. As linhas tracejadas dividem os chás ao meio: metade vendeu mais de ${fq(mq.q)} e metade tem margem acima de ${fmt.pct(mq.m, 0)}. Chá é comparado só com chá. Aqui a classe é a do período escolhido; a oficial (fixa, usada no Pedido) está na tabela abaixo.`
+      : `Cada ponto é um acessório ou envasado. Quanto mais à direita, mais unidades vendidas no período; quanto mais alto, maior a margem. As linhas tracejadas dividem os produtos ao meio: metade vendeu mais de ${fq(mq.q)} e metade tem margem acima de ${fmt.pct(mq.m, 0)}. Aqui a classe é a do período escolhido; a oficial (fixa, usada no Pedido) está na tabela abaixo.`,
       TS.seg([['Chás a granel', 'kg'], ['Acessórios e envasados', 'un']], grSel ? 'kg' : 'un', (v) => { state.estGrupo = v; TS.render(); }),
       legenda,
       sel ? h('div', { class: 'est-filtro' }, `Mostrando só ${CLASSE[sel][0]} no gráfico e na tabela abaixo. `, h('button', { type: 'button', class: 'link-btn', onclick: () => { state.estClasse = null; TS.render(); } }, 'Ver todos')) : null,
@@ -813,11 +915,13 @@
         options: { plugins: { legend: { display: false }, tooltip: { filter: (c) => !!c.raw.p, callbacks: { label: (c) => `${c.raw.p.produto}: ${fq(c.raw.p.giro)}${c.raw.p.tamanhos ? ' (' + c.raw.p.tamanhos + ')' : ''} · margem ${fmt.pct(c.raw.p.margem)} · lucro ${fmt.brl(c.raw.p.lucro)}` } } },
           scales: { x: { type: 'logarithmic', title: { display: true, text: `${grSel ? 'Kg vendidos' : 'Unidades vendidas'} no período` }, ticks: { callback: (v) => (Math.abs(Math.log10(v) - Math.round(Math.log10(v))) < 1e-9 ? (v < 1 ? String(v).replace('.', ',') : fmt.int(v)) : '') } }, y: { min: Math.floor(yMin), max: Math.ceil(yMax), title: { display: true, text: 'Margem (%)' }, ticks: { callback: (v) => v + '%' } } } },
       }, 'tall') : TS.empty())));
-    corpo.append(h('div', { class: 'mt' }, TS.card('Produtos por lucro', 'Curva ABC: A = produtos que fazem 80% do lucro (nunca podem faltar). Chá a granel aparece uma vez só, somando todas as gramaturas. O grupo (Estrela, Volume…) compara chá com chá e acessório com acessório.', TS.table({
+    corpo.append(h('div', { class: 'mt' }, TS.card('Produtos por lucro', 'Curva ABC: A = produtos que fazem 80% do lucro (nunca podem faltar). Chá a granel aparece uma vez só, somando todas as gramaturas. A classe (Estrela, Volume…) compara chá com chá e acessório com acessório: "No período" usa o filtro; "Oficial" é fixa e é a que o Pedido usa; "Tendência" mostra se o produto está saindo acima ou abaixo do normal.', ctlMeses, TS.table({
       cols: [
         { key: 'produto', label: 'Produto', align: 'l', sticky: true, wrap: true, render: (r) => (r.granel && r.porTam ? h('button', { type: 'button', class: 'est-prod-btn', title: 'Ver lucro e margem de cada tamanho de pacote', onclick: (e) => abrirTamanhos(e, r) }, h('span', { class: 'est-seta', 'aria-hidden': 'true' }, '▸'), h('span', null, h('span', { class: 'est-prod-nome' }, r.produto), h('small', { class: 'est-tam' }, r.tamanhos, h('span', { class: 'est-ver' }, ' · ver por pacote')))) : r.granel ? h('span', null, r.produto, h('small', { class: 'est-tam' }, r.tamanhos)) : r.produto) },
         { key: 'abc', label: 'ABC', title: 'Curva ABC pelo lucro: A = produtos que somam 80% do lucro do período; B = os próximos 15%; C = o resto', cls: (r) => (r.abc === 'A' ? 'hit' : '') },
-        { key: 'classe', label: 'Grupo', align: 'l', render: (r) => h('span', { class: 'est-tag', style: { '--cor': CLASSE[r.classe][1] } }, CLASSE[r.classe][0]), sortVal: (r) => r.classe },
+        { key: 'classe', label: 'No período', align: 'l', title: 'Classe só com as vendas do filtro de período (a do gráfico acima). Mostra o momento: uma promoção pode puxar um produto para cima aqui', render: (r) => tagCl(r.classe), sortVal: (r) => ORD_CL[r.classe] || 0 },
+        { key: 'oficial', label: 'Oficial', align: 'l', title: `Classe oficial: a mediana do que saiu por mês nos últimos ${CO.meses} meses fechados × a margem bruta. Um mês de promoção pesa pouco. Não muda com o filtro e é a que o Pedido usa. ${podeTravar ? 'Escolha uma classe para travar à mão (🔒); "Automática" volta para a conta.' : '🔒 = travada à mão.'}`, render: (r) => celOficial(r), sortVal: (r) => ORD_CL[r.oficial] || 0 },
+        { key: 'tend', label: 'Tendência', title: 'O que saiu por mês no período escolhido comparado com a mediana mensal da classe oficial. ↑ vendendo 20% ou mais acima do normal; ↓ 20% ou mais abaixo. Com períodos curtos (poucos dias) a conta oscila mais', render: (r) => celTend(r), sortVal: (r) => (r.tend == null ? -9 : r.tend) },
         { key: 'giro', label: 'Vendido', title: 'Quanto saiu no período. Chá a granel em kg, somando todos os tamanhos; os outros em unidades', render: (r) => (r.granel ? `${fmt.kg(r.giro)} kg` : `${fmt.int(r.giro)} un.`), sortVal: (r) => r.giro },
         { key: 'vt', label: 'Faturamento', title: 'Valor vendido no período (sem taxa de serviço)', fmt: fmt.brl },
         { key: 'custo', label: 'Custo', title: 'Custo do AppNext × quantidade vendida. No chá a granel: kg × custo do kg + saco kraft e etiquetas de cada pacote', fmt: fmt.brl },
