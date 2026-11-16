@@ -47,7 +47,7 @@
   }
 
   /** o cálculo: tudo que a tela mostra */
-  function calcular(M, estoque, ecfg, catalogo, pcfg, modo, ev, editados, ccfg) {
+  function calcular(M, estoque, ecfg, catalogo, pcfg, modo, ev, editados, ccfg, obrig) {
     const db = TS.db, I = TS.rules.ids;
     const fim = db.maxDay, hoje = fim + 1;
     const N = pcfg.dias, ent = ecfg.entregaDias;
@@ -148,11 +148,22 @@
     // independente do filtro de período; classes travadas à mão valem acima da conta
     const CO = TS.classeOficial(M, ccfg);
     const classe = { get: (cod) => { const x = CO.get(String(cod)); return x ? x.classe : undefined; }, fixa: (cod) => { const x = CO.get(String(cod)); return !!(x && x.fixa); } };
+    // ---------- pedido obrigatório (ativo): vem de qualquer forma — conta como estoque chegando e entra no valor ----------
+    const OB = new Map();
+    const obAtivos = ((obrig && obrig.lista) || []).filter((o) => o.ativo);
+    for (const o of obAtivos) for (const x of o.itens) {
+      const k = String(x.cod);
+      const a = OB.get(k) || OB.set(k, { cod: k, nome: x.nome, qtd: 0, preco: null, de: new Set() }).get(k);
+      a.qtd += x.qtd; if (x.preco != null) a.preco = x.preco; a.de.add(o.nome);
+    }
     const linhas = [];
     for (const it of estoque.itens) {
       const vel = (cons.get(it.cod) || 0) / 30;
       const prev = vel * (modo === 'evento' ? 1 : sazonal(it));
       const qtd = Math.max(0, it.qtd || 0);
+      const chega = OB.has(String(it.cod)) ? OB.get(String(it.cod)).qtd : 0; // vem no pedido obrigatório
+      const qtdEf = qtd + chega;
+      const txtChega = chega ? ` − ${qtdTxt(chega, it)} que vêm no pedido obrigatório` : '';
       let precisa, conta, prior = 0;
       if (modo === 'evento') {
         const ly = lyEv.get(it.cod) || 0;
@@ -160,16 +171,16 @@
         // consumo normal até começar: no máximo entrega + intervalo de pedidos (o resto as reposições normais cobrem)
         const ate = Math.min(Math.max(0, ev0 - hoje), ent + N);
         const noEvento = ly * cresc, antes = prev * ate;
-        precisa = noEvento + antes - qtd;
-        conta = `No ${ev.nome} do ano passado: ${qtdTxt(ly, it)} × crescimento ${fmt.n2(cresc)} = ${qtdTxt(noEvento, it)}. Consumo normal até lá (${fmt.int(ate)} dias × ${qtdTxt(prev, it)}/dia) = ${qtdTxt(antes, it)}. Menos o estoque de ${qtdTxt(qtd, it)}.`;
+        precisa = noEvento + antes - qtdEf;
+        conta = `No ${ev.nome} do ano passado: ${qtdTxt(ly, it)} × crescimento ${fmt.n2(cresc)} = ${qtdTxt(noEvento, it)}. Consumo normal até lá (${fmt.int(ate)} dias × ${qtdTxt(prev, it)}/dia) = ${qtdTxt(antes, it)}. Menos o estoque de ${qtdTxt(qtd, it)}${txtChega}.`;
       } else {
         // chá a granel que vendeu nos últimos 90 dias e está abaixo do piso: entra sempre, na frente
         const cl = classe.get(it.cod);
         const ehCha = it.un === 'Kg' && (grupoDe(it.cod) || 'cha') === 'cha' && (prev > 0 || bruto.has(it.cod));
-        prior = ehCha && qtd < PISO ? 2 : ehCha && cl === 'estrela' && qtd < PISO_ESTRELA ? 1 : 0;
-        if (!(prev > 0) && !(it.min && qtd < it.min) && !prior) continue;
-        precisa = Math.max(prev * H - qtd, (it.min || 0) - qtd, prior ? 1e-6 : 0);
-        conta = `Previsão ${qtdTxt(prev, it)}/dia × (${ent} dias de entrega + ${N} dias até o próximo pedido) = ${qtdTxt(prev * H, it)} − estoque ${qtdTxt(qtd, it)}${it.min && it.min - qtd > prev * H - qtd ? ` · o mínimo do AppNext pede ${qtdTxt(it.min - qtd, it)}` : ''}.`
+        prior = ehCha && qtdEf < PISO ? 2 : ehCha && cl === 'estrela' && qtdEf < PISO_ESTRELA ? 1 : 0;
+        if (!(prev > 0) && !(it.min && qtdEf < it.min) && !prior) continue;
+        precisa = Math.max(prev * H - qtdEf, (it.min || 0) - qtdEf, prior ? 1e-6 : 0);
+        conta = `Previsão ${qtdTxt(prev, it)}/dia × (${ent} dias de entrega + ${N} dias até o próximo pedido) = ${qtdTxt(prev * H, it)} − estoque ${qtdTxt(qtd, it)}${txtChega}${it.min && it.min - qtdEf > prev * H - qtdEf ? ` · o mínimo do AppNext pede ${qtdTxt(it.min - qtdEf, it)}` : ''}.`
           + (prior === 2 ? ' Prioridade: estoque abaixo de 500 g.' : prior === 1 ? ' Prioridade: Estrela com estoque abaixo de 700 g.' : '')
           + (it.un === 'Kg' ? ' Chá a granel só em quilo inteiro.' : '');
       }
@@ -183,7 +194,7 @@
       const sugerido = arred(precisa, c, it);
       const site = !catalogo ? 'sem' : !c ? 'fora' : !c.disp ? 'indisp' : 'ok';
       const unidadeEstranha = c && c.disp && it.custo > 0 && (c.preco / it.custo > 4 || c.preco / it.custo < 0.25);
-      linhas.push({ cod: it.cod, produto: it.desc, it, c, grupo: g, grupoTxt: GRUPOS[g], qtd, prev, dias, urgente, precisa, sugerido, conta, preco, lucroDia, site, unidadeEstranha,
+      linhas.push({ cod: it.cod, produto: it.desc, it, c, grupo: g, grupoTxt: GRUPOS[g], qtd, chega, prev, dias, urgente, precisa, sugerido, conta, preco, lucroDia, site, unidadeEstranha,
         classe: classe.get(it.cod) || null, classeFixa: classe.fixa(it.cod), prior,
         margem: vendaItem.get(it.cod) ? (contrib.get(it.cod) || 0) / vendaItem.get(it.cod) : null, pedir: 0, motivo: '' });
     }
@@ -206,6 +217,20 @@
       }
     }
 
+    // linhas do pedido obrigatório: travadas, entram no total e na proporção do grupo, mas não vão para o carrinho
+    const obG = { cha: 0, env: 0, acess: 0, insumo: 0, outros: 0 };
+    for (const x of OB.values()) {
+      const c = catPorCod.get(x.cod), doEst = M.porCod.get(x.cod);
+      const it = doEst || { cod: x.cod, desc: x.nome || (c && c.nome) || x.cod, un: 'Un', custo: null, qtd: 0 };
+      const g = grupoDe(x.cod) || (doEst ? (doEst.un === 'Kg' ? 'cha' : doEst.tipo === 'PN' ? 'acess' : 'insumo') : 'outros');
+      const preco = x.preco != null ? x.preco : c && c.disp ? c.preco : it.custo || null;
+      obG[g] += x.qtd * (preco || 0);
+      linhas.push({ cod: x.cod, produto: doEst ? doEst.desc : (c && c.nome) || x.nome || x.cod, it, c, grupo: g, grupoTxt: GRUPOS[g], qtd: Math.max(0, it.qtd || 0), prev: 0, dias: null, urgente: false, precisa: x.qtd, sugerido: x.qtd,
+        conta: `Vem no ${[...x.de].join(', ')}: a franquia manda de qualquer forma. Não vai para o carrinho.`, preco, lucroDia: (contrib.get(x.cod) || 0) / 30, site: 'obrig', obrig: true, unidadeEstranha: false,
+        classe: classe.get(x.cod) || null, classeFixa: classe.fixa(x.cod), margem: null, pedir: x.qtd, motivo: 'obrigatório' });
+    }
+    const obTotal = Object.values(obG).reduce((a, v) => a + v, 0);
+
     // ---------- distribuição do valor ----------
     const compraveis = linhas.filter((r) => !r.extra && (r.site === 'ok' || r.site === 'sem'));
     const prioridade = (a, b) => ((b.prior || 0) - (a.prior || 0)) || (b.urgente - a.urgente) || (b.lucroDia - a.lucroDia) || (b.prev * (b.preco || 0) - a.prev * (a.preco || 0));
@@ -220,12 +245,13 @@
       for (const r of compraveis) { r.pedir = r.sugerido; r.motivo = 'completo'; }
     } else {
       // embalagens e insumos acompanham os chás: entram primeiro, fora da proporção
-      let gasto = 0;
+      // o pedido obrigatório já ocupa parte do valor: embalagens/outros saem antes; chás, envasados e acessórios contam na parte do grupo
+      let gasto = obG.insumo + obG.outros;
       for (const r of compraveis.filter((x) => x.grupo === 'insumo')) { r.pedir = r.sugerido; r.motivo = 'completo'; gasto += custoDe(r, r.pedir); }
       const resto = Math.max(0, orcamento - gasto);
       const alvo = { cha: resto * share.cha, env: resto * share.env, acess: resto * share.acess };
       const folga = 1 + pcfg.folgaPct / 100;
-      const usado = { cha: 0, env: 0, acess: 0 };
+      const usado = { cha: obG.cha, env: obG.env, acess: obG.acess };
       const mult = (r) => passoDe(r.c, r.it);
       const encaixar = (r, cabe) => {
         const falta = r.sugerido - r.pedir;
@@ -257,7 +283,7 @@
       r.sugeridoPedir = r.pedir;
       if (editados && editados.has(String(r.cod)) && (r.site === 'ok' || r.site === 'sem')) r.pedir = editados.get(String(r.cod));
     }
-    return { linhas, vendasN, cmvReal, cmvVt, cmvCusto, cmvMeses: [...meses].sort(), pct, orcamento, share, shareVendas, propManual: manual, classeMeses: CO.meses, fatG, crescLoja, cresc, evInfo, ev, evLyVt, temAnoPassado, N, ent, hoje };
+    return { linhas, vendasN, cmvReal, cmvVt, cmvCusto, cmvMeses: [...meses].sort(), pct, orcamento, share, shareVendas, propManual: manual, classeMeses: CO.meses, obTotal, obG, obAtivos, fatG, crescLoja, cresc, evInfo, ev, evLyVt, temAnoPassado, N, ent, hoje };
   }
 
   // ---------- tela ----------
@@ -290,7 +316,7 @@
     const chave = `${loja}|${modo}|${ev ? ev.id : ''}`;
     const editados = qtdPorLoja.get(chave) || qtdPorLoja.set(chave, new Map()).get(chave);
     // Rpronto: redesenho depois de pôr/tirar um produto (não refaz a conta; as quantidades já estão nas linhas)
-    const R = Rpronto || calcular(M, e.estoque, e.cfg, p.catalogo, par, modo, ev, editados, e.classe);
+    const R = Rpronto || calcular(M, e.estoque, e.cfg, p.catalogo, par, modo, ev, editados, e.classe, p.obrigatorio);
 
     // ---------- controles ----------
     const num = (v, attrs) => h('input', { class: 'f-input', type: 'number', value: v ?? '', style: { maxWidth: '96px' }, ...attrs });
@@ -367,14 +393,14 @@
     const pintarTotal = () => {
       const t = total(), n = R.linhas.filter((r) => r.pedir > 0).length;
       kTotal.textContent = fmt.brl0(t);
-      kTotalFoot.replaceChildren(`${fmt.int(n)} ${n === 1 ? 'produto' : 'produtos'}`,
+      kTotalFoot.replaceChildren(`${fmt.int(n)} ${n === 1 ? 'produto' : 'produtos'}${R.obTotal ? ` · inclui ${fmt.brl0(R.obTotal)} do obrigatório` : ''}`,
         R.orcamento ? h('span', { class: t > R.orcamento * 1.02 ? 'down' : '' }, ` · ${fmt.pct(t / R.orcamento, 0)} do valor · ${t <= R.orcamento ? `sobram ${fmt.brl0(R.orcamento - t)}` : `passa ${fmt.brl0(t - R.orcamento)}`}`) : '');
       mix && pintarMix();
     };
     const kpis = [];
     if (modo === 'repor') {
       kpis.push(TS.kpi(`Vendas da loja · ${R.N} dias`, fmt.brl0(R.vendasN), `até ${fmt.date(TS.dayToIso(R.hoje - 1))} · sem Espaço Gourmet`));
-      kpis.push(TS.kpi('Limite do pedido', fmt.brl0(R.orcamento), `${fmt.pct(R.pct)} das vendas${par.cmvPct == null ? ' (CMV real)' : ` · CMV real ${fmt.pct(R.cmvReal)}`}`,
+      kpis.push(TS.kpi('Limite do pedido', fmt.brl0(R.orcamento), R.obTotal ? h('span', null, `obrigatório ${fmt.brl0(R.obTotal)} · `, h('b', null, `para pedir ${fmt.brl0(Math.max(0, R.orcamento - R.obTotal))}`)) : `${fmt.pct(R.pct)} das vendas${par.cmvPct == null ? ' (CMV real)' : ` · CMV real ${fmt.pct(R.cmvReal)}`}`,
         `CMV real = custo dos produtos vendidos ÷ faturamento, só loja, nos 3 últimos meses fechados: ${fmt.pct(R.cmvReal)}.`));
     } else {
       const [a0, a1] = R.evInfo.atual, [l0, l1] = R.evInfo.anterior;
@@ -394,6 +420,7 @@
         `Vendas previstas: ritmo dos últimos ${R.N} dias × ${fmt.int(ate)} dias até começar + ${R.ev.nome} do ano passado × ${fmt.n2(R.cresc)}. Se o pedido sugerido passar muito disso, há estoque sobrando ou produtos de giro alto; confira as quantidades.`));
     }
     corpo.append(h('div', { class: 'grid g-kpi mt' }, kpis));
+    corpo.append(h('div', { class: 'mt' }, cartaoObrigatorio(corpo, loja, M, e, p, R)));
     if (modo === 'evento' && R.evInfo.atual[0] - R.hoje > R.ent + R.N) corpo.append(h('div', { class: 'notice mt' }, `Faltam ${fmt.int(R.evInfo.atual[0] - R.hoje)} dias para o ${R.ev.nome}: isto é uma prévia. O consumo normal até lá foi limitado a ${R.ent + R.N} dias (entrega + intervalo de pedidos), porque as reposições normais cobrem o resto. Refaça perto da data, com o estoque de então.`));
     if (modo === 'evento' && R.evInfo.atual[0] - R.hoje < R.ent) corpo.append(h('div', { class: 'notice warn mt' }, `A entrega leva ${R.ent} dias e o ${R.ev.nome} começa antes disso: o pedido pode chegar atrasado.`));
 
@@ -407,6 +434,7 @@
           li('Quanto cada produto precisa:', `previsão de venda por dia (últimos 30 dias, ajustada pela época do ano) × (${R.ent} dias de entrega + ${R.N} dias até o próximo pedido) − o estoque. Se o mínimo do AppNext pedir mais, vale o mínimo.`),
           li('Arredondamento:', 'chá a granel só em quilo inteiro (1 kg, 2 kg…); os outros no múltiplo do site, sempre para cima, respeitando mínimo e máximo do site.'),
           li('Embalagens e insumos', '(saco kraft, etiquetas) entram primeiro, fora da proporção.'),
+          li('Pedido obrigatório:', 'o que a franquia manda de qualquer forma (cadastrado em "Pedido obrigatório") já ocupa o valor: sai do limite, conta na parte do grupo dele e as quantidades contam como estoque chegando, para não pedir de novo. Não vai para o carrinho.'),
           li('Divisão do valor:', R.propManual ? 'o resto vai para cada grupo pela proporção que você definiu; grupo com 0% fica fora (dá para pôr à mão).' : 'o resto vai para chás a granel, envasados e acessórios na mesma proporção das vendas do período.', ` Cada grupo pode passar ${fmt.int(par.folgaPct ?? 10)}% da sua parte (folga).`),
           li('Ordem dentro de cada grupo:', '1º chás a granel com estoque abaixo de 500 g (entram sempre, mesmo que a previsão não peça, desde que tenham vendido nos últimos 90 dias); 2º chás Estrela abaixo de 700 g; 3º o que acaba antes da entrega; depois quem deixa mais lucro sem fixos por dia. Produto que não cabe inteiro entra com parte da necessidade.'),
           li('Classe (Estrela, Volume, Joia, Peso morto):', `é a classe oficial, a mesma da Rentabilidade. Usa a mediana do que o produto vendeu por mês nos últimos ${R.classeMeses} meses fechados, então um mês de promoção pesa pouco, e a margem bruta do período. Não muda com o filtro de período. A janela (3, 6 ou 12 meses) muda aqui, acima da tabela ("Classe pelos últimos"), ou em Produtos → Rentabilidade → Produtos por lucro; as classes travadas à mão (🔒) ficam na Rentabilidade.`),
@@ -461,10 +489,11 @@
       indisp: ['Indisponível no site', (r) => !r.extra && r.site === 'indisp'],
       cat: ['Fora do catálogo', (r) => r.site === 'fora'],
       resto: ['Resto do catálogo', (r) => r.extra],
+      ...(R.obTotal ? { obrig: ['🔒 Obrigatório', (r) => r.obrig] } : {}),
       todos: ['Todos', () => true],
     };
-    const SITK = (r) => (r.extra ? (r.semEstoque ? 'semest' : 'semnec') : r.qtd <= 0 ? 'acabou' : r.urgente ? 'falta' : r.dias != null && r.dias < R.ent + R.N ? 'pedir' : 'ok');
-    const SITS = { acabou: ['Acabou', 'erro'], falta: ['Falta antes da entrega', 'erro'], pedir: ['Pedir', 'warn'], ok: ['OK', 'ok'], semnec: ['Não precisa agora', 'ok'], semest: ['Fora do estoque', 'muted'] };
+    const SITK = (r) => (r.obrig ? 'obrig' : r.extra ? (r.semEstoque ? 'semest' : 'semnec') : r.qtd <= 0 ? 'acabou' : r.urgente ? 'falta' : r.dias != null && r.dias < R.ent + R.N ? 'pedir' : 'ok');
+    const SITS = { acabou: ['Acabou', 'erro'], falta: ['Falta antes da entrega', 'erro'], pedir: ['Pedir', 'warn'], ok: ['OK', 'ok'], semnec: ['Não precisa agora', 'ok'], semest: ['Fora do estoque', 'muted'], obrig: ['🔒 Obrigatório', 'warn'] };
     const SITU = (r) => SITS[SITK(r)];
     // filtros extras (valem em qualquer aba): grupo, situação e classe
     const fx = state.pedFx || (state.pedFx = { g: '', s: '', c: '', m: '' });
@@ -523,6 +552,14 @@
     });
     // observação de cada linha, conforme o pedido de agora (muda quando você põe, tira ou limpa)
     function obs(r) {
+      if (r.obrig) return h('span', { class: 'warn-t', title: r.conta }, 'pedido obrigatório (não vai no carrinho)');
+      if (r.chega) {
+        const base = obsBase(r);
+        return h('span', null, base, h('small', { class: 'est-tam' }, `+ ${qtdTxt(r.chega, r.it)} no obrigatório`));
+      }
+      return obsBase(r);
+    }
+    function obsBase(r) {
       if (r.site === 'indisp') return h('span', { class: 'neg' }, 'indisponível no site (R$ 0,01)');
       if (r.site === 'fora') return h('span', { class: 'muted' }, 'não está no catálogo FRANQUIAS');
       if (editados.has(String(r.cod))) {
@@ -547,6 +584,7 @@
       window.scrollTo(0, y);
     }
     function campoQtd(r) {
+      if (r.obrig) return h('span', { class: 'ped-obr-q', title: 'Vem no pedido obrigatório da franquia: não muda aqui (edite em "Pedido obrigatório")' }, `🔒 ${qtdTxt(r.pedir, r.it)}`);
       if (r.site !== 'ok' && r.site !== 'sem') return '—';
       const passo = passoDe(r.c, r.it);
       const i = h('input', { class: 'f-input ped-q', type: 'number', min: 0, step: String(passo), value: r.pedir || 0 });
@@ -593,7 +631,7 @@
     const sub = modo === 'repor'
       ? `Compra só o que precisa para ${R.ent} dias de entrega + ${R.N} dias até o próximo pedido, com a época do ano. Urgentes primeiro; depois quem deixa mais lucro sem fixos por dia. ${catInfo}`
       : `O que vendeu no ${R.ev.nome} do ano passado × crescimento, + o consumo normal até lá − estoque. Sem limite de valor: ajuste as quantidades. ${catInfo}`;
-    const btnCsv = h('button', { type: 'button', class: 'btn', onclick: () => baixarCsv(R.linhas.filter((r) => r.pedir > 0), loja) }, '⬇ CSV');
+    const btnCsv = h('button', { type: 'button', class: 'btn', title: 'O pedido como está na tela (sem o pedido obrigatório, que a franquia já manda)', onclick: () => baixarCsv(R.linhas.filter((r) => r.pedir > 0 && !r.obrig), loja) }, '⬇ CSV');
     // Limpar: zera as quantidades do pedido (tudo ou um grupo); "Voltar à sugestão" desfaz
     const zerar = (g) => {
       for (const r of R.linhas) if ((r.site === 'ok' || r.site === 'sem') && (!g || r.grupo === g) && r.pedir > 0) { r.pedir = 0; if (r.sugeridoPedir === 0) editados.delete(String(r.cod)); else editados.set(String(r.cod), 0); }
@@ -776,7 +814,8 @@
       const itens = doPedido();
       if (!itens.length) { msg.className = 'neg'; msg.textContent = 'Nada no pedido.'; return; }
       const semCat = R.linhas.filter((r) => r.pedir > 0 && r.site === 'sem').length;
-      if (!confirm(`Vão para o carrinho ${itens.length} produtos, ${fmt.brl(itens.reduce((s, r) => s + r.pedir * (r.preco || 0), 0))} (o pedido como está agora na tela).${semCat ? `\n${semCat} sem catálogo ficam de fora.` : ''}\n\nContinuar?`)) return;
+      const nOb = R.linhas.filter((r) => r.obrig).length;
+      if (!confirm(`Vão para o carrinho ${itens.length} produtos, ${fmt.brl(itens.reduce((s, r) => s + r.pedir * (r.preco || 0), 0))} (o pedido como está agora na tela).${semCat ? `\n${semCat} sem catálogo ficam de fora.` : ''}${nOb ? `\nO pedido obrigatório (${nOb} produtos) não vai: a franquia já manda.` : ''}\n\nContinuar?`)) return;
       const aba = window.open('about:blank', '_blank');
       btnCarrinho.disabled = true; msg.className = 'muted'; msg.textContent = 'Preparando…';
       try {
@@ -873,6 +912,146 @@
       poll = setTimeout(tic, 3000);
     };
     poll = setTimeout(tic, 3000);
+  }
+
+  // ---------- pedido obrigatório da franquia ----------
+  async function salvarObrig(loja, corpoReq) {
+    const r = await fetch(TS.api(`pedido/obrigatorio?loja=${encodeURIComponent(loja)}`), { method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-Painel': '1' }, body: JSON.stringify(corpoReq) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.erro || 'Não consegui salvar.');
+    return j.obrigatorio;
+  }
+  const dataBR = (iso) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : '');
+  function cartaoObrigatorio(corpo, loja, M, e, p, R) {
+    const lista = (p.obrigatorio && p.obrigatorio.lista) || [];
+    const refazer = (ob) => { p.obrigatorio = ob; pintar(corpo, loja, M, e, p); };
+    const msg = h('span', { class: 'muted' });
+    const acao = (rot, fn, cls) => h('button', { type: 'button', class: cls || 'btn', onclick: async () => { try { msg.className = 'muted'; msg.textContent = ''; const ob = await fn(); if (ob) refazer(ob); } catch (err) { msg.className = 'neg'; msg.textContent = err.message; } } }, rot);
+    const valor = (o) => o.itens.reduce((s, x) => s + x.qtd * (x.preco ?? precoDe(p, M, x.cod) ?? 0), 0);
+    const linha = (o) => h('div', { class: 'ped-obr ' + (o.ativo ? 'on' : 'off') },
+      h('div', null, h('b', null, (o.ativo ? '🔒 ' : '') + o.nome),
+        h('div', { class: 'muted' }, `${fmt.int(o.itens.length)} produtos · ${fmt.brl0(valor(o))}${o.ate ? ` · vale até ${dataBR(o.ate)}` : ''}${o.encerrado ? ' · encerrado' : !o.ativo ? ' · venceu' : ''}${o.por ? ` · por ${o.por}` : ''}`)),
+      h('div', { class: 'ped-obr-ac' },
+        acao('Editar', async () => { editarObrig(loja, p, M, o, refazer); return null; }),
+        o.ativo ? acao('Já chegou · encerrar', () => (confirm(`Encerrar "${o.nome}"? Ele para de contar no pedido (o estoque do AppNext já terá a mercadoria).`) ? salvarObrig(loja, { id: o.id, encerrar: true }) : null))
+          : acao('Reabrir', () => salvarObrig(loja, { id: o.id, reabrir: true })),
+        acao('Apagar', () => (confirm(`Apagar "${o.nome}"?`) ? salvarObrig(loja, { id: o.id, apagar: true }) : null), 'btn ped-obr-del')));
+    const ativos = lista.filter((o) => o.ativo), antigos = lista.filter((o) => !o.ativo);
+    const sub = R.obTotal
+      ? `A franquia manda de qualquer forma: ${fmt.brl0(R.obTotal)} já ocupam o valor do pedido e as quantidades contam como estoque chegando. Esses itens não vão para o carrinho.`
+      : 'Quando a franquia avisar do pedido obrigatório, cadastre aqui: o valor sai do limite do pedido e as quantidades contam como estoque chegando, para não pedir duas vezes.';
+    return TS.cardWithTools('Pedido obrigatório', sub, h('button', { type: 'button', class: 'btn primary', onclick: () => editarObrig(loja, p, M, null, refazer) }, '＋ Pedido obrigatório'),
+      ...(ativos.length ? ativos.map(linha) : [h('p', { class: 'muted' }, 'Nenhum pedido obrigatório valendo agora.')]),
+      antigos.length ? h('details', { class: 'ped-obr-ant' }, h('summary', null, `Anteriores (${antigos.length})`), ...antigos.map(linha)) : null, msg);
+  }
+  /** preço de um produto: catálogo do Sistema de Pedidos (disponível) ou custo do AppNext */
+  function precoDe(p, M, cod) {
+    const c = ((p.catalogo && p.catalogo.itens) || []).find((x) => String(x.cod) === String(cod));
+    if (c && c.disp) return c.preco;
+    const it = M.porCod.get(String(cod));
+    return it && it.custo ? it.custo : null;
+  }
+  /** produtos conhecidos: catálogo + estoque, para a busca e para ler a mensagem colada */
+  function conhecidos(p, M) {
+    const m = new Map();
+    for (const c of (p.catalogo && p.catalogo.itens) || []) m.set(String(c.cod), { cod: String(c.cod), nome: c.nome, un: '' });
+    for (const it of M.porCod.values()) { const k = String(it.cod); const x = m.get(k) || { cod: k, nome: it.desc }; x.un = it.un; if (!x.nome) x.nome = it.desc; m.set(k, x); }
+    return m;
+  }
+  const normT = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+  /** lê a mensagem da franquia: em cada linha, o código (ou o nome) de um produto conhecido, a quantidade e, se houver, o valor */
+  function lerMensagem(txt, K) {
+    const achados = [], nao = [];
+    const nomes = [...K.values()].filter((x) => x.nome && x.nome.length >= 5).sort((a, b) => b.nome.length - a.nome.length);
+    for (const bruta of String(txt || '').split(/\r?\n/)) {
+      const l = bruta.trim();
+      if (!l || !/\d/.test(l)) continue;
+      // valor: "R$ 12,34" (ou o número com 2 casas depois de "valor"/"unit")
+      let preco = null;
+      const mp = l.match(/R\$\s*([\d.]+,\d{2})/i) || l.match(/(?:valor|unit[áa]rio|pre[çc]o)\D{0,10}([\d.]+,\d{2})/i);
+      if (mp) preco = +mp[1].replace(/\./g, '').replace(',', '.');
+      const semPreco = l.replace(/R\$\s*[\d.]+,\d{2}/gi, ' ');
+      // código: um número (ou 29114.CX) que exista no catálogo/estoque
+      const toks = semPreco.match(/\b\d+(?:\.[A-Za-z0-9]+)?\b/g) || [];
+      let item = null, codTok = null;
+      for (const t of toks) if (K.has(t)) { item = K.get(t); codTok = t; break; }
+      if (!item) { const n = normT(semPreco); item = nomes.find((x) => n.includes(normT(x.nome))) || null; }
+      if (!item) { nao.push(l); continue; }
+      // quantidade: número com unidade (un, und, kg, x, pç) ou "qtd 6"; senão o último número inteiro que não é o código
+      const resto = codTok ? semPreco.replace(codTok, ' ') : semPreco.replace(new RegExp(item.nome.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'), ' ');
+      let q = null;
+      const mq = resto.match(/(?:qtd|quant(?:idade)?)\D{0,6}(\d+(?:[.,]\d+)?)/i) || resto.match(/(\d+(?:[.,]\d+)?)\s*(?:un\b|und|unid|kg|pç|pc|pcs|x\b)/i) || resto.match(/\bx\s*(\d+(?:[.,]\d+)?)/i);
+      if (mq) q = +mq[1].replace(',', '.');
+      else { const ns = (resto.match(/\b\d+(?:,\d+)?\b/g) || []).map((x) => +x.replace(',', '.')).filter((x) => x > 0 && x < 10000); if (ns.length) q = ns[ns.length - 1]; }
+      if (!(q > 0)) { nao.push(l); continue; }
+      achados.push({ cod: item.cod, nome: item.nome, qtd: q, preco });
+    }
+    return { achados, nao };
+  }
+  function editarObrig(loja, p, M, o, refazer) {
+    document.querySelector('.camada-obr')?.remove();
+    const K = conhecidos(p, M);
+    const fechar = () => { camada.remove(); if (!document.querySelector('.camada-cheia')) document.body.classList.remove('com-camada'); document.removeEventListener('keydown', esc); };
+    const esc = (ev) => { if (ev.key === 'Escape') fechar(); };
+    const proxMes = (() => { const d = new Date(); d.setMonth(d.getMonth() + 1, 0); return d.toISOString().slice(0, 10); })();
+    const iNome = h('input', { class: 'f-input', value: o ? o.nome : `Pedido obrigatório de ${new Date().toLocaleDateString('pt-BR', { month: 'long' })}`, maxlength: 60 });
+    const iAte = h('input', { class: 'f-input', type: 'date', value: o ? o.ate || '' : proxMes });
+    const itens = (o ? o.itens : []).map((x) => ({ ...x }));
+    const dl = h('datalist', { id: 'ped-obr-dl' }, [...K.values()].slice(0, 4000).map((x) => h('option', { value: `${x.cod} — ${x.nome}` })));
+    const tbody = h('tbody');
+    const totalEl = h('b');
+    const resolver = (txt) => {
+      const t = String(txt || '').trim();
+      const cod = t.split(' — ')[0].trim();
+      if (K.has(cod)) return K.get(cod);
+      const n = normT(t);
+      const xs = [...K.values()].filter((x) => normT(x.nome).includes(n));
+      return xs.length === 1 ? xs[0] : null;
+    };
+    const desenhar = () => {
+      tbody.replaceChildren(...itens.map((x, k) => {
+        const iP = h('input', { class: 'f-input', list: 'ped-obr-dl', value: x.cod ? `${x.cod} — ${x.nome || (K.get(x.cod) || {}).nome || ''}` : '', placeholder: 'Código ou nome', onchange: (ev) => { const a = resolver(ev.target.value); if (a) { x.cod = a.cod; x.nome = a.nome; } else { x.cod = ''; } desenhar(); } });
+        const iQ = h('input', { class: 'f-input ped-obr-n', type: 'number', min: 0, step: 'any', value: x.qtd || '', onchange: (ev) => { x.qtd = +ev.target.value || 0; desenhar(); } });
+        const auto = x.cod ? precoDe(p, M, x.cod) : null;
+        const iV = h('input', { class: 'f-input ped-obr-n', type: 'number', min: 0, step: '0.01', value: x.preco ?? '', placeholder: auto != null ? fmt.n2(auto) : '—', title: 'Em branco = preço do catálogo (ou o custo do AppNext)', onchange: (ev) => { x.preco = ev.target.value === '' ? null : +ev.target.value; desenhar(); } });
+        const un = x.cod && K.get(x.cod) ? String(K.get(x.cod).un || '').toLowerCase() : '';
+        const v = (x.preco ?? auto ?? 0) * (x.qtd || 0);
+        return h('tr', null, h('td', { class: 'l' }, iP, x.cod ? null : h('small', { class: 'neg' }, x.nome ? ' não achei este produto' : '')),
+          h('td', null, iQ, un ? h('small', null, ' ' + un) : null), h('td', null, iV), h('td', null, fmt.brl(v)),
+          h('td', null, h('button', { type: 'button', class: 'icon-btn', title: 'Tirar', onclick: () => { itens.splice(k, 1); desenhar(); } }, '×')));
+      }));
+      totalEl.textContent = `${fmt.int(itens.filter((x) => x.cod && x.qtd > 0).length)} produtos · ${fmt.brl(itens.reduce((s, x) => s + (x.cod ? (x.preco ?? precoDe(p, M, x.cod) ?? 0) * (x.qtd || 0) : 0), 0))}`;
+    };
+    const cola = h('textarea', { class: 'f-input ped-obr-cola', rows: 5, placeholder: 'Cole aqui a mensagem da franquia (WhatsApp ou e-mail). Ex.:\n20511 Matcha Gracia Blend Green — 2 un — R$ 308,68\n65268 All In One Mug Berry 6 un' });
+    const resCola = h('div', { class: 'muted' });
+    const ler = h('button', { type: 'button', class: 'btn', onclick: () => {
+      const { achados, nao } = lerMensagem(cola.value, K);
+      for (const a of achados) { const j = itens.find((x) => x.cod === a.cod); if (j) { j.qtd = a.qtd; if (a.preco != null) j.preco = a.preco; } else itens.push(a); }
+      resCola.replaceChildren(`${fmt.int(achados.length)} produto(s) reconhecido(s).`, nao.length ? h('div', { class: 'neg' }, `Não reconheci ${nao.length} linha(s): `, h('small', null, nao.slice(0, 5).join(' · ') + (nao.length > 5 ? ' …' : '')), ' — inclua à mão.') : '');
+      desenhar();
+    } }, 'Ler a mensagem');
+    const erro = h('span', { class: 'neg' });
+    const salvar = h('button', { type: 'button', class: 'btn primary', onclick: async () => {
+      erro.textContent = '';
+      const ok = itens.filter((x) => x.cod && x.qtd > 0);
+      if (!ok.length) { erro.textContent = 'Coloque pelo menos um produto com quantidade.'; return; }
+      salvar.disabled = true;
+      try { const ob = await salvarObrig(loja, { id: o ? o.id : undefined, nome: iNome.value, ate: iAte.value, itens: ok }); fechar(); refazer(ob); }
+      catch (err) { salvar.disabled = false; erro.textContent = err.message; }
+    } }, 'Salvar');
+    desenhar();
+    const caixa = h('div', { class: 'card card-cheio fech-modal ped-obr-ed' },
+      h('button', { type: 'button', class: 'icon-btn exp-fechar', title: 'Fechar (Esc)', 'aria-label': 'Fechar', onclick: fechar }, '✕'),
+      h('div', { class: 'fech-modal-topo' }, h('b', null, o ? 'Editar pedido obrigatório' : 'Novo pedido obrigatório')),
+      h('div', { class: 'ped-obr-cab' }, h('label', null, h('span', { class: 'f-label' }, 'Nome'), iNome), h('label', null, h('span', { class: 'f-label' }, 'Vale até'), iAte,
+        h('small', { class: 'muted' }, 'Depois desta data (ou de "Já chegou") ele para de contar no pedido.'))),
+      h('div', { class: 'f-label mt' }, 'Colar a mensagem da franquia (opcional)'), cola, h('div', { class: 'ped-obr-lin' }, ler, resCola),
+      h('div', { class: 'f-label mt' }, 'Produtos'), dl,
+      h('div', { class: 'table-wrap' }, h('table', { class: 't ped-obr-t' }, h('thead', null, h('tr', null, h('th', { class: 'l' }, 'Produto'), h('th', null, 'Quantidade'), h('th', { title: 'Em branco = preço do catálogo do Sistema de Pedidos (ou o custo do AppNext)' }, 'Valor unit.'), h('th', null, 'Total'), h('th', null, ''))), tbody)),
+      h('div', { class: 'ped-obr-lin' }, h('button', { type: 'button', class: 'btn', onclick: () => { itens.push({ cod: '', nome: '', qtd: 1, preco: null }); desenhar(); const ins = tbody.querySelectorAll('input[list]'); if (ins.length) ins[ins.length - 1].focus(); } }, '＋ Produto'), totalEl),
+      h('div', { class: 'ped-obr-lin mt' }, salvar, h('button', { type: 'button', class: 'btn', onclick: fechar }, 'Cancelar'), erro));
+    const camada = h('div', { class: 'camada-cheia camada-obr', role: 'dialog', 'aria-modal': 'true', onclick: (ev) => { if (ev.target === camada) fechar(); } }, caixa);
+    document.body.append(camada); document.body.classList.add('com-camada'); document.addEventListener('keydown', esc);
   }
 
   function baixarCsv(lista, loja) {

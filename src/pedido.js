@@ -167,4 +167,48 @@ function progresso(c, b) {
   return { ok: true };
 }
 
-module.exports = { ORIGENS, criarCodigo, lerCodigo, progresso, acesso, gravarAcesso, catalogo, carrinho, gravarEntrada, cfg, validarCfg, validarItens, EVENTOS };
+// ---------- pedido obrigatório: o que a franquia manda de qualquer forma (entra no valor e conta como estoque chegando) ----------
+const arqObrig = (id) => path.join(pasta(id), 'obrigatorio.json');
+const hojeBR = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
+/** { lista: [{ id, nome, ate, encerrado, por, em, itens: [{ cod, nome, qtd, preco }] }] } — ativos = não encerrados e dentro da data */
+function obrigatorios(id) {
+  const d = ler(arqObrig(id)) || { lista: [] };
+  const hoje = hojeBR();
+  for (const o of d.lista) o.ativo = !o.encerrado && (!o.ate || o.ate >= hoje);
+  return d;
+}
+function validarObrig(b) {
+  const nome = String(b.nome || '').replace(/[\r\n]/g, ' ').trim().slice(0, 60) || 'Pedido obrigatório';
+  const ate = String(b.ate || '').trim();
+  if (ate && !/^\d{4}-\d{2}-\d{2}$/.test(ate)) return { erro: 'Data inválida.' };
+  const itens = [];
+  for (const x of Array.isArray(b.itens) ? b.itens.slice(0, 300) : []) {
+    const cod = String(x.cod || '').trim().slice(0, 30), q = Number(x.qtd), pr = x.preco == null || x.preco === '' ? null : Number(x.preco);
+    if (!cod) continue;
+    if (!(q > 0) || q > 100000) return { erro: `Quantidade inválida no produto ${cod}.` };
+    if (pr != null && !(pr >= 0 && pr < 1e6)) return { erro: `Valor inválido no produto ${cod}.` };
+    itens.push({ cod, nome: String(x.nome || '').trim().slice(0, 120), qtd: Math.round(q * 1000) / 1000, preco: pr == null ? null : Math.round(pr * 100) / 100 });
+  }
+  if (!itens.length) return { erro: 'Coloque pelo menos um produto.' };
+  return { ok: { nome, ate: ate || null, itens } };
+}
+/** cria ou atualiza (b.id), encerra (b.encerrar), reabre (b.reabrir) ou apaga (b.apagar) */
+function alterarObrig(id, b, por) {
+  const d = ler(arqObrig(id)) || { lista: [] };
+  let o = b.id ? d.lista.find((x) => x.id === b.id) : null;
+  if (b.id && !o) return { erro: 'Pedido obrigatório não encontrado.' };
+  if (b.apagar) d.lista = d.lista.filter((x) => x !== o);
+  else if (b.encerrar || b.reabrir) { o.encerrado = !!b.encerrar; o.encerradoEm = b.encerrar ? new Date().toISOString() : null; }
+  else {
+    const v = validarObrig(b);
+    if (v.erro) return v;
+    if (!o) { o = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), criadoEm: new Date().toISOString() }; d.lista.unshift(o); }
+    Object.assign(o, v.ok, { por, em: new Date().toISOString() });
+  }
+  d.lista = d.lista.slice(0, 60);
+  fs.mkdirSync(pasta(id), { recursive: true });
+  C.gravarAtomico(arqObrig(id), JSON.stringify(d), 0o640);
+  return { ok: obrigatorios(id), item: o };
+}
+
+module.exports = { obrigatorios, alterarObrig, ORIGENS, criarCodigo, lerCodigo, progresso, acesso, gravarAcesso, catalogo, carrinho, gravarEntrada, cfg, validarCfg, validarItens, EVENTOS };

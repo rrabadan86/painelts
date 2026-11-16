@@ -276,7 +276,11 @@ app.get('/api/demo/estoque/notas', (req, res) => {
 });
 app.get('/api/demo/pedido', (req, res) => {
   if (!lojaDemo(req)) return res.status(400).json({ erro: 'Escolha uma loja.' });
-  try { const e = DEMO.estoqueDemo(req.query.loja); res.json({ catalogo: e.catalogo, carrinho: null, cfg: PEDd.cfg({}), robo: { disponivel: false }, podeRobo: false }); } catch (e) { res.status(500).json({ erro: e.message }); }
+  try { const e = DEMO.estoqueDemo(req.query.loja); // pedido obrigatório fictício: 6 produtos do catálogo
+    const disp = e.catalogo.itens.filter((c) => c.disp).slice(5, 11);
+    const ate = new Date(Date.now() + 20 * 86400e3).toISOString().slice(0, 10);
+    const obrigatorio = { lista: [{ id: 'demo', nome: 'Pedido obrigatório de dezembro (exemplo)', ate, ativo: true, por: 'franquia', em: new Date().toISOString(), itens: disp.map((c, k) => ({ cod: c.cod, nome: c.nome, qtd: k % 2 ? 2 : 6, preco: c.preco })) }] };
+    res.json({ catalogo: e.catalogo, carrinho: null, cfg: PEDd.cfg({}), obrigatorio, robo: { disponivel: false }, podeRobo: false }); } catch (e) { res.status(500).json({ erro: e.message }); }
 });
 app.get('/api/demo/pedido/acesso', (req, res) => res.json({ temLogin: false, usuario: '' }));
 app.get('/api/demo/admin/estado', (req, res) => { try { res.json(DEMO.estadoDemo()); } catch (e) { res.status(500).json({ erro: e.message }); } });
@@ -678,7 +682,21 @@ app.get('/api/pedido', async (req, res) => {
       }
     } catch (e) { robo = { disponivel: false, erro: e.message }; }
   }
-  res.json({ catalogo: PED.catalogo(loja.id), carrinho: PED.carrinho(loja.id), cfg: PED.cfg(C.get().lojas.find((l) => l.id === loja.id)), robo, podeRobo: req.perfil === 'admin' });
+  res.json({ catalogo: PED.catalogo(loja.id), carrinho: PED.carrinho(loja.id), cfg: PED.cfg(C.get().lojas.find((l) => l.id === loja.id)), obrigatorio: PED.obrigatorios(loja.id), robo, podeRobo: req.perfil === 'admin' });
+});
+// pedido obrigatório da franquia: criar, alterar, encerrar, reabrir, apagar
+app.put('/api/pedido/obrigatorio', express.json({ limit: '100kb' }), (req, res) => {
+  if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
+  if (!podeTela(req, 'pedido')) return res.status(403).json({ erro: 'Sem permissão.' });
+  const loja = req.lojas.find((l) => l.id === String(req.query.loja || ''));
+  if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  const b = req.body || {};
+  const r = PED.alterarObrig(loja.id, b, req.user);
+  if (r.erro) return res.status(400).json({ erro: r.erro });
+  const o = r.item || {};
+  C.auditar(req.user, b.apagar ? 'apagou pedido obrigatório' : b.encerrar ? 'encerrou pedido obrigatório' : b.reabrir ? 'reabriu pedido obrigatório' : b.id ? 'alterou pedido obrigatório' : 'cadastrou pedido obrigatório', loja.id,
+    { loja: loja.id, nome: o.nome, itens: o.itens ? o.itens.length : undefined, valor: o.itens ? Math.round(o.itens.reduce((s, x) => s + (x.preco || 0) * x.qtd, 0)) : undefined });
+  res.json({ ok: true, obrigatorio: r.ok });
 });
 app.put('/api/pedido/cfg', express.json({ limit: '20kb' }), (req, res) => {
   if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });

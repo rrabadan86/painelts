@@ -1581,3 +1581,22 @@ td.site-dif { color: #B5452B; font-weight: 600; }
 .ini-erro .ini-ico { background: #B5452B; } .ini-warn .ini-ico { background: #C9A227; } .ini-info .ini-ico { background: #4E7D96; } .ini-ok .ini-ico { background: #2C5234; }
 .ini-ir { flex: none; font-size: 12px; font-weight: 600; color: var(--green, #2C5234); }
 .ini-pend { margin-top: 10px; font-size: 12px; }
+/* pedido obrigatório */
+.ped-obr { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--line, #E2DCCF); border-radius: 10px; margin-top: 8px; background: #FFFBEF; }
+.ped-obr.off { background: #fff; opacity: .8; }
+.ped-obr > div:first-child { flex: 1; min-width: 0; }
+.ped-obr .muted { font-size: 12px; }
+.ped-obr-ac { display: flex; gap: 6px; flex-wrap: wrap; }
+.ped-obr-ac .btn { padding: 4px 10px; font-size: 12px; }
+.ped-obr-del { color: #B5452B; }
+.ped-obr-ant { margin-top: 10px; }
+.ped-obr-ed { max-width: 900px; }
+.ped-obr-cab { display: grid; grid-template-columns: 2fr 1fr; gap: 12px; }
+.ped-obr-cab label { display: flex; flex-direction: column; gap: 4px; }
+.ped-obr-cola { width: 100%; font-family: inherit; }
+.ped-obr-lin { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
+.ped-obr-t td { vertical-align: middle; }
+.ped-obr-t input[list] { min-width: 320px; }
+.ped-obr-n { width: 100px; }
+.ped-obr-q { white-space: nowrap; font-weight: 600; color: #8a6d12; }
+@media (max-width: 640px) { .ped-obr { flex-direction: column; align-items: flex-start; } .ped-obr-cab { grid-template-columns: 1fr; } .ped-obr-t input[list] { min-width: 200px; } }
