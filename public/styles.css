@@ -1442,3 +1442,23 @@ tr.cp-enviada td { background: #EEF5EC !important; }
 .cfg-caixa { font-size: 12px; margin: 0 6px 0 0; white-space: nowrap; }
 .user-btn.on { background: #C9A227; border-color: #C9A227; color: #1F3A2A; }
 .user-btn.on .user-ini { background: #1F3A2A; color: #C9A227; }
+
+/* Evolução mensal no celular: cada linha vira um cartão (nome em cima; Faturamento, Cupons, TKM, PMA e IPA em 5 colunas, com a variação embaixo) */
+@media (max-width: 700px) {
+  .t.tree { min-width: 0 !important; width: 100%; }
+  .t.tree thead { display: none; }
+  .t.tree tr { display: grid; grid-template-columns: minmax(0,1.5fr) minmax(0,.9fr) minmax(0,1.15fr) minmax(0,1.05fr) minmax(0,.85fr); grid-auto-flow: column; border-bottom: 1px solid var(--line, #E6E0D2); }
+  .t.tree td { display: block; padding: 2px 4px !important; text-align: left; border: 0 !important; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12px; }
+  .t.tree td.tree-l, .t.tree td.sticky-col { grid-column: 1 / -1; grid-row: 1; position: static; padding: 8px 6px 4px !important; font-size: 13.5px; white-space: normal; }
+  .t.tree td.tree-v { grid-row: 2; font-weight: 600; }
+  .t.tree td.tree-v::before { content: attr(data-l); display: block; font-size: 9.5px; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: .02em; }
+  .t.tree td.tree-var, .t.tree tr > td.muted:not(.tree-l) { grid-row: 3; font-size: 11.5px; padding-bottom: 8px !important; }
+  .t.tree .tree-var .tree-ant { font-size: 10px; }
+  .t.tree td.tree-var { overflow: visible; text-overflow: clip; letter-spacing: -.01em; }
+  .t.tree td.tree-l.n1 { padding-left: 18px !important; }
+  .t.tree td.tree-l.n2 { padding-left: 32px !important; }
+  .t.tree td.tree-l.n3 { padding-left: 46px !important; }
+  .t.tree tr.lv1, .t.tree tr.lv2, .t.tree tr.lv3 { border-left: 3px solid #E6DCC2; }
+  .t.tree tfoot tr td { background: #E4EEE1; }
+  .t.tree .tree-btn { width: 24px; height: 24px; }
+}

@@ -255,8 +255,8 @@
       const btn = temFilhos ? h('button', { type: 'button', class: 'tree-btn', 'aria-expanded': String(open), 'aria-label': (open ? 'Recolher ' : 'Expandir ') + rotulo,
         onclick: () => { open ? fechar(chave) : aberto.add(chave); paint(); } }, open ? '−' : '+') : h('span', { class: 'tree-sp' });
       const tds = [h('td', { class: `l sticky-col tree-l n${nivel}` }, h('span', { class: 'tree-cell' }, btn, h('span', null, rotulo)))];
-      for (const [k, , fm] of cols) {
-        tds.push(h('td', null, fm(a[k])));
+      for (const [k, lab, fm] of cols) {
+        tds.push(h('td', { class: 'tree-v', 'data-l': lab }, fm(a[k])));
         if (nivel === 0) continue;
         const d = p && p[k] ? a[k] / p[k] - 1 : null;
         // variação e, embaixo, o valor do ano anterior (no mesmo recorte de dias)
@@ -322,7 +322,7 @@
         const idxAnt = [...yms].flatMap((ym) => prevIdx(ym) || []);
         if (idxAnt.length) cmpT = { a: t, p: ind(idxAnt), dica: 'Período escolhido contra o mesmo período do ano anterior' };
       }
-      for (const col of cols) tf.append(h('td', null, col[2](t[col[0]])), celVar(col, cmpT));
+      for (const col of cols) tf.append(h('td', { class: 'tree-v', 'data-l': col[1] }, col[2](t[col[0]])), celVar(col, cmpT));
       tbl.append(h('tfoot', null, tf));
     }
     paint();
