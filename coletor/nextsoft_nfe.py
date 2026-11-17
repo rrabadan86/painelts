@@ -233,6 +233,9 @@ DEVOLVER = "async (p) => {" + JS_BASE.replace("acha('salvarRascunho')", "acha('m
   limpar(S, ''); S.itens.forEach((it, n) => limpar(it, `itens[${n}].`));
   window.__limparIds = () => { limpar(S, ''); S.itens.forEach((it, n) => limpar(it, `itens[${n}].`)); return trocados; }; // de novo na hora de gravar
   const t = tela.$refs.tabs; const invalida = ['validarDadosNota', 'validarDadosFornecedor', 'validarProdutos', 'validarTransportadora', 'validarValoresAdicionais'].filter((k) => t[k] && t[k]());
+  // o AppNext exige a modalidade da BC do ICMS em cada item (Guid obrigatório): ela vem da regra fiscal de devolução
+  const semModalidade = S.itens.filter((i) => !(i.imposto && GUID.test(String(i.imposto.modalidadeDeterminacaoBcIcmsId || '')))).map((i) => i.codigo);
+  if (semModalidade.length) erro(`a regra fiscal (sequência) de Devolução ao Fornecedor desta loja está sem a "Modalidade de determinação da BC do ICMS": preencha na sequência fiscal no AppNext (como na de Venda) e tente de novo — itens ${semModalidade.slice(0, 5).join(', ')}`);
   return { trocados, invalida, cfop: cfops[0].codigo, chaveRef: String(S.chaveAcesso || ''), total: Number(S.valorTotalLiquido), produtos: Number(S.valorTotalProduto), itens: S.itens.map((i) => ({ codigo: String(i.codigo), nome: i.nome || '', qtd: Number(i.quantidade), preco: Number(i.valorUnitario), total: Number(i.valorTotalLiquido) })) };
 }"""
 
