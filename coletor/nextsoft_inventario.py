@@ -26,7 +26,11 @@ import nextsoft_export_to_drive as nx  # noqa: E402
 from playwright.sync_api import sync_playwright  # noqa: E402
 from nextsoft_produtos import fazer_login  # noqa: E402
 
-log, step = nx.log, nx.step
+log = nx.log
+
+
+def step(t):
+    log("▸ " + t)
 
 # componente da tela de importação (Vue): o que o AppNext leu do arquivo e em que passo está
 LER_VM = """() => {
@@ -71,13 +75,17 @@ def main():
         try:
             step("1) Login")
             nx.goto_login_with_retries(page, nx.LOGIN_URL)
+            t0 = datetime.now()
             fazer_login(page)
+            log("   ✓ login feito")
             nx.trocar_loja(page, os.getenv("APPNEXT_LOJA_DESTINO"))
+            log(f"   ✓ loja: {os.getenv('APPNEXT_LOJA_DESTINO') or 'a padrão do usuário'}")
             step("2) Estoque → Auditoria/Inventário → Importar")
             page.evaluate("() => { location.hash = '#/estoque/inventario/importacao'; }")
             page.locator("input[type=file]").first.wait_for(state="attached", timeout=40000)
             page.wait_for_timeout(1500)
-            step(f"3) Enviando a planilha ({len(esperado)} produtos)")
+            log("   ✓ tela de importação aberta (passo 1: Selecione o arquivo)")
+            step(f"3) Enviando a planilha ({len(esperado)} produtos, {Path(ENTRADA).stat().st_size // 1024 or 1} KB)")
             page.locator("input[type=file]").first.set_input_files(ENTRADA)
             vm = None
             for _ in range(90):
@@ -87,8 +95,9 @@ def main():
                     break
             if not vm or not vm["itens"]:
                 raise RuntimeError("o AppNext não leu os itens da planilha" + (" (recusou o arquivo)" if vm and vm["erro"] else ""))
-            step("4) Conferindo o que o AppNext leu")
             lidos = vm["itens"]
+            log(f"   ✓ o AppNext leu {len(lidos)} produtos da planilha")
+            step("4) Conferindo item a item (código e quantidade)")
             com_cod = [i for i in lidos if i["cod"]]
             erros = []
             if len(lidos) != len(esperado):
@@ -102,6 +111,12 @@ def main():
             else:  # a tela não mostra o código: confere as quantidades em conjunto
                 if sorted(round(i["qtd"], 3) for i in lidos) != sorted(round(v, 3) for v in esperado.values()):
                     erros.append("as quantidades lidas pelo AppNext não batem com as da planilha")
+            for i in lidos[:60]:
+                e = esperado.get(i["cod"])
+                marca = "✓" if e is not None and abs(i["qtd"] - e) <= 0.0005 else "✗"
+                log(f"   {marca} {i['cod'] or '—'} {i['desc'][:45]}: AppNext {i['qtd']:g}" + (f" · painel {e:g}" if e is not None else ""))
+            if len(lidos) > 60:
+                log(f"   … e mais {len(lidos) - 60} produtos")
             if erros:
                 raise RuntimeError("conferência falhou, nada foi gravado: " + "; ".join(erros[:8]))
             log(f"   ✓ {len(lidos)} produtos conferidos (código e quantidade)")
@@ -115,6 +130,7 @@ def main():
                         break
                 if not vm or vm["passo"] < alvo:
                     raise RuntimeError(f"a tela não passou para o passo {alvo}")
+                log("   ✓ " + ("passo 2: Quantidade dos produtos" if alvo == 2 else "passo 3: Confirmar inventário"))
             if SIMULAR:
                 log("   SIMULAR=1: parei antes do Salvar (nada foi gravado)")
                 gravar({"ok": True, "simulado": True, "itens": len(lidos)})
@@ -129,7 +145,8 @@ def main():
                     break
             if not ok:
                 raise RuntimeError("o AppNext não confirmou a gravação (sem a mensagem de sucesso)")
-            log("   ✓ inventário gravado no AppNext")
+            log("   ✓ o AppNext confirmou: inventário cadastrado com sucesso")
+            log(f"Concluído em {(datetime.now() - t0).seconds} s")
             gravar({"ok": True, "itens": len(lidos)})
             return 0
         except Exception as e:  # noqa: BLE001

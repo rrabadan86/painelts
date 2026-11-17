@@ -316,7 +316,7 @@ def rodar_inventario(job):
     except Exception as e:  # noqa: BLE001
         codigo = str(e)
     try:
-        cauda = log_path.read_text(encoding="utf-8", errors="replace").splitlines()[-30:]
+        cauda = [l for l in log_path.read_text(encoding="utf-8", errors="replace").splitlines() if l.strip() and not set(l.split("] ", 1)[-1]) <= {"="}][-80:]
     except OSError:
         cauda = []
     with lock:
@@ -331,12 +331,22 @@ def rodar_inventario(job):
     log(f"{loja}: inventário ({tipo}) {'OK' if codigo == 0 else 'FALHOU (' + str(codigo) + ')'}")
 
 
+def robo_agora(loja):
+    """o que o robô está fazendo agora e quantos pedidos esperam na frente (sem expor outras lojas)"""
+    with lock:
+        t = dict(trabalho)
+        n = len(fila)
+    if not t:
+        return {"livre": True, "fila": n}
+    return {"livre": False, "fila": n, "inicio": t.get("inicio"), "gatilho": t.get("gatilho"), "outraLoja": t.get("loja") != loja}
+
+
 def info_inventario(loja):
     with lock:
         st = json.loads(json.dumps(inv_est.get(loja) or {}))
     if st.get("estado") == "rodando":
         try:
-            st["aoVivo"] = (WORK_DIR / loja / "inventario.log").read_text(encoding="utf-8", errors="replace").splitlines()[-8:]
+            st["aoVivo"] = [l for l in (WORK_DIR / loja / "inventario.log").read_text(encoding="utf-8", errors="replace").splitlines() if l.strip() and not set(l.split("] ", 1)[-1]) <= {"="}][-60:]
         except OSError:
             pass
     return st
@@ -628,12 +638,17 @@ def rodar(job):
     log(f"{loja}: {'OK' if ok else 'FALHOU'} em {round(time.time() - inicio)}s (código {codigo}{'' if xml is None else ', xml ' + ('ok' if xml['ok'] else 'falhou')})")
 
 
+trabalho = {}  # o que o robô (um só, para todas as lojas) está fazendo agora
+
+
 def trabalhador():
+    global trabalho
     while True:
         job = None
         with lock:
             if fila:
                 job = fila.popleft()
+                trabalho = {"loja": job["loja"], "gatilho": job.get("gatilho"), "inicio": datetime.now(TZ).isoformat()}
         if job:
             try:
                 if job.get("gatilho") == "pedido":
@@ -655,6 +670,8 @@ def trabalhador():
                         inv_est[job["loja"]] = {**inv_est.get(job["loja"], {}), "estado": "parado"}
                     else:
                         _estado(job["loja"])["estado"] = "parado"
+            with lock:
+                trabalho = {}
         else:
             time.sleep(2)
 
@@ -747,7 +764,7 @@ class API(BaseHTTPRequestHandler):
             with lock:
                 ped = json.loads(json.dumps(pedido_est.get(loja) or {}))
             return self._json(200, {"configurada": True, "horarios": horarios_do_dia(loja), "janela": janela(), "fila": fila_n, "temFixe": tem_fixe,
-                                    "temPedido": tem_pedido(loja), "pedido": ped, "saldos": info_saldos(loja), "inventario": info_inventario(loja), **info})
+                                    "temPedido": tem_pedido(loja), "pedido": ped, "saldos": info_saldos(loja), "inventario": info_inventario(loja), "robo": robo_agora(loja), **info})
         self._json(404, {"erro": "rota"})
 
     def do_POST(self):  # noqa: N802

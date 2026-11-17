@@ -810,7 +810,15 @@ app.get('/api/inventario/contagem', async (req, res) => {
   // "zerar os não listados": o que ficaria zero, por grupo
   const r = INV.resto(c, est, await catInv(loja));
   let robo = null;
-  if (c.envio && (c.envio.estado === 'na_fila' || c.envio.estado === 'erro') && COL.ativo()) { try { robo = (await COL.status(loja.id)).inventario; } catch { /* ok */ } }
+  if (c.envio && COL.ativo()) {
+    try {
+      const st = await COL.status(loja.id);
+      robo = st.inventario || {};
+      // na fila: o robô espera a coleta que já está rodando terminar
+      const ag = st.robo;
+      if (ag && !ag.livre && ag.gatilho !== 'inventario') robo.ocupado = { gatilho: ag.gatilho, inicio: ag.inicio, outraLoja: !!ag.outraLoja };
+    } catch { /* ok */ }
+  }
   res.json({ ...c, estoqueEm: est && est.em, agora, podeRevisar: true, resto: r, restoFora: [...INV.gruposFora(c, r)], podeEnviar: COL.ativo(), robo });
 });
 // enviar direto para o AppNext: o robô importa a planilha (confere item a item o que o AppNext leu antes de salvar)

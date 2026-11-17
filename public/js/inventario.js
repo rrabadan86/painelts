@@ -342,20 +342,38 @@
       if (!confirm(txt)) return;
       try { await API.enviar(loja, c.id, tipo); toast('Enviado para o robô. Acompanhe aqui.'); repintar(); } catch (e) { toast(e.message, true); }
     };
-    const cartaoEnvio = () => {
+    const logRobo = (linhas) => h('pre', { class: 'inv-log' }, (linhas || []).join('\n'));
+    const cartaoEnvio = (cc = c) => {
+      const env = cc.envio;
       if (!env) return null;
-      const r = c.robo || {}, u = r.ultima || {};
+      const r = cc.robo || {}, u = r.ultima || {};
       const desf = env.tipo === 'desfazer';
-      if (enviando) {
-        if (corpo.isConnected) setTimeout(() => { if (corpo.isConnected && state.invId === c.id) repintar(); }, 4000);
-        const vivo = (r.aoVivo || []).slice(-1)[0];
-        return h('div', { class: 'card mt inv-envio' }, h('div', { class: 'inv-envio-tit' }, h('span', { class: 'cfg-pulso' }), h('b', null, desf ? 'Desfazendo no AppNext…' : 'Enviando para o AppNext…'), h('small', { class: 'muted inv-envio-sub' }, `${r.estado === 'rodando' ? 'o robô está na tela de inventário' : 'na fila do robô (começa em instantes)'}`)),
-          vivo ? h('div', { class: 'muted inv-vivo' }, vivo.replace(/^\[[\d:]+\]\s*/, '')) : null,
-          h('small', { class: 'muted' }, 'Leva de 1 a 3 minutos. Pode sair desta tela: o resultado fica salvo aqui.'));
+      if (env.estado === 'na_fila') {
+        const rodando = r.estado === 'rodando';
+        const oc = r.ocupado;
+        const sub = rodando ? 'o robô está trabalhando no AppNext'
+          : oc ? `o robô está terminando ${oc.outraLoja ? 'uma atualização de outra loja' : oc.gatilho === 'agendado' ? 'a atualização automática desta loja' : oc.gatilho === 'saldos' ? 'a sincronização de saldos do FIXE' : oc.gatilho === 'pedido' ? 'um pedido ao fornecedor' : 'uma atualização desta loja'}${oc.inicio ? ` (começou ${quando(oc.inicio)})` : ''}; o inventário começa logo depois`
+            : 'na fila do robô (começa em instantes)';
+        const el = h('div', { class: 'card mt inv-envio' },
+          h('div', { class: 'inv-envio-tit' }, h('span', { class: 'cfg-pulso' }), h('b', null, desf ? 'Desfazendo no AppNext…' : 'Enviando para o AppNext…'), h('small', { class: 'muted inv-envio-sub' }, `Enviado ${quando(env.em)} por ${env.por || '—'} · ${sub}`)),
+          rodando && r.aoVivo && r.aoVivo.length ? logRobo(r.aoVivo) : null,
+          h('small', { class: 'muted' }, 'Leva de 1 a 3 minutos depois que começa. Pode sair desta tela: o resultado fica salvo aqui.'));
+        // atualiza só este quadro (não mexe no resto da tela); quando terminar, redesenha tudo
+        setTimeout(async () => {
+          if (!el.isConnected || state.invId !== c.id) return;
+          let n; try { n = await API.abrir(loja, c.id); } catch { n = null; }
+          if (!el.isConnected) return;
+          if (!n || !n.envio || n.envio.estado !== 'na_fila') { repintar(); return; }
+          const pre = el.querySelector('.inv-log'), noFim = !pre || pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 10;
+          const novo = cartaoEnvio(n); el.replaceWith(novo);
+          const p2 = novo.querySelector('.inv-log'); if (p2 && noFim) p2.scrollTop = p2.scrollHeight;
+        }, 3000);
+        return el;
       }
       if (env.estado === 'erro') return h('div', { class: 'notice err mt' }, h('b', null, desf ? 'O desfazer não foi feito. ' : 'O inventário não foi importado. '), env.erro || 'falhou',
         ' Nada foi gravado no AppNext se a conferência falhou; tente de novo ou baixe a planilha e importe à mão.',
-        u.log && u.log.length ? h('details', null, h('summary', null, 'Log do robô'), h('pre', { class: 'inv-log' }, u.log.join('\n'))) : null);
+        u.log && u.log.length ? h('details', { open: true }, h('summary', null, 'Log do robô'), logRobo(u.log)) : null);
+      if (env.estado === 'ok' && u.log && u.log.length && u.id === c.id) return h('details', { class: 'card mt' }, h('summary', null, h('b', null, desf ? '✓ Desfeito no AppNext pelo robô' : '✓ Importado no AppNext pelo robô'), h('span', { class: 'muted' }, ` ${quando(env.fim)} · ver o log`)), logRobo(u.log));
       return null;
     };
 
