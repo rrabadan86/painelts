@@ -31,7 +31,7 @@ function filtrosOk(f) {
     if (typeof v === 'number' && Number.isFinite(v)) out[k] = v;
     else if (typeof v === 'string') out[k] = texto(v, 80);
     else if (typeof v === 'boolean') out[k] = v;
-    else if (Array.isArray(v)) out[k] = v.slice(0, 30).map((x) => texto(x, 60));
+    else if (Array.isArray(v)) out[k] = v.slice(0, 30).map((x) => texto(x, 120));
   }
   return out;
 }

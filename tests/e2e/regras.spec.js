@@ -67,4 +67,20 @@ test.describe('regras', () => {
     const [sw, cw] = await page.locator('.est-t-lucro').evaluate((el) => { const w = el.closest('.table-wrap'); return [w.scrollWidth, w.clientWidth]; });
     expect(sw - cw).toBeLessThanOrEqual(2);
   });
+
+  test('Campanha: escolher mais de um produto exato e citar no {produto}', async ({ page }) => {
+    await page.evaluate(() => { location.hash = '#campanhas'; });
+    await page.getByRole('button', { name: 'Criar campanha' }).click();
+    const antes = await page.locator('.cp-contagem b').innerText();
+    await page.locator('summary', { hasText: 'O que comprou' }).click();
+    for (let k = 0; k < 2; k++) {
+      await page.locator('.cp-prod-busca').fill('african');
+      await page.locator('.cp-sug-it').first().dispatchEvent('mousedown');
+    }
+    await expect(page.locator('.cp-prod-chip')).toHaveCount(2);
+    await expect(page.locator('.cp-sug')).not.toContainText('null');
+    await expect.poll(async () => page.locator('.cp-contagem b').innerText()).not.toBe(antes);
+    await page.locator('textarea.cp-msg').fill('Chegou {produto}!');
+    await expect(page.locator('.cp-exemplo')).toContainText(/Chegou .+ e .+!/);
+  });
 });

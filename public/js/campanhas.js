@@ -38,18 +38,22 @@
 
   // ---------- critérios ----------
   const SEGS = [['vip', 'VIP'], ['fiel', 'Fiéis'], ['sumido', 'Sumidos'], ['repor', 'Hora de repor'], ['vence', 'Pontos vencendo'], ['novo', 'Novos do mês'], ['uma', 'Uma compra só']];
-  const PADRAO = { ptsMin: '', ptsMax: '', venceDias: '', produto: '', grupo: '', compraDias: '', ausMin: '', ausMax: '', visMin: '', visMax: '', aniv: '', segs: [], vendedora: '', lojaPref: '', semContato: 30 };
+  const PADRAO = { ptsMin: '', ptsMax: '', venceDias: '', produto: '', produtos: [], grupo: '', compraDias: '', ausMin: '', ausMax: '', visMin: '', visMax: '', aniv: '', segs: [], vendedora: '', lojaPref: '', semContato: 30 };
   const num = (v) => (v === '' || v == null || Number.isNaN(+v) ? null : +v);
 
   /** clientes que atendem aos critérios: só com celular e sem "não quer mensagens" */
   function selecionar(f) {
     const db = TS.db, hoje = dia();
-    const prod = TS.norm(f.produto || '').trim();
+    const lp = listaProdutos(f);
     const grupoId = f.grupo ? db.D.grupoC.indexOf(f.grupo) : -1;
     if (f.grupo && grupoId < 0) return []; // grupo que não existe mais nas vendas: ninguém (antes o filtro era ignorado e entrava todo mundo)
     const desde = num(f.compraDias) != null ? hoje - num(f.compraDias) : -Infinity;
     let prodOk = null;
-    if (prod) { prodOk = new Uint8Array(db.D.descricao.length); db.D.descricao.forEach((t, i) => { if (TS.norm(t).includes(prod)) prodOk[i] = 1; }); }
+    if (lp.length) {
+      const exatos = new Set(lp.filter((x) => !x.contem).map((x) => TS.norm(x.t))), partes = lp.filter((x) => x.contem).map((x) => TS.norm(x.t));
+      prodOk = new Uint8Array(db.D.descricao.length);
+      db.D.descricao.forEach((t, i) => { const n = TS.norm(t); if (exatos.has(n) || partes.some((q) => n.includes(q))) prodOk[i] = 1; });
+    }
     const mesAniv = f.aniv === 'atual' ? new Date().getMonth() + 1 : f.aniv === 'proximo' ? ((new Date().getMonth() + 1) % 12) + 1 : num(f.aniv);
     const out = [];
     for (const c of A().universo()) {
@@ -84,7 +88,17 @@
     return out.sort((a, b) => b.saldo - a.saldo || (a.c.nome || '').localeCompare(b.c.nome || '', 'pt-BR'));
   }
   const clienteDe = (cpf) => A().universo().find((c) => c.cpf === cpf) || { cpf, nome: '', cupons: [], tags: new Set() };
-  const extras = (camp) => ({ produto: (camp.filtros && camp.filtros.produto) || '' });
+  /** produtos do filtro: [{ t, contem }]. "~texto" = todos os produtos que contêm o texto; o campo antigo "produto" vira "contém" */
+  function listaProdutos(f) {
+    const l = Array.isArray(f.produtos) && f.produtos.length ? f.produtos : f.produto ? ['~' + f.produto] : [];
+    return l.filter(Boolean).map((x) => (x[0] === '~' ? { t: x.slice(1), contem: true } : { t: x, contem: false }));
+  }
+  /** {produto} na mensagem: os nomes escolhidos ("African Sunset 250G e African Sunset 100G") */
+  const nomesProdutos = (f) => {
+    const n = listaProdutos(f || {}).map((x) => x.t.replace(/\s+/g, ' ').trim());
+    return n.length <= 1 ? n[0] || '' : n.slice(0, -1).join(', ') + ' e ' + n[n.length - 1];
+  };
+  const extras = (camp) => ({ produto: nomesProdutos(camp.filtros) });
 
   // ---------- página ----------
   TS.pages.campanhas = function (root) {
@@ -177,7 +191,7 @@
     const previa = h('div', { class: 'cp-previa' });
     const exemplo = h('div', { class: 'cli-msg cp-exemplo' });
     let sel_ = [];
-    const atualizar = TS.debounce(() => {
+    let atualizar = TS.debounce(() => {
       sel_ = selecionar(f);
       contagem.replaceChildren(h('b', null, fmt.int(sel_.length)), ` ${sel_.length === 1 ? 'cliente' : 'clientes'} com celular entram na campanha`);
       const c0 = sel_[0] && sel_[0].c;
@@ -217,39 +231,105 @@
         abrirCampanha(corpo, lista, r.campanha);
       } catch (e) { erro.textContent = e.message; salvar.disabled = false; }
     });
-    const grupo = (titulo, ...itens) => h('div', { class: 'cp-grupo' }, h('div', { class: 'fx-grupo-tit' }, titulo), h('div', { class: 'cp-campos' }, ...itens));
+    // ---- formulário: cada critério numa frase ("Saldo entre __ e __ pontos"), em blocos que abrem e fecham
+    const num_ = (k, ph, larg) => { const x = inp(k, ph); x.classList.add('cp-num'); if (larg) x.style.width = larg; return x; };
+    const linha = (...partes) => h('div', { class: 'cp-linha' }, ...partes.map((p) => (typeof p === 'string' ? h('span', null, p) : p)));
+    const ativo = (...ks) => ks.some((k) => (Array.isArray(f[k]) ? f[k].length : f[k] !== '' && f[k] != null && f[k] !== PADRAO[k]));
+    const bloco = (titulo, ks, ...corpoB) => {
+      const d = h('details', { class: 'cp-bloco', open: ativo(...ks) || null }, h('summary', null, h('b', null, titulo), h('span', { class: 'cp-bloco-res' })), h('div', { class: 'cp-bloco-corpo' }, ...corpoB));
+      d._ks = ks;
+      return d;
+    };
+    // produtos: escolher na lista (exatos, com o tamanho) e/ou "todos que contêm…"
+    if (!Array.isArray(f.produtos)) f.produtos = [];
+    if (f.produto && !f.produtos.length) { f.produtos = ['~' + f.produto]; }
+    f.produto = '';
+    const vendidos = new Map();
+    for (let i2 = 0; i2 < db.n; i2++) vendidos.set(db.desc[i2], (vendidos.get(db.desc[i2]) || 0) + (db.qtd[i2] || 0));
+    const todosProd = db.D.descricao.map((t, k) => ({ t, k, n: TS.norm(t), q: vendidos.get(k) || 0 })).filter((x) => x.t && x.q > 0).sort((a, b) => b.q - a.q);
+    const chipsProd = h('div', { class: 'cp-prod-chips' });
+    const buscaProd = h('input', { class: 'f-input cp-prod-busca', type: 'search', placeholder: 'Digite parte do nome: african, earl grey, caneca…', autocomplete: 'off' });
+    const sugest = h('div', { class: 'cp-sug', role: 'listbox', hidden: true });
+    const pintarChips = () => {
+      chipsProd.replaceChildren(...f.produtos.map((p) => h('span', { class: 'cp-prod-chip' + (p[0] === '~' ? ' contem' : '') }, p[0] === '~' ? `todos com "${p.slice(1)}"` : p,
+        h('button', { type: 'button', 'aria-label': 'Tirar ' + p, onclick: () => { f.produtos = f.produtos.filter((x) => x !== p); pintarChips(); atualizar(); } }, '✕'))));
+      chipsProd.hidden = !f.produtos.length;
+    };
+    const addProd = (p) => { if (!f.produtos.includes(p) && f.produtos.length < 30) f.produtos = [...f.produtos, p]; buscaProd.value = ''; sugest.hidden = true; pintarChips(); atualizar(); buscaProd.focus(); };
+    const pintarSug = () => {
+      const q = TS.norm(buscaProd.value.trim());
+      if (!q) { sugest.hidden = true; return; }
+      const achou = todosProd.filter((x) => x.n.includes(q) && !f.produtos.includes(x.t)).slice(0, 9);
+      sugest.replaceChildren(...[
+        ...achou.map((x) => h('button', { type: 'button', class: 'cp-sug-it', role: 'option', onmousedown: (e) => { e.preventDefault(); addProd(x.t); } }, h('span', null, x.t), h('small', null, `${fmt.int(x.q)} vendidos`))),
+        h('button', { type: 'button', class: 'cp-sug-it cp-sug-todos', onmousedown: (e) => { e.preventDefault(); addProd('~' + buscaProd.value.trim()); } }, h('span', null, `Todos os produtos com "${buscaProd.value.trim()}"`), h('small', null, 'todos os tamanhos e variações')),
+        !achou.length ? h('div', { class: 'cp-sug-vazio' }, 'Nenhum produto vendido com esse nome.') : null].filter(Boolean));
+      sugest.hidden = false;
+    };
+    buscaProd.addEventListener('input', pintarSug);
+    buscaProd.addEventListener('focus', pintarSug);
+    buscaProd.addEventListener('blur', () => setTimeout(() => { sugest.hidden = true; }, 150));
+    buscaProd.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); const p = sugest.querySelector('.cp-sug-it'); if (p) p.dispatchEvent(new MouseEvent('mousedown')); }
+      if (e.key === 'Escape') sugest.hidden = true;
+    });
+    pintarChips();
+    const lojaNome = (() => { const o = document.querySelector('#lojaSel option:checked'); const n = o && o.textContent.trim(); return n ? `Esta loja (${n})` : 'Esta loja'; })();
+    const blocos = [
+      bloco('Pontos no FIXE', ['ptsMin', 'ptsMax', 'venceDias'],
+        linha('Saldo entre', num_('ptsMin', 'mín.'), 'e', num_('ptsMax', 'máx.'), 'pontos'),
+        linha('Com pontos vencendo nos próximos', num_('venceDias', 'ex.: 30'), 'dias', TS.dica('Só quem tem pontos que vencem nos próximos N dias. Vazio = não filtra.'))),
+      bloco('O que comprou', ['produtos', 'grupo', 'compraDias'],
+        h('div', { class: 'cp-prod' }, h('span', { class: 'cp-rot' }, 'Comprou', TS.dica('Escolha um ou mais produtos (com o tamanho). Entra quem comprou qualquer um deles. Use {produto} na mensagem para citar os nomes.')),
+          h('div', { class: 'cp-prod-box' }, chipsProd, h('div', { class: 'cp-prod-campo' }, buscaProd, sugest))),
+        linha('ou algo do grupo', sel('grupo', [['', 'qualquer grupo'], ...grupos.map((g) => [g, g])])),
+        linha('nos últimos', num_('compraDias', 'todos'), 'dias', TS.dica('Vazio = em qualquer época.'))),
+      bloco('Frequência', ['ausMin', 'ausMax', 'visMin', 'visMax'],
+        linha('Está sem comprar há', num_('ausMin', 'ex.: 60'), 'a', num_('ausMax', 'máx.'), 'dias', TS.dica('Dias desde a última compra com CPF.')),
+        linha('Já fez de', num_('visMin', 'mín.'), 'a', num_('visMax', 'máx.'), 'compras', TS.dica('Cupons com CPF em todo o histórico.'))),
+      bloco('Perfil', ['aniv', 'vendedora', 'lojaPref'],
+        linha('Faz aniversário em', sel('aniv', [['', 'qualquer mês'], ['atual', 'mês atual'], ['proximo', 'próximo mês'], ...MESES]), TS.dica('"Mês atual" e "Próximo mês" acompanham a data nas campanhas recorrentes.')),
+        linha('Mais atendido por', sel('vendedora', [['', 'qualquer vendedora'], ...vendedoras.map((v) => [v, v])])),
+        linha('Compra mais em', sel('lojaPref', [['', 'qualquer loja'], ['nossa', lojaNome], ['outra', 'outra loja da rede'], ...lojasRede.map((l) => [l, l])]), TS.dica('Loja onde o cliente mais comprou nos últimos 12 meses (esta loja pelas vendas; as outras pelas compras lançadas no FIXE).'))),
+      bloco('Segmentos', ['segs'], h('small', { class: 'muted' }, 'Entra quem estiver em qualquer um dos marcados.'), segBox),
+    ];
+    // resumo de cada bloco no título (aparece mesmo fechado)
+    const resumoBloco = () => {
+      const R = {
+        ptsMin: () => (f.ptsMin !== '' || f.ptsMax !== '' ? `saldo ${f.ptsMin || 0}${f.ptsMax !== '' ? '–' + f.ptsMax : '+'} pts` : ''),
+        venceDias: () => (f.venceDias !== '' ? `vencendo em ${f.venceDias} dias` : ''),
+        produtos: () => (f.produtos.length ? `${f.produtos.length} produto${f.produtos.length > 1 ? 's' : ''}` : ''),
+        grupo: () => f.grupo || '', compraDias: () => (f.compraDias !== '' ? `últimos ${f.compraDias} dias` : ''),
+        ausMin: () => (f.ausMin !== '' || f.ausMax !== '' ? `sem comprar ${f.ausMin || 0}${f.ausMax !== '' ? '–' + f.ausMax : '+'} dias` : ''),
+        visMin: () => (f.visMin !== '' || f.visMax !== '' ? `${f.visMin || 0}${f.visMax !== '' ? '–' + f.visMax : '+'} compras` : ''),
+        aniv: () => (f.aniv ? 'aniversário' : ''), vendedora: () => f.vendedora || '', lojaPref: () => (f.lojaPref ? 'loja preferida' : ''),
+        segs: () => f.segs.map((k) => (SEGS.find(([x]) => x === k) || [, k])[1]).join(', '),
+      };
+      for (const b of blocos) b.querySelector('.cp-bloco-res').textContent = b._ks.map((k) => (R[k] ? R[k]() : '')).filter(Boolean).join(' · ');
+    };
+    const atualizar0 = atualizar;
+    atualizar = () => { resumoBloco(); atualizar0(); };
+    resumoBloco();
     corpo.replaceChildren(
       h('div', { class: 'cp-acoes' }, h('button', { type: 'button', class: 'btn', onclick: () => (editando ? abrirCampanha(corpo, lista, base) : pintarLista(corpo, lista, [])) }, editando ? '‹ Voltar à campanha' : '‹ Voltar às campanhas')),
-      h('div', { class: 'grid g-3-2', style: { alignItems: 'start' } },
-        TS.card(editando ? `Editar "${base.nome}"` : 'Nova campanha', 'Escolha quem entra. Só aparecem clientes com celular cadastrado que não pediram para não receber mensagens.',
-          h('div', { class: 'cp-form' },
-            campo('Nome da campanha', nome),
-            grupo('Pontos (FIXE)',
-              campo('Saldo de', inp('ptsMin', 'mín.')), campo('até', inp('ptsMax', 'máx.')),
-              campo('Pontos vencendo em até (dias)', inp('venceDias', 'ex.: 30'), 'Só quem tem pontos que vencem nos próximos N dias. Vazio = não filtra.')),
-            grupo('Compras',
-              campo('Comprou o produto', inp('produto', 'ex.: earl grey', 'search'), 'Parte do nome do produto. Use {produto} na mensagem para citar.'),
-              campo('ou do grupo', sel('grupo', [['', 'Qualquer grupo'], ...grupos.map((g) => [g, g])])),
-              campo('nos últimos (dias)', inp('compraDias', 'vazio = qualquer época')),
-              campo('Dias sem comprar: de', inp('ausMin', 'ex.: 60'), 'Dias desde a última compra com CPF.'), campo('até', inp('ausMax', 'máx.')),
-              campo('Visitas (compras): de', inp('visMin', 'mín.'), 'Quantas compras o cliente já fez (cupons com CPF), em todo o histórico.'), campo('até', inp('visMax', 'máx.'))),
-            grupo('Perfil',
-              campo('Aniversário', sel('aniv', [['', 'Qualquer mês'], ['atual', 'Mês atual'], ['proximo', 'Próximo mês'], ...MESES]), '"Mês atual" e "Próximo mês" acompanham a data nas campanhas recorrentes.'),
-              campo('Mais atendido por', sel('vendedora', [['', 'Qualquer vendedora'], ...vendedoras.map((v) => [v, v])])),
-              campo('Loja preferida', sel('lojaPref', [['', 'Qualquer loja'], ['nossa', (() => { const o = document.querySelector('#lojaSel option:checked, select.loja-sel option:checked'); const n = o && o.textContent.trim(); return n ? `Esta loja (${n})` : 'Esta loja'; })()], ['outra', 'Outra loja da rede'], ...lojasRede.map((l) => [l, l])]), 'Loja onde o cliente mais comprou nos últimos 12 meses (esta loja pelas vendas; as outras pelas compras lançadas no FIXE). "Outra loja da rede" = clientes que compram mais em outra loja.'),
-              campo('Não incluir quem foi contatado há menos de (dias)', inp('semContato', '0 = incluir'), 'Evita mandar duas mensagens seguidas para a mesma pessoa.')),
-            h('div', { class: 'cp-grupo' }, h('div', { class: 'fx-grupo-tit' }, 'Segmentos (qualquer um deles)'), segBox),
-            h('div', { class: 'cp-grupo' }, h('div', { class: 'fx-grupo-tit' }, 'Mensagem'),
-              h('div', { class: 'cp-campos' }, campo('Modelo', modSel)),
-              msg,
-              h('small', { class: 'muted' }, 'Campos: {nome} primeiro nome · {pontos} saldo · {vence} data do próximo vencimento · {cha} chá favorito · {produto} produto do filtro · {loja}'),
-              exemplo),
-            grupo('Envio e retorno',
-              campo('Medir o retorno em (dias)', janela, 'Conta como "voltou" quem comprar (cupom com CPF) do dia do envio até N dias depois.'),
-              campo('Repetir', rec, 'Toda semana ou todo mês uma lista nova é montada com estes critérios quando a tela de campanhas é aberta.')),
-            refazerBox,
-            h('div', { class: 'cp-salvar' }, contagem, salvar, erro))),
-        TS.card('Quem entra', 'Clique num cliente para ver a ficha', previa)));
+      h('div', { class: 'grid g-3-2 cp-tela', style: { alignItems: 'start' } },
+        h('div', { class: 'cp-esq' },
+          TS.card(editando ? `Editar "${base.nome}"` : 'Nova campanha', null,
+            h('div', { class: 'cp-form' },
+              h('label', { class: 'cp-campo cp-nome' }, h('span', null, 'Nome da campanha'), nome),
+              h('div', { class: 'cp-passo' }, h('span', { class: 'cp-n' }, '1'), h('div', null, h('b', null, 'Quem entra'), h('small', { class: 'muted' }, 'Só clientes com celular que não pediram para não receber mensagens. Os critérios se somam (precisa atender a todos).'))),
+              ...blocos,
+              linha('Não incluir quem foi contatado há menos de', num_('semContato', '0'), 'dias', TS.dica('Evita mandar duas mensagens seguidas para a mesma pessoa. 0 = incluir todos.')),
+              h('div', { class: 'cp-passo' }, h('span', { class: 'cp-n' }, '2'), h('div', null, h('b', null, 'Mensagem'), h('small', { class: 'muted' }, 'Campos: {nome} · {pontos} · {vence} · {cha} chá favorito · {produto} produtos escolhidos · {loja}'))),
+              h('div', { class: 'cp-msg-topo' }, modSel), msg, exemplo,
+              h('div', { class: 'cp-passo' }, h('span', { class: 'cp-n' }, '3'), h('div', null, h('b', null, 'Envio e retorno'))),
+              linha('Medir o retorno em', janela, 'dias', TS.dica('Conta como "voltou" quem comprar (cupom com CPF) do dia do envio até N dias depois.')),
+              linha('Repetir', rec, TS.dica('Toda semana ou todo mês uma lista nova é montada com estes critérios quando a tela de campanhas é aberta.')),
+              refazerBox))),
+        h('div', { class: 'cp-dir' },
+          h('div', { class: 'card cp-resumo-fixo' }, contagem, h('div', { class: 'cp-salvar' }, salvar, erro)),
+          TS.card('Quem entra', 'Clique num cliente para ver a ficha', previa))));
+    janela.classList.add('cp-num'); rec.classList.add('cp-sel');
     atualizar();
   }
 
