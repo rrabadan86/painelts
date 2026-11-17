@@ -3,7 +3,7 @@
 const { test, expect } = require('@playwright/test');
 
 const TELAS = ['inicio', 'resumo', 'comparativos', 'promocao', 'cupons', 'clilista', 'clientes', 'campanhas', 'espera', 'comissionamento', 'mapa',
-  'rentab', 'precos', 'site', 'estoque', 'pedido', 'notas', 'nfsaida', 'dre', 'config'];
+  'rentab', 'precos', 'site', 'estoque', 'pedido', 'notas', 'nfsaida', 'inventario', 'dre', 'config'];
 
 /** carrega a apresentação uma vez por página do navegador */
 async function abrirApresentacao(page) {

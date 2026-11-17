@@ -258,6 +258,15 @@ app.get('/api/demo/estoque', (req, res) => {
   if (!lojaDemo(req)) return res.status(400).json({ erro: 'Escolha uma loja.' });
   try { const e = DEMO.estoqueDemo(req.query.loja); res.json({ estoque: e.estoque, cfg: ESd.cfg({ estoqueCfg: e.estoqueCfg }), classe: ESd.classeCfg({}), historico: e.historico, compras: e.compras }); } catch (e) { res.status(500).json({ erro: e.message }); }
 });
+// inventário na apresentação: o catálogo fictício (a contagem fica só no navegador; nada é salvo)
+app.get('/api/demo/inventario/catalogo', (req, res) => {
+  if (!lojaDemo(req)) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  const e = DEMO.estoqueDemo(req.query.loja);
+  const p = DEMO.partes().find((x) => x.id === req.query.loja);
+  const cat = require('./src/inventario').catalogo(e.estoque, null, p ? p.vendas : null)
+    .map((i) => ({ ...i, grupo: i.un === 'Kg' ? 'MATÉRIA PRIMA' : 'ACESSÓRIOS', sub: i.un === 'Kg' ? 'Matéria Prima' : '' }));
+  res.json({ itens: cat, estoqueEm: e.estoque.em });
+});
 // NF-e de saída fictícias (vendas com nota, transferência, devolução), montadas com os produtos da apresentação
 const NFSd = require('./src/nfsaida');
 function nfsDemo(lojaId) {
@@ -737,6 +746,110 @@ app.get('/api/pedido', async (req, res) => {
   }
   res.json({ catalogo: PED.catalogo(loja.id), carrinho: PED.carrinho(loja.id), cfg: PED.cfg(C.get().lojas.find((l) => l.id === loja.id)), obrigatorio: PED.obrigatorios(loja.id), espera: ESP.resumoPorCod(loja.id), robo, podeRobo: req.perfil === 'admin' });
 });
+// ---------- inventário (Estoque → Inventário): contar pelo celular e gerar a planilha do AppNext ----------
+const INV = require('./src/inventario');
+const podeInv = (req) => req.perfil === 'vendedor' || podeTela(req, 'inventario');
+const lojaInv = (req, res) => {
+  if (!podeInv(req)) { res.status(403).json({ erro: 'Sem permissão.' }); return null; }
+  const loja = req.lojas.find((l) => l.id === String((req.body && req.body.loja) || req.query.loja || ''));
+  if (!loja) { res.status(400).json({ erro: 'Escolha uma loja.' }); return null; }
+  return loja;
+};
+async function catInv(loja) {
+  let vendas = null;
+  try { vendas = (await dadosLoja(loja)).raw.vendas; } catch { /* sem vendas: sem o tipo de chá */ }
+  return INV.catalogo(ES.atual(loja.id), TAB.resumo(loja.id), vendas);
+}
+app.get('/api/inventario', async (req, res) => {
+  const loja = lojaInv(req, res); if (!loja) return;
+  const est = ES.atual(loja.id);
+  const cat = await catInv(loja);
+  const conta = (k) => { const m = new Map(); for (const i of cat) if (i[k]) m.set(i[k], (m.get(i[k]) || 0) + 1); return [...m].sort((a, b) => a[0].localeCompare(b[0], 'pt-BR')); };
+  const subs = new Map();
+  for (const i of cat) if (i.grupo && i.sub) { const k = i.grupo + '|' + i.sub; subs.set(k, (subs.get(k) || 0) + 1); }
+  const fams = new Map();
+  for (const i of cat) { const f = INV.familia(i.tipo); if (f) fams.set(f, (fams.get(f) || 0) + 1); }
+  res.json({
+    contagens: INV.lista(loja.id), estoqueEm: est && est.em, perfil: req.perfil,
+    grupos: conta('grupo'), subs: [...subs].map(([k, n]) => [...k.split('|'), n]), tipos: conta('tipo'), familias: [...fams].sort((a, b) => a[0].localeCompare(b[0], 'pt-BR')),
+    kg: cat.filter((i) => i.un === 'Kg' && i.tipo).length,
+  });
+});
+// busca de itens (para escolher ou incluir): nome, código ou código de barras
+app.get('/api/inventario/itens', async (req, res) => {
+  const loja = lojaInv(req, res); if (!loja) return;
+  const q = ESP.ESQ(req.query.q || ''), d = String(req.query.q || '').replace(/\D/g, '');
+  if (q.length < 2 && d.length < 2) return res.json({ itens: [] });
+  const cat = await catInv(loja);
+  const vend = req.perfil === 'vendedor';
+  const achou = cat.filter((i) => ESP.ESQ(i.desc).includes(q) || (d.length >= 2 && (i.cod === d || i.cod.startsWith(d) || (i.barras && i.barras === d)))).slice(0, 15)
+    .map((i) => ({ cod: i.cod, desc: i.desc, un: i.un, grupo: i.grupo, sub: i.sub, tipo: i.tipo, barras: i.barras, qtd: vend ? null : i.qtd }));
+  res.json({ itens: achou });
+});
+// prévia: quantos itens entram com a escolha
+app.post('/api/inventario/previa', express.json({ limit: '50kb' }), async (req, res) => {
+  const loja = lojaInv(req, res); if (!loja) return;
+  const cat = await catInv(loja);
+  const b = req.body || {}, cods = new Set((b.cods || []).map(String)), f = b.filtro || {};
+  const n = cat.filter((i) => cods.has(i.cod) || (f.grupo && i.grupo === f.grupo && (!f.sub || i.sub === f.sub)) || (f.tipo && i.tipo === f.tipo) || (f.familia && INV.familia(i.tipo) === f.familia) || (f.tudoKg && i.un === 'Kg' && i.tipo)).length;
+  res.json({ itens: n });
+});
+app.get('/api/inventario/contagem', (req, res) => {
+  const loja = lojaInv(req, res); if (!loja) return;
+  const c = INV.ler(loja.id, String(req.query.id || ''));
+  if (!c) return res.status(404).json({ erro: 'Contagem não encontrada.' });
+  // depois de importada: a quantidade de agora no estoque do painel, para conferir se o AppNext recebeu
+  const est = ES.atual(loja.id);
+  const agora = req.perfil === 'vendedor' ? null : Object.fromEntries(((est && est.itens) || []).filter((i) => c.itens.some((x) => x.cod === String(i.cod))).map((i) => [String(i.cod), i.qtd]));
+  res.json({ ...INV.paraUsuario(c, req.perfil), estoqueEm: est && est.em, agora, podeRevisar: req.perfil !== 'vendedor' });
+});
+app.use('/api/inventario', (req, res, next) => {
+  if (req.method === 'GET') return next();
+  if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
+  next();
+});
+app.post('/api/inventario', express.json({ limit: '200kb' }), async (req, res) => {
+  const loja = lojaInv(req, res); if (!loja) return;
+  const r = INV.criar(loja.id, req.body || {}, req.user, await catInv(loja), req.perfil);
+  if (r.erro) return res.status(400).json({ erro: r.erro });
+  C.auditar(req.user, 'abriu uma contagem de estoque', loja.id, { loja: loja.id, nome: r.ok.nome, itens: r.ok.itens.length });
+  res.json({ ok: true, id: r.ok.id });
+});
+app.put('/api/inventario/contagem/:id/item/:cod', express.json({ limit: '2kb' }), (req, res) => {
+  const loja = lojaInv(req, res); if (!loja) return;
+  const r = INV.contar(loja.id, String(req.params.id), String(req.params.cod), (req.body || {}).cont, req.user);
+  if (r.erro) return res.status(400).json({ erro: r.erro });
+  res.json({ ok: true, item: req.perfil === 'vendedor' ? { ...r.ok, sis: null, custo: null } : r.ok });
+});
+app.post('/api/inventario/contagem/:id/itens', express.json({ limit: '50kb' }), async (req, res) => {
+  const loja = lojaInv(req, res); if (!loja) return;
+  const r = INV.adicionar(loja.id, String(req.params.id), (req.body || {}).cods || [], await catInv(loja));
+  if (r.erro) return res.status(400).json({ erro: r.erro });
+  res.json({ ok: true });
+});
+app.post('/api/inventario/contagem/:id/:acao', express.json({ limit: '2kb' }), (req, res) => {
+  const loja = lojaInv(req, res); if (!loja) return;
+  const a = String(req.params.acao);
+  if (req.perfil === 'vendedor' && a !== 'revisar') return res.status(403).json({ erro: 'Peça para a gerente.' });
+  const r = INV.acao(loja.id, String(req.params.id), a, req.user);
+  if (r.erro) return res.status(400).json({ erro: r.erro });
+  if (a === 'importado' || a === 'cancelar') C.auditar(req.user, a === 'importado' ? 'marcou a contagem como importada no AppNext' : 'cancelou uma contagem de estoque', loja.id, { loja: loja.id, nome: r.ok.nome });
+  res.json({ ok: true });
+});
+// planilha no modelo do AppNext (Estoque → Auditoria/Inventário → Novo → Por Excel)
+app.get('/api/inventario/contagem/:id/planilha', async (req, res) => {
+  const loja = lojaInv(req, res); if (!loja) return;
+  if (req.perfil === 'vendedor') return res.status(403).json({ erro: 'Peça para a gerente gerar a planilha.' });
+  const c = INV.ler(loja.id, String(req.params.id));
+  if (!c) return res.status(404).json({ erro: 'Contagem não encontrada.' });
+  if (!c.itens.some((i) => i.cont != null)) return res.status(400).json({ erro: 'Nenhum item contado.' });
+  const buf = await INV.planilha(c, loja.nome, ES.atual(loja.id));
+  INV.marcarGerado(loja.id, c.id, req.user);
+  C.auditar(req.user, 'gerou a planilha de inventário', loja.id, { loja: loja.id, nome: c.nome, itens: c.itens.filter((i) => i.cont != null).length });
+  const nome = `Inventario_${String(loja.nome).normalize('NFD').replace(/[^\w]+/g, '_')}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+  res.set('Content-Disposition', `attachment; filename="${nome}"`).type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet').send(Buffer.from(buf));
+});
+
 // ---------- lista de espera (Clientes → Lista de espera): todos os perfis da loja anotam e avisam ----------
 const ESP = require('./src/espera');
 const FIx = require('./src/fidelidade');
@@ -1251,16 +1364,19 @@ app.listen(PORT, () => {
     const mig = [];
     C.alterar((cfg) => {
       for (const [nome, u] of Object.entries(cfg.usuarios || {})) {
-        if (u.telasV >= 4) continue;
+        if (u.telasV >= 5) continue;
+        // v5: Estoque → Inventário (contagem pelo celular): quem vê o Estoque passa a ver o Inventário
+        if (u.perfil === 'gerente' && Array.isArray(u.telas) && u.telas.includes('estoque') && !u.telas.includes('inventario')) { u.telas.push('inventario'); mig.push(nome); }
+        if (u.telasV >= 4) { u.telasV = 5; continue; }
         // v4: o detalhamento de cupons saiu do Comissionamento e virou Vendas → Cupons
         if (u.perfil === 'gerente' && Array.isArray(u.telas) && u.telas.includes('comissionamento') && !u.telas.includes('cupons')) { u.telas.push('cupons'); mig.push(nome); }
-        if (u.telasV >= 3) { u.telasV = 4; continue; }
+        if (u.telasV >= 3) { u.telasV = 5; continue; }
         // v2: Preços e Site saíram do Estoque e margem; v3: o Estoque e margem virou Rentabilidade + Estoque (+ Notas fiscais)
         if (u.perfil === 'gerente' && Array.isArray(u.telas) && u.telas.includes('estoque')) {
           for (const t of [...(u.telasV >= 2 ? [] : ['precos', 'site']), 'rentab', 'notas']) if (!u.telas.includes(t)) u.telas.push(t);
           mig.push(nome);
         }
-        u.telasV = 4;
+        u.telasV = 5;
       }
     });
     if (mig.length) C.auditar('sistema', 'organizou as telas no menu novo (Vendas → Cupons; Produtos, Estoque, Resultado)', 'usuarios', { usuarios: [...new Set(mig)] });

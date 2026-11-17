@@ -111,4 +111,25 @@ test.describe('regras', () => {
     await page.evaluate(() => TS.cfgRepintar());
     expect(await page.evaluate(() => window.scrollY)).toBe(antes);
   });
+
+  test('Inventário: nova contagem de um tipo de chá, contar em gramas, revisar', async ({ page }) => {
+    await page.evaluate(() => { location.hash = '#inventario'; });
+    await page.getByRole('button', { name: '+ Nova contagem' }).click();
+    await page.locator('.inv-modos button', { hasText: 'Um tipo de chá' }).click();
+    const sel = page.locator('.inv-modo-corpo select');
+    const op = await sel.locator('option').nth(1).getAttribute('value');
+    await sel.selectOption(op);
+    await expect(page.locator('.inv-previa b')).not.toHaveText('0');
+    await page.getByRole('button', { name: 'Começar a contar' }).click();
+    const campo = page.locator('input.inv-qtd').first();
+    await campo.fill('375');
+    await campo.press('Enter');
+    await expect(page.locator('.inv-salvo.ok').first()).toBeVisible();
+    await expect(page.locator('.inv-prog')).toContainText('1 de');
+    page.on('dialog', (d) => d.accept());
+    await page.getByRole('button', { name: 'Terminar contagem' }).click();
+    await expect(page.locator('.inv-revfil')).toBeVisible();
+    await page.locator('.inv-revfil button', { hasText: 'Todos os contados' }).click();
+    await expect(page.locator('.inv-revfil').locator('..')).toContainText('375 g');
+  });
 });
