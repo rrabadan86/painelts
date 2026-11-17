@@ -50,6 +50,7 @@ SCRIPT_CAIXA = Path(os.getenv("COLETOR_SCRIPT_CAIXA", Path(__file__).with_name("
 SCRIPT_PRODUTOS = Path(os.getenv("COLETOR_SCRIPT_PRODUTOS", Path(__file__).with_name("nextsoft_produtos.py")))
 SCRIPT_FIXE = Path(os.getenv("COLETOR_SCRIPT_FIXE", Path(__file__).with_name("fixe_export.py")))
 # saldo oficial de pontos de cada cliente (só pelo botão "Sincronizar saldos com o FIXE")
+SCRIPT_NFE = Path(os.getenv("COLETOR_SCRIPT_NFE", Path(__file__).with_name("nextsoft_nfe.py")))
 SCRIPT_INVENTARIO = Path(os.getenv("COLETOR_SCRIPT_INVENTARIO", Path(__file__).with_name("nextsoft_inventario.py")))
 SCRIPT_SALDOS = Path(os.getenv("COLETOR_SCRIPT_SALDOS", Path(__file__).with_name("fixe_saldos.py")))
 # Sistema de Pedidos da franqueadora: catálogo (toda noite) e montar o carrinho (pelo painel)
@@ -302,11 +303,87 @@ def trabalhador_inventario():
                 break
             time.sleep(3)
         try:
-            rodar_inventario(job)
+            if job.get("gatilho") == "nfe":
+                rodar_nfe(job)
+            else:
+                rodar_inventario(job)
         except Exception as e:  # noqa: BLE001
-            log(f"{loja}: inventário erro inesperado {e}")
+            log(f"{loja}: {job.get('gatilho')} erro inesperado {e}")
             with lock:
-                inv_est[loja] = {**inv_est.get(loja, {}), "estado": "parado"}
+                est = nfe_est if job.get("gatilho") == "nfe" else inv_est
+                est[loja] = {**est.get(loja, {}), "estado": "parado"}
+
+
+# ---------- NF-e de saída (rascunho no AppNext): mesma fila exclusiva do inventário ----------
+nfe_est = {}  # loja -> {"estado", "id", "acao", "ultima"}
+RID_OK = re.compile(r"^([a-f0-9]{12}|cadastros)$")
+
+
+def arquivos_nfe(loja, rid):
+    base = DATA_DIR / loja / "nfe" / "envio"
+    return base / f"{rid}.json", base / f"{rid}.resultado.json"
+
+
+def enfileirar_nfe(loja, rid, acao, por=None):
+    with lock:
+        p = nfe_est.get(loja) or {}
+        if p.get("estado") in ("na_fila", "rodando"):
+            return False
+        job = {"loja": loja, "gatilho": "nfe", "rid": rid, "acao": acao, "por": por, "criado": datetime.now(TZ).isoformat()}
+        nfe_est[loja] = {**{k: v for k, v in p.items() if k == "ultima"}, "estado": "na_fila", "id": rid, "acao": acao, "por": por, "criado": job["criado"]}
+        fila_inv.append(job)
+    log(f"{loja}: NF-e ({acao}) na fila{' por ' + por if por else ''}")
+    return True
+
+
+def rodar_nfe(job):
+    loja, rid, acao = job["loja"], job["rid"], job["acao"]
+    pasta = WORK_DIR / loja
+    robo = pasta / "nfe-robo"  # navegador próprio
+    robo.mkdir(parents=True, exist_ok=True)
+    entrada, resultado = arquivos_nfe(loja, rid)
+    SEGREDO = re.compile(r"(SECRET|TOKEN|PASS|SENHA|SMTP|GITHUB|KEY)", re.I)
+    env = {k: v for k, v in os.environ.items() if not k.startswith("COLETOR_") and not SEGREDO.search(k)}
+    env.update(ler_env(CONFIG_DIR / f"{loja}.env"))
+    env.update({"PYTHONUNBUFFERED": "1", "ACAO": acao, "ENTRADA_NFE": str(entrada), "SAIDA_RESULTADO": str(resultado)})
+    log_path = pasta / "nfe.log"
+    inicio = time.time()
+    with lock:
+        nfe_est[loja] = {**nfe_est.get(loja, {}), "estado": "rodando", "inicio": datetime.now(TZ).isoformat()}
+    log(f"{loja}: NF-e ({acao}) rodando")
+    try:
+        with open(log_path, "w", encoding="utf-8") as out:
+            p = subprocess.run([sys.executable, str(SCRIPT_NFE)], cwd=robo, env=env, stdout=out, stderr=subprocess.STDOUT, timeout=900)
+            codigo = p.returncode
+    except subprocess.TimeoutExpired:
+        codigo = "timeout"
+    except Exception as e:  # noqa: BLE001
+        codigo = str(e)
+    try:
+        cauda = [l for l in log_path.read_text(encoding="utf-8", errors="replace").splitlines() if l.strip() and not set(l.split("] ", 1)[-1]) <= {"="}][-80:]
+    except OSError:
+        cauda = []
+    with lock:
+        p = nfe_est.get(loja, {})
+        ultima = {"id": rid, "acao": acao, "por": job.get("por"), "criado": job["criado"], "inicio": p.get("inicio"), "fim": datetime.now(TZ).isoformat(),
+                  "ok": codigo == 0, "codigo": codigo, "duracao_s": round(time.time() - inicio), "log": cauda}
+        nfe_est[loja] = {"estado": "parado", "ultima": ultima}
+    try:
+        (pasta / "nfe.json").write_text(json.dumps(ultima, ensure_ascii=False), encoding="utf-8")
+    except OSError:
+        pass
+    log(f"{loja}: NF-e ({acao}) {'OK' if codigo == 0 else 'FALHOU (' + str(codigo) + ')'}")
+
+
+def info_nfe(loja):
+    with lock:
+        st = json.loads(json.dumps(nfe_est.get(loja) or {}))
+    if st.get("estado") == "rodando":
+        try:
+            st["aoVivo"] = [l for l in (WORK_DIR / loja / "nfe.log").read_text(encoding="utf-8", errors="replace").splitlines() if l.strip() and not set(l.split("] ", 1)[-1]) <= {"="}][-60:]
+        except OSError:
+            pass
+    return st
 
 
 def enfileirar_inventario(loja, cid, tipo, por=None):
@@ -729,6 +806,12 @@ def agendador():
 
 def carregar_ultimas():
     for loja in lojas_configuradas():
+        fn_ = WORK_DIR / loja / "nfe.json"
+        if fn_.exists():
+            try:
+                nfe_est[loja] = {"estado": "parado", "ultima": json.loads(fn_.read_text(encoding="utf-8"))}
+            except Exception:  # noqa: BLE001
+                pass
         fi_ = WORK_DIR / loja / "inventario.json"
         if fi_.exists():
             try:
@@ -794,7 +877,7 @@ class API(BaseHTTPRequestHandler):
             with lock:
                 ped = json.loads(json.dumps(pedido_est.get(loja) or {}))
             return self._json(200, {"configurada": True, "horarios": horarios_do_dia(loja), "janela": janela(), "fila": fila_n, "temFixe": tem_fixe,
-                                    "temPedido": tem_pedido(loja), "pedido": ped, "saldos": info_saldos(loja), "inventario": info_inventario(loja), "robo": robo_agora(loja), **info})
+                                    "temPedido": tem_pedido(loja), "pedido": ped, "saldos": info_saldos(loja), "inventario": info_inventario(loja), "nfe": info_nfe(loja), "robo": robo_agora(loja), **info})
         self._json(404, {"erro": "rota"})
 
     def do_POST(self):  # noqa: N802
@@ -836,6 +919,25 @@ class API(BaseHTTPRequestHandler):
                 return self._json(400, {"erro": "Sem a lista de produtos para o carrinho."})
             if not enfileirar_pedido(loja, acao, por, bool(corpo.get("somar"))):
                 return self._json(409, {"erro": "Já há uma tarefa do Sistema de Pedidos na fila ou rodando para esta loja."})
+            return self._json(200, {"ok": True})
+        if self.path.startswith("/nfe/"):
+            loja = self._loja("/nfe/")
+            if not loja or loja not in lojas_configuradas():
+                return self._json(404, {"erro": "Loja sem acesso ao AppNext configurado."})
+            try:
+                n = int(self.headers.get("Content-Length", "0") or 0)
+                corpo = json.loads(self.rfile.read(min(n, 2000)) or b"{}") if n else {}
+            except Exception:  # noqa: BLE001
+                return self._json(400, {"erro": "pedido inválido"})
+            rid, acao = str(corpo.get("id") or ""), str(corpo.get("acao") or "")
+            if not RID_OK.match(rid) or acao not in ("cadastros", "rascunho") or (acao == "cadastros") != (rid == "cadastros"):
+                return self._json(400, {"erro": "pedido inválido"})
+            if not SCRIPT_NFE.exists():
+                return self._json(400, {"erro": "O coletor desta VPS ainda não tem o robô da NF-e (atualize)."})
+            if acao == "rascunho" and not arquivos_nfe(loja, rid)[0].exists():
+                return self._json(400, {"erro": "Falta o arquivo da nota."})
+            if not enfileirar_nfe(loja, rid, acao, por):
+                return self._json(409, {"erro": "O robô da NF-e desta loja já está trabalhando."})
             return self._json(200, {"ok": True})
         if self.path.startswith("/inventario/"):
             loja = self._loja("/inventario/")

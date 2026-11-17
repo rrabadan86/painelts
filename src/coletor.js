@@ -41,7 +41,7 @@ async function status(lojaId, comLog) {
   const { status: st, json } = await chamar(`/status/${encodeURIComponent(lojaId)}`);
   if (st === 401) throw new Error('COLETOR_TOKEN diferente entre o painel e o coletor');
   if (!json.configurada) return { configurada: false };
-  return { configurada: true, horarios: json.horarios, janela: json.janela, temFixe: !!json.temFixe, temPedido: !!json.temPedido, pedido: json.pedido || null, saldos: json.saldos || null, inventario: json.inventario || null, robo: json.robo || null, fila: json.fila || 0, lote: json.lote || null, execucao: execucao(json, comLog) };
+  return { configurada: true, horarios: json.horarios, janela: json.janela, temFixe: !!json.temFixe, temPedido: !!json.temPedido, pedido: json.pedido || null, saldos: json.saldos || null, inventario: json.inventario || null, nfe: json.nfe || null, robo: json.robo || null, fila: json.fila || 0, lote: json.lote || null, execucao: execucao(json, comLog) };
 }
 
 async function rodar(lojaId, por, itens) {
@@ -66,6 +66,10 @@ async function pedido(lojaId, por, body) {
 async function inventario(lojaId, id, tipo, por) {
   return chamar(`/inventario/${encodeURIComponent(lojaId)}`, { method: 'POST', por, body: { id, tipo } });
 }
+/** NF-e de saída: ler os cadastros da tela ou salvar um rascunho (arquivo em dados/<loja>/nfe/envio) */
+async function nfe(lojaId, id, acao, por) {
+  return chamar(`/nfe/${encodeURIComponent(lojaId)}`, { method: 'POST', por, body: { id, acao } });
+}
 async function cancelar(lojaId, por) {
   return chamar(`/cancelar/${encodeURIComponent(lojaId)}`, { method: 'POST', por });
 }
@@ -73,4 +77,4 @@ async function saude() {
   try { const r = await chamar('/saude'); return r.json; } catch (e) { return { ok: false, erro: e.message }; }
 }
 
-module.exports = { inventario, pedido, fixe, fixeSaldos, ativo, status, rodar, historico, cancelar, saude };
+module.exports = { nfe, inventario, pedido, fixe, fixeSaldos, ativo, status, rodar, historico, cancelar, saude };

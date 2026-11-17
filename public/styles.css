@@ -1958,3 +1958,30 @@ body.com-camada .ped-barra { display: none; }
 .ped-est-vivo { display: grid; gap: 6px; margin-top: 6px; }
 .ped-cat-info .neg { color: #B23B2E; }
 .aviso-versao { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 300; display: flex; gap: 12px; align-items: center; background: #1f2a22; color: #fff; padding: 10px 14px; border-radius: 12px; box-shadow: 0 6px 24px rgba(0,0,0,.25); font-size: 14px; }
+.nfe-topo { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.nfe-form { display: grid; gap: 12px; }
+.nfe-cad { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.nfe-grade { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 12px; }
+@media (max-width: 760px) { .nfe-grade { grid-template-columns: 1fr; } }
+.nfe-campo { display: grid; gap: 4px; align-content: start; min-width: 0; }
+.nfe-campo > label { font-size: 12px; font-weight: 600; color: #556; }
+.nfe-sug { display: grid; gap: 2px; }
+.nfe-sug-i { text-align: left; background: #f6f4ee; border: 1px solid #e6e1d4; border-radius: 8px; padding: 6px 8px; cursor: pointer; }
+.nfe-sug-i:hover { background: #ece8dc; }
+.nfe-escolhido { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; }
+.nfe-check { display: flex; gap: 6px; align-items: center; font-size: 13px; }
+.nfe-itens { display: grid; gap: 6px; }
+.nfe-item { display: grid; grid-template-columns: minmax(0, 1fr) auto auto 90px auto; gap: 8px; align-items: center; padding: 6px 8px; border: 1px solid #eee8da; border-radius: 8px; }
+@media (max-width: 760px) { .nfe-item { grid-template-columns: 1fr 1fr; } .nfe-item-n { grid-column: 1 / -1; } }
+.nfe-num { width: 90px; }
+.nfe-lin { text-align: right; }
+.nfe-total { font-size: 15px; text-align: right; }
+.nfe-fixos { font-size: 12px; }
+.nfe-vivo { display: grid; gap: 6px; }
+.nfe-ras { display: grid; gap: 6px; }
+.nfe-ras-l { display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap; padding: 6px 0; border-bottom: 1px solid #f0ece2; }
+.nfe-st { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 10px; }
+.nfe-st-fila { background: #eef3fb; color: #1F5FBF; }
+.nfe-st-ok { background: #e7f3e7; color: #2C5234; }
+.nfe-st-erro { background: #fbe9e7; color: #B23B2E; }
+.nfe-erro { flex-basis: 100%; font-size: 12px; color: #B23B2E; }

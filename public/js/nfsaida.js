@@ -26,6 +26,7 @@
     if (!state.loja || state.loja === 'todas') { root.append(h('div', { class: 'notice' }, 'As notas são de cada loja: escolha uma loja no seletor do topo.')); return; }
     const loja = state.loja;
     const corpo = h('div', { class: 'mt nf-saida' }, h('div', { class: 'card' }, h('div', { class: 'loading' }, h('div', null, h('div', { class: 'spinner' }), h('p', null, 'Lendo as notas…')))));
+    if (TS.eu?.perfil !== 'vendedor' && !TS.demo) root.append(novaNota(loja));
     root.append(corpo);
     const p = cache.get(loja) || fetch(TS.api(`nfsaida?loja=${encodeURIComponent(loja)}`), { credentials: 'same-origin' }).then(async (r) => { const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.erro || 'Falha ao ler as notas.'); return j; });
     cache.set(loja, p);
@@ -36,6 +37,152 @@
       if (state.abrirNFe) { const ch = state.abrirNFe; state.abrirNFe = null; abrir(loja, ch); }
     }).catch((e) => { cache.delete(loja); corpo.replaceChildren(h('div', { class: 'notice err' }, e.message)); });
   };
+
+  // ======================= nova NF-e: rascunho no AppNext pelo robô =======================
+  const quandoTZ = (iso) => (iso ? new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—');
+  const ESTADO_NFE = { na_fila: ['na fila do robô', 'nfe-st-fila'], ok: ['rascunho salvo no AppNext', 'nfe-st-ok'], teste: ['teste ok: tudo conferiu (nada foi salvo)', 'nfe-st-fila'], erro: ['não foi salvo', 'nfe-st-erro'] };
+  const ESQ = (x) => String(x ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  async function nfeApi(metodo, rota, corpo) {
+    const r = await fetch(TS.api(rota), { method: metodo, credentials: 'same-origin', headers: metodo === 'GET' ? {} : { 'Content-Type': 'application/json', 'X-Painel': '1' }, body: corpo ? JSON.stringify(corpo) : undefined });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.erro || 'Falha.');
+    return j;
+  }
+  function novaNota(loja) {
+    const box = h('div', { class: 'mt nfe-box' });
+    let aberto = false, info = null, timer = null;
+    const form = { parceiro: null, consumidorFinal: false, vendedorId: '', pagamento: '', itens: [], obs: '' };
+    const carregar = async () => {
+      try { info = await nfeApi('GET', `nfe?loja=${encodeURIComponent(loja)}`); } catch (e) { info = { erroGeral: e.message }; }
+      if (!box.isConnected) return;
+      pintar();
+      const trabalhando = info && ((info.robo && (info.robo.estado === 'na_fila' || info.robo.estado === 'rodando')) || (info.rascunhos || []).some((r) => r.estado === 'na_fila'));
+      clearTimeout(timer);
+      if (trabalhando) timer = setTimeout(carregar, 4000);
+    };
+    const roboVivo = () => {
+      const r = info && info.robo;
+      if (!r || (r.estado !== 'na_fila' && r.estado !== 'rodando')) return null;
+      return h('div', { class: 'nfe-vivo' }, h('div', null, h('span', { class: 'cfg-pulso' }), ' ', h('b', null, r.acao === 'cadastros' ? 'Lendo os cadastros do AppNext…' : 'Preenchendo a nota no AppNext…'),
+        h('small', { class: 'muted' }, r.estado === 'rodando' ? ' o robô está na tela de Saída de Produtos' : ' na fila do robô')),
+        r.aoVivo && r.aoVivo.length ? h('pre', { class: 'inv-log' }, r.aoVivo.slice(-14).join('\n')) : null);
+    };
+    function pintar() {
+      const bt = h('button', { type: 'button', class: 'btn ' + (aberto ? '' : 'primary') }, aberto ? 'Fechar' : '＋ Nova NF-e (rascunho no AppNext)');
+      bt.addEventListener('click', () => { aberto = !aberto; pintar(); });
+      const ras = (info && info.rascunhos) || [];
+      box.replaceChildren(...[
+        h('div', { class: 'nfe-topo' }, bt, h('small', { class: 'muted' }, 'O robô preenche a saída no AppNext e salva como rascunho. Quem confere e transmite a nota é a loja, no AppNext.')),
+        info && info.erroGeral ? h('div', { class: 'notice err mt' }, info.erroGeral) : null,
+        aberto ? formulario() : (info && info.robo && info.robo.acao === 'rascunho' ? roboVivo() : null),
+        ras.length ? listaRascunhos(ras.slice(0, aberto ? 3 : 6)) : null].filter(Boolean));
+    }
+    function listaRascunhos(ras) {
+      const ult = info.robo && info.robo.ultima;
+      return TS.card('Rascunhos pedidos ao robô', 'Os mais recentes. "Rascunho salvo" = está no AppNext em Estoque → Saída de Produtos, esperando a loja conferir e transmitir.',
+        h('div', { class: 'nfe-ras' }, ...ras.map((r) => h('div', { class: 'nfe-ras-l' },
+          h('div', null, h('b', null, r.parceiro.nome), h('small', { class: 'muted' }, ` · ${quandoTZ(r.em)} · ${r.por || '—'} · ${fmt.int(r.itens.length)} ${r.itens.length === 1 ? 'produto' : 'produtos'} · ${fmt.brl(r.total)}`)),
+          h('span', { class: 'nfe-st ' + ESTADO_NFE[r.estado][1] }, r.estado === 'na_fila' && info.robo && info.robo.estado === 'rodando' && info.robo.id === r.id ? 'o robô está preenchendo' : ESTADO_NFE[r.estado][0]),
+          r.estado === 'erro' ? h('div', { class: 'nfe-erro' }, r.erro || 'falhou', ' — nada foi salvo no AppNext.', ult && ult.id === r.id && ult.log && ult.log.length ? h('details', null, h('summary', null, 'log do robô'), h('pre', { class: 'inv-log' }, ult.log.join('\n'))) : null) : null))));
+    }
+    function formulario() {
+      if (!info) return h('div', { class: 'card mt' }, h('p', { class: 'muted' }, 'Carregando…'));
+      const cad = info.cadastros;
+      const vivo = roboVivo();
+      const btCad = h('button', { type: 'button', class: 'btn', disabled: !!vivo || !info.podeRobo || null }, cad ? '↻ Atualizar cadastros' : 'Buscar cadastros do AppNext');
+      btCad.addEventListener('click', async () => { btCad.disabled = true; try { await nfeApi('POST', 'nfe/cadastros', { loja }); carregar(); } catch (e) { alert(e.message); btCad.disabled = false; } });
+      const topoCad = h('div', { class: 'nfe-cad' }, cad ? h('small', { class: 'muted' }, `Parceiros, vendedores e produtos do AppNext lidos em ${quandoTZ(cad.em)} (${fmt.int(cad.parceiros.length)} parceiros · ${fmt.int(cad.produtos.length)} produtos). Cadastrou algo novo no AppNext? Atualize.`) : h('span', null, 'Para montar a nota, o painel precisa dos parceiros, vendedores e produtos do AppNext (o robô só lê, não altera nada).'), btCad,
+        info.erroCadastros && (!cad || Date.parse(info.erroCadastros.em) > Date.parse(cad.em)) ? h('div', { class: 'notice err' }, 'A última leitura dos cadastros falhou: ', info.erroCadastros.erro) : null, vivo && info.robo.acao === 'cadastros' ? vivo : null);
+      if (!cad) return h('div', { class: 'card mt nfe-form' }, topoCad);
+      // ---- parceiro
+      const parcBox = h('div', { class: 'nfe-campo' });
+      const pintarParc = () => {
+        if (form.parceiro) {
+          const cf = h('input', { type: 'checkbox', checked: form.consumidorFinal || null });
+          cf.addEventListener('change', () => { form.consumidorFinal = cf.checked; });
+          parcBox.replaceChildren(h('label', null, 'Parceiro'), h('div', { class: 'nfe-escolhido' }, h('b', null, form.parceiro.nome), h('small', { class: 'muted' }, ' ' + docTxt(form.parceiro.doc)),
+            h('button', { type: 'button', class: 'link-btn', onclick: () => { form.parceiro = null; pintarParc(); } }, 'trocar')),
+          h('label', { class: 'nfe-check' }, cf, ' Consumidor final'));
+          return;
+        }
+        const inp = h('input', { class: 'f-input', placeholder: 'Nome ou CNPJ/CPF do parceiro…', autocomplete: 'off' });
+        const sug = h('div', { class: 'nfe-sug' });
+        inp.addEventListener('input', () => {
+          const q = ESQ(inp.value), qd = inp.value.replace(/\D/g, '');
+          const achou = q.length < 2 ? [] : cad.parceiros.filter((x) => ESQ(x.nome).includes(q) || (qd.length >= 3 && x.doc.includes(qd))).slice(0, 8);
+          sug.replaceChildren(...achou.map((x) => h('button', { type: 'button', class: 'nfe-sug-i', onclick: () => { form.parceiro = x; form.consumidorFinal = !!x.consumidorFinal; pintarParc(); } }, h('b', null, x.nome), h('small', { class: 'muted' }, ' ' + docTxt(x.doc)))),
+            ...(q.length >= 2 && !achou.length ? [h('small', { class: 'muted' }, 'Nenhum parceiro com esse nome. Cadastre no AppNext e clique em "Atualizar cadastros".')] : []));
+        });
+        parcBox.replaceChildren(h('label', null, 'Parceiro'), inp, sug);
+      };
+      pintarParc();
+      // ---- vendedor e pagamento
+      const vend = h('select', { class: 'f-input' }, h('option', { value: '' }, 'Escolha…'), ...cad.vendedores.map((v) => h('option', { value: v.id, selected: form.vendedorId === v.id || null }, v.nome)));
+      vend.addEventListener('change', () => { form.vendedorId = vend.value; });
+      if (!form.pagamento) form.pagamento = (cad.pagamentos.find((x) => x.codigo === '9') || {}).codigo || '';
+      const pag = h('select', { class: 'f-input' }, h('option', { value: '' }, 'Escolha…'), ...cad.pagamentos.map((x) => h('option', { value: x.codigo, selected: form.pagamento === x.codigo || null }, `[${x.codigo}] ${x.descricao}`)));
+      pag.addEventListener('change', () => { form.pagamento = pag.value; });
+      // ---- produtos
+      const tabela = h('div', { class: 'nfe-itens' });
+      const totalEl = h('b');
+      const pintarItens = () => {
+        const tot = form.itens.reduce((s, i) => s + Math.round(i.qtd * i.preco * 100) / 100, 0);
+        totalEl.textContent = fmt.brl(tot);
+        tabela.replaceChildren(...form.itens.map((it, k) => {
+          const q = h('input', { class: 'f-input nfe-num', type: 'number', min: 0, step: 'any', value: it.qtd });
+          const pr = h('input', { class: 'f-input nfe-num', type: 'number', min: 0, step: '0.01', value: it.preco });
+          const lin = h('small', { class: 'nfe-lin' }, fmt.brl(it.qtd * it.preco));
+          q.addEventListener('input', () => { it.qtd = Number(q.value) || 0; lin.textContent = fmt.brl(it.qtd * it.preco); totalEl.textContent = fmt.brl(form.itens.reduce((s, i) => s + Math.round(i.qtd * i.preco * 100) / 100, 0)); });
+          pr.addEventListener('input', () => { it.preco = Number(pr.value) || 0; lin.textContent = fmt.brl(it.qtd * it.preco); totalEl.textContent = fmt.brl(form.itens.reduce((s, i) => s + Math.round(i.qtd * i.preco * 100) / 100, 0)); });
+          return h('div', { class: 'nfe-item' }, h('div', { class: 'nfe-item-n' }, h('b', null, it.nome), h('small', { class: 'muted' }, ` cód. ${it.codigo}${it.un ? ' · ' + it.un : ''}`)),
+            h('label', null, 'Qtd ', q), h('label', null, 'R$ ', pr), lin,
+            h('button', { type: 'button', class: 'link-btn', onclick: () => { form.itens.splice(k, 1); pintarItens(); } }, 'remover'));
+        }), ...(form.itens.length ? [] : [h('small', { class: 'muted' }, 'Nenhum produto ainda.')]));
+      };
+      const busca = h('input', { class: 'f-input', placeholder: 'Adicionar produto: nome ou código…', autocomplete: 'off' });
+      const sugP = h('div', { class: 'nfe-sug' });
+      busca.addEventListener('input', () => {
+        const q = ESQ(busca.value);
+        const achou = q.length < 2 ? [] : cad.produtos.filter((x) => x.codigo === busca.value.trim() || ESQ(x.nome).includes(q) || x.codigo.startsWith(busca.value.trim())).slice(0, 10);
+        sugP.replaceChildren(...achou.map((x) => h('button', { type: 'button', class: 'nfe-sug-i', onclick: () => { form.itens.push({ produtoId: x.id, codigo: x.codigo, nome: x.nome, un: x.un, qtd: 1, preco: x.preco }); busca.value = ''; sugP.replaceChildren(); pintarItens(); busca.focus(); } },
+          h('b', null, x.nome), h('small', { class: 'muted' }, ` cód. ${x.codigo} · ${fmt.brl(x.preco)}`))));
+      });
+      pintarItens();
+      const msg = h('div', { class: 'muted' });
+      const enviar = h('button', { type: 'button', class: 'btn primary', disabled: !!vivo || null }, 'Criar rascunho no AppNext');
+      const testar = h('button', { type: 'button', class: 'btn', disabled: !!vivo || null, title: 'O robô preenche a nota no AppNext e confere tudo, mas não salva nada' }, 'Testar sem salvar');
+      const mandar = async (simular) => {
+        msg.className = 'neg';
+        if (!form.parceiro) { msg.textContent = 'Escolha o parceiro.'; return; }
+        if (!form.vendedorId) { msg.textContent = 'Escolha o vendedor.'; return; }
+        if (!form.pagamento) { msg.textContent = 'Escolha a forma de pagamento.'; return; }
+        if (!form.itens.length) { msg.textContent = 'Adicione pelo menos um produto.'; return; }
+        if (form.itens.some((i) => !(i.qtd > 0) || !(i.preco > 0))) { msg.textContent = 'Confira quantidade e preço de cada produto.'; return; }
+        const tot = form.itens.reduce((s, i) => s + Math.round(i.qtd * i.preco * 100) / 100, 0);
+        if (!simular && !confirm(`Criar o rascunho da NF-e no AppNext?\n\n${form.parceiro.nome}${form.consumidorFinal ? ' (consumidor final)' : ''}\n${form.itens.length} ${form.itens.length === 1 ? 'produto' : 'produtos'} · ${fmt.brl(tot)}\n\nO robô salva como RASCUNHO: a nota só é emitida quando a loja conferir e transmitir no AppNext.`)) return;
+        enviar.disabled = true; testar.disabled = true; msg.className = 'muted'; msg.textContent = 'Enviando ao robô…';
+        try {
+          await nfeApi('POST', 'nfe/rascunho', { loja, simular, parceiroId: form.parceiro.id, consumidorFinal: form.consumidorFinal, vendedorId: form.vendedorId, pagamento: form.pagamento, itens: form.itens.map((i) => ({ produtoId: i.produtoId, qtd: i.qtd, preco: i.preco })) });
+          if (!simular) { Object.assign(form, { parceiro: null, consumidorFinal: false, itens: [] }); aberto = false; }
+          carregar();
+        } catch (e) { msg.className = 'neg'; msg.textContent = e.message; enviar.disabled = false; testar.disabled = false; }
+      };
+      enviar.addEventListener('click', () => mandar(false));
+      testar.addEventListener('click', () => mandar(true));
+      return h('div', { class: 'card mt nfe-form' }, topoCad,
+        h('div', { class: 'nfe-grade' }, parcBox,
+          h('div', { class: 'nfe-campo' }, h('label', null, 'Vendedor'), vend),
+          h('div', { class: 'nfe-campo' }, h('label', null, 'Forma de pagamento'), pag)),
+        h('div', { class: 'nfe-campo' }, h('label', null, 'Produtos'), busca, sugP, tabela),
+        h('div', { class: 'nfe-total' }, 'Total: ', totalEl),
+        h('div', { class: 'aviso nfe-fixos' }, 'Vai sempre como: [1] Venda · CFOP 5102 · série NF-e · NF-e normal · frete [9] sem frete / [9] sem ocorrência de transporte · endereço padrão do parceiro. Os impostos são calculados pelo AppNext. O robô confere tudo e salva como ', h('b', null, 'rascunho'), ' (não transmite).'),
+        h('div', { class: 'cfg-acoes' }, enviar, testar, msg),
+        vivo && info.robo.acao === 'rascunho' ? vivo : null);
+    }
+    pintar();
+    carregar();
+    return box;
+  }
 
   function lista(loja, j) {
     const f = state.f;

@@ -700,6 +700,49 @@ const lojaNfs = (req, res) => {
   if (!loja) { res.status(400).json({ erro: 'Escolha uma loja.' }); return null; }
   return loja;
 };
+// ---------- nova NF-e de saída: o robô preenche no AppNext e salva como RASCUNHO (a loja confere e transmite) ----------
+const NFE = require('./src/nfe');
+const lojaNfe = (req, res) => {
+  if (!podeTela(req, 'notas')) { res.status(403).json({ erro: 'Sem permissão.' }); return null; }
+  const loja = req.lojas.find((l) => l.id === String((req.body && req.body.loja) || req.query.loja || ''));
+  if (!loja) { res.status(400).json({ erro: 'Escolha uma loja.' }); return null; }
+  return loja;
+};
+app.get('/api/nfe', async (req, res) => {
+  const loja = lojaNfe(req, res); if (!loja) return;
+  const { lista, mudou } = NFE.conferir(loja.id);
+  for (const r of mudou) C.auditar(r.por || 'sistema', r.estado === 'ok' ? 'robô salvou rascunho de NF-e no AppNext' : r.estado === 'teste' ? 'robô testou uma NF-e (nada salvo)' : 'robô não conseguiu salvar o rascunho de NF-e', loja.id, { loja: loja.id, parceiro: r.parceiro.nome, total: r.total, erro: r.erro || null });
+  let robo = null;
+  if (COL.ativo()) { try { robo = (await COL.status(loja.id)).nfe; } catch { /* ok */ } }
+  // pedido perdido (o coletor reiniciou com ele na fila): vira erro
+  const parado = !robo || (robo.estado !== 'na_fila' && robo.estado !== 'rodando');
+  for (const r of lista) if (r.estado === 'na_fila' && parado && Date.now() - Date.parse(r.em) > 20000) { NFE.erro(loja.id, r.id, robo && robo.ultima && robo.ultima.id === r.id ? `o robô terminou sem confirmar (código ${robo.ultima.codigo})` : 'o pedido se perdeu (o coletor reiniciou); crie de novo'); }
+  const cad = NFE.cadastros(loja.id);
+  res.json({ cadastros: cad, erroCadastros: NFE.erroCadastros(loja.id), rascunhos: NFE.lista(loja.id).slice(0, 30), robo, podeRobo: COL.ativo() });
+});
+app.use('/api/nfe', (req, res, next) => (req.method === 'GET' || req.get('X-Painel') === '1' ? next() : res.status(403).json({ erro: 'Pedido inválido.' })));
+app.post('/api/nfe/cadastros', express.json({ limit: '2kb' }), async (req, res) => {
+  const loja = lojaNfe(req, res); if (!loja) return;
+  if (!COL.ativo()) return res.status(400).json({ erro: 'O coletor não está ligado nesta VPS.' });
+  NFE.prepararCadastros(loja.id);
+  try {
+    const x = await COL.nfe(loja.id, 'cadastros', 'cadastros', req.user);
+    if (x.status >= 400) return res.status(x.status === 409 ? 409 : 400).json({ erro: (x.json && x.json.erro) || 'O coletor recusou.' });
+  } catch (e) { return res.status(502).json({ erro: 'Não consegui falar com o coletor: ' + e.message }); }
+  res.json({ ok: true });
+});
+app.post('/api/nfe/rascunho', express.json({ limit: '30kb' }), async (req, res) => {
+  const loja = lojaNfe(req, res); if (!loja) return;
+  if (!COL.ativo()) return res.status(400).json({ erro: 'O coletor não está ligado nesta VPS.' });
+  const r = NFE.criar(loja.id, req.body || {}, req.user);
+  if (r.erro) return res.status(400).json({ erro: r.erro });
+  try {
+    const x = await COL.nfe(loja.id, r.ok.id, 'rascunho', req.user);
+    if (x.status >= 400) { const erro = (x.json && x.json.erro) || 'O coletor recusou.'; NFE.erro(loja.id, r.ok.id, erro); return res.status(x.status === 409 ? 409 : 400).json({ erro }); }
+  } catch (e) { NFE.erro(loja.id, r.ok.id, 'sem resposta do coletor'); return res.status(502).json({ erro: 'Não consegui falar com o coletor: ' + e.message }); }
+  C.auditar(req.user, r.ok.simular ? 'pediu teste de NF-e no AppNext (sem salvar)' : 'pediu rascunho de NF-e no AppNext', loja.id, { loja: loja.id, parceiro: r.ok.parceiro.nome, itens: r.ok.itens.length, total: r.ok.total });
+  res.json({ ok: true, rascunho: r.ok });
+});
 app.get('/api/nfsaida', (req, res) => { const l = lojaNfs(req, res); if (l) res.json(NFS.lista(l.id)); });
 app.get('/api/nfsaida/nota', (req, res) => { const l = lojaNfs(req, res); if (!l) return; const n = NFS.nota(l.id, String(req.query.chave || '')); if (!n) return res.status(404).json({ erro: 'Nota não encontrada.' }); res.json(n); });
 app.get('/api/nfsaida/xml', (req, res) => {
