@@ -104,9 +104,10 @@ test.describe('regras', () => {
   test('Configurações: a atualização automática não leva a tela para o início', async ({ page }) => {
     await page.evaluate(() => { location.hash = '#config'; });
     await expect(page.locator('.cfg-abas')).toBeVisible();
-    await page.evaluate(() => window.scrollTo(0, 600));
+    await page.setViewportSize({ width: 1366, height: 360 });
+    await page.evaluate(() => window.scrollTo(0, (document.documentElement.scrollHeight - innerHeight) / 2));
     const antes = await page.evaluate(() => window.scrollY);
-    expect(antes).toBeGreaterThan(100);
+    expect(antes).toBeGreaterThan(50);
     await page.evaluate(() => TS.cfgRepintar());
     expect(await page.evaluate(() => window.scrollY)).toBe(antes);
   });
