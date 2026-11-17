@@ -367,6 +367,7 @@
     const notaCmv = h('small', { class: 'ped-nota' }, par.cmvPct == null ? 'automático: CMV real' : h('span', null, `manual · CMV real ${fmt.pct(R.cmvReal)} · `, voltar('cmvPct')));
     const notaCresc = h('small', { class: 'ped-nota' }, par.crescimentoPct == null ? 'automático: últimas 8 semanas' : h('span', null, `manual · da loja ${fmt.pct(R.crescLoja - 1)} · `, voltar('crescimentoPct')));
     const cat = blocoCatalogo(corpo, loja, M, e, p);
+    const est = blocoEstoque(loja, e);
     const controles = h('div', { class: 'card ped-ctl' },
       h('div', { class: 'ped-ctl-l' },
         TS.seg([['Reposição', 'repor'], ['Data comemorativa', 'evento']], modo, (v) => { state.pedModo = v; pintar(corpo, loja, M, e, p); }),
@@ -377,7 +378,7 @@
         modo === 'repor' ? lbl('Vendas de', iDias, 'dias', 'Período de vendas usado no valor e intervalo até o próximo pedido (ex.: 7 para pedido semanal, 14 para quinzenal).') : null,
         modo === 'repor' ? lbl('Folga da proporção', iFolga, '%', 'Quanto cada grupo (chás, envasados, acessórios) pode passar da sua parte antes de o valor ir para os outros.') : null,
         modo === 'evento' ? lbl('Crescimento', iCresc, '%', `Quanto a mais (ou a menos) que no ano passado se vende na data.\n\nAutomático: o crescimento da loja nas últimas 8 semanas contra as mesmas 8 semanas do ano passado (${fmt.pct(R.crescLoja - 1)}), o mesmo do card "Próximas semanas" em Estoque e margem.\n\nDigite outro valor se espera mais ou menos movimento.`, notaCresc) : null),
-      h('div', { class: 'cfg-acoes' }, salvar, cat.acao, msg), h('div', { class: 'ped-cat' }, cat.info, cat.st));
+      h('div', { class: 'cfg-acoes' }, salvar, est.acao, cat.acao, msg), h('div', { class: 'ped-cat' }, est.info, cat.info, est.st, cat.st));
     corpo.append(controles);
     if (modo === 'evento') corpo.append(editorEventos(loja, p, par, () => pintar(corpo, loja, M, e, p)));
 
@@ -851,6 +852,67 @@
   /** o carrinho está sendo montado no navegador? (código válido e ainda não terminou) */
   const carrinhoAtivo = (c) => !!(c && c.modo === 'navegador' && !c.fim && c.expira && Date.parse(c.expira) > Date.now());
   const linkFavorito = () => `javascript:(function(){var s=document.createElement('script');s.src='${location.origin}/js/carrinho-site.js?v='+Date.now();document.body.appendChild(s);})();`;
+
+  /** topo da tela: de quando é o estoque do AppNext + "Atualizar estoque" (só o admin roda o coletor) com o andamento e o log */
+  function blocoEstoque(loja, e) {
+    const quando = (iso) => new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+    const em = e.estoque && e.estoque.em;
+    const horas = em ? (Date.now() - Date.parse(em)) / 36e5 : null;
+    const ha = horas == null ? '' : horas < 1 ? `há ${Math.max(1, Math.round(horas * 60))} min` : horas < 48 ? `há ${Math.round(horas)} h` : `há ${Math.round(horas / 24)} dias`;
+    const info = h('div', { class: 'ped-cat-info' }, em ? h('span', { class: horas > 12 ? 'neg' : null }, 'Estoque do AppNext: ', h('b', null, quando(em)), ` (${ha})`) : h('span', { class: 'neg' }, 'Sem data do estoque'));
+    const st = h('div', { class: 'ped-cat-st' });
+    if (TS.eu?.perfil !== 'admin' || TS.demo) return { info, st, acao: null };
+    const btn = h('button', { type: 'button', class: 'btn' }, '↻ Atualizar estoque');
+    const desenhar = (x) => {
+      const ex = x && x.execucao;
+      if (!ex) { st.replaceChildren(); return; }
+      if (ex.estado === 'na_fila' || ex.estado === 'rodando') {
+        btn.disabled = true;
+        st.replaceChildren(h('div', { class: 'ped-est-vivo' }, h('div', null, h('span', { class: 'cfg-pulso' }), ' ', h('b', null, ex.estado === 'rodando' ? 'Buscando o estoque no AppNext…' : 'Na fila do robô…'),
+          h('small', { class: 'muted' }, ` ${ex.itens && ex.itens.length ? 'só ' + ex.itens.join(', ') : 'atualização completa'} · leva de 1 a 4 min; a tela recarrega sozinha`)),
+          ex.aoVivo && ex.aoVivo.length ? h('pre', { class: 'ped-log' }, ex.aoVivo.slice(-12).join('\n')) : null));
+        return;
+      }
+      btn.disabled = false;
+      if (ex.estado === 'falhou') st.replaceChildren(h('div', null, h('span', { class: 'neg' }, `A última atualização (${ex.fim ? quando(ex.fim) : ''}) falhou.`),
+        ex.log && ex.log.length ? h('details', { class: 'ped-cat-log' }, h('summary', null, 'ver o log'), h('pre', { class: 'ped-log' }, ex.log.join('\n'))) : null));
+      else st.replaceChildren();
+    };
+    let vigiando = false;
+    const vigiar = async (antes) => {
+      if (vigiando) return; vigiando = true;
+      for (let k = 0; k < 150 && btn.isConnected; k++) {
+        let x = null;
+        try { x = await (await fetch('/api/script?loja=' + encodeURIComponent(loja), { credentials: 'same-origin' })).json(); } catch { /* tenta de novo */ }
+        if (!btn.isConnected) break;
+        desenhar(x);
+        const ex = x && x.execucao;
+        if (ex && ex.estado !== 'na_fila' && ex.estado !== 'rodando' && (k > 0 || antes)) {
+          if (ex.estado === 'ok') { try { await TS.estoqueBuscar(loja, true); } catch { /* fica o que tinha */ } if (btn.isConnected) TS.render(); }
+          break;
+        }
+        await new Promise((r) => setTimeout(r, 4000));
+      }
+      vigiando = false;
+    };
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      try {
+        const r = await fetch('/api/script?loja=' + encodeURIComponent(loja), { method: 'POST', credentials: 'same-origin', headers: { 'X-Painel': '1', 'Content-Type': 'application/json' }, body: JSON.stringify({ itens: ['estoque'] }) });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok && r.status !== 409) throw new Error(j.erro || 'Falha.');
+        desenhar({ execucao: { estado: 'na_fila', itens: ['estoque'] } });
+        vigiar(true);
+      } catch (err) { st.replaceChildren(h('span', { class: 'neg' }, err.message)); btn.disabled = false; }
+    });
+    // já tem uma atualização rodando? mostra o andamento
+    fetch('/api/script?loja=' + encodeURIComponent(loja), { credentials: 'same-origin' }).then((r) => r.json()).then((x) => {
+      if (!btn.isConnected) return;
+      const ex = x && x.execucao;
+      if (ex && (ex.estado === 'na_fila' || ex.estado === 'rodando')) { desenhar(x); vigiar(true); } else if (ex && ex.estado === 'falhou') desenhar(x);
+    }).catch(() => null);
+    return { info, st, acao: btn };
+  }
 
   /** topo da tela: "Atualizar catálogo" + data da última leitura (preço, disponível e múltiplo do site) */
   function blocoCatalogo(corpo, loja, M, e, p) {

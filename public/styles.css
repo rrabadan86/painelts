@@ -1955,3 +1955,5 @@ body.com-camada .ped-barra { display: none; }
 .cp-hoje { display: inline-block; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 10px; background: #eef4ec; color: #2C5234; margin-bottom: 6px; }
 .cp-hoje.fim { background: #fbeee0; color: #8a5a00; }
 .cp-var-txt { white-space: pre-line; }
+.ped-est-vivo { display: grid; gap: 6px; margin-top: 6px; }
+.ped-cat-info .neg { color: #B23B2E; }
