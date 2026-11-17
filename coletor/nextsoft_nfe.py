@@ -88,7 +88,9 @@ LER_CADASTROS = "async () => {" + JS_BASE + """
   return {
     parceiros: (sl.parceiros || []).filter(ativo).map((x) => ({ id: x.id, nome: x.nome || x.apelido || '', doc: String(x.cnpjCpf || ''), consumidorFinal: !!x.tagConsumidorFinal, tipoPessoa: x.tipoPessoa })),
     vendedores: (sl.vendedores || []).filter(ativo).map((x) => ({ id: x.id, nome: x.nome || '', codigo: x.codigo })),
-    produtos: (sl.produtos || []).filter(ativo).map((x) => ({ id: x.id, codigo: String(x.codigo ?? ''), nome: x.nome || '', preco: Number(x.precoVenda) || 0, un: x.unidadeMedida && (x.unidadeMedida.sigla || x.unidadeMedida.nome) || '' })),
+    // produtos: a lista da JANELA de produto (a da tela não traz os chás em pacote, ex.: Valeriana Garden 100G)
+    produtos: ((acha('onSubmitProduct') || {}).selectList || {}).produtos.filter(ativo).map((x) => ({ id: x.id, codigo: String(x.codigo ?? ''), nome: x.nome || '', preco: Number(x.precoVenda) || 0,
+      un: typeof x.unidadeMedida === 'string' ? x.unidadeMedida : (x.unidadeMedida && (x.unidadeMedida.sigla || x.unidadeMedida.nome)) || '' })),
     pagamentos: (sl.formasPagamento || []).map((x) => ({ codigo: String(x.codigo), descricao: x.descricao })),
   };
 }"""
@@ -118,7 +120,7 @@ PREENCHER = "async (p) => {" + JS_BASE + """
   await espera(500);
   // produtos: pela janela do AppNext (ela calcula os impostos de cada item)
   for (const it of p.itens) {
-    const prod = (sl.produtos || []).find((x) => x.id === it.produtoId) || erro(`produto ${it.codigo} não encontrado no AppNext`);
+    const prod = (acha('onSubmitProduct').selectList.produtos || []).find((x) => x.id === it.produtoId) || erro(`produto ${it.codigo} não encontrado no AppNext`);
     acha('abrirNovoItem').abrirNovoItem(); await espera(1200);
     const f = acha('onSubmitProduct');
     f.$set(f.item, 'produtoId', prod.id); await espera(2000);
@@ -137,7 +139,7 @@ PREENCHER = "async (p) => {" + JS_BASE + """
   const invalida = acha('validaCampos').validaCampos(); // true = tem erro em alguma aba
   return {
     invalida, parceiro: parc.nome, doc: String(parc.cnpjCpf || ''), consumidorFinal: S.consumidorFinal, vendedor: vend.nome, pagamento: pag.descricao,
-    total: Number(S.valorTotalLiquido), itens: S.itens.map((i) => { const pr = (sl.produtos || []).find((x) => x.id === i.produtoId) || {}; return { produtoId: i.produtoId, codigo: String(pr.codigo ?? ''), nome: pr.nome || '', qtd: Number(i.quantidade), preco: Number(i.valorUnitario), total: Number(i.valorTotalBruto ?? i.valorTotal ?? 0) }; }),
+    total: Number(S.valorTotalLiquido), itens: S.itens.map((i) => { const pr = (acha('onSubmitProduct').selectList.produtos || []).find((x) => x.id === i.produtoId) || {}; return { produtoId: i.produtoId, codigo: String(pr.codigo ?? ''), nome: pr.nome || '', qtd: Number(i.quantidade), preco: Number(i.valorUnitario), total: Number(i.valorTotalBruto ?? i.valorTotal ?? 0) }; }),
   };
 }"""
 
@@ -146,7 +148,7 @@ def abrir_tela(page):
     page.evaluate(f"() => {{ location.hash = '{ROTA}'; }}")
     for _ in range(60):
         page.wait_for_timeout(1000)
-        if page.evaluate(ACHA, "salvarRascunho") and page.evaluate("() => { const r=[...document.querySelectorAll('*')].find(e=>e.__vue__); const f=[r.__vue__.$root]; while(f.length){const x=f.shift(); if(x.$options.methods&&x.$options.methods.salvarRascunho) return !!(x.selectList&&x.selectList.produtos&&x.selectList.produtos.length); f.push(...(x.$children||[]));} return false; }"):
+        if page.evaluate(ACHA, "salvarRascunho") and page.evaluate("() => { const r=[...document.querySelectorAll('*')].find(e=>e.__vue__); const f=[r.__vue__.$root]; while(f.length){const x=f.shift(); if(x.$options.methods&&x.$options.methods.salvarRascunho) return !!(x.selectList&&x.selectList.produtos&&x.selectList.produtos.length); f.push(...(x.$children||[]));} return false; }") and page.evaluate("() => { const r=[...document.querySelectorAll('*')].find(e=>e.__vue__); const f=[r.__vue__.$root]; while(f.length){const x=f.shift(); if(x.$options.methods&&x.$options.methods.onSubmitProduct) return !!(x.selectList&&x.selectList.produtos&&x.selectList.produtos.length); f.push(...(x.$children||[]));} return false; }"):
             return
     raise RuntimeError("a tela de Saída de Produtos não carregou")
 
