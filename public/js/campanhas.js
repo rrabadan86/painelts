@@ -141,6 +141,24 @@
     const ks = c ? c.cupons.filter((k) => k.day >= e && k.day <= e + janela) : [];
     return { voltou: ks.length > 0, vt: ks.reduce((t, k) => t + k.vt, 0), primeira: ks.length ? Math.min(...ks.map((k) => k.day)) : null, aberto: dia() - e < janela };
   }
+  /** retorno por variação da mensagem: enviadas, voltaram e faturamento de cada uma */
+  function cartaoVariacoes(r, camp, textos) {
+    const linhas = textos.map((t, k) => {
+      const its = r.lista.filter((x) => x.st === 'e' && x.v === k);
+      let volt = 0, vt = 0, aberto = 0;
+      for (const it of its) { const x = retorno(it, camp.janela); if (x.voltou) { volt++; vt += x.vt; } if (x.aberto) aberto++; }
+      return { k: k + 1, texto: t, env: its.length, volt, pct: its.length ? volt / its.length : null, vt, aberto };
+    });
+    const melhor = linhas.filter((l) => l.env >= 10).sort((a, b) => b.pct - a.pct)[0];
+    return TS.card('Retorno por variação', `Cada cliente recebeu uma versão da mensagem · com poucas mensagens (menos de 10 por variação) a diferença ainda é sorte`, TS.table({
+      cols: [
+        { key: 'k', label: 'Variação', align: 'l', render: (l) => h('span', null, `${l.k}`, melhor && melhor.k === l.k ? h('span', { class: 'cli-tag t-repor' }, ' melhor até agora') : null) },
+        { key: 'texto', label: 'Mensagem', align: 'l', render: (l) => h('small', { class: 'cp-var-txt' }, l.texto.length > 110 ? l.texto.slice(0, 110) + '…' : l.texto) },
+        { key: 'env', label: 'Enviadas', fmt: fmt.int }, { key: 'pct', label: 'Voltaram', render: (l) => (l.pct == null ? '—' : `${fmt.pct(l.pct, 0)} (${fmt.int(l.volt)})`) },
+        { key: 'vt', label: 'Faturamento', fmt: fmt.brl0 },
+      ], rows: linhas, sortKey: 'k', sortDir: 'asc',
+    }));
+  }
   function resumoRodada(r, janela) {
     let env = 0, pend = 0, opt = 0, volt = 0, vt = 0, aberto = 0;
     for (const it of r.lista) {
@@ -215,6 +233,25 @@
     const modSel = h('select', { class: 'f-input' }, h('option', { value: '' }, 'Usar um modelo…'), ...modelos.map((m, k) => h('option', { value: k }, m.nome)));
     modSel.addEventListener('change', () => { if (modSel.value !== '') { msg.value = modelos[+modSel.value].texto; atualizar(); } modSel.value = ''; });
     const janela = h('input', { class: 'f-input', type: 'number', min: 1, max: 365, value: base ? base.janela : 30 });
+    const limite = h('input', { class: 'f-input cp-num', type: 'number', min: 0, max: 500, value: base && base.limiteDia != null ? base.limiteDia : 20 });
+    // variações da mensagem (até 4 além da principal): cada cliente recebe uma, em rodízio; o retorno é medido por variação
+    let alvoMsg = msg;
+    msg.addEventListener('focus', () => { alvoMsg = msg; });
+    const varBox = h('div', { class: 'cp-variacoes' });
+    const variacoes = [];
+    const addVar = (txt = '') => {
+      if (variacoes.length >= 4) return;
+      const t = h('textarea', { class: 'f-input cp-msg', rows: 3, placeholder: 'Mesma ideia, com outras palavras…' }, txt);
+      t.addEventListener('focus', () => { alvoMsg = t; });
+      t.addEventListener('input', () => atualizar());
+      const linhaV = h('div', { class: 'cp-var' }, h('div', { class: 'cp-var-top' }, h('small', null, ''), h('button', { type: 'button', class: 'link-btn', onclick: () => { variacoes.splice(variacoes.indexOf(t), 1); linhaV.remove(); numerar(); atualizar(); } }, 'remover')), t);
+      variacoes.push(t); varBox.append(linhaV); numerar();
+    };
+    const btVar = h('button', { type: 'button', class: 'btn' }, '+ Adicionar variação');
+    btVar.addEventListener('click', () => { addVar(); variacoes[variacoes.length - 1].focus(); });
+    function numerar() { [...varBox.children].forEach((el, k) => { el.querySelector('small').textContent = `Variação ${k + 2}`; }); btVar.hidden = variacoes.length >= 4; }
+    for (const v of (base && base.variacoes) || []) addVar(v);
+    const textosVar = () => variacoes.map((t) => t.value.trim()).filter(Boolean);
     const rec = h('select', { class: 'f-input' }, h('option', { value: '' }, 'Não (lista única)'), h('option', { value: 'semanal', selected: base && base.recorrente === 'semanal' || null }, 'Toda semana'), h('option', { value: 'mensal', selected: base && base.recorrente === 'mensal' || null }, 'Todo mês'));
     const segBox = h('div', { class: 'chips' }, ...SEGS.map(([k, t]) => { const b = h('button', { type: 'button', class: 'chip' + (f.segs.includes(k) ? ' on' : '') }, t); b.addEventListener('click', () => { f.segs = f.segs.includes(k) ? f.segs.filter((x) => x !== k) : [...f.segs, k]; b.classList.toggle('on'); atualizar(); }); return b; }));
     const vendedoras = [...new Set(TS.cli.lista.map((c) => c.vendedora).filter(Boolean))].sort();
@@ -247,9 +284,10 @@
         const b = h('button', { type: 'button', class: 'chip cp-tag', title: dica }, '{' + k + '}');
         b.addEventListener('mousedown', (e) => e.preventDefault()); // não tira o cursor da mensagem
         b.addEventListener('click', () => {
-          const ini = msg.selectionStart ?? msg.value.length, fim = msg.selectionEnd ?? ini, t = '{' + k + '}';
-          msg.value = msg.value.slice(0, ini) + t + msg.value.slice(fim);
-          msg.focus(); msg.selectionStart = msg.selectionEnd = ini + t.length; atualizar();
+          const m = alvoMsg && alvoMsg.isConnected ? alvoMsg : msg;
+          const ini = m.selectionStart ?? m.value.length, fim = m.selectionEnd ?? ini, t = '{' + k + '}';
+          m.value = m.value.slice(0, ini) + t + m.value.slice(fim);
+          m.focus(); m.selectionStart = m.selectionEnd = ini + t.length; atualizar();
         });
         return b;
       }));
@@ -266,7 +304,7 @@
       salvar.disabled = true;
       if (editando) {
         try {
-          const r = await api('PUT', `/api/campanhas/${base.id}`, { loja: state.loja, nome: nome.value.trim(), mensagem: msg.value.trim(), janela: +janela.value || 30, recorrente: rec.value, filtros: f });
+          const r = await api('PUT', `/api/campanhas/${base.id}`, { loja: state.loja, nome: nome.value.trim(), mensagem: msg.value.trim(), variacoes: textosVar(), limiteDia: +limite.value || 0, janela: +janela.value || 30, recorrente: rec.value, filtros: f });
           Object.assign(base, r.campanha);
           if (refazer.checked && JSON.stringify(f) !== filtrosAntes && base.rodadas[0]) {
             const r2 = await api('PUT', `/api/campanhas/${base.id}/rodadas/${base.rodadas[0].id}`, { loja: state.loja, lista: sel_.map(({ c }) => ({ cpf: c.cpf, nome: c.nome })) });
@@ -277,7 +315,7 @@
         return;
       }
       try {
-        const r = await api('POST', '/api/campanhas', { loja: state.loja, nome: nome.value.trim(), mensagem: msg.value.trim(), janela: +janela.value || 30, recorrente: rec.value, filtros: f, lista: sel_.map(({ c }) => ({ cpf: c.cpf, nome: c.nome })) });
+        const r = await api('POST', '/api/campanhas', { loja: state.loja, nome: nome.value.trim(), mensagem: msg.value.trim(), variacoes: textosVar(), limiteDia: +limite.value || 0, janela: +janela.value || 30, recorrente: rec.value, filtros: f, lista: sel_.map(({ c }) => ({ cpf: c.cpf, nome: c.nome })) });
         lista.unshift(r.campanha);
         if (base && base.copia) { api('DELETE', `/api/campanhas/copias/${base.copia}?${qs()}`).catch(() => null); lista.copias = (lista.copias || []).filter((x) => x.id !== base.copia); }
         abrirCampanha(corpo, lista, r.campanha);
@@ -373,8 +411,10 @@
               ...blocos,
               linha('Não incluir quem foi contatado há menos de', num_('semContato', '0'), 'dias', TS.dica('Evita mandar duas mensagens seguidas para a mesma pessoa. 0 = incluir todos.')),
               h('div', { class: 'cp-passo' }, h('span', { class: 'cp-n' }, '2'), h('div', null, h('b', null, 'Mensagem'), h('small', { class: 'muted' }, 'Clique num campo para colocar na mensagem onde está o cursor.'))),
-              h('div', { class: 'cp-msg-topo' }, modSel), camposMsg(), msg, exemplo,
+              h('div', { class: 'cp-msg-topo' }, modSel), camposMsg(), h('small', { class: 'muted' }, 'Variação 1 (principal)'), msg, exemplo,
+              varBox, h('div', { class: 'cp-var-acoes' }, btVar, h('small', { class: 'muted' }, ' Até 5 versões da mesma mensagem. Cada cliente recebe uma, em rodízio, e o painel mostra qual trouxe mais clientes de volta.')),
               h('div', { class: 'cp-passo' }, h('span', { class: 'cp-n' }, '3'), h('div', null, h('b', null, 'Envio e retorno'))),
+              linha('Enviar no máximo', limite, 'mensagens por dia nesta campanha', TS.dica('Ao chegar no limite, a fila para e continua no dia seguinte. 0 = sem limite. Poucas mensagens por dia, para quem tem motivo de receber, mantêm o número da loja saudável.')),
               linha('Medir o retorno em', janela, 'dias', TS.dica('Conta como "voltou" quem comprar (cupom com CPF) do dia do envio até N dias depois.')),
               linha('Repetir', rec, TS.dica('Toda semana ou todo mês uma lista nova é montada com estes critérios quando a tela de campanhas é aberta.')),
               refazerBox))),
@@ -392,9 +432,9 @@
     const r = camp.rodadas.find((x) => x.id === rodadaId) || camp.rodadas[0];
     const s = resumoRodada(r, camp.janela);
     const repintar = () => abrirCampanha(corpo, lista, camp, r.id, true);
-    const marcarSt = async (it, st, motivo) => {
-      const x = await api('POST', `/api/campanhas/${camp.id}/marcar`, { loja: state.loja, rodada: r.id, cpf: it.cpf, st, motivo });
-      for (const k of ['em', 'por', 'motivo', 'liberado']) delete it[k];
+    const marcarSt = async (it, st, motivo, v) => {
+      const x = await api('POST', `/api/campanhas/${camp.id}/marcar`, { loja: state.loja, rodada: r.id, cpf: it.cpf, st, motivo, v });
+      for (const k of ['em', 'por', 'motivo', 'liberado', 'v']) delete it[k];
       Object.assign(it, x.item);
     };
     // quem recebeu mensagem de OUTRA campanha (ou pelo painel) há menos de N dias, ou pediu para não receber,
@@ -419,19 +459,30 @@
     // fila: próximo pendente
     const pend = r.lista.filter((x) => x.st === 'p');
     const atual = pend[0];
+    // limite por dia: conta os envios de hoje desta campanha (todas as listas)
+    const hojeIso = new Date().toLocaleDateString('sv-SE');
+    const limiteDia = camp.limiteDia != null ? camp.limiteDia : 20;
+    const enviadosHoje = camp.rodadas.reduce((n, rr) => n + rr.lista.filter((x) => x.st === 'e' && x.em && new Date(x.em).toLocaleDateString('sv-SE') === hojeIso).length, 0);
+    const noLimite = limiteDia > 0 && enviadosHoje >= limiteDia;
+    // variações: rodízio pela quantidade já enviada (cada uma recebe mais ou menos o mesmo número)
+    const textos = [camp.mensagem, ...(camp.variacoes || [])];
+    const varAtual = r.lista.filter((x) => x.st === 'e').length % textos.length;
+    const contaHoje = limiteDia > 0 ? h('span', { class: 'cp-hoje' + (noLimite ? ' fim' : '') }, `Hoje: ${fmt.int(enviadosHoje)} de ${fmt.int(limiteDia)}`) : null;
     let fila;
-    if (atual) {
+    if (atual && noLimite) {
+      fila = TS.card('Fila de envio', `${fmt.int(pend.length)} pendentes`, h('div', { class: 'cp-fim' }, contaHoje, h('b', null, ' Limite de hoje atingido.'), ` A fila continua amanhã. Dá para mudar o limite em "Editar campanha".`));
+    } else if (atual) {
       const c = clienteDe(atual.cpf);
-      const txt = A().texto(camp.mensagem, c, extras(camp));
+      const txt = A().texto(textos[varAtual], c, extras(camp));
       const ct = A().contatoDe(c);
       const enviar = h('a', { class: 'btn primary cp-enviar', href: c.wpp ? A().linkWpp(c, txt) : '#', target: '_blank', rel: 'noopener' }, 'Abrir no WhatsApp e ir para o próximo ›');
       enviar.addEventListener('click', async (e) => {
         if (!c.wpp || TS.demo) e.preventDefault();
         enviar.classList.add('carregando');
-        try { await marcarSt(atual, 'e'); if (!TS.demo) await A().marcar(c, 'contatado', 'Campanha: ' + camp.nome.slice(0, 28)).catch(() => {}); } catch (err) { alert(err.message); }
+        try { await marcarSt(atual, 'e', null, textos.length > 1 ? varAtual : null); if (!TS.demo) await A().marcar(c, 'contatado', 'Campanha: ' + camp.nome.slice(0, 28)).catch(() => {}); } catch (err) { alert(err.message); }
         repintar();
       });
-      fila = TS.card('Fila de envio', `${fmt.int(pend.length)} pendentes · com o WhatsApp da loja aberto neste computador, clique, confira e aperte Enter no WhatsApp`,
+      fila = TS.card('Fila de envio', `${fmt.int(pend.length)} pendentes${textos.length > 1 ? ` · variação ${varAtual + 1} de ${textos.length}` : ''} · com o WhatsApp da loja aberto neste computador, clique, confira e aperte Enter no WhatsApp`, contaHoje,
         h('div', { class: 'cp-fila' },
           h('div', { class: 'cp-fila-cli' },
             h('div', { class: 'cj-nome' }, c.nome || 'Cliente'),
@@ -487,6 +538,7 @@
         kpi('Faturamento do retorno', fmt.brl0(s.vt), s.volt ? `ticket ${fmt.brl0(s.vt / s.volt)}` : null, 'Soma das compras desses clientes no prazo do retorno.'),
         kpi('Não querem', fmt.int(s.opt), 'saíram das próximas campanhas')),
       h('div', { class: 'mt' }, fila),
+      textos.length > 1 ? h('div', { class: 'mt' }, cartaoVariacoes(r, camp, textos)) : null,
       h('div', { class: 'mt' }, TS.cardWithTools('Clientes da campanha', 'Enviadas ficam em verde · clique num cliente para ver a ficha', h('div', { class: 'cp-acoes', style: { margin: 0 } }, tab.searchBox, csvBt), tab)));
   }
 

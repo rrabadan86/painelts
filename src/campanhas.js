@@ -56,7 +56,12 @@ function dadosOk(b, atual = {}) {
   if (!(janela >= 1 && janela <= 365)) return { erro: 'Prazo para medir o retorno: de 1 a 365 dias.' };
   const recorrente = String(b.recorrente ?? atual.recorrente ?? '');
   if (!RECORRENCIAS.includes(recorrente)) return { erro: 'Repetição inválida.' };
-  return { ok: { nome, mensagem, janela, recorrente, ativa: b.ativa == null ? atual.ativa ?? true : !!b.ativa, filtros: b.filtros ? filtrosOk(b.filtros) : atual.filtros || {} } };
+  // até 4 variações além da mensagem principal (cada cliente recebe uma; o retorno é medido por variação)
+  const variacoes = (Array.isArray(b.variacoes) ? b.variacoes : atual.variacoes || []).map((x) => texto(x, 1000)).filter(Boolean).slice(0, 4);
+  // limite de envios por dia nesta campanha (0 = sem limite)
+  const limiteDia = Math.round(+(b.limiteDia ?? atual.limiteDia ?? 20));
+  if (!(limiteDia >= 0 && limiteDia <= 500)) return { erro: 'Limite por dia: de 0 a 500.' };
+  return { ok: { nome, mensagem, variacoes, limiteDia, janela, recorrente, ativa: b.ativa == null ? atual.ativa ?? true : !!b.ativa, filtros: b.filtros ? filtrosOk(b.filtros) : atual.filtros || {} } };
 }
 
 function criar(id, b, por) {
@@ -108,7 +113,7 @@ function refazerLista(id, cid, rid, lista) {
   gravar(id, todas);
   return { ok: c };
 }
-function marcar(id, cid, rid, cpf, st, por, motivo) {
+function marcar(id, cid, rid, cpf, st, por, motivo, variacao) {
   if (!ST.includes(st)) return { erro: 'Situação inválida.' };
   const todas = ler(id);
   const c = todas.find((x) => x.id === cid);
@@ -116,6 +121,8 @@ function marcar(id, cid, rid, cpf, st, por, motivo) {
   const it = r && r.lista.find((x) => x.cpf === cpf);
   if (!it) return { erro: 'Cliente não está nesta campanha.' };
   it.st = st;
+  delete it.v;
+  if (st === 'e' && Number.isInteger(variacao) && variacao >= 0 && variacao <= 4) it.v = variacao;
   if (st === 'p') { delete it.em; delete it.por; delete it.motivo; if (motivo === 'liberado') it.liberado = true; } else { it.em = new Date().toISOString(); it.por = por; if (motivo && motivo !== 'liberado') it.motivo = texto(motivo, 120); else delete it.motivo; }
   gravar(id, todas);
   return { ok: it };

@@ -1949,3 +1949,9 @@ body.com-camada .ped-barra { display: none; }
 .cp-tag { font-family: ui-monospace, monospace; font-size: 11.5px; padding: 3px 8px; }
 .cp-faltam { display: block; margin-top: 6px; color: #8a5a00; }
 .cp-motivo { display: block; color: #8a5a00; font-size: 11.5px; }
+.cp-variacoes { display: grid; gap: 8px; margin-top: 8px; }
+.cp-var-top { display: flex; justify-content: space-between; align-items: center; }
+.cp-var-acoes { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 6px 0 4px; }
+.cp-hoje { display: inline-block; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 10px; background: #eef4ec; color: #2C5234; margin-bottom: 6px; }
+.cp-hoje.fim { background: #fbeee0; color: #8a5a00; }
+.cp-var-txt { white-space: pre-line; }
