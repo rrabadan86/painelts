@@ -42,7 +42,7 @@
     let ic = null, txt = null, sub = null;
     if (info.aguardando) { ic = 'aguardando'; txt = 'Acionado, aguardando o GitHub iniciar…'; sub = info.disparo ? `por ${info.disparo.por} às ${hora(info.disparo.em)}` : ''; }
     else if (e && e.estado === 'na_fila') { ic = 'na_fila'; txt = info.origem === 'vps' ? 'Na fila (uma loja por vez)' : 'Na fila do GitHub'; sub = `desde ${hora(e.criado)}`; }
-    else if (e && e.estado === 'rodando') { ic = 'rodando'; txt = 'Rodando…'; sub = `começou ${hora(e.inicio)}${e.por ? ' · por ' + e.por : ''} · costuma levar de 3 a 7 min`; }
+    else if (e && e.estado === 'rodando') { ic = 'rodando'; txt = 'Rodando…'; sub = `começou ${hora(e.inicio)}${e.por ? ' · por ' + e.por : ''} · ${e.itens && e.itens.length ? 'buscando só: ' + e.itens.map((i) => (ITENS.find((x) => x.id === i) || { nome: i }).nome.toLowerCase()).join(', ') : 'costuma levar de 3 a 7 min'}`; }
     else if (e && e.estado === 'ok') { ic = 'ok'; txt = 'Última atualização concluída'; sub = `${hora(e.fim)} · ${e.gatilho === 'agendado' ? 'automática' : 'manual' + (e.por ? ' (' + e.por + ')' : '')}${e.duracao ? ' · ' + (e.duracao < 90 ? e.duracao + ' s' : Math.round(e.duracao / 60) + ' min') : ''}`; }
     else if (e && e.estado === 'falhou') { ic = 'falhou'; txt = 'A última execução falhou'; sub = `${hora(e.fim)} · ${e.conclusao === 'cancelled' ? 'cancelada' : 'veja o log abaixo ou avise o administrador'}`; }
     if (ic) pop.append(h('div', { class: 'script-status' }, h('span', { class: 'ic ' + ic }, ic === 'ok' ? '✓' : ic === 'falhou' ? '!' : '…'), h('span', null, txt, sub ? h('small', null, sub) : null)));
@@ -51,7 +51,8 @@
       if (info.origem === 'vps') {
         const opcoes = ITENS.filter((it) => it.id !== 'fixe' || info.temFixe);
         pop.append(h('div', { class: 'script-escolha' }, opcoes.map((it) => {
-          const cb = h('input', { type: 'checkbox', checked: !desmarcados.has(it.id) || null, disabled: ativo() || null });
+          const emCurso = ativo() && e && e.itens && e.itens.length ? e.itens : null; // durante a execução, mostra o que está sendo buscado de verdade
+          const cb = h('input', { type: 'checkbox', checked: (emCurso ? emCurso.includes(it.id) : !desmarcados.has(it.id)) || null, disabled: ativo() || null });
           cb.addEventListener('change', () => { if (cb.checked) desmarcados.delete(it.id); else desmarcados.add(it.id); pintar(); });
           return h('label', { class: 'script-op' }, cb, h('span', null, h('b', null, it.nome), h('small', null, it.dica)));
         })));
