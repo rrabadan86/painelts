@@ -36,6 +36,22 @@ def step(t):
     log("▸ " + t)
 
 
+def abrir_login(page):
+    """abre o AppNext sem esperar o "load" completo (um recurso de terceiros lento travava 60 s por tentativa):
+    basta a página montar e aparecer o login (ou já estar logado)"""
+    for i in range(1, 5):
+        for url in (nx.LOGIN_URL, nx.LOGIN_URL.replace("https://www.", "https://")):
+            try:
+                log(f"   abrindo o AppNext (tentativa {i})")
+                page.goto(url, wait_until="domcontentloaded", timeout=45_000)
+                page.wait_for_function("() => !!document.querySelector('input[type=password]') || /#\\/loja\\//.test(location.hash)", timeout=45_000)
+                return
+            except Exception as e:  # noqa: BLE001
+                log(f"   não abriu: {str(e).splitlines()[0][:120]}")
+        page.wait_for_timeout(i * 5000)
+    raise RuntimeError("o AppNext não abriu (site lento ou fora do ar); tente de novo em alguns minutos")
+
+
 def fazer_login(page):
     if "/#/login" in page.url:
         page.fill(nx.SEL["rede"], nx.REDE)
@@ -151,7 +167,7 @@ def main():
         try:
             t0 = datetime.now()
             step("1) Login")
-            nx.goto_login_with_retries(page, nx.LOGIN_URL)
+            abrir_login(page)
             fazer_login(page)
             log("   ✓ login feito")
             nx.trocar_loja(page, os.getenv("APPNEXT_LOJA_DESTINO"))
