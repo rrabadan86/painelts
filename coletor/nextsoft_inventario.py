@@ -24,13 +24,22 @@ os.environ.setdefault("SAIDA_ARQUIVO", str(Path.cwd() / "_nao_usado.xlsx"))
 
 import nextsoft_export_to_drive as nx  # noqa: E402
 from playwright.sync_api import sync_playwright  # noqa: E402
-from nextsoft_produtos import fazer_login  # noqa: E402
 
 log = nx.log
 
 
 def step(t):
     log("▸ " + t)
+
+
+def fazer_login(page):
+    """mesmo login do robô de produtos (aqui sem importar aquele script, que exige outras variáveis)"""
+    if "/#/login" in page.url:
+        page.fill(nx.SEL["rede"], nx.REDE)
+        page.fill(nx.SEL["email"], nx.USER)
+        page.fill(nx.SEL["senha"], nx.PASS)
+        page.click(nx.SEL["entrar"])
+    page.wait_for_url("**/#/loja/**", timeout=120_000)
 
 # componente da tela de importação (Vue): o que o AppNext leu do arquivo e em que passo está
 LER_VM = """() => {
