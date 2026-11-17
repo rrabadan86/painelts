@@ -1,0 +1,36 @@
+# Testes automáticos a cada envio: contas (unitários) e todas as telas da apresentação no computador e no celular.
+# Resultado aparece como ✓ / ✗ no commit. Se falhar, o relatório com as telas fica em "Artifacts" da execução.
+name: Testes
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+concurrency:
+  group: testes-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  testes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Contas (unitários)
+        run: npm test
+      - name: Navegador
+        run: npx playwright install --with-deps chromium
+      - name: Telas (computador e celular)
+        run: npx playwright test
+        env:
+          CI: '1'
+      - name: Relatório das telas
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: relatorio-telas
+          path: playwright-report/
+          retention-days: 7

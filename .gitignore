@@ -15,3 +15,8 @@ config/coletor/*.py
 *.zip
 __pycache__/
 *.pyc
+
+# testes automáticos
+tests/.dados/
+test-results/
+playwright-report/
