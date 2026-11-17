@@ -31,26 +31,61 @@ status() { # estado (ok|erro|atualizando) e mensagem
   chmod 644 "$SIS/status.txt" 2>/dev/null
 }
 
+# resultado dos testes automáticos de cada versão (o GitHub grava no ramo "testes": sha, resultado, data, link)
+temtestes() { G rev-parse -q --verify origin/testes >/dev/null 2>&1; }
+resultado() { # sha completo -> success | failure | cancelled | (vazio = ainda testando)
+  G show origin/testes:resultados.txt 2>/dev/null | awk -F'\t' -v s="$1" '$1==s {r=$2} END {print r}'
+}
+alvo() { # a versão mais nova (até origin/main) que passou nos testes
+  local sha
+  for sha in $(G log --format=%H HEAD..origin/main 2>/dev/null); do
+    [ "$(resultado "$sha")" = success ] && { echo "$sha"; return; }
+  done
+}
+
 versao() { # grava a versão instalada e as novidades disponíveis
   {
     printf 'verificado\t%s\n' "$(agora)"
     printf 'atual\t%s\t%s\t%s\n' "$(G rev-parse --short HEAD)" "$(G log -1 --format=%cI HEAD)" "$(G log -1 --format=%s HEAD)"
     G log HEAD..origin/main --format='novo%x09%h%x09%cI%x09%s' 2>/dev/null
     G log -12 HEAD --format='recente%x09%h%x09%cI%x09%s' 2>/dev/null
+    if temtestes; then
+      printf 'testes\ton\n'
+      for sha in $(G log --format=%H HEAD..origin/main 2>/dev/null); do
+        G show origin/testes:resultados.txt 2>/dev/null | awk -F'\t' -v s="$sha" -v c="$(G rev-parse --short "$sha")" '$1==s {r=$2; u=$4} END {if (r!="") printf "teste\t%s\t%s\t%s\n", c, r, u}'
+      done
+      a="$(alvo)"
+      if [ -n "$a" ]; then printf 'alvo\t%s\n' "$(G rev-parse --short "$a")"; fi
+    fi
+    true
   } > "$SIS/versao.txt.tmp" && mv -f "$SIS/versao.txt.tmp" "$SIS/versao.txt"
   chmod 644 "$SIS/versao.txt" 2>/dev/null
 }
 
-buscar() { G fetch -q origin main >>"$LOG" 2>&1 || echo "$(agora) falha no git fetch" >>"$LOG"; }
+buscar() {
+  G fetch -q origin main >>"$LOG" 2>&1 || echo "$(agora) falha no git fetch" >>"$LOG"
+  G fetch -q origin testes:refs/remotes/origin/testes >>"$LOG" 2>&1 || true
+}
 
 # 1) pedido de atualização
 if [ -f "$SIS/atualizar.pedido" ]; then
   POR="$(head -c 200 "$SIS/atualizar.pedido" | tr -cd '[:alnum:] ._@:-')"
+  printf '%s\n' "$POR" > "$SIS/.pedido.ultimo"
   rm -f "$SIS/atualizar.pedido"
   echo "===== $(agora) atualização pedida por ${POR:-?} =====" >>"$LOG"
   status atualizando "Baixando a versão nova e reconstruindo o painel"
   buscar
-  if G pull --ff-only >>"$LOG" 2>&1 && docker compose up -d --build >>"$LOG" 2>&1; then
+  # só instala até a versão mais nova que passou nos testes automáticos ("forcar" no pedido instala tudo)
+  DESTINO=origin/main
+  if temtestes && ! grep -q ' forcar' "$SIS/.pedido.ultimo" 2>/dev/null; then
+    DESTINO="$(alvo)"
+    if [ -z "$DESTINO" ]; then
+      status erro "Nenhuma novidade passou nos testes automáticos ainda. Nada foi instalado."
+      versao; exit 0
+    fi
+  fi
+  echo "destino: $(G rev-parse --short "$DESTINO")" >>"$LOG"
+  if G merge --ff-only "$DESTINO" >>"$LOG" 2>&1 && docker compose up -d --build >>"$LOG" 2>&1; then
     status ok "Atualizado para a versão $(G rev-parse --short HEAD)"
     docker image prune -f >>"$LOG" 2>&1
   else

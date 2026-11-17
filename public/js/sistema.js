@@ -28,11 +28,14 @@
     return j > 0 && j < 90 ? { t: m.slice(0, j), d: m.slice(j + 2) } : { t: m, d: '' };
   }
   const maiuscula = (t) => (t ? t[0].toUpperCase() + t.slice(1) : t);
+  // resultado dos testes automáticos de cada novidade
+  const TESTE = { ok: ['✓', 'testada', 'Passou nos testes automáticos'], falhou: ['✗', 'falhou', 'Não passou nos testes automáticos: não será instalada'], testando: ['⏳', 'testando', 'Os testes automáticos estão rodando (uns 2 minutos)'], pulado: ['–', 'não testada', 'Os testes foram pulados porque chegou uma versão mais nova logo depois; vale o resultado da mais nova'] };
+  const selo = (c) => { const [ic, txt, dica] = TESTE[c.teste]; const el = h(c.testeUrl ? 'a' : 'span', { class: 'sis-teste t-' + c.teste, title: dica, href: c.testeUrl || null, target: c.testeUrl ? '_blank' : null, rel: 'noopener', onclick: (e) => e.stopPropagation() }, ic + ' ' + txt); return el; };
   function itemLista(c) {
     const p = partes(c.msg);
     const det = p.d ? h('div', { class: 'sis-det' }, maiuscula(p.d)) : null;
     const li = h('li', { class: det ? 'tem-det' : '', title: det ? 'Toque para ver tudo' : '' },
-      h('div', { class: 'sis-l1' }, h('b', null, maiuscula(p.t)), h('small', null, dia(c.data))), det);
+      h('div', { class: 'sis-l1' }, h('b', null, maiuscula(p.t)), h('small', null, TESTE[c.teste] ? selo(c) : null, dia(c.data))), det);
     if (det) li.addEventListener('click', () => li.classList.toggle('aberto'));
     return li;
   }
@@ -64,14 +67,28 @@
     if (info.novidades.length) {
       corpo.append(h('div', { class: 'sis-sec' }, `Para instalar · ${info.novidades.length}`),
         h('ul', { class: 'sis-lista' }, info.novidades.map(itemLista)));
-      const b = h('button', { class: 'btn primary', type: 'button', disabled: atualizando() || null }, atualizando() ? 'Atualização em andamento' : `Instalar ${info.novidades.length === 1 ? 'a novidade' : `as ${info.novidades.length} novidades`}`);
-      b.addEventListener('click', async () => {
+      // com os testes automáticos ligados, instala até a novidade mais nova que passou (as de cima dela esperam)
+      const N = info.novidades;
+      const iAlvo = info.testes ? N.findIndex((x) => x.sha === info.alvo) : 0; // 0 = a mais nova
+      const qtd = iAlvo < 0 ? 0 : N.length - iAlvo;
+      const pedir = async (b, forcar) => {
         b.disabled = true; b.textContent = 'Enviando…';
-        try { await api('POST', '/sistema/atualizar'); acompanhando = true; versaoAntes = info.atual && info.atual.sha; toast('Atualização pedida. O painel recarrega sozinho quando terminar.'); }
+        try { await api('POST', '/sistema/atualizar' + (forcar ? '?forcar=1' : '')); acompanhando = true; versaoAntes = info.atual && info.atual.sha; toast('Atualização pedida. O painel recarrega sozinho quando terminar.'); }
         catch (e) { toast(e.message); }
         consultar();
-      });
-      corpo.append(h('div', { class: 'sis-acao' }, b));
+      };
+      const b = h('button', { class: 'btn primary', type: 'button', disabled: atualizando() || !qtd || null },
+        atualizando() ? 'Atualização em andamento' : !qtd ? (N.some((x) => x.teste === 'testando') ? 'Aguardando os testes…' : 'Nenhuma novidade passou nos testes')
+          : qtd === N.length ? `Instalar ${N.length === 1 ? 'a novidade' : `as ${N.length} novidades`}` : `Instalar ${qtd} de ${N.length} (as testadas)`);
+      b.addEventListener('click', () => pedir(b, false));
+      const espera = N.slice(0, Math.max(0, iAlvo < 0 ? N.length : iAlvo));
+      const nota = !info.testes ? null
+        : espera.some((x) => x.teste === 'falhou') ? h('div', { class: 'notice err sis-nota' }, 'Uma novidade não passou nos testes automáticos e não será instalada. O Claude é avisado pelo GitHub e corrige; a correção aparece aqui.')
+          : espera.length ? h('div', { class: 'aviso sis-nota' }, `${espera.length === 1 ? 'A novidade mais recente ainda está' : `${espera.length} novidades ainda estão`} nos testes automáticos (uns 2 minutos). ${qtd ? 'Dá para instalar as testadas agora ou esperar.' : 'O botão libera sozinho quando passar.'}`)
+            : null;
+      const forcar = info.testes && qtd < N.length && !atualizando() ? h('button', { class: 'link-btn sis-forcar', type: 'button', title: 'Instala tudo, sem esperar os testes. Use só em emergência.',
+        onclick: (e) => { if (confirm('Instalar todas as novidades sem esperar os testes automáticos? Use só em emergência.')) pedir(e.target, true); } }, 'instalar tudo mesmo assim') : null;
+      corpo.append(h('div', { class: 'sis-acao' }, nota, b, forcar));
     }
     // instaladas recentemente
     const rec = (info.recentes && info.recentes.length ? info.recentes : info.atual ? [info.atual] : []).slice(0, 8);

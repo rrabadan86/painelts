@@ -3,6 +3,7 @@
 name: Testes
 on:
   push:
+    branches-ignore: [testes]
   pull_request:
   workflow_dispatch:
 concurrency:
@@ -34,3 +35,32 @@ jobs:
           name: relatorio-telas
           path: playwright-report/
           retention-days: 7
+
+  # resultado de cada versão do main no ramo "testes" (arquivo resultados.txt): o atualizador da VPS lê
+  # e só instala versões que passaram. O painel mostra ✓ / ✗ em "Atualizações do painel".
+  registrar:
+    needs: testes
+    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Gravar o resultado
+        env:
+          RES: ${{ needs.testes.result }}
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          git init -q r && cd r
+          git remote add origin "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          for i in 1 2 3 4 5 6; do
+            if git fetch -q --depth 1 origin testes 2>/dev/null; then git checkout -q -B testes FETCH_HEAD; else git checkout -q --orphan testes; git rm -rqf . 2>/dev/null || true; fi
+            touch resultados.txt
+            printf '%s\t%s\t%s\t%s\n' "$GITHUB_SHA" "$RES" "$(date -Iseconds)" "$URL" >> resultados.txt
+            tail -n 400 resultados.txt > t && mv t resultados.txt
+            git add resultados.txt
+            git -c user.name='testes automáticos' -c user.email='testes@painel.local' commit -qm "testes: ${GITHUB_SHA::7} ${RES}"
+            git push -q origin HEAD:testes && exit 0
+            sleep $((RANDOM % 6 + 2))
+          done
+          exit 1

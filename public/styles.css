@@ -1751,3 +1751,12 @@ body.com-camada .ped-barra { display: none; }
 .est-t-lucro th { white-space: normal; vertical-align: bottom; }
 .est-vis-margens th:not(.sticky-col) { max-width: 92px; }
 .est-t-lucro .est-ir { display: inline; margin-left: 4px; }
+
+/* resultado dos testes automáticos nas novidades */
+.sis-teste { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 999px; margin-right: 6px; text-decoration: none; }
+.sis-teste.t-ok { background: #e3f2e6; color: #23683a; }
+.sis-teste.t-falhou { background: #fbe4e1; color: #a33; }
+.sis-teste.t-testando { background: #fff3d6; color: #8a6200; }
+.sis-teste.t-pulado { background: #eee; color: #666; }
+.sis-nota { margin-bottom: 8px; font-size: 12.5px; }
+.sis-forcar { display: block; margin: 6px auto 0; font-size: 12px; }

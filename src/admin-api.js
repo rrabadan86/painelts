@@ -812,7 +812,8 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
   function sistema() {
     const v = lerTxt('versao.txt');
     const st = lerTxt('status.txt');
-    const out = { instalado: false, verificado: null, atual: null, novidades: [], recentes: [], status: null, pedido: fs.existsSync(path.join(SIS, 'atualizar.pedido')) };
+    const testes = {};
+    const out = { testes: false, alvo: null, instalado: false, verificado: null, atual: null, novidades: [], recentes: [], status: null, pedido: fs.existsSync(path.join(SIS, 'atualizar.pedido')) };
     if (v) {
       out.instalado = true;
       for (const linha of v.split('\n')) {
@@ -821,6 +822,15 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
         else if (c[0] === 'atual') out.atual = { sha: c[1], data: c[2], msg: (c.slice(3).join('\t') || '').slice(0, 300) };
         else if (c[0] === 'novo' && out.novidades.length < 60) out.novidades.push({ sha: c[1], data: c[2], msg: (c.slice(3).join('\t') || '').slice(0, 300) });
         else if (c[0] === 'recente' && out.recentes.length < 12) out.recentes.push({ sha: c[1], data: c[2], msg: (c.slice(3).join('\t') || '').slice(0, 300) });
+        else if (c[0] === 'testes') out.testes = true;
+        else if (c[0] === 'teste') testes[c[1]] = { res: c[2], url: /^https:\/\/github\.com\//.test(c[3] || '') ? c[3] : null };
+        else if (c[0] === 'alvo') out.alvo = c[1];
+      }
+      // resultado dos testes automáticos de cada novidade: ok | falhou | testando (ainda sem resultado)
+      if (out.testes) for (const n of out.novidades) {
+        const t = testes[n.sha];
+        n.teste = !t ? 'testando' : t.res === 'success' ? 'ok' : t.res === 'cancelled' ? 'pulado' : 'falhou';
+        n.testeUrl = t && t.url;
       }
       // sem verificação há mais de 20 min: o cron do atualizador parou
       out.parado = !out.verificado || Date.now() - Date.parse(out.verificado) > 20 * 60e3;
@@ -835,8 +845,10 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     const s = sistema();
     if (!s.instalado) return res.status(400).json({ erro: 'O atualizador ainda não foi instalado na VPS.' });
     if (acao === 'atualizar' && s.status && s.status.estado === 'atualizando') return res.status(409).json({ erro: 'Já tem uma atualização em andamento.' });
-    try { fs.writeFileSync(path.join(SIS, `${acao}.pedido`), `${req.user} ${new Date().toISOString()}\n`); } catch (e) { return res.status(500).json({ erro: 'Não consegui gravar o pedido: ' + e.message }); }
-    if (acao === 'atualizar') aud(req, 'pediu atualização do painel', 'sistema', { de: s.atual && s.atual.sha, novidades: s.novidades.length });
+    const forcar = acao === 'atualizar' && req.query.forcar === '1';
+    if (acao === 'atualizar' && s.testes && !s.alvo && !forcar) return res.status(409).json({ erro: 'Nenhuma novidade passou nos testes automáticos ainda.' });
+    try { fs.writeFileSync(path.join(SIS, `${acao}.pedido`), `${req.user} ${new Date().toISOString()}${forcar ? ' forcar' : ''}\n`); } catch (e) { return res.status(500).json({ erro: 'Não consegui gravar o pedido: ' + e.message }); }
+    if (acao === 'atualizar') aud(req, forcar ? 'pediu atualização do painel SEM esperar os testes' : 'pediu atualização do painel', 'sistema', { de: s.atual && s.atual.sha, para: forcar ? 'tudo' : s.alvo, novidades: s.novidades.length });
     res.json({ ok: true });
   });
 
