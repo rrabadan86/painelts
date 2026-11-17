@@ -43,14 +43,18 @@ def fazer_login(page):
 
 # componente da tela de importação (Vue): o que o AppNext leu do arquivo e em que passo está
 LER_VM = """() => {
-  let c = document.querySelector('input[type=file]');
-  while (c && !c.__vue__) c = c.parentElement;
-  let v = c && c.__vue__;
-  while (v && !(v.$options.methods && v.$options.methods.importarExcel)) v = v.$parent;
+  // procura a tela pela árvore do Vue (depois de ler o arquivo, o campo de arquivo some da tela)
+  const raiz = [...document.querySelectorAll('*')].find((e) => e.__vue__);
+  let v = null;
+  const fila = raiz ? [raiz.__vue__.$root] : [];
+  while (fila.length && !v) {
+    const x = fila.shift();
+    if (x.$options.methods && x.$options.methods.importarExcel) v = x; else fila.push(...(x.$children || []));
+  }
   if (!v) return null;
   const itens = ((v.inventario && v.inventario.itens) || []).map((i) => ({
-    cod: String(i.codigo ?? i.codigoProduto ?? i.cod ?? (i.produto && (i.produto.codigo ?? i.produto.cod)) ?? ''),
-    desc: String(i.descricao ?? i.produto ?? (i.produto && i.produto.descricao) ?? ''),
+    cod: String(i.codigo ?? i.codigoProduto ?? i.cod ?? ''),
+    desc: String(i.nome ?? i.descricao ?? ''),
     qtd: Number(i.quantidade), custo: Number(i.precoCusto), id: i.id }));
   return { passo: v.wizardStep, carregando: !!v.loadingArquivo, erro: v.erroArquivo === true || v.erroArquivo === 'true', itens };
 }"""
@@ -112,17 +116,30 @@ def main():
                 vm = page.evaluate(LER_VM)
                 if vm and not vm["carregando"] and (vm["itens"] or vm["erro"]):
                     break
+                if resp and (not vm or not vm["carregando"]):
+                    page.wait_for_timeout(1500)
+                    vm = page.evaluate(LER_VM)
+                    break
             # aviso que o AppNext mostrou na tela (fica 10 s) e a resposta da leitura do arquivo
             avisos = page.evaluate("""() => [...document.querySelectorAll('.toast, .toasted, .swal2-popup, .notification, .vue-notification, .alert, .iziToast, [role=alert]')]
                 .map((e) => e.innerText.trim()).filter(Boolean).slice(0, 5)""")
             if resp:
                 log(f"   resposta do AppNext ao ler o arquivo: HTTP {resp['status']}")
-                if resp.get("corpo"):
+                if resp.get("corpo") and resp["status"] >= 400:
                     log("   " + resp["corpo"][:600].replace("\n", " "))
             else:
                 log("   o AppNext não respondeu à leitura do arquivo")
             for a in avisos:
                 log("   aviso na tela: " + a.replace("\n", " ")[:300])
+            if (not vm or not vm["itens"]) and resp.get("status") == 200:
+                try:
+                    lr = json.loads(resp.get("corpo") or "[]")
+                    if isinstance(lr, list) and lr:
+                        log("   (itens conferidos pela resposta do AppNext)")
+                        vm = {**(vm or {"passo": 1, "carregando": False, "erro": False}), "itens": [
+                            {"cod": str(i.get("codigo") or ""), "desc": str(i.get("nome") or ""), "qtd": float(i.get("quantidade") or 0)} for i in lr]}
+                except ValueError:
+                    pass
             if not vm or not vm["itens"]:
                 motivo = (avisos[0] if avisos else "") or (resp.get("corpo", "")[:200] if resp and resp.get("status", 200) >= 400 else "")
                 raise RuntimeError("o AppNext não leu os itens da planilha" + (f": {motivo}" if motivo else (" (recusou o arquivo)" if vm and vm["erro"] else "")))
