@@ -123,11 +123,22 @@ PREENCHER = "async (p) => {" + JS_BASE + """
     const prod = (acha('onSubmitProduct').selectList.produtos || []).find((x) => x.id === it.produtoId) || erro(`produto ${it.codigo} não encontrado no AppNext`);
     acha('abrirNovoItem').abrirNovoItem(); await espera(1200);
     const f = acha('onSubmitProduct');
-    f.$set(f.item, 'produtoId', prod.id); await espera(2000);
+    // as regras fiscais (sequências) chegam do AppNext depois que a janela abre: espera antes de escolher o produto
+    for (let k = 0; k < 60 && !((f.selectList.sequenciasFiscal || []).length); k++) await espera(250);
+    if (!(f.selectList.sequenciasFiscal || []).length) erro('o AppNext não carregou as regras fiscais (sequências) na janela do produto');
+    f.$set(f.item, 'produtoId', prod.id);
+    for (let k = 0; k < 40 && !f.item.sequenciaFiscalId; k++) await espera(250);
+    if (!f.item.sequenciaFiscalId) {
+      // a janela não escolheu sozinha: a regra de Venda que inclui o produto (a mesma que o AppNext procura)
+      const seq = (f.selectList.sequenciasFiscal || []).find((q) => q.motivoMovimentacao && q.motivoMovimentacao.id === motivo.id && (q.produtosLoja || []).some((e) => e.id === prod.id));
+      if (seq) { f.$set(f.item, 'sequenciaFiscalId', seq.id); for (let k = 0; k < 20 && !(f.item.imposto && f.item.imposto.cfopId); k++) await espera(250); }
+    }
+    await espera(800);
     f.$set(f.item, 'quantidade', it.qtd); await espera(500);
     if (it.preco != null) { f.$set(f.item, 'valorUnitario', it.preco); await espera(500); }
     f.$set(f.item, 'vendedorId', vend.id); await espera(500);
-    if (!f.item.sequenciaFiscalId) erro(`o AppNext não achou a regra fiscal do produto ${prod.codigo}`);
+    if (!f.item.sequenciaFiscalId) erro(`o produto ${prod.codigo} (${prod.nome}) não tem regra fiscal de Venda no AppNext: cadastre a sequência fiscal dele ou faça esta nota à mão`);
+    if (!(f.item.imposto && f.item.imposto.cfopId)) erro(`o AppNext não preencheu os impostos do produto ${prod.codigo}`);
     f.nextStep(); await espera(1200); f.nextStep(); await espera(1200);
     if (f.wizardStep !== 3) erro(`a janela do produto ${prod.codigo} não chegou ao resumo (passo ${f.wizardStep})`);
     const antes = S.itens.length;
