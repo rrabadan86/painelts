@@ -218,24 +218,21 @@ DEVOLVER = "async (p) => {" + JS_BASE.replace("acha('salvarRascunho')", "acha('m
   if (erroTotais) erro('o AppNext não recalculou os totais da nota: ' + erroTotais.slice(0, 150));
   await espera(500);
   if (tela.lojaAtual.id !== S.lojaId) erro('a loja aberta no AppNext não é a da nota de entrada');
-  // campos de id vazios ("") que o servidor não aceita como Guid: viram null (ex.: imposto.modalidadeDeterminacaoBcIcmsId)
+  // campos de id que não são Guid ("" , número, texto, null na modalidade da BC): são removidos do envio — o servidor usa o padrão
   // e qualquer outro valor que não seja um Guid (número, objeto, texto): o log mostra quais foram trocados
   const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   const trocados = [];
   const limpar = (o, onde) => { if (!o || typeof o !== 'object') return; for (const k of Object.keys(o)) {
     const v = o[k];
-    if (/Id$/.test(k) && v != null && !(typeof v === 'string' && GUID.test(v))) {
+    if (/Id$/.test(k) && (v != null || /modalidadeDeterminacao/i.test(k)) && !(typeof v === 'string' && GUID.test(v))) {
       const g = v && typeof v === 'object' && typeof v.id === 'string' && GUID.test(v.id) ? v.id : null; // objeto com id: usa o id
-      trocados.push(`${onde}${k}=${typeof v === 'object' ? 'objeto' : JSON.stringify(v).slice(0, 20)}→${g ? 'id' : 'null'}`);
-      o[k] = g;
+      trocados.push(`${onde}${k}=${typeof v === 'object' ? 'objeto' : JSON.stringify(v).slice(0, 20)}→${g ? 'id' : 'removido'}`);
+      if (g) o[k] = g; else delete o[k]; // sem o campo, o servidor usa o padrão (null não serve para Guid obrigatório)
     } else if (v && typeof v === 'object' && !Array.isArray(v)) limpar(v, onde + k + '.');
   } };
   limpar(S, ''); S.itens.forEach((it, n) => limpar(it, `itens[${n}].`));
   window.__limparIds = () => { limpar(S, ''); S.itens.forEach((it, n) => limpar(it, `itens[${n}].`)); return trocados; }; // de novo na hora de gravar
   const t = tela.$refs.tabs; const invalida = ['validarDadosNota', 'validarDadosFornecedor', 'validarProdutos', 'validarTransportadora', 'validarValoresAdicionais'].filter((k) => t[k] && t[k]());
-  // o AppNext exige a modalidade da BC do ICMS em cada item (Guid obrigatório): ela vem da regra fiscal de devolução
-  const semModalidade = S.itens.filter((i) => !(i.imposto && GUID.test(String(i.imposto.modalidadeDeterminacaoBcIcmsId || '')))).map((i) => i.codigo);
-  if (semModalidade.length) erro(`a regra fiscal (sequência) de Devolução ao Fornecedor desta loja está sem a "Modalidade de determinação da BC do ICMS": preencha na sequência fiscal no AppNext (como na de Venda) e tente de novo — itens ${semModalidade.slice(0, 5).join(', ')}`);
   return { trocados, invalida, cfop: cfops[0].codigo, chaveRef: String(S.chaveAcesso || ''), total: Number(S.valorTotalLiquido), produtos: Number(S.valorTotalProduto), itens: S.itens.map((i) => ({ codigo: String(i.codigo), nome: i.nome || '', qtd: Number(i.quantidade), preco: Number(i.valorUnitario), total: Number(i.valorTotalLiquido) })) };
 }"""
 
