@@ -95,6 +95,16 @@ def main():
             page.wait_for_timeout(1500)
             log("   ✓ tela de importação aberta (passo 1: Selecione o arquivo)")
             step(f"3) Enviando a planilha ({len(esperado)} produtos, {Path(ENTRADA).stat().st_size // 1024 or 1} KB)")
+            resp = {}
+
+            def ao_responder(r):
+                if "inventario/upload" in r.url:
+                    try:
+                        corpo = r.text()
+                    except Exception:  # noqa: BLE001
+                        corpo = ""
+                    resp.update({"status": r.status, "corpo": corpo})
+            page.on("response", ao_responder)
             page.locator("input[type=file]").first.set_input_files(ENTRADA)
             vm = None
             for _ in range(90):
@@ -102,9 +112,22 @@ def main():
                 vm = page.evaluate(LER_VM)
                 if vm and not vm["carregando"] and (vm["itens"] or vm["erro"]):
                     break
+            # aviso que o AppNext mostrou na tela (fica 10 s) e a resposta da leitura do arquivo
+            avisos = page.evaluate("""() => [...document.querySelectorAll('.toast, .toasted, .swal2-popup, .notification, .vue-notification, .alert, .iziToast, [role=alert]')]
+                .map((e) => e.innerText.trim()).filter(Boolean).slice(0, 5)""")
+            if resp:
+                log(f"   resposta do AppNext ao ler o arquivo: HTTP {resp['status']}")
+                if resp.get("corpo"):
+                    log("   " + resp["corpo"][:600].replace("\n", " "))
+            else:
+                log("   o AppNext não respondeu à leitura do arquivo")
+            for a in avisos:
+                log("   aviso na tela: " + a.replace("\n", " ")[:300])
             if not vm or not vm["itens"]:
-                raise RuntimeError("o AppNext não leu os itens da planilha" + (" (recusou o arquivo)" if vm and vm["erro"] else ""))
+                motivo = (avisos[0] if avisos else "") or (resp.get("corpo", "")[:200] if resp and resp.get("status", 200) >= 400 else "")
+                raise RuntimeError("o AppNext não leu os itens da planilha" + (f": {motivo}" if motivo else (" (recusou o arquivo)" if vm and vm["erro"] else "")))
             lidos = vm["itens"]
+            page.remove_listener("response", ao_responder)
             log(f"   ✓ o AppNext leu {len(lidos)} produtos da planilha")
             step("4) Conferindo item a item (código e quantidade)")
             com_cod = [i for i in lidos if i["cod"]]
