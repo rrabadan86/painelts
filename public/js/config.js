@@ -1198,7 +1198,28 @@
   }
 
   // ======================= COLETOR =======================
+  // ---- backup no Google Drive (admin): situação, tamanho, log e "Fazer backup agora"
+  let bkp = null;
+  function cartaoBackup() {
+    const card = h('div', { class: 'card cfg-form' }, h('div', { class: 'card-title' }, 'Backup no Google Drive'));
+    if (!bkp) { api('GET', '/backup').then((b) => { bkp = b; pintar(); }).catch(() => { bkp = { erro: true }; }); card.append(h('div', { class: 'muted' }, 'Carregando…')); return card; }
+    if (bkp.erro) return null;
+    const tam = (b) => (b == null ? '—' : b >= 1e9 ? `${(b / 1e9).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} GB` : `${Math.max(1, Math.round(b / 1e6)).toLocaleString('pt-BR')} MB`);
+    const u = bkp.ultimoOk;
+    const sit = bkp.estado === 'rodando' || bkp.pedido ? linhaSit('rodando', 'Backup', bkp.pedido ? 'na fila (começa em até 1 minuto)' : 'enviando agora', 'A primeira vez envia tudo; as próximas, só o que mudou.')
+      : bkp.estado === 'erro' ? linhaSit('erro', 'Backup', h('span', { class: 'neg' }, 'o último falhou'), `${dt(bkp.em)} · ${bkp.msg || 'veja o log'}`, u ? `O último que deu certo foi ${dt(u.em)}.` : null)
+        : bkp.estado === 'ok' ? linhaSit('ok', 'Backup', `feito ${dt(bkp.em)}`, `${tam(u && u.bytes)} no Drive, ${fmt.int((u && u.arquivos) || 0)} arquivos, criptografados. Roda sozinho toda madrugada; o que muda fica guardado por 30 dias.`)
+          : linhaSit('nada', 'Backup', 'ainda não configurado', 'Na VPS, rode uma vez: bash /opt/teashop-painel/scripts/backup-configurar.sh (ele explica o passo a passo).');
+    card.append(h('div', { class: 'cfg-sit' }, sit));
+    const pode = bkp.estado && bkp.estado !== 'nao_configurado' && bkp.estado !== 'rodando' && !bkp.pedido;
+    if (pode) card.append(h('div', { class: 'cfg-acoes' }, acao('Fazer backup agora', async () => { await api('POST', '/backup'); bkp = null; setTimeout(() => { bkp = null; if (raiz && raiz.isConnected) pintar(); }, 70000); return 'Backup pedido. Começa em até 1 minuto.'; })));
+    if (bkp.log && bkp.log.length) card.append(detalhes('bkplog', { class: 'cfg-log' }, h('summary', null, 'Log do último backup'), logBonito(bkp.log)));
+    if (bkp.estado === 'rodando' || bkp.pedido) setTimeout(() => { bkp = null; if (raiz && raiz.isConnected && state.cfgAba === 'coletor') pintar(); }, 10000);
+    return card;
+  }
+
   function abaColetor(box) {
+    if (est.perfil === 'admin') { const c = cartaoBackup(); if (c) box.append(c); }
     if (!est.coletorAtivo) { box.append(h('div', { class: 'notice' }, 'O coletor não está ligado nesta VPS (falta COLETOR_URL/COLETOR_TOKEN no .env).')); return; }
     const ed = editorSemana(est.agenda);
     const proprias = (est.lojas || []).filter((x) => x.horarios && x.horarios.propria).map((x) => x.nome);

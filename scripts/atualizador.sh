@@ -67,6 +67,16 @@ buscar() {
   G fetch -q origin testes:refs/remotes/origin/testes >>"$LOG" 2>&1 || true
 }
 
+# 0) backup no Google Drive (scripts/backup.sh): quando o painel pede, ou uma vez por dia entre 3h e 6h.
+#    Roda separado (não segura a trava do atualizador) e só depois de configurado (scripts/backup-configurar.sh).
+if [ -f "$DIR/scripts/backup.sh" ]; then
+  HOJE="$(date +%F)"; H=$((10#$(date +%H)))
+  if [ -f "$SIS/backup.pedido" ] || { [ "$H" -ge 3 ] && [ "$H" -lt 6 ] && [ ! -f "$SIS/.backup.dia.$HOJE" ]; }; then
+    touch "$SIS/.backup.dia.$HOJE"; find "$SIS" -maxdepth 1 -name '.backup.dia.*' -mtime +3 -delete 2>/dev/null
+    nohup bash "$DIR/scripts/backup.sh" </dev/null >/dev/null 2>&1 9>&- &
+  fi
+fi
+
 # 1) pedido de atualização
 if [ -f "$SIS/atualizar.pedido" ]; then
   POR="$(head -c 200 "$SIS/atualizar.pedido" | tr -cd '[:alnum:] ._@:-')"

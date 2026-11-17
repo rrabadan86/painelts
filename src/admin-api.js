@@ -841,6 +841,28 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     return out;
   }
   r.get('/sistema', soAdmin, (req, res) => res.json(sistema()));
+  // backup no Google Drive (scripts/backup.sh na VPS): situação e "fazer agora"
+  function backup() {
+    const st = (lerTxt('backup.txt') || '').trim().split('\t'), ok = (lerTxt('backup.ok') || '').trim().split('\t');
+    let log = [];
+    try { log = fs.readFileSync(path.join(SIS, 'backup.log'), 'utf8').split('\n').filter(Boolean).slice(-30); } catch { /* ok */ }
+    const n = (x) => (x && /^\d+$/.test(x) ? +x : null);
+    return {
+      instalado: !!lerTxt('versao.txt'), estado: st[0] || null, em: st[1] || null, msg: st[4] || null,
+      ultimoOk: ok[0] ? { em: ok[0], bytes: n(ok[1]), arquivos: n(ok[2]) } : null,
+      pedido: fs.existsSync(path.join(SIS, 'backup.pedido')), log,
+    };
+  }
+  r.get('/backup', soAdmin, (req, res) => res.json(backup()));
+  r.post('/backup', soAdmin, (req, res) => {
+    const b = backup();
+    if (!b.instalado) return res.status(400).json({ erro: 'O atualizador ainda não foi instalado na VPS.' });
+    if (b.estado === 'nao_configurado' || !b.estado) return res.status(400).json({ erro: 'O backup ainda não foi configurado na VPS (scripts/backup-configurar.sh).' });
+    if (b.estado === 'rodando' || b.pedido) return res.status(409).json({ erro: 'Já tem um backup em andamento.' });
+    try { fs.writeFileSync(path.join(SIS, 'backup.pedido'), `${req.user} ${new Date().toISOString()}\n`); } catch (e) { return res.status(500).json({ erro: 'Não consegui pedir: ' + e.message }); }
+    aud(req, 'pediu backup no Google Drive', 'sistema', {});
+    res.json({ ok: true });
+  });
   r.post('/sistema/:acao', soAdmin, (req, res) => {
     const acao = req.params.acao;
     if (!['atualizar', 'verificar'].includes(acao)) return res.status(404).json({ erro: 'Ação inválida.' });
