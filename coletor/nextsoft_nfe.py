@@ -192,6 +192,9 @@ DEVOLVER = "async (p) => {" + JS_BASE.replace("acha('salvarRascunho')", "acha('m
   const cfops = sl.cfops || [];
   if (!cfops.length) erro('não há regra fiscal (sequência) de Devolução ao Fornecedor nesta loja no AppNext');
   if (cfops.length > 1) erro(`há ${cfops.length} CFOPs de devolução nesta loja (${cfops.map((c) => c.codigo).join(', ')}); faça esta nota à mão`);
+  // a modalidade da BC do ICMS que veio da nota de entrada (a regra de devolução não tem): guardada antes da regra sobrescrever
+  const GUIDm = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const modOrig = new Map(S.itens.map((i) => [String(i.codigo).toUpperCase(), i.imposto && i.imposto.modalidadeDeterminacaoBcIcmsId]));
   set('cfopId', cfops[0].id); // a tela põe a regra em cada item e recalcula os impostos
   for (let k = 0; k < 40 && S.itens.some((i) => !i.produtosSequencia || !(i.imposto && i.imposto.cfopId)); k++) await espera(250);
   if (S.itens.some((i) => !i.produtosSequencia)) erro('algum item não tem a regra fiscal de devolução');
@@ -204,7 +207,25 @@ DEVOLVER = "async (p) => {" + JS_BASE.replace("acha('salvarRascunho')", "acha('m
   set('tipoFreteId', tf.id); set('modalidadeFreteId', mf.id);
   const forn = acha('carregarEnderecosParceiro');
   for (let k = 0; k < 40 && forn && (forn.carregandoEnderecos || !forn.enderecosParceiro.length); k++) await espera(250);
-  if (!S.enderecoId && forn && forn.enderecosParceiro.length === 1) set('enderecoId', forn.enderecosParceiro[0].id);
+  // sempre com o endereço do parceiro (o principal, se houver; senão o primeiro)
+  if (!S.enderecoId && forn && forn.enderecosParceiro.length) { const ends = forn.enderecosParceiro; set('enderecoId', (ends.find((e) => e.principal || e.padrao) || ends[0]).id); }
+  if (!S.enderecoId) erro('o parceiro não tem endereço no AppNext para escolher');
+  // data de emissão da saída: sempre hoje (a tela traz a data da nota de entrada)
+  const hj = new Date(), hoje = `${hj.getFullYear()}-${String(hj.getMonth() + 1).padStart(2, '0')}-${String(hj.getDate()).padStart(2, '0')}`;
+  const datas = Object.keys(S).filter((k) => /^data/i.test(k) && /emiss|saida/i.test(k));
+  for (const k of datas) set(k, typeof S[k] === 'string' && /^\\d{4}-\\d{2}-\\d{2}/.test(S[k]) ? hoje + S[k].slice(10) : hoje);
+  // modalidade da BC do ICMS: o AppNext exige uma que exista. Usa a da nota de entrada; senão a [3] Valor da operação da lista da tela
+  const listaMod = Object.keys(sl).filter((k) => /modalidade/i.test(k) && /icms|bc|base|determina/i.test(k) && !/st$/i.test(k)).map((k) => sl[k]).find((v) => Array.isArray(v) && v.length) || [];
+  const mod3 = listaMod.find((x) => String(x.codigo) === '3') || null;
+  const modLog = [];
+  for (const it of S.itens) {
+    if (!it.imposto) continue;
+    const atual = it.imposto.modalidadeDeterminacaoBcIcmsId, orig = modOrig.get(String(it.codigo).toUpperCase());
+    if (typeof atual === 'string' && GUIDm.test(atual)) continue;
+    const novo = (typeof orig === 'string' && GUIDm.test(orig)) ? orig : (mod3 && mod3.id);
+    if (novo) { tela.$set(it.imposto, 'modalidadeDeterminacaoBcIcmsId', novo); modLog.push(`${it.codigo}: ${novo === orig ? 'da nota de entrada' : '[3] valor da operação'}`); }
+    else modLog.push(`${it.codigo}: sem modalidade (listas na tela: ${Object.keys(sl).filter((k) => /modalidade/i.test(k)).join(', ') || 'nenhuma'})`);
+  }
   await espera(800);
   // totais da nota: a tela chama o cálculo sem esperar; aqui espera a resposta do AppNext (com o frete já preenchido)
   let erroTotais = null;
@@ -233,7 +254,7 @@ DEVOLVER = "async (p) => {" + JS_BASE.replace("acha('salvarRascunho')", "acha('m
   limpar(S, ''); S.itens.forEach((it, n) => limpar(it, `itens[${n}].`));
   window.__limparIds = () => { limpar(S, ''); S.itens.forEach((it, n) => limpar(it, `itens[${n}].`)); return trocados; }; // de novo na hora de gravar
   const t = tela.$refs.tabs; const invalida = ['validarDadosNota', 'validarDadosFornecedor', 'validarProdutos', 'validarTransportadora', 'validarValoresAdicionais'].filter((k) => t[k] && t[k]());
-  return { trocados, invalida, cfop: cfops[0].codigo, chaveRef: String(S.chaveAcesso || ''), total: Number(S.valorTotalLiquido), produtos: Number(S.valorTotalProduto), itens: S.itens.map((i) => ({ codigo: String(i.codigo), nome: i.nome || '', qtd: Number(i.quantidade), preco: Number(i.valorUnitario), total: Number(i.valorTotalLiquido) })) };
+  return { modLog, datas: datas.length ? datas.map((k) => `${k}=${String(S[k]).slice(0, 10)}`) : ['campo não encontrado: ' + Object.keys(S).filter((k) => /^data/i.test(k)).join(', ')], trocados, invalida, cfop: cfops[0].codigo, chaveRef: String(S.chaveAcesso || ''), total: Number(S.valorTotalLiquido), produtos: Number(S.valorTotalProduto), itens: S.itens.map((i) => ({ codigo: String(i.codigo), nome: i.nome || '', qtd: Number(i.quantidade), preco: Number(i.valorUnitario), total: Number(i.valorTotalLiquido) })) };
 }"""
 
 
@@ -270,6 +291,7 @@ def devolucao(page, pedido, t0):
     step(f"3) Deixando só os {len(pedido['itens'])} itens da devolução e preenchendo")
     r = page.evaluate(DEVOLVER, pedido)
     log(f"   CFOP {r['cfop']} · série NF-e · frete [9]/[9] · sem pagamento e sem vendedor")
+    log(f"   data de emissão: {', '.join(r.get('datas') or [])} · modalidade da BC do ICMS: {'; '.join(r.get('modLog') or []) or 'já preenchida'}")
     if r.get("trocados"):
         log("   campos de id corrigidos: " + ", ".join(r["trocados"][:20]))
     step("4) Conferindo")
