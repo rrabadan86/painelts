@@ -753,7 +753,7 @@ async function enviarDevolucao(loja, d) {
     const anexos = [...await anexosNf(loja, d), { filename: `devolucao-NF${d.nota.nf}.xlsx`, content: xlsx }];
     d = DEV.ler(loja.id, d.id) || d; // acharNfDevolucao pode ter guardado o número da nota
     d.itens.forEach((it, n) => { for (let k = 0; k < it.fotos; k++) anexos.push({ filename: `NF${d.nota.nf}-${it.cod}-foto${k + 1}.jpg`, path: DEV.arqFoto(loja.id, d.id, n, k) }); });
-    await NOTIF.enviarEmail(para.join(', '), `Devolução · ${nome} · NF ${d.nota.nf}${d.nfe && d.nfe.numero ? ' · NF-e de devolução ' + d.nfe.numero : ''}${d.nota.fornecedor ? ' · ' + d.nota.fornecedor : ''}`, DEV.textoEmail(d, nome), null, smtp, anexos);
+    await NOTIF.enviarEmail(para.join(', '), DEV.montarAssunto(loja.id, d, nome), DEV.textoEmail(d, nome), null, smtp, anexos);
     return DEV.atualizar(loja.id, d.id, (x) => { x.email = { estado: 'enviado', em: new Date().toISOString(), para, comNota: !!(x.nfe && x.nfe.chave) }; });
   } catch (e) {
     return DEV.atualizar(loja.id, d.id, (x) => { x.email = { estado: 'erro', erro: String(e.message || e).slice(0, 300), em: new Date().toISOString() }; });
@@ -790,7 +790,7 @@ app.get('/api/devolucoes', async (req, res) => {
   }
   // a NF-e de devolução foi autorizada (o XML chegou)? manda o e-mail que estava esperando
   for (let k = 0; k < ds.length; k++) if (ds[k] && ds[k].email && ds[k].email.estado === 'aguardando_nf' && ds[k].nfe && ds[k].nfe.estado === 'ok' && acharNfDevolucao(loja, ds[k])) ds[k] = await enviarDevolucao(loja, DEV.ler(loja.id, ds[k].id));
-  res.json({ devolucoes: ds, destinatarios: DEV.destinatarios(loja.id) });
+  res.json({ devolucoes: ds, destinatarios: DEV.destinatarios(loja.id), assunto: DEV.assunto(loja.id) });
 });
 // de tempos em tempos: devoluções esperando a NF-e autorizada para mandar o e-mail
 setInterval(async () => {
@@ -820,10 +820,12 @@ app.get('/api/devolucoes/:id/foto/:n/:k', (req, res) => {
 app.use('/api/devolucoes', (req, res, next) => (req.method === 'GET' || req.get('X-Painel') === '1' ? next() : res.status(403).json({ erro: 'Pedido inválido.' })));
 app.put('/api/devolucoes/destinatarios', express.json({ limit: '4kb' }), (req, res) => {
   const loja = lojaDev(req, res); if (!loja) return;
-  const r = DEV.salvarDestinatarios(loja.id, (req.body || {}).emails);
+  const b = req.body || {};
+  const r = DEV.salvarDestinatarios(loja.id, b.emails);
   if (r.erro) return res.status(400).json({ erro: r.erro });
-  C.auditar(req.user, 'alterou os destinatários das devoluções', loja.id, { loja: loja.id, emails: r.ok.length });
-  res.json({ ok: true, destinatarios: r.ok });
+  const assunto = b.assunto != null ? DEV.salvarAssunto(loja.id, b.assunto) : DEV.assunto(loja.id);
+  C.auditar(req.user, 'alterou o e-mail das devoluções', loja.id, { loja: loja.id, emails: r.ok.length });
+  res.json({ ok: true, destinatarios: r.ok, assunto });
 });
 app.post('/api/devolucoes', express.json({ limit: '12mb' }), async (req, res) => {
   const loja = lojaDev(req, res); if (!loja) return;

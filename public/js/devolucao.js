@@ -110,13 +110,7 @@
     busca.addEventListener('input', () => { const q = busca.value.toLowerCase().trim(); linhas.forEach((el) => { el.hidden = !!q && !el.dataset.busca.includes(q); }); });
     lista.append(...linhas);
     pintarResumo();
-    // destinatários
-    const destInp = h('input', { class: 'f-input', value: dest.join(', '), placeholder: 'e-mails separados por vírgula' });
-    const destMsg = h('small', { class: 'muted' });
-    const salvarDest = h('button', { type: 'button', class: 'btn' }, 'Salvar destinatários');
-    salvarDest.addEventListener('click', async () => {
-      try { const r = await api('PUT', 'devolucoes/destinatarios', { loja, emails: destInp.value.split(/[,;\s]+/).filter(Boolean) }); dest = r.destinatarios; destInp.value = dest.join(', '); destMsg.textContent = `Salvo: ${dest.length} ${dest.length === 1 ? 'destinatário' : 'destinatários'}.`; } catch (e) { destMsg.textContent = e.message; }
-    });
+    // destinatários e assunto: Configurações → Integrações
     const obsGeral = h('textarea', { class: 'f-input', rows: 2, maxlength: 400, placeholder: 'Observação geral (opcional)' });
     const msg = h('div', { class: 'muted' });
     const enviar = h('button', { type: 'button', class: 'btn primary' }, 'Enviar devolução');
@@ -141,7 +135,7 @@
       h('div', { class: 'card-title' }, `Devolver itens da NF ${n.nf}`),
       h('div', { class: 'card-sub' }, 'Marque os itens e diga quantos vieram danificados e quantos não chegaram (pode ser os dois no mesmo item). Danificados precisam de foto (até 3).'),
       busca, lista, resumo, obsGeral,
-      h('div', { class: 'dev-dest' }, h('b', null, 'Destinatários do e-mail (desta loja)'), destInp, h('div', { class: 'dev-linha' }, salvarDest, destMsg)),
+      h('div', { class: 'dev-dest' }, h('small', null, h('b', null, 'O e-mail vai para: '), dest.length ? dest.join(', ') : h('span', { class: 'neg' }, 'ninguém ainda'), ' · ', h('a', { href: '#config' }, 'editar em Configurações → Integrações'))),
       h('div', { class: 'cfg-acoes' }, enviar, h('button', { type: 'button', class: 'btn', onclick: () => box.replaceWith(barra(n)) }, 'Cancelar'), msg)));
   }
   TS.devolucao = { barra };

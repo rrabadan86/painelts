@@ -18,7 +18,20 @@ const EMAIL = /^[^\s@<>,;]{1,64}@[^\s@<>,;]{1,190}\.[a-z]{2,}$/i;
 const txt = (v, n) => String(v ?? '').replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, n);
 const lerJ = (f, d) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return d; } };
 
+const ASSUNTO_PADRAO = 'Devolução · {loja} · NF {nf} · {fornecedor}';
 function destinatarios(id) { return lerJ(path.join(pasta(id), 'destinatarios.json'), []); }
+/** assunto do e-mail (editável em Configurações → Integrações): {loja} {nf} {fornecedor} {nfDevolucao} */
+function assunto(id) { const a = lerJ(path.join(pasta(id), 'assunto.json'), null); return (a && a.assunto) || ASSUNTO_PADRAO; }
+function salvarAssunto(id, a) {
+  const t = txt(a, 160) || ASSUNTO_PADRAO;
+  fs.mkdirSync(pasta(id), { recursive: true });
+  C.gravarAtomico(path.join(pasta(id), 'assunto.json'), JSON.stringify({ assunto: t }), 0o640);
+  return t;
+}
+function montarAssunto(id, d, nomeLoja) {
+  const v = { loja: nomeLoja, nf: String(d.nota.nf), fornecedor: d.nota.fornecedor || '', nfDevolucao: d.nfe && d.nfe.numero ? String(d.nfe.numero) : '' };
+  return assunto(id).replace(/\{(\w+)\}/g, (m, k) => (k in v ? v[k] : m)).replace(/\s*·\s*(·|$)/g, '$1').replace(/\s{2,}/g, ' ').trim();
+}
 function salvarDestinatarios(id, lista) {
   const l = [...new Set((Array.isArray(lista) ? lista : []).map((x) => String(x).trim().toLowerCase()).filter(Boolean))].slice(0, 20);
   const ruim = l.find((e) => !EMAIL.test(e));
@@ -178,4 +191,4 @@ function conferirNfe(id, d) {
 }
 function erroNfe(id, did, erro) { return atualizar(id, did, (x) => { x.nfe = { ...(x.nfe || {}), estado: 'erro', erro, fim: new Date().toISOString() }; }); }
 
-module.exports = { pedirNfe, conferirNfe, erroNfe, destinatarios, salvarDestinatarios, criar, ler, atualizar, lista, arqFoto, planilha, textoEmail, pastaDev };
+module.exports = { ASSUNTO_PADRAO, assunto, salvarAssunto, montarAssunto, pedirNfe, conferirNfe, erroNfe, destinatarios, salvarDestinatarios, criar, ler, atualizar, lista, arqFoto, planilha, textoEmail, pastaDev };

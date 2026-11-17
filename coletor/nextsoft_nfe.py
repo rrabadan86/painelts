@@ -218,6 +218,9 @@ DEVOLVER = "async (p) => {" + JS_BASE.replace("acha('salvarRascunho')", "acha('m
   if (erroTotais) erro('o AppNext não recalculou os totais da nota: ' + erroTotais.slice(0, 150));
   await espera(500);
   if (tela.lojaAtual.id !== S.lojaId) erro('a loja aberta no AppNext não é a da nota de entrada');
+  // campos de id vazios ("") que o servidor não aceita como Guid: viram null (ex.: imposto.modalidadeDeterminacaoBcIcmsId)
+  const limpar = (o) => { if (!o || typeof o !== 'object') return; for (const k of Object.keys(o)) { if (/Id$/.test(k) && o[k] === '') o[k] = null; else if (o[k] && typeof o[k] === 'object' && !Array.isArray(o[k])) limpar(o[k]); } };
+  limpar(S); for (const it of S.itens) limpar(it);
   const t = tela.$refs.tabs; const invalida = ['validarDadosNota', 'validarDadosFornecedor', 'validarProdutos', 'validarTransportadora', 'validarValoresAdicionais'].filter((k) => t[k] && t[k]());
   return { invalida, cfop: cfops[0].codigo, chaveRef: String(S.chaveAcesso || ''), total: Number(S.valorTotalLiquido), produtos: Number(S.valorTotalProduto), itens: S.itens.map((i) => ({ codigo: String(i.codigo), nome: i.nome || '', qtd: Number(i.quantidade), preco: Number(i.valorUnitario), total: Number(i.valorTotalLiquido) })) };
 }"""

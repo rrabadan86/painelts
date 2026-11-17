@@ -209,7 +209,7 @@
       ['metas', 'Metas e comissão', 'Meta do mês, regras de comissão e férias da equipe', () => [blocoMetas(l), blocoFerias(l), admin ? blocoRegras(l) : null]],
       ['loja', 'Loja e equipe', 'Horário de funcionamento, equipe, logo e dados da loja', () => [blocoOperacao(l), blocoMarca(l), admin ? blocoEditar(l) : null]],
       gestor && TS.blocoEstoqueCfg ? ['estoque', 'Estoque e margem', 'Impostos, maquininha, custos da loja por categoria, reposição e embalagens', () => [TS.blocoEstoqueCfg(l.id)]] : null,
-      ['integracoes', 'Integrações', 'AppNext, Sistema de Pedidos e FIXE', () => [admin ? blocoAppNext(l) : null, admin && TS.blocoPedidoAcesso ? TS.blocoPedidoAcesso(l.id) : null, blocoFixe(l)]],
+      ['integracoes', 'Integrações', 'AppNext, Sistema de Pedidos, FIXE e e-mail das devoluções', () => [admin ? blocoAppNext(l) : null, admin && TS.blocoPedidoAcesso ? TS.blocoPedidoAcesso(l.id) : null, blocoFixe(l), blocoDevolucao(l)]],
       ['avisos', 'Mensagens', 'Fechamento do dia por e-mail e mensagens de WhatsApp', () => [blocoFechamento(l), blocoWpp(l)]],
     ].filter(Boolean);
     const atual = SECOES.some((x) => x[0] === secaoLoja.get(l.id)) ? secaoLoja.get(l.id) : SECOES[0][0];
@@ -627,6 +627,31 @@
 
   // ---- planilhas
   // ---- cadastro de clientes pelo FIXE (exportação por e-mail, lida no Gmail da loja)
+  /** e-mail das devoluções ao fornecedor: para quem vai e o assunto */
+  function blocoDevolucao(l) {
+    const b = h('section', { class: 'cfg-bloco' }, h('h3', null, 'Devoluções ao fornecedor (e-mail)'),
+      h('p', { class: 'muted' }, 'Quando a loja registra uma devolução (Notas fiscais → Entrada → nota → Devolver itens), o painel manda, depois que a NF-e de devolução é autorizada, um e-mail com a NF-e (PDF e XML), a planilha e as fotos pelo Gmail da loja.'));
+    const emails = h('input', { class: 'f-input', placeholder: 'e-mails separados por vírgula' });
+    const assunto = h('input', { class: 'f-input', maxlength: 160 });
+    const msg = h('small', { class: 'muted' });
+    const salvar = h('button', { type: 'button', class: 'btn primary' }, 'Salvar');
+    fetch(TS.api(`devolucoes?loja=${encodeURIComponent(l.id)}`), { credentials: 'same-origin' }).then((r) => r.json()).then((j) => { emails.value = (j.destinatarios || []).join(', '); assunto.value = j.assunto || ''; }).catch(() => null);
+    salvar.addEventListener('click', async () => {
+      salvar.disabled = true;
+      try {
+        const r = await fetch(TS.api('devolucoes/destinatarios'), { method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-Painel': '1' }, body: JSON.stringify({ loja: l.id, emails: emails.value.split(/[,;\s]+/).filter(Boolean), assunto: assunto.value }) });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.erro || 'Falha.');
+        emails.value = j.destinatarios.join(', '); assunto.value = j.assunto; msg.textContent = 'Salvo.';
+      } catch (e) { msg.textContent = e.message; }
+      salvar.disabled = false;
+    });
+    b.append(h('label', { class: 'cfg-campo' }, h('span', null, 'Destinatários'), emails),
+      h('label', { class: 'cfg-campo' }, h('span', null, 'Assunto'), assunto),
+      h('small', { class: 'muted' }, 'Campos do assunto: {loja} · {nf} (nota de entrada) · {fornecedor} · {nfDevolucao} (número da NF-e de devolução)'),
+      h('div', { class: 'cfg-acoes' }, salvar, msg));
+    return b;
+  }
   function blocoFixe(l) {
     const fx = l.fixe || {};
     const gmail = (l.fechEmail && l.fechEmail.email && l.fechEmail.email.user) || '';
