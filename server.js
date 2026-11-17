@@ -508,7 +508,7 @@ app.get('/api/campanhas', (req, res) => {
   if (!podeClientes(req)) return res.status(403).json({ erro: 'Sem permissão.' });
   const id = lojaCamp(req);
   if (!id) return res.status(400).json({ erro: 'Escolha uma loja.' });
-  res.json({ campanhas: CAMP.ler(id) });
+  res.json({ campanhas: CAMP.ler(id), copias: CAMP.lerCopias(id) });
 });
 app.use('/api/campanhas', (req, res, next) => {
   if (req.method === 'GET') return next();
@@ -545,6 +545,25 @@ app.post('/api/campanhas/:id/marcar', express.json({ limit: '4kb' }), (req, res)
   const r = CAMP.marcar(id, req.params.id, String(b.rodada || ''), String(b.cpf || ''), String(b.st || ''), req.user);
   if (r.erro) return res.status(400).json({ erro: r.erro });
   res.json({ ok: true, item: r.ok });
+});
+// copiar para outras lojas (só as que a pessoa acessa): chega lá como "campanha recebida" para montar a lista
+app.post('/api/campanhas/:id/copiar', express.json({ limit: '4kb' }), (req, res) => {
+  const id = lojaCamp(req);
+  if (!id) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  const destinos = Array.isArray((req.body || {}).destinos) ? req.body.destinos.map(String) : [];
+  if (destinos.some((d) => !req.lojas.some((l) => l.id === d))) return res.status(403).json({ erro: 'Você não tem acesso a uma das lojas escolhidas.' });
+  const origem = req.lojas.find((l) => l.id === id);
+  const r = CAMP.copiar(id, origem && origem.nome, req.params.id, destinos, req.user);
+  if (r.erro) return res.status(400).json({ erro: r.erro });
+  C.auditar(req.user, 'copiou campanha para outras lojas', id, { loja: id, destinos: r.ok });
+  res.json({ ok: true, destinos: r.ok });
+});
+app.delete('/api/campanhas/copias/:cid', (req, res) => {
+  const id = lojaCamp(req);
+  if (!id) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  const r = CAMP.descartarCopia(id, req.params.cid);
+  if (r.erro) return res.status(400).json({ erro: r.erro });
+  res.json({ ok: true });
 });
 app.delete('/api/campanhas/:id', (req, res) => {
   const id = lojaCamp(req);

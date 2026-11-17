@@ -112,6 +112,7 @@
     root.append(corpo);
     api('GET', '/api/campanhas?' + qs()).then(async (j) => {
       const lista = j.campanhas || [];
+      lista.copias = j.copias || [];
       const novas = await rodadasRecorrentes(lista);
       if (corpo.isConnected) pintarLista(corpo, lista, novas);
     }).catch((e) => corpo.replaceChildren(h('div', { class: 'notice err' }, e.message)));
@@ -162,10 +163,43 @@
           h('div', { class: 'ok' }, h('b', null, s.env ? fmt.pct(s.volt / s.env, 0) : '—'), h('small', null, `voltaram (${c.janela} dias)`))),
         h('div', { class: 'cp-barra' }, h('span', { style: { width: (s.total ? (s.env + s.opt) / s.total * 100 : 0) + '%' } })));
     });
+    const copias = (lista.copias || []).map((cp) => h('div', { class: 'card cp-recebida' },
+      h('div', null, h('b', null, cp.nome), h('small', { class: 'muted' }, ` · copiada de ${cp.deNome || cp.deLoja} por ${cp.por || '—'} em ${fmt.date(cp.em.slice(0, 10))}`),
+        h('div', { class: 'muted cp-recebida-msg' }, cp.mensagem.length > 140 ? cp.mensagem.slice(0, 140) + '…' : cp.mensagem)),
+      h('div', { class: 'cp-recebida-acoes' },
+        h('button', { type: 'button', class: 'btn primary', onclick: () => criar(corpo, lista, { ...cp, copia: cp.id }) }, 'Montar a lista desta loja'),
+        h('button', { type: 'button', class: 'btn', onclick: async () => { if (!confirm(`Descartar a campanha "${cp.nome}" recebida de ${cp.deNome || cp.deLoja}?`)) return; try { await api('DELETE', `/api/campanhas/copias/${cp.id}?${qs()}`); lista.copias = lista.copias.filter((x) => x !== cp); pintarLista(corpo, lista, []); } catch (e) { alert(e.message); } } }, 'Descartar'))));
     por(corpo,
       novas.length ? h('div', { class: 'notice' }, `Nova lista criada para: ${novas.join(', ')} (campanha recorrente).`) : null,
+      copias.length ? h('div', { class: 'cp-recebidas' }, h('div', { class: 'cp-recebidas-tit' }, h('b', null, `Recebidas de outras lojas (${copias.length})`), h('small', { class: 'muted' }, ' · a mensagem e os critérios vêm prontos; a lista é montada com os clientes desta loja')), ...copias) : null,
       h('div', { class: 'cp-acoes' }, h('button', { type: 'button', class: 'btn primary', onclick: () => criar(corpo, lista) }, '+ Criar campanha')),
       lista.length ? h('div', { class: 'cp-grid' }, ...cards) : TS.card(null, null, TS.empty('Nenhuma campanha ainda. Clique em "Criar campanha" para montar a primeira.')));
+  }
+
+  /** escolher as lojas que recebem a campanha (mensagem e critérios; cada loja monta a própria lista) */
+  function copiarPara(camp) {
+    const outras = (TS.lojas || []).filter((l) => l.id !== state.loja).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+    const marc = new Set();
+    const ok = h('button', { type: 'button', class: 'btn primary', disabled: true }, 'Copiar');
+    const conta = () => { ok.disabled = !marc.size; ok.textContent = marc.size ? `Copiar para ${marc.size} ${marc.size === 1 ? 'loja' : 'lojas'}` : 'Copiar'; };
+    const itens = outras.map((l) => { const cb = h('input', { type: 'checkbox' }); cb.addEventListener('change', () => { if (cb.checked) marc.add(l.id); else marc.delete(l.id); conta(); }); return h('label', { class: 'cp-loja' }, cb, h('span', null, l.nome)); });
+    const todas = h('button', { type: 'button', class: 'btn link' }, 'Marcar todas');
+    todas.addEventListener('click', () => { const tudo = marc.size < outras.length; itens.forEach((it, k) => { const cb = it.querySelector('input'); cb.checked = tudo; if (tudo) marc.add(outras[k].id); else marc.delete(outras[k].id); }); conta(); });
+    const erro = h('div', { class: 'muted' });
+    const fundo = h('div', { class: 'cp-modal-bg' });
+    const fechar = () => fundo.remove();
+    fundo.addEventListener('click', (e) => { if (e.target === fundo) fechar(); });
+    ok.addEventListener('click', async () => {
+      ok.disabled = true; erro.textContent = '';
+      try { const r = await api('POST', `/api/campanhas/${camp.id}/copiar`, { loja: state.loja, destinos: [...marc] }); fechar(); const t = h('div', { class: 'toast', role: 'status' }, `Copiada para ${r.destinos.length} ${r.destinos.length === 1 ? 'loja' : 'lojas'}. Lá ela aparece em "Recebidas de outras lojas".`); document.body.append(t); setTimeout(() => t.remove(), 6000); } catch (e) { erro.textContent = e.message; ok.disabled = false; }
+    });
+    fundo.append(h('div', { class: 'card cp-copiar' },
+      h('h3', null, 'Copiar para outra loja'),
+      h('p', { class: 'muted' }, `"${camp.nome}" vai com a mensagem e os critérios. Em cada loja, quem abrir Campanhas clica em "Montar a lista desta loja": a lista sai dos clientes de lá.`),
+      outras.length > 3 ? todas : null,
+      h('div', { class: 'cp-lojas' }, ...itens), erro,
+      h('div', { class: 'cp-acoes' }, h('span', { style: { flex: 1 } }), h('button', { type: 'button', class: 'btn', onclick: fechar }, 'Cancelar'), ok)));
+    document.body.append(fundo);
   }
 
   // ---------- criar ----------
@@ -176,7 +210,7 @@
     const campo = (rot, el, dica) => h('label', { class: 'cp-campo' }, h('span', null, rot, dica ? TS.dica(dica) : null), el);
     const inp = (k, ph, tipo = 'number') => { const i = h('input', { class: 'f-input', type: tipo, placeholder: ph, value: f[k] ?? '', min: tipo === 'number' ? 0 : null }); i.addEventListener('input', () => { f[k] = i.value; atualizar(); }); return i; };
     const sel = (k, opcoes) => { const s = h('select', { class: 'f-input' }, ...opcoes.map(([v, t]) => h('option', { value: v, selected: String(f[k]) === String(v) || null }, t))); s.addEventListener('change', () => { f[k] = s.value; atualizar(); }); return s; };
-    const nome = h('input', { class: 'f-input', placeholder: 'Ex.: Pontos vencendo em dezembro', value: base ? base.nome + (editando ? '' : ' (cópia)') : '' });
+    const nome = h('input', { class: 'f-input', placeholder: 'Ex.: Pontos vencendo em dezembro', value: base ? base.nome + (editando || base.copia ? '' : ' (cópia)') : '' });
     const msg = h('textarea', { class: 'f-input cp-msg', rows: 4 }, base ? base.mensagem : (modelos.find((m) => /pontos/i.test(m.nome)) || modelos[0] || { texto: '' }).texto);
     const modSel = h('select', { class: 'f-input' }, h('option', { value: '' }, 'Usar um modelo…'), ...modelos.map((m, k) => h('option', { value: k }, m.nome)));
     modSel.addEventListener('change', () => { if (modSel.value !== '') { msg.value = modelos[+modSel.value].texto; atualizar(); } modSel.value = ''; });
@@ -228,6 +262,7 @@
       try {
         const r = await api('POST', '/api/campanhas', { loja: state.loja, nome: nome.value.trim(), mensagem: msg.value.trim(), janela: +janela.value || 30, recorrente: rec.value, filtros: f, lista: sel_.map(({ c }) => ({ cpf: c.cpf, nome: c.nome })) });
         lista.unshift(r.campanha);
+        if (base && base.copia) { api('DELETE', `/api/campanhas/copias/${base.copia}?${qs()}`).catch(() => null); lista.copias = (lista.copias || []).filter((x) => x.id !== base.copia); }
         abrirCampanha(corpo, lista, r.campanha);
       } catch (e) { erro.textContent = e.message; salvar.disabled = false; }
     });
@@ -402,6 +437,7 @@
         h('button', { type: 'button', class: 'btn', onclick: () => criar(corpo, lista, camp, true) }, 'Editar campanha'),
         camp.recorrente ? h('button', { type: 'button', class: 'btn', onclick: async () => { try { const x = await api('PUT', `/api/campanhas/${camp.id}`, { loja: state.loja, ativa: camp.ativa === false }); Object.assign(camp, x.campanha); repintar(); } catch (e) { alert(e.message); } } }, camp.ativa === false ? 'Retomar repetição' : 'Pausar repetição') : null,
         h('button', { type: 'button', class: 'btn', onclick: () => criar(corpo, lista, camp) }, 'Duplicar'),
+        (TS.lojas || []).length > 1 && !TS.demo ? h('button', { type: 'button', class: 'btn', onclick: () => copiarPara(camp) }, 'Copiar para outra loja') : null,
         h('button', { type: 'button', class: 'btn danger-txt', onclick: async () => { if (!confirm(`Apagar a campanha "${camp.nome}"? As listas e o retorno somem.`)) return; await api('DELETE', `/api/campanhas/${camp.id}?${qs()}`).catch((e) => alert(e.message)); lista.splice(lista.indexOf(camp), 1); pintarLista(corpo, lista, []); } }, 'Apagar')),
       h('div', { class: 'page-head cp-head' }, h('div', null, h('h2', { class: 'page-title' }, camp.nome),
         h('div', { class: 'page-sub' }, `${camp.recorrente ? (camp.recorrente === 'semanal' ? 'Toda semana · ' : 'Todo mês · ') : ''}lista de ${fmt.date(r.em.slice(0, 10))} · retorno medido em ${camp.janela} dias`))),

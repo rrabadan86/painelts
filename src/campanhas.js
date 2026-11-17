@@ -129,4 +129,30 @@ function apagar(id, cid) {
   return { ok: true };
 }
 
-module.exports = { ler, criar, alterar, novaRodada, refazerLista, marcar, apagar };
+// ---------- copiar para outra loja ----------
+// A lista depende dos clientes de cada loja (os filtros rodam no navegador), então a cópia chega na outra loja
+// como "campanha recebida": quem abre Campanhas lá revisa e salva, e a lista é montada com os clientes de lá.
+const arqCopias = (id) => path.join(C.pastaLoja(id), 'campanhas-copias.json');
+function lerCopias(id) { try { const j = JSON.parse(fs.readFileSync(arqCopias(id), 'utf8')); return Array.isArray(j) ? j : []; } catch { return []; } }
+function copiar(origem, nomeOrigem, cid, destinos, por) {
+  const c = ler(origem).find((x) => x.id === cid);
+  if (!c) return { erro: 'Campanha não encontrada.' };
+  const ds = [...new Set((destinos || []).map(String))].filter((d) => d !== origem);
+  if (!ds.length) return { erro: 'Escolha pelo menos uma loja.' };
+  for (const d of ds) {
+    const l = lerCopias(d).filter((x) => !(x.deLoja === origem && x.deCampanha === cid)); // a mesma campanha mandada de novo substitui
+    l.unshift({ id: novoId(), nome: c.nome, mensagem: c.mensagem, janela: c.janela, recorrente: c.recorrente, filtros: c.filtros || {}, deLoja: origem, deNome: nomeOrigem, deCampanha: cid, por, em: new Date().toISOString() });
+    fs.mkdirSync(path.dirname(arqCopias(d)), { recursive: true });
+    C.gravarAtomico(arqCopias(d), JSON.stringify(l.slice(0, 50)), 0o640);
+  }
+  return { ok: ds };
+}
+function descartarCopia(id, cpid) {
+  const l = lerCopias(id);
+  const n = l.filter((x) => x.id !== cpid);
+  if (n.length === l.length) return { erro: 'Cópia não encontrada.' };
+  C.gravarAtomico(arqCopias(id), JSON.stringify(n), 0o640);
+  return { ok: true };
+}
+
+module.exports = { lerCopias, copiar, descartarCopia, ler, criar, alterar, novaRodada, refazerLista, marcar, apagar };
