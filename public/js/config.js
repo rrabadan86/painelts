@@ -73,14 +73,22 @@
     carregar();
   };
 
+  TS.cfgRepintar = () => pintar(); // a mesma repintura da atualização automática (usada nos testes)
   function pintar() {
-    const root = raiz;
+    // monta a tela nova fora da página e troca de uma vez: a página não encolhe no meio e a rolagem fica onde estava
+    // (a atualização automática a cada 5 s não leva mais para o início); os logs abertos mantêm a própria rolagem
+    const root = h('div');
     sujo = false;
     const scroll = window.scrollY;
-    root.textContent = '';
+    const rolLogs = [...raiz.querySelectorAll('.cfg-log')].map((d) => { const el = d.querySelector('.cfg-log-txt, pre, .log-bonito') || d; return [d.dataset.chave || '', el.scrollTop, el.scrollHeight - el.clientHeight - el.scrollTop < 4]; });
+    const fim = () => {
+      raiz.replaceChildren(...root.childNodes);
+      [...raiz.querySelectorAll('.cfg-log')].forEach((d, i) => { const r = rolLogs[i]; const el = d.querySelector('.cfg-log-txt, pre, .log-bonito') || d; if (r) el.scrollTop = r[2] ? el.scrollHeight : r[1]; });
+      window.scrollTo({ top: scroll, behavior: 'instant' });
+    };
     root.append(h('div', { class: 'page-head' }, h('div', null, h('h1', { class: 'page-title' }, 'Configurações'),
       h('div', { class: 'page-sub' }, est.perfil === 'admin' ? 'Lojas, acesso ao AppNext, metas, usuários e horários' : 'Metas, planilhas e usuários das suas lojas'))));
-    if (est.erro) { root.append(h('div', { class: 'notice err' }, est.erro)); return; }
+    if (est.erro) { root.append(h('div', { class: 'notice err' }, est.erro)); fim(); return; }
     const abas = [['Lojas', 'lojas'], ['Usuários', 'usuarios']];
     if (est.perfil === 'admin') abas.push(['Atualização automática', 'coletor'], ['Resumo diário', 'resumo']);
     abas.push(['Histórico de alterações', 'historico']);
@@ -89,7 +97,7 @@
     const corpo = h('div', { class: 'cfg-corpo' });
     root.append(corpo);
     ({ lojas: abaLojas, usuarios: abaUsuarios, coletor: abaColetor, resumo: abaResumo, historico: abaHistorico })[state.cfgAba](corpo);
-    window.scrollTo({ top: scroll });
+    fim();
   }
 
   // ======================= LOJAS =======================

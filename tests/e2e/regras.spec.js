@@ -100,4 +100,14 @@ test.describe('regras', () => {
     await page.locator('.esp-sug-p .cp-sug-it').first().dispatchEvent('mousedown');
     await expect(page.locator('.esp-chip')).toHaveCount(1);
   });
+
+  test('Configurações: a atualização automática não leva a tela para o início', async ({ page }) => {
+    await page.evaluate(() => { location.hash = '#config'; });
+    await expect(page.locator('.cfg-abas')).toBeVisible();
+    await page.evaluate(() => window.scrollTo(0, 600));
+    const antes = await page.evaluate(() => window.scrollY);
+    expect(antes).toBeGreaterThan(100);
+    await page.evaluate(() => TS.cfgRepintar());
+    expect(await page.evaluate(() => window.scrollY)).toBe(antes);
+  });
 });
