@@ -90,6 +90,7 @@
       nfsaida: [['periodo'], 'Notas fiscais: o período vale na aba "No período".'],
       dre: [[], 'O Resultado mostra mês a mês e não usa estes filtros.'],
       inicio: [[], 'O Início mostra o que pede atenção hoje e não usa estes filtros.'],
+      espera: [[], 'A lista de espera não usa estes filtros.'],
     }[state.page];
     const usa = (k) => !USO || USO[0].includes(k);
     if (USO) box.append(h('div', { class: 'f-hint f-uso' }, USO[1]));

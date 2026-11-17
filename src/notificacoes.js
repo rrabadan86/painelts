@@ -276,4 +276,13 @@ function agendar(obter) {
   }, 30e3);
 }
 
-module.exports = { quandoFechamento, assuntoFechamento, assuntoValido, ASSUNTO_PADRAO, enviarEmail, ler, gravar, publico, publicoLoja, cfgLoja, conversasTelegram, enviarTodos, montarTexto, agendar, montarFechamento, enviarFechamento, enviarFechamentoLoja };
+/** aviso curto no Telegram para quem recebe os alertas desta loja (lista de espera etc.) */
+async function avisarLoja(id, texto) {
+  const c = ler();
+  if (!c.telegram.token) return 0;
+  let n = 0;
+  for (const d of c.telegram.destinos) if ((d.lojas || []).includes('*') || (d.lojas || []).includes(id)) { await enviarTelegram(d.chatId, texto); n++; }
+  return n;
+}
+
+module.exports = { avisarLoja, quandoFechamento, assuntoFechamento, assuntoValido, ASSUNTO_PADRAO, enviarEmail, ler, gravar, publico, publicoLoja, cfgLoja, conversasTelegram, enviarTodos, montarTexto, agendar, montarFechamento, enviarFechamento, enviarFechamentoLoja };

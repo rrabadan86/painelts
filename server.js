@@ -735,8 +735,97 @@ app.get('/api/pedido', async (req, res) => {
       }
     } catch (e) { robo = { disponivel: false, erro: e.message }; }
   }
-  res.json({ catalogo: PED.catalogo(loja.id), carrinho: PED.carrinho(loja.id), cfg: PED.cfg(C.get().lojas.find((l) => l.id === loja.id)), obrigatorio: PED.obrigatorios(loja.id), robo, podeRobo: req.perfil === 'admin' });
+  res.json({ catalogo: PED.catalogo(loja.id), carrinho: PED.carrinho(loja.id), cfg: PED.cfg(C.get().lojas.find((l) => l.id === loja.id)), obrigatorio: PED.obrigatorios(loja.id), espera: ESP.resumoPorCod(loja.id), robo, podeRobo: req.perfil === 'admin' });
 });
+// ---------- lista de espera (Clientes → Lista de espera): todos os perfis da loja anotam e avisam ----------
+const ESP = require('./src/espera');
+const FIx = require('./src/fidelidade');
+const lojaEsp = (req) => req.lojas.find((l) => l.id === String((req.body && req.body.loja) || req.query.loja || ''));
+/** confere chegadas e compras com os dados da loja; avisa no Telegram quando algo chegou */
+async function avaliarEspera(loja) {
+  let raw = null;
+  try { raw = (await dadosLoja(loja)).raw; } catch { /* sem vendas: confere só a chegada */ }
+  const fx = FIx.eventos(loja.id);
+  const novos = ESP.avaliar(loja.id, { notas: ES.notas(loja.id), estoque: ES.atual(loja.id), xml: raw ? raw.xml : [], vendas: raw ? raw.vendas : null, fixe: fx ? fx.eventos : [] });
+  if (novos.length) {
+    const porProd = new Map();
+    for (const p of novos) for (const i of p.itens) porProd.set(i.desc, (porProd.get(i.desc) || 0) + 1);
+    const txt = `⏳ Lista de espera · ${loja.nome}\nChegou:\n` + [...porProd].map(([d, n]) => `• ${d}: ${n} ${n === 1 ? 'cliente esperando' : 'clientes esperando'}`).join('\n') + '\nAbra Clientes → Lista de espera para avisar.';
+    NOTIF.avisarLoja(loja.id, txt).catch((e) => console.error('[espera] aviso:', e.message));
+  }
+  return novos;
+}
+setInterval(() => { for (const l of C.get().lojas) avaliarEspera(l).catch((e) => console.error(`[espera] ${l.id}:`, e.message)); }, 15 * 60e3).unref();
+app.get('/api/espera', async (req, res) => {
+  const loja = lojaEsp(req);
+  if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  try { await avaliarEspera(loja); } catch (e) { console.error('[espera]', e.message); }
+  const d = ESP.ler(loja.id);
+  res.json({ pedidos: d.pedidos, modelo: d.modelo, dias: ESP.DIAS_COMPRA, podeModelo: req.perfil !== 'vendedor', lojaNome: loja.nome });
+});
+// produtos para escolher: o cadastro do AppNext (com o tamanho) e o que já foi vendido; marca o que está em falta
+app.get('/api/espera/produtos', async (req, res) => {
+  const loja = lojaEsp(req);
+  if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  const q = ESP.ESQ(req.query.q || '');
+  if (q.length < 2) return res.json({ produtos: [] });
+  const m = new Map();
+  for (const i of (TAB.resumo(loja.id) || { itens: [] }).itens || []) if (i.desc && i.preco !== 0.01) m.set(ESP.ESQ(i.desc), { desc: i.desc, cod: String(i.cod), vendidos: 0 });
+  try { for (const v of (await dadosLoja(loja)).raw.vendas) { const k = ESP.ESQ(v.descricao); const a = m.get(k) || m.set(k, { desc: v.descricao, cod: v.cod != null ? String(v.cod) : null, vendidos: 0 }).get(k); a.vendidos += v.qtd || 0; if (!a.cod && v.cod != null) a.cod = String(v.cod); } } catch { /* ok */ }
+  const est = ES.atual(loja.id);
+  const achou = [...m.entries()].filter(([k]) => k.includes(q)).map(([, x]) => x).sort((a, b) => b.vendidos - a.vendidos).slice(0, 12).map((x) => {
+    const cods = ESP.codsEstoque(x, est);
+    const qtd = cods.length ? cods.reduce((s, c) => { const i = ((est && est.itens) || []).find((y) => String(y.cod) === c); return s + (i ? Math.max(0, i.qtd || 0) : 0); }, 0) : null;
+    return { desc: x.desc, cod: x.cod, vendidos: Math.round(x.vendidos), falta: qtd == null ? null : qtd <= 0 };
+  });
+  res.json({ produtos: achou });
+});
+// clientes para escolher (nome, CPF ou celular): no máximo 8, só com 3+ letras ou números
+app.get('/api/espera/clientes', async (req, res) => {
+  const loja = lojaEsp(req);
+  if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  const q = String(req.query.q || '').trim(), qn = ESP.ESQ(q), qd = q.replace(/\D/g, '');
+  if (qn.length < 3 && qd.length < 3) return res.json({ clientes: [] });
+  let cl = [];
+  try { cl = (await dadosLoja(loja)).raw.clientes || []; } catch { /* ok */ }
+  const out = [];
+  for (const c of cl) {
+    const cel = String(c.celular || '').replace(/\D/g, '');
+    const ok = (qd.length >= 3 && (String(c.cpf).startsWith(qd) || cel.includes(qd))) || (qn.length >= 3 && /[a-z]/.test(qn) && ESP.ESQ(c.nome).includes(qn));
+    if (ok) out.push({ cpf: c.cpf, nome: c.nome || '', celular: cel });
+    if (out.length >= 8) break;
+  }
+  res.json({ clientes: out });
+});
+app.use('/api/espera', (req, res, next) => {
+  if (req.method === 'GET') return next();
+  if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
+  next();
+});
+app.post('/api/espera', express.json({ limit: '20kb' }), (req, res) => {
+  const loja = lojaEsp(req);
+  if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  const r = ESP.criar(loja.id, req.body || {}, req.user, ES.atual(loja.id));
+  if (r.erro) return res.status(400).json({ erro: r.erro });
+  C.auditar(req.user, 'anotou na lista de espera', loja.id, { loja: loja.id, itens: r.ok.itens.map((i) => i.desc).join(', ').slice(0, 200) });
+  res.json({ ok: true, pedido: r.ok });
+});
+app.post('/api/espera/:id/:acao', express.json({ limit: '2kb' }), (req, res) => {
+  const loja = lojaEsp(req);
+  if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  const r = ESP.acao(loja.id, String(req.params.id), String(req.params.acao), req.user);
+  if (r.erro) return res.status(400).json({ erro: r.erro });
+  res.json({ ok: true, pedido: r.ok });
+});
+app.put('/api/espera/modelo', express.json({ limit: '4kb' }), (req, res) => {
+  const loja = lojaEsp(req);
+  if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  if (req.perfil === 'vendedor') return res.status(403).json({ erro: 'Sem permissão.' });
+  const r = ESP.salvarModelo(loja.id, (req.body || {}).modelo);
+  if (r.erro) return res.status(400).json({ erro: r.erro });
+  res.json({ ok: true, modelo: r.ok });
+});
+
 // pedido obrigatório da franquia: criar, alterar, encerrar, reabrir, apagar
 app.put('/api/pedido/obrigatorio', express.json({ limit: '100kb' }), (req, res) => {
   if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });

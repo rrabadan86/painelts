@@ -22,9 +22,16 @@
       lista.sort((a, b) => ord[a.nivel] - ord[b.nivel]);
       avisos.replaceChildren(...(lista.length ? lista.map(item) : [h('p', { class: 'muted' }, 'Nada pedindo atenção por enquanto. 👏')]));
     };
-    const tarefas = [avisosVendas(lista), avisosEstoque(lista), avisosSite(lista), avisosAtualizacoes(lista)].map((p) => p.catch(() => null).then(() => { if (avisos.isConnected) pintar(); }));
+    const tarefas = [avisosEspera(lista), avisosVendas(lista), avisosEstoque(lista), avisosSite(lista), avisosAtualizacoes(lista)].map((p) => p.catch(() => null).then(() => { if (avisos.isConnected) pintar(); }));
     Promise.all(tarefas).then(() => pend.remove());
   };
+
+  // ---------- lista de espera ----------
+  async function avisosEspera(lista) {
+    if (!TS.esperaResumo) return;
+    const r = await TS.esperaResumo();
+    if (r && r.chegou) lista.push({ nivel: 'warn', titulo: `Lista de espera: ${fmt.int(r.chegou)} ${r.chegou === 1 ? 'cliente para avisar' : 'clientes para avisar'}`, texto: 'O produto que eles pediram chegou. A mensagem do WhatsApp já está pronta.', link: '#espera', ir: 'avisar ›', antes: () => { state.espAba = 'avisar'; } });
+  }
 
   function item(a) {
     const ir = () => { if (a.antes) a.antes(); if (a.link) location.hash = a.link; if (a.acao) a.acao(); };

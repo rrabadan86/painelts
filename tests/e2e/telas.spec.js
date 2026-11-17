@@ -2,7 +2,7 @@
 // erro de JavaScript, "null"/"undefined"/"NaN" na tela, aviso de erro, página mais larga que a tela (celular)
 const { test, expect } = require('@playwright/test');
 
-const TELAS = ['inicio', 'resumo', 'comparativos', 'promocao', 'cupons', 'clilista', 'clientes', 'campanhas', 'comissionamento', 'mapa',
+const TELAS = ['inicio', 'resumo', 'comparativos', 'promocao', 'cupons', 'clilista', 'clientes', 'campanhas', 'espera', 'comissionamento', 'mapa',
   'rentab', 'precos', 'site', 'estoque', 'pedido', 'notas', 'nfsaida', 'dre', 'config'];
 
 /** carrega a apresentação uma vez por página do navegador */

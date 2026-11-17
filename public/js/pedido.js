@@ -47,7 +47,7 @@
   }
 
   /** o cálculo: tudo que a tela mostra */
-  function calcular(M, estoque, ecfg, catalogo, pcfg, modo, ev, editados, ccfg, obrig) {
+  function calcular(M, estoque, ecfg, catalogo, pcfg, modo, ev, editados, ccfg, obrig, espera = {}) {
     const db = TS.db, I = TS.rules.ids;
     const fim = db.maxDay, hoje = fim + 1;
     const N = pcfg.dias, ent = ecfg.entregaDias;
@@ -163,6 +163,7 @@
       const qtd = Math.max(0, it.qtd || 0);
       const chega = OB.has(String(it.cod)) ? OB.get(String(it.cod)).qtd : 0; // vem no pedido obrigatório
       const qtdEf = qtd + chega;
+      const esp = espera[String(it.cod)] || null; // lista de espera (Clientes → Lista de espera)
       const txtChega = chega ? ` − ${qtdTxt(chega, it)} que vêm no pedido obrigatório` : '';
       let precisa, conta, prior = 0;
       if (modo === 'evento') {
@@ -178,10 +179,12 @@
         const cl = classe.get(it.cod);
         const ehCha = it.un === 'Kg' && (grupoDe(it.cod) || 'cha') === 'cha' && (prev > 0 || bruto.has(it.cod));
         prior = ehCha && qtdEf < PISO ? 2 : ehCha && cl === 'estrela' && qtdEf < PISO_ESTRELA ? 1 : 0;
+        // cliente na lista de espera com o estoque zerado: entra na frente de tudo
+        if (esp && qtdEf <= 0) prior = 3;
         if (!(prev > 0) && !(it.min && qtdEf < it.min) && !prior) continue;
         precisa = Math.max(prev * H - qtdEf, (it.min || 0) - qtdEf, prior ? 1e-6 : 0);
         conta = `Previsão ${qtdTxt(prev, it)}/dia × (${ent} dias de entrega + ${N} dias até o próximo pedido) = ${qtdTxt(prev * H, it)} − estoque ${qtdTxt(qtd, it)}${txtChega}${it.min && it.min - qtdEf > prev * H - qtdEf ? ` · o mínimo do AppNext pede ${qtdTxt(it.min - qtdEf, it)}` : ''}.`
-          + (prior === 2 ? ' Prioridade: estoque abaixo de 500 g.' : prior === 1 ? ' Prioridade: Estrela com estoque abaixo de 700 g.' : '')
+          + (prior === 3 ? ` Prioridade: ${esp.pedidos} ${esp.pedidos === 1 ? 'cliente esperando' : 'clientes esperando'} na lista de espera.` : prior === 2 ? ' Prioridade: estoque abaixo de 500 g.' : prior === 1 ? ' Prioridade: Estrela com estoque abaixo de 700 g.' : '')
           + (it.un === 'Kg' ? ' Chá a granel só em quilo inteiro.' : '');
       }
       if (!(precisa > 0)) continue;
@@ -195,7 +198,7 @@
       const site = !catalogo ? 'sem' : !c ? 'fora' : !c.disp ? 'indisp' : 'ok';
       const unidadeEstranha = c && c.disp && it.custo > 0 && (c.preco / it.custo > 4 || c.preco / it.custo < 0.25);
       linhas.push({ cod: it.cod, produto: it.desc, it, c, grupo: g, grupoTxt: GRUPOS[g], qtd, chega, prev, dias, urgente, precisa, sugerido, conta, preco, lucroDia, site, unidadeEstranha,
-        classe: classe.get(it.cod) || null, classeFixa: classe.fixa(it.cod), prior,
+        classe: classe.get(it.cod) || null, classeFixa: classe.fixa(it.cod), prior, esp,
         margem: vendaItem.get(it.cod) ? (contrib.get(it.cod) || 0) / vendaItem.get(it.cod) : null, pedir: 0, motivo: '' });
     }
 
@@ -316,7 +319,7 @@
     const chave = `${loja}|${modo}|${ev ? ev.id : ''}`;
     const editados = qtdPorLoja.get(chave) || qtdPorLoja.set(chave, new Map()).get(chave);
     // Rpronto: redesenho depois de pôr/tirar um produto (não refaz a conta; as quantidades já estão nas linhas)
-    const R = Rpronto || calcular(M, e.estoque, e.cfg, p.catalogo, par, modo, ev, editados, e.classe, p.obrigatorio);
+    const R = Rpronto || calcular(M, e.estoque, e.cfg, p.catalogo, par, modo, ev, editados, e.classe, p.obrigatorio, p.espera || {});
 
     // ---------- controles ----------
     const num = (v, attrs) => h('input', { class: 'f-input', type: 'number', value: v ?? '', style: { maxWidth: '96px' }, ...attrs });
@@ -472,7 +475,7 @@
           li('Embalagens e insumos', '(saco kraft, etiquetas) entram primeiro, fora da proporção.'),
           li('Pedido obrigatório:', 'o que a franquia manda de qualquer forma (cadastrado em "Pedido obrigatório") já ocupa o valor: sai do limite, conta na parte do grupo dele e as quantidades contam como estoque chegando, para não pedir de novo. Não vai para o carrinho.'),
           li('Divisão do valor:', R.propManual ? 'o resto vai para cada grupo pela proporção que você definiu; grupo com 0% fica fora (dá para pôr à mão).' : 'o resto vai para chás a granel, envasados e acessórios na mesma proporção das vendas do período.', ` Cada grupo pode passar ${fmt.int(par.folgaPct ?? 10)}% da sua parte (folga).`),
-          li('Ordem dentro de cada grupo:', '1º chás a granel com estoque abaixo de 500 g (entram sempre, mesmo que a previsão não peça, desde que tenham vendido nos últimos 90 dias); 2º chás Estrela abaixo de 700 g; 3º o que acaba antes da entrega; depois quem deixa mais lucro sem fixos por dia. Produto que não cabe inteiro entra com parte da necessidade.'),
+          li('Ordem dentro de cada grupo:', 'antes de tudo, produto zerado com cliente na lista de espera (⏳); 1º chás a granel com estoque abaixo de 500 g (entram sempre, mesmo que a previsão não peça, desde que tenham vendido nos últimos 90 dias); 2º chás Estrela abaixo de 700 g; 3º o que acaba antes da entrega; depois quem deixa mais lucro sem fixos por dia. Produto que não cabe inteiro entra com parte da necessidade.'),
           li('Classe (Estrela, Volume, Joia, Peso morto):', `é a classe oficial, a mesma da Rentabilidade. Usa a mediana do que o produto vendeu por mês nos últimos ${R.classeMeses} meses fechados, então um mês de promoção pesa pouco, e a margem bruta do período. Não muda com o filtro de período. A janela (3, 6 ou 12 meses) muda aqui, acima da tabela ("Classe pelos últimos"), ou em Produtos → Rentabilidade → Produtos por lucro; as classes travadas à mão (🔒) ficam na Rentabilidade.`),
           li('Sobra:', 'o que sobrar do valor vai para quem ainda precisa, na mesma ordem. Use "Limpar ▾ → Completar com a sobra" depois de mexer à mão.'),
           li('Fica de fora:', 'indisponível no site, fora do catálogo FRANQUIAS e o resto do catálogo (o que não precisa agora e os bens de consumo): esses você pede à mão.')));
@@ -564,7 +567,7 @@
     const sobra = R.orcamento != null ? R.orcamento - totalAgora : null;
     const MOBILE = matchMedia('(max-width: 760px)').matches;
     const cols = [
-        { key: 'produto', label: 'Produto', align: 'l', sticky: true, wrap: true, render: (r) => h('span', null, r.produto, r.obrig ? h('span', { class: 'ped-tag-obr', title: 'Vem no pedido obrigatório: não vai para o carrinho' }, '🔒 obrigatório') : r.chega ? h('span', { class: 'ped-tag-obr', title: `O pedido obrigatório já traz ${qtdTxt(r.chega, r.it)} deste produto (já descontado do "Precisa"). O que estiver em "Pedir" é a mais e vai para o carrinho.` }, `+ ${qtdTxt(r.chega, r.it)} no obrigatório`) : null, r.prior ? h('span', { class: 'ped-prio', title: r.prior === 2 ? 'Prioridade: estoque abaixo de 500 g' : 'Prioridade: Estrela com estoque abaixo de 700 g' }, r.prior === 2 ? '< 500 g' : 'Estrela < 700 g') : null, h('small', { class: 'est-tam' }, `cód. ${r.cod}`)) },
+        { key: 'produto', label: 'Produto', align: 'l', sticky: true, wrap: true, render: (r) => h('span', null, r.produto, r.obrig ? h('span', { class: 'ped-tag-obr', title: 'Vem no pedido obrigatório: não vai para o carrinho' }, '🔒 obrigatório') : r.chega ? h('span', { class: 'ped-tag-obr', title: `O pedido obrigatório já traz ${qtdTxt(r.chega, r.it)} deste produto (já descontado do "Precisa"). O que estiver em "Pedir" é a mais e vai para o carrinho.` }, `+ ${qtdTxt(r.chega, r.it)} no obrigatório`) : null, r.esp ? h('a', { class: 'ped-prio ped-esp', href: '#espera', title: `Na lista de espera: ${r.esp.clientes.join(', ')}${r.esp.pedidos > r.esp.clientes.length ? '…' : ''}. Quando a nota chegar, eles aparecem para avisar.`, onclick: (e) => e.stopPropagation() }, `⏳ ${r.esp.pedidos} esperando`) : null, r.prior && r.prior < 3 ? h('span', { class: 'ped-prio', title: r.prior === 2 ? 'Prioridade: estoque abaixo de 500 g' : 'Prioridade: Estrela com estoque abaixo de 700 g' }, r.prior === 2 ? '< 500 g' : 'Estrela < 700 g') : null, h('small', { class: 'est-tam' }, `cód. ${r.cod}`)) },
         { key: 'grupoTxt', label: 'Grupo', align: 'l' },
         { key: 'classe', label: 'Classe', align: 'l', title: `Classe oficial: o que sai por mês (a mediana dos últimos ${R.classeMeses} meses fechados, então um mês de promoção pesa pouco) × margem bruta, comparados com a mediana dos outros produtos. Não muda com o filtro de período. 🔒 = travada à mão na Rentabilidade. Estrela: vende muito e tem margem boa. Volume: vende muito, margem menor. Joia: margem boa, vende pouco. Peso morto: vende pouco e margem baixa`,
           render: (r) => (r.classe ? h('span', { class: 'ped-cl ped-cl-' + r.classe, title: r.classeFixa ? 'Travada à mão na Rentabilidade' : null }, (r.classeFixa ? '🔒 ' : '') + CLASSES[r.classe]) : h('span', { class: 'muted' }, '—')), sortVal: (r) => ({ estrela: 4, volume: 3, joia: 2, peso: 1 })[r.classe] || 0 },

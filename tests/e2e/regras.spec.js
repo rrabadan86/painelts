@@ -83,4 +83,18 @@ test.describe('regras', () => {
     await page.locator('textarea.cp-msg').fill('Chegou {produto}!');
     await expect(page.locator('.cp-exemplo')).toContainText(/Chegou .+ e .+!/);
   });
+
+  test('Lista de espera: abas, mensagem pronta e formulário com cliente e produto', async ({ page }) => {
+    await page.evaluate(() => { location.hash = '#espera'; });
+    await expect(page.locator('.esp-abas')).toContainText('Chegaram · avisar');
+    await expect(page.locator('.esp-item.esp-chegou').first()).toBeVisible();
+    await expect(page.locator('.esp-item.esp-chegou textarea.esp-msg').first()).toHaveValue(/chegou/);
+    await page.getByRole('button', { name: '+ Anotar pedido' }).click();
+    await page.locator('.esp-form input[type=search]').first().fill('ana');
+    await page.locator('.esp-form .cp-sug-it').first().dispatchEvent('mousedown');
+    await expect(page.locator('.esp-cli-esc')).toBeVisible();
+    await page.locator('.esp-form input[type=search]').nth(1).fill('african');
+    await page.locator('.esp-sug-p .cp-sug-it').first().dispatchEvent('mousedown');
+    await expect(page.locator('.esp-chip')).toHaveCount(1);
+  });
 });
