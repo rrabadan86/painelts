@@ -241,4 +241,42 @@ function marcarDesfazer(id, cid, por, etapa) {
   return { ok: c };
 }
 
-module.exports = { lista, ler, catalogo, familia, criar, contar, adicionar, acao, paraUsuario, planilha, linhasPlanilha, marcarGerado, resto, zerar, gruposFora, linhasDesfazer, marcarDesfazer };
+// ---------- enviar direto para o AppNext (robô do coletor) ----------
+const pastaEnvio = (id) => path.join(pasta(id), 'envio');
+/** deixa a planilha e a lista do que tem de ser lido (código → quantidade) para o robô; grava o envio na contagem */
+async function prepararEnvio(id, cid, tipo, linhas, por) {
+  const c = ler(id, cid);
+  if (!c) return { erro: 'Contagem não encontrada.' };
+  fs.mkdirSync(pastaEnvio(id), { recursive: true });
+  const base = path.join(pastaEnvio(id), `${cid}-${tipo}`);
+  try { fs.unlinkSync(base + '.resultado.json'); } catch { /* ok */ }
+  fs.writeFileSync(base + '.xlsx', Buffer.from(await planilha(linhas)));
+  fs.writeFileSync(base + '.json', JSON.stringify(linhas.map((l) => ({ cod: l.cod, nova: l.nova }))));
+  if (tipo === 'importar') {
+    c.planilha = { em: new Date().toISOString(), por, itens: linhas.map((l) => ({ cod: l.cod, desc: l.desc, un: l.un, grupo: l.grupo, sub: l.sub, antes: l.antes, nova: l.nova, custo: l.custo, zerado: !!l.zerado })) };
+    c.geradoEm = c.planilha.em; c.geradoPor = por;
+    if (c.st === 'contando' || c.st === 'revisao') c.st = 'gerado';
+  } else c.desfazer = { geradoEm: new Date().toISOString(), por };
+  c.envio = { tipo, em: new Date().toISOString(), por, itens: linhas.length, estado: 'na_fila' };
+  gravar(id, c);
+  return { ok: c };
+}
+/** resultado do robô: importado (ou desfeito) quando deu certo; o erro fica no envio */
+function conferirEnvio(id, cid) {
+  const c = ler(id, cid);
+  if (!c || !c.envio || c.envio.estado === 'ok' || c.envio.estado === 'erro') return { c, mudou: false };
+  let r;
+  try { r = JSON.parse(fs.readFileSync(path.join(pastaEnvio(id), `${cid}-${c.envio.tipo}.resultado.json`), 'utf8')); } catch { return { c, mudou: false }; }
+  if (!r.em || Date.parse(r.em) < Date.parse(c.envio.em)) return { c, mudou: false };
+  if (r.ok && !r.simulado) {
+    c.envio.estado = 'ok'; c.envio.fim = r.em;
+    if (c.envio.tipo === 'importar') { c.st = 'importado'; c.importadoEm = r.em; c.importadoPor = c.envio.por; c.importadoPeloRobo = true; }
+    else { c.desfazer = { ...(c.desfazer || {}), importadoEm: r.em, importadoPor: c.envio.por }; c.st = 'revertido'; }
+  } else { c.envio.estado = 'erro'; c.envio.erro = r.erro || (r.simulado ? 'simulação' : 'falhou'); c.envio.fim = r.em; }
+  gravar(id, c);
+  return { c, mudou: true, ok: c.envio.estado === 'ok' };
+}
+
+function erroEnvio(id, cid, erro) { const c = ler(id, cid); if (c && c.envio) { c.envio.estado = 'erro'; c.envio.erro = erro; c.envio.fim = new Date().toISOString(); gravar(id, c); } }
+
+module.exports = { erroEnvio, prepararEnvio, conferirEnvio, lista, ler, catalogo, familia, criar, contar, adicionar, acao, paraUsuario, planilha, linhasPlanilha, marcarGerado, resto, zerar, gruposFora, linhasDesfazer, marcarDesfazer };

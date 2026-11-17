@@ -1928,3 +1928,9 @@ body.com-camada .ped-barra { display: none; }
 .inv-zerar-g { display: flex; gap: 8px; align-items: center; background: #fff; border: 1px solid var(--line, #e6e1d6); border-radius: 8px; padding: 6px 8px; font-size: 13px; }
 .inv-zerar-g span { flex: 1; }
 .inv-zerar-lista summary, .inv-antigas details summary { cursor: pointer; font-weight: 600; font-size: 13px; }
+.inv-envio { display: grid; gap: 6px; border: 2px solid #c8d8f2; background: #f6f9ff; }
+.inv-envio-tit { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.inv-envio-sub { flex-basis: 100%; }
+.inv-vivo { font-family: ui-monospace, monospace; font-size: 12px; }
+.inv-log { max-height: 260px; overflow: auto; font-size: 11.5px; background: #1f2a22; color: #e9f2ea; padding: 8px; border-radius: 8px; white-space: pre-wrap; }
+.inv-enviar { font-size: 14px; padding: 9px 18px; }

@@ -49,6 +49,7 @@
       const resto = (await demoCat(loja)).filter((i) => !na.has(i.cod) && Math.abs(i.qtd || 0) > 0.0005).map((i) => ({ cod: i.cod, desc: i.desc, un: i.un, grupo: i.grupo, qtd: i.qtd, custo: i.custo }));
       return { ...c, podeRevisar: true, agora: null, resto, restoFora: (c.zerar && c.zerar.semGrupos) || [] };
     },
+    async enviar(loja, id, tipo) { if (TS.demo) throw new Error('Na apresentação nada é enviado ao AppNext.'); return req('POST', `inventario/contagem/${id}/enviar`, { loja, tipo }); },
     async zerar(loja, id, z) { if (!TS.demo) return req('PUT', `inventario/contagem/${id}/zerar`, { loja, ...z }); DEMO.cont.find((x) => x.id === id).zerar = z; },
     async contar(loja, id, cod, cont) {
       if (!TS.demo) return (await req('PUT', `inventario/contagem/${id}/item/${encodeURIComponent(cod)}`, { loja, cont })).item;
@@ -69,7 +70,7 @@
   TS.pages.inventario = function (root) {
     if (TS.subEstoque) root.append(TS.subEstoque('inventario'));
     root.append(h('div', { class: 'page-head' }, h('div', null, h('h1', { class: 'page-title' }, 'Inventário'),
-      h('div', { class: 'page-sub' }, 'Conte o estoque pelo celular ou pelo computador (um item, um grupo ou um tipo de chá) e gere a planilha para importar no AppNext.'))));
+      h('div', { class: 'page-sub' }, 'Conte o estoque pelo celular ou pelo computador (um item, um grupo ou um tipo de chá) e envie direto para o AppNext.'))));
     if (!state.loja || state.loja === 'todas') { root.append(h('div', { class: 'notice' }, 'O inventário é de cada loja: escolha uma loja no seletor do topo.')); return; }
     const corpo = h('div', null, h('div', { class: 'card' }, h('div', { class: 'loading' }, h('div', null, h('div', { class: 'spinner' }), h('p', null, 'Carregando…')))));
     root.append(corpo);
@@ -331,6 +332,32 @@
       setTimeout(repintar, 1500);
     } }, c.st === 'gerado' ? 'Baixar a planilha de novo' : 'Baixar planilha do AppNext');
     const fazer = (a, conf) => async () => { if (conf && !confirm(conf)) return; try { await API.acao(loja, c.id, a); if (a === 'cancelar') state.invId = null; TS.render(); } catch (e) { toast(e.message, true); } };
+    // enviar direto para o AppNext pelo robô (confere o que o AppNext leu antes de salvar)
+    const env = c.envio || null, enviando = env && env.estado === 'na_fila';
+    const enviar = (tipo) => async () => {
+      const n = tipo === 'importar' ? contados.length + zerados.length : (c.planilha ? c.planilha.itens.length : 0);
+      const txt = tipo === 'importar'
+        ? `Enviar para o AppNext agora?\n\n${fmt.int(contados.length)} produtos contados${zerados.length ? ` e ${fmt.int(zerados.length)} zerados (fora da contagem)` : ''}.\nO robô confere item a item o que o AppNext leu e só então salva o inventário.`
+        : `Desfazer no AppNext?\n\n${fmt.int(n)} produtos voltam ao que eram antes deste inventário (mantendo o que vendeu ou entrou depois).`;
+      if (!confirm(txt)) return;
+      try { await API.enviar(loja, c.id, tipo); toast('Enviado para o robô. Acompanhe aqui.'); repintar(); } catch (e) { toast(e.message, true); }
+    };
+    const cartaoEnvio = () => {
+      if (!env) return null;
+      const r = c.robo || {}, u = r.ultima || {};
+      const desf = env.tipo === 'desfazer';
+      if (enviando) {
+        if (corpo.isConnected) setTimeout(() => { if (corpo.isConnected && state.invId === c.id) repintar(); }, 4000);
+        const vivo = (r.aoVivo || []).slice(-1)[0];
+        return h('div', { class: 'card mt inv-envio' }, h('div', { class: 'inv-envio-tit' }, h('span', { class: 'cfg-pulso' }), h('b', null, desf ? 'Desfazendo no AppNext…' : 'Enviando para o AppNext…'), h('small', { class: 'muted inv-envio-sub' }, `${r.estado === 'rodando' ? 'o robô está na tela de inventário' : 'na fila do robô (começa em instantes)'}`)),
+          vivo ? h('div', { class: 'muted inv-vivo' }, vivo.replace(/^\[[\d:]+\]\s*/, '')) : null,
+          h('small', { class: 'muted' }, 'Leva de 1 a 3 minutos. Pode sair desta tela: o resultado fica salvo aqui.'));
+      }
+      if (env.estado === 'erro') return h('div', { class: 'notice err mt' }, h('b', null, desf ? 'O desfazer não foi feito. ' : 'O inventário não foi importado. '), env.erro || 'falhou',
+        ' Nada foi gravado no AppNext se a conferência falhou; tente de novo ou baixe a planilha e importe à mão.',
+        u.log && u.log.length ? h('details', null, h('summary', null, 'Log do robô'), h('pre', { class: 'inv-log' }, u.log.join('\n'))) : null);
+      return null;
+    };
 
     // cartão "produtos fora da contagem": ligar, ver por grupo e escolher os grupos que ficam de fora
     const cartaoZerar = () => {
@@ -372,8 +399,8 @@
       } }, 'Desfazer este inventário') : null;
       return h('div', { class: 'card mt' }, h('div', { class: 'card-title' }, 'O que foi para o AppNext'),
         h('div', { class: 'card-sub' }, `Planilha gerada ${quando(c.planilha.em)} por ${c.planilha.por || '—'}: ${fmt.int(pl.length)} produtos${pl.some((l) => l.zerado) ? ` (${fmt.int(pl.filter((l) => l.zerado).length)} zerados por estarem fora da contagem)` : ''} · ajuste de ${fmt.brl(ajuste)} em custo.`),
-        c.st === 'importado' ? h('div', { class: 'inv-acoes' }, btnDesf, c.desfazer && c.desfazer.geradoEm ? h('button', { type: 'button', class: 'btn', onclick: fazer('desfeito', 'Confirma que importou a planilha de desfazer no AppNext?') }, 'Já importei o desfazer') : null) : null,
-        c.st === 'importado' && c.desfazer && c.desfazer.geradoEm ? h('div', { class: 'aviso inv-passos' }, `Planilha de desfazer baixada ${quando(c.desfazer.geradoEm)}. Importe no AppNext (Auditoria/Inventário → ＋ → Por Excel) e clique em "Já importei o desfazer".`) : null,
+        c.st === 'importado' && !enviando ? h('div', { class: 'inv-acoes' }, c.podeEnviar ? h('button', { type: 'button', class: 'btn ghost-danger', onclick: enviar('desfazer') }, 'Desfazer no AppNext') : null, c.podeEnviar && btnDesf ? (btnDesf.className = 'btn', btnDesf.textContent = 'ou baixar a planilha de desfazer', btnDesf) : btnDesf, c.desfazer && c.desfazer.geradoEm && !(env && env.tipo === 'desfazer') ? h('button', { type: 'button', class: 'btn', onclick: fazer('desfeito', 'Confirma que importou a planilha de desfazer no AppNext?') }, 'Já importei o desfazer') : null) : null,
+        c.st === 'importado' && c.desfazer && c.desfazer.geradoEm && !(env && env.tipo === 'desfazer') ? h('div', { class: 'aviso inv-passos' }, `Planilha de desfazer baixada ${quando(c.desfazer.geradoEm)}. Importe no AppNext (Auditoria/Inventário → ＋ → Por Excel) e clique em "Já importei o desfazer".`) : null,
         c.st === 'revertido' ? h('p', { class: 'muted' }, `Desfeito ${quando(c.desfazer.importadoEm)} por ${c.desfazer.importadoPor || '—'}.`) : null,
         h('details', null, h('summary', null, 'Ver item a item'), TS.table({
           cols: [
@@ -394,15 +421,17 @@
         TS.kpi('Sobrou (custo)', fmt.brl(sobra), 'contado acima do sistema'),
         TS.kpi('Faltou (custo)', fmt.brl(falta), z.ativo && zerados.length ? `inclui ${fmt.brl(valorZ)} dos zerados` : 'contado abaixo do sistema')),
       mudou.length ? h('div', { class: 'notice mt' }, `${fmt.int(mudou.length)} ${mudou.length === 1 ? 'item mudou' : 'itens mudaram'} no estoque do painel desde o começo da contagem (venda ou entrada). A planilha leva o que foi contado: se vendeu depois de contar, reconte esses itens antes de importar.`) : null,
-      cartaoZerar(),
+      cartaoEnvio(),
+      enviando ? null : cartaoZerar(),
       h('div', { class: 'card mt' },
         h('div', { class: 'inv-acoes' },
-          !fechada && c.st !== 'cancelado' ? baixar : null,
-          c.st === 'gerado' ? h('button', { type: 'button', class: 'btn', onclick: fazer('importado') }, 'Já importei no AppNext') : null,
-          ['revisao', 'gerado', 'cancelado'].includes(c.st) ? h('button', { type: 'button', class: 'btn', onclick: fazer('reabrir') }, 'Reabrir para contar') : null,
-          !fechada && c.st !== 'cancelado' ? h('button', { type: 'button', class: 'btn ghost-danger', onclick: fazer('cancelar', 'Cancelar esta contagem? Ela fica no histórico.') }, 'Cancelar') : null),
-        c.st === 'gerado' ? h('div', { class: 'aviso inv-passos' }, h('b', null, 'Agora no AppNext: '), 'Estoque → Auditoria/Inventário → ＋ (Cadastrar um novo) → Por Excel → envie a planilha baixada. Depois clique em "Já importei no AppNext".') : null,
-        c.st === 'importado' ? h('p', { class: 'muted' }, `Importado ${quando(c.importadoEm)} por ${c.importadoPor || '—'}. Na próxima atualização do estoque, a coluna "No AppNext agora" mostra ✓ nos itens que já estão com a quantidade contada.`) : null,
+          !fechada && c.st !== 'cancelado' && c.podeEnviar && !enviando ? h('button', { type: 'button', class: 'btn primary inv-enviar', onclick: enviar('importar') }, env && env.estado === 'erro' ? 'Tentar enviar de novo' : 'Enviar para o AppNext') : null,
+          !fechada && c.st !== 'cancelado' && !enviando ? (c.podeEnviar ? (baixar.classList.remove('primary'), baixar.textContent = 'ou baixar a planilha', baixar) : baixar) : null,
+          c.st === 'gerado' && !enviando && !(env && env.tipo === 'importar') ? h('button', { type: 'button', class: 'btn', onclick: fazer('importado') }, 'Já importei no AppNext') : null,
+          ['revisao', 'gerado', 'cancelado'].includes(c.st) && !enviando ? h('button', { type: 'button', class: 'btn', onclick: fazer('reabrir') }, 'Reabrir para contar') : null,
+          !fechada && c.st !== 'cancelado' && !enviando ? h('button', { type: 'button', class: 'btn ghost-danger', onclick: fazer('cancelar', 'Cancelar esta contagem? Ela fica no histórico.') }, 'Cancelar') : null),
+        c.st === 'gerado' && !c.podeEnviar ? h('div', { class: 'aviso inv-passos' }, h('b', null, 'Agora no AppNext: '), 'Estoque → Auditoria/Inventário → ＋ (Cadastrar um novo) → Por Excel → envie a planilha baixada. Depois clique em "Já importei no AppNext".') : null,
+        c.st === 'importado' ? h('p', { class: 'muted' }, `Importado ${quando(c.importadoEm)} por ${c.importadoPor || '—'}${c.importadoPeloRobo ? ' (pelo robô, conferido item a item)' : ''}. Na próxima atualização do estoque, a coluna "No AppNext agora" mostra ✓ nos itens que já estão com a quantidade contada.`) : null,
         h('div', { class: 'inv-revfil' }, TS.seg([[`Só diferenças (${div.length})`, 'dif'], [`Todos os contados (${rows.length})`, 'todos']], filV, (v) => { state.invRevFil = v; telaRevisar(corpo, loja, c); }), tab.searchBox), tab),
       cartaoEnviado());
   }

@@ -796,6 +796,10 @@ app.post('/api/inventario/previa', express.json({ limit: '50kb' }), async (req, 
 });
 app.get('/api/inventario/contagem', async (req, res) => {
   const loja = lojaInv(req, res); if (!loja) return;
+  // envio pelo robô: quando terminou, a contagem vira importada e o estoque é buscado de novo para conferir
+  const cf = INV.conferirEnvio(loja.id, String(req.query.id || ''));
+  if (cf.mudou && cf.ok && cf.c.envio.tipo && COL.ativo()) COL.rodar(loja.id, 'inventário', ['estoque']).catch(() => null);
+  if (cf.mudou) C.auditar(cf.c.envio.por || 'sistema', cf.ok ? (cf.c.envio.tipo === 'importar' ? 'inventário importado no AppNext pelo robô' : 'inventário desfeito no AppNext pelo robô') : 'o robô não conseguiu importar o inventário', loja.id, { loja: loja.id, nome: cf.c.nome, erro: cf.c.envio.erro || null });
   const c = INV.ler(loja.id, String(req.query.id || ''));
   if (!c) return res.status(404).json({ erro: 'Contagem não encontrada.' });
   const est = ES.atual(loja.id);
@@ -805,7 +809,36 @@ app.get('/api/inventario/contagem', async (req, res) => {
   const agora = Object.fromEntries(((est && est.itens) || []).filter((i) => cods.has(String(i.cod))).map((i) => [String(i.cod), i.qtd]));
   // "zerar os não listados": o que ficaria zero, por grupo
   const r = INV.resto(c, est, await catInv(loja));
-  res.json({ ...c, estoqueEm: est && est.em, agora, podeRevisar: true, resto: r, restoFora: [...INV.gruposFora(c, r)] });
+  let robo = null;
+  if (c.envio && (c.envio.estado === 'na_fila' || c.envio.estado === 'erro') && COL.ativo()) { try { robo = (await COL.status(loja.id)).inventario; } catch { /* ok */ } }
+  res.json({ ...c, estoqueEm: est && est.em, agora, podeRevisar: true, resto: r, restoFora: [...INV.gruposFora(c, r)], podeEnviar: COL.ativo(), robo });
+});
+// enviar direto para o AppNext: o robô importa a planilha (confere item a item o que o AppNext leu antes de salvar)
+app.post('/api/inventario/contagem/:id/enviar', express.json({ limit: '2kb' }), async (req, res) => {
+  const loja = lojaInv(req, res); if (!loja) return;
+  if (req.perfil === 'vendedor') return res.status(403).json({ erro: 'Peça para a gerente enviar.' });
+  if (!COL.ativo()) return res.status(400).json({ erro: 'O coletor não está ligado nesta VPS: baixe a planilha e importe no AppNext.' });
+  const tipo = (req.body || {}).tipo === 'desfazer' ? 'desfazer' : 'importar';
+  const c = INV.ler(loja.id, String(req.params.id));
+  if (!c) return res.status(404).json({ erro: 'Contagem não encontrada.' });
+  if (c.envio && c.envio.estado === 'na_fila') return res.status(409).json({ erro: 'Esta contagem já está sendo enviada.' });
+  let linhas;
+  if (tipo === 'importar') {
+    if (['importado', 'revertido', 'cancelado'].includes(c.st)) return res.status(400).json({ erro: 'Esta contagem não pode ser enviada.' });
+    if (!c.itens.some((i) => i.cont != null)) return res.status(400).json({ erro: 'Nenhum item contado.' });
+    linhas = INV.linhasPlanilha(c, ES.atual(loja.id), await catInv(loja));
+  } else {
+    if (c.st !== 'importado' || !c.planilha) return res.status(400).json({ erro: 'Só dá para desfazer uma contagem importada.' });
+    linhas = INV.linhasDesfazer(c, ES.atual(loja.id));
+  }
+  const p = await INV.prepararEnvio(loja.id, c.id, tipo, linhas, req.user);
+  if (p.erro) return res.status(400).json({ erro: p.erro });
+  try {
+    const x = await COL.inventario(loja.id, c.id, tipo, req.user);
+    if (x.status >= 400) { const erro = (x.json && x.json.erro) || 'O coletor recusou.'; INV.erroEnvio(loja.id, c.id, erro); return res.status(x.status === 409 ? 409 : 400).json({ erro }); }
+  } catch (e) { INV.erroEnvio(loja.id, c.id, 'sem resposta do coletor'); return res.status(502).json({ erro: 'Não consegui falar com o coletor: ' + e.message }); }
+  C.auditar(req.user, tipo === 'importar' ? 'mandou o robô importar um inventário no AppNext' : 'mandou o robô desfazer um inventário no AppNext', loja.id, { loja: loja.id, nome: c.nome, itens: linhas.length, zerados: linhas.filter((l) => l.zerado).length });
+  res.json({ ok: true });
 });
 app.put('/api/inventario/contagem/:id/zerar', express.json({ limit: '20kb' }), (req, res) => {
   const loja = lojaInv(req, res); if (!loja) return;

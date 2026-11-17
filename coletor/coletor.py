@@ -50,6 +50,7 @@ SCRIPT_CAIXA = Path(os.getenv("COLETOR_SCRIPT_CAIXA", Path(__file__).with_name("
 SCRIPT_PRODUTOS = Path(os.getenv("COLETOR_SCRIPT_PRODUTOS", Path(__file__).with_name("nextsoft_produtos.py")))
 SCRIPT_FIXE = Path(os.getenv("COLETOR_SCRIPT_FIXE", Path(__file__).with_name("fixe_export.py")))
 # saldo oficial de pontos de cada cliente (só pelo botão "Sincronizar saldos com o FIXE")
+SCRIPT_INVENTARIO = Path(os.getenv("COLETOR_SCRIPT_INVENTARIO", Path(__file__).with_name("nextsoft_inventario.py")))
 SCRIPT_SALDOS = Path(os.getenv("COLETOR_SCRIPT_SALDOS", Path(__file__).with_name("fixe_saldos.py")))
 # Sistema de Pedidos da franqueadora: catálogo (toda noite) e montar o carrinho (pelo painel)
 SCRIPT_PEDIDO = Path(os.getenv("COLETOR_SCRIPT_PEDIDO", Path(__file__).with_name("nextsoft_pedido.py")))
@@ -122,6 +123,7 @@ ID_OK = re.compile(r"^[a-z0-9_-]{1,40}$")
 fila = deque()
 lock = threading.Lock()
 estado = {}  # loja -> dict
+inv_est = {}  # loja -> {"estado", "id", "tipo", "por", "ultima"} (importar inventário no AppNext)
 saldos_est = {}  # loja -> {"estado", "por", "criado", "inicio", "ultima"} (sincronizar saldos de pontos com o FIXE)
 pedido_est = {}  # loja -> {"estado", "acao", "criado", "inicio", "fim", "ok", "codigo", "log"} (Sistema de Pedidos)
 DATA_OK = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -191,7 +193,7 @@ def _estado(loja):
 
 
 def pendentes(loja):
-    return sum(1 for j in fila if j["loja"] == loja and j.get("gatilho") not in ("pedido", "saldos"))
+    return sum(1 for j in fila if j["loja"] == loja and j.get("gatilho") not in ("pedido", "saldos", "inventario"))
 
 
 ITENS = ("vendas", "xml", "estoque", "fixe")
@@ -268,6 +270,76 @@ def enfileirar_saldos(loja, por=None):
         fila.appendleft(job)  # é rápido (1 a 2 min): passa na frente das partes do histórico, logo depois do que está rodando
     log(f"{loja}: saldos do FIXE na fila{' por ' + por if por else ''}")
     return True
+
+
+CID_OK = re.compile(r"^[a-f0-9]{12}$")
+
+
+def arquivos_inventario(loja, cid, tipo):
+    base = DATA_DIR / loja / "inventario" / "envio"
+    return base / f"{cid}-{tipo}.xlsx", base / f"{cid}-{tipo}.json", base / f"{cid}-{tipo}.resultado.json"
+
+
+def enfileirar_inventario(loja, cid, tipo, por=None):
+    """inventário no AppNext (só por pedido de alguém no painel): fila própria, na frente das partes do histórico"""
+    with lock:
+        p = inv_est.get(loja) or {}
+        if p.get("estado") in ("na_fila", "rodando"):
+            return False
+        job = {"loja": loja, "gatilho": "inventario", "cid": cid, "tipo": tipo, "por": por, "criado": datetime.now(TZ).isoformat()}
+        inv_est[loja] = {**{k: v for k, v in p.items() if k == "ultima"}, "estado": "na_fila", "id": cid, "tipo": tipo, "por": por, "criado": job["criado"]}
+        fila.appendleft(job)
+    log(f"{loja}: inventário ({tipo}) na fila{' por ' + por if por else ''}")
+    return True
+
+
+def rodar_inventario(job):
+    loja, cid, tipo = job["loja"], job["cid"], job["tipo"]
+    pasta = WORK_DIR / loja
+    pasta.mkdir(parents=True, exist_ok=True)
+    xlsx, esperado, resultado = arquivos_inventario(loja, cid, tipo)
+    SEGREDO = re.compile(r"(SECRET|TOKEN|PASS|SENHA|SMTP|GITHUB|KEY)", re.I)
+    env = {k: v for k, v in os.environ.items() if not k.startswith("COLETOR_") and not SEGREDO.search(k)}
+    env.update(ler_env(CONFIG_DIR / f"{loja}.env"))
+    env.update({"PYTHONUNBUFFERED": "1", "ENTRADA_INVENTARIO": str(xlsx), "ESPERADO_INVENTARIO": str(esperado), "SAIDA_RESULTADO": str(resultado)})
+    log_path = pasta / "inventario.log"
+    inicio = time.time()
+    with lock:
+        inv_est[loja] = {**inv_est.get(loja, {}), "estado": "rodando", "inicio": datetime.now(TZ).isoformat()}
+    log(f"{loja}: inventário ({tipo}) rodando")
+    try:
+        with open(log_path, "w", encoding="utf-8") as out:
+            p = subprocess.run([sys.executable, str(SCRIPT_INVENTARIO)], cwd=pasta, env=env, stdout=out, stderr=subprocess.STDOUT, timeout=900)
+            codigo = p.returncode
+    except subprocess.TimeoutExpired:
+        codigo = "timeout"
+    except Exception as e:  # noqa: BLE001
+        codigo = str(e)
+    try:
+        cauda = log_path.read_text(encoding="utf-8", errors="replace").splitlines()[-30:]
+    except OSError:
+        cauda = []
+    with lock:
+        p = inv_est.get(loja, {})
+        ultima = {"id": cid, "tipo": tipo, "por": job.get("por"), "criado": job["criado"], "inicio": p.get("inicio"), "fim": datetime.now(TZ).isoformat(),
+                  "ok": codigo == 0, "codigo": codigo, "duracao_s": round(time.time() - inicio), "log": cauda}
+        inv_est[loja] = {"estado": "parado", "ultima": ultima}
+    try:
+        (pasta / "inventario.json").write_text(json.dumps(ultima, ensure_ascii=False), encoding="utf-8")
+    except OSError:
+        pass
+    log(f"{loja}: inventário ({tipo}) {'OK' if codigo == 0 else 'FALHOU (' + str(codigo) + ')'}")
+
+
+def info_inventario(loja):
+    with lock:
+        st = json.loads(json.dumps(inv_est.get(loja) or {}))
+    if st.get("estado") == "rodando":
+        try:
+            st["aoVivo"] = (WORK_DIR / loja / "inventario.log").read_text(encoding="utf-8", errors="replace").splitlines()[-8:]
+        except OSError:
+            pass
+    return st
 
 
 def rodar_saldos(job):
@@ -383,7 +455,7 @@ def enfileirar_historico(loja, partes, por=None, tipo="ambos", extras=None):
 def cancelar(loja):
     with lock:
         antes = len(fila)
-        resto = [j for j in fila if j["loja"] != loja or j.get("gatilho") in ("pedido", "saldos")]
+        resto = [j for j in fila if j["loja"] != loja or j.get("gatilho") in ("pedido", "saldos", "inventario")]
         fila.clear()
         fila.extend(resto)
         e = _estado(loja)
@@ -549,7 +621,7 @@ def rodar(job):
                 lote["falhas"].append({"de": de, "ate": ate, "codigo": str(codigo), "log": cauda[-30:]})
             if lote["feitas"] >= lote["total"]:
                 lote["fim"] = datetime.now(TZ).isoformat()
-        prox = next((j for j in fila if j["loja"] == loja and j.get("gatilho") not in ("pedido", "saldos")), None)
+        prox = next((j for j in fila if j["loja"] == loja and j.get("gatilho") not in ("pedido", "saldos", "inventario")), None)
         e["atual"] = prox
         e["estado"] = "na_fila" if prox else "parado"
     (pasta / "ultima.json").write_text(json.dumps({"ultima": e["ultima"], "lote": e.get("lote")}, ensure_ascii=False, indent=1), encoding="utf-8")
@@ -568,6 +640,8 @@ def trabalhador():
                     rodar_pedido(job)
                 elif job.get("gatilho") == "saldos":
                     rodar_saldos(job)
+                elif job.get("gatilho") == "inventario":
+                    rodar_inventario(job)
                 else:
                     rodar(job)
             except Exception as e:  # noqa: BLE001
@@ -577,6 +651,8 @@ def trabalhador():
                         pedido_est[job["loja"]] = {**pedido_est.get(job["loja"], {}), "estado": "parado"}
                     elif job.get("gatilho") == "saldos":
                         saldos_est[job["loja"]] = {**saldos_est.get(job["loja"], {}), "estado": "parado"}
+                    elif job.get("gatilho") == "inventario":
+                        inv_est[job["loja"]] = {**inv_est.get(job["loja"], {}), "estado": "parado"}
                     else:
                         _estado(job["loja"])["estado"] = "parado"
         else:
@@ -606,6 +682,12 @@ def agendador():
 
 def carregar_ultimas():
     for loja in lojas_configuradas():
+        fi_ = WORK_DIR / loja / "inventario.json"
+        if fi_.exists():
+            try:
+                inv_est[loja] = {"estado": "parado", "ultima": json.loads(fi_.read_text(encoding="utf-8"))}
+            except Exception:  # noqa: BLE001
+                pass
         fs_ = WORK_DIR / loja / "saldos.json"
         if fs_.exists():
             try:
@@ -665,7 +747,7 @@ class API(BaseHTTPRequestHandler):
             with lock:
                 ped = json.loads(json.dumps(pedido_est.get(loja) or {}))
             return self._json(200, {"configurada": True, "horarios": horarios_do_dia(loja), "janela": janela(), "fila": fila_n, "temFixe": tem_fixe,
-                                    "temPedido": tem_pedido(loja), "pedido": ped, "saldos": info_saldos(loja), **info})
+                                    "temPedido": tem_pedido(loja), "pedido": ped, "saldos": info_saldos(loja), "inventario": info_inventario(loja), **info})
         self._json(404, {"erro": "rota"})
 
     def do_POST(self):  # noqa: N802
@@ -707,6 +789,25 @@ class API(BaseHTTPRequestHandler):
                 return self._json(400, {"erro": "Sem a lista de produtos para o carrinho."})
             if not enfileirar_pedido(loja, acao, por, bool(corpo.get("somar"))):
                 return self._json(409, {"erro": "Já há uma tarefa do Sistema de Pedidos na fila ou rodando para esta loja."})
+            return self._json(200, {"ok": True})
+        if self.path.startswith("/inventario/"):
+            loja = self._loja("/inventario/")
+            if not loja or loja not in lojas_configuradas():
+                return self._json(404, {"erro": "Loja sem acesso ao AppNext configurado."})
+            try:
+                n = int(self.headers.get("Content-Length", "0") or 0)
+                corpo = json.loads(self.rfile.read(min(n, 2000)) or b"{}") if n else {}
+            except Exception:  # noqa: BLE001
+                return self._json(400, {"erro": "pedido inválido"})
+            cid, tipo = str(corpo.get("id") or ""), str(corpo.get("tipo") or "")
+            if not CID_OK.match(cid) or tipo not in ("importar", "desfazer"):
+                return self._json(400, {"erro": "pedido inválido"})
+            if not SCRIPT_INVENTARIO.exists():
+                return self._json(400, {"erro": "O coletor desta VPS ainda não tem o robô de inventário (atualize)."})
+            if not all(f.exists() for f in arquivos_inventario(loja, cid, tipo)[:2]):
+                return self._json(400, {"erro": "Faltam os arquivos do inventário."})
+            if not enfileirar_inventario(loja, cid, tipo, por):
+                return self._json(409, {"erro": "Já tem um inventário desta loja na fila ou rodando."})
             return self._json(200, {"ok": True})
         if self.path.startswith("/fixe-saldos/"):
             loja = self._loja("/fixe-saldos/")

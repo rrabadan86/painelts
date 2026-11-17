@@ -80,3 +80,23 @@ test('zerar os não listados: entram com Nova Qtd 0, menos os grupos desmarcados
   assert.ok(INV.marcarDesfazer('l1', c.id, 'ger', 'gerado').ok);
   assert.strictEqual(INV.marcarDesfazer('l1', c.id, 'ger', 'importado').ok.st, 'revertido');
 });
+
+test('envio ao AppNext: prepara arquivos e só marca importado com resultado do robô', async () => {
+  const dir = tmp, INV2 = INV;
+  const c = INV2.criar('lj', { cods: ['1'] }, 'ger', [{ cod: '1', desc: 'A', un: 'UN', qtd: 5, custo: 2 }], 'gerente').ok;
+  INV2.contar('lj', c.id, '1', 3, 'ger');
+  const linhas = [{ cod: '1', desc: 'A', un: 'UN', antes: 5, nova: 3, custo: 2 }];
+  const p = await INV2.prepararEnvio('lj', c.id, 'importar', linhas, 'ger');
+  assert.equal(p.ok.envio.estado, 'na_fila');
+  const base = path.join(dir, 'lj', 'inventario', 'envio', `${c.id}-importar`);
+  assert.ok(fs.statSync(base + '.xlsx').size > 1000);
+  assert.deepEqual(JSON.parse(fs.readFileSync(base + '.json', 'utf8')), [{ cod: '1', nova: 3 }]);
+  assert.equal(INV2.conferirEnvio('lj', c.id).mudou, false); // sem resultado ainda
+  fs.writeFileSync(base + '.resultado.json', JSON.stringify({ ok: true, simulado: true, em: new Date(Date.now() + 1000).toISOString() }));
+  let r = INV2.conferirEnvio('lj', c.id);
+  assert.equal(r.c.envio.estado, 'erro'); assert.notEqual(r.c.st, 'importado'); // simulação não conta
+  await INV2.prepararEnvio('lj', c.id, 'importar', linhas, 'ger');
+  fs.writeFileSync(base + '.resultado.json', JSON.stringify({ ok: true, em: new Date(Date.now() + 1000).toISOString() }));
+  r = INV2.conferirEnvio('lj', c.id);
+  assert.equal(r.c.st, 'importado'); assert.equal(r.c.importadoPeloRobo, true);
+});
