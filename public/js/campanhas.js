@@ -229,7 +229,11 @@
       sel_ = selecionar(f);
       contagem.replaceChildren(h('b', null, fmt.int(sel_.length)), ` ${sel_.length === 1 ? 'cliente' : 'clientes'} com celular entram na campanha`);
       const c0 = sel_[0] && sel_[0].c;
-      exemplo.replaceChildren(h('small', { class: 'muted' }, c0 ? `Como fica para ${c0.nome || 'o primeiro cliente'}:` : 'Exemplo:'), h('div', null, c0 ? A().texto(msg.value, c0, extras({ filtros: f })) : msg.value));
+      // quem não tem o dado de um campo usado (ex.: sem chá favorito) recebe o texto de reserva: avisa quantos
+      const faltam = (TS.CAMPOS_MSG || []).filter(([k, , falta]) => falta && msg.value.includes('{' + k + '}'))
+        .map(([k, , falta]) => [k, sel_.filter(({ c }) => falta(c)).length]).filter(([, n]) => n);
+      exemplo.replaceChildren(h('small', { class: 'muted' }, c0 ? `Como fica para ${c0.nome || 'o primeiro cliente'}:` : 'Exemplo:'), h('div', null, c0 ? A().texto(msg.value, c0, extras({ filtros: f })) : msg.value),
+        faltam.length ? h('small', { class: 'cp-faltam' }, 'Sem o dado: ', faltam.map(([k, n]) => `{${k}} em ${fmt.int(n)} ${n === 1 ? 'cliente' : 'clientes'}`).join(' · '), ' — confira como fica para eles ou ajuste a frase.') : null);
       por(previa, sel_.length ? TS.table({
         cols: [{ key: 'nome', label: 'Cliente', align: 'l', render: (r) => h('span', null, r.nome, h('small', { class: 'muted cp-cel' }, `${r.cel} · CPF ${A().fmtCPF(r.cpf)}`)) }, { key: 'saldo', label: 'Pontos', fmt: fmt.int }, { key: 'vence', label: 'Vencem', align: 'l' }, { key: 'ultima', label: 'Última compra', align: 'l', render: (r) => d(r.ult) }],
         rows: sel_.slice(0, 300).map(({ c, saldo }) => ({ cpf: c.cpf, nome: c.nome || '—', cel: A().fmtTel(c.celular), saldo, vence: c.fx && c.fx.prox != null ? `${fmt.int(c.fx.proxPts)} em ${d(c.fx.prox)}` : '—', ult: c.ultima, ultima: c.ultima ?? -1 })),
@@ -237,6 +241,19 @@
       }) : TS.empty('Nenhum cliente com celular atende a esses critérios.'), sel_.length > 300 ? h('small', { class: 'muted' }, `Mostrando 300 de ${fmt.int(sel_.length)}. A campanha guarda todos.`) : null);
     }, 250);
     msg.addEventListener('input', atualizar);
+    function camposMsg() {
+      const lista = [...(TS.CAMPOS_MSG || []), ['produto', 'produtos escolhidos nos critérios']];
+      return h('div', { class: 'cp-campos' }, ...lista.map(([k, dica]) => {
+        const b = h('button', { type: 'button', class: 'chip cp-tag', title: dica }, '{' + k + '}');
+        b.addEventListener('mousedown', (e) => e.preventDefault()); // não tira o cursor da mensagem
+        b.addEventListener('click', () => {
+          const ini = msg.selectionStart ?? msg.value.length, fim = msg.selectionEnd ?? ini, t = '{' + k + '}';
+          msg.value = msg.value.slice(0, ini) + t + msg.value.slice(fim);
+          msg.focus(); msg.selectionStart = msg.selectionEnd = ini + t.length; atualizar();
+        });
+        return b;
+      }));
+    }
     const salvar = h('button', { type: 'button', class: 'btn primary' }, editando ? 'Salvar alterações' : 'Salvar campanha');
     const erro = h('span', { class: 'muted' });
     const filtrosAntes = JSON.stringify(editando ? { ...PADRAO, ...base.filtros } : null);
@@ -355,8 +372,8 @@
               h('div', { class: 'cp-passo' }, h('span', { class: 'cp-n' }, '1'), h('div', null, h('b', null, 'Quem entra'), h('small', { class: 'muted' }, 'Só clientes com celular que não pediram para não receber mensagens. Os critérios se somam (precisa atender a todos).'))),
               ...blocos,
               linha('Não incluir quem foi contatado há menos de', num_('semContato', '0'), 'dias', TS.dica('Evita mandar duas mensagens seguidas para a mesma pessoa. 0 = incluir todos.')),
-              h('div', { class: 'cp-passo' }, h('span', { class: 'cp-n' }, '2'), h('div', null, h('b', null, 'Mensagem'), h('small', { class: 'muted' }, 'Campos: {nome} · {pontos} · {vence} · {cha} chá favorito · {produto} produtos escolhidos · {loja}'))),
-              h('div', { class: 'cp-msg-topo' }, modSel), msg, exemplo,
+              h('div', { class: 'cp-passo' }, h('span', { class: 'cp-n' }, '2'), h('div', null, h('b', null, 'Mensagem'), h('small', { class: 'muted' }, 'Clique num campo para colocar na mensagem onde está o cursor.'))),
+              h('div', { class: 'cp-msg-topo' }, modSel), camposMsg(), msg, exemplo,
               h('div', { class: 'cp-passo' }, h('span', { class: 'cp-n' }, '3'), h('div', null, h('b', null, 'Envio e retorno'))),
               linha('Medir o retorno em', janela, 'dias', TS.dica('Conta como "voltou" quem comprar (cupom com CPF) do dia do envio até N dias depois.')),
               linha('Repetir', rec, TS.dica('Toda semana ou todo mês uma lista nova é montada com estes critérios quando a tela de campanhas é aberta.')),

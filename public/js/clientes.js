@@ -128,6 +128,10 @@
     let soSemVenda = 0;
     const cuponsCPF = new Map(); // "cupom|lojaId" → cliente (para a % de vendas com CPF)
     const cha = TS.rules.ids.chaTotal;
+    // vendedoras ativas = venderam nos últimos 60 dias dos dados (quem saiu da loja não vira {vendedora})
+    let ultDia = 0; for (let i = 0; i < db.n; i++) if (db.day[i] > ultDia) ultDia = db.day[i];
+    const vendAtivas = new Set();
+    for (let i = 0; i < db.n; i++) if (db.day[i] > ultDia - 60) { const v = db.D.vendedor[db.vend[i]]; if (v) vendAtivas.add(v); }
     for (const c of porCPF.values()) {
       if (!c.cupons.length) { if (c.semVenda) soSemVenda++; continue; } // nenhuma compra encontrada nas vendas
       c.cupons.sort((a, b) => b.day - a.day);
@@ -140,7 +144,8 @@
       // ficha: frequência, chá favorito, pacote, vendedora, gasto 12 meses
       const dias = [...new Set(c.cupons.map((k) => k.day))].sort((a, b) => a - b);
       c.intervalo = dias.length >= 2 ? (dias[dias.length - 1] - dias[0]) / (dias.length - 1) : null;
-      const diasCha = new Set(), porCha = new Map(), porTam = new Map(), porVend = new Map(), gramas = new Map();
+      const diasCha = new Set(), porCha = new Map(), porTam = new Map(), porVend = new Map(), gramas = new Map(), atendeu = new Map();
+      c.chaUltimo = null;
       c.gasto12 = 0; c.gasto12ant = 0;
       for (const k of c.cupons) {
         cuponsCPF.set(k.cupom + '|' + k.lojaId, c);
@@ -148,9 +153,10 @@
         for (const i of k.itens) {
           if (taxas.has(db.desc[i])) continue;
           const v = db.D.vendedor[db.vend[i]];
-          if (v) porVend.set(v, (porVend.get(v) || 0) + (db.vt[i] || 0));
+          if (v) { porVend.set(v, (porVend.get(v) || 0) + (db.vt[i] || 0)); (atendeu.get(v) || atendeu.set(v, new Set()).get(v)).add(k.cupom + '|' + k.loja); }
           // chá a granel/pacote (tem kg); xícaras e bebidas não contam
           if (!cha.has(db.grupo[i]) || !(db.cha[i] > 0)) continue;
+          if (c.chaUltimo == null) c.chaUltimo = db.D.produto[db.prod[i]]; // cupons em ordem do mais novo
           diasCha.add(k.day);
           gramas.set(k.day, (gramas.get(k.day) || 0) + db.cha[i] * 1000);
           porCha.set(db.prod[i], (porCha.get(db.prod[i]) || 0) + db.cha[i]);
@@ -162,6 +168,8 @@
       c.chaFavorito = fav != null ? db.D.produto[fav] : null;
       c.pacote = maior(porTam);
       c.vendedora = maior(porVend);
+      // quem mais atendeu (nº de compras), entre as vendedoras que ainda estão na loja; empate → quem vendeu mais
+      c.vendedoraPref = [...atendeu].filter(([v]) => vendAtivas.has(v)).sort((a, b) => b[1].size - a[1].size || (porVend.get(b[0]) || 0) - (porVend.get(a[0]) || 0)).map(([v]) => v)[0] || null;
       const dc = [...diasCha].sort((a, b) => a - b);
       c.ultimaCha = dc.length ? dc[dc.length - 1] : null;
       c.gramasUltima = c.ultimaCha != null ? Math.round(gramas.get(c.ultimaCha) || 0) : 0;
@@ -258,13 +266,31 @@
     { nome: 'Pontos vencendo', texto: 'Oi, {nome}! Você tem {pontos} pontos no programa de fidelidade da {loja}, e parte deles vence em {vence}. Que tal usar numa visita? 🍵' },
   ];
   const modelosDe = (lojaId) => { const m = (TS.db.metas || []).find((x) => x.id === lojaId); return (m && m.wpp && m.wpp.length ? m.wpp : TS.WPP_PADRAO); };
+  const nomeBonito = (n) => String(n || '').trim().toLowerCase().split(/\s+/).map((p, k) => (k && /^(da|de|do|das|dos|e)$/.test(p) ? p : p.charAt(0).toUpperCase() + p.slice(1))).join(' ');
+  const saudacao = () => { const hh = new Date().getHours(); return hh < 12 ? 'Bom dia' : hh < 18 ? 'Boa tarde' : 'Boa noite'; };
+  /** campos da mensagem (campanhas e WhatsApp): chave, o que é, e o que vai quando o cliente não tem o dado */
+  TS.CAMPOS_MSG = [
+    ['nome', 'primeiro nome'], ['nomecompleto', 'nome completo'], ['saudacao', 'Bom dia / Boa tarde / Boa noite (na hora do envio)'],
+    ['vendedora', 'vendedora que mais atendeu o cliente (só quem vendeu nos últimos 60 dias; sem ela: "equipe da <loja>")', (c) => !c.vendedoraPref],
+    ['cha', 'chá favorito', (c) => !c.chaFavorito], ['ultimocha', 'último chá que comprou', (c) => !c.chaUltimo],
+    ['pacote', 'tamanho de pacote que costuma levar (ex.: 100g)', (c) => !c.pacote],
+    ['pontos', 'saldo de pontos'], ['vencepts', 'pontos que vencem na próxima data'], ['vence', 'data em que os próximos pontos vencem', (c) => !(c.fx && c.fx.prox != null)],
+    ['ultimacompra', 'data da última compra'], ['dias', 'dias desde a última compra'], ['visitas', 'quantas vezes comprou'],
+    ['aniversario', 'dia e mês do aniversário', (c) => !c.aniv], ['loja', 'nome da loja'],
+  ];
   const primeiroNome = (n) => { const p = String(n || '').trim().split(/\s+/)[0] || ''; return p ? p[0].toUpperCase() + p.slice(1).toLowerCase() : ''; };
   function textoWpp(modelo, c) {
     const lid = lojaIdDe(c);
     const loja = ((TS.lojas || []).find((l) => l.id === lid) || {}).nome || 'Tea Shop';
     const fx = c.fx || {};
-    return modelo.texto.replace(/\{nome\}/g, primeiroNome(c.nome) || 'tudo bem').replace(/\{loja\}/g, loja).replace(/\{cha\}/g, c.chaFavorito || 'chá')
-      .replace(/\{pontos\}/g, fmt.int(fx.saldo || 0)).replace(/\{vence\}/g, fx.prox != null ? fmt.date(TS.dayToIso(fx.prox)) : '—');
+    const v = {
+      nome: primeiroNome(c.nome) || 'tudo bem', nomecompleto: nomeBonito(c.nome) || 'tudo bem', loja, cha: c.chaFavorito || 'chá',
+      ultimocha: c.chaUltimo || c.chaFavorito || 'chá', pacote: c.pacote ? `${c.pacote}g` : '', vendedora: primeiroNome(c.vendedoraPref) || `equipe da ${loja}`, // "Aqui é a {vendedora}" → "Aqui é a equipe da Tea Shop…"
+      pontos: fmt.int(fx.saldo || 0), vence: fx.prox != null ? fmt.date(TS.dayToIso(fx.prox)) : '—', vencepts: fmt.int(fx.proxPts || 0),
+      ultimacompra: c.ultima != null ? fmt.date(TS.dayToIso(c.ultima)) : '—', dias: c.ausencia != null ? fmt.int(c.ausencia) : '—',
+      aniversario: c.aniv || '—', visitas: fmt.int(c.visitas || 0), saudacao: saudacao(),
+    };
+    return modelo.texto.replace(/\{([a-z]+)\}/g, (m, k) => (k in v ? v[k] : m)).replace(/ {2,}/g, ' ');
   }
   const linkWpp = (c, txt) => (TS.demo ? '#demo' : c.wpp + '?text=' + encodeURIComponent(txt));
 
