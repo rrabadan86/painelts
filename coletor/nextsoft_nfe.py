@@ -198,7 +198,18 @@ DEVOLVER = "async (p) => {" + JS_BASE.replace("acha('salvarRascunho')", "acha('m
   for (let k = 0; k < 40 && forn && (forn.carregandoEnderecos || !forn.enderecosParceiro.length); k++) await espera(250);
   if (!S.enderecoId && forn && forn.enderecosParceiro.length === 1) set('enderecoId', forn.enderecosParceiro[0].id);
   await espera(800);
-  await tela.calcularTotais(); await espera(800);
+  // totais da nota: a tela chama o cálculo sem esperar; aqui espera a resposta do AppNext (com o frete já preenchido)
+  let erroTotais = null;
+  for (let k = 0; k < 3; k++) {
+    try {
+      await tela.CalculaValoresTotaisMovimento({ lojaId: tela.lojaAtual.id, parceiroId: S.parceiroId, valorDesconto: S.valorDesconto || 0, valorFrete: S.valorFrete || 0,
+        valorSeguro: S.valorSeguro || 0, valorDespesasAcessorias: S.valorDespesasAcessorias || 0, modalidadeFreteId: S.modalidadeFreteId, itens: S.itens });
+      erroTotais = null; break;
+    } catch (e) { erroTotais = String(e.message || e); await espera(1500); }
+  }
+  if (erroTotais) erro('o AppNext não recalculou os totais da nota: ' + erroTotais.slice(0, 150));
+  await espera(500);
+  if (tela.lojaAtual.id !== S.lojaId) erro('a loja aberta no AppNext não é a da nota de entrada');
   const t = tela.$refs.tabs; const invalida = ['validarDadosNota', 'validarDadosFornecedor', 'validarProdutos', 'validarTransportadora', 'validarValoresAdicionais'].filter((k) => t[k] && t[k]());
   return { invalida, cfop: cfops[0].codigo, chaveRef: String(S.chaveAcesso || ''), total: Number(S.valorTotalLiquido), itens: S.itens.map((i) => ({ codigo: String(i.codigo), nome: i.nome || '', qtd: Number(i.quantidade), preco: Number(i.valorUnitario), total: Number(i.valorTotalLiquido) })) };
 }"""
