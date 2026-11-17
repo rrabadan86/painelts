@@ -52,13 +52,11 @@
     const ativas = rows.filter((r) => r.situacao !== 'cancelada');
     const tab = TS.table({
       cols: [
-        { key: 'emissao', label: 'Emissão', align: 'l', render: (r) => quando(r.emissao), sortVal: (r) => r.emissao || '' },
-        { key: 'nfTxt', label: 'NF / série', align: 'l', render: (r) => h('a', { href: '#', class: 'prc-nome', onclick: (e) => { e.preventDefault(); abrir(loja, r.chave); } }, r.nfTxt), sortVal: (r) => r.numero || 0 },
-        { key: 'destNome', label: 'Destinatário', align: 'l', wrap: true, render: (r) => h('span', null, r.destNome || '—', r.dest && r.dest.mun ? h('small', { class: 'est-tam' }, `${r.dest.mun}${r.dest.uf ? ' - ' + r.dest.uf : ''}`) : null) },
-        { key: 'docBusca', label: 'CPF/CNPJ', align: 'l', render: (r) => docLink(r.dest), sortVal: (r) => (r.dest && r.dest.doc) || '' },
-        { key: 'natOp', label: 'Natureza', align: 'l', wrap: true, render: (r) => h('span', null, r.natOp || '—', r.cfops && r.cfops.length ? h('small', { class: 'est-tam' }, 'CFOP ' + r.cfops.join(', ')) : null) },
+        // compacta: cada coluna junta duas informações para caber sem rolagem horizontal
+        { key: 'nfTxt', label: 'NF / emissão', align: 'l', render: (r) => h('span', null, h('a', { href: '#', class: 'prc-nome', onclick: (e) => { e.preventDefault(); abrir(loja, r.chave); } }, r.nfTxt), h('small', { class: 'est-tam' }, quando(r.emissao))), sortVal: (r) => r.emissao || '' },
+        { key: 'destNome', label: 'Destinatário', align: 'l', wrap: true, render: (r) => h('span', null, r.destNome || '—', h('small', { class: 'est-tam' }, r.dest && r.dest.doc ? docLink(r.dest) : null, r.dest && r.dest.mun ? `${r.dest && r.dest.doc ? ' · ' : ''}${r.dest.mun}${r.dest.uf ? ' - ' + r.dest.uf : ''}` : null)) },
+        { key: 'natOp', label: 'Natureza', align: 'l', wrap: true, render: (r) => h('span', null, r.natOp || '—', h('small', { class: 'est-tam' }, [r.cfops && r.cfops.length ? 'CFOP ' + r.cfops.join(', ') : null, r.itens != null ? `${fmt.int(r.itens)} ${r.itens === 1 ? 'item' : 'itens'}` : null].filter(Boolean).join(' · '))) },
         { key: 'situacao', label: 'Situação', align: 'l', render: (r) => situ(r.situacao) },
-        { key: 'itens', label: 'Itens', fmt: fmt.int },
         { key: 'valor', label: 'Valor', fmt: (v) => (v == null ? '—' : fmt.brl(v)), cls: (r) => (r.situacao === 'cancelada' ? 'nf-riscado' : '') },
         { key: 'acoes', label: '', align: 'l', sortVal: () => 0, render: (r) => h('span', { class: 'nf-acoes' },
           h('a', { class: 'btn prc-ver', href: url('danfe', loja, r.chave), target: '_blank', rel: 'noopener', title: 'DANFE para imprimir ou salvar em PDF' }, 'DANFE'),
@@ -66,8 +64,8 @@
       ],
       rows, sortKey: 'emissao', maxHeight: '560px', search: 'Buscar NF, destinatário, CPF/CNPJ ou natureza…', searchKeys: ['nfTxt', 'destNome', 'docBusca', 'natOp'], cls: 'est-t',
       rowClass: (r) => (r.situacao === 'cancelada' ? 'nf-linha-cancelada' : null),
-      total: { nfTxt: `${fmt.int(rows.length)} notas`, itens: rows.reduce((a, r) => a + (r.itens || 0), 0), valor: ativas.reduce((a, r) => a + (r.valor || 0), 0) },
-      imprimir: ['emissao', 'nfTxt', 'destNome', 'docBusca', 'natOp', 'situacao', 'itens', 'valor'],
+      total: { nfTxt: `${fmt.int(rows.length)} notas`, valor: ativas.reduce((a, r) => a + (r.valor || 0), 0) },
+      imprimir: ['nfTxt', 'destNome', 'natOp', 'situacao', 'valor'],
       empty: fil === 'per' ? 'Nenhuma NF-e no período do filtro. Veja "Todas".' : 'Nenhuma nota.',
     });
     const canc = rows.length - ativas.length;
