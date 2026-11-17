@@ -46,7 +46,7 @@ test('planilha: modelo do AppNext, só os itens contados, código como texto, cu
   const c = INV.criar('l1', { cods: ['71194', '003', '31020'] }, 'ger', cat, 'gerente').ok;
   INV.contar('l1', c.id, '003', 0, 'ger');
   INV.contar('l1', c.id, '31020', 1.1, 'ger');
-  const buf = await INV.planilha(INV.ler('l1', c.id), 'Loja 1', estoque);
+  const buf = await INV.planilha(INV.linhasPlanilha(INV.ler('l1', c.id), estoque, cat));
   const wb = new ExcelJS.Workbook(); await wb.xlsx.load(buf);
   const ws = wb.worksheets[0];
   assert.strictEqual(ws.name, 'Inventário');
@@ -57,4 +57,26 @@ test('planilha: modelo do AppNext, só os itens contados, código como texto, cu
   const m = Object.fromEntries(linhas.map((l) => [l[0], l]));
   assert.strictEqual(typeof m['003'][0], 'string');
   assert.deepStrictEqual([m['003'][6], m['31020'][6], m['31020'][7]], [0, 1.1, 180]);
+});
+
+test('zerar os não listados: entram com Nova Qtd 0, menos os grupos desmarcados; desfazer volta ao de antes', async () => {
+  const est2 = { ...estoque, itens: [...estoque.itens, { cod: '81985', desc: 'Jogo Americano', un: 'Un', qtd: 500, custo: 0.34 }] };
+  const cat2 = INV.catalogo(est2, { itens: [...tabela.itens, { cod: '81985', grupo: 'CONSUMÍVEIS - SEM CONTROLE DE ESTOQUE' }] }, vendas);
+  const c = INV.criar('l1', { cods: ['31020'], zerarResto: true }, 'ger', cat2, 'gerente').ok;
+  INV.contar('l1', c.id, '31020', 1.0, 'ger');
+  let l = INV.linhasPlanilha(INV.ler('l1', c.id), est2, cat2);
+  // Rooibos (0,4), material (13) e lata (4) zerados; jogo americano (sem controle de estoque) fica de fora por padrão
+  assert.deepStrictEqual(l.filter((x) => x.zerado).map((x) => x.cod).sort(), ['003', '31030', '71194']);
+  assert.ok(l.every((x) => !x.zerado || x.nova === 0));
+  INV.zerar('l1', c.id, { ativo: true, semGrupos: ['ACESSÓRIOS', 'CONSUMÍVEIS - SEM CONTROLE DE ESTOQUE'] });
+  l = INV.linhasPlanilha(INV.ler('l1', c.id), est2, cat2);
+  assert.ok(!l.some((x) => x.cod === '71194'));
+  INV.marcarGerado('l1', c.id, 'ger', l);
+  INV.acao('l1', c.id, 'importado', 'ger');
+  // depois da importação vendeu 0,1 kg de valeriana: o desfazer volta a 1,25 − 0,1 = 1,15 e o rooibos a 0,4
+  const depois = { em: new Date(Date.now() + 60e3).toISOString(), itens: [{ cod: '31020', qtd: 0.9, custo: 180 }, { cod: '31030', qtd: 0, custo: 150 }, { cod: '003', qtd: 0, custo: 0.01 }] };
+  const d = Object.fromEntries(INV.linhasDesfazer(INV.ler('l1', c.id), depois).map((x) => [x.cod, x.nova]));
+  assert.deepStrictEqual([d['31020'], d['31030'], d['003']], [1.15, 0.4, 13]);
+  assert.ok(INV.marcarDesfazer('l1', c.id, 'ger', 'gerado').ok);
+  assert.strictEqual(INV.marcarDesfazer('l1', c.id, 'ger', 'importado').ok.st, 'revertido');
 });

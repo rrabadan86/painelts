@@ -1921,3 +1921,10 @@ body.com-camada .ped-barra { display: none; }
   .inv-dupla { grid-template-columns: 1fr; }
   .inv-rodape .btn { width: 100%; }
 }
+.inv-zerar { display: grid; gap: 8px; }
+.inv-zerar.on { border: 2px solid #e2b4ad; background: #fffaf8; }
+.inv-zerar-res { font-size: 14px; color: #a33; }
+.inv-zerar-grupos { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 6px; }
+.inv-zerar-g { display: flex; gap: 8px; align-items: center; background: #fff; border: 1px solid var(--line, #e6e1d6); border-radius: 8px; padding: 6px 8px; font-size: 13px; }
+.inv-zerar-g span { flex: 1; }
+.inv-zerar-lista summary, .inv-antigas details summary { cursor: pointer; font-weight: 600; font-size: 13px; }

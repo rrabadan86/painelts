@@ -132,4 +132,23 @@ test.describe('regras', () => {
     await page.locator('.inv-revfil button', { hasText: 'Todos os contados' }).click();
     await expect(page.locator('.inv-revfil').locator('..')).toContainText('375 g');
   });
+
+  test('Inventário: "zerar os não listados" mostra o que vai ficar 0 e deixa desmarcar grupos', async ({ page }) => {
+    await page.evaluate(() => { location.hash = '#inventario'; });
+    await page.getByRole('button', { name: '+ Nova contagem' }).click();
+    await page.locator('.inv-modo-corpo input[type=search]').fill('a');
+    await page.locator('.inv-modo-corpo input[type=search]').fill('ar');
+    await page.locator('.cp-sug-it').first().dispatchEvent('mousedown');
+    await page.locator('.inv-check', { hasText: 'Zerar os produtos' }).locator('input').check();
+    await page.getByRole('button', { name: 'Começar a contar' }).click();
+    await page.locator('input.inv-qtd').first().fill('2');
+    await page.locator('input.inv-qtd').first().press('Enter');
+    await expect(page.locator('.inv-salvo.ok').first()).toBeVisible();
+    page.on('dialog', (d) => d.accept());
+    await page.getByRole('button', { name: 'Terminar contagem' }).click();
+    await expect(page.locator('.inv-zerar.on')).toBeVisible();
+    const antes = await page.locator('.inv-zerar-res b').innerText();
+    await page.locator('.inv-zerar-g input').first().uncheck();
+    await expect(page.locator('.inv-zerar-res b')).not.toHaveText(antes);
+  });
 });

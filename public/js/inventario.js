@@ -6,7 +6,7 @@
    Contagem cega: quem conta não vê a quantidade do sistema (a vendedora sempre conta às cegas). */
 (function () {
   const { h, fmt, state } = TS;
-  const ST = { contando: ['Contando', 'inv-st-cont'], revisao: ['Para revisar', 'inv-st-rev'], gerado: ['Planilha gerada', 'inv-st-ger'], importado: ['Importado no AppNext', 'inv-st-ok'], cancelado: ['Cancelada', 'inv-st-canc'] };
+  const ST = { contando: ['Contando', 'inv-st-cont'], revisao: ['Para revisar', 'inv-st-rev'], gerado: ['Planilha gerada', 'inv-st-ger'], importado: ['Importado no AppNext', 'inv-st-ok'], cancelado: ['Cancelada', 'inv-st-canc'], revertido: ['Desfeita', 'inv-st-canc'] };
   const ehKg = (un) => String(un || '').toLowerCase() === 'kg';
   const qtdTxt = (v, un) => (v == null ? '—' : ehKg(un) ? (v < 1 ? `${fmt.int(Math.round(v * 1000))} g` : `${v.toLocaleString('pt-BR', { maximumFractionDigits: 3 })} kg`) : `${v.toLocaleString('pt-BR', { maximumFractionDigits: 3 })} ${String(un || 'un').toLowerCase()}`);
   const quando = (iso) => (iso ? new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—');
@@ -40,10 +40,16 @@
       if (!TS.demo) return (await req('POST', 'inventario', { loja, ...b })).id;
       const itens = escolheDemo(await demoCat(loja), b);
       if (!itens.length) throw new Error('Escolha pelo menos um item para contar.');
-      const c = { id: 'demo' + Date.now().toString(16).slice(-8), nome: b.nome || 'Contagem', criadoEm: new Date().toISOString(), por: 'apresentacao', cega: !!b.cega, st: 'contando', itens: itens.map((i) => ({ ...i, sis: i.qtd, cont: null })) };
+      const c = { id: 'demo' + Date.now().toString(16).slice(-8), nome: b.nome || 'Contagem', criadoEm: new Date().toISOString(), por: 'apresentacao', cega: !!b.cega, st: 'contando', zerar: { ativo: !!b.zerarResto, semGrupos: null }, itens: itens.map((i) => ({ ...i, sis: i.qtd, cont: null })) };
       DEMO.cont.unshift(c); return c.id;
     },
-    async abrir(loja, id) { if (!TS.demo) return req('GET', `inventario/contagem?loja=${encodeURIComponent(loja)}&id=${id}`); const c = DEMO.cont.find((x) => x.id === id); return { ...c, podeRevisar: true, agora: null }; },
+    async abrir(loja, id) {
+      if (!TS.demo) return req('GET', `inventario/contagem?loja=${encodeURIComponent(loja)}&id=${id}`);
+      const c = DEMO.cont.find((x) => x.id === id), na = new Set(c.itens.map((i) => i.cod));
+      const resto = (await demoCat(loja)).filter((i) => !na.has(i.cod) && Math.abs(i.qtd || 0) > 0.0005).map((i) => ({ cod: i.cod, desc: i.desc, un: i.un, grupo: i.grupo, qtd: i.qtd, custo: i.custo }));
+      return { ...c, podeRevisar: true, agora: null, resto, restoFora: (c.zerar && c.zerar.semGrupos) || [] };
+    },
+    async zerar(loja, id, z) { if (!TS.demo) return req('PUT', `inventario/contagem/${id}/zerar`, { loja, ...z }); DEMO.cont.find((x) => x.id === id).zerar = z; },
     async contar(loja, id, cod, cont) {
       if (!TS.demo) return (await req('PUT', `inventario/contagem/${id}/item/${encodeURIComponent(cod)}`, { loja, cont })).item;
       const it = DEMO.cont.find((x) => x.id === id).itens.find((i) => i.cod === cod); Object.assign(it, { cont, por: 'apresentacao', em: cont == null ? null : new Date().toISOString() }); return it;
@@ -79,14 +85,15 @@
     if (!corpo.isConnected) return;
     const vend = TS.eu && TS.eu.perfil === 'vendedor';
     const abertas = d.contagens.filter((c) => c.st === 'contando' || c.st === 'revisao' || c.st === 'gerado');
-    const antigas = d.contagens.filter((c) => !abertas.includes(c)).slice(0, 20);
+    const antigas = d.contagens.filter((c) => !abertas.includes(c)).slice(0, 50);
     const linha = (c) => {
       const [t, cls] = ST[c.st];
       const pct = c.itens ? c.contados / c.itens : 0;
       return h('button', { type: 'button', class: 'inv-linha', onclick: () => { state.invId = c.id; TS.render(); } },
         h('div', { class: 'inv-linha-top' }, h('b', null, c.nome), h('span', { class: 'inv-st ' + cls }, t)),
         h('div', { class: 'inv-barra' }, h('i', { style: { width: Math.round(pct * 100) + '%' } })),
-        h('small', { class: 'muted' }, `${fmt.int(c.contados)} de ${fmt.int(c.itens)} contados · aberta ${quando(c.criadoEm)} por ${c.por || '—'}${c.cega ? ' · cega' : ''}`));
+        h('small', { class: 'muted' }, `${fmt.int(c.contados)} de ${fmt.int(c.itens)} contados · aberta ${quando(c.criadoEm)} por ${c.por || '—'}${c.cega ? ' · cega' : ''}${c.zerar ? ' · zera os não listados' : ''}`),
+        c.importadoEm ? h('small', { class: 'muted' }, `Importado ${quando(c.importadoEm)}${c.importadoPor ? ' por ' + c.importadoPor : ''} · ${fmt.int(c.naPlanilha || 0)} produtos${c.zerados ? ` (${fmt.int(c.zerados)} zerados)` : ''} · ajuste ${fmt.brl(c.ajuste || 0)}${c.revertidoEm ? ' · desfeito ' + quando(c.revertidoEm) : ''}`) : null);
     };
     const novaBox = h('div');
     const btnNova = h('button', { type: 'button', class: 'btn primary inv-nova-btn', onclick: () => { btnNova.hidden = true; novaBox.replaceChildren(formNova(loja, d, () => { btnNova.hidden = false; novaBox.replaceChildren(); })); } }, '+ Nova contagem');
@@ -94,7 +101,7 @@
       h('div', { class: 'inv-topo' }, btnNova, h('small', { class: 'muted' }, d.estoqueEm ? `Estoque do painel de ${quando(d.estoqueEm)}.` : '')),
       novaBox,
       h('div', { class: 'card mt' }, h('div', { class: 'card-title' }, 'Em andamento'), abertas.length ? h('div', { class: 'inv-lista' }, ...abertas.map(linha)) : TS.empty('Nenhuma contagem aberta. Comece com "Nova contagem".')),
-      antigas.length ? h('details', { class: 'card mt inv-antigas' }, h('summary', null, `Contagens anteriores (${antigas.length})`), h('div', { class: 'inv-lista' }, ...antigas.map(linha))) : null,
+      antigas.length ? h('div', { class: 'card mt inv-antigas' }, h('div', { class: 'card-title' }, `Histórico (${antigas.length})`), h('div', { class: 'card-sub' }, 'Contagens importadas, desfeitas ou canceladas. Abra uma para ver o que foi para o AppNext ou desfazer.'), h('div', { class: 'inv-lista' }, ...antigas.map(linha))) : null,
       vend ? null : h('div', { class: 'card mt inv-como' }, h('div', { class: 'card-title' }, 'Como funciona'),
         h('ol', null,
           h('li', null, 'Abra uma contagem: alguns produtos, um grupo, um tipo de chá ou todos os chás a granel. Itens fora dela não mudam no AppNext.'),
@@ -109,6 +116,7 @@
     const f = { modo: 'produtos', cods: [], prod: [], grupo: '', sub: '', familia: '', tipo: '' };
     const nome = h('input', { class: 'f-input', placeholder: 'Nome (opcional): Rooibos, Latas, Contagem de sábado…' });
     const cega = h('input', { type: 'checkbox', checked: vend || null, disabled: vend || null });
+    const zerarResto = h('input', { type: 'checkbox' });
     const previa = h('div', { class: 'inv-previa' });
     const corpoModo = h('div', { class: 'inv-modo-corpo' });
     let tPrev;
@@ -150,13 +158,14 @@
       if (!b) { erro.textContent = 'Escolha o que contar.'; return; }
       comecar.disabled = true;
       const nomePadrao = f.modo === 'grupo' ? f.sub || f.grupo : f.modo === 'cha' ? f.familia || f.tipo : f.modo === 'kg' ? 'Chás a granel' : f.prod.length === 1 ? f.prod[0].desc : '';
-      try { const id = await API.criar(loja, { ...b, nome: nome.value.trim() || nomePadrao, cega: cega.checked }); state.invId = id; TS.render(); }
+      try { const id = await API.criar(loja, { ...b, nome: nome.value.trim() || nomePadrao, cega: cega.checked, zerarResto: zerarResto.checked }); state.invId = id; TS.render(); }
       catch (e) { erro.textContent = e.message; comecar.disabled = false; }
     } }, 'Começar a contar');
     return h('div', { class: 'card mt inv-form' }, h('div', { class: 'card-title' }, 'Nova contagem'),
       h('div', { class: 'inv-modos' }, modos), corpoModo, previa,
       h('label', { class: 'esp-campo' }, h('span', { class: 'f-label' }, 'Nome'), nome),
       h('label', { class: 'inv-check' }, cega, h('span', null, h('b', null, 'Contagem cega'), ' — quem conta não vê a quantidade do sistema (conta sem se influenciar).', vend ? ' Para vendedoras é sempre cega.' : '')),
+      vend ? null : h('label', { class: 'inv-check' }, zerarResto, h('span', null, h('b', null, 'Zerar os produtos que não estão nesta contagem'), ' — o que não for listado aqui fica 0 no AppNext. Na revisão você vê a lista e escolhe os grupos que ficam de fora antes de gerar a planilha.')),
       erro, h('div', { class: 'esp-acoes' }, comecar, h('button', { type: 'button', class: 'btn', onclick: fechar }, 'Fechar')));
   }
 
@@ -281,16 +290,24 @@
 
   // ---------- revisão (gerente, franqueado, admin) ----------
   function telaRevisar(corpo, loja, c) {
+    const repintar = () => abrirContagem(corpo, loja, c.id);
+    const fechada = c.st === 'importado' || c.st === 'revertido';
     const contados = c.itens.filter((i) => i.cont != null);
     const rows = contados.map((i) => {
       const dq = Math.round((i.cont - (i.sis || 0)) * 1000) / 1000;
       const agora = c.agora && c.agora[i.cod] != null ? c.agora[i.cod] : null;
       return { ...i, dq, dr: i.custo != null ? dq * i.custo : null, agora, mudou: agora != null && Math.abs(agora - (i.sis || 0)) > 0.0005, conferiu: agora != null && Math.abs(agora - i.cont) < 0.0005 };
     });
-    const sobra = rows.reduce((s, r) => s + (r.dr > 0 ? r.dr : 0), 0), falta = rows.reduce((s, r) => s + (r.dr < 0 ? -r.dr : 0), 0);
+    // "zerar os não listados": o que ficaria zero (menos os grupos desmarcados)
+    const z = c.zerar || { ativo: false };
+    const resto = c.resto || [];
+    const fora = new Set(c.restoFora || []);
+    const zerados = z.ativo ? resto.filter((r) => !fora.has(r.grupo)) : [];
+    const valorZ = zerados.reduce((s0, r) => s0 + (r.custo || 0) * (r.qtd || 0), 0);
+    const sobra = rows.reduce((s0, r) => s0 + (r.dr > 0 ? r.dr : 0), 0), falta = rows.reduce((s0, r) => s0 + (r.dr < 0 ? -r.dr : 0), 0) + Math.max(0, valorZ);
     const div = rows.filter((r) => Math.abs(r.dq) > 0.0005);
     const sem = c.itens.length - contados.length;
-    const mudou = rows.filter((r) => r.mudou && c.st !== 'importado');
+    const mudou = rows.filter((r) => r.mudou && !fechada);
     const filV = state.invRevFil === 'todos' ? 'todos' : 'dif';
     const tab = TS.table({
       cols: [
@@ -298,11 +315,11 @@
         { key: 'sis', label: 'Sistema', render: (r) => qtdTxt(r.sis, r.un), sortVal: (r) => r.sis },
         { key: 'cont', label: 'Contado', render: (r) => h('b', null, qtdTxt(r.cont, r.un)), sortVal: (r) => r.cont },
         { key: 'dq', label: 'Diferença', render: (r) => h('span', { class: r.dq > 0 ? 'pos' : r.dq < 0 ? 'neg' : 'muted' }, r.dq === 0 ? 'confere' : `${r.dq > 0 ? '+' : '−'}${qtdTxt(Math.abs(r.dq), r.un)}`), sortVal: (r) => r.dq },
-        { key: 'dr', label: 'Em R$ (custo)', render: (r) => (r.dr == null ? '—' : h('span', { class: r.dr > 0 ? 'pos' : r.dr < 0 ? 'neg' : 'muted' }, fmt.brl(r.dr))), sortVal: (r) => r.dr || 0 },
+        { key: 'dr', label: 'Em R$ (custo)', fmt: fmt.brl, render: (r) => (r.dr == null ? '—' : h('span', { class: r.dr > 0 ? 'pos' : r.dr < 0 ? 'neg' : 'muted' }, fmt.brl(r.dr))), sortVal: (r) => r.dr || 0 },
         c.st === 'importado' ? { key: 'agora', label: 'No AppNext agora', render: (r) => (r.agora == null ? '—' : h('span', { class: r.conferiu ? 'pos' : 'muted', title: r.conferiu ? 'O estoque do AppNext já está com a quantidade contada' : 'Ainda diferente: o estoque do painel é de antes da importação, ou houve venda/entrada depois' }, qtdTxt(r.agora, r.un), r.conferiu ? ' ✓' : '')), sortVal: (r) => r.agora || 0 } : null,
       ].filter(Boolean),
       rows: filV === 'dif' ? div : rows, sortKey: 'dr', sortDir: 'asc', maxHeight: '520px', search: 'Buscar produto…', searchKeys: ['desc', 'cod'], cls: 'est-t',
-      total: { desc: `${fmt.int(filV === 'dif' ? div.length : rows.length)} itens`, dr: (filV === 'dif' ? div : rows).reduce((s, r) => s + (r.dr || 0), 0) },
+      total: { desc: `${fmt.int(filV === 'dif' ? div.length : rows.length)} itens`, dr: (filV === 'dif' ? div : rows).reduce((s0, r) => s0 + (r.dr || 0), 0) },
       imprimir: ['desc', 'sis', 'cont', 'dq', 'dr'],
       empty: 'Nenhuma diferença: tudo confere com o sistema. 👏',
     });
@@ -310,26 +327,83 @@
     const baixar = h('a', { class: 'btn primary', href: TS.demo ? '#' : TS.api(`inventario/contagem/${c.id}/planilha?loja=${encodeURIComponent(loja)}`), onclick: (e) => {
       if (TS.demo) { e.preventDefault(); toast('Na apresentação a planilha não é gerada.'); return; }
       if (!contados.length) { e.preventDefault(); toast('Nenhum item contado.', true); return; }
-      setTimeout(() => abrirContagem(corpo, loja, c.id), 1500);
-    } }, c.st === 'gerado' || c.st === 'importado' ? 'Baixar a planilha de novo' : 'Baixar planilha do AppNext');
+      if (z.ativo && zerados.length && !confirm(`A planilha vai ZERAR no AppNext ${fmt.int(zerados.length)} produtos que não estão nesta contagem (${fmt.brl(valorZ)} em custo). Confirma?`)) { e.preventDefault(); return; }
+      setTimeout(repintar, 1500);
+    } }, c.st === 'gerado' ? 'Baixar a planilha de novo' : 'Baixar planilha do AppNext');
     const fazer = (a, conf) => async () => { if (conf && !confirm(conf)) return; try { await API.acao(loja, c.id, a); if (a === 'cancelar') state.invId = null; TS.render(); } catch (e) { toast(e.message, true); } };
-    troca(corpo, 
+
+    // cartão "produtos fora da contagem": ligar, ver por grupo e escolher os grupos que ficam de fora
+    const cartaoZerar = () => {
+      if (fechada) return null;
+      const salvarZ = async (novo) => { try { await API.zerar(loja, c.id, novo); repintar(); } catch (e) { toast(e.message, true); } };
+      const chk = h('input', { type: 'checkbox', checked: z.ativo || null, onchange: () => salvarZ({ ativo: chk.checked, semGrupos: z.semGrupos ?? null }) });
+      const card = h('div', { class: 'card mt inv-zerar' + (z.ativo ? ' on' : '') },
+        h('label', { class: 'inv-check' }, chk, h('span', null, h('b', null, 'Zerar os produtos que não estão nesta contagem'), ` — ${fmt.int(resto.length)} produtos fora da contagem têm estoque no sistema hoje.`)));
+      if (!z.ativo) return card;
+      const grupos = new Map();
+      for (const r of resto) { const g = r.grupo || 'Sem grupo'; const a = grupos.get(g) || grupos.set(g, { n: 0, v: 0 }).get(g); a.n++; a.v += (r.custo || 0) * (r.qtd || 0); }
+      const lista = [...grupos].sort((a, b) => b[1].n - a[1].n);
+      card.append(
+        h('div', { class: 'inv-zerar-res' }, h('b', null, `${fmt.int(zerados.length)} produtos vão ficar 0 no AppNext`), ` · ${fmt.brl(valorZ)} em custo`),
+        h('small', { class: 'muted' }, 'Desmarque os grupos que NÃO devem ser zerados (os "sem controle de estoque" já começam desmarcados).'),
+        h('div', { class: 'inv-zerar-grupos' }, ...lista.map(([g, a]) => {
+          const cb = h('input', { type: 'checkbox', checked: !fora.has(g === 'Sem grupo' ? '' : g) || null, onchange: () => {
+            const nf = new Set(fora); const k = g === 'Sem grupo' ? '' : g; if (cb.checked) nf.delete(k); else nf.add(k);
+            salvarZ({ ativo: true, semGrupos: [...nf] });
+          } });
+          return h('label', { class: 'inv-zerar-g' }, cb, h('span', null, g), h('small', { class: 'muted' }, `${fmt.int(a.n)} · ${fmt.brl(a.v)}`));
+        })),
+        h('details', { class: 'inv-zerar-lista' }, h('summary', null, 'Ver os produtos que vão ficar 0'), TS.table({
+          cols: [{ key: 'desc', label: 'Produto', align: 'l', wrap: true, render: (r) => h('span', null, r.desc, h('small', { class: 'est-tam' }, `cód. ${r.cod} · ${r.grupo || 'sem grupo'}`)) }, { key: 'qtd', label: 'Hoje no sistema', render: (r) => qtdTxt(r.qtd, r.un), sortVal: (r) => r.qtd }, { key: 'v', label: 'Custo', fmt: fmt.brl }],
+          rows: zerados.map((r) => ({ ...r, v: (r.custo || 0) * (r.qtd || 0) })), sortKey: 'v', maxHeight: '360px', search: 'Buscar…', searchKeys: ['desc', 'cod', 'grupo'], cls: 'est-t',
+        })));
+      return card;
+    };
+
+    // o que foi para o AppNext (histórico) e desfazer
+    const cartaoEnviado = () => {
+      if (!c.planilha) return null;
+      const pl = c.planilha.itens.map((l) => ({ ...l, dif: Math.round((l.nova - l.antes) * 1000) / 1000, v: (l.nova - l.antes) * (l.custo || 0) }));
+      const ajuste = pl.reduce((s0, l) => s0 + l.v, 0);
+      const btnDesf = c.st === 'importado' ? h('a', { class: 'btn ghost-danger', href: TS.demo ? '#' : TS.api(`inventario/contagem/${c.id}/desfazer?loja=${encodeURIComponent(loja)}`), onclick: (e) => {
+        if (TS.demo) { e.preventDefault(); toast('Na apresentação não dá para desfazer.'); return; }
+        if (!confirm('Baixar a planilha que DESFAZ este inventário? Cada item volta ao que era antes, mantendo o que vendeu ou entrou depois. Depois importe no AppNext do mesmo jeito.')) { e.preventDefault(); return; }
+        setTimeout(repintar, 1500);
+      } }, 'Desfazer este inventário') : null;
+      return h('div', { class: 'card mt' }, h('div', { class: 'card-title' }, 'O que foi para o AppNext'),
+        h('div', { class: 'card-sub' }, `Planilha gerada ${quando(c.planilha.em)} por ${c.planilha.por || '—'}: ${fmt.int(pl.length)} produtos${pl.some((l) => l.zerado) ? ` (${fmt.int(pl.filter((l) => l.zerado).length)} zerados por estarem fora da contagem)` : ''} · ajuste de ${fmt.brl(ajuste)} em custo.`),
+        c.st === 'importado' ? h('div', { class: 'inv-acoes' }, btnDesf, c.desfazer && c.desfazer.geradoEm ? h('button', { type: 'button', class: 'btn', onclick: fazer('desfeito', 'Confirma que importou a planilha de desfazer no AppNext?') }, 'Já importei o desfazer') : null) : null,
+        c.st === 'importado' && c.desfazer && c.desfazer.geradoEm ? h('div', { class: 'aviso inv-passos' }, `Planilha de desfazer baixada ${quando(c.desfazer.geradoEm)}. Importe no AppNext (Auditoria/Inventário → ＋ → Por Excel) e clique em "Já importei o desfazer".`) : null,
+        c.st === 'revertido' ? h('p', { class: 'muted' }, `Desfeito ${quando(c.desfazer.importadoEm)} por ${c.desfazer.importadoPor || '—'}.`) : null,
+        h('details', null, h('summary', null, 'Ver item a item'), TS.table({
+          cols: [
+            { key: 'desc', label: 'Produto', align: 'l', wrap: true, render: (r) => h('span', null, r.desc, r.zerado ? h('span', { class: 'inv-st inv-st-canc', style: { marginLeft: '6px' } }, 'zerado') : null, h('small', { class: 'est-tam' }, `cód. ${r.cod}`)) },
+            { key: 'antes', label: 'Antes', render: (r) => qtdTxt(r.antes, r.un), sortVal: (r) => r.antes },
+            { key: 'nova', label: 'Ficou', render: (r) => h('b', null, qtdTxt(r.nova, r.un)), sortVal: (r) => r.nova },
+            { key: 'v', label: 'Ajuste (custo)', fmt: fmt.brl, render: (r) => h('span', { class: r.v > 0 ? 'pos' : r.v < 0 ? 'neg' : 'muted' }, fmt.brl(r.v)), sortVal: (r) => r.v },
+          ],
+          rows: pl, sortKey: 'v', sortDir: 'asc', maxHeight: '420px', search: 'Buscar…', searchKeys: ['desc', 'cod'], cls: 'est-t', imprimir: ['desc', 'antes', 'nova', 'v'],
+        })));
+    };
+
+    troca(corpo,
       h('div', { class: 'inv-cab' }, h('button', { type: 'button', class: 'btn', onclick: () => { state.invId = null; TS.render(); } }, '‹ Contagens'), h('div', null, h('b', { class: 'inv-titulo' }, c.nome), ' ', h('span', { class: 'inv-st ' + stC }, stT))),
       h('div', { class: 'grid g-kpi mt' },
         TS.kpi('Itens contados', `${fmt.int(contados.length)} de ${fmt.int(c.itens.length)}`, sem ? `${fmt.int(sem)} sem contar ficam de fora` : 'todos contados'),
         TS.kpi('Com diferença', fmt.int(div.length), contados.length ? `${fmt.pct(div.length / contados.length, 0)} dos contados` : ''),
         TS.kpi('Sobrou (custo)', fmt.brl(sobra), 'contado acima do sistema'),
-        TS.kpi('Faltou (custo)', fmt.brl(falta), 'contado abaixo do sistema')),
-      mudou.length ? h('div', { class: 'notice mt' }, `${fmt.int(mudou.length)} ${mudou.length === 1 ? 'item mudou' : 'itens mudaram'} no estoque do painel desde o começo da contagem (venda ou entrada). A planilha leva o que foi contado: se vendeu depois de contar, reconte esses itens ou ajuste antes de importar.`) : null,
+        TS.kpi('Faltou (custo)', fmt.brl(falta), z.ativo && zerados.length ? `inclui ${fmt.brl(valorZ)} dos zerados` : 'contado abaixo do sistema')),
+      mudou.length ? h('div', { class: 'notice mt' }, `${fmt.int(mudou.length)} ${mudou.length === 1 ? 'item mudou' : 'itens mudaram'} no estoque do painel desde o começo da contagem (venda ou entrada). A planilha leva o que foi contado: se vendeu depois de contar, reconte esses itens antes de importar.`) : null,
+      cartaoZerar(),
       h('div', { class: 'card mt' },
         h('div', { class: 'inv-acoes' },
-          c.st !== 'importado' && c.st !== 'cancelado' ? baixar : null,
+          !fechada && c.st !== 'cancelado' ? baixar : null,
           c.st === 'gerado' ? h('button', { type: 'button', class: 'btn', onclick: fazer('importado') }, 'Já importei no AppNext') : null,
-          c.st === 'importado' ? baixar : null,
           ['revisao', 'gerado', 'cancelado'].includes(c.st) ? h('button', { type: 'button', class: 'btn', onclick: fazer('reabrir') }, 'Reabrir para contar') : null,
-          c.st !== 'importado' && c.st !== 'cancelado' ? h('button', { type: 'button', class: 'btn ghost-danger', onclick: fazer('cancelar', 'Cancelar esta contagem? Ela fica no histórico.') }, 'Cancelar') : null),
-        c.st === 'gerado' ? h('div', { class: 'aviso inv-passos' }, h('b', null, 'Agora no AppNext: '), 'Estoque → Auditoria/Inventário → ＋ (Cadastrar um novo) → Por Excel → envie a planilha baixada. Depois clique em "Já importei no AppNext". A planilha só tem os itens contados: o resto do estoque não muda.') : null,
-        c.st === 'importado' ? h('p', { class: 'muted' }, `Importado ${quando(c.importadoEm)}. Na próxima atualização do estoque, a coluna "No AppNext agora" mostra ✓ nos itens que já estão com a quantidade contada.`) : null,
-        h('div', { class: 'inv-revfil' }, TS.seg([[`Só diferenças (${div.length})`, 'dif'], [`Todos os contados (${rows.length})`, 'todos']], filV, (v) => { state.invRevFil = v; telaRevisar(corpo, loja, c); }), tab.searchBox), tab));
+          !fechada && c.st !== 'cancelado' ? h('button', { type: 'button', class: 'btn ghost-danger', onclick: fazer('cancelar', 'Cancelar esta contagem? Ela fica no histórico.') }, 'Cancelar') : null),
+        c.st === 'gerado' ? h('div', { class: 'aviso inv-passos' }, h('b', null, 'Agora no AppNext: '), 'Estoque → Auditoria/Inventário → ＋ (Cadastrar um novo) → Por Excel → envie a planilha baixada. Depois clique em "Já importei no AppNext".') : null,
+        c.st === 'importado' ? h('p', { class: 'muted' }, `Importado ${quando(c.importadoEm)} por ${c.importadoPor || '—'}. Na próxima atualização do estoque, a coluna "No AppNext agora" mostra ✓ nos itens que já estão com a quantidade contada.`) : null,
+        h('div', { class: 'inv-revfil' }, TS.seg([[`Só diferenças (${div.length})`, 'dif'], [`Todos os contados (${rows.length})`, 'todos']], filV, (v) => { state.invRevFil = v; telaRevisar(corpo, loja, c); }), tab.searchBox), tab),
+      cartaoEnviado());
   }
 })();

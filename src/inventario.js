@@ -29,7 +29,8 @@ function lista(id) {
   let fsx = [];
   try { fsx = fs.readdirSync(pasta(id)).filter((f) => /^[a-f0-9]{12}\.json$/.test(f)); } catch { return []; }
   return fsx.map((f) => { try { return JSON.parse(fs.readFileSync(path.join(pasta(id), f), 'utf8')); } catch { return null; } }).filter(Boolean)
-    .map((c) => ({ id: c.id, nome: c.nome, criadoEm: c.criadoEm, por: c.por, cega: c.cega, st: c.st, itens: c.itens.length, contados: c.itens.filter((i) => i.cont != null).length, geradoEm: c.geradoEm || null, importadoEm: c.importadoEm || null }))
+    .map((c) => ({ id: c.id, nome: c.nome, criadoEm: c.criadoEm, por: c.por, cega: c.cega, st: c.st, itens: c.itens.length, contados: c.itens.filter((i) => i.cont != null).length, geradoEm: c.geradoEm || null, importadoEm: c.importadoEm || null, importadoPor: c.importadoPor || null, zerar: !!(c.zerar && c.zerar.ativo),
+      ajuste: c.planilha ? c.planilha.itens.reduce((s, l) => s + (l.nova - l.antes) * (l.custo || 0), 0) : null, naPlanilha: c.planilha ? c.planilha.itens.length : null, zerados: c.planilha ? c.planilha.itens.filter((l) => l.zerado).length : null, revertidoEm: c.desfazer && c.desfazer.importadoEm || null }))
     .sort((a, b) => (a.criadoEm < b.criadoEm ? 1 : -1));
 }
 
@@ -82,7 +83,7 @@ function criar(id, b, por, cat, perfil) {
   if (itens.length > 2000) return { erro: 'Itens demais numa contagem só (máximo 2.000).' };
   const c = {
     id: crypto.randomBytes(6).toString('hex'), nome: txt(b.nome, 80) || `Contagem de ${new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`,
-    criadoEm: new Date().toISOString(), por, cega: perfil === 'vendedor' ? true : !!b.cega, st: 'contando',
+    criadoEm: new Date().toISOString(), por, cega: perfil === 'vendedor' ? true : !!b.cega, st: 'contando', zerar: { ativo: perfil !== 'vendedor' && !!b.zerarResto, semGrupos: null },
     itens: itens.map((i) => ({ cod: i.cod, desc: i.desc, un: i.un, grupo: i.grupo, sub: i.sub, tipo: i.tipo, barras: i.barras, sis: i.qtd, custo: i.custo, cont: null, por: null, em: null })),
   };
   gravar(id, c);
@@ -125,7 +126,7 @@ function acao(id, cid, a, por) {
   if (a === 'revisar') { if (c.st !== 'contando') return { erro: 'A contagem não está aberta.' }; c.st = 'revisao'; c.revisaoEm = agora; }
   else if (a === 'reabrir') { if (!['revisao', 'gerado', 'cancelado'].includes(c.st)) return { erro: 'Não dá para reabrir.' }; c.st = 'contando'; }
   else if (a === 'importado') { if (c.st !== 'gerado') return { erro: 'Gere a planilha antes.' }; c.st = 'importado'; c.importadoEm = agora; c.importadoPor = por; }
-  else if (a === 'cancelar') { if (c.st === 'importado') return { erro: 'Esta contagem já foi importada no AppNext.' }; c.st = 'cancelado'; c.canceladoEm = agora; c.canceladoPor = por; }
+  else if (a === 'cancelar') { if (c.st === 'importado' || c.st === 'revertido') return { erro: 'Esta contagem já foi importada no AppNext.' }; c.st = 'cancelado'; c.canceladoEm = agora; c.canceladoPor = por; }
   else return { erro: 'Ação inválida.' };
   gravar(id, c);
   return { ok: c };
@@ -138,11 +139,49 @@ function paraUsuario(c, perfil) {
   return { ...c, itens: c.itens.map((i) => ({ ...i, sis: esconde ? null : i.sis, custo: semCusto ? null : i.custo })) };
 }
 
+/** grupo que, por padrão, NÃO é zerado junto (não tem controle de estoque) */
+const SEM_CONTROLE = /SEM CONTROLE/i;
 /**
- * Planilha no modelo do AppNext (mesmas colunas e títulos), só com os itens contados.
- * Nova Qtd = o que foi contado. Preço de Custo = o custo atual do estoque do painel (sem alteração de custo).
+ * Itens fora da contagem que seriam zerados ("zerar os produtos não listados"): todos do estoque com quantidade
+ * diferente de zero, menos os grupos desmarcados. cat = catálogo (para o grupo).
  */
-async function planilha(c, nomeLoja, estoqueAtual) {
+function resto(c, estoque, cat) {
+  const na = new Set(c.itens.map((i) => i.cod));
+  const g = new Map((cat || []).map((i) => [i.cod, i]));
+  return ((estoque && estoque.itens) || []).filter((i) => !na.has(String(i.cod)) && Math.abs(i.qtd || 0) > 0.0005)
+    .map((i) => { const x = g.get(String(i.cod)) || {}; return { cod: String(i.cod), desc: i.desc, un: i.un, grupo: x.grupo || '', sub: x.sub || '', qtd: i.qtd, custo: i.custo ?? null }; });
+}
+const zerarOpcao = (c) => c.zerar || { ativo: false, semGrupos: null };
+/** grupos que ficam de fora do "zerar": escolha da pessoa, ou por padrão os "sem controle de estoque" */
+const gruposFora = (c, itens) => { const z = zerarOpcao(c); return new Set(Array.isArray(z.semGrupos) ? z.semGrupos : [...new Set(itens.map((i) => i.grupo).filter((x) => SEM_CONTROLE.test(x)))]); };
+
+function zerar(id, cid, b) {
+  const c = ler(id, cid);
+  if (!c) return { erro: 'Contagem não encontrada.' };
+  if (c.st === 'importado' || c.st === 'revertido') return { erro: 'Esta contagem já foi importada.' };
+  c.zerar = { ativo: !!b.ativo, semGrupos: Array.isArray(b.semGrupos) ? b.semGrupos.map((x) => txt(x, 80)).slice(0, 200) : null };
+  gravar(id, c);
+  return { ok: c.zerar };
+}
+
+/** linhas da planilha: os contados (Nova Qtd = contado) e, com "zerar", os de fora com quantidade (Nova Qtd = 0) */
+function linhasPlanilha(c, estoque, cat) {
+  const atual = new Map(((estoque && estoque.itens) || []).map((i) => [String(i.cod), i]));
+  const out = [];
+  for (const i of c.itens) {
+    if (i.cont == null) continue;
+    const a = atual.get(i.cod);
+    out.push({ cod: i.cod, desc: i.desc, un: i.un, grupo: i.grupo || '', sub: i.sub || '', antes: a ? a.qtd ?? 0 : i.sis ?? 0, nova: i.cont, custo: a && a.custo != null ? a.custo : i.custo ?? 0, zerado: false });
+  }
+  if (zerarOpcao(c).ativo) {
+    const r = resto(c, estoque, cat), fora = gruposFora(c, r);
+    for (const i of r) if (!fora.has(i.grupo)) out.push({ cod: i.cod, desc: i.desc, un: i.un, grupo: i.grupo, sub: i.sub, antes: i.qtd, nova: 0, custo: i.custo ?? 0, zerado: true });
+  }
+  return out;
+}
+
+/** planilha no modelo do AppNext (mesmas colunas e títulos) a partir das linhas */
+async function planilha(linhas) {
   const ExcelJS = require('exceljs');
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet('Inventário');
@@ -154,13 +193,10 @@ async function planilha(c, nomeLoja, estoqueAtual) {
   ws.getCell('A2').alignment = { wrapText: true, vertical: 'top' };
   ws.getRow(6).values = ['Código', 'Descrição', 'Unidade', 'Grupo', 'Subgrupo', 'Qtd. Atual', 'Nova Qtd.', 'Preço de Custo'];
   ws.getRow(6).font = { bold: true };
-  const atual = new Map(((estoqueAtual && estoqueAtual.itens) || []).map((i) => [String(i.cod), i]));
   let r = 7;
-  for (const i of c.itens) {
-    if (i.cont == null) continue;
-    const a = atual.get(i.cod);
+  for (const l of linhas) {
     const row = ws.getRow(r++);
-    row.values = [i.cod, i.desc, i.un, i.grupo || '', i.sub || null, a ? a.qtd ?? 0 : i.sis ?? 0, i.cont, a && a.custo != null ? a.custo : i.custo ?? 0];
+    row.values = [l.cod, l.desc, l.un, l.grupo || '', l.sub || null, l.antes ?? 0, l.nova, l.custo ?? 0];
     row.getCell(1).numFmt = '@';
     row.getCell(6).numFmt = '#,##0.000';
     row.getCell(7).numFmt = '#,##0.000';
@@ -169,13 +205,40 @@ async function planilha(c, nomeLoja, estoqueAtual) {
   return wb.xlsx.writeBuffer();
 }
 
-function marcarGerado(id, cid, por) {
+/** guarda o que foi para o AppNext (para o histórico e para desfazer) */
+function marcarGerado(id, cid, por, linhas) {
   const c = ler(id, cid);
   if (!c) return null;
   if (c.st === 'contando' || c.st === 'revisao') c.st = 'gerado';
   c.geradoEm = new Date().toISOString(); c.geradoPor = por;
+  c.planilha = { em: c.geradoEm, por, itens: linhas.map((l) => ({ cod: l.cod, desc: l.desc, un: l.un, grupo: l.grupo, sub: l.sub, antes: l.antes, nova: l.nova, custo: l.custo, zerado: !!l.zerado })) };
   gravar(id, c);
   return c;
 }
 
-module.exports = { lista, ler, catalogo, familia, criar, contar, adicionar, acao, paraUsuario, planilha, marcarGerado };
+/**
+ * Desfazer (rollback): volta cada item da planilha importada ao que era antes, mantendo o que aconteceu depois
+ * (venda, entrada): nova = agora − (contado − antes). Se o estoque do painel ainda é de antes da importação,
+ * "agora" é o que foi importado, e o resultado é a quantidade de antes.
+ */
+function linhasDesfazer(c, estoque) {
+  if (!c.planilha) return null;
+  const atual = new Map(((estoque && estoque.itens) || []).map((i) => [String(i.cod), i]));
+  const depois = estoque && estoque.em && c.importadoEm && Date.parse(estoque.em) > Date.parse(c.importadoEm);
+  return c.planilha.itens.map((l) => {
+    const a = atual.get(l.cod);
+    const agora = depois && a ? a.qtd ?? 0 : l.nova;
+    const nova = Math.max(0, Math.round((agora - (l.nova - l.antes)) * 1000) / 1000);
+    return { ...l, antes: agora, nova, custo: a && a.custo != null ? a.custo : l.custo, zerado: false };
+  });
+}
+function marcarDesfazer(id, cid, por, etapa) {
+  const c = ler(id, cid);
+  if (!c) return { erro: 'Contagem não encontrada.' };
+  if (etapa === 'gerado') { if (c.st !== 'importado') return { erro: 'Só dá para desfazer uma contagem importada.' }; c.desfazer = { geradoEm: new Date().toISOString(), por }; }
+  else if (etapa === 'importado') { if (!c.desfazer) return { erro: 'Baixe a planilha de desfazer antes.' }; c.desfazer.importadoEm = new Date().toISOString(); c.desfazer.importadoPor = por; c.st = 'revertido'; }
+  gravar(id, c);
+  return { ok: c };
+}
+
+module.exports = { lista, ler, catalogo, familia, criar, contar, adicionar, acao, paraUsuario, planilha, linhasPlanilha, marcarGerado, resto, zerar, gruposFora, linhasDesfazer, marcarDesfazer };

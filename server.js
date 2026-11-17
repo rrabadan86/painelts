@@ -794,14 +794,26 @@ app.post('/api/inventario/previa', express.json({ limit: '50kb' }), async (req, 
   const n = cat.filter((i) => cods.has(i.cod) || (f.grupo && i.grupo === f.grupo && (!f.sub || i.sub === f.sub)) || (f.tipo && i.tipo === f.tipo) || (f.familia && INV.familia(i.tipo) === f.familia) || (f.tudoKg && i.un === 'Kg' && i.tipo)).length;
   res.json({ itens: n });
 });
-app.get('/api/inventario/contagem', (req, res) => {
+app.get('/api/inventario/contagem', async (req, res) => {
   const loja = lojaInv(req, res); if (!loja) return;
   const c = INV.ler(loja.id, String(req.query.id || ''));
   if (!c) return res.status(404).json({ erro: 'Contagem não encontrada.' });
-  // depois de importada: a quantidade de agora no estoque do painel, para conferir se o AppNext recebeu
   const est = ES.atual(loja.id);
-  const agora = req.perfil === 'vendedor' ? null : Object.fromEntries(((est && est.itens) || []).filter((i) => c.itens.some((x) => x.cod === String(i.cod))).map((i) => [String(i.cod), i.qtd]));
-  res.json({ ...INV.paraUsuario(c, req.perfil), estoqueEm: est && est.em, agora, podeRevisar: req.perfil !== 'vendedor' });
+  if (req.perfil === 'vendedor') { const { planilha, desfazer, zerar, ...resto } = INV.paraUsuario(c, req.perfil); return res.json({ ...resto, estoqueEm: est && est.em, agora: null, podeRevisar: false }); }
+  // depois de importada: a quantidade de agora no estoque do painel, para conferir se o AppNext recebeu
+  const cods = new Set([...c.itens.map((x) => x.cod), ...((c.planilha && c.planilha.itens) || []).map((x) => x.cod)]);
+  const agora = Object.fromEntries(((est && est.itens) || []).filter((i) => cods.has(String(i.cod))).map((i) => [String(i.cod), i.qtd]));
+  // "zerar os não listados": o que ficaria zero, por grupo
+  const r = INV.resto(c, est, await catInv(loja));
+  res.json({ ...c, estoqueEm: est && est.em, agora, podeRevisar: true, resto: r, restoFora: [...INV.gruposFora(c, r)] });
+});
+app.put('/api/inventario/contagem/:id/zerar', express.json({ limit: '20kb' }), (req, res) => {
+  const loja = lojaInv(req, res); if (!loja) return;
+  if (req.perfil === 'vendedor') return res.status(403).json({ erro: 'Peça para a gerente.' });
+  if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
+  const r = INV.zerar(loja.id, String(req.params.id), req.body || {});
+  if (r.erro) return res.status(400).json({ erro: r.erro });
+  res.json({ ok: true, zerar: r.ok });
 });
 app.use('/api/inventario', (req, res, next) => {
   if (req.method === 'GET') return next();
@@ -831,6 +843,12 @@ app.post('/api/inventario/contagem/:id/:acao', express.json({ limit: '2kb' }), (
   const loja = lojaInv(req, res); if (!loja) return;
   const a = String(req.params.acao);
   if (req.perfil === 'vendedor' && a !== 'revisar') return res.status(403).json({ erro: 'Peça para a gerente.' });
+  if (a === 'desfeito') {
+    const d = INV.marcarDesfazer(loja.id, String(req.params.id), req.user, 'importado');
+    if (d.erro) return res.status(400).json({ erro: d.erro });
+    C.auditar(req.user, 'desfez um inventário no AppNext', loja.id, { loja: loja.id, nome: d.ok.nome });
+    return res.json({ ok: true });
+  }
   const r = INV.acao(loja.id, String(req.params.id), a, req.user);
   if (r.erro) return res.status(400).json({ erro: r.erro });
   if (a === 'importado' || a === 'cancelar') C.auditar(req.user, a === 'importado' ? 'marcou a contagem como importada no AppNext' : 'cancelou uma contagem de estoque', loja.id, { loja: loja.id, nome: r.ok.nome });
@@ -843,11 +861,27 @@ app.get('/api/inventario/contagem/:id/planilha', async (req, res) => {
   const c = INV.ler(loja.id, String(req.params.id));
   if (!c) return res.status(404).json({ erro: 'Contagem não encontrada.' });
   if (!c.itens.some((i) => i.cont != null)) return res.status(400).json({ erro: 'Nenhum item contado.' });
-  const buf = await INV.planilha(c, loja.nome, ES.atual(loja.id));
-  INV.marcarGerado(loja.id, c.id, req.user);
-  C.auditar(req.user, 'gerou a planilha de inventário', loja.id, { loja: loja.id, nome: c.nome, itens: c.itens.filter((i) => i.cont != null).length });
+  if (c.st === 'importado' || c.st === 'revertido') return res.status(400).json({ erro: 'Esta contagem já foi importada; o que foi enviado está no histórico.' });
+  const linhas = INV.linhasPlanilha(c, ES.atual(loja.id), await catInv(loja));
+  const buf = await INV.planilha(linhas);
+  INV.marcarGerado(loja.id, c.id, req.user, linhas);
+  C.auditar(req.user, 'gerou a planilha de inventário', loja.id, { loja: loja.id, nome: c.nome, itens: linhas.length, zerados: linhas.filter((l) => l.zerado).length });
   const nome = `Inventario_${String(loja.nome).normalize('NFD').replace(/[^\w]+/g, '_')}_${new Date().toISOString().slice(0, 10)}.xlsx`;
   res.set('Content-Disposition', `attachment; filename="${nome}"`).type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet').send(Buffer.from(buf));
+});
+
+// desfazer: planilha que volta os itens da contagem importada ao que eram antes (mantendo o que vendeu/entrou depois)
+app.get('/api/inventario/contagem/:id/desfazer', (req, res) => {
+  const loja = lojaInv(req, res); if (!loja) return;
+  if (req.perfil === 'vendedor') return res.status(403).json({ erro: 'Sem permissão.' });
+  const c = INV.ler(loja.id, String(req.params.id));
+  if (!c || c.st !== 'importado' || !c.planilha) return res.status(400).json({ erro: 'Só dá para desfazer uma contagem importada.' });
+  const linhas = INV.linhasDesfazer(c, ES.atual(loja.id));
+  INV.planilha(linhas).then((buf) => {
+    INV.marcarDesfazer(loja.id, c.id, req.user, 'gerado');
+    C.auditar(req.user, 'gerou a planilha para desfazer um inventário', loja.id, { loja: loja.id, nome: c.nome, itens: linhas.length });
+    res.set('Content-Disposition', `attachment; filename="Desfazer_inventario_${new Date().toISOString().slice(0, 10)}.xlsx"`).type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet').send(Buffer.from(buf));
+  }).catch((e) => res.status(500).json({ erro: e.message }));
 });
 
 // ---------- lista de espera (Clientes → Lista de espera): todos os perfis da loja anotam e avisam ----------
