@@ -280,6 +280,35 @@ def arquivos_inventario(loja, cid, tipo):
     return base / f"{cid}-{tipo}.xlsx", base / f"{cid}-{tipo}.json", base / f"{cid}-{tipo}.resultado.json"
 
 
+fila_inv = deque()  # robô exclusivo do inventário: não espera as coletas das outras lojas
+
+
+def trabalhador_inventario():
+    while True:
+        with lock:
+            job = fila_inv.popleft() if fila_inv else None
+        if not job:
+            time.sleep(1)
+            continue
+        loja = job["loja"]
+        # só espera se a coleta desta mesma loja estiver no AppNext agora (mesmo usuário logado duas vezes)
+        limite = time.time() + 20 * 60
+        while time.time() < limite:
+            with lock:
+                ocupada = trabalho.get("loja") == loja
+                if ocupada:
+                    inv_est[loja] = {**inv_est.get(loja, {}), "estado": "na_fila", "esperando": dict(trabalho)}
+            if not ocupada:
+                break
+            time.sleep(3)
+        try:
+            rodar_inventario(job)
+        except Exception as e:  # noqa: BLE001
+            log(f"{loja}: inventário erro inesperado {e}")
+            with lock:
+                inv_est[loja] = {**inv_est.get(loja, {}), "estado": "parado"}
+
+
 def enfileirar_inventario(loja, cid, tipo, por=None):
     """inventário no AppNext (só por pedido de alguém no painel): fila própria, na frente das partes do histórico"""
     with lock:
@@ -288,7 +317,7 @@ def enfileirar_inventario(loja, cid, tipo, por=None):
             return False
         job = {"loja": loja, "gatilho": "inventario", "cid": cid, "tipo": tipo, "por": por, "criado": datetime.now(TZ).isoformat()}
         inv_est[loja] = {**{k: v for k, v in p.items() if k == "ultima"}, "estado": "na_fila", "id": cid, "tipo": tipo, "por": por, "criado": job["criado"]}
-        fila.appendleft(job)
+        fila_inv.append(job)
     log(f"{loja}: inventário ({tipo}) na fila{' por ' + por if por else ''}")
     return True
 
@@ -296,7 +325,8 @@ def enfileirar_inventario(loja, cid, tipo, por=None):
 def rodar_inventario(job):
     loja, cid, tipo = job["loja"], job["cid"], job["tipo"]
     pasta = WORK_DIR / loja
-    pasta.mkdir(parents=True, exist_ok=True)
+    robo = pasta / "inventario-robo"  # navegador próprio: não disputa o perfil com a coleta
+    robo.mkdir(parents=True, exist_ok=True)
     xlsx, esperado, resultado = arquivos_inventario(loja, cid, tipo)
     SEGREDO = re.compile(r"(SECRET|TOKEN|PASS|SENHA|SMTP|GITHUB|KEY)", re.I)
     env = {k: v for k, v in os.environ.items() if not k.startswith("COLETOR_") and not SEGREDO.search(k)}
@@ -305,11 +335,11 @@ def rodar_inventario(job):
     log_path = pasta / "inventario.log"
     inicio = time.time()
     with lock:
-        inv_est[loja] = {**inv_est.get(loja, {}), "estado": "rodando", "inicio": datetime.now(TZ).isoformat()}
+        inv_est[loja] = {**{k: v for k, v in inv_est.get(loja, {}).items() if k != "esperando"}, "estado": "rodando", "inicio": datetime.now(TZ).isoformat()}
     log(f"{loja}: inventário ({tipo}) rodando")
     try:
         with open(log_path, "w", encoding="utf-8") as out:
-            p = subprocess.run([sys.executable, str(SCRIPT_INVENTARIO)], cwd=pasta, env=env, stdout=out, stderr=subprocess.STDOUT, timeout=900)
+            p = subprocess.run([sys.executable, str(SCRIPT_INVENTARIO)], cwd=robo, env=env, stdout=out, stderr=subprocess.STDOUT, timeout=900)
             codigo = p.returncode
     except subprocess.TimeoutExpired:
         codigo = "timeout"
@@ -880,6 +910,7 @@ def main():
     carregar_ultimas()
     log(f"Coletor pronto. Lojas: {', '.join(lojas_configuradas()) or 'nenhuma'} · horários: {', '.join(horarios())} · janela {janela()} dias")
     threading.Thread(target=trabalhador, daemon=True).start()
+    threading.Thread(target=trabalhador_inventario, daemon=True).start()
     threading.Thread(target=agendador, daemon=True).start()
     ThreadingHTTPServer(("0.0.0.0", PORTA), API).serve_forever()
 

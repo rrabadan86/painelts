@@ -815,8 +815,17 @@ app.get('/api/inventario/contagem', async (req, res) => {
       const st = await COL.status(loja.id);
       robo = st.inventario || {};
       // na fila: o robô espera a coleta que já está rodando terminar
-      const ag = st.robo;
-      if (ag && !ag.livre && ag.gatilho !== 'inventario') robo.ocupado = { gatilho: ag.gatilho, inicio: ag.inicio, outraLoja: !!ag.outraLoja };
+      if (robo.esperando) robo.ocupado = { gatilho: robo.esperando.gatilho, inicio: robo.esperando.inicio };
+      // o robô não tem mais este envio (terminou sem resultado ou o coletor reiniciou): mostra como erro, com o log
+      const u = robo.ultima;
+      const desteEnvio = u && u.id === c.id && Date.parse(u.fim) >= Date.parse(c.envio.em) - 1000;
+      if (c.envio.estado === 'na_fila' && robo.estado !== 'na_fila' && robo.estado !== 'rodando' && (desteEnvio || Date.now() - Date.parse(c.envio.em) > 15000)) {
+        const again = INV.conferirEnvio(loja.id, c.id);
+        if (!again.mudou) {
+          INV.erroEnvio(loja.id, c.id, desteEnvio ? `o robô terminou sem confirmar (código ${u.codigo})` : 'o pedido se perdeu (o coletor foi reiniciado, provavelmente por uma atualização); envie de novo');
+          Object.assign(c, INV.ler(loja.id, c.id));
+        } else Object.assign(c, again.c);
+      }
     } catch { /* ok */ }
   }
   res.json({ ...c, estoqueEm: est && est.em, agora, podeRevisar: true, resto: r, restoFora: [...INV.gruposFora(c, r)], podeEnviar: COL.ativo(), robo });
