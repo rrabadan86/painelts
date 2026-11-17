@@ -542,7 +542,7 @@ app.post('/api/campanhas/:id/marcar', express.json({ limit: '4kb' }), (req, res)
   const id = lojaCamp(req);
   if (!id) return res.status(400).json({ erro: 'Escolha uma loja.' });
   const b = req.body || {};
-  const r = CAMP.marcar(id, req.params.id, String(b.rodada || ''), String(b.cpf || ''), String(b.st || ''), req.user);
+  const r = CAMP.marcar(id, req.params.id, String(b.rodada || ''), String(b.cpf || ''), String(b.st || ''), req.user, b.motivo ? String(b.motivo) : null);
   if (r.erro) return res.status(400).json({ erro: r.erro });
   res.json({ ok: true, item: r.ok });
 });

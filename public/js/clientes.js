@@ -239,6 +239,11 @@
       .then((j) => { TS.cli.contatos = j.contatos || {}; if (state.page === 'clientes' || state.page === 'clilista') TS.render(); })
       .catch(() => { TS.cli.contatos = {}; }).finally(() => { carregandoContatos = false; });
   }
+  /** busca de novo quem foi contatado (outra pessoa pode ter enviado de outro computador) */
+  async function recarregarContatos() {
+    if (TS.demo) { TS.cli.contatos = TS.cli.contatos || {}; return; }
+    try { const j = await (await fetch('/api/contatos?loja=' + encodeURIComponent(state.loja || ''), { credentials: 'same-origin' })).json(); if (j.contatos) TS.cli.contatos = j.contatos; } catch { /* fica o que tinha */ }
+  }
   async function marcar(c, acao, motivo) {
     const loja = lojaIdDe(c);
     let novo;
@@ -1263,7 +1268,7 @@
   }
   // usado pela tela Campanhas
   TS.cliApi = {
-    abrirClientes: (cpfs) => abrirClientes(cpfs), contatoDe: (c) => contatoDe(c), marcar: (c, acao, motivo) => marcar(c, acao, motivo),
+    abrirClientes: (cpfs) => abrirClientes(cpfs), contatoDe: (c) => contatoDe(c), recarregarContatos: () => recarregarContatos(), marcar: (c, acao, motivo) => marcar(c, acao, motivo),
     carregarContatos: () => carregarContatos(), modelos: () => modelosDe(state.loja), fmtTel: (x) => fmtTel(x), fmtCPF: (x) => fmtCPF(x), csv: (a, b, c) => csv(a, b, c),
     texto: (txt, c, extra = {}) => { let t = textoWpp({ texto: txt }, c); for (const [k, v] of Object.entries(extra)) t = t.split('{' + k + '}').join(v); return t; },
     linkWpp: (c, txt) => linkWpp(c, txt),

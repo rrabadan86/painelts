@@ -386,14 +386,36 @@
   }
 
   // ---------- campanha: fila de envio, lista e retorno ----------
-  function abrirCampanha(corpo, lista, camp, rodadaId) {
+  async function abrirCampanha(corpo, lista, camp, rodadaId, jaRecarregou) {
+    // ao abrir: busca de novo quem já recebeu mensagem (de outra campanha, ou de outro computador)
+    if (!jaRecarregou) { await A().recarregarContatos(); if (!corpo.isConnected) return; }
     const r = camp.rodadas.find((x) => x.id === rodadaId) || camp.rodadas[0];
     const s = resumoRodada(r, camp.janela);
-    const repintar = () => abrirCampanha(corpo, lista, camp, r.id);
-    const marcarSt = async (it, st) => {
-      const x = await api('POST', `/api/campanhas/${camp.id}/marcar`, { loja: state.loja, rodada: r.id, cpf: it.cpf, st });
+    const repintar = () => abrirCampanha(corpo, lista, camp, r.id, true);
+    const marcarSt = async (it, st, motivo) => {
+      const x = await api('POST', `/api/campanhas/${camp.id}/marcar`, { loja: state.loja, rodada: r.id, cpf: it.cpf, st, motivo });
+      for (const k of ['em', 'por', 'motivo', 'liberado']) delete it[k];
       Object.assign(it, x.item);
     };
+    // quem recebeu mensagem de OUTRA campanha (ou pelo painel) há menos de N dias, ou pediu para não receber,
+    // sai da fila sozinho como "pulada" com o motivo; "voltar para a fila" libera manualmente
+    const dias = Number(String((camp.filtros || {}).semContato ?? '').replace(',', '.')) || 0;
+    const minha = 'Campanha: ' + camp.nome.slice(0, 28);
+    const bloqueio = (it) => {
+      if (it.st !== 'p' || it.liberado) return null;
+      const ct = A().contatoDe(clienteDe(it.cpf));
+      if (!ct) return null;
+      if (ct.optout) return 'não quer mensagens';
+      if (dias && ct.em && Date.now() - Date.parse(ct.em) < dias * 864e5 && ct.motivo !== minha) return `já recebeu em ${fmt.date(ct.em.slice(0, 10))}${ct.motivo ? ' (' + ct.motivo.replace(/^Campanha: /, 'campanha ') + ')' : ''}`;
+      return null;
+    };
+    const bloqueados = r.lista.map((it) => [it, bloqueio(it)]).filter(([, m]) => m);
+    if (bloqueados.length) {
+      for (const [it, m] of bloqueados) { try { await marcarSt(it, 'x', m); } catch { /* tenta de novo na próxima vez */ } }
+      if (!corpo.isConnected) return;
+      const t = h('div', { class: 'toast', role: 'status' }, `${fmt.int(bloqueados.length)} ${bloqueados.length === 1 ? 'cliente saiu' : 'clientes saíram'} da fila: já ${bloqueados.length === 1 ? 'recebeu' : 'receberam'} mensagem há menos de ${dias} dias (ou não quer${bloqueados.length === 1 ? '' : 'em'} mensagens).`);
+      document.body.append(t); setTimeout(() => t.remove(), 6000);
+    }
     // fila: próximo pendente
     const pend = r.lista.filter((x) => x.st === 'p');
     const atual = pend[0];
@@ -436,9 +458,9 @@
       cols: [
         { key: 'nome', label: 'Cliente', align: 'l', render: (x) => h('span', null, x.nome, h('small', { class: 'muted cp-cel' }, 'CPF ' + A().fmtCPF(x.cpf))) },
         { key: 'cel', label: 'Celular', align: 'l' },
-        { key: 'st', label: 'Situação', align: 'l', render: (x) => h('span', { class: 'cp-st ' + ST[x.st][1] }, ST[x.st][0], x.em != null ? h('small', null, ` ${d(x.em)}${x.por ? ' · ' + x.por : ''}`) : null), sortVal: (x) => ({ e: 3, x: 2, o: 1, p: 0 })[x.st] },
+        { key: 'st', label: 'Situação', align: 'l', render: (x) => h('span', { class: 'cp-st ' + ST[x.st][1] }, ST[x.st][0], x.em != null ? h('small', null, ` ${d(x.em)}${x.por ? ' · ' + x.por : ''}`) : null, x.it.motivo ? h('small', { class: 'cp-motivo' }, x.it.motivo) : null), sortVal: (x) => ({ e: 3, x: 2, o: 1, p: 0 })[x.st] },
         { key: 'voltou', label: `Voltou em ${camp.janela} dias`, align: 'l', render: (x) => (!x.ret ? '—' : x.ret.voltou ? h('span', { class: 'cp-st ok' }, `Sim · ${d(x.ret.primeira)} · ${fmt.brl0(x.ret.vt)}`) : x.ret.aberto ? h('span', { class: 'muted' }, 'ainda no prazo') : h('span', { class: 'muted' }, 'não')) },
-        { key: 'acao', label: '', align: 'l', render: (x) => (x.st !== 'p' ? h('button', { type: 'button', class: 'link-btn', onclick: async (e) => { e.stopPropagation(); await marcarSt(x.it, 'p').catch((er) => alert(er.message)); repintar(); } }, 'voltar para a fila') : null), sortVal: () => 0 },
+        { key: 'acao', label: '', align: 'l', render: (x) => (x.st !== 'p' ? h('button', { type: 'button', class: 'link-btn', onclick: async (e) => { e.stopPropagation(); await marcarSt(x.it, 'p', x.it.motivo ? 'liberado' : null).catch((er) => alert(er.message)); repintar(); } }, 'voltar para a fila') : null), sortVal: () => 0 },
       ],
       rows: linhas.map((x) => ({ ...x, cpfTxt: A().fmtCPF(x.cpf) + ' ' + x.cpf })), search: 'Buscar por nome, CPF ou celular', searchKeys: ['nome', 'cpfTxt', 'cel'], sortKey: 'st', sortDir: 'asc', rowClass: (x) => (x.st === 'e' ? 'cp-enviada' : null), onRowClick: (x) => A().abrirClientes([x.cpf]),
     });

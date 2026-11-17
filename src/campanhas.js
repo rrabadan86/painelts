@@ -108,7 +108,7 @@ function refazerLista(id, cid, rid, lista) {
   gravar(id, todas);
   return { ok: c };
 }
-function marcar(id, cid, rid, cpf, st, por) {
+function marcar(id, cid, rid, cpf, st, por, motivo) {
   if (!ST.includes(st)) return { erro: 'Situação inválida.' };
   const todas = ler(id);
   const c = todas.find((x) => x.id === cid);
@@ -116,7 +116,7 @@ function marcar(id, cid, rid, cpf, st, por) {
   const it = r && r.lista.find((x) => x.cpf === cpf);
   if (!it) return { erro: 'Cliente não está nesta campanha.' };
   it.st = st;
-  if (st === 'p') { delete it.em; delete it.por; } else { it.em = new Date().toISOString(); it.por = por; }
+  if (st === 'p') { delete it.em; delete it.por; delete it.motivo; if (motivo === 'liberado') it.liberado = true; } else { it.em = new Date().toISOString(); it.por = por; if (motivo && motivo !== 'liberado') it.motivo = texto(motivo, 120); else delete it.motivo; }
   gravar(id, todas);
   return { ok: it };
 }
