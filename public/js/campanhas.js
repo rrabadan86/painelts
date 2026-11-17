@@ -270,7 +270,7 @@
       const faltam = (TS.CAMPOS_MSG || []).filter(([k, , falta]) => falta && msg.value.includes('{' + k + '}'))
         .map(([k, , falta]) => [k, sel_.filter(({ c }) => falta(c)).length]).filter(([, n]) => n);
       exemplo.replaceChildren(h('small', { class: 'muted' }, c0 ? `Como fica para ${c0.nome || 'o primeiro cliente'}:` : 'Exemplo:'), h('div', null, c0 ? A().texto(msg.value, c0, extras({ filtros: f })) : msg.value),
-        faltam.length ? h('small', { class: 'cp-faltam' }, 'Sem o dado: ', faltam.map(([k, n]) => `{${k}} em ${fmt.int(n)} ${n === 1 ? 'cliente' : 'clientes'}`).join(' · '), ' — confira como fica para eles ou ajuste a frase.') : null);
+        ...(faltam.length ? [h('small', { class: 'cp-faltam' }, 'Sem o dado: ', faltam.map(([k, n]) => `{${k}} em ${fmt.int(n)} ${n === 1 ? 'cliente' : 'clientes'}`).join(' · '), ' — confira como fica para eles ou ajuste a frase.')] : []));
       por(previa, sel_.length ? TS.table({
         cols: [{ key: 'nome', label: 'Cliente', align: 'l', render: (r) => h('span', null, r.nome, h('small', { class: 'muted cp-cel' }, `${r.cel} · CPF ${A().fmtCPF(r.cpf)}`)) }, { key: 'saldo', label: 'Pontos', fmt: fmt.int }, { key: 'vence', label: 'Vencem', align: 'l' }, { key: 'ultima', label: 'Última compra', align: 'l', render: (r) => d(r.ult) }],
         rows: sel_.slice(0, 300).map(({ c, saldo }) => ({ cpf: c.cpf, nome: c.nome || '—', cel: A().fmtTel(c.celular), saldo, vence: c.fx && c.fx.prox != null ? `${fmt.int(c.fx.proxPts)} em ${d(c.fx.prox)}` : '—', ult: c.ultima, ultima: c.ultima ?? -1 })),

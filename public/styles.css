@@ -1957,3 +1957,4 @@ body.com-camada .ped-barra { display: none; }
 .cp-var-txt { white-space: pre-line; }
 .ped-est-vivo { display: grid; gap: 6px; margin-top: 6px; }
 .ped-cat-info .neg { color: #B23B2E; }
+.aviso-versao { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 300; display: flex; gap: 12px; align-items: center; background: #1f2a22; color: #fff; padding: 10px 14px; border-radius: 12px; box-shadow: 0 6px 24px rgba(0,0,0,.25); font-size: 14px; }

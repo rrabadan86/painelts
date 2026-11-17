@@ -574,6 +574,13 @@ app.delete('/api/campanhas/:id', (req, res) => {
   res.json({ ok: true });
 });
 
+// versão dos arquivos da tela (o ?v= do index.html): a aba aberta compara e oferece recarregar depois de uma atualização
+app.get('/api/versao', (req, res) => {
+  let v = null;
+  try { const m = fs.readFileSync(path.join(pub, 'index.html'), 'utf8').match(/\?v=([\w.-]+)/); v = m && m[1]; } catch { /* sem versão */ }
+  res.set('Cache-Control', 'no-store');
+  res.json({ v });
+});
 app.get('/api/eu', (req, res) => {
   const u = C.get().usuarios[req.user];
   res.json({

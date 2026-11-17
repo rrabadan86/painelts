@@ -347,4 +347,21 @@
     TS.scriptLoja();
   }
   iniciar();
+
+  // painel atualizado com a aba aberta: avisa e oferece recarregar (senão a tela continua com a versão antiga)
+  const minhaVersao = (() => { const sc = [...document.scripts].find((x) => /\?v=/.test(x.src)); return sc ? new URL(sc.src).searchParams.get('v') : null; })();
+  let avisado = false;
+  async function conferirVersao() {
+    if (avisado || !minhaVersao || TS.demo) return;
+    try {
+      const j = await (await fetch('/api/versao', { credentials: 'same-origin', cache: 'no-store' })).json();
+      if (!j.v || j.v === minhaVersao) return;
+      avisado = true;
+      const b = TS.h('div', { class: 'aviso-versao', role: 'status' }, TS.h('span', null, 'O painel foi atualizado.'),
+        TS.h('button', { type: 'button', class: 'btn primary', onclick: () => location.reload() }, 'Recarregar agora'));
+      document.body.append(b);
+    } catch { /* sem conexão: tenta depois */ }
+  }
+  setInterval(conferirVersao, 3 * 60e3);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) conferirVersao(); });
 })();
