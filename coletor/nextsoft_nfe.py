@@ -217,12 +217,21 @@ def devolucao(page, pedido, t0):
     step("2) Entrada da nota → Devolução (o AppNext preenche fornecedor, chave e itens)")
     if not re.match(r"^[0-9a-f-]{36}$", str(pedido.get("entradaId", ""))):
         raise RuntimeError("a nota de entrada não tem o id do AppNext")
-    page.evaluate(f"() => {{ location.hash = '#/estoque/saida-devolucao/devolucao/{pedido['entradaId']}'; }}")
+    # o mesmo caminho de quem faz à mão: lista de entradas → devolução da nota (direto pela rota, às vezes as
+    # regras fiscais não carregavam); tenta duas vezes
     pronto = "() => { const r=[...document.querySelectorAll('*')].find(e=>e.__vue__); if(!r) return false; const f=[r.__vue__.$root]; while(f.length){const x=f.shift(); if(x.$options.methods&&x.$options.methods.montarDevolucao) return !!(x.saida&&x.saida.itens&&x.saida.itens.length&&x.selectList&&(x.selectList.sequenciasFiscais||[]).length&&(x.selectList.motivosMovimentacao||[]).length); f.push(...(x.$children||[]));} return false; }"
-    for _ in range(60):
-        page.wait_for_timeout(1000)
-        if page.evaluate(pronto):
-            break
+    for tentativa in (1, 2):
+        page.evaluate("() => { location.hash = '#/estoque/entrada-produto'; }")
+        page.wait_for_timeout(4000)
+        page.evaluate(f"() => {{ location.hash = '#/estoque/saida-devolucao/devolucao/{pedido['entradaId']}'; }}")
+        for _ in range(45):
+            page.wait_for_timeout(1000)
+            if page.evaluate(pronto):
+                break
+        else:
+            log(f"   a tela de devolução não carregou tudo (tentativa {tentativa})")
+            continue
+        break
     else:
         diag = page.evaluate("() => { const r=[...document.querySelectorAll('*')].find(e=>e.__vue__); if(!r) return 'sem Vue · ' + location.hash; const f=[r.__vue__.$root]; while(f.length){const x=f.shift(); if(x.$options.methods&&x.$options.methods.montarDevolucao){ const sl=x.selectList||{}; return `itens ${((x.saida||{}).itens||[]).length} · regras ${(sl.sequenciasFiscais||[]).length} · motivos ${(sl.motivosMovimentacao||[]).length} · ${location.hash.replace(/[0-9a-f-]{36}/,'ID')}`; } f.push(...(x.$children||[]));} return 'tela de devolução não montou · ' + location.hash.replace(/[0-9a-f-]{36}/,'ID'); }")
         log(f"   situação da tela: {diag}")

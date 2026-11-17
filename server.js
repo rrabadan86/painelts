@@ -782,6 +782,12 @@ app.get('/api/devolucoes', async (req, res) => {
       ? DEV.erroNfe(loja.id, d.id, robo && robo.ultima && robo.ultima.id === d.id ? `o robô terminou sem confirmar (código ${robo.ultima.codigo})` : 'o pedido se perdeu (o coletor reiniciou); peça de novo') : d));
     ds.forEach((d) => { if (d.nfe && d.nfe.estado === 'na_fila' && robo && robo.id === d.id) d.nfe.robo = { estado: robo.estado, aoVivo: robo.aoVivo || null }; });
   }
+  // erro: o log do robô da última vez (se foi desta devolução)
+  if (ds.some((d) => d && d.nfe && d.nfe.estado === 'erro') && COL.ativo()) {
+    let robo = null; try { robo = (await COL.status(loja.id)).nfe; } catch { /* ok */ }
+    const u = robo && robo.ultima;
+    if (u && u.log) ds.forEach((d) => { if (d && d.nfe && d.nfe.estado === 'erro' && u.id === d.id) d.nfe.log = u.log; });
+  }
   // a NF-e de devolução foi autorizada (o XML chegou)? manda o e-mail que estava esperando
   for (let k = 0; k < ds.length; k++) if (ds[k] && ds[k].email && ds[k].email.estado === 'aguardando_nf' && ds[k].nfe && ds[k].nfe.estado === 'ok' && acharNfDevolucao(loja, ds[k])) ds[k] = await enviarDevolucao(loja, DEV.ler(loja.id, ds[k].id));
   res.json({ devolucoes: ds, destinatarios: DEV.destinatarios(loja.id) });

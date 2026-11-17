@@ -61,7 +61,8 @@
       h('div', null, h('span', { class: 'dev-st ' + (nf.estado === 'ok' || nf.estado === 'teste' ? 'ok' : nf.estado === 'erro' ? 'erro' : 'fila') }, (nf.estado === 'na_fila' ? '⏳ ' : '') + (NFE_TXT[nf.estado] || nf.estado)),
         nf.numero ? h('small', null, ` · NF-e nº ${nf.numero} autorizada`) : null, nf.cfop ? h('small', { class: 'muted' }, ` · CFOP ${nf.cfop}`) : null, nf.erro ? h('small', { class: 'neg' }, ' ' + nf.erro) : null,
         podePedir ? h('span', null, ' ', h('button', { type: 'button', class: 'link-btn', onclick: pedirNfe(false) }, nf.estado === 'erro' ? 'tentar de novo' : 'gravar no AppNext'), ' · ', h('button', { type: 'button', class: 'link-btn', onclick: pedirNfe(true) }, 'testar sem salvar')) : null),
-      nf.estado === 'na_fila' && nf.robo && nf.robo.aoVivo ? h('pre', { class: 'inv-log' }, nf.robo.aoVivo.slice(-8).join('\n')) : null);
+      nf.estado === 'na_fila' && nf.robo && nf.robo.aoVivo ? h('pre', { class: 'inv-log' }, nf.robo.aoVivo.slice(-8).join('\n')) : null,
+      nf.estado === 'erro' && nf.log && nf.log.length ? h('details', null, h('summary', null, 'log do robô'), h('pre', { class: 'inv-log' }, nf.log.join('\n'))) : null);
     reenviar.addEventListener('click', async () => { if (e.estado === 'aguardando_nf' && !confirm('Mandar o e-mail agora, SEM a NF-e de devolução (só a planilha e as fotos)?')) return; reenviar.disabled = true; try { const r = await api('POST', `devolucoes/${d.id}/reenviar`, { loja }); el.replaceWith(itemFeito(r.devolucao, loja)); } catch (er) { alert(er.message); reenviar.disabled = false; } });
     if (nf.estado === 'na_fila') setTimeout(async () => {
       if (!el.isConnected) return;
