@@ -219,7 +219,7 @@ DEVOLVER = "async (p) => {" + JS_BASE.replace("acha('salvarRascunho')", "acha('m
   await espera(500);
   if (tela.lojaAtual.id !== S.lojaId) erro('a loja aberta no AppNext não é a da nota de entrada');
   const t = tela.$refs.tabs; const invalida = ['validarDadosNota', 'validarDadosFornecedor', 'validarProdutos', 'validarTransportadora', 'validarValoresAdicionais'].filter((k) => t[k] && t[k]());
-  return { invalida, cfop: cfops[0].codigo, chaveRef: String(S.chaveAcesso || ''), total: Number(S.valorTotalLiquido), itens: S.itens.map((i) => ({ codigo: String(i.codigo), nome: i.nome || '', qtd: Number(i.quantidade), preco: Number(i.valorUnitario), total: Number(i.valorTotalLiquido) })) };
+  return { invalida, cfop: cfops[0].codigo, chaveRef: String(S.chaveAcesso || ''), total: Number(S.valorTotalLiquido), produtos: Number(S.valorTotalProduto), itens: S.itens.map((i) => ({ codigo: String(i.codigo), nome: i.nome || '', qtd: Number(i.quantidade), preco: Number(i.valorUnitario), total: Number(i.valorTotalLiquido) })) };
 }"""
 
 
@@ -269,10 +269,14 @@ def devolucao(page, pedido, t0):
         log(f"   {'✓' if ok else '✗'} {i['codigo']} {i['nome'][:40]}: {i['qtd']:g} × R$ {i['preco']:.2f} = R$ {i['total']:.2f}")
         if not ok:
             erros.append(f"item {i['codigo']} com quantidade diferente")
-    soma = round(sum(i["total"] for i in r["itens"]), 2)
-    log(f"   total da nota: R$ {r['total']:.2f} · soma dos itens: R$ {soma:.2f}")
-    if abs(r["total"] - soma) > 0.05:
-        erros.append(f"o total da nota (R$ {r['total']:.2f}) não bate com a soma dos itens (R$ {soma:.2f}): o AppNext não recalculou")
+    # produtos da nota = soma de quantidade × valor unitário; o total pode ser maior pelos impostos por fora (IPI, ST)
+    soma = round(sum(i["qtd"] * i["preco"] for i in r["itens"]), 2)
+    prod = r.get("produtos") or 0
+    log(f"   produtos: R$ {prod:.2f} (soma dos itens: R$ {soma:.2f}) · total da nota com impostos: R$ {r['total']:.2f}")
+    if abs(prod - soma) > 0.05:
+        erros.append(f"o valor dos produtos da nota (R$ {prod:.2f}) não bate com a soma dos itens (R$ {soma:.2f}): o AppNext não recalculou")
+    elif not (soma - 0.05 <= r["total"] <= soma * 1.6 + 0.05):
+        erros.append(f"o total da nota (R$ {r['total']:.2f}) está fora do esperado para R$ {soma:.2f} em produtos")
     if erros:
         raise RuntimeError("conferência falhou, nada foi salvo: " + "; ".join(erros[:6]))
     log("   ✓ tudo confere")

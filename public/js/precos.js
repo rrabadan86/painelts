@@ -384,7 +384,11 @@
     const loja = D.loja;
     const p = cacheNotas.get(loja) || fetch(TS.api(`estoque/notas?loja=${encodeURIComponent(loja)}`), { credentials: 'same-origin' }).then(async (r) => { const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.erro || 'Falha ao ler as notas.'); return j; });
     cacheNotas.set(loja, p);
-    p.then((j) => {
+    // devoluções feitas (para marcar as notas que tiveram devolução): sem permissão ou sem dados, segue sem marcar
+    const pd = TS.demo ? Promise.resolve([]) : fetch(TS.api(`devolucoes?loja=${encodeURIComponent(loja)}`), { credentials: 'same-origin' }).then((r) => (r.ok ? r.json() : { devolucoes: [] })).then((x) => x.devolucoes || []).catch(() => []);
+    Promise.all([p, pd]).then(([j, devs]) => {
+      j.devs = new Map();
+      for (const d of devs) { const k = `${d.nota.id}|${d.nota.nf}`; (j.devs.get(k) || j.devs.set(k, []).get(k)).push(d); }
       box.replaceChildren(listaNotas(D, j));
       // veio de um link ("NF nº …" no histórico de um produto): abre a nota
       if (state.abrirNF != null) { const n = (j.notas || []).find((x) => String(x.nf) === String(state.abrirNF)); state.abrirNF = null; if (n) abrirNota(D, { ...n, dia: TS.isoToDay(n.entrada || n.emissao), nfTxt: `${n.nf ?? '—'}${n.serie ? ' / ' + n.serie : ''}` }); }
@@ -400,7 +404,8 @@
     });
     if (!todas.length) return TS.card('Notas fiscais de entrada', null, h('p', { class: 'muted' }, 'Nenhuma nota de entrada no painel ainda. O coletor lê as notas concluídas de Estoque → Entrada de Produtos do AppNext junto com o estoque.'));
     const noPer = (n) => (f.de == null || n.dia >= f.de) && (f.ate == null || n.dia <= f.ate);
-    const FIL = { per: ['No período', noPer], todas: ['Todas', () => true] };
+    const devDe = (n) => (j.devs && j.devs.get(`${n.id}|${n.nf}`)) || null;
+    const FIL = { per: ['No período', noPer], todas: ['Todas', () => true], ...(j.devs && j.devs.size ? { dev: ['Com devolução', (n) => !!devDe(n)] } : {}) };
     const fil = FIL[state.prcNotasFil] ? state.prcNotasFil : 'per';
     const rows = todas.filter(FIL[fil][1]);
     const tab = TS.table({
@@ -408,7 +413,8 @@
         // compacta: entrada + emissão numa coluna, tipo junto do fornecedor; a linha inteira abre a nota
         { key: 'dia', label: 'Entrada', align: 'l', render: (r) => h('span', null, r.entrada ? quando(r.entrada) : '—', h('small', { class: 'est-tam' }, r.emissao ? 'emissão ' + quando(r.emissao) : '')), sortVal: (r) => r.dia ?? 0 },
         { key: 'nfTxt', label: 'NF / série', align: 'l', render: (r) => h('a', { href: '#', class: 'prc-nome', onclick: (e) => { e.preventDefault(); e.stopPropagation(); abrirNota(D, r); } }, r.nfTxt), sortVal: (r) => +r.nf || 0 },
-        { key: 'fornecedor', label: 'Fornecedor', align: 'l', wrap: true, render: (r) => h('span', null, r.fornecedor || '—', r.motivo ? h('small', { class: 'est-tam' }, h('span', { class: 'prc-st ' + (r.compra ? 'prc-st-v' : 'prc-st-n') }, r.motivo)) : null) },
+        { key: 'fornecedor', label: 'Fornecedor', align: 'l', wrap: true, render: (r) => { const dv = devDe(r); return h('span', null, r.fornecedor || '—', h('small', { class: 'est-tam' }, r.motivo ? h('span', { class: 'prc-st ' + (r.compra ? 'prc-st-v' : 'prc-st-n') }, r.motivo) : null,
+          dv ? h('span', { class: 'prc-st nf-dev', title: dv.map((d) => `${d.itens.length} ${d.itens.length === 1 ? 'item' : 'itens'} em ${new Date(d.em).toLocaleDateString('pt-BR')}`).join(' · ') }, `↩ devolução${dv.length > 1 ? ` (${dv.length})` : ''}`) : null)); } },
         { key: 'nItens', label: 'Itens', fmt: fmt.int },
         { key: 'total', label: 'Total da nota', fmt: (v) => (v == null ? '—' : fmt.brl(v)) },
       ],

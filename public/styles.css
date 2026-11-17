@@ -2004,3 +2004,4 @@ body.com-camada .ped-barra { display: none; }
 .dev-dest { display: grid; gap: 6px; }
 .dev-st.fila { background: #eef3fb; color: #1F5FBF; } .dev-feita { display: grid; gap: 3px; padding: 6px 0; border-bottom: 1px solid #f0ece2; }
 .dev-form textarea { font-family: inherit; }
+.nf-dev { background: #fbeee0 !important; color: #8a5a00 !important; margin-left: 4px; }
