@@ -93,6 +93,9 @@ test.describe('regras', () => {
     await page.locator('.esp-form input[type=search]').first().fill('ana');
     await page.locator('.esp-form .cp-sug-it').first().dispatchEvent('mousedown');
     await expect(page.locator('.esp-cli-esc')).toBeVisible();
+    await expect(page.locator('.esp-cli-novo')).toBeHidden();
+    expect(await page.locator('.esp-cli-esc').innerText()).not.toMatch(/(^|\s)null(\s|$)/);
+    await expect(page.locator('.esp-form select')).toBeVisible();
     await page.locator('.esp-form input[type=search]').nth(1).fill('african');
     await page.locator('.esp-sug-p .cp-sug-it').first().dispatchEvent('mousedown');
     await expect(page.locator('.esp-chip')).toHaveCount(1);

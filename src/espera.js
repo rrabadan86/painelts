@@ -65,7 +65,7 @@ function validarNovo(b, estoque) {
   if (!itens.length) return { erro: 'Escolha pelo menos um produto.' };
   const cods = [...new Set(itens.flatMap((i) => codsEstoque(i, estoque)))];
   const nomes = cods.map((c) => { const i = ((estoque && estoque.itens) || []).find((x) => String(x.cod) === c); return i ? `${i.desc}${i.un === 'Kg' ? ' (kg)' : ''}` : c; });
-  return { ok: { cliente: { cpf: cpf || null, nome, celular: cel }, itens, obs: txt(b.obs, 300), estoqueCods: cods, estoqueNomes: nomes, zerado: cods.length ? qtdEstoque(cods, estoque) <= 0 : null } };
+  return { ok: { cliente: { cpf: cpf || null, nome, celular: cel }, itens, obs: txt(b.obs, 300), vendedora: txt(b.vendedora, 60) || null, estoqueCods: cods, estoqueNomes: nomes, zerado: cods.length ? qtdEstoque(cods, estoque) <= 0 : null } };
 }
 
 function criar(id, b, por, estoque) {

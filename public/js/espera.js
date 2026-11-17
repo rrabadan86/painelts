@@ -114,7 +114,7 @@
         h('span', { class: 'esp-st ' + stCls }, stTxt)),
       h('div', { class: 'esp-prod' }, nomesItens(p)),
       h('div', { class: 'esp-sit' }, sit),
-      h('div', { class: 'esp-meta muted' }, `Anotado ${quandoTxt(p.criadoEm)} por ${p.por || '—'}${p.obs ? ' · ' + p.obs : ''}`),
+      h('div', { class: 'esp-meta muted' }, `Anotado ${quandoTxt(p.criadoEm)} por ${p.vendedora || p.por || '—'}${p.vendedora && p.por && p.vendedora.toLowerCase() !== String(p.por).toLowerCase() ? ` (usuário ${p.por})` : ''}${p.obs ? ' · ' + p.obs : ''}`),
       p.st === 'esperando' ? (p.estoqueCods && p.estoqueCods.length
         ? h('div', { class: 'esp-meta muted', title: 'Quando uma nota de entrada trouxer este item, o pedido passa para "Chegaram"' }, `Acompanhando no estoque: ${(p.estoqueNomes || p.estoqueCods).join(', ')}`)
         : TS.demo ? null : h('div', { class: 'esp-aviso' }, 'Não achei este produto no estoque: quando chegar, use "Já chegou".')) : null,
@@ -157,9 +157,9 @@
     novoBox.append(nNome, nCel, nCpf, h('small', { class: 'muted' }, 'Com o CPF o painel consegue saber se o cliente voltou para comprar.'));
     const escolher = (c) => {
       f.cliente = c; buscaCli.value = ''; sugCli.hidden = true; buscaCli.parentNode.hidden = true; novoBox.hidden = true;
-      escolhido.replaceChildren(h('b', null, c.nome), h('small', { class: 'muted' }, ` ${telTxt(c.celular)}${c.cpf ? ' · CPF ' + String(c.cpf).replace(/^(\d{3})\d{6}(\d{2})$/, '$1.***.***-$2') : ''}`),
+      escolhido.replaceChildren(...[h('b', null, c.nome), h('small', { class: 'muted' }, ` ${telTxt(c.celular)}${c.cpf ? ' · CPF ' + String(c.cpf).replace(/^(\d{3})\d{6}(\d{2})$/, '$1.***.***-$2') : ''}`),
         !c.celular || c.celular.length < 10 ? h('div', { class: 'esp-aviso' }, 'Sem celular no cadastro: ', (() => { const i = h('input', { class: 'f-input', placeholder: 'Celular com DDD', inputmode: 'tel' }); i.addEventListener('input', () => { f.cliente.celular = i.value.replace(/\D/g, ''); }); return i; })()) : null,
-        h('button', { type: 'button', class: 'link-btn', onclick: () => { f.cliente = null; escolhido.hidden = true; buscaCli.parentNode.hidden = false; buscaCli.focus(); } }, 'trocar'));
+        h('button', { type: 'button', class: 'link-btn', onclick: () => { f.cliente = null; escolhido.hidden = true; buscaCli.parentNode.hidden = false; buscaCli.focus(); } }, 'trocar')].filter(Boolean));
       escolhido.hidden = false;
     };
     let tCli;
@@ -207,7 +207,11 @@
       }, 250);
     });
     buscaP.addEventListener('blur', () => setTimeout(() => { sugP.hidden = true; }, 150));
-    const obs = h('input', { class: 'f-input', placeholder: 'Observação (opcional): prefere 250 g, só depois do dia 20…' });
+    const obs = h('input', { class: 'f-input', placeholder: 'Ex.: prefere 250 g, só depois do dia 20…' });
+    // quem está anotando (opcional): as vendedoras da loja; a vendedora logada já vem escolhida
+    const euVend = TS.eu && TS.eu.perfil === 'vendedor' ? String(TS.eu.vendedor || '').trim() : '';
+    const vendNomes = euVend ? [euVend] : [...new Set((TS.db && TS.db.D.vendedor) || [])].filter((n) => n && !/^SEM VENDEDOR$|^COLEGA \d+$/i.test(n.trim())).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+    const vend = h('select', { class: 'f-input' }, h('option', { value: '' }, 'Não informar'), ...vendNomes.map((n) => h('option', { value: n, selected: n === euVend || null }, n)));
     const erro = h('div', { class: 'neg esp-erro' });
     const salvar = h('button', { type: 'button', class: 'btn primary', onclick: async () => {
       erro.textContent = '';
@@ -216,14 +220,14 @@
       if (!f.itens.length) { erro.textContent = 'Escolha pelo menos um produto.'; return; }
       if (TS.demo) { erro.textContent = 'Na apresentação nada é salvo.'; return; }
       salvar.disabled = true;
-      try { const r = await api('POST', 'espera', { loja, cliente: cli, itens: f.itens.map(({ desc, cod, qtd, generico }) => ({ desc, cod, qtd, generico })), obs: obs.value }); aoSalvar(r.pedido); }
+      try { const r = await api('POST', 'espera', { loja, cliente: cli, itens: f.itens.map(({ desc, cod, qtd, generico }) => ({ desc, cod, qtd, generico })), obs: obs.value, vendedora: vend.value }); aoSalvar(r.pedido); }
       catch (e) { erro.textContent = e.message; salvar.disabled = false; }
     } }, 'Salvar na lista de espera');
     return h('div', { class: 'card esp-form mt' },
       h('div', { class: 'card-title' }, 'Anotar pedido'),
       h('div', { class: 'esp-campo' }, h('span', { class: 'f-label' }, 'Cliente'), h('div', { class: 'cp-prod-campo' }, buscaCli, sugCli), escolhido, novoBox),
       h('div', { class: 'esp-campo' }, h('span', { class: 'f-label' }, 'Produtos'), chips, h('div', { class: 'cp-prod-campo' }, buscaP, sugP)),
-      h('div', { class: 'esp-campo' }, obs),
+      h('div', { class: 'esp-campo esp-dupla' }, h('label', { class: 'esp-campo' }, h('span', { class: 'f-label' }, 'Vendedora (opcional)'), vend), h('label', { class: 'esp-campo' }, h('span', { class: 'f-label' }, 'Observação (opcional)'), obs)),
       erro,
       h('div', { class: 'esp-acoes' }, salvar, h('button', { type: 'button', class: 'btn', onclick: aoFechar }, 'Fechar')));
   }
