@@ -1726,3 +1726,16 @@ body.com-camada .ped-barra { display: none; }
   .card, .content, .layout { min-width: 0; max-width: 100%; }
   .content { overflow-x: clip; }
 }
+
+/* ---- Notas fiscais: abas Entrada | Saída e NF-e emitidas ---- */
+.nf-abas { margin: 4px 0 6px; }
+.nf-acoes { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+.nf-acoes .btn { padding: 3px 8px; font-size: 12px; }
+.nf-linha-cancelada td { color: var(--muted, #888); }
+.nf-riscado { text-decoration: line-through; }
+.nf-cancelada { background: #fbe9e6 !important; color: #a33 !important; }
+.nf-dest { display: flex; flex-direction: column; gap: 2px; margin: 10px 0 6px; padding: 8px 10px; border: 1px solid var(--line, #e6e1d6); border-radius: 10px; font-size: 13px; }
+.nf-dest small { font-size: 11px; color: var(--muted, #777); text-transform: uppercase; letter-spacing: .03em; }
+.nf-botoes { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 10px 0 4px; }
+.cli-tag.t-nfe { background: #e7eefb; color: #1F4FA0; text-decoration: none; margin-left: 6px; cursor: pointer; }
+.cupons-t .cpf-link { font-size: 12px; }

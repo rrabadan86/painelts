@@ -3,7 +3,7 @@
 (function () {
   const { h, fmt, state } = TS;
   const content = document.getElementById('content');
-  let PAGES = ['inicio', 'resumo', 'comparativos', 'comissionamento', 'promocao', 'mapa', 'clientes', 'minha'];
+  let PAGES = ['inicio', 'resumo', 'comparativos', 'comissionamento', 'promocao', 'cupons', 'mapa', 'clientes', 'minha'];
   TS.paginas = () => PAGES;
 
   // ---- manter o campo em que a pessoa está digitando quando a tela é redesenhada ----
@@ -73,7 +73,7 @@
     if (g) restaurar(g);
   };
   function renderTela() {
-    document.querySelectorAll('#tabs a').forEach((a) => a.classList.toggle('active', a.dataset.page === state.page || (a.dataset.grupo || '').split(',').includes(state.page)));
+    document.querySelectorAll('#tabs a').forEach((a) => a.classList.toggle('active', a.dataset.page === state.page || (a.dataset.grupo || '').split(',').includes(state.page === 'nfsaida' ? 'notas' : state.page)));
     ajustarTopo();
     const ativa = document.querySelector('#tabs a.active');
     if (ativa && ativa.scrollIntoView) { const t = document.getElementById('tabs'); if (t.scrollWidth > t.clientWidth) t.scrollTo({ left: ativa.offsetLeft - 12, behavior: 'smooth' }); }
@@ -245,14 +245,14 @@
    * Menu por assunto: Vendas · Clientes · Equipe · Estoque e Margem · ⚙. Cada grupo mostra só as telas que a pessoa pode ver;
    * grupo com uma tela só vira uma aba com o nome da tela; com mais de uma, a tela tem um submenu no topo.
    */
-  const ROTULO = { inicio: 'Início', resumo: 'Resumo', comparativos: 'Comparativos', promocao: 'Promoção', clilista: 'Lista de clientes', clientes: 'Indicadores', campanhas: 'Campanhas',
+  const ROTULO = { inicio: 'Início', resumo: 'Resumo', comparativos: 'Comparativos', promocao: 'Promoção', cupons: 'Cupons', nfsaida: 'Notas fiscais', clilista: 'Lista de clientes', clientes: 'Indicadores', campanhas: 'Campanhas',
     comissionamento: 'Comissionamento', minha: 'Minha comissão', mapa: 'Movimento e escala', rentab: 'Rentabilidade', precos: 'Preços', site: 'Site', estoque: 'Estoque', pedido: 'Pedido', notas: 'Notas fiscais', dre: 'Resultado' };
   TS.GRUPOS = [];
   function montarMenu(grupoEst, temConfig) {
     const tabs = document.getElementById('tabs');
     const G = [
       ['Início', ['inicio']],
-      ['Vendas', ['resumo', 'comparativos', 'promocao']],
+      ['Vendas', ['resumo', 'comparativos', 'promocao', 'cupons']],
       ['Clientes', ['clilista', 'clientes', 'campanhas']],
       ['Equipe', ['comissionamento', 'minha', 'mapa']],
       ['Produtos', grupoEst.filter((p) => ['rentab', 'precos', 'site'].includes(p))],
@@ -271,6 +271,7 @@
   }
   /** submenu do grupo da tela (quando o grupo tem mais de uma tela) */
   TS.subGrupo = (atual) => {
+    if (atual === 'nfsaida') atual = 'notas'; // Notas fiscais → Saída fica dentro de Notas fiscais
     const g = TS.GRUPOS.find(([, ps]) => ps.includes(atual));
     if (!g || g[1].length < 2) return document.createDocumentFragment();
     return h('nav', { class: 'submenu', 'aria-label': g[0] }, g[1].map((p) => h('a', { href: '#' + p, class: p === atual ? 'on' : null, 'aria-current': p === atual ? 'page' : null }, ROTULO[p])));
@@ -300,7 +301,7 @@
     const EST = ['rentab', 'precos', 'site', 'estoque', 'pedido', 'notas', 'dre'];
     const grupoEst = eu.pode?.configurar ? EST : EST.filter((p) => (eu.telas || []).includes(p));
     TS.telasEstoque = grupoEst;
-    PAGES = [...PAGES.filter((p) => !grupoEst.includes(p)), ...grupoEst];
+    PAGES = [...PAGES.filter((p) => !grupoEst.includes(p)), ...grupoEst, ...(grupoEst.includes('notas') ? ['nfsaida'] : [])];
     if (eu.pode?.configurar) PAGES = [...PAGES, 'config'];
     montarMenu(grupoEst, !!eu.pode?.configurar);
     // nome no menu da conta

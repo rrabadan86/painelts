@@ -258,6 +258,37 @@ app.get('/api/demo/estoque', (req, res) => {
   if (!lojaDemo(req)) return res.status(400).json({ erro: 'Escolha uma loja.' });
   try { const e = DEMO.estoqueDemo(req.query.loja); res.json({ estoque: e.estoque, cfg: ESd.cfg({ estoqueCfg: e.estoqueCfg }), classe: ESd.classeCfg({}), historico: e.historico, compras: e.compras }); } catch (e) { res.status(500).json({ erro: e.message }); }
 });
+// NF-e de saída fictícias (vendas com nota, transferência, devolução), montadas com os produtos da apresentação
+const NFSd = require('./src/nfsaida');
+function nfsDemo(lojaId) {
+  const e = DEMO.estoqueDemo(lojaId), it = e.estoque.itens.filter((i) => i.desc).slice(0, 40);
+  const hoje = new Date(), dia = (n) => new Date(hoje.getTime() - n * 864e5).toISOString().slice(0, 10);
+  const lj = DEMO.lojasDemo().find((l) => l.id === lojaId) || { nome: 'Tea Shop' };
+  const base = [
+    [5, 'Venda de mercadoria', 'Saída', 'Normal', '5102', { nome: 'Empresa Fictícia de Eventos Ltda', doc: '12345678000190', tipoDoc: 'CNPJ' }, [[0, 25, 7.9], [1, 25, 7.9], [2, 25, 7.9]], 'autorizada'],
+    [12, 'Venda de mercadoria', 'Saída', 'Normal', '5102', { nome: 'Maria Exemplo da Silva', doc: '12345678909', tipoDoc: 'CPF' }, [[3, 2, 54.9], [4, 1, 129.9]], 'autorizada'],
+    [20, 'Transferência entre filiais', 'Saída', 'Normal', '5152', { nome: 'Tea Shop Filial (fictícia)', doc: '98765432000110', tipoDoc: 'CNPJ' }, [[5, 6, 32.5], [6, 4, 41.2], [7, 3, 18.0]], 'autorizada'],
+    [27, 'Devolução de compra', 'Saída', 'Devolução', '5202', { nome: 'Fornecedor Fictício S.A.', doc: '11222333000144', tipoDoc: 'CNPJ' }, [[8, 2, 22.4]], 'autorizada'],
+    [33, 'Venda de mercadoria', 'Saída', 'Normal', '5102', { nome: 'João Exemplo Pereira', doc: '98765432100', tipoDoc: 'CPF' }, [[9, 3, 39.9]], 'cancelada'],
+  ];
+  return base.map(([d, natOp, tipo, fin, cfop, dest, its, sit], k) => {
+    const numero = 70 + k * 3, data = dia(d);
+    const itens = its.map(([ix, qtd, vUn], j) => { const p = it[ix % it.length] || { cod: String(ix), desc: 'Produto' }; return { n: j + 1, cod: p.cod, desc: p.desc, ncm: '09021000', cfop, un: p.un || 'UN', qtd, vUn, vProd: Math.round(qtd * vUn * 100) / 100, vDesc: 0 }; });
+    const vNF = Math.round(itens.reduce((t, i) => t + i.vProd, 0) * 100) / 100;
+    const chave = ('52' + data.slice(2, 4) + data.slice(5, 7) + '00000000000191' + '55' + '001' + String(numero).padStart(9, '0') + '1' + String(10000000 + numero).slice(-8)).padEnd(44, '0').slice(0, 44);
+    return { chave, situacao: sit, numero, serie: '1', mod: '55', emissao: data + 'T14:47:00-03:00', data, natOp, tipo, finalidade: fin,
+      emit: { nome: lj.nome + ' (fictícia)', fantasia: lj.nome, cnpj: '00000000000191', ie: '000000000', end: { linha: 'Rua Exemplo, 100 · Centro', mun: 'Cidade Exemplo', uf: 'GO', cep: '74000000' } },
+      dest: { ...dest, end: { linha: 'Av. Fictícia, 200 · Bairro Exemplo', mun: 'Cidade Exemplo', uf: 'GO', cep: '74000000' } },
+      total: { vNF, vProd: vNF, vDesc: 0 }, pagamentos: [], infCpl: 'Nota fictícia da apresentação.', protocolo: sit === 'autorizada' || sit === 'cancelada' ? '152260000000' + numero : null, autorizadaEm: data + 'T14:48:00-03:00', itens };
+  });
+}
+const cabNfs = (n) => ({ chave: n.chave, numero: n.numero, serie: n.serie, data: n.data, emissao: n.emissao, natOp: n.natOp, tipo: n.tipo, finalidade: n.finalidade, situacao: n.situacao,
+  dest: n.dest ? { nome: n.dest.nome, doc: n.dest.doc, tipoDoc: n.dest.tipoDoc, mun: n.dest.end && n.dest.end.mun, uf: n.dest.end && n.dest.end.uf } : null,
+  valor: n.total.vNF, itens: n.itens.length, qtd: n.itens.reduce((t, i) => t + (i.qtd || 0), 0), cfops: [...new Set(n.itens.map((i) => i.cfop))] });
+app.get('/api/demo/nfsaida', (req, res) => { if (!lojaDemo(req)) return res.status(400).json({ erro: 'Escolha uma loja.' }); res.json({ notas: nfsDemo(req.query.loja).map(cabNfs), temXml: true }); });
+app.get('/api/demo/nfsaida/nota', (req, res) => { const n = lojaDemo(req) && nfsDemo(req.query.loja).find((x) => x.chave === req.query.chave); if (!n) return res.status(404).json({ erro: 'Nota não encontrada.' }); res.json(n); });
+app.get('/api/demo/nfsaida/danfe', (req, res) => { const n = lojaDemo(req) && nfsDemo(req.query.loja).find((x) => x.chave === req.query.chave); if (!n) return res.status(404).send('Nota não encontrada.'); res.set('X-Robots-Tag', 'noindex').type('html').send(NFSd.danfe(n)); });
+app.get('/api/demo/nfsaida/xml', (req, res) => res.status(404).type('text/plain; charset=utf-8').send('Na apresentação as notas são fictícias e não têm XML.'));
 app.get('/api/demo/estoque/notas', (req, res) => {
   if (!lojaDemo(req)) return res.status(400).json({ erro: 'Escolha uma loja.' });
   try {
@@ -608,6 +639,28 @@ app.get('/api/estoque', (req, res) => {
   res.json({ estoque: ES.atual(loja.id), cfg: ES.cfg(lc), classe: ES.classeCfg(lc), tabela: TAB.resumo(loja.id), historico: ES.historico(loja.id), compras: ES.compras(loja.id) });
 });
 // notas de entrada (compras) do AppNext, inteiras: lista e detalhe na tela Preços
+// NF-e emitidas pela loja (saída): lista, nota completa, XML original e DANFE para imprimir
+const NFS = require('./src/nfsaida');
+const lojaNfs = (req, res) => {
+  if (!podeTela(req, 'notas')) { res.status(403).json({ erro: 'Sem permissão.' }); return null; }
+  const loja = req.lojas.find((l) => l.id === String(req.query.loja || ''));
+  if (!loja) { res.status(400).json({ erro: 'Escolha uma loja.' }); return null; }
+  return loja;
+};
+app.get('/api/nfsaida', (req, res) => { const l = lojaNfs(req, res); if (l) res.json(NFS.lista(l.id)); });
+app.get('/api/nfsaida/nota', (req, res) => { const l = lojaNfs(req, res); if (!l) return; const n = NFS.nota(l.id, String(req.query.chave || '')); if (!n) return res.status(404).json({ erro: 'Nota não encontrada.' }); res.json(n); });
+app.get('/api/nfsaida/xml', (req, res) => {
+  const l = lojaNfs(req, res); if (!l) return;
+  const a = NFS.achar(l.id, String(req.query.chave || ''));
+  if (!a) return res.status(404).json({ erro: 'Nota não encontrada.' });
+  res.set('Content-Disposition', `attachment; filename="NFe${a.chave}.xml"`).type('application/xml').sendFile(a.arq);
+});
+app.get('/api/nfsaida/danfe', (req, res) => {
+  const l = lojaNfs(req, res); if (!l) return;
+  const n = NFS.nota(l.id, String(req.query.chave || ''));
+  if (!n) return res.status(404).type('text/plain; charset=utf-8').send('Nota não encontrada.');
+  res.type('html').send(NFS.danfe(n));
+});
 app.get('/api/estoque/notas', (req, res) => {
   if (!podeTela(req, 'rentab', 'estoque', 'precos', 'notas', 'pedido', 'dre')) return res.status(403).json({ erro: 'Sem permissão.' });
   const loja = req.lojas.find((l) => l.id === String(req.query.loja || ''));
@@ -1106,16 +1159,19 @@ app.listen(PORT, () => {
     const mig = [];
     C.alterar((cfg) => {
       for (const [nome, u] of Object.entries(cfg.usuarios || {})) {
-        if (u.telasV >= 3) continue;
+        if (u.telasV >= 4) continue;
+        // v4: o detalhamento de cupons saiu do Comissionamento e virou Vendas → Cupons
+        if (u.perfil === 'gerente' && Array.isArray(u.telas) && u.telas.includes('comissionamento') && !u.telas.includes('cupons')) { u.telas.push('cupons'); mig.push(nome); }
+        if (u.telasV >= 3) { u.telasV = 4; continue; }
         // v2: Preços e Site saíram do Estoque e margem; v3: o Estoque e margem virou Rentabilidade + Estoque (+ Notas fiscais)
         if (u.perfil === 'gerente' && Array.isArray(u.telas) && u.telas.includes('estoque')) {
           for (const t of [...(u.telasV >= 2 ? [] : ['precos', 'site']), 'rentab', 'notas']) if (!u.telas.includes(t)) u.telas.push(t);
           mig.push(nome);
         }
-        u.telasV = 3;
+        u.telasV = 4;
       }
     });
-    if (mig.length) C.auditar('sistema', 'organizou as telas no menu novo (Produtos, Estoque, Resultado)', 'usuarios', { usuarios: mig });
+    if (mig.length) C.auditar('sistema', 'organizou as telas no menu novo (Vendas → Cupons; Produtos, Estoque, Resultado)', 'usuarios', { usuarios: [...new Set(mig)] });
   } catch (e) { console.error('[config] telas do menu novo:', e.message); }
   for (const l of C.get().lojas) dadosLoja(l).catch((e) => console.error(`[dados] ${l.id}: primeira carga falhou:`, e.message));
 });

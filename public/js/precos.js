@@ -368,6 +368,7 @@
     if (TS.subEstoque) root.append(TS.subEstoque('notas'));
     root.append(h('div', { class: 'page-head' }, h('div', null, h('h1', { class: 'page-title' }, 'Notas fiscais'),
       h('div', { class: 'page-sub' }, 'Notas de entrada do AppNext: produtos, quantidades, valores e o que mudou no custo'))));
+    if (TS.abasNotas) root.append(TS.abasNotas('notas'));
     if (!state.loja || state.loja === 'todas') { root.append(h('div', { class: 'notice' }, 'As notas são de cada loja: escolha uma loja no seletor do topo.')); return; }
     const corpo = h('div', { class: 'prc-notas' }, h('div', { class: 'loading' }, h('div', null, h('div', { class: 'spinner' }), h('p', null, 'Lendo as notas…'))));
     root.append(corpo);

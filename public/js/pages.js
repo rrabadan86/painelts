@@ -87,6 +87,7 @@
       estoque: [['produto'], 'Estoque de agora; a reposição usa o ritmo das últimas semanas (não usa o período).'],
       pedido: [['produto'], 'Pedido: estoque de agora e a previsão de venda (não usa o período). O produto só filtra a tabela.'],
       notas: [['periodo'], 'Notas fiscais: o período vale na aba "No período".'],
+      nfsaida: [['periodo'], 'Notas fiscais: o período vale na aba "No período".'],
       dre: [[], 'O Resultado mostra mês a mês e não usa estes filtros.'],
       inicio: [[], 'O Início mostra o que pede atenção hoje e não usa estes filtros.'],
     }[state.page];
@@ -855,41 +856,85 @@
       TS.card('Espaço Gourmet: gorjetas', 'Taxa de serviço dividida conforme a regra de cada loja', tabEG),
       TS.card('Royalties', 'Vendas da loja = chás + acessórios', tabRoy)));
 
-    // cupons detalhados
-    const q = c.cupom;
-    const detIdx = q ? base.filter((i) => String(db.cupom[i]).includes(q)) : base;
-    const det = detIdx.map((i) => ({
-      cupom: db.cupom[i], data: db.iso[i], produto: db.D.descricao[db.desc[i]], qtd: db.qtd[i], grupo: db.D.grupoC[db.grupoC[i]], cat: db.D.cat[db.cat[i]], vendedor: db.D.vendedor[db.vend[i]], vt: db.vt[i],
-    }));
+  };
+
+  // ======================= CUPONS (Vendas → Cupons) =======================
+  /** cupom (chave da venda) → cliente: CPF/CNPJ da nota ou, sem CPF na nota, o CPF que ganhou os pontos no FIXE */
+  function clientesDosCupons() {
+    const m = new Map();
+    if (!TS.cli || !TS.cli.porCPF || !(TS.eu && (TS.eu.pode?.clientes || TS.demo))) return m;
+    for (const c of TS.cli.porCPF.values()) for (const k of c.cupons || []) {
+      if (!k.itens || !k.itens.length) continue;
+      const ch = TS.chaveCupom(k.itens[0]);
+      if (!m.has(ch) || (m.get(ch).fixe && k.origem !== 'fixe')) m.set(ch, { cpf: c.cpf, nome: c.nome || '', fixe: k.origem === 'fixe' });
+    }
+    return m;
+  }
+  const docTxt = (d) => { const s = String(d || ''); return s.length === 14 ? s.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5') : s.length === 11 ? s.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4') : s; };
+  /** CPF/CNPJ do cupom: clicar abre a ficha do cliente */
+  function docCupom(cl) {
+    if (!cl) return '';
+    return h('button', { type: 'button', class: 'cpf-link', title: (cl.nome ? cl.nome + ' · ' : '') + (cl.fixe ? 'sem CPF na nota; o CPF veio dos pontos lançados no FIXE' : 'CPF/CNPJ na nota') + ' · clique para abrir a ficha',
+      onclick: (e) => { e.stopPropagation(); if (TS.cliApi) TS.cliApi.abrirClientes([cl.cpf]); } }, docTxt(cl.cpf), cl.fixe ? h('small', { class: 'muted' }, ' FIXE') : null);
+  }
+  // NF-e emitidas (Estoque → Notas fiscais → Saída): o cupom com o mesmo número e data é uma nota "grande"
+  let nfsCache = null;
+  function nfsDaLoja() {
+    const loja = state.loja;
+    if (!loja || loja === 'todas' || !PAGES_TEM('notas')) return Promise.resolve(null);
+    if (nfsCache && nfsCache.loja === loja) return nfsCache.p;
+    const p = fetch(TS.api(`nfsaida?loja=${encodeURIComponent(loja)}`), { credentials: 'same-origin' }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+    nfsCache = { loja, p };
+    return p;
+  }
+  const PAGES_TEM = (p) => (TS.GRUPOS || []).some(([, ps]) => ps.includes(p));
+
+  TS.pages.cupons = function (root) {
+    const db = TS.db;
+    if (TS.subGrupo) root.append(TS.subGrupo('cupons'));
+    root.append(cabecalho('Cupons', 'Cada venda do período, por dia e cupom, com os itens, o vendedor e o cliente (CPF/CNPJ)'));
+    const base = TS.filtrar();
+    if (!base.length) { root.append(TS.card(null, null, TS.empty())); return; }
+    const clientes = clientesDosCupons();
+    const cliDe = (i) => clientes.get(TS.chaveCupom(i)) || null;
+    const det = base.map((i) => {
+      const cl = cliDe(i);
+      return { cupom: db.cupom[i], data: db.iso[i], produto: db.D.descricao[db.desc[i]], qtd: db.qtd[i], grupo: db.D.grupoC[db.grupoC[i]], cat: db.D.cat[db.cat[i]], vendedor: db.D.vendedor[db.vend[i]], vt: db.vt[i], cl, doc: cl ? cl.cpf + ' ' + docTxt(cl.cpf) + ' ' + cl.nome : '' };
+    });
+    const temCli = clientes.size > 0;
     const tabDet = TS.table({
       cols: [
         { key: 'cupom', label: 'Cupom', align: 'l', fmt: (v) => String(v) },
         { key: 'data', label: 'Data', align: 'l', fmt: fmt.date },
+        temCli ? { key: 'doc', label: 'CPF/CNPJ', align: 'l', render: (r) => docCupom(r.cl), sortVal: (r) => r.doc } : null,
         { key: 'produto', label: 'Produto', align: 'l', wrap: true },
         { key: 'qtd', label: 'Qtd', fmt: fmt.int },
         { key: 'grupo', label: 'Grupo', align: 'l' },
         { key: 'cat', label: 'Categoria', align: 'l', wrap: true },
         { key: 'vendedor', label: 'Vendedor', align: 'l' },
         { key: 'vt', label: 'Valor', fmt: fmt.brl },
-      ],
-      rows: det, sortKey: 'data', pageSize: 50, maxHeight: 'free', search: 'Buscar produto, vendedor…', searchKeys: ['produto', 'vendedor', 'grupo', 'cat'],
-      total: { cupom: `${fmt.int(new Set(detIdx.map(TS.chaveCupom)).size)} cupons`, vt: det.reduce((s, r) => s + (r.vt || 0), 0), qtd: det.reduce((s, r) => s + (r.qtd || 0), 0) },
+      ].filter(Boolean),
+      rows: det, sortKey: 'data', pageSize: 50, maxHeight: 'free', search: 'Buscar produto, vendedor, CPF…', searchKeys: ['produto', 'vendedor', 'grupo', 'cat', 'doc'],
+      total: { cupom: `${fmt.int(new Set(base.map(TS.chaveCupom)).size)} cupons`, vt: det.reduce((s, r) => s + (r.vt || 0), 0), qtd: det.reduce((s, r) => s + (r.qtd || 0), 0) },
     });
     const modoCup = state.cupModo || 'dia';
     const segCup = TS.seg([['Por dia e cupom', 'dia'], ['Lista de itens', 'lista']], modoCup, (v) => { state.cupModo = v; TS.render(); });
+    const nCpf = new Set(base.filter((i) => cliDe(i)).map(TS.chaveCupom)).size, nCup = new Set(base.map(TS.chaveCupom)).size;
+    const subCli = temCli ? ` · ${fmt.int(nCpf)} de ${fmt.int(nCup)} cupons com cliente identificado (clique no CPF/CNPJ para abrir a ficha)` : '';
     if (modoCup === 'lista') {
-      root.append(TS.section('Detalhamento de cupons'), TS.cardWithTools('Cupons do período', q ? `Filtrando cupom "${q}"` : 'Todos os itens vendidos', h('div', { class: 'table-tools' }, tabDet.searchBox, segCup), tabDet));
+      root.append(TS.cardWithTools('Cupons do período', 'Todos os itens vendidos' + subCli, h('div', { class: 'table-tools' }, tabDet.searchBox, segCup), tabDet));
     } else {
-      const arv = arvoreCupons(detIdx);
-      root.append(TS.section('Detalhamento de cupons'), TS.cardWithTools('Cupons do período', q ? `Filtrando cupom "${q}"` : 'Clique em + no dia para ver os cupons e no cupom para ver os itens', h('div', { class: 'table-tools' }, arv.busca, segCup), arv.tools, arv));
+      const arv = arvoreCupons(base, temCli ? cliDe : null);
+      root.append(TS.cardWithTools('Cupons do período', 'Clique em + no dia para ver os cupons e no cupom para ver os itens' + subCli, h('div', { class: 'table-tools' }, arv.busca, segCup), arv.tools, arv));
+      nfsDaLoja().then((j) => { if (j && j.notas && j.notas.length) arv.marcarNFe(j.notas); });
     }
   };
 
   /** Dia → Cupom fiscal → itens */
-  function arvoreCupons(idx) {
+  function arvoreCupons(idx, cliDe) {
     const db = TS.db;
     const aberto = (state.cupAberto ||= new Set());
-    let q = '', limite = 31;
+    let q = '', limite = 31, nfe = new Map();
     const hhmm = (m) => (m == null ? '' : `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`);
     // monta dias e cupons uma vez
     const dias = new Map();
@@ -914,7 +959,9 @@
     const box = h('div', null, wrap, mais);
     const casa = (i) => {
       if (!q) return true;
-      return TS.norm(db.D.descricao[db.desc[i]]).includes(q) || TS.norm(db.D.vendedor[db.vend[i]]).includes(q) || String(db.cupom[i]).includes(q) || TS.norm(db.D.grupoC[db.grupoC[i]]).includes(q);
+      const cl = cliDe && cliDe(i);
+      return TS.norm(db.D.descricao[db.desc[i]]).includes(q) || TS.norm(db.D.vendedor[db.vend[i]]).includes(q) || String(db.cupom[i]).includes(q) || TS.norm(db.D.grupoC[db.grupoC[i]]).includes(q)
+        || (cl && (cl.cpf.includes(q.replace(/\D/g, '') || '#') || TS.norm(cl.nome).includes(q)));
     };
     const btn = (chave, rot) => {
       const open = aberto.has(chave);
@@ -923,7 +970,7 @@
     };
     function paint() {
       tbl.textContent = '';
-      tbl.append(h('thead', null, h('tr', null, h('th', { class: 'l sticky-col' }, 'Dia / Cupom / Produto'), h('th', { class: 'l' }, 'Hora'), h('th', { class: 'l' }, 'Vendedor'), h('th', { class: 'l' }, 'Grupo'), h('th', null, 'Cupons'), h('th', null, 'Itens'), h('th', null, 'Valor'))));
+      tbl.append(h('thead', null, h('tr', null, h('th', { class: 'l sticky-col' }, 'Dia / Cupom / Produto'), h('th', { class: 'l' }, 'Hora'), cliDe ? h('th', { class: 'l' }, 'CPF/CNPJ') : null, h('th', { class: 'l' }, 'Vendedor'), h('th', { class: 'l' }, 'Grupo'), h('th', null, 'Cupons'), h('th', null, 'Itens'), h('th', null, 'Valor'))));
       const tb = h('tbody');
       let mostrados = 0, totC = 0, totI = 0, totV = 0;
       const lista = q ? ordem.filter((dia) => [...dia.cupons.values()].some((c) => c.itens.some(casa))) : ordem;
@@ -936,28 +983,32 @@
         const kD = 'd' + dia.d;
         const wd = new Date(dia.d + 'T12:00:00Z').toLocaleDateString('pt-BR', { weekday: 'short', timeZone: 'UTC' }).replace('.', '');
         tb.append(h('tr', { class: 'lv0' }, h('td', { class: 'l sticky-col tree-l' }, h('span', { class: 'tree-cell' }, btn(kD, dia.d), h('span', null, `${fmt.date(dia.d)} · ${wd}`))),
-          h('td'), h('td'), h('td'), h('td', null, fmt.int(cups.length)), h('td', null, fmt.int(qtd)), h('td', null, fmt.brl(vt))));
+          h('td'), cliDe ? h('td') : null, h('td'), h('td'), h('td', null, fmt.int(cups.length)), h('td', null, fmt.int(qtd)), h('td', null, fmt.brl(vt))));
         if (!aberto.has(kD) && !q) continue;
         for (const c of cups) {
           const kC = `${kD}|${c.k}`;
-          tb.append(h('tr', { class: 'lv1' }, h('td', { class: 'l sticky-col tree-l n1' }, h('span', { class: 'tree-cell' }, btn(kC, 'cupom ' + c.num), h('span', null, `Cupom ${c.num}`, varias ? h('small', { class: 'muted' }, ` · ${c.loja}`) : null))),
-            h('td', { class: 'l' }, hhmm(c.min)), h('td', { class: 'l' }, [...c.vend].join(', ') || '—'), h('td'), h('td'), h('td', null, fmt.int(c.qtd)), h('td', null, fmt.brl(c.vt))));
+          const nf = nfe.get(c.num + '|' + dia.d);
+          tb.append(h('tr', { class: 'lv1' }, h('td', { class: 'l sticky-col tree-l n1' }, h('span', { class: 'tree-cell' }, btn(kC, 'cupom ' + c.num), h('span', null, nf ? 'NF-e ' : 'Cupom ', c.num, varias ? h('small', { class: 'muted' }, ` · ${c.loja}`) : null),
+            nf ? h('a', { class: 'cli-tag t-nfe', href: '#nfsaida', title: `Nota fiscal eletrônica (modelo 55)${nf.natOp ? ' · ' + nf.natOp : ''}${nf.dest && nf.dest.nome ? ' · ' + nf.dest.nome : ''}. Clique para ver a nota, o XML e o DANFE.`, onclick: (e) => { e.stopPropagation(); state.abrirNFe = nf.chave; } }, 'nota fiscal ›') : null)),
+            h('td', { class: 'l' }, hhmm(c.min)), cliDe ? h('td', { class: 'l' }, docCupom(cliDe(c.itens[0]))) : null, h('td', { class: 'l' }, [...c.vend].join(', ') || '—'), h('td'), h('td'), h('td', null, fmt.int(c.qtd)), h('td', null, fmt.brl(c.vt))));
           if (!aberto.has(kC)) continue;
           for (const i of c.itens) {
             tb.append(h('tr', { class: 'lv2' + (casa(i) ? '' : ' fora') }, h('td', { class: 'l sticky-col tree-l n2 wrap' }, h('span', { class: 'tree-cell' }, h('span', { class: 'tree-sp' }), h('span', null, db.D.descricao[db.desc[i]]))),
-              h('td'), h('td', { class: 'l' }, db.D.vendedor[db.vend[i]]), h('td', { class: 'l' }, db.D.grupoC[db.grupoC[i]]), h('td'), h('td', null, fmt.int(db.qtd[i])), h('td', null, fmt.brl(db.vt[i]))));
+              h('td'), cliDe ? h('td') : null, h('td', { class: 'l' }, db.D.vendedor[db.vend[i]]), h('td', { class: 'l' }, db.D.grupoC[db.grupoC[i]]), h('td'), h('td', null, fmt.int(db.qtd[i])), h('td', null, fmt.brl(db.vt[i]))));
           }
         }
       }
-      if (!lista.length) tb.append(h('tr', null, h('td', { colspan: 7, class: 'l muted' }, 'Nada encontrado.')));
-      tbl.append(tb, h('tfoot', null, h('tr', null, h('td', { class: 'l sticky-col' }, `Total · ${fmt.int(lista.length)} dias`), h('td'), h('td'), h('td'), h('td', null, fmt.int(totC)), h('td', null, fmt.int(totI)), h('td', null, fmt.brl(totV)))));
+      if (!lista.length) tb.append(h('tr', null, h('td', { colspan: cliDe ? 8 : 7, class: 'l muted' }, 'Nada encontrado.')));
+      tbl.append(tb, h('tfoot', null, h('tr', null, h('td', { class: 'l sticky-col' }, `Total · ${fmt.int(lista.length)} dias`), h('td'), cliDe ? h('td') : null, h('td'), h('td'), h('td', null, fmt.int(totC)), h('td', null, fmt.int(totI)), h('td', null, fmt.brl(totV)))));
       mais.textContent = '';
       if (lista.length > limite) mais.append(`Mostrando ${limite} de ${lista.length} dias `, h('button', { type: 'button', class: 'btn', onclick: () => { limite += 31; paint(); } }, 'Mostrar mais dias'));
     }
-    const busca = h('input', { class: 'f-input', type: 'search', placeholder: 'Buscar produto, vendedor, cupom…' });
+    const busca = h('input', { class: 'f-input', type: 'search', placeholder: cliDe ? 'Buscar produto, vendedor, cupom, CPF…' : 'Buscar produto, vendedor, cupom…' });
     busca.addEventListener('input', TS.debounce(() => { q = TS.norm(busca.value.trim()); paint(); }, 250));
     paint();
     box.busca = busca;
+    // NF-e (modelo 55) com o mesmo número e data de um cupom: a linha vira "NF-e nº" com o link para a nota
+    box.marcarNFe = (notas) => { nfe = new Map(notas.filter((n) => n.situacao !== 'cancelada').map((n) => [n.numero + '|' + n.data, n])); if (tbl.isConnected) paint(); };
     box.tools = h('div', { class: 'table-tools', style: { marginBottom: '8px' } },
       h('button', { type: 'button', class: 'btn', onclick: () => { ordem.slice(0, limite).forEach((d) => aberto.add('d' + d.d)); paint(); } }, 'Abrir dias'),
       h('button', { type: 'button', class: 'btn', onclick: () => { ordem.slice(0, limite).forEach((d) => { aberto.add('d' + d.d); d.cupons.forEach((c) => aberto.add(`d${d.d}|${c.k}`)); }); paint(); } }, 'Expandir tudo'),
