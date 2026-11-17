@@ -236,7 +236,7 @@
             grupo('Perfil',
               campo('Aniversário', sel('aniv', [['', 'Qualquer mês'], ['atual', 'Mês atual'], ['proximo', 'Próximo mês'], ...MESES]), '"Mês atual" e "Próximo mês" acompanham a data nas campanhas recorrentes.'),
               campo('Mais atendido por', sel('vendedora', [['', 'Qualquer vendedora'], ...vendedoras.map((v) => [v, v])])),
-              campo('Loja preferida', sel('lojaPref', [['', 'Qualquer loja'], ['nossa', 'Esta loja'], ['outra', 'Outra loja da rede'], ...lojasRede.map((l) => [l, l])]), 'Loja onde o cliente mais comprou nos últimos 12 meses (esta loja pelas vendas; as outras pelas compras lançadas no FIXE). "Outra loja da rede" = clientes que compram mais em outra loja.'),
+              campo('Loja preferida', sel('lojaPref', [['', 'Qualquer loja'], ['nossa', (() => { const o = document.querySelector('#lojaSel option:checked, select.loja-sel option:checked'); const n = o && o.textContent.trim(); return n ? `Esta loja (${n})` : 'Esta loja'; })()], ['outra', 'Outra loja da rede'], ...lojasRede.map((l) => [l, l])]), 'Loja onde o cliente mais comprou nos últimos 12 meses (esta loja pelas vendas; as outras pelas compras lançadas no FIXE). "Outra loja da rede" = clientes que compram mais em outra loja.'),
               campo('Não incluir quem foi contatado há menos de (dias)', inp('semContato', '0 = incluir'), 'Evita mandar duas mensagens seguidas para a mesma pessoa.')),
             h('div', { class: 'cp-grupo' }, h('div', { class: 'fx-grupo-tit' }, 'Segmentos (qualquer um deles)'), segBox),
             h('div', { class: 'cp-grupo' }, h('div', { class: 'fx-grupo-tit' }, 'Mensagem'),

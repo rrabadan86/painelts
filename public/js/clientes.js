@@ -532,7 +532,11 @@
     if (c.cupons.length) out.push(fichaCliente(c, r), destaque && destaque.cpfNota ? null : acoesCliente(c));
     else {
       const f = blocoFidelidade(c);
-      out.push(h('div', { class: 'cli-ficha' }, f || h('div', { class: 'fi-bloco fi-largo' }, h('div', { class: 'fi-nota' }, 'Sem dados no FIXE.'))),
+      const item = (rot, val) => (val ? h('div', { class: 'fi' }, h('span', null, rot), h('b', null, val)) : null);
+      const tel = fmtTel(c.celular);
+      const contato = [item('Celular', tel), item('E-mail', c.email), item('Cidade', c.cidade), item('Aniversário', c.aniv ? `${c.aniv}${c.idade != null ? ` · ${c.idade} anos` : ''}` : null)].filter(Boolean);
+      out.push(h('div', { class: 'cli-ficha' }, contato.length ? h('div', { class: 'fi-bloco' }, h('div', { class: 'fi-tit' }, 'Contato (cadastro do FIXE)'), ...contato) : null,
+        f || h('div', { class: 'fi-bloco fi-largo' }, h('div', { class: 'fi-nota' }, 'Sem dados no FIXE.'))),
         h('p', { class: 'muted', style: { margin: '0 0 8px', fontSize: '12px' } }, 'Nenhuma compra com este CPF na nota foi encontrada nas vendas.'));
     }
     for (const dv of c.divergencias || []) out.push(h('div', { class: 'cupom-aviso' }, h('span', { class: 'cli-tag t-semfixe', style: { marginLeft: 0, marginRight: '6px' } }, 'CPF diferente no FIXE'), `Cupom ${dv.cupom} de ${fmt.date(TS.dayToIso(dv.day))} (${fmt.brl(dv.vt)}): compra feita no CPF `, cpfLink(dv.cpfNota, { cupom: dv.cupom, day: dv.day, cpfNota: dv.cpfNota }, c.cpf), ', mas foi usado o CPF deste cliente no FIXE.'));
@@ -615,7 +619,15 @@
   function clientePorCpf(cpf) {
     let c = TS.cli.porCPF && TS.cli.porCPF.get(cpf);
     const fxc = TS.cli.fxPorCpf ? TS.cli.fxPorCpf.get(cpf) : null;
-    if (!c) c = { cpf, empresa: cpf.length === 14, nome: (fxc && fxc.nome) || '', celular: '', wpp: null, cupons: [], divergencias: [], tags: new Set(), semVenda: 0 };
+    if (!c) {
+      // cliente só do FIXE (nenhuma compra com o CPF na nota): os dados vêm do cadastro (Base de leads), como nas campanhas
+      const info = (TS.cli.cad && TS.cli.cad.get(cpf)) || {};
+      const cel = digits(info.celular), local = cel.length >= 12 && cel.startsWith('55') ? cel.slice(2) : cel;
+      const nasc = info.nascimento || null;
+      c = { cpf, empresa: cpf.length === 14, nome: (info.nome || (fxc && fxc.nome) || '').trim(), celular: cel, wpp: local.length >= 10 && local.length <= 11 ? (TS.demo ? '#demo' : 'https://wa.me/55' + local) : null,
+        nascimento: nasc, idade: idade(nasc), aniv: nasc ? nasc.slice(8, 10) + '/' + nasc.slice(5, 7) : '', cidade: info.cidade || '', email: info.email || '',
+        cupons: [], divergencias: [], tags: new Set(), semVenda: 0 };
+    }
     if (!c.fx && fxc) c.fx = fxc;
     if (!c.tags) c.tags = new Set();
     const cupons = c.cupons;
@@ -988,7 +1000,7 @@
       item('Saldo de pontos', fmt.int(f.saldo), f.saldoFixe != null ? (() => { const em = f.saldoFixeEm ? new Date(f.saldoFixeEm) : null, quando = em && !isNaN(em) ? em.toLocaleDateString('pt-BR') + ' ' + em.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
         const de = f.saldoFixeOrigem === 'sinc' ? `lido no FIXE${quando ? ' em ' + quando : ''} (sincronização)` : `da Base de leads${quando ? ' de ' + quando : ''}`;
         return `Saldo oficial do FIXE: ${fmt.int(f.saldoFixeLido)} pts ${de}` + (f.saldoFixeDepois ? `, ${f.saldoFixeDepois > 0 ? '+' : '−'} ${fmt.int(Math.abs(f.saldoFixeDepois))} pts dos movimentos nos Logs depois disso.` : '. Os movimentos dos Logs depois disso entram na conta.'); })() : `Calculado pelos Logs: pontos ganhos que ainda valem (cada lote vale ${regras.validadeMeses} meses), menos resgates e expirações. Importe a Base de leads para ver o saldo oficial do FIXE.`),
-      f.saldoFixe == null && !(TS.db.fidelidade || []).some((b) => b.saldosFixe || (b.membros || []).some((x) => x.length > 2)) ? h('div', { class: 'fi-nota' }, 'Saldo calculado pelos Logs. Para trazer o saldo oficial do FIXE, use "Sincronizar saldos com o FIXE" em Configurações → Clientes e fidelidade pelo FIXE.') : null,
+      f.saldoFixe == null && !(TS.db.fidelidade || []).some((b) => b.saldosFixe || (b.membros || []).some((x) => x.length > 2)) ? h('div', { class: 'fi-nota' }, 'Saldo calculado pelos Logs. Para trazer o saldo oficial do FIXE, use "Sincronizar saldos com o FIXE" em Configurações → Integrações → FIXE.') : null,
       f.saldoFixe != null && f.saldoLogs != null && f.saldoLogs !== f.saldoFixe ? h('div', { class: 'fi-nota' }, `Só pelos Logs o saldo daria ${fmt.int(f.saldoLogs)} pts (${f.saldoFixe > f.saldoLogs ? '+' : ''}${fmt.int(f.saldoFixe - f.saldoLogs)} no FIXE). A diferença costuma ser ponto de compra antiga que os Logs não detalham, ajuste ou bônus, ou ponto vencido que o FIXE ainda não baixou. Veja o extrato abaixo.`) : null,
       f.prox != null ? item('Próximo vencimento', `${fmt.int(f.proxPts)} pts em ${d(f.prox)}`) : null,
       f.em30 ? item('Vencem em 30 dias', `${fmt.int(f.em30)} pts`) : null,
