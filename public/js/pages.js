@@ -570,6 +570,24 @@
       TS.kpi('Loja (sem EG)', fmt.pct(pctEG == null ? null : 1 - pctEG), 'do faturamento')));
 
     // ---- evolução mensal em árvore: Mês → Ano → Vendedor (variação contra o mesmo mês do ano anterior)
+    // média da franquia (anônima, todas as lojas): só para quem não é vendedora, com uma loja escolhida
+    const B0 = TS.baldes(f.de, f.ate);
+    const fr = (() => {
+      if (TS.eu?.perfil === 'vendedor' || !state.loja || state.loja === 'todas' || TS.demo) return null;
+      const a = de, b = Math.min(ate, db.maxDay), chave = `${state.loja}|${a}|${b}|${B0.tipo}`;
+      if (TS._redeComp && TS._redeComp.chave === chave) return TS._redeComp.r;
+      if (TS._redeCompPedido !== chave) {
+        TS._redeCompPedido = chave;
+        fetch(TS.api(`rede/comparativos?loja=${encodeURIComponent(state.loja)}&de=${a}&ate=${b}&tipo=${B0.tipo}`), { credentials: 'same-origin' }).then((r) => r.json()).then((r) => {
+          TS._redeComp = { chave, r: r.erro ? null : r };
+          if (state.page === 'comparativos' && TS._redeCompPedido === chave) TS.render();
+        }).catch(() => { TS._redeComp = { chave, r: null }; });
+      }
+      return null;
+    })();
+    const temFr = !!(fr && !fr.minimo);
+    const FR = 'Média da franquia';
+    const dsFr = (data) => TS.dsMedia(FR, data, { borderColor: '#6B3FA0', backgroundColor: '#6B3FA0', borderDash: [2, 3], borderWidth: 2.5 });
     const prevAll = semSemVendedor(TS.filtrar({ usarTamanho: true, ignorar: ['datas'] }));
     const porMesAll = TS.agrupar(prevAll, (i) => db.ym[i]);
     const tabM = arvoreMensal(base, porMesAll, { de, ate: Math.min(ate, db.maxDay) });
@@ -577,7 +595,8 @@
     const porVend = [...TS.agrupar(base, (i) => db.vend[i])].map(([v, idx]) => ({ nome: db.D.vendedor[v], ...R().mixPct(idx), vt: TS.soma(idx, 'vt') })).filter((r) => r.arom != null).sort((a, b) => b.vt - a.vt);
     const mixLoja = R().mixPct(base);
     if (porVend.length > 1 && mixLoja.arom != null) porVend.push({ nome: 'Média da loja', ...mixLoja, media: true });
-    const corMix = (cor) => porVend.map((r) => (r.media ? TS.alpha(cor, .5) : cor));
+    if (temFr && fr.mix) porVend.push({ nome: FR, ...fr.mix, media: true, franquia: true });
+    const corMix = (cor) => porVend.map((r) => (r.franquia ? TS.alpha(cor, .28) : r.media ? TS.alpha(cor, .5) : cor));
     const mixChart = TS.chart({
       type: 'bar',
       data: {
@@ -597,7 +616,7 @@
     root.append(h('div', { class: 'mt' },
       TS.cardWithTools('Evolução mensal', `Clique em + no mês para ver os anos e no ano para ver ${new Set(base.map((i) => db.loja[i])).size > 1 ? 'as lojas e, na loja, os vendedores' : 'os vendedores'} · variação contra o mesmo mês do ano anterior (mês incompleto: mesmos dias)`,
         tabM.tools, tabM)));
-    root.append(h('div', { class: 'mt' }, TS.card('Mix de vendas por vendedor', '% do faturamento de chás e acessórios · última barra = média da loja', mixChart)));
+    root.append(h('div', { class: 'mt' }, TS.card('Mix de vendas por vendedor', `% do faturamento de chás e acessórios · no fim: média da loja${temFr && fr.mix ? ' e da franquia' : ''}`, mixChart)));
 
     // ---- histórico de faturamento por loja
     // agrupado pelo período do filtro: semana/mês atual = por dia; até ~6 meses = por semana; ano ou mais = por mês
@@ -610,13 +629,12 @@
     });
     if (dsLoja.length > 1) dsLoja.push(TS.dsMedia('Média das lojas', TS.mediaSeries(dsLoja.map((d) => d.data))));
     else if (dsLoja.length === 1) { const m = TS.mediaPontos(dsLoja[0].data); dsLoja.push(TS.dsMedia({ dia: 'Média diária', semana: 'Média semanal', mes: 'Média mensal' }[B.tipo], dsLoja[0].data.map(() => m), { tension: 0 })); }
-    root.append(h('div', { class: 'mt' }, TS.card('Histórico de faturamento', `${B.porX[0].toUpperCase() + B.porX.slice(1)} e loja · tracejado = média · acompanha o período do filtro`, TS.chart({
+    if (temFr && dsLoja.length) dsLoja.push(dsFr(meses.map((k) => fr.hist[String(k)] ?? null)));
+    root.append(h('div', { class: 'mt' }, TS.card('Histórico de faturamento', `${B.porX[0].toUpperCase() + B.porX.slice(1)} e loja · tracejado = média${temFr ? ' · pontilhado = média da franquia (por loja)' : ''} · acompanha o período do filtro`, TS.chart({
       type: 'line', data: { labels: meses.map(B.rotulo), datasets: dsLoja },
       options: { plugins: { legend: { display: true }, tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${fmt.brl(c.raw)}` } } }, scales: { y: TS.axisBRL, x: TS.axisCat } },
     }))));
 
-    // ---- sua loja × rede (anônimo)
-    if (TS.eu?.perfil !== 'vendedor') root.append(h('div', { class: 'mt' }, TS.cartaoRede()));
 
     // ---- indicadores mensais por vendedor
     const met = state.compMetrica || 'tkm';
@@ -642,7 +660,8 @@
     const contagem = met === 'cupons' || /^p\d+$/.test(met);
     const mediaLoja = contagem ? TS.mediaSeries(dsV.map((d) => d.data)) : meses.map((m) => (porMesV.get(m) ? TS.indicadores(porMesV.get(m))[met] : null));
     if (dsV.length) dsV.push(TS.dsMedia('Média da loja', mediaLoja));
-    root.append(TS.section('Indicadores por vendedor'), TS.cardWithTools(`${B.nome} por vendedor`, `${/^p\d+$/.test(met) ? 'Pacotes de chá vendidos (unidades). ' : ''}Tracejado = média da loja${contagem ? ' (por vendedor)' : ''}.`,
+    if (temFr && dsV.length) dsV.push(dsFr(meses.map((k) => (fr.met[String(k)] || {})[met] ?? null)));
+    root.append(TS.section('Indicadores por vendedor'), TS.cardWithTools(`${B.nome} por vendedor`, `${/^p\d+$/.test(met) ? 'Pacotes de chá vendidos (unidades). ' : ''}Tracejado = média da loja${contagem ? ' (por vendedor)' : ''}.${temFr ? ` Pontilhado = média da franquia${contagem ? ' (por vendedor)' : ''}.` : ''}`,
       TS.seg(METRICAS, met, (v) => { state.compMetrica = v; TS.render(); }),
       TS.chart({
         type: 'line', data: { labels: meses.map(B.rotulo), datasets: dsV },
@@ -656,13 +675,19 @@
     const dsP = tams.map((t, k) => {
       const d = vendP.map(([, idx]) => idx.reduce((s, i) => s + (db.so[i] === t ? db.qtd[i] || 0 : 0), 0));
       const cor = ['#A9C5A0', '#2C5234', '#C9A227', '#8B5E3C', '#2F6F6A'][k];
-      d.push(d.length ? d.reduce((a, b) => a + b, 0) / d.length : 0); // média da loja (por vendedor)
-      return { label: rotTam(t), data: d, backgroundColor: d.map((_, j) => (j === d.length - 1 ? TS.alpha(cor, .45) : cor)), borderColor: cor, borderWidth: d.map((_, j) => (j === d.length - 1 ? 1.5 : 0)), borderRadius: 4 };
+      const nv = d.length;
+      d.push(nv ? d.reduce((a, b) => a + b, 0) / nv : 0); // média da loja (por vendedor)
+      if (temFr && fr.pacotes) d.push(fr.pacotes[t] || 0); // média da franquia (por vendedor)
+      return { label: rotTam(t), data: d, backgroundColor: d.map((_, j) => (j === nv + 1 ? TS.alpha(cor, .22) : j === nv ? TS.alpha(cor, .45) : cor)), borderColor: cor, borderWidth: d.map((_, j) => (j >= nv ? 1.5 : 0)), borderRadius: 4 };
     });
-    root.append(h('div', { class: 'mt' }, TS.card('Pacotes por tamanho', 'Unidades vendidas por vendedor no período · última coluna = média da loja por vendedor', vendP.length ? TS.chart({
-      type: 'bar', data: { labels: [...vendP.map(([v]) => db.D.vendedor[v]), 'Média da loja'], datasets: dsP },
-      options: { plugins: { legend: { labels: { generateLabels: (ch) => ch.data.datasets.map((d, i) => ({ text: d.label, fillStyle: d.borderColor, strokeStyle: d.borderColor, lineWidth: 0, datasetIndex: i, hidden: !ch.isDatasetVisible(i) })) } }, tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${c.dataIndex === c.dataset.data.length - 1 ? fmt.n1(c.raw) : fmt.int(c.raw)} un.` } } }, scales: { y: TS.axisNum(fmt.int), x: TS.axisCat } },
+    const comFrP = temFr && fr.pacotes;
+    root.append(h('div', { class: 'mt' }, TS.card('Pacotes por tamanho', `Unidades vendidas por vendedor no período · no fim: média da loja${comFrP ? ' e da franquia' : ''} por vendedor`, vendP.length ? TS.chart({
+      type: 'bar', data: { labels: [...vendP.map(([v]) => db.D.vendedor[v]), 'Média da loja', ...(comFrP ? [FR] : [])], datasets: dsP },
+      options: { plugins: { legend: { labels: { generateLabels: (ch) => ch.data.datasets.map((d, i) => ({ text: d.label, fillStyle: d.borderColor, strokeStyle: d.borderColor, lineWidth: 0, datasetIndex: i, hidden: !ch.isDatasetVisible(i) })) } }, tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${c.dataIndex >= vendP.length ? fmt.n1(c.raw) : fmt.int(c.raw)} un.` } } }, scales: { y: TS.axisNum(fmt.int), x: TS.axisCat } },
     }) : TS.empty())));
+    // ---- sua loja × rede (anônimo): último cartão da tela
+    if (TS.eu?.perfil !== 'vendedor') root.append(h('div', { class: 'mt' }, TS.cartaoRede()));
+    if (fr && fr.minimo) root.append(h('p', { class: 'muted', style: { fontSize: '12px' } }, `A média da franquia aparece nos gráficos quando pelo menos ${fr.minimo} lojas têm vendas no período (hoje: ${fr.lojas}).`));
   };
 
   // ======================= COMISSIONAMENTO =======================

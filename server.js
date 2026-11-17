@@ -630,6 +630,24 @@ app.get('/api/rede', async (req, res) => {
     res.json(r);
   } catch (e) { res.status(500).json({ erro: e.message }); }
 });
+// média da franquia nos gráficos de Vendas → Comparativos (anônima; mesmas regras do navegador)
+const RCOMP = require('./src/redecomp');
+const redeCompCache = new Map();
+app.get('/api/rede/comparativos', async (req, res) => {
+  if (req.perfil === 'vendedor') return res.status(403).json({ erro: 'Sem permissão.' });
+  const loja = req.lojas.find((l) => l.id === String(req.query.loja || ''));
+  const de = Number(req.query.de), ate = Number(req.query.ate), tipo = String(req.query.tipo || '');
+  if (!loja || !Number.isInteger(de) || !Number.isInteger(ate) || ate < de || ate - de > 4000 || !['dia', 'semana', 'mes'].includes(tipo)) return res.status(400).json({ erro: 'Pedido inválido.' });
+  try {
+    const partes = [];
+    for (const l of C.get().lojas) { try { partes.push(await dadosParaIndicadores(l)); } catch { /* loja sem dados */ } }
+    const chave = `${de}|${ate}|${tipo}|` + partes.map((p) => p.id + ':' + p.vendas.length).join(',');
+    let r = redeCompCache.get(chave);
+    if (!r) { r = RCOMP.comparativos(partes, de, ate, tipo); if (redeCompCache.size > 30) redeCompCache.clear(); redeCompCache.set(chave, r); }
+    res.set('Cache-Control', 'no-store');
+    res.json(r);
+  } catch (e) { res.status(500).json({ erro: e.message }); }
+});
 app.get('/api/alertas', async (req, res) => {
   if (req.perfil === 'vendedor') return res.json({ alertas: [] });
   const loja = req.lojas.find((l) => l.id === String(req.query.loja || ''));
