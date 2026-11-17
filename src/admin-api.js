@@ -832,6 +832,8 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
         n.teste = !t ? 'testando' : t.res === 'success' ? 'ok' : t.res === 'cancelled' ? 'pulado' : 'falhou';
         n.testeUrl = t && t.url;
       }
+      // versões mais antigas que a última testada sem resultado próprio (puladas ou de antes dos testes): valem pela mais nova
+      if (out.testes && out.alvo) { const i = out.novidades.findIndex((n) => n.sha === out.alvo); out.novidades.forEach((n, k) => { if (i >= 0 && k > i && n.teste === 'testando') n.teste = 'pulado'; }); }
       // sem verificação há mais de 20 min: o cron do atualizador parou
       out.parado = !out.verificado || Date.now() - Date.parse(out.verificado) > 20 * 60e3;
     }
