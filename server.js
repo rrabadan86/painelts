@@ -715,7 +715,13 @@ function acharNfDevolucao(loja, d) {
   const cands = NFS.lista(loja.id).notas.filter((n) => n.finalidade === 'Devolução' && n.situacao !== 'cancelada' && (n.data || '') >= d.em.slice(0, 10));
   for (const c of cands) {
     const n = NFS.nota(loja.id, c.chave);
-    if (n && (n.refs || []).includes(d.nfe.chaveRef)) {
+    // a nota tem de ser ESTA devolução: mesma nota referenciada e os mesmos produtos nas mesmas quantidades
+    // (uma devolução feita à mão no AppNext com outros itens não dispara o e-mail desta)
+    const qtdDev = new Map(), qtdNf = new Map();
+    for (const i of d.itens || []) qtdDev.set(String(i.cod).toUpperCase(), (qtdDev.get(String(i.cod).toUpperCase()) || 0) + Number(i.qtd));
+    for (const i of (n && n.itens) || []) qtdNf.set(String(i.cod).toUpperCase(), (qtdNf.get(String(i.cod).toUpperCase()) || 0) + Number(i.qtd));
+    const mesmosItens = qtdDev.size === qtdNf.size && [...qtdDev].every(([k, q]) => Math.abs((qtdNf.get(k) ?? -1) - q) < 1e-6);
+    if (n && (n.refs || []).includes(d.nfe.chaveRef) && mesmosItens) {
       DEV.atualizar(loja.id, d.id, (x) => { x.nfe = { ...x.nfe, chave: c.chave, numero: n.numero, autorizadaEm: n.autorizadaEm || n.emissao }; });
       return c.chave;
     }
