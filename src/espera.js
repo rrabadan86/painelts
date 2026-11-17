@@ -40,6 +40,15 @@ function codsEstoque(item, estoque) {
     const nD = ESQ(item.desc), nB = ESQ(base(item.desc));
     for (const i of itens) { const n = ESQ(i.desc); if ((i.un === 'Kg' && n === nB) || n === nD) out.add(String(i.cod)); }
   }
+  // pelo nome solto ("valeriana", "valeriana 500g"): todas as palavras no nome do item; chá a granel (kg) primeiro
+  if (!out.size) {
+    const pal = ESQ(base(item.desc)).split(' ').filter((w) => w.length >= 3 && !/^(cha|chas|de|da|do|com)$/.test(w));
+    if (pal.length) {
+      const cand = itens.filter((i) => { const n = ' ' + ESQ(i.desc) + ' '; return pal.every((w) => n.includes(' ' + w + ' ') || n.includes(' ' + w)); });
+      const kg = cand.filter((i) => i.un === 'Kg');
+      for (const i of (kg.length ? kg : cand).slice(0, 3)) out.add(String(i.cod));
+    }
+  }
   return [...out];
 }
 const qtdEstoque = (cods, estoque) => cods.reduce((s, c) => { const i = ((estoque && estoque.itens) || []).find((x) => String(x.cod) === c); return s + (i ? Math.max(0, i.qtd || 0) : 0); }, 0);
@@ -52,10 +61,11 @@ function validarNovo(b, estoque) {
   if (!nome) return { erro: 'Informe o nome do cliente.' };
   if (cel.length < 10) return { erro: 'Informe o celular com DDD (para avisar pelo WhatsApp).' };
   if (cpf && cpf.length !== 11 && cpf.length !== 14) return { erro: 'CPF inválido.' };
-  const itens = (Array.isArray(b.itens) ? b.itens : []).slice(0, 10).map((i) => ({ desc: txt(i && i.desc, 120), cod: txt(i && i.cod, 30) || null, qtd: Math.max(1, Math.min(99, Math.round(+(i && i.qtd) || 1))) })).filter((i) => i.desc);
+  const itens = (Array.isArray(b.itens) ? b.itens : []).slice(0, 10).map((i) => ({ desc: txt(i && i.desc, 120), cod: txt(i && i.cod, 30) || null, qtd: Math.max(1, Math.min(99, Math.round(+(i && i.qtd) || 1))), generico: !!(i && i.generico) })).filter((i) => i.desc);
   if (!itens.length) return { erro: 'Escolha pelo menos um produto.' };
   const cods = [...new Set(itens.flatMap((i) => codsEstoque(i, estoque)))];
-  return { ok: { cliente: { cpf: cpf || null, nome, celular: cel }, itens, obs: txt(b.obs, 300), estoqueCods: cods, zerado: cods.length ? qtdEstoque(cods, estoque) <= 0 : null } };
+  const nomes = cods.map((c) => { const i = ((estoque && estoque.itens) || []).find((x) => String(x.cod) === c); return i ? `${i.desc}${i.un === 'Kg' ? ' (kg)' : ''}` : c; });
+  return { ok: { cliente: { cpf: cpf || null, nome, celular: cel }, itens, obs: txt(b.obs, 300), estoqueCods: cods, estoqueNomes: nomes, zerado: cods.length ? qtdEstoque(cods, estoque) <= 0 : null } };
 }
 
 function criar(id, b, por, estoque) {
@@ -115,7 +125,11 @@ function avaliar(id, ctx) {
     if (p.st === 'esperando') {
       const desde = p.criadoEm.slice(0, 10);
       const nf = notas.filter((n) => n.dia >= desde && n.itens.some((i) => (p.estoqueCods || []).includes(String(i.cod)))).sort((a, b) => (a.dia < b.dia ? -1 : 1))[0];
-      if (nf) { p.chegou = { em: new Date(nf.dia + 'T12:00:00-03:00').toISOString(), nf: `${nf.nf ?? ''}${nf.serie ? '/' + nf.serie : ''}`, fornecedor: nf.fornecedor || '', origem: 'nota' }; }
+      if (nf) {
+        const vi = nf.itens.filter((i) => (p.estoqueCods || []).includes(String(i.cod)));
+        const veio = vi.map((i) => `${String(i.un || '').toLowerCase() === 'kg' ? String(i.qtd).replace('.', ',') + ' kg' : (i.qtd ?? '') + ' ' + String(i.un || 'un').toLowerCase()} de ${i.nome}`).join(', ');
+        p.chegou = { em: new Date(nf.dia + 'T12:00:00-03:00').toISOString(), nf: `${nf.nf ?? ''}${nf.serie ? '/' + nf.serie : ''}`, fornecedor: nf.fornecedor || '', origem: 'nota', veio };
+      }
       else if (p.zerado && estEm > Date.parse(p.criadoEm) && (p.estoqueCods || []).length && qtdEstoque(p.estoqueCods, ctx.estoque) > 0) p.chegou = { em: new Date(estEm).toISOString(), origem: 'estoque' };
       if (p.chegou) { p.st = 'chegou'; mudou = true; novos.push(p); }
     }
@@ -123,8 +137,9 @@ function avaliar(id, ctx) {
       const desde = String((p.chegou && p.chegou.em) || p.criadoEm).slice(0, 10);
       const cs = (compras.get(p.cliente.cpf) || []).filter((c) => c.data >= desde).sort((a, b) => (a.data < b.data ? -1 : 1));
       if (cs.length) {
-        const nomes = p.itens.map((i) => ESQ(i.desc));
-        const levouEm = cs.find((c) => c.cupom != null && (itensCupom.get(c.cupom + '|' + c.data) || []).some((n) => nomes.includes(n)));
+        const nomes = p.itens.map((i) => ESQ(i.desc)), bases = p.itens.map((i) => ESQ(base(i.desc)));
+        const casa = (n) => nomes.includes(n) || bases.some((b) => b && (ESQ(base(n)) === b || (' ' + n + ' ').includes(' ' + b + ' ')));
+        const levouEm = cs.find((c) => c.cupom != null && (itensCupom.get(c.cupom + '|' + c.data) || []).some(casa));
         const c = levouEm || cs[0];
         p.compra = { data: c.data, cupom: c.cupom, levou: !!levouEm, fixe: !!c.fixe };
         p.st = 'comprou'; p.fim = new Date().toISOString(); mudou = true;

@@ -773,12 +773,15 @@ app.get('/api/espera/produtos', async (req, res) => {
   for (const i of (TAB.resumo(loja.id) || { itens: [] }).itens || []) if (i.desc && i.preco !== 0.01) m.set(ESP.ESQ(i.desc), { desc: i.desc, cod: String(i.cod), vendidos: 0 });
   try { for (const v of (await dadosLoja(loja)).raw.vendas) { const k = ESP.ESQ(v.descricao); const a = m.get(k) || m.set(k, { desc: v.descricao, cod: v.cod != null ? String(v.cod) : null, vendidos: 0 }).get(k); a.vendidos += v.qtd || 0; if (!a.cod && v.cod != null) a.cod = String(v.cod); } } catch { /* ok */ }
   const est = ES.atual(loja.id);
-  const achou = [...m.entries()].filter(([k]) => k.includes(q)).map(([, x]) => x).sort((a, b) => b.vendidos - a.vendidos).slice(0, 12).map((x) => {
+  // chá a granel sem o pacote ("valeriana"): o item do estoque em kg, que vale para qualquer tamanho
+  const gen = ((est && est.itens) || []).filter((i) => i.un === 'Kg' && ESP.ESQ(i.desc).includes(q)).slice(0, 4)
+    .map((i) => ({ desc: i.desc, cod: String(i.cod), generico: true, vendidos: 0, falta: !(i.qtd > 0) }));
+  const achou0 = [...m.entries()].filter(([k]) => k.includes(q)).map(([, x]) => x).sort((a, b) => b.vendidos - a.vendidos).slice(0, 12).map((x) => {
     const cods = ESP.codsEstoque(x, est);
     const qtd = cods.length ? cods.reduce((s, c) => { const i = ((est && est.itens) || []).find((y) => String(y.cod) === c); return s + (i ? Math.max(0, i.qtd || 0) : 0); }, 0) : null;
     return { desc: x.desc, cod: x.cod, vendidos: Math.round(x.vendidos), falta: qtd == null ? null : qtd <= 0 };
   });
-  res.json({ produtos: achou });
+  res.json({ produtos: [...gen, ...achou0.filter((x) => !gen.some((g) => ESP.ESQ(g.desc) === ESP.ESQ(x.desc)))] });
 });
 // clientes para escolher (nome, CPF ou celular): no máximo 8, só com 3+ letras ou números
 app.get('/api/espera/clientes', async (req, res) => {

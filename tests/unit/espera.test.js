@@ -10,12 +10,33 @@ process.env.CONFIG_FILE = path.join(tmp, 'lojas.json');
 fs.writeFileSync(process.env.CONFIG_FILE, JSON.stringify({ lojas: [{ id: 'l1', nome: 'Loja 1' }], usuarios: {} }));
 const E = require('../../src/espera');
 
-const estoque = { em: '2026-11-01T10:00:00Z', itens: [{ cod: '27010', desc: 'African Sunset', un: 'Kg', qtd: 0 }, { cod: '5001', desc: 'Caneca Uki', un: 'Un', qtd: 0 }] };
+const estoque = { em: '2026-11-01T10:00:00Z', itens: [{ cod: '27010', desc: 'African Sunset', un: 'Kg', qtd: 0 }, { cod: '5001', desc: 'Caneca Uki', un: 'Un', qtd: 0 },
+  { cod: '31020', desc: 'Valeriana Garden', un: 'Kg', qtd: 0 }, { cod: '31029', desc: 'Valeriana Garden - Sache Piramidal', un: 'Un', qtd: 4 }] };
 
 test('pacote de chá liga ao chá do estoque em kg (código + tamanho, ou pelo nome)', () => {
   assert.deepStrictEqual(E.codsEstoque({ cod: '270102', desc: 'African Sunset 100G' }, estoque), ['27010']);
   assert.deepStrictEqual(E.codsEstoque({ cod: null, desc: 'African Sunset 250G' }, estoque), ['27010']);
   assert.deepStrictEqual(E.codsEstoque({ cod: '5001', desc: 'Caneca Uki' }, estoque), ['5001']);
+});
+
+test('cliente sem o pacote ("valeriana") ou com o tamanho e sem código ("Valeriana 500g"): liga ao chá em kg', () => {
+  assert.deepStrictEqual(E.codsEstoque({ desc: 'valeriana' }, estoque), ['31020']);
+  assert.deepStrictEqual(E.codsEstoque({ desc: 'Valeriana 500g' }, estoque), ['31020']);
+  assert.deepStrictEqual(E.codsEstoque({ desc: 'Valeriana Garden 500G' }, estoque), ['31020']);
+});
+
+test('pediu "valeriana" e comprou Valeriana Garden 100G: conta como levou o produto', () => {
+  const a = E.criar('l1', { cliente: { nome: 'Cris', celular: '62977776666', cpf: '11122233344' }, itens: [{ desc: 'valeriana', generico: true }] }, 'gabi', estoque);
+  assert.deepStrictEqual(a.ok.estoqueNomes, ['Valeriana Garden (kg)']);
+  const hoje = new Date().toISOString().slice(0, 10);
+  const notas = { notas: [{ nf: 99, entrada: hoje, itens: [{ cod: '31020', nome: 'Valeriana Garden', un: 'Kg', qtd: 2 }] }] };
+  E.avaliar('l1', { notas, estoque, xml: [], fixe: [], vendas: [] });
+  const p1 = E.ler('l1').pedidos.find((p) => p.id === a.ok.id);
+  assert.strictEqual(p1.st, 'chegou');
+  assert.match(p1.chegou.veio, /2 kg de Valeriana Garden/);
+  E.avaliar('l1', { notas, estoque, xml: [{ cpf: '11122233344', cupom: 9001, data: hoje }], fixe: [], vendas: [{ cupom: 9001, data: hoje, descricao: 'Valeriana Garden 100G' }] });
+  const p2 = E.ler('l1').pedidos.find((p) => p.id === a.ok.id);
+  assert.deepStrictEqual([p2.st, p2.compra.levou], ['comprou', true]);
 });
 
 test('ciclo: esperando → chegou (NF) → avisado → comprou; e "não comprou" depois de 7 dias', () => {

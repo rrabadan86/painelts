@@ -1849,3 +1849,4 @@ body.com-camada .ped-barra { display: none; }
   .esp-acoes .btn { flex: 1 1 auto; text-align: center; min-height: 40px; }
   .esp-modelo { max-width: none; }
 }
+.esp-sug-gen em, .esp-chip em { font-style: normal; font-weight: 500; color: #7a5600; font-size: 12px; }

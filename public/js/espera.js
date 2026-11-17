@@ -97,7 +97,7 @@
       if (!TS.demo) window.open(u, '_blank', 'noopener');
       fazer('avisado');
     } }, rot);
-    const sit = p.st === 'chegou' ? `Chegou ${dataTxt(p.chegou.em)}${p.chegou.nf ? ` na NF ${p.chegou.nf}` : p.chegou.origem === 'estoque' ? ' (o estoque voltou)' : ' (marcado à mão)'}`
+    const sit = p.st === 'chegou' ? `Chegou ${dataTxt(p.chegou.em)}${p.chegou.nf ? ` na NF ${p.chegou.nf}${p.chegou.veio ? ` (${p.chegou.veio})` : ''}` : p.chegou.origem === 'estoque' ? ' (o estoque voltou)' : ' (marcado à mão)'}`
       : p.st === 'esperando' ? `Esperando há ${Math.max(0, Math.round((Date.now() - Date.parse(p.criadoEm)) / 864e5))} dias`
         : p.st === 'avisado' ? `Avisado ${quandoTxt(p.avisado.em)} por ${p.avisado.por || '—'} · ${p.cliente.cpf ? `o painel confere a compra até ${dataTxt(new Date(Date.parse(p.avisado.em) + d.dias * 864e5).toISOString())}` : 'sem CPF: o painel não consegue conferir a compra'}`
           : p.st === 'comprou' ? `Comprou em ${fmt.date(p.compra.data)}${p.compra.cupom ? ` (cupom ${p.compra.cupom})` : p.compra.fixe ? ' (pontos no FIXE)' : ''} · ${p.compra.levou ? 'levou o produto pedido ✓' : 'comprou outra coisa'}`
@@ -115,6 +115,9 @@
       h('div', { class: 'esp-prod' }, nomesItens(p)),
       h('div', { class: 'esp-sit' }, sit),
       h('div', { class: 'esp-meta muted' }, `Anotado ${quandoTxt(p.criadoEm)} por ${p.por || '—'}${p.obs ? ' · ' + p.obs : ''}`),
+      p.st === 'esperando' ? (p.estoqueCods && p.estoqueCods.length
+        ? h('div', { class: 'esp-meta muted', title: 'Quando uma nota de entrada trouxer este item, o pedido passa para "Chegaram"' }, `Acompanhando no estoque: ${(p.estoqueNomes || p.estoqueCods).join(', ')}`)
+        : TS.demo ? null : h('div', { class: 'esp-aviso' }, 'Não achei este produto no estoque: quando chegar, use "Já chegou".')) : null,
       p.st === 'chegou' ? msg : null,
       acoes.length ? h('div', { class: 'esp-acoes' }, ...acoes) : null);
   }
@@ -181,7 +184,7 @@
     const pintarChips = () => chips.replaceChildren(...f.itens.map((it) => h('span', { class: 'cp-prod-chip esp-chip' },
       h('button', { type: 'button', 'aria-label': 'menos', onclick: () => { it.qtd = Math.max(1, it.qtd - 1); pintarChips(); } }, '−'), h('b', null, `${it.qtd}×`),
       h('button', { type: 'button', 'aria-label': 'mais', onclick: () => { it.qtd = Math.min(99, it.qtd + 1); pintarChips(); } }, '＋'),
-      h('span', null, it.desc), it.falta === false ? h('small', { class: 'esp-tem', title: 'O estoque do painel mostra este produto disponível' }, 'tem no estoque') : null,
+      h('span', null, it.desc, it.generico ? h('em', null, ' · qualquer tamanho') : null), it.falta === false ? h('small', { class: 'esp-tem', title: 'O estoque do painel mostra este produto disponível' }, 'tem no estoque') : null,
       h('button', { type: 'button', 'aria-label': 'Tirar', onclick: () => { f.itens = f.itens.filter((x) => x !== it); pintarChips(); } }, '✕'))));
     let tP;
     buscaP.addEventListener('input', () => {
@@ -190,11 +193,16 @@
       if (q.length < 2) { sugP.hidden = true; return; }
       tP = setTimeout(async () => {
         let lista = [];
-        if (TS.demo) { const qn = TS.norm(q); lista = [...new Set(TS.db.D.descricao)].filter((x) => x && TS.norm(x).includes(qn)).slice(0, 10).map((x) => ({ desc: x, cod: null, vendidos: 0, falta: null })); }
+        if (TS.demo) {
+          const qn = TS.norm(q), descs = [...new Set(TS.db.D.descricao)].filter((x) => x && TS.norm(x).includes(qn));
+          const bases = [...new Set(descs.filter((x) => / \d+ ?G$/i.test(x)).map((x) => x.replace(/\s*\d+\s*G$/i, '')))].slice(0, 3);
+          lista = [...bases.map((x) => ({ desc: x, cod: null, generico: true, falta: true })), ...descs.slice(0, 9).map((x) => ({ desc: x, cod: null, vendidos: 0, falta: null }))];
+        }
         else { try { lista = (await (await fetch(TS.api(`espera/produtos?loja=${encodeURIComponent(loja)}&q=${encodeURIComponent(q)}`), { credentials: 'same-origin' })).json()).produtos || []; } catch { lista = []; } }
-        sugP.replaceChildren(...[...lista.map((x) => h('button', { type: 'button', class: 'cp-sug-it', onmousedown: (e) => { e.preventDefault(); if (!f.itens.some((i) => i.desc === x.desc)) f.itens.push({ desc: x.desc, cod: x.cod, qtd: 1, falta: x.falta }); buscaP.value = ''; sugP.hidden = true; pintarChips(); buscaP.focus(); } },
-          h('span', null, x.desc), h('small', null, x.falta === true ? 'em falta' : x.falta === false ? 'tem no estoque' : x.vendidos ? `${fmt.int(x.vendidos)} vendidos` : ''))),
-        !lista.length ? h('div', { class: 'cp-sug-vazio' }, 'Nenhum produto com esse nome.') : null].filter(Boolean));
+        const add = (x) => { if (!f.itens.some((i) => i.desc === x.desc)) f.itens.push({ desc: x.desc, cod: x.cod, qtd: 1, falta: x.falta, generico: !!x.generico }); buscaP.value = ''; sugP.hidden = true; pintarChips(); buscaP.focus(); };
+        sugP.replaceChildren(...[...lista.map((x) => h('button', { type: 'button', class: 'cp-sug-it' + (x.generico ? ' esp-sug-gen' : ''), onmousedown: (e) => { e.preventDefault(); add(x); } },
+          h('span', null, x.desc, x.generico ? h('em', null, ' · qualquer tamanho') : null), h('small', null, [x.falta === true ? 'em falta' : x.falta === false ? 'tem no estoque' : '', x.vendidos ? `${fmt.int(x.vendidos)} vendidos` : ''].filter(Boolean).join(' · ')))),
+        h('button', { type: 'button', class: 'cp-sug-it cp-sug-todos', onmousedown: (e) => { e.preventDefault(); add({ desc: q, cod: null, generico: true }); } }, h('span', null, `Anotar "${q}" como o cliente falou`), h('small', null, 'o painel procura no estoque pelo nome'))].filter(Boolean));
         sugP.hidden = false;
       }, 250);
     });
@@ -208,7 +216,7 @@
       if (!f.itens.length) { erro.textContent = 'Escolha pelo menos um produto.'; return; }
       if (TS.demo) { erro.textContent = 'Na apresentação nada é salvo.'; return; }
       salvar.disabled = true;
-      try { const r = await api('POST', 'espera', { loja, cliente: cli, itens: f.itens.map(({ desc, cod, qtd }) => ({ desc, cod, qtd })), obs: obs.value }); aoSalvar(r.pedido); }
+      try { const r = await api('POST', 'espera', { loja, cliente: cli, itens: f.itens.map(({ desc, cod, qtd, generico }) => ({ desc, cod, qtd, generico })), obs: obs.value }); aoSalvar(r.pedido); }
       catch (e) { erro.textContent = e.message; salvar.disabled = false; }
     } }, 'Salvar na lista de espera');
     return h('div', { class: 'card esp-form mt' },
