@@ -177,7 +177,15 @@ DEVOLVER = "async (p) => {" + JS_BASE.replace("acha('salvarRascunho')", "acha('m
     if (i.qtd > Number(it.quantidade) + 1e-9) erro(`o item ${i.codigo} tem ${it.quantidade} na nota e a devolução pede ${i.qtd}`);
   }
   S.itens.splice(0, S.itens.length, ...S.itens.filter((i) => pedidos.has(String(i.codigo).toUpperCase())));
-  for (const it of S.itens) tela.$set(it, 'quantidade', pedidos.get(String(it.codigo).toUpperCase()).qtd);
+  // nova quantidade: o valor bruto e os rateios (frete, seguro, despesas, desconto) da nota de entrada vão na proporção
+  for (const it of S.itens) {
+    const novo = pedidos.get(String(it.codigo).toUpperCase()).qtd, orig = Number(it.quantidade) || novo, f = novo / orig;
+    const r2 = (v) => Math.round((Number(v) || 0) * f * 100) / 100;
+    tela.$set(it, 'quantidade', novo);
+    tela.$set(it, 'valorTotalBruto', Math.round(novo * Number(it.valorUnitario) * 100) / 100);
+    for (const k of ['valorDescontoProporcionalPedido', 'valorDescontoProporcional', 'valorFreteProporcional', 'valorSeguroProporcional', 'valorDespesasAcessoriasProporcional']) if (k in it) tela.$set(it, k, r2(it[k]));
+    tela.$set(it, 'valorTotalLiquido', Math.round((it.valorTotalBruto - (Number(it.valorDescontoProporcionalPedido) || 0)) * 100) / 100);
+  }
   const m19 = (sl.motivosMovimentacao || []).find((x) => String(x.codigo) === '19') || erro('motivo [19] Devolução ao Fornecedor não existe');
   set('motivoMovimentacaoId', m19.id); await espera(1500);
   if (!(sl.cfops || []).length) sl.cfops = tela.buscarSequenciafiscalPorMotivoMovimentacao(m19.id);
