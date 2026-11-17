@@ -1001,7 +1001,8 @@
         const de = f.saldoFixeOrigem === 'sinc' ? `lido no FIXE${quando ? ' em ' + quando : ''} (sincronização)` : `da Base de leads${quando ? ' de ' + quando : ''}`;
         return `Saldo oficial do FIXE: ${fmt.int(f.saldoFixeLido)} pts ${de}` + (f.saldoFixeDepois ? `, ${f.saldoFixeDepois > 0 ? '+' : '−'} ${fmt.int(Math.abs(f.saldoFixeDepois))} pts dos movimentos nos Logs depois disso.` : '. Os movimentos dos Logs depois disso entram na conta.'); })() : `Calculado pelos Logs: pontos ganhos que ainda valem (cada lote vale ${regras.validadeMeses} meses), menos resgates e expirações. Importe a Base de leads para ver o saldo oficial do FIXE.`),
       f.saldoFixe == null && !(TS.db.fidelidade || []).some((b) => b.saldosFixe || (b.membros || []).some((x) => x.length > 2)) ? h('div', { class: 'fi-nota' }, 'Saldo calculado pelos Logs. Para trazer o saldo oficial do FIXE, use "Sincronizar saldos com o FIXE" em Configurações → Integrações → FIXE.') : null,
-      f.saldoFixe != null && f.saldoLogs != null && f.saldoLogs !== f.saldoFixe ? h('div', { class: 'fi-nota' }, `Só pelos Logs o saldo daria ${fmt.int(f.saldoLogs)} pts (${f.saldoFixe > f.saldoLogs ? '+' : ''}${fmt.int(f.saldoFixe - f.saldoLogs)} no FIXE). A diferença costuma ser ponto de compra antiga que os Logs não detalham, ajuste ou bônus, ou ponto vencido que o FIXE ainda não baixou. Veja o extrato abaixo.`) : null,
+      f.saldoFixe != null && f.saldoLogs != null && f.saldoFixe > f.saldoLogs ? h('div', { class: 'fi-nota' }, `${fmt.int(f.saldoFixe - f.saldoLogs)} dos ${fmt.int(f.saldoFixe)} pts vêm de compras antigas importadas no FIXE (antes dos pontos por produto). Esses pontos não têm data de vencimento no FIXE: nos Logs, só vencem os pontos lançados no FIXE, 12 meses depois de cada compra.`)
+      : f.saldoFixe != null && f.saldoLogs != null && f.saldoLogs !== f.saldoFixe ? h('div', { class: 'fi-nota' }, `Só pelos Logs o saldo daria ${fmt.int(f.saldoLogs)} pts (${f.saldoFixe > f.saldoLogs ? '+' : ''}${fmt.int(f.saldoFixe - f.saldoLogs)} no FIXE). A diferença costuma ser ponto de compra antiga que os Logs não detalham, ajuste ou bônus, ou ponto vencido que o FIXE ainda não baixou. Veja o extrato abaixo.`) : null,
       f.prox != null ? item('Próximo vencimento', `${fmt.int(f.proxPts)} pts em ${d(f.prox)}`) : null,
       f.em30 ? item('Vencem em 30 dias', `${fmt.int(f.em30)} pts`) : null,
       item('Ganhos · resgatados · expirados', `${fmt.int(f.ganhos)} · ${fmt.int(f.resgatados)} · ${fmt.int(f.expirados)}`),
@@ -1226,6 +1227,11 @@
     // "Como funciona" vai para o ⓘ do título (texto com as lojas desta base)
     const ic = card.querySelector('.card-title .dica-i');
     if (ic) ic.replaceWith(TS.dica(comoFunciona));
+    // pontos antigos importados no FIXE: não vencem (o FIXE só faz vencer os pontos lançados por ele)
+    { let n = 0, pts = 0;
+      for (const f of (TS.cli.fxPorCpf || new Map()).values()) if (f.saldoFixe != null && f.saldoLogs != null && f.saldoFixe > f.saldoLogs) { n++; pts += f.saldoFixe - f.saldoLogs; }
+      if (n) card.append(h('div', { class: 'notice fx-antigos' }, h('b', null, `${fmt.int(pts)} pts de ${fmt.int(n)} clientes vêm de compras antigas importadas no FIXE e não vencem. `),
+        'Nos Logs, o FIXE só faz vencer os pontos lançados por ele (12 meses depois de cada compra); o saldo importado ficou sem data. Por isso esses clientes não entram em "Pontos vencendo". Vale confirmar com a FIXE se esse saldo deveria vencer.')); }
     card.classList.add('fx-card');
     return card;
   }
