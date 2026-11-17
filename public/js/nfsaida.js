@@ -12,8 +12,8 @@
   /** CPF do destinatário que existe nos clientes: clicar abre a ficha */
   const docLink = (d) => {
     if (!d || !d.doc) return '—';
-    const temFicha = d.tipoDoc === 'CPF' && TS.cliApi && TS.cli && TS.cli.porCPF && (TS.cli.porCPF.has(d.doc) || (TS.cli.fxPorCpf && TS.cli.fxPorCpf.has(d.doc)));
-    return temFicha ? h('button', { type: 'button', class: 'cpf-link', title: 'Abrir a ficha do cliente', onclick: (e) => { e.stopPropagation(); TS.cliApi.abrirClientes([d.doc]); } }, docTxt(d.doc)) : docTxt(d.doc);
+    const temFicha = (d.tipoDoc === 'CPF' || d.tipoDoc === 'CNPJ') && TS.cliApi && TS.cli && TS.cli.porCPF && (TS.cli.porCPF.has(d.doc) || (TS.cli.fxPorCpf && TS.cli.fxPorCpf.has(d.doc)));
+    return temFicha ? h('button', { type: 'button', class: 'cpf-link', title: 'Abrir o histórico do cliente', onclick: (e) => { e.stopPropagation(); TS.cliApi.abrirClientes([d.doc]); } }, docTxt(d.doc)) : docTxt(d.doc);
   };
   const situ = (s) => h('span', { class: 'prc-st ' + (s === 'cancelada' ? 'prc-st-n nf-cancelada' : 'prc-st-v') }, s === 'cancelada' ? 'cancelada' : 'autorizada');
 
@@ -61,7 +61,6 @@
         { key: 'itens', label: 'Itens', fmt: fmt.int },
         { key: 'valor', label: 'Valor', fmt: (v) => (v == null ? '—' : fmt.brl(v)), cls: (r) => (r.situacao === 'cancelada' ? 'nf-riscado' : '') },
         { key: 'acoes', label: '', align: 'l', sortVal: () => 0, render: (r) => h('span', { class: 'nf-acoes' },
-          h('button', { type: 'button', class: 'btn prc-ver', onclick: () => abrir(loja, r.chave) }, 'Ver'),
           h('a', { class: 'btn prc-ver', href: url('danfe', loja, r.chave), target: '_blank', rel: 'noopener', title: 'DANFE para imprimir ou salvar em PDF' }, 'DANFE'),
           TS.demo ? null : h('a', { class: 'btn prc-ver', href: url('xml', loja, r.chave), title: 'Baixar o XML da nota' }, 'XML')) },
       ],
@@ -72,7 +71,7 @@
       empty: fil === 'per' ? 'Nenhuma NF-e no período do filtro. Veja "Todas".' : 'Nenhuma nota.',
     });
     const canc = rows.length - ativas.length;
-    return TS.cardWithTools('Notas de saída (NF-e)', `NF-e emitidas pela loja, lidas dos XMLs do AppNext. O total soma só as autorizadas${canc ? ` (${fmt.int(canc)} cancelada${canc > 1 ? 's' : ''} fora da soma)` : ''}. Clique na nota para ver os itens; "DANFE" abre a nota pronta para imprimir ou salvar em PDF.`,
+    return TS.cardWithTools('Notas de saída (NF-e)', `NF-e emitidas pela loja, lidas dos XMLs do AppNext. O total soma só as autorizadas${canc ? ` (${fmt.int(canc)} cancelada${canc > 1 ? 's' : ''} fora da soma)` : ''}. Clique no número da nota para ver os itens; "DANFE" abre a nota pronta para imprimir ou salvar em PDF.`,
       h('div', { class: 'est-tools' }, tab.searchBox && (tab.searchBox.classList.add('est-busca'), tab.searchBox),
         TS.seg(Object.entries(FIL).map(([k, [t, fn]]) => [`${t} (${fmt.int(todas.filter(fn).length)})`, k]), fil, (v) => { state.nfsFil = v; TS.render(); })),
       tab);
@@ -108,7 +107,7 @@
       total: { desc: `${fmt.int((n.itens || []).length)} itens`, vProd: (n.itens || []).reduce((a, r) => a + (r.vProd || 0), 0), vDesc: (n.itens || []).reduce((a, r) => a + (r.vDesc || 0), 0) },
     });
     const end = d.end ? [d.end.linha, [d.end.mun, d.end.uf].filter(Boolean).join(' - '), d.end.cep ? 'CEP ' + d.end.cep : ''].filter(Boolean).join(' · ') : '';
-    card.replaceChildren(card.firstChild,
+    card.replaceChildren(...[card.firstChild,
       h('div', { class: 'card-title' }, `NF-e ${n.numero ?? '—'}${n.serie ? ' / série ' + n.serie : ''} `, situ(n.situacao)),
       h('div', { class: 'card-sub' }, [n.natOp, n.tipo, n.finalidade && n.finalidade !== 'Normal' ? n.finalidade : null].filter(Boolean).join(' · ')),
       h('div', { class: 'prc-resumo' },
@@ -123,6 +122,7 @@
         TS.demo ? h('span', { class: 'muted' }, 'Na apresentação as notas são fictícias e não têm XML.') : h('a', { class: 'btn', href: url('xml', loja, chave) }, 'Baixar XML'),
         h('button', { type: 'button', class: 'btn', title: 'Copiar a chave de acesso', onclick: (e) => { navigator.clipboard?.writeText(n.chave).then(() => { e.target.textContent = 'Chave copiada ✓'; }); } }, 'Copiar chave')),
       h('div', { class: 'f-label mt' }, 'Produtos da nota'),
-      tab);
+      tab].filter(Boolean));
   }
+  TS.abrirNFe = (chave, loja = state.loja) => abrir(loja, chave);
 })();

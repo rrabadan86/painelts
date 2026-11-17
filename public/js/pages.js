@@ -988,8 +988,8 @@
         for (const c of cups) {
           const kC = `${kD}|${c.k}`;
           const nf = nfe.get(c.num + '|' + dia.d);
-          tb.append(h('tr', { class: 'lv1' }, h('td', { class: 'l sticky-col tree-l n1' }, h('span', { class: 'tree-cell' }, btn(kC, 'cupom ' + c.num), h('span', null, nf ? 'NF-e ' : 'Cupom ', c.num, varias ? h('small', { class: 'muted' }, ` · ${c.loja}`) : null),
-            nf ? h('a', { class: 'cli-tag t-nfe', href: '#nfsaida', title: `Nota fiscal eletrônica (modelo 55)${nf.natOp ? ' · ' + nf.natOp : ''}${nf.dest && nf.dest.nome ? ' · ' + nf.dest.nome : ''}. Clique para ver a nota, o XML e o DANFE.`, onclick: (e) => { e.stopPropagation(); state.abrirNFe = nf.chave; } }, 'nota fiscal ›') : null)),
+          tb.append(h('tr', { class: 'lv1' }, h('td', { class: 'l sticky-col tree-l n1' }, h('span', { class: 'tree-cell' }, btn(kC, 'cupom ' + c.num), nf ? h('span', null, 'Nota fiscal ', h('button', { type: 'button', class: 'cpf-link', title: `NF-e ${nf.numero}${nf.natOp ? ' · ' + nf.natOp : ''}${nf.dest && nf.dest.nome ? ' · ' + nf.dest.nome : ''}. Clique para ver a nota, o XML e o DANFE.`, onclick: (e) => { e.stopPropagation(); if (TS.abrirNFe) TS.abrirNFe(nf.chave); } }, String(c.num)), varias ? h('small', { class: 'muted' }, ` · ${c.loja}`) : null)
+              : h('span', null, `Cupom ${c.num}`, varias ? h('small', { class: 'muted' }, ` · ${c.loja}`) : null))),
             h('td', { class: 'l' }, hhmm(c.min)), cliDe ? h('td', { class: 'l' }, docCupom(cliDe(c.itens[0]))) : null, h('td', { class: 'l' }, [...c.vend].join(', ') || '—'), h('td'), h('td'), h('td', null, fmt.int(c.qtd)), h('td', null, fmt.brl(c.vt))));
           if (!aberto.has(kC)) continue;
           for (const i of c.itens) {
@@ -1008,7 +1008,19 @@
     paint();
     box.busca = busca;
     // NF-e (modelo 55) com o mesmo número e data de um cupom: a linha vira "NF-e nº" com o link para a nota
-    box.marcarNFe = (notas) => { nfe = new Map(notas.filter((n) => n.situacao !== 'cancelada').map((n) => [n.numero + '|' + n.data, n])); if (tbl.isConnected) paint(); };
+    box.marcarNFe = (notas) => {
+      nfe = new Map();
+      const porNum = new Map();
+      for (const n of notas) if (n.situacao !== 'cancelada') (porNum.get(n.numero) || porNum.set(n.numero, []).get(n.numero)).push(n);
+      for (const dia of ordem) for (const c of dia.cupons.values()) {
+        const cand = porNum.get(c.num);
+        if (!cand) continue;
+        const d0 = TS.isoToDay(dia.d);
+        const n = cand.map((x) => ({ x, dd: Math.abs(TS.isoToDay(x.data) - d0) })).filter((y) => y.dd <= 3).sort((a, b) => a.dd - b.dd)[0];
+        if (n) nfe.set(c.num + '|' + dia.d, n.x);
+      }
+      if (tbl.isConnected) paint();
+    };
     box.tools = h('div', { class: 'table-tools', style: { marginBottom: '8px' } },
       h('button', { type: 'button', class: 'btn', onclick: () => { ordem.slice(0, limite).forEach((d) => aberto.add('d' + d.d)); paint(); } }, 'Abrir dias'),
       h('button', { type: 'button', class: 'btn', onclick: () => { ordem.slice(0, limite).forEach((d) => { aberto.add('d' + d.d); d.cupons.forEach((c) => aberto.add(`d${d.d}|${c.k}`)); }); paint(); } }, 'Expandir tudo'),
