@@ -405,18 +405,16 @@
     const rows = todas.filter(FIL[fil][1]);
     const tab = TS.table({
       cols: [
-        { key: 'dia', label: 'Entrada', align: 'l', render: (r) => (r.entrada ? quando(r.entrada) : '—'), sortVal: (r) => r.dia ?? 0 },
-        { key: 'emissao', label: 'Emissão', align: 'l', render: (r) => (r.emissao ? quando(r.emissao) : '—') },
-        { key: 'nfTxt', label: 'NF / série', align: 'l', render: (r) => h('a', { href: '#', class: 'prc-nome', onclick: (e) => { e.preventDefault(); abrirNota(D, r); } }, r.nfTxt), sortVal: (r) => +r.nf || 0 },
-        { key: 'fornecedor', label: 'Fornecedor', align: 'l', wrap: true },
-        { key: 'motivo', label: 'Tipo', align: 'l', render: (r) => h('span', { class: 'prc-st ' + (r.compra ? 'prc-st-v' : 'prc-st-n') }, r.motivo || '—') },
+        // compacta: entrada + emissão numa coluna, tipo junto do fornecedor; a linha inteira abre a nota
+        { key: 'dia', label: 'Entrada', align: 'l', render: (r) => h('span', null, r.entrada ? quando(r.entrada) : '—', h('small', { class: 'est-tam' }, r.emissao ? 'emissão ' + quando(r.emissao) : '')), sortVal: (r) => r.dia ?? 0 },
+        { key: 'nfTxt', label: 'NF / série', align: 'l', render: (r) => h('a', { href: '#', class: 'prc-nome', onclick: (e) => { e.preventDefault(); e.stopPropagation(); abrirNota(D, r); } }, r.nfTxt), sortVal: (r) => +r.nf || 0 },
+        { key: 'fornecedor', label: 'Fornecedor', align: 'l', wrap: true, render: (r) => h('span', null, r.fornecedor || '—', r.motivo ? h('small', { class: 'est-tam' }, h('span', { class: 'prc-st ' + (r.compra ? 'prc-st-v' : 'prc-st-n') }, r.motivo)) : null) },
         { key: 'nItens', label: 'Itens', fmt: fmt.int },
         { key: 'total', label: 'Total da nota', fmt: (v) => (v == null ? '—' : fmt.brl(v)) },
-        { key: 'ver', label: '', align: 'l', render: (r) => h('button', { type: 'button', class: 'btn prc-ver', onclick: () => abrirNota(D, r) }, 'Ver nota'), sortVal: () => 0 },
       ],
-      rows, sortKey: 'dia', maxHeight: '520px', search: 'Buscar NF, fornecedor ou produto…', searchKeys: ['nfTxt', 'fornecedor', 'motivo', 'busca'], cls: 'est-t',
+      rows, sortKey: 'dia', maxHeight: '520px', search: 'Buscar NF, fornecedor ou produto…', searchKeys: ['nfTxt', 'fornecedor', 'motivo', 'busca'], cls: 'est-t', onRowClick: (r) => abrirNota(D, r),
       total: { nfTxt: `${fmt.int(rows.length)} notas`, nItens: rows.reduce((a, r) => a + r.nItens, 0), total: rows.reduce((a, r) => a + (r.total || 0), 0) },
-      imprimir: ['dia', 'emissao', 'nfTxt', 'fornecedor', 'motivo', 'nItens', 'total'],
+      imprimir: ['dia', 'nfTxt', 'fornecedor', 'nItens', 'total'],
       empty: fil === 'per' ? 'Nenhuma nota no período do filtro. Veja "Todas".' : 'Nenhuma nota.',
     });
     return TS.cardWithTools('Notas fiscais de entrada', `Notas de entrada concluídas no AppNext (Estoque → Entrada de Produtos), lidas pelo coletor${j.atualizado ? ' · atualizado em ' + new Date(j.atualizado).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : ''}. Clique na nota para ver os produtos, quantidades, valores e o que mudou no custo.`,

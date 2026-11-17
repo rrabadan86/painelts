@@ -44,17 +44,23 @@ function criar(id, nota, b, por) {
   if (!nota) return { erro: 'Nota de entrada não encontrada.' };
   const porCod = new Map(nota.itens.map((i) => [String(i.cod), i]));
   const itens = [], fotos = [];
+  // cada produto pode ter parte danificada e parte que não chegou (ex.: pediu 6, 2 quebrados e 4 faltaram)
   for (const x of Array.isArray(b.itens) ? b.itens.slice(0, 80) : []) {
     const i = porCod.get(String(x.cod));
     if (!i) return { erro: `O item ${x.cod} não está nesta nota.` };
-    const tipo = x.tipo === 'faltou' ? 'faltou' : 'danificado';
-    const qtd = Math.round(Number(x.qtd) * 1000) / 1000;
-    if (!(qtd > 0 && qtd <= (i.qtd || 0) + 1e-9)) return { erro: `Quantidade inválida em ${i.nome} (a nota tem ${i.qtd}).` };
-    const fs_ = (Array.isArray(x.fotos) ? x.fotos : []).slice(0, 3).map(foto);
-    if (fs_.some((f) => !f)) return { erro: `Uma foto de ${i.nome} não é válida (use JPG ou PNG).` };
-    if (tipo === 'danificado' && !fs_.length) return { erro: `Anexe pelo menos 1 foto de ${i.nome} (danificado).` };
-    itens.push({ cod: String(i.cod), nome: i.nome, un: i.un || '', tipo, qtd, vu: i.vu ?? null, obs: txt(x.obs, 200), fotos: fs_.length });
-    fotos.push(fs_);
+    const q = (v) => Math.round((Number(v) || 0) * 1000) / 1000;
+    const dan = x.qtdDanificado != null || x.qtdFaltou != null ? q(x.qtdDanificado) : x.tipo === 'faltou' ? 0 : q(x.qtd);
+    const fal = x.qtdDanificado != null || x.qtdFaltou != null ? q(x.qtdFaltou) : x.tipo === 'faltou' ? q(x.qtd) : 0;
+    if (dan < 0 || fal < 0 || !(dan + fal > 0)) return { erro: `Informe a quantidade de ${i.nome}.` };
+    if (dan + fal > (i.qtd || 0) + 1e-9) return { erro: `${i.nome}: ${dan + fal} passa da quantidade da nota (${i.qtd}).` };
+    if (dan > 0) {
+      const fs_ = (Array.isArray(x.fotos) ? x.fotos : []).slice(0, 3).map(foto);
+      if (fs_.some((f) => !f)) return { erro: `Uma foto de ${i.nome} não é válida (use JPG ou PNG).` };
+      if (!fs_.length) return { erro: `Anexe pelo menos 1 foto de ${i.nome} (danificado).` };
+      itens.push({ cod: String(i.cod), nome: i.nome, un: i.un || '', tipo: 'danificado', qtd: dan, vu: i.vu ?? null, obs: txt(x.obs, 200), fotos: fs_.length });
+      fotos.push(fs_);
+    }
+    if (fal > 0) { itens.push({ cod: String(i.cod), nome: i.nome, un: i.un || '', tipo: 'faltou', qtd: fal, vu: i.vu ?? null, obs: txt(x.obsFaltou, 200), fotos: 0 }); fotos.push([]); }
   }
   if (!itens.length) return { erro: 'Escolha pelo menos um item.' };
   const did = crypto.randomBytes(6).toString('hex');
@@ -157,7 +163,7 @@ function pedirNfe(id, d, simular) {
   if (!/^[0-9a-f-]{36}$/.test(String(d.nota.id || ''))) return { erro: 'Esta nota não tem o id do AppNext (atualize as notas de entrada).' };
   fs.mkdirSync(envioNfe(id), { recursive: true });
   try { fs.unlinkSync(path.join(envioNfe(id), d.id + '.resultado.json')); } catch { /* ok */ }
-  fs.writeFileSync(path.join(envioNfe(id), d.id + '.json'), JSON.stringify({ entradaId: d.nota.id, itens: d.itens.map((i) => ({ codigo: i.cod, qtd: i.qtd })), simular: !!simular }));
+  fs.writeFileSync(path.join(envioNfe(id), d.id + '.json'), JSON.stringify({ entradaId: d.nota.id, itens: [...d.itens.reduce((m, i) => m.set(i.cod, Math.round(((m.get(i.cod) || 0) + i.qtd) * 1000) / 1000), new Map())].map(([codigo, qtd]) => ({ codigo, qtd })), simular: !!simular }));
   return { ok: atualizar(id, d.id, (x) => { x.nfe = { estado: 'na_fila', em: new Date().toISOString(), simular: !!simular }; }) };
 }
 /** resultado do robô para a NF-e de devolução */
