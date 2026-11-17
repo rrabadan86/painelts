@@ -219,10 +219,21 @@ DEVOLVER = "async (p) => {" + JS_BASE.replace("acha('salvarRascunho')", "acha('m
   await espera(500);
   if (tela.lojaAtual.id !== S.lojaId) erro('a loja aberta no AppNext não é a da nota de entrada');
   // campos de id vazios ("") que o servidor não aceita como Guid: viram null (ex.: imposto.modalidadeDeterminacaoBcIcmsId)
-  const limpar = (o) => { if (!o || typeof o !== 'object') return; for (const k of Object.keys(o)) { if (/Id$/.test(k) && o[k] === '') o[k] = null; else if (o[k] && typeof o[k] === 'object' && !Array.isArray(o[k])) limpar(o[k]); } };
-  limpar(S); for (const it of S.itens) limpar(it);
+  // e qualquer outro valor que não seja um Guid (número, objeto, texto): o log mostra quais foram trocados
+  const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const trocados = [];
+  const limpar = (o, onde) => { if (!o || typeof o !== 'object') return; for (const k of Object.keys(o)) {
+    const v = o[k];
+    if (/Id$/.test(k) && v != null && !(typeof v === 'string' && GUID.test(v))) {
+      const g = v && typeof v === 'object' && typeof v.id === 'string' && GUID.test(v.id) ? v.id : null; // objeto com id: usa o id
+      trocados.push(`${onde}${k}=${typeof v === 'object' ? 'objeto' : JSON.stringify(v).slice(0, 20)}→${g ? 'id' : 'null'}`);
+      o[k] = g;
+    } else if (v && typeof v === 'object' && !Array.isArray(v)) limpar(v, onde + k + '.');
+  } };
+  limpar(S, ''); S.itens.forEach((it, n) => limpar(it, `itens[${n}].`));
+  window.__limparIds = () => { limpar(S, ''); S.itens.forEach((it, n) => limpar(it, `itens[${n}].`)); return trocados; }; // de novo na hora de gravar
   const t = tela.$refs.tabs; const invalida = ['validarDadosNota', 'validarDadosFornecedor', 'validarProdutos', 'validarTransportadora', 'validarValoresAdicionais'].filter((k) => t[k] && t[k]());
-  return { invalida, cfop: cfops[0].codigo, chaveRef: String(S.chaveAcesso || ''), total: Number(S.valorTotalLiquido), produtos: Number(S.valorTotalProduto), itens: S.itens.map((i) => ({ codigo: String(i.codigo), nome: i.nome || '', qtd: Number(i.quantidade), preco: Number(i.valorUnitario), total: Number(i.valorTotalLiquido) })) };
+  return { trocados, invalida, cfop: cfops[0].codigo, chaveRef: String(S.chaveAcesso || ''), total: Number(S.valorTotalLiquido), produtos: Number(S.valorTotalProduto), itens: S.itens.map((i) => ({ codigo: String(i.codigo), nome: i.nome || '', qtd: Number(i.quantidade), preco: Number(i.valorUnitario), total: Number(i.valorTotalLiquido) })) };
 }"""
 
 
@@ -259,6 +270,8 @@ def devolucao(page, pedido, t0):
     step(f"3) Deixando só os {len(pedido['itens'])} itens da devolução e preenchendo")
     r = page.evaluate(DEVOLVER, pedido)
     log(f"   CFOP {r['cfop']} · série NF-e · frete [9]/[9] · sem pagamento e sem vendedor")
+    if r.get("trocados"):
+        log("   campos de id corrigidos: " + ", ".join(r["trocados"][:20]))
     step("4) Conferindo")
     erros = []
     if r["invalida"]:
@@ -297,7 +310,7 @@ def devolucao(page, pedido, t0):
             except Exception:  # noqa: BLE001
                 resp.update({"status": rr.status})
     page.on("response", ao_responder)
-    page.evaluate("() => { const r=[...document.querySelectorAll('*')].find(e=>e.__vue__); const f=[r.__vue__.$root]; while(f.length){const x=f.shift(); if(x.$options.methods&&x.$options.methods.montarDevolucao){ if (x.wizardStepSaida !== 1) throw new Error('a tela não está na 1ª etapa'); x.formCadastrar(); return true; } f.push(...(x.$children||[]));} return false; }")
+    page.evaluate("() => { const r=[...document.querySelectorAll('*')].find(e=>e.__vue__); const f=[r.__vue__.$root]; while(f.length){const x=f.shift(); if(x.$options.methods&&x.$options.methods.montarDevolucao){ if (x.wizardStepSaida !== 1) throw new Error('a tela não está na 1ª etapa'); if (window.__limparIds) window.__limparIds(); x.formCadastrar(); return true; } f.push(...(x.$children||[]));} return false; }")
     ok = False
     for _ in range(60):
         page.wait_for_timeout(1000)
