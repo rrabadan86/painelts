@@ -450,12 +450,39 @@
   }
 
   /** Cria um gráfico dentro de um contêiner com altura fixa */
+  // séries escondidas pela legenda, por gráfico (tela + título do cartão), enquanto o painel estiver aberto
+  const OCULTAS = new Map();
+  const chaveLegenda = (box) => {
+    const t = box.closest('.card') && box.closest('.card').querySelector('.card-title');
+    if (!t) return null;
+    const txt = (t.firstChild ? t.firstChild.textContent : t.textContent || '').trim().replace(/^(Dia a dia|Semana a semana|Mês a mês)\s+/, '');
+    return txt ? (TS.state && TS.state.page || location.hash) + '|' + txt : null;
+  };
   TS.chart = function (config, cls = '') {
     const box = h('div', { class: 'chart-box ' + cls });
     const canvas = h('canvas', { role: 'img', 'aria-label': config.ariaLabel || 'Gráfico' });
     box.append(canvas);
     requestAnimationFrame(() => {
       if (!box.isConnected) return;
+      // legenda desmarcada continua desmarcada quando o gráfico é redesenhado (troca de indicador, filtro, período)
+      const chave = config.legendaChave || chaveLegenda(box);
+      const ocultas = chave ? (OCULTAS.get(chave) || new Set()) : null;
+      if (ocultas && ocultas.size) for (const d of (config.data && config.data.datasets) || []) if (ocultas.has(d.label)) d.hidden = true;
+      if (chave) {
+        config.options = config.options || {};
+        config.options.plugins = config.options.plugins || {};
+        const lg = (config.options.plugins.legend = config.options.plugins.legend || {});
+        const antes = lg.onClick || Chart.defaults.plugins.legend.onClick;
+        lg.onClick = function (e, item, legend) {
+          antes.call(this, e, item, legend);
+          if (item.datasetIndex == null) return; // pizza: a legenda é de fatias, não de séries
+          const ch = legend.chart, ds = ch.data.datasets[item.datasetIndex];
+          if (!ds || !ds.label) return;
+          const set = OCULTAS.get(chave) || new Set();
+          if (ch.isDatasetVisible(item.datasetIndex)) set.delete(ds.label); else set.add(ds.label);
+          OCULTAS.set(chave, set);
+        };
+      }
       const c = new Chart(canvas, config);
       charts.add(c);
     });
