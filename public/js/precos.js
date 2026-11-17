@@ -461,6 +461,7 @@
         h('div', null, h('small', null, 'Entrada'), h('b', null, n.entrada ? quando(n.entrada) : '—')),
         h('div', null, h('small', null, 'Total da nota'), h('b', null, n.total != null ? fmt.brl(n.total) : '—'))),
       h('div', { class: 'prc-nota-info muted' }, [n.motivo && `Tipo: ${n.motivo}`, n.status && `Situação: ${n.status}`, n.cfop && `CFOP ${n.cfop}`, `${fmt.int(linhas.length)} itens`, subiu || desceu ? `custo subiu em ${fmt.int(subiu)} e caiu em ${fmt.int(desceu)}` : ''].filter(Boolean).join(' · ')),
+      TS.devolucao && !TS.demo ? TS.devolucao.barra(n, () => card) : null,
       h('div', { class: 'f-label mt' }, 'Produtos da nota', h('button', { type: 'button', class: 'exp-btn prt-btn prc-nf-prt', title: 'Imprimir a nota', onclick: () => TS.imprimir(card) }, '🖨', h('span', null, 'Imprimir'))),
       tab);
     const camada = h('div', { class: 'prc-drawer-camada', onmousedown: (e) => { if (e.target === camada) fechar(); } }, card);

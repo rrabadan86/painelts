@@ -700,6 +700,76 @@ const lojaNfs = (req, res) => {
   if (!loja) { res.status(400).json({ erro: 'Escolha uma loja.' }); return null; }
   return loja;
 };
+// ---------- devolução ao fornecedor (a partir de uma nota de entrada): planilha, fotos e e-mail ----------
+const DEV = require('./src/devolucao');
+const lojaDev = (req, res) => {
+  if (!podeTela(req, 'notas', 'precos')) { res.status(403).json({ erro: 'Sem permissão.' }); return null; }
+  const loja = req.lojas.find((l) => l.id === String((req.body && req.body.loja) || req.query.loja || ''));
+  if (!loja) { res.status(400).json({ erro: 'Escolha uma loja.' }); return null; }
+  return loja;
+};
+/** manda o e-mail da devolução pelo Gmail da loja (ou o servidor geral), com a planilha e as fotos */
+async function enviarDevolucao(loja, d) {
+  const para = DEV.destinatarios(loja.id);
+  if (!para.length) return DEV.atualizar(loja.id, d.id, (x) => { x.email = { estado: 'sem_destinatarios' }; });
+  const NOTIF = require('./src/notificacoes');
+  const cfg = NOTIF.ler();
+  const lc = (cfg.lojas || {})[loja.id];
+  const smtp = lc && lc.email && lc.email.host ? lc.email : cfg.email;
+  const nome = (loja.marca && loja.marca.nome) || loja.nome;
+  try {
+    const xlsx = await DEV.planilha(loja.id, d, nome);
+    const anexos = [{ filename: `devolucao-NF${d.nota.nf}.xlsx`, content: xlsx }];
+    d.itens.forEach((it, n) => { for (let k = 0; k < it.fotos; k++) anexos.push({ filename: `NF${d.nota.nf}-${it.cod}-foto${k + 1}.jpg`, path: DEV.arqFoto(loja.id, d.id, n, k) }); });
+    await NOTIF.enviarEmail(para.join(', '), `Devolução · ${nome} · NF ${d.nota.nf}${d.nota.fornecedor ? ' · ' + d.nota.fornecedor : ''}`, DEV.textoEmail(d, nome), null, smtp, anexos);
+    return DEV.atualizar(loja.id, d.id, (x) => { x.email = { estado: 'enviado', em: new Date().toISOString(), para }; });
+  } catch (e) {
+    return DEV.atualizar(loja.id, d.id, (x) => { x.email = { estado: 'erro', erro: String(e.message || e).slice(0, 300), em: new Date().toISOString() }; });
+  }
+}
+app.get('/api/devolucoes', (req, res) => {
+  const loja = lojaDev(req, res); if (!loja) return;
+  res.json({ devolucoes: DEV.lista(loja.id).slice(0, 50), destinatarios: DEV.destinatarios(loja.id) });
+});
+app.get('/api/devolucoes/:id/planilha', async (req, res) => {
+  const loja = lojaDev(req, res); if (!loja) return;
+  const d = DEV.ler(loja.id, String(req.params.id));
+  if (!d) return res.status(404).json({ erro: 'Devolução não encontrada.' });
+  const buf = await DEV.planilha(loja.id, d, (loja.marca && loja.marca.nome) || loja.nome);
+  res.set('Content-Disposition', `attachment; filename="devolucao-NF${String(d.nota.nf).replace(/\W/g, '')}.xlsx"`);
+  res.type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet').send(buf);
+});
+app.get('/api/devolucoes/:id/foto/:n/:k', (req, res) => {
+  const loja = lojaDev(req, res); if (!loja) return;
+  const f = DEV.arqFoto(loja.id, String(req.params.id), req.params.n, req.params.k);
+  if (!f || !fs.existsSync(f)) return res.status(404).end();
+  res.set('Cache-Control', 'private, max-age=3600');
+  res.type('image/jpeg').sendFile(f);
+});
+app.use('/api/devolucoes', (req, res, next) => (req.method === 'GET' || req.get('X-Painel') === '1' ? next() : res.status(403).json({ erro: 'Pedido inválido.' })));
+app.put('/api/devolucoes/destinatarios', express.json({ limit: '4kb' }), (req, res) => {
+  const loja = lojaDev(req, res); if (!loja) return;
+  const r = DEV.salvarDestinatarios(loja.id, (req.body || {}).emails);
+  if (r.erro) return res.status(400).json({ erro: r.erro });
+  C.auditar(req.user, 'alterou os destinatários das devoluções', loja.id, { loja: loja.id, emails: r.ok.length });
+  res.json({ ok: true, destinatarios: r.ok });
+});
+app.post('/api/devolucoes', express.json({ limit: '12mb' }), async (req, res) => {
+  const loja = lojaDev(req, res); if (!loja) return;
+  const b = req.body || {};
+  const nota = ((ES.notas(loja.id) || {}).notas || []).find((n) => String(n.id) === String(b.notaId) && String(n.nf) === String(b.nf));
+  const r = DEV.criar(loja.id, nota, b, req.user);
+  if (r.erro) return res.status(400).json({ erro: r.erro });
+  C.auditar(req.user, 'registrou devolução ao fornecedor', loja.id, { loja: loja.id, nf: r.ok.nota.nf, itens: r.ok.itens.length });
+  const d = await enviarDevolucao(loja, r.ok);
+  res.json({ ok: true, devolucao: d });
+});
+app.post('/api/devolucoes/:id/reenviar', express.json({ limit: '1kb' }), async (req, res) => {
+  const loja = lojaDev(req, res); if (!loja) return;
+  const d = DEV.ler(loja.id, String(req.params.id));
+  if (!d) return res.status(404).json({ erro: 'Devolução não encontrada.' });
+  res.json({ ok: true, devolucao: await enviarDevolucao(loja, d) });
+});
 // ---------- nova NF-e de saída: o robô preenche no AppNext e salva como RASCUNHO (a loja confere e transmite) ----------
 const NFE = require('./src/nfe');
 const lojaNfe = (req, res) => {
