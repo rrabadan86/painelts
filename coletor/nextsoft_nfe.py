@@ -145,7 +145,13 @@ PREENCHER = "async (p) => {" + JS_BASE + """
     await f.onSubmitProduct(); await espera(1200);
     if (S.itens.length !== antes + 1) erro(`o produto ${prod.codigo} não entrou na nota`);
   }
-  try { window.jQuery && window.jQuery('.modal.show').modal('hide'); } catch (e) { /* ok */ }
+  // fecha a janela do produto (se ficar aberta, ela cobre o botão Rascunho)
+  for (let k = 0; k < 20 && document.querySelector('#facilitadorProdutos.show, .modal.show'); k++) {
+    const m = document.querySelector('#facilitadorProdutos.show, .modal.show');
+    const x = m && m.querySelector('[data-dismiss="modal"], button.close, .btn-close, button[aria-label="Close"], button[aria-label="Fechar"]');
+    if (x) x.click(); else { try { window.jQuery && window.jQuery(m).modal('hide'); } catch (e) { /* ok */ } m.classList.remove('show'); m.style.display = 'none'; document.querySelectorAll('.modal-backdrop').forEach((b) => b.remove()); document.body.classList.remove('modal-open'); }
+    await espera(400);
+  }
   await tela.calcularTotais(); await espera(800);
   const invalida = acha('validaCampos').validaCampos(); // true = tem erro em alguma aba
   return {
@@ -220,7 +226,10 @@ def main():
                 gravar({"ok": True, "simulado": True, "nota": r})
                 return 0
             step("5) Salvar como RASCUNHO (não conclui nem transmite)")
-            page.locator("button:has-text('Rascunho') >> visible=true").last.click()
+            page.keyboard.press("Escape")
+            page.wait_for_timeout(500)
+            # o mesmo que o botão "Rascunho" faz (valida as abas, calcula os totais e grava com revisado = falso)
+            page.evaluate("() => { const r=[...document.querySelectorAll('*')].find(e=>e.__vue__); const f=[r.__vue__.$root]; while(f.length){const x=f.shift(); if(x.$options.methods&&x.$options.methods.salvarRascunho){ x.salvarRascunho(); return true; } f.push(...(x.$children||[]));} return false; }")
             ok = False
             for _ in range(60):
                 page.wait_for_timeout(1000)
