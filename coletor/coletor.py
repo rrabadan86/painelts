@@ -920,6 +920,34 @@ class API(BaseHTTPRequestHandler):
             if not enfileirar_pedido(loja, acao, por, bool(corpo.get("somar"))):
                 return self._json(409, {"erro": "Já há uma tarefa do Sistema de Pedidos na fila ou rodando para esta loja."})
             return self._json(200, {"ok": True})
+        if self.path.startswith("/pdf/"):
+            # DANFE em PDF para o e-mail da devolução: o painel deixa o HTML em dados/<loja>/devolucoes/<id>/danfe.html
+            loja = self._loja("/pdf/")
+            if not loja or loja not in lojas_configuradas():
+                return self._json(404, {"erro": "loja"})
+            try:
+                n = int(self.headers.get("Content-Length", "0") or 0)
+                corpo = json.loads(self.rfile.read(min(n, 500)) or b"{}") if n else {}
+            except Exception:  # noqa: BLE001
+                return self._json(400, {"erro": "pedido inválido"})
+            did = str(corpo.get("id") or "")
+            if not re.match(r"^[a-f0-9]{12}$", did):
+                return self._json(400, {"erro": "pedido inválido"})
+            pasta = DATA_DIR / loja / "devolucoes" / did
+            src, dst = pasta / "danfe.html", pasta / "danfe.pdf"
+            if not src.exists():
+                return self._json(400, {"erro": "sem o HTML do DANFE"})
+            try:
+                from playwright.sync_api import sync_playwright
+                with sync_playwright() as pw:
+                    b = pw.chromium.launch()
+                    pg = b.new_page()
+                    pg.set_content(src.read_text(encoding="utf-8"), wait_until="load")
+                    pg.pdf(path=str(dst), format="A4", print_background=True, margin={"top": "8mm", "bottom": "8mm", "left": "8mm", "right": "8mm"})
+                    b.close()
+            except Exception as e:  # noqa: BLE001
+                return self._json(500, {"erro": str(e)[:200]})
+            return self._json(200, {"ok": True})
         if self.path.startswith("/nfe/"):
             loja = self._loja("/nfe/")
             if not loja or loja not in lojas_configuradas():

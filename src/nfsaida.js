@@ -77,6 +77,7 @@ function lerXml(txt) {
       vBC: num(tag(tot, 'vBC')), vICMS: num(tag(tot, 'vICMS')), vIPI: num(tag(tot, 'vIPI')), vPIS: num(tag(tot, 'vPIS')), vCOFINS: num(tag(tot, 'vCOFINS')), vTotTrib: num(tag(tot, 'vTotTrib')) },
     pagamentos: pags,
     infCpl: tag(bloco(inf, 'infAdic'), 'infCpl'),
+    refs: [...bloco(ide, 'NFref').matchAll(/<refNFe>(\d{44})<\/refNFe>/g)].map((x) => x[1]).concat([...ide.matchAll(/<refNFe>(\d{44})<\/refNFe>/g)].map((x) => x[1])).filter((v, k, a) => a.indexOf(v) === k),
     protocolo: tag(prot, 'nProt'), autorizadaEm: tag(prot, 'dhRecbto'), cStat: tag(prot, 'cStat'), xMotivo: tag(prot, 'xMotivo'),
     itens,
   };

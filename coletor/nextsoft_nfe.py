@@ -200,7 +200,7 @@ DEVOLVER = "async (p) => {" + JS_BASE.replace("acha('salvarRascunho')", "acha('m
   await espera(800);
   await tela.calcularTotais(); await espera(800);
   const t = tela.$refs.tabs; const invalida = ['validarDadosNota', 'validarDadosFornecedor', 'validarProdutos', 'validarTransportadora', 'validarValoresAdicionais'].filter((k) => t[k] && t[k]());
-  return { invalida, cfop: cfops[0].codigo, total: Number(S.valorTotalLiquido), itens: S.itens.map((i) => ({ codigo: String(i.codigo), nome: i.nome || '', qtd: Number(i.quantidade), preco: Number(i.valorUnitario), total: Number(i.valorTotalLiquido) })) };
+  return { invalida, cfop: cfops[0].codigo, chaveRef: String(S.chaveAcesso || ''), total: Number(S.valorTotalLiquido), itens: S.itens.map((i) => ({ codigo: String(i.codigo), nome: i.nome || '', qtd: Number(i.quantidade), preco: Number(i.valorUnitario), total: Number(i.valorTotalLiquido) })) };
 }"""
 
 
@@ -224,7 +224,9 @@ def devolucao(page, pedido, t0):
         if page.evaluate(pronto):
             break
     else:
-        raise RuntimeError("a tela de devolução não carregou a nota de entrada")
+        diag = page.evaluate("() => { const r=[...document.querySelectorAll('*')].find(e=>e.__vue__); if(!r) return 'sem Vue · ' + location.hash; const f=[r.__vue__.$root]; while(f.length){const x=f.shift(); if(x.$options.methods&&x.$options.methods.montarDevolucao){ const sl=x.selectList||{}; return `itens ${((x.saida||{}).itens||[]).length} · regras ${(sl.sequenciasFiscais||[]).length} · motivos ${(sl.motivosMovimentacao||[]).length} · ${location.hash.replace(/[0-9a-f-]{36}/,'ID')}`; } f.push(...(x.$children||[]));} return 'tela de devolução não montou · ' + location.hash.replace(/[0-9a-f-]{36}/,'ID'); }")
+        log(f"   situação da tela: {diag}")
+        raise RuntimeError(f"a tela de devolução não carregou a nota de entrada ({diag})")
     log("   ✓ nota de entrada carregada na devolução")
     step(f"3) Deixando só os {len(pedido['itens'])} itens da devolução e preenchendo")
     r = page.evaluate(DEVOLVER, pedido)

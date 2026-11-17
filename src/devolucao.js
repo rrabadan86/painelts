@@ -150,11 +150,12 @@ function textoEmail(d, nomeLoja) {
   const dataBR = (iso) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : '');
   const dan = d.itens.filter((i) => i.tipo === 'danificado'), fal = d.itens.filter((i) => i.tipo === 'faltou');
   const l = (i) => `• ${i.cod} · ${i.nome} · ${i.qtd} ${i.un || 'un'}${i.obs ? ' — ' + i.obs : ''}`;
-  return [`Olá,`, '', `A ${nomeLoja} registrou uma devolução referente à NF ${d.nota.nf}${d.nota.serie ? '/' + d.nota.serie : ''} (${d.nota.fornecedor || 'fornecedor'}, emissão ${dataBR(d.nota.emissao)}).`, '',
+  const nf = d.nfe && d.nfe.numero ? `NF-e de devolução nº ${d.nfe.numero} (em anexo, PDF e XML)` : null;
+  return [`Olá,`, '', `A ${nomeLoja} registrou uma devolução referente à NF ${d.nota.nf}${d.nota.serie ? '/' + d.nota.serie : ''} (${d.nota.fornecedor || 'fornecedor'}, emissão ${dataBR(d.nota.emissao)}).`, ...(nf ? ['', nf + '.'] : []), '',
     ...(dan.length ? ['Itens quebrados / danificados:', ...dan.map(l), ''] : []),
     ...(fal.length ? ['Itens que estavam na nota, porém não chegaram:', ...fal.map(l), ''] : []),
     ...(d.obs ? [`Observação: ${d.obs}`, ''] : []),
-    'Em anexo: a planilha da devolução e as fotos dos itens danificados.', '', `${nomeLoja}`].join('\n');
+    `Em anexo: ${d.nfe && d.nfe.numero ? 'a NF-e de devolução (PDF e XML), ' : ''}a planilha da devolução e as fotos dos itens danificados.`, '', `${nomeLoja}`].join('\n');
 }
 
 // ---------- NF-e de devolução: o robô grava a saída de devolução no AppNext SEM concluir ----------
@@ -172,7 +173,7 @@ function conferirNfe(id, d) {
   const r = lerJ(path.join(envioNfe(id), d.id + '.resultado.json'), null);
   if (!r || !r.em || Date.parse(r.em) < Date.parse(d.nfe.em)) return d;
   return atualizar(id, d.id, (x) => {
-    x.nfe = { ...x.nfe, fim: r.em, estado: r.ok ? (r.simulado ? 'teste' : 'ok') : 'erro', erro: r.ok ? undefined : r.erro || 'falhou', cfop: r.nota && r.nota.cfop, total: r.nota && r.nota.total };
+    x.nfe = { ...x.nfe, fim: r.em, estado: r.ok ? (r.simulado ? 'teste' : 'ok') : 'erro', erro: r.ok ? undefined : r.erro || 'falhou', cfop: r.nota && r.nota.cfop, total: r.nota && r.nota.total, chaveRef: (r.nota && r.nota.chaveRef) || x.nfe.chaveRef };
   });
 }
 function erroNfe(id, did, erro) { return atualizar(id, did, (x) => { x.nfe = { ...(x.nfe || {}), estado: 'erro', erro, fim: new Date().toISOString() }; }); }

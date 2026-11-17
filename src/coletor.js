@@ -8,9 +8,9 @@ const TOKEN = process.env.COLETOR_TOKEN || '';
 
 const ativo = () => Boolean(URL_BASE && TOKEN);
 
-async function chamar(path, { method = 'GET', por, body } = {}) {
+async function chamar(path, { method = 'GET', por, body, espera = 10000 } = {}) {
   const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), 10000);
+  const t = setTimeout(() => ctrl.abort(), espera);
   try {
     const res = await fetch(URL_BASE + path, {
       method, signal: ctrl.signal,
@@ -70,6 +70,10 @@ async function inventario(lojaId, id, tipo, por) {
 async function nfe(lojaId, id, acao, por) {
   return chamar(`/nfe/${encodeURIComponent(lojaId)}`, { method: 'POST', por, body: { id, acao } });
 }
+/** DANFE (HTML deixado em dados/<loja>/devolucoes/<id>/danfe.html) em PDF, pelo Chromium do coletor */
+async function pdf(lojaId, id) {
+  return chamar(`/pdf/${encodeURIComponent(lojaId)}`, { method: 'POST', body: { id }, espera: 60000 });
+}
 async function cancelar(lojaId, por) {
   return chamar(`/cancelar/${encodeURIComponent(lojaId)}`, { method: 'POST', por });
 }
@@ -77,4 +81,4 @@ async function saude() {
   try { const r = await chamar('/saude'); return r.json; } catch (e) { return { ok: false, erro: e.message }; }
 }
 
-module.exports = { nfe, inventario, pedido, fixe, fixeSaldos, ativo, status, rodar, historico, cancelar, saude };
+module.exports = { pdf, nfe, inventario, pedido, fixe, fixeSaldos, ativo, status, rodar, historico, cancelar, saude };

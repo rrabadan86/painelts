@@ -708,7 +708,38 @@ const lojaDev = (req, res) => {
   if (!loja) { res.status(400).json({ erro: 'Escolha uma loja.' }); return null; }
   return loja;
 };
-/** manda o e-mail da devolução pelo Gmail da loja (ou o servidor geral), com a planilha e as fotos */
+/** NF-e de devolução já autorizada (o XML chegou pelo coletor): a que referencia a nota de entrada */
+function acharNfDevolucao(loja, d) {
+  if (!d.nfe || !d.nfe.chaveRef) return null;
+  if (d.nfe.chave) return d.nfe.chave;
+  const cands = NFS.lista(loja.id).notas.filter((n) => n.finalidade === 'Devolução' && n.situacao !== 'cancelada' && (n.data || '') >= d.em.slice(0, 10));
+  for (const c of cands) {
+    const n = NFS.nota(loja.id, c.chave);
+    if (n && (n.refs || []).includes(d.nfe.chaveRef)) {
+      DEV.atualizar(loja.id, d.id, (x) => { x.nfe = { ...x.nfe, chave: c.chave, numero: n.numero, autorizadaEm: n.autorizadaEm || n.emissao }; });
+      return c.chave;
+    }
+  }
+  return null;
+}
+/** anexos da NF-e de devolução: XML original e DANFE em PDF (pelo Chromium do coletor; sem ele, o DANFE em HTML) */
+async function anexosNf(loja, d) {
+  const chave = acharNfDevolucao(loja, d);
+  if (!chave) return [];
+  const a = NFS.achar(loja.id, chave), n = NFS.nota(loja.id, chave);
+  if (!a || !n) return [];
+  const out = [{ filename: `NFe-devolucao-${n.numero}.xml`, path: a.arq }];
+  const dir = DEV.pastaDev(loja.id, d.id);
+  try {
+    fs.writeFileSync(path.join(dir, 'danfe.html'), NFS.danfe(n));
+    try { fs.unlinkSync(path.join(dir, 'danfe.pdf')); } catch { /* ok */ }
+    const x = COL.ativo() ? await COL.pdf(loja.id, d.id) : { status: 0 };
+    if (x.status === 200 && fs.existsSync(path.join(dir, 'danfe.pdf'))) out.push({ filename: `DANFE-devolucao-${n.numero}.pdf`, path: path.join(dir, 'danfe.pdf') });
+    else out.push({ filename: `DANFE-devolucao-${n.numero}.html`, path: path.join(dir, 'danfe.html') });
+  } catch (e) { console.error('[devolução] DANFE:', e.message); }
+  return out;
+}
+/** manda o e-mail da devolução pelo Gmail da loja (ou o servidor geral), com a NF-e (PDF e XML), a planilha e as fotos */
 async function enviarDevolucao(loja, d) {
   const para = DEV.destinatarios(loja.id);
   if (!para.length) return DEV.atualizar(loja.id, d.id, (x) => { x.email = { estado: 'sem_destinatarios' }; });
@@ -719,10 +750,11 @@ async function enviarDevolucao(loja, d) {
   const nome = (loja.marca && loja.marca.nome) || loja.nome;
   try {
     const xlsx = await DEV.planilha(loja.id, d, nome);
-    const anexos = [{ filename: `devolucao-NF${d.nota.nf}.xlsx`, content: xlsx }];
+    const anexos = [...await anexosNf(loja, d), { filename: `devolucao-NF${d.nota.nf}.xlsx`, content: xlsx }];
+    d = DEV.ler(loja.id, d.id) || d; // acharNfDevolucao pode ter guardado o número da nota
     d.itens.forEach((it, n) => { for (let k = 0; k < it.fotos; k++) anexos.push({ filename: `NF${d.nota.nf}-${it.cod}-foto${k + 1}.jpg`, path: DEV.arqFoto(loja.id, d.id, n, k) }); });
-    await NOTIF.enviarEmail(para.join(', '), `Devolução · ${nome} · NF ${d.nota.nf}${d.nota.fornecedor ? ' · ' + d.nota.fornecedor : ''}`, DEV.textoEmail(d, nome), null, smtp, anexos);
-    return DEV.atualizar(loja.id, d.id, (x) => { x.email = { estado: 'enviado', em: new Date().toISOString(), para }; });
+    await NOTIF.enviarEmail(para.join(', '), `Devolução · ${nome} · NF ${d.nota.nf}${d.nfe && d.nfe.numero ? ' · NF-e de devolução ' + d.nfe.numero : ''}${d.nota.fornecedor ? ' · ' + d.nota.fornecedor : ''}`, DEV.textoEmail(d, nome), null, smtp, anexos);
+    return DEV.atualizar(loja.id, d.id, (x) => { x.email = { estado: 'enviado', em: new Date().toISOString(), para, comNota: !!(x.nfe && x.nfe.chave) }; });
   } catch (e) {
     return DEV.atualizar(loja.id, d.id, (x) => { x.email = { estado: 'erro', erro: String(e.message || e).slice(0, 300), em: new Date().toISOString() }; });
   }
@@ -746,12 +778,24 @@ app.get('/api/devolucoes', async (req, res) => {
   if (ds.some((d) => d.nfe && d.nfe.estado === 'na_fila') && COL.ativo()) {
     let robo = null; try { robo = (await COL.status(loja.id)).nfe; } catch { /* ok */ }
     const parado = !robo || (robo.estado !== 'na_fila' && robo.estado !== 'rodando');
-    ds = ds.map((d) => (d.nfe && d.nfe.estado === 'na_fila' && parado && Date.now() - Date.parse(d.nfe.em) > 20000
+    ds = ds.map((d) => (d && d.nfe && d.nfe.estado === 'na_fila' && parado && Date.now() - Date.parse(d.nfe.em) > 20000
       ? DEV.erroNfe(loja.id, d.id, robo && robo.ultima && robo.ultima.id === d.id ? `o robô terminou sem confirmar (código ${robo.ultima.codigo})` : 'o pedido se perdeu (o coletor reiniciou); peça de novo') : d));
     ds.forEach((d) => { if (d.nfe && d.nfe.estado === 'na_fila' && robo && robo.id === d.id) d.nfe.robo = { estado: robo.estado, aoVivo: robo.aoVivo || null }; });
   }
+  // a NF-e de devolução foi autorizada (o XML chegou)? manda o e-mail que estava esperando
+  for (let k = 0; k < ds.length; k++) if (ds[k] && ds[k].email && ds[k].email.estado === 'aguardando_nf' && ds[k].nfe && ds[k].nfe.estado === 'ok' && acharNfDevolucao(loja, ds[k])) ds[k] = await enviarDevolucao(loja, DEV.ler(loja.id, ds[k].id));
   res.json({ devolucoes: ds, destinatarios: DEV.destinatarios(loja.id) });
 });
+// de tempos em tempos: devoluções esperando a NF-e autorizada para mandar o e-mail
+setInterval(async () => {
+  for (const loja of C.get().lojas) {
+    try {
+      for (const d of DEV.lista(loja.id).slice(0, 30)) {
+        if (d.email && d.email.estado === 'aguardando_nf' && d.nfe && d.nfe.estado === 'ok' && acharNfDevolucao(loja, d)) await enviarDevolucao(loja, DEV.ler(loja.id, d.id));
+      }
+    } catch (e) { console.error(`[devolução] ${loja.id}:`, e.message); }
+  }
+}, 10 * 60e3).unref();
 app.get('/api/devolucoes/:id/planilha', async (req, res) => {
   const loja = lojaDev(req, res); if (!loja) return;
   const d = DEV.ler(loja.id, String(req.params.id));
@@ -782,8 +826,9 @@ app.post('/api/devolucoes', express.json({ limit: '12mb' }), async (req, res) =>
   const r = DEV.criar(loja.id, nota, b, req.user);
   if (r.erro) return res.status(400).json({ erro: r.erro });
   C.auditar(req.user, 'registrou devolução ao fornecedor', loja.id, { loja: loja.id, nf: r.ok.nota.nf, itens: r.ok.itens.length });
-  let d = await enviarDevolucao(loja, r.ok);
-  d = await nfeDevolucao(loja, d, req.user, false); // e já pede a NF-e de devolução ao robô
+  // o e-mail espera a NF-e de devolução ser autorizada (vai com o PDF e o XML); o robô grava a nota agora
+  DEV.atualizar(loja.id, r.ok.id, (x) => { x.email = { estado: 'aguardando_nf' }; });
+  const d = await nfeDevolucao(loja, DEV.ler(loja.id, r.ok.id), req.user, false);
   res.json({ ok: true, devolucao: d });
 });
 app.post('/api/devolucoes/:id/nfe', express.json({ limit: '1kb' }), async (req, res) => {

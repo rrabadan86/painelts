@@ -11,7 +11,7 @@
   };
   const quando = (iso) => (iso ? new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—');
   const NFE_TXT = { na_fila: 'NF-e: o robô está gravando no AppNext…', ok: 'NF-e de devolução gravada no AppNext (não concluída): confira, conclua e transmita lá', teste: 'NF-e: teste ok, tudo conferiu (nada foi salvo)', erro: 'NF-e de devolução não foi gravada', pendente: 'NF-e: ainda não pedida' };
-  const EMAIL_TXT = { enviado: 'e-mail enviado', erro: 'e-mail não foi enviado', sem_destinatarios: 'sem destinatários: e-mail não enviado', pendente: 'enviando e-mail…' };
+  const EMAIL_TXT = { aguardando_nf: 'e-mail aguardando a NF-e de devolução ser autorizada (vai com o PDF e o XML)', enviado: 'e-mail enviado', erro: 'e-mail não foi enviado', sem_destinatarios: 'sem destinatários: e-mail não enviado', pendente: 'enviando e-mail…' };
 
   /** reduz a foto do celular para JPEG de até 1600 px (cabe no e-mail e na planilha) */
   function reduzir(arquivo) {
@@ -48,7 +48,7 @@
   }
   function itemFeito(d, loja) {
     const e = d.email || {}, nf = d.nfe || { estado: 'pendente' };
-    const reenviar = h('button', { type: 'button', class: 'link-btn' }, 'reenviar e-mail');
+    const reenviar = h('button', { type: 'button', class: 'link-btn', title: e.estado === 'aguardando_nf' ? 'Manda já, só com a planilha e as fotos (sem a NF-e)' : 'Manda de novo (com a NF-e, se ela já estiver autorizada)' }, e.estado === 'aguardando_nf' ? 'enviar agora sem a nota' : 'reenviar e-mail');
     const pedirNfe = (simular) => async () => {
       if (!simular && !confirm('Gravar a NF-e de devolução no AppNext (sem concluir)? A loja confere, conclui e transmite lá.')) return;
       try { const r = await api('POST', `devolucoes/${d.id}/nfe`, { loja, simular }); el.replaceWith(itemFeito(r.devolucao, loja)); } catch (er) { alert(er.message); }
@@ -57,12 +57,12 @@
     const el = h('div', { class: 'dev-feita' },
       h('div', null, h('b', null, `Devolução de ${quando(d.em)}`), h('small', { class: 'muted' }, ` por ${d.por} · ${d.itens.length} ${d.itens.length === 1 ? 'item' : 'itens'} · `),
         h('a', { href: TS.api(`devolucoes/${d.id}/planilha?loja=${encodeURIComponent(loja)}`) }, 'planilha')),
-      h('div', null, h('span', { class: 'dev-st ' + (e.estado === 'enviado' ? 'ok' : 'erro') }, EMAIL_TXT[e.estado] || e.estado), e.erro ? h('small', { class: 'neg' }, ' ' + e.erro) : null, ' ', reenviar),
+      h('div', null, h('span', { class: 'dev-st ' + (e.estado === 'enviado' ? 'ok' : e.estado === 'aguardando_nf' ? 'fila' : 'erro') }, (e.estado === 'enviado' && e.comNota ? 'e-mail enviado com a NF-e' : EMAIL_TXT[e.estado] || e.estado)), e.erro ? h('small', { class: 'neg' }, ' ' + e.erro) : null, ' ', reenviar),
       h('div', null, h('span', { class: 'dev-st ' + (nf.estado === 'ok' || nf.estado === 'teste' ? 'ok' : nf.estado === 'erro' ? 'erro' : 'fila') }, (nf.estado === 'na_fila' ? '⏳ ' : '') + (NFE_TXT[nf.estado] || nf.estado)),
-        nf.cfop ? h('small', { class: 'muted' }, ` · CFOP ${nf.cfop}`) : null, nf.erro ? h('small', { class: 'neg' }, ' ' + nf.erro) : null,
+        nf.numero ? h('small', null, ` · NF-e nº ${nf.numero} autorizada`) : null, nf.cfop ? h('small', { class: 'muted' }, ` · CFOP ${nf.cfop}`) : null, nf.erro ? h('small', { class: 'neg' }, ' ' + nf.erro) : null,
         podePedir ? h('span', null, ' ', h('button', { type: 'button', class: 'link-btn', onclick: pedirNfe(false) }, nf.estado === 'erro' ? 'tentar de novo' : 'gravar no AppNext'), ' · ', h('button', { type: 'button', class: 'link-btn', onclick: pedirNfe(true) }, 'testar sem salvar')) : null),
       nf.estado === 'na_fila' && nf.robo && nf.robo.aoVivo ? h('pre', { class: 'inv-log' }, nf.robo.aoVivo.slice(-8).join('\n')) : null);
-    reenviar.addEventListener('click', async () => { reenviar.disabled = true; try { const r = await api('POST', `devolucoes/${d.id}/reenviar`, { loja }); el.replaceWith(itemFeito(r.devolucao, loja)); } catch (er) { alert(er.message); reenviar.disabled = false; } });
+    reenviar.addEventListener('click', async () => { if (e.estado === 'aguardando_nf' && !confirm('Mandar o e-mail agora, SEM a NF-e de devolução (só a planilha e as fotos)?')) return; reenviar.disabled = true; try { const r = await api('POST', `devolucoes/${d.id}/reenviar`, { loja }); el.replaceWith(itemFeito(r.devolucao, loja)); } catch (er) { alert(er.message); reenviar.disabled = false; } });
     if (nf.estado === 'na_fila') setTimeout(async () => {
       if (!el.isConnected) return;
       try { const j = await api('GET', `devolucoes?loja=${encodeURIComponent(loja)}`); const n = j.devolucoes.find((x) => x.id === d.id); if (n && el.isConnected) el.replaceWith(itemFeito(n, loja)); } catch { /* tenta de novo */ }
