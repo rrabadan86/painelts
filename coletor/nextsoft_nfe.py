@@ -250,7 +250,10 @@ def devolucao(page, pedido, t0):
         log(f"   {'✓' if ok else '✗'} {i['codigo']} {i['nome'][:40]}: {i['qtd']:g} × R$ {i['preco']:.2f} = R$ {i['total']:.2f}")
         if not ok:
             erros.append(f"item {i['codigo']} com quantidade diferente")
-    log(f"   total da nota: R$ {r['total']:.2f}")
+    soma = round(sum(i["total"] for i in r["itens"]), 2)
+    log(f"   total da nota: R$ {r['total']:.2f} · soma dos itens: R$ {soma:.2f}")
+    if abs(r["total"] - soma) > 0.05:
+        erros.append(f"o total da nota (R$ {r['total']:.2f}) não bate com a soma dos itens (R$ {soma:.2f}): o AppNext não recalculou")
     if erros:
         raise RuntimeError("conferência falhou, nada foi salvo: " + "; ".join(erros[:6]))
     log("   ✓ tudo confere")
@@ -260,6 +263,14 @@ def devolucao(page, pedido, t0):
         return 0
     step("5) Salvar SEM concluir (a loja confere, conclui e transmite no AppNext)")
     # na 1ª etapa da tela, formCadastrar grava com revisado = falso (não concluída)
+    resp = {}
+    def ao_responder(rr):
+        if rr.request.method == "POST" and "saida" in rr.url.lower():
+            try:
+                resp.update({"status": rr.status, "corpo": rr.text()[:500]})
+            except Exception:  # noqa: BLE001
+                resp.update({"status": rr.status})
+    page.on("response", ao_responder)
     page.evaluate("() => { const r=[...document.querySelectorAll('*')].find(e=>e.__vue__); const f=[r.__vue__.$root]; while(f.length){const x=f.shift(); if(x.$options.methods&&x.$options.methods.montarDevolucao){ if (x.wizardStepSaida !== 1) throw new Error('a tela não está na 1ª etapa'); x.formCadastrar(); return true; } f.push(...(x.$children||[]));} return false; }")
     ok = False
     for _ in range(60):
@@ -267,8 +278,13 @@ def devolucao(page, pedido, t0):
         if page.locator("text=/cadastrada com sucesso/i").count() or "/saida-devolucao/" not in page.url:
             ok = True
             break
+    avisos = page.evaluate("() => [...document.querySelectorAll('.toast, .toasted, .swal2-popup, .notification, .vue-notification, .alert, .iziToast, [role=alert]')].map((e) => e.innerText.trim()).filter(Boolean).slice(0, 5)")
+    if resp:
+        log(f"   resposta do AppNext: HTTP {resp.get('status')} {resp.get('corpo', '')[:300]}")
+    for a in avisos:
+        log("   aviso na tela: " + a.replace("\n", " ")[:300])
     if not ok:
-        raise RuntimeError("o AppNext não confirmou a gravação da devolução")
+        raise RuntimeError("o AppNext não confirmou a gravação da devolução" + (f": {avisos[0][:200]}" if avisos else (f" (HTTP {resp.get('status')})" if resp else "")))
     log("   ✓ o AppNext gravou a saída de devolução (não concluída)")
     log(f"Concluído em {(datetime.now() - t0).seconds} s")
     gravar({"ok": True, "nota": r})
