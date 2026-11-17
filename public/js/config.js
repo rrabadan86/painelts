@@ -2,7 +2,7 @@
 'use strict';
 (function () {
   const { h, fmt, state } = TS;
-  const TELAS_NOME = [['resumo', 'Resumo'], ['comparativos', 'Comparativos'], ['comissionamento', 'Comissionamento'], ['promocao', 'Promoção'], ['cupons', 'Vendas → Cupons (itens de cada venda)'], ['mapa', 'Movimento e escala (mapa de calor)'], ['clientes', 'Clientes (CPF e telefone)'], ['minha', 'Comissão de cada vendedor'], ['rentab', 'Produtos → Rentabilidade'], ['precos', 'Produtos → Preços'], ['site', 'Produtos → Site (preços do e-commerce)'], ['estoque', 'Estoque → Estoque'], ['pedido', 'Estoque → Pedido'], ['notas', 'Estoque → Notas fiscais (entrada e saída)'], ['inventario', 'Estoque → Inventário (contagem; a vendedora sempre conta)'], ['dre', 'Resultado (DRE)']];
+  const TELAS_NOME = [['resumo', 'Resumo'], ['comparativos', 'Comparativos'], ['comissionamento', 'Comissionamento'], ['promocao', 'Promoção'], ['cupons', 'Vendas → Cupons (itens de cada venda)'], ['mapa', 'Movimento e escala (mapa de calor)'], ['clientes', 'Clientes (CPF e telefone)'], ['minha', 'Comissão de cada vendedor'], ['rentab', 'Produtos → Rentabilidade'], ['precos', 'Produtos → Preços'], ['site', 'Produtos → Site (preços do e-commerce)'], ['estoque', 'Estoque → Estoque'], ['pedido', 'Estoque → Pedido'], ['notas', 'Estoque → Notas fiscais (entrada e saída)'], ['inventario', 'Estoque → Inventário (contagem; a vendedora sempre conta)'], ['espera', 'Clientes → Lista de espera (a vendedora sempre usa)'], ['dre', 'Resultado (DRE)']];
   const TELAS_PADRAO = ['resumo', 'comparativos', 'comissionamento', 'promocao', 'mapa', 'minha'];
   const PERFIL_NOME = { admin: 'Administrador', franqueado: 'Franqueado', gerente: 'Gerente', vendedor: 'Vendedor' };
   const PERFIL_DESC = {

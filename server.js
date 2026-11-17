@@ -997,6 +997,8 @@ async function avaliarEspera(loja) {
   return novos;
 }
 setInterval(() => { for (const l of C.get().lojas) avaliarEspera(l).catch((e) => console.error(`[espera] ${l.id}:`, e.message)); }, 15 * 60e3).unref();
+// lista de espera: vendedoras sempre; gerente só com a tela liberada em Configurações → Usuários
+app.use('/api/espera', (req, res, next) => (req.perfil === 'vendedor' || podeTela(req, 'espera') ? next() : res.status(403).json({ erro: 'Sem permissão.' })));
 app.get('/api/espera', async (req, res) => {
   const loja = lojaEsp(req);
   if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
@@ -1492,19 +1494,22 @@ app.listen(PORT, () => {
     const mig = [];
     C.alterar((cfg) => {
       for (const [nome, u] of Object.entries(cfg.usuarios || {})) {
-        if (u.telasV >= 5) continue;
+        if (u.telasV >= 6) continue;
+        // v6: Lista de espera virou uma tela que se libera: quem já tinha (todos os gerentes) continua com ela
+        if (u.perfil === 'gerente' && Array.isArray(u.telas) && !u.telas.includes('espera')) { u.telas.push('espera'); mig.push(nome); }
+        if (u.telasV >= 5) { u.telasV = 6; continue; }
         // v5: Estoque → Inventário (contagem pelo celular): quem vê o Estoque passa a ver o Inventário
         if (u.perfil === 'gerente' && Array.isArray(u.telas) && u.telas.includes('estoque') && !u.telas.includes('inventario')) { u.telas.push('inventario'); mig.push(nome); }
-        if (u.telasV >= 4) { u.telasV = 5; continue; }
+        if (u.telasV >= 4) { u.telasV = 6; continue; }
         // v4: o detalhamento de cupons saiu do Comissionamento e virou Vendas → Cupons
         if (u.perfil === 'gerente' && Array.isArray(u.telas) && u.telas.includes('comissionamento') && !u.telas.includes('cupons')) { u.telas.push('cupons'); mig.push(nome); }
-        if (u.telasV >= 3) { u.telasV = 5; continue; }
+        if (u.telasV >= 3) { u.telasV = 6; continue; }
         // v2: Preços e Site saíram do Estoque e margem; v3: o Estoque e margem virou Rentabilidade + Estoque (+ Notas fiscais)
         if (u.perfil === 'gerente' && Array.isArray(u.telas) && u.telas.includes('estoque')) {
           for (const t of [...(u.telasV >= 2 ? [] : ['precos', 'site']), 'rentab', 'notas']) if (!u.telas.includes(t)) u.telas.push(t);
           mig.push(nome);
         }
-        u.telasV = 5;
+        u.telasV = 6;
       }
     });
     if (mig.length) C.auditar('sistema', 'organizou as telas no menu novo (Vendas → Cupons; Produtos, Estoque, Resultado)', 'usuarios', { usuarios: [...new Set(mig)] });

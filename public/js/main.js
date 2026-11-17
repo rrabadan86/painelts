@@ -295,8 +295,11 @@
     else if (!PAGES.includes('minha')) PAGES.push('minha');
     ROTULO.minha = eu.perfil === 'vendedor' ? 'Minha comissão' : 'Comissão por vendedor';
     if (eu.perfil === 'vendedor') document.body.classList.add('perfil-vendedor');
-    if (PAGES.includes('clientes')) PAGES.splice(PAGES.indexOf('clientes'), 1, 'clilista', 'clientes', 'campanhas', 'espera');
-    else PAGES.push('espera'); // lista de espera: todos os perfis (vendedoras inclusive)
+    // lista de espera: vendedoras sempre; gerente só com a tela liberada
+    const veEspera = eu.perfil !== 'gerente' || !Array.isArray(eu.telas) || eu.telas.includes('espera');
+    PAGES = PAGES.filter((p) => p !== 'espera');
+    if (PAGES.includes('clientes')) PAGES.splice(PAGES.indexOf('clientes'), 1, 'clilista', 'clientes', 'campanhas', ...(veEspera ? ['espera'] : []));
+    else if (veEspera) PAGES.push('espera');
     // Estoque e Margem: admin e franqueado veem tudo; gerente só as telas liberadas em Configurações → Usuários
     // Produtos (Rentabilidade, Preços, Site), Estoque (Estoque, Pedido, Notas fiscais) e Resultado
     const EST = ['rentab', 'precos', 'site', 'estoque', 'pedido', 'notas', 'inventario', 'dre'];
