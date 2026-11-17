@@ -217,25 +217,22 @@ def devolucao(page, pedido, t0):
     step("2) Entrada da nota → Devolução (o AppNext preenche fornecedor, chave e itens)")
     if not re.match(r"^[0-9a-f-]{36}$", str(pedido.get("entradaId", ""))):
         raise RuntimeError("a nota de entrada não tem o id do AppNext")
-    # o mesmo caminho de quem faz à mão: lista de entradas → devolução da nota (direto pela rota, às vezes as
-    # regras fiscais não carregavam); tenta duas vezes
-    pronto = "() => { const r=[...document.querySelectorAll('*')].find(e=>e.__vue__); if(!r) return false; const f=[r.__vue__.$root]; while(f.length){const x=f.shift(); if(x.$options.methods&&x.$options.methods.montarDevolucao) return !!(x.saida&&x.saida.itens&&x.saida.itens.length&&x.selectList&&(x.selectList.sequenciasFiscais||[]).length&&(x.selectList.motivosMovimentacao||[]).length); f.push(...(x.$children||[]));} return false; }"
-    for tentativa in (1, 2):
-        page.evaluate("() => { location.hash = '#/estoque/entrada-produto'; }")
-        page.wait_for_timeout(4000)
-        page.evaluate(f"() => {{ location.hash = '#/estoque/saida-devolucao/devolucao/{pedido['entradaId']}'; }}")
-        for _ in range(45):
-            page.wait_for_timeout(1000)
-            if page.evaluate(pronto):
-                break
-        else:
-            log(f"   a tela de devolução não carregou tudo (tentativa {tentativa})")
-            continue
-        break
-    else:
-        diag = page.evaluate("() => { const r=[...document.querySelectorAll('*')].find(e=>e.__vue__); if(!r) return 'sem Vue · ' + location.hash; const f=[r.__vue__.$root]; while(f.length){const x=f.shift(); if(x.$options.methods&&x.$options.methods.montarDevolucao){ const sl=x.selectList||{}; return `itens ${((x.saida||{}).itens||[]).length} · regras ${(sl.sequenciasFiscais||[]).length} · motivos ${(sl.motivosMovimentacao||[]).length} · ${location.hash.replace(/[0-9a-f-]{36}/,'ID')}`; } f.push(...(x.$children||[]));} return 'tela de devolução não montou · ' + location.hash.replace(/[0-9a-f-]{36}/,'ID'); }")
-        log(f"   situação da tela: {diag}")
-        raise RuntimeError(f"a tela de devolução não carregou a nota de entrada ({diag})")
+    page.evaluate("() => { location.hash = '#/estoque/entrada-produto'; }")
+    page.wait_for_timeout(3000)
+    page.evaluate(f"() => {{ location.hash = '#/estoque/saida-devolucao/devolucao/{pedido['entradaId']}'; }}")
+    estado = "() => { const r=[...document.querySelectorAll('*')].find(e=>e.__vue__); if(!r) return null; const f=[r.__vue__.$root]; while(f.length){const x=f.shift(); if(x.$options.methods&&x.$options.methods.montarDevolucao){ const sl=x.selectList||{}; return { itens: ((x.saida||{}).itens||[]).length, regras: (sl.sequenciasFiscais||[]).length, motivos: (sl.motivosMovimentacao||[]).length }; } f.push(...(x.$children||[]));} return null; }"
+    st = None
+    for k in range(60):
+        page.wait_for_timeout(1000)
+        st = page.evaluate(estado)
+        if st and st["itens"] and st["motivos"] and (st["regras"] or k >= 15):
+            break
+    log(f"   situação da tela: {st}")
+    if not st or not st["itens"]:
+        raise RuntimeError("a tela de devolução não carregou a nota de entrada")
+    if not st["regras"]:
+        # a tela busca as regras fiscais de devolução DA LOJA (devolucao=true): esta loja não tem nenhuma
+        raise RuntimeError("esta loja não tem regra fiscal (sequência fiscal) de Devolução ao Fornecedor no AppNext: cadastre uma (motivo [19], CFOP 5202/6202, marcada para devolução, com os produtos), como a da Vila Madalena, e tente de novo")
     log("   ✓ nota de entrada carregada na devolução")
     step(f"3) Deixando só os {len(pedido['itens'])} itens da devolução e preenchendo")
     r = page.evaluate(DEVOLVER, pedido)
