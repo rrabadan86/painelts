@@ -1053,8 +1053,9 @@
         options: { plugins: { legend: { display: false }, tooltip: { filter: (c) => !!c.raw.p, callbacks: { label: (c) => `${c.raw.p.produto}: ${fq(c.raw.p.giro)}${c.raw.p.tamanhos ? ' (' + c.raw.p.tamanhos + ')' : ''} · margem ${fmt.pct(c.raw.p.margem)} · lucro ${fmt.brl(c.raw.p.lucro)}` } } },
           scales: { x: { type: 'logarithmic', title: { display: true, text: `${grSel ? 'Kg vendidos' : 'Unidades vendidas'} no período` }, ticks: { callback: (v) => (Math.abs(Math.log10(v) - Math.round(Math.log10(v))) < 1e-9 ? (v < 1 ? String(v).replace('.', ',') : fmt.int(v)) : '') } }, y: { min: Math.floor(yMin), max: Math.ceil(yMax), title: { display: true, text: 'Margem (%)' }, ticks: { callback: (v) => v + '%' } } } },
       }, 'tall') : TS.empty())));
-    corpo.append(h('div', { class: 'mt' }, TS.card('Produtos por lucro', 'Curva ABC: A = produtos que fazem 80% do lucro (nunca podem faltar). Chá a granel aparece uma vez só, somando todas as gramaturas. A classe (Estrela, Volume…) compara chá com chá e acessório com acessório: "No período" usa o filtro; "Oficial" é fixa e é a que o Pedido usa; "Tendência" mostra se o produto está saindo acima ou abaixo do normal.', ctlMeses, TS.table({
-      cols: [
+    // colunas por visão: a tabela completa tem 16 colunas; "Resumo" e "Margens" cabem na tela sem rolar para o lado
+    const COLS = [
+
         { key: 'produto', label: 'Produto', align: 'l', sticky: true, wrap: true, render: (r) => h('span', null, (r.granel && r.porTam ? h('button', { type: 'button', class: 'est-prod-btn', title: 'Ver lucro e margem de cada tamanho de pacote', onclick: (e) => abrirTamanhos(e, r) }, h('span', { class: 'est-seta', 'aria-hidden': 'true' }, '▸'), h('span', null, h('span', { class: 'est-prod-nome' }, r.produto), h('small', { class: 'est-tam' }, r.tamanhos, h('span', { class: 'est-ver' }, ' · ver por pacote')))) : r.granel ? h('span', null, r.produto, h('small', { class: 'est-tam' }, r.tamanhos)) : r.produto), (TS.telasEstoque || []).includes('pedido') ? h('a', { href: '#pedido', class: 'est-ir', title: 'Abrir o Pedido já buscando este produto', onclick: (e) => { e.preventDefault(); TS.irParaPedido(r.produto); } }, 'no pedido ›') : null) },
         { key: 'abc', label: 'ABC', title: 'Curva ABC pelo lucro: A = produtos que somam 80% do lucro do período; B = os próximos 15%; C = o resto', cls: (r) => (r.abc === 'A' ? 'hit' : '') },
         { key: 'classe', label: 'No período', align: 'l', title: 'Classe só com as vendas do filtro de período (a do gráfico acima). Mostra o momento: uma promoção pode puxar um produto para cima aqui', render: (r) => tagCl(r.classe), sortVal: (r) => ORD_CL[r.classe] || 0 },
@@ -1072,10 +1073,28 @@
         { key: 'lucroLiq', label: 'Lucro com fixos', fmt: fmt.brl, title: 'Lucro bruto − deduções. Clique no valor para ver a conta', render: (r) => (r.lucroLiq == null ? '' : h('button', { type: 'button', class: 'est-conta' + (r.lucroLiq < 0 ? ' neg' : ''), title: 'Clique para ver a conta', onclick: (e) => abrirLiq(e, r) }, fmt.brl(r.lucroLiq))), sortVal: (r) => r.lucroLiq },
         { key: 'margemLiq', label: 'Margem com fixos', title: 'Lucro líquido ÷ faturamento (com os custos fixos rateados). Informativa: um produto com líquida negativa e contribuição positiva continua ajudando a pagar os custos fixos', fmt: (v) => (v == null ? '' : fmt.pct(v)), cls: (r) => (r.margemLiq != null && r.margemLiq < 0 ? 'est-liq-neg' : '') },
 
-      ],
-      rows: sel ? prods.filter((p) => p.classe === sel) : prods, sortKey: 'lucro', maxHeight: '520px', search: 'Buscar produto…', searchKeys: ['produto'], produto: 'produto', imprimir: ['produto', 'abc', 'oficial', 'giro', 'vt', 'lucro', 'margem', 'margemTab', 'contrib', 'margemContrib'], cls: 'est-t',
-      total: { produto: 'Total', vt: fatCusto, custo: custoTot, lucro, margem: fatCusto ? lucro / fatCusto : null, contrib: contribTot, margemContrib: fatCusto ? contribTot / fatCusto : null, ded: dedSoma, lucroLiq: lucroLiqTot, margemLiq: fatCusto ? lucroLiqTot / fatCusto : null },
-    }))));
+
+      // Resumo: classe oficial com a do período e a tendência embaixo (uma coluna em vez de três)
+      { key: 'classeRes', label: 'Classe', align: 'l', title: `Em cima, a classe oficial (mediana de ${CO.meses} meses, a que o Pedido usa${podeTravar ? '; escolha para travar à mão 🔒' : ''}). Embaixo, a classe só no período do filtro e a tendência (o que saiu por mês no período × o normal)`,
+        render: (r) => h('div', { class: 'est-cl-res' }, celOficial(r), h('small', { class: 'est-tam' }, 'no período: ', r.classe ? CLASSE[r.classe][0] : '—', r.tend != null ? h('span', null, ' · ', celTend(r)) : null)), sortVal: (r) => ORD_CL[r.oficial] || 0 },
+      { key: 'lucroRes', label: 'Lucro bruto', title: 'Faturamento − custo. Embaixo, o custo', render: (r) => h('span', { class: r.lucro < 0 ? 'neg' : null }, fmt.brl(r.lucro), h('small', { class: 'est-tam' }, 'custo ' + fmt.brl(r.custo))), sortVal: (r) => r.lucro },
+    ];
+    const VIS = {
+      resumo: ['Resumo', ['produto', 'abc', 'classeRes', 'giro', 'vt', 'lucroRes', 'margem', 'margemContrib'], 'Classe, venda, lucro e margens (as outras colunas em "Lucro e margens")'],
+      margens: ['Lucro e margens', ['produto', 'vt', 'lucroRes', 'margem', 'margemTab', 'contrib', 'margemContrib', 'lucroLiq', 'margemLiq'], 'Do faturamento ao lucro com os custos fixos'],
+      tudo: ['Todas as colunas', ['produto', 'abc', 'classe', 'oficial', 'tend', 'giro', 'vt', 'custo', 'lucro', 'margem', 'margemTab', 'contrib', 'margemContrib', 'ded', 'lucroLiq', 'margemLiq'], 'Tudo (rola para o lado)'],
+    };
+    const vis = VIS[state.estColVis] ? state.estColVis : 'resumo';
+    const porKey = new Map(COLS.map((c) => [c.key, c]));
+    const tabLucro = TS.table({
+      cols: VIS[vis][1].map((k) => porKey.get(k)).filter(Boolean),
+      rows: sel ? prods.filter((p) => p.classe === sel) : prods, sortKey: 'lucro', maxHeight: '520px', search: 'Buscar produto…', searchKeys: ['produto'], produto: 'produto', imprimir: ['produto', 'abc', 'oficial', 'classeRes', 'giro', 'vt', 'lucro', 'lucroRes', 'margem', 'margemTab', 'contrib', 'margemContrib'], cls: 'est-t est-t-lucro est-vis-' + vis,
+      total: { produto: 'Total', vt: fatCusto, custo: custoTot, lucro, lucroRes: fmt.brl(lucro), margem: fatCusto ? lucro / fatCusto : null, contrib: contribTot, margemContrib: fatCusto ? contribTot / fatCusto : null, ded: dedSoma, lucroLiq: lucroLiqTot, margemLiq: fatCusto ? lucroLiqTot / fatCusto : null },
+    });
+    const segVis = h('div', { class: 'est-vis' }, h('span', { class: 'f-label' }, 'Colunas:'),
+      TS.seg(Object.entries(VIS).map(([k, [t]]) => [t, k]), vis, (v) => { state.estColVis = v; TS.render(); }),
+      h('small', { class: 'muted' }, VIS[vis][2]));
+    corpo.append(h('div', { class: 'mt' }, TS.card('Produtos por lucro', 'Curva ABC: A = produtos que fazem 80% do lucro (nunca podem faltar). Chá a granel aparece uma vez só, somando todas as gramaturas. A classe (Estrela, Volume…) compara chá com chá e acessório com acessório: a oficial é fixa e é a que o Pedido usa; a "no período" usa o filtro; a tendência mostra se o produto está saindo acima ou abaixo do normal.', h('div', { class: 'est-lucro-ctl' }, ctlMeses, segVis), tabLucro)));
 
     corpo.append(...[cartaoTabela(), cartaoAlertaMargem(), cartaoPacotes()].filter(Boolean).map((c) => h('div', { class: 'mt' }, c)));
 

@@ -1739,3 +1739,15 @@ body.com-camada .ped-barra { display: none; }
 .nf-botoes { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 10px 0 4px; }
 .cli-tag.t-nfe { background: #e7eefb; color: #1F4FA0; text-decoration: none; margin-left: 6px; cursor: pointer; }
 .cupons-t .cpf-link { font-size: 12px; }
+
+/* ---- Produtos por lucro: visões de colunas (Resumo cabe na tela) ---- */
+.est-lucro-ctl { display: flex; flex-wrap: wrap; gap: 8px 24px; align-items: center; margin-bottom: 8px; }
+.est-lucro-ctl .est-cl-meses { margin: 0; }
+.est-vis { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.est-cl-res { display: flex; flex-direction: column; gap: 2px; }
+.est-cl-res .est-tam { white-space: nowrap; }
+.est-t-lucro td.sticky-col, .est-t-lucro th.sticky-col { max-width: 210px; min-width: 160px; }
+.est-vis-resumo th, .est-vis-resumo td, .est-vis-margens th, .est-vis-margens td { padding-left: 8px; padding-right: 8px; }
+.est-t-lucro th { white-space: normal; vertical-align: bottom; }
+.est-vis-margens th:not(.sticky-col) { max-width: 92px; }
+.est-t-lucro .est-ir { display: inline; margin-left: 4px; }
