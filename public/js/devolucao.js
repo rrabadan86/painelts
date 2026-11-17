@@ -10,6 +10,7 @@
     return j;
   };
   const quando = (iso) => (iso ? new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—');
+  const NFE_TXT = { na_fila: 'NF-e: o robô está gravando no AppNext…', ok: 'NF-e de devolução gravada no AppNext (não concluída): confira, conclua e transmita lá', teste: 'NF-e: teste ok, tudo conferiu (nada foi salvo)', erro: 'NF-e de devolução não foi gravada', pendente: 'NF-e: ainda não pedida' };
   const EMAIL_TXT = { enviado: 'e-mail enviado', erro: 'e-mail não foi enviado', sem_destinatarios: 'sem destinatários: e-mail não enviado', pendente: 'enviando e-mail…' };
 
   /** reduz a foto do celular para JPEG de até 1600 px (cabe no e-mail e na planilha) */
@@ -46,13 +47,26 @@
     return box;
   }
   function itemFeito(d, loja) {
-    const e = d.email || {};
+    const e = d.email || {}, nf = d.nfe || { estado: 'pendente' };
     const reenviar = h('button', { type: 'button', class: 'link-btn' }, 'reenviar e-mail');
+    const pedirNfe = (simular) => async () => {
+      if (!simular && !confirm('Gravar a NF-e de devolução no AppNext (sem concluir)? A loja confere, conclui e transmite lá.')) return;
+      try { const r = await api('POST', `devolucoes/${d.id}/nfe`, { loja, simular }); el.replaceWith(itemFeito(r.devolucao, loja)); } catch (er) { alert(er.message); }
+    };
+    const podePedir = nf.estado === 'erro' || nf.estado === 'teste' || nf.estado === 'pendente';
     const el = h('div', { class: 'dev-feita' },
-      h('b', null, `Devolução de ${quando(d.em)}`), h('small', { class: 'muted' }, ` por ${d.por} · ${d.itens.length} ${d.itens.length === 1 ? 'item' : 'itens'} · `),
-      h('span', { class: 'dev-st ' + (e.estado === 'enviado' ? 'ok' : 'erro') }, EMAIL_TXT[e.estado] || e.estado), e.erro ? h('small', { class: 'neg' }, ' ' + e.erro) : null, ' ',
-      h('a', { href: TS.api(`devolucoes/${d.id}/planilha?loja=${encodeURIComponent(loja)}`) }, 'planilha'), ' · ', reenviar);
+      h('div', null, h('b', null, `Devolução de ${quando(d.em)}`), h('small', { class: 'muted' }, ` por ${d.por} · ${d.itens.length} ${d.itens.length === 1 ? 'item' : 'itens'} · `),
+        h('a', { href: TS.api(`devolucoes/${d.id}/planilha?loja=${encodeURIComponent(loja)}`) }, 'planilha')),
+      h('div', null, h('span', { class: 'dev-st ' + (e.estado === 'enviado' ? 'ok' : 'erro') }, EMAIL_TXT[e.estado] || e.estado), e.erro ? h('small', { class: 'neg' }, ' ' + e.erro) : null, ' ', reenviar),
+      h('div', null, h('span', { class: 'dev-st ' + (nf.estado === 'ok' || nf.estado === 'teste' ? 'ok' : nf.estado === 'erro' ? 'erro' : 'fila') }, (nf.estado === 'na_fila' ? '⏳ ' : '') + (NFE_TXT[nf.estado] || nf.estado)),
+        nf.cfop ? h('small', { class: 'muted' }, ` · CFOP ${nf.cfop}`) : null, nf.erro ? h('small', { class: 'neg' }, ' ' + nf.erro) : null,
+        podePedir ? h('span', null, ' ', h('button', { type: 'button', class: 'link-btn', onclick: pedirNfe(false) }, nf.estado === 'erro' ? 'tentar de novo' : 'gravar no AppNext'), ' · ', h('button', { type: 'button', class: 'link-btn', onclick: pedirNfe(true) }, 'testar sem salvar')) : null),
+      nf.estado === 'na_fila' && nf.robo && nf.robo.aoVivo ? h('pre', { class: 'inv-log' }, nf.robo.aoVivo.slice(-8).join('\n')) : null);
     reenviar.addEventListener('click', async () => { reenviar.disabled = true; try { const r = await api('POST', `devolucoes/${d.id}/reenviar`, { loja }); el.replaceWith(itemFeito(r.devolucao, loja)); } catch (er) { alert(er.message); reenviar.disabled = false; } });
+    if (nf.estado === 'na_fila') setTimeout(async () => {
+      if (!el.isConnected) return;
+      try { const j = await api('GET', `devolucoes?loja=${encodeURIComponent(loja)}`); const n = j.devolucoes.find((x) => x.id === d.id); if (n && el.isConnected) el.replaceWith(itemFeito(n, loja)); } catch { /* tenta de novo */ }
+    }, 4000);
     return el;
   }
 
@@ -119,9 +133,7 @@
       enviar.disabled = true; msg.className = 'muted'; msg.textContent = 'Montando a planilha e enviando…';
       try {
         const r = await api('POST', 'devolucoes', { loja, notaId: n.id, nf: n.nf, obs: obsGeral.value, itens: [...sel].map(([cod, x]) => ({ cod, ...x })) });
-        box.replaceChildren(h('div', { class: 'notice' }, h('b', null, 'Devolução registrada. '), EMAIL_TXT[r.devolucao.email.estado] || '', r.devolucao.email.erro ? ': ' + r.devolucao.email.erro.replace(/\.$/, '') : '', '. ',
-          h('a', { href: TS.api(`devolucoes/${r.devolucao.id}/planilha?loja=${encodeURIComponent(loja)}`) }, 'Baixar a planilha'),
-          h('div', { class: 'muted' }, 'A NF-e de devolução (rascunho no AppNext) é a próxima etapa do painel; por enquanto, emita no AppNext.')));
+        box.replaceChildren(h('div', { class: 'notice' }, h('b', null, 'Devolução registrada.')), h('div', { class: 'dev-feitas' }, itemFeito(r.devolucao, loja)));
       } catch (e) { msg.className = 'neg'; msg.textContent = e.message; enviar.disabled = false; }
     });
     box.replaceChildren(h('div', { class: 'card dev-form' },

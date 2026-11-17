@@ -727,9 +727,30 @@ async function enviarDevolucao(loja, d) {
     return DEV.atualizar(loja.id, d.id, (x) => { x.email = { estado: 'erro', erro: String(e.message || e).slice(0, 300), em: new Date().toISOString() }; });
   }
 }
-app.get('/api/devolucoes', (req, res) => {
+/** pede ao robô a NF-e de devolução (gravada no AppNext sem concluir) */
+async function nfeDevolucao(loja, d, por, simular) {
+  if (!COL.ativo()) return DEV.erroNfe(loja.id, d.id, 'o coletor não está ligado nesta VPS');
+  const p = DEV.pedirNfe(loja.id, d, simular);
+  if (p.erro) return DEV.erroNfe(loja.id, d.id, p.erro);
+  try {
+    const x = await COL.nfe(loja.id, d.id, 'devolucao', por);
+    if (x.status >= 400) return DEV.erroNfe(loja.id, d.id, (x.json && x.json.erro) || 'o coletor recusou');
+  } catch (e) { return DEV.erroNfe(loja.id, d.id, 'sem resposta do coletor'); }
+  C.auditar(por, simular ? 'pediu teste da NF-e de devolução (sem salvar)' : 'pediu a NF-e de devolução no AppNext', loja.id, { loja: loja.id, nf: d.nota.nf });
+  return DEV.ler(loja.id, d.id);
+}
+app.get('/api/devolucoes', async (req, res) => {
   const loja = lojaDev(req, res); if (!loja) return;
-  res.json({ devolucoes: DEV.lista(loja.id).slice(0, 50), destinatarios: DEV.destinatarios(loja.id) });
+  let ds = DEV.lista(loja.id).slice(0, 50).map((d) => DEV.conferirNfe(loja.id, d));
+  // pedido perdido (o coletor reiniciou com ele na fila): vira erro
+  if (ds.some((d) => d.nfe && d.nfe.estado === 'na_fila') && COL.ativo()) {
+    let robo = null; try { robo = (await COL.status(loja.id)).nfe; } catch { /* ok */ }
+    const parado = !robo || (robo.estado !== 'na_fila' && robo.estado !== 'rodando');
+    ds = ds.map((d) => (d.nfe && d.nfe.estado === 'na_fila' && parado && Date.now() - Date.parse(d.nfe.em) > 20000
+      ? DEV.erroNfe(loja.id, d.id, robo && robo.ultima && robo.ultima.id === d.id ? `o robô terminou sem confirmar (código ${robo.ultima.codigo})` : 'o pedido se perdeu (o coletor reiniciou); peça de novo') : d));
+    ds.forEach((d) => { if (d.nfe && d.nfe.estado === 'na_fila' && robo && robo.id === d.id) d.nfe.robo = { estado: robo.estado, aoVivo: robo.aoVivo || null }; });
+  }
+  res.json({ devolucoes: ds, destinatarios: DEV.destinatarios(loja.id) });
 });
 app.get('/api/devolucoes/:id/planilha', async (req, res) => {
   const loja = lojaDev(req, res); if (!loja) return;
@@ -761,8 +782,16 @@ app.post('/api/devolucoes', express.json({ limit: '12mb' }), async (req, res) =>
   const r = DEV.criar(loja.id, nota, b, req.user);
   if (r.erro) return res.status(400).json({ erro: r.erro });
   C.auditar(req.user, 'registrou devolução ao fornecedor', loja.id, { loja: loja.id, nf: r.ok.nota.nf, itens: r.ok.itens.length });
-  const d = await enviarDevolucao(loja, r.ok);
+  let d = await enviarDevolucao(loja, r.ok);
+  d = await nfeDevolucao(loja, d, req.user, false); // e já pede a NF-e de devolução ao robô
   res.json({ ok: true, devolucao: d });
+});
+app.post('/api/devolucoes/:id/nfe', express.json({ limit: '1kb' }), async (req, res) => {
+  const loja = lojaDev(req, res); if (!loja) return;
+  const d = DEV.ler(loja.id, String(req.params.id));
+  if (!d) return res.status(404).json({ erro: 'Devolução não encontrada.' });
+  if (d.nfe && (d.nfe.estado === 'na_fila' || d.nfe.estado === 'ok')) return res.status(409).json({ erro: d.nfe.estado === 'ok' ? 'A NF-e desta devolução já foi gravada no AppNext.' : 'O robô já está cuidando desta devolução.' });
+  res.json({ ok: true, devolucao: await nfeDevolucao(loja, d, req.user, !!(req.body || {}).simular) });
 });
 app.post('/api/devolucoes/:id/reenviar', express.json({ limit: '1kb' }), async (req, res) => {
   const loja = lojaDev(req, res); if (!loja) return;

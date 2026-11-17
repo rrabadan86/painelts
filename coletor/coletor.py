@@ -930,11 +930,11 @@ class API(BaseHTTPRequestHandler):
             except Exception:  # noqa: BLE001
                 return self._json(400, {"erro": "pedido inválido"})
             rid, acao = str(corpo.get("id") or ""), str(corpo.get("acao") or "")
-            if not RID_OK.match(rid) or acao not in ("cadastros", "rascunho") or (acao == "cadastros") != (rid == "cadastros"):
+            if not RID_OK.match(rid) or acao not in ("cadastros", "rascunho", "devolucao") or (acao == "cadastros") != (rid == "cadastros"):
                 return self._json(400, {"erro": "pedido inválido"})
             if not SCRIPT_NFE.exists():
                 return self._json(400, {"erro": "O coletor desta VPS ainda não tem o robô da NF-e (atualize)."})
-            if acao == "rascunho" and not arquivos_nfe(loja, rid)[0].exists():
+            if acao != "cadastros" and not arquivos_nfe(loja, rid)[0].exists():
                 return self._json(400, {"erro": "Falta o arquivo da nota."})
             if not enfileirar_nfe(loja, rid, acao, por):
                 return self._json(409, {"erro": "O robô da NF-e desta loja já está trabalhando."})

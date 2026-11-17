@@ -151,4 +151,24 @@ function textoEmail(d, nomeLoja) {
     'Em anexo: a planilha da devolução e as fotos dos itens danificados.', '', `${nomeLoja}`].join('\n');
 }
 
-module.exports = { destinatarios, salvarDestinatarios, criar, ler, atualizar, lista, arqFoto, planilha, textoEmail, pastaDev };
+// ---------- NF-e de devolução: o robô grava a saída de devolução no AppNext SEM concluir ----------
+const envioNfe = (id) => path.join(C.pastaLoja(id), 'nfe', 'envio');
+function pedirNfe(id, d, simular) {
+  if (!/^[0-9a-f-]{36}$/.test(String(d.nota.id || ''))) return { erro: 'Esta nota não tem o id do AppNext (atualize as notas de entrada).' };
+  fs.mkdirSync(envioNfe(id), { recursive: true });
+  try { fs.unlinkSync(path.join(envioNfe(id), d.id + '.resultado.json')); } catch { /* ok */ }
+  fs.writeFileSync(path.join(envioNfe(id), d.id + '.json'), JSON.stringify({ entradaId: d.nota.id, itens: d.itens.map((i) => ({ codigo: i.cod, qtd: i.qtd })), simular: !!simular }));
+  return { ok: atualizar(id, d.id, (x) => { x.nfe = { estado: 'na_fila', em: new Date().toISOString(), simular: !!simular }; }) };
+}
+/** resultado do robô para a NF-e de devolução */
+function conferirNfe(id, d) {
+  if (!d.nfe || d.nfe.estado !== 'na_fila') return d;
+  const r = lerJ(path.join(envioNfe(id), d.id + '.resultado.json'), null);
+  if (!r || !r.em || Date.parse(r.em) < Date.parse(d.nfe.em)) return d;
+  return atualizar(id, d.id, (x) => {
+    x.nfe = { ...x.nfe, fim: r.em, estado: r.ok ? (r.simulado ? 'teste' : 'ok') : 'erro', erro: r.ok ? undefined : r.erro || 'falhou', cfop: r.nota && r.nota.cfop, total: r.nota && r.nota.total };
+  });
+}
+function erroNfe(id, did, erro) { return atualizar(id, did, (x) => { x.nfe = { ...(x.nfe || {}), estado: 'erro', erro, fim: new Date().toISOString() }; }); }
+
+module.exports = { pedirNfe, conferirNfe, erroNfe, destinatarios, salvarDestinatarios, criar, ler, atualizar, lista, arqFoto, planilha, textoEmail, pastaDev };

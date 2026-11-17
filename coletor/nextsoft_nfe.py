@@ -11,6 +11,7 @@
 # SIMULAR=1 faz tudo menos o clique em Rascunho.
 import json
 import os
+import re
 import sys
 import traceback
 from datetime import datetime
@@ -20,8 +21,8 @@ ACAO = os.getenv("ACAO", "").strip()
 ENTRADA = os.getenv("ENTRADA_NFE", "").strip()
 SAIDA = os.getenv("SAIDA_RESULTADO", "").strip()
 SIMULAR = os.getenv("SIMULAR", "") == "1"
-if ACAO not in ("cadastros", "rascunho") or not SAIDA or (ACAO == "rascunho" and not ENTRADA):
-    print("ERRO: defina ACAO (cadastros|rascunho), SAIDA_RESULTADO e, no rascunho, ENTRADA_NFE")
+if ACAO not in ("cadastros", "rascunho", "devolucao") or not SAIDA or (ACAO != "cadastros" and not ENTRADA):
+    print("ERRO: defina ACAO (cadastros|rascunho|devolucao), SAIDA_RESULTADO e, no rascunho/devolução, ENTRADA_NFE")
     sys.exit(2)
 os.environ.setdefault("SAIDA_ARQUIVO", str(Path.cwd() / "_nao_usado.xlsx"))
 
@@ -161,6 +162,48 @@ PREENCHER = "async (p) => {" + JS_BASE + """
 }"""
 
 
+# devolução: a tela do AppNext abre a partir da nota de ENTRADA já com fornecedor, chave e TODOS os itens;
+# o robô deixa só os itens da devolução com as quantidades do painel, põe o motivo [19], o CFOP da regra fiscal
+# de devolução, a série NF-e e frete [9]/[9] (sem pagamento e sem vendedor) e o AppNext recalcula os impostos.
+DEVOLVER = "async (p) => {" + JS_BASE.replace("acha('salvarRascunho')", "acha('montarDevolucao')") + """
+  const sl = tela.selectList, S = tela.saida, set = (k, v) => tela.$set(S, k, v);
+  const erro = (t) => { throw new Error(t); };
+  if (!S.chaveAcesso) erro('a nota de entrada não tem chave de acesso no AppNext');
+  // só os itens da devolução, com as quantidades do painel
+  const pedidos = new Map(p.itens.map((i) => [String(i.codigo).toUpperCase(), i]));
+  const naNota = new Map(S.itens.map((i) => [String(i.codigo).toUpperCase(), i]));
+  for (const [cod, i] of pedidos) {
+    const it = naNota.get(cod) || erro(`o item ${i.codigo} não está nesta nota no AppNext`);
+    if (i.qtd > Number(it.quantidade) + 1e-9) erro(`o item ${i.codigo} tem ${it.quantidade} na nota e a devolução pede ${i.qtd}`);
+  }
+  S.itens.splice(0, S.itens.length, ...S.itens.filter((i) => pedidos.has(String(i.codigo).toUpperCase())));
+  for (const it of S.itens) tela.$set(it, 'quantidade', pedidos.get(String(it.codigo).toUpperCase()).qtd);
+  const m19 = (sl.motivosMovimentacao || []).find((x) => String(x.codigo) === '19') || erro('motivo [19] Devolução ao Fornecedor não existe');
+  set('motivoMovimentacaoId', m19.id); await espera(1500);
+  if (!(sl.cfops || []).length) sl.cfops = tela.buscarSequenciafiscalPorMotivoMovimentacao(m19.id);
+  const cfops = sl.cfops || [];
+  if (!cfops.length) erro('não há regra fiscal (sequência) de Devolução ao Fornecedor nesta loja no AppNext');
+  if (cfops.length > 1) erro(`há ${cfops.length} CFOPs de devolução nesta loja (${cfops.map((c) => c.codigo).join(', ')}); faça esta nota à mão`);
+  set('cfopId', cfops[0].id); // a tela põe a regra em cada item e recalcula os impostos
+  for (let k = 0; k < 40 && S.itens.some((i) => !i.produtosSequencia || !(i.imposto && i.imposto.cfopId)); k++) await espera(250);
+  if (S.itens.some((i) => !i.produtosSequencia)) erro('algum item não tem a regra fiscal de devolução');
+  await espera(2500); // o cálculo dos impostos de cada item vem do AppNext
+  const serie = (sl.serieNfe || []).find((x) => x.descricao === 'NF-e') || erro('série "NF-e" não existe');
+  const dn = tela.$refs.tabs && tela.$refs.tabs.$refs.dadosNota; if (dn) dn.serie = serie.id;
+  if (!S.serie) { set('serie', String(serie.serie)); set('modeloNFe', String(serie.modelo)); }
+  const tf = (sl.tiposFrete || []).find((x) => String(x.codigo) === '9') || erro('tipo de frete [9] não existe');
+  const mf = (sl.modalidadesFrete || []).find((x) => String(x.codigo) === '9') || erro('modalidade de frete [9] não existe');
+  set('tipoFreteId', tf.id); set('modalidadeFreteId', mf.id);
+  const forn = acha('carregarEnderecosParceiro');
+  for (let k = 0; k < 40 && forn && (forn.carregandoEnderecos || !forn.enderecosParceiro.length); k++) await espera(250);
+  if (!S.enderecoId && forn && forn.enderecosParceiro.length === 1) set('enderecoId', forn.enderecosParceiro[0].id);
+  await espera(800);
+  await tela.calcularTotais(); await espera(800);
+  const t = tela.$refs.tabs; const invalida = ['validarDadosNota', 'validarDadosFornecedor', 'validarProdutos', 'validarTransportadora', 'validarValoresAdicionais'].filter((k) => t[k] && t[k]());
+  return { invalida, cfop: cfops[0].codigo, total: Number(S.valorTotalLiquido), itens: S.itens.map((i) => ({ codigo: String(i.codigo), nome: i.nome || '', qtd: Number(i.quantidade), preco: Number(i.valorUnitario), total: Number(i.valorTotalLiquido) })) };
+}"""
+
+
 def abrir_tela(page):
     page.evaluate(f"() => {{ location.hash = '{ROTA}'; }}")
     for _ in range(60):
@@ -170,9 +213,63 @@ def abrir_tela(page):
     raise RuntimeError("a tela de Saída de Produtos não carregou")
 
 
+def devolucao(page, pedido, t0):
+    step("2) Entrada da nota → Devolução (o AppNext preenche fornecedor, chave e itens)")
+    if not re.match(r"^[0-9a-f-]{36}$", str(pedido.get("entradaId", ""))):
+        raise RuntimeError("a nota de entrada não tem o id do AppNext")
+    page.evaluate(f"() => {{ location.hash = '#/estoque/saida-devolucao/devolucao/{pedido['entradaId']}'; }}")
+    pronto = "() => { const r=[...document.querySelectorAll('*')].find(e=>e.__vue__); if(!r) return false; const f=[r.__vue__.$root]; while(f.length){const x=f.shift(); if(x.$options.methods&&x.$options.methods.montarDevolucao) return !!(x.saida&&x.saida.itens&&x.saida.itens.length&&x.selectList&&(x.selectList.sequenciasFiscais||[]).length&&(x.selectList.motivosMovimentacao||[]).length); f.push(...(x.$children||[]));} return false; }"
+    for _ in range(60):
+        page.wait_for_timeout(1000)
+        if page.evaluate(pronto):
+            break
+    else:
+        raise RuntimeError("a tela de devolução não carregou a nota de entrada")
+    log("   ✓ nota de entrada carregada na devolução")
+    step(f"3) Deixando só os {len(pedido['itens'])} itens da devolução e preenchendo")
+    r = page.evaluate(DEVOLVER, pedido)
+    log(f"   CFOP {r['cfop']} · série NF-e · frete [9]/[9] · sem pagamento e sem vendedor")
+    step("4) Conferindo")
+    erros = []
+    if r["invalida"]:
+        erros.append("o AppNext acusou campo obrigatório faltando (" + ", ".join(r["invalida"]) + ")")
+    esp = {str(i["codigo"]).upper(): float(i["qtd"]) for i in pedido["itens"]}
+    if len(r["itens"]) != len(esp):
+        erros.append(f"a nota ficou com {len(r['itens'])} itens e a devolução tem {len(esp)}")
+    for i in r["itens"]:
+        q = esp.get(i["codigo"].upper())
+        ok = q is not None and abs(i["qtd"] - q) < 0.0005
+        log(f"   {'✓' if ok else '✗'} {i['codigo']} {i['nome'][:40]}: {i['qtd']:g} × R$ {i['preco']:.2f} = R$ {i['total']:.2f}")
+        if not ok:
+            erros.append(f"item {i['codigo']} com quantidade diferente")
+    log(f"   total da nota: R$ {r['total']:.2f}")
+    if erros:
+        raise RuntimeError("conferência falhou, nada foi salvo: " + "; ".join(erros[:6]))
+    log("   ✓ tudo confere")
+    if SIMULAR or pedido.get("simular"):
+        log("   TESTE: parei antes de salvar (nada foi salvo no AppNext)")
+        gravar({"ok": True, "simulado": True, "nota": r})
+        return 0
+    step("5) Salvar SEM concluir (a loja confere, conclui e transmite no AppNext)")
+    # na 1ª etapa da tela, formCadastrar grava com revisado = falso (não concluída)
+    page.evaluate("() => { const r=[...document.querySelectorAll('*')].find(e=>e.__vue__); const f=[r.__vue__.$root]; while(f.length){const x=f.shift(); if(x.$options.methods&&x.$options.methods.montarDevolucao){ if (x.wizardStepSaida !== 1) throw new Error('a tela não está na 1ª etapa'); x.formCadastrar(); return true; } f.push(...(x.$children||[]));} return false; }")
+    ok = False
+    for _ in range(60):
+        page.wait_for_timeout(1000)
+        if page.locator("text=/cadastrada com sucesso/i").count() or "/saida-devolucao/" not in page.url:
+            ok = True
+            break
+    if not ok:
+        raise RuntimeError("o AppNext não confirmou a gravação da devolução")
+    log("   ✓ o AppNext gravou a saída de devolução (não concluída)")
+    log(f"Concluído em {(datetime.now() - t0).seconds} s")
+    gravar({"ok": True, "nota": r})
+    return 0
+
+
 def main():
     nx.start_watchdog(int(os.getenv("MAX_RUNTIME_SECONDS", "600")))
-    pedido = json.loads(Path(ENTRADA).read_text(encoding="utf-8")) if ACAO == "rascunho" else None
+    pedido = json.loads(Path(ENTRADA).read_text(encoding="utf-8")) if ACAO != "cadastros" else None
     with sync_playwright() as pw:
         ctx = pw.chromium.launch_persistent_context(
             user_data_dir=str(Path.cwd() / "pw_state"), headless=True, accept_downloads=False, ignore_https_errors=True,
@@ -191,6 +288,8 @@ def main():
             log("   ✓ login feito")
             nx.trocar_loja(page, os.getenv("APPNEXT_LOJA_DESTINO"))
             log(f"   ✓ loja: {os.getenv('APPNEXT_LOJA_DESTINO') or 'a padrão do usuário'}")
+            if ACAO == "devolucao":
+                return devolucao(page, pedido, t0)
             step("2) Estoque → Saída de Produtos → Nova")
             abrir_tela(page)
             log("   ✓ tela aberta")
