@@ -87,7 +87,8 @@
     const manual = d.lotes.some((x) => x.cod === l.cod && x.ajuste && x.ajuste.tipo === 'manual');
     fundo.append(h('div', { class: 'card cp-copiar vl-modal' },
       h('h3', null, `Lotes de ${l.desc}`),
-      h('p', { class: 'muted' }, 'Pese quanto tem de cada lote (em gramas). Use quando a loja abriu um pacote novo antes do antigo. A soma tem de dar o estoque do AppNext; se não der, o total está errado: conte pelo Inventário (por lote).'),
+      h('p', { class: 'muted' }, 'Pese quanto tem de cada lote (em gramas). Use quando a loja abriu um pacote novo antes do antigo.'),
+      h('p', { class: 'vl-aviso' }, h('b', null, 'Não é inventário: '), 'não muda nada no AppNext, só diz ao painel de que lote é cada parte do estoque. A soma tem de dar o estoque que já está no AppNext. Se não der, o total está errado: corrija pelo Inventário (dá para contar por lote lá).'),
       camposLotes(lotes, mapa, (m, sm) => { mapa = m; soma = sm; pintarSoma(); }), info, erro,
       h('div', { class: 'cp-acoes' },
         manual ? h('button', { type: 'button', class: 'link-btn', title: 'Esquece o ajuste e volta a calcular: o estoque fica nas entradas mais novas', onclick: () => enviar({ chave: l.chave, automatico: true }) }, 'voltar ao automático') : null,
@@ -212,7 +213,7 @@
         { key: 'saldo', label: 'Saldo', render: (l) => h('div', { class: 'vl-saldo' },
           h('span', { title: l.qtdEntrada ? `chegaram ${kgTxt(l.qtdEntrada)}` : null }, kgTxt(l.saldo)),
           l.ajuste ? h('small', { class: 'vl-sub vl-aj', title: `${l.ajuste.tipo === 'inventario' ? 'Contado por lote no inventário' : 'Ajustado na tela'}${l.ajuste.por ? ' por ' + l.ajuste.por : ''} em ${new Date(l.ajuste.em).toLocaleDateString('pt-BR')}; as vendas depois disso saem do lote mais antigo` }, l.ajuste.tipo === 'inventario' ? 'contado no inventário' : 'ajustado') : null,
-          h('button', { type: 'button', class: 'link-btn vl-ajustar', title: 'Quanto tem de cada lote deste chá (ex.: abriram o pacote novo antes do antigo)', onclick: () => ajustarCha(l, d, loja, () => dados(loja, true).then((nd) => { if (corpo.isConnected) pintar(corpo, loja, nd); })) }, '⚖ ajustar')) },
+          h('button', { type: 'button', class: 'link-btn vl-ajustar', title: 'Divide o estoque deste chá entre os lotes (ex.: abriram o pacote novo antes do antigo). Não é inventário: não muda nada no AppNext e a soma tem de ser o estoque que já está lá. Se o total estiver errado, corrija pelo Inventário.', onclick: () => ajustarCha(l, d, loja, () => dados(loja, true).then((nd) => { if (corpo.isConnected) pintar(corpo, loja, nd); })) }, '⚖ ajustar')) },
         { key: 'lote', label: 'Lote', align: 'l', render: (l) => {
           const i = h('input', { class: 'f-input vl-lote' + (l.lote === '0' ? ' vl-vazio' : ''), value: l.lote === '0' ? '' : l.lote, placeholder: '0', maxlength: 30, 'aria-label': `Lote de ${l.desc}`, autocomplete: 'off', autocapitalize: 'characters' });
           i.addEventListener('change', () => { i.value = i.value.trim().toUpperCase(); i.classList.toggle('vl-vazio', !i.value); salvar(l, { lote: i.value }, i); });
@@ -247,7 +248,7 @@
       h('div', { class: 'card vl-ajuda' }, h('b', null, 'Como funciona'), h('ul', null,
         h('li', null, 'Chegou chá a granel? Digite o nº do lote que está no pacote na linha da entrada (nota e data). A validade já vem com 12 meses da entrada; se o pacote disser outra data, corrija.'),
         h('li', null, 'O saldo de cada lote sai do estoque do AppNext: o que sobrou fica nas entradas mais novas, porque o mais antigo é vendido primeiro. Por isso, venda sempre o lote mais antigo.'),
-        h('li', null, 'Abriram o pacote novo antes do antigo? Em "⚖ ajustar", pese quanto tem de cada lote. No Inventário, o chá a granel também pode ser contado por lote. Depois disso, as vendas saem do lote mais antigo.'),
+        h('li', null, 'Abriram o pacote novo antes do antigo? Em "⚖ ajustar", pese quanto tem de cada lote. O ajustar não é inventário: não muda o AppNext, só divide o estoque entre os lotes. Se o total estiver errado, use o Inventário (o chá a granel pode ser contado por lote). Depois disso, as vendas saem do lote mais antigo.'),
         h('li', null, '⚫ Vencido: tire da venda e lance a perda no AppNext. 🔴 e 🟠: degustação, oferta e campanha. 🟡: deixe na frente da prateleira.'),
         h('li', null, 'Os lotes em risco aparecem também em Vendas → Promoção, no Pedido (para não comprar mais do mesmo chá) e no resumo diário.'))));
     desenharTabela();
