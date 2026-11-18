@@ -139,3 +139,23 @@ test('contagem aberta antes da regra nova: item não contado também vai como 0'
   assert.equal(INV.ler('lv', 'aaaaaaaaaaaa').semContarZero, true);
   assert.equal(INV.ler('lv', 'bbbbbbbbbbbb').semContarZero, undefined);
 });
+
+test('cobertura: contagem do painel pelo recorte e inventário do AppNext com metade dos produtos do grupo/tipo', () => {
+  const cat = [
+    { cod: '1', grupo: 'ACESSÓRIOS', un: 'Un', qtd: 3 }, { cod: '2', grupo: 'ACESSÓRIOS', un: 'Un', qtd: 2 },
+    { cod: '3', grupo: 'ACESSÓRIOS', un: 'Un', qtd: 1 }, { cod: '4', grupo: 'ACESSÓRIOS', un: 'Un', qtd: 0 },
+    { cod: '10', grupo: 'CHÁS', un: 'Kg', qtd: 1, tipo: 'CHÁ BRANCO PURO' }, { cod: '11', grupo: 'CHÁS', un: 'Kg', qtd: 2, tipo: 'CHÁ BRANCO AROMATIZADO' },
+    { cod: '20', grupo: 'CHÁS', un: 'Kg', qtd: 1, tipo: 'ROOIBOS PURO' },
+  ];
+  const hist = { em: '2026-11-18T05:00:00Z', inventarios: [
+    { id: 'a', numero: 600, data: '2026-11-10T10:00:00-03:00', itens: [{ cod: '1' }] }, // 1 de 3 acessórios: não cobre
+    { id: 'b', numero: 601, data: '2026-11-12T10:00:00-03:00', itens: [{ cod: '1' }, { cod: '2' }, { cod: '11' }] }, // 2 de 3; 1 de 2 brancos
+  ] };
+  const cont = [{ st: 'importado', importadoEm: '2026-11-15T12:00:00.000Z', escopo: { familia: 'Rooibos' } },
+    { st: 'cancelado', importadoEm: null, escopo: { grupo: 'ACESSÓRIOS' } }];
+  const r = INV.cobertura('lx', cat, cont, hist);
+  assert.deepEqual(r.grupos['ACESSÓRIOS'], { em: '2026-11-12T13:00:00.000Z', fonte: 'appnext', numero: 601 });
+  assert.equal(r.familias['Chá branco'].numero, 601);
+  assert.equal(r.familias.Rooibos.fonte, 'painel');
+  assert.equal(r.appnextEm, '2026-11-18T05:00:00Z');
+});

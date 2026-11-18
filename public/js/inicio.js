@@ -4,7 +4,7 @@
  *   que venderam nos últimos 90 dias, e produtos que acabaram e venderam nos últimos 30 dias.
  * - Site (quem vê o Site): mudanças de preço e promoção desde a consulta anterior.
  * - Atualizações (admin e franqueado): coletas que falharam nas últimas 48 h; vendas atrasadas.
- * - Inventário (quem vê Inventário): Acessórios, Alimentação, Consumíveis, Sachês, Tea Moments e cada tipo de chá há 25 dias ou mais sem contagem importada. */
+ * - Inventário (quem vê Inventário): Acessórios, Alimentação, Consumíveis, Sachês, Tea Moments e cada tipo de chá há 25 dias ou mais sem inventário (contagem do painel ou inventário feito direto no AppNext, lido toda madrugada). */
 (function () {
   const { h, fmt, state } = TS;
 
@@ -116,17 +116,21 @@
     const dia = (iso) => new Date(iso).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
     const hoje = dia(new Date().toISOString());
     const diasDesde = (iso) => Math.round((Date.parse(hoje) - Date.parse(dia(iso))) / 864e5);
+    // o servidor junta as contagens do painel e o histórico do AppNext (lido toda madrugada); na apresentação, só o painel
+    const cob = d.cobertura || null;
     const ultimo = (cobre) => feitas.filter((c) => c.escopo && cobre(c.escopo)).reduce((m, c) => (!m || c.importadoEm > m ? c.importadoEm : m), null);
+    const ultG = (g) => (cob ? (cob.grupos[g] || {}).em || null : ultimo((e) => e.grupo === g));
+    const ultF = (f) => (cob ? (cob.familias[f] || {}).em || null : ultimo((e) => e.kg || e.familia === f || (e.tipo && fam(e.tipo) === f)));
     const atrasados = (itens) => itens.map(([nome, ult]) => ({ nome, dias: ult ? diasDesde(ult) : null })).filter((x) => x.dias == null || x.dias >= DIAS_INV)
       .sort((a, b) => (b.dias ?? 1e9) - (a.dias ?? 1e9));
     const norm = (s) => TS.norm(s).toUpperCase();
     const grupos = (d.grupos || []).map(([g]) => g).filter((g) => GRUPOS_INV.some((re) => re.test(norm(g))));
-    const gAtr = atrasados(grupos.map((g) => [g, ultimo((e) => e.grupo === g)]));
+    const gAtr = atrasados(grupos.map((g) => [g, ultG(g)]));
     // tipo de chá: vale a contagem do tipo (puro + aromatizado), a de "todos os chás a granel" e as antigas de só puro/só aromatizado
-    const tAtr = atrasados((d.familias || []).map(([f]) => [f, ultimo((e) => e.kg || e.familia === f || (e.tipo && fam(e.tipo) === f))]));
+    const tAtr = atrasados((d.familias || []).map(([f]) => [f, ultF(f)]));
     const txt = (xs) => {
       const com = xs.filter((x) => x.dias != null), sem = xs.filter((x) => x.dias == null);
-      return [com.length ? com.map((x) => `${x.nome} (${x.dias} dias)`).join(', ') : '', sem.length ? `Nenhuma contagem no painel: ${sem.map((x) => x.nome).join(', ')}` : ''].filter(Boolean).join('. ');
+      return [com.length ? com.map((x) => `${x.nome} (${x.dias} dias)`).join(', ') : '', sem.length ? `${cob && cob.appnextEm ? 'Nenhum inventário (painel ou AppNext)' : 'Nenhuma contagem no painel'}: ${sem.map((x) => x.nome).join(', ')}` : ''].filter(Boolean).join('. ');
     };
     const ir = { link: '#inventario', ir: 'fazer inventário ›', antes: () => { state.invId = null; } };
     if (gAtr.length) lista.push({ nivel: 'warn', titulo: `Inventário: ${fmt.int(gAtr.length)} ${gAtr.length === 1 ? 'grupo está' : 'grupos estão'} há ${DIAS_INV} dias ou mais sem contagem`, texto: txt(gAtr), ...ir });

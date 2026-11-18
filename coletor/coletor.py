@@ -55,6 +55,9 @@ SCRIPT_FIXE = Path(os.getenv("COLETOR_SCRIPT_FIXE", Path(__file__).with_name("fi
 # saldo oficial de pontos de cada cliente (só pelo botão "Sincronizar saldos com o FIXE")
 SCRIPT_NFE = Path(os.getenv("COLETOR_SCRIPT_NFE", Path(__file__).with_name("nextsoft_nfe.py")))
 SCRIPT_INVENTARIO = Path(os.getenv("COLETOR_SCRIPT_INVENTARIO", Path(__file__).with_name("nextsoft_inventario.py")))
+# só lê o histórico de inventários do AppNext (Auditoria/Inventário), todo dia às HORA_INVHIST
+SCRIPT_INVHIST = Path(os.getenv("COLETOR_SCRIPT_INVHIST", Path(__file__).with_name("nextsoft_invhist.py")))
+HORA_INVHIST = os.getenv("COLETOR_HORA_INVHIST", "02:00")
 SCRIPT_SALDOS = Path(os.getenv("COLETOR_SCRIPT_SALDOS", Path(__file__).with_name("fixe_saldos.py")))
 # Sistema de Pedidos da franqueadora: catálogo (toda noite) e montar o carrinho (pelo painel)
 SCRIPT_PEDIDO = Path(os.getenv("COLETOR_SCRIPT_PEDIDO", Path(__file__).with_name("nextsoft_pedido.py")))
@@ -365,7 +368,8 @@ def trabalhador_inventario():
             continue
         loja = job["loja"]
         eh_nfe = job.get("gatilho") == "nfe"
-        est_alvo = nfe_est if eh_nfe else inv_est
+        eh_hist = job.get("gatilho") == "invhist"
+        est_alvo = nfe_est if eh_nfe else invhist_est if eh_hist else inv_est
 
         def marcar_espera(ocup):
             est_alvo[loja] = {**est_alvo.get(loja, {}), "estado": "na_fila", "esperando": ocup}
@@ -376,6 +380,8 @@ def trabalhador_inventario():
                 raise RuntimeError("tempo esgotado aguardando a coleta desta loja liberar o AppNext")
             if eh_nfe:
                 rodar_nfe(job)
+            elif eh_hist:
+                rodar_invhist(job)
             else:
                 rodar_inventario(job)
         except Exception as e:  # noqa: BLE001
@@ -507,6 +513,45 @@ def rodar_inventario(job):
     except OSError:
         pass
     log(f"{loja}: inventário ({tipo}) {'OK' if codigo == 0 else 'FALHOU (' + str(codigo) + ')'}")
+
+
+# ---------- histórico de inventários do AppNext (só leitura), todo dia de madrugada ----------
+invhist_est = {}  # loja -> {"estado", "ultima"}
+
+
+def enfileirar_invhist(loja):
+    with lock:
+        if (invhist_est.get(loja) or {}).get("estado") in ("na_fila", "rodando"):
+            return False
+        invhist_est[loja] = {**invhist_est.get(loja, {}), "estado": "na_fila"}
+        fila_inv.append({"loja": loja, "gatilho": "invhist", "criado": datetime.now(TZ).isoformat()})
+    log(f"{loja}: histórico de inventários do AppNext na fila")
+    return True
+
+
+def rodar_invhist(job):
+    loja = job["loja"]
+    pasta = WORK_DIR / loja
+    robo = pasta / "inventario-robo"  # mesmo navegador do inventário (a fila é a mesma: nunca rodam juntos)
+    robo.mkdir(parents=True, exist_ok=True)
+    SEGREDO = re.compile(r"(SECRET|TOKEN|PASS|SENHA|SMTP|GITHUB|KEY)", re.I)
+    env = {k: v for k, v in os.environ.items() if not k.startswith("COLETOR_") and not SEGREDO.search(k)}
+    env.update(ler_env(CONFIG_DIR / f"{loja}.env"))
+    env.update({"PYTHONUNBUFFERED": "1", "SAIDA_HISTORICO": str(DATA_DIR / loja / "inventario" / "appnext-historico.json")})
+    log_path = pasta / "invhist.log"
+    inicio = time.time()
+    with lock:
+        invhist_est[loja] = {"estado": "rodando", "inicio": datetime.now(TZ).isoformat()}
+    try:
+        with open(log_path, "w", encoding="utf-8") as out:
+            codigo = rodar_processo([sys.executable, str(SCRIPT_INVHIST)], cwd=robo, env=env, out=out, timeout=1800)
+    except subprocess.TimeoutExpired:
+        codigo = "timeout"
+    except Exception as e:  # noqa: BLE001
+        codigo = str(e)
+    with lock:
+        invhist_est[loja] = {"estado": "parado", "ultima": {"fim": datetime.now(TZ).isoformat(), "ok": codigo == 0, "codigo": codigo, "duracao_s": round(time.time() - inicio)}}
+    log(f"{loja}: histórico de inventários {'OK' if codigo == 0 else 'FALHOU (' + str(codigo) + ')'}")
 
 
 def robo_agora(loja):
@@ -1051,6 +1096,13 @@ def agendador():
             enfileirar(loja, "agendado", fixe=noite, ultima_do_dia=noite, data_ref=hoje_str)
             if noite and tem_pedido(loja):
                 enfileirar_pedido(loja, "catalogo", "rotina")
+        # histórico de inventários do AppNext: uma vez por dia, de madrugada (só leitura)
+        if hhmm == HORA_INVHIST:
+            for loja in lojas_configuradas():
+                chave = f"invhist {loja} {hoje_str}"
+                if chave not in feitos:
+                    feitos.add(chave)
+                    enfileirar_invhist(loja)
         if len(feitos) > 5000:
             feitos = {k for k in feitos if hoje_str in k}
         time.sleep(20)
@@ -1309,6 +1361,9 @@ def main():
     threading.Thread(target=trabalhador, daemon=True).start()
     threading.Thread(target=trabalhador_inventario, daemon=True).start()
     threading.Thread(target=agendador, daemon=True).start()
+    for loja_ in lojas_configuradas():
+        if not (DATA_DIR / loja_ / "inventario" / "appnext-historico.json").exists():
+            enfileirar_invhist(loja_)
     ThreadingHTTPServer(("0.0.0.0", PORTA), API).serve_forever()
 
 

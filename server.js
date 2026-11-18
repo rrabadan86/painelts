@@ -1326,6 +1326,7 @@ app.get('/api/inventario', async (req, res) => {
     contagens, estoqueEm: est && est.em, perfil: req.perfil,
     grupos: conta('grupo'), subs: [...subs].map(([k, n]) => [...k.split('|'), n]), tipos: conta('tipo'), familias: [...fams].sort((a, b) => a[0].localeCompare(b[0], 'pt-BR')),
     kg: cat.filter(INV.ehChaGranel).length,
+    cobertura: INV.cobertura(loja.id, cat, INV.lista(loja.id)),
   });
 });
 // busca de itens (para escolher ou incluir): nome, código ou código de barras

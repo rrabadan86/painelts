@@ -4,7 +4,7 @@ ENV TZ=America/Sao_Paulo PYTHONUNBUFFERED=1
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-COPY coletor.py nextsoft_sessao.py nextsoft_export_to_drive.py nextsoft_xml.py nextsoft_estoque.py fixe_export.py fixe_saldos.py nextsoft_inventario.py nextsoft_nfe.py nextsoft_pedido.py nextsoft_compras.py nextsoft_caixa.py nextsoft_produtos.py ./
+COPY coletor.py nextsoft_sessao.py nextsoft_export_to_drive.py nextsoft_xml.py nextsoft_estoque.py fixe_export.py fixe_saldos.py nextsoft_inventario.py nextsoft_invhist.py nextsoft_nfe.py nextsoft_pedido.py nextsoft_compras.py nextsoft_caixa.py nextsoft_produtos.py ./
 EXPOSE 8000
 HEALTHCHECK --interval=60s --timeout=5s CMD python -c "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/saude',timeout=3)"
 CMD ["python", "coletor.py"]

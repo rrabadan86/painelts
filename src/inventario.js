@@ -330,4 +330,51 @@ function conferirEnvio(id, cid) {
 
 function erroEnvio(id, cid, erro) { const c = ler(id, cid); if (c && c.envio) { c.envio.estado = 'erro'; c.envio.erro = erro; c.envio.fim = new Date().toISOString(); gravar(id, c); } }
 
-module.exports = { ehChaGranel, escopoDe, erroEnvio, prepararEnvio, conferirEnvio, lista, ler, catalogo, familia, criar, contar, adicionar, acao, paraUsuario, planilha, linhasPlanilha, marcarGerado, resto, zerar, gruposFora, linhasDesfazer, marcarDesfazer };
+/**
+ * Último inventário de cada grupo e de cada tipo de chá (puro + aromatizado juntos), juntando:
+ *  - as contagens do painel importadas no AppNext (pelo recorte: grupo, tipo de chá, todos os chás a granel);
+ *  - o histórico lido do AppNext todo dia de madrugada (inventários feitos direto lá). Um inventário do AppNext
+ *    "cobre" o grupo/tipo quando inclui pelo menos METADE_COBRE dos produtos dele com estoque.
+ * Volta { grupos: { nome: { em, fonte, numero? } }, familias: {…}, appnextEm }.
+ */
+const METADE_COBRE = 0.5;
+function historicoAppNext(id) {
+  try { return JSON.parse(fs.readFileSync(path.join(pasta(id), 'appnext-historico.json'), 'utf8')); } catch { return null; }
+}
+function cobertura(id, cat, contagens, hist = historicoAppNext(id)) {
+  const out = { grupos: {}, familias: {}, appnextEm: (hist && hist.em) || null };
+  const marca = (alvo, k, em, fonte, numero) => { if (k && em && (!alvo[k] || em > alvo[k].em)) alvo[k] = { em, fonte, ...(numero != null ? { numero } : {}) }; };
+  const grupoDe = new Map(), famDe = new Map();
+  const comEst = { g: new Map(), f: new Map() };
+  const add = (m, k, cod) => { if (!m.has(k)) m.set(k, new Set()); m.get(k).add(cod); };
+  for (const i of cat || []) {
+    const f = ehChaGranel(i) ? familia(i.tipo) : '';
+    if (i.grupo) grupoDe.set(i.cod, i.grupo);
+    if (f) famDe.set(i.cod, f);
+    if (Math.abs(i.qtd || 0) > 0.0005) { if (i.grupo) add(comEst.g, i.grupo, i.cod); if (f) add(comEst.f, f, i.cod); }
+  }
+  for (const c of contagens || []) {
+    if (c.st !== 'importado' || !c.importadoEm || !c.escopo) continue;
+    const e = c.escopo;
+    if (e.grupo) marca(out.grupos, e.grupo, c.importadoEm, 'painel');
+    if (e.familia) marca(out.familias, e.familia, c.importadoEm, 'painel');
+    if (e.tipo) marca(out.familias, familia(e.tipo), c.importadoEm, 'painel');
+    if (e.kg) for (const f of new Set(famDe.values())) marca(out.familias, f, c.importadoEm, 'painel');
+  }
+  for (const inv of (hist && hist.inventarios) || []) {
+    if (!inv.data || !Array.isArray(inv.itens)) continue;
+    const em = new Date(inv.data).toISOString();
+    const cods = new Set(inv.itens.map((x) => String(x.cod)));
+    for (const [de, alvo, est] of [[ grupoDe, out.grupos, comEst.g], [famDe, out.familias, comEst.f]]) {
+      const contou = new Map();
+      for (const cod of cods) { const k = de.get(cod); if (k) add(contou, k, cod); }
+      for (const [k, set] of contou) {
+        const base = new Set([...(est.get(k) || []), ...set]);
+        if (set.size / base.size >= METADE_COBRE) marca(alvo, k, em, 'appnext', inv.numero);
+      }
+    }
+  }
+  return out;
+}
+
+module.exports = { cobertura, historicoAppNext, ehChaGranel, escopoDe, erroEnvio, prepararEnvio, conferirEnvio, lista, ler, catalogo, familia, criar, contar, adicionar, acao, paraUsuario, planilha, linhasPlanilha, marcarGerado, resto, zerar, gruposFora, linhasDesfazer, marcarDesfazer };
