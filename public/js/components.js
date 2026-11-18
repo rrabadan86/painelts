@@ -122,6 +122,43 @@
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && expandido && !document.querySelector('.ms.open, .camada-cheia:not(.exp-camada), .prc-drawer-camada, .prc-popup-camada, .inv-camera')) fecharExpandido(false);
   });
+  /** imagem do cartão com gráfico: título, loja e período, o(s) gráfico(s) e o rodapé; compartilha (celular) ou baixa (computador) */
+  TS.compartilharGrafico = async function (card, btn) {
+    const canv = [...card.querySelectorAll('.chart-box canvas')].filter((c) => c.closest('.card') === card && c.width && c.height);
+    if (!canv.length) return;
+    const titulo = (card.querySelector('.card-title')?.firstChild?.textContent || card.querySelector('.card-title')?.textContent || 'Gráfico').trim();
+    const selLoja = document.querySelector('#lojaSel, .loja-sel select, header select');
+    const loja = selLoja && selLoja.selectedOptions && selLoja.selectedOptions[0] ? selLoja.selectedOptions[0].textContent.trim() : '';
+    const periodo = TS.periodoTexto ? TS.periodoTexto() : '';
+    const W = 1080, pad = 48, esc = (c) => (W - pad * 2) / c.width;
+    const alturas = canv.map((c) => Math.round(c.height * esc(c)));
+    const H = pad + 64 + 40 + alturas.reduce((a, b) => a + b + 24, 0) + 56;
+    const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+    const g = cv.getContext('2d');
+    g.fillStyle = '#ffffff'; g.fillRect(0, 0, W, H);
+    g.fillStyle = '#2C5234'; g.fillRect(0, 0, W, 10);
+    g.fillStyle = '#1f2a22'; g.font = '700 40px system-ui, -apple-system, Segoe UI, Roboto, sans-serif'; g.textBaseline = 'top';
+    const corta = (t, max) => { let x = t; while (g.measureText(x).width > max && x.length > 4) x = x.slice(0, -2); return x === t ? t : x.trimEnd() + '…'; };
+    g.fillText(corta(titulo, W - pad * 2), pad, pad);
+    g.fillStyle = '#6b6b6b'; g.font = '400 26px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
+    g.fillText(corta([loja, periodo].filter(Boolean).join(' · '), W - pad * 2), pad, pad + 56);
+    let y = pad + 64 + 40;
+    canv.forEach((c, i) => { g.drawImage(c, pad, y, W - pad * 2, alturas[i]); y += alturas[i] + 24; });
+    g.fillStyle = '#9a9a9a'; g.font = '400 22px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
+    g.fillText(`Tea Shop · painel de vendas · ${new Date().toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}`, pad, H - 44);
+    const blob = await new Promise((r) => cv.toBlob(r, 'image/png'));
+    if (!blob) return;
+    const nome = (titulo.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w]+/g, '-').replace(/^-|-$/g, '').toLowerCase() || 'grafico') + '.png';
+    const arq = new File([blob], nome, { type: 'image/png' });
+    try {
+      if (navigator.canShare && navigator.canShare({ files: [arq] })) { await navigator.share({ files: [arq], title: titulo }); return; }
+    } catch (e) { if (e && e.name === 'AbortError') return; }
+    // sem compartilhar (computador): baixa a imagem
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = nome; document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    if (btn) { const sp = btn.querySelector('span'); if (sp) { const t = sp.textContent; sp.textContent = 'Imagem baixada'; setTimeout(() => { sp.textContent = t; }, 2500); } }
+  };
+
   TS.botoesExpandir = function (root) {
     // a tela foi redesenhada: a camada antiga ficou com o cartão velho
     const reabrir = TS.expandidoTitulo;
@@ -137,10 +174,13 @@
       const temTab = [...card.querySelectorAll('.table-wrap')].some((t) => t.closest('.card') === card);
       const temGraf = [...card.querySelectorAll('.chart-box')].some((t) => t.closest('.card') === card);
       if (!temTab && !temGraf) continue;
-      const temExp = !!card.querySelector(':scope > .card-head .exp-btn'), temPrt = !!card.querySelector(':scope > .card-head .prt-btn');
-      if ((temExp || !temTab) && temPrt) continue;
+      const temExp = !!card.querySelector(':scope > .card-head .exp-btn:not(.prt-btn):not(.shr-btn)'), temPrt = !!card.querySelector(':scope > .card-head .prt-btn');
+      const temShr = !!card.querySelector(':scope > .card-head .shr-btn');
+      if ((temExp || !temTab) && temPrt && (temShr || !temGraf)) continue;
       let head = card.querySelector(':scope > .card-head');
       if (!head) { head = h('div', { class: 'card-head' }, h('div')); card.prepend(head); }
+      // gráfico: compartilhar a imagem (no celular abre o menu do sistema, com o WhatsApp)
+      if (temGraf && !temShr) head.append(h('button', { type: 'button', class: 'exp-btn shr-btn', title: 'Compartilhar a imagem do gráfico (WhatsApp, e-mail…)', 'aria-label': 'Compartilhar imagem', onclick: (e) => TS.compartilharGrafico(card, e.currentTarget) }, '📤', h('span', null, 'Compartilhar')));
       if (!temPrt) head.append(h('button', { type: 'button', class: 'exp-btn prt-btn', title: 'Imprimir (ou salvar em PDF)', 'aria-label': 'Imprimir', onclick: () => TS.imprimir(card) }, '🖨', h('span', null, 'Imprimir')));
       if (temTab && !temExp) {
         head.append(h('button', { type: 'button', class: 'exp-btn', title: 'Expandir em tela cheia', 'aria-label': 'Expandir em tela cheia', onclick: () => expandir(card) }, '⤢', h('span', null, 'Expandir')));
