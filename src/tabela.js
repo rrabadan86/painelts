@@ -17,13 +17,7 @@ const txt = (v) => {
   if (typeof v === 'object') { if (v.richText) return v.richText.map((x) => x.text).join(''); if (v.text != null) return String(v.text); if (v.result != null) return String(v.result); }
   return String(v).trim();
 };
-const preco = (v) => {
-  if (typeof v === 'number') return Number.isFinite(v) ? v : null;
-  const s = txt(v).replace(/[R$\s]/g, '');
-  if (!s) return null;
-  const x = Number(s.includes(',') ? s.replace(/\./g, '').replace(',', '.') : s);
-  return Number.isFinite(x) ? x : null;
-};
+const preco = (v) => require('./numero').valorBR(typeof v === 'object' && v ? txt(v) : v); // src/numero.js
 const norm = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
 
 function dataDoTitulo(t) {

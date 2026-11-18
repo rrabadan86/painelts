@@ -27,12 +27,7 @@ function quantidade(v) {
   return Number.isFinite(n) ? n / 1000 : null;
 }
 function dinheiro(v) {
-  if (v == null || v === '' || v === '-') return null;
-  if (typeof v === 'number') return Number.isFinite(v) ? v : null;
-  if (typeof v === 'object' && v && 'result' in v) return dinheiro(v.result);
-  const s = String(v).replace(/R\$\s*/i, '').trim();
-  const n = /,\d{1,4}$/.test(s) ? +s.replace(/\./g, '').replace(',', '.') : +s;
-  return Number.isFinite(n) ? n : null;
+  return require('./numero').valorBR(v); // "R$ 1.234,56", espaço invisível, "(5,00)"… (src/numero.js)
 }
 /** "NextSoft - Estoque Atual ( 12/11/2026, 19:01:05 )" → ISO */
 function dataDoTitulo(t) {

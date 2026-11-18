@@ -17,16 +17,9 @@ function toText(v) {
   return String(v);
 }
 
+/** número/valor da planilha (formatos brasileiros, "R$", espaço invisível, negativo entre parênteses): ver src/numero.js */
 function toNumber(v) {
-  if (v === null || v === undefined || v === '') return null;
-  if (typeof v === 'number') return Number.isFinite(v) ? v : null;
-  if (typeof v === 'object' && 'result' in v) return toNumber(v.result);
-  let s = String(v).trim().replace(/^R\$\s*/i, '');
-  if (s === '') return null;
-  // formato brasileiro "1.234,56"
-  if (/,\d{1,}$/.test(s) && s.includes(',')) s = s.replace(/\./g, '').replace(',', '.');
-  const n = Number(s);
-  return Number.isFinite(n) ? n : null;
+  return require('./numero').valorBR(v);
 }
 
 // Int64.Type do Power Query arredonda "para o par" (banker's rounding)
