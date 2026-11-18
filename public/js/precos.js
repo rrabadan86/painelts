@@ -528,9 +528,9 @@
       h('div', { class: 'prc-nota-info muted' }, [n.motivo && `Tipo: ${n.motivo}`, n.status && `Situação: ${n.status}`, n.cfop && `CFOP ${n.cfop}`, `${fmt.int(linhas.length)} itens`, subiu || desceu ? `custo subiu em ${fmt.int(subiu)} e caiu em ${fmt.int(desceu)}` : ''].filter(Boolean).join(' · ')),
       blocoSaidasVinculadas(D.loja, vinculadas),
       TS.devolucao && !TS.demo ? TS.devolucao.barra(n, () => card, aoMudar) : null,
-      TS.validade ? TS.validade.blocoNota(D.loja, n, () => TS.validade.pendentes(D.loja).then((p) => { j.lotesPend = p; const c = document.querySelector('.prc-notas > .mt'); if (c) c.replaceChildren(listaNotas(D, j, aoMudar)); })) : null,
       h('div', { class: 'f-label mt' }, 'Produtos da nota', h('button', { type: 'button', class: 'exp-btn prt-btn prc-nf-prt', title: 'Imprimir a nota', onclick: () => TS.imprimir(card) }, '🖨', h('span', null, 'Imprimir'))),
-      tab);
+      tab,
+      TS.validade ? TS.validade.blocoNota(D.loja, n, () => TS.validade.pendentes(D.loja).then((p) => { j.lotesPend = p; const c = document.querySelector('.prc-notas > .mt'); if (c) c.replaceChildren(listaNotas(D, j, aoMudar)); })) : null);
     const camada = h('div', { class: 'prc-drawer-camada', onmousedown: (e) => { if (e.target === camada) fechar(); } }, card);
     document.body.append(camada);
     document.body.classList.add('com-camada');
