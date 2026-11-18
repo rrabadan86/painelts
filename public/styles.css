@@ -2231,3 +2231,9 @@ details.vl-ajuda summary { cursor: pointer; font-weight: 600; }
 .nfe-st-aut { background: #d9efdc; }
 .nfe-emitir, .dev-emitir { padding: 4px 12px; font-size: 12px; }
 .dev-emitir { margin-left: 8px; }
+.inv-hist-ferr { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; margin: 10px 0 12px; }
+.inv-hist-per { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 13px; }
+.inv-hist-per .f-input { width: auto; padding: 6px 8px; }
+.inv-hist-ferr .search-box, .inv-hist-ferr input[type=search] { min-width: 220px; }
+.inv-hist-cont { display: inline-flex; flex-direction: column; gap: 4px; align-items: flex-end; }
+.inv-barra.mini { width: 80px; height: 5px; display: block; }

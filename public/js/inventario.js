@@ -65,7 +65,7 @@
     async acao(loja, id, a) {
       if (!TS.demo) return req('POST', `inventario/contagem/${id}/${a}`, { loja });
       const c = DEMO.cont.find((x) => x.id === id);
-      c.st = { revisar: 'revisao', reabrir: 'contando', importado: 'importado', cancelar: 'cancelado' }[a] || c.st;
+      c.st = { revisar: 'revisao', reabrir: 'contando', importado: 'importado', cancelar: 'cancelado' }[a] || c.st; if (a === 'cancelar') c.canceladoEm = new Date().toISOString();
     },
   };
 
@@ -88,7 +88,7 @@
     if (!corpo.isConnected) return;
     const vend = TS.eu && TS.eu.perfil === 'vendedor';
     const abertas = d.contagens.filter((c) => c.st === 'contando' || c.st === 'revisao' || c.st === 'gerado');
-    const antigas = d.contagens.filter((c) => !abertas.includes(c)).slice(0, 50);
+    const antigas = d.contagens.filter((c) => !abertas.includes(c));
     const linha = (c) => {
       const [t, cls] = ST[c.st];
       const pct = c.itens ? c.contados / c.itens : 0;
@@ -104,7 +104,7 @@
       h('div', { class: 'inv-topo' }, btnNova, h('small', { class: 'muted' }, d.estoqueEm ? `Estoque do painel de ${quando(d.estoqueEm)}.` : '')),
       novaBox,
       h('div', { class: 'card mt' }, h('div', { class: 'card-title' }, 'Em andamento'), abertas.length ? h('div', { class: 'inv-lista' }, ...abertas.map(linha)) : TS.empty('Nenhuma contagem aberta. Comece com "Nova contagem".')),
-      antigas.length ? h('div', { class: 'card mt inv-antigas' }, h('div', { class: 'card-title' }, `Histórico (${antigas.length})`), h('div', { class: 'card-sub' }, 'Contagens importadas, desfeitas ou canceladas. Abra uma para ver o que foi para o AppNext ou desfazer.'), h('div', { class: 'inv-lista' }, ...antigas.map(linha))) : null,
+      antigas.length ? historico(antigas, vend) : null,
       vend ? null : h('div', { class: 'card mt inv-como' }, h('div', { class: 'card-title' }, 'Como funciona'),
         h('ol', null,
           h('li', null, 'Abra uma contagem: alguns produtos, um grupo, um tipo de chá ou todos os chás a granel. Itens fora dela não mudam no AppNext.'),
@@ -112,6 +112,59 @@
           h('li', null, 'Revise as diferenças e baixe a planilha. Ela vem só com os itens contados.'),
           h('li', null, 'No AppNext: Estoque → Auditoria/Inventário → ＋ → Por Excel → envie a planilha. Depois marque "Já importei" aqui.'),
           h('li', null, 'Conte com a loja fechada ou gere a planilha logo depois: o que vender entre a contagem e a importação não entra na conta.'))));
+  }
+
+  // ---------- histórico: tabela com situação, período e busca ----------
+  const diaSP = (iso) => (iso ? new Date(iso).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }) : '');
+  function historico(todas, vend) {
+    const f = state.invHist || (state.invHist = { st: 'todas', de: '', ate: '' });
+    const SIT = [['Todas', 'todas'], ['Importadas', 'importado'], ['Canceladas', 'cancelado'], ['Desfeitas', 'revertido']];
+    const box = h('div');
+    const de = h('input', { type: 'date', class: 'f-input', value: f.de, 'aria-label': 'De' });
+    const ate = h('input', { type: 'date', class: 'f-input', value: f.ate, 'aria-label': 'Até' });
+    const atalho = (rot, dias) => h('button', { type: 'button', class: 'link-btn', onclick: () => {
+      if (dias == null) { f.de = ''; f.ate = ''; } else { const d0 = new Date(Date.now() - dias * 864e5); f.de = diaSP(d0.toISOString()); f.ate = ''; }
+      de.value = f.de; ate.value = f.ate; pintar();
+    } }, rot);
+    de.onchange = () => { f.de = de.value; pintar(); };
+    ate.onchange = () => { f.ate = ate.value; pintar(); };
+    let seg;
+    const pintarSeg = () => {
+      const noPer = todas.filter(noPeriodo);
+      const n = (k) => (k === 'todas' ? noPer.length : noPer.filter((c) => c.st === k).length);
+      const novo = TS.seg(SIT.map(([r, k]) => [`${r} (${n(k)})`, k]), f.st, (v) => { f.st = v; pintar(); });
+      if (seg) seg.replaceWith(novo); seg = novo;
+    };
+    // período pela data em que a contagem foi aberta (ou importada/cancelada, se for mais tarde)
+    function noPeriodo(c) {
+      const dias = [c.criadoEm, c.importadoEm, c.canceladoEm, c.revertidoEm].filter(Boolean).map(diaSP);
+      return dias.some((x) => (!f.de || x >= f.de) && (!f.ate || x <= f.ate));
+    }
+    const pintar = () => {
+      pintarSeg();
+      const rows = todas.filter((c) => noPeriodo(c) && (f.st === 'todas' || c.st === f.st))
+        .map((c) => ({ ...c, situacao: ST[c.st][0], fim: c.importadoEm || c.canceladoEm || null, pct: c.itens ? c.contados / c.itens : 0 }));
+      const ajTot = rows.reduce((a, c) => a + (c.st === 'importado' && c.ajuste ? c.ajuste : 0), 0);
+      const tab = TS.table({
+        cols: [
+          { key: 'nome', label: 'Contagem', align: 'l', sticky: true, wrap: true, render: (c) => h('span', null, h('b', null, c.nome), h('small', { class: 'est-tam' }, `${c.cega ? 'cega · ' : ''}${c.zerar ? 'zera os não listados · ' : ''}aberta por ${c.por || '—'}`)) },
+          { key: 'situacao', label: 'Situação', align: 'l', render: (c) => h('span', { class: 'inv-st ' + ST[c.st][1] }, c.situacao) },
+          { key: 'criadoEm', label: 'Aberta em', fmt: (v) => quando(v) },
+          { key: 'fim', label: 'Importada/cancelada', render: (c) => (c.importadoEm ? h('span', null, quando(c.importadoEm), h('small', { class: 'est-tam' }, c.importadoPor ? 'por ' + c.importadoPor : '')) : c.canceladoEm ? quando(c.canceladoEm) : '—'), sortVal: (c) => c.fim || '' },
+          { key: 'contados', label: 'Contados', render: (c) => h('span', { class: 'inv-hist-cont' }, `${fmt.int(c.contados)} de ${fmt.int(c.itens)}`, h('span', { class: 'inv-barra mini' }, h('i', { style: { width: Math.round(c.pct * 100) + '%' } }))), sortVal: (c) => c.pct },
+          { key: 'naPlanilha', label: 'No AppNext', title: 'Produtos que foram para o AppNext (contados + zerados)', render: (c) => (c.naPlanilha == null ? '—' : `${fmt.int(c.naPlanilha)}${c.zerados ? ` (${fmt.int(c.zerados)} zerados)` : ''}`), sortVal: (c) => c.naPlanilha ?? -1 },
+          ...(vend ? [] : [{ key: 'ajuste', label: 'Ajuste (custo)', title: 'Diferença do inventário a preço de custo', render: (c) => (c.ajuste == null ? '—' : h('span', { class: c.ajuste < 0 ? 'neg' : '' }, fmt.brl(c.ajuste))), sortVal: (c) => c.ajuste ?? 0 }]),
+        ],
+        rows, sortKey: 'criadoEm', pageSize: 10, search: 'Buscar contagem ou pessoa…', searchKeys: ['nome', 'por', 'importadoPor'],
+        onRowClick: (c) => { state.invId = c.id; TS.render(); }, empty: 'Nenhuma contagem com esses filtros.',
+        total: rows.length ? { nome: `${fmt.int(rows.length)} contage${rows.length === 1 ? 'm' : 'ns'}`, ...(vend ? {} : { ajuste: fmt.brl(ajTot) }) } : null,
+      });
+      box.replaceChildren(h('div', { class: 'inv-hist-ferr' }, seg, h('div', { class: 'inv-hist-per' }, h('span', { class: 'muted' }, 'Período'), de, h('span', { class: 'muted' }, 'até'), ate,
+        atalho('30 dias', 30), atalho('90 dias', 90), atalho('tudo', null)), tab.searchBox), tab);
+    };
+    pintar();
+    return h('div', { class: 'card mt inv-antigas' }, h('div', { class: 'card-title' }, `Histórico (${todas.length})`),
+      h('div', { class: 'card-sub' }, 'Contagens importadas, desfeitas ou canceladas. Clique numa linha para ver o que foi para o AppNext ou desfazer.'), box);
   }
 
   function formNova(loja, d, fechar) {

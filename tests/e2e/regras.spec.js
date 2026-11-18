@@ -200,6 +200,34 @@ test.describe('regras', () => {
     await expect(page.locator('.inv-revfil').locator('..')).toContainText('375 g');
   });
 
+  test('Inventário: cancelar na tela de contagem; histórico com situação, período e busca', async ({ page }) => {
+    await page.evaluate(() => { location.hash = '#inventario'; });
+    for (const nome of ['Teste cancelar', 'Outra contagem']) {
+      await page.getByRole('button', { name: '+ Nova contagem' }).click();
+      await page.locator('.inv-modos button', { hasText: 'Um tipo de chá' }).click();
+      const sel = page.locator('.inv-modo-corpo select');
+      await sel.selectOption(await sel.locator('option').nth(1).getAttribute('value'));
+      await page.getByPlaceholder(/Nome \(opcional\)/).fill(nome);
+      await page.getByRole('button', { name: 'Começar a contar' }).click();
+      page.once('dialog', (d) => d.accept());
+      await page.getByRole('button', { name: 'Cancelar contagem' }).click();
+      await expect(page.locator('.inv-antigas')).toContainText(nome);
+    }
+    const hist = page.locator('.inv-antigas');
+    await expect(hist.locator('.inv-hist-ferr button', { hasText: 'Canceladas (2)' })).toBeVisible();
+    await hist.locator('.inv-hist-ferr button', { hasText: 'Importadas' }).click();
+    await expect(hist).toContainText('Nenhuma contagem com esses filtros');
+    await hist.locator('.inv-hist-ferr button', { hasText: 'Todas' }).click();
+    await hist.locator('input[type=date]').first().fill('2099-01-01');
+    await hist.locator('input[type=date]').first().dispatchEvent('change');
+    await expect(hist).toContainText('Nenhuma contagem com esses filtros');
+    await hist.getByRole('button', { name: 'tudo' }).click();
+    await hist.locator('input[type=search], .inv-hist-ferr input:not([type=date])').first().fill('outra');
+    await expect(hist.locator('tbody tr')).toHaveCount(1);
+    await hist.locator('tbody tr').first().click();
+    await expect(page.locator('.inv-cab')).toContainText('Outra contagem');
+  });
+
   test('Inventário: chá a granel contado por lote (o total é a soma)', async ({ page }) => {
     await page.evaluate(() => { location.hash = '#inventario'; });
     await page.getByRole('button', { name: '+ Nova contagem' }).click();
