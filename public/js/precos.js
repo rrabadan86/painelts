@@ -472,10 +472,50 @@
       empty: fil === 'per' ? 'Nenhuma nota no período do filtro. Veja "Todas".' : 'Nenhuma nota.',
     });
     return TS.cardWithTools('Notas fiscais de entrada', `Notas de entrada concluídas no AppNext (Estoque → Entrada de Produtos), lidas pelo coletor${j.atualizado ? ' · atualizado em ' + new Date(j.atualizado).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : ''}. Clique na nota para ver os produtos, quantidades, valores e o que mudou no custo.`,
-      h('div', { class: 'est-tools' }, tab.searchBox && (tab.searchBox.classList.add('est-busca'), tab.searchBox),
+      h('div', { class: 'est-tools' }, tab.searchBox && (tab.searchBox.classList.add('est-busca'), tab.searchBox), botaoSincronizar(D, j),
         TS.seg(Object.entries(FIL).map(([k, [t, fn]]) => [`${t} (${fmt.int(todas.filter(fn).length)})`, k]), fil, (v) => { state.prcNotasFil = v; const c = document.querySelector('.prc-notas > .mt'); if (c) c.replaceChildren(listaNotas(D, j, aoMudar)); })),
       tab);
   }
+  /** "Sincronizar agora" (só admin): o coletor busca o estoque e as notas de compra do AppNext; acompanha até terminar */
+  const sinc = {}; // loja -> timer
+  function botaoSincronizar(D, j) {
+    if (TS.demo || !TS.eu || TS.eu.perfil !== 'admin') return null;
+    const loja = D.loja;
+    const st = h('small', { class: 'muted nf-sinc-st' });
+    const btn = h('button', { type: 'button', class: 'btn nf-sinc', title: 'Busca agora no AppNext o estoque e as notas de entrada desta loja (leva alguns minutos)' }, '⟳ Sincronizar agora');
+    const url = `estoque/notas/sincronizar?loja=${encodeURIComponent(loja)}`;
+    const recarregar = async () => { cacheNotas.delete(loja); if (TS.estoqueBuscar) await TS.estoqueBuscar(loja, true).catch(() => null); TS.render(); };
+    const acompanhar = (antes) => {
+      clearTimeout(sinc[loja]);
+      const passo = async () => {
+        if (!btn.isConnected && !document.querySelector('.nf-sinc')) { delete sinc[loja]; return; }
+        let s; try { s = await (await fetch(TS.api(url), { credentials: 'same-origin' })).json(); } catch { s = {}; }
+        const vivo = document.querySelector('.nf-sinc-st') || st;
+        if (s.estado === 'na_fila' || s.estado === 'rodando') {
+          vivo.textContent = s.estado === 'na_fila' ? `⏳ na fila do robô${s.fila ? ` (${s.fila} na frente)` : ''}…` : '⏳ buscando no AppNext…';
+          const b = document.querySelector('.nf-sinc'); if (b) b.disabled = true;
+          sinc[loja] = setTimeout(passo, 8000); return;
+        }
+        delete sinc[loja];
+        if ((s.atualizado && s.atualizado !== antes) || s.estado === 'ok') { vivo.textContent = '✓ sincronizado'; recarregar(); return; }
+        vivo.textContent = s.estado === 'falhou' ? '✗ a busca no AppNext falhou (veja Configurações → Lojas)' : '';
+        const b = document.querySelector('.nf-sinc'); if (b) b.disabled = false;
+      };
+      passo();
+    };
+    btn.onclick = async () => {
+      btn.disabled = true; st.textContent = 'pedindo ao robô…';
+      try {
+        const r = await fetch(TS.api('estoque/notas/sincronizar'), { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-Painel': '1' }, body: JSON.stringify({ loja }) });
+        const x = await r.json().catch(() => ({}));
+        if (!r.ok && r.status !== 409) throw new Error(x.erro || 'Falha ao pedir a sincronização.');
+        acompanhar(j.atualizado || null);
+      } catch (e) { st.textContent = '✗ ' + e.message; btn.disabled = false; }
+    };
+    if (sinc[loja] === undefined) fetch(TS.api(url), { credentials: 'same-origin' }).then((r) => r.json()).then((s) => { if (s.estado === 'na_fila' || s.estado === 'rodando') acompanhar(j.atualizado || null); }).catch(() => {});
+    return h('span', { class: 'nf-sinc-box' }, btn, st);
+  }
+
   /** custo de um item antes da nota: a entrada anterior (outra nota) ou a importação de estoque anterior */
   function custoAntes(D, cod, dia, nf) {
     let v = null, d0 = -Infinity, origem = '';

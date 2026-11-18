@@ -2237,3 +2237,6 @@ details.vl-ajuda summary { cursor: pointer; font-weight: 600; }
 .inv-hist-ferr .search-box, .inv-hist-ferr input[type=search] { min-width: 220px; }
 .inv-hist-cont { display: inline-flex; flex-direction: column; gap: 4px; align-items: flex-end; }
 .inv-barra.mini { width: 80px; height: 5px; display: block; }
+.nf-sinc-box { display: inline-flex; align-items: center; gap: 8px; }
+.nf-sinc { white-space: nowrap; }
+.nf-sinc-st { white-space: nowrap; }

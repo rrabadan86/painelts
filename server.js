@@ -1223,6 +1223,31 @@ app.get('/api/estoque/notas', (req, res) => {
   if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
   res.json(ES.notas(loja.id) || { notas: [] });
 });
+// "Sincronizar agora" nas notas de entrada: o coletor busca só o estoque + notas de compra do AppNext (só admin dispara)
+app.get('/api/estoque/notas/sincronizar', async (req, res) => {
+  if (req.perfil !== 'admin') return res.status(403).json({ erro: 'Só o admin sincroniza.' });
+  const loja = req.lojas.find((l) => l.id === String(req.query.loja || ''));
+  if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  if (!COL.ativo()) return res.json({ estado: 'sem_coletor' });
+  try {
+    const s = await COL.status(loja.id, false);
+    const x = s.execucao || {};
+    res.json({ estado: x.estado || 'parado', itens: x.itens || null, inicio: x.inicio || null, fim: x.fim || null, fila: s.fila || 0, atualizado: (ES.notas(loja.id) || {}).atualizado || null });
+  } catch (e) { res.status(502).json({ erro: e.message }); }
+});
+app.post('/api/estoque/notas/sincronizar', express.json({ limit: '1kb' }), async (req, res) => {
+  if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
+  if (req.perfil !== 'admin') return res.status(403).json({ erro: 'Só o admin sincroniza.' });
+  const loja = req.lojas.find((l) => l.id === String((req.body && req.body.loja) || ''));
+  if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  if (!COL.ativo()) return res.status(400).json({ erro: 'O coletor não está ligado nesta VPS.' });
+  try {
+    const x = await COL.rodar(loja.id, req.user, ['estoque']);
+    if (x.status !== 200) return res.status(x.status).json({ erro: (x.json && x.json.erro) || 'Falha no coletor.' });
+    C.auditar(req.user, 'sincronizou as notas de entrada (estoque) com o AppNext', loja.id, { loja: loja.id });
+    res.json({ ok: true });
+  } catch (e) { res.status(502).json({ erro: e.message }); }
+});
 // classe oficial (Estrela, Volume…): janela de 3, 6 ou 12 meses e classes travadas à mão (admin e franqueado)
 app.put('/api/estoque/classe', express.json({ limit: '5kb' }), (req, res) => {
   if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
