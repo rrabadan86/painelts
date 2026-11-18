@@ -130,3 +130,11 @@ test('lotes: chás a granel da nota de entrada (antes do estoque) e notas com lo
   const depois = L.calcular({ estoque: { ...estoque, em: '2026-11-18T09:00:00Z', itens: [{ ...estoque.itens[0], qtd: 2.3 }] }, compras, tabela: null, edits: L.ler('nt'), hoje: '2026-11-18' }).lotes;
   assert.equal(depois.find((l) => l.chave === '777|5|2026-11-17').lote, 'R1');
 });
+
+test('lotes: lote que já acabou não fica como "lote pendente" na nota', () => {
+  const estoque = { em: '2026-11-18T09:00:00Z', itens: [{ cod: '5', desc: 'ROOIBOS', un: 'Kg', qtd: 1, custo: 90 }, { cod: '8', desc: 'MATE', un: 'Kg', qtd: 0, custo: 50 }] };
+  const compras = { itens: { 5: [['2026-11-10', 90, 900, 2, 'TSB']], 8: [['2026-11-10', 50, 900, 1, 'TSB']] } };
+  const nota = { id: 'n900', nf: 900, entrada: '2026-11-10', itens: [{ cod: '5', un: 'KG', qtd: 2 }, { cod: '8', un: 'KG', qtd: 1 }] };
+  const abertos = new Set(L.calcular({ estoque, compras, tabela: null, edits: { lotes: {} }, hoje: '2026-11-18' }).lotes.map((l) => l.chave));
+  assert.deepEqual(L.pendentesNotas({ notas: [nota], estoque, compras, edits: { lotes: {} }, abertos, hoje: '2026-11-18' }), { n900: 1 });
+});

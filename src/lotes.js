@@ -372,11 +372,13 @@ function daNota({ nota, estoque, compras, edits }) {
   return out;
 }
 /** notas recentes (60 dias) com chá a granel ainda sem nº de lote: { id da nota: quantos faltam } */
-function pendentesNotas({ notas, estoque, compras, edits, hoje = hojeSP() }) {
-  const out = {}, corte = somarMeses(hoje, -2);
+function pendentesNotas({ notas, estoque, compras, edits, abertos, hoje = hojeSP() }) {
+  const out = {}, corte = somarMeses(hoje, -2), dEst = String((estoque && estoque.em) || '').slice(0, 10);
+  // lote que já acabou (o estoque exportado já tem a nota e o lote não tem saldo) não fica pendente
+  const acabou = (x) => abertos && DIA.test(dEst) && x.entrada <= dEst && !abertos.has(x.chave);
   for (const n of notas || []) {
     if (String(n.entrada || n.emissao || '').slice(0, 10) < corte) continue;
-    const f = daNota({ nota: n, estoque, compras, edits }).filter((x) => x.lote === '0').length;
+    const f = daNota({ nota: n, estoque, compras, edits }).filter((x) => x.lote === '0' && !acabou(x)).length;
     if (f) out[n.id] = f;
   }
   return out;

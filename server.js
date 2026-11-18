@@ -1491,7 +1491,7 @@ app.get('/api/validade/notas', (req, res) => {
   const ctx = LOT.daLoja(loja.id), ns = ES.notas(loja.id);
   const notas = (ns && ns.notas) || [];
   const ctxN = { estoque: ctx.estoque, compras: ctx.compras, edits: ctx.edits };
-  const pendentes = LOT.pendentesNotas({ notas, ...ctxN });
+  const pendentes = LOT.pendentesNotas({ notas, ...ctxN, abertos: new Set(ctx.lotes.map((l) => l.chave)) });
   // uma nota (o detalhe aberto) ou as recentes que têm chá a granel (até 15)
   const so = String(req.query.nota || '');
   const recentes = (so ? notas.filter((n) => String(n.id) === so) : notas.slice().sort((a, b) => String(b.entrada || b.emissao || '').localeCompare(String(a.entrada || a.emissao || ''))))
