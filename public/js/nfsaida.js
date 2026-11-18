@@ -50,21 +50,30 @@
   }
   function novaNota(loja) {
     const box = h('div', { class: 'mt nfe-box' });
-    let aberto = false, info = null, timer = null;
+    let aberto = false, info = null, timer = null, esperandoParc = null;
     const form = { parceiro: null, consumidorFinal: false, vendedorId: '', pagamento: '', itens: [], obs: '' };
     const carregar = async () => {
       try { info = await nfeApi('GET', `nfe?loja=${encodeURIComponent(loja)}`); } catch (e) { info = { erroGeral: e.message }; }
       if (!box.isConnected) return;
       pintar();
-      const trabalhando = info && ((info.robo && (info.robo.estado === 'na_fila' || info.robo.estado === 'rodando')) || (info.rascunhos || []).some((r) => r.estado === 'na_fila'));
+      const trabalhando = info && ((info.robo && (info.robo.estado === 'na_fila' || info.robo.estado === 'rodando')) || (info.rascunhos || []).some((r) => r.estado === 'na_fila') || (info.parceiros || []).some((r) => r.estado === 'na_fila'));
+      // parceiro novo cadastrado pelo robô: já fica escolhido na nota
+      if (info && esperandoParc) {
+        const r = (info.parceiros || []).find((x) => x.id === esperandoParc);
+        if (r && r.estado !== 'na_fila') {
+          esperandoParc = null;
+          const novo = r.estado === 'ok' && info.cadastros ? info.cadastros.parceiros.find((x) => (r.novoId && x.id === r.novoId) || String(x.doc || '').replace(/\D/g, '') === r.doc) : null;
+          if (novo) { form.parceiro = novo; form.consumidorFinal = !!novo.consumidorFinal; pintar(); }
+        }
+      }
       clearTimeout(timer);
       if (trabalhando) timer = setTimeout(carregar, 4000);
     };
     const roboVivo = () => {
       const r = info && info.robo;
       if (!r || (r.estado !== 'na_fila' && r.estado !== 'rodando')) return null;
-      return h('div', { class: 'nfe-vivo' }, h('div', null, h('span', { class: 'cfg-pulso' }), ' ', h('b', null, r.acao === 'cadastros' ? 'Lendo os cadastros do AppNext…' : 'Preenchendo a nota no AppNext…'),
-        h('small', { class: 'muted' }, r.estado === 'rodando' ? ' o robô está na tela de Saída de Produtos' : ' na fila do robô')),
+      return h('div', { class: 'nfe-vivo' }, h('div', null, h('span', { class: 'cfg-pulso' }), ' ', h('b', null, r.acao === 'cadastros' ? 'Lendo os cadastros do AppNext…' : r.acao === 'parceiro' ? 'Cadastrando o parceiro no AppNext…' : 'Preenchendo a nota no AppNext…'),
+        h('small', { class: 'muted' }, r.estado === 'rodando' ? (r.acao === 'parceiro' ? ' o robô está em Parceiros → Cadastrar' : ' o robô está na tela de Saída de Produtos') : ' na fila do robô')),
         r.aoVivo && r.aoVivo.length ? h('pre', { class: 'inv-log' }, r.aoVivo.slice(-14).join('\n')) : null);
     };
     function pintar() {
@@ -85,6 +94,15 @@
           h('span', { class: 'nfe-st ' + ESTADO_NFE[r.estado][1] }, r.estado === 'na_fila' && info.robo && info.robo.estado === 'rodando' && info.robo.id === r.id ? 'o robô está preenchendo' : ESTADO_NFE[r.estado][0]),
           r.estado === 'erro' ? h('div', { class: 'nfe-erro' }, r.erro || 'falhou', ' — nada foi salvo no AppNext.', ult && ult.id === r.id && ult.log && ult.log.length ? h('details', null, h('summary', null, 'log do robô'), h('pre', { class: 'inv-log' }, ult.log.join('\n'))) : null) : null))));
     }
+    const formParceiro = (aoPedir) => abrirFormParceiro(loja, aoPedir);
+    blocoParceiros = () => {
+      const ps = ((info && info.parceiros) || []).filter((r) => r.estado !== 'teste' || Date.now() - Date.parse(r.em) < 3600e3).slice(0, 3);
+      if (!ps.length) return null;
+      const ult = info.robo && info.robo.ultima;
+      return h('div', { class: 'nfe-parcs' }, ...ps.map((r) => h('div', { class: 'nfe-parc-l' },
+        h('small', null, h('b', null, r.nome), ` · ${quandoTZ(r.em)} `), h('span', { class: 'nfe-st ' + ESTADO_PARC[r.estado][1] }, r.estado === 'na_fila' && info.robo && info.robo.estado === 'rodando' && info.robo.id === r.id ? 'o robô está cadastrando' : ESTADO_PARC[r.estado][0]),
+        r.estado === 'erro' ? h('div', { class: 'nfe-erro' }, r.erro || 'falhou', ' — nada foi salvo.', ult && ult.id === r.id && ult.log && ult.log.length ? h('details', null, h('summary', null, 'log do robô'), h('pre', { class: 'inv-log' }, ult.log.join('\n'))) : null) : null)));
+    };
     function formulario() {
       if (!info) return h('div', { class: 'card mt' }, h('p', { class: 'muted' }, 'Carregando…'));
       const cad = info.cadastros;
@@ -111,9 +129,11 @@
           const q = ESQ(inp.value), qd = inp.value.replace(/\D/g, '');
           const achou = q.length < 2 ? [] : cad.parceiros.filter((x) => ESQ(x.nome).includes(q) || (qd.length >= 3 && x.doc.includes(qd))).slice(0, 8);
           sug.replaceChildren(...achou.map((x) => h('button', { type: 'button', class: 'nfe-sug-i', onclick: () => { form.parceiro = x; form.consumidorFinal = !!x.consumidorFinal; pintarParc(); } }, h('b', null, x.nome), h('small', { class: 'muted' }, ' ' + docTxt(x.doc)))),
-            ...(q.length >= 2 && !achou.length ? [h('small', { class: 'muted' }, 'Nenhum parceiro com esse nome. Cadastre no AppNext e clique em "Atualizar cadastros".')] : []));
+            ...(q.length >= 2 && !achou.length ? [h('small', { class: 'muted' }, 'Nenhum parceiro com esse nome ou documento. Use "＋ Cadastrar parceiro novo".')] : []));
         });
-        parcBox.replaceChildren(h('label', null, 'Parceiro'), inp, sug);
+        parcBox.replaceChildren(h('label', null, 'Parceiro'), inp, sug,
+          h('button', { type: 'button', class: 'link-btn nfe-novo-parc', disabled: !!vivo || !info.podeRobo || null, onclick: () => formParceiro((rid) => { esperandoParc = rid; carregar(); }) }, '＋ Cadastrar parceiro novo'),
+          blocoParceiros());
       };
       pintarParc();
       // ---- vendedor e pagamento
@@ -177,12 +197,69 @@
         h('div', { class: 'nfe-total' }, 'Total: ', totalEl),
         h('div', { class: 'aviso nfe-fixos' }, 'Vai sempre como: [1] Venda · CFOP 5102 · série NF-e · NF-e normal · frete [9] sem frete / [9] sem ocorrência de transporte · endereço padrão do parceiro. Os impostos são calculados pelo AppNext. O robô confere tudo e salva como ', h('b', null, 'rascunho'), ' (não transmite).'),
         h('div', { class: 'cfg-acoes' }, enviar, testar, msg),
-        vivo && info.robo.acao === 'rascunho' ? vivo : null);
+        vivo && (info.robo.acao === 'rascunho' || info.robo.acao === 'parceiro') ? vivo : null);
     }
     pintar();
     carregar();
     return box;
   }
+
+  /** parceiros novos pedidos ao robô (os mais recentes) */
+  const ESTADO_PARC = { na_fila: ['na fila do robô', 'nfe-st-fila'], ok: ['cadastrado no AppNext', 'nfe-st-ok'], teste: ['teste ok (nada foi salvo)', 'nfe-st-fila'], erro: ['não foi cadastrado', 'nfe-st-erro'] };
+  let blocoParceiros = () => null;
+  /** janela "Cadastrar parceiro novo": o robô preenche Parceiros → Cadastrar no AppNext (o CEP completa o endereço) */
+  function abrirFormParceiro(loja, aoPedir) {
+    const v = { tipo: 'PJ', tipoIe: '9', crt: '1' };
+    const campo = (rot, el, dica) => h('label', { class: 'nfe-campo np-campo' }, h('span', null, rot, dica ? TS.dica(dica) : null), el);
+    const inp = (k, ph, extra = {}) => { const i = h('input', { class: 'f-input', placeholder: ph || '', autocomplete: 'off', ...extra }); i.addEventListener('input', () => { v[k] = i.value; }); return i; };
+    const corpoTipo = h('div', { class: 'np-grade' });
+    const pintarTipo = () => {
+      if (v.tipo === 'PJ') {
+        const ie = h('select', { class: 'f-input' }, [['9', 'Não contribuinte'], ['2', 'Contribuinte isento de IE'], ['1', 'Contribuinte de ICMS (tem IE)']].map(([c, t]) => h('option', { value: c, selected: v.tipoIe === c || null }, t)));
+        const ieNum = inp('ie', 'só números', { inputmode: 'numeric' });
+        const ieBox = campo('Inscrição estadual', ieNum); ieBox.hidden = v.tipoIe !== '1';
+        ie.addEventListener('change', () => { v.tipoIe = ie.value; ieBox.hidden = v.tipoIe !== '1'; });
+        const crt = h('select', { class: 'f-input' }, [['1', 'Simples Nacional'], ['2', 'Simples Nacional - excesso de sublimite'], ['3', 'Regime Normal'], ['4', 'Simples Nacional - MEI']].map(([c, t]) => h('option', { value: c, selected: v.crt === c || null }, t)));
+        crt.addEventListener('change', () => { v.crt = crt.value; });
+        corpoTipo.replaceChildren(campo('CNPJ', inp('doc', '00.000.000/0000-00', { inputmode: 'numeric' })), campo('Razão social', inp('razaoSocial', '')),
+          campo('Nome fantasia', inp('nomeFantasia', 'se vazio, a razão social')), campo('Situação no ICMS', ie), ieBox, campo('Regime tributário', crt),
+          campo('Inscrição municipal', inp('im', 'opcional')));
+      } else {
+        corpoTipo.replaceChildren(campo('CPF', inp('doc', '000.000.000-00', { inputmode: 'numeric' })), campo('Nome completo', inp('nome', 'nome e sobrenome')),
+          campo('Data de nascimento', inp('nascimento', 'DD/MM/AAAA', { inputmode: 'numeric', maxlength: 10 }), 'O AppNext exige a data de nascimento para pessoa física.'), campo('Apelido', inp('apelido', 'se vazio, o primeiro nome')));
+      }
+    };
+    const tipoSeg = TS.seg([['Empresa (CNPJ)', 'PJ'], ['Pessoa física (CPF)', 'PF']], v.tipo, (t) => { for (const k of ['doc', 'nome', 'apelido', 'nascimento', 'razaoSocial', 'nomeFantasia', 'ie', 'im']) delete v[k]; v.tipo = t; tipoSeg.querySelectorAll('button').forEach((b, k) => b.classList.toggle('on', (k === 0 ? 'PJ' : 'PF') === t)); pintarTipo(); });
+    pintarTipo();
+    const msg = h('div', { class: 'muted' });
+    const fundo = h('div', { class: 'cp-modal-bg' });
+    const fechar = () => fundo.remove();
+    fundo.addEventListener('click', (e) => { if (e.target === fundo) fechar(); });
+    const mandar = async (simular) => {
+      const doc = String(v.doc || '').replace(/\D/g, '');
+      const nome = v.tipo === 'PJ' ? v.razaoSocial : v.nome;
+      if (!simular && !confirm(`Cadastrar no AppNext?\n\n${nome || '(sem nome)'}\n${v.tipo === 'PJ' ? 'CNPJ' : 'CPF'} ${doc}\nCEP ${v.cep || ''}, nº ${v.numero || 'S/N'}\n\nO robô preenche Parceiros → Cadastrar e salva. O endereço sai do CEP.`)) return;
+      msg.className = 'muted'; msg.textContent = 'Enviando ao robô…';
+      try {
+        const j = await nfeApi('POST', 'nfe/parceiro', { loja, simular, ...v });
+        fechar();
+        aoPedir(j.parceiro.id);
+      } catch (e) { msg.className = 'neg'; msg.textContent = e.message; }
+    };
+    fundo.append(h('div', { class: 'card cp-copiar np-modal' },
+      h('h3', null, 'Cadastrar parceiro novo no AppNext'),
+      h('p', { class: 'muted' }, 'O robô preenche Parceiros → Cadastrar no AppNext e salva. Rua, bairro, cidade e UF vêm do CEP. Entra no grupo "Clientes". Depois ele já aparece na nota.'),
+      tipoSeg, corpoTipo,
+      h('div', { class: 'np-grade' }, campo('Telefone', inp('telefone', 'DDD + número (opcional)', { inputmode: 'tel' })), campo('CEP', inp('cep', '00000-000', { inputmode: 'numeric' })),
+        campo('Número', inp('numero', 'S/N se não tiver')), campo('Complemento', inp('complemento', 'opcional'))),
+      msg,
+      h('div', { class: 'cp-acoes' }, h('button', { type: 'button', class: 'btn', title: 'O robô preenche e confere, mas não salva', onclick: () => mandar(true) }, 'Testar sem salvar'), h('span', { style: { flex: 1 } }),
+        h('button', { type: 'button', class: 'btn', onclick: fechar }, 'Cancelar'), h('button', { type: 'button', class: 'btn primary', onclick: () => mandar(false) }, 'Cadastrar no AppNext'))));
+    document.body.append(fundo);
+    const primeiro = fundo.querySelector('input'); if (primeiro) primeiro.focus();
+  }
+
+  TS.abrirFormParceiro = abrirFormParceiro;
 
   function lista(loja, j) {
     const f = state.f;

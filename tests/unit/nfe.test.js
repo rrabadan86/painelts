@@ -31,3 +31,18 @@ test('rascunho de NF-e: confere contra os cadastros, grava o pedido e lê o resu
   assert.equal(NFE.conferir('lj').lista[0].estado, 'teste');
   fs.rmSync(tmp, { recursive: true, force: true });
 });
+
+test('parceiro novo: valida CPF/CNPJ, nascimento, CEP e não repete quem já está no AppNext', () => {
+  const N = require('../../src/nfe');
+  const base = { cep: '01310-100', numero: '1000' };
+  assert.match(N.criarParceiro('lp', { ...base, tipo: 'PF', doc: '529.982.247-24', nome: 'ANA SILVA', nascimento: '01/01/1990' }, 'g').erro, /CPF/);
+  assert.match(N.criarParceiro('lp', { ...base, tipo: 'PF', doc: '529.982.247-25', nome: 'ANA', nascimento: '01/01/1990' }, 'g').erro, /sobrenome/);
+  assert.match(N.criarParceiro('lp', { ...base, tipo: 'PF', doc: '52998224725', nome: 'Ana Silva', nascimento: '31/02/1990' }, 'g').erro, /nascimento/);
+  assert.match(N.criarParceiro('lp', { tipo: 'PF', doc: '52998224725', nome: 'Ana Silva', nascimento: '01/01/1990', cep: '123' }, 'g').erro, /CEP/);
+  assert.match(N.criarParceiro('lp', { ...base, tipo: 'PJ', doc: '11.222.333/0001-81', razaoSocial: 'X LTDA', tipoIe: '1', ie: '' }, 'g').erro, /Inscrição estadual/);
+  const pf = N.criarParceiro('lp', { ...base, tipo: 'PF', doc: '529.982.247-25', nome: 'Ana Silva', nascimento: '01/01/1990', telefone: '(11) 99999-9999' }, 'g').ok;
+  assert.deepStrictEqual([pf.tipo, pf.doc, pf.nome, pf.estado], ['PF', '52998224725', 'ANA SILVA', 'na_fila']);
+  const pj = N.criarParceiro('lp', { ...base, tipo: 'PJ', doc: '11.222.333/0001-81', razaoSocial: 'Empresa X Ltda', tipoIe: '9', simular: true }, 'g').ok;
+  assert.strictEqual(pj.simular, true);
+  assert.strictEqual(N.listaParceiros('lp').length, 2);
+});

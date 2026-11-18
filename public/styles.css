@@ -2206,3 +2206,12 @@ details.vl-ajuda summary { cursor: pointer; font-weight: 600; }
 .hj-msg { font-size: 12.5px; color: var(--muted); background: var(--cream-2); border-radius: 8px; padding: 6px 10px; max-height: 3.2em; overflow: hidden; }
 .hj-rodape { display: block; margin-top: 10px; }
 @media (max-width: 860px) { .hj-item { grid-template-columns: 1fr; } }
+/* NF-e: parceiro novo pelo robô */
+.np-modal { width: min(640px, 100%); max-height: 92vh; overflow: auto; }
+.np-grade { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; margin: 10px 0; }
+.np-campo > span { display: flex; gap: 4px; align-items: center; font-size: 12px; color: var(--muted); }
+.np-campo[hidden] { display: none; }
+.nfe-novo-parc { padding-left: 0; margin-top: 4px; }
+.nfe-parcs { display: grid; gap: 4px; margin-top: 6px; }
+.nfe-parc-l { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+@media (max-width: 600px) { .np-grade { grid-template-columns: 1fr; } }

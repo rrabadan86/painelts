@@ -361,13 +361,19 @@ app.post('/logout', (req, res) => {
 });
 
 // ---------- upload do script diário (token verificado ANTES de ler o corpo de até 80 MB) ----------
+const tokenRuimAud = new Map();
 function autenticarUpload(req, res, next) {
   const cfg = C.get();
   const loja = cfg.lojas.find((l) => l.id === String(req.params.loja).toLowerCase());
   const tokens = [cfg.uploadToken, loja && loja.uploadToken].filter(Boolean);
   const dado = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
   if (!tokens.length) return res.status(403).json({ erro: 'Upload desativado: defina "uploadToken" no lojas.json ou UPLOAD_TOKEN no .env.' });
-  if (!dado || !tokens.some((t) => safeEq(dado, t))) return res.status(401).json({ erro: 'Token inválido.' });
+  if (!dado || !tokens.some((t) => safeEq(dado, t))) {
+    // no máximo um registro a cada 10 min por loja (tentativas repetidas não enchem o histórico)
+    if (loja && Date.now() - (tokenRuimAud.get(loja.id) || 0) > 600e3) { tokenRuimAud.set(loja.id, Date.now()); C.auditar('api', 'tentativa de envio com token inválido', loja.id, { loja: loja.id, ip: req.ip }); }
+    return res.status(401).json({ erro: 'Token inválido.' });
+  }
+  req.tokenUpload = loja && loja.uploadToken && safeEq(dado, loja.uploadToken) ? 'loja' : 'geral';
   if (!loja) return res.status(404).json({ erro: `Loja "${req.params.loja}" não existe no lojas.json.` });
   const nome = String(req.params.arquivo).replace(/\.xlsx$/i, '');
   if (!C.ARQUIVOS[nome]) return res.status(400).json({ erro: `Arquivo inválido. Use um destes: ${Object.keys(C.ARQUIVOS).join(', ')}` });
@@ -386,6 +392,8 @@ app.post('/api/upload/:loja/:arquivo', autenticarUpload, express.raw({ type: () 
       C.gravarAtomico(path.join(C.pastaLoja(loja.id), `${nome}.xlsx`), buf, 0o640); // troca atômica
     }
     console.log(`[upload] ${loja.id}/${nome}.xlsx (${(buf.length / 1024).toFixed(0)} KB)`);
+    // fica no histórico de auditoria: qual planilha chegou, para qual loja, por qual token (o geral ou o da loja) e o tamanho
+    C.auditar(req.tokenUpload === 'loja' ? `api:${loja.id}` : 'api', 'recebeu planilha pela API', loja.id, { loja: loja.id, arquivo: `${nome}.xlsx`, kb: Math.round(buf.length / 1024), ip: req.ip });
     // já processa em segundo plano para o próximo acesso ser rápido
     dadosLoja(loja, true).catch((e) => console.error(`[upload] ${loja.id}: erro ao processar:`, e.message));
     res.json({ ok: true, loja: loja.id, arquivo: `${nome}.xlsx`, bytes: buf.length });
@@ -1131,8 +1139,11 @@ app.get('/api/nfe', async (req, res) => {
   // pedido perdido (o coletor reiniciou com ele na fila): vira erro
   const parado = !robo || (robo.estado !== 'na_fila' && robo.estado !== 'rodando');
   for (const r of lista) if (r.estado === 'na_fila' && parado && Date.now() - Date.parse(r.em) > 20000) { NFE.erro(loja.id, r.id, robo && robo.ultima && robo.ultima.id === r.id ? `o robô terminou sem confirmar (código ${robo.ultima.codigo})` : 'o pedido se perdeu (o coletor reiniciou); crie de novo'); }
+  const cp = NFE.conferirParceiros(loja.id);
+  for (const r of cp.mudou) C.auditar(r.por || 'sistema', r.estado === 'ok' ? 'robô cadastrou parceiro no AppNext' : r.estado === 'teste' ? 'robô testou o cadastro de parceiro (nada salvo)' : 'robô não conseguiu cadastrar o parceiro', loja.id, { loja: loja.id, tipo: r.tipo, nome: r.nome, erro: r.erro || null });
+  for (const r of cp.lista) if (r.estado === 'na_fila' && parado && Date.now() - Date.parse(r.em) > 20000) NFE.erroParceiro(loja.id, r.id, robo && robo.ultima && robo.ultima.id === r.id ? `o robô terminou sem confirmar (código ${robo.ultima.codigo})` : 'o pedido se perdeu (o coletor reiniciou); peça de novo');
   const cad = NFE.cadastros(loja.id);
-  res.json({ cadastros: cad, erroCadastros: NFE.erroCadastros(loja.id), rascunhos: NFE.lista(loja.id).slice(0, 30), robo, podeRobo: COL.ativo() });
+  res.json({ cadastros: cad, erroCadastros: NFE.erroCadastros(loja.id), rascunhos: NFE.lista(loja.id).slice(0, 30), parceiros: NFE.listaParceiros(loja.id).slice(0, 10), robo, podeRobo: COL.ativo() });
 });
 app.use('/api/nfe', (req, res, next) => (req.method === 'GET' || req.get('X-Painel') === '1' ? next() : res.status(403).json({ erro: 'Pedido inválido.' })));
 app.post('/api/nfe/cadastros', express.json({ limit: '2kb' }), async (req, res) => {
@@ -1144,6 +1155,19 @@ app.post('/api/nfe/cadastros', express.json({ limit: '2kb' }), async (req, res) 
     if (x.status >= 400) return res.status(x.status === 409 ? 409 : 400).json({ erro: (x.json && x.json.erro) || 'O coletor recusou.' });
   } catch (e) { return res.status(502).json({ erro: 'Não consegui falar com o coletor: ' + e.message }); }
   res.json({ ok: true });
+});
+// parceiro novo: o robô cadastra em Parceiros → Cadastrar do AppNext (só com o clique e a confirmação de quem pediu)
+app.post('/api/nfe/parceiro', express.json({ limit: '4kb' }), async (req, res) => {
+  const loja = lojaNfe(req, res); if (!loja) return;
+  if (!COL.ativo()) return res.status(400).json({ erro: 'O coletor não está ligado nesta VPS.' });
+  const r = NFE.criarParceiro(loja.id, req.body || {}, req.user);
+  if (r.erro) return res.status(400).json({ erro: r.erro });
+  try {
+    const x = await COL.nfe(loja.id, r.ok.id, 'parceiro', req.user);
+    if (x.status >= 400) { const erro = (x.json && x.json.erro) || 'O coletor recusou.'; NFE.erroParceiro(loja.id, r.ok.id, erro); return res.status(x.status === 409 ? 409 : 400).json({ erro }); }
+  } catch (e) { NFE.erroParceiro(loja.id, r.ok.id, 'sem resposta do coletor'); return res.status(502).json({ erro: 'Não consegui falar com o coletor: ' + e.message }); }
+  C.auditar(req.user, r.ok.simular ? 'pediu teste de cadastro de parceiro no AppNext (sem salvar)' : 'pediu cadastro de parceiro no AppNext', loja.id, { loja: loja.id, tipo: r.ok.tipo, nome: r.ok.nome });
+  res.json({ ok: true, parceiro: r.ok });
 });
 app.post('/api/nfe/rascunho', express.json({ limit: '30kb' }), async (req, res) => {
   const loja = lojaNfe(req, res); if (!loja) return;

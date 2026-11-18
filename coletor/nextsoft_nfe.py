@@ -478,6 +478,133 @@ def devolucao(page, pedido, t0):
     return 0
 
 
+# parceiro novo: preenche Parceiros → Cadastrar com o que o painel mandou; o CEP preenche o endereço (com o código do município)
+PARCEIRO = """async (p) => {
+  const espera = (ms) => new Promise((r) => setTimeout(r, ms));
+  const erro = (t) => { throw new Error(t); };
+  const acha = (m) => { const r = [...document.querySelectorAll('*')].find((e) => e.__vue__); const f = r ? [r.__vue__.$root] : []; while (f.length) { const x = f.shift(); if (x.$options.methods && x.$options.methods[m]) return x; f.push(...(x.$children || [])); } return null; };
+  let t = null;
+  for (let k = 0; k < 60 && !(t = acha('verificaParceiro')); k++) await espera(250);
+  if (!t) erro('a tela de cadastro de parceiro não abriu');
+  for (let k = 0; k < 60 && !(t.tiposIe.length && t.gruposParceiro.length && t.estadoList.length && t.crtList.length); k++) await espera(250);
+  if (!t.tiposIe.length || !t.gruposParceiro.length) erro('a tela de parceiro não carregou as listas (tipo de IE, grupos)');
+  const P = t.parceiro, S = (o, k, v) => t.$set(o, k, v);
+  const pj = p.tipo === 'PJ';
+  const tp = t.tiposPessoa.find((x) => x.id === (pj ? 2 : 1)) || erro('tipo de pessoa não existe');
+  t.tipoPessoa = tp; S(P, 'tipoPessoa', tp.id);
+  await espera(300);
+  if (typeof t.nextStep === 'function' && t.wizardStep === 1) t.nextStep(); // "Continuar" da tela
+  await espera(300);
+  const grupo = t.gruposParceiro.find((g) => String(g.nome).trim().toLowerCase() === String(p.grupo || 'Clientes').trim().toLowerCase()) || t.gruposParceiro.find((g) => /cliente/i.test(g.nome)) || erro('grupo de parceiro "Clientes" não existe nesta loja');
+  const tel = String(p.telefone || '').replace(/\\D/g, '');
+  if (pj) {
+    const J = P.juridico;
+    S(J, 'cnpj', p.doc); S(J, 'razaoSocial', p.razaoSocial); S(J, 'nomeFantasia', p.nomeFantasia || p.razaoSocial);
+    S(J, 'inscricaoEstadual', p.ie || ''); S(J, 'inscricaoMunicipal', p.im || ''); S(J, 'telefone', tel); S(J, 'grupos', [grupo.id]);
+    const crt = t.crtList.find((x) => String(x.codigo) === String(p.crt || '1')) || erro('regime tributário (CRT) não existe');
+    t.crt = crt; S(J, 'crtId', crt.id);
+    const ie = t.tiposIe.find((x) => String(x.codigo) === String(p.tipoIe)) || erro('tipo de inscrição estadual não existe');
+    t.tipoIe = ie; S(P, 'tipoInscricaoEstadualId', ie.id);
+  } else {
+    const F = P.fisico;
+    S(F, 'cpf', p.doc); S(F, 'nomeCompleto', p.nome); S(F, 'apelido', p.apelido || String(p.nome).split(' ')[0]);
+    S(F, 'dataDeNascimento', p.nascimento); S(F, 'rg', p.rg || ''); S(F, 'telefone', tel); S(F, 'grupos', [grupo.id]);
+  }
+  // endereço: o CEP preenche rua, bairro, cidade, UF e o código do município (o mesmo botão da tela)
+  const E = P.endereco;
+  S(E, 'cep', p.cep); t.cepinvalido = '';
+  t.buscacep();
+  for (let k = 0; k < 40 && !E.codigoMunicipio && !t.cepinvalido; k++) await espera(250);
+  if (!E.codigoMunicipio) erro(`o CEP ${p.cep} não foi encontrado (${t.cepinvalido || 'sem resposta'}): confira o CEP`);
+  if (p.logradouro && !E.logradouro) S(E, 'logradouro', p.logradouro);
+  if (p.bairro && !E.bairro) S(E, 'bairro', p.bairro);
+  S(E, 'numero', p.numero || 'S/N'); S(E, 'complemento', p.complemento || ''); S(E, 'padrao', true);
+  if (!E.pais) S(E, 'pais', 'Brasil');
+  await espera(300);
+  // o que o AppNext acusa como inválido (as mesmas regras do botão Salvar)
+  const v = t.$v.parceiro, bloco = pj ? 'juridico' : 'fisico';
+  v[bloco].$touch(); v.endereco.$touch();
+  const invalidos = [...Object.keys(v[bloco]).filter((k) => !k.startsWith('$') && v[bloco][k].$invalid).map((k) => k),
+    ...Object.keys(v.endereco).filter((k) => !k.startsWith('$') && v.endereco[k].$invalid).map((k) => 'endereço.' + k)];
+  if (!t.lojaAtual || !t.lojaAtual.id) erro('a loja não está aberta no AppNext');
+  return { invalidos, tipo: pj ? 'PJ' : 'PF', doc: p.doc, nome: pj ? P.juridico.razaoSocial : P.fisico.nomeCompleto, grupo: grupo.nome, loja: t.lojaAtual.nomeFantasia || t.lojaAtual.nome || '',
+    endereco: { cep: E.cep, logradouro: E.logradouro, numero: E.numero, bairro: E.bairro, municipio: E.municipio, uf: E.uf, ibge: E.codigoMunicipio } };
+}"""
+
+NOMES_CAMPO = {"nomeCompleto": "nome completo", "apelido": "apelido", "cpf": "CPF", "dataDeNascimento": "data de nascimento", "telefone": "telefone",
+               "grupos": "grupo", "cnpj": "CNPJ", "razaoSocial": "razão social", "nomeFantasia": "nome fantasia", "inscricaoEstadual": "inscrição estadual",
+               "inscricaoMunicipal": "inscrição municipal", "crtId": "regime tributário", "endereço.cep": "CEP", "endereço.logradouro": "rua",
+               "endereço.numero": "número", "endereço.bairro": "bairro", "endereço.municipio": "cidade", "endereço.uf": "UF"}
+
+
+def parceiro(page, pedido, t0):
+    step("2) Parceiros → Cadastrar")
+    page.evaluate("() => { location.hash = '#/parceiros'; }")
+    page.wait_for_timeout(2000)
+    page.evaluate("() => { location.hash = '#/parceiros/cadastrar'; }")
+    page.wait_for_timeout(2500)
+    step(f"3) Preenchendo {'empresa' if pedido['tipo'] == 'PJ' else 'pessoa física'} e endereço pelo CEP")
+    r = page.evaluate(PARCEIRO, pedido)
+    e = r["endereco"]
+    log(f"   {r['nome']} · {r['doc']} · grupo {r['grupo']}")
+    log(f"   endereço: {e['logradouro']}, {e['numero']} · {e['bairro']} · {e['municipio']}/{e['uf']} · CEP {e['cep']} (IBGE {e['ibge']})")
+    if r["invalidos"]:
+        raise RuntimeError("o AppNext recusou estes campos, nada foi salvo: " + ", ".join(NOMES_CAMPO.get(k, k) for k in r["invalidos"]))
+    log("   ✓ tudo preenchido e aceito pela tela")
+    if SIMULAR or pedido.get("simular"):
+        log("   TESTE: parei antes de salvar (nada foi salvo no AppNext)")
+        gravar({"ok": True, "simulado": True, "parceiro": r})
+        return 0
+    step("4) Salvar o parceiro")
+    resp = {}
+
+    def ao_responder(rr):
+        try:
+            if rr.request.method == "POST" and re.search(r"parceiro", rr.url, re.I):
+                resp.update({"status": rr.status})
+                try:
+                    resp.update({"corpo": rr.text()[:500]})
+                except Exception:  # noqa: BLE001
+                    pass
+        except Exception:  # noqa: BLE001
+            pass
+    page.on("response", ao_responder)
+    page.evaluate("() => { const r=[...document.querySelectorAll('*')].find(e=>e.__vue__); const f=[r.__vue__.$root]; while(f.length){const x=f.shift(); if(x.$options.methods&&x.$options.methods.verificaParceiro){ x.formCadastrar(); return true; } f.push(...(x.$children||[]));} return false; }")
+    ok = False
+    for _ in range(45):
+        page.wait_for_timeout(1000)
+        if resp.get("status") and resp["status"] >= 400:
+            break
+        if page.locator("text=/cadastrado com sucesso/i").count() or (resp.get("status") and resp["status"] < 300 and "/cadastrar" not in page.url):
+            ok = True
+            break
+    avisos = [x.strip() for x in page.locator(".swal2-html-container, .swal2-title, .toast-body, .vue-notification, .notification-content").all_inner_texts() if x.strip()][:4]
+    for a in avisos:
+        log("   aviso na tela: " + a.replace("\n", " ")[:300])
+    if not ok:
+        detalhe = f": {avisos[0][:200]}" if avisos else (f" (HTTP {resp.get('status')} {resp.get('corpo', '')[:200]})" if resp else "")
+        raise RuntimeError("o AppNext não confirmou o cadastro do parceiro" + detalhe)
+    log("   ✓ o AppNext cadastrou o parceiro")
+    # a lista de parceiros do painel (para a NF-e) já sai com ele
+    try:
+        step("5) Atualizando os cadastros do painel (parceiros, vendedores, produtos)")
+        abrir_tela(page)
+        c = page.evaluate(LER_CADASTROS)
+        arq = Path(SAIDA).with_name("cadastros.resultado.json")
+        tmp = arq.with_name(f"cadastros.resultado.json.{os.getpid()}.tmp")
+        tmp.write_text(json.dumps({"ok": True, "cadastros": c, "em": datetime.now().astimezone().isoformat()}, ensure_ascii=False), encoding="utf-8")
+        os.chmod(tmp, 0o640)
+        tmp.replace(arq)
+        achou = next((x for x in c["parceiros"] if re.sub(r"\D", "", x.get("doc") or "") == pedido["doc"]), None)
+        log(f"   ✓ {len(c['parceiros'])} parceiros" + (f" · o novo já aparece: {achou['nome']}" if achou else " · o novo ainda não apareceu na lista (busque os cadastros de novo daqui a pouco)"))
+        r["id"] = achou["id"] if achou else None
+    except Exception as e2:  # noqa: BLE001
+        log(f"   não consegui atualizar os cadastros agora: {str(e2).splitlines()[0][:150]}")
+    log(f"Concluído em {(datetime.now() - t0).seconds} s")
+    gravar({"ok": True, "parceiro": r})
+    return 0
+
+
 def main():
     nx.start_watchdog(int(os.getenv("MAX_RUNTIME_SECONDS", "600")))
     pedido = json.loads(Path(ENTRADA).read_text(encoding="utf-8")) if ACAO != "cadastros" else None
@@ -503,6 +630,8 @@ def main():
             log(f"   ✓ loja: {os.getenv('APPNEXT_LOJA_DESTINO') or 'a padrão do usuário'}")
             if ACAO == "devolucao":
                 return devolucao(page, pedido, t0)
+            if ACAO == "parceiro":
+                return parceiro(page, pedido, t0)
             step("2) Estoque → Saída de Produtos → Nova")
             abrir_tela(page)
             log("   ✓ tela aberta")
