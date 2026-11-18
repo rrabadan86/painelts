@@ -60,7 +60,7 @@ function criar(id, nota, b, por) {
   const jaDevolvido = new Map();
   if (nota.id != null) {
     for (const ant of lista(id)) {
-      if (String(ant.nota && ant.nota.id) !== String(nota.id) || !(ant.nfe && ant.nfe.estado === 'ok')) continue;
+      if (String(ant.nota && ant.nota.id) !== String(nota.id) || !(ant.nfe && ant.nfe.estado === 'ok' && ant.nfe.situacao !== 'cancelada')) continue;
       for (const it of ant.itens || []) jaDevolvido.set(String(it.cod), (jaDevolvido.get(String(it.cod)) || 0) + (it.qtd || 0));
     }
   }
@@ -97,7 +97,7 @@ function criar(id, nota, b, por) {
   itens.forEach((it, n) => fotos[n].forEach((f, k) => C.gravarAtomico(path.join(dir, `foto-${n}-${k}.jpg`), f, 0o640)));
   const d = {
     id: did, em: new Date().toISOString(), por, obs: txt(b.obs, 400),
-    nota: { id: nota.id, nf: nota.nf, serie: nota.serie, emissao: nota.emissao, entrada: nota.entrada, fornecedor: nota.fornecedor, total: nota.total },
+    nota: { id: nota.id, nf: nota.nf, serie: nota.serie, chave: nota.chave || '', emissao: nota.emissao, entrada: nota.entrada, fornecedor: nota.fornecedor, total: nota.total },
     itens, total: Math.round(itens.reduce((s, i) => s + (i.vu || 0) * i.qtd, 0) * 100) / 100,
     email: { estado: 'pendente' }, nfe: { estado: 'pendente' },
   };
@@ -106,6 +106,13 @@ function criar(id, nota, b, por) {
 }
 const ler = (id, did) => (ID_OK.test(did) ? lerJ(path.join(pastaDev(id, did), 'devolucao.json'), null) : null);
 function atualizar(id, did, fn) { const d = ler(id, did); if (!d) return null; fn(d); C.gravarAtomico(path.join(pastaDev(id, did), 'devolucao.json'), JSON.stringify(d), 0o640); return d; }
+function excluir(id, did) {
+  const d = ler(id, did);
+  if (!d) return null;
+  try { fs.rmSync(pastaDev(id, did), { recursive: true, force: true }); } catch { /* ok */ }
+  for (const s of ['.json', '.resultado.json']) { try { fs.unlinkSync(path.join(envioNfe(id), did + s)); } catch { /* ok */ } }
+  return d;
+}
 function lista(id) {
   let ds = [];
   try { ds = fs.readdirSync(pasta(id)).filter((x) => ID_OK.test(x)); } catch { /* nenhuma */ }
@@ -201,9 +208,9 @@ function conferirNfe(id, d) {
   const r = lerJ(path.join(envioNfe(id), d.id + '.resultado.json'), null);
   if (!r || !r.em || Date.parse(r.em) < Date.parse(d.nfe.em)) return d;
   return atualizar(id, d.id, (x) => {
-    x.nfe = { ...x.nfe, fim: r.em, estado: r.ok ? (r.simulado ? 'teste' : 'ok') : 'erro', erro: r.ok ? undefined : r.erro || 'falhou', cfop: r.nota && r.nota.cfop, total: r.nota && r.nota.total, chaveRef: (r.nota && r.nota.chaveRef) || x.nfe.chaveRef };
+    x.nfe = { ...x.nfe, fim: r.em, estado: r.ok ? (r.simulado ? 'teste' : 'ok') : 'erro', erro: r.ok ? undefined : r.erro || 'falhou', cfop: r.nota && r.nota.cfop, total: r.nota && r.nota.total, chaveRef: (r.nota && r.nota.chaveRef) || x.nfe.chaveRef, saidaId: (r.nota && r.nota.saidaId) || x.nfe.saidaId };
   });
 }
 function erroNfe(id, did, erro) { return atualizar(id, did, (x) => { x.nfe = { ...(x.nfe || {}), estado: 'erro', erro, fim: new Date().toISOString() }; }); }
 
-module.exports = { ASSUNTO_PADRAO, assunto, salvarAssunto, montarAssunto, pedirNfe, conferirNfe, erroNfe, destinatarios, salvarDestinatarios, criar, ler, atualizar, lista, arqFoto, planilha, textoEmail, pastaDev };
+module.exports = { ASSUNTO_PADRAO, assunto, salvarAssunto, montarAssunto, pedirNfe, conferirNfe, erroNfe, destinatarios, salvarDestinatarios, criar, ler, atualizar, excluir, lista, arqFoto, planilha, textoEmail, pastaDev };

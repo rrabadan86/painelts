@@ -156,4 +156,22 @@ test.describe('regras', () => {
     await page.locator('.inv-zerar-g input').first().uncheck();
     await expect(page.locator('.inv-zerar-res b')).not.toHaveText(antes);
   });
+
+  test('NF de entrada mostra NF-e de saída vinculada e abre pop-up sobreposto sem fechar a entrada', async ({ page }) => {
+    await page.evaluate(() => { location.hash = '#notas'; });
+    const abaDev = page.locator('.prc-notas .seg button', { hasText: 'Com devolução' });
+    await expect(abaDev).toBeVisible();
+    await abaDev.click();
+    await expect(page.locator('.prc-notas .nf-dev').first()).toContainText('devolução');
+    await page.locator('.prc-notas a.prc-nome').first().click();
+    await expect(page.locator('.prc-drawer')).toBeVisible();
+    const btnSaida = page.locator('.prc-drawer .nf-vinculo-btn').first();
+    await expect(btnSaida).toContainText('NF-e nº 79');
+    await btnSaida.click();
+    await expect(page.locator('.prc-popup-camada .prc-popup')).toContainText('NF-e 79');
+    await expect(page.locator('.prc-drawer')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.prc-popup-camada')).toHaveCount(0);
+    await expect(page.locator('.prc-drawer')).toBeVisible();
+  });
 });

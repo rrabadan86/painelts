@@ -469,6 +469,10 @@ def devolucao(page, pedido, t0):
         detalhe = f": {avisos[0][:200]}" if avisos else (f" (HTTP {resp.get('status')} {resp.get('corpo', '')[:200]})".rstrip() if resp else "")
         raise RuntimeError("o AppNext não confirmou a gravação da devolução" + detalhe)
     log("   ✓ o AppNext gravou a saída de devolução (não concluída)")
+    if (resp and resp.get("corpo")):
+        m_id = re.search(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", str(resp["corpo"]), re.I)
+        if m_id and m_id.group(0) != "00000000-0000-0000-0000-000000000000":
+            r["saidaId"] = m_id.group(0)
     log(f"Concluído em {(datetime.now() - t0).seconds} s")
     gravar({"ok": True, "nota": r})
     return 0

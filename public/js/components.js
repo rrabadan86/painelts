@@ -120,7 +120,7 @@
     TS.expandidoTitulo = titulo;
   }
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && expandido && !document.querySelector('.ms.open, .camada-cheia:not(.exp-camada), .prc-drawer-camada, .inv-camera')) fecharExpandido(false);
+    if (e.key === 'Escape' && expandido && !document.querySelector('.ms.open, .camada-cheia:not(.exp-camada), .prc-drawer-camada, .prc-popup-camada, .inv-camera')) fecharExpandido(false);
   });
   TS.botoesExpandir = function (root) {
     // a tela foi redesenhada: a camada antiga ficou com o cartão velho

@@ -163,8 +163,10 @@ def nota_de(d):
             "qtd": q, "vu": num(i.get("valorUnitario")),
             "custo": round((vl if vl else (vb or 0)) / q, 4), "grupo": i.get("grupoNome") or "",
         })
+    ch = re.sub(r"\D", "", str(d.get("chaveAcesso") or d.get("chaveNfe") or d.get("chave") or ""))
     return {
         "id": d.get("id"), "nf": d.get("numeroNota"), "serie": d.get("serie"),
+        "chave": ch if len(ch) == 44 else "",
         "emissao": str(d.get("dataEmissao") or "")[:10], "entrada": str(d.get("dataEntrada") or d.get("dataConclusao") or "")[:10],
         "status": d.get("status"), "motivo": ((d.get("motivoMovimentacao") or {}).get("descricao") or "").strip(),
         "cfop": (d.get("cfop") or {}).get("codigo"),
@@ -203,6 +205,10 @@ def coletar_compras_na_pagina(page, saida: str, desde: str = None):
         novas, falhas = 0, 0
         for x in concluidas:
             if x["id"] in notas_por_id:
+                if not notas_por_id[x["id"]].get("chave"):
+                    ch_x = re.sub(r"\D", "", str(x.get("chaveAcesso") or x.get("chaveNfe") or x.get("chave") or ""))
+                    if len(ch_x) == 44:
+                        notas_por_id[x["id"]]["chave"] = ch_x
                 continue
             url = urlunsplit((base.scheme, base.netloc, base.path.rstrip("/") + "/" + x["id"], "", ""))
             try:

@@ -222,17 +222,28 @@
       tab);
   }
 
-  async function abrir(loja, chave) {
-    document.querySelector('.prc-drawer-camada')?.remove();
-    const fechar = () => { camada.remove(); document.body.classList.remove('com-camada'); document.removeEventListener('keydown', esc); };
-    const esc = (e) => { if (e.key === 'Escape') fechar(); };
-    const card = h('aside', { class: 'card prc-drawer prc-drawer-largo', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Nota fiscal' },
+  async function abrir(loja, chave, opts) {
+    const sobrepor = !!(opts && opts.sobrepor) || !!document.querySelector('.prc-drawer-camada');
+    document.querySelector('.prc-popup-camada')?.remove();
+    if (!sobrepor) document.querySelector('.prc-drawer-camada')?.remove();
+    const fechar = () => {
+      camada.remove();
+      if (!document.querySelector('.prc-drawer-camada, .prc-popup-camada, .camada-cheia')) document.body.classList.remove('com-camada');
+      document.removeEventListener('keydown', esc, true);
+    };
+    const esc = (e) => {
+      if (e.key === 'Escape') {
+        if (sobrepor) { e.preventDefault(); e.stopImmediatePropagation(); }
+        fechar();
+      }
+    };
+    const card = h('aside', { class: sobrepor ? 'card prc-popup prc-drawer-largo' : 'card prc-drawer prc-drawer-largo', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Nota fiscal de saída' },
       h('button', { type: 'button', class: 'icon-btn exp-fechar', title: 'Fechar (Esc)', 'aria-label': 'Fechar', onclick: () => fechar() }, '✕'),
       h('div', { class: 'loading' }, h('div', null, h('div', { class: 'spinner' }), h('p', null, 'Abrindo a nota…'))));
-    const camada = h('div', { class: 'prc-drawer-camada', onmousedown: (e) => { if (e.target === camada) fechar(); } }, card);
+    const camada = h('div', { class: sobrepor ? 'prc-popup-camada' : 'prc-drawer-camada', onmousedown: (e) => { if (e.target === camada) fechar(); } }, card);
     document.body.append(camada);
     document.body.classList.add('com-camada');
-    document.addEventListener('keydown', esc);
+    document.addEventListener('keydown', esc, true);
     let n;
     try {
       const r = await fetch(url('nota', loja, chave), { credentials: 'same-origin' });
@@ -269,5 +280,5 @@
       h('div', { class: 'f-label mt' }, 'Produtos da nota'),
       tab].filter(Boolean));
   }
-  TS.abrirNFe = (chave, loja = state.loja) => abrir(loja, chave);
+  TS.abrirNFe = (chave, loja = state.loja, opts) => abrir(loja, chave, opts);
 })();

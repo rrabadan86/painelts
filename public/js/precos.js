@@ -380,23 +380,68 @@
   };
   const cacheNotas = new Map();
   TS.aoLimparCache && TS.aoLimparCache(() => cacheNotas.clear());
+  /** confere se uma chave de 44 dígitos referenciada (<refNFe>) aponta para esta nota de entrada */
+  function refBateNota(ref, n) {
+    if (!ref || ref.length !== 44 || !n) return false;
+    if (n.chave && ref === n.chave) return true;
+    if (Number(ref.slice(25, 34)) !== Number(n.nf)) return false;
+    if (n.serie != null && String(n.serie) !== '' && Number(ref.slice(22, 25)) !== Number(n.serie)) return false;
+    if (n.emissao && n.emissao.length >= 7 && ref.slice(2, 6) !== n.emissao.slice(2, 4) + n.emissao.slice(5, 7)) return false;
+    return true;
+  }
+  function saidasDeNota(j, n) {
+    const out = [], vistas = new Set();
+    for (const s of (j && j.saidas) || []) {
+      if ((s.refs || []).some((ref) => refBateNota(ref, n)) && !vistas.has(s.chave)) { vistas.add(s.chave); out.push(s); }
+    }
+    const devs = (j && j.devs && j.devs.get(`${n.id}|${n.nf}`)) || [];
+    for (const d of devs) {
+      const nf = d.nfe;
+      if (nf && nf.chave && !vistas.has(nf.chave)) {
+        vistas.add(nf.chave);
+        out.push({ chave: nf.chave, numero: nf.numero, serie: nf.serie || '1', emissao: nf.autorizadaEm || d.em, natOp: 'Devolução ao fornecedor', finalidade: 'Devolução', situacao: nf.situacao === 'cancelada' || nf.estado === 'cancelada' ? 'cancelada' : 'autorizada', valor: nf.total ?? d.total, cfops: nf.cfop ? [nf.cfop] : [] });
+      }
+    }
+    return out;
+  }
+  function devAtivaDeNota(j, n) {
+    const devs = ((j && j.devs && j.devs.get(`${n.id}|${n.nf}`)) || []).filter((d) => !(d.nfe && (d.nfe.estado === 'cancelada' || d.nfe.situacao === 'cancelada')));
+    const saidasDev = saidasDeNota(j, n).filter((s) => s.finalidade === 'Devolução' && s.situacao !== 'cancelada');
+    if (!devs.length && !saidasDev.length) return null;
+    const total = Math.max(devs.length, saidasDev.length);
+    const dicas = [
+      ...devs.map((d) => `${d.itens.length} ${d.itens.length === 1 ? 'item' : 'itens'} em ${new Date(d.em).toLocaleDateString('pt-BR')}${d.nfe && d.nfe.numero ? ` (NF-e nº ${d.nfe.numero})` : ''}`),
+      ...(!devs.length ? saidasDev.map((s) => `NF-e de devolução nº ${s.numero ?? '—'}`) : []),
+    ];
+    return { total, dica: dicas.join(' · ') };
+  }
   function cartaoNotas(D) {
     const box = h('div', { class: 'mt' }, h('div', { class: 'card' }, h('div', { class: 'loading' }, h('div', null, h('div', { class: 'spinner' }), h('p', null, 'Lendo as notas fiscais…')))));
     const loja = D.loja;
     const p = cacheNotas.get(loja) || fetch(TS.api(`estoque/notas?loja=${encodeURIComponent(loja)}`), { credentials: 'same-origin' }).then(async (r) => { const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.erro || 'Falha ao ler as notas.'); return j; });
     cacheNotas.set(loja, p);
-    // devoluções feitas (para marcar as notas que tiveram devolução): sem permissão ou sem dados, segue sem marcar
-    const pd = TS.demo ? Promise.resolve([]) : fetch(TS.api(`devolucoes?loja=${encodeURIComponent(loja)}`), { credentials: 'same-origin' }).then((r) => (r.ok ? r.json() : { devolucoes: [] })).then((x) => x.devolucoes || []).catch(() => []);
-    Promise.all([p, pd]).then(([j, devs]) => {
+    const buscarDevs = () => (TS.demo ? Promise.resolve([]) : fetch(TS.api(`devolucoes?loja=${encodeURIComponent(loja)}`), { credentials: 'same-origin' }).then((r) => (r.ok ? r.json() : { devolucoes: [] })).then((x) => x.devolucoes || []).catch(() => []));
+    const ps = fetch(TS.api(`nfsaida?loja=${encodeURIComponent(loja)}`), { credentials: 'same-origin' }).then((r) => (r.ok ? r.json() : { notas: [] })).then((x) => x.notas || []).catch(() => []);
+    const indexarDevs = (j, devs) => {
       j.devs = new Map();
       for (const d of devs) { const k = `${d.nota.id}|${d.nota.nf}`; (j.devs.get(k) || j.devs.set(k, []).get(k)).push(d); }
-      box.replaceChildren(listaNotas(D, j));
+    };
+    const atualizarDevs = (j) => buscarDevs().then((devs) => {
+      indexarDevs(j, devs);
+      if (!devs.length && state.prcNotasFil === 'dev') state.prcNotasFil = 'per';
+      if (box.isConnected) box.replaceChildren(listaNotas(D, j, () => atualizarDevs(j)));
+    });
+    Promise.all([p, buscarDevs(), ps]).then(([j, devs, saidas]) => {
+      j.saidas = saidas;
+      indexarDevs(j, devs);
+      const aoMudar = () => atualizarDevs(j);
+      box.replaceChildren(listaNotas(D, j, aoMudar));
       // veio de um link ("NF nº …" no histórico de um produto): abre a nota
-      if (state.abrirNF != null) { const n = (j.notas || []).find((x) => String(x.nf) === String(state.abrirNF)); state.abrirNF = null; if (n) abrirNota(D, { ...n, dia: TS.isoToDay(n.entrada || n.emissao), nfTxt: `${n.nf ?? '—'}${n.serie ? ' / ' + n.serie : ''}` }); }
+      if (state.abrirNF != null) { const n = (j.notas || []).find((x) => String(x.nf) === String(state.abrirNF)); state.abrirNF = null; if (n) abrirNota(D, { ...n, dia: TS.isoToDay(n.entrada || n.emissao), nfTxt: `${n.nf ?? '—'}${n.serie ? ' / ' + n.serie : ''}` }, j, aoMudar); }
     }).catch((e) => { cacheNotas.delete(loja); box.replaceChildren(h('div', { class: 'notice err' }, e.message)); });
     return box;
   }
-  function listaNotas(D, j) {
+  function listaNotas(D, j, aoMudar) {
     const f = state.f;
     const todas = (j.notas || []).map((n) => {
       const dia = TS.isoToDay(n.entrada || n.emissao);
@@ -405,28 +450,28 @@
     });
     if (!todas.length) return TS.card('Notas fiscais de entrada', null, h('p', { class: 'muted' }, 'Nenhuma nota de entrada no painel ainda. O coletor lê as notas concluídas de Estoque → Entrada de Produtos do AppNext junto com o estoque.'));
     const noPer = (n) => (f.de == null || n.dia >= f.de) && (f.ate == null || n.dia <= f.ate);
-    const devDe = (n) => (j.devs && j.devs.get(`${n.id}|${n.nf}`)) || null;
-    const FIL = { per: ['No período', noPer], todas: ['Todas', () => true], ...(j.devs && j.devs.size ? { dev: ['Com devolução', (n) => !!devDe(n)] } : {}) };
+    const temAlgumaDev = todas.some((n) => !!devAtivaDeNota(j, n));
+    const FIL = { per: ['No período', noPer], todas: ['Todas', () => true], ...(temAlgumaDev ? { dev: ['Com devolução', (n) => !!devAtivaDeNota(j, n)] } : {}) };
     const fil = FIL[state.prcNotasFil] ? state.prcNotasFil : 'per';
     const rows = todas.filter(FIL[fil][1]);
     const tab = TS.table({
       cols: [
         // compacta: entrada + emissão numa coluna, tipo junto do fornecedor; a linha inteira abre a nota
         { key: 'dia', label: 'Entrada', align: 'l', render: (r) => h('span', null, r.entrada ? quando(r.entrada) : '—', h('small', { class: 'est-tam' }, r.emissao ? 'emissão ' + quando(r.emissao) : '')), sortVal: (r) => r.dia ?? 0 },
-        { key: 'nfTxt', label: 'NF / série', align: 'l', render: (r) => h('a', { href: '#', class: 'prc-nome', onclick: (e) => { e.preventDefault(); e.stopPropagation(); abrirNota(D, r); } }, r.nfTxt), sortVal: (r) => +r.nf || 0 },
-        { key: 'fornecedor', label: 'Fornecedor', align: 'l', wrap: true, render: (r) => { const dv = devDe(r); return h('span', null, r.fornecedor || '—', h('small', { class: 'est-tam' }, r.motivo ? h('span', { class: 'prc-st ' + (r.compra ? 'prc-st-v' : 'prc-st-n') }, r.motivo) : null,
-          dv ? h('span', { class: 'prc-st nf-dev', title: dv.map((d) => `${d.itens.length} ${d.itens.length === 1 ? 'item' : 'itens'} em ${new Date(d.em).toLocaleDateString('pt-BR')}`).join(' · ') }, `↩ devolução${dv.length > 1 ? ` (${dv.length})` : ''}`) : null)); } },
+        { key: 'nfTxt', label: 'NF / série', align: 'l', render: (r) => h('a', { href: '#', class: 'prc-nome', onclick: (e) => { e.preventDefault(); e.stopPropagation(); abrirNota(D, r, j, aoMudar); } }, r.nfTxt), sortVal: (r) => +r.nf || 0 },
+        { key: 'fornecedor', label: 'Fornecedor', align: 'l', wrap: true, render: (r) => { const dv = devAtivaDeNota(j, r); return h('span', null, r.fornecedor || '—', h('small', { class: 'est-tam' }, r.motivo ? h('span', { class: 'prc-st ' + (r.compra ? 'prc-st-v' : 'prc-st-n') }, r.motivo) : null,
+          dv ? h('span', { class: 'prc-st nf-dev', title: dv.dica }, `↩ devolução${dv.total > 1 ? ` (${dv.total})` : ''}`) : null)); } },
         { key: 'nItens', label: 'Itens', fmt: fmt.int },
         { key: 'total', label: 'Total da nota', fmt: (v) => (v == null ? '—' : fmt.brl(v)) },
       ],
-      rows, sortKey: 'dia', maxHeight: '520px', search: 'Buscar NF, fornecedor ou produto…', searchKeys: ['nfTxt', 'fornecedor', 'motivo', 'busca'], cls: 'est-t', onRowClick: (r) => abrirNota(D, r),
+      rows, sortKey: 'dia', maxHeight: '520px', search: 'Buscar NF, fornecedor ou produto…', searchKeys: ['nfTxt', 'fornecedor', 'motivo', 'busca'], cls: 'est-t', onRowClick: (r) => abrirNota(D, r, j, aoMudar),
       total: { nfTxt: `${fmt.int(rows.length)} notas`, nItens: rows.reduce((a, r) => a + r.nItens, 0), total: rows.reduce((a, r) => a + (r.total || 0), 0) },
       imprimir: ['dia', 'nfTxt', 'fornecedor', 'nItens', 'total'],
       empty: fil === 'per' ? 'Nenhuma nota no período do filtro. Veja "Todas".' : 'Nenhuma nota.',
     });
     return TS.cardWithTools('Notas fiscais de entrada', `Notas de entrada concluídas no AppNext (Estoque → Entrada de Produtos), lidas pelo coletor${j.atualizado ? ' · atualizado em ' + new Date(j.atualizado).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : ''}. Clique na nota para ver os produtos, quantidades, valores e o que mudou no custo.`,
       h('div', { class: 'est-tools' }, tab.searchBox && (tab.searchBox.classList.add('est-busca'), tab.searchBox),
-        TS.seg(Object.entries(FIL).map(([k, [t, fn]]) => [`${t} (${fmt.int(todas.filter(fn).length)})`, k]), fil, (v) => { state.prcNotasFil = v; const c = document.querySelector('.prc-notas > .mt'); if (c) c.replaceChildren(listaNotas(D, j)); })),
+        TS.seg(Object.entries(FIL).map(([k, [t, fn]]) => [`${t} (${fmt.int(todas.filter(fn).length)})`, k]), fil, (v) => { state.prcNotasFil = v; const c = document.querySelector('.prc-notas > .mt'); if (c) c.replaceChildren(listaNotas(D, j, aoMudar)); })),
       tab);
   }
   /** custo de um item antes da nota: a entrada anterior (outra nota) ou a importação de estoque anterior */
@@ -436,10 +481,22 @@
     for (const [d, c] of (D.hist && D.hist[cod]) || []) { const dd = TS.isoToDay(d); if (dd < dia && dd > d0) { v = c; d0 = dd; origem = `estoque de ${quando(d)}`; } }
     return v == null ? null : { v, origem };
   }
-  function abrirNota(D, n) {
+  function blocoSaidasVinculadas(loja, vinculadas) {
+    if (!vinculadas || !vinculadas.length) return null;
+    return h('div', { class: 'nf-vinculos' },
+      h('small', { class: 'nf-vinculos-tit' }, vinculadas.length === 1 ? 'Nota fiscal de saída vinculada a esta entrada' : `Notas fiscais de saída vinculadas (${vinculadas.length})`),
+      ...vinculadas.map((s) => h('button', { type: 'button', class: 'nf-vinculo-btn' + (s.situacao === 'cancelada' ? ' canc' : ''), onclick: () => TS.abrirNFe && TS.abrirNFe(s.chave, loja, { sobrepor: true }) },
+        h('span', { class: 'nf-vinculo-esq' },
+          h('b', null, `↪ NF-e nº ${s.numero ?? '—'}${s.serie ? ' / série ' + s.serie : ''}`),
+          h('span', { class: 'prc-st ' + (s.situacao === 'cancelada' ? 'prc-st-n nf-cancelada' : 'prc-st-v') }, s.situacao === 'cancelada' ? 'cancelada' : 'autorizada'),
+          h('small', { class: 'muted' }, [s.natOp || s.finalidade, s.cfops && s.cfops.length ? 'CFOP ' + s.cfops.join(', ') : null, s.emissao ? quando(s.emissao.slice(0, 10)) : null, s.valor != null ? fmt.brl(s.valor) : null].filter(Boolean).join(' · '))),
+        h('span', { class: 'nf-vinculo-ver' }, 'Ver NF-e ↗'))));
+  }
+  function abrirNota(D, n, j, aoMudar) {
+    document.querySelector('.prc-popup-camada')?.remove();
     document.querySelector('.prc-drawer-camada')?.remove();
-    const fechar = () => { camada.remove(); document.body.classList.remove('com-camada'); document.removeEventListener('keydown', esc); };
-    const esc = (e) => { if (e.key === 'Escape') fechar(); };
+    const fechar = () => { camada.remove(); if (!document.querySelector('.prc-popup-camada, .camada-cheia')) document.body.classList.remove('com-camada'); document.removeEventListener('keydown', esc); };
+    const esc = (e) => { if (e.key === 'Escape' && !document.querySelector('.prc-popup-camada')) fechar(); };
     const linhas = n.itens.map((i) => {
       const a = custoAntes(D, i.cod, n.dia, n.nf);
       return { ...i, total: Math.round(i.custo * i.qtd * 100) / 100, antes: a ? a.v : null, origemAntes: a ? a.origem : '', varC: a && a.v ? i.custo / a.v - 1 : null };
@@ -458,6 +515,7 @@
       total: { nome: `${fmt.int(linhas.length)} itens`, total: linhas.reduce((a, r) => a + r.total, 0) },
     });
     const subiu = linhas.filter((r) => r.varC != null && r.varC > 0.0005).length, desceu = linhas.filter((r) => r.varC != null && r.varC < -0.0005).length;
+    const vinculadas = saidasDeNota(j, n);
     const card = h('aside', { class: 'card prc-drawer prc-drawer-largo', role: 'dialog', 'aria-modal': 'true', 'aria-label': `Nota ${n.nfTxt}` },
       h('button', { type: 'button', class: 'icon-btn exp-fechar', title: 'Fechar (Esc)', 'aria-label': 'Fechar', onclick: fechar }, '✕'),
       h('div', { class: 'card-title' }, `NF ${n.nfTxt}`), h('div', { class: 'card-sub' }, n.fornecedor || 'Fornecedor não informado'),
@@ -466,7 +524,8 @@
         h('div', null, h('small', null, 'Entrada'), h('b', null, n.entrada ? quando(n.entrada) : '—')),
         h('div', null, h('small', null, 'Total da nota'), h('b', null, n.total != null ? fmt.brl(n.total) : '—'))),
       h('div', { class: 'prc-nota-info muted' }, [n.motivo && `Tipo: ${n.motivo}`, n.status && `Situação: ${n.status}`, n.cfop && `CFOP ${n.cfop}`, `${fmt.int(linhas.length)} itens`, subiu || desceu ? `custo subiu em ${fmt.int(subiu)} e caiu em ${fmt.int(desceu)}` : ''].filter(Boolean).join(' · ')),
-      TS.devolucao && !TS.demo ? TS.devolucao.barra(n, () => card) : null,
+      blocoSaidasVinculadas(D.loja, vinculadas),
+      TS.devolucao && !TS.demo ? TS.devolucao.barra(n, () => card, aoMudar) : null,
       h('div', { class: 'f-label mt' }, 'Produtos da nota', h('button', { type: 'button', class: 'exp-btn prt-btn prc-nf-prt', title: 'Imprimir a nota', onclick: () => TS.imprimir(card) }, '🖨', h('span', null, 'Imprimir'))),
       tab);
     const camada = h('div', { class: 'prc-drawer-camada', onmousedown: (e) => { if (e.target === camada) fechar(); } }, card);

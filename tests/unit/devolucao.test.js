@@ -124,3 +124,42 @@ test('robô de devolução: preenche e preserva modalidadeDeterminacaoBcIcmsId v
   assert.equal(saida.usuarioConclusaoId, null);
 });
 
+test('devolução: exclusão limpa registro/fila, NF-e cancelada libera saldo e NFS.lista expõe refs', () => {
+  const tmp2 = fs.mkdtempSync(path.join(os.tmpdir(), 'dev2-'));
+  const C = require('../../src/config');
+  const origPasta = C.pastaLoja;
+  C.pastaLoja = (id) => path.join(tmp2, id);
+  try {
+    const NFS = require('../../src/nfsaida');
+    const nEntrada = { id: '11111111-2222-3333-4444-555555555555', nf: 19084, serie: 1, chave: '32261023729370000160550010000190841885739322', emissao: '2026-10-15', entrada: '2026-10-20', fornecedor: 'TSB', total: 30, itens: [{ cod: '80149', nome: 'Saco Kraft', un: 'UN', qtd: 3, vu: 10 }] };
+    const r1 = DEV.criar('lj2', nEntrada, { itens: [{ cod: '80149', tipo: 'faltou', qtd: 3 }] }, 'admin').ok;
+    DEV.atualizar('lj2', r1.id, (x) => { x.nfe = { estado: 'ok', situacao: 'autorizada' }; });
+    assert.match(DEV.criar('lj2', nEntrada, { itens: [{ cod: '80149', tipo: 'faltou', qtd: 1 }] }, 'admin').erro, /já devolvidos/);
+    // se a NF-e de devolução foi cancelada no AppNext, o item volta a ficar disponível
+    DEV.atualizar('lj2', r1.id, (x) => { x.nfe = { estado: 'ok', situacao: 'cancelada' }; });
+    const r2 = DEV.criar('lj2', nEntrada, { itens: [{ cod: '80149', tipo: 'faltou', qtd: 2 }] }, 'admin');
+    assert.ok(r2.ok, 'NF-e cancelada não deve bloquear nova devolução');
+    // exclusão remove pasta da devolução e arquivos da fila de NF-e
+    DEV.pedirNfe('lj2', r2.ok, true);
+    assert.ok(fs.existsSync(path.join(tmp2, 'lj2', 'nfe', 'envio', r2.ok.id + '.json')));
+    assert.equal(DEV.excluir('lj2', '../invalido'), null);
+    const exc = DEV.excluir('lj2', r2.ok.id);
+    assert.equal(exc.id, r2.ok.id);
+    assert.equal(DEV.ler('lj2', r2.ok.id), null);
+    assert.ok(!fs.existsSync(path.join(tmp2, 'lj2', 'nfe', 'envio', r2.ok.id + '.json')));
+
+    // NFS.lista inclui as chaves referenciadas (<refNFe>) no cabeçalho
+    const dirXml = path.join(tmp2, 'lj2', 'xmls', '2026-11', 'ativos');
+    fs.mkdirSync(dirXml, { recursive: true });
+    const chaveSaida = '52261100000000000191550010000000791100000790';
+    fs.writeFileSync(path.join(dirXml, '20261118_' + chaveSaida + '.xml'), `<nfeProc><NFe><infNFe><ide><nNF>79</nNF><serie>1</serie><mod>55</mod><dhEmi>2026-11-18T10:00:00-03:00</dhEmi><natOp>Devolução</natOp><tpNF>1</tpNF><finNFe>4</finNFe><NFref><refNFe>${nEntrada.chave}</refNFe></NFref></ide><emit><xNome>Loja</xNome><CNPJ>00000000000191</CNPJ></emit><dest><xNome>TSB</xNome><CNPJ>23729370000160</CNPJ></dest><det nItem="1"><prod><cProd>80149</cProd><xProd>Saco</xProd><CFOP>6202</CFOP><uCom>UN</uCom><qCom>1</qCom><vUnCom>10</vUnCom><vProd>10</vProd></prod></det><total><ICMSTot><vNF>10.00</vNF><vProd>10.00</vProd></ICMSTot></total></infNFe></NFe></nfeProc>`);
+    const ls = NFS.lista('lj2');
+    assert.equal(ls.notas.length, 1);
+    assert.deepEqual(ls.notas[0].refs, [nEntrada.chave]);
+  } finally {
+    C.pastaLoja = origPasta;
+    fs.rmSync(tmp2, { recursive: true, force: true });
+  }
+});
+
+

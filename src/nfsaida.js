@@ -92,7 +92,7 @@ const cache = new Map();
 function cabecalho(a) {
   let st;
   try { st = fs.statSync(a.arq); } catch { return null; }
-  const k = a.arq + '|' + st.mtimeMs;
+  const k = 'v2|' + a.arq + '|' + st.mtimeMs;
   if (!cache.has(k)) {
     if (cache.size >= 4000) cache.delete(cache.keys().next().value);
     try {
@@ -100,7 +100,7 @@ function cabecalho(a) {
       const cfops = [...new Set(n.itens.map((i) => i.cfop).filter(Boolean))];
       cache.set(k, { chave: a.chave, numero: n.numero, serie: n.serie, data: n.data, emissao: n.emissao, natOp: n.natOp, tipo: n.tipo, finalidade: n.finalidade,
         dest: n.dest ? { nome: n.dest.nome, doc: n.dest.doc, tipoDoc: n.dest.tipoDoc, mun: n.dest.end && n.dest.end.mun, uf: n.dest.end && n.dest.end.uf } : null,
-        valor: n.total.vNF, itens: n.itens.length, qtd: n.itens.reduce((s, i) => s + (i.qtd || 0), 0), cfops });
+        valor: n.total.vNF, itens: n.itens.length, qtd: n.itens.reduce((s, i) => s + (i.qtd || 0), 0), cfops, refs: n.refs || [] });
     } catch { cache.set(k, null); }
   }
   const c = cache.get(k);

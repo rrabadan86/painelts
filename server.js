@@ -436,6 +436,11 @@ function nfsDemo(lojaId) {
   const e = DEMO.estoqueDemo(lojaId), it = e.estoque.itens.filter((i) => i.desc).slice(0, 40);
   const hoje = new Date(), dia = (n) => new Date(hoje.getTime() - n * 864e5).toISOString().slice(0, 10);
   const lj = DEMO.lojasDemo().find((l) => l.id === lojaId) || { nome: 'Tea Shop' };
+  let refDemo = null;
+  for (const l of Object.values(e.compras.itens || {})) for (const [dEnt, , nfEnt] of l) {
+    if (!refDemo || dEnt > refDemo.d) refDemo = { d: dEnt, nf: nfEnt };
+  }
+  const chaveRefDemo = refDemo ? ('35' + refDemo.d.slice(2, 4) + refDemo.d.slice(5, 7) + '11222333000144' + '55' + '001' + String(Number(refDemo.nf) || 1).padStart(9, '0') + '1' + '10000001').padEnd(44, '0').slice(0, 44) : null;
   const base = [
     [5, 'Venda de mercadoria', 'Saída', 'Normal', '5102', { nome: 'Empresa Fictícia de Eventos Ltda', doc: '12345678000190', tipoDoc: 'CNPJ' }, [[0, 25, 7.9], [1, 25, 7.9], [2, 25, 7.9]], 'autorizada'],
     [12, 'Venda de mercadoria', 'Saída', 'Normal', '5102', { nome: 'Maria Exemplo da Silva', doc: '12345678909', tipoDoc: 'CPF' }, [[3, 2, 54.9], [4, 1, 129.9]], 'autorizada'],
@@ -448,13 +453,14 @@ function nfsDemo(lojaId) {
     const itens = its.map(([ix, qtd, vUn], j) => { const p = it[ix % it.length] || { cod: String(ix), desc: 'Produto' }; return { n: j + 1, cod: p.cod, desc: p.desc, ncm: '09021000', cfop, un: p.un || 'UN', qtd, vUn, vProd: Math.round(qtd * vUn * 100) / 100, vDesc: 0 }; });
     const vNF = Math.round(itens.reduce((t, i) => t + i.vProd, 0) * 100) / 100;
     const chave = ('52' + data.slice(2, 4) + data.slice(5, 7) + '00000000000191' + '55' + '001' + String(numero).padStart(9, '0') + '1' + String(10000000 + numero).slice(-8)).padEnd(44, '0').slice(0, 44);
-    return { chave, situacao: sit, numero, serie: '1', mod: '55', emissao: data + 'T14:47:00-03:00', data, natOp, tipo, finalidade: fin,
+    const refs = fin === 'Devolução' && chaveRefDemo ? [chaveRefDemo] : [];
+    return { chave, situacao: sit, numero, serie: '1', mod: '55', emissao: data + 'T14:47:00-03:00', data, natOp, tipo, finalidade: fin, refs,
       emit: { nome: lj.nome + ' (fictícia)', fantasia: lj.nome, cnpj: '00000000000191', ie: '000000000', end: { linha: 'Rua Exemplo, 100 · Centro', mun: 'Cidade Exemplo', uf: 'GO', cep: '74000000' } },
       dest: { ...dest, end: { linha: 'Av. Fictícia, 200 · Bairro Exemplo', mun: 'Cidade Exemplo', uf: 'GO', cep: '74000000' } },
       total: { vNF, vProd: vNF, vDesc: 0 }, pagamentos: [], infCpl: 'Nota fictícia da apresentação.', protocolo: sit === 'autorizada' || sit === 'cancelada' ? '152260000000' + numero : null, autorizadaEm: data + 'T14:48:00-03:00', itens };
   });
 }
-const cabNfs = (n) => ({ chave: n.chave, numero: n.numero, serie: n.serie, data: n.data, emissao: n.emissao, natOp: n.natOp, tipo: n.tipo, finalidade: n.finalidade, situacao: n.situacao,
+const cabNfs = (n) => ({ chave: n.chave, numero: n.numero, serie: n.serie, data: n.data, emissao: n.emissao, natOp: n.natOp, tipo: n.tipo, finalidade: n.finalidade, situacao: n.situacao, refs: n.refs || [],
   dest: n.dest ? { nome: n.dest.nome, doc: n.dest.doc, tipoDoc: n.dest.tipoDoc, mun: n.dest.end && n.dest.end.mun, uf: n.dest.end && n.dest.end.uf } : null,
   valor: n.total.vNF, itens: n.itens.length, qtd: n.itens.reduce((t, i) => t + (i.qtd || 0), 0), cfops: [...new Set(n.itens.map((i) => i.cfop))] });
 app.get('/api/demo/nfsaida', (req, res) => { if (!lojaDemo(req)) return res.status(400).json({ erro: 'Escolha uma loja.' }); res.json({ notas: nfsDemo(req.query.loja).map(cabNfs), temXml: true }); });
@@ -880,25 +886,44 @@ const lojaDev = (req, res) => {
   if (!loja) { res.status(400).json({ erro: 'Escolha uma loja.' }); return null; }
   return loja;
 };
-/** NF-e de devolução já autorizada (o XML chegou pelo coletor): a que referencia a nota de entrada */
-function acharNfDevolucao(loja, d) {
-  if (!d.nfe || !d.nfe.chaveRef) return null;
-  if (d.nfe.chave) return d.nfe.chave;
-  const cands = NFS.lista(loja.id).notas.filter((n) => n.finalidade === 'Devolução' && n.situacao !== 'cancelada' && (n.data || '') >= d.em.slice(0, 10));
-  for (const c of cands) {
+/** sincroniza a devolução com o XML da NF-e de saída (autorizada ou cancelada no AppNext) */
+function sincronizarNfDevolucao(loja, d) {
+  if (!d || !d.nfe) return d;
+  if (d.nfe.chave) {
+    const arq = NFS.achar(loja.id, d.nfe.chave);
+    if (!arq) return d;
+    const sit = arq.sit === 'cancelados' ? 'cancelada' : 'autorizada';
+    const est = sit === 'cancelada' ? 'cancelada' : (d.nfe.estado === 'cancelada' ? 'ok' : d.nfe.estado);
+    if (d.nfe.situacao !== sit || d.nfe.estado !== est) {
+      return DEV.atualizar(loja.id, d.id, (x) => { x.nfe = { ...x.nfe, situacao: sit, estado: est }; }) || d;
+    }
+    return d;
+  }
+  const ref = d.nfe.chaveRef || (d.nota && d.nota.chave) || '';
+  if (!ref) return d;
+  const qtdDev = new Map();
+  for (const i of d.itens || []) qtdDev.set(String(i.cod).toUpperCase(), (qtdDev.get(String(i.cod).toUpperCase()) || 0) + Number(i.qtd));
+  const todas = NFS.lista(loja.id).notas.filter((n) => n.finalidade === 'Devolução' && (n.data || '') >= d.em.slice(0, 10) && (n.refs || []).includes(ref));
+  // prioriza NF-e autorizada; se só houver cancelada para os mesmos itens, marca como cancelada
+  const ordenada = [...todas.filter((n) => n.situacao !== 'cancelada'), ...todas.filter((n) => n.situacao === 'cancelada')];
+  for (const c of ordenada) {
     const n = NFS.nota(loja.id, c.chave);
-    // a nota tem de ser ESTA devolução: mesma nota referenciada e os mesmos produtos nas mesmas quantidades
-    // (uma devolução feita à mão no AppNext com outros itens não dispara o e-mail desta)
-    const qtdDev = new Map(), qtdNf = new Map();
-    for (const i of d.itens || []) qtdDev.set(String(i.cod).toUpperCase(), (qtdDev.get(String(i.cod).toUpperCase()) || 0) + Number(i.qtd));
+    const qtdNf = new Map();
     for (const i of (n && n.itens) || []) qtdNf.set(String(i.cod).toUpperCase(), (qtdNf.get(String(i.cod).toUpperCase()) || 0) + Number(i.qtd));
     const mesmosItens = qtdDev.size === qtdNf.size && [...qtdDev].every(([k, q]) => Math.abs((qtdNf.get(k) ?? -1) - q) < 1e-6);
-    if (n && (n.refs || []).includes(d.nfe.chaveRef) && mesmosItens) {
-      DEV.atualizar(loja.id, d.id, (x) => { x.nfe = { ...x.nfe, chave: c.chave, numero: n.numero, autorizadaEm: n.autorizadaEm || n.emissao }; });
-      return c.chave;
+    if (n && (n.refs || []).includes(ref) && mesmosItens) {
+      const sit = c.situacao === 'cancelada' ? 'cancelada' : 'autorizada';
+      return DEV.atualizar(loja.id, d.id, (x) => {
+        x.nfe = { ...x.nfe, chaveRef: x.nfe.chaveRef || ref, chave: c.chave, numero: n.numero, serie: n.serie, situacao: sit, estado: sit === 'cancelada' ? 'cancelada' : 'ok', autorizadaEm: n.autorizadaEm || n.emissao };
+      }) || d;
     }
   }
-  return null;
+  return d;
+}
+/** NF-e de devolução já autorizada (o XML chegou pelo coletor): a que referencia a nota de entrada */
+function acharNfDevolucao(loja, d) {
+  const s = sincronizarNfDevolucao(loja, d);
+  return s && s.nfe && s.nfe.chave && s.nfe.situacao !== 'cancelada' ? s.nfe.chave : null;
 }
 /** anexos da NF-e de devolução: XML original e DANFE em PDF (pelo Chromium do coletor; sem ele, o DANFE em HTML) */
 async function anexosNf(loja, d) {
@@ -941,7 +966,7 @@ async function enviarDevolucao(loja, d, forcarReenvio = false) {
       d = DEV.ler(loja.id, d.id) || d; // acharNfDevolucao pode ter guardado o número da nota
       d.itens.forEach((it, n) => { for (let k = 0; k < it.fotos; k++) anexos.push({ filename: `NF${d.nota.nf}-${it.cod}-foto${k + 1}.jpg`, path: DEV.arqFoto(loja.id, d.id, n, k) }); });
       await NOTIF.enviarEmail(para.join(', '), DEV.montarAssunto(loja.id, d, nome), DEV.textoEmail(d, nome), null, smtp, anexos);
-      return DEV.atualizar(loja.id, d.id, (x) => { x.email = { estado: 'enviado', em: new Date().toISOString(), para, comNota: !!(x.nfe && x.nfe.chave) }; });
+      return DEV.atualizar(loja.id, d.id, (x) => { x.email = { estado: 'enviado', em: new Date().toISOString(), para, comNota: !!(x.nfe && x.nfe.chave && x.nfe.situacao !== 'cancelada') }; });
     } catch (e) {
       return DEV.atualizar(loja.id, d.id, (x) => { x.email = { estado: 'erro', erro: String(e.message || e).slice(0, 300), em: new Date().toISOString() }; });
     }
@@ -963,7 +988,7 @@ async function nfeDevolucao(loja, d, por, simular) {
 }
 app.get('/api/devolucoes', async (req, res) => {
   const loja = lojaDev(req, res); if (!loja) return;
-  let ds = DEV.lista(loja.id).slice(0, 50).map((d) => DEV.conferirNfe(loja.id, d));
+  let ds = DEV.lista(loja.id).slice(0, 50).map((d) => sincronizarNfDevolucao(loja, DEV.conferirNfe(loja.id, d)));
   // pedido perdido (o coletor reiniciou com ele na fila): vira erro
   if (ds.some((d) => d.nfe && d.nfe.estado === 'na_fila') && COL.ativo()) {
     let robo = null; try { robo = (await COL.status(loja.id)).nfe; } catch { /* ok */ }
@@ -991,7 +1016,8 @@ setInterval(async () => {
     for (const loja of C.get().lojas) {
       try {
         for (const d of DEV.lista(loja.id).slice(0, 30)) {
-          if (d.email && d.email.estado === 'aguardando_nf' && d.nfe && d.nfe.estado === 'ok' && acharNfDevolucao(loja, d)) await enviarDevolucao(loja, DEV.ler(loja.id, d.id));
+          const s = sincronizarNfDevolucao(loja, d);
+          if (s.email && s.email.estado === 'aguardando_nf' && s.nfe && s.nfe.estado === 'ok' && acharNfDevolucao(loja, s)) await enviarDevolucao(loja, DEV.ler(loja.id, s.id));
         }
       } catch (e) { console.error(`[devolução] ${loja.id}:`, e.message); }
     }
@@ -1038,7 +1064,7 @@ app.post('/api/devolucoes/:id/nfe', express.json({ limit: '1kb' }), async (req, 
   const loja = lojaDev(req, res); if (!loja) return;
   const d = DEV.ler(loja.id, String(req.params.id));
   if (!d) return res.status(404).json({ erro: 'Devolução não encontrada.' });
-  if (d.nfe && (d.nfe.estado === 'na_fila' || d.nfe.estado === 'ok')) return res.status(409).json({ erro: d.nfe.estado === 'ok' ? 'A NF-e desta devolução já foi gravada no AppNext.' : 'O robô já está cuidando desta devolução.' });
+  if (d.nfe && (d.nfe.estado === 'na_fila' || (d.nfe.estado === 'ok' && d.nfe.situacao !== 'cancelada'))) return res.status(409).json({ erro: d.nfe.estado === 'ok' ? 'A NF-e desta devolução já foi gravada no AppNext.' : 'O robô já está cuidando desta devolução.' });
   res.json({ ok: true, devolucao: await nfeDevolucao(loja, d, req.user, !!(req.body || {}).simular) });
 });
 app.post('/api/devolucoes/:id/reenviar', express.json({ limit: '1kb' }), async (req, res) => {
@@ -1046,6 +1072,15 @@ app.post('/api/devolucoes/:id/reenviar', express.json({ limit: '1kb' }), async (
   const d = DEV.ler(loja.id, String(req.params.id));
   if (!d) return res.status(404).json({ erro: 'Devolução não encontrada.' });
   res.json({ ok: true, devolucao: await enviarDevolucao(loja, d, true) });
+});
+app.delete('/api/devolucoes/:id', (req, res) => {
+  const loja = lojaDev(req, res); if (!loja) return;
+  const d = DEV.ler(loja.id, String(req.params.id));
+  if (!d) return res.status(404).json({ erro: 'Devolução não encontrada.' });
+  if (d.nfe && d.nfe.estado === 'na_fila') return res.status(409).json({ erro: 'O robô está gravando esta devolução agora; aguarde terminar antes de excluir.' });
+  DEV.excluir(loja.id, d.id);
+  C.auditar(req.user, 'excluiu registro de devolução', loja.id, { loja: loja.id, id: d.id, nf: d.nota && d.nota.nf });
+  res.json({ ok: true });
 });
 // ---------- nova NF-e de saída: o robô preenche no AppNext e salva como RASCUNHO (a loja confere e transmite) ----------
 const NFE = require('./src/nfe');
