@@ -22,7 +22,10 @@ const ID = /^[a-f0-9]{12}$/;
 
 function ler(id, cid) {
   if (!ID.test(String(cid))) return null;
-  try { return JSON.parse(fs.readFileSync(arq(id, cid), 'utf8')); } catch { return null; }
+  let c; try { c = JSON.parse(fs.readFileSync(arq(id, cid), 'utf8')); } catch { return null; }
+  // contagem aberta antes da regra "não contado = 0" também segue a regra (as já enviadas ficam como foram)
+  if (c && c.semContarZero === undefined && (c.st === 'contando' || c.st === 'revisao')) c.semContarZero = true;
+  return c;
 }
 function gravar(id, c) { fs.mkdirSync(pasta(id), { recursive: true }); C.gravarAtomico(arq(id, c.id), JSON.stringify(c), 0o640); }
 function lista(id) {

@@ -128,3 +128,14 @@ test('item da contagem que ninguém contou vai como 0 (contagens novas)', () => 
   const antiga = { ...INV.ler('l4', c.id), semContarZero: undefined };
   assert.ok(!INV.linhasPlanilha(antiga, estoque, cat4).some((x) => x.cod === '31030'));
 });
+
+test('contagem aberta antes da regra nova: item não contado também vai como 0', () => {
+  const C2 = require('../../src/config');
+  const dir = path.join(C2.pastaLoja('lv'), 'inventario');
+  fs.mkdirSync(dir, { recursive: true });
+  const base = { id: 'aaaaaaaaaaaa', nome: 'Velha', criadoEm: new Date().toISOString(), st: 'revisao', zerar: { ativo: false }, itens: [{ cod: '1', desc: 'A', un: 'Kg', sis: 2, cont: 1 }, { cod: '2', desc: 'B', un: 'Kg', sis: 3, cont: null }] };
+  fs.writeFileSync(path.join(dir, 'aaaaaaaaaaaa.json'), JSON.stringify(base));
+  fs.writeFileSync(path.join(dir, 'bbbbbbbbbbbb.json'), JSON.stringify({ ...base, id: 'bbbbbbbbbbbb', st: 'importado' }));
+  assert.equal(INV.ler('lv', 'aaaaaaaaaaaa').semContarZero, true);
+  assert.equal(INV.ler('lv', 'bbbbbbbbbbbb').semContarZero, undefined);
+});
