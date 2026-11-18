@@ -215,7 +215,7 @@ async function pacote(lojas, force, perfilDados = 'completo', desde = null) {
   const metaCfgs = lojas.map((l, i) => {
     const atual = cfgLojas.find((x) => x.id === l.id) || l;
     const r = entradas[i].raw;
-    return { id: l.id, nome: atual.nome, nomesVenda: r.metaCfg?.nomesVenda || [], padrao: atual.meta ?? r.metaPlanilha ?? null, meses: atual.metas || {}, metaAuto: atual.metaAuto || null, regras: atual.regras || null, operacao: atual.operacao || null, ferias: atual.ferias || [], feriadosLocais: atual.feriadosLocais || [], feriadosHoras: atual.feriadosHoras || {}, feriadosHorario: atual.feriadosHorario || {}, escalaAjustes: atual.escalaAjustes || {}, wpp: atual.wppModelos || null, contabilidade: atual.contabilidade || [] };
+    return { id: l.id, nome: atual.nome, nomesVenda: r.metaCfg?.nomesVenda || [], padrao: atual.meta ?? r.metaPlanilha ?? null, meses: atual.metas || {}, metaAuto: atual.metaAuto || null, regras: atual.regras || null, operacao: atual.operacao || null, ferias: atual.ferias || [], feriadosLocais: atual.feriadosLocais || [], feriadosHoras: atual.feriadosHoras || {}, feriadosHorario: atual.feriadosHorario || {}, escalaAjustes: atual.escalaAjustes || {}, wpp: atual.wppModelos || null, wppIntervalo: atual.wppIntervalo || 21, contabilidade: atual.contabilidade || [] };
   });
   const k = entradas.map((e, i) => `${lojas[i].id}@${e.at}:${e.sig}`).join('|') + '#' + JSON.stringify(metaCfgs) + '#' + perfilDados + '#' + (desde || '');
   const chave = lojas.map((l) => l.id).join(',') + '|' + perfilDados + '|' + (desde || '');

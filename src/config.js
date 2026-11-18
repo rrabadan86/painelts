@@ -68,6 +68,7 @@ function normalizar(cfg) {
     feriadosHorario: l.feriadosHorario && typeof l.feriadosHorario === 'object' ? l.feriadosHorario : {},
     escalaAjustes: l.escalaAjustes && typeof l.escalaAjustes === 'object' ? l.escalaAjustes : {},
     wppModelos: Array.isArray(l.wppModelos) ? l.wppModelos : null,
+    wppIntervalo: Number.isInteger(l.wppIntervalo) ? l.wppIntervalo : null, // dias mínimos entre duas mensagens para o mesmo cliente
     estoqueCfg: l.estoqueCfg && typeof l.estoqueCfg === 'object' ? l.estoqueCfg : null,
     pedidoCfg: l.pedidoCfg && typeof l.pedidoCfg === 'object' ? l.pedidoCfg : null,
     classeCfg: l.classeCfg && typeof l.classeCfg === 'object' ? l.classeCfg : null,

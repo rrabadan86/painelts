@@ -70,7 +70,8 @@
       if (!c.wpp) continue;
       const ct = A().contatoDe(c);
       if (ct && ct.optout) continue;
-      if (num(f.semContato) && ct && ct.em && Date.now() - Date.parse(ct.em) < num(f.semContato) * 864e5) continue;
+      const semC = Math.max(num(f.semContato) || 0, A().intervalo ? A().intervalo() : 21); // nunca menos que o intervalo da loja
+      if (ct && ct.em && Date.now() - Date.parse(ct.em) < semC * 864e5) continue;
       const saldo = c.fx ? c.fx.saldo || 0 : 0;
       if (num(f.ptsMin) != null && saldo < num(f.ptsMin)) continue;
       if (num(f.ptsMax) != null && saldo > num(f.ptsMax)) continue;
@@ -443,7 +444,7 @@
               h('label', { class: 'cp-campo cp-nome' }, h('span', null, 'Nome da campanha'), nome),
               h('div', { class: 'cp-passo' }, h('span', { class: 'cp-n' }, '1'), h('div', null, h('b', null, 'Quem entra'), h('small', { class: 'muted' }, 'Só clientes com celular que não pediram para não receber mensagens. Os critérios se somam (precisa atender a todos).'))),
               ...blocos,
-              linha('Não incluir quem foi contatado há menos de', num_('semContato', '0'), 'dias', TS.dica('Evita mandar duas mensagens seguidas para a mesma pessoa. 0 = incluir todos.')),
+              linha('Não incluir quem foi contatado há menos de', num_('semContato', '0'), 'dias', TS.dica(`Evita mandar duas mensagens seguidas para a mesma pessoa. Nunca menos que o intervalo da loja (uma mensagem a cada ${A().intervalo ? A().intervalo() : 21} dias, em Configurações → Lojas → Mensagens de WhatsApp).`)),
               h('div', { class: 'cp-passo' }, h('span', { class: 'cp-n' }, '2'), h('div', null, h('b', null, 'Mensagem'), h('small', { class: 'muted' }, 'Clique num campo para colocar na mensagem onde está o cursor.'))),
               h('div', { class: 'cp-msg-topo' }, modSel), camposMsg(), h('small', { class: 'muted' }, 'Variação 1 (principal)'), msg, exemplo,
               varBox, h('div', { class: 'cp-var-acoes' }, btVar, h('small', { class: 'muted' }, ' Até 5 versões da mesma mensagem. Cada cliente recebe uma, em rodízio, e o painel mostra qual trouxe mais clientes de volta.')),
@@ -476,14 +477,18 @@
     };
     // quem recebeu mensagem de OUTRA campanha (ou pelo painel) há menos de N dias, ou pediu para não receber,
     // sai da fila sozinho como "pulada" com o motivo; "voltar para a fila" libera manualmente
-    const dias = Number(String((camp.filtros || {}).semContato ?? '').replace(',', '.')) || 0;
+    const dias = Math.max(Number(String((camp.filtros || {}).semContato ?? '').replace(',', '.')) || 0, A().intervalo ? A().intervalo() : 21); // nunca menos que o intervalo da loja
     const minha = 'Campanha: ' + camp.nome.slice(0, 28);
     const bloqueio = (it) => {
-      if (it.st !== 'p' || it.liberado) return null;
+      if (it.st !== 'p') return null;
       const ct = A().contatoDe(clienteDe(it.cpf));
       if (!ct) return null;
       if (ct.optout) return 'não quer mensagens';
-      if (dias && ct.em && Date.now() - Date.parse(ct.em) < dias * 864e5 && ct.motivo !== minha) return `já recebeu em ${fmt.date(ct.em.slice(0, 10))}${ct.motivo ? ' (' + ct.motivo.replace(/^Campanha: /, 'campanha ') + ')' : ''}`;
+      const iv = A().intervalo ? A().intervalo() : 21;
+      const ha = ct.em ? Date.now() - Date.parse(ct.em) : Infinity;
+      // o intervalo da loja vale sempre (até para esta mesma campanha e para quem foi "voltado para a fila");
+      // o prazo maior pedido na campanha pode ser liberado à mão
+      if (ct.em && (ha < iv * 864e5 || (!it.liberado && dias && ha < dias * 864e5 && ct.motivo !== minha))) return `já recebeu em ${fmt.date(ct.em.slice(0, 10))}${ct.motivo ? ' (' + ct.motivo.replace(/^Campanha: /, 'campanha ') + ')' : ''}`;
       return null;
     };
     const bloqueados = r.lista.map((it) => [it, bloqueio(it)]).filter(([, m]) => m);

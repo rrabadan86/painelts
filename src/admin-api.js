@@ -177,7 +177,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
       return {
         logo: !!arquivoLogo(l.id), operacao: l.operacao, ferias: l.ferias,
         metaAuto: l.metaAuto, totaisSemEG: totaisSemEG(l.id),
-        id: l.id, nome: l.nome, appnext: l.appnext, meta: l.meta, metas: l.metas, criadaEm: l.criadaEm, regras: l.regras, marca: l.marca, wppModelos: l.wppModelos,
+        id: l.id, nome: l.nome, appnext: l.appnext, meta: l.meta, metas: l.metas, criadaEm: l.criadaEm, regras: l.regras, marca: l.marca, wppModelos: l.wppModelos, wppIntervalo: l.wppIntervalo ?? null,
         nomesVenda: (() => { const raw = rawDe(l.id); return raw ? [...new Set(raw.vendas.slice(-500).map((v) => v.loja).filter(Boolean))] : []; })(),
         base: B.resumo(l.id), xml: XB.resumo(l.id), estoque: (() => { const e = ES.atual(l.id); return e ? { em: e.em, itens: e.itens.length, origem: e.origem || '' } : null; })(), fechEmail: NOTIF.publicoLoja(l.id), eventos: require('./eventos').lista(l.id), horarios: (() => { const a = AG.ler(); return { propria: !!a.lojas[l.id], semana: a.lojas[l.id] || a.padrao, hoje: AG.doDia(l.id) }; })(), fontes, vendedores: vendedoresDe(l.id),
         fixe: { url: (env && env.FIXE_URL) || '', usuario: (env && env.FIXE_USER) || '', email: (env && env.FIXE_EMAIL) || '', temSenha: !!(env && env.FIXE_PASS), apelido: !(env && env.FIXE_APELIDO_USAR === '0'), enderecoPedido: env && env.FIXE_EMAIL ? (env.FIXE_APELIDO_USAR === '0' ? env.FIXE_EMAIL : require('./fixemail').comApelido(env.FIXE_EMAIL, l.id)) : '', ...require('./fixemail').situacao(l.id), logs: require('./fidelidade').resumo(l.id), saldos: require('./fidelidade').resumoSaldos(l.id), fidelidade: require('./fidelidade').regrasDe(l) },
@@ -536,8 +536,11 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     const lista = Array.isArray(req.body.modelos) ? req.body.modelos : null;
     if (!lista || lista.length > 12) return res.status(400).json({ erro: 'Lista de modelos inválida (até 12).' });
     const limpos = lista.map((m) => ({ nome: semQuebra(m.nome).slice(0, 40), texto: String(m.texto || '').replace(/\r/g, '').slice(0, 700) })).filter((m) => m.nome && m.texto);
-    C.alterar((cfg) => { cfg.lojas.find((x) => x.id === req.loja.id).wppModelos = limpos; });
-    aud(req, 'alterou modelos de WhatsApp', req.loja.id, { loja: req.loja.id, modelos: limpos.length });
+    // intervalo mínimo entre duas mensagens para o mesmo cliente (Hoje, ficha e campanhas): 7 a 90 dias
+    const iv = req.body.intervalo == null ? null : Math.round(Number(req.body.intervalo));
+    if (iv != null && !(iv >= 7 && iv <= 90)) return res.status(400).json({ erro: 'Intervalo entre mensagens: de 7 a 90 dias.' });
+    C.alterar((cfg) => { const l = cfg.lojas.find((x) => x.id === req.loja.id); l.wppModelos = limpos; if (iv != null) l.wppIntervalo = iv; });
+    aud(req, 'alterou modelos de WhatsApp', req.loja.id, { loja: req.loja.id, modelos: limpos.length, intervalo: iv });
     pacoteLimpar();
     res.json({ ok: true });
   });

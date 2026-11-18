@@ -321,7 +321,7 @@
   // ---------- contatos (contatado / não quer mensagens), guardados por loja no servidor ----------
   const NOMES_SEG = { hoje: 'Contatar hoje', aniv: 'Aniversário (7 dias)', sumido: 'Sumidos', repor: 'Hora de repor', vence: 'Pontos vencendo', semfixe: 'Compras sem FIXE', forafixe: 'Fora do FIXE', novo: 'Novos do mês', fiel: 'Fiéis', vip: 'VIP', uma: 'Uma compra só' };
   const DICA_SEG = {
-    hoje: 'Aniversariantes da semana, sumidos, quem está na hora de repor e quem tem pontos do FIXE vencendo — sem quem já foi contatado nos últimos 30 dias ou não quer mensagens.',
+    hoje: 'Aniversariantes da semana, sumidos, quem está na hora de repor e quem tem pontos do FIXE vencendo — sem quem recebeu mensagem dentro do intervalo entre mensagens da loja (21 dias, em Configurações) ou não quer mensagens.',
     vence: 'Têm pontos do programa de fidelidade (FIXE) que vencem nos próximos 30 dias.',
     semfixe: 'Estão no FIXE, mas têm compra com CPF na nota sem nenhum lançamento no FIXE naquele dia (não informou ou não foi lançado).',
     forafixe: 'Deram o CPF na nota, mas não estão na base do FIXE desta loja: dá para convidar a se cadastrar.',
@@ -337,6 +337,11 @@
     return m ? m.id : (TS.db.metas[0] && TS.db.metas[0].id);
   };
   const contatoDe = (c) => (TS.cli.contatos ? TS.cli.contatos[c.cpf] : null);
+  /** trava contra mensagem insistente: dias mínimos entre duas mensagens para o mesmo cliente (Configurações → Lojas → Mensagens) */
+  const intervaloDe = (lojaId) => { const m = (TS.db.metas || []).find((x) => x.id === lojaId); return (m && m.wppIntervalo) || 21; };
+  TS.intervaloMsg = (lojaId) => intervaloDe(lojaId || state.loja);
+  /** recebeu mensagem dentro do intervalo? → { dias, ate } ou null */
+  const recebeuRecente = (c) => { const ct = contatoDe(c); if (!ct || !ct.em) return null; const iv = intervaloDe(lojaIdDe(c)), dd = Math.floor((Date.now() - Date.parse(ct.em)) / 864e5); return dd < iv ? { dias: dd, ate: new Date(Date.parse(ct.em) + iv * 864e5), iv, ct } : null; };
   let carregandoContatos = null;
   function carregarContatos() {
     const lojaAlvo = state.loja || '';
@@ -498,7 +503,7 @@
         const ct = contatoDe(c);
         if (s.seg === 'hoje') {
           if (!(c.tags.has('aniv') || c.tags.has('sumido') || c.tags.has('repor') || c.tags.has('vence'))) continue;
-          if (ct && (ct.optout || (ct.em && Date.now() - Date.parse(ct.em) < 30 * 864e5))) continue;
+          if (ct && (ct.optout || (ct.em && Date.now() - Date.parse(ct.em) < intervaloDe(lojaIdDe(c)) * 864e5))) continue;
         } else if (!c.tags.has(s.seg)) continue;
       }
       if (s.rfm && (!c.rfm || c.rfm.g !== s.rfm)) continue;
@@ -541,7 +546,7 @@
   TS.pages.hoje = function (root) {
     if (TS.subClientes) root.append(TS.subClientes('hoje'));
     root.append(h('div', { class: 'page-head' }, h('div', null, h('h1', { class: 'page-title' }, 'Hoje'),
-      h('div', { class: 'page-sub' }, 'Quem contatar hoje e por quê. Uma mensagem por vez, pelo WhatsApp da loja; quem foi contatado nos últimos 30 dias ou pediu para não receber não aparece.'))));
+      h('div', { class: 'page-sub' }, `Quem contatar hoje e por quê. Uma mensagem por cliente, pelo WhatsApp da loja; quem recebeu mensagem nos últimos ${intervaloDe(state.loja)} dias (de qualquer tela ou campanha) ou pediu para não receber não aparece.`))));
     if (!TS.cli || !TS.cli.lista) { root.append(h('div', { class: 'notice' }, 'Os clientes ainda não foram carregados.')); return; }
     if (!state.loja || state.loja === 'todas') { root.append(h('div', { class: 'notice' }, 'Escolha uma loja no seletor do topo.')); return; }
     carregarContatos();
@@ -561,7 +566,7 @@
       for (const c of TS.cli.lista) {
         const ct = contatoDe(c);
         if (ct && ct.em && ct.em.slice(0, 10) === hojeIso) contatadosHoje++;
-        if (!c.wpp || (ct && (ct.optout || (ct.em && Date.now() - Date.parse(ct.em) < 30 * 864e5)))) continue;
+        if (!c.wpp || (ct && (ct.optout || (ct.em && Date.now() - Date.parse(ct.em) < intervaloDe(lojaIdDe(c)) * 864e5)))) continue;
         const ms = [];
         if (c.rfm && (c.rfm.g === 'naoperder' || c.rfm.g === 'risco' || c.rfm.g === 'atencao')) ms.push(c.rfm.g);
         if (c.tags.has('aniv')) ms.push('aniv');
@@ -609,7 +614,7 @@
       const LIM = 30;
       corpo.replaceChildren(
         h('div', { class: 'grid g-kpi' },
-          TS.kpi('Para contatar hoje', fmt.int(itens.length), 'com WhatsApp e sem contato nos últimos 30 dias'),
+          TS.kpi('Para contatar hoje', fmt.int(itens.length), `com WhatsApp e sem mensagem nos últimos ${intervaloDe(state.loja)} dias`),
           TS.kpi('Contatados hoje', fmt.int(contatadosHoje), 'pelo painel (Hoje, Lista e Campanhas)'),
           TS.kpi('Em risco ou não pode perder', fmt.int(itens.filter((x) => x.ms.includes('risco') || x.ms.includes('naoperder')).length), 'clientes bons que estão sumindo')),
         h('div', { class: 'card' },
@@ -1498,7 +1503,7 @@
   }
   // usado pela tela Campanhas
   TS.cliApi = {
-    abrirClientes: (cpfs) => abrirClientes(cpfs), contatoDe: (c) => contatoDe(c), recarregarContatos: () => recarregarContatos(), marcar: (c, acao, motivo) => marcar(c, acao, motivo),
+    abrirClientes: (cpfs) => abrirClientes(cpfs), contatoDe: (c) => contatoDe(c), intervalo: () => intervaloDe(state.loja), recarregarContatos: () => recarregarContatos(), marcar: (c, acao, motivo) => marcar(c, acao, motivo),
     carregarContatos: () => carregarContatos(), modelos: () => modelosDe(state.loja), fmtTel: (x) => fmtTel(x), fmtCPF: (x) => fmtCPF(x), csv: (a, b, c) => csv(a, b, c),
     texto: (txt, c, extra = {}) => { let t = textoWpp({ texto: txt }, c); for (const [k, v] of Object.entries(extra)) t = t.split('{' + k + '}').join(v); return t; },
     linkWpp: (c, txt) => linkWpp(c, txt),
@@ -1549,11 +1554,15 @@
         };
         sel.addEventListener('change', pv); pv();
         if (TS.estoqueDisp && state.loja && state.loja !== 'todas') TS.estoqueDisp(state.loja).then((d) => { disp = d; pv(); }).catch(() => null);
+        const rr0 = recebeuRecente(c);
         box.append(h('div', { class: 'cli-wpp' }, h('span', { class: 'f-label' }, 'Mensagem pronta'), sel, prev, aviso,
+          rr0 ? h('div', { class: 'notice cli-sem-estoque' }, `⏳ Recebeu mensagem há ${rr0.dias} ${rr0.dias === 1 ? 'dia' : 'dias'}${rr0.ct.motivo ? ' (' + rr0.ct.motivo + ')' : ''}: a próxima só a partir de ${rr0.ate.toLocaleDateString('pt-BR')} (uma a cada ${rr0.iv} dias).`) : null,
           h('div', { class: 'cfg-inline' },
             h('a', { class: 'btn primary', href: '#', onclick: async (e) => {
               e.preventDefault();
               if (faltando) { alert(`${faltando} está sem estoque: escolha outra mensagem.`); return; }
+              const rr = recebeuRecente(c);
+              if (rr) { alert(`${c.nome || 'Este cliente'} recebeu mensagem da loja há ${rr.dias} ${rr.dias === 1 ? 'dia' : 'dias'}${rr.ct.motivo ? ' (' + rr.ct.motivo + ')' : ''}. Para não ser insistente, a próxima só a partir de ${rr.ate.toLocaleDateString('pt-BR')} (uma mensagem a cada ${rr.iv} dias).`); return; }
               if (TS.demo) { alert('Na apresentação o WhatsApp não abre (número fictício). A mensagem seria:\n\n' + textoWpp(atual(), c)); }
               else window.open(linkWpp(c, textoWpp(atual(), c)), '_blank', 'noopener');
               try { await marcar(c, 'contatado', atual().nome); pintar(); } catch (er) { alert(er.message); }

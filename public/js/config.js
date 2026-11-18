@@ -894,12 +894,15 @@
       }));
     };
     pintarW();
-    sec0.append(h('p', { class: 'muted' }, 'Textos que aparecem prontos ao abrir o WhatsApp de um cliente na tela Clientes. Use {nome} (primeiro nome), {loja} e {cha} (chá favorito do cliente).'),
+    const intervalo = inp({ type: 'number', min: 7, max: 90, value: l.wppIntervalo || 21, style: { width: '90px' } });
+    sec0.append(h('div', { class: 'cfg-inline cfg-wpp-int' }, h('b', null, 'Uma mensagem a cada'), intervalo, h('span', null, 'dias por cliente'),
+        TS.dica('Trava contra mensagem insistente: quem recebeu mensagem da loja (Hoje, ficha do cliente ou campanha) não recebe outra antes desse prazo. Vale para todas as telas; numa campanha dá para pedir um prazo maior.')),
+      h('p', { class: 'muted' }, 'Textos que aparecem prontos ao abrir o WhatsApp de um cliente na tela Clientes. Use {nome} (primeiro nome), {loja} e {cha} (chá favorito do cliente).'),
       corpo,
       h('div', { class: 'cfg-acoes' },
         h('button', { type: 'button', class: 'btn', onclick: () => { if (lista.length >= 12) return; lista.push({ nome: 'Nova mensagem', texto: 'Oi, {nome}! ' }); pintarW(); } }, '+ Mensagem'),
         h('button', { type: 'button', class: 'btn', onclick: () => { lista.splice(0, lista.length, ...(TS.WPP_PADRAO || []).map((m) => ({ ...m }))); pintarW(); } }, 'Voltar ao padrão'),
-        acao('Salvar mensagens', async () => { await api('PUT', `/lojas/${l.id}/wpp-modelos`, { modelos: lista }); return 'Mensagens salvas.'; }, 'btn primary')));
+        acao('Salvar mensagens', async () => { await api('PUT', `/lojas/${l.id}/wpp-modelos`, { modelos: lista, intervalo: +intervalo.value }); l.wppIntervalo = +intervalo.value; return 'Mensagens e intervalo salvos.'; }, 'btn primary')));
     return sec0;
   }
 
