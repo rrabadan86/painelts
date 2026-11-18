@@ -84,15 +84,47 @@
         h('div', { class: 'nfe-topo' }, bt, h('small', { class: 'muted' }, 'O robô preenche a saída no AppNext e salva como rascunho. Quem confere e transmite a nota é a loja, no AppNext.')),
         info && info.erroGeral ? h('div', { class: 'notice err mt' }, info.erroGeral) : null,
         aberto ? formulario() : (info && info.robo && info.robo.acao === 'rascunho' ? roboVivo() : null),
-        ras.length ? listaRascunhos(ras.slice(0, aberto ? 3 : 6)) : null].filter(Boolean));
+        ras.length ? listaRascunhos(ras) : null].filter(Boolean));
     }
+    /** rascunhos pedidos ao robô: tabela no padrão das notas de saída (filtro, busca, paginação) */
     function listaRascunhos(ras) {
       const ult = info.robo && info.robo.ultima;
-      return TS.card('Rascunhos pedidos ao robô', 'Os mais recentes. "Rascunho salvo" = está no AppNext em Estoque → Saída de Produtos, esperando a loja conferir e transmitir.',
-        h('div', { class: 'nfe-ras' }, ...ras.map((r) => h('div', { class: 'nfe-ras-l' },
-          h('div', null, h('b', null, r.parceiro.nome), h('small', { class: 'muted' }, ` · ${quandoTZ(r.em)} · ${r.por || '—'} · ${fmt.int(r.itens.length)} ${r.itens.length === 1 ? 'produto' : 'produtos'} · ${fmt.brl(r.total)}`)),
-          h('span', { class: 'nfe-st ' + ESTADO_NFE[r.estado][1] }, r.estado === 'na_fila' && info.robo && info.robo.estado === 'rodando' && info.robo.id === r.id ? 'o robô está preenchendo' : ESTADO_NFE[r.estado][0]),
-          r.estado === 'erro' ? h('div', { class: 'nfe-erro' }, r.erro || 'falhou', ' — nada foi salvo no AppNext.', ult && ult.id === r.id && ult.log && ult.log.length ? h('details', null, h('summary', null, 'log do robô'), h('pre', { class: 'inv-log' }, ult.log.join('\n'))) : null) : null))));
+      const FIL = { todos: ['Todos', () => true], ok: ['Salvos', (r) => r.estado === 'ok'], erro: ['Não salvos', (r) => r.estado === 'erro'], fila: ['Na fila', (r) => r.estado === 'na_fila'], teste: ['Testes', (r) => r.estado === 'teste'] };
+      const contaF = (k) => ras.filter(FIL[k][1]).length;
+      const fil = FIL[state.nfeRasFil] && contaF(state.nfeRasFil) ? state.nfeRasFil : 'todos';
+      const rows = ras.filter(FIL[fil][1]).map((r) => ({ ...r, quando: r.em, parcNome: r.parceiro.nome, nItens: r.itens.length, situ: { na_fila: 0, erro: 1, teste: 2, ok: 3 }[r.estado] ?? 4 }));
+      const situCel = (r) => {
+        const rodando = r.estado === 'na_fila' && info.robo && info.robo.estado === 'rodando' && info.robo.id === r.id;
+        return h('div', { class: 'nfe-ras-situ' }, h('span', { class: 'nfe-st ' + ESTADO_NFE[r.estado][1] }, rodando ? 'o robô está preenchendo' : ESTADO_NFE[r.estado][0]),
+          r.estado === 'erro' ? h('small', { class: 'nfe-erro', title: r.erro || '' }, (r.erro || 'falhou').replace(/^(Page\.evaluate|Locator\.\w+): (Error: )?/, '').slice(0, 90)) : null);
+      };
+      const tab = TS.table({
+        cols: [
+          { key: 'quando', label: 'Pedido em', align: 'l', render: (r) => h('span', null, quandoTZ(r.em), h('small', { class: 'est-tam' }, r.por || '—')), sortVal: (r) => Date.parse(r.em) || 0 },
+          { key: 'parcNome', label: 'Parceiro', align: 'l', wrap: true, render: (r) => h('span', null, r.parceiro.nome, h('small', { class: 'est-tam' }, [r.parceiro.doc ? docTxt(r.parceiro.doc) : null, r.vendedor, r.pagamento].filter(Boolean).join(' · '))) },
+          { key: 'nItens', label: 'Itens', fmt: fmt.int },
+          { key: 'total', label: 'Total', fmt: (v) => (v == null ? '—' : fmt.brl(v)) },
+          { key: 'situ', label: 'Situação', align: 'l', render: situCel },
+          { key: 'log', label: '', align: 'l', sortVal: () => 0, render: (r) => (r.estado === 'erro' && ult && ult.id === r.id && ult.log && ult.log.length
+            ? h('button', { type: 'button', class: 'btn prc-ver', onclick: (e) => { e.stopPropagation(); verLog(r, ult.log); } }, 'Log') : null) },
+        ],
+        rows, sortKey: 'quando', pageSize: 8, search: 'Buscar parceiro, vendedor ou quem pediu…', searchKeys: ['parcNome', 'por', 'vendedor'], cls: 'est-t nfe-ras-t',
+        rowClass: (r) => (r.estado === 'erro' ? 'nfe-ras-erro' : null),
+        empty: 'Nenhum rascunho com esse filtro.',
+      });
+      return TS.cardWithTools(`Rascunhos pedidos ao robô (${fmt.int(ras.length)})`, '"Rascunho salvo" = está no AppNext em Estoque → Saída de Produtos, esperando a loja conferir e transmitir. "Não salvo" = nada foi gravado no AppNext.',
+        h('div', { class: 'est-tools' }, tab.searchBox && (tab.searchBox.classList.add('est-busca'), tab.searchBox),
+          TS.seg(Object.entries(FIL).filter(([k]) => k === 'todos' || contaF(k)).map(([k, [t]]) => [`${t} (${fmt.int(contaF(k))})`, k]), fil, (v) => { state.nfeRasFil = v; pintar(); })),
+        tab);
+    }
+    /** log do robô (última execução) numa janela */
+    function verLog(r, log) {
+      const fundo = h('div', { class: 'cp-modal-bg' });
+      const fechar = () => fundo.remove();
+      fundo.addEventListener('click', (e) => { if (e.target === fundo) fechar(); });
+      fundo.append(h('div', { class: 'card cp-copiar nfe-log-modal' }, h('h3', null, `Log do robô · ${r.parceiro.nome}`), h('p', { class: 'nfe-erro' }, r.erro || ''), h('pre', { class: 'inv-log' }, log.join('\n')),
+        h('div', { class: 'cp-acoes' }, h('span', { style: { flex: 1 } }), h('button', { type: 'button', class: 'btn', onclick: fechar }, 'Fechar'))));
+      document.body.append(fundo);
     }
     const formParceiro = (aoPedir) => abrirFormParceiro(loja, aoPedir);
     blocoParceiros = () => {
