@@ -253,6 +253,16 @@ test.describe('regras', () => {
     await expect(page.locator('.prc-drawer')).toBeVisible();
   });
 
+  test('Nota de saída: clicar na linha abre o detalhamento com custo e margem', async ({ page }) => {
+    await page.evaluate(() => { location.hash = '#nfsaida'; });
+    await page.locator('.prc-notas .seg button, .seg button', { hasText: 'Todas' }).first().click();
+    await page.locator('.est-t tbody tr').first().locator('td').nth(2).click();
+    const gaveta = page.locator('.prc-drawer');
+    await expect(gaveta).toContainText('Produtos da nota');
+    await expect(gaveta).toContainText('Margem');
+    expect(await gaveta.innerText(), 'texto "null" na nota').not.toMatch(/(^|\s)(null|undefined|NaN)(\s|$)/);
+  });
+
   test('Nota de entrada: lote do chá a granel junto da devolução, etiqueta e filtro "lote pendente"', async ({ page }) => {
     await page.evaluate(() => { location.hash = '#notas'; });
     const aba = page.locator('.prc-notas .seg button', { hasText: 'Lote pendente' });

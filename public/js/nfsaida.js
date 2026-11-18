@@ -277,17 +277,18 @@
     const tab = TS.table({
       cols: [
         // compacta: cada coluna junta duas informações para caber sem rolagem horizontal
-        { key: 'nfTxt', label: 'NF / emissão', align: 'l', render: (r) => h('span', null, h('a', { href: '#', class: 'prc-nome', onclick: (e) => { e.preventDefault(); abrir(loja, r.chave); } }, r.nfTxt), h('small', { class: 'est-tam' }, quando(r.emissao))), sortVal: (r) => r.emissao || '' },
+        { key: 'nfTxt', label: 'NF / emissão', align: 'l', render: (r) => h('span', null, h('a', { href: '#', class: 'prc-nome', onclick: (e) => { e.preventDefault(); e.stopPropagation(); abrir(loja, r.chave); } }, r.nfTxt), h('small', { class: 'est-tam' }, quando(r.emissao))), sortVal: (r) => r.emissao || '' },
         { key: 'destNome', label: 'Destinatário', align: 'l', wrap: true, render: (r) => h('span', null, r.destNome || '—', h('small', { class: 'est-tam' }, r.dest && r.dest.doc ? docLink(r.dest) : null, r.dest && r.dest.mun ? `${r.dest && r.dest.doc ? ' · ' : ''}${r.dest.mun}${r.dest.uf ? ' - ' + r.dest.uf : ''}` : null)) },
         { key: 'natOp', label: 'Natureza', align: 'l', wrap: true, render: (r) => h('span', null, r.natOp || '—', h('small', { class: 'est-tam' }, [r.cfops && r.cfops.length ? 'CFOP ' + r.cfops.join(', ') : null, r.itens != null ? `${fmt.int(r.itens)} ${r.itens === 1 ? 'item' : 'itens'}` : null].filter(Boolean).join(' · '))) },
         { key: 'situacao', label: 'Situação', align: 'l', render: (r) => situ(r.situacao) },
         { key: 'valor', label: 'Valor', fmt: (v) => (v == null ? '—' : fmt.brl(v)), cls: (r) => (r.situacao === 'cancelada' ? 'nf-riscado' : '') },
         { key: 'acoes', label: '', align: 'l', sortVal: () => 0, render: (r) => h('span', { class: 'nf-acoes' },
-          h('a', { class: 'btn prc-ver', href: url('danfe', loja, r.chave), target: '_blank', rel: 'noopener', title: 'DANFE para imprimir ou salvar em PDF' }, 'DANFE'),
-          TS.demo ? null : h('a', { class: 'btn prc-ver', href: url('xml', loja, r.chave), title: 'Baixar o XML da nota' }, 'XML')) },
+          h('a', { class: 'btn prc-ver', href: url('danfe', loja, r.chave), target: '_blank', rel: 'noopener', title: 'DANFE para imprimir ou salvar em PDF', onclick: (e) => e.stopPropagation() }, 'DANFE'),
+          TS.demo ? null : h('a', { class: 'btn prc-ver', href: url('xml', loja, r.chave), title: 'Baixar o XML da nota', onclick: (e) => e.stopPropagation() }, 'XML')) },
       ],
       rows, sortKey: 'emissao', maxHeight: '560px', search: 'Buscar NF, destinatário, CPF/CNPJ ou natureza…', searchKeys: ['nfTxt', 'destNome', 'docBusca', 'natOp'], cls: 'est-t',
       rowClass: (r) => (r.situacao === 'cancelada' ? 'nf-linha-cancelada' : null),
+      onRowClick: (r) => abrir(loja, r.chave), // a linha inteira abre a nota (produtos, destinatário, valores), como na entrada
       total: { nfTxt: `${fmt.int(rows.length)} notas`, valor: ativas.reduce((a, r) => a + (r.valor || 0), 0) },
       imprimir: ['nfTxt', 'destNome', 'natOp', 'situacao', 'valor'],
       empty: fil === 'per' ? 'Nenhuma NF-e no período do filtro. Veja "Todas".' : 'Nenhuma nota.',
@@ -328,6 +329,17 @@
       if (!r.ok) throw new Error(n.erro || 'Falha ao abrir a nota.');
     } catch (e) { card.lastChild.replaceWith(h('div', { class: 'notice err' }, e.message)); return; }
     const d = n.dest || {}, t = n.total || {};
+    // custo e margem de cada item (só para quem vê custos): custo do cadastro do AppNext (chá a granel: kg × tamanho + embalagem)
+    let M = null;
+    try { M = TS.custosLoja ? await TS.custosLoja() : null; } catch { M = null; }
+    const itens = (n.itens || []).map((r) => {
+      let c = M ? M.custoCadastro(r.cod, r.desc) : null;
+      // chá a granel vendido em kg (ex.: transferência): o custo do kg do estoque
+      if (!c && M && M.porCod && /^kg$/i.test(String(r.un || ''))) { const it = M.porCod.get(String(r.cod)); if (it && it.custo) c = { custo: it.custo }; }
+      const cu = c ? Math.round(c.custo * 100) / 100 : null;
+      const liq = r.qtd ? ((r.vProd || 0) - (r.vDesc || 0)) / r.qtd : null;
+      return { ...r, custo: cu, margem: cu != null && liq ? (liq - cu) / liq : null };
+    });
     const tab = TS.table({
       cols: [
         { key: 'desc', label: 'Produto', align: 'l', sticky: true, wrap: true, render: (r) => h('span', null, r.desc, h('small', { class: 'est-tam' }, `cód. ${r.cod || '—'}${r.ncm ? ' · NCM ' + r.ncm : ''}${r.cfop ? ' · CFOP ' + r.cfop : ''}`)) },
@@ -335,8 +347,12 @@
         { key: 'vUn', label: 'Valor unit.', fmt: (v) => (v == null ? '—' : fmt.brl(v)) },
         { key: 'vDesc', label: 'Desconto', fmt: (v) => (v ? fmt.brl(v) : '—') },
         { key: 'vProd', label: 'Total', fmt: fmt.brl },
+        ...(M ? [
+          { key: 'custo', label: 'Custo unit.', title: 'Custo do cadastro do AppNext (chá a granel: custo do kg × tamanho + embalagem)', fmt: (v) => (v == null ? '—' : fmt.brl(v)) },
+          { key: 'margem', label: 'Margem', title: '(valor unitário com desconto − custo) ÷ valor unitário com desconto', render: (r) => (r.margem == null ? '—' : h('span', { class: r.margem < 0 ? 'neg' : '' }, fmt.pct(r.margem, 1))), sortVal: (r) => r.margem ?? -99 },
+        ] : []),
       ],
-      rows: n.itens || [], sortKey: 'vProd', maxHeight: '50vh', search: 'Buscar produto…', searchKeys: ['desc', 'cod'], cls: 'est-t',
+      rows: itens, sortKey: 'vProd', maxHeight: '50vh', search: 'Buscar produto…', searchKeys: ['desc', 'cod'], cls: 'est-t',
       total: { desc: `${fmt.int((n.itens || []).length)} itens`, vProd: (n.itens || []).reduce((a, r) => a + (r.vProd || 0), 0), vDesc: (n.itens || []).reduce((a, r) => a + (r.vDesc || 0), 0) },
     });
     const end = d.end ? [d.end.linha, [d.end.mun, d.end.uf].filter(Boolean).join(' - '), d.end.cep ? 'CEP ' + d.end.cep : ''].filter(Boolean).join(' · ') : '';
@@ -346,7 +362,12 @@
       h('div', { class: 'prc-resumo' },
         h('div', null, h('small', null, 'Emissão'), h('b', null, quando(n.emissao))),
         h('div', null, h('small', null, 'Itens'), h('b', null, fmt.int((n.itens || []).length))),
-        h('div', null, h('small', null, 'Valor da nota'), h('b', null, t.vNF != null ? fmt.brl(t.vNF) : '—'))),
+        h('div', null, h('small', null, 'Valor da nota'), h('b', null, t.vNF != null ? fmt.brl(t.vNF) : '—')),
+        ...(() => { // margem da nota (só com custo de todos os itens)
+          if (!M || !itens.length || itens.some((r) => r.custo == null)) return [];
+          const venda = itens.reduce((a, r) => a + (r.vProd || 0) - (r.vDesc || 0), 0), custo = itens.reduce((a, r) => a + r.custo * r.qtd, 0);
+          return venda > 0 ? [h('div', null, h('small', null, 'Margem bruta'), h('b', null, `${fmt.pct((venda - custo) / venda, 1)} · ${fmt.brl(venda - custo)}`))] : [];
+        })()),
       h('div', { class: 'nf-dest' }, h('small', null, 'Destinatário'), h('b', null, d.nome || '—'), h('span', null, d.tipoDoc ? d.tipoDoc + ' ' : '', docLink(d)), end ? h('span', { class: 'muted' }, end) : null, d.email ? h('span', { class: 'muted' }, d.email) : null),
       h('div', { class: 'prc-nota-info muted' }, [t.vDesc ? `Desconto ${fmt.brl(t.vDesc)}` : '', t.vFrete ? `Frete ${fmt.brl(t.vFrete)}` : '', t.vICMS ? `ICMS ${fmt.brl(t.vICMS)}` : '', n.protocolo ? `Protocolo ${n.protocolo}${n.autorizadaEm ? ' de ' + quando(n.autorizadaEm) : ''}` : '', `Chave ${n.chave}`].filter(Boolean).join(' · ')),
       n.infCpl ? h('div', { class: 'prc-nota-info muted' }, 'Informações complementares: ' + n.infCpl) : null,
