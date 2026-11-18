@@ -46,7 +46,7 @@
     const idx = TS.filtrar({ de, ate, ignorar: ['vendedores', 'grupos', 'cats', 'produto'], mesLivre: true });
     const taxas = TS.rules.ids.taxas;
     let vt = 0; const cup = new Set();
-    for (const i of idx) { if (taxas.has(TS.db.desc[i])) continue; vt += TS.db.vt[i] || 0; cup.add(TS.db.loja[i] + '|' + TS.db.cupom[i]); }
+    for (const i of idx) { if (taxas.has(TS.db.desc[i])) continue; vt += TS.db.vt[i] || 0; cup.add(TS.chaveCupom(i)); }
     return { vt, cupons: cup.size };
   }
   function blocoVendas() {

@@ -28,10 +28,10 @@ function quantidade(v) {
 }
 function dinheiro(v) {
   if (v == null || v === '' || v === '-') return null;
-  if (typeof v === 'number') return v;
+  if (typeof v === 'number') return Number.isFinite(v) ? v : null;
   if (typeof v === 'object' && v && 'result' in v) return dinheiro(v.result);
   const s = String(v).replace(/R\$\s*/i, '').trim();
-  const n = /,\d{1,2}$/.test(s) ? +s.replace(/\./g, '').replace(',', '.') : +s;
+  const n = /,\d{1,4}$/.test(s) ? +s.replace(/\./g, '').replace(',', '.') : +s;
   return Number.isFinite(n) ? n : null;
 }
 /** "NextSoft - Estoque Atual ( 12/11/2026, 19:01:05 )" → ISO */
@@ -90,7 +90,8 @@ function historico(id) {
 const lerHist = (id) => { try { return JSON.parse(fs.readFileSync(arqHist(id), 'utf8')); } catch { return {}; } };
 function registrarCustos(id, itens, quando) {
   const h = lerHist(id);
-  const dia = String(quando && !Number.isNaN(Date.parse(quando)) ? quando : new Date().toISOString()).slice(0, 10);
+  const ms = quando ? Date.parse(quando) : NaN;
+  const dia = Number.isFinite(ms) ? C.diaSP(ms) : C.hojeBR();
   let mudou = false;
   for (const it of itens) {
     if (!(it.custo > 0)) continue;
@@ -135,11 +136,18 @@ function notas(id) {
   })) };
 }
 
+const atualCache = new Map(); // id -> { mtimeMs, size, val }
 function atual(id) {
+  const f = arqAtual(id);
+  let st;
+  try { st = fs.statSync(f); } catch { atualCache.delete(id); return null; }
+  const hit = atualCache.get(id);
+  if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size) return { ...hit.val };
   let j;
-  try { j = JSON.parse(fs.readFileSync(arqAtual(id), 'utf8')); } catch { return null; }
+  try { j = JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return null; }
   if (j && (!j.em || Number.isNaN(Date.parse(j.em)))) j.em = j.importadoEm || null; // data do título que não deu para ler
-  return j;
+  atualCache.set(id, { mtimeMs: st.mtimeMs, size: st.size, val: j });
+  return { ...j };
 }
 
 /** grava a planilha nova; o que sumiu fica com quantidade 0 (o relatório esconde itens zerados) */
@@ -152,6 +160,7 @@ async function importar(id, buf, origem = 'painel') {
   const dados = { em: novo.em || new Date().toISOString(), importadoEm: new Date().toISOString(), origem, itens: [...novo.itens, ...zerados] };
   fs.mkdirSync(pasta(id), { recursive: true });
   C.gravarAtomico(arqAtual(id), JSON.stringify(dados), 0o640);
+  atualCache.delete(id);
   // primeira vez: o estoque que já existia vira o ponto de partida do histórico
   if (antes && !fs.existsSync(arqHist(id))) registrarCustos(id, antes.itens, antes.em);
   registrarCustos(id, novo.itens, dados.em);
@@ -161,16 +170,33 @@ async function importar(id, buf, origem = 'painel') {
 function pendentes(id) {
   try { return fs.readdirSync(pastaEntrada(id)).filter((f) => /\.xlsx$/i.test(f) && !f.includes('.tmp')).sort(); } catch { return []; }
 }
-/** planilhas que o coletor deixou: importa a mais nova e descarta as outras */
+const procAtivo = new Set();
+function guardarErro(dir, f) {
+  try {
+    fs.renameSync(path.join(dir, f), path.join(dir, f + '.erro'));
+    const errs = fs.readdirSync(dir).filter((x) => x.endsWith('.erro')).sort();
+    errs.slice(0, Math.max(0, errs.length - 5)).forEach((x) => { try { fs.unlinkSync(path.join(dir, x)); } catch { /* ok */ } });
+  } catch { /* ok */ }
+}
+/** planilhas que o coletor deixou: importa a mais nova e descarta as outras (se falhar, guarda .erro) */
 async function processar(id) {
-  const fs_ = pendentes(id);
-  if (!fs_.length) return null;
-  const ultimo = fs_[fs_.length - 1];
-  let r = null;
-  try { r = await importar(id, fs.readFileSync(path.join(pastaEntrada(id), ultimo)), 'coletor'); }
-  catch (e) { console.error(`[estoque] ${id}: ${ultimo}: ${e.message}`); }
-  for (const f of fs_) { try { fs.unlinkSync(path.join(pastaEntrada(id), f)); } catch { /* ok */ } }
-  return r;
+  if (procAtivo.has(id)) return null;
+  procAtivo.add(id);
+  try {
+    const fs_ = pendentes(id);
+    if (!fs_.length) return null;
+    const dir = pastaEntrada(id), ultimo = fs_[fs_.length - 1];
+    let r = null, falhou = false;
+    try { r = await importar(id, fs.readFileSync(path.join(dir, ultimo)), 'coletor'); }
+    catch (e) { falhou = true; console.error(`[estoque] ${id}: ${ultimo}: ${e.message}`); }
+    for (const f of fs_) {
+      if (falhou && f === ultimo) guardarErro(dir, f);
+      else try { fs.unlinkSync(path.join(dir, f)); } catch { /* ok */ }
+    }
+    return r;
+  } finally {
+    procAtivo.delete(id);
+  }
 }
 
 // ---------- configuração por loja (prazo do fornecedor, cobertura, embalagens dos chás) ----------

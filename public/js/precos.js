@@ -379,6 +379,7 @@
     }).catch((err) => corpo.replaceChildren(h('div', { class: 'notice err' }, err.message)));
   };
   const cacheNotas = new Map();
+  TS.aoLimparCache && TS.aoLimparCache(() => cacheNotas.clear());
   function cartaoNotas(D) {
     const box = h('div', { class: 'mt' }, h('div', { class: 'card' }, h('div', { class: 'loading' }, h('div', null, h('div', { class: 'spinner' }), h('p', null, 'Lendo as notas fiscais…')))));
     const loja = D.loja;

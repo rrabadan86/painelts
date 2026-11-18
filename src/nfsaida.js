@@ -35,7 +35,11 @@ function arquivos(id) {
 }
 
 // ---- leitura do XML (sem dependências: as tags da NF-e são fixas)
-const ent = (s) => String(s).replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
+const ent = (s) => String(s)
+  .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
+  .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCodePoint(parseInt(h, 16)))
+  .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(parseInt(d, 10)))
+  .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
 const tag = (txt, n) => { if (!txt) return null; const m = new RegExp(`<${n}(?:\\s[^>]*)?>([\\s\\S]*?)</${n}>`).exec(txt); return m ? ent(m[1].trim()) : null; };
 const bloco = (txt, n) => { if (!txt) return ''; const m = new RegExp(`<${n}(?:\\s[^>]*)?>([\\s\\S]*?)</${n}>`).exec(txt); return m ? m[1] : ''; };
 const num = (v) => (v == null || v === '' ? null : Number(v));
@@ -56,7 +60,7 @@ function lerXml(txt) {
   const ide = bloco(inf, 'ide'), emit = bloco(inf, 'emit'), dest = bloco(inf, 'dest'), tot = bloco(inf, 'ICMSTot');
   const prot = bloco(txt, 'infProt');
   const itens = [];
-  const re = /<det\s+nItem="(\d+)"[^>]*>([\s\S]*?)<\/det>/g;
+  const re = /<det\b[^>]*\bnItem="(\d+)"[^>]*>([\s\S]*?)<\/det>/g;
   let m;
   while ((m = re.exec(inf))) {
     const p = bloco(m[2], 'prod');
@@ -65,7 +69,7 @@ function lerXml(txt) {
   }
   const dh = tag(ide, 'dhEmi') || tag(ide, 'dEmi') || '';
   const pags = [];
-  const rp = /<detPag>([\s\S]*?)<\/detPag>/g;
+  const rp = /<detPag(?:\s[^>]*)?>([\s\S]*?)<\/detPag>/g;
   while ((m = rp.exec(inf))) pags.push({ tPag: tag(m[1], 'tPag'), v: num(tag(m[1], 'vPag')) });
   return {
     numero: num(tag(ide, 'nNF')), serie: tag(ide, 'serie'), mod: tag(ide, 'mod'), emissao: dh, data: dh.slice(0, 10), natOp: tag(ide, 'natOp'),
@@ -90,6 +94,7 @@ function cabecalho(a) {
   try { st = fs.statSync(a.arq); } catch { return null; }
   const k = a.arq + '|' + st.mtimeMs;
   if (!cache.has(k)) {
+    if (cache.size >= 4000) cache.delete(cache.keys().next().value);
     try {
       const n = lerXml(fs.readFileSync(a.arq, 'utf8'));
       const cfops = [...new Set(n.itens.map((i) => i.cfop).filter(Boolean))];

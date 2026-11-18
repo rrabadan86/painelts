@@ -84,16 +84,14 @@ async function atualizar(origem, quem) {
       let hist = lerHist();
       if (!hist) hist = semear(antes);
       registrar(hist, out.em, itens);
-      fs.writeFileSync(arqHist() + '.tmp', JSON.stringify(hist));
-      fs.renameSync(arqHist() + '.tmp', arqHist());
-      fs.writeFileSync(arq() + '.tmp', JSON.stringify(out));
-      fs.renameSync(arq() + '.tmp', arq());
+      C.gravarAtomico(arqHist(), JSON.stringify(hist), 0o640);
+      C.gravarAtomico(arq(), JSON.stringify(out), 0o640);
       console.log(`[site] ${itens.length} variantes lidas (${origem})`);
       return { ok: true, n: itens.length, em: out.em };
     } catch (e) {
       console.error('[site] falhou:', e.message);
       const out = { ...(antes || { itens: [] }), erro: { em: new Date().toISOString(), msg: e.message, origem } };
-      try { fs.mkdirSync(pasta(), { recursive: true }); fs.writeFileSync(arq(), JSON.stringify(out)); } catch { /* ok */ }
+      try { fs.mkdirSync(pasta(), { recursive: true }); C.gravarAtomico(arq(), JSON.stringify(out), 0o640); } catch { /* ok */ }
       return { ok: false, erro: e.message };
     } finally { rodando = null; }
   })();
@@ -119,8 +117,8 @@ function agendar() {
     if (ultErro === a.dia && Date.now() - Date.parse(d.erro.em) < 3600e3) return;
     atualizar('agendada');
   };
-  setTimeout(tick, 20e3);
-  setInterval(tick, 60e3);
+  setTimeout(tick, 20e3).unref();
+  setInterval(tick, 60e3).unref();
 }
 
 module.exports = { ler, lerHist, atualizar, agendar, rodando: () => !!rodando, semear };

@@ -26,6 +26,8 @@ import os
 
 os.umask(0o027)  # arquivos novos (vendas, XMLs com CPF) sem leitura para outros usuários da VPS
 import re
+import shutil
+import signal
 import subprocess
 import sys
 import threading
@@ -40,6 +42,7 @@ CONFIG_DIR = Path(os.getenv("COLETOR_CONFIG", "/config"))
 DATA_DIR = Path(os.getenv("DATA_DIR", "/data"))
 WORK_DIR = Path(os.getenv("COLETOR_WORK", "/work"))
 SCRIPT = Path(os.getenv("COLETOR_SCRIPT", Path(__file__).with_name("nextsoft_export_to_drive.py")))
+SCRIPT_SESSAO = Path(os.getenv("COLETOR_SCRIPT_SESSAO", Path(__file__).with_name("nextsoft_sessao.py")))
 SCRIPT_XML = Path(os.getenv("COLETOR_SCRIPT_XML", Path(__file__).with_name("nextsoft_xml.py")))
 SCRIPT_ESTOQUE = Path(os.getenv("COLETOR_SCRIPT_ESTOQUE", Path(__file__).with_name("nextsoft_estoque.py")))
 # notas de entrada (compras): histórico de custo desde a primeira compra; roda junto do estoque
@@ -64,7 +67,7 @@ TOKEN = os.getenv("COLETOR_TOKEN", "")
 # variável vazia (o docker-compose repassa só as do coletor; as que não existem no .env chegam vazias) = padrão
 HORARIOS_ENV = [h.strip() for h in (os.getenv("COLETOR_HORARIOS") or "13:30,23:00").split(",") if h.strip()]
 JANELA_ENV = int(os.getenv("COLETOR_JANELA") or "7")
-HHMM = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+HHMM = re.compile(r"^([01]\d|2[0-3]):[0-5]\d\Z")
 
 
 def janela():
@@ -119,19 +122,61 @@ def horarios_do_dia(loja=None, quando=None):
 TZ = ZoneInfo(os.getenv("TZ", "America/Sao_Paulo"))
 TEMPO_MAX = int(os.getenv("COLETOR_TEMPO_MAX") or "900")  # segundos por loja
 PORTA = int(os.getenv("COLETOR_PORTA") or "8000")
-ID_OK = re.compile(r"^[a-z0-9_-]{1,40}$")
+ID_OK = re.compile(r"^[a-z0-9_-]{1,40}\Z")
 
-fila = deque()
+fila = deque()       # manual, agendado, saldos, pedido (sempre têm prioridade sobre lotes de histórico)
+fila_hist = deque()  # partes de importação longa de histórico
 lock = threading.Lock()
+cond_loja = threading.Condition(lock)
+lojas_appnext = {}   # loja -> {"gatilho": ..., "inicio": ...} enquanto algum robô usa a conta AppNext da loja
+sem_pdf = threading.Semaphore(2)
 estado = {}  # loja -> dict
 inv_est = {}  # loja -> {"estado", "id", "tipo", "por", "ultima"} (importar inventário no AppNext)
 saldos_est = {}  # loja -> {"estado", "por", "criado", "inicio", "ultima"} (sincronizar saldos de pontos com o FIXE)
 pedido_est = {}  # loja -> {"estado", "acao", "criado", "inicio", "fim", "ok", "codigo", "log"} (Sistema de Pedidos)
-DATA_OK = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+DATA_OK = re.compile(r"^\d{4}-\d{2}-\d{2}\Z")
 
 
 def log(msg):
     print(f"[{datetime.now(TZ):%d/%m %H:%M:%S}] {msg}", flush=True)
+
+
+def rodar_processo(cmd, cwd, env, out, timeout):
+    """Executa subprocesso em grupo próprio e mata toda a árvore (incluindo Chromium filho) em caso de timeout."""
+    p = subprocess.Popen(cmd, cwd=cwd, env=env, stdout=out, stderr=subprocess.STDOUT, start_new_session=True)
+    try:
+        return p.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(p.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        try:
+            p.wait(timeout=5)
+        except Exception:  # noqa: BLE001
+            pass
+        raise
+
+
+def adquirir_loja_appnext(loja, gatilho, timeout=1200, ao_esperar=None):
+    """Garante que apenas 1 navegador acesse a conta AppNext da mesma loja por vez."""
+    fim = time.time() + timeout
+    with cond_loja:
+        while loja in lojas_appnext:
+            restante = fim - time.time()
+            if restante <= 0:
+                return False
+            if ao_esperar:
+                ao_esperar(dict(lojas_appnext[loja]))
+            cond_loja.wait(timeout=min(3.0, restante))
+        lojas_appnext[loja] = {"loja": loja, "gatilho": gatilho, "inicio": datetime.now(TZ).isoformat()}
+        return True
+
+
+def liberar_loja_appnext(loja):
+    with cond_loja:
+        lojas_appnext.pop(loja, None)
+        cond_loja.notify_all()
 
 
 def ler_env(path: Path) -> dict:
@@ -193,26 +238,53 @@ def _estado(loja):
     return estado.setdefault(loja, {"estado": "parado", "ultima": None, "atual": None, "lote": None})
 
 
+def _prox_coleta_loja(loja):
+    for q in (fila, fila_hist):
+        for j in q:
+            if j["loja"] == loja and j.get("gatilho") not in ("pedido", "saldos", "inventario"):
+                return j
+    return None
+
+
 def pendentes(loja):
-    return sum(1 for j in fila if j["loja"] == loja and j.get("gatilho") not in ("pedido", "saldos", "inventario"))
+    return (
+        sum(1 for j in fila if j["loja"] == loja and j.get("gatilho") not in ("pedido", "saldos", "inventario"))
+        + sum(1 for j in fila_hist if j["loja"] == loja)
+    )
 
 
 ITENS = ("vendas", "xml", "estoque", "fixe")
 
 
-def enfileirar(loja, gatilho, por=None, de=None, ate=None, fixe=False, tipo=None, itens=None, ultima_do_dia=False):
+def enfileirar(loja, gatilho, por=None, de=None, ate=None, fixe=False, tipo=None, itens=None, ultima_do_dia=False, data_ref=None):
     """Rotina/manual: recusa se a loja já tem algo na fila ou rodando.
     fixe=True: pede também a exportação do cadastro de clientes ao FIXE (coleta da noite)."""
+    hoje_str = data_ref or datetime.now(TZ).strftime("%Y-%m-%d")
     with lock:
         e = _estado(loja)
         if e["estado"] in ("na_fila", "rodando") or pendentes(loja):
+            atual_g = (e.get("atual") or {}).get("gatilho")
+            if gatilho == "agendado":
+                # Se a loja está ocupada com lote de histórico (ou coleta manual parcial), guarda a rotina agendada
+                # para rodar logo após o item em andamento, sem perder a atualização nem a data planejada.
+                if atual_g == "historico" or (e.get("atual") or {}).get("tipo") in ("fixe", "xml"):
+                    ant = e.get("agendado_pendente") or {}
+                    e["agendado_pendente"] = {
+                        "fixe": bool(ant.get("fixe") or fixe),
+                        "ultima_do_dia": bool(ant.get("ultima_do_dia") or ultima_do_dia),
+                        "data_ref": hoje_str,
+                    }
+                    log(f"{loja}: rotina agendada guardada para rodar após {atual_g or 'coleta atual'}")
+                    return False
             if ultima_do_dia:
-                # a loja já está atualizando: a coleta que está em andamento passa a valer como a última do dia
-                e["marcar_ultima_do_dia"] = datetime.now(TZ).strftime("%Y-%m-%d")
+                # a loja já está atualizando vendas completas: a coleta em andamento passa a valer como a última do dia
+                e["marcar_ultima_do_dia"] = hoje_str
             return False
         job = {"loja": loja, "gatilho": gatilho, "por": por, "de": de, "ate": ate, "criado": datetime.now(TZ).isoformat(), "inicio": None, "fixe": fixe}
+        if data_ref:
+            job["data_ref"] = data_ref
         if ultima_do_dia:
-            job["ultimaDoDia"] = datetime.now(TZ).strftime("%Y-%m-%d")  # o painel envia o fechamento do dia quando esta terminar
+            job["ultimaDoDia"] = hoje_str  # o painel envia o fechamento do dia quando esta terminar
         if tipo:
             job["tipo"] = tipo
         if itens:
@@ -273,7 +345,7 @@ def enfileirar_saldos(loja, por=None):
     return True
 
 
-CID_OK = re.compile(r"^[a-f0-9]{12}$")
+CID_OK = re.compile(r"^[a-f0-9]{12}\Z")
 
 
 def arquivos_inventario(loja, cid, tipo):
@@ -281,7 +353,7 @@ def arquivos_inventario(loja, cid, tipo):
     return base / f"{cid}-{tipo}.xlsx", base / f"{cid}-{tipo}.json", base / f"{cid}-{tipo}.resultado.json"
 
 
-fila_inv = deque()  # robô exclusivo do inventário: não espera as coletas das outras lojas
+fila_inv = deque()  # robô exclusivo do inventário/NF-e: não espera as coletas das outras lojas
 
 
 def trabalhador_inventario():
@@ -292,31 +364,32 @@ def trabalhador_inventario():
             time.sleep(1)
             continue
         loja = job["loja"]
-        # só espera se a coleta desta mesma loja estiver no AppNext agora (mesmo usuário logado duas vezes)
-        limite = time.time() + 20 * 60
-        while time.time() < limite:
-            with lock:
-                ocupada = trabalho.get("loja") == loja
-                if ocupada:
-                    inv_est[loja] = {**inv_est.get(loja, {}), "estado": "na_fila", "esperando": dict(trabalho)}
-            if not ocupada:
-                break
-            time.sleep(3)
+        eh_nfe = job.get("gatilho") == "nfe"
+        est_alvo = nfe_est if eh_nfe else inv_est
+
+        def marcar_espera(ocup):
+            est_alvo[loja] = {**est_alvo.get(loja, {}), "estado": "na_fila", "esperando": ocup}
+
+        adquiriu = adquirir_loja_appnext(loja, job.get("gatilho") or "inventario", timeout=20 * 60, ao_esperar=marcar_espera)
         try:
-            if job.get("gatilho") == "nfe":
+            if not adquiriu:
+                raise RuntimeError("tempo esgotado aguardando a coleta desta loja liberar o AppNext")
+            if eh_nfe:
                 rodar_nfe(job)
             else:
                 rodar_inventario(job)
         except Exception as e:  # noqa: BLE001
             log(f"{loja}: {job.get('gatilho')} erro inesperado {e}")
             with lock:
-                est = nfe_est if job.get("gatilho") == "nfe" else inv_est
-                est[loja] = {**est.get(loja, {}), "estado": "parado"}
+                est_alvo[loja] = {**{k: v for k, v in est_alvo.get(loja, {}).items() if k != "esperando"}, "estado": "parado"}
+        finally:
+            if adquiriu:
+                liberar_loja_appnext(loja)
 
 
 # ---------- NF-e de saída (rascunho no AppNext): mesma fila exclusiva do inventário ----------
 nfe_est = {}  # loja -> {"estado", "id", "acao", "ultima"}
-RID_OK = re.compile(r"^([a-f0-9]{12}|cadastros)$")
+RID_OK = re.compile(r"^([a-f0-9]{12}|cadastros)\Z")
 
 
 def arquivos_nfe(loja, rid):
@@ -349,12 +422,11 @@ def rodar_nfe(job):
     log_path = pasta / "nfe.log"
     inicio = time.time()
     with lock:
-        nfe_est[loja] = {**nfe_est.get(loja, {}), "estado": "rodando", "inicio": datetime.now(TZ).isoformat()}
+        nfe_est[loja] = {**{k: v for k, v in nfe_est.get(loja, {}).items() if k != "esperando"}, "estado": "rodando", "inicio": datetime.now(TZ).isoformat()}
     log(f"{loja}: NF-e ({acao}) rodando")
     try:
         with open(log_path, "w", encoding="utf-8") as out:
-            p = subprocess.run([sys.executable, str(SCRIPT_NFE)], cwd=robo, env=env, stdout=out, stderr=subprocess.STDOUT, timeout=900)
-            codigo = p.returncode
+            codigo = rodar_processo([sys.executable, str(SCRIPT_NFE)], cwd=robo, env=env, out=out, timeout=900)
     except subprocess.TimeoutExpired:
         codigo = "timeout"
     except Exception as e:  # noqa: BLE001
@@ -416,8 +488,7 @@ def rodar_inventario(job):
     log(f"{loja}: inventário ({tipo}) rodando")
     try:
         with open(log_path, "w", encoding="utf-8") as out:
-            p = subprocess.run([sys.executable, str(SCRIPT_INVENTARIO)], cwd=robo, env=env, stdout=out, stderr=subprocess.STDOUT, timeout=900)
-            codigo = p.returncode
+            codigo = rodar_processo([sys.executable, str(SCRIPT_INVENTARIO)], cwd=robo, env=env, out=out, timeout=900)
     except subprocess.TimeoutExpired:
         codigo = "timeout"
     except Exception as e:  # noqa: BLE001
@@ -442,7 +513,7 @@ def robo_agora(loja):
     """o que o robô está fazendo agora e quantos pedidos esperam na frente (sem expor outras lojas)"""
     with lock:
         t = dict(trabalho)
-        n = len(fila)
+        n = len(fila) + len(fila_hist)
     if not t:
         return {"livre": True, "fila": n}
     return {"livre": False, "fila": n, "inicio": t.get("inicio"), "gatilho": t.get("gatilho"), "outraLoja": t.get("loja") != loja}
@@ -474,8 +545,7 @@ def rodar_saldos(job):
     log(f"{loja}: saldos do FIXE rodando")
     try:
         with open(log_path, "w", encoding="utf-8") as out:
-            p = subprocess.run([sys.executable, str(SCRIPT_SALDOS)], cwd=pasta, env=env, stdout=out, stderr=subprocess.STDOUT, timeout=900)
-            codigo = p.returncode
+            codigo = rodar_processo([sys.executable, str(SCRIPT_SALDOS)], cwd=pasta, env=env, out=out, timeout=900)
     except subprocess.TimeoutExpired:
         codigo = "timeout"
     except Exception as e:  # noqa: BLE001
@@ -508,6 +578,10 @@ def info_saldos(loja):
     return st
 
 
+URL_PEDIDO_PADRAO = "https://grnteashop.nextsoft.com.br/pedidos"
+CACHE_CATALOGO_TTL = 12 * 3600  # 12h: o catálogo FRANQUIAS é único da franqueadora
+
+
 def rodar_pedido(job):
     loja, acao = job["loja"], job["acao"]
     pasta = WORK_DIR / loja
@@ -517,23 +591,62 @@ def rodar_pedido(job):
     env.update(ler_env(CONFIG_DIR / f"{loja}.env"))
     env.update(acesso_pedido(loja))
     destino = DATA_DIR / loja / "pedido"
-    env.update({"MODO": acao, "PYTHONUNBUFFERED": "1", "SAIDA_CATALOGO": str(destino / "catalogo.json"),
+    arq_cat = destino / "catalogo.json"
+    env.update({"MODO": acao, "PYTHONUNBUFFERED": "1", "SAIDA_CATALOGO": str(arq_cat),
                 "ENTRADA_PEDIDO": str(destino / "entrada.json"), "SAIDA_RESULTADO": str(destino / "carrinho.json"),
                 "CARRINHO_SOMAR": "1" if job.get("somar") else "0"})
     env.setdefault("MAX_RUNTIME_SECONDS", "900")
+    url_norm = (env.get("PEDIDO_URL") or URL_PEDIDO_PADRAO).strip().rstrip("/").lower()
+    forn_slug = re.sub(r"[^a-z0-9]+", "_", (env.get("PEDIDO_FORNECEDOR") or "franquias").strip().lower()).strip("_") or "franquias"
+    cache_rede = DATA_DIR / "_sistema" / f"catalogo-{forn_slug}.json" if url_norm == URL_PEDIDO_PADRAO else None
     log_path = pasta / "pedido.log"
     inicio = time.time()
     with lock:
         pedido_est[loja] = {**pedido_est.get(loja, {}), "estado": "rodando", "inicio": datetime.now(TZ).isoformat()}
+
+    # Na rotina da noite, reaproveita o catálogo já consultado por outra loja nas últimas 12 horas
+    if acao == "catalogo" and job.get("por") == "rotina" and cache_rede and cache_rede.exists():
+        try:
+            idade = time.time() - cache_rede.stat().st_mtime
+            if 0 <= idade < CACHE_CATALOGO_TTL and cache_rede.stat().st_size > 100:
+                destino.mkdir(parents=True, exist_ok=True)
+                tmp = arq_cat.with_name(f"{arq_cat.name}.{os.getpid()}.tmp")
+                shutil.copyfile(cache_rede, tmp)
+                os.chmod(tmp, 0o640)
+                tmp.replace(arq_cat)
+                msg = f"[{datetime.now(TZ):%H:%M:%S}] Catálogo reaproveitado do cache da rede ({int(idade // 60)} min atrás)."
+                log_path.write_text(msg + "\n", encoding="utf-8")
+                with lock:
+                    p = pedido_est.get(loja, {})
+                    ultima = {"acao": acao, "por": job.get("por"), "criado": job["criado"], "inicio": p.get("inicio"), "fim": datetime.now(TZ).isoformat(),
+                              "ok": True, "codigo": 0, "duracao_s": 0, "log": [msg]}
+                    pedido_est[loja] = {"estado": "parado", "ultima": ultima}
+                try:
+                    (pasta / "pedido.json").write_text(json.dumps(ultima, ensure_ascii=False), encoding="utf-8")
+                except OSError:
+                    pass
+                log(f"{loja}: pedido/catalogo OK (cache da rede)")
+                return
+        except OSError:
+            pass
+
     log(f"{loja}: pedido/{acao} rodando")
     try:
         with open(log_path, "w", encoding="utf-8") as out:
-            p = subprocess.run([sys.executable, str(SCRIPT_PEDIDO)], cwd=pasta, env=env, stdout=out, stderr=subprocess.STDOUT, timeout=TEMPO_MAX)
-            codigo = p.returncode
+            codigo = rodar_processo([sys.executable, str(SCRIPT_PEDIDO)], cwd=pasta, env=env, out=out, timeout=TEMPO_MAX)
     except subprocess.TimeoutExpired:
         codigo = "timeout"
     except Exception as e:  # noqa: BLE001
         codigo = str(e)
+    if acao == "catalogo" and codigo == 0 and cache_rede and arq_cat.exists():
+        try:
+            cache_rede.parent.mkdir(parents=True, exist_ok=True)
+            tmp_c = cache_rede.with_name(f"{cache_rede.name}.{os.getpid()}.tmp")
+            shutil.copyfile(arq_cat, tmp_c)
+            os.chmod(tmp_c, 0o640)
+            tmp_c.replace(cache_rede)
+        except OSError:
+            pass
     try:
         cauda = log_path.read_text(encoding="utf-8", errors="replace").splitlines()[-25:]
     except OSError:
@@ -564,28 +677,42 @@ def enfileirar_historico(loja, partes, por=None, tipo="ambos", extras=None):
         e["lote"] = {"total": len(jobs), "feitas": 0, "falhas": [], "de": partes[0]["de"], "ate": partes[-1]["ate"], "por": por, "criado": agora, "fim": None, "tipo": tipo}
         e["estado"] = "na_fila"
         e["atual"] = jobs[0]
-        fila.extend(jobs)
+        fila_hist.extend(jobs)
     log(f"{loja}: histórico em {len(partes)} parte(s) {partes[0]['de']} → {partes[-1]['ate']}")
     return True
 
 
 def cancelar(loja):
     with lock:
-        antes = len(fila)
+        antes = len(fila) + len(fila_hist)
         resto = [j for j in fila if j["loja"] != loja or j.get("gatilho") in ("pedido", "saldos", "inventario")]
+        resto_h = [j for j in fila_hist if j["loja"] != loja]
         fila.clear()
         fila.extend(resto)
+        fila_hist.clear()
+        fila_hist.extend(resto_h)
         e = _estado(loja)
+        e.pop("agendado_pendente", None)
         if e["estado"] == "na_fila":
             e["estado"], e["atual"] = "parado", None
         if e.get("lote") and not e["lote"].get("fim"):
             e["lote"]["fim"] = datetime.now(TZ).isoformat()
             e["lote"]["cancelado"] = True
-    return antes - len(fila)
+        removidas = antes - (len(fila) + len(fila_hist))
+    return removidas
 
 
 def br(iso):
     return f"{iso[8:10]}/{iso[5:7]}/{iso[0:4]}"
+
+
+def _enxugar_linhas(linhas):
+    enxutas = []
+    for l in linhas:
+        if enxutas and l.strip() == enxutas[-1].strip():
+            continue
+        enxutas.append(l)
+    return enxutas
 
 
 def rodar(job):
@@ -597,9 +724,10 @@ def rodar(job):
     SEGREDO = re.compile(r"(SECRET|TOKEN|PASS|SENHA|SMTP|GITHUB|KEY)", re.I)
     env = {k: v for k, v in os.environ.items() if not k.startswith("COLETOR_") and not SEGREDO.search(k)}
     env.update(ler_env(cfg))
-    # período: histórico = o pedido; rotina = últimos dias da janela.
+    # período: histórico = o pedido; rotina = últimos dias da janela (ancorada na data em que foi agendada).
     # Do dia 1 ao 5 a rotina também refaz o mês anterior inteiro (correções do fechamento: comissão e faturamento).
-    hoje = datetime.now(TZ).date()
+    ref_iso = job.get("data_ref")
+    hoje = datetime.strptime(ref_iso, "%Y-%m-%d").date() if (ref_iso and DATA_OK.match(ref_iso)) else datetime.now(TZ).date()
     if job.get("de") and job.get("ate"):
         de, ate = job["de"], job["ate"]
     else:
@@ -645,87 +773,190 @@ def rodar(job):
 
     trechos = []  # final do log de cada script (o do XML não esconde o das vendas)
 
-    def executar(arquivo, env_extra):
+    def executar(arquivo, env_extra, tempo_limite=None):
         """roda um script e devolve o código de saída (ou 'timeout'/erro)"""
         inicio_log = log_path.stat().st_size
         try:
-            return _executar(arquivo, env_extra)
+            return _executar(arquivo, env_extra, tempo_limite or TEMPO_MAX)
         finally:
             with open(log_path, "rb") as f:
                 f.seek(inicio_log)
                 linhas = f.read().decode("utf-8", "replace").splitlines()
-            # tira as linhas repetidas do Playwright ("locator resolved to ...")
-            enxutas = []
-            for l in linhas:
-                if enxutas and l.strip() == enxutas[-1].strip():
-                    continue
-                enxutas.append(l)
-            trechos.append(enxutas[-15:])
+            trechos.append(_enxugar_linhas(linhas)[-15:])
 
-    def _executar(arquivo, env_extra):
+    def _executar(arquivo, env_extra, lim):
         try:
             with open(log_path, "a", encoding="utf-8") as out:
                 out.write(f"\n### {arquivo.name} ###\n")
                 out.flush()
-                p = subprocess.run([sys.executable, str(arquivo)], cwd=pasta, env={**env, **env_extra}, stdout=out, stderr=subprocess.STDOUT, timeout=TEMPO_MAX)
-                return p.returncode
+                return rodar_processo([sys.executable, str(arquivo)], cwd=pasta, env={**env, **env_extra}, out=out, timeout=lim)
         except subprocess.TimeoutExpired:
             with open(log_path, "a", encoding="utf-8") as out:
-                out.write(f"\n### coletor: tempo máximo de {TEMPO_MAX}s excedido ###\n")
+                out.write(f"\n### coletor: tempo máximo de {lim}s excedido ###\n")
             return "timeout"
         except Exception as e:  # noqa: BLE001
             return str(e)
 
-    ok, codigo, xml = True, 0, None
-    principal = None  # o resultado da coleta é o do primeiro script que rodou
-    if tipo in ("ambos", "vendas"):
-        codigo = executar(script, {})
-        ok = codigo == 0
-        principal = "vendas"
-    if tipo in ("ambos", "xml") and SCRIPT_XML.exists():
-        saida_xml = str(DATA_DIR / loja / "entrada" / f"{carimbo}_{de}_{ate}_xml.json")
-        cx = executar(SCRIPT_XML, {"SAIDA_XML": saida_xml, "SAIDA_ARQUIVO": str(pasta / "_nao_usado.xlsx")})
-        xml = {"ok": cx == 0, "codigo": cx}
-        if principal is None:
-            ok, codigo, principal = cx == 0, cx, "xml"
-    caixa = None
-    if tipo in ("ambos", "vendas") and job.get("gatilho") != "historico" and SCRIPT_CAIXA.exists():
-        # fechamento de caixa: só acrescenta os novos; falha aqui não muda o resultado da coleta
-        cx2 = executar(SCRIPT_CAIXA, {"SAIDA_CAIXA": str(DATA_DIR / loja / "caixa" / "fechamentos.json"), "SAIDA_ARQUIVO": str(pasta / "_nao_usado.xlsx")})
-        caixa = {"ok": cx2 == 0, "codigo": cx2}
-    estoque = None
-    fixe = None
-    if (job.get("fixe") or tipo == "fixe") and SCRIPT_FIXE.exists():
-        # cadastro de clientes: só pede a exportação; o painel lê o e-mail do FIXE e importa
-        cf = executar(SCRIPT_FIXE, {"SAIDA_FIXE": str(DATA_DIR / loja / "fixe" / "pedido.json"), "FIXE_APELIDO": loja})  # apelido do Gmail: separa as lojas que usam o mesmo Gmail
-        fixe = {"ok": cf == 0, "codigo": cf}
-        if principal is None:
-            ok, codigo, principal = cf == 0, cf, "fixe"
     quer_estoque = ("estoque" in quer) if quer is not None else (tipo not in ("fixe", "saldos") and job["gatilho"] != "historico" and ESTOQUE_ROTINA)
     if "estoque" in (job.get("extras") or []):
         quer_estoque = True
+    tab = DATA_DIR / loja / "cadastro" / "tabela.json"
+    velha = not tab.exists() or (datetime.now().timestamp() - tab.stat().st_mtime) > 20 * 3600
+
+    saida_xml = str(DATA_DIR / loja / "entrada" / f"{carimbo}_{de}_{ate}_xml.json")
+    saida_caixa = str(DATA_DIR / loja / "caixa" / "fechamentos.json")
+    saida_est = str(DATA_DIR / loja / "estoque" / "entrada" / f"{carimbo}_estoque.xlsx")
+    saida_compras = str(DATA_DIR / loja / "estoque" / "compras.json")
+    saida_produtos = str(DATA_DIR / loja / "cadastro" / "entrada")
+
+    etapas_appnext = []
+    if tipo in ("ambos", "vendas"):
+        etapas_appnext.append("vendas")
+    if tipo in ("ambos", "xml") and SCRIPT_XML.exists():
+        etapas_appnext.append("xml")
+    if tipo in ("ambos", "vendas") and job.get("gatilho") != "historico" and SCRIPT_CAIXA.exists():
+        etapas_appnext.append("caixa")
     if quer_estoque and SCRIPT_ESTOQUE.exists():
-        # o estoque é uma foto de agora: só nas atualizações (não no histórico); falha aqui não derruba a coleta
-        saida_est = str(DATA_DIR / loja / "estoque" / "entrada" / f"{carimbo}_estoque.xlsx")
-        ce = executar(SCRIPT_ESTOQUE, {"SAIDA_ESTOQUE": saida_est, "SAIDA_ARQUIVO": str(pasta / "_nao_usado.xlsx")})
-        estoque = {"ok": ce == 0, "codigo": ce}
-        if principal is None:
-            ok, codigo, principal = ce == 0, ce, "estoque"
+        etapas_appnext.append("estoque")
         if SCRIPT_COMPRAS.exists():
-            # notas de compra: só acrescenta as novas; falha aqui não muda o resultado da coleta
-            cc = executar(SCRIPT_COMPRAS, {"SAIDA_COMPRAS": str(DATA_DIR / loja / "estoque" / "compras.json"), "SAIDA_ARQUIVO": str(pasta / "_nao_usado.xlsx")})
-            estoque["compras"] = cc == 0
-        tab = DATA_DIR / loja / "cadastro" / "tabela.json"
-        velha = not tab.exists() or (datetime.now().timestamp() - tab.stat().st_mtime) > 20 * 3600
+            etapas_appnext.append("compras")
         if SCRIPT_PRODUTOS.exists() and (velha or "estoque" in (job.get("extras") or []) or (quer is not None and "estoque" in quer)):
-            # preço de tabela: muda pouco; falha aqui não muda o resultado da coleta
-            cp = executar(SCRIPT_PRODUTOS, {"SAIDA_PRODUTOS": str(DATA_DIR / loja / "cadastro" / "entrada"), "SAIDA_ARQUIVO": str(pasta / "_nao_usado.xlsx")})
-            estoque["produtos"] = cp == 0
+            etapas_appnext.append("produtos")
+
+    ok, codigo, xml, caixa, estoque, fixe = True, 0, None, None, None, None
+    principal = None  # o resultado da coleta é o do primeiro script que rodou
+
+    precisa_appnext = bool(etapas_appnext)
+    adquiriu_appnext = False
+    if precisa_appnext:
+        adquiriu_appnext = adquirir_loja_appnext(loja, job.get("gatilho") or "coleta", timeout=max(TEMPO_MAX, 1200))
+        if not adquiriu_appnext:
+            with open(log_path, "a", encoding="utf-8") as out:
+                out.write("\n### coletor: tempo esgotado aguardando liberação do AppNext desta loja ###\n")
+            ok, codigo, principal = False, "ocupada", etapas_appnext[0]
+
+    try:
+        if precisa_appnext and adquiriu_appnext:
+            usar_sessao_unica = (script == SCRIPT and SCRIPT_SESSAO.exists() and len(etapas_appnext) >= 2)
+            if usar_sessao_unica:
+                arq_sessao = pasta / "sessao.json"
+                arq_res_sessao = pasta / "sessao_resultado.json"
+                arq_res_sessao.unlink(missing_ok=True)
+                arq_sessao.write_text(json.dumps({
+                    "etapas": etapas_appnext,
+                    "saida_vendas": env["SAIDA_ARQUIVO"],
+                    "saida_xml": saida_xml,
+                    "saida_caixa": saida_caixa,
+                    "saida_estoque": saida_est,
+                    "saida_compras": saida_compras,
+                    "saida_produtos": saida_produtos,
+                }, ensure_ascii=False), encoding="utf-8")
+                lim_sessao = max(TEMPO_MAX, 1200)
+                inicio_log = log_path.stat().st_size
+                try:
+                    with open(log_path, "a", encoding="utf-8") as out:
+                        cod_s = rodar_processo(
+                            [sys.executable, str(SCRIPT_SESSAO)],
+                            cwd=pasta,
+                            env={**env, "SESSAO_ARQUIVO": str(arq_sessao), "SAIDA_SESSAO": str(arq_res_sessao), "MAX_RUNTIME_SECONDS": str(lim_sessao)},
+                            out=out,
+                            timeout=lim_sessao + 30,
+                        )
+                except subprocess.TimeoutExpired:
+                    with open(log_path, "a", encoding="utf-8") as out:
+                        out.write(f"\n### coletor: tempo máximo de {lim_sessao}s excedido ###\n")
+                    cod_s = "timeout"
+                except Exception as e:  # noqa: BLE001
+                    cod_s = str(e)
+                # Extrai o resumo das últimas linhas de cada módulo impresso na sessão única
+                with open(log_path, "rb") as f:
+                    f.seek(inicio_log)
+                    linhas_s = f.read().decode("utf-8", "replace").splitlines()
+                bloco = []
+                for l in linhas_s:
+                    t = l.strip()
+                    if t.startswith("### ") and t.endswith(" ###") and t[4:-4].endswith(".py"):
+                        if bloco:
+                            trechos.append(_enxugar_linhas(bloco)[-15:])
+                        bloco = [l]
+                    else:
+                        bloco.append(l)
+                if bloco:
+                    trechos.append(_enxugar_linhas(bloco)[-15:])
+
+                res_etapas = {}
+                if arq_res_sessao.exists():
+                    try:
+                        res_etapas = (json.loads(arq_res_sessao.read_text(encoding="utf-8")) or {}).get("etapas") or {}
+                    except Exception:  # noqa: BLE001
+                        res_etapas = {}
+
+                def _st(nome):
+                    r = res_etapas.get(nome)
+                    if isinstance(r, dict):
+                        return bool(r.get("ok")), (0 if r.get("ok") else (cod_s if cod_s == "timeout" else r.get("codigo", 1)))
+                    return False, (cod_s if cod_s != 0 else 1)
+
+                if "vendas" in etapas_appnext:
+                    ok, codigo = _st("vendas")
+                    principal = "vendas"
+                if "xml" in etapas_appnext:
+                    ox, cx = _st("xml")
+                    xml = {"ok": ox, "codigo": cx}
+                    if principal is None:
+                        ok, codigo, principal = ox, cx, "xml"
+                if "caixa" in etapas_appnext:
+                    oc, ccx = _st("caixa")
+                    caixa = {"ok": oc, "codigo": ccx}
+                if "estoque" in etapas_appnext:
+                    oe, ce = _st("estoque")
+                    estoque = {"ok": oe, "codigo": ce}
+                    if principal is None:
+                        ok, codigo, principal = oe, ce, "estoque"
+                    if "compras" in etapas_appnext:
+                        estoque["compras"] = _st("compras")[0]
+                    if "produtos" in etapas_appnext:
+                        estoque["produtos"] = _st("produtos")[0]
+            else:
+                if "vendas" in etapas_appnext:
+                    codigo = executar(script, {})
+                    ok = codigo == 0
+                    principal = "vendas"
+                if "xml" in etapas_appnext:
+                    cx = executar(SCRIPT_XML, {"SAIDA_XML": saida_xml, "SAIDA_ARQUIVO": str(pasta / "_nao_usado.xlsx")})
+                    xml = {"ok": cx == 0, "codigo": cx}
+                    if principal is None:
+                        ok, codigo, principal = cx == 0, cx, "xml"
+                if "caixa" in etapas_appnext:
+                    cx2 = executar(SCRIPT_CAIXA, {"SAIDA_CAIXA": saida_caixa, "SAIDA_ARQUIVO": str(pasta / "_nao_usado.xlsx")})
+                    caixa = {"ok": cx2 == 0, "codigo": cx2}
+                if "estoque" in etapas_appnext:
+                    ce = executar(SCRIPT_ESTOQUE, {"SAIDA_ESTOQUE": saida_est, "SAIDA_ARQUIVO": str(pasta / "_nao_usado.xlsx")})
+                    estoque = {"ok": ce == 0, "codigo": ce}
+                    if principal is None:
+                        ok, codigo, principal = ce == 0, ce, "estoque"
+                    if "compras" in etapas_appnext:
+                        cc = executar(SCRIPT_COMPRAS, {"SAIDA_COMPRAS": saida_compras, "SAIDA_ARQUIVO": str(pasta / "_nao_usado.xlsx")})
+                        estoque["compras"] = cc == 0
+                    if "produtos" in etapas_appnext:
+                        cp = executar(SCRIPT_PRODUTOS, {"SAIDA_PRODUTOS": saida_produtos, "SAIDA_ARQUIVO": str(pasta / "_nao_usado.xlsx")})
+                        estoque["produtos"] = cp == 0
+    finally:
+        if adquiriu_appnext:
+            liberar_loja_appnext(loja)
+
+    if (job.get("fixe") or tipo == "fixe") and SCRIPT_FIXE.exists():
+        # cadastro de clientes: só pede a exportação; o painel lê o e-mail do FIXE e importa
+        cf = executar(SCRIPT_FIXE, {"SAIDA_FIXE": str(DATA_DIR / loja / "fixe" / "pedido.json"), "FIXE_APELIDO": loja})
+        fixe = {"ok": cf == 0, "codigo": cf}
+        if principal is None:
+            ok, codigo, principal = cf == 0, cf, "fixe"
+
     cauda = [l for t in trechos for l in t] or (log_path.read_text(encoding="utf-8", errors="replace").splitlines()[-25:] if log_path.exists() else [])
     with lock:
         e = _estado(loja)
         # pedido de "última do dia" que chegou com a loja ocupada: vale para esta coleta (o histórico em lotes passa adiante)
-        if job.get("gatilho") != "historico" and e.get("marcar_ultima_do_dia"):
+        if job.get("gatilho") != "historico" and tipo in ("ambos", "vendas") and e.get("marcar_ultima_do_dia"):
             marca = e.pop("marcar_ultima_do_dia")
             if not job.get("ultimaDoDia") and marca >= (datetime.now(TZ) - timedelta(hours=6)).strftime("%Y-%m-%d"):
                 job = {**job, "ultimaDoDia": marca}
@@ -738,14 +969,31 @@ def rodar(job):
                 lote["falhas"].append({"de": de, "ate": ate, "codigo": str(codigo), "log": cauda[-30:]})
             if lote["feitas"] >= lote["total"]:
                 lote["fim"] = datetime.now(TZ).isoformat()
-        prox = next((j for j in fila if j["loja"] == loja and j.get("gatilho") not in ("pedido", "saldos", "inventario")), None)
+        # Se uma rotina agendada chegou enquanto a loja estava ocupada, coloca na fila prioritária agora
+        if e.get("agendado_pendente") and not any(j["loja"] == loja and j.get("gatilho") not in ("pedido", "saldos", "inventario") for j in fila):
+            pend = e.pop("agendado_pendente")
+            j_ag = {
+                "loja": loja,
+                "gatilho": "agendado",
+                "por": None,
+                "de": None,
+                "ate": None,
+                "criado": datetime.now(TZ).isoformat(),
+                "inicio": None,
+                "fixe": pend.get("fixe", False),
+                "data_ref": pend.get("data_ref"),
+            }
+            if pend.get("ultima_do_dia"):
+                j_ag["ultimaDoDia"] = pend.get("data_ref") or datetime.now(TZ).strftime("%Y-%m-%d")
+            fila.append(j_ag)
+        prox = _prox_coleta_loja(loja)
         e["atual"] = prox
         e["estado"] = "na_fila" if prox else "parado"
     (pasta / "ultima.json").write_text(json.dumps({"ultima": e["ultima"], "lote": e.get("lote")}, ensure_ascii=False, indent=1), encoding="utf-8")
     log(f"{loja}: {'OK' if ok else 'FALHOU'} em {round(time.time() - inicio)}s (código {codigo}{'' if xml is None else ', xml ' + ('ok' if xml['ok'] else 'falhou')})")
 
 
-trabalho = {}  # o que o robô (um só, para todas as lojas) está fazendo agora
+trabalho = {}  # o que o robô principal está fazendo agora
 
 
 def trabalhador():
@@ -755,6 +1003,9 @@ def trabalhador():
         with lock:
             if fila:
                 job = fila.popleft()
+            elif fila_hist:
+                job = fila_hist.popleft()
+            if job:
                 trabalho = {"loja": job["loja"], "gatilho": job.get("gatilho"), "inicio": datetime.now(TZ).isoformat()}
         if job:
             try:
@@ -789,18 +1040,19 @@ def agendador():
     while True:
         agora = datetime.now(TZ)
         hhmm = agora.strftime("%H:%M")
+        hoje_str = agora.strftime("%Y-%m-%d")
         for loja in lojas_configuradas():
             hs = horarios_do_dia(loja, agora)
-            chave = f"{loja} {agora.strftime('%Y-%m-%d')} {hhmm}"
+            chave = f"{loja} {hoje_str} {hhmm}"
             if hhmm not in hs or chave in feitos:
                 continue
             feitos.add(chave)
             noite = hhmm == max(hs)  # a última do dia também pede o FIXE, o catálogo e dispara o fechamento
-            enfileirar(loja, "agendado", fixe=noite, ultima_do_dia=noite)
+            enfileirar(loja, "agendado", fixe=noite, ultima_do_dia=noite, data_ref=hoje_str)
             if noite and tem_pedido(loja):
                 enfileirar_pedido(loja, "catalogo", "rotina")
         if len(feitos) > 5000:
-            feitos = {k for k in feitos if agora.strftime("%Y-%m-%d") in k}
+            feitos = {k for k in feitos if hoje_str in k}
         time.sleep(20)
 
 
@@ -931,22 +1183,37 @@ class API(BaseHTTPRequestHandler):
             except Exception:  # noqa: BLE001
                 return self._json(400, {"erro": "pedido inválido"})
             did = str(corpo.get("id") or "")
-            if not re.match(r"^[a-f0-9]{12}$", did):
+            if not CID_OK.match(did):
                 return self._json(400, {"erro": "pedido inválido"})
             pasta = DATA_DIR / loja / "devolucoes" / did
             src, dst = pasta / "danfe.html", pasta / "danfe.pdf"
             if not src.exists():
                 return self._json(400, {"erro": "sem o HTML do DANFE"})
+            if not sem_pdf.acquire(timeout=30):
+                return self._json(503, {"erro": "gerador de PDF ocupado, tente em instantes"})
             try:
                 from playwright.sync_api import sync_playwright
+                html_doc = src.read_text(encoding="utf-8")
+                tmp_pdf = dst.with_name(f"{dst.name}.{os.getpid()}.{threading.get_ident()}.tmp")
                 with sync_playwright() as pw:
-                    b = pw.chromium.launch()
-                    pg = b.new_page()
-                    pg.set_content(src.read_text(encoding="utf-8"), wait_until="load")
-                    pg.pdf(path=str(dst), format="A4", print_background=True, margin={"top": "8mm", "bottom": "8mm", "left": "8mm", "right": "8mm"})
-                    b.close()
+                    b = pw.chromium.launch(headless=True)
+                    try:
+                        ctx = b.new_context(java_script_enabled=False)
+                        pg = ctx.new_page()
+                        pg.route("**/*", lambda route: route.continue_() if route.request.url.startswith(("about:", "data:")) else route.abort())
+                        pg.set_content(html_doc, wait_until="load", timeout=15000)
+                        pg.pdf(path=str(tmp_pdf), format="A4", print_background=True, margin={"top": "8mm", "bottom": "8mm", "left": "8mm", "right": "8mm"})
+                    finally:
+                        try:
+                            b.close()
+                        except Exception:  # noqa: BLE001
+                            pass
+                os.chmod(tmp_pdf, 0o640)
+                tmp_pdf.replace(dst)
             except Exception as e:  # noqa: BLE001
                 return self._json(500, {"erro": str(e)[:200]})
+            finally:
+                sem_pdf.release()
             return self._json(200, {"ok": True})
         if self.path.startswith("/nfe/"):
             loja = self._loja("/nfe/")

@@ -1209,7 +1209,10 @@
     const K = conhecidos(p, M);
     const fechar = () => { camada.remove(); if (!document.querySelector('.camada-cheia')) document.body.classList.remove('com-camada'); document.removeEventListener('keydown', esc); };
     const esc = (ev) => { if (ev.key === 'Escape') fechar(); };
-    const proxMes = (() => { const d = new Date(); d.setMonth(d.getMonth() + 1, 0); return d.toISOString().slice(0, 10); })();
+    const proxMes = (() => {
+      const h0 = TS.hojeSP ? TS.hojeSP() : new Date().toISOString().slice(0, 10);
+      return new Date(Date.UTC(+h0.slice(0, 4), +h0.slice(5, 7) + 1, 0)).toISOString().slice(0, 10);
+    })();
     const iNome = h('input', { class: 'f-input', value: o ? o.nome : `Pedido obrigatório de ${new Date().toLocaleDateString('pt-BR', { month: 'long' })}`, maxlength: 60 });
     const iAte = h('input', { class: 'f-input', type: 'date', value: o ? o.ate || '' : proxMes });
     const itens = (o ? o.itens : []).map((x) => ({ ...x }));

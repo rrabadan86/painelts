@@ -135,7 +135,7 @@
     for (const c of porCPF.values()) {
       if (!c.cupons.length) { if (c.semVenda) soSemVenda++; continue; } // nenhuma compra encontrada nas vendas
       c.cupons.sort((a, b) => b.day - a.day);
-      c.visitas = new Set(c.cupons.map((k) => k.cupom + '|' + k.loja)).size;
+      c.visitas = new Set(c.cupons.map((k) => k.cupom + '|' + k.loja + '|' + k.day)).size;
       c.ultima = c.cupons[0].day;
       c.primeira = c.cupons[c.cupons.length - 1].day;
       c.ausencia = hoje - c.ultima;
@@ -148,12 +148,12 @@
       c.chaUltimo = null;
       c.gasto12 = 0; c.gasto12ant = 0;
       for (const k of c.cupons) {
-        cuponsCPF.set(k.cupom + '|' + k.lojaId, c);
+        cuponsCPF.set(k.cupom + '|' + k.lojaId + '|' + k.day, c);
         if (k.day > hoje - 365) c.gasto12 += k.vt; else if (k.day > hoje - 730) c.gasto12ant += k.vt;
         for (const i of k.itens) {
           if (taxas.has(db.desc[i])) continue;
           const v = db.D.vendedor[db.vend[i]];
-          if (v) { porVend.set(v, (porVend.get(v) || 0) + (db.vt[i] || 0)); (atendeu.get(v) || atendeu.set(v, new Set()).get(v)).add(k.cupom + '|' + k.loja); }
+          if (v) { porVend.set(v, (porVend.get(v) || 0) + (db.vt[i] || 0)); (atendeu.get(v) || atendeu.set(v, new Set()).get(v)).add(k.cupom + '|' + k.loja + '|' + k.day); }
           // chá a granel/pacote (tem kg); xícaras e bebidas não contam
           if (!cha.has(db.grupo[i]) || !(db.cha[i] > 0)) continue;
           if (c.chaUltimo == null) c.chaUltimo = db.D.produto[db.prod[i]]; // cupons em ordem do mais novo
@@ -190,8 +190,8 @@
     // segmentos (sobre o histórico todo)
     const gastos = lista.map((c) => c.gasto12).filter((v) => v > 0).sort((a, b) => b - a);
     const corteVip = gastos.length >= 10 ? gastos[Math.floor(gastos.length * 0.1) - 1] : Infinity;
-    const hojeD = new Date(), mesHoje = hojeD.getUTCMonth(), anoHoje = hojeD.getUTCFullYear();
-    const proximos7 = new Set(Array.from({ length: 8 }, (_, k) => { const d = new Date(Date.now() + k * 864e5); return String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }));
+    const hojeIso = TS.dayToIso(hoje), anoHoje = +hojeIso.slice(0, 4), mesHoje = +hojeIso.slice(5, 7) - 1;
+    const proximos7 = new Set(Array.from({ length: 8 }, (_, k) => TS.dayToIso(hoje + k).slice(5, 10)));
     for (const c of lista) {
       const t = new Set();
       const p = new Date(c.primeira * 864e5);
@@ -209,7 +209,9 @@
       c.tags = t;
     }
     // quem tem pontos no FIXE mas nenhum cupom com CPF: entra nas campanhas pelo cadastro (nome e celular)
-    TS.cli = { cad, lista, fixe, porCPF, fxPorCpf: fx ? fx.porCpf : null, semVendaTotal, semVendaLista, soSemVenda, cuponsXml: db.xml.length, cuponsCPF, contatos: (TS.cli && TS.cli.contatos) || null, cidades: [...new Set(db.clientes.map((c) => c.cidade).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR')) };
+    const lojaAt = state.loja || '';
+    const contatosAnt = TS.cli && TS.cli.contatosLoja === lojaAt ? TS.cli.contatos : null;
+    TS.cli = { cad, lista, fixe, porCPF, fxPorCpf: fx ? fx.porCpf : null, semVendaTotal, semVendaLista, soSemVenda, cuponsXml: db.xml.length, cuponsCPF, contatos: contatosAnt, contatosLoja: contatosAnt ? lojaAt : null, cidades: [...new Set(db.clientes.map((c) => c.cidade).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR')) };
   };
   // ---------- contatos (contatado / não quer mensagens), guardados por loja no servidor ----------
   const NOMES_SEG = { hoje: 'Contatar hoje', aniv: 'Aniversário (7 dias)', sumido: 'Sumidos', repor: 'Hora de repor', vence: 'Pontos vencendo', semfixe: 'Compras sem FIXE', forafixe: 'Fora do FIXE', novo: 'Novos do mês', fiel: 'Fiéis', vip: 'VIP', uma: 'Uma compra só' };
@@ -230,19 +232,30 @@
     return m ? m.id : (TS.db.metas[0] && TS.db.metas[0].id);
   };
   const contatoDe = (c) => (TS.cli.contatos ? TS.cli.contatos[c.cpf] : null);
-  let carregandoContatos = false;
+  let carregandoContatos = null;
   function carregarContatos() {
-    if (TS.cli.contatos || carregandoContatos) return;
-    if (TS.demo) { TS.cli.contatos = {}; return; }
-    carregandoContatos = true;
-    fetch('/api/contatos?loja=' + encodeURIComponent(state.loja || ''), { credentials: 'same-origin' }).then((r) => r.json())
-      .then((j) => { TS.cli.contatos = j.contatos || {}; if (state.page === 'clientes' || state.page === 'clilista') TS.render(); })
-      .catch(() => { TS.cli.contatos = {}; }).finally(() => { carregandoContatos = false; });
+    const lojaAlvo = state.loja || '';
+    if ((TS.cli.contatos && TS.cli.contatosLoja === lojaAlvo) || carregandoContatos === lojaAlvo) return;
+    if (TS.demo) { TS.cli.contatos = {}; TS.cli.contatosLoja = lojaAlvo; return; }
+    carregandoContatos = lojaAlvo;
+    fetch('/api/contatos?loja=' + encodeURIComponent(lojaAlvo), { credentials: 'same-origin' }).then((r) => r.json())
+      .then((j) => {
+        if ((state.loja || '') !== lojaAlvo || !TS.cli) return;
+        TS.cli.contatos = j.contatos || {};
+        TS.cli.contatosLoja = lojaAlvo;
+        if (state.page === 'clientes' || state.page === 'clilista') TS.render();
+      })
+      .catch(() => { if ((state.loja || '') === lojaAlvo && TS.cli) { TS.cli.contatos = {}; TS.cli.contatosLoja = lojaAlvo; } })
+      .finally(() => { if (carregandoContatos === lojaAlvo) carregandoContatos = null; });
   }
   /** busca de novo quem foi contatado (outra pessoa pode ter enviado de outro computador) */
   async function recarregarContatos() {
-    if (TS.demo) { TS.cli.contatos = TS.cli.contatos || {}; return; }
-    try { const j = await (await fetch('/api/contatos?loja=' + encodeURIComponent(state.loja || ''), { credentials: 'same-origin' })).json(); if (j.contatos) TS.cli.contatos = j.contatos; } catch { /* fica o que tinha */ }
+    const lojaAlvo = state.loja || '';
+    if (TS.demo) { TS.cli.contatos = TS.cli.contatos || {}; TS.cli.contatosLoja = lojaAlvo; return; }
+    try {
+      const j = await (await fetch('/api/contatos?loja=' + encodeURIComponent(lojaAlvo), { credentials: 'same-origin' })).json();
+      if (j.contatos && (state.loja || '') === lojaAlvo && TS.cli) { TS.cli.contatos = j.contatos; TS.cli.contatosLoja = lojaAlvo; }
+    } catch { /* fica o que tinha */ }
   }
   async function marcar(c, acao, motivo) {
     const loja = lojaIdDe(c);
@@ -312,6 +325,7 @@
 
   // ---------- filtros ----------
   TS.filtrosClientes = function () {
+    if (TS.garantirClientes) TS.garantirClientes();
     const s = state.cli, db = TS.db, box = h('div'), rerender = () => TS.render();
     const txt = (label, key, ph, mode) => {
       const i = h('input', { class: 'f-input', type: 'search', placeholder: ph, value: s[key], inputmode: mode || null });
@@ -340,12 +354,12 @@
     );
     const mes = h('select', { class: 'f-input' }, h('option', { value: '' }, 'Qualquer mês'), TS.MESES.map((m, i) => h('option', { value: String(i + 1).padStart(2, '0'), selected: s.aniv === String(i + 1).padStart(2, '0') || null }, m)));
     mes.addEventListener('change', () => { s.aniv = mes.value; rerender(); });
-    const hojeMes = String(new Date().getMonth() + 1).padStart(2, '0');
+    const hojeMes = TS.hojeSP ? TS.hojeSP().slice(5, 7) : String(new Date().getMonth() + 1).padStart(2, '0');
     box.append(h('div', { class: 'f-group' }, h('span', { class: 'f-label' }, 'Aniversário'), mes,
       h('div', { class: 'chips' }, h('button', { type: 'button', class: 'chip' + (s.aniv === hojeMes ? ' on' : ''), onclick: () => { s.aniv = s.aniv === hojeMes ? '' : hojeMes; rerender(); } }, 'Aniversariantes do mês'))));
     if (db.opts.lojas.length > 1) box.append(TS.multiSelect({ label: 'Loja', options: db.opts.lojas, selected: s.lojas, onChange: rerender, placeholder: 'Todas as lojas' }));
     box.append(TS.multiSelect({ label: 'Grupo comprado', options: db.opts.grupos, selected: s.grupos, onChange: rerender }));
-    if (TS.cli.cidades.length) box.append(TS.multiSelect({ label: 'Cidade (cadastro)', options: TS.cli.cidades.map((c) => [c, c]), selected: s.cidade, onChange: rerender, placeholder: 'Todas' }));
+    if (TS.cli && TS.cli.cidades.length) box.append(TS.multiSelect({ label: 'Cidade (cadastro)', options: TS.cli.cidades.map((c) => [c, c]), selected: s.cidade, onChange: rerender, placeholder: 'Todas' }));
     return box;
   };
 
@@ -648,6 +662,7 @@
 
   /** dados completos de um CPF para a janela (inclusive quem só existe no FIXE) */
   function clientePorCpf(cpf) {
+    if (TS.garantirClientes) TS.garantirClientes();
     let c = TS.cli.porCPF && TS.cli.porCPF.get(cpf);
     const fxc = TS.cli.fxPorCpf ? TS.cli.fxPorCpf.get(cpf) : null;
     if (!c) {
@@ -791,13 +806,13 @@
     const porCupom = new Map(); // cupons do período que têm o produto
     for (let i = 0; i < db.n; i++) {
       if (!noPer(db.day[i])) continue;
-      if (alvo[db.desc[i]]) porCupom.set(db.cupom[i] + '|' + db.loja[i], true);
+      if (alvo[db.desc[i]]) porCupom.set(db.cupom[i] + '|' + db.loja[i] + '|' + db.day[i], true);
     }
     if (!porCupom.size) return TS.card(`Quem leva "${s.produto}"`, 'também leva…', TS.empty('Nenhuma venda desse produto no período.'));
     const cont = new Map();
     const vistos = new Set();
     for (let i = 0; i < db.n; i++) {
-      const k = db.cupom[i] + '|' + db.loja[i];
+      const k = db.cupom[i] + '|' + db.loja[i] + '|' + db.day[i];
       if (!porCupom.has(k) || alvo[db.desc[i]] || taxas.has(db.desc[i])) continue;
       const kp = k + '#' + db.prod[i];
       if (vistos.has(kp)) continue;
@@ -816,13 +831,13 @@
     const taxas = TS.rules.ids.taxas;
     const lojasOk = s.lojas.size ? s.lojas : null;
     // todas as vendas do período: cupons por vendedora e com/sem CPF
-    const cupons = new Map(); // "cupom|loja" → { vt, vends:Set }
+    const cupons = new Map(); // "cupom|loja|day" → { vt, vends:Set }
     for (let i = 0; i < db.n; i++) {
       if (!noPer(db.day[i])) continue;
       if (lojasOk && !lojasOk.has(db.loja[i])) continue;
       const v = db.D.vendedor[db.vend[i]];
       if (!v || /^sem vendedor$/i.test(v)) continue;
-      const k = db.cupom[i] + '|' + db.loja[i];
+      const k = db.cupom[i] + '|' + db.loja[i] + '|' + db.day[i];
       let x = cupons.get(k);
       if (!x) cupons.set(k, (x = { vt: 0, vends: new Set() }));
       if (!taxas.has(db.desc[i])) x.vt += db.vt[i] || 0;

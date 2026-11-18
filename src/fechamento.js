@@ -51,7 +51,7 @@ function numeros(linhas) {
   const porVend = new Map();
   for (const v of linhas) {
     const x = v.vt || 0;
-    const ch = v.cupom + '|' + v.loja;
+    const ch = (v.data || '') + '|' + v.cupom + '|' + v.loja;
     // taxa de serviço (gorjeta) e taxa de entrega não são venda: não entram em nenhum valor
     if (ehTaxa(v)) { if (ehDelivery(v)) cupons.delivery.add(ch); continue; }
     total += x;
@@ -64,6 +64,7 @@ function numeros(linhas) {
     else cupons.loja.add(ch);
     if (!semVendedor(v.vendedor) && !/delivery|entrega/i.test(v.vendedor)) porVend.set(v.vendedor, (porVend.get(v.vendedor) || 0) + x);
   }
+  for (const c of cupons.omni) { cupons.delivery.delete(c); cupons.loja.delete(c); }
   for (const c of cupons.delivery) cupons.loja.delete(c);
   const cliLoja = cupons.loja.size, cliOmni = cupons.omni.size, cliDel = cupons.delivery.size;
   const cliTotal = cliLoja + cliOmni + cliDel;

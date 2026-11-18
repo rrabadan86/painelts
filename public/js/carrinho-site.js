@@ -35,8 +35,9 @@
   box.innerHTML = '<header><b>🛒 Carrinho Tea Shop</b><button type="button" title="Fechar">✕</button></header><div class="c"><div class="topo">Preparando…</div><div class="bar"><i style="width:0"></i></div><div class="msgs"></div><ul></ul></div>';
   document.body.append(box);
   const el = { topo: box.querySelector('.topo'), bar: box.querySelector('.bar i'), msgs: box.querySelector('.msgs'), lista: box.querySelector('ul') };
-  let rodando = false;
-  box.querySelector('header button').onclick = () => { if (rodando && !confirm('Parar de colocar produtos no carrinho?')) return; parar = true; box.remove(); delete window.__teashopCarrinho; };
+  let rodando = false, fr = null;
+  const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  box.querySelector('header button').onclick = () => { if (rodando && !confirm('Parar de colocar produtos no carrinho?')) return; parar = true; if (fr) fr.remove(); box.remove(); delete window.__teashopCarrinho; };
   let parar = false;
   const msg = (t, cls) => { el.msgs.innerHTML = ''; if (t) { const d = document.createElement('div'); d.className = 'msg ' + (cls || ''); d.innerHTML = t; el.msgs.append(d); } };
   window.__teashopCarrinho = { mostrar: () => box.scrollIntoView() };
@@ -45,7 +46,7 @@
   if (document.getElementById('UserName')) { msg('Entre no site com o login da loja e clique no favorito de novo.', 'er'); el.topo.textContent = ''; return; }
 
   // ---------- quadro escondido onde o trabalho acontece (a página da pessoa não recarrega) ----------
-  const fr = document.createElement('iframe');
+  fr = document.createElement('iframe');
   fr.style.cssText = 'position:fixed;left:-3000px;top:0;width:1300px;height:900px;border:0;visibility:hidden';
   document.body.append(fr);
   let carregou = null;
@@ -132,13 +133,12 @@
   function pintar() {
     const feitos = itens.filter((i) => res.has(i.cod)).length, ok = [...res.values()].filter((x) => x.status === 'ok').length;
     el.bar.style.width = `${itens.length ? Math.round((feitos / itens.length) * 100) : 0}%`;
-    el.topo.innerHTML = `<b>${feitos}/${itens.length} produtos processados</b> · ${ok} no carrinho${atual ? `<br><small>Agora: ${atual}</small>` : ''}`;
+    el.topo.innerHTML = `<b>${feitos}/${itens.length} produtos processados</b> · ${ok} no carrinho${atual ? `<br><small>Agora: ${esc(atual)}</small>` : ''}`;
     el.lista.innerHTML = '';
     for (const it of itens) {
       const x = res.get(it.cod);
       const li = document.createElement('li');
       const [t, c] = x ? ROT[x.status] : it.nome === atual ? ['colocando…', 'tsc-pe'] : ['na fila', 'tsc-pe'];
-      const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
       li.innerHTML = `<span>${esc(it.nome)}${x && x.qtd ? ` <small>(${br(x.qtd, x.qtd % 1 ? 2 : 0)})</small>` : ''}${x && x.erro && (x.status === 'sem_estoque' || x.status === 'recusado') ? `<br><small class="tsc-av-t">Site: ${esc(x.erro)}</small>` : ''}</span><em class="st ${c}" title="${x && x.erro ? esc(x.erro) : ''}">${t}</em>`;
       if (x && !['ok', 'indisponivel', 'sem_estoque'].includes(x.status) && !rodando) {
         const b = document.createElement('button'); b.className = 'tb'; b.textContent = 'Tentar de novo';
@@ -167,7 +167,7 @@
         atual = null; pintar(); avisar(false);
       }
     } catch (e) {
-      msg(`Parou: ${String(e.message || e)}`, 'er');
+      msg(`Parou: ${esc(e.message || e)}`, 'er');
     }
     rodando = false; atual = null;
     // a página de cima mostra o carrinho atualizado
@@ -175,7 +175,7 @@
     const topo = topoCarrinho(doc() || document);
     pintar();
     const ok = [...res.values()].filter((x) => x.status === 'ok').length, prob = itens.length - ok;
-    msg(`<b>Pronto:</b> ${ok} de ${itens.length} produtos no carrinho${topo ? ` (${topo})` : ''}.${prob ? ` ${prob} com problema: veja abaixo e use "Tentar de novo" se fizer sentido.` : ''}<br>O pedido <b>não foi finalizado</b>: confira o carrinho e finalize no site.<br><button class="pr" type="button">Ver o carrinho</button>`, 'ok');
+    msg(`<b>Pronto:</b> ${ok} de ${itens.length} produtos no carrinho${topo ? ` (${esc(topo)})` : ''}.${prob ? ` ${prob} com problema: veja abaixo e use "Tentar de novo" se fizer sentido.` : ''}<br>O pedido <b>não foi finalizado</b>: confira o carrinho e finalize no site.<br><button class="pr" type="button">Ver o carrinho</button>`, 'ok');
     el.msgs.querySelector('button.pr').onclick = () => { location.href = BASE + 'Abertura.aspx'; };
     avisar(true, topo);
   }
@@ -193,6 +193,6 @@
       if (topo && !/N[ãa]o h[áa] Ite/i.test(topo) && !confirm(`O carrinho já tem itens (${topo}). Os produtos da lista serão somados a ele. Continuar?`)) { msg('Nada foi colocado. Esvazie ou finalize o carrinho e clique no favorito de novo.', 'er'); return; }
       if (quem) box.querySelector('header b').textContent = `🛒 Carrinho Tea Shop · ${quem.replace(/^Olá,?\s*/, '')}`;
       await rodar(itens);
-    } catch (e) { msg(String(e.message || e), 'er'); el.topo.textContent = ''; }
+    } catch (e) { msg(esc(e.message || e), 'er'); el.topo.textContent = ''; }
   })();
 })();

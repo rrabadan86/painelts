@@ -78,8 +78,9 @@ LER_VM = """() => {
 
 def gravar(res):
     Path(SAIDA).parent.mkdir(parents=True, exist_ok=True)
-    tmp = Path(SAIDA).with_suffix(".tmp")
+    tmp = Path(SAIDA).with_name(f"{Path(SAIDA).name}.{os.getpid()}.tmp")
     tmp.write_text(json.dumps({**res, "em": datetime.now().astimezone().isoformat()}, ensure_ascii=False), encoding="utf-8")
+    os.chmod(tmp, 0o640)
     tmp.replace(SAIDA)
 
 
@@ -92,9 +93,11 @@ def clicar_visivel(page, texto):
 def main():
     nx.start_watchdog(int(os.getenv("MAX_RUNTIME_SECONDS", "600")))
     esperado = {str(x["cod"]): float(x["nova"]) for x in json.loads(Path(ESPERADO).read_text(encoding="utf-8"))}
+    pasta_pw = Path.cwd() / "pw_state"
+    nx.limpar_locks_perfil(pasta_pw)
     with sync_playwright() as pw:
         ctx = pw.chromium.launch_persistent_context(
-            user_data_dir=str(Path.cwd() / "pw_state"), headless=True, accept_downloads=True, ignore_https_errors=True,
+            user_data_dir=str(pasta_pw), headless=True, accept_downloads=True, ignore_https_errors=nx.INSEGURO,
             viewport={"width": 1600, "height": 950},
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36",
         )
@@ -201,6 +204,11 @@ def main():
                 gravar({"ok": True, "simulado": True, "itens": len(lidos)})
                 return 0
             step("6) Salvar (grava o inventário no AppNext)")
+            alvo_loja = (os.getenv("APPNEXT_LOJA_DESTINO") or "").strip()
+            if alvo_loja:
+                atual_loja = nx.loja_atual(page)
+                if not atual_loja or not nx._confere(atual_loja, alvo_loja):
+                    raise RuntimeError(f"topo mudou para '{atual_loja or '?'}' antes de salvar (esperado '{alvo_loja}'); nada foi gravado")
             clicar_visivel(page, "Salvar")
             ok = False
             for _ in range(60):

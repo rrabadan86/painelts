@@ -4,6 +4,9 @@ process.umask(0o027);
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
+const zlib = require('zlib');
+const { promisify } = require('util');
+const gzipAsync = promisify(zlib.gzip);
 const express = require('express');
 const compression = require('compression');
 const C = require('./src/config');
@@ -55,19 +58,44 @@ function readToken(tok) {
     return { ...p, sig };
   } catch { return null; }
 }
-const cookies = (req) => Object.fromEntries((req.headers.cookie || '').split(';').map((c) => c.trim().split('=')).filter((x) => x[0]).map(([k, ...v]) => [k, decodeURIComponent(v.join('='))]));
+const decCookie = (s) => { try { return decodeURIComponent(s); } catch { return s; } };
+const cookies = (req) => Object.fromEntries((req.headers.cookie || '').split(';').map((c) => c.trim().split('=')).filter((x) => x[0]).map(([k, ...v]) => [k, decCookie(v.join('='))]));
 const safeEq = (a, b) => crypto.timingSafeEqual(crypto.createHash('sha256').update(String(a)).digest(), crypto.createHash('sha256').update(String(b)).digest());
+function mesmaOrigemForm(req) {
+  const ref = req.get('Origin') || req.get('Referer');
+  if (!ref) return true;
+  try { return new URL(ref).host === req.get('Host'); } catch { return false; }
+}
+function lruGet(map, k) {
+  if (!map.has(k)) return undefined;
+  const v = map.get(k);
+  map.delete(k);
+  map.set(k, v);
+  return v;
+}
+function lruSet(map, k, v, max) {
+  if (map.has(k)) map.delete(k);
+  else if (map.size >= max) map.delete(map.keys().next().value);
+  map.set(k, v);
+}
 
-// tentativas de login erradas: por IP (10 em 15 min) e por usuário (8 em 15 min, de qualquer IP)
+// tentativas de login erradas: por IP (10 em 15 min), por IP+usuário (8 em 15 min) e teto global por usuário (30 em 15 min)
 const attempts = new Map();
 const JANELA = 15 * 60e3;
-function tooMany(chave, limite = 10) {
+function tooMany(chave, limite = 10, janela = JANELA) {
   const now = Date.now();
-  const a = (attempts.get(chave) || []).filter((t) => now - t < JANELA);
-  attempts.set(chave, a);
+  const prev = attempts.get(chave);
+  if (!prev) return false;
+  const a = prev.filter((t) => now - t < janela);
+  if (a.length) attempts.set(chave, a); else attempts.delete(chave);
   return a.length >= limite;
 }
-const falhou = (chave) => { const a = attempts.get(chave) || []; a.push(Date.now()); attempts.set(chave, a); };
+function falhou(chave) {
+  if (!attempts.has(chave) && attempts.size >= 10000) attempts.delete(attempts.keys().next().value);
+  const a = attempts.get(chave) || [];
+  a.push(Date.now());
+  attempts.set(chave, a);
+}
 setInterval(() => {
   const now = Date.now();
   for (const [k, a] of attempts) if (!a.length || now - a[a.length - 1] > JANELA) attempts.delete(k);
@@ -75,7 +103,7 @@ setInterval(() => {
 }, 5 * 60e3).unref();
 
 // ---------- cache por loja ----------
-const cacheLoja = new Map(); // id -> { sig, at, raw, loading }
+const cacheLoja = new Map(); // id -> { sig, at, raw, loading, reload }
 async function dadosLoja(loja, force) {
   let e = cacheLoja.get(loja.id);
   const sig = assinatura(loja);
@@ -83,17 +111,29 @@ async function dadosLoja(loja, force) {
   const fresco = e && e.raw && e.sig === sig && (!temDrive || Date.now() - e.at < CACHE_MIN * 60e3);
   if (fresco && !force) return e;
   if (!e) cacheLoja.set(loja.id, (e = {}));
+  if (e.loading) {
+    if (force) e.reload = true;
+    try { await e.loading; } catch (err) {
+      if (!force) {
+        if (e.raw) return { ...e, stale: err.message };
+        throw err;
+      }
+    }
+    if (!force && e.raw && e.sig === assinatura(loja)) return e;
+  }
   if (!e.loading) {
     e.loading = (async () => {
-      try {
+      do {
+        e.reload = false;
+        const sigAgora = assinatura(loja);
         const raw = await loadLoja(loja);
         raw.lojaNome = loja.nome;
         CLS.aplicar(raw.vendas); // produtos reclassificados pelo painel (contam na meta, comissão e royalties)
-        Object.assign(e, { sig, at: Date.now(), raw, erro: null });
+        Object.assign(e, { sig: sigAgora, at: Date.now(), raw, erro: null });
         console.log(`[dados] ${loja.id}: ${raw.vendas.length} vendas, ${raw.xml.length} cupons c/ CPF, ${raw.clientes.length} clientes em ${raw.ms} ms`);
         if (raw.avisos.length) console.warn(`[dados] ${loja.id} avisos:`, raw.avisos.join(' | '));
-      } finally { e.loading = null; }
-    })();
+      } while (e.reload);
+    })().finally(() => { e.loading = null; });
   }
   try { await e.loading; return e; }
   catch (err) {
@@ -107,19 +147,67 @@ function podeClientes(req) {
   if (req.perfil !== 'gerente') return false;
   return (C.telasDo(C.usuario(req.user)) || []).includes('clientes');
 }
-/** o que cada perfil recebe: gerente e vendedor não recebem dados de clientes; vendedor não vê o nome dos colegas */
+/** o que cada perfil recebe: gerente e vendedor não recebem dados de clientes; vendedor não vê o nome nem dados dos colegas */
 function filtrarPorPerfil(data, perfilDados) {
   if (perfilDados === 'completo') return data;
   const out = { ...data, xml: [], clientes: [], fidelidade: [] };
   if (perfilDados.startsWith('vendedor:')) {
     const eu = perfilDados.slice(9).trim().toUpperCase();
-    const outros = [...new Set(data.vendas.map((v) => v.vendedor))].filter((n) => n && n.trim().toUpperCase() !== eu).sort();
-    const apelido = new Map(outros.map((n, i) => [n, /^SEM VENDEDOR$/i.test(n.trim()) ? n : `COLEGA ${i + 1}`]));
-    out.vendas = data.vendas.map((v) => (apelido.has(v.vendedor) ? { ...v, vendedor: apelido.get(v.vendedor) } : v));
+    const chaveOrd = (n) => crypto.createHmac('sha256', SECRET).update('vend:' + String(n).trim().toUpperCase()).digest('hex');
+    const nomesVendas = [...new Set(data.vendas.map((v) => v.vendedor))].filter((n) => n && n.trim().toUpperCase() !== eu);
+    const nomesExtras = (data.metaCfgs || []).flatMap((m) => [
+      ...((m.ferias || []).map((f) => f && f.vendedor)),
+      ...((m.regras && m.regras.semMeta) || []),
+      ...((m.regras && m.regras.semComissao) || []),
+      ...((m.regras && m.regras.rateio && m.regras.rateio.exclui) || []),
+    ]).filter((n) => n && String(n).trim().toUpperCase() !== eu && !/^SEM VENDEDOR$/i.test(String(n).trim()));
+    const todosOutros = new Map();
+    for (const n of [...nomesVendas, ...nomesExtras]) {
+      const k = String(n).trim().toUpperCase();
+      if (k && k !== eu && !todosOutros.has(k)) todosOutros.set(k, n);
+    }
+    const ordenados = [...todosOutros.keys()].filter((k) => k !== 'SEM VENDEDOR').sort((a, b) => chaveOrd(a).localeCompare(chaveOrd(b)));
+    const apelidoUpper = new Map(ordenados.map((k, i) => [k, `COLEGA ${i + 1}`]));
+    apelidoUpper.set('SEM VENDEDOR', 'SEM VENDEDOR');
+    const mapearNome = (n) => {
+      if (!n) return n;
+      const k = String(n).trim().toUpperCase();
+      if (k === eu) return n;
+      return apelidoUpper.get(k) || 'COLEGA';
+    };
+    out.vendas = data.vendas.map((v) => {
+      const k = v.vendedor ? String(v.vendedor).trim().toUpperCase() : '';
+      return k && k !== eu && apelidoUpper.has(k) ? { ...v, vendedor: apelidoUpper.get(k) } : v;
+    });
+    if (Array.isArray(data.metaCfgs)) {
+      out.metaCfgs = data.metaCfgs.map((m) => ({
+        ...m,
+        contabilidade: [],
+        escalaAjustes: {},
+        feriadosHoras: Object.fromEntries(Object.entries(m.feriadosHoras || {}).map(([ym, dias]) => [
+          ym,
+          Object.fromEntries(Object.entries(dias || {}).map(([dt, pp]) => [
+            dt,
+            Object.fromEntries(Object.entries(pp || {}).filter(([nm]) => String(nm).trim().toUpperCase() === eu)),
+          ])),
+        ])),
+        operacao: m.operacao ? {
+          ...m.operacao,
+          equipe: m.operacao.equipe ? { ...m.operacao.equipe, nomes: undefined, pessoas: undefined } : m.operacao.equipe,
+        } : null,
+        ferias: (m.ferias || []).map((f) => ({ ...f, vendedor: mapearNome(f.vendedor) })),
+        regras: m.regras ? {
+          ...m.regras,
+          semMeta: Array.isArray(m.regras.semMeta) ? m.regras.semMeta.map(mapearNome) : m.regras.semMeta,
+          semComissao: Array.isArray(m.regras.semComissao) ? m.regras.semComissao.map(mapearNome) : m.regras.semComissao,
+          rateio: m.regras.rateio ? { ...m.regras.rateio, exclui: Array.isArray(m.regras.rateio.exclui) ? m.regras.rateio.exclui.map(mapearNome) : [] } : m.regras.rateio,
+        } : null,
+      }));
+    }
   }
   return out;
 }
-const packCache = new Map(); // chave -> { k, body }
+const packCache = new Map(); // chave -> { k, buf, gz, etag }
 async function pacote(lojas, force, perfilDados = 'completo', desde = null) {
   const entradas = await Promise.all(lojas.map((l) => dadosLoja(l, force)));
   // metas vêm sempre da configuração atual (mudam pelo painel sem recarregar as planilhas)
@@ -129,12 +217,12 @@ async function pacote(lojas, force, perfilDados = 'completo', desde = null) {
     const r = entradas[i].raw;
     return { id: l.id, nome: atual.nome, nomesVenda: r.metaCfg?.nomesVenda || [], padrao: atual.meta ?? r.metaPlanilha ?? null, meses: atual.metas || {}, metaAuto: atual.metaAuto || null, regras: atual.regras || null, operacao: atual.operacao || null, ferias: atual.ferias || [], feriadosLocais: atual.feriadosLocais || [], feriadosHoras: atual.feriadosHoras || {}, feriadosHorario: atual.feriadosHorario || {}, escalaAjustes: atual.escalaAjustes || {}, wpp: atual.wppModelos || null, contabilidade: atual.contabilidade || [] };
   });
-  const k = entradas.map((e, i) => `${lojas[i].id}@${e.at}`).join('|') + '#' + JSON.stringify(metaCfgs) + '#' + perfilDados + '#' + (desde || '');
+  const k = entradas.map((e, i) => `${lojas[i].id}@${e.at}:${e.sig}`).join('|') + '#' + JSON.stringify(metaCfgs) + '#' + perfilDados + '#' + (desde || '');
   const chave = lojas.map((l) => l.id).join(',') + '|' + perfilDados + '|' + (desde || '');
-  const pc = packCache.get(chave);
+  const pc = lruGet(packCache, chave);
   const stale = entradas.map((e) => e.stale).filter(Boolean).join(' | ') || null;
   const at = Math.min(...entradas.map((e) => e.at));
-  if (pc && pc.k === k) return { body: pc.body, etag: pc.etag, at, stale };
+  if (pc && pc.k === k) return { buf: pc.buf, gz: pc.gz, etag: pc.etag, at, stale };
   let data = lojas.length === 1 ? { ...entradas[0].raw } : juntar(entradas.map((e) => e.raw));
   data.metaCfgs = metaCfgs;
   data.meta = metaCfgs.some((m) => m.padrao != null) ? metaCfgs.reduce((s, m) => s + (m.padrao || 0), 0) : null;
@@ -145,11 +233,11 @@ async function pacote(lojas, force, perfilDados = 'completo', desde = null) {
   if (desde) {
     data = { ...data, vendas: data.vendas.filter((v) => v.data >= desde), xml: (data.xml || []).filter((x) => !x.data || x.data >= desde) };
   }
-  const body = JSON.stringify(pack(data, { lojas: lojas.map((l) => ({ id: l.id, nome: l.nome })), perfil: perfilDados.split(':')[0], desde: desde && inicio && inicio < desde ? desde : null, inicio }));
-  const etag = '"' + require('crypto').createHash('sha1').update(body).digest('base64').slice(0, 27) + '"';
-  if (packCache.size > 40) packCache.clear();
-  packCache.set(chave, { k, body, etag });
-  return { body, etag, at, stale };
+  const buf = Buffer.from(JSON.stringify(pack(data, { lojas: lojas.map((l) => ({ id: l.id, nome: l.nome })), perfil: perfilDados.split(':')[0], desde: desde && inicio && inicio < desde ? desde : null, inicio })));
+  const gz = buf.length >= 1024 ? await gzipAsync(buf, { level: 6 }) : null;
+  const etag = '"' + crypto.createHash('sha1').update(buf).digest('base64').slice(0, 27) + '"';
+  lruSet(packCache, chave, { k, buf, gz, etag }, 40);
+  return { buf, gz, etag, at, stale };
 }
 
 // ---------- app ----------
@@ -161,7 +249,7 @@ app.use((req, res, next) => {
   res.set({
     'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY', 'Referrer-Policy': 'same-origin',
     'Content-Security-Policy': "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'",
-    'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), payment=()',
+    'Permissions-Policy': 'camera=(self), microphone=(), geolocation=(), payment=()',
     'Cross-Origin-Opener-Policy': 'same-origin',
     // HTTPS sempre (só quando o painel roda atrás do HTTPS, COOKIE_SECURE=true)
     ...(SECURE_COOKIE ? { 'Strict-Transport-Security': 'max-age=31536000; includeSubDomains' } : {}),
@@ -170,49 +258,110 @@ app.use((req, res, next) => {
 });
 
 const pub = path.join(__dirname, 'public');
+
+// ---------- pacote único de JS/CSS da tela (pré-comprimido em Brotli + Gzip, cache imutável por hash) ----------
+const APP_SCRIPTS = [
+  'core.js', 'components.js', 'dicas.js', 'rules.js', 'pages.js', 'fidelidade.js',
+  'clientes.js', 'campanhas.js', 'espera.js', 'extras.js', 'contabilidade.js',
+  'estoque.js', 'devolucao.js', 'precos.js', 'inventario.js', 'nfsaida.js',
+  'site.js', 'inicio.js', 'pedido.js', 'dre.js', 'mapa.js', 'feriados.js',
+  'config.js', 'script.js', 'fechamento.js', 'sistema.js', 'main.js',
+];
+let bundleMem = null, bundleCheckEm = 0;
+function comprimirAsset(buf) {
+  return {
+    raw: buf,
+    gz: zlib.gzipSync(buf, { level: 6 }),
+    br: zlib.brotliCompressSync(buf, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 5 } }),
+  };
+}
+function obterBundle() {
+  const agora = Date.now();
+  if (bundleMem && agora - bundleCheckEm < 1500) return bundleMem;
+  bundleCheckEm = agora;
+  const arqs = [path.join(pub, 'index.html'), path.join(pub, 'styles.css'), ...APP_SCRIPTS.map((f) => path.join(pub, 'js', f))];
+  const mtimes = arqs.map((f) => { try { return fs.statSync(f).mtimeMs; } catch { return 0; } }).join(',');
+  if (bundleMem && bundleMem.mtimes === mtimes) return bundleMem;
+  const cssBuf = fs.readFileSync(path.join(pub, 'styles.css'));
+  const jsPartes = ['"use strict";'];
+  for (const f of APP_SCRIPTS) jsPartes.push(`/* === ${f} === */\n;` + fs.readFileSync(path.join(pub, 'js', f), 'utf8') + '\n;');
+  const jsBuf = Buffer.from(jsPartes.join('\n'), 'utf8');
+  const htmlCru = fs.readFileSync(path.join(pub, 'index.html'), 'utf8');
+  const v = crypto.createHash('sha256').update(cssBuf).update(jsBuf).update(htmlCru).digest('hex').slice(0, 12);
+  const html = htmlCru
+    .replace(/\/styles\.css(\?v=[^"']*)?/g, `/styles.css?v=${v}`)
+    .replace(/\/app\.js(\?v=[^"']*)?/g, `/app.js?v=${v}`);
+  bundleMem = { mtimes, v, html: comprimirAsset(Buffer.from(html, 'utf8')), css: comprimirAsset(cssBuf), js: comprimirAsset(jsBuf) };
+  return bundleMem;
+}
+function responderAsset(req, res, asset, contentType, imutavel, etag) {
+  if (etag) {
+    res.set('ETag', etag);
+    if (req.get('If-None-Match') === etag) return res.status(304).end();
+  }
+  res.set({
+    'Content-Type': contentType,
+    'Cache-Control': imutavel ? 'public, max-age=31536000, immutable' : 'no-cache',
+    Vary: 'Accept-Encoding',
+  });
+  const ae = String(req.headers['accept-encoding'] || '');
+  if (/\bbr\b/.test(ae) && asset.br) { res.set('Content-Encoding', 'br'); return res.end(asset.br); }
+  if (/\bgzip\b/.test(ae) && asset.gz) { res.set('Content-Encoding', 'gzip'); return res.end(asset.gz); }
+  return res.end(asset.raw);
+}
+obterBundle(); // aquece na subida
+
 app.get('/health', (req, res) => res.json({ ok: true, lojasEmCache: [...cacheLoja.entries()].filter(([, e]) => e.at).map(([id, e]) => ({ id, em: new Date(e.at).toISOString() })) }));
 app.get('/login', (req, res) => res.sendFile(path.join(pub, 'login.html')));
 ['login.css', 'login.js', 'favicon.svg', 'trocar-senha.js'].forEach((f) => app.get('/' + f, (req, res) => res.sendFile(path.join(pub, f))));
 const CHART_JS = path.join(path.dirname(require.resolve('chart.js')), 'chart.umd.min.js');
-app.get('/vendor/chart.umd.js', (req, res) => res.sendFile(CHART_JS));
+app.get('/vendor/chart.umd.js', (req, res) => res.sendFile(CHART_JS, { maxAge: '7d' }));
 // PDF no navegador (fechamento do mês que vai anexado ao e-mail da contabilidade)
 const H2C_JS = path.join(path.dirname(require.resolve('html2canvas/package.json')), 'dist', 'html2canvas.min.js');
 const JSPDF_JS = path.join(path.dirname(require.resolve('jspdf/package.json')), 'dist', 'jspdf.umd.min.js');
-app.get('/vendor/html2canvas.js', (req, res) => res.sendFile(H2C_JS));
-app.get('/vendor/jspdf.js', (req, res) => res.sendFile(JSPDF_JS));
+app.get('/vendor/html2canvas.js', (req, res) => res.sendFile(H2C_JS, { maxAge: '7d' }));
+app.get('/vendor/jspdf.js', (req, res) => res.sendFile(JSPDF_JS, { maxAge: '7d' }));
 
-app.post('/login', express.urlencoded({ extended: false }), (req, res) => {
+app.post('/login', express.urlencoded({ extended: false }), async (req, res) => {
+  if (!mesmaOrigemForm(req)) return res.status(403).type('text/plain; charset=utf-8').send('Origem inválida.');
   const ip = req.ip;
   const cfg = C.get();
   const user = String(req.body.usuario || '').trim().toLowerCase().slice(0, 80);
   const pass = String(req.body.senha || '').slice(0, 200);
-  const chaveU = 'u:' + user;
-  if (tooMany(ip) || tooMany(chaveU, 8)) return res.redirect('/login?e=limite');
+  const chaveU = `u:${ip}:${user}`, chaveUG = `ug:${user}`;
+  if (tooMany(ip) || (user && (tooMany(chaveU, 8) || tooMany(chaveUG, 30)))) return res.redirect('/login?e=limite');
   const u = user && user !== '*' ? cfg.usuarios[user] : null;
-  if (u && u.ativo && C.confereSenha(pass, u.senha)) {
+  // verifica sempre com scrypt assíncrono em tempo constante (mesmo se o usuário não existir ou estiver inativo)
+  const senhaOk = await C.confereSenhaAsync(pass, u && u.ativo ? u.senha : null);
+  if (u && u.ativo && senhaOk) {
     if (C.expirado(u)) { attempts.delete(ip); attempts.delete(chaveU); return res.redirect('/login?e=expirou&ate=' + u.acessoAte); }
     if (C.lojasDoUsuario(user).length || u.perfil === 'admin') {
       attempts.delete(ip); attempts.delete(chaveU);
       // senha antiga ainda em texto puro: passa a ser guardada com scrypt
-      if (String(u.senha).startsWith('plain$')) C.alterar((c) => { c.usuarios[user].senha = C.hashSenha(pass); });
+      if (String(u.senha).startsWith('plain$')) {
+        const novoHash = await C.hashSenhaAsync(pass);
+        C.alterar((c) => { if (c.usuarios[user]) c.usuarios[user].senha = novoHash; });
+      }
       C.registrarAcesso(user);
       res.cookie('ts_sess', makeToken(user), { httpOnly: true, sameSite: 'lax', secure: SECURE_COOKIE, maxAge: SESSION_HOURS * 3600e3 });
       return res.redirect(u.trocarSenha ? '/trocar-senha?primeiro=1' : '/');
     }
   }
-  falhou(ip); falhou(chaveU);
+  falhou(ip);
+  if (user) { falhou(chaveU); falhou(chaveUG); }
   const lojaQ = String(req.body.loja || '').toLowerCase().replace(/[^a-z0-9_-]/g, '');
   res.redirect('/login?e=1' + (lojaQ ? '&loja=' + lojaQ : ''));
 });
 app.post('/logout', (req, res) => {
+  if (!mesmaOrigemForm(req)) return res.status(403).type('text/plain; charset=utf-8').send('Origem inválida.');
   const s = readToken(cookies(req).ts_sess);
   if (s) encerrados.set(s.sig, s.exp);
   res.clearCookie('ts_sess', { httpOnly: true, sameSite: 'lax', secure: SECURE_COOKIE });
   res.redirect('/login');
 });
 
-// ---------- upload do script diário (token, sem login) ----------
-app.post('/api/upload/:loja/:arquivo', express.raw({ type: () => true, limit: `${MAX_UPLOAD_MB}mb` }), async (req, res) => {
+// ---------- upload do script diário (token verificado ANTES de ler o corpo de até 80 MB) ----------
+function autenticarUpload(req, res, next) {
   const cfg = C.get();
   const loja = cfg.lojas.find((l) => l.id === String(req.params.loja).toLowerCase());
   const tokens = [cfg.uploadToken, loja && loja.uploadToken].filter(Boolean);
@@ -222,6 +371,12 @@ app.post('/api/upload/:loja/:arquivo', express.raw({ type: () => true, limit: `$
   if (!loja) return res.status(404).json({ erro: `Loja "${req.params.loja}" não existe no lojas.json.` });
   const nome = String(req.params.arquivo).replace(/\.xlsx$/i, '');
   if (!C.ARQUIVOS[nome]) return res.status(400).json({ erro: `Arquivo inválido. Use um destes: ${Object.keys(C.ARQUIVOS).join(', ')}` });
+  req.lojaUpload = loja;
+  req.nomeUpload = nome;
+  next();
+}
+app.post('/api/upload/:loja/:arquivo', autenticarUpload, express.raw({ type: () => true, limit: `${MAX_UPLOAD_MB}mb` }), async (req, res) => {
+  const loja = req.lojaUpload, nome = req.nomeUpload;
   const buf = req.body;
   if (!Buffer.isBuffer(buf) || buf.length < 100 || buf[0] !== 0x50 || buf[1] !== 0x4b) return res.status(400).json({ erro: 'O conteúdo enviado não é um .xlsx.' });
   try {
@@ -242,12 +397,20 @@ app.post('/api/upload/:loja/:arquivo', express.raw({ type: () => true, limit: `$
 
 // ---------- apresentação pública (dados FICTÍCIOS, sem login) ----------
 // só arquivos estáticos (js/css) e os dados inventados; nada da configuração real é lido aqui
+app.get('/app.js', (req, res) => {
+  const b = obterBundle();
+  responderAsset(req, res, b.js, 'application/javascript; charset=utf-8', req.query.v === b.v, `"js-${b.v}"`);
+});
+app.get('/styles.css', (req, res) => {
+  const b = obterBundle();
+  responderAsset(req, res, b.css, 'text/css; charset=utf-8', req.query.v === b.v, `"css-${b.v}"`);
+});
 app.use('/js', express.static(path.join(pub, 'js'), { index: false, maxAge: 0 }));
-app.get('/styles.css', (req, res) => res.sendFile(path.join(pub, 'styles.css')));
 app.get(['/apresentacao', '/apresentacao/'], (req, res) => {
   if (!DEMO.disponivel()) return res.status(404).type('text/plain; charset=utf-8').send('Apresentação indisponível.');
   res.set('X-Robots-Tag', 'noindex');
-  res.sendFile(path.join(pub, 'index.html'));
+  const b = obterBundle();
+  responderAsset(req, res, b.html, 'text/html; charset=utf-8', false, `"html-${b.v}"`);
 });
 // a apresentação entra como administrador (tudo visível, nada é salvo: o navegador barra qualquer alteração)
 app.get('/api/demo/eu', (req, res) => res.json({ usuario: 'apresentacao', nome: 'Visitante', demo: true, perfil: 'admin', vendedor: '',
@@ -443,19 +606,25 @@ app.use((req, res, next) => {
 
 // ---------- trocar a própria senha ----------
 app.get('/trocar-senha', (req, res) => res.sendFile(path.join(pub, 'trocar-senha.html')));
-app.post('/trocar-senha', express.urlencoded({ extended: false }), (req, res) => {
+app.post('/trocar-senha', express.urlencoded({ extended: false }), async (req, res) => {
+  if (!mesmaOrigemForm(req)) return res.status(403).type('text/plain; charset=utf-8').send('Origem inválida.');
   const ip = req.ip;
   const volta = (e) => res.redirect('/trocar-senha?e=' + e + (C.usuario(req.user)?.trocarSenha ? '&primeiro=1' : ''));
   if (req.user === '*' || !C.get().usuarios[req.user]) return volta('usuario');
   if (tooMany(ip)) return volta('limite');
   const u = C.get().usuarios[req.user];
-  const atual = String(req.body.atual || ''), nova = String(req.body.nova || ''), confirma = String(req.body.confirma || '');
-  if (!C.confereSenha(atual, u.senha)) { falhou(ip); return volta('atual'); }
-  if (nova.length < 8) return volta('curta');
+  const atual = String(req.body.atual || '').slice(0, 200), nova = String(req.body.nova || ''), confirma = String(req.body.confirma || '');
+  if (!(await C.confereSenhaAsync(atual, u.senha))) { falhou(ip); return volta('atual'); }
+  if (nova.length < 8 || nova.length > 200) return volta('curta');
   if (nova !== confirma) return volta('confirma');
   if (nova === atual) return volta('igual');
   if (nova.toLowerCase().includes(req.user.toLowerCase())) return volta('usuario-na-senha');
-  C.alterar((cfg) => { const x = cfg.usuarios[req.user]; x.senha = C.hashSenha(nova); x.trocarSenha = false; x.senhaTrocadaEm = new Date().toISOString(); });
+  const novoHash = await C.hashSenhaAsync(nova);
+  C.alterar((cfg) => {
+    const x = cfg.usuarios[req.user];
+    if (!x) return;
+    x.senha = novoHash; x.sessao = (x.sessao || 0) + 1; x.trocarSenha = false; x.senhaTrocadaEm = new Date().toISOString();
+  });
   C.auditar(req.user, 'trocou a própria senha', req.user, { obrigatoria: !!u.trocarSenha });
   // a senha nova encerra as outras sessões; esta continua com um cookie novo
   res.cookie('ts_sess', makeToken(req.user), { httpOnly: true, sameSite: 'lax', secure: SECURE_COOKIE, maxAge: SESSION_HOURS * 3600e3 });
@@ -574,12 +743,10 @@ app.delete('/api/campanhas/:id', (req, res) => {
   res.json({ ok: true });
 });
 
-// versão dos arquivos da tela (o ?v= do index.html): a aba aberta compara e oferece recarregar depois de uma atualização
+// versão dos arquivos da tela (o hash automático do bundle): a aba aberta compara e oferece recarregar depois de uma atualização
 app.get('/api/versao', (req, res) => {
-  let v = null;
-  try { const m = fs.readFileSync(path.join(pub, 'index.html'), 'utf8').match(/\?v=([\w.-]+)/); v = m && m[1]; } catch { /* sem versão */ }
   res.set('Cache-Control', 'no-store');
-  res.json({ v });
+  res.json({ v: obterBundle().v });
 });
 app.get('/api/eu', (req, res) => {
   const u = C.get().usuarios[req.user];
@@ -608,7 +775,12 @@ app.get('/api/dados', async (req, res) => {
     if (req.get('If-None-Match') === d.etag) { res.set('X-Dados-Em', new Date(d.at).toISOString()); return res.status(304).end(); }
     res.set('X-Dados-Em', new Date(d.at).toISOString());
     if (d.stale) res.set('X-Dados-Aviso', encodeURIComponent(d.stale));
-    res.type('application/json').send(d.body);
+    res.set({ 'Content-Type': 'application/json; charset=utf-8', Vary: 'Accept-Encoding' });
+    if (d.gz && /\bgzip\b/.test(String(req.headers['accept-encoding'] || ''))) {
+      res.set('Content-Encoding', 'gzip');
+      return res.end(d.gz);
+    }
+    res.end(d.buf);
   } catch (e) {
     console.error('[dados] erro:', e.message);
     res.status(502).json({ erro: e.message });
@@ -618,7 +790,7 @@ app.get('/api/dados', async (req, res) => {
 // ---------- comparativo com a rede (anônimo) e alertas ----------
 async function dadosParaIndicadores(loja) {
   const e = await dadosLoja(loja);
-  return { id: loja.id, loja, vendas: e.raw.vendas, metaPlanilha: e.raw.metaPlanilha };
+  return { id: loja.id, loja, vendas: e.raw.vendas, metaPlanilha: e.raw.metaPlanilha, sig: e.sig };
 }
 const redeCache = new Map();
 app.get('/api/rede', async (req, res) => {
@@ -630,9 +802,9 @@ app.get('/api/rede', async (req, res) => {
     const todas = C.get().lojas;
     const partes = [];
     for (const l of todas) { try { partes.push(await dadosParaIndicadores(l)); } catch { /* loja sem dados */ } }
-    const chave = ym + '|' + loja.id + '|' + partes.map((p) => p.id + ':' + p.vendas.length + ':' + JSON.stringify(p.loja.metas || {}) + (p.loja.meta ?? '')).join(',');
-    let r = redeCache.get(chave);
-    if (!r) { r = IND.rede(partes, ym, loja.id); redeCache.clear(); redeCache.set(chave, r); }
+    const chave = ym + '|' + loja.id + '|' + partes.map((p) => p.id + ':' + p.sig + ':' + JSON.stringify(p.loja.metas || {}) + (p.loja.meta ?? '')).join(',');
+    let r = lruGet(redeCache, chave);
+    if (!r) { r = IND.rede(partes, ym, loja.id); lruSet(redeCache, chave, r, 40); }
     res.set('Cache-Control', 'no-store');
     res.json(r);
   } catch (e) { res.status(500).json({ erro: e.message }); }
@@ -648,9 +820,9 @@ app.get('/api/rede/comparativos', async (req, res) => {
   try {
     const partes = [];
     for (const l of C.get().lojas) { try { partes.push(await dadosParaIndicadores(l)); } catch { /* loja sem dados */ } }
-    const chave = `${de}|${ate}|${tipo}|` + partes.map((p) => p.id + ':' + p.vendas.length).join(',');
-    let r = redeCompCache.get(chave);
-    if (!r) { r = RCOMP.comparativos(partes, de, ate, tipo); if (redeCompCache.size > 30) redeCompCache.clear(); redeCompCache.set(chave, r); }
+    const chave = `${de}|${ate}|${tipo}|` + partes.map((p) => p.id + ':' + p.sig).join(',');
+    let r = lruGet(redeCompCache, chave);
+    if (!r) { r = RCOMP.comparativos(partes, de, ate, tipo); lruSet(redeCompCache, chave, r, 40); }
     res.set('Cache-Control', 'no-store');
     res.json(r);
   } catch (e) { res.status(500).json({ erro: e.message }); }
@@ -745,24 +917,36 @@ async function anexosNf(loja, d) {
   } catch (e) { console.error('[devolução] DANFE:', e.message); }
   return out;
 }
+const devEnviando = new Set();
 /** manda o e-mail da devolução pelo Gmail da loja (ou o servidor geral), com a NF-e (PDF e XML), a planilha e as fotos */
-async function enviarDevolucao(loja, d) {
-  const para = DEV.destinatarios(loja.id);
-  if (!para.length) return DEV.atualizar(loja.id, d.id, (x) => { x.email = { estado: 'sem_destinatarios' }; });
-  const NOTIF = require('./src/notificacoes');
-  const cfg = NOTIF.ler();
-  const lc = (cfg.lojas || {})[loja.id];
-  const smtp = lc && lc.email && lc.email.host ? lc.email : cfg.email;
-  const nome = (loja.marca && loja.marca.nome) || loja.nome;
+async function enviarDevolucao(loja, d, forcarReenvio = false) {
+  if (!d) return d;
+  const chaveLock = `${loja.id}:${d.id}`;
+  if (devEnviando.has(chaveLock)) return DEV.ler(loja.id, d.id) || d;
+  devEnviando.add(chaveLock);
   try {
-    const xlsx = await DEV.planilha(loja.id, d, nome);
-    const anexos = [...await anexosNf(loja, d), { filename: `devolucao-NF${d.nota.nf}.xlsx`, content: xlsx }];
-    d = DEV.ler(loja.id, d.id) || d; // acharNfDevolucao pode ter guardado o número da nota
-    d.itens.forEach((it, n) => { for (let k = 0; k < it.fotos; k++) anexos.push({ filename: `NF${d.nota.nf}-${it.cod}-foto${k + 1}.jpg`, path: DEV.arqFoto(loja.id, d.id, n, k) }); });
-    await NOTIF.enviarEmail(para.join(', '), DEV.montarAssunto(loja.id, d, nome), DEV.textoEmail(d, nome), null, smtp, anexos);
-    return DEV.atualizar(loja.id, d.id, (x) => { x.email = { estado: 'enviado', em: new Date().toISOString(), para, comNota: !!(x.nfe && x.nfe.chave) }; });
-  } catch (e) {
-    return DEV.atualizar(loja.id, d.id, (x) => { x.email = { estado: 'erro', erro: String(e.message || e).slice(0, 300), em: new Date().toISOString() }; });
+    const fresco = DEV.ler(loja.id, d.id) || d;
+    if (!forcarReenvio && fresco.email && fresco.email.estado === 'enviado') return fresco;
+    d = fresco;
+    const para = DEV.destinatarios(loja.id);
+    if (!para.length) return DEV.atualizar(loja.id, d.id, (x) => { x.email = { estado: 'sem_destinatarios' }; });
+    const NOTIF = require('./src/notificacoes');
+    const cfg = NOTIF.ler();
+    const lc = (cfg.lojas || {})[loja.id];
+    const smtp = lc && lc.email && lc.email.host ? lc.email : cfg.email;
+    const nome = (loja.marca && loja.marca.nome) || loja.nome;
+    try {
+      const xlsx = await DEV.planilha(loja.id, d, nome);
+      const anexos = [...await anexosNf(loja, d), { filename: `devolucao-NF${d.nota.nf}.xlsx`, content: xlsx }];
+      d = DEV.ler(loja.id, d.id) || d; // acharNfDevolucao pode ter guardado o número da nota
+      d.itens.forEach((it, n) => { for (let k = 0; k < it.fotos; k++) anexos.push({ filename: `NF${d.nota.nf}-${it.cod}-foto${k + 1}.jpg`, path: DEV.arqFoto(loja.id, d.id, n, k) }); });
+      await NOTIF.enviarEmail(para.join(', '), DEV.montarAssunto(loja.id, d, nome), DEV.textoEmail(d, nome), null, smtp, anexos);
+      return DEV.atualizar(loja.id, d.id, (x) => { x.email = { estado: 'enviado', em: new Date().toISOString(), para, comNota: !!(x.nfe && x.nfe.chave) }; });
+    } catch (e) {
+      return DEV.atualizar(loja.id, d.id, (x) => { x.email = { estado: 'erro', erro: String(e.message || e).slice(0, 300), em: new Date().toISOString() }; });
+    }
+  } finally {
+    devEnviando.delete(chaveLock);
   }
 }
 /** pede ao robô a NF-e de devolução (gravada no AppNext sem concluir) */
@@ -799,14 +983,19 @@ app.get('/api/devolucoes', async (req, res) => {
   res.json({ devolucoes: ds, destinatarios: DEV.destinatarios(loja.id), assunto: DEV.assunto(loja.id) });
 });
 // de tempos em tempos: devoluções esperando a NF-e autorizada para mandar o e-mail
+let devCiclo = false;
 setInterval(async () => {
-  for (const loja of C.get().lojas) {
-    try {
-      for (const d of DEV.lista(loja.id).slice(0, 30)) {
-        if (d.email && d.email.estado === 'aguardando_nf' && d.nfe && d.nfe.estado === 'ok' && acharNfDevolucao(loja, d)) await enviarDevolucao(loja, DEV.ler(loja.id, d.id));
-      }
-    } catch (e) { console.error(`[devolução] ${loja.id}:`, e.message); }
-  }
+  if (devCiclo) return;
+  devCiclo = true;
+  try {
+    for (const loja of C.get().lojas) {
+      try {
+        for (const d of DEV.lista(loja.id).slice(0, 30)) {
+          if (d.email && d.email.estado === 'aguardando_nf' && d.nfe && d.nfe.estado === 'ok' && acharNfDevolucao(loja, d)) await enviarDevolucao(loja, DEV.ler(loja.id, d.id));
+        }
+      } catch (e) { console.error(`[devolução] ${loja.id}:`, e.message); }
+    }
+  } finally { devCiclo = false; }
 }, 10 * 60e3).unref();
 app.get('/api/devolucoes/:id/planilha', async (req, res) => {
   const loja = lojaDev(req, res); if (!loja) return;
@@ -856,7 +1045,7 @@ app.post('/api/devolucoes/:id/reenviar', express.json({ limit: '1kb' }), async (
   const loja = lojaDev(req, res); if (!loja) return;
   const d = DEV.ler(loja.id, String(req.params.id));
   if (!d) return res.status(404).json({ erro: 'Devolução não encontrada.' });
-  res.json({ ok: true, devolucao: await enviarDevolucao(loja, d) });
+  res.json({ ok: true, devolucao: await enviarDevolucao(loja, d, true) });
 });
 // ---------- nova NF-e de saída: o robô preenche no AppNext e salva como RASCUNHO (a loja confere e transmite) ----------
 const NFE = require('./src/nfe');
@@ -1005,6 +1194,11 @@ async function catInv(loja) {
   try { vendas = (await dadosLoja(loja)).raw.vendas; } catch { /* sem vendas: sem o tipo de chá */ }
   return INV.catalogo(ES.atual(loja.id), TAB.resumo(loja.id), vendas);
 }
+app.use('/api/inventario', (req, res, next) => {
+  if (req.method === 'GET') return next();
+  if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
+  next();
+});
 app.get('/api/inventario', async (req, res) => {
   const loja = lojaInv(req, res); if (!loja) return;
   const est = ES.atual(loja.id);
@@ -1014,8 +1208,9 @@ app.get('/api/inventario', async (req, res) => {
   for (const i of cat) if (i.grupo && i.sub) { const k = i.grupo + '|' + i.sub; subs.set(k, (subs.get(k) || 0) + 1); }
   const fams = new Map();
   for (const i of cat) { const f = INV.familia(i.tipo); if (f) fams.set(f, (fams.get(f) || 0) + 1); }
+  const contagens = req.perfil === 'vendedor' ? INV.lista(loja.id).map((x) => ({ ...x, ajuste: null })) : INV.lista(loja.id);
   res.json({
-    contagens: INV.lista(loja.id), estoqueEm: est && est.em, perfil: req.perfil,
+    contagens, estoqueEm: est && est.em, perfil: req.perfil,
     grupos: conta('grupo'), subs: [...subs].map(([k, n]) => [...k.split('|'), n]), tipos: conta('tipo'), familias: [...fams].sort((a, b) => a[0].localeCompare(b[0], 'pt-BR')),
     kg: cat.filter((i) => i.un === 'Kg' && i.tipo).length,
   });
@@ -1105,15 +1300,9 @@ app.post('/api/inventario/contagem/:id/enviar', express.json({ limit: '2kb' }), 
 app.put('/api/inventario/contagem/:id/zerar', express.json({ limit: '20kb' }), (req, res) => {
   const loja = lojaInv(req, res); if (!loja) return;
   if (req.perfil === 'vendedor') return res.status(403).json({ erro: 'Peça para a gerente.' });
-  if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
   const r = INV.zerar(loja.id, String(req.params.id), req.body || {});
   if (r.erro) return res.status(400).json({ erro: r.erro });
   res.json({ ok: true, zerar: r.ok });
-});
-app.use('/api/inventario', (req, res, next) => {
-  if (req.method === 'GET') return next();
-  if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
-  next();
 });
 app.post('/api/inventario', express.json({ limit: '200kb' }), async (req, res) => {
   const loja = lojaInv(req, res); if (!loja) return;
@@ -1161,7 +1350,7 @@ app.get('/api/inventario/contagem/:id/planilha', async (req, res) => {
   const buf = await INV.planilha(linhas);
   INV.marcarGerado(loja.id, c.id, req.user, linhas);
   C.auditar(req.user, 'gerou a planilha de inventário', loja.id, { loja: loja.id, nome: c.nome, itens: linhas.length, zerados: linhas.filter((l) => l.zerado).length });
-  const nome = `Inventario_${String(loja.nome).normalize('NFD').replace(/[^\w]+/g, '_')}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+  const nome = `Inventario_${String(loja.nome).normalize('NFD').replace(/[^\w]+/g, '_')}_${C.hojeBR()}.xlsx`;
   res.set('Content-Disposition', `attachment; filename="${nome}"`).type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet').send(Buffer.from(buf));
 });
 
@@ -1175,7 +1364,7 @@ app.get('/api/inventario/contagem/:id/desfazer', (req, res) => {
   INV.planilha(linhas).then((buf) => {
     INV.marcarDesfazer(loja.id, c.id, req.user, 'gerado');
     C.auditar(req.user, 'gerou a planilha para desfazer um inventário', loja.id, { loja: loja.id, nome: c.nome, itens: linhas.length });
-    res.set('Content-Disposition', `attachment; filename="Desfazer_inventario_${new Date().toISOString().slice(0, 10)}.xlsx"`).type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet').send(Buffer.from(buf));
+    res.set('Content-Disposition', `attachment; filename="Desfazer_inventario_${C.hojeBR()}.xlsx"`).type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet').send(Buffer.from(buf));
   }).catch((e) => res.status(500).json({ erro: e.message }));
 });
 
@@ -1183,19 +1372,26 @@ app.get('/api/inventario/contagem/:id/desfazer', (req, res) => {
 const ESP = require('./src/espera');
 const FIx = require('./src/fidelidade');
 const lojaEsp = (req) => req.lojas.find((l) => l.id === String((req.body && req.body.loja) || req.query.loja || ''));
+const esperaAvaliando = new Set();
 /** confere chegadas e compras com os dados da loja; avisa no Telegram quando algo chegou */
 async function avaliarEspera(loja) {
-  let raw = null;
-  try { raw = (await dadosLoja(loja)).raw; } catch { /* sem vendas: confere só a chegada */ }
-  const fx = FIx.eventos(loja.id);
-  const novos = ESP.avaliar(loja.id, { notas: ES.notas(loja.id), estoque: ES.atual(loja.id), xml: raw ? raw.xml : [], vendas: raw ? raw.vendas : null, fixe: fx ? fx.eventos : [] });
-  if (novos.length) {
-    const porProd = new Map();
-    for (const p of novos) for (const i of p.itens) porProd.set(i.desc, (porProd.get(i.desc) || 0) + 1);
-    const txt = `⏳ Lista de espera · ${loja.nome}\nChegou:\n` + [...porProd].map(([d, n]) => `• ${d}: ${n} ${n === 1 ? 'cliente esperando' : 'clientes esperando'}`).join('\n') + '\nAbra Clientes → Lista de espera para avisar.';
-    NOTIF.avisarLoja(loja.id, txt).catch((e) => console.error('[espera] aviso:', e.message));
+  if (esperaAvaliando.has(loja.id)) return [];
+  esperaAvaliando.add(loja.id);
+  try {
+    let raw = null;
+    try { raw = (await dadosLoja(loja)).raw; } catch { /* sem vendas: confere só a chegada */ }
+    const fx = FIx.eventos(loja.id);
+    const novos = ESP.avaliar(loja.id, { notas: ES.notas(loja.id), estoque: ES.atual(loja.id), xml: raw ? raw.xml : [], vendas: raw ? raw.vendas : null, fixe: fx ? fx.eventos : [] });
+    if (novos.length) {
+      const porProd = new Map();
+      for (const p of novos) for (const i of p.itens) porProd.set(i.desc, (porProd.get(i.desc) || 0) + 1);
+      const txt = `⏳ Lista de espera · ${loja.nome}\nChegou:\n` + [...porProd].map(([d, n]) => `• ${d}: ${n} ${n === 1 ? 'cliente esperando' : 'clientes esperando'}`).join('\n') + '\nAbra Clientes → Lista de espera para avisar.';
+      NOTIF.avisarLoja(loja.id, txt).catch((e) => console.error('[espera] aviso:', e.message));
+    }
+    return novos;
+  } finally {
+    esperaAvaliando.delete(loja.id);
   }
-  return novos;
 }
 setInterval(() => { for (const l of C.get().lojas) avaliarEspera(l).catch((e) => console.error(`[espera] ${l.id}:`, e.message)); }, 15 * 60e3).unref();
 // lista de espera: vendedoras sempre; gerente só com a tela liberada em Configurações → Usuários
@@ -1215,7 +1411,7 @@ app.get('/api/espera', async (req, res) => {
     if (!k) return;
     if (!vMap.has(k) || (vMap.get(k) === vMap.get(k).toLowerCase() && s !== s.toLowerCase())) vMap.set(k, s);
   };
-  const corte = new Date(Date.now() - 120 * 864e5).toISOString().slice(0, 10);
+  const corte = C.diaSP(Date.now() - 120 * 864e5);
   if (raw && Array.isArray(raw.vendas)) for (const v of raw.vendas) if (!v.data || v.data >= corte) addV(v.vendedor);
   for (const p of d.pedidos) addV(p.vendedora);
   const vendedoras = [...vMap.values()].sort((a, b) => a.localeCompare(b, 'pt-BR'));
@@ -1241,18 +1437,27 @@ app.get('/api/espera/produtos', async (req, res) => {
   });
   res.json({ produtos: [...gen, ...achou0.filter((x) => !gen.some((g) => ESP.ESQ(g.desc) === ESP.ESQ(x.desc)))] });
 });
-// clientes para escolher (nome, CPF ou celular): no máximo 8, só com 3+ letras ou números
+// clientes para escolher (nome, CPF ou celular): no máximo 8; sem acesso a Clientes exige 6+ dígitos para CPF/celular e aplica limite de consultas
 app.get('/api/espera/clientes', async (req, res) => {
   const loja = lojaEsp(req);
   if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  const amplo = podeClientes(req);
+  const minDig = amplo ? 3 : 6;
   const q = String(req.query.q || '').trim(), qn = ESP.ESQ(q), qd = q.replace(/\D/g, '');
-  if (qn.length < 3 && qd.length < 3) return res.json({ clientes: [] });
+  const temNome = qn.length >= 3 && /[a-z]/.test(qn);
+  const temDig = qd.length >= minDig;
+  if (!temNome && !temDig) return res.json({ clientes: [] });
+  if (!amplo) {
+    const kEsp = 'espcli:' + req.user;
+    if (tooMany(kEsp, 45, 60e3)) return res.status(429).json({ erro: 'Muitas buscas seguidas. Aguarde um instante.' });
+    falhou(kEsp);
+  }
   let cl = [];
   try { cl = (await dadosLoja(loja)).raw.clientes || []; } catch { /* ok */ }
   const out = [];
   for (const c of cl) {
     const cel = String(c.celular || '').replace(/\D/g, '');
-    const ok = (qd.length >= 3 && (String(c.cpf).startsWith(qd) || cel.includes(qd))) || (qn.length >= 3 && /[a-z]/.test(qn) && ESP.ESQ(c.nome).includes(qn));
+    const ok = (temDig && (String(c.cpf).startsWith(qd) || cel.includes(qd))) || (temNome && ESP.ESQ(c.nome).includes(qn));
     if (ok) out.push({ cpf: c.cpf, nome: c.nome || '', celular: cel });
     if (out.length >= 8) break;
   }
@@ -1367,12 +1572,15 @@ app.post('/api/pedido/robo', express.json({ limit: '200kb' }), async (req, res) 
 const FX = require('./src/fixemail');
 const CADX = require('./src/cadastro');
 const fixeOcupado = new Set(), fixeUltimo = new Map();
+const emailBaseFixe = (s) => String(s || '').trim().toLowerCase().replace(/\+[^@]+@/, '@');
 async function verificarFixe(l) {
   fixeOcupado.add(l.id); fixeUltimo.set(l.id, Date.now());
   try {
     const NOTIF = require('./src/notificacoes');
     const nc = NOTIF.ler(), x = NOTIF.cfgLoja(nc, l.id);
-    const smtp = x.email && x.email.user && x.email.pass ? x.email : nc.email;
+    const { pedido } = FX.situacao(l.id);
+    const globalCompativel = nc.email && nc.email.user && nc.email.pass && pedido && pedido.email && emailBaseFixe(nc.email.user) === emailBaseFixe(pedido.email);
+    const smtp = x.email && x.email.user && x.email.pass ? x.email : globalCompativel ? nc.email : null;
     const r = await FX.verificar(l.id, smtp, async (buf) => {
       // Logs (movimentos do programa de fidelidade) ou Base de leads (cadastro): decide pelo conteúdo
       const FI = require('./src/fidelidade');
@@ -1416,7 +1624,7 @@ function pedidoContabilidade(req, res) {
   const NOTIF = require('./src/notificacoes');
   const nc = NOTIF.ler();
   const x = NOTIF.cfgLoja(nc, loja.id);
-  const smtp = x.email && x.email.host && x.email.from ? x.email : nc.email && nc.email.host && nc.email.from ? nc.email : null;
+  const smtp = x.email && x.email.host && x.email.from ? x.email : (req.perfil === 'admin' && nc.email && nc.email.host && nc.email.from ? nc.email : null);
   if (!smtp) { res.status(400).json({ erro: 'A loja ainda não tem o Gmail configurado (Configurações → Lojas → Fechamento do dia).' }); return null; }
   // tira scripts e eventos do corpo (vai como e-mail; nada disso funciona lá)
   const corpo = b.html.replace(/<script[\s\S]*?<\/script>/gi, '').replace(/\son\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '');
@@ -1610,8 +1818,9 @@ app.get('/api/script', async (req, res) => {
   const c = scriptCache.get(loja.id);
   const d = disparos.get(loja.id);
   try {
-    let execucao = c && Date.now() - c.at < 10e3 ? c.execucao : null;
-    if (!execucao) {
+    const valido = c && Date.now() - c.at < 10e3;
+    let execucao = valido ? c.execucao : null;
+    if (!valido) {
       execucao = await GH.ultimaExecucao(loja.github);
       scriptCache.set(loja.id, { at: Date.now(), execucao });
     }
@@ -1664,38 +1873,56 @@ app.post('/api/script', express.json({ limit: '2kb' }), async (req, res) => {
   }
 });
 
-app.use(express.static(pub, { index: 'index.html', maxAge: 0 }));
+app.get(['/', '/index.html'], (req, res) => {
+  const b = obterBundle();
+  responderAsset(req, res, b.html, 'text/html; charset=utf-8', false, `"html-${b.v}"`);
+});
+app.use(express.static(pub, { index: false, maxAge: 0 }));
 
 // processa planilhas que chegam na entrada (coletor) sem esperar alguém abrir o painel
+const tabOcupado = new Set(), estOcupado = new Set();
 setInterval(() => {
   for (const l of C.get().lojas) {
     if (B.pendentes(l.id).length || XB.pendentes(l.id).length) dadosLoja(l, true).catch((e) => console.error(`[base] ${l.id}:`, e.message));
     if (FX.situacao(l.id).pedido && !fixeOcupado.has(l.id) && Date.now() - (fixeUltimo.get(l.id) || 0) > 110e3) verificarFixe(l);
-    if (TAB.pendentes(l.id).length) TAB.processar(l.id).then((r) => r.length && console.log(`[tabela] ${l.id}: ${r.map((x) => `${x.tipo} ${x.itens}`).join(', ')}`)).catch((e) => console.error(`[tabela] ${l.id}:`, e.message));
-    if (ES.pendentes(l.id).length) ES.processar(l.id).then((r) => r && console.log(`[estoque] ${l.id}: ${r.itens} itens (${r.zerados} zerados)`)).catch((e) => console.error(`[estoque] ${l.id}:`, e.message));
+    if (!tabOcupado.has(l.id) && TAB.pendentes(l.id).length) {
+      tabOcupado.add(l.id);
+      TAB.processar(l.id).then((r) => r.length && console.log(`[tabela] ${l.id}: ${r.map((x) => `${x.tipo} ${x.itens}`).join(', ')}`)).catch((e) => console.error(`[tabela] ${l.id}:`, e.message)).finally(() => tabOcupado.delete(l.id));
+    }
+    if (!estOcupado.has(l.id) && ES.pendentes(l.id).length) {
+      estOcupado.add(l.id);
+      ES.processar(l.id).then((r) => r && console.log(`[estoque] ${l.id}: ${r.itens} itens (${r.zerados} zerados)`)).catch((e) => console.error(`[estoque] ${l.id}:`, e.message)).finally(() => estOcupado.delete(l.id));
+    }
   }
-}, 30e3);
+}, 30e3).unref();
 
 // histórico das atualizações de cada loja (coletas, estoque, caixa, FIXE): a cada minuto
+let eventosRodando = false;
 setInterval(async () => {
-  const EV = require('./src/eventos');
-  for (const l of C.get().lojas) {
-    try {
-      const s = COL.ativo() ? await COL.status(l.id, true).catch(() => null) : null;
-      EV.registrar(l.id, { execucao: s && s.configurada ? s.execucao : null, saldos: s && s.configurada && s.saldos ? s.saldos.ultima : null, fixeUltimo: FX.situacao(l.id).ultimo });
-    } catch (e) { console.error(`[eventos] ${l.id}:`, e.message); }
+  if (eventosRodando) return;
+  eventosRodando = true;
+  try {
+    const EV = require('./src/eventos');
+    for (const l of C.get().lojas) {
+      try {
+        const s = COL.ativo() ? await COL.status(l.id, true).catch(() => null) : null;
+        EV.registrar(l.id, { execucao: s && s.configurada ? s.execucao : null, saldos: s && s.configurada && s.saldos ? s.saldos.ultima : null, fixeUltimo: FX.situacao(l.id).ultimo });
+      } catch (e) { console.error(`[eventos] ${l.id}:`, e.message); }
+    }
+  } finally {
+    eventosRodando = false;
   }
-}, 60e3);
+}, 60e3).unref();
 
 // avisos de falha para o administrador (coleta, FIXE, loja sem vendas de ontem): a cada 5 minutos
 setInterval(() => {
   require('./src/avisos').verificar({ COL, FX, B, NOTIF: require('./src/notificacoes') }).catch((e) => console.error('[avisos]', e.message));
-}, 5 * 60e3);
+}, 5 * 60e3).unref();
 
 // resumo diário (Telegram / e-mail) no horário configurado
 NOTIF.agendar(async (id) => { const l = C.get().lojas.find((x) => x.id === id); return l ? dadosParaIndicadores(l) : null; });
 
-app.listen(PORT, () => {
+const srv = app.listen(PORT, () => {
   console.log(`Tea Shop painel em http://localhost:${PORT}`);
   SITE.agendar(); // preços do e-commerce: todo dia às 10h
   // Google Drive desativado: tira os IDs antigos do lojas.json (uma vez; fica cópia em config/backups)
@@ -1731,3 +1958,16 @@ app.listen(PORT, () => {
   } catch (e) { console.error('[config] telas do menu novo:', e.message); }
   for (const l of C.get().lojas) dadosLoja(l).catch((e) => console.error(`[dados] ${l.id}: primeira carga falhou:`, e.message));
 });
+
+let encerrando = false;
+function desligar(sinal) {
+  if (encerrando) return;
+  encerrando = true;
+  console.log(`[sistema] ${sinal}: encerrando com segurança…`);
+  try { C.flushAcessos && C.flushAcessos(); } catch { /* ok */ }
+  const t = setTimeout(() => process.exit(0), 8000);
+  t.unref();
+  srv.close(() => process.exit(0));
+}
+process.on('SIGTERM', () => desligar('SIGTERM'));
+process.on('SIGINT', () => desligar('SIGINT'));

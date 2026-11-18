@@ -2,9 +2,11 @@ services:
   teashop-painel:
     build: .
     container_name: teashop-painel
+    init: true
     restart: unless-stopped
     env_file: .env
     environment:
+      TZ: America/Sao_Paulo
       COLETOR_URL: http://coletor:8000
     volumes:
       - ./config:/app/config   # lojas.json (lojas, usuários, tokens)
@@ -21,6 +23,7 @@ services:
   coletor:
     build: ./coletor
     container_name: teashop-coletor
+    init: true
     restart: unless-stopped
     user: "1000:1000"                 # mesmo usuário do painel: os dois gravam em dados/
     # Só o que o coletor precisa (o .env do painel tem senhas de e-mail, sessão, GitHub…: não vão para cá).

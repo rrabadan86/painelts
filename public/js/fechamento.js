@@ -4,6 +4,7 @@
 (function () {
   const { h, state } = TS;
   const cache = new Map(); // loja|dia → resposta
+  TS.aoLimparCache && TS.aoLimparCache(() => cache.clear());
 
   /** cartão do fechamento de uma loja (usado na prévia de Configurações → Resumo diário) */
   TS.cartaoFechamento = function (lojaId) {
@@ -48,13 +49,15 @@
     dataIn.addEventListener('change', () => { state.fechDia = dataIn.value; carregar(); });
     function imprimirFech() {
       if (!atual) return;
-      let imp = document.getElementById('impressao');
-      if (!imp) { imp = h('div', { id: 'impressao' }); document.body.append(imp); }
+      document.getElementById('impressao')?.remove();
       const sec = h('section', { class: 'imp-pag imp-fech' });
       sec.innerHTML = atual.html;
-      imp.replaceChildren(sec);
-      document.body.classList.add('imprimindo');
-      setTimeout(() => { window.print(); document.body.classList.remove('imprimindo'); }, 50);
+      const imp = h('div', { id: 'impressao' }, sec);
+      document.body.append(imp);
+      document.body.classList.add('imprimindo', 'imprimindo-doc');
+      const limpar = () => { document.body.classList.remove('imprimindo', 'imprimindo-doc'); imp.remove(); window.removeEventListener('afterprint', limpar); };
+      window.addEventListener('afterprint', limpar);
+      setTimeout(() => { window.print(); setTimeout(() => { if (document.body.classList.contains('imprimindo-doc') && !window.matchMedia('print').matches) limpar(); }, 1000); }, 50);
     }
     carregar();
     return card;

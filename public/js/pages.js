@@ -149,9 +149,10 @@
   /** ao trocar de loja os ids dos textos mudam: zera o que depende deles */
   TS.resetFiltros = function () {
     const f = state.f;
-    f.lojas.clear(); f.vendedores.clear(); f.grupos.clear(); f.cats.clear();
+    f.lojas.clear(); f.vendedores.clear(); f.grupos.clear(); f.cats.clear(); f.tamanhos.clear(); f.produto = '';
     state.cli.cidade.clear(); state.cli.grupos.clear(); state.cli.lojas.clear();
     state.com.vendBonus = ''; state.com.meta = null; state.com.cupom = '';
+    nfsCache = null;
   };
   /** filtros que guardam números do dicionário → textos (e de volta), para sobreviver a uma recarga dos dados */
   const SETS_DIC = () => [[state.f.lojas, 'loja'], [state.f.vendedores, 'vendedor'], [state.f.grupos, 'grupoC'], [state.f.cats, 'cat'], [state.cli.grupos, 'grupoC'], [state.cli.lojas, 'loja']];
@@ -784,7 +785,7 @@
           ` porque o grupo do produto não é chá aromatizado, chá puro nem acessório: ${[...fora].sort((a, b) => b[1] - a[1]).map(([n, v]) => `${n} (${fmt.brl(v)})`).join(', ')}.${ehAdm ? '' : ' Se algum deveria contar, peça ao administrador do painel para classificar o produto.'}`, det));
         else if (ehAdm) root.append(h('div', { class: 'fora-ok muted' }, prods.size ? 'Os produtos fora da meta deste período já foram confirmados. ' : '', det));
       }
-      if (!TS.classificacao && !TS._clsCarregando) TS.carregarClassificacao().then(() => TS.render());
+      if (!TS.classificacao && !TS._clsCarregando) TS.carregarClassificacao().then(() => { if (state.page === 'comissionamento') TS.render(); });
     }
     if (res.lojasNoPeriodo > 1) root.append(h('div', { class: 'notice' }, 'Há mais de uma loja no filtro. As regras de comissão mudam por loja, então selecione uma loja para ver os valores corretos.'));
     const mensal = ['mes', 'mesAnt', 'custom'].includes(state.f.preset) || (state.f.preset === 'anomes' && state.f.ano && state.f.mes);
@@ -906,6 +907,7 @@
   }
   // NF-e emitidas (Estoque → Notas fiscais → Saída): o cupom com o mesmo número e data é uma nota "grande"
   let nfsCache = null;
+  TS.aoLimparCache && TS.aoLimparCache(() => { nfsCache = null; });
   function nfsDaLoja() {
     const loja = state.loja;
     if (!loja || loja === 'todas' || !PAGES_TEM('notas')) return Promise.resolve(null);
@@ -924,31 +926,37 @@
     if (!base.length) { root.append(TS.card(null, null, TS.empty())); return; }
     const clientes = clientesDosCupons();
     const cliDe = (i) => clientes.get(TS.chaveCupom(i)) || null;
-    const det = base.map((i) => {
-      const cl = cliDe(i);
-      return { cupom: db.cupom[i], data: db.iso[i], produto: db.D.descricao[db.desc[i]], qtd: db.qtd[i], grupo: db.D.grupoC[db.grupoC[i]], cat: db.D.cat[db.cat[i]], vendedor: db.D.vendedor[db.vend[i]], vt: db.vt[i], cl, doc: cl ? cl.cpf + ' ' + docTxt(cl.cpf) + ' ' + cl.nome : '' };
-    });
     const temCli = clientes.size > 0;
-    const tabDet = TS.table({
-      cols: [
-        { key: 'cupom', label: 'Cupom', align: 'l', fmt: (v) => String(v) },
-        { key: 'data', label: 'Data', align: 'l', fmt: fmt.date },
-        temCli ? { key: 'doc', label: 'CPF/CNPJ', align: 'l', render: (r) => docCupom(r.cl), sortVal: (r) => r.doc } : null,
-        { key: 'produto', label: 'Produto', align: 'l', wrap: true },
-        { key: 'qtd', label: 'Qtd', fmt: fmt.int },
-        { key: 'grupo', label: 'Grupo', align: 'l' },
-        { key: 'cat', label: 'Categoria', align: 'l', wrap: true },
-        { key: 'vendedor', label: 'Vendedor', align: 'l' },
-        { key: 'vt', label: 'Valor', fmt: fmt.brl },
-      ].filter(Boolean),
-      rows: det, sortKey: 'data', pageSize: 50, maxHeight: 'free', search: 'Buscar produto, vendedor, CPF…', searchKeys: ['produto', 'vendedor', 'grupo', 'cat', 'doc'],
-      total: { cupom: `${fmt.int(new Set(base.map(TS.chaveCupom)).size)} cupons`, vt: det.reduce((s, r) => s + (r.vt || 0), 0), qtd: det.reduce((s, r) => s + (r.qtd || 0), 0) },
-    });
     const modoCup = state.cupModo || 'dia';
     const segCup = TS.seg([['Por dia e cupom', 'dia'], ['Lista de itens', 'lista']], modoCup, (v) => { state.cupModo = v; TS.render(); });
-    const nCpf = new Set(base.filter((i) => cliDe(i)).map(TS.chaveCupom)).size, nCup = new Set(base.map(TS.chaveCupom)).size;
+    const cupSet = new Set(), cpfSet = new Set();
+    for (const i of base) {
+      const ch = TS.chaveCupom(i);
+      cupSet.add(ch);
+      if (temCli && clientes.has(ch)) cpfSet.add(ch);
+    }
+    const nCup = cupSet.size, nCpf = cpfSet.size;
     const subCli = temCli ? ` · ${fmt.int(nCpf)} de ${fmt.int(nCup)} cupons com cliente identificado (clique no CPF/CNPJ para abrir a ficha)` : '';
     if (modoCup === 'lista') {
+      const det = base.map((i) => {
+        const cl = cliDe(i);
+        return { cupom: db.cupom[i], data: db.iso[i], produto: db.D.descricao[db.desc[i]], qtd: db.qtd[i], grupo: db.D.grupoC[db.grupoC[i]], cat: db.D.cat[db.cat[i]], vendedor: db.D.vendedor[db.vend[i]], vt: db.vt[i], cl, doc: cl ? cl.cpf + ' ' + docTxt(cl.cpf) + ' ' + cl.nome : '' };
+      });
+      const tabDet = TS.table({
+        cols: [
+          { key: 'cupom', label: 'Cupom', align: 'l', fmt: (v) => String(v) },
+          { key: 'data', label: 'Data', align: 'l', fmt: fmt.date },
+          temCli ? { key: 'doc', label: 'CPF/CNPJ', align: 'l', render: (r) => docCupom(r.cl), sortVal: (r) => r.doc } : null,
+          { key: 'produto', label: 'Produto', align: 'l', wrap: true },
+          { key: 'qtd', label: 'Qtd', fmt: fmt.int },
+          { key: 'grupo', label: 'Grupo', align: 'l' },
+          { key: 'cat', label: 'Categoria', align: 'l', wrap: true },
+          { key: 'vendedor', label: 'Vendedor', align: 'l' },
+          { key: 'vt', label: 'Valor', fmt: fmt.brl },
+        ].filter(Boolean),
+        rows: det, sortKey: 'data', pageSize: 50, maxHeight: 'free', search: 'Buscar produto, vendedor, CPF…', searchKeys: ['produto', 'vendedor', 'grupo', 'cat', 'doc'],
+        total: { cupom: `${fmt.int(nCup)} cupons`, vt: det.reduce((s, r) => s + (r.vt || 0), 0), qtd: det.reduce((s, r) => s + (r.qtd || 0), 0) },
+      });
       root.append(TS.cardWithTools('Cupons do período', 'Todos os itens vendidos' + subCli, h('div', { class: 'table-tools' }, tabDet.searchBox, segCup), tabDet));
     } else {
       const arv = arvoreCupons(base, temCli ? cliDe : null);

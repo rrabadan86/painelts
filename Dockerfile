@@ -1,6 +1,7 @@
 FROM node:22-alpine
 WORKDIR /app
 ENV NODE_ENV=production \
+    TZ=America/Sao_Paulo \
     CONFIG_FILE=/app/config/lojas.json \
     DATA_DIR=/data
 COPY package.json package-lock.json ./

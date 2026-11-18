@@ -166,8 +166,12 @@ function perguntarSenha(prompt) {
       if (senha !== conf) sair('as senhas não conferem');
     }
     if (String(senha).length < 8) sair('use pelo menos 8 caracteres');
-    cfg.usuarios[nome] = { senha: C.hashSenha(senha), lojas: lojas.map((l) => (l === '*' ? '*' : normId(l))) };
-    gravar(cfg);
+    if (String(senha).length > 200) sair('use no máximo 200 caracteres');
+    const lojasNorm = lojas.map((l) => (l === '*' ? '*' : normId(l)));
+    C.alterar((c) => {
+      const ant = c.usuarios[nome] || {};
+      c.usuarios[nome] = { ...ant, senha: C.hashSenha(senha), lojas: lojasNorm, sessao: (ant.sessao || 0) + 1 };
+    });
     console.log(`Usuário "${nome}" salvo com acesso a: ${lojas.join(', ')}`);
     return;
   }

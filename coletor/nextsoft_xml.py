@@ -25,25 +25,20 @@ from urllib.parse import unquote
 import xml.etree.ElementTree as ET
 
 SAIDA_XML = os.getenv("SAIDA_XML", "").strip()
-if not SAIDA_XML:
-    print("ERRO: defina SAIDA_XML")
-    sys.exit(1)
 # o módulo de vendas exige um destino; aqui só reaproveitamos login/troca de loja
 os.environ.setdefault("SAIDA_ARQUIVO", str(Path.cwd() / "_nao_usado.xlsx"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import nextsoft_export_to_drive as nx  # noqa: E402
 from playwright.sync_api import sync_playwright  # noqa: E402
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit  # noqa: E402
 
 log, step = nx.log, nx.step
 URL_XML = "https://www.appnext.com.br/#/fiscal/gerador-xml"
+MAX_ZIP_BYTES = 250 * 1024 * 1024
 
 
 def dt_br(s):
     return datetime.strptime(s, "%d/%m/%Y").date()
-
-
-INI = dt_br(os.getenv("DATA_INICIO", "01/06/2025"))
-FIM = dt_br(os.getenv("DATA_FIM")) if os.getenv("DATA_FIM") else date.today()
 
 
 def janelas(ini, fim):
@@ -82,6 +77,10 @@ def _txt(raiz, caminho):
     return (el.text or "").strip() if el is not None and el.text else ""
 
 
+def _limpar_chave_arq(s: str) -> str:
+    return re.sub(r"[^A-Za-z0-9_.-]+", "_", str(s or "")).strip("._")[:80] or "nota"
+
+
 def ler_nota(conteudo: bytes):
     try:
         raiz = ET.fromstring(conteudo)
@@ -101,8 +100,10 @@ def ler_nota(conteudo: bytes):
     cnpj = _txt(dest, "CNPJ") if dest is not None else ""
     nome = _txt(dest, "xNome") if dest is not None else ""
     dh = _txt(ide, "dhEmi") or _txt(ide, "dEmi")
+    raw_id = (inf.get("Id") or "").replace("NFe", "").strip()
+    chave = raw_id if re.fullmatch(r"\d{44}", raw_id) else (_limpar_chave_arq(raw_id) if raw_id else None)
     return {
-        "chave": (inf.get("Id") or "").replace("NFe", "") or None,
+        "chave": chave,
         "cupom": int(n),
         "serie": _txt(ide, "serie"),
         "mod": _txt(ide, "mod"),
@@ -114,13 +115,23 @@ def ler_nota(conteudo: bytes):
     }
 
 
-def ler_zip(dados: bytes, notas: dict, brutos: list = None):
+def ler_zip(dados: bytes, notas: dict, brutos: list = None, _nivel: int = 0, _acum: list = None):
     """notas: chave -> dados da nota; brutos (opcional): [(nome, bytes, nota ou None)] com todos os XMLs"""
+    if _nivel > 3:
+        raise RuntimeError("ZIP com muitos níveis aninhados")
+    if _acum is None:
+        _acum = [0]
     with zipfile.ZipFile(io.BytesIO(dados)) as z:
-        for nome in z.namelist():
-            b = z.read(nome)
+        for info in z.infolist():
+            if info.is_dir():
+                continue
+            _acum[0] += info.file_size
+            if _acum[0] > MAX_ZIP_BYTES:
+                raise RuntimeError("ZIP de XMLs excedeu o limite seguro de 250 MB descomprimidos")
+            nome = info.filename
+            b = z.read(info)
             if nome.lower().endswith(".zip"):
-                ler_zip(b, notas, brutos)
+                ler_zip(b, notas, brutos, _nivel + 1, _acum)
             elif nome.lower().endswith(".xml"):
                 n = ler_nota(b)
                 if n:
@@ -131,36 +142,41 @@ def ler_zip(dados: bytes, notas: dict, brutos: list = None):
 
 # ---------------- XMLs originais (vão para a contabilidade) ----------------
 # dados/<loja>/xmls/AAAA-MM/{ativos,cancelados}/AAAAMMDD_<chave>.xml
-PASTA_XMLS = Path(os.getenv("PASTA_XMLS") or (Path(SAIDA_XML).parent.parent / "xmls"))
 RE_CHAVE = re.compile(rb"<chNFe>(\d{44})</chNFe>")
 RE_DH = re.compile(rb"<(?:dhEvento|dhRegEvento|dhEmi)>(\d{4})-(\d{2})-(\d{2})")
 
 
-def guardar_xmls(brutos, situacao: str, ini: date, fim: date):
-    """grava os XMLs do período; quando o período começa no dia 1, substitui o que havia até 'fim'"""
+def guardar_xmls(brutos, situacao: str, ini: date, fim: date, pasta_xmls: Path):
+    """grava os XMLs do período primeiro e só depois remove antigos substituídos (quando começa no dia 1)"""
     meses = {}
     for nome, b, n in brutos:
-        if n:
-            dia, chave = n["data"].replace("-", ""), n["chave"] or f"{n['mod']}-{n['serie']}-{n['cupom']}"
+        if n and re.fullmatch(r"\d{4}-\d{2}-\d{2}", n.get("data") or ""):
+            dia = n["data"].replace("-", "")
+            chave = _limpar_chave_arq(n["chave"] or f"{n['mod']}-{n['serie']}-{n['cupom']}")
         else:  # evento (cancelamento etc.): chave da nota + data do evento
             m, d = RE_CHAVE.search(b), RE_DH.search(b)
             dia = b"".join(d.groups()).decode() if d else ini.strftime("%Y%m%d")
-            chave = "evento_" + (m.group(1).decode() if m else re.sub(r"[^\w.-]+", "_", Path(nome).stem)[:60])
+            chave = "evento_" + (m.group(1).decode() if m else _limpar_chave_arq(Path(nome).stem)[:60])
         meses.setdefault(f"{dia[:4]}-{dia[4:6]}", []).append((f"{dia}_{chave}.xml", b))
     if ini.day == 1:
         meses.setdefault(ini.strftime("%Y-%m"), [])
     for ym, arqs in meses.items():
-        pasta = PASTA_XMLS / ym / situacao
+        if not re.fullmatch(r"\d{4}-\d{2}", ym):
+            continue
+        pasta = pasta_xmls / ym / situacao
         pasta.mkdir(parents=True, exist_ok=True)
+        novos_nomes = set()
+        for nome, b in arqs:
+            novos_nomes.add(nome)
+            tmp = pasta / f"{nome}.{os.getpid()}.tmp"
+            tmp.write_bytes(b)
+            os.chmod(tmp, 0o640)
+            tmp.replace(pasta / nome)
         if ini.day == 1 and ym == ini.strftime("%Y-%m"):
             limite = fim.strftime("%Y%m%d")
             for velho in pasta.glob("*.xml"):
-                if velho.name[:8] <= limite:
-                    velho.unlink()
-        for nome, b in arqs:
-            tmp = pasta / (nome + ".tmp")
-            tmp.write_bytes(b)
-            tmp.replace(pasta / nome)
+                if velho.name not in novos_nomes and velho.name[:8] <= limite:
+                    velho.unlink(missing_ok=True)
 
 
 class ErroAppNext(RuntimeError):
@@ -170,7 +186,6 @@ class ErroAppNext(RuntimeError):
         super().__init__(f"{a:%m/%Y}: AppNext respondeu {status}{(': ' + texto) if texto else ''}")
 
 
-# "nada para baixar" (ex.: mês sem nota cancelada ainda): o AppNext responde 400/404 em vez de um .zip vazio
 RE_VAZIO = re.compile(r"nenhum|nenhuma|n[ãa]o (h[áa]|existe|foi encontrad|encontr)|sem (nota|xml|arquivo|registro)|not found|no (data|content|records)", re.I)
 
 
@@ -189,8 +204,8 @@ def texto_resposta(resp):
 
 
 def pedir_zip(page, ref, cab, a, b, corpo_base):
-    url_nova = trocar_datas(ref.url, a, b)
-    corpo = trocar_datas(corpo_base, a, b) if corpo_base else None
+    url_nova = trocar_datas_url(ref.url, a, b) or trocar_datas(ref.url, a, b)
+    corpo = (trocar_datas_json(corpo_base, a, b) or trocar_datas(corpo_base, a, b)) if corpo_base else None
     if url_nova is None and corpo is None:
         raise RuntimeError("Não achei as datas no pedido do Gerar para trocar.")
     url = url_nova or ref.url
@@ -203,14 +218,12 @@ def pedir_zip(page, ref, cab, a, b, corpo_base):
     if not dados.startswith(b"PK"):
         dados = desembrulhar(page, dados)
         if not dados.startswith(b"PK"):
-            # não aceita "sem notas" às cegas: pode ser o pedido errado
             raise RuntimeError(f"{a:%m/%Y}: a resposta não é um .zip ({resp.headers.get('content-type', '')}): {dados[:200]!r}")
     return dados
 
 
 # ---------------- AppNext ----------------
 def _tela_xml_visivel(page):
-    # "Gerar XML" também existe no menu (escondido): confere o que só existe na tela
     return page.locator("text=/Filtros\\s*:/ >> visible=true").count() > 0 or page.locator("button:has-text('Gerar') >> visible=true").count() > 0
 
 
@@ -224,8 +237,6 @@ def fazer_login(page):
 
 
 def ir_para_xml(page):
-    """troca só o '#' do endereço: a página não recarrega e o login continua valendo
-    (um goto para www.appnext.com.br quando o login abriu em appnext.com.br recarrega e desloga)"""
     page.evaluate("() => { location.hash = '#/fiscal/gerador-xml'; }")
 
 
@@ -278,8 +289,63 @@ def escolher(page, grupo, opcao):
     log(f"{grupo}: {opcao}")
 
 
-# datas nos pedidos: ISO (2026-11-01) ou brasileira (01/11/2026, também codificada 01%2F11%2F2026)
 RE_DATA = re.compile(r"(\d{4})-(\d{2})-(\d{2})|(\d{2})(/|%2F)(\d{2})\5(\d{4})", re.I)
+CHAVES_INI = {"datainicial", "dataemissaoinicial", "datainicio", "inicio", "de"}
+CHAVES_FIM = {"datafinal", "dataemissaofinal", "datafim", "fim", "ate"}
+
+
+def _fmt_mesmo_estilo(val_atual: str, d: date) -> str:
+    m = RE_DATA.search(str(val_atual or ""))
+    if not m:
+        return d.isoformat()
+    novo = d.isoformat() if m.group(1) else f"{d.day:02d}{m.group(5)}{d.month:02d}{m.group(5)}{d.year}"
+    return val_atual[:m.start()] + novo + val_atual[m.end():]
+
+
+def trocar_datas_url(url: str, ini: date, fim: date):
+    p = urlsplit(url)
+    if not p.query:
+        return None
+    pares = parse_qsl(p.query, keep_blank_values=True)
+    mudou_i, mudou_f, out = False, False, []
+    for k, v in pares:
+        kl = re.sub(r"[^a-z]", "", k.lower())
+        if kl in CHAVES_INI and RE_DATA.search(v):
+            out.append((k, _fmt_mesmo_estilo(v, ini)))
+            mudou_i = True
+        elif kl in CHAVES_FIM and RE_DATA.search(v):
+            out.append((k, _fmt_mesmo_estilo(v, fim)))
+            mudou_f = True
+        else:
+            out.append((k, v))
+    return urlunsplit((p.scheme, p.netloc, p.path, urlencode(out), p.fragment)) if (mudou_i and mudou_f) else None
+
+
+def trocar_datas_json(corpo: str, ini: date, fim: date):
+    try:
+        j = json.loads(corpo)
+    except Exception:  # noqa: BLE001
+        return None
+    if not isinstance(j, dict):
+        return None
+    mudou = [False, False]
+    def visitar(obj):
+        if isinstance(obj, dict):
+            for k, v in list(obj.items()):
+                kl = re.sub(r"[^a-z]", "", str(k).lower())
+                if isinstance(v, str) and kl in CHAVES_INI and RE_DATA.search(v):
+                    obj[k] = _fmt_mesmo_estilo(v, ini)
+                    mudou[0] = True
+                elif isinstance(v, str) and kl in CHAVES_FIM and RE_DATA.search(v):
+                    obj[k] = _fmt_mesmo_estilo(v, fim)
+                    mudou[1] = True
+                else:
+                    visitar(v)
+        elif isinstance(obj, list):
+            for x in obj:
+                visitar(x)
+    visitar(j)
+    return json.dumps(j, ensure_ascii=False) if (mudou[0] and mudou[1]) else None
 
 
 def trocar_datas(texto, ini: date, fim: date):
@@ -327,153 +393,168 @@ def desembrulhar(page, dados: bytes) -> bytes:
             except Exception:  # noqa: BLE001
                 pass
     for t in textos:
-        if t.startswith("http"):
+        if t.startswith("https://") and re.search(r"(appnext\.com\.br|nextsoft|amazonaws\.com|blob\.core\.windows\.net)", t, re.I):
             return page.request.get(t, timeout=300_000).body()
     return dados
 
 
+def coletar_xml_na_pagina(page, ini: date, fim: date, saida_xml: str):
+    """Executa Fiscal → Gerar XML usando uma página já autenticada na loja certa."""
+    pasta_xmls = Path(os.getenv("PASTA_XMLS") or (Path(saida_xml).parent.parent / "xmls"))
+    notas = {}
+    pedidos, respostas = [], []
+    do_appnext = lambda u: re.search(r"https?://([^/]*\.)?(appnext\.com\.br|nextsoft[^/]*)(/|$)", u, re.I) is not None
+    on_req = lambda r: pedidos.append(r) if r.resource_type in ("xhr", "fetch", "document", "other") and do_appnext(r.url) else None
+    on_res = lambda r: respostas.append(r) if r.request.resource_type in ("xhr", "fetch", "document", "other") and do_appnext(r.url) else None
+    page.on("request", on_req)
+    page.on("response", on_res)
+    try:
+        nx.garantir_loja(page)
+        step("2) Fiscal → Gerar XML")
+        abrir_tela_xml(page)
+        nx.garantir_loja(page)
+        try:
+            page.wait_for_load_state("networkidle", timeout=10000)
+        except Exception:
+            pass
+
+        step("3) Filtros: Tipo Todos, Situação Ativos")
+        abrir_filtros(page)
+        escolher(page, "Tipo", "Todos")
+        escolher(page, "Situação", "Ativos")
+
+        step("4) Gerar (pedido de referência com o período que está na tela)")
+        antes, antes_r = len(pedidos), len(respostas)
+        with page.expect_download(timeout=180_000) as dl:
+            page.get_by_role("button", name=re.compile(r"^\s*Gerar\s*$", re.I)).last.click()
+        arq = dl.value
+        ref_bytes = Path(arq.path()).read_bytes() if arq.path() else b""
+        page.wait_for_timeout(1500)
+        cand = pedidos[antes:]
+        ref = None
+        for resp in reversed(respostas[antes_r:]):
+            h = {k.lower(): v for k, v in resp.headers.items()}
+            tipo = h.get("content-type", "")
+            if "zip" in tipo or "octet-stream" in tipo or "attachment" in h.get("content-disposition", ""):
+                ref = resp.request
+                log(f"Resposta com o arquivo: {resp.status} {tipo} {h.get('content-disposition', '')[:120]}")
+                break
+        if ref is None:
+            for r in reversed(cand):
+                corpo = r.post_data or ""
+                if len(RE_DATA.findall(unquote(r.url) + corpo)) >= 2:
+                    ref = r
+                    break
+        if ref:
+            log(f"Pedido de referência: {ref.method} {ref.url[:300]}")
+            if ref.post_data:
+                log(f"Corpo: {ref.post_data[:500]}")
+        else:
+            log("Não identifiquei o pedido do Gerar com datas. Pedidos vistos:")
+            for r in cand[-15:]:
+                log(f"  {r.method} {r.url[:200]} {(r.post_data or '')[:200]}")
+            for resp in respostas[antes_r:][-15:]:
+                log(f"  resposta {resp.status} {resp.url[:160]} {resp.headers.get('content-type', '')}")
+
+        step(f"5) Baixando {ini:%d/%m/%Y} a {fim:%d/%m/%Y} mês a mês")
+        if not ref:
+            raise RuntimeError("Sem o pedido de referência não dá para escolher o período. Veja os pedidos listados acima.")
+        cab = {k: v for k, v in ref.headers.items() if k.lower() not in ("content-length", "host", "cookie", "accept-encoding")}
+        corpo_canc = None
+        if ref.post_data and re.search(r'"cancelado"\s*:\s*false', ref.post_data):
+            corpo_canc = re.sub(r'"cancelado"\s*:\s*false', '"cancelado":true', ref.post_data)
+        else:
+            log("Aviso: não achei 'cancelado' no pedido do Gerar; só os XMLs ativos serão guardados.")
+        for a, b in janelas(ini, fim):
+            try:
+                dados = pedir_zip(page, ref, cab, a, b, ref.post_data)
+            except ErroAppNext as e:
+                if e.status in (400, 404) and RE_VAZIO.search(e.texto or ""):
+                    log(f"{a:%m/%Y}: sem notas ativas no período (AppNext: {e.texto})")
+                    dados = None
+                else:
+                    raise
+            antes_n = len(notas)
+            brutos = []
+            if dados:
+                ler_zip(dados, notas, brutos)
+                guardar_xmls(brutos, "ativos", a, b, pasta_xmls)
+            txt = f"{a:%m/%Y}: {len(notas) - antes_n} notas ativas ({len(dados or b'') // 1024} KB)"
+            if corpo_canc:
+                try:
+                    dc = pedir_zip(page, ref, cab, a, b, corpo_canc)
+                except ErroAppNext as e:
+                    if e.status not in (400, 404):
+                        raise
+                    log(f"{a:%m/%Y}: nenhuma nota cancelada (AppNext respondeu {e.status}{': ' + e.texto if e.texto else ''})")
+                    dc = None
+                canc, bc = {}, []
+                if dc:
+                    ler_zip(dc, canc, bc)
+                bc = [x for x in bc if not (x[2] and (x[2]["chave"] or "") in notas)]
+                if dc:
+                    guardar_xmls(bc, "cancelados", a, b, pasta_xmls)
+                txt += f" · {sum(1 for x in bc if x[2])} canceladas ({len(bc)} XMLs)"
+            log(txt)
+        if ref_bytes.startswith(b"PK"):
+            conf = {}
+            ler_zip(ref_bytes, conf)
+            dias = sorted({n["data"] for n in conf.values()})
+            log(f"Conferência: o clique em Gerar trouxe {len(conf)} notas ({dias[0] if dias else '-'} a {dias[-1] if dias else '-'}); não entram na importação")
+    finally:
+        try:
+            page.remove_listener("request", on_req)
+            page.remove_listener("response", on_res)
+        except Exception:
+            pass
+
+    lista = sorted(notas.values(), key=lambda n: (n["data"], n["cupom"]))
+    com_doc = sum(1 for n in lista if n["cpf"] or n["cnpj"])
+    destino = Path(saida_xml)
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    tmp = destino.with_name(f"{destino.name}.{os.getpid()}.tmp")
+    tmp.write_text(json.dumps({"de": ini.isoformat(), "ate": fim.isoformat(), "total": len(lista), "notas": [n for n in lista if n["cpf"] or n["cnpj"]]}, ensure_ascii=False), encoding="utf-8")
+    os.chmod(tmp, 0o640)
+    tmp.replace(destino)
+    log(f"XML: {len(lista)} notas, {com_doc} com CPF/CNPJ → {destino.name}")
+
+
 def main():
+    saida = os.getenv("SAIDA_XML", "").strip()
+    if not saida:
+        print("ERRO: defina SAIDA_XML")
+        return 1
+    ini = dt_br(os.getenv("DATA_INICIO", "01/06/2025"))
+    fim = dt_br(os.getenv("DATA_FIM")) if os.getenv("DATA_FIM") else datetime.now(nx._TZ_LOG).date()
     nx.start_watchdog(int(os.getenv("MAX_RUNTIME_SECONDS", "900")))
-    notas, ok = {}, False
+    pasta_pw = Path.cwd() / "pw_state"
+    nx.limpar_locks_perfil(pasta_pw)
     with sync_playwright() as pw:
         ctx = pw.chromium.launch_persistent_context(
-            user_data_dir=str(Path.cwd() / "pw_state"), headless=True, accept_downloads=True, ignore_https_errors=True,
+            user_data_dir=str(pasta_pw), headless=True, accept_downloads=True, ignore_https_errors=nx.INSEGURO,
             viewport={"width": 1600, "height": 950},
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36",
         )
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         page.set_default_timeout(30_000)
         page.set_default_navigation_timeout(60_000)
-        pedidos, respostas = [], []
-        # só pedidos do próprio AppNext (telemetria como Sentry/Google também manda datas no corpo)
-        do_appnext = lambda u: re.search(r"https?://([^/]*\.)?(appnext\.com\.br|nextsoft[^/]*)(/|$)", u, re.I) is not None
-        page.on("request", lambda r: pedidos.append(r) if r.resource_type in ("xhr", "fetch", "document", "other") and do_appnext(r.url) else None)
-        page.on("response", lambda r: respostas.append(r) if r.request.resource_type in ("xhr", "fetch", "document", "other") and do_appnext(r.url) else None)
         try:
             step("1) Login")
             nx.goto_login_with_retries(page, nx.LOGIN_URL)
             fazer_login(page)
             nx.trocar_loja(page, os.getenv("APPNEXT_LOJA_DESTINO"))
-
-            step("2) Fiscal → Gerar XML")
-            abrir_tela_xml(page)
-            try:
-                page.wait_for_load_state("networkidle", timeout=10000)
-            except Exception:
-                pass
-
-            step("3) Filtros: Tipo Todos, Situação Ativos")
-            abrir_filtros(page)
-            escolher(page, "Tipo", "Todos")
-            escolher(page, "Situação", "Ativos")
-
-            step("4) Gerar (pedido de referência com o período que está na tela)")
-            antes, antes_r = len(pedidos), len(respostas)
-            with page.expect_download(timeout=180_000) as dl:
-                page.get_by_role("button", name=re.compile(r"^\s*Gerar\s*$", re.I)).last.click()
-            arq = dl.value
-            ref_bytes = Path(arq.path()).read_bytes() if arq.path() else b""
-            page.wait_for_timeout(1500)
-            cand = pedidos[antes:]
-            ref = None
-            # 1º: a resposta que trouxe o arquivo (zip / download)
-            for resp in reversed(respostas[antes_r:]):
-                h = {k.lower(): v for k, v in resp.headers.items()}
-                tipo = h.get("content-type", "")
-                if "zip" in tipo or "octet-stream" in tipo or "attachment" in h.get("content-disposition", ""):
-                    ref = resp.request
-                    log(f"Resposta com o arquivo: {resp.status} {tipo} {h.get('content-disposition', '')[:120]}")
-                    break
-            # 2º: o último pedido do AppNext com as duas datas no endereço ou no corpo
-            if ref is None:
-                for r in reversed(cand):
-                    corpo = r.post_data or ""
-                    if len(RE_DATA.findall(unquote(r.url) + corpo)) >= 2:
-                        ref = r
-                        break
-            if ref:
-                log(f"Pedido de referência: {ref.method} {ref.url[:300]}")
-                if ref.post_data:
-                    log(f"Corpo: {ref.post_data[:500]}")
-            else:
-                log("Não identifiquei o pedido do Gerar com datas. Pedidos vistos:")
-                for r in cand[-15:]:
-                    log(f"  {r.method} {r.url[:200]} {(r.post_data or '')[:200]}")
-                for resp in respostas[antes_r:][-15:]:
-                    log(f"  resposta {resp.status} {resp.url[:160]} {resp.headers.get('content-type', '')}")
-
-            step(f"5) Baixando {INI:%d/%m/%Y} a {FIM:%d/%m/%Y} mês a mês")
-            if not ref:
-                raise RuntimeError("Sem o pedido de referência não dá para escolher o período. Veja os pedidos listados acima.")
-            cab = {k: v for k, v in ref.headers.items() if k.lower() not in ("content-length", "host", "cookie", "accept-encoding")}
-            # o pedido de referência é o de "Ativos" (cancelado:false); os cancelados vêm do mesmo pedido com cancelado:true
-            corpo_canc = None
-            if ref.post_data and re.search(r'"cancelado"\s*:\s*false', ref.post_data):
-                corpo_canc = re.sub(r'"cancelado"\s*:\s*false', '"cancelado":true', ref.post_data)
-            else:
-                log("Aviso: não achei 'cancelado' no pedido do Gerar; só os XMLs ativos serão guardados.")
-            for a, b in janelas(INI, FIM):
-                try:
-                    dados = pedir_zip(page, ref, cab, a, b, ref.post_data)
-                except ErroAppNext as e:
-                    # mês sem nota nenhuma: segue; outro motivo: para, com o texto do AppNext no log
-                    if e.status in (400, 404) and RE_VAZIO.search(e.texto or ""):
-                        log(f"{a:%m/%Y}: sem notas ativas no período (AppNext: {e.texto})")
-                        dados = None
-                    else:
-                        raise
-                antes_n = len(notas)
-                brutos = []
-                if dados:
-                    ler_zip(dados, notas, brutos)
-                    guardar_xmls(brutos, "ativos", a, b)  # sem resposta não apaga o que já estava guardado
-                txt = f"{a:%m/%Y}: {len(notas) - antes_n} notas ativas ({len(dados or b'') // 1024} KB)"
-                if corpo_canc:
-                    # cancelados: mês sem nenhuma cancelada é comum (o AppNext responde 400): conta como zero
-                    try:
-                        dc = pedir_zip(page, ref, cab, a, b, corpo_canc)
-                    except ErroAppNext as e:
-                        if e.status not in (400, 404):
-                            raise
-                        log(f"{a:%m/%Y}: nenhuma nota cancelada (AppNext respondeu {e.status}{': ' + e.texto if e.texto else ''})")
-                        dc = None
-                    canc, bc = {}, []
-                    if dc:
-                        ler_zip(dc, canc, bc)
-                    # se o AppNext devolver todas, fica só o que não está entre as ativas
-                    bc = [x for x in bc if not (x[2] and (x[2]["chave"] or "") in notas)]
-                    if dc:
-                        guardar_xmls(bc, "cancelados", a, b)
-                    txt += f" · {sum(1 for x in bc if x[2])} canceladas ({len(bc)} XMLs)"
-                log(txt)
-            # o zip baixado pelo clique é do período que estava na tela (não do pedido): só serve de conferência
-            if ref_bytes.startswith(b"PK"):
-                conf = {}
-                ler_zip(ref_bytes, conf)
-                dias = sorted({n["data"] for n in conf.values()})
-                log(f"Conferência: o clique em Gerar trouxe {len(conf)} notas ({dias[0] if dias else '-'} a {dias[-1] if dias else '-'}); não entram na importação")
-            ok = True
+            coletar_xml_na_pagina(page, ini, fim, saida)
+            return 0
         except Exception:
             log("### ERRO DURANTE O FLUXO DO XML ###")
             print(traceback.format_exc())
+            log("### Finalizando com erro (exit 1) ###")
+            return 1
         finally:
             try:
                 ctx.close()
             except Exception:
                 pass
-
-    if ok:
-        lista = sorted(notas.values(), key=lambda n: (n["data"], n["cupom"]))
-        com_doc = sum(1 for n in lista if n["cpf"] or n["cnpj"])
-        destino = Path(SAIDA_XML)
-        destino.parent.mkdir(parents=True, exist_ok=True)
-        tmp = destino.with_suffix(".tmp")
-        tmp.write_text(json.dumps({"de": INI.isoformat(), "ate": FIM.isoformat(), "total": len(lista), "notas": [n for n in lista if n["cpf"] or n["cnpj"]]}, ensure_ascii=False), encoding="utf-8")
-        tmp.replace(destino)
-        log(f"XML: {len(lista)} notas, {com_doc} com CPF/CNPJ → {destino.name}")
-        return 0
-    log("### Finalizando com erro (exit 1) ###")
-    return 1
 
 
 if __name__ == "__main__":

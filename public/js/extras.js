@@ -227,9 +227,10 @@
     document.getElementById('impressao')?.remove();
     const el = h('div', { id: 'impressao' }, TS.paginasFechamento(args));
     document.body.append(el);
-    const limpar = () => { el.remove(); window.removeEventListener('afterprint', limpar); };
+    document.body.classList.add('imprimindo-doc');
+    const limpar = () => { document.body.classList.remove('imprimindo-doc'); el.remove(); window.removeEventListener('afterprint', limpar); };
     window.addEventListener('afterprint', limpar);
-    setTimeout(() => window.print(), 100);
+    setTimeout(() => { window.print(); setTimeout(() => { if (document.body.classList.contains('imprimindo-doc') && !window.matchMedia('print').matches) limpar(); }, 1000); }, 100);
   };
 })();
 

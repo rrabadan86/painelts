@@ -43,11 +43,10 @@
     if (TS.eu && TS.eu.vendedor) add(TS.eu.vendedor);
     return [...m.values()].sort((a, b) => a.localeCompare(b, 'pt-BR'));
   };
-  const textoDe = (modelo, p, loja) => modelo
-    .split('{nome}').join(primeiro(p.cliente.nome))
-    .split('{produto}').join(nomesItens(p))
-    .split('{loja}').join(loja || 'loja')
-    .split('{vendedora}').join(vendDe(p) || 'equipe');
+  const textoDe = (modelo, p, loja) => {
+    const vars = { nome: primeiro(p.cliente.nome), produto: nomesItens(p), loja: loja || 'loja', vendedora: vendDe(p) || 'equipe' };
+    return String(modelo || '').replace(/\{(nome|produto|loja|vendedora)\}/g, (_, k) => vars[k]);
+  };
 
   async function api(metodo, url, corpo) {
     const r = await fetch(TS.api(url), { method: metodo, credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-Painel': '1' }, body: corpo ? JSON.stringify(corpo) : undefined });
@@ -247,7 +246,7 @@
               : `Cancelado ${dataTxt(p.cancelado && p.cancelado.em)} por ${(p.cancelado && p.cancelado.por) || '—'}`;
     const acoes = p.st === 'chegou' ? [btnW('Avisar no WhatsApp ›'), h('button', { type: 'button', class: 'btn', onclick: () => fazer('cancelar', 'Cancelar este pedido da lista de espera?') }, 'Cancelar')]
       : p.st === 'esperando' ? [h('button', { type: 'button', class: 'btn', title: 'Use se o produto chegou e a nota ainda não apareceu no painel', onclick: () => fazer('chegou') }, 'Já chegou'), h('button', { type: 'button', class: 'btn', onclick: () => fazer('cancelar', 'Cancelar este pedido da lista de espera?') }, 'Cancelar')]
-        : p.st === 'avisado' ? [h('a', { class: 'btn', href: wpp(p.cliente.celular, '') || '#', target: '_blank', rel: 'noopener' }, 'Abrir conversa'), h('button', { type: 'button', class: 'btn', onclick: () => fazer('cancelar', 'Cancelar este pedido?') }, 'Cancelar')]
+        : p.st === 'avisado' ? [h('a', { class: 'btn', href: TS.demo ? '#' : (wpp(p.cliente.celular, '') || '#'), target: TS.demo ? null : '_blank', rel: TS.demo ? null : 'noopener', onclick: TS.demo ? (e) => { e.preventDefault(); alert('Na apresentação nada é enviado.'); } : null }, 'Abrir conversa'), h('button', { type: 'button', class: 'btn', onclick: () => fazer('cancelar', 'Cancelar este pedido?') }, 'Cancelar')]
           : p.st === 'naocomprou' || p.st === 'cancelado' ? [h('button', { type: 'button', class: 'btn', onclick: () => fazer('reabrir') }, 'Reabrir')] : [];
 
     // seletor discreto para definir/trocar a vendedora do pedido quando necessário

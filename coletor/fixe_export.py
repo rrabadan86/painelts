@@ -67,10 +67,23 @@ def primeiro(page, seletores, timeout=15000):
     return None
 
 
+import threading
+import time
+
+
+def iniciar_watchdog(seg=600):
+    def _matar():
+        time.sleep(max(60, int(seg)))
+        log(f"[watchdog] tempo máximo ({seg}s) atingido. Abortando.")
+        os._exit(124)
+    threading.Thread(target=_matar, daemon=True).start()
+
+
 def main():
     if not (URL and USER and PASS and EMAIL and SAIDA):
         log("ERRO: acesso ao FIXE incompleto (endereço, usuário, senha e e-mail de destino).")
         return 2
+    iniciar_watchdog(int(os.getenv("MAX_RUNTIME_SECONDS", "600")))
     with sync_playwright() as pw:
         b = pw.chromium.launch(headless=True)
         ctx = b.new_context(viewport={"width": 1400, "height": 900}, locale="pt-BR",
@@ -104,7 +117,10 @@ def main():
                 # grava o que já foi pedido: o painel importa o que chegar, mesmo se outra exportação falhar
                 destino = Path(SAIDA)
                 destino.parent.mkdir(parents=True, exist_ok=True)
-                destino.write_text(json.dumps({"em": datetime.now(TZ).isoformat(), "email": EMAIL, "emailBase": EMAIL_BASE, "tipos": feitos, "respostas": respostas, "confirmados": confirmacoes}), encoding="utf-8")
+                tmp = destino.with_name(f"{destino.name}.{os.getpid()}.tmp")
+                tmp.write_text(json.dumps({"em": datetime.now(TZ).isoformat(), "email": EMAIL, "emailBase": EMAIL_BASE, "tipos": feitos, "respostas": respostas, "confirmados": confirmacoes}), encoding="utf-8")
+                os.chmod(tmp, 0o640)
+                tmp.replace(destino)
 
             def abrir_opcao(rotulo):
                 """clica em Exportar e na opção; tenta de novo com a página recarregada (a janela anterior pode ter ficado aberta)"""

@@ -40,8 +40,16 @@ function lista(id) {
  */
 // grupos de venda que não são tipo de chá (lata, acessório, Tea Room…): não viram "tipo"
 const NAO_CHA = /ACESS|ENVASAD|ALIMENT|TEA ROOM|TEA MOMENT|CONSUM|MATERIA|SACH|FIDELIDADE|KIT|PRESENTE|EMBALA|LATA/i;
+const catCache = new Map();
 function catalogo(estoque, tabela, vendas) {
-  const tab = new Map(((tabela && tabela.itens) || []).map((i) => [String(i.cod), i]));
+  const estItens = (estoque && estoque.itens) || [];
+  const tabItens = (tabela && tabela.itens) || [];
+  const chave = estoque && estoque.em && tabela && tabela.simples && tabela.simples.em
+    ? `${estoque.em}|${estItens.length}|${tabela.simples.em}|${(tabela.compostos && tabela.compostos.em) || ''}|${tabItens.length}|${vendas ? vendas.length : 0}|${vendas && vendas.length ? vendas[vendas.length - 1].data : ''}`
+    : null;
+  if (chave && catCache.has(chave)) return catCache.get(chave);
+  const tab = new Map(tabItens.map((i) => [String(i.cod), i]));
+  const porCod = new Map(estItens.map((i) => [String(i.cod), i]));
   const tipo = new Map(); // cod do estoque → tipo de chá
   if (vendas) {
     const vistos = new Set();
@@ -49,15 +57,20 @@ function catalogo(estoque, tabela, vendas) {
       if (!v.grupo || vistos.has(v.descricao) || NAO_CHA.test(v.grupo)) continue;
       vistos.add(v.descricao);
       for (const c of ESP.codsEstoque({ desc: v.descricao, cod: v.cod != null ? String(v.cod) : null }, estoque)) {
-        const it = estoque.itens.find((x) => String(x.cod) === c);
+        const it = porCod.get(c);
         if (it && it.un === 'Kg' && !tipo.has(c)) tipo.set(c, v.grupo);
       }
     }
   }
-  return ((estoque && estoque.itens) || []).map((i) => {
+  const out = estItens.map((i) => {
     const t = tab.get(String(i.cod)) || {};
     return { cod: String(i.cod), desc: i.desc, un: i.un || t.un || '', grupo: t.grupo || '', sub: t.sub || '', barras: t.barras || '', tipo: tipo.get(String(i.cod)) || '', qtd: i.qtd ?? 0, custo: i.custo ?? null };
   });
+  if (chave) {
+    if (catCache.size >= 24) catCache.delete(catCache.keys().next().value);
+    catCache.set(chave, out);
+  }
+  return out;
 }
 
 /** tipo de chá agrupado: "ROOIBOS AROMATIZADO" e "ROOIBOS PURO" → "Rooibos" (os dois também ficam como opção) */
@@ -245,13 +258,15 @@ function marcarDesfazer(id, cid, por, etapa) {
 const pastaEnvio = (id) => path.join(pasta(id), 'envio');
 /** deixa a planilha e a lista do que tem de ser lido (código → quantidade) para o robô; grava o envio na contagem */
 async function prepararEnvio(id, cid, tipo, linhas, por) {
-  const c = ler(id, cid);
-  if (!c) return { erro: 'Contagem não encontrada.' };
+  if (!ler(id, cid)) return { erro: 'Contagem não encontrada.' };
   fs.mkdirSync(pastaEnvio(id), { recursive: true });
   const base = path.join(pastaEnvio(id), `${cid}-${tipo}`);
   try { fs.unlinkSync(base + '.resultado.json'); } catch { /* ok */ }
-  fs.writeFileSync(base + '.xlsx', Buffer.from(await planilha(linhas)));
-  fs.writeFileSync(base + '.json', JSON.stringify(linhas.map((l) => ({ cod: l.cod, nova: l.nova }))));
+  const buf = Buffer.from(await planilha(linhas));
+  C.gravarAtomico(base + '.xlsx', buf, 0o640);
+  C.gravarAtomico(base + '.json', JSON.stringify(linhas.map((l) => ({ cod: l.cod, nova: l.nova }))), 0o640);
+  const c = ler(id, cid);
+  if (!c) return { erro: 'Contagem não encontrada.' };
   if (tipo === 'importar') {
     c.planilha = { em: new Date().toISOString(), por, itens: linhas.map((l) => ({ cod: l.cod, desc: l.desc, un: l.un, grupo: l.grupo, sub: l.sub, antes: l.antes, nova: l.nova, custo: l.custo, zerado: !!l.zerado })) };
     c.geradoEm = c.planilha.em; c.geradoPor = por;

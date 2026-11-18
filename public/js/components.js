@@ -119,7 +119,9 @@
     });
     TS.expandidoTitulo = titulo;
   }
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && expandido && !document.querySelector('.ms.open')) fecharExpandido(false); });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && expandido && !document.querySelector('.ms.open, .camada-cheia:not(.exp-camada), .prc-drawer-camada, .inv-camera')) fecharExpandido(false);
+  });
   TS.botoesExpandir = function (root) {
     // a tela foi redesenhada: a camada antiga ficou com o cartão velho
     const reabrir = TS.expandidoTitulo;
@@ -307,7 +309,7 @@
     let searchBox = null;
     if (search) {
       searchBox = h('input', { class: 'f-input', type: 'search', placeholder: search, value: searchInit || '' });
-      searchBox.addEventListener('input', TS.debounce(() => { q = TS.norm(searchBox.value); page = 0; if (TS._buscas && TS._buscas.tela === location.hash) TS._buscas.v[chaveBusca] = searchBox.value; if (onSearch) onSearch(searchBox.value); paint(); }, 200));
+      searchBox.addEventListener('input', TS.debounce(() => { q = TS.norm(searchBox.value); page = 0; if (TS._buscas && TS._buscas.tela === location.hash) TS._buscas.v[chaveBusca] = searchBox.value; if (onSearch) onSearch(searchBox.value); paint(); }, 120));
     }
     function sorted() {
       let r = rows;
@@ -463,7 +465,9 @@
     const canvas = h('canvas', { role: 'img', 'aria-label': config.ariaLabel || 'Gráfico' });
     box.append(canvas);
     requestAnimationFrame(() => {
+      for (const ch of charts) { if (!ch.canvas || !ch.canvas.isConnected) { ch.destroy(); charts.delete(ch); } }
       if (!box.isConnected) return;
+      if (window.Chart && Chart.getChart) { const ant = Chart.getChart(canvas); if (ant) { ant.destroy(); charts.delete(ant); } }
       // legenda desmarcada continua desmarcada quando o gráfico é redesenhado (troca de indicador, filtro, período)
       const chave = config.legendaChave || chaveLegenda(box);
       const ocultas = chave ? (OCULTAS.get(chave) || new Set()) : null;

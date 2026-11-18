@@ -4,6 +4,7 @@
   const { h, fmt, state } = TS;
   const ESQ = (s) => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
   const cache = new Map(); // loja → { at, estoque, cfg }
+  TS.aoLimparCache && TS.aoLimparCache(() => cache.clear());
   const DIA = 86400e3;
 
   async function buscar(loja, forcar) {
@@ -385,7 +386,7 @@
   /** cartão do ponto de equilíbrio (fica no Resultado) */
   TS.cartaoEquilibrio = function (loja) {
     const box = h('div', { class: 'mt' });
-    buscar(loja).then((x) => { if (box.isConnected || true) pintar(box, x, 'equilibrio'); }).catch(() => box.replaceChildren());
+    buscar(loja).then((x) => { if (box.isConnected) pintar(box, x, 'equilibrio'); }).catch(() => box.replaceChildren());
     return box;
   };
 
@@ -1126,7 +1127,7 @@
         if (M.taxa(i) || !(db.vt[i] > 0)) continue;
         const cs = M.casar(i);
         const nome = cs && cs.kg ? cs.it.desc : db.D.descricao[db.desc[i]];
-        const k = db.day[i] + '|' + db.cupom[i];
+        const k = TS.chaveCupom(i);
         (cupons.get(k) || cupons.set(k, new Set()).get(k)).add(nome);
         const p = preco.get(nome) || { vt: 0, qtd: 0, custo: 0, qtdC: 0, ded: 0, granel: !!(cs && cs.kg) };
         const q = db.qtd[i] || 1; p.vt += db.vt[i]; p.qtd += q;
@@ -1284,7 +1285,7 @@
     const linhas = [['Código', 'Produto', 'Unidade', 'Estoque', 'Pedir', 'Custo unitário', 'Custo do pedido', 'Situação'].join(';'),
       ...lista.map((r) => [r.cod, r.produto, r.it.un, num(r.qtd, r.it.un === 'Kg' ? 3 : 0), num(r.pedir, r.it.un === 'Kg' ? 1 : 0), num(r.it.custo || 0, 2), num(r.custoPedido, 2), r.sit].map(esc).join(';'))];
     const blob = new Blob(['﻿' + linhas.join('\r\n')], { type: 'text/csv;charset=utf-8' });
-    const a = h('a', { href: URL.createObjectURL(blob), download: `pedido-${state.loja}-${new Date().toISOString().slice(0, 10)}.csv` });
+    const a = h('a', { href: URL.createObjectURL(blob), download: `pedido-${state.loja}-${TS.hojeSP ? TS.hojeSP() : new Date().toISOString().slice(0, 10)}.csv` });
     document.body.append(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   }

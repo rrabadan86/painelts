@@ -5,7 +5,12 @@
   const JANELA_MIN = 120; // o FIXE registra os pontos perto da venda; a folga cobre o relógio e o lançamento depois
 
   const tokens = (s) => new Set(TS.norm(s).replace(/(\d+)\s*(g|kg|ml|un)\b/g, '$1$2').replace(/[^a-z0-9]+/g, ' ').split(' ').filter((t) => t.length > 1 || /\d/.test(t)));
-  const addMeses = (day, m) => { const d = new Date(day * 864e5); return Math.round(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + m, d.getUTCDate()) / 864e5); };
+  const addMeses = (day, m) => {
+    const d = new Date(day * 864e5);
+    const y = d.getUTCFullYear(), mo = d.getUTCMonth() + m;
+    const ult = new Date(Date.UTC(y, mo + 1, 0)).getUTCDate();
+    return Math.round(Date.UTC(y, mo, Math.min(d.getUTCDate(), ult)) / 864e5);
+  };
 
   /** movimentos de todas as bases do FIXE carregadas → lista de objetos, com os cancelamentos aplicados */
   function movimentos() {
@@ -205,8 +210,8 @@
       for (const m of lista) {
         // prazo vencido antes deste movimento: o ciclo fecha sem resgate
         if (aberto != null && m.day - aberto > prazo) { fecha('nao'); podeAbrir = false; }
-        if ((m.tipo === 'pontos' || m.tipo === 'boasvindas') && m.pontos > 0) lotes.push({ vence: addMeses(m.day, validadeMeses), resta: m.pontos });
-        else if (m.tipo === 'resgate' || m.tipo === 'expirou') {
+        if ((m.tipo === 'pontos' || m.tipo === 'boasvindas' || m.tipo === 'ajuste') && m.pontos > 0) lotes.push({ vence: addMeses(m.day, validadeMeses), resta: m.pontos });
+        else if (m.tipo === 'resgate' || m.tipo === 'expirou' || m.tipo === 'saida') {
           if (m.tipo === 'resgate') { if (aberto != null) fecha('sim', m.day); podeAbrir = true; }
           let falta = m.pontos;
           for (const l of lotes) { if (!falta) break; const t = Math.min(l.resta, falta); l.resta -= t; falta -= t; }

@@ -71,11 +71,16 @@ TS.MESES = MESES;
 TS.DIAS_SEMANA = DIAS_SEMANA;
 TS.ymLabel = (ym) => `${MESES[+ym.slice(5, 7) - 1]}/${ym.slice(2, 4)}`;
 
-// ---------- datas (dias desde 1970, em UTC) ----------
+// ---------- datas (dias desde 1970, no fuso de Brasília) ----------
 const DAY = 86400000;
+const FMT_HOJE_SP = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' });
+TS.hojeSP = () => FMT_HOJE_SP.format(new Date());
 TS.isoToDay = (iso) => Math.floor(Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10)) / DAY);
 TS.dayToIso = (d) => new Date(d * DAY).toISOString().slice(0, 10);
-TS.todayDay = () => { const n = new Date(); return Math.floor(Date.UTC(n.getFullYear(), n.getMonth(), n.getDate()) / DAY); };
+TS.todayDay = () => TS.isoToDay(TS.hojeSP());
+TS._limpadores = [];
+TS.aoLimparCache = (fn) => { if (typeof fn === 'function') TS._limpadores.push(fn); };
+TS.limparCaches = () => { for (const fn of TS._limpadores) { try { fn(); } catch { /* ok */ } } };
 
 // ---------- decodificação ----------
 TS.decode = function (raw) {
@@ -301,7 +306,12 @@ TS.indicadores = function (idx) {
 
 /** cupom + loja + dia: o número do cupom pode se repetir entre lojas e, em períodos longos,
  *  entre caixas/séries diferentes; um cupom nunca passa de um dia para o outro */
-TS.chaveCupom = (i) => (TS.db.cupom[i] * 64 + TS.db.loja[i]) * 50000 + (TS.db.day[i] || 0);
+TS.chaveCupom = (i) => {
+  const c = TS.db.cupom[i];
+  return typeof c === 'number' && Number.isInteger(c) && c >= 0 && c < 1e9
+    ? (c * 64 + TS.db.loja[i]) * 65536 + (TS.db.day[i] || 0)
+    : `${c}|${TS.db.loja[i]}|${TS.db.day[i] || 0}`;
+};
 
 TS.soma = (idx, col) => { let s = 0; const a = TS.db[col]; for (const i of idx) s += a[i] || 0; return s; };
 

@@ -149,13 +149,14 @@ async function montarFechamento(lojasIds, obter, dia, { semCaixa } = {}) {
   const cfg = C.get();
   const ids = lojasIds.includes('*') ? cfg.lojas.map((l) => l.id) : lojasIds;
   const textos = [], htmls = [];
+  const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
   for (const id of ids) {
     try {
       const d = await obter(id);
       if (!d) continue;
       const f = F.calcular(d, dia);
       if (semCaixa) f.caixa = null;
-      if (!f.temVendas) { textos.push(`━━ ${f.loja.nome} ━━\nSem vendas registradas em ${dia.split('-').reverse().join('/')} (a coleta da noite já rodou?).`); htmls.push(`<p><b>${f.loja.nome}</b>: sem vendas registradas no dia.</p>`); continue; }
+      if (!f.temVendas) { textos.push(`━━ ${f.loja.nome} ━━\nSem vendas registradas em ${dia.split('-').reverse().join('/')} (a coleta da noite já rodou?).`); htmls.push(`<p><b>${esc(f.loja.nome)}</b>: sem vendas registradas no dia.</p>`); continue; }
       textos.push(F.texto(f)); htmls.push(F.html(f));
     } catch (e) { textos.push(`━━ ${id} ━━\nNão foi possível montar o fechamento: ${e.message}`); }
   }
@@ -245,34 +246,53 @@ async function statusColetor(id) {
   try { return await COL.status(id); } catch { return null; }
 }
 
+/** altera apenas campos pontuais relendo o arquivo atual (não sobrescreve edições feitas em paralelo) */
+function alterarPontual(fn) {
+  const atual = ler();
+  fn(atual);
+  gravar(atual);
+}
+
 /** agenda: confere a cada 30 s se chegou o horário (Brasília) */
+let agendaRodando = false;
 function agendar(obter) {
-  setInterval(async () => {
-    const c = ler();
-    const { iso, hhmm } = I.hojeSP();
-    // fechamento do dia de cada loja: logo depois da última atualização automática do dia (as manuais não disparam);
-    // loja sem atualização automática: no horário escolhido. Se a última do dia não acontecer, sai às 6h do dia seguinte.
-    const ontem = new Date(Date.parse(iso + 'T12:00:00Z') - 86400e3).toISOString().slice(0, 10);
-    for (const l of C.get().lojas) {
-      const x = c.lojas && c.lojas[l.id] && cfgLoja(c, l.id);
-      if (!x || !x.fechamento.ativo) continue;
-      const ult = x.fechamento.ultimoEnvio || '';
-      const { dia, motivo } = quandoFechamento(await statusColetor(l.id), { ult, iso, ontem, hhmm, horario: x.fechamento.horario });
-      if (!dia) continue;
-      x.fechamento.ultimoEnvio = dia; gravar(c); // marca antes: nunca envia duas vezes o mesmo dia
-      try {
-        const r = await enviarFechamentoLoja(obter, l.id, { dia });
-        C.auditar('sistema', 'enviou fechamento do dia', l.id, { loja: l.id, dia, motivo, envios: r.length, falhas: r.filter((y) => !y.ok).map((y) => `${y.para}: ${y.erro}`) });
-      } catch (e) { console.error(`[fechamento] ${l.id}:`, e.message); }
-    }
-    if (!c.ativo) return;
-    if (c.ultimoEnvio === iso || hhmm < c.horario) return;
-    c.ultimoEnvio = iso; gravar(c); // marca antes: nunca envia duas vezes no mesmo dia
+  return setInterval(async () => {
+    if (agendaRodando) return;
+    agendaRodando = true;
     try {
-      const r = await enviarTodos(obter);
-      C.auditar('sistema', 'enviou resumo diário', 'notificações', { envios: r.length, falhas: r.filter((x) => !x.ok).map((x) => `${x.para}: ${x.erro}`) });
-      console.log(`[resumo] enviado: ${r.filter((x) => x.ok).length} ok, ${r.filter((x) => !x.ok).length} falha(s)`);
-    } catch (e) { console.error('[resumo] erro:', e.message); }
+      const { iso, hhmm } = I.hojeSP();
+      const ontem = new Date(Date.parse(iso + 'T12:00:00Z') - 86400e3).toISOString().slice(0, 10);
+      for (const l of C.get().lojas) {
+        const cLoja = ler();
+        const x = cLoja.lojas && cLoja.lojas[l.id] && cfgLoja(cLoja, l.id);
+        if (!x || !x.fechamento.ativo) continue;
+        const ult = x.fechamento.ultimoEnvio || '';
+        const { dia, motivo } = quandoFechamento(await statusColetor(l.id), { ult, iso, ontem, hhmm, horario: x.fechamento.horario });
+        if (!dia) continue;
+        alterarPontual((atu) => { cfgLoja(atu, l.id).fechamento.ultimoEnvio = dia; });
+        try {
+          const r = await enviarFechamentoLoja(obter, l.id, { dia });
+          if (r.length && r.every((y) => !y.ok)) alterarPontual((atu) => { cfgLoja(atu, l.id).fechamento.ultimoEnvio = ult || null; });
+          C.auditar('sistema', 'enviou fechamento do dia', l.id, { loja: l.id, dia, motivo, envios: r.length, falhas: r.filter((y) => !y.ok).map((y) => `${y.para}: ${y.erro}`) });
+        } catch (e) {
+          alterarPontual((atu) => { cfgLoja(atu, l.id).fechamento.ultimoEnvio = ult || null; });
+          console.error(`[fechamento] ${l.id}:`, e.message);
+        }
+      }
+      const cGeral = ler();
+      if (!cGeral.ativo || cGeral.ultimoEnvio === iso || hhmm < cGeral.horario) return;
+      const ultGeral = cGeral.ultimoEnvio || null;
+      alterarPontual((atu) => { atu.ultimoEnvio = iso; });
+      try {
+        const r = await enviarTodos(obter);
+        if (r.length && r.every((x) => !x.ok)) alterarPontual((atu) => { atu.ultimoEnvio = ultGeral; });
+        C.auditar('sistema', 'enviou resumo diário', 'notificações', { envios: r.length, falhas: r.filter((x) => !x.ok).map((x) => `${x.para}: ${x.erro}`) });
+        console.log(`[resumo] enviado: ${r.filter((x) => x.ok).length} ok, ${r.filter((x) => !x.ok).length} falha(s)`);
+      } catch (e) {
+        alterarPontual((atu) => { atu.ultimoEnvio = ultGeral; });
+        console.error('[resumo] erro:', e.message);
+      }
+    } finally { agendaRodando = false; }
   }, 30e3);
 }
 

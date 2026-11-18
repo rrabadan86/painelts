@@ -56,16 +56,31 @@ function foto(dataUrl) {
 function criar(id, nota, b, por) {
   if (!nota) return { erro: 'Nota de entrada não encontrada.' };
   const porCod = new Map(nota.itens.map((i) => [String(i.cod), i]));
+  // desconta itens que já tiveram NF-e de devolução gravada no AppNext para esta mesma nota
+  const jaDevolvido = new Map();
+  if (nota.id != null) {
+    for (const ant of lista(id)) {
+      if (String(ant.nota && ant.nota.id) !== String(nota.id) || !(ant.nfe && ant.nfe.estado === 'ok')) continue;
+      for (const it of ant.itens || []) jaDevolvido.set(String(it.cod), (jaDevolvido.get(String(it.cod)) || 0) + (it.qtd || 0));
+    }
+  }
+  const somaPorCod = new Map();
   const itens = [], fotos = [];
   // cada produto pode ter parte danificada e parte que não chegou (ex.: pediu 6, 2 quebrados e 4 faltaram)
   for (const x of Array.isArray(b.itens) ? b.itens.slice(0, 80) : []) {
-    const i = porCod.get(String(x.cod));
+    const cod = String(x.cod);
+    const i = porCod.get(cod);
     if (!i) return { erro: `O item ${x.cod} não está nesta nota.` };
     const q = (v) => Math.round((Number(v) || 0) * 1000) / 1000;
     const dan = x.qtdDanificado != null || x.qtdFaltou != null ? q(x.qtdDanificado) : x.tipo === 'faltou' ? 0 : q(x.qtd);
     const fal = x.qtdDanificado != null || x.qtdFaltou != null ? q(x.qtdFaltou) : x.tipo === 'faltou' ? q(x.qtd) : 0;
     if (dan < 0 || fal < 0 || !(dan + fal > 0)) return { erro: `Informe a quantidade de ${i.nome}.` };
-    if (dan + fal > (i.qtd || 0) + 1e-9) return { erro: `${i.nome}: ${dan + fal} passa da quantidade da nota (${i.qtd}).` };
+    const prev = jaDevolvido.get(cod) || 0;
+    const acum = Math.round(((somaPorCod.get(cod) || 0) + dan + fal) * 1000) / 1000;
+    if (acum + prev > (i.qtd || 0) + 1e-9) {
+      return { erro: prev > 0 ? `${i.nome}: ${acum} + ${prev} já devolvidos em NF-e anterior passa da quantidade da nota (${i.qtd}).` : `${i.nome}: ${acum} passa da quantidade da nota (${i.qtd}).` };
+    }
+    somaPorCod.set(cod, acum);
     if (dan > 0) {
       const fs_ = (Array.isArray(x.fotos) ? x.fotos : []).slice(0, 3).map(foto);
       if (fs_.some((f) => !f)) return { erro: `Uma foto de ${i.nome} não é válida (use JPG ou PNG).` };
@@ -79,7 +94,7 @@ function criar(id, nota, b, por) {
   const did = crypto.randomBytes(6).toString('hex');
   const dir = pastaDev(id, did);
   fs.mkdirSync(dir, { recursive: true });
-  itens.forEach((it, n) => fotos[n].forEach((f, k) => fs.writeFileSync(path.join(dir, `foto-${n}-${k}.jpg`), f)));
+  itens.forEach((it, n) => fotos[n].forEach((f, k) => C.gravarAtomico(path.join(dir, `foto-${n}-${k}.jpg`), f, 0o640)));
   const d = {
     id: did, em: new Date().toISOString(), por, obs: txt(b.obs, 400),
     nota: { id: nota.id, nf: nota.nf, serie: nota.serie, emissao: nota.emissao, entrada: nota.entrada, fornecedor: nota.fornecedor, total: nota.total },
@@ -154,7 +169,7 @@ async function planilha(id, d, nomeLoja) {
     }
   }
   const buf = Buffer.from(await wb.xlsx.writeBuffer());
-  fs.writeFileSync(path.join(pastaDev(id, d.id), 'devolucao.xlsx'), buf);
+  C.gravarAtomico(path.join(pastaDev(id, d.id), 'devolucao.xlsx'), buf, 0o640);
   return buf;
 }
 
@@ -177,7 +192,7 @@ function pedirNfe(id, d, simular) {
   if (!/^[0-9a-f-]{36}$/.test(String(d.nota.id || ''))) return { erro: 'Esta nota não tem o id do AppNext (atualize as notas de entrada).' };
   fs.mkdirSync(envioNfe(id), { recursive: true });
   try { fs.unlinkSync(path.join(envioNfe(id), d.id + '.resultado.json')); } catch { /* ok */ }
-  fs.writeFileSync(path.join(envioNfe(id), d.id + '.json'), JSON.stringify({ entradaId: d.nota.id, itens: [...d.itens.reduce((m, i) => m.set(i.cod, Math.round(((m.get(i.cod) || 0) + i.qtd) * 1000) / 1000), new Map())].map(([codigo, qtd]) => ({ codigo, qtd })), simular: !!simular }));
+  C.gravarAtomico(path.join(envioNfe(id), d.id + '.json'), JSON.stringify({ entradaId: d.nota.id, itens: [...d.itens.reduce((m, i) => m.set(i.cod, Math.round(((m.get(i.cod) || 0) + i.qtd) * 1000) / 1000), new Map())].map(([codigo, qtd]) => ({ codigo, qtd })), simular: !!simular }), 0o640);
   return { ok: atualizar(id, d.id, (x) => { x.nfe = { estado: 'na_fila', em: new Date().toISOString(), simular: !!simular }; }) };
 }
 /** resultado do robô para a NF-e de devolução */

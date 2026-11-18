@@ -79,7 +79,15 @@ function lerClientes(rows) {
       cidade: txt(pega(r, 'cidade')).trim().slice(0, 80),
       ...(d.formato === 'FIXE' ? { cadastroFixe: (() => { const v = pega(r, 'cadastro'); return v == null || txt(v).trim() === '' ? null : dataDMY(v); })(),
         // saldo oficial de pontos do FIXE (a base de leads traz); vale mais que a conta feita pelos Logs
-        saldoFixe: (() => { const v = pega(r, 'saldo'); if (v == null || txt(v).trim() === '') return null; const n = Number(String(txt(v)).replace(/\./g, '').replace(',', '.')); return Number.isFinite(n) ? Math.round(n) : null; })() } : {}),
+        saldoFixe: (() => {
+          const v = pega(r, 'saldo');
+          if (v == null || txt(v).trim() === '') return null;
+          if (typeof v === 'number') return Number.isFinite(v) ? Math.round(v) : null;
+          if (typeof v === 'object' && typeof v.result === 'number') return Number.isFinite(v.result) ? Math.round(v.result) : null;
+          const s = txt(v).trim();
+          const n = Number(s.includes(',') ? s.replace(/\./g, '').replace(',', '.') : s.replace(/\.(?=\d{3}(\D|$))/g, ''));
+          return Number.isFinite(n) ? Math.round(n) : null;
+        })() } : {}),
     });
   }
   const usadas = new Set(Object.values(d.col).filter((j) => j >= 0));

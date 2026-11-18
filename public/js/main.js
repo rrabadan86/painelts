@@ -49,8 +49,19 @@
   // histórico parcial: o painel carrega os últimos 24 meses (+ o mês atual) e busca o resto só quando precisa
   // (Clientes, "Tudo", "só o mês" em todos os anos, ou um período cujo ano anterior fica antes do que veio)
   TS.historicoCompleto = false;
-  let buscandoCompleto = false;
-  const desdeParcial = () => { const n = new Date(); return new Date(Date.UTC(n.getFullYear(), n.getMonth() - 24, 1)).toISOString().slice(0, 10); };
+  let buscandoCompleto = false, cliIdle = null;
+  const TELAS_CLI = new Set(['clientes', 'clilista', 'campanhas', 'cupons', 'espera', 'nfsaida']);
+  const desdeParcial = () => {
+    const h0 = TS.hojeSP ? TS.hojeSP() : new Date().toISOString().slice(0, 10);
+    return new Date(Date.UTC(+h0.slice(0, 4), +h0.slice(5, 7) - 1 - 24, 1)).toISOString().slice(0, 10);
+  };
+  TS.garantirClientes = function () {
+    if (TS.db && (!TS.cli || TS.cli._db !== TS.db)) {
+      TS.prepararClientes();
+      if (TS.cli) TS.cli._db = TS.db;
+    }
+    return TS.cli;
+  };
   function precisaCompleto() {
     const db = TS.db, f = state.f;
     if (!db || !db.desde || TS.historicoCompleto) return false;
@@ -89,6 +100,7 @@
     }
     if (!TS.db) return;
     TS.destroyCharts();
+    if (TS.db.n && TELAS_CLI.has(state.page)) TS.garantirClientes();
     TS.renderFiltros();
     const root = h('div');
     if (!TS.db.n) {
@@ -153,11 +165,14 @@
     const btn = document.getElementById('updated');
     btn.classList.add('carregando');
     try {
+      const hashPag = location.hash.replace('#', '');
+      const pagAlvo = PAGES.includes(hashPag) ? hashPag : state.page;
       const qs = new URLSearchParams({ loja: state.loja || '' });
       if (TS.lojaCarregada !== state.loja) TS.historicoCompleto = false; // loja nova: começa pelo parcial
+      if (['clientes', 'clilista', 'campanhas'].includes(pagAlvo)) TS.historicoCompleto = true;
       if (!TS.historicoCompleto) qs.set('desde', desdeParcial());
       const chave = qs.toString();
-      if (forcar) qs.set('atualizar', '1');
+      if (forcar) { qs.set('atualizar', '1'); TS.limparCaches && TS.limparCaches(); }
       // mesmo pedido de antes: o servidor responde 304 se nada mudou (não baixa tudo de novo)
       const headers = !forcar && TS.etag && TS.etagChave === chave && TS.db ? { 'If-None-Match': TS.etag } : {};
       const res = await fetch(TS.api('dados?' + qs), { credentials: 'same-origin', headers });
@@ -170,7 +185,7 @@
       const primeira = !TS.db || TS.lojaCarregada !== state.loja;
       if (!primeira && !forcar && body.geradoEm === TS.db.geradoEm && (body.desde || null) === (TS.db.desde || null)) return; // nada mudou
       TS.etag = res.headers.get('ETag'); TS.etagChave = chave;
-      if (primeira && TS.db) TS.resetFiltros();
+      if (primeira && TS.db) { TS.resetFiltros(); TS.limparCaches && TS.limparCaches(); }
       // os filtros guardam o número de cada texto no dicionário; numa recarga (atualização automática, "carregar todo o
       // histórico", produto reclassificado) a ordem do dicionário pode mudar: guarda os textos e remonta depois
       const textos = !primeira && TS.db ? TS.filtrosEmTexto() : null;
@@ -179,7 +194,10 @@
       if (textos) TS.filtrosDeTexto(textos);
       TS.aplicarMarca && TS.aplicarMarca();
       TS.rules.prepare();
-      TS.prepararClientes();
+      TS.cli = null;
+      if (cliIdle) { (window.cancelIdleCallback || clearTimeout)(cliIdle); cliIdle = null; }
+      if (TELAS_CLI.has(pagAlvo)) TS.garantirClientes();
+      else cliIdle = (window.requestIdleCallback || ((fn) => setTimeout(fn, 200)))(() => { cliIdle = null; TS.garantirClientes(); });
       const aviso = res.headers.get('X-Dados-Aviso');
       TS.aviso = aviso ? 'Não consegui atualizar agora; mostrando os dados anteriores. Motivo: ' + decodeURIComponent(aviso) : null;
       const em = new Date(res.headers.get('X-Dados-Em') || body.geradoEm);
@@ -336,6 +354,8 @@
         sel.hidden = false;
         sel.addEventListener('change', () => {
           state.loja = sel.value;
+          state.invId = null;
+          TS.limparCaches && TS.limparCaches();
           try { localStorage.setItem(TS.demo ? 'teashop.demo.loja' : 'teashop.loja', state.loja); } catch { /* ok */ }
           // nas Configurações (todas as lojas) a tela fica; a loja escolhida vale para as outras telas
           if (state.page !== 'config') content.replaceChildren(h('div', { class: 'loading' }, h('div', null, h('div', { class: 'spinner' }), h('p', null, 'Carregando a loja…'))));

@@ -22,9 +22,6 @@ from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 SAIDA = os.getenv("SAIDA_COMPRAS", "").strip()
-if not SAIDA:
-    print("ERRO: defina SAIDA_COMPRAS")
-    sys.exit(2)
 os.environ.setdefault("SAIDA_ARQUIVO", str(Path.cwd() / "_nao_usado.xlsx"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import nextsoft_export_to_drive as nx  # noqa: E402
@@ -54,7 +51,6 @@ def pedido_referencia(page, pedidos):
                 fazer_login(page)
                 nx.trocar_loja(page, os.getenv("APPNEXT_LOJA_DESTINO"))
             antes = len(pedidos)
-            # troca só o '#': a página não recarrega e o login continua valendo (passa por outra tela para a lista recarregar)
             page.evaluate("() => { location.hash = '#/estoque/extrato-estoque'; }")
             page.wait_for_timeout(1500)
             page.evaluate(f"() => {{ location.hash = '{HASH}'; }}")
@@ -75,8 +71,17 @@ def trocar_periodo(url, ini: str, fim: str):
     q = dict(parse_qsl(p.query, keep_blank_values=True))
     if "dataEmissaoInicial" not in q or "dataEmissaoFinal" not in q:
         raise RuntimeError("O pedido da lista não tem dataEmissaoInicial/dataEmissaoFinal; o AppNext mudou a tela.")
-    q["dataEmissaoInicial"] = f"{ini}T00:00:00.000Z"
-    q["dataEmissaoFinal"] = f"{fim}T23:59:59.000Z"
+    dt_i = datetime.strptime(ini, "%Y-%m-%d")
+    dt_f = datetime.strptime(fim, "%Y-%m-%d")
+    q["dataEmissaoInicial"] = nx.para_iso_utc_brt(dt_i, fim=False)
+    q["dataEmissaoFinal"] = nx.para_iso_utc_brt(dt_f, fim=True)
+    for k in ("tamanhoPagina", "pageSize", "limit", "quantidade"):
+        if k in q:
+            try:
+                if int(q[k]) < 200:
+                    q[k] = "200"
+            except ValueError:
+                pass
     return urlunsplit((p.scheme, p.netloc, p.path, urlencode(q), p.fragment))
 
 
@@ -89,6 +94,54 @@ def pedir_json(page, url, cab):
             t = ""
         raise RuntimeError(f"AppNext respondeu {resp.status} em {urlsplit(url).path}{': ' + t if t else ''}")
     return resp.json()
+
+
+def pedir_lista_paginada(page, url_base, cab):
+    """Percorre páginas da listagem quando a API do AppNext pagina os registros."""
+    p = urlsplit(url_base)
+    q = dict(parse_qsl(p.query, keep_blank_values=True))
+    pag_key = next((k for k in ("pagina", "page", "pageNumber") if k in q), None)
+    skip_key = "skip" if not pag_key and "skip" in q else None
+    tam_key = next((k for k in ("tamanhoPagina", "pageSize", "limit", "length", "take") if k in q), None)
+    tam = int(q[tam_key]) if tam_key and str(q[tam_key]).isdigit() else 0
+    base_num = int(q[pag_key]) if pag_key and str(q[pag_key]).isdigit() else 1
+
+    vistos, out = set(), []
+    for idx in range(50):
+        q_cur = dict(q)
+        if pag_key:
+            q_cur[pag_key] = str(base_num + idx)
+        elif skip_key and tam > 0:
+            q_cur[skip_key] = str(idx * tam)
+        url = urlunsplit((p.scheme, p.netloc, p.path, urlencode(q_cur), p.fragment))
+        res = pedir_json(page, url, cab)
+        if isinstance(res, list):
+            lote, meta = res, {}
+        elif isinstance(res, dict):
+            meta = res
+            lote = res.get("itens") or res.get("items") or next((v for v in res.values() if isinstance(v, list)), [])
+        else:
+            break
+        novos_lote = 0
+        for item in lote:
+            iid = item.get("id") if isinstance(item, dict) else None
+            if iid is not None:
+                if iid in vistos:
+                    continue
+                vistos.add(iid)
+            out.append(item)
+            novos_lote += 1
+        if not (pag_key or (skip_key and tam > 0)) or not lote or novos_lote == 0:
+            break
+        tot_pags = meta.get("totalPaginas") or meta.get("totalPages")
+        tot_regs = meta.get("totalRegistros") or meta.get("totalCount") or meta.get("total")
+        if isinstance(tot_pags, int) and (idx + 1) >= tot_pags:
+            break
+        if isinstance(tot_regs, int) and len(out) >= tot_regs:
+            break
+        if tam > 0 and len(lote) < tam and not tot_pags and not tot_regs:
+            break
+    return out
 
 
 def num(v):
@@ -108,7 +161,6 @@ def nota_de(d):
         itens.append({
             "cod": str(i.get("codigo") or "").strip(), "nome": (i.get("nome") or "").strip(), "un": i.get("unidade") or "",
             "qtd": q, "vu": num(i.get("valorUnitario")),
-            # custo de uma unidade: líquido (com IPI e rateios) ÷ quantidade; sem o líquido, o bruto
             "custo": round((vl if vl else (vb or 0)) / q, 4), "grupo": i.get("grupoNome") or "",
         })
     return {
@@ -121,68 +173,90 @@ def nota_de(d):
     }
 
 
-def main():
-    nx.start_watchdog(int(os.getenv("MAX_RUNTIME_SECONDS", "900")))
-    destino = Path(SAIDA)
+def coletar_compras_na_pagina(page, saida: str, desde: str = None):
+    desde = (desde or os.getenv("COMPRAS_DESDE") or "2018-01-01").strip()
+    destino = Path(saida)
     try:
         antigo = json.loads(destino.read_text(encoding="utf-8"))
     except Exception:  # noqa: BLE001
         antigo = {}
     guardadas = {n["id"]: n for n in antigo.get("notas", []) if n.get("id")}
+    pedidos = []
+    on_req = lambda r: pedidos.append(r) if r.resource_type in ("xhr", "fetch") and "appnext" in r.url else None
+    page.on("request", on_req)
+    try:
+        nx.garantir_loja(page)
+        step("2) Estoque → Entrada de Produtos")
+        ref = pedido_referencia(page, pedidos)
+        nx.garantir_loja(page)
+        cab = {k: v for k, v in ref.headers.items() if k.lower() not in ("content-length", "host", "cookie", "accept-encoding")}
+
+        hoje = datetime.now(nx._TZ_LOG).date().isoformat()
+        step(f"3) Lista de notas de {desde} a {hoje}")
+        lista = pedir_lista_paginada(page, trocar_periodo(ref.url, desde, hoje), cab)
+        concluidas = [x for x in lista if str(x.get("status") or "").lower().startswith("conclu") and x.get("id")]
+        log(f"{len(lista)} notas no AppNext, {len(concluidas)} concluídas ({len(guardadas)} já guardadas)")
+
+        step("4) Itens das notas novas")
+        base = urlsplit(ref.url)
+        notas_por_id = dict(guardadas)
+        novas, falhas = 0, 0
+        for x in concluidas:
+            if x["id"] in notas_por_id:
+                continue
+            url = urlunsplit((base.scheme, base.netloc, base.path.rstrip("/") + "/" + x["id"], "", ""))
+            try:
+                n = nota_de(pedir_json(page, url, cab))
+            except Exception as e:  # noqa: BLE001
+                falhas += 1
+                log(f"NF {x.get('numeroNota')}: {str(e)[:200]}")
+                if falhas >= 5:
+                    raise
+                continue
+            notas_por_id[n["id"]] = n
+            novas += 1
+            log(f"NF {n['nf']} ({n['emissao']}, {n['fornecedor'][:30]}): {len(n['itens'])} itens")
+        ids_concluidas = {x["id"] for x in concluidas}
+        notas = [n for nid, n in notas_por_id.items() if nid in ids_concluidas or nid in guardadas]
+        notas.sort(key=lambda n: (n["entrada"] or n["emissao"], n["nf"] or 0))
+        destino.parent.mkdir(parents=True, exist_ok=True)
+        tmp = destino.with_name(f"{destino.name}.{os.getpid()}.tmp")
+        tmp.write_text(json.dumps({"atualizado": datetime.now(nx._TZ_LOG).isoformat(), "desde": desde, "notas": notas}, ensure_ascii=False), encoding="utf-8")
+        os.chmod(tmp, 0o640)
+        tmp.replace(destino)
+        log(f"Compras: {len(notas)} notas ({novas} novas{', ' + str(falhas) + ' com erro' if falhas else ''}) → {destino.name}")
+        if falhas and novas == 0:
+            raise RuntimeError(f"Falha ao baixar {falhas} nota(s) nova(s) de compra.")
+    finally:
+        try:
+            page.remove_listener("request", on_req)
+        except Exception:
+            pass
+
+
+def main():
+    saida = os.getenv("SAIDA_COMPRAS", "").strip()
+    if not saida:
+        print("ERRO: defina SAIDA_COMPRAS")
+        return 2
+    nx.start_watchdog(int(os.getenv("MAX_RUNTIME_SECONDS", "900")))
+    pasta_pw = Path.cwd() / "pw_state"
+    nx.limpar_locks_perfil(pasta_pw)
     with sync_playwright() as pw:
         ctx = pw.chromium.launch_persistent_context(
-            user_data_dir=str(Path.cwd() / "pw_state"), headless=True, ignore_https_errors=True,
+            user_data_dir=str(pasta_pw), headless=True, ignore_https_errors=nx.INSEGURO,
             viewport={"width": 1600, "height": 950},
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36",
         )
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         page.set_default_timeout(30_000)
         page.set_default_navigation_timeout(60_000)
-        pedidos = []
-        page.on("request", lambda r: pedidos.append(r) if r.resource_type in ("xhr", "fetch") and "appnext" in r.url else None)
         try:
             step("1) Login")
             nx.goto_login_with_retries(page, nx.LOGIN_URL)
             fazer_login(page)
             nx.trocar_loja(page, os.getenv("APPNEXT_LOJA_DESTINO"))
-
-            step("2) Estoque → Entrada de Produtos")
-            ref = pedido_referencia(page, pedidos)
-            cab = {k: v for k, v in ref.headers.items() if k.lower() not in ("content-length", "host", "cookie", "accept-encoding")}
-
-            hoje = date.today().isoformat()
-            step(f"3) Lista de notas de {DESDE} a {hoje}")
-            lista = pedir_json(page, trocar_periodo(ref.url, DESDE, hoje), cab)
-            if isinstance(lista, dict):
-                lista = lista.get("itens") or next((v for v in lista.values() if isinstance(v, list)), [])
-            concluidas = [x for x in lista if str(x.get("status") or "").lower().startswith("conclu") and x.get("id")]
-            log(f"{len(lista)} notas no AppNext, {len(concluidas)} concluídas ({len(guardadas)} já guardadas)")
-
-            step("4) Itens das notas novas")
-            base = urlsplit(ref.url)
-            notas, novas, falhas = [], 0, 0
-            for x in concluidas:
-                if x["id"] in guardadas:
-                    notas.append(guardadas[x["id"]])
-                    continue
-                url = urlunsplit((base.scheme, base.netloc, base.path.rstrip("/") + "/" + x["id"], "", ""))
-                try:
-                    n = nota_de(pedir_json(page, url, cab))
-                except Exception as e:  # noqa: BLE001
-                    falhas += 1
-                    log(f"NF {x.get('numeroNota')}: {str(e)[:200]}")
-                    if falhas >= 5:
-                        raise
-                    continue
-                notas.append(n)
-                novas += 1
-                log(f"NF {n['nf']} ({n['emissao']}, {n['fornecedor'][:30]}): {len(n['itens'])} itens")
-            notas.sort(key=lambda n: (n["entrada"] or n["emissao"], n["nf"] or 0))
-            destino.parent.mkdir(parents=True, exist_ok=True)
-            tmp = destino.with_name(destino.name + ".tmp")
-            tmp.write_text(json.dumps({"atualizado": datetime.now().astimezone().isoformat(), "desde": DESDE, "notas": notas}, ensure_ascii=False), encoding="utf-8")
-            tmp.replace(destino)
-            log(f"Compras: {len(notas)} notas ({novas} novas{', ' + str(falhas) + ' com erro' if falhas else ''}) → {destino.name}")
+            coletar_compras_na_pagina(page, saida)
             return 0
         except Exception:  # noqa: BLE001
             log("### ERRO NAS COMPRAS ###")

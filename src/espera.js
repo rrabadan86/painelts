@@ -28,9 +28,20 @@ function gravar(id, d) { fs.mkdirSync(path.dirname(arq(id)), { recursive: true }
 // ---------- produto pedido → item do estoque (mesmas regras do custo: código, código do chá + tamanho, nome) ----------
 const TAM = /\s*[-–]?\s*\d+\s*(g|gr|grs|gramas)\s*$/i;
 const base = (desc) => String(desc || '').replace(TAM, '').trim();
-function codsEstoque(item, estoque) {
+const idxCache = new WeakMap();
+function idxEstoque(estoque) {
   const itens = (estoque && estoque.itens) || [];
-  const porCod = new Map(itens.map((i) => [String(i.cod), i]));
+  let x = idxCache.get(itens);
+  if (!x) {
+    const porCod = new Map();
+    const norm = itens.map((i) => { const c = String(i.cod); porCod.set(c, i); const n = ESQ(i.desc); return { i, cod: c, n, pad: ' ' + n + ' ' }; });
+    x = { porCod, norm };
+    if (Array.isArray(estoque && estoque.itens)) idxCache.set(itens, x);
+  }
+  return x;
+}
+function codsEstoque(item, estoque) {
+  const { porCod, norm } = idxEstoque(estoque);
   const cod = String(item.cod || '');
   const out = new Set();
   if (cod && porCod.has(cod)) out.add(cod);
@@ -38,20 +49,20 @@ function codsEstoque(item, estoque) {
   if (/^\d{6,}$/.test(cod) && porCod.has(cod.slice(0, -1)) && porCod.get(cod.slice(0, -1)).un === 'Kg') out.add(cod.slice(0, -1));
   if (!out.size) {
     const nD = ESQ(item.desc), nB = ESQ(base(item.desc));
-    for (const i of itens) { const n = ESQ(i.desc); if ((i.un === 'Kg' && n === nB) || n === nD) out.add(String(i.cod)); }
+    for (const { i, cod: ic, n } of norm) if ((i.un === 'Kg' && n === nB) || n === nD) out.add(ic);
   }
   // pelo nome solto ("valeriana", "valeriana 500g"): todas as palavras no nome do item; chá a granel (kg) primeiro
   if (!out.size) {
     const pal = ESQ(base(item.desc)).split(' ').filter((w) => w.length >= 3 && !/^(cha|chas|de|da|do|com)$/.test(w));
     if (pal.length) {
-      const cand = itens.filter((i) => { const n = ' ' + ESQ(i.desc) + ' '; return pal.every((w) => n.includes(' ' + w + ' ') || n.includes(' ' + w)); });
-      const kg = cand.filter((i) => i.un === 'Kg');
-      for (const i of (kg.length ? kg : cand).slice(0, 3)) out.add(String(i.cod));
+      const cand = norm.filter(({ pad }) => pal.every((w) => pad.includes(' ' + w + ' ') || pad.includes(' ' + w)));
+      const kg = cand.filter(({ i }) => i.un === 'Kg');
+      for (const { cod: ic } of (kg.length ? kg : cand).slice(0, 3)) out.add(ic);
     }
   }
   return [...out];
 }
-const qtdEstoque = (cods, estoque) => cods.reduce((s, c) => { const i = ((estoque && estoque.itens) || []).find((x) => String(x.cod) === c); return s + (i ? Math.max(0, i.qtd || 0) : 0); }, 0);
+const qtdEstoque = (cods, estoque) => { const { porCod } = idxEstoque(estoque); return cods.reduce((s, c) => { const i = porCod.get(c); return s + (i ? Math.max(0, i.qtd || 0) : 0); }, 0); };
 
 // ---------- validação ----------
 function validarNovo(b, estoque) {
@@ -129,10 +140,16 @@ function avaliar(id, ctx) {
   for (const e of ctx.fixe || []) if (e.tipo === 'pontos' || e.tipo === 'compra') add(e.cpf, { data: e.data, cupom: null, fixe: true });
   const itensCupom = new Map();
   if (ctx.vendas) for (const v of ctx.vendas) { const k = v.cupom + '|' + v.data; (itensCupom.get(k) || itensCupom.set(k, []).get(k)).push(ESQ(v.descricao)); }
+  const diaLocal = (iso) => {
+    const s = String(iso || '');
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    const ms = Date.parse(s);
+    return Number.isFinite(ms) ? C.diaSP(ms) : s.slice(0, 10);
+  };
   const agora = Date.now();
   for (const p of d.pedidos) {
     if (p.st === 'esperando') {
-      const desde = p.criadoEm.slice(0, 10);
+      const desde = diaLocal(p.criadoEm);
       const nf = notas.filter((n) => n.dia >= desde && n.itens.some((i) => (p.estoqueCods || []).includes(String(i.cod)))).sort((a, b) => (a.dia < b.dia ? -1 : 1))[0];
       if (nf) {
         const vi = nf.itens.filter((i) => (p.estoqueCods || []).includes(String(i.cod)));
@@ -143,7 +160,7 @@ function avaliar(id, ctx) {
       if (p.chegou) { p.st = 'chegou'; mudou = true; novos.push(p); }
     }
     if ((p.st === 'chegou' || p.st === 'avisado') && p.cliente.cpf) {
-      const desde = String((p.chegou && p.chegou.em) || p.criadoEm).slice(0, 10);
+      const desde = diaLocal((p.chegou && p.chegou.em) || p.criadoEm);
       const cs = (compras.get(p.cliente.cpf) || []).filter((c) => c.data >= desde).sort((a, b) => (a.data < b.data ? -1 : 1));
       if (cs.length) {
         const nomes = p.itens.map((i) => ESQ(i.desc)), bases = p.itens.map((i) => ESQ(base(i.desc)));

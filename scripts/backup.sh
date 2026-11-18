@@ -9,32 +9,46 @@ set -u
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
 SIS="$DIR/dados/_sistema"
-mkdir -p "$SIS" || exit 1
-exec 8>"$SIS/.backup.lock"
+CTL="$DIR/.atualizador"
+[ -L "$SIS" ] && exit 1
+mkdir -p "$SIS" "$CTL" || exit 1
+chmod 700 "$CTL" 2>/dev/null
+exec 8>"$CTL/.backup.lock"
 flock -n 8 || exit 0
 REM="teashop-cripto:"
-LOG="$SIS/backup.log"
+LOG="$CTL/backup.log"
 agora() { date -Iseconds; }
+publicar() { # $1=nome_arquivo (lê da entrada padrão)
+  [ -L "$SIS" ] && return 1
+  rm -f "$SIS/$1" 2>/dev/null
+  local tmp
+  tmp="$(mktemp "$SIS/.tmp.${1}.XXXXXX")" || return 1
+  cat > "$tmp" && chmod 644 "$tmp" 2>/dev/null && mv -f "$tmp" "$SIS/$1"
+}
 estado() { # estado (ok|erro|rodando|nao_configurado) · quando · bytes no Drive · arquivos · mensagem
-  printf '%s\t%s\t%s\t%s\t%s\n' "$1" "$(agora)" "${2:-}" "${3:-}" "${4:-}" > "$SIS/backup.txt.tmp" && mv -f "$SIS/backup.txt.tmp" "$SIS/backup.txt"
-  chmod 644 "$SIS/backup.txt" 2>/dev/null
+  printf '%s\t%s\t%s\t%s\t%s\n' "$1" "$(agora)" "${2:-}" "${3:-}" "${4:-}" | publicar backup.txt
 }
 rm -f "$SIS/backup.pedido"
 if ! command -v rclone >/dev/null 2>&1 || ! rclone listremotes 2>/dev/null | grep -qx "$REM"; then
   estado nao_configurado "" "" "Rode scripts/backup-configurar.sh na VPS (uma vez)."
   exit 0
 fi
+if [ ! -f "$DIR/config/lojas.json" ]; then
+  estado erro "" "" "config/lojas.json ausente: backup cancelado por segurança para não esvaziar o Drive."
+  exit 1
+fi
 estado rodando "" "" "Enviando para o Google Drive…"
 DIA="$(date +%F)"
+VERSAO_TS="${DIA}_$(date +%H%M%S)"
 OPC=(--fast-list --transfers 4 --checkers 8 --retries 3 --low-level-retries 10 --log-level NOTICE --log-file "$LOG")
 {
   echo "=== backup $(agora) ==="
 } > "$LOG"
 ok=1
-rclone sync "$DIR/dados" "${REM}atual/dados" --backup-dir "${REM}versoes/$DIA/dados" \
+rclone sync "$DIR/dados" "${REM}atual/dados" --backup-dir "${REM}versoes/$VERSAO_TS/dados" \
   --exclude "_sistema/*.lock" --exclude "_sistema/.*" --exclude "_sistema/backup.*" "${OPC[@]}" || ok=0
-rclone sync "$DIR/config" "${REM}atual/config" --backup-dir "${REM}versoes/$DIA/config" --exclude "*.lock" "${OPC[@]}" || ok=0
-[ -f "$DIR/.env" ] && { rclone copyto "$DIR/.env" "${REM}atual/env/painel.env" --backup-dir "${REM}versoes/$DIA/env" "${OPC[@]}" || ok=0; }
+rclone sync "$DIR/config" "${REM}atual/config" --backup-dir "${REM}versoes/$VERSAO_TS/config" --exclude "*.lock" "${OPC[@]}" || ok=0
+[ -f "$DIR/.env" ] && { rclone copyto "$DIR/.env" "${REM}atual/env/painel.env" --backup-dir "${REM}versoes/$VERSAO_TS/env" "${OPC[@]}" || ok=0; }
 # versões com mais de 30 dias saem
 rclone delete "${REM}versoes" --min-age 30d "${OPC[@]}" >/dev/null 2>&1
 rclone rmdirs "${REM}versoes" --leave-root "${OPC[@]}" >/dev/null 2>&1
@@ -42,9 +56,10 @@ TAM="$(rclone size "${REM}atual" --json 2>/dev/null)"
 BYTES="$(printf '%s' "$TAM" | sed -n 's/.*"bytes":\([0-9]*\).*/\1/p')"
 ARQS="$(printf '%s' "$TAM" | sed -n 's/.*"count":\([0-9]*\).*/\1/p')"
 if [ "$ok" = 1 ]; then
+  touch "$CTL/.backup.dia.$DIA"
   estado ok "$BYTES" "$ARQS" "Backup completo."
-  printf '%s\t%s\t%s\n' "$(agora)" "$BYTES" "$ARQS" > "$SIS/backup.ok"; chmod 644 "$SIS/backup.ok" 2>/dev/null
+  printf '%s\t%s\t%s\n' "$(agora)" "$BYTES" "$ARQS" | publicar backup.ok
 else
   estado erro "$BYTES" "$ARQS" "$(grep -m1 -iE 'error|erro|failed' "$LOG" | cut -c1-300)"
 fi
-chmod 644 "$LOG" 2>/dev/null
+publicar backup.log < "$LOG"

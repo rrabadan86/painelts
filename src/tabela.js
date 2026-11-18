@@ -18,16 +18,32 @@ const txt = (v) => {
   return String(v).trim();
 };
 const preco = (v) => {
-  if (typeof v === 'number') return v;
-  const s = txt(v).replace(/[R$\s]/g, '').replace(/\./g, '').replace(',', '.');
-  const x = Number(s);
+  if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+  const s = txt(v).replace(/[R$\s]/g, '');
+  if (!s) return null;
+  const x = Number(s.includes(',') ? s.replace(/\./g, '').replace(',', '.') : s);
   return Number.isFinite(x) ? x : null;
 };
 const norm = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
 
+function dataDoTitulo(t) {
+  const m = /(\d{1,2})\/(\d{1,2})\/(\d{4}),?\s*(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?/i.exec(String(t || ''));
+  if (!m) return null;
+  let [a, b] = [+m[1], +m[2]], hh = +m[4];
+  if (m[7]) { if (/pm/i.test(m[7]) && hh < 12) hh += 12; if (/am/i.test(m[7]) && hh === 12) hh = 0; }
+  let dia = a, mes = b;
+  if (b > 12 || (m[7] && a <= 12)) { dia = b; mes = a; }
+  if (mes < 1 || mes > 12 || dia < 1 || dia > 31 || hh > 23) return null;
+  const p2 = (n) => String(n).padStart(2, '0');
+  const iso = `${m[3]}-${p2(mes)}-${p2(dia)}T${p2(hh)}:${m[5]}:${m[6] || '00'}-03:00`;
+  const ms = Date.parse(iso);
+  return Number.isFinite(ms) ? new Date(ms).toISOString() : null;
+}
+
 /** lê as linhas da planilha: descobre se é "Produtos" ou "Produtos Compostos" pelo título da primeira linha */
 function ler(rows) {
-  const titulo = norm(rows.slice(0, 3).map((r) => (r || []).map(txt).join(' ')).join(' '));
+  const cabCru = rows.slice(0, 3).map((r) => (r || []).map(txt).join(' ')).join(' ');
+  const titulo = norm(cabCru);
   const tipo = /compost/.test(titulo) ? 'compostos' : 'simples';
   const iCab = rows.findIndex((r) => (r || []).some((c) => norm(txt(c)) === 'codigo') && (r || []).some((c) => norm(txt(c)) === 'preco'));
   if (iCab < 0) throw new Error('Não achei as colunas "Código" e "Preço": use a exportação em Excel de Produtos → Produtos (ou Produtos Compostos) do AppNext.');
@@ -46,14 +62,15 @@ function ler(rows) {
     itens.push({ cod, barras: b && b !== '-' ? b : '', desc: txt(r[ci.desc]), un: ci.un >= 0 ? txt(r[ci.un]) : '', grupo: ci.grupo >= 0 ? txt(r[ci.grupo]) : '', sub: ci.sub >= 0 && txt(r[ci.sub]) !== '-' ? txt(r[ci.sub]) : '', preco: preco(r[ci.preco]) });
   }
   if (!itens.length) throw new Error('A planilha não tem produtos.');
-  const m = titulo.match(/(\d{2})\/(\d{2})\/(\d{4}),?\s*(\d{2}):(\d{2})/);
-  const em = m ? new Date(`${m[3]}-${m[2]}-${m[1]}T${m[4]}:${m[5]}:00-03:00`).toISOString() : new Date().toISOString();
+  const em = dataDoTitulo(cabCru) || new Date().toISOString();
   return { tipo, em, itens };
 }
 
 function atual(id) {
   try { return JSON.parse(fs.readFileSync(arq(id), 'utf8')); } catch { return null; }
 }
+
+const resumoCache = new Map(); // id -> { mtimeMs, size, val }
 
 async function importar(id, buf, origem = 'painel') {
   const { linhasDeBuffer } = require('./sources');
@@ -62,30 +79,54 @@ async function importar(id, buf, origem = 'painel') {
   d[novo.tipo] = { em: novo.em, importadoEm: new Date().toISOString(), origem, itens: novo.itens };
   fs.mkdirSync(pasta(id), { recursive: true });
   C.gravarAtomico(arq(id), JSON.stringify(d), 0o640);
+  resumoCache.delete(id);
   return { tipo: novo.tipo, itens: novo.itens.length, comPreco: novo.itens.filter((i) => i.preco > 0.01).length, em: novo.em };
 }
 
 function pendentes(id) {
   try { return fs.readdirSync(pastaEntrada(id)).filter((f) => /\.xlsx$/i.test(f) && !f.includes('.tmp')).sort(); } catch { return []; }
 }
-/** planilhas que o coletor deixou: importa todas (produtos e compostos) e apaga */
+const procAtivo = new Set();
+/** planilhas que o coletor deixou: importa todas (produtos e compostos) e apaga (ou guarda .erro) */
 async function processar(id) {
-  const out = [];
-  for (const f of pendentes(id)) {
-    try { out.push(await importar(id, fs.readFileSync(path.join(pastaEntrada(id), f)), 'coletor')); }
-    catch (e) { console.error(`[tabela] ${id}: ${f}: ${e.message}`); }
-    try { fs.unlinkSync(path.join(pastaEntrada(id), f)); } catch { /* ok */ }
+  if (procAtivo.has(id)) return [];
+  procAtivo.add(id);
+  try {
+    const out = [], dir = pastaEntrada(id);
+    for (const f of pendentes(id)) {
+      let ok = false;
+      try { out.push(await importar(id, fs.readFileSync(path.join(dir, f)), 'coletor')); ok = true; }
+      catch (e) { console.error(`[tabela] ${id}: ${f}: ${e.message}`); }
+      if (ok) {
+        try { fs.unlinkSync(path.join(dir, f)); } catch { /* ok */ }
+      } else {
+        try {
+          fs.renameSync(path.join(dir, f), path.join(dir, f + '.erro'));
+          const errs = fs.readdirSync(dir).filter((x) => x.endsWith('.erro')).sort();
+          errs.slice(0, Math.max(0, errs.length - 5)).forEach((x) => { try { fs.unlinkSync(path.join(dir, x)); } catch { /* ok */ } });
+        } catch { /* ok */ }
+      }
+    }
+    return out;
+  } finally {
+    procAtivo.delete(id);
   }
-  return out;
 }
 
 /** resumo para o navegador: as duas listas juntas (o composto vale quando o código repete) */
 function resumo(id) {
+  const f = arq(id);
+  let st;
+  try { st = fs.statSync(f); } catch { resumoCache.delete(id); return null; }
+  const hit = resumoCache.get(id);
+  if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size) return hit.val;
   const d = atual(id);
   if (!d) return null;
   const itens = new Map();
   for (const t of ['simples', 'compostos']) for (const i of (d[t] && d[t].itens) || []) itens.set(i.cod, { ...i, composto: t === 'compostos' });
-  return { simples: d.simples ? { em: d.simples.em, origem: d.simples.origem, n: d.simples.itens.length } : null, compostos: d.compostos ? { em: d.compostos.em, origem: d.compostos.origem, n: d.compostos.itens.length } : null, itens: [...itens.values()] };
+  const val = { simples: d.simples ? { em: d.simples.em, origem: d.simples.origem, n: d.simples.itens.length } : null, compostos: d.compostos ? { em: d.compostos.em, origem: d.compostos.origem, n: d.compostos.itens.length } : null, itens: [...itens.values()] };
+  resumoCache.set(id, { mtimeMs: st.mtimeMs, size: st.size, val });
+  return val;
 }
 
 module.exports = { ler, atual, importar, pendentes, processar, resumo };

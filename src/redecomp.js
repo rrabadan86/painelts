@@ -45,7 +45,19 @@ function comparativos(partes, de, ate, tipo) {
   // 1) mix (% do faturamento de chás e acessórios): média das lojas
   const mixes = lojas.map(({ vs }) => {
     let a = 0, p = 0, c = 0, t = 0;
-    for (const v of vs) { const x = v.vt || 0; if (mixTotal.has(v.grupoC)) t += x; if (catArom.has(v.cat)) a += x; if (catPuro.has(v.cat)) p += x; if (gAcess.has(v.grupo)) c += x; }
+    for (const v of vs) {
+      const x = v.vt || 0;
+      if (mixTotal.has(v.grupoC)) t += x;
+      if (v.grupoOrig !== undefined) {
+        if (v.grupoC === 'CHÁ AROMATIZADO') a += x;
+        else if (v.grupoC === 'CHÁ PURO') p += x;
+        else if (v.grupoC === 'ACESSÓRIOS') c += x;
+      } else {
+        if (catArom.has(v.cat)) a += x;
+        if (catPuro.has(v.cat)) p += x;
+        if (gAcess.has(v.grupo)) c += x;
+      }
+    }
     return t ? { arom: a / t, puro: p / t, acess: c / t } : null;
   }).filter(Boolean);
   const med = (k) => mixes.reduce((s, m) => s + m[k], 0) / mixes.length;
@@ -88,12 +100,12 @@ function comparativos(partes, de, ate, tipo) {
     if (b.lojas.size < MIN_LOJAS) continue;
     const c = b.cupons.size, ws = [...b.vend.values()];
     const m = { tkm: c ? b.vt / c : null, pma: b.qtd ? b.vt / b.qtd : null, ipa: c ? b.qtd / c : null, cupons: ws.length ? ws.reduce((s, w) => s + w.cupons.size, 0) / ws.length : null };
-    for (const t of TAMS) { const xs = ws.map((w) => w.p[t] || 0).filter((x) => x > 0); m['p' + t] = xs.length ? xs.reduce((s, x) => s + x, 0) / xs.length : null; }
+    for (const t of TAMS) { const xs = ws.map((w) => w.p[t] || 0).filter((x) => x > 0); m['p' + t] = xs.length >= 3 ? xs.reduce((s, x) => s + x, 0) / xs.length : null; }
     met[k] = m;
   }
   // 4) pacotes por tamanho no período: média por vendedor (entre os que venderam pacotes)
   const pvs = [...pacVend.values()];
-  const pacotes = pvs.length ? Object.fromEntries(TAMS.map((t) => [t, pvs.reduce((s, pv) => s + (pv[t] || 0), 0) / pvs.length])) : null;
+  const pacotes = pvs.length >= 3 ? Object.fromEntries(TAMS.map((t) => [t, pvs.reduce((s, pv) => s + (pv[t] || 0), 0) / pvs.length])) : null;
   return { lojas: lojas.length, de: isoDe(de), ate: isoDe(ate), tipo, mix, hist, met, pacotes };
 }
 

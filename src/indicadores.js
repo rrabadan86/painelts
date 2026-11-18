@@ -35,7 +35,7 @@ function metricas(vendas) {
     if (semVendedor(v.vendedor)) continue;
     const x = v.vt || 0;
     vt += x; qtd += semItem(v) ? 0 : v.qtd || 0;
-    cupons.add(v.cupom + '|' + v.loja);
+    cupons.add((v.data || '') + '|' + v.cupom + '|' + v.loja);
     if (CHA_TOTAL.has(v.grupo)) kg += v.qtdCha || 0;
     if (v.grupoC === EG) eg += x;
     if (G_AROM.has(v.grupoC)) arom += x; else if (G_PURO.has(v.grupoC)) puro += x; else if (G_ACESS.has(v.grupoC)) acess += x;
@@ -45,13 +45,17 @@ function metricas(vendas) {
 }
 const entre = (vendas, de, ate) => vendas.filter((v) => v.data >= de && v.data <= ate);
 
-/** vendas por mês sem o grupo Espaço Gourmet (base da meta automática) */
+/** vendas por mês sem o grupo Espaço Gourmet e sem taxas (base da meta automática) */
 const cacheTotais = new WeakMap();
 function totaisSemEG(vendas) {
   let t = cacheTotais.get(vendas);
   if (!t) {
     t = {};
-    for (const v of vendas) { if (v.grupoC === EG || !v.data || /^taxa (de servi|delivery)/i.test(String(v.descricao || '').trim())) continue; const ym = v.data.slice(0, 7); t[ym] = (t[ym] || 0) + (v.vt || 0); }
+    for (const v of vendas) {
+      if (v.grupoC === EG || v.cat === EG || !v.data || /^taxa /i.test(String(v.descricao || '').trim())) continue;
+      const ym = v.data.slice(0, 7);
+      t[ym] = (t[ym] || 0) + (v.vt || 0);
+    }
     cacheTotais.set(vendas, t);
   }
   return t;

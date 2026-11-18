@@ -140,6 +140,20 @@ if not (REDE and USER and PASS):
 TS = datetime.now().strftime("%Y%m%d_%H%M%S")
 LOCAL_OUT = Path.cwd() / f"export_nextsoft_{TS}.xlsx"
 LOGIN_URL = "https://www.appnext.com.br/#/login"
+INSEGURO = os.getenv("APPNEXT_INSEGURO", "0").strip() == "1"
+_BRT = timezone(timedelta(hours=-3))
+
+
+def limpar_locks_perfil(pasta_pw: Path):
+    """Remove travas órfãs do Chromium (SingletonLock/Cookie/Socket) deixadas por processos encerrados à força."""
+    for nome in ("SingletonLock", "SingletonCookie", "SingletonSocket"):
+        p = pasta_pw / nome
+        try:
+            if p.is_symlink() or p.exists():
+                p.unlink(missing_ok=True)
+        except OSError:
+            pass
+
 
 # -------- datas ----------
 def to_dt(s: str, end=False):
@@ -150,15 +164,23 @@ def to_dt(s: str, end=False):
         return None
 
 
+def para_iso_utc_brt(dt_brt: datetime, fim=False) -> str:
+    """Converte data/hora em Brasília (-03:00) para ISO UTC (...Z) esperado pela API do AppNext."""
+    base = dt_brt.replace(hour=23, minute=59, second=59, microsecond=999000) if fim else dt_brt.replace(hour=0, minute=0, second=0, microsecond=0)
+    utc = base.replace(tzinfo=_BRT).astimezone(timezone.utc)
+    ms = 999 if fim else 0
+    return utc.strftime(f"%Y-%m-%dT%H:%M:%S.{ms:03d}Z")
+
+
 if not DATA_FIM:
-    DATA_FIM = datetime.now().strftime("%d/%m/%Y")
+    DATA_FIM = datetime.now(_TZ_LOG).strftime("%d/%m/%Y")
 
 INI_DT = to_dt(DATA_INICIO) or datetime(2025, 6, 1)
-FIM_DT = to_dt(DATA_FIM, end=True) or datetime.now().replace(hour=23, minute=59, second=59)
+FIM_DT = to_dt(DATA_FIM, end=True) or datetime.now(_TZ_LOG).replace(tzinfo=None, hour=23, minute=59, second=59)
 
-# ISO com Z (mesmo padrão visto no DevTools)
-FMT_JSON_INI = INI_DT.strftime("%Y-%m-%dT%H:%M:%S.000Z")
-FMT_JSON_FIM = FIM_DT.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+# ISO em UTC correspondente ao início (00:00 BRT) e fim (23:59:59.999 BRT) do dia em Brasília
+FMT_JSON_INI = para_iso_utc_brt(INI_DT, fim=False)
+FMT_JSON_FIM = para_iso_utc_brt(FIM_DT, fim=True)
 FMT_BR_INI = INI_DT.strftime("%d/%m/%Y, %H:%M:%S")
 FMT_BR_FIM = FIM_DT.strftime("%d/%m/%Y, %H:%M:%S")
 
@@ -239,7 +261,7 @@ def gravar_saida_local(local_file: Path):
     destino.parent.mkdir(parents=True, exist_ok=True)
     tmp = destino.with_name(destino.name + f".{os.getpid()}.tmp")
     shutil.copyfile(local_file, tmp)
-    os.chmod(tmp, 0o644)
+    os.chmod(tmp, 0o640)
     os.replace(tmp, destino)
     log(f"Planilha gravada em {destino} ({destino.stat().st_size // 1024} KB)")
 
@@ -498,40 +520,59 @@ def fetch_report_json_with_dates(page):
     todos = []
     for jini, jfim in _janelas_mensais(INI_DT, FIM_DT):
         qs = dict(base_qs)
-        qs["dataInicial"] = [jini.strftime("%Y-%m-%dT%H:%M:%S.000Z")]
-        qs["dataFinal"]   = [jfim.strftime("%Y-%m-%dT%H:%M:%S.000Z")]
-        target_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}?{urlencode(qs, doseq=True)}"
-        log(f"[dados-replay] {jini:%d/%m/%Y} -> {jfim:%d/%m/%Y}")
-
-        result = None
-        # retries reduzidos: 2 tentativas e backoff menor (cabe no orçamento de tempo)
-        for tentativa in range(1, 3):
-            result = page.evaluate(js_code, [target_url, headers])
-            if result.get("ok"):
-                break
-            log(f"  HTTP {result.get('status')} (tentativa {tentativa}/2)")
-            page.wait_for_timeout(1000 * tentativa)
-
-        if not result or not result.get("ok"):
-            raise RuntimeError(
-                f"Falha na janela {jini:%d/%m} - {jfim:%d/%m}: "
-                f"HTTP {result.get('status') if result else '??'}"
-            )
-
-        try:
-            parcial = json.loads(result["text"])
-        except Exception as e:
-            raise RuntimeError(f"JSON inválido na janela {jini:%d/%m}: {e}") from e
-
-        if isinstance(parcial, list):
-            todos.extend(parcial)
-        elif isinstance(parcial, dict):
-            for key in ("items", "data", "resultado", "rows", "content"):
-                if isinstance(parcial.get(key), list):
-                    todos.extend(parcial[key])
-                    break
+        qs["dataInicial"] = [para_iso_utc_brt(jini, fim=False)]
+        qs["dataFinal"]   = [para_iso_utc_brt(jfim, fim=True)]
+        pag_key = next((k for k in ("pagina", "page", "pageNumber") if k in qs), None)
+        pag_num = 1
+        while pag_num <= 50:
+            if pag_key:
+                qs[pag_key] = [str(pag_num)]
+            target_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}?{urlencode(qs, doseq=True)}"
+            if pag_num == 1:
+                log(f"[dados-replay] {jini:%d/%m/%Y} -> {jfim:%d/%m/%Y}")
             else:
-                todos.append(parcial)
+                log(f"[dados-replay] {jini:%d/%m/%Y} -> {jfim:%d/%m/%Y} (página {pag_num})")
+
+            result = None
+            for tentativa in range(1, 3):
+                result = page.evaluate(js_code, [target_url, headers])
+                if result.get("ok"):
+                    break
+                log(f"  HTTP {result.get('status')} (tentativa {tentativa}/2)")
+                page.wait_for_timeout(1000 * tentativa)
+
+            if not result or not result.get("ok"):
+                raise RuntimeError(
+                    f"Falha na janela {jini:%d/%m} - {jfim:%d/%m}: "
+                    f"HTTP {result.get('status') if result else '??'}"
+                )
+
+            try:
+                parcial = json.loads(result["text"])
+            except Exception as e:
+                raise RuntimeError(f"JSON inválido na janela {jini:%d/%m}: {e}") from e
+
+            if isinstance(parcial, list):
+                todos.extend(parcial)
+                break
+            elif isinstance(parcial, dict):
+                lote = None
+                for key in ("items", "itens", "data", "resultado", "rows", "content"):
+                    if isinstance(parcial.get(key), list):
+                        lote = parcial[key]
+                        break
+                if lote is None:
+                    todos.append(parcial)
+                    break
+                todos.extend(lote)
+                tot_pags = parcial.get("totalPages") or parcial.get("totalPaginas")
+                tem_prox = parcial.get("hasNextPage") or (isinstance(tot_pags, int) and pag_num < tot_pags)
+                if pag_key and lote and tem_prox:
+                    pag_num += 1
+                    continue
+                break
+            else:
+                break
 
     log(f"[dados-replay] total de linhas agregadas: {len(todos)}")
     return todos
@@ -611,7 +652,7 @@ def _data_br(v):
     try:
         dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
         if dt.tzinfo is not None:
-            dt = dt.astimezone(timezone(timedelta(hours=-3)))
+            dt = dt.astimezone(_BRT)
         return dt.strftime("%d/%m/%Y")
     except Exception:
         pass
@@ -636,12 +677,14 @@ def _hora_br(v):
         dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
         if "T" not in s and " " not in s:
             return ""
-        if dt.hour == 0 and dt.minute == 0 and dt.second == 0:
-            return ""  # meia-noite (UTC ou local) = a API mandou só a data
+        if dt.tzinfo is None and dt.hour == 0 and dt.minute == 0 and dt.second == 0:
+            return ""  # data sem fuso à meia-noite = API mandou só a data
         if dt.tzinfo is not None:
-            dt = dt.astimezone(timezone(timedelta(hours=-3)))
+            # 00:00:00Z exato sem milissegundos pode ser só data OU venda às 21:00:00 BRT;
+            # só descarta quando a própria string termina em T00:00:00Z/T00:00:00.000Z em campos só de data
+            dt = dt.astimezone(_BRT)
         if dt.hour == 0 and dt.minute == 0 and dt.second == 0:
-            return ""  # só data (meia-noite): sem hora real
+            return ""  # meia-noite em Brasília = sem hora real
         return dt.strftime("%H:%M")
     except Exception:
         pass
@@ -765,12 +808,17 @@ def loja_atual(page):
 
 
 def _confere(texto, alvo):
-    """o topo às vezes vem cortado ('SÃO PAULO - TEA SHOP ...'): compara o pedaço visível"""
-    t = _sem_acento(texto).replace("…", "...")
-    if "..." in t:
-        t = t.split("...")[0].strip()
+    """Confere o nome no topo: só aceita prefixo quando o próprio topo veio cortado com '...' / '…'."""
+    bruto = str(texto or "").strip()
+    truncado = "..." in bruto or "…" in bruto
+    pedaco = bruto.replace("…", "...").split("...")[0].strip() if truncado else bruto
+    t = _sem_acento(pedaco)
     a = _sem_acento(alvo)
-    return bool(t) and (t == a or (len(t) >= 12 and a.startswith(t)))
+    if not t or not a:
+        return False
+    if t == a:
+        return True
+    return truncado and len(t) >= 18 and a.startswith(t)
 
 
 def trocar_loja(page, loja_nome=None):
@@ -788,7 +836,8 @@ def trocar_loja(page, loja_nome=None):
     alvo_n = _sem_acento(alvo)
     step(f"2) Trocando loja → {alvo}")
     atual = loja_atual(page)
-    if atual and _confere(atual, alvo):
+    # só pula o clique se o texto completo bater sem estar cortado com reticências
+    if atual and "..." not in atual and "…" not in atual and _sem_acento(atual) == alvo_n:
         log(f"Já está na loja certa: {atual}")
         return True
     for tentativa in range(1, 4):
@@ -848,10 +897,21 @@ def trocar_loja(page, loja_nome=None):
     raise RuntimeError(f"Não consegui trocar para a loja {alvo} no AppNext (o topo mostra '{loja_atual(page) or '?'}'). "
                        "Parei para não baixar dados de outra loja.")
 
+
+def garantir_loja(page, loja_nome=None):
+    """Reconfere o cabeçalho da loja antes de exportar e refaz a troca se necessário."""
+    alvo = (loja_nome or os.getenv("APPNEXT_LOJA_DESTINO") or "").strip()
+    if not alvo:
+        return True
+    atual = loja_atual(page)
+    if atual and _confere(atual, alvo):
+        return True
+    log(f"[conferência] topo mostra '{atual or '?'}' em vez de '{alvo}'; refazendo troca de loja…")
+    return trocar_loja(page, alvo)
+
+
 # -------- Navegação resiliente: goto com retries --------
 def goto_login_with_retries(page, url, tries=3):
-    # tries reduzido de 5 -> 3 e timeout de 240s -> 60s por tentativa.
-    # Antes, no pior caso, o login sozinho podia consumir ~20 min.
     alt_urls = {url, url.replace("https://www.", "https://")}
     for i in range(1, tries + 1):
         for target in alt_urls:
@@ -861,36 +921,124 @@ def goto_login_with_retries(page, url, tries=3):
                 return
             except Exception as e:
                 log(f"[goto] falhou em {target}: {e}")
-        page.wait_for_timeout(i * 3000)  # backoff progressivo (menor)
+        page.wait_for_timeout(i * 3000)
     page.goto(url, wait_until="load", timeout=60_000)
+
+
+def coletar_vendas_na_pagina(page, saida_arquivo=None):
+    """Executa a coleta de Vendedor Analítico aproveitando uma página já autenticada na loja certa."""
+    global SAIDA_ARQUIVO, GRAVAR_LOCAL
+    if saida_arquivo is not None:
+        SAIDA_ARQUIVO = str(saida_arquivo).strip()
+        GRAVAR_LOCAL = bool(SAIDA_ARQUIVO)
+    Captured.filtro_url = None
+    CapturedExport.url = None
+    hook_filter_capture(page)
+    hook_export_capture(page)
+    garantir_loja(page)
+
+    step("3) Menu: Vendas → Vendedor Analítico")
+    goto_vendedor_analitico_via_menu(page)
+    wait_for_titulo_rel(page, timeout=40000)
+    log("Tela confirmada.")
+    garantir_loja(page)
+
+    step("4) Abrindo filtros")
+    open_filters_pane(page)
+    try:
+        page.locator(SEL["btn_atualizar"]).first.click(timeout=3000)
+    except Exception:
+        pass
+    try:
+        page.wait_for_selector(SEL["grid_row"], timeout=30000)
+    except Exception:
+        log("[grid] nenhuma linha visível no período inicial da tela; seguindo para exportação/API.")
+
+    step("5) Exportar Excel (tentar capturar URL)")
+    captured_export_ok = False
+    local_out = Path.cwd() / f"export_nextsoft_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    try:
+        with page.expect_download(timeout=90_000) as dl_tmp:
+            page.locator(SEL["excel_btn"]).first.click()
+        tmp_download = dl_tmp.value
+        tmp_path = Path.cwd() / f"_tmp_export_{TS}.xlsx"
+        tmp_download.save_as(tmp_path.as_posix())
+        log("Export padrão baixado (pode ser blob:/POST). Tentando reaproveitar URL capturada...")
+
+        if CapturedExport.url:
+            step(f"5b) Reemitindo export com período {FMT_BR_INI} → {FMT_BR_FIM}")
+            replay_export_with_dates(page, local_out)
+            captured_export_ok = True
+        else:
+            log("Não consegui capturar URL direta do Excel (provável blob:). Usarei fallback via API.")
+
+        try:
+            tmp_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+    except Exception as e:
+        log(f"Aviso: falha ao acionar o botão Excel ou capturar URL: {e}. Vou usar fallback via API.")
+
+    if not captured_export_ok:
+        step(f"5c) Fallback: baixando dados da API {FMT_BR_INI} → {FMT_BR_FIM} e gerando Excel")
+        data = fetch_report_json_with_dates(page)
+        write_excel_from_json(data, local_out)
+
+    erros_envio = []
+    if GRAVAR_LOCAL:
+        step("6) Gravando a planilha na pasta da loja")
+        try:
+            gravar_saida_local(local_out)
+        except Exception as e:
+            log(f"ERRO ao gravar: {e}")
+            erros_envio.append("pasta local")
+    if ENVIAR_DRIVE:
+        step("6) Enviando para Google Drive")
+        try:
+            rclone_copy_latest(local_out)
+            log("Upload no Drive concluído.")
+        except Exception as e:
+            log(f"ERRO no Drive: {e}")
+            erros_envio.append("Drive")
+    if ENVIAR_PAINEL:
+        step(f"7) Enviando para o painel ({PAINEL_LOJA})")
+        try:
+            enviar_para_painel(local_out)
+        except Exception as e:
+            log(f"ERRO no painel: {e}")
+            erros_envio.append("painel")
+    if GRAVAR_LOCAL:
+        try:
+            local_out.unlink(missing_ok=True)
+        except Exception:
+            pass
+    if erros_envio:
+        raise RuntimeError("Falha no envio para: " + ", ".join(erros_envio))
+
 
 # ================ MAIN =================
 def main():
-    # Liga o watchdog ANTES de qualquer coisa pesada.
     start_watchdog(MAX_RUNTIME_SECONDS)
-
-    ok = False  # <<< NOVO: controla se o fluxo terminou com sucesso de verdade
+    ok = False
+    pasta_pw = Path.cwd() / "pw_state"
+    limpar_locks_perfil(pasta_pw)
 
     with sync_playwright() as pw:
         context = pw.chromium.launch_persistent_context(
-            user_data_dir=str(Path.cwd() / "pw_state"),
+            user_data_dir=str(pasta_pw),
             headless=True,
             accept_downloads=True,
-            ignore_https_errors=True,
+            ignore_https_errors=INSEGURO,
             viewport={"width": 1600, "height": 950},
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36",
         )
         page = context.pages[0] if context.pages else context.new_page()
-        # timeouts reduzidos: 180s -> 30s (ação) e 300s -> 60s (navegação)
         page.set_default_timeout(30_000)
         page.set_default_navigation_timeout(60_000)
 
         page.on("console", lambda m: log(f"[console] {m.type}: {m.text}"))
         page.on("pageerror", lambda e: log(f"[pageerror] {e}"))
         page.on("requestfailed", lambda r: log(f"[requestfailed] {r.url} -> {r.failure}"))
-
-        hook_filter_capture(page)
-        hook_export_capture(page)
 
         try:
             step("1) Login")
@@ -908,88 +1056,9 @@ def main():
             except Exception:
                 pass
 
-            # 2) Trocar loja via secret (habilite se quiser forçar)
             trocar_loja(page, os.getenv("APPNEXT_LOJA_DESTINO"))
-
-            # 3) Ir para Vendas > Vendedor Analítico
-            step("3) Menu: Vendas → Vendedor Analítico")
-            goto_vendedor_analitico_via_menu(page)
-            wait_for_titulo_rel(page, timeout=40000)
-            log("Tela confirmada.")
-
-            # 4) Abrir filtros e estabilizar grid
-            step("4) Abrindo filtros")
-            open_filters_pane(page)
-            try:
-                page.locator(SEL["btn_atualizar"]).first.click(timeout=3000)
-            except Exception:
-                pass
-            page.wait_for_selector(SEL["grid_row"], timeout=30000)
-
-            # 5) Export
-            step("5) Exportar Excel (tentar capturar URL)")
-            captured_export_ok = False
-            try:
-                # timeout reduzido de 180s -> 90s
-                with page.expect_download(timeout=90_000) as dl_tmp:
-                    page.locator(SEL["excel_btn"]).first.click()
-                tmp_download = dl_tmp.value
-                tmp_path = Path.cwd() / f"_tmp_export_{TS}.xlsx"
-                tmp_download.save_as(tmp_path.as_posix())
-                log("Export padrão baixado (pode ser blob:/POST). Tentando reaproveitar URL capturada...")
-
-                if CapturedExport.url:
-                    step(f"5b) Reemitindo export com período {FMT_BR_INI} → {FMT_BR_FIM}")
-                    replay_export_with_dates(page, LOCAL_OUT)
-                    captured_export_ok = True
-                else:
-                    log("Não consegui capturar URL direta do Excel (provável blob:). Usarei fallback via API.")
-
-                try:
-                    tmp_path.unlink(missing_ok=True)
-                except Exception:
-                    pass
-            except Exception as e:
-                log(f"Aviso: falha ao acionar o botão Excel ou capturar URL: {e}. Vou usar fallback via API.")
-
-            if not captured_export_ok:
-                step(f"5c) Fallback: baixando dados da API {FMT_BR_INI} → {FMT_BR_FIM} e gerando Excel")
-                data = fetch_report_json_with_dates(page)
-                write_excel_from_json(data, LOCAL_OUT)
-
-            # 6) e 7) Envios: um destino não impede o outro
-            erros_envio = []
-            if GRAVAR_LOCAL:
-                step("6) Gravando a planilha na pasta da loja")
-                try:
-                    gravar_saida_local(LOCAL_OUT)
-                except Exception as e:
-                    log(f"ERRO ao gravar: {e}")
-                    erros_envio.append("pasta local")
-            if ENVIAR_DRIVE:
-                step("6) Enviando para Google Drive")
-                try:
-                    rclone_copy_latest(LOCAL_OUT)
-                    log("Upload no Drive concluído.")
-                except Exception as e:
-                    log(f"ERRO no Drive: {e}")
-                    erros_envio.append("Drive")
-            if ENVIAR_PAINEL:
-                step(f"7) Enviando para o painel ({PAINEL_LOJA})")
-                try:
-                    enviar_para_painel(LOCAL_OUT)
-                except Exception as e:
-                    log(f"ERRO no painel: {e}")
-                    erros_envio.append("painel")
-            if erros_envio:
-                raise RuntimeError("Falha no envio para: " + ", ".join(erros_envio))
-
-            ok = True  # <<< só chega aqui se TUDO acima deu certo
-            if GRAVAR_LOCAL:
-                try:
-                    LOCAL_OUT.unlink(missing_ok=True)  # cópia já está na pasta da loja
-                except Exception:
-                    pass
+            coletar_vendas_na_pagina(page, SAIDA_ARQUIVO)
+            ok = True
 
         except Exception:
             log("### ERRO DURANTE O FLUXO ###")
@@ -1001,7 +1070,6 @@ def main():
                 pass
 
     step("FINALIZADO")
-    log(f"Local: {LOCAL_OUT.resolve()}")
     if GRAVAR_LOCAL:
         log(f"Saída: {SAIDA_ARQUIVO}")
     if ENVIAR_DRIVE:
@@ -1009,8 +1077,6 @@ def main():
     if ENVIAR_PAINEL:
         log(f"Painel: {PAINEL_URL}  (loja {PAINEL_LOJA}, arquivo {PAINEL_ARQUIVO}.xlsx)")
 
-    # <<< NOVO: faz o job FALHAR de verdade se algo deu errado.
-    # Antes, qualquer erro era "engolido" e o Actions mostrava verde.
     if not ok:
         log("### Finalizando com erro (exit 1) ###")
         sys.exit(1)

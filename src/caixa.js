@@ -51,14 +51,33 @@ function doDia(id, dia) {
     for (const m of f.sangrias || []) if (!m.reserva) { sang += m.valor || 0; movs.push({ tipo: 'Sangria', ...m }); }
   }
   const lista = [...formas, ...[...extras.values()].filter((x) => x.valor || x.informado)].map((x) => ({ ...x, valor: r2(x.valor), informado: r2(x.informado), dif: r2(x.dif) }));
-  const abertura = r2(fs_[0].fundoInicial);
-  const fechamento = r2(fs_[fs_.length - 1].reserva);
-  const deveria = r2(abertura + din + sup - sang);
+  // agrupa por PDV para somar corretamente múltiplos caixas e variações de fundo entre turnos
+  const porPdv = new Map();
+  for (const f of fs_) {
+    const k = String(f.pdv ?? 'unico');
+    let arr = porPdv.get(k);
+    if (!arr) porPdv.set(k, (arr = []));
+    arr.push(f);
+  }
+  let aberturaSoma = 0, fechamentoSoma = 0, ajusteTurnos = 0;
+  for (const sessoes of porPdv.values()) {
+    aberturaSoma += sessoes[0].fundoInicial || 0;
+    fechamentoSoma += sessoes[sessoes.length - 1].reserva || 0;
+    for (let i = 1; i < sessoes.length; i++) {
+      if (sessoes[i].fundoInicial != null && sessoes[i - 1].reserva != null) {
+        ajusteTurnos += (sessoes[i].fundoInicial || 0) - (sessoes[i - 1].reserva || 0);
+      }
+    }
+  }
+  const abertura = r2(aberturaSoma);
+  const fechamento = r2(fechamentoSoma);
+  const ajusteEntreTurnos = r2(ajusteTurnos);
+  const deveria = r2(abertura + ajusteEntreTurnos + din + sup - sang);
   return {
     dia, vazio: false, atualizado: j.atualizado || null,
     caixas: fs_.map((f) => ({ numero: f.numero, pdv: f.pdv, turno: f.turno, abertura: f.abertura, fechamento: f.fechamento, operador: f.opFechamento || f.opAbertura })),
     formas: lista, totalVendas: r2(lista.reduce((s, x) => s + x.valor, 0)),
-    suprimento: r2(sup), sangria: r2(sang), abertura, fechamento, deveria, diferenca: r2(fechamento - deveria),
+    suprimento: r2(sup), sangria: r2(sang), abertura, fechamento, ajusteEntreTurnos, deveria, diferenca: r2(fechamento - deveria),
     difAppNext: r2(fs_.reduce((s, f) => s + (f.difVendas || 0), 0)),
     movimentos: movs.sort((a, b) => (a.hora || '').localeCompare(b.hora || '')),
   };

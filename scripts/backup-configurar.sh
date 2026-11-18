@@ -26,11 +26,34 @@ cat <<TXT
 TXT
 read -r -p "2) Cole aqui o token e tecle Enter: " TOKEN
 case "$TOKEN" in \{*access_token*) ;; *) echo "Isso não parece o token (deve começar com {\"access_token\"). Rode de novo."; exit 1;; esac
-rclone config create teashop-drive drive scope=drive root_folder_id="$PASTA_ID" token="$TOKEN" --non-interactive >/dev/null
+umask 077
+RCLONE_CONF="$(rclone config file | tail -n1)"
+mkdir -p "$(dirname "$RCLONE_CONF")"
+cat >> "$RCLONE_CONF" <<EOF
+
+[teashop-drive]
+type = drive
+scope = drive
+root_folder_id = $PASTA_ID
+token = $TOKEN
+EOF
+chmod 600 "$RCLONE_CONF"
 rclone lsd teashop-drive: >/dev/null || { echo "Não consegui acessar a pasta do Drive. Confira a conta usada na autorização."; rclone config delete teashop-drive; exit 1; }
 SENHA="$(openssl rand -base64 30 | tr -d '/+=' | cut -c1-32)"
 SAL="$(openssl rand -base64 30 | tr -d '/+=' | cut -c1-32)"
-rclone config create teashop-cripto crypt remote=teashop-drive:painel filename_encryption=standard directory_name_encryption=true password="$SENHA" password2="$SAL" --obscure --non-interactive >/dev/null
+SENHA_OBS="$(printf '%s' "$SENHA" | rclone obscure -)"
+SAL_OBS="$(printf '%s' "$SAL" | rclone obscure -)"
+cat >> "$RCLONE_CONF" <<EOF
+
+[teashop-cripto]
+type = crypt
+remote = teashop-drive:painel
+filename_encryption = standard
+directory_name_encryption = true
+password = $SENHA_OBS
+password2 = $SAL_OBS
+EOF
+chmod 600 "$RCLONE_CONF"
 cat <<TXT
 
 ==================================================================================

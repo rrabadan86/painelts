@@ -33,7 +33,9 @@ function telasDo(u) {
   if (u.perfil === 'gerente') return u.telas || TELAS_GERENTE_PADRAO;
   return null;
 }
-let cache = { mtime: 0, cfg: null };
+let cache = { mtime: 0, cfg: null, verificadoEm: 0 };
+const scryptAsync = require('util').promisify(crypto.scrypt);
+const FMT_DIA_SP = new Intl.DateTimeFormat('sv-SE', { timeZone: 'America/Sao_Paulo' });
 
 /** Configuração padrão quando não existe lojas.json: uma loja só, usando o .env (modo da versão 1) */
 function fromEnv() {
@@ -57,6 +59,7 @@ function normalizar(cfg) {
     metaAuto: l.metaAuto && typeof l.metaAuto === 'object' ? { ativo: !!l.metaAuto.ativo, pct: +l.metaAuto.pct || 0 } : null,
     appnext: l.appnext || '',
     regras: l.regras && typeof l.regras === 'object' ? l.regras : null,
+    fidelidade: l.fidelidade && typeof l.fidelidade === 'object' ? l.fidelidade : null,
     marca: l.marca && typeof l.marca === 'object' ? l.marca : null,
     operacao: l.operacao && typeof l.operacao === 'object' ? l.operacao : null,
     ferias: Array.isArray(l.ferias) ? l.ferias : [],
@@ -83,6 +86,7 @@ function normalizar(cfg) {
       vendedor: v.vendedor || '',
       // telas liberadas (só gerente); null = padrão do perfil
       telas: Array.isArray(v.telas) && v.telas.length ? v.telas.filter((t) => TELAS.includes(t)) : null,
+      telasV: v.telasV || undefined,
       ativo: v.ativo !== false,
       criadoEm: v.criadoEm || null,
       // último dia de acesso (AAAA-MM-DD, horário de Brasília); null = sem prazo
@@ -98,28 +102,44 @@ function normalizar(cfg) {
 }
 
 function get() {
+  const agora = Date.now();
+  if (cache.cfg && cache.mtime !== 0 && agora - cache.verificadoEm < 400) return cache.cfg;
   let st = null;
   try { st = fs.statSync(CONFIG_FILE); } catch { /* sem arquivo */ }
   if (!st) {
-    if (!cache.cfg || cache.mtime !== -1) cache = { mtime: -1, cfg: fromEnv() };
+    if (!cache.cfg || cache.mtime !== -1) cache = { mtime: -1, cfg: fromEnv(), verificadoEm: agora };
+    else cache.verificadoEm = agora;
     return cache.cfg;
   }
   if (st.mtimeMs !== cache.mtime) {
     try {
-      cache = { mtime: st.mtimeMs, cfg: normalizar(JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'))) };
+      cache = { mtime: st.mtimeMs, cfg: normalizar(JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'))), verificadoEm: agora };
       console.log(`[config] ${cache.cfg.lojas.length} loja(s), ${Object.keys(cache.cfg.usuarios).length} usuário(s)`);
     } catch (e) {
       console.error('[config] lojas.json inválido, mantendo a versão anterior:', e.message);
       if (!cache.cfg) throw e;
+      cache.verificadoEm = agora;
     }
+  } else {
+    cache.verificadoEm = agora;
   }
   return cache.cfg;
 }
 
 // ---------- senhas (scrypt) ----------
+const HASH_FANTASMA = (() => {
+  const s = Buffer.alloc(16, 7);
+  return `scrypt$${s.toString('base64')}$${crypto.scryptSync('__painelts_fantasma__', s, 32).toString('base64')}`;
+})();
+
 function hashSenha(senha) {
   const salt = crypto.randomBytes(16);
   const h = crypto.scryptSync(String(senha), salt, 32);
+  return `scrypt$${salt.toString('base64')}$${h.toString('base64')}`;
+}
+async function hashSenhaAsync(senha) {
+  const salt = crypto.randomBytes(16);
+  const h = await scryptAsync(String(senha), salt, 32);
   return `scrypt$${salt.toString('base64')}$${h.toString('base64')}`;
 }
 function confereSenha(senha, guardada) {
@@ -135,10 +155,32 @@ function confereSenha(senha, guardada) {
   const ref = Buffer.from(hash, 'base64');
   return ref.length === h.length && crypto.timingSafeEqual(h, ref);
 }
+async function confereSenhaAsync(senha, guardada) {
+  const alvo = guardada || HASH_FANTASMA;
+  if (alvo.startsWith('plain$')) {
+    const a = crypto.createHash('sha256').update(String(senha)).digest();
+    const b = crypto.createHash('sha256').update(alvo.slice(6)).digest();
+    return !!guardada && crypto.timingSafeEqual(a, b);
+  }
+  const [alg, salt, hash] = alvo.split('$');
+  if (alg !== 'scrypt' || !salt || !hash) {
+    await scryptAsync(String(senha), Buffer.alloc(16, 7), 32);
+    return false;
+  }
+  const h = await scryptAsync(String(senha), Buffer.from(salt, 'base64'), 32);
+  const ref = Buffer.from(hash, 'base64');
+  const ok = ref.length === h.length && crypto.timingSafeEqual(h, ref);
+  return !!guardada && ok;
+}
 
 /** Lojas que um usuário pode ver */
+/** data AAAA-MM-DD no fuso de Brasília */
+const diaSP = (v) => {
+  const d = v == null ? new Date() : new Date(v);
+  return Number.isNaN(d.getTime()) ? FMT_DIA_SP.format(new Date()) : FMT_DIA_SP.format(d);
+};
 /** hoje no horário de Brasília (AAAA-MM-DD) */
-const hojeBR = () => new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
+const hojeBR = () => diaSP();
 /** o prazo de acesso do usuário já passou? (o último dia ainda vale) */
 const expirado = (u) => !!(u && u.acessoAte && hojeBR() > u.acessoAte);
 /** hoje + n meses (o dia é ajustado no fim do mês: 31/01 + 1 = 28/02) */
@@ -163,7 +205,7 @@ function lojasDoUsuario(user) {
   return cfg.lojas.filter((l) => u.lojas.includes(l.id));
 }
 
-const pastaLoja = (id) => path.join(DATA_DIR, id);
+const pastaLoja = (id) => path.join(DATA_DIR, String(id || '').toLowerCase().replace(/[^a-z0-9_-]/g, ''));
 const CONFIG_DIR = path.dirname(CONFIG_FILE);
 const COLETOR_DIR = path.resolve(process.env.COLETOR_CONFIG_DIR || path.join(CONFIG_DIR, 'coletor'));
 
@@ -175,7 +217,7 @@ function usuario(user) {
 /** grava arquivo de forma atômica (tmp + rename) */
 function gravarAtomico(file, conteudo, mode = 0o600) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
+  const tmp = `${file}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 8)}.tmp`;
   fs.writeFileSync(tmp, conteudo, { mode });
   fs.renameSync(tmp, file);
 }
@@ -187,7 +229,10 @@ function gravarAtomico(file, conteudo, mode = 0o600) {
 function alterar(fn) {
   let cru = { lojas: [], usuarios: {} };
   if (fs.existsSync(CONFIG_FILE)) cru = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
-  cru.lojas = cru.lojas || []; cru.usuarios = cru.usuarios || {};
+  cru.lojas = (cru.lojas || []).map((l) => (l && l.id ? { ...l, id: String(l.id).toLowerCase().replace(/[^a-z0-9_-]/g, '') } : l));
+  const usNorm = {};
+  for (const [k, v] of Object.entries(cru.usuarios || {})) usNorm[String(k).toLowerCase()] = v;
+  cru.usuarios = usNorm;
   const antes = JSON.stringify(cru);
   const r = fn(cru);
   const depois = JSON.stringify(cru, null, 2) + '\n';
@@ -209,26 +254,53 @@ function alterar(fn) {
 const AUDITORIA = path.join(CONFIG_DIR, 'auditoria.jsonl');
 function auditar(por, acao, alvo, detalhe) {
   const linha = JSON.stringify({ em: new Date().toISOString(), por, acao, alvo, detalhe: detalhe || undefined });
-  try { fs.mkdirSync(CONFIG_DIR, { recursive: true }); fs.appendFileSync(AUDITORIA, linha + '\n', { mode: 0o600 }); } catch (e) { console.warn('[auditoria]', e.message); }
+  try {
+    fs.mkdirSync(CONFIG_DIR, { recursive: true });
+    fs.appendFileSync(AUDITORIA, linha + '\n', { mode: 0o600 });
+    const st = fs.statSync(AUDITORIA);
+    if (st.size > 6 * 1024 * 1024) {
+      const cauda = lerCauda(AUDITORIA, 3 * 1024 * 1024).split('\n').slice(1).join('\n');
+      gravarAtomico(AUDITORIA, cauda ? cauda + '\n' : '', 0o600);
+    }
+  } catch (e) { console.warn('[auditoria]', e.message); }
+}
+function lerCauda(arq, maxBytes) {
+  const st = fs.statSync(arq);
+  if (st.size <= maxBytes) return fs.readFileSync(arq, 'utf8');
+  const fd = fs.openSync(arq, 'r');
+  try {
+    const buf = Buffer.allocUnsafe(maxBytes);
+    const lidos = fs.readSync(fd, buf, 0, maxBytes, st.size - maxBytes);
+    const txt = buf.subarray(0, lidos).toString('utf8');
+    const nl = txt.indexOf('\n');
+    return nl >= 0 ? txt.slice(nl + 1) : txt;
+  } finally { fs.closeSync(fd); }
 }
 function lerAuditoria(limite = 300) {
   try {
-    const t = fs.readFileSync(AUDITORIA, 'utf8').trim().split('\n').filter(Boolean);
+    const t = lerCauda(AUDITORIA, Math.max(262144, limite * 600)).trim().split('\n').filter(Boolean);
     return t.slice(-limite).reverse().map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
   } catch { return []; }
 }
 
 // ---------- último acesso (arquivo separado: login não reescreve o lojas.json) ----------
 const ACESSOS = path.join(CONFIG_DIR, 'acessos.json');
-let acessos = null, acessosTimer = null;
+let acessos = null, acessosTimer = null, acessosSujo = false;
 function lerAcessos() {
   if (!acessos) { try { acessos = JSON.parse(fs.readFileSync(ACESSOS, 'utf8')); } catch { acessos = {}; } }
   return acessos;
 }
+function flushAcessos() {
+  if (!acessosSujo || !acessos) return;
+  clearTimeout(acessosTimer); acessosTimer = null; acessosSujo = false;
+  try { gravarAtomico(ACESSOS, JSON.stringify(acessos)); } catch (e) { console.warn('[acessos]', e.message); }
+}
 function registrarAcesso(user) {
   lerAcessos()[user] = new Date().toISOString();
+  acessosSujo = true;
   clearTimeout(acessosTimer);
-  acessosTimer = setTimeout(() => { try { gravarAtomico(ACESSOS, JSON.stringify(acessos)); } catch (e) { console.warn('[acessos]', e.message); } }, 2000);
+  acessosTimer = setTimeout(flushAcessos, 2000);
+  if (acessosTimer.unref) acessosTimer.unref();
 }
 
 /** meta da loja num mês (AAAA-MM): meta do mês, senão a padrão */
@@ -237,6 +309,6 @@ function metaDoMes(loja, ym) {
 }
 
 module.exports = {
-  get, hashSenha, confereSenha, chaveSessao, lojasDoUsuario, pastaLoja, usuario, alterar, gravarAtomico, auditar, lerAuditoria,
-  registrarAcesso, lerAcessos, expirado, hojeBR, somaMeses, metaDoMes, PERFIS, TELAS, TELAS_GERENTE_PADRAO, telasDo, ARQUIVOS, CONFIG_FILE, CONFIG_DIR, COLETOR_DIR, DATA_DIR,
+  get, hashSenha, hashSenhaAsync, confereSenha, confereSenhaAsync, chaveSessao, lojasDoUsuario, pastaLoja, usuario, alterar, gravarAtomico, auditar, lerAuditoria,
+  registrarAcesso, flushAcessos, lerAcessos, expirado, hojeBR, diaSP, somaMeses, metaDoMes, PERFIS, TELAS, TELAS_GERENTE_PADRAO, telasDo, ARQUIVOS, CONFIG_FILE, CONFIG_DIR, COLETOR_DIR, DATA_DIR,
 };

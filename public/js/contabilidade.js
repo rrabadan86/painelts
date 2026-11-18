@@ -203,7 +203,7 @@ ${secao('Total da loja', [
   const ultimoDia = (ym) => { const d = new Date(Date.UTC(+ym.slice(0, 4), +ym.slice(5, 7), 0)); return d.toISOString().slice(0, 10); };
   /** período de apuração: mês cheio; no mês corrente, até hoje */
   TS.periodoApuracao = function (ym) {
-    const hoje = new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
+    const hoje = TS.hojeSP ? TS.hojeSP() : new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
     const fim = ultimoDia(ym) > hoje ? hoje : ultimoDia(ym);
     return { de: ym + '-01', ate: fim, parcial: fim !== ultimoDia(ym), texto: `${dataBr(ym + '-01')} a ${dataBr(fim)}` };
   };
@@ -225,7 +225,8 @@ ${secao('Total da loja', [
       <td style="padding:12px 14px;border-bottom:1px solid ${LINHA}"><div style="font-size:11px;color:${CINZA};text-transform:uppercase;letter-spacing:.6px">${esc(rot)}</div>${sub ? `<div style="font-size:12px;color:${CINZA};margin-top:2px">${esc(sub)}</div>` : ''}</td>
       <td style="padding:12px 14px;border-bottom:1px solid ${LINHA};text-align:right;white-space:nowrap;font-size:20px;font-weight:700;color:${ESCURO}">${esc(brl(val))}</td></tr>`;
     const msg = String(mensagem || '').trim();
-    const x = xml || { ativos: { notas: 0, total: 0 }, cancelados: { notas: 0, total: 0, eventos: 0 } };
+    const x = xml || { ativos: { notas: 0, total: 0 }, cancelados: { notas: 0, total: 0, eventos: 0 }, outras: { notas: 0, total: 0 } };
+    const outr = x.outras || { notas: 0, total: 0 };
     return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:620px;margin:0 auto;border-collapse:separate;background:#ffffff;border:1px solid ${LINHA};border-radius:16px;font-family:Arial,Helvetica,sans-serif;color:${ESCURO}">
 <tr><td style="padding:22px 18px 4px">
   <div style="font-size:11px;font-weight:700;letter-spacing:1.4px;color:${OURO};text-transform:uppercase">Faturamento do mês</div>
@@ -245,9 +246,10 @@ ${msg ? `<tr><td style="padding:14px 18px 0;font-size:14px;line-height:1.55;colo
   </table>
 </td></tr>
 ${secao('Notas fiscais (XML anexado)', [
-    linha('Ativas', `${fmt.int(x.ativos.notas)} ${x.ativos.notas === 1 ? 'nota' : 'notas'} · ${brl(x.ativos.total)}`, { forte: true }),
+    linha('Vendas ativas', `${fmt.int(x.ativos.notas)} ${x.ativos.notas === 1 ? 'nota' : 'notas'} · ${brl(x.ativos.total)}`, { forte: true }),
+    outr.notas ? linha('Devoluções / outras operações', `${fmt.int(outr.notas)} ${outr.notas === 1 ? 'nota' : 'notas'} · ${brl(outr.total)}`, { sub: 'fora do faturamento de venda (ex.: devolução ao fornecedor)' }) : '',
     linha('Canceladas', `${fmt.int(x.cancelados.notas)} ${x.cancelados.notas === 1 ? 'nota' : 'notas'} · ${brl(x.cancelados.total)}`, { cor: x.cancelados.notas ? '#B5452B' : ESCURO, sub: x.cancelados.eventos ? `${x.cancelados.eventos} ${x.cancelados.eventos === 1 ? 'evento' : 'eventos'} de cancelamento junto` : '' }),
-    linha('Total de notas emitidas', `${fmt.int(x.ativos.notas + x.cancelados.notas)} · ${brl(x.ativos.total + x.cancelados.total)}`),
+    linha('Total de notas emitidas', `${fmt.int(x.ativos.notas + outr.notas + x.cancelados.notas)} · ${brl(x.ativos.total + outr.total + x.cancelados.total)}`),
   ])}
 <tr><td style="padding:20px 18px 22px;font-size:11px;line-height:1.5;color:${CINZA}">
   O arquivo .zip anexado tem duas pastas: <b>ativos</b> (notas válidas) e <b>cancelados</b> (notas canceladas e os eventos de cancelamento). Faturamento calculado com as vendas do AppNext; as notas ativas somam o valor das NFC-e válidas do período.

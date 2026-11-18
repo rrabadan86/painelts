@@ -43,10 +43,11 @@ function evento(h) {
   else if (/^Opera[cç][aã]o cancelada/i.test(resto)) tipo = 'cancelado';
   else if ((k = /^Bem vindo\(a\), voc[eê] ganhou (\d+) ponto/i.exec(resto))) { tipo = 'boasvindas'; pontos = +k[1]; }
   else if (/^Bem vindo/i.test(resto)) tipo = 'boasvindas';
-  // outros textos com pontos (ajuste, bônus, estorno…): entrada ou saída pela palavra
-  else if ((k = /(\d+)\s*pontos?/i.exec(resto))) {
-    pontos = +k[1];
-    tipo = /remov|debit|estorn|retirad|subtra|descont|cancel/i.test(resto) ? 'saida' : /adicion|credit|ganh|bonus|bônus|acresc|ajuste|transfer/i.test(resto) ? 'ajuste' : 'outro';
+  // outros textos com pontos (ajuste, bônus, estorno…): entrada ou saída pela palavra ou sinal negativo
+  else if ((k = /([+-]?\d+)\s*pontos?/i.exec(resto))) {
+    const n = +k[1];
+    pontos = Math.abs(n);
+    tipo = n < 0 || /remov|debit|estorn|retirad|subtra|descont|cancel/i.test(resto) ? 'saida' : /adicion|credit|ganh|bonus|bônus|acresc|ajuste|transfer/i.test(resto) ? 'ajuste' : 'outro';
   }
   const txt = tipo === 'outro' || tipo === 'saida' || tipo === 'ajuste' ? resto.split('\n')[0].trim().slice(0, 80) : undefined;
   return { data, min, tipo, pontos, produtos, ...(txt ? { txt } : {}) };
@@ -63,6 +64,7 @@ function ler(rows) {
   const cadastros = {};
   if (k.cpf < 0) throw new Error('A planilha de Logs precisa da coluna CPF.');
   const out = [];
+  const segs = [];
   for (const r of rows.slice(iCab + 1)) {
     if (!r) continue;
     const cpf = String(r[k.cpf] ?? '').replace(/\D/g, '').padStart(11, '0');
@@ -74,15 +76,30 @@ function ler(rows) {
     for (const b of blocos) {
       const e = evento(b);
       if (!e) continue;
+      const ms = /^\d{2}\/\d{2}\/\d{4}\s+\d{1,2}:\d{1,2}:(\d{1,2})/.exec(b.replace(/\r/g, ''));
+      segs.push(ms ? +ms[1] : '');
       out.push({ cpf, nome: k.nome >= 0 ? String(r[k.nome] ?? '').trim().slice(0, 80) : '', loja: k.loja >= 0 ? String(r[k.loja] ?? '').trim().replace(/\.$/, '') : '', ...e });
     }
   }
   if (!out.length) throw new Error('Nenhum movimento na planilha de Logs.');
-  // sem repetidos (o mesmo movimento pode vir em duas linhas)
+  // sem repetidos (o mesmo movimento pode vir em duas linhas; segundos diferenciam movimentos no mesmo minuto)
   const vistos = new Set();
-  const ev = out.filter((e) => { const c = [e.cpf, e.data, e.min, e.tipo, e.pontos, e.produtos.join('|')].join('#'); if (vistos.has(c)) return false; vistos.add(c); return true; });
+  const ev = out.filter((e, idx) => { const c = [e.cpf, e.data, e.min, segs[idx], e.tipo, e.pontos, e.produtos.join('|')].join('#'); if (vistos.has(c)) return false; vistos.add(c); return true; });
   ev.cadastros = cadastros;
   return ev;
+}
+
+const gzCache = new Map();
+function lerGzCache(f) {
+  let st;
+  try { st = fs.statSync(f); } catch { gzCache.delete(f); return null; }
+  const hit = gzCache.get(f);
+  if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size) return hit.val;
+  try {
+    const val = JSON.parse(zlib.gunzipSync(fs.readFileSync(f)).toString('utf8'));
+    gzCache.set(f, { mtimeMs: st.mtimeMs, size: st.size, val });
+    return val;
+  } catch { return null; }
 }
 
 async function importar(id, buf) {
@@ -90,6 +107,7 @@ async function importar(id, buf) {
   const ev = ler(await linhasDeBuffer(buf));
   fs.mkdirSync(path.dirname(arq(id)), { recursive: true });
   C.gravarAtomico(arq(id), zlib.gzipSync(JSON.stringify({ em: new Date().toISOString(), eventos: ev, cadastros: ev.cadastros || {} })), 0o640);
+  gzCache.delete(arq(id));
   const cont = (t) => ev.filter((e) => e.tipo === t).length;
   const r = { tipo: 'logs', movimentos: ev.length, clientes: new Set(ev.map((e) => e.cpf)).size, compras: cont('pontos') + cont('compra'), resgates: cont('resgate'), expirados: cont('expirou') };
   C.gravarAtomico(path.join(path.dirname(arq(id)), 'logs.json'), JSON.stringify({ em: new Date().toISOString(), ...r }), 0o640);
@@ -101,7 +119,7 @@ function resumo(id) {
 }
 
 function eventos(id) {
-  try { return JSON.parse(zlib.gunzipSync(fs.readFileSync(arq(id))).toString('utf8')); } catch { return null; }
+  return lerGzCache(arq(id));
 }
 
 const arqMembros = (id) => path.join(C.pastaLoja(id), 'fixe', 'membros.json.gz');
@@ -123,9 +141,10 @@ function resumoSaldos(id) {
 function gravarMembros(id, lista) {
   fs.mkdirSync(path.dirname(arqMembros(id)), { recursive: true });
   C.gravarAtomico(arqMembros(id), zlib.gzipSync(JSON.stringify({ em: new Date().toISOString(), membros: lista })), 0o640);
+  gzCache.delete(arqMembros(id));
 }
 function membros(id) {
-  try { return JSON.parse(zlib.gunzipSync(fs.readFileSync(arqMembros(id))).toString('utf8')); } catch { return null; }
+  return lerGzCache(arqMembros(id));
 }
 
 // minResgate: pontos para poder resgatar; prazoResgate: dias que o cliente tem para resgatar (indicador da tela Clientes)

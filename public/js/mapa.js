@@ -762,9 +762,10 @@
         h('p', { class: 'imp-obs' }, `Intervalo de ${op.equipe.intervalo || 0} min nas jornadas acima de 6h. Emitido em ${new Date().toLocaleString('pt-BR')}.`),
         h('div', { class: 'imp-ass' }, h('div', null, h('span'), 'Responsável pela loja'), h('div', null, h('span'), 'Ciente da equipe'))));
       document.body.append(el);
-      const limpar = () => { el.remove(); window.removeEventListener('afterprint', limpar); };
+      document.body.classList.add('imprimindo-doc');
+      const limpar = () => { document.body.classList.remove('imprimindo-doc'); el.remove(); window.removeEventListener('afterprint', limpar); };
       window.addEventListener('afterprint', limpar);
-      setTimeout(() => window.print(), 100);
+      setTimeout(() => { window.print(); setTimeout(() => { if (document.body.classList.contains('imprimindo-doc') && !window.matchMedia('print').matches) limpar(); }, 1000); }, 100);
     };
     // editor do dia selecionado
     const editor = (() => {

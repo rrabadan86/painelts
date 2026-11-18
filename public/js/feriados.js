@@ -191,7 +191,8 @@
       card.append(h('div', { class: 'card-head' }, h('div', null, h('div', { class: 'card-title' }, `Feriados de ${TS.MESES_LONGOS[+ym.slice(5, 7) - 1].toLowerCase()}/${ym.slice(0, 4)}`),
         h('div', { class: 'card-sub' }, 'Horas trabalhadas por cada pessoa em cada feriado. Vão para o PDF do fechamento.')), acoes));
       // formulário de feriado local
-      const fData = h('input', { class: 'f-input', type: 'date', min: ym + '-01', max: ym + '-31' });
+      const ultDia = new Date(Date.UTC(+ym.slice(0, 4), +ym.slice(5, 7), 0)).getUTCDate();
+      const fData = h('input', { class: 'f-input', type: 'date', min: ym + '-01', max: `${ym}-${String(ultDia).padStart(2, '0')}` });
       const fNome = h('input', { class: 'f-input', placeholder: 'Aniversário da cidade' });
       const fAnual = h('input', { type: 'checkbox', checked: true });
       const form = h('div', { class: 'feriado-form', hidden: true }, fData, fNome, h('label', { class: 'cfg-check-l' }, fAnual, ' repete todo ano'),

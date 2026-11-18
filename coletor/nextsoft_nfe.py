@@ -63,9 +63,10 @@ def fazer_login(page):
 
 
 def gravar(res):
-    tmp = Path(SAIDA + ".tmp")
+    tmp = Path(f"{SAIDA}.{os.getpid()}.tmp")
     tmp.parent.mkdir(parents=True, exist_ok=True)
     tmp.write_text(json.dumps({**res, "em": datetime.now().astimezone().isoformat()}, ensure_ascii=False), encoding="utf-8")
+    os.chmod(tmp, 0o640)
     tmp.replace(SAIDA)
 
 
@@ -476,9 +477,11 @@ def devolucao(page, pedido, t0):
 def main():
     nx.start_watchdog(int(os.getenv("MAX_RUNTIME_SECONDS", "600")))
     pedido = json.loads(Path(ENTRADA).read_text(encoding="utf-8")) if ACAO != "cadastros" else None
+    pasta_pw = Path.cwd() / "pw_state"
+    nx.limpar_locks_perfil(pasta_pw)
     with sync_playwright() as pw:
         ctx = pw.chromium.launch_persistent_context(
-            user_data_dir=str(Path.cwd() / "pw_state"), headless=True, accept_downloads=False, ignore_https_errors=True,
+            user_data_dir=str(pasta_pw), headless=True, accept_downloads=False, ignore_https_errors=nx.INSEGURO,
             viewport={"width": 1600, "height": 950},
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36",
         )

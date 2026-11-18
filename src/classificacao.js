@@ -10,7 +10,7 @@ const path = require('path');
 const C = require('./config');
 
 const ARQ = () => path.join(C.CONFIG_DIR, 'classificacao.json');
-const GRUPO = { arom: 'CHÁ AROMATIZADO', puro: 'CHÁ PURO', acess: 'ACESSÓRIOS' };
+const GRUPO = { arom: 'CHÁ AROMATIZADO', puro: 'CHÁ PURO', acess: 'ACESSÓRIOS', fora: 'FORA DA META' };
 const CLASSES = ['arom', 'puro', 'acess', 'fora'];
 const chave = (t) => String(t || '').trim().replace(/\s+/g, ' ').toUpperCase();
 
@@ -45,8 +45,12 @@ function aplicar(vendas) {
   let n = 0;
   for (const v of vendas) {
     const x = p[chave(v.descricao)];
-    if (!x || !GRUPO[x.classe] || v.grupoC === GRUPO[x.classe]) continue;
-    v.grupoOrig = v.grupoC; v.grupoC = GRUPO[x.classe]; n++;
+    if (!x || !GRUPO[x.classe]) continue;
+    const orig = v.grupoOrig !== undefined ? v.grupoOrig : v.grupoC;
+    if (v.grupoC === GRUPO[x.classe]) continue;
+    v.grupoOrig = orig;
+    v.grupoC = GRUPO[x.classe];
+    n++;
   }
   return n;
 }

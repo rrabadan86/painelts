@@ -48,6 +48,19 @@ function gravarEnv(id, valores) {
 const semQuebra = (v) => String(v ?? '').replace(/[\r\n]/g, '').trim();
 const slug = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
   .replace(/^tea\s*shop\s*/, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 30);
+function hostSmtpInvalido(host) {
+  const h = String(host || '').trim().toLowerCase().replace(/^\[|\]$/g, '');
+  if (!h) return false;
+  if (!/^[a-z0-9.:-]+$/.test(h) || !h.includes('.')) return true;
+  if (h === 'localhost' || h.endsWith('.localhost') || h.endsWith('.local') || h.endsWith('.internal') || h === 'coletor' || h === 'teashop-painel') return true;
+  if (h.includes(':')) return true; // bloqueia IPv6 literal em SMTP configurável
+  const m = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (m) {
+    const [a, b] = [+m[1], +m[2]];
+    if (a === 0 || a === 10 || a === 127 || a >= 224 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127)) return true;
+  }
+  return false;
+}
 
 const DIAS_SEMANA = ['seg', 'ter', 'qua', 'qui', 'sex', 'sab', 'dom'];
 function validarOperacao(o) {
@@ -230,6 +243,12 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
       for (const u of Object.values(cfg.usuarios)) if (Array.isArray(u.lojas)) u.lojas = u.lojas.filter((x) => x !== id);
     });
     try { if (fs.existsSync(envFile(id))) fs.renameSync(envFile(id), envFile(id) + `.removida-${Date.now()}`); } catch { /* ok */ }
+    try { AG.gravarLoja(id, null); } catch { /* ok */ }
+    try { NOTIF.alterarPontual((nc) => { if (nc.lojas) delete nc.lojas[id]; }); } catch { /* ok */ }
+    try {
+      const fPed = path.join(C.CONFIG_DIR, 'acesso-pedido', `${id}.json`);
+      if (fs.existsSync(fPed)) fs.renameSync(fPed, `${fPed}.removida-${Date.now()}`);
+    } catch { /* ok */ }
     aud(req, 'removeu loja', id, { loja: id, obs: 'dados mantidos na pasta da loja' });
     depois();
     res.json({ ok: true });
@@ -288,6 +307,9 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     if (!rede || !usuario) return res.status(400).json({ erro: 'Informe a rede e o usuário do AppNext.' });
     const atual = lerEnv(req.loja.id);
     if (!b.senha && !(atual && atual.APPNEXT_PASS)) return res.status(400).json({ erro: 'Informe a senha do AppNext.' });
+    if (!b.senha && atual && atual.APPNEXT_PASS && ((atual.APPNEXT_USER && atual.APPNEXT_USER !== usuario) || (atual.APPNEXT_REDE && atual.APPNEXT_REDE !== rede))) {
+      return res.status(400).json({ erro: 'Informe a senha novamente ao trocar a rede ou o usuário do AppNext.' });
+    }
     const valores = {
       APPNEXT_REDE: rede, APPNEXT_USER: usuario,
       APPNEXT_LOJA_DESTINO: semQuebra(b.lojaDestino), APPNEXT_LOJA_ID_DESTINO: semQuebra(b.lojaIdDestino),
@@ -312,6 +334,9 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     const atual = lerEnv(req.loja.id);
     if (!atual) return res.status(400).json({ erro: 'Cadastre primeiro o acesso ao AppNext desta loja (o coletor usa o mesmo arquivo).' });
     if (!b.senha && !atual.FIXE_PASS) return res.status(400).json({ erro: 'Informe a senha do FIXE.' });
+    if (!b.senha && atual.FIXE_PASS && ((atual.FIXE_USER && atual.FIXE_USER !== usuario) || (atual.FIXE_URL && atual.FIXE_URL !== url))) {
+      return res.status(400).json({ erro: 'Informe a senha do FIXE novamente ao trocar o endereço ou o usuário.' });
+    }
     const valores = { FIXE_URL: url, FIXE_USER: usuario, FIXE_EMAIL: email };
     if (b.apelido != null) valores.FIXE_APELIDO_USAR = b.apelido ? null : '0'; // padrão: usa o apelido +loja no Gmail
     if (b.senha) valores.FIXE_PASS = String(b.senha).replace(/[\r\n]/g, '');
@@ -387,7 +412,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     if (!YM_OK.test(de || '') || !YM_OK.test(ate || '') || de > ate) return res.status(400).json({ erro: 'Período inválido.' });
     const meses = B.mesesEntre(de + '-01', ate + '-01');
     if (meses.length > 120) return res.status(400).json({ erro: 'Período longo demais (máximo 10 anos).' });
-    const hoje = new Date().toISOString().slice(0, 10);
+    const hoje = C.hojeBR();
     const partes = [];
     for (let i = 0; i < meses.length; i += passo) {
       const ini = meses[i], fim = meses[Math.min(meses.length - 1, i + passo - 1)];
@@ -564,6 +589,12 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     }
     if (b.email) {
       const e = b.email;
+      const hNovo = e.host != null ? semQuebra(e.host) : c.email.host;
+      const uNovo = e.user != null ? semQuebra(e.user) : c.email.user;
+      if (hostSmtpInvalido(hNovo)) return res.status(400).json({ erro: 'Servidor SMTP inválido.' });
+      if (!e.pass && c.email.pass && ((c.email.host && hNovo !== c.email.host) || (c.email.user && uNovo !== c.email.user))) {
+        return res.status(400).json({ erro: 'Informe a senha novamente ao trocar o servidor ou o usuário de e-mail.' });
+      }
       for (const k of ['host', 'user', 'from']) if (e[k] != null) c.email[k] = semQuebra(e[k]);
       if (e.port != null) c.email.port = +e.port || 587;
       if (e.secure != null) c.email.secure = !!e.secure;
@@ -616,6 +647,12 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
       x.email = { ...x.email, host: '', user: '', from: '', pass: '' };
     } else if (b.email) {
       const e = b.email;
+      const hNovo = e.host != null ? semQuebra(e.host).slice(0, 200) : x.email.host;
+      const uNovo = e.user != null ? semQuebra(e.user).slice(0, 200) : x.email.user;
+      if (hostSmtpInvalido(hNovo)) return res.status(400).json({ erro: 'Servidor SMTP inválido.' });
+      if (!e.pass && x.email.pass && ((x.email.host && hNovo !== x.email.host) || (x.email.user && uNovo !== x.email.user))) {
+        return res.status(400).json({ erro: 'Informe a senha de aplicativo novamente ao trocar o servidor ou o usuário de e-mail.' });
+      }
       for (const k of ['host', 'user', 'from']) if (e[k] != null) x.email[k] = semQuebra(e[k]).slice(0, 200);
       if (e.port != null) x.email.port = +e.port || 587;
       if (e.secure != null) x.email.secure = !!e.secure;
@@ -729,7 +766,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     telas: b.perfil === 'gerente' && Array.isArray(b.telas) ? [...new Set(b.telas.map(String))].filter((t) => C.TELAS.includes(t)) : undefined,
     telasV: 6, // telas escolhidas uma a uma no menu novo (Produtos: Rentabilidade, Preços, Site; Estoque: Estoque, Pedido, Notas fiscais)
     ativo: b.ativo !== false,
-    acessoAte: b.acessoAte || null,
+    acessoAte: /^\d{4}-\d{2}-\d{2}$/.test(String(b.acessoAte || '')) ? String(b.acessoAte) : null,
   });
   /** acessoMeses: n ≥ 1 = acesso até hoje + n meses; 0 = sem prazo; ausente = mantém */
   function prazo(b, atual) {
@@ -738,50 +775,60 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     if (!Number.isInteger(n) || n < 0 || n > 120) return { erro: 'Prazo de acesso inválido: informe de 1 a 120 meses (0 = sem prazo).' };
     return { ok: n === 0 ? null : C.somaMeses(C.hojeBR(), n) };
   }
+  const lojaUnicaAud = (lojas) => (Array.isArray(lojas) && lojas.length === 1 && lojas[0] !== '*' ? lojas[0] : undefined);
 
-  r.post('/usuarios', json, (req, res) => {
+  r.post('/usuarios', json, async (req, res) => {
     const nome = String(req.body.nome || '').trim().toLowerCase();
     if (!NOME_OK.test(nome)) return res.status(400).json({ erro: 'Usuário inválido: 2 a 30 caracteres, letras minúsculas, números, ponto, hífen ou _.' });
     const senha = String(req.body.senha || '');
     if (senha.length < 8) return res.status(400).json({ erro: 'A senha precisa de pelo menos 8 caracteres.' });
+    if (senha.length > 200) return res.status(400).json({ erro: 'A senha deve ter no máximo 200 caracteres.' });
     const d = limparDados(req.body);
     const erro = validarUsuario(req, d, null);
     if (erro) return res.status(400).json({ erro });
     const pz = prazo(req.body, null);
     if (pz.erro) return res.status(400).json({ erro: pz.erro });
     d.acessoAte = pz.ok;
+    const hash = await C.hashSenhaAsync(senha);
     try {
       C.alterar((cfg) => {
         if (cfg.usuarios[nome]) throw new Error(`O usuário "${nome}" já existe.`);
-        cfg.usuarios[nome] = { senha: C.hashSenha(senha), ...d, trocarSenha: req.body.trocarSenha !== false, criadoEm: new Date().toISOString() };
+        cfg.usuarios[nome] = { senha: hash, ...d, trocarSenha: req.body.trocarSenha !== false, criadoEm: new Date().toISOString() };
       });
     } catch (e) { return res.status(400).json({ erro: e.message }); }
-    aud(req, 'criou usuário', nome, { perfil: d.perfil, lojas: d.lojas, acessoAte: d.acessoAte || 'sem prazo', trocarSenha: req.body.trocarSenha !== false, loja: d.lojas[0] });
+    aud(req, 'criou usuário', nome, { perfil: d.perfil, lojas: d.lojas, acessoAte: d.acessoAte || 'sem prazo', trocarSenha: req.body.trocarSenha !== false, loja: lojaUnicaAud(d.lojas) });
     res.json({ ok: true });
   });
 
-  r.put('/usuarios/:nome', json, (req, res) => {
+  r.put('/usuarios/:nome', json, async (req, res) => {
     const nome = String(req.params.nome).toLowerCase();
     const alvo = C.get().usuarios[nome];
     if (!alvo || nome === '*') return res.status(404).json({ erro: 'Usuário não encontrado.' });
     if (!usuariosVisiveis(req).some((u) => u.nome === nome)) return res.status(403).json({ erro: 'Sem permissão para alterar este usuário.' });
     const d = limparDados({ ...alvo, ...req.body });
-    const pz = prazo(req.body, alvo.acessoAte);
-    if (pz.erro) return res.status(400).json({ erro: pz.erro });
-    d.acessoAte = pz.ok;
+    if (req.body.acessoMeses != null && req.body.acessoMeses !== '') {
+      const pz = prazo(req.body, alvo.acessoAte);
+      if (pz.erro) return res.status(400).json({ erro: pz.erro });
+      d.acessoAte = pz.ok;
+    } else if (req.body.acessoAte === undefined) {
+      d.acessoAte = alvo.acessoAte || null;
+    }
     if (nome === req.user && (d.perfil !== alvo.perfil || !d.ativo)) return res.status(400).json({ erro: 'Você não pode mudar o próprio perfil nem se desativar.' });
-    if (nome === req.user && d.acessoAte && d.acessoAte !== (alvo.acessoAte || null)) return res.status(400).json({ erro: 'Você não pode colocar prazo no próprio acesso.' });
+    if (nome === req.user && (d.acessoAte || null) !== (alvo.acessoAte || null)) return res.status(400).json({ erro: 'Você não pode alterar o prazo do próprio acesso.' });
     const erro = validarUsuario(req, d, alvo);
     if (erro) return res.status(400).json({ erro });
     const senha = req.body.senha ? String(req.body.senha) : null;
     if (senha && senha.length < 8) return res.status(400).json({ erro: 'A senha precisa de pelo menos 8 caracteres.' });
+    if (senha && senha.length > 200) return res.status(400).json({ erro: 'A senha deve ter no máximo 200 caracteres.' });
+    const hash = senha ? await C.hashSenhaAsync(senha) : null;
     C.alterar((cfg) => {
       const u = cfg.usuarios[nome];
+      if (!u) return;
       Object.assign(u, d);
-      if (senha) u.senha = C.hashSenha(senha);
+      if (hash) { u.senha = hash; u.sessao = (u.sessao || 0) + 1; }
       if (typeof req.body.trocarSenha === 'boolean' && nome !== req.user) u.trocarSenha = req.body.trocarSenha;
     });
-    aud(req, 'alterou usuário', nome, { perfil: d.perfil, lojas: d.lojas, telas: d.telas, ativo: d.ativo, acessoAte: d.acessoAte !== (alvo.acessoAte || null) ? d.acessoAte || 'sem prazo' : undefined, senha: senha ? 'redefinida' : undefined, trocarSenha: typeof req.body.trocarSenha === 'boolean' && req.body.trocarSenha !== !!alvo.trocarSenha ? req.body.trocarSenha : undefined, loja: d.lojas[0] });
+    aud(req, 'alterou usuário', nome, { perfil: d.perfil, lojas: d.lojas, telas: d.telas, ativo: d.ativo, acessoAte: d.acessoAte !== (alvo.acessoAte || null) ? d.acessoAte || 'sem prazo' : undefined, senha: senha ? 'redefinida' : undefined, trocarSenha: typeof req.body.trocarSenha === 'boolean' && req.body.trocarSenha !== !!alvo.trocarSenha ? req.body.trocarSenha : undefined, loja: lojaUnicaAud(d.lojas) });
     pacoteLimpar();
     res.json({ ok: true });
   });
@@ -792,7 +839,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     if (!C.get().usuarios[nome]) return res.status(404).json({ erro: 'Usuário não encontrado.' });
     if (!usuariosVisiveis(req).some((u) => u.nome === nome)) return res.status(403).json({ erro: 'Sem permissão.' });
     C.alterar((cfg) => { const u = cfg.usuarios[nome]; u.sessao = (u.sessao || 0) + 1; });
-    aud(req, 'encerrou as sessões', nome, { loja: C.get().usuarios[nome].lojas[0] });
+    aud(req, 'encerrou as sessões', nome, { loja: lojaUnicaAud(C.get().usuarios[nome].lojas) });
     res.json({ ok: true });
   });
 
@@ -802,7 +849,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     if (!usuariosVisiveis(req).some((u) => u.nome === nome)) return res.status(403).json({ erro: 'Sem permissão.' });
     const alvo = C.get().usuarios[nome];
     C.alterar((cfg) => { delete cfg.usuarios[nome]; });
-    aud(req, 'excluiu usuário', nome, { loja: alvo?.lojas?.[0] });
+    aud(req, 'excluiu usuário', nome, { loja: lojaUnicaAud(alvo?.lojas) });
     res.json({ ok: true });
   });
 

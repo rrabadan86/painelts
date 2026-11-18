@@ -204,7 +204,7 @@
       prog.replaceChildren(h('div', { class: 'inv-barra' }, h('i', { style: { width: Math.round((n / Math.max(1, c.itens.length)) * 100) + '%' } })), h('small', null, h('b', null, `${fmt.int(n)} de ${fmt.int(c.itens.length)}`), ' contados'));
     };
     const busca = h('input', { class: 'f-input inv-busca', type: 'search', placeholder: 'Procurar na contagem…', autocomplete: 'off' });
-    busca.addEventListener('input', () => { fil.q = TS.norm(busca.value.trim()); pintar(); });
+    busca.addEventListener('input', TS.debounce ? TS.debounce(() => { fil.q = TS.norm(busca.value.trim()); pintar(); }, 120) : () => { fil.q = TS.norm(busca.value.trim()); pintar(); });
     const segF = TS.seg([['Faltam', 'faltam'], ['Contados', 'contados'], ['Todos', 'todos']], fil.v, (v) => { fil.v = v; state.invFil = v; segF.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.v === v)); pintar(); });
     segF.querySelectorAll('button').forEach((b, i) => { b.dataset.v = ['faltam', 'contados', 'todos'][i]; });
     // leitor de código de barras (câmera) — Chrome no Android
@@ -238,7 +238,13 @@
       const salvar = async () => {
         const txt = inp.value.trim().replace(/\s/g, '');
         let v = null;
-        if (txt !== '') { v = Number(txt.replace(/\./g, '').replace(',', '.')); if (!Number.isFinite(v) || v < 0) { est.textContent = 'número inválido'; est.className = 'inv-salvo neg'; return; } if (kg) v = v / 1000; }
+        if (txt !== '') {
+          // aceita vírgula brasileira ("1,5" ou "1.250,5") e ponto decimal direto do teclado numérico ("1.5")
+          const limpo = txt.includes(',') ? txt.replace(/\./g, '').replace(',', '.') : txt;
+          v = Number(limpo);
+          if (!Number.isFinite(v) || v < 0) { est.textContent = 'número inválido'; est.className = 'inv-salvo neg'; return; }
+          if (kg) v = v / 1000;
+        }
         if (v === i.cont) return;
         est.textContent = 'salvando…'; est.className = 'inv-salvo';
         try { const r = await API.contar(loja, c.id, i.cod, v); Object.assign(i, { cont: r.cont, por: r.por, em: r.em }); est.textContent = v == null ? '' : 'salvo ✓'; est.className = 'inv-salvo ok'; pintarProg(); pintarDif(); }
@@ -273,15 +279,23 @@
   async function lerCodigo(fn) {
     let stream;
     const video = h('video', { class: 'inv-video', playsinline: true, muted: true });
-    const fechar = () => { try { stream && stream.getTracks().forEach((t) => t.stop()); } catch { /* ok */ } camada.remove(); };
+    const esc = (e) => { if (e.key === 'Escape') fechar(); };
+    const fechar = () => {
+      document.removeEventListener('keydown', esc);
+      window.removeEventListener('hashchange', fechar);
+      try { stream && stream.getTracks().forEach((t) => t.stop()); } catch { /* ok */ }
+      camada.remove();
+    };
     const camada = h('div', { class: 'inv-camera' }, video, h('div', { class: 'inv-mira' }), h('button', { type: 'button', class: 'btn', onclick: fechar }, 'Fechar'));
     document.body.append(camada);
+    document.addEventListener('keydown', esc);
+    window.addEventListener('hashchange', fechar);
     try {
       stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
       video.srcObject = stream; await video.play();
       const det = new window.BarcodeDetector({ formats: ['ean_13', 'ean_8', 'code_128', 'upc_a', 'upc_e'] });
       const loop = async () => {
-        if (!camada.isConnected) return;
+        if (!camada.isConnected) { fechar(); return; }
         try { const r = await det.detect(video); if (r.length) { fechar(); fn(String(r[0].rawValue).trim()); return; } } catch { /* tenta de novo */ }
         requestAnimationFrame(loop);
       };

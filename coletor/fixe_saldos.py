@@ -11,7 +11,7 @@ import traceback
 from datetime import datetime
 from pathlib import Path
 
-from fixe_export import TZ, URL, USER, PASS, log, tela, primeiro
+from fixe_export import TZ, URL, USER, PASS, log, tela, primeiro, iniciar_watchdog
 
 from playwright.sync_api import sync_playwright
 
@@ -37,6 +37,7 @@ def main():
     if not (URL and USER and PASS and SAIDA):
         log("ERRO: acesso ao FIXE incompleto (endereço, usuário e senha).")
         return 2
+    iniciar_watchdog(int(os.getenv("MAX_RUNTIME_SECONDS", "600")))
     with sync_playwright() as pw:
         b = pw.chromium.launch(headless=True)
         ctx = b.new_context(viewport={"width": 1400, "height": 900}, locale="pt-BR",
@@ -79,7 +80,9 @@ def main():
                     raise RuntimeError(f"o FIXE recusou a consulta: {r['erro']}")
                 total = r["total"] if total is None else total
                 for cpf, pts in r["lista"]:
-                    if len(cpf) == 11:
+                    if 8 <= len(cpf) < 11:
+                        cpf = cpf.zfill(11)
+                    if len(cpf) == 11 and cpf.strip("0"):
                         saldos[cpf] = max(saldos.get(cpf, 0), pts)  # o mesmo CPF pode ter mais de um cadastro
                 skip += POR_VEZ
                 log(f"   {min(skip, total)} de {total} clientes")
@@ -87,8 +90,9 @@ def main():
                     break
             destino = Path(SAIDA)
             destino.parent.mkdir(parents=True, exist_ok=True)
-            tmp = destino.with_suffix(".tmp")
+            tmp = destino.with_name(f"{destino.name}.{os.getpid()}.tmp")
             tmp.write_text(json.dumps({"em": datetime.now(TZ).isoformat(), "total": total, "saldos": sorted(saldos.items())}), encoding="utf-8")
+            os.chmod(tmp, 0o640)
             tmp.replace(destino)
             log(f"4) Saldos gravados: {len(saldos)} CPFs, {sum(1 for v in saldos.values() if v > 0)} com pontos")
             return 0

@@ -210,8 +210,8 @@
     corpo.append(h('div', { class: 'mt' }, TS.card('Produtos do site', `Preço cheio do site comparado com o nosso preço ${lojaTxt}: o preço de tabela do cadastro do AppNext quando o painel tem, senão o preço mais vendido nas últimas 4 semanas. Em promoção = o site mostra preço "de" e "por". Clique no nome para abrir o produto no site.`, seg, tab)));
   }
   // ---------- histórico de um produto do site ----------
-  const dataTxt = (iso) => new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' });
-  const diaDe = (iso) => TS.isoToDay(new Date(iso).toLocaleDateString('en-CA')); // dia no horário local (a consulta é gravada em UTC)
+  const dataTxt = (iso) => new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', timeZone: 'America/Sao_Paulo' });
+  const diaDe = (iso) => TS.isoToDay(new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(iso)));
   /** mudanças entre dois pontos do histórico, em palavras */
   function mudancas(a, b) {
     const out = [];
@@ -225,29 +225,42 @@
     if (a[1] != null && a[3] !== b[3]) out.push({ t: b[3] ? 'Voltou a ter estoque' : 'Esgotou', cls: 'prc-st-n' });
     return out;
   }
-  /** nosso preço praticado num dia: o preço de tabela mais vendido nos 28 dias até ele */
-  function nossoNoDia(nome, dia) {
+  /** pré-indexa as vendas de um produto por dia para consultar a moda de 28 dias em O(1) */
+  function indexarNosso(nome) {
     const db = TS.db;
-    const cont = new Map();
-    for (let i = 0; i < db.n; i++) {
-      if (db.day[i] > dia || db.day[i] < dia - 27 || db.D.descricao[db.desc[i]] !== nome || !(db.vu[i] > 0)) continue;
-      const k = Math.round(db.vu[i] * 100) / 100; cont.set(k, (cont.get(k) || 0) + db.qtd[i]);
+    const descId = db.D.descricao.indexOf(nome);
+    const porDia = new Map();
+    if (descId >= 0) {
+      for (let i = 0; i < db.n; i++) {
+        if (db.desc[i] !== descId || !(db.vu[i] > 0)) continue;
+        const d = db.day[i], k = Math.round(db.vu[i] * 100) / 100;
+        let m = porDia.get(d); if (!m) porDia.set(d, (m = new Map()));
+        m.set(k, (m.get(k) || 0) + db.qtd[i]);
+      }
     }
-    let best = null, n = -1;
-    for (const [k, q] of cont) if (q > n) { best = k; n = q; }
-    return best;
+    return (dia) => {
+      const cont = new Map();
+      for (let d = dia - 27; d <= dia; d++) {
+        const m = porDia.get(d);
+        if (m) for (const [k, q] of m) cont.set(k, (cont.get(k) || 0) + q);
+      }
+      let best = null, n = -1;
+      for (const [k, q] of cont) if (q > n) { best = k; n = q; }
+      return best;
+    };
   }
   function abrirHistorico(r, pts) {
     document.querySelector('.prc-drawer-camada')?.remove();
     const fechar = () => { camada.remove(); document.body.classList.remove('com-camada'); document.removeEventListener('keydown', esc); };
     const esc = (e) => { if (e.key === 'Escape') fechar(); };
     const titulo = r.produto + (r.variante ? ' · ' + r.variante : '');
+    const nossoNoDia = r.nos && r.nos.ult != null ? indexarNosso(r.nos.nome) : null;
     // gráfico em degrau: cada ponto do histórico + hoje
     const dias = [...pts.map((p) => diaDe(p[0])), TS.todayDay()];
-    const labels = dias.map((d) => dataTxt(TS.dayToIso(d)));
+    const labels = dias.map((d) => dataTxt(TS.dayToIso(d) + 'T12:00:00Z'));
     const em = (k) => pts[Math.min(k, pts.length - 1)];
     const sAgora = dias.map((_, k) => em(k)[1]), sCheio = dias.map((_, k) => (em(k)[1] == null ? null : em(k)[2] ?? em(k)[1]));
-    const sNosso = r.nos && r.nos.ult != null ? dias.map((d) => nossoNoDia(r.nos.nome, d)) : dias.map(() => r.nosso);
+    const sNosso = nossoNoDia ? dias.map((d) => nossoNoDia(d)) : dias.map(() => r.nosso);
     const graf = TS.chart({
       type: 'line',
       data: { labels, datasets: [
@@ -264,7 +277,7 @@
       const ms = mudancas(pts[k - 1], pts[k]);
       if (!ms.length) continue;
       const dia = diaDe(pts[k][0]);
-      const nosso = r.nos ? (r.nos.ult != null ? nossoNoDia(r.nos.nome, dia) : r.nosso) : null;
+      const nosso = r.nos ? (nossoNoDia ? nossoNoDia(dia) : r.nosso) : null;
       itens.push(h('li', { class: 'prc-tl-i' },
         h('div', { class: 'prc-tl-d' }, dataTxt(pts[k][0]), h('span', { class: 'muted' }, ` (consulta das ${new Date(pts[k][0]).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })})`)),
         ...ms.map((m) => h('div', { class: 'prc-tl-l' }, h('span', { class: 'prc-st ' + m.cls }, m.t), m.v != null ? h('span', { class: 'prc-badge ' + (m.v > 0 ? 'prc-ruim' : 'prc-bom') }, `${m.v > 0 ? '+' : ''}${fmt.n1(m.v * 100)}%`) : null)),

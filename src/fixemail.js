@@ -56,13 +56,60 @@ function linkDoEmail(html) {
   return a ? a[1].replace(/&amp;/g, '&') : null;
 }
 
+const dns = require('dns').promises;
+const net = require('net');
+
+function ipPrivado(ip) {
+  if (!ip) return true;
+  if (ip.startsWith('::ffff:')) ip = ip.slice(7);
+  if (net.isIPv4(ip)) {
+    const [a, b] = ip.split('.').map(Number);
+    return a === 0 || a === 10 || a === 127 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || a >= 224;
+  }
+  const s = ip.toLowerCase();
+  return s === '::1' || s === '::' || s.startsWith('fc') || s.startsWith('fd') || s.startsWith('fe80:');
+}
+
+async function validarUrlExterna(rawUrl) {
+  let u;
+  try { u = new URL(rawUrl); } catch { throw new Error('link inválido no e-mail do FIXE'); }
+  if (u.protocol !== 'https:') throw new Error('o link do e-mail não é https');
+  const h = u.hostname.toLowerCase();
+  if (!h.includes('.') || h === 'localhost' || h.endsWith('.local') || h.endsWith('.internal')) throw new Error('endereço do link bloqueado');
+  if (net.isIP(h)) {
+    if (ipPrivado(h)) throw new Error('endereço privado bloqueado');
+    return u.toString();
+  }
+  const addrs = await dns.lookup(h, { all: true });
+  if (!addrs.length || addrs.some((a) => ipPrivado(a.address))) throw new Error('endereço interno bloqueado');
+  return u.toString();
+}
+
 async function baixar(url) {
-  if (!/^https:\/\//i.test(url)) throw new Error('o link do e-mail não é https');
-  const r = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(120e3) });
-  if (!r.ok) throw new Error(`o link do FIXE respondeu ${r.status}`);
-  const buf = Buffer.from(await r.arrayBuffer());
-  if (buf.length > 40 * 1024 * 1024) throw new Error('arquivo grande demais');
-  return buf;
+  let atual = url;
+  for (let hop = 0; hop < 5; hop++) {
+    const seguro = await validarUrlExterna(atual);
+    const r = await fetch(seguro, { redirect: 'manual', signal: AbortSignal.timeout(120e3) });
+    if (r.status >= 300 && r.status < 400 && r.headers.get('location')) {
+      atual = new URL(r.headers.get('location'), seguro).toString();
+      continue;
+    }
+    if (!r.ok) throw new Error(`o link do FIXE respondeu ${r.status}`);
+    const buf = Buffer.from(await r.arrayBuffer());
+    if (buf.length > 40 * 1024 * 1024) throw new Error('arquivo grande demais');
+    return buf;
+  }
+  throw new Error('redirecionamentos demais no link do FIXE');
+}
+
+function remetenteAutenticado(p, ehSpam) {
+  const de = ((p.from && p.from.value) || []).map((x) => String(x.address || '').toLowerCase());
+  if (!de.includes(REMETENTE)) return false;
+  const ar = [].concat((p.headers && p.headers.get('authentication-results')) || []).map((x) => (typeof x === 'string' ? x : x && x.text) || '').join(' ');
+  if (!ar) return !ehSpam;
+  if (/\bdkim=pass\b/i.test(ar) || /\bspf=pass\b/i.test(ar)) return true;
+  if (ehSpam || (/\bdkim=(fail|none)\b/i.test(ar) && /\bspf=(fail|softfail|none)\b/i.test(ar))) return false;
+  return true;
 }
 
 /**
@@ -108,6 +155,7 @@ async function verificar(id, smtp, importar) {
           if (vistos.has(mid) || new Date(msg.internalDate) < desde) continue;
           const p = await simpleParser(msg.source);
           if (!/export/i.test(p.subject || '')) continue;
+          if (!remetenteAutenticado(p, cx === spam)) continue;
           // pedido para o apelido da loja (usuario+loja@gmail.com): só vale o e-mail endereçado a ele — outra loja pode usar o mesmo Gmail
           if (apelido && !destinatarios(p).includes(apelido)) continue;
           // pedido para o endereço normal: ignora o que foi mandado ao apelido de outra loja (usuario+outra@gmail.com)

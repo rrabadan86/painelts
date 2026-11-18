@@ -11,9 +11,6 @@ from datetime import datetime
 from pathlib import Path
 
 SAIDA = os.getenv("SAIDA_PRODUTOS", "").strip()
-if not SAIDA:
-    print("ERRO: defina SAIDA_PRODUTOS")
-    sys.exit(2)
 os.environ.setdefault("SAIDA_ARQUIVO", str(Path.cwd() / "_nao_usado.xlsx"))
 
 import nextsoft_export_to_drive as nx  # noqa: E402
@@ -72,19 +69,46 @@ def baixar(page, destino):
     if not dados.startswith(b"PK"):
         raise RuntimeError(f"O arquivo baixado não é um .xlsx ({dl.value.suggested_filename}).")
     destino.parent.mkdir(parents=True, exist_ok=True)
-    tmp = destino.with_name(destino.name + ".tmp")
+    tmp = destino.with_name(f"{destino.name}.{os.getpid()}.tmp")
     tmp.write_bytes(dados)
+    os.chmod(tmp, 0o640)
     tmp.replace(destino)
     log(f"{destino.name}: {len(dados) // 1024} KB")
 
 
+def coletar_produtos_na_pagina(page, saida_dir: str):
+    carimbo = datetime.now(nx._TZ_LOG).strftime("%Y%m%d_%H%M%S")
+    falhas = []
+    nx.garantir_loja(page)
+    for k, (nome, hash_, titulo) in enumerate(TELAS, start=2):
+        step(f"{k}) {nome}: abrir e exportar para Excel")
+        try:
+            abrir(page, hash_, titulo)
+            nx.garantir_loja(page)
+            try:
+                page.wait_for_load_state("networkidle", timeout=15000)
+            except Exception:  # noqa: BLE001
+                pass
+            page.wait_for_timeout(1500)
+            baixar(page, Path(saida_dir) / f"{carimbo}_{nome}.xlsx")
+        except Exception as e:  # noqa: BLE001
+            falhas.append(nome)
+            log(f"### ERRO em {nome}: {str(e).splitlines()[0][:300]}")
+    if falhas:
+        raise RuntimeError(f"Falha na exportação de: {', '.join(falhas)}")
+
+
 def main():
+    saida = os.getenv("SAIDA_PRODUTOS", "").strip()
+    if not saida:
+        print("ERRO: defina SAIDA_PRODUTOS")
+        return 2
     nx.start_watchdog(int(os.getenv("MAX_RUNTIME_SECONDS", "600")))
-    carimbo = datetime.now().strftime("%Y%m%d_%H%M%S")
-    falhas = 0
+    pasta_pw = Path.cwd() / "pw_state"
+    nx.limpar_locks_perfil(pasta_pw)
     with sync_playwright() as pw:
         ctx = pw.chromium.launch_persistent_context(
-            user_data_dir=str(Path.cwd() / "pw_state"), headless=True, accept_downloads=True, ignore_https_errors=True,
+            user_data_dir=str(pasta_pw), headless=True, accept_downloads=True, ignore_https_errors=nx.INSEGURO,
             viewport={"width": 1600, "height": 950},
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36",
         )
@@ -96,20 +120,8 @@ def main():
             nx.goto_login_with_retries(page, nx.LOGIN_URL)
             fazer_login(page)
             nx.trocar_loja(page, os.getenv("APPNEXT_LOJA_DESTINO"))
-            for k, (nome, hash_, titulo) in enumerate(TELAS, start=2):
-                step(f"{k}) {nome}: abrir e exportar para Excel")
-                try:
-                    abrir(page, hash_, titulo)
-                    try:
-                        page.wait_for_load_state("networkidle", timeout=15000)
-                    except Exception:  # noqa: BLE001
-                        pass
-                    page.wait_for_timeout(1500)
-                    baixar(page, Path(SAIDA) / f"{carimbo}_{nome}.xlsx")
-                except Exception as e:  # noqa: BLE001
-                    falhas += 1
-                    log(f"### ERRO em {nome}: {str(e).splitlines()[0][:300]}")
-            return 1 if falhas == len(TELAS) else 0
+            coletar_produtos_na_pagina(page, saida)
+            return 0
         except Exception:  # noqa: BLE001
             log("### ERRO NOS PRODUTOS ###")
             print(traceback.format_exc())

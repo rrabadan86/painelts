@@ -9,9 +9,6 @@ import traceback
 from pathlib import Path
 
 SAIDA = os.getenv("SAIDA_ESTOQUE", "").strip()
-if not SAIDA:
-    print("ERRO: defina SAIDA_ESTOQUE")
-    sys.exit(2)
 os.environ.setdefault("SAIDA_ARQUIVO", str(Path.cwd() / "_nao_usado.xlsx"))
 
 import nextsoft_export_to_drive as nx  # noqa: E402
@@ -49,7 +46,6 @@ def abrir_tela(page):
                 log("O AppNext voltou para o login; entrando de novo…")
                 fazer_login(page)
                 nx.trocar_loja(page, os.getenv("APPNEXT_LOJA_DESTINO"))
-            # troca só o '#': a página não recarrega e o login continua valendo
             page.evaluate(f"() => {{ location.hash = '{HASH}'; }}")
             for _ in range(25):
                 if tela_ok(page):
@@ -63,8 +59,7 @@ def abrir_tela(page):
 
 
 def mostrar_zerados(page):
-    """Filtros (funil) → "Mostrar item com Quantidade Zero" = Sim → Atualizar Filtros.
-    Sem isso o relatório esconde o que está zerado (ex.: a matéria-prima de um chá que acabou) e o painel perde o custo."""
+    """Filtros (funil) → "Mostrar item com Quantidade Zero" = Sim → Atualizar Filtros."""
     rotulo = "text=/Mostrar item com Quantidade Zero/i >> visible=true"
     if not page.locator(rotulo).count():
         ok = nx._click_first(page, [
@@ -87,11 +82,49 @@ def mostrar_zerados(page):
     log("Filtro: itens com quantidade zero = Sim" + ("" if chip else " (não confirmei na etiqueta do filtro)"))
 
 
+def coletar_estoque_na_pagina(page, saida: str):
+    nx.garantir_loja(page)
+    step("2) Estoque → Estoque Atual")
+    abrir_tela(page)
+    nx.garantir_loja(page)
+    try:
+        page.wait_for_load_state("networkidle", timeout=15000)
+    except Exception:  # noqa: BLE001
+        pass
+    step("3) Filtro: mostrar itens com quantidade zero")
+    try:
+        mostrar_zerados(page)
+    except Exception as e1:  # noqa: BLE001
+        log(f"Aviso: 1ª tentativa de ligar 'Mostrar item com Quantidade Zero' falhou ({str(e1).splitlines()[0][:140]}); tentando de novo…")
+        abrir_tela(page)
+        mostrar_zerados(page)
+    step("4) Exportar para Excel")
+    botao = next(page.locator(s).first for s in BOTAO_EXCEL if page.locator(s).count())
+    with page.expect_download(timeout=180_000) as dl:
+        botao.click()
+    dados = Path(dl.value.path()).read_bytes()
+    if not dados.startswith(b"PK"):
+        raise RuntimeError(f"O arquivo baixado não é um .xlsx ({dl.value.suggested_filename}).")
+    destino = Path(saida)
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    tmp = destino.with_name(f"{destino.name}.{os.getpid()}.tmp")
+    tmp.write_bytes(dados)
+    os.chmod(tmp, 0o640)
+    tmp.replace(destino)
+    log(f"Estoque: {len(dados) // 1024} KB → {destino.name}")
+
+
 def main():
+    saida = os.getenv("SAIDA_ESTOQUE", "").strip()
+    if not saida:
+        print("ERRO: defina SAIDA_ESTOQUE")
+        return 2
     nx.start_watchdog(int(os.getenv("MAX_RUNTIME_SECONDS", "600")))
+    pasta_pw = Path.cwd() / "pw_state"
+    nx.limpar_locks_perfil(pasta_pw)
     with sync_playwright() as pw:
         ctx = pw.chromium.launch_persistent_context(
-            user_data_dir=str(Path.cwd() / "pw_state"), headless=True, accept_downloads=True, ignore_https_errors=True,
+            user_data_dir=str(pasta_pw), headless=True, accept_downloads=True, ignore_https_errors=nx.INSEGURO,
             viewport={"width": 1600, "height": 950},
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36",
         )
@@ -103,30 +136,7 @@ def main():
             nx.goto_login_with_retries(page, nx.LOGIN_URL)
             fazer_login(page)
             nx.trocar_loja(page, os.getenv("APPNEXT_LOJA_DESTINO"))
-            step("2) Estoque → Estoque Atual")
-            abrir_tela(page)
-            try:
-                page.wait_for_load_state("networkidle", timeout=15000)
-            except Exception:  # noqa: BLE001
-                pass
-            step("3) Filtro: mostrar itens com quantidade zero")
-            try:
-                mostrar_zerados(page)
-            except Exception as e:  # noqa: BLE001
-                log(f"Aviso: não consegui ligar 'Mostrar item com Quantidade Zero' ({str(e).splitlines()[0][:160]}); o relatório sai sem os itens zerados.")
-            step("4) Exportar para Excel")
-            botao = next(page.locator(s).first for s in BOTAO_EXCEL if page.locator(s).count())
-            with page.expect_download(timeout=180_000) as dl:
-                botao.click()
-            dados = Path(dl.value.path()).read_bytes()
-            if not dados.startswith(b"PK"):
-                raise RuntimeError(f"O arquivo baixado não é um .xlsx ({dl.value.suggested_filename}).")
-            destino = Path(SAIDA)
-            destino.parent.mkdir(parents=True, exist_ok=True)
-            tmp = destino.with_name(destino.name + ".tmp")
-            tmp.write_bytes(dados)
-            tmp.replace(destino)
-            log(f"Estoque: {len(dados) // 1024} KB → {destino.name}")
+            coletar_estoque_na_pagina(page, saida)
             return 0
         except Exception:  # noqa: BLE001
             log("### ERRO NO ESTOQUE ###")

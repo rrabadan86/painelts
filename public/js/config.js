@@ -66,8 +66,11 @@
 
   TS.pages.config = function (root) {
     raiz = root;
-    root.addEventListener('input', () => { sujo = true; });
-    root.addEventListener('change', (e) => { if (e.target.matches('input,select')) sujo = true; });
+    if (!root._sujoLigado) {
+      root._sujoLigado = true;
+      root.addEventListener('input', () => { sujo = true; });
+      root.addEventListener('change', (e) => { if (e.target.matches('input,select')) sujo = true; });
+    }
     if (!est) { root.append(h('div', { class: 'loading' }, h('div', { class: 'spinner' }), h('p', null, 'Carregando configurações…'))); carregar(); return; }
     pintar();
     carregar();
@@ -916,7 +919,7 @@
         const nd = h('span', { class: 'muted' }, dias(f) ? `${dias(f)} dias` : '');
         const upd = () => { f.de = de.value; f.ate = ate.value; nd.textContent = dias(f) ? `${dias(f)} dias` : ''; sujo = true; };
         de.addEventListener('change', upd); ate.addEventListener('change', upd);
-        const hoje = new Date().toISOString().slice(0, 10);
+        const hoje = TS.hojeSP ? TS.hojeSP() : new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
         corpo.append(h('div', { class: 'ferias-item' + (f.ate && f.ate < hoje ? ' passada' : '') },
           h('label', { class: 'cfg-campo fi-nome' }, h('span', null, 'Vendedora'), sel),
           h('label', { class: 'cfg-campo' }, h('span', null, 'De'), de), h('label', { class: 'cfg-campo' }, h('span', null, 'Até'), ate),
@@ -1096,7 +1099,7 @@
   }
 
   const dataBr = (iso) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : '');
-  const hojeBR = () => new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
+  const hojeBR = () => (TS.hojeSP ? TS.hojeSP() : new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10));
   const diasAte = (iso) => Math.round((Date.parse(iso + 'T12:00:00Z') - Date.parse(hojeBR() + 'T12:00:00Z')) / 864e5);
   function somaMeses(iso, n) {
     const [a, m, d] = iso.split('-').map(Number);

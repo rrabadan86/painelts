@@ -19,12 +19,10 @@ from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 SAIDA = os.getenv("SAIDA_CAIXA", "").strip()
-if not SAIDA:
-    print("ERRO: defina SAIDA_CAIXA")
-    sys.exit(2)
 os.environ.setdefault("SAIDA_ARQUIVO", str(Path.cwd() / "_nao_usado.xlsx"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import nextsoft_export_to_drive as nx  # noqa: E402
+import nextsoft_compras as ncomp  # noqa: E402
 from playwright.sync_api import sync_playwright  # noqa: E402
 
 log, step = nx.log, nx.step
@@ -72,20 +70,25 @@ def trocar_periodo(url, ini: str, fim: str):
     q = dict(parse_qsl(p.query, keep_blank_values=True))
     if "dataInicial" not in q or "dataFinal" not in q:
         raise RuntimeError("O pedido da lista não tem dataInicial/dataFinal; o AppNext mudou a tela.")
-    q["dataInicial"] = f"{ini}T00:00:00.000"
-    q["dataFinal"] = f"{fim}T23:59:59.999"
+    suf_z = "Z" if str(q.get("dataInicial") or "").endswith("Z") else ""
+    if suf_z:
+        q["dataInicial"] = nx.para_iso_utc_brt(datetime.strptime(ini, "%Y-%m-%d"), fim=False)
+        q["dataFinal"] = nx.para_iso_utc_brt(datetime.strptime(fim, "%Y-%m-%d"), fim=True)
+    else:
+        q["dataInicial"] = f"{ini}T00:00:00.000"
+        q["dataFinal"] = f"{fim}T23:59:59.999"
+    for k in ("tamanhoPagina", "pageSize", "limit", "quantidade"):
+        if k in q:
+            try:
+                if int(q[k]) < 200:
+                    q[k] = "200"
+            except ValueError:
+                pass
     return urlunsplit((p.scheme, p.netloc, p.path, urlencode(q), p.fragment))
 
 
 def pedir_json(page, url, cab):
-    resp = page.request.get(url, headers=cab, timeout=120_000)
-    if not resp.ok:
-        try:
-            t = re.sub(r"\s+", " ", resp.text())[:300]
-        except Exception:  # noqa: BLE001
-            t = ""
-        raise RuntimeError(f"AppNext respondeu {resp.status} em {urlsplit(url).path}{': ' + t if t else ''}")
-    return resp.json()
+    return ncomp.pedir_json(page, url, cab)
 
 
 def num(v):
@@ -126,69 +129,89 @@ def fechamento_de(d):
     }
 
 
-def main():
-    nx.start_watchdog(int(os.getenv("MAX_RUNTIME_SECONDS", "600")))
-    destino = Path(SAIDA)
+def coletar_caixa_na_pagina(page, saida: str, dias: int = None):
+    dias = max(1, min(120, int(dias or os.getenv("CAIXA_DIAS") or "10")))
+    destino = Path(saida)
     try:
         antigo = json.loads(destino.read_text(encoding="utf-8"))
     except Exception:  # noqa: BLE001
         antigo = {}
     guardados = {f["id"]: f for f in antigo.get("fechamentos", []) if f.get("id")}
+    pedidos = []
+    on_req = lambda r: pedidos.append(r) if r.resource_type in ("xhr", "fetch") and "appnext" in r.url else None
+    page.on("request", on_req)
+    try:
+        nx.garantir_loja(page)
+        step("2) Vendas → Fechamentos de PDV")
+        ref = pedido_referencia(page, pedidos)
+        nx.garantir_loja(page)
+        cab = {k: v for k, v in ref.headers.items() if k.lower() not in ("content-length", "host", "cookie", "accept-encoding")}
+
+        hoje = datetime.now(nx._TZ_LOG).date()
+        ini = (hoje - timedelta(days=dias)).isoformat()
+        step(f"3) Fechamentos de {ini} a {hoje.isoformat()}")
+        lista = ncomp.pedir_lista_paginada(page, trocar_periodo(ref.url, ini, hoje.isoformat()), cab)
+        fechados = [x for x in lista if x.get("id") and x.get("dataFechamento")]
+        log(f"{len(lista)} caixas no período, {len(fechados)} fechados")
+
+        step("4) Detalhe dos fechamentos novos")
+        base = urlsplit(ref.url)
+        novos, falhas = 0, 0
+        for x in fechados:
+            if x["id"] in guardados:
+                continue
+            url = urlunsplit((base.scheme, base.netloc, base.path.rstrip("/") + "/" + x["id"], "", ""))
+            try:
+                f = fechamento_de(pedir_json(page, url, cab))
+            except Exception as e:  # noqa: BLE001
+                falhas += 1
+                log(f"Fechamento {x.get('numeroOperacao')}: {str(e)[:200]}")
+                if falhas >= 5:
+                    raise
+                continue
+            guardados[f["id"]] = f
+            novos += 1
+            log(f"Fechamento {f['numero']} ({f['fechamento']}, PDV {f['pdv']}, {f['turno']}): R$ {f['apurado']:.2f}")
+        corte = (hoje - timedelta(days=GUARDA_DIAS)).isoformat()
+        todos = sorted((f for f in guardados.values() if (f.get("dia") or "") >= corte), key=lambda f: f.get("fechamento") or "")
+        destino.parent.mkdir(parents=True, exist_ok=True)
+        tmp = destino.with_name(f"{destino.name}.{os.getpid()}.tmp")
+        tmp.write_text(json.dumps({"atualizado": datetime.now(nx._TZ_LOG).isoformat(), "fechamentos": todos}, ensure_ascii=False), encoding="utf-8")
+        os.chmod(tmp, 0o640)
+        tmp.replace(destino)
+        log(f"Caixa: {len(todos)} fechamentos guardados ({novos} novos{', ' + str(falhas) + ' com erro' if falhas else ''}) → {destino.name}")
+        if falhas and novas == 0:
+            raise RuntimeError(f"Falha ao baixar {falhas} fechamento(s) de caixa.")
+    finally:
+        try:
+            page.remove_listener("request", on_req)
+        except Exception:
+            pass
+
+
+def main():
+    saida = os.getenv("SAIDA_CAIXA", "").strip()
+    if not saida:
+        print("ERRO: defina SAIDA_CAIXA")
+        return 2
+    nx.start_watchdog(int(os.getenv("MAX_RUNTIME_SECONDS", "600")))
+    pasta_pw = Path.cwd() / "pw_state"
+    nx.limpar_locks_perfil(pasta_pw)
     with sync_playwright() as pw:
         ctx = pw.chromium.launch_persistent_context(
-            user_data_dir=str(Path.cwd() / "pw_state"), headless=True, ignore_https_errors=True,
+            user_data_dir=str(pasta_pw), headless=True, ignore_https_errors=nx.INSEGURO,
             viewport={"width": 1600, "height": 950},
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36",
         )
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         page.set_default_timeout(30_000)
         page.set_default_navigation_timeout(60_000)
-        pedidos = []
-        page.on("request", lambda r: pedidos.append(r) if r.resource_type in ("xhr", "fetch") and "appnext" in r.url else None)
         try:
             step("1) Login")
             nx.goto_login_with_retries(page, nx.LOGIN_URL)
             fazer_login(page)
             nx.trocar_loja(page, os.getenv("APPNEXT_LOJA_DESTINO"))
-
-            step("2) Vendas → Fechamentos de PDV")
-            ref = pedido_referencia(page, pedidos)
-            cab = {k: v for k, v in ref.headers.items() if k.lower() not in ("content-length", "host", "cookie", "accept-encoding")}
-
-            hoje = date.today()
-            ini = (hoje - timedelta(days=DIAS)).isoformat()
-            step(f"3) Fechamentos de {ini} a {hoje.isoformat()}")
-            lista = pedir_json(page, trocar_periodo(ref.url, ini, hoje.isoformat()), cab)
-            if isinstance(lista, dict):
-                lista = lista.get("itens") or next((v for v in lista.values() if isinstance(v, list)), [])
-            fechados = [x for x in lista if x.get("id") and x.get("dataFechamento")]
-            log(f"{len(lista)} caixas no período, {len(fechados)} fechados")
-
-            step("4) Detalhe dos fechamentos novos")
-            base = urlsplit(ref.url)
-            novos, falhas = 0, 0
-            for x in fechados:
-                if x["id"] in guardados:
-                    continue
-                url = urlunsplit((base.scheme, base.netloc, base.path.rstrip("/") + "/" + x["id"], "", ""))
-                try:
-                    f = fechamento_de(pedir_json(page, url, cab))
-                except Exception as e:  # noqa: BLE001
-                    falhas += 1
-                    log(f"Fechamento {x.get('numeroOperacao')}: {str(e)[:200]}")
-                    if falhas >= 5:
-                        raise
-                    continue
-                guardados[f["id"]] = f
-                novos += 1
-                log(f"Fechamento {f['numero']} ({f['fechamento']}, PDV {f['pdv']}, {f['turno']}): R$ {f['apurado']:.2f}")
-            corte = (hoje - timedelta(days=GUARDA_DIAS)).isoformat()
-            todos = sorted((f for f in guardados.values() if (f.get("dia") or "") >= corte), key=lambda f: f.get("fechamento") or "")
-            destino.parent.mkdir(parents=True, exist_ok=True)
-            tmp = destino.with_name(destino.name + ".tmp")
-            tmp.write_text(json.dumps({"atualizado": datetime.now().astimezone().isoformat(), "fechamentos": todos}, ensure_ascii=False), encoding="utf-8")
-            tmp.replace(destino)
-            log(f"Caixa: {len(todos)} fechamentos guardados ({novos} novos{', ' + str(falhas) + ' com erro' if falhas else ''}) → {destino.name}")
+            coletar_caixa_na_pagina(page, saida)
             return 0
         except Exception:  # noqa: BLE001
             log("### ERRO NO FECHAMENTO DE CAIXA ###")

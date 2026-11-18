@@ -426,9 +426,9 @@ body.perfil-vendedor #btnScript { display: none !important; }
 #impressao { display: none; }
 @media print {
   @page { size: A4; margin: 14mm; }
-  body:not(.imprimindo-cartao) > *:not(#impressao) { display: none !important; }
+  body.imprimindo-doc > *:not(#impressao) { display: none !important; }
   body { background: #fff !important; }
-  #impressao { display: block; font-family: Inter, Arial, sans-serif; color: #1d2b22; font-size: 11pt; }
+  body.imprimindo-doc #impressao { display: block; font-family: Inter, Arial, sans-serif; color: #1d2b22; font-size: 11pt; }
   .imp-pag { page-break-after: always; }
   .imp-pag:last-child { page-break-after: auto; }
   .imp-cab { display: flex; justify-content: space-between; border-bottom: 2px solid #2C5234; padding-bottom: 8px; margin-bottom: 16px; font-size: 10pt; }
