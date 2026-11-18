@@ -168,66 +168,159 @@ PREENCHER = "async (p) => {" + JS_BASE + """
 DEVOLVER = "async (p) => {" + JS_BASE.replace("acha('salvarRascunho')", "acha('montarDevolucao')") + """
   const sl = tela.selectList, S = tela.saida, set = (k, v) => tela.$set(S, k, v);
   const erro = (t) => { throw new Error(t); };
+  const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const ZERO = '00000000-0000-0000-0000-000000000000';
+  const ehGuid = (v) => typeof v === 'string' && v.trim() !== ZERO && GUID.test(v.trim());
+  const ler = (o, ...ks) => {
+    if (!o || typeof o !== 'object') return undefined;
+    const alvos = ks.map((c) => c.toLowerCase()), achou = Object.keys(o).find((x) => alvos.includes(x.toLowerCase()));
+    return achou !== undefined ? o[achou] : undefined;
+  };
   if (!S.chaveAcesso) erro('a nota de entrada não tem chave de acesso no AppNext');
-  // só os itens da devolução, com as quantidades do painel
-  const pedidos = new Map(p.itens.map((i) => [String(i.codigo).toUpperCase(), i]));
-  const naNota = new Map(S.itens.map((i) => [String(i.codigo).toUpperCase(), i]));
-  for (const [cod, i] of pedidos) {
-    const it = naNota.get(cod) || erro(`o item ${i.codigo} não está nesta nota no AppNext`);
-    if (i.qtd > Number(it.quantidade) + 1e-9) erro(`o item ${i.codigo} tem ${it.quantidade} na nota e a devolução pede ${i.qtd}`);
+  // guarda os dados de modalidade da BC do ICMS da nota de entrada (id ou código XML em itemImposto) antes que a regra sobrescreva
+  const modEntrada = new Map();
+  for (const i of S.itens) {
+    const cod = String(i.codigo).toUpperCase(), imp = i.imposto || i.Imposto || {}, itImp = i.itemImposto || i.ItemImposto || {};
+    const idDir = [ler(imp, 'modalidadeDeterminacaoBcIcmsId'), imp.modalidadeDeterminacaoBcIcms && imp.modalidadeDeterminacaoBcIcms.id,
+      ler(itImp, 'modalidadeDeterminacaoBcIcmsId'), itImp.modalidadeDeterminacaoBcIcms && itImp.modalidadeDeterminacaoBcIcms.id].find(ehGuid) || null;
+    const codMod = [ler(itImp, 'modalidadeDeterminacaoBcIcmsCodigo'), ler(imp, 'modalidadeDeterminacaoBcIcmsCodigo'),
+      imp.modalidadeDeterminacaoBcIcms && imp.modalidadeDeterminacaoBcIcms.codigo, itImp.modalidadeDeterminacaoBcIcms && itImp.modalidadeDeterminacaoBcIcms.codigo]
+      .find((v) => v !== undefined && v !== null && String(v).trim() !== '' && String(v).trim() !== ZERO);
+    if (!modEntrada.has(cod)) modEntrada.set(cod, { id: idDir ? idDir.trim() : null, codigo: codMod != null ? String(codMod).trim() : null });
   }
-  S.itens.splice(0, S.itens.length, ...S.itens.filter((i) => pedidos.has(String(i.codigo).toUpperCase())));
+  // só os itens da devolução, com as quantidades do painel (1 linha por item pedido e ordem renumerada)
+  const pedidos = new Map(p.itens.map((i) => [String(i.codigo).toUpperCase(), i]));
+  const escolhidos = [];
+  for (const [cod, i] of pedidos) {
+    const cands = S.itens.filter((x) => String(x.codigo).toUpperCase() === cod);
+    if (!cands.length) erro(`o item ${i.codigo} não está nesta nota no AppNext`);
+    const it = cands.find((x) => i.qtd <= Number(x.quantidade) + 1e-9) || cands[0];
+    if (i.qtd > Number(it.quantidade) + 1e-9) erro(`o item ${i.codigo} tem ${it.quantidade} na nota e a devolução pede ${i.qtd}`);
+    escolhidos.push(it);
+  }
+  S.itens.splice(0, S.itens.length, ...escolhidos);
   // nova quantidade: o valor bruto e os rateios (frete, seguro, despesas, desconto) da nota de entrada vão na proporção
-  for (const it of S.itens) {
+  S.itens.forEach((it, idx) => {
     const novo = pedidos.get(String(it.codigo).toUpperCase()).qtd, orig = Number(it.quantidade) || novo, f = novo / orig;
     const r2 = (v) => Math.round((Number(v) || 0) * f * 100) / 100;
+    tela.$set(it, 'ordem', idx + 1);
     tela.$set(it, 'quantidade', novo);
     tela.$set(it, 'valorTotalBruto', Math.round(novo * Number(it.valorUnitario) * 100) / 100);
     for (const k of ['valorDescontoProporcionalPedido', 'valorDescontoProporcional', 'valorFreteProporcional', 'valorSeguroProporcional', 'valorDespesasAcessoriasProporcional']) if (k in it) tela.$set(it, k, r2(it[k]));
-    tela.$set(it, 'valorTotalLiquido', Math.round((it.valorTotalBruto - (Number(it.valorDescontoProporcionalPedido) || 0)) * 100) / 100);
+    const desc = Number(it.valorDescontoProporcional ?? it.valorDescontoProporcionalPedido) || 0;
+    tela.$set(it, 'valorTotalLiquido', Math.round((it.valorTotalBruto - desc) * 100) / 100);
+  });
+  // lista oficial de modalidades da BC do ICMS: na tela de devolução ela fica no FacilitadorProduto (onSubmitProduct) ou no endpoint fiscal
+  let listaMod = [];
+  const fp = acha('onSubmitProduct');
+  for (let k = 0; k < 12; k++) {
+    const cand = (fp && fp.selectList && fp.selectList.modalidadesDeterminacaoBcICMS) || sl.modalidadesDeterminacaoBcICMS || [];
+    if (Array.isArray(cand) && cand.length) { listaMod = cand; break; }
+    await espera(250);
   }
+  if (!listaMod.length && typeof tela.getRequest === 'function') {
+    const urlMod = (tela.$store && tela.$store.state && tela.$store.state.fiscal && tela.$store.state.fiscal.modalidade_determinacao_bc_icms && tela.$store.state.fiscal.modalidade_determinacao_bc_icms.get) || '/api/v1/fiscal/modalidade-determinacao-bc-icms';
+    try { const rMod = await tela.getRequest(urlMod, '?desativado=false'); if (Array.isArray(rMod)) listaMod = rMod; } catch (e) { /* ok */ }
+  }
+  listaMod = listaMod.filter((x) => x && ehGuid(x.id));
+  const acharModCod = (cod) => {
+    if (cod == null || cod === '') return null;
+    const s = String(cod).trim(), norm = /^\\d+$/.test(s) ? String(Number(s)) : s.toLowerCase();
+    return listaMod.find((m) => m.codigo != null && (String(m.codigo).trim() === s || (/^\\d+$/.test(String(m.codigo).trim()) ? String(Number(m.codigo)) : String(m.codigo).trim().toLowerCase()) === norm)) || null;
+  };
+  const mod3 = acharModCod('3') || listaMod.find((m) => /valor da opera/i.test(String(m.descricao || ''))) || listaMod[0] || null;
+  // endereço do parceiro (principal/padrão, se houver; senão o primeiro)
+  const forn = acha('carregarEnderecosParceiro');
+  for (let k = 0; k < 40 && forn && (forn.carregandoEnderecos || !forn.enderecosParceiro.length); k++) await espera(250);
+  if (forn && forn.enderecosParceiro.length) {
+    const ends = forn.enderecosParceiro;
+    if (!ehGuid(S.enderecoId) || !ends.some((e) => String(e.id) === String(S.enderecoId))) set('enderecoId', (ends.find((e) => e.principal || e.padrao) || ends[0]).id);
+    await espera(200);
+    if (typeof forn.sincronizarEnderecoReferencia === 'function') forn.sincronizarEnderecoReferencia();
+  }
+  if (!ehGuid(S.enderecoId)) erro('o parceiro não tem endereço no AppNext para escolher');
+  // motivo [19] e CFOP da regra fiscal de devolução (sem duplicar CFOP quando há mais de uma sequência com o mesmo CFOP)
   const m19 = (sl.motivosMovimentacao || []).find((x) => String(x.codigo) === '19') || erro('motivo [19] Devolução ao Fornecedor não existe');
-  set('motivoMovimentacaoId', m19.id); await espera(1500);
-  if (!(sl.cfops || []).length) sl.cfops = tela.buscarSequenciafiscalPorMotivoMovimentacao(m19.id);
-  const cfops = sl.cfops || [];
+  set('motivoMovimentacaoId', m19.id); await espera(800);
+  const seqsMotivo = (sl.sequenciasFiscais || []).filter((e) => e && e.motivoMovimentacao && e.motivoMovimentacao.id === m19.id && e.cfop && ehGuid(e.cfop.id));
+  const cfopsUnicos = [...new Map(seqsMotivo.map((s) => [s.cfop.id, s.cfop])).values()];
+  sl.cfops = cfopsUnicos.length ? cfopsUnicos : (tela.buscarSequenciafiscalPorMotivoMovimentacao(m19.id) || []);
+  const cfops = [...new Map((sl.cfops || []).filter((c) => c && ehGuid(c.id)).map((c) => [c.id, c])).values()];
   if (!cfops.length) erro('não há regra fiscal (sequência) de Devolução ao Fornecedor nesta loja no AppNext');
-  if (cfops.length > 1) erro(`há ${cfops.length} CFOPs de devolução nesta loja (${cfops.map((c) => c.codigo).join(', ')}); faça esta nota à mão`);
-  // a modalidade da BC do ICMS que veio da nota de entrada (a regra de devolução não tem): guardada antes da regra sobrescrever
-  const GUIDm = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  const modOrig = new Map(S.itens.map((i) => [String(i.codigo).toUpperCase(), i.imposto && i.imposto.modalidadeDeterminacaoBcIcmsId]));
-  set('cfopId', cfops[0].id); // a tela põe a regra em cada item e recalcula os impostos
-  for (let k = 0; k < 40 && S.itens.some((i) => !i.produtosSequencia || !(i.imposto && i.imposto.cfopId)); k++) await espera(250);
+  let cfopEscolhido = cfops[0];
+  if (cfops.length > 1) {
+    const c5 = cfops.filter((c) => String(c.codigo).startsWith('5')), c6 = cfops.filter((c) => String(c.codigo).startsWith('6'));
+    const ufEnd = String((((forn && forn.enderecoSelecionado && forn.enderecoSelecionado.cidade) || (S.enderecoReferencia && S.enderecoReferencia.cidade) || {}).uf) || '').toUpperCase();
+    const ufLoja = String((((tela.lojaAtual && tela.lojaAtual.endereco && tela.lojaAtual.endereco.cidade) || {}).uf) || (tela.lojaAtual && tela.lojaAtual.uf) || '').toUpperCase();
+    if (cfops.length === 2 && c5.length === 1 && c6.length === 1 && ufEnd && ufLoja) cfopEscolhido = ufEnd === ufLoja ? c5[0] : c6[0];
+    else erro(`há ${cfops.length} CFOPs de devolução nesta loja (${cfops.map((c) => c.codigo).join(', ')}); faça esta nota à mão`);
+  }
+  // resolve a modalidade da BC do ICMS de cada item (1º regra fiscal, 2º nota de entrada por id ou código XML, 3º [3] Valor da operação)
+  const seqsCfop = seqsMotivo.filter((s) => s.cfop.id === cfopEscolhido.id);
+  const modAlvo = new Map();
+  for (const it of S.itens) {
+    const cod = String(it.codigo).toUpperCase();
+    const seqProd = seqsCfop.find((s) => (s.produtosLoja || []).some((pr) => pr.id === it.produtoId)) || seqsCfop[0] || null;
+    const modRegra = seqProd && seqProd.modalidadeDeterminacaoBcIcms && ehGuid(seqProd.modalidadeDeterminacaoBcIcms.id) ? seqProd.modalidadeDeterminacaoBcIcms : null;
+    const orig = modEntrada.get(cod) || {};
+    const modOrigId = orig.id && (!listaMod.length || listaMod.some((m) => String(m.id) === orig.id)) ? (listaMod.find((m) => String(m.id) === orig.id) || { id: orig.id }) : null;
+    const modOrigCod = !modOrigId && orig.codigo != null ? acharModCod(orig.codigo) : null;
+    if (modRegra) modAlvo.set(cod, { id: modRegra.id.trim(), obj: modRegra, fonte: 'da regra fiscal', daRegra: true });
+    else if (modOrigId) modAlvo.set(cod, { id: modOrigId.id.trim(), obj: modOrigId, fonte: 'da nota de entrada', daRegra: false });
+    else if (modOrigCod) modAlvo.set(cod, { id: modOrigCod.id.trim(), obj: modOrigCod, fonte: `[${modOrigCod.codigo}] da nota de entrada`, daRegra: false });
+    else if (mod3) modAlvo.set(cod, { id: mod3.id.trim(), obj: mod3, fonte: `[${mod3.codigo ?? 3}] valor da operação`, daRegra: false });
+  }
+  // se a sequência fiscal da loja não tiver modalidade da BC, preenche na sequência em memória para o calcularProdutos já enviar o Guid certo
+  const modPadraoSeq = ([...modAlvo.values()][0] && [...modAlvo.values()][0].obj) || mod3;
+  if (modPadraoSeq) {
+    for (const sq of (sl.sequenciasFiscais || [])) {
+      if (sq && sq.cfop && sq.cfop.id === cfopEscolhido.id && !(sq.modalidadeDeterminacaoBcIcms && ehGuid(sq.modalidadeDeterminacaoBcIcms.id))) {
+        sq.modalidadeDeterminacaoBcIcms = modPadraoSeq;
+      }
+    }
+  }
+  // zera cfopId anterior para esperar de verdade todas as chamadas assíncronas de calcularProdutos terminarem
+  if (S.cfopId === cfopEscolhido.id) { set('cfopId', null); await espera(100); }
+  for (const it of S.itens) if (it.imposto) it.imposto.cfopId = null;
+  set('cfopId', cfopEscolhido.id);
+  for (let k = 0; k < 60 && S.itens.some((i) => !i.produtosSequencia || !(i.imposto && i.imposto.cfopId === cfopEscolhido.id)); k++) await espera(250);
   if (S.itens.some((i) => !i.produtosSequencia)) erro('algum item não tem a regra fiscal de devolução');
-  await espera(2500); // o cálculo dos impostos de cada item vem do AppNext
+  if (S.itens.some((i) => !(i.imposto && i.imposto.cfopId === cfopEscolhido.id))) erro('o AppNext não terminou de calcular os impostos dos itens da devolução');
+  await espera(400);
   const serie = (sl.serieNfe || []).find((x) => x.descricao === 'NF-e') || erro('série "NF-e" não existe');
-  const dn = tela.$refs.tabs && tela.$refs.tabs.$refs.dadosNota; if (dn) dn.serie = serie.id;
-  if (!S.serie) { set('serie', String(serie.serie)); set('modeloNFe', String(serie.modelo)); }
+  const dn = tela.$refs.tabs && tela.$refs.tabs.$refs.dadosNota;
+  if (dn) { dn.serie = serie.id; await espera(250); }
+  if (!S.serie) set('serie', String(serie.serie));
+  if (!S.modeloNFe) set('modeloNFe', String(serie.modelo));
+  if (!S.numeroNota && serie.proximoNumero != null) set('numeroNota', String(serie.proximoNumero));
+  const fin4 = (sl.finalidades || []).find((x) => Number(x.codigo) === 4);
+  if (!ehGuid(S.finalidadeId) && fin4 && ehGuid(fin4.id)) set('finalidadeId', fin4.id);
+  if (S.tipoFinalidadeId !== null) set('tipoFinalidadeId', null);
   const tf = (sl.tiposFrete || []).find((x) => String(x.codigo) === '9') || erro('tipo de frete [9] não existe');
   const mf = (sl.modalidadesFrete || []).find((x) => String(x.codigo) === '9') || erro('modalidade de frete [9] não existe');
   set('tipoFreteId', tf.id); set('modalidadeFreteId', mf.id);
-  const forn = acha('carregarEnderecosParceiro');
-  for (let k = 0; k < 40 && forn && (forn.carregandoEnderecos || !forn.enderecosParceiro.length); k++) await espera(250);
-  // sempre com o endereço do parceiro (o principal, se houver; senão o primeiro)
-  if (!S.enderecoId && forn && forn.enderecosParceiro.length) { const ends = forn.enderecosParceiro; set('enderecoId', (ends.find((e) => e.principal || e.padrao) || ends[0]).id); }
-  if (!S.enderecoId) erro('o parceiro não tem endereço no AppNext para escolher');
+  if (!S.revisado) set('usuarioConclusaoId', null);
   // data de emissão da saída: sempre hoje (a tela traz a data da nota de entrada)
   const hj = new Date(), hoje = `${hj.getFullYear()}-${String(hj.getMonth() + 1).padStart(2, '0')}-${String(hj.getDate()).padStart(2, '0')}`;
   const datas = Object.keys(S).filter((k) => /^data/i.test(k) && /emiss|saida/i.test(k));
   for (const k of datas) set(k, typeof S[k] === 'string' && /^\\d{4}-\\d{2}-\\d{2}/.test(S[k]) ? hoje + S[k].slice(10) : hoje);
-  // modalidade da BC do ICMS: o AppNext exige uma que exista. Usa a da nota de entrada; senão a [3] Valor da operação da lista da tela
-  const listaMod = Object.keys(sl).filter((k) => /modalidade/i.test(k) && /icms|bc|base|determina/i.test(k) && !/st$/i.test(k)).map((k) => sl[k]).find((v) => Array.isArray(v) && v.length) || [];
-  const mod3 = listaMod.find((x) => String(x.codigo) === '3') || null;
   const modLog = [];
-  for (const it of S.itens) {
-    if (!it.imposto) continue;
-    const atual = it.imposto.modalidadeDeterminacaoBcIcmsId, orig = modOrig.get(String(it.codigo).toUpperCase());
-    if (typeof atual === 'string' && GUIDm.test(atual)) continue;
-    const novo = (typeof orig === 'string' && GUIDm.test(orig)) ? orig : (mod3 && mod3.id);
-    if (novo) { tela.$set(it.imposto, 'modalidadeDeterminacaoBcIcmsId', novo); modLog.push(`${it.codigo}: ${novo === orig ? 'da nota de entrada' : '[3] valor da operação'}`); }
-    else modLog.push(`${it.codigo}: sem modalidade (listas na tela: ${Object.keys(sl).filter((k) => /modalidade/i.test(k)).join(', ') || 'nenhuma'})`);
-  }
-  await espera(800);
-  // totais da nota: a tela chama o cálculo sem esperar; aqui espera a resposta do AppNext (com o frete já preenchido)
+  const garantirModalidades = (logar) => {
+    for (const it of S.itens) {
+      if (!it.imposto) continue;
+      const alvo = modAlvo.get(String(it.codigo).toUpperCase());
+      if (alvo && ehGuid(alvo.id) && (!ehGuid(it.imposto.modalidadeDeterminacaoBcIcmsId) || (!alvo.daRegra && it.imposto.modalidadeDeterminacaoBcIcmsId !== alvo.id))) {
+        tela.$set(it.imposto, 'modalidadeDeterminacaoBcIcmsId', alvo.id);
+      }
+      if (logar) {
+        if (ehGuid(it.imposto.modalidadeDeterminacaoBcIcmsId)) modLog.push(`${it.codigo}: ${alvo ? alvo.fonte : 'preenchida'}`);
+        else modLog.push(`${it.codigo}: sem modalidade (listaMod=${listaMod.length})`);
+      }
+    }
+  };
+  garantirModalidades(true);
+  await espera(300);
+  // totais da nota: aguarda a resposta do AppNext e reaplica a modalidade (AtualizaItens recria it.imposto)
   let erroTotais = null;
   for (let k = 0; k < 3; k++) {
     try {
@@ -237,24 +330,40 @@ DEVOLVER = "async (p) => {" + JS_BASE.replace("acha('salvarRascunho')", "acha('m
     } catch (e) { erroTotais = String(e.message || e); await espera(1500); }
   }
   if (erroTotais) erro('o AppNext não recalculou os totais da nota: ' + erroTotais.slice(0, 150));
-  await espera(500);
+  garantirModalidades(false);
+  await espera(300);
   if (tela.lojaAtual.id !== S.lojaId) erro('a loja aberta no AppNext não é a da nota de entrada');
-  // campos de id que não são Guid ("" , número, texto, null na modalidade da BC): são removidos do envio — o servidor usa o padrão
-  // e qualquer outro valor que não seja um Guid (número, objeto, texto): o log mostra quais foram trocados
-  const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  const trocados = [];
-  const limpar = (o, onde) => { if (!o || typeof o !== 'object') return; for (const k of Object.keys(o)) {
-    const v = o[k];
-    if (/Id$/.test(k) && (v != null || /modalidadeDeterminacao/i.test(k)) && !(typeof v === 'string' && GUID.test(v))) {
-      const g = v && typeof v === 'object' && typeof v.id === 'string' && GUID.test(v.id) ? v.id : null; // objeto com id: usa o id
-      trocados.push(`${onde}${k}=${typeof v === 'object' ? 'objeto' : JSON.stringify(v).slice(0, 20)}→${g ? 'id' : 'removido'}`);
-      if (g) o[k] = g; else delete o[k]; // sem o campo, o servidor usa o padrão (null não serve para Guid obrigatório)
-    } else if (v && typeof v === 'object' && !Array.isArray(v)) limpar(v, onde + k + '.');
-  } };
-  limpar(S, ''); S.itens.forEach((it, n) => limpar(it, `itens[${n}].`));
-  window.__limparIds = () => { limpar(S, ''); S.itens.forEach((it, n) => limpar(it, `itens[${n}].`)); return trocados; }; // de novo na hora de gravar
+  // campos opcionais *Id que não são Guid válido ("" , Guid zerado, número ou objeto) viram o id válido ou null (sem apagar Guid obrigatório)
+  const trocados = [], jaLogou = new Set();
+  const limparObj = (o, onde) => {
+    if (!o || typeof o !== 'object') return;
+    for (const k of Object.keys(o)) {
+      const v = o[k];
+      if (/Id$/i.test(k) && v != null && !ehGuid(v)) {
+        const g = v && typeof v === 'object' && ehGuid(v.id) ? v.id.trim() : null;
+        const ch = onde + k;
+        if (!jaLogou.has(ch)) { jaLogou.add(ch); trocados.push(`${ch}=${typeof v === 'object' ? 'objeto' : JSON.stringify(v).slice(0, 20)}→${g ? 'id' : 'null'}`); }
+        o[k] = g;
+      }
+    }
+  };
+  const sanitizar = () => {
+    garantirModalidades(false);
+    limparObj(S, '');
+    S.itens.forEach((it, n) => { limparObj(it, `itens[${n}].`); if (it.imposto) limparObj(it.imposto, `itens[${n}].imposto.`); });
+    return trocados;
+  };
+  sanitizar();
+  window.__limparIds = sanitizar; // reaplica logo antes de formCadastrar()
+  const idsFaltando = [];
+  for (const k of ['lojaId', 'parceiroId', 'enderecoId', 'motivoMovimentacaoId', 'cfopId', 'finalidadeId', 'tipoFreteId', 'modalidadeFreteId']) if (!ehGuid(S[k])) idsFaltando.push(k);
+  S.itens.forEach((it, n) => {
+    if (!ehGuid(it.produtoId)) idsFaltando.push(`itens[${n}].produtoId`);
+    const imp = it.imposto || {};
+    for (const k of ['cfopId', 'icmsId', 'icmsOrigemId', 'pisId', 'cofinsId', 'ipiId', 'modalidadeDeterminacaoBcIcmsId']) if (!ehGuid(imp[k])) idsFaltando.push(`itens[${n}].imposto.${k}`);
+  });
   const t = tela.$refs.tabs; const invalida = ['validarDadosNota', 'validarDadosFornecedor', 'validarProdutos', 'validarTransportadora', 'validarValoresAdicionais'].filter((k) => t[k] && t[k]());
-  return { modLog, datas: datas.length ? datas.map((k) => `${k}=${String(S[k]).slice(0, 10)}`) : ['campo não encontrado: ' + Object.keys(S).filter((k) => /^data/i.test(k)).join(', ')], trocados, invalida, cfop: cfops[0].codigo, chaveRef: String(S.chaveAcesso || ''), total: Number(S.valorTotalLiquido), produtos: Number(S.valorTotalProduto), itens: S.itens.map((i) => ({ codigo: String(i.codigo), nome: i.nome || '', qtd: Number(i.quantidade), preco: Number(i.valorUnitario), total: Number(i.valorTotalLiquido) })) };
+  return { modLog, datas: datas.length ? datas.map((k) => `${k}=${String(S[k]).slice(0, 10)}`) : ['campo não encontrado: ' + Object.keys(S).filter((k) => /^data/i.test(k)).join(', ')], trocados, idsFaltando, invalida, cfop: cfopEscolhido.codigo, chaveRef: String(S.chaveAcesso || ''), total: Number(S.valorTotalLiquido), produtos: Number(S.valorTotalProduto), itens: S.itens.map((i) => ({ codigo: String(i.codigo), nome: i.nome || '', qtd: Number(i.quantidade), preco: Number(i.valorUnitario), total: Number(i.valorTotalLiquido) })) };
 }"""
 
 
@@ -274,12 +383,21 @@ def devolucao(page, pedido, t0):
     page.evaluate("() => { location.hash = '#/estoque/entrada-produto'; }")
     page.wait_for_timeout(3000)
     page.evaluate(f"() => {{ location.hash = '#/estoque/saida-devolucao/devolucao/{pedido['entradaId']}'; }}")
-    estado = "() => { const r=[...document.querySelectorAll('*')].find(e=>e.__vue__); if(!r) return null; const f=[r.__vue__.$root]; while(f.length){const x=f.shift(); if(x.$options.methods&&x.$options.methods.montarDevolucao){ const sl=x.selectList||{}; return { itens: ((x.saida||{}).itens||[]).length, regras: (sl.sequenciasFiscais||[]).length, motivos: (sl.motivosMovimentacao||[]).length }; } f.push(...(x.$children||[]));} return null; }"
+    estado = (
+        "() => { const r=[...document.querySelectorAll('*')].find(e=>e.__vue__); if(!r) return null;"
+        " const f=[r.__vue__.$root]; while(f.length){const x=f.shift();"
+        " if(x.$options.methods&&x.$options.methods.montarDevolucao){ const sl=x.selectList||{};"
+        " return { pronta: !!x.devolucao, itens: ((x.saida||{}).itens||[]).length,"
+        " regras: (sl.sequenciasFiscais||[]).length, motivos: (sl.motivosMovimentacao||[]).length,"
+        " series: (sl.serieNfe||[]).length, finalidades: (sl.finalidades||[]).length,"
+        " fretes: Math.min((sl.tiposFrete||[]).length, (sl.modalidadesFrete||[]).length) }; }"
+        " f.push(...(x.$children||[]));} return null; }"
+    )
     st = None
     for k in range(60):
         page.wait_for_timeout(1000)
         st = page.evaluate(estado)
-        if st and st["itens"] and st["motivos"] and (st["regras"] or k >= 15):
+        if st and (st["pronta"] or k >= 20) and st["itens"] and st["motivos"] and st["series"] and st["finalidades"] and st["fretes"] and (st["regras"] or k >= 15):
             break
     log(f"   situação da tela: {st}")
     if not st or not st["itens"]:
@@ -298,6 +416,8 @@ def devolucao(page, pedido, t0):
     erros = []
     if r["invalida"]:
         erros.append("o AppNext acusou campo obrigatório faltando (" + ", ".join(r["invalida"]) + ")")
+    if r.get("idsFaltando"):
+        erros.append("campos fiscais sem Guid válido (" + ", ".join(r["idsFaltando"][:8]) + ")")
     esp = {str(i["codigo"]).upper(): float(i["qtd"]) for i in pedido["itens"]}
     if len(r["itens"]) != len(esp):
         erros.append(f"a nota ficou com {len(r['itens'])} itens e a devolução tem {len(esp)}")
@@ -345,7 +465,8 @@ def devolucao(page, pedido, t0):
     for a in avisos:
         log("   aviso na tela: " + a.replace("\n", " ")[:300])
     if not ok:
-        raise RuntimeError("o AppNext não confirmou a gravação da devolução" + (f": {avisos[0][:200]}" if avisos else (f" (HTTP {resp.get('status')})" if resp else "")))
+        detalhe = f": {avisos[0][:200]}" if avisos else (f" (HTTP {resp.get('status')} {resp.get('corpo', '')[:200]})".rstrip() if resp else "")
+        raise RuntimeError("o AppNext não confirmou a gravação da devolução" + detalhe)
     log("   ✓ o AppNext gravou a saída de devolução (não concluída)")
     log(f"Concluído em {(datetime.now() - t0).seconds} s")
     gravar({"ok": True, "nota": r})
