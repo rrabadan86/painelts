@@ -446,13 +446,16 @@
     const todas = (j.notas || []).map((n) => {
       const dia = TS.isoToDay(n.entrada || n.emissao);
       // busca: também acha a nota pelo nome ou código de um produto dela
-      return { ...n, dia, nfTxt: `${n.nf ?? '—'}${n.serie ? ' / ' + n.serie : ''}`, nItens: n.itens.length, compra: /compra/i.test(n.motivo || ''), busca: n.itens.map((i) => i.nome + ' ' + i.cod).join(' ') };
+      const descItens = n.itens.some((i) => i.desc != null) ? n.itens.reduce((a, i) => a + (+i.desc || 0), 0) : null;
+      const desconto = n.desconto != null ? n.desconto : descItens;
+      return { ...n, desconto, dia, nfTxt: `${n.nf ?? '—'}${n.serie ? ' / ' + n.serie : ''}`, nItens: n.itens.length, compra: /compra/i.test(n.motivo || ''), busca: n.itens.map((i) => i.nome + ' ' + i.cod).join(' ') };
     });
     if (!todas.length) return TS.card('Notas fiscais de entrada', null, h('p', { class: 'muted' }, 'Nenhuma nota de entrada no painel ainda. O coletor lê as notas concluídas de Estoque → Entrada de Produtos do AppNext junto com o estoque.'));
     const noPer = (n) => (f.de == null || n.dia >= f.de) && (f.ate == null || n.dia <= f.ate);
     const temAlgumaDev = todas.some((n) => !!devAtivaDeNota(j, n));
     const temPend = Object.keys(j.lotesPend || {}).length > 0;
-    const FIL = { per: ['No período', noPer], todas: ['Todas', () => true], ...(temAlgumaDev ? { dev: ['Com devolução', (n) => !!devAtivaDeNota(j, n)] } : {}), ...(temPend ? { lote: ['Lote pendente', (n) => !!j.lotesPend[n.id]] } : {}) };
+    const temDescLido = todas.some((n) => n.desconto != null);
+    const FIL = { per: ['No período', noPer], todas: ['Todas', () => true], ...(todas.some((n) => n.desconto > 0.005) ? { desc: ['Com desconto', (n) => n.desconto > 0.005] } : {}), ...(temAlgumaDev ? { dev: ['Com devolução', (n) => !!devAtivaDeNota(j, n)] } : {}), ...(temPend ? { lote: ['Lote pendente', (n) => !!j.lotesPend[n.id]] } : {}) };
     const fil = FIL[state.prcNotasFil] ? state.prcNotasFil : 'per';
     const rows = todas.filter(FIL[fil][1]);
     const tab = TS.table({
@@ -464,11 +467,12 @@
           dv ? h('span', { class: 'prc-st nf-dev', title: dv.dica }, `↩ devolução${dv.total > 1 ? ` (${dv.total})` : ''}`) : null,
           j.lotesPend && j.lotesPend[r.id] ? h('span', { class: 'prc-st vl-pend', title: `${j.lotesPend[r.id]} chá(s) a granel sem o nº do lote: abra a nota e preencha` }, `🍃 lote pendente (${j.lotesPend[r.id]})`) : null)); } },
         { key: 'nItens', label: 'Itens', fmt: fmt.int },
+        ...(temDescLido ? [{ key: 'desconto', label: 'Desconto', title: 'Desconto da nota (a franquia dá o desconto das devoluções diluído nos produtos)', render: (r) => (r.desconto == null ? h('span', { class: 'muted' }, '—') : r.desconto > 0.005 ? h('b', { class: 'nf-desc' }, fmt.brl(r.desconto)) : h('span', { class: 'muted' }, 'R$ 0,00')), sortVal: (r) => r.desconto ?? -1 }] : []),
         { key: 'total', label: 'Total da nota', fmt: (v) => (v == null ? '—' : fmt.brl(v)) },
       ],
       rows, sortKey: 'dia', maxHeight: '520px', search: 'Buscar NF, fornecedor ou produto…', searchKeys: ['nfTxt', 'fornecedor', 'motivo', 'busca'], cls: 'est-t', onRowClick: (r) => abrirNota(D, r, j, aoMudar),
-      total: { nfTxt: `${fmt.int(rows.length)} notas`, nItens: rows.reduce((a, r) => a + r.nItens, 0), total: rows.reduce((a, r) => a + (r.total || 0), 0) },
-      imprimir: ['dia', 'nfTxt', 'fornecedor', 'nItens', 'total'],
+      total: { nfTxt: `${fmt.int(rows.length)} notas`, nItens: rows.reduce((a, r) => a + r.nItens, 0), total: rows.reduce((a, r) => a + (r.total || 0), 0), ...(temDescLido ? { desconto: fmt.brl(rows.reduce((a, r) => a + (r.desconto || 0), 0)) } : {}) },
+      imprimir: ['dia', 'nfTxt', 'fornecedor', 'nItens', 'desconto', 'total'],
       empty: fil === 'per' ? 'Nenhuma nota no período do filtro. Veja "Todas".' : 'Nenhuma nota.',
     });
     const sincEl = botaoSincronizar(D, j);
@@ -584,11 +588,12 @@
         { key: 'vu', label: 'Valor unit. (nota)', title: 'Valor unitário escrito na nota (sem IPI e rateios)', fmt: (v) => (v == null ? '—' : fmt.brl(v)) },
         { key: 'custo', label: 'Custo unit.', title: 'Valor líquido do item ÷ quantidade (com IPI e rateios): é o "custo último" que o AppNext usa', fmt: fmt.brl },
         { key: 'total', label: 'Total', fmt: fmt.brl },
+        ...(n.itens.some((i) => i.desc > 0.005) ? [{ key: 'desc', label: 'Desconto', title: 'Desconto deste item na nota', fmt: (v) => (v ? fmt.brl(v) : '—') }] : []),
         { key: 'varC', label: 'Custo antes', title: 'Custo do mesmo produto antes desta nota (entrada anterior ou importação de estoque) e a variação', render: (r) => (r.antes == null ? h('span', { class: 'muted' }, 'primeira entrada') : h('div', { class: 'prc-v', title: r.origemAntes }, h('span', null, fmt.brl(r.antes)), r.varC != null && Math.abs(r.varC) >= 0.0005 ? h('span', { class: 'prc-badge ' + (r.varC > 0 ? 'prc-ruim' : 'prc-bom') }, pctTxt(r.varC)) : h('span', { class: 'muted' }, 'igual'))), sortVal: (r) => r.varC ?? -99 },
         ...(temGranel ? [{ key: 'lote', label: 'Lote · validade', align: 'l', title: 'Chá a granel: digite o nº do lote do pacote. A validade vem com 12 meses da entrada; corrija se o pacote disser outra data. Salva sozinho.', render: celLote, sortVal: (r) => (lotesNota && lotesNota.porCod.has(String(r.cod)) ? (lotesNota.porCod.get(String(r.cod)).some((x) => x.lote === '0') ? 0 : 1) : 2) }] : []),
       ],
       rows: linhas, sortKey: 'total', maxHeight: '60vh', search: 'Buscar produto…', searchKeys: ['nome', 'cod'], cls: 'est-t',
-      total: { nome: `${fmt.int(linhas.length)} itens`, total: linhas.reduce((a, r) => a + r.total, 0) },
+      total: { nome: `${fmt.int(linhas.length)} itens`, total: linhas.reduce((a, r) => a + r.total, 0), ...(n.itens.some((i) => i.desc > 0.005) ? { desc: linhas.reduce((a, r) => a + (r.desc || 0), 0) } : {}) },
     });
     const subiu = linhas.filter((r) => r.varC != null && r.varC > 0.0005).length, desceu = linhas.filter((r) => r.varC != null && r.varC < -0.0005).length;
     const vinculadas = saidasDeNota(j, n);
@@ -598,7 +603,8 @@
       h('div', { class: 'prc-resumo' },
         h('div', null, h('small', null, 'Emissão'), h('b', null, n.emissao ? quando(n.emissao) : '—')),
         h('div', null, h('small', null, 'Entrada'), h('b', null, n.entrada ? quando(n.entrada) : '—')),
-        h('div', null, h('small', null, 'Total da nota'), h('b', null, n.total != null ? fmt.brl(n.total) : '—'))),
+        h('div', null, h('small', null, 'Total da nota'), h('b', null, n.total != null ? fmt.brl(n.total) : '—')),
+        n.desconto > 0.005 ? h('div', null, h('small', null, 'Desconto'), h('b', { class: 'nf-desc' }, fmt.brl(n.desconto))) : null),
       h('div', { class: 'prc-nota-info muted' }, [n.motivo && `Tipo: ${n.motivo}`, n.status && `Situação: ${n.status}`, n.cfop && `CFOP ${n.cfop}`, `${fmt.int(linhas.length)} itens`, subiu || desceu ? `custo subiu em ${fmt.int(subiu)} e caiu em ${fmt.int(desceu)}` : ''].filter(Boolean).join(' · ')),
       blocoSaidasVinculadas(D.loja, vinculadas),
       TS.devolucao && !TS.demo ? TS.devolucao.barra(n, () => card, aoMudar) : null,
