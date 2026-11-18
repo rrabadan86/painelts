@@ -24,12 +24,14 @@
   async function demoCat(loja) { if (!DEMO.cat) DEMO.cat = (await req('GET', `inventario/catalogo?loja=${encodeURIComponent(loja)}`)).itens; return DEMO.cat; }
   const familia = (t) => { const s = String(t || '').toUpperCase().replace(/\s+(AROMATIZADO|PURO)$/, '').trim(); return s ? s[0] + s.slice(1).toLowerCase().replace(/\bchá\b/gi, 'Chá') : ''; };
   const escolheDemo = (cat, b) => { const cods = new Set(b.cods || []), f = b.filtro || {}; return cat.filter((i) => cods.has(i.cod) || (f.grupo && i.grupo === f.grupo && (!f.sub || i.sub === f.sub)) || (f.tipo && i.tipo === f.tipo) || (f.familia && familia(i.tipo) === f.familia) || (f.tudoKg && ehKg(i.un) && (Math.abs(i.qtd || 0) > 0.0005 || i.tipo))); };
+  TS.invFamilia = familia;
+  TS.invResumo = (loja) => API.resumo(loja);
   const API = {
     async resumo(loja) {
       if (!TS.demo) return req('GET', `inventario?loja=${encodeURIComponent(loja)}`);
       const cat = await demoCat(loja), conta = (k) => { const m = new Map(); for (const i of cat) if (i[k]) m.set(i[k], (m.get(i[k]) || 0) + 1); return [...m]; };
       const fams = new Map(); for (const i of cat) { const f = familia(i.tipo); if (f) fams.set(f, (fams.get(f) || 0) + 1); }
-      return { contagens: DEMO.cont.map((c) => ({ ...c, itens: c.itens.length, contados: c.itens.filter((i) => i.cont != null).length })), perfil: 'admin', grupos: conta('grupo'), subs: [], tipos: conta('tipo'), familias: [...fams], kg: cat.filter((i) => ehKg(i.un) && i.tipo).length };
+      return { contagens: DEMO.cont.map((c) => ({ ...c, escopo: (c.zerar && c.zerar.escopo) || null, itens: c.itens.length, contados: c.itens.filter((i) => i.cont != null).length })), perfil: 'admin', grupos: conta('grupo'), subs: [], tipos: conta('tipo'), familias: [...fams], kg: cat.filter((i) => ehKg(i.un) && i.tipo).length };
     },
     async buscar(loja, q) {
       if (!TS.demo) return (await req('GET', `inventario/itens?loja=${encodeURIComponent(loja)}&q=${encodeURIComponent(q)}`)).itens;
@@ -203,10 +205,10 @@
         selS.addEventListener('change', () => { f.sub = selS.value; atualizarPrevia(); });
         corpoModo.replaceChildren(h('div', { class: 'inv-dupla' }, selG, selS));
       } else if (f.modo === 'cha') {
+        // puro e aromatizado juntos: "Chá branco" conta o branco puro e o aromatizado
         const selF = h('select', { class: 'f-input' }, h('option', { value: '' }, 'Escolha o tipo de chá'),
-          h('optgroup', { label: 'Tipo (puro e aromatizado juntos)' }, ...d.familias.map(([x, n]) => h('option', { value: 'f:' + x, selected: f.familia === x || null }, `${x} (${n})`))),
-          h('optgroup', { label: 'Só aromatizado ou só puro' }, ...d.tipos.map(([x, n]) => h('option', { value: 't:' + x, selected: f.tipo === x || null }, `${x[0] + x.slice(1).toLowerCase()} (${n})`))));
-        selF.addEventListener('change', () => { const v = selF.value; f.familia = v.startsWith('f:') ? v.slice(2) : ''; f.tipo = v.startsWith('t:') ? v.slice(2) : ''; atualizarPrevia(); });
+          ...d.familias.map(([x, n]) => h('option', { value: 'f:' + x, selected: f.familia === x || null }, `${x} (${n})`)));
+        selF.addEventListener('change', () => { const v = selF.value; f.familia = v.startsWith('f:') ? v.slice(2) : ''; f.tipo = ''; atualizarPrevia(); });
         troca(corpoModo, selF, d.familias.length ? null : h('small', { class: 'muted' }, 'O tipo de chá vem das vendas dos pacotes; ainda não há vendas suficientes para saber.'));
       } else corpoModo.replaceChildren(h('p', { class: 'muted' }, `Todos os ${fmt.int(d.kg)} chás a granel (kg) do estoque: os que têm estoque no sistema e os que vendem.`));
       atualizarPrevia();

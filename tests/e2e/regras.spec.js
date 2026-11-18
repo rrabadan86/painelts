@@ -228,6 +228,17 @@ test.describe('regras', () => {
     await expect(page.locator('.inv-cab')).toContainText('Outra contagem');
   });
 
+  test('Início avisa grupo/tipo de chá sem inventário há 25 dias; tipo de chá une puro e aromatizado', async ({ page }) => {
+    await page.evaluate(() => { location.hash = '#inicio'; });
+    await expect(page.locator('.ini-avisos')).toContainText(/tipos? de chá (está|estão) há 25 dias ou mais sem contagem/);
+    await page.evaluate(() => { location.hash = '#inventario'; });
+    await page.getByRole('button', { name: '+ Nova contagem' }).click();
+    await page.locator('.inv-modos button', { hasText: 'Um tipo de chá' }).click();
+    const ops = await page.locator('.inv-modo-corpo select option').allTextContents();
+    expect(ops.some((o) => /aromatizado|puro/i.test(o))).toBe(false);
+    expect(await page.locator('.inv-modo-corpo select optgroup').count()).toBe(0);
+  });
+
   test('Inventário: chá a granel contado por lote (o total é a soma)', async ({ page }) => {
     await page.evaluate(() => { location.hash = '#inventario'; });
     await page.getByRole('button', { name: '+ Nova contagem' }).click();

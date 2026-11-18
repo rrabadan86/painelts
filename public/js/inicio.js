@@ -3,7 +3,8 @@
  * - Estoque (quem vê Estoque ou Pedido, com uma loja escolhida): chás a granel abaixo de 500 g e Estrela abaixo de 700 g
  *   que venderam nos últimos 90 dias, e produtos que acabaram e venderam nos últimos 30 dias.
  * - Site (quem vê o Site): mudanças de preço e promoção desde a consulta anterior.
- * - Atualizações (admin e franqueado): coletas que falharam nas últimas 48 h; vendas atrasadas. */
+ * - Atualizações (admin e franqueado): coletas que falharam nas últimas 48 h; vendas atrasadas.
+ * - Inventário (quem vê Inventário): Acessórios, Alimentação, Consumíveis, Sachês, Tea Moments e cada tipo de chá há 25 dias ou mais sem contagem importada. */
 (function () {
   const { h, fmt, state } = TS;
 
@@ -22,7 +23,7 @@
       lista.sort((a, b) => ord[a.nivel] - ord[b.nivel]);
       avisos.replaceChildren(...(lista.length ? lista.map(item) : [h('p', { class: 'muted' }, 'Nada pedindo atenção por enquanto. 👏')]));
     };
-    const tarefas = [avisosEspera(lista), avisosVendas(lista), avisosEstoque(lista), avisosSite(lista), avisosAtualizacoes(lista)].map((p) => p.catch(() => null).then(() => { if (avisos.isConnected) pintar(); }));
+    const tarefas = [avisosEspera(lista), avisosVendas(lista), avisosEstoque(lista), avisosSite(lista), avisosAtualizacoes(lista), avisosInventario(lista)].map((p) => p.catch(() => null).then(() => { if (avisos.isConnected) pintar(); }));
     Promise.all(tarefas).then(() => pend.remove());
   };
 
@@ -101,6 +102,35 @@
     if (abaixo500.length) lista.push({ nivel: 'erro', titulo: `${fmt.int(abaixo500.length)} chá(s) a granel com menos de 500 g`, texto: nomes(abaixo500), link: temPedido ? '#pedido' : '#estoque', ir: temPedido ? 'ver no pedido ›' : 'ver estoque ›', antes: () => { state.pedFiltro = 'pedido'; } });
     if (estrela700.length) lista.push({ nivel: 'warn', titulo: `${fmt.int(estrela700.length)} chá(s) Estrela com menos de 700 g`, texto: nomes(estrela700), link: temPedido ? '#pedido' : '#estoque', ir: temPedido ? 'ver no pedido ›' : 'ver estoque ›' });
     if (acabou.length) lista.push({ nivel: 'warn', titulo: `${fmt.int(acabou.length)} produto(s) acabaram e venderam no último mês`, texto: nomes(acabou), link: '#estoque', ir: 'o que repor ›', antes: () => { state.estSit = 'repor'; } });
+  }
+
+  // ---------- inventário: grupo ou tipo de chá há 25 dias ou mais sem inventário importado ----------
+  const DIAS_INV = 25;
+  const GRUPOS_INV = [/ACESS/, /ALIMENT/, /CONSUM/, /SACH/, /TEA\s*MOMENT/];
+  async function avisosInventario(lista) {
+    const telas = TS.telasEstoque || [];
+    if (!state.loja || state.loja === 'todas' || !telas.includes('inventario') || !TS.invResumo) return;
+    const d = await TS.invResumo(state.loja);
+    const fam = TS.invFamilia || ((x) => x);
+    const feitas = (d.contagens || []).filter((c) => c.st === 'importado' && c.importadoEm);
+    const dia = (iso) => new Date(iso).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+    const hoje = dia(new Date().toISOString());
+    const diasDesde = (iso) => Math.round((Date.parse(hoje) - Date.parse(dia(iso))) / 864e5);
+    const ultimo = (cobre) => feitas.filter((c) => c.escopo && cobre(c.escopo)).reduce((m, c) => (!m || c.importadoEm > m ? c.importadoEm : m), null);
+    const atrasados = (itens) => itens.map(([nome, ult]) => ({ nome, dias: ult ? diasDesde(ult) : null })).filter((x) => x.dias == null || x.dias >= DIAS_INV)
+      .sort((a, b) => (b.dias ?? 1e9) - (a.dias ?? 1e9));
+    const norm = (s) => TS.norm(s).toUpperCase();
+    const grupos = (d.grupos || []).map(([g]) => g).filter((g) => GRUPOS_INV.some((re) => re.test(norm(g))));
+    const gAtr = atrasados(grupos.map((g) => [g, ultimo((e) => e.grupo === g)]));
+    // tipo de chá: vale a contagem do tipo (puro + aromatizado), a de "todos os chás a granel" e as antigas de só puro/só aromatizado
+    const tAtr = atrasados((d.familias || []).map(([f]) => [f, ultimo((e) => e.kg || e.familia === f || (e.tipo && fam(e.tipo) === f))]));
+    const txt = (xs) => {
+      const com = xs.filter((x) => x.dias != null), sem = xs.filter((x) => x.dias == null);
+      return [com.length ? com.map((x) => `${x.nome} (${x.dias} dias)`).join(', ') : '', sem.length ? `Nenhuma contagem no painel: ${sem.map((x) => x.nome).join(', ')}` : ''].filter(Boolean).join('. ');
+    };
+    const ir = { link: '#inventario', ir: 'fazer inventário ›', antes: () => { state.invId = null; } };
+    if (gAtr.length) lista.push({ nivel: 'warn', titulo: `Inventário: ${fmt.int(gAtr.length)} ${gAtr.length === 1 ? 'grupo está' : 'grupos estão'} há ${DIAS_INV} dias ou mais sem contagem`, texto: txt(gAtr), ...ir });
+    if (tAtr.length) lista.push({ nivel: 'warn', titulo: `Inventário: ${fmt.int(tAtr.length)} ${tAtr.length === 1 ? 'tipo de chá está' : 'tipos de chá estão'} há ${DIAS_INV} dias ou mais sem contagem`, texto: txt(tAtr), ...ir });
   }
 
   // ---------- site ----------

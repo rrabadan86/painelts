@@ -32,7 +32,7 @@ function lista(id) {
   let fsx = [];
   try { fsx = fs.readdirSync(pasta(id)).filter((f) => /^[a-f0-9]{12}\.json$/.test(f)); } catch { return []; }
   return fsx.map((f) => { try { return JSON.parse(fs.readFileSync(path.join(pasta(id), f), 'utf8')); } catch { return null; } }).filter(Boolean)
-    .map((c) => ({ id: c.id, nome: c.nome, criadoEm: c.criadoEm, por: c.por, cega: c.cega, st: c.st, itens: c.itens.length, contados: c.itens.filter((i) => i.cont != null).length, geradoEm: c.geradoEm || null, importadoEm: c.importadoEm || null, importadoPor: c.importadoPor || null, canceladoEm: c.canceladoEm || null, canceladoPor: c.canceladoPor || null, zerar: !!(c.zerar && c.zerar.ativo),
+    .map((c) => ({ id: c.id, nome: c.nome, criadoEm: c.criadoEm, por: c.por, cega: c.cega, st: c.st, itens: c.itens.length, contados: c.itens.filter((i) => i.cont != null).length, geradoEm: c.geradoEm || null, importadoEm: c.importadoEm || null, importadoPor: c.importadoPor || null, canceladoEm: c.canceladoEm || null, canceladoPor: c.canceladoPor || null, escopo: (c.zerar && c.zerar.escopo) || null, zerar: !!(c.zerar && c.zerar.ativo),
       ajuste: c.planilha ? c.planilha.itens.reduce((s, l) => s + (l.nova - l.antes) * (l.custo || 0), 0) : null, naPlanilha: c.planilha ? c.planilha.itens.length : null, zerados: c.planilha ? c.planilha.itens.filter((l) => l.zerado).length : null, revertidoEm: c.desfazer && c.desfazer.importadoEm || null }))
     .sort((a, b) => (a.criadoEm < b.criadoEm ? 1 : -1));
 }
