@@ -1279,7 +1279,7 @@ app.get('/api/inventario', async (req, res) => {
   res.json({
     contagens, estoqueEm: est && est.em, perfil: req.perfil,
     grupos: conta('grupo'), subs: [...subs].map(([k, n]) => [...k.split('|'), n]), tipos: conta('tipo'), familias: [...fams].sort((a, b) => a[0].localeCompare(b[0], 'pt-BR')),
-    kg: cat.filter((i) => i.un === 'Kg' && i.tipo).length,
+    kg: cat.filter(INV.ehChaGranel).length,
   });
 });
 // busca de itens (para escolher ou incluir): nome, código ou código de barras
@@ -1298,7 +1298,7 @@ app.post('/api/inventario/previa', express.json({ limit: '50kb' }), async (req, 
   const loja = lojaInv(req, res); if (!loja) return;
   const cat = await catInv(loja);
   const b = req.body || {}, cods = new Set((b.cods || []).map(String)), f = b.filtro || {};
-  const n = cat.filter((i) => cods.has(i.cod) || (f.grupo && i.grupo === f.grupo && (!f.sub || i.sub === f.sub)) || (f.tipo && i.tipo === f.tipo) || (f.familia && INV.familia(i.tipo) === f.familia) || (f.tudoKg && i.un === 'Kg' && i.tipo)).length;
+  const n = cat.filter((i) => cods.has(i.cod) || (f.grupo && i.grupo === f.grupo && (!f.sub || i.sub === f.sub)) || (f.tipo && i.tipo === f.tipo) || (f.familia && INV.familia(i.tipo) === f.familia) || (f.tudoKg && INV.ehChaGranel(i))).length;
   res.json({ itens: n });
 });
 app.get('/api/inventario/contagem', async (req, res) => {

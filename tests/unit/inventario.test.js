@@ -100,3 +100,17 @@ test('envio ao AppNext: prepara arquivos e só marca importado com resultado do 
   r = INV2.conferirEnvio('lj', c.id);
   assert.equal(r.c.st, 'importado'); assert.equal(r.c.importadoPeloRobo, true);
 });
+
+test('todos os chás a granel: pega do estoque (mesmo sem venda) e o "zerar" só zera chá a granel', () => {
+  const est3 = { ...estoque, itens: [...estoque.itens, { cod: '99001', desc: 'Chá Sem Venda', un: 'Kg', qtd: 0.7, custo: 100 }, { cod: '99002', desc: 'Caneca', un: 'Un', qtd: 3, custo: 20 }] };
+  const cat3 = INV.catalogo(est3, tabela, vendas);
+  const c = INV.criar('l3', { filtro: { tudoKg: true }, zerarResto: true }, 'ger', cat3, 'gerente').ok;
+  assert.ok(c.itens.some((i) => i.cod === '99001'), 'chá a granel com estoque e sem venda entra na contagem');
+  assert.ok(!c.itens.some((i) => i.un !== 'Kg'));
+  assert.deepStrictEqual(c.zerar.escopo, { kg: true });
+  const r = INV.resto(INV.ler('l3', c.id), est3, cat3);
+  assert.ok(r.every((i) => i.un === 'Kg'), 'o zerar nunca pega acessório nem lata');
+  // "Alguns produtos" continua valendo para a loja inteira
+  const c2 = INV.criar('l3', { cods: ['99001'], zerarResto: true }, 'ger', cat3, 'gerente').ok;
+  assert.ok(INV.resto(INV.ler('l3', c2.id), est3, cat3).some((i) => i.cod === '99002'));
+});

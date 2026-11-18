@@ -23,7 +23,7 @@
   }
   async function demoCat(loja) { if (!DEMO.cat) DEMO.cat = (await req('GET', `inventario/catalogo?loja=${encodeURIComponent(loja)}`)).itens; return DEMO.cat; }
   const familia = (t) => { const s = String(t || '').toUpperCase().replace(/\s+(AROMATIZADO|PURO)$/, '').trim(); return s ? s[0] + s.slice(1).toLowerCase().replace(/\bchá\b/gi, 'Chá') : ''; };
-  const escolheDemo = (cat, b) => { const cods = new Set(b.cods || []), f = b.filtro || {}; return cat.filter((i) => cods.has(i.cod) || (f.grupo && i.grupo === f.grupo && (!f.sub || i.sub === f.sub)) || (f.tipo && i.tipo === f.tipo) || (f.familia && familia(i.tipo) === f.familia) || (f.tudoKg && ehKg(i.un) && i.tipo)); };
+  const escolheDemo = (cat, b) => { const cods = new Set(b.cods || []), f = b.filtro || {}; return cat.filter((i) => cods.has(i.cod) || (f.grupo && i.grupo === f.grupo && (!f.sub || i.sub === f.sub)) || (f.tipo && i.tipo === f.tipo) || (f.familia && familia(i.tipo) === f.familia) || (f.tudoKg && ehKg(i.un) && (Math.abs(i.qtd || 0) > 0.0005 || i.tipo))); };
   const API = {
     async resumo(loja) {
       if (!TS.demo) return req('GET', `inventario?loja=${encodeURIComponent(loja)}`);
@@ -40,13 +40,15 @@
       if (!TS.demo) return (await req('POST', 'inventario', { loja, ...b })).id;
       const itens = escolheDemo(await demoCat(loja), b);
       if (!itens.length) throw new Error('Escolha pelo menos um item para contar.');
-      const c = { id: 'demo' + Date.now().toString(16).slice(-8), nome: b.nome || 'Contagem', criadoEm: new Date().toISOString(), por: 'apresentacao', cega: !!b.cega, st: 'contando', zerar: { ativo: !!b.zerarResto, semGrupos: null }, itens: itens.map((i) => ({ ...i, sis: i.qtd, cont: null })) };
+      const c = { id: 'demo' + Date.now().toString(16).slice(-8), nome: b.nome || 'Contagem', criadoEm: new Date().toISOString(), por: 'apresentacao', cega: !!b.cega, st: 'contando', zerar: { ativo: !!b.zerarResto, semGrupos: null, escopo: (b.filtro && b.filtro.tudoKg) ? { kg: true } : (b.filtro && b.filtro.grupo) ? { grupo: b.filtro.grupo, sub: b.filtro.sub } : (b.filtro && b.filtro.tipo) ? { tipo: b.filtro.tipo } : (b.filtro && b.filtro.familia) ? { familia: b.filtro.familia } : null }, itens: itens.map((i) => ({ ...i, sis: i.qtd, cont: null })) };
       DEMO.cont.unshift(c); return c.id;
     },
     async abrir(loja, id) {
       if (!TS.demo) return req('GET', `inventario/contagem?loja=${encodeURIComponent(loja)}&id=${id}`);
       const c = DEMO.cont.find((x) => x.id === id), na = new Set(c.itens.map((i) => i.cod));
-      const resto = (await demoCat(loja)).filter((i) => !na.has(i.cod) && Math.abs(i.qtd || 0) > 0.0005).map((i) => ({ cod: i.cod, desc: i.desc, un: i.un, grupo: i.grupo, qtd: i.qtd, custo: i.custo }));
+      const esc = c.zerar && c.zerar.escopo;
+      const noEsc = (i) => !esc || (esc.kg ? ehKg(i.un) : esc.grupo ? i.grupo === esc.grupo && (!esc.sub || i.sub === esc.sub) : esc.tipo ? i.tipo === esc.tipo : esc.familia ? familia(i.tipo) === esc.familia : true);
+      const resto = (await demoCat(loja)).filter((i) => !na.has(i.cod) && Math.abs(i.qtd || 0) > 0.0005 && noEsc(i)).map((i) => ({ cod: i.cod, desc: i.desc, un: i.un, grupo: i.grupo, qtd: i.qtd, custo: i.custo }));
       return { ...c, podeRevisar: true, agora: null, resto, restoFora: (c.zerar && c.zerar.semGrupos) || [] };
     },
     async enviar(loja, id, tipo) { if (TS.demo) throw new Error('Na apresentação nada é enviado ao AppNext.'); return req('POST', `inventario/contagem/${id}/enviar`, { loja, tipo }); },
@@ -118,6 +120,12 @@
     const nome = h('input', { class: 'f-input', placeholder: 'Nome (opcional): Rooibos, Latas, Contagem de sábado…' });
     const cega = h('input', { type: 'checkbox', checked: vend || null, disabled: vend || null });
     const zerarResto = h('input', { type: 'checkbox' });
+    // até onde vai o "zerar": o mesmo recorte da contagem (só "Alguns produtos" vale para a loja inteira)
+    const alcanceZerar = h('span');
+    const pintarAlcance = () => { alcanceZerar.replaceChildren(f.modo === 'kg' ? h('span', null, 'só ', h('b', null, 'chá a granel'), ' fora da contagem fica 0 no AppNext (acessórios, latas e o resto da loja não mudam).')
+      : f.modo === 'grupo' ? h('span', null, 'só produtos ', h('b', null, 'deste grupo'), ' fora da contagem ficam 0 no AppNext (o resto da loja não muda).')
+      : f.modo === 'cha' ? h('span', null, 'só chás ', h('b', null, 'deste tipo'), ' fora da contagem ficam 0 no AppNext (o resto da loja não muda).')
+      : h('span', null, h('b', null, 'atenção: vale para a loja inteira'), ' — todo produto com estoque que não for listado aqui fica 0 no AppNext.')); };
     const previa = h('div', { class: 'inv-previa' });
     const corpoModo = h('div', { class: 'inv-modo-corpo' });
     let tPrev;
@@ -128,6 +136,7 @@
     const corpoB = () => (f.modo === 'produtos' ? (f.cods.length ? { cods: f.cods } : null) : f.modo === 'grupo' ? (f.grupo ? { filtro: { grupo: f.grupo, sub: f.sub || undefined } } : null)
       : f.modo === 'cha' ? (f.tipo ? { filtro: { tipo: f.tipo } } : f.familia ? { filtro: { familia: f.familia } } : null) : { filtro: { tudoKg: true } });
     const pintarModo = () => {
+      pintarAlcance();
       if (f.modo === 'produtos') {
         const chips = h('div', { class: 'cp-prod-chips' });
         const pintarChips = () => chips.replaceChildren(...f.prod.map((p) => h('span', { class: 'cp-prod-chip' }, p.desc, h('button', { type: 'button', 'aria-label': 'Tirar', onclick: () => { f.prod = f.prod.filter((x) => x !== p); f.cods = f.prod.map((x) => x.cod); pintarChips(); atualizarPrevia(); } }, '✕'))));
@@ -146,7 +155,7 @@
           h('optgroup', { label: 'Só aromatizado ou só puro' }, ...d.tipos.map(([x, n]) => h('option', { value: 't:' + x, selected: f.tipo === x || null }, `${x[0] + x.slice(1).toLowerCase()} (${n})`))));
         selF.addEventListener('change', () => { const v = selF.value; f.familia = v.startsWith('f:') ? v.slice(2) : ''; f.tipo = v.startsWith('t:') ? v.slice(2) : ''; atualizarPrevia(); });
         troca(corpoModo, selF, d.familias.length ? null : h('small', { class: 'muted' }, 'O tipo de chá vem das vendas dos pacotes; ainda não há vendas suficientes para saber.'));
-      } else corpoModo.replaceChildren(h('p', { class: 'muted' }, `Todos os ${fmt.int(d.kg)} chás a granel (kg) que aparecem nas vendas.`));
+      } else corpoModo.replaceChildren(h('p', { class: 'muted' }, `Todos os ${fmt.int(d.kg)} chás a granel (kg) do estoque: os que têm estoque no sistema e os que vendem.`));
       atualizarPrevia();
     };
     const modos = TS.seg([['Alguns produtos', 'produtos'], ['Um grupo', 'grupo'], ['Um tipo de chá', 'cha'], ['Todos os chás a granel', 'kg']], f.modo, (v) => { f.modo = v; modos.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.v === v)); pintarModo(); });
@@ -166,7 +175,7 @@
       h('div', { class: 'inv-modos' }, modos), corpoModo, previa,
       h('label', { class: 'esp-campo' }, h('span', { class: 'f-label' }, 'Nome'), nome),
       h('label', { class: 'inv-check' }, cega, h('span', null, h('b', null, 'Contagem cega'), ' — quem conta não vê a quantidade do sistema (conta sem se influenciar).', vend ? ' Para vendedoras é sempre cega.' : '')),
-      vend ? null : h('label', { class: 'inv-check' }, zerarResto, h('span', null, h('b', null, 'Zerar os produtos que não estão nesta contagem'), ' — o que não for listado aqui fica 0 no AppNext. Na revisão você vê a lista e escolhe os grupos que ficam de fora antes de gerar a planilha.')),
+      vend ? null : h('label', { class: 'inv-check' }, zerarResto, h('span', null, h('b', null, 'Zerar os produtos que não estão nesta contagem'), ' — ', alcanceZerar, ' Na revisão você vê a lista e escolhe os grupos que ficam de fora antes de gerar a planilha.')),
       erro, h('div', { class: 'esp-acoes' }, comecar, h('button', { type: 'button', class: 'btn', onclick: fechar }, 'Fechar')));
   }
 
@@ -341,6 +350,8 @@
     // "zerar os não listados": o que ficaria zero (menos os grupos desmarcados)
     const z = c.zerar || { ativo: false };
     const resto = c.resto || [];
+    const esc = z.escopo || null; // até onde vai o "zerar": o recorte da contagem
+    const escTxt = !esc ? 'produtos' : esc.kg ? 'chás a granel' : esc.grupo ? `produtos do grupo ${esc.sub || esc.grupo}` : `chás ${String(esc.tipo || esc.familia).toLowerCase()}`;
     const fora = new Set(c.restoFora || []);
     const zerados = z.ativo ? resto.filter((r) => !fora.has(r.grupo)) : [];
     const valorZ = zerados.reduce((s0, r) => s0 + (r.custo || 0) * (r.qtd || 0), 0);
@@ -422,7 +433,7 @@
       const salvarZ = async (novo) => { try { await API.zerar(loja, c.id, novo); repintar(); } catch (e) { toast(e.message, true); } };
       const chk = h('input', { type: 'checkbox', checked: z.ativo || null, onchange: () => salvarZ({ ativo: chk.checked, semGrupos: z.semGrupos ?? null }) });
       const card = h('div', { class: 'card mt inv-zerar' + (z.ativo ? ' on' : '') },
-        h('label', { class: 'inv-check' }, chk, h('span', null, h('b', null, 'Zerar os produtos que não estão nesta contagem'), ` — ${fmt.int(resto.length)} produtos fora da contagem têm estoque no sistema hoje.`)));
+        h('label', { class: 'inv-check' }, chk, h('span', null, h('b', null, 'Zerar os produtos que não estão nesta contagem'), ` — ${fmt.int(resto.length)} ${escTxt} fora da contagem têm estoque no sistema hoje.`, esc ? null : h('b', { class: 'inv-zerar-loja' }, ' Vale para a loja inteira.'))));
       if (!z.ativo) return card;
       const grupos = new Map();
       for (const r of resto) { const g = r.grupo || 'Sem grupo'; const a = grupos.get(g) || grupos.set(g, { n: 0, v: 0 }).get(g); a.n++; a.v += (r.custo || 0) * (r.qtd || 0); }

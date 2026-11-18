@@ -80,6 +80,22 @@ const familia = (t) => {
 };
 
 /** escolhe os itens pela forma pedida: cods (lista), grupo, subgrupo, tipo, familia, "comEstoque" */
+/** chá a granel do estoque (kg): com estoque no sistema ou que vende — independente de ter vendido no período */
+const ehChaGranel = (i) => i.un === 'Kg' && (Math.abs(Number(i.qtd) || 0) > 0.0005 || !!i.tipo);
+/**
+ * Até onde vai o "zerar os produtos que não estão nesta contagem": o mesmo recorte da contagem
+ * (todos os chás a granel → só chá a granel; um grupo → só o grupo; um tipo de chá → só esse tipo).
+ * "Alguns produtos" = a loja inteira (como antes).
+ */
+function escopoDe(b) {
+  const f = (b && b.filtro) || {};
+  if (f.tudoKg) return { kg: true };
+  if (f.grupo) return { grupo: txt(f.grupo, 80), ...(f.sub ? { sub: txt(f.sub, 80) } : {}) };
+  if (f.tipo) return { tipo: txt(f.tipo, 80) };
+  if (f.familia) return { familia: txt(f.familia, 80) };
+  return null;
+}
+const noEscopo = (esc, i) => !esc || (esc.kg ? i.un === 'Kg' : esc.grupo ? i.grupo === esc.grupo && (!esc.sub || i.sub === esc.sub) : esc.tipo ? i.tipo === esc.tipo : esc.familia ? familia(i.tipo) === esc.familia : true);
 function escolher(cat, b) {
   const cods = new Set((Array.isArray(b.cods) ? b.cods : []).map(String));
   const f = b.filtro || {};
@@ -87,7 +103,7 @@ function escolher(cat, b) {
     || (f.grupo && i.grupo === f.grupo && (!f.sub || i.sub === f.sub))
     || (f.tipo && i.tipo === f.tipo)
     || (f.familia && familia(i.tipo) === f.familia)
-    || (f.tudoKg && i.un === 'Kg' && i.tipo));
+    || (f.tudoKg && ehChaGranel(i)));
 }
 
 function criar(id, b, por, cat, perfil) {
@@ -96,7 +112,7 @@ function criar(id, b, por, cat, perfil) {
   if (itens.length > 2000) return { erro: 'Itens demais numa contagem só (máximo 2.000).' };
   const c = {
     id: crypto.randomBytes(6).toString('hex'), nome: txt(b.nome, 80) || `Contagem de ${new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`,
-    criadoEm: new Date().toISOString(), por, cega: perfil === 'vendedor' ? true : !!b.cega, st: 'contando', zerar: { ativo: perfil !== 'vendedor' && !!b.zerarResto, semGrupos: null },
+    criadoEm: new Date().toISOString(), por, cega: perfil === 'vendedor' ? true : !!b.cega, st: 'contando', zerar: { ativo: perfil !== 'vendedor' && !!b.zerarResto, semGrupos: null, escopo: escopoDe(b) },
     itens: itens.map((i) => ({ cod: i.cod, desc: i.desc, un: i.un, grupo: i.grupo, sub: i.sub, tipo: i.tipo, barras: i.barras, sis: i.qtd, custo: i.custo, cont: null, por: null, em: null })),
   };
   gravar(id, c);
@@ -174,8 +190,10 @@ const SEM_CONTROLE = /SEM CONTROLE/i;
 function resto(c, estoque, cat) {
   const na = new Set(c.itens.map((i) => i.cod));
   const g = new Map((cat || []).map((i) => [i.cod, i]));
+  const esc = c.zerar && c.zerar.escopo;
   return ((estoque && estoque.itens) || []).filter((i) => !na.has(String(i.cod)) && Math.abs(i.qtd || 0) > 0.0005)
-    .map((i) => { const x = g.get(String(i.cod)) || {}; return { cod: String(i.cod), desc: i.desc, un: i.un, grupo: x.grupo || '', sub: x.sub || '', qtd: i.qtd, custo: i.custo ?? null }; });
+    .map((i) => { const x = g.get(String(i.cod)) || {}; return { cod: String(i.cod), desc: i.desc, un: i.un, grupo: x.grupo || '', sub: x.sub || '', tipo: x.tipo || '', qtd: i.qtd, custo: i.custo ?? null }; })
+    .filter((i) => noEscopo(esc, i)); // só o recorte da contagem (ex.: chá a granel), nunca a loja inteira sem querer
 }
 const zerarOpcao = (c) => c.zerar || { ativo: false, semGrupos: null };
 /** grupos que ficam de fora do "zerar": escolha da pessoa, ou por padrão os "sem controle de estoque" */
@@ -185,7 +203,7 @@ function zerar(id, cid, b) {
   const c = ler(id, cid);
   if (!c) return { erro: 'Contagem não encontrada.' };
   if (c.st === 'importado' || c.st === 'revertido') return { erro: 'Esta contagem já foi importada.' };
-  c.zerar = { ativo: !!b.ativo, semGrupos: Array.isArray(b.semGrupos) ? b.semGrupos.map((x) => txt(x, 80)).slice(0, 200) : null };
+  c.zerar = { ativo: !!b.ativo, semGrupos: Array.isArray(b.semGrupos) ? b.semGrupos.map((x) => txt(x, 80)).slice(0, 200) : null, escopo: (c.zerar && c.zerar.escopo) || null };
   gravar(id, c);
   return { ok: c.zerar };
 }
@@ -307,4 +325,4 @@ function conferirEnvio(id, cid) {
 
 function erroEnvio(id, cid, erro) { const c = ler(id, cid); if (c && c.envio) { c.envio.estado = 'erro'; c.envio.erro = erro; c.envio.fim = new Date().toISOString(); gravar(id, c); } }
 
-module.exports = { erroEnvio, prepararEnvio, conferirEnvio, lista, ler, catalogo, familia, criar, contar, adicionar, acao, paraUsuario, planilha, linhasPlanilha, marcarGerado, resto, zerar, gruposFora, linhasDesfazer, marcarDesfazer };
+module.exports = { ehChaGranel, escopoDe, erroEnvio, prepararEnvio, conferirEnvio, lista, ler, catalogo, familia, criar, contar, adicionar, acao, paraUsuario, planilha, linhasPlanilha, marcarGerado, resto, zerar, gruposFora, linhasDesfazer, marcarDesfazer };
