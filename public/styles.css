@@ -1943,7 +1943,7 @@ body.com-camada .ped-barra { display: none; }
 .inv-salvo.ok { color: #23683a; } .inv-salvo.neg { color: #a33; }
 .inv-incluir { margin-top: 12px; background: #fff; border: 1px dashed var(--line, #e6e1d6); border-radius: 10px; padding: 8px 12px; }
 .inv-incluir summary { cursor: pointer; font-weight: 600; font-size: 13px; }
-.inv-rodape { position: sticky; bottom: 0; background: linear-gradient(transparent, var(--bg, #f3efe6) 30%); padding: 14px 0 6px; display: flex; justify-content: flex-end; }
+.inv-rodape { position: sticky; bottom: 0; background: linear-gradient(transparent, var(--bg, #f3efe6) 30%); padding: 14px 0 6px; display: flex; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
 .inv-rodape .btn { min-height: 46px; padding: 0 22px; font-size: 15px; }
 .inv-acoes { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
 .inv-passos { margin-bottom: 10px; font-size: 13px; }

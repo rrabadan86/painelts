@@ -307,6 +307,11 @@
         : `${faltam} ${faltam === 1 ? 'item ficou' : 'itens ficaram'} sem contar. Eles ficam de fora da planilha (não mudam no AppNext). Terminar mesmo assim?`)) return;
       try { await API.acao(loja, c.id, 'revisar'); toast(c.podeRevisar ? 'Contagem terminada. Revise as diferenças.' : 'Contagem terminada. A gerente revisa e gera a planilha.'); if (!c.podeRevisar) state.invId = null; TS.render(); } catch (e) { toast(e.message, true); }
     } }, 'Terminar contagem');
+    // gerente/admin: descartar uma contagem aberta (nada vai para o AppNext; fica no histórico como cancelada)
+    const cancelar = h('button', { type: 'button', class: 'btn ghost-danger', onclick: async () => {
+      if (!confirm(`Cancelar a contagem "${c.nome}"?\n\nNada vai para o AppNext. Ela fica no histórico como cancelada (dá para reabrir depois).`)) return;
+      try { await API.acao(loja, c.id, 'cancelar'); state.invId = null; toast('Contagem cancelada.'); TS.render(); } catch (e) { toast(e.message, true); }
+    } }, 'Cancelar contagem');
     pintarProg(); pintar();
     troca(corpo, 
       h('div', { class: 'inv-cab' }, voltar, h('div', null, h('b', { class: 'inv-titulo' }, c.nome), h('small', { class: 'muted' }, ` · ${c.cega ? 'contagem cega' : 'com a quantidade do sistema'}`))),
@@ -314,7 +319,7 @@
         c.semContarZero && aberta ? h('small', { class: 'muted inv-zero-aviso' }, 'Item desta contagem que ficar sem contar vai como 0 (zero) para o AppNext. Não precisa digitar 0.') : null),
       !aberta ? h('div', { class: 'notice' }, 'Esta contagem já foi terminada. A gerente revisa e gera a planilha.') : null,
       lista, incluir,
-      aberta ? h('div', { class: 'inv-rodape' }, terminar) : null);
+      aberta ? h('div', { class: 'inv-rodape' }, c.podeRevisar ? cancelar : null, terminar) : null);
   }
 
   /** câmera + BarcodeDetector: lê EAN/código e chama fn(código) */
