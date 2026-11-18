@@ -102,7 +102,7 @@
     const marcador = document.createComment('cartão expandido');
     card.replaceWith(marcador);
     const fechar = h('button', { type: 'button', class: 'icon-btn exp-fechar', title: 'Fechar (Esc)', 'aria-label': 'Fechar', onclick: () => fecharExpandido(false) }, '✕');
-    const camada = h('div', { class: 'camada-cheia', role: 'dialog', 'aria-modal': 'true', 'aria-label': titulo, onclick: (e) => { if (e.target === camada) fecharExpandido(false); } }, card);
+    const camada = h('div', { class: 'camada-cheia exp-camada', role: 'dialog', 'aria-modal': 'true', 'aria-label': titulo, onclick: (e) => { if (e.target === camada) fecharExpandido(false); } }, card);
     card.classList.add('card-cheio');
     card.prepend(fechar);
     document.body.append(camada);

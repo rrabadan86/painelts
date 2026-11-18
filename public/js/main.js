@@ -160,6 +160,42 @@
   }
   window.addEventListener('hashchange', rota);
 
+  // ---------- botão "voltar" do celular fecha a janela por cima (nota, ficha, drawer…) em vez de trocar de tela ----------
+  // Cada janela aberta ganha uma entrada no histórico (mesmo endereço). O "voltar" consome essa entrada e fecha a de cima.
+  // Se a janela fecha pelo X/fundo, o painel tira a entrada sobrando (sem o usuário perceber).
+  (function () {
+    const SEL = '.camada-cheia, .prc-drawer-camada, .prc-popup-camada, .cp-modal-bg';
+    let empurrados = 0, ignorar = 0, fechandoPeloVoltar = 0, agendado = false;
+    const pilha = [];
+    const abertas = () => [...document.querySelectorAll(SEL)].filter((el) => el.isConnected);
+    const sync = () => {
+      agendado = false;
+      const n = abertas().length;
+      while (empurrados < n) { history.pushState({ camada: true }, '', location.href); pilha.push(location.href); empurrados++; }
+      while (empurrados > n) {
+        empurrados--;
+        const url = pilha.pop();
+        if (fechandoPeloVoltar > 0) fechandoPeloVoltar--; // o "voltar" já consumiu a entrada
+        else if (url === location.href && history.state && history.state.camada) { ignorar++; history.back(); }
+        // fechou porque foi para outra tela (link dentro da janela): não volta, senão desfaria a navegação
+      }
+    };
+    new MutationObserver(() => { if (!agendado) { agendado = true; queueMicrotask(sync); } }).observe(document.body, { childList: true, subtree: true });
+    const fecharTopo = (el) => {
+      // as janelas fecham com um clique no fundo (o próprio elemento da camada)
+      for (const tipo of ['mousedown', 'click']) el.dispatchEvent(new MouseEvent(tipo, { bubbles: true, cancelable: true }));
+      if (el.isConnected) { const x = el.querySelector('[aria-label="Fechar"], .fechar, .prc-drawer-fechar'); if (x) x.click(); }
+      if (el.isConnected) { el.remove(); if (!document.querySelector(SEL)) document.body.classList.remove('com-camada'); }
+    };
+    window.addEventListener('popstate', () => {
+      if (ignorar > 0) { ignorar--; return; }
+      const lista = abertas();
+      if (!lista.length) return;
+      fechandoPeloVoltar++;
+      fecharTopo(lista[lista.length - 1]);
+    });
+  })();
+
   // ---------- dados ----------
   async function carregar(forcar) {
     const btn = document.getElementById('updated');
