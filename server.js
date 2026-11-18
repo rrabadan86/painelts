@@ -1203,9 +1203,23 @@ app.use('/api/espera', (req, res, next) => (req.perfil === 'vendedor' || podeTel
 app.get('/api/espera', async (req, res) => {
   const loja = lojaEsp(req);
   if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  let raw = null;
+  try { raw = (await dadosLoja(loja)).raw; } catch { /* ok */ }
   try { await avaliarEspera(loja); } catch (e) { console.error('[espera]', e.message); }
   const d = ESP.ler(loja.id);
-  res.json({ pedidos: d.pedidos, modelo: d.modelo, dias: ESP.DIAS_COMPRA, podeModelo: req.perfil !== 'vendedor', lojaNome: loja.nome });
+  const vMap = new Map();
+  const addV = (n) => {
+    const s = String(n || '').trim();
+    if (!s || /^SEM VENDEDOR$|^COLEGA \d+$/i.test(s)) return;
+    const k = ESP.ESQ(s);
+    if (!k) return;
+    if (!vMap.has(k) || (vMap.get(k) === vMap.get(k).toLowerCase() && s !== s.toLowerCase())) vMap.set(k, s);
+  };
+  const corte = new Date(Date.now() - 120 * 864e5).toISOString().slice(0, 10);
+  if (raw && Array.isArray(raw.vendas)) for (const v of raw.vendas) if (!v.data || v.data >= corte) addV(v.vendedor);
+  for (const p of d.pedidos) addV(p.vendedora);
+  const vendedoras = [...vMap.values()].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  res.json({ pedidos: d.pedidos, modelo: d.modelo, dias: ESP.DIAS_COMPRA, podeModelo: req.perfil !== 'vendedor', lojaNome: loja.nome, vendedoras });
 });
 // produtos para escolher: o cadastro do AppNext (com o tamanho) e o que já foi vendido; marca o que está em falta
 app.get('/api/espera/produtos', async (req, res) => {
@@ -1260,7 +1274,7 @@ app.post('/api/espera', express.json({ limit: '20kb' }), (req, res) => {
 app.post('/api/espera/:id/:acao', express.json({ limit: '2kb' }), (req, res) => {
   const loja = lojaEsp(req);
   if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
-  const r = ESP.acao(loja.id, String(req.params.id), String(req.params.acao), req.user);
+  const r = ESP.acao(loja.id, String(req.params.id), String(req.params.acao), req.user, req.body || {});
   if (r.erro) return res.status(400).json({ erro: r.erro });
   res.json({ ok: true, pedido: r.ok });
 });

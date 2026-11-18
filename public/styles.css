@@ -1822,32 +1822,74 @@ body.com-camada .ped-barra { display: none; }
 .esp-chip > span { font-weight: 600; }
 .esp-tem { background: #fff3d6; color: #7a5600; border-radius: 999px; padding: 1px 6px; font-size: 11px; }
 .esp-erro:empty { display: none; }
-.esp-abas { margin-bottom: 10px; overflow-x: auto; }
-.esp-lista { display: grid; gap: 10px; }
-.esp-item { border: 1px solid var(--line, #e6e1d6); border-left: 4px solid #c9c2b2; border-radius: 10px; padding: 10px 12px; display: grid; gap: 4px; background: #fff; }
+.esp-abas { margin-bottom: 10px; overflow-x: auto; max-width: 100%; }
+.esp-cab-painel { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.esp-cab-painel .esp-abas { margin-bottom: 0; min-width: 0; }
+.esp-modo { min-width: 0; max-width: 100%; }
+.esp-barra { display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.esp-pilulas { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; min-width: 0; }
+.esp-pil { border: 1px solid var(--line, #e6e1d6); background: #faf8f3; color: var(--ink, #222); border-radius: 999px; padding: 4px 10px; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; transition: border-color .15s, background .15s; }
+.esp-pil b { font-weight: 700; opacity: .85; }
+.esp-pil:hover { border-color: var(--green, #2C5234); background: #fff; }
+.esp-pil.sem { border-style: dashed; color: #6b6352; }
+.esp-pil.on { background: var(--green, #2C5234); border-color: var(--green, #2C5234); border-style: solid; color: #fff; }
+.esp-busca { flex: 1 1 210px; max-width: 300px; min-width: 0; height: 34px; }
+.esp-lista { display: grid; gap: 10px; min-width: 0; }
+.esp-grupo { border: 1px solid var(--line, #e6e1d6); border-radius: 12px; background: #fbfaf6; overflow: hidden; min-width: 0; }
+.esp-grupo-cab { list-style: none; cursor: pointer; padding: 9px 12px; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 6px 12px; background: #f4f0e6; user-select: none; }
+.esp-grupo-cab::-webkit-details-marker { display: none; }
+.esp-grupo-cab:hover { background: #eee9dc; }
+.esp-grupo-esq { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.esp-grupo-esq::before { content: "▸"; font-size: 12px; color: var(--muted, #6b7a70); transition: transform .15s; display: inline-block; }
+.esp-grupo[open] > .esp-grupo-cab .esp-grupo-esq::before { transform: rotate(90deg); }
+.esp-ini { width: 24px; height: 24px; border-radius: 50%; background: var(--green, #2C5234); color: #fff; font-size: 12px; font-weight: 700; display: inline-grid; place-items: center; flex: none; }
+.esp-grupo-sem .esp-ini { background: #9c8c6b; }
+.esp-grupo-nome { font-size: 14px; color: var(--dark, #1F3D2B); }
+.esp-grupo-qtd { font-size: 11.5px; font-weight: 600; color: #5c5648; background: #e6e0d2; border-radius: 999px; padding: 2px 8px; white-space: nowrap; }
+.esp-grupo-resumo { font-size: 12px; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.esp-grupo-corpo { padding: 8px; display: grid; gap: 8px; min-width: 0; }
+.esp-item { border: 1px solid var(--line, #e6e1d6); border-left: 4px solid #c9c2b2; border-radius: 10px; padding: 10px 12px; display: grid; gap: 4px; background: #fff; min-width: 0; }
 .esp-item.esp-chegou { border-left-color: #C9A227; background: #fffbef; }
 .esp-item.esp-avisado { border-left-color: #1F5FBF; }
 .esp-item.esp-comprou { border-left-color: #2C5234; }
 .esp-item.esp-nao, .esp-item.esp-canc { opacity: .8; }
-.esp-cab { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.esp-linha { display: flex; justify-content: space-between; align-items: center; gap: 8px 14px; min-width: 0; }
+.esp-corpo { display: grid; gap: 3px; min-width: 0; flex: 1 1 auto; }
+.esp-cab { display: flex; justify-content: space-between; gap: 6px 8px; align-items: center; flex-wrap: wrap; }
+.esp-cli-linha { display: flex; align-items: baseline; gap: 4px 6px; flex-wrap: wrap; min-width: 0; }
+.esp-tags-dir { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .esp-nome { font-size: 14.5px; }
-.esp-ficha { margin-left: 8px; font-size: 12px; }
+.esp-ficha { margin-left: 4px; font-size: 12px; }
 .esp-st { font-size: 11.5px; font-weight: 700; border-radius: 999px; padding: 2px 8px; background: #eee; color: #555; white-space: nowrap; }
 .esp-st.esp-chegou { background: #fff0c2; color: #7a5600; }
 .esp-st.esp-esperando { background: #f0ede4; color: #6b6352; }
 .esp-st.esp-avisado { background: #e3ecfa; color: #1F4FA0; }
 .esp-st.esp-comprou { background: #e3f2e6; color: #23683a; }
 .esp-st.esp-nao, .esp-st.esp-canc { background: #f3e3e0; color: #a33; }
+.esp-meio { font-size: 13px; line-height: 1.35; overflow-wrap: anywhere; }
 .esp-prod { font-weight: 600; color: var(--green, #2C5234); }
 .esp-sit { font-size: 13px; }
+.esp-obs { color: #6b6352; font-style: italic; }
 .esp-meta { font-size: 12px; }
+.esp-aviso-inline { color: #8a6200; font-weight: 500; }
+.esp-vend-wrap { display: inline-flex; align-items: center; }
+.esp-vend-tag { border: 1px solid #cfe0d2; background: #eef5ef; color: var(--green, #2C5234); border-radius: 999px; padding: 2px 8px; font-size: 11.5px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.esp-vend-tag:hover { border-color: var(--green, #2C5234); background: #e3efe5; }
+.esp-vend-tag.sem { background: #fff3d6; border-color: #e6cc8f; color: #7a5600; }
+.esp-trocar-vend { font-size: 11.5px; padding: 0 2px; }
+.esp-vend-sel { height: 26px; padding: 0 6px; font-size: 12px; width: auto; max-width: 170px; }
 .esp-msg { margin-top: 4px; font-size: 13px; font-family: inherit; line-height: 1.4; }
 .esp-modelo textarea { font-family: inherit; }
 .esp-acoes { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.esp-acoes-dir { margin-top: 0; flex: none; }
 .ped-esp { background: #fff0c2 !important; color: #7a5600 !important; text-decoration: none; }
 @media (max-width: 760px) {
+  .esp-linha { flex-direction: column; align-items: stretch; }
+  .esp-acoes-dir { margin-top: 4px; }
   .esp-acoes .btn { flex: 1 1 auto; text-align: center; min-height: 40px; }
   .esp-modelo { max-width: none; }
+  .esp-busca { flex-basis: 100%; max-width: none; }
+  .esp-grupo-resumo { white-space: normal; }
 }
 .esp-sug-gen em, .esp-chip em { font-style: normal; font-weight: 500; color: #7a5600; font-size: 12px; }
 .esp-cli-novo[hidden], .esp-cli-esc[hidden] { display: none; }

@@ -79,16 +79,25 @@ function criar(id, b, por, estoque) {
   return { ok: p };
 }
 
-/** ações: avisado, chegou (à mão), cancelar, reabrir */
-function acao(id, pid, a, por) {
+/** ações: avisado, chegou (à mão), cancelar, reabrir, vendedora */
+function acao(id, pid, a, por, extra) {
   const d = ler(id);
   const p = d.pedidos.find((x) => x.id === pid);
   if (!p) return { erro: 'Pedido não encontrado.' };
   const agora = new Date().toISOString();
-  if (a === 'avisado') { if (['comprou', 'naocomprou', 'cancelado'].includes(p.st)) return { erro: 'Este pedido já foi encerrado.' }; if (!p.chegou) p.chegou = { em: agora, origem: 'manual', por }; p.avisado = { em: agora, por }; p.st = 'avisado'; }
+  const vend = txt(extra && extra.vendedora, 60) || null;
+  if (a === 'avisado') {
+    if (['comprou', 'naocomprou', 'cancelado'].includes(p.st)) return { erro: 'Este pedido já foi encerrado.' };
+    if (!p.chegou) p.chegou = { em: agora, origem: 'manual', por };
+    const vFinal = vend || p.vendedora || null;
+    p.avisado = { em: agora, por, ...(vFinal ? { vendedora: vFinal } : {}) };
+    if (!p.vendedora && vFinal) p.vendedora = vFinal;
+    p.st = 'avisado';
+  }
   else if (a === 'chegou') { if (p.st !== 'esperando') return { erro: 'Só pedidos esperando.' }; p.chegou = { em: agora, origem: 'manual', por }; p.st = 'chegou'; }
   else if (a === 'cancelar') { if (['comprou', 'cancelado'].includes(p.st)) return { erro: 'Este pedido já foi encerrado.' }; p.cancelado = { em: agora, por }; p.antes = p.st; p.st = 'cancelado'; }
   else if (a === 'reabrir') { if (p.st !== 'cancelado' && p.st !== 'naocomprou') return { erro: 'Só pedidos cancelados ou sem compra.' }; p.st = p.avisado && p.st === 'naocomprou' ? 'avisado' : p.antes || (p.chegou ? 'chegou' : 'esperando'); if (p.st === 'avisado') p.avisado.em = agora; delete p.cancelado; delete p.fim; }
+  else if (a === 'vendedora') { p.vendedora = vend; }
   else return { erro: 'Ação inválida.' };
   gravar(id, d);
   return { ok: p };

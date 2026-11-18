@@ -84,11 +84,16 @@ test.describe('regras', () => {
     await expect(page.locator('.cp-exemplo')).toContainText(/Chegou .+ e .+!/);
   });
 
-  test('Lista de espera: abas, mensagem pronta e formulário com cliente e produto', async ({ page }) => {
+  test('Lista de espera: separação por vendedora, modos, mensagem pronta e formulário', async ({ page }) => {
     await page.evaluate(() => { location.hash = '#espera'; });
     await expect(page.locator('.esp-abas')).toContainText('Chegaram · avisar');
+    await expect(page.locator('.esp-grupo').first()).toBeVisible();
+    await expect(page.locator('.esp-pilulas .esp-pil').first()).toContainText('Todas');
     await expect(page.locator('.esp-item.esp-chegou').first()).toBeVisible();
     await expect(page.locator('.esp-item.esp-chegou textarea.esp-msg').first()).toHaveValue(/chegou/);
+    await page.locator('.esp-modo button', { hasText: 'Por produto' }).click();
+    await expect(page.locator('.esp-grupo-prod').first()).toBeVisible();
+    await page.locator('.esp-modo button', { hasText: 'Por vendedora' }).click();
     await page.getByRole('button', { name: '+ Anotar pedido' }).click();
     await page.locator('.esp-form input[type=search]').first().fill('ana');
     await page.locator('.esp-form .cp-sug-it').first().dispatchEvent('mousedown');

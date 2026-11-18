@@ -67,3 +67,14 @@ test('sem celular ou sem produto não salva', () => {
   assert.match(E.criar('l1', { cliente: { nome: 'X', celular: '123' }, itens: [{ desc: 'A' }] }, 'u', estoque).erro, /celular/);
   assert.match(E.criar('l1', { cliente: { nome: 'X', celular: '62999998888' }, itens: [] }, 'u', estoque).erro, /produto/);
 });
+
+test('trocar vendedora do pedido e registrar vendedora ao avisar', () => {
+  const c = E.criar('l1', { cliente: { nome: 'Dani', celular: '62991112222' }, itens: [{ desc: 'Caneca Uki', cod: '5001' }] }, 'vendedora', estoque);
+  assert.strictEqual(c.ok.vendedora, null);
+  const r1 = E.acao('l1', c.ok.id, 'vendedora', 'vendedora', { vendedora: 'Lyandra' });
+  assert.strictEqual(r1.ok.vendedora, 'Lyandra');
+  const r2 = E.acao('l1', c.ok.id, 'avisado', 'vendedora', { vendedora: 'Gabrielly' });
+  assert.strictEqual(r2.ok.avisado.vendedora, 'Gabrielly');
+  assert.strictEqual(r2.ok.vendedora, 'Lyandra');
+});
+
