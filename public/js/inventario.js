@@ -40,7 +40,7 @@
       if (!TS.demo) return (await req('POST', 'inventario', { loja, ...b })).id;
       const itens = escolheDemo(await demoCat(loja), b);
       if (!itens.length) throw new Error('Escolha pelo menos um item para contar.');
-      const c = { id: 'demo' + Date.now().toString(16).slice(-8), nome: b.nome || 'Contagem', criadoEm: new Date().toISOString(), por: 'apresentacao', cega: !!b.cega, st: 'contando', zerar: { ativo: !!b.zerarResto, semGrupos: null, escopo: (b.filtro && b.filtro.tudoKg) ? { kg: true } : (b.filtro && b.filtro.grupo) ? { grupo: b.filtro.grupo, sub: b.filtro.sub } : (b.filtro && b.filtro.tipo) ? { tipo: b.filtro.tipo } : (b.filtro && b.filtro.familia) ? { familia: b.filtro.familia } : null }, itens: itens.map((i) => ({ ...i, sis: i.qtd, cont: null })) };
+      const c = { id: 'demo' + Date.now().toString(16).slice(-8), nome: b.nome || 'Contagem', criadoEm: new Date().toISOString(), por: 'apresentacao', cega: !!b.cega, st: 'contando', semContarZero: true, zerar: { ativo: !!b.zerarResto, semGrupos: null, escopo: (b.filtro && b.filtro.tudoKg) ? { kg: true } : (b.filtro && b.filtro.grupo) ? { grupo: b.filtro.grupo, sub: b.filtro.sub } : (b.filtro && b.filtro.tipo) ? { tipo: b.filtro.tipo } : (b.filtro && b.filtro.familia) ? { familia: b.filtro.familia } : null }, itens: itens.map((i) => ({ ...i, sis: i.qtd, cont: null })) };
       DEMO.cont.unshift(c); return c.id;
     },
     async abrir(loja, id) {
@@ -286,10 +286,15 @@
           }, !aberta));
         painel.hidden = false;
       };
-      const porLote = kg && TS.validade && (!TS.paginas || TS.paginas().includes('validade')) ? h('button', { type: 'button', class: 'link-btn inv-porlote', onclick: abrirLotes }, i.lotes && Object.keys(i.lotes).length ? `por lote ✓ (${Object.keys(i.lotes).length})` : 'contar por lote') : null;
+      const porLote = kg && TS.validade && (!TS.paginas || TS.paginas().includes('validade')) ? h('span', { class: 'inv-porlote-box' },
+        h('button', { type: 'button', class: 'link-btn inv-porlote', onclick: abrirLotes }, i.lotes && Object.keys(i.lotes).length ? `por lote ✓ (${Object.keys(i.lotes).length})` : 'contar por lote'),
+        TS.dica('Opcional. Se o chá tem pacotes de entradas diferentes (lotes com validades diferentes), pese cada lote separado: o total do item é a soma. Assim a tela Validade fica sabendo quanto sobrou de cada lote. Se não quiser, conte só o total no campo de gramas.')) : null;
       if (i.lotes && Object.keys(i.lotes).length) inp.readOnly = true;
       return h('div', { class: 'inv-item' + (i.cont != null ? ' feito' : '') + (kg ? ' inv-kg' : ''), 'data-cod': i.cod },
-        h('div', { class: 'inv-item-txt' }, h('b', null, i.desc), h('small', { class: 'muted' }, `cód. ${i.cod}${i.sis != null ? ' · sistema: ' + qtdTxt(i.sis, i.un) : ''}`), h('div', null, dif, est, porLote)),
+        h('div', { class: 'inv-item-txt' }, h('b', null, i.desc),
+          h('div', { class: 'inv-item-info' }, h('small', { class: 'muted' }, `cód. ${i.cod}`),
+            i.sis != null ? h('span', { class: 'inv-sis' + (Math.abs(i.sis) < 0.0005 ? ' zero' : ''), title: 'Quantidade no AppNext agora' }, 'Sistema: ', h('b', null, qtdTxt(i.sis, i.un))) : null),
+          h('div', null, dif, est, porLote)),
         h('div', { class: 'inv-item-qtd' }, passo(-1), h('div', { class: 'inv-campo' }, inp, h('span', null, kg ? 'g' : String(i.un || 'un').toLowerCase())), passo(1)),
         painel);
     };
@@ -297,13 +302,16 @@
       buscaItens(loja, async (it) => { try { await API.incluir(loja, c.id, [it.cod]); toast(`${it.desc} incluído.`); abrirContagem(corpo, loja, c.id); } catch (e) { toast(e.message, true); } }, 'Nome, código ou código de barras')) : null;
     const terminar = h('button', { type: 'button', class: 'btn primary', onclick: async () => {
       const faltam = c.itens.filter((i) => i.cont == null).length;
-      if (faltam && !confirm(`${faltam} ${faltam === 1 ? 'item ficou' : 'itens ficaram'} sem contar. Eles ficam de fora da planilha (não mudam no AppNext). Terminar mesmo assim?`)) return;
+      if (faltam && !confirm(c.semContarZero
+        ? `${faltam} ${faltam === 1 ? 'item ficou' : 'itens ficaram'} sem contar. ${faltam === 1 ? 'Ele vai' : 'Eles vão'} como 0 (zero) para o AppNext. Terminar mesmo assim?`
+        : `${faltam} ${faltam === 1 ? 'item ficou' : 'itens ficaram'} sem contar. Eles ficam de fora da planilha (não mudam no AppNext). Terminar mesmo assim?`)) return;
       try { await API.acao(loja, c.id, 'revisar'); toast(c.podeRevisar ? 'Contagem terminada. Revise as diferenças.' : 'Contagem terminada. A gerente revisa e gera a planilha.'); if (!c.podeRevisar) state.invId = null; TS.render(); } catch (e) { toast(e.message, true); }
     } }, 'Terminar contagem');
     pintarProg(); pintar();
     troca(corpo, 
       h('div', { class: 'inv-cab' }, voltar, h('div', null, h('b', { class: 'inv-titulo' }, c.nome), h('small', { class: 'muted' }, ` · ${c.cega ? 'contagem cega' : 'com a quantidade do sistema'}`))),
-      h('div', { class: 'card inv-fixo' }, prog, h('div', { class: 'inv-ferr' }, busca, scan), segF),
+      h('div', { class: 'card inv-fixo' }, prog, h('div', { class: 'inv-ferr' }, busca, scan), segF,
+        c.semContarZero && aberta ? h('small', { class: 'muted inv-zero-aviso' }, 'Item desta contagem que ficar sem contar vai como 0 (zero) para o AppNext. Não precisa digitar 0.') : null),
       !aberta ? h('div', { class: 'notice' }, 'Esta contagem já foi terminada. A gerente revisa e gera a planilha.') : null,
       lista, incluir,
       aberta ? h('div', { class: 'inv-rodape' }, terminar) : null);
@@ -484,7 +492,7 @@
     troca(corpo,
       h('div', { class: 'inv-cab' }, h('button', { type: 'button', class: 'btn', onclick: () => { state.invId = null; TS.render(); } }, '‹ Contagens'), h('div', null, h('b', { class: 'inv-titulo' }, c.nome), ' ', h('span', { class: 'inv-st ' + stC }, stT))),
       h('div', { class: 'grid g-kpi mt' },
-        TS.kpi('Itens contados', `${fmt.int(contados.length)} de ${fmt.int(c.itens.length)}`, sem ? `${fmt.int(sem)} sem contar ficam de fora` : 'todos contados'),
+        TS.kpi('Itens contados', `${fmt.int(contados.length)} de ${fmt.int(c.itens.length)}`, sem ? (c.semContarZero ? `${fmt.int(sem)} sem contar vão como 0` : `${fmt.int(sem)} sem contar ficam de fora`) : 'todos contados'),
         TS.kpi('Com diferença', fmt.int(div.length), contados.length ? `${fmt.pct(div.length / contados.length, 0)} dos contados` : ''),
         TS.kpi('Sobrou (custo)', fmt.brl(sobra), 'contado acima do sistema'),
         TS.kpi('Faltou (custo)', fmt.brl(falta), z.ativo && zerados.length ? `inclui ${fmt.brl(valorZ)} dos zerados` : 'contado abaixo do sistema')),
@@ -501,6 +509,13 @@
         c.st === 'gerado' && !c.podeEnviar ? h('div', { class: 'aviso inv-passos' }, h('b', null, 'Agora no AppNext: '), 'Estoque → Auditoria/Inventário → ＋ (Cadastrar um novo) → Por Excel → envie a planilha baixada. Depois clique em "Já importei no AppNext".') : null,
         c.st === 'importado' ? h('p', { class: 'muted' }, `Importado ${quando(c.importadoEm)} por ${c.importadoPor || '—'}${c.importadoPeloRobo ? ' (pelo robô, conferido item a item)' : ''}. Na próxima atualização do estoque, a coluna "No AppNext agora" mostra ✓ nos itens que já estão com a quantidade contada.`) : null,
         h('div', { class: 'inv-revfil' }, TS.seg([[`Só diferenças (${div.length})`, 'dif'], [`Todos os contados (${rows.length})`, 'todos']], filV, (v) => { state.invRevFil = v; telaRevisar(corpo, loja, c); }), tab.searchBox), tab),
+      (() => { // itens da contagem que ninguém contou: vão como 0 (contagens novas)
+        const nc = c.semContarZero ? c.itens.filter((i) => i.cont == null && i.sis != null && Math.abs(i.sis) > 0.0005) : [];
+        if (!nc.length || fechada) return null;
+        return h('details', { class: 'card mt inv-naocont' }, h('summary', null, h('b', null, `${fmt.int(nc.length)} ${nc.length === 1 ? 'item não foi contado e vai' : 'itens não foram contados e vão'} como 0 para o AppNext`), ' — ver quais'),
+          h('ul', null, ...nc.slice(0, 200).map((i) => h('li', null, i.desc, h('small', { class: 'muted' }, ` · cód. ${i.cod} · sistema ${qtdTxt(i.sis, i.un)} → 0`)))),
+          h('small', { class: 'muted' }, 'Se algum deles tem estoque, reabra a contagem e conte (ou digite a quantidade).'));
+      })(),
       cartaoEnviado());
   }
 })();

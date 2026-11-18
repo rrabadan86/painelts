@@ -42,7 +42,7 @@ test('contagem: por tipo de chá; kg com casas, unidade só inteiro; cega para v
   assert.match(INV.contar('l1', c2.id, '99999', 1, 'ger').erro, /fora/);
 });
 
-test('planilha: modelo do AppNext, só os itens contados, código como texto, custo atual', async () => {
+test('planilha: modelo do AppNext, contados e (contagem nova) os não contados como 0, código como texto, custo atual', async () => {
   const c = INV.criar('l1', { cods: ['71194', '003', '31020'] }, 'ger', cat, 'gerente').ok;
   INV.contar('l1', c.id, '003', 0, 'ger');
   INV.contar('l1', c.id, '31020', 1.1, 'ger');
@@ -53,10 +53,10 @@ test('planilha: modelo do AppNext, só os itens contados, código como texto, cu
   assert.deepStrictEqual(ws.getRow(6).values.slice(1), ['Código', 'Descrição', 'Unidade', 'Grupo', 'Subgrupo', 'Qtd. Atual', 'Nova Qtd.', 'Preço de Custo']);
   const linhas = [];
   ws.eachRow((r, n) => { if (n >= 7) linhas.push(r.values.slice(1)); });
-  assert.strictEqual(linhas.length, 2); // a lata não foi contada: fica de fora
+  assert.strictEqual(linhas.length, 3); // a lata não foi contada: vai como 0
   const m = Object.fromEntries(linhas.map((l) => [l[0], l]));
   assert.strictEqual(typeof m['003'][0], 'string');
-  assert.deepStrictEqual([m['003'][6], m['31020'][6], m['31020'][7]], [0, 1.1, 180]);
+  assert.deepStrictEqual([m['003'][6], m['31020'][6], m['31020'][7], m['71194'][6]], [0, 1.1, 180, 0]);
 });
 
 test('zerar os não listados: entram com Nova Qtd 0, menos os grupos desmarcados; desfazer volta ao de antes', async () => {
@@ -113,4 +113,18 @@ test('todos os chás a granel: pega do estoque (mesmo sem venda) e o "zerar" só
   // "Alguns produtos" continua valendo para a loja inteira
   const c2 = INV.criar('l3', { cods: ['99001'], zerarResto: true }, 'ger', cat3, 'gerente').ok;
   assert.ok(INV.resto(INV.ler('l3', c2.id), est3, cat3).some((i) => i.cod === '99002'));
+});
+
+test('item da contagem que ninguém contou vai como 0 (contagens novas)', () => {
+  const cat4 = INV.catalogo(estoque, tabela, vendas);
+  const c = INV.criar('l4', { cods: ['31020', '31030'] }, 'ger', cat4, 'gerente').ok;
+  assert.strictEqual(c.semContarZero, true);
+  INV.contar('l4', c.id, '31020', 1.1, 'ger');
+  const l = INV.linhasPlanilha(INV.ler('l4', c.id), estoque, cat4);
+  const r = l.find((x) => x.cod === '31030');
+  assert.ok(r, 'o rooibos não contado entra na planilha');
+  assert.deepStrictEqual([r.nova, r.naoContado], [0, true]);
+  // contagem antiga (sem a regra): o não contado fica de fora
+  const antiga = { ...INV.ler('l4', c.id), semContarZero: undefined };
+  assert.ok(!INV.linhasPlanilha(antiga, estoque, cat4).some((x) => x.cod === '31030'));
 });

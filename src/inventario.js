@@ -112,7 +112,7 @@ function criar(id, b, por, cat, perfil) {
   if (itens.length > 2000) return { erro: 'Itens demais numa contagem só (máximo 2.000).' };
   const c = {
     id: crypto.randomBytes(6).toString('hex'), nome: txt(b.nome, 80) || `Contagem de ${new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`,
-    criadoEm: new Date().toISOString(), por, cega: perfil === 'vendedor' ? true : !!b.cega, st: 'contando', zerar: { ativo: perfil !== 'vendedor' && !!b.zerarResto, semGrupos: null, escopo: escopoDe(b) },
+    criadoEm: new Date().toISOString(), por, cega: perfil === 'vendedor' ? true : !!b.cega, st: 'contando', semContarZero: true /* item não contado = 0 */, zerar: { ativo: perfil !== 'vendedor' && !!b.zerarResto, semGrupos: null, escopo: escopoDe(b) },
     itens: itens.map((i) => ({ cod: i.cod, desc: i.desc, un: i.un, grupo: i.grupo, sub: i.sub, tipo: i.tipo, barras: i.barras, sis: i.qtd, custo: i.custo, cont: null, por: null, em: null })),
   };
   gravar(id, c);
@@ -213,9 +213,11 @@ function linhasPlanilha(c, estoque, cat) {
   const atual = new Map(((estoque && estoque.itens) || []).map((i) => [String(i.cod), i]));
   const out = [];
   for (const i of c.itens) {
-    if (i.cont == null) continue;
     const a = atual.get(i.cod);
-    out.push({ cod: i.cod, desc: i.desc, un: i.un, grupo: i.grupo || '', sub: i.sub || '', antes: a ? a.qtd ?? 0 : i.sis ?? 0, nova: i.cont, custo: a && a.custo != null ? a.custo : i.custo ?? 0, zerado: false });
+    const antes = a ? a.qtd ?? 0 : i.sis ?? 0;
+    // item da contagem que ninguém contou: vai como 0 (contagens novas); se o sistema já tem 0, não precisa ir
+    if (i.cont == null && !(c.semContarZero && Math.abs(antes) > 0.0005)) continue;
+    out.push({ cod: i.cod, desc: i.desc, un: i.un, grupo: i.grupo || '', sub: i.sub || '', antes, nova: i.cont ?? 0, custo: a && a.custo != null ? a.custo : i.custo ?? 0, zerado: false, naoContado: i.cont == null });
   }
   if (zerarOpcao(c).ativo) {
     const r = resto(c, estoque, cat), fora = gruposFora(c, r);

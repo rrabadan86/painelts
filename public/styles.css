@@ -2218,3 +2218,9 @@ details.vl-ajuda summary { cursor: pointer; font-weight: 600; }
 .cli-wpp a.btn.desab { opacity: .45; }
 .cli-sem-estoque, .cp-estoque { background: #FBE6CC; border-color: #F1C98F; color: #6b3d00; }
 .cp-sem-estoque { color: #9A5300; font-weight: 600; }
+.inv-item-info { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.inv-sis { display: inline-flex; align-items: baseline; gap: 4px; font-size: 13px; color: var(--dark); background: var(--sage-l); border-radius: 6px; padding: 2px 8px; }
+.inv-sis b { font-size: 15px; }
+.inv-sis.zero { background: #EFEDE9; color: var(--muted); }
+.inv-porlote-box { display: inline-flex; align-items: center; gap: 2px; }
+.inv-zero-aviso { display: block; margin-top: 6px; }
