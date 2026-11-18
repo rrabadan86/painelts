@@ -764,7 +764,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     lojas: b.perfil === 'admin' ? ['*'] : [...new Set((Array.isArray(b.lojas) ? b.lojas : []).map((x) => String(x).toLowerCase()))].filter((x) => x !== '*'),
     vendedor: b.perfil === 'vendedor' ? semQuebra(b.vendedor).toUpperCase() : '',
     telas: b.perfil === 'gerente' && Array.isArray(b.telas) ? [...new Set(b.telas.map(String))].filter((t) => C.TELAS.includes(t)) : undefined,
-    telasV: 6, // telas escolhidas uma a uma no menu novo (Produtos: Rentabilidade, Preços, Site; Estoque: Estoque, Pedido, Notas fiscais)
+    telasV: 7, // telas escolhidas uma a uma no menu novo (Produtos: Rentabilidade, Preços, Site; Estoque: Estoque, Pedido, Notas fiscais)
     ativo: b.ativo !== false,
     acessoAte: /^\d{4}-\d{2}-\d{2}$/.test(String(b.acessoAte || '')) ? String(b.acessoAte) : null,
   });

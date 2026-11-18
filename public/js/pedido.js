@@ -47,6 +47,7 @@
   }
 
   /** o cálculo: tudo que a tela mostra */
+  let VAL = new Map(); // cod → { dias, faixa, kg } do lote mais urgente (< 90 dias)
   function calcular(M, estoque, ecfg, catalogo, pcfg, modo, ev, editados, ccfg, obrig, espera = {}) {
     const db = TS.db, I = TS.rules.ids;
     const fim = db.maxDay, hoje = fim + 1;
@@ -185,7 +186,8 @@
         precisa = Math.max(prev * H - qtdEf, (it.min || 0) - qtdEf, prior ? 1e-6 : 0);
         conta = `Previsão ${qtdTxt(prev, it)}/dia × (${ent} dias de entrega + ${N} dias até o próximo pedido) = ${qtdTxt(prev * H, it)} − estoque ${qtdTxt(qtd, it)}${txtChega}${it.min && it.min - qtdEf > prev * H - qtdEf ? ` · o mínimo do AppNext pede ${qtdTxt(it.min - qtdEf, it)}` : ''}.`
           + (prior === 3 ? ` Prioridade: ${esp.pedidos} ${esp.pedidos === 1 ? 'cliente esperando' : 'clientes esperando'} na lista de espera.` : prior === 2 ? ' Prioridade: estoque abaixo de 500 g.' : prior === 1 ? ' Prioridade: Estrela com estoque abaixo de 700 g.' : '')
-          + (it.un === 'Kg' ? ' Chá a granel só em quilo inteiro.' : '');
+          + (it.un === 'Kg' ? ' Chá a granel só em quilo inteiro.' : '')
+          + (VAL.has(String(it.cod)) ? ` Atenção: ${qtdTxt(VAL.get(String(it.cod)).kg, it)} deste chá vencem em ${VAL.get(String(it.cod)).dias < 0 ? 'lote já vencido' : VAL.get(String(it.cod)).dias + ' dias'}: venda antes de comprar mais.` : '');
       }
       if (!(precisa > 0)) continue;
       const c = catPorCod.get(String(it.cod));
@@ -299,8 +301,9 @@
     const corpo = h('div', null, h('div', { class: 'loading' }, h('div', null, h('div', { class: 'spinner' }), h('p', null, 'Montando o pedido…'))));
     root.append(corpo);
     const loja = state.loja;
-    Promise.all([TS.estoqueBuscar(loja), buscar(loja), TS.custosLoja()]).then(([e, p, M]) => {
+    Promise.all([TS.estoqueBuscar(loja), buscar(loja), TS.custosLoja(), TS.validade ? TS.validade.riscoPorCod(loja) : new Map()]).then(([e, p, M, vl]) => {
       if (!corpo.isConnected) return;
+      VAL = vl; // lotes de chá a granel perto da validade (Estoque → Validade)
       if (!e.estoque || !e.estoque.itens || !e.estoque.itens.length || !M) {
         corpo.replaceChildren(h('div', { class: 'notice' }, 'Ainda não há estoque desta loja no painel. O pedido usa o estoque e o custo do AppNext: veja Estoque e Margem.'));
         return;
@@ -568,7 +571,7 @@
     const sobra = R.orcamento != null ? R.orcamento - totalAgora : null;
     const MOBILE = matchMedia('(max-width: 760px)').matches;
     const cols = [
-        { key: 'produto', label: 'Produto', align: 'l', sticky: true, wrap: true, render: (r) => h('span', null, r.produto, r.obrig ? h('span', { class: 'ped-tag-obr', title: 'Vem no pedido obrigatório: não vai para o carrinho' }, '🔒 obrigatório') : r.chega ? h('span', { class: 'ped-tag-obr', title: `O pedido obrigatório já traz ${qtdTxt(r.chega, r.it)} deste produto (já descontado do "Precisa"). O que estiver em "Pedir" é a mais e vai para o carrinho.` }, `+ ${qtdTxt(r.chega, r.it)} no obrigatório`) : null, r.esp ? h('a', { class: 'ped-prio ped-esp', href: '#espera', title: `Na lista de espera: ${r.esp.clientes.join(', ')}${r.esp.pedidos > r.esp.clientes.length ? '…' : ''}. Quando a nota chegar, eles aparecem para avisar.`, onclick: (e) => e.stopPropagation() }, `⏳ ${r.esp.pedidos} esperando`) : null, r.prior && r.prior < 3 ? h('span', { class: 'ped-prio', title: r.prior === 2 ? 'Prioridade: estoque abaixo de 500 g' : 'Prioridade: Estrela com estoque abaixo de 700 g' }, r.prior === 2 ? '< 500 g' : 'Estrela < 700 g') : null, h('small', { class: 'est-tam' }, `cód. ${r.cod}`)) },
+        { key: 'produto', label: 'Produto', align: 'l', sticky: true, wrap: true, render: (r) => h('span', null, r.produto, r.obrig ? h('span', { class: 'ped-tag-obr', title: 'Vem no pedido obrigatório: não vai para o carrinho' }, '🔒 obrigatório') : r.chega ? h('span', { class: 'ped-tag-obr', title: `O pedido obrigatório já traz ${qtdTxt(r.chega, r.it)} deste produto (já descontado do "Precisa"). O que estiver em "Pedir" é a mais e vai para o carrinho.` }, `+ ${qtdTxt(r.chega, r.it)} no obrigatório`) : null, r.esp ? h('a', { class: 'ped-prio ped-esp', href: '#espera', title: `Na lista de espera: ${r.esp.clientes.join(', ')}${r.esp.pedidos > r.esp.clientes.length ? '…' : ''}. Quando a nota chegar, eles aparecem para avisar.`, onclick: (e) => e.stopPropagation() }, `⏳ ${r.esp.pedidos} esperando`) : null, VAL.has(String(r.cod)) ? (() => { const v = VAL.get(String(r.cod)); return h('a', { class: 'pd-vl', href: '#validade', title: `${qtdTxt(v.kg, r.it)} em lote${v.dias < 0 ? ' já vencido' : ` que vence em ${v.dias} dias`}: venda o que tem antes de comprar mais (Estoque → Validade)`, onclick: (e) => e.stopPropagation() }, TS.validade.badge(v.faixa)); })() : null, r.prior && r.prior < 3 ? h('span', { class: 'ped-prio', title: r.prior === 2 ? 'Prioridade: estoque abaixo de 500 g' : 'Prioridade: Estrela com estoque abaixo de 700 g' }, r.prior === 2 ? '< 500 g' : 'Estrela < 700 g') : null, h('small', { class: 'est-tam' }, `cód. ${r.cod}`)) },
         { key: 'grupoTxt', label: 'Grupo', align: 'l' },
         { key: 'classe', label: 'Classe', align: 'l', title: `Classe oficial: o que sai por mês (a mediana dos últimos ${R.classeMeses} meses fechados, então um mês de promoção pesa pouco) × margem bruta, comparados com a mediana dos outros produtos. Não muda com o filtro de período. 🔒 = travada à mão na Rentabilidade. Estrela: vende muito e tem margem boa. Volume: vende muito, margem menor. Joia: margem boa, vende pouco. Peso morto: vende pouco e margem baixa`,
           render: (r) => (r.classe ? h('span', { class: 'ped-cl ped-cl-' + r.classe, title: r.classeFixa ? 'Travada à mão na Rentabilidade' : null }, (r.classeFixa ? '🔒 ' : '') + CLASSES[r.classe]) : h('span', { class: 'muted' }, '—')), sortVal: (r) => ({ estrela: 4, volume: 3, joia: 2, peso: 1 })[r.classe] || 0 },

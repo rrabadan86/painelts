@@ -1067,6 +1067,8 @@
   TS.pages.promocao = function (root) {
     const db = TS.db, f = state.f, N = state.promo.dias;
     root.append(cabecalho('Promoção', 'Compara o período escolhido com os dias imediatamente anteriores'));
+    // chá a granel perto da validade (Estoque → Validade): o que a equipe deve vender primeiro
+    if (TS.validade) root.append(TS.validade.cartaoVenderPrimeiro(state.loja));
     if (f.de == null) { root.append(h('div', { class: 'notice' }, 'Escolha um período (por exemplo, as datas da promoção) para comparar com os dias anteriores.')); return; }
     const excl = (idx) => idx.filter((i) => !TS.rules.ids.semVendedor.has(db.vend[i]));
     const atual = excl(TS.filtrar());

@@ -264,7 +264,7 @@
    * grupo com uma tela só vira uma aba com o nome da tela; com mais de uma, a tela tem um submenu no topo.
    */
   const ROTULO = { inicio: 'Início', resumo: 'Resumo', comparativos: 'Comparativos', promocao: 'Promoção', cupons: 'Cupons', nfsaida: 'Notas fiscais', clilista: 'Lista de clientes', clientes: 'Indicadores', campanhas: 'Campanhas', espera: 'Lista de espera',
-    comissionamento: 'Comissionamento', minha: 'Minha comissão', mapa: 'Movimento e escala', rentab: 'Rentabilidade', precos: 'Preços', site: 'Site', estoque: 'Estoque', pedido: 'Pedido', notas: 'Notas fiscais', inventario: 'Inventário', dre: 'Resultado' };
+    comissionamento: 'Comissionamento', minha: 'Minha comissão', mapa: 'Movimento e escala', rentab: 'Rentabilidade', precos: 'Preços', site: 'Site', estoque: 'Estoque', pedido: 'Pedido', notas: 'Notas fiscais', inventario: 'Inventário', validade: 'Validade', dre: 'Resultado' };
   TS.GRUPOS = [];
   function montarMenu(grupoEst, temConfig) {
     const tabs = document.getElementById('tabs');
@@ -274,7 +274,7 @@
       ['Clientes', ['clilista', 'clientes', 'campanhas', 'espera']],
       ['Equipe', ['comissionamento', 'minha', 'mapa']],
       ['Produtos', grupoEst.filter((p) => ['rentab', 'precos', 'site'].includes(p))],
-      ['Estoque', grupoEst.filter((p) => ['estoque', 'pedido', 'notas', 'inventario'].includes(p))],
+      ['Estoque', grupoEst.filter((p) => ['estoque', 'validade', 'pedido', 'notas', 'inventario'].includes(p))],
       ['Resultado', grupoEst.filter((p) => p === 'dre')],
     ].map(([nome, ps]) => [nome, ps.filter((p) => PAGES.includes(p))]).filter(([, ps]) => ps.length);
     TS.GRUPOS = G;
@@ -320,9 +320,10 @@
     else if (veEspera) PAGES.push('espera');
     // Estoque e Margem: admin e franqueado veem tudo; gerente só as telas liberadas em Configurações → Usuários
     // Produtos (Rentabilidade, Preços, Site), Estoque (Estoque, Pedido, Notas fiscais) e Resultado
-    const EST = ['rentab', 'precos', 'site', 'estoque', 'pedido', 'notas', 'inventario', 'dre'];
+    const EST = ['rentab', 'precos', 'site', 'estoque', 'validade', 'pedido', 'notas', 'inventario', 'dre'];
     const grupoEst = eu.pode?.configurar ? EST : EST.filter((p) => (eu.telas || []).includes(p));
     if (eu.perfil === 'vendedor' && !grupoEst.includes('inventario')) grupoEst.push('inventario'); // a vendedora conta o estoque
+    if (eu.perfil === 'vendedor' && !grupoEst.includes('validade')) grupoEst.unshift('validade'); // e acompanha a validade dos lotes
     TS.telasEstoque = grupoEst;
     PAGES = [...PAGES.filter((p) => !grupoEst.includes(p)), ...grupoEst, ...(grupoEst.includes('notas') ? ['nfsaida'] : [])];
     if (eu.pode?.configurar) PAGES = [...PAGES, 'config'];

@@ -1,0 +1,176 @@
+/* Estoque → Validade: lotes do chá a granel (só o chá em kg tem validade).
+   Cada entrada de chá é um lote, com validade de 12 meses da entrada. A equipe digita o nº do lote (vem "0")
+   e corrige a validade se o pacote disser outra coisa. O saldo de cada lote vem do estoque atual do AppNext,
+   distribuído da entrada mais nova para a mais antiga (o mais antigo foi vendido primeiro).
+   Também alimenta: Vendas → Promoção ("vender primeiro"), Estoque → Pedido (aviso) e Clientes → Campanhas. */
+(function () {
+  const { h, fmt, state } = TS;
+  const COR = { vencido: 'vl-vencido', critica: 'vl-critica', acao: 'vl-acao', atencao: 'vl-atencao', ok: 'vl-ok', sem: 'vl-sem' };
+  const ICONE = { vencido: '⚫', critica: '🔴', acao: '🟠', atencao: '🟡', ok: '🟢', sem: '⚪' };
+  const NOME = { vencido: '⚫ Vencido', critica: '🔴 Menos de 30 dias', acao: '🟠 30 a 60 dias', atencao: '🟡 60 a 90 dias', ok: '🟢 Mais de 90 dias', sem: '⚪ Sem data' };
+  const CURTO = { vencido: 'Vencido', critica: '< 30 dias', acao: '30–60 dias', atencao: '60–90 dias', ok: '> 90 dias', sem: 'Sem data' };
+  const kgTxt = (v) => (v == null ? '—' : v < 1 ? `${fmt.int(Math.round(v * 1000))} g` : `${fmt.kg(v)} kg`);
+  const diasTxt = (d) => (d == null ? 'sem data' : d < 0 ? `venceu há ${-d} d` : d === 0 ? 'vence hoje' : `${d} d`);
+  const toast = (msg, erro) => { const t = h('div', { class: 'toast' + (erro ? ' err' : '') }, msg); document.body.append(t); setTimeout(() => t.remove(), erro ? 6000 : 3000); };
+
+  async function req(metodo, url, corpo) {
+    const r = await fetch(TS.api(url), { method: metodo, credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-Painel': '1' }, body: corpo ? JSON.stringify(corpo) : undefined });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) { const e = new Error(j.erro || 'Não deu certo.'); e.status = r.status; throw e; }
+    return j;
+  }
+  // os dados ficam guardados 1 minuto (Promoção, Pedido e a tela usam os mesmos)
+  const cache = new Map();
+  function dados(loja, forcar) {
+    const c = cache.get(loja);
+    if (!forcar && c && Date.now() - c.em < 60000) return c.p;
+    const p = req('GET', `validade?loja=${encodeURIComponent(loja)}`);
+    cache.set(loja, { em: Date.now(), p });
+    p.catch(() => cache.delete(loja));
+    return p;
+  }
+  const badge = (f) => h('span', { class: 'vl-badge ' + COR[f] }, ICONE[f] + ' ' + CURTO[f]);
+  const podeCampanha = () => (TS.paginas ? TS.paginas().includes('campanhas') : false);
+
+  /** abre Clientes → Campanhas com a campanha pronta para quem já comprou o chá */
+  function campanhaDoCha(l) {
+    const nome = l.desc.replace(/\s+/g, ' ').trim();
+    const titulo = nome.charAt(0) + nome.slice(1).toLowerCase();
+    TS.campanhaPronta = {
+      pronta: true, nome: `Validade: ${titulo}`.slice(0, 60), recorrente: '', janela: 15,
+      mensagem: `Oi, {nome}! Você que gosta de ${titulo}: estamos com ele fresquinho em condição especial esta semana na {loja} 🍵 Quer que a gente separe um pacote para você?`,
+      filtros: { produtos: ['~' + nome] },
+    };
+    location.hash = '#campanhas';
+  }
+  TS.validade = { dados, badge, campanhaDoCha };
+
+  TS.pages.validade = function (root) {
+    if (TS.subEstoque) root.append(TS.subEstoque('validade'));
+    root.append(h('div', { class: 'page-head' }, h('div', null, h('h1', { class: 'page-title' }, 'Validade e lotes'),
+      h('div', { class: 'page-sub' }, 'Chá a granel: cada entrada é um lote, com validade de 12 meses. Digite o nº do lote que está no pacote quando a mercadoria chegar.'))));
+    if (!state.loja || state.loja === 'todas') { root.append(h('div', { class: 'notice' }, 'A validade é de cada loja: escolha uma loja no seletor do topo.')); return; }
+    const corpo = h('div', null, h('div', { class: 'card' }, h('div', { class: 'loading' }, h('div', null, h('div', { class: 'spinner' }), h('p', null, 'Carregando os lotes…')))));
+    root.append(corpo);
+    const loja = state.loja;
+    dados(loja, true).then((d) => { if (corpo.isConnected) pintar(corpo, loja, d); })
+      .catch((e) => corpo.replaceChildren(h('div', { class: 'notice err' }, TS.demo ? 'A validade dos lotes não está na apresentação.' : e.message)));
+  };
+
+  const F = { faixa: 'risco', familia: '', q: '', semLote: false }; // filtros sobrevivem enquanto a tela está aberta
+  function pintar(corpo, loja, d) {
+    const r = d.resumo, pf = r.porFaixa;
+    const tile = (id) => {
+      const x = pf[id];
+      const el = TS.kpi(NOME[id], `${fmt.int(x.lotes)} lote${x.lotes === 1 ? '' : 's'}`, kgTxt(x.kg) + (x.venda ? ` · ${fmt.brl0(x.venda)}` : ''),
+        id === 'vencido' ? 'Lotes com a validade já passada: retirar da venda e lançar a perda no AppNext.' : id === 'sem' ? 'Estoque que não bate com nenhuma nota de entrada conhecida: informe a validade do pacote.' : `Lotes que vencem em: ${CURTO[id]}.`);
+      el.classList.add('vl-kpi', COR[id]);
+      el.tabIndex = 0; el.setAttribute('role', 'button');
+      const ir = () => { F.faixa = id; pintar(corpo, loja, d); };
+      el.addEventListener('click', ir); el.addEventListener('keydown', (e) => { if (e.key === 'Enter') ir(); });
+      return el;
+    };
+    const ids = ['vencido', 'critica', 'acao', 'atencao', 'ok', ...(pf.sem.lotes ? ['sem'] : [])];
+    const risco = TS.kpi(`Valor em risco (< ${d.riscoDias} dias)`, fmt.brl0(r.risco.venda), [
+      `${kgTxt(r.risco.kg)} · ${fmt.int(r.risco.lotes)} lote${r.risco.lotes === 1 ? '' : 's'}`,
+      d.custos && r.risco.custo != null ? ` · a custo ${fmt.brl0(r.risco.custo)}` : '',
+    ].join(''), 'A preço de venda (pacote de 100 g): o que deixa de entrar se o chá vencer. Inclui os vencidos.' + (d.custos ? ' A custo: o que a loja perde.' : ''));
+    risco.classList.add('vl-kpi-risco');
+
+    // filtros
+    const fams = [...new Set(d.lotes.map((l) => l.familia).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+    const selFam = h('select', { class: 'f-input', 'aria-label': 'Tipo de chá' }, h('option', { value: '' }, 'Todos os tipos de chá'), ...fams.map((f) => h('option', { value: f, selected: F.familia === f || null }, f)));
+    selFam.addEventListener('change', () => { F.familia = selFam.value; desenharTabela(); });
+    const semLote = h('label', { class: 'vl-check' }, h('input', { type: 'checkbox', checked: F.semLote || null, onchange: (e) => { F.semLote = e.target.checked; desenharTabela(); } }), ` sem nº de lote (${fmt.int(r.semLote)})`);
+    const segs = () => TS.seg([['Em risco', 'risco'], ...ids.map((id) => [CURTO[id], id]), ['Todos', 'todos']], F.faixa, (v) => { F.faixa = v; pintar(corpo, loja, d); });
+
+    const tabela = h('div');
+    function linhas() {
+      return d.lotes.filter((l) => (F.faixa === 'todos' ? true : F.faixa === 'risco' ? l.dias != null && l.dias < 90 : l.faixa === F.faixa)
+        && (!F.familia || l.familia === F.familia) && (!F.semLote || l.lote === '0'));
+    }
+    function salvar(l, corpoReq, el) {
+      if (TS.demo) { // apresentação: muda só na tela
+        if ('lote' in corpoReq) l.lote = corpoReq.lote || '0';
+        el.classList.add('vl-salvo'); setTimeout(() => el.classList.remove('vl-salvo'), 1200);
+        return;
+      }
+      el.classList.add('vl-salvando');
+      req('PUT', 'validade/lote', { loja, chave: l.chave, ...corpoReq }).then((j) => {
+        cache.delete(loja);
+        if (j.lote) Object.assign(l, j.lote);
+        el.classList.remove('vl-salvando'); el.classList.add('vl-salvo'); setTimeout(() => el.classList.remove('vl-salvo'), 1200);
+        if ('validade' in corpoReq) dados(loja, true).then((nd) => { if (corpo.isConnected) pintar(corpo, loja, nd); }).catch(() => null);
+      }).catch((e) => { el.classList.remove('vl-salvando'); toast(e.message, true); });
+    }
+    function desenharTabela() {
+      const rows = linhas();
+      const cols = [
+        { key: 'dias', label: 'Faixa', align: 'l', render: (l) => h('div', null, badge(l.faixa), h('small', { class: 'vl-dias' }, diasTxt(l.dias))) },
+        { key: 'desc', label: 'Chá', align: 'l', render: (l) => h('div', null, h('b', null, l.desc), h('small', { class: 'muted vl-sub' }, [l.cod, l.familia].filter(Boolean).join(' · '))) },
+        { key: 'entrada', label: 'Entrada', align: 'l', render: (l) => (l.entrada ? h('div', null, fmt.date(l.entrada), h('small', { class: 'muted vl-sub' }, `NF ${l.nf}`)) : h('small', { class: 'muted' }, 'saldo sem nota')) },
+        { key: 'saldo', label: 'Saldo', render: (l) => h('span', { title: l.qtdEntrada ? `chegaram ${kgTxt(l.qtdEntrada)}` : null }, kgTxt(l.saldo)) },
+        { key: 'lote', label: 'Lote', align: 'l', render: (l) => {
+          const i = h('input', { class: 'f-input vl-lote' + (l.lote === '0' ? ' vl-vazio' : ''), value: l.lote === '0' ? '' : l.lote, placeholder: '0', maxlength: 30, 'aria-label': `Lote de ${l.desc}`, autocomplete: 'off', autocapitalize: 'characters' });
+          i.addEventListener('change', () => { i.value = i.value.trim().toUpperCase(); i.classList.toggle('vl-vazio', !i.value); salvar(l, { lote: i.value }, i); });
+          i.addEventListener('keydown', (e) => { if (e.key === 'Enter') i.blur(); });
+          return i;
+        } },
+        { key: 'validade', label: 'Validade', align: 'l', render: (l) => {
+          const i = h('input', { class: 'f-input vl-val', type: 'date', value: l.validade || '', min: l.entrada || null, 'aria-label': `Validade de ${l.desc}` });
+          i.addEventListener('change', () => salvar(l, { validade: i.value }, i));
+          const volta = !l.padrao && l.validadePadrao ? h('button', { type: 'button', class: 'link-btn', title: `Voltar para 12 meses da entrada (${fmt.date(l.validadePadrao)})`, onclick: () => salvar(l, { validade: '' }, i) }, '12 meses') : null;
+          return h('div', { class: 'vl-val-box' }, i, volta, !l.padrao && l.editadoPor ? h('small', { class: 'muted vl-sub' }, `corrigida por ${l.editadoPor}`) : null);
+        } },
+        { key: 'venda', label: 'Valor (venda)', render: (l) => (l.precoKg ? fmt.brl0(l.saldo * l.precoKg) : '—'), sortVal: (l) => l.saldo * (l.precoKg || 0) },
+        ...(d.custos ? [{ key: 'custo', label: 'A custo', render: (l) => (l.custoKg ? fmt.brl0(l.saldo * l.custoKg) : '—'), sortVal: (l) => l.saldo * (l.custoKg || 0) }] : []),
+        ...(podeCampanha() ? [{ key: 'acao', label: '', align: 'l', render: (l) => (l.dias != null && l.dias < 60 && l.dias >= 0
+          ? h('button', { type: 'button', class: 'btn vl-camp', title: `Campanha no WhatsApp para quem já comprou ${l.desc}`, onclick: () => campanhaDoCha(l) }, '📣 Campanha') : null) }] : []),
+      ];
+      const rowsT = rows.map((l) => ({ ...l, venda: l.saldo * (l.precoKg || 0), custo: l.saldo * (l.custoKg || 0), dias: l.dias == null ? 99999 : l.dias, _l: l }));
+      // a tabela ordena pelo valor das chaves; sem data vai para o fim (tem a aba própria)
+      tabela.replaceChildren(rows.length ? TS.table({
+        cols: cols.map((c) => ({ ...c, render: c.render ? (row) => c.render(row._l) : undefined })), rows: rowsT, sortKey: 'dias', sortDir: 'asc',
+        search: 'Buscar chá ou lote', searchKeys: ['desc', 'cod', 'lote', 'nf'], pageSize: 50, cls: 'vl-tabela',
+      }) : TS.empty(F.faixa === 'risco' ? 'Nenhum lote vence nos próximos 90 dias. 🎉' : 'Nenhum lote com esses filtros.'));
+    }
+
+    const quando = d.em ? new Date(d.em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
+    corpo.replaceChildren(
+      h('div', { class: 'grid g-kpi vl-kpis' }, risco, ...ids.map(tile)),
+      TS.cardWithTools('Lotes de chá a granel', `Saldo pelo estoque do AppNext de ${quando} · o mais antigo sai primeiro · envasado e acessório não têm validade`,
+        h('div', { class: 'vl-filtros' }, selFam, semLote),
+        h('div', { class: 'vl-segs' }, segs()), tabela),
+      h('div', { class: 'card vl-ajuda' }, h('b', null, 'Como funciona'), h('ul', null,
+        h('li', null, 'Chegou chá a granel? Digite o nº do lote que está no pacote na linha da entrada (nota e data). A validade já vem com 12 meses da entrada; se o pacote disser outra data, corrija.'),
+        h('li', null, 'O saldo de cada lote sai do estoque do AppNext: o que sobrou fica nas entradas mais novas, porque o mais antigo é vendido primeiro. Por isso, venda sempre o lote mais antigo.'),
+        h('li', null, '⚫ Vencido: tire da venda e lance a perda no AppNext. 🔴 e 🟠: degustação, oferta e campanha. 🟡: deixe na frente da prateleira.'),
+        h('li', null, 'Os lotes em risco aparecem também em Vendas → Promoção, no Pedido (para não comprar mais do mesmo chá) e no resumo diário.'))));
+    desenharTabela();
+  }
+
+  /** Vendas → Promoção: o que vender primeiro (vencendo em menos de 60 dias) */
+  TS.validade.cartaoVenderPrimeiro = function (loja) {
+    const box = h('div');
+    if (!loja || loja === 'todas') return box;
+    dados(loja).then((d) => {
+      const ls = d.lotes.filter((l) => l.dias != null && l.dias < 60).sort((a, b) => a.dias - b.dias);
+      if (!ls.length || !box.isConnected) return;
+      box.replaceChildren(TS.card('🍃 Vender primeiro: chá perto da validade', `${fmt.int(ls.length)} lote${ls.length === 1 ? '' : 's'} vencem em menos de 60 dias · valor ${fmt.brl0(d.resumo.risco.venda)} a preço de venda`,
+        h('ul', { class: 'vl-lista' }, ...ls.slice(0, 12).map((l) => h('li', null, badge(l.faixa), h('b', null, ' ' + l.desc), h('span', { class: 'muted' }, ` · ${kgTxt(l.saldo)} · ${diasTxt(l.dias)}${l.lote !== '0' ? ` · lote ${l.lote}` : ''}`)))),
+        ls.length > 12 ? h('p', { class: 'muted' }, `e mais ${ls.length - 12}…`) : null,
+        TS.paginas && TS.paginas().includes('validade') ? h('a', { href: '#validade', class: 'link-btn' }, 'Ver todos os lotes →') : null));
+    }).catch(() => null); // sem permissão ou sem estoque: o cartão não aparece
+    return box;
+  };
+
+  /** Estoque → Pedido: por código, o lote mais urgente (< 90 dias) de cada chá */
+  TS.validade.riscoPorCod = async function (loja) {
+    const out = new Map();
+    try {
+      const d = await dados(loja);
+      for (const l of d.lotes) if (l.dias != null && l.dias < 90 && (!out.has(l.cod) || l.dias < out.get(l.cod).dias)) out.set(l.cod, { dias: l.dias, faixa: l.faixa, kg: d.lotes.filter((x) => x.cod === l.cod && x.dias != null && x.dias < 90).reduce((s, x) => s + x.saldo, 0) });
+    } catch { /* sem permissão: sem aviso */ }
+    return out;
+  };
+})();

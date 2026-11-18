@@ -263,7 +263,7 @@ const pub = path.join(__dirname, 'public');
 const APP_SCRIPTS = [
   'core.js', 'components.js', 'dicas.js', 'rules.js', 'pages.js', 'fidelidade.js',
   'clientes.js', 'campanhas.js', 'espera.js', 'extras.js', 'contabilidade.js',
-  'estoque.js', 'devolucao.js', 'precos.js', 'inventario.js', 'nfsaida.js',
+  'estoque.js', 'devolucao.js', 'precos.js', 'inventario.js', 'validade.js', 'nfsaida.js',
   'site.js', 'inicio.js', 'pedido.js', 'dre.js', 'mapa.js', 'feriados.js',
   'config.js', 'script.js', 'fechamento.js', 'sistema.js', 'main.js',
 ];
@@ -429,6 +429,21 @@ app.get('/api/demo/inventario/catalogo', (req, res) => {
   const cat = require('./src/inventario').catalogo(e.estoque, null, p ? p.vendas : null)
     .map((i) => ({ ...i, grupo: i.un === 'Kg' ? 'MATÉRIA PRIMA' : 'ACESSÓRIOS', sub: i.un === 'Kg' ? 'Matéria Prima' : '' }));
   res.json({ itens: cat, estoqueEm: e.estoque.em });
+});
+// validade na apresentação: as entradas fictícias "envelhecidas" para mostrar todas as faixas (nada é salvo)
+app.get('/api/demo/validade', (req, res) => {
+  if (!lojaDemo(req)) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  const LOTd = require('./src/lotes');
+  const e = DEMO.estoqueDemo(req.query.loja);
+  const comp = { itens: {} };
+  for (const [cod, l] of Object.entries((e.compras && e.compras.itens) || {})) {
+    const k = [...cod].reduce((a, c) => a + c.charCodeAt(0), 0) % 14; // 0 a 13 meses para trás
+    comp.itens[cod] = l.map(([d, ...r]) => [LOTd.somarMeses(d, -k), ...r]);
+  }
+  const { em, lotes } = LOTd.calcular({ estoque: e.estoque, compras: comp, tabela: null, edits: { lotes: {} } });
+  for (const l of lotes) if (l.precoKg == null && l.custoKg) l.precoKg = Math.round(l.custoKg * 2.6);
+  res.json({ em, hoje: LOTd.hojeSP(), meses: LOTd.MESES_VALIDADE, riscoDias: LOTd.RISCO_DIAS, custos: true, faixas: LOTd.FAIXAS.map((f) => ({ id: f.id, nome: f.nome, ate: Number.isFinite(f.ate) ? f.ate : null })),
+    resumo: LOTd.resumo(lotes), lotes: lotes.map((l) => ({ ...l, tipo: '', familia: '' })) });
 });
 // NF-e de saída fictícias (vendas com nota, transferência, devolução), montadas com os produtos da apresentação
 const NFSd = require('./src/nfsaida');
@@ -1403,6 +1418,44 @@ app.get('/api/inventario/contagem/:id/desfazer', (req, res) => {
   }).catch((e) => res.status(500).json({ erro: e.message }));
 });
 
+// ---------- validade e lotes do chá a granel (Estoque → Validade): a equipe informa o lote; o painel faz o resto ----------
+const LOT = require('./src/lotes');
+const podeValidade = (req) => req.perfil === 'vendedor' || podeTela(req, 'validade');
+const podeCustos = (req) => podeTela(req, 'rentab', 'estoque', 'precos', 'notas', 'pedido', 'dre');
+const lojaVal = (req, res) => {
+  if (!podeValidade(req)) { res.status(403).json({ erro: 'Sem permissão.' }); return null; }
+  const loja = req.lojas.find((l) => l.id === String((req.body && req.body.loja) || req.query.loja || ''));
+  if (!loja) { res.status(400).json({ erro: 'Escolha uma loja.' }); return null; }
+  return loja;
+};
+/** o custo não sai para quem não vê custos (vendedora e gerente sem as telas de estoque) */
+const semCusto = (req, x) => (podeCustos(req) ? x : { ...x, custoKg: null });
+app.get('/api/validade', async (req, res) => {
+  const loja = lojaVal(req, res); if (!loja) return;
+  const { em, lotes } = LOT.daLoja(loja.id);
+  // tipo de chá (Rooibos, Chá verde…) para o filtro: vem das vendas dos pacotes
+  let tipos = new Map();
+  try { tipos = new Map((await catInv(loja)).map((i) => [i.cod, i.tipo])); } catch { /* sem o tipo */ }
+  const r = LOT.resumo(lotes);
+  const custos = podeCustos(req);
+  if (!custos) { for (const p of [...Object.values(r.porFaixa), r.risco]) { p.custo = null; delete p.semCusto; } }
+  res.json({
+    em, hoje: LOT.hojeSP(), meses: LOT.MESES_VALIDADE, riscoDias: LOT.RISCO_DIAS, custos, faixas: LOT.FAIXAS.map((f) => ({ id: f.id, nome: f.nome, ate: Number.isFinite(f.ate) ? f.ate : null })),
+    resumo: r, lotes: lotes.map((l) => semCusto(req, { ...l, tipo: tipos.get(l.cod) || '', familia: INV.familia(tipos.get(l.cod) || '') })),
+  });
+});
+app.put('/api/validade/lote', express.json({ limit: '4kb' }), (req, res) => {
+  if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
+  const loja = lojaVal(req, res); if (!loja) return;
+  const { lotes } = LOT.daLoja(loja.id);
+  const r = LOT.editar(loja.id, req.body || {}, req.user, lotes);
+  if (r.erro) return res.status(400).json({ erro: r.erro });
+  const l = lotes.find((x) => x.chave === String(req.body.chave));
+  C.auditar(req.user, 'alterou lote/validade', loja.id, { loja: loja.id, cod: l.cod, nf: l.nf, entrada: l.entrada, antes: r.antes, depois: r.ok });
+  const novo = LOT.daLoja(loja.id).lotes.find((x) => x.chave === l.chave);
+  res.json({ ok: true, lote: novo ? semCusto(req, novo) : null });
+});
+
 // ---------- lista de espera (Clientes → Lista de espera): todos os perfis da loja anotam e avisam ----------
 const ESP = require('./src/espera');
 const FIx = require('./src/fidelidade');
@@ -1971,22 +2024,25 @@ const srv = app.listen(PORT, () => {
     const mig = [];
     C.alterar((cfg) => {
       for (const [nome, u] of Object.entries(cfg.usuarios || {})) {
-        if (u.telasV >= 6) continue;
+        if (u.telasV >= 7) continue;
+        // v7: Estoque → Validade (lotes do chá a granel): todo gerente acompanha
+        if (u.perfil === 'gerente' && Array.isArray(u.telas) && !u.telas.includes('validade')) { u.telas.push('validade'); mig.push(nome); }
+        if (u.telasV >= 6) { u.telasV = 7; continue; }
         // v6: Lista de espera virou uma tela que se libera: quem já tinha (todos os gerentes) continua com ela
         if (u.perfil === 'gerente' && Array.isArray(u.telas) && !u.telas.includes('espera')) { u.telas.push('espera'); mig.push(nome); }
-        if (u.telasV >= 5) { u.telasV = 6; continue; }
+        if (u.telasV >= 5) { u.telasV = 7; continue; }
         // v5: Estoque → Inventário (contagem pelo celular): quem vê o Estoque passa a ver o Inventário
         if (u.perfil === 'gerente' && Array.isArray(u.telas) && u.telas.includes('estoque') && !u.telas.includes('inventario')) { u.telas.push('inventario'); mig.push(nome); }
-        if (u.telasV >= 4) { u.telasV = 6; continue; }
+        if (u.telasV >= 4) { u.telasV = 7; continue; }
         // v4: o detalhamento de cupons saiu do Comissionamento e virou Vendas → Cupons
         if (u.perfil === 'gerente' && Array.isArray(u.telas) && u.telas.includes('comissionamento') && !u.telas.includes('cupons')) { u.telas.push('cupons'); mig.push(nome); }
-        if (u.telasV >= 3) { u.telasV = 6; continue; }
+        if (u.telasV >= 3) { u.telasV = 7; continue; }
         // v2: Preços e Site saíram do Estoque e margem; v3: o Estoque e margem virou Rentabilidade + Estoque (+ Notas fiscais)
         if (u.perfil === 'gerente' && Array.isArray(u.telas) && u.telas.includes('estoque')) {
           for (const t of [...(u.telasV >= 2 ? [] : ['precos', 'site']), 'rentab', 'notas']) if (!u.telas.includes(t)) u.telas.push(t);
           mig.push(nome);
         }
-        u.telasV = 6;
+        u.telasV = 7;
       }
     });
     if (mig.length) C.auditar('sistema', 'organizou as telas no menu novo (Vendas → Cupons; Produtos, Estoque, Resultado)', 'usuarios', { usuarios: [...new Set(mig)] });

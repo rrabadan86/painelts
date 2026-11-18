@@ -114,7 +114,10 @@
       const lista = j.campanhas || [];
       lista.copias = j.copias || [];
       const novas = await rodadasRecorrentes(lista);
-      if (corpo.isConnected) pintarLista(corpo, lista, novas);
+      if (!corpo.isConnected) return;
+      pintarLista(corpo, lista, novas);
+      // vinda de Estoque → Validade: a campanha já montada para quem comprou o chá perto de vencer
+      if (TS.campanhaPronta) { const b = TS.campanhaPronta; TS.campanhaPronta = null; criar(corpo, lista, b); }
     }).catch((e) => corpo.replaceChildren(h('div', { class: 'notice err' }, e.message)));
   };
 
@@ -228,7 +231,7 @@
     const campo = (rot, el, dica) => h('label', { class: 'cp-campo' }, h('span', null, rot, dica ? TS.dica(dica) : null), el);
     const inp = (k, ph, tipo = 'number') => { const i = h('input', { class: 'f-input', type: tipo, placeholder: ph, value: f[k] ?? '', min: tipo === 'number' ? 0 : null }); i.addEventListener('input', () => { f[k] = i.value; atualizar(); }); return i; };
     const sel = (k, opcoes) => { const s = h('select', { class: 'f-input' }, ...opcoes.map(([v, t]) => h('option', { value: v, selected: String(f[k]) === String(v) || null }, t))); s.addEventListener('change', () => { f[k] = s.value; atualizar(); }); return s; };
-    const nome = h('input', { class: 'f-input', placeholder: 'Ex.: Pontos vencendo em dezembro', value: base ? base.nome + (editando || base.copia ? '' : ' (cópia)') : '' });
+    const nome = h('input', { class: 'f-input', placeholder: 'Ex.: Pontos vencendo em dezembro', value: base ? base.nome + (editando || base.copia || base.pronta ? '' : ' (cópia)') : '' });
     const msg = h('textarea', { class: 'f-input cp-msg', rows: 4 }, base ? base.mensagem : (modelos.find((m) => /pontos/i.test(m.nome)) || modelos[0] || { texto: '' }).texto);
     const modSel = h('select', { class: 'f-input' }, h('option', { value: '' }, 'Usar um modelo…'), ...modelos.map((m, k) => h('option', { value: k }, m.nome)));
     modSel.addEventListener('change', () => { if (modSel.value !== '') { msg.value = modelos[+modSel.value].texto; atualizar(); } modSel.value = ''; });

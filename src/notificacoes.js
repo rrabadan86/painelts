@@ -114,7 +114,9 @@ async function montarTexto(lojasIds, obter, comAlertas = true) {
       const r = I.resumoDiario(d);
       const al = comAlertas ? r.alertas.filter((a) => a.tipo !== 'alta').slice(0, 4) : [];
       const bons = comAlertas ? r.alertas.filter((a) => a.tipo === 'alta').slice(0, 2) : [];
-      blocos.push([`━━ ${r.titulo} ━━`, ...r.linhas,
+      let validade = [];
+      try { validade = require('./lotes').linhasResumo(id); } catch { /* sem estoque: sem o bloco */ }
+      blocos.push([`━━ ${r.titulo} ━━`, ...r.linhas, ...validade,
         ...(al.length ? ['', '⚠️ Atenção:', ...al.map((a) => '• ' + a.texto)] : []),
         ...(bons.length ? ['', '👏 Destaques:', ...bons.map((a) => '• ' + a.texto)] : [])].join('\n'));
     } catch (e) { blocos.push(`━━ ${id} ━━\nNão foi possível montar o resumo: ${e.message}`); }

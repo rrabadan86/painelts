@@ -2069,3 +2069,36 @@ body.com-camada .ped-barra { display: none; }
   .prc-popup { width: 100% !important; max-width: 100%; max-height: 92vh; border-radius: 16px 16px 12px 12px; padding: 16px; }
   .nf-vinculo-btn { flex-direction: column; align-items: flex-start; }
 }
+
+/* ---------- Estoque → Validade (lotes do chá a granel) ---------- */
+.vl-badge { display: inline-block; border-radius: 6px; padding: 1px 7px; font-size: 11px; font-weight: 700; white-space: nowrap; }
+.vl-vencido { --vl: #3a3a3a; --vl-bg: #E4E2DE; }
+.vl-critica { --vl: #9E2F1A; --vl-bg: #F6DCD3; }
+.vl-acao { --vl: #9A5300; --vl-bg: #FBE6CC; }
+.vl-atencao { --vl: #7a5a00; --vl-bg: #F6EBC4; }
+.vl-ok { --vl: #2C5234; --vl-bg: #E3EDE1; }
+.vl-sem { --vl: #5d6670; --vl-bg: #ECEFF2; }
+.vl-badge { color: var(--vl); background: var(--vl-bg); }
+.vl-kpis { grid-template-columns: repeat(auto-fit, minmax(138px, 1fr)); }
+.vl-kpi { cursor: pointer; }
+.vl-kpi::before { background: var(--vl); }
+.vl-kpi:hover, .vl-kpi:focus-visible { box-shadow: 0 0 0 2px var(--vl-bg), var(--shadow); outline: none; }
+.vl-kpi-risco::before { background: var(--bad); }
+.vl-kpi .kpi-value { font-size: 20px; }
+.vl-filtros { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.vl-filtros select { min-width: 200px; }
+.vl-check { font-size: 13px; color: var(--muted); white-space: nowrap; cursor: pointer; }
+.vl-segs { margin: 4px 0 10px; overflow-x: auto; }
+.vl-dias, .vl-sub { display: block; font-size: 11px; color: var(--muted); margin-top: 2px; }
+.vl-lote { width: 120px; text-transform: uppercase; padding: 5px 8px; }
+.vl-lote.vl-vazio { border-color: var(--gold); background: #FFFCF2; }
+.vl-val { width: 150px; padding: 4px 8px; }
+.vl-val-box { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; }
+.vl-salvando { opacity: .55; }
+.vl-salvo { border-color: var(--good) !important; box-shadow: 0 0 0 2px #E3EDE1; transition: box-shadow .3s; }
+.vl-camp { padding: 4px 10px; font-size: 12px; white-space: nowrap; }
+.vl-ajuda ul { margin: 6px 0 0; padding-left: 18px; color: var(--muted); font-size: 13px; line-height: 1.55; }
+.vl-lista { list-style: none; margin: 4px 0 6px; padding: 0; display: grid; gap: 6px; }
+.vl-lista li { font-size: 13px; }
+.pd-vl { margin-left: 6px; cursor: help; }
+@media (max-width: 760px) { .vl-lote, .vl-val { width: 100%; } .vl-filtros select { min-width: 0; flex: 1; } }
