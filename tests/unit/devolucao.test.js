@@ -163,3 +163,18 @@ test('devolução: exclusão limpa registro/fila, NF-e cancelada libera saldo e 
 });
 
 
+
+test('devolução: emitir só depois de um teste com total (até 2 horas)', () => {
+  const nota2 = { ...nota, id: '11111111-2222-3333-4444-555555555555' };
+  const d = DEV.criar('le', nota2, { itens: [{ cod: '406', tipo: 'faltou', qtd: 1 }] }, 'g').ok;
+  assert.match(DEV.pedirNfe('le', d, false, true).erro, /teste/);
+  DEV.atualizar('le', d.id, (x) => { x.nfe = { estado: 'teste', total: 12.5, em: new Date().toISOString(), fim: new Date().toISOString() }; });
+  const r = DEV.pedirNfe('le', DEV.ler('le', d.id), false, true).ok;
+  assert.deepEqual([r.nfe.estado, r.nfe.emitir], ['na_fila', true]);
+  const dir = path.join(tmp, 'le', 'nfe', 'envio');
+  const pedido = JSON.parse(fs.readFileSync(path.join(dir, d.id + '.json'), 'utf8'));
+  assert.deepEqual([pedido.emitir, pedido.simular, pedido.totalTeste], [true, false, 12.5]);
+  fs.writeFileSync(path.join(dir, d.id + '.resultado.json'), JSON.stringify({ ok: true, emitida: true, em: new Date(Date.now() + 1000).toISOString(), nota: { total: 12.5 }, nfe: { numero: 75, chave: 'x', protocolo: 'p' } }));
+  const c = DEV.conferirNfe('le', DEV.ler('le', d.id));
+  assert.deepEqual([c.nfe.estado, c.nfe.emitida.numero], ['ok', 75]);
+});

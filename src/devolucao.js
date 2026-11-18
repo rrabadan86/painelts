@@ -195,12 +195,19 @@ function textoEmail(d, nomeLoja) {
 
 // ---------- NF-e de devolução: o robô grava a saída de devolução no AppNext SEM concluir ----------
 const envioNfe = (id) => path.join(C.pastaLoja(id), 'nfe', 'envio');
-function pedirNfe(id, d, simular) {
+function pedirNfe(id, d, simular, emitir) {
   if (!/^[0-9a-f-]{36}$/.test(String(d.nota.id || ''))) return { erro: 'Esta nota não tem o id do AppNext (atualize as notas de entrada).' };
+  // emitir (concluir e transmitir) só depois de um teste conferido há pouco: o robô confere se o total continua o mesmo
+  let totalTeste = null;
+  if (emitir) {
+    if (!(d.nfe && d.nfe.estado === 'teste' && d.nfe.total != null && Date.now() - Date.parse(d.nfe.fim || d.nfe.em) < 2 * 3600e3)) return { erro: 'Para emitir, teste antes ("testar sem salvar") e confira o total: o teste vale por 2 horas.' };
+    totalTeste = d.nfe.total;
+    simular = false;
+  }
   fs.mkdirSync(envioNfe(id), { recursive: true });
   try { fs.unlinkSync(path.join(envioNfe(id), d.id + '.resultado.json')); } catch { /* ok */ }
-  C.gravarAtomico(path.join(envioNfe(id), d.id + '.json'), JSON.stringify({ entradaId: d.nota.id, itens: [...d.itens.reduce((m, i) => m.set(i.cod, Math.round(((m.get(i.cod) || 0) + i.qtd) * 1000) / 1000), new Map())].map(([codigo, qtd]) => ({ codigo, qtd })), simular: !!simular }), 0o640);
-  return { ok: atualizar(id, d.id, (x) => { x.nfe = { estado: 'na_fila', em: new Date().toISOString(), simular: !!simular }; }) };
+  C.gravarAtomico(path.join(envioNfe(id), d.id + '.json'), JSON.stringify({ entradaId: d.nota.id, itens: [...d.itens.reduce((m, i) => m.set(i.cod, Math.round(((m.get(i.cod) || 0) + i.qtd) * 1000) / 1000), new Map())].map(([codigo, qtd]) => ({ codigo, qtd })), simular: !!simular, emitir: !!emitir, totalTeste }), 0o640);
+  return { ok: atualizar(id, d.id, (x) => { x.nfe = { estado: 'na_fila', em: new Date().toISOString(), simular: !!simular, emitir: !!emitir }; }) };
 }
 /** resultado do robô para a NF-e de devolução */
 function conferirNfe(id, d) {
@@ -208,7 +215,9 @@ function conferirNfe(id, d) {
   const r = lerJ(path.join(envioNfe(id), d.id + '.resultado.json'), null);
   if (!r || !r.em || Date.parse(r.em) < Date.parse(d.nfe.em)) return d;
   return atualizar(id, d.id, (x) => {
-    x.nfe = { ...x.nfe, fim: r.em, estado: r.ok ? (r.simulado ? 'teste' : 'ok') : 'erro', erro: r.ok ? undefined : r.erro || 'falhou', cfop: r.nota && r.nota.cfop, total: r.nota && r.nota.total, chaveRef: (r.nota && r.nota.chaveRef) || x.nfe.chaveRef, saidaId: (r.nota && r.nota.saidaId) || x.nfe.saidaId };
+    // emitida = concluída e autorizada pela SEFAZ (o e-mail sai quando o XML chegar); concluida = concluída mas não transmitida
+    x.nfe = { ...x.nfe, fim: r.em, estado: r.ok ? (r.simulado ? 'teste' : 'ok') : r.concluida ? 'concluida' : 'erro', erro: r.ok ? undefined : r.erro || 'falhou', cfop: r.nota && r.nota.cfop, total: r.nota && r.nota.total, chaveRef: (r.nota && r.nota.chaveRef) || x.nfe.chaveRef, saidaId: (r.nota && r.nota.saidaId) || x.nfe.saidaId,
+      emitida: r.emitida && r.nfe ? { numero: r.nfe.numero, serie: r.nfe.serie, chave: r.nfe.chave, protocolo: r.nfe.protocolo } : x.nfe.emitida };
   });
 }
 function erroNfe(id, did, erro) { return atualizar(id, did, (x) => { x.nfe = { ...(x.nfe || {}), estado: 'erro', erro, fim: new Date().toISOString() }; }); }

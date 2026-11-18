@@ -63,6 +63,22 @@ function criar(id, b, por) {
   gravarLista(id, [reg, ...lista(id)]);
   return { ok: reg };
 }
+/** emitir (concluir e transmitir) a partir de um teste conferido há pouco: mesmo pedido, agora para valer */
+function emitir(id, ridTeste, por) {
+  const l = lista(id);
+  const t = l.find((x) => x.id === ridTeste);
+  if (!t || t.estado !== 'teste') return { erro: 'Emita a partir de um teste que deu certo ("Testar sem salvar").' };
+  if (t.emitidaEm) return { erro: 'Esta nota já foi mandada para emitir.' };
+  if (!(Date.now() - Date.parse(t.fim || t.em) < 2 * 3600e3)) return { erro: 'Este teste tem mais de 2 horas: teste de novo para conferir o total antes de emitir.' };
+  const orig = lerJ(path.join(envio(id), ridTeste + '.json'), null);
+  if (!orig) return { erro: 'Não achei o pedido do teste: teste de novo.' };
+  const rid = crypto.randomBytes(6).toString('hex');
+  C.gravarAtomico(path.join(envio(id), rid + '.json'), JSON.stringify({ ...orig, simular: false, emitir: true, totalTeste: t.totalAppNext ?? null }), 0o640);
+  const reg = { ...t, id: rid, em: new Date().toISOString(), por, simular: false, emitir: true, de: ridTeste, estado: 'na_fila', fim: undefined, erro: undefined };
+  t.emitidaEm = reg.em; t.emitidaPor = por;
+  gravarLista(id, [reg, ...l]);
+  return { ok: reg };
+}
 function erro(id, rid, msg) { const l = lista(id); const r = l.find((x) => x.id === rid); if (r) { r.estado = 'erro'; r.erro = msg; r.fim = new Date().toISOString(); gravarLista(id, l); } }
 /** resultado do robô para os rascunhos na fila */
 function conferir(id) {
@@ -72,7 +88,11 @@ function conferir(id) {
     if (r.estado !== 'na_fila') continue;
     const x = lerJ(path.join(envio(id), r.id + '.resultado.json'), null);
     if (!x || !x.em || Date.parse(x.em) < Date.parse(r.em)) continue;
-    if (x.ok && x.simulado) { r.estado = 'teste'; r.totalAppNext = x.nota && x.nota.total; } else if (x.ok) { r.estado = 'ok'; r.totalAppNext = x.nota && x.nota.total; } else { r.estado = 'erro'; r.erro = x.erro || 'falhou'; }
+    if (x.ok && x.simulado) { r.estado = 'teste'; r.totalAppNext = x.nota && x.nota.total; }
+    else if (x.ok && x.emitida) { r.estado = 'autorizada'; r.totalAppNext = x.nota && x.nota.total; r.nfe = x.nfe ? { numero: x.nfe.numero, serie: x.nfe.serie, chave: x.nfe.chave, protocolo: x.nfe.protocolo } : null; }
+    else if (x.ok) { r.estado = 'ok'; r.totalAppNext = x.nota && x.nota.total; }
+    else if (x.concluida) { r.estado = 'concluida'; r.erro = x.erro || 'concluída sem transmitir'; }
+    else { r.estado = 'erro'; r.erro = x.erro || 'falhou'; }
     r.fim = x.em;
     mudou.push(r);
   }
@@ -152,4 +172,4 @@ function conferirParceiros(id) {
   return { lista: l, mudou };
 }
 
-module.exports = { cadastros, erroCadastros, prepararCadastros, lista, criar, erro, conferir, criarParceiro, listaParceiros, erroParceiro, conferirParceiros, cpfOk, cnpjOk };
+module.exports = { cadastros, erroCadastros, prepararCadastros, lista, criar, emitir, erro, conferir, criarParceiro, listaParceiros, erroParceiro, conferirParceiros, cpfOk, cnpjOk };

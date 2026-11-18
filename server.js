@@ -1020,15 +1020,16 @@ async function enviarDevolucao(loja, d, forcarReenvio = false) {
   }
 }
 /** pede ao robô a NF-e de devolução (gravada no AppNext sem concluir) */
-async function nfeDevolucao(loja, d, por, simular) {
+async function nfeDevolucao(loja, d, por, simular, emitir) {
   if (!COL.ativo()) return DEV.erroNfe(loja.id, d.id, 'o coletor não está ligado nesta VPS');
-  const p = DEV.pedirNfe(loja.id, d, simular);
+  const p = DEV.pedirNfe(loja.id, d, simular, emitir);
+  if (p.erro && emitir) return { erroPedido: p.erro };
   if (p.erro) return DEV.erroNfe(loja.id, d.id, p.erro);
   try {
     const x = await COL.nfe(loja.id, d.id, 'devolucao', por);
     if (x.status >= 400) return DEV.erroNfe(loja.id, d.id, (x.json && x.json.erro) || 'o coletor recusou');
   } catch (e) { return DEV.erroNfe(loja.id, d.id, 'sem resposta do coletor'); }
-  C.auditar(por, simular ? 'pediu teste da NF-e de devolução (sem salvar)' : 'pediu a NF-e de devolução no AppNext', loja.id, { loja: loja.id, nf: d.nota.nf });
+  C.auditar(por, emitir ? 'mandou EMITIR a NF-e de devolução (concluir e transmitir à SEFAZ)' : simular ? 'pediu teste da NF-e de devolução (sem salvar)' : 'pediu a NF-e de devolução no AppNext', loja.id, { loja: loja.id, nf: d.nota.nf, total: emitir ? d.nfe && d.nfe.total : undefined });
   return DEV.ler(loja.id, d.id);
 }
 app.get('/api/devolucoes', async (req, res) => {
@@ -1046,7 +1047,7 @@ app.get('/api/devolucoes', async (req, res) => {
   if (ds.some((d) => d && d.nfe && d.nfe.estado === 'erro') && COL.ativo()) {
     let robo = null; try { robo = (await COL.status(loja.id)).nfe; } catch { /* ok */ }
     const u = robo && robo.ultima;
-    if (u && u.log) ds.forEach((d) => { if (d && d.nfe && d.nfe.estado === 'erro' && u.id === d.id) d.nfe.log = u.log; });
+    if (u && u.log) ds.forEach((d) => { if (d && d.nfe && (d.nfe.estado === 'erro' || d.nfe.estado === 'concluida') && u.id === d.id) d.nfe.log = u.log; });
   }
   // a NF-e de devolução foi autorizada (o XML chegou)? manda o e-mail que estava esperando
   for (let k = 0; k < ds.length; k++) if (ds[k] && ds[k].email && ds[k].email.estado === 'aguardando_nf' && ds[k].nfe && ds[k].nfe.estado === 'ok' && acharNfDevolucao(loja, ds[k])) ds[k] = await enviarDevolucao(loja, DEV.ler(loja.id, ds[k].id));
@@ -1109,8 +1110,11 @@ app.post('/api/devolucoes/:id/nfe', express.json({ limit: '1kb' }), async (req, 
   const loja = lojaDev(req, res); if (!loja) return;
   const d = DEV.ler(loja.id, String(req.params.id));
   if (!d) return res.status(404).json({ erro: 'Devolução não encontrada.' });
-  if (d.nfe && (d.nfe.estado === 'na_fila' || (d.nfe.estado === 'ok' && d.nfe.situacao !== 'cancelada'))) return res.status(409).json({ erro: d.nfe.estado === 'ok' ? 'A NF-e desta devolução já foi gravada no AppNext.' : 'O robô já está cuidando desta devolução.' });
-  res.json({ ok: true, devolucao: await nfeDevolucao(loja, d, req.user, !!(req.body || {}).simular) });
+  if (d.nfe && (d.nfe.estado === 'na_fila' || d.nfe.estado === 'concluida' || (d.nfe.estado === 'ok' && d.nfe.situacao !== 'cancelada'))) return res.status(409).json({ erro: d.nfe.estado === 'ok' ? 'A NF-e desta devolução já foi gravada no AppNext.' : d.nfe.estado === 'concluida' ? 'A saída já foi concluída no AppNext: homologue lá.' : 'O robô já está cuidando desta devolução.' });
+  const b = req.body || {};
+  const r = await nfeDevolucao(loja, d, req.user, !!b.simular, !!b.emitir);
+  if (r && r.erroPedido) return res.status(400).json({ erro: r.erroPedido });
+  res.json({ ok: true, devolucao: r });
 });
 app.post('/api/devolucoes/:id/reenviar', express.json({ limit: '1kb' }), async (req, res) => {
   const loja = lojaDev(req, res); if (!loja) return;
@@ -1138,7 +1142,7 @@ const lojaNfe = (req, res) => {
 app.get('/api/nfe', async (req, res) => {
   const loja = lojaNfe(req, res); if (!loja) return;
   const { lista, mudou } = NFE.conferir(loja.id);
-  for (const r of mudou) C.auditar(r.por || 'sistema', r.estado === 'ok' ? 'robô salvou rascunho de NF-e no AppNext' : r.estado === 'teste' ? 'robô testou uma NF-e (nada salvo)' : 'robô não conseguiu salvar o rascunho de NF-e', loja.id, { loja: loja.id, parceiro: r.parceiro.nome, total: r.total, erro: r.erro || null });
+  for (const r of mudou) C.auditar(r.por || 'sistema', r.estado === 'ok' ? 'robô salvou rascunho de NF-e no AppNext' : r.estado === 'teste' ? 'robô testou uma NF-e (nada salvo)' : r.estado === 'autorizada' ? 'robô emitiu NF-e (autorizada pela SEFAZ)' : r.estado === 'concluida' ? 'robô concluiu a NF-e mas ela não foi autorizada' : 'robô não conseguiu salvar o rascunho de NF-e', loja.id, { loja: loja.id, parceiro: r.parceiro.nome, total: r.total, nfe: r.nfe || null, erro: r.erro || null });
   let robo = null;
   if (COL.ativo()) { try { robo = (await COL.status(loja.id)).nfe; } catch { /* ok */ } }
   // pedido perdido (o coletor reiniciou com ele na fila): vira erro
@@ -1160,6 +1164,19 @@ app.post('/api/nfe/cadastros', express.json({ limit: '2kb' }), async (req, res) 
     if (x.status >= 400) return res.status(x.status === 409 ? 409 : 400).json({ erro: (x.json && x.json.erro) || 'O coletor recusou.' });
   } catch (e) { return res.status(502).json({ erro: 'Não consegui falar com o coletor: ' + e.message }); }
   res.json({ ok: true });
+});
+// emitir a NF-e de venda: a partir de um teste conferido (o robô conclui e homologa; confere se o total é o do teste)
+app.post('/api/nfe/emitir', express.json({ limit: '2kb' }), async (req, res) => {
+  const loja = lojaNfe(req, res); if (!loja) return;
+  if (!COL.ativo()) return res.status(400).json({ erro: 'O coletor não está ligado nesta VPS.' });
+  const r = NFE.emitir(loja.id, String((req.body || {}).id || ''), req.user);
+  if (r.erro) return res.status(400).json({ erro: r.erro });
+  try {
+    const x = await COL.nfe(loja.id, r.ok.id, 'rascunho', req.user);
+    if (x.status >= 400) { const erro = (x.json && x.json.erro) || 'O coletor recusou.'; NFE.erro(loja.id, r.ok.id, erro); return res.status(x.status === 409 ? 409 : 400).json({ erro }); }
+  } catch (e) { NFE.erro(loja.id, r.ok.id, 'sem resposta do coletor'); return res.status(502).json({ erro: 'Não consegui falar com o coletor: ' + e.message }); }
+  C.auditar(req.user, 'mandou EMITIR NF-e de venda (concluir e transmitir à SEFAZ)', loja.id, { loja: loja.id, parceiro: r.ok.parceiro.nome, itens: r.ok.itens.length, total: r.ok.totalAppNext ?? r.ok.total });
+  res.json({ ok: true, rascunho: r.ok });
 });
 // parceiro novo: o robô cadastra em Parceiros → Cadastrar do AppNext (só com o clique e a confirmação de quem pediu)
 app.post('/api/nfe/parceiro', express.json({ limit: '4kb' }), async (req, res) => {

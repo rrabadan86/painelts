@@ -17,6 +17,7 @@
     teste: 'NF-e: teste ok, tudo conferiu (nada foi salvo)',
     erro: 'NF-e de devolução não foi gravada',
     pendente: 'NF-e: ainda não pedida',
+    concluida: 'NF-e de devolução CONCLUÍDA no AppNext, mas NÃO transmitida: homologue lá',
   };
   const EMAIL_TXT = { aguardando_nf: 'e-mail aguardando a NF-e de devolução ser autorizada (vai com o PDF e o XML)', enviado: 'e-mail enviado', erro: 'e-mail não foi enviado', sem_destinatarios: 'sem destinatários: e-mail não enviado', pendente: 'enviando e-mail…' };
 
@@ -74,7 +75,16 @@
       } catch (er) { alert(er.message); excluir.disabled = false; }
     });
     const podePedir = nf.estado === 'erro' || nf.estado === 'teste' || nf.estado === 'pendente' || ehCanc;
-    const nfeTxt = ehCanc ? NFE_TXT.cancelada : nf.chave ? `NF-e de devolução nº ${nf.numero ?? '—'} autorizada` : (NFE_TXT[nf.estado] || nf.estado);
+    const nfeTxt = ehCanc ? NFE_TXT.cancelada : nf.chave ? `NF-e de devolução nº ${nf.numero ?? '—'} autorizada`
+      : nf.emitida ? `NF-e de devolução nº ${nf.emitida.numero ?? '—'} autorizada pela SEFAZ (o e-mail sai quando o XML chegar ao painel)`
+      : nf.estado === 'na_fila' && nf.emitir ? 'NF-e: o robô está emitindo (concluir e transmitir)…'
+      : nf.estado === 'teste' && nf.total != null ? `NF-e: teste ok, total no AppNext ${fmt.brl(nf.total)} (nada foi salvo)` : (NFE_TXT[nf.estado] || nf.estado);
+    // emitir direto: depois de um teste que deu certo há menos de 2 horas
+    const podeEmitir = nf.estado === 'teste' && nf.total != null && Date.now() - Date.parse(nf.fim || nf.em) < 2 * 3600e3;
+    const emitirNfe = async () => {
+      if (!confirm(`EMITIR a NF-e de devolução no AppNext?\n\nNF de entrada ${d.nota.nf} · ${d.nota.fornecedor || ''}\nTotal calculado pelo AppNext: ${fmt.brl(nf.total)}\n\nO robô preenche de novo, confere se o total continua o mesmo, CONCLUI e HOMOLOGA (transmite à SEFAZ). Depois de autorizada, a nota só pode ser cancelada em até 24 horas. O e-mail ao fornecedor sai com a NF-e assim que o XML chegar ao painel.`)) return;
+      try { const r = await api('POST', `devolucoes/${d.id}/nfe`, { loja, emitir: true }); el.replaceWith(itemFeito(r.devolucao, loja, aoMudar)); if (aoMudar) aoMudar(); } catch (er) { alert(er.message); }
+    };
     const el = h('div', { class: 'dev-feita' },
       h('div', { class: 'dev-feita-cab' },
         h('span', null, h('b', null, `Devolução de ${quando(d.em)}`), h('small', { class: 'muted' }, ` por ${d.por} · ${d.itens.length} ${d.itens.length === 1 ? 'item' : 'itens'} · `),
@@ -82,12 +92,13 @@
         excluir),
       h('div', null, h('span', { class: 'dev-st ' + (e.estado === 'enviado' ? 'ok' : e.estado === 'aguardando_nf' ? 'fila' : 'erro') }, (e.estado === 'enviado' && e.comNota ? 'e-mail enviado com a NF-e' : EMAIL_TXT[e.estado] || e.estado)), e.erro ? h('small', { class: 'neg' }, ' ' + e.erro) : null, ' ', reenviar),
       h('div', { class: 'dev-nfe-linha' },
-        h('span', { class: 'dev-st ' + (ehCanc ? 'canc' : nf.estado === 'ok' || nf.estado === 'teste' ? 'ok' : nf.estado === 'erro' ? 'erro' : 'fila') }, (nf.estado === 'na_fila' ? '⏳ ' : '') + nfeTxt),
+        h('span', { class: 'dev-st ' + (ehCanc ? 'canc' : nf.estado === 'ok' || nf.estado === 'teste' ? 'ok' : nf.estado === 'erro' || nf.estado === 'concluida' ? 'erro' : 'fila') }, (nf.estado === 'na_fila' ? '⏳ ' : '') + nfeTxt),
+        podeEmitir ? h('button', { type: 'button', class: 'btn primary dev-emitir', onclick: emitirNfe, title: 'Concluir e transmitir à SEFAZ' }, 'Emitir NF-e') : null,
         nf.chave ? h('button', { type: 'button', class: 'btn prc-ver dev-ver-nfe', onclick: () => TS.abrirNFe && TS.abrirNFe(nf.chave, loja, { sobrepor: true }) }, `↪ NF-e de saída nº ${nf.numero ?? '—'}${ehCanc ? ' (cancelada)' : ''} · ver detalhes`) : null,
         nf.cfop ? h('small', { class: 'muted' }, ` · CFOP ${nf.cfop}`) : null, nf.erro ? h('small', { class: 'neg' }, ' ' + nf.erro) : null,
-        podePedir ? h('span', null, ' ', h('button', { type: 'button', class: 'link-btn', onclick: pedirNfe(false) }, nf.estado === 'erro' || ehCanc ? 'gravar novamente no AppNext' : 'gravar no AppNext'), ' · ', h('button', { type: 'button', class: 'link-btn', onclick: pedirNfe(true) }, 'testar sem salvar')) : null),
+        podePedir ? h('span', null, ' ', h('button', { type: 'button', class: 'link-btn', onclick: pedirNfe(true), title: 'O robô preenche e confere; mostra o total do AppNext. Depois dá para emitir direto.' }, 'testar sem salvar'), ' · ', h('button', { type: 'button', class: 'link-btn', onclick: pedirNfe(false), title: 'Só grava no AppNext, sem concluir (a loja conclui e transmite lá)' }, nf.estado === 'erro' || ehCanc ? 'gravar rascunho novamente' : 'só gravar rascunho')) : null),
       nf.estado === 'na_fila' && nf.robo && nf.robo.aoVivo ? h('pre', { class: 'inv-log' }, nf.robo.aoVivo.slice(-8).join('\n')) : null,
-      nf.estado === 'erro' && nf.log && nf.log.length ? h('details', null, h('summary', null, 'log do robô'), h('pre', { class: 'inv-log' }, nf.log.join('\n'))) : null);
+      (nf.estado === 'erro' || nf.estado === 'concluida') && nf.log && nf.log.length ? h('details', null, h('summary', null, 'log do robô'), h('pre', { class: 'inv-log' }, nf.log.join('\n'))) : null);
     reenviar.addEventListener('click', async () => { if (e.estado === 'aguardando_nf' && !confirm('Mandar o e-mail agora, SEM a NF-e de devolução (só a planilha e as fotos)?')) return; reenviar.disabled = true; try { const r = await api('POST', `devolucoes/${d.id}/reenviar`, { loja }); el.replaceWith(itemFeito(r.devolucao, loja, aoMudar)); if (aoMudar) aoMudar(); } catch (er) { alert(er.message); reenviar.disabled = false; } });
     if (nf.estado === 'na_fila') setTimeout(async () => {
       if (!el.isConnected) return;

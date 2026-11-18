@@ -40,7 +40,8 @@
 
   // ======================= nova NF-e: rascunho no AppNext pelo robô =======================
   const quandoTZ = (iso) => (iso ? new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—');
-  const ESTADO_NFE = { na_fila: ['na fila do robô', 'nfe-st-fila'], ok: ['rascunho salvo no AppNext', 'nfe-st-ok'], teste: ['teste ok: tudo conferiu (nada foi salvo)', 'nfe-st-fila'], erro: ['não foi salvo', 'nfe-st-erro'] };
+  const ESTADO_NFE = { na_fila: ['na fila do robô', 'nfe-st-fila'], ok: ['rascunho salvo no AppNext', 'nfe-st-ok'], teste: ['teste ok: tudo conferiu (nada foi salvo)', 'nfe-st-fila'], erro: ['não foi salvo', 'nfe-st-erro'],
+    autorizada: ['NF-e autorizada pela SEFAZ', 'nfe-st-ok nfe-st-aut'], concluida: ['concluída, NÃO transmitida', 'nfe-st-erro'] };
   const ESQ = (x) => String(x ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
   async function nfeApi(metodo, rota, corpo) {
     const r = await fetch(TS.api(rota), { method: metodo, credentials: 'same-origin', headers: metodo === 'GET' ? {} : { 'Content-Type': 'application/json', 'X-Painel': '1' }, body: corpo ? JSON.stringify(corpo) : undefined });
@@ -72,7 +73,7 @@
     const roboVivo = () => {
       const r = info && info.robo;
       if (!r || (r.estado !== 'na_fila' && r.estado !== 'rodando')) return null;
-      return h('div', { class: 'nfe-vivo' }, h('div', null, h('span', { class: 'cfg-pulso' }), ' ', h('b', null, r.acao === 'cadastros' ? 'Lendo os cadastros do AppNext…' : r.acao === 'parceiro' ? 'Cadastrando o parceiro no AppNext…' : 'Preenchendo a nota no AppNext…'),
+      return h('div', { class: 'nfe-vivo' }, h('div', null, h('span', { class: 'cfg-pulso' }), ' ', h('b', null, r.acao === 'cadastros' ? 'Lendo os cadastros do AppNext…' : r.acao === 'parceiro' ? 'Cadastrando o parceiro no AppNext…' : (info.rascunhos || []).some((x) => x.id === r.id && x.emitir) ? 'Emitindo a NF-e (concluir e transmitir à SEFAZ)…' : 'Preenchendo a nota no AppNext…'),
         h('small', { class: 'muted' }, r.estado === 'rodando' ? (r.acao === 'parceiro' ? ' o robô está em Parceiros → Cadastrar' : ' o robô está na tela de Saída de Produtos') : ' na fila do robô')),
         r.aoVivo && r.aoVivo.length ? h('pre', { class: 'inv-log' }, r.aoVivo.slice(-14).join('\n')) : null);
     };
@@ -89,14 +90,16 @@
     /** rascunhos pedidos ao robô: tabela no padrão das notas de saída (filtro, busca, paginação) */
     function listaRascunhos(ras) {
       const ult = info.robo && info.robo.ultima;
-      const FIL = { todos: ['Todos', () => true], ok: ['Salvos', (r) => r.estado === 'ok'], erro: ['Não salvos', (r) => r.estado === 'erro'], fila: ['Na fila', (r) => r.estado === 'na_fila'], teste: ['Testes', (r) => r.estado === 'teste'] };
+      const FIL = { todos: ['Todos', () => true], aut: ['Emitidas', (r) => r.estado === 'autorizada'], ok: ['Rascunhos salvos', (r) => r.estado === 'ok'], erro: ['Com problema', (r) => r.estado === 'erro' || r.estado === 'concluida'], fila: ['Na fila', (r) => r.estado === 'na_fila'], teste: ['Testes', (r) => r.estado === 'teste'] };
       const contaF = (k) => ras.filter(FIL[k][1]).length;
       const fil = FIL[state.nfeRasFil] && contaF(state.nfeRasFil) ? state.nfeRasFil : 'todos';
-      const rows = ras.filter(FIL[fil][1]).map((r) => ({ ...r, quando: r.em, parcNome: r.parceiro.nome, nItens: r.itens.length, situ: { na_fila: 0, erro: 1, teste: 2, ok: 3 }[r.estado] ?? 4 }));
+      const rows = ras.filter(FIL[fil][1]).map((r) => ({ ...r, quando: r.em, parcNome: r.parceiro.nome, nItens: r.itens.length, situ: { na_fila: 0, concluida: 1, erro: 2, teste: 3, ok: 4, autorizada: 5 }[r.estado] ?? 6 }));
       const situCel = (r) => {
         const rodando = r.estado === 'na_fila' && info.robo && info.robo.estado === 'rodando' && info.robo.id === r.id;
-        return h('div', { class: 'nfe-ras-situ' }, h('span', { class: 'nfe-st ' + ESTADO_NFE[r.estado][1] }, rodando ? 'o robô está preenchendo' : ESTADO_NFE[r.estado][0]),
-          r.estado === 'erro' ? h('small', { class: 'nfe-erro', title: r.erro || '' }, (r.erro || 'falhou').replace(/^(Page\.evaluate|Locator\.\w+): (Error: )?/, '').slice(0, 90)) : null);
+        return h('div', { class: 'nfe-ras-situ' }, h('span', { class: 'nfe-st ' + (ESTADO_NFE[r.estado] || ESTADO_NFE.erro)[1] }, rodando ? (r.emitir ? 'o robô está emitindo' : 'o robô está preenchendo') : r.estado === 'na_fila' && r.emitir ? 'na fila para emitir' : (ESTADO_NFE[r.estado] || ESTADO_NFE.erro)[0]),
+          r.estado === 'autorizada' && r.nfe ? h('small', { class: 'muted' }, `NF-e nº ${r.nfe.numero}${r.nfe.protocolo ? ' · protocolo ' + r.nfe.protocolo : ''}`) : null,
+          r.estado === 'teste' && r.totalAppNext != null ? h('small', { class: 'muted' }, `total no AppNext: ${fmt.brl(r.totalAppNext)}`) : null,
+          r.estado === 'erro' || r.estado === 'concluida' ? h('small', { class: 'nfe-erro', title: r.erro || '' }, (r.erro || 'falhou').replace(/^(Page\.evaluate|Locator\.\w+): (Error: )?/, '').slice(0, r.estado === 'concluida' ? 200 : 90)) : null);
       };
       const tab = TS.table({
         cols: [
@@ -105,8 +108,9 @@
           { key: 'nItens', label: 'Itens', fmt: fmt.int },
           { key: 'total', label: 'Total', fmt: (v) => (v == null ? '—' : fmt.brl(v)) },
           { key: 'situ', label: 'Situação', align: 'l', render: situCel },
-          { key: 'log', label: '', align: 'l', sortVal: () => 0, render: (r) => (r.estado === 'erro' && ult && ult.id === r.id && ult.log && ult.log.length
-            ? h('button', { type: 'button', class: 'btn prc-ver', onclick: (e) => { e.stopPropagation(); verLog(r, ult.log); } }, 'Log') : null) },
+          { key: 'log', label: '', align: 'l', sortVal: () => 0, render: (r) => h('span', { class: 'nf-acoes' },
+            podeEmitir(r) ? h('button', { type: 'button', class: 'btn primary nfe-emitir', title: 'Concluir e transmitir esta nota à SEFAZ (o robô confere se o total continua o do teste)', onclick: (e) => { e.stopPropagation(); emitirTeste(r); } }, 'Emitir NF-e') : null,
+            (r.estado === 'erro' || r.estado === 'concluida') && ult && ult.id === r.id && ult.log && ult.log.length ? h('button', { type: 'button', class: 'btn prc-ver', onclick: (e) => { e.stopPropagation(); verLog(r, ult.log); } }, 'Log') : null) },
         ],
         rows, sortKey: 'quando', pageSize: 8, search: 'Buscar parceiro, vendedor ou quem pediu…', searchKeys: ['parcNome', 'por', 'vendedor'], cls: 'est-t nfe-ras-t',
         rowClass: (r) => (r.estado === 'erro' ? 'nfe-ras-erro' : null),
@@ -116,6 +120,13 @@
         h('div', { class: 'est-tools' }, tab.searchBox && (tab.searchBox.classList.add('est-busca'), tab.searchBox),
           TS.seg(Object.entries(FIL).filter(([k]) => k === 'todos' || contaF(k)).map(([k, [t]]) => [`${t} (${fmt.int(contaF(k))})`, k]), fil, (v) => { state.nfeRasFil = v; pintar(); })),
         tab);
+    }
+    // teste que deu certo há menos de 2 horas e ainda não foi emitido: pode virar a NF-e de verdade
+    const podeEmitir = (r) => r.estado === 'teste' && !r.emitidaEm && r.totalAppNext != null && Date.now() - Date.parse(r.fim || r.em) < 2 * 3600e3 && !(info.robo && (info.robo.estado === 'na_fila' || info.robo.estado === 'rodando'));
+    async function emitirTeste(r) {
+      const txt = `EMITIR a NF-e no AppNext?\n\n${r.parceiro.nome}\n${r.itens.length} ${r.itens.length === 1 ? 'produto' : 'produtos'} · total calculado pelo AppNext: ${fmt.brl(r.totalAppNext)}\n\nO robô preenche de novo, confere se o total continua o mesmo, CONCLUI a saída e HOMOLOGA (transmite à SEFAZ). Depois de autorizada, a nota só pode ser cancelada em até 24 horas.`;
+      if (!confirm(txt)) return;
+      try { await nfeApi('POST', 'nfe/emitir', { loja, id: r.id }); carregar(); } catch (e) { alert(e.message); }
     }
     /** log do robô (última execução) numa janela */
     function verLog(r, log) {
@@ -227,7 +238,8 @@
           h('div', { class: 'nfe-campo' }, h('label', null, 'Forma de pagamento'), pag)),
         h('div', { class: 'nfe-campo' }, h('label', null, 'Produtos'), busca, sugP, tabela),
         h('div', { class: 'nfe-total' }, 'Total: ', totalEl),
-        h('div', { class: 'aviso nfe-fixos' }, 'Vai sempre como: [1] Venda · CFOP 5102 · série NF-e · NF-e normal · frete [9] sem frete / [9] sem ocorrência de transporte · endereço padrão do parceiro. Os impostos são calculados pelo AppNext. O robô confere tudo e salva como ', h('b', null, 'rascunho'), ' (não transmite).'),
+        h('div', { class: 'aviso nfe-fixos' }, 'Vai sempre como: [1] Venda · CFOP 5102 · série NF-e · NF-e normal · frete [9] sem frete / [9] sem ocorrência de transporte · endereço padrão do parceiro. Os impostos são calculados pelo AppNext. ',
+          h('b', null, 'Para emitir direto: '), 'clique em "Testar sem salvar", confira o total calculado pelo AppNext na lista e clique em ', h('b', null, '"Emitir NF-e"'), ' (o robô conclui e transmite à SEFAZ). "Criar rascunho" só salva, sem transmitir.'),
         h('div', { class: 'cfg-acoes' }, enviar, testar, msg),
         vivo && (info.robo.acao === 'rascunho' || info.robo.acao === 'parceiro') ? vivo : null);
     }

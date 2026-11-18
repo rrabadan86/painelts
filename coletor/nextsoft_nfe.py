@@ -2,7 +2,8 @@
 # NF-e de saída no AppNext (Estoque → Saída de Produtos), em duas ações:
 #   ACAO=cadastros  só LÊ a tela: parceiros, vendedores, produtos e formas de pagamento (para o formulário do painel);
 #                   de vendedores sai só id/nome/código (nunca login ou senha).
-#   ACAO=rascunho   preenche a saída com o que o painel mandou e salva como RASCUNHO (nunca conclui nem transmite):
+#   ACAO=rascunho   preenche a saída com o que o painel mandou e salva como RASCUNHO; com "emitir" (pedido depois de um
+#                   teste conferido no painel) conclui e homologa (transmite à SEFAZ):
 #                   dados da nota (motivo [1] Venda, CFOP 5102, série NF-e, NF-e normal, pagamento escolhido), parceiro,
 #                   consumidor final, endereço, vendedor, frete [9]/[9] e cada produto pela janela do próprio AppNext
 #                   (que calcula os impostos). CONFERE produtos, quantidades, preços e total antes de salvar; se algo
@@ -377,6 +378,77 @@ def abrir_tela(page):
     raise RuntimeError("a tela de Saída de Produtos não carregou")
 
 
+
+# ---------- emitir: concluir a saída e homologar (transmitir à SEFAZ), só quando o painel pediu "Emitir NF-e" ----------
+GUID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.I)
+
+
+def id_da_resposta(resp):
+    m = GUID_RE.search(str((resp or {}).get("corpo") or ""))
+    return m.group(0) if m and m.group(0) != "00000000-0000-0000-0000-000000000000" else None
+
+
+def achar_saida_concluida(page, parceiro_nome, total):
+    """sem o id na resposta: a saída concluída mais nova deste parceiro com este total, na lista do AppNext"""
+    page.evaluate("() => { location.hash = '#/estoque/saida-produto'; }")
+    for _ in range(30):
+        page.wait_for_timeout(1000)
+        r = page.evaluate("""(a) => { const r=[...document.querySelectorAll('*')].find(e=>e.__vue__); if(!r) return null; const f=[r.__vue__.$root]; while(f.length){const x=f.shift(); if(x.$options.methods&&x.$options.methods.initDatatable&&Array.isArray(x.saidas)){
+          const cands = x.saidas.filter((s) => /conclu/i.test(String(s.status)) && Math.abs(Number(s.valorTotalNota) - a.total) < 0.011 && (!a.nome || String((s.parceiro && (s.parceiro.nome || s.parceiro.razaoSocial || s.parceiro.nomeFantasia)) || '').toUpperCase().includes(String(a.nome).toUpperCase().slice(0, 12))));
+          cands.sort((p, q) => String(q.dataSaida).localeCompare(String(p.dataSaida)));
+          return { ok: true, id: cands[0] ? cands[0].id : null, n: cands.length }; } f.push(...(x.$children||[]));} return null; }""", {"nome": parceiro_nome or "", "total": float(total or 0)})
+        if r and r.get("ok"):
+            return r.get("id")
+    return None
+
+
+def homologar(page, saida_id):
+    """abre Saída de Produtos → detalhes e faz o mesmo que o botão "Homologar" (sem a janela de confirmação: ela foi feita no painel)"""
+    step("Homologar: transmitir a NF-e à SEFAZ")
+    page.evaluate("() => { location.hash = '#/estoque/saida-produto'; }")
+    page.wait_for_timeout(2000)
+    page.evaluate(f"() => {{ location.hash = '#/estoque/saida-produto/detalhes/{saida_id}'; }}")
+    pronto = "(id) => { const r=[...document.querySelectorAll('*')].find(e=>e.__vue__); if(!r) return null; const f=[r.__vue__.$root]; while(f.length){const x=f.shift(); if(x.$options.methods&&x.$options.methods.submitHomologaNfe){ return x.saida && x.saida.id === id ? { status: x.saida.status, numero: x.saida.numeroNota } : null; } f.push(...(x.$children||[]));} return null; }"
+    st = None
+    for _ in range(40):
+        page.wait_for_timeout(1000)
+        st = page.evaluate(pronto, saida_id)
+        if st:
+            break
+    if not st:
+        raise RuntimeError("a tela de detalhes da saída não abriu para homologar")
+    log(f"   saída nº {st.get('numero')}: {st.get('status')}")
+    if str(st.get("status")) != "Homologada":
+        if not re.search(r"conclu", str(st.get("status")), re.I):
+            raise RuntimeError(f"a saída não está concluída no AppNext (situação: {st.get('status')}): não dá para homologar")
+        r = page.evaluate("""async (id) => {
+          const espera = (ms) => new Promise((ok) => setTimeout(ok, ms));
+          const r=[...document.querySelectorAll('*')].find(e=>e.__vue__); const f=[r.__vue__.$root]; let x=null; while(f.length){const y=f.shift(); if(y.$options.methods&&y.$options.methods.submitHomologaNfe){x=y;break;} f.push(...(y.$children||[]));}
+          if (!x || !x.saida || x.saida.id !== id) throw new Error('detalhes da saída não carregaram');
+          await x.enviarSefaz({ lojaId: x.saida.loja.id, usuarioId: x.usuarioLogado.id, saidasId: [x.saida.id] }, 'homologar');
+          // em processamento na SEFAZ: confere de novo por até 60 s
+          for (let k = 0; k < 12 && x.saida.status !== 'Homologada'; k++) {
+            const docs = x.saida.documentosFiscais || [], d = docs[docs.length - 1];
+            if (d && d.status && Number(d.status) !== 100 && Number(d.status) !== 105 && Number(d.status) !== 103) break; // rejeitada: não adianta esperar
+            await espera(5000);
+            try { const e = await x.getRequest(x.getSaidaURL, id); x.saida = { ...e }; } catch (e) { /* tenta de novo */ }
+          }
+          const docs = x.saida.documentosFiscais || [], d = docs[docs.length - 1] || {};
+          return { status: x.saida.status, numero: x.saida.numeroNota, serie: x.saida.serie, chave: d.chave || '', protocolo: d.protocolo || '', cStat: d.status || null, mensagem: d.mensagem || '' };
+        }""", saida_id)
+    else:
+        r = page.evaluate("""(id) => { const r=[...document.querySelectorAll('*')].find(e=>e.__vue__); const f=[r.__vue__.$root]; while(f.length){const x=f.shift(); if(x.$options.methods&&x.$options.methods.submitHomologaNfe){ const docs=x.saida.documentosFiscais||[], d=docs[docs.length-1]||{}; return { status: x.saida.status, numero: x.saida.numeroNota, serie: x.saida.serie, chave: d.chave||'', protocolo: d.protocolo||'', cStat: d.status||null, mensagem: d.mensagem||'' }; } f.push(...(x.$children||[]));} return null; }""", saida_id)
+    try:
+        page.evaluate("() => { const b = document.querySelector('.swal2-confirm'); if (b) b.click(); }")
+    except Exception:  # noqa: BLE001
+        pass
+    log(f"   SEFAZ: {r.get('cStat') or '—'} {r.get('mensagem') or ''}".rstrip())
+    if r.get("status") != "Homologada":
+        raise RuntimeError(f"a SEFAZ não autorizou a NF-e nº {r.get('numero')}: {r.get('mensagem') or 'sem resposta'} — ela ficou CONCLUÍDA no AppNext, sem transmitir: corrija lá e clique em Homologar")
+    log(f"   ✓ NF-e nº {r.get('numero')} autorizada · protocolo {r.get('protocolo')}")
+    return r
+
+
 def devolucao(page, pedido, t0):
     step("2) Entrada da nota → Devolução (o AppNext preenche fornecedor, chave e itens)")
     if not re.match(r"^[0-9a-f-]{36}$", str(pedido.get("entradaId", ""))):
@@ -443,8 +515,11 @@ def devolucao(page, pedido, t0):
         log("   TESTE: parei antes de salvar (nada foi salvo no AppNext)")
         gravar({"ok": True, "simulado": True, "nota": r})
         return 0
-    step("5) Salvar SEM concluir (a loja confere, conclui e transmite no AppNext)")
-    # na 1ª etapa da tela, formCadastrar grava com revisado = falso (não concluída)
+    emitir = bool(pedido.get("emitir"))
+    if emitir and pedido.get("totalTeste") is not None and abs(r["total"] - float(pedido["totalTeste"])) > 0.011:
+        raise RuntimeError(f"o total da nota mudou desde o teste (R$ {float(pedido['totalTeste']):.2f} → R$ {r['total']:.2f}): nada foi salvo; teste de novo")
+    step("5) Concluir a saída de devolução (depois: homologar)" if emitir else "5) Salvar SEM concluir (a loja confere, conclui e transmite no AppNext)")
+    # na 1ª etapa da tela, formCadastrar grava com revisado = falso (não concluída); na 2ª, conclui
     resp = {}
     def ao_responder(rr):
         if rr.request.method == "POST" and "saida" in rr.url.lower():
@@ -453,7 +528,7 @@ def devolucao(page, pedido, t0):
             except Exception:  # noqa: BLE001
                 resp.update({"status": rr.status})
     page.on("response", ao_responder)
-    page.evaluate("() => { const r=[...document.querySelectorAll('*')].find(e=>e.__vue__); const f=[r.__vue__.$root]; while(f.length){const x=f.shift(); if(x.$options.methods&&x.$options.methods.montarDevolucao){ if (x.wizardStepSaida !== 1) throw new Error('a tela não está na 1ª etapa'); if (window.__limparIds) window.__limparIds(); x.formCadastrar(); return true; } f.push(...(x.$children||[]));} return false; }")
+    page.evaluate("(emitir) => { const r=[...document.querySelectorAll('*')].find(e=>e.__vue__); const f=[r.__vue__.$root]; while(f.length){const x=f.shift(); if(x.$options.methods&&x.$options.methods.montarDevolucao){ if (x.wizardStepSaida !== 1) throw new Error('a tela não está na 1ª etapa'); if (window.__limparIds) window.__limparIds(); if (emitir) x.wizardStepSaida = 2; x.formCadastrar(); return true; } f.push(...(x.$children||[]));} return false; }", emitir)
     ok = False
     for _ in range(60):
         page.wait_for_timeout(1000)
@@ -468,13 +543,24 @@ def devolucao(page, pedido, t0):
     if not ok:
         detalhe = f": {avisos[0][:200]}" if avisos else (f" (HTTP {resp.get('status')} {resp.get('corpo', '')[:200]})".rstrip() if resp else "")
         raise RuntimeError("o AppNext não confirmou a gravação da devolução" + detalhe)
-    log("   ✓ o AppNext gravou a saída de devolução (não concluída)")
-    if (resp and resp.get("corpo")):
-        m_id = re.search(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", str(resp["corpo"]), re.I)
-        if m_id and m_id.group(0) != "00000000-0000-0000-0000-000000000000":
-            r["saidaId"] = m_id.group(0)
+    r["saidaId"] = id_da_resposta(resp)
+    if not emitir:
+        log("   ✓ o AppNext gravou a saída de devolução (não concluída)")
+        log(f"Concluído em {(datetime.now() - t0).seconds} s")
+        gravar({"ok": True, "nota": r})
+        return 0
+    log("   ✓ o AppNext concluiu a saída de devolução")
+    sid = r["saidaId"] or achar_saida_concluida(page, "", r["total"])
+    if not sid:
+        gravar({"ok": False, "concluida": True, "nota": r, "erro": "a devolução foi CONCLUÍDA no AppNext, mas não achei a saída para homologar: homologue lá (Estoque → Saída de Produtos)"})
+        return 1
+    try:
+        nf = homologar(page, sid)
+    except Exception as e:  # noqa: BLE001
+        gravar({"ok": False, "concluida": True, "nota": r, "erro": str(e).splitlines()[0][:400]})
+        return 1
     log(f"Concluído em {(datetime.now() - t0).seconds} s")
-    gravar({"ok": True, "nota": r})
+    gravar({"ok": True, "emitida": True, "nota": r, "nfe": nf})
     return 0
 
 
@@ -605,6 +691,50 @@ def parceiro(page, pedido, t0):
     return 0
 
 
+def emitir_venda(page, pedido, r, t0):
+    """conclui a saída (o mesmo que o botão de concluir da 2ª etapa) e homologa; só quando o painel pediu "Emitir NF-e" depois do teste"""
+    if pedido.get("totalTeste") is not None and abs(r["total"] - float(pedido["totalTeste"])) > 0.011:
+        raise RuntimeError(f"o total da nota mudou desde o teste (R$ {float(pedido['totalTeste']):.2f} → R$ {r['total']:.2f}): nada foi salvo; teste de novo")
+    step("5) Concluir a saída (depois: homologar)")
+    page.keyboard.press("Escape")
+    page.wait_for_timeout(500)
+    resp = {}
+
+    def ao_responder(rr):
+        if rr.request.method == "POST" and "saida" in rr.url.lower():
+            try:
+                resp.update({"status": rr.status, "corpo": rr.text()[:500]})
+            except Exception:  # noqa: BLE001
+                resp.update({"status": rr.status})
+    page.on("response", ao_responder)
+    page.evaluate("""async () => { const r=[...document.querySelectorAll('*')].find(e=>e.__vue__); const f=[r.__vue__.$root]; while(f.length){const x=f.shift(); if(x.$options.methods&&x.$options.methods.salvarRascunho){
+        if (x.$refs.tabs && x.$refs.tabs.validaCampos()) throw new Error('o AppNext acusou campo obrigatório faltando');
+        await x.calcularTotais(); x.formCadastrar(); return true; } f.push(...(x.$children||[]));} return false; }""")
+    ok = False
+    for _ in range(60):
+        page.wait_for_timeout(1000)
+        if (resp.get("status") or 0) >= 400:
+            break
+        if page.locator("text=/cadastrada com sucesso/i").count() or "/cadastrar" not in page.url:
+            ok = True
+            break
+    if not ok:
+        raise RuntimeError("o AppNext não confirmou a conclusão da saída" + (f" (HTTP {resp.get('status')} {resp.get('corpo', '')[:200]})" if resp else "") + ": nada foi transmitido")
+    log("   ✓ o AppNext concluiu a saída")
+    sid = id_da_resposta(resp) or achar_saida_concluida(page, r.get("parceiro"), r["total"])
+    if not sid:
+        gravar({"ok": False, "concluida": True, "nota": r, "erro": "a saída foi CONCLUÍDA no AppNext, mas não achei ela para homologar: homologue lá (Estoque → Saída de Produtos)"})
+        return 1
+    try:
+        nf = homologar(page, sid)
+    except Exception as e:  # noqa: BLE001
+        gravar({"ok": False, "concluida": True, "nota": r, "saidaId": sid, "erro": str(e).splitlines()[0][:400]})
+        return 1
+    log(f"Concluído em {(datetime.now() - t0).seconds} s")
+    gravar({"ok": True, "emitida": True, "nota": r, "nfe": nf})
+    return 0
+
+
 def main():
     nx.start_watchdog(int(os.getenv("MAX_RUNTIME_SECONDS", "600")))
     pedido = json.loads(Path(ENTRADA).read_text(encoding="utf-8")) if ACAO != "cadastros" else None
@@ -666,6 +796,8 @@ def main():
                 log("   TESTE: parei antes do Rascunho (nada foi salvo no AppNext)")
                 gravar({"ok": True, "simulado": True, "nota": r})
                 return 0
+            if pedido.get("emitir"):
+                return emitir_venda(page, pedido, r, t0)
             step("5) Salvar como RASCUNHO (não conclui nem transmite)")
             page.keyboard.press("Escape")
             page.wait_for_timeout(500)
