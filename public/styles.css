@@ -2240,3 +2240,14 @@ details.vl-ajuda summary { cursor: pointer; font-weight: 600; }
 .nf-sinc-box { display: inline-flex; align-items: center; gap: 8px; }
 .nf-sinc { white-space: nowrap; }
 .nf-sinc-st { white-space: nowrap; }
+/* Movimento e escala: abas */
+.mapa-abas { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 14px; border-bottom: 1px solid var(--line, #e3ddcf); }
+.mapa-aba-btn { background: none; border: 0; border-bottom: 3px solid transparent; padding: 9px 14px; font: inherit; font-weight: 600; color: var(--muted, #6b6b6b); cursor: pointer; margin-bottom: -1px; }
+.mapa-aba-btn:hover { color: var(--green, #2C5234); }
+.mapa-aba-btn.on { color: var(--green, #2C5234); border-bottom-color: var(--gold, #D4A82A); }
+.mapa-resumo { display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: center; padding: 10px 14px; border-radius: 10px; background: #fff; border: 1px solid var(--line, #e3ddcf); border-left: 4px solid #8fbf96; font-size: 14px; }
+.mapa-resumo.warn { border-left-color: #D4A82A; }
+.mapa-resumo.err { border-left-color: #c0392b; }
+.mapa-resumo .link-btn { margin-left: auto; }
+.mes-tools { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.mes-tools-esq { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }

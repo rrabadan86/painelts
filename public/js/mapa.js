@@ -442,17 +442,24 @@
   TS.pages.mapa = function (root) {
     const db = TS.db;
     const base = TS.filtrar();
-    root.append(h('div', { class: 'page-head' }, h('div', null, h('h1', { class: 'page-title' }, 'Movimento e escala'), h('div', { class: 'page-sub' }, 'Movimento por dia da semana e hora, para montar a escala')),
+    root.append(h('div', { class: 'page-head' }, h('div', null, h('h1', { class: 'page-title' }, 'Movimento e escala'), h('div', { class: 'page-sub' }, 'A escala do mês da equipe, o movimento da loja por hora e as regras que montam a escala.')),
       h('div', { class: 'active-filters' }, h('span', { class: 'af' }, TS.periodoTexto()))));
+    // três abas: Escala do mês (o dia a dia) · Movimento (por que a escala é assim) · Equipe e regras (o que monta a escala)
+    const ABAS = [['escala', 'Escala do mês'], ['movimento', 'Movimento da loja'], ['equipe', 'Equipe e regras']];
+    const temLoja = state.loja && state.loja !== 'todas';
+    const aba = ABAS.some(([k]) => k === state.mapaAba) ? state.mapaAba : temLoja ? 'escala' : 'movimento';
+    const cx = { escala: h('div', { class: 'mapa-aba' }), movimento: h('div', { class: 'mapa-aba' }), equipe: h('div', { class: 'mapa-aba' }) };
+    root.append(h('div', { class: 'mapa-abas', role: 'tablist' }, ...ABAS.map(([k, t]) => h('button', { type: 'button', role: 'tab', 'aria-selected': String(k === aba), class: 'mapa-aba-btn' + (k === aba ? ' on' : ''), onclick: () => { state.mapaAba = k; TS.render(); } }, t))), cx[aba]);
+    const M = cx.movimento, Q = cx.equipe, ES = cx.escala;
     const cfgMapa = state.loja && state.loja !== 'todas' ? (db.metas || []).find((m) => m.id === state.loja) : null;
     const anoI = +TS.dayToIso(db.minDay).slice(0, 4), anoF = +TS.dayToIso(db.maxDay).slice(0, 4);
     const feriadosSet = TS.datasFeriado ? TS.datasFeriado(cfgMapa, anoI, anoF) : new Set();
     const ehFeriado = (day) => feriadosSet.has(TS.dayToIso(day));
     const { lista: lista0, total, semHora } = cupons(base);
     const lista = lista0.filter((c) => !ehFeriado(c.day));
-    if (!total) { root.append(TS.card(null, null, TS.empty())); return; }
+    if (!total) { cx[aba].append(TS.card(null, null, TS.empty())); return; }
     if (!lista.length) {
-      root.append(h('div', { class: 'card vazio-loja' }, h('h2', null, 'Ainda sem o horário das vendas'),
+      cx[aba].append(h('div', { class: 'card vazio-loja' }, h('h2', null, 'Ainda sem o horário das vendas'),
         h('p', null, 'As planilhas desta loja têm só a data de cada cupom. A partir desta versão o coletor também guarda a hora (quando o AppNext informa). Depois da próxima atualização, o mapa aparece aqui; para ter o passado, use "Importar histórico" em Configurações.')));
       return;
     }
@@ -466,7 +473,7 @@
     if (opInfo && (!state.mapaOp || state.mapaOp.id !== opInfo.id)) state.mapaOp = opInfo;
     const op = state.mapaOp && opInfo ? state.mapaOp.op : null;
 
-    if (semHora / total > 0.05) root.append(h('div', { class: 'notice' }, `O mapa usa só as vendas que já têm hora: de ${fmt.date(TS.dayToIso(de))} a ${fmt.date(TS.dayToIso(ate))} (${fmt.int(lista.length)} cupons). As vendas mais antigas vieram sem hora`,
+    if (semHora / total > 0.05) M.append(h('div', { class: 'notice' }, `O mapa usa só as vendas que já têm hora: de ${fmt.date(TS.dayToIso(de))} a ${fmt.date(TS.dayToIso(ate))} (${fmt.int(lista.length)} cupons). As vendas mais antigas vieram sem hora`,
       TS.eu?.pode?.configurar ? h('span', null, ' — para incluí-las, use "Importar histórico" em ', h('a', { href: '#config' }, 'Configurações'), '.') : '.'));
 
     // horas exibidas: abertura..fechamento (ou onde houve venda)
@@ -491,12 +498,13 @@
         }), h('td', { class: 'tot' }, fv(somaDia)));
       })));
     const seg = TS.seg([['Atendimentos', 'cupons'], ['Faturamento', 'vt'], ['Itens', 'qtd']], met, (v) => { state.mapaMetrica = v; TS.render(); });
-    root.append(TS.cardWithTools('Movimento médio por hora', `Média por dia no período (${g.nDias.reduce((s, x) => s + x, 0)} dias, sem os feriados, que têm movimento e horário diferentes). Passe o mouse para ver o pico de cada horário.${op ? ' Hachurado = loja fechada.' : ''}`, seg,
+    M.append(TS.cardWithTools('Movimento médio por hora', `Média por dia no período (${g.nDias.reduce((s, x) => s + x, 0)} dias, sem os feriados, que têm movimento e horário diferentes). Passe o mouse para ver o pico de cada horário.${op ? ' Hachurado = loja fechada.' : ''}`, seg,
       h('div', { class: 'table-wrap free mapa-wrap' }, tab)));
 
     // ---- equipe e escala
     if (!opInfo) {
-      root.append(h('div', { class: 'notice mt' }, 'Para ver quantas pessoas são necessárias e a escala sugerida, escolha uma loja no seletor do topo.'));
+      const aviso = () => h('div', { class: 'notice mt' }, 'Escolha uma loja no seletor do topo para ver a escala, as pessoas necessárias por hora e as regras da equipe.');
+      M.append(aviso()); ES.append(aviso()); Q.append(aviso());
       return;
     }
     const need = necessidade(g.p80, op);
@@ -525,11 +533,12 @@
     });
     const horasNec = need.reduce((s, r) => s + r.reduce((a, b) => a + b, 0), 0);
     const horasDisp = op.equipe.funcionarios * op.equipe.cargaSemanal;
-    root.append(h('div', { class: 'grid g-kpi mt' },
+    const kpis = () => h('div', { class: 'grid g-kpi mt' },
       TS.kpi('Horas de trabalho necessárias', `${fmt.int(horasNec)} h/semana`, `para cobrir todos os horários e picos`),
       TS.kpi('Horas da equipe atual', `${fmt.int(horasDisp)} h/semana`, h('span', { class: horasDisp >= horasNec ? 'up' : 'down' }, `${op.equipe.funcionarios} × ${op.equipe.cargaSemanal}h · ${horasDisp >= horasNec ? 'sobra' : 'faltam'} ${fmt.int(Math.abs(horasDisp - horasNec))} h`)),
       TS.kpi('Equipe mínima', ideal.soAberto ? `${ideal.soAberto} pessoas` : '15+', 'para nunca deixar a loja sozinha'),
-      TS.kpi('Equipe ideal', ideal.tudo ? `${ideal.tudo} pessoas` : 'mais de 15', 'cobrindo também os picos')),
+      TS.kpi('Equipe ideal', ideal.tudo ? `${ideal.tudo} pessoas` : 'mais de 15', 'cobrindo também os picos'));
+    M.append(kpis(),
       h('details', { class: 'mapa-como' }, h('summary', null, 'Como esses números são calculados'),
         h('ol', null,
           h('li', null, `Para cada dia da semana e hora aberta, pega o movimento de pico (o número de atendimentos que 80% dos dias não passam) e divide por ${op.equipe.capacidade} atendimentos por pessoa por hora. Nunca fica abaixo do mínimo de pessoas do dia. Isso dá as "pessoas necessárias por hora".`),
@@ -538,18 +547,25 @@
           h('li', null, h('b', null, 'Equipe mínima'), ': o menor número de pessoas em que nenhum horário fica com a loja sozinha (zero pessoas).'),
           h('li', null, h('b', null, 'Equipe ideal'), ': o menor número em que, além disso, todos os picos e o mínimo de cada dia ficam cobertos.')),
         h('p', { class: 'muted' }, 'A equipe pode ser maior que horas ÷ carga porque folgas, jornada máxima e intervalo não deixam encaixar as horas perfeitamente.')));
-    root.append(h('div', { class: 'grid g-2 mt mapa-grid' },
+    M.append(h('div', { class: 'mt' },
       TS.card('Pessoas necessárias por hora', `Com base no pico do horário (80% dos dias ficam abaixo) e em ${op.equipe.capacidade} atendimentos por pessoa por hora.`,
         h('div', { class: 'table-wrap free mapa-wrap' }, tabNeed),
         h('div', { class: 'mapa-leg' }, h('span', { class: 'n1' }, '1 pessoa'), h('span', { class: 'n2' }, '2 pessoas'), h('span', { class: 'n3' }, '3 ou mais')),
-        trechos.length ? h('p', { class: 'mapa-trechos' }, h('b', null, 'Precisa de 2+ pessoas: '), trechos.join(' · ')) : h('p', { class: 'muted' }, 'Uma pessoa dá conta em todos os horários com essa capacidade.')),
-      cartaoAjustes(opInfo)));
+        trechos.length ? h('p', { class: 'mapa-trechos' }, h('b', null, 'Precisa de 2+ pessoas: '), trechos.join(' · ')) : h('p', { class: 'muted' }, 'Uma pessoa dá conta em todos os horários com essa capacidade.'))));
+    // resumo da equipe no topo da escala do mês: dá para ver na hora se a equipe dá conta
+    const nEq = op.equipe.funcionarios;
+    const okEq = ideal.tudo && nEq >= ideal.tudo, minEq = ideal.soAberto && nEq >= ideal.soAberto;
+    ES.append(h('div', { class: 'mapa-resumo ' + (okEq ? 'ok' : minEq ? 'warn' : 'err') },
+      h('span', null, h('b', null, `${nEq} ${nEq === 1 ? 'pessoa' : 'pessoas'}`), ` · escala ${op.equipe.escala}${rodizio ? ' · rodízio de domingo' : ''} · ${op.equipe.cargaSemanal} h/semana`),
+      h('span', null, okEq ? '✓ cobre todos os horários e picos' : minEq ? `cobre a loja, mas a ideal é ${ideal.tudo || '15+'} pessoas para os picos` : `a loja fica sozinha em algum horário: mínimo ${ideal.soAberto || '15+'} pessoas`),
+      h('button', { type: 'button', class: 'link-btn', onclick: () => { state.mapaAba = 'equipe'; TS.render(); } }, 'mudar equipe e regras ›')));
+    Q.append(cartaoAjustes(opInfo));
 
     const cfgLoja = (db.metas || []).find((m) => m.id === opInfo.id) || null;
     if (rodizio) {
-      root.append(h('div', { class: 'mt' }, cartaoRodizio(need, op, horas, ideal)));
+      Q.append(h('div', { class: 'mt' }, cartaoRodizio(need, op, horas, ideal)));
       const rr = montarRodizio(need, op, pessoasDe(op.equipe));
-      root.append(h('div', { class: 'mt' }, cartaoMes({ op, cfg: cfgLoja, semanas: rr.semanas, L: rr.L, need, lojaNome: opInfo.nome })));
+      ES.append(h('div', { class: 'mt' }, cartaoMes({ op, cfg: cfgLoja, semanas: rr.semanas, L: rr.L, need, lojaNome: opInfo.nome })));
       return;
     }
     // escala
@@ -568,14 +584,14 @@
       ? h('div', { class: 'notice err' }, `Com ${op.equipe.funcionarios} pessoa(s) ficam ${fmt.n1(esc.descoberto)} h por semana com a loja sozinha. A equipe mínima para isso não acontecer é de ${ideal.soAberto || '15+'} pessoas.`)
       : esc.abaixo > 0 ? h('div', { class: 'notice' }, `Loja sempre coberta, mas faltam pessoas nos picos durante ${fmt.n1(esc.abaixo)} h por semana. ${ideal.tudo ? `Com ${ideal.tudo} pessoas os picos ficam cobertos.` : ''}`)
         : h('div', { class: 'notice ok' }, 'Essa equipe cobre todos os horários e picos.');
-    root.append(h('div', { class: 'mt' }, TS.card(`Escala sugerida (${op.equipe.escala})`,
+    Q.append(h('div', { class: 'mt' }, TS.card(`Semana-modelo sugerida (${op.equipe.escala})`,
       `Jornada de ${Math.floor(esc.jornada / 60)}h${String(Math.round(esc.jornada % 60)).padStart(2, '0')} por dia (horários arredondados de 30 em 30 min)${esc.intervalo ? ` + ${esc.intervalo} min de intervalo` : ''}, ${esc.diasTrab} dias por semana. Sugestão automática: ajuste ao que combinou com a equipe e confira as regras da CLT e da convenção coletiva (ex.: folga aos domingos periodicamente).`,
       avisoEsc,
       h('div', { class: 'table-wrap free' }, h('table', { class: 'escala-t' }, h('thead', null, h('tr', null, h('th', { class: 'l' }, ''), DIAS_NOME.map((d) => h('th', null, d)))), h('tbody', null, linhasEsc))),
       h('div', { class: 'f-label', style: { marginTop: '16px' } }, 'Cobertura da escala'),
       h('div', { class: 'table-wrap free mapa-wrap' }, cobertura),
       h('div', { class: 'mapa-leg' }, h('span', { class: 'ok' }, 'na medida'), h('span', { class: 'sobra' }, 'sobra gente'), h('span', { class: 'falta' }, 'falta gente no pico'), h('span', { class: 'vazio' }, 'loja sozinha')))));
-    root.append(h('div', { class: 'mt' }, cartaoMes({ op, cfg: cfgLoja, semanas: [{ turnosP: esc.pessoas, motivos: null }], L: 1, need, lojaNome: opInfo.nome })));
+    ES.append(h('div', { class: 'mt' }, cartaoMes({ op, cfg: cfgLoja, semanas: [{ turnosP: esc.pessoas, motivos: null }], L: 1, need, lojaNome: opInfo.nome })));
   };
 
   // ---------- escala do mês (datas reais, feriados e férias) ----------
@@ -878,11 +894,10 @@
       h('span', { class: 'muted' }, nAj ? `${nAj} ajuste(s) manual(is) neste mês${AJ.sujo ? ' — não salvos' : ''}.${AJ.msg ? ' ' + AJ.msg : ''}` : 'Toque num dia de uma pessoa para ajustar (folga, horário ou troca).'),
       pode && AJ.sujo ? (() => { const b = h('button', { type: 'button', class: 'btn primary' }, 'Salvar ajustes'); b.addEventListener('click', () => salvarAj(b)); return b; })() : null,
       nAj ? h('button', { type: 'button', class: 'btn ghost-danger', onclick: () => { AJ.dados = {}; AJ.sujo = true; AJ.sel = null; TS.render(); } }, 'Desfazer ajustes do mês') : null,
-      btnTrazer, btnReplicar,
       TS.demo && AJ.sujo ? h('span', { class: 'muted' }, '(na apresentação os ajustes não são salvos)') : null);
 
-    return TS.cardWithTools('Escala do mês', `Dia a dia com feriados e férias. ${L > 1 ? `O rodízio de ${L} semanas começa a contar no domingo ${TS.fmt.date(domingoDe(op.equipe.inicioRodizio || INICIO_PADRAO))} (ajuste em "Horário e equipe").` : 'A semana sugerida se repete todas as semanas.'} Passe o mouse para ver intervalo e feriado.`,
-      h('div', { class: 'table-tools' }, sel, h('button', { type: 'button', class: 'btn primary', onclick: imprimir }, '⎙ Exportar PDF')),
+    return TS.cardWithTools('Escala do mês', `Dia a dia, com feriados e férias. ${L > 1 ? `Rodízio de ${L} semanas contado a partir do domingo ${TS.fmt.date(domingoDe(op.equipe.inicioRodizio || INICIO_PADRAO))}.` : 'A semana-modelo se repete todas as semanas.'}`,
+      h('div', { class: 'table-tools mes-tools' }, h('div', { class: 'mes-tools-esq' }, sel, btnTrazer, btnReplicar), h('button', { type: 'button', class: 'btn primary', onclick: imprimir }, '⎙ Exportar PDF')),
       alertas.length ? h('div', { class: 'notice' }, h('b', null, 'Atenção: '), alertas.slice(0, 6).join(' · '), alertas.length > 6 ? ` e mais ${alertas.length - 6}` : '') : null,
       barraAj, editor,
       legenda(), tabela(false));
@@ -935,7 +950,7 @@
       ? h('div', { class: 'notice err' }, `Com ${pessoas.length} pessoa(s) e essas regras, a loja fica sem ninguém ${fmt.n1(tot.descoberto / r.L)} h por semana em média.${ideal.soAberto ? ` Equipe mínima: ${ideal.soAberto} pessoas.` : ''}`)
       : tot.abaixo > 0 ? h('div', { class: 'notice' }, `A loja nunca fica sozinha, mas faltam pessoas nos picos ou no mínimo do dia em ${fmt.n1(tot.abaixo / r.L)} h por semana, em média. Veja os alertas de cada semana.${ideal.tudo ? ` Com ${ideal.tudo} pessoas fica tudo coberto.` : ''}`)
         : h('div', { class: 'notice ok' }, 'Essa equipe cumpre o rodízio, os mínimos de cada dia e os picos.');
-    return TS.cardWithTools(`Escala sugerida · rodízio de domingo (${op.equipe.escala})`,
+    return TS.cardWithTools(`Semana-modelo do rodízio de domingo (${op.equipe.escala})`,
       `Semana de domingo a sábado. ${r.kDom ? `${r.kDom} pessoa(s) trabalham em cada domingo; ${r.folgamDom} folga(m) — e folga(m) também na segunda.` : 'Loja fechada no domingo.'} O ciclo se repete a cada ${r.L} semana(s). Jornada de ${Math.floor(r.jornada / 60)}h${String(Math.round(r.jornada % 60)).padStart(2, '0')} por dia${r.intervalo ? ` + ${r.intervalo} min de intervalo` : ''}. Confira a CLT e a convenção coletiva.`,
       seg, aviso,
       excessos.length ? h('div', { class: 'notice err' }, `Não deu para manter no máximo ${r.maxF} pessoa(s) de folga por dia em: ${excessos.map(([k, x]) => `semana ${k + 1} (${x.map((wd) => DIAS_NOME[wd]).join(', ')})`).join('; ')}. Revise as folgas fixas escolhidas à mão ou o limite em "Horário e equipe".`) : null,
