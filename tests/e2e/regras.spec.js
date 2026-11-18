@@ -123,10 +123,10 @@ test.describe('regras', () => {
     expect(await page.locator('.vl-kpis .vl-kpi').count()).toBeGreaterThanOrEqual(5);
     await expect(page.locator('.vl-kpi-risco')).toContainText('a custo');
     await page.locator('.vl-segs button', { hasText: 'Todos' }).click();
-    const lote = page.locator('input.vl-lote').first();
+    const lote = page.locator('.vl-tabela input.vl-lote').first();
     await lote.fill('l2611-a');
     await lote.press('Enter');
-    await expect(page.locator('input.vl-lote.vl-salvo')).toHaveCount(1);
+    await expect(page.locator('.vl-tabela input.vl-lote.vl-salvo')).toHaveCount(1);
     await expect(lote).toHaveValue('L2611-A');
     expect(await page.locator('main').innerText(), 'texto "null" na tela').not.toMatch(/(^|\s)(null|undefined|NaN)(\s|$)/);
     // ajustar os lotes de um chá: a soma tem de ser o estoque
