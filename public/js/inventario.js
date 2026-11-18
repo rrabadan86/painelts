@@ -423,24 +423,37 @@
     const fora = new Set(c.restoFora || []);
     const zerados = z.ativo ? resto.filter((r) => !fora.has(r.grupo)) : [];
     const valorZ = zerados.reduce((s0, r) => s0 + (r.custo || 0) * (r.qtd || 0), 0);
-    const sobra = rows.reduce((s0, r) => s0 + (r.dr > 0 ? r.dr : 0), 0), falta = rows.reduce((s0, r) => s0 + (r.dr < 0 ? -r.dr : 0), 0) + Math.max(0, valorZ);
+    // zerados: o que vai (ou foi) como 0 sem ter sido contado — item da contagem sem contar e, com "zerar", os de fora
+    const naoCont = new Set(c.itens.filter((i) => i.cont == null).map((i) => i.cod));
+    const linhaZero = (x, antes, custo, motivo) => {
+      const agora = c.agora && c.agora[x.cod] != null ? c.agora[x.cod] : null;
+      return { ...x, sis: antes, cont: 0, dq: -antes, dr: custo != null ? -antes * custo : null, custo, motivo, zeroRow: true, agora, conferiu: agora != null && Math.abs(agora) < 0.0005 };
+    };
+    const zeroRows = c.planilha && c.planilha.itens
+      ? c.planilha.itens.filter((l) => l.zerado || l.naoContado || (naoCont.has(l.cod) && !l.nova)).map((l) => linhaZero(l, l.antes || 0, l.custo, l.zerado ? 'fora da contagem' : 'não contado'))
+      : [...(c.semContarZero ? c.itens.filter((i) => i.cont == null && i.sis != null && Math.abs(i.sis) > 0.0005).map((i) => linhaZero(i, i.sis, i.custo, 'não contado')) : []),
+        ...zerados.map((r) => linhaZero(r, r.qtd || 0, r.custo, 'fora da contagem'))];
+    const valorZero = zeroRows.reduce((s0, r) => s0 + (r.dr < 0 ? -r.dr : 0), 0);
+    const sobra = rows.reduce((s0, r) => s0 + (r.dr > 0 ? r.dr : 0), 0), falta = rows.reduce((s0, r) => s0 + (r.dr < 0 ? -r.dr : 0), 0) + valorZero;
     const div = rows.filter((r) => Math.abs(r.dq) > 0.0005);
+    const iguais = rows.filter((r) => Math.abs(r.dq) <= 0.0005);
     const sem = c.itens.length - contados.length;
     const mudou = rows.filter((r) => r.mudou && !fechada);
-    const filV = state.invRevFil === 'todos' ? 'todos' : 'dif';
+    const filV = ['dif', 'iguais', 'zerados', 'todos'].includes(state.invRevFil) ? state.invRevFil : 'dif';
+    const vis = { dif: div, iguais, zerados: zeroRows, todos: [...rows, ...zeroRows] }[filV];
     const tab = TS.table({
       cols: [
-        { key: 'desc', label: 'Produto', align: 'l', sticky: true, wrap: true, render: (r) => h('span', null, r.desc, h('small', { class: 'est-tam' }, `cód. ${r.cod}${r.por ? ` · contou ${r.por} ${quando(r.em)}` : ''}`)) },
+        { key: 'desc', label: 'Produto', align: 'l', sticky: true, wrap: true, render: (r) => h('span', null, r.desc, h('small', { class: 'est-tam' }, `cód. ${r.cod}${r.zeroRow ? ` · ${r.motivo}: vai como 0` : r.por ? ` · contou ${r.por} ${quando(r.em)}` : ''}`)) },
         { key: 'sis', label: 'Sistema', render: (r) => qtdTxt(r.sis, r.un), sortVal: (r) => r.sis },
-        { key: 'cont', label: 'Contado', render: (r) => h('b', null, qtdTxt(r.cont, r.un)), sortVal: (r) => r.cont },
+        { key: 'cont', label: 'Contado', render: (r) => (r.zeroRow ? h('span', { class: 'muted', title: r.motivo === 'não contado' ? 'Ninguém contou: vai como 0' : 'Fora da contagem, com "zerar os não listados": vai como 0' }, '0 (zerado)') : h('b', null, qtdTxt(r.cont, r.un))), sortVal: (r) => r.cont },
         { key: 'dq', label: 'Diferença', render: (r) => h('span', { class: r.dq > 0 ? 'pos' : r.dq < 0 ? 'neg' : 'muted' }, r.dq === 0 ? 'confere' : `${r.dq > 0 ? '+' : '−'}${qtdTxt(Math.abs(r.dq), r.un)}`), sortVal: (r) => r.dq },
         { key: 'dr', label: 'Em R$ (custo)', fmt: fmt.brl, render: (r) => (r.dr == null ? '—' : h('span', { class: r.dr > 0 ? 'pos' : r.dr < 0 ? 'neg' : 'muted' }, fmt.brl(r.dr))), sortVal: (r) => r.dr || 0 },
         c.st === 'importado' ? { key: 'agora', label: 'No AppNext agora', render: (r) => (r.agora == null ? '—' : h('span', { class: r.conferiu ? 'pos' : 'muted', title: r.conferiu ? 'O estoque do AppNext já está com a quantidade contada' : 'Ainda diferente: o estoque do painel é de antes da importação, ou houve venda/entrada depois' }, qtdTxt(r.agora, r.un), r.conferiu ? ' ✓' : '')), sortVal: (r) => r.agora || 0 } : null,
       ].filter(Boolean),
-      rows: filV === 'dif' ? div : rows, sortKey: 'dr', sortDir: 'asc', maxHeight: '520px', search: 'Buscar produto…', searchKeys: ['desc', 'cod'], cls: 'est-t',
-      total: { desc: `${fmt.int(filV === 'dif' ? div.length : rows.length)} itens`, dr: (filV === 'dif' ? div : rows).reduce((s0, r) => s0 + (r.dr || 0), 0) },
+      rows: vis, sortKey: 'dr', sortDir: 'asc', maxHeight: '520px', search: 'Buscar produto…', searchKeys: ['desc', 'cod'], cls: 'est-t',
+      total: { desc: `${fmt.int(vis.length)} itens`, dr: vis.reduce((s0, r) => s0 + (r.dr || 0), 0) },
       imprimir: ['desc', 'sis', 'cont', 'dq', 'dr'],
-      empty: 'Nenhuma diferença: tudo confere com o sistema. 👏',
+      empty: { dif: 'Nenhuma diferença: tudo confere com o sistema. 👏', iguais: 'Nenhum item contado igual ao sistema.', zerados: 'Nenhum item zerado: tudo o que vai para o AppNext foi contado.', todos: 'Nada nesta contagem.' }[filV],
     });
     const [stT, stC] = ST[c.st];
     const baixar = h('a', { class: 'btn primary', href: TS.demo ? '#' : TS.api(`inventario/contagem/${c.id}/planilha?loja=${encodeURIComponent(loja)}`), onclick: (e) => {
@@ -555,7 +568,7 @@
         TS.kpi('Itens contados', `${fmt.int(contados.length)} de ${fmt.int(c.itens.length)}`, sem ? (c.semContarZero ? `${fmt.int(sem)} sem contar vão como 0` : `${fmt.int(sem)} sem contar ficam de fora`) : 'todos contados'),
         TS.kpi('Com diferença', fmt.int(div.length), contados.length ? `${fmt.pct(div.length / contados.length, 0)} dos contados` : ''),
         TS.kpi('Sobrou (custo)', fmt.brl(sobra), 'contado acima do sistema'),
-        TS.kpi('Faltou (custo)', fmt.brl(falta), z.ativo && zerados.length ? `inclui ${fmt.brl(valorZ)} dos zerados` : 'contado abaixo do sistema')),
+        TS.kpi('Faltou (custo)', fmt.brl(falta), zeroRows.length ? `inclui ${fmt.brl(valorZero)} dos ${fmt.int(zeroRows.length)} zerados` : 'contado abaixo do sistema')),
       mudou.length ? h('div', { class: 'notice mt' }, `${fmt.int(mudou.length)} ${mudou.length === 1 ? 'item mudou' : 'itens mudaram'} no estoque do painel desde o começo da contagem (venda ou entrada). A planilha leva o que foi contado: se vendeu depois de contar, reconte esses itens antes de importar.`) : null,
       cartaoEnvio(),
       enviando ? null : cartaoZerar(),
@@ -568,14 +581,9 @@
           !fechada && c.st !== 'cancelado' && !enviando ? h('button', { type: 'button', class: 'btn ghost-danger', onclick: fazer('cancelar', 'Cancelar esta contagem? Ela fica no histórico.') }, 'Cancelar') : null),
         c.st === 'gerado' && !c.podeEnviar ? h('div', { class: 'aviso inv-passos' }, h('b', null, 'Agora no AppNext: '), 'Estoque → Auditoria/Inventário → ＋ (Cadastrar um novo) → Por Excel → envie a planilha baixada. Depois clique em "Já importei no AppNext".') : null,
         c.st === 'importado' ? h('p', { class: 'muted' }, `Importado ${quando(c.importadoEm)} por ${c.importadoPor || '—'}${c.importadoPeloRobo ? ' (pelo robô, conferido item a item)' : ''}. Na próxima atualização do estoque, a coluna "No AppNext agora" mostra ✓ nos itens que já estão com a quantidade contada.`) : null,
-        h('div', { class: 'inv-revfil' }, TS.seg([[`Só diferenças (${div.length})`, 'dif'], [`Todos os contados (${rows.length})`, 'todos']], filV, (v) => { state.invRevFil = v; telaRevisar(corpo, loja, c); }), tab.searchBox), tab),
-      (() => { // itens da contagem que ninguém contou: vão como 0 (contagens novas)
-        const nc = c.semContarZero ? c.itens.filter((i) => i.cont == null && i.sis != null && Math.abs(i.sis) > 0.0005) : [];
-        if (!nc.length || fechada) return null;
-        return h('details', { class: 'card mt inv-naocont' }, h('summary', null, h('b', null, `${fmt.int(nc.length)} ${nc.length === 1 ? 'item não foi contado e vai' : 'itens não foram contados e vão'} como 0 para o AppNext`), ' — ver quais'),
-          h('ul', null, ...nc.slice(0, 200).map((i) => h('li', null, i.desc, h('small', { class: 'muted' }, ` · cód. ${i.cod} · sistema ${qtdTxt(i.sis, i.un)} → 0`)))),
-          h('small', { class: 'muted' }, 'Se algum deles tem estoque, reabra a contagem e conte (ou digite a quantidade).'));
-      })(),
+        h('div', { class: 'inv-revfil' }, TS.seg([[`Só diferenças (${div.length})`, 'dif'], [`Iguais (${iguais.length})`, 'iguais'], [`Zerados (${zeroRows.length})`, 'zerados'], [`Todos (${rows.length + zeroRows.length})`, 'todos']], filV, (v) => { state.invRevFil = v; telaRevisar(corpo, loja, c); }), tab.searchBox),
+        filV === 'zerados' && zeroRows.length && !fechada ? h('small', { class: 'muted inv-zero-dica' }, 'Itens que ninguém contou vão como 0 para o AppNext. Se algum deles tem estoque, reabra a contagem e conte.') : null,
+        tab),
       cartaoEnviado());
   }
 })();

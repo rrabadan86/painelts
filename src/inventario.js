@@ -260,7 +260,7 @@ function marcarGerado(id, cid, por, linhas) {
   if (!c) return null;
   if (c.st === 'contando' || c.st === 'revisao') c.st = 'gerado';
   c.geradoEm = new Date().toISOString(); c.geradoPor = por;
-  c.planilha = { em: c.geradoEm, por, itens: linhas.map((l) => ({ cod: l.cod, desc: l.desc, un: l.un, grupo: l.grupo, sub: l.sub, antes: l.antes, nova: l.nova, custo: l.custo, zerado: !!l.zerado })) };
+  c.planilha = { em: c.geradoEm, por, itens: linhas.map((l) => ({ cod: l.cod, desc: l.desc, un: l.un, grupo: l.grupo, sub: l.sub, antes: l.antes, nova: l.nova, custo: l.custo, zerado: !!l.zerado, ...(l.naoContado ? { naoContado: true } : {}) })) }; 
   gravar(id, c);
   return c;
 }
@@ -304,7 +304,7 @@ async function prepararEnvio(id, cid, tipo, linhas, por) {
   const c = ler(id, cid);
   if (!c) return { erro: 'Contagem não encontrada.' };
   if (tipo === 'importar') {
-    c.planilha = { em: new Date().toISOString(), por, itens: linhas.map((l) => ({ cod: l.cod, desc: l.desc, un: l.un, grupo: l.grupo, sub: l.sub, antes: l.antes, nova: l.nova, custo: l.custo, zerado: !!l.zerado })) };
+    c.planilha = { em: new Date().toISOString(), por, itens: linhas.map((l) => ({ cod: l.cod, desc: l.desc, un: l.un, grupo: l.grupo, sub: l.sub, antes: l.antes, nova: l.nova, custo: l.custo, zerado: !!l.zerado, ...(l.naoContado ? { naoContado: true } : {}) })) }; 
     c.geradoEm = c.planilha.em; c.geradoPor = por;
     if (c.st === 'contando' || c.st === 'revisao') c.st = 'gerado';
   } else c.desfazer = { geradoEm: new Date().toISOString(), por };

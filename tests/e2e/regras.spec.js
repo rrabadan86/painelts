@@ -196,8 +196,14 @@ test.describe('regras', () => {
     page.on('dialog', (d) => d.accept());
     await page.getByRole('button', { name: 'Terminar contagem' }).click();
     await expect(page.locator('.inv-revfil')).toBeVisible();
-    await page.locator('.inv-revfil button', { hasText: 'Todos os contados' }).click();
+    await page.locator('.inv-revfil button', { hasText: /^Todos \(/ }).click();
     await expect(page.locator('.inv-revfil').locator('..')).toContainText('375 g');
+    await expect(page.locator('.inv-revfil button', { hasText: /^Iguais \(\d+\)/ })).toBeVisible();
+    const z = page.locator('.inv-revfil button', { hasText: /^Zerados \(\d+\)/ });
+    const nz = Number((await z.textContent()).match(/\d+/)[0]);
+    await z.click();
+    if (nz) await expect(page.locator('.inv-revfil').locator('..')).toContainText('não contado: vai como 0');
+    else await expect(page.locator('.inv-revfil').locator('..')).toContainText('Nenhum item zerado');
   });
 
   test('Inventário: cancelar na tela de contagem; histórico com situação, período e busca', async ({ page }) => {
