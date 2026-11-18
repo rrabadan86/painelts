@@ -438,6 +438,11 @@ app.get('/api/demo/inventario/catalogo', (req, res) => {
     .map((i) => ({ ...i, grupo: i.un === 'Kg' ? 'MATÉRIA PRIMA' : 'ACESSÓRIOS', sub: i.un === 'Kg' ? 'Matéria Prima' : '' }));
   res.json({ itens: cat, estoqueEm: e.estoque.em });
 });
+app.get('/api/demo/estoque/disponivel', (req, res) => {
+  if (!lojaDemo(req)) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  const e = DEMO.estoqueDemo(req.query.loja);
+  res.json(require('./src/lotes').disponivel({ estoque: e.estoque, compras: e.compras }));
+});
 // validade na apresentação: as entradas fictícias "envelhecidas" para mostrar todas as faixas (nada é salvo)
 app.get('/api/demo/validade', (req, res) => {
   if (!lojaDemo(req)) return res.status(400).json({ erro: 'Escolha uma loja.' });
@@ -1498,6 +1503,13 @@ app.put('/api/validade/saldo', express.json({ limit: '4kb' }), (req, res) => {
   C.auditar(req.user, req.body.automatico ? 'voltou o saldo dos lotes para o automático' : 'ajustou o saldo de um lote', loja.id,
     { loja: loja.id, cod: l.cod, nf: l.nf, entrada: l.entrada, ...(req.body.automatico ? {} : { antes: r.antes, depois: Number(req.body.saldo), lotes: r.ok.fix }) });
   res.json({ ok: true });
+});
+// o que tem em estoque (sem quantidade nem custo): toda mensagem que oferece produto só sai se a loja tiver
+app.get('/api/estoque/disponivel', (req, res) => {
+  if (!(podeClientes(req) || (req.perfil !== 'vendedor' && podeValidade(req)))) return res.status(403).json({ erro: 'Sem permissão.' });
+  const loja = req.lojas.find((l) => l.id === String(req.query.loja || ''));
+  if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  res.json(LOT.disponivel({ estoque: ES.atual(loja.id), compras: ES.compras(loja.id) }));
 });
 app.put('/api/validade/lote', express.json({ limit: '4kb' }), (req, res) => {
   if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });

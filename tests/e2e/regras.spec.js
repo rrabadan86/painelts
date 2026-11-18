@@ -159,6 +159,26 @@ test.describe('regras', () => {
     await expect(page.locator('main')).toContainText('Tipo de chá que compra');
   });
 
+  test('Trava de estoque: mensagem que oferece produto sem estoque não sai', async ({ page }) => {
+    const r = await page.evaluate(async () => {
+      const d = await TS.estoqueDisp(TS.state.loja);
+      const c = { chaFavorito: 'Produto Que Nao Existe', chaUltimo: null };
+      const zero = (await (await fetch('/api/demo/estoque/disponivel?loja=' + encodeURIComponent(TS.state.loja))).json()).itens.find((x) => !x[2]);
+      return {
+        desconhecido: d.tem('Produto Que Nao Existe'),
+        semEstoque: zero ? d.tem(zero[0]) : false,
+        bloqueia: zero ? TS.semEstoqueNaMensagem(d, 'Seu {cha} acabou?', { chaFavorito: zero[0] }) : zero,
+        semTag: zero ? TS.semEstoqueNaMensagem(d, 'Oi, {nome}!', { chaFavorito: zero[0] }) : null,
+        produto: zero ? TS.semEstoqueNaMensagem(d, 'Chegou {produto}', c, { produtos: [zero[0]] }) : zero,
+      };
+    });
+    expect(r.desconhecido).toBeNull();
+    expect(r.semEstoque).toBe(false);
+    expect(r.bloqueia).toBeTruthy();
+    expect(r.semTag).toBeNull();
+    expect(r.produto).toBeTruthy();
+  });
+
   test('Inventário: nova contagem de um tipo de chá, contar em gramas, revisar', async ({ page }) => {
     await page.evaluate(() => { location.hash = '#inventario'; });
     await page.getByRole('button', { name: '+ Nova contagem' }).click();

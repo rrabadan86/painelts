@@ -146,6 +146,49 @@
 
   TS.validade = { dados, badge, campanhaDoCha, lotesDoCha, camposLotes, rotLote, blocoNota, pendentes };
 
+  /**
+   * Trava de estoque das mensagens: toda mensagem que oferece produto só sai se a loja tiver.
+   * TS.estoqueDisp(loja) → { tem(nome) → true | false | null (produto que o painel não achou no estoque: não trava) }
+   * O nome pode ser o do pacote ("Valeriana Garden 100G"): vale o chá a granel ("VALERIANA GARDEN").
+   */
+  const semTamanho = (t) => TS.norm(String(t || '')).replace(/\s*[-–]?\s*\d+\s*(g|gr|grs|gramas)\b.*$/, '').trim();
+  const dispCache = new Map();
+  TS.estoqueDisp = function (loja) {
+    const c = dispCache.get(loja);
+    if (c && Date.now() - c.em < 60000) return c.p;
+    const p = req('GET', `estoque/disponivel?loja=${encodeURIComponent(loja)}`).then((j) => {
+      const exato = new Map(), base = new Map();
+      for (const [desc, un, tem] of j.itens || []) {
+        const n = TS.norm(desc); exato.set(n, (exato.get(n) || false) || !!tem);
+        if (String(un).toLowerCase() === 'kg') { const b = semTamanho(desc); base.set(b, (base.get(b) || false) || !!tem); }
+      }
+      const tem = (nome) => {
+        if (!nome) return null;
+        const n = TS.norm(nome);
+        if (exato.has(n)) return exato.get(n);
+        const b = semTamanho(nome);
+        if (base.has(b)) return base.get(b);
+        if (exato.has(b)) return exato.get(b);
+        return null;
+      };
+      return { tem, em: j.em };
+    });
+    dispCache.set(loja, { em: Date.now(), p });
+    p.catch(() => dispCache.delete(loja));
+    return p;
+  };
+  /** produtos que a mensagem oferece para este cliente: {cha}, {ultimocha}, {produto} (os da campanha) e {chaoferta} */
+  TS.produtosDaMensagem = (texto, c, extra = {}) => {
+    const t = String(texto || ''), out = [];
+    if (/\{cha\}/.test(t) && c.chaFavorito) out.push(c.chaFavorito);
+    if (/\{ultimocha\}/.test(t) && c.chaUltimo) out.push(c.chaUltimo);
+    if (/\{produto\}/.test(t)) out.push(...(extra.produtos || []));
+    if (/\{chaoferta\}/.test(t) && extra.chaoferta) out.push(extra.chaoferta);
+    return out;
+  };
+  /** o primeiro produto citado que está sem estoque (ou null) */
+  TS.semEstoqueNaMensagem = (disp, texto, c, extra) => (disp ? TS.produtosDaMensagem(texto, c, extra).find((p) => disp.tem(p) === false) || null : null);
+
   TS.pages.validade = function (root) {
     if (TS.subEstoque) root.append(TS.subEstoque('validade'));
     root.append(h('div', { class: 'page-head' }, h('div', null, h('h1', { class: 'page-title' }, 'Validade e lotes'),

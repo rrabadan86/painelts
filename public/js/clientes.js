@@ -552,10 +552,8 @@
       const perto = new Map();
       for (const l of (val && val.lotes) || []) if (l.dias != null && l.dias >= 0 && l.dias < 60) { const k = TS.norm(l.desc); if (!perto.has(k) || l.dias < perto.get(k).dias) perto.set(k, { dias: l.dias, desc: l.desc }); }
       const semTam = (t) => TS.norm(String(t || '')).replace(/\s*[-–]?\s*\d+\s*(g|gr|grs|gramas)\b.*$/, '').trim();
-      // trava: não oferecer chá que a loja não tem (estoque 0 no AppNext e nenhuma nota de entrada depois do estoque)
-      const temCha = new Map(); // nome → true (tem ou está chegando) / false (sem estoque)
-      for (const [d, q, chegou] of (val && val.granel) || []) { const k = semTam(d); temCha.set(k, (temCha.get(k) || false) || q > 0.0005 || !!chegou); }
-      const semEstoque = (nome) => { if (!nome || !temCha.size) return false; const k = semTam(nome); return temCha.has(k) && !temCha.get(k); };
+      // trava: não oferecer produto que a loja não tem (estoque 0 no AppNext e nenhuma nota de entrada depois do estoque)
+      const disp = (val && val.disp) || null;
       let foraSemEstoque = 0;
       const hojeIso = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
       let contatadosHoje = 0;
@@ -575,9 +573,9 @@
         if (!ms.length) continue;
         // a mensagem do motivo cita o chá ({cha}/{ultimocha})? se ele está sem estoque, o motivo sai (volta quando chegar a nota)
         const mods0 = modelosDe(lojaIdDe(c));
-        const citaCha = (m) => { const x = MOTIVOS_HOJE[m]; if (m === 'validade') return null; const txt0 = x.texto || ((mods0.find((y) => y.nome === x.modelo) || {}).texto || ''); return /\{cha\}/.test(txt0) ? c.chaFavorito : /\{ultimocha\}/.test(txt0) ? c.chaUltimo : null; };
+        const txtDe = (m) => { const x = MOTIVOS_HOJE[m]; return x.texto || ((mods0.find((y) => y.nome === x.modelo) || mods0[0] || {}).texto || ''); };
         const antes = ms.length;
-        for (let k = ms.length - 1; k >= 0; k--) if (semEstoque(citaCha(ms[k]))) ms.splice(k, 1);
+        for (let k = ms.length - 1; k >= 0; k--) if (TS.semEstoqueNaMensagem && TS.semEstoqueNaMensagem(disp, txtDe(ms[k]), c, { chaoferta: oferta })) ms.splice(k, 1);
         if (!ms.length) { if (antes) foraSemEstoque++; continue; }
         ms.sort((a, b) => MOTIVOS_HOJE[b].peso - MOTIVOS_HOJE[a].peso);
         itens.push({ c, ms, oferta, peso: MOTIVOS_HOJE[ms[0]].peso + ms.length + Math.min(9, (c.gasto12 || 0) / 500) });
@@ -625,8 +623,11 @@
     if (!TS.validade) pintar(null);
     else {
       corpo.replaceChildren(h('div', { class: 'card' }, h('div', { class: 'loading' }, h('div', null, h('div', { class: 'spinner' }), h('p', null, 'Conferindo o estoque dos chás…')))));
-      TS.validade.dados(state.loja).then((v) => { if (corpo.isConnected) pintar(v); })
-        .catch(() => { if (!corpo.isConnected) return; pintar(null); corpo.prepend(h('div', { class: 'notice' }, 'Sem acesso ao estoque nesta conta: a lista não confere se o chá citado na mensagem tem em estoque.')); });
+      Promise.all([TS.validade.dados(state.loja).catch(() => null), TS.estoqueDisp(state.loja).catch(() => null)]).then(([v, disp]) => {
+        if (!corpo.isConnected) return;
+        pintar({ ...(v || {}), disp });
+        if (!disp) corpo.prepend(h('div', { class: 'notice' }, 'Não consegui ler o estoque agora: a lista não está conferindo se o produto citado na mensagem tem em estoque.'));
+      });
     }
   };
 
@@ -1538,12 +1539,21 @@
         const sel = h('select', { class: 'f-input', 'aria-label': 'Modelo de mensagem' }, mods.map((m, k) => h('option', { value: k, selected: m.nome === sugerido || null }, m.nome)));
         const prev = h('div', { class: 'cli-msg' });
         const atual = () => mods[+sel.value];
-        const pv = () => { prev.textContent = textoWpp(atual(), c); };
+        const aviso = h('div', { class: 'notice cli-sem-estoque', hidden: true });
+        let disp = null, faltando = null;
+        const pv = () => {
+          prev.textContent = textoWpp(atual(), c);
+          faltando = TS.semEstoqueNaMensagem ? TS.semEstoqueNaMensagem(disp, atual().texto, c) : null;
+          aviso.hidden = !faltando; aviso.textContent = faltando ? `🚫 ${faltando} está sem estoque: esta mensagem oferece um produto que a loja não tem. Escolha outra mensagem ou espere a nota de entrada.` : '';
+          const bt = box.querySelector('.cli-wpp a.btn.primary'); if (bt) bt.classList.toggle('desab', !!faltando);
+        };
         sel.addEventListener('change', pv); pv();
-        box.append(h('div', { class: 'cli-wpp' }, h('span', { class: 'f-label' }, 'Mensagem pronta'), sel, prev,
+        if (TS.estoqueDisp && state.loja && state.loja !== 'todas') TS.estoqueDisp(state.loja).then((d) => { disp = d; pv(); }).catch(() => null);
+        box.append(h('div', { class: 'cli-wpp' }, h('span', { class: 'f-label' }, 'Mensagem pronta'), sel, prev, aviso,
           h('div', { class: 'cfg-inline' },
             h('a', { class: 'btn primary', href: '#', onclick: async (e) => {
               e.preventDefault();
+              if (faltando) { alert(`${faltando} está sem estoque: escolha outra mensagem.`); return; }
               if (TS.demo) { alert('Na apresentação o WhatsApp não abre (número fictício). A mensagem seria:\n\n' + textoWpp(atual(), c)); }
               else window.open(linkWpp(c, textoWpp(atual(), c)), '_blank', 'noopener');
               try { await marcar(c, 'contatado', atual().nome); pintar(); } catch (er) { alert(er.message); }

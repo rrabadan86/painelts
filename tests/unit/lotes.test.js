@@ -144,3 +144,10 @@ test('lotes: chá a granel com e sem estoque (e nota que chegou depois do estoqu
   const compras = { itens: { 3: [['2026-11-19', 10, 5, 1, 'T']] } };
   assert.deepEqual(L.granelEstoque({ estoque, compras }), [['VALERIANA', 0, 0], ['CHAI', 0.4, 0], ['MATE', 0, 1]]);
 });
+
+test('lotes: disponível (sem quantidade nem custo) para a trava das mensagens', () => {
+  const estoque = { em: '2026-11-18T09:00:00Z', itens: [{ cod: '1', desc: 'VALERIANA', un: 'Kg', qtd: 0, custo: 9 }, { cod: '2', desc: 'CANECA', un: 'Un', qtd: 3, custo: 9 }, { cod: '3', desc: 'MATE', un: 'Kg', qtd: 0 }] };
+  const r = L.disponivel({ estoque, compras: { itens: { 3: [['2026-11-19', 1, 1, 1, 'T']] } } });
+  assert.deepEqual(r.itens, [['VALERIANA', 'Kg', 0], ['CANECA', 'Un', 1], ['MATE', 'Kg', 1]]);
+  assert.ok(!JSON.stringify(r).includes('custo'));
+});

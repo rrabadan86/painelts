@@ -392,6 +392,14 @@ function granelEstoque({ estoque, compras }) {
     .map((i) => [i.desc || '', Math.round((Number(i.qtd) || 0) * 1000) / 1000, (ent[String(i.cod)] || []).some(([dia]) => DIA.test(dEst) && dia > dEst) ? 1 : 0]);
 }
 
+/** o que tem em estoque: [nome, unidade, 1 = tem (ou chegou nota depois do estoque exportado) / 0 = não tem] — sem quantidade nem custo */
+function disponivel({ estoque, compras }) {
+  const dEst = String((estoque && estoque.em) || '').slice(0, 10);
+  const ent = (compras && compras.itens) || {};
+  const itens = ((estoque && estoque.itens) || []).map((i) => [i.desc || '', i.un || '', (Number(i.qtd) || 0) > 0.0005 || (ent[String(i.cod)] || []).some(([dia]) => DIA.test(dEst) && dia > dEst) ? 1 : 0]);
+  return { em: (estoque && estoque.em) || null, itens };
+}
+
 /** lotes da loja já calculados (arquivos do estoque, das compras e da tabela, ajustes da tela e do inventário) */
 function daLoja(id, hoje) {
   const TAB = require('./tabela');
@@ -421,4 +429,4 @@ function linhasResumo(id) {
     ...top];
 }
 
-module.exports = { MESES_VALIDADE, FAIXAS, RISCO_DIAS, ler, calcular, resumo, editar, editarSaldo, daLoja, daNota, granelEstoque, pendentesNotas, entradasDoCod, entradasRecentes, linhasResumo, somarMeses, precosKg, faixa, hojeSP };
+module.exports = { MESES_VALIDADE, FAIXAS, RISCO_DIAS, ler, calcular, resumo, editar, editarSaldo, daLoja, daNota, granelEstoque, disponivel, pendentesNotas, entradasDoCod, entradasRecentes, linhasResumo, somarMeses, precosKg, faixa, hojeSP };

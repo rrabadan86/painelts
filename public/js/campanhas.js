@@ -282,6 +282,8 @@
     const previa = h('div', { class: 'cp-previa' });
     const exemplo = h('div', { class: 'cli-msg cp-exemplo' });
     let sel_ = [];
+    let dispForm = null;
+    if (TS.estoqueDisp && state.loja && state.loja !== 'todas') TS.estoqueDisp(state.loja).then((d0) => { dispForm = d0; atualizar(); }).catch(() => null);
     let atualizar = TS.debounce(() => {
       sel_ = selecionar(f);
       contagem.replaceChildren(h('b', null, fmt.int(sel_.length)), ` ${sel_.length === 1 ? 'cliente' : 'clientes'} com celular entram na campanha`);
@@ -290,7 +292,15 @@
       const faltam = (TS.CAMPOS_MSG || []).filter(([k, , falta]) => falta && msg.value.includes('{' + k + '}'))
         .map(([k, , falta]) => [k, sel_.filter(({ c }) => falta(c)).length]).filter(([, n]) => n);
       exemplo.replaceChildren(h('small', { class: 'muted' }, c0 ? `Como fica para ${c0.nome || 'o primeiro cliente'}:` : 'Exemplo:'), h('div', null, c0 ? A().texto(msg.value, c0, extras({ filtros: f })) : msg.value),
-        ...(faltam.length ? [h('small', { class: 'cp-faltam' }, 'Sem o dado: ', faltam.map(([k, n]) => `{${k}} em ${fmt.int(n)} ${n === 1 ? 'cliente' : 'clientes'}`).join(' · '), ' — confira como fica para eles ou ajuste a frase.')] : []));
+        ...(faltam.length ? [h('small', { class: 'cp-faltam' }, 'Sem o dado: ', faltam.map(([k, n]) => `{${k}} em ${fmt.int(n)} ${n === 1 ? 'cliente' : 'clientes'}`).join(' · '), ' — confira como fica para eles ou ajuste a frase.')] : []),
+        ...(() => { // trava de estoque: quantos receberiam oferta de produto sem estoque (ficam esperando a nota de entrada)
+          if (!dispForm) return [];
+          const prods = listaProdutos(f).filter((x) => !x.contem).map((x) => x.t);
+          const textosF = [msg.value, ...textosVar()];
+          const semP = /\{produto\}/.test(textosF.join(' ')) ? prods.filter((p) => dispForm.tem(p) === false) : [];
+          let n = 0; for (const { c } of sel_) if (textosF.some((t) => TS.semEstoqueNaMensagem(dispForm, t, c, { produtos: prods }))) n++;
+          return n ? [h('small', { class: 'cp-faltam cp-sem-estoque' }, `🚫 ${fmt.int(n)} ${n === 1 ? 'cliente receberia' : 'clientes receberiam'} oferta de produto sem estoque${semP.length ? ` (${semP.slice(0, 3).join(', ')})` : ''}: eles ficam esperando a nota de entrada e não entram na fila de envio.`)] : [];
+        })());
       por(previa, sel_.length ? TS.table({
         cols: [{ key: 'nome', label: 'Cliente', align: 'l', render: (r) => h('span', null, r.nome, h('small', { class: 'muted cp-cel' }, `${r.cel} · CPF ${A().fmtCPF(r.cpf)}`)) }, { key: 'saldo', label: 'Pontos', fmt: fmt.int }, { key: 'vence', label: 'Vencem', align: 'l' }, { key: 'ultima', label: 'Última compra', align: 'l', render: (r) => d(r.ult) }],
         rows: sel_.slice(0, 300).map(({ c, saldo }) => ({ cpf: c.cpf, nome: c.nome || '—', cel: A().fmtTel(c.celular), saldo, vence: c.fx && c.fx.prox != null ? `${fmt.int(c.fx.proxPts)} em ${d(c.fx.prox)}` : '—', ult: c.ultima, ultima: c.ultima ?? -1 })),
@@ -453,6 +463,9 @@
   async function abrirCampanha(corpo, lista, camp, rodadaId, jaRecarregou) {
     // ao abrir: busca de novo quem já recebeu mensagem (de outra campanha, ou de outro computador)
     if (!jaRecarregou) { await A().recarregarContatos(); if (!corpo.isConnected) return; }
+    // trava de estoque: a mensagem que oferece produto ({cha}, {ultimocha}, {produto}) só sai se a loja tiver
+    let disp = null;
+    if (TS.estoqueDisp) { try { disp = await TS.estoqueDisp(state.loja); } catch { /* sem leitura do estoque: sem trava (aviso na tela) */ } if (!corpo.isConnected) return; }
     const r = camp.rodadas.find((x) => x.id === rodadaId) || camp.rodadas[0];
     const s = resumoRodada(r, camp.janela);
     const repintar = () => abrirCampanha(corpo, lista, camp, r.id, true);
@@ -480,9 +493,18 @@
       const t = h('div', { class: 'toast', role: 'status' }, `${fmt.int(bloqueados.length)} ${bloqueados.length === 1 ? 'cliente saiu' : 'clientes saíram'} da fila: já ${bloqueados.length === 1 ? 'recebeu' : 'receberam'} mensagem há menos de ${dias} dias (ou não quer${bloqueados.length === 1 ? '' : 'em'} mensagens).`);
       document.body.append(t); setTimeout(() => t.remove(), 6000);
     }
-    // fila: próximo pendente
-    const pend = r.lista.filter((x) => x.st === 'p');
+    // fila: próximo pendente (quem receberia oferta de produto sem estoque espera, sem sair da lista: volta quando chegar a nota)
+    const textos0 = [camp.mensagem, ...(camp.variacoes || [])];
+    const prodsCamp = listaProdutos(camp.filtros || {}).filter((x) => !x.contem).map((x) => x.t);
+    const faltaPara = (it) => { const c = clienteDe(it.cpf); for (const t of textos0) { const f = TS.semEstoqueNaMensagem ? TS.semEstoqueNaMensagem(disp, t, c, { produtos: prodsCamp }) : null; if (f) return f; } return null; };
+    const esperandoEstoque = new Map();
+    for (const it of r.lista) if (it.st === 'p') { const f = faltaPara(it); if (f) esperandoEstoque.set(it.cpf, f); }
+    const pend = r.lista.filter((x) => x.st === 'p' && !esperandoEstoque.has(x.cpf));
     const atual = pend[0];
+    const faltam = [...new Set(esperandoEstoque.values())];
+    const avisoEstoque = esperandoEstoque.size ? h('div', { class: 'notice cp-estoque' }, h('b', null, `🚫 ${fmt.int(esperandoEstoque.size)} ${esperandoEstoque.size === 1 ? 'cliente esperando' : 'clientes esperando'} estoque: `),
+      `a mensagem ofereceria ${faltam.slice(0, 4).join(', ')}${faltam.length > 4 ? '…' : ''}, que está sem estoque. Eles continuam na lista e entram na fila quando chegar a nota de entrada.`)
+      : !disp ? h('div', { class: 'notice' }, 'Não consegui ler o estoque agora: a fila não está conferindo se o produto citado tem em estoque.') : null;
     // limite por dia: conta os envios de hoje desta campanha (todas as listas)
     const hojeIso = new Date().toLocaleDateString('sv-SE');
     const limiteDia = camp.limiteDia != null ? camp.limiteDia : 20;
@@ -521,7 +543,8 @@
             h('button', { type: 'button', class: 'btn', onclick: () => A().abrirClientes([c.cpf]) }, 'Ver cliente'),
             h('button', { type: 'button', class: 'btn danger-txt', onclick: async () => { if (!confirm(`${c.nome || 'Este cliente'} não quer receber mensagens?`)) return; await marcarSt(atual, 'o').catch(() => {}); if (!TS.demo) await A().marcar(c, 'optout').catch(() => {}); repintar(); } }, 'Não quer mensagens'))));
     } else {
-      fila = TS.card('Fila de envio', null, h('div', { class: 'cp-fim' }, h('b', null, '✓ Todas as mensagens desta lista foram enviadas.'), ` O retorno é medido até ${camp.janela} dias depois de cada envio.`));
+      fila = esperandoEstoque.size ? TS.card('Fila de envio', null, h('div', { class: 'cp-fim' }, h('b', null, 'Só faltam clientes esperando estoque.'), ' Eles entram na fila quando chegar a nota de entrada do produto.'))
+        : TS.card('Fila de envio', null, h('div', { class: 'cp-fim' }, h('b', null, '✓ Todas as mensagens desta lista foram enviadas.'), ` O retorno é medido até ${camp.janela} dias depois de cada envio.`));
     }
     // lista com situação e retorno
     const ST = { p: ['Pendente', ''], e: ['Enviada', 'ok'], o: ['Não quer', 'neg'], x: ['Pulada', ''] };
@@ -533,7 +556,7 @@
       cols: [
         { key: 'nome', label: 'Cliente', align: 'l', render: (x) => h('span', null, x.nome, h('small', { class: 'muted cp-cel' }, 'CPF ' + A().fmtCPF(x.cpf))) },
         { key: 'cel', label: 'Celular', align: 'l' },
-        { key: 'st', label: 'Situação', align: 'l', render: (x) => h('span', { class: 'cp-st ' + ST[x.st][1] }, ST[x.st][0], x.em != null ? h('small', null, ` ${d(x.em)}${x.por ? ' · ' + x.por : ''}`) : null, x.it.motivo ? h('small', { class: 'cp-motivo' }, x.it.motivo) : null), sortVal: (x) => ({ e: 3, x: 2, o: 1, p: 0 })[x.st] },
+        { key: 'st', label: 'Situação', align: 'l', render: (x) => h('span', { class: 'cp-st ' + ST[x.st][1] }, x.st === 'p' && esperandoEstoque.has(x.cpf) ? `Esperando estoque (${esperandoEstoque.get(x.cpf)})` : ST[x.st][0], x.em != null ? h('small', null, ` ${d(x.em)}${x.por ? ' · ' + x.por : ''}`) : null, x.it.motivo ? h('small', { class: 'cp-motivo' }, x.it.motivo) : null), sortVal: (x) => ({ e: 3, x: 2, o: 1, p: 0 })[x.st] },
         { key: 'voltou', label: `Voltou em ${camp.janela} dias`, align: 'l', render: (x) => (!x.ret ? '—' : x.ret.voltou ? h('span', { class: 'cp-st ok' }, `Sim · ${d(x.ret.primeira)} · ${fmt.brl0(x.ret.vt)}`) : x.ret.aberto ? h('span', { class: 'muted' }, 'ainda no prazo') : h('span', { class: 'muted' }, 'não')) },
         { key: 'acao', label: '', align: 'l', render: (x) => (x.st !== 'p' ? h('button', { type: 'button', class: 'link-btn', onclick: async (e) => { e.stopPropagation(); await marcarSt(x.it, 'p', x.it.motivo ? 'liberado' : null).catch((er) => alert(er.message)); repintar(); } }, 'voltar para a fila') : null), sortVal: () => 0 },
       ],
@@ -561,6 +584,7 @@
         kpi('Voltaram', s.env ? fmt.pct(s.volt / s.env, 0) : '—', `${fmt.int(s.volt)} de ${fmt.int(s.env)} enviados${s.aberto ? ` · ${fmt.int(s.aberto)} ainda no prazo` : ''}`, `Clientes que compraram (cupom com CPF) do dia do envio até ${camp.janela} dias depois.`),
         kpi('Faturamento do retorno', fmt.brl0(s.vt), s.volt ? `ticket ${fmt.brl0(s.vt / s.volt)}` : null, 'Soma das compras desses clientes no prazo do retorno.'),
         kpi('Não querem', fmt.int(s.opt), 'saíram das próximas campanhas')),
+      avisoEstoque ? h('div', { class: 'mt' }, avisoEstoque) : null,
       h('div', { class: 'mt' }, fila),
       textos.length > 1 ? h('div', { class: 'mt' }, cartaoVariacoes(r, camp, textos)) : null,
       h('div', { class: 'mt' }, TS.cardWithTools('Clientes da campanha', 'Enviadas ficam em verde · clique num cliente para ver a ficha', h('div', { class: 'cp-acoes', style: { margin: 0 } }, tab.searchBox, csvBt), tab)));

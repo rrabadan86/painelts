@@ -2215,3 +2215,6 @@ details.vl-ajuda summary { cursor: pointer; font-weight: 600; }
 .nfe-parcs { display: grid; gap: 4px; margin-top: 6px; }
 .nfe-parc-l { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 @media (max-width: 600px) { .np-grade { grid-template-columns: 1fr; } }
+.cli-wpp a.btn.desab { opacity: .45; }
+.cli-sem-estoque, .cp-estoque { background: #FBE6CC; border-color: #F1C98F; color: #6b3d00; }
+.cp-sem-estoque { color: #9A5300; font-weight: 600; }
