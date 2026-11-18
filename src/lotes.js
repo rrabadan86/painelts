@@ -384,6 +384,14 @@ function pendentesNotas({ notas, estoque, compras, edits, abertos, hoje = hojeSP
   return out;
 }
 
+/** chá a granel do estoque: [nome, kg no AppNext, chegou nota depois do estoque exportado] (para não oferecer o que não tem) */
+function granelEstoque({ estoque, compras }) {
+  const dEst = String((estoque && estoque.em) || '').slice(0, 10);
+  const ent = (compras && compras.itens) || {};
+  return ((estoque && estoque.itens) || []).filter((i) => i.un === 'Kg' && !ENVASADO.test(i.desc || ''))
+    .map((i) => [i.desc || '', Math.round((Number(i.qtd) || 0) * 1000) / 1000, (ent[String(i.cod)] || []).some(([dia]) => DIA.test(dEst) && dia > dEst) ? 1 : 0]);
+}
+
 /** lotes da loja já calculados (arquivos do estoque, das compras e da tabela, ajustes da tela e do inventário) */
 function daLoja(id, hoje) {
   const TAB = require('./tabela');
@@ -413,4 +421,4 @@ function linhasResumo(id) {
     ...top];
 }
 
-module.exports = { MESES_VALIDADE, FAIXAS, RISCO_DIAS, ler, calcular, resumo, editar, editarSaldo, daLoja, daNota, pendentesNotas, entradasDoCod, entradasRecentes, linhasResumo, somarMeses, precosKg, faixa, hojeSP };
+module.exports = { MESES_VALIDADE, FAIXAS, RISCO_DIAS, ler, calcular, resumo, editar, editarSaldo, daLoja, daNota, granelEstoque, pendentesNotas, entradasDoCod, entradasRecentes, linhasResumo, somarMeses, precosKg, faixa, hojeSP };

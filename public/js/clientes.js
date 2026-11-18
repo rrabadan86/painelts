@@ -552,6 +552,11 @@
       const perto = new Map();
       for (const l of (val && val.lotes) || []) if (l.dias != null && l.dias >= 0 && l.dias < 60) { const k = TS.norm(l.desc); if (!perto.has(k) || l.dias < perto.get(k).dias) perto.set(k, { dias: l.dias, desc: l.desc }); }
       const semTam = (t) => TS.norm(String(t || '')).replace(/\s*[-–]?\s*\d+\s*(g|gr|grs|gramas)\b.*$/, '').trim();
+      // trava: não oferecer chá que a loja não tem (estoque 0 no AppNext e nenhuma nota de entrada depois do estoque)
+      const temCha = new Map(); // nome → true (tem ou está chegando) / false (sem estoque)
+      for (const [d, q, chegou] of (val && val.granel) || []) { const k = semTam(d); temCha.set(k, (temCha.get(k) || false) || q > 0.0005 || !!chegou); }
+      const semEstoque = (nome) => { if (!nome || !temCha.size) return false; const k = semTam(nome); return temCha.has(k) && !temCha.get(k); };
+      let foraSemEstoque = 0;
       const hojeIso = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
       let contatadosHoje = 0;
       const itens = [];
@@ -568,6 +573,12 @@
         if (oferta) ms.push('validade');
         if (c.tags.has('vence')) ms.push('vence');
         if (!ms.length) continue;
+        // a mensagem do motivo cita o chá ({cha}/{ultimocha})? se ele está sem estoque, o motivo sai (volta quando chegar a nota)
+        const mods0 = modelosDe(lojaIdDe(c));
+        const citaCha = (m) => { const x = MOTIVOS_HOJE[m]; if (m === 'validade') return null; const txt0 = x.texto || ((mods0.find((y) => y.nome === x.modelo) || {}).texto || ''); return /\{cha\}/.test(txt0) ? c.chaFavorito : /\{ultimocha\}/.test(txt0) ? c.chaUltimo : null; };
+        const antes = ms.length;
+        for (let k = ms.length - 1; k >= 0; k--) if (semEstoque(citaCha(ms[k]))) ms.splice(k, 1);
+        if (!ms.length) { if (antes) foraSemEstoque++; continue; }
         ms.sort((a, b) => MOTIVOS_HOJE[b].peso - MOTIVOS_HOJE[a].peso);
         itens.push({ c, ms, oferta, peso: MOTIVOS_HOJE[ms[0]].peso + ms.length + Math.min(9, (c.gasto12 || 0) / 500) });
       }
@@ -607,10 +618,16 @@
           h('div', { class: 'hj-ferr' }, chips, selV),
           sel.length ? h('div', { class: 'hj-lista' }, ...sel.slice(0, LIM).map(linha)) : TS.empty('Ninguém para contatar com esses filtros. 🎉'),
           sel.length > LIM ? h('p', { class: 'muted' }, `Mostrando os ${LIM} mais importantes de ${fmt.int(sel.length)}. Depois de contatar, a lista anda.`) : null,
+          foraSemEstoque ? h('p', { class: 'muted hj-fora' }, `🚫 ${fmt.int(foraSemEstoque)} cliente${foraSemEstoque === 1 ? '' : 's'} fora da lista: a mensagem citaria um chá que está sem estoque. Voltam quando chegar a nota de entrada do chá.`) : null,
           h('small', { class: 'muted hj-rodape' }, 'Ordem: quem é mais importante primeiro (clientes bons sumindo, aniversário, hora de repor…). Ao abrir o WhatsApp, o cliente fica marcado como contatado e sai da lista. Mande poucas por vez para o WhatsApp não restringir o número.')));
     };
-    pintar(null);
-    if (TS.validade) TS.validade.dados(state.loja).then((v) => { if (corpo.isConnected) pintar(v); }).catch(() => null);
+    // espera o estoque (chá a granel) para não mostrar quem receberia mensagem de chá que a loja não tem
+    if (!TS.validade) pintar(null);
+    else {
+      corpo.replaceChildren(h('div', { class: 'card' }, h('div', { class: 'loading' }, h('div', null, h('div', { class: 'spinner' }), h('p', null, 'Conferindo o estoque dos chás…')))));
+      TS.validade.dados(state.loja).then((v) => { if (corpo.isConnected) pintar(v); })
+        .catch(() => { if (!corpo.isConnected) return; pintar(null); corpo.prepend(h('div', { class: 'notice' }, 'Sem acesso ao estoque nesta conta: a lista não confere se o chá citado na mensagem tem em estoque.')); });
+    }
   };
 
   // ---------- página ----------

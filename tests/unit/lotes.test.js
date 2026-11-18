@@ -138,3 +138,9 @@ test('lotes: lote que já acabou não fica como "lote pendente" na nota', () => 
   const abertos = new Set(L.calcular({ estoque, compras, tabela: null, edits: { lotes: {} }, hoje: '2026-11-18' }).lotes.map((l) => l.chave));
   assert.deepEqual(L.pendentesNotas({ notas: [nota], estoque, compras, edits: { lotes: {} }, abertos, hoje: '2026-11-18' }), { n900: 1 });
 });
+
+test('lotes: chá a granel com e sem estoque (e nota que chegou depois do estoque)', () => {
+  const estoque = { em: '2026-11-18T09:00:00Z', itens: [{ cod: '1', desc: 'VALERIANA', un: 'Kg', qtd: 0 }, { cod: '2', desc: 'CHAI', un: 'Kg', qtd: 0.4 }, { cod: '3', desc: 'MATE', un: 'Kg', qtd: 0 }, { cod: '4', desc: 'LATA X', un: 'Kg', qtd: 2 }] };
+  const compras = { itens: { 3: [['2026-11-19', 10, 5, 1, 'T']] } };
+  assert.deepEqual(L.granelEstoque({ estoque, compras }), [['VALERIANA', 0, 0], ['CHAI', 0.4, 0], ['MATE', 0, 1]]);
+});

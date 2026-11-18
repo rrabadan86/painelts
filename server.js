@@ -451,7 +451,7 @@ app.get('/api/demo/validade', (req, res) => {
   const { em, lotes } = LOTd.calcular({ estoque: e.estoque, compras: comp, tabela: null, edits: { lotes: {} } });
   for (const l of lotes) if (l.precoKg == null && l.custoKg) l.precoKg = Math.round(l.custoKg * 2.6);
   res.json({ em, hoje: LOTd.hojeSP(), meses: LOTd.MESES_VALIDADE, riscoDias: LOTd.RISCO_DIAS, custos: true, faixas: LOTd.FAIXAS.map((f) => ({ id: f.id, nome: f.nome, ate: Number.isFinite(f.ate) ? f.ate : null })),
-    resumo: LOTd.resumo(lotes), lotes: lotes.map((l) => ({ ...l, tipo: '', familia: '' })), entradas: LOTd.entradasRecentes({ estoque: e.estoque, compras: comp, edits: { lotes: {} } }) });
+    resumo: LOTd.resumo(lotes), lotes: lotes.map((l) => ({ ...l, tipo: '', familia: '' })), granel: LOTd.granelEstoque({ estoque: e.estoque, compras: e.compras }), entradas: LOTd.entradasRecentes({ estoque: e.estoque, compras: comp, edits: { lotes: {} } }) });
 });
 // NF-e de saída fictícias (vendas com nota, transferência, devolução), montadas com os produtos da apresentação
 const NFSd = require('./src/nfsaida');
@@ -1484,6 +1484,7 @@ app.get('/api/validade', async (req, res) => {
     em, hoje: LOT.hojeSP(), meses: LOT.MESES_VALIDADE, riscoDias: LOT.RISCO_DIAS, custos, faixas: LOT.FAIXAS.map((f) => ({ id: f.id, nome: f.nome, ate: Number.isFinite(f.ate) ? f.ate : null })),
     resumo: r, lotes: lotes.map((l) => semCusto(req, { ...l, tipo: tipos.get(l.cod) || '', familia: INV.familia(tipos.get(l.cod) || '') })),
     entradas: LOT.entradasRecentes(ctx), // para contar por lote no inventário
+    granel: LOT.granelEstoque(ctx), // chá a granel com/sem estoque (Clientes → Hoje não oferece chá que a loja não tem)
   });
 });
 // "deste lote ainda tem X" (ou voltar para a regra automática neste chá)
