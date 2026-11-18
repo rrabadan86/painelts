@@ -50,7 +50,7 @@
   // (Clientes, "Tudo", "só o mês" em todos os anos, ou um período cujo ano anterior fica antes do que veio)
   TS.historicoCompleto = false;
   let buscandoCompleto = false, cliIdle = null;
-  const TELAS_CLI = new Set(['clientes', 'clilista', 'campanhas', 'cupons', 'espera', 'nfsaida']);
+  const TELAS_CLI = new Set(['hoje', 'clientes', 'clilista', 'campanhas', 'cupons', 'espera', 'nfsaida']);
   const desdeParcial = () => {
     const h0 = TS.hojeSP ? TS.hojeSP() : new Date().toISOString().slice(0, 10);
     return new Date(Date.UTC(+h0.slice(0, 4), +h0.slice(5, 7) - 1 - 24, 1)).toISOString().slice(0, 10);
@@ -263,7 +263,7 @@
    * Menu por assunto: Vendas · Clientes · Equipe · Estoque e Margem · ⚙. Cada grupo mostra só as telas que a pessoa pode ver;
    * grupo com uma tela só vira uma aba com o nome da tela; com mais de uma, a tela tem um submenu no topo.
    */
-  const ROTULO = { inicio: 'Início', resumo: 'Resumo', comparativos: 'Comparativos', promocao: 'Promoção', cupons: 'Cupons', nfsaida: 'Notas fiscais', clilista: 'Lista de clientes', clientes: 'Indicadores', campanhas: 'Campanhas', espera: 'Lista de espera',
+  const ROTULO = { inicio: 'Início', resumo: 'Resumo', comparativos: 'Comparativos', promocao: 'Promoção', cupons: 'Cupons', nfsaida: 'Notas fiscais', hoje: 'Hoje', clilista: 'Lista de clientes', clientes: 'Indicadores', campanhas: 'Campanhas', espera: 'Lista de espera',
     comissionamento: 'Comissionamento', minha: 'Minha comissão', mapa: 'Movimento e escala', rentab: 'Rentabilidade', precos: 'Preços', site: 'Site', estoque: 'Estoque', pedido: 'Pedido', notas: 'Notas fiscais', inventario: 'Inventário', validade: 'Validade', dre: 'Resultado' };
   TS.GRUPOS = [];
   function montarMenu(grupoEst, temConfig) {
@@ -271,7 +271,7 @@
     const G = [
       ['Início', ['inicio']],
       ['Vendas', ['resumo', 'comparativos', 'promocao', 'cupons']],
-      ['Clientes', ['clilista', 'clientes', 'campanhas', 'espera']],
+      ['Clientes', ['hoje', 'clilista', 'clientes', 'campanhas', 'espera']],
       ['Equipe', ['comissionamento', 'minha', 'mapa']],
       ['Produtos', grupoEst.filter((p) => ['rentab', 'precos', 'site'].includes(p))],
       ['Estoque', grupoEst.filter((p) => ['estoque', 'validade', 'pedido', 'notas', 'inventario'].includes(p))],
@@ -298,7 +298,7 @@
   /** abas conforme o perfil */
   function configurarAbas(eu) {
     if (!eu.perfil) {
-      if (!PAGES.includes('campanhas')) PAGES.splice(PAGES.indexOf('clientes'), 1, 'clilista', 'clientes', 'campanhas', 'espera');
+      if (!PAGES.includes('campanhas')) PAGES.splice(PAGES.indexOf('clientes'), 1, 'hoje', 'clilista', 'clientes', 'campanhas', 'espera');
       PAGES = PAGES.filter((p) => p !== 'minha');
       montarMenu([], false);
       return;
@@ -316,7 +316,7 @@
     // lista de espera: vendedoras sempre; gerente só com a tela liberada
     const veEspera = eu.perfil !== 'gerente' || !Array.isArray(eu.telas) || eu.telas.includes('espera');
     PAGES = PAGES.filter((p) => p !== 'espera');
-    if (PAGES.includes('clientes')) PAGES.splice(PAGES.indexOf('clientes'), 1, 'clilista', 'clientes', 'campanhas', ...(veEspera ? ['espera'] : []));
+    if (PAGES.includes('clientes')) PAGES.splice(PAGES.indexOf('clientes'), 1, 'hoje', 'clilista', 'clientes', 'campanhas', ...(veEspera ? ['espera'] : []));
     else if (veEspera) PAGES.push('espera');
     // Estoque e Margem: admin e franqueado veem tudo; gerente só as telas liberadas em Configurações → Usuários
     // Produtos (Rentabilidade, Preços, Site), Estoque (Estoque, Pedido, Notas fiscais) e Resultado

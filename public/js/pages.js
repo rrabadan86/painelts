@@ -1067,9 +1067,9 @@
   TS.pages.promocao = function (root) {
     const db = TS.db, f = state.f, N = state.promo.dias;
     root.append(cabecalho('Promoção', 'Compara o período escolhido com os dias imediatamente anteriores'));
-    // chá a granel perto da validade (Estoque → Validade): o que a equipe deve vender primeiro
-    if (TS.validade) root.append(TS.validade.cartaoVenderPrimeiro(state.loja));
-    if (f.de == null) { root.append(h('div', { class: 'notice' }, 'Escolha um período (por exemplo, as datas da promoção) para comparar com os dias anteriores.')); return; }
+    // sugestões para a próxima promoção (validade dos lotes): logo abaixo dos números do período
+    const sugestoes = TS.validade ? TS.validade.secaoPromocao(state.loja) : null;
+    if (f.de == null) { root.append(h('div', { class: 'notice' }, 'Escolha um período (por exemplo, as datas da promoção) para comparar com os dias anteriores.'), sugestoes || ''); return; }
     const excl = (idx) => idx.filter((i) => !TS.rules.ids.semVendedor.has(db.vend[i]));
     const atual = excl(TS.filtrar());
     const ant = excl(TS.filtrar({ de: f.de - N, ate: f.de - 1 }));
@@ -1085,6 +1085,7 @@
       h('div', { class: 'card kpi' }, h('div', { class: 'kpi-label' }, 'Período comparado'), h('div', { class: 'kpi-value', style: { fontSize: '15px', whiteSpace: 'normal' } }, `${fmt.date(TS.dayToIso(f.de - N))} a ${fmt.date(TS.dayToIso(f.de - 1))}`), h('div', { class: 'kpi-foot' }, `${N} dias antes de ${fmt.date(TS.dayToIso(f.de))}`)),
       card('TKM', a.tkm, p.tkm, fmt.brl), card('PMA', a.pma, p.pma, fmt.brl), card('IPA', a.ipa, p.ipa, fmt.n2),
       cardDia('Atendimentos', a.cupons, p.cupons, fmt.int), cardDia('Faturamento', a.vt, p.vt, fmt.brl0)));
+    if (sugestoes) root.append(sugestoes);
 
     // lucro antes × durante × depois (custo do estoque; só admin e franqueado com uma loja escolhida)
     if (TS.cartaoLucroPromo && TS.podeContabilidade && TS.podeContabilidade() && state.loja && state.loja !== 'todas') {

@@ -828,7 +828,7 @@ app.get('/api/dados', async (req, res) => {
 // ---------- comparativo com a rede (anônimo) e alertas ----------
 async function dadosParaIndicadores(loja) {
   const e = await dadosLoja(loja);
-  return { id: loja.id, loja, vendas: e.raw.vendas, metaPlanilha: e.raw.metaPlanilha, sig: e.sig };
+  return { id: loja.id, loja, vendas: e.raw.vendas, metaPlanilha: e.raw.metaPlanilha, xml: e.raw.xml, sig: e.sig };
 }
 const redeCache = new Map();
 app.get('/api/rede', async (req, res) => {

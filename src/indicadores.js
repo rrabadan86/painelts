@@ -97,7 +97,35 @@ const METRICAS_REDE = [
   ['vt', 'Faturamento', 'brl0'], ['cupons', 'Atendimentos (cupons)', 'int'], ['tkm', 'Ticket médio (TKM)', 'brl'], ['pma', 'Preço médio (PMA)', 'brl'],
   ['ipa', 'Itens por atendimento (IPA)', 'n2'], ['kg', 'Chá vendido (kg)', 'kg'], ['pctPuro', 'Chá puro (% da loja)', 'pct'], ['pctAcess', 'Acessórios (% da loja)', 'pct'], ['pctEG', 'Espaço Gourmet (% do faturamento)', 'pct'],
   ['cresc', 'Crescimento vs. mesmo mês do ano anterior', 'delta'], ['pctMeta', 'Meta atingida', 'pct'],
+  ['ret90', 'Clientes novos que voltaram em 90 dias', 'pct'],
 ];
+/**
+ * Retenção: dos clientes (CPF na nota) que compraram pela 1ª vez nos 12 meses que terminam 90 dias antes de "ate",
+ * quantos % voltaram a comprar em até 90 dias. A data de cada cupom com CPF vem das vendas (pelo nº do cupom).
+ * Com menos de 20 clientes novos, não calcula (o número não diria nada).
+ */
+function retencao90(vendas, xml, ate) {
+  if (!Array.isArray(xml) || !xml.length) return null;
+  const DIAms = 864e5;
+  const diaCupom = new Map();
+  for (const v of vendas) if (v.cupom != null && !diaCupom.has(v.cupom)) diaCupom.set(v.cupom, Math.floor(Date.parse(String(v.data).slice(0, 10) + 'T00:00:00Z') / DIAms));
+  const porCpf = new Map();
+  for (const x of xml) {
+    if (!x.cpf) continue;
+    const d = diaCupom.get(x.cupom);
+    if (d == null || !Number.isFinite(d)) continue;
+    (porCpf.get(x.cpf) || porCpf.set(x.cpf, []).get(x.cpf)).push(d);
+  }
+  const fim = Math.floor(Date.parse(String(ate).slice(0, 10) + 'T00:00:00Z') / DIAms);
+  let n = 0, voltaram = 0;
+  for (const ds of porCpf.values()) {
+    const p = Math.min(...ds);
+    if (p > fim - 90 || p <= fim - 455) continue;
+    n++;
+    if (ds.some((d) => d > p && d <= p + 90)) voltaram++;
+  }
+  return n >= 20 ? voltaram / n : null;
+}
 const MIN_LOJAS_REDE = 4; // com menos lojas, a média revelaria demais sobre cada uma
 
 /**
@@ -127,6 +155,7 @@ function rede(partes, ym, lojaId, minimo = MIN_LOJAS_REDE) {
     const meta = metaMes(p.loja, ym, p.metaPlanilha, p.vendas);
     const prop = corte < ate ? +corte.slice(8, 10) / diasNoMes(ym) : 1;
     m.pctMeta = meta ? m.metaLoja / (meta * prop) : null;
+    m.ret90 = retencao90(p.vendas, p.xml, corte);
     return { id: p.id, m };
   });
   const out = { ym, ate: corte, parcial: corte < ate, lojas: vals.length, minimo, indicadores: [] };
@@ -245,4 +274,4 @@ function resumoDiario({ loja, vendas, metaPlanilha }) {
   return { titulo: loja.nome, dia, linhas, alertas: alertas({ loja, vendas, metaPlanilha }) };
 }
 
-module.exports = { metaMes, totaisSemEG, metricas, rede, alertas, resumoDiario, hojeSP, MIN_LOJAS_REDE };
+module.exports = { retencao90, metaMes, totaisSemEG, metricas, rede, alertas, resumoDiario, hojeSP, MIN_LOJAS_REDE };

@@ -208,11 +208,116 @@
       if (fixe && fixe.temLeads && !c.empresa && !c.membroFixe) t.add('forafixe');
       c.tags = t;
     }
+    // RFM: notas de 1 a 5 em recência, frequência e valor (12 meses) e o grupo; e o grupo de 30 dias atrás (movimento)
+    const rfmHoje = calcRfm(lista, hoje), rfmAntes = calcRfm(lista, hoje - 30);
+    for (const c of lista) { c.rfm = rfmHoje.get(c.cpf) || null; c.rfmAntes = rfmAntes.get(c.cpf) || null; }
     // quem tem pontos no FIXE mas nenhum cupom com CPF: entra nas campanhas pelo cadastro (nome e celular)
     const lojaAt = state.loja || '';
     const contatosAnt = TS.cli && TS.cli.contatosLoja === lojaAt ? TS.cli.contatos : null;
     TS.cli = { cad, lista, fixe, porCPF, fxPorCpf: fx ? fx.porCpf : null, semVendaTotal, semVendaLista, soSemVenda, cuponsXml: db.xml.length, cuponsCPF, contatos: contatosAnt, contatosLoja: contatosAnt ? lojaAt : null, cidades: [...new Set(db.clientes.map((c) => c.cidade).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR')) };
   };
+  // ---------- RFM (recência, frequência e valor): o comportamento de cada cliente em grupos ----------
+  const GRUPOS_RFM = [
+    ['campeao', '🏆 Campeões', 'Compram muito, sempre, e vieram há pouco.', 'Lançamentos e atenção VIP; peça indicação.'],
+    ['leal', '💚 Leais', 'Compram com frequência e voltam.', 'Programa de pontos, novidades do tipo de chá favorito.'],
+    ['novo', '✨ Novos', 'Primeira compra nos últimos 60 dias.', 'A 2ª compra é a mais importante: convide a voltar.'],
+    ['promissor', '🌱 Promissores', 'Vieram há pouco, ainda compram pouco.', 'Apresente outros chás e o programa de pontos.'],
+    ['atencao', '👀 Precisam de atenção', 'Bons clientes que estão espaçando as visitas.', 'Lembre do chá favorito antes que sumam.'],
+    ['risco', '⚠️ Em risco', 'Vinham com frequência (2 compras ou mais no ano) e estão sumindo.', 'Contato pessoal já: mensagem com o chá favorito.'],
+    ['naoperder', '🚨 Não pode perder', 'Estavam entre os melhores e pararam de vir.', 'Ligação ou oferta especial: são os que mais faziam diferença.'],
+    ['hibernando', '😴 Hibernando', 'Compravam pouco e pararam há um tempo.', 'Campanha de volta, barata (novidades).'],
+    ['perdido', '💤 Perdidos', 'Sem vir há muito tempo e compravam pouco.', 'Só em campanhas grandes; não gaste esforço individual.'],
+  ];
+  const RFM = Object.fromEntries(GRUPOS_RFM.map(([id, nome, dica, acao], ordem) => [id, { id, nome, dica, acao, ordem }]));
+  TS.RFM = { GRUPOS: GRUPOS_RFM.map(([id]) => RFM[id]), por: RFM };
+  /** notas por quintil dentro da loja (5 = melhor) e o grupo de cada cliente, olhando só as compras até o dia "ref" */
+  function calcRfm(lista, ref) {
+    const xs = [];
+    for (const c of lista) {
+      let ult = null, prim = null, val = 0;
+      const dias = new Set();
+      for (const k of c.cupons) {
+        if (k.day > ref) continue;
+        if (ult == null || k.day > ult) ult = k.day;
+        if (prim == null || k.day < prim) prim = k.day;
+        if (k.day > ref - 365) { dias.add(k.day); val += k.vt || 0; }
+      }
+      if (ult == null) continue;
+      xs.push({ cpf: c.cpf, rec: ref - ult, freq: dias.size, val, prim, visitas: new Set(c.cupons.filter((k) => k.day <= ref).map((k) => k.day)).size });
+    }
+    const out = new Map();
+    if (!xs.length) return out;
+    // nota pela posição (empates ficam com a mesma nota): rec menor é melhor; freq e val maiores são melhores
+    // frequência e valor: comparados só entre quem comprou nos 12 meses (quem não comprou fica com nota 1)
+    const nota = (campo, melhorMenor) => {
+      const ord = (campo === 'rec' ? xs : xs.filter((x) => x.freq > 0)).map((x) => x[campo]).sort((a, b) => a - b);
+      if (!ord.length) return () => 1;
+      return (v) => { let lo = 0, hi = ord.length; while (lo < hi) { const m = (lo + hi) >> 1; if (ord[m] < v) lo = m + 1; else hi = m; } let up = lo; while (up < ord.length && ord[up] === v) up++; const pct = (lo + up) / 2 / ord.length; const n = Math.min(5, Math.floor(pct * 5) + 1); return melhorMenor ? 6 - n : n; };
+    };
+    // recência em dias corridos (o chá acaba em 1 a 2 meses): 5 = até 30 d, 4 = até 60, 3 = até 120, 2 = até 240, 1 = mais
+    const nR = (d) => (d <= 30 ? 5 : d <= 60 ? 4 : d <= 120 ? 3 : d <= 240 ? 2 : 1), nF = nota('freq', false), nM = nota('val', false);
+    for (const x of xs) {
+      const r = nR(x.rec), f = x.freq ? nF(x.freq) : 1, m = x.val ? nM(x.val) : 1, fm = Math.round((f + m) / 2);
+      const g = x.visitas === 1 && x.rec <= 60 ? 'novo' : r >= 4 && fm >= 4 ? 'campeao' : r >= 3 && fm >= 3 ? 'leal' : r >= 4 ? 'promissor'
+        : r <= 2 && fm >= 4 && x.freq >= 2 ? 'naoperder' : r <= 2 && x.freq >= 2 ? 'risco' : r === 3 ? 'atencao' : r === 2 ? 'hibernando' : 'perdido';
+      out.set(x.cpf, { r, f, m, g });
+    }
+    return out;
+  }
+  /** Indicadores: quantos clientes em cada grupo (RFM), quanto gastaram e quem mudou de grupo nos últimos 30 dias */
+  function cartaoRfm() {
+    const todos = TS.cli.lista.filter((c) => c.rfm);
+    if (!todos.length) return TS.card('Grupos de clientes (RFM)', null, TS.empty('Sem clientes com compra identificada.'));
+    const por = new Map(TS.RFM.GRUPOS.map((g) => [g.id, { n: 0, antes: 0, gasto: 0 }]));
+    for (const c of todos) { const x = por.get(c.rfm.g); x.n++; x.gasto += c.gasto12 || 0; }
+    for (const c of TS.cli.lista) if (c.rfmAntes) por.get(c.rfmAntes.g).antes++;
+    const totG = [...por.values()].reduce((a, x) => a + x.gasto, 0) || 1;
+    const ir = (g) => { state.cli.rfm = g; state.cli.seg = ''; location.hash = '#clilista'; };
+    const linhas = TS.RFM.GRUPOS.map((g) => {
+      const x = por.get(g.id), d = x.n - x.antes;
+      return h('tr', { class: 'rfm-linha', role: 'button', tabindex: 0, title: `${g.dica} O que fazer: ${g.acao} (clique para ver a lista)`, onclick: () => ir(g.id), onkeydown: (e) => { if (e.key === 'Enter') ir(g.id); } },
+        h('td', { class: 'l' }, h('span', { class: 'cli-tag rfm-' + g.id }, g.nome)),
+        h('td', null, fmt.int(x.n), h('small', { class: 'muted' }, ` ${fmt.pct(x.n / todos.length, 0)}`)),
+        h('td', { class: d > 0 ? (['risco', 'naoperder', 'hibernando', 'perdido', 'atencao'].includes(g.id) ? 'neg' : 'pos') : d < 0 ? (['risco', 'naoperder', 'hibernando', 'perdido', 'atencao'].includes(g.id) ? 'pos' : 'neg') : 'muted' }, d === 0 ? '=' : (d > 0 ? '+' : '−') + fmt.int(Math.abs(d))),
+        h('td', null, fmt.brl0(x.gasto), h('small', { class: 'muted' }, ` ${fmt.pct(x.gasto / totG, 0)}`)));
+    });
+    // quem piorou: dos bons grupos para os de risco nos últimos 30 dias
+    const BONS = new Set(['campeao', 'leal']), RUINS = new Set(['atencao', 'risco', 'naoperder', 'hibernando', 'perdido']);
+    const mov = new Map();
+    for (const c of TS.cli.lista) if (c.rfm && c.rfmAntes && BONS.has(c.rfmAntes.g) && RUINS.has(c.rfm.g)) { const k = c.rfmAntes.g + '>' + c.rfm.g; mov.set(k, (mov.get(k) || 0) + 1); }
+    const movs = [...mov].sort((a, b) => b[1] - a[1]).slice(0, 3);
+    return TS.card('Grupos de clientes (RFM)', 'Recência, frequência e valor (12 meses) comparados entre os clientes da loja · coluna "30 dias": quanto o grupo mudou no último mês · clique para ver a lista',
+      h('div', { class: 'table-wrap free' }, h('table', { class: 't rfm-t' },
+        h('thead', null, h('tr', null, h('th', { class: 'l' }, 'Grupo'), h('th', null, 'Clientes'), h('th', null, '30 dias'), h('th', null, 'Gasto 12 meses'))),
+        h('tbody', null, linhas))),
+      movs.length ? h('div', { class: 'rfm-mov' }, h('b', null, 'Atenção: '), movs.map(([k, n]) => { const [a, b] = k.split('>'); return `${fmt.int(n)} ${n === 1 ? 'cliente passou' : 'clientes passaram'} de ${TS.RFM.por[a].nome} para ${TS.RFM.por[b].nome}`; }).join(' · '), '.') : null);
+  }
+  /** Indicadores: retenção por safra — dos clientes que compraram pela 1ª vez em cada mês, quantos % voltaram */
+  function cartaoSafras() {
+    const hoje = TS.todayDay(), JAN = [30, 60, 90, 180, 365];
+    const meses = new Map();
+    for (const c of TS.cli.lista) {
+      if (c.primeira == null || c.primeira < hoje - 13 * 31) continue;
+      const ym = TS.dayToIso(c.primeira).slice(0, 7);
+      const voltou = c.cupons.filter((k) => k.day > c.primeira).map((k) => k.day);
+      const x = meses.get(ym) || meses.set(ym, { n: 0, el: JAN.map(() => 0), v: JAN.map(() => 0) }).get(ym);
+      x.n++;
+      JAN.forEach((d, k) => { if (hoje - c.primeira >= d) { x.el[k]++; if (voltou.some((dd) => dd <= c.primeira + d)) x.v[k]++; } });
+    }
+    const yms = [...meses.keys()].sort().reverse().slice(0, 12);
+    if (!yms.length) return TS.card('Retenção por safra', null, TS.empty('Sem clientes novos nos últimos 12 meses.'));
+    const cor = (p) => `rgba(44, 82, 52, ${(0.08 + Math.min(1, p / 0.6) * 0.62).toFixed(2)})`;
+    const linhas = yms.map((ym) => { const x = meses.get(ym); return h('tr', null, h('td', { class: 'l' }, TS.ymLabel(ym)), h('td', null, fmt.int(x.n)),
+      ...JAN.map((d, k) => { if (!x.el[k] || x.el[k] < x.n * 0.5) return h('td', { class: 'muted safra-vazio', title: 'Ainda não deu tempo' }, '·'); const p = x.v[k] / x.el[k];
+        return h('td', { class: 'safra-cel', style: { background: cor(p), color: p > 0.35 ? '#fff' : null }, title: `${fmt.int(x.v[k])} de ${fmt.int(x.el[k])} voltaram em até ${d} dias` }, fmt.pct(p, 0)); })); });
+    return TS.card('Retenção por safra', 'Clientes pelo mês da 1ª compra: quantos % voltaram a comprar em até 30, 60, 90, 180 e 365 dias · mostra se a loja está segurando os clientes novos',
+      h('div', { class: 'table-wrap free' }, h('table', { class: 't safra-t' },
+        h('thead', null, h('tr', null, h('th', { class: 'l' }, '1ª compra'), h('th', null, 'Novos'), ...JAN.map((d) => h('th', null, d < 365 ? `${d} d` : '1 ano')))),
+        h('tbody', null, linhas))));
+  }
+  const chipRfm = (c) => (c.rfm ? h('span', { class: 'cli-tag rfm-' + c.rfm.g, title: `${RFM[c.rfm.g].dica} Notas R${c.rfm.r} F${c.rfm.f} V${c.rfm.m} (1 a 5). O que fazer: ${RFM[c.rfm.g].acao}` }, RFM[c.rfm.g].nome) : null);
+  TS.chipRfm = chipRfm;
+
   // ---------- contatos (contatado / não quer mensagens), guardados por loja no servidor ----------
   const NOMES_SEG = { hoje: 'Contatar hoje', aniv: 'Aniversário (7 dias)', sumido: 'Sumidos', repor: 'Hora de repor', vence: 'Pontos vencendo', semfixe: 'Compras sem FIXE', forafixe: 'Fora do FIXE', novo: 'Novos do mês', fiel: 'Fiéis', vip: 'VIP', uma: 'Uma compra só' };
   const DICA_SEG = {
@@ -243,7 +348,7 @@
         if ((state.loja || '') !== lojaAlvo || !TS.cli) return;
         TS.cli.contatos = j.contatos || {};
         TS.cli.contatosLoja = lojaAlvo;
-        if (state.page === 'clientes' || state.page === 'clilista') TS.render();
+        if (state.page === 'clientes' || state.page === 'clilista' || state.page === 'hoje') TS.render();
       })
       .catch(() => { if ((state.loja || '') === lojaAlvo && TS.cli) { TS.cli.contatos = {}; TS.cli.contatosLoja = lojaAlvo; } })
       .finally(() => { if (carregandoContatos === lojaAlvo) carregandoContatos = null; });
@@ -396,6 +501,7 @@
           if (ct && (ct.optout || (ct.em && Date.now() - Date.parse(ct.em) < 30 * 864e5))) continue;
         } else if (!c.tags.has(s.seg)) continue;
       }
+      if (s.rfm && (!c.rfm || c.rfm.g !== s.rfm)) continue;
       if (s.cidade.size && !s.cidade.has(c.cidade)) continue;
       let cupons = c.cupons;
       if (noPer) cupons = cupons.filter((k) => noPer(k.day));
@@ -421,6 +527,92 @@
     return out;
   }
 
+  // ---------- Clientes → Hoje: quem contatar hoje e por quê (gerente, franqueado e admin; a vendedora não vê clientes) ----------
+  const MOTIVOS_HOJE = {
+    naoperder: { nome: '🚨 Não pode perder', modelo: 'Sentimos sua falta', peso: 100 },
+    risco: { nome: '⚠️ Em risco', modelo: 'Sentimos sua falta', peso: 90 },
+    aniv: { nome: '🎂 Aniversário', modelo: 'Aniversário', peso: 80 },
+    repor: { nome: '🍵 Hora de repor', modelo: 'Hora de repor', peso: 70 },
+    validade: { nome: '🍃 Chá dele perto da validade', peso: 60, texto: 'Oi, {nome}! O {chaoferta} que você gosta está com condição especial esta semana na {loja} 🍵 Quer que a gente separe um pacote para você?' },
+    vence: { nome: '★ Pontos vencendo', modelo: 'Pontos vencendo', peso: 50 },
+    atencao: { nome: '👀 Precisa de atenção', modelo: 'Novidades', peso: 40 },
+  };
+  const hojeF = { motivo: '', vend: '' };
+  TS.pages.hoje = function (root) {
+    if (TS.subClientes) root.append(TS.subClientes('hoje'));
+    root.append(h('div', { class: 'page-head' }, h('div', null, h('h1', { class: 'page-title' }, 'Hoje'),
+      h('div', { class: 'page-sub' }, 'Quem contatar hoje e por quê. Uma mensagem por vez, pelo WhatsApp da loja; quem foi contatado nos últimos 30 dias ou pediu para não receber não aparece.'))));
+    if (!TS.cli || !TS.cli.lista) { root.append(h('div', { class: 'notice' }, 'Os clientes ainda não foram carregados.')); return; }
+    if (!state.loja || state.loja === 'todas') { root.append(h('div', { class: 'notice' }, 'Escolha uma loja no seletor do topo.')); return; }
+    carregarContatos();
+    const corpo = h('div');
+    root.append(corpo);
+    const pintar = (val) => {
+      // chás perto da validade (Estoque → Validade): nome normalizado → dias
+      const perto = new Map();
+      for (const l of (val && val.lotes) || []) if (l.dias != null && l.dias >= 0 && l.dias < 60) { const k = TS.norm(l.desc); if (!perto.has(k) || l.dias < perto.get(k).dias) perto.set(k, { dias: l.dias, desc: l.desc }); }
+      const semTam = (t) => TS.norm(String(t || '')).replace(/\s*[-–]?\s*\d+\s*(g|gr|grs|gramas)\b.*$/, '').trim();
+      const hojeIso = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+      let contatadosHoje = 0;
+      const itens = [];
+      for (const c of TS.cli.lista) {
+        const ct = contatoDe(c);
+        if (ct && ct.em && ct.em.slice(0, 10) === hojeIso) contatadosHoje++;
+        if (!c.wpp || (ct && (ct.optout || (ct.em && Date.now() - Date.parse(ct.em) < 30 * 864e5)))) continue;
+        const ms = [];
+        if (c.rfm && (c.rfm.g === 'naoperder' || c.rfm.g === 'risco' || c.rfm.g === 'atencao')) ms.push(c.rfm.g);
+        if (c.tags.has('aniv')) ms.push('aniv');
+        if (c.tags.has('repor')) ms.push('repor');
+        let oferta = null;
+        for (const t of [c.chaFavorito, c.chaUltimo]) { const x = t && perto.get(semTam(t)); if (x) { oferta = x.desc; break; } }
+        if (oferta) ms.push('validade');
+        if (c.tags.has('vence')) ms.push('vence');
+        if (!ms.length) continue;
+        ms.sort((a, b) => MOTIVOS_HOJE[b].peso - MOTIVOS_HOJE[a].peso);
+        itens.push({ c, ms, oferta, peso: MOTIVOS_HOJE[ms[0]].peso + ms.length + Math.min(9, (c.gasto12 || 0) / 500) });
+      }
+      itens.sort((a, b) => b.peso - a.peso);
+      const vends = [...new Set(itens.map((x) => x.c.vendedoraPref).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+      const sel = itens.filter((x) => (!hojeF.motivo || x.ms.includes(hojeF.motivo)) && (!hojeF.vend || x.c.vendedoraPref === hojeF.vend));
+      const conta = (m) => itens.filter((x) => x.ms.includes(m)).length;
+      const chips = h('div', { class: 'chips hj-chips' },
+        h('button', { type: 'button', class: 'chip' + (!hojeF.motivo ? ' on' : ''), onclick: () => { hojeF.motivo = ''; pintar(val); } }, `Todos (${fmt.int(itens.length)})`),
+        ...Object.entries(MOTIVOS_HOJE).filter(([m]) => conta(m)).map(([m, x]) => h('button', { type: 'button', class: 'chip' + (hojeF.motivo === m ? ' on' : ''), onclick: () => { hojeF.motivo = hojeF.motivo === m ? '' : m; pintar(val); } }, `${x.nome} (${fmt.int(conta(m))})`)));
+      const selV = vends.length ? h('select', { class: 'f-input hj-vend', 'aria-label': 'Vendedora' }, h('option', { value: '' }, 'Todas as vendedoras'), ...vends.map((v) => h('option', { value: v, selected: hojeF.vend === v || null }, v))) : null;
+      if (selV) selV.addEventListener('change', () => { hojeF.vend = selV.value; pintar(val); });
+      const linha = (x) => {
+        const c = x.c, m0 = MOTIVOS_HOJE[x.ms[0]];
+        const mods = modelosDe(lojaIdDe(c));
+        const txt = m0.texto ? TS.cliApi.texto(m0.texto, c, { chaoferta: x.oferta || c.chaFavorito || 'chá' }) : textoWpp(mods.find((m) => m.nome === m0.modelo) || mods[0], c);
+        const el = h('div', { class: 'hj-item' },
+          h('div', { class: 'hj-quem' }, h('button', { type: 'button', class: 'hj-nome', onclick: () => abrirClientes([c.cpf]), title: 'Abrir a ficha' }, c.nome || fmtCPF(c.cpf)),
+            h('div', { class: 'hj-motivos' }, ...x.ms.map((m) => h('span', { class: 'hj-mot hj-' + m }, MOTIVOS_HOJE[m].nome))),
+            h('small', { class: 'muted' }, [c.vendedoraPref && `atende: ${c.vendedoraPref}`, c.chaFavorito && `gosta de ${c.chaFavorito}`, x.oferta && `oferecer: ${x.oferta}`, c.ausencia != null && `${fmt.int(c.ausencia)} d sem vir`].filter(Boolean).join(' · '))),
+          h('div', { class: 'hj-msg', title: txt }, txt),
+          h('div', { class: 'hj-acoes' }, h('a', { class: 'btn primary', href: '#', onclick: async (e) => {
+            e.preventDefault();
+            if (TS.demo) alert('Na apresentação o WhatsApp não abre (número fictício). A mensagem seria:\n\n' + txt);
+            else window.open(linkWpp(c, txt), '_blank', 'noopener');
+            try { await marcar(c, 'contatado', 'Hoje · ' + m0.nome.replace(/^\S+\s/, '')); el.classList.add('hj-feito'); setTimeout(() => pintar(val), 900); } catch (er) { alert(er.message); }
+          } }, 'WhatsApp')));
+        return el;
+      };
+      const LIM = 30;
+      corpo.replaceChildren(
+        h('div', { class: 'grid g-kpi' },
+          TS.kpi('Para contatar hoje', fmt.int(itens.length), 'com WhatsApp e sem contato nos últimos 30 dias'),
+          TS.kpi('Contatados hoje', fmt.int(contatadosHoje), 'pelo painel (Hoje, Lista e Campanhas)'),
+          TS.kpi('Em risco ou não pode perder', fmt.int(itens.filter((x) => x.ms.includes('risco') || x.ms.includes('naoperder')).length), 'clientes bons que estão sumindo')),
+        h('div', { class: 'card' },
+          h('div', { class: 'hj-ferr' }, chips, selV),
+          sel.length ? h('div', { class: 'hj-lista' }, ...sel.slice(0, LIM).map(linha)) : TS.empty('Ninguém para contatar com esses filtros. 🎉'),
+          sel.length > LIM ? h('p', { class: 'muted' }, `Mostrando os ${LIM} mais importantes de ${fmt.int(sel.length)}. Depois de contatar, a lista anda.`) : null,
+          h('small', { class: 'muted hj-rodape' }, 'Ordem: quem é mais importante primeiro (clientes bons sumindo, aniversário, hora de repor…). Ao abrir o WhatsApp, o cliente fica marcado como contatado e sai da lista. Mande poucas por vez para o WhatsApp não restringir o número.')));
+    };
+    pintar(null);
+    if (TS.validade) TS.validade.dados(state.loja).then((v) => { if (corpo.isConnected) pintar(v); }).catch(() => null);
+  };
+
   // ---------- página ----------
   // Clientes → Lista de clientes (só a lista, com segmentos) e Indicadores (base, fidelidade, números e gráficos)
   TS.pages.clilista = (root) => telaClientes(root, 'lista');
@@ -433,10 +625,10 @@
     if (!db.xml.length && !(TS.fx && TS.fx.tem())) { root.append(h('div', { class: 'notice' }, 'A planilha "Xml" (cupons com CPF) não foi carregada.')); return; }
     carregarContatos();
     // os segmentos (Contatar hoje, VIP…) são da lista: nos indicadores valem só os filtros da barra lateral
-    const segSalvo = s.seg;
-    if (!ehLista) s.seg = '';
+    const segSalvo = s.seg, rfmSalvo = s.rfm;
+    if (!ehLista) { s.seg = ''; s.rfm = ''; }
     const lista = filtrar();
-    s.seg = segSalvo;
+    s.seg = segSalvo; s.rfm = rfmSalvo;
     if (!ehLista && TS.cli.semVendaTotal) {
       const pct = TS.cli.semVendaTotal / TS.cli.cuponsXml;
       root.append(h('div', { class: 'notice cli-semvenda' + (pct > 0.2 ? ' err' : ''), role: 'button', tabindex: '0', title: 'Clique para ver a lista', onclick: abrirSemVenda, onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); abrirSemVenda(); } } },
@@ -447,6 +639,7 @@
 
     if (!ehLista) {
       root.append(...baseDeClientes(lista));
+      root.append(TS.section('Comportamento dos clientes'), h('div', { class: 'grid g-2 rfm-grid' }, cartaoRfm(), cartaoSafras()));
       if (TS.cli.fixe) { root.append(TS.section('Fidelidade')); const cr = cartaoResgate(TS.cli.fixe); if (cr) root.append(cr); root.append(cartaoFixe(TS.cli.fixe)); }
       root.append(TS.section('Perfil dos clientes'));
     }
@@ -484,7 +677,10 @@
 
     const segBar = h('div', { class: 'cli-segs' }, h('span', { class: 'f-label' }, 'Segmentos:'),
       Object.entries(NOMES_SEG).filter(([k]) => !['vence', 'semfixe', 'forafixe'].includes(k) || TS.cli.fixe).map(([k, nome]) => h('button', { type: 'button', class: 'chip' + (s.seg === k ? ' on' : '') + (k === 'hoje' ? ' chip-destaque' : ''), title: DICA_SEG[k], onclick: () => { s.seg = s.seg === k ? '' : k; TS.render(); } }, nome)),
-      s.seg ? h('small', { class: 'muted cli-seg-dica' }, DICA_SEG[s.seg]) : null);
+      s.seg ? h('small', { class: 'muted cli-seg-dica' }, DICA_SEG[s.seg]) : null,
+      h('div', { class: 'cli-segs-rfm' }, h('span', { class: 'f-label' }, 'Grupos (RFM):', TS.dica('Cada cliente ganha uma nota de 1 a 5 em Recência (até 30, 60, 120, 240 dias ou mais sem vir), Frequência e Valor (últimos 12 meses, comparando com os outros clientes da loja). As notas viram o grupo.')),
+        ...TS.RFM.GRUPOS.map((g) => h('button', { type: 'button', class: 'chip rfm-chip rfm-' + g.id + (s.rfm === g.id ? ' on' : ''), title: `${g.dica} O que fazer: ${g.acao}`, onclick: () => { s.rfm = s.rfm === g.id ? '' : g.id; TS.render(); } }, g.nome)),
+        s.rfm ? h('small', { class: 'muted cli-seg-dica' }, `${RFM[s.rfm].dica} O que fazer: ${RFM[s.rfm].acao}`) : null));
     const ordSel = TS.seg([['Mais recentes', 'recente'], ['Maior valor', 'valor'], ['Mais visitas', 'visitas'], ['Mais tempo sem vir', 'ausencia'], ['Nome', 'nome']], ordem, (v) => { s.ordem = v; TS.render(); });
     const csv = h('button', { class: 'btn', type: 'button', onclick: () => baixarCSV(lista) }, 'Baixar lista (CSV)');
     const csvWpp = h('button', { class: 'btn', type: 'button', title: 'Só nome e celular de quem tem WhatsApp e não pediu para não receber mensagens', onclick: () => baixarCSVWpp(lista) }, 'Lista para WhatsApp (CSV)');
@@ -545,6 +741,7 @@
           c.aniv ? h('span', null, '🎂 ' + c.aniv) : null,
           c.cidade ? h('span', null, c.cidade) : null,
           c.fx && c.fx.saldo ? h('span', { class: 'cli-pts', title: c.fx.prox != null ? `Saldo no FIXE · ${fmt.int(c.fx.proxPts)} pts vencem em ${fmt.date(TS.dayToIso(c.fx.prox))}` : 'Saldo no FIXE' }, `★ ${fmt.int(c.fx.saldo)} pts`) : null,
+          chipRfm(c),
           ...[...(c.tags || [])].map((t) => h('span', { class: 'cli-tag t-' + t, title: DICA_SEG[t] }, NOMES_SEG[t])),
           (() => { const ct = contatoDe(c); return ct && ct.optout ? h('span', { class: 'cli-tag t-optout', title: 'Pediu para não receber mensagens' }, 'não quer mensagens') : ct && ct.em ? h('span', { class: 'cli-tag t-contato', title: `Contatado por ${ct.por || '?'}${ct.motivo ? ' · ' + ct.motivo : ''}` }, 'contatado ' + fmt.date(ct.em.slice(0, 10))) : null; })(),
           c.wpp ? h('a', { class: 'wpp', href: c.wpp, target: TS.demo ? null : '_blank', rel: 'noopener', title: TS.demo ? 'Na apresentação o WhatsApp não abre (número fictício)' : null, onclick: (e) => { e.stopPropagation(); if (TS.demo) e.preventDefault(); } }, '● WhatsApp') : null)),

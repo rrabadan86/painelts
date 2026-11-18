@@ -38,7 +38,17 @@
 
   // ---------- critérios ----------
   const SEGS = [['vip', 'VIP'], ['fiel', 'Fiéis'], ['sumido', 'Sumidos'], ['repor', 'Hora de repor'], ['vence', 'Pontos vencendo'], ['novo', 'Novos do mês'], ['uma', 'Uma compra só']];
-  const PADRAO = { ptsMin: '', ptsMax: '', venceDias: '', produto: '', produtos: [], grupo: '', compraDias: '', ausMin: '', ausMax: '', visMin: '', visMax: '', aniv: '', segs: [], vendedora: '', lojaPref: '', semContato: 30 };
+  const PADRAO = { ptsMin: '', ptsMax: '', venceDias: '', produto: '', produtos: [], grupo: '', compraDias: '', ausMin: '', ausMax: '', visMin: '', visMax: '', aniv: '', segs: [], rfm: [], tipos: [], vendedora: '', lojaPref: '', semContato: 30 };
+  // tipo de chá pela família do grupo de venda: "CHÁ PRETO AROMATIZADO" e "CHÁ PRETO PURO" → "Chá preto"
+  const NAO_TIPO = /ACESS|ENVASAD|ALIMENT|TEA ROOM|TEA MOMENT|CONSUM|MATERIA|SACH|FIDELIDADE|KIT|PRESENTE|EMBALA|LATA|MINITIN|ESPA[ÇC]O GOURMET|COSM/i;
+  const familiaCha = (g) => { const x = String(g || '').toUpperCase().replace(/\s+(AROMATIZADO|PURO)S?$/, '').trim(); return x && !NAO_TIPO.test(x) ? x.charAt(0) + x.slice(1).toLowerCase().replace(/\bchá\b/g, 'Chá') : ''; };
+  /** famílias de chá que o cliente já comprou (guardado no cliente) */
+  const familiasDe = (c) => {
+    if (c._fams) return c._fams;
+    const db = TS.db, fs = new Set();
+    for (const k of c.cupons || []) for (const i of k.itens || []) { const f = familiaCha(db.D.grupo[db.grupo[i]]); if (f) fs.add(f); }
+    return (c._fams = fs);
+  };
   const num = (v) => (v === '' || v == null || Number.isNaN(+v) ? null : +v);
 
   /** clientes que atendem aos critérios: só com celular e sem "não quer mensagens" */
@@ -71,6 +81,8 @@
       if (num(f.visMax) != null && (c.visitas || 0) > num(f.visMax)) continue;
       if (mesAniv && !(c.nascimento && +c.nascimento.slice(5, 7) === mesAniv)) continue;
       if (f.segs && f.segs.length && !f.segs.some((t) => c.tags && c.tags.has(t))) continue;
+      if (f.rfm && f.rfm.length && !(c.rfm && f.rfm.includes(c.rfm.g))) continue;
+      if (f.tipos && f.tipos.length && !f.tipos.some((t) => familiasDe(c).has(t))) continue;
       if (f.vendedora && c.vendedora !== f.vendedora) continue;
       if (f.lojaPref) {
         const pr = TS.lojasDoCliente(c).pref;
@@ -257,6 +269,11 @@
     const textosVar = () => variacoes.map((t) => t.value.trim()).filter(Boolean);
     const rec = h('select', { class: 'f-input' }, h('option', { value: '' }, 'Não (lista única)'), h('option', { value: 'semanal', selected: base && base.recorrente === 'semanal' || null }, 'Toda semana'), h('option', { value: 'mensal', selected: base && base.recorrente === 'mensal' || null }, 'Todo mês'));
     const segBox = h('div', { class: 'chips' }, ...SEGS.map(([k, t]) => { const b = h('button', { type: 'button', class: 'chip' + (f.segs.includes(k) ? ' on' : '') }, t); b.addEventListener('click', () => { f.segs = f.segs.includes(k) ? f.segs.filter((x) => x !== k) : [...f.segs, k]; b.classList.toggle('on'); atualizar(); }); return b; }));
+    if (!Array.isArray(f.rfm)) f.rfm = []; if (!Array.isArray(f.tipos)) f.tipos = [];
+    const chipsDe = (k, opcoes) => h('div', { class: 'chips' }, ...opcoes.map(([v, t, dica]) => { const b = h('button', { type: 'button', class: 'chip' + (f[k].includes(v) ? ' on' : ''), title: dica || null }, t); b.addEventListener('click', () => { f[k] = f[k].includes(v) ? f[k].filter((x) => x !== v) : [...f[k], v]; b.classList.toggle('on'); atualizar(); }); return b; }));
+    const rfmBox = TS.RFM ? chipsDe('rfm', TS.RFM.GRUPOS.map((g) => [g.id, g.nome, `${g.dica} O que fazer: ${g.acao}`])) : null;
+    const fams = [...new Set(db.D.grupo.map(familiaCha).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+    const tiposBox = chipsDe('tipos', fams.map((x) => [x, x]));
     const vendedoras = [...new Set(TS.cli.lista.map((c) => c.vendedora).filter(Boolean))].sort();
     const lojasRede = [...new Set(((TS.cli.fixe && TS.cli.fixe.movs) || []).filter((m) => !m.propria && m.loja).map((m) => m.loja))].sort();
     const grupos = db.opts.grupos.map(([nomeG]) => nomeG).filter(Boolean);
@@ -384,8 +401,10 @@
         linha('Faz aniversário em', sel('aniv', [['', 'qualquer mês'], ['atual', 'mês atual'], ['proximo', 'próximo mês'], ...MESES]), TS.dica('"Mês atual" e "Próximo mês" acompanham a data nas campanhas recorrentes.')),
         linha('Mais atendido por', sel('vendedora', [['', 'qualquer vendedora'], ...vendedoras.map((v) => [v, v])])),
         linha('Compra mais em', sel('lojaPref', [['', 'qualquer loja'], ['nossa', lojaNome], ['outra', 'outra loja da rede'], ...lojasRede.map((l) => [l, l])]), TS.dica('Loja onde o cliente mais comprou nos últimos 12 meses (esta loja pelas vendas; as outras pelas compras lançadas no FIXE).'))),
-      bloco('Segmentos', ['segs'], h('small', { class: 'muted' }, 'Entra quem estiver em qualquer um dos marcados.'), segBox),
-    ];
+      bloco('Segmentos', ['segs'], h('small', { class: 'muted' }, 'Entra quem estiver em qualquer um dos marcados. "Hora de repor" + um tipo de chá = a régua de recompra daquele tipo.'), segBox),
+      rfmBox ? bloco('Grupo do cliente (RFM)', ['rfm'], h('small', { class: 'muted' }, 'Pelo comportamento: recência, frequência e valor nos últimos 12 meses. Entra quem estiver em qualquer um dos marcados.'), rfmBox) : null,
+      fams.length ? bloco('Tipo de chá que compra', ['tipos'], h('small', { class: 'muted' }, 'Clientes que já compraram chá deste tipo (qualquer um dos marcados).'), tiposBox) : null,
+    ].filter(Boolean);
     // resumo de cada bloco no título (aparece mesmo fechado)
     const resumoBloco = () => {
       const R = {
@@ -397,6 +416,8 @@
         visMin: () => (f.visMin !== '' || f.visMax !== '' ? `${f.visMin || 0}${f.visMax !== '' ? '–' + f.visMax : '+'} compras` : ''),
         aniv: () => (f.aniv ? 'aniversário' : ''), vendedora: () => f.vendedora || '', lojaPref: () => (f.lojaPref ? 'loja preferida' : ''),
         segs: () => f.segs.map((k) => (SEGS.find(([x]) => x === k) || [, k])[1]).join(', '),
+        rfm: () => (TS.RFM ? f.rfm.map((k) => (TS.RFM.por[k] || { nome: k }).nome).join(', ') : ''),
+        tipos: () => f.tipos.join(', '),
       };
       for (const b of blocos) b.querySelector('.cp-bloco-res').textContent = b._ks.map((k) => (R[k] ? R[k]() : '')).filter(Boolean).join(' · ');
     };

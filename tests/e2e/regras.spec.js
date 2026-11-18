@@ -119,10 +119,9 @@ test.describe('regras', () => {
 
   test('Validade: faixas, valor em risco, lote editável e "vender primeiro" na Promoção', async ({ page }) => {
     await page.evaluate(() => { location.hash = '#validade'; });
-    await expect(page.locator('.vl-kpi.vl-vencido')).toBeVisible();
-    expect(await page.locator('.vl-kpis .vl-kpi').count()).toBeGreaterThanOrEqual(5);
-    await expect(page.locator('.vl-kpi-risco')).toContainText('a custo');
-    await page.locator('.vl-segs button', { hasText: 'Todos' }).click();
+    await expect(page.locator('.vl-resumo .vl-risco')).toContainText('a custo');
+    await expect(page.locator('.vl-alerta')).toContainText('vencido');
+    await page.locator('.vl-chip', { hasText: 'Todos' }).click();
     const lote = page.locator('.vl-tabela input.vl-lote').first();
     await lote.fill('l2611-a');
     await lote.press('Enter');
@@ -137,10 +136,27 @@ test.describe('regras', () => {
     await expect(page.locator('.vl-modal .vl-dif')).toContainText('sobram');
     await expect(page.locator('.vl-modal button.primary')).toBeDisabled();
     await page.locator('.vl-modal button', { hasText: 'Cancelar' }).click();
-    await page.locator('.vl-kpi.vl-critica').click();
+    await page.locator('.vl-chip.vl-critica').click();
     await expect(page.locator('.vl-tabela').first()).toContainText('< 30 dias');
     await page.evaluate(() => { location.hash = '#promocao'; });
     await expect(page.locator('main')).toContainText('Vender primeiro');
+  });
+
+  test('Clientes: RFM (grupos, filtro, indicadores), retenção por safra e tela Hoje', async ({ page }) => {
+    await page.evaluate(() => { location.hash = '#clientes'; });
+    await expect(page.locator('.rfm-t')).toContainText('Campeões');
+    await expect(page.locator('.safra-t')).toContainText('Novos');
+    await page.locator('.rfm-t tr.rfm-linha', { hasText: 'Leais' }).click();
+    await expect(page).toHaveURL(/#clilista/);
+    await expect(page.locator('.rfm-chip.on')).toContainText('Leais');
+    await expect(page.locator('.cli-tag.rfm-leal').first()).toBeVisible();
+    await page.evaluate(() => { location.hash = '#hoje'; });
+    await expect(page.locator('.hj-item').first()).toBeVisible();
+    expect(await page.locator('main').innerText(), 'texto "null" na tela').not.toMatch(/(^|\s)(null|undefined|NaN)(\s|$)/);
+    await page.evaluate(() => { location.hash = '#campanhas'; });
+    await page.getByRole('button', { name: '+ Criar campanha' }).click();
+    await expect(page.locator('main')).toContainText('Grupo do cliente (RFM)');
+    await expect(page.locator('main')).toContainText('Tipo de chá que compra');
   });
 
   test('Inventário: nova contagem de um tipo de chá, contar em gramas, revisar', async ({ page }) => {
