@@ -564,6 +564,19 @@
       return { ...i, total: Math.round(i.custo * i.qtd * 100) / 100, antes: a ? a.v : null, origemAntes: a ? a.origem : '', varC: a && a.v ? i.custo / a.v - 1 : null };
     });
     const unTxt = (u) => String(u || 'un').toLowerCase();
+    // chá a granel: lote e validade na própria linha do produto (salvam sozinhos)
+    const temGranel = !!TS.validade && n.itens.some((i) => unTxt(i.un) === 'kg');
+    let lotesNota = null;
+    const faltaLote = h('span', { class: 'vl-falta' });
+    const contarLotes = () => { if (!lotesNota) return; const f = lotesNota.itens.filter((x) => x.lote === '0').length; faltaLote.textContent = f ? `🍃 ${f} sem lote` : '🍃 lotes preenchidos ✓'; faltaLote.className = f ? 'vl-falta' : 'vl-falta ok'; };
+    const aoSalvarLote = () => { contarLotes(); TS.validade.pendentes(D.loja).then((p) => { j.lotesPend = p; const c = document.querySelector('.prc-notas > .mt'); if (c) c.replaceChildren(listaNotas(D, j, aoMudar)); }); };
+    const celLote = (r) => {
+      const box = h('div', { class: 'vl-nota-cel', 'data-cod': r.cod });
+      if (lotesNota) { const c = lotesNota.campos(r.cod); if (c) box.append(c); else box.append(h('span', { class: 'muted' }, '—')); }
+      else if (unTxt(r.un) === 'kg') box.append(h('span', { class: 'muted' }, '…'));
+      else box.append(h('span', { class: 'muted' }, '—'));
+      return box;
+    };
     const tab = TS.table({
       cols: [
         { key: 'nome', label: 'Produto', align: 'l', sticky: true, wrap: true, render: (r) => h('span', null, r.nome, h('small', { class: 'est-tam' }, `cód. ${r.cod}${r.grupo ? ' · ' + r.grupo : ''}`)) },
@@ -572,6 +585,7 @@
         { key: 'custo', label: 'Custo unit.', title: 'Valor líquido do item ÷ quantidade (com IPI e rateios): é o "custo último" que o AppNext usa', fmt: fmt.brl },
         { key: 'total', label: 'Total', fmt: fmt.brl },
         { key: 'varC', label: 'Custo antes', title: 'Custo do mesmo produto antes desta nota (entrada anterior ou importação de estoque) e a variação', render: (r) => (r.antes == null ? h('span', { class: 'muted' }, 'primeira entrada') : h('div', { class: 'prc-v', title: r.origemAntes }, h('span', null, fmt.brl(r.antes)), r.varC != null && Math.abs(r.varC) >= 0.0005 ? h('span', { class: 'prc-badge ' + (r.varC > 0 ? 'prc-ruim' : 'prc-bom') }, pctTxt(r.varC)) : h('span', { class: 'muted' }, 'igual'))), sortVal: (r) => r.varC ?? -99 },
+        ...(temGranel ? [{ key: 'lote', label: 'Lote · validade', align: 'l', title: 'Chá a granel: digite o nº do lote do pacote. A validade vem com 12 meses da entrada; corrija se o pacote disser outra data. Salva sozinho.', render: celLote, sortVal: (r) => (lotesNota && lotesNota.porCod.has(String(r.cod)) ? (lotesNota.porCod.get(String(r.cod)).some((x) => x.lote === '0') ? 0 : 1) : 2) }] : []),
       ],
       rows: linhas, sortKey: 'total', maxHeight: '60vh', search: 'Buscar produto…', searchKeys: ['nome', 'cod'], cls: 'est-t',
       total: { nome: `${fmt.int(linhas.length)} itens`, total: linhas.reduce((a, r) => a + r.total, 0) },
@@ -588,9 +602,14 @@
       h('div', { class: 'prc-nota-info muted' }, [n.motivo && `Tipo: ${n.motivo}`, n.status && `Situação: ${n.status}`, n.cfop && `CFOP ${n.cfop}`, `${fmt.int(linhas.length)} itens`, subiu || desceu ? `custo subiu em ${fmt.int(subiu)} e caiu em ${fmt.int(desceu)}` : ''].filter(Boolean).join(' · ')),
       blocoSaidasVinculadas(D.loja, vinculadas),
       TS.devolucao && !TS.demo ? TS.devolucao.barra(n, () => card, aoMudar) : null,
-      h('div', { class: 'f-label mt' }, 'Produtos da nota', h('button', { type: 'button', class: 'exp-btn prt-btn prc-nf-prt', title: 'Imprimir a nota', onclick: () => TS.imprimir(card) }, '🖨', h('span', null, 'Imprimir'))),
-      tab,
-      TS.validade ? TS.validade.blocoNota(D.loja, n, () => TS.validade.pendentes(D.loja).then((p) => { j.lotesPend = p; const c = document.querySelector('.prc-notas > .mt'); if (c) c.replaceChildren(listaNotas(D, j, aoMudar)); })) : null);
+      h('div', { class: 'f-label mt' }, 'Produtos da nota', temGranel ? h('span', null, ' ', faltaLote) : null, h('button', { type: 'button', class: 'exp-btn prt-btn prc-nf-prt', title: 'Imprimir a nota', onclick: () => TS.imprimir(card) }, '🖨', h('span', null, 'Imprimir'))),
+      tab);
+    if (temGranel) TS.validade.lotesDaNota(D.loja, n, aoSalvarLote).then((ln) => {
+      lotesNota = ln;
+      contarLotes();
+      // troca o "…" pelos campos nas linhas que já estão na tela
+      for (const box of card.querySelectorAll('.vl-nota-cel')) { const c = ln && ln.campos(box.dataset.cod); box.replaceChildren(c || h('span', { class: 'muted' }, '—')); }
+    });
     const camada = h('div', { class: 'prc-drawer-camada', onmousedown: (e) => { if (e.target === camada) fechar(); } }, card);
     document.body.append(camada);
     document.body.classList.add('com-camada');

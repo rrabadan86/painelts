@@ -99,8 +99,9 @@
   }
 
   /** chás a granel de uma nota de entrada com o nº do lote e a validade (vale antes do estoque ser atualizado) */
-  function linhasNota(loja, nt, aoSalvar) {
-    return h('div', { class: 'vl-nota-itens' }, ...nt.itens.map((it) => {
+  /** campos de lote e validade de um chá a granel da nota (salvam sozinhos ao sair do campo) */
+  function camposItem(loja, it, aoSalvar) {
+    {
       const lote = h('input', { class: 'f-input vl-lote' + (it.lote === '0' ? ' vl-vazio' : ''), value: it.lote === '0' ? '' : it.lote, placeholder: 'nº do lote', maxlength: 30, autocomplete: 'off', autocapitalize: 'characters', 'aria-label': `Lote de ${it.desc}` });
       const val = h('input', { class: 'f-input vl-val', type: 'date', value: it.validade || '', min: it.entrada, 'aria-label': `Validade de ${it.desc}` });
       const enviar = (corpoReq, el) => {
@@ -118,11 +119,39 @@
       lote.addEventListener('change', () => { lote.value = lote.value.trim().toUpperCase(); lote.classList.toggle('vl-vazio', !lote.value); enviar({ lote: lote.value }, lote); });
       lote.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); lote.blur(); } });
       val.addEventListener('change', () => enviar({ validade: val.value }, val));
+      return { lote, val };
+    }
+  }
+  function linhasNota(loja, nt, aoSalvar) {
+    return h('div', { class: 'vl-nota-itens' }, ...nt.itens.map((it) => {
+      const { lote, val } = camposItem(loja, it, aoSalvar);
       return h('div', { class: 'vl-nota-item' },
         h('div', { class: 'vl-nota-cha' }, h('b', null, it.desc), h('small', { class: 'muted vl-sub' }, `cód. ${it.cod} · ${kgTxt(it.qtd)}`)),
         h('label', { class: 'vl-campo' }, h('small', null, 'Lote'), lote),
         h('label', { class: 'vl-campo' }, h('small', null, 'Validade'), val));
     }));
+  }
+  /** chás a granel da nota com lote e validade, para pôr dentro da tabela de produtos: Promise<{ itens, porCod, campos(cod) }> */
+  function lotesDaNota(loja, n, aoSalvar) {
+    if (!loja || loja === 'todas') return Promise.resolve(null);
+    return req('GET', `validade/notas?loja=${encodeURIComponent(loja)}&nota=${encodeURIComponent(n.id)}`).then((j) => {
+      const nt = (j.notas || [])[0];
+      if (!nt || !nt.itens.length) return null;
+      const porCod = new Map();
+      for (const it of nt.itens) (porCod.get(String(it.cod)) || porCod.set(String(it.cod), []).get(String(it.cod))).push(it);
+      // os campos de cada chá: criados uma vez (a tabela redesenha ao ordenar/buscar e reaproveita os mesmos)
+      const prontos = new Map();
+      const campos = (cod) => {
+        const its = porCod.get(String(cod));
+        if (!its) return null;
+        if (!prontos.has(String(cod))) prontos.set(String(cod), h('div', { class: 'vl-nota-campos' }, ...its.map((it) => {
+          const { lote, val } = camposItem(loja, it, aoSalvar);
+          return h('div', { class: 'vl-nota-par' }, h('label', { class: 'vl-campo' }, h('small', null, 'Lote'), lote), h('label', { class: 'vl-campo' }, h('small', null, 'Validade'), val));
+        })));
+        return prontos.get(String(cod));
+      };
+      return { itens: nt.itens, porCod, campos };
+    }).catch(() => null);
   }
   /** Estoque → Notas fiscais → nota de entrada: bloco "Lotes do chá a granel" (some se a nota não tem chá a granel) */
   function blocoNota(loja, n, aoSalvar) {
@@ -144,7 +173,7 @@
   /** notas de entrada com lote pendente: { id da nota: quantos chás faltam } */
   const pendentes = (loja) => (req('GET', `validade/notas?loja=${encodeURIComponent(loja)}`).then((j) => j.pendentes || {}).catch(() => ({})));
 
-  TS.validade = { dados, badge, campanhaDoCha, lotesDoCha, camposLotes, rotLote, blocoNota, pendentes };
+  TS.validade = { dados, badge, campanhaDoCha, lotesDoCha, camposLotes, rotLote, blocoNota, lotesDaNota, pendentes };
 
   /**
    * Trava de estoque das mensagens: toda mensagem que oferece produto só sai se a loja tiver.

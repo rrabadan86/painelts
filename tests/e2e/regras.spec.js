@@ -315,8 +315,10 @@ test.describe('regras', () => {
     await aba.click();
     await expect(page.locator('.prc-notas .vl-pend').first()).toContainText('lote pendente');
     await page.locator('.prc-notas a.prc-nome').first().click();
-    const bloco = page.locator('.prc-drawer .vl-nota');
-    await expect(bloco).toContainText('Lotes do chá a granel');
+    const bloco = page.locator('.prc-drawer');
+    await expect(bloco).toContainText('Lote · validade');
+    await expect(bloco.locator('.vl-falta')).toContainText('sem lote');
+    await expect(bloco.locator('.vl-nota')).toHaveCount(0); // sem o cartão separado
     const lote = bloco.locator('input.vl-lote').first();
     await lote.fill('r2611');
     await lote.press('Enter');

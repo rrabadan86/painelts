@@ -2254,3 +2254,6 @@ details.vl-ajuda summary { cursor: pointer; font-weight: 600; }
 .nf-sinc-logbox { margin: 4px 0 10px; }
 .nf-sinc-logbox summary { cursor: pointer; font-size: 13px; color: var(--muted, #6b6b6b); }
 .nf-sinc-log { margin-top: 6px; }
+.vl-nota-campos { display: flex; flex-direction: column; gap: 6px; min-width: 150px; }
+.vl-nota-par { display: flex; flex-direction: column; gap: 4px; }
+.vl-nota-cel .vl-campo small { display: block; font-size: 11px; color: var(--muted, #6b6b6b); }
