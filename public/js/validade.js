@@ -97,7 +97,53 @@
     const primeiro = fundo.querySelector('input'); if (primeiro) primeiro.focus();
   }
 
-  TS.validade = { dados, badge, campanhaDoCha, lotesDoCha, camposLotes, rotLote };
+  /** chás a granel de uma nota de entrada com o nº do lote e a validade (vale antes do estoque ser atualizado) */
+  function linhasNota(loja, nt, aoSalvar) {
+    return h('div', { class: 'vl-nota-itens' }, ...nt.itens.map((it) => {
+      const lote = h('input', { class: 'f-input vl-lote' + (it.lote === '0' ? ' vl-vazio' : ''), value: it.lote === '0' ? '' : it.lote, placeholder: 'nº do lote', maxlength: 30, autocomplete: 'off', autocapitalize: 'characters', 'aria-label': `Lote de ${it.desc}` });
+      const val = h('input', { class: 'f-input vl-val', type: 'date', value: it.validade || '', min: it.entrada, 'aria-label': `Validade de ${it.desc}` });
+      const enviar = (corpoReq, el) => {
+        if (TS.demo) { el.classList.add('vl-salvo'); setTimeout(() => el.classList.remove('vl-salvo'), 1200); return; }
+        el.classList.add('vl-salvando');
+        req('PUT', 'validade/lote', { loja, chave: it.chave, ...corpoReq }).then((j) => {
+          cache.delete(loja);
+          const e = j.editado || {};
+          it.lote = e.lote || '0'; it.validade = e.validade || it.validadePadrao;
+          el.classList.remove('vl-salvando'); el.classList.add('vl-salvo'); setTimeout(() => el.classList.remove('vl-salvo'), 1200);
+          if ('validade' in corpoReq) val.value = it.validade;
+          if (aoSalvar) aoSalvar(it);
+        }).catch((e) => { el.classList.remove('vl-salvando'); toast(e.message, true); });
+      };
+      lote.addEventListener('change', () => { lote.value = lote.value.trim().toUpperCase(); lote.classList.toggle('vl-vazio', !lote.value); enviar({ lote: lote.value }, lote); });
+      lote.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); lote.blur(); } });
+      val.addEventListener('change', () => enviar({ validade: val.value }, val));
+      return h('div', { class: 'vl-nota-item' },
+        h('div', { class: 'vl-nota-cha' }, h('b', null, it.desc), h('small', { class: 'muted vl-sub' }, `cód. ${it.cod} · ${kgTxt(it.qtd)}`)),
+        h('label', { class: 'vl-campo' }, h('small', null, 'Lote'), lote),
+        h('label', { class: 'vl-campo' }, h('small', null, 'Validade'), val));
+    }));
+  }
+  /** Estoque → Notas fiscais → nota de entrada: bloco "Lotes do chá a granel" (some se a nota não tem chá a granel) */
+  function blocoNota(loja, n, aoSalvar) {
+    const box = h('div');
+    if (!loja || loja === 'todas') return box;
+    req('GET', `validade/notas?loja=${encodeURIComponent(loja)}&nota=${encodeURIComponent(n.id)}`).then((j) => {
+      const nt = (j.notas || [])[0];
+      if (!nt || !nt.itens.length || !box.isConnected) return;
+      const falta = h('span', { class: 'vl-falta' });
+      const contar = () => { const f = nt.itens.filter((x) => x.lote === '0').length; falta.textContent = f ? ` · ${f} sem lote` : ' · tudo preenchido ✓'; falta.className = f ? 'vl-falta' : 'vl-falta ok'; };
+      contar();
+      box.replaceChildren(h('div', { class: 'vl-nota' },
+        h('div', { class: 'vl-nota-tit' }, h('b', null, '🍃 Lotes do chá a granel'), falta),
+        h('small', { class: 'muted' }, 'Digite o nº do lote que está no pacote. A validade já vem com 12 meses da entrada; corrija se o pacote disser outra data.'),
+        linhasNota(loja, nt, () => { contar(); if (aoSalvar) aoSalvar(); })));
+    }).catch(() => null); // sem permissão: o bloco não aparece
+    return box;
+  }
+  /** notas de entrada com lote pendente: { id da nota: quantos chás faltam } */
+  const pendentes = (loja) => (req('GET', `validade/notas?loja=${encodeURIComponent(loja)}`).then((j) => j.pendentes || {}).catch(() => ({})));
+
+  TS.validade = { dados, badge, campanhaDoCha, lotesDoCha, camposLotes, rotLote, blocoNota, pendentes };
 
   TS.pages.validade = function (root) {
     if (TS.subEstoque) root.append(TS.subEstoque('validade'));
@@ -205,6 +251,14 @@
         h('li', null, '⚫ Vencido: tire da venda e lance a perda no AppNext. 🔴 e 🟠: degustação, oferta e campanha. 🟡: deixe na frente da prateleira.'),
         h('li', null, 'Os lotes em risco aparecem também em Vendas → Promoção, no Pedido (para não comprar mais do mesmo chá) e no resumo diário.'))));
     desenharTabela();
+    // notas que chegaram com chá sem nº de lote (antes mesmo de o estoque ser atualizado)
+    req('GET', `validade/notas?loja=${encodeURIComponent(loja)}`).then((j) => {
+      const ns = (j.notas || []).filter((nt) => j.pendentes[nt.id]);
+      if (!ns.length || !corpo.isConnected) return;
+      corpo.insertBefore(TS.card('📦 Notas que chegaram: lote pendente', 'Chá a granel das notas de entrada recentes ainda sem o nº do lote',
+        ...ns.slice(0, 5).map((nt) => h('div', { class: 'vl-nota' }, h('div', { class: 'vl-nota-tit' }, h('b', null, `NF ${nt.nf}`), h('span', { class: 'muted' }, ` · entrada ${fmt.date(nt.entrada)} · ${nt.fornecedor}`)),
+          linhasNota(loja, { ...nt, itens: nt.itens.filter((x) => x.lote === '0') }, null)))), corpo.children[1] || null);
+    }).catch(() => null);
   }
 
   /** Vendas → Promoção: o que vender primeiro (vencendo em menos de 60 dias) */

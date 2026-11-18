@@ -431,8 +431,8 @@
       if (!devs.length && state.prcNotasFil === 'dev') state.prcNotasFil = 'per';
       if (box.isConnected) box.replaceChildren(listaNotas(D, j, () => atualizarDevs(j)));
     });
-    Promise.all([p, buscarDevs(), ps]).then(([j, devs, saidas]) => {
-      j.saidas = saidas;
+    Promise.all([p, buscarDevs(), ps, TS.validade ? TS.validade.pendentes(loja) : {}]).then(([j, devs, saidas, lotesPend]) => {
+      j.saidas = saidas; j.lotesPend = lotesPend || {};
       indexarDevs(j, devs);
       const aoMudar = () => atualizarDevs(j);
       box.replaceChildren(listaNotas(D, j, aoMudar));
@@ -451,7 +451,8 @@
     if (!todas.length) return TS.card('Notas fiscais de entrada', null, h('p', { class: 'muted' }, 'Nenhuma nota de entrada no painel ainda. O coletor lê as notas concluídas de Estoque → Entrada de Produtos do AppNext junto com o estoque.'));
     const noPer = (n) => (f.de == null || n.dia >= f.de) && (f.ate == null || n.dia <= f.ate);
     const temAlgumaDev = todas.some((n) => !!devAtivaDeNota(j, n));
-    const FIL = { per: ['No período', noPer], todas: ['Todas', () => true], ...(temAlgumaDev ? { dev: ['Com devolução', (n) => !!devAtivaDeNota(j, n)] } : {}) };
+    const temPend = Object.keys(j.lotesPend || {}).length > 0;
+    const FIL = { per: ['No período', noPer], todas: ['Todas', () => true], ...(temAlgumaDev ? { dev: ['Com devolução', (n) => !!devAtivaDeNota(j, n)] } : {}), ...(temPend ? { lote: ['Lote pendente', (n) => !!j.lotesPend[n.id]] } : {}) };
     const fil = FIL[state.prcNotasFil] ? state.prcNotasFil : 'per';
     const rows = todas.filter(FIL[fil][1]);
     const tab = TS.table({
@@ -460,7 +461,8 @@
         { key: 'dia', label: 'Entrada', align: 'l', render: (r) => h('span', null, r.entrada ? quando(r.entrada) : '—', h('small', { class: 'est-tam' }, r.emissao ? 'emissão ' + quando(r.emissao) : '')), sortVal: (r) => r.dia ?? 0 },
         { key: 'nfTxt', label: 'NF / série', align: 'l', render: (r) => h('a', { href: '#', class: 'prc-nome', onclick: (e) => { e.preventDefault(); e.stopPropagation(); abrirNota(D, r, j, aoMudar); } }, r.nfTxt), sortVal: (r) => +r.nf || 0 },
         { key: 'fornecedor', label: 'Fornecedor', align: 'l', wrap: true, render: (r) => { const dv = devAtivaDeNota(j, r); return h('span', null, r.fornecedor || '—', h('small', { class: 'est-tam' }, r.motivo ? h('span', { class: 'prc-st ' + (r.compra ? 'prc-st-v' : 'prc-st-n') }, r.motivo) : null,
-          dv ? h('span', { class: 'prc-st nf-dev', title: dv.dica }, `↩ devolução${dv.total > 1 ? ` (${dv.total})` : ''}`) : null)); } },
+          dv ? h('span', { class: 'prc-st nf-dev', title: dv.dica }, `↩ devolução${dv.total > 1 ? ` (${dv.total})` : ''}`) : null,
+          j.lotesPend && j.lotesPend[r.id] ? h('span', { class: 'prc-st vl-pend', title: `${j.lotesPend[r.id]} chá(s) a granel sem o nº do lote: abra a nota e preencha` }, `🍃 lote pendente (${j.lotesPend[r.id]})`) : null)); } },
         { key: 'nItens', label: 'Itens', fmt: fmt.int },
         { key: 'total', label: 'Total da nota', fmt: (v) => (v == null ? '—' : fmt.brl(v)) },
       ],
@@ -526,6 +528,7 @@
       h('div', { class: 'prc-nota-info muted' }, [n.motivo && `Tipo: ${n.motivo}`, n.status && `Situação: ${n.status}`, n.cfop && `CFOP ${n.cfop}`, `${fmt.int(linhas.length)} itens`, subiu || desceu ? `custo subiu em ${fmt.int(subiu)} e caiu em ${fmt.int(desceu)}` : ''].filter(Boolean).join(' · ')),
       blocoSaidasVinculadas(D.loja, vinculadas),
       TS.devolucao && !TS.demo ? TS.devolucao.barra(n, () => card, aoMudar) : null,
+      TS.validade ? TS.validade.blocoNota(D.loja, n, () => TS.validade.pendentes(D.loja).then((p) => { j.lotesPend = p; const c = document.querySelector('.prc-notas > .mt'); if (c) c.replaceChildren(listaNotas(D, j, aoMudar)); })) : null,
       h('div', { class: 'f-label mt' }, 'Produtos da nota', h('button', { type: 'button', class: 'exp-btn prt-btn prc-nf-prt', title: 'Imprimir a nota', onclick: () => TS.imprimir(card) }, '🖨', h('span', null, 'Imprimir'))),
       tab);
     const camada = h('div', { class: 'prc-drawer-camada', onmousedown: (e) => { if (e.target === camada) fechar(); } }, card);

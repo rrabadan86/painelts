@@ -216,4 +216,21 @@ test.describe('regras', () => {
     await expect(page.locator('.prc-popup-camada')).toHaveCount(0);
     await expect(page.locator('.prc-drawer')).toBeVisible();
   });
+
+  test('Nota de entrada: lote do chá a granel junto da devolução, etiqueta e filtro "lote pendente"', async ({ page }) => {
+    await page.evaluate(() => { location.hash = '#notas'; });
+    const aba = page.locator('.prc-notas .seg button', { hasText: 'Lote pendente' });
+    await expect(aba).toBeVisible();
+    await aba.click();
+    await expect(page.locator('.prc-notas .vl-pend').first()).toContainText('lote pendente');
+    await page.locator('.prc-notas a.prc-nome').first().click();
+    const bloco = page.locator('.prc-drawer .vl-nota');
+    await expect(bloco).toContainText('Lotes do chá a granel');
+    const lote = bloco.locator('input.vl-lote').first();
+    await lote.fill('r2611');
+    await lote.press('Enter');
+    await expect(bloco.locator('input.vl-lote.vl-salvo')).toHaveCount(1);
+    await expect(lote).toHaveValue('R2611');
+    await expect(bloco.locator('input.vl-val').first()).not.toHaveValue('');
+  });
 });

@@ -203,9 +203,11 @@ function resumo(lotes) {
 }
 
 /** a equipe informa o nº do lote e/ou corrige a validade (validade vazia = volta para 12 meses da entrada) */
-function editar(id, b, por, lotesAtuais) {
+function editar(id, b, por, lotesAtuais, compras) {
   const chave = String(b.chave || '');
-  const l = lotesAtuais.find((x) => x.chave === chave);
+  // o lote em aberto ou, vindo da nota de entrada, qualquer entrada conhecida (mesmo antes do estoque ser atualizado)
+  let l = lotesAtuais.find((x) => x.chave === chave);
+  if (!l && compras) { const cod = chave.split('|')[1] || ''; l = entradasDoCod(cod, compras.itens || {}).find((e) => e.chave === chave); }
   if (!l) return { erro: 'Lote não encontrado (o estoque pode ter mudado): atualize a tela.' };
   const d = ler(id);
   const atual = d.lotes[chave] || {};
@@ -228,7 +230,7 @@ function editar(id, b, por, lotesAtuais) {
   if (!novo.lote && !novo.validade) delete d.lotes[chave];
   else d.lotes[chave] = { ...(novo.lote ? { lote: novo.lote } : {}), ...(novo.validade ? { validade: novo.validade } : {}), por: String(por || ''), em: new Date().toISOString() };
   // limpa edições de lotes que já acabaram há mais de 2 anos (o arquivo não cresce sem fim)
-  const corte = somarMeses(hojeSP(), -24), vivos = new Set(lotesAtuais.map((x) => x.chave));
+  const corte = somarMeses(hojeSP(), -24), vivos = new Set([...lotesAtuais.map((x) => x.chave), chave]);
   for (const [k, x] of Object.entries(d.lotes)) if (!vivos.has(k) && String(x.em || '').slice(0, 10) < corte) delete d.lotes[k];
   gravar(id, d);
   return { ok: d.lotes[chave] || null, antes: atual };
@@ -348,6 +350,38 @@ function entradasRecentes({ estoque, compras, edits, hoje = hojeSP() }) {
   return out;
 }
 
+/**
+ * Lotes de uma nota de entrada (Estoque → Notas fiscais e Validade → notas recentes): os chás a granel da nota,
+ * com o nº do lote e a validade, mesmo antes do estoque do AppNext ser atualizado. nota = ES.notas().notas[k]
+ */
+function daNota({ nota, estoque, compras, edits }) {
+  const porCod = new Map(((estoque && estoque.itens) || []).map((i) => [String(i.cod), i]));
+  const dia = String(nota.entrada || nota.emissao || '').slice(0, 10);
+  const ed = (edits && edits.lotes) || {};
+  const usados = new Set(), out = [];
+  for (const it of nota.itens || []) {
+    const cod = String(it.cod || ''), est = porCod.get(cod);
+    const granel = est ? est.un === 'Kg' : /^kg$/i.test(String(it.un || ''));
+    if (!granel || ENVASADO.test((est && est.desc) || it.nome || '')) continue;
+    const e = entradasDoCod(cod, (compras && compras.itens) || {}).find((x) => x.nf === String(nota.nf) && x.entrada === dia && !usados.has(x.chave));
+    if (!e) continue; // nota que não é compra concluída (o painel não conta como lote)
+    usados.add(e.chave);
+    const x = ed[e.chave] || {}, padrao = somarMeses(e.entrada, MESES_VALIDADE);
+    out.push({ chave: e.chave, cod, desc: (est && est.desc) || it.nome || cod, qtd: e.qtdEntrada, lote: x.lote || '0', validade: DIA.test(x.validade || '') ? x.validade : padrao, padrao: !DIA.test(x.validade || ''), validadePadrao: padrao, entrada: e.entrada });
+  }
+  return out;
+}
+/** notas recentes (60 dias) com chá a granel ainda sem nº de lote: { id da nota: quantos faltam } */
+function pendentesNotas({ notas, estoque, compras, edits, hoje = hojeSP() }) {
+  const out = {}, corte = somarMeses(hoje, -2);
+  for (const n of notas || []) {
+    if (String(n.entrada || n.emissao || '').slice(0, 10) < corte) continue;
+    const f = daNota({ nota: n, estoque, compras, edits }).filter((x) => x.lote === '0').length;
+    if (f) out[n.id] = f;
+  }
+  return out;
+}
+
 /** lotes da loja já calculados (arquivos do estoque, das compras e da tabela, ajustes da tela e do inventário) */
 function daLoja(id, hoje) {
   const TAB = require('./tabela');
@@ -377,4 +411,4 @@ function linhasResumo(id) {
     ...top];
 }
 
-module.exports = { MESES_VALIDADE, FAIXAS, RISCO_DIAS, ler, calcular, resumo, editar, editarSaldo, daLoja, entradasDoCod, entradasRecentes, linhasResumo, somarMeses, precosKg, faixa, hojeSP };
+module.exports = { MESES_VALIDADE, FAIXAS, RISCO_DIAS, ler, calcular, resumo, editar, editarSaldo, daLoja, daNota, pendentesNotas, entradasDoCod, entradasRecentes, linhasResumo, somarMeses, precosKg, faixa, hojeSP };

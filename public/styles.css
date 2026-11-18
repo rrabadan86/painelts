@@ -2118,3 +2118,14 @@ body.com-camada .ped-barra { display: none; }
 .inv-lotes { flex-basis: 100%; border-top: 1px dashed var(--line); padding-top: 6px; }
 .inv-lotes[hidden] { display: none; }
 .inv-porlote { padding: 0 0 0 6px; font-size: 12px; }
+.vl-nota { border: 1px solid #DCE7D8; background: #F6FAF4; border-radius: 10px; padding: 10px 12px; margin: 10px 0; }
+.vl-nota-tit { margin-bottom: 4px; }
+.vl-falta { color: #9A5300; font-weight: 600; font-size: 13px; }
+.vl-falta.ok { color: var(--good); }
+.vl-nota-itens { display: grid; gap: 6px; margin-top: 8px; }
+.vl-nota-item { display: grid; grid-template-columns: minmax(0, 1fr) 140px 160px; gap: 8px; align-items: end; background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }
+.vl-campo { display: grid; gap: 2px; }
+.vl-campo small { color: var(--muted); font-size: 11px; }
+.vl-nota-item .vl-lote, .vl-nota-item .vl-val { width: 100%; }
+.prc-st.vl-pend { background: #FBE6CC; color: #9A5300; }
+@media (max-width: 760px) { .vl-nota-item { grid-template-columns: 1fr 1fr; } .vl-nota-cha { grid-column: 1 / -1; } }

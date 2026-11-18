@@ -112,3 +112,21 @@ test('lotes: todos os lotes do chá de uma vez (a soma tem de ser o estoque)', (
   const r = L.calcular({ estoque, compras: comp, tabela: null, edits: L.ler('mx'), hoje: '2026-11-18' });
   assert.deepEqual(Object.fromEntries(r.lotes.map((l) => [l.chave, l.saldo])), { '11|7|2026-02-01': 0.5, '12|7|2026-10-01': 0.7 });
 });
+
+test('lotes: chás a granel da nota de entrada (antes do estoque) e notas com lote pendente', () => {
+  const estoque = { em: '2026-11-10T09:00:00Z', itens: [{ cod: '5', desc: 'ROOIBOS', un: 'Kg', qtd: 0.3, custo: 90 }, { cod: '6', desc: 'LATA X', un: 'UN', qtd: 4, custo: 20 }] };
+  const compras = { itens: { 5: [['2026-11-17', 90, 777, 2, 'TSB']], 6: [['2026-11-17', 20, 777, 6, 'TSB']] } };
+  const nota = { id: 'n777', nf: 777, entrada: '2026-11-17T10:00:00', itens: [{ cod: '5', nome: 'ROOIBOS', un: 'KG', qtd: 2 }, { cod: '6', nome: 'LATA X', un: 'UN', qtd: 6 }] };
+  const its = L.daNota({ nota, estoque, compras, edits: L.ler('nt') });
+  assert.deepEqual(its.map((x) => [x.chave, x.lote, x.validade, x.qtd]), [['777|5|2026-11-17', '0', '2027-11-17', 2]]);
+  assert.deepEqual(L.pendentesNotas({ notas: [nota], estoque, compras, edits: L.ler('nt'), hoje: '2026-11-18' }), { n777: 1 });
+  // o estoque ainda é de antes da nota: o lote não está em aberto, mas dá para informar pela nota
+  const abertos = L.calcular({ estoque, compras, tabela: null, edits: L.ler('nt'), hoje: '2026-11-18' }).lotes;
+  assert.ok(!abertos.some((l) => l.chave === '777|5|2026-11-17'));
+  assert.match(L.editar('nt', { chave: '777|5|2026-11-17', lote: 'R1' }, 'v', abertos).erro, /não encontrado/);
+  assert.ok(L.editar('nt', { chave: '777|5|2026-11-17', lote: 'R1' }, 'v', abertos, compras).ok);
+  assert.deepEqual(L.pendentesNotas({ notas: [nota], estoque, compras, edits: L.ler('nt'), hoje: '2026-11-18' }), {});
+  // quando o estoque é atualizado, o lote aparece com o nº já preenchido
+  const depois = L.calcular({ estoque: { ...estoque, em: '2026-11-18T09:00:00Z', itens: [{ ...estoque.itens[0], qtd: 2.3 }] }, compras, tabela: null, edits: L.ler('nt'), hoje: '2026-11-18' }).lotes;
+  assert.equal(depois.find((l) => l.chave === '777|5|2026-11-17').lote, 'R1');
+});

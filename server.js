@@ -482,6 +482,23 @@ app.get('/api/demo/nfsaida', (req, res) => { if (!lojaDemo(req)) return res.stat
 app.get('/api/demo/nfsaida/nota', (req, res) => { const n = lojaDemo(req) && nfsDemo(req.query.loja).find((x) => x.chave === req.query.chave); if (!n) return res.status(404).json({ erro: 'Nota não encontrada.' }); res.json(n); });
 app.get('/api/demo/nfsaida/danfe', (req, res) => { const n = lojaDemo(req) && nfsDemo(req.query.loja).find((x) => x.chave === req.query.chave); if (!n) return res.status(404).send('Nota não encontrada.'); res.set('X-Robots-Tag', 'noindex').type('html').send(NFSd.danfe(n)); });
 app.get('/api/demo/nfsaida/xml', (req, res) => res.status(404).type('text/plain; charset=utf-8').send('Na apresentação as notas são fictícias e não têm XML.'));
+// lotes das notas de entrada na apresentação (nada é salvo: o navegador só mostra)
+app.get('/api/demo/validade/notas', (req, res) => {
+  if (!lojaDemo(req)) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  const LOTd = require('./src/lotes');
+  const e = DEMO.estoqueDemo(req.query.loja);
+  const porNf = new Map();
+  for (const [cod, l] of Object.entries(e.compras.itens || {})) for (const [dia, custo, nf, qtd, forn] of l) {
+    const n = porNf.get(nf) || porNf.set(nf, { id: nf, nf, entrada: dia, fornecedor: forn, itens: [] }).get(nf);
+    const it = e.estoque.itens.find((i) => i.cod === cod) || {};
+    n.itens.push({ cod, nome: it.desc || cod, un: it.un || 'Un', qtd, custo });
+  }
+  const notas = [...porNf.values()];
+  const ctxN = { estoque: e.estoque, compras: e.compras, edits: { lotes: {} } };
+  const so = String(req.query.nota || '');
+  res.json({ pendentes: LOTd.pendentesNotas({ notas, ...ctxN }), notas: notas.filter((n) => !so || String(n.id) === so).sort((a, b) => b.entrada.localeCompare(a.entrada))
+    .map((n) => ({ id: n.id, nf: n.nf, entrada: n.entrada, fornecedor: n.fornecedor, itens: LOTd.daNota({ nota: n, ...ctxN }) })).filter((n) => n.itens.length).slice(0, 15) });
+});
 app.get('/api/demo/estoque/notas', (req, res) => {
   if (!lojaDemo(req)) return res.status(400).json({ erro: 'Escolha uma loja.' });
   try {
@@ -1420,7 +1437,7 @@ app.get('/api/inventario/contagem/:id/desfazer', (req, res) => {
 
 // ---------- validade e lotes do chá a granel (Estoque → Validade): a equipe informa o lote; o painel faz o resto ----------
 const LOT = require('./src/lotes');
-const podeValidade = (req) => req.perfil === 'vendedor' || podeTela(req, 'validade');
+const podeValidade = (req) => req.perfil === 'vendedor' || podeTela(req, 'validade', 'notas', 'precos'); // quem abre a nota de entrada também informa o lote
 const podeCustos = (req) => podeTela(req, 'rentab', 'estoque', 'precos', 'notas', 'pedido', 'dre');
 const lojaVal = (req, res) => {
   if (!podeValidade(req)) { res.status(403).json({ erro: 'Sem permissão.' }); return null; }
@@ -1460,13 +1477,27 @@ app.put('/api/validade/saldo', express.json({ limit: '4kb' }), (req, res) => {
 app.put('/api/validade/lote', express.json({ limit: '4kb' }), (req, res) => {
   if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
   const loja = lojaVal(req, res); if (!loja) return;
-  const { lotes } = LOT.daLoja(loja.id);
-  const r = LOT.editar(loja.id, req.body || {}, req.user, lotes);
+  const { lotes, compras } = LOT.daLoja(loja.id);
+  const r = LOT.editar(loja.id, req.body || {}, req.user, lotes, compras);
   if (r.erro) return res.status(400).json({ erro: r.erro });
-  const l = lotes.find((x) => x.chave === String(req.body.chave));
-  C.auditar(req.user, 'alterou lote/validade', loja.id, { loja: loja.id, cod: l.cod, nf: l.nf, entrada: l.entrada, antes: r.antes, depois: r.ok });
-  const novo = LOT.daLoja(loja.id).lotes.find((x) => x.chave === l.chave);
-  res.json({ ok: true, lote: novo ? semCusto(req, novo) : null });
+  const [nf, cod, entrada] = String(req.body.chave).split('|');
+  C.auditar(req.user, 'alterou lote/validade', loja.id, { loja: loja.id, cod, nf, entrada, antes: r.antes, depois: r.ok });
+  const novo = LOT.daLoja(loja.id).lotes.find((x) => x.chave === String(req.body.chave));
+  res.json({ ok: true, lote: novo ? semCusto(req, novo) : null, editado: r.ok });
+});
+// lotes das notas de entrada (Estoque → Notas fiscais e Validade → "Notas que chegaram"): sem esperar o estoque
+app.get('/api/validade/notas', (req, res) => {
+  const loja = lojaVal(req, res); if (!loja) return;
+  const ctx = LOT.daLoja(loja.id), ns = ES.notas(loja.id);
+  const notas = (ns && ns.notas) || [];
+  const ctxN = { estoque: ctx.estoque, compras: ctx.compras, edits: ctx.edits };
+  const pendentes = LOT.pendentesNotas({ notas, ...ctxN });
+  // uma nota (o detalhe aberto) ou as recentes que têm chá a granel (até 15)
+  const so = String(req.query.nota || '');
+  const recentes = (so ? notas.filter((n) => String(n.id) === so) : notas.slice().sort((a, b) => String(b.entrada || b.emissao || '').localeCompare(String(a.entrada || a.emissao || ''))))
+    .map((n) => ({ id: n.id, nf: n.nf, entrada: String(n.entrada || n.emissao || '').slice(0, 10), fornecedor: n.fornecedor || '', itens: LOT.daNota({ nota: n, ...ctxN }) }))
+    .filter((n) => n.itens.length).slice(0, 15);
+  res.json({ pendentes, notas: recentes });
 });
 
 // ---------- lista de espera (Clientes → Lista de espera): todos os perfis da loja anotam e avisam ----------
