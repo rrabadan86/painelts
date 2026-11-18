@@ -1,0 +1,153 @@
+'use strict';
+/**
+ * Conta com a franquia: créditos que a loja tem a receber do fornecedor (franquia) e onde foram compensados.
+ *
+ * Créditos: cada NF-e de DEVOLUÇÃO autorizada (XML da loja, finalidade "Devolução"), ligada à nota de entrada
+ *           que ela devolve (refNFe) — o fornecedor do crédito é o fornecedor dessa nota.
+ * Baixas:   o DESCONTO das notas de entrada seguintes do mesmo fornecedor. Regra da franquia: cada devolução é
+ *           descontada INTEIRA numa única nota; uma nota pode trazer o desconto de várias devoluções.
+ *           O painel procura, entre os créditos em aberto emitidos antes da nota, a combinação que fecha o desconto
+ *           (tolerância de centavos). Achou uma só combinação → compensa sozinho. Não fechou → fica para conferir.
+ * À mão:    ligar uma nota a créditos, marcar crédito como compensado de outro jeito (boleto) ou cancelado,
+ *           e marcar um desconto como "não é de devolução" (promoção etc.).
+ *   dados/<loja>/conta-franquia.json  { manual: { credito: {nota|como, obs, por, em} }, ignorar: { notaId: {por, em, obs} } }
+ */
+const fs = require('fs');
+const path = require('path');
+const C = require('./config');
+
+const PRAZO_DIAS = 30;       // sem desconto depois disso = atrasado
+const TOL = 0.06;            // diferença aceita por crédito (arredondamento do rateio)
+const MAX_COMB = 18;         // créditos em aberto testados por nota (combinações)
+
+const arq = (id) => path.join(C.pastaLoja(id), 'conta-franquia.json');
+const ler = (id) => { try { const j = JSON.parse(fs.readFileSync(arq(id), 'utf8')); return { manual: j.manual || {}, ignorar: j.ignorar || {} }; } catch { return { manual: {}, ignorar: {} }; } };
+const gravar = (id, d) => { fs.mkdirSync(C.pastaLoja(id), { recursive: true }); C.gravarAtomico(arq(id), JSON.stringify(d), 0o640); };
+const r2 = (v) => Math.round((Number(v) || 0) * 100) / 100;
+const dia = (iso) => String(iso || '').slice(0, 10);
+const dias = (a, b) => Math.round((Date.parse(dia(b) + 'T12:00:00Z') - Date.parse(dia(a) + 'T12:00:00Z')) / 864e5);
+
+/** desconto da nota de entrada (lido pelo robô); null = o AppNext não informou */
+function descontoDaNota(n) {
+  if (n.desconto != null && Number.isFinite(+n.desconto)) return r2(n.desconto);
+  const itens = (n.itens || []).filter((i) => i.desc != null);
+  if (itens.length) return r2(itens.reduce((s, i) => s + (+i.desc || 0), 0));
+  return null;
+}
+
+/** créditos: NF-e de devolução autorizadas (XML) + as emitidas pelo painel cujo XML ainda não chegou */
+function creditos(saidas, compras, devsPainel) {
+  const porChave = new Map((compras || []).filter((n) => n.chave).map((n) => [n.chave, n]));
+  const out = [], vistas = new Set();
+  for (const s of saidas || []) {
+    if (s.finalidade !== 'Devolução' || s.situacao === 'cancelada') continue;
+    const origem = (s.refs || []).map((k) => porChave.get(k)).find(Boolean) || null;
+    vistas.add(String(s.numero));
+    out.push({ id: s.chave, numero: s.numero, serie: s.serie, emissao: dia(s.emissao), valor: r2(s.valor), fornecedor: origem ? origem.fornecedor : (s.dest && s.dest.nome) || '', notaOrigem: origem ? { id: origem.id, nf: origem.nf } : null, xml: true });
+  }
+  for (const d of devsPainel || []) {
+    const e = d.nfe && (d.nfe.emitida || (d.nfe.numero ? d.nfe : null));
+    if (!e || !e.numero || vistas.has(String(e.numero)) || (d.nfe && (d.nfe.estado === 'cancelada' || d.nfe.situacao === 'cancelada'))) continue;
+    vistas.add(String(e.numero));
+    out.push({ id: 'dev-' + d.id, numero: e.numero, serie: e.serie || 1, emissao: dia(d.nfe.fim || d.nfe.autorizadaEm || d.em), valor: r2(d.nfe.total ?? d.total), fornecedor: (d.nota && d.nota.fornecedor) || '', notaOrigem: d.nota ? { id: d.nota.id, nf: d.nota.nf } : null, xml: false });
+  }
+  return out.sort((a, b) => a.emissao.localeCompare(b.emissao) || (a.numero || 0) - (b.numero || 0));
+}
+
+/** a combinação de créditos que soma o alvo; [] = nenhuma; mais de uma → devolve a primeira e marca "ambígua" */
+function combinar(cands, alvo) {
+  const n = Math.min(cands.length, MAX_COMB);
+  const achadas = [];
+  const buscar = (k, soma, usados) => {
+    if (achadas.length > 1) return;
+    if (Math.abs(soma - alvo) <= TOL * Math.max(1, usados.length)) { if (usados.length) achadas.push(usados.slice()); return; }
+    if (k >= n || soma > alvo + TOL * n) return;
+    usados.push(cands[k]); buscar(k + 1, soma + cands[k].valor, usados); usados.pop();
+    buscar(k + 1, soma, usados);
+  };
+  buscar(0, 0, []);
+  return { comb: achadas[0] || [], ambigua: achadas.length > 1 };
+}
+
+/**
+ * a conta: { creditos: [{…, situacao: aberto|atrasado|compensado|manual, compensadoEm?: {nota, como}}], notas: [notas com desconto e o que compensaram],
+ *            resumo: { aberto, atrasado, compensado, semPar } }
+ */
+function conta(id, { saidas, compras, devsPainel, hoje = new Date().toISOString() }) {
+  const m = ler(id);
+  const cr = creditos(saidas, compras, devsPainel);
+  const porId = new Map(cr.map((c) => [c.id, c]));
+  const usado = new Map(); // crédito → { nota, auto }
+  // 1) à mão primeiro
+  for (const [cid, x] of Object.entries(m.manual)) {
+    if (!porId.has(cid)) continue;
+    usado.set(cid, x.nota ? { nota: x.nota, como: 'nota', manual: true, por: x.por, em: x.em, obs: x.obs || '' } : { como: x.como || 'outro', manual: true, por: x.por, em: x.em, obs: x.obs || '' });
+  }
+  // 2) notas de entrada com desconto, da mais antiga para a mais nova
+  const comDesc = (compras || []).map((n) => ({ n, desc: descontoDaNota(n), quando: dia(n.emissao || n.entrada) }))
+    .filter((x) => x.desc != null && x.desc > 0.5).sort((a, b) => a.quando.localeCompare(b.quando));
+  const notas = [];
+  for (const { n, desc, quando } of comDesc) {
+    const ref = { id: n.id, nf: n.nf, emissao: dia(n.emissao), entrada: dia(n.entrada), fornecedor: n.fornecedor, desconto: desc, total: n.total };
+    if (m.ignorar[n.id]) { notas.push({ ...ref, situacao: 'ignorada', obs: m.ignorar[n.id].obs || '', creditos: [] }); continue; }
+    const manuais = [...usado].filter(([, u]) => u.nota === n.id).map(([cid]) => porId.get(cid)).filter(Boolean);
+    if (manuais.length) { notas.push({ ...ref, situacao: 'manual', creditos: manuais.map((c) => c.id), soma: r2(manuais.reduce((s, c) => s + c.valor, 0)) }); continue; }
+    const cands = cr.filter((c) => !usado.has(c.id) && c.emissao <= quando && (!c.fornecedor || !n.fornecedor || c.fornecedor === n.fornecedor));
+    const { comb, ambigua } = combinar(cands, desc);
+    if (comb.length) {
+      for (const c of comb) usado.set(c.id, { nota: n.id, como: 'nota', auto: true });
+      notas.push({ ...ref, situacao: ambigua ? 'conferir' : 'compensou', ambigua, creditos: comb.map((c) => c.id), soma: r2(comb.reduce((s, c) => s + c.valor, 0)) });
+    } else notas.push({ ...ref, situacao: cands.length ? 'sem_par' : 'sem_credito', creditos: [] });
+  }
+  const notaPorId = new Map(notas.map((x) => [x.id, x]));
+  const lista = cr.map((c) => {
+    const u = usado.get(c.id);
+    if (u) {
+      const nt = u.nota ? notaPorId.get(u.nota) || (compras || []).find((x) => x.id === u.nota) : null;
+      return { ...c, situacao: u.manual ? 'manual' : 'compensado', compensado: { como: u.como, nota: nt ? { id: nt.id, nf: nt.nf, emissao: dia(nt.emissao) } : null, obs: u.obs || '', por: u.por || null, em: u.em || null, auto: !!u.auto, ambigua: !!(nt && nt.ambigua) } };
+    }
+    const d = dias(c.emissao, hoje);
+    return { ...c, situacao: d > PRAZO_DIAS ? 'atrasado' : 'aberto', dias: d };
+  });
+  const soma = (f) => r2(lista.filter(f).reduce((s, c) => s + c.valor, 0));
+  return {
+    creditos: lista.reverse(), notas: notas.reverse(), prazo: PRAZO_DIAS,
+    descontoLido: (compras || []).some((n) => descontoDaNota(n) != null),
+    resumo: {
+      aberto: soma((c) => c.situacao === 'aberto'), atrasado: soma((c) => c.situacao === 'atrasado'),
+      compensado: soma((c) => c.situacao === 'compensado' || c.situacao === 'manual'),
+      nAtrasado: lista.filter((c) => c.situacao === 'atrasado').length, nAberto: lista.filter((c) => c.situacao === 'aberto').length,
+      conferir: notas.filter((x) => x.situacao === 'sem_par' || x.situacao === 'conferir').length,
+    },
+  };
+}
+
+/** ações à mão: ligar (nota + créditos), compensar (como: boleto/outro), cancelar, desfazer (crédito), ignorar/considerar (nota) */
+function acao(id, b, por) {
+  const m = ler(id);
+  const em = new Date().toISOString();
+  const obs = String(b.obs || '').replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, 200);
+  const cid = (x) => /^[\w-]{3,60}$/.test(String(x || ''));
+  if (b.tipo === 'ligar') {
+    if (!b.nota || !Array.isArray(b.creditos) || !b.creditos.length || !b.creditos.every(cid)) return { erro: 'Escolha a nota e os créditos.' };
+    for (const c of b.creditos) m.manual[c] = { nota: String(b.nota).slice(0, 60), obs, por, em };
+    delete m.ignorar[b.nota];
+  } else if (b.tipo === 'compensar' || b.tipo === 'cancelar') {
+    if (!cid(b.credito)) return { erro: 'Crédito inválido.' };
+    m.manual[b.credito] = { como: b.tipo === 'cancelar' ? 'cancelado' : (['boleto', 'royalties', 'outro'].includes(b.como) ? b.como : 'outro'), obs, por, em };
+  } else if (b.tipo === 'desfazer') {
+    if (!cid(b.credito)) return { erro: 'Crédito inválido.' };
+    delete m.manual[b.credito];
+  } else if (b.tipo === 'ignorar') {
+    if (!b.nota) return { erro: 'Nota inválida.' };
+    m.ignorar[String(b.nota).slice(0, 60)] = { obs, por, em };
+    for (const [c, x] of Object.entries(m.manual)) if (x.nota === b.nota) delete m.manual[c];
+  } else if (b.tipo === 'considerar') {
+    delete m.ignorar[String(b.nota || '')];
+    for (const [c, x] of Object.entries(m.manual)) if (x.nota === b.nota) delete m.manual[c];
+  } else return { erro: 'Ação inválida.' };
+  gravar(id, m);
+  return { ok: true };
+}
+
+module.exports = { conta, acao, creditos, combinar, descontoDaNota, PRAZO_DIAS };

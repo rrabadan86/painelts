@@ -1,0 +1,132 @@
+/* Notas fiscais → Créditos com a franquia.
+ * Cada NF-e de devolução vira um crédito; o painel procura o desconto dela nas notas de compra seguintes
+ * (a franquia desconta a devolução inteira numa nota, diluída nos itens; uma nota pode trazer várias).
+ * Achou → compensado. Não fechou → "Para conferir". Sem desconto em 30 dias → atrasado. */
+(function () {
+  const { h, fmt, state } = TS;
+  const toast = (msg, erro) => { const t = h('div', { class: 'toast' + (erro ? ' err' : '') }, msg); document.body.append(t); setTimeout(() => t.remove(), erro ? 6000 : 3000); };
+  const dataTxt = (iso) => (iso ? fmt.date(String(iso).slice(0, 10)) : '—');
+  const ST = {
+    aberto: ['Em aberto', 'cf-aberto'], atrasado: ['Atrasado', 'cf-atrasado'], compensado: ['Compensado', 'cf-ok'], manual: ['Compensado (à mão)', 'cf-ok'],
+  };
+  const COMO = { nota: 'na nota', boleto: 'no boleto', royalties: 'nos royalties', outro: 'de outro jeito', cancelado: 'cancelado' };
+  const NST = { compensou: ['Compensou', 'cf-ok'], manual: ['Ligada à mão', 'cf-ok'], conferir: ['Conferir (mais de uma combinação)', 'cf-atrasado'], sem_par: ['Desconto sem devolução que feche', 'cf-atrasado'], sem_credito: ['Desconto sem devolução em aberto', 'cf-aberto'], ignorada: ['Não é de devolução', 'cf-cinza'] };
+
+  async function api(metodo, p, corpo) {
+    const r = await fetch(TS.api(p), { method: metodo, credentials: 'same-origin', headers: corpo ? { 'Content-Type': 'application/json', 'X-Painel': '1' } : {}, body: corpo ? JSON.stringify(corpo) : undefined });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.erro || 'Falha.');
+    return j;
+  }
+
+  TS.pages.creditos = function (root) {
+    if (TS.subEstoque) root.append(TS.subEstoque('creditos'));
+    root.append(h('div', { class: 'page-head' }, h('div', null, h('h1', { class: 'page-title' }, 'Notas fiscais'),
+      h('div', { class: 'page-sub' }, 'Créditos com a franquia: cada devolução e em qual nota de compra ela foi descontada'))));
+    if (TS.abasNotas) root.append(TS.abasNotas('creditos'));
+    if (!state.loja || state.loja === 'todas') { root.append(h('div', { class: 'notice' }, 'Os créditos são de cada loja: escolha uma loja no seletor do topo.')); return; }
+    const loja = state.loja;
+    const corpo = h('div', { class: 'mt' }, h('div', { class: 'card' }, h('div', { class: 'loading' }, h('div', null, h('div', { class: 'spinner' }), h('p', null, 'Montando a conta…')))));
+    root.append(corpo);
+    api('GET', `conta-franquia?loja=${encodeURIComponent(loja)}`).then((d) => { if (corpo.isConnected) pintar(corpo, loja, d); })
+      .catch((e) => corpo.replaceChildren(h('div', { class: 'notice err' }, e.message)));
+  };
+
+  function pintar(corpo, loja, d) {
+    const r = d.resumo;
+    const acao = async (b, msg) => {
+      try { const nd = await api('POST', 'conta-franquia/acao', { loja, ...b }); if (msg) toast(msg); pintar(corpo, loja, nd); } catch (e) { toast(e.message, true); }
+    };
+    const porId = new Map(d.creditos.map((c) => [c.id, c]));
+    const fil = ['todos', 'aberto', 'atrasado', 'compensado'].includes(state.cfFil) ? state.cfFil : (r.nAtrasado ? 'atrasado' : 'todos');
+    const filtra = (c) => fil === 'todos' || (fil === 'compensado' ? c.situacao === 'compensado' || c.situacao === 'manual' : c.situacao === fil);
+    const rows = d.creditos.filter(filtra);
+
+    const menuCredito = (c) => {
+      if (c.situacao === 'manual') return h('button', { type: 'button', class: 'link-btn', onclick: () => acao({ tipo: 'desfazer', credito: c.id }, 'Voltou para o automático.') }, 'desfazer');
+      if (c.situacao === 'compensado') return null;
+      const sel = h('select', { class: 'f-input cf-sel', 'aria-label': 'Marcar como' },
+        h('option', { value: '' }, 'Marcar como…'), h('option', { value: 'boleto' }, 'Compensado no boleto'), h('option', { value: 'royalties' }, 'Compensado nos royalties'),
+        h('option', { value: 'outro' }, 'Compensado de outro jeito'), h('option', { value: 'cancelar' }, 'Cancelado / não vai ser pago'));
+      sel.addEventListener('change', () => {
+        const v = sel.value; sel.value = '';
+        if (!v) return;
+        const obs = prompt(v === 'cancelar' ? 'Por que este crédito não vai ser pago? (opcional)' : 'Observação (opcional): data, nº do boleto…', '');
+        if (obs === null) return;
+        acao(v === 'cancelar' ? { tipo: 'cancelar', credito: c.id, obs } : { tipo: 'compensar', credito: c.id, como: v, obs }, 'Crédito atualizado.');
+      });
+      return sel;
+    };
+    const tab = TS.table({
+      cols: [
+        { key: 'numero', label: 'Devolução', align: 'l', render: (c) => h('span', null, h('b', null, `NF-e ${c.numero ?? '—'}`), h('small', { class: 'est-tam' }, `${dataTxt(c.emissao)}${c.notaOrigem ? ` · da NF ${c.notaOrigem.nf}` : ''}${c.xml ? '' : ' · XML ainda não chegou'}`)), sortVal: (c) => c.emissao },
+        { key: 'fornecedor', label: 'Fornecedor', align: 'l', wrap: true },
+        { key: 'valor', label: 'Valor', fmt: fmt.brl },
+        { key: 'situacao', label: 'Situação', align: 'l', render: (c) => {
+          const [t, cls] = ST[c.situacao] || [c.situacao, ''];
+          const comp = c.compensado;
+          return h('span', null, h('span', { class: 'cf-st ' + cls }, comp && comp.como === 'cancelado' ? 'Cancelado' : t),
+            h('small', { class: 'est-tam' }, comp ? (comp.nota ? `na NF ${comp.nota.nf} de ${dataTxt(comp.nota.emissao)}${comp.ambigua ? ' (confira)' : ''}` : `${COMO[comp.como] || ''}${comp.obs ? ' · ' + comp.obs : ''}`) + (comp.por ? ` · ${comp.por}` : '')
+              : `${c.dias} dia(s) sem desconto${c.situacao === 'atrasado' ? ` (prazo ${d.prazo})` : ''}`));
+        }, sortVal: (c) => ({ atrasado: 0, aberto: 1, manual: 2, compensado: 3 })[c.situacao] ?? 9 },
+        { key: 'acao', label: '', align: 'l', render: menuCredito },
+      ],
+      rows, sortKey: 'numero', pageSize: 15, search: 'Buscar NF ou fornecedor…', searchKeys: ['fornecedor', 'numero'], cls: 'est-t',
+      total: rows.length ? { numero: `${fmt.int(rows.length)} devoluções`, valor: rows.reduce((s, c) => s + c.valor, 0) } : null,
+      empty: d.creditos.length ? 'Nenhuma devolução com esse filtro.' : 'Nenhuma NF-e de devolução autorizada ainda. Elas aparecem aqui quando o XML chega ao painel.',
+    });
+    const seg = TS.seg([['Todas', 'todos'], [`Atrasadas (${r.nAtrasado})`, 'atrasado'], [`Em aberto (${r.nAberto})`, 'aberto'], ['Compensadas', 'compensado']], fil, (v) => { state.cfFil = v; pintar(corpo, loja, d); });
+
+    // notas de compra com desconto: o que cada uma compensou, e as que pedem conferência
+    const abertos = d.creditos.filter((c) => c.situacao === 'aberto' || c.situacao === 'atrasado');
+    const ligar = (n) => {
+      if (!abertos.length) { toast('Não há devolução em aberto para ligar.', true); return; }
+      const marc = new Set();
+      const soma = h('b');
+      const pintarSoma = () => { const s = [...marc].reduce((a, id) => a + porId.get(id).valor, 0); soma.textContent = `${fmt.brl(s)} de ${fmt.brl(n.desconto)}`; soma.className = Math.abs(s - n.desconto) < 0.1 ? 'pos' : ''; };
+      const fundo = h('div', { class: 'cp-modal-bg' });
+      const fechar = () => fundo.remove();
+      fundo.addEventListener('click', (e) => { if (e.target === fundo) fechar(); });
+      fundo.append(h('div', { class: 'card cp-copiar cf-ligar' },
+        h('h3', null, `NF ${n.nf}: desconto de ${fmt.brl(n.desconto)}`),
+        h('p', { class: 'muted' }, 'Marque as devoluções que a franquia descontou nesta nota.'),
+        h('div', { class: 'cf-lista' }, ...abertos.map((c) => h('label', { class: 'cf-item' }, h('input', { type: 'checkbox', onchange: (e) => { if (e.target.checked) marc.add(c.id); else marc.delete(c.id); pintarSoma(); } }),
+          h('span', null, `NF-e ${c.numero} · ${dataTxt(c.emissao)} · `, h('b', null, fmt.brl(c.valor)))))),
+        h('p', null, 'Marcado: ', soma),
+        h('div', { class: 'cp-acoes' }, h('span', { style: { flex: 1 } }), h('button', { type: 'button', class: 'btn', onclick: fechar }, 'Cancelar'),
+          h('button', { type: 'button', class: 'btn primary', onclick: () => { if (!marc.size) return; fechar(); acao({ tipo: 'ligar', nota: n.id, creditos: [...marc] }, 'Nota ligada às devoluções.'); } }, 'Ligar'))));
+      pintarSoma();
+      document.body.append(fundo);
+    };
+    const tabN = d.notas.length ? TS.table({
+      cols: [
+        { key: 'nf', label: 'Nota de compra', align: 'l', render: (n) => h('span', null, h('b', null, `NF ${n.nf}`), h('small', { class: 'est-tam' }, `emissão ${dataTxt(n.emissao)}`)), sortVal: (n) => n.emissao },
+        { key: 'desconto', label: 'Desconto', fmt: fmt.brl },
+        { key: 'situacao', label: 'O que compensou', align: 'l', wrap: true, render: (n) => {
+          const [t, cls] = NST[n.situacao] || [n.situacao, ''];
+          const cs = (n.creditos || []).map((id) => porId.get(id)).filter(Boolean);
+          return h('span', null, h('span', { class: 'cf-st ' + cls }, t), cs.length ? h('small', { class: 'est-tam' }, cs.map((c) => `NF-e ${c.numero} (${fmt.brl(c.valor)})`).join(' + ')) : null);
+        } },
+        { key: 'acao', label: '', align: 'l', render: (n) => (n.situacao === 'ignorada'
+          ? h('button', { type: 'button', class: 'link-btn', onclick: () => acao({ tipo: 'considerar', nota: n.id }, 'Desconto volta a ser conferido.') }, 'é de devolução')
+          : h('span', { class: 'cf-acoes' },
+            n.situacao !== 'compensou' ? h('button', { type: 'button', class: 'link-btn', onclick: () => ligar(n) }, 'ligar às devoluções') : null,
+            n.situacao === 'manual' ? null : h('button', { type: 'button', class: 'link-btn', title: 'Promoção, bonificação…', onclick: () => { const obs = prompt('De que é este desconto? (opcional)', ''); if (obs !== null) acao({ tipo: 'ignorar', nota: n.id, obs }, 'Marcado como desconto que não é de devolução.'); } }, 'não é de devolução'))) },
+      ],
+      rows: d.notas, sortKey: 'nf', pageSize: 10, cls: 'est-t',
+    }) : null;
+
+    corpo.replaceChildren(...[
+      h('div', { class: 'grid g-kpi' },
+        TS.kpi('A receber, atrasado', fmt.brl(r.atrasado), r.nAtrasado ? `${fmt.int(r.nAtrasado)} devolução(ões) há mais de ${d.prazo} dias` : 'nada atrasado'),
+        TS.kpi('A receber, no prazo', fmt.brl(r.aberto), `${fmt.int(r.nAberto)} devolução(ões) esperando desconto`),
+        TS.kpi('Já compensado', fmt.brl(r.compensado), 'descontado em notas ou marcado à mão'),
+        TS.kpi('Para conferir', fmt.int(r.conferir), r.conferir ? 'notas com desconto que não fecharam' : 'tudo ligado')),
+      d.descontoLido ? null : h('div', { class: 'notice mt' }, h('b', null, 'Ainda sem o desconto das notas de compra. '), 'O robô passa a ler o desconto de cada nota na próxima sincronização das notas de entrada. Até lá, as devoluções ficam em aberto e você pode marcar à mão.'),
+      h('div', { class: 'card mt' }, h('div', { class: 'card-title' }, 'Devoluções (créditos)'),
+        h('div', { class: 'card-sub' }, `Cada NF-e de devolução autorizada. A franquia desconta cada uma inteira numa nota de compra seguinte; o painel acha a nota pelo valor do desconto. Sem desconto em ${d.prazo} dias = atrasada.`),
+        h('div', { class: 'est-tools' }, tab.searchBox, seg), tab),
+      tabN ? h('div', { class: 'card mt' }, h('div', { class: 'card-title' }, 'Notas de compra com desconto'),
+        h('div', { class: 'card-sub' }, 'Quando o desconto fecha exatamente com uma ou mais devoluções em aberto, o painel liga sozinho. Quando não fecha, ligue à mão ou marque que não é de devolução.'), tabN) : null].filter(Boolean));
+  }
+})();

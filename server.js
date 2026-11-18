@@ -263,7 +263,7 @@ const pub = path.join(__dirname, 'public');
 const APP_SCRIPTS = [
   'core.js', 'components.js', 'dicas.js', 'rules.js', 'pages.js', 'fidelidade.js',
   'clientes.js', 'campanhas.js', 'espera.js', 'extras.js', 'contabilidade.js',
-  'estoque.js', 'devolucao.js', 'precos.js', 'inventario.js', 'validade.js', 'nfsaida.js',
+  'estoque.js', 'devolucao.js', 'precos.js', 'inventario.js', 'validade.js', 'nfsaida.js', 'creditos.js',
   'site.js', 'inicio.js', 'pedido.js', 'dre.js', 'mapa.js', 'feriados.js',
   'config.js', 'script.js', 'fechamento.js', 'sistema.js', 'main.js',
 ];
@@ -491,6 +491,19 @@ function nfsDemo(lojaId) {
 const cabNfs = (n) => ({ chave: n.chave, numero: n.numero, serie: n.serie, data: n.data, emissao: n.emissao, natOp: n.natOp, tipo: n.tipo, finalidade: n.finalidade, situacao: n.situacao, refs: n.refs || [],
   dest: n.dest ? { nome: n.dest.nome, doc: n.dest.doc, tipoDoc: n.dest.tipoDoc, mun: n.dest.end && n.dest.end.mun, uf: n.dest.end && n.dest.end.uf } : null,
   valor: n.total.vNF, itens: n.itens.length, qtd: n.itens.reduce((t, i) => t + (i.qtd || 0), 0), cfops: [...new Set(n.itens.map((i) => i.cfop))] });
+// apresentação: conta com a franquia de exemplo (nada é salvo)
+app.get('/api/demo/conta-franquia', (req, res) => {
+  if (!lojaDemo(req)) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  const CFd = require('./src/contafranquia');
+  const d = (n) => new Date(Date.now() - n * 864e5).toISOString().slice(0, 10);
+  const forn = 'TSB FRANQUIAS E COMERCIO LTDA ME';
+  const ent = (id, nf, dias, desconto) => ({ id, nf, chave: String(nf).padStart(44, '3'), emissao: d(dias), entrada: d(dias), fornecedor: forn, total: 2500, desconto, itens: [] });
+  const compras = [ent('e1', 19001, 70, 0), ent('e2', 19050, 55, 0), ent('e3', 19120, 22, 350), ent('e4', 19180, 8, 120)];
+  const dev = (n, dias, valor, ref) => ({ chave: String(n).padStart(44, '4'), numero: n, serie: 1, emissao: d(dias), finalidade: 'Devolução', situacao: 'autorizada', valor, refs: [ref], dest: { nome: forn } });
+  const saidas = [dev(512, 60, 200, compras[0].chave), dev(518, 48, 150, compras[1].chave), dev(531, 41, 60.9, compras[1].chave), dev(540, 12, 87.4, compras[2].chave)];
+  res.json(CFd.conta('__demo__', { saidas, compras, devsPainel: [] }));
+});
+app.post('/api/demo/conta-franquia/acao', (req, res) => res.status(400).json({ erro: 'Na apresentação nada é salvo.' }));
 app.get('/api/demo/nfsaida', (req, res) => { if (!lojaDemo(req)) return res.status(400).json({ erro: 'Escolha uma loja.' }); res.json({ notas: nfsDemo(req.query.loja).map(cabNfs), temXml: true }); });
 app.get('/api/demo/nfsaida/nota', (req, res) => { const n = lojaDemo(req) && nfsDemo(req.query.loja).find((x) => x.chave === req.query.chave); if (!n) return res.status(404).json({ erro: 'Nota não encontrada.' }); res.json(n); });
 app.get('/api/demo/nfsaida/danfe', (req, res) => { const n = lojaDemo(req) && nfsDemo(req.query.loja).find((x) => x.chave === req.query.chave); if (!n) return res.status(404).send('Nota não encontrada.'); res.set('X-Robots-Tag', 'noindex').type('html').send(NFSd.danfe(n)); });
@@ -1222,6 +1235,25 @@ app.get('/api/estoque/notas', (req, res) => {
   const loja = req.lojas.find((l) => l.id === String(req.query.loja || ''));
   if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
   res.json(ES.notas(loja.id) || { notas: [] });
+});
+// conta com a franquia: devoluções a receber × desconto nas notas de compra (admin, franqueado e gerente com Notas fiscais)
+const CF = require('./src/contafranquia');
+const lojaCF = (req, res, corpo) => {
+  if (!podeTela(req, 'notas')) { res.status(403).json({ erro: 'Sem permissão.' }); return null; }
+  const id = String((corpo ? req.body && req.body.loja : req.query.loja) || '');
+  const loja = req.lojas.find((l) => l.id === id);
+  if (!loja) { res.status(400).json({ erro: 'Escolha uma loja.' }); return null; }
+  return loja;
+};
+const contaDaLoja = (loja) => CF.conta(loja.id, { saidas: NFS.lista(loja.id).notas, compras: (ES.notas(loja.id) || { notas: [] }).notas, devsPainel: DEV.lista(loja.id) });
+app.get('/api/conta-franquia', (req, res) => { const loja = lojaCF(req, res); if (loja) res.json(contaDaLoja(loja)); });
+app.post('/api/conta-franquia/acao', express.json({ limit: '5kb' }), (req, res) => {
+  if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
+  const loja = lojaCF(req, res, true); if (!loja) return;
+  const r = CF.acao(loja.id, req.body || {}, req.user);
+  if (r.erro) return res.status(400).json({ erro: r.erro });
+  C.auditar(req.user, 'conta com a franquia: ' + String(req.body.tipo), loja.id, { loja: loja.id, nota: req.body.nota || null, creditos: req.body.creditos || (req.body.credito ? [req.body.credito] : []) });
+  res.json(contaDaLoja(loja));
 });
 // "Sincronizar agora" nas notas de entrada: o coletor busca só o estoque + notas de compra do AppNext (só admin dispara)
 app.get('/api/estoque/notas/sincronizar', async (req, res) => {

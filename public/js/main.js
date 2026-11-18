@@ -84,7 +84,7 @@
     if (g) restaurar(g);
   };
   function renderTela() {
-    document.querySelectorAll('#tabs a').forEach((a) => a.classList.toggle('active', a.dataset.page === state.page || (a.dataset.grupo || '').split(',').includes(state.page === 'nfsaida' ? 'notas' : state.page)));
+    document.querySelectorAll('#tabs a').forEach((a) => a.classList.toggle('active', a.dataset.page === state.page || (a.dataset.grupo || '').split(',').includes(state.page === 'nfsaida' || state.page === 'creditos' ? 'notas' : state.page)));
     ajustarTopo();
     const ativa = document.querySelector('#tabs a.active');
     if (ativa && ativa.scrollIntoView) { const t = document.getElementById('tabs'); if (t.scrollWidth > t.clientWidth) t.scrollTo({ left: ativa.offsetLeft - 12, behavior: 'smooth' }); }
@@ -299,7 +299,7 @@
    * Menu por assunto: Vendas · Clientes · Equipe · Estoque e Margem · ⚙. Cada grupo mostra só as telas que a pessoa pode ver;
    * grupo com uma tela só vira uma aba com o nome da tela; com mais de uma, a tela tem um submenu no topo.
    */
-  const ROTULO = { inicio: 'Início', resumo: 'Resumo', comparativos: 'Comparativos', promocao: 'Promoção', cupons: 'Cupons', nfsaida: 'Notas fiscais', hoje: 'Hoje', clilista: 'Lista de clientes', clientes: 'Indicadores', campanhas: 'Campanhas', espera: 'Lista de espera',
+  const ROTULO = { inicio: 'Início', resumo: 'Resumo', comparativos: 'Comparativos', promocao: 'Promoção', cupons: 'Cupons', nfsaida: 'Notas fiscais', creditos: 'Notas fiscais', hoje: 'Hoje', clilista: 'Lista de clientes', clientes: 'Indicadores', campanhas: 'Campanhas', espera: 'Lista de espera',
     comissionamento: 'Comissionamento', minha: 'Minha comissão', mapa: 'Movimento e escala', rentab: 'Rentabilidade', precos: 'Preços', site: 'Site', estoque: 'Estoque', pedido: 'Pedido', notas: 'Notas fiscais', inventario: 'Inventário', validade: 'Validade', dre: 'Resultado' };
   TS.GRUPOS = [];
   function montarMenu(grupoEst, temConfig) {
@@ -325,7 +325,7 @@
   }
   /** submenu do grupo da tela (quando o grupo tem mais de uma tela) */
   TS.subGrupo = (atual) => {
-    if (atual === 'nfsaida') atual = 'notas'; // Notas fiscais → Saída fica dentro de Notas fiscais
+    if (atual === 'nfsaida' || atual === 'creditos') atual = 'notas'; // Notas fiscais → Saída fica dentro de Notas fiscais
     const g = TS.GRUPOS.find(([, ps]) => ps.includes(atual));
     if (!g || g[1].length < 2) return document.createDocumentFragment();
     return h('nav', { class: 'submenu', 'aria-label': g[0] }, g[1].map((p) => h('a', { href: '#' + p, class: p === atual ? 'on' : null, 'aria-current': p === atual ? 'page' : null }, ROTULO[p])));
@@ -361,7 +361,7 @@
     if (eu.perfil === 'vendedor' && !grupoEst.includes('inventario')) grupoEst.push('inventario'); // a vendedora conta o estoque
     if (eu.perfil === 'vendedor' && !grupoEst.includes('validade')) grupoEst.unshift('validade'); // e acompanha a validade dos lotes
     TS.telasEstoque = grupoEst;
-    PAGES = [...PAGES.filter((p) => !grupoEst.includes(p)), ...grupoEst, ...(grupoEst.includes('notas') ? ['nfsaida'] : [])];
+    PAGES = [...PAGES.filter((p) => !grupoEst.includes(p)), ...grupoEst, ...(grupoEst.includes('notas') ? ['nfsaida', 'creditos'] : [])];
     if (eu.pode?.configurar) PAGES = [...PAGES, 'config'];
     montarMenu(grupoEst, !!eu.pode?.configurar);
     // nome no menu da conta

@@ -17,7 +17,7 @@ import os
 import re
 import sys
 import traceback
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
@@ -151,9 +151,30 @@ def num(v):
         return None
 
 
+# desconto da nota (a franquia dá o desconto das devoluções diluído nos itens): os nomes que o AppNext pode usar
+CAMPOS_DESC_NOTA = ("valorDesconto", "valorTotalDesconto", "valorDescontoTotal", "totalDesconto", "desconto", "vDesc")
+CAMPOS_DESC_ITEM = ("valorDesconto", "valorTotalDesconto", "valorDescontoTotal", "desconto", "vDesc", "descontoValor")
+VERSAO_NOTA = 2  # 2 = já tem o desconto
+_viu_campos = []
+
+
+def primeiro_num(d, campos):
+    for k in campos:
+        if k in d and d.get(k) is not None:
+            v = num(d.get(k))
+            if v is not None:
+                return v
+    return None
+
+
 def nota_de(d):
     forn = d.get("fornecedor") or {}
     itens = []
+    if not _viu_campos:  # uma vez por execução: o log mostra onde o AppNext guarda o desconto (para conferir)
+        _viu_campos.append(1)
+        cn = sorted(k for k in d.keys() if "desc" in k.lower())
+        ci = sorted({k for i in (d.get("itens") or [])[:5] for k in i.keys() if "desc" in k.lower()})
+        log(f"campos de desconto no AppNext · nota: {', '.join(cn) or 'nenhum'} · itens: {', '.join(ci) or 'nenhum'}")
     for i in d.get("itens") or []:
         q, vl, vb = num(i.get("quantidade")), num(i.get("valorTotalLiquido")), num(i.get("valorTotalBruto"))
         if not q or q <= 0:
@@ -162,6 +183,7 @@ def nota_de(d):
             "cod": str(i.get("codigo") or "").strip(), "nome": (i.get("nome") or "").strip(), "un": i.get("unidade") or "",
             "qtd": q, "vu": num(i.get("valorUnitario")),
             "custo": round((vl if vl else (vb or 0)) / q, 4), "grupo": i.get("grupoNome") or "",
+            "desc": primeiro_num(i, CAMPOS_DESC_ITEM),
         })
     ch = re.sub(r"\D", "", str(d.get("chaveAcesso") or d.get("chaveNfe") or d.get("chave") or ""))
     return {
@@ -172,6 +194,8 @@ def nota_de(d):
         "cfop": (d.get("cfop") or {}).get("codigo"),
         "fornecedor": (forn.get("nomeFantasia") or forn.get("razaoSocial") or forn.get("nome") or "").strip(),
         "total": num(d.get("valorTotalLiquido")) or num(d.get("valorTotalNota")), "itens": itens,
+        "desconto": primeiro_num(d, CAMPOS_DESC_NOTA), "fornecedorDoc": re.sub(r"\D", "", str(forn.get("cpfCnpj") or forn.get("cnpj") or forn.get("documento") or "")),
+        "v": VERSAO_NOTA,
     }
 
 
@@ -203,6 +227,14 @@ def coletar_compras_na_pagina(page, saida: str, desde: str = None):
         base = urlsplit(ref.url)
         notas_por_id = dict(guardadas)
         novas, falhas = 0, 0
+        # notas guardadas antes do desconto: baixa de novo as do último ano (uma vez só)
+        um_ano = (datetime.now(nx._TZ_LOG).date().replace(day=1) - timedelta(days=365)).isoformat()
+        velhas = {}
+        for nid, g in list(notas_por_id.items()):
+            if g.get("v") != VERSAO_NOTA and (g.get("entrada") or g.get("emissao") or "") >= um_ano:
+                velhas[nid] = notas_por_id.pop(nid)
+        if velhas:
+            log(f"{len(velhas)} nota(s) do último ano baixadas de novo para ler o desconto (só desta vez)")
         for x in concluidas:
             if x["id"] in notas_por_id:
                 if not notas_por_id[x["id"]].get("chave"):
@@ -215,6 +247,8 @@ def coletar_compras_na_pagina(page, saida: str, desde: str = None):
                 n = nota_de(pedir_json(page, url, cab))
             except Exception as e:  # noqa: BLE001
                 falhas += 1
+                if x["id"] in velhas:  # não perde a nota guardada se a releitura falhar
+                    notas_por_id[x["id"]] = velhas[x["id"]]
                 log(f"NF {x.get('numeroNota')}: {str(e)[:200]}")
                 if falhas >= 5:
                     raise
@@ -222,6 +256,8 @@ def coletar_compras_na_pagina(page, saida: str, desde: str = None):
             notas_por_id[n["id"]] = n
             novas += 1
             log(f"NF {n['nf']} ({n['emissao']}, {n['fornecedor'][:30]}): {len(n['itens'])} itens")
+        for nid, g in velhas.items():
+            notas_por_id.setdefault(nid, g)
         ids_concluidas = {x["id"] for x in concluidas}
         notas = [n for nid, n in notas_por_id.items() if nid in ids_concluidas or nid in guardadas]
         notas.sort(key=lambda n: (n["entrada"] or n["emissao"], n["nf"] or 0))

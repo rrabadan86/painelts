@@ -34,3 +34,17 @@ test('gráfico: botão Compartilhar gera a imagem (no computador, baixa o PNG)',
   expect(fs.statSync(p).size).toBeGreaterThan(5000);
   fs.copyFileSync(p, '/tmp/share.png');
 });
+
+test('Créditos com a franquia: devoluções compensadas pelo desconto das notas, atrasadas e aviso no Início', async ({ page }, info) => {
+  test.skip(info.project.name !== 'computador');
+  await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS.db);
+  await page.evaluate(() => { location.hash = '#creditos'; });
+  const corpo = page.locator('#app, main, body').first();
+  await expect(page.locator('.nf-abas button', { hasText: 'Créditos com a franquia' })).toHaveClass(/on/);
+  await page.locator('.seg button', { hasText: 'Todas' }).first().click();
+  await expect(corpo).toContainText('na NF 19120');
+  await expect(corpo).toContainText('Atrasado');
+  await expect(corpo).toContainText('Desconto sem devolução que feche');
+  await page.evaluate(() => { location.hash = '#inicio'; });
+  await expect(page.locator('.ini-avisos')).toContainText(/Franquia: 1 devolução sem desconto/);
+});

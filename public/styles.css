@@ -2257,3 +2257,13 @@ details.vl-ajuda summary { cursor: pointer; font-weight: 600; }
 .vl-nota-campos { display: flex; flex-direction: column; gap: 6px; min-width: 150px; }
 .vl-nota-par { display: flex; flex-direction: column; gap: 4px; }
 .vl-nota-cel .vl-campo small { display: block; font-size: 11px; color: var(--muted, #6b6b6b); }
+/* Créditos com a franquia */
+.cf-st { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; background: #eee; }
+.cf-ok { background: #d9efdc; color: #1f5a2b; }
+.cf-aberto { background: #f3ecd8; color: #7a5b0f; }
+.cf-atrasado { background: #f8dcd6; color: #9b2c1c; }
+.cf-cinza { background: #ececec; color: #666; }
+.cf-sel { width: auto; height: 30px; padding: 2px 6px; font-size: 12.5px; }
+.cf-acoes { display: inline-flex; gap: 10px; flex-wrap: wrap; }
+.cf-lista { display: flex; flex-direction: column; gap: 6px; max-height: 50vh; overflow: auto; margin: 8px 0; }
+.cf-item { display: flex; gap: 8px; align-items: center; }

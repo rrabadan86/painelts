@@ -127,7 +127,8 @@ function notas(id) {
   try { j = JSON.parse(fs.readFileSync(arqCompras(id), 'utf8')); } catch { return null; }
   return { atualizado: j.atualizado || null, desde: j.desde || null, notas: (j.notas || []).map((n) => ({
     id: n.id, nf: n.nf, serie: n.serie, chave: n.chave || '', emissao: n.emissao || '', entrada: n.entrada || '', status: n.status || '', motivo: n.motivo || '', cfop: n.cfop || '',
-    fornecedor: n.fornecedor || '', total: n.total, itens: (n.itens || []).map((i) => ({ cod: i.cod, nome: i.nome, un: i.un, qtd: i.qtd, vu: i.vu, custo: i.custo, grupo: i.grupo })),
+    fornecedor: n.fornecedor || '', fornecedorDoc: n.fornecedorDoc || '', total: n.total, desconto: n.desconto ?? null,
+    itens: (n.itens || []).map((i) => ({ cod: i.cod, nome: i.nome, un: i.un, qtd: i.qtd, vu: i.vu, custo: i.custo, grupo: i.grupo, ...(i.desc != null ? { desc: i.desc } : {}) })),
   })) };
 }
 

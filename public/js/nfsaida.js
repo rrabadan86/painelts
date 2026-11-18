@@ -4,7 +4,7 @@
   const { h, fmt, state } = TS;
 
   /** abas Entrada | Saída dentro de Notas fiscais */
-  TS.abasNotas = (atual) => h('div', { class: 'nf-abas' }, TS.seg([['Notas de entrada', 'notas'], ['Notas de saída (NF-e emitidas)', 'nfsaida']], atual, (v) => { location.hash = '#' + v; }));
+  TS.abasNotas = (atual) => h('div', { class: 'nf-abas' }, TS.seg([['Notas de entrada', 'notas'], ['Notas de saída (NF-e emitidas)', 'nfsaida'], ['Créditos com a franquia', 'creditos']], atual, (v) => { location.hash = '#' + v; }));
 
   const docTxt = (d) => { const s = String(d || ''); return s.length === 14 ? s.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5') : s.length === 11 ? s.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4') : s; };
   const quando = (iso) => (iso ? fmt.date(iso.slice(0, 10)) + (iso.length > 10 ? ' ' + iso.slice(11, 16) : '') : '—');

@@ -23,7 +23,7 @@
       lista.sort((a, b) => ord[a.nivel] - ord[b.nivel]);
       avisos.replaceChildren(...(lista.length ? lista.map(item) : [h('p', { class: 'muted' }, 'Nada pedindo atenção por enquanto. 👏')]));
     };
-    const tarefas = [avisosEspera(lista), avisosVendas(lista), avisosEstoque(lista), avisosSite(lista), avisosAtualizacoes(lista), avisosInventario(lista)].map((p) => p.catch(() => null).then(() => { if (avisos.isConnected) pintar(); }));
+    const tarefas = [avisosEspera(lista), avisosVendas(lista), avisosEstoque(lista), avisosSite(lista), avisosAtualizacoes(lista), avisosInventario(lista), avisosCreditos(lista)].map((p) => p.catch(() => null).then(() => { if (avisos.isConnected) pintar(); }));
     Promise.all(tarefas).then(() => pend.remove());
   };
 
@@ -135,6 +135,17 @@
     const ir = { link: '#inventario', ir: 'fazer inventário ›', antes: () => { state.invId = null; } };
     if (gAtr.length) lista.push({ nivel: 'warn', titulo: `Inventário: ${fmt.int(gAtr.length)} ${gAtr.length === 1 ? 'grupo está' : 'grupos estão'} há ${DIAS_INV} dias ou mais sem contagem`, texto: txt(gAtr), ...ir });
     if (tAtr.length) lista.push({ nivel: 'warn', titulo: `Inventário: ${fmt.int(tAtr.length)} ${tAtr.length === 1 ? 'tipo de chá está' : 'tipos de chá estão'} há ${DIAS_INV} dias ou mais sem contagem`, texto: txt(tAtr), ...ir });
+  }
+
+  // ---------- créditos com a franquia: devoluções sem desconto há mais de 30 dias ----------
+  async function avisosCreditos(lista) {
+    if (!state.loja || state.loja === 'todas' || !(TS.telasEstoque || []).includes('notas')) return;
+    const r = await fetch(TS.api(`conta-franquia?loja=${encodeURIComponent(state.loja)}`), { credentials: 'same-origin' });
+    if (!r.ok) return;
+    const d = await r.json();
+    const ir = { link: '#creditos', ir: 'ver créditos ›', antes: () => { state.cfFil = 'atrasado'; } };
+    if (d.resumo.nAtrasado) lista.push({ nivel: 'warn', titulo: `Franquia: ${fmt.int(d.resumo.nAtrasado)} ${d.resumo.nAtrasado === 1 ? 'devolução sem desconto' : 'devoluções sem desconto'} há mais de ${d.prazo} dias · ${fmt.brl(d.resumo.atrasado)}`, texto: 'Nenhuma nota de compra trouxe esse desconto ainda. Cobre a franquia ou marque como compensado.', ...ir });
+    if (d.resumo.conferir) lista.push({ nivel: 'info', titulo: `Franquia: ${fmt.int(d.resumo.conferir)} ${d.resumo.conferir === 1 ? 'nota de compra com desconto' : 'notas de compra com desconto'} para conferir`, texto: 'O desconto não fechou com as devoluções em aberto.', link: '#creditos', ir: 'conferir ›', antes: () => { state.cfFil = 'todos'; } });
   }
 
   // ---------- site ----------
