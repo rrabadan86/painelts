@@ -836,10 +836,49 @@
         AJ.sujo = false; AJ.msg = ''; TS.render();
       } catch (e) { btn.textContent = e.message; btn.disabled = false; }
     };
+    // replicar os ajustes para outro mês mantendo a alternância: cada dia recebe os ajustes do dia do mês de origem
+    // com o MESMO dia da semana e a MESMA semana do rodízio (quem folga no domingo continua girando). Feriados e férias ficam de fora.
+    const ancoraR = domingoDe(op.equipe.inicioRodizio || INICIO_PADRAO);
+    const semR = (iso) => (L > 1 ? (((Math.round((diaMs(domingoDe(iso)) - diaMs(ancoraR)) / (7 * 86400000)) % L) + L) % L) : 0);
+    const nomesEq = new Set(pessoasDe(op.equipe).map((q) => q.nome.trim().toUpperCase()));
+    const deFerias = (nome, iso) => ((cfg && cfg.ferias) || []).some((f) => String(f.vendedor).trim().toUpperCase() === nome && f.de <= iso && f.ate >= iso);
+    function replicar(srcYm, dstYm, src) {
+      const ferSrc = new Set(TS.feriadosDoMes ? TS.feriadosDoMes(cfg, srcYm).map((f) => f.data) : []);
+      const ferDst = new Set(TS.feriadosDoMes ? TS.feriadosDoMes(cfg, dstYm).map((f) => f.data) : []);
+      const porChave = new Map(); // "semana|dia da semana" → ajustes do último dia assim no mês de origem
+      for (const d of Object.keys(src).sort()) if (!ferSrc.has(d) && Object.keys(src[d] || {}).length) porChave.set(`${semR(d)}|${wdDe(d)}`, src[d]);
+      const nD = new Date(Date.UTC(+dstYm.slice(0, 4), +dstYm.slice(5, 7), 0)).getUTCDate();
+      const out = {}; let n = 0;
+      for (let k = 1; k <= nD; k++) {
+        const d = `${dstYm}-${String(k).padStart(2, '0')}`;
+        const a = !ferDst.has(d) && porChave.get(`${semR(d)}|${wdDe(d)}`);
+        if (!a) continue;
+        for (const [nome, x] of Object.entries(a)) if (nomesEq.has(nome) && !deFerias(nome, d)) { (out[d] ||= {})[nome] = { ...x }; n++; }
+      }
+      return { out, n };
+    }
+    const iM = meses.indexOf(ym), prox = meses[iM + 1], ant = meses[iM - 1];
+    const salvos = (m) => ((cfg && cfg.escalaAjustes) || {})[m] || {};
+    const nomeMes = (m) => TS.MESES_LONGOS[+m.slice(5, 7) - 1].toLowerCase();
+    const btnReplicar = pode && prox && nAj ? h('button', { type: 'button', class: 'btn', title: `Leva os ajustes deste mês para ${nomeMes(prox)}, seguindo o rodízio (mesma semana do rodízio e mesmo dia da semana). Você confere lá antes de salvar.`, onclick: () => {
+      if (AJ.sujo) { alert('Salve os ajustes deste mês antes de replicar.'); return; }
+      if (Object.keys(salvos(prox)).length && !confirm(`${TS.MESES_LONGOS[+prox.slice(5, 7) - 1]} já tem ajustes salvos. Substituir pelos deste mês? (você ainda confere antes de salvar)`)) return;
+      const r = replicar(ym, prox, AJ.dados);
+      state.escMesYm = prox;
+      state.escAj = { chave: `${(cfg && cfg.id) || 'loja'}|${prox}`, dados: r.out, sujo: true, sel: null, msg: `${r.n} ajuste(s) trazidos de ${nomeMes(ym)} seguindo o rodízio. Confira e salve.` };
+      TS.render();
+    } }, `Replicar para ${nomeMes(prox)} ›`) : null;
+    const btnTrazer = pode && ant && Object.keys(salvos(ant)).length ? h('button', { type: 'button', class: 'btn', title: `Traz os ajustes salvos de ${nomeMes(ant)} para este mês, seguindo o rodízio. Você confere antes de salvar.`, onclick: () => {
+      if (nAj && !confirm(`Substituir os ${nAj} ajuste(s) deste mês pelos de ${nomeMes(ant)}?`)) return;
+      const r = replicar(ant, ym, salvos(ant));
+      AJ.dados = r.out; AJ.sujo = true; AJ.sel = null; AJ.msg = `${r.n} ajuste(s) trazidos de ${nomeMes(ant)} seguindo o rodízio. Confira e salve.`;
+      TS.render();
+    } }, `‹ Trazer de ${nomeMes(ant)}`) : null;
     const barraAj = h('div', { class: 'aj-barra' },
       h('span', { class: 'muted' }, nAj ? `${nAj} ajuste(s) manual(is) neste mês${AJ.sujo ? ' — não salvos' : ''}.${AJ.msg ? ' ' + AJ.msg : ''}` : 'Toque num dia de uma pessoa para ajustar (folga, horário ou troca).'),
       pode && AJ.sujo ? (() => { const b = h('button', { type: 'button', class: 'btn primary' }, 'Salvar ajustes'); b.addEventListener('click', () => salvarAj(b)); return b; })() : null,
       nAj ? h('button', { type: 'button', class: 'btn ghost-danger', onclick: () => { AJ.dados = {}; AJ.sujo = true; AJ.sel = null; TS.render(); } }, 'Desfazer ajustes do mês') : null,
+      btnTrazer, btnReplicar,
       TS.demo && AJ.sujo ? h('span', { class: 'muted' }, '(na apresentação os ajustes não são salvos)') : null);
 
     return TS.cardWithTools('Escala do mês', `Dia a dia com feriados e férias. ${L > 1 ? `O rodízio de ${L} semanas começa a contar no domingo ${TS.fmt.date(domingoDe(op.equipe.inicioRodizio || INICIO_PADRAO))} (ajuste em "Horário e equipe").` : 'A semana sugerida se repete todas as semanas.'} Passe o mouse para ver intervalo e feriado.`,
