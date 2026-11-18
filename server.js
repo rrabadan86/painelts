@@ -1230,9 +1230,13 @@ app.get('/api/estoque/notas/sincronizar', async (req, res) => {
   if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
   if (!COL.ativo()) return res.json({ estado: 'sem_coletor' });
   try {
-    const s = await COL.status(loja.id, false);
+    const s = await COL.status(loja.id, true);
     const x = s.execucao || {};
-    res.json({ estado: x.estado || 'parado', itens: x.itens || null, inicio: x.inicio || null, fim: x.fim || null, fila: s.fila || 0, atualizado: (ES.notas(loja.id) || {}).atualizado || null });
+    const r = s.robo || {};
+    // log: ao vivo enquanto roda; senão, o final da última execução. "robo": o que o robô está fazendo agora (outra loja não aparece pelo nome)
+    res.json({ estado: x.estado || 'parado', itens: x.itens || null, gatilho: x.gatilho || null, por: x.por || null, criado: x.criado || null, inicio: x.inicio || null, fim: x.fim || null, fila: s.fila || 0,
+      log: (x.estado === 'rodando' ? x.aoVivo : x.log) || [], robo: r.livre ? null : { gatilho: r.gatilho || null, inicio: r.inicio || null, outraLoja: !!r.outraLoja },
+      atualizado: (ES.notas(loja.id) || {}).atualizado || null });
   } catch (e) { res.status(502).json({ erro: e.message }); }
 });
 app.post('/api/estoque/notas/sincronizar', express.json({ limit: '1kb' }), async (req, res) => {

@@ -471,10 +471,11 @@
       imprimir: ['dia', 'nfTxt', 'fornecedor', 'nItens', 'total'],
       empty: fil === 'per' ? 'Nenhuma nota no período do filtro. Veja "Todas".' : 'Nenhuma nota.',
     });
+    const sincEl = botaoSincronizar(D, j);
     return TS.cardWithTools('Notas fiscais de entrada', `Notas de entrada concluídas no AppNext (Estoque → Entrada de Produtos), lidas pelo coletor${j.atualizado ? ' · atualizado em ' + new Date(j.atualizado).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : ''}. Clique na nota para ver os produtos, quantidades, valores e o que mudou no custo.`,
-      h('div', { class: 'est-tools' }, tab.searchBox && (tab.searchBox.classList.add('est-busca'), tab.searchBox), botaoSincronizar(D, j),
+      h('div', { class: 'est-tools' }, tab.searchBox && (tab.searchBox.classList.add('est-busca'), tab.searchBox), sincEl,
         TS.seg(Object.entries(FIL).map(([k, [t, fn]]) => [`${t} (${fmt.int(todas.filter(fn).length)})`, k]), fil, (v) => { state.prcNotasFil = v; const c = document.querySelector('.prc-notas > .mt'); if (c) c.replaceChildren(listaNotas(D, j, aoMudar)); })),
-      tab);
+      sincEl && sincEl._log, tab);
   }
   /** "Sincronizar agora" (só admin): o coletor busca o estoque e as notas de compra do AppNext; acompanha até terminar */
   const sinc = {}; // loja -> timer
@@ -482,6 +483,22 @@
     if (TS.demo || !TS.eu || TS.eu.perfil !== 'admin') return null;
     const loja = D.loja;
     const st = h('small', { class: 'muted nf-sinc-st' });
+    // log do robô, como nas outras telas: ao vivo enquanto roda; depois, o final da última execução
+    const logPre = h('pre', { class: 'inv-log nf-sinc-log' });
+    const logBox = h('details', { class: 'nf-sinc-logbox', hidden: true, open: state.nfSincLogAberto || null, ontoggle: (e) => { state.nfSincLogAberto = e.target.open; } },
+      h('summary', null, h('span', { class: 'nf-sinc-logtit' }, 'Log do robô')), logPre);
+    const pintarLog = (s) => {
+      const box = document.querySelector('.nf-sinc-logbox') || logBox, pre = box.querySelector('pre') || logPre, tit = box.querySelector('.nf-sinc-logtit');
+      const linhas = (s.log || []).filter((l) => String(l).trim());
+      const quando = (iso) => (iso ? new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '');
+      const fazendo = s.robo && s.estado === 'na_fila' ? ` · o robô está ${s.robo.outraLoja ? 'atualizando outra loja' : 'ocupado nesta loja'}${s.robo.inicio ? ' desde ' + new Date(s.robo.inicio).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : ''}` : '';
+      if (tit) tit.textContent = s.estado === 'rodando' ? `Log do robô (ao vivo, desde ${quando(s.inicio)})`
+        : s.estado === 'na_fila' ? `Na fila desde ${quando(s.criado)}${fazendo}`
+        : s.fim ? `Log da última atualização (${quando(s.fim)} · ${s.estado === 'ok' ? 'concluída' : 'falhou'}${s.itens ? ' · ' + s.itens.join(', ') : ''})` : 'Log do robô';
+      pre.textContent = linhas.length ? linhas.join('\n') : s.estado === 'na_fila' ? 'Aguardando a vez na fila…' : 'Sem log.';
+      box.hidden = !(linhas.length || s.estado === 'na_fila' || s.estado === 'rodando');
+      if (s.estado === 'rodando' && box.open) pre.scrollTop = pre.scrollHeight;
+    };
     const btn = h('button', { type: 'button', class: 'btn nf-sinc', title: 'Busca agora no AppNext o estoque e as notas de entrada desta loja (leva alguns minutos)' }, '⟳ Sincronizar agora');
     const url = `estoque/notas/sincronizar?loja=${encodeURIComponent(loja)}`;
     const recarregar = async () => { cacheNotas.delete(loja); if (TS.estoqueBuscar) await TS.estoqueBuscar(loja, true).catch(() => null); TS.render(); };
@@ -491,10 +508,11 @@
         if (!btn.isConnected && !document.querySelector('.nf-sinc')) { delete sinc[loja]; return; }
         let s; try { s = await (await fetch(TS.api(url), { credentials: 'same-origin' })).json(); } catch { s = {}; }
         const vivo = document.querySelector('.nf-sinc-st') || st;
+        pintarLog(s);
         if (s.estado === 'na_fila' || s.estado === 'rodando') {
           vivo.textContent = s.estado === 'na_fila' ? `⏳ na fila do robô${s.fila ? ` (${s.fila} na frente)` : ''}…` : '⏳ buscando no AppNext…';
           const b = document.querySelector('.nf-sinc'); if (b) b.disabled = true;
-          sinc[loja] = setTimeout(passo, 8000); return;
+          sinc[loja] = setTimeout(passo, 5000); return;
         }
         delete sinc[loja];
         if ((s.atualizado && s.atualizado !== antes) || s.estado === 'ok') { vivo.textContent = '✓ sincronizado'; recarregar(); return; }
@@ -512,8 +530,10 @@
         acompanhar(j.atualizado || null);
       } catch (e) { st.textContent = '✗ ' + e.message; btn.disabled = false; }
     };
-    if (sinc[loja] === undefined) fetch(TS.api(url), { credentials: 'same-origin' }).then((r) => r.json()).then((s) => { if (s.estado === 'na_fila' || s.estado === 'rodando') acompanhar(j.atualizado || null); }).catch(() => {});
-    return h('span', { class: 'nf-sinc-box' }, btn, st);
+    if (sinc[loja] === undefined) fetch(TS.api(url), { credentials: 'same-origin' }).then((r) => r.json()).then((s) => { pintarLog(s); if (s.estado === 'na_fila' || s.estado === 'rodando') acompanhar(j.atualizado || null); }).catch(() => {});
+    const box = h('span', { class: 'nf-sinc-box' }, btn, st);
+    box._log = logBox;
+    return box;
   }
 
   /** custo de um item antes da nota: a entrada anterior (outra nota) ou a importação de estoque anterior */

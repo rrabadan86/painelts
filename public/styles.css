@@ -2251,3 +2251,6 @@ details.vl-ajuda summary { cursor: pointer; font-weight: 600; }
 .mapa-resumo .link-btn { margin-left: auto; }
 .mes-tools { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
 .mes-tools-esq { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.nf-sinc-logbox { margin: 4px 0 10px; }
+.nf-sinc-logbox summary { cursor: pointer; font-size: 13px; color: var(--muted, #6b6b6b); }
+.nf-sinc-log { margin-top: 6px; }
