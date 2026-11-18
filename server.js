@@ -443,7 +443,7 @@ app.get('/api/demo/validade', (req, res) => {
   const { em, lotes } = LOTd.calcular({ estoque: e.estoque, compras: comp, tabela: null, edits: { lotes: {} } });
   for (const l of lotes) if (l.precoKg == null && l.custoKg) l.precoKg = Math.round(l.custoKg * 2.6);
   res.json({ em, hoje: LOTd.hojeSP(), meses: LOTd.MESES_VALIDADE, riscoDias: LOTd.RISCO_DIAS, custos: true, faixas: LOTd.FAIXAS.map((f) => ({ id: f.id, nome: f.nome, ate: Number.isFinite(f.ate) ? f.ate : null })),
-    resumo: LOTd.resumo(lotes), lotes: lotes.map((l) => ({ ...l, tipo: '', familia: '' })) });
+    resumo: LOTd.resumo(lotes), lotes: lotes.map((l) => ({ ...l, tipo: '', familia: '' })), entradas: LOTd.entradasRecentes({ estoque: e.estoque, compras: comp, edits: { lotes: {} } }) });
 });
 // NF-e de saída fictícias (vendas com nota, transferência, devolução), montadas com os produtos da apresentação
 const NFSd = require('./src/nfsaida');
@@ -1361,9 +1361,9 @@ app.post('/api/inventario', express.json({ limit: '200kb' }), async (req, res) =
   C.auditar(req.user, 'abriu uma contagem de estoque', loja.id, { loja: loja.id, nome: r.ok.nome, itens: r.ok.itens.length });
   res.json({ ok: true, id: r.ok.id });
 });
-app.put('/api/inventario/contagem/:id/item/:cod', express.json({ limit: '2kb' }), (req, res) => {
+app.put('/api/inventario/contagem/:id/item/:cod', express.json({ limit: '8kb' }), (req, res) => {
   const loja = lojaInv(req, res); if (!loja) return;
-  const r = INV.contar(loja.id, String(req.params.id), String(req.params.cod), (req.body || {}).cont, req.user);
+  const r = INV.contar(loja.id, String(req.params.id), String(req.params.cod), (req.body || {}).cont, req.user, (req.body || {}).lotes);
   if (r.erro) return res.status(400).json({ erro: r.erro });
   res.json({ ok: true, item: req.perfil === 'vendedor' ? { ...r.ok, sis: null, custo: null } : r.ok });
 });
@@ -1432,7 +1432,7 @@ const lojaVal = (req, res) => {
 const semCusto = (req, x) => (podeCustos(req) ? x : { ...x, custoKg: null });
 app.get('/api/validade', async (req, res) => {
   const loja = lojaVal(req, res); if (!loja) return;
-  const { em, lotes } = LOT.daLoja(loja.id);
+  const ctx = LOT.daLoja(loja.id), { em, lotes } = ctx;
   // tipo de chá (Rooibos, Chá verde…) para o filtro: vem das vendas dos pacotes
   let tipos = new Map();
   try { tipos = new Map((await catInv(loja)).map((i) => [i.cod, i.tipo])); } catch { /* sem o tipo */ }
@@ -1442,7 +1442,20 @@ app.get('/api/validade', async (req, res) => {
   res.json({
     em, hoje: LOT.hojeSP(), meses: LOT.MESES_VALIDADE, riscoDias: LOT.RISCO_DIAS, custos, faixas: LOT.FAIXAS.map((f) => ({ id: f.id, nome: f.nome, ate: Number.isFinite(f.ate) ? f.ate : null })),
     resumo: r, lotes: lotes.map((l) => semCusto(req, { ...l, tipo: tipos.get(l.cod) || '', familia: INV.familia(tipos.get(l.cod) || '') })),
+    entradas: LOT.entradasRecentes(ctx), // para contar por lote no inventário
   });
+});
+// "deste lote ainda tem X" (ou voltar para a regra automática neste chá)
+app.put('/api/validade/saldo', express.json({ limit: '4kb' }), (req, res) => {
+  if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
+  const loja = lojaVal(req, res); if (!loja) return;
+  const ctx = LOT.daLoja(loja.id);
+  const r = LOT.editarSaldo(loja.id, req.body || {}, req.user, ctx);
+  if (r.erro) return res.status(400).json({ erro: r.erro });
+  const l = ctx.lotes.find((x) => x.chave === String(req.body.chave)) || ctx.lotes.find((x) => x.cod === String(req.body.cod)) || {};
+  C.auditar(req.user, req.body.automatico ? 'voltou o saldo dos lotes para o automático' : 'ajustou o saldo de um lote', loja.id,
+    { loja: loja.id, cod: l.cod, nf: l.nf, entrada: l.entrada, ...(req.body.automatico ? {} : { antes: r.antes, depois: Number(req.body.saldo), lotes: r.ok.fix }) });
+  res.json({ ok: true });
 });
 app.put('/api/validade/lote', express.json({ limit: '4kb' }), (req, res) => {
   if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });

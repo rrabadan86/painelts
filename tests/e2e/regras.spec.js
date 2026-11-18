@@ -129,6 +129,14 @@ test.describe('regras', () => {
     await expect(page.locator('input.vl-lote.vl-salvo')).toHaveCount(1);
     await expect(lote).toHaveValue('L2611-A');
     expect(await page.locator('main').innerText(), 'texto "null" na tela').not.toMatch(/(^|\s)(null|undefined|NaN)(\s|$)/);
+    // ajustar os lotes de um chá: a soma tem de ser o estoque
+    await page.locator('.vl-ajustar').first().click();
+    await expect(page.locator('.vl-modal')).toBeVisible();
+    await expect(page.locator('.vl-modal .vl-okk')).toBeVisible();
+    await page.locator('.vl-modal input.vl-g').first().fill('99999');
+    await expect(page.locator('.vl-modal .vl-dif')).toContainText('sobram');
+    await expect(page.locator('.vl-modal button.primary')).toBeDisabled();
+    await page.locator('.vl-modal button', { hasText: 'Cancelar' }).click();
     await page.locator('.vl-kpi.vl-critica').click();
     await expect(page.locator('.vl-tabela').first()).toContainText('< 30 dias');
     await page.evaluate(() => { location.hash = '#promocao'; });
@@ -154,6 +162,22 @@ test.describe('regras', () => {
     await expect(page.locator('.inv-revfil')).toBeVisible();
     await page.locator('.inv-revfil button', { hasText: 'Todos os contados' }).click();
     await expect(page.locator('.inv-revfil').locator('..')).toContainText('375 g');
+  });
+
+  test('Inventário: chá a granel contado por lote (o total é a soma)', async ({ page }) => {
+    await page.evaluate(() => { location.hash = '#inventario'; });
+    await page.getByRole('button', { name: '+ Nova contagem' }).click();
+    await page.locator('.inv-modos button', { hasText: 'Todos os chás a granel' }).click();
+    await page.getByRole('button', { name: 'Começar a contar' }).click();
+    const item = page.locator('.inv-item.inv-kg', { has: page.locator('.inv-porlote') }).first();
+    await item.locator('.inv-porlote').click();
+    const campos = item.locator('input.vl-g');
+    await expect(campos.first()).toBeVisible();
+    await campos.first().fill('150');
+    if (await campos.count() > 1) await campos.nth(1).fill('50');
+    const total = (await campos.count()) > 1 ? '200' : '150';
+    await expect(item.locator('input.inv-qtd')).toHaveValue(total);
+    await expect(item.locator('.inv-salvo.ok')).toContainText('por lote');
   });
 
   test('Inventário: "zerar os não listados" mostra o que vai ficar 0 e deixa desmarcar grupos', async ({ page }) => {

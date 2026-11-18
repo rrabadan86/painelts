@@ -43,7 +43,61 @@
     };
     location.hash = '#campanhas';
   }
-  TS.validade = { dados, badge, campanhaDoCha };
+  /** entradas recentes do chá (+ "saldo sem nota" quando houver), com o saldo que o painel calcula hoje */
+  function lotesDoCha(d, cod) {
+    const atuais = new Map(d.lotes.filter((l) => l.cod === cod).map((l) => [l.chave, l]));
+    const out = ((d.entradas || {})[cod] || []).map((e) => ({ ...e, saldo: atuais.has(e.chave) ? atuais.get(e.chave).saldo : 0 }));
+    for (const l of atuais.values()) if (!out.some((e) => e.chave === l.chave)) out.push({ chave: l.chave, nf: l.nf, entrada: l.entrada, lote: l.lote, validade: l.validade, saldo: l.saldo });
+    return out;
+  }
+  const rotLote = (e) => (e.entrada ? `Entrada ${fmt.date(e.entrada)} · NF ${e.nf}` : 'Saldo sem nota') + ` · lote ${e.lote && e.lote !== '0' ? e.lote : '0'}` + (e.validade ? ` · vence ${fmt.date(e.validade)}` : '');
+  /** campos em gramas, um por lote; onChange(mapa chave → kg, soma em kg) */
+  function camposLotes(lotes, valores, onChange, desabilitado) {
+    const vals = new Map(lotes.map((e) => [e.chave, valores[e.chave] ?? 0]));
+    const avisar = () => onChange(Object.fromEntries([...vals].filter(([, v]) => v > 0)), Math.round([...vals.values()].reduce((a, b) => a + b, 0) * 1000) / 1000);
+    return h('div', { class: 'vl-lotes-campos' }, ...lotes.map((e) => {
+      const i = h('input', { class: 'f-input vl-g', type: 'text', inputmode: 'numeric', value: vals.get(e.chave) ? String(Math.round(vals.get(e.chave) * 1000)) : '', placeholder: '0', disabled: desabilitado || null, 'aria-label': `Gramas: ${rotLote(e)}` });
+      i.addEventListener('input', () => { const g = Number(i.value.replace(/\D/g, '')) || 0; vals.set(e.chave, g / 1000); avisar(); });
+      return h('label', { class: 'vl-lote-linha' }, h('span', null, rotLote(e)), h('span', { class: 'vl-g-box' }, i, h('small', null, 'g')));
+    }));
+  }
+
+  /** "Ajustar os lotes deste chá": quanto tem de cada lote (a soma tem de ser o estoque do AppNext) */
+  function ajustarCha(l, d, loja, depois) {
+    const lotes = lotesDoCha(d, l.cod);
+    const S = Math.round(d.lotes.filter((x) => x.cod === l.cod).reduce((a, x) => a + x.saldo, 0) * 1000) / 1000;
+    let mapa = Object.fromEntries(lotes.filter((e) => e.saldo > 0).map((e) => [e.chave, e.saldo])), soma = S;
+    const ok = h('button', { type: 'button', class: 'btn primary' }, 'Salvar');
+    const info = h('div', { class: 'vl-soma' });
+    const erro = h('div', { class: 'muted vl-erro' });
+    const pintarSoma = () => {
+      const igual = Math.abs(soma - S) < 0.0015;
+      info.replaceChildren(h('b', null, `Soma: ${kgTxt(soma)}`), ` · estoque no AppNext: ${kgTxt(S)}`, igual ? h('span', { class: 'vl-okk' }, ' ✓') : h('span', { class: 'vl-dif' }, ` · ${soma > S ? 'sobram' : 'faltam'} ${kgTxt(Math.abs(soma - S))}`));
+      ok.disabled = !igual;
+    };
+    const fundo = h('div', { class: 'cp-modal-bg' });
+    const fechar = () => fundo.remove();
+    fundo.addEventListener('click', (e) => { if (e.target === fundo) fechar(); });
+    const enviar = async (corpoReq) => {
+      ok.disabled = true; erro.textContent = '';
+      if (TS.demo) { fechar(); toast('Na apresentação nada é salvo.'); return; }
+      try { await req('PUT', 'validade/saldo', { loja, ...corpoReq }); cache.delete(loja); fechar(); toast('Lotes ajustados.'); depois(); } catch (e) { erro.textContent = e.message; ok.disabled = false; }
+    };
+    ok.addEventListener('click', () => enviar({ cod: l.cod, lotes: mapa }));
+    const manual = d.lotes.some((x) => x.cod === l.cod && x.ajuste && x.ajuste.tipo === 'manual');
+    fundo.append(h('div', { class: 'card cp-copiar vl-modal' },
+      h('h3', null, `Lotes de ${l.desc}`),
+      h('p', { class: 'muted' }, 'Pese quanto tem de cada lote (em gramas). Use quando a loja abriu um pacote novo antes do antigo. A soma tem de dar o estoque do AppNext; se não der, o total está errado: conte pelo Inventário (por lote).'),
+      camposLotes(lotes, mapa, (m, sm) => { mapa = m; soma = sm; pintarSoma(); }), info, erro,
+      h('div', { class: 'cp-acoes' },
+        manual ? h('button', { type: 'button', class: 'link-btn', title: 'Esquece o ajuste e volta a calcular: o estoque fica nas entradas mais novas', onclick: () => enviar({ chave: l.chave, automatico: true }) }, 'voltar ao automático') : null,
+        h('span', { style: { flex: 1 } }), h('button', { type: 'button', class: 'btn', onclick: fechar }, 'Cancelar'), ok)));
+    pintarSoma();
+    document.body.append(fundo);
+    const primeiro = fundo.querySelector('input'); if (primeiro) primeiro.focus();
+  }
+
+  TS.validade = { dados, badge, campanhaDoCha, lotesDoCha, camposLotes, rotLote };
 
   TS.pages.validade = function (root) {
     if (TS.subEstoque) root.append(TS.subEstoque('validade'));
@@ -109,7 +163,10 @@
         { key: 'dias', label: 'Faixa', align: 'l', render: (l) => h('div', null, badge(l.faixa), h('small', { class: 'vl-dias' }, diasTxt(l.dias))) },
         { key: 'desc', label: 'Chá', align: 'l', render: (l) => h('div', null, h('b', null, l.desc), h('small', { class: 'muted vl-sub' }, [l.cod, l.familia].filter(Boolean).join(' · '))) },
         { key: 'entrada', label: 'Entrada', align: 'l', render: (l) => (l.entrada ? h('div', null, fmt.date(l.entrada), h('small', { class: 'muted vl-sub' }, `NF ${l.nf}`)) : h('small', { class: 'muted' }, 'saldo sem nota')) },
-        { key: 'saldo', label: 'Saldo', render: (l) => h('span', { title: l.qtdEntrada ? `chegaram ${kgTxt(l.qtdEntrada)}` : null }, kgTxt(l.saldo)) },
+        { key: 'saldo', label: 'Saldo', render: (l) => h('div', { class: 'vl-saldo' },
+          h('span', { title: l.qtdEntrada ? `chegaram ${kgTxt(l.qtdEntrada)}` : null }, kgTxt(l.saldo)),
+          l.ajuste ? h('small', { class: 'vl-sub vl-aj', title: `${l.ajuste.tipo === 'inventario' ? 'Contado por lote no inventário' : 'Ajustado na tela'}${l.ajuste.por ? ' por ' + l.ajuste.por : ''} em ${new Date(l.ajuste.em).toLocaleDateString('pt-BR')}; as vendas depois disso saem do lote mais antigo` }, l.ajuste.tipo === 'inventario' ? 'contado no inventário' : 'ajustado') : null,
+          h('button', { type: 'button', class: 'link-btn vl-ajustar', title: 'Quanto tem de cada lote deste chá (ex.: abriram o pacote novo antes do antigo)', onclick: () => ajustarCha(l, d, loja, () => dados(loja, true).then((nd) => { if (corpo.isConnected) pintar(corpo, loja, nd); })) }, '⚖ ajustar')) },
         { key: 'lote', label: 'Lote', align: 'l', render: (l) => {
           const i = h('input', { class: 'f-input vl-lote' + (l.lote === '0' ? ' vl-vazio' : ''), value: l.lote === '0' ? '' : l.lote, placeholder: '0', maxlength: 30, 'aria-label': `Lote de ${l.desc}`, autocomplete: 'off', autocapitalize: 'characters' });
           i.addEventListener('change', () => { i.value = i.value.trim().toUpperCase(); i.classList.toggle('vl-vazio', !i.value); salvar(l, { lote: i.value }, i); });
@@ -144,6 +201,7 @@
       h('div', { class: 'card vl-ajuda' }, h('b', null, 'Como funciona'), h('ul', null,
         h('li', null, 'Chegou chá a granel? Digite o nº do lote que está no pacote na linha da entrada (nota e data). A validade já vem com 12 meses da entrada; se o pacote disser outra data, corrija.'),
         h('li', null, 'O saldo de cada lote sai do estoque do AppNext: o que sobrou fica nas entradas mais novas, porque o mais antigo é vendido primeiro. Por isso, venda sempre o lote mais antigo.'),
+        h('li', null, 'Abriram o pacote novo antes do antigo? Em "⚖ ajustar", pese quanto tem de cada lote. No Inventário, o chá a granel também pode ser contado por lote. Depois disso, as vendas saem do lote mais antigo.'),
         h('li', null, '⚫ Vencido: tire da venda e lance a perda no AppNext. 🔴 e 🟠: degustação, oferta e campanha. 🟡: deixe na frente da prateleira.'),
         h('li', null, 'Os lotes em risco aparecem também em Vendas → Promoção, no Pedido (para não comprar mais do mesmo chá) e no resumo diário.'))));
     desenharTabela();

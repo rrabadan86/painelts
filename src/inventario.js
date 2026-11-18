@@ -104,7 +104,7 @@ function criar(id, b, por, cat, perfil) {
 }
 
 /** quantidade contada: número >= 0 com até 3 casas (kg) ou null para apagar */
-function contar(id, cid, cod, valor, por) {
+function contar(id, cid, cod, valor, por, lotes) {
   const c = ler(id, cid);
   if (!c) return { erro: 'Contagem não encontrada.' };
   if (c.st !== 'contando' && c.st !== 'revisao') return { erro: 'Esta contagem já foi fechada. Reabra para mudar.' };
@@ -117,6 +117,19 @@ function contar(id, cid, cod, valor, por) {
     v = Math.round(v * 1000) / 1000;
     if (it.un !== 'Kg' && it.un !== 'kg' && !Number.isInteger(v)) return { erro: `${it.desc} é contado em ${it.un || 'unidades'}: use número inteiro.` };
   }
+  // chá a granel contado por lote: { chave do lote: kg } (Estoque → Validade); o total é a soma
+  if (lotes && typeof lotes === 'object' && !Array.isArray(lotes) && Object.keys(lotes).length) {
+    if (it.un !== 'Kg' && it.un !== 'kg') return { erro: 'Só o chá a granel é contado por lote.' };
+    const ls = {};
+    for (const [k, q] of Object.entries(lotes).slice(0, 30)) {
+      if (!/^[\w.|-]{3,80}$/.test(k)) return { erro: 'Lote inválido.' };
+      const x = Math.round(Number(q) * 1000) / 1000;
+      if (!Number.isFinite(x) || x < 0 || x > 1e4) return { erro: 'Quantidade inválida no lote.' };
+      if (x > 0) ls[k] = x;
+    }
+    v = Math.round(Object.values(ls).reduce((s, x) => s + x, 0) * 1000) / 1000;
+    it.lotes = ls;
+  } else delete it.lotes;
   it.cont = v; it.por = v == null ? null : por; it.em = v == null ? null : new Date().toISOString();
   gravar(id, c);
   return { ok: it };

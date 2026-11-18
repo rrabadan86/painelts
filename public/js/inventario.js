@@ -51,9 +51,9 @@
     },
     async enviar(loja, id, tipo) { if (TS.demo) throw new Error('Na apresentação nada é enviado ao AppNext.'); return req('POST', `inventario/contagem/${id}/enviar`, { loja, tipo }); },
     async zerar(loja, id, z) { if (!TS.demo) return req('PUT', `inventario/contagem/${id}/zerar`, { loja, ...z }); DEMO.cont.find((x) => x.id === id).zerar = z; },
-    async contar(loja, id, cod, cont) {
-      if (!TS.demo) return (await req('PUT', `inventario/contagem/${id}/item/${encodeURIComponent(cod)}`, { loja, cont })).item;
-      const it = DEMO.cont.find((x) => x.id === id).itens.find((i) => i.cod === cod); Object.assign(it, { cont, por: 'apresentacao', em: cont == null ? null : new Date().toISOString() }); return it;
+    async contar(loja, id, cod, cont, lotes) {
+      if (!TS.demo) return (await req('PUT', `inventario/contagem/${id}/item/${encodeURIComponent(cod)}`, { loja, cont, ...(lotes ? { lotes } : {}) })).item;
+      const it = DEMO.cont.find((x) => x.id === id).itens.find((i) => i.cod === cod); Object.assign(it, { cont, lotes: lotes || undefined, por: 'apresentacao', em: cont == null ? null : new Date().toISOString() }); return it;
     },
     async incluir(loja, id, cods) {
       if (!TS.demo) return req('POST', `inventario/contagem/${id}/itens`, { loja, cods });
@@ -247,7 +247,7 @@
         }
         if (v === i.cont) return;
         est.textContent = 'salvando…'; est.className = 'inv-salvo';
-        try { const r = await API.contar(loja, c.id, i.cod, v); Object.assign(i, { cont: r.cont, por: r.por, em: r.em }); est.textContent = v == null ? '' : 'salvo ✓'; est.className = 'inv-salvo ok'; pintarProg(); pintarDif(); }
+        try { const r = await API.contar(loja, c.id, i.cod, v); Object.assign(i, { cont: r.cont, lotes: r.lotes, por: r.por, em: r.em }); inp.readOnly = false; painel.hidden = true; if (porLote) porLote.textContent = 'contar por lote'; est.textContent = v == null ? '' : 'salvo ✓'; est.className = 'inv-salvo ok'; pintarProg(); pintarDif(); }
         catch (e) { est.textContent = e.message; est.className = 'inv-salvo neg'; }
       };
       inp.addEventListener('input', () => { clearTimeout(t); t = setTimeout(salvar, 900); });
@@ -255,9 +255,34 @@
       inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); clearTimeout(t); salvar(); const todos = [...lista.querySelectorAll('input.inv-qtd')]; const k = todos.indexOf(inp); if (todos[k + 1]) todos[k + 1].focus(); else inp.blur(); } });
       const passo = (d0) => h('button', { type: 'button', class: 'inv-passo', disabled: !aberta || null, 'aria-label': d0 > 0 ? 'mais um' : 'menos um', onclick: () => { const atual = i.cont ?? 0; const v = Math.max(0, kg ? atual * 1000 + d0 * 10 : atual + d0); inp.value = kg ? String(Math.round(v)) : String(v); clearTimeout(t); salvar(); } }, d0 > 0 ? '＋' : '−');
       pintarDif();
-      return h('div', { class: 'inv-item' + (i.cont != null ? ' feito' : ''), 'data-cod': i.cod },
-        h('div', { class: 'inv-item-txt' }, h('b', null, i.desc), h('small', { class: 'muted' }, `cód. ${i.cod}${i.sis != null ? ' · sistema: ' + qtdTxt(i.sis, i.un) : ''}`), h('div', null, dif, est)),
-        h('div', { class: 'inv-item-qtd' }, passo(-1), h('div', { class: 'inv-campo' }, inp, h('span', null, kg ? 'g' : String(i.un || 'un').toLowerCase())), passo(1)));
+      // chá a granel: contar por lote (Estoque → Validade) — o total é a soma; depois de importado no AppNext,
+      // o painel parte dessa contagem para o saldo de cada lote
+      const painel = h('div', { class: 'inv-lotes', hidden: true });
+      let tLote;
+      const abrirLotes = async () => {
+        if (!painel.hidden) { painel.hidden = true; return; }
+        let dv;
+        try { dv = await TS.validade.dados(loja); } catch (e) { toast(e.message, true); return; }
+        const ls = TS.validade.lotesDoCha(dv, i.cod).map((x) => ({ ...x, saldo: undefined }));
+        if (!ls.length) { toast('Este chá não tem entradas nos últimos 14 meses: conte o total.', true); return; }
+        painel.replaceChildren(h('small', { class: 'muted' }, 'Pese cada lote em gramas: o total é a soma.'),
+          TS.validade.camposLotes(ls, i.lotes || {}, (m, soma) => {
+            inp.value = soma ? String(Math.round(soma * 1000)) : ''; inp.readOnly = true;
+            clearTimeout(tLote);
+            tLote = setTimeout(async () => {
+              est.textContent = 'salvando…'; est.className = 'inv-salvo';
+              try { const r = await API.contar(loja, c.id, i.cod, soma, Object.keys(m).length ? m : null); Object.assign(i, { cont: r.cont, lotes: r.lotes, por: r.por, em: r.em }); est.textContent = 'salvo por lote ✓'; est.className = 'inv-salvo ok'; pintarProg(); pintarDif(); }
+              catch (e) { est.textContent = e.message; est.className = 'inv-salvo neg'; }
+            }, 700);
+          }, !aberta));
+        painel.hidden = false;
+      };
+      const porLote = kg && TS.validade && (!TS.paginas || TS.paginas().includes('validade')) ? h('button', { type: 'button', class: 'link-btn inv-porlote', onclick: abrirLotes }, i.lotes && Object.keys(i.lotes).length ? `por lote ✓ (${Object.keys(i.lotes).length})` : 'contar por lote') : null;
+      if (i.lotes && Object.keys(i.lotes).length) inp.readOnly = true;
+      return h('div', { class: 'inv-item' + (i.cont != null ? ' feito' : '') + (kg ? ' inv-kg' : ''), 'data-cod': i.cod },
+        h('div', { class: 'inv-item-txt' }, h('b', null, i.desc), h('small', { class: 'muted' }, `cód. ${i.cod}${i.sis != null ? ' · sistema: ' + qtdTxt(i.sis, i.un) : ''}`), h('div', null, dif, est, porLote)),
+        h('div', { class: 'inv-item-qtd' }, passo(-1), h('div', { class: 'inv-campo' }, inp, h('span', null, kg ? 'g' : String(i.un || 'un').toLowerCase())), passo(1)),
+        painel);
     };
     const incluir = aberta ? h('details', { class: 'inv-incluir' }, h('summary', null, '+ Incluir item que não está na lista'),
       buscaItens(loja, async (it) => { try { await API.incluir(loja, c.id, [it.cod]); toast(`${it.desc} incluído.`); abrirContagem(corpo, loja, c.id); } catch (e) { toast(e.message, true); } }, 'Nome, código ou código de barras')) : null;

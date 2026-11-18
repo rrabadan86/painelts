@@ -83,31 +83,90 @@ function precosKg(tabela, estoque) {
  * estoque = ES.atual; compras = ES.compras; tabela = TAB.resumo; edits = ler(id); hoje = AAAA-MM-DD
  * → { em, lotes: [{ chave, cod, desc, nf, entrada, qtdEntrada, saldo, lote, validade, padrao, dias, faixa, custoKg, precoKg }] }
  */
-function calcular({ estoque, compras, tabela, edits, hoje = hojeSP() }) {
+const r3 = (v) => Math.round(v * 1000) / 1000;
+/** todas as entradas do chá, da mais nova para a mais antiga, com a chave do lote */
+function entradasDoCod(cod, ent) {
+  const lista = (ent[cod] || []).filter(([dia]) => DIA.test(dia)).slice().sort((a, b) => (a[0] < b[0] ? 1 : a[0] > b[0] ? -1 : 0));
+  const vistos = new Set();
+  return lista.map(([dia, , nf, qtd]) => {
+    let chave = `${nf}|${cod}|${dia}`;
+    for (let k = 2; vistos.has(chave); k++) chave = `${nf}|${cod}|${dia}|${k}`; // o mesmo chá duas vezes na mesma nota
+    vistos.add(chave);
+    return { chave, nf: String(nf ?? ''), entrada: dia, qtdEntrada: Number(qtd) || 0 };
+  });
+}
+/** regra automática: o estoque fica nas entradas mais novas (cada uma até o que chegou); o resto é "saldo sem nota" */
+function distribuir(S, entradas, inicial) {
+  const dist = new Map();
+  let resta = S;
+  for (const e of entradas) {
+    if (!(resta > 1e-9)) break;
+    const q = Math.min(resta, e.qtdEntrada);
+    if (q > 0) { dist.set(e.chave, q); resta = r3(resta - q); }
+  }
+  if (resta > 1e-9) dist.set(inicial, resta);
+  return dist;
+}
+/**
+ * Com um ajuste (a equipe disse quanto tem de cada lote, na tela ou na contagem do inventário): parte dessa foto,
+ * soma as entradas que chegaram depois e tira a diferença para o estoque atual do AppNext do lote mais antigo
+ * (venda e perda saem do mais antigo; sobra vai para o mais novo). O total continua sendo o do AppNext.
+ */
+function aPartirDoAjuste(S, anc, todas, dEst, inicial) {
+  const info = new Map(todas.map((e) => [e.chave, e]));
+  const dist = new Map(Object.entries(anc.fix || {}).filter(([, v]) => v > 0).map(([k, v]) => [k, +v]));
+  for (const e of todas) if (e.entrada > anc.dia && (!DIA.test(dEst) || e.entrada <= dEst)) dist.set(e.chave, r3((dist.get(e.chave) || 0) + e.qtdEntrada));
+  let D = r3([...dist.values()].reduce((x, v) => x + v, 0) - S);
+  const dataDe = (k) => (info.get(k) ? info.get(k).entrada : '');
+  if (D > 0) {
+    for (const k of [...dist.keys()].sort((a, b) => (dataDe(a) < dataDe(b) ? -1 : dataDe(a) > dataDe(b) ? 1 : 0))) {
+      if (!(D > 1e-9)) break;
+      const q = Math.min(D, dist.get(k));
+      dist.set(k, r3(dist.get(k) - q)); D = r3(D - q);
+    }
+  } else if (D < 0) {
+    const novo = todas.find((e) => !DIA.test(dEst) || e.entrada <= dEst);
+    const k = novo ? novo.chave : inicial;
+    dist.set(k, r3((dist.get(k) || 0) - D));
+  }
+  for (const [k, v] of dist) if (!(v > 1e-9)) dist.delete(k);
+  return dist;
+}
+/** o ajuste que vale para este estoque: o mais recente feito até a data do estoque exportado */
+function escolherAjuste(lista, estEm) {
+  const t = Date.parse(estEm || '') || Infinity;
+  return (lista || []).filter((a) => (Date.parse(a.em) || 0) <= t).sort((a, b) => (Date.parse(b.em) || 0) - (Date.parse(a.em) || 0))[0] || null;
+}
+
+/**
+ * Lotes em aberto do chá a granel.
+ * estoque = ES.atual; compras = ES.compras; tabela = TAB.resumo; edits = ler(id); ajustes = { cod: [ajuste] }; hoje = AAAA-MM-DD
+ * → { em, lotes: [{ chave, cod, desc, nf, entrada, qtdEntrada, saldo, lote, validade, padrao, dias, faixa, custoKg, precoKg, ajuste }] }
+ */
+function calcular({ estoque, compras, tabela, edits, ajustes, hoje = hojeSP() }) {
   if (!estoque || !Array.isArray(estoque.itens)) return { em: null, lotes: [] };
   const dEst = String(estoque.em || '').slice(0, 10);
   const ed = (edits && edits.lotes) || {};
+  const ajs = ajustes || (edits && edits.ajustes) || {};
   const precos = precosKg(tabela, estoque);
   const ent = (compras && compras.itens) || {};
   const lotes = [];
   for (const it of estoque.itens) {
     if (it.un !== 'Kg' || ENVASADO.test(it.desc || '')) continue; // só o chá a granel tem validade (lata, minitin, sachê… não)
     const cod = String(it.cod);
-    let resta = Math.max(0, Math.round((Number(it.qtd) || 0) * 1000) / 1000);
-    if (!(resta > 0)) continue;
-    // entradas que já estavam no estoque exportado (as de depois ainda não contam no saldo), da mais nova para a mais antiga
-    const lista = (ent[cod] || []).filter(([dia]) => DIA.test(dia) && (!DIA.test(dEst) || dia <= dEst)).slice().sort((a, b) => (a[0] < b[0] ? 1 : a[0] > b[0] ? -1 : 0));
-    const vistos = new Set();
-    for (const [dia, , nf, qtd] of lista) {
-      if (!(resta > 1e-9)) break;
-      let chave = `${nf}|${cod}|${dia}`;
-      for (let k = 2; vistos.has(chave); k++) chave = `${nf}|${cod}|${dia}|${k}`; // o mesmo chá duas vezes na mesma nota
-      vistos.add(chave);
-      const saldo = Math.min(resta, Number(qtd) || 0);
-      resta = Math.round((resta - saldo) * 1000) / 1000;
-      if (saldo > 0) lotes.push(montar(chave, it, { nf: String(nf ?? ''), entrada: dia, qtdEntrada: Number(qtd) || 0, saldo }, ed[chave], hoje, precos));
+    const S = Math.max(0, r3(Number(it.qtd) || 0));
+    if (!(S > 0)) continue;
+    const todas = entradasDoCod(cod, ent), inicial = `inicial|${cod}`;
+    const anc = escolherAjuste(ajs[cod], estoque.em);
+    // sem ajuste: só as entradas que já estavam no estoque exportado (as de depois ainda não contam no saldo)
+    const dist = anc ? aPartirDoAjuste(S, anc, todas, dEst, inicial) : distribuir(S, todas.filter((e) => !DIA.test(dEst) || e.entrada <= dEst), inicial);
+    const info = new Map(todas.map((e) => [e.chave, e]));
+    const aj = anc ? { tipo: anc.tipo, por: anc.por || '', em: anc.feitoEm || anc.em } : null;
+    for (const [chave, saldo] of dist) {
+      const e = info.get(chave);
+      const base = e ? { nf: e.nf, entrada: e.entrada, qtdEntrada: e.qtdEntrada, saldo } : { nf: '', entrada: null, qtdEntrada: null, saldo };
+      lotes.push({ ...montar(chave, it, base, ed[chave], hoje, precos), ajuste: aj });
     }
-    if (resta > 1e-9) lotes.push(montar(`inicial|${cod}`, it, { nf: '', entrada: null, qtdEntrada: null, saldo: resta }, ed[`inicial|${cod}`], hoje, precos));
   }
   lotes.sort((a, b) => (a.dias ?? -1e9) - (b.dias ?? -1e9) || a.desc.localeCompare(b.desc, 'pt-BR'));
   return { em: estoque.em || null, lotes };
@@ -175,10 +234,129 @@ function editar(id, b, por, lotesAtuais) {
   return { ok: d.lotes[chave] || null, antes: atual };
 }
 
-/** lotes da loja já calculados (arquivos do estoque, das compras e da tabela) */
+/**
+ * "Deste lote ainda tem X": a equipe corrige o saldo de um lote (ex.: abriram o pacote novo antes do antigo).
+ * O total continua o do AppNext: a diferença sai (ou vai) para os outros lotes — o que sobra vai para os mais novos,
+ * o que falta sai dos mais antigos. Fica guardado como uma foto (ajuste) e as vendas seguintes saem do mais antigo.
+ * b = { chave, saldo (kg) } ou { chave, automatico: true } (volta para a regra automática neste chá)
+ */
+function editarSaldo(id, b, por, ctx) {
+  const { estoque, compras, lotes } = ctx;
+  if (b.lotes && typeof b.lotes === 'object') return editarSaldos(id, b, por, ctx);
+  const l = lotes.find((x) => x.chave === String(b.chave || ''));
+  if (!l) return { erro: 'Lote não encontrado (o estoque pode ter mudado): atualize a tela.' };
+  const d = ler(id);
+  d.ajustes = d.ajustes || {};
+  if (b.automatico) {
+    d.ajustes[l.cod] = (d.ajustes[l.cod] || []).filter((a) => a.tipo !== 'manual');
+    if (!d.ajustes[l.cod].length) delete d.ajustes[l.cod];
+    gravar(id, d);
+    return { ok: true };
+  }
+  const v = r3(Number(String(b.saldo ?? '').replace(',', '.')));
+  const doCod = lotes.filter((x) => x.cod === l.cod);
+  const S = r3(doCod.reduce((x, y) => x + y.saldo, 0));
+  if (!Number.isFinite(v) || v < 0) return { erro: 'Saldo inválido.' };
+  if (v > S + 1e-9) return { erro: `O estoque deste chá no AppNext é ${String(S).replace('.', ',')} kg: o lote não pode ter mais que isso. Se tem mais, ajuste o estoque pelo inventário.` };
+  if (l.qtdEntrada != null && v > l.qtdEntrada + 1e-9) return { erro: `Neste lote chegaram ${String(l.qtdEntrada).replace('.', ',')} kg.` };
+  const dEst = String(estoque.em || '').slice(0, 10);
+  const todas = entradasDoCod(l.cod, (compras && compras.itens) || {}).filter((e) => !DIA.test(dEst) || e.entrada <= dEst);
+  const cur = new Map(doCod.map((x) => [x.chave, x.saldo]));
+  let dif = r3((cur.get(l.chave) || 0) - v);
+  cur.set(l.chave, v);
+  if (dif > 0) { // o lote tem menos do que o painel achava: o resto está nos mais novos (até o que chegou em cada um)
+    for (const e of todas) {
+      if (!(dif > 1e-9)) break;
+      if (e.chave === l.chave) continue;
+      const q = Math.min(dif, Math.max(0, r3(e.qtdEntrada - (cur.get(e.chave) || 0))));
+      if (q > 0) { cur.set(e.chave, r3((cur.get(e.chave) || 0) + q)); dif = r3(dif - q); }
+    }
+    if (dif > 1e-9) { const k = `inicial|${l.cod}`; cur.set(k, r3((cur.get(k) || 0) + dif)); }
+  } else if (dif < 0) { // tem mais: sai dos outros, do mais antigo para o mais novo
+    let falta = -dif;
+    const data = (k) => { const e = todas.find((x) => x.chave === k); return e ? e.entrada : ''; };
+    for (const k of [...cur.keys()].filter((k) => k !== l.chave).sort((a, b2) => (data(a) < data(b2) ? -1 : 1))) {
+      if (!(falta > 1e-9)) break;
+      const q = Math.min(falta, cur.get(k)); cur.set(k, r3(cur.get(k) - q)); falta = r3(falta - q);
+    }
+  }
+  const fix = {};
+  for (const [k, x] of cur) if (x > 1e-9) fix[k] = x;
+  const aj = { em: estoque.em || new Date().toISOString(), dia: dEst, fix, tipo: 'manual', por: String(por || ''), feitoEm: new Date().toISOString() };
+  d.ajustes[l.cod] = [...(d.ajustes[l.cod] || []), aj].slice(-3);
+  gravar(id, d);
+  return { ok: aj, antes: l.saldo };
+}
+
+/** todos os lotes de um chá de uma vez ({ cod, lotes: { chave: kg } }): a soma tem de ser o estoque do AppNext */
+function editarSaldos(id, b, por, ctx) {
+  const { estoque, compras, lotes } = ctx;
+  const cod = String(b.cod || '');
+  const doCod = lotes.filter((x) => x.cod === cod);
+  if (!doCod.length) return { erro: 'Este chá não tem estoque no AppNext.' };
+  const S = r3(doCod.reduce((x, y) => x + y.saldo, 0));
+  const dEst = String(estoque.em || '').slice(0, 10);
+  const todas = new Map(entradasDoCod(cod, (compras && compras.itens) || {}).filter((e) => !DIA.test(dEst) || e.entrada <= dEst).map((e) => [e.chave, e]));
+  const fix = {};
+  for (const [k, q] of Object.entries(b.lotes).slice(0, 30)) {
+    const e = todas.get(k);
+    if (!e && k !== `inicial|${cod}`) return { erro: 'Lote inválido: atualize a tela.' };
+    const v = r3(Number(q));
+    if (!Number.isFinite(v) || v < 0) return { erro: 'Quantidade inválida.' };
+    if (e && v > e.qtdEntrada + 1e-9) return { erro: `No lote de ${e.entrada.split('-').reverse().join('/')} chegaram ${String(e.qtdEntrada).replace('.', ',')} kg.` };
+    if (v > 0) fix[k] = v;
+  }
+  const soma = r3(Object.values(fix).reduce((x, v) => x + v, 0));
+  if (Math.abs(soma - S) > 0.0015) return { erro: `A soma dos lotes (${String(soma).replace('.', ',')} kg) tem de ser o estoque do AppNext (${String(S).replace('.', ',')} kg). Se o total está errado, corrija pelo Inventário (contando por lote).` };
+  const d = ler(id);
+  d.ajustes = d.ajustes || {};
+  const aj = { em: estoque.em || new Date().toISOString(), dia: dEst, fix, tipo: 'manual', por: String(por || ''), feitoEm: new Date().toISOString() };
+  d.ajustes[cod] = [...(d.ajustes[cod] || []), aj].slice(-3);
+  gravar(id, d);
+  return { ok: aj, antes: Object.fromEntries(doCod.map((x) => [x.chave, x.saldo])) };
+}
+
+/** contagem por lote no inventário: depois que a contagem foi importada no AppNext, vira o ponto de partida do chá */
+function ajustesInventario(id) {
+  const out = {};
+  let INV;
+  try { INV = require('./inventario'); } catch { return out; }
+  const corte = Date.now() - 400 * 864e5;
+  for (const c of INV.lista(id)) {
+    if (c.st !== 'importado' || !c.importadoEm || !(Date.parse(c.importadoEm) > corte)) continue;
+    const cc = INV.ler(id, c.id);
+    for (const it of (cc && cc.itens) || []) {
+      if (it.cont == null || !it.lotes || !Object.keys(it.lotes).length) continue;
+      const dia = new Date(c.importadoEm).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+      (out[it.cod] || (out[it.cod] = [])).push({ em: c.importadoEm, dia, fix: it.lotes, tipo: 'inventario', por: it.por || '', feitoEm: c.importadoEm });
+    }
+  }
+  return out;
+}
+
+/** para a contagem por lote: as entradas dos últimos 14 meses de cada chá a granel (mesmo as que o painel acha que acabaram) */
+function entradasRecentes({ estoque, compras, edits, hoje = hojeSP() }) {
+  const out = {};
+  const ed = (edits && edits.lotes) || {}, corte = somarMeses(hoje, -14);
+  for (const it of (estoque && estoque.itens) || []) {
+    if (it.un !== 'Kg' || ENVASADO.test(it.desc || '')) continue;
+    const cod = String(it.cod);
+    const l = entradasDoCod(cod, (compras && compras.itens) || {}).filter((e) => e.entrada >= corte).slice(0, 8)
+      .map((e) => ({ chave: e.chave, nf: e.nf, entrada: e.entrada, lote: (ed[e.chave] && ed[e.chave].lote) || '0', validade: (ed[e.chave] && ed[e.chave].validade) || somarMeses(e.entrada, MESES_VALIDADE) }));
+    if (l.length) out[cod] = l;
+  }
+  return out;
+}
+
+/** lotes da loja já calculados (arquivos do estoque, das compras e da tabela, ajustes da tela e do inventário) */
 function daLoja(id, hoje) {
   const TAB = require('./tabela');
-  return calcular({ estoque: ES.atual(id), compras: ES.compras(id), tabela: TAB.resumo(id), edits: ler(id), hoje });
+  const edits = ler(id);
+  const ajustes = {};
+  for (const [cod, l] of Object.entries(edits.ajustes || {})) ajustes[cod] = [...l];
+  for (const [cod, l] of Object.entries(ajustesInventario(id))) ajustes[cod] = [...(ajustes[cod] || []), ...l];
+  const estoque = ES.atual(id), compras = ES.compras(id);
+  return { ...calcular({ estoque, compras, tabela: TAB.resumo(id), edits, ajustes, hoje }), estoque, compras, edits };
 }
 
 /** bloco do resumo diário (Telegram/e-mail): só quantidades e valor a preço de venda (o custo não sai do painel) */
@@ -199,4 +377,4 @@ function linhasResumo(id) {
     ...top];
 }
 
-module.exports = { MESES_VALIDADE, FAIXAS, RISCO_DIAS, ler, calcular, resumo, editar, daLoja, linhasResumo, somarMeses, precosKg, faixa, hojeSP };
+module.exports = { MESES_VALIDADE, FAIXAS, RISCO_DIAS, ler, calcular, resumo, editar, editarSaldo, daLoja, entradasDoCod, entradasRecentes, linhasResumo, somarMeses, precosKg, faixa, hojeSP };

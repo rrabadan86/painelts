@@ -70,3 +70,45 @@ test('lotes: edição do nº do lote e da validade, resumo e valor em risco', ()
   assert.equal(calc().find((x) => x.chave === ch).validade, '2027-03-10');
   assert.deepEqual(L.ler('lj').lotes, {});
 });
+
+test('lotes: "deste lote ainda tem X" e as vendas seguintes saindo do mais antigo', () => {
+  // valeriana: 200 g do lote antigo (A) e 1 kg do novo (B); estoque 1,2 kg
+  const comp = { itens: { 9: [['2026-01-10', 100, 1, 2, 'T'], ['2026-11-17', 100, 2, 1, 'T']] } };
+  const est = (q, em) => ({ em, itens: [{ cod: '9', desc: 'VALERIANA', un: 'Kg', qtd: q, custo: 100 }] });
+  const A = '1|9|2026-01-10', B = '2|9|2026-11-17';
+  const dist = (r) => Object.fromEntries(r.lotes.map((l) => [l.chave, l.saldo]));
+  const calc = (e) => L.calcular({ estoque: e, compras: comp, tabela: null, edits: L.ler('aj'), hoje: '2026-11-18' });
+  assert.deepEqual(dist(calc(est(1.2, '2026-11-18T09:00:00Z'))), { [B]: 1, [A]: 0.2 });
+  // venderam 300 g do pacote novo por engano: o AppNext fica com 0,9 kg; a regra automática acharia A = 0
+  let ctx = { estoque: est(0.9, '2026-11-19T09:00:00Z'), compras: comp };
+  ctx.lotes = calc(ctx.estoque).lotes;
+  assert.deepEqual(dist({ lotes: ctx.lotes }), { [B]: 0.9 });
+  // a vendedora diz: do lote A ainda tem 200 g
+  assert.match(L.editarSaldo('aj', { chave: B, saldo: 1.5 }, 'v', ctx).erro, /AppNext/);
+  ctx.lotes = [...ctx.lotes, { chave: A, cod: '9', saldo: 0, qtdEntrada: 2 }]; // a tela manda o lote que ela vê
+  assert.ok(L.editarSaldo('aj', { chave: A, saldo: 0.2 }, 'vendedora', ctx).ok);
+  assert.deepEqual(dist(calc(est(0.9, '2026-11-19T09:00:00Z'))), { [B]: 0.7, [A]: 0.2 });
+  // vendeu mais 250 g: sai primeiro do lote A
+  const d2 = calc(est(0.65, '2026-11-20T09:00:00Z'));
+  assert.deepEqual(dist(d2), { [B]: 0.65 });
+  assert.equal(d2.lotes[0].ajuste.tipo, 'manual');
+  // chegou mais 1 kg (lote C) e vendeu 100 g
+  comp.itens[9].push(['2026-11-21', 100, 3, 1, 'T']);
+  assert.deepEqual(dist(calc(est(1.55, '2026-11-22T09:00:00Z'))), { [B]: 0.55, '3|9|2026-11-21': 1 });
+  // um estoque exportado antes do ajuste não usa o ajuste
+  assert.deepEqual(dist(calc(est(1.2, '2026-11-18T09:00:00Z'))), { [B]: 1, [A]: 0.2 });
+  // voltar ao automático
+  assert.ok(L.editarSaldo('aj', { chave: B, automatico: true }, 'g', { ...ctx, lotes: calc(est(0.9, '2026-11-19T09:00:00Z')).lotes }).ok);
+  assert.deepEqual(dist(calc(est(0.9, '2026-11-19T09:00:00Z'))), { [B]: 0.9 });
+});
+
+test('lotes: todos os lotes do chá de uma vez (a soma tem de ser o estoque)', () => {
+  const comp = { itens: { 7: [['2026-02-01', 100, 11, 2, 'T'], ['2026-10-01', 100, 12, 1, 'T']] } };
+  const estoque = { em: '2026-11-18T09:00:00Z', itens: [{ cod: '7', desc: 'CHAI', un: 'Kg', qtd: 1.2, custo: 100 }] };
+  const ctx = { estoque, compras: comp, lotes: L.calcular({ estoque, compras: comp, tabela: null, edits: L.ler('mx'), hoje: '2026-11-18' }).lotes };
+  assert.match(L.editarSaldo('mx', { cod: '7', lotes: { '11|7|2026-02-01': 0.5, '12|7|2026-10-01': 0.5 } }, 'v', ctx).erro, /soma/);
+  assert.match(L.editarSaldo('mx', { cod: '7', lotes: { 'x|7|2026-02-01': 1.2 } }, 'v', ctx).erro, /inválido/);
+  assert.ok(L.editarSaldo('mx', { cod: '7', lotes: { '11|7|2026-02-01': 0.5, '12|7|2026-10-01': 0.7 } }, 'v', ctx).ok);
+  const r = L.calcular({ estoque, compras: comp, tabela: null, edits: L.ler('mx'), hoje: '2026-11-18' });
+  assert.deepEqual(Object.fromEntries(r.lotes.map((l) => [l.chave, l.saldo])), { '11|7|2026-02-01': 0.5, '12|7|2026-10-01': 0.7 });
+});

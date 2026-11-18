@@ -2101,4 +2101,20 @@ body.com-camada .ped-barra { display: none; }
 .vl-lista { list-style: none; margin: 4px 0 6px; padding: 0; display: grid; gap: 6px; }
 .vl-lista li { font-size: 13px; }
 .pd-vl { margin-left: 6px; cursor: help; }
-@media (max-width: 760px) { .vl-lote, .vl-val { width: 100%; } .vl-filtros select { min-width: 0; flex: 1; } }
+@media (max-width: 760px) { .vl-lote, .vl-val { width: 100%; min-width: 0; max-width: 100%; } .vl-val-box { min-width: 0; overflow: hidden; } .vl-filtros select { min-width: 0; flex: 1; } }
+.vl-saldo { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
+.vl-aj { color: var(--green); font-weight: 600; }
+.vl-ajustar { padding: 0; font-size: 11px; }
+.vl-modal { width: min(560px, 100%); max-height: 90vh; overflow: auto; }
+.vl-lotes-campos { display: grid; gap: 6px; margin: 10px 0; }
+.vl-lote-linha { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 13px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+.vl-g-box { display: flex; align-items: center; gap: 4px; flex: none; }
+.vl-g { width: 90px; text-align: right; }
+.vl-soma { font-size: 13px; margin: 4px 0; }
+.vl-okk { color: var(--good); font-weight: 700; }
+.vl-dif { color: var(--bad); font-weight: 600; }
+.vl-erro { color: var(--bad); font-size: 13px; min-height: 1em; }
+.inv-item.inv-kg { flex-wrap: wrap; }
+.inv-lotes { flex-basis: 100%; border-top: 1px dashed var(--line); padding-top: 6px; }
+.inv-lotes[hidden] { display: none; }
+.inv-porlote { padding: 0 0 0 6px; font-size: 12px; }
