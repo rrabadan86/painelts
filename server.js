@@ -268,7 +268,7 @@ const pub = path.join(__dirname, 'public');
 const APP_SCRIPTS = [
   'core.js', 'components.js', 'dicas.js', 'rules.js', 'pages.js', 'fidelidade.js',
   'clientes.js', 'campanhas.js', 'espera.js', 'extras.js', 'contabilidade.js',
-  'estoque.js', 'devolucao.js', 'precos.js', 'inventario.js', 'validade.js', 'nfsaida.js', 'creditos.js', 'orcamento.js', 'checklist.js',
+  'estoque.js', 'devolucao.js', 'precos.js', 'inventario.js', 'sugestoes.js', 'validade.js', 'nfsaida.js', 'creditos.js', 'orcamento.js', 'checklist.js',
   'site.js', 'inicio.js', 'pedido.js', 'ia.js', 'dre.js', 'mapa.js', 'feriados.js',
   'config.js', 'script.js', 'fechamento.js', 'sistema.js', 'main.js',
 ];
@@ -624,6 +624,34 @@ app.get('/api/demo/pedido', (req, res) => {
     const ate = new Date(Date.now() + 20 * 86400e3).toISOString().slice(0, 10);
     const obrigatorio = { lista: [{ id: 'demo', nome: 'Pedido obrigatório de dezembro (exemplo)', ate, ativo: true, por: 'franquia', em: new Date().toISOString(), itens: disp.map((c, k) => ({ cod: c.cod, nome: c.nome, qtd: k % 2 ? 2 : 6, preco: c.preco })) }] };
     res.json({ catalogo: e.catalogo, carrinho: null, cfg: PEDd.cfg({}), obrigatorio, robo: { disponivel: false }, podeRobo: false }); } catch (e) { res.status(500).json({ erro: e.message }); }
+});
+// ⭐ sugestões fictícias da equipe (a tela guarda as mudanças só no navegador)
+function sugestoesDemo(lojaId) {
+  const SUGd = require('./src/sugestoes');
+  const e = DEMO.estoqueDemo(lojaId);
+  const its = (e.estoque.itens || []).filter((i) => i.desc);
+  const kg = its.filter((i) => /^kg$/i.test(i.un)), un = its.filter((i) => !/^kg$/i.test(i.un));
+  const dia = (n) => new Date(Date.now() - n * 864e5).toISOString();
+  const mk = (k, it, nome, x) => ({ id: 'dsug' + k, cod: String(it.cod), desc: it.desc, un: it.un || '', por: nome.toLowerCase(), nome, em: dia(x.dias || 2), recado: x.recado || '', justificativa: x.just || '',
+    situacao: SUGd.situacao(it), st: x.st || 'aberta', hist: x.hist || [], decisao: null, fimEm: x.st && x.st !== 'aberta' ? dia(1) : undefined });
+  const pick = (arr, k) => arr[k % Math.max(1, arr.length)];
+  if (!its.length) return [];
+  return [
+    mk(1, pick(kg, 3), 'Lyandra', { recado: 'Cliente pergunta toda semana', dias: 3 }),
+    mk(2, pick(kg, 3), 'Camila', { recado: '', dias: 1 }),
+    mk(3, pick(un, 5), 'Gabrielly', { just: 'Só tem 1 e a cliente leva 3 de presente', dias: 4 }),
+    mk(4, pick(kg, 8), 'Lyandra', { dias: 9, hist: [{ em: dia(6), res: 'nao', motivo: 'Fica para o próximo pedido', por: 'gerente' }] }),
+    mk(5, pick(un, 9), 'Camila', { dias: 12, st: 'atendida', hist: [{ em: dia(1), res: 'entrou', motivo: '', por: 'gerente' }] }),
+    mk(6, pick(un, 13), 'Gabrielly', { dias: 8, hist: [{ em: dia(5), res: 'semsite', motivo: 'Sem estoque no site da franquia (automático)', por: 'gerente' }] }),
+  ];
+}
+app.get('/api/demo/sugestoes', (req, res) => {
+  if (!lojaDemo(req)) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  try { res.json({ itens: sugestoesDemo(req.query.loja).reverse(), todos: true, motivos: require('./src/sugestoes').MOTIVOS }); } catch (e) { res.status(500).json({ erro: e.message }); }
+});
+app.get('/api/demo/sugestoes/produtos', (req, res) => {
+  if (!lojaDemo(req)) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  try { res.json({ produtos: require('./src/sugestoes').buscar(DEMO.estoqueDemo(req.query.loja).estoque, String(req.query.q || '').slice(0, 60)) }); } catch (e) { res.status(500).json({ erro: e.message }); }
 });
 app.get('/api/demo/pedido/acesso', (req, res) => res.json({ temLogin: false, usuario: '' }));
 app.get('/api/demo/admin/estado', (req, res) => { try { res.json(DEMO.estadoDemo()); } catch (e) { res.status(500).json({ erro: e.message }); } });
@@ -1806,7 +1834,7 @@ app.get('/api/pedido', async (req, res) => {
       }
     } catch (e) { robo = { disponivel: false, erro: e.message }; }
   }
-  res.json({ catalogo: PED.catalogo(loja.id), carrinho: PED.carrinho(loja.id), cfg: PED.cfg(C.get().lojas.find((l) => l.id === loja.id)), obrigatorio: PED.obrigatorios(loja.id), espera: ESP.resumoPorCod(loja.id), robo, podeRobo: req.perfil === 'admin' });
+  res.json({ catalogo: PED.catalogo(loja.id), carrinho: PED.carrinho(loja.id), cfg: PED.cfg(C.get().lojas.find((l) => l.id === loja.id)), obrigatorio: PED.obrigatorios(loja.id), espera: ESP.resumoPorCod(loja.id), sugestoes: require('./src/sugestoes').paraPedido(loja.id), robo, podeRobo: req.perfil === 'admin' });
 });
 // ---------- inventário (Estoque → Inventário): contar pelo celular e gerar a planilha do AppNext ----------
 const INV = require('./src/inventario');
@@ -2192,6 +2220,68 @@ app.put('/api/espera/modelo', express.json({ limit: '4kb' }), (req, res) => {
   const r = ESP.salvarModelo(loja.id, (req.body || {}).modelo);
   if (r.erro) return res.status(400).json({ erro: r.erro });
   res.json({ ok: true, modelo: r.ok });
+});
+
+// ---------- ⭐ sugestões da equipe para o pedido (Estoque → Sugestões): todos os perfis da loja marcam; quem faz o pedido decide ----------
+const SUG = require('./src/sugestoes');
+const lojaSug = (req) => req.lojas.find((l) => l.id === String((req.body && req.body.loja) || req.query.loja || ''));
+const decidePedido = (req) => podeTela(req, 'pedido');
+app.use('/api/sugestoes', (req, res, next) => {
+  if (req.method !== 'GET' && req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
+  next();
+});
+app.get('/api/sugestoes', (req, res) => {
+  const loja = lojaSug(req);
+  if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  const todos = decidePedido(req);
+  res.json({ itens: SUG.lista(loja.id, req.user, todos), todos, motivos: SUG.MOTIVOS });
+});
+// produtos para marcar: só nome e situação (tem / pouco / acabou) — nunca quantidade nem custo
+app.get('/api/sugestoes/produtos', (req, res) => {
+  const loja = lojaSug(req);
+  if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  res.json({ produtos: SUG.buscar(ES.atual(loja.id), String(req.query.q || '').slice(0, 60)) });
+});
+app.post('/api/sugestoes', express.json({ limit: '4kb' }), (req, res) => {
+  const loja = lojaSug(req);
+  if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  const u = C.usuario(req.user) || {};
+  const r = SUG.criar(loja.id, req.body || {}, req.user, u.vendedor || u.nome || req.user, ES.atual(loja.id));
+  if (r.erro) return res.status(400).json({ erro: r.erro });
+  C.auditar(req.user, 'sugeriu produto para o pedido', loja.id, { loja: loja.id, produto: r.ok.desc });
+  res.json({ ok: true, sugestao: r.ok });
+});
+app.post('/api/sugestoes/visto', express.json({ limit: '2kb' }), (req, res) => {
+  const loja = lojaSug(req);
+  if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  res.json(SUG.visto(loja.id, req.user));
+});
+app.post('/api/sugestoes/:id/retirar', express.json({ limit: '2kb' }), (req, res) => {
+  const loja = lojaSug(req);
+  if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  const r = SUG.retirar(loja.id, String(req.params.id), req.user, decidePedido(req));
+  if (r.erro) return res.status(400).json({ erro: r.erro });
+  C.auditar(req.user, 'tirou a estrela de um produto', loja.id, { loja: loja.id, produto: r.ok.desc });
+  res.json({ ok: true, sugestao: r.ok });
+});
+// no Pedido: "Não agora" (com motivo) e registrar o pedido nas sugestões
+app.put('/api/pedido/sugestoes/decisao', express.json({ limit: '4kb' }), (req, res) => {
+  if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
+  if (!decidePedido(req)) return res.status(403).json({ erro: 'Sem permissão.' });
+  const loja = lojaSug(req);
+  if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  const r = SUG.decidir(loja.id, String((req.body || {}).cod || ''), req.body || {}, req.user);
+  if (r.erro) return res.status(400).json({ erro: r.erro });
+  res.json({ ok: true, decisao: r.ok });
+});
+app.post('/api/pedido/sugestoes/fechar', express.json({ limit: '300kb' }), (req, res) => {
+  if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
+  if (!decidePedido(req)) return res.status(403).json({ erro: 'Sem permissão.' });
+  const loja = lojaSug(req);
+  if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  const r = SUG.fechar(loja.id, (req.body || {}).itens, req.user);
+  C.auditar(req.user, 'respondeu as sugestões da equipe no pedido', loja.id, { loja: loja.id, ...r.ok });
+  res.json({ ok: true, ...r.ok });
 });
 
 // pedido obrigatório da franquia: criar, alterar, encerrar, reabrir, apagar

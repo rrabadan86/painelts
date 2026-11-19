@@ -301,7 +301,7 @@
     const corpo = h('div', null, h('div', { class: 'loading' }, h('div', null, h('div', { class: 'spinner' }), h('p', null, 'Montando o pedido…'))));
     root.append(corpo);
     const loja = state.loja;
-    Promise.all([TS.estoqueBuscar(loja), buscar(loja), TS.custosLoja(), TS.validade ? TS.validade.riscoPorCod(loja) : new Map()]).then(([e, p, M, vl]) => {
+    Promise.all([TS.estoqueBuscar(loja), buscar(loja).then(async (p) => { if (TS.sug) p.sugestoes = await TS.sug.paraPedido(loja, p).catch(() => p.sugestoes || []); return p; }), TS.custosLoja(), TS.validade ? TS.validade.riscoPorCod(loja) : new Map()]).then(([e, p, M, vl]) => {
       if (!corpo.isConnected) return;
       VAL = vl; // lotes de chá a granel perto da validade (Estoque → Validade)
       if (!e.estoque || !e.estoque.itens || !e.estoque.itens.length || !M) {
@@ -323,6 +323,9 @@
     const editados = qtdPorLoja.get(chave) || qtdPorLoja.set(chave, new Map()).get(chave);
     // Rpronto: redesenho depois de pôr/tirar um produto (não refaz a conta; as quantidades já estão nas linhas)
     const R = Rpronto || calcular(M, e.estoque, e.cfg, p.catalogo, par, modo, ev, editados, e.classe, p.obrigatorio, p.espera || {});
+    // ⭐ sugestões da equipe: só marcam a linha (não mudam a conta); quem faz o pedido decide no quadro
+    const SUG = new Map((p.sugestoes || []).map((g) => [String(g.cod), g]));
+    for (const r of R.linhas) r.sug = SUG.get(String(r.cod)) || null;
 
     // ---------- controles ----------
     const num = (v, attrs) => h('input', { class: 'f-input', type: 'number', value: v ?? '', style: { maxWidth: '96px' }, ...attrs });
@@ -463,6 +466,7 @@
     }
     corpo.append(h('div', { class: 'grid g-kpi mt' }, kpis));
     if (R.obTotal) corpo.append(h('div', { class: 'card mt ped-compo-card' }, h('div', { class: 'card-title' }, 'Composição do pedido'), R.novoCompo()));
+    if (SUG.size) corpo.append(cartaoSugestoes());
     corpo.append(h('div', { class: 'mt' }, cartaoObrigatorio(corpo, loja, M, e, p, R)));
     if (TS.iaPedido && TS.eu && ['admin', 'franqueado'].includes(TS.eu.perfil)) corpo.append(cartaoIA(corpo, loja, M, e, p, R, editados, chave));
     if (modo === 'evento' && R.evInfo.atual[0] - R.hoje > R.ent + R.N) corpo.append(h('div', { class: 'notice mt' }, `Faltam ${fmt.int(R.evInfo.atual[0] - R.hoje)} dias para o ${R.ev.nome}: isto é uma prévia. O consumo normal até lá foi limitado a ${R.ent + R.N} dias (entrega + intervalo de pedidos), porque as reposições normais cobrem o resto. Refaça perto da data, com o estoque de então.`));
@@ -533,6 +537,7 @@
       indisp: ['Indisponível no site', (r) => !r.extra && r.site === 'indisp'],
       cat: ['Fora do catálogo', (r) => r.site === 'fora'],
       resto: ['Resto do catálogo', (r) => r.extra],
+      ...(SUG.size ? { sug: ['⭐ Da equipe', (r) => !!r.sug] } : {}),
       ...(R.obTotal ? { obrig: ['🔒 Obrigatório', (r) => r.obrig] } : {}),
       todos: ['Todos', () => true],
     };
@@ -572,7 +577,7 @@
     const sobra = R.orcamento != null ? R.orcamento - totalAgora : null;
     const MOBILE = matchMedia('(max-width: 760px)').matches;
     const cols = [
-        { key: 'produto', label: 'Produto', align: 'l', sticky: true, wrap: true, render: (r) => h('span', null, r.produto, r.obrig ? h('span', { class: 'ped-tag-obr', title: 'Vem no pedido obrigatório: não vai para o carrinho' }, '🔒 obrigatório') : r.chega ? h('span', { class: 'ped-tag-obr', title: `O pedido obrigatório já traz ${qtdTxt(r.chega, r.it)} deste produto (já descontado do "Precisa"). O que estiver em "Pedir" é a mais e vai para o carrinho.` }, `+ ${qtdTxt(r.chega, r.it)} no obrigatório`) : null, r.esp ? h('a', { class: 'ped-prio ped-esp', href: '#espera', title: `Na lista de espera: ${r.esp.clientes.join(', ')}${r.esp.pedidos > r.esp.clientes.length ? '…' : ''}. Quando a nota chegar, eles aparecem para avisar.`, onclick: (e) => e.stopPropagation() }, `⏳ ${r.esp.pedidos} esperando`) : null, VAL.has(String(r.cod)) ? (() => { const v = VAL.get(String(r.cod)); return h('a', { class: 'pd-vl', href: '#validade', title: `${qtdTxt(v.kg, r.it)} em lote${v.dias < 0 ? ' já vencido' : ` que vence em ${v.dias} dias`}: venda o que tem antes de comprar mais (Estoque → Validade)`, onclick: (e) => e.stopPropagation() }, TS.validade.badge(v.faixa)); })() : null, r.prior && r.prior < 3 ? h('span', { class: 'ped-prio', title: r.prior === 2 ? 'Prioridade: estoque abaixo de 500 g' : 'Prioridade: Estrela com estoque abaixo de 700 g' }, r.prior === 2 ? '< 500 g' : 'Estrela < 700 g') : null, h('small', { class: 'est-tam' }, `cód. ${r.cod}`)) },
+        { key: 'produto', label: 'Produto', align: 'l', sticky: true, wrap: true, render: (r) => h('span', null, r.produto, r.sug ? h('span', { class: 'ped-prio ped-sug', title: `Sugerido pela equipe: ${r.sug.pessoas.join(', ')}. Não muda a conta do pedido: decida no quadro "⭐ Sugestões da equipe".` }, `⭐ ${r.sug.pessoas.length > 1 ? r.sug.pessoas.length + ' pediram' : 'equipe'}`) : null, r.obrig ? h('span', { class: 'ped-tag-obr', title: 'Vem no pedido obrigatório: não vai para o carrinho' }, '🔒 obrigatório') : r.chega ? h('span', { class: 'ped-tag-obr', title: `O pedido obrigatório já traz ${qtdTxt(r.chega, r.it)} deste produto (já descontado do "Precisa"). O que estiver em "Pedir" é a mais e vai para o carrinho.` }, `+ ${qtdTxt(r.chega, r.it)} no obrigatório`) : null, r.esp ? h('a', { class: 'ped-prio ped-esp', href: '#espera', title: `Na lista de espera: ${r.esp.clientes.join(', ')}${r.esp.pedidos > r.esp.clientes.length ? '…' : ''}. Quando a nota chegar, eles aparecem para avisar.`, onclick: (e) => e.stopPropagation() }, `⏳ ${r.esp.pedidos} esperando`) : null, VAL.has(String(r.cod)) ? (() => { const v = VAL.get(String(r.cod)); return h('a', { class: 'pd-vl', href: '#validade', title: `${qtdTxt(v.kg, r.it)} em lote${v.dias < 0 ? ' já vencido' : ` que vence em ${v.dias} dias`}: venda o que tem antes de comprar mais (Estoque → Validade)`, onclick: (e) => e.stopPropagation() }, TS.validade.badge(v.faixa)); })() : null, r.prior && r.prior < 3 ? h('span', { class: 'ped-prio', title: r.prior === 2 ? 'Prioridade: estoque abaixo de 500 g' : 'Prioridade: Estrela com estoque abaixo de 700 g' }, r.prior === 2 ? '< 500 g' : 'Estrela < 700 g') : null, h('small', { class: 'est-tam' }, `cód. ${r.cod}`)) },
         { key: 'grupoTxt', label: 'Grupo', align: 'l' },
         { key: 'classe', label: 'Classe', align: 'l', title: `Classe oficial: o que sai por mês (a mediana dos últimos ${R.classeMeses} meses fechados, então um mês de promoção pesa pouco) × margem bruta, comparados com a mediana dos outros produtos. Não muda com o filtro de período. 🔒 = travada à mão na Rentabilidade. Estrela: vende muito e tem margem boa. Volume: vende muito, margem menor. Joia: margem boa, vende pouco. Peso morto: vende pouco e margem baixa`,
           render: (r) => (r.classe ? h('span', { class: 'ped-cl ped-cl-' + r.classe, title: r.classeFixa ? 'Travada à mão na Rentabilidade' : null }, (r.classeFixa ? '🔒 ' : '') + CLASSES[r.classe]) : h('span', { class: 'muted' }, '—')), sortVal: (r) => ({ estrela: 4, volume: 3, joia: 2, peso: 1 })[r.classe] || 0 },
@@ -654,6 +659,74 @@
         ? h('span', { class: 'pos' }, `cabe no valor (sobram ${fmt.brl0(sobra)}): use ＋`)
         : h('span', { class: 'warn-t' }, `passa do valor em ${fmt.brl0(custo - Math.max(0, sobra))}`);
     }
+    // ---------- ⭐ sugestões da equipe: adicionar, "não agora" com motivo, ou automático quando o site não tem ----------
+    function cartaoSugestoes() {
+      const grupos = [...SUG.values()];
+      const linhaDe = (g) => R.linhas.find((r) => String(r.cod) === String(g.cod)) || null;
+      const pend = grupos.filter((g) => { const r = linhaDe(g); return !(r && r.pedir > 0) && !(r && (r.site === 'indisp' || r.site === 'fora')) && !g.decisao; }).length;
+      const msg = h('div', { class: state.pedSugMsg ? 'pos sug-ped-msg' : 'muted sug-ped-msg' }, state.pedSugMsg || '');
+      state.pedSugMsg = null;
+      const item = (g) => {
+        const r = linhaDe(g);
+        const semSite = r && (r.site === 'indisp' || r.site === 'fora');
+        const noPed = r && r.pedir > 0 && !semSite;
+        const decidir = async (res, motivo) => {
+          try { g.decisao = await TS.sug.decidir(loja, g.cod, res, motivo); repintar(); } catch (err) { alert(err.message); }
+        };
+        const adicionar = () => {
+          const passo = passoDe(r.c, r.it);
+          const v = Math.round(Math.ceil(Math.max(r.sugerido || 0, passo) / passo - 1e-9) * passo * 1000) / 1000;
+          r.pedir = v;
+          if (v === r.sugeridoPedir) editados.delete(String(r.cod)); else editados.set(String(r.cod), v);
+          if (g.decisao) decidir(null); else repintar();
+        };
+        const tirar = () => { r.pedir = 0; if (r.sugeridoPedir === 0) editados.delete(String(r.cod)); else editados.set(String(r.cod), 0); repintar(); };
+        let acao;
+        if (semSite) acao = h('span', { class: 'warn-t' }, '🚫 Sem estoque no site: a equipe fica sabendo sozinha');
+        else if (noPed) acao = h('span', null, h('span', { class: 'pos' }, `✅ No pedido: ${qtdTxt(r.pedir, r.it)} `), h('button', { type: 'button', class: 'btn sug-ped-btn', onclick: tirar }, 'Tirar'));
+        else if (g.decisao) acao = h('span', null, h('span', { class: 'neg' }, `Não agora: ${g.decisao.motivo} `), h('button', { type: 'button', class: 'btn sug-ped-btn', onclick: () => decidir(null) }, 'Desfazer'));
+        else {
+          const motivos = h('span', { class: 'sug-motivos', hidden: true }, TS.sug.MOTIVOS.map((m) => h('button', { type: 'button', class: 'chip', onclick: () => decidir('nao', m) }, m)));
+          acao = h('span', { class: 'sug-ped-acoes' },
+            r && (r.site === 'ok' || r.site === 'sem') ? h('button', { type: 'button', class: 'btn primary sug-ped-btn', onclick: adicionar }, `＋ Adicionar${r.sugerido > 0 ? ` (${qtdTxt(r.sugerido, r.it)})` : ''}`) : h('span', { class: 'muted' }, 'fora da lista do pedido '),
+            h('button', { type: 'button', class: 'btn sug-ped-btn', onclick: () => { motivos.hidden = !motivos.hidden; } }, 'Não agora ▾'), motivos);
+        }
+        return h('div', { class: 'sug-ped' + (noPed ? ' on' : '') },
+          h('div', { class: 'sug-ped-cab' }, h('b', null, '⭐ ', g.desc),
+            r ? h('small', { class: 'muted' }, ` · estoque ${qtdTxt(r.qtd, r.it)}${r.sugerido > 0 ? ` · precisa ${qtdTxt(r.sugerido, r.it)}` : ' · a conta não pede agora'}`) : null),
+          h('div', { class: 'sug-ped-quem muted' }, `${g.pessoas.join(', ')} · desde ${TS.sug.dataTxt(g.desde)}${g.pedidos ? ` · já passou por ${g.pedidos} ${g.pedidos === 1 ? 'pedido' : 'pedidos'}` : ''}`),
+          ...g.notas.filter((n) => n.justificativa || n.recado).map((n) => h('div', { class: 'sug-ped-nota' }, h('small', null, `${n.nome}: `), [n.justificativa, n.recado].filter(Boolean).join(' · '))),
+          h('div', { class: 'sug-ped-acao' }, acao));
+      };
+      const registrar = h('button', { type: 'button', class: 'btn' }, 'Registrar o pedido nas sugestões');
+      registrar.addEventListener('click', async () => {
+        if (!confirm('Registrar este pedido nas sugestões da equipe?\n\nO que está no pedido vira "entrou"; o que não está fica marcado para o próximo, com o motivo; sem estoque no site é automático.')) return;
+        registrar.disabled = true;
+        let n;
+        try { n = await registrarSugestoes(); p.sugestoes = await TS.sug.paraPedido(loja, { sugestoes: n.abertas }); }
+        catch (err) { msg.className = 'neg'; msg.textContent = err.message; registrar.disabled = false; return; }
+        state.pedSugMsg = resumoSug(n);
+        repintar();
+        // nada mais aberto: o quadro some; o resumo fica num aviso
+        if (!p.sugestoes.length && state.pedSugMsg) { corpo.querySelector('.ped-ctl')?.after(h('div', { class: 'notice ok mt sug-ped-msg' }, state.pedSugMsg)); state.pedSugMsg = null; }
+      });
+      return h('div', { class: 'card mt sug-ped-card' },
+        h('div', { class: 'card-title' }, `⭐ Sugestões da equipe (${grupos.length})`),
+        h('p', { class: 'muted' }, 'Produtos que a equipe pediu. A estrela não muda a conta do pedido: você decide. ', pend ? h('b', null, `${pend} para revisar. `) : null,
+          'Ao montar o carrinho, a resposta vai para a equipe sozinha (entrou, não entrou com o motivo, ou sem estoque no site); o que não entrou continua marcado para o próximo pedido.'),
+        h('div', { class: 'sug-ped-lista' }, grupos.map(item)),
+        h('div', { class: 'cfg-acoes' }, registrar, msg));
+    }
+    /** registra o pedido de agora nas sugestões abertas (também chamado ao montar o carrinho) */
+    async function registrarSugestoes() {
+      const itens = R.linhas.filter((r) => SUG.has(String(r.cod))).map((r) => ({ cod: r.cod, pedir: r.pedir, site: r.site }));
+      const n = await TS.sug.fechar(loja, itens);
+      if (!TS.demo) { try { const j = await buscar(loja); n.abertas = j.sugestoes || []; } catch { n.abertas = []; } }
+      return n;
+    }
+    R.registrarSugestoes = SUG.size ? registrarSugestoes : null;
+    const resumoSug = (n) => `Sugestões respondidas: ${n.entrou} entraram, ${n.nao} ficaram para o próximo pedido${n.semsite ? `, ${n.semsite} sem estoque no site` : ''}.`;
+    R.resumoSug = resumoSug;
     /** redesenha mantendo a rolagem da tabela e da página */
     function repintar() {
       const tw = corpo.querySelector('.ped-t')?.closest('.table-wrap');
@@ -980,6 +1053,8 @@
         msg.className = j.fora && j.fora.length ? 'neg' : 'muted';
         msg.textContent = j.fora && j.fora.length ? `${j.fora.length} produto(s) não estão disponíveis no catálogo e ficaram de fora: atualize o catálogo.` : '';
         statusBox.replaceChildren(progresso({ modo: 'navegador', aguardando: true, total: itens.length, itens: [], site: j.url }));
+        // ⭐ responde as sugestões da equipe com o pedido que foi para o carrinho
+        if (R.registrarSugestoes) R.registrarSugestoes().then((n) => { msg.className = 'pos'; msg.textContent = [msg.textContent, R.resumoSug(n)].filter(Boolean).join(' '); p.sugestoes = n.abertas || p.sugestoes; }).catch(() => {});
         acompanhar(corpo, loja, M, e);
       } catch (err) { if (aba) aba.close(); msg.className = 'neg'; msg.textContent = err.message; }
       btnCarrinho.disabled = false;
