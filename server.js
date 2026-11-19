@@ -1335,7 +1335,7 @@ app.get('/api/estoque/notas', (req, res) => {
 const CF = require('./src/contafranquia');
 const lojaCF = (req, res, corpo) => {
   if (!podeTela(req, 'notas')) { res.status(403).json({ erro: 'Sem permissão.' }); return null; }
-  const id = String((corpo ? req.body && req.body.loja : req.query.loja) || '');
+  const id = String((corpo && req.body && req.body.loja) || req.query.loja || ''); // corpo ou endereço
   const loja = req.lojas.find((l) => l.id === id);
   if (!loja) { res.status(400).json({ erro: 'Escolha uma loja.' }); return null; }
   return loja;
