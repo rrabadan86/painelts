@@ -74,3 +74,36 @@ test('Escala: intervalo da jornada acima de 8h e o da jornada de até 8h são co
   expect(r.info).toMatch(/7h20 por dia → intervalo de 30 min/);
   expect(r.infoNeg).toBe(true); // 30 min numa jornada acima de 6h fica abaixo da CLT: avisa
 });
+
+// Ajuste manual: atalhos de um toque (abre/meio/fecha) com a jornada certa, relógio de 10 em 10 min e resumo na hora
+test('Escala → ajuste manual: atalhos Abre/Meio/Fecha, passo de 10 min e resumo da jornada com avisos', async ({ page }) => {
+  await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS.db);
+  await page.evaluate(() => { location.hash = '#mapa'; });
+  const cel = page.locator('td.trab.clicavel').first();
+  await expect(cel).toBeVisible();
+  await cel.evaluate((td) => td.click());
+  const ed = page.locator('.aj-editor');
+  await expect(ed).toBeVisible();
+  const at = ed.locator('.aj-atalho');
+  const n = await at.count();
+  expect(n).toBeGreaterThanOrEqual(2); // Abre e Fecha; "Meio" só quando sobra 1h no dia
+  await expect(at.nth(0)).toContainText('Abre');
+  await expect(at.nth(n - 1)).toContainText('Fecha');
+  await at.nth(0).evaluate((b) => b.click());
+  const [ini, fim] = [ed.locator('input[type=time]').nth(0), ed.locator('input[type=time]').nth(1)];
+  await expect(ini).toHaveAttribute('step', '600');
+  const resumo = ed.locator('.aj-resumo');
+  await expect(resumo).toContainText(/no total = \dh\d\d de trabalho/);
+  await expect(resumo).not.toContainText('⚠'); // atalho já vem com a jornada padrão, dentro do horário
+  // horário maior que a jornada: avisa na hora
+  await ini.fill('07:00');
+  await expect(resumo).toContainText('fora do horário da loja');
+  // Fecha: termina no fechamento
+  await at.nth(n - 1).evaluate((b) => b.click());
+  const txtFecha = await at.nth(n - 1).locator('small').textContent();
+  await expect(fim).toHaveValue(txtFecha.split('–')[1]);
+  // aplica e "salva": na apresentação nada vai para o servidor
+  await ed.getByRole('button', { name: 'Aplicar' }).click();
+  await page.getByRole('button', { name: 'Salvar ajustes' }).click();
+  await expect(page.locator('#content')).toContainText('Na apresentação nada é salvo');
+});

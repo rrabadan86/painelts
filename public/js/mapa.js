@@ -458,8 +458,8 @@
         campo('Funcionários', num('funcionarios', { min: 1, max: 40, step: 1 })),
         campo('Carga horária semanal (h)', num('cargaSemanal', { min: 4, max: 60, step: 1 }), '44h = 8h48 por dia na 5x2 · 7h20 na 6x1'),
         campo('Escala', esc),
-        campo('Intervalo — jornada acima de 8h (min)', num('intervalo', { min: 0, max: 180, step: 15 }), 'CLT: no mínimo 1h (até 2h).'),
-        campo('Intervalo — jornada de até 8h (min)', num('intervaloAte8', { min: 0, max: 180, step: 15, value: e.intervaloAte8 ?? '', placeholder: 'como antes' }), 'De 4h a 8h. Vazio = como antes (o intervalo de cima acima de 6h; 30 min até 6h). CLT: acima de 6h, 1h; de 4h a 6h, 15 min.'),
+        campo('Intervalo — jornada acima de 8h (min)', num('intervalo', { min: 0, max: 180, step: 5 }), 'CLT: no mínimo 1h (até 2h).'),
+        campo('Intervalo — jornada de até 8h (min)', num('intervaloAte8', { min: 0, max: 180, step: 5, value: e.intervaloAte8 ?? '', placeholder: 'como antes' }), 'De 4h a 8h. Vazio = como antes (o intervalo de cima acima de 6h; 30 min até 6h). CLT: acima de 6h, 1h; de 4h a 6h, 15 min.'),
         campo('Atendimentos por pessoa por hora', num('capacidade', { min: 1, max: 100, step: 1 }), 'Acima disso, precisa de mais uma pessoa.')),
       (() => {
         const dias = e.escala === '6x1' ? 6 : 5, jorn = (e.cargaSemanal * 60) / dias, iv = intervaloMin(e, jorn);
@@ -732,7 +732,7 @@
     const chaveAj = `${(cfg && cfg.id) || 'loja'}|${ym}`;
     if (!state.escAj || state.escAj.chave !== chaveAj) state.escAj = { chave: chaveAj, dados: JSON.parse(JSON.stringify(((cfg && cfg.escalaAjustes) || {})[ym] || {})), sujo: false, sel: null };
     const AJ = state.escAj;
-    const pode = !TS.demo && (TS.eu?.pode?.configurar || (TS.eu?.perfil === 'gerente' && (TS.eu.telas || []).includes('mapa')));
+    const pode = TS.demo || TS.eu?.pode?.configurar || (TS.eu?.perfil === 'gerente' && (TS.eu.telas || []).includes('mapa')); // apresentação: ajusta na tela, não salva
     const E = escalaDoMes({ op, cfg, semanas, L, ym, need, ajustes: AJ.dados });
     const nAj = Object.values(AJ.dados).reduce((s, o) => s + Object.keys(o).length, 0);
     const DS = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
@@ -837,7 +837,37 @@
       const ini = h('input', { class: 'f-input', type: 'time', value: ajAtual?.ini || (atual.tipo === 'trab' ? hhmm(atual.ini) : '10:00') });
       const fim = h('input', { class: 'f-input', type: 'time', value: ajAtual?.fim || (atual.tipo === 'trab' ? hhmm(atual.fim) : '18:00') });
       const com = h('select', { class: 'f-input' }, E.pessoas.map((q, j) => (j === i ? null : h('option', { value: j }, `${q.nome} (${E.cel[j][k].tipo === 'trab' ? `${hhmm(E.cel[j][k].ini)}–${hhmm(E.cel[j][k].fim)}` : E.cel[j][k].motivo || 'folga'})`))).filter(Boolean));
-      const blocoHora = h('div', { class: 'aj-linha' }, h('span', null, 'Entrada'), ini, h('span', null, 'Saída'), fim);
+      // horário da loja nesse dia (feriado tem o seu) e jornada padrão: atalhos e conferência na hora
+      const hfSel = E.feriados.has(iso) && TS.horarioFeriado ? TS.horarioFeriado({ ...(cfg || {}), operacao: op }, iso) : null;
+      const fSel = hfSel && !hfSel.fechado ? hfSel : op.funcionamento[DIAS[wdDe(iso)]];
+      const abreM = fSel && !fSel.fechado ? hm(fSel.abre) : null, fechaM = fSel && !fSel.fechado ? hm(fSel.fecha) : null;
+      const eq = op.equipe, trabPad = Math.round(((eq.cargaSemanal * 60) / (eq.escala === '6x1' ? 6 : 5)) / B) * B;
+      const totalPad = trabPad + intervaloMin(eq, trabPad);
+      for (const x of [ini, fim]) { x.step = 600; if (abreM != null) { x.min = hhmm(abreM); x.max = hhmm(fechaM); } } // relógio de 10 em 10 min
+      const resumo = h('small', { class: 'aj-resumo muted' });
+      const hTxt2 = (m) => `${Math.floor(m / 60)}h${String(m % 60).padStart(2, '0')}`;
+      const conferir = () => {
+        if (!ini.value || !fim.value || ini.value >= fim.value) { resumo.className = 'aj-resumo neg'; resumo.textContent = 'A entrada precisa ser antes da saída.'; return; }
+        const dur = hm(fim.value) - hm(ini.value);
+        const ivA = +eq.intervalo || 0; const iv = dur - ivA > 480 ? ivA : intervaloMin(eq, dur - intervaloMin(eq, Math.min(dur, 480)));
+        const trab = iv && dur - iv > 240 ? dur - iv : dur;
+        const avisos = [];
+        if (abreM != null && (hm(ini.value) < abreM || hm(fim.value) > fechaM)) avisos.push(`fora do horário da loja (${hhmm(abreM)}–${hhmm(fechaM)})`);
+        if (trab > trabPad + 5) avisos.push(`${hTxt2(trab - trabPad)} a mais que a jornada padrão (${hTxt2(trabPad)})`);
+        else if (trab < trabPad - 5) avisos.push(`${hTxt2(trabPad - trab)} a menos que a jornada padrão (${hTxt2(trabPad)})`);
+        resumo.className = 'aj-resumo ' + (avisos.length ? 'neg' : 'muted');
+        resumo.textContent = `${hTxt2(dur)} no total = ${hTxt2(trab)} de trabalho${trab < dur ? ` + ${dur - trab} min de intervalo` : ''}${avisos.length ? ' · ⚠ ' + avisos.join(' · ') : ''}`;
+      };
+      ini.addEventListener('input', conferir); fim.addEventListener('input', conferir);
+      const atalho = (rot, a, b) => (a == null ? null : h('button', { type: 'button', class: 'btn aj-atalho', onclick: () => { modo.value = 'trab'; mostrar(); ini.value = hhmm(a); fim.value = hhmm(b); conferir(); } }, h('b', null, rot), h('small', null, `${hhmm(a)}–${hhmm(b)}`)));
+      const cabe = abreM != null && fechaM - abreM >= totalPad;
+      const meio = cabe ? Math.round((abreM + (fechaM - abreM - totalPad) / 2) / B) * B : null;
+      const atalhos = abreM != null ? h('div', { class: 'aj-atalhos' },
+        cabe ? atalho('Abre', abreM, abreM + totalPad) : atalho('Dia todo', abreM, fechaM),
+        cabe && fechaM - abreM - totalPad >= 60 ? atalho('Meio', meio, meio + totalPad) : null, // só quando sobra pelo menos 1h no dia
+        cabe ? atalho('Fecha', fechaM - totalPad, fechaM) : null) : null;
+      const blocoHora = h('div', null, atalhos, h('div', { class: 'aj-linha aj-horas' }, h('label', null, h('span', null, 'Entrada'), ini), h('label', null, h('span', null, 'Saída'), fim)), resumo);
+      conferir();
       const blocoTroca = h('div', { class: 'aj-linha' }, h('span', null, 'Com'), com);
       const mostrar = () => { blocoHora.hidden = modo.value !== 'trab'; blocoTroca.hidden = modo.value !== 'troca'; };
       modo.addEventListener('change', mostrar); mostrar();
@@ -884,6 +914,7 @@
         h('small', { class: 'muted' }, 'O painel trava a sua escolha e refaz os turnos das outras pessoas nesse dia para manter a loja coberta.'));
     })();
     const salvarAj = async (btn) => {
+      if (TS.demo) { AJ.msg = 'Na apresentação nada é salvo: os ajustes ficam só nesta tela.'; TS.render(); return; }
       btn.disabled = true;
       try {
         const r = await fetch(`/api/escala-ajustes?loja=${encodeURIComponent(cfg.id)}&ym=${ym}`, { method: 'PUT', credentials: 'same-origin', headers: { 'X-Painel': '1', 'Content-Type': 'application/json' }, body: JSON.stringify({ ajustes: AJ.dados }) });
