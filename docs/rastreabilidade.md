@@ -222,6 +222,7 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 | EST-36 | Desfazer o inventário | `inventario.js` | `inventario.test` | ✅ (lógica) — rota é GET, ver A-04 |
 | EST-37 | Envio pelo robô só marca importado com resultado real | `inventario.js` | `inventario.test` | ✅ |
 | EST-38 | Etapas: gerar planilha, importado, reabrir | `inventario.js` | `regras.spec` | 🟡 |
+| EST-41 | Reabrir para contar só no mesmo dia (Brasília) em que a contagem foi aberta; depois, a tela avisa e pede contagem nova (decisão do dono) | `inventario.js` `podeReabrir` (servidor) e `mesmoDia` (tela) | `inventario.test` "reabrir para contar: só no mesmo dia"; `regras.spec` "reabrir para contar só no mesmo dia" | ✅ |
 | EST-39 | Cobertura do inventário e aviso de 25 dias | `inventario.js` | `inventario.test`; `regras.spec` | ✅ |
 | EST-40 | Limites do inventário (2.000 itens) | `inventario.js` | — | ❌ |
 | EST-50 | Valor do pedido = % do faturamento (CMV real) | `pedido.js` | — | ❌ |

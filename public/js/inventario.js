@@ -9,12 +9,17 @@
   const ST = { contando: ['Contando', 'inv-st-cont'], revisao: ['Para revisar', 'inv-st-rev'], gerado: ['Planilha gerada', 'inv-st-ger'], importado: ['Importado no AppNext', 'inv-st-ok'], cancelado: ['Cancelada', 'inv-st-canc'], revertido: ['Desfeita', 'inv-st-canc'] };
   const ehKg = (un) => String(un || '').toLowerCase() === 'kg';
   const qtdTxt = (v, un) => (v == null ? '—' : ehKg(un) ? (v < 1 ? `${fmt.int(Math.round(v * 1000))} g` : `${v.toLocaleString('pt-BR', { maximumFractionDigits: 3 })} kg`) : `${v.toLocaleString('pt-BR', { maximumFractionDigits: 3 })} ${String(un || 'un').toLowerCase()}`);
+  const diaBR = (d) => new Date(d).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+  /** reabrir para contar só no dia em que a contagem foi aberta (o servidor também confere) */
+  const mesmoDia = (c) => !!c.criadoEm && diaBR(c.criadoEm) === diaBR(Date.now());
+  TS.invMesmoDia = mesmoDia; // testes
   const quando = (iso) => (iso ? new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—');
   const troca = (el, ...xs) => el.replaceChildren(...xs.filter((x) => x != null && x !== false)); // sem "null" na tela
   const toast = (msg, erro) => { const t = h('div', { class: 'toast' + (erro ? ' err' : '') }, msg); document.body.append(t); setTimeout(() => t.remove(), erro ? 6000 : 3000); };
 
   // ---------- dados: servidor ou, na apresentação, só no navegador ----------
   const DEMO = { cat: null, cont: [] };
+  TS._invDemo = DEMO; // testes (só a apresentação)
   async function req(metodo, url, corpo) {
     const r = await fetch(TS.api(url), { method: metodo, credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-Painel': '1' }, body: corpo ? JSON.stringify(corpo) : undefined });
     const j = await r.json().catch(() => ({}));
@@ -67,6 +72,7 @@
     async acao(loja, id, a) {
       if (!TS.demo) return req('POST', `inventario/contagem/${id}/${a}`, { loja });
       const c = DEMO.cont.find((x) => x.id === id);
+      if (a === 'reabrir' && !mesmoDia(c)) throw new Error('Só dá para reabrir no mesmo dia em que a contagem foi aberta.');
       c.st = { revisar: 'revisao', reabrir: 'contando', importado: 'importado', cancelar: 'cancelado' }[a] || c.st; if (a === 'cancelar') c.canceladoEm = new Date().toISOString();
     },
   };
@@ -364,7 +370,7 @@
     } }, 'Terminar contagem');
     // gerente/admin: descartar uma contagem aberta (nada vai para o AppNext; fica no histórico como cancelada)
     const cancelar = h('button', { type: 'button', class: 'btn ghost-danger', onclick: async () => {
-      if (!confirm(`Cancelar a contagem "${c.nome}"?\n\nNada vai para o AppNext. Ela fica no histórico como cancelada (dá para reabrir depois).`)) return;
+      if (!confirm(`Cancelar a contagem "${c.nome}"?\n\nNada vai para o AppNext. Ela fica no histórico como cancelada (dá para reabrir só hoje).`)) return;
       try { await API.acao(loja, c.id, 'cancelar'); state.invId = null; toast('Contagem cancelada.'); TS.render(); } catch (e) { toast(e.message, true); }
     } }, 'Cancelar contagem');
     pintarProg(); pintar();
@@ -577,8 +583,11 @@
           !fechada && c.st !== 'cancelado' && c.podeEnviar && !enviando ? h('button', { type: 'button', class: 'btn primary inv-enviar', onclick: enviar('importar') }, env && env.estado === 'erro' ? 'Tentar enviar de novo' : 'Enviar para o AppNext') : null,
           !fechada && c.st !== 'cancelado' && !enviando ? (c.podeEnviar ? (baixar.classList.remove('primary'), baixar.textContent = 'ou baixar a planilha', baixar) : baixar) : null,
           c.st === 'gerado' && !enviando && !(env && env.tipo === 'importar') ? h('button', { type: 'button', class: 'btn', onclick: fazer('importado') }, 'Já importei no AppNext') : null,
-          ['revisao', 'gerado', 'cancelado'].includes(c.st) && !enviando ? h('button', { type: 'button', class: 'btn', onclick: fazer('reabrir') }, 'Reabrir para contar') : null,
+          ['revisao', 'gerado', 'cancelado'].includes(c.st) && !enviando && mesmoDia(c) ? h('button', { type: 'button', class: 'btn', title: 'Dá para reabrir só hoje, o dia em que a contagem foi aberta.', onclick: fazer('reabrir') }, 'Reabrir para contar') : null,
           !fechada && c.st !== 'cancelado' && !enviando ? h('button', { type: 'button', class: 'btn ghost-danger', onclick: fazer('cancelar', 'Cancelar esta contagem? Ela fica no histórico.') }, 'Cancelar') : null),
+        ['revisao', 'gerado', 'cancelado'].includes(c.st) && !enviando ? h('p', { class: 'muted inv-reabrir' }, mesmoDia(c)
+          ? 'Dá para reabrir esta contagem só hoje. A partir de amanhã ela fica fechada: para contar de novo, faça uma nova contagem.'
+          : `Esta contagem foi aberta em ${new Date(c.criadoEm).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })} e não dá mais para reabrir (só no mesmo dia: o estoque já mudou desde então). Para contar de novo, faça uma nova contagem.`) : null,
         c.st === 'gerado' && !c.podeEnviar ? h('div', { class: 'aviso inv-passos' }, h('b', null, 'Agora no AppNext: '), 'Estoque → Auditoria/Inventário → ＋ (Cadastrar um novo) → Por Excel → envie a planilha baixada. Depois clique em "Já importei no AppNext".') : null,
         c.st === 'importado' ? h('p', { class: 'muted' }, `Importado ${quando(c.importadoEm)} por ${c.importadoPor || '—'}${c.importadoPeloRobo ? ' (pelo robô, conferido item a item)' : ''}. Na próxima atualização do estoque, a coluna "No AppNext agora" mostra ✓ nos itens que já estão com a quantidade contada.`) : null,
         h('div', { class: 'inv-revfil' }, TS.seg([[`Só diferenças (${div.length})`, 'dif'], [`Iguais (${iguais.length})`, 'iguais'], [`Zerados (${zeroRows.length})`, 'zerados'], [`Todos (${rows.length + zeroRows.length})`, 'todos']], filV, (v) => { state.invRevFil = v; telaRevisar(corpo, loja, c); }), tab.searchBox),
