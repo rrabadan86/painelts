@@ -268,21 +268,37 @@ test('Escala (revisão): 09:40 sem "loja sozinha" falso, segunda fechada na 5x2 
   for (const t of r.trab) expect(t, 'mais de 6h de trabalho com intervalo curto').toBeLessThanOrEqual(360);
 });
 
-// Replicar/Trazer mês: ajuste pontual vai só para o dia equivalente (não se multiplica pelas outras terças) — decisão do dono
-test('Escala: replicar mês leva cada ajuste para um dia só (o equivalente), sem multiplicar', async ({ page }) => {
-  await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS._escala && TS._escala.diasEquivalentes);
+// Replicar/Trazer mês: só vão os ajustes marcados para repetir (em todos os mesmos dias da semana); pontual fica no dia dele
+test('Escala: replicar mês leva só os ajustes que repetem; o pontual fica no dia dele', async ({ page }) => {
+  await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS._escala && TS._escala.ajustesQueRepetem);
   const r = await page.evaluate(() => {
-    const wd = (iso) => new Date(iso + 'T12:00:00Z').getUTCDay();
-    const chave = (iso) => `0|${wd(iso)}`; // modelo livre: uma semana só (todas as terças têm a mesma chave)
-    const src = { '2026-11-10': { ANA: { tipo: 'folga' } } }; // 2ª terça de novembro
-    const um = TS._escala.diasEquivalentes('2026-11', '2026-12', src, chave);
-    // dois ajustes diferentes em terças diferentes: cada um para a sua ocorrência
-    const dois = TS._escala.diasEquivalentes('2026-11', '2026-12', { '2026-11-03': { ANA: { tipo: 'folga' } }, '2026-11-17': { BIA: { tipo: 'folga' } } }, chave);
-    // feriado no destino: não recebe
-    const fer = TS._escala.diasEquivalentes('2026-11', '2026-12', src, chave, new Set(), new Set(['2026-12-08']));
-    return { um, dois, fer };
+    const src = {
+      '2026-11-10': { ANA: { tipo: 'folga' } }, // pontual (terça)
+      '2026-11-04': { BIA: { tipo: 'folga', repete: true } }, '2026-11-11': { BIA: { tipo: 'folga', repete: true } }, // toda quarta
+    };
+    const out = TS._escala.ajustesQueRepetem('2026-11', '2026-12', src);
+    const fer = TS._escala.ajustesQueRepetem('2026-11', '2026-12', src, new Set(['2026-12-02']));
+    return { dias: Object.keys(out), temAna: JSON.stringify(out).includes('ANA'), fer: Object.keys(fer) };
   });
-  expect(Object.keys(r.um)).toEqual(['2026-12-08']); // 2ª terça de dezembro
-  expect(r.dois).toEqual({ '2026-12-01': { ANA: { tipo: 'folga' } }, '2026-12-15': { BIA: { tipo: 'folga' } } });
-  expect(r.fer).toEqual({});
+  expect(r.dias).toEqual(['2026-12-02', '2026-12-09', '2026-12-16', '2026-12-23', '2026-12-30']); // todas as quartas de dezembro
+  expect(r.temAna).toBe(false);
+  expect(r.fer).not.toContain('2026-12-02');
+});
+
+// Ajuste manual: escolher "Neste e nos próximos <dia>" aplica no dia e nos próximos do mesmo dia da semana; pontual só no dia
+test('Escala → ajuste manual: "Vale para" pontual ou repetindo nos próximos', async ({ page }) => {
+  await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS.db);
+  await page.evaluate(() => { location.hash = '#mapa'; });
+  const cel = page.locator('td.trab.clicavel').first();
+  await expect(cel).toBeVisible();
+  await cel.evaluate((td) => td.click());
+  const ed = page.locator('.aj-editor');
+  await ed.locator('select').first().selectOption('folga');
+  await expect(ed.locator('.aj-vale')).toBeVisible();
+  await expect(ed.locator('.aj-vale option').nth(1)).toContainText('Neste e nos próximos');
+  await ed.locator('.aj-vale').selectOption('repete');
+  await ed.getByRole('button', { name: 'Aplicar' }).click();
+  await expect(page.locator('.aj-barra')).toContainText(/Ajuste aplicado em \d+ /);
+  const n = await page.evaluate(() => Object.keys(TS.state.escAj.dados).length);
+  expect(n).toBeGreaterThan(1);
 });

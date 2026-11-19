@@ -251,4 +251,13 @@ function paraPedido(id) {
   return [...m.values()].sort((a, b) => b.pessoas.length - a.pessoas.length || a.desde.localeCompare(b.desde));
 }
 
-module.exports = { ler, situacao, precisaJustificar, buscar, criar, retirar, decidir, fechar, resultadoCarrinho, avaliarNotas, visto, lista, paraPedido, MOTIVOS, POUCO_KG };
+/** estoque de agora para a tela: quem decide o pedido vê a quantidade; quem só sugere, a situação (tem / pouco / acabou) */
+function comEstoque(itens, estoque, todos) {
+  const porCod = new Map(((estoque && estoque.itens) || []).map((i) => [String(i.cod), i]));
+  return itens.map((s) => {
+    const it = porCod.get(String(s.cod));
+    return { ...s, agora: it ? { situacao: situacao(it), un: it.un || '', ...(todos ? { qtd: Number(it.qtd) || 0 } : {}) } : null };
+  });
+}
+
+module.exports = { comEstoque, ler, situacao, precisaJustificar, buscar, criar, retirar, decidir, fechar, resultadoCarrinho, avaliarNotas, visto, lista, paraPedido, MOTIVOS, POUCO_KG };

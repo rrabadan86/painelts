@@ -2718,3 +2718,4 @@ details.vl-ajuda summary { cursor: pointer; font-weight: 600; }
 .pos { color: var(--good); }
 .neg { color: var(--bad); }
 .muted { color: var(--muted); }
+.sug-agora { white-space: nowrap; }

@@ -39,7 +39,7 @@
     if (!TS.demo) return (await enviar('POST', `/api/sugestoes?${q(loja)}`, { cod: prod.cod, recado, justificativa })).sugestao;
     if (DEMO.d.itens.some((s) => s.st === 'aberta' && s.cod === prod.cod && s.por === 'apresentacao')) throw new Error('Você já marcou este produto: ele está esperando o próximo pedido.');
     if (prod.justificar && String(justificativa || '').trim().length < 5) throw new Error('Este produto ainda tem na loja: conte por que pedir mais (ex.: "cliente leva sempre 3").');
-    const s = { id: 'dn' + Date.now(), cod: prod.cod, desc: prod.desc, un: prod.un, por: 'apresentacao', nome: 'Você', em: new Date().toISOString(), recado: recado || '', justificativa: prod.justificar ? justificativa : '', situacao: prod.situacao, st: 'aberta', hist: [], decisao: null };
+    const s = { id: 'dn' + Date.now(), cod: prod.cod, desc: prod.desc, un: prod.un, por: 'apresentacao', nome: 'Você', em: new Date().toISOString(), recado: recado || '', justificativa: prod.justificar ? justificativa : '', situacao: prod.situacao, agora: { situacao: prod.situacao, un: prod.un }, st: 'aberta', hist: [], decisao: null };
     DEMO.d.itens.unshift(s);
     return s;
   }
@@ -149,6 +149,9 @@
       { key: 'desc', label: 'Produto', align: 'l', sticky: true, wrap: true, title: 'A etiqueta é a situação na loja quando o produto foi marcado: tem, pouco (chá abaixo de 700 g) ou acabou.',
         render: (s) => { const [t, c] = SIT[s.situacao] || ['', '']; return h('div', { class: 'sug-prod-cel' }, h('b', null, (s.st === 'aberta' ? '⭐ ' : '') + s.desc), ' ', t ? h('span', { class: 'badge ' + c }, t) : null, s.novo ? h('span', { class: 'badge warn' }, 'novo') : null,
           s.st === 'aberta' && s.equipe > 1 ? h('small', { class: 'muted sug-motivo' }, `${s.equipe} pessoas da equipe pediram`) : null); } },
+      { key: 'agora', label: 'Estoque agora', title: d.todos ? 'Quanto tem na loja agora (planilha de estoque do AppNext). A etiqueta da coluna Produto é a situação quando a estrela foi marcada.' : 'Se o produto tem na loja agora (tem / pouco / acabou).',
+        render: (s) => { const a = s.agora; if (!a) return h('span', { class: 'muted' }, '—'); const [t, c] = SIT[a.situacao] || ['', '']; return a.qtd != null ? h('div', { class: 'sug-agora' }, h('b', null, /^kg$/i.test(a.un) ? `${TS.fmt.kg(a.qtd)} kg` : `${TS.fmt.int(a.qtd)} ${String(a.un || 'un').toLowerCase()}`), ' ', h('span', { class: 'badge ' + c }, t)) : h('span', { class: 'badge ' + c }, t); },
+        sortVal: (s) => (s.agora ? (s.agora.qtd != null ? s.agora.qtd : { acabou: 0, pouco: 1, tem: 2 }[s.agora.situacao]) : -1) },
       d.todos ? { key: 'nome', label: 'Quem', align: 'l' } : null,
       { key: 'em', label: 'Marcado em', render: (s) => dataTxt(s.em), sortVal: (s) => s.em },
       { key: 'motivo', label: 'Por que / recado', align: 'l', wrap: true, title: 'Por que pedir (obrigatório quando ainda tinha na loja) e o recado para quem faz o pedido.',

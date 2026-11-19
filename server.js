@@ -653,7 +653,7 @@ function sugestoesDemo(lojaId) {
 }
 app.get('/api/demo/sugestoes', (req, res) => {
   if (!lojaDemo(req)) return res.status(400).json({ erro: 'Escolha uma loja.' });
-  try { res.json({ itens: sugestoesDemo(req.query.loja).reverse(), todos: true, motivos: require('./src/sugestoes').MOTIVOS }); } catch (e) { res.status(500).json({ erro: e.message }); }
+  try { const SUGd = require('./src/sugestoes'); res.json({ itens: SUGd.comEstoque(sugestoesDemo(req.query.loja).reverse(), DEMO.estoqueDemo(req.query.loja).estoque, true), todos: true, motivos: SUGd.MOTIVOS }); } catch (e) { res.status(500).json({ erro: e.message }); }
 });
 app.get('/api/demo/sugestoes/produtos', (req, res) => {
   if (!lojaDemo(req)) return res.status(400).json({ erro: 'Escolha uma loja.' });
@@ -2272,7 +2272,7 @@ app.get('/api/sugestoes', (req, res) => {
   if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
   try { SUG.avaliarNotas(loja.id, ES.notas(loja.id)); } catch (e) { console.error('[sugestões] notas:', e.message); }
   const todos = decidePedido(req);
-  res.json({ itens: SUG.lista(loja.id, req.user, todos), todos, motivos: SUG.MOTIVOS });
+  res.json({ itens: SUG.comEstoque(SUG.lista(loja.id, req.user, todos), ES.atual(loja.id), todos), todos, motivos: SUG.MOTIVOS });
 });
 // produtos para marcar: só nome e situação (tem / pouco / acabou) — nunca quantidade nem custo
 app.get('/api/sugestoes/produtos', (req, res) => {
@@ -2287,7 +2287,7 @@ app.post('/api/sugestoes', express.json({ limit: '4kb' }), (req, res) => {
   const r = SUG.criar(loja.id, req.body || {}, req.user, u.vendedor || u.nome || req.user, ES.atual(loja.id));
   if (r.erro) return res.status(400).json({ erro: r.erro });
   C.auditar(req.user, 'sugeriu produto para o pedido', loja.id, { loja: loja.id, produto: r.ok.desc });
-  res.json({ ok: true, sugestao: r.ok });
+  res.json({ ok: true, sugestao: SUG.comEstoque([r.ok], ES.atual(loja.id), decidePedido(req))[0] });
 });
 app.post('/api/sugestoes/visto', express.json({ limit: '2kb' }), (req, res) => {
   const loja = lojaSug(req);
@@ -2589,7 +2589,7 @@ app.put('/api/escala-ajustes', express.json({ limit: '200kb' }), (req, res) => {
       const n = String(nome).trim().toUpperCase().slice(0, 40);
       if (!a || !['folga', 'trab'].includes(a.tipo)) return res.status(400).json({ erro: `Ajuste inválido de ${nome} em ${data}.` });
       if (a.tipo === 'trab' && (!HM.test(a.ini || '') || !HM.test(a.fim || '') || a.ini >= a.fim)) return res.status(400).json({ erro: `Confira o horário de ${nome} em ${data} (entrada antes da saída).` });
-      (limpo[data] ||= {})[n] = a.tipo === 'trab' ? { tipo: 'trab', ini: a.ini, fim: a.fim } : { tipo: 'folga' };
+      (limpo[data] ||= {})[n] = { ...(a.tipo === 'trab' ? { tipo: 'trab', ini: a.ini, fim: a.fim } : { tipo: 'folga' }), ...(a.repete === true ? { repete: true } : {}) }; // repete: vai para os próximos meses ao replicar
     }
   }
   C.alterar((cfg) => {
