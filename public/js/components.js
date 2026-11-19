@@ -326,7 +326,7 @@
   /** tela de celular (até 760 px): algumas telas mudam o jeito de mostrar; o computador não muda */
   TS.ehCelular = () => window.matchMedia('(max-width: 760px)').matches;
 
-  TS.table = function ({ cols, rows, total, sortKey, sortDir = 'desc', maxHeight, pageSize, search, searchKeys, searchInit, onSearch, onRowClick, rowClass, empty, cls, imprimir, produto }) {
+  TS.table = function ({ cols, rows, total, sortKey, sortDir = 'desc', maxHeight, pageSize, search, searchKeys, searchInit, onSearch, onRowClick, rowClass, empty, cls, imprimir, produto, cartao }) {
     // produto: colunas com o nome do produto — o filtro "Produto contém" da lateral também vale nesta tabela
     const fProd = produto && TS.state.f.produto ? TS.norm(TS.state.f.produto) : '';
     if (fProd) { const ks = [].concat(produto); rows = rows.filter((row) => ks.some((k) => TS.norm(row[k]).includes(fProd))); }
@@ -338,7 +338,7 @@
     if (chaveBusca && searchInit == null && mem.v[chaveBusca]) searchInit = mem.v[chaveBusca];
     let sk = sortKey, sd = sortDir, page = 0, q = searchInit ? TS.norm(searchInit) : '';
     // celular: tabela com 5 colunas ou mais vira cartões (cada linha um cartão, "rótulo: valor"); só no celular
-    const MOB = TS.ehCelular() && cols.length >= 5;
+    const MOB = TS.ehCelular() && (cols.length >= 5 || cartao === true);
     if (MOB && !pageSize && rows.length > 60) pageSize = 40; // cartões são altos: em páginas
     const rotulo = (c) => (typeof c.label === 'string' ? c.label : '');
     const wrap = h('div', { class: MOB ? 'tab-mob-w' : null });

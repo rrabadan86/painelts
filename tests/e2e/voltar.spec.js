@@ -44,8 +44,10 @@ test('Créditos com a franquia: devoluções compensadas pelo desconto das notas
   await page.locator('.seg button', { hasText: 'Todas' }).first().click();
   await expect(corpo).toContainText('na NF 19120');
   await expect(corpo).toContainText('Atrasado');
-  await expect(corpo).toContainText('Sugestão: confirme');
-  await expect(corpo).toContainText('sobram');
+  await expect(corpo).toContainText('Para resolver (1)');
+  await expect(corpo).toContainText('Sobram');
+  await page.locator('.cff summary').click();
+  await expect(page.locator('.cff')).toContainText('Compensou');
   await page.evaluate(() => { location.hash = '#inicio'; });
   await expect(page.locator('.ini-avisos')).toContainText(/Franquia: 1 devolução sem desconto/);
 });
@@ -55,9 +57,14 @@ test('Créditos: botões da linha não abrem a nota; "ligar" lista também as de
   await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS.db);
   await page.evaluate(() => { location.hash = '#creditos'; });
   await page.locator('.seg button', { hasText: 'Todas' }).first().click();
-  await page.getByRole('button', { name: /Escolher devoluções/ }).first().click();
+  await page.locator('.cfp-item').getByRole('button', { name: 'Trocar' }).click();
   await expect(page.locator('.cf-ligar')).toBeVisible();
   await expect(page.locator('.cf-ligar .cfl-linha').first()).toBeVisible();
   expect(await page.evaluate(() => location.hash)).toBe('#creditos');
   await expect(page.locator('.prc-drawer')).toHaveCount(0);
+  await page.locator('.cf-ligar').getByRole('button', { name: 'Cancelar' }).click();
+  // menu ⋯ abre sem abrir a NF-e
+  await page.locator('.cf-tab .cf-mais').first().click();
+  await expect(page.locator('.cf-menu-lista:visible')).toContainText('Compensada no boleto');
+  await expect(page.locator('.camada-cheia, .prc-drawer-camada')).toHaveCount(0);
 });
