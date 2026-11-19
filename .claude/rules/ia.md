@@ -4,6 +4,7 @@ paths:
   - "src/iaprompts.js"
   - "src/iaconversas.js"
   - "public/js/ia.js"
+  - "public/js/inicio.js"
   - "tests/unit/ia.test.js"
   - "tests/e2e/ia.spec.js"
 ---
@@ -14,6 +15,11 @@ paths:
 - `src/iaprompts.js`: instruções (`sistemaPergunta`, `SISTEMA_DIAG`, `SISTEMA_PEDIDO`), ferramentas (`ferramentas({ clientes, custos })`)
   e `conferirMensagens` (do navegador só sai texto e `tool_result`).
 - `src/iaconversas.js`: histórico por pessoa e por loja (sem a lista de clientes).
+- **Análise do dia** (Início): **uma por loja por dia**, a mesma para admin e franqueado. `POST /api/ia/diagnostico` guarda em
+  `dados/<loja>/ia/diag-AAAA-MM-DD-loja.json` com `IA.umaVez` (quem abre depois lê a guardada; duas pessoas juntas não pagam duas vezes).
+  Vão só números e avisos de **vendas** (nada de custo, estoque, franquia). Tela: faixa no topo do Início + aba "Análise do dia" no ✨
+  (`TS.iaAnaliseDia()` em `inicio.js`), pontinho no ✨ até ler (`TS.iaAnaliseLida`, por aparelho).
+- Modelos novos da Anthropic **recusam forçar ferramenta** (`tool_choice` `tool`/`any` dá 400): use `IA.comFerramenta` (vai com `auto` e pede de novo se vier só texto).
 - `public/js/ia.js`: as consultas **rodam no navegador** sobre os dados que o perfil já vê (`executar(nome, inp, pode, resp)`).
   O que o perfil não pode ver não existe ali, então também não vai para a IA.
 
