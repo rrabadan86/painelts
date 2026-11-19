@@ -2713,3 +2713,8 @@ details.vl-ajuda summary { cursor: pointer; font-weight: 600; }
 .sug-motivo { display: block; font-size: 11px; }
 .sug-txt { font-size: 12px; max-width: 360px; }
 .sug-prod-cel { min-width: 0; }
+
+/* cores de texto por classe (valem fora das tabelas também; regras mais específicas continuam valendo) */
+.pos { color: var(--good); }
+.neg { color: var(--bad); }
+.muted { color: var(--muted); }
