@@ -124,8 +124,10 @@
     if (state.page === 'comissionamento') {
       const c = state.com;
       const mp = TS.metaPeriodo();
+      // a meta simulada vale só para o mês em que foi digitada: mudou o mês do período, volta a meta cadastrada
+      if (c.meta != null && c.metaYm && c.metaYm !== mp.ym) { c.meta = null; c.metaYm = null; }
       const meta = h('input', { class: 'f-input', type: 'number', min: 0, step: 500, value: c.meta ?? mp.valor ?? '' });
-      meta.addEventListener('change', () => { c.meta = meta.value === '' ? null : +meta.value; rerender(); });
+      meta.addEventListener('change', () => { c.meta = meta.value === '' ? null : +meta.value; c.metaYm = c.meta == null ? null : TS.metaPeriodo().ym; rerender(); });
       const sel = h('select', { class: 'f-input' }, h('option', { value: '' }, '— nenhum —'),
         db.opts.vendedores.filter(([s]) => s.toUpperCase() !== 'SEM VENDEDOR').map(([s]) => h('option', { value: s, selected: c.vendBonus === s || null }, s)));
       sel.addEventListener('change', () => { c.vendBonus = sel.value; rerender(); });
@@ -697,6 +699,7 @@
   // ======================= COMISSIONAMENTO =======================
   TS.pages.comissionamento = function (root) {
     const db = TS.db, c = state.com;
+    if (c.meta != null && c.metaYm && c.metaYm !== TS.metaPeriodo().ym) { c.meta = null; c.metaYm = null; }
     const meta = c.meta ?? TS.metaPeriodo().valor ?? 0;
     const base = TS.filtrar();
     const baseSemVend = TS.filtrar({ ignorar: ['vendedores'] });
@@ -704,6 +707,8 @@
     if (!base.length) { root.append(TS.card(null, null, TS.empty())); return; }
 
     const res = R().comissionamento({ base, baseSemVend, metaLoja: meta, vendBonus: c.vendBonus, ym: TS.metaPeriodo().ym });
+    if (!(meta > 0)) root.append(h('div', { class: 'notice warn', 'data-aviso': 'sem-meta' }, h('b', null, 'Meta não cadastrada: '),
+      `sem a meta de ${TS.ymLabel(TS.metaPeriodo().ym)} a comissão sai pela taxa mínima (abaixo da meta) e o bônus pela menor faixa. Cadastre a meta em Configurações → Lojas.`));
     if (res.feriasMes.length) root.append(h('div', { class: 'notice' }, h('b', null, 'Férias no mês: '),
       res.feriasMes.map((f) => `${f.vendedor} (${fmt.date(f.de)} a ${fmt.date(f.ate)})`).join(' · '),
       '. Nesses dias a meta diária é dividida só entre quem está trabalhando.'));

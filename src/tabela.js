@@ -74,6 +74,12 @@ function registrarPreco(hist, cod, dia, preco) {
   if (ult && ult[0] === dia) ult[1] = preco; else l.push([dia, Math.round(preco * 100) / 100]);
 }
 
+/** dia (AAAA-MM-DD) no horário de Brasília: a data da planilha é guardada em UTC e 22:40 daqui já é o dia seguinte lá */
+function diaBrasilia(em) {
+  const ms = Date.parse(em || '');
+  return Number.isFinite(ms) ? C.diaSP(ms) : String(em || '').slice(0, 10);
+}
+
 const resumoCache = new Map(); // id -> { mtimeMs, size, val }
 
 async function importar(id, buf, origem = 'painel') {
@@ -83,10 +89,10 @@ async function importar(id, buf, origem = 'painel') {
   // histórico do preço de cadastro: { cod: [[AAAA-MM-DD, preço], …] } — guarda só quando o preço muda
   // (na primeira vez, a lista anterior entra como ponto de partida)
   d.historico = d.historico || {};
-  const anotar = (lista, em) => { for (const i of lista || []) registrarPreco(d.historico, i.cod, String(em || '').slice(0, 10), i.preco); };
+  const anotar = (lista, em) => { for (const i of lista || []) registrarPreco(d.historico, i.cod, diaBrasilia(em), i.preco); };
   if (d[novo.tipo] && !d.historicoDesde) anotar(d[novo.tipo].itens, d[novo.tipo].em);
   anotar(novo.itens, novo.em);
-  d.historicoDesde = d.historicoDesde || String(novo.em).slice(0, 10);
+  d.historicoDesde = d.historicoDesde || diaBrasilia(novo.em);
   d[novo.tipo] = { em: novo.em, importadoEm: new Date().toISOString(), origem, itens: novo.itens };
   fs.mkdirSync(pasta(id), { recursive: true });
   C.gravarAtomico(arq(id), JSON.stringify(d), 0o640);
@@ -141,4 +147,4 @@ function resumo(id) {
   return val;
 }
 
-module.exports = { ler, atual, importar, pendentes, processar, resumo, registrarPreco };
+module.exports = { diaBrasilia, ler, atual, importar, pendentes, processar, resumo, registrarPreco };

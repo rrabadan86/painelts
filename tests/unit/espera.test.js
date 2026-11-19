@@ -29,7 +29,7 @@ test('pediu "valeriana" e comprou Valeriana Garden 100G: conta como levou o prod
   const a = E.criar('l1', { cliente: { nome: 'Cris', celular: '62977776666', cpf: '11122233344' }, itens: [{ desc: 'valeriana', generico: true }] }, 'gabi', estoque);
   assert.deepStrictEqual(a.ok.estoqueNomes, ['Valeriana Garden (kg)']);
   const hoje = new Date().toISOString().slice(0, 10);
-  const notas = { notas: [{ nf: 99, entrada: hoje, itens: [{ cod: '31020', nome: 'Valeriana Garden', un: 'Kg', qtd: 2 }] }] };
+  const notas = { notas: [{ nf: 99, entrada: hoje, status: 'Concluída', motivo: 'Compra', itens: [{ cod: '31020', nome: 'Valeriana Garden', un: 'Kg', qtd: 2 }] }] };
   E.avaliar('l1', { notas, estoque, xml: [], fixe: [], vendas: [] });
   const p1 = E.ler('l1').pedidos.find((p) => p.id === a.ok.id);
   assert.strictEqual(p1.st, 'chegou');
@@ -45,7 +45,7 @@ test('ciclo: esperando → chegou (NF) → avisado → comprou; e "não comprou"
   assert.ok(a.ok && b.ok);
   assert.strictEqual(a.ok.zerado, true);
   const hoje = new Date().toISOString().slice(0, 10);
-  const notas = { notas: [{ nf: 4512, serie: '1', entrada: hoje, fornecedor: 'Franquia', itens: [{ cod: '27010', nome: 'African Sunset' }] }] };
+  const notas = { notas: [{ nf: 4512, serie: '1', entrada: hoje, status: 'Concluída', motivo: 'Compra', fornecedor: 'Franquia', itens: [{ cod: '27010', nome: 'African Sunset' }] }] };
   const novos = E.avaliar('l1', { notas, estoque, xml: [], fixe: [], vendas: [] });
   assert.strictEqual(novos.length, 2);
   assert.strictEqual(E.ler('l1').pedidos.find((p) => p.id === a.ok.id).chegou.nf, '4512/1');

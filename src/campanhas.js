@@ -87,13 +87,23 @@ function alterar(id, cid, b) {
   gravar(id, todas);
   return { ok: c };
 }
-function novaRodada(id, cid, lista, por) {
+/** campanha recorrente: a última lista ainda vale? (semanal = menos de 7 dias; mensal = mesmo mês, em Brasília) */
+function rodadaEmDia(c, agora = Date.now()) {
+  const ult = c && c.recorrente && c.rodadas && c.rodadas[0] ? Date.parse(c.rodadas[0].em) : NaN;
+  if (!Number.isFinite(ult)) return false;
+  if (c.recorrente === 'semanal') return agora - ult < 7 * 864e5;
+  return C.diaSP(agora).slice(0, 7) <= C.diaSP(ult).slice(0, 7);
+}
+/** lista nova da campanha. Recorrente com a lista do período já criada (duas abas, dois aparelhos): não cria
+ *  outra — devolve a que existe, com repetida: true */
+function novaRodada(id, cid, lista, por, agora = Date.now()) {
   const todas = ler(id);
   const c = todas.find((x) => x.id === cid);
   if (!c) return { erro: 'Campanha não encontrada.' };
+  if (rodadaEmDia(c, agora)) return { ok: c, repetida: true };
   const l = listaOk(lista);
   if (l.erro) return l;
-  c.rodadas.unshift({ id: novoId(), em: new Date().toISOString(), por, lista: l.ok });
+  c.rodadas.unshift({ id: novoId(), em: new Date(agora).toISOString(), por, lista: l.ok });
   if (c.rodadas.length > 60) c.rodadas.length = 60;
   gravar(id, todas);
   return { ok: c };
@@ -162,4 +172,4 @@ function descartarCopia(id, cpid) {
   return { ok: true };
 }
 
-module.exports = { lerCopias, copiar, descartarCopia, ler, criar, alterar, novaRodada, refazerLista, marcar, apagar };
+module.exports = { rodadaEmDia, lerCopias, copiar, descartarCopia, ler, criar, alterar, novaRodada, refazerLista, marcar, apagar };

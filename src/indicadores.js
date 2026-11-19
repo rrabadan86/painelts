@@ -107,12 +107,24 @@ const METRICAS_REDE = [
 function retencao90(vendas, xml, ate) {
   if (!Array.isArray(xml) || !xml.length) return null;
   const DIAms = 864e5;
-  const diaCupom = new Map();
-  for (const v of vendas) if (v.cupom != null && !diaCupom.has(v.cupom)) diaCupom.set(v.cupom, Math.floor(Date.parse(String(v.data).slice(0, 10) + 'T00:00:00Z') / DIAms));
+  // o número do cupom se repete (a numeração do caixa recomeça): a chave é cupom|dia, como no navegador (chaveCupom).
+  // Só quando o XML não traz a data, ou ela não bate com nenhuma venda, vale o número — e só se ele aparece num dia só.
+  const diaDe = (s) => Math.floor(Date.parse(String(s).slice(0, 10) + 'T00:00:00Z') / DIAms);
+  const chaves = new Set(), diasCupom = new Map();
+  for (const v of vendas) {
+    if (v.cupom == null) continue;
+    const d = diaDe(v.data);
+    if (!Number.isFinite(d)) continue;
+    chaves.add(v.cupom + '|' + d);
+    (diasCupom.get(v.cupom) || diasCupom.set(v.cupom, new Set()).get(v.cupom)).add(d);
+  }
   const porCpf = new Map();
   for (const x of xml) {
     if (!x.cpf) continue;
-    const d = diaCupom.get(x.cupom);
+    const dx = x.data ? diaDe(x.data) : NaN;
+    let d = null;
+    if (Number.isFinite(dx) && chaves.has(x.cupom + '|' + dx)) d = dx;
+    else { const ds = diasCupom.get(x.cupom); if (ds && ds.size === 1) d = [...ds][0]; }
     if (d == null || !Number.isFinite(d)) continue;
     (porCpf.get(x.cpf) || porCpf.set(x.cpf, []).get(x.cpf)).push(d);
   }

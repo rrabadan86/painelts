@@ -132,10 +132,17 @@ function aPartirDoAjuste(S, anc, todas, dEst, inicial) {
   for (const [k, v] of dist) if (!(v > 1e-9)) dist.delete(k);
   return dist;
 }
-/** o ajuste que vale para este estoque: o mais recente feito até a data do estoque exportado */
+/**
+ * o ajuste que vale para este estoque: o mais recente feito até a data do estoque exportado.
+ * Ajustes manuais do mesmo estoque têm o mesmo "em": aí vale o que foi feito por último (feitoEm; sem ele, o
+ * último da lista) — cada ajuste já guarda a distribuição inteira do chá, com os ajustes anteriores dentro.
+ */
 function escolherAjuste(lista, estEm) {
   const t = Date.parse(estEm || '') || Infinity;
-  return (lista || []).filter((a) => (Date.parse(a.em) || 0) <= t).sort((a, b) => (Date.parse(b.em) || 0) - (Date.parse(a.em) || 0))[0] || null;
+  const ms = (v) => Date.parse(v || '') || 0;
+  return (lista || []).map((a, i) => ({ a, i })).filter((x) => ms(x.a.em) <= t)
+    .sort((x, y) => (ms(y.a.em) - ms(x.a.em)) || (ms(y.a.feitoEm) - ms(x.a.feitoEm)) || (y.i - x.i))
+    .map((x) => x.a)[0] || null;
 }
 
 /**
@@ -266,8 +273,13 @@ function editarSaldo(id, b, por, ctx) {
   const cur = new Map(doCod.map((x) => [x.chave, x.saldo]));
   let dif = r3((cur.get(l.chave) || 0) - v);
   cur.set(l.chave, v);
+  // lotes que a pessoa já acertou à mão neste mesmo estoque: a diferença mexe neles só por último,
+  // para o segundo ajuste (de outro lote) não desfazer o primeiro
+  const antM = estoque.em ? escolherAjuste((d.ajustes[l.cod] || []).filter((a) => a.tipo === 'manual'), estoque.em) : null;
+  const fixos = new Set(antM && antM.em === estoque.em ? antM.lotes || [] : []);
+  fixos.delete(l.chave);
   if (dif > 0) { // o lote tem menos do que o painel achava: o resto está nos mais novos (até o que chegou em cada um)
-    for (const e of todas) {
+    for (const e of [...todas.filter((x) => !fixos.has(x.chave)), ...todas.filter((x) => fixos.has(x.chave))]) {
       if (!(dif > 1e-9)) break;
       if (e.chave === l.chave) continue;
       const q = Math.min(dif, Math.max(0, r3(e.qtdEntrada - (cur.get(e.chave) || 0))));
@@ -277,14 +289,14 @@ function editarSaldo(id, b, por, ctx) {
   } else if (dif < 0) { // tem mais: sai dos outros, do mais antigo para o mais novo
     let falta = -dif;
     const data = (k) => { const e = todas.find((x) => x.chave === k); return e ? e.entrada : ''; };
-    for (const k of [...cur.keys()].filter((k) => k !== l.chave).sort((a, b2) => (data(a) < data(b2) ? -1 : 1))) {
+    for (const k of [...cur.keys()].filter((k) => k !== l.chave).sort((a, b2) => (fixos.has(a) - fixos.has(b2)) || (data(a) < data(b2) ? -1 : 1))) {
       if (!(falta > 1e-9)) break;
       const q = Math.min(falta, cur.get(k)); cur.set(k, r3(cur.get(k) - q)); falta = r3(falta - q);
     }
   }
   const fix = {};
   for (const [k, x] of cur) if (x > 1e-9) fix[k] = x;
-  const aj = { em: estoque.em || new Date().toISOString(), dia: dEst, fix, tipo: 'manual', por: String(por || ''), feitoEm: new Date().toISOString() };
+  const aj = { em: estoque.em || new Date().toISOString(), dia: dEst, fix, tipo: 'manual', por: String(por || ''), feitoEm: new Date().toISOString(), lotes: [...fixos, l.chave] };
   d.ajustes[l.cod] = [...(d.ajustes[l.cod] || []), aj].slice(-3);
   gravar(id, d);
   return { ok: aj, antes: l.saldo };
@@ -429,4 +441,4 @@ function linhasResumo(id) {
     ...top];
 }
 
-module.exports = { MESES_VALIDADE, FAIXAS, RISCO_DIAS, ler, calcular, resumo, editar, editarSaldo, daLoja, daNota, granelEstoque, disponivel, pendentesNotas, entradasDoCod, entradasRecentes, linhasResumo, somarMeses, precosKg, faixa, hojeSP };
+module.exports = { escolherAjuste, MESES_VALIDADE, FAIXAS, RISCO_DIAS, ler, calcular, resumo, editar, editarSaldo, daLoja, daNota, granelEstoque, disponivel, pendentesNotas, entradasDoCod, entradasRecentes, linhasResumo, somarMeses, precosKg, faixa, hojeSP };

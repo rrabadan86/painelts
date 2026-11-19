@@ -159,9 +159,8 @@ function filtrarPorPerfil(data, perfilDados) {
     const nomesVendas = [...new Set(data.vendas.map((v) => v.vendedor))].filter((n) => n && n.trim().toUpperCase() !== eu);
     const nomesExtras = (data.metaCfgs || []).flatMap((m) => [
       ...((m.ferias || []).map((f) => f && f.vendedor)),
-      ...((m.regras && m.regras.semMeta) || []),
-      ...((m.regras && m.regras.semComissao) || []),
-      ...((m.regras && m.regras.rateio && m.regras.rateio.exclui) || []),
+      // listas do modelo da loja + regras gravadas (loja sem regras usa o modelo, que também tem nomes)
+      ...Object.values(require('./src/regrasvend').listasEfetivas(m)).flat(),
     ]).filter((n) => n && String(n).trim().toUpperCase() !== eu && !/^SEM VENDEDOR$/i.test(String(n).trim()));
     const todosOutros = new Map();
     for (const n of [...nomesVendas, ...nomesExtras]) {
@@ -198,12 +197,7 @@ function filtrarPorPerfil(data, perfilDados) {
           equipe: m.operacao.equipe ? { ...m.operacao.equipe, nomes: undefined, pessoas: undefined } : m.operacao.equipe,
         } : null,
         ferias: (m.ferias || []).map((f) => ({ ...f, vendedor: mapearNome(f.vendedor) })),
-        regras: m.regras ? {
-          ...m.regras,
-          semMeta: Array.isArray(m.regras.semMeta) ? m.regras.semMeta.map(mapearNome) : m.regras.semMeta,
-          semComissao: Array.isArray(m.regras.semComissao) ? m.regras.semComissao.map(mapearNome) : m.regras.semComissao,
-          rateio: m.regras.rateio ? { ...m.regras.rateio, exclui: Array.isArray(m.regras.rateio.exclui) ? m.regras.rateio.exclui.map(mapearNome) : [] } : m.regras.rateio,
-        } : null,
+        regras: require('./src/regrasvend').regrasAnonimas(m, mapearNome),
       }));
     }
   }
@@ -876,7 +870,9 @@ app.put('/api/campanhas/:id', express.json({ limit: '20kb' }), (req, res) => {
 app.post('/api/campanhas/:id/rodadas', express.json({ limit: '600kb' }), (req, res) => {
   const id = lojaCamp(req);
   if (!id) return res.status(400).json({ erro: 'Escolha uma loja.' });
-  respCamp(res, CAMP.novaRodada(id, req.params.id, (req.body || {}).lista, req.user));
+  const r = CAMP.novaRodada(id, req.params.id, (req.body || {}).lista, req.user);
+  if (r.repetida) return res.json({ ok: true, campanha: r.ok, repetida: true }); // a lista deste período já existia
+  respCamp(res, r);
 });
 app.put('/api/campanhas/:id/rodadas/:rid', express.json({ limit: '600kb' }), (req, res) => {
   const id = lojaCamp(req);

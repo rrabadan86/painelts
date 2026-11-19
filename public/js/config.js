@@ -29,7 +29,7 @@
       body: corpo == null ? undefined : raw ? corpo : JSON.stringify(corpo),
     });
     const j = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(j.erro || `Erro ${res.status}`);
+    if (!res.ok) { const e = new Error(j.erro || `Erro ${res.status}`); e.dados = j; throw e; }
     return j;
   }
   function toast(msg, erro) {
@@ -821,7 +821,14 @@
         const f = arq.files[0];
         if (!f) throw new Error('Escolha o arquivo.');
         // Logs do FIXE vão pelo mesmo envio do cadastro: o painel reconhece pela planilha
-        const r = await api('POST', `/lojas/${l.id}/upload/${tipo.value === 'FIXE_Logs' ? 'Dados_Clientes' : tipo.value}`, f, { 'X-Arquivo': encodeURIComponent(f.name) });
+        const urlEnvio = `/lojas/${l.id}/upload/${tipo.value === 'FIXE_Logs' ? 'Dados_Clientes' : tipo.value}`;
+        let r;
+        try { r = await api('POST', urlEnvio, f, { 'X-Arquivo': encodeURIComponent(f.name) }); }
+        catch (e) {
+          // estoque com bem menos produtos que o atual: só grava se quem enviou confirmar
+          if (!(e.dados && e.dados.podeForcar) || !confirm(e.message + '\n\nSe a planilha está certa (a loja realmente ficou com poucos produtos), clique em OK para gravar assim mesmo.')) throw e;
+          r = await api('POST', urlEnvio + '?forcar=1', f, { 'X-Arquivo': encodeURIComponent(f.name) });
+        }
         arq.value = '';
         setTimeout(() => TS.recarregar && TS.recarregar(true), 4000);
         if (r && r.estoque) {

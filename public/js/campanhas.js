@@ -144,7 +144,7 @@
       const vence = !ult || (c.recorrente === 'semanal' ? agora - ult >= 7 * 864e5 : agora.getFullYear() * 12 + agora.getMonth() > ult.getFullYear() * 12 + ult.getMonth());
       if (!vence) continue;
       const sel = selecionar({ ...PADRAO, ...c.filtros });
-      try { const r = await api('POST', `/api/campanhas/${c.id}/rodadas`, { loja: state.loja, lista: sel.map(({ c: x }) => ({ cpf: x.cpf, nome: x.nome })) }); Object.assign(c, r.campanha); feitas.push(c.nome); } catch { /* tenta de novo na próxima vez */ }
+      try { const r = await api('POST', `/api/campanhas/${c.id}/rodadas`, { loja: state.loja, lista: sel.map(({ c: x }) => ({ cpf: x.cpf, nome: x.nome })) }); Object.assign(c, r.campanha); if (!r.repetida) feitas.push(c.nome); } catch { /* tenta de novo na próxima vez */ }
     }
     return feitas;
   }
