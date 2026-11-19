@@ -45,8 +45,8 @@ Hooks (`.claude/settings.json`): bloqueiam commit/push de segredos e limpam os r
 - ⭐ Sugestões para o pedido (Estoque → Sugestões): vendedora sempre; gerente com a tela marcada (vem no padrão). A vendedora vê só o nome e a situação do produto (tem / pouco / acabou), nunca quantidade nem custo, e só as próprias sugestões; quem decide é quem tem a tela Pedido. A estrela não muda a conta do pedido sugerido.
 - Orçamento: só admin e franqueado.
 - Falar com a franquia por e-mail (reajuste de custo, cobrança de devoluções e de fidelidade, envio automático): só admin e franqueado.
-- Configurações da loja: o **franqueado configura tudo das lojas dele** (acesso ao AppNext, login do Sistema de Pedidos, regras de comissão, dados da loja, FIXE, mensagens, IA). Continua só do admin o que é da rede: criar/remover loja, horários e janela do coletor, resumo diário, sistema e backup.
-- Só o admin dispara o coletor ("Sincronizar agora").
+- **Franqueado = admin das lojas dele** (decisão do dono): na loja dele faz tudo o que o admin faz — configurações (AppNext, Sistema de Pedidos, comissão, dados da loja, FIXE, mensagens, IA), coletor ("Atualizar agora", "Sincronizar agora", importar histórico, cancelar, FIXE, robô do Sistema de Pedidos) e resumo diário (destinatários, teste, prévia e envio só das lojas dele). Nunca vê nem altera outra loja: toda rota confere a loja no servidor (`soGestor` + `lojaPermitida`, `req.lojas`).
+- Continua só do admin o que é da rede (não tem "loja dele"): criar/remover loja, horários e janela da rede, horário/ativação/token do Telegram/SMTP do resumo, vincular conversa nova do Telegram, classificação dos produtos, sistema, atualizações, backup, usuários admin/franqueado. Na tela do franqueado isso aparece travado (🔒) ou a aba fica oculta.
 - IA (✨, análise do Início, revisão do pedido): só admin e franqueado.
 
 **AppNext, FIXE e NF-e** (detalhes em `coletor.md` e `nfe.md`)
