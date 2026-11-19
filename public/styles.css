@@ -2637,6 +2637,13 @@ details.vl-ajuda summary { cursor: pointer; font-weight: 600; }
 /* Preços: motivo provável da diferença entre vendas e cadastro */
 .prc-tabpor { display: flex; align-items: center; gap: 4px; font-size: 11.5px; color: var(--muted); margin-top: 2px; }
 .prc-badge.prc-neutro { background: var(--sage-l, #eef0ea); color: var(--muted); }
+/* Preços: célula empilhada — valor de agora em destaque + etiqueta; "antes", data e detalhe embaixo (tabela sem rolagem para o lado) */
+.prc-c { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
+.prc-c1 { display: inline-flex; align-items: baseline; gap: 5px; }
+.prc-c small { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--muted); }
+.prc-t .prc-st { font-size: 10.5px; padding: 1px 7px; }
+.t.t-mob .prc-c { align-items: flex-start; }
+.t.est-t.efp-t td.wrap { min-width: 150px; }
 
 /* Nota de entrada → Enviar para a franquia (reclamar do reajuste) */
 .nf-impacto-bts { display: flex; flex-wrap: wrap; gap: 8px; }
