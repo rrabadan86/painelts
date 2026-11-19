@@ -65,7 +65,7 @@ test('entrega: só nota da TSB Franquias emitida a partir do pedido; janela de 5
   // fixa o dia do pedido em 2026-11-21 (meio-dia em Brasília) para as duas pedidas (valeriana de ana e de bia)
   for (const s of d.itens) if (s.aguardando) s.aguardando.em = '2026-11-21T15:00:00Z';
   fs.writeFileSync(path.join(tmp, 'l1', 'sugestoes.json'), JSON.stringify(d));
-  const nota = (nf, emissao, fornecedor, cods) => ({ nf, serie: '1', emissao, fornecedor, motivo: 'Compra para comercialização.', itens: cods.map((cod) => ({ cod })) });
+  const nota = (nf, emissao, fornecedor, cods, entrada = emissao) => ({ nf, serie: '1', emissao, entrada, fornecedor, motivo: 'Compra para comercialização.', itens: cods.map((cod) => ({ cod })) });
   const notas = { notas: [
     nota('19000', '2026-11-18', 'TSB FRANQUIAS E COMERCIO LTDA ME', ['31020']), // antes do pedido: não vale
     nota('555', '2026-11-24', 'GRAFICA QUALQUER LTDA', ['31020']), // outro fornecedor: não vale
@@ -104,11 +104,37 @@ test('entrega: fechou a janela sem o produto → "não veio no pedido" e volta; 
   assert.strictEqual(SUG.avaliarNotas('l2', notas, somar(7)).mudou, 1);
   const h = SUG.lista('l2', 'ana', false).find((s) => s.cod === '90001');
   assert.deepStrictEqual([h.st, !!h.aguardando, h.hist.at(-1).res], ['aberta', false, 'naoveio']);
-  assert.match(h.hist.at(-1).motivo, /Não veio na NF 19300 .*indisponível no fornecedor/);
+  assert.match(h.hist.at(-1).motivo, /Não veio na entrega de .*NF 19300.*indisponível no fornecedor/);
 });
 
 test('tirar a estrela: só quem marcou (ou quem faz o pedido)', () => {
   const s = SUG.criar('l1', { cod: '71194', justificativa: 'presente de natal' }, 'ana', 'Ana', estoque).ok;
   assert.match(SUG.retirar('l1', s.id, 'bia', false).erro, /Só quem marcou/);
   assert.strictEqual(SUG.retirar('l1', s.id, 'ger', true).ok.st, 'retirada');
+});
+
+test('entrega: os 5 dias contam da ENTRADA na loja (não da emissão) e o produto que chega depois de "não veio" também tira a estrela', () => {
+  const est = { itens: [{ cod: '95001', desc: 'Mug Super Jumbo Koi', un: 'Un', qtd: 0 }] };
+  SUG.criar('l3', { cod: '95001' }, 'ana', 'Ana', est);
+  SUG.fechar('l3', [{ cod: '95001', pedir: 2, site: 'ok' }], 'ger');
+  const d = SUG.ler('l3'); d.itens[0].aguardando.em = '2026-11-20T15:00:00Z'; d.itens[0].hist[0].em = '2026-11-20T15:00:00Z';
+  fs.writeFileSync(path.join(tmp, 'l3', 'sugestoes.json'), JSON.stringify(d));
+  const N = (nf, emissao, entrada, cods) => ({ nf, serie: '1', emissao, entrada, fornecedor: 'TSB FRANQUIAS E COMERCIO LTDA ME', motivo: 'Compra', itens: cods.map((cod) => ({ cod })) });
+  // pedido sexta 20/11; 1ª nota emitida 25/11 entra só em 01/12, sem o produto; 2ª emitida 26/11 entra em 05/12 com ele
+  const n1 = N('19400', '2026-11-25', '2026-12-01', ['71194']);
+  assert.strictEqual(SUG.avaliarNotas('l3', { notas: [n1] }, '2026-12-04').mudou, 0, 'janela até 06/12 pela entrada: ainda espera');
+  assert.strictEqual(SUG.avaliarNotas('l3', { notas: [n1, N('19401', '2026-11-26', '2026-12-05', ['95001'])] }, '2026-12-05').mudou, 1);
+  let s = SUG.lista('l3', 'ana', false)[0];
+  assert.deepStrictEqual([s.st, s.chegou], ['atendida', { nf: '19401/1', dia: '2026-12-05' }]);
+  // outra loja: passa a janela sem o produto → não veio; depois chega numa nota de 15/12 → chegou
+  SUG.criar('l4', { cod: '95001' }, 'ana', 'Ana', est);
+  SUG.fechar('l4', [{ cod: '95001', pedir: 2, site: 'ok' }], 'ger');
+  const d4 = SUG.ler('l4'); d4.itens[0].aguardando.em = '2026-11-20T15:00:00Z'; d4.itens[0].hist[0].em = '2026-11-20T15:00:00Z';
+  fs.writeFileSync(path.join(tmp, 'l4', 'sugestoes.json'), JSON.stringify(d4));
+  assert.strictEqual(SUG.avaliarNotas('l4', { notas: [n1] }, '2026-12-07').mudou, 1);
+  s = SUG.lista('l4', 'ana', false)[0];
+  assert.deepStrictEqual([s.st, !!s.aguardando, s.hist.at(-1).res], ['aberta', false, 'naoveio']);
+  assert.strictEqual(SUG.avaliarNotas('l4', { notas: [n1, N('19500', '2026-12-12', '2026-12-15', ['95001'])] }, '2026-12-15').mudou, 1);
+  s = SUG.lista('l4', 'ana', false)[0];
+  assert.deepStrictEqual([s.st, s.chegou.nf, s.hist.map((x) => x.res)], ['atendida', '19500/1', ['pedido', 'naoveio', 'chegou']]);
 });

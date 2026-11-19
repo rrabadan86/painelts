@@ -132,7 +132,7 @@
     const ult = ultimo(s);
     if (s.st === 'atendida') return s.chegou ? h('span', { class: 'pos' }, `✅ Chegou na loja: NF ${s.chegou.nf} de ${TS.fmt.date(s.chegou.dia).slice(0, 5)}`) : h('span', { class: 'pos' }, `✅ Entrou no pedido de ${dataTxt(s.fimEm)}`);
     if (s.st === 'retirada') return h('span', { class: 'muted' }, `Estrela tirada em ${dataTxt(s.fimEm)}`);
-    if (s.aguardando) return h('span', { class: 'sug-aguarda' }, `🛒 No pedido de ${dataTxt(s.aguardando.em)}: aguardando entrega`, TS.dica('A estrela sai quando a nota da TSB Franquias chegar com o produto. Se a entrega vier sem ele (até 5 dias depois da primeira nota), a sugestão volta para o próximo pedido.'));
+    if (s.aguardando) return h('span', { class: 'sug-aguarda' }, `🛒 No pedido de ${dataTxt(s.aguardando.em)}: aguardando entrega`, TS.dica('A estrela sai quando a nota da TSB Franquias chegar com o produto (não importa quanto demore). Se a primeira nota chegar sem ele, o painel espera mais 5 dias por outra nota; sem o produto, a sugestão volta para o próximo pedido — e, se ele chegar depois, a estrela sai do mesmo jeito.'));
     if (ult) return h('span', { class: R(ult)[1] }, `${R(ult)[0]} · ${dataTxt(ult.em)}`, ult.motivo && ult.res !== 'semsite' ? h('small', { class: 'muted sug-motivo' }, ult.motivo) : null, h('small', { class: 'muted sug-motivo' }, 'continua marcada para o próximo pedido'));
     return h('span', { class: 'muted' }, '🕓 Aguardando o próximo pedido');
   }

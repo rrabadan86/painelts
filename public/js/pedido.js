@@ -714,7 +714,7 @@
       return h('div', { class: 'card mt sug-ped-card' },
         h('div', { class: 'card-title' }, `⭐ Sugestões da equipe (${grupos.length})`),
         h('p', { class: 'muted' }, 'Produtos que a equipe pediu. A estrela não muda a conta do pedido: você decide. ', pend ? h('b', null, `${pend} para revisar. `) : null,
-          'Ao montar o carrinho, a resposta vai para a equipe sozinha. O que foi no pedido fica "aguardando entrega" até a nota da TSB Franquias chegar: com o produto, a estrela sai; sem ele (até 5 dias depois da primeira nota), volta para cá. O que não entrou continua marcado para o próximo pedido.'),
+          'Ao montar o carrinho, a resposta vai para a equipe sozinha. O que foi no pedido fica "aguardando entrega" até a nota da TSB Franquias chegar: com o produto, a estrela sai (não importa quanto demore); se a primeira nota chegar sem ele e nenhuma outra o trouxer em 5 dias, volta para cá. O que não entrou continua marcado para o próximo pedido.'),
         h('div', { class: 'sug-ped-lista' }, grupos.map(item)),
         h('div', { class: 'cfg-acoes' }, registrar, msg));
     }

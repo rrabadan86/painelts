@@ -10,9 +10,10 @@
  * Ao registrar o pedido (montar o carrinho ou "Registrar o pedido"): no pedido → "aguardando entrega" (a estrela continua);
  * indisponível no site → "sem estoque no site" (automático); não entrou → motivo. As duas últimas continuam para o próximo.
  * O site recusou no carrinho (favorito) → "não foi possível pedir" e volta para o próximo.
- * Entrega: a primeira nota da franquia (TSB FRANQUIAS) emitida a partir do dia do pedido e as que chegarem até 5 dias
- * depois dela formam a entrega. Produto nelas → "chegou na loja" e a estrela sai; fechou a janela sem ele → "não veio
- * no pedido" e continua. Sem nota da franquia em 30 dias → "não veio" também. O histórico de cada pedido fica guardado.
+ * Entrega: valem só notas da franquia (TSB FRANQUIAS) emitidas a partir do dia do pedido. A primeira delas a entrar no
+ * AppNext e as que entrarem até 5 dias depois (pela data de entrada) formam a entrega. Produto nelas → "chegou na loja" e a
+ * estrela sai; passou a janela sem ele → "não veio no pedido" e volta para o próximo. Se chegar depois, em qualquer nota da
+ * franquia posterior ao pedido, também vira "chegou". Sem nota da franquia em 30 dias → volta. O histórico fica guardado.
  */
 const fs = require('fs');
 const path = require('path');
@@ -147,31 +148,43 @@ function resultadoCarrinho(id, itens) {
  */
 function avaliarNotas(id, notas, hoje = C.diaSP()) {
   const d = ler(id);
-  const esperando = d.itens.filter((s) => s.st === 'aberta' && s.aguardando);
-  if (!esperando.length) return { mudou: 0 };
+  // pedidas: aguardando entrega, ou que já foram num pedido e voltaram (o produto ainda pode chegar depois)
+  const pedidas = d.itens.filter((s) => s.st === 'aberta' && (s.aguardando || (s.hist || []).some((x) => x.res === 'pedido')));
+  if (!pedidas.length) return { mudou: 0 };
+  // emi = emissão (vale só a partir do dia do pedido); ent = entrada no AppNext (quando chegou na loja: a janela conta daqui)
+  const dia10 = (v) => String(v || '').slice(0, 10);
   const fr = ((notas && notas.notas) || [])
     .filter((n) => FRANQUIA.test(String(n.fornecedor || '')) && !/devolu|troca/i.test(n.motivo || ''))
-    .map((n) => ({ nf: `${n.nf ?? ''}${n.serie ? '/' + n.serie : ''}`, dia: String(n.emissao || n.entrada || '').slice(0, 10), cods: new Set((n.itens || []).map((i) => String(i.cod))) }))
-    .filter((n) => /^\d{4}-\d{2}-\d{2}$/.test(n.dia))
-    .sort((a, b) => (a.dia < b.dia ? -1 : a.dia > b.dia ? 1 : 0));
+    .map((n) => ({ nf: `${n.nf ?? ''}${n.serie ? '/' + n.serie : ''}`, emi: dia10(n.emissao || n.entrada), ent: dia10(n.entrada || n.emissao), cods: new Set((n.itens || []).map((i) => String(i.cod))) }))
+    .filter((n) => /^\d{4}-\d{2}-\d{2}$/.test(n.emi) && /^\d{4}-\d{2}-\d{2}$/.test(n.ent))
+    .sort((a, b) => (a.ent < b.ent ? -1 : a.ent > b.ent ? 1 : 0));
   const em = new Date().toISOString();
   let mudou = 0;
-  for (const s of esperando) {
+  const chegou = (s, n) => {
+    s.hist.push({ em, res: 'chegou', motivo: `NF ${n.nf} de ${dm(n.ent)}`, nf: n.nf, dia: n.ent });
+    Object.assign(s, { st: 'atendida', fimEm: em, chegou: { nf: n.nf, dia: n.ent } });
+    delete s.aguardando; mudou++;
+  };
+  for (const s of pedidas) {
+    if (!s.aguardando) {
+      // já voltou para o próximo pedido, mas o produto chegou depois numa nota da franquia emitida a partir do 1º pedido
+      const ped1 = diaBR(s.hist.find((x) => x.res === 'pedido').em);
+      const tarde = fr.find((n) => n.emi >= ped1 && n.cods.has(s.cod));
+      if (tarde) chegou(s, tarde);
+      continue;
+    }
     const pedDia = diaBR(s.aguardando.em);
-    const depois = fr.filter((n) => n.dia >= pedDia);
+    const depois = fr.filter((n) => n.emi >= pedDia);
     if (!depois.length) {
       if (hoje > somaDias(pedDia, SEM_NOTA_DIAS)) { s.hist.push({ em, res: 'naoveio', motivo: `Nenhuma nota da franquia em ${SEM_NOTA_DIAS} dias depois do pedido` }); delete s.aguardando; mudou++; }
       continue;
     }
-    const fimJanela = somaDias(depois[0].dia, JANELA_DIAS);
-    const entrega = depois.filter((n) => n.dia <= fimJanela);
-    const achou = entrega.find((n) => n.cods.has(s.cod));
-    if (achou) {
-      s.hist.push({ em, res: 'chegou', motivo: `NF ${achou.nf} de ${dm(achou.dia)}`, nf: achou.nf, dia: achou.dia });
-      Object.assign(s, { st: 'atendida', fimEm: em, chegou: { nf: achou.nf, dia: achou.dia } });
-      delete s.aguardando; mudou++;
-    } else if (hoje > fimJanela) {
-      s.hist.push({ em, res: 'naoveio', motivo: `Não veio na NF ${entrega.map((n) => n.nf).join(', ')} de ${dm(depois[0].dia)} (indisponível no fornecedor)` });
+    const fimJanela = somaDias(depois[0].ent, JANELA_DIAS);
+    const achou = depois.find((n) => n.ent <= fimJanela && n.cods.has(s.cod));
+    if (achou) chegou(s, achou);
+    else if (hoje > fimJanela) {
+      const entrega = depois.filter((n) => n.ent <= fimJanela);
+      s.hist.push({ em, res: 'naoveio', motivo: `Não veio na entrega de ${dm(depois[0].ent)} (NF ${entrega.map((n) => n.nf).join(', ')}): indisponível no fornecedor` });
       delete s.aguardando; mudou++;
     }
   }
