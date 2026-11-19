@@ -1700,6 +1700,8 @@ body.com-camada .ped-barra { display: none; }
   .t.t-mob > tbody > tr > td input, .t.t-mob > tbody > tr > td select { max-width: 100%; min-width: 0; }
   .t.t-mob > tbody > tr > td::before, .t.t-mob > tfoot > tr > td::before { content: attr(data-l); font-size: 11px; font-weight: 500; color: var(--muted, #7a7a7a); text-transform: none; letter-spacing: 0; }
   .t.t-mob > tbody > tr > td:not([data-l])::before, .t.t-mob > tbody > tr > td[data-l=""]::before, .t.t-mob > tfoot > tr > td:not([data-l])::before { content: none; }
+  .t.t-mob > tbody > tr > td.com-dica::before { content: none; }
+  .t.t-mob > tbody > tr > td.com-dica > .mob-rot { display: flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 500; color: var(--muted, #7a7a7a); }
   .t.t-mob > tbody > tr > td.mob-tit, .t.t-mob > tfoot > tr > td.mob-tit { grid-column: 1 / -1; font-size: 15px; font-weight: 600; padding-bottom: 6px !important; border-bottom: 1px solid #F0EBE0 !important; }
   .t.t-mob > tbody > tr > td.mob-tit::before { content: none; }
   .t.t-mob > tbody > tr > td[data-l=""], .t.t-mob > tbody > tr > td:not([data-l]):not(.mob-tit) { grid-column: 1 / -1; }

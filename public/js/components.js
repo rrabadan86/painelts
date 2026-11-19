@@ -374,8 +374,9 @@
       tbl.textContent = '';
       const thead = h('thead'), trh = h('tr');
       cols.forEach((c) => {
-        const th = h('th', { class: [c.align === 'l' ? 'l' : '', c.sticky ? 'sticky-col' : '', sk === c.key ? 'sorted' : ''].join(' ') + sec(c), title: c.title || null, scope: 'col' },
-          c.label, h('span', { class: 'arrow' }, sk === c.key ? (sd === 'asc' ? '▲' : '▼') : '↕'));
+        // coluna com explicação (title): ⓘ tocável ao lado do nome (o balão funciona também no celular)
+        const th = h('th', { class: [c.align === 'l' ? 'l' : '', c.sticky ? 'sticky-col' : '', sk === c.key ? 'sorted' : ''].join(' ') + sec(c), scope: 'col' },
+          c.label, c.title && c.label ? TS.dica(c.title) : null, h('span', { class: 'arrow' }, sk === c.key ? (sd === 'asc' ? '▲' : '▼') : '↕'));
         th.addEventListener('click', () => { if (sk === c.key) sd = sd === 'asc' ? 'desc' : 'asc'; else { sk = c.key; sd = c.align === 'l' ? 'asc' : 'desc'; } paint(); });
         trh.append(th);
       });
@@ -391,7 +392,10 @@
           const v = row[c.key];
           const extra = c.cls ? c.cls(row) : '';
           const content = c.render ? c.render(row) : (c.fmt ? c.fmt(v, row) : (v ?? ''));
-          tr.append(h('td', { class: [c.align === 'l' ? 'l' : '', c.sticky ? 'sticky-col' : '', c.wrap ? 'wrap' : '', extra].join(' ') + sec(c) + (MOB && c === cols[0] ? ' mob-tit' : ''), 'data-l': MOB ? rotulo(c) : null }, content));
+          // celular: o rótulo do cartão vem do CSS (data-l); com explicação, vira um rótulo de verdade com o ⓘ
+          const comDica = MOB && c.title && rotulo(c) && c !== cols[0];
+          tr.append(h('td', { class: [c.align === 'l' ? 'l' : '', c.sticky ? 'sticky-col' : '', c.wrap ? 'wrap' : '', extra, comDica ? 'com-dica' : ''].join(' ') + sec(c) + (MOB && c === cols[0] ? ' mob-tit' : ''), 'data-l': MOB ? rotulo(c) : null },
+            comDica ? h('span', { class: 'mob-rot' }, rotulo(c), TS.dica(c.title)) : null, content));
         });
         tb.append(tr);
       }
