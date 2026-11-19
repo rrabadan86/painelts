@@ -284,13 +284,19 @@
     // a barra fixa do Pedido no rodapé: o botão sobe para não ficar por cima
     new MutationObserver(() => document.body.classList.toggle('com-ped-barra', !!document.querySelector('.ped-barra'))).observe(document.getElementById('content') || document.body, { childList: true, subtree: true });
   };
-  TS.iaAbrir = (pergunta) => abrir(pergunta);
+  TS.iaAbrir = (pergunta, opts) => abrir(pergunta, opts);
+  // pontinho no ✨: há análise do dia que esta pessoa ainda não leu (neste aparelho)
+  TS.iaPontinho = (on) => { for (const id of ['btnIA', 'fabIA']) { const b = document.getElementById(id); if (b) b.classList.toggle('ia-novidade', !!on); } };
 
   let painel = null;
-  function abrir(pergunta) {
-    if (painel && painel.isConnected) { painel.querySelector('textarea').focus(); return; }
+  function abrir(pergunta, opts) {
+    if (painel && painel.isConnected) { if (opts && opts.aba && painel._aba) painel._aba(opts.aba); else painel.querySelector('textarea').focus(); return; }
     if (!conv || conv.loja !== state.loja) conv = novaConv();
     let modo = 'conv';
+    // abas: "Análise do dia" (abre nela quando há análise de hoje ainda não lida) e "Perguntar"
+    const temAnalise = !!TS.iaAnaliseDia;
+    let aba = (opts && opts.aba) || (typeof pergunta === 'string' && pergunta.trim() ? 'perguntar' : temAnalise && TS.iaAnaliseLida && !TS.iaAnaliseLida() ? 'analise' : 'perguntar');
+    if (!temAnalise) aba = 'perguntar';
     const lista = h('div', { class: 'ia-lista', 'aria-live': 'polite' });
     const txt = h('textarea', { class: 'f-input ia-txt', rows: 2, maxlength: 2000, placeholder: 'Pergunte sobre vendas, vendedoras, clientes, estoque…' });
     const env = h('button', { type: 'button', class: 'btn primary ia-env' }, 'Enviar');
@@ -300,9 +306,11 @@
     const nova = h('button', { type: 'button', class: 'link-btn', onclick: () => { if (ocupado) return; conv = novaConv(); modo = 'conv'; pintarLista(); txt.focus(); } }, 'Nova conversa');
     const btHist = h('button', { type: 'button', class: 'link-btn', onclick: () => { if (ocupado) return; modo = modo === 'hist' ? 'conv' : 'hist'; pintarLista(); } }, 'Histórico');
     const nomeLoja = contexto().loja;
+    const abasEl = TS.seg([['Análise do dia', 'analise'], ['Perguntar', 'perguntar']], aba, (v) => irAba(v));
     const gaveta = h('div', { class: 'card prc-drawer ia-gaveta', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Pergunte ao painel' },
       h('button', { type: 'button', class: 'exp-fechar', 'aria-label': 'Fechar', onclick: fechar }, '✕'),
-      h('div', { class: 'ia-cab' }, h('div', { class: 'card-title' }, '✨ Pergunte ao painel'), h('div', { class: 'muted ia-sub' }, nomeLoja, ' · ', nova, ' · ', btHist)),
+      h('div', { class: 'ia-cab' }, h('div', { class: 'card-title' }, '✨ Pergunte ao painel'), h('div', { class: 'muted ia-sub' }, nomeLoja, h('span', { class: 'ia-sub-conv' }, ' · ', nova, ' · ', btHist))),
+      temAnalise ? h('div', { class: 'ia-abas' }, abasEl) : null,
       aviso, lista,
       h('div', { class: 'ia-rodape' }, txt, env),
       h('small', { class: 'muted ia-nota' }, 'A IA só consulta os dados que você já vê no painel e pode errar: confira os números importantes. Clientes vão só com o primeiro nome.'));
@@ -350,7 +358,43 @@
         pintarLista();
       } catch (e) { alert(e.message); }
     }
+    function irAba(v) {
+      aba = v;
+      abasEl.querySelectorAll('button').forEach((b, k) => b.classList.toggle('on', (k === 0 ? 'analise' : 'perguntar') === v));
+      pintarLista();
+      if (v === 'perguntar') setTimeout(() => txt.focus(), 50);
+    }
+    camada._aba = irAba;
+    // ---------- aba "Análise do dia" ----------
+    async function pintarAnalise() {
+      rodape().hidden = true;
+      gaveta.querySelector('.ia-sub-conv').hidden = true;
+      lista.replaceChildren(h('div', { class: 'ia-an-vazio muted' }, h('span', { class: 'cfg-pulso' }), ' A IA está preparando a análise do dia…'));
+      let j;
+      try { j = await TS.iaAnaliseDia(); } catch (e) { if (aba === 'analise') lista.replaceChildren(h('div', { class: 'notice' }, e.message)); return; }
+      if (aba !== 'analise' || !camada.isConnected) return;
+      const r = (j && j.diagnostico) || {};
+      if (!r.manchete) { lista.replaceChildren(h('div', { class: 'ia-an-vazio muted' }, 'Ainda não há análise do dia para esta loja.')); return; }
+      const hora = j.em ? new Date(j.em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
+      const perguntarSobre = (t) => { irAba('perguntar'); perguntar(`Sobre a análise do dia ("${t}"): explique melhor e mostre os números.`); };
+      const exps = r.explicacoes || [];
+      lista.replaceChildren(h('div', { class: 'ia-an' }, ...[
+        h('p', { class: 'ia-an-m' }, r.manchete),
+        h('small', { class: 'muted ia-an-meta' }, `Feita às ${hora}${j.simulada ? ' (simulada na apresentação)' : ''} · uma por dia, a mesma para admin e franqueado · a próxima sai amanhã`),
+        ...exps.map((x, k) => h('details', { class: 'ia-an-b', open: k === 0 || null },
+          h('summary', null, x.titulo),
+          x.porque ? h('div', { class: 'ia-an-porque' }, TS.iaMd(x.porque)) : null,
+          x.o_que_fazer ? h('div', { class: 'ia-an-fazer' }, h('b', null, '👉 O que fazer: '), x.o_que_fazer) : null,
+          h('button', { type: 'button', class: 'link-btn ia-an-perg', onclick: () => perguntarSobre(x.titulo) }, 'Perguntar mais sobre isso ›'))),
+        (r.fora_do_padrao || []).length ? h('div', { class: 'ia-an-fp' }, h('div', { class: 'ia-an-fp-t' }, '⚠️ Fora do padrão'),
+          ...(r.fora_do_padrao || []).map((x) => h('div', { class: 'ia-an-fp-i' }, h('b', null, x.titulo), x.detalhe ? h('div', { class: 'muted' }, x.detalhe) : null))) : null,
+        h('small', { class: 'muted ia-an-nota' }, 'Análise da IA com os números de vendas do painel. Confira antes de tomar decisões importantes.'),
+      ].filter(Boolean)));
+      TS.iaAnaliseLida && TS.iaAnaliseLida(true);
+    }
     function pintarLista() {
+      if (aba === 'analise') { pintarAnalise(); return; }
+      gaveta.querySelector('.ia-sub-conv').hidden = false;
       if (modo === 'hist') { pintarHist(); return; }
       btHist.textContent = 'Histórico';
       rodape().hidden = false;
@@ -434,7 +478,7 @@
         ? h('span', null, 'A IA ainda não está ligada nesta loja. ', h('a', { href: '#config', onclick: () => { TS.cfgIrIA && TS.cfgIrIA(state.loja); fechar(); } }, 'Cadastre a chave da Anthropic desta loja em Configurações'), '.')
         : 'A IA ainda não está ligada nesta loja: peça ao franqueado para cadastrar a chave em Configurações.'));
     }).catch(() => {});
-    if (typeof pergunta === 'string' && pergunta.trim()) perguntar(pergunta.trim()); else setTimeout(() => txt.focus(), 50);
+    if (typeof pergunta === 'string' && pergunta.trim()) perguntar(pergunta.trim()); else if (aba === 'perguntar') setTimeout(() => txt.focus(), 50);
   }
 
   const CORES = ['#2C5234', '#C9A227', '#7FA37A', '#B5452B', '#6B7A70'];

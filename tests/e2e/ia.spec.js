@@ -8,6 +8,8 @@ test('IA: Pergunte ao painel abre, consulta as vendas e responde (simulada na ap
   await b.click();
   const g = page.locator('.ia-gaveta');
   await expect(g).toBeVisible();
+  // com análise do dia ainda não lida o ✨ abre nela: vai para Perguntar
+  await g.locator('.ia-abas .seg button', { hasText: 'Perguntar' }).click();
   await g.locator('.ia-sug').first().click();
   await expect(g.locator('.ia-ela')).toContainText('consultando as vendas');
   await expect(g.locator('.ia-ela .ia-md')).toContainText('simulada');
@@ -62,14 +64,35 @@ test('IA: chave fica em Configurações → Lojas → (loja) → Inteligência a
   await expect(b).toContainText('Na apresentação nada é salvo');
 });
 
-test('IA: Início explica o porquê (decomposição + fora do padrão) e o ✨ não quebra o topo no celular', async ({ page }, info) => {
+test('IA: análise do dia — manchete no topo do Início, completa no ✨ (aba), pontinho some depois de ler; ✨ não quebra o topo no celular', async ({ page }, info) => {
   await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS.db);
-  await page.evaluate(() => { location.hash = '#inicio'; });
-  const c = page.locator('.ini-porque');
-  await expect(c).toBeVisible({ timeout: 30000 });
-  await expect(c.locator('.ini-porque-m')).toContainText('últimos 7 dias');
-  await expect(c).toContainText('movimento (atendimentos)');
-  await expect(c).not.toContainText('null');
+  await page.evaluate(() => { try { localStorage.removeItem('teashop.ia.lida'); } catch { /* ok */ } location.hash = '#inicio'; });
+  const faixa = page.locator('.ini-faixa-btn');
+  await expect(faixa).toBeVisible({ timeout: 30000 });
+  await expect(faixa).toContainText('últimos 7 dias');
+  await expect(faixa).toContainText('ler a análise');
+  // a faixa vem antes dos números
+  const yF = (await faixa.boundingBox()).y, yK = (await page.locator('.g-kpi').first().boundingBox()).y;
+  expect(yF).toBeLessThan(yK);
+  const bt = page.locator(info.project.name === 'celular' ? '#fabIA' : '#btnIA');
+  await expect(bt).toHaveClass(/ia-novidade/);
+  await faixa.click();
+  const g = page.locator('.ia-gaveta');
+  await expect(g.locator('.ia-abas .seg button.on')).toHaveText('Análise do dia');
+  await expect(g.locator('.ia-an-m')).toContainText('últimos 7 dias');
+  await expect(g).toContainText('movimento (atendimentos)');
+  await expect(g.locator('.ia-an')).not.toContainText('null');
+  await expect(g.locator('.ia-rodape')).toBeHidden(); // na análise não tem caixa de pergunta
+  await expect(bt).not.toHaveClass(/ia-novidade/);
+  // "Perguntar mais sobre isso" vai para a aba Perguntar já com a pergunta
+  await g.locator('.ia-an-perg').first().click();
+  await expect(g.locator('.ia-abas .seg button.on')).toHaveText('Perguntar');
+  await expect(g.locator('.ia-eu').first()).toContainText('Sobre a análise do dia');
+  await page.keyboard.press('Escape');
+  // aberta de novo depois de lida: começa em Perguntar
+  await bt.click();
+  await expect(page.locator('.ia-gaveta .ia-abas .seg button.on')).toHaveText('Perguntar');
+  await page.keyboard.press('Escape');
   if (info.project.name === 'celular') {
     const alt = await page.locator('.topbar').evaluate((el) => el.getBoundingClientRect().height);
     const sel = await page.locator('#lojaSel').boundingBox(), user = await page.locator('#btnUsuario').boundingBox();
@@ -89,6 +112,7 @@ test('IA: resposta que estoura o limite mostra aviso e "Tentar de novo" (sem que
   });
   await page.locator('#btnIA').click();
   const g = page.locator('.ia-gaveta');
+  await g.locator('.ia-abas .seg button', { hasText: 'Perguntar' }).click();
   await g.locator('textarea').fill('Teste de limite');
   await g.locator('textarea').press('Enter');
   await expect(g.locator('.ia-erro')).toContainText('limite de tamanho');

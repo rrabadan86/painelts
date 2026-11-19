@@ -2580,3 +2580,39 @@ details.vl-ajuda summary { cursor: pointer; font-weight: 600; }
 .ia-hist-abrir { flex: 1; min-width: 0; text-align: left; background: none; border: 0; padding: 10px 12px; cursor: pointer; font: inherit; color: var(--ink); display: grid; gap: 2px; }
 .ia-hist-abrir b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .ia-hist-del { padding: 0 12px; text-decoration: none; }
+
+/* ===== análise do dia (IA): faixa no Início + aba no ✨ + pontinho ===== */
+.ini-faixa-ia { margin: 4px 0 14px; }
+.ini-faixa-ia[hidden] { display: none; }
+.ini-faixa-ia > .ini-faixa-tag, .ini-faixa-ia > .ini-faixa-txt { display: inline; }
+.ini-faixa-btn { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; cursor: pointer; font: inherit; color: inherit;
+  background: #FFF8E1; border: 1px solid #EBCB5B; border-left: 5px solid #C9A227; border-radius: 12px; padding: 10px 14px; }
+.ini-faixa-btn:hover { background: #FFF2C4; }
+.ini-faixa-tag { flex: 0 0 auto; font-weight: 700; color: #7A5A00; font-size: 13px; }
+.ini-faixa-txt { flex: 1 1 auto; min-width: 0; font-size: 14px; line-height: 1.35; color: var(--dark, #1E2B22);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.ini-faixa-ir { flex: 0 0 auto; font-weight: 600; color: var(--green, #2C5234); white-space: nowrap; font-size: 13px; }
+@media (max-width: 600px) {
+  .ini-faixa-btn { flex-wrap: wrap; gap: 4px 8px; }
+  .ini-faixa-txt { flex-basis: 100%; order: 2; -webkit-line-clamp: 3; }
+  .ini-faixa-ir { order: 3; }
+}
+.ia-abas { margin: 6px 0 8px; }
+.ia-abas .seg { width: 100%; display: grid; grid-template-columns: 1fr 1fr; }
+.ia-an { display: flex; flex-direction: column; gap: 10px; padding: 4px 2px 8px; }
+.ia-an-m { margin: 0; font-size: 18px; font-weight: 700; line-height: 1.35; color: var(--dark, #1E2B22); }
+.ia-an-meta { display: block; margin-top: -4px; }
+.ia-an-b { border: 1px solid var(--line, #E2DCCF); border-radius: 12px; background: #fff; padding: 0 14px; }
+.ia-an-b > summary { cursor: pointer; padding: 12px 0; font-weight: 700; line-height: 1.35; list-style-position: inside; }
+.ia-an-b[open] > summary { border-bottom: 1px solid var(--line, #E2DCCF); margin-bottom: 8px; }
+.ia-an-porque { font-size: 14px; line-height: 1.5; }
+.ia-an-fazer { margin: 8px 0 4px; padding: 8px 10px; border-radius: 10px; background: #EEF3EC; color: #22603A; font-size: 14px; line-height: 1.45; }
+.ia-an-perg { display: inline-block; margin: 4px 0 12px; font-size: 13px; }
+.ia-an-fp { border: 1px solid #F0C9A8; background: #FFF8F1; border-radius: 12px; padding: 10px 14px; }
+.ia-an-fp-t { font-weight: 700; color: #9A4A12; margin-bottom: 6px; }
+.ia-an-fp-i { margin-top: 6px; font-size: 14px; line-height: 1.4; }
+.ia-an-vazio { padding: 18px 4px; }
+.ia-an-nota { display: block; }
+/* pontinho: análise do dia ainda não lida */
+.ia-btn { position: relative; } /* o .ia-fab já é fixed */
+.ia-btn.ia-novidade::after, .ia-fab.ia-novidade::after { content: ''; position: absolute; top: 4px; right: 4px; width: 11px; height: 11px; border-radius: 50%; background: #E0A800; box-shadow: 0 0 0 2px #fff; }
