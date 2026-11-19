@@ -2363,3 +2363,11 @@ details.vl-ajuda summary { cursor: pointer; font-weight: 600; }
 .cfm-semcupom { color: #9a7a20; font-size: 12.5px; }
 @media (max-width: 760px) { .cfm-cab { display: none; } .cfm-item { grid-template-columns: 1fr; gap: 4px; } .cfm-lista { border-top: 1px solid var(--line, #e3ddcf); border-radius: 8px; } }
 .cfm-como { display: block; font-size: 11.5px; color: #1f5a2b; } .cfm-como.aprox { color: #9a7a20; }
+/* Créditos: cobrança por e-mail */
+.cfe { width: min(760px, 96vw); max-height: 92vh; overflow: auto; display: flex; flex-direction: column; gap: 10px; }
+.cfe-sec { font-weight: 700; font-size: 13px; color: var(--green, #2C5234); margin-top: 4px; }
+.cfe-itens { max-height: 26vh; }
+.cfe-msg { min-height: 130px; font-family: inherit; line-height: 1.45; }
+.cfe-prev { border: 1px solid var(--line, #e3ddcf); border-radius: 10px; padding: 6px 10px; overflow-x: auto; background: #fff; }
+.cfe-info { font-size: 12.5px; display: flex; flex-direction: column; gap: 2px; }
+.cfr-btns { display: flex; gap: 8px; flex-wrap: wrap; }

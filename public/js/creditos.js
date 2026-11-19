@@ -124,6 +124,66 @@
     document.body.append(fundo);
   }
 
+  /** janela de cobrança por e-mail: escolher o que cobrar, revisar destinatários/assunto/mensagem e enviar */
+  function cobrar(tipo, d, loja) {
+    const fid = tipo === 'fidelidade';
+    const opcoes = fid
+      ? d.fidelidade.meses.filter((m) => m.situacao !== 'mes_aberto' && m.situacao !== 'ok').map((m) => ({ id: m.mes, rot: `Prêmios de ${mesTxt(m.mes)}`, val: Math.max(0, m.devido - m.recebido), info: (PST[m.situacao] || [''])[0], marcado: m.situacao === 'atrasado' || m.situacao === 'faltou' }))
+      : d.creditos.filter((c) => c.situacao === 'atrasado' || c.situacao === 'aberto' || c.situacao === 'confirmar').map((c) => ({ id: c.id, rot: `NF-e ${c.numero} · ${dataTxt(c.emissao)}`, val: c.valor, info: (ST[c.situacao] || [''])[0], marcado: c.situacao === 'atrasado' }));
+    if (!opcoes.length) { toast(fid ? 'Nenhum mês de prêmios para cobrar.' : 'Nenhuma devolução em aberto para cobrar.', true); return; }
+    const marc = new Set(opcoes.filter((o) => o.marcado).map((o) => o.id));
+    if (!marc.size) marc.add(opcoes[0].id);
+    const para = h('input', { class: 'f-input', placeholder: 'email@franquia.com.br, outro@…' });
+    const assunto = h('input', { class: 'f-input', maxlength: 200 });
+    const msg = h('textarea', { class: 'f-input cfe-msg', rows: 7 });
+    const prev = h('div', { class: 'cfe-prev' });
+    const info = h('div', { class: 'cfe-info muted' });
+    let editouA = false, editouM = false;
+    assunto.addEventListener('input', () => { editouA = true; });
+    msg.addEventListener('input', () => { editouM = true; });
+    const enviar = h('button', { type: 'button', class: 'btn primary' }, '✉ Enviar e-mail');
+    const carregar = async () => {
+      enviar.disabled = !marc.size;
+      if (!marc.size) { prev.replaceChildren(h('p', { class: 'muted' }, 'Marque o que cobrar.')); return; }
+      try {
+        const r = await api('POST', 'conta-franquia/email/previa', { loja, tipo, ...(fid ? { meses: [...marc] } : { ids: [...marc] }) });
+        if (!para.value) para.value = (r.para || []).join(', ');
+        if (!editouA) assunto.value = r.assunto;
+        if (!editouM) msg.value = r.mensagem;
+        prev.innerHTML = r.tabelaHtml; // montada no servidor, com o texto escapado
+        info.replaceChildren(...[h('div', null, h('b', null, 'Anexos: '), (r.anexos || []).join(', ') || 'nenhum'),
+          r.ultima ? h('div', null, `Última cobrança deste tipo: ${new Date(r.ultima.em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })} por ${r.ultima.por || '—'}, para ${r.ultima.para.join(', ')}`) : null].filter(Boolean));
+      } catch (e) { prev.replaceChildren(h('div', { class: 'notice err' }, e.message)); }
+    };
+    const fundo = h('div', { class: 'cp-modal-bg' });
+    const fechar = () => fundo.remove();
+    fundo.addEventListener('click', (e) => { if (e.target === fundo) fechar(); });
+    enviar.addEventListener('click', async () => {
+      const total = opcoes.filter((o) => marc.has(o.id)).reduce((s0, o) => s0 + o.val, 0);
+      if (!confirm(`Enviar a cobrança para ${para.value}?\n\n${marc.size} ${fid ? 'mês(es) de prêmios' : 'nota(s) de devolução'} · ${fmt.brl(total)}`)) return;
+      enviar.disabled = true; enviar.textContent = 'Enviando…';
+      try {
+        await api('POST', 'conta-franquia/email/enviar', { loja, tipo, para: para.value, assunto: assunto.value, mensagem: msg.value, ...(fid ? { meses: [...marc] } : { ids: [...marc] }) });
+        fechar(); toast('Cobrança enviada.');
+      } catch (e) { toast(e.message, true); enviar.disabled = false; enviar.textContent = '✉ Enviar e-mail'; }
+    });
+    const lista = h('div', { class: 'cfl-lista cfe-itens' }, ...opcoes.map((o) => {
+      const cb = h('input', { type: 'checkbox', checked: marc.has(o.id) || null });
+      const el = h('label', { class: 'cfl-linha' + (marc.has(o.id) ? ' on' : '') }, cb, h('span', { class: 'cfl-nf' }, h('b', null, o.rot)), h('span', { class: 'cfl-onde' }, o.info), h('b', { class: 'cfl-valor' }, fmt.brl(o.val)));
+      cb.addEventListener('change', () => { if (cb.checked) marc.add(o.id); else marc.delete(o.id); el.classList.toggle('on', cb.checked); carregar(); });
+      return el;
+    }));
+    const campo = (rot, el) => h('label', { class: 'cfr-campo' }, h('span', null, rot), el);
+    fundo.append(h('div', { class: 'card cp-copiar cf-ligar cfe' },
+      h('div', { class: 'cfl-cab' }, h('div', null, h('h3', null, fid ? 'Cobrar a franquia · prêmios de fidelidade' : 'Cobrar a franquia · devoluções'), h('small', { class: 'muted' }, 'Revise e envie. Nada sai sem você clicar em Enviar.')), h('button', { type: 'button', class: 'cf-b', 'aria-label': 'Fechar', onclick: fechar }, '✕')),
+      h('div', { class: 'cfe-sec' }, fid ? 'Meses a cobrar' : 'Notas a cobrar'), lista,
+      campo('Para', para), campo('Assunto', assunto), campo('Mensagem', msg),
+      h('div', { class: 'cfe-sec' }, 'Vai junto no e-mail'), prev, info,
+      h('div', { class: 'cp-acoes' }, h('span', { style: { flex: 1 } }), h('button', { type: 'button', class: 'btn', onclick: fechar }, 'Cancelar'), enviar)));
+    document.body.append(fundo);
+    carregar();
+  }
+
   function premiosCard(d, loja, acaoRoy) {
     const fid = d.fidelidade;
     if (!fid) return null;
@@ -144,7 +204,7 @@
     return h('div', { class: 'card mt' },
       h('div', { class: 'cfr-topo' }, h('div', null, h('div', { class: 'card-title' }, 'Prêmios de fidelidade · desconto nos royalties'),
         h('div', { class: 'card-sub' }, `A franquia devolve ${fmt.int(fid.pct * 100)}% do custo dos prêmios resgatados no FIXE, como desconto no boleto de royalties (normalmente no royalty do mês seguinte). Lance o desconto que veio, com o mês de referência do royalty, e o painel confere.`)),
-        fid.meses.length ? h('button', { type: 'button', class: 'btn primary', onclick: () => lancarRoyalty(fid, acaoRoy) }, '+ Lançar desconto nos royalties') : null),
+        fid.meses.length ? h('div', { class: 'cfr-btns' }, h('button', { type: 'button', class: 'btn', onclick: () => cobrar('fidelidade', d, loja) }, '✉ Cobrar a franquia'), h('button', { type: 'button', class: 'btn primary', onclick: () => lancarRoyalty(fid, acaoRoy) }, '+ Lançar desconto nos royalties')) : null),
       fid.meses.length ? h('div', { class: 'cfr-res' },
         h('div', { class: r.nAtrasado ? 'ruim' : '' }, h('small', null, 'Atrasado'), h('b', null, fmt.brl(r.atrasado)), h('small', null, r.nAtrasado ? `${r.nAtrasado} mês(es) sem desconto` : 'nada atrasado')),
         h('div', { class: r.nFaltou ? 'ruim' : '' }, h('small', null, 'Veio a menos'), h('b', null, fmt.brl(r.faltou)), h('small', null, r.nFaltou ? `${r.nFaltou} mês(es) com diferença` : 'nenhuma diferença')),
@@ -301,7 +361,7 @@
         TS.kpi('Já compensado', fmt.brl(r.compensado), 'descontado em notas ou marcado à mão')),
       d.descontoLido ? null : h('div', { class: 'notice mt' }, h('b', null, 'Ainda sem o desconto das notas de compra. '), 'O robô passa a ler o desconto na próxima sincronização das notas de entrada. Até lá, as devoluções ficam em aberto.'),
       cardPend,
-      h('div', { class: 'card mt' }, h('div', { class: 'card-title' }, 'Devoluções'),
+      h('div', { class: 'card mt' }, h('div', { class: 'cfr-topo' }, h('div', { class: 'card-title' }, 'Devoluções'), d.creditos.some((c) => c.situacao === 'atrasado' || c.situacao === 'aberto' || c.situacao === 'confirmar') ? h('button', { type: 'button', class: 'btn', onclick: () => cobrar('devolucoes', d, loja) }, '✉ Cobrar a franquia') : null),
         h('div', { class: 'card-sub' }, `Cada NF-e de devolução autorizada${variosForn ? '' : ` para ${d.creditos[0] ? d.creditos[0].fornecedor : 'a franquia'}`}. Sem desconto em ${d.prazo} dias = atrasada. Clique para abrir a NF-e.`),
         h('div', { class: 'est-tools' }, tab.searchBox, seg), tab),
       cardPremios,

@@ -107,3 +107,18 @@ test('Prêmio de fidelidade: acha o cupom da venda em que o prêmio saiu (mesmo 
   expect(r.nada).toBeNull();
   expect([r.porCpf, r.como]).toEqual([r.esperado, 'cpf']);
 });
+
+test('Cobrar a franquia: e-mail das devoluções e dos prêmios (revisar antes; sem coluna de cupom)', async ({ page }, info) => {
+  test.skip(info.project.name !== 'computador');
+  await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS.db);
+  await page.evaluate(() => { location.hash = '#creditos'; });
+  await page.locator('.card', { hasText: 'Devoluções' }).getByRole('button', { name: '✉ Cobrar a franquia' }).click();
+  const m = page.locator('.cfe');
+  await expect(m).toContainText('Cobrar a franquia · devoluções');
+  await expect(m.locator('.cfe-prev')).toContainText('NF-e 531');
+  await expect(m.locator('input').nth(0)).not.toHaveValue('');
+  await m.getByRole('button', { name: 'Fechar' }).click();
+  await page.locator('.card', { hasText: 'Prêmios de fidelidade' }).last().getByRole('button', { name: '✉ Cobrar a franquia' }).click();
+  await expect(page.locator('.cfe .cfe-prev')).toContainText('Falta');
+  await expect(page.locator('.cfe')).not.toContainText(/Cupom/);
+});

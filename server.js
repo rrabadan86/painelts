@@ -492,8 +492,7 @@ const cabNfs = (n) => ({ chave: n.chave, numero: n.numero, serie: n.serie, data:
   dest: n.dest ? { nome: n.dest.nome, doc: n.dest.doc, tipoDoc: n.dest.tipoDoc, mun: n.dest.end && n.dest.end.mun, uf: n.dest.end && n.dest.end.uf } : null,
   valor: n.total.vNF, itens: n.itens.length, qtd: n.itens.reduce((t, i) => t + (i.qtd || 0), 0), cfops: [...new Set(n.itens.map((i) => i.cfop))] });
 // apresentação: conta com a franquia de exemplo (nada é salvo)
-app.get('/api/demo/conta-franquia', (req, res) => {
-  if (!lojaDemo(req)) return res.status(400).json({ erro: 'Escolha uma loja.' });
+function contaDemo() {
   const CFd = require('./src/contafranquia');
   const d = (n) => new Date(Date.now() - n * 864e5).toISOString().slice(0, 10);
   const forn = 'TSB FRANQUIAS E COMERCIO LTDA ME';
@@ -514,10 +513,18 @@ app.get('/api/demo/conta-franquia', (req, res) => {
   }
   { const ls = fidelidade.meses, soma = (f, k) => Math.round(ls.filter(f).reduce((a, x) => a + x[k], 0) * 100) / 100;
     Object.assign(fidelidade.resumo, { atrasado: soma((x) => x.situacao === 'atrasado', 'devido'), nAtrasado: ls.filter((x) => x.situacao === 'atrasado').length, faltou: soma((x) => x.situacao === 'faltou', 'diferenca'), nFaltou: ls.filter((x) => x.situacao === 'faltou').length, recebido: soma(() => true, 'recebido') }); }
-  res.json({ ...CFd.conta('__demo__', { saidas, compras, devsPainel: [] }), fidelidade });
+  return { ...CFd.conta('__demo__', { saidas, compras, devsPainel: [] }), fidelidade };
+}
+
+app.get('/api/demo/conta-franquia', (req, res) => { if (!lojaDemo(req)) return res.status(400).json({ erro: 'Escolha uma loja.' }); res.json(contaDemo()); });
+app.post('/api/demo/conta-franquia/email/previa', express.json({ limit: '10kb' }), (req, res) => {
+  const conta = contaDemo();
+  const r = require('./src/cobranca').montar(req.body.tipo === 'fidelidade' ? 'fidelidade' : 'devolucoes', { conta, fid: conta.fidelidade, ids: req.body.ids, meses: req.body.meses, nomeLoja: 'Tea Shop Centro' });
+  res.json({ ...r, para: ['franquia@exemplo.com'], ultima: null, anexos: req.body.tipo === 'fidelidade' ? ['planilha com a relação dos resgates (.xlsx)'] : ['XML de cada nota de devolução'] });
 });
 app.post('/api/demo/conta-franquia/acao', (req, res) => res.status(400).json({ erro: 'Na apresentação nada é salvo.' }));
 app.post('/api/demo/conta-franquia/royalties', (req, res) => res.status(400).json({ erro: 'Na apresentação nada é salvo.' }));
+app.post('/api/demo/conta-franquia/email/enviar', (req, res) => res.status(400).json({ erro: 'Na apresentação nenhum e-mail é enviado.' }));
 app.get('/api/demo/nfsaida', (req, res) => { if (!lojaDemo(req)) return res.status(400).json({ erro: 'Escolha uma loja.' }); res.json({ notas: nfsDemo(req.query.loja).map(cabNfs), temXml: true }); });
 app.get('/api/demo/nfsaida/nota', (req, res) => { const n = lojaDemo(req) && nfsDemo(req.query.loja).find((x) => x.chave === req.query.chave); if (!n) return res.status(404).json({ erro: 'Nota não encontrada.' }); res.json(n); });
 app.get('/api/demo/nfsaida/danfe', (req, res) => { const n = lojaDemo(req) && nfsDemo(req.query.loja).find((x) => x.chave === req.query.chave); if (!n) return res.status(404).send('Nota não encontrada.'); res.set('X-Robots-Tag', 'noindex').type('html').send(NFSd.danfe(n)); });
@@ -1281,6 +1288,53 @@ app.post('/api/conta-franquia/royalties', express.json({ limit: '5kb' }), (req, 
   if (r.erro) return res.status(400).json({ erro: r.erro });
   C.auditar(req.user, req.body.tipo === 'apagar' ? 'apagou desconto nos royalties (fidelidade)' : 'lançou desconto nos royalties (fidelidade)', loja.id, { loja: loja.id, ref: req.body.ref || null, premios: req.body.premios || null, valor: req.body.valor || null });
   res.json(contaDaLoja(loja));
+});
+// cobrança à franquia por e-mail: rascunho (para revisar) e envio (só com clique e confirmação; fica registrado)
+const COB = require('./src/cobranca');
+const nomeLojaCF = (loja) => (loja.marca && loja.marca.nome) || loja.nome;
+const rascunhoCob = (loja, b) => {
+  const conta = contaDaLoja(loja);
+  const r = COB.montar(b.tipo === 'fidelidade' ? 'fidelidade' : 'devolucoes', { conta, fid: conta.fidelidade, ids: Array.isArray(b.ids) ? b.ids : null, meses: Array.isArray(b.meses) ? b.meses : null, nomeLoja: nomeLojaCF(loja) });
+  return { conta, r };
+};
+app.post('/api/conta-franquia/email/previa', express.json({ limit: '10kb' }), (req, res) => {
+  if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
+  const loja = lojaCF(req, res, true); if (!loja) return;
+  const tipo = req.body.tipo === 'fidelidade' ? 'fidelidade' : 'devolucoes';
+  const { r } = rascunhoCob(loja, req.body);
+  const para = COB.emails(loja.id, tipo) || DEV.destinatarios(loja.id);
+  const ult = COB.historico(loja.id).find((x) => x.tipo === tipo) || null;
+  res.json({ ...r, para, ultima: ult, anexos: tipo === 'fidelidade' ? ['planilha com a relação dos resgates (.xlsx)'] : r.itens.map(() => null).length ? ['XML de cada nota de devolução'] : [] });
+});
+app.post('/api/conta-franquia/email/enviar', express.json({ limit: '20kb' }), async (req, res) => {
+  if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
+  const loja = lojaCF(req, res, true); if (!loja) return;
+  const tipo = req.body.tipo === 'fidelidade' ? 'fidelidade' : 'devolucoes';
+  const p = COB.validarPara(req.body.para);
+  if (p.erro) return res.status(400).json({ erro: p.erro });
+  const { conta, r } = rascunhoCob(loja, req.body);
+  if (!r.itens.length) return res.status(400).json({ erro: 'Nada para cobrar.' });
+  const assunto = String(req.body.assunto || r.assunto).replace(/[\r\n]+/g, ' ').trim().slice(0, 200);
+  const mensagem = String(req.body.mensagem ?? r.mensagem).slice(0, 5000);
+  const NOTIF = require('./src/notificacoes');
+  const cfgN = NOTIF.ler();
+  const lc = (cfgN.lojas || {})[loja.id];
+  const smtp = lc && lc.email && lc.email.host ? lc.email : cfgN.email;
+  const anexos = [];
+  try {
+    if (tipo === 'fidelidade') {
+      anexos.push({ filename: `premios-fidelidade-${loja.id}.xlsx`, content: Buffer.from(await COB.planilhaFidelidade(conta.fidelidade, r.itens, nomeLojaCF(loja))) });
+    } else {
+      for (const c of conta.creditos.filter((x) => r.itens.includes(x.id) && x.xml)) {
+        const a = NFS.achar(loja.id, c.id);
+        if (a) anexos.push({ filename: `NFe-devolucao-${c.numero}.xml`, path: a.arq });
+      }
+    }
+    await NOTIF.enviarEmail(p.ok.join(', '), assunto, `${mensagem}\n\n${r.tabelaTexto}`, COB.html(mensagem, r.tabelaHtml), smtp, anexos);
+  } catch (e) { return res.status(502).json({ erro: 'O e-mail não saiu: ' + (e.message || e) }); }
+  COB.registrar(loja.id, tipo, p.ok, r.itens, r.total, req.user);
+  C.auditar(req.user, tipo === 'fidelidade' ? 'enviou cobrança à franquia (prêmios de fidelidade)' : 'enviou cobrança à franquia (devoluções)', loja.id, { loja: loja.id, para: p.ok, itens: r.itens, total: r.total });
+  res.json({ ok: true, para: p.ok, historico: COB.historico(loja.id).slice(0, 20) });
 });
 app.get('/api/conta-franquia', (req, res) => {
   const loja = lojaCF(req, res); if (!loja) return;
