@@ -1385,6 +1385,7 @@
     const maq = h('input', { class: 'f-input', type: 'number', min: 0, max: 50, step: '0.01', value: cfg.cartaoPct ?? 0, style: { maxWidth: '110px' } });
     const mMin = h('input', { class: 'f-input', type: 'number', min: -50, max: 95, step: '0.5', value: cfg.margemMin ?? 15, style: { maxWidth: '110px' } });
     const mAlvo = h('input', { class: 'f-input', type: 'number', min: -50, max: 95, step: '0.5', value: cfg.margemAlvo ?? 30, style: { maxWidth: '110px' } });
+    const teto = h('input', { class: 'f-input', type: 'number', min: 1, max: 90, step: '0.5', value: cfg.comprasTetoPct ?? 32, style: { maxWidth: '110px' } }); // Compras × vendas (comprasvendas.js)
     // ---------- outros custos, agrupados por categoria (Funcionários, Imóvel, Sistemas, Outros…) ----------
     const cats = (cfg.categorias || []).map((c) => ({ ...c }));
     if (!cats.some((c) => c.id === 'outros')) cats.push({ id: 'outros', nome: 'Outros' });
@@ -1478,7 +1479,7 @@
       try {
         const embalagens = Object.fromEntries(embs.map(([g, i]) => [g, i.value.split(',').map((s) => s.trim()).filter(Boolean).map((s) => { const [cod, q] = s.split(/[×x*]/i); return { cod: (cod || '').trim(), qtd: +(q || 1) }; })]));
         const r = await fetch(`/api/estoque/cfg?loja=${encodeURIComponent(lojaId)}`, { method: 'PUT', credentials: 'same-origin', headers: { 'X-Painel': '1', 'Content-Type': 'application/json' },
-          body: JSON.stringify({ entregaDias: +ent.value, coberturaDias: +cob.value, paradoDias: +par.value, segurancaPct: +seg.value, simplesPct: simp.value, cartaoPct: maq.value, margemMin: mMin.value, margemAlvo: mAlvo.value, outros: itens.map((x) => ({ nome: x.nome, tipo: x.tipo, valor: x.valor, aplica: x.aplica, cat: x.cat })), categorias: cats.map((c) => ({ id: c.id, nome: c.nome })), pontuais: pont.map((x) => ({ nome: x.nome, ym: x.ym, valor: x.valor, cat: x.cat, anual: !!x.anual })), embalagens }) });
+          body: JSON.stringify({ entregaDias: +ent.value, coberturaDias: +cob.value, paradoDias: +par.value, segurancaPct: +seg.value, simplesPct: simp.value, cartaoPct: maq.value, margemMin: mMin.value, margemAlvo: mAlvo.value, comprasTetoPct: teto.value, outros: itens.map((x) => ({ nome: x.nome, tipo: x.tipo, valor: x.valor, aplica: x.aplica, cat: x.cat })), categorias: cats.map((c) => ({ id: c.id, nome: c.nome })), pontuais: pont.map((x) => ({ nome: x.nome, ym: x.ym, valor: x.valor, cat: x.cat, anual: !!x.anual })), embalagens }) });
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j.erro || 'Falha ao salvar.');
         cache.delete(lojaId);
@@ -1488,7 +1489,7 @@
       salvar.disabled = salvar2.disabled = false;
     });
     const ouvir = (el) => { el.addEventListener('input', sujo); el.addEventListener('change', sujo); return el; };
-    [ent, cob, par, seg, simp, maq, mMin, mAlvo, outrosBox, pontBox].forEach(ouvir);
+    [ent, cob, par, seg, simp, maq, mMin, mAlvo, teto, outrosBox, pontBox].forEach(ouvir);
     embs.forEach(([, i]) => ouvir(i));
     outrosBox.addEventListener('click', (e) => { if (e.target.closest('.est-outro-rem')) sujo(); });
     if (opts.so === 'custos') {
@@ -1523,7 +1524,8 @@
         h('label', null, h('span', null, 'Entrega do fornecedor'), h('div', null, ent, ' dias')),
         h('label', null, h('span', null, 'Pedir para'), h('div', null, cob, ' dias de venda')),
         h('label', null, h('span', null, 'Parado depois de'), h('div', null, par, ' dias sem venda')),
-        h('label', null, h('span', null, 'Segurança do mínimo sugerido'), h('div', null, seg, ' %'))),
+        h('label', null, h('span', null, 'Segurança do mínimo sugerido'), h('div', null, seg, ' %')),
+        h('label', null, h('span', null, 'Teto de compras do mês', TS.dica('Quanto das vendas a loja aceita gastar em compras no mês (padrão 32%). Aparece em "Compras × vendas", no Pedido e no Resultado: acima disso a loja está comprando mais do que o combinado para o que vende.')), h('div', null, teto, ' % das vendas'))),
       h('div', { class: 'f-label', style: { marginTop: '14px' } }, 'Embalagem de cada pacote de chá a granel (entra no custo e no consumo)'),
       h('div', { class: 'est-emb' }, embs.map(([g, i]) => h('label', null, h('span', null, g === '1000' ? '1 kg' : g + ' g'), i, h('small', { class: 'muted' }, nomeEmb(cfg.embalagens[g]))))),
       h('div', { class: 'cfg-acoes' }, salvar, msg),

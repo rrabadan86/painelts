@@ -432,9 +432,11 @@
           R.orcamento != null ? h('small', { class: t > R.orcamento * 1.02 ? 'down' : '' }, t <= R.orcamento ? `sobram ${fmt.brl0(R.orcamento - t)}` : `passa ${fmt.brl0(t - R.orcamento)}`) : null),
         h('button', { type: 'button', class: 'btn primary', onclick: () => { const c = corpo.querySelector('.ped-robo'); if (c) c.scrollIntoView({ behavior: 'smooth', block: 'start' }); } }, 'Montar carrinho ›'));
     };
+    let cvQuadro = null;
     const pintarTotal = () => {
       compos.forEach(desenharCompo);
       pintarBarra();
+      if (cvQuadro) cvQuadro.atualizar(total()); // compras do mês × teto, com este pedido somado
       const t = total(), n = R.linhas.filter((r) => r.pedir > 0).length;
       kTotal.textContent = fmt.brl0(t);
       const nOb = R.linhas.filter((r) => r.obrig).length;
@@ -465,6 +467,7 @@
         `Vendas previstas: ritmo dos últimos ${R.N} dias × ${fmt.int(ate)} dias até começar + ${R.ev.nome} do ano passado × ${fmt.n2(R.cresc)}. Se o pedido sugerido passar muito disso, há estoque sobrando ou produtos de giro alto; confira as quantidades.`));
     }
     corpo.append(h('div', { class: 'grid g-kpi mt' }, kpis));
+    if (TS.comprasVendas) corpo.append((cvQuadro = TS.comprasVendas.quadroPedido(M, e, total())));
     if (R.obTotal) corpo.append(h('div', { class: 'card mt ped-compo-card' }, h('div', { class: 'card-title' }, 'Composição do pedido'), R.novoCompo()));
     if (SUG.size) corpo.append(cartaoSugestoes());
     corpo.append(h('div', { class: 'mt' }, cartaoObrigatorio(corpo, loja, M, e, p, R)));

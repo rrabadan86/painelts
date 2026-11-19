@@ -136,6 +136,7 @@
       D.loja = loja; D.hist = e.historico || {}; D.comprasItens = (e.compras && e.compras.itens) || {};
       D.tabela = new Map(((e.tabela && e.tabela.itens) || []).filter((t) => t.preco > 0.011).map((t) => [t.cod, t.preco]));
       D.tabHist = (e.tabela && e.tabela.historico) || {}; D.tabHistDesde = (e.tabela && e.tabela.historicoDesde) || null;
+      if (TS.efeitoPreco) D.efeito = TS.efeitoPreco.calcular(D, M); // efeito de cada reajuste de venda (efeitopreco.js)
       pintar(corpo, D);
     }).catch((err) => corpo.replaceChildren(h('div', { class: 'notice err' }, err.message)));
   };
@@ -211,7 +212,7 @@
       sem: ['Sem reajuste', (r) => r.status === 'nada'],
       ...(D.tabela && D.tabela.size ? { cad: ['Caixa ≠ sistema', (r) => r.tabDif != null] } : {}),
     };
-    const filtro = state.precoFil || 'todos';
+    const filtro = FIL[state.precoFil] || (state.precoFil === 'efeito' && D.efeito) ? state.precoFil : 'todos';
     const media = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
     const comC = linhas.filter((r) => r.nC), comV = linhas.filter((r) => r.nV), perda = linhas.filter((r) => r.perdeu);
     const inicioCusto = Number.isFinite(D.inicioCusto) ? TS.dayToIso(D.inicioCusto) : null;
@@ -224,7 +225,8 @@
         TS.kpi('Perderam margem', fmt.int(perda.length), perda.length ? h('span', { class: 'neg' }, 'custo subiu mais que a venda') : 'nenhum no período',
           'Margem bruta no fim do período menor que antes dele.'),
         TS.kpi('Histórico de custo desde', inicioCusto ? quando(inicioCusto) : '—', D.temCompras ? 'notas de compra do AppNext + importações de estoque' : 'o painel guarda o custo a cada importação de estoque',
-          'O AppNext só informa o custo de hoje. Antes desta data, o custo é estimado pelo mais antigo conhecido.')),
+          'O AppNext só informa o custo de hoje. Antes desta data, o custo é estimado pelo mais antigo conhecido.'),
+        D.efeito ? TS.efeitoPreco.kpi(D.efeito, () => { state.precoFil = 'efeito'; pintar(corpo, D); }) : null),
       h('div', { class: 'mt' }, tabela(linhas, FIL, filtro, corpo, D)),
       h('p', { class: 'muted mt' }, 'As notas de entrada, com os produtos e valores de cada uma, ficam em ', h('a', { href: '#notas' }, 'Estoque → Notas fiscais'), '.'));
   }
@@ -240,6 +242,10 @@
   }
 
   function tabela(linhas, FIL, filtro, corpo, D) {
+    const cont = (k) => linhas.filter(FIL[k][1]).length;
+    // abas da tela: os filtros dos produtos + "Reajustes (N)" (efeito de cada reajuste de venda, em efeitopreco.js)
+    const abas = () => TS.seg([...Object.entries(FIL).map(([k, [t]]) => [`${t} (${cont(k)})`, k]), ...(D.efeito ? [[`Reajustes (${D.efeito.lista.length})`, 'efeito']] : [])], filtro, (v) => { state.precoFil = v; pintar(corpo, D); });
+    if (filtro === 'efeito') return TS.efeitoPreco.cartao(D.efeito, abas(), (nome) => { const r = linhas.find((x) => x.nome === nome); if (r) abrirProduto(r); }, () => pintar(corpo, D));
     const rows = linhas.filter(FIL[filtro][1]);
     const temCad = !!(D.tabela && D.tabela.size); // com a planilha de preços: "No sistema" (cadastro) e "No caixa" lado a lado
     const STATUS = { ambos: ['Custo + Venda', 'prc-st-a'], custo: ['Só custo', 'prc-st-c'], venda: ['Só venda', 'prc-st-v'], nada: ['Sem reajuste', 'prc-st-n'] };
@@ -265,10 +271,9 @@
       rows, sortKey: filtro === 'margem' ? 'difMargem' : 'cVar', sortDir: filtro === 'margem' ? 'asc' : 'desc', maxHeight: '640px', search: 'Buscar produto…', searchKeys: ['nome', 'cat'], produto: 'nome', cls: 'est-t prc-t',
       empty: 'Nenhum produto neste filtro no período.',
     });
-    const cont = (k) => linhas.filter(FIL[k][1]).length;
     return TS.cardWithTools('Produtos', `Clique no produto para ver o gráfico de custo × venda e todos os reajustes. Custo e venda são de 1 unidade vendida (pacote, lata, caneca…). "No sistema" é o preço cadastrado no AppNext (é ele que entra na margem); "No caixa" é o que saiu nos cupons, para conferência${D.tabHistDesde ? ` (reajustes do cadastro desde ${quando(D.tabHistDesde)})` : ' (o histórico de reajustes do cadastro começa a ser guardado agora, a cada planilha de preços importada)'}.`,
       h('div', { class: 'est-tools' }, tab.searchBox && (tab.searchBox.classList.add('est-busca'), tab.searchBox),
-        TS.seg(Object.entries(FIL).map(([k, [t]]) => [`${t} (${cont(k)})`, k]), filtro, (v) => { state.precoFil = v; pintar(corpo, D); })),
+        abas()),
       tab);
   }
 
@@ -415,6 +420,7 @@
       h('div', { class: 'f-label mt' }, 'Simular preço de venda'),
       h('div', { class: 'prc-sim' }, h('span', null, 'R$ '), inp, manter && Math.abs(manter - venda) > 0.01 ? h('button', { type: 'button', class: 'btn', onclick: () => { inp.value = (Math.ceil(manter * 10) / 10).toFixed(2); sim(); } }, `Voltar à margem de antes (${fmt.pct(r.mAnt)}): ${fmt.brl(Math.ceil(manter * 10) / 10)}`) : null),
       out, h('small', { class: 'muted' }, 'O painel só simula: o preço é alterado no AppNext.'),
+      TS.efeitoPreco ? TS.efeitoPreco.detalhe(r) : null,
       h('div', { class: 'f-label mt' }, 'Reajustes (mais recente primeiro)'),
       h('ul', { class: 'prc-tl' }, itens));
     const camada = h('div', { class: 'prc-drawer-camada', onmousedown: (e) => { if (e.target === camada) fechar(); } }, card);

@@ -210,5 +210,7 @@
     b2.append(h('tr', { class: 'dre-info' }, h('td', { class: 'l sticky-col' }, 'Resultado em % do faturamento'), ult12.map((x) => h('td', { class: x.resultado < 0 ? 'neg' : null }, pc(x.resultado, x.fat)))));
     t2.append(b2);
     corpo.append(h('div', { class: 'mt' }, TS.card('Mês a mês', '* mês em andamento: projeção no ritmo atual, com os custos fixos inteiros', h('div', { class: 'table-wrap' }, t2))));
+    // compras × vendas do mês: estou comprando mais do que vendo? (comprasvendas.js)
+    if (TS.comprasVendas) corpo.append(TS.comprasVendas.cartaoResultado(M));
   }
 })();

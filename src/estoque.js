@@ -118,7 +118,7 @@ function compras(id) {
     }
   }
   for (const l of Object.values(out)) l.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
-  return { atualizado: j.atualizado || null, notas: (j.notas || []).length, itens: out };
+  return { atualizado: j.atualizado || null, desde: j.desde || null, notas: (j.notas || []).length, itens: out };
 }
 
 /** notas de entrada guardadas pelo coletor, inteiras (para a lista e o detalhe na tela Preços) */
@@ -206,7 +206,7 @@ const EMB_PADRAO = {
 };
 // categorias dos outros custos (editáveis); "outros" sempre existe e recebe o que não tem categoria
 const CATEGORIAS = [{ id: 'func', nome: 'Funcionários' }, { id: 'imovel', nome: 'Imóvel' }, { id: 'sistemas', nome: 'Sistemas' }, { id: 'outros', nome: 'Outros' }];
-const PADRAO = { categorias: CATEGORIAS, entregaDias: 10, coberturaDias: 30, paradoDias: 60, segurancaPct: 50, simplesPct: 0, cartaoPct: 0, outros: [], margemMin: 15, margemAlvo: 30, embalagens: EMB_PADRAO };
+const PADRAO = { categorias: CATEGORIAS, entregaDias: 10, coberturaDias: 30, paradoDias: 60, segurancaPct: 50, simplesPct: 0, cartaoPct: 0, outros: [], margemMin: 15, margemAlvo: 30, comprasTetoPct: 32, embalagens: EMB_PADRAO };
 function cfg(loja) {
   const c = (loja && loja.estoqueCfg) || {};
   return {
@@ -224,6 +224,8 @@ function cfg(loja) {
     pontuais: Array.isArray(c.pontuais) ? c.pontuais : [],
     margemMin: Number.isFinite(c.margemMin) ? c.margemMin : PADRAO.margemMin,
     margemAlvo: Number.isFinite(c.margemAlvo) ? c.margemAlvo : PADRAO.margemAlvo,
+    // teto das compras do mês: % das vendas (Compras × vendas, no Pedido e no Resultado)
+    comprasTetoPct: c.comprasTetoPct >= 1 && c.comprasTetoPct <= 90 ? c.comprasTetoPct : PADRAO.comprasTetoPct,
     embalagens: c.embalagens && typeof c.embalagens === 'object' ? c.embalagens : EMB_PADRAO,
   };
 }
@@ -237,6 +239,9 @@ function validarCfg(b) {
   const mm = (v, d) => { const x = Math.round(Number(String(v ?? d).replace(',', '.')) * 10) / 10; return Number.isFinite(x) && x >= -50 && x <= 95 ? x : null; };
   out.margemMin = mm(b.margemMin, PADRAO.margemMin); out.margemAlvo = mm(b.margemAlvo, PADRAO.margemAlvo);
   if (out.margemMin == null || out.margemAlvo == null) return { erro: 'Margens: use um percentual entre −50 e 95.' };
+  // teto das compras do mês (% das vendas); quem salva sem o campo fica com o padrão
+  out.comprasTetoPct = Math.round(Number(String(b.comprasTetoPct ?? PADRAO.comprasTetoPct).replace(',', '.')) * 10) / 10;
+  if (!(out.comprasTetoPct >= 1 && out.comprasTetoPct <= 90)) return { erro: 'Teto de compras: use um percentual entre 1 e 90.' };
   // categorias: nome curto; "outros" sempre fica
   const cats = Array.isArray(b.categorias) ? b.categorias : CATEGORIAS;
   if (cats.length > 12) return { erro: 'No máximo 12 categorias.' };
