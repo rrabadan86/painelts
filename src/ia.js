@@ -1,10 +1,10 @@
 'use strict';
 /**
  * Inteligência artificial (Claude, da Anthropic) com a chave de cada franqueado.
- *   config/ia.json         chaves (criptografadas, AES-256-GCM), lojas de cada chave, teto e uso por mês
+ *   config/ia.json         chave de cada loja (criptografada, AES-256-GCM), teto e uso por mês
  *   config/ia-mestra.key   chave mestra que criptografa as chaves (gerada na 1ª vez; ou IA_SEGREDO no .env)
  * A chave da API nunca volta para a tela, para log ou para e-mail: só os 4 últimos caracteres.
- * Cada loja usa no máximo uma chave; quem salva escolhe as lojas (as suas). Sem chave, a IA fica desligada na loja.
+ * Cada loja tem a própria chave, teto e uso (Configurações → loja → Inteligência artificial). Sem chave, a IA fica desligada na loja.
  * IA_FALSO=1 (testes) e a apresentação usam respostas simuladas: nada vai para a Anthropic.
  */
 const fs = require('fs');
@@ -44,59 +44,55 @@ function decifrar(s) {
 }
 
 // ---------- arquivo ----------
+// { chaves: { <loja>: { enc, fim, dono, teto, criadaEm, testadaEm } }, uso: { <loja>: { 'AAAA-MM': {...} } } }
 function ler() {
-  try { const j = JSON.parse(fs.readFileSync(ARQ(), 'utf8')); return { chaves: j.chaves || {}, uso: j.uso || {} }; } catch { return { chaves: {}, uso: {} }; }
+  let j;
+  try { j = JSON.parse(fs.readFileSync(ARQ(), 'utf8')); } catch { return { chaves: {}, uso: {} }; }
+  const d = { chaves: j.chaves || {}, uso: j.uso || {} };
+  // formato antigo (uma chave para várias lojas): cada loja vira dona do próprio registro
+  for (const [id, r] of Object.entries(d.chaves)) {
+    if (!Array.isArray(r.lojas)) continue;
+    delete d.chaves[id];
+    const { lojas, ...resto } = r;
+    lojas.forEach((l, k) => { d.chaves[l] = { ...resto }; if (k === 0 && d.uso[id]) d.uso[l] = d.uso[id]; });
+    delete d.uso[id];
+  }
+  return d;
 }
 const gravar = (d) => C.gravarAtomico(ARQ(), JSON.stringify(d, null, 1), 0o600);
 const mesAtual = () => C.hojeBR().slice(0, 7);
 const formatoOk = (k) => /^sk-ant-[A-Za-z0-9_-]{20,200}$/.test(String(k || '').trim());
 
-/** chave que vale para a loja: { id, ...registro } ou null */
+/** chave da loja: { id (= loja), ...registro } ou null */
 function chaveDaLoja(lojaId, d = ler()) {
-  for (const [id, r] of Object.entries(d.chaves)) if ((r.lojas || []).includes(lojaId)) return { id, ...r };
-  return null;
+  const r = d.chaves[lojaId];
+  return r ? { id: lojaId, ...r } : null;
 }
-function usoDoMes(id, d = ler(), ym = mesAtual()) {
-  const u = (d.uso[id] || {})[ym] || {};
+function usoDoMes(lojaId, d = ler(), ym = mesAtual()) {
+  const u = (d.uso[lojaId] || {})[ym] || {};
   return { pedidos: u.pedidos || 0, entrada: u.entrada || 0, saida: u.saida || 0, usd: u.usd || 0 };
 }
 
-/** situação para a tela (nunca devolve a chave) */
-function situacao(lojas, user, perfil) {
+/** situação da loja para a tela (nunca devolve a chave) */
+function situacao(lojaId) {
   const d = ler();
-  const nomeDe = (u) => (C.usuario(u) || {}).nome || u;
-  const vistas = new Map();
-  const porLoja = lojas.map((l) => {
-    const k = chaveDaLoja(l.id, d);
-    if (k && !vistas.has(k.id)) vistas.set(k.id, k);
-    return { loja: l.id, nome: l.nome, chave: k ? k.id : null };
-  });
-  const chaves = [...vistas.values()].map((k) => ({
-    id: k.id, fim: k.fim, dono: nomeDe(k.dono), minha: k.dono === user, teto: k.teto, criadaEm: k.criadaEm, testadaEm: k.testadaEm || null,
-    lojas: (k.lojas || []).filter((x) => lojas.some((l) => l.id === x)), outrasLojas: (k.lojas || []).filter((x) => !lojas.some((l) => l.id === x)).length,
-    podeMexer: perfil === 'admin' || k.dono === user, uso: usoDoMes(k.id, d), modelo: MODELO(),
-  }));
-  return { porLoja, chaves, preco: PRECO(), tetoPadrao: TETO_PADRAO };
+  const k = d.chaves[lojaId];
+  return {
+    chave: k ? { fim: k.fim, dono: (C.usuario(k.dono) || {}).nome || k.dono, teto: k.teto ?? null, criadaEm: k.criadaEm || null, testadaEm: k.testadaEm || null } : null,
+    uso: usoDoMes(lojaId, d), modelo: MODELO(), preco: PRECO(), tetoPadrao: TETO_PADRAO,
+  };
 }
 
-/** grava a chave para as lojas (tira essas lojas das outras chaves). Devolve { ok:{id, fim} } ou { erro } */
-function salvar({ chave, lojas, teto, user }) {
+/** grava a chave da loja (troca a anterior; o uso do mês continua sendo da loja) */
+function salvar({ chave, loja, teto, user }) {
   chave = String(chave || '').trim();
   if (!formatoOk(chave)) return { erro: 'Essa não parece uma chave da API da Anthropic (começa com "sk-ant-").' };
-  if (!Array.isArray(lojas) || !lojas.length) return { erro: 'Escolha pelo menos uma loja.' };
+  if (!loja) return { erro: 'Escolha a loja.' };
   const d = ler();
-  // mesma chave já guardada por esta pessoa: reaproveita o registro (mantém o uso do mês)
-  let id = Object.keys(d.chaves).find((x) => d.chaves[x].dono === user && (() => { try { return decifrar(d.chaves[x].enc) === chave; } catch { return false; } })());
-  if (!id) id = crypto.randomBytes(6).toString('hex');
-  for (const [x, r] of Object.entries(d.chaves)) if (x !== id) r.lojas = (r.lojas || []).filter((l) => !lojas.includes(l));
-  const ant = d.chaves[id] || {};
-  d.chaves[id] = {
-    enc: cifrar(chave), fim: chave.slice(-4), dono: user, lojas: [...new Set([...(ant.lojas || []), ...lojas])],
-    teto: tetoValido(teto, ant.teto), criadaEm: ant.criadaEm || new Date().toISOString(), testadaEm: new Date().toISOString(),
-  };
-  for (const [x, r] of Object.entries(d.chaves)) if (!r.lojas.length) delete d.chaves[x];
+  const ant = d.chaves[loja] || {};
+  d.chaves[loja] = { enc: cifrar(chave), fim: chave.slice(-4), dono: user, teto: tetoValido(teto, ant.teto), criadaEm: new Date().toISOString(), testadaEm: new Date().toISOString() };
   gravar(d);
-  return { ok: { id, fim: chave.slice(-4) } };
+  return { ok: { fim: chave.slice(-4) } };
 }
 function tetoValido(t, ant) {
   if (t === null || t === '') return null; // sem teto
@@ -104,28 +100,18 @@ function tetoValido(t, ant) {
   if (Number.isFinite(n) && n >= 1 && n <= 1000) return Math.round(n * 100) / 100;
   return ant !== undefined ? ant : TETO_PADRAO;
 }
-function alterar(id, { teto, lojas }, user, perfil, lojasPermitidas) {
+function alterar(loja, { teto }) {
   const d = ler();
-  const r = d.chaves[id];
-  if (!r) return { erro: 'Chave não encontrada.' };
-  if (perfil !== 'admin' && r.dono !== user) return { erro: 'Só quem cadastrou a chave pode mudar.' };
+  const r = d.chaves[loja];
+  if (!r) return { erro: 'Esta loja não tem chave.' };
   if (teto !== undefined) r.teto = tetoValido(teto, r.teto);
-  if (Array.isArray(lojas)) {
-    const minhas = new Set(lojasPermitidas);
-    const novas = lojas.filter((l) => minhas.has(l));
-    for (const [x, o] of Object.entries(d.chaves)) if (x !== id) o.lojas = (o.lojas || []).filter((l) => !novas.includes(l));
-    r.lojas = [...(r.lojas || []).filter((l) => !minhas.has(l)), ...novas];
-  }
-  for (const [x, o] of Object.entries(d.chaves)) if (!o.lojas.length) delete d.chaves[x];
   gravar(d);
   return { ok: true };
 }
-function remover(id, user, perfil) {
+function remover(loja) {
   const d = ler();
-  const r = d.chaves[id];
-  if (!r) return { erro: 'Chave não encontrada.' };
-  if (perfil !== 'admin' && r.dono !== user) return { erro: 'Só quem cadastrou a chave pode remover.' };
-  delete d.chaves[id];
+  if (!d.chaves[loja]) return { erro: 'Esta loja não tem chave.' };
+  delete d.chaves[loja];
   gravar(d);
   return { ok: true };
 }
@@ -165,10 +151,11 @@ class ErroIA extends Error { constructor(msg, status = 400) { super(msg); this.s
 /** chama a API de mensagens com a chave da loja (confere teto antes; registra o uso depois) */
 async function mensagens(lojaId, corpo) {
   const d = ler();
+  const onde = `Configurações → Lojas → ${(C.get().lojas.find((l) => l.id === lojaId) || {}).nome || lojaId} → Inteligência artificial`;
   const k = chaveDaLoja(lojaId, d);
-  if (!k) throw new ErroIA('A IA não está configurada nesta loja: o franqueado cadastra a chave em Configurações → Inteligência artificial.', 409);
+  if (!k) throw new ErroIA(`A IA não está ligada nesta loja: o franqueado cadastra a chave em ${onde}.`, 409);
   const uso = usoDoMes(k.id, d);
-  if (k.teto != null && uso.usd >= k.teto) throw new ErroIA(`O teto de US$ ${k.teto.toFixed(2)} deste mês foi atingido. Aumente em Configurações → Inteligência artificial ou espere o mês virar.`, 429);
+  if (k.teto != null && uso.usd >= k.teto) throw new ErroIA(`O teto de US$ ${k.teto.toFixed(2)} deste mês foi atingido. Aumente em ${onde} ou espere o mês virar.`, 429);
   const req = { model: MODELO(), max_tokens: corpo.max_tokens || 2048, ...corpo };
   let j;
   if (process.env.IA_FALSO === '1') j = simular(req);
@@ -182,7 +169,7 @@ async function mensagens(lojaId, corpo) {
     j = await r.json().catch(() => ({}));
     if (!r.ok) {
       const m = (j.error && j.error.message) || '';
-      if (r.status === 401) throw new ErroIA('A Anthropic recusou a chave desta loja (foi desativada?). Cadastre de novo em Configurações → Inteligência artificial.', 409);
+      if (r.status === 401) throw new ErroIA(`A Anthropic recusou a chave desta loja (foi desativada?). Cadastre de novo em ${onde}.`, 409);
       if (/credit balance/i.test(m)) throw new ErroIA('Acabaram os créditos da conta na Anthropic: o franqueado precisa adicionar créditos em console.anthropic.com (Billing).', 402);
       if (r.status === 429) throw new ErroIA('Muitos pedidos à IA em pouco tempo. Espere um minuto.', 429);
       if (r.status === 529 || r.status >= 500) throw new ErroIA('A IA está sobrecarregada agora. Tente de novo em instantes.', 503);

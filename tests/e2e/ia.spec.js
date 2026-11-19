@@ -35,17 +35,18 @@ test('IA: revisão do pedido sugere ajuste e aplica na quantidade', async ({ pag
   await expect(page.locator('.kpi-label', { hasText: 'Seu pedido (com alterações)' })).toBeVisible();
 });
 
-test('IA: Configurações mostra a aba Inteligência artificial com o passo a passo', async ({ page }, info) => {
+test('IA: chave fica em Configurações → Lojas → (loja) → Inteligência artificial', async ({ page }, info) => {
   test.skip(info.project.name !== 'computador');
   await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS.db);
-  await page.evaluate(() => { location.hash = '#config'; });
-  await page.getByRole('button', { name: 'Inteligência artificial' }).click();
-  await expect(page.locator('.ia-form')).toBeVisible();
-  await expect(page.locator('.ia-passo summary')).toContainText('Como criar a chave');
-  await expect(page.locator('.ia-form input[type=password]')).toHaveAttribute('autocomplete', 'off');
-  await page.locator('.ia-form input[type=password]').fill('sk-ant-api03-' + 'y'.repeat(40));
-  await page.getByRole('button', { name: 'Testar e salvar' }).click();
-  await expect(page.locator('.ia-form')).toContainText('Na apresentação nada é salvo');
+  await page.evaluate(() => TS.cfgIrIA('demo-centro'));
+  const b = page.locator('.ia-cfg');
+  await expect(b).toBeVisible();
+  await expect(page.locator('.cfg-abas')).not.toContainText('Inteligência artificial');
+  await expect(b.locator('.ia-passo summary')).toContainText('Como criar a chave');
+  await expect(b.locator('input[type=password]')).toHaveAttribute('autocomplete', 'off');
+  await b.locator('input[type=password]').fill('sk-ant-api03-' + 'y'.repeat(40));
+  await b.getByRole('button', { name: 'Testar e salvar' }).click();
+  await expect(b).toContainText('Na apresentação nada é salvo');
 });
 
 test('IA: Início explica o porquê (decomposição + fora do padrão) e o ✨ não quebra o topo no celular', async ({ page }, info) => {

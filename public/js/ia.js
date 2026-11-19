@@ -3,7 +3,7 @@
  *    (vendas, clientes, estoque): o que o perfil não pode ver não existe aqui, então também não vai para a IA.
  *    Clientes vão só com primeiro nome + inicial (sem CPF, telefone, e-mail).
  *  - Revisão do pedido sugerido (aba Pedido): TS.iaPedido.
- *  - Configurações → Inteligência artificial: TS.abaIA (a chave nunca volta para a tela).
+ *  - Configurações → Lojas → (loja) → Inteligência artificial: TS.blocoIA (uma chave por loja; nunca volta para a tela).
  * Na apresentação as respostas são simuladas. */
 (function () {
   const { h, fmt, state } = TS;
@@ -311,6 +311,7 @@
           conv.mensagens.push({ role: 'assistant', content });
           const textos = content.filter((b) => b.type === 'text').map((b) => b.text).join('\n\n').trim();
           const usos = content.filter((b) => b.type === 'tool_use');
+          if (j.stop_reason === 'max_tokens' && usos.length) { conv.mensagens.pop(); r.texto = textos || 'A resposta ficou longa demais. Tente uma pergunta mais específica.'; break; }
           if (j.stop_reason !== 'tool_use' || !usos.length) { r.texto = textos; break; }
           const res = [];
           for (const u of usos) {
@@ -337,7 +338,7 @@
     iaApi('GET', `ia/estado?loja=${encodeURIComponent(state.loja || '')}`).then((s) => {
       if (s.ativa) return;
       aviso.replaceChildren(h('div', { class: 'notice' }, s.podeConfigurar
-        ? h('span', null, 'A IA ainda não está ligada nesta loja. ', h('a', { href: '#config', onclick: () => { state.cfgAba = 'ia'; fechar(); } }, 'Cadastre sua chave da Anthropic em Configurações → Inteligência artificial'), '.')
+        ? h('span', null, 'A IA ainda não está ligada nesta loja. ', h('a', { href: '#config', onclick: () => { TS.cfgIrIA && TS.cfgIrIA(state.loja); fechar(); } }, 'Cadastre a chave da Anthropic desta loja em Configurações'), '.')
         : 'A IA ainda não está ligada nesta loja: peça ao franqueado para cadastrar a chave em Configurações.'));
     }).catch(() => {});
     if (typeof pergunta === 'string' && pergunta.trim()) perguntar(pergunta.trim()); else setTimeout(() => txt.focus(), 50);
@@ -359,94 +360,79 @@
   // ======================= revisão do pedido =======================
   TS.iaPedido = (loja, dados) => iaApi('POST', 'ia/pedido', { loja, dados });
 
-  // ======================= Configurações → Inteligência artificial =======================
-  let cfgDados = null, cfgMsg = null, formAberto = false;
-  TS.abaIA = function (box, repintar) {
-    const corpo = h('div');
-    box.append(corpo);
-    const pintarCfg = () => {
-      if (!cfgDados) { corpo.replaceChildren(h('div', { class: 'loading' }, h('div', { class: 'spinner' }), h('p', null, 'Carregando…'))); return; }
-      if (cfgDados.erro) { corpo.replaceChildren(h('div', { class: 'notice err' }, cfgDados.erro)); return; }
-      const d = cfgDados;
-      const nomeLoja = (id) => (d.porLoja.find((l) => l.loja === id) || {}).nome || id;
-      const semChave = d.porLoja.filter((l) => !l.chave);
-      const usd = (v) => 'US$ ' + (v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-      const msg = cfgMsg ? h('div', { class: 'notice ' + cfgMsg[0] }, cfgMsg[1]) : null;
-      cfgMsg = null;
-      const cartaoChave = (k) => {
-        const pct = k.teto ? Math.min(1, k.uso.usd / k.teto) : 0;
-        const teto = h('input', { class: 'f-input', type: 'number', min: 1, max: 1000, step: 1, value: k.teto ?? '', placeholder: 'sem teto', style: { maxWidth: '110px' } });
+  // ======================= Configurações → Lojas → (loja) → Inteligência artificial =======================
+  const cfgCache = new Map(); // loja → situação (para redesenhar sem piscar)
+  const cfgMsg = new Map();
+  TS.blocoIA = function (lojaId) {
+    const corpo = h('section', { class: 'cfg-bloco cfg-form ia-cfg' });
+    const usd = (v) => 'US$ ' + (v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const recarregar = async () => { try { cfgCache.set(lojaId, await iaApi('GET', `ia/config?loja=${encodeURIComponent(lojaId)}`)); } catch (e) { cfgCache.set(lojaId, { erro: e.message }); } if (corpo.isConnected) pintar(); };
+    let trocando = false;
+    const pintar = () => {
+      const d = cfgCache.get(lojaId);
+      const tit = h('h3', null, 'Inteligência artificial');
+      if (!d) { corpo.replaceChildren(tit, h('div', { class: 'muted' }, 'Carregando…')); return; }
+      if (d.erro) { corpo.replaceChildren(tit, h('div', { class: 'notice err' }, d.erro)); return; }
+      const m = cfgMsg.get(lojaId); cfgMsg.delete(lojaId);
+      const k = d.chave;
+      const intro = h('p', { class: 'muted' }, 'Com a IA ligada nesta loja: o botão ✨ responde perguntas sobre vendas, equipe, clientes e estoque; o Início explica por que as vendas mudaram; e o Pedido ganha a revisão do pedido sugerido. '
+        + `O uso é cobrado na conta da Anthropic dona desta chave: uma pergunta comum fica em torno de US$ 0,01 a 0,05 (estimativa: ${usd(d.preco.entrada)} por milhão de tokens de entrada e ${usd(d.preco.saida)} de saída).`);
+      const passos = h('details', { class: 'ia-passo' }, h('summary', null, 'Como criar a chave (5 minutos)'), h('ol', { class: 'cfg-passos' },
+        h('li', null, 'Entre em ', h('a', { href: 'https://console.anthropic.com', target: '_blank', rel: 'noopener' }, 'console.anthropic.com'), ' e crie uma conta (pode ser uma por loja ou a mesma conta para várias).'),
+        h('li', null, 'Em ', h('b', null, 'Billing'), ', cadastre o cartão e compre créditos (US$ 5 ou 10 bastam para começar). Ali também dá para limitar o gasto por mês.'),
+        h('li', null, 'Em ', h('b', null, 'API keys'), ', clique em ', h('b', null, 'Create key'), ', dê o nome da loja (ex.: "Painel Flamboyant") e copie a chave (começa com sk-ant-).'),
+        h('li', null, 'Cole aqui e clique em ', h('b', null, 'Testar e salvar'), '. Não mande a chave por WhatsApp nem e-mail.')));
+      const partes = [tit, m ? h('div', { class: 'notice ' + m[0] }, m[1]) : null];
+      if (k && !trocando) {
+        const pct = k.teto ? Math.min(1, d.uso.usd / k.teto) : 0;
+        const teto = h('input', { class: 'f-input', type: 'number', min: 1, max: 1000, step: 1, value: k.teto ?? '', placeholder: 'sem teto', style: { maxWidth: '100px' } });
         const btTeto = h('button', { type: 'button', class: 'btn' }, 'Salvar teto');
         btTeto.addEventListener('click', async () => {
           btTeto.disabled = true;
-          try { await iaApi('PATCH', `ia/chave/${k.id}`, { teto: teto.value === '' ? null : +teto.value }); cfgMsg = ['ok', 'Teto salvo.']; await recarregar(); } catch (e) { cfgMsg = ['err', e.message]; pintarCfg(); }
+          try { await iaApi('PATCH', 'ia/chave', { loja: lojaId, teto: teto.value === '' ? null : +teto.value }); cfgMsg.set(lojaId, ['ok', 'Teto salvo.']); } catch (e) { cfgMsg.set(lojaId, ['err', e.message]); }
+          recarregar();
         });
-        const btRem = h('button', { type: 'button', class: 'btn danger' }, 'Remover chave');
+        const btRem = h('button', { type: 'button', class: 'btn danger' }, 'Remover');
         btRem.addEventListener('click', async () => {
-          if (!confirm(`Remover a chave terminada em ${k.fim}?\n\nA IA fica desligada em ${k.lojas.map(nomeLoja).join(', ')} até cadastrar outra. A chave continua existindo no console da Anthropic: desative lá também se não for usar mais.`)) return;
+          if (!confirm(`Remover a chave ···· ${k.fim} desta loja?\n\nA IA fica desligada aqui até cadastrar outra. A chave continua existindo no console da Anthropic: desative lá também se não for mais usar.`)) return;
           btRem.disabled = true;
-          try { await iaApi('DELETE', `ia/chave/${k.id}`); cfgMsg = ['ok', 'Chave removida.']; await recarregar(); } catch (e) { cfgMsg = ['err', e.message]; pintarCfg(); }
+          try { await iaApi('DELETE', `ia/chave?loja=${encodeURIComponent(lojaId)}`); cfgMsg.set(lojaId, ['ok', 'Chave removida: a IA está desligada nesta loja.']); } catch (e) { cfgMsg.set(lojaId, ['err', e.message]); }
+          recarregar();
         });
-        return h('div', { class: 'card ia-chave' },
-          h('div', { class: 'ia-chave-cab' }, h('span', { class: 'cf-st cf-ok' }, 'Chave configurada ✓'), h('b', null, ` ···· ${k.fim}`),
-            h('small', { class: 'muted' }, ` · cadastrada por ${k.dono}${k.criadaEm ? ' em ' + fmt.date(k.criadaEm.slice(0, 10)) : ''}`)),
-          h('div', null, 'Vale para: ', h('b', null, k.lojas.map(nomeLoja).join(', ')), k.outrasLojas ? h('small', { class: 'muted' }, ` + ${k.outrasLojas} loja(s) de outros usuários`) : null),
+        partes.push(
+          h('div', { class: 'ia-chave-cab' }, h('span', { class: 'cf-st cf-ok' }, 'IA ligada ✓'), h('span', null, ` chave ···· ${k.fim}`), h('small', { class: 'muted' }, ` · cadastrada por ${k.dono}${k.criadaEm ? ' em ' + fmt.date(k.criadaEm.slice(0, 10)) : ''}`)),
           h('div', { class: 'ia-uso' },
-            h('div', null, 'Uso neste mês: ', h('b', null, usd(k.uso.usd)), k.teto ? ` de ${usd(k.teto)}` : ' (sem teto)', h('small', { class: 'muted' }, ` · ${fmt.int(k.uso.pedidos)} chamadas à IA · estimativa`)),
+            h('div', null, 'Uso neste mês: ', h('b', null, usd(d.uso.usd)), k.teto ? ` de ${usd(k.teto)}` : ' (sem teto)', h('small', { class: 'muted' }, ` · ${fmt.int(d.uso.pedidos)} chamadas · estimativa`)),
             k.teto ? h('div', { class: 'ia-barra' }, h('span', { style: { width: `${pct * 100}%` }, class: pct >= 0.9 ? 'alto' : null })) : null),
-          k.podeMexer ? h('div', { class: 'cfg-acoes ia-chave-acoes' }, h('label', null, 'Teto por mês (US$) ', teto), btTeto, h('button', { type: 'button', class: 'btn', onclick: () => { formAberto = true; pintarCfg(); } }, 'Trocar a chave'), btRem)
-            : h('small', { class: 'muted' }, 'Só quem cadastrou (ou o admin) muda esta chave.'));
-      };
-      // formulário: a chave vai direto para o servidor (campo de senha, sem autocompletar) e nunca volta
-      const form = () => {
-        const inp = h('input', { class: 'f-input', type: 'password', autocomplete: 'off', spellcheck: 'false', placeholder: 'sk-ant-…', style: { maxWidth: '420px' } });
-        const marcadas = new Set(semChave.length ? semChave.map((l) => l.loja) : d.porLoja.map((l) => l.loja));
-        const cks = d.porLoja.map((l) => {
-          const c = h('input', { type: 'checkbox', checked: marcadas.has(l.loja) || null });
-          c.addEventListener('change', () => { if (c.checked) marcadas.add(l.loja); else marcadas.delete(l.loja); });
-          return h('label', { class: 'ia-ck' }, c, ' ', l.nome, l.chave ? h('small', { class: 'muted' }, ' (troca a chave atual)') : null);
-        });
-        const teto = h('input', { class: 'f-input', type: 'number', min: 1, max: 1000, step: 1, value: d.tetoPadrao, style: { maxWidth: '110px' } });
+          h('div', { class: 'cfg-acoes ia-chave-acoes' }, h('label', null, 'Teto por mês (US$) ', teto), btTeto,
+            h('button', { type: 'button', class: 'btn', onclick: () => { trocando = true; pintar(); } }, 'Trocar a chave'), btRem),
+          intro);
+      } else {
+        const inp = h('input', { class: 'f-input', type: 'password', autocomplete: 'off', spellcheck: 'false', placeholder: 'sk-ant-…' });
+        const teto = h('input', { class: 'f-input', type: 'number', min: 1, max: 1000, step: 1, value: (k && k.teto) ?? d.tetoPadrao, style: { maxWidth: '100px' } });
         const bt = h('button', { type: 'button', class: 'btn primary' }, 'Testar e salvar');
         const st = h('span', { class: 'muted' });
         bt.addEventListener('click', async () => {
           if (!/^sk-ant-/.test(inp.value.trim())) { st.className = 'neg'; st.textContent = 'A chave começa com "sk-ant-". Copie de novo no console da Anthropic.'; return; }
-          if (!marcadas.size) { st.className = 'neg'; st.textContent = 'Marque pelo menos uma loja.'; return; }
           bt.disabled = true; st.className = 'muted'; st.textContent = 'Testando a chave na Anthropic…';
           try {
-            const j = await iaApi('PUT', 'ia/chave', { chave: inp.value.trim(), lojas: [...marcadas], teto: teto.value === '' ? null : +teto.value });
-            inp.value = '';
-            formAberto = false;
-            cfgMsg = ['ok', `Chave ···· ${j.fim} conferida e salva. A IA já está ligada: use o botão ✨ no topo.`];
-            await recarregar();
+            const j = await iaApi('PUT', 'ia/chave', { loja: lojaId, chave: inp.value.trim(), teto: teto.value === '' ? null : +teto.value });
+            inp.value = ''; trocando = false;
+            cfgMsg.set(lojaId, ['ok', `Chave ···· ${j.fim} conferida e salva. A IA já está ligada nesta loja: use o botão ✨.`]);
+            recarregar();
           } catch (e) { st.className = 'neg'; st.textContent = e.message; bt.disabled = false; }
         });
-        return h('div', { class: 'card ia-form' },
-          h('div', { class: 'card-title' }, d.chaves.length ? 'Cadastrar outra chave' : 'Cadastrar a sua chave'),
-          h('label', { class: 'cfr-campo' }, h('span', null, 'Chave da API (Anthropic)'), inp),
-          h('div', { class: 'ia-cks' }, h('span', null, 'Lojas que usam esta chave:'), cks),
-          h('label', null, 'Teto por mês (US$) ', teto, h('small', { class: 'muted' }, ' a IA pausa ao chegar nele; vazio = sem teto')),
-          h('div', { class: 'cfg-acoes' }, bt, d.chaves.length ? h('button', { type: 'button', class: 'btn', onclick: () => { formAberto = false; pintarCfg(); } }, 'Cancelar') : null, st),
-          h('small', { class: 'muted' }, 'A chave é testada na Anthropic e guardada criptografada no servidor. Ela nunca mais aparece na tela, em e-mail ou em log: só os 4 últimos caracteres.'));
-      };
-      corpo.replaceChildren(...[
-        h('div', { class: 'card' },
-          h('div', { class: 'card-title' }, 'Inteligência artificial'),
-          h('p', null, 'Com a IA ligada, o botão ✨ no topo responde perguntas sobre as vendas, a equipe, os clientes e o estoque, e a aba Pedido ganha a revisão do pedido sugerido. '
-            + 'Cada franqueado usa a própria conta da Anthropic (a empresa do Claude): o uso é cobrado direto no cartão de quem cadastrou a chave.'),
-          h('p', { class: 'muted' }, `Quanto custa: uma pergunta comum fica em torno de US$ 0,01 a 0,05 (estimativa pelo preço de ${usd(d.preco.entrada)} por milhão de tokens de entrada e ${usd(d.preco.saida)} de saída). Uma loja que pergunta todo dia gasta poucos dólares por mês.`),
-          h('details', { class: 'ia-passo' }, h('summary', null, 'Como criar a chave (5 minutos)'), h('ol', { class: 'cfg-passos' },
-            h('li', null, 'Entre em ', h('a', { href: 'https://console.anthropic.com', target: '_blank', rel: 'noopener' }, 'console.anthropic.com'), ' e crie uma conta com o seu e-mail.'),
-            h('li', null, 'Em ', h('b', null, 'Billing'), ', cadastre o cartão e compre créditos (US$ 5 ou 10 bastam para começar). Ali também dá para pôr um limite de gasto por mês.'),
-            h('li', null, 'Em ', h('b', null, 'API keys'), ', clique em ', h('b', null, 'Create key'), ', dê um nome (ex.: "Painel Tea Shop") e copie a chave (começa com sk-ant-).'),
-            h('li', null, 'Cole aqui embaixo, marque as lojas e clique em ', h('b', null, 'Testar e salvar'), '. Não mande a chave por WhatsApp nem e-mail.')))),
-        msg,
-        ...d.chaves.map(cartaoChave),
-        semChave.length && d.chaves.length ? h('div', { class: 'notice' }, `Sem chave (IA desligada): ${semChave.map((l) => l.nome).join(', ')}.`) : null,
-        !d.chaves.length || formAberto || semChave.length ? form() : h('button', { type: 'button', class: 'btn', onclick: () => { formAberto = true; pintarCfg(); } }, '＋ Cadastrar outra chave')].filter(Boolean));
+        partes.push(k ? null : h('div', null, h('span', { class: 'cf-st' }, 'IA desligada'), h('small', { class: 'muted' }, ' · esta loja ainda não tem chave')), intro, passos,
+          h('div', { class: 'ia-form' },
+            h('label', { class: 'cfr-campo' }, h('span', null, k ? 'Chave nova (Anthropic)' : 'Chave da API (Anthropic)'), inp),
+            h('label', { class: 'ia-teto' }, h('span', null, 'Teto por mês (US$)'), teto, h('small', { class: 'muted' }, 'a IA pausa ao chegar nele; vazio = sem teto')),
+            h('div', { class: 'cfg-acoes' }, bt, k ? h('button', { type: 'button', class: 'btn', onclick: () => { trocando = false; pintar(); } }, 'Cancelar') : null, st),
+            h('small', { class: 'muted' }, 'A chave é testada na Anthropic e guardada criptografada no servidor. Ela nunca mais aparece na tela, em e-mail ou em log: só os 4 últimos caracteres.')));
+      }
+      corpo.replaceChildren(...partes.filter(Boolean));
     };
-    const recarregar = async () => { try { cfgDados = await iaApi('GET', 'ia/config'); } catch (e) { cfgDados = { erro: e.message }; } if (corpo.isConnected) pintarCfg(); };
-    pintarCfg();
+    pintar();
     recarregar();
+    return corpo;
   };
 })();

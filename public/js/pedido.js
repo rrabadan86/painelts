@@ -1159,7 +1159,7 @@
         pintar(corpo, loja, M, e, p);
       } catch (err) {
         box.replaceChildren(h('div', { class: 'card-title' }, '🤖 Revisão com IA'), h('div', { class: 'notice err' }, err.message),
-          err.status === 409 && TS.eu.pode && TS.eu.pode.configurar ? h('a', { href: '#config', onclick: () => { state.cfgAba = 'ia'; } }, 'Configurações → Inteligência artificial') : null,
+          err.status === 409 && TS.eu.pode && TS.eu.pode.configurar ? h('a', { href: '#config', onclick: () => { TS.cfgIrIA && TS.cfgIrIA(loja); } }, 'Cadastrar a chave desta loja em Configurações') : null,
           h('div', { class: 'cfg-acoes' }, h('button', { type: 'button', class: 'btn', onclick: revisar }, 'Tentar de novo')));
       }
     };

@@ -76,7 +76,14 @@
     carregar();
   };
 
-  TS.cfgRepintar = () => pintar(); // a mesma repintura da atualização automática (usada nos testes)
+  TS.cfgRepintar = () => pintar();
+  /** abre Configurações → Lojas → (loja) → Inteligência artificial */
+  TS.cfgIrIA = (lojaId) => {
+    if (!lojaId || lojaId === 'todas') lojaId = (TS.lojas || [])[0] && TS.lojas[0].id;
+    state.cfgAba = 'lojas'; abertos.add('loja:' + lojaId); secaoLoja.set(lojaId, 'ia');
+    try { sessionStorage.setItem('cfgSecao', JSON.stringify([...secaoLoja])); } catch { /* ok */ }
+    if (location.hash === '#config' && raiz && raiz.isConnected) pintar(); else location.hash = '#config';
+  }; // a mesma repintura da atualização automática (usada nos testes)
   function pintar() {
     // monta a tela nova fora da página e troca de uma vez: a página não encolhe no meio e a rolagem fica onde estava
     // (a atualização automática a cada 5 s não leva mais para o início); os logs abertos mantêm a própria rolagem
@@ -94,13 +101,12 @@
     if (est.erro) { root.append(h('div', { class: 'notice err' }, est.erro)); fim(); return; }
     const abas = [['Lojas', 'lojas'], ['Usuários', 'usuarios']];
     if (est.perfil === 'admin') abas.push(['Atualização automática', 'coletor'], ['Resumo diário', 'resumo']);
-    if ((est.perfil === 'admin' || est.perfil === 'franqueado') && TS.abaIA) abas.push(['Inteligência artificial', 'ia']);
     abas.push(['Histórico de alterações', 'historico']);
     state.cfgAba = abas.some(([, v]) => v === state.cfgAba) ? state.cfgAba : 'lojas';
     root.append(h('div', { class: 'cfg-abas' }, TS.seg(abas, state.cfgAba, (v) => { state.cfgAba = v; pintar(); })));
     const corpo = h('div', { class: 'cfg-corpo' });
     root.append(corpo);
-    ({ lojas: abaLojas, usuarios: abaUsuarios, coletor: abaColetor, resumo: abaResumo, historico: abaHistorico, ia: (b) => TS.abaIA(b, pintar) })[state.cfgAba](corpo);
+    ({ lojas: abaLojas, usuarios: abaUsuarios, coletor: abaColetor, resumo: abaResumo, historico: abaHistorico })[state.cfgAba](corpo);
     fim();
   }
 
@@ -214,6 +220,7 @@
       ['loja', 'Loja e equipe', 'Horário de funcionamento, equipe, logo e dados da loja', () => [blocoOperacao(l), blocoMarca(l), admin ? blocoEditar(l) : null]],
       gestor && TS.blocoEstoqueCfg ? ['estoque', 'Estoque e margem', 'Impostos, maquininha, custos da loja por categoria, reposição e embalagens', () => [TS.blocoEstoqueCfg(l.id)]] : null,
       ['integracoes', 'Integrações', 'AppNext, Sistema de Pedidos, FIXE e e-mail das devoluções', () => [admin ? blocoAppNext(l) : null, admin && TS.blocoPedidoAcesso ? TS.blocoPedidoAcesso(l.id) : null, blocoFixe(l), blocoDevolucao(l)]],
+      gestor && TS.blocoIA ? ['ia', 'Inteligência artificial', 'Chave da Anthropic desta loja, teto e uso do mês', () => [TS.blocoIA(l.id)]] : null,
       ['avisos', 'Mensagens', 'Fechamento do dia por e-mail, mensagens de WhatsApp e cobrança à franquia', () => [blocoFechamento(l), blocoWpp(l), gestor ? blocoCobranca(l) : null]],
     ].filter(Boolean);
     const atual = SECOES.some((x) => x[0] === secaoLoja.get(l.id)) ? secaoLoja.get(l.id) : SECOES[0][0];

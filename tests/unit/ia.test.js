@@ -13,31 +13,34 @@ const IA = require('../../src/ia');
 const IAP = require('../../src/iaprompts');
 const CHAVE = 'sk-ant-api03-' + 'x'.repeat(40) + 'AB12';
 
-test('IA: chave criptografada, nunca devolvida, uma chave por loja', () => {
-  assert.ok(IA.salvar({ chave: 'abc', lojas: ['a'], user: 'fr' }).erro);
-  const r = IA.salvar({ chave: CHAVE, lojas: ['a', 'b'], teto: 5, user: 'fr' });
+test('IA: uma chave por loja, criptografada e nunca devolvida; formato antigo migra', () => {
+  // formato antigo (uma chave para várias lojas): cada loja vira dona do próprio registro
+  fs.writeFileSync(path.join(tmp, 'ia.json'), JSON.stringify({ chaves: { x1: { enc: IA.cifrar(CHAVE), fim: 'AB12', dono: 'fr', lojas: ['b', 'c'], teto: 7 } }, uso: { x1: { '2026-11': { pedidos: 3, usd: 0.5 } } } }));
+  assert.equal(IA.chaveDaLoja('b').fim, 'AB12');
+  assert.equal(IA.chaveDaLoja('c').teto, 7);
+  assert.equal(IA.chaveDaLoja('a'), null);
+  assert.ok(IA.salvar({ chave: 'abc', loja: 'a', user: 'fr' }).erro);
+  const r = IA.salvar({ chave: CHAVE, loja: 'a', teto: 5, user: 'fr' });
   assert.equal(r.ok.fim, 'AB12');
   const bruto = fs.readFileSync(path.join(tmp, 'ia.json'), 'utf8');
   assert.ok(!bruto.includes(CHAVE) && !bruto.includes('x'.repeat(20)), 'a chave não fica em texto no arquivo');
   assert.equal((fs.statSync(path.join(tmp, 'ia.json')).mode & 0o777), 0o600);
-  const s = IA.situacao([{ id: 'a', nome: 'A' }, { id: 'b', nome: 'B' }], 'fr', 'franqueado');
+  const s = IA.situacao('a');
   assert.ok(!JSON.stringify(s).includes(CHAVE));
-  assert.equal(s.chaves.length, 1);
-  assert.deepEqual(s.chaves[0].lojas, ['a', 'b']);
-  assert.equal(s.chaves[0].teto, 5);
-  // outra chave para a loja b: sai da primeira
-  const r2 = IA.salvar({ chave: CHAVE.replace('AB12', 'CD34'), lojas: ['b'], user: 'fr' });
-  assert.equal(IA.chaveDaLoja('b').id, r2.ok.id);
-  assert.deepEqual(IA.chaveDaLoja('a').lojas, ['a']);
-  // só o dono (ou admin) mexe
-  assert.ok(IA.remover(r2.ok.id, 'f2', 'franqueado').erro);
-  assert.ok(IA.remover(r2.ok.id, 'fr', 'franqueado').ok);
+  assert.equal(s.chave.fim, 'AB12');
+  assert.equal(s.chave.teto, 5);
+  // trocar a chave da loja b não mexe na c
+  IA.salvar({ chave: CHAVE.replace('AB12', 'CD34'), loja: 'b', user: 'fr' });
+  assert.equal(IA.chaveDaLoja('b').fim, 'CD34');
+  assert.equal(IA.chaveDaLoja('c').fim, 'AB12');
+  assert.ok(IA.remover('b').ok);
   assert.equal(IA.chaveDaLoja('b'), null);
+  assert.ok(IA.remover('c').ok);
   assert.equal(IA.decifrar(IA.cifrar('olá')), 'olá');
 });
 
 test('IA: uso do mês e teto', async () => {
-  const id = IA.chaveDaLoja('a').id;
+  const id = 'a';
   const j = await IA.mensagens('a', { messages: [{ role: 'user', content: 'oi' }] });
   assert.ok(j.content.length);
   const u = IA.usoDoMes(id);
@@ -45,18 +48,20 @@ test('IA: uso do mês e teto', async () => {
   assert.ok(u.usd > 0);
   // custo: 1M entrada + 1M saída = 3 + 15
   assert.equal(IA.custo({ input_tokens: 1e6, output_tokens: 1e6 }), 18);
-  IA.alterar(id, { teto: 1 }, 'fr', 'franqueado', ['a', 'b']);
+  IA.alterar('a', { teto: 1 });
   const d = JSON.parse(fs.readFileSync(path.join(tmp, 'ia.json'), 'utf8'));
   for (const m of Object.values(d.uso[id])) m.usd = 1.5;
   fs.writeFileSync(path.join(tmp, 'ia.json'), JSON.stringify(d));
   await assert.rejects(IA.mensagens('a', { messages: [{ role: 'user', content: 'oi' }] }), /teto/);
-  await assert.rejects(IA.mensagens('c', { messages: [{ role: 'user', content: 'oi' }] }), /não está configurada/);
+  await assert.rejects(IA.mensagens('c', { messages: [{ role: 'user', content: 'oi' }] }), /não está ligada/);
 });
 
 test('IA: conferência das mensagens e ferramentas por perfil', () => {
   assert.equal(IAP.conferirMensagens([{ role: 'user', content: 'quanto vendemos?' }]), null);
   assert.ok(IAP.conferirMensagens([{ role: 'assistant', content: 'x' }]));
   assert.ok(IAP.conferirMensagens([{ role: 'user', content: [{ type: 'tool_use', id: '1', name: 'x', input: {} }] }]));
+  // o que a IA devolveu (inclusive raciocínio) volta como veio
+  assert.equal(IAP.conferirMensagens([{ role: 'user', content: 'q' }, { role: 'assistant', content: [{ type: 'thinking', thinking: '…', signature: 's' }, { type: 'tool_use', id: 't', name: 'consultar_vendas', input: {} }] }, { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't', content: '{}' }] }]), null);
   assert.ok(IAP.conferirMensagens([{ role: 'user', content: 'a'.repeat(5000) }]));
   const ok = [{ role: 'user', content: 'q' }, { role: 'assistant', content: [{ type: 'tool_use', id: 't', name: 'consultar_vendas', input: {} }] }, { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't', content: '{}' }] }];
   assert.equal(IAP.conferirMensagens(ok), null);

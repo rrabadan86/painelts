@@ -119,18 +119,22 @@ function sistemaPergunta(ctx, { clientes, custos, perfil }) {
 
 /** confere as mensagens que vêm do navegador (formato da API; tamanho limitado) */
 function conferirMensagens(ms) {
-  if (!Array.isArray(ms) || !ms.length || ms.length > 60) return 'Conversa inválida.';
-  if (JSON.stringify(ms).length > 250000) return 'A conversa ficou longa demais: comece uma nova.';
+  if (!Array.isArray(ms) || !ms.length || ms.length > 80) return 'Conversa inválida (tamanho).';
+  if (JSON.stringify(ms).length > 400000) return 'A conversa ficou longa demais: clique em "Nova conversa".';
   for (let k = 0; k < ms.length; k++) {
     const m = ms[k];
-    if (!m || (m.role !== 'user' && m.role !== 'assistant')) return 'Conversa inválida.';
-    if ((k % 2 === 0) !== (m.role === 'user')) return 'Conversa inválida.';
-    if (typeof m.content === 'string') { if (!m.content.trim() || m.content.length > 4000) return 'Pergunta vazia ou longa demais.'; continue; }
-    if (!Array.isArray(m.content) || !m.content.length) return 'Conversa inválida.';
+    if (!m || (m.role !== 'user' && m.role !== 'assistant')) return `Conversa inválida (mensagem ${k + 1}).`;
+    if ((k % 2 === 0) !== (m.role === 'user')) return `Conversa inválida (ordem na mensagem ${k + 1}).`;
+    if (typeof m.content === 'string') {
+      if (m.role === 'user' && (!m.content.trim() || m.content.length > 4000)) return 'Pergunta vazia ou longa demais.';
+      continue;
+    }
+    if (!Array.isArray(m.content) || !m.content.length) return `Conversa inválida (mensagem ${k + 1} vazia).`;
     for (const b of m.content) {
-      if (!b || !['text', 'tool_use', 'tool_result'].includes(b.type)) return 'Conversa inválida.';
-      if (b.type === 'tool_result' && (m.role !== 'user' || typeof b.content !== 'string' || b.content.length > 60000)) return 'Conversa inválida.';
-      if (b.type === 'tool_use' && m.role !== 'assistant') return 'Conversa inválida.';
+      if (!b || typeof b.type !== 'string') return `Conversa inválida (bloco na mensagem ${k + 1}).`;
+      // do navegador só sai texto e resultado das consultas; o que a IA devolveu (texto, ferramenta, raciocínio…) volta como veio
+      if (m.role === 'user' && !['text', 'tool_result'].includes(b.type)) return `Conversa inválida (bloco ${b.type}).`;
+      if (b.type === 'tool_result' && (typeof b.content !== 'string' || b.content.length > 60000)) return 'Resultado de consulta grande demais.';
     }
   }
   return null;
