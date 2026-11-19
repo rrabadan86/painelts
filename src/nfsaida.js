@@ -115,6 +115,8 @@ function lista(id) {
   return { notas, temXml };
 }
 
+/** chaves das NF-e que já têm XML guardado (para a lista do robô mostrar DANFE/XML sem ler cada arquivo) */
+const chaves = (id) => new Set(arquivos(id).map((a) => a.chave));
 function achar(id, chave) {
   if (!CHAVE.test(String(chave || ''))) return null;
   return arquivos(id).find((a) => a.chave === chave) || null;
@@ -208,4 +210,4 @@ ${n.situacao === 'cancelada' ? '<div class="cancelada">NOTA FISCAL CANCELADA</di
 </div></body></html>`;
 }
 
-module.exports = { lista, nota, achar, danfe, lerXml, code128c };
+module.exports = { lista, nota, achar, chaves, danfe, lerXml, code128c };

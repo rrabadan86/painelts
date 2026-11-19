@@ -106,6 +106,7 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 | NFE-07 | `SIMULAR=1` faz tudo menos o clique final | `nextsoft_nfe.py`; `nfe.js` | `nfe.test` "rascunho… lê o resultado" | 🟡 |
 | NFE-08 | Na apresentação nada vai para o robô | `core.js`; telas escondem o fluxo | `telas.spec` (só abre) | 🟡 |
 | NFE-09 | Lista só NF-e modelo 55 (NFC-e fica em Cupons) | `nfsaida.js` `ehNFe` | `nfsaida.test` (3); `regras.spec` "DANFE" | ✅ |
+| NFE-12 | NF-e emitida pelo painel: pede ao coletor o XML do dia e a linha mostra DANFE/XML quando chega (senão "⏳ chegam na próxima coleta") | `server.js` `/api/nfe`; `nfe.js` `marcarXml`; `nfsaida.js` `chaves`, tela `docsNfe` | `nfe.test` "chaves()", "autorizada" | 🟡 — tela sem teste de tela (formulário não abre na apresentação) |
 | NFE-10 | Cadastro de parceiro novo pelo robô | `nfe.js`; `nextsoft_nfe.py` | `nfe.test` "parceiro novo"; `consulta-cnpj.spec` | 🟡 — **defeito: robô recusa a ação, ver A-05** |
 | NFE-11 | BrasilAPI: CNPJ/CEP preenche só campos vazios | `brasilapi.js`; `orcamento.js` | `brasilapi.test` (3); `consulta-cnpj.spec` (2) | ✅ |
 
@@ -464,6 +465,7 @@ Todos os da lista A foram conferidos no código, um por um.
 | E-21 | "Replicar/Trazer mês" multiplicava ajuste pontual | `mapa.js` `ajustesQueRepetem`, editor "Vale para" | ✅ Decisão do dono: no ajuste a pessoa escolhe **Só neste dia (pontual)** ou **Neste e nos próximos <dia da semana>** (também nos próximos meses). Replicar/Trazer leva só os que repetem, em todos os mesmos dias da semana; pontual fica no dia dele. `escala-horario.spec` "replicar mês", "Vale para" |
 | E-22 | Feriado que abre em dia normalmente fechado fica sem ninguém e sem alerta | `mapa.js` | ❌ A fazer |
 | E-23 | NF-e de venda: o teste passava e a emissão falhava ao concluir por falta de estoque ("não possui estoque suficiente"), obrigando a refazer tudo | `nfsaida.js` (estoque por produto + aviso antes do robô), `nextsoft_nfe.py` (lê o estoque do produto no AppNext na conferência) | ✅ A tela avisa na hora; o robô para no teste quando o AppNext informa o estoque (o campo é registrado no log para conferência) |
+| E-24 | NF-e emitida (autorizada) não aparecia em Notas de saída nem tinha DANFE/XML até a próxima coleta | `server.js` `/api/nfe` (pede a importação do XML ao autorizar), `nfsaida.js` (DANFE/XML na linha e nos detalhes) | ✅ |
 
 ## Resumo em números
 

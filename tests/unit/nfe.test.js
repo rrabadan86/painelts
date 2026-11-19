@@ -67,6 +67,10 @@ test('emitir NF-e de venda: só a partir de um teste ok recente; o robô recebe 
   fs.writeFileSync(path.join(env, e.id + '.resultado.json'), JSON.stringify({ ok: true, emitida: true, em: new Date(Date.now() + 2000).toISOString(), nota: { total: 21.3 }, nfe: { numero: 74, serie: 1, chave: '3526', protocolo: '1352' } }));
   const l = NFE.conferir('le').lista;
   assert.deepEqual([l[0].estado, l[0].nfe.numero], ['autorizada', 74]);
+  // XML da nota emitida pedido ao coletor (para DANFE/XML aparecerem): fica marcado na linha
+  NFE.marcarXml('le', e.id, 'pedido');
+  const m = NFE.lista('le').find((x) => x.id === e.id);
+  assert.equal(m.xml, 'pedido'); assert.ok(m.xmlEm);
   // concluída e rejeitada
   const t2 = NFE.criar('le', { ...base, simular: true }, 'ger').ok;
   fs.writeFileSync(path.join(env, t2.id + '.resultado.json'), JSON.stringify({ ok: true, simulado: true, em: new Date(Date.now() + 1000).toISOString(), nota: { total: 21.3 } }));
@@ -74,4 +78,14 @@ test('emitir NF-e de venda: só a partir de um teste ok recente; o robô recebe 
   const e2 = NFE.emitir('le', t2.id, 'ger').ok;
   fs.writeFileSync(path.join(env, e2.id + '.resultado.json'), JSON.stringify({ ok: false, concluida: true, em: new Date(Date.now() + 2000).toISOString(), erro: 'a SEFAZ não autorizou' }));
   assert.equal(NFE.conferir('le').lista[0].estado, 'concluida');
+});
+
+test('nota emitida: chaves() acha o XML guardado pelo coletor (lista do robô mostra DANFE e XML)', () => {
+  const NFS = require('../../src/nfsaida');
+  const chave = '35261112345678000190550010000000721000000720';
+  assert.equal(NFS.chaves('lx').size, 0, 'sem pasta de XML: nada');
+  const dir = path.join(C.pastaLoja('lx'), 'xmls', '2026-11', 'ativos');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, `20261119_${chave}.xml`), '<nfeProc/>');
+  assert.ok(NFS.chaves('lx').has(chave));
 });
