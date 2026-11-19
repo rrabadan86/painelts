@@ -215,6 +215,8 @@ test('Escala do mês: com a semana começando na segunda, as semanas vão de seg
   await page.selectOption('#lojaSel', 'demo-parque');
   await page.evaluate(() => { TS.state.escMesYm = '2026-11'; TS.state.mapaAba = 'escala'; location.hash = '#mapa'; });
   await expect(page.locator('table.sem-t th span').first()).toHaveText('Dom');
+  // espera a troca de loja terminar (senão a simulação volta ao que está salvo quando os dados chegam)
+  await page.waitForFunction(() => TS.lojaCarregada === 'demo-parque' && TS.state.mapaOp && !document.querySelector('#updated.carregando'));
   await page.evaluate(() => { TS.state.mapaOp.op.equipe.inicioSemana = 'seg'; TS.render(); });
   const cab = page.locator('table.sem-t').first().locator('thead th span');
   await expect(cab.first()).toHaveText('Seg');
