@@ -2268,3 +2268,5 @@ details.vl-ajuda summary { cursor: pointer; font-weight: 600; }
 .cf-lista { display: flex; flex-direction: column; gap: 6px; max-height: 50vh; overflow: auto; margin: 8px 0; }
 .cf-item { display: flex; gap: 8px; align-items: center; }
 .nf-desc { color: #1f5a2b; }
+.cf-sobra { color: #9b2c1c; }
+.cf-conf { padding: 3px 10px; font-size: 12px; min-height: 0; }

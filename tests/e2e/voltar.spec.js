@@ -44,7 +44,8 @@ test('Créditos com a franquia: devoluções compensadas pelo desconto das notas
   await page.locator('.seg button', { hasText: 'Todas' }).first().click();
   await expect(corpo).toContainText('na NF 19120');
   await expect(corpo).toContainText('Atrasado');
-  await expect(corpo).toContainText('Desconto sem devolução que feche');
+  await expect(corpo).toContainText('Sugestão: confirme');
+  await expect(corpo).toContainText('sobram');
   await page.evaluate(() => { location.hash = '#inicio'; });
   await expect(page.locator('.ini-avisos')).toContainText(/Franquia: 1 devolução sem desconto/);
 });

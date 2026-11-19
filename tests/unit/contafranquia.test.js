@@ -14,6 +14,12 @@ const d = (iso) => iso;
 const ent = (id, nf, emissao, desconto) => ({ id, nf, chave: String(nf).padStart(44, '3'), emissao, entrada: emissao, fornecedor: forn, total: 1000, desconto, itens: [] });
 const dev = (n, emissao, valor, ref) => ({ chave: String(n).padStart(44, '4'), numero: n, emissao, finalidade: 'Devolução', situacao: 'autorizada', valor, refs: [ref] });
 
+test('parcial: as devoluções mais antigas que cabem no desconto, sem passar', () => {
+  const c = (id, valor) => ({ id, valor });
+  assert.deepEqual(CF.parcial([c('a', 42), c('b', 42), c('c', 181.2)], 287.3).map((x) => x.id), ['a', 'b', 'c']);
+  assert.deepEqual(CF.parcial([c('a', 300)], 287.3), []);
+});
+
 test('combinar: acha a combinação exata de devoluções (cada uma inteira) e marca quando há mais de uma', () => {
   const c = (id, valor) => ({ id, valor });
   assert.deepEqual(CF.combinar([c('a', 200), c('b', 150), c('c', 87.4)], 350).comb.map((x) => x.id), ['a', 'b']);
@@ -32,11 +38,19 @@ test('conta: desconto da nota compensa as devoluções; o que sobra fica em aber
   assert.equal(x.creditos.length, 4, 'a cancelada não conta');
   assert.equal(por[512].situacao, 'compensado'); assert.equal(por[512].compensado.nota.nf, 19120);
   assert.equal(por[518].situacao, 'compensado');
-  assert.equal(por[531].situacao, 'atrasado');
+  // 19180: desconto de R$ 75 não fecha → sugere a devolução mais antiga que cabe (531, R$ 60,90), sobra R$ 14,10
+  const n4 = x.notas.find((n) => n.nf === 19180);
+  assert.deepEqual([n4.situacao, n4.sobra], ['sugestao', 14.1]);
+  assert.equal(por[531].situacao, 'confirmar');
   assert.equal(por[540].situacao, 'aberto');
   assert.equal(por[512].fornecedor, forn);
-  assert.equal(x.notas.find((n) => n.nf === 19180).situacao, 'sem_par');
   assert.equal(x.resumo.conferir, 1);
+  // "não é isso": a 531 volta a ficar atrasada
+  assert.ok(CF.acao('lj', { tipo: 'recusar', nota: 'e4' }, 'ger').ok);
+  const xr = CF.conta('lj', { saidas, compras, devsPainel: [], hoje: '2026-11-18T12:00:00Z' });
+  assert.equal(xr.creditos.find((c) => c.numero === 531).situacao, 'atrasado');
+  assert.equal(xr.notas.find((n) => n.nf === 19180).situacao, 'sem_par');
+  assert.ok(CF.acao('lj', { tipo: 'considerar', nota: 'e4' }, 'ger').ok);
   // à mão: a 531 foi paga no boleto; o desconto da 19180 não é de devolução
   assert.ok(CF.acao('lj', { tipo: 'compensar', credito: por[531].id, como: 'boleto', obs: 'boleto 12/11' }, 'ger').ok);
   assert.ok(CF.acao('lj', { tipo: 'ignorar', nota: 'e4', obs: 'promoção' }, 'ger').ok);

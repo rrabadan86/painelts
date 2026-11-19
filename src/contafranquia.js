@@ -21,7 +21,7 @@ const TOL = 0.06;            // diferença aceita por crédito (arredondamento d
 const MAX_COMB = 18;         // créditos em aberto testados por nota (combinações)
 
 const arq = (id) => path.join(C.pastaLoja(id), 'conta-franquia.json');
-const ler = (id) => { try { const j = JSON.parse(fs.readFileSync(arq(id), 'utf8')); return { manual: j.manual || {}, ignorar: j.ignorar || {} }; } catch { return { manual: {}, ignorar: {} }; } };
+const ler = (id) => { try { const j = JSON.parse(fs.readFileSync(arq(id), 'utf8')); return { manual: j.manual || {}, ignorar: j.ignorar || {}, recusar: j.recusar || {} }; } catch { return { manual: {}, ignorar: {}, recusar: {} }; } };
 const gravar = (id, d) => { fs.mkdirSync(C.pastaLoja(id), { recursive: true }); C.gravarAtomico(arq(id), JSON.stringify(d), 0o640); };
 const r2 = (v) => Math.round((Number(v) || 0) * 100) / 100;
 const dia = (iso) => String(iso || '').slice(0, 10);
@@ -70,6 +70,24 @@ function combinar(cands, alvo) {
 }
 
 /**
+ * sem combinação exata: as devoluções mais antigas cuja soma chega mais perto do desconto SEM passar
+ * (o desconto pode ter outra coisa junto). Empate → as mais antigas.
+ */
+function parcial(cands, alvo) {
+  const n = Math.min(cands.length, MAX_COMB);
+  let melhor = [], somaM = 0;
+  const buscar = (k, soma, usados) => {
+    if (soma > alvo + TOL * Math.max(1, usados.length)) return;
+    if (soma > somaM + 0.005) { somaM = soma; melhor = usados.slice(); }
+    if (k >= n) return;
+    usados.push(cands[k]); buscar(k + 1, soma + cands[k].valor, usados); usados.pop();
+    buscar(k + 1, soma, usados);
+  };
+  buscar(0, 0, []);
+  return melhor;
+}
+
+/**
  * a conta: { creditos: [{…, situacao: aberto|atrasado|compensado|manual, compensadoEm?: {nota, como}}], notas: [notas com desconto e o que compensaram],
  *            resumo: { aberto, atrasado, compensado, semPar } }
  */
@@ -93,18 +111,28 @@ function conta(id, { saidas, compras, devsPainel, hoje = new Date().toISOString(
     const manuais = [...usado].filter(([, u]) => u.nota === n.id).map(([cid]) => porId.get(cid)).filter(Boolean);
     if (manuais.length) { notas.push({ ...ref, situacao: 'manual', creditos: manuais.map((c) => c.id), soma: r2(manuais.reduce((s, c) => s + c.valor, 0)) }); continue; }
     const cands = cr.filter((c) => !usado.has(c.id) && c.emissao <= quando && (!c.fornecedor || !n.fornecedor || c.fornecedor === n.fornecedor));
+    const recusada = !!m.recusar[n.id];
     const { comb, ambigua } = combinar(cands, desc);
-    if (comb.length) {
-      for (const c of comb) usado.set(c.id, { nota: n.id, como: 'nota', auto: true });
-      notas.push({ ...ref, situacao: ambigua ? 'conferir' : 'compensou', ambigua, creditos: comb.map((c) => c.id), soma: r2(comb.reduce((s, c) => s + c.valor, 0)) });
-    } else notas.push({ ...ref, situacao: cands.length ? 'sem_par' : 'sem_credito', creditos: [] });
+    const reservar = (cs, situ) => {
+      for (const c of cs) usado.set(c.id, { nota: n.id, como: 'nota', auto: true, confirmar: situ !== 'compensou' });
+      const soma = r2(cs.reduce((s, c) => s + c.valor, 0));
+      notas.push({ ...ref, situacao: situ, ambigua: situ === 'conferir', creditos: cs.map((c) => c.id), soma, sobra: r2(desc - soma) });
+    };
+    if (comb.length && !ambigua) reservar(comb, 'compensou');               // fecha certinho, uma combinação só
+    else if (recusada) notas.push({ ...ref, situacao: cands.length ? 'sem_par' : 'sem_credito', recusada: true, creditos: [] });
+    else if (comb.length) reservar(comb, 'conferir');                      // fecha, mas há mais de uma combinação: as mais antigas
+    else {
+      const p = parcial(cands, desc);
+      if (p.length) reservar(p, 'sugestao');                               // não fecha: as mais antigas que cabem no desconto
+      else notas.push({ ...ref, situacao: cands.length ? 'sem_par' : 'sem_credito', creditos: [] });
+    }
   }
   const notaPorId = new Map(notas.map((x) => [x.id, x]));
   const lista = cr.map((c) => {
     const u = usado.get(c.id);
     if (u) {
       const nt = u.nota ? notaPorId.get(u.nota) || (compras || []).find((x) => x.id === u.nota) : null;
-      return { ...c, situacao: u.manual ? 'manual' : 'compensado', compensado: { como: u.como, nota: nt ? { id: nt.id, nf: nt.nf, emissao: dia(nt.emissao) } : null, obs: u.obs || '', por: u.por || null, em: u.em || null, auto: !!u.auto, ambigua: !!(nt && nt.ambigua) } };
+      return { ...c, situacao: u.manual ? 'manual' : u.confirmar ? 'confirmar' : 'compensado', compensado: { como: u.como, nota: nt ? { id: nt.id, nf: nt.nf, emissao: dia(nt.emissao) } : null, obs: u.obs || '', por: u.por || null, em: u.em || null, auto: !!u.auto, ambigua: !!(nt && nt.ambigua) } };
     }
     const d = dias(c.emissao, hoje);
     return { ...c, situacao: d > PRAZO_DIAS ? 'atrasado' : 'aberto', dias: d };
@@ -115,9 +143,10 @@ function conta(id, { saidas, compras, devsPainel, hoje = new Date().toISOString(
     descontoLido: (compras || []).some((n) => descontoDaNota(n) != null),
     resumo: {
       aberto: soma((c) => c.situacao === 'aberto'), atrasado: soma((c) => c.situacao === 'atrasado'),
-      compensado: soma((c) => c.situacao === 'compensado' || c.situacao === 'manual'),
+      compensado: soma((c) => c.situacao === 'compensado' || c.situacao === 'manual'), confirmar: soma((c) => c.situacao === 'confirmar'),
       nAtrasado: lista.filter((c) => c.situacao === 'atrasado').length, nAberto: lista.filter((c) => c.situacao === 'aberto').length,
-      conferir: notas.filter((x) => x.situacao === 'sem_par' || x.situacao === 'conferir').length,
+      nConfirmar: lista.filter((c) => c.situacao === 'confirmar').length,
+      conferir: notas.filter((x) => x.situacao === 'sem_par' || x.situacao === 'conferir' || x.situacao === 'sugestao').length,
     },
   };
 }
@@ -138,16 +167,23 @@ function acao(id, b, por) {
   } else if (b.tipo === 'desfazer') {
     if (!cid(b.credito)) return { erro: 'Crédito inválido.' };
     delete m.manual[b.credito];
+  } else if (b.tipo === 'confirmar') {
+    if (!b.nota || !Array.isArray(b.creditos) || !b.creditos.length || !b.creditos.every(cid)) return { erro: 'Nada para confirmar.' };
+    for (const c of b.creditos) m.manual[c] = { nota: String(b.nota).slice(0, 60), obs: obs || 'confirmado', por, em };
+    delete m.recusar[b.nota];
+  } else if (b.tipo === 'recusar') {
+    if (!b.nota) return { erro: 'Nota inválida.' };
+    m.recusar[String(b.nota).slice(0, 60)] = { obs, por, em };
   } else if (b.tipo === 'ignorar') {
     if (!b.nota) return { erro: 'Nota inválida.' };
     m.ignorar[String(b.nota).slice(0, 60)] = { obs, por, em };
     for (const [c, x] of Object.entries(m.manual)) if (x.nota === b.nota) delete m.manual[c];
   } else if (b.tipo === 'considerar') {
-    delete m.ignorar[String(b.nota || '')];
+    delete m.ignorar[String(b.nota || '')]; delete m.recusar[String(b.nota || '')];
     for (const [c, x] of Object.entries(m.manual)) if (x.nota === b.nota) delete m.manual[c];
   } else return { erro: 'Ação inválida.' };
   gravar(id, m);
   return { ok: true };
 }
 
-module.exports = { conta, acao, creditos, combinar, descontoDaNota, PRAZO_DIAS };
+module.exports = { conta, acao, creditos, combinar, parcial, descontoDaNota, PRAZO_DIAS };
