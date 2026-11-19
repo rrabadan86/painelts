@@ -93,3 +93,25 @@ test('IA: histórico de conversas por pessoa e por loja, sem a lista de clientes
   assert.ok(IAC.apagar('fr', 'aaaaaaaaaaaa').ok);
   assert.equal(IAC.abrir('fr', 'aaaaaaaaaaaa'), null);
 });
+
+test('IA: diagnóstico e revisão do pedido não forçam a ferramenta (os modelos novos recusam) e pedem de novo se vier só texto', async () => {
+  IA.salvar({ chave: CHAVE, loja: 'c', user: 'f2' });
+  const enviados = [];
+  const fetchAntes = global.fetch, falsoAntes = process.env.IA_FALSO;
+  process.env.IA_FALSO = '0';
+  const respostas = [
+    { stop_reason: 'end_turn', usage: { input_tokens: 10, output_tokens: 5 }, content: [{ type: 'text', text: 'Aqui está a explicação…' }] },
+    { stop_reason: 'tool_use', usage: { input_tokens: 10, output_tokens: 5 }, content: [{ type: 'tool_use', id: 't1', name: 'diagnostico', input: { resumo: 'ok' } }] },
+  ];
+  global.fetch = async (url, op) => { enviados.push(JSON.parse(op.body)); return { ok: true, status: 200, json: async () => respostas.shift() }; };
+  try {
+    const r = await IA.comFerramenta('c', { max_tokens: 100, system: 's', ferramenta: IAP.FERR_DIAG, conteudo: 'dados' });
+    assert.deepEqual(r, { resumo: 'ok' });
+    assert.equal(enviados.length, 2);
+    for (const b of enviados) assert.deepEqual(b.tool_choice, { type: 'auto' });
+    assert.equal(enviados[1].messages.length, 3, 'a segunda tentativa leva a resposta anterior e o pedido da ferramenta');
+  } finally {
+    global.fetch = fetchAntes; process.env.IA_FALSO = falsoAntes;
+    IA.remover('c');
+  }
+});
