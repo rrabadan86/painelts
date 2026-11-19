@@ -231,14 +231,17 @@
       h('p', { class: 'muted mt' }, 'As notas de entrada, com os produtos e valores de cada uma, ficam em ', h('a', { href: '#notas' }, 'Estoque → Notas fiscais'), '.'));
   }
 
-  function variacao(ant, at, v, dia, ehCusto, kg) {
+  // o que teve reajuste no período (etiqueta no nome do produto e no painel lateral)
+  const ST_PROD = { ambos: ['Custo + Venda', 'prc-st-a'], custo: ['Só custo', 'prc-st-c'], venda: ['Só venda', 'prc-st-v'], nada: ['Sem reajuste', 'prc-st-n'] };
+
+  /** célula "agora em destaque": valor do fim do período + etiqueta da variação; embaixo, em letra pequena, o de antes e a data (e as linhas extras) */
+  function variacao(ant, at, v, dia, ehCusto, ...extras) {
     if (at == null) return h('span', { class: 'muted' }, '—');
     const cor = v == null ? '' : (ehCusto ? v > 0 : v < 0) ? 'prc-ruim' : 'prc-bom';
-    return h('div', { class: 'prc-v' },
-      v != null ? h('s', { class: 'muted' }, fmt.brl(ant)) : null,
-      h('b', null, fmt.brl(at)),
-      v != null ? h('span', { class: 'prc-badge ' + cor }, pctTxt(v)) : null,
-      dia != null ? h('small', { class: 'muted' }, quando(TS.dayToIso(dia))) : null);
+    return h('div', { class: 'prc-c' },
+      h('span', { class: 'prc-c1' }, h('b', null, fmt.brl(at)), v != null ? h('span', { class: 'prc-badge ' + cor }, pctTxt(v)) : null),
+      v != null ? h('small', null, `antes ${fmt.brl(ant)}${dia != null ? ` · ${quando(TS.dayToIso(dia))}` : ''}`) : null,
+      ...extras.filter(Boolean));
   }
 
   function tabela(linhas, FIL, filtro, corpo, D) {
@@ -247,31 +250,35 @@
     const abas = () => TS.seg([...Object.entries(FIL).map(([k, [t]]) => [`${t} (${cont(k)})`, k]), ...(D.efeito ? [[`Reajustes (${D.efeito.lista.length})`, 'efeito']] : [])], filtro, (v) => { state.precoFil = v; pintar(corpo, D); });
     if (filtro === 'efeito') return TS.efeitoPreco.cartao(D.efeito, abas(), (nome) => { const r = linhas.find((x) => x.nome === nome); if (r) abrirProduto(r); }, () => pintar(corpo, D));
     const rows = linhas.filter(FIL[filtro][1]);
-    const temCad = !!(D.tabela && D.tabela.size); // com a planilha de preços: "No sistema" (cadastro) e "No caixa" lado a lado
-    const STATUS = { ambos: ['Custo + Venda', 'prc-st-a'], custo: ['Só custo', 'prc-st-c'], venda: ['Só venda', 'prc-st-v'], nada: ['Sem reajuste', 'prc-st-n'] };
+    const temCad = !!(D.tabela && D.tabela.size); // com a planilha de preços: o preço de venda é o do cadastro; o do caixa aparece quando difere
+    // Sem rolagem para o lado: poucas colunas, cada uma com o valor de agora em destaque e o "antes" embaixo. O que mudou vira
+    // etiqueta no nome; cada aba mostra só as colunas dela (Caixa ≠ sistema: sistema, caixa e motivo). O resto fica no painel do produto.
+    const cNome = { key: 'nome', label: 'Produto', align: 'l', sticky: true, wrap: true,
+      title: 'Clique no nome para abrir o histórico do produto: gráfico de custo × venda, composição do custo, vendas por mês e todos os reajustes. A etiqueta diz o que teve reajuste no período: Custo + Venda = os dois mudaram; Só custo = o custo mudou e o preço não (a margem mexeu); Só venda = o preço mudou e o custo não; Sem reajuste = nenhum dos dois mudou.',
+      render: (r) => { const [t, c] = ST_PROD[r.status]; return h('span', null, h('a', { href: '#', class: 'prc-nome', onclick: (e) => { e.preventDefault(); abrirProduto(r); } }, r.nome), filtro === 'sem' ? null : ' ', filtro === 'sem' ? null : h('span', { class: 'prc-st ' + c }, t), h('small', { class: 'est-tam' }, r.cat)); } };
+    const cCusto = { key: 'cVar', label: 'Custo', title: 'Quanto custa 1 unidade vendida (pacote, lata, caneca…) pelo custo do estoque/notas de entrada. Em negrito = custo no fim do período; a etiqueta é a variação no período (vermelho = subiu); embaixo, o custo de antes e a data em que mudou. Só um valor = o custo não mudou no período.', render: (r) => variacao(r.cAnt, r.cAt, r.cVar, r.cDia, true), sortVal: (r) => r.cVar ?? -99 };
+    const cPreco = { key: 'vVar', label: 'Preço de venda', title: temCad ? 'Preço de venda CADASTRADO no AppNext (Produtos / Produtos Compostos) no fim do período: a margem usa o preço do sistema. A etiqueta é o reajuste no período (verde = subiu); embaixo, o preço de antes e a data — o "antes" vem do histórico que o painel guarda a cada planilha de preços importada. A linha "caixa R$ …" só aparece quando os cupons saíram a um preço diferente do sistema (− abaixo, + acima): o ⓘ ao lado diz o motivo provável e a aba "Caixa ≠ sistema" mostra todos. "Sem cadastro" = o produto não está na planilha de preços: vale o preço do caixa. Desconto dado no caixa não entra (fica separado no cupom).' : 'Preço de tabela que saiu nos cupons (sem desconto) no fim do período. A etiqueta é o reajuste no período (verde = subiu); embaixo, o preço de antes e a data. Conta como reajuste quando o preço novo se mantém.',
+      render: (r) => variacao(r.vAnt, r.vAt, r.vVar, r.vDia, false,
+        temCad && r.base === 'caixa' ? h('small', null, 'sem cadastro · margem pelo caixa') : null,
+        r.base !== 'caixa' && r.tabDif != null ? h('small', { class: 'prc-cx' }, h('span', null, `caixa ${fmt.brl(r.vCx)} `, h('span', { class: r.tabPor && r.tabPor.tipo === 'parado' ? null : 'neg' }, `(${pctTxt(r.tabDif)})`)), r.tabPor ? TS.dica(r.tabPor.longo) : null) : null),
+      sortVal: (r) => r.vVar ?? -99 };
+    const cMargem = { key: 'difMargem', label: 'Margem bruta', title: 'Margem bruta = (preço de venda − custo) ÷ preço de venda, sem impostos, comissão nem royalties. Em negrito = no fim do período (vermelho = caiu); a etiqueta mostra quantos pontos percentuais (p.p.) ganhou ou perdeu; embaixo, a margem de antes.', render: (r) => { if (r.mAt == null) return '—'; const mudou = r.difMargem != null && Math.abs(r.difMargem) >= 0.0005; return h('div', { class: 'prc-c' },
+        h('span', { class: 'prc-c1' }, h('b', { class: r.perdeu ? 'neg' : null }, fmt.pct(r.mAt)), mudou ? h('span', { class: 'prc-badge ' + (r.difMargem < 0 ? 'prc-ruim' : 'prc-bom') }, `${r.difMargem > 0 ? '+' : ''}${fmt.n1(r.difMargem * 100)} p.p.`) : null),
+        mudou ? h('small', null, `antes ${fmt.pct(r.mAnt)}`) : null); },
+      sortVal: (r) => r.difMargem ?? 0 };
+    // aba "Caixa ≠ sistema": o preço do cadastro, o que saiu nos cupons e o motivo provável, por extenso
+    const cSistema = { key: 'vAt', label: 'No sistema', title: 'Preço de venda CADASTRADO no AppNext no fim do período (é ele que entra na margem). Etiqueta e "antes" aparecem quando o cadastro mudou no período.', render: (r) => variacao(r.vAnt, r.vAt, r.vVar, r.vDia, false) };
+    const cCaixa = { key: 'cx', label: 'No caixa', title: 'Preço que saiu nos cupons (o mais vendido nas últimas semanas). A etiqueta mostra quanto o caixa ficou abaixo (−) ou acima (+) do sistema; cinza = o produto não vende mais e o preço é antigo. Desconto dado no caixa não entra (fica separado no cupom).',
+      render: (r) => h('div', { class: 'prc-c' }, h('span', { class: 'prc-c1' }, h('b', null, fmt.brl(r.vCx)), h('span', { class: 'prc-badge ' + (r.tabPor && r.tabPor.tipo === 'parado' ? 'prc-neutro' : 'prc-ruim') }, pctTxt(r.tabDif))), h('small', null, 'do sistema')), sortVal: (r) => (r.tabDif == null ? -99 : Math.abs(r.tabDif)) };
+    const cMotivo = { key: 'tabPor', label: 'Motivo provável', align: 'l', wrap: true, title: 'Por que o caixa difere do sistema, olhando as vendas das últimas 4 semanas: "última venda dd/mm" = não vende mais e o preço é antigo; "promoção?" = parte das vendas no preço do sistema e parte em outro; "PDV ≠ cadastro" ou "desde dd/mm" = todas as vendas fora do preço do sistema (um dos dois está desatualizado).',
+      render: (r) => (r.tabPor ? h('span', null, h('b', null, r.tabPor.curto), h('small', { class: 'muted efp-det' }, r.tabPor.longo)) : '—'), sortVal: (r) => (r.tabPor ? r.tabPor.tipo : '') };
+    const ehCad = filtro === 'cad';
     const tab = TS.table({
-      cols: [
-        { key: 'nome', label: 'Produto', align: 'l', sticky: true, wrap: true, render: (r) => h('a', { href: '#', class: 'prc-nome', onclick: (e) => { e.preventDefault(); abrirProduto(r); } }, r.nome, h('small', { class: 'est-tam' }, r.cat)) },
-        { key: 'cVar', label: 'Custo (antes → agora)', title: 'Quanto custa 1 unidade vendida (pacote, lata, caneca…) pelo custo do estoque/notas de entrada. Riscado = custo antes do período; em negrito = custo no fim dele; a % é a variação (vermelho = subiu) e a data é quando mudou. Só um valor = o custo não mudou no período.', render: (r) => variacao(r.cAnt, r.cAt, r.cVar, r.cDia, true), sortVal: (r) => r.cVar ?? -99 },
-        temCad ? { key: 'vVar', label: 'No sistema (antes → agora)', title: 'Preço de venda CADASTRADO no AppNext (Produtos / Produtos Compostos): antes do período → no fim dele; a % e a data aparecem quando o cadastro mudou. O "antes" vem do histórico que o painel guarda a cada planilha de preços importada. É este preço que entra na margem. "Sem cadastro" = o produto não está na planilha de preços: a margem usa o preço do caixa.',
-          render: (r) => (r.base === 'caixa' ? h('span', { class: 'muted' }, 'sem cadastro') : variacao(r.vAnt, r.vAt, r.vVar, r.vDia, false)), sortVal: (r) => (r.base === 'caixa' ? -100 : r.vVar ?? -99) } : null,
-        { key: 'cx', label: temCad ? 'No caixa' : 'Venda (antes → agora)', title: temCad ? 'Preço que saiu nos cupons (o mais vendido nas últimas semanas). Produto com cadastro: é só conferência (a margem usa o preço do sistema); a etiqueta mostra quanto o caixa ficou abaixo (−) ou acima (+) do sistema e, embaixo, o motivo provável: "última venda dd/mm" = não vende mais e o preço é antigo; "promoção?" = parte das vendas no preço do sistema e parte em outro; "PDV ≠ cadastro" ou "desde dd/mm" = todas as vendas fora do sistema. Produto sem cadastro: mostra antes → agora e é este preço que entra na margem. Desconto dado no caixa não entra (fica separado no cupom).' : 'Preço de tabela que saiu nos cupons (sem desconto): antes do período → no fim dele. Conta como reajuste quando o preço novo se mantém.',
-          render: (r) => {
-            if (r.base === 'caixa') return h('div', null, variacao(r.cx.vAnt, r.cx.vAt, r.cx.vVar, r.cx.vDia, false), temCad ? h('small', { class: 'prc-tabpor' }, 'margem pelo caixa') : null);
-            return h('div', { class: 'prc-v' }, h('b', null, fmt.brl(r.vCx)), r.tabDif != null ? h('span', { class: 'prc-badge ' + (r.tabPor && r.tabPor.tipo === 'parado' ? 'prc-neutro' : 'prc-ruim') }, `${pctTxt(r.tabDif)} do sistema`) : h('span', { class: 'muted' }, 'igual ao sistema'),
-              r.tabPor ? h('small', { class: 'prc-tabpor' }, r.tabPor.curto, TS.dica(r.tabPor.longo)) : null);
-          }, sortVal: (r) => (r.base === 'caixa' ? (temCad ? -100 : r.cx.vVar ?? -99) : r.tabDif == null ? -99 : Math.abs(r.tabDif)) },
-        { key: 'status', label: 'O que mudou', align: 'l', title: 'O que teve reajuste no período: Custo + Venda = os dois mudaram; Só custo = o custo mudou e o preço não (a margem mexeu); Só venda = o preço mudou e o custo não; Sem reajuste = nenhum dos dois mudou.', render: (r) => { const [t, c] = STATUS[r.status]; return h('span', { class: 'prc-st ' + c }, t); }, sortVal: (r) => ({ ambos: 3, custo: 2, venda: 1, nada: 0 })[r.status] },
-        { key: 'difMargem', label: 'Margem bruta (antes → agora)', title: 'Margem bruta = (preço de venda − custo) ÷ preço de venda, sem impostos, comissão nem royalties. Riscado = antes do período; em negrito = agora; a etiqueta mostra quantos pontos percentuais (p.p.) ganhou ou perdeu.', render: (r) => (r.mAt == null ? '—' : h('div', { class: 'prc-v' },
-          r.difMargem != null && Math.abs(r.difMargem) >= 0.0005 ? h('s', { class: 'muted' }, fmt.pct(r.mAnt)) : null, h('b', { class: r.perdeu ? 'neg' : null }, fmt.pct(r.mAt)),
-          r.difMargem != null && Math.abs(r.difMargem) >= 0.0005 ? h('span', { class: 'prc-badge ' + (r.difMargem < 0 ? 'prc-ruim' : 'prc-bom') }, `${r.difMargem > 0 ? '+' : ''}${fmt.n1(r.difMargem * 100)} p.p.`) : null)),
-          sortVal: (r) => r.difMargem ?? 0 },
-        { key: 'acoes', label: '', align: 'l', render: (r) => h('button', { type: 'button', class: 'btn prc-ver', onclick: () => abrirProduto(r) }, 'Histórico'), sortVal: () => 0 },
-      ].filter(Boolean),
-      rows, sortKey: filtro === 'margem' ? 'difMargem' : 'cVar', sortDir: filtro === 'margem' ? 'asc' : 'desc', maxHeight: '640px', search: 'Buscar produto…', searchKeys: ['nome', 'cat'], produto: 'nome', cls: 'est-t prc-t',
+      cols: ehCad ? [cNome, cSistema, cCaixa, cMotivo] : [cNome, cCusto, cPreco, cMargem],
+      rows, sortKey: ehCad ? 'cx' : filtro === 'margem' ? 'difMargem' : 'cVar', sortDir: filtro === 'margem' ? 'asc' : 'desc', maxHeight: '640px', search: 'Buscar produto…', searchKeys: ['nome', 'cat'], produto: 'nome', cls: 'est-t prc-t', cartao: true,
       empty: 'Nenhum produto neste filtro no período.',
     });
-    return TS.cardWithTools('Produtos', `Clique no produto para ver o gráfico de custo × venda e todos os reajustes. Custo e venda são de 1 unidade vendida (pacote, lata, caneca…). "No sistema" é o preço cadastrado no AppNext (é ele que entra na margem); "No caixa" é o que saiu nos cupons, para conferência${D.tabHistDesde ? ` (reajustes do cadastro desde ${quando(D.tabHistDesde)})` : ' (o histórico de reajustes do cadastro começa a ser guardado agora, a cada planilha de preços importada)'}.`,
+    return TS.cardWithTools('Produtos', `Clique no produto para ver o gráfico de custo × venda e todos os reajustes. Custo e preço são de 1 unidade vendida (pacote, lata, caneca…): o valor em destaque é o do fim do período e, embaixo, o de antes. ${temCad ? `O preço de venda é o cadastrado no AppNext (é ele que entra na margem); quando o caixa cobrou diferente, aparece embaixo${D.tabHistDesde ? ` (reajustes do cadastro desde ${quando(D.tabHistDesde)})` : ' (o histórico de reajustes do cadastro começa a ser guardado agora, a cada planilha de preços importada)'}.` : 'O preço de venda é o que saiu nos cupons.'}`,
       h('div', { class: 'est-tools' }, tab.searchBox && (tab.searchBox.classList.add('est-busca'), tab.searchBox),
         abas()),
       tab);
@@ -407,7 +414,7 @@
     inp.addEventListener('input', sim); sim();
     const card = h('aside', { class: 'card prc-drawer', role: 'dialog', 'aria-modal': 'true', 'aria-label': r.nome },
       h('button', { type: 'button', class: 'icon-btn exp-fechar', title: 'Fechar (Esc)', 'aria-label': 'Fechar', onclick: fechar }, '✕'),
-      h('div', { class: 'card-title' }, r.nome), h('div', { class: 'card-sub' }, r.cat),
+      h('div', { class: 'card-title' }, r.nome), h('div', { class: 'card-sub' }, r.cat, r.status ? ' · no período: ' : null, r.status ? h('span', { class: 'prc-st ' + ST_PROD[r.status][1] }, ST_PROD[r.status][0]) : null),
       h('div', { class: 'prc-resumo' },
         h('div', null, h('small', null, 'Custo hoje'), h('b', null, fmt.brl(custo))),
         h('div', null, h('small', null, 'Venda hoje'), h('b', null, fmt.brl(venda))),
