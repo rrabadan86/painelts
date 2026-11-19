@@ -339,7 +339,11 @@
     let sk = sortKey, sd = sortDir, page = 0, q = searchInit ? TS.norm(searchInit) : '';
     // celular: tabela com 5 colunas ou mais vira cartões (cada linha um cartão, "rótulo: valor"); só no celular
     const MOB = TS.ehCelular() && (cols.length >= 5 || cartao === true);
-    if (MOB && !pageSize && rows.length > 60) pageSize = 40; // cartões são altos: em páginas
+    // páginas: montar centenas de linhas de uma vez travava a troca de tela (o navegador calcula o layout de todas).
+    // Celular: cartões são altos, sempre em páginas de 40. Computador: tabela grande em páginas de 100.
+    // A busca e a ordenação valem para todas as linhas; a impressão mostra tudo (tw._tudo).
+    if (MOB && rows.length > 60) pageSize = Math.min(pageSize || 40, 40);
+    else if (!MOB && !pageSize && rows.length > 150) pageSize = 100;
     const rotulo = (c) => (typeof c.label === 'string' ? c.label : '');
     const wrap = h('div', { class: MOB ? 'tab-mob-w' : null });
     const tbl = h('table', { class: 't' + (cls ? ' ' + cls : '') + (MOB ? ' t-mob' : '') });
