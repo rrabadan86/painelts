@@ -13,7 +13,7 @@
     const r = await fetch(TS.api(`estoque?loja=${encodeURIComponent(loja)}`), { credentials: 'same-origin' });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.erro || 'Falha ao ler o estoque.');
-    const x = { at: Date.now(), estoque: j.estoque, cfg: j.cfg, tabela: j.tabela || null, classe: j.classe || { meses: 6, fixas: {} }, historico: j.historico || {}, compras: j.compras || null, foraDeLinha: j.foraDeLinha || null };
+    const x = { at: Date.now(), estoque: j.estoque, cfg: j.cfg, tabela: j.tabela || null, classe: j.classe || { meses: 6, fixas: {} }, historico: j.historico || {}, compras: j.compras || null, foraDeLinha: j.foraDeLinha || null, espera: j.espera || {} };
     cache.set(loja, x);
     return x;
   }
@@ -402,7 +402,7 @@
     return box;
   };
 
-  function pintar(corpo, { estoque, cfg, historico, classe: ccfg, tabela, foraDeLinha }, modo = 'estoque') {
+  function pintar(corpo, { estoque, cfg, historico, classe: ccfg, tabela, foraDeLinha, espera }, modo = 'estoque') {
     corpo.replaceChildren();
     // cada tela põe só a sua parte (a conta é a mesma)
     const R = modo === 'rentab', E = modo === 'estoque', EQ = modo === 'equilibrio';
@@ -916,6 +916,9 @@
       const parado = parados.length && parados[parados.length - 1].cod === it.cod;
       todos.push({ ...linha, valor: it.custo && qtd > 0 ? qtd * it.custo : 0, ultima: vendeuAlgumaVez ? TS.dayToIso(ult) : null, semVenda: vendeuAlgumaVez ? fim - ult : null, parado: !!parado, nunca: !vendeuAlgumaVez, foraLinha: foraLinhaDe(it.cod) });
     }
+    // venda perdida por falta (zerado que vendia) e excesso (vende, mas sobra): contas em ruptura.js
+    const RUP = TS.ruptura.marcar({ linhas: todos, M, H, espera });
+    const RUPQ = TS.ruptura.quadros(RUP, { H });
     const diasTxt = (d) => (d == null ? '—' : `${fmt.int(d)} ${Math.round(d) === 1 ? 'dia' : 'dias'}`);
     const porque = (r) => ({
       acabou: `Estoque zerado e a previsão é vender ${qtdTxt(r.prev, r.it)} por dia.`,
@@ -967,7 +970,9 @@
     put(E, h('div', { class: 'grid g-kpi' },
       kpiFiltro(TS.kpi('Estoque a custo', fmt.brl0(valorEstoque), `${fmt.int(estoque.itens.filter((i) => i.qtd > 0).length)} produtos com saldo`, 'Toque para ver na tabela os produtos com saldo'), 'saldo'),
       kpiFiltro(TS.kpi('Para repor', fmt.int(repor.length), h('span', { class: urgentes ? 'down' : '' }, `${fmt.int(urgentes)} ${urgentes === 1 ? 'urgente' : 'urgentes'} · pedido ${fmt.brl0(repor.reduce((s, r) => s + r.custoPedido, 0))}`), 'Urgente = acabou ou acaba antes de o pedido chegar. Toque para ver na tabela'), 'repor'),
-      kpiFiltro(TS.kpi('Estoque parado', fmt.brl0(valorParado), `${fmt.int(parados.length)} produtos sem venda há ${cfg.paradoDias}+ dias`, 'Toque para ver na tabela os produtos parados'), 'parados')));
+      kpiFiltro(RUPQ.falta, 'falta'),
+      kpiFiltro(TS.kpi('Estoque parado', fmt.brl0(valorParado), `${fmt.int(parados.length)} produtos sem venda há ${cfg.paradoDias}+ dias`, 'Toque para ver na tabela os produtos parados'), 'parados'),
+      kpiFiltro(RUPQ.sobra, 'sobrando')));
 
     if (EQ) { corpo.append(cartaoEquilibrio()); return; }
 
@@ -1279,7 +1284,9 @@
         : r.est === 'semsaldo' ? 'Sem saldo no AppNext e sem venda nos últimos 30 dias.' : porque(r));
     const FILTROS = {
       repor: ['O que repor', (r) => repor.includes(r)],
+      falta: ['Perdendo venda', (r) => !!r.rup],
       parados: ['Parados', (r) => r.parado && !r.foraLinha],
+      sobrando: ['Sobrando', (r) => !!r.exc],
       ...(todos.some((r) => r.foraLinha && r.qtd > 0) ? { liquidar: ['Fora de linha · liquidar', (r) => r.foraLinha && r.qtd > 0] } : {}),
       saldo: ['Com saldo', (r) => r.qtd > 0],
       todos: ['Todos', () => true],
@@ -1316,21 +1323,29 @@
       { key: 'valor', label: 'Valor a custo', title: 'Estoque × custo unitário do AppNext', fmt: (v) => (v ? fmt.brl(v) : '—') },
       { key: 'ultima', label: 'Última venda', title: 'Última vez que este produto vendeu no histórico do painel', fmt: (v) => (v ? fmt.date(v) : '—'), sortVal: (r) => (r.semVenda == null ? -1e9 : -r.semVenda) },
     ];
+    // abas "Perdendo venda" e "Sobrando": só as colunas que explicam a conta (ruptura.js); nas outras, entra "Perdendo R$/dia"
+    const RC = TS.ruptura.colunas({ qtdTxt, H });
+    const col = (k) => colsT.find((c) => c.key === k);
+    const COLS_ABA = {
+      falta: ['produto', 'tipo', RC.perdaDia, RC.zeradoHa, RC.acumulado, RC.vendiaDia, RC.esperando, 'pedir', 'custoPedido'].map((c) => (typeof c === 'string' ? col(c) : c)),
+      sobrando: ['produto', 'tipo', 'qtd', 'prev', 'dias', RC.alvo, RC.sobraQtd, RC.sobraValor].map((c) => (typeof c === 'string' ? col(c) : c)),
+    };
+    colsT.splice(colsT.findIndex((c) => c.key === 'qtd'), 0, RC.perdaDia);
     // busca: procura em TODOS os produtos, qualquer que seja o filtro
     const busca = h('input', { class: 'f-input est-busca', type: 'search', placeholder: 'Buscar qualquer produto (nome ou código)…', value: state.estBusca || '', autocomplete: 'off' });
     const tabBoxT = h('div');
     const infoBusca = h('small', { class: 'muted est-busca-info' });
-    const ORD = { repor: 'est', parados: 'valor', liquidar: 'valor', saldo: 'valor', todos: 'produto' };
+    const ORD = { repor: 'est', falta: 'perdaDia', sobrando: 'sobraValor', parados: 'valor', liquidar: 'valor', saldo: 'valor', todos: 'produto' };
     function montarT() {
       const q = ESQ(busca.value), qd = busca.value.replace(/\D/g, '');
       const rows = q ? todos.filter((r) => ESQ(r.produto).includes(q) || (qd && String(r.cod).includes(qd))) : todos.filter(FILTROS[filtroT][1]);
       infoBusca.textContent = !q ? '' : rows.length ? `${fmt.int(rows.length)} ${rows.length === 1 ? 'produto encontrado' : 'produtos encontrados'} entre todos os ${fmt.int(todos.length)} (a busca procura em todos, qualquer que seja o filtro)` : '';
       segT.classList.toggle('est-seg-off', !!q);
       tabBoxT.replaceChildren(TS.table({
-        cols: colsT, rows, sortKey: q ? 'produto' : ORD[filtroT], sortDir: q || filtroT === 'todos' ? 'asc' : 'desc', maxHeight: '600px', produto: 'produto', cls: 'est-t',
-        imprimir: ['produto', 'est', 'qtd', 'prev', 'dias', 'pedir', 'custoPedido', 'valor'],
+        cols: (!q && COLS_ABA[filtroT]) || colsT, rows, sortKey: q ? 'produto' : ORD[filtroT], sortDir: q || filtroT === 'todos' ? 'asc' : 'desc', maxHeight: '600px', produto: 'produto', cls: 'est-t',
+        imprimir: !q && COLS_ABA[filtroT] ? null : ['produto', 'est', 'qtd', 'prev', 'dias', 'pedir', 'custoPedido', 'valor'],
         rowClass: (r) => (entradas.has(String(r.cod)) ? 'est-tem-entrada' : ''),
-        empty: q ? 'Nenhum produto com esse nome ou código na planilha de estoque do AppNext.' : { repor: 'Nada para repor agora. 👏', parados: 'Nada parado. 👏', saldo: 'Nenhum produto com saldo.', todos: 'Nenhum produto.' }[filtroT],
+        empty: q ? 'Nenhum produto com esse nome ou código na planilha de estoque do AppNext.' : { repor: 'Nada para repor agora. 👏', falta: 'Nenhum produto zerado que vendia. 👏', sobrando: 'Nenhum produto com saldo demais. 👏', parados: 'Nada parado. 👏', saldo: 'Nenhum produto com saldo.', todos: 'Nenhum produto.' }[filtroT],
       }));
     }
     const segT = TS.seg(Object.entries(FILTROS).map(([k, [t]]) => [`${t} (${fmt.int(conta(k))})`, k]), filtroT, (v) => { filtroT = v; state.estSit = v; if (busca.value) { busca.value = ''; state.estBusca = ''; } montarT(); });
@@ -1357,7 +1372,7 @@
       }).catch(() => null);
     const csv = h('button', { type: 'button', class: 'btn', onclick: () => baixarPedido(repor) }, '⬇ Baixar pedido (CSV)');
     const cardT = TS.cardWithTools('Estoque',
-      h('span', null, `Todos os ${fmt.int(todos.length)} produtos da planilha do AppNext. Reposição pelo ritmo dos últimos 30 dias ajustado pela época do ano (coluna Previsão/dia) · entrega em ${ent} dias · pedido para ${cob} dias de venda. Chás a granel em kg (inclui o consumo de saco kraft e etiquetas). Parado = com saldo e sem venda há ${cfg.paradoDias}+ dias.`,
+      h('span', null, `Todos os ${fmt.int(todos.length)} produtos da planilha do AppNext. Reposição pelo ritmo dos últimos 30 dias ajustado pela época do ano (coluna Previsão/dia) · entrega em ${ent} dias · pedido para ${cob} dias de venda. Chás a granel em kg (inclui o consumo de saco kraft e etiquetas). Parado = com saldo e sem venda há ${cfg.paradoDias}+ dias. Perdendo venda = zerado que vendia (estimativa pela venda dos ${TS.ruptura.JANELA} dias antes de zerar). Sobrando = vende, mas o saldo dura mais de ${TS.ruptura.FATOR_EXCESSO * H} dias.`,
         h('span', { class: 'est-minres' }, ` Mínimo do AppNext comparado com o sugerido: `,
           h('b', { class: 'est-sug est-sug-baixo' }, `${fmt.int(repo.filter((r) => r.minSit === 'baixo').length)} baixos`), ' · ',
           h('b', { class: 'est-sug est-sug-alto' }, `${fmt.int(repo.filter((r) => r.minSit === 'alto').length)} altos`), ' · ',
