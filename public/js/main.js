@@ -32,10 +32,15 @@
       não a cada dígito — senão o campo some no meio da digitação. */
   TS.aoConfirmar = function (x, fn) {
     let pendente = false;
+    // foco acompanhado pelos próprios eventos: no campo de hora o Chrome dispara "change" a cada parte digitada
+    // (hora, minuto) e document.activeElement nem sempre aponta para o campo nesse momento
+    let focado = false;
+    x.addEventListener('focus', () => { focado = true; });
+    x.addEventListener('blur', () => { focado = false; });
     x.addEventListener('change', () => {
       // no celular, data e hora vêm de um seletor (não se digita): aplica na hora
       const seletor = /^(date|time|month|datetime-local)$/.test(x.type) && matchMedia('(pointer: coarse)').matches;
-      if (!seletor && document.activeElement === x && x.type !== 'checkbox' && x.tagName !== 'SELECT') {
+      if (!seletor && (focado || document.activeElement === x) && x.type !== 'checkbox' && x.tagName !== 'SELECT') {
         if (pendente) return;
         pendente = true;
         x.addEventListener('blur', () => { pendente = false; setTimeout(fn, 0); }, { once: true }); // depois que o foco já foi para o próximo campo

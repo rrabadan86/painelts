@@ -126,3 +126,99 @@ test('Escala: em dia curto o intervalo continua inteiro (CLT) e o trabalho é qu
   for (const t of r.dom) { expect(t.int).toBe(60); expect(t.total).toBe(540); } // 8h de trabalho + 1h
   for (const t of r.semana) { expect(t.int).toBe(60); expect(t.total).toBe(560); } // 8h20 + 1h
 });
+
+// Campo de hora do horário de funcionamento: digitar "0950" de uma vez não pode perder o foco no meio (antes saía no "09")
+test('Horário e equipe: digitar a hora inteira no campo não perde o foco', async ({ page }, info) => {
+  test.skip(info.project.name === 'celular', 'no celular a hora vem do seletor do sistema');
+  await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS.db);
+  await page.evaluate(() => { TS.state.mapaAba = 'equipe'; location.hash = '#mapa'; });
+  const ab = page.locator('table.op-horas input[type=time]').first();
+  await ab.waitFor();
+  await ab.click({ position: { x: 12, y: 10 } });
+  await page.keyboard.type('0950');
+  await expect(ab).toBeFocused();
+  await expect(ab).toHaveValue('09:50');
+});
+
+// Escala do mês: horas líquidas em cada dia e, no feriado, o horário usado e de onde veio
+test('Escala do mês: horas líquidas por dia e horário do feriado no cabeçalho', async ({ page }) => {
+  await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS.db);
+  await page.selectOption('#lojaSel', 'demo-parque');
+  await page.evaluate(() => { TS.state.escMesYm = '2026-11'; TS.state.mapaAba = 'escala'; location.hash = '#mapa'; });
+  const cel = page.locator('td.trab').first();
+  await expect(cel.locator('.liq-dia')).toHaveText(/^\dh(\d\d)? líquidas$/);
+  // líquidas = total − intervalo
+  const ok = await cel.evaluate((td) => {
+    const m = (t) => +t.slice(0, 2) * 60 + +t.slice(3, 5);
+    const [a, b] = td.querySelector('b').textContent.match(/\d\d:\d\d/g).map(m);
+    const p = (td.querySelector('small') && td.querySelector('small').textContent.match(/\d\d:\d\d/g)) || [];
+    const liq = (b - a) - (p.length === 2 && /int/.test(td.querySelector('small').textContent) ? m(p[1]) - m(p[0]) : 0);
+    const t = td.querySelector('.liq-dia').textContent.match(/(\d+)h(\d\d)?/);
+    return liq === +t[1] * 60 + +(t[2] || 0);
+  });
+  expect(ok).toBe(true);
+  // feriado de novembro (Finados): horário da loja embaixo do nome
+  await expect(page.locator('th.fer .fer-hor').first()).toHaveText(/\d\d:\d\d–\d\d:\d\d|fechada/);
+});
+
+// Dia de 6h (domingo 14h–20h) e feriado cortado: o intervalo segue o turno real (CLT: até 6h, intervalo curto; nunca sem intervalo acima de 4h)
+test('Escala: turno curto de domingo usa o intervalo de até 6h e o feriado cortado mantém intervalo', async ({ page }) => {
+  await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS._escala);
+  const r = await page.evaluate(() => {
+    const H = (a, f) => ({ abre: a, fecha: f, fechado: false });
+    const op = { funcionamento: { seg: H('10:00', '22:00'), ter: H('10:00', '22:00'), qua: H('10:00', '22:00'), qui: H('10:00', '22:00'), sex: H('10:00', '22:00'), sab: H('10:00', '22:00'), dom: H('14:00', '20:00') },
+      equipe: { funcionarios: 4, cargaSemanal: 44, escala: '6x1', intervalo: 60, capacidade: 3, modelo: 'rodizio' } };
+    const need = Array.from({ length: 7 }, () => Array(24).fill(1));
+    const ps = ['A', 'B', 'C', 'D'].map((nome) => ({ nome, folga: 'auto', folga2: 'auto', turno: 'tanto' }));
+    const out = TS._escala.montarRodizio(need, op, ps);
+    const dom = [];
+    for (const s of out.semanas) for (const p of s.turnosP) { const t = p[6]; if (t) dom.push({ total: t.fim - t.ini, int: t.pausa ? t.pausa[1] - t.pausa[0] : 0 }); }
+    return dom;
+  });
+  expect(r.length).toBeGreaterThan(0);
+  for (const t of r) { expect(t.total).toBe(360); expect(t.int).toBe(30); } // 6h de loja: 5h30 de trabalho + 30 min (antes 5h + 1h)
+  // turno digitado de 4h20 (mais de 4h seguidas): tem intervalo; de 4h: não tem
+  const p = await page.evaluate(() => [TS._intervalo.pausaDoTurno(840, 1100, { intervalo: 60 }), TS._intervalo.pausaDoTurno(840, 1080, { intervalo: 60 })]);
+  expect(p[0] && p[0][1] - p[0][0]).toBe(30);
+  expect(p[1]).toBe(null);
+});
+
+// Semana de segunda a domingo: folga do domingo puxa a segunda SEGUINTE e cada semana Seg–Dom fecha com os dias certos
+test('Escala: semana começando na segunda mantém os dias certos por semana e a segunda após o domingo', async ({ page }) => {
+  await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS._escala);
+  const r = await page.evaluate(() => {
+    const H = (a, f) => ({ abre: a, fecha: f, fechado: false });
+    const func = { seg: H('09:40', '22:00'), ter: H('09:40', '22:00'), qua: H('09:40', '22:00'), qui: H('09:40', '22:00'), sex: H('09:40', '22:00'), sab: H('09:40', '22:00'), dom: H('12:00', '21:00') };
+    const need = Array.from({ length: 7 }, () => Array(24).fill(1));
+    const out = {};
+    for (const [esc, n] of [['5x2', 3], ['5x2', 4], ['6x1', 4], ['6x1', 5]]) {
+      const ps = Array.from({ length: n }, (_, i) => ({ nome: 'P' + i, folga: 'auto', folga2: 'auto', turno: 'tanto' }));
+      const rr = TS._escala.montarRodizio(need, { funcionamento: func, equipe: { funcionarios: n, cargaSemanal: 44, escala: esc, intervalo: 60, capacidade: 3, modelo: 'rodizio', inicioSemana: 'seg' } }, ps);
+      const L = rr.semanas.length;
+      const dias = rr.semanas.map((s) => s.turnosP.map((p) => p.filter(Boolean).length)); // dias trabalhados por pessoa em cada semana Seg–Dom
+      // quem folga no domingo da semana w folga na segunda da semana w+1
+      let par = true;
+      rr.semanas.forEach((s, w) => s.turnosP.forEach((p, i) => { if (!p[6] && !rr.semanas[(w + 1) % L].turnosP[i][0]) return; if (!p[6]) par = false; }));
+      out[`${esc}-${n}`] = { dias, par, L };
+    }
+    return out;
+  });
+  for (const [k, v] of Object.entries(r)) {
+    const alvo = k.startsWith('5x2') ? 5 : 6;
+    for (const sem of v.dias) for (const d of sem) expect(d, `${k}: dias na semana Seg–Dom`).toBe(alvo);
+    expect(v.par, `${k}: segunda seguinte ao domingo de folga`).toBe(true);
+  }
+});
+
+test('Escala do mês: com a semana começando na segunda, as semanas vão de segunda a domingo', async ({ page }) => {
+  await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS.db);
+  await page.selectOption('#lojaSel', 'demo-parque');
+  await page.evaluate(() => { TS.state.escMesYm = '2026-11'; TS.state.mapaAba = 'escala'; location.hash = '#mapa'; });
+  await expect(page.locator('table.sem-t th span').first()).toHaveText('Dom');
+  // espera a troca de loja terminar (senão a simulação volta ao que está salvo quando os dados chegam)
+  await page.waitForFunction(() => TS.lojaCarregada === 'demo-parque' && TS.state.mapaOp && !document.querySelector('#updated.carregando'));
+  await page.evaluate(() => { TS.state.mapaOp.op.equipe.inicioSemana = 'seg'; TS.render(); });
+  const cab = page.locator('table.sem-t').first().locator('thead th span');
+  await expect(cab.first()).toHaveText('Seg');
+  await expect(cab.nth(6)).toHaveText('Dom');
+});
