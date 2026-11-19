@@ -257,10 +257,36 @@
       SECOES.map(([id, rot]) => h('a', { href: '#config', class: id === atual ? 'on' : null, 'aria-current': id === atual ? 'page' : null,
         onclick: (e) => { e.preventDefault(); secaoLoja.set(l.id, id); try { sessionStorage.setItem('cfgSecao', JSON.stringify([...secaoLoja])); } catch { /* ok */ } pintar(); } }, rot)));
     const grid = h('div', { class: 'cfg-loja-corpo' }, ...sec[3]().filter(Boolean));
-    card.append(h('div', { class: 'cfg-loja-nav' }, nav, h('div', { class: 'muted cfg-sub-d' }, sec[2])), grid);
+    enxugar(grid);
+    // ajustes: menu das seções na lateral (no celular, em cima) e o conteúdo numa coluna, um cartão por assunto
+    nav.classList.add('cfg-sub-v');
+    card.append(h('div', { class: 'cfg-loja-layout' }, h('div', { class: 'cfg-loja-nav' }, nav),
+      h('div', { class: 'cfg-loja-main' }, h('div', { class: 'cfg-sec-cab' }, h('h2', null, sec[1]), h('div', { class: 'muted' }, sec[2])), grid)));
     return card;
   }
 
+  /**
+   * Deixa a seção enxuta (padrão minimalista): a ajuda longa embaixo de cada campo vira ⓘ ao lado do nome;
+   * parágrafos e avisos de explicação além do primeiro vão para "Como funciona ▸" recolhido.
+   */
+  function enxugar(raiz) {
+    for (const b of raiz.querySelectorAll('.cfg-bloco')) {
+      for (const c of b.querySelectorAll('label.cfg-campo, div.cfg-campo')) {
+        const sm = [...c.children].find((x) => x.tagName === 'SMALL' && !x.className && !x.children.length);
+        const rot = [...c.children].find((x) => x.tagName === 'SPAN');
+        const t = sm && sm.textContent.trim();
+        if (!t || t.length < 40 || !rot || !TS.dica) continue;
+        rot.append(' ', TS.dica(t)); sm.remove();
+      }
+      const ps = [...b.children].filter((x) => (x.tagName === 'P' && !x.querySelector('input, select, button, textarea')) || (x.classList.contains('notice') && !x.classList.contains('err')));
+      const extras = ps.slice(1).filter((x) => x.textContent.trim().length > 60);
+      if (extras.length) {
+        const det = h('details', { class: 'cfg-mais' }, h('summary', null, 'Como funciona'));
+        extras[0].before(det);
+        for (const x of extras) det.append(x);
+      }
+    }
+  }
   /** linha de situação (ícone + título + detalhes), o mesmo padrão em todo o painel */
   const linhaSit = (st, titulo, principal, ...extra) => h('div', { class: 'cfg-sit-l' },
     h('span', { class: 'cfg-sit-ic ' + st }, { ok: '✓', erro: '!', rodando: '…', nada: '–' }[st]),
