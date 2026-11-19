@@ -109,11 +109,11 @@
         r.aoVivo && r.aoVivo.length ? h('pre', { class: 'inv-log' }, r.aoVivo.slice(-14).join('\n')) : null);
     };
     function pintar() {
-      const bt = h('button', { type: 'button', class: 'btn ' + (aberto ? '' : 'primary') }, aberto ? 'Fechar' : '＋ Nova NF-e (rascunho no AppNext)');
+      const bt = h('button', { type: 'button', class: 'btn ' + (aberto ? '' : 'primary') }, aberto ? 'Fechar' : '＋ Nova NF-e');
       bt.addEventListener('click', () => { aberto = !aberto; pintar(); });
       const ras = (info && info.rascunhos) || [];
       box.replaceChildren(...[
-        h('div', { class: 'nfe-topo' }, bt, h('small', { class: 'muted' }, 'O robô preenche a saída no AppNext e salva como rascunho. Quem confere e transmite a nota é a loja, no AppNext.')),
+        h('div', { class: 'nfe-topo' }, bt, h('small', { class: 'muted' }, 'Para emitir pelo painel: o robô testa a nota no AppNext (sem salvar), você confere o total e clica em "Emitir NF-e" — ele conclui e transmite à SEFAZ. Se preferir, "Só salvar rascunho" deixa a nota no AppNext para transmitir lá.')),
         info && info.erroGeral ? h('div', { class: 'notice err mt' }, info.erroGeral) : null,
         aberto && avisoPronta ? h('div', { class: 'notice ' + (avisoPronta.falta.length ? '' : 'ok') }, h('b', null, `Nota montada a partir do orçamento #${avisoPronta.numero}. `), avisoPronta.falta.length ? h('span', null, 'Confira: ', avisoPronta.falta.join('; '), '.') : 'Confira e teste antes de emitir.') : null,
         aberto ? formulario() : (info && info.robo && info.robo.acao === 'rascunho' ? roboVivo() : null),
@@ -148,7 +148,7 @@
         rowClass: (r) => (r.estado === 'erro' ? 'nfe-ras-erro' : null),
         empty: 'Nenhum rascunho com esse filtro.',
       });
-      return TS.cardWithTools(`Rascunhos pedidos ao robô (${fmt.int(ras.length)})`, '"Rascunho salvo" = está no AppNext em Estoque → Saída de Produtos, esperando a loja conferir e transmitir. "Não salvo" = nada foi gravado no AppNext.',
+      return TS.cardWithTools(`Notas pedidas ao robô (${fmt.int(ras.length)})`, 'Teste conferido → "Emitir NF-e" na linha. "Rascunho salvo" = está no AppNext (Estoque → Saída de Produtos) esperando a loja transmitir. "Não foi salvo" = nada foi gravado no AppNext (o motivo aparece embaixo).',
         h('div', { class: 'est-tools' }, tab.searchBox && (tab.searchBox.classList.add('est-busca'), tab.searchBox),
           TS.seg(Object.entries(FIL).filter(([k]) => k === 'todos' || contaF(k)).map(([k, [t]]) => [`${t} (${fmt.int(contaF(k))})`, k]), fil, (v) => { state.nfeRasFil = v; pintar(); })),
         tab);
@@ -247,8 +247,8 @@
       });
       pintarItens();
       const msg = h('div', { class: 'muted' });
-      const enviar = h('button', { type: 'button', class: 'btn primary', disabled: !!vivo || null }, 'Criar rascunho no AppNext');
-      const testar = h('button', { type: 'button', class: 'btn', disabled: !!vivo || null, title: 'O robô preenche a nota no AppNext e confere tudo, mas não salva nada' }, 'Testar sem salvar');
+      const enviar = h('button', { type: 'button', class: 'btn', disabled: !!vivo || null, title: 'O robô salva a nota no AppNext como rascunho, sem transmitir: a loja confere e transmite lá' }, 'Só salvar rascunho');
+      const testar = h('button', { type: 'button', class: 'btn primary', disabled: !!vivo || null, title: 'O robô preenche a nota no AppNext e confere tudo, mas não salva nada. Depois, na lista, aparece "Emitir NF-e"' }, '1. Testar para emitir');
       const mandar = async (simular) => {
         msg.className = 'neg';
         if (!form.parceiro) { msg.textContent = 'Escolha o parceiro.'; return; }
@@ -274,8 +274,8 @@
         h('div', { class: 'nfe-campo' }, h('label', null, 'Produtos'), busca, sugP, tabela),
         h('div', { class: 'nfe-total' }, 'Total: ', totalEl),
         h('div', { class: 'aviso nfe-fixos' }, 'Vai sempre como: [1] Venda · CFOP 5102 · série NF-e · NF-e normal · frete [9] sem frete / [9] sem ocorrência de transporte · endereço padrão do parceiro. Os impostos são calculados pelo AppNext. ',
-          h('b', null, 'Para emitir direto: '), 'clique em "Testar sem salvar", confira o total calculado pelo AppNext na lista e clique em ', h('b', null, '"Emitir NF-e"'), ' (o robô conclui e transmite à SEFAZ). "Criar rascunho" só salva, sem transmitir.'),
-        h('div', { class: 'cfg-acoes' }, enviar, testar, msg),
+          h('b', null, 'Para emitir: '), '1. "Testar para emitir" (nada é salvo) → 2. confira o total do AppNext na lista → 3. ', h('b', null, '"Emitir NF-e"'), ' (o robô conclui e transmite à SEFAZ; vale por 2 horas depois do teste). "Só salvar rascunho" grava sem transmitir.'),
+        h('div', { class: 'cfg-acoes' }, testar, enviar, msg),
         vivo && (info.robo.acao === 'rascunho' || info.robo.acao === 'parceiro') ? vivo : null);
     }
     pintar();
