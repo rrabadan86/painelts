@@ -199,6 +199,24 @@ async function comFerramenta(lojaId, { max_tokens, system, ferramenta, conteudo 
   return t ? t.input : null;
 }
 
+/**
+ * uma resposta por arquivo (ex.: o diagnóstico do Início, um por loja por dia): se o arquivo existe, devolve o que está nele
+ * sem chamar a IA; se alguém já está gerando, espera a mesma geração (duas pessoas abrindo juntas não pagam duas vezes).
+ * gerar() devolve o objeto a guardar (ou null = não guarda e devolve null).
+ */
+const gerando = new Map();
+async function umaVez(arq, gerar) {
+  try { return { ...JSON.parse(require('fs').readFileSync(arq, 'utf8')), guardada: true }; } catch { /* ainda não tem */ }
+  if (gerando.has(arq)) return gerando.get(arq);
+  const p = (async () => {
+    const out = await gerar();
+    if (out) { require('fs').mkdirSync(require('path').dirname(arq), { recursive: true }); C.gravarAtomico(arq, JSON.stringify(out), 0o640); }
+    return out;
+  })().finally(() => gerando.delete(arq));
+  gerando.set(arq, p);
+  return p;
+}
+
 // ---------- respostas simuladas (testes e apresentação) ----------
 function simular(req) {
   const usage = { input_tokens: 1200, output_tokens: 150 };
@@ -247,4 +265,4 @@ function simular(req) {
   return { stop_reason: 'end_turn', usage, content: [{ type: 'text', text: txt }] };
 }
 
-module.exports = { comFerramenta, situacao, salvar, alterar, remover, testar, mensagens, chaveDaLoja, usoDoMes, custo, formatoOk, simular, ErroIA, cifrar, decifrar, MODELO, TETO_PADRAO };
+module.exports = { comFerramenta, umaVez, situacao, salvar, alterar, remover, testar, mensagens, chaveDaLoja, usoDoMes, custo, formatoOk, simular, ErroIA, cifrar, decifrar, MODELO, TETO_PADRAO };

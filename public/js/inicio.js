@@ -151,7 +151,9 @@
     const card = h('div', { class: 'card mt ini-porque' }, h('div', { class: 'card-title' }, '✨ Por que isso está acontecendo'),
       h('div', { class: 'ini-porque-c' }, h('span', { class: 'cfg-pulso' }), ' A IA está lendo os números e os avisos…'));
     box.replaceChildren(card);
-    const fatos = { ...a, avisos: lista.filter((x) => x.nivel !== 'ok').map((x) => `${x.titulo}${x.texto ? ' — ' + x.texto : ''}`.slice(0, 400)) };
+    // a análise é UMA por loja por dia, a mesma para admin, franqueado e gerente: vai só o que os três veem
+    // (números de vendas e os avisos de vendas). Custo, estoque, franquia, site e inventário ficam de fora.
+    const fatos = { ...a, avisos: lista.filter((x) => x.padrao && x.nivel !== 'ok').map((x) => `${x.titulo}${x.texto ? ' — ' + x.texto : ''}`.slice(0, 400)) };
     const pintarRes = (j) => {
       const r = j.diagnostico || {};
       card.replaceChildren(...[
@@ -159,7 +161,7 @@
         r.manchete ? h('p', { class: 'ini-porque-m' }, r.manchete) : null,
         ...(r.explicacoes || []).map((x) => h('div', { class: 'ini-porque-i' }, h('b', null, x.titulo), x.porque ? TS.iaMd(x.porque) : null, x.o_que_fazer ? h('div', { class: 'ini-porque-f' }, '👉 ', x.o_que_fazer) : null)),
         (r.fora_do_padrao || []).length ? h('div', { class: 'ini-porque-fp' }, h('div', { class: 'ini-porque-st' }, 'Fora do padrão'), ...(r.fora_do_padrao || []).map((x) => h('div', { class: 'ini-porque-i' }, h('b', null, '⚠️ ', x.titulo), x.detalhe ? h('div', { class: 'muted' }, x.detalhe) : null))) : null,
-        h('small', { class: 'muted ini-porque-n' }, 'Explicação da IA a partir dos números do painel. Confira antes de tomar decisões importantes.')].filter(Boolean));
+        h('small', { class: 'muted ini-porque-n' }, `Análise do dia feita pela IA com os números de vendas${j.em ? ` (às ${new Date(j.em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })})` : ''}: uma por dia, a mesma para a equipe. A próxima sai amanhã. Confira antes de tomar decisões importantes.`)].filter(Boolean));
     };
     try { pintarRes(await TS.iaApi('POST', 'ia/diagnostico', { loja: state.loja, fatos })); }
     catch (e) { card.replaceChildren(h('div', { class: 'card-title' }, '✨ Por que isso está acontecendo'), h('p', { class: 'muted' }, e.message)); }

@@ -870,6 +870,7 @@
     const repo = [];
     let valorEstoque = 0, valorParado = 0;
     const parados = [];
+    const todos = []; // todos os produtos da planilha do AppNext (a tabela única da tela Estoque)
     for (const it of estoque.itens) {
       const vel = (cons.get(it.cod) || 0) / 30;
       const sz = sazonal(it);
@@ -894,7 +895,10 @@
       let sug = prev * ent * (1 + seg / 100);
       sug = sug <= 0 ? null : it.un === 'Kg' ? Math.ceil(sug * 10) / 10 : Math.ceil(sug);
       const minSit = sug == null ? null : !it.min ? 'sem' : it.min > sug * 2 ? 'alto' : it.min < sug * 0.7 ? 'baixo' : 'ok';
-      if (vel > 0 || (it.min && qtd < it.min)) repo.push({ cod: it.cod, produto: it.desc, tipo: TIPO_ITEM(it), it, qtd, min: it.min, sug, minSit, vel, prev, fator: sz.f, origem: sz.origem, dias, pedir, custoPedido: pedir * (it.custo || 0), sit });
+      const linha = { cod: it.cod, produto: it.desc, tipo: TIPO_ITEM(it), it, qtd, min: it.min, sug, minSit, vel, prev, fator: sz.f, origem: sz.origem, dias, pedir, custoPedido: pedir * (it.custo || 0), sit };
+      if (vel > 0 || (it.min && qtd < it.min)) repo.push(linha);
+      const parado = parados.length && parados[parados.length - 1].cod === it.cod;
+      todos.push({ ...linha, valor: it.custo && qtd > 0 ? qtd * it.custo : 0, ultima: vendeuAlgumaVez ? TS.dayToIso(ult) : null, semVenda: vendeuAlgumaVez ? fim - ult : null, parado: !!parado, nunca: !vendeuAlgumaVez });
     }
     const diasTxt = (d) => (d == null ? '—' : `${fmt.int(d)} ${Math.round(d) === 1 ? 'dia' : 'dias'}`);
     const porque = (r) => ({
@@ -931,6 +935,7 @@
     const urgentes = repor.filter((r) => r.sit === 'acabou' || r.sit === 'falta').length;
 
     // ---------- KPIs ----------
+    const kpiFiltro = (el, k) => { el.classList.add('est-kpi-click'); el.setAttribute('role', 'button'); el.tabIndex = 0; const ir = () => TS.estFiltrar && TS.estFiltrar(k); el.addEventListener('click', ir); el.addEventListener('keydown', (e) => { if (e.key === 'Enter') ir(); }); return el; };
     const kLiq = TS.kpi('Lucro com fixos', fmt.brl0(lucroLiqTot), h('span', null, `margem de ${fmt.pct(fatCusto ? lucroLiqTot / fatCusto : null)}`),
         `Lucro bruto − comissão ${fmt.brl0(dedTot.com)} − royalties ${fmt.brl0(dedTot.roy)} − Simples ${fmt.brl0(dedTot.imp)} (${fmt.pct(pSimples)}) − maquininha ${fmt.brl0(dedTot.maq)} (${fmt.pct(pCartao)})${OUTROS.length ? ` − outros custos ${fmt.brl0(dedTot.out)}` : ''}. Clique para ver a conta.${!pSimples && !pCartao ? ' Configure o % do Simples e da maquininha em Configurações → Lojas → Estoque e margem.' : ''}`);
     kLiq.classList.add('est-kpi-click');
@@ -944,9 +949,9 @@
       kCon, kLiq,
       TS.kpi('Vendas com custo', fmt.pct(fat ? fatCusto / fat : null, 0), `${fmt.brl0(fatCusto)} de ${fmt.brl0(fat)}`, 'Parte do faturamento (sem taxas) cujo custo o painel encontrou')));
     put(E, h('div', { class: 'grid g-kpi' },
-      TS.kpi('Estoque a custo', fmt.brl0(valorEstoque), `${fmt.int(estoque.itens.filter((i) => i.qtd > 0).length)} produtos com saldo`),
-      TS.kpi('Para repor', fmt.int(repor.length), h('span', { class: urgentes ? 'down' : '' }, `${fmt.int(urgentes)} ${urgentes === 1 ? 'urgente' : 'urgentes'} · pedido ${fmt.brl0(repor.reduce((s, r) => s + r.custoPedido, 0))}`), 'Urgente = acabou ou acaba antes de o pedido chegar'),
-      TS.kpi('Estoque parado', fmt.brl0(valorParado), `${fmt.int(parados.length)} produtos sem venda há ${cfg.paradoDias}+ dias`)));
+      kpiFiltro(TS.kpi('Estoque a custo', fmt.brl0(valorEstoque), `${fmt.int(estoque.itens.filter((i) => i.qtd > 0).length)} produtos com saldo`, 'Toque para ver na tabela os produtos com saldo'), 'saldo'),
+      kpiFiltro(TS.kpi('Para repor', fmt.int(repor.length), h('span', { class: urgentes ? 'down' : '' }, `${fmt.int(urgentes)} ${urgentes === 1 ? 'urgente' : 'urgentes'} · pedido ${fmt.brl0(repor.reduce((s, r) => s + r.custoPedido, 0))}`), 'Urgente = acabou ou acaba antes de o pedido chegar. Toque para ver na tabela'), 'repor'),
+      kpiFiltro(TS.kpi('Estoque parado', fmt.brl0(valorParado), `${fmt.int(parados.length)} produtos sem venda há ${cfg.paradoDias}+ dias`, 'Toque para ver na tabela os produtos parados'), 'parados')));
 
     if (EQ) { corpo.append(cartaoEquilibrio()); return; }
 
@@ -1233,15 +1238,41 @@
           h('div', null, h('div', { class: 'f-label' }, 'Vão vender mais nas próximas semanas: compre antes'), picos.length ? h('ul', { class: 'est-saz-l' }, picos.map(item)) : h('p', { class: 'muted' }, 'Nenhum produto com alta forte nessa época no ano passado.')),
           h('div', null, h('div', { class: 'f-label' }, 'Vão vender menos: segure a compra'), quedas.length ? h('ul', { class: 'est-saz-l' }, quedas.map(item)) : h('p', { class: 'muted' }, 'Nenhum produto com queda forte nessa época no ano passado.'))));
     }
-    const sitSel = state.estSit || 'repor';
-    const linhasRepo = sitSel === 'repor' ? repor : repo;
+    // ---------- tabela única: todos os produtos da planilha do AppNext ----------
+    const SIT_T = { ...SIT, parado: ['Parado', 'warn', 5], novo: ['Novo · ainda não vendeu', 'novo', 6], ok: ['OK', 'ok', 7], semsaldo: ['Sem saldo', 'cinza', 8] };
+    for (const r of todos) {
+      r.est = ['acabou', 'falta', 'minimo', 'pedir'].includes(r.sit) && (r.sit !== 'pedir' || r.pedir > 0) ? r.sit
+        : r.parado ? 'parado' : r.nunca && r.qtd > 0 ? 'novo' : r.qtd <= 0 ? 'semsaldo' : 'ok';
+    }
+    const porqueT = (r) => (r.est === 'parado' ? `Saldo de ${qtdTxt(r.qtd, r.it)} ${r.ultima ? `e a última venda foi há ${diasTxt(r.semVenda)}` : 'e nenhuma venda no histórico do painel'}: dinheiro parado.`
+      : r.est === 'novo' ? 'Tem saldo e ainda não vendeu no histórico do painel (produto novo ou matéria-prima de pacotes que ainda não saíram).'
+        : r.est === 'semsaldo' ? 'Sem saldo no AppNext e sem venda nos últimos 30 dias.' : porque(r));
+    const FILTROS = {
+      repor: ['O que repor', (r) => repor.includes(r)],
+      parados: ['Parados', (r) => r.parado],
+      saldo: ['Com saldo', (r) => r.qtd > 0],
+      todos: ['Todos', () => true],
+    };
+    // "todos" antigo era "Tudo que vende"; o Início manda "repor"
+    let filtroT = FILTROS[state.estSit] ? state.estSit : 'repor';
+    const codRepor = new Set(repor.map((r) => r.cod));
+    FILTROS.repor[1] = (r) => codRepor.has(r.cod);
+    const conta = (k) => todos.filter(FILTROS[k][1]).length;
     const podePed = (TS.telasEstoque || []).includes('pedido');
-    const tabRepo = TS.table({
-        cols: [
+    // notas de entrada lançadas depois da planilha de estoque: o saldo delas ainda não está aqui
+    let entradas = new Map(); // cod → [{ nf, dia, qtd, mesmoDia }]
+    const diaPlanilha = estoque.em ? new Date(estoque.em).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }) : null;
+    const avisoNotas = h('div', { class: 'est-notas-depois' });
+    const celEstoque = (r) => {
+      const es = entradas.get(String(r.cod));
+      return h('span', null, qtdTxt(r.qtd, r.it), es ? h('small', { class: 'est-entrada', title: es.map((e) => `NF ${e.nf} lançada em ${fmt.date(e.dia)}${e.mesmoDia ? ' (mesmo dia da planilha: pode já estar no saldo)' : ''}`).join('\n') },
+        `+ ${qtdTxt(es.reduce((a, e) => a + (e.qtd || 0), 0), r.it)} da NF ${es.map((e) => e.nf).join(', ')}`, es.every((e) => e.mesmoDia) ? ' (talvez já no saldo)' : ' ainda não está no saldo') : null);
+    };
+    const colsT = [
           { key: 'produto', label: 'Produto', align: 'l', sticky: true, wrap: true, render: (r) => h('span', null, r.produto, podePed ? h('a', { href: '#pedido', class: 'est-ir', title: 'Abrir o Pedido já buscando este produto', onclick: (e) => { e.preventDefault(); TS.irParaPedido(r.produto); } }, 'no pedido ›') : null) },
           { key: 'tipo', label: 'Tipo', align: 'l', title: 'Chá a granel (em kg, vendido em pacotes de vários tamanhos), produto pronto ou insumo/embalagem (saco kraft, etiqueta…)' },
-          { key: 'sit', label: 'Situação', align: 'l', title: 'Passe o mouse na etiqueta de cada linha para ver o motivo', render: (r) => h('span', { class: 'badge ' + SIT[r.sit][1], title: porque(r) }, SIT[r.sit][0]), sortVal: (r) => -SIT[r.sit][2] },
-          { key: 'qtd', label: 'Estoque', title: 'Saldo de agora, da última planilha de estoque do AppNext', render: (r) => qtdTxt(r.qtd, r.it) },
+          { key: 'est', label: 'Situação', align: 'l', title: 'Passe o mouse (ou toque) na etiqueta para ver o motivo', render: (r) => h('span', { class: 'badge ' + SIT_T[r.est][1], title: porqueT(r) }, SIT_T[r.est][0]), sortVal: (r) => -SIT_T[r.est][2] },
+          { key: 'qtd', label: 'Estoque', title: 'Saldo da última planilha de estoque do AppNext (data no topo). Nota de entrada lançada depois aparece embaixo do saldo', render: celEstoque },
           { key: 'min', label: 'Mínimo', title: 'Estoque mínimo cadastrado no AppNext (— = sem mínimo)', render: (r) => (r.min ? qtdTxt(r.min, r.it) : '—') },
           { key: 'sug', label: 'Mín. sugerido', title: `Mínimo calculado pela venda: venda por dia × ${ent} dias de entrega + ${seg}% de segurança. Azul = o mínimo do AppNext está bom; vermelho = muito baixo (vai faltar); amarelo = muito alto (dinheiro parado). Use para corrigir o cadastro no AppNext`,
             render: (r) => (r.sug == null ? '—' : h('span', { class: 'est-sug est-sug-' + r.minSit, title: sugTxt(r) }, qtdTxt(r.sug, r.it))), sortVal: (r) => r.sug },
@@ -1250,30 +1281,62 @@
             render: (r) => (!(r.prev > 0) ? '—' : h('span', { class: 'est-prev' + (r.fator >= 1.15 ? ' sobe' : r.fator <= 0.87 ? ' desce' : ''), title: prevTxt(r) }, `${r.it.un === 'Kg' ? fmt.kg(r.prev) + ' kg' : fmt.n1(r.prev)}`, r.fator >= 1.15 || r.fator <= 0.87 ? h('small', null, ` ${r.fator > 1 ? '▲' : '▼'}${fmt.int(Math.abs(r.fator - 1) * 100)}%`) : null)), sortVal: (r) => r.prev },
           { key: 'dias', label: 'Dura', title: 'Quantos dias o estoque atual aguenta no ritmo de venda (estoque ÷ venda por dia)', fmt: (v) => (v == null ? '—' : v > 365 ? '+1 ano' : `${fmt.int(v)} ${Math.round(v) === 1 ? "dia" : "dias"}`) },
           { key: 'pedir', label: 'Pedir', title: 'Quanto pedir para chegar em tempo e durar o período escolhido. Passe o mouse no número para ver a conta', render: (r) => (r.pedir > 0 ? h('b', { title: contaPedido(r), class: 'est-dica' }, qtdTxt(r.pedir, r.it)) : '—') },
-          { key: 'custoPedido', label: 'Custo', title: 'Quantidade a pedir × custo unitário do AppNext', fmt: (v) => (v ? fmt.brl(v) : '—') },
-        ],
-        rows: linhasRepo, sortKey: 'sit', maxHeight: '560px', produto: 'produto', imprimir: ['produto', 'sit', 'qtd', 'prev', 'dias', 'pedir', 'custoPedido'], search: 'Buscar produto…', searchKeys: ['produto', 'cod'], searchInit: state.estBusca || '', onSearch: (v) => { state.estBusca = v; }, cls: 'est-t', empty: 'Nada para repor agora.',
-    });
+          { key: 'custoPedido', label: 'Custo do pedido', title: 'Quantidade a pedir × custo unitário do AppNext', fmt: (v) => (v ? fmt.brl(v) : '—') },
+      { key: 'valor', label: 'Valor a custo', title: 'Estoque × custo unitário do AppNext', fmt: (v) => (v ? fmt.brl(v) : '—') },
+      { key: 'ultima', label: 'Última venda', title: 'Última vez que este produto vendeu no histórico do painel', fmt: (v) => (v ? fmt.date(v) : '—'), sortVal: (r) => (r.semVenda == null ? -1e9 : -r.semVenda) },
+    ];
+    // busca: procura em TODOS os produtos, qualquer que seja o filtro
+    const busca = h('input', { class: 'f-input est-busca', type: 'search', placeholder: 'Buscar qualquer produto (nome ou código)…', value: state.estBusca || '', autocomplete: 'off' });
+    const tabBoxT = h('div');
+    const infoBusca = h('small', { class: 'muted est-busca-info' });
+    const ORD = { repor: 'est', parados: 'valor', saldo: 'valor', todos: 'produto' };
+    function montarT() {
+      const q = ESQ(busca.value), qd = busca.value.replace(/\D/g, '');
+      const rows = q ? todos.filter((r) => ESQ(r.produto).includes(q) || (qd && String(r.cod).includes(qd))) : todos.filter(FILTROS[filtroT][1]);
+      infoBusca.textContent = !q ? '' : rows.length ? `${fmt.int(rows.length)} ${rows.length === 1 ? 'produto encontrado' : 'produtos encontrados'} entre todos os ${fmt.int(todos.length)} (a busca procura em todos, qualquer que seja o filtro)` : '';
+      segT.classList.toggle('est-seg-off', !!q);
+      tabBoxT.replaceChildren(TS.table({
+        cols: colsT, rows, sortKey: q ? 'produto' : ORD[filtroT], sortDir: q || filtroT === 'todos' ? 'asc' : 'desc', maxHeight: '600px', produto: 'produto', cls: 'est-t',
+        imprimir: ['produto', 'est', 'qtd', 'prev', 'dias', 'pedir', 'custoPedido', 'valor'],
+        rowClass: (r) => (entradas.has(String(r.cod)) ? 'est-tem-entrada' : ''),
+        empty: q ? 'Nenhum produto com esse nome ou código na planilha de estoque do AppNext.' : { repor: 'Nada para repor agora. 👏', parados: 'Nada parado. 👏', saldo: 'Nenhum produto com saldo.', todos: 'Nenhum produto.' }[filtroT],
+      }));
+    }
+    const segT = TS.seg(Object.entries(FILTROS).map(([k, [t]]) => [`${t} (${fmt.int(conta(k))})`, k]), filtroT, (v) => { filtroT = v; state.estSit = v; if (busca.value) { busca.value = ''; state.estBusca = ''; } montarT(); });
+    let tBusca = null;
+    busca.addEventListener('input', () => { clearTimeout(tBusca); tBusca = setTimeout(() => { state.estBusca = busca.value; montarT(); }, 200); });
+    montarT();
+    // depois que as notas chegam, marca os produtos com entrada que ainda não está no saldo
+    if (diaPlanilha && state.loja && state.loja !== 'todas') fetch(TS.api(`estoque/notas?loja=${encodeURIComponent(state.loja)}`), { credentials: 'same-origin' })
+      .then((r) => (r.ok ? r.json() : null)).then((j) => {
+        if (!j || !tabBoxT.isConnected) return;
+        const novas = (j.notas || []).filter((n) => /^conclu/i.test(n.status || '') && String(n.entrada || '').slice(0, 10) >= diaPlanilha);
+        if (!novas.length) return;
+        entradas = new Map();
+        for (const n of novas) for (const i of n.itens || []) {
+          const k = String(i.cod);
+          (entradas.get(k) || entradas.set(k, []).get(k)).push({ nf: n.nf, dia: String(n.entrada).slice(0, 10), qtd: i.qtd, mesmoDia: String(n.entrada).slice(0, 10) === diaPlanilha });
+        }
+        const depois = novas.filter((n) => String(n.entrada).slice(0, 10) > diaPlanilha), mesmo = novas.length - depois.length;
+        avisoNotas.replaceChildren(h('span', null, '📦 ',
+          depois.length ? `${depois.length === 1 ? 'A NF' : 'As NFs'} ${depois.map((n) => n.nf).join(', ')} ${depois.length === 1 ? 'foi lançada' : 'foram lançadas'} depois da planilha de estoque: o saldo ${depois.length === 1 ? 'dela' : 'delas'} entra na próxima atualização. ` : '',
+          mesmo ? `${mesmo === 1 ? '1 nota lançada' : `${mesmo} notas lançadas`} no mesmo dia da planilha (pode já estar no saldo). ` : '',
+          'Os produtos estão marcados na tabela.'));
+        montarT();
+      }).catch(() => null);
     const csv = h('button', { type: 'button', class: 'btn', onclick: () => baixarPedido(repor) }, '⬇ Baixar pedido (CSV)');
-    put(E, h('div', { class: 'mt' }, TS.cardWithTools('O que repor',
-      h('span', null, `Ritmo dos últimos 30 dias ajustado pela época do ano (coluna Previsão/dia) · entrega em ${ent} dias · pedido para ${cob} dias de venda. Chás a granel em kg (inclui o consumo de saco kraft e etiquetas).`,
-        h('span', { class: 'est-minres' }, ` Mínimo do AppNext comparado com o sugerido (em "Tudo que vende"): `,
+    const cardT = TS.cardWithTools('Estoque',
+      h('span', null, `Todos os ${fmt.int(todos.length)} produtos da planilha do AppNext. Reposição pelo ritmo dos últimos 30 dias ajustado pela época do ano (coluna Previsão/dia) · entrega em ${ent} dias · pedido para ${cob} dias de venda. Chás a granel em kg (inclui o consumo de saco kraft e etiquetas). Parado = com saldo e sem venda há ${cfg.paradoDias}+ dias.`,
+        h('span', { class: 'est-minres' }, ` Mínimo do AppNext comparado com o sugerido: `,
           h('b', { class: 'est-sug est-sug-baixo' }, `${fmt.int(repo.filter((r) => r.minSit === 'baixo').length)} baixos`), ' · ',
           h('b', { class: 'est-sug est-sug-alto' }, `${fmt.int(repo.filter((r) => r.minSit === 'alto').length)} altos`), ' · ',
           h('b', { class: 'est-sug est-sug-sem' }, `${fmt.int(repo.filter((r) => r.minSit === 'sem').length)} sem mínimo`))),
-      h('div', { class: 'est-tools' }, tabRepo.searchBox && (tabRepo.searchBox.classList.add('est-busca'), tabRepo.searchBox), TS.seg([['Só o que repor', 'repor'], ['Tudo que vende', 'todos']], sitSel, (v) => { state.estSit = v; TS.render(); }), csv),
-      tabRepo)));
-
-    put(E, h('div', { class: 'mt' }, TS.card('Estoque parado', `Produtos com saldo e sem venda há ${cfg.paradoDias} dias ou mais: dinheiro empatado. Pense em vitrine, degustação, kit ou promoção.`, TS.table({
-      cols: [
-        { key: 'produto', label: 'Produto', align: 'l', sticky: true, wrap: true },
-        { key: 'tipo', label: 'Tipo', align: 'l' },
-        { key: 'qtd', label: 'Estoque', title: 'Saldo de agora no AppNext', render: (r) => qtdTxt(r.qtd, r.it) },
-        { key: 'valor', label: 'Valor a custo', title: 'Dinheiro parado: estoque × custo unitário', fmt: fmt.brl },
-        { key: 'ultima', label: 'Última venda', title: 'Última vez que este produto vendeu no histórico do painel', fmt: (v) => (v ? fmt.date(v) : 'sem venda no histórico'), sortVal: (r) => r.dias ?? 1e9 },
-      ],
-      rows: parados, sortKey: 'valor', maxHeight: '420px', cls: 'est-t', search: 'Buscar produto…', searchKeys: ['produto', 'cod'], produto: 'produto', empty: 'Nada parado. 👏',
-    }))));
+      h('div', { class: 'est-tools' }, busca, segT, csv),
+      h('div', null, infoBusca, avisoNotas, tabBoxT));
+    cardT.id = 'est-tabela';
+    put(E, h('div', { class: 'mt' }, cardT));
+    // os quadros do topo filtram a tabela
+    TS.estFiltrar = (k) => { filtroT = k; state.estSit = k; busca.value = ''; state.estBusca = ''; segT.querySelectorAll('button').forEach((b, i) => b.classList.toggle('on', Object.keys(FILTROS)[i] === k)); montarT(); cardT.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
 
     put(R, h('p', { class: 'muted mt' }, 'Reajustes de custo e de venda e o efeito na margem de cada produto: ', h('a', { href: '#precos' }, 'Produtos → Preços'), '.'));
     put(E, h('p', { class: 'muted mt' }, 'Margem e lucro de cada produto: ', h('a', { href: '#rentab' }, 'Produtos → Rentabilidade'), ' · notas de entrada: ', h('a', { href: '#notas' }, 'Estoque → Notas fiscais'), '.'));

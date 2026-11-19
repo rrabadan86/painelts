@@ -115,3 +115,20 @@ test('IA: diagnóstico e revisão do pedido não forçam a ferramenta (os modelo
     IA.remover('c');
   }
 });
+
+test('IA: diagnóstico do Início é gerado uma vez por arquivo (loja + dia), mesmo com duas pessoas abrindo juntas', async () => {
+  const arq = path.join(tmp, 'a', 'ia', 'diag-2026-11-19-loja.json');
+  let chamadas = 0;
+  const gerar = async () => { chamadas++; await new Promise((r) => setTimeout(r, 30)); return { diagnostico: { manchete: 'x' }, em: 'agora' }; };
+  const [a, b] = await Promise.all([IA.umaVez(arq, gerar), IA.umaVez(arq, gerar)]);
+  assert.equal(chamadas, 1, 'duas pessoas ao mesmo tempo: uma geração só');
+  assert.deepEqual(a, b);
+  const c = await IA.umaVez(arq, gerar);
+  assert.equal(chamadas, 1, 'quem abre depois lê a guardada');
+  assert.equal(c.guardada, true);
+  assert.equal(c.diagnostico.manchete, 'x');
+  // IA sem resposta: não guarda (dá para tentar de novo)
+  const arq2 = path.join(tmp, 'a', 'ia', 'diag-2026-11-19-todas-x.json');
+  assert.equal(await IA.umaVez(arq2, async () => null), null);
+  assert.ok(!fs.existsSync(arq2));
+});

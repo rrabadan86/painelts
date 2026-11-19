@@ -1621,7 +1621,6 @@ app.delete('/api/ia/conversas/:id', (req, res) => {
   res.json({ ok: true });
 });
 // "Por que isso está acontecendo" (Início): a mesma situação (mesmos números e avisos) não é cobrada de novo
-const DIAG_MAX_DIA = 8;
 app.post('/api/ia/diagnostico', express.json({ limit: '150kb' }), async (req, res) => {
   const b = req.body || {};
   const loja = lojaIA(req, res, b.loja); if (!loja) return;
@@ -1629,25 +1628,27 @@ app.post('/api/ia/diagnostico', express.json({ limit: '150kb' }), async (req, re
   if (!fatos) return res.status(400).json({ erro: 'Sem dados.' });
   const txt = JSON.stringify(fatos);
   if (txt.length > 120000) return res.status(400).json({ erro: 'Dados demais.' });
+  // UMA análise por loja por dia, a mesma para toda a equipe (admin, franqueado e gerente): quem abrir primeiro gera,
+  // os outros leem a guardada. Os números que vão para a IA são só de vendas, que esses três perfis já veem.
   const pasta = path.join(C.pastaLoja(loja.id), 'ia');
   const dia = C.hojeBR();
-  const hash = crypto.createHash('sha256').update(String(b.loja) + '|' + txt).digest('hex').slice(0, 16);
-  const arq = path.join(pasta, `diag-${dia}-${hash}.json`);
-  try { return res.json(JSON.parse(fs.readFileSync(arq, 'utf8'))); } catch { /* ainda não tem */ }
-  let doDia = [];
-  try { doDia = fs.readdirSync(pasta).filter((f) => f.startsWith(`diag-${dia}-`)).map((f) => ({ f, t: fs.statSync(path.join(pasta, f)).mtimeMs })).sort((x, y) => y.t - x.t); } catch { /* ok */ }
-  // muitas versões no mesmo dia (dados mudando): devolve a última, sem gastar mais
-  if (doDia.length >= DIAG_MAX_DIA) { try { return res.json(JSON.parse(fs.readFileSync(path.join(pasta, doDia[0].f), 'utf8'))); } catch { /* segue */ } }
-  if (tooMany('ia:' + req.user, 150)) return res.status(429).json({ erro: 'Muitos pedidos à IA em pouco tempo. Espere alguns minutos.' });
-  falhou('ia:' + req.user);
+  const qual = String(b.loja) === 'todas' ? 'todas-' + crypto.createHash('sha256').update(req.lojas.map((l) => l.id).sort().join(',')).digest('hex').slice(0, 10) : 'loja';
+  const arq = path.join(pasta, `diag-${dia}-${qual}.json`);
+  let jaTem = false;
+  try { fs.accessSync(arq); jaTem = true; } catch { /* ainda não tem */ }
+  if (!jaTem) {
+    if (tooMany('ia:' + req.user, 150)) return res.status(429).json({ erro: 'Muitos pedidos à IA em pouco tempo. Espere alguns minutos.' });
+    falhou('ia:' + req.user);
+  }
   try {
-    const diag = await IA.comFerramenta(loja.id, { max_tokens: 6000, system: IAP.SISTEMA_DIAG, ferramenta: IAP.FERR_DIAG, conteudo: 'Números do painel (JSON):\n' + txt });
-    if (!diag) return res.status(502).json({ erro: 'A IA não devolveu a explicação. Tente de novo.' });
-    const out = { diagnostico: diag, em: new Date().toISOString() };
-    fs.mkdirSync(pasta, { recursive: true });
-    C.gravarAtomico(arq, JSON.stringify(out), 0o640);
-    // guarda só os últimos 7 dias
-    try { for (const f of fs.readdirSync(pasta)) { const m = /^diag-(\d{4}-\d{2}-\d{2})-/.exec(f); if (m && Date.parse(dia) - Date.parse(m[1]) > 7 * 864e5) fs.unlinkSync(path.join(pasta, f)); } } catch { /* ok */ }
+    const out = await IA.umaVez(arq, async () => {
+      const diag = await IA.comFerramenta(loja.id, { max_tokens: 6000, system: IAP.SISTEMA_DIAG, ferramenta: IAP.FERR_DIAG, conteudo: 'Números do painel (JSON):\n' + txt });
+      if (!diag) return null;
+      // guarda só os últimos 7 dias
+      try { for (const f of fs.readdirSync(pasta)) { const m = /^diag-(\d{4}-\d{2}-\d{2})-/.exec(f); if (m && Date.parse(dia) - Date.parse(m[1]) > 7 * 864e5) fs.unlinkSync(path.join(pasta, f)); } } catch { /* ok */ }
+      return { diagnostico: diag, em: new Date().toISOString(), dia };
+    });
+    if (!out) return res.status(502).json({ erro: 'A IA não devolveu a explicação. Tente de novo.' });
     res.json(out);
   } catch (err) { iaErro(res, err); }
 });
