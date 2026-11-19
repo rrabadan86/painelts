@@ -434,6 +434,8 @@
   }
 
   // aviso no Início e número no menu: quantos produtos chegaram para quem está esperando
+  /** pedidos da lista de espera (para a ficha da equipe, em equipe.js) */
+  TS.esperaDados = buscar;
   TS.esperaResumo = async function () {
     if (!state.loja || state.loja === 'todas' || TS.demo) return null;
     try { const d = await buscar(state.loja); return { chegou: d.pedidos.filter((p) => p.st === 'chegou').length, esperando: d.pedidos.filter((p) => p.st === 'esperando').length }; } catch { return null; }

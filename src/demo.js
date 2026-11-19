@@ -163,7 +163,43 @@ function gerarLoja(L, ini, fim, horaHoje) {
   const receitaMes = vendas.filter((v) => v.data >= iso(fim - 365)).reduce((s, v) => s + (v.vt || 0), 0) / Math.min(12, meses);
   const meta = Math.round((receitaMes * 1.08) / 5000) * 5000;
   void anos;
-  return { vendas, xml, clientes, meta, avisos: [], fontes: [{ nome: 'Dados fictícios', desc: 'demonstração', origem: null, ok: true }], lojaNome: L.nome };
+  return { vendas, xml, clientes, meta, avisos: [], fontes: [{ nome: 'Dados fictícios', desc: 'demonstração', origem: null, ok: true }], lojaNome: L.nome, fixos: equipe.slice(0, 3).map((v) => v.nome) };
+}
+
+/**
+ * Programa de fidelidade FICTÍCIO (para a seção Fidelidade da apresentação): ~2/3 dos clientes com CPF estão no programa,
+ * ganham 1 ponto a cada R$ 50 e parte deles troca 6 pontos por um prêmio na visita seguinte. Mesmo formato que o painel
+ * recebe dos Logs do FIXE (src/fidelidade.js → paraPainel).
+ */
+function fidelidadeDemo(L, parte) {
+  const FI = require('./fidelidade');
+  const cup = new Map();
+  for (const v of parte.vendas) {
+    let c = cup.get(v.cupom);
+    if (!c) cup.set(v.cupom, (c = { data: v.data, min: v.min, vt: 0, prods: [] }));
+    c.vt += v.vt || 0;
+    if (c.prods.length < 2 && v.vu >= 0.05) c.prods.push(v.descricao);
+  }
+  const nome = new Map(parte.clientes.map((c) => [c.cpf, c.nome]));
+  const porCpf = new Map();
+  for (const x of parte.xml) { const c = cup.get(x.cupom); if (c) (porCpf.get(x.cpf) || porCpf.set(x.cpf, []).get(x.cpf)).push(c); }
+  const premios = [...new Set(parte.vendas.filter((v) => / 50G$/i.test(v.descricao) && v.vu >= 0.05).map((v) => v.descricao))].slice(0, 6);
+  const eventos = [], membros = [], cadastros = {};
+  for (const [cpf, cs] of porCpf) {
+    const hsh = hashTxt(cpf);
+    if (hsh % 3 === 0) continue; // fora do programa
+    cs.sort((a, b) => (a.data < b.data ? -1 : a.data > b.data ? 1 : (a.min || 0) - (b.min || 0)));
+    membros.push([cpf, cs[0].data]); cadastros[cpf] = cs[0].data;
+    let saldo = 0, k = 0;
+    for (const c of cs) {
+      const base = { cpf, nome: nome.get(cpf) || '', loja: L.loja, data: c.data, min: c.min == null ? 720 : Math.min(1439, c.min + 2) };
+      if (saldo >= 6 && (hsh + k++) % 5 < 3 && premios.length) { eventos.push({ ...base, tipo: 'resgate', pontos: 6, produtos: [premios[(hsh + k) % premios.length]] }); saldo -= 6; }
+      const pts = Math.floor(c.vt / 50);
+      if (pts > 0) { eventos.push({ ...base, min: Math.min(1439, base.min + 1), tipo: 'pontos', pontos: pts, produtos: c.prods }); saldo += pts; }
+    }
+  }
+  const em = new Date().toISOString();
+  return FI.paraPainel({ em, eventos, cadastros }, { id: L.id, nome: L.nome }, [L.loja], { em, membros }, null);
 }
 
 let cache = { chave: null, partes: null, corpos: new Map() };
@@ -184,13 +220,16 @@ function pacoteDemo(id) {
     const sel = k === 'todas' ? cache.partes : [cache.partes[LOJAS.findIndex((L) => L.id === k)]];
     const dados = sel.length === 1 ? { ...sel[0] } : juntar(sel);
     const idx = k === 'todas' ? LOJAS.map((_, i) => i) : [LOJAS.findIndex((L) => L.id === k)];
+    dados.fidelidade = idx.map((i) => fidelidadeDemo(LOJAS[i], cache.partes[i]));
+    // a escala fictícia usa o nome das vendedoras fixas da loja (para a venda por hora trabalhada); a loja com apelidos na escala fica como está
+    const operacaoDemo = (i) => { const o = OPERACAO[LOJAS[i].id]; return o.equipe.pessoas ? o : { ...o, equipe: { ...o.equipe, nomes: cache.partes[i].fixos } }; };
     // férias de exemplo: uma vendedora de cada loja tirou 10 dias no mês passado
     const feriasDemo = (i) => {
       const hoje = new Date(); const ant = new Date(Date.UTC(hoje.getUTCFullYear(), hoje.getUTCMonth() - 1, 1)).toISOString().slice(0, 7);
       const nomes = [...new Set(cache.partes[i].vendas.filter((v) => v.data.startsWith(ant)).map((v) => v.vendedor))].filter(Boolean).sort();
       return nomes.length > 1 ? [{ vendedor: nomes[0], de: `${ant}-05`, ate: `${ant}-14` }] : [];
     };
-    dados.metaCfgs = idx.map((i) => ({ id: LOJAS[i].id, nome: LOJAS[i].nome, nomesVenda: [LOJAS[i].loja], padrao: cache.partes[i].meta, meses: {}, metaAuto: { ativo: true, pct: 10 }, regras: null, operacao: OPERACAO[LOJAS[i].id], ferias: feriasDemo(i) }));
+    dados.metaCfgs = idx.map((i) => ({ id: LOJAS[i].id, nome: LOJAS[i].nome, nomesVenda: [LOJAS[i].loja], padrao: cache.partes[i].meta, meses: {}, metaAuto: { ativo: true, pct: 10 }, regras: null, operacao: operacaoDemo(i), ferias: feriasDemo(i) }));
     dados.meta = dados.metaCfgs.reduce((s, m) => s + (m.padrao || 0), 0);
     cache.corpos.set(k, JSON.stringify(pack(dados, { loja: k, demo: true })));
   }
