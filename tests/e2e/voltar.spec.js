@@ -98,8 +98,12 @@ test('Prêmio de fidelidade: acha o cupom da venda em que o prêmio saiu (mesmo 
       { data: TS.dayToIso(db.day[i]), min: db.min[i] + 5, produtos: [db.D.descricao[db.desc[i]]] },
       { data: TS.dayToIso(db.day[i]), min: db.min[i], produtos: ['PRODUTO QUE NAO EXISTE XYZ'] },
     ]);
-    return { esperado: db.cupom[i], achou: res[0] && res[0].cupom, nada: res[1] };
+    // o cliente do resgate está no FIXE: o CPF na nota acha o cupom mesmo sem o produto
+    db.xml = [...(db.xml || []), { cpf: '12345678909', loja: db.D.loja[db.loja[i]], cupom: db.cupom[i], data: TS.dayToIso(db.day[i]) }];
+    const pc = TS.fx.cupomDosResgates('lojaX', [{ cpf: '12345678909', data: TS.dayToIso(db.day[i]), min: db.min[i] + 60, produtos: ['PRÊMIO COM OUTRO NOME'] }]);
+    return { esperado: db.cupom[i], achou: res[0] && res[0].cupom, nada: res[1], porCpf: pc[0] && pc[0].cupom, como: pc[0] && pc[0].como };
   });
   expect(r.achou).toBe(r.esperado);
   expect(r.nada).toBeNull();
+  expect([r.porCpf, r.como]).toEqual([r.esperado, 'cpf']);
 });

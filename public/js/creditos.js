@@ -93,7 +93,9 @@
     const item = (r, k) => {
       const c = cli(r.cpf), cp = cupons[k];
       const custo = r.produtos.reduce((s0, p) => s0 + (p.custo || 0), 0);
-      const det = cp ? h('details', { class: 'cfm-cupom' }, h('summary', null, h('b', null, `Cupom ${cp.cupom}`), ` · ${horaTxt(cp.min)}${cp.vendedor ? ' · ' + cp.vendedor : ''} · ${fmt.brl(cp.vt)}`),
+      const COMO = { fixe: 'mesma compra no FIXE', cpf: 'CPF do cliente na nota', hora: 'pela hora e pelo produto (confira)' };
+      const det = cp ? h('details', { class: 'cfm-cupom' }, h('summary', null, h('b', null, `Cupom ${cp.cupom}`), ` · ${horaTxt(cp.min)}${cp.vendedor ? ' · ' + cp.vendedor : ''} · ${fmt.brl(cp.vt)}`,
+        h('small', { class: 'cfm-como' + (cp.como === 'hora' ? ' aprox' : '') }, COMO[cp.como] || '')),
         h('div', { class: 'cfm-itens' }, ...cp.itens.map((it) => h('div', null, h('span', null, it.desc), h('span', null, it.qtd != null ? `${fmt.n2(it.qtd).replace(/,00$/, '')} × ` : '', fmt.brl(it.vt))))))
         : h('div', { class: 'cfm-semcupom', title: 'Nenhum cupom da loja no mesmo dia, perto do horário, com o produto do prêmio (o painel pode não ter as vendas desse dia)' }, 'cupom não achado');
       return h('div', { class: 'cfm-item' },

@@ -246,10 +246,32 @@
       c.vt += db.vt[i] || 0;
       if (c.vend == null) c.vend = db.D.vendedor[db.vend[i]] || null;
     }
+    // o resgate exige o cliente no FIXE: o CPF identifica a venda. 1) a compra do mesmo cliente no mesmo dia que o FIXE
+    // já ligou a um cupom (pontos da mesma venda); 2) cupom com o CPF dele na nota (XML); 3) hora + produto do prêmio
+    const porCpfDia = new Map();
+    try {
+      const movs = movimentos(); ligar(movs);
+      for (const mv of movs) if (mv.cupom && mv.lojaId === lid) { const k = mv.cpf + '|' + mv.day; if (!porCpfDia.has(k)) porCpfDia.set(k, []); porCpfDia.get(k).push(mv); }
+    } catch { /* sem logs: segue pelos outros jeitos */ }
+    const xmlCpf = new Map(); // "cpf|dia" → Set(cupom)
+    for (const x of db.xml || []) {
+      if (!x.cpf || x.loja !== base.vendaLoja || !x.data) continue;
+      const d = TS.isoToDay(x.data);
+      for (const dd of [d - 1, d, d + 1]) { const k = x.cpf + '|' + dd; if (!xmlCpf.has(k)) xmlCpf.set(k, new Set()); xmlCpf.get(k).add(x.cupom); }
+    }
     const usados = new Set();
+    const pronto = (c, como) => { usados.add(c.cupom); return { cupom: c.cupom, min: c.min, vt: c.vt, vendedor: c.vend, como, itens: c.linhas.map((i) => ({ desc: db.D.descricao[db.desc[i]], qtd: TS.qtdItem ? TS.qtdItem(i) : null, vt: db.vt[i] || 0 })) }; };
+    const perto = (cs, min) => cs.sort((a, b) => (min == null || a.min == null ? 0 : Math.abs(a.min - min)) - (min == null || b.min == null ? 0 : Math.abs(b.min - min)))[0];
     return lista.map((r) => {
-      const m = porDia.get(TS.isoToDay(r.data));
+      const dia = TS.isoToDay(r.data);
+      const m = porDia.get(dia);
       if (!m) return null;
+      if (r.cpf) {
+        const mvs = (porCpfDia.get(r.cpf + '|' + dia) || []).map((mv) => m.get(mv.cupom.cupom)).filter((c) => c && !usados.has(c.cupom));
+        if (mvs.length) return pronto(perto(mvs, r.min), 'fixe');
+        const xs = [...(xmlCpf.get(r.cpf + '|' + dia) || [])].map((cu) => m.get(cu) ?? m.get(Number(cu)) ?? m.get(String(cu))).filter((c) => c && !usados.has(c.cupom));
+        if (xs.length) return pronto(perto(xs, r.min), 'cpf');
+      }
       const tp = (r.produtos || []).map(tokens);
       let best = null;
       for (const c of m.values()) {
@@ -263,9 +285,7 @@
         if (!best || score > best.score) best = { c, score };
       }
       if (!best) return null;
-      usados.add(best.c.cupom);
-      const c = best.c;
-      return { cupom: c.cupom, min: c.min, vt: c.vt, vendedor: c.vend, itens: c.linhas.map((i) => ({ desc: db.D.descricao[db.desc[i]], qtd: TS.qtdItem ? TS.qtdItem(i) : null, vt: db.vt[i] || 0 })) };
+      return pronto(best.c, 'hora');
     });
   }
 
