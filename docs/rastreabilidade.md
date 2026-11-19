@@ -463,6 +463,7 @@ Todos os da lista A foram conferidos no código, um por um.
 | E-20 | Repetir sozinho um POST da IA depois de erro de rede pode cobrar 2× (se a resposta caiu depois de cobrada) | `ia.js` `iaApi` | 🟡 Mantido (o dono pediu a nova tentativa automática); risco baixo |
 | E-21 | "Replicar/Trazer mês" multiplicava ajuste pontual | `mapa.js` `ajustesQueRepetem`, editor "Vale para" | ✅ Decisão do dono: no ajuste a pessoa escolhe **Só neste dia (pontual)** ou **Neste e nos próximos <dia da semana>** (também nos próximos meses). Replicar/Trazer leva só os que repetem, em todos os mesmos dias da semana; pontual fica no dia dele. `escala-horario.spec` "replicar mês", "Vale para" |
 | E-22 | Feriado que abre em dia normalmente fechado fica sem ninguém e sem alerta | `mapa.js` | ❌ A fazer |
+| E-23 | NF-e de venda: o teste passava e a emissão falhava ao concluir por falta de estoque ("não possui estoque suficiente"), obrigando a refazer tudo | `nfsaida.js` (estoque por produto + aviso antes do robô), `nextsoft_nfe.py` (lê o estoque do produto no AppNext na conferência) | ✅ A tela avisa na hora; o robô para no teste quando o AppNext informa o estoque (o campo é registrado no log para conferência) |
 
 ## Resumo em números
 

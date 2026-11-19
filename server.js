@@ -1287,7 +1287,10 @@ app.get('/api/nfe', async (req, res) => {
   for (const r of cp.mudou) C.auditar(r.por || 'sistema', r.estado === 'ok' ? 'robô cadastrou parceiro no AppNext' : r.estado === 'teste' ? 'robô testou o cadastro de parceiro (nada salvo)' : 'robô não conseguiu cadastrar o parceiro', loja.id, { loja: loja.id, tipo: r.tipo, nome: r.nome, erro: r.erro || null });
   for (const r of cp.lista) if (r.estado === 'na_fila' && parado && Date.now() - Date.parse(r.em) > 20000) NFE.erroParceiro(loja.id, r.id, robo && robo.ultima && robo.ultima.id === r.id ? `o robô terminou sem confirmar (código ${robo.ultima.codigo})` : 'o pedido se perdeu (o coletor reiniciou); peça de novo');
   const cad = NFE.cadastros(loja.id);
-  res.json({ cadastros: cad, erroCadastros: NFE.erroCadastros(loja.id), rascunhos: NFE.lista(loja.id).slice(0, 100), parceiros: NFE.listaParceiros(loja.id).slice(0, 10), robo, podeRobo: COL.ativo() });
+  // estoque da última planilha do AppNext: a tela avisa na hora o produto da nota sem estoque suficiente (o AppNext recusa ao concluir)
+  const est = ES.atual(loja.id);
+  const estoque = est && est.itens ? { em: est.em, qtd: Object.fromEntries(est.itens.map((i) => [String(i.cod), Number(i.qtd) || 0])) } : null;
+  res.json({ cadastros: cad, erroCadastros: NFE.erroCadastros(loja.id), rascunhos: NFE.lista(loja.id).slice(0, 100), parceiros: NFE.listaParceiros(loja.id).slice(0, 10), robo, podeRobo: COL.ativo(), estoque });
 });
 app.use('/api/nfe', (req, res, next) => (req.method === 'GET' || req.get('X-Painel') === '1' ? next() : res.status(403).json({ erro: 'Pedido inválido.' })));
 app.post('/api/nfe/cadastros', express.json({ limit: '2kb' }), async (req, res) => {
