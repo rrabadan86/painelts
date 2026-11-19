@@ -2723,3 +2723,30 @@ details.vl-ajuda summary { cursor: pointer; font-weight: 600; }
 .cfg-loja-sub2 { display: block; font-size: 11px; }
 .cfg-lojas-t .cfg-per { font-size: 12px; overflow-wrap: anywhere; }
 @media (min-width: 761px) { .cfg-lojas-t .cfg-per { white-space: nowrap; } }
+
+/* ---------- Configurações → loja: tela de ajustes enxuta (menu lateral + uma coluna de cartões) ---------- */
+.cfg-loja-layout { display: grid; grid-template-columns: minmax(0, 1fr); border-top: 1px solid var(--line); }
+.cfg-loja-layout .cfg-loja-nav { border-top: 0; }
+.cfg-loja-main { min-width: 0; background: var(--cream-2); padding: 18px 20px 24px; }
+.cfg-sec-cab { max-width: 900px; margin-bottom: 14px; }
+.cfg-sec-cab h2 { margin: 0; font-size: 17px; color: var(--dark); }
+.cfg-sec-cab .muted { font-size: 13px; margin-top: 2px; }
+.cfg-loja-main .cfg-loja-corpo { display: flex; flex-direction: column; gap: 16px; border-top: 0; max-width: 900px; }
+.cfg-loja-main .cfg-bloco { background: #fff; border: 1px solid var(--line); border-radius: var(--radius); padding: 18px 20px; box-shadow: var(--shadow);
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr)); gap: 12px 16px; align-content: start; }
+.cfg-loja-main .cfg-bloco > :not(label.cfg-campo):not(div.cfg-campo) { grid-column: 1 / -1; }
+.cfg-loja-main .cfg-bloco > h3 { font-size: 15px; margin: 0; }
+.cfg-loja-main .cfg-bloco > p { margin: -6px 0 0; color: var(--muted); }
+.cfg-loja-main .cfg-bloco .cfg-acoes { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 4px; }
+.cfg-loja-main .cfg-bloco .cfg-campo > span { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.cfg-mais { font-size: 12.5px; color: var(--muted); }
+.cfg-mais > summary { cursor: pointer; color: var(--green); font-weight: 600; width: max-content; }
+.cfg-mais > * + * { margin-top: 6px; }
+@media (min-width: 1000px) {
+  .cfg-loja-layout { grid-template-columns: 210px minmax(0, 1fr); }
+  .cfg-loja-layout .cfg-loja-nav { padding: 14px 10px; border-right: 1px solid var(--line); }
+  .cfg-sub.cfg-sub-v { display: flex; flex-direction: column; gap: 2px; overflow: visible; }
+  .cfg-sub.cfg-sub-v a { display: block; padding: 8px 12px; border-radius: 8px; border-bottom: 0; white-space: normal; }
+  .cfg-sub.cfg-sub-v a.on { background: var(--sage-l); color: var(--dark); font-weight: 600; box-shadow: inset 3px 0 0 var(--green); }
+}
+@media (max-width: 760px) { .cfg-loja-main { padding: 12px 10px 18px; } .cfg-loja-main .cfg-bloco { padding: 14px; } }

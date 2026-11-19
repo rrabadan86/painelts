@@ -35,6 +35,10 @@ Lista que abre um detalhe: a tabela some e o detalhe aparece no lugar, com "‹ 
 - Número sempre formatado (`TS.fmt`): `R$ 1.234,56`, `12,5%`, `0,500 kg`, `dd/mm`.
 - Nunca "null", "undefined", "NaN": `replaceChildren(...[...].filter(Boolean))` e `fmt` devolve "—".
 
+## Telas de ajustes (Configurações → loja e parecidas)
+- Menu das seções na lateral (computador) / em cima (celular); conteúdo numa coluna (até ~900 px), **um cartão por assunto** (`section.cfg-bloco`): título, uma frase do que é, campos curtos lado a lado e o Salvar no rodapé do cartão.
+- Ajuda longa de campo vira ⓘ ao lado do nome; explicação extensa fica em "Como funciona ▸" recolhido (`enxugar()` em `config.js` faz isso sozinho para o `campo(rótulo, controle, dica)` e os parágrafos além do primeiro).
+
 ## Formulários
 - `campo(rótulo, controle, dica)`: rótulo em cima, dica `small` embaixo. Grupo de caixas de marcar = `fieldset` com `legend` (não `label` dentro de `label`).
 - Regra fixa aparece **travada** (`disabled`) com 🔒 e o motivo — não escondida.
