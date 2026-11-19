@@ -78,30 +78,47 @@
     valor.focus();
   }
 
-  /** janela: os resgates do mês, com o custo de cada prêmio, e os descontos lançados */
-  function verMes(m, acaoRoy, fid) {
+  /** janela: todos os resgates do mês — fidelizado, prêmio e custo, e o cupom da venda em que o prêmio saiu */
+  const cpfTxt = (s) => (s && s.length === 11 ? `${s.slice(0, 3)}.${s.slice(3, 6)}.${s.slice(6, 9)}-${s.slice(9)}` : s || '');
+  const telTxt = (t) => { const x = String(t || '').replace(/\D/g, '').replace(/^55(?=\d{10,11}$)/, ''); return x.length === 11 ? `(${x.slice(0, 2)}) ${x.slice(2, 7)}-${x.slice(7)}` : x.length === 10 ? `(${x.slice(0, 2)}) ${x.slice(2, 6)}-${x.slice(6)}` : ''; };
+  const horaTxt = (min) => (min == null ? '' : `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`);
+  function verMes(m, acaoRoy, fid, loja) {
     const fundo = h('div', { class: 'cp-modal-bg' });
     const fechar = () => fundo.remove();
     fundo.addEventListener('click', (e) => { if (e.target === fundo) fechar(); });
-    const linhas = m.resgates.flatMap((r) => r.produtos.map((p) => ({ data: r.data, cliente: r.cliente, nome: p.nome, custo: p.custo })));
-    const tab = TS.table({
-      cols: [
-        { key: 'data', label: 'Data', align: 'l', fmt: (v) => fmt.date(v) },
-        { key: 'nome', label: 'Prêmio', align: 'l', wrap: true, render: (x) => h('span', null, x.nome, x.cliente ? h('small', { class: 'est-tam' }, x.cliente) : null) },
-        { key: 'custo', label: 'Custo', render: (x) => (x.custo == null ? h('span', { class: 'cf-sobra', title: 'O painel não achou este produto no estoque: confira o custo' }, 'sem custo') : fmt.brl(x.custo)), sortVal: (x) => x.custo ?? -1 },
-      ],
-      rows: linhas, sortKey: 'data', sortDir: 'asc', maxHeight: '40vh', cls: 'est-t', cartao: false,
-      total: { data: `${fmt.int(linhas.length)} prêmios`, custo: fmt.brl(m.custo) },
-    });
-    fundo.append(h('div', { class: 'card cp-copiar cf-ligar cfr-mes' },
-      h('div', { class: 'cfl-cab' }, h('div', null, h('h3', null, `Prêmios de ${mesTxt(m.mes)}`), h('small', { class: 'muted' }, `${fmt.int(m.resgates.length)} resgates · custo ${fmt.brl(m.custo)} · a receber ${fmt.int(fid.pct * 100)}% = ${fmt.brl(m.devido)}`)), h('button', { type: 'button', class: 'cf-b', 'aria-label': 'Fechar', onclick: fechar }, '✕')),
+    const resg = m.resgates.slice().sort((a, b) => (a.data + String(a.min ?? '')).localeCompare(b.data + String(b.min ?? '')));
+    const cupons = TS.fx && TS.fx.cupomDosResgates ? TS.fx.cupomDosResgates(loja, resg) : resg.map(() => null);
+    const cli = (cpf) => (TS.cli && TS.cli.porCPF && TS.cli.porCPF.get(cpf)) || null;
+    const achados = cupons.filter(Boolean).length;
+    const item = (r, k) => {
+      const c = cli(r.cpf), cp = cupons[k];
+      const custo = r.produtos.reduce((s0, p) => s0 + (p.custo || 0), 0);
+      const det = cp ? h('details', { class: 'cfm-cupom' }, h('summary', null, h('b', null, `Cupom ${cp.cupom}`), ` · ${horaTxt(cp.min)}${cp.vendedor ? ' · ' + cp.vendedor : ''} · ${fmt.brl(cp.vt)}`),
+        h('div', { class: 'cfm-itens' }, ...cp.itens.map((it) => h('div', null, h('span', null, it.desc), h('span', null, it.qtd != null ? `${fmt.n2(it.qtd).replace(/,00$/, '')} × ` : '', fmt.brl(it.vt))))))
+        : h('div', { class: 'cfm-semcupom', title: 'Nenhum cupom da loja no mesmo dia, perto do horário, com o produto do prêmio (o painel pode não ter as vendas desse dia)' }, 'cupom não achado');
+      return h('div', { class: 'cfm-item' },
+        h('div', { class: 'cfm-quando' }, h('b', null, fmt.date(r.data)), h('small', null, horaTxt(r.min) || '—'), h('small', null, `${fmt.int(r.pontos)} pontos`)),
+        h('div', { class: 'cfm-quem' },
+          r.cpf && TS.abrirClientes ? h('a', { href: '#', class: 'prc-nome', title: 'Abrir a ficha do cliente', onclick: (e) => { e.preventDefault(); fechar(); TS.abrirClientes([r.cpf]); } }, h('b', null, (c && c.nome) || r.cliente || cpfTxt(r.cpf))) : h('b', null, r.cliente || '—'),
+          h('small', null, [cpfTxt(r.cpf), c && telTxt(c.celular)].filter(Boolean).join(' · ')),
+          c && c.fx && c.fx.saldo != null ? h('small', null, `saldo hoje: ${fmt.int(c.fx.saldo)} pontos`) : null),
+        h('div', { class: 'cfm-premio' }, ...r.produtos.map((p) => h('div', null, h('span', null, p.nome), p.custo == null ? h('span', { class: 'cf-sobra', title: 'Produto não achado no estoque' }, 'sem custo') : h('span', null, fmt.brl(p.custo)))),
+          r.produtos.length > 1 ? h('div', { class: 'cfm-tot' }, h('span', null, 'Custo'), h('b', null, fmt.brl(custo))) : null),
+        h('div', { class: 'cfm-cup' }, det));
+    };
+    const card = h('div', { class: 'card cp-copiar cf-ligar cfr-mes' },
+      h('div', { class: 'cfl-cab' }, h('div', null, h('h3', null, `Prêmios de ${mesTxt(m.mes)}`),
+        h('small', { class: 'muted' }, `${fmt.int(m.resgates.length)} resgates · custo ${fmt.brl(m.custo)} · a receber ${fmt.int(fid.pct * 100)}% = ${fmt.brl(m.devido)} · cupom achado em ${fmt.int(achados)} de ${fmt.int(resg.length)}`)),
+        h('div', { class: 'cfm-topo-btn' }, h('button', { type: 'button', class: 'cf-b', title: 'Imprimir ou salvar em PDF', onclick: () => TS.imprimir && TS.imprimir(card) }, '🖨 Imprimir'), h('button', { type: 'button', class: 'cf-b', 'aria-label': 'Fechar', onclick: fechar }, '✕'))),
       m.semCusto ? h('div', { class: 'notice' }, `${fmt.int(m.semCusto)} prêmio(s) sem custo no painel (produto não achado no estoque): o valor a receber pode estar abaixo do certo.`) : null,
-      tab,
-      h('div', { class: 'cfr-lanc' }, h('b', null, 'Descontos lançados'),
+      h('div', { class: 'cfm-cab' }, h('span', null, 'Data'), h('span', null, 'Fidelizado'), h('span', null, 'Prêmio e custo'), h('span', null, 'Cupom da venda')),
+      h('div', { class: 'cfm-lista' }, ...resg.map(item)),
+      h('div', { class: 'cfr-lanc' }, h('b', null, 'Descontos lançados nos royalties'),
         m.lancamentos.length ? h('div', null, ...m.lancamentos.map((l) => h('div', { class: 'cfr-lanc-l' }, h('span', null, `Royalty de ${mesTxt(l.ref)}: `, h('b', null, fmt.brl(l.valor)), l.obs ? h('small', { class: 'muted' }, ` · ${l.obs}`) : null, l.por ? h('small', { class: 'muted' }, ` · ${l.por}`) : null),
           h('button', { type: 'button', class: 'link-btn', onclick: async () => { if (!confirm('Apagar este lançamento?')) return; if (await acaoRoy({ tipo: 'apagar', id: l.id }, 'Lançamento apagado.')) fechar(); } }, 'apagar'))))
           : h('p', { class: 'muted' }, 'Nenhum desconto lançado para os prêmios deste mês.'),
-        h('div', { class: 'cp-acoes' }, h('span', { style: { flex: 1 } }), h('button', { type: 'button', class: 'btn primary', onclick: () => { fechar(); lancarRoyalty(fid, acaoRoy, m.mes); } }, '+ Lançar desconto deste mês')))));
+        h('div', { class: 'cp-acoes' }, h('span', { style: { flex: 1 } }), h('button', { type: 'button', class: 'btn primary', onclick: () => { fechar(); lancarRoyalty(fid, acaoRoy, m.mes); } }, '+ Lançar desconto deste mês'))));
+    fundo.append(card);
     document.body.append(fundo);
   }
 
@@ -111,7 +128,7 @@
     const r = fid.resumo;
     const tab = fid.meses.length ? TS.table({
       cols: [
-        { key: 'mes', label: 'Prêmios de', align: 'l', render: (m) => h('span', null, h('a', { href: '#', class: 'prc-nome', onclick: (e) => { e.preventDefault(); e.stopPropagation(); verMes(m, acaoRoy, fid); } }, h('b', null, mesTxt(m.mes))), h('small', { class: 'est-tam' }, `${fmt.int(m.resgates.length)} resgates`)), sortVal: (m) => m.mes },
+        { key: 'mes', label: 'Prêmios de', align: 'l', render: (m) => h('span', null, h('a', { href: '#', class: 'prc-nome', onclick: (e) => { e.preventDefault(); e.stopPropagation(); verMes(m, acaoRoy, fid, loja); } }, h('b', null, mesTxt(m.mes))), h('small', { class: 'est-tam' }, `${fmt.int(m.resgates.length)} resgates`)), sortVal: (m) => m.mes },
         { key: 'custo', label: 'Custo dos prêmios', render: (m) => h('span', null, fmt.brl(m.custo), m.semCusto ? h('small', { class: 'cf-sobra', title: 'Prêmios sem custo no painel' }, ` +${m.semCusto}?`) : null), sortVal: (m) => m.custo },
         { key: 'devido', label: `A receber (${fmt.int(fid.pct * 100)}%)`, fmt: fmt.brl },
         { key: 'recebido', label: 'Recebido nos royalties', render: (m) => (m.lancamentos.length ? h('span', null, fmt.brl(m.recebido), h('small', { class: 'est-tam' }, m.lancamentos.map((l) => `royalty de ${mesTxt(l.ref)}`).join(' + '))) : h('span', { class: 'muted' }, '—')), sortVal: (m) => m.recebido },
@@ -119,7 +136,7 @@
         { key: 'situacao', label: 'Situação', align: 'l', render: (m) => { const [t, cls] = PST[m.situacao] || [m.situacao, '']; return h('span', { class: 'cf-st ' + cls }, t); } },
         { key: 'acao', label: '', align: 'r', render: (m) => (m.situacao === 'mes_aberto' ? null : h('span', { onclick: (e) => e.stopPropagation() }, h('button', { type: 'button', class: 'cf-b' + (m.situacao === 'atrasado' || m.situacao === 'aguardando' ? ' cf-b-ok' : ''), onclick: () => lancarRoyalty(fid, acaoRoy, m.mes) }, '+ Lançar'))) },
       ],
-      rows: fid.meses, sortKey: 'mes', pageSize: 12, cls: 'est-t', onRowClick: (m) => verMes(m, acaoRoy, fid),
+      rows: fid.meses, sortKey: 'mes', pageSize: 12, cls: 'est-t', onRowClick: (m) => verMes(m, acaoRoy, fid, loja),
     }) : null;
     return h('div', { class: 'card mt' },
       h('div', { class: 'cfr-topo' }, h('div', null, h('div', { class: 'card-title' }, 'Prêmios de fidelidade · desconto nos royalties'),

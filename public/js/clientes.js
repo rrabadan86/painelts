@@ -977,6 +977,7 @@
     document.addEventListener('keydown', esc);
   }
 
+  TS.abrirClientes = (cpfs, destaque) => abrirClientes(cpfs, destaque);
   function abrirClientes(cpfs, destaque) {
     document.querySelector('.camada-cli')?.remove();
     const fechar = () => { camada.remove(); if (!document.querySelector('.camada-cheia')) document.body.classList.remove('com-camada'); document.removeEventListener('keydown', esc); };

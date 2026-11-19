@@ -226,7 +226,7 @@ function premios({ eventos, estoque, compras, codsDe }) {
       if (custo == null) m.semCusto++; else m.custo += custo;
       return { nome, cod, custo: custo == null ? null : r2(custo) };
     });
-    m.resgates.push({ data: e.data, pontos: e.pontos || 0, cliente: e.nome || '', produtos: prods });
+    m.resgates.push({ data: e.data, min: e.min ?? null, cpf: e.cpf || '', pontos: e.pontos || 0, cliente: e.nome || '', produtos: prods });
   }
   return [...meses.values()].map((m) => ({ ...m, custo: r2(m.custo), devido: r2(m.custo * PCT_PREMIO) })).sort((a, b) => b.mes.localeCompare(a.mes));
 }

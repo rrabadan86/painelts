@@ -225,8 +225,53 @@
     return ciclos;
   }
 
+  /**
+   * cupom de venda de cada resgate de prêmio (o prêmio sai num cupom no caixa): mesmo dia e loja, hora perto
+   * do registro no FIXE e o produto do prêmio no cupom. lista: [{ cpf, data (AAAA-MM-DD), min, produtos }]
+   * → mesma ordem: { cupom, min, vt, vendedor, itens: [{ desc, qtd, vt }] } ou null
+   */
+  function cupomDosResgates(lojaPainel, lista) {
+    const db = TS.db;
+    const base = (db.fidelidade || []).find((b) => b.id === lojaPainel);
+    const lid = base && base.vendaLoja != null ? db.D.loja.indexOf(base.vendaLoja) : -1;
+    if (lid < 0) return lista.map(() => null);
+    const dias = new Set(lista.map((r) => TS.isoToDay(r.data)));
+    const porDia = new Map();
+    for (let i = 0; i < db.n; i++) {
+      if (db.loja[i] !== lid || !dias.has(db.day[i])) continue;
+      let m = porDia.get(db.day[i]); if (!m) porDia.set(db.day[i], (m = new Map()));
+      let c = m.get(db.cupom[i]); if (!c) m.set(db.cupom[i], (c = { cupom: db.cupom[i], min: null, vt: 0, vend: null, linhas: [] }));
+      c.linhas.push(i);
+      if (c.min == null && db.min[i] != null) c.min = db.min[i];
+      c.vt += db.vt[i] || 0;
+      if (c.vend == null) c.vend = db.D.vendedor[db.vend[i]] || null;
+    }
+    const usados = new Set();
+    return lista.map((r) => {
+      const m = porDia.get(TS.isoToDay(r.data));
+      if (!m) return null;
+      const tp = (r.produtos || []).map(tokens);
+      let best = null;
+      for (const c of m.values()) {
+        if (usados.has(c.cupom)) continue;
+        const dt = r.min != null && c.min != null ? Math.abs(c.min - r.min) : null;
+        if (dt != null && dt > JANELA_MIN) continue;
+        let ok = 0;
+        for (const t of tp) { if (!t.size) continue; let b = 0; for (const i of c.linhas) { const ti = tokens(db.D.descricao[db.desc[i]]); let n = 0; for (const x of t) if (ti.has(x)) n++; b = Math.max(b, n / t.size); } if (b >= 0.7) ok++; }
+        if (tp.length && !ok) continue; // o prêmio tem de estar no cupom
+        const score = ok * 2 + (dt != null ? 1 - dt / JANELA_MIN : 0);
+        if (!best || score > best.score) best = { c, score };
+      }
+      if (!best) return null;
+      usados.add(best.c.cupom);
+      const c = best.c;
+      return { cupom: c.cupom, min: c.min, vt: c.vt, vendedor: c.vend, itens: c.linhas.map((i) => ({ desc: db.D.descricao[db.desc[i]], qtd: TS.qtdItem ? TS.qtdItem(i) : null, vt: db.vt[i] || 0 })) };
+    });
+  }
+
   TS.fx = {
     resgates,
+    cupomDosResgates,
     tem: () => !!(TS.db.fidelidade && TS.db.fidelidade.some((b) => (b.ev && b.ev.length) || (b.membros && b.membros.length))),
     preparar() {
       const movs = movimentos();

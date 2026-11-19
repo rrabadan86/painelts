@@ -2346,3 +2346,19 @@ details.vl-ajuda summary { cursor: pointer; font-weight: 600; }
 .cfr-lanc { margin-top: 12px; }
 .cfr-lanc-l { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-top: 1px solid #eee8db; font-size: 13.5px; }
 @media (max-width: 640px) { .cfr-res { grid-template-columns: 1fr 1fr; } .cfr-grade { grid-template-columns: 1fr; } }
+/* Créditos: relação dos prêmios do mês */
+.cfr-mes { width: min(1000px, 96vw); max-height: 92vh; overflow: auto; }
+.cfm-topo-btn { display: flex; gap: 6px; }
+.cfm-cab, .cfm-item { display: grid; grid-template-columns: 90px 1.2fr 1.3fr 1.3fr; gap: 12px; padding: 8px 10px; }
+.cfm-cab { background: var(--green, #2C5234); color: #fff; border-radius: 8px 8px 0 0; font-size: 12px; font-weight: 600; margin-top: 8px; }
+.cfm-lista { border: 1px solid var(--line, #e3ddcf); border-top: 0; border-radius: 0 0 8px 8px; }
+.cfm-item { border-top: 1px solid #eee8db; font-size: 13.5px; align-items: start; }
+.cfm-item:nth-child(even) { background: #faf8f3; }
+.cfm-quando small, .cfm-quem small { display: block; color: #6b6b6b; font-size: 12px; }
+.cfm-premio > div { display: flex; justify-content: space-between; gap: 8px; }
+.cfm-tot { border-top: 1px dashed #ddd; margin-top: 3px; padding-top: 3px; }
+.cfm-cupom summary { cursor: pointer; }
+.cfm-itens { margin-top: 4px; font-size: 12.5px; color: #444; }
+.cfm-itens > div { display: flex; justify-content: space-between; gap: 8px; }
+.cfm-semcupom { color: #9a7a20; font-size: 12.5px; }
+@media (max-width: 760px) { .cfm-cab { display: none; } .cfm-item { grid-template-columns: 1fr; gap: 4px; } .cfm-lista { border-top: 1px solid var(--line, #e3ddcf); border-radius: 8px; } }

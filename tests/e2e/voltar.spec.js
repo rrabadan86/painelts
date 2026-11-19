@@ -79,8 +79,27 @@ test('Créditos: prêmios de fidelidade (50% do custo) × desconto nos royalties
   await expect(card).toContainText(/royalty de /);
   await card.locator('tbody tr').first().click();
   await expect(page.locator('.cfr-mes')).toContainText('Prêmios de');
+  await expect(page.locator('.cfr-mes .cfm-cab')).toContainText('Cupom da venda');
+  await expect(page.locator('.cfr-mes .cfm-item').first()).toBeVisible();
   await page.locator('.cfr-mes').getByRole('button', { name: 'Fechar' }).click();
   await card.getByRole('button', { name: '+ Lançar desconto nos royalties' }).click();
   await expect(page.locator('.cf-ligar')).toContainText('Royalty de referência');
   await expect(page.locator('.cf-ligar')).toContainText('Referente aos prêmios de');
+});
+
+test('Prêmio de fidelidade: acha o cupom da venda em que o prêmio saiu (mesmo dia, hora perto, produto no cupom)', async ({ page }, info) => {
+  test.skip(info.project.name !== 'computador');
+  await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS.db && TS.fx);
+  const r = await page.evaluate(() => {
+    const db = TS.db;
+    let i = -1; for (let k = db.n - 1; k >= 0; k--) if (db.min[k] != null) { i = k; break; }
+    db.fidelidade = [{ id: 'lojaX', vendaLoja: db.D.loja[db.loja[i]], nomes: [], lojas: [], propria: [], ev: [], regras: {} }];
+    const res = TS.fx.cupomDosResgates('lojaX', [
+      { data: TS.dayToIso(db.day[i]), min: db.min[i] + 5, produtos: [db.D.descricao[db.desc[i]]] },
+      { data: TS.dayToIso(db.day[i]), min: db.min[i], produtos: ['PRODUTO QUE NAO EXISTE XYZ'] },
+    ]);
+    return { esperado: db.cupom[i], achou: res[0] && res[0].cupom, nada: res[1] };
+  });
+  expect(r.achou).toBe(r.esperado);
+  expect(r.nada).toBeNull();
 });
