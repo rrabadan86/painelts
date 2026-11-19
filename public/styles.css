@@ -2371,3 +2371,4 @@ details.vl-ajuda summary { cursor: pointer; font-weight: 600; }
 .cfe-prev { border: 1px solid var(--line, #e3ddcf); border-radius: 10px; padding: 6px 10px; overflow-x: auto; background: #fff; }
 .cfe-info { font-size: 12.5px; display: flex; flex-direction: column; gap: 2px; }
 .cfr-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+.cf-menu-lista { position: fixed; right: auto; top: 0; left: 0; z-index: 1000; min-width: 0; }

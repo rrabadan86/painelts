@@ -122,3 +122,17 @@ test('Cobrar a franquia: e-mail das devoluções e dos prêmios (revisar antes; 
   await expect(page.locator('.cfe .cfe-prev')).toContainText('Falta');
   await expect(page.locator('.cfe')).not.toContainText(/Cupom/);
 });
+
+test('Créditos no celular: o menu ⋯ abre dentro da tela', async ({ page }, info) => {
+  test.skip(info.project.name !== 'celular');
+  await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS.db);
+  await page.evaluate(() => { location.hash = '#creditos'; });
+  const b = page.locator('.cf-tab .cf-mais, .card .cf-mais').first();
+  await b.scrollIntoViewIfNeeded();
+  await b.click();
+  const lista = page.locator('.cf-menu-lista:visible').first();
+  await expect(lista).toBeVisible();
+  const box = await lista.boundingBox(), vw = page.viewportSize().width;
+  expect(box.x).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(vw);
+});

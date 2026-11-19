@@ -35,9 +35,21 @@
   /** menu "⋯" com ações secundárias: [[rótulo, fn, dica]] */
   function menuMais(itens) {
     const lista = h('div', { class: 'cf-menu-lista', hidden: true });
-    const fechar = () => { lista.hidden = true; document.removeEventListener('click', fora, true); };
+    const fechar = () => { lista.hidden = true; document.removeEventListener('click', fora, true); window.removeEventListener('scroll', reposicionar, true); };
+    const reposicionar = () => { if (!lista.hidden) { if (!btn.isConnected) fechar(); else posicionar(); } };
     const fora = (e) => { if (!box.contains(e.target)) fechar(); };
-    const btn = h('button', { type: 'button', class: 'cf-b cf-mais', 'aria-label': 'Mais ações', title: 'Mais ações', onclick: (e) => { e.stopPropagation(); lista.hidden = !lista.hidden; if (!lista.hidden) document.addEventListener('click', fora, true); else fechar(); } }, '⋯');
+    // a lista abre presa à tela (fixed) e sempre dentro dela: no celular o ⋯ fica na esquerda do cartão
+    const posicionar = () => {
+      const r = btn.getBoundingClientRect(), vw = window.innerWidth, vh = window.innerHeight;
+      const w = Math.min(280, vw - 16), alt = lista.offsetHeight || 160;
+      lista.style.width = w + 'px';
+      lista.style.left = Math.max(8, Math.min(r.right - w, vw - w - 8)) + 'px';
+      lista.style.top = (r.bottom + 4 + alt > vh - 8 ? Math.max(8, r.top - alt - 4) : r.bottom + 4) + 'px';
+    };
+    const btn = h('button', { type: 'button', class: 'cf-b cf-mais', 'aria-label': 'Mais ações', title: 'Mais ações', onclick: (e) => {
+      e.stopPropagation(); lista.hidden = !lista.hidden;
+      if (!lista.hidden) { posicionar(); document.addEventListener('click', fora, true); window.addEventListener('scroll', reposicionar, true); } else fechar();
+    } }, '⋯');
     for (const [t, fn, dica] of itens) lista.append(h('button', { type: 'button', title: dica || '', onclick: (e) => { e.stopPropagation(); fechar(); fn(); } }, t));
     const box = h('span', { class: 'cf-menu', onclick: (e) => e.stopPropagation() }, btn, lista);
     return box;
