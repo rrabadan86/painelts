@@ -332,6 +332,7 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 | CLI-10 | RFM e retenção por safra | `clientes.js`; `indicadores.js` | `rfm.test`; `regras.spec` | 🟡 |
 | CLI-11 | Lista de espera: esperando → chegou → avisado → comprou/não comprou | `espera.js` | `espera.test` (6) | ✅ |
 | CLI-12 | Lista de espera: permissões (ver PERF-26) | servidor | — | ❌ |
+| CLI-13 | Exceção decidida pelo dono (D-01): na Lista de espera a vendedora busca e vê nome, CPF e celular do cliente | `/api/espera`, `/api/espera/clientes` | — | ❌ |
 
 ## 14. Orçamento (ORC)
 
@@ -385,7 +386,7 @@ Todos os da lista A foram conferidos no código, um por um.
 ### A. Erros confirmados (corrigir com teste)
 | # | Achado | Regra | Onde |
 |---|---|---|---|
-| A-01 | **Lista de espera entrega à vendedora CPF, nome e celular de clientes** (busca no cadastro e nos pedidos) e os nomes reais das colegas | PERF-06, PERF-08 | `server.js` `/api/espera`, `/api/espera/clientes` |
+| A-01 | ~~Lista de espera entrega à vendedora dados de clientes~~ — **permitido pelo dono (D-01)**; os nomes reais das colegas continuam sendo erro (PERF-08) | PERF-08 | `server.js` `/api/espera`, `/api/espera/clientes` |
 | A-02 | **Conta com a franquia devolve CPF completo e nome dos clientes da fidelidade** a gerente com Notas fiscais que não tem a tela Clientes | PERF-07 | `contafranquia.js` (resgates); rotas `/api/conta-franquia` |
 | A-03 | **NF-e de devolução: gerente com só a tela Preços consegue mandar o robô emitir** (a regra pede Notas fiscais) | NFE-02 | `server.js` `lojaDev` (`podeTela('notas','precos')`) |
 | A-04 | **Desfazer o inventário é um GET** (fica fora da proteção X-Painel; um link de outro site pode disparar) | SEG-12 | `server.js` `GET /api/inventario/contagem/:id/desfazer` |
@@ -417,17 +418,17 @@ Todos os da lista A foram conferidos no código, um por um.
 | C-09 | O hook de segredos não bloqueia `config/notificacoes.json` (senhas SMTP e token do Telegram), `config/acessos.json` nem `config/auditoria.jsonl` |
 | C-10 | Atualizador: "instalar mesmo assim" e o caso em que o ramo de testes nunca foi baixado instalam versão não testada |
 
-### D. Precisa de decisão do dono
-| # | Pergunta |
-|---|---|
-| D-01 | **Lista de espera:** a vendedora deve buscar clientes por nome/CPF/celular? Se sim, registro a exceção no CLAUDE.md; se não, restrinjo no servidor (A-01) |
-| D-02 | **Resultado (DRE) no mês em andamento:** custos fixos cheios (como calcula hoje) ou proporcionais aos dias (como diz o ⓘ)? |
-| D-03 | **Pedido × Estoque:** o "quanto pedir" usa prazos diferentes (entrega + 14 dias no Pedido, + 30 no Estoque). Qual vale? E o Pedido deve contar as notas lançadas depois da planilha? |
-| D-04 | **"O custo subiu" na nota:** o aviso usa alta de 0,5%; a lista do e-mail usa 0,05%. Qual limite? |
-| D-05 | **Gerente:** hoje recebe todas as vendas (Resumo, Comparativos, Comissionamento) mesmo sem essas telas liberadas — elas só ficam escondidas. Deve ser bloqueado no servidor? |
-| D-06 | **Gerente com Notas fiscais** pode mandar a cobrança de devoluções e fidelidade por e-mail à franquia (o reajuste é só admin/franqueado). Mantém? |
-| D-07 | **Gerente com só Inventário** vê custos na contagem; na Validade não vê. Qual vale? |
-| D-08 | **Escala 6x1, semana de domingo a sábado:** quem folga no domingo ganha 2 folgas naquela semana (trabalha 5 dias). É o desejado? |
+### D. Decisões do dono (19/11/2026)
+| # | Pergunta | Decisão | Consequência |
+|---|---|---|---|
+| D-01 | Lista de espera: vendedora busca clientes (nome, CPF, celular)? | **Pode, como hoje** | Exceção registrada no CLAUDE.md; A-01 deixa de ser erro (vira regra CLI-13) |
+| D-02 | DRE do mês em andamento: fixos cheios ou proporcionais? | **Cheios, como hoje** | Corrigir só o texto do ⓘ |
+| D-03 | Pedido × Estoque: prazo e notas depois da planilha | **Mesmo prazo de cobertura e o Pedido conta as notas lançadas depois da planilha** | Mudar `pedido.js` + teste |
+| D-04 | Limite de "O custo subiu" | **Qualquer alta (0,05%) nos dois** | Alinhar aviso e filtro a 0,05% + teste |
+| D-05 | Gerente recebe todas as vendas sem as telas liberadas? | **Pode, como hoje** | Registrado (PERF-19: telas de vendas do gerente só escondidas, de propósito) |
+| D-06 | Cobrança por e-mail à franquia (devoluções e fidelidade) | **Só admin e franqueado** | Mudar `/api/conta-franquia/email/*` e `/auto` + teste |
+| D-07 | Gerente com só Inventário vê custos? | **Não: custo só com tela de custo** | Mudar inventário (`paraUsuario`/rotas) + teste |
+| D-08 | 6x1, semana Dom–Sáb: folga do domingo puxa a segunda (5 dias na semana)? | **Sim, é o combinado** | Registrado (ESC-12) |
 
 ---
 
@@ -455,7 +456,7 @@ Todos os da lista A foram conferidos no código, um por um.
 
 ## Próximas etapas
 
-1. **Dono decide** os itens D-01 a D-08.
+1. ~~Dono decide os itens D-01 a D-08~~ — decidido em 19/11/2026 (ver D).
 2. **Corrigir os erros da lista A**, cada um com um teste que mostra o erro antes e passa depois.
 3. **Teste de permissões no servidor:** sobe o painel com um usuário de cada perfil e confere os 403 e o que cada um recebe (cobre de uma vez a maior parte de PERF, SEG-12 e as listas de clientes/custos).
 4. **Testes das contas sem teste**, por prioridade de dinheiro: comissão e metas (EQP), Resultado e margem (RES/PRC), reposição e pedido (EST).

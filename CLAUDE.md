@@ -36,9 +36,10 @@ Hooks (`.claude/settings.json`): bloqueiam commit/push de segredos e limpam os r
 
 **Perfis**
 - Custo e margem nunca aparecem para vendedora.
-- Vendedora não recebe dados de clientes.
+- Vendedora não recebe dados de clientes. **Exceção (decisão do dono):** na Lista de espera ela busca e vê nome, CPF e celular do cliente para anotar e avisar.
+- Gerente recebe as vendas de toda a loja mesmo sem as telas de vendas liberadas (decisão do dono); custo só com tela de custo liberada (Estoque, Preços, Rentabilidade, Notas, Pedido, Resultado) — inclusive no Inventário.
 - Orçamento: só admin e franqueado.
-- Enviar para a franquia (reclamar do reajuste de custo na nota de entrada): só admin e franqueado.
+- Falar com a franquia por e-mail (reajuste de custo, cobrança de devoluções e de fidelidade, envio automático): só admin e franqueado.
 - Só o admin dispara o coletor ("Sincronizar agora").
 - IA (✨, análise do Início, revisão do pedido): só admin e franqueado.
 
