@@ -7,6 +7,7 @@ const crypto = require('crypto');
 const zlib = require('zlib');
 const { promisify } = require('util');
 const gzipAsync = promisify(zlib.gzip);
+const brotliAsync = promisify(zlib.brotliCompress);
 const express = require('express');
 const compression = require('compression');
 const C = require('./src/config');
@@ -222,7 +223,7 @@ async function pacote(lojas, force, perfilDados = 'completo', desde = null) {
   const pc = lruGet(packCache, chave);
   const stale = entradas.map((e) => e.stale).filter(Boolean).join(' | ') || null;
   const at = Math.min(...entradas.map((e) => e.at));
-  if (pc && pc.k === k) return { buf: pc.buf, gz: pc.gz, etag: pc.etag, at, stale };
+  if (pc && pc.k === k) return { buf: pc.buf, gz: pc.gz, br: pc.br, etag: pc.etag, at, stale };
   let data = lojas.length === 1 ? { ...entradas[0].raw } : juntar(entradas.map((e) => e.raw));
   data.metaCfgs = metaCfgs;
   data.meta = metaCfgs.some((m) => m.padrao != null) ? metaCfgs.reduce((s, m) => s + (m.padrao || 0), 0) : null;
@@ -234,10 +235,13 @@ async function pacote(lojas, force, perfilDados = 'completo', desde = null) {
     data = { ...data, vendas: data.vendas.filter((v) => v.data >= desde), xml: (data.xml || []).filter((x) => !x.data || x.data >= desde) };
   }
   const buf = Buffer.from(JSON.stringify(pack(data, { lojas: lojas.map((l) => ({ id: l.id, nome: l.nome })), perfil: perfilDados.split(':')[0], desde: desde && inicio && inicio < desde ? desde : null, inicio })));
-  const gz = buf.length >= 1024 ? await gzipAsync(buf, { level: 6 }) : null;
+  // brotli (qualidade 5) sai ~15% menor que o gzip e é tão rápido quanto; o gzip fica para navegador sem brotli
+  const [gz, br] = buf.length >= 1024
+    ? await Promise.all([gzipAsync(buf, { level: 6 }), brotliAsync(buf, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 5, [zlib.constants.BROTLI_PARAM_SIZE_HINT]: buf.length } })])
+    : [null, null];
   const etag = '"' + crypto.createHash('sha1').update(buf).digest('base64').slice(0, 27) + '"';
-  lruSet(packCache, chave, { k, buf, gz, etag }, 40);
-  return { buf, gz, etag, at, stale };
+  lruSet(packCache, chave, { k, buf, gz, br, etag }, 40);
+  return { buf, gz, br, etag, at, stale };
 }
 
 // ---------- app ----------
@@ -894,7 +898,12 @@ app.get('/api/dados', async (req, res) => {
     res.set('X-Dados-Em', new Date(d.at).toISOString());
     if (d.stale) res.set('X-Dados-Aviso', encodeURIComponent(d.stale));
     res.set({ 'Content-Type': 'application/json; charset=utf-8', Vary: 'Accept-Encoding' });
-    if (d.gz && /\bgzip\b/.test(String(req.headers['accept-encoding'] || ''))) {
+    const aceita = String(req.headers['accept-encoding'] || '');
+    if (d.br && /\bbr\b/.test(aceita)) {
+      res.set('Content-Encoding', 'br');
+      return res.end(d.br);
+    }
+    if (d.gz && /\bgzip\b/.test(aceita)) {
       res.set('Content-Encoding', 'gzip');
       return res.end(d.gz);
     }

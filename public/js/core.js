@@ -45,6 +45,9 @@ if (TS.demo && !window.__demoFetch) {
 // ---------- formatação ----------
 const nf = (d) => new Intl.NumberFormat('pt-BR', { minimumFractionDigits: d, maximumFractionDigits: d });
 const NF0 = nf(0), NF1 = nf(1), NF2 = nf(2), NF3 = nf(3);
+// um formatador por número de casas, criado uma vez (criar a cada número pesava em todas as telas)
+const NFS = new Map();
+const nfCache = (d) => { let f = NFS.get(d); if (!f) NFS.set(d, (f = nf(d))); return f; };
 const BRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 const BRL0 = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
 TS.fmt = {
@@ -54,7 +57,7 @@ TS.fmt = {
   kg: (v) => (v == null || !isFinite(v) ? '—' : NF3.format(v)),
   brl: (v) => (v == null || !isFinite(v) ? '—' : BRL.format(v)),
   brl0: (v) => (v == null || !isFinite(v) ? '—' : BRL0.format(v)),
-  pct: (v, d = 1) => (v == null || !isFinite(v) ? '—' : nf(d).format(v * 100) + '%'),
+  pct: (v, d = 1) => (v == null || !isFinite(v) ? '—' : nfCache(d).format(v * 100) + '%'),
   delta: (v) => (v == null || !isFinite(v) ? '—' : (v > 0 ? '+' : '') + NF1.format(v * 100) + '%'),
   date: (iso) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : '—'),
   compact: (v) => {
