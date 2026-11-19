@@ -10,7 +10,7 @@ test('Preços: ⓘ explica a coluna "No caixa" no computador e no celular', asyn
   const alvo = celular ? tab.locator('tbody td.com-dica .mob-rot', { hasText: 'No caixa' }).first() : tab.locator('thead th', { hasText: 'No caixa' });
   await expect(alvo).toBeVisible();
   if (celular) await alvo.locator('.dica-i').tap(); else await alvo.locator('.dica-i').click();
-  await expect(page.locator('.dica-balao')).toContainText('a margem é calculada pelo cadastro');
+  await expect(page.locator('.dica-balao')).toContainText('a margem usa o preço do sistema');
   // ⓘ no cabeçalho não reordena a tabela
   if (!celular) await expect(tab.locator('thead th.sorted')).not.toContainText('No caixa');
   // o rótulo do cartão continua um só (sem o rótulo do CSS repetido)
@@ -64,4 +64,22 @@ test('Preços: venda e margem pelo preço do cadastro, com o histórico de reaju
   expect(r.b.vAnt).toBe(50); expect(r.b.vAt).toBe(50); expect(r.b.nV).toBe(0); expect(r.b.mAt).toBeCloseTo(0.6, 6);
   // período depois do reajuste: sem mudança
   expect(r.c.vAnt).toBe(680.1); expect(r.c.nV).toBe(0);
+});
+
+// Preço do sistema (cadastro) e do caixa em colunas separadas: produto sem cadastro mostra "sem cadastro" no sistema e o caixa com antes → agora
+test('Preços: colunas "No sistema" e "No caixa" lado a lado', async ({ page }, info) => {
+  test.skip(info.project.name === 'celular', 'cabeçalho só no computador');
+  await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS.db);
+  await page.evaluate(() => { location.hash = '#precos'; });
+  const tab = page.locator('table.prc-t');
+  await expect(tab).toBeVisible();
+  const ths = await tab.locator('thead th').allInnerTexts();
+  const iSis = ths.findIndex((t) => t.includes('No sistema')), iCx = ths.findIndex((t) => t.includes('No caixa'));
+  expect(iSis).toBeGreaterThan(0); expect(iCx).toBe(iSis + 1);
+  expect(ths.some((t) => t.includes('Venda (antes'))).toBe(false);
+  // a apresentação não tem códigos de produto: tudo "sem cadastro", margem pelo caixa
+  const linha = tab.locator('tbody tr').first();
+  await expect(linha.locator('td').nth(iSis)).toContainText('sem cadastro');
+  await expect(linha.locator('td').nth(iCx)).toContainText('margem pelo caixa');
+  await expect(linha.locator('td').nth(iCx)).toContainText('R$');
 });
