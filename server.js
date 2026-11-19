@@ -2235,7 +2235,10 @@ app.put('/api/espera/modelo', express.json({ limit: '4kb' }), (req, res) => {
 const SUG = require('./src/sugestoes');
 const lojaSug = (req) => req.lojas.find((l) => l.id === String((req.body && req.body.loja) || req.query.loja || ''));
 const decidePedido = (req) => podeTela(req, 'pedido');
+// vendedora sempre; gerente só com a tela ⭐ Sugestões marcada em Configurações → Usuários
+const podeSugestoes = (req) => req.perfil === 'vendedor' || podeTela(req, 'sugestoes');
 app.use('/api/sugestoes', (req, res, next) => {
+  if (!podeSugestoes(req)) return res.status(403).json({ erro: 'Sem permissão.' });
   if (req.method !== 'GET' && req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
   next();
 });
@@ -2737,25 +2740,28 @@ const srv = app.listen(PORT, () => {
     const mig = [];
     C.alterar((cfg) => {
       for (const [nome, u] of Object.entries(cfg.usuarios || {})) {
-        if (u.telasV >= 7) continue;
+        if (u.telasV >= 8) continue;
+        // v8: ⭐ Sugestões para o pedido virou tela que se libera: o gerente que já tinha telas escolhidas continua com ela
+        if (u.perfil === 'gerente' && Array.isArray(u.telas) && !u.telas.includes('sugestoes')) { u.telas.push('sugestoes'); mig.push(nome); }
+        if (u.telasV >= 7) { u.telasV = 8; continue; }
         // v7: Estoque → Validade (lotes do chá a granel): todo gerente acompanha
         if (u.perfil === 'gerente' && Array.isArray(u.telas) && !u.telas.includes('validade')) { u.telas.push('validade'); mig.push(nome); }
-        if (u.telasV >= 6) { u.telasV = 7; continue; }
+        if (u.telasV >= 6) { u.telasV = 8; continue; }
         // v6: Lista de espera virou uma tela que se libera: quem já tinha (todos os gerentes) continua com ela
         if (u.perfil === 'gerente' && Array.isArray(u.telas) && !u.telas.includes('espera')) { u.telas.push('espera'); mig.push(nome); }
-        if (u.telasV >= 5) { u.telasV = 7; continue; }
+        if (u.telasV >= 5) { u.telasV = 8; continue; }
         // v5: Estoque → Inventário (contagem pelo celular): quem vê o Estoque passa a ver o Inventário
         if (u.perfil === 'gerente' && Array.isArray(u.telas) && u.telas.includes('estoque') && !u.telas.includes('inventario')) { u.telas.push('inventario'); mig.push(nome); }
-        if (u.telasV >= 4) { u.telasV = 7; continue; }
+        if (u.telasV >= 4) { u.telasV = 8; continue; }
         // v4: o detalhamento de cupons saiu do Comissionamento e virou Vendas → Cupons
         if (u.perfil === 'gerente' && Array.isArray(u.telas) && u.telas.includes('comissionamento') && !u.telas.includes('cupons')) { u.telas.push('cupons'); mig.push(nome); }
-        if (u.telasV >= 3) { u.telasV = 7; continue; }
+        if (u.telasV >= 3) { u.telasV = 8; continue; }
         // v2: Preços e Site saíram do Estoque e margem; v3: o Estoque e margem virou Rentabilidade + Estoque (+ Notas fiscais)
         if (u.perfil === 'gerente' && Array.isArray(u.telas) && u.telas.includes('estoque')) {
           for (const t of [...(u.telasV >= 2 ? [] : ['precos', 'site']), 'rentab', 'notas']) if (!u.telas.includes(t)) u.telas.push(t);
           mig.push(nome);
         }
-        u.telasV = 7;
+        u.telasV = 8;
       }
     });
     if (mig.length) C.auditar('sistema', 'organizou as telas no menu novo (Vendas → Cupons; Produtos, Estoque, Resultado)', 'usuarios', { usuarios: [...new Set(mig)] });

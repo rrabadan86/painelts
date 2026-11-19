@@ -1,0 +1,84 @@
+// O servidor respeita a marcação de telas de Configurações → Usuários (não basta esconder no menu).
+// Sobe o painel de verdade com usuários de cada perfil e confere o que cada um recebe.
+const { test, before, after } = require('node:test');
+const assert = require('node:assert');
+const os = require('os');
+const fs = require('fs');
+const path = require('path');
+const { spawn } = require('child_process');
+
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'perm-'));
+const CONFIG_FILE = path.join(tmp, 'lojas.json');
+const PORTA = 3200 + Math.floor(Math.random() * 600);
+const BASE = `http://127.0.0.1:${PORTA}`;
+let srv;
+const cookies = {};
+
+before(async () => {
+  process.env.DATA_DIR = tmp; process.env.CONFIG_FILE = CONFIG_FILE;
+  const C = require('../../src/config');
+  const senha = await C.hashSenhaAsync('senha-teste-123');
+  const u = (perfil, extra) => ({ senha, perfil, lojas: ['l1'], ativo: true, ...extra });
+  fs.writeFileSync(CONFIG_FILE, JSON.stringify({
+    lojas: [{ id: 'l1', nome: 'Loja 1' }],
+    usuarios: {
+      dono: u('franqueado'),
+      ger_sem: u('gerente', { telas: ['resumo', 'mapa'], telasV: 8 }),
+      ger_com: u('gerente', { telas: ['resumo', 'sugestoes', 'espera'], telasV: 8 }),
+      ger_pad: u('gerente', { telasV: 8 }),
+      vend: u('vendedor', { vendedor: 'ANA' }),
+    },
+  }));
+  srv = spawn(process.execPath, ['server.js'], { cwd: path.join(__dirname, '../..'), env: { ...process.env, PORT: String(PORTA), DATA_DIR: tmp, CONFIG_FILE, SESSION_SECRET: 'teste-permissoes', NODE_ENV: 'test' }, stdio: 'ignore' });
+  for (let k = 0; k < 100; k++) { try { const r = await fetch(BASE + '/login'); if (r.status < 500) break; } catch { /* subindo */ } await new Promise((ok) => setTimeout(ok, 100)); }
+  for (const nome of ['dono', 'ger_sem', 'ger_com', 'ger_pad', 'vend']) {
+    const r = await fetch(BASE + '/login', { method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: `usuario=${nome}&senha=senha-teste-123` });
+    const c = (r.headers.get('set-cookie') || '').split(';')[0];
+    assert.ok(c.startsWith('ts_sess='), `login de ${nome}`);
+    cookies[nome] = c;
+  }
+});
+after(async () => {
+  if (srv) { const fim = new Promise((ok) => srv.once('exit', ok)); srv.kill(); await fim; }
+  fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); // dados temporários do teste: apaga
+});
+
+const status = async (nome, url, opt = {}) => (await fetch(BASE + url, { ...opt, headers: { Cookie: cookies[nome], 'X-Painel': '1', 'Content-Type': 'application/json', ...(opt.headers || {}) } })).status;
+
+test('⭐ Sugestões: vendedora sempre; gerente só com a tela marcada (sem escolha = padrão, que inclui)', async () => {
+  assert.strictEqual(await status('vend', '/api/sugestoes?loja=l1'), 200);
+  assert.strictEqual(await status('dono', '/api/sugestoes?loja=l1'), 200);
+  assert.strictEqual(await status('ger_com', '/api/sugestoes?loja=l1'), 200);
+  assert.strictEqual(await status('ger_pad', '/api/sugestoes?loja=l1'), 200);
+  assert.strictEqual(await status('ger_sem', '/api/sugestoes?loja=l1'), 403);
+  assert.strictEqual(await status('ger_sem', '/api/sugestoes?loja=l1', { method: 'POST', body: JSON.stringify({ cod: '1' }) }), 403);
+});
+
+test('decidir as sugestões no Pedido exige a tela Pedido', async () => {
+  assert.strictEqual(await status('ger_com', '/api/pedido/sugestoes/decisao?loja=l1', { method: 'PUT', body: JSON.stringify({ cod: '1', res: 'nao' }) }), 403);
+  assert.strictEqual(await status('vend', '/api/pedido/sugestoes/fechar?loja=l1', { method: 'POST', body: JSON.stringify({ itens: [] }) }), 403);
+});
+
+test('Lista de espera: vendedora sempre; gerente só com a tela marcada (o padrão inclui)', async () => {
+  assert.strictEqual(await status('vend', '/api/espera?loja=l1'), 200);
+  assert.strictEqual(await status('ger_com', '/api/espera?loja=l1'), 200);
+  assert.strictEqual(await status('ger_pad', '/api/espera?loja=l1'), 200);
+  assert.strictEqual(await status('ger_sem', '/api/espera?loja=l1'), 403);
+});
+
+test('telas de custo: gerente sem a tela e vendedora não recebem; escala só com Movimento e escala', async () => {
+  for (const nome of ['ger_sem', 'ger_com', 'ger_pad', 'vend']) assert.strictEqual(await status(nome, '/api/estoque?loja=l1'), 403, nome);
+  assert.strictEqual(await status('dono', '/api/estoque?loja=l1'), 200);
+  assert.strictEqual(await status('vend', '/api/pedido?loja=l1'), 403);
+  assert.strictEqual(await status('ger_com', '/api/escala-ajustes?loja=l1&ym=2026-11', { method: 'PUT', body: JSON.stringify({ ajustes: {} }) }), 403);
+  assert.strictEqual(await status('ger_sem', '/api/escala-ajustes?loja=l1&ym=2026-11', { method: 'PUT', body: JSON.stringify({ ajustes: {} }) }), 200);
+});
+
+test('Configurações → Usuários recebe a lista de telas agrupada como no menu (só quem configura)', async () => {
+  const r = await fetch(BASE + '/api/admin/estado', { headers: { Cookie: cookies.dono } });
+  assert.strictEqual(r.status, 200);
+  const j = await r.json();
+  assert.deepStrictEqual(j.telas.map((g) => g.grupo), ['Início', 'Vendas', 'Clientes', 'Equipe', 'Produtos', 'Estoque', 'Resultado', 'Configurações']);
+  assert.ok(j.telas.find((g) => g.grupo === 'Estoque').telas.some((t) => t.id === 'sugestoes'));
+  assert.strictEqual((await fetch(BASE + '/api/admin/estado', { headers: { Cookie: cookies.ger_pad } })).status, 403);
+});

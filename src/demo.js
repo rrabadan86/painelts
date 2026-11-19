@@ -333,7 +333,7 @@ function estadoDemo() {
     { em: ha(26), por: 'franqueado.exemplo', acao: 'adicionou destinatário do fechamento', alvo: 'demo-parque', detalhe: { loja: 'demo-parque' } },
     { em: ha(72), por: 'apresentacao', acao: 'criou usuário', alvo: 'gerente.centro', detalhe: {} },
   ];
-  return { perfil: 'admin', usuario: 'apresentacao', coletorAtivo: false, horarios: ['13:30', '23:00'], janela: null, coletorOk: null, lojas, usuarios, auditoria, todasLojas: LOJAS.map((L) => ({ id: L.id, nome: L.nome })), demo: true };
+  return { perfil: 'admin', usuario: 'apresentacao', coletorAtivo: false, horarios: ['13:30', '23:00'], janela: null, coletorOk: null, lojas, usuarios, auditoria, todasLojas: LOJAS.map((L) => ({ id: L.id, nome: L.nome })), telas: require('./telas').paraTela(), demo: true };
 }
 
 const lojasDemo = () => LOJAS.map(({ id, nome }) => ({ id, nome }));
