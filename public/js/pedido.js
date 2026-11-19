@@ -677,6 +677,7 @@
         const notas = g.notas.filter((n) => n.justificativa || n.recado).map((n) => `${n.nome}: ${[n.justificativa, n.recado].filter(Boolean).join(' · ')}`);
         return { g, r, semSite, noPed, aba, cod: g.cod, desc: g.desc, quem: g.pessoas.join(', '), recados: notas.join(' | '), notas };
       });
+      const DICA_ABA = { pedir: 'Sugestões de produto disponível no Sistema de Pedidos que ainda não estão neste pedido.', nopedido: 'Sugestões que já estão na tabela do pedido (🛒).', semsite: 'O site não tem o produto agora: a sugestão fica guardada para o próximo pedido e a equipe é avisada.', nao: 'Sugestões que você decidiu não pedir desta vez (com o motivo).', todas: 'Todas as sugestões abertas da equipe.' };
       const ABAS = { pedir: 'Dá para pedir', nopedido: 'Já no pedido', semsite: 'Sem estoque no site', nao: 'Não pedir', todas: 'Todas' };
       const cont = (k) => (k === 'todas' ? itens.length : itens.filter((x) => x.aba === k).length);
       // abre na primeira aba que tiver itens; depois vale a que a pessoa escolheu. No celular, lista grande começa recolhida
@@ -754,7 +755,7 @@
         h('p', { class: 'muted' }, 'Produtos que a equipe pediu. A estrela não muda a conta do pedido: você decide, linha a linha. ', cont('pedir') ? h('b', null, `${cont('pedir')} para decidir. `) : null,
           h('details', { class: 'est-como' }, h('summary', null, 'Como funciona ▸'),
             h('p', null, 'Ao montar o carrinho (ou em "Registrar o pedido nas sugestões"), a resposta vai para a equipe sozinha. O que foi no pedido fica "aguardando entrega" até a nota da TSB Franquias chegar: com o produto, a estrela sai (não importa quanto demore); se a primeira nota chegar sem ele e nenhuma outra o trouxer em 5 dias, volta para cá. O que não entrou, ou está sem estoque no site, continua marcado para o próximo pedido.'))),
-        TS.seg(abas.map((k) => [`${ABAS[k]} (${cont(k)})`, k]), ver.aberto ? ver.aba : null, (v) => { ver.aba = v; ver.aberto = true; repintar(); }),
+        TS.seg(abas.map((k) => [`${ABAS[k]} (${cont(k)})`, k, DICA_ABA[k]]), ver.aberto ? ver.aba : null, (v) => { ver.aba = v; ver.aberto = true; repintar(); }),
         ver.aberto ? tabela() : null,
         h('div', { class: 'cfg-acoes' }, registrar, msg));
     }
