@@ -16,7 +16,7 @@ test('Estoque: tabela única — filtros, busca em todos os produtos, quadros qu
   const card = page.locator('#est-tabela');
   await expect(card).toBeVisible();
   const filtros = card.locator('.est-tools .seg button');
-  await expect(filtros).toHaveText([/O que repor/, /Parados/, /Com saldo/, /Todos/]);
+  await expect(filtros).toHaveText([/O que repor/, /Parados/, /Fora de linha · liquidar/, /Com saldo/, /Todos/]);
   await expect(filtros.first()).toHaveClass(/on/);
 
   // aviso da nota lançada depois da planilha

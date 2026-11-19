@@ -227,6 +227,7 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 | EST-43 | Sugestão com estoque na loja exige justificativa (chá a granel < 700 g não) | `sugestoes.js` `criar` | `sugestoes.test` "criar…"; `sugestoes.spec` | ✅ |
 | EST-44 | A estrela não muda a conta do pedido; quem faz o pedido decide (Adicionar / Não agora com motivo) | `pedido.js` `cartaoSugestoes`; `PUT /api/pedido/sugestoes/decisao` (tela Pedido) | `sugestoes.spec` | 🟡 (permissão da rota sem teste de servidor) |
 | EST-45 | Ao registrar o pedido: entrou encerra; sem estoque no site é automático e continua; não entrou guarda o motivo e continua para o próximo; histórico guardado e aviso de resposta nova | `sugestoes.js` `fechar`/`visto`; `pedido.js` (montar carrinho) | `sugestoes.test` "pedido…"; `sugestoes.spec` | ✅ |
+| EST-46 | Fora de linha: produto indisponível no Sistema de Pedidos há 90+ dias seguidos (ou que saiu do catálogo) vira "Fora de linha · liquidar" no Estoque, sai de "O que repor" e de "Parados" (decisão do dono) | `pedido.js` (servidor) `atualizarDisp`/`foraDeLinha`; `estoque.js` `foraLinhaDe` | `foradelinha.test`; `foradelinha.spec`; `estoque.spec` | ✅ |
 | EST-39 | Cobertura do inventário e aviso de 25 dias | `inventario.js` | `inventario.test`; `regras.spec` | ✅ |
 | EST-40 | Limites do inventário (2.000 itens) | `inventario.js` | — | ❌ |
 | EST-50 | Valor do pedido = % do faturamento (CMV real) | `pedido.js` | — | ❌ |

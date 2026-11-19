@@ -55,6 +55,7 @@ Hooks (`.claude/settings.json`): bloqueiam commit/push de segredos e limpam os r
 - Dados temporários de teste: apague depois.
 
 ## Pendências combinadas (o dono pediu para depois)
+- Infusor obrigatório das mugs (Harmony, Classic, Super Jumbo, All in One Mug e Jumbo) no Pedido e no favorito do carrinho: o par mug → infusor vem da pergunta do Sistema de Pedidos (o dono manda o print quando o site abrir). Mug Uki e a linha de pinturas não têm infusor. Decisão: não agrupar estampas nos indicadores.
 - Conferência do boleto de royalties (ler o PDF e conferir os descontos de devoluções e da fidelidade).
 - Reserva de estoque para encomenda (ligada ao Orçamento).
 - Meta do dia dividida pela escala, em vez da participação nas vendas.
