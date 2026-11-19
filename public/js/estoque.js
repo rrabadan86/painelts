@@ -13,7 +13,7 @@
     const r = await fetch(TS.api(`estoque?loja=${encodeURIComponent(loja)}`), { credentials: 'same-origin' });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.erro || 'Falha ao ler o estoque.');
-    const x = { at: Date.now(), estoque: j.estoque, cfg: j.cfg, tabela: j.tabela || null, classe: j.classe || { meses: 6, fixas: {} }, historico: j.historico || {}, compras: j.compras || null };
+    const x = { at: Date.now(), estoque: j.estoque, cfg: j.cfg, tabela: j.tabela || null, classe: j.classe || { meses: 6, fixas: {} }, historico: j.historico || {}, compras: j.compras || null, foraDeLinha: j.foraDeLinha || null };
     cache.set(loja, x);
     return x;
   }
@@ -402,7 +402,7 @@
     return box;
   };
 
-  function pintar(corpo, { estoque, cfg, historico, classe: ccfg, tabela }, modo = 'estoque') {
+  function pintar(corpo, { estoque, cfg, historico, classe: ccfg, tabela, foraDeLinha }, modo = 'estoque') {
     corpo.replaceChildren();
     // cada tela põe só a sua parte (a conta é a mesma)
     const R = modo === 'rentab', E = modo === 'estoque', EQ = modo === 'equilibrio';
@@ -867,6 +867,13 @@
       if (dias >= 6 && b > 0) return { f: lim((n / H) / (b / 30)), origem: 'item' };
       return { f: FL[it.un === 'Kg' ? 'kg' : 'un'], origem: 'loja' };
     }
+    // fora de linha: indisponível no Sistema de Pedidos há 90+ dias seguidos (o painel acompanha o catálogo desde foraDeLinha.desde)
+    const FL_DIAS = (foraDeLinha && foraDeLinha.dias) || 90;
+    const foraLinhaDe = (cod) => {
+      const d = foraDeLinha && foraDeLinha.indisp && foraDeLinha.indisp[String(cod)];
+      return d && TS.todayDay() - TS.isoToDay(d) >= FL_DIAS ? d : null;
+    };
+    TS.estoqueForaLinhaDe = foraLinhaDe; // testes
     const repo = [];
     let valorEstoque = 0, valorParado = 0;
     const parados = [];
@@ -898,7 +905,7 @@
       const linha = { cod: it.cod, produto: it.desc, tipo: TIPO_ITEM(it), it, qtd, min: it.min, sug, minSit, vel, prev, fator: sz.f, origem: sz.origem, dias, pedir, custoPedido: pedir * (it.custo || 0), sit };
       if (vel > 0 || (it.min && qtd < it.min)) repo.push(linha);
       const parado = parados.length && parados[parados.length - 1].cod === it.cod;
-      todos.push({ ...linha, valor: it.custo && qtd > 0 ? qtd * it.custo : 0, ultima: vendeuAlgumaVez ? TS.dayToIso(ult) : null, semVenda: vendeuAlgumaVez ? fim - ult : null, parado: !!parado, nunca: !vendeuAlgumaVez });
+      todos.push({ ...linha, valor: it.custo && qtd > 0 ? qtd * it.custo : 0, ultima: vendeuAlgumaVez ? TS.dayToIso(ult) : null, semVenda: vendeuAlgumaVez ? fim - ult : null, parado: !!parado, nunca: !vendeuAlgumaVez, foraLinha: foraLinhaDe(it.cod) });
     }
     const diasTxt = (d) => (d == null ? '—' : `${fmt.int(d)} ${Math.round(d) === 1 ? 'dia' : 'dias'}`);
     const porque = (r) => ({
@@ -931,7 +938,7 @@
       return `${pelaVenda}${peloMin}. Arredondado para ${qtdTxt(r.pedir, r.it)}.`;
     };
     const SIT = { acabou: ['Acabou', 'erro', 0], falta: ['Falta antes da entrega', 'erro', 1], minimo: ['Abaixo do mínimo', 'erro', 2], pedir: ['Pedir', 'warn', 3], ok: ['OK', 'ok', 4] };
-    const repor = repo.filter((r) => r.sit !== 'ok' && r.pedir > 0);
+    const repor = repo.filter((r) => r.sit !== 'ok' && r.pedir > 0 && !foraLinhaDe(r.cod)); // fora de linha não se repõe
     const urgentes = repor.filter((r) => r.sit === 'acabou' || r.sit === 'falta').length;
 
     // ---------- KPIs ----------
@@ -1239,24 +1246,28 @@
           h('div', null, h('div', { class: 'f-label' }, 'Vão vender menos: segure a compra'), quedas.length ? h('ul', { class: 'est-saz-l' }, quedas.map(item)) : h('p', { class: 'muted' }, 'Nenhum produto com queda forte nessa época no ano passado.'))));
     }
     // ---------- tabela única: todos os produtos da planilha do AppNext ----------
-    const SIT_T = { ...SIT, parado: ['Parado', 'warn', 5], novo: ['Novo · ainda não vendeu', 'novo', 6], ok: ['OK', 'ok', 7], semsaldo: ['Sem saldo', 'cinza', 8] };
+    const SIT_T = { ...SIT, liquidar: ['Fora de linha · liquidar', 'warn', 5], parado: ['Parado', 'warn', 5], novo: ['Novo · ainda não vendeu', 'novo', 6], ok: ['OK', 'ok', 7], foralinha: ['Fora de linha', 'cinza', 8], semsaldo: ['Sem saldo', 'cinza', 8] };
     for (const r of todos) {
+      // fora de linha não se repõe (a franquia não vende mais): com saldo, é para liquidar
+      if (r.foraLinha) { r.est = r.qtd > 0 ? 'liquidar' : 'foralinha'; continue; }
       r.est = ['acabou', 'falta', 'minimo', 'pedir'].includes(r.sit) && (r.sit !== 'pedir' || r.pedir > 0) ? r.sit
         : r.parado ? 'parado' : r.nunca && r.qtd > 0 ? 'novo' : r.qtd <= 0 ? 'semsaldo' : 'ok';
     }
-    const porqueT = (r) => (r.est === 'parado' ? `Saldo de ${qtdTxt(r.qtd, r.it)} ${r.ultima ? `e a última venda foi há ${diasTxt(r.semVenda)}` : 'e nenhuma venda no histórico do painel'}: dinheiro parado.`
+    const porqueT = (r) => (r.foraLinha ? `Indisponível no Sistema de Pedidos desde ${fmt.date(r.foraLinha)} (${FL_DIAS}+ dias): saiu de linha na franquia, não dá para repor.${r.qtd > 0 ? ` Venda o saldo de ${qtdTxt(r.qtd, r.it)} (vitrine, promoção, kit).` : ''}`
+      : r.est === 'parado' ? `Saldo de ${qtdTxt(r.qtd, r.it)} ${r.ultima ? `e a última venda foi há ${diasTxt(r.semVenda)}` : 'e nenhuma venda no histórico do painel'}: dinheiro parado.`
       : r.est === 'novo' ? 'Tem saldo e ainda não vendeu no histórico do painel (produto novo ou matéria-prima de pacotes que ainda não saíram).'
         : r.est === 'semsaldo' ? 'Sem saldo no AppNext e sem venda nos últimos 30 dias.' : porque(r));
     const FILTROS = {
       repor: ['O que repor', (r) => repor.includes(r)],
-      parados: ['Parados', (r) => r.parado],
+      parados: ['Parados', (r) => r.parado && !r.foraLinha],
+      ...(todos.some((r) => r.foraLinha && r.qtd > 0) ? { liquidar: ['Fora de linha · liquidar', (r) => r.foraLinha && r.qtd > 0] } : {}),
       saldo: ['Com saldo', (r) => r.qtd > 0],
       todos: ['Todos', () => true],
     };
     // "todos" antigo era "Tudo que vende"; o Início manda "repor"
     let filtroT = FILTROS[state.estSit] ? state.estSit : 'repor';
     const codRepor = new Set(repor.map((r) => r.cod));
-    FILTROS.repor[1] = (r) => codRepor.has(r.cod);
+    FILTROS.repor[1] = (r) => codRepor.has(r.cod) && !r.foraLinha;
     const conta = (k) => todos.filter(FILTROS[k][1]).length;
     const podePed = (TS.telasEstoque || []).includes('pedido');
     // notas de entrada lançadas depois da planilha de estoque: o saldo delas ainda não está aqui
@@ -1289,7 +1300,7 @@
     const busca = h('input', { class: 'f-input est-busca', type: 'search', placeholder: 'Buscar qualquer produto (nome ou código)…', value: state.estBusca || '', autocomplete: 'off' });
     const tabBoxT = h('div');
     const infoBusca = h('small', { class: 'muted est-busca-info' });
-    const ORD = { repor: 'est', parados: 'valor', saldo: 'valor', todos: 'produto' };
+    const ORD = { repor: 'est', parados: 'valor', liquidar: 'valor', saldo: 'valor', todos: 'produto' };
     function montarT() {
       const q = ESQ(busca.value), qd = busca.value.replace(/\D/g, '');
       const rows = q ? todos.filter((r) => ESQ(r.produto).includes(q) || (qd && String(r.cod).includes(qd))) : todos.filter(FILTROS[filtroT][1]);

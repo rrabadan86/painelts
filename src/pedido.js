@@ -16,6 +16,40 @@ const ler = (f) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catc
 const catalogo = (id) => ler(path.join(pasta(id), 'catalogo.json'));
 const carrinho = (id) => ler(path.join(pasta(id), 'carrinho.json'));
 
+/**
+ * Fora de linha: desde quando cada produto está indisponível no Sistema de Pedidos (catálogo FRANQUIAS lido toda noite).
+ *   dados/<loja>/pedido/disponibilidade.json = { desde: 'AAAA-MM-DD' (início do acompanhamento), catEm, indisp: { cod: 'AAAA-MM-DD' } }
+ * Produto que volta a ficar disponível sai da lista. Fora do catálogo também conta como indisponível.
+ * Com FORA_DE_LINHA_DIAS seguidos indisponível, o Estoque mostra "fora de linha: liquidar" em vez de "parado".
+ */
+const FORA_DE_LINHA_DIAS = 90;
+const arqDisp = (id) => path.join(pasta(id), 'disponibilidade.json');
+const diaSP = (iso) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(iso ? new Date(iso) : new Date());
+function atualizarDisp(id, cat = catalogo(id)) {
+  const d = ler(arqDisp(id)) || { desde: null, catEm: null, indisp: {} };
+  d.indisp = d.indisp || {}; d.noCat = d.noCat || {};
+  if (!cat || !Array.isArray(cat.itens) || !cat.itens.length || cat.em === d.catEm) return d;
+  const dia = diaSP(cat.em || undefined);
+  const noCat = new Set(cat.itens.map((c) => String(c.cod)));
+  for (const c of cat.itens) {
+    const cod = String(c.cod);
+    d.noCat[cod] = 1; // já apareceu no catálogo alguma vez (produto que nunca foi da franquia não vira "fora de linha")
+    if (c.disp) delete d.indisp[cod];
+    else if (!d.indisp[cod]) d.indisp[cod] = dia;
+  }
+  // saiu do catálogo: também indisponível
+  for (const cod of Object.keys(d.noCat)) if (!noCat.has(cod) && !d.indisp[cod]) d.indisp[cod] = dia;
+  d.desde = d.desde || dia;
+  d.catEm = cat.em;
+  try { fs.mkdirSync(pasta(id), { recursive: true }); C.gravarAtomico(arqDisp(id), JSON.stringify(d), 0o640); } catch { /* sem disco: tenta na próxima */ }
+  return d;
+}
+/** { desde, dias, indisp: { cod: 'AAAA-MM-DD' } } — o Estoque decide o que já passou de FORA_DE_LINHA_DIAS */
+function foraDeLinha(id) {
+  const d = atualizarDisp(id, catalogo(id));
+  return { desde: d.desde, dias: FORA_DE_LINHA_DIAS, indisp: d.indisp };
+}
+
 function gravarEntrada(id, itens, por, refazer) {
   fs.mkdirSync(pasta(id), { recursive: true });
   C.gravarAtomico(path.join(pasta(id), 'entrada.json'), JSON.stringify({ em: new Date().toISOString(), por, itens, refazer: !!refazer }), 0o640);
@@ -211,4 +245,4 @@ function alterarObrig(id, b, por) {
   return { ok: obrigatorios(id), item: o };
 }
 
-module.exports = { obrigatorios, alterarObrig, ORIGENS, criarCodigo, lerCodigo, progresso, acesso, gravarAcesso, catalogo, carrinho, gravarEntrada, cfg, validarCfg, validarItens, EVENTOS };
+module.exports = { foraDeLinha, atualizarDisp, FORA_DE_LINHA_DIAS, obrigatorios, alterarObrig, ORIGENS, criarCodigo, lerCodigo, progresso, acesso, gravarAcesso, catalogo, carrinho, gravarEntrada, cfg, validarCfg, validarItens, EVENTOS };

@@ -475,7 +475,11 @@ app.get('/api/demo/estoque', (req, res) => {
       ...its.filter((i) => i.un !== 'Kg').map((i) => ({ cod: String(i.cod), desc: i.desc, grupo: 'ACESSÓRIOS', preco: Math.round(i.custo * 2.2 * 10) / 10 })),
       ...its.filter((i) => i.un === 'Kg' && /^\d{4,6}$/.test(String(i.cod))).map((i) => ({ cod: String(i.cod) + '2', desc: `${i.desc} 100G`, grupo: 'CHÁS', preco: Math.round(i.custo * 0.1 * 2.6 * 10) / 10 })),
     ] };
-    res.json({ estoque: e.estoque, cfg: ESd.cfg({ estoqueCfg: e.estoqueCfg }), classe: ESd.classeCfg({}), historico: e.historico, compras: e.compras, tabela });
+    // fora de linha fictício: 3 acessórios com saldo indisponíveis no Sistema de Pedidos há ~4 meses e 1 há 20 dias
+    const comSaldo = its.filter((i) => i.un !== 'Kg' && i.qtd > 0);
+    const dia = (n) => new Date(Date.now() - n * 864e5).toISOString().slice(0, 10);
+    const foraDeLinha = { desde: dia(200), dias: 90, indisp: Object.fromEntries(comSaldo.slice(2, 6).map((i, k) => [String(i.cod), dia(k < 3 ? 120 + k * 10 : 20)])) };
+    res.json({ estoque: e.estoque, cfg: ESd.cfg({ estoqueCfg: e.estoqueCfg }), classe: ESd.classeCfg({}), historico: e.historico, compras: e.compras, tabela, foraDeLinha });
   } catch (e) { res.status(500).json({ erro: e.message }); }
 });
 // inventário na apresentação: o catálogo fictício (a contagem fica só no navegador; nada é salvo)
@@ -1034,7 +1038,10 @@ app.get('/api/estoque', (req, res) => {
   const loja = req.lojas.find((l) => l.id === String(req.query.loja || ''));
   if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
   const lc = C.get().lojas.find((l) => l.id === loja.id);
-  res.json({ estoque: ES.atual(loja.id), cfg: ES.cfg(lc), classe: ES.classeCfg(lc), tabela: TAB.resumo(loja.id), historico: ES.historico(loja.id), compras: ES.compras(loja.id) });
+  const est = ES.atual(loja.id);
+  let foraDeLinha = null;
+  try { foraDeLinha = PED.foraDeLinha(loja.id); } catch (e) { console.error('[fora de linha]', e.message); }
+  res.json({ estoque: est, cfg: ES.cfg(lc), classe: ES.classeCfg(lc), tabela: TAB.resumo(loja.id), historico: ES.historico(loja.id), compras: ES.compras(loja.id), foraDeLinha });
 });
 // notas de entrada (compras) do AppNext, inteiras: lista e detalhe na tela Preços
 // NF-e emitidas pela loja (saída): lista, nota completa, XML original e DANFE para imprimir
@@ -2124,6 +2131,8 @@ async function avaliarEspera(loja) {
   }
 }
 setInterval(() => { for (const l of C.get().lojas) avaliarEspera(l).catch((e) => console.error(`[espera] ${l.id}:`, e.message)); }, 15 * 60e3).unref();
+// fora de linha: confere o catálogo do Sistema de Pedidos a cada hora (o coletor lê toda noite), mesmo sem ninguém abrir o Estoque
+setInterval(() => { for (const l of C.get().lojas) { try { require('./src/pedido').atualizarDisp(l.id); } catch (e) { console.error(`[fora de linha] ${l.id}:`, e.message); } } }, 60 * 60e3).unref();
 // lista de espera: vendedoras sempre; gerente só com a tela liberada em Configurações → Usuários
 app.use('/api/espera', (req, res, next) => (req.perfil === 'vendedor' || podeTela(req, 'espera') ? next() : res.status(403).json({ erro: 'Sem permissão.' })));
 app.get('/api/espera', async (req, res) => {
