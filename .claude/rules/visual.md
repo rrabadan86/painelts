@@ -8,6 +8,16 @@ Toda tela nova ou mexida segue estas peças, nesta ordem. Antes de inventar um c
 (Estoque → Notas fiscais, ⭐ Sugestões e Configurações → Lojas são as referências de lista; Estoque é a de tabela com filtros e quadros).
 Lista que abre um detalhe: a tabela some e o detalhe aparece no lugar, com "‹ Voltar" no topo (Inventário → contagem, Configurações → loja).
 
+## Princípios do dono (valem para toda tela nova ou mexida)
+1. **Simplicidade e usabilidade primeiro**: a pessoa entende a tela sem manual; uma ação principal por bloco; poucos cliques.
+2. **Sem rolagem horizontal** em tabela no computador (1100–1400 px): junte informações na mesma célula (valor + detalhe pequeno embaixo), cada aba mostra só as colunas dela, o resto vai para a janela do produto. No celular vira cartão.
+3. **O seletor reflete o que está na tela**: quadro clicável, aba (`TS.seg`) e filtro mostram o mesmo estado. `TS.seg` marca sozinho a opção clicada; quando outra coisa muda a aba (um quadro), use `TS.segMarcar(seg, valor)`.
+4. **Tudo tem explicação**: toda coluna e todo quadro com `title` (ⓘ) e toda opção de seletor com dica (`[rótulo, valor, dica]` no `TS.seg`) — o que é, de onde vem, como ler.
+5. **Produto é clicável** e abre o histórico dele: `TS.histCompras(r, comprasItens, nfAtual)` (a janela da nota de entrada: notas, quantidade, custo e variação) ou o painel do produto da tela.
+6. **Visual nos dois sentidos**: ícones consistentes com texto/tooltip (🛒 já está no pedido, ⭐ pedido da equipe); o que se relaciona aparece marcado nas duas listas.
+7. **Ação por linha além da ação em lote** (ex.: "+ Adicionar ao pedido" em cada item).
+8. **Campo de data, hora ou número não redesenha nem grava a cada dígito**: `TS.aoConfirmar` (o Chrome dispara `change` a cada parte da data).
+
 ## Estrutura da página (de cima para baixo)
 1. **Submenu do grupo**: `TS.subEstoque(tela)` / `TS.subGrupo(tela)` — nunca um menu próprio.
 2. **Cabeçalho**: `page-head` com `h1.page-title` (com o ícone da tela, se tiver) e `div.page-sub` — uma frase do que a tela faz.

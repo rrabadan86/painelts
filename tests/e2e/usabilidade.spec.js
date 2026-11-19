@@ -162,3 +162,27 @@ test('Textos longos recolhidos em "Como funciona ▸": cabeçalho do Estoque e q
   await det.locator('summary').click();
   await expect(det.locator('p')).toContainText('aguardando entrega');
 });
+
+test('Estoque: o seletor acompanha a aba clicada e cada opção tem explicação', async ({ page }) => {
+  await abrir(page); await ir(page, 'estoque');
+  const seg = page.locator('.seg', { hasText: 'O que repor' }).first();
+  await expect(seg.locator('button.on')).toContainText('O que repor');
+  for (const b of await seg.locator('button').all()) expect((await b.getAttribute('title')) || '').not.toBe('');
+  await seg.getByRole('button', { name: /Parados/ }).click();
+  await expect(seg.locator('button.on')).toHaveCount(1);
+  await expect(seg.locator('button.on')).toContainText('Parados');
+  await seg.getByRole('button', { name: /Perdendo venda/ }).click();
+  await expect(seg.locator('button.on')).toContainText('Perdendo venda');
+});
+
+test('Margem de tabela: clicar no produto abre o histórico de compras (a janela da nota de entrada)', async ({ page }) => {
+  await abrir(page); await ir(page, 'rentab');
+  await page.locator('.est-abas .seg').getByRole('button', { name: 'Margem de tabela' }).click();
+  const prod = page.locator('.nf-hist-btn').first();
+  await expect(prod).toBeVisible();
+  await prod.evaluate((b) => b.click());
+  const pop = page.locator('.nf-hist-pop');
+  await expect(pop).toContainText('Histórico de compras');
+  await page.keyboard.press('Escape');
+  await expect(pop).toHaveCount(0);
+});

@@ -22,6 +22,7 @@ Antes de começar, leia uma tela parecida já pronta (ex.: `public/js/checklist.
 - [ ] **Layout no padrão** de `.claude/rules/visual.md`: submenu do grupo → cabeçalho (título + frase) → avisos → quadros (`TS.kpi`) → ação principal → card com abas com contagem e `TS.table`. Cores por classe (`pos`/`neg`/`warn-t`/`muted`, `badge ok|warn|erro|cinza`), nada de cor solta no JS.
 - [ ] Menu em `public/js/main.js`: rótulo em `ROTULO` e o id no grupo certo; regras de quem vê (perfil, `telasDo`).
 - [ ] Filtros: em `public/js/pages.js`, diga quais filtros a tela usa (ou a mensagem de que não usa).
+- [ ] Princípios do dono (topo de `.claude/rules/visual.md`): sem rolagem horizontal no computador; seletor acompanha a aba/quadro (`TS.segMarcar`); `title` em toda coluna e quadro e dica em toda opção do `TS.seg`; produto clicável abre o histórico (`TS.histCompras`); ação por linha; data/hora/número com `TS.aoConfirmar`.
 - [ ] `replaceChildren([...].filter(Boolean))`; textos simples, em português, sem termos técnicos.
 
 ## Testes

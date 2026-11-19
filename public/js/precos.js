@@ -11,6 +11,53 @@
   const { h, fmt, state } = TS;
 
   const quando = (iso) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(2, 4)}` : '—');
+  /** Histórico de compras de um produto (todas as notas de compra que o painel tem): janela usada na nota de entrada
+      e em qualquer tabela de produto (Margem de tabela…). r = { nome, cod, un, grupo }; nfAtual destaca "esta nota". */
+  TS.histCompras = function (r, comprasItens, nfAtual) {
+    const unTxt = (u) => String(u || 'un').toLowerCase();
+    const kg = unTxt(r.un) === 'kg';
+    const comp = ((comprasItens && comprasItens[r.cod]) || []).map(([dia, custo, nf, qtd, forn]) => ({ dia, custo, nf, qtd, forn }))
+      .sort((a, b) => (a.dia < b.dia ? -1 : a.dia > b.dia ? 1 : 0));
+    comp.forEach((c, k) => { c.varC = k && comp[k - 1].custo ? c.custo / comp[k - 1].custo - 1 : null; c.esta = nfAtual != null && String(c.nf) === String(nfAtual); });
+    const qtdF = (v) => (v == null ? '—' : kg ? `${fmt.kg(v)} kg` : `${fmt.n2(v).replace(/,00$/, '')} ${unTxt(r.un)}`);
+    const doze = new Date(Date.now() - 365 * 864e5).toISOString().slice(0, 10);
+    const ano = comp.filter((c) => c.dia >= doze);
+    const qAno = ano.reduce((a, c) => a + (c.qtd || 0), 0), vAno = ano.reduce((a, c) => a + (c.qtd || 0) * c.custo, 0);
+    const primeiro = comp[0], ultimo = comp[comp.length - 1];
+    const corpo = comp.length ? [
+      h('div', { class: 'prc-resumo' },
+        h('div', null, h('small', null, 'Compras em 12 meses'), h('b', null, `${fmt.int(ano.length)} ${ano.length === 1 ? 'nota' : 'notas'}`), h('small', { class: 'muted' }, qtdF(qAno))),
+        h('div', null, h('small', null, 'Custo médio (12 meses)'), h('b', null, qAno ? fmt.brl(vAno / qAno) : '—')),
+        h('div', null, h('small', null, 'Último custo'), h('b', null, fmt.brl(ultimo.custo)), comp.length > 1 ? h('small', { class: 'muted' }, `desde ${quando(primeiro.dia)}: `, h('span', { class: 'prc-badge ' + (ultimo.custo > primeiro.custo ? 'prc-ruim' : 'prc-bom') }, pctTxt(ultimo.custo / primeiro.custo - 1))) : null)),
+      comp.length > 1 ? h('div', { class: 'prc-graf' }, TS.chart({
+        type: 'line',
+        data: { labels: comp.map((c) => quando(c.dia)), datasets: [{ label: kg ? 'Custo do kg' : 'Custo unitário', data: comp.map((c) => c.custo), borderColor: '#C77F12', backgroundColor: '#C77F12', pointRadius: comp.map((c) => (c.esta ? 6 : 3)), borderWidth: 2, tension: 0 }] },
+        options: { plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => `${fmt.brl(c.raw)} · NF ${comp[c.dataIndex].nf} · ${qtdF(comp[c.dataIndex].qtd)}` } } }, scales: { y: { ...TS.axisNum((v) => fmt.brl(v)) }, x: TS.axisCat } },
+      }, 'short')) : null,
+      TS.table({
+        cols: [
+          { key: 'dia', label: 'Entrada', align: 'l', render: (c) => h('span', null, quando(c.dia), c.esta ? h('small', { class: 'est-tam' }, 'esta nota') : null) },
+          { key: 'nf', label: 'NF', align: 'l', render: (c) => String(c.nf ?? '—'), sortVal: (c) => +c.nf || 0 },
+          { key: 'forn', label: 'Fornecedor', align: 'l', wrap: true, render: (c) => c.forn || '—' },
+          { key: 'qtd', label: 'Qtd', render: (c) => qtdF(c.qtd) },
+          { key: 'custo', label: kg ? 'Custo do kg' : 'Custo unit.', fmt: fmt.brl },
+          { key: 'varC', label: 'Variação', title: 'Comparado com a compra anterior', render: (c) => (c.varC == null ? h('span', { class: 'muted' }, '—') : Math.abs(c.varC) < 0.0005 ? h('span', { class: 'muted' }, 'igual') : h('span', { class: 'prc-badge ' + (c.varC > 0 ? 'prc-ruim' : 'prc-bom') }, pctTxt(c.varC))), sortVal: (c) => c.varC ?? -99 },
+        ],
+        rows: comp, sortKey: 'dia', sortDir: 'desc', cls: 'est-t', rowClass: (c) => (c.esta ? 'nf-hist-esta' : ''),
+      }),
+    ] : [h('p', { class: 'muted' }, 'O painel ainda não tem outras compras deste produto. O histórico vem das notas de compra concluídas que o coletor lê do AppNext.')];
+    document.querySelector('.prc-popup-camada')?.remove();
+    const fecharP = () => { cam.remove(); document.removeEventListener('keydown', escP, true); };
+    const escP = (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); fecharP(); } };
+    const pop = h('aside', { class: 'card prc-popup nf-hist-pop', role: 'dialog', 'aria-modal': 'true', 'aria-label': `Histórico de compras de ${r.nome}` },
+      h('button', { type: 'button', class: 'icon-btn exp-fechar', title: 'Fechar (Esc)', 'aria-label': 'Fechar', onclick: fecharP }, '✕'),
+      h('div', { class: 'card-title' }, r.nome),
+      h('div', { class: 'card-sub' }, `Histórico de compras · cód. ${r.cod}${r.grupo ? ' · ' + r.grupo : ''}`),
+      ...corpo.filter(Boolean));
+    const cam = h('div', { class: 'prc-popup-camada', onmousedown: (e) => { if (e.target === cam) fecharP(); } }, pop);
+    document.body.append(cam);
+    document.addEventListener('keydown', escP, true);
+  };
   const pctTxt = (v) => (v == null ? '—' : `${v > 0 ? '+' : ''}${fmt.n1(v * 100)}%`);
 
   /** monta o histórico de cada produto vendido */
@@ -814,50 +861,7 @@
     };
     TS.abrirEnvioFranquiaTeste = abrirEnvioFranquia; // testes
     // histórico de compras do item: todas as notas de compra que o painel tem (Estoque → Entrada de Produtos do AppNext)
-    const abrirHistorico = (r) => {
-      const kg = unTxt(r.un) === 'kg';
-      const comp = ((D.comprasItens && D.comprasItens[r.cod]) || []).map(([dia, custo, nf, qtd, forn]) => ({ dia, custo, nf, qtd, forn }))
-        .sort((a, b) => (a.dia < b.dia ? -1 : a.dia > b.dia ? 1 : 0));
-      comp.forEach((c, k) => { c.varC = k && comp[k - 1].custo ? c.custo / comp[k - 1].custo - 1 : null; c.esta = String(c.nf) === String(n.nf); });
-      const qtdF = (v) => (v == null ? '—' : kg ? `${fmt.kg(v)} kg` : `${fmt.n2(v).replace(/,00$/, '')} ${unTxt(r.un)}`);
-      const doze = new Date(Date.now() - 365 * 864e5).toISOString().slice(0, 10);
-      const ano = comp.filter((c) => c.dia >= doze);
-      const qAno = ano.reduce((a, c) => a + (c.qtd || 0), 0), vAno = ano.reduce((a, c) => a + (c.qtd || 0) * c.custo, 0);
-      const primeiro = comp[0], ultimo = comp[comp.length - 1];
-      const corpo = comp.length ? [
-        h('div', { class: 'prc-resumo' },
-          h('div', null, h('small', null, 'Compras em 12 meses'), h('b', null, `${fmt.int(ano.length)} ${ano.length === 1 ? 'nota' : 'notas'}`), h('small', { class: 'muted' }, qtdF(qAno))),
-          h('div', null, h('small', null, 'Custo médio (12 meses)'), h('b', null, qAno ? fmt.brl(vAno / qAno) : '—')),
-          h('div', null, h('small', null, 'Último custo'), h('b', null, fmt.brl(ultimo.custo)), comp.length > 1 ? h('small', { class: 'muted' }, `desde ${quando(primeiro.dia)}: `, h('span', { class: 'prc-badge ' + (ultimo.custo > primeiro.custo ? 'prc-ruim' : 'prc-bom') }, pctTxt(ultimo.custo / primeiro.custo - 1))) : null)),
-        comp.length > 1 ? h('div', { class: 'prc-graf' }, TS.chart({
-          type: 'line',
-          data: { labels: comp.map((c) => quando(c.dia)), datasets: [{ label: kg ? 'Custo do kg' : 'Custo unitário', data: comp.map((c) => c.custo), borderColor: '#C77F12', backgroundColor: '#C77F12', pointRadius: comp.map((c) => (c.esta ? 6 : 3)), borderWidth: 2, tension: 0 }] },
-          options: { plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => `${fmt.brl(c.raw)} · NF ${comp[c.dataIndex].nf} · ${qtdF(comp[c.dataIndex].qtd)}` } } }, scales: { y: { ...TS.axisNum((v) => fmt.brl(v)) }, x: TS.axisCat } },
-        }, 'short')) : null,
-        TS.table({
-          cols: [
-            { key: 'dia', label: 'Entrada', align: 'l', render: (c) => h('span', null, quando(c.dia), c.esta ? h('small', { class: 'est-tam' }, 'esta nota') : null) },
-            { key: 'nf', label: 'NF', align: 'l', render: (c) => String(c.nf ?? '—'), sortVal: (c) => +c.nf || 0 },
-            { key: 'forn', label: 'Fornecedor', align: 'l', wrap: true, render: (c) => c.forn || '—' },
-            { key: 'qtd', label: 'Qtd', render: (c) => qtdF(c.qtd) },
-            { key: 'custo', label: kg ? 'Custo do kg' : 'Custo unit.', fmt: fmt.brl },
-            { key: 'varC', label: 'Variação', title: 'Comparado com a compra anterior', render: (c) => (c.varC == null ? h('span', { class: 'muted' }, '—') : Math.abs(c.varC) < 0.0005 ? h('span', { class: 'muted' }, 'igual') : h('span', { class: 'prc-badge ' + (c.varC > 0 ? 'prc-ruim' : 'prc-bom') }, pctTxt(c.varC))), sortVal: (c) => c.varC ?? -99 },
-          ],
-          rows: comp, sortKey: 'dia', sortDir: 'desc', cls: 'est-t', rowClass: (c) => (c.esta ? 'nf-hist-esta' : ''),
-        }),
-      ] : [h('p', { class: 'muted' }, 'O painel ainda não tem outras compras deste produto. O histórico vem das notas de compra concluídas que o coletor lê do AppNext.')];
-      document.querySelector('.prc-popup-camada')?.remove();
-      const fecharP = () => { cam.remove(); document.removeEventListener('keydown', escP, true); };
-      const escP = (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); fecharP(); } };
-      const pop = h('aside', { class: 'card prc-popup nf-hist-pop', role: 'dialog', 'aria-modal': 'true', 'aria-label': `Histórico de compras de ${r.nome}` },
-        h('button', { type: 'button', class: 'icon-btn exp-fechar', title: 'Fechar (Esc)', 'aria-label': 'Fechar', onclick: fecharP }, '✕'),
-        h('div', { class: 'card-title' }, r.nome),
-        h('div', { class: 'card-sub' }, `Histórico de compras · cód. ${r.cod}${r.grupo ? ' · ' + r.grupo : ''}`),
-        ...corpo.filter(Boolean));
-      const cam = h('div', { class: 'prc-popup-camada', onmousedown: (e) => { if (e.target === cam) fecharP(); } }, pop);
-      document.body.append(cam);
-      document.addEventListener('keydown', escP, true);
-    };
+    const abrirHistorico = (r) => TS.histCompras(r, D.comprasItens, n.nf);
     const tabBox = h('div');
     const montarTab = () => tabBox.replaceChildren(TS.table({
       rowClass: (r) => (impPorItem.has(String(r.cod)) ? 'nf-marg' : ''),
