@@ -171,4 +171,40 @@ const SISTEMA_PEDIDO = [
   'Entregue chamando a ferramenta revisar_pedido.',
 ].join('\n');
 
-module.exports = { ferramentas, sistemaPergunta, conferirMensagens, FERR_PEDIDO, SISTEMA_PEDIDO };
+
+// ---------- por que as vendas mudaram (Início) ----------
+const FERR_DIAG = {
+  name: 'diagnostico',
+  description: 'Entrega a explicação para o Início do painel.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      manchete: { type: 'string', description: 'Uma frase com o principal (ex.: "A semana caiu 12% porque vieram menos clientes; quem veio comprou igual.").' },
+      explicacoes: {
+        type: 'array', maxItems: 4,
+        items: { type: 'object', properties: { titulo: { type: 'string' }, porque: { type: 'string', description: '1 a 3 frases com os números que explicam.' }, o_que_fazer: { type: 'string', description: 'Uma ação prática e concreta (opcional).' } }, required: ['titulo', 'porque'] },
+      },
+      fora_do_padrao: {
+        type: 'array', maxItems: 5,
+        items: { type: 'object', properties: { titulo: { type: 'string' }, detalhe: { type: 'string' } }, required: ['titulo'] },
+      },
+    },
+    required: ['manchete', 'explicacoes', 'fora_do_padrao'],
+  },
+};
+const SISTEMA_DIAG = [
+  'Você é o analista de uma loja Tea Shop (franquia de chás) no Brasil e escreve o "porquê" do Início do painel, em português do Brasil, curto e direto.',
+  'Recebe: a comparação dos últimos 7 dias com a média das 4 semanas anteriores, do mês até agora com o mês anterior e com o ano passado (mesmos dias),',
+  'cada uma com a diferença em R$ explicada por: movimento (número de atendimentos), itens por atendimento e preço médio por item; e por onde mudou (grupos, vendedoras, dias da semana).',
+  'Recebe também o que está fora do padrão (cupons com desconto alto, vendedora com desconto médio alto, dias muito abaixo do normal, inventário com ajuste grande) e os avisos que a tela já mostra.',
+  'Regras:',
+  '- Use só os números recebidos; não invente. Dinheiro em R$ sem centavos, porcentagem com no máximo 1 casa.',
+  '- Explique a CAUSA: "o movimento está igual, o que caiu foi o ticket: menos itens por atendimento" é o tipo de frase que ajuda. Diga qual parte pesa mais.',
+  '- Não repita o texto dos avisos: explique o que está por trás deles ou como se ligam.',
+  '- Fora do padrão: diga por que chama atenção e o que conferir, sem acusar ninguém ("vale conferir", "pode ser…").',
+  '- Se está tudo bem, diga isso na manchete e traga só o que vale acompanhar. No máximo 4 explicações.',
+  '- A ação sugerida precisa ser concreta e possível numa loja (ex.: oferecer o 2º item, revisar a escala do sábado, conferir o cupom X com a vendedora).',
+  'Entregue chamando a ferramenta diagnostico.',
+].join('\n');
+
+module.exports = { FERR_DIAG, SISTEMA_DIAG, ferramentas, sistemaPergunta, conferirMensagens, FERR_PEDIDO, SISTEMA_PEDIDO };

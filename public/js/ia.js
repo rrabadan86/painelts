@@ -240,6 +240,10 @@
     const alvo = document.querySelector('.topbar-right');
     const upd = document.getElementById('updated');
     if (alvo) alvo.insertBefore(b, upd ? upd.nextSibling : alvo.firstChild);
+    // celular: botão flutuante no canto (o topo não tem espaço)
+    document.body.append(h('button', { class: 'ia-fab', id: 'fabIA', type: 'button', title: 'Pergunte ao painel (IA)', 'aria-label': 'Pergunte ao painel (IA)', onclick: () => abrir() }, '✨'));
+    // a barra fixa do Pedido no rodapé: o botão sobe para não ficar por cima
+    new MutationObserver(() => document.body.classList.toggle('com-ped-barra', !!document.querySelector('.ped-barra'))).observe(document.getElementById('content') || document.body, { childList: true, subtree: true });
   };
   TS.iaAbrir = (pergunta) => abrir(pergunta);
 

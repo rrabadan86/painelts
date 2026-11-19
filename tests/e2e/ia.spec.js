@@ -1,9 +1,10 @@
 const { test, expect } = require('@playwright/test');
 
-test('IA: Pergunte ao painel abre, consulta as vendas e responde (simulada na apresentação)', async ({ page }) => {
+test('IA: Pergunte ao painel abre, consulta as vendas e responde (simulada na apresentação)', async ({ page }, info) => {
   await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS.db);
-  const b = page.locator('#btnIA');
+  const b = page.locator(info.project.name === 'celular' ? '#fabIA' : '#btnIA');
   await expect(b).toBeVisible();
+  if (info.project.name === 'celular') await expect(page.locator('#btnIA')).toBeHidden();
   await b.click();
   const g = page.locator('.ia-gaveta');
   await expect(g).toBeVisible();
@@ -45,4 +46,20 @@ test('IA: Configurações mostra a aba Inteligência artificial com o passo a pa
   await page.locator('.ia-form input[type=password]').fill('sk-ant-api03-' + 'y'.repeat(40));
   await page.getByRole('button', { name: 'Testar e salvar' }).click();
   await expect(page.locator('.ia-form')).toContainText('Na apresentação nada é salvo');
+});
+
+test('IA: Início explica o porquê (decomposição + fora do padrão) e o ✨ não quebra o topo no celular', async ({ page }, info) => {
+  await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS.db);
+  await page.evaluate(() => { location.hash = '#inicio'; });
+  const c = page.locator('.ini-porque');
+  await expect(c).toBeVisible({ timeout: 30000 });
+  await expect(c.locator('.ini-porque-m')).toContainText('últimos 7 dias');
+  await expect(c).toContainText('movimento (atendimentos)');
+  await expect(c).not.toContainText('null');
+  if (info.project.name === 'celular') {
+    const alt = await page.locator('.topbar').evaluate((el) => el.getBoundingClientRect().height);
+    const sel = await page.locator('#lojaSel').boundingBox(), user = await page.locator('#btnUsuario').boundingBox();
+    expect(Math.abs(sel.y - user.y)).toBeLessThan(20); // loja e conta na mesma linha
+    expect(alt).toBeLessThan(200);
+  }
 });

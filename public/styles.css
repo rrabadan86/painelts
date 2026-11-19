@@ -2512,3 +2512,21 @@ details.vl-ajuda summary { cursor: pointer; font-weight: 600; }
 .ped-ia-t .l { text-align: left; }
 .ped-ia-mot { min-width: 220px; color: var(--ink); }
 .ped-ia-feito td { opacity: .65; }
+/* celular: o ✨ sai do topo (não quebra o cabeçalho em duas linhas) e vira botão flutuante */
+.ia-fab { display: none; }
+@media (max-width: 760px) {
+  #btnIA { display: none; }
+  .ia-fab { display: flex; position: fixed; right: 14px; bottom: calc(16px + env(safe-area-inset-bottom)); z-index: 60; width: 52px; height: 52px; border-radius: 50%; border: 0; align-items: center; justify-content: center;
+    background: var(--green); color: #fff; font-size: 22px; box-shadow: 0 4px 14px rgba(31, 61, 43, .35); cursor: pointer; }
+  body.com-ped-barra .ia-fab { bottom: calc(84px + env(safe-area-inset-bottom)); }
+  body.com-camada .ia-fab { display: none; }
+}
+.ini-porque { border-left: 4px solid var(--gold); }
+.ini-porque-c { color: var(--muted); }
+.ini-porque-m { font-size: 16px; font-weight: 600; color: var(--dark); margin: 4px 0 10px; }
+.ini-porque-i { padding: 8px 0; border-top: 1px solid var(--line); }
+.ini-porque-i .ia-md { margin-top: 2px; }
+.ini-porque-f { margin-top: 4px; color: var(--green); font-weight: 500; }
+.ini-porque-fp { margin-top: 6px; }
+.ini-porque-st { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 8px 0 2px; }
+.ini-porque-n { display: block; margin-top: 8px; font-size: 11.5px; }

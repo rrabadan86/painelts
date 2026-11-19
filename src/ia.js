@@ -208,6 +208,18 @@ function simular(req) {
       ajustes: it ? [{ cod: String(it.cod), qtd: (it.pedir || 0) + (it.un === 'Kg' ? 1 : 2), motivo: 'Exemplo: vendeu acima da média nas últimas semanas e a época que vem costuma ser mais forte.' }] : [],
     } }] };
   }
+  if (forcada === 'diagnostico') {
+    let f = {};
+    try { f = JSON.parse(String(ultima.content).replace(/^[^{]*/, '')); } catch { /* ok */ }
+    const sm = f.semana || {}, e = sm.explicado_por_reais || {};
+    const partes = [['movimento (atendimentos)', e.movimento_atendimentos], ['itens por atendimento', e.itens_por_atendimento], ['preço médio por item', e.preco_medio_por_item]].filter((x) => x[1] != null).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
+    const brl = (v) => 'R$ ' + Math.round(v).toLocaleString('pt-BR');
+    return { stop_reason: 'tool_use', usage, content: [{ type: 'tool_use', id: 'sim2', name: 'diagnostico', input: {
+      manchete: sm.variacao_pct != null ? `Os últimos 7 dias estão ${sm.variacao_pct >= 0 ? '+' : ''}${String(sm.variacao_pct).replace('.', ',')}% contra a média das 4 semanas anteriores; o que mais pesou foi ${partes.length ? partes[0][0] : 'o movimento'}.` : 'Sem base suficiente para comparar.',
+      explicacoes: partes.length ? [{ titulo: 'De onde vem a diferença', porque: partes.map(([n, v]) => `${n}: ${v >= 0 ? '+' : '−'}${brl(Math.abs(v))}`).join(' · ') + '.', o_que_fazer: 'Exemplo simulado: na loja de verdade, a IA sugere a ação conforme a causa.' }] : [],
+      fora_do_padrao: ((f.desconto && f.desconto.altos) || []).slice(0, 2).map((c) => ({ titulo: `Cupom ${c.cupom}: ${c.pct}% de desconto`, detalhe: 'Exemplo simulado: vale conferir o motivo com a vendedora.' })),
+    } }] };
+  }
   const resultados = Array.isArray(ultima.content) ? ultima.content.filter((b) => b.type === 'tool_result') : [];
   if (!resultados.length && req.tools && req.tools.some((t) => t.name === 'consultar_vendas')) {
     return { stop_reason: 'tool_use', usage, content: [{ type: 'text', text: 'Vou consultar as vendas.' }, { type: 'tool_use', id: 'sim-v', name: 'consultar_vendas', input: { periodo: { ultimos_dias: 90 }, agrupar_por: 'mes' } }] };
