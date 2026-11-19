@@ -1,4 +1,6 @@
 (function () {
+  // tela de entrar: nenhum dado do painel fica guardado neste aparelho (vale também para sessão expirada)
+  try { if (window.indexedDB) indexedDB.deleteDatabase('teashop-painel'); } catch (x) { /* ok */ }
   var q = new URLSearchParams(location.search);
   var e = q.get('e');
   if (e) {

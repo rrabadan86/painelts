@@ -196,60 +196,160 @@
     });
   })();
 
+  // ---------- dados guardados no aparelho ----------
+  // Abrir o painel mostra na hora a última versão guardada neste navegador; o servidor confere logo em seguida
+  // (responde "não mudou" ou manda a nova). Guarda só o que o servidor já entrega a esta pessoa, uma versão por
+  // pessoa e loja; some ao sair, quando a sessão expira, quando outra pessoa entra neste aparelho e depois de 7 dias.
+  const Guardados = (() => {
+    const BANCO = 'teashop-painel', TAB = 'dados', VALIDADE = 7 * 864e5;
+    let pBanco = null;
+    const banco = () => pBanco || (pBanco = new Promise((ok, erro) => {
+      if (!window.indexedDB) { erro(new Error('sem IndexedDB')); return; }
+      const r = indexedDB.open(BANCO, 1);
+      r.onupgradeneeded = () => r.result.createObjectStore(TAB);
+      r.onsuccess = () => { r.result.onversionchange = () => { r.result.close(); pBanco = null; }; ok(r.result); };
+      r.onerror = () => erro(r.error);
+      r.onblocked = () => erro(new Error('bloqueado'));
+    }).catch((e) => { pBanco = null; throw e; }));
+    const pedir = async (modo, fn) => {
+      const db = await banco();
+      return new Promise((ok, erro) => {
+        const t = db.transaction(TAB, modo);
+        const r = fn(t.objectStore(TAB));
+        t.oncomplete = () => ok(r && r.result);
+        t.onerror = t.onabort = () => erro(t.error);
+      });
+    };
+    const dono = () => (TS.demo ? 'demo' : TS.eu ? (TS.eu.usuario || '_') : '');
+    return {
+      async ler(loja, chave) {
+        try {
+          const u = dono();
+          if (!u) return null;
+          const g = await pedir('readonly', (s) => s.get(u + '|' + loja));
+          return g && g.chave === chave && Date.now() - g.salvoEm < VALIDADE ? g : null;
+        } catch { return null; }
+      },
+      salvar(loja, chave, texto, etag, em) {
+        const u = dono();
+        if (!u || !etag) return;
+        pedir('readwrite', (s) => s.put({ chave, texto, etag, em, salvoEm: Date.now() }, u + '|' + loja)).catch(() => { /* sem espaço: segue sem guardar */ });
+      },
+      /** apaga o que é de outra pessoa ou já venceu */
+      async limpar() {
+        const u = dono();
+        if (!u) return;
+        try {
+          await pedir('readwrite', (s) => {
+            const r = s.openCursor();
+            r.onsuccess = () => {
+              const c = r.result;
+              if (!c) return;
+              if (!String(c.key).startsWith(u + '|') || !(Date.now() - (c.value && c.value.salvoEm) < VALIDADE)) c.delete();
+              c.continue();
+            };
+          });
+        } catch { /* ok */ }
+      },
+      /** apaga tudo (sair / sessão expirada); espera no máximo 1,5 s */
+      apagarTudo() {
+        return new Promise((ok) => {
+          const fim = setTimeout(ok, 1500);
+          const pronto = () => { clearTimeout(fim); ok(); };
+          Promise.resolve(pBanco).then((db) => db && db.close(), () => {}).then(() => {
+            pBanco = null;
+            try { const r = indexedDB.deleteDatabase(BANCO); r.onsuccess = r.onerror = r.onblocked = pronto; } catch { pronto(); }
+          });
+        });
+      },
+    };
+  })();
+  TS.guardados = Guardados;
+  const irParaLogin = async () => { await Guardados.apagarTudo(); location.href = '/login'; };
+  // Sair: apaga os dados guardados antes de encerrar a sessão
+  document.querySelectorAll('form.logout-form').forEach((f) => f.addEventListener('submit', (e) => {
+    if (f.dataset.limpo) return;
+    e.preventDefault();
+    Guardados.apagarTudo().then(() => { f.dataset.limpo = '1'; f.submit(); });
+  }));
+
   // ---------- dados ----------
+  /** desenha os dados recebidos (do servidor ou guardados no aparelho) */
+  function aplicar(body, { pagAlvo, em, aviso }) {
+    const primeira = !TS.db || TS.lojaCarregada !== state.loja;
+    if (primeira && TS.db) { TS.resetFiltros(); TS.limparCaches && TS.limparCaches(); }
+    // os filtros guardam o número de cada texto no dicionário; numa recarga (atualização automática, "carregar todo o
+    // histórico", produto reclassificado) a ordem do dicionário pode mudar: guarda os textos e remonta depois
+    const textos = !primeira && TS.db ? TS.filtrosEmTexto() : null;
+    TS.lojaCarregada = state.loja;
+    TS.db = TS.decode(body);
+    if (textos) TS.filtrosDeTexto(textos);
+    TS.aplicarMarca && TS.aplicarMarca();
+    TS.rules.prepare();
+    TS.cli = null;
+    if (cliIdle) { (window.cancelIdleCallback || clearTimeout)(cliIdle); cliIdle = null; }
+    if (TELAS_CLI.has(pagAlvo)) TS.garantirClientes();
+    else cliIdle = (window.requestIdleCallback || ((fn) => setTimeout(fn, 200)))(() => { cliIdle = null; TS.garantirClientes(); });
+    TS.aviso = aviso ? 'Não consegui atualizar agora; mostrando os dados anteriores. Motivo: ' + aviso : null;
+    const quando = new Date(em || body.geradoEm);
+    const upd = document.getElementById('updated');
+    upd.replaceChildren('Atualizado', h('b', null, quando.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })));
+    const podeHist = TS.eu && TS.eu.pode && TS.eu.pode.configurar && TS.abrirHistAtualizacoes && !TS.demo;
+    upd.title = `Dados processados em ${quando.toLocaleString('pt-BR')}. Vendas até ${fmt.date(TS.dayToIso(TS.db.maxDay))}.${podeHist ? '\n\nClique para ver o histórico das atualizações.' : ''}`;
+    upd.classList.toggle('clicavel', !!podeHist);
+    if (podeHist && !upd.dataset.ligado) { upd.dataset.ligado = '1'; upd.setAttribute('role', 'button'); upd.tabIndex = 0; upd.addEventListener('click', () => TS.abrirHistAtualizacoes()); upd.addEventListener('keydown', (e) => { if (e.key === 'Enter') TS.abrirHistAtualizacoes(); }); }
+    if (primeira) { if (!lerEstado()) TS.aplicarPreset('30d'); rota(); } else if (state.page !== 'config') TS.render();
+  }
+
   async function carregar(forcar) {
     const btn = document.getElementById('updated');
     btn.classList.add('carregando');
+    const loja = state.loja;
     try {
       const hashPag = location.hash.replace('#', '');
       const pagAlvo = PAGES.includes(hashPag) ? hashPag : state.page;
-      const qs = new URLSearchParams({ loja: state.loja || '' });
-      if (TS.lojaCarregada !== state.loja) TS.historicoCompleto = false; // loja nova: começa pelo parcial
+      const qs = new URLSearchParams({ loja: loja || '' });
+      if (TS.lojaCarregada !== loja) TS.historicoCompleto = false; // loja nova: começa pelo parcial
       if (['clientes', 'clilista', 'campanhas'].includes(pagAlvo)) TS.historicoCompleto = true;
       if (!TS.historicoCompleto) qs.set('desde', desdeParcial());
       const chave = qs.toString();
       if (forcar) { qs.set('atualizar', '1'); TS.limparCaches && TS.limparCaches(); }
+      // abrindo o painel (ou trocando de loja): mostra na hora o que ficou guardado neste aparelho
+      if (!forcar && (!TS.db || TS.lojaCarregada !== loja)) {
+        const g = await Guardados.ler(loja, chave);
+        if (g && state.loja === loja && (!TS.db || TS.lojaCarregada !== loja)) {
+          try {
+            aplicar(JSON.parse(g.texto), { pagAlvo, em: g.em, aviso: null });
+            TS.etag = g.etag; TS.etagChave = chave; TS.dadosGuardados = true;
+          } catch (e) { console.error(e); }
+        }
+      }
       // mesmo pedido de antes: o servidor responde 304 se nada mudou (não baixa tudo de novo)
-      const headers = !forcar && TS.etag && TS.etagChave === chave && TS.db ? { 'If-None-Match': TS.etag } : {};
+      const headers = !forcar && TS.etag && TS.etagChave === chave && TS.db && TS.lojaCarregada === loja ? { 'If-None-Match': TS.etag } : {};
       const res = await fetch(TS.api('dados?' + qs), { credentials: 'same-origin', headers });
-      if (res.status === 304) return;
-      if (res.status === 401 && !TS.demo) { location.href = '/login'; return; }
-      const body = await res.json();
+      if (state.loja !== loja) return; // trocaram de loja enquanto baixava: o pedido da loja nova cuida da tela
+      if (res.status === 304) { TS.dadosGuardados = false; return; }
+      if (res.status === 401 && !TS.demo) { irParaLogin(); return; }
+      const texto = await res.text();
+      const body = JSON.parse(texto);
       if (res.status === 403 && body.erro === 'trocar-senha') { location.href = '/trocar-senha?primeiro=1'; return; }
       if (body.semLojas) { TS.db = null; if (TS.eu?.pode?.configurar) { location.hash = '#config'; rota(); } else content.replaceChildren(h('div', { class: 'notice' }, body.erro)); return; }
       if (!res.ok) throw new Error(body.erro || res.statusText);
-      const primeira = !TS.db || TS.lojaCarregada !== state.loja;
+      TS.dadosGuardados = false;
+      const etag = res.headers.get('ETag');
+      const em = res.headers.get('X-Dados-Em') || body.geradoEm;
+      const avisoSrv = res.headers.get('X-Dados-Aviso');
+      if (!avisoSrv) Guardados.salvar(loja, chave, texto, etag, em);
+      const primeira = !TS.db || TS.lojaCarregada !== loja;
+      TS.etag = etag; TS.etagChave = chave;
       if (!primeira && !forcar && body.geradoEm === TS.db.geradoEm && (body.desde || null) === (TS.db.desde || null)) return; // nada mudou
-      TS.etag = res.headers.get('ETag'); TS.etagChave = chave;
-      if (primeira && TS.db) { TS.resetFiltros(); TS.limparCaches && TS.limparCaches(); }
-      // os filtros guardam o número de cada texto no dicionário; numa recarga (atualização automática, "carregar todo o
-      // histórico", produto reclassificado) a ordem do dicionário pode mudar: guarda os textos e remonta depois
-      const textos = !primeira && TS.db ? TS.filtrosEmTexto() : null;
-      TS.lojaCarregada = state.loja;
-      TS.db = TS.decode(body);
-      if (textos) TS.filtrosDeTexto(textos);
-      TS.aplicarMarca && TS.aplicarMarca();
-      TS.rules.prepare();
-      TS.cli = null;
-      if (cliIdle) { (window.cancelIdleCallback || clearTimeout)(cliIdle); cliIdle = null; }
-      if (TELAS_CLI.has(pagAlvo)) TS.garantirClientes();
-      else cliIdle = (window.requestIdleCallback || ((fn) => setTimeout(fn, 200)))(() => { cliIdle = null; TS.garantirClientes(); });
-      const aviso = res.headers.get('X-Dados-Aviso');
-      TS.aviso = aviso ? 'Não consegui atualizar agora; mostrando os dados anteriores. Motivo: ' + decodeURIComponent(aviso) : null;
-      const em = new Date(res.headers.get('X-Dados-Em') || body.geradoEm);
-      document.getElementById('updated').replaceChildren('Atualizado', h('b', null, em.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })));
-      const upd = document.getElementById('updated');
-      const podeHist = TS.eu && TS.eu.pode && TS.eu.pode.configurar && TS.abrirHistAtualizacoes && !TS.demo;
-      upd.title = `Dados processados em ${em.toLocaleString('pt-BR')}. Vendas até ${fmt.date(TS.dayToIso(TS.db.maxDay))}.${podeHist ? '\n\nClique para ver o histórico das atualizações.' : ''}`;
-      upd.classList.toggle('clicavel', !!podeHist);
-      if (podeHist && !upd.dataset.ligado) { upd.dataset.ligado = '1'; upd.setAttribute('role', 'button'); upd.tabIndex = 0; upd.addEventListener('click', () => TS.abrirHistAtualizacoes()); upd.addEventListener('keydown', (e) => { if (e.key === 'Enter') TS.abrirHistAtualizacoes(); }); }
-      if (primeira) { if (!lerEstado()) TS.aplicarPreset('30d'); rota(); } else if (state.page !== 'config') TS.render();
+      aplicar(body, { pagAlvo, em, aviso: avisoSrv ? decodeURIComponent(avisoSrv) : null });
     } catch (e) {
       console.error(e);
       if (!TS.db) content.replaceChildren(h('div', { class: 'notice err' }, 'Não foi possível carregar os dados: ' + e.message, h('div', { style: { marginTop: '8px' } }, h('button', { class: 'btn', onclick: () => carregar(true) }, 'Tentar de novo'))));
-      else { TS.aviso = 'Falha ao atualizar: ' + e.message; TS.render(); }
+      else { TS.aviso = (TS.dadosGuardados ? 'Sem conexão com o painel: mostrando os dados guardados neste aparelho. ' : 'Falha ao atualizar: ') + e.message; TS.render(); }
     } finally {
-      btn.classList.remove('carregando');
+      if (state.loja === loja) btn.classList.remove('carregando');
     }
   }
 
@@ -379,9 +479,10 @@
   async function iniciar() {
     try {
       const r = await fetch(TS.api('eu'), { credentials: 'same-origin' });
-      if (r.status === 401 && !TS.demo) { location.href = '/login'; return; }
+      if (r.status === 401 && !TS.demo) { irParaLogin(); return; }
       const eu = await r.json();
       TS.eu = eu;
+      Guardados.limpar(); // outra pessoa entrou neste aparelho: o que era dela sai daqui
       TS.lojas = eu.lojas || [];
       configurarAbas(eu);
       TS.sistemaInit && TS.sistemaInit(eu);
