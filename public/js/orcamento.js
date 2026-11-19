@@ -243,17 +243,32 @@
         c.semCusto ? h('div', { class: 'notice' }, `${c.semCusto} produto(s) sem custo no painel: a margem fica maior do que a real.`) : null,
         h('small', { class: 'muted' }, 'Deduções com as taxas da loja (Configurações → Estoque e margem). As margens líquida e de contribuição são sobre o total do cliente.')].filter(Boolean));
     }
-    function pintar() { const c = conta(o, cat.taxas); pintarLinhas(c); pintarPainel(c); }
+    // rascunho: só "Salvar" fica ativo até salvar; qualquer mudança depois volta a pedir para salvar
+    let sujo = !o.id, iniciado = false;
+    const secundarios = [];
+    const aviso = h('small', { class: 'muted orc-salve' });
+    const atualizarBotoes = () => {
+      const bloq = !travado && (sujo || !o.id);
+      for (const b of secundarios) b.disabled = bloq;
+      aviso.textContent = bloq ? (o.id ? 'Há mudanças não salvas: salve para imprimir, enviar ou mudar a situação.' : 'Salve o orçamento para imprimir, enviar ou mudar a situação.') : '';
+    };
+    const mexeu = () => { if (!iniciado || travado) return; if (!sujo) { sujo = true; atualizarBotoes(); } };
+    const sec = (b) => { if (b) secundarios.push(b); return b; };
+    function pintar() { const c = conta(o, cat.taxas); pintarLinhas(c); pintarPainel(c); mexeu(); }
 
     const pagSel = h('select', { class: 'f-input', disabled: travado || null }, ...Object.entries(PAG).map(([k, v]) => h('option', { value: k, selected: o.pagamento === k || null }, v)));
     pagSel.addEventListener('change', () => { o.pagamento = pagSel.value; pintar(); });
+    // vendedora do pedido (vai na NF-e de venda): quem vendeu nos últimos 90 dias
+    const vendsLoja = (() => { const db = TS.db, s = new Set(); if (db && db.n) for (let i = 0; i < db.n; i++) if (db.day[i] > TS.todayDay() - 90 && db.D.vendedor[db.vend[i]]) s.add(db.D.vendedor[db.vend[i]]); return [...s].sort((a, b) => a.localeCompare(b, 'pt-BR')); })();
+    const vendSel = h('select', { class: 'f-input', disabled: travado || null }, h('option', { value: '' }, 'Sem vendedora'), ...[...new Set([...vendsLoja, ...(o.vendedora ? [o.vendedora] : [])])].map((v) => h('option', { value: v, selected: o.vendedora === v || null }, v)));
+    vendSel.addEventListener('change', () => { o.vendedora = vendSel.value; });
     const comCb = h('input', { type: 'checkbox', checked: o.comissao || null, disabled: travado || null });
     comCb.addEventListener('change', () => { o.comissao = comCb.checked; pintar(); });
 
     const salvar = async () => {
       try {
         const r = await api('POST', 'orcamentos', { loja, ...o });
-        Object.assign(o, r.ok); state.orcAberto = r.ok.id; toast(`Orçamento #${r.ok.numero} salvo.`); return r.ok;
+        Object.assign(o, r.ok); state.orcAberto = r.ok.id; sujo = false; toast(`Orçamento #${r.ok.numero} salvo.`); return r.ok;
       } catch (e) { toast(e.message, true); return null; }
     };
     const mudarSit = async (sit) => {
@@ -269,6 +284,12 @@
       const linhas = o.itens.map((i) => `• ${fmt.n2(i.qtd).replace(/,00$/, '')} × ${i.nome} — ${fmt.brl(i.qtd * i.preco * (1 - (i.desc || 0) / 100) * (1 - (o.descGeral || 0) / 100))}`);
       const txt = `Olá${o.cliente.contato ? ', ' + o.cliente.contato.split(' ')[0] : ''}! Segue o orçamento${o.numero ? ' nº ' + o.numero : ''} da ${nomeLoja(loja)}:\n\n${linhas.join('\n')}${o.frete ? `\n• Frete — ${fmt.brl(o.frete)}` : ''}\n\n*Total: ${fmt.brl(c.total)}*\nPagamento: ${PAG[o.pagamento]} · Validade: ${o.validadeDias} dias${o.entrega ? `\nEntrega: ${o.entrega}` : ''}\n\nQualquer dúvida, estamos à disposição! 🍵`;
       window.open((tel.length >= 10 ? `https://wa.me/55${tel.replace(/^55(?=\d{10,11}$)/, '')}` : 'https://wa.me/') + '?text=' + encodeURIComponent(txt), '_blank', 'noopener');
+    };
+    const emitirNfe = () => {
+      if (!o.cliente.doc) { if (!confirm('O orçamento está sem CNPJ/CPF: na nota você vai escolher o parceiro à mão. Continuar?')) return; }
+      const pu = (i) => i.preco * (1 - (i.desc || 0) / 100) * (1 - (o.descGeral || 0) / 100);
+      TS.nfPronta = { loja, numero: o.numero, doc: o.cliente.doc, nome: o.cliente.empresa || o.cliente.contato, vendedora: o.vendedora || '', pagamento: o.pagamento, frete: o.frete || 0, obs: `Orçamento nº ${o.numero}`, itens: o.itens.map((i) => ({ cod: i.cod, nome: i.nome, qtd: i.qtd, preco: pu(i) })) };
+      location.hash = '#nfsaida';
     };
     const dup = () => { const c = JSON.parse(JSON.stringify(o)); delete c.id; delete c.numero; delete c.situacao; delete c.historico; delete c.motivoPerda; state.orcAberto = 'novo'; editor(corpo, loja, cat, c); toast('Cópia aberta: salve para criar o novo orçamento.'); };
     const excluir = async () => { if (!o.id || !confirm('Excluir este rascunho?')) return; try { await api('DELETE', `orcamentos/${o.id}?loja=${encodeURIComponent(loja)}`); voltar(); } catch (e) { toast(e.message, true); } };
@@ -291,22 +312,31 @@
           h('div', { class: 'card mt' }, h('div', { class: 'card-title' }, 'Condições'),
             h('div', { class: 'cfr-grade orc-cond' }, campo('Desconto geral (%)', numEl(o, 'descGeral')), campo('Frete cobrado (R$)', numEl(o, 'frete')),
               campo('Custos extras (R$)', numEl(o, 'custoExtra', { title: 'Embalagem especial, frete pago pela loja, cartão…' })), campo('Pagamento', pagSel),
-              campo('Validade (dias)', numEl(o, 'validadeDias')), campo('Entrega', inp(o, 'entrega', { placeholder: 'Ex.: retirada na loja até 15/12' })),
+              campo('Validade (dias)', numEl(o, 'validadeDias')), campo('Entrega', inp(o, 'entrega', { placeholder: 'Ex.: retirada na loja até 15/12' })), campo('Vendedora', vendSel),
               h('label', { class: 'cfg-check-l orc-com' }, comCb, ' Paga comissão à vendedora')),
             campo('Observações para o cliente', (() => { const t = h('textarea', { class: 'f-input', rows: 3, disabled: travado || null }, o.obs || ''); t.addEventListener('input', () => { o.obs = t.value; }); return t; })()))),
         h('div', { class: 'orc-lado' }, painel,
           h('div', { class: 'card mt orc-acoes' },
             travado ? null : h('button', { type: 'button', class: 'btn primary', onclick: async () => { if (await salvar()) editor(corpo, loja, cat, o); } }, 'Salvar'),
-            h('button', { type: 'button', class: 'btn', onclick: docCliente }, '🖨 Imprimir / PDF para o cliente'),
-            h('button', { type: 'button', class: 'btn', onclick: whats }, 'WhatsApp para o cliente'),
-            o.situacao !== 'enviado' && !travado ? h('button', { type: 'button', class: 'btn', onclick: () => mudarSit('enviado') }, 'Marcar como enviado') : null,
-            !travado ? h('button', { type: 'button', class: 'btn orc-aprov', onclick: () => mudarSit('aprovado') }, '✓ Cliente aprovou') : null,
-            o.situacao !== 'perdido' && !travado ? h('button', { type: 'button', class: 'btn ghost-danger', onclick: () => mudarSit('perdido') }, 'Perdemos') : null,
-            o.situacao === 'perdido' ? h('button', { type: 'button', class: 'btn', onclick: () => mudarSit('rascunho') }, 'Reabrir') : null,
-            o.id ? h('button', { type: 'button', class: 'link-btn', onclick: dup }, 'Duplicar') : null,
+            travado ? null : aviso,
+            sec(h('button', { type: 'button', class: 'btn', onclick: docCliente }, '🖨 Imprimir / PDF para o cliente')),
+            sec(h('button', { type: 'button', class: 'btn', onclick: whats }, 'WhatsApp para o cliente')),
+            o.situacao !== 'enviado' && !travado ? sec(h('button', { type: 'button', class: 'btn', onclick: () => mudarSit('enviado') }, 'Marcar como enviado')) : null,
+            !travado ? sec(h('button', { type: 'button', class: 'btn orc-aprov', onclick: () => mudarSit('aprovado') }, '✓ Cliente aprovou')) : null,
+            travado && !TS.demo ? h('button', { type: 'button', class: 'btn primary', title: 'Abre a NF-e de venda já com o parceiro, a vendedora, o pagamento e os produtos do orçamento', onclick: emitirNfe }, '🧾 Emitir NF-e de venda') : null,
+            travado && TS.demo ? h('button', { type: 'button', class: 'btn primary', onclick: () => toast('Na apresentação a NF-e não é emitida.') }, '🧾 Emitir NF-e de venda') : null,
+            o.situacao !== 'perdido' && !travado ? sec(h('button', { type: 'button', class: 'btn ghost-danger', onclick: () => mudarSit('perdido') }, 'Perdemos')) : null,
+            o.situacao === 'perdido' ? sec(h('button', { type: 'button', class: 'btn', onclick: () => mudarSit('rascunho') }, 'Reabrir')) : null,
+            o.id ? sec(h('button', { type: 'button', class: 'link-btn', onclick: dup }, 'Duplicar')) : null,
             o.id && o.situacao === 'rascunho' ? h('button', { type: 'button', class: 'link-btn neg', onclick: excluir }, 'Excluir rascunho') : null)))].filter(Boolean));
     pintar();
     pintarInfo();
+    // campos de texto (cliente, condições, observação) também contam como mudança; a busca de produto não
+    const ed = corpo;
+    if (!ed._orcOuvindo) { ed._orcOuvindo = true; ed.addEventListener('input', (e) => { if (ed._orcMexeu && !e.target.closest('.orc-busca:not(.orc-cli-campo)')) ed._orcMexeu(); }); ed.addEventListener('change', (e) => { if (ed._orcMexeu && !e.target.closest('.orc-busca:not(.orc-cli-campo)')) ed._orcMexeu(); }); }
+    ed._orcMexeu = mexeu;
+    iniciado = true;
+    atualizarBotoes();
   }
 
   const nomeLoja = (loja) => { const m = (TS.db.metas || []).find((x) => x.id === loja); return (m && m.nome) || 'Tea Shop'; };

@@ -146,6 +146,9 @@ test('Orçamento: monta com margem bruta e líquida, salva, aprova e o documento
   const busca = page.getByPlaceholder('Buscar produto: nome ou código…');
   await busca.fill('ch');
   await page.locator('.orc-sug').first().click();
+  const vend = page.locator('.cfr-campo', { hasText: 'Vendedora' }).locator('select');
+  await expect(vend.locator('option')).not.toHaveCount(1);
+  await vend.selectOption({ index: 1 });
   await page.locator('.orc-linha input').first().fill('20');
   await page.locator('.orc-linha input').first().dispatchEvent('change');
   const painel = page.locator('.orc-painel');
@@ -153,10 +156,18 @@ test('Orçamento: monta com margem bruta e líquida, salva, aprova e o documento
   await expect(painel).toContainText('Margem líquida');
   await expect(painel).toContainText('Royalties');
   expect(await page.locator('main').innerText(), 'texto "null" no orçamento').not.toMatch(/(^|\s)(null|undefined|NaN)(\s|$)/);
+  await expect(page.getByRole('button', { name: '✓ Cliente aprovou' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: '🖨 Imprimir / PDF para o cliente' })).toBeDisabled();
   await page.getByRole('button', { name: 'Salvar' }).click();
   await expect(page.locator('.inv-titulo')).toContainText('Orçamento #1');
+  await expect(page.getByRole('button', { name: '✓ Cliente aprovou' })).toBeEnabled();
+  await page.locator('.cfr-campo', { hasText: 'Entrega' }).locator('input').fill('retirada');
+  await expect(page.getByRole('button', { name: '✓ Cliente aprovou' })).toBeDisabled();
+  await page.getByRole('button', { name: 'Salvar' }).click();
+  await expect(page.getByRole('button', { name: '✓ Cliente aprovou' })).toBeEnabled();
   await page.getByRole('button', { name: '✓ Cliente aprovou' }).click();
   await expect(page.locator('.cf-st', { hasText: 'Aprovado' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '🧾 Emitir NF-e de venda' })).toBeVisible();
   await page.getByRole('button', { name: '‹ Orçamentos' }).click();
   await expect(page.locator('.card', { hasText: 'Orçamentos' })).toContainText('Empresa Exemplo Ltda');
 });

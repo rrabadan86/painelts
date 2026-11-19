@@ -51,11 +51,42 @@
   }
   function novaNota(loja) {
     const box = h('div', { class: 'mt nfe-box' });
-    let aberto = false, info = null, timer = null, esperandoParc = null;
+    let aberto = false, info = null, timer = null, esperandoParc = null, avisoPronta = null;
     const form = { parceiro: null, consumidorFinal: false, vendedorId: '', pagamento: '', itens: [], obs: '' };
+    /** nota vinda de um orçamento aprovado (Vendas → Orçamento): parceiro pelo CNPJ/CPF, vendedora pelo nome,
+     *  pagamento pela forma, produtos pelo código (preço já com os descontos). O que não achar fica listado. */
+    function aplicarPronta() {
+      const p = TS.nfPronta;
+      const cad = info && info.cadastros;
+      if (!p || p.loja !== loja || !cad) return;
+      TS.nfPronta = null;
+      const falta = [];
+      const doc = String(p.doc || '').replace(/\D/g, '');
+      form.parceiro = doc ? cad.parceiros.find((x) => String(x.doc || '').replace(/\D/g, '') === doc) || null : null;
+      if (!form.parceiro) falta.push(`parceiro ${p.nome || ''}${doc ? ' (' + docTxt(doc) + ')' : ''} não está no AppNext: escolha ou cadastre`);
+      else form.consumidorFinal = !!form.parceiro.consumidorFinal;
+      const vn = ESQ(p.vendedora || '');
+      const v = vn ? cad.vendedores.find((x) => ESQ(x.nome) === vn) || cad.vendedores.find((x) => ESQ(x.nome).startsWith(vn.split(' ')[0])) : null;
+      form.vendedorId = v ? v.id : '';
+      if (p.vendedora && !v) falta.push(`vendedora ${p.vendedora} não achada nos vendedores do AppNext`);
+      const PAGS = { pix: /pix/i, boleto: /boleto/i, cartao: /cr[eé]dito|cart/i, dinheiro: /dinheiro/i };
+      const pg = cad.pagamentos.find((x) => (PAGS[p.pagamento] || /$^/).test(x.descricao));
+      if (pg) form.pagamento = pg.codigo;
+      form.itens = [];
+      for (const i of p.itens) {
+        const x = cad.produtos.find((y) => y.codigo === String(i.cod));
+        if (x) form.itens.push({ produtoId: x.id, codigo: x.codigo, nome: x.nome, un: x.un, qtd: i.qtd, preco: Math.round(i.preco * 100) / 100 });
+        else falta.push(`produto ${i.nome} (cód. ${i.cod}) não está nos produtos lidos do AppNext`);
+      }
+      if (p.frete) falta.push(`o frete do orçamento (${fmt.brl(p.frete)}) não entra nos itens: lance no AppNext se precisar`);
+      form.obs = p.obs || '';
+      aberto = true;
+      avisoPronta = { numero: p.numero, falta };
+    }
     const carregar = async () => {
       try { info = await nfeApi('GET', `nfe?loja=${encodeURIComponent(loja)}`); } catch (e) { info = { erroGeral: e.message }; }
       if (!box.isConnected) return;
+      aplicarPronta();
       pintar();
       const trabalhando = info && ((info.robo && (info.robo.estado === 'na_fila' || info.robo.estado === 'rodando')) || (info.rascunhos || []).some((r) => r.estado === 'na_fila') || (info.parceiros || []).some((r) => r.estado === 'na_fila'));
       // parceiro novo cadastrado pelo robô: já fica escolhido na nota
@@ -84,6 +115,7 @@
       box.replaceChildren(...[
         h('div', { class: 'nfe-topo' }, bt, h('small', { class: 'muted' }, 'O robô preenche a saída no AppNext e salva como rascunho. Quem confere e transmite a nota é a loja, no AppNext.')),
         info && info.erroGeral ? h('div', { class: 'notice err mt' }, info.erroGeral) : null,
+        aberto && avisoPronta ? h('div', { class: 'notice ' + (avisoPronta.falta.length ? '' : 'ok') }, h('b', null, `Nota montada a partir do orçamento #${avisoPronta.numero}. `), avisoPronta.falta.length ? h('span', null, 'Confira: ', avisoPronta.falta.join('; '), '.') : 'Confira e teste antes de emitir.') : null,
         aberto ? formulario() : (info && info.robo && info.robo.acao === 'rascunho' ? roboVivo() : null),
         ras.length ? listaRascunhos(ras) : null].filter(Boolean));
     }

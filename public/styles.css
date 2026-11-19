@@ -2454,3 +2454,4 @@ details.vl-ajuda summary { cursor: pointer; font-weight: 600; }
 .orc-cli-sugs { min-width: 280px; }
 .orc-cli-info { margin-top: 8px; font-size: 13px; color: #444; }
 .orc-cli-info:empty { display: none; }
+.orc-salve { display: block; text-align: center; } .orc-salve:empty { display: none; } .orc-acoes .btn:disabled { opacity: .45; cursor: not-allowed; }

@@ -49,7 +49,7 @@ function normalizar(b) {
     frete: num(b.frete ?? 0, 0, 1e6) ?? 0, custoExtra: num(b.custoExtra ?? 0, 0, 1e6) ?? 0,
     pagamento: ['pix', 'boleto', 'cartao', 'dinheiro'].includes(b.pagamento) ? b.pagamento : 'pix',
     comissao: !!b.comissao, validadeDias: Math.round(num(b.validadeDias ?? 7, 1, 90) ?? 7),
-    entrega: txt(b.entrega, 120), obs: txt(b.obs, 1000), titulo: txt(b.titulo, 120),
+    entrega: txt(b.entrega, 120), obs: txt(b.obs, 1000), titulo: txt(b.titulo, 120), vendedora: txt(b.vendedora, 60),
   };
 }
 
