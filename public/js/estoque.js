@@ -416,7 +416,8 @@
     const M = motor(estoque, cfg);
     const temCod = db.D.cod && db.D.cod.some((c) => c);
     put(!EQ, h('div', { class: 'muted est-origem' }, `Estoque e custos do AppNext de ${new Date(estoque.em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })} · ${fmt.int(estoque.itens.length)} produtos`,
-      temCod ? '' : ' · as vendas ainda não têm o código do produto: o casamento está sendo feito pelo nome (veja "Vendas sem custo" no fim)'));
+      temCod ? null : ' · ', temCod ? null : h('details', { class: 'est-como' }, h('summary', null, 'As vendas estão sem o código do produto. Como funciona ▸'),
+        h('p', null, 'Sem o código, o painel acha o custo de cada venda pelo nome do produto. Se o nome da venda for diferente do nome no estoque, o custo não é achado e a venda fica fora da margem' + (R ? ': confira a lista "Vendas sem custo" no fim desta tela.' : ' (a lista fica em Produtos → Rentabilidade, "Vendas sem custo").')))));
 
     const { deducoes, OUTROS, taxaOutro, mediaFat, ONDE_FAT, pSimples, pCartao, CATS, catDe } = criarDeducoes(M, cfg);
 
@@ -426,6 +427,11 @@
     const dedTot = { com: 0, roy: 0, imp: 0, maq: 0, out: 0 };
     const outrosTot = OUTROS.map(() => 0);
     const porProd = new Map(), porVend = new Map(), semCusto = new Map();
+    // prêmio de fidelidade ou brinde: sai por R$ 0,01 (às vezes com o preço cheio e o desconto de quase 100% na linha, o que
+    // M.taxa e TS.ehResgate não pegam). Entra no total da loja (o custo é real), mas não na conta de cada produto:
+    // uma unidade a R$ 0,01 levava a margem do produto a −100.000% e esticava o gráfico.
+    const resg = (i) => TS.ehResgate(i) || ((db.qtd[i] || 0) > 0 && (db.vt[i] || 0) / db.qtd[i] < 0.05);
+    let nResg = 0, custoResg = 0;
     for (const i of base) {
       if (M.taxa(i)) continue;
       const vt = db.vt[i] || 0;
@@ -449,6 +455,7 @@
       const dd = deducoes(i);
       for (const k in dedTot) dedTot[k] += dd[k];
       dd.outros.forEach((v, k) => { outrosTot[k] += v; });
+      if (resg(i)) { nResg += db.qtd[i] || 0; custoResg += c; } else {
       const cs = M.casar(i);
       const granel = cs.kg;
       const chave = granel ? 'kg:' + cs.it.cod : d;
@@ -467,11 +474,13 @@
         p.porTam.set(cs.g, t);
       }
       porProd.set(chave, p);
+      }
       const vn = db.D.vendedor[db.vend[i]] || '—';
       const v = porVend.get(vn) || { vendedor: vn, vt: 0, custo: 0, fat: 0, ded: 0, dedVar: 0 };
       v.vt += vt; v.custo += c; v.ded += dd.var + dd.fix; v.dedVar += dd.var; porVend.set(vn, v);
     }
     for (const i of base) { if (M.taxa(i)) continue; const v = porVend.get(db.D.vendedor[db.vend[i]] || '—'); if (v) v.fat += db.vt[i] || 0; }
+    put(R && nResg > 0, h('div', { class: 'muted est-origem' }, `${fmt.int(nResg)} ${nResg === 1 ? 'item saiu' : 'itens saíram'} a R$ 0,01 (prêmios de fidelidade e brindes): ${nResg === 1 ? 'fica' : 'ficam'} fora da margem de cada produto e ${nResg === 1 ? 'entra' : 'entram'} só no total da loja (custo de ${fmt.brl(custoResg)}).`));
     const lucro = fatCusto - custoTot;
     const tamTxt = (m) => [...m].sort((a, b) => a[0] - b[0]).map(([g, q]) => `${fmt.int(q)}× ${g >= 1000 ? g / 1000 + ' kg' : g + 'g'}`).join(' · ');
     const prods = [...porProd.values()].filter((p) => p.vt > 0).map((p) => {
@@ -688,7 +697,7 @@
       // (pelo código; sem código nas vendas, pelo nome)
       const real = new Map();
       for (const i of base) {
-        if (M.taxa(i)) continue;
+        if (M.taxa(i) || resg(i)) continue;
         const cod = db.D.cod ? String(db.D.cod[db.cod[i]] ?? '') : '';
         const k = cod || 'n:' + ESQ(db.D.descricao[db.desc[i]]);
         const r = real.get(k) || real.set(k, { vt: 0, custo: 0, qtd: 0, temCusto: true }).get(k);
@@ -1055,29 +1064,37 @@
     };
     const sel = CLASSE[state.estClasse] ? state.estClasse : null;
     const mq = MED[grSel];
+    // abas internas: uma parte por vez (no celular a tela inteira passava de 30 mil px); a aba fica lembrada
+    const ABAS_R = [['Visão geral', 'geral'], ['Produtos', 'produtos'], ['Margem de tabela', 'tabela'], ['Pacotes', 'pacotes'], ['Vendedoras', 'vendedoras'], ['Kits', 'kits']];
+    const abaR = ABAS_R.some(([, k]) => k === state.rentAba) ? state.rentAba : 'geral';
+    const irAba = (k) => { state.rentAba = k; TS.render(); };
+    corpo.append(h('div', { class: 'est-abas mt' }, TS.seg(ABAS_R, abaR, irAba)));
     const legenda = h('div', { class: 'est-classes' }, Object.entries(CLASSE).map(([k, [n, c]]) => h('button', {
       type: 'button', class: 'est-classe' + (sel === k ? ' on' : sel ? ' off' : ''), style: { '--cor': c }, 'aria-pressed': sel === k ? 'true' : 'false',
       title: sel === k ? 'Clique de novo para ver todos' : `Mostrar só ${n}`,
       onclick: () => { state.estClasse = sel === k ? null : k; TS.render(); },
     }, h('span', { class: 'est-classe-tit' }, h('i'), h('b', null, n), h('em', null, conta[k])), h('span', { class: 'est-classe-txt' }, DESC[k]))));
     const linhaMed = (pts) => ({ type: 'line', data: pts, borderColor: '#9AA59D', borderDash: [5, 4], borderWidth: 1, pointRadius: 0, pointHoverRadius: 0, fill: false, showLine: true });
-    const ys = prodsG.map((p) => p.margem * 100), xs = prodsG.map((p) => Math.max(grSel ? 0.01 : 1, p.giro));
+    // margem muito negativa (venda quase de graça) não pode esticar o eixo: o ponto fica na borda de baixo e o balão mostra a margem real
+    const PISO_Y = -50, yDe = (p) => Math.max(PISO_Y, p.margem * 100);
+    const ys = prodsG.map(yDe), xs = prodsG.map((p) => Math.max(grSel ? 0.01 : 1, p.giro));
     const yMin = Math.min(...ys, mq.m * 100) - 1, yMax = Math.max(...ys, mq.m * 100) + 1, xMin = Math.min(...xs, mq.q), xMax = Math.max(...xs, mq.q);
-    corpo.append(h('div', { class: 'mt' }, TS.cardWithTools('Giro × margem', grSel
-      ? `Cada ponto é um chá a granel, somando todos os tamanhos (50g, 100g, 250g…). Quanto mais à direita, mais kg vendidos no período; quanto mais alto, maior a margem. As linhas tracejadas dividem os chás ao meio: metade vendeu mais de ${fq(mq.q)} e metade tem margem acima de ${fmt.pct(mq.m, 0)}. Chá é comparado só com chá. Aqui a classe é a do período escolhido; a oficial (fixa, usada no Pedido) está na tabela abaixo.`
-      : `Cada ponto é um acessório ou envasado. Quanto mais à direita, mais unidades vendidas no período; quanto mais alto, maior a margem. As linhas tracejadas dividem os produtos ao meio: metade vendeu mais de ${fq(mq.q)} e metade tem margem acima de ${fmt.pct(mq.m, 0)}. Aqui a classe é a do período escolhido; a oficial (fixa, usada no Pedido) está na tabela abaixo.`,
+    if (abaR === 'geral') corpo.append(h('div', { class: 'mt' }, TS.cardWithTools('Giro × margem', grSel
+      ? `Cada ponto é um chá a granel, somando todos os tamanhos (50g, 100g, 250g…). Quanto mais à direita, mais kg vendidos no período; quanto mais alto, maior a margem. As linhas tracejadas dividem os chás ao meio: metade vendeu mais de ${fq(mq.q)} e metade tem margem acima de ${fmt.pct(mq.m, 0)}. Chá é comparado só com chá. Aqui a classe é a do período escolhido; a oficial (fixa, usada no Pedido) está na aba Produtos.`
+      : `Cada ponto é um acessório ou envasado. Quanto mais à direita, mais unidades vendidas no período; quanto mais alto, maior a margem. As linhas tracejadas dividem os produtos ao meio: metade vendeu mais de ${fq(mq.q)} e metade tem margem acima de ${fmt.pct(mq.m, 0)}. Aqui a classe é a do período escolhido; a oficial (fixa, usada no Pedido) está na aba Produtos.`,
       TS.seg([['Chás a granel', 'kg'], ['Acessórios e envasados', 'un']], grSel ? 'kg' : 'un', (v) => { state.estGrupo = v; TS.render(); }),
       legenda,
-      sel ? h('div', { class: 'est-filtro' }, `Mostrando só ${CLASSE[sel][0]} no gráfico e na tabela abaixo. `, h('button', { type: 'button', class: 'link-btn', onclick: () => { state.estClasse = null; TS.render(); } }, 'Ver todos')) : null,
+      sel ? h('div', { class: 'est-filtro' }, `Mostrando só ${CLASSE[sel][0]} no gráfico e na aba Produtos. `, h('button', { type: 'button', class: 'link-btn', onclick: () => { state.estClasse = null; TS.render(); } }, 'Ver todos')) : null,
       prodsG.length ? TS.chart({
         type: 'scatter',
         data: { datasets: [
-          ...Object.entries(CLASSE).filter(([k]) => !sel || k === sel).map(([k, [n, c]]) => ({ label: n, data: prodsG.filter((p) => p.classe === k).map((p) => ({ x: Math.max(grSel ? 0.01 : 1, p.giro), y: p.margem * 100, p })), backgroundColor: c + 'CC', pointRadius: 5, pointHoverRadius: 7 })),
+          ...Object.entries(CLASSE).filter(([k]) => !sel || k === sel).map(([k, [n, c]]) => ({ label: n, data: prodsG.filter((p) => p.classe === k).map((p) => ({ x: Math.max(grSel ? 0.01 : 1, p.giro), y: yDe(p), p })), backgroundColor: c + 'CC', pointRadius: 5, pointHoverRadius: 7 })),
           linhaMed([{ x: mq.q, y: yMin }, { x: mq.q, y: yMax }]), linhaMed([{ x: xMin, y: mq.m * 100 }, { x: xMax, y: mq.m * 100 }]),
         ] },
         options: { plugins: { legend: { display: false }, tooltip: { filter: (c) => !!c.raw.p, callbacks: { label: (c) => `${c.raw.p.produto}: ${fq(c.raw.p.giro)}${c.raw.p.tamanhos ? ' (' + c.raw.p.tamanhos + ')' : ''} · margem ${fmt.pct(c.raw.p.margem)} · lucro ${fmt.brl(c.raw.p.lucro)}` } } },
           scales: { x: { type: 'logarithmic', title: { display: true, text: `${grSel ? 'Kg vendidos' : 'Unidades vendidas'} no período` }, ticks: { callback: (v) => (Math.abs(Math.log10(v) - Math.round(Math.log10(v))) < 1e-9 ? (v < 1 ? String(v).replace('.', ',') : fmt.int(v)) : '') } }, y: { min: Math.floor(yMin), max: Math.ceil(yMax), title: { display: true, text: 'Margem (%)' }, ticks: { callback: (v) => v + '%' } } } },
       }, 'tall') : TS.empty())));
+    if (abaR === 'geral') { const al = cartaoAlertaMargem(); if (al) corpo.append(h('div', { class: 'mt' }, al)); }
     // colunas por visão: a tabela completa tem 16 colunas; "Resumo" e "Margens" cabem na tela sem rolar para o lado
     const COLS = [
 
@@ -1119,12 +1136,13 @@
     const segVis = h('div', { class: 'est-vis' }, h('span', { class: 'f-label' }, 'Colunas:'),
       TS.seg(Object.entries(VIS).map(([k, [t]]) => [t, k]), vis, (v) => { state.estColVis = v; TS.render(); }),
       h('small', { class: 'muted' }, VIS[vis][2]));
-    corpo.append(h('div', { class: 'mt' }, TS.card('Produtos por lucro', 'Curva ABC: A = produtos que fazem 80% do lucro (nunca podem faltar). Chá a granel aparece uma vez só, somando todas as gramaturas. A classe (Estrela, Volume…) compara chá com chá e acessório com acessório: a oficial é fixa e é a que o Pedido usa; a "no período" usa o filtro; a tendência mostra se o produto está saindo acima ou abaixo do normal.', h('div', { class: 'est-lucro-ctl' }, ctlMeses, segVis), tabLucro)));
+    if (abaR === 'produtos') corpo.append(h('div', { class: 'mt' }, sel ? h('div', { class: 'est-filtro' }, `Mostrando só ${CLASSE[sel][0]}. `, h('button', { type: 'button', class: 'link-btn', onclick: () => { state.estClasse = null; TS.render(); } }, 'Ver todos')) : null, TS.card('Produtos por lucro', 'Curva ABC: A = produtos que fazem 80% do lucro (nunca podem faltar). Chá a granel aparece uma vez só, somando todas as gramaturas. A classe (Estrela, Volume…) compara chá com chá e acessório com acessório: a oficial é fixa e é a que o Pedido usa; a "no período" usa o filtro; a tendência mostra se o produto está saindo acima ou abaixo do normal.', h('div', { class: 'est-lucro-ctl' }, ctlMeses, segVis), tabLucro)));
 
-    corpo.append(...[cartaoTabela(), cartaoAlertaMargem(), cartaoPacotes()].filter(Boolean).map((c) => h('div', { class: 'mt' }, c)));
+    if (abaR === 'tabela') corpo.append(h('div', { class: 'mt' }, cartaoTabela()));
+    if (abaR === 'pacotes') corpo.append(h('div', { class: 'mt' }, cartaoPacotes() || TS.card('Qual pacote oferecer', null, h('p', { class: 'muted' }, 'Nenhum chá a granel vendeu em dois tamanhos ou mais no período. Escolha um período maior.'))));
 
     const vends = [...porVend.values()].filter((v) => v.vt > 0).map((v) => ({ ...v, lucro: v.vt - v.custo, margem: (v.vt - v.custo) / v.vt, lucroLiq: v.vt - v.custo - v.ded, margemLiq: (v.vt - v.custo - v.ded) / v.vt, contrib: v.vt - v.custo - v.dedVar, margemContrib: (v.vt - v.custo - v.dedVar) / v.vt, cobre: v.fat ? v.vt / v.fat : null }));
-    corpo.append(h('div', { class: 'mt' }, TS.card('Lucro por vendedora', 'Quem vende mais nem sempre é quem deixa mais lucro.', TS.table({
+    if (abaR === 'vendedoras') corpo.append(h('div', { class: 'mt' }, TS.card('Lucro por vendedora', 'Quem vende mais nem sempre é quem deixa mais lucro.', TS.table({
       cols: [
         { key: 'vendedor', label: 'Vendedora', align: 'l', sticky: true },
         { key: 'fat', label: 'Faturamento', title: 'Tudo que a vendedora vendeu no período (sem taxa de serviço)', fmt: fmt.brl },
@@ -1140,15 +1158,14 @@
     }))));
 
     // ---------- kits: produtos que saem juntos no mesmo cupom ----------
-    corpo.append(TS.section('Combos e kits'));
-    corpo.append(h('div', { class: 'mt' }, cartaoKits()));
+    if (abaR === 'kits') corpo.append(h('div', { class: 'mt' }, cartaoKits()));
     }
     function cartaoKits() {
       const DESC_KIT = (state.estKitDesc ?? 10);
       const cupons = new Map(); // cupom → Set(produto)
       const preco = new Map(); // produto → { vt, qtd, custo, qtdC }
       for (const i of base) {
-        if (M.taxa(i) || !(db.vt[i] > 0)) continue;
+        if (M.taxa(i) || !(db.vt[i] > 0) || resg(i)) continue;
         const cs = M.casar(i);
         const nome = cs && cs.kg ? cs.it.desc : db.D.descricao[db.desc[i]];
         const k = TS.chaveCupom(i);
@@ -1227,8 +1244,11 @@
       }
       const proxLy = lyFut.reduce((t, v) => t + (v || 0), 0), passLy = antes.reduce((t, v) => t + (v || 0), 0);
       const varEpoca = passLy ? proxLy / passLy - 1 : null;
-      const picos = repo.filter((r) => r.origem === 'item' && r.vel > 0 && r.fator >= 1.3).sort((a, b) => (b.prev - b.vel) * (b.it.custo || 1) - (a.prev - a.vel) * (a.it.custo || 1)).slice(0, 8);
-      const quedas = repo.filter((r) => r.origem === 'item' && r.vel > 0 && r.fator <= 0.75).sort((a, b) => a.fator - b.fator).slice(0, 6);
+      // taxas, serviços e o consumo do Espaço Gourmet estão na planilha do AppNext como "produto", mas ninguém compra isso da franquia
+      const nomesTaxa = new Set([...TS.rules.ids.taxas].map((k) => TS.norm(db.D.descricao[k])));
+      const compravel = (r) => { const n = TS.norm(r.produto); return !nomesTaxa.has(n) && !/^taxa\b|\bservico\b|\bconsumo eg\b/.test(n); };
+      const picos = repo.filter((r) => compravel(r) && r.origem === 'item' && r.vel > 0 && r.fator >= 1.3).sort((a, b) => (b.prev - b.vel) * (b.it.custo || 1) - (a.prev - a.vel) * (a.it.custo || 1)).slice(0, 8);
+      const quedas = repo.filter((r) => compravel(r) && r.origem === 'item' && r.vel > 0 && r.fator <= 0.75).sort((a, b) => a.fator - b.fator).slice(0, 6);
       const item = (r) => h('li', null, h('b', null, r.produto), ` · ${r.fator > 1 ? '+' : '−'}${fmt.int(Math.abs(r.fator - 1) * 100)}% por dia · prever ${qtdTxt(r.prev * H, r.it)} em ${H} dias`);
       return TS.card('Próximas semanas', `Movimento da loja nas próximas 8 semanas pelo que aconteceu na mesma época do ano passado, corrigido pelo crescimento atual da loja (${cresc >= 1 ? '+' : ''}${fmt.pct(cresc - 1, 0)} nas últimas 8 semanas em relação ao ano passado).`,
         h('div', { class: 'est-saz-res' }, varEpoca == null ? null : h('span', null, 'No ano passado, as 8 semanas seguintes venderam ', h('b', { class: varEpoca >= 0 ? 'pos' : 'neg' }, `${varEpoca >= 0 ? '+' : ''}${fmt.pct(varEpoca, 0)}`), ' em relação às 8 anteriores.')),

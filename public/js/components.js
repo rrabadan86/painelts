@@ -567,6 +567,69 @@
     enderecoTxt: (e) => (e ? [[e.rua, e.numero].filter(Boolean).join(', '), e.bairro, [e.cidade, e.uf].filter(Boolean).join('/')].filter(Boolean).join(' · ') : ''),
   };
 
+  // ---------- janelas de pergunta e de aviso (no lugar do prompt()/alert() do navegador) ----------
+  /**
+   * TS.perguntar('Por que perdemos?', { texto, chips: ['Preço', 'Prazo'], obrigatorio: true, rotulo, dica, ok: 'Salvar' })
+   * devolve Promise: o texto digitado ('' quando é opcional e ficou vazio) ou null se a pessoa cancelou.
+   * Os chips são atalhos: um toque preenche o campo (dá para completar escrevendo).
+   */
+  TS.perguntar = function (titulo, o = {}) {
+    return new Promise((resolver) => {
+      const fundo = h('div', { class: 'cp-modal-bg' });
+      let feito = false;
+      const sair = (v) => { if (feito) return; feito = true; fundo.remove(); resolver(v); };
+      const campo = h('input', { class: 'f-input', type: 'text', maxlength: o.max || 200, value: o.valor || '', placeholder: o.dica || '', 'aria-label': o.rotulo || titulo });
+      const erro = h('small', { class: 'neg', role: 'alert', hidden: true });
+      const chips = (o.chips || []).length ? h('div', { class: 'chips' }, o.chips.map((c) => h('button', { type: 'button', class: 'chip', onclick: (e) => {
+        campo.value = c; erro.hidden = true;
+        chips.querySelectorAll('.chip').forEach((b) => b.classList.toggle('on', b === e.currentTarget));
+        campo.focus();
+      } }, c))) : null;
+      const confirmar = () => {
+        const v = campo.value.trim();
+        if (o.obrigatorio && !v) { erro.textContent = o.falta || 'Escolha um motivo ou escreva no campo.'; erro.hidden = false; campo.focus(); return; }
+        sair(v);
+      };
+      campo.addEventListener('input', () => { erro.hidden = true; if (chips) chips.querySelectorAll('.chip').forEach((b) => b.classList.toggle('on', b.textContent === campo.value.trim())); });
+      campo.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); confirmar(); } });
+      fundo.addEventListener('click', (e) => { if (e.target === fundo) sair(null); });
+      fundo.addEventListener('keydown', (e) => { if (e.key === 'Escape') sair(null); });
+      fundo.append(h('div', { class: 'card cp-copiar ts-perg', role: 'dialog', 'aria-modal': 'true', 'aria-label': titulo },
+        h('h3', null, titulo),
+        o.texto ? h('div', { class: 'muted' }, o.texto) : null,
+        chips,
+        h('label', { class: 'ts-perg-campo' }, h('span', { class: 'f-label' }, o.rotulo || (o.obrigatorio ? 'Motivo' : 'Observação (opcional)')), campo),
+        erro,
+        h('div', { class: 'ts-perg-acoes' },
+          h('button', { type: 'button', class: 'btn', onclick: () => sair(null) }, 'Cancelar'),
+          h('button', { type: 'button', class: 'btn primary', onclick: confirmar }, o.ok || 'Confirmar'))));
+      // fechada pelo "voltar" do celular (main.js tira a janela): conta como cancelar
+      new MutationObserver((_, ob) => { if (!fundo.isConnected) { ob.disconnect(); if (!feito) { feito = true; resolver(null); } } }).observe(document.body, { childList: true });
+      document.body.append(fundo);
+      campo.focus();
+    });
+  };
+  /** TS.avisar('Este cliente está sem celular válido.') — aviso simples com "Entendi"; devolve Promise que fecha junto */
+  TS.avisar = function (msg, o = {}) {
+    return new Promise((resolver) => {
+      const fundo = h('div', { class: 'cp-modal-bg' });
+      let feito = false;
+      const sair = () => { if (feito) return; feito = true; fundo.remove(); resolver(); };
+      const ok = h('button', { type: 'button', class: 'btn primary', onclick: sair }, 'Entendi');
+      fundo.addEventListener('click', (e) => { if (e.target === fundo) sair(); });
+      fundo.addEventListener('keydown', (e) => { if (e.key === 'Escape') sair(); });
+      fundo.append(h('div', { class: 'card cp-copiar ts-perg', role: 'alertdialog', 'aria-modal': 'true', 'aria-label': o.titulo || 'Aviso' },
+        o.titulo ? h('h3', null, o.titulo) : null,
+        h('div', { class: 'ts-perg-msg' }, String(msg == null ? '' : msg)),
+        h('div', { class: 'ts-perg-acoes' }, ok)));
+      new MutationObserver((_, ob) => { if (!fundo.isConnected) { ob.disconnect(); if (!feito) { feito = true; resolver(); } } }).observe(document.body, { childList: true });
+      document.body.append(fundo);
+      ok.focus();
+    });
+  };
+  /** erro de uma ação em português: sem conexão vira frase nossa, nunca o texto do navegador */
+  TS.avisarErro = (e) => TS.avisar(TS.erroDeRede && TS.erroDeRede(e) ? 'Sem conexão com o painel agora. Tente de novo em instantes.' : (e && e.message) || 'Não deu certo. Tente de novo.', { titulo: 'Não deu certo' });
+
   TS.alpha = (hex, a) => {
     const n = parseInt(hex.slice(1), 16);
     return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;

@@ -96,6 +96,7 @@
     document.body.classList.toggle('pg-config', state.page === 'config');
     document.getElementById('btnUsuario')?.classList.toggle('on', state.page === 'config');
     document.body.classList.toggle('pg-minha', state.page === 'minha');
+    document.body.classList.toggle('pg-semfiltros', state.page === 'inicio' || state.page === 'dre'); // não usam a lateral de filtros
     if (state.page === 'config') {
       TS.destroyCharts();
       const root = h('div');
