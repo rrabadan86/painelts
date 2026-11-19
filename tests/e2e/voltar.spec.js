@@ -201,3 +201,17 @@ test('Checklist: marcar item guarda quem e a hora; editar os itens', async ({ pa
   await page.getByRole('button', { name: 'Editar os itens' }).click();
   await expect(page.locator('.ck-ed')).toContainText('Fechamento');
 });
+
+test('Orçamento: o cliente sai da base de clientes (nome ou CPF/CNPJ)', async ({ page }, info) => {
+  test.skip(info.project.name !== 'computador');
+  await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS.db);
+  await page.evaluate(() => { location.hash = '#orcamento'; });
+  await page.getByRole('button', { name: '+ Novo orçamento' }).click();
+  await page.waitForFunction(() => TS.cli && TS.cli.lista && TS.cli.lista.length);
+  const nome = await page.evaluate(() => TS.cli.lista.find((c) => c.nome && c.nome.length > 5).nome);
+  const campo = page.locator('.cfr-campo', { hasText: 'Contato' }).locator('input');
+  await campo.fill(nome.slice(0, 5));
+  await page.locator('.orc-cli-sugs .orc-sug').first().click();
+  await expect(page.locator('.cfr-campo', { hasText: 'CNPJ / CPF' }).locator('input')).not.toHaveValue('');
+  await expect(page.locator('.orc-cli-info')).toContainText('Cliente da base');
+});

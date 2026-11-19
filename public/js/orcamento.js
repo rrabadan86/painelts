@@ -79,6 +79,7 @@
       if (!corpo.isConnected) return;
       const lista = j.orcamentos || [];
       const aberto = state.orcAberto && (state.orcAberto === 'novo' ? {} : lista.find((o) => o.id === state.orcAberto));
+      cat.orcAnteriores = lista;
       if (aberto) editor(corpo, loja, cat, aberto); else telaLista(corpo, loja, cat, lista);
     }).catch((e) => corpo.replaceChildren(h('div', { class: 'notice err' }, e.message)));
   };
@@ -124,6 +125,60 @@
     const painel = h('div', { class: 'orc-painel card' });
     const linhasBox = h('div');
     const campo = (rot, el, cls) => h('label', { class: 'cfr-campo ' + (cls || '') }, h('span', null, rot), el);
+    // cliente: busca na base de clientes (CPF/CNPJ das notas, FIXE) e nos orçamentos anteriores
+    if (TS.garantirClientes) { try { TS.garantirClientes(); } catch { /* sem base */ } }
+    const docFmt = (d) => { const x = String(d || '').replace(/\D/g, ''); return x.length === 14 ? `${x.slice(0, 2)}.${x.slice(2, 5)}.${x.slice(5, 8)}/${x.slice(8, 12)}-${x.slice(12)}` : x.length === 11 ? `${x.slice(0, 3)}.${x.slice(3, 6)}.${x.slice(6, 9)}-${x.slice(9)}` : d || ''; };
+    const telFmt = (t) => { const x = String(t || '').replace(/\D/g, '').replace(/^55(?=\d{10,11}$)/, ''); return x.length === 11 ? `(${x.slice(0, 2)}) ${x.slice(2, 7)}-${x.slice(7)}` : x.length === 10 ? `(${x.slice(0, 2)}) ${x.slice(2, 6)}-${x.slice(6)}` : t || ''; };
+    const infoCli = h('div', { class: 'orc-cli-info' });
+    const pintarInfo = () => {
+      const c = o.cliente.cpf && TS.cli && TS.cli.porCPF ? TS.cli.porCPF.get(o.cliente.cpf) : null;
+      if (!c) { infoCli.replaceChildren(); return; }
+      infoCli.replaceChildren(h('span', { class: 'cf-st cf-ok' }, 'Cliente da base'), ' ',
+        h('small', null, [c.ultima != null ? `última compra ${fmt.date(TS.dayToIso(c.ultima))}` : '', c.gasto12 ? `${fmt.brl0(c.gasto12)} nos últimos 12 meses` : '', c.cupons ? `${fmt.int(c.cupons.length)} compra(s)` : '', c.chaFavorito ? `gosta de ${c.chaFavorito}` : ''].filter(Boolean).join(' · ')));
+    };
+    const candidatos = (q) => {
+      const n = TS.norm(q), dig = q.replace(/\D/g, '');
+      const out = [], vistos = new Set();
+      for (const a of cat.orcAnteriores || []) {
+        const k = (a.cliente.doc || '').replace(/\D/g, '') || TS.norm(a.cliente.empresa || a.cliente.contato);
+        if (vistos.has(k)) continue;
+        if (TS.norm(`${a.cliente.empresa} ${a.cliente.contato}`).includes(n) || (dig.length >= 3 && (a.cliente.doc || '').replace(/\D/g, '').includes(dig))) { vistos.add(k); out.push({ fonte: `orçamento #${a.numero}`, ...a.cliente }); }
+      }
+      for (const c of (TS.cli && TS.cli.lista) || []) {
+        if (out.length >= 10) break;
+        if (vistos.has(c.cpf)) continue;
+        if (TS.norm(c.nome).includes(n) || (dig.length >= 4 && c.cpf.includes(dig))) {
+          vistos.add(c.cpf);
+          out.push({ fonte: c.empresa ? 'cliente (CNPJ)' : 'cliente', empresa: c.empresa ? c.nome : '', contato: c.empresa ? '' : c.nome, doc: docFmt(c.cpf), cpf: c.cpf, telefone: telFmt(c.celular), email: c.email || '', extra: c.ultima != null ? `última compra ${fmt.date(TS.dayToIso(c.ultima))}` : '' });
+        }
+      }
+      return out.slice(0, 10);
+    };
+    const campos = {};
+    const preencher = (x) => {
+      for (const k of ['empresa', 'contato', 'doc', 'telefone', 'email']) if (x[k]) { o.cliente[k] = x[k]; if (campos[k]) campos[k].value = x[k]; }
+      o.cliente.cpf = x.cpf || String(x.doc || '').replace(/\D/g, '');
+      pintarInfo();
+    };
+    const autoCli = (k, attrs) => {
+      const el = inp(o.cliente, k, attrs);
+      campos[k] = el;
+      const box = h('div', { class: 'orc-sugs orc-cli-sugs' });
+      let t = null;
+      el.addEventListener('input', () => {
+        clearTimeout(t);
+        t = setTimeout(() => {
+          const q = el.value.trim();
+          if (q.length < 2) { box.replaceChildren(); return; }
+          const cs = candidatos(q);
+          box.replaceChildren(...cs.map((x) => h('button', { type: 'button', class: 'orc-sug', onclick: () => { preencher(x); box.replaceChildren(); } },
+            h('span', null, h('b', null, x.empresa || x.contato), h('small', null, ` ${[x.doc, x.telefone].filter(Boolean).join(' · ')}`)),
+            h('small', null, [x.fonte, x.extra].filter(Boolean).join(' · ')))));
+        }, 200);
+      });
+      el.addEventListener('blur', () => setTimeout(() => box.replaceChildren(), 200));
+      return h('div', { class: 'orc-busca orc-cli-campo' }, el, box);
+    };
     const inp = (obj, k, attrs = {}) => { const el = h('input', { class: 'f-input', value: obj[k] ?? '', disabled: travado || null, ...attrs }); el.addEventListener('input', () => { obj[k] = el.value; if (attrs.recalc) pintar(); }); return el; };
     const numEl = (obj, k, attrs = {}) => { const el = h('input', { class: 'f-input orc-num', inputmode: 'decimal', value: String(obj[k] ?? 0).replace('.', ','), disabled: travado || null, ...attrs }); el.addEventListener('input', () => { obj[k] = numIn(el.value); pintar(); }); return el; };
 
@@ -226,9 +281,11 @@
       h('div', { class: 'orc-grade mt' },
         h('div', null,
           h('div', { class: 'card' }, h('div', { class: 'card-title' }, 'Cliente'),
-            h('div', { class: 'cfr-grade' }, campo('Empresa', inp(o.cliente, 'empresa', { placeholder: 'Razão social ou nome' })), campo('CNPJ / CPF', inp(o.cliente, 'doc')),
-              campo('Contato', inp(o.cliente, 'contato', { placeholder: 'Quem pediu' })), campo('Telefone / WhatsApp', inp(o.cliente, 'telefone', { inputmode: 'tel' })),
-              campo('E-mail', inp(o.cliente, 'email', { type: 'email' })), campo('Título (opcional)', inp(o, 'titulo', { placeholder: 'Ex.: kits de fim de ano' })))),
+            h('small', { class: 'muted' }, 'Digite o nome, o CNPJ ou o CPF: o painel procura na base de clientes e nos orçamentos anteriores.'),
+            h('div', { class: 'cfr-grade' }, campo('Empresa', autoCli('empresa', { placeholder: 'Razão social ou nome' })), campo('CNPJ / CPF', autoCli('doc', { inputmode: 'numeric' })),
+              campo('Contato', autoCli('contato', { placeholder: 'Quem pediu' })), campo('Telefone / WhatsApp', (campos.telefone = inp(o.cliente, 'telefone', { inputmode: 'tel' }))),
+              campo('E-mail', (campos.email = inp(o.cliente, 'email', { type: 'email' }))), campo('Título (opcional)', inp(o, 'titulo', { placeholder: 'Ex.: kits de fim de ano' }))),
+            infoCli),
           h('div', { class: 'card mt' }, h('div', { class: 'card-title' }, 'Produtos'),
             travado ? null : h('div', { class: 'orc-busca' }, busca, sugs), linhasBox),
           h('div', { class: 'card mt' }, h('div', { class: 'card-title' }, 'Condições'),
@@ -249,6 +306,7 @@
             o.id ? h('button', { type: 'button', class: 'link-btn', onclick: dup }, 'Duplicar') : null,
             o.id && o.situacao === 'rascunho' ? h('button', { type: 'button', class: 'link-btn neg', onclick: excluir }, 'Excluir rascunho') : null)))].filter(Boolean));
     pintar();
+    pintarInfo();
   }
 
   const nomeLoja = (loja) => { const m = (TS.db.metas || []).find((x) => x.id === loja); return (m && m.nome) || 'Tea Shop'; };
