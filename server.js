@@ -263,7 +263,7 @@ const pub = path.join(__dirname, 'public');
 const APP_SCRIPTS = [
   'core.js', 'components.js', 'dicas.js', 'rules.js', 'pages.js', 'fidelidade.js',
   'clientes.js', 'campanhas.js', 'espera.js', 'extras.js', 'contabilidade.js',
-  'estoque.js', 'devolucao.js', 'precos.js', 'inventario.js', 'validade.js', 'nfsaida.js', 'creditos.js',
+  'estoque.js', 'devolucao.js', 'precos.js', 'inventario.js', 'validade.js', 'nfsaida.js', 'creditos.js', 'orcamento.js',
   'site.js', 'inicio.js', 'pedido.js', 'dre.js', 'mapa.js', 'feriados.js',
   'config.js', 'script.js', 'fechamento.js', 'sistema.js', 'main.js',
 ];
@@ -427,7 +427,16 @@ const ESd = require('./src/estoque'), PEDd = require('./src/pedido');
 const lojaDemo = (req) => DEMO.lojasDemo().find((l) => l.id === String(req.query.loja || ''));
 app.get('/api/demo/estoque', (req, res) => {
   if (!lojaDemo(req)) return res.status(400).json({ erro: 'Escolha uma loja.' });
-  try { const e = DEMO.estoqueDemo(req.query.loja); res.json({ estoque: e.estoque, cfg: ESd.cfg({ estoqueCfg: e.estoqueCfg }), classe: ESd.classeCfg({}), historico: e.historico, compras: e.compras }); } catch (e) { res.status(500).json({ erro: e.message }); }
+  try {
+    const e = DEMO.estoqueDemo(req.query.loja);
+    // tabela de preço fictícia (para o Orçamento): acessórios a ~2,2× o custo; chá a granel em pacote de 100 g
+    const its = (e.estoque.itens || []).filter((i) => i.custo > 0);
+    const tabela = { itens: [
+      ...its.filter((i) => i.un !== 'Kg').map((i) => ({ cod: String(i.cod), desc: i.desc, grupo: 'ACESSÓRIOS', preco: Math.round(i.custo * 2.2 * 10) / 10 })),
+      ...its.filter((i) => i.un === 'Kg' && /^\d{4,6}$/.test(String(i.cod))).map((i) => ({ cod: String(i.cod) + '2', desc: `${i.desc} 100G`, grupo: 'CHÁS', preco: Math.round(i.custo * 0.1 * 2.6 * 10) / 10 })),
+    ] };
+    res.json({ estoque: e.estoque, cfg: ESd.cfg({ estoqueCfg: e.estoqueCfg }), classe: ESd.classeCfg({}), historico: e.historico, compras: e.compras, tabela });
+  } catch (e) { res.status(500).json({ erro: e.message }); }
 });
 // inventário na apresentação: o catálogo fictício (a contagem fica só no navegador; nada é salvo)
 app.get('/api/demo/inventario/catalogo', (req, res) => {
@@ -1381,6 +1390,39 @@ app.post('/api/conta-franquia/acao', express.json({ limit: '5kb' }), (req, res) 
   if (r.erro) return res.status(400).json({ erro: r.erro });
   C.auditar(req.user, 'conta com a franquia: ' + String(req.body.tipo), loja.id, { loja: loja.id, nota: req.body.nota || null, creditos: req.body.creditos || (req.body.credito ? [req.body.credito] : []) });
   res.json(contaDaLoja(loja));
+});
+// orçamentos para empresas (só admin e franqueado: mostram custo e margem)
+const ORC = require('./src/orcamentos');
+const lojaOrc = (req, res, corpo) => {
+  if (!podeContabilidade(req)) { res.status(403).json({ erro: 'Só o admin e o franqueado fazem orçamento.' }); return null; }
+  const id = String((corpo ? req.body && req.body.loja : req.query.loja) || '');
+  const loja = req.lojas.find((l) => l.id === id);
+  if (!loja) { res.status(400).json({ erro: 'Escolha uma loja.' }); return null; }
+  return loja;
+};
+app.get('/api/orcamentos', (req, res) => { const loja = lojaOrc(req, res); if (loja) res.json({ orcamentos: ORC.lista(loja.id).map((o) => ({ ...o, totais: ORC.totais(o) })) }); });
+app.post('/api/orcamentos', express.json({ limit: '200kb' }), (req, res) => {
+  if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
+  const loja = lojaOrc(req, res, true); if (!loja) return;
+  const r = ORC.salvar(loja.id, req.body || {}, req.user);
+  if (r.erro) return res.status(400).json({ erro: r.erro });
+  C.auditar(req.user, req.body.id ? 'alterou um orçamento' : 'criou um orçamento', loja.id, { loja: loja.id, numero: r.ok.numero, cliente: r.ok.cliente.empresa || r.ok.cliente.contato, total: ORC.totais(r.ok).total });
+  res.json({ ok: { ...r.ok, totais: ORC.totais(r.ok) } });
+});
+app.post('/api/orcamentos/:id/situacao', express.json({ limit: '5kb' }), (req, res) => {
+  if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
+  const loja = lojaOrc(req, res, true); if (!loja) return;
+  const r = ORC.situacao(loja.id, String(req.params.id), String(req.body.situacao || ''), req.body.motivo, req.user);
+  if (r.erro) return res.status(400).json({ erro: r.erro });
+  C.auditar(req.user, `orçamento ${r.ok.numero}: ${r.ok.situacao}`, loja.id, { loja: loja.id, numero: r.ok.numero, motivo: r.ok.motivoPerda || null });
+  res.json({ ok: { ...r.ok, totais: ORC.totais(r.ok) } });
+});
+app.delete('/api/orcamentos/:id', (req, res) => {
+  if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
+  const loja = lojaOrc(req, res); if (!loja) return;
+  const r = ORC.excluir(loja.id, String(req.params.id));
+  if (r.erro) return res.status(400).json({ erro: r.erro });
+  res.json({ ok: true });
 });
 // "Sincronizar agora" nas notas de entrada: o coletor busca só o estoque + notas de compra do AppNext (só admin dispara)
 app.get('/api/estoque/notas/sincronizar', async (req, res) => {

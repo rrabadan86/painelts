@@ -202,7 +202,19 @@
     // despesas de um mês só: as que caem no mês ym (as "todo ano" repetem no mesmo mês dos anos seguintes)
     const PONTUAIS = (cfg.pontuais || []).filter((x) => x.valor > 0 && x.ym);
     const pontuaisDoMes = (ym) => PONTUAIS.filter((x) => x.ym === ym || (x.anual && x.ym.slice(5) === ym.slice(5) && ym > x.ym));
-    return { deducoes, OUTROS, taxaOutro, dicaOutro, mediaFat, ONDE_FAT, pSimples, pCartao, CATS, catDe, PONTUAIS, pontuaisDoMes };
+    /** % das deduções sobre uma venda (para o Orçamento): royalties + marketing, Simples, maquininha, comissão média
+     *  do mês fechado mais recente e os outros custos (% e mensais rateados) */
+    const taxasVenda = () => {
+      const ym = (TS.dayToIso(TS.todayDay()).slice(0, 7));
+      const ant = (() => { const d = new Date(Date.UTC(+ym.slice(0, 4), +ym.slice(5, 7) - 2, 1)); return d.toISOString().slice(0, 7); })();
+      const c = comDoMes(ant), vend = (c.vendas || 0);
+      const com = vend > 0 ? (c.pago || 0) / vend : 0;
+      const ry = rgLoja.royalties;
+      const pct = OUTROS.filter((x) => x.tipo === 'pct' && x.aplica !== 'eg').reduce((s, x) => s + taxaOutro(x), 0);
+      const fix = OUTROS.filter((x) => x.tipo === 'mes' && x.aplica !== 'eg').reduce((s, x) => s + taxaOutro(x), 0);
+      return { roy: (ry.loja || 0) + (ry.mkt || 0), imp: pSimples, maq: pCartao, com, outrosPct: pct, outrosFix: fix, mesCom: ant };
+    };
+    return { deducoes, OUTROS, taxaOutro, dicaOutro, mediaFat, ONDE_FAT, pSimples, pCartao, CATS, catDe, PONTUAIS, pontuaisDoMes, taxasVenda };
   }
 
   TS.estoqueBuscar = buscar;

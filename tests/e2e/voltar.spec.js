@@ -136,3 +136,27 @@ test('Créditos no celular: o menu ⋯ abre dentro da tela', async ({ page }, in
   expect(box.x).toBeGreaterThanOrEqual(0);
   expect(box.x + box.width).toBeLessThanOrEqual(vw);
 });
+
+test('Orçamento: monta com margem bruta e líquida, salva, aprova e o documento do cliente não mostra custo', async ({ page }, info) => {
+  test.skip(info.project.name !== 'computador');
+  await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS.db);
+  await page.evaluate(() => { location.hash = '#orcamento'; });
+  await page.getByRole('button', { name: '+ Novo orçamento' }).click();
+  await page.locator('.cfr-campo', { hasText: 'Empresa' }).locator('input').fill('Empresa Exemplo Ltda');
+  const busca = page.getByPlaceholder('Buscar produto: nome ou código…');
+  await busca.fill('ch');
+  await page.locator('.orc-sug').first().click();
+  await page.locator('.orc-linha input').first().fill('20');
+  await page.locator('.orc-linha input').first().dispatchEvent('change');
+  const painel = page.locator('.orc-painel');
+  await expect(painel).toContainText('Margem bruta');
+  await expect(painel).toContainText('Margem líquida');
+  await expect(painel).toContainText('Royalties');
+  expect(await page.locator('main').innerText(), 'texto "null" no orçamento').not.toMatch(/(^|\s)(null|undefined|NaN)(\s|$)/);
+  await page.getByRole('button', { name: 'Salvar' }).click();
+  await expect(page.locator('.inv-titulo')).toContainText('Orçamento #1');
+  await page.getByRole('button', { name: '✓ Cliente aprovou' }).click();
+  await expect(page.locator('.cf-st', { hasText: 'Aprovado' })).toBeVisible();
+  await page.getByRole('button', { name: '‹ Orçamentos' }).click();
+  await expect(page.locator('.card', { hasText: 'Orçamentos' })).toContainText('Empresa Exemplo Ltda');
+});

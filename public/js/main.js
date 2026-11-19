@@ -299,14 +299,14 @@
    * Menu por assunto: Vendas · Clientes · Equipe · Estoque e Margem · ⚙. Cada grupo mostra só as telas que a pessoa pode ver;
    * grupo com uma tela só vira uma aba com o nome da tela; com mais de uma, a tela tem um submenu no topo.
    */
-  const ROTULO = { inicio: 'Início', resumo: 'Resumo', comparativos: 'Comparativos', promocao: 'Promoção', cupons: 'Cupons', nfsaida: 'Notas fiscais', creditos: 'Notas fiscais', hoje: 'Hoje', clilista: 'Lista de clientes', clientes: 'Indicadores', campanhas: 'Campanhas', espera: 'Lista de espera',
+  const ROTULO = { inicio: 'Início', resumo: 'Resumo', comparativos: 'Comparativos', promocao: 'Promoção', cupons: 'Cupons', nfsaida: 'Notas fiscais', creditos: 'Notas fiscais', orcamento: 'Orçamento', hoje: 'Hoje', clilista: 'Lista de clientes', clientes: 'Indicadores', campanhas: 'Campanhas', espera: 'Lista de espera',
     comissionamento: 'Comissionamento', minha: 'Minha comissão', mapa: 'Movimento e escala', rentab: 'Rentabilidade', precos: 'Preços', site: 'Site', estoque: 'Estoque', pedido: 'Pedido', notas: 'Notas fiscais', inventario: 'Inventário', validade: 'Validade', dre: 'Resultado' };
   TS.GRUPOS = [];
   function montarMenu(grupoEst, temConfig) {
     const tabs = document.getElementById('tabs');
     const G = [
       ['Início', ['inicio']],
-      ['Vendas', ['resumo', 'comparativos', 'promocao', 'cupons']],
+      ['Vendas', ['resumo', 'comparativos', 'promocao', 'cupons', 'orcamento']],
       ['Clientes', ['hoje', 'clilista', 'clientes', 'campanhas', 'espera']],
       ['Equipe', ['comissionamento', 'minha', 'mapa']],
       ['Produtos', grupoEst.filter((p) => ['rentab', 'precos', 'site'].includes(p))],
@@ -362,6 +362,8 @@
     if (eu.perfil === 'vendedor' && !grupoEst.includes('validade')) grupoEst.unshift('validade'); // e acompanha a validade dos lotes
     TS.telasEstoque = grupoEst;
     PAGES = [...PAGES.filter((p) => !grupoEst.includes(p)), ...grupoEst, ...(grupoEst.includes('notas') ? ['nfsaida', 'creditos'] : [])];
+    // orçamento para empresas: só admin e franqueado (mostra custo e margem)
+    if (eu.perfil === 'admin' || eu.perfil === 'franqueado' || eu.pode?.configurar) PAGES = [...PAGES.filter((p) => p !== 'orcamento'), 'orcamento'];
     if (eu.pode?.configurar) PAGES = [...PAGES, 'config'];
     montarMenu(grupoEst, !!eu.pode?.configurar);
     // nome no menu da conta

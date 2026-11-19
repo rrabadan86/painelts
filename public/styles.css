@@ -2372,3 +2372,50 @@ details.vl-ajuda summary { cursor: pointer; font-weight: 600; }
 .cfe-info { font-size: 12.5px; display: flex; flex-direction: column; gap: 2px; }
 .cfr-btns { display: flex; gap: 8px; flex-wrap: wrap; }
 .cf-menu-lista { position: fixed; right: auto; top: 0; left: 0; z-index: 1000; min-width: 0; }
+/* Orçamento */
+.orc-topo { display: flex; justify-content: flex-end; }
+.orc-grade { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 14px; align-items: start; }
+.orc-lado { position: sticky; top: 12px; }
+.orc-painel .orc-l { display: flex; justify-content: space-between; gap: 10px; padding: 3px 0; font-size: 13.5px; }
+.orc-painel .orc-tot { font-size: 16px; }
+.orc-painel .orc-dest b { font-size: 15px; }
+.orc-painel .orc-liq b { font-size: 18px; color: var(--green, #2C5234); }
+.orc-painel .orc-l.neg b { color: #b23a2b; }
+.orc-painel hr { border: 0; border-top: 1px solid #eee8db; margin: 6px 0; }
+.orc-acoes { display: flex; flex-direction: column; gap: 8px; }
+.orc-acoes .btn { width: 100%; }
+.orc-aprov { background: #d9efdc; border-color: #8fbf96; color: #1f5a2b; }
+.orc-busca { position: relative; margin-bottom: 10px; }
+.orc-sugs { position: absolute; left: 0; right: 0; top: 100%; z-index: 20; background: #fff; border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.12); max-height: 50vh; overflow: auto; }
+.orc-sugs:empty { display: none; }
+.orc-sug { display: flex; justify-content: space-between; gap: 10px; width: 100%; text-align: left; background: none; border: 0; border-bottom: 1px solid #f0ebe0; padding: 9px 12px; font: inherit; font-size: 13.5px; cursor: pointer; }
+.orc-sug:hover { background: #f4f1ea; }
+.orc-sug small { color: #6b6b6b; }
+.orc-sug-vazio { padding: 10px 12px; }
+.orc-cab, .orc-linha { display: grid; grid-template-columns: minmax(160px, 2.2fr) 70px 95px 70px 95px 85px 70px 34px; gap: 8px; align-items: center; }
+.orc-cab { font-size: 11.5px; color: #6b6b6b; font-weight: 600; text-transform: uppercase; padding: 0 0 6px; border-bottom: 1px solid #eee8db; }
+.orc-linha { padding: 8px 0; border-bottom: 1px solid #f0ebe0; font-size: 13.5px; }
+.orc-prod small { display: block; font-size: 12px; }
+.orc-num { padding: 6px 8px; text-align: right; }
+.orc-v { text-align: right; }
+.orc-x { padding: 4px 8px; }
+.orc-cond { grid-template-columns: repeat(3, 1fr); }
+.orc-com { align-self: end; }
+@media (max-width: 1000px) { .orc-grade { grid-template-columns: 1fr; } .orc-lado { position: static; } }
+@media (max-width: 700px) {
+  .orc-cab { display: none; }
+  .orc-linha { grid-template-columns: 1fr 1fr 1fr; }
+  .orc-prod { grid-column: 1 / -1; }
+  .orc-linha > span[data-r]::before { content: attr(data-r); display: block; font-size: 11px; color: #6b6b6b; }
+  .orc-cond { grid-template-columns: 1fr 1fr; }
+}
+/* documento do orçamento (impressão) */
+.orc-doc h2 { margin: 0; color: var(--green, #2C5234); }
+.orc-doc-cab { display: flex; justify-content: space-between; gap: 20px; border-bottom: 3px solid var(--green, #2C5234); padding-bottom: 10px; margin-bottom: 12px; }
+.orc-doc .r { text-align: right; }
+.orc-doc-cli { margin-bottom: 12px; }
+.orc-doc-t { width: 100%; border-collapse: collapse; }
+.orc-doc-t th { background: var(--green, #2C5234); color: #fff; padding: 6px 8px; text-align: left; }
+.orc-doc-t td { padding: 6px 8px; border-bottom: 1px solid #e6e0d2; }
+.orc-doc-t .tot td { font-weight: 700; font-size: 15px; background: #e8efe7; }
+.orc-doc-cond { margin-top: 14px; display: flex; flex-direction: column; gap: 4px; }
