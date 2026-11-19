@@ -12,7 +12,7 @@
   const hLiq = (m) => `${Math.floor(m / 60)}h${m % 60 ? String(m % 60).padStart(2, '0') : ''}`; // 8h20, 8h
   const hhmm = (m) => `${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
   /**
-   * Faixa do dia em blocos de 30 min: inclui o bloco da abertura e o do fechamento mesmo quando o horário não é
+   * Faixa do dia em blocos de B (10) min: inclui o bloco da abertura e o do fechamento mesmo quando o horário não é
    * redondo (09:40 → o bloco das 09:30 conta), e guarda os minutos exatos: [bloco inicial, bloco final, abre, fecha].
    */
   const faixaDia = (f) => (f && !f.fechado ? [Math.floor(hm(f.abre) / B), Math.ceil(hm(f.fecha) / B), hm(f.abre), hm(f.fecha)] : null);
@@ -214,7 +214,7 @@
     const faltas = Array.from({ length: 7 }, () => Array(NB).fill(0));
     for (let wd = 0; wd < 7; wd++) for (let s = 0; s < NB; s++) {
       const f = slotsNeed[wd][s] - cob[wd][s];
-      if (slotsNeed[wd][s] > 0 && f > 0) { faltas[wd][s] = f; if (cob[wd][s] === 0) descoberto += 0.5; else abaixo += 0.5; }
+      if (slotsNeed[wd][s] > 0 && f > 0) { faltas[wd][s] = f; if (cob[wd][s] === 0) descoberto += B / 60; else abaixo += B / 60; } // horas (cada bloco = B min)
     }
     return { pessoas, cob, faltas, descoberto, abaixo, trabMin, jornada, intervalo, diasTrab };
   }
@@ -417,7 +417,7 @@
         for (let x = 0; x <= NB; x++) {
           const n = x < NB ? slotsNeed[wd][x] : 0, c = x < NB ? cob[wd][x] : 0;
           const falta = n > 0 && c < n;
-          if (falta) { if (c === 0) descoberto += 0.5; else abaixo += 0.5; if (ini == null) { ini = x; pior = { c, n }; } else if (c < pior.c) pior = { c, n }; }
+          if (falta) { if (c === 0) descoberto += B / 60; else abaixo += B / 60; if (ini == null) { ini = x; pior = { c, n }; } else if (c < pior.c) pior = { c, n }; }
           if (!falta && ini != null) { problemas.push({ wd, ini: ini * B, fim: x * B, c: pior.c, n: pior.n }); ini = null; }
         }
       }
@@ -425,7 +425,7 @@
     }
     return { semanas, L, kDom, folgamDom, trabMin, jornada, intervalo, diasBase, fixos, maxF };
   }
-  TS._escala = { montarRodizio: (...a) => montarRodizio(...a) };
+  TS._escala = { montarRodizio: (...a) => montarRodizio(...a), montarEscala: (...a) => montarEscala(...a), B, PH };
   const resumoRodizio = (r) => ({ descoberto: r.semanas.reduce((s, w) => s + w.descoberto, 0), abaixo: r.semanas.reduce((s, w) => s + w.abaixo, 0) });
 
   // ---------- editor de horário e equipe (usado aqui e em Configurações) ----------
@@ -656,7 +656,7 @@
       h('tbody', null, DIAS_CURTO.map((dn, wd) => h('tr', null, h('th', { class: 'l' }, dn), horas.map((hr) => {
         const n = need[wd][hr];
         if (!n) return h('td', { class: 'fechado' });
-        const c = Math.min(esc.cob[wd][hr * 2], esc.cob[wd][hr * 2 + 1]);
+        const c = Math.min(...esc.cob[wd].slice(hr * PH, hr * PH + PH)); // a hora inteira (PH blocos)
         const cls = c === 0 ? 'vazio' : c < n ? 'falta' : c > n ? 'sobra' : 'ok';
         return h('td', { class: cls, title: `${DIAS_NOME[wd]} ${hr}h: ${c} na loja, precisa de ${n}` }, c);
       })))));
@@ -1063,7 +1063,7 @@
       h('tbody', null, ORDEM.map((wd) => h('tr', null, h('th', { class: 'l' }, DIAS_CURTO[wd]), horas.map((hr) => {
         const n = need[wd][hr];
         if (!n) return h('td', { class: 'fechado' });
-        const c = Math.min(w.cob[wd][hr * 2], w.cob[wd][hr * 2 + 1]);
+        const c = Math.min(...w.cob[wd].slice(hr * PH, hr * PH + PH));
         const cls = c === 0 ? 'vazio' : c < n ? 'falta' : c > n ? 'sobra' : 'ok';
         return h('td', { class: cls, title: `${DIAS_NOME[wd]} ${hr}h: ${c} na loja, precisa de ${n}` }, c);
       })))));

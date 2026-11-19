@@ -222,3 +222,19 @@ test('Escala do mês: com a semana começando na segunda, as semanas vão de seg
   await expect(cab.first()).toHaveText('Seg');
   await expect(cab.nth(6)).toHaveText('Dom');
 });
+
+// Cobertura por hora e horas descobertas em blocos de 10 min (antes liam a hora errada e contavam 3x)
+test('Escala: horas descobertas contam o tempo certo em blocos de 10 min', async ({ page }) => {
+  await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS._escala && TS._escala.montarEscala);
+  const r = await page.evaluate(() => {
+    const H = (a, f) => ({ abre: a, fecha: f, fechado: false }), F = { abre: '09:00', fecha: '18:00', fechado: true };
+    // loja aberta só na segunda, 10h–20h (10h), 1 pessoa de 8h (+1h): sobra 1h sem ninguém
+    const op = { funcionamento: { seg: H('10:00', '20:00'), ter: F, qua: F, qui: F, sex: F, sab: F, dom: F }, equipe: { funcionarios: 1, cargaSemanal: 40, escala: '5x2', intervalo: 60, intervaloAte8: 60, capacidade: 3 } };
+    const need = Array.from({ length: 7 }, (_, d) => Array.from({ length: 24 }, (_, hr) => (d === 0 && hr >= 10 && hr < 20 ? 1 : 0))); // como na tela: só no horário da loja
+    const e = TS._escala.montarEscala(need, op, 1);
+    return { descoberto: e.descoberto, PH: TS._escala.PH };
+  });
+  expect(r.PH).toBe(6);
+  // 10h de loja − 9h de turno (8h + 1h de intervalo) = 1h sem ninguém + 1h do intervalo = 2h
+  expect(r.descoberto).toBeCloseTo(2, 5);
+});

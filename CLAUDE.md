@@ -18,6 +18,7 @@ Hooks (`.claude/settings.json`): bloqueiam commit/push de segredos e limpam os r
 - Toda tela/rota nova precisa funcionar na apresentação: crie a rota `/api/demo/...` (dados fictícios ou resposta simulada, sem gravar).
 - Permissões no servidor (`req.perfil`, `podeTela`, `podeClientes`, `podeCustos`), não só escondendo na tela.
 - Testes: unidade em `tests/unit/*.test.js` (`node --test`); tela em `tests/e2e/*.spec.js` (Playwright, sempre na apresentação, projetos "computador" e "celular").
+- **Matriz de rastreabilidade:** `docs/rastreabilidade.md` liga cada regra (código PERF-01, ESC-16…) ao código e ao teste que a cobre. Mudou ou criou regra: atualize a linha no mesmo PR (onde está, teste, cobertura); achou erro ou lacuna: registre nos Achados.
 - Durante os ajustes: `npm test` + só os testes de tela da parte mexida (`npx playwright test tests/e2e/ia.spec.js`, ou `-g "nome"`). A bateria completa é uma vez, antes de subir.
 
 ## Antes de cada commit
@@ -35,9 +36,10 @@ Hooks (`.claude/settings.json`): bloqueiam commit/push de segredos e limpam os r
 
 **Perfis**
 - Custo e margem nunca aparecem para vendedora.
-- Vendedora não recebe dados de clientes.
+- Vendedora não recebe dados de clientes. **Exceção (decisão do dono):** na Lista de espera ela busca e vê nome, CPF e celular do cliente para anotar e avisar.
+- Gerente recebe as vendas de toda a loja mesmo sem as telas de vendas liberadas (decisão do dono); custo só com tela de custo liberada (Estoque, Preços, Rentabilidade, Notas, Pedido, Resultado) — inclusive no Inventário.
 - Orçamento: só admin e franqueado.
-- Enviar para a franquia (reclamar do reajuste de custo na nota de entrada): só admin e franqueado.
+- Falar com a franquia por e-mail (reajuste de custo, cobrança de devoluções e de fidelidade, envio automático): só admin e franqueado.
 - Só o admin dispara o coletor ("Sincronizar agora").
 - IA (✨, análise do Início, revisão do pedido): só admin e franqueado.
 
