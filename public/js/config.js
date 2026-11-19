@@ -98,7 +98,7 @@
       h('div', { class: 'page-sub' }, est.perfil === 'admin' ? 'Lojas, acesso ao AppNext, metas, usuários e horários' : 'Metas, planilhas e usuários das suas lojas'))));
     if (est.erro) { root.append(h('div', { class: 'notice err' }, est.erro)); fim(); return; }
     const abas = [['Lojas', 'lojas'], ['Usuários', 'usuarios']];
-    if (est.perfil === 'admin') abas.push(['Atualização automática', 'coletor'], ['Resumo diário', 'resumo']);
+    if (est.perfil === 'admin' || est.perfil === 'franqueado') abas.push(['Atualização automática', 'coletor'], ['Resumo diário', 'resumo']); // o franqueado vê a parte das lojas dele
     abas.push(['Histórico de alterações', 'historico']);
     state.cfgAba = abas.some(([, v]) => v === state.cfgAba) ? state.cfgAba : 'lojas';
     root.append(h('div', { class: 'cfg-abas' }, TS.seg(abas, state.cfgAba, (v) => { state.cfgAba = v; pintar(); })));
@@ -328,10 +328,10 @@
     return fx.url ? linhaSit('nada', 'Fidelidade (Logs do FIXE)', 'ainda não importado', 'Vem junto com o cadastro, na atualização da noite. Também dá para enviar a planilha de Logs em "Enviar planilha" → Cadastro de clientes.') : null;
   }
 
-  /** botão "Sincronizar saldos com o FIXE" (admin); some enquanto a sincronização está na fila ou rodando */
+  /** botão "Sincronizar saldos com o FIXE" (admin ou franqueado da loja); some enquanto a sincronização está na fila ou rodando */
   function botaoSaldos(l) {
     const fx = l.fixe || {}, st = (l.status && l.status.saldos) || {};
-    if (!(est.perfil === 'admin' && est.coletorAtivo && fx.url && fx.temSenha) || ['na_fila', 'rodando'].includes(st.estado)) return null;
+    if (!((est.perfil === 'admin' || est.perfil === 'franqueado') && est.coletorAtivo && fx.url && fx.temSenha) || ['na_fila', 'rodando'].includes(st.estado)) return null;
     return acao('Sincronizar saldos com o FIXE', async () => {
       if (!confirm('O robô entra no FIXE e lê o saldo de pontos de cada cliente (só leitura, não muda nada no FIXE). Esse saldo passa a ser o ponto de partida; depois, os Logs de todo dia atualizam. Continuar?')) return null;
       await api('POST', `/lojas/${l.id}/fixe/saldos`);
@@ -462,7 +462,7 @@
         falhas.length ? h('div', { class: 'neg' }, `Com erro: ${falhas.map((f) => `${dIso(f.de)} a ${dIso(f.ate)}`).join(', ')}. Rode de novo só esses períodos.`) : null,
         ...falhas.filter((f) => f.log && f.log.length).map((f) => detalhes(`falha:${l.id}:${f.de}`, { class: 'cfg-log' }, h('summary', null, `Por que a parte ${dIso(f.de)} a ${dIso(f.ate)} falhou`), logBonito(f.log)))));
     }
-    if (est.coletorAtivo && l.coletor.configurado && est.perfil === 'admin') { // só o admin roda o coletor
+    if (est.coletorAtivo && l.coletor.configurado && (est.perfil === 'admin' || est.perfil === 'franqueado')) { // admin ou franqueado da loja roda o coletor
       const acoes = h('div', { class: 'cfg-acoes' });
       if (ocupado) acoes.append(acao('Cancelar o que está na fila', async () => { await api('POST', `/lojas/${l.id}/cancelar`); return 'Fila cancelada (a parte que já está rodando termina).'; }));
       else acoes.append(acao('Atualizar agora', async () => { await api('POST', `/lojas/${l.id}/rodar`); return 'Atualização na fila. Leva alguns minutos.'; }, 'btn primary'));
@@ -758,7 +758,7 @@
       h('div', { class: 'cfg-acoes' },
         acao('Salvar acesso ao FIXE', async () => { await api('PUT', `/lojas/${l.id}/fixe`, { url: url.value, usuario: usuario.value, senha: senha.value, email: email.value, apelido: apelido.checked }); senha.value = ''; return 'Acesso ao FIXE salvo.'; }, 'btn primary'),
         fx.url ? acao('Remover acesso', async () => { if (!confirm('Remover o acesso desta loja ao FIXE (endereço, usuário, senha e e-mail)? O cadastro de clientes que já está no painel continua.')) return null; await api('DELETE', `/lojas/${l.id}/fixe`); return 'Acesso ao FIXE removido.'; }) : null,
-        est.perfil === 'admin' && est.coletorAtivo && fx.url ? acao('Importar agora', async () => { await api('POST', `/lojas/${l.id}/fixe/rodar`); return 'Pedido enviado ao FIXE. Em alguns minutos o e-mail chega e o cadastro é atualizado.'; }) : null,
+        (est.perfil === 'admin' || est.perfil === 'franqueado') && est.coletorAtivo && fx.url ? acao('Importar agora', async () => { await api('POST', `/lojas/${l.id}/fixe/rodar`); return 'Pedido enviado ao FIXE. Em alguns minutos o e-mail chega e o cadastro é atualizado.'; }) : null,
         botaoSaldos(l)),
       fx.url ? h('p', { class: 'muted', style: { marginTop: '6px' } }, 'Sincronizar saldos: use uma vez para acertar os pontos antigos que os Logs não trazem. Repita só se notar diferença entre o painel e o FIXE em algum cliente.') : null);
     // regras de pontos
@@ -1379,7 +1379,8 @@
 
   function abaColetor(box) {
     if (est.perfil === 'admin') { const c = cartaoBackup(); if (c) box.append(c); }
-    if (!est.coletorAtivo) { box.append(h('div', { class: 'notice' }, 'O coletor não está ligado nesta VPS (falta COLETOR_URL/COLETOR_TOKEN no .env).')); return; }
+    if (!est.coletorAtivo) { box.append(h('div', { class: 'notice' }, est.perfil === 'admin' ? 'O coletor não está ligado nesta VPS (falta COLETOR_URL/COLETOR_TOKEN no .env).' : 'A atualização automática não está ligada neste painel.')); return; }
+    if (est.perfil !== 'admin') { abaColetorFranqueado(box); return; }
     const ed = editorSemana(est.agenda);
     const proprias = (est.lojas || []).filter((x) => x.horarios && x.horarios.propria).map((x) => x.nome);
     box.append(h('div', { class: 'card cfg-form' }, h('div', { class: 'card-title' }, 'Horários da atualização automática (rede)'),
@@ -1406,8 +1407,21 @@
       };
       api('GET', '/notif').then(montar).catch((e) => card.replaceChildren(h('div', { class: 'card-title' }, 'Avisos de falha por e-mail'), h('p', { class: 'neg' }, e.message)));
     }
+    box.append(cartaoSituacaoLojas());
+  }
+  /** franqueado: os horários e os dias da rede aparecem travados (🔒, são do administrador); a situação é só das lojas dele */
+  function abaColetorFranqueado(box) {
+    const NOMES = { 1: 'Seg', 2: 'Ter', 3: 'Qua', 4: 'Qui', 5: 'Sex', 6: 'Sáb', 0: 'Dom' };
+    const sem = est.agenda || {};
+    box.append(h('div', { class: 'card cfg-form cfg-rede-travada' }, h('div', { class: 'card-title' }, 'Horários da atualização automática (rede) 🔒'),
+      h('p', { class: 'muted' }, '🔒 Os horários da rede e os dias baixados em cada atualização valem para todas as lojas: só o administrador muda. Os horários da sua loja você muda em Lojas → abra a loja → Dados e atualização.'),
+      h('p', null, [1, 2, 3, 4, 5, 6, 0].map((n) => `${NOMES[n]}: ${(sem[String(n)] || []).join(', ') || '—'}`).join(' · ')),
+      h('p', { class: 'muted' }, `Cada atualização baixa os últimos ${est.janela || 7} dias do AppNext. "Atualizar agora" e "Importar histórico" ficam em Lojas → abra a loja → Dados e atualização.`)));
+    box.append(cartaoSituacaoLojas());
+  }
+  function cartaoSituacaoLojas() {
     // resumo das lojas
-    box.append(h('div', { class: 'card' }, h('div', { class: 'card-title' }, 'Situação de cada loja'),
+    return (h('div', { class: 'card' }, h('div', { class: 'card-title' }, est.perfil === 'admin' ? 'Situação de cada loja' : 'Situação das suas lojas'),
       h('div', { class: 'table-wrap free' }, h('table', { class: 't cfg-t' },
         h('thead', null, h('tr', null, ['Loja', 'Acesso AppNext', 'Última coleta', 'Situação', 'Dados até'].map((t) => h('th', { class: 'l' }, t)))),
         h('tbody', null, est.lojas.map((l) => {
@@ -1424,6 +1438,7 @@
     if (!notif) { box.append(h('div', { class: 'muted' }, 'Carregando…')); api('GET', '/notif').then((n) => { notif = n; pintar(); }).catch((e) => toast(e.message, true)); return; }
     const n = notif;
     const recarregar = async () => { notif = await api('GET', '/notif'); };
+    if (n.restrito) { abaResumoFranqueado(box, n, recarregar); return; }
     const nomeLoja = new Map(est.todasLojas.map((l) => [l.id, l.nome]));
     const lojasTxt = (ls) => (ls.includes('*') ? 'Todas as lojas' : ls.map((x) => nomeLoja.get(x) || x).join(', '));
     const selLojas = (atual) => {
@@ -1508,6 +1523,55 @@
       if (e.destinos.length) em.append(tabelaDestinos('email', e.destinos, 'email', lojasTxt, recarregar));
     }
     box.append(em);
+  }
+  /** franqueado: horário, ativação, robô do Telegram e servidor de e-mail são da rede (travados, 🔒); ele cuida de quem recebe as lojas dele */
+  function abaResumoFranqueado(box, n, recarregar) {
+    const nomeLoja = new Map(est.todasLojas.map((l) => [l.id, l.nome]));
+    const lojasTxt = (ls) => ls.map((x) => nomeLoja.get(x) || x).join(', ');
+    const selLojas = () => {
+      const el = h('div', { class: 'cfg-checks' }, est.todasLojas.map((l) => h('label', null, h('input', { type: 'checkbox', value: l.id, checked: est.todasLojas.length === 1 || null }), ' ', l.nome)));
+      el.valor = () => [...el.querySelectorAll('input:checked')].map((i) => i.value);
+      return el;
+    };
+    box.append(h('div', { class: 'card cfg-form' }, h('div', { class: 'card-title' }, 'Resumo diário'),
+      h('p', { class: 'muted' }, 'Todo dia, no horário escolhido, cada pessoa recebe o resumo do dia anterior das lojas dela: faturamento, atendimentos, ticket médio, andamento da meta, projeção do mês e alertas.'),
+      h('label', { class: 'cfg-check-l' }, h('input', { type: 'checkbox', checked: n.ativo || null, disabled: true }), ' Enviar o resumo todos os dias 🔒'),
+      h('label', { class: 'cfg-check-l' }, h('input', { type: 'checkbox', checked: n.alertas || null, disabled: true }), ' Incluir alertas e destaques 🔒'),
+      h('div', { class: 'cfg-grid' }, campo('Horário (Brasília) 🔒', inp({ type: 'time', value: n.horario, disabled: true, style: { maxWidth: '140px' } }))),
+      h('p', { class: 'muted' }, '🔒 O horário, a ativação, o robô do Telegram e o servidor de e-mail valem para todas as lojas: só o administrador muda. Aqui você cuida de quem recebe o resumo das suas lojas.'),
+      n.ultimoEnvio ? h('p', { class: 'muted' }, `Último envio: ${dIso(n.ultimoEnvio)}`) : null,
+      h('div', { class: 'cfg-acoes' }, acao('Ver prévia da mensagem', async () => { previa = (await api('GET', '/notif/previa?loja=*')).texto; }))));
+    if (previa) box.append(h('div', { class: 'card' }, h('div', { class: 'card-title' }, 'Prévia'), h('pre', { class: 'cfg-msg' }, previa)));
+
+    box.append(h('div', { class: 'card cfg-form' }, h('div', { class: 'card-title' }, 'Fechamento do dia'),
+      h('p', null, 'O fechamento do dia (que substitui a planilha) é configurado ', h('b', null, 'em cada loja'), ': Configurações → Lojas → abra a loja → ', h('b', null, 'Fechamento do dia por e-mail'), '.'),
+      h('div', { class: 'cfg-acoes' },
+        h('button', { type: 'button', class: 'btn', onclick: () => TS.abrirFechamento(est.lojas.map((l) => ({ id: l.id, nome: l.nome })), state.loja && state.loja !== 'todas' ? state.loja : null) }, 'Ver mensagem'),
+        acao(est.lojas.length > 1 ? 'Enviar agora (suas lojas)' : 'Enviar agora', async () => {
+          if (!confirm('Enviar agora o fechamento de hoje ' + (est.lojas.length > 1 ? 'das suas lojas' : 'da sua loja') + ' para os destinatários cadastrados?')) return null;
+          const r = await api('POST', '/notif/fechamento/enviar');
+          const ok = r.envios.filter((x) => x.ok), falhas = r.envios.filter((x) => !x.ok);
+          if (falhas.length) throw new Error(`Enviados ${ok.length}; falharam: ${falhas.map((x) => `${x.loja} → ${x.para} (${x.erro})`).join('; ')}`);
+          return `Fechamento enviado: ${ok.length} e-mail(s)/mensagem(ns).`;
+        }))));
+
+    const novoEmail = inp({ type: 'email', placeholder: 'pessoa@email.com' }), novoNome = inp({ placeholder: 'Nome' }), novoLojas = selLojas();
+    const em = h('div', { class: 'card cfg-form' }, h('div', { class: 'card-title' }, 'Quem recebe o resumo das suas lojas (e-mail)'));
+    if (!n.email.configurado) em.append(h('div', { class: 'notice' }, 'O servidor de e-mail do resumo diário ainda não foi configurado pelo administrador. Sem ele o resumo não sai por e-mail.'));
+    else {
+      em.append(h('div', { class: 'cfg-grid' }, campo('E-mail', novoEmail), campo('Nome', novoNome)), campo('Recebe as lojas', novoLojas),
+        h('div', { class: 'cfg-acoes' }, acao('Adicionar', async () => {
+          if (!novoLojas.valor().length) throw new Error('Marque pelo menos uma loja.');
+          await api('POST', '/notif/destinos', { canal: 'email', id: novoEmail.value, nome: novoNome.value, lojas: novoLojas.valor() }); await recarregar(); return 'Adicionado.';
+        }, 'btn primary')));
+      if (n.email.destinos.length) em.append(tabelaDestinos('email', n.email.destinos, 'email', lojasTxt, recarregar));
+      else em.append(h('p', { class: 'muted' }, 'Ninguém cadastrado ainda para as suas lojas.'));
+    }
+    box.append(em);
+    const tg = h('div', { class: 'card cfg-form' }, h('div', { class: 'card-title' }, 'Telegram 🔒'),
+      h('p', { class: 'muted' }, n.telegram.configurado ? '🔒 O robô do Telegram é da rede: para incluir uma pessoa nova, peça ao administrador. Quem já recebe só as suas lojas aparece abaixo.' : '🔒 O robô do Telegram é da rede e ainda não foi configurado pelo administrador.'));
+    if (n.telegram.destinos.length) tg.append(tabelaDestinos('telegram', n.telegram.destinos, 'chatId', lojasTxt, recarregar));
+    box.append(tg);
   }
   /** passo a passo do Gmail (usado no e-mail geral e no de cada loja) */
   function passoGmail(chave, { host, port, sec, from, user }) {

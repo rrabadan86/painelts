@@ -46,7 +46,7 @@
     else if (e && e.estado === 'ok') { ic = 'ok'; txt = 'Última atualização concluída'; sub = `${hora(e.fim)} · ${e.gatilho === 'agendado' ? 'automática' : 'manual' + (e.por ? ' (' + e.por + ')' : '')}${e.duracao ? ' · ' + (e.duracao < 90 ? e.duracao + ' s' : Math.round(e.duracao / 60) + ' min') : ''}`; }
     else if (e && e.estado === 'falhou') { ic = 'falhou'; txt = 'A última execução falhou'; sub = `${hora(e.fim)} · ${e.conclusao === 'cancelled' ? 'cancelada' : 'veja o log abaixo ou avise o administrador'}`; }
     if (ic) pop.append(h('div', { class: 'script-status' }, h('span', { class: 'ic ' + ic }, ic === 'ok' ? '✓' : ic === 'falhou' ? '!' : '…'), h('span', null, txt, sub ? h('small', null, sub) : null)));
-    if (TS.eu && TS.eu.perfil === 'admin') { // só o admin roda a coleta
+    if (TS.eu && ['admin', 'franqueado'].includes(TS.eu.perfil)) { // admin ou franqueado da loja roda a coleta
       let escolhidos = null;
       if (info.origem === 'vps') {
         const opcoes = ITENS.filter((it) => it.id !== 'fixe' || info.temFixe);
