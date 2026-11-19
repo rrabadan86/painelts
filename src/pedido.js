@@ -198,7 +198,8 @@ function progresso(c, b) {
   const novo = { ...atual, aguardando: false, itens, total: x.itens.length, atual: b.atual ? txt(b.atual, 120) : undefined, expira: new Date(x.expira).toISOString(),
     fim: b.fim ? new Date().toISOString() : undefined, carrinhoDepois: b.carrinhoDepois ? { texto: txt(b.carrinhoDepois.texto, 80) } : atual.carrinhoDepois, ok: !!b.fim };
   C.gravarAtomico(f, JSON.stringify(novo), 0o640);
-  return { ok: true };
+  // o servidor usa no fim para responder as ⭐ sugestões que o site recusou (só a loja e o resultado; nada vai ao favorito)
+  return { ok: true, _loja: x.loja, _fim: !!b.fim, _itens: itens };
 }
 
 // ---------- pedido obrigatório: o que a franquia manda de qualquer forma (entra no valor e conta como estoque chegando) ----------

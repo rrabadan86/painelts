@@ -663,7 +663,7 @@
     function cartaoSugestoes() {
       const grupos = [...SUG.values()];
       const linhaDe = (g) => R.linhas.find((r) => String(r.cod) === String(g.cod)) || null;
-      const pend = grupos.filter((g) => { const r = linhaDe(g); return !(r && r.pedir > 0) && !(r && (r.site === 'indisp' || r.site === 'fora')) && !g.decisao; }).length;
+      const pend = grupos.filter((g) => { const r = linhaDe(g); return !g.aguardando && !(r && r.pedir > 0) && !(r && (r.site === 'indisp' || r.site === 'fora')) && !g.decisao; }).length;
       const msg = h('div', { class: state.pedSugMsg ? 'pos sug-ped-msg' : 'muted sug-ped-msg' }, state.pedSugMsg || '');
       state.pedSugMsg = null;
       const item = (g) => {
@@ -682,7 +682,8 @@
         };
         const tirar = () => { r.pedir = 0; if (r.sugeridoPedir === 0) editados.delete(String(r.cod)); else editados.set(String(r.cod), 0); repintar(); };
         let acao;
-        if (semSite) acao = h('span', { class: 'warn-t' }, '🚫 Sem estoque no site: a equipe fica sabendo sozinha');
+        if (g.aguardando) acao = h('span', { class: 'sug-aguarda' }, `🛒 Pedido em ${TS.sug.dataTxt(g.aguardando.em)}: aguardando entrega. A estrela sai quando a nota da TSB Franquias chegar com o produto; se não vier na entrega, volta para cá.`);
+        else if (semSite) acao = h('span', { class: 'warn-t' }, '🚫 Sem estoque no site: a equipe fica sabendo sozinha');
         else if (noPed) acao = h('span', null, h('span', { class: 'pos' }, `✅ No pedido: ${qtdTxt(r.pedir, r.it)} `), h('button', { type: 'button', class: 'btn sug-ped-btn', onclick: tirar }, 'Tirar'));
         else if (g.decisao) acao = h('span', null, h('span', { class: 'neg' }, `Não agora: ${g.decisao.motivo} `), h('button', { type: 'button', class: 'btn sug-ped-btn', onclick: () => decidir(null) }, 'Desfazer'));
         else {
@@ -700,7 +701,7 @@
       };
       const registrar = h('button', { type: 'button', class: 'btn' }, 'Registrar o pedido nas sugestões');
       registrar.addEventListener('click', async () => {
-        if (!confirm('Registrar este pedido nas sugestões da equipe?\n\nO que está no pedido vira "entrou"; o que não está fica marcado para o próximo, com o motivo; sem estoque no site é automático.')) return;
+        if (!confirm('Registrar este pedido nas sugestões da equipe?\n\nO que está no pedido fica "aguardando entrega" (a estrela sai quando a nota da franquia chegar com o produto); o que não está fica marcado para o próximo, com o motivo; sem estoque no site é automático.')) return;
         registrar.disabled = true;
         let n;
         try { n = await registrarSugestoes(); p.sugestoes = await TS.sug.paraPedido(loja, { sugestoes: n.abertas }); }
@@ -713,7 +714,7 @@
       return h('div', { class: 'card mt sug-ped-card' },
         h('div', { class: 'card-title' }, `⭐ Sugestões da equipe (${grupos.length})`),
         h('p', { class: 'muted' }, 'Produtos que a equipe pediu. A estrela não muda a conta do pedido: você decide. ', pend ? h('b', null, `${pend} para revisar. `) : null,
-          'Ao montar o carrinho, a resposta vai para a equipe sozinha (entrou, não entrou com o motivo, ou sem estoque no site); o que não entrou continua marcado para o próximo pedido.'),
+          'Ao montar o carrinho, a resposta vai para a equipe sozinha. O que foi no pedido fica "aguardando entrega" até a nota da TSB Franquias chegar: com o produto, a estrela sai; sem ele (até 5 dias depois da primeira nota), volta para cá. O que não entrou continua marcado para o próximo pedido.'),
         h('div', { class: 'sug-ped-lista' }, grupos.map(item)),
         h('div', { class: 'cfg-acoes' }, registrar, msg));
     }
@@ -725,7 +726,7 @@
       return n;
     }
     R.registrarSugestoes = SUG.size ? registrarSugestoes : null;
-    const resumoSug = (n) => `Sugestões respondidas: ${n.entrou} entraram, ${n.nao} ficaram para o próximo pedido${n.semsite ? `, ${n.semsite} sem estoque no site` : ''}.`;
+    const resumoSug = (n) => `Sugestões respondidas: ${n.pedido} no pedido (aguardando entrega), ${n.nao} ficaram para o próximo${n.semsite ? `, ${n.semsite} sem estoque no site` : ''}.`;
     R.resumoSug = resumoSug;
     /** redesenha mantendo a rolagem da tabela e da página */
     function repintar() {

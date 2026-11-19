@@ -9,8 +9,11 @@ test('Preços: ⓘ explica a coluna "No caixa" no computador e no celular', asyn
   const celular = info.project.name === 'celular';
   const alvo = celular ? tab.locator('tbody td.com-dica .mob-rot', { hasText: 'No caixa' }).first() : tab.locator('thead th', { hasText: 'No caixa' });
   await expect(alvo).toBeVisible();
-  if (celular) await alvo.locator('.dica-i').tap(); else await alvo.locator('.dica-i').click();
-  await expect(page.locator('.dica-balao')).toContainText('a margem usa o preço do sistema');
+  // a tabela de Preços pode se redesenhar quando chegam os dados do cadastro: se o toque cair no meio, toca de novo
+  await expect(async () => {
+    if (celular) await alvo.locator('.dica-i').tap(); else await alvo.locator('.dica-i').click();
+    await expect(page.locator('.dica-balao')).toContainText('a margem usa o preço do sistema', { timeout: 2000 });
+  }).toPass({ timeout: 15000 });
   // ⓘ no cabeçalho não reordena a tabela
   if (!celular) await expect(tab.locator('thead th.sorted')).not.toContainText('No caixa');
   // o rótulo do cartão continua um só (sem o rótulo do CSS repetido)

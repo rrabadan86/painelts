@@ -645,7 +645,9 @@ function sugestoesDemo(lojaId) {
     mk(2, pick(kg, 3), 'Camila', { recado: '', dias: 1 }),
     mk(3, pick(un, 5), 'Gabrielly', { just: 'Só tem 1 e a cliente leva 3 de presente', dias: 4 }),
     mk(4, pick(kg, 8), 'Lyandra', { dias: 9, hist: [{ em: dia(6), res: 'nao', motivo: 'Fica para o próximo pedido', por: 'gerente' }] }),
-    mk(5, pick(un, 9), 'Camila', { dias: 12, st: 'atendida', hist: [{ em: dia(1), res: 'entrou', motivo: '', por: 'gerente' }] }),
+    { ...mk(5, pick(un, 9), 'Camila', { dias: 12, st: 'atendida', hist: [{ em: dia(9), res: 'pedido', motivo: '', por: 'gerente' }, { em: dia(1), res: 'chegou', motivo: `NF 19218/1 de ${dia(2).slice(8, 10)}/${dia(2).slice(5, 7)}`, por: 'gerente' }] }), chegou: { nf: '19218/1', dia: dia(2).slice(0, 10) } },
+    { ...mk(7, pick(un, 17), 'Lyandra', { dias: 6, hist: [{ em: dia(3), res: 'pedido', motivo: '', por: 'gerente' }] }), aguardando: { em: dia(3), qtd: 2 } },
+    mk(8, pick(un, 21), 'Camila', { dias: 20, hist: [{ em: dia(16), res: 'pedido', motivo: '', por: 'gerente' }, { em: dia(8), res: 'naoveio', motivo: 'Não veio na NF 19171/1 de 11/11 (indisponível no fornecedor)', por: 'gerente' }] }),
     mk(6, pick(un, 13), 'Gabrielly', { dias: 8, hist: [{ em: dia(5), res: 'semsite', motivo: 'Sem estoque no site da franquia (automático)', por: 'gerente' }] }),
   ];
 }
@@ -745,7 +747,9 @@ app.get('/marca/:id/logo', (req, res) => {
     cors(req, res);
     let b; try { b = JSON.parse(req.body || '{}'); } catch { return res.status(400).json({ erro: 'inválido' }); }
     const r = PEDx.progresso(req.query.c, b);
-    res.status(r.erro ? 404 : 200).json(r);
+    // ⭐ sugestões: o que o site recusou no carrinho volta para o próximo pedido
+    if (!r.erro && r._fim) { try { require('./src/sugestoes').resultadoCarrinho(r._loja, r._itens); } catch (e) { console.error('[sugestões] carrinho:', e.message); } }
+    res.status(r.erro ? 404 : 200).json(r.erro ? r : { ok: true });
   });
 }
 
@@ -1841,7 +1845,7 @@ app.get('/api/pedido', async (req, res) => {
       }
     } catch (e) { robo = { disponivel: false, erro: e.message }; }
   }
-  res.json({ catalogo: PED.catalogo(loja.id), carrinho: PED.carrinho(loja.id), cfg: PED.cfg(C.get().lojas.find((l) => l.id === loja.id)), obrigatorio: PED.obrigatorios(loja.id), espera: ESP.resumoPorCod(loja.id), sugestoes: require('./src/sugestoes').paraPedido(loja.id), robo, podeRobo: req.perfil === 'admin' });
+  res.json({ catalogo: PED.catalogo(loja.id), carrinho: PED.carrinho(loja.id), cfg: PED.cfg(C.get().lojas.find((l) => l.id === loja.id)), obrigatorio: PED.obrigatorios(loja.id), espera: ESP.resumoPorCod(loja.id), sugestoes: (() => { const S = require('./src/sugestoes'); try { S.avaliarNotas(loja.id, ES.notas(loja.id)); } catch { /* segue */ } return S.paraPedido(loja.id); })(), robo, podeRobo: req.perfil === 'admin' });
 });
 // ---------- inventário (Estoque → Inventário): contar pelo celular e gerar a planilha do AppNext ----------
 const INV = require('./src/inventario');
@@ -2118,6 +2122,7 @@ async function avaliarEspera(loja) {
     let raw = null;
     try { raw = (await dadosLoja(loja)).raw; } catch { /* sem vendas: confere só a chegada */ }
     const fx = FIx.eventos(loja.id);
+    try { require('./src/sugestoes').avaliarNotas(loja.id, ES.notas(loja.id)); } catch (e) { console.error('[sugestões] notas:', e.message); }
     const novos = ESP.avaliar(loja.id, { notas: ES.notas(loja.id), estoque: ES.atual(loja.id), xml: raw ? raw.xml : [], vendas: raw ? raw.vendas : null, fixe: fx ? fx.eventos : [] });
     if (novos.length) {
       const porProd = new Map();
@@ -2245,6 +2250,7 @@ app.use('/api/sugestoes', (req, res, next) => {
 app.get('/api/sugestoes', (req, res) => {
   const loja = lojaSug(req);
   if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  try { SUG.avaliarNotas(loja.id, ES.notas(loja.id)); } catch (e) { console.error('[sugestões] notas:', e.message); }
   const todos = decidePedido(req);
   res.json({ itens: SUG.lista(loja.id, req.user, todos), todos, motivos: SUG.MOTIVOS });
 });
