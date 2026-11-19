@@ -21,6 +21,7 @@ paths:
 - `src/nfe.js`: NF-e de venda como pedido para o robô (`dados/<loja>/nfe/envio/<id>.json` → `<id>.resultado.json`) e histórico em `rascunhos.json`.
 - `src/devolucao.js`: devolução ao fornecedor a partir da nota de entrada (itens danificados/faltando, fotos, planilha, e-mail, NF-e).
 - `src/nfsaida.js`: lista as NF-e (modelo 55) a partir dos XMLs que o coletor guarda; NFC-e (65) ficam em Vendas → Cupons.
+- `src/brasilapi.js` (rotas `/api/brasil/cnpj|cep`): dados públicos de CNPJ/CEP para preencher parceiro e cliente do orçamento; só preenche campo vazio; vendedora não usa; na apresentação a resposta é fictícia.
 - `coletor/nextsoft_nfe.py`: `ACAO=cadastros` só lê; `ACAO=rascunho` preenche e salva rascunho, e com `emitir` conclui e homologa.
   Confere produtos, quantidades, preços e total antes de salvar; se algo não bater, **para sem salvar**. `SIMULAR=1` faz tudo menos o clique final.
 
