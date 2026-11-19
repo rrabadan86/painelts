@@ -301,7 +301,7 @@
     if (primeira) { if (!lerEstado()) TS.aplicarPreset('30d'); rota(); } else if (state.page !== 'config') TS.render();
   }
 
-  async function carregar(forcar) {
+  async function carregar(forcar, repetindo) {
     const btn = document.getElementById('updated');
     btn.classList.add('carregando');
     const loja = state.loja;
@@ -346,6 +346,9 @@
       aplicar(body, { pagAlvo, em, aviso: avisoSrv ? decodeURIComponent(avisoSrv) : null });
     } catch (e) {
       console.error(e);
+      // a página foi pausada (outra aba/app) ou a internet caiu no meio: espera voltar e tenta de novo uma vez, sem assustar
+      if (TS.erroDeRede(e) && !repetindo) { TS.esperarVisivel().then(() => { if (state.loja === loja) carregar(forcar, true); }); return; }
+      if (TS.erroDeRede(e)) e = new Error('sem conexão com o painel agora.');
       if (!TS.db) content.replaceChildren(h('div', { class: 'notice err' }, 'Não foi possível carregar os dados: ' + e.message, h('div', { style: { marginTop: '8px' } }, h('button', { class: 'btn', onclick: () => carregar(true) }, 'Tentar de novo'))));
       else { TS.aviso = (TS.dadosGuardados ? 'Sem conexão com o painel: mostrando os dados guardados neste aparelho. ' : 'Falha ao atualizar: ') + e.message; TS.render(); }
     } finally {

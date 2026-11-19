@@ -246,6 +246,16 @@ function simular(req) {
     } }] };
   }
   const resultados = Array.isArray(ultima.content) ? ultima.content.filter((b) => b.type === 'tool_result') : [];
+  // pergunta sobre compras / notas de entrada / margem: consulta as notas (não as vendas)
+  const pergunta = String((req.messages.slice().reverse().find((m) => m.role === 'user' && typeof m.content === 'string') || {}).content || '');
+  if (/compra|nota de entrada|margem/i.test(pergunta) && req.tools && req.tools.some((t) => t.name === 'consultar_compras')) {
+    const rc = resultados.find((b) => b.tool_use_id === 'sim-c');
+    if (!rc) return { stop_reason: 'tool_use', usage, content: [{ type: 'tool_use', id: 'sim-c', name: 'consultar_compras', input: { periodo: { ultimos_dias: 90 }, filtro: 'todos' } }] };
+    let r = {};
+    try { r = JSON.parse(rc.content); } catch { /* ok */ }
+    const linhas = (r.itens || []).slice(0, 5).map((x) => `- **${x.item}**: ${x.meses.map((m) => `${m.mes} R$ ${String(m.custo_medio).replace('.', ',')}`).join(' → ')} (margem ${x.margem})`).join('\n');
+    return { stop_reason: 'end_turn', usage, content: [{ type: 'text', text: `Pelas notas de entrada de ${r.periodo ? r.periodo.de : '?'} a ${r.periodo ? r.periodo.ate : '?'}: ${r.itens_com_compra || 0} itens tiveram compra e ${r.itens_sem_compra || 0} não tiveram.\n\n${linhas}\n\n*Resposta simulada na apresentação.*` }] };
+  }
   if (!resultados.length && req.tools && req.tools.some((t) => t.name === 'consultar_vendas')) {
     return { stop_reason: 'tool_use', usage, content: [{ type: 'text', text: 'Vou consultar as vendas.' }, { type: 'tool_use', id: 'sim-v', name: 'consultar_vendas', input: { periodo: { ultimos_dias: 90 }, agrupar_por: 'mes' } }] };
   }

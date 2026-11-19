@@ -78,6 +78,18 @@ TS.ymLabel = (ym) => `${MESES[+ym.slice(5, 7) - 1]}/${ym.slice(2, 4)}`;
 const DAY = 86400000;
 const FMT_HOJE_SP = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' });
 TS.hojeSP = () => FMT_HOJE_SP.format(new Date());
+/** erro de rede do fetch ("Failed to fetch", "Load failed", "NetworkError…"): o navegador pausou a página ou a internet caiu */
+TS.erroDeRede = (e) => e instanceof TypeError && /fetch|network|load failed/i.test(e.message || '');
+/** espera a página voltar a aparecer e a internet voltar (no máximo 60 s) */
+TS.esperarVisivel = () => new Promise((ok) => {
+  const pronto = () => !document.hidden && navigator.onLine !== false;
+  if (pronto()) { setTimeout(ok, 800); return; }
+  let fim = null;
+  const f = () => { if (!pronto()) return; sair(); setTimeout(ok, 300); };
+  const sair = () => { document.removeEventListener('visibilitychange', f); window.removeEventListener('online', f); clearTimeout(fim); };
+  document.addEventListener('visibilitychange', f); window.addEventListener('online', f);
+  fim = setTimeout(() => { sair(); ok(); }, 60e3);
+});
 TS.isoToDay = (iso) => Math.floor(Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10)) / DAY);
 TS.dayToIso = (d) => new Date(d * DAY).toISOString().slice(0, 10);
 TS.todayDay = () => TS.isoToDay(TS.hojeSP());

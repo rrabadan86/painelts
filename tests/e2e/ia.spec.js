@@ -120,3 +120,31 @@ test('IA: resposta que estoura o limite mostra aviso e "Tentar de novo" (sem que
   await expect(g.locator('.ia-eu')).toHaveCount(1);
   await expect(g.locator('.ia-ela .ia-md')).toContainText('simulada');
 });
+
+test('IA: margem de produto ao longo do tempo vem das notas de entrada (não das vendas) e lista o que não teve compra', async ({ page }, info) => {
+  await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS.db && TS.iaAbrir);
+  await page.evaluate(() => TS.iaAbrir('Quais produtos tiveram a margem bruta maior nas últimas compras?'));
+  const g = page.locator('.ia-gaveta');
+  await expect(g.locator('.ia-ela')).toContainText('consultando as notas de entrada', { timeout: 20000 });
+  await expect(g.locator('.ia-ela')).not.toContainText('consultando as vendas');
+  await expect(g.locator('.ia-ela .ia-md')).toContainText('Pelas notas de entrada');
+  await expect(g.locator('.ia-ela .ia-md')).toContainText(/\d+ itens tiveram compra e \d+ não tiveram/);
+  await expect(g.locator('.ia-ela .ia-md li').first()).toContainText('R$');
+  void info;
+});
+
+test('IA: conexão que cai no meio da pergunta tenta de novo sozinha; se continuar caída, mostra aviso em português', async ({ page }) => {
+  await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS.db && TS.iaAbrir);
+  let falhas = 1;
+  await page.route('**/api/demo/ia/perguntar*', (route) => (falhas-- > 0 ? route.abort('internetdisconnected') : route.continue()));
+  await page.evaluate(() => TS.iaAbrir('Quanto vendemos?'));
+  const g = page.locator('.ia-gaveta');
+  await expect(g.locator('.ia-ela .ia-md')).toContainText('simulada', { timeout: 20000 });
+  await g.getByRole('button', { name: 'Nova conversa' }).click();
+  falhas = 99;
+  await g.locator('textarea').fill('Quanto vendemos ontem?');
+  await g.locator('textarea').press('Enter');
+  await expect(g.locator('.ia-erro')).toContainText('A conexão com o painel caiu', { timeout: 20000 });
+  await expect(g.locator('.ia-erro')).not.toContainText(/fetch/i);
+  await expect(g.getByRole('button', { name: /Tentar de novo/ })).toBeVisible();
+});

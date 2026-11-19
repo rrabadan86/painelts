@@ -9,8 +9,16 @@
   const { h, fmt, state } = TS;
   const DIA = 86400e3;
 
+  const SEM_CONEXAO = 'A conexão com o painel caiu no meio do pedido (a internet oscilou ou o celular pausou a página ao trocar de aba). Toque em "Tentar de novo".';
   async function iaApi(metodo, rota, corpo) {
-    const r = await fetch(TS.api(rota), { method: metodo, credentials: 'same-origin', headers: metodo === 'GET' ? {} : { 'Content-Type': 'application/json', 'X-Painel': '1' }, body: corpo ? JSON.stringify(corpo) : undefined });
+    const pedir = () => fetch(TS.api(rota), { method: metodo, credentials: 'same-origin', headers: metodo === 'GET' ? {} : { 'Content-Type': 'application/json', 'X-Painel': '1' }, body: corpo ? JSON.stringify(corpo) : undefined });
+    let r;
+    try { r = await pedir(); } catch (e) {
+      if (!TS.erroDeRede(e)) throw e;
+      // a página foi pausada (outra aba/app) ou a internet caiu: espera voltar e tenta uma vez
+      await TS.esperarVisivel();
+      try { r = await pedir(); } catch (e2) { throw TS.erroDeRede(e2) ? new Error(SEM_CONEXAO) : e2; }
+    }
     const j = await r.json().catch(() => ({}));
     if (!r.ok) { const e = new Error(j.erro || 'Falha.'); e.status = r.status; throw e; }
     return j;
@@ -225,6 +233,80 @@
     l.sort(ord);
     return { lido_do_appnext_em: e.estoque.em || null, total: l.length, valor_total: r2(l.reduce((s, x) => s + (x.valor_estoque || 0), 0)), itens: l.slice(0, Math.min(100, inp.limite || 30)) };
   }
+  /**
+   * Compras (notas de entrada) × preço de tabela: custo de cada compra no período, mês a mês, e a margem bruta que esse
+   * custo dá no preço de tabela atual do AppNext. Não usa as vendas. Também lista o que não teve compra no período.
+   */
+  async function consultarCompras(inp) {
+    if (!state.loja || state.loja === 'todas') return { erro: 'Escolha uma loja no topo do painel para ver as compras.' };
+    const [e, M] = await Promise.all([TS.estoqueBuscar(state.loja), TS.custosLoja()]);
+    const est = (e && e.estoque && e.estoque.itens) || [];
+    const compras = (e && e.compras && e.compras.itens) || {};
+    if (!M || !est.length) return { erro: 'Ainda não há estoque nem notas de entrada desta loja no painel.' };
+    // período: de/ate ou últimos N dias até hoje (sem período: últimos 90 dias)
+    const hoje = TS.hojeSP ? TS.hojeSP() : new Date().toISOString().slice(0, 10);
+    const P = inp.periodo || {};
+    const iso = (d) => TS.dayToIso(d);
+    let ate = /^\d{4}-\d{2}-\d{2}$/.test(P.ate || '') ? P.ate : hoje;
+    let de = /^\d{4}-\d{2}-\d{2}$/.test(P.de || '') ? P.de : iso(TS.isoToDay(ate) - ((P.ultimos_dias || 90) - 1));
+    if (de > ate) [de, ate] = [ate, de];
+    const q = inp.busca ? TS.norm(inp.busca) : null;
+    const porCod = new Map(est.map((it) => [String(it.cod), it]));
+    // produtos da tabela de preço feitos com cada item (o próprio item ou os pacotes de chá feitos com a matéria-prima)
+    const vende = new Map();
+    for (const t of (e.tabela && e.tabela.itens) || []) {
+      if (!(t.preco > 0.011)) continue;
+      const c = M.custoCadastro(t.cod, t.desc);
+      if (!c || !c.it) continue;
+      const k = String(c.it.cod), parte = c.kg ? c.g / 1000 : 1;
+      (vende.get(k) || vende.set(k, []).get(k)).push({ produto: t.desc, preco: t.preco, parte, fixo: c.custo - parte * (c.it.custo || 0) });
+    }
+    const pct = (x) => Math.round(x * 1000) / 10;
+    const comCompra = [], semCompra = [];
+    const cods = new Set([...Object.keys(compras), ...porCod.keys()]);
+    for (const cod of cods) {
+      const it = porCod.get(cod);
+      const lista = compras[cod] || [];
+      const nome = it ? it.desc : cod;
+      if (q && !TS.norm(nome).includes(q) && !cod.includes(inp.busca)) continue;
+      const un = it && it.un === 'Kg' ? 'kg' : ((it && it.un) || 'un').toLowerCase();
+      const noPer = lista.filter(([d]) => d >= de && d <= ate);
+      const antes = lista.filter(([d]) => d < de).sort((a, b) => (a[0] < b[0] ? 1 : -1))[0];
+      if (!noPer.length) {
+        if ((it && it.qtd > 0) || lista.length) semCompra.push({ cod, item: nome, estoque: it ? Math.round((it.qtd || 0) * 1000) / 1000 : null, unidade: un, ultima_compra: antes ? antes[0] : null, ultimo_custo: antes ? r2(antes[1]) : null });
+        continue;
+      }
+      const meses = new Map();
+      for (const [d, custo, nf, qtd] of noPer) {
+        const m = meses.get(d.slice(0, 7)) || { qtd: 0, valor: 0, n: 0, notas: [] };
+        const qq = +qtd > 0 ? +qtd : 1;
+        m.qtd += qq; m.valor += qq * custo; m.n++; if (nf != null && !m.notas.includes(nf)) m.notas.push(nf);
+        meses.set(d.slice(0, 7), m);
+      }
+      const ms = [...meses].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([mes, m]) => ({ mes, custo_medio: r2(m.valor / m.qtd), qtd: Math.round(m.qtd * 1000) / 1000, notas: m.notas.slice(0, 5) }));
+      const prods = (vende.get(cod) || []).sort((a, b) => a.preco - b.preco).slice(0, 4).map((p) => ({
+        produto: p.produto, preco_tabela: r2(p.preco),
+        margem_por_mes: ms.map((m) => pct((p.preco - (p.fixo + p.parte * m.custo_medio)) / p.preco)),
+      }));
+      // tendência: custo de um mês com compra para o seguinte (margem sobe quando o custo cai, com o preço de tabela atual)
+      let sobe = ms.length >= 2, cai = ms.length >= 2;
+      for (let k = 1; k < ms.length; k++) { const a = ms[k - 1].custo_medio, b = ms[k].custo_medio; if (!(b < a * 0.995)) sobe = false; if (!(b > a * 1.005)) cai = false; }
+      comCompra.push({ cod, item: nome, unidade: un, custo_antes_do_periodo: antes ? { data: antes[0], custo: r2(antes[1]) } : null, custo_no_estoque_hoje: it && it.custo != null ? r2(it.custo) : null,
+        meses: ms, margem: sobe ? 'subiu' : cai ? 'caiu' : ms.length < 2 ? 'uma_compra_so' : 'oscilou', produtos_a_venda: prods, mais_produtos: Math.max(0, (vende.get(cod) || []).length - prods.length) });
+    }
+    const fil = inp.filtro || 'todos';
+    const lim = Math.min(100, inp.limite || 40);
+    const res = { periodo: { de, ate }, base: 'custo das notas de entrada (compra) × preço de tabela atual do AppNext; não usa as vendas', itens_com_compra: comCompra.length, itens_sem_compra: semCompra.length };
+    if (fil === 'sem_compra') { res.sem_compra = semCompra.sort((a, b) => (b.estoque || 0) - (a.estoque || 0)).slice(0, lim); return res; }
+    let l = comCompra;
+    if (fil === 'margem_subiu') l = l.filter((x) => x.margem === 'subiu');
+    if (fil === 'margem_caiu') l = l.filter((x) => x.margem === 'caiu');
+    l.sort((a, b) => a.item.localeCompare(b.item, 'pt-BR'));
+    res.total_no_filtro = l.length;
+    res.itens = l.slice(0, lim);
+    res.sem_compra_exemplos = semCompra.filter((x) => x.estoque > 0).slice(0, 15).map((x) => x.item);
+    return res;
+  }
   async function executar(nome, inp, pode, resp) {
     inp = inp || {};
     try {
@@ -232,6 +314,7 @@
       if (nome === 'listar_valores') return listarValores(inp);
       if (nome === 'consultar_clientes' && pode.clientes) return consultarClientes(inp, resp);
       if (nome === 'consultar_estoque' && pode.custos) return await consultarEstoque(inp);
+      if (nome === 'consultar_compras' && pode.custos) return await consultarCompras(inp);
       if (nome === 'mostrar_grafico') { resp.graficos.push(inp); return { ok: true }; }
       return { erro: 'Ferramenta indisponível para este perfil.' };
     } catch (e) { return { erro: 'Falha na consulta: ' + e.message }; }
@@ -241,7 +324,7 @@
     return ms.map((m, k) => (k >= desde || m.role !== 'user' || !Array.isArray(m.content) ? m
       : { ...m, content: m.content.map((b) => (b.type === 'tool_result' && b.content.length > 1500 ? { ...b, content: b.content.slice(0, 1500) + '…(resultado anterior resumido)' } : b)) }));
   }
-  const PASSO = { consultar_vendas: 'consultando as vendas', listar_valores: 'conferindo os nomes', consultar_clientes: 'consultando os clientes', consultar_estoque: 'consultando o estoque', mostrar_grafico: 'montando o gráfico' };
+  const PASSO = { consultar_vendas: 'consultando as vendas', listar_valores: 'conferindo os nomes', consultar_clientes: 'consultando os clientes', consultar_estoque: 'consultando o estoque', consultar_compras: 'consultando as notas de entrada', mostrar_grafico: 'montando o gráfico' };
 
   // ======================= painel "Pergunte ao painel" =======================
   let conv = null; // { id, loja, mensagens:[API], vis:[{eu}|{ia}] }
