@@ -211,11 +211,18 @@ function simular(req) {
   if (!resultados.length && req.tools && req.tools.some((t) => t.name === 'consultar_vendas')) {
     return { stop_reason: 'tool_use', usage, content: [{ type: 'text', text: 'Vou consultar as vendas.' }, { type: 'tool_use', id: 'sim-v', name: 'consultar_vendas', input: { periodo: { ultimos_dias: 90 }, agrupar_por: 'mes' } }] };
   }
+  const usouGrafico = req.messages.some((m) => m.role === 'assistant' && Array.isArray(m.content) && m.content.some((b) => b.type === 'tool_use' && b.name === 'mostrar_grafico'));
+  if (!usouGrafico && req.tools && req.tools.some((t) => t.name === 'mostrar_grafico')) {
+    let r = {};
+    try { r = JSON.parse(resultados[0].content); } catch { /* ok */ }
+    return { stop_reason: 'tool_use', usage, content: [{ type: 'tool_use', id: 'sim-g', name: 'mostrar_grafico', input: { tipo: 'barra', titulo: 'Faturamento por mês', formato: 'moeda', rotulos: (r.grupos || []).map((g) => g.chave), series: [{ nome: 'Faturamento', valores: (r.grupos || []).map((g) => g.faturamento) }] } }] };
+  }
   let txt = 'Resposta simulada.';
   try {
-    const r = JSON.parse(resultados[0].content);
+    const consulta = req.messages.flatMap((m) => (Array.isArray(m.content) ? m.content : [])).find((b) => b.type === 'tool_result' && b.tool_use_id === 'sim-v');
+    const r = JSON.parse(consulta.content);
     const linhas = (r.grupos || []).map((g) => `- **${g.chave}**: ${g.faturamento.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} em ${g.cupons} atendimentos`).join('\n');
-    txt = `Nos últimos 90 dias, mês a mês:\n\n${linhas}\n\n*Na apresentação a resposta é simulada: na loja de verdade a IA responde à sua pergunta com os números da loja.*`;
+    txt = `Nos últimos 90 dias, mês a mês:\n\n{{grafico}}\n\n${linhas}\n  - exemplo de subitem\n\n*Na apresentação a resposta é simulada: na loja de verdade a IA responde à sua pergunta com os números da loja.*`;
   } catch { /* ok */ }
   return { stop_reason: 'end_turn', usage, content: [{ type: 'text', text: txt }] };
 }

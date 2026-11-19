@@ -73,3 +73,23 @@ test('IA: conferência das mensagens e ferramentas por perfil', () => {
   assert.match(sis, /não vê dados de clientes/);
   assert.match(sis, /não vê custo/);
 });
+
+test('IA: histórico de conversas por pessoa e por loja, sem a lista de clientes', () => {
+  const IAC = require('../../src/iaconversas');
+  const vis = [{ eu: 'Quanto vendemos?' }, { ia: { passos: ['consultando as vendas'], texto: 'R$ 10', graficos: [], clientes: [{ n: 3, cpfs: ['12345678901'] }] } }];
+  assert.ok(IAC.salvar('fr', 'zz', { loja: 'a', vis }).erro);
+  assert.ok(IAC.salvar('fr', 'aaaaaaaaaaaa', { loja: 'a', vis: [] }).erro);
+  assert.ok(IAC.salvar('fr', 'aaaaaaaaaaaa', { loja: 'a', vis, mensagens: [{ role: 'user', content: 'Quanto vendemos?' }] }).ok);
+  IAC.salvar('fr', 'bbbbbbbbbbbb', { loja: 'b', vis });
+  assert.deepEqual(IAC.lista('fr', 'a').map((c) => c.id), ['aaaaaaaaaaaa']);
+  assert.equal(IAC.lista('fr', 'a')[0].titulo, 'Quanto vendemos?');
+  assert.equal(IAC.lista('fr', 'a')[0].perguntas, 1);
+  assert.equal(IAC.lista('f2', 'a').length, 0, 'cada pessoa vê só as suas');
+  const c = IAC.abrir('fr', 'aaaaaaaaaaaa');
+  assert.ok(!JSON.stringify(c).includes('12345678901'), 'CPF não fica gravado');
+  assert.equal(c.vis[1].ia.clientes[0].n, 3);
+  assert.equal(c.mensagens.length, 1);
+  assert.ok(IAC.salvar('fr', 'aaaaaaaaaaaa', { loja: 'b', vis }).erro, 'não troca de loja');
+  assert.ok(IAC.apagar('fr', 'aaaaaaaaaaaa').ok);
+  assert.equal(IAC.abrir('fr', 'aaaaaaaaaaaa'), null);
+});

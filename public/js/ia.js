@@ -31,37 +31,62 @@
     if (ult < txt.length) out.push(txt.slice(ult));
     return out;
   }
-  TS.iaMd = function (txt) {
+  /** markdown → elementos. graficos: lista de gráficos; a linha {{grafico}} (ou {{grafico 2}}) põe o gráfico ali; os que sobram vão no fim */
+  TS.iaMd = function (txt, graficos, desenhar) {
     const box = h('div', { class: 'ia-md' });
     const linhas = String(txt || '').replace(/\r/g, '').split('\n');
-    let k = 0;
+    const usados = new Set();
+    const RE_G = /^\s*\{\{\s*gr[aá]fico\s*(\d*)\s*\}\}\s*$/i, RE_LI = /^(\s*)([-*•]|\d+[.)])\s+(.*)$/;
+    let k = 0, proxG = 0;
     while (k < linhas.length) {
       const l = linhas[k];
       if (!l.trim()) { k++; continue; }
+      const mg = RE_G.exec(l);
+      if (mg) {
+        const n = mg[1] ? +mg[1] - 1 : proxG;
+        if (graficos && graficos[n] && desenhar && !usados.has(n)) { box.append(desenhar(graficos[n])); usados.add(n); }
+        proxG = n + 1; k++;
+        continue;
+      }
       if (/^\s*\|/.test(l)) { // tabela
         const rows = [];
         while (k < linhas.length && /^\s*\|/.test(linhas[k])) { rows.push(linhas[k]); k++; }
         const cel = (r) => r.trim().replace(/^\||\|$/g, '').split('|').map((c) => c.trim());
         const corpo = rows.filter((r) => !/^\s*\|?\s*:?-{2,}/.test(r)).map(cel);
         const [cab, ...resto] = corpo;
-        const num = (c) => /^[-+]?(R\$\s?)?[\d.,]+\s?%?$/.test(c);
+        const num = (c) => /^[-+−]?(R\$\s?)?[\d.,]+\s?(%|kg|g)?$/.test(c);
         box.append(h('div', { class: 'ia-tab-w' }, h('table', { class: 'ia-tab' },
           cab ? h('thead', null, h('tr', null, cab.map((c) => h('th', null, inline(c))))) : null,
           h('tbody', null, resto.map((r) => h('tr', null, r.map((c) => h('td', { class: num(c) ? 'n' : null }, inline(c)))))))));
         continue;
       }
-      if (/^\s*([-*•]|\d+[.)])\s+/.test(l)) {
-        const ord = /^\s*\d+[.)]/.test(l);
-        const lista = h(ord ? 'ol' : 'ul');
-        while (k < linhas.length && /^\s*([-*•]|\d+[.)])\s+/.test(linhas[k])) { lista.append(h('li', null, inline(linhas[k].replace(/^\s*([-*•]|\d+[.)])\s+/, '')))); k++; }
-        box.append(lista);
+      if (RE_LI.test(l)) {
+        // listas com subitens: o recuo decide o nível; cada nível tem o próprio tipo (numerada ou não)
+        const pilha = [];
+        while (k < linhas.length && (RE_LI.test(linhas[k]) || (linhas[k].trim() && /^\s{2,}\S/.test(linhas[k]) && pilha.length))) {
+          const m = RE_LI.exec(linhas[k]);
+          if (!m) { const li = pilha[pilha.length - 1].ultimo; if (li) li.append(' ', ...inline(linhas[k].trim())); k++; continue; }
+          const ind = m[1].replace(/\t/g, '    ').length, ord = /\d/.test(m[2]);
+          while (pilha.length && ind < pilha[pilha.length - 1].ind) pilha.pop();
+          let topo = pilha[pilha.length - 1];
+          if (!topo || ind > topo.ind) {
+            const el = h(ord ? 'ol' : 'ul');
+            if (topo && topo.ultimo) topo.ultimo.append(el); else box.append(el);
+            topo = { el, ind, ultimo: null };
+            pilha.push(topo);
+          }
+          const li = h('li', null, inline(m[3]));
+          topo.el.append(li); topo.ultimo = li;
+          k++;
+        }
         continue;
       }
       if (/^#{1,4}\s/.test(l)) { box.append(h('p', { class: 'ia-tit' }, inline(l.replace(/^#+\s*/, '')))); k++; continue; }
       const par = [];
-      while (k < linhas.length && linhas[k].trim() && !/^\s*(\||[-*•]\s|\d+[.)]\s|#{1,4}\s)/.test(linhas[k])) { par.push(linhas[k]); k++; }
+      while (k < linhas.length && linhas[k].trim() && !RE_G.test(linhas[k]) && !/^\s*(\||[-*•]\s|\d+[.)]\s|#{1,4}\s)/.test(linhas[k])) { par.push(linhas[k]); k++; }
       box.append(h('p', null, inline(par.join(' '))));
     }
+    if (graficos && desenhar) graficos.forEach((g, n) => { if (!usados.has(n)) box.append(desenhar(g)); });
     return box;
   };
 
@@ -214,7 +239,16 @@
   const PASSO = { consultar_vendas: 'consultando as vendas', listar_valores: 'conferindo os nomes', consultar_clientes: 'consultando os clientes', consultar_estoque: 'consultando o estoque', mostrar_grafico: 'montando o gráfico' };
 
   // ======================= painel "Pergunte ao painel" =======================
-  let conv = null; // { loja, mensagens:[API], vis:[{eu}|{ia}] }
+  let conv = null; // { id, loja, mensagens:[API], vis:[{eu}|{ia}] }
+  const novoId = () => [...crypto.getRandomValues(new Uint8Array(6))].map((b) => b.toString(16).padStart(2, '0')).join('');
+  const novaConv = () => ({ id: novoId(), loja: state.loja, mensagens: [], vis: [] });
+  const demoHist = new Map(); // apresentação: o histórico fica só na memória
+  async function gravarConv(c) {
+    if (!c.vis.length) return;
+    const corpo = { loja: c.loja, vis: c.vis.map((v) => (v.ia ? { ia: { ...v.ia, clientes: v.ia.clientes.map((x) => ({ n: x.n })) } } : v)), mensagens: c.mensagens };
+    if (TS.demo) { demoHist.set(c.id, { id: c.id, loja: c.loja, titulo: (c.vis.find((v) => v.eu) || {}).eu, atualizadaEm: new Date().toISOString(), perguntas: c.vis.filter((v) => v.eu).length, ...corpo }); return; }
+    try { await iaApi('PUT', `ia/conversas/${c.id}`, corpo); } catch { /* o histórico não pode atrapalhar a conversa */ }
+  }
   let ocupado = false;
   const pode = () => ({ clientes: !!(TS.eu && TS.eu.pode && TS.eu.pode.clientes) && !!(TS.db && TS.db.clientes), custos: !!(TS.eu && TS.eu.pode && (TS.eu.pode.custos || TS.eu.pode.configurar)) && state.loja !== 'todas' });
   function contexto() {
@@ -250,18 +284,20 @@
   let painel = null;
   function abrir(pergunta) {
     if (painel && painel.isConnected) { painel.querySelector('textarea').focus(); return; }
-    if (!conv || conv.loja !== state.loja) conv = { loja: state.loja, mensagens: [], vis: [] };
+    if (!conv || conv.loja !== state.loja) conv = novaConv();
+    let modo = 'conv';
     const lista = h('div', { class: 'ia-lista', 'aria-live': 'polite' });
     const txt = h('textarea', { class: 'f-input ia-txt', rows: 2, maxlength: 2000, placeholder: 'Pergunte sobre vendas, vendedoras, clientes, estoque…' });
     const env = h('button', { type: 'button', class: 'btn primary ia-env' }, 'Enviar');
     const aviso = h('div', { class: 'ia-aviso' });
     const fechar = () => { camada.remove(); document.removeEventListener('keydown', esc); if (!document.querySelector('.camada-cheia, .prc-drawer-camada')) document.body.classList.remove('com-camada'); };
     const esc = (e) => { if (e.key === 'Escape' && camada.isConnected && document.querySelector('.prc-drawer-camada:last-of-type') === camada) fechar(); };
-    const nova = h('button', { type: 'button', class: 'link-btn', onclick: () => { if (ocupado) return; conv = { loja: state.loja, mensagens: [], vis: [] }; pintarLista(); txt.focus(); } }, 'Nova conversa');
+    const nova = h('button', { type: 'button', class: 'link-btn', onclick: () => { if (ocupado) return; conv = novaConv(); modo = 'conv'; pintarLista(); txt.focus(); } }, 'Nova conversa');
+    const btHist = h('button', { type: 'button', class: 'link-btn', onclick: () => { if (ocupado) return; modo = modo === 'hist' ? 'conv' : 'hist'; pintarLista(); } }, 'Histórico');
     const nomeLoja = contexto().loja;
     const gaveta = h('div', { class: 'card prc-drawer ia-gaveta', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Pergunte ao painel' },
       h('button', { type: 'button', class: 'exp-fechar', 'aria-label': 'Fechar', onclick: fechar }, '✕'),
-      h('div', { class: 'ia-cab' }, h('div', { class: 'card-title' }, '✨ Pergunte ao painel'), h('div', { class: 'muted ia-sub' }, nomeLoja, ' · ', nova)),
+      h('div', { class: 'ia-cab' }, h('div', { class: 'card-title' }, '✨ Pergunte ao painel'), h('div', { class: 'muted ia-sub' }, nomeLoja, ' · ', nova, ' · ', btHist)),
       aviso, lista,
       h('div', { class: 'ia-rodape' }, txt, env),
       h('small', { class: 'muted ia-nota' }, 'A IA só consulta os dados que você já vê no painel e pode errar: confira os números importantes. Clientes vão só com o primeiro nome.'));
@@ -274,7 +310,47 @@
     env.addEventListener('click', enviar);
     txt.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); enviar(); } });
 
+    const rodape = () => gaveta.querySelector('.ia-rodape');
+    async function pintarHist() {
+      btHist.textContent = '‹ Voltar à conversa';
+      rodape().hidden = true;
+      const busca = h('input', { class: 'f-input', placeholder: 'Buscar nas perguntas…', type: 'search' });
+      const box = h('div', { class: 'ia-hist' }, h('div', { class: 'muted' }, 'Carregando…'));
+      lista.replaceChildren(h('div', { class: 'ia-hist-top' }, h('b', null, 'Suas conversas nesta loja'), busca), box);
+      let itens = [];
+      try { itens = TS.demo ? [...demoHist.values()].filter((c) => c.loja === state.loja).sort((a, b) => (a.atualizadaEm < b.atualizadaEm ? 1 : -1)) : (await iaApi('GET', `ia/conversas?loja=${encodeURIComponent(state.loja || '')}`)).conversas; }
+      catch (e) { box.replaceChildren(h('div', { class: 'notice err' }, e.message)); return; }
+      const quando = (iso) => { const d = new Date(iso); return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' }) + ' ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }); };
+      const desenhar = () => {
+        const q = TS.norm(busca.value.trim());
+        const l = itens.filter((c) => !q || TS.norm(c.titulo).includes(q));
+        box.replaceChildren(...(l.length ? l.map((c) => h('div', { class: 'ia-hist-i' + (c.id === conv.id ? ' on' : '') },
+          h('button', { type: 'button', class: 'ia-hist-abrir', onclick: () => abrirConv(c.id) }, h('b', null, c.titulo), h('small', { class: 'muted' }, `${quando(c.atualizadaEm)} · ${fmt.int(c.perguntas)} ${c.perguntas === 1 ? 'pergunta' : 'perguntas'}`)),
+          h('button', { type: 'button', class: 'link-btn ia-hist-del', title: 'Apagar conversa', 'aria-label': 'Apagar conversa', onclick: async () => {
+            if (!confirm(`Apagar a conversa "${c.titulo}"?`)) return;
+            try { if (TS.demo) demoHist.delete(c.id); else await iaApi('DELETE', `ia/conversas/${c.id}`); } catch (e) { alert(e.message); return; }
+            itens = itens.filter((x) => x.id !== c.id);
+            if (conv.id === c.id) conv = novaConv();
+            desenhar();
+          } }, '🗑'))) : [h('p', { class: 'muted' }, itens.length ? 'Nenhuma conversa com esse texto.' : 'Nenhuma conversa gravada ainda. Cada pergunta respondida fica guardada aqui.')]));
+      };
+      busca.addEventListener('input', desenhar);
+      desenhar();
+    }
+    async function abrirConv(id) {
+      try {
+        const c = TS.demo ? demoHist.get(id) : await iaApi('GET', `ia/conversas/${id}`);
+        conv = { id: c.id, loja: c.loja, mensagens: c.mensagens || [], vis: c.vis || [], soLeitura: !(c.mensagens || []).length };
+        modo = 'conv';
+        pintarLista();
+      } catch (e) { alert(e.message); }
+    }
     function pintarLista() {
+      if (modo === 'hist') { pintarHist(); return; }
+      btHist.textContent = 'Histórico';
+      rodape().hidden = false;
+      txt.disabled = !!conv.soLeitura;
+      txt.placeholder = conv.soLeitura ? 'Esta conversa ficou grande demais para continuar: comece uma nova.' : 'Pergunte sobre vendas, vendedoras, clientes, estoque…';
       if (!conv.vis.length) {
         lista.replaceChildren(h('div', { class: 'ia-vazio' }, h('p', null, 'Pergunte em português, como perguntaria a um analista. Exemplos:'),
           h('div', { class: 'ia-sugs' }, sugestoes().map((s) => h('button', { type: 'button', class: 'ia-sug', onclick: () => perguntar(s) }, s)))));
@@ -289,13 +365,15 @@
       return h('div', { class: 'ia-msg ia-ela' + (r.erro ? ' ia-erro' : '') },
         r.passos.length ? h('div', { class: 'ia-passos' }, r.passos.map((p) => h('span', null, (r.fim || r.erro ? '✓ ' : '… ') + p))) : null,
         r.erro ? h('p', null, r.erro) : null,
-        r.texto ? TS.iaMd(r.texto) : !r.fim && !r.erro ? h('div', { class: 'ia-pensando' }, h('span', { class: 'cfg-pulso' }), ' pensando…') : null,
-        ...r.graficos.map(grafico),
-        ...r.clientes.map((c) => h('button', { type: 'button', class: 'btn ia-cli', onclick: () => { fechar(); TS.abrirClientes && TS.abrirClientes(c.cpfs); } }, `👥 Abrir ${fmt.int(c.n)} ${c.n === 1 ? 'cliente' : 'clientes'} no painel`)),
+        r.texto ? TS.iaMd(r.texto, r.graficos, grafico) : !r.fim && !r.erro ? h('div', { class: 'ia-pensando' }, h('span', { class: 'cfg-pulso' }), ' pensando…') : null,
+        ...(r.texto ? [] : r.graficos.map(grafico)),
+        ...r.clientes.map((c) => (c.cpfs ? h('button', { type: 'button', class: 'btn ia-cli', onclick: () => { fechar(); TS.abrirClientes && TS.abrirClientes(c.cpfs); } }, `👥 Abrir ${fmt.int(c.n)} ${c.n === 1 ? 'cliente' : 'clientes'} no painel`)
+          : h('small', { class: 'muted ia-cli' }, `👥 ${fmt.int(c.n)} ${c.n === 1 ? 'cliente' : 'clientes'} (a lista não fica no histórico: pergunte de novo para abrir)`))),
         r.fim && r.texto ? h('div', { class: 'ia-acoes' }, h('button', { type: 'button', class: 'link-btn', onclick: (e) => { navigator.clipboard && navigator.clipboard.writeText(r.texto); e.target.textContent = 'copiado ✓'; } }, 'copiar resposta')) : null);
     }
     async function perguntar(q) {
-      if (ocupado) return;
+      if (ocupado || conv.soLeitura) return;
+      if (modo === 'hist') { modo = 'conv'; }
       if (!TS.db) { aviso.replaceChildren(h('div', { class: 'notice' }, 'Espere os dados da loja carregarem.')); return; }
       ocupado = true; env.disabled = true; aviso.replaceChildren();
       const base = conv.mensagens.length;
@@ -331,6 +409,7 @@
       }
       ocupado = false; env.disabled = false;
       pintarLista();
+      gravarConv(conv);
       txt.focus();
     }
     pintarLista();

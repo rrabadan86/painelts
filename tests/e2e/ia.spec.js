@@ -12,11 +12,24 @@ test('IA: Pergunte ao painel abre, consulta as vendas e responde (simulada na ap
   await expect(g.locator('.ia-ela')).toContainText('consultando as vendas');
   await expect(g.locator('.ia-ela .ia-md')).toContainText('simulada');
   await expect(g.locator('.ia-ela .ia-md li').first()).toContainText('R$');
+  // gráfico no lugar marcado ({{grafico}}) e subitem dentro do item, não numerado à parte
+  await expect(g.locator('.ia-ela .ia-md .ia-graf canvas')).toHaveCount(1);
+  await expect(g.locator('.ia-ela .ia-md')).not.toContainText('{{');
+  await expect(g.locator('.ia-ela .ia-md li ul li')).toContainText('exemplo de subitem');
+  const altura = await g.locator('.ia-graf canvas').evaluate((c) => c.getBoundingClientRect().height);
+  expect(altura).toBeGreaterThan(100);
   // pergunta digitada (Enter envia) e conversa continua
   await g.locator('textarea').fill('E nos últimos 90 dias?');
   await g.locator('textarea').press('Enter');
   await expect(g.locator('.ia-eu')).toHaveCount(2);
-  await expect(g.locator('.ia-ela .ia-md')).toHaveCount(2);
+  await expect(g.locator('.ia-ela .ia-md')).toHaveCount(2, { timeout: 20000 });
+  // histórico: a conversa fica gravada e reabre
+  await g.getByRole('button', { name: 'Nova conversa' }).click();
+  await expect(g.locator('.ia-sug').first()).toBeVisible();
+  await g.getByRole('button', { name: 'Histórico' }).click();
+  await expect(g.locator('.ia-hist-i')).toHaveCount(1);
+  await g.locator('.ia-hist-abrir').first().click();
+  await expect(g.locator('.ia-eu')).toHaveCount(2);
   await page.keyboard.press('Escape');
   await expect(g).toHaveCount(0);
 });

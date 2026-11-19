@@ -435,6 +435,10 @@ app.post('/api/demo/ia/perguntar', express.json({ limit: '300kb' }), (req, res) 
   const j = IAd.simular({ messages: b.mensagens, tools: IAPd.ferramentas({ clientes: true, custos: true }) });
   res.json({ content: j.content, stop_reason: j.stop_reason, simulada: true });
 });
+// histórico na apresentação: só na memória do navegador (nada é gravado)
+app.get('/api/demo/ia/conversas', (req, res) => res.json({ conversas: [], demo: true }));
+app.put('/api/demo/ia/conversas/:id', (req, res) => res.json({ id: req.params.id, demo: true }));
+app.delete('/api/demo/ia/conversas/:id', (req, res) => res.json({ ok: true }));
 app.post('/api/demo/ia/diagnostico', express.json({ limit: '150kb' }), (req, res) => {
   const j = IAd.simular({ messages: [{ role: 'user', content: 'Dados: ' + JSON.stringify((req.body && req.body.fatos) || {}) }], tool_choice: { type: 'tool', name: 'diagnostico' } });
   res.json({ diagnostico: j.content[0].input, em: new Date().toISOString(), simulada: true });
@@ -1551,6 +1555,35 @@ app.post('/api/ia/perguntar', express.json({ limit: '300kb' }), async (req, res)
     if (b.mensagens.length === 1) C.auditar(req.user, 'perguntou à IA', loja.id, { loja: loja.id });
     res.json({ content: j.content, stop_reason: j.stop_reason });
   } catch (err) { iaErro(res, err); }
+});
+// histórico do "Pergunte ao painel": só as conversas da própria pessoa
+const IAC = require('./src/iaconversas');
+app.get('/api/ia/conversas', (req, res) => {
+  if (!podeIA(req)) return res.status(403).json({ erro: 'Sem permissão.' });
+  const loja = String(req.query.loja || '');
+  if (loja !== 'todas' && !req.lojas.some((l) => l.id === loja)) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  res.json({ conversas: IAC.lista(req.user, loja) });
+});
+app.get('/api/ia/conversas/:id', (req, res) => {
+  if (!podeIA(req)) return res.status(403).json({ erro: 'Sem permissão.' });
+  const c = IAC.abrir(req.user, req.params.id);
+  if (!c || (c.loja !== 'todas' && !req.lojas.some((l) => l.id === c.loja))) return res.status(404).json({ erro: 'Conversa não encontrada.' });
+  res.json(c);
+});
+app.put('/api/ia/conversas/:id', express.json({ limit: '800kb' }), (req, res) => {
+  if (!podeIA(req)) return res.status(403).json({ erro: 'Sem permissão.' });
+  const b = req.body || {};
+  const loja = String(b.loja || '');
+  if (loja !== 'todas' && !req.lojas.some((l) => l.id === loja)) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  const r = IAC.salvar(req.user, req.params.id, { loja, vis: b.vis, mensagens: b.mensagens });
+  if (r.erro) return res.status(400).json({ erro: r.erro });
+  res.json(r.ok);
+});
+app.delete('/api/ia/conversas/:id', (req, res) => {
+  if (!podeIA(req)) return res.status(403).json({ erro: 'Sem permissão.' });
+  const r = IAC.apagar(req.user, req.params.id);
+  if (r.erro) return res.status(400).json({ erro: r.erro });
+  res.json({ ok: true });
 });
 // "Por que isso está acontecendo" (Início): a mesma situação (mesmos números e avisos) não é cobrada de novo
 const DIAG_MAX_DIA = 8;
