@@ -432,11 +432,37 @@ Todos os da lista A foram conferidos no código, um por um.
 | D-03 | Pedido × Estoque: prazo e notas depois da planilha | **Mesmo prazo de cobertura e o Pedido conta as notas lançadas depois da planilha** | Mudar `pedido.js` + teste |
 | D-04 | Limite de "O custo subiu" | **Qualquer alta (0,05%) nos dois** | Alinhar aviso e filtro a 0,05% + teste |
 | D-05 | Gerente recebe todas as vendas sem as telas liberadas? | **Pode, como hoje** | Registrado (PERF-19: telas de vendas do gerente só escondidas, de propósito) |
-| D-06 | Cobrança por e-mail à franquia (devoluções e fidelidade) | **Só admin e franqueado** | Mudar `/api/conta-franquia/email/*` e `/auto` + teste |
+| D-06 | Cobrança por e-mail à franquia (devoluções e fidelidade) | **Só admin e franqueado** | ✅ Feito (revisão 19/11): `/api/conta-franquia/email/*` e `/auto` + botão escondido; `permissoes-telas.test` |
 | D-07 | Gerente com só Inventário vê custos? | **Não: custo só com tela de custo** | Mudar inventário (`paraUsuario`/rotas) + teste |
 | D-08 | 6x1, semana Dom–Sáb: folga do domingo puxa a segunda (5 dias na semana)? | **Sim, é o combinado** | Registrado (ESC-12) |
 
 ---
+
+### E. Revisão dos dias 18 e 19/11 (5 revisores por área; corrigido com teste no mesmo PR)
+| Código | Achado | Onde | Situação |
+|---|---|---|---|
+| E-01 | Robô de NF-e podia homologar a saída errada (sem o id da resposta, buscava "a mais nova com o mesmo total", até sem parceiro) | `coletor/nextsoft_nfe.py` `achar_saida_concluida` | ✅ Devolução: não procura; venda: só com parceiro e exatamente 1 candidata — senão "homologue lá" |
+| E-02 | Conclusão da venda que demora vira "nada foi transmitido" (convidava a emitir de novo = nota em dobro) | `nextsoft_nfe.py` | ✅ Mensagem manda conferir no AppNext antes de tentar de novo |
+| E-03 | Gerente com Notas enviava cobrança por e-mail à franquia (D-06) | `server.js` `/api/conta-franquia/email/*`, `/auto`; `creditos.js` | ✅ `permissoes-telas.test` |
+| E-04 | Cobrança automática podia sair 2× (SMTP lento) | `server.js` (agendamento) | ✅ Trava + mês marcado antes de enviar |
+| E-05 | Desconto nos royalties "123.45" virava 12.345,00 | `contafranquia.js` `royalties` | ✅ `contafranquia.test` |
+| E-06 | Devolução cancelada voltava como crédito; o feito à mão antes do XML se perdia (id trocava) | `contafranquia.js` `creditos`/`conta` | ✅ `contafranquia.test` |
+| E-07 | Desconto 0 no cabeçalho escondia o desconto dos itens; tolerância da combinação crescia sem limite | `contafranquia.js` | ✅ `contafranquia.test` |
+| E-08 | Mês da fidelidade / atraso em UTC; soma da planilha da fidelidade sem arredondar | `contafranquia.js` | ✅ |
+| E-09 | ⭐ Sugestões: obrigatório virava "não entrou"; registrar 2× duplicava; 2ª estrela no produto aguardando virava "não entrou"; nota não concluída ou da manhã do pedido contava; carrinho com "erro" ficava aguardando; "não agora" antigo voltava | `sugestoes.js`, `pedido.js` | ✅ `sugestoes.test` "revisão" |
+| E-10 | Vendedora recebia a quantidade pedida e o login de quem decidiu (Sugestões) e o login das colegas (Checklist) | `sugestoes.js` `lista`; `server.js` `/api/checklist` | ✅ `sugestoes.test`, `permissoes-telas.test` |
+| E-11 | Inventário: não contado que recebeu entrada durante a contagem era zerado sem aparecer na revisão; subgrupo marcava o grupo inteiro; data estranha do AppNext derrubava a tela | `inventario.js` (tela e servidor) | ✅ |
+| E-12 | Estoque: quadro "parado" contava fora de linha e o filtro não | `estoque.js` | ✅ |
+| E-13 | Escala: abertura 09:40 dava "loja sozinha" falso e equipe mínima "15+"; dia fechado não contava como folga no rodízio (5x2 com 4 dias); intervalo não crescia com o turno (6h20 com 30 min) | `mapa.js` | ✅ `escala-horario.spec` "revisão" |
+| E-14 | Horas automáticas do feriado não seguiam a regra nova do intervalo; rota de ajustes/feriados dava 500 com dia `null` | `feriados.js`, `server.js` | ✅ |
+| E-15 | IA: pergunta com 10 rodadas quebrava a conversa; conversa longa travava com texto técnico; análise do dia gerada com dados velhos do aparelho; análise "desligada" até recarregar; Esc não fechava o ✨ após um aviso; teto inválido salvo em silêncio | `ia.js`, `inicio.js`, `src/ia.js` | ✅ |
+| E-16 | Cache do aparelho com duas pessoas no mesmo navegador (outra aba) gravava dados de B na chave de A | `main.js` + `X-Painel-Usuario` em `/api/dados` | ✅ |
+| E-17 | Ficha do cliente: WhatsApp liberado antes de ler o estoque; Checklist: hora no fuso do aparelho e dia antigo ao trocar de loja; "Voltar" do celular desfazia link dentro de janela | `clientes.js`, `checklist.js`, `main.js` | ✅ |
+| E-18 | Orçamento: "1.234,56" virava 0; NF-e do orçamento com centavos diferentes sem aviso | `orcamento.js` | ✅ (aviso antes de abrir a nota) |
+| E-19 | Rota assíncrona com erro sem tratamento derrubava o painel; demo aceitava 16 MB sem login; histórico de inventário com NaN | `server.js`, `nextsoft_invhist.py` | ✅ |
+| E-20 | Repetir sozinho um POST da IA depois de erro de rede pode cobrar 2× (se a resposta caiu depois de cobrada) | `ia.js` `iaApi` | 🟡 Mantido (o dono pediu a nova tentativa automática); risco baixo |
+| E-21 | "Replicar/Trazer mês" aplica o ajuste em todos os dias com a mesma semana do rodízio e dia da semana | `mapa.js` | 🟡 É o comportamento combinado (ajuste segue o rodízio); conferir com o dono se um ajuste pontual deve ir só para o dia equivalente |
+| E-22 | Feriado que abre em dia normalmente fechado fica sem ninguém e sem alerta | `mapa.js` | ❌ A fazer |
 
 ## Resumo em números
 

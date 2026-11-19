@@ -65,7 +65,7 @@ test('entrega: só nota da TSB Franquias emitida a partir do pedido; janela de 5
   // fixa o dia do pedido em 2026-11-21 (meio-dia em Brasília) para as duas pedidas (valeriana de ana e de bia)
   for (const s of d.itens) if (s.aguardando) s.aguardando.em = '2026-11-21T15:00:00Z';
   fs.writeFileSync(path.join(tmp, 'l1', 'sugestoes.json'), JSON.stringify(d));
-  const nota = (nf, emissao, fornecedor, cods, entrada = emissao) => ({ nf, serie: '1', emissao, entrada, fornecedor, motivo: 'Compra para comercialização.', itens: cods.map((cod) => ({ cod })) });
+  const nota = (nf, emissao, fornecedor, cods, entrada = emissao) => ({ nf, serie: '1', emissao, entrada, fornecedor, motivo: 'Compra para comercialização.', status: 'Concluída', itens: cods.map((cod) => ({ cod })) });
   const notas = { notas: [
     nota('19000', '2026-11-18', 'TSB FRANQUIAS E COMERCIO LTDA ME', ['31020']), // antes do pedido: não vale
     nota('555', '2026-11-24', 'GRAFICA QUALQUER LTDA', ['31020']), // outro fornecedor: não vale
@@ -99,7 +99,7 @@ test('entrega: fechou a janela sem o produto → "não veio no pedido" e volta; 
   // a Hamsa: a entrega da franquia (com a janela fechada) veio sem ela
   const hoje = C.diaSP();
   const somar = (n) => new Date(Date.parse(hoje + 'T12:00:00Z') + n * 864e5).toISOString().slice(0, 10);
-  const notas = { notas: [{ nf: '19300', emissao: somar(1), fornecedor: 'TSB FRANQUIAS E COMERCIO LTDA ME', motivo: 'Compra', itens: [{ cod: '71194' }] }] };
+  const notas = { notas: [{ nf: '19300', emissao: somar(1), fornecedor: 'TSB FRANQUIAS E COMERCIO LTDA ME', motivo: 'Compra', status: 'Concluída', itens: [{ cod: '71194' }] }] };
   assert.strictEqual(SUG.avaliarNotas('l2', notas, somar(3)).mudou, 0, 'janela aberta');
   assert.strictEqual(SUG.avaliarNotas('l2', notas, somar(7)).mudou, 1);
   const h = SUG.lista('l2', 'ana', false).find((s) => s.cod === '90001');
@@ -119,7 +119,7 @@ test('entrega: os 5 dias contam da ENTRADA na loja (não da emissão) e o produt
   SUG.fechar('l3', [{ cod: '95001', pedir: 2, site: 'ok' }], 'ger');
   const d = SUG.ler('l3'); d.itens[0].aguardando.em = '2026-11-20T15:00:00Z'; d.itens[0].hist[0].em = '2026-11-20T15:00:00Z';
   fs.writeFileSync(path.join(tmp, 'l3', 'sugestoes.json'), JSON.stringify(d));
-  const N = (nf, emissao, entrada, cods) => ({ nf, serie: '1', emissao, entrada, fornecedor: 'TSB FRANQUIAS E COMERCIO LTDA ME', motivo: 'Compra', itens: cods.map((cod) => ({ cod })) });
+  const N = (nf, emissao, entrada, cods) => ({ nf, serie: '1', emissao, entrada, fornecedor: 'TSB FRANQUIAS E COMERCIO LTDA ME', motivo: 'Compra', status: 'Concluída', itens: cods.map((cod) => ({ cod })) });
   // pedido sexta 20/11; 1ª nota emitida 25/11 entra só em 01/12, sem o produto; 2ª emitida 26/11 entra em 05/12 com ele
   const n1 = N('19400', '2026-11-25', '2026-12-01', ['71194']);
   assert.strictEqual(SUG.avaliarNotas('l3', { notas: [n1] }, '2026-12-04').mudou, 0, 'janela até 06/12 pela entrada: ainda espera');
@@ -137,4 +137,30 @@ test('entrega: os 5 dias contam da ENTRADA na loja (não da emissão) e o produt
   assert.strictEqual(SUG.avaliarNotas('l4', { notas: [n1, N('19500', '2026-12-12', '2026-12-15', ['95001'])] }, '2026-12-15').mudou, 1);
   s = SUG.lista('l4', 'ana', false)[0];
   assert.deepStrictEqual([s.st, s.chegou.nf, s.hist.map((x) => x.res)], ['atendida', '19500/1', ['pedido', 'naoveio', 'chegou']]);
+});
+
+test('revisão: obrigatório conta como pedido; registrar 2× no mesmo dia não duplica; 2ª estrela segue a 1ª; nota não concluída ou emitida no dia do pedido não vale; vendedora sem quantidade', () => {
+  const est = { itens: [{ cod: 'A1', desc: 'Caneca A', un: 'Un', qtd: 0 }, { cod: 'B1', desc: 'Caneca B', un: 'Un', qtd: 0 }] };
+  SUG.criar('l5', { cod: 'A1' }, 'ana', 'Ana', est);
+  SUG.criar('l5', { cod: 'B1' }, 'ana', 'Ana', est);
+  // A1: linha normal sem pedir + linha do obrigatório (vem por último) → pedido
+  const r = SUG.fechar('l5', [{ cod: 'A1', pedir: 0, site: 'ok' }, { cod: 'A1', pedir: 6, site: 'obrig' }, { cod: 'B1', pedir: 0, site: 'ok' }], 'ger').ok;
+  assert.deepStrictEqual(r, { pedido: 1, semsite: 0, nao: 1 });
+  // registrar de novo no mesmo dia: B1 não ganha outro "não entrou"
+  SUG.fechar('l5', [{ cod: 'B1', pedir: 0, site: 'ok' }], 'ger');
+  assert.strictEqual(SUG.lista('l5', 'ana', false).find((s) => s.cod === 'B1').hist.length, 1);
+  // 2ª estrela no A1 (já aguardando entrega) segue junto e não é decidida de novo
+  const bia = SUG.criar('l5', { cod: 'A1' }, 'bia', 'Bia', est).ok;
+  assert.ok(bia.aguardando);
+  assert.match(SUG.decidir('l5', 'A1', { res: 'nao' }, 'ger').erro, /aguardando entrega/);
+  // vendedora: sem quantidade pedida nem login de quem decidiu
+  const v = SUG.lista('l5', 'ana', false).find((s) => s.cod === 'A1');
+  assert.deepStrictEqual(Object.keys(v.aguardando), ['em']);
+  assert.ok(v.hist.every((h) => h.por === undefined));
+  // notas: emitida no mesmo dia do pedido (é do pedido anterior) e não concluída não valem
+  const d = SUG.ler('l5'); for (const s of d.itens) if (s.aguardando) s.aguardando.em = '2026-11-20T23:00:00Z';
+  fs.writeFileSync(path.join(tmp, 'l5', 'sugestoes.json'), JSON.stringify(d));
+  const N = (nf, emissao, status) => ({ nf, emissao, entrada: emissao, status, fornecedor: 'TSB FRANQUIAS E COMERCIO LTDA ME', motivo: 'Compra', itens: [{ cod: 'A1' }] });
+  assert.strictEqual(SUG.avaliarNotas('l5', { notas: [N('1', '2026-11-20', 'Concluída'), N('2', '2026-11-22', 'Digitação')] }, '2026-11-23').mudou, 0);
+  assert.strictEqual(SUG.avaliarNotas('l5', { notas: [N('3', '2026-11-23', 'Concluída')] }, '2026-11-23').mudou, 2, 'as duas estrelas do A1 saem');
 });

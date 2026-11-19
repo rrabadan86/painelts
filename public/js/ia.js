@@ -385,7 +385,7 @@
     const env = h('button', { type: 'button', class: 'btn primary ia-env' }, 'Enviar');
     const aviso = h('div', { class: 'ia-aviso' });
     const fechar = () => { camada.remove(); document.removeEventListener('keydown', esc); if (!document.querySelector('.camada-cheia, .prc-drawer-camada')) document.body.classList.remove('com-camada'); };
-    const esc = (e) => { if (e.key === 'Escape' && camada.isConnected && document.querySelector('.prc-drawer-camada:last-of-type') === camada) fechar(); };
+    const esc = (e) => { if (e.key === 'Escape' && camada.isConnected && [...document.querySelectorAll('.prc-drawer-camada, .camada-cheia')].pop() === camada) fechar(); };
     const nova = h('button', { type: 'button', class: 'link-btn', onclick: () => { if (ocupado) return; conv = novaConv(); modo = 'conv'; pintarLista(); txt.focus(); } }, 'Nova conversa');
     const btHist = h('button', { type: 'button', class: 'link-btn', onclick: () => { if (ocupado) return; modo = modo === 'hist' ? 'conv' : 'hist'; pintarLista(); } }, 'Histórico');
     const nomeLoja = contexto().loja;
@@ -508,6 +508,8 @@
       if (ocupado || conv.soLeitura) return;
       if (modo === 'hist') { modo = 'conv'; }
       if (!TS.db) { aviso.replaceChildren(h('div', { class: 'notice' }, 'Espere os dados da loja carregarem.')); return; }
+      // o servidor aceita até 80 mensagens por conversa (cada pergunta usa várias): avisa antes de travar
+      if (conv.mensagens.length > 60) { aviso.replaceChildren(h('div', { class: 'notice' }, 'Esta conversa ficou longa. Comece uma nova conversa para continuar (a atual fica no histórico).')); return; }
       ocupado = true; env.disabled = true; aviso.replaceChildren();
       const base = conv.mensagens.length;
       conv.mensagens.push({ role: 'user', content: q });
@@ -541,7 +543,12 @@
             res.push({ type: 'tool_result', tool_use_id: u.id, content: s });
           }
           conv.mensagens.push({ role: 'user', content: res });
-          if (rodada === 9) r.texto = textos || 'A pergunta precisou de consultas demais. Tente dividir em perguntas menores.';
+          if (rodada === 9) {
+            r.texto = textos || 'A pergunta precisou de consultas demais. Tente dividir em perguntas menores.';
+            // a conversa não pode terminar com o resultado das consultas (mensagem da pessoa): fecha com a resposta, para a próxima pergunta valer
+            conv.mensagens.length -= 2;
+            conv.mensagens.push({ role: 'assistant', content: [{ type: 'text', text: r.texto }] });
+          }
         }
         r.fim = true;
       } catch (e) {

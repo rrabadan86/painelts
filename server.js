@@ -578,7 +578,7 @@ app.post('/api/demo/conta-franquia/email/previa', express.json({ limit: '10kb' }
 app.post('/api/demo/conta-franquia/acao', (req, res) => res.status(400).json({ erro: 'Na apresentação nada é salvo.' }));
 app.post('/api/demo/conta-franquia/royalties', (req, res) => res.status(400).json({ erro: 'Na apresentação nada é salvo.' }));
 app.get('/api/demo/reajuste/para', (req, res) => res.json({ para: ['compras@franquia-exemplo.com.br'], loja: 'Tea Shop Centro' }));
-app.post('/api/demo/reajuste/enviar', express.json({ limit: '16mb' }), (req, res) => {
+app.post('/api/demo/reajuste/enviar', express.json({ limit: '2mb' }), (req, res) => {
   const it = COB.conferirItensReajuste((req.body || {}).itens);
   if (it.erro) return res.status(400).json({ erro: it.erro });
   res.json({ ok: true, simulado: true, para: ['compras@franquia-exemplo.com.br'], graficos: COB.conferirGraficos((req.body || {}).graficos, it.ok).length }); // apresentação: nada é enviado
@@ -935,6 +935,8 @@ app.get('/api/eu', (req, res) => {
 });
 
 app.get('/api/dados', async (req, res) => {
+  // de quem são estes dados: o navegador só guarda/mostra se for a mesma pessoa da aba (outra pessoa pode ter entrado em outra aba)
+  res.set('X-Painel-Usuario', req.user === '*' ? '' : String(req.user || ''));
   const pedido = String(req.query.loja || '');
   let lojas;
   if (pedido === 'todas') lojas = req.lojas;
@@ -1412,6 +1414,7 @@ const rascunhoCob = (loja, b) => {
 };
 app.post('/api/conta-franquia/email/previa', express.json({ limit: '10kb' }), (req, res) => {
   if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
+  if (!(req.perfil === 'admin' || req.perfil === 'franqueado')) return res.status(403).json({ erro: 'Só o admin ou o franqueado fala com a franquia.' }); // D-06
   const loja = lojaCF(req, res, true); if (!loja) return;
   const tipo = req.body.tipo === 'fidelidade' ? 'fidelidade' : 'devolucoes';
   const { r } = rascunhoCob(loja, req.body);
@@ -1449,9 +1452,11 @@ async function enviarCobranca(loja, tipo, b, por) {
 }
 app.post('/api/conta-franquia/email/enviar', express.json({ limit: '20kb' }), async (req, res) => {
   if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
+  if (!(req.perfil === 'admin' || req.perfil === 'franqueado')) return res.status(403).json({ erro: 'Só o admin ou o franqueado fala com a franquia.' }); // D-06
   const loja = lojaCF(req, res, true); if (!loja) return;
   const tipo = req.body.tipo === 'fidelidade' ? 'fidelidade' : 'devolucoes';
-  const x = await enviarCobranca(loja, tipo, req.body, req.user);
+  let x;
+  try { x = await enviarCobranca(loja, tipo, req.body, req.user); } catch (e) { console.error('[cobrança]', e); return res.status(500).json({ erro: 'Erro ao montar a cobrança: ' + e.message }); }
   if (x.erro) return res.status(x.vazio ? 400 : 502).json({ erro: x.erro });
   res.json({ ok: true, para: x.para, historico: COB.historico(loja.id).slice(0, 20) });
 });
@@ -1490,6 +1495,7 @@ app.post('/api/reajuste/enviar', express.json({ limit: '16mb' }), async (req, re
 });
 // envio automático todo mês (ligado em Configurações → Mensagens)
 app.get('/api/conta-franquia/auto', (req, res) => {
+  if (!(req.perfil === 'admin' || req.perfil === 'franqueado')) return res.status(403).json({ erro: 'Só o admin ou o franqueado fala com a franquia.' }); // D-06
   const loja = lojaCF(req, res); if (!loja) return;
   res.json({ ...COB.auto(loja.id), para: { devolucoes: COB.emails(loja.id, 'devolucoes') || DEV.destinatarios(loja.id), fidelidade: COB.emails(loja.id, 'fidelidade') || DEV.destinatarios(loja.id) } });
 });
@@ -1502,12 +1508,17 @@ app.put('/api/conta-franquia/auto', express.json({ limit: '5kb' }), (req, res) =
   C.auditar(req.user, 'configurou a cobrança automática à franquia', loja.id, { loja: loja.id, devolucoes: r.ok.devolucoes, fidelidade: r.ok.fidelidade, dia: r.ok.dia, hora: r.ok.hora });
   res.json(r.ok);
 });
+let cobCiclo = false; // uma rodada por vez: SMTP lento não pode fazer a cobrança do mês sair duas vezes
 setInterval(async () => {
+  if (cobCiclo) return;
+  cobCiclo = true;
+  try {
   const agora = new Date().toLocaleString('sv-SE', { timeZone: 'America/Sao_Paulo' }).replace(' ', 'T');
   for (const loja of C.get().lojas || []) {
     for (const tipo of ['devolucoes', 'fidelidade']) {
       try {
         if (!COB.devidoAgora(loja.id, tipo, agora)) continue;
+        COB.marcarAuto(loja.id, tipo, agora.slice(0, 7), { ok: false, erro: 'enviando…', andamento: true }); // marca o mês antes: se cair no meio, não reenvia sozinha
         const para = COB.emails(loja.id, tipo) || DEV.destinatarios(loja.id);
         const x = await enviarCobranca(loja, tipo, { para }, 'agendado');
         COB.marcarAuto(loja.id, tipo, agora.slice(0, 7), x.erro ? (x.vazio ? { ok: true, nada: true } : { ok: false, erro: x.erro }) : { ok: true, itens: x.itens.length, total: x.total });
@@ -1515,6 +1526,7 @@ setInterval(async () => {
       } catch (e) { console.error('[cobrança]', loja.id, tipo, e.message); }
     }
   }
+  } finally { cobCiclo = false; }
 }, 5 * 60 * 1000).unref();
 app.get('/api/conta-franquia', (req, res) => {
   const loja = lojaCF(req, res); if (!loja) return;
@@ -1540,7 +1552,15 @@ const lojaCk = (req, res, corpo) => {
 app.get('/api/checklist', (req, res) => {
   const loja = lojaCk(req, res); if (!loja) return;
   const dia = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.dia || '')) ? String(req.query.dia) : hojeSPiso();
-  res.json({ dia, hoje: hojeSPiso(), itens: CK.itens(loja.id), marcados: CK.doDia(loja.id, dia), historico: CK.historico(loja.id), podeEditar: req.perfil !== 'vendedor' });
+  let marcados = CK.doDia(loja.id, dia), historico = CK.historico(loja.id);
+  // vendedora não vê o login das colegas (PERF-08): "você" ou "equipe"
+  if (req.perfil === 'vendedor') {
+    const quem = (x) => (x && x.por ? { ...x, por: x.por === req.user ? 'você' : 'equipe' } : x);
+    const doTipo = (o) => Object.fromEntries(Object.entries(o || {}).map(([k, v]) => [k, v && typeof v === 'object' && !Array.isArray(v) && 'em' in v ? quem(v) : v]));
+    marcados = Object.fromEntries(Object.entries(marcados || {}).map(([t, o]) => [t, o && typeof o === 'object' ? doTipo(o) : o]));
+    historico = (historico || []).map((x) => Object.fromEntries(Object.entries(x).map(([k, v]) => [k, v && typeof v === 'object' && v.ultima ? { ...v, ultima: quem(v.ultima) } : v])));
+  }
+  res.json({ dia, hoje: hojeSPiso(), itens: CK.itens(loja.id), marcados, historico, podeEditar: req.perfil !== 'vendedor' });
 });
 app.post('/api/checklist/marcar', express.json({ limit: '5kb' }), (req, res) => {
   if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
@@ -2505,7 +2525,7 @@ app.put('/api/feriados', express.json({ limit: '200kb' }), (req, res) => {
   if (!horas || typeof horas !== 'object') return res.status(400).json({ erro: 'Horas inválidas.' });
   const limpo = {};
   for (const [data, porPessoa] of Object.entries(horas)) {
-    if (!DATA.test(data) || !data.startsWith(ym) || typeof porPessoa !== 'object') return res.status(400).json({ erro: `Data inválida: ${data}` });
+    if (!DATA.test(data) || !data.startsWith(ym) || !porPessoa || typeof porPessoa !== 'object') return res.status(400).json({ erro: `Data inválida: ${data}` });
     for (const [nome, min] of Object.entries(porPessoa)) {
       if (min == null || min === '') continue;
       const m = Number(min);
@@ -2560,11 +2580,11 @@ app.put('/api/escala-ajustes', express.json({ limit: '200kb' }), (req, res) => {
   const ym = String(req.query.ym || '');
   if (!loja || !/^\d{4}-\d{2}$/.test(ym)) return res.status(400).json({ erro: 'Escolha a loja e o mês.' });
   const aj = (req.body && req.body.ajustes) || {};
-  if (typeof aj !== 'object') return res.status(400).json({ erro: 'Ajustes inválidos.' });
+  if (!aj || typeof aj !== 'object') return res.status(400).json({ erro: 'Ajustes inválidos.' });
   const HM = /^([01]\d|2[0-3]):[0-5]\d$/;
   const limpo = {};
   for (const [data, porPessoa] of Object.entries(aj)) {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(data) || !data.startsWith(ym) || typeof porPessoa !== 'object') return res.status(400).json({ erro: `Data inválida: ${data}` });
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(data) || !data.startsWith(ym) || !porPessoa || typeof porPessoa !== 'object') return res.status(400).json({ erro: `Data inválida: ${data}` });
     for (const [nome, a] of Object.entries(porPessoa)) {
       const n = String(nome).trim().toUpperCase().slice(0, 40);
       if (!a || !['folga', 'trab'].includes(a.tipo)) return res.status(400).json({ erro: `Ajuste inválido de ${nome} em ${data}.` });
@@ -2785,5 +2805,7 @@ function desligar(sinal) {
   t.unref();
   srv.close(() => process.exit(0));
 }
+// rota assíncrona que falhar sem tratamento não derruba o painel para todo mundo: registra e segue
+process.on('unhandledRejection', (e) => console.error('[erro sem tratamento]', e && e.stack ? e.stack : e));
 process.on('SIGTERM', () => desligar('SIGTERM'));
 process.on('SIGINT', () => desligar('SIGINT'));

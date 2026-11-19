@@ -365,14 +365,15 @@ function cobertura(id, cat, contagens, hist = historicoAppNext(id)) {
   for (const c of contagens || []) {
     if (c.st !== 'importado' || !c.importadoEm || !c.escopo) continue;
     const e = c.escopo;
-    if (e.grupo) marca(out.grupos, e.grupo, c.importadoEm, 'painel');
+    if (e.grupo && !e.sub) marca(out.grupos, e.grupo, c.importadoEm, 'painel'); // só um subgrupo não cobre o grupo inteiro
     if (e.familia) marca(out.familias, e.familia, c.importadoEm, 'painel');
     if (e.tipo) marca(out.familias, familia(e.tipo), c.importadoEm, 'painel');
     if (e.kg) for (const f of new Set(famDe.values())) marca(out.familias, f, c.importadoEm, 'painel');
   }
   for (const inv of (hist && hist.inventarios) || []) {
-    if (!inv.data || !Array.isArray(inv.itens)) continue;
-    const em = new Date(inv.data).toISOString();
+    const t = Date.parse(inv.data || '');
+    if (!Number.isFinite(t) || !Array.isArray(inv.itens)) continue; // data estranha do AppNext: ignora (não derruba a tela)
+    const em = new Date(t).toISOString();
     const cods = new Set(inv.itens.map((x) => String(x.cod)));
     for (const [de, alvo, est] of [[ grupoDe, out.grupos, comEst.g], [famDe, out.familias, comEst.f]]) {
       const contou = new Map();

@@ -662,14 +662,17 @@
     // ---------- ⭐ sugestões da equipe: adicionar, "não agora" com motivo, ou automático quando o site não tem ----------
     function cartaoSugestoes() {
       const grupos = [...SUG.values()];
-      const linhaDe = (g) => R.linhas.find((r) => String(r.cod) === String(g.cod)) || null;
-      const pend = grupos.filter((g) => { const r = linhaDe(g); return !g.aguardando && !(r && r.pedir > 0) && !(r && (r.site === 'indisp' || r.site === 'fora')) && !g.decisao; }).length;
+      // o mesmo produto pode ter a linha normal e a do pedido obrigatório: decide pela normal; o obrigatório já conta como no pedido
+      const linhaDe = (g) => { const xs = R.linhas.filter((r) => String(r.cod) === String(g.cod)); return xs.find((r) => !r.obrig) || xs[0] || null; };
+      const noObrig = (g) => R.linhas.some((r) => r.obrig && String(r.cod) === String(g.cod) && r.pedir > 0);
+      const pend = grupos.filter((g) => { const r = linhaDe(g); return !g.aguardando && !noObrig(g) && !(r && r.pedir > 0) && !(r && (r.site === 'indisp' || r.site === 'fora')) && !g.decisao; }).length;
       const msg = h('div', { class: state.pedSugMsg ? 'pos sug-ped-msg' : 'muted sug-ped-msg' }, state.pedSugMsg || '');
       state.pedSugMsg = null;
       const item = (g) => {
         const r = linhaDe(g);
         const semSite = r && (r.site === 'indisp' || r.site === 'fora');
-        const noPed = r && r.pedir > 0 && !semSite;
+        const ob = noObrig(g);
+        const noPed = (r && r.pedir > 0 && !semSite) || ob;
         const decidir = async (res, motivo) => {
           try { g.decisao = await TS.sug.decidir(loja, g.cod, res, motivo); repintar(); } catch (err) { alert(err.message); }
         };
@@ -684,7 +687,7 @@
         let acao;
         if (g.aguardando) acao = h('span', { class: 'sug-aguarda' }, `🛒 Pedido em ${TS.sug.dataTxt(g.aguardando.em)}: aguardando entrega. A estrela sai quando a nota da TSB Franquias chegar com o produto; se não vier na entrega, volta para cá.`);
         else if (semSite) acao = h('span', { class: 'warn-t' }, '🚫 Sem estoque no site: a equipe fica sabendo sozinha');
-        else if (noPed) acao = h('span', null, h('span', { class: 'pos' }, `✅ No pedido: ${qtdTxt(r.pedir, r.it)} `), h('button', { type: 'button', class: 'btn sug-ped-btn', onclick: tirar }, 'Tirar'));
+        else if (noPed) acao = h('span', null, h('span', { class: 'pos' }, ob && !(r && !r.obrig && r.pedir > 0) ? '✅ Vem no pedido obrigatório ' : `✅ No pedido: ${qtdTxt(r.pedir, r.it)} `), r && !r.obrig && r.pedir > 0 ? h('button', { type: 'button', class: 'btn sug-ped-btn', onclick: tirar }, 'Tirar') : null);
         else if (g.decisao) acao = h('span', null, h('span', { class: 'neg' }, `Não agora: ${g.decisao.motivo} `), h('button', { type: 'button', class: 'btn sug-ped-btn', onclick: () => decidir(null) }, 'Desfazer'));
         else {
           const motivos = h('span', { class: 'sug-motivos', hidden: true }, TS.sug.MOTIVOS.map((m) => h('button', { type: 'button', class: 'chip', onclick: () => decidir('nao', m) }, m)));

@@ -100,7 +100,9 @@
     const ef = TS.horarioFeriado(cfg, data);
     if (ef && ef.fechado) return 0;
     const aberto = ef && ef.abre && ef.fecha ? hm2(ef.fecha) - hm2(ef.abre) : jornada;
-    const util = aberto > 360 ? aberto - (eq.intervalo ?? 60) : aberto;
+    // intervalo pela mesma regra da escala (acima de 8h, de 4h a 8h, até 4h sem); sem a escala carregada, a regra antiga
+    const p = TS._intervalo && TS._intervalo.pausaDoTurno ? TS._intervalo.pausaDoTurno(0, aberto, eq, null) : null;
+    const util = TS._intervalo ? aberto - (p ? p[1] - p[0] : 0) : aberto > 360 ? aberto - (eq.intervalo ?? 60) : aberto;
     return Math.max(0, Math.min(jornada, util));
   }
   /**

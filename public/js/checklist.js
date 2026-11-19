@@ -4,7 +4,7 @@
   const { h, fmt, state } = TS;
   const toast = (msg, erro) => { const t = h('div', { class: 'toast' + (erro ? ' err' : '') }, msg); document.body.append(t); setTimeout(() => t.remove(), erro ? 6000 : 3000); };
   const NOMES = { abertura: 'Abertura', fechamento: 'Fechamento' };
-  const hora = (iso) => (iso ? new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '');
+  const hora = (iso) => (iso ? new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' }) : '');
   const hojeIso = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
 
   // apresentação: fica só na página
@@ -33,6 +33,8 @@
     const corpo = h('div', { class: 'mt' });
     root.append(corpo);
     const loja = state.loja;
+    if (state.ckDiaLoja !== state.loja) state.ckDia = null; // trocou de loja: volta para hoje
+    state.ckDiaLoja = state.loja;
     const dia = state.ckDia || null;
     api('GET', `checklist?loja=${encodeURIComponent(loja)}${dia ? '&dia=' + dia : ''}`).then((d) => { if (corpo.isConnected) pintar(corpo, loja, d); })
       .catch((e) => corpo.replaceChildren(h('div', { class: 'notice err' }, e.message)));

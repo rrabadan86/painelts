@@ -185,7 +185,9 @@
         // fechou porque foi para outra tela (link dentro da janela): não volta, senão desfaria a navegação
       }
     };
-    new MutationObserver(() => { if (!agendado) { agendado = true; queueMicrotask(sync); } }).observe(document.body, { childList: true, subtree: true });
+    // setTimeout (não microtarefa): um link dentro da janela que fecha a janela no clique já trocou o endereço quando o sync roda,
+    // então o "voltar" automático não desfaz a navegação
+    new MutationObserver(() => { if (!agendado) { agendado = true; setTimeout(sync, 0); } }).observe(document.body, { childList: true, subtree: true });
     const fecharTopo = (el) => {
       // as janelas fecham com um clique no fundo (o próprio elemento da camada)
       for (const tipo of ['mousedown', 'click']) el.dispatchEvent(new MouseEvent(tipo, { bubbles: true, cancelable: true }));
@@ -333,6 +335,9 @@
       const headers = !forcar && TS.etag && TS.etagChave === chave && TS.db && TS.lojaCarregada === loja ? { 'If-None-Match': TS.etag } : {};
       const res = await fetch(TS.api('dados?' + qs), { credentials: 'same-origin', headers });
       if (state.loja !== loja) return; // trocaram de loja enquanto baixava: o pedido da loja nova cuida da tela
+      // outra pessoa entrou neste navegador (outra aba): nada desta resposta fica aqui; recarrega como a pessoa nova
+      const dono = res.headers.get('X-Painel-Usuario');
+      if (!TS.demo && dono != null && TS.eu && dono !== (TS.eu.usuario || '')) { Guardados.limpar && Guardados.limpar(); location.reload(); return; }
       if (res.status === 304) { TS.dadosGuardados = false; return; }
       if (res.status === 401 && !TS.demo) { irParaLogin(); return; }
       const texto = await res.text();

@@ -238,3 +238,32 @@ test('Escala: horas descobertas contam o tempo certo em blocos de 10 min', async
   // 10h de loja − 9h de turno (8h + 1h de intervalo) = 1h sem ninguém + 1h do intervalo = 2h
   expect(r.descoberto).toBeCloseTo(2, 5);
 });
+
+// Revisão: abertura fora da hora cheia não vira "loja sozinha"; dia fechado conta como folga no rodízio; intervalo cresce com o turno
+test('Escala (revisão): 09:40 sem "loja sozinha" falso, segunda fechada na 5x2 com 5 dias, intervalo sempre crescente', async ({ page }) => {
+  await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS._escala && TS._intervalo);
+  const r = await page.evaluate(() => {
+    const H = (abre, fecha) => ({ abre, fecha, fechado: false });
+    const need = Array.from({ length: 7 }, () => Array(24).fill(1));
+    const ps = (n) => Array.from({ length: n }, (_, k) => ({ nome: 'P' + k, folga: 'auto', folga2: 'auto', turno: 'tanto' }));
+    // 1) abre 09:40 / sábado fecha 21:50, equipe folgada: nenhum bloco antes das 09:40 conta como descoberto
+    const op1 = { funcionamento: { seg: H('09:40', '22:00'), ter: H('09:40', '22:00'), qua: H('09:40', '22:00'), qui: H('09:40', '22:00'), sex: H('09:40', '22:00'), sab: H('09:40', '21:50'), dom: H('12:00', '21:00') },
+      equipe: { funcionarios: 8, cargaSemanal: 44, escala: '5x2', intervalo: 60, capacidade: 8, modelo: 'rodizio' } };
+    const rod = TS._escala.montarRodizio(need, op1, ps(8));
+    const probAntes = rod.semanas.flatMap((s) => s.problemas || []).filter((p) => p.ini < 9 * 60 + 40 && p.fim <= 9 * 60 + 40);
+    // 2) segunda fechada, 5x2: todo mundo trabalha 5 dias por semana completa
+    const op2 = { funcionamento: { seg: { fechado: true }, ter: H('10:00', '22:00'), qua: H('10:00', '22:00'), qui: H('10:00', '22:00'), sex: H('10:00', '22:00'), sab: H('10:00', '22:00'), dom: H('12:00', '20:00') },
+      equipe: { funcionarios: 4, cargaSemanal: 44, escala: '5x2', intervalo: 60, capacidade: 4, modelo: 'rodizio' } };
+    const rod2 = TS._escala.montarRodizio(need, op2, ps(4));
+    const diasTrab = rod2.semanas.map((s) => s.turnosP.map((p) => p.filter(Boolean).length));
+    // 3) intervalo do turno (ajuste manual/feriado) nunca diminui quando o turno cresce
+    const e = { intervalo: 60 };
+    const ivs = [300, 360, 390, 400, 410, 420, 430, 480, 540].map((d) => { const p = TS._intervalo.pausaDoTurno(600, 600 + d, e, null); return p ? p[1] - p[0] : 0; });
+    const trab = [400, 410, 420].map((d) => { const p = TS._intervalo.pausaDoTurno(600, 600 + d, e, null); return d - (p ? p[1] - p[0] : 0); });
+    return { probAntes: probAntes.length, diasTrab, ivs, trab };
+  });
+  expect(r.probAntes).toBe(0);
+  for (const sem of r.diasTrab) for (const n of sem) expect(n).toBe(5);
+  for (let k = 1; k < r.ivs.length; k++) expect(r.ivs[k]).toBeGreaterThanOrEqual(r.ivs[k - 1]);
+  for (const t of r.trab) expect(t, 'mais de 6h de trabalho com intervalo curto').toBeLessThanOrEqual(360);
+});

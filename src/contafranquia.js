@@ -29,21 +29,27 @@ const dias = (a, b) => Math.round((Date.parse(dia(b) + 'T12:00:00Z') - Date.pars
 
 /** desconto da nota de entrada (lido pelo robô); null = o AppNext não informou */
 function descontoDaNota(n) {
-  if (n.desconto != null && Number.isFinite(+n.desconto)) return r2(n.desconto);
+  const cab = n.desconto != null && Number.isFinite(+n.desconto) ? r2(n.desconto) : null;
   const itens = (n.itens || []).filter((i) => i.desc != null);
-  if (itens.length) return r2(itens.reduce((s, i) => s + (+i.desc || 0), 0));
-  return null;
+  const nosItens = itens.length ? r2(itens.reduce((s, i) => s + (+i.desc || 0), 0)) : null;
+  // a franquia às vezes manda 0 no cabeçalho e o desconto diluído nos itens: vale o maior dos dois
+  if (cab == null) return nosItens;
+  return nosItens != null ? Math.max(cab, nosItens) : cab;
 }
 
 /** créditos: NF-e de devolução autorizadas (XML) + as emitidas pelo painel cujo XML ainda não chegou */
 function creditos(saidas, compras, devsPainel) {
   const porChave = new Map((compras || []).filter((n) => n.chave).map((n) => [n.chave, n]));
   const out = [], vistas = new Set();
+  // devolução do painel pelo número da NF-e: quando o XML chega, o crédito troca de id (dev-<id> → chave); o apelido leva o que foi feito à mão
+  const devPorNum = new Map();
+  for (const d of devsPainel || []) { const e = d.nfe && (d.nfe.emitida || (d.nfe.numero ? d.nfe : null)); if (e && e.numero) devPorNum.set(String(e.numero), 'dev-' + d.id); }
   for (const s of saidas || []) {
-    if (s.finalidade !== 'Devolução' || s.situacao === 'cancelada') continue;
+    if (s.finalidade !== 'Devolução') continue;
+    vistas.add(String(s.numero)); // cancelada também: a do painel com esse número não volta como crédito
+    if (s.situacao === 'cancelada') continue;
     const origem = (s.refs || []).map((k) => porChave.get(k)).find(Boolean) || null;
-    vistas.add(String(s.numero));
-    out.push({ id: s.chave, numero: s.numero, serie: s.serie, emissao: dia(s.emissao), valor: r2(s.valor), fornecedor: origem ? origem.fornecedor : (s.dest && s.dest.nome) || '', notaOrigem: origem ? { id: origem.id, nf: origem.nf } : null, xml: true });
+    out.push({ id: s.chave, apelido: devPorNum.get(String(s.numero)) || null, numero: s.numero, serie: s.serie, emissao: dia(s.emissao), valor: r2(s.valor), fornecedor: origem ? origem.fornecedor : (s.dest && s.dest.nome) || '', notaOrigem: origem ? { id: origem.id, nf: origem.nf } : null, xml: true });
   }
   for (const d of devsPainel || []) {
     const e = d.nfe && (d.nfe.emitida || (d.nfe.numero ? d.nfe : null));
@@ -60,7 +66,8 @@ function combinar(cands, alvo) {
   const achadas = [];
   const buscar = (k, soma, usados) => {
     if (achadas.length > 1) return;
-    if (Math.abs(soma - alvo) <= TOL * Math.max(1, usados.length)) { if (usados.length) achadas.push(usados.slice()); return; }
+    // tolerância: arredondamento do rateio, no máximo 10 centavos
+    if (Math.abs(soma - alvo) <= Math.min(TOL * Math.max(1, usados.length), 0.10)) { if (usados.length) achadas.push(usados.slice()); return; }
     if (k >= n || soma > alvo + TOL * n) return;
     usados.push(cands[k]); buscar(k + 1, soma + cands[k].valor, usados); usados.pop();
     buscar(k + 1, soma, usados);
@@ -91,14 +98,16 @@ function parcial(cands, alvo) {
  * a conta: { creditos: [{…, situacao: aberto|atrasado|compensado|manual, compensadoEm?: {nota, como}}], notas: [notas com desconto e o que compensaram],
  *            resumo: { aberto, atrasado, compensado, semPar } }
  */
-function conta(id, { saidas, compras, devsPainel, hoje = new Date().toISOString() }) {
+function conta(id, { saidas, compras, devsPainel, hoje = C.diaSP() }) {
   const m = ler(id);
   const cr = creditos(saidas, compras, devsPainel);
   const porId = new Map(cr.map((c) => [c.id, c]));
+  const doApelido = new Map(cr.filter((c) => c.apelido).map((c) => [c.apelido, c.id]));
   const usado = new Map(); // crédito → { nota, auto }
-  // 1) à mão primeiro
-  for (const [cid, x] of Object.entries(m.manual)) {
-    if (!porId.has(cid)) continue;
+  // 1) à mão primeiro (o que foi marcado antes do XML chegar, pelo id antigo dev-<id>, continua valendo)
+  for (const [cid0, x] of Object.entries(m.manual)) {
+    const cid = porId.has(cid0) ? cid0 : doApelido.get(cid0);
+    if (!cid || usado.has(cid)) continue;
     usado.set(cid, x.nota ? { nota: x.nota, como: 'nota', manual: true, por: x.por, em: x.em, obs: x.obs || '' } : { como: x.como || 'outro', manual: true, por: x.por, em: x.em, obs: x.obs || '' });
   }
   // 2) notas de entrada com desconto, da mais antiga para a mais nova
@@ -223,7 +232,7 @@ function premios({ eventos, estoque, compras, codsDe }) {
       const cod = cods[0] || null, it = cod && porCod.get(cod);
       let custo = cod ? custoEm(cod, e.data) : null;
       if (custo != null && it && /^kg$/i.test(it.un || '')) { const g = gramas(nome); custo = g ? custo * g / 1000 : null; }
-      if (custo == null) m.semCusto++; else m.custo += custo;
+      if (custo == null) m.semCusto++; else m.custo += r2(custo); // soma o que aparece na planilha (centavos batem)
       return { nome, cod, custo: custo == null ? null : r2(custo) };
     });
     m.resgates.push({ data: e.data, min: e.min ?? null, cpf: e.cpf || '', pontos: e.pontos || 0, cliente: e.nome || '', produtos: prods });
@@ -232,7 +241,7 @@ function premios({ eventos, estoque, compras, codsDe }) {
 }
 
 /** os prêmios de cada mês × os descontos lançados nos royalties (cada lançamento diz o mês de referência do royalty) */
-function contaPremios(id, entrada, hoje = new Date().toISOString()) {
+function contaPremios(id, entrada, hoje = C.diaSP()) {
   const m = ler(id);
   const ms = premios(entrada);
   const mesHoje = hoje.slice(0, 7);
@@ -262,7 +271,9 @@ function royalties(id, b, por) {
   if (b.tipo === 'apagar') {
     m.royalties = m.royalties.filter((r) => r.id !== String(b.id || ''));
   } else {
-    const valor = Math.round(Number(String(b.valor).replace(/\./g, '').replace(',', '.')) * 100) / 100;
+    const vs = String(b.valor ?? '').trim();
+    // "1.234,56" (milhar com ponto) ou "123.45" (teclado do celular com ponto decimal)
+    const valor = Math.round(Number(vs.includes(',') ? vs.replace(/\./g, '').replace(',', '.') : /^\d+\.\d{1,2}$/.test(vs) ? vs : vs.replace(/\./g, '')) * 100) / 100;
     if (!YM.test(String(b.ref || ''))) return { erro: 'Informe o mês de referência do royalty.' };
     const premiosMes = YM.test(String(b.premios || '')) ? b.premios : somaMes(b.ref, -1);
     if (!Number.isFinite(valor) || valor <= 0 || valor > 1e6) return { erro: 'Valor do desconto inválido.' };

@@ -894,7 +894,7 @@
       else if (dias != null && dias < H) sit = 'pedir';
       const ult = ultimaVenda.get(it.cod);
       const vendeuAlgumaVez = ult != null;
-      if (qtd > 0 && it.custo && (vendeuAlgumaVez || (temCod && it.tipo === 'PN')) && (!vendeuAlgumaVez || fim - ult >= cfg.paradoDias)) {
+      if (qtd > 0 && it.custo && !foraLinhaDe(it.cod) && (vendeuAlgumaVez || (temCod && it.tipo === 'PN')) && (!vendeuAlgumaVez || fim - ult >= cfg.paradoDias)) { // fora de linha conta à parte (liquidar)
         const v = qtd * it.custo; valorParado += v;
         parados.push({ cod: it.cod, produto: it.desc, tipo: TIPO_ITEM(it), qtd, it, valor: v, ultima: vendeuAlgumaVez ? TS.dayToIso(ult) : null, dias: vendeuAlgumaVez ? fim - ult : null });
       }

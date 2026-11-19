@@ -16,6 +16,8 @@
    * redondo (09:40 → o bloco das 09:30 conta), e guarda os minutos exatos: [bloco inicial, bloco final, abre, fecha].
    */
   const faixaDia = (f) => (f && !f.fechado ? [Math.floor(hm(f.abre) / B), Math.ceil(hm(f.fecha) / B), hm(f.abre), hm(f.fecha)] : null);
+  /** cobertura da hora na grade: o menor número de pessoas nos blocos da hora que estão dentro do horário da loja */
+  const cobHora = (linha, fx, hr) => { const xs = []; for (let s0 = hr * PH; s0 < hr * PH + PH; s0++) if (!fx || (s0 >= fx[0] && s0 < fx[1])) xs.push(linha[s0]); return xs.length ? Math.min(...xs) : 0; };
   /** turno em minutos: quem abre começa na hora exata da abertura e quem fecha sai na hora exata do fechamento (mesma jornada) */
   /**
    * Intervalo (min) de uma jornada: acima de 8h → "intervalo" da equipe; de 4h a 8h → "intervaloAte8"
@@ -36,6 +38,7 @@
     if (!intervalo) return 0;
     if (len * B - intervalo > 360) return intervalo / B; // ainda mais de 6h de trabalho: intervalo inteiro
     const iv = Math.min(intervalo, IV_CURTO);            // turno de até 6h (dia curto): o intervalo dessa faixa
+    if (len * B - iv > 360) return intervalo / B;         // com o intervalo curto passaria de 6h de trabalho: precisa do inteiro (CLT)
     return len * B > 240 ? iv / B : 0;                    // mais de 4h seguidas pede intervalo (CLT); até 4h, sem
   }
   /** intervalo de um turno já em minutos (feriado cortado, ajuste manual): o que a jornada real pede, no meio do turno */
@@ -43,7 +46,10 @@
     const dur = fim - ini;
     const ivA = +e.intervalo || 0;
     if (dur <= 240) return null; // até 4h: sem intervalo
-    let iv = Math.round((dur - ivA > 480 ? ivA : intervaloMin(e, dur - intervaloMin(e, Math.min(dur, 480)))) / B) * B;
+    // o menor intervalo que cobre o trabalho que sobra (sempre crescente com o turno): tenta o das faixas de 4h–6h, 6h–8h e acima de 8h
+    const cands = [...new Set([intervaloMin(e, 300), intervaloMin(e, 420), intervaloMin(e, 481), ivA])].filter((x) => x > 0).sort((a, b) => a - b);
+    let iv = cands.find((c) => c >= intervaloMin(e, dur - c)) ?? cands[cands.length - 1] ?? 0;
+    iv = Math.round(iv / B) * B;
     if (!iv) iv = Math.round(intervaloMin(e, 300) / B) * B; // mais de 4h seguidas: no mínimo o intervalo curto (CLT)
     if (!iv) return null;
     if (antes && antes[1] - antes[0] === iv && antes[0] >= ini + 120 && antes[1] <= fim - 120) return antes; // o de antes ainda serve
@@ -147,8 +153,9 @@
     const jornada = (e.cargaSemanal * 60) / diasTrab; // jornada diária exata (ex.: 44h na 5x2 = 8h48)
     const trabMin = Math.round(jornada / B) * B; // na escala, arredondada para blocos de 10 min
     const intervalo = intervaloBloco(e, trabMin);
-    const slotsNeed = need.map((row) => Array.from({ length: NB }, (_, s) => row[Math.floor(s / PH)]));
     const abertura = DIAS.map((d) => faixaDia(op.funcionamento[d]));
+    // precisa de gente só dentro do horário da loja: com abertura 09:40, os blocos das 09:00–09:40 não contam
+    const slotsNeed = need.map((row, wd) => Array.from({ length: NB }, (_, s) => (abertura[wd] && s >= abertura[wd][0] && s < abertura[wd][1] ? row[Math.floor(s / PH)] : 0)));
     const cob = Array.from({ length: 7 }, () => Array(NB).fill(0));
     const pessoas = [];
     const maxF = Math.max(1, Math.min(10, Math.round(+e.maxFolgaDia || 1)));
@@ -314,9 +321,10 @@
     const jornada = (e.cargaSemanal * 60) / diasBase;
     const trabMin = Math.round(jornada / B) * B;
     const intervalo = intervaloBloco(e, trabMin);
-    const slotsNeed = need.map((row) => Array.from({ length: NB }, (_, x) => row[Math.floor(x / PH)]));
     const abertura = DIAS.map((d) => faixaDia(op.funcionamento[d]));
+    const slotsNeed = need.map((row, wd) => Array.from({ length: NB }, (_, x) => (abertura[wd] && x >= abertura[wd][0] && x < abertura[wd][1] ? row[Math.floor(x / PH)] : 0)));
     const DOM = 6, SEG = 0;
+    const fechadosSem = [0, 1, 2, 3, 4, 5, 6].filter((wd) => !abertura[wd]);
     const domAberto = !!abertura[DOM];
     // quantas pessoas no domingo
     // no máximo maxF pessoas de folga no mesmo dia (domingo incluído)
@@ -368,7 +376,8 @@
         } else if (folgaDom.has(i)) { offs[i].add(DOM); offs[i].add(SEG); cont[DOM]++; cont[SEG]++; motivos[i][DOM] = 'Folga (rodízio)'; motivos[i][SEG] = 'Folga (após domingo)'; }
       });
       // folgas que ainda faltam na semana (5x2: 2; 6x1: 1), descontando as que o domingo já deu
-      const precisa = (i) => Math.max(0, (seis ? 1 : 2) - offs[i].size);
+      // dia em que a loja fecha conta como folga para todos (5x2 com segunda fechada: 5 dias, não 4)
+      const precisa = (i) => Math.max(0, (seis ? 1 : 2) - new Set([...offs[i], ...fechadosSem]).size);
       const manuais = (i) => [pessoas[i].folga, pessoas[i].folga2].filter((f) => f && f !== 'auto').length;
       const ordemP = pessoas.map((_, i) => i).sort((x, y) => manuais(y) - manuais(x) || ((x - w + N * 9) % N) - ((y - w + N * 9) % N));
       for (const i of ordemP) {
@@ -656,7 +665,7 @@
       h('tbody', null, DIAS_CURTO.map((dn, wd) => h('tr', null, h('th', { class: 'l' }, dn), horas.map((hr) => {
         const n = need[wd][hr];
         if (!n) return h('td', { class: 'fechado' });
-        const c = Math.min(...esc.cob[wd].slice(hr * PH, hr * PH + PH)); // a hora inteira (PH blocos)
+        const c = cobHora(esc.cob[wd], faixaDia(op.funcionamento[DIAS[wd]]), hr); // a hora (blocos dentro do horário da loja)
         const cls = c === 0 ? 'vazio' : c < n ? 'falta' : c > n ? 'sobra' : 'ok';
         return h('td', { class: cls, title: `${DIAS_NOME[wd]} ${hr}h: ${c} na loja, precisa de ${n}` }, c);
       })))));
@@ -1063,7 +1072,7 @@
       h('tbody', null, ORDEM.map((wd) => h('tr', null, h('th', { class: 'l' }, DIAS_CURTO[wd]), horas.map((hr) => {
         const n = need[wd][hr];
         if (!n) return h('td', { class: 'fechado' });
-        const c = Math.min(...w.cob[wd].slice(hr * PH, hr * PH + PH));
+        const c = cobHora(w.cob[wd], faixaDia(op.funcionamento[DIAS[wd]]), hr);
         const cls = c === 0 ? 'vazio' : c < n ? 'falta' : c > n ? 'sobra' : 'ok';
         return h('td', { class: cls, title: `${DIAS_NOME[wd]} ${hr}h: ${c} na loja, precisa de ${n}` }, c);
       })))));

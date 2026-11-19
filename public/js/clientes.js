@@ -1605,7 +1605,8 @@
         const prev = h('div', { class: 'cli-msg' });
         const atual = () => mods[+sel.value];
         const aviso = h('div', { class: 'notice cli-sem-estoque', hidden: true });
-        let disp = null, faltando = null;
+        // a trava de estoque só libera o botão depois de ler o estoque (clique rápido não passa sem conferir)
+        let disp = null, faltando = null, lido = !(TS.estoqueDisp && state.loja && state.loja !== 'todas');
         const pv = () => {
           prev.textContent = textoWpp(atual(), c);
           faltando = TS.semEstoqueNaMensagem ? TS.semEstoqueNaMensagem(disp, atual().texto, c) : null;
@@ -1613,13 +1614,14 @@
           const bt = box.querySelector('.cli-wpp a.btn.primary'); if (bt) bt.classList.toggle('desab', !!faltando);
         };
         sel.addEventListener('change', pv); pv();
-        if (TS.estoqueDisp && state.loja && state.loja !== 'todas') TS.estoqueDisp(state.loja).then((d) => { disp = d; pv(); }).catch(() => null);
+        if (!lido) TS.estoqueDisp(state.loja).then((d) => { disp = d; lido = true; pv(); }).catch(() => { lido = true; aviso.hidden = false; aviso.textContent = 'Não consegui ler o estoque agora: confira se o produto da mensagem tem na loja antes de enviar.'; });
         const rr0 = recebeuRecente(c);
         box.append(h('div', { class: 'cli-wpp' }, h('span', { class: 'f-label' }, 'Mensagem pronta'), sel, prev, aviso,
           rr0 ? h('div', { class: 'notice cli-sem-estoque' }, `⏳ Recebeu mensagem há ${rr0.dias} ${rr0.dias === 1 ? 'dia' : 'dias'}${rr0.ct.motivo ? ' (' + rr0.ct.motivo + ')' : ''}: a próxima só a partir de ${rr0.ate.toLocaleDateString('pt-BR')} (uma a cada ${rr0.iv} dias).`) : null,
           h('div', { class: 'cfg-inline' },
             h('a', { class: 'btn primary', href: '#', onclick: async (e) => {
               e.preventDefault();
+              if (!lido) { alert('Conferindo o estoque… tente de novo em um instante.'); return; }
               if (faltando) { alert(`${faltando} está sem estoque: escolha outra mensagem.`); return; }
               const rr = recebeuRecente(c);
               if (rr) { alert(`${c.nome || 'Este cliente'} recebeu mensagem da loja há ${rr.dias} ${rr.dias === 1 ? 'dia' : 'dias'}${rr.ct.motivo ? ' (' + rr.ct.motivo + ')' : ''}. Para não ser insistente, a próxima só a partir de ${rr.ate.toLocaleDateString('pt-BR')} (uma mensagem a cada ${rr.iv} dias).`); return; }
