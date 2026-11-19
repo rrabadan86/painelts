@@ -8,6 +8,7 @@
   const hm = (s) => +s.slice(0, 2) * 60 + +s.slice(3, 5);
   // escala em blocos de 10 min (entrada, saída e intervalo em qualquer horário de 10 em 10 min)
   const B = 10, NB = 1440 / B, PH = 60 / B, K = 30 / B; // K: quantos blocos cabem em meia hora (as regras foram pensadas em meias horas)
+  const hLiq = (m) => `${Math.floor(m / 60)}h${m % 60 ? String(m % 60).padStart(2, '0') : ''}`; // 8h20, 8h
   const hhmm = (m) => `${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
   /**
    * Faixa do dia em blocos de 30 min: inclui o bloco da abertura e o do fechamento mesmo quando o horário não é
@@ -28,17 +29,32 @@
    * Blocos de intervalo num turno de len blocos: o intervalo inteiro sempre que sobram mais de 4h de trabalho
    * (dia curto, ex.: domingo 12h–21h, encurta o trabalho, não o intervalo — a CLT pede 1h acima de 6h).
    */
+  let IV_CURTO = 30; // intervalo de um turno de 4h a 6h na loja em cálculo (definido por equipeAtual)
+  const equipeAtual = (e) => { IV_CURTO = intervaloBloco(e, 300); };
   function intervaloNoTurno(len, intervalo) {
     if (!intervalo) return 0;
-    const trab = len * B - intervalo;
-    if (trab > 240) return intervalo / B;
-    return len * B > 240 ? Math.min(intervalo, 30) / B : 0; // turno curto: no máximo meia hora
+    if (len * B - intervalo > 360) return intervalo / B; // ainda mais de 6h de trabalho: intervalo inteiro
+    const iv = Math.min(intervalo, IV_CURTO);            // turno de até 6h (dia curto): o intervalo dessa faixa
+    return len * B > 240 ? iv / B : 0;                    // mais de 4h seguidas pede intervalo (CLT); até 4h, sem
   }
+  /** intervalo de um turno já em minutos (feriado cortado, ajuste manual): o que a jornada real pede, no meio do turno */
+  function pausaDoTurno(ini, fim, e, antes) {
+    const dur = fim - ini;
+    const ivA = +e.intervalo || 0;
+    if (dur <= 240) return null; // até 4h: sem intervalo
+    let iv = Math.round((dur - ivA > 480 ? ivA : intervaloMin(e, dur - intervaloMin(e, Math.min(dur, 480)))) / B) * B;
+    if (!iv) iv = Math.round(intervaloMin(e, 300) / B) * B; // mais de 4h seguidas: no mínimo o intervalo curto (CLT)
+    if (!iv) return null;
+    if (antes && antes[1] - antes[0] === iv && antes[0] >= ini + 120 && antes[1] <= fim - 120) return antes; // o de antes ainda serve
+    const m = Math.round((ini + (dur - iv) / 2) / B) * B;
+    return [m, m + iv];
+  }
+
   /** na escala automática (blocos de 10 min) */
   const intervaloBloco = (e, trabMin) => Math.round(intervaloMin(e, trabMin) / B) * B;
   /** abaixo do mínimo da CLT? (acima de 6h: 1h; de 4h a 6h: 15 min) */
   const abaixoClt = (jorn, int) => (jorn > 360 ? int < 60 : jorn > 240 ? int < 15 : false);
-  TS._intervalo = { intervaloMin, abaixoClt };
+  TS._intervalo = { intervaloMin, abaixoClt, pausaDoTurno: (...a) => pausaDoTurno(...a) };
   function paraTurno(o, ab) {
     let ini = o.s * B, fim = (o.s + o.len) * B;
     let pausa = o.pausa != null && o.intSlots ? [o.pausa * B, (o.pausa + o.intSlots) * B] : null;
@@ -125,6 +141,7 @@
   // ---------- escala sugerida (gulosa, em blocos de 30 min) ----------
   function montarEscala(need, op, nFunc) {
     const e = op.equipe;
+    equipeAtual(e);
     const diasTrab = e.escala === '6x1' ? 6 : 5;
     const jornada = (e.cargaSemanal * 60) / diasTrab; // jornada diária exata (ex.: 44h na 5x2 = 8h48)
     const trabMin = Math.round(jornada / B) * B; // na escala, arredondada para blocos de 10 min
@@ -290,6 +307,7 @@
    */
   function montarRodizio(need, op, pessoas) {
     const e = op.equipe, N = pessoas.length;
+    equipeAtual(e);
     const seis = e.escala === '6x1';
     const diasBase = seis ? 6 : 5;
     const jornada = (e.cargaSemanal * 60) / diasBase;
@@ -654,6 +672,7 @@
 
   /** monta a escala de cada dia do mês: { dias:[iso], pessoas:[nome], cel[i][k] = {tipo, ini, fim, pausa, motivo} } */
   function escalaDoMes({ op, cfg, semanas, L, ym, need, ajustes }) {
+    equipeAtual(op.equipe);
     const pessoas = pessoasDe(op.equipe);
     const nD = new Date(Date.UTC(+ym.slice(0, 4), +ym.slice(5, 7), 0)).getUTCDate();
     const dias = Array.from({ length: nD }, (_, k) => `${ym}-${String(k + 1).padStart(2, '0')}`);
@@ -676,7 +695,7 @@
         if (hf && !hf.fechado) {
           const ini = Math.max(t.ini, hm(hf.abre)), fim = Math.min(t.fim, hm(hf.fecha));
           if (fim - ini < 60) return { tipo: 'folga', motivo: 'Folga (feriado)', feriado: fer.nome, semana: w };
-          return { tipo: 'trab', ini, fim, pausa: fim - ini > 360 ? t.pausa : null, feriado: fer.nome, semana: w };
+          return { tipo: 'trab', ini, fim, pausa: pausaDoTurno(ini, fim, op.equipe, t.pausa), feriado: fer.nome, semana: w };
         }
         return { tipo: 'trab', ...t, feriado: fer.nome, semana: w };
       }
@@ -707,11 +726,8 @@
           if (!a) return;
           if (a.tipo === 'folga') cel[i][k] = { tipo: 'folga', motivo: 'Folga (ajuste)', aj: true, feriado: fer && fer.nome };
           else {
-            const ini = hm(a.ini), fim = hm(a.fim), dur = fim - ini;
-            let pausa = null;
-            const ivA = +e.intervalo || 0; const iv = dur - ivA > 480 ? ivA : intervaloMin(e, dur - intervaloMin(e, Math.min(dur, 480))); // horário digitado já inclui o intervalo
-            if (iv && dur - iv > 240) { const m = Math.round((ini + (dur - iv) / 2) / B) * B; pausa = [m, m + iv]; }
-            cel[i][k] = { tipo: 'trab', ini, fim, pausa, aj: true, feriado: fer && fer.nome };
+            const ini = hm(a.ini), fim = hm(a.fim);
+            cel[i][k] = { tipo: 'trab', ini, fim, pausa: pausaDoTurno(ini, fim, e), aj: true, feriado: fer && fer.nome }; // horário digitado já inclui o intervalo
           }
           aplica(cel[i][k], 1);
         });
@@ -778,7 +794,8 @@
       const marca = c.aj ? (paraPdf ? '*' : ' •') : '';
       if (c.tipo === 'trab') {
         return h('td', { class: 'trab' + (c.feriado ? ' fer' : '') + extra, onclick: clique, title: `${c.feriado ? c.feriado + ' · ' : ''}${c.aj ? 'ajuste manual' : c.recalc ? 'recalculado por causa de um ajuste' : ''}` },
-          h('b', null, `${hhmm(c.ini)}–${hhmm(c.fim)}${marca}`), c.pausa ? h('small', null, `int. ${hhmm(c.pausa[0])}–${hhmm(c.pausa[1])}`) : null);
+          h('b', null, `${hhmm(c.ini)}–${hhmm(c.fim)}${marca}`), c.pausa ? h('small', null, `int. ${hhmm(c.pausa[0])}–${hhmm(c.pausa[1])}`) : null,
+          h('small', { class: 'liq-dia' }, `${hLiq((c.fim - c.ini) - (c.pausa ? c.pausa[1] - c.pausa[0] : 0))} líquidas`)); // horas trabalhadas no dia, sem o intervalo
       }
       const txt = c.tipo === 'ferias' ? 'Férias' : c.tipo === 'fechado' ? 'Fechado' : /rodízio|após/.test(c.motivo || '') ? 'Folga (rodízio)' : 'Folga';
       return h('td', { class: c.tipo + (/rodízio|após/.test(c.motivo || '') ? ' rod' : '') + extra, onclick: clique, title: (c.motivo || '') + (c.feriado ? ` · ${c.feriado}` : '') }, txt + marca);
@@ -790,7 +807,12 @@
           h('tr', null, h('th', { class: 'l sem-nome' }, `Semana ${n}`, h('small', null, ` ${dentro[0].slice(8)}/${dentro[0].slice(5, 7)} a ${dentro[dentro.length - 1].slice(8)}/${dentro[dentro.length - 1].slice(5, 7)}`)),
             datas.map((d, j) => {
               const fer = E.feriados.get(d);
-              return h('th', { class: (j === 0 ? 'dom' : '') + (fer ? ' fer' : '') + (E.dias.includes(d) ? '' : ' fora'), title: fer ? fer.nome : '' }, h('span', null, DSN[j]), h('b', null, `${d.slice(8)}/${d.slice(5, 7)}`), fer ? h('small', null, fer.nome) : null);
+              // feriado: mostra o horário que a escala usou e de onde veio (o horário próprio da data, na tela Feriados, vale mais que o padrão)
+              const hfx = fer && TS.horarioFeriado ? TS.horarioFeriado({ ...(cfg || {}), operacao: op }, d) : null;
+              const hTxtF = hfx ? (hfx.fechado ? 'fechada' : `${hfx.abre}–${hfx.fecha}`) : '';
+              const origF = hfx ? { data: 'horário próprio desta data (tela Feriados)', feriados: 'padrão de feriados (Horário e equipe)', semana: 'horário normal do dia' }[hfx.origem] : '';
+              return h('th', { class: (j === 0 ? 'dom' : '') + (fer ? ' fer' : '') + (E.dias.includes(d) ? '' : ' fora'), title: fer ? `${fer.nome}${hfx ? ` · loja ${hTxtF} (${origF})` : ''}` : '' }, h('span', null, DSN[j]), h('b', null, `${d.slice(8)}/${d.slice(5, 7)}`),
+                fer ? h('small', null, fer.nome) : null, hfx ? h('small', { class: 'fer-hor' + (hfx.origem === 'data' ? ' proprio' : '') }, hfx.origem === 'data' ? `${hTxtF} ✎` : hTxtF) : null);
             }),
             h('th', { class: 'tot' }, 'Total'), h('th', { class: 'tot' }, 'Líquida'))),
         h('tbody', null, E.pessoas.map((p, i) => {
@@ -816,7 +838,7 @@
       })));
     const tabela = (paraPdf) => h('div', { class: 'semanas' }, semanasMes.map((datas, n) => blocoSemana(datas, n + 1, paraPdf)), resumoMes(paraPdf));
     const legenda = () => h('div', { class: 'mes-leg' }, h('span', { class: 'l-trab' }, 'entrada–saída (int. = intervalo)'), h('span', { class: 'l-folga' }, 'folga'), h('span', { class: 'l-rod' }, 'folga do rodízio (domingo e segunda)'),
-      h('span', { class: 'l-ferias' }, 'férias'), h('span', { class: 'l-fer' }, 'feriado'), h('span', null, '• ou * = ajuste manual'), h('span', null, 'Total = com intervalo · Líquida = sem intervalo'));
+      h('span', { class: 'l-ferias' }, 'férias'), h('span', { class: 'l-fer' }, 'feriado'), h('span', null, '• ou * = ajuste manual'), h('span', null, 'Total = com intervalo · Líquida (e "líquidas" em cada dia) = sem intervalo'), h('span', { class: 'fer-hor proprio' }, '✎ = horário próprio do feriado (tela Feriados)'));
     const ferMes = [...E.feriados.values()];
     const imprimir = () => {
       document.getElementById('impressao')?.remove();
