@@ -77,3 +77,22 @@ test('IA: Início explica o porquê (decomposição + fora do padrão) e o ✨ n
     expect(alt).toBeLessThan(200);
   }
 });
+
+test('IA: resposta que estoura o limite mostra aviso e "Tentar de novo" (sem quebrar a conversa)', async ({ page }, info) => {
+  test.skip(info.project.name !== 'computador');
+  await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS.db);
+  let n = 0;
+  await page.route('**/api/demo/ia/perguntar', (route) => {
+    n++;
+    if (n === 1) return route.fulfill({ json: { content: [{ type: 'thinking', thinking: '…', signature: 'x' }], stop_reason: 'max_tokens' } });
+    return route.continue();
+  });
+  await page.locator('#btnIA').click();
+  const g = page.locator('.ia-gaveta');
+  await g.locator('textarea').fill('Teste de limite');
+  await g.locator('textarea').press('Enter');
+  await expect(g.locator('.ia-erro')).toContainText('limite de tamanho');
+  await g.getByRole('button', { name: '↻ Tentar de novo' }).click();
+  await expect(g.locator('.ia-eu')).toHaveCount(1);
+  await expect(g.locator('.ia-ela .ia-md')).toContainText('simulada');
+});

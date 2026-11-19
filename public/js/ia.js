@@ -236,6 +236,11 @@
       return { erro: 'Ferramenta indisponível para este perfil.' };
     } catch (e) { return { erro: 'Falha na consulta: ' + e.message }; }
   }
+  /** o que vai para a IA: as consultas das perguntas anteriores já viraram resposta; manda só um resumo delas (menos tempo e custo) */
+  function enxuta(ms, desde) {
+    return ms.map((m, k) => (k >= desde || m.role !== 'user' || !Array.isArray(m.content) ? m
+      : { ...m, content: m.content.map((b) => (b.type === 'tool_result' && b.content.length > 1500 ? { ...b, content: b.content.slice(0, 1500) + '…(resultado anterior resumido)' } : b)) }));
+  }
   const PASSO = { consultar_vendas: 'consultando as vendas', listar_valores: 'conferindo os nomes', consultar_clientes: 'consultando os clientes', consultar_estoque: 'consultando o estoque', mostrar_grafico: 'montando o gráfico' };
 
   // ======================= painel "Pergunte ao painel" =======================
@@ -365,6 +370,7 @@
       return h('div', { class: 'ia-msg ia-ela' + (r.erro ? ' ia-erro' : '') },
         r.passos.length ? h('div', { class: 'ia-passos' }, r.passos.map((p) => h('span', null, (r.fim || r.erro ? '✓ ' : '… ') + p))) : null,
         r.erro ? h('p', null, r.erro) : null,
+        r.erro && r.repetir && v === conv.vis[conv.vis.length - 1] ? h('button', { type: 'button', class: 'btn ia-repetir', onclick: () => { conv.vis.splice(-2, 2); perguntar(r.repetir); } }, '↻ Tentar de novo') : null,
         r.texto ? TS.iaMd(r.texto, r.graficos, grafico) : !r.fim && !r.erro ? h('div', { class: 'ia-pensando' }, h('span', { class: 'cfg-pulso' }), ' pensando…') : null,
         ...(r.texto ? [] : r.graficos.map(grafico)),
         ...r.clientes.map((c) => (c.cpfs ? h('button', { type: 'button', class: 'btn ia-cli', onclick: () => { fechar(); TS.abrirClientes && TS.abrirClientes(c.cpfs); } }, `👥 Abrir ${fmt.int(c.n)} ${c.n === 1 ? 'cliente' : 'clientes'} no painel`)
@@ -384,13 +390,21 @@
       const pd = pode();
       try {
         for (let rodada = 0; rodada < 10; rodada++) {
-          const j = await iaApi('POST', 'ia/perguntar', { loja: state.loja, mensagens: conv.mensagens, contexto: contexto() });
+          const j = await iaApi('POST', 'ia/perguntar', { loja: state.loja, mensagens: enxuta(conv.mensagens, base), contexto: contexto() });
           const content = j.content && j.content.length ? j.content : [{ type: 'text', text: '(sem resposta)' }];
           conv.mensagens.push({ role: 'assistant', content });
           const textos = content.filter((b) => b.type === 'text').map((b) => b.text).join('\n\n').trim();
           const usos = content.filter((b) => b.type === 'tool_use');
-          if (j.stop_reason === 'max_tokens' && usos.length) { conv.mensagens.pop(); r.texto = textos || 'A resposta ficou longa demais. Tente uma pergunta mais específica.'; break; }
-          if (j.stop_reason !== 'tool_use' || !usos.length) { r.texto = textos; break; }
+          if (j.stop_reason === 'max_tokens' && (usos.length || !textos)) {
+            // o limite de tamanho acabou antes de a IA escrever: a conversa volta ao ponto anterior e dá para tentar de novo
+            conv.mensagens.length = base;
+            throw Object.assign(new Error('A IA usou todo o limite de tamanho antes de terminar a resposta. Tente de novo ou divida a pergunta em partes menores.'), { repetir: true });
+          }
+          if (j.stop_reason !== 'tool_use' || !usos.length) {
+            if (!textos) { conv.mensagens.length = base; throw Object.assign(new Error('A IA terminou sem escrever a resposta. Tente de novo.'), { repetir: true }); }
+            r.texto = textos + (j.stop_reason === 'max_tokens' ? '\n\n*(a resposta foi cortada por tamanho: peça "continue")*' : '');
+            break;
+          }
           const res = [];
           for (const u of usos) {
             r.passos.push(PASSO[u.name] || u.name); pintarLista();
@@ -405,7 +419,7 @@
         r.fim = true;
       } catch (e) {
         conv.mensagens.length = base; // volta a conversa ao ponto antes da pergunta
-        r.erro = e.message; r.fim = true;
+        r.erro = e.message; r.fim = true; r.repetir = q;
       }
       ocupado = false; env.disabled = false;
       pintarLista();

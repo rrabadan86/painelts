@@ -164,7 +164,7 @@ async function mensagens(lojaId, corpo) {
     try { chave = decifrar(k.enc); } catch { throw new ErroIA('Não consegui abrir a chave guardada (a chave mestra mudou?). Cadastre a chave de novo.', 500); }
     let r;
     try {
-      r = await fetch(`${API}/messages`, { method: 'POST', headers: { 'x-api-key': chave, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' }, body: JSON.stringify(req), signal: AbortSignal.timeout(120000) });
+      r = await fetch(`${API}/messages`, { method: 'POST', headers: { 'x-api-key': chave, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' }, body: JSON.stringify(req), signal: AbortSignal.timeout(240000) });
     } catch (e) { throw new ErroIA('Não consegui falar com a Anthropic agora (' + (e.name === 'TimeoutError' ? 'demorou demais' : e.message) + ').', 502); }
     j = await r.json().catch(() => ({}));
     if (!r.ok) {

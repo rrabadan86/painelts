@@ -1547,7 +1547,7 @@ app.post('/api/ia/perguntar', express.json({ limit: '300kb' }), async (req, res)
   const pode = { clientes: podeClientes(req), custos: podeCustos(req) && b.loja !== 'todas', perfil: req.perfil };
   try {
     const j = await IA.mensagens(loja.id, {
-      max_tokens: 2500,
+      max_tokens: 12000,
       system: [{ type: 'text', text: IAP.sistemaPergunta(b.contexto, pode), cache_control: { type: 'ephemeral' } }],
       tools: IAP.ferramentas(pode),
       messages: b.mensagens,
@@ -1607,7 +1607,7 @@ app.post('/api/ia/diagnostico', express.json({ limit: '150kb' }), async (req, re
   falhou('ia:' + req.user);
   try {
     const j = await IA.mensagens(loja.id, {
-      max_tokens: 1500, system: IAP.SISTEMA_DIAG, tools: [IAP.FERR_DIAG], tool_choice: { type: 'tool', name: 'diagnostico' },
+      max_tokens: 6000, system: IAP.SISTEMA_DIAG, tools: [IAP.FERR_DIAG], tool_choice: { type: 'tool', name: 'diagnostico' },
       messages: [{ role: 'user', content: 'Números do painel (JSON):\n' + txt }],
     });
     const t = (j.content || []).find((x) => x.type === 'tool_use' && x.name === 'diagnostico');
@@ -1632,7 +1632,7 @@ app.post('/api/ia/pedido', express.json({ limit: '200kb' }), async (req, res) =>
   if (!dados || !Array.isArray(dados.itens) || !dados.itens.length) return res.status(400).json({ erro: 'Pedido vazio.' });
   try {
     const j = await IA.mensagens(loja.id, {
-      max_tokens: 3000, system: IAP.SISTEMA_PEDIDO, tools: [IAP.FERR_PEDIDO], tool_choice: { type: 'tool', name: 'revisar_pedido' },
+      max_tokens: 10000, system: IAP.SISTEMA_PEDIDO, tools: [IAP.FERR_PEDIDO], tool_choice: { type: 'tool', name: 'revisar_pedido' },
       messages: [{ role: 'user', content: 'Dados do pedido (JSON):\n' + JSON.stringify(dados) }],
     });
     const t = (j.content || []).find((x) => x.type === 'tool_use' && x.name === 'revisar_pedido');
