@@ -108,7 +108,7 @@ function filtrar() {
   const src = fs.readFileSync(path.join(__dirname, '../../server.js'), 'utf8');
   const ini = src.indexOf('function filtrarPorPerfil('), fim = src.indexOf('\nconst packCache');
   assert.ok(ini > 0 && fim > ini, 'filtrarPorPerfil não encontrada no server.js');
-  const ctx = vm.createContext({ crypto: require('crypto'), SECRET: 'teste' });
+  const ctx = vm.createContext({ crypto: require('crypto'), SECRET: 'teste', require: (m) => require(m.startsWith('./') ? path.join(__dirname, '../..', m) : m) });
   vm.runInContext(src.slice(ini, fim) + '\nthis.f = filtrarPorPerfil;', ctx);
   return (d, p) => JSON.parse(JSON.stringify(ctx.f(d, p)));
 }
