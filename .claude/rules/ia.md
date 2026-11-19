@@ -34,3 +34,4 @@ paths:
 - Modelo (`MODELO()`) e preço por milhão de tokens (`PRECO()`, `IA_PRECO_ENTRADA`/`IA_PRECO_SAIDA`) ficam em `src/ia.js`: o uso e o teto do mês dependem deles.
 - Consulta nova para o ✨: siga a skill `nova-consulta-ia`.
 - Testes: `node --test tests/unit/ia.test.js` e `npx playwright test tests/e2e/ia.spec.js`.
+- Análise do dia só com os dados **atuais** do servidor (espera sair do cache do aparelho, `TS.dadosGuardados`); resultado `null` não fica guardado (chave cadastrada depois vale na hora). Conversa do ✨: acima de 60 mensagens pede nova conversa; a 10ª rodada fecha com uma resposta (a conversa nunca termina em `tool_result`).
