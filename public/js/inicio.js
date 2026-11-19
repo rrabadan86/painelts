@@ -16,8 +16,9 @@
       h('div', { class: 'page-sub' }, 'O que pede atenção hoje. Clique num aviso para ir à tela certa.'))));
     const avisos = h('div', { class: 'ini-avisos' });
     const pend = h('div', { class: 'muted ini-pend' }, 'Conferindo estoque, site e atualizações…');
-    const diag = h('div');
-    root.append(blocoVendas(), diag, h('div', { class: 'mt' }, h('div', { class: 'card' }, h('div', { class: 'card-title' }, 'Avisos'), avisos, pend)));
+    const faixa = h('div', { class: 'ini-faixa-ia', hidden: true });
+    root.append(faixa, blocoVendas(), h('div', { class: 'mt' }, h('div', { class: 'card' }, h('div', { class: 'card-title' }, 'Avisos'), avisos, pend)));
+    faixaIA(faixa);
     const lista = [];
     const pintar = () => {
       const ord = { erro: 0, warn: 1, info: 2, ok: 3 };
@@ -26,7 +27,7 @@
     };
     const analise = TS.db && TS.db.n && TS.eu && TS.eu.perfil !== 'vendedor' ? analisar() : null;
     const tarefas = [avisosEspera(lista), avisosVendas(lista), avisosEstoque(lista), avisosSite(lista), avisosAtualizacoes(lista), avisosInventario(lista, analise), avisosCreditos(lista), avisosCusto(lista), avisosPadrao(lista, analise)].map((p) => p.catch(() => null).then(() => { if (avisos.isConnected) pintar(); }));
-    Promise.all(tarefas).then(() => { pend.remove(); if (analise && diag.isConnected) cartaoPorque(diag, lista, analise); });
+    Promise.all(tarefas).then(() => { pend.remove(); });
   };
 
   // ======================= por que as vendas mudaram e o que está fora do padrão =======================
@@ -142,29 +143,60 @@
     }
   }
 
-  /** cartão "Por que isso está acontecendo" (IA). A resposta fica guardada no servidor: a mesma situação não é cobrada de novo. */
-  async function cartaoPorque(box, lista, a) {
-    if (!TS.iaApi || !TS.eu || !['admin', 'franqueado'].includes(TS.eu.perfil)) return;
+  // ======================= análise do dia (IA): uma por loja por dia, a mesma para admin e franqueado =======================
+  // O Início mostra só a manchete no topo; a análise completa fica no ✨ (aba "Análise do dia").
+  const podeIA = () => !!(TS.iaApi && TS.eu && ['admin', 'franqueado'].includes(TS.eu.perfil));
+  let cacheDia = null;
+  /** a análise do dia da loja escolhida: { diagnostico, em, dia } ou null (IA desligada). Gera só se ninguém gerou hoje. */
+  TS.iaAnaliseDia = function () {
+    if (!podeIA() || !TS.db || !TS.db.n) return Promise.resolve(null);
+    const chave = `${state.loja}|${TS.hojeSP()}`;
+    if (cacheDia && cacheDia.chave === chave) return cacheDia.p;
+    const p = (async () => {
+      const st = await TS.iaApi('GET', `ia/estado?loja=${encodeURIComponent(state.loja || '')}`);
+      if (!st.ativa) return null;
+      const a = analisar();
+      const l = [];
+      await avisosPadrao(l, a);
+      // vai só o que todos que veem a IA podem ver: números de vendas e avisos de vendas (custo, estoque, franquia… ficam de fora)
+      const fatos = { ...a, avisos: l.filter((x) => x.nivel !== 'ok').map((x) => `${x.titulo}${x.texto ? ' — ' + x.texto : ''}`.slice(0, 400)) };
+      return TS.iaApi('POST', 'ia/diagnostico', { loja: state.loja, fatos });
+    })();
+    cacheDia = { chave, p };
+    p.catch(() => { if (cacheDia && cacheDia.chave === chave) cacheDia = null; }); // erro: tenta de novo na próxima vez
+    return p;
+  };
+  // "já li a análise de hoje" (por aparelho): apaga o pontinho do ✨
+  const CHAVE_LIDA = 'teashop.ia.lida';
+  TS.iaAnaliseLida = (marcar) => {
+    const k = `${state.loja}|${TS.hojeSP()}`;
+    try {
+      if (marcar) { localStorage.setItem(CHAVE_LIDA, k); TS.iaPontinho && TS.iaPontinho(false); return true; }
+      return localStorage.getItem(CHAVE_LIDA) === k;
+    } catch { return !!marcar; }
+  };
+  async function faixaIA(box) {
+    if (!podeIA()) return;
     let st;
     try { st = await TS.iaApi('GET', `ia/estado?loja=${encodeURIComponent(state.loja || '')}`); } catch { return; }
     if (!st.ativa || !box.isConnected) return;
-    const card = h('div', { class: 'card mt ini-porque' }, h('div', { class: 'card-title' }, '✨ Por que isso está acontecendo'),
-      h('div', { class: 'ini-porque-c' }, h('span', { class: 'cfg-pulso' }), ' A IA está lendo os números e os avisos…'));
-    box.replaceChildren(card);
-    // a análise é UMA por loja por dia, a mesma para admin e franqueado (gerente e vendedora não veem a IA): vai só o que todos eles veem
-    // (números de vendas e os avisos de vendas). Custo, estoque, franquia, site e inventário ficam de fora.
-    const fatos = { ...a, avisos: lista.filter((x) => x.padrao && x.nivel !== 'ok').map((x) => `${x.titulo}${x.texto ? ' — ' + x.texto : ''}`.slice(0, 400)) };
-    const pintarRes = (j) => {
-      const r = j.diagnostico || {};
-      card.replaceChildren(...[
-        h('div', { class: 'card-title' }, '✨ Por que isso está acontecendo', h('small', { class: 'muted' }, ` · ${j.em ? new Date(j.em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : ''}${j.simulada ? ' · simulado (apresentação)' : ''}`)),
-        r.manchete ? h('p', { class: 'ini-porque-m' }, r.manchete) : null,
-        ...(r.explicacoes || []).map((x) => h('div', { class: 'ini-porque-i' }, h('b', null, x.titulo), x.porque ? TS.iaMd(x.porque) : null, x.o_que_fazer ? h('div', { class: 'ini-porque-f' }, '👉 ', x.o_que_fazer) : null)),
-        (r.fora_do_padrao || []).length ? h('div', { class: 'ini-porque-fp' }, h('div', { class: 'ini-porque-st' }, 'Fora do padrão'), ...(r.fora_do_padrao || []).map((x) => h('div', { class: 'ini-porque-i' }, h('b', null, '⚠️ ', x.titulo), x.detalhe ? h('div', { class: 'muted' }, x.detalhe) : null))) : null,
-        h('small', { class: 'muted ini-porque-n' }, `Análise do dia feita pela IA com os números de vendas${j.em ? ` (às ${new Date(j.em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })})` : ''}: uma por dia, a mesma para a equipe. A próxima sai amanhã. Confira antes de tomar decisões importantes.`)].filter(Boolean));
-    };
-    try { pintarRes(await TS.iaApi('POST', 'ia/diagnostico', { loja: state.loja, fatos })); }
-    catch (e) { card.replaceChildren(h('div', { class: 'card-title' }, '✨ Por que isso está acontecendo'), h('p', { class: 'muted' }, e.message)); }
+    const abrir = () => TS.iaAbrir && TS.iaAbrir(null, { aba: 'analise' });
+    box.hidden = false;
+    box.replaceChildren(h('span', { class: 'ini-faixa-tag' }, '✨ Análise do dia'), h('span', { class: 'ini-faixa-txt muted' }, h('span', { class: 'cfg-pulso' }), ' A IA está preparando…'));
+    try {
+      const j = await TS.iaAnaliseDia();
+      if (!box.isConnected) return;
+      const r = (j && j.diagnostico) || {};
+      if (!r.manchete) { box.hidden = true; return; }
+      box.replaceChildren(
+        h('button', { type: 'button', class: 'ini-faixa-btn', onclick: abrir, title: 'Ler a análise completa' },
+          h('span', { class: 'ini-faixa-tag' }, '✨ Análise do dia'),
+          h('span', { class: 'ini-faixa-txt' }, r.manchete),
+          h('span', { class: 'ini-faixa-ir' }, 'ler a análise ›')));
+      if (!TS.iaAnaliseLida()) TS.iaPontinho && TS.iaPontinho(true);
+    } catch (e) {
+      if (box.isConnected) box.replaceChildren(h('span', { class: 'ini-faixa-tag' }, '✨ Análise do dia'), h('span', { class: 'ini-faixa-txt muted' }, e.message));
+    }
   }
 
   // ---------- lista de espera ----------
