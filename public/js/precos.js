@@ -619,6 +619,42 @@
           h('small', { class: 'muted' }, [s.natOp || s.finalidade, s.cfops && s.cfops.length ? 'CFOP ' + s.cfops.join(', ') : null, s.emissao ? quando(s.emissao.slice(0, 10)) : null, s.valor != null ? fmt.brl(s.valor) : null].filter(Boolean).join(' · '))),
         h('span', { class: 'nf-vinculo-ver' }, 'Ver NF-e ↗'))));
   }
+  /**
+   * Gráfico do histórico de compras de um item como imagem (PNG), para ir no e-mail à franquia.
+   * pts: [{ dia: 'AAAA-MM-DD', custo, esta }] em ordem; o ponto desta nota fica maior.
+   */
+  function graficoComprasPng(nome, pts, unidade) {
+    const W = 600, H = 280, esc = 2, mE = 86, mD = 40, mT = 44, mB = 44;
+    const cv = document.createElement('canvas'); cv.width = W * esc; cv.height = H * esc;
+    const g = cv.getContext('2d'); g.scale(esc, esc);
+    g.fillStyle = '#ffffff'; g.fillRect(0, 0, W, H);
+    g.fillStyle = '#1d2b22'; g.font = 'bold 15px Arial, sans-serif'; g.textBaseline = 'alphabetic';
+    g.fillText(`${nome} — custo ${unidade === 'kg' ? 'do kg' : 'da unidade'} nas compras`, 12, 22);
+    const vs = pts.map((p) => p.custo);
+    let lo = Math.min(...vs), hi = Math.max(...vs);
+    if (hi - lo < 0.01) { lo -= 5; hi += 5; }
+    const pad = (hi - lo) * 0.12; lo = Math.max(0, lo - pad); hi += pad;
+    const x = (k) => (pts.length === 1 ? (mE + W - mD) / 2 : mE + (k * (W - mE - mD)) / (pts.length - 1));
+    const y = (v) => mT + (1 - (v - lo) / (hi - lo)) * (H - mT - mB);
+    g.font = '11px Arial, sans-serif'; g.textAlign = 'right'; g.textBaseline = 'middle';
+    for (let k = 0; k <= 4; k++) {
+      const v = lo + ((hi - lo) * k) / 4, yy = y(v);
+      g.strokeStyle = '#ece7da'; g.lineWidth = 1; g.beginPath(); g.moveTo(mE, yy); g.lineTo(W - mD, yy); g.stroke();
+      g.fillStyle = '#6b7a70'; g.fillText(fmt.brl(v), mE - 8, yy);
+    }
+    g.textAlign = 'center'; g.textBaseline = 'top';
+    const passo = Math.ceil(pts.length / 7);
+    pts.forEach((p, k) => { if (k % passo === 0 || k === pts.length - 1) { g.fillStyle = p.esta ? '#1d2b22' : '#6b7a70'; g.fillText(quando(p.dia), x(k), H - mB + 10); } });
+    g.strokeStyle = '#C98A1B'; g.lineWidth = 2.5; g.beginPath();
+    pts.forEach((p, k) => (k ? g.lineTo(x(k), y(p.custo)) : g.moveTo(x(k), y(p.custo)))); g.stroke();
+    pts.forEach((p, k) => {
+      g.fillStyle = '#C98A1B'; g.beginPath(); g.arc(x(k), y(p.custo), p.esta ? 7 : 4.5, 0, Math.PI * 2); g.fill();
+      if (p.esta || k === 0 || pts.length <= 8) { g.fillStyle = '#1d2b22'; g.font = (p.esta ? 'bold ' : '') + '11px Arial, sans-serif'; g.textBaseline = 'bottom'; g.fillText(fmt.brl(p.custo), Math.min(Math.max(x(k), mE + 30), W - mD - 30), y(p.custo) - 9); g.textBaseline = 'top'; g.font = '11px Arial, sans-serif'; }
+    });
+    return cv.toDataURL('image/png');
+  }
+  TS.graficoComprasPng = graficoComprasPng; // testes
+
   function abrirNota(D, n, j, aoMudar) {
     document.querySelector('.prc-popup-camada')?.remove();
     document.querySelector('.prc-drawer-camada')?.remove();
@@ -697,6 +733,10 @@
       iMsg.value = `Olá,\n\nNa nota fiscal ${n.nfTxt}${n.entrada ? ` (entrada em ${quando(n.entrada)})` : ''}${n.fornecedor ? `, de ${n.fornecedor},` : ''} os produtos abaixo chegaram com custo maior do que na compra anterior. Podem conferir se o reajuste está correto?\n\nObrigado${quem ? ',\n' + quem : '.'}`;
       const status = h('div', { class: 'nf-fr-st', role: 'status' });
       const conta = h('span', { class: 'muted' });
+      const cGraf = h('input', { type: 'checkbox', checked: true });
+      // histórico de compras de cada item (das notas que o painel tem), com esta nota marcada
+      const pontos = (x) => ((D.comprasItens && D.comprasItens[x.cod]) || []).map(([dia, custo, nf]) => ({ dia, custo, esta: String(nf) === String(n.nf) }))
+        .filter((p) => p.custo > 0).sort((a, b) => (a.dia < b.dia ? -1 : a.dia > b.dia ? 1 : 0)).slice(-15);
       const btEnviar = h('button', { type: 'button', class: 'btn primary' }, '✉ Enviar');
       const pintarConta = () => { const k = itens.filter((x) => x.on).length; conta.textContent = `${k} de ${itens.length} ${itens.length === 1 ? 'produto marcado' : 'produtos marcados'}`; btEnviar.disabled = !k; };
       const marcarTodos = h('input', { type: 'checkbox', checked: true, 'aria-label': 'Marcar todos', onchange: (e) => { for (const x of itens) x.on = e.target.checked; lista.querySelectorAll('input[type=checkbox]').forEach((c) => { c.checked = e.target.checked; }); pintarConta(); } });
@@ -711,8 +751,9 @@
         if (!confirm(`Enviar o e-mail para ${iPara.value.trim()} com ${marcados.length} ${marcados.length === 1 ? 'produto' : 'produtos'}?`)) return;
         btEnviar.disabled = true; status.className = 'nf-fr-st muted'; status.textContent = 'Enviando…';
         try {
+          const graficos = cGraf.checked ? marcados.slice(0, 30).map((x) => { const pts = pontos(x); return pts.length ? { cod: x.cod, png: graficoComprasPng(x.nome, pts, unTxt(linhas.find((r) => String(r.cod) === x.cod)?.un)) } : null; }).filter(Boolean) : [];
           const r = await fetch(TS.api('reajuste/enviar'), { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-Painel': '1' },
-            body: JSON.stringify({ loja: D.loja, nf: n.nfTxt, para: iPara.value, assunto: iAssunto.value, mensagem: iMsg.value, itens: marcados.map(({ cod, nome, antes, depois }) => ({ cod, nome, antes, depois })) }) });
+            body: JSON.stringify({ loja: D.loja, nf: n.nfTxt, para: iPara.value, assunto: iAssunto.value, mensagem: iMsg.value, graficos, itens: marcados.map(({ cod, nome, antes, depois }) => ({ cod, nome, antes, depois })) }) });
           const j = await r.json().catch(() => ({}));
           if (!r.ok) throw new Error(j.erro || 'Falha ao enviar.');
           status.className = 'nf-fr-st ok';
@@ -728,6 +769,7 @@
         campo('Para', iPara), campo('Assunto', iAssunto),
         h('div', { class: 'nf-fr-cab' }, h('label', { class: 'nf-fr-todos' }, marcarTodos, ' Produtos com custo maior'), conta),
         lista,
+        h('label', { class: 'nf-fr-todos nf-fr-graf' }, cGraf, ' Incluir o gráfico do histórico de compras de cada produto marcado'),
         campo('Mensagem', iMsg),
         h('div', { class: 'nf-fr-acoes' }, h('button', { type: 'button', class: 'btn', onclick: fecharP }, 'Cancelar'), btEnviar),
         status);

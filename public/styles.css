@@ -2653,3 +2653,4 @@ details.vl-ajuda summary { cursor: pointer; font-weight: 600; }
 .nf-fr-acoes { display: flex; justify-content: flex-end; gap: 8px; }
 .nf-fr-st.ok { color: var(--pos, #2C5234); font-weight: 600; }
 @media (max-width: 600px) { .nf-fr-item { grid-template-columns: auto minmax(0, 1fr); } .nf-fr-val { grid-column: 2; justify-content: flex-start; } }
+.nf-fr-graf { font-weight: 500; font-size: 14px; }

@@ -574,10 +574,10 @@ app.post('/api/demo/conta-franquia/email/previa', express.json({ limit: '10kb' }
 app.post('/api/demo/conta-franquia/acao', (req, res) => res.status(400).json({ erro: 'Na apresentação nada é salvo.' }));
 app.post('/api/demo/conta-franquia/royalties', (req, res) => res.status(400).json({ erro: 'Na apresentação nada é salvo.' }));
 app.get('/api/demo/reajuste/para', (req, res) => res.json({ para: ['compras@franquia-exemplo.com.br'], loja: 'Tea Shop Centro' }));
-app.post('/api/demo/reajuste/enviar', express.json({ limit: '40kb' }), (req, res) => {
+app.post('/api/demo/reajuste/enviar', express.json({ limit: '16mb' }), (req, res) => {
   const it = COB.conferirItensReajuste((req.body || {}).itens);
   if (it.erro) return res.status(400).json({ erro: it.erro });
-  res.json({ ok: true, simulado: true, para: ['compras@franquia-exemplo.com.br'] }); // apresentação: nada é enviado
+  res.json({ ok: true, simulado: true, para: ['compras@franquia-exemplo.com.br'], graficos: COB.conferirGraficos((req.body || {}).graficos, it.ok).length }); // apresentação: nada é enviado
 });
 app.post('/api/demo/conta-franquia/email/enviar', (req, res) => res.status(400).json({ erro: 'Na apresentação nenhum e-mail é enviado.' }));
 app.get('/api/demo/nfsaida', (req, res) => { if (!lojaDemo(req)) return res.status(400).json({ erro: 'Escolha uma loja.' }); res.json({ notas: nfsDemo(req.query.loja).map(cabNfs), temXml: true }); });
@@ -1423,7 +1423,7 @@ app.get('/api/reajuste/para', (req, res) => {
   const loja = lojaCF(req, res); if (!loja) return;
   res.json({ para: COB.emails(loja.id, 'reajuste') || DEV.destinatarios(loja.id) || [], loja: nomeLojaCF(loja) });
 });
-app.post('/api/reajuste/enviar', express.json({ limit: '40kb' }), async (req, res) => {
+app.post('/api/reajuste/enviar', express.json({ limit: '16mb' }), async (req, res) => {
   if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
   if (!podeReajuste(req)) return res.status(403).json({ erro: 'Só o admin ou o franqueado fala com a franquia.' });
   const loja = lojaCF(req, res, true); if (!loja) return;
@@ -1435,16 +1435,18 @@ app.post('/api/reajuste/enviar', express.json({ limit: '40kb' }), async (req, re
   const assunto = String(b.assunto || '').replace(/[\r\n]+/g, ' ').trim().slice(0, 200);
   if (!assunto) return res.status(400).json({ erro: 'Escreva o assunto.' });
   const mensagem = String(b.mensagem || '').slice(0, 5000);
-  const t = COB.tabelaReajuste(it.ok);
+  const graficos = COB.conferirGraficos(b.graficos, it.ok);
+  const t = COB.tabelaReajuste(it.ok, graficos);
+  const anexos = graficos.map((g) => ({ filename: `historico-${g.cod || 'produto'}.png`, content: g.buf, contentType: 'image/png', cid: g.cid }));
   const NOTIF = require('./src/notificacoes');
   const cfgN = NOTIF.ler();
   const lc = (cfgN.lojas || {})[loja.id];
   const smtp = lc && lc.email && lc.email.host ? lc.email : cfgN.email;
   if (!smtp || !smtp.host) return res.status(400).json({ erro: 'A loja ainda não tem o e-mail configurado (Configurações → Lojas).' });
-  try { await NOTIF.enviarEmail(p.ok.join(', '), assunto, `${mensagem}\n\n${t.tabelaTexto}`, COB.html(mensagem, t.tabelaHtml), smtp); } catch (e) { return res.status(502).json({ erro: 'O e-mail não saiu: ' + (e.message || e) }); }
+  try { await NOTIF.enviarEmail(p.ok.join(', '), assunto, `${mensagem}\n\n${t.tabelaTexto}`, COB.html(mensagem, t.tabelaHtml), smtp, anexos.length ? anexos : null); } catch (e) { return res.status(502).json({ erro: 'O e-mail não saiu: ' + (e.message || e) }); }
   const nf = String(b.nf || '').slice(0, 30);
   COB.registrar(loja.id, 'reajuste', p.ok, it.ok.map((x) => x.cod || x.nome), 0, req.user);
-  C.auditar(req.user, 'enviou à franquia reclamação de reajuste de custo', loja.id, { loja: loja.id, nf, para: p.ok, itens: it.ok.map((x) => `${x.nome}: ${x.antes} → ${x.depois}`) });
+  C.auditar(req.user, 'enviou à franquia reclamação de reajuste de custo', loja.id, { loja: loja.id, nf, para: p.ok, graficos: graficos.length, itens: it.ok.map((x) => `${x.nome}: ${x.antes} → ${x.depois}`) });
   res.json({ ok: true, para: p.ok });
 });
 // envio automático todo mês (ligado em Configurações → Mensagens)

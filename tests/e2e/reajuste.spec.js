@@ -40,6 +40,10 @@ test('Nota de entrada: enviar reclamação de reajuste para a franquia, escolhen
   expect(enviado.mensagem).toBe('Olá, podem conferir estes itens?');
   expect(enviado.itens.length).toBe(n > 1 ? n - 1 : 1);
   expect(enviado.itens[0].depois).toBeGreaterThan(enviado.itens[0].antes);
+  // gráfico do histórico de compras de cada produto marcado vai junto (imagem PNG)
+  expect(enviado.graficos.length).toBe(enviado.itens.length);
+  expect(enviado.graficos[0].png).toMatch(/^data:image\/png;base64,/);
+  expect(enviado.itens.map((i) => i.cod)).toContain(enviado.graficos[0].cod);
   const larga = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(larga).toBeLessThanOrEqual(1);
 });

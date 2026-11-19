@@ -139,12 +139,14 @@ function marcarAuto(id, tipo, ym, resultado) {
  * Reclamação de reajuste de custo (nota de entrada → "Enviar para a franquia"): tabela dos itens escolhidos,
  * com o custo antes, o custo nesta nota e o aumento. itens: [{ cod, nome, antes, depois }] (já conferidos).
  */
-function tabelaReajuste(itens) {
+function tabelaReajuste(itens, imagens) {
   const pct = (a, d) => `${d >= a ? '+' : ''}${((d / a - 1) * 100).toFixed(1).replace('.', ',')}%`;
   const linhas = itens.map((i) => [i.nome + (i.cod ? ` (cód. ${i.cod})` : ''), brl(i.antes), brl(i.depois), pct(i.antes, i.depois)]);
   const cab = ['Produto', 'Custo antes', 'Custo nesta nota', 'Aumento'];
+  // gráficos do histórico de compras (imagens anexadas no próprio e-mail: cid)
+  const graf = (imagens || []).map((g) => `<div style="margin:18px 0 4px;font-weight:bold">${esc(g.nome)} — histórico de compras</div><img src="cid:${g.cid}" alt="Histórico de compras de ${esc(g.nome)}" width="600" style="max-width:100%;height:auto;border:1px solid #e6e0d2;border-radius:8px">`).join('');
   return {
-    tabelaHtml: tabela(cab, linhas),
+    tabelaHtml: tabela(cab, linhas) + graf,
     tabelaTexto: [cab.join(' | '), ...linhas.map((l) => l.join(' | '))].join('\n'),
   };
 }
@@ -162,4 +164,19 @@ function conferirItensReajuste(lista) {
   return { ok };
 }
 
-module.exports = { tabelaReajuste, conferirItensReajuste, auto, salvarAuto, devidoAgora, marcarAuto, montar, planilhaFidelidade, emails, registrar, historico, validarPara, html, itensDevolucoes, itensFidelidade };
+/** imagens dos gráficos (PNG em data URL, vindas da tela): até 30, até 400 KB cada; só PNG de verdade */
+function conferirGraficos(lista, itens) {
+  const porCod = new Map(itens.map((i) => [i.cod, i]));
+  const ok = [];
+  for (const g of Array.isArray(lista) ? lista.slice(0, 30) : []) {
+    const m = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/.exec(String((g && g.png) || ''));
+    const it = porCod.get(String((g && g.cod) || ''));
+    if (!m || !it || m[1].length > 550000) continue;
+    const buf = Buffer.from(m[1], 'base64');
+    if (buf.length < 8 || buf.readUInt32BE(0) !== 0x89504e47) continue;
+    ok.push({ cod: it.cod, nome: it.nome, buf, cid: `hist-${ok.length}@painel` });
+  }
+  return ok;
+}
+
+module.exports = { tabelaReajuste, conferirItensReajuste, conferirGraficos, auto, salvarAuto, devidoAgora, marcarAuto, montar, planilhaFidelidade, emails, registrar, historico, validarPara, html, itensDevolucoes, itensFidelidade };
