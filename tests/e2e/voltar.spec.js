@@ -178,3 +178,13 @@ test('Custo subiu: margem antes × agora e preço sugerido para manter a margem'
   expect(r.x.sug).toBeGreaterThan(r.preco);
   expect(Math.round((r.x.sug * 100)) % 100).toBe(90);
 });
+
+test('Hoje: meta do dia da loja e a parte de cada vendedora', async ({ page }, info) => {
+  test.skip(info.project.name !== 'computador');
+  await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS.db && TS.cli);
+  await page.evaluate(() => { location.hash = '#hoje'; });
+  const c = page.locator('.md-card');
+  await expect(c).toContainText('Meta de hoje');
+  await expect(c).toContainText(/Falta R\$/);
+  await expect(c.locator('.md-v').first()).toBeVisible();
+});

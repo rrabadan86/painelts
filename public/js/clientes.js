@@ -543,6 +543,63 @@
     atencao: { nome: '👀 Precisa de atenção', modelo: 'Novidades', peso: 40 },
   };
   const hojeF = { motivo: '', vend: '' };
+  /** meta do dia: (meta do mês − vendido até ontem) ÷ dias de loja aberta que faltam (com hoje), e a parte de
+   *  cada vendedora pela participação dela nas vendas dos últimos 30 dias */
+  function cartaoMetaDia() {
+    const db = TS.db;
+    if (!db || !db.n || !TS.metaCalc) return null;
+    const hojeD = TS.todayDay(), hojeIso = TS.dayToIso(hojeD), ym = hojeIso.slice(0, 7);
+    const meta = TS.metaCalc(ym).valor;
+    if (!meta) return null;
+    const ini = TS.isoToDay(ym + '-01');
+    const taxas = TS.rules.ids.taxas;
+    const idx = (de, ate) => TS.filtrar({ de, ate, ignorar: ['vendedores', 'grupos', 'cats', 'produto'], mesLivre: true }).filter((i) => !taxas.has(db.desc[i]));
+    const soma = (ii) => ii.reduce((s, i) => s + (db.vt[i] || 0), 0);
+    const ateOntem = hojeD > ini ? soma(idx(ini, hojeD - 1)) : 0;
+    const hojeIdx = db.maxDay >= hojeD ? idx(hojeD, hojeD) : [];
+    // dias de loja aberta que faltam no mês (com hoje): horário de funcionamento da loja e feriados fechados
+    const cfg = (db.metas || []).find((m) => m.id === state.loja) || null;
+    const op = cfg && cfg.operacao;
+    const DIAS_OP = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab'];
+    const ultimo = TS.isoToDay(new Date(Date.UTC(+ym.slice(0, 4), +ym.slice(5, 7), 0)).toISOString().slice(0, 10));
+    const fer = new Map(TS.feriadosDoMes ? TS.feriadosDoMes(cfg, ym).map((f) => [f.data, f]) : []);
+    let restam = 0;
+    for (let d = hojeD; d <= ultimo; d++) {
+      const iso = TS.dayToIso(d), wd = new Date(iso + 'T12:00:00Z').getUTCDay();
+      const f = op && op.funcionamento && op.funcionamento[DIAS_OP[wd]];
+      if (f && f.fechado) continue;
+      if (fer.has(iso) && TS.horarioFeriado && (TS.horarioFeriado({ ...(cfg || {}), operacao: op }, iso) || {}).fechado) continue;
+      restam++;
+    }
+    const falta = Math.max(0, meta - ateOntem);
+    const metaHoje = restam ? falta / restam : falta;
+    const vendHoje = soma(hojeIdx);
+    // participação de cada vendedora nos últimos 30 dias
+    const part = new Map();
+    for (const i of idx(hojeD - 30, hojeD - 1)) { const v = db.D.vendedor[db.vend[i]]; if (v) part.set(v, (part.get(v) || 0) + (db.vt[i] || 0)); }
+    const tot30 = [...part.values()].reduce((a, b) => a + b, 0);
+    const hojeV = new Map();
+    for (const i of hojeIdx) { const v = db.D.vendedor[db.vend[i]]; if (v) hojeV.set(v, (hojeV.get(v) || 0) + (db.vt[i] || 0)); }
+    const souVend = TS.eu && TS.eu.perfil === 'vendedor';
+    const eu = souVend ? String(TS.eu.vendedor || '').toUpperCase() : null;
+    const vends = [...part].filter(([v, x]) => x / tot30 >= 0.03 && (!eu || String(v).toUpperCase() === eu)).sort((a, b) => b[1] - a[1]);
+    const temHoje = db.maxDay >= hojeD;
+    const barra = (feito, alvo) => h('div', { class: 'md-barra' }, h('i', { style: { width: Math.min(100, alvo ? (feito / alvo) * 100 : 0) + '%' } }));
+    return h('div', { class: 'card md-card' },
+      h('div', { class: 'md-topo' },
+        h('div', null, h('div', { class: 'card-title' }, 'Meta de hoje'),
+          h('div', { class: 'card-sub' }, `Falta ${fmt.brl0(falta)} para a meta do mês (${fmt.brl0(meta)}) em ${restam} ${restam === 1 ? 'dia' : 'dias'} de loja aberta`)),
+        h('div', { class: 'md-num' }, h('b', null, fmt.brl0(metaHoje)), temHoje ? h('small', null, `vendido hoje: ${fmt.brl0(vendHoje)}`) : h('small', null, 'as vendas de hoje chegam na próxima atualização'))),
+      temHoje ? barra(vendHoje, metaHoje) : null,
+      vends.length ? h('div', { class: 'md-vends' }, ...vends.map(([v, x]) => {
+        const alvo = metaHoje * (x / tot30), feito = hojeV.get(v) || 0;
+        return h('div', { class: 'md-v' }, h('span', { class: 'md-nome' }, String(v).toLowerCase().replace(/(^|\s)\S/g, (c) => c.toUpperCase())),
+          h('span', { class: 'md-alvo' }, h('b', null, fmt.brl0(alvo)), temHoje ? h('small', null, ` · fez ${fmt.brl0(feito)}${feito >= alvo ? ' ✓' : ''}`) : null),
+          temHoje ? barra(feito, alvo) : null);
+      })) : null,
+      h('small', { class: 'muted md-nota' }, 'A parte de cada vendedora segue a participação dela nas vendas dos últimos 30 dias.'));
+  }
+
   TS.pages.hoje = function (root) {
     if (TS.subClientes) root.append(TS.subClientes('hoje'));
     root.append(h('div', { class: 'page-head' }, h('div', null, h('h1', { class: 'page-title' }, 'Hoje'),
@@ -550,6 +607,8 @@
     if (!TS.cli || !TS.cli.lista) { root.append(h('div', { class: 'notice' }, 'Os clientes ainda não foram carregados.')); return; }
     if (!state.loja || state.loja === 'todas') { root.append(h('div', { class: 'notice' }, 'Escolha uma loja no seletor do topo.')); return; }
     carregarContatos();
+    const md = cartaoMetaDia();
+    if (md) root.append(md);
     const corpo = h('div');
     root.append(corpo);
     const pintar = (val) => {
