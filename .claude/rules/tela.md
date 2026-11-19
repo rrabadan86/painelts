@@ -13,5 +13,6 @@ paths:
 - Esconder na tela não é permissão: o servidor também precisa negar (custo/margem nunca para vendedora; clientes não vão para vendedora).
 - Textos simples e diretos, em português; nada de termos técnicos para a vendedora.
 - Toda tela funciona na apresentação (`/apresentacao`, dados fictícios, nada gravado nem enviado).
+- Celular: tabela com 5+ colunas vira cartão (grade de 2 colunas que encolhem). Nada pode passar da borda do cartão: o teste `tests/e2e/telas.spec.js` confere em todas as telas. Tabela dentro de cartão (ex.: conta por pacote) continua tabela.
 - Mudou algo visível: confira no celular (390 px) — skill `conferir-celular`. Tela nova: skill `nova-tela`.
 - Testes de tela (`tests/e2e`) rodam sempre na apresentação, nos projetos "computador" e "celular".
