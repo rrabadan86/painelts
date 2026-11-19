@@ -8,7 +8,8 @@
   const PAG = { pix: 'PIX', boleto: 'Boleto', cartao: 'Cartão', dinheiro: 'Dinheiro' };
   const pct = (v) => (v == null || !Number.isFinite(v) ? '—' : fmt.pct(v, 1));
   const num = (v) => { const x = Number(String(v ?? '').replace(/\./g, '').replace(',', '.')); return Number.isFinite(x) ? x : 0; };
-  const numIn = (v) => { const x = Number(String(v ?? '').replace(',', '.')); return Number.isFinite(x) ? x : 0; };
+  // campo digitado: "1.234,56" (milhar com ponto), "1234,56" ou "123.45" (teclado com ponto decimal)
+  const numIn = (v) => { const t = String(v ?? '').trim(); const x = Number(t.includes(',') ? t.replace(/\./g, '').replace(',', '.') : t); return Number.isFinite(x) ? x : 0; };
 
   // apresentação: nada é salvo no servidor (fica na memória da página)
   const DEMO = { lista: [], n: 0 };
@@ -323,6 +324,9 @@
     const emitirNfe = () => {
       if (!o.cliente.doc) { if (!confirm('O orçamento está sem CNPJ/CPF: na nota você vai escolher o parceiro à mão. Continuar?')) return; }
       const pu = (i) => i.preco * (1 - (i.desc || 0) / 100) * (1 - (o.descGeral || 0) / 100);
+      // na NF-e o preço unitário vai com 2 casas: com desconto, o total pode mudar alguns centavos — avisa antes
+      const exato = o.itens.reduce((t, i) => t + i.qtd * pu(i), 0), nota = o.itens.reduce((t, i) => t + i.qtd * Math.round(pu(i) * 100) / 100, 0);
+      if (Math.abs(exato - nota) >= 0.005 && !confirm(`Na NF-e o preço de cada unidade vai com 2 casas: os produtos somam ${fmt.brl(nota)} (no orçamento ${fmt.brl(exato)}). Ajuste um preço na nota se precisar bater o centavo. Continuar?`)) return;
       TS.nfPronta = { loja, numero: o.numero, doc: o.cliente.doc, nome: o.cliente.empresa || o.cliente.contato, vendedora: o.vendedora || '', pagamento: o.pagamento, frete: o.frete || 0, obs: `Orçamento nº ${o.numero}`, itens: o.itens.map((i) => ({ cod: i.cod, nome: i.nome, qtd: i.qtd, preco: pu(i) })) };
       location.hash = '#nfsaida';
     };

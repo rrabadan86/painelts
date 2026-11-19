@@ -153,6 +153,9 @@
     const chave = `${state.loja}|${TS.hojeSP()}`;
     if (cacheDia && cacheDia.chave === chave) return cacheDia.p;
     const p = (async () => {
+      // os dados guardados no aparelho podem ser de dias atrás: a análise (fixa o dia inteiro para todos) espera os atuais do servidor
+      for (let k = 0; k < 60 && TS.dadosGuardados; k++) await new Promise((ok) => setTimeout(ok, 250));
+      if (TS.dadosGuardados || `${state.loja}|${TS.hojeSP()}` !== chave) return null;
       const st = await TS.iaApi('GET', `ia/estado?loja=${encodeURIComponent(state.loja || '')}`);
       if (!st.ativa) return null;
       const a = analisar();
@@ -163,7 +166,8 @@
       return TS.iaApi('POST', 'ia/diagnostico', { loja: state.loja, fatos });
     })();
     cacheDia = { chave, p };
-    p.catch(() => { if (cacheDia && cacheDia.chave === chave) cacheDia = null; }); // erro: tenta de novo na próxima vez
+    // erro ou nada (IA desligada, sem dados atuais): tenta de novo na próxima vez — ex.: a chave acabou de ser cadastrada
+    p.then((v) => { if (v == null && cacheDia && cacheDia.chave === chave) cacheDia = null; }, () => { if (cacheDia && cacheDia.chave === chave) cacheDia = null; });
     return p;
   };
   // "já li a análise de hoje" (por aparelho): apaga o pontinho do ✨

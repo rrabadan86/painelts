@@ -78,7 +78,7 @@ DETALHE_JS = """async (id) => {
     const v = achar((x) => x.$data && 'inventario' in x.$data && 'config' in x.$data);
     const inv = v && v.inventario;
     if (inv && inv.id === id && Array.isArray(inv.itens)) {
-      return { itens: inv.itens.map((i) => ({ cod: String(i.produtoCodigo ?? ''), ant: Number(i.quantidadeAnterior), lanc: Number(i.quantidadeLancada) })) };
+      return { itens: inv.itens.map((i) => ({ cod: String(i.produtoCodigo ?? ''), ant: Number(i.quantidadeAnterior ?? 0) || 0, lanc: Number(i.quantidadeLancada ?? 0) || 0 })) };
     }
     await new Promise((r) => setTimeout(r, 300));
   }

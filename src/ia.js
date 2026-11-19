@@ -104,7 +104,11 @@ function alterar(loja, { teto }) {
   const d = ler();
   const r = d.chaves[loja];
   if (!r) return { erro: 'Esta loja não tem chave.' };
-  if (teto !== undefined) r.teto = tetoValido(teto, r.teto);
+  if (teto !== undefined) {
+    const n = teto === null || teto === '' ? null : Number(teto);
+    if (n !== null && !(Number.isFinite(n) && n >= 1 && n <= 1000)) return { erro: 'O teto por mês vai de US$ 1 a US$ 1.000 (ou em branco, sem teto).' };
+    r.teto = tetoValido(teto, r.teto);
+  }
   gravar(d);
   return { ok: true };
 }

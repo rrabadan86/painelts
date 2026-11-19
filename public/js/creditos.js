@@ -137,6 +137,8 @@
   }
 
   /** janela de cobrança por e-mail: escolher o que cobrar, revisar destinatários/assunto/mensagem e enviar */
+  /** falar com a franquia por e-mail: só admin e franqueado (o servidor também confere — D-06) */
+  const podeCobrar = () => !!(TS.eu && ['admin', 'franqueado'].includes(TS.eu.perfil));
   function cobrar(tipo, d, loja) {
     const fid = tipo === 'fidelidade';
     const opcoes = fid
@@ -216,7 +218,7 @@
     return h('div', { class: 'card mt' },
       h('div', { class: 'cfr-topo' }, h('div', null, h('div', { class: 'card-title' }, 'Prêmios de fidelidade · desconto nos royalties'),
         h('div', { class: 'card-sub' }, `A franquia devolve ${fmt.int(fid.pct * 100)}% do custo dos prêmios resgatados no FIXE, como desconto no boleto de royalties (normalmente no royalty do mês seguinte). Lance o desconto que veio, com o mês de referência do royalty, e o painel confere.`)),
-        fid.meses.length ? h('div', { class: 'cfr-btns' }, h('button', { type: 'button', class: 'btn', onclick: () => cobrar('fidelidade', d, loja) }, '✉ Cobrar a franquia'), h('button', { type: 'button', class: 'btn primary', onclick: () => lancarRoyalty(fid, acaoRoy) }, '+ Lançar desconto nos royalties')) : null),
+        fid.meses.length ? h('div', { class: 'cfr-btns' }, podeCobrar() ? h('button', { type: 'button', class: 'btn', onclick: () => cobrar('fidelidade', d, loja) }, '✉ Cobrar a franquia') : null, h('button', { type: 'button', class: 'btn primary', onclick: () => lancarRoyalty(fid, acaoRoy) }, '+ Lançar desconto nos royalties')) : null),
       fid.meses.length ? h('div', { class: 'cfr-res' },
         h('div', { class: r.nAtrasado ? 'ruim' : '' }, h('small', null, 'Atrasado'), h('b', null, fmt.brl(r.atrasado)), h('small', null, r.nAtrasado ? `${r.nAtrasado} mês(es) sem desconto` : 'nada atrasado')),
         h('div', { class: r.nFaltou ? 'ruim' : '' }, h('small', null, 'Veio a menos'), h('b', null, fmt.brl(r.faltou)), h('small', null, r.nFaltou ? `${r.nFaltou} mês(es) com diferença` : 'nenhuma diferença')),
@@ -373,7 +375,7 @@
         TS.kpi('Já compensado', fmt.brl(r.compensado), 'descontado em notas ou marcado à mão')),
       d.descontoLido ? null : h('div', { class: 'notice mt' }, h('b', null, 'Ainda sem o desconto das notas de compra. '), 'O robô passa a ler o desconto na próxima sincronização das notas de entrada. Até lá, as devoluções ficam em aberto.'),
       cardPend,
-      h('div', { class: 'card mt' }, h('div', { class: 'cfr-topo' }, h('div', { class: 'card-title' }, 'Devoluções'), d.creditos.some((c) => c.situacao === 'atrasado' || c.situacao === 'aberto' || c.situacao === 'confirmar') ? h('button', { type: 'button', class: 'btn', onclick: () => cobrar('devolucoes', d, loja) }, '✉ Cobrar a franquia') : null),
+      h('div', { class: 'card mt' }, h('div', { class: 'cfr-topo' }, h('div', { class: 'card-title' }, 'Devoluções'), podeCobrar() && d.creditos.some((c) => c.situacao === 'atrasado' || c.situacao === 'aberto' || c.situacao === 'confirmar') ? h('button', { type: 'button', class: 'btn', onclick: () => cobrar('devolucoes', d, loja) }, '✉ Cobrar a franquia') : null),
         h('div', { class: 'card-sub' }, `Cada NF-e de devolução autorizada${variosForn ? '' : ` para ${d.creditos[0] ? d.creditos[0].fornecedor : 'a franquia'}`}. Sem desconto em ${d.prazo} dias = atrasada. Clique para abrir a NF-e.`),
         h('div', { class: 'est-tools' }, tab.searchBox, seg), tab),
       cardPremios,

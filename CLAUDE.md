@@ -9,13 +9,14 @@ Painel de vendas das lojas Tea Shop (substitui o Power BI). Responda sempre em *
 - **Apresentação:** `/apresentacao` mostra dados fictícios (`src/demo.js`, rotas `/api/demo/...`) e **nunca grava nem envia nada**.
 - **IA:** ✨ Pergunte ao painel, diagnóstico do Início e revisão do pedido (`src/ia*.js`, `public/js/ia.js`).
 
-Regras por parte do código ficam em `.claude/rules/` e carregam sozinhas ao mexer nos arquivos: `tela.md`, `coletor.md`, `ia.md`, `nfe.md`.
+Regras por parte do código ficam em `.claude/rules/` e carregam sozinhas ao mexer nos arquivos: `tela.md`, `visual.md` (padrão de layout: cabeçalho, avisos, quadros, card com abas e `TS.table`, cores por classe, celular), `coletor.md`, `ia.md`, `nfe.md`.
 Roteiros em `.claude/skills/`: `subir-versao`, `conferir-celular`, `nova-tela`, `nova-consulta-ia`.
 Hooks (`.claude/settings.json`): bloqueiam commit/push de segredos e limpam os restos dos testes de tela.
 
 ## Convenções de código
 - Rota que grava exige o cabeçalho `X-Painel: 1`; ações importantes vão para a auditoria (`C.auditar`).
 - Toda tela/rota nova precisa funcionar na apresentação: crie a rota `/api/demo/...` (dados fictícios ou resposta simulada, sem gravar).
+- **Layout sempre no padrão** de `.claude/rules/visual.md`: lista com mais de ~5 itens é `TS.table` (busca, ordenação, páginas, cartão no celular), nunca pilha de cartões; cores por classe/token; conferir prints no computador e no celular.
 - Permissões no servidor (`req.perfil`, `podeTela`, `podeClientes`, `podeCustos`), não só escondendo na tela.
 - Testes: unidade em `tests/unit/*.test.js` (`node --test`); tela em `tests/e2e/*.spec.js` (Playwright, sempre na apresentação, projetos "computador" e "celular").
 - **Matriz de rastreabilidade:** `docs/rastreabilidade.md` liga cada regra (código PERF-01, ESC-16…) ao código e ao teste que a cobre. Mudou ou criou regra: atualize a linha no mesmo PR (onde está, teste, cobertura); achou erro ou lacuna: registre nos Achados.

@@ -23,3 +23,4 @@ paths:
 - Saídas do robô em JSON (`SAIDA_RESULTADO`/`SAIDA_SESSAO`): o painel lê esses arquivos; mantenha os campos que ele já usa.
 - Logs não podem ter senha, token, CPF completo nem e-mail pessoal do dono.
 - Dados temporários de teste: apague depois.
+- Dado que vem do AppNext pode faltar ou vir em outro formato: número com `?? 0`, data com `Date.parse` conferida — um `NaN`/data inválida gravado no JSON derruba a leitura no painel.

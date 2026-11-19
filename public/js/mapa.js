@@ -16,6 +16,8 @@
    * redondo (09:40 → o bloco das 09:30 conta), e guarda os minutos exatos: [bloco inicial, bloco final, abre, fecha].
    */
   const faixaDia = (f) => (f && !f.fechado ? [Math.floor(hm(f.abre) / B), Math.ceil(hm(f.fecha) / B), hm(f.abre), hm(f.fecha)] : null);
+  /** cobertura da hora na grade: o menor número de pessoas nos blocos da hora que estão dentro do horário da loja */
+  const cobHora = (linha, fx, hr) => { const xs = []; for (let s0 = hr * PH; s0 < hr * PH + PH; s0++) if (!fx || (s0 >= fx[0] && s0 < fx[1])) xs.push(linha[s0]); return xs.length ? Math.min(...xs) : 0; };
   /** turno em minutos: quem abre começa na hora exata da abertura e quem fecha sai na hora exata do fechamento (mesma jornada) */
   /**
    * Intervalo (min) de uma jornada: acima de 8h → "intervalo" da equipe; de 4h a 8h → "intervaloAte8"
@@ -36,6 +38,7 @@
     if (!intervalo) return 0;
     if (len * B - intervalo > 360) return intervalo / B; // ainda mais de 6h de trabalho: intervalo inteiro
     const iv = Math.min(intervalo, IV_CURTO);            // turno de até 6h (dia curto): o intervalo dessa faixa
+    if (len * B - iv > 360) return intervalo / B;         // com o intervalo curto passaria de 6h de trabalho: precisa do inteiro (CLT)
     return len * B > 240 ? iv / B : 0;                    // mais de 4h seguidas pede intervalo (CLT); até 4h, sem
   }
   /** intervalo de um turno já em minutos (feriado cortado, ajuste manual): o que a jornada real pede, no meio do turno */
@@ -43,7 +46,10 @@
     const dur = fim - ini;
     const ivA = +e.intervalo || 0;
     if (dur <= 240) return null; // até 4h: sem intervalo
-    let iv = Math.round((dur - ivA > 480 ? ivA : intervaloMin(e, dur - intervaloMin(e, Math.min(dur, 480)))) / B) * B;
+    // o menor intervalo que cobre o trabalho que sobra (sempre crescente com o turno): tenta o das faixas de 4h–6h, 6h–8h e acima de 8h
+    const cands = [...new Set([intervaloMin(e, 300), intervaloMin(e, 420), intervaloMin(e, 481), ivA])].filter((x) => x > 0).sort((a, b) => a - b);
+    let iv = cands.find((c) => c >= intervaloMin(e, dur - c)) ?? cands[cands.length - 1] ?? 0;
+    iv = Math.round(iv / B) * B;
     if (!iv) iv = Math.round(intervaloMin(e, 300) / B) * B; // mais de 4h seguidas: no mínimo o intervalo curto (CLT)
     if (!iv) return null;
     if (antes && antes[1] - antes[0] === iv && antes[0] >= ini + 120 && antes[1] <= fim - 120) return antes; // o de antes ainda serve
@@ -56,6 +62,24 @@
   /** abaixo do mínimo da CLT? (acima de 6h: 1h; de 4h a 6h: 15 min) */
   const abaixoClt = (jorn, int) => (jorn > 360 ? int < 60 : jorn > 240 ? int < 15 : false);
   TS._intervalo = { intervaloMin, abaixoClt, pausaDoTurno: (...a) => pausaDoTurno(...a) };
+  /**
+   * Replicar/Trazer mês: cada dia do destino recebe os ajustes do dia EQUIVALENTE da origem — mesma chave (semana do rodízio +
+   * dia da semana) e a mesma ocorrência no mês (1ª, 2ª…). Ajuste pontual vai só para um dia (decisão do dono). Feriados ficam de fora.
+   * Devolve { 'AAAA-MM-DD': { NOME: ajuste } } (sem filtrar equipe/férias).
+   */
+  function diasEquivalentes(srcYm, dstYm, src, chave, ferSrc = new Set(), ferDst = new Set()) {
+    const diasDe = (m) => Array.from({ length: new Date(Date.UTC(+m.slice(0, 4), +m.slice(5, 7), 0)).getUTCDate() }, (_, k) => `${m}-${String(k + 1).padStart(2, '0')}`);
+    const filas = new Map();
+    for (const d of diasDe(srcYm)) { const ch = chave(d); (filas.get(ch) || filas.set(ch, []).get(ch)).push(ferSrc.has(d) ? null : (src || {})[d] || null); }
+    const usados = new Map(), out = {};
+    for (const d of diasDe(dstYm)) {
+      const ch = chave(d), k = usados.get(ch) || 0;
+      usados.set(ch, k + 1);
+      const a = !ferDst.has(d) && (filas.get(ch) || [])[k];
+      if (a && Object.keys(a).length) out[d] = a;
+    }
+    return out;
+  }
   function paraTurno(o, ab) {
     let ini = o.s * B, fim = (o.s + o.len) * B;
     let pausa = o.pausa != null && o.intSlots ? [o.pausa * B, (o.pausa + o.intSlots) * B] : null;
@@ -147,8 +171,9 @@
     const jornada = (e.cargaSemanal * 60) / diasTrab; // jornada diária exata (ex.: 44h na 5x2 = 8h48)
     const trabMin = Math.round(jornada / B) * B; // na escala, arredondada para blocos de 10 min
     const intervalo = intervaloBloco(e, trabMin);
-    const slotsNeed = need.map((row) => Array.from({ length: NB }, (_, s) => row[Math.floor(s / PH)]));
     const abertura = DIAS.map((d) => faixaDia(op.funcionamento[d]));
+    // precisa de gente só dentro do horário da loja: com abertura 09:40, os blocos das 09:00–09:40 não contam
+    const slotsNeed = need.map((row, wd) => Array.from({ length: NB }, (_, s) => (abertura[wd] && s >= abertura[wd][0] && s < abertura[wd][1] ? row[Math.floor(s / PH)] : 0)));
     const cob = Array.from({ length: 7 }, () => Array(NB).fill(0));
     const pessoas = [];
     const maxF = Math.max(1, Math.min(10, Math.round(+e.maxFolgaDia || 1)));
@@ -314,9 +339,10 @@
     const jornada = (e.cargaSemanal * 60) / diasBase;
     const trabMin = Math.round(jornada / B) * B;
     const intervalo = intervaloBloco(e, trabMin);
-    const slotsNeed = need.map((row) => Array.from({ length: NB }, (_, x) => row[Math.floor(x / PH)]));
     const abertura = DIAS.map((d) => faixaDia(op.funcionamento[d]));
+    const slotsNeed = need.map((row, wd) => Array.from({ length: NB }, (_, x) => (abertura[wd] && x >= abertura[wd][0] && x < abertura[wd][1] ? row[Math.floor(x / PH)] : 0)));
     const DOM = 6, SEG = 0;
+    const fechadosSem = [0, 1, 2, 3, 4, 5, 6].filter((wd) => !abertura[wd]);
     const domAberto = !!abertura[DOM];
     // quantas pessoas no domingo
     // no máximo maxF pessoas de folga no mesmo dia (domingo incluído)
@@ -368,7 +394,8 @@
         } else if (folgaDom.has(i)) { offs[i].add(DOM); offs[i].add(SEG); cont[DOM]++; cont[SEG]++; motivos[i][DOM] = 'Folga (rodízio)'; motivos[i][SEG] = 'Folga (após domingo)'; }
       });
       // folgas que ainda faltam na semana (5x2: 2; 6x1: 1), descontando as que o domingo já deu
-      const precisa = (i) => Math.max(0, (seis ? 1 : 2) - offs[i].size);
+      // dia em que a loja fecha conta como folga para todos (5x2 com segunda fechada: 5 dias, não 4)
+      const precisa = (i) => Math.max(0, (seis ? 1 : 2) - new Set([...offs[i], ...fechadosSem]).size);
       const manuais = (i) => [pessoas[i].folga, pessoas[i].folga2].filter((f) => f && f !== 'auto').length;
       const ordemP = pessoas.map((_, i) => i).sort((x, y) => manuais(y) - manuais(x) || ((x - w + N * 9) % N) - ((y - w + N * 9) % N));
       for (const i of ordemP) {
@@ -425,7 +452,7 @@
     }
     return { semanas, L, kDom, folgamDom, trabMin, jornada, intervalo, diasBase, fixos, maxF };
   }
-  TS._escala = { montarRodizio: (...a) => montarRodizio(...a), montarEscala: (...a) => montarEscala(...a), B, PH };
+  TS._escala = { montarRodizio: (...a) => montarRodizio(...a), montarEscala: (...a) => montarEscala(...a), diasEquivalentes, B, PH };
   const resumoRodizio = (r) => ({ descoberto: r.semanas.reduce((s, w) => s + w.descoberto, 0), abaixo: r.semanas.reduce((s, w) => s + w.abaixo, 0) });
 
   // ---------- editor de horário e equipe (usado aqui e em Configurações) ----------
@@ -656,7 +683,7 @@
       h('tbody', null, DIAS_CURTO.map((dn, wd) => h('tr', null, h('th', { class: 'l' }, dn), horas.map((hr) => {
         const n = need[wd][hr];
         if (!n) return h('td', { class: 'fechado' });
-        const c = Math.min(...esc.cob[wd].slice(hr * PH, hr * PH + PH)); // a hora inteira (PH blocos)
+        const c = cobHora(esc.cob[wd], faixaDia(op.funcionamento[DIAS[wd]]), hr); // a hora (blocos dentro do horário da loja)
         const cls = c === 0 ? 'vazio' : c < n ? 'falta' : c > n ? 'sobra' : 'ok';
         return h('td', { class: cls, title: `${DIAS_NOME[wd]} ${hr}h: ${c} na loja, precisa de ${n}` }, c);
       })))));
@@ -973,8 +1000,9 @@
         AJ.sujo = false; AJ.msg = ''; TS.render();
       } catch (e) { btn.textContent = e.message; btn.disabled = false; }
     };
-    // replicar os ajustes para outro mês mantendo a alternância: cada dia recebe os ajustes do dia do mês de origem
-    // com o MESMO dia da semana e a MESMA semana do rodízio (quem folga no domingo continua girando). Feriados e férias ficam de fora.
+    // replicar os ajustes para outro mês mantendo a alternância: cada dia recebe os ajustes do dia EQUIVALENTE do mês de origem
+    // (mesmo dia da semana, mesma semana do rodízio e a mesma ocorrência no mês: 1ª terça dessa semana do rodízio → 1ª terça).
+    // Ajuste pontual vai só para um dia (decisão do dono). Feriados e férias ficam de fora.
     const ancoraR = inicioDe(op.equipe, op.equipe.inicioRodizio || INICIO_PADRAO);
     const semR = (iso) => (L > 1 ? (((Math.round((diaMs(inicioDe(op.equipe, iso)) - diaMs(ancoraR)) / (7 * 86400000)) % L) + L) % L) : 0);
     const nomesEq = new Set(pessoasDe(op.equipe).map((q) => q.nome.trim().toUpperCase()));
@@ -982,14 +1010,8 @@
     function replicar(srcYm, dstYm, src) {
       const ferSrc = new Set(TS.feriadosDoMes ? TS.feriadosDoMes(cfg, srcYm).map((f) => f.data) : []);
       const ferDst = new Set(TS.feriadosDoMes ? TS.feriadosDoMes(cfg, dstYm).map((f) => f.data) : []);
-      const porChave = new Map(); // "semana|dia da semana" → ajustes do último dia assim no mês de origem
-      for (const d of Object.keys(src).sort()) if (!ferSrc.has(d) && Object.keys(src[d] || {}).length) porChave.set(`${semR(d)}|${wdDe(d)}`, src[d]);
-      const nD = new Date(Date.UTC(+dstYm.slice(0, 4), +dstYm.slice(5, 7), 0)).getUTCDate();
       const out = {}; let n = 0;
-      for (let k = 1; k <= nD; k++) {
-        const d = `${dstYm}-${String(k).padStart(2, '0')}`;
-        const a = !ferDst.has(d) && porChave.get(`${semR(d)}|${wdDe(d)}`);
-        if (!a) continue;
+      for (const [d, a] of Object.entries(diasEquivalentes(srcYm, dstYm, src, (iso) => `${semR(iso)}|${wdDe(iso)}`, ferSrc, ferDst))) {
         for (const [nome, x] of Object.entries(a)) if (nomesEq.has(nome) && !deFerias(nome, d)) { (out[d] ||= {})[nome] = { ...x }; n++; }
       }
       return { out, n };
@@ -997,7 +1019,7 @@
     const iM = meses.indexOf(ym), prox = meses[iM + 1], ant = meses[iM - 1];
     const salvos = (m) => ((cfg && cfg.escalaAjustes) || {})[m] || {};
     const nomeMes = (m) => TS.MESES_LONGOS[+m.slice(5, 7) - 1].toLowerCase();
-    const btnReplicar = pode && prox && nAj ? h('button', { type: 'button', class: 'btn', title: `Leva os ajustes deste mês para ${nomeMes(prox)}, seguindo o rodízio (mesma semana do rodízio e mesmo dia da semana). Você confere lá antes de salvar.`, onclick: () => {
+    const btnReplicar = pode && prox && nAj ? h('button', { type: 'button', class: 'btn', title: `Leva os ajustes deste mês para ${nomeMes(prox)}, cada um para o dia equivalente (mesma semana do rodízio e mesmo dia da semana): ajuste pontual vai só para um dia. Você confere lá antes de salvar.`, onclick: () => {
       if (AJ.sujo) { alert('Salve os ajustes deste mês antes de replicar.'); return; }
       if (Object.keys(salvos(prox)).length && !confirm(`${TS.MESES_LONGOS[+prox.slice(5, 7) - 1]} já tem ajustes salvos. Substituir pelos deste mês? (você ainda confere antes de salvar)`)) return;
       const r = replicar(ym, prox, AJ.dados);
@@ -1063,7 +1085,7 @@
       h('tbody', null, ORDEM.map((wd) => h('tr', null, h('th', { class: 'l' }, DIAS_CURTO[wd]), horas.map((hr) => {
         const n = need[wd][hr];
         if (!n) return h('td', { class: 'fechado' });
-        const c = Math.min(...w.cob[wd].slice(hr * PH, hr * PH + PH));
+        const c = cobHora(w.cob[wd], faixaDia(op.funcionamento[DIAS[wd]]), hr);
         const cls = c === 0 ? 'vazio' : c < n ? 'falta' : c > n ? 'sobra' : 'ok';
         return h('td', { class: cls, title: `${DIAS_NOME[wd]} ${hr}h: ${c} na loja, precisa de ${n}` }, c);
       })))));

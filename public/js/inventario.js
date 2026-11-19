@@ -437,7 +437,8 @@
     };
     const zeroRows = c.planilha && c.planilha.itens
       ? c.planilha.itens.filter((l) => l.zerado || l.naoContado || (naoCont.has(l.cod) && !l.nova)).map((l) => linhaZero(l, l.antes || 0, l.custo, l.zerado ? 'fora da contagem' : 'não contado'))
-      : [...(c.semContarZero ? c.itens.filter((i) => i.cont == null && i.sis != null && Math.abs(i.sis) > 0.0005).map((i) => linhaZero(i, i.sis, i.custo, 'não contado')) : []),
+      // não contado: a planilha usa o saldo de AGORA (o servidor também); item que recebeu entrada durante a contagem aparece aqui
+      : [...(c.semContarZero ? c.itens.map((i) => ({ i, base: c.agora && c.agora[i.cod] != null ? c.agora[i.cod] : i.sis })).filter(({ i, base }) => i.cont == null && base != null && Math.abs(base) > 0.0005).map(({ i, base }) => linhaZero(i, base, i.custo, 'não contado')) : []),
         ...zerados.map((r) => linhaZero(r, r.qtd || 0, r.custo, 'fora da contagem'))];
     const valorZero = zeroRows.reduce((s0, r) => s0 + (r.dr < 0 ? -r.dr : 0), 0);
     const sobra = rows.reduce((s0, r) => s0 + (r.dr > 0 ? r.dr : 0), 0), falta = rows.reduce((s0, r) => s0 + (r.dr < 0 ? -r.dr : 0), 0) + valorZero;

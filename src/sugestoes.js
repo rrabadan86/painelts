@@ -67,6 +67,9 @@ function criar(id, b, por, nome, estoque) {
   if (precisaJustificar(sit) && justificativa.length < 5) return { erro: 'Este produto ainda tem na loja: conte por que pedir mais (ex.: "cliente leva sempre 3").' };
   const s = { id: crypto.randomBytes(6).toString('hex'), cod, desc: it.desc, un: it.un || '', por, nome: txt(nome || por, 60), em: new Date().toISOString(),
     recado: txt(b.recado, 300), justificativa: precisaJustificar(sit) ? justificativa : '', situacao: sit, st: 'aberta', hist: [], decisao: null };
+  // o produto já foi pedido e está aguardando entrega: esta estrela segue junto (sai quando ele chegar)
+  const junto = d.itens.find((x) => x.st === 'aberta' && x.cod === cod && x.aguardando);
+  if (junto) { s.aguardando = { ...junto.aguardando }; s.hist.push({ em: junto.aguardando.em, res: 'pedido', motivo: 'já estava no pedido', por: junto.aguardando.por }); }
   d.itens.push(s);
   gravar(id, d);
   return { ok: s };
@@ -86,8 +89,8 @@ function retirar(id, sid, por, podeTodos) {
 /** decisão de quem faz o pedido para um produto: "Não agora" com motivo (res 'nao') ou volta a ficar sem decisão (res null) */
 function decidir(id, cod, b, por) {
   const d = ler(id);
-  const abertas = d.itens.filter((s) => s.st === 'aberta' && s.cod === String(cod));
-  if (!abertas.length) return { erro: 'Nenhuma sugestão aberta para este produto.' };
+  const abertas = d.itens.filter((s) => s.st === 'aberta' && s.cod === String(cod) && !s.aguardando);
+  if (!abertas.length) return { erro: 'Nenhuma sugestão aberta para este produto (ou ele já está aguardando entrega).' };
   const dec = b && b.res === 'nao' ? { res: 'nao', motivo: txt(b.motivo, 120) || 'Não entrou desta vez', por, em: new Date().toISOString() } : null;
   for (const s of abertas) s.decisao = dec;
   gravar(id, d);
@@ -100,14 +103,27 @@ function decidir(id, cod, b, por) {
  */
 function fechar(id, itens, por) {
   const d = ler(id);
-  const porCod = new Map((Array.isArray(itens) ? itens : []).slice(0, 5000).map((x) => [String(x && x.cod), x || {}]));
-  const em = new Date().toISOString();
+  // o mesmo produto pode vir em mais de uma linha (ex.: no pedido obrigatório e a mais no carrinho): soma e vale a melhor situação
+  const porCod = new Map();
+  for (const x of (Array.isArray(itens) ? itens : []).slice(0, 5000)) {
+    if (!x) continue;
+    const k = String(x.cod), a = porCod.get(k), pedir = Number(x.pedir) || 0;
+    const vai = pedir > 0 && ['ok', 'sem', 'obrig'].includes(x.site);
+    if (!a) porCod.set(k, { cod: k, pedir: vai ? pedir : 0, site: vai ? 'ok' : x.site });
+    else if (vai) { a.pedir += pedir; a.site = 'ok'; }
+  }
+  const em = new Date().toISOString(), hoje = C.diaSP();
   const n = { pedido: 0, semsite: 0, nao: 0 };
+  const aguardam = new Set(d.itens.filter((s) => s.st === 'aberta' && s.aguardando).map((s) => s.cod));
   for (const s of d.itens) {
-    if (s.st !== 'aberta' || s.aguardando) continue; // já pedida: espera a nota
+    if (s.st !== 'aberta' || s.aguardando || aguardam.has(s.cod)) continue; // já pedido: espera a nota
+    const ult = (s.hist || [])[(s.hist || []).length - 1];
     const x = porCod.get(s.cod);
+    const vai = x && x.pedir > 0 && x.site === 'ok';
+    // registrar de novo no mesmo dia (montar o carrinho e depois "Registrar"): só muda quem passou a ir no pedido
+    if (ult && ['nao', 'semsite'].includes(ult.res) && C.diaSP(ult.em) === hoje && !vai) continue;
     let h;
-    if (x && Number(x.pedir) > 0 && (x.site === 'ok' || x.site === 'sem')) { h = { em, res: 'pedido', motivo: '', por }; s.aguardando = { em, por, qtd: Number(x.pedir) }; }
+    if (vai) { h = { em, res: 'pedido', motivo: '', por }; s.aguardando = { em, por, qtd: x.pedir }; }
     else if (x && (x.site === 'indisp' || x.site === 'fora')) h = { em, res: 'semsite', motivo: 'Sem estoque no site da franquia (automático)', por };
     else h = { em, res: 'nao', motivo: (s.decisao && s.decisao.motivo) || 'Não entrou desta vez', por };
     (s.hist = s.hist || []).push(h);
@@ -123,7 +139,7 @@ const JANELA_DIAS = 5, SEM_NOTA_DIAS = 30;
 const somaDias = (dia, n) => new Date(Date.parse(dia + 'T12:00:00Z') + n * 864e5).toISOString().slice(0, 10);
 const diaBR = (iso) => C.diaSP(iso);
 const dm = (dia) => `${dia.slice(8, 10)}/${dia.slice(5, 7)}`;
-const STATUS_CARRINHO = { sem_estoque: 'sem estoque no fornecedor', recusado: 'o site recusou', indisponivel: 'indisponível no site', nao_encontrado: 'o site não achou o produto', acima_do_maximo: 'acima do máximo do site' };
+const STATUS_CARRINHO = { erro: 'erro ao pôr no carrinho', sem_estoque: 'sem estoque no fornecedor', recusado: 'o site recusou', indisponivel: 'indisponível no site', nao_encontrado: 'o site não achou o produto', acima_do_maximo: 'acima do máximo do site' };
 
 /** fim do carrinho montado pelo favorito: o que o site não aceitou volta para o próximo pedido */
 function resultadoCarrinho(id, itens) {
@@ -136,7 +152,7 @@ function resultadoCarrinho(id, itens) {
     const x = ruim.get(s.cod);
     if (s.st !== 'aberta' || !s.aguardando || !x || Date.now() - Date.parse(s.aguardando.em) > 3 * 864e5) continue;
     (s.hist = s.hist || []).push({ em, res: 'naopediu', motivo: `Não foi possível pedir: ${STATUS_CARRINHO[x.status]}` });
-    delete s.aguardando; n++;
+    delete s.aguardando; s.decisao = null; n++;
   }
   if (n) gravar(id, d);
   return { ok: n };
@@ -154,7 +170,7 @@ function avaliarNotas(id, notas, hoje = C.diaSP()) {
   // emi = emissão (vale só a partir do dia do pedido); ent = entrada no AppNext (quando chegou na loja: a janela conta daqui)
   const dia10 = (v) => String(v || '').slice(0, 10);
   const fr = ((notas && notas.notas) || [])
-    .filter((n) => FRANQUIA.test(String(n.fornecedor || '')) && !/devolu|troca/i.test(n.motivo || ''))
+    .filter((n) => FRANQUIA.test(String(n.fornecedor || '')) && !/devolu|troca/i.test(n.motivo || '') && /^conclu/i.test(n.status || ''))
     .map((n) => ({ nf: `${n.nf ?? ''}${n.serie ? '/' + n.serie : ''}`, emi: dia10(n.emissao || n.entrada), ent: dia10(n.entrada || n.emissao), cods: new Set((n.itens || []).map((i) => String(i.cod))) }))
     .filter((n) => /^\d{4}-\d{2}-\d{2}$/.test(n.emi) && /^\d{4}-\d{2}-\d{2}$/.test(n.ent))
     .sort((a, b) => (a.ent < b.ent ? -1 : a.ent > b.ent ? 1 : 0));
@@ -169,14 +185,14 @@ function avaliarNotas(id, notas, hoje = C.diaSP()) {
     if (!s.aguardando) {
       // já voltou para o próximo pedido, mas o produto chegou depois numa nota da franquia emitida a partir do 1º pedido
       const ped1 = diaBR(s.hist.find((x) => x.res === 'pedido').em);
-      const tarde = fr.find((n) => n.emi >= ped1 && n.cods.has(s.cod));
+      const tarde = fr.find((n) => n.emi > ped1 && n.cods.has(s.cod));
       if (tarde) chegou(s, tarde);
       continue;
     }
     const pedDia = diaBR(s.aguardando.em);
-    const depois = fr.filter((n) => n.emi >= pedDia);
+    const depois = fr.filter((n) => n.emi > pedDia); // emitida DEPOIS do dia do pedido: a nota da manhã do pedido é do pedido anterior
     if (!depois.length) {
-      if (hoje > somaDias(pedDia, SEM_NOTA_DIAS)) { s.hist.push({ em, res: 'naoveio', motivo: `Nenhuma nota da franquia em ${SEM_NOTA_DIAS} dias depois do pedido` }); delete s.aguardando; mudou++; }
+      if (hoje > somaDias(pedDia, SEM_NOTA_DIAS)) { s.hist.push({ em, res: 'naoveio', motivo: `Nenhuma nota da franquia em ${SEM_NOTA_DIAS} dias depois do pedido` }); delete s.aguardando; s.decisao = null; mudou++; }
       continue;
     }
     const fimJanela = somaDias(depois[0].ent, JANELA_DIAS);
@@ -185,7 +201,7 @@ function avaliarNotas(id, notas, hoje = C.diaSP()) {
     else if (hoje > fimJanela) {
       const entrega = depois.filter((n) => n.ent <= fimJanela);
       s.hist.push({ em, res: 'naoveio', motivo: `Não veio na entrega de ${dm(depois[0].ent)} (NF ${entrega.map((n) => n.nf).join(', ')}): indisponível no fornecedor` });
-      delete s.aguardando; mudou++;
+      delete s.aguardando; s.decisao = null; mudou++;
     }
   }
   if (mudou) gravar(id, d);
@@ -210,7 +226,13 @@ function lista(id, por, todos) {
   const abertasPorCod = new Map();
   for (const s of d.itens) if (s.st === 'aberta') abertasPorCod.set(s.cod, (abertasPorCod.get(s.cod) || 0) + 1);
   const xs = (todos ? d.itens : d.itens.filter((s) => s.por === por)).slice(-500).reverse();
-  return xs.map((s) => ({ ...s, novo: s.por === por && novo(s), equipe: s.st === 'aberta' ? abertasPorCod.get(s.cod) || 1 : null, ...(todos ? {} : { por: undefined }) }));
+  const semLogin = (x) => (x ? { ...x, por: undefined } : x);
+  return xs.map((s) => {
+    const base = { ...s, novo: s.por === por && novo(s), equipe: s.st === 'aberta' ? abertasPorCod.get(s.cod) || 1 : null };
+    if (todos) return base;
+    // quem só sugere vê o andamento, sem quantidade pedida nem o login de quem decidiu
+    return { ...base, por: undefined, aguardando: s.aguardando ? { em: s.aguardando.em } : undefined, decisao: undefined, hist: (s.hist || []).map(semLogin) };
+  });
 }
 
 /** para o Pedido: as abertas agrupadas por produto */

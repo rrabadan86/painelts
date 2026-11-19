@@ -59,7 +59,8 @@
   async function fechar(loja, itens) {
     if (!TS.demo) return enviar('POST', `/api/pedido/sugestoes/fechar?${q(loja)}`, { itens });
     await carregar(loja);
-    const porCod = new Map(itens.map((x) => [String(x.cod), x])), em = new Date().toISOString(), n = { pedido: 0, semsite: 0, nao: 0 };
+    const porCod = new Map(), em = new Date().toISOString(), n = { pedido: 0, semsite: 0, nao: 0 };
+    for (const x of itens) { const vai = x.pedir > 0 && ['ok', 'sem', 'obrig'].includes(x.site), a = porCod.get(String(x.cod)); if (!a) porCod.set(String(x.cod), { pedir: vai ? x.pedir : 0, site: vai ? 'ok' : x.site }); else if (vai) { a.pedir += x.pedir; a.site = 'ok'; } }
     for (const s of DEMO.d.itens) {
       if (s.st !== 'aberta' || s.aguardando) continue;
       const x = porCod.get(s.cod);

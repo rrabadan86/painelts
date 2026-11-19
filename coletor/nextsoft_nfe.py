@@ -389,7 +389,11 @@ def id_da_resposta(resp):
 
 
 def achar_saida_concluida(page, parceiro_nome, total):
-    """sem o id na resposta: a saída concluída mais nova deste parceiro com este total, na lista do AppNext"""
+    """sem o id na resposta: a saída concluída deste parceiro com este total, na lista do AppNext.
+    Só devolve se houver EXATAMENTE uma candidata e o nome do parceiro vier: na dúvida (duas saídas iguais, sem parceiro),
+    não homologa nada — quem decide é a pessoa, no AppNext (homologar a nota errada transmite à SEFAZ uma nota que ninguém revisou)."""
+    if not str(parceiro_nome or "").strip():
+        return None
     page.evaluate("() => { location.hash = '#/estoque/saida-produto'; }")
     for _ in range(30):
         page.wait_for_timeout(1000)
@@ -398,7 +402,7 @@ def achar_saida_concluida(page, parceiro_nome, total):
           cands.sort((p, q) => String(q.dataSaida).localeCompare(String(p.dataSaida)));
           return { ok: true, id: cands[0] ? cands[0].id : null, n: cands.length }; } f.push(...(x.$children||[]));} return null; }""", {"nome": parceiro_nome or "", "total": float(total or 0)})
         if r and r.get("ok"):
-            return r.get("id")
+            return r.get("id") if r.get("n") == 1 else None
     return None
 
 
@@ -550,7 +554,7 @@ def devolucao(page, pedido, t0):
         gravar({"ok": True, "nota": r})
         return 0
     log("   ✓ o AppNext concluiu a saída de devolução")
-    sid = r["saidaId"] or achar_saida_concluida(page, "", r["total"])
+    sid = r["saidaId"]  # sem o id da resposta não procura: homologar a saída errada transmitiria outra nota à SEFAZ
     if not sid:
         gravar({"ok": False, "concluida": True, "nota": r, "erro": "a devolução foi CONCLUÍDA no AppNext, mas não achei a saída para homologar: homologue lá (Estoque → Saída de Produtos)"})
         return 1
@@ -719,7 +723,10 @@ def emitir_venda(page, pedido, r, t0):
             ok = True
             break
     if not ok:
-        raise RuntimeError("o AppNext não confirmou a conclusão da saída" + (f" (HTTP {resp.get('status')} {resp.get('corpo', '')[:200]})" if resp else "") + ": nada foi transmitido")
+        if (resp.get("status") or 0) >= 400:
+            raise RuntimeError(f"o AppNext recusou a conclusão da saída (HTTP {resp.get('status')} {resp.get('corpo', '')[:200]}): nada foi transmitido")
+        # sem resposta de erro: o AppNext pode ter concluído depois do tempo — conferir antes de tentar de novo (senão vira nota em dobro)
+        raise RuntimeError("o AppNext não confirmou a conclusão da saída a tempo: CONFIRA em Estoque → Saída de Produtos se ela foi concluída antes de emitir de novo (nada foi homologado)")
     log("   ✓ o AppNext concluiu a saída")
     sid = id_da_resposta(resp) or achar_saida_concluida(page, r.get("parceiro"), r["total"])
     if not sid:

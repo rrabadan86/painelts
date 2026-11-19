@@ -26,12 +26,14 @@ before(async () => {
       ger_sem: u('gerente', { telas: ['resumo', 'mapa'], telasV: 8 }),
       ger_com: u('gerente', { telas: ['resumo', 'sugestoes', 'espera'], telasV: 8 }),
       ger_pad: u('gerente', { telasV: 8 }),
+      ger_notas: u('gerente', { telas: ['notas'], telasV: 8 }),
+      vend2: u('vendedor', { vendedor: 'BIA' }),
       vend: u('vendedor', { vendedor: 'ANA' }),
     },
   }));
   srv = spawn(process.execPath, ['server.js'], { cwd: path.join(__dirname, '../..'), env: { ...process.env, PORT: String(PORTA), DATA_DIR: tmp, CONFIG_FILE, SESSION_SECRET: 'teste-permissoes', NODE_ENV: 'test' }, stdio: 'ignore' });
   for (let k = 0; k < 100; k++) { try { const r = await fetch(BASE + '/login'); if (r.status < 500) break; } catch { /* subindo */ } await new Promise((ok) => setTimeout(ok, 100)); }
-  for (const nome of ['dono', 'ger_sem', 'ger_com', 'ger_pad', 'vend']) {
+  for (const nome of ['dono', 'ger_sem', 'ger_com', 'ger_pad', 'ger_notas', 'vend', 'vend2']) {
     const r = await fetch(BASE + '/login', { method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: `usuario=${nome}&senha=senha-teste-123` });
     const c = (r.headers.get('set-cookie') || '').split(';')[0];
     assert.ok(c.startsWith('ts_sess='), `login de ${nome}`);
@@ -81,4 +83,25 @@ test('Configurações → Usuários recebe a lista de telas agrupada como no men
   assert.deepStrictEqual(j.telas.map((g) => g.grupo), ['Início', 'Vendas', 'Clientes', 'Equipe', 'Produtos', 'Estoque', 'Resultado', 'Configurações']);
   assert.ok(j.telas.find((g) => g.grupo === 'Estoque').telas.some((t) => t.id === 'sugestoes'));
   assert.strictEqual((await fetch(BASE + '/api/admin/estado', { headers: { Cookie: cookies.ger_pad } })).status, 403);
+});
+
+test('falar com a franquia por e-mail (cobrança): só admin e franqueado, mesmo para gerente com Notas fiscais (D-06)', async () => {
+  for (const url of ['/api/conta-franquia/email/previa?loja=l1', '/api/conta-franquia/email/enviar?loja=l1']) {
+    assert.strictEqual(await status('ger_notas', url, { method: 'POST', body: JSON.stringify({ tipo: 'devolucoes' }) }), 403, url);
+  }
+  assert.strictEqual(await status('ger_notas', '/api/conta-franquia/auto?loja=l1'), 403);
+  assert.notStrictEqual(await status('dono', '/api/conta-franquia/email/previa?loja=l1', { method: 'POST', body: JSON.stringify({ tipo: 'devolucoes' }) }), 403);
+});
+
+test('checklist: a vendedora vê "você" ou "equipe", nunca o login da colega', async () => {
+  const hoje = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
+  const r0 = await (await fetch(BASE + '/api/checklist?loja=l1', { headers: { Cookie: cookies.dono } })).json();
+  const item = r0.itens.abertura[0];
+  const marcar = (nome) => fetch(BASE + '/api/checklist/marcar?loja=l1', { method: 'POST', headers: { Cookie: cookies[nome], 'X-Painel': '1', 'Content-Type': 'application/json' }, body: JSON.stringify({ loja: 'l1', dia: hoje, tipo: 'abertura', item: item.id, feito: true }) });
+  assert.strictEqual((await marcar('vend2')).status, 200);
+  const j = await (await fetch(BASE + '/api/checklist?loja=l1', { headers: { Cookie: cookies.vend } })).json();
+  assert.strictEqual(j.marcados.abertura[item.id].por, 'equipe');
+  assert.ok(!JSON.stringify(j).includes('vend2'));
+  const jd = await (await fetch(BASE + '/api/checklist?loja=l1', { headers: { Cookie: cookies.dono } })).json();
+  assert.strictEqual(jd.marcados.abertura[item.id].por, 'vend2');
 });

@@ -100,3 +100,33 @@ test('prêmios de fidelidade: 50% do custo dos resgates do mês; desconto lança
   assert.equal(CF2.contaPremios('lf', ent, '2026-11-18T12:00:00Z').meses.find((m) => m.mes === '2026-09').recebido, 3);
   fs.rmSync(tmp2, { recursive: true, force: true });
 });
+
+test('revisão: desconto zerado no cabeçalho não esconde o dos itens; tolerância da combinação no máximo 10 centavos', () => {
+  assert.strictEqual(CF.descontoDaNota({ desconto: 0, itens: [{ desc: 10.5 }, { desc: 4.5 }] }), 15);
+  assert.strictEqual(CF.descontoDaNota({ desconto: 20, itens: [{ desc: 5 }] }), 20);
+  assert.strictEqual(CF.descontoDaNota({ itens: [] }), null);
+  const c = (id, valor) => ({ id, valor });
+  const dez = Array.from({ length: 10 }, (_, k) => c('d' + k, 49.945));
+  assert.deepEqual(CF.combinar(dez, 500).comb, [], '10 devoluções somando 499,45 não fecham sozinhas um desconto de 500,00');
+  assert.strictEqual(CF.combinar([c('a', 99.97), c('b', 100)], 199.99).comb.length, 2, 'arredondamento de centavos ainda fecha');
+});
+
+test('revisão: devolução cancelada sai da conta; o que foi marcado à mão antes do XML continua valendo', () => {
+  const devPainel = (id, numero) => ({ id, em: '2026-09-01', total: 100, nfe: { emitida: { numero, serie: 1 }, total: 100 }, nota: { id: 'e1', nf: '10', fornecedor: forn } });
+  // XML cancelado com o número da devolução do painel: não volta como crédito
+  const canc = { ...dev(901, '2026-09-01', 100, 'x'), situacao: 'cancelada' };
+  assert.deepEqual(CF.creditos([canc], [], [devPainel('p1', 901)]), []);
+  // marcado "compensado no boleto" antes do XML (id dev-p2); o XML chega e troca o id: segue compensado
+  assert.ok(!CF.acao('lj', { tipo: 'compensar', credito: 'dev-p2', como: 'boleto' }, 'dono').erro);
+  const xml = dev(902, '2026-09-01', 100, 'x');
+  const r = CF.conta('lj', { saidas: [xml], compras: [], devsPainel: [devPainel('p2', 902)], hoje: '2026-11-19' });
+  const cr = r.creditos.find((x) => x.numero === 902);
+  assert.strictEqual(cr.situacao, 'manual');
+});
+
+test('revisão: desconto nos royalties aceita "123.45" (teclado do celular) e "1.234,56"', () => {
+  CF.royalties('lr', { ref: '2026-10', valor: '123.45' }, 'dono');
+  CF.royalties('lr', { ref: '2026-10', valor: '1.234,56' }, 'dono');
+  const j = JSON.parse(fs.readFileSync(path.join(tmp, 'lr', 'conta-franquia.json'), 'utf8'));
+  assert.deepEqual(j.royalties.map((x) => x.valor), [123.45, 1234.56]);
+});
