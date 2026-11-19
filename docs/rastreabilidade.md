@@ -466,6 +466,19 @@ Todos os da lista A foram conferidos no código, um por um.
 | E-22 | Feriado que abre em dia normalmente fechado fica sem ninguém e sem alerta | `mapa.js` | ❌ A fazer |
 | E-23 | NF-e de venda: o teste passava e a emissão falhava ao concluir por falta de estoque ("não possui estoque suficiente"), obrigando a refazer tudo | `nfsaida.js` (estoque por produto + aviso antes do robô), `nextsoft_nfe.py` (lê o estoque do produto no AppNext na conferência) | ✅ A tela avisa na hora; o robô para no teste quando o AppNext informa o estoque (o campo é registrado no log para conferência) |
 | E-24 | NF-e emitida (autorizada) não aparecia em Notas de saída nem tinha DANFE/XML até a próxima coleta | `server.js` `/api/nfe` (pede a importação do XML ao autorizar), `nfsaida.js` (DANFE/XML na linha e nos detalhes) | ✅ |
+| E-25 | Comissão e bônus com meta 0 (loja sem meta, férias o mês todo) caíam na faixa mais alta; meta simulada valia para outro mês | `rules.js` `comissao`, `R.aliquotaBonus`; `pages.js` (`metaYm`, aviso "Meta não cadastrada") | ✅ `bugslogica.test`, `regras.spec` |
+| E-26 | "Minha comissão" da vendedora divergia da conta do dono com loja sem regras salvas | `src/regrasvend.js`, `server.js` `filtrarPorPerfil` | ✅ `bugslogica.test` (ramo do servidor sem teste) |
+| E-27 | Validade: 2º ajuste manual de lote no mesmo estoque era ignorado | `lotes.js` `escolherAjuste`, `editarSaldo` | ✅ `bugslogica.test` |
+| E-28 | Lista de espera marcava "chegou" com nota pendente ou de devolução/troca | `espera.js` `avaliar` | ✅ `bugslogica.test`, `espera.test` |
+| E-29 | Planilha de estoque parcial zerava o resto da loja | `estoque.js` `travaParcial`; `admin-api.js` (`?forcar=1` só no envio manual, auditado) | ✅ `bugslogica.test` (confirmação na tela sem teste) |
+| E-30 | Histórico de preço de cadastro com o dia seguinte (UTC) | `tabela.js` `diaBrasilia` | ✅ `bugslogica.test` |
+| E-31 | Campanha recorrente podia criar a rodada em dobro | `campanhas.js` `rodadaEmDia`, `novaRodada` | ✅ `bugslogica.test` |
+| E-32 | Devoluções pendentes da mesma nota passavam da quantidade; pedido obrigatório sem id dava 500; retenção 90 dias casava cupom só pelo número | `devolucao.js` `contaComoDevolvido`; `pedido.js` `alterarObrig`; `indicadores.js` `retencao90` | ✅ `bugslogica.test`, `devolucao.test`, `rfm.test` |
+| E-33 | Gerente trocava os destinatários dos e-mails de devolução (e da cobrança automática por tabela) | `server.js` `PUT /api/devolucoes/destinatarios` (só admin/franqueado); `config.js` (travado) | ✅ `seguranca.test` |
+| E-34 | E-mail do FIXE aceito sem assinatura do domínio e com link de qualquer site | `fixemail.js` `remetenteAutenticado` (DKIM/DMARC/SPF alinhados), `linkDoEmail` (`FIXE_LINK_DOMINIOS`) | 🟡 `seguranca.test`; falta conferir com um e-mail real do FIXE |
+| E-35 | GET da planilha do inventário fechava a contagem; busca de clientes da espera sem teto diário; login travável por terceiros; "Sair" voltava a valer após reinício; `/health` listava lojas; erro cru com caminho | `server.js`, `inventario.js`, `config.js` `msgErro`, `pedido.js` | ✅ `seguranca.test` (download do inventário sem teste de tela) |
+| E-36 | Rentabilidade distorcida por item a R$ 0,01 (desconto de ~100%); Próximas semanas listava taxa/serviço; prompt/alert do navegador; Início sem "lembrar depois" | `estoque.js` (`resg`, `PISO_Y`, `compravel`, abas `rentAba`), `components.js` (`TS.perguntar`, `TS.avisar`), `inicio.js` (`adiados`) | ✅ `usabilidade.spec` |
+| PERF-17 | Índice das NF-e por data da pasta; compras/notas/histórico e contagens com cache por arquivo; apresentação pré-comprimida; limpeza dos envios ao robô (90 dias) | `nfsaida.js` `indiceDe`; `estoque.js` `lerComCache`; `inventario.js` `resumoDe`; `nfe.js`/`inventario.js` `limparEnvios`; `server.js` | ✅ `cache.test`, `dados-comprimidos.spec` (memo da espera e `packCache` sem teste) |
 
 ## Resumo em números
 

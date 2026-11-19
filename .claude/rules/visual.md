@@ -53,3 +53,6 @@ Lista que abre um detalhe: a tabela some e o detalhe aparece no lugar, com "‹ 
 - [ ] Usa as peças acima (cabeçalho, avisos, quadros, card, abas com contagem, `TS.table`).
 - [ ] Cores por classe/token; nenhuma cor/hex nova no JS.
 - [ ] Prints no computador e no celular conferidos (sem rolagem lateral, sem texto cortado, sem "null").
+
+## Explicação longa
+- Uma frase + `details.est-como` ("Como funciona ▸"). Tela com muitos blocos vira abas internas (`TS.seg`, como a Rentabilidade).

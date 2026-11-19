@@ -25,3 +25,5 @@ paths:
 - Fora de linha (Estoque): `src/pedido.js` guarda desde quando cada produto está indisponível no catálogo do Sistema de Pedidos (`pedido/disponibilidade.json`, a cada hora e ao abrir o Estoque); com 90+ dias vira "Fora de linha · liquidar" e sai de repor/parados. Só conta produto que já apareceu no catálogo.
 - Telas por perfil: o menu (`main.js`) e Configurações → Usuários seguem a lista única `src/telas.js` (grupo, regra por perfil, padrão do gerente). Página nova (`TS.pages.x`) ou rótulo novo em `ROTULO` sem entrar lá derruba `tests/unit/telas.test.js`.
 - Cache do aparelho: `/api/dados` manda `X-Painel-Usuario`; se não for a pessoa da aba (outra pessoa entrou em outra aba), o painel não guarda nem mostra e recarrega.
+- Perguntas e avisos: `TS.perguntar` / `TS.avisar` / `TS.avisarErro` (components.js), nunca `prompt()`/`alert()` em fluxo novo. Tela sem filtros entra em `pg-semfiltros` (main.js). Aviso do Início que se repete ganha `id` para o "lembrar depois" (7 dias, por pessoa; aviso vermelho nunca é adiado).
+- A vendedora recebe do servidor as listas das regras de comissão já traduzidas (`src/regrasvend.js`), mesmo sem regras salvas.
