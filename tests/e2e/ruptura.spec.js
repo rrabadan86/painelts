@@ -1,0 +1,46 @@
+const { test, expect } = require('@playwright/test');
+
+// Estoque: quadros "Perdendo por falta" e "Dinheiro sobrando" filtram a tabela; abas com contagem e colunas com a conta
+test('Estoque: perdendo venda por falta e dinheiro sobrando — quadros, abas e colunas', async ({ page }) => {
+  await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS.db && TS.state.loja && TS.state.loja !== 'todas');
+  await page.evaluate(() => { location.hash = '#estoque'; });
+  const card = page.locator('#est-tabela');
+  await expect(card).toBeVisible({ timeout: 20000 });
+
+  // quadro "Perdendo por falta": R$ por dia e nº de produtos; clicar filtra a tabela
+  const kFalta = page.locator('.kpi', { hasText: 'Perdendo por falta' });
+  await expect(kFalta.locator('.kpi-value')).toContainText(/R\$.*\/dia/);
+  await kFalta.click();
+  const abaFalta = card.getByRole('button', { name: /Perdendo venda \(\d+\)/ });
+  await expect(abaFalta).toHaveClass(/on/);
+  const nFalta = +(await abaFalta.textContent()).match(/\((\d+)\)/)[1];
+  expect(nFalta).toBeGreaterThan(0);
+  await expect(kFalta.locator('.kpi-foot')).toContainText(String(nFalta));
+  await expect(card).toContainText('Perdendo R$/dia');
+  await expect(card).toContainText('Zerado há');
+  await expect(card).toContainText('Na lista de espera');
+  await expect(kFalta.locator('.kpi-foot')).toContainText(/⏳ \d+ com cliente esperando/); // a apresentação tem cliente aguardando produto zerado
+  // só entra produto zerado, e a soma das linhas é o número do quadro
+  const conta = await page.evaluate(async () => {
+    const e = await TS.estoqueBuscar(TS.state.loja);
+    return { zerados: e.estoque.itens.filter((i) => !(i.qtd > 0)).length, espera: Object.keys(e.espera).length };
+  });
+  expect(conta.zerados).toBeGreaterThanOrEqual(nFalta);
+  expect(conta.espera).toBeGreaterThan(0);
+
+  // quadro "Dinheiro sobrando" → aba "Sobrando (N)" com unidades e R$ a custo
+  const kSobra = page.locator('.kpi', { hasText: 'Dinheiro sobrando' });
+  await kSobra.click();
+  const abaSobra = card.getByRole('button', { name: /Sobrando \(\d+\)/ });
+  await expect(abaSobra).toHaveClass(/on/);
+  const nSobra = +(await abaSobra.textContent()).match(/\((\d+)\)/)[1];
+  if (nSobra) {
+    await expect(kSobra.locator('.kpi-value')).toContainText('R$');
+    await expect(card).toContainText('Sobrando R$ (custo)');
+    await expect(card).toContainText('Precisa ter');
+  } else await expect(card).toContainText('Nenhum produto com saldo demais');
+
+  // nada de "null", "undefined" ou "NaN" na tela
+  await expect(card).not.toContainText(/null|undefined|NaN/);
+  await expect(page.locator('.g-kpi').first()).not.toContainText(/null|undefined|NaN/);
+});
