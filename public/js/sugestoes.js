@@ -5,7 +5,10 @@
 (function () {
   const { h, state } = TS;
   const SIT = { tem: ['Tem na loja', 'ok'], pouco: ['Pouco na loja', 'warn'], acabou: ['Acabou', 'erro'] };
-  const RES = { entrou: ['✅ Entrou no pedido', 'pos'], nao: ['❌ Não entrou', 'neg'], semsite: ['🚫 Sem estoque no site', 'warn-t'] };
+  const RES = {
+    pedido: ['🛒 Foi no pedido', 'muted'], chegou: ['✅ Chegou na loja', 'pos'], entrou: ['✅ Entrou no pedido', 'pos'],
+    nao: ['❌ Não entrou no pedido', 'neg'], semsite: ['🚫 Sem estoque no site', 'warn-t'], naopediu: ['🚫 Não foi possível pedir', 'warn-t'], naoveio: ['⚠️ Não veio no pedido', 'neg'],
+  };
   const MOTIVOS = ['Ainda temos estoque', 'Vende pouco', 'Fica para o próximo pedido', 'Passou do valor do pedido'];
   const dataTxt = (iso) => (iso ? new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', timeZone: 'America/Sao_Paulo' }) : '—');
   const DEMO = { loja: null, d: null };
@@ -56,12 +59,12 @@
   async function fechar(loja, itens) {
     if (!TS.demo) return enviar('POST', `/api/pedido/sugestoes/fechar?${q(loja)}`, { itens });
     await carregar(loja);
-    const porCod = new Map(itens.map((x) => [String(x.cod), x])), em = new Date().toISOString(), n = { entrou: 0, semsite: 0, nao: 0 };
+    const porCod = new Map(itens.map((x) => [String(x.cod), x])), em = new Date().toISOString(), n = { pedido: 0, semsite: 0, nao: 0 };
     for (const s of DEMO.d.itens) {
-      if (s.st !== 'aberta') continue;
+      if (s.st !== 'aberta' || s.aguardando) continue;
       const x = porCod.get(s.cod);
       let hh;
-      if (x && x.pedir > 0 && (x.site === 'ok' || x.site === 'sem')) { hh = { em, res: 'entrou', motivo: '' }; s.st = 'atendida'; s.fimEm = em; }
+      if (x && x.pedir > 0 && (x.site === 'ok' || x.site === 'sem')) { hh = { em, res: 'pedido', motivo: '' }; s.aguardando = { em, qtd: x.pedir }; }
       else if (x && (x.site === 'indisp' || x.site === 'fora')) hh = { em, res: 'semsite', motivo: 'Sem estoque no site da franquia (automático)' };
       else hh = { em, res: 'nao', motivo: (s.decisao && s.decisao.motivo) || 'Não entrou desta vez' };
       (s.hist = s.hist || []).push(hh); s.decisao = null; n[hh.res]++;
@@ -79,6 +82,7 @@
       if (s.em < g.desde) g.desde = s.em;
       g.pedidos = Math.max(g.pedidos, (s.hist || []).length);
       if (s.decisao) g.decisao = s.decisao;
+      if (s.aguardando) g.aguardando = s.aguardando;
     }
     return [...m.values()].sort((a, b) => b.pessoas.length - a.pessoas.length || a.desde.localeCompare(b.desde));
   }
@@ -100,22 +104,66 @@
 
   function pintar(corpo, loja, d) {
     const repintar = () => pintar(corpo, loja, d);
-    const abertas = d.itens.filter((s) => s.st === 'aberta'), encerradas = d.itens.filter((s) => s.st !== 'aberta');
+    const ABAS = {
+      abertas: ['Esperando o pedido', (s) => s.st === 'aberta' && !s.aguardando],
+      entrega: ['Aguardando entrega', (s) => s.st === 'aberta' && !!s.aguardando],
+      encerradas: ['Encerradas', (s) => s.st !== 'aberta'],
+    };
     const novos = d.itens.filter((s) => s.novo);
-    const aba = state.sugAba === 'encerradas' ? 'encerradas' : 'abertas';
-    const lista = aba === 'abertas' ? abertas : encerradas;
+    const aba = ABAS[state.sugAba] ? state.sugAba : 'abertas';
+    const lista = d.itens.filter(ABAS[aba][1]);
     corpo.replaceChildren(...[
-      novos.length ? h('div', { class: 'notice ok sug-novos' }, `🔔 ${novos.length === 1 ? '1 sugestão sua recebeu resposta' : `${novos.length} sugestões suas receberam resposta`}: veja abaixo.`) : null,
-      cartaoNova(loja, d, (s) => { d.itens.unshift(s); state.sugAba = 'abertas'; repintar(); }),
+      novos.length ? h('div', { class: 'notice ok sug-novos' }, `🔔 ${novos.length === 1 ? '1 sugestão sua recebeu resposta' : `${novos.length} sugestões suas receberam resposta`}: veja abaixo (em destaque).`) : null,
+      cartaoNova(loja, d, (x) => { d.itens.unshift(x); state.sugAba = 'abertas'; repintar(); }),
       h('div', { class: 'card mt' },
         h('div', { class: 'card-title' }, d.todos ? 'Sugestões da equipe' : 'Minhas sugestões'),
         d.todos ? h('p', { class: 'muted' }, 'A decisão é tomada em ', h('a', { href: '#pedido' }, 'Estoque → Pedido'), ', no quadro "⭐ Sugestões da equipe". O pedido sugerido não muda sozinho por causa da estrela.') : null,
-        TS.seg([[`Esperando o pedido (${abertas.length})`, 'abertas'], [`Encerradas (${encerradas.length})`, 'encerradas']], aba, (v) => { state.sugAba = v; repintar(); }),
-        lista.length ? h('div', { class: 'sug-lista' }, lista.map((s) => cartaoSug(loja, d, s, repintar)))
-          : h('p', { class: 'muted' }, aba === 'abertas' ? 'Nenhuma sugestão esperando o pedido.' : 'Nenhuma sugestão encerrada ainda.')),
+        TS.seg(Object.entries(ABAS).map(([k, [t, f]]) => [`${t} (${d.itens.filter(f).length})`, k]), aba, (v) => { state.sugAba = v; repintar(); }),
+        tabela(loja, d, lista, aba, repintar)),
     ].filter(Boolean));
     if (novos.length && !TS.demo) enviar('POST', `/api/sugestoes/visto?${q(loja)}`).catch(() => {});
-    if (novos.length) for (const s of novos) s.novo = false;
+    if (novos.length) for (const x of novos) x.novo = false;
+  }
+
+  const R = (x) => RES[x.res] || ['', 'muted'];
+  const ultimo = (s) => (s.hist && s.hist.length ? s.hist[s.hist.length - 1] : null);
+  /** andamento da sugestão: aguardando, no pedido (aguardando entrega), chegou, não veio… */
+  function statusDe(s) {
+    const ult = ultimo(s);
+    if (s.st === 'atendida') return s.chegou ? h('span', { class: 'pos' }, `✅ Chegou na loja: NF ${s.chegou.nf} de ${TS.fmt.date(s.chegou.dia).slice(0, 5)}`) : h('span', { class: 'pos' }, `✅ Entrou no pedido de ${dataTxt(s.fimEm)}`);
+    if (s.st === 'retirada') return h('span', { class: 'muted' }, `Estrela tirada em ${dataTxt(s.fimEm)}`);
+    if (s.aguardando) return h('span', { class: 'sug-aguarda' }, `🛒 No pedido de ${dataTxt(s.aguardando.em)}: aguardando entrega`, TS.dica('A estrela sai quando a nota da TSB Franquias chegar com o produto (não importa quanto demore). Se a primeira nota chegar sem ele, o painel espera mais 5 dias por outra nota; sem o produto, a sugestão volta para o próximo pedido — e, se ele chegar depois, a estrela sai do mesmo jeito.'));
+    if (ult) return h('span', { class: R(ult)[1] }, `${R(ult)[0]} · ${dataTxt(ult.em)}`, ult.motivo && ult.res !== 'semsite' ? h('small', { class: 'muted sug-motivo' }, ult.motivo) : null, h('small', { class: 'muted sug-motivo' }, 'continua marcada para o próximo pedido'));
+    return h('span', { class: 'muted' }, '🕓 Aguardando o próximo pedido');
+  }
+  function tabela(loja, d, lista, aba, repintar) {
+    const meu = (s) => !d.todos || s.nome === 'Você' || s.por === (TS.eu && TS.eu.usuario);
+    const tirar = (s) => (s.st === 'aberta' && !s.aguardando && (meu(s) || d.todos) ? h('button', { type: 'button', class: 'btn ghost-danger sug-tirar', onclick: async (ev) => {
+      ev.stopPropagation();
+      if (!confirm(`Tirar a estrela de ${s.desc}?`)) return;
+      ev.target.disabled = true;
+      try { Object.assign(s, await retirar(loja, s.id)); repintar(); } catch (e) { alert(e.message); ev.target.disabled = false; }
+    } }, 'Tirar estrela') : null);
+    const cols = [
+      { key: 'desc', label: 'Produto', align: 'l', sticky: true, wrap: true, title: 'A etiqueta é a situação na loja quando o produto foi marcado: tem, pouco (chá abaixo de 700 g) ou acabou.',
+        render: (s) => { const [t, c] = SIT[s.situacao] || ['', '']; return h('div', { class: 'sug-prod-cel' }, h('b', null, (s.st === 'aberta' ? '⭐ ' : '') + s.desc), ' ', t ? h('span', { class: 'badge ' + c }, t) : null, s.novo ? h('span', { class: 'badge warn' }, 'novo') : null,
+          s.st === 'aberta' && s.equipe > 1 ? h('small', { class: 'muted sug-motivo' }, `${s.equipe} pessoas da equipe pediram`) : null); } },
+      d.todos ? { key: 'nome', label: 'Quem', align: 'l' } : null,
+      { key: 'em', label: 'Marcado em', render: (s) => dataTxt(s.em), sortVal: (s) => s.em },
+      { key: 'motivo', label: 'Por que / recado', align: 'l', wrap: true, title: 'Por que pedir (obrigatório quando ainda tinha na loja) e o recado para quem faz o pedido.',
+        render: (s) => (s.justificativa || s.recado ? h('div', { class: 'sug-txt' }, s.justificativa ? h('div', null, s.justificativa) : null, s.recado ? h('div', { class: 'muted' }, s.recado) : null) : h('span', { class: 'muted' }, '—')),
+        sortVal: (s) => s.justificativa || s.recado || '' },
+      { key: 'andamento', label: 'Andamento', align: 'l', wrap: true, title: 'O que aconteceu nos pedidos: no pedido (aguardando entrega), chegou na loja pela nota da franquia, não veio na entrega, não entrou (com o motivo) ou sem estoque no site.',
+        render: (s) => h('div', null, statusDe(s), s.hist && s.hist.length > 1 ? h('details', { class: 'sug-hist' }, h('summary', null, `Histórico (${s.hist.length})`),
+          h('ul', null, s.hist.map((x) => h('li', null, `${dataTxt(x.em)} · ${R(x)[0]}${x.motivo && x.res !== 'semsite' ? ` — ${x.motivo}` : ''}`)))) : null),
+        sortVal: (s) => (ultimo(s) || {}).em || s.em },
+      { key: 'acoes', label: '', align: 'l', render: tirar, sortVal: () => 0 },
+    ].filter(Boolean);
+    return TS.table({
+      cols, rows: lista, sortKey: 'em', sortDir: 'desc', maxHeight: '620px', search: 'Buscar produto, pessoa ou recado…', searchKeys: ['desc', 'cod', 'nome', 'recado', 'justificativa'], produto: 'desc', cls: 'est-t sug-t',
+      rowClass: (s) => (s.novo ? 'sug-novo' : null),
+      empty: { abertas: 'Nenhuma sugestão esperando o pedido.', entrega: 'Nada aguardando entrega.', encerradas: 'Nenhuma sugestão encerrada ainda.' }[aba],
+    });
   }
 
   function cartaoNova(loja, d, aoCriar) {
@@ -164,27 +212,4 @@
       busca, res, msg);
   }
 
-  function cartaoSug(loja, d, s, repintar) {
-    const [t, c] = SIT[s.situacao] || ['', ''];
-    const ult = s.hist && s.hist.length ? s.hist[s.hist.length - 1] : null;
-    const meu = !d.todos || s.nome === 'Você' || s.por === (TS.eu && TS.eu.usuario);
-    const status = s.st === 'atendida' ? h('span', { class: 'pos' }, `✅ Entrou no pedido de ${dataTxt(s.fimEm)}`)
-      : s.st === 'retirada' ? h('span', { class: 'muted' }, `Estrela tirada em ${dataTxt(s.fimEm)}`)
-        : ult ? h('span', { class: RES[ult.res][1] }, `${RES[ult.res][0]} no pedido de ${dataTxt(ult.em)}${ult.motivo && ult.res !== 'semsite' ? `: ${ult.motivo}` : ''} · continua marcada para o próximo`)
-          : h('span', { class: 'muted' }, '🕓 Aguardando o próximo pedido');
-    const tirar = s.st === 'aberta' && (meu || d.todos) ? h('button', { type: 'button', class: 'btn ghost-danger sug-tirar', onclick: async (ev) => {
-      if (!confirm(`Tirar a estrela de ${s.desc}?`)) return;
-      ev.target.disabled = true;
-      try { Object.assign(s, await retirar(loja, s.id)); repintar(); } catch (e) { alert(e.message); ev.target.disabled = false; }
-    } }, 'Tirar estrela') : null;
-    return h('div', { class: 'sug-item' + (s.novo ? ' novo' : '') },
-      h('div', { class: 'sug-item-cab' }, h('b', null, (s.st === 'aberta' ? '⭐ ' : '') + s.desc), ' ', h('span', { class: 'badge ' + c, title: 'Situação na loja quando foi marcado' }, t), s.novo ? h('span', { class: 'badge warn' }, 'novo') : null),
-      h('div', { class: 'sug-item-meta muted' }, `marcado em ${dataTxt(s.em)}`, d.todos && s.nome ? ` por ${s.nome}` : '', s.st === 'aberta' && s.equipe > 1 ? ` · ${s.equipe} pessoas da equipe pediram` : ''),
-      s.justificativa ? h('div', { class: 'sug-item-txt' }, h('small', null, 'Por que pedir: '), s.justificativa) : null,
-      s.recado ? h('div', { class: 'sug-item-txt' }, h('small', null, 'Recado: '), s.recado) : null,
-      h('div', { class: 'sug-item-st' }, status),
-      s.hist && s.hist.length > 1 ? h('details', { class: 'sug-hist' }, h('summary', null, `Histórico (${s.hist.length} pedidos)`),
-        h('ul', null, s.hist.map((x) => h('li', null, `${dataTxt(x.em)} · ${RES[x.res][0]}${x.motivo && x.res !== 'semsite' ? ` — ${x.motivo}` : ''}`)))) : null,
-      tirar);
-  }
 })();

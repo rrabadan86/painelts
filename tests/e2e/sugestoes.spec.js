@@ -7,7 +7,7 @@ test('Sugestões: marcar produto, justificar quando tem na loja e revisar no Ped
   await page.evaluate(() => { location.hash = '#sugestoes'; });
   await expect(page.locator('.page-title')).toContainText('Sugestões para o pedido');
   // a apresentação já traz sugestões da equipe
-  await expect(page.locator('.sug-item').first()).toBeVisible();
+  await expect(page.locator('.sug-t tbody tr').first()).toBeVisible();
   // um produto que ainda tem na loja (pede justificativa)
   const prod = await page.evaluate(async () => {
     const loja = TS.state.loja;
@@ -25,7 +25,7 @@ test('Sugestões: marcar produto, justificar quando tem na loja e revisar no Ped
   await expect(linha.locator('.neg')).toContainText('ainda tem na loja');
   await linha.locator('.sug-just').fill('Cliente leva sempre 3 de presente');
   await linha.getByRole('button', { name: '⭐ Confirmar sugestão' }).click();
-  await expect(page.locator('.sug-item', { hasText: prod.desc })).toContainText('Aguardando o próximo pedido');
+  await expect(page.locator('.sug-t tbody tr', { hasText: prod.desc })).toContainText('Aguardando o próximo pedido');
 
   // no Pedido: quadro com as sugestões, "Não agora" com motivo e registrar
   await page.evaluate(() => { location.hash = '#pedido'; });
@@ -41,6 +41,6 @@ test('Sugestões: marcar produto, justificar quando tem na loja e revisar no Ped
 
   // a resposta volta para a tela de sugestões e o produto continua marcado para o próximo pedido
   await page.evaluate(() => { location.hash = '#sugestoes'; });
-  await expect(page.locator('.sug-item', { hasText: prod.desc })).toContainText('Não entrou');
-  await expect(page.locator('.sug-item', { hasText: prod.desc })).toContainText('continua marcada para o próximo');
+  await expect(page.locator('.sug-t tbody tr', { hasText: prod.desc })).toContainText('Não entrou');
+  await expect(page.locator('.sug-t tbody tr', { hasText: prod.desc })).toContainText('continua marcada para o próximo');
 });

@@ -2708,3 +2708,8 @@ details.vl-ajuda summary { cursor: pointer; font-weight: 600; }
 @media (max-width: 760px) {
   .cfg-edit-row .cfg-user-form { position: sticky; left: 0; width: calc(100vw - 64px); max-width: calc(100vw - 64px); box-sizing: border-box; }
 }
+.sug-aguarda { color: #1f5f8b; }
+.sug-t tr.sug-novo td { background: #fff8dc; }
+.sug-motivo { display: block; font-size: 11px; }
+.sug-txt { font-size: 12px; max-width: 360px; }
+.sug-prod-cel { min-width: 0; }
