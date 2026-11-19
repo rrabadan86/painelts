@@ -159,3 +159,19 @@ test('cobertura: contagem do painel pelo recorte e inventário do AppNext com me
   assert.equal(r.familias.Rooibos.fonte, 'painel');
   assert.equal(r.appnextEm, '2026-11-18T05:00:00Z');
 });
+
+test('reabrir para contar: só no mesmo dia (Brasília) em que a contagem foi aberta', () => {
+  const c = INV.criar('l1', { cods: ['31020'] }, 'ger', cat, 'gerente').ok;
+  assert.ok(INV.acao('l1', c.id, 'cancelar', 'ger').ok);
+  assert.ok(INV.acao('l1', c.id, 'reabrir', 'ger').ok, 'aberta hoje: reabre');
+  assert.ok(INV.acao('l1', c.id, 'revisar', 'ger').ok);
+  // aberta ontem: não reabre mais
+  const x = INV.ler('l1', c.id); x.criadoEm = new Date(Date.now() - 864e5 * 1.5).toISOString();
+  fs.writeFileSync(path.join(tmp, 'l1', 'inventario', `${c.id}.json`), JSON.stringify(x));
+  const r = INV.acao('l1', c.id, 'reabrir', 'ger');
+  assert.match(r.erro || '', /mesmo dia/);
+  assert.strictEqual(INV.ler('l1', c.id).st, 'revisao');
+  // virada do dia em Brasília: 23:30 de 18/11 (02:30Z de 19/11) já não vale às 00:10 de 19/11
+  assert.strictEqual(INV.podeReabrir({ criadoEm: '2026-11-19T02:30:00Z' }, new Date('2026-11-19T03:10:00Z')), false);
+  assert.strictEqual(INV.podeReabrir({ criadoEm: '2026-11-19T03:10:00Z' }, new Date('2026-11-20T02:50:00Z')), true);
+});

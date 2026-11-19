@@ -164,12 +164,21 @@ function adicionar(id, cid, cods, cat) {
   return { ok: c };
 }
 
+/** reabrir para contar só no mesmo dia (horário de Brasília) em que a contagem foi aberta: depois disso o estoque já mudou */
+function podeReabrir(c, agora = new Date()) {
+  return !!(c && c.criadoEm) && C.diaSP(c.criadoEm) === C.diaSP(agora);
+}
+
 function acao(id, cid, a, por) {
   const c = ler(id, cid);
   if (!c) return { erro: 'Contagem não encontrada.' };
   const agora = new Date().toISOString();
   if (a === 'revisar') { if (c.st !== 'contando') return { erro: 'A contagem não está aberta.' }; c.st = 'revisao'; c.revisaoEm = agora; }
-  else if (a === 'reabrir') { if (!['revisao', 'gerado', 'cancelado'].includes(c.st)) return { erro: 'Não dá para reabrir.' }; c.st = 'contando'; }
+  else if (a === 'reabrir') {
+    if (!['revisao', 'gerado', 'cancelado'].includes(c.st)) return { erro: 'Não dá para reabrir.' };
+    if (!podeReabrir(c)) return { erro: `Só dá para reabrir no mesmo dia em que a contagem foi aberta (${C.diaSP(c.criadoEm).split('-').reverse().join('/')}). O estoque já mudou desde então: faça uma nova contagem.` };
+    c.st = 'contando';
+  }
   else if (a === 'importado') { if (c.st !== 'gerado') return { erro: 'Gere a planilha antes.' }; c.st = 'importado'; c.importadoEm = agora; c.importadoPor = por; }
   else if (a === 'cancelar') { if (c.st === 'importado' || c.st === 'revertido') return { erro: 'Esta contagem já foi importada no AppNext.' }; c.st = 'cancelado'; c.canceladoEm = agora; c.canceladoPor = por; }
   else return { erro: 'Ação inválida.' };
@@ -377,4 +386,4 @@ function cobertura(id, cat, contagens, hist = historicoAppNext(id)) {
   return out;
 }
 
-module.exports = { cobertura, historicoAppNext, ehChaGranel, escopoDe, erroEnvio, prepararEnvio, conferirEnvio, lista, ler, catalogo, familia, criar, contar, adicionar, acao, paraUsuario, planilha, linhasPlanilha, marcarGerado, resto, zerar, gruposFora, linhasDesfazer, marcarDesfazer };
+module.exports = { podeReabrir, cobertura, historicoAppNext, ehChaGranel, escopoDe, erroEnvio, prepararEnvio, conferirEnvio, lista, ler, catalogo, familia, criar, contar, adicionar, acao, paraUsuario, planilha, linhasPlanilha, marcarGerado, resto, zerar, gruposFora, linhasDesfazer, marcarDesfazer };

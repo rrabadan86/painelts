@@ -234,6 +234,30 @@ test.describe('regras', () => {
     await expect(page.locator('.inv-cab')).toContainText('Outra contagem');
   });
 
+  test('Inventário: reabrir para contar só no mesmo dia em que a contagem foi aberta', async ({ page }) => {
+    await page.evaluate(() => { location.hash = '#inventario'; });
+    await page.getByRole('button', { name: '+ Nova contagem' }).click();
+    await page.locator('.inv-modos button', { hasText: 'Um tipo de chá' }).click();
+    const sel = page.locator('.inv-modo-corpo select');
+    await sel.selectOption(await sel.locator('option').nth(1).getAttribute('value'));
+    await page.getByPlaceholder(/Nome \(opcional\)/).fill('Teste reabrir');
+    await page.getByRole('button', { name: 'Começar a contar' }).click();
+    page.once('dialog', (d) => d.accept());
+    await page.getByRole('button', { name: 'Cancelar contagem' }).click();
+    const hist = page.locator('.inv-antigas');
+    await hist.locator('tbody tr', { hasText: 'Teste reabrir' }).first().click();
+    // aberta hoje: o botão aparece e avisa que é só hoje
+    await expect(page.getByRole('button', { name: 'Reabrir para contar' })).toBeVisible();
+    await expect(page.locator('.inv-reabrir')).toContainText('só hoje');
+    // aberta ontem: sem botão, com o motivo
+    await page.evaluate(() => { const c = TS._invDemo.cont.find((x) => x.nome === 'Teste reabrir'); c.criadoEm = new Date(Date.now() - 864e5 * 1.5).toISOString(); });
+    await page.getByRole('button', { name: '‹ Contagens' }).click();
+    await hist.locator('tbody tr', { hasText: 'Teste reabrir' }).first().click();
+    await expect(page.locator('.inv-cab')).toContainText('Teste reabrir');
+    await expect(page.getByRole('button', { name: 'Reabrir para contar' })).toHaveCount(0);
+    await expect(page.locator('.inv-reabrir')).toContainText('não dá mais para reabrir');
+  });
+
   test('Início avisa grupo/tipo de chá sem inventário há 25 dias; tipo de chá une puro e aromatizado', async ({ page }) => {
     await page.evaluate(() => { location.hash = '#inicio'; });
     await expect(page.locator('.ini-avisos')).toContainText(/tipos? de chá (está|estão) há 25 dias ou mais sem contagem/);
