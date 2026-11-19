@@ -7,6 +7,24 @@
   const DIAS_CURTO = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
   const hm = (s) => +s.slice(0, 2) * 60 + +s.slice(3, 5);
   const hhmm = (m) => `${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+  /**
+   * Faixa do dia em blocos de 30 min: inclui o bloco da abertura e o do fechamento mesmo quando o horário não é
+   * redondo (09:40 → o bloco das 09:30 conta), e guarda os minutos exatos: [bloco inicial, bloco final, abre, fecha].
+   */
+  const faixaDia = (f) => (f && !f.fechado ? [Math.floor(hm(f.abre) / 30), Math.ceil(hm(f.fecha) / 30), hm(f.abre), hm(f.fecha)] : null);
+  /** turno em minutos: quem abre começa na hora exata da abertura e quem fecha sai na hora exata do fechamento (mesma jornada) */
+  function paraTurno(o, ab) {
+    let ini = o.s * 30, fim = (o.s + o.len) * 30;
+    let pausa = o.pausa != null && o.intSlots ? [o.pausa * 30, (o.pausa + o.intSlots) * 30] : null;
+    if (ab && ab.length > 2) {
+      let d = 0;
+      if (o.s <= ab[0] && ab[2] > ini) d = ab[2] - ini;            // abre: empurra para a hora exata (ex.: 09:30 → 09:40)
+      else if (o.s + o.len >= ab[1] && ab[3] < fim) d = ab[3] - fim; // fecha: puxa para a hora exata (ex.: 22:00 → 21:50)
+      ini += d; fim += d; if (pausa) pausa = [pausa[0] + d, pausa[1] + d];
+      ini = Math.max(ini, ab[2]); fim = Math.min(fim, ab[3]); // turno do dia inteiro: fica dentro do horário
+    }
+    return { ini, fim, pausa };
+  }
 
   const PADRAO = () => ({
     funcionamento: Object.fromEntries(DIAS.map((d) => [d, { abre: '10:00', fecha: d === 'dom' ? '18:00' : '22:00', fechado: false }])),
@@ -86,7 +104,7 @@
     const trabMin = Math.round(jornada / 30) * 30; // na escala, arredondada para blocos de 30 min
     const intervalo = trabMin > 360 ? Math.max(0, Math.round((e.intervalo || 0) / 30) * 30) : trabMin > 240 ? 30 : 0;
     const slotsNeed = need.map((row) => Array.from({ length: 48 }, (_, s) => row[Math.floor(s / 2)]));
-    const abertura = DIAS.map((d) => { const f = op.funcionamento[d]; return f && !f.fechado ? [Math.ceil(hm(f.abre) / 30), Math.floor(hm(f.fecha) / 30)] : null; });
+    const abertura = DIAS.map((d) => faixaDia(op.funcionamento[d]));
     const cob = Array.from({ length: 7 }, () => Array(48).fill(0));
     const pessoas = [];
     const maxF = Math.max(1, Math.min(10, Math.round(+e.maxFolgaDia || 1)));
@@ -135,7 +153,7 @@
       const turnos = opcoes.map((o, wd) => {
         if (!o || !trab.has(wd)) return null;
         for (let x = o.s; x < o.s + o.len; x++) if (!(o.pausa != null && x >= o.pausa && x < o.pausa + o.intSlots)) cob[wd][x]++;
-        return { ini: o.s * 30, fim: (o.s + o.len) * 30, pausa: o.pausa != null && o.intSlots ? [o.pausa * 30, (o.pausa + o.intSlots) * 30] : null };
+        return paraTurno(o, abertura[wd]);
       });
       pessoas.push(turnos);
     }
@@ -252,7 +270,7 @@
     const trabMin = Math.round(jornada / 30) * 30;
     const intervalo = trabMin > 360 ? Math.max(0, Math.round((e.intervalo || 0) / 30) * 30) : trabMin > 240 ? 30 : 0;
     const slotsNeed = need.map((row) => Array.from({ length: 48 }, (_, x) => row[Math.floor(x / 2)]));
-    const abertura = DIAS.map((d) => { const f = op.funcionamento[d]; return f && !f.fechado ? [Math.ceil(hm(f.abre) / 30), Math.floor(hm(f.fecha) / 30)] : null; });
+    const abertura = DIAS.map((d) => faixaDia(op.funcionamento[d]));
     const DOM = 6, SEG = 0;
     const domAberto = !!abertura[DOM];
     // quantas pessoas no domingo
@@ -337,7 +355,7 @@
           for (const par of doDia) { aplica(wd, par[1], -1); par[1] = melhorTurno(wd, cob, slotsNeed, abertura, trabMin, intervalo, pessoas[par[0]].turno); aplica(wd, par[1], 1); }
         }
         { const lista = doDia.map(([i, o]) => ({ pref: pessoas[i].turno, o })); trocarPorPreferencia(lista, abertura[wd]); lista.forEach((x, k) => { doDia[k][1] = x.o; }); }
-        for (const [i, o] of doDia) turnosP[i][wd] = { ini: o.s * 30, fim: (o.s + o.len) * 30, pausa: o.pausa != null && o.intSlots ? [o.pausa * 30, (o.pausa + o.intSlots) * 30] : null };
+        for (const [i, o] of doDia) turnosP[i][wd] = paraTurno(o, abertura[wd]);
       }
       let descoberto = 0, abaixo = 0;
       const problemas = [];
@@ -647,7 +665,7 @@
         const fer = feriados.get(iso);
         const hf = fer && TS.horarioFeriado ? TS.horarioFeriado({ ...(cfg || {}), operacao: op }, iso) : null;
         const f = op.funcionamento[DIAS[wd]];
-        const ab = hf && !hf.fechado ? [Math.ceil(hm(hf.abre) / 30), Math.floor(hm(hf.fecha) / 30)] : !f.fechado ? [Math.ceil(hm(f.abre) / 30), Math.floor(hm(f.fecha) / 30)] : null;
+        const ab = hf && !hf.fechado ? faixaDia(hf) : faixaDia(f);
         const sNeed = [Array.from({ length: 48 }, (_, x) => (ab && x >= ab[0] && x < ab[1] ? need[wd][Math.floor(x / 2)] || 1 : 0))];
         const cob = [Array(48).fill(0)];
         const aplica = (c, sinal) => { if (c && c.tipo === 'trab') for (let x = Math.floor(c.ini / 30); x < Math.ceil(c.fim / 30); x++) if (!(c.pausa && x * 30 >= c.pausa[0] && x * 30 < c.pausa[1])) cob[0][x] += sinal; };
@@ -667,7 +685,7 @@
         // os demais que trabalham no dia: refazem o turno vendo os travados
         const livres = pessoas.map((p, i) => i).filter((i) => !aj[pessoas[i].nome.trim().toUpperCase()] && cel[i][k].tipo === 'trab');
         if (!ab) return;
-        const turno = (o) => ({ tipo: 'trab', ini: o.s * 30, fim: (o.s + o.len) * 30, pausa: o.pausa != null && o.intSlots ? [o.pausa * 30, (o.pausa + o.intSlots) * 30] : null, feriado: fer && fer.nome, recalc: true });
+        const turno = (o) => ({ tipo: 'trab', ...paraTurno(o, ab), feriado: fer && fer.nome, recalc: true });
         for (const i of livres) { const o = melhorTurno(0, cob, sNeed, [ab], trabMin, intervalo, pessoas[i].turno); if (o) { cel[i][k] = turno(o); aplica(cel[i][k], 1); } }
         for (let r = 0; r < 2; r++) for (const i of livres) { aplica(cel[i][k], -1); const o = melhorTurno(0, cob, sNeed, [ab], trabMin, intervalo, pessoas[i].turno); if (o) cel[i][k] = turno(o); aplica(cel[i][k], 1); }
         { // troca entre os recalculados quando respeita melhor a preferência (mesma duração)
