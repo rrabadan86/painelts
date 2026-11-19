@@ -202,7 +202,10 @@
         const sug = h('div', { class: 'nfe-sug' });
         inp.addEventListener('input', () => {
           const q = ESQ(inp.value), qd = inp.value.replace(/\D/g, '');
-          const achou = q.length < 2 ? [] : cad.parceiros.filter((x) => ESQ(x.nome).includes(q) || (qd.length >= 3 && x.doc.includes(qd))).slice(0, 8);
+          const vistos = new Set();
+          // o AppNext às vezes devolve o mesmo parceiro duas vezes: mostra um só (mesmo documento e nome)
+          const achou = q.length < 2 ? [] : cad.parceiros.filter((x) => ESQ(x.nome).includes(q) || (qd.length >= 3 && x.doc.includes(qd)))
+            .filter((x) => { const k = String(x.doc || '').replace(/\D/g, '') + '|' + ESQ(x.nome); if (vistos.has(k)) return false; vistos.add(k); return true; }).slice(0, 8);
           sug.replaceChildren(...achou.map((x) => h('button', { type: 'button', class: 'nfe-sug-i', onclick: () => { form.parceiro = x; form.consumidorFinal = !!x.consumidorFinal; pintarParc(); } }, h('b', null, x.nome), h('small', { class: 'muted' }, ' ' + docTxt(x.doc)))),
             ...(q.length >= 2 && !achou.length ? [h('small', { class: 'muted' }, 'Nenhum parceiro com esse nome ou documento. Use "＋ Cadastrar parceiro novo".')] : []));
         });

@@ -75,9 +75,12 @@
     const corpo = h('div', { class: 'mt' }, h('div', { class: 'card' }, h('div', { class: 'loading' }, h('div', null, h('div', { class: 'spinner' }), h('p', null, 'Carregando os produtos e os custos…')))));
     root.append(corpo);
     const loja = state.loja;
-    Promise.all([catalogo(loja), api('GET', `orcamentos?loja=${encodeURIComponent(loja)}`)]).then(([cat, j]) => {
+    // parceiros do AppNext (os mesmos da NF-e de saída): empresas com CNPJ que não aparecem na base de clientes
+    const parceiros = api('GET', `nfe?loja=${encodeURIComponent(loja)}`).then((x) => (x && x.cadastros && x.cadastros.parceiros) || []).catch(() => []);
+    Promise.all([catalogo(loja), api('GET', `orcamentos?loja=${encodeURIComponent(loja)}`), parceiros]).then(([cat, j, parc]) => {
       if (!corpo.isConnected) return;
       const lista = j.orcamentos || [];
+      cat.parceiros = parc;
       const aberto = state.orcAberto && (state.orcAberto === 'novo' ? {} : lista.find((o) => o.id === state.orcAberto));
       cat.orcAnteriores = lista;
       if (aberto) editor(corpo, loja, cat, aberto); else telaLista(corpo, loja, cat, lista);
@@ -132,7 +135,8 @@
     const infoCli = h('div', { class: 'orc-cli-info' });
     const pintarInfo = () => {
       const c = o.cliente.cpf && TS.cli && TS.cli.porCPF ? TS.cli.porCPF.get(o.cliente.cpf) : null;
-      if (!c) { infoCli.replaceChildren(); return; }
+      const pa = o.cliente.cpf ? (cat.parceiros || []).find((x) => String(x.doc || '').replace(/\D/g, '') === o.cliente.cpf) : null;
+      if (!c) { infoCli.replaceChildren(...(pa ? [h('span', { class: 'cf-st cf-ok' }, 'Parceiro no AppNext'), ' ', h('small', null, 'a NF-e de venda já sai para este cadastro')] : [])); return; }
       infoCli.replaceChildren(h('span', { class: 'cf-st cf-ok' }, 'Cliente da base'), ' ',
         h('small', null, [c.ultima != null ? `última compra ${fmt.date(TS.dayToIso(c.ultima))}` : '', c.gasto12 ? `${fmt.brl0(c.gasto12)} nos últimos 12 meses` : '', c.cupons ? `${fmt.int(c.cupons.length)} compra(s)` : '', c.chaFavorito ? `gosta de ${c.chaFavorito}` : ''].filter(Boolean).join(' · ')));
     };
@@ -143,6 +147,16 @@
         const k = (a.cliente.doc || '').replace(/\D/g, '') || TS.norm(a.cliente.empresa || a.cliente.contato);
         if (vistos.has(k)) continue;
         if (TS.norm(`${a.cliente.empresa} ${a.cliente.contato}`).includes(n) || (dig.length >= 3 && (a.cliente.doc || '').replace(/\D/g, '').includes(dig))) { vistos.add(k); out.push({ fonte: `orçamento #${a.numero}`, ...a.cliente }); }
+      }
+      for (const p of cat.parceiros || []) {
+        if (out.length >= 10) break;
+        const d = String(p.doc || '').replace(/\D/g, '');
+        if (!d || vistos.has(d)) continue;
+        if (TS.norm(p.nome).includes(n) || (dig.length >= 3 && d.includes(dig))) {
+          vistos.add(d);
+          const pj = d.length === 14;
+          out.push({ fonte: 'parceiro no AppNext', empresa: pj ? p.nome : '', contato: pj ? '' : p.nome, doc: docFmt(d), cpf: d });
+        }
       }
       for (const c of (TS.cli && TS.cli.lista) || []) {
         if (out.length >= 10) break;
