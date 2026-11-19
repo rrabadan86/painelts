@@ -115,7 +115,7 @@
       box.replaceChildren(...[
         h('div', { class: 'nfe-topo' }, bt, h('small', { class: 'muted' }, 'Para emitir pelo painel: o robô testa a nota no AppNext (sem salvar), você confere o total e clica em "Emitir NF-e" — ele conclui e transmite à SEFAZ. Se preferir, "Só salvar rascunho" deixa a nota no AppNext para transmitir lá.')),
         info && info.erroGeral ? h('div', { class: 'notice err mt' }, info.erroGeral) : null,
-        aberto && avisoPronta ? h('div', { class: 'notice ' + (avisoPronta.falta.length ? '' : 'ok') }, h('b', null, `Nota montada a partir do orçamento #${avisoPronta.numero}. `), avisoPronta.falta.length ? h('span', null, 'Confira: ', avisoPronta.falta.join('; '), '.') : 'Confira e teste antes de emitir.') : null,
+        aberto && avisoPronta ? h('div', { class: 'notice ' + (avisoPronta.falta.length ? '' : 'ok') }, h('b', null, avisoPronta.titulo || `Nota montada a partir do orçamento #${avisoPronta.numero}. `), avisoPronta.falta.length ? h('span', null, 'Confira: ', avisoPronta.falta.join('; '), '.') : 'Confira e teste antes de emitir.') : null,
         aberto ? formulario() : (info && info.robo && info.robo.acao === 'rascunho' ? roboVivo() : null),
         ras.length ? listaRascunhos(ras) : null].filter(Boolean));
     }
@@ -141,11 +141,13 @@
           { key: 'total', label: 'Total', fmt: (v) => (v == null ? '—' : fmt.brl(v)) },
           { key: 'situ', label: 'Situação', align: 'l', render: situCel },
           { key: 'log', label: '', align: 'l', sortVal: () => 0, render: (r) => h('span', { class: 'nf-acoes' },
+            r.estado === 'erro' && podeRefazer(r) ? h('button', { type: 'button', class: 'btn nfe-refazer', title: 'Abre a nota já preenchida com os mesmos dados para ajustar e testar de novo', onclick: (e) => { e.stopPropagation(); refazer(r); } }, '↻ Refazer') : null,
             podeEmitir(r) ? h('button', { type: 'button', class: 'btn primary nfe-emitir', title: 'Concluir e transmitir esta nota à SEFAZ (o robô confere se o total continua o do teste)', onclick: (e) => { e.stopPropagation(); emitirTeste(r); } }, 'Emitir NF-e') : null,
             (r.estado === 'erro' || r.estado === 'concluida') && ult && ult.id === r.id && ult.log && ult.log.length ? h('button', { type: 'button', class: 'btn prc-ver', onclick: (e) => { e.stopPropagation(); verLog(r, ult.log); } }, 'Log') : null) },
         ],
         rows, sortKey: 'quando', pageSize: 8, search: 'Buscar parceiro, vendedor ou quem pediu…', searchKeys: ['parcNome', 'por', 'vendedor'], cls: 'est-t nfe-ras-t',
         rowClass: (r) => (r.estado === 'erro' ? 'nfe-ras-erro' : null),
+        onRowClick: (r) => detalhes(r),
         empty: 'Nenhum rascunho com esse filtro.',
       });
       return TS.cardWithTools(`Notas pedidas ao robô (${fmt.int(ras.length)})`, 'Teste conferido → "Emitir NF-e" na linha. "Rascunho salvo" = está no AppNext (Estoque → Saída de Produtos) esperando a loja transmitir. "Não foi salvo" = nada foi gravado no AppNext (o motivo aparece embaixo).',
@@ -153,6 +155,69 @@
           TS.seg(Object.entries(FIL).filter(([k]) => k === 'todos' || contaF(k)).map(([k, [t]]) => [`${t} (${fmt.int(contaF(k))})`, k]), fil, (v) => { state.nfeRasFil = v; pintar(); })),
         tab);
     }
+    /** refazer: abre o formulário já preenchido com o pedido (parceiro, vendedor, pagamento, produtos) para ajustar e testar de novo */
+    const podeRefazer = (r) => ['erro', 'teste', 'ok', 'autorizada'].includes(r.estado) && !(info.robo && (info.robo.estado === 'na_fila' || info.robo.estado === 'rodando'));
+    function refazer(r) {
+      const cad = info && info.cadastros;
+      if (!cad) { alert('Busque os cadastros do AppNext primeiro.'); return; }
+      if (r.estado === 'ok' && !confirm('Este pedido já está salvo como rascunho no AppNext. Refazer cria outra nota (o rascunho antigo continua lá: apague no AppNext se não for usar). Continuar?')) return;
+      if (r.estado === 'autorizada' && !confirm('Esta nota já foi emitida. Refazer monta uma NOTA NOVA com os mesmos dados. Continuar?')) return;
+      const falta = [];
+      const doc = String(r.parceiro.doc || '').replace(/\D/g, '');
+      form.parceiro = cad.parceiros.find((x) => doc && String(x.doc || '').replace(/\D/g, '') === doc) || cad.parceiros.find((x) => ESQ(x.nome) === ESQ(r.parceiro.nome)) || null;
+      if (!form.parceiro) falta.push(`parceiro ${r.parceiro.nome} não está mais nos cadastros: escolha de novo`);
+      form.consumidorFinal = !!r.consumidorFinal;
+      const v = cad.vendedores.find((x) => ESQ(x.nome) === ESQ(r.vendedor || ''));
+      form.vendedorId = v ? v.id : ''; if (r.vendedor && !v) falta.push(`vendedor ${r.vendedor} não achado`);
+      const pg = cad.pagamentos.find((x) => x.descricao === r.pagamento);
+      form.pagamento = pg ? pg.codigo : ''; if (r.pagamento && !pg) falta.push(`forma de pagamento ${r.pagamento} não achada`);
+      form.itens = [];
+      for (const i of r.itens) {
+        const x = cad.produtos.find((y) => y.id === i.produtoId) || cad.produtos.find((y) => y.codigo === String(i.codigo));
+        if (x) form.itens.push({ produtoId: x.id, codigo: x.codigo, nome: x.nome, un: x.un, qtd: i.qtd, preco: i.preco });
+        else falta.push(`produto ${i.nome || i.codigo} não está mais nos cadastros`);
+      }
+      form.obs = r.obs || '';
+      aberto = true;
+      avisoPronta = { titulo: `Nota refeita a partir do pedido de ${quandoTZ(r.em)}${r.erro ? ' (que deu erro)' : ''}. `, falta };
+      pintar();
+      box.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    /** detalhes do pedido ao robô: itens, estoque de agora, situação completa e as ações */
+    function detalhes(r) {
+      const fundo = h('div', { class: 'cp-modal-bg' });
+      const fechar = () => fundo.remove();
+      fundo.addEventListener('click', (e) => { if (e.target === fundo) fechar(); });
+      const est = (i) => (info.estoque && info.estoque.qtd && info.estoque.qtd[String(i.codigo)] != null ? info.estoque.qtd[String(i.codigo)] : null);
+      const ult = info.robo && info.robo.ultima;
+      const [stTxt, stCls] = ESTADO_NFE[r.estado] || ESTADO_NFE.erro;
+      const tab = TS.table({
+        cols: [
+          { key: 'nome', label: 'Produto', align: 'l', wrap: true, render: (i) => h('span', null, h('b', null, i.nome || ''), h('small', { class: 'est-tam' }, `cód. ${i.codigo}`)) },
+          { key: 'qtd', label: 'Qtd', fmt: (v) => fmt.n2(v).replace(/,00$/, '') },
+          { key: 'preco', label: 'Preço', fmt: fmt.brl },
+          { key: 'tot', label: 'Total', render: (i) => fmt.brl(Math.round(i.qtd * i.preco * 100) / 100), sortVal: (i) => i.qtd * i.preco },
+          { key: 'est', label: 'Estoque agora', title: 'Estoque da última planilha do AppNext. Vermelho = a nota pede mais do que tem (o AppNext recusa ao concluir).',
+            render: (i) => { const e = est(i); return e == null ? h('span', { class: 'muted' }, '—') : h('span', { class: i.qtd > e + 1e-9 ? 'neg' : null }, fmt.n2(e).replace(/,00$/, '') + (i.qtd > e + 1e-9 ? ' ⚠' : '')); }, sortVal: (i) => est(i) ?? -1 },
+        ],
+        rows: r.itens.map((i) => ({ ...i, tot: i.qtd * i.preco, est: est(i) })), sortKey: 'nome', sortDir: 'asc', cls: 'est-t', empty: 'Sem itens.',
+      });
+      fundo.append(h('div', { class: 'card cp-copiar nfe-det-modal' },
+        h('div', { class: 'nfe-det-cab' }, h('h3', null, r.parceiro.nome), h('span', { class: 'nfe-st ' + stCls }, stTxt)),
+        h('div', { class: 'muted nfe-det-info' }, [r.parceiro.doc ? docTxt(r.parceiro.doc) : null, r.vendedor && `vendedor ${r.vendedor}`, r.pagamento, `pedido em ${quandoTZ(r.em)}${r.por ? ' por ' + r.por : ''}`].filter(Boolean).join(' · ')),
+        r.erro ? h('div', { class: 'notice err nfe-det-erro' }, r.erro) : null,
+        r.estado === 'autorizada' && r.nfe ? h('div', { class: 'notice ok' }, `NF-e nº ${r.nfe.numero}${r.nfe.protocolo ? ' · protocolo ' + r.nfe.protocolo : ''}`) : null,
+        tab,
+        h('div', { class: 'nfe-det-tot' }, 'Total: ', h('b', null, fmt.brl(r.total)), r.totalAppNext != null ? h('span', { class: 'muted' }, ` · no AppNext: ${fmt.brl(r.totalAppNext)}`) : null),
+        h('div', { class: 'cp-acoes' },
+          podeRefazer(r) ? h('button', { type: 'button', class: 'btn primary', onclick: () => { fechar(); refazer(r); } }, '↻ Refazer esta nota') : null,
+          podeEmitir(r) ? h('button', { type: 'button', class: 'btn primary', onclick: () => { fechar(); emitirTeste(r); } }, 'Emitir NF-e') : null,
+          (r.estado === 'erro' || r.estado === 'concluida') && ult && ult.id === r.id && ult.log && ult.log.length ? h('button', { type: 'button', class: 'btn', onclick: () => { fechar(); verLog(r, ult.log); } }, 'Ver log do robô') : null,
+          r.estado === 'concluida' ? h('small', { class: 'neg' }, 'A saída foi concluída no AppNext: confira lá antes de refazer (para não duplicar).') : null,
+          h('span', { style: { flex: 1 } }), h('button', { type: 'button', class: 'btn', onclick: fechar }, 'Fechar'))));
+      document.body.append(fundo);
+    }
+    TS.nfeDetalhesTeste = detalhes; // testes
     // teste que deu certo há menos de 2 horas e ainda não foi emitido: pode virar a NF-e de verdade
     const podeEmitir = (r) => r.estado === 'teste' && !r.emitidaEm && r.totalAppNext != null && Date.now() - Date.parse(r.fim || r.em) < 2 * 3600e3 && !(info.robo && (info.robo.estado === 'na_fila' || info.robo.estado === 'rodando'));
     async function emitirTeste(r) {
