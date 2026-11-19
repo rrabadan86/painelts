@@ -135,9 +135,26 @@
       const D = calcular(M, e.historico, e.compras);
       D.loja = loja; D.hist = e.historico || {}; D.comprasItens = (e.compras && e.compras.itens) || {};
       D.tabela = new Map(((e.tabela && e.tabela.itens) || []).filter((t) => t.preco > 0.011).map((t) => [t.cod, t.preco]));
+      D.tabHist = (e.tabela && e.tabela.historico) || {}; D.tabHistDesde = (e.tabela && e.tabela.historicoDesde) || null;
       pintar(corpo, D);
     }).catch((err) => corpo.replaceChildren(h('div', { class: 'notice err' }, err.message)));
   };
+
+  /**
+   * Venda (antes → agora) e margem pelo preço do cadastro do AppNext. O "antes" vem do histórico do cadastro, que o
+   * painel guarda a cada planilha de preços importada (D.tabHist: { cod: [[AAAA-MM-DD, preço], …] }); antes de existir
+   * histórico, o preço é o atual (sem reajuste conhecido).
+   */
+  function vendaPeloCadastro(r, D, de, ate) {
+    const hist = ((D.tabHist && D.tabHist[r.cod]) || []).map(([d, v]) => [TS.isoToDay(d), v]);
+    const em = (dia) => { let v = null; for (const [d, x] of hist) { if (d <= dia) v = x; else break; } return v; };
+    const vAt = hist.length && hist[hist.length - 1][0] > ate ? (em(ate) ?? r.tab) : r.tab;
+    const vAnt = de != null ? (em(de - 1) ?? (hist.length ? hist[0][1] : vAt)) : (hist.length ? hist[0][1] : vAt);
+    const mud = hist.slice(1).filter(([d]) => (de == null || d >= de) && d <= ate);
+    const mg = (v, c) => (v > 0 && c != null ? (v - c) / v : null);
+    Object.assign(r, { base: 'cadastro', vAnt, vAt, vVar: mud.length && vAnt ? vAt / vAnt - 1 : null, vDia: mud.length ? mud[mud.length - 1][0] : null, nV: mud.length, mAnt: mg(vAnt, r.cAnt), mAt: mg(vAt, r.cAt) });
+  }
+  TS.precoVendaPeloCadastro = vendaPeloCadastro; // testes
 
   /**
    * Por que o preço das vendas difere do cadastro? Olha as vendas das últimas 4 semanas do período:
@@ -157,14 +174,14 @@
     const un = (n) => `${fmt.int(Math.round(n))} un.`;
     const data = (d) => quando(TS.dayToIso(d));
     if (!nTab && !nOutro) return { tipo: 'parado', curto: `última venda ${data(Math.min(r.ultDia, ate))}`,
-      longo: `Não vende desde ${data(Math.min(r.ultDia, ate))}: ${fmt.brl(r.vAt)} é o preço daquela época. Se o cadastro mudou depois, não há erro — confira só se o produto ainda está à venda.` };
+      longo: `Não vende desde ${data(Math.min(r.ultDia, ate))}: ${fmt.brl(r.vCx ?? r.vAt)} é o preço daquela época. Se o cadastro mudou depois, não há erro — confira só se o produto ainda está à venda.` };
     if (nTab && nOutro) return { tipo: 'misto', curto: 'promoção?',
       longo: `Nas últimas 4 semanas: ${un(nTab)} no preço do cadastro (${fmt.brl(r.tab)}) e ${un(nOutro)} a outro preço. Parece promoção ou tabela de preço especial em parte das vendas.` };
     const ult = r.vendaEv && r.vendaEv[r.vendaEv.length - 1];
     if (ult && ult.de != null && Math.abs(ult.de - r.tab) < 0.005) return { tipo: 'pdv', curto: `desde ${data(ult.dia)}`,
-      longo: `Até ${data(ult.dia)} vendia no preço do cadastro (${fmt.brl(r.tab)}); desde então todas as vendas (${un(nOutro)} nas últimas 4 semanas) saíram a ${fmt.brl(r.vAt)}. Promoção em andamento ou preço trocado no PDV sem mudar o cadastro.` };
+      longo: `Até ${data(ult.dia)} vendia no preço do cadastro (${fmt.brl(r.tab)}); desde então todas as vendas (${un(nOutro)} nas últimas 4 semanas) saíram a ${fmt.brl(r.vCx ?? r.vAt)}. Promoção em andamento ou preço trocado no PDV sem mudar o cadastro.` };
     return { tipo: 'pdv', curto: 'PDV ≠ cadastro',
-      longo: `Nas últimas 4 semanas todas as vendas (${un(nOutro)}) saíram fora do preço do cadastro. O PDV está cobrando ${fmt.brl(r.vAt)} e o cadastro diz ${fmt.brl(r.tab)}: um dos dois está desatualizado.` };
+      longo: `Nas últimas 4 semanas todas as vendas (${un(nOutro)}) saíram fora do preço do cadastro. O PDV está cobrando ${fmt.brl(r.vCx ?? r.vAt)} e o cadastro diz ${fmt.brl(r.tab)}: um dos dois está desatualizado.` };
   }
 
   TS.precoPorQueDifere = porQueDifere; // testes
@@ -174,12 +191,15 @@
     const de = f.de ?? null, ate = Math.min(f.ate ?? db.maxDay, TS.todayDay());
     const linhas = D.lista.map((p) => ({ ...p, de, ate, ...noPeriodo(p, de, ate) })).filter((r) => r.vAt != null);
     for (const r of linhas) {
+      // preço de venda = o do CADASTRO do AppNext (não o que saiu no caixa); o do caixa fica só como informação
+      r.vCx = r.vAt;
+      r.tab = D.tabela && D.tabela.has(r.cod) ? D.tabela.get(r.cod) : null;
+      if (r.tab != null) vendaPeloCadastro(r, D, de, ate); else r.base = 'caixa'; // sem cadastro: continua pelo caixa
       r.status = r.nC && r.nV ? 'ambos' : r.nC ? 'custo' : r.nV ? 'venda' : 'nada';
       r.perdeu = r.mAnt != null && r.mAt != null && r.mAt < r.mAnt - 0.0005;
       r.difMargem = r.mAnt != null && r.mAt != null ? r.mAt - r.mAnt : null;
-      // preço de tabela do cadastro do AppNext × o praticado nas vendas
-      r.tab = D.tabela && D.tabela.has(r.cod) ? D.tabela.get(r.cod) : null;
-      r.tabDif = r.tab != null && r.vAt != null && Math.abs(r.tab - r.vAt) >= 0.01 ? r.vAt / r.tab - 1 : null;
+      // o que saiu no caixa × o cadastro
+      r.tabDif = r.tab != null && r.vCx != null && Math.abs(r.tab - r.vCx) >= 0.01 ? r.vCx / r.tab - 1 : null;
       if (r.tabDif != null) r.tabPor = porQueDifere(r, ate);
     }
     const FIL = {
@@ -225,9 +245,11 @@
       cols: [
         { key: 'nome', label: 'Produto', align: 'l', sticky: true, wrap: true, render: (r) => h('a', { href: '#', class: 'prc-nome', onclick: (e) => { e.preventDefault(); abrirProduto(r); } }, r.nome, h('small', { class: 'est-tam' }, r.cat)) },
         { key: 'cVar', label: 'Custo (antes → agora)', title: 'Quanto custa 1 unidade vendida (pacote, lata, caneca…) pelo custo do estoque/notas de entrada. Riscado = custo antes do período; em negrito = custo no fim dele; a % é a variação (vermelho = subiu) e a data é quando mudou. Só um valor = o custo não mudou no período.', render: (r) => variacao(r.cAnt, r.cAt, r.cVar, r.cDia, true), sortVal: (r) => r.cVar ?? -99 },
-        { key: 'vVar', label: 'Venda (antes → agora)', title: 'Preço pelo qual o produto foi vendido nos cupons: antes do período → no fim dele (a % e a data aparecem quando mudou). Só um valor = o preço de venda não mudou no período.', render: (r) => variacao(r.vAnt, r.vAt, r.vVar, r.vDia, false), sortVal: (r) => r.vVar ?? -99 },
-        D.tabela && D.tabela.size ? { key: 'tab', label: 'Cadastro', title: 'Preço de tabela no cadastro do AppNext (Produtos / Produtos Compostos). A etiqueta vermelha "vendas −X%" mostra quanto o preço das vendas do período ficou abaixo (−) ou acima (+) do cadastro. Embaixo, o motivo provável pelas últimas 4 semanas: "última venda dd/mm" = não vende mais e o preço é antigo; "promoção?" = parte das vendas no cadastro e parte em outro preço; "PDV ≠ cadastro" ou "desde dd/mm" = todas as vendas fora do cadastro. Desconto dado no caixa não entra aqui (fica separado no cupom).', render: (r) => (r.tab == null ? h('span', { class: 'muted' }, '—') : h('div', { class: 'prc-v' }, h('b', null, fmt.brl(r.tab)), r.tabDif != null ? h('span', { class: 'prc-badge ' + (r.tabPor && r.tabPor.tipo === 'parado' ? 'prc-neutro' : 'prc-ruim') }, `vendas ${pctTxt(r.tabDif)}`) : null,
-          r.tabPor ? h('small', { class: 'prc-tabpor' }, r.tabPor.curto, TS.dica(r.tabPor.longo)) : null)), sortVal: (r) => (r.tabDif == null ? -99 : Math.abs(r.tabDif)) } : null,
+        { key: 'vVar', label: 'Venda (antes → agora)', title: 'Preço de venda do CADASTRO do AppNext (Produtos / Produtos Compostos): antes do período → no fim dele; a % e a data aparecem quando o cadastro mudou. O "antes" vem do histórico que o painel guarda a cada planilha de preços importada. Produto sem cadastro: usa o preço do caixa e aparece "pelo caixa".',
+          render: (r) => h('div', null, variacao(r.vAnt, r.vAt, r.vVar, r.vDia, false), r.base === 'caixa' ? h('small', { class: 'prc-tabpor' }, 'pelo caixa (sem cadastro)') : null), sortVal: (r) => r.vVar ?? -99 },
+        D.tabela && D.tabela.size ? { key: 'tab', label: 'No caixa', title: 'Preço que saiu nos cupons (o mais vendido nas últimas semanas). Só para conferência: a margem é calculada pelo cadastro. A etiqueta mostra quanto o caixa ficou abaixo (−) ou acima (+) do cadastro e, embaixo, o motivo provável: "última venda dd/mm" = não vende mais e o preço é antigo; "promoção?" = parte das vendas no cadastro e parte em outro preço; "PDV ≠ cadastro" ou "desde dd/mm" = todas as vendas fora do cadastro. Desconto dado no caixa não entra (fica separado no cupom).',
+          render: (r) => (r.tab == null ? h('span', { class: 'muted' }, '—') : h('div', { class: 'prc-v' }, h('b', null, fmt.brl(r.vCx)), r.tabDif != null ? h('span', { class: 'prc-badge ' + (r.tabPor && r.tabPor.tipo === 'parado' ? 'prc-neutro' : 'prc-ruim') }, `${pctTxt(r.tabDif)} do cadastro`) : h('span', { class: 'muted' }, 'igual ao cadastro'),
+            r.tabPor ? h('small', { class: 'prc-tabpor' }, r.tabPor.curto, TS.dica(r.tabPor.longo)) : null)), sortVal: (r) => (r.tabDif == null ? -99 : Math.abs(r.tabDif)) } : null,
         { key: 'status', label: 'O que mudou', align: 'l', title: 'O que teve reajuste no período: Custo + Venda = os dois mudaram; Só custo = o custo mudou e o preço não (a margem mexeu); Só venda = o preço mudou e o custo não; Sem reajuste = nenhum dos dois mudou.', render: (r) => { const [t, c] = STATUS[r.status]; return h('span', { class: 'prc-st ' + c }, t); }, sortVal: (r) => ({ ambos: 3, custo: 2, venda: 1, nada: 0 })[r.status] },
         { key: 'difMargem', label: 'Margem bruta (antes → agora)', title: 'Margem bruta = (preço de venda − custo) ÷ preço de venda, sem impostos, comissão nem royalties. Riscado = antes do período; em negrito = agora; a etiqueta mostra quantos pontos percentuais (p.p.) ganhou ou perdeu.', render: (r) => (r.mAt == null ? '—' : h('div', { class: 'prc-v' },
           r.difMargem != null && Math.abs(r.difMargem) >= 0.0005 ? h('s', { class: 'muted' }, fmt.pct(r.mAnt)) : null, h('b', { class: r.perdeu ? 'neg' : null }, fmt.pct(r.mAt)),
@@ -239,7 +261,7 @@
       empty: 'Nenhum produto neste filtro no período.',
     });
     const cont = (k) => linhas.filter(FIL[k][1]).length;
-    return TS.cardWithTools('Produtos', 'Clique no produto para ver o gráfico de custo × venda e todos os reajustes. Custo e venda são de 1 unidade vendida (pacote, lata, caneca…).',
+    return TS.cardWithTools('Produtos', `Clique no produto para ver o gráfico de custo × venda e todos os reajustes. Custo e venda são de 1 unidade vendida (pacote, lata, caneca…). O preço de venda e a margem vêm do cadastro do AppNext${D.tabHistDesde ? ` (reajustes do cadastro desde ${quando(D.tabHistDesde)})` : ' (o histórico de reajustes do cadastro começa a ser guardado agora, a cada planilha de preços importada)'}.`,
       h('div', { class: 'est-tools' }, tab.searchBox && (tab.searchBox.classList.add('est-busca'), tab.searchBox),
         TS.seg(Object.entries(FIL).map(([k, [t]]) => [`${t} (${cont(k)})`, k]), filtro, (v) => { state.precoFil = v; pintar(corpo, D); })),
       tab);
@@ -299,8 +321,8 @@
         mudou(a, b) && a ? h('span', { class: 'prc-badge ' + ((bomSobe ? b < a : b > a) ? 'prc-ruim' : 'prc-bom') }, f === fmt.pct ? `${b > a ? '+' : ''}${fmt.n1((b - a) * 100)} p.p.` : pctTxt(b / a - 1)) : null)));
     const lb = (v, c) => (v != null && c != null ? v - c : null), mg = (v, c) => (v > 0 && c != null ? (v - c) / v : null);
     const tab = h('table', { class: 'prc-comp' }, h('thead', null, h('tr', null, h('th', { class: 'l' }, 'Venda (1 unidade)'), h('th', null, 'Antes → agora'))), h('tbody', null,
-      linha('Preço de venda', vAnt, vAt, fmt.brl, true, 'preço de tabela praticado'),
-      r.tab != null ? h('tr', null, h('td', { class: 'l' }, h('div', null, 'Preço no cadastro do AppNext'), h('small', { class: r.tabDif != null ? 'neg' : 'muted' }, r.tabDif != null ? `as vendas estão ${pctTxt(r.tabDif)} do cadastro` : 'igual ao praticado'), r.tabPor ? h('small', { class: 'muted', style: { display: 'block' } }, r.tabPor.longo) : null), h('td', null, h('span', { class: 'prc-aa' }, h('b', null, fmt.brl(r.tab))))) : null,
+      linha('Preço de venda', vAnt, vAt, fmt.brl, true, r.base === 'caixa' ? 'pelo caixa (produto sem cadastro)' : 'cadastro do AppNext'),
+      r.tab != null ? h('tr', null, h('td', { class: 'l' }, h('div', null, 'Vendido no caixa'), h('small', { class: r.tabDif != null ? 'neg' : 'muted' }, r.tabDif != null ? `${pctTxt(r.tabDif)} do cadastro` : 'igual ao cadastro'), r.tabPor ? h('small', { class: 'muted', style: { display: 'block' } }, r.tabPor.longo) : null), h('td', null, h('span', { class: 'prc-aa' }, h('b', null, fmt.brl(r.vCx))))) : null,
       kgUn > 0 ? linha('Preço de venda do kg', vAnt / kgUn, vAt / kgUn, fmt.brl, true, `${fmt.int(Math.round(kgUn * 1000))} g por unidade`) : null,
       linha('Lucro bruto por unidade', lb(vAnt, cAnt), lb(vAt, cAt), fmt.brl, true, 'venda − custo'),
       linha('Margem bruta', mg(vAnt, cAnt), mg(vAt, cAt), fmt.pct, true)));
