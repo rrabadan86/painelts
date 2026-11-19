@@ -2677,21 +2677,28 @@ details.vl-ajuda summary { cursor: pointer; font-weight: 600; }
 .sug-form { display: grid; gap: 8px; margin-top: 8px; }
 .sug-form textarea { width: 100%; box-sizing: border-box; }
 .sug-aviso { margin: 0; font-size: 13px; }
-.sug-lista, .sug-ped-lista { display: grid; gap: 10px; margin-top: 10px; }
-.sug-item, .sug-ped { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: #fff; display: grid; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
+.sug-lista { display: grid; gap: 10px; margin-top: 10px; }
+.sug-item { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: #fff; display: grid; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
 .sug-item.novo { border-color: #e2b93b; box-shadow: 0 0 0 2px #fff4c7; }
-.sug-ped.on { background: #f3faf4; }
-.sug-item-meta, .sug-ped-quem { font-size: 12px; }
-.sug-item-txt, .sug-ped-nota { font-size: 13px; }
-.sug-item-txt small, .sug-ped-nota small { color: var(--muted); }
+.sug-ped-t tr.sug-ped-on td { background: #f3faf4; }
+.sug-item-meta { font-size: 12px; }
+.sug-item-txt { font-size: 13px; }
+.sug-item-txt small { color: var(--muted); }
 .sug-hist { font-size: 12px; color: var(--muted); }
 .sug-hist ul { margin: 4px 0 0; padding-left: 18px; }
 .sug-tirar { justify-self: start; font-size: 12px; padding: 4px 10px; }
-.sug-ped-acao { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 4px; }
 .sug-ped-acoes { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .sug-ped-btn { font-size: 12px; padding: 4px 10px; }
-.sug-motivos { display: flex; flex-wrap: wrap; gap: 6px; width: 100%; }
-.sug-motivos[hidden] { display: none; }
+.sug-ped-card .seg { margin: 6px 0 8px; flex-wrap: wrap; }
+.sug-ped-rec { font-weight: 400; }
+.sug-ped-no { white-space: nowrap; }
+/* a célula "Pedido" quebra a linha em vez de alargar a tabela (sem rolagem para o lado no computador) */
+.sug-ped-t .sug-ped-acoes { display: block; }
+.sug-ped-t .sug-ped-acoes .sug-ped-btn { margin: 2px 6px 2px 0; }
+.sug-ped-t.est-t td.wrap { min-width: 170px; }
+@media (max-width: 760px) {
+  .sug-ped-t.t-mob td:last-child { grid-column: 1 / -1; }
+}
 
 /* Configurações → Usuários: telas agrupadas como no menu, regras fixas travadas */
 .cfg-telas { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; font-weight: 400; min-width: 0; max-width: 100%; }
