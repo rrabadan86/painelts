@@ -4,34 +4,26 @@ Painel de vendas das lojas Tea Shop (substitui o Power BI). Responda sempre em *
 
 ## Como o projeto é organizado
 - **Servidor:** Node/Express — `server.js` (rotas) e `src/*.js` (regras: estoque, inventário, NF-e, conta com a franquia, cobrança, orçamentos, checklist, IA…).
-- **Tela:** JavaScript puro em `public/js/*.js`, tudo no namespace `TS` (`TS.h()` monta elementos, `TS.table`, `TS.kpi`, `TS.seg`, `TS.chart`, `TS.api` — este já sabe se está na apresentação).
-  - Script novo de tela precisa entrar em `APP_SCRIPTS` no `server.js`.
-  - O versionamento dos arquivos (`?v=`) é automático: não mexa.
-  - `replaceChildren(...)` com `null` escreve "null" na tela: sempre `[...].filter(Boolean)`.
+- **Tela:** JavaScript puro em `public/js/*.js`, namespace `TS`.
 - **Coletor (robôs):** Python + Playwright em `coletor/` (AppNext, FIXE, Sistema de Pedidos).
 - **Apresentação:** `/apresentacao` mostra dados fictícios (`src/demo.js`, rotas `/api/demo/...`) e **nunca grava nem envia nada**.
-- **IA:** `src/ia.js` (chave da Anthropic por loja, criptografada; teto e uso por mês), `src/iaprompts.js` (instruções e ferramentas), `src/iaconversas.js` (histórico), `public/js/ia.js` (✨ Pergunte ao painel; as consultas rodam no navegador sobre os dados que o perfil já vê). Na apresentação e nos testes (`IA_FALSO=1`) as respostas são simuladas.
+- **IA:** ✨ Pergunte ao painel, diagnóstico do Início e revisão do pedido (`src/ia*.js`, `public/js/ia.js`).
+
+Regras por parte do código ficam em `.claude/rules/` e carregam sozinhas ao mexer nos arquivos: `tela.md`, `coletor.md`, `ia.md`, `nfe.md`.
+Roteiros em `.claude/skills/`: `subir-versao`, `conferir-celular`, `nova-tela`, `nova-consulta-ia`.
+Hooks (`.claude/settings.json`): bloqueiam commit/push de segredos e limpam os restos dos testes de tela.
 
 ## Convenções de código
 - Rota que grava exige o cabeçalho `X-Painel: 1`; ações importantes vão para a auditoria (`C.auditar`).
 - Toda tela/rota nova precisa funcionar na apresentação: crie a rota `/api/demo/...` (dados fictícios ou resposta simulada, sem gravar).
 - Permissões no servidor (`req.perfil`, `podeTela`, `podeClientes`, `podeCustos`), não só escondendo na tela.
-- Testes: unidade em `tests/unit/*.test.js` (`node --test`); tela em `tests/e2e/*.spec.js` (Playwright, sempre na apresentação, projetos "computador" e "celular"). Mudou algo visível: confira no celular (390 px).
-- Textos da tela simples e diretos, em português; nada de termos técnicos para a vendedora.
-
-## Testes (economizar tokens e tempo)
-- **Durante os ajustes:** `npm test` + só os testes de tela da parte mexida, ex.: `npx playwright test tests/e2e/ia.spec.js` (ou `-g "nome do teste"`).
-- **Antes de subir para o GitHub:** a bateria completa, uma vez:
-```bash
-npm test
-npx playwright test          # se precisar: CHROME_PATH=<chromium> npx playwright test
-rm -rf test-results playwright-report tests/.dados
-```
-- O GitHub roda tudo de novo antes de liberar a instalação: se algo escapar, a versão não entra.
+- Testes: unidade em `tests/unit/*.test.js` (`node --test`); tela em `tests/e2e/*.spec.js` (Playwright, sempre na apresentação, projetos "computador" e "celular").
+- Durante os ajustes: `npm test` + só os testes de tela da parte mexida (`npx playwright test tests/e2e/ia.spec.js`, ou `-g "nome"`). A bateria completa é uma vez, antes de subir.
 
 ## Antes de cada commit
 - Comece sempre com `git fetch origin main && git merge --ff-only FETCH_HEAD` (o dono também sobe mudanças).
-- Faça commit e push de cada mudança. A instalação na VPS é pelo painel ("Atualizações do painel"): só versões que passam nos testes do GitHub entram. Depois é Ctrl+F5.
+- Faça commit e push de cada mudança (skill `subir-versao`). A instalação na VPS é pelo painel ("Atualizações do painel"): só versões que passam nos testes do GitHub entram. Depois é Ctrl+F5.
+- **Autorizado pelo dono (vale para todas as sessões):** o Claude pode abrir o PR e fazer o merge no `main` sozinho, sem perguntar, depois que os testes do GitHub do PR passarem (✓). Testes falharam: corrija antes; nunca faça merge com ✗ nem pule testes.
 
 ## Regras que não mudam
 **Segredos e dados**
@@ -45,22 +37,17 @@ rm -rf test-results playwright-report tests/.dados
 - Orçamento: só admin e franqueado.
 - Só o admin dispara o coletor ("Sincronizar agora").
 
-**AppNext e FIXE**
-- AppNext: só grava em fluxos aprovados pelo dono (clique no painel + confirmação, conferido item a item, auditado).
+**AppNext, FIXE e NF-e** (detalhes em `coletor.md` e `nfe.md`)
+- AppNext: só grava em fluxos aprovados pelo dono (clique no painel + confirmação, conferido item a item, auditado). Explorando: só olhar, nunca Concluir, Homologar ou Salvar.
 - O robô conclui e homologa NF-e (venda e devolução) só depois da revisão, para admin, franqueado e gerentes com Notas fiscais.
-- Explorando o AppNext: só olhar, nunca Concluir, Homologar ou Salvar.
 - FIXE: só observar.
+- Pergunte antes de abrir o AppNext no Chrome. Ele guarda a sessão por aba: cada aba nova pede login ao dono.
 
 **WhatsApp e testes**
 - Envio manual: um clique por mensagem, sem insistir com o cliente.
 - Dados temporários de teste: apague depois.
-- Pergunte antes de abrir o AppNext no Chrome. Ele guarda a sessão por aba: cada aba nova pede login ao dono.
 
 ## Pendências combinadas (o dono pediu para depois)
-- **Autorizado, fazer na próxima sessão:** organizar a pasta `.claude/` para gastar menos tokens:
-  - rules com `paths` em `.claude/rules/`: `coletor.md` (coletor/**), `ia.md` (arquivos da IA), `nfe.md` (NF-e e devolução), `tela.md` (public/js/**), tirando do CLAUDE.md o que for específico (ele fica curto: visão geral, segredos, perfis);
-  - skills em `.claude/skills/`: `subir-versao` (fetch/merge, bateria completa, limpeza, commit no formato, push), `conferir-celular` (script pronto: apresentação a 390 px + print), `nova-tela` (checklist: APP_SCRIPTS, menu, rota demo, permissão no servidor, testes computador/celular), `nova-consulta-ia` (como ensinar uma consulta nova ao ✨);
-  - hooks em `.claude/settings.json`: bloquear commit de segredos (`.env`, `config/lojas.json`, `config/coletor/*.env`, `config/ia.json`, `config/ia-mestra.key`, `dados/`) e limpar `test-results`/`playwright-report` depois dos testes.
 - Conferência do boleto de royalties (ler o PDF e conferir os descontos de devoluções e da fidelidade).
 - Reserva de estoque para encomenda (ligada ao Orçamento).
 - Meta do dia dividida pela escala, em vez da participação nas vendas.
