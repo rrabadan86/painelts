@@ -223,6 +223,10 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 | EST-37 | Envio pelo robô só marca importado com resultado real | `inventario.js` | `inventario.test` | ✅ |
 | EST-38 | Etapas: gerar planilha, importado, reabrir | `inventario.js` | `regras.spec` | 🟡 |
 | EST-41 | Reabrir para contar só no mesmo dia (Brasília) em que a contagem foi aberta; depois, a tela avisa e pede contagem nova (decisão do dono) | `inventario.js` `podeReabrir` (servidor) e `mesmoDia` (tela) | `inventario.test` "reabrir para contar: só no mesmo dia"; `regras.spec` "reabrir para contar só no mesmo dia" | ✅ |
+| EST-42 | ⭐ Sugestões: toda a equipe marca produto para o próximo pedido; a vendedora vê só nome e situação (tem/pouco/acabou) e só as próprias | `sugestoes.js` (`buscar`, `lista`); `server.js` `/api/sugestoes` | `sugestoes.test` "situação…", "pedido…"; `sugestoes.spec` | ✅ |
+| EST-43 | Sugestão com estoque na loja exige justificativa (chá a granel < 700 g não) | `sugestoes.js` `criar` | `sugestoes.test` "criar…"; `sugestoes.spec` | ✅ |
+| EST-44 | A estrela não muda a conta do pedido; quem faz o pedido decide (Adicionar / Não agora com motivo) | `pedido.js` `cartaoSugestoes`; `PUT /api/pedido/sugestoes/decisao` (tela Pedido) | `sugestoes.spec` | 🟡 (permissão da rota sem teste de servidor) |
+| EST-45 | Ao registrar o pedido: entrou encerra; sem estoque no site é automático e continua; não entrou guarda o motivo e continua para o próximo; histórico guardado e aviso de resposta nova | `sugestoes.js` `fechar`/`visto`; `pedido.js` (montar carrinho) | `sugestoes.test` "pedido…"; `sugestoes.spec` | ✅ |
 | EST-39 | Cobertura do inventário e aviso de 25 dias | `inventario.js` | `inventario.test`; `regras.spec` | ✅ |
 | EST-40 | Limites do inventário (2.000 itens) | `inventario.js` | — | ❌ |
 | EST-50 | Valor do pedido = % do faturamento (CMV real) | `pedido.js` | — | ❌ |
