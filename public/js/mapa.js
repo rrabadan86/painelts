@@ -24,7 +24,17 @@
     if (jorn > 240) return e.intervaloAte8 != null ? Math.max(0, +e.intervaloAte8 || 0) : jorn > 360 ? Math.max(0, +e.intervalo || 0) : 30;
     return 0;
   }
-  /** na escala automática (blocos de 30 min) */
+  /**
+   * Blocos de intervalo num turno de len blocos: o intervalo inteiro sempre que sobram mais de 4h de trabalho
+   * (dia curto, ex.: domingo 12h–21h, encurta o trabalho, não o intervalo — a CLT pede 1h acima de 6h).
+   */
+  function intervaloNoTurno(len, intervalo) {
+    if (!intervalo) return 0;
+    const trab = len * B - intervalo;
+    if (trab > 240) return intervalo / B;
+    return len * B > 240 ? Math.min(intervalo, 30) / B : 0; // turno curto: no máximo meia hora
+  }
+  /** na escala automática (blocos de 10 min) */
   const intervaloBloco = (e, trabMin) => Math.round(intervaloMin(e, trabMin) / B) * B;
   /** abaixo do mínimo da CLT? (acima de 6h: 1h; de 4h a 6h: 15 min) */
   const abaixoClt = (jorn, int) => (jorn > 360 ? int < 60 : jorn > 240 ? int < 15 : false);
@@ -133,7 +143,7 @@
         if (!ab) { opcoes.push(null); continue; }
         const [a, b] = ab;
         const len = Math.min(b - a, (trabMin + intervalo) / B);
-        const intSlots = Math.min(intervalo / B, Math.max(0, len - trabMin / B));
+        const intSlots = intervaloNoTurno(len, intervalo); // dia curto: encurta o trabalho, não o intervalo
         let melhor = null;
         for (let s = a; s + len <= b; s++) {
           // intervalo: no meio do turno, onde a necessidade é menor
@@ -243,7 +253,7 @@
     if (!ab) return null;
     const [a, b] = ab;
     const len = Math.min(b - a, (trabMin + intervalo) / B);
-    const intSlots = Math.min(intervalo / B, Math.max(0, len - trabMin / B));
+    const intSlots = intervaloNoTurno(len, intervalo); // dia curto: encurta o trabalho, não o intervalo
     // horários das pontas (abertura/fechamento) só são cobertos por poucos turnos: valem mais
     const nIni = Math.max(1, b - len - a + 1);
     const raro = (x) => { const lo = Math.max(a, x - len + 1), hi = Math.min(b - len, x); return 1 + 4 / Math.max(1, Math.ceil(Math.min(nIni, hi - lo + 1) / K)); };
@@ -456,7 +466,7 @@
       h('div', { class: 'f-label', style: { marginTop: '14px' } }, 'Jornada'),
       h('div', { class: 'cfg-grid c3' },
         campo('Funcionários', num('funcionarios', { min: 1, max: 40, step: 1 })),
-        campo('Carga horária semanal (h)', num('cargaSemanal', { min: 4, max: 60, step: 1 }), '44h = 8h48 por dia na 5x2 · 7h20 na 6x1'),
+        campo('Carga horária semanal (h)', num('cargaSemanal', { min: 4, max: 60, step: 1 }), (() => { const c = +e.cargaSemanal || 44, f = (m) => `${Math.floor(m / 60)}h${String(Math.round(m % 60)).padStart(2, '0')}`; return `${c}h = ${f((c * 60) / 5)} por dia na 5x2 · ${f((c * 60) / 6)} na 6x1`; })()),
         campo('Escala', esc),
         campo('Intervalo — jornada acima de 8h (min)', num('intervalo', { min: 0, max: 180, step: 5 }), 'CLT: no mínimo 1h (até 2h).'),
         campo('Intervalo — jornada de até 8h (min)', num('intervaloAte8', { min: 0, max: 180, step: 5, value: e.intervaloAte8 ?? '', placeholder: 'como antes' }), 'De 4h a 8h. Vazio = como antes (o intervalo de cima acima de 6h; 30 min até 6h). CLT: acima de 6h, 1h; de 4h a 6h, 15 min.'),

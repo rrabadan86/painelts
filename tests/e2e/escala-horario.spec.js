@@ -107,3 +107,22 @@ test('Escala → ajuste manual: atalhos Abre/Meio/Fecha, passo de 10 min e resum
   await page.getByRole('button', { name: 'Salvar ajustes' }).click();
   await expect(page.locator('#content')).toContainText('Na apresentação nada é salvo');
 });
+
+// Dia curto (domingo 12h–21h = 9h) com jornada de 8h20 + 1h: encurta o trabalho, o intervalo continua de 1h (antes ficava 40 min)
+test('Escala: em dia curto o intervalo continua inteiro (CLT) e o trabalho é que encurta', async ({ page }) => {
+  await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS._escala);
+  const r = await page.evaluate(() => {
+    const H = (a, f) => ({ abre: a, fecha: f, fechado: false });
+    const op = { funcionamento: { seg: H('09:40', '22:00'), ter: H('09:40', '22:00'), qua: H('09:40', '22:00'), qui: H('09:40', '22:00'), sex: H('09:40', '22:00'), sab: H('09:40', '22:00'), dom: H('12:00', '21:00') },
+      equipe: { funcionarios: 3, cargaSemanal: 42, escala: '5x2', intervalo: 60, capacidade: 2, modelo: 'rodizio' } };
+    const need = Array.from({ length: 7 }, () => Array(24).fill(1));
+    const ps = ['Natalie', 'Isaias', 'Gabi'].map((nome) => ({ nome, folga: 'auto', folga2: 'auto', turno: 'tanto' }));
+    const out = TS._escala.montarRodizio(need, op, ps);
+    const dom = [], semana = [];
+    for (const s of out.semanas) for (const p of s.turnosP) p.forEach((t, wd) => { if (!t) return; (wd === 6 ? dom : semana).push({ total: t.fim - t.ini, int: t.pausa ? t.pausa[1] - t.pausa[0] : 0 }); });
+    return { dom, semana };
+  });
+  expect(r.dom.length).toBeGreaterThan(0);
+  for (const t of r.dom) { expect(t.int).toBe(60); expect(t.total).toBe(540); } // 8h de trabalho + 1h
+  for (const t of r.semana) { expect(t.int).toBe(60); expect(t.total).toBe(560); } // 8h20 + 1h
+});
