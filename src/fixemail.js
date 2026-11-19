@@ -15,7 +15,7 @@ const REMETENTE = 'fixe@fixecrm.com.br';
 const DOMINIO = REMETENTE.split('@')[1];
 // de onde o painel aceita baixar a planilha: o domínio do FIXE (e subdomínios). Se o FIXE passar a mandar o link por
 // outro endereço, o dono libera em FIXE_LINK_DOMINIOS (separados por vírgula), sem mexer no código.
-const dominiosLink = () => [DOMINIO, ...String(process.env.FIXE_LINK_DOMINIOS || '').toLowerCase().split(/[,\s]+/).filter((d) => /^[a-z0-9.-]+\.[a-z]{2,}$/.test(d))];
+const dominiosLink = () => [DOMINIO, 'epossible.com.br', ...String(process.env.FIXE_LINK_DOMINIOS || '').toLowerCase().split(/[,\s]+/).filter((d) => /^[a-z0-9.-]+\.[a-z]{2,}$/.test(d))];
 const doDominio = (host, dom) => { const h = String(host || '').toLowerCase().replace(/\.$/, ''); return h === dom || h.endsWith('.' + dom); };
 const ESPERA_MAX = 3 * 3600e3; // depois de 3 h sem e-mail, desiste e avisa
 const pasta = (id) => path.join(C.pastaLoja(id), 'fixe');
@@ -137,6 +137,11 @@ function remetenteAutenticado(p) {
   for (const parte of ar.split(';')) {
     if (/^\s*dkim=pass\b/i.test(parte)) {
       const m = /\bheader\.i=\S*@([a-z0-9.-]+)/i.exec(parte) || /\bheader\.d=([a-z0-9.-]+)/i.exec(parte);
+      if (m && doDominio(m[1], DOMINIO)) return true;
+    }
+    // SPF alinhado: quem enviou (envelope) é do próprio domínio do FIXE
+    if (/^\s*spf=pass\b/i.test(parte)) {
+      const m = /\bsmtp\.mailfrom=(?:\S*@)?([a-z0-9.-]+)/i.exec(parte);
       if (m && doDominio(m[1], DOMINIO)) return true;
     }
     if (/^\s*dmarc=pass\b/i.test(parte)) {
