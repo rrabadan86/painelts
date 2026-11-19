@@ -82,6 +82,7 @@ function validarOperacao(o) {
   if (!int(e.cargaSemanal, 4, 60)) return 'Carga horária semanal inválida.';
   if (!['5x2', '6x1'].includes(e.escala)) return 'Escala inválida.';
   if (!int(e.intervalo, 0, 180)) return 'Intervalo inválido.';
+  if (e.intervaloAte8 != null && !int(e.intervaloAte8, 0, 180)) return 'Intervalo da jornada de até 8h inválido (0 a 180 min).';
   if (!(typeof e.capacidade === 'number' && e.capacidade > 0 && e.capacidade <= 100)) return 'Atendimentos por pessoa por hora inválido.';
   if (e.nomes != null && (!Array.isArray(e.nomes) || e.nomes.length > 40 || e.nomes.some((n) => typeof n !== 'string' || n.length > 40))) return 'Nomes inválidos.';
   if (e.modelo != null && !['livre', 'rodizio'].includes(e.modelo)) return 'Modelo de escala inválido.';

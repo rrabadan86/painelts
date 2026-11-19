@@ -13,6 +13,20 @@
    */
   const faixaDia = (f) => (f && !f.fechado ? [Math.floor(hm(f.abre) / 30), Math.ceil(hm(f.fecha) / 30), hm(f.abre), hm(f.fecha)] : null);
   /** turno em minutos: quem abre começa na hora exata da abertura e quem fecha sai na hora exata do fechamento (mesma jornada) */
+  /**
+   * Intervalo (min) de uma jornada: acima de 8h → "intervalo" da equipe; de 4h a 8h → "intervaloAte8"
+   * (sem ele, o de antes: acima de 6h o "intervalo", até 6h 30 min); até 4h, sem intervalo.
+   */
+  function intervaloMin(e, jorn) {
+    if (jorn > 480) return Math.max(0, +e.intervalo || 0);
+    if (jorn > 240) return e.intervaloAte8 != null ? Math.max(0, +e.intervaloAte8 || 0) : jorn > 360 ? Math.max(0, +e.intervalo || 0) : 30;
+    return 0;
+  }
+  /** na escala automática (blocos de 30 min) */
+  const intervaloBloco = (e, trabMin) => Math.round(intervaloMin(e, trabMin) / 30) * 30;
+  /** abaixo do mínimo da CLT? (acima de 6h: 1h; de 4h a 6h: 15 min) */
+  const abaixoClt = (jorn, int) => (jorn > 360 ? int < 60 : jorn > 240 ? int < 15 : false);
+  TS._intervalo = { intervaloMin, abaixoClt };
   function paraTurno(o, ab) {
     let ini = o.s * 30, fim = (o.s + o.len) * 30;
     let pausa = o.pausa != null && o.intSlots ? [o.pausa * 30, (o.pausa + o.intSlots) * 30] : null;
@@ -102,7 +116,7 @@
     const diasTrab = e.escala === '6x1' ? 6 : 5;
     const jornada = (e.cargaSemanal * 60) / diasTrab; // jornada diária exata (ex.: 44h na 5x2 = 8h48)
     const trabMin = Math.round(jornada / 30) * 30; // na escala, arredondada para blocos de 30 min
-    const intervalo = trabMin > 360 ? Math.max(0, Math.round((e.intervalo || 0) / 30) * 30) : trabMin > 240 ? 30 : 0;
+    const intervalo = intervaloBloco(e, trabMin);
     const slotsNeed = need.map((row) => Array.from({ length: 48 }, (_, s) => row[Math.floor(s / 2)]));
     const abertura = DIAS.map((d) => faixaDia(op.funcionamento[d]));
     const cob = Array.from({ length: 7 }, () => Array(48).fill(0));
@@ -268,7 +282,7 @@
     const diasBase = seis ? 6 : 5;
     const jornada = (e.cargaSemanal * 60) / diasBase;
     const trabMin = Math.round(jornada / 30) * 30;
-    const intervalo = trabMin > 360 ? Math.max(0, Math.round((e.intervalo || 0) / 30) * 30) : trabMin > 240 ? 30 : 0;
+    const intervalo = intervaloBloco(e, trabMin);
     const slotsNeed = need.map((row) => Array.from({ length: 48 }, (_, x) => row[Math.floor(x / 2)]));
     const abertura = DIAS.map((d) => faixaDia(op.funcionamento[d]));
     const DOM = 6, SEG = 0;
@@ -398,7 +412,7 @@
     linhas.push(h('tr', { class: 'linha-feriado' }, h('td', { class: 'l' }, 'Feriados'), h('td', null, fAb), h('td', null, fFe),
       h('td', null, h('label', { class: 'cfg-check-l' }, fFech, ' fechado'), h('label', { class: 'cfg-check-l' }, fMesmo, ' igual ao dia da semana'))));
     const e = op.equipe;
-    const num = (k, attrs) => { const x = h('input', { class: 'f-input', type: 'number', value: e[k], ...attrs }); TS.aoConfirmar(x, () => { e[k] = +x.value; aoMudar && aoMudar(); }); return x; };
+    const num = (k, attrs) => { const x = h('input', { class: 'f-input', type: 'number', value: e[k], ...attrs }); TS.aoConfirmar(x, () => { e[k] = x.value === '' && attrs.placeholder ? null : +x.value; aoMudar && aoMudar(); }); return x; }; // com placeholder, vazio = sem valor (usa o padrão)
     const esc = h('select', { class: 'f-input' }, h('option', { value: '5x2', selected: e.escala === '5x2' || null }, '5x2 (5 dias, 2 folgas)'), h('option', { value: '6x1', selected: e.escala === '6x1' || null }, '6x1 (6 dias, 1 folga)'));
     esc.addEventListener('change', () => { e.escala = esc.value; aoMudar && aoMudar(); });
     const modelo = h('select', { class: 'f-input' },
@@ -442,8 +456,14 @@
         campo('Funcionários', num('funcionarios', { min: 1, max: 40, step: 1 })),
         campo('Carga horária semanal (h)', num('cargaSemanal', { min: 4, max: 60, step: 1 }), '44h = 8h48 por dia na 5x2 · 7h20 na 6x1'),
         campo('Escala', esc),
-        campo('Intervalo (min)', num('intervalo', { min: 0, max: 180, step: 15 }), 'Para jornadas acima de 6h.'),
+        campo('Intervalo — jornada acima de 8h (min)', num('intervalo', { min: 0, max: 180, step: 15 }), 'CLT: no mínimo 1h (até 2h).'),
+        campo('Intervalo — jornada de até 8h (min)', num('intervaloAte8', { min: 0, max: 180, step: 15, value: e.intervaloAte8 ?? '', placeholder: 'como antes' }), 'De 4h a 8h. Vazio = como antes (o intervalo de cima acima de 6h; 30 min até 6h). CLT: acima de 6h, 1h; de 4h a 6h, 15 min.'),
         campo('Atendimentos por pessoa por hora', num('capacidade', { min: 1, max: 100, step: 1 }), 'Acima disso, precisa de mais uma pessoa.')),
+      (() => {
+        const dias = e.escala === '6x1' ? 6 : 5, jorn = (e.cargaSemanal * 60) / dias, iv = intervaloMin(e, jorn);
+        const txt = `Jornada desta loja: ${Math.floor(jorn / 60)}h${String(Math.round(jorn % 60)).padStart(2, '0')} por dia → intervalo de ${iv} min${iv % 30 ? ' (na escala automática, arredondado para ' + intervaloBloco(e, jorn) + ' min)' : ''}.`;
+        return h('p', { class: 'op-int-info ' + (abaixoClt(jorn, iv) ? 'neg' : 'muted') }, txt, abaixoClt(jorn, iv) ? ' Abaixo do mínimo da CLT para essa jornada: confira com a convenção coletiva.' : '');
+      })(),
       h('div', { class: 'f-label', style: { marginTop: '14px' } }, 'Regras da escala'),
       h('div', { class: 'cfg-grid' }, campo('Modelo', modelo, e.modelo === 'rodizio' ? 'Semana de domingo a sábado. As folgas de domingo giram igualmente entre a equipe.' : null),
         e.modelo === 'rodizio' ? campo('A "Semana 1" do rodízio começa no domingo', inicio, 'Use um domingo em que a Pessoa 1 folgou. A escala do mês segue a partir dele.') : null),
@@ -561,7 +581,7 @@
         h('ol', null,
           h('li', null, `Para cada dia da semana e hora aberta, pega o movimento de pico (o número de atendimentos que 80% dos dias não passam) e divide por ${op.equipe.capacidade} atendimentos por pessoa por hora. Nunca fica abaixo do mínimo de pessoas do dia. Isso dá as "pessoas necessárias por hora".`),
           h('li', null, `Horas necessárias = soma dessas pessoas em todas as horas da semana. Horas da equipe = funcionários × ${op.equipe.cargaSemanal} h.`),
-          h('li', null, `O painel monta a escala de verdade com 1, 2, 3… pessoas, usando as regras configuradas (${op.equipe.escala}, jornada, intervalo de ${op.equipe.intervalo} min, ${op.equipe.modelo === 'rodizio' ? 'rodízio de domingo, ' : ''}no máximo ${op.equipe.maxFolgaDia || 1} de folga por dia).`),
+          h('li', null, `O painel monta a escala de verdade com 1, 2, 3… pessoas, usando as regras configuradas (${op.equipe.escala}, jornada, intervalo de ${intervaloMin(op.equipe, (op.equipe.cargaSemanal * 60) / (op.equipe.escala === '6x1' ? 6 : 5))} min, ${op.equipe.modelo === 'rodizio' ? 'rodízio de domingo, ' : ''}no máximo ${op.equipe.maxFolgaDia || 1} de folga por dia).`),
           h('li', null, h('b', null, 'Equipe mínima'), ': o menor número de pessoas em que nenhum horário fica com a loja sozinha (zero pessoas).'),
           h('li', null, h('b', null, 'Equipe ideal'), ': o menor número em que, além disso, todos os picos e o mínimo de cada dia ficam cobertos.')),
         h('p', { class: 'muted' }, 'A equipe pode ser maior que horas ÷ carga porque folgas, jornada máxima e intervalo não deixam encaixar as horas perfeitamente.')));
@@ -657,7 +677,7 @@
       const e = op.equipe;
       const diasBase = e.escala === '6x1' ? 6 : 5;
       const trabMin = Math.round(((e.cargaSemanal * 60) / diasBase) / 30) * 30;
-      const intervalo = trabMin > 360 ? Math.max(0, Math.round((e.intervalo || 0) / 30) * 30) : trabMin > 240 ? 30 : 0;
+      const intervalo = intervaloBloco(e, trabMin);
       dias.forEach((iso, k) => {
         const aj = ajustes[iso];
         if (!aj || !Object.keys(aj).length) return;
@@ -677,7 +697,8 @@
           else {
             const ini = hm(a.ini), fim = hm(a.fim), dur = fim - ini;
             let pausa = null;
-            if (dur > 360 && e.intervalo) { const m = Math.round((ini + (dur - e.intervalo) / 2) / 30) * 30; pausa = [m, m + e.intervalo]; }
+            const ivA = +e.intervalo || 0; const iv = dur - ivA > 480 ? ivA : intervaloMin(e, dur - intervaloMin(e, Math.min(dur, 480))); // horário digitado já inclui o intervalo
+            if (iv && dur - iv > 240) { const m = Math.round((ini + (dur - iv) / 2) / 30) * 30; pausa = [m, m + iv]; }
             cel[i][k] = { tipo: 'trab', ini, fim, pausa, aj: true, feriado: fer && fer.nome };
           }
           aplica(cel[i][k], 1);
@@ -793,7 +814,7 @@
         tabela(true), legenda(),
         ferMes.length ? h('p', { class: 'imp-obs' }, 'Feriados: ' + ferMes.map((f) => `${f.data.slice(8)}/${f.data.slice(5, 7)} ${f.nome}`).join(' · ')) : null,
         alertas.length ? h('p', { class: 'imp-obs' }, 'Atenção: ' + alertas.join(' · ')) : null,
-        h('p', { class: 'imp-obs' }, `Intervalo de ${op.equipe.intervalo || 0} min nas jornadas acima de 6h. Emitido em ${new Date().toLocaleString('pt-BR')}.`),
+        h('p', { class: 'imp-obs' }, `Intervalo: ${op.equipe.intervalo || 0} min nas jornadas acima de 8h${op.equipe.intervaloAte8 != null ? `, ${op.equipe.intervaloAte8} min nas de 4h a 8h` : ''}. Emitido em ${new Date().toLocaleString('pt-BR')}.`),
         h('div', { class: 'imp-ass' }, h('div', null, h('span'), 'Responsável pela loja'), h('div', null, h('span'), 'Ciente da equipe'))));
       document.body.append(el);
       document.body.classList.add('imprimindo-doc');
