@@ -59,7 +59,7 @@ test('Escala: intervalo da jornada acima de 8h e o da jornada de até 8h são co
       acima: intervaloMin({ intervalo: 90, intervaloAte8: 30 }, 528), ate8: intervaloMin({ intervalo: 90, intervaloAte8: 30 }, 440),
       semCampo7h: intervaloMin({ intervalo: 60 }, 440), semCampo5h: intervaloMin({ intervalo: 60 }, 300), curta: intervaloMin({ intervalo: 60, intervaloAte8: 30 }, 200),
       clt: [abaixoClt(440, 30), abaixoClt(440, 60), abaixoClt(300, 15), abaixoClt(300, 10)],
-      // 6x1 44h = 7h20 (escala: 7h30) com 30 min de intervalo → 8h no total; 5x2 44h = 8h48 (escala: 9h) + 60 → 10h
+      // blocos de 10 min: 6x1 44h = 7h20 exatas + 30 min de intervalo → 7h50; 5x2 44h = 8h48 (8h50 em blocos de 10 min) + 60 → 9h50
       seisPorUm: duracoes({ ...base, escala: '6x1', intervaloAte8: 30 }), cincoPorDois: duracoes({ ...base, escala: '5x2', intervaloAte8: 30 }),
       labels, info: info && info.textContent, infoNeg: info && info.classList.contains('neg'),
     };
@@ -67,8 +67,8 @@ test('Escala: intervalo da jornada acima de 8h e o da jornada de até 8h são co
   expect(r.acima).toBe(90); expect(r.ate8).toBe(30); expect(r.curta).toBe(0);
   expect(r.semCampo7h).toBe(60); expect(r.semCampo5h).toBe(30); // sem o campo novo: igual a antes
   expect(r.clt).toEqual([true, false, false, true]);
-  expect(r.seisPorUm).toEqual([480]);
-  expect(r.cincoPorDois).toEqual([600]);
+  expect(r.seisPorUm).toEqual([470]);
+  expect(r.cincoPorDois).toEqual([590]);
   expect(r.labels).toContain('Intervalo — jornada acima de 8h (min)');
   expect(r.labels).toContain('Intervalo — jornada de até 8h (min)');
   expect(r.info).toMatch(/7h20 por dia → intervalo de 30 min/);

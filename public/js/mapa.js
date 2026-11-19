@@ -6,12 +6,14 @@
   const DIAS_NOME = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
   const DIAS_CURTO = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
   const hm = (s) => +s.slice(0, 2) * 60 + +s.slice(3, 5);
+  // escala em blocos de 10 min (entrada, saída e intervalo em qualquer horário de 10 em 10 min)
+  const B = 10, NB = 1440 / B, PH = 60 / B, K = 30 / B; // K: quantos blocos cabem em meia hora (as regras foram pensadas em meias horas)
   const hhmm = (m) => `${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
   /**
    * Faixa do dia em blocos de 30 min: inclui o bloco da abertura e o do fechamento mesmo quando o horário não é
    * redondo (09:40 → o bloco das 09:30 conta), e guarda os minutos exatos: [bloco inicial, bloco final, abre, fecha].
    */
-  const faixaDia = (f) => (f && !f.fechado ? [Math.floor(hm(f.abre) / 30), Math.ceil(hm(f.fecha) / 30), hm(f.abre), hm(f.fecha)] : null);
+  const faixaDia = (f) => (f && !f.fechado ? [Math.floor(hm(f.abre) / B), Math.ceil(hm(f.fecha) / B), hm(f.abre), hm(f.fecha)] : null);
   /** turno em minutos: quem abre começa na hora exata da abertura e quem fecha sai na hora exata do fechamento (mesma jornada) */
   /**
    * Intervalo (min) de uma jornada: acima de 8h → "intervalo" da equipe; de 4h a 8h → "intervaloAte8"
@@ -23,13 +25,13 @@
     return 0;
   }
   /** na escala automática (blocos de 30 min) */
-  const intervaloBloco = (e, trabMin) => Math.round(intervaloMin(e, trabMin) / 30) * 30;
+  const intervaloBloco = (e, trabMin) => Math.round(intervaloMin(e, trabMin) / B) * B;
   /** abaixo do mínimo da CLT? (acima de 6h: 1h; de 4h a 6h: 15 min) */
   const abaixoClt = (jorn, int) => (jorn > 360 ? int < 60 : jorn > 240 ? int < 15 : false);
   TS._intervalo = { intervaloMin, abaixoClt };
   function paraTurno(o, ab) {
-    let ini = o.s * 30, fim = (o.s + o.len) * 30;
-    let pausa = o.pausa != null && o.intSlots ? [o.pausa * 30, (o.pausa + o.intSlots) * 30] : null;
+    let ini = o.s * B, fim = (o.s + o.len) * B;
+    let pausa = o.pausa != null && o.intSlots ? [o.pausa * B, (o.pausa + o.intSlots) * B] : null;
     if (ab && ab.length > 2) {
       let d = 0;
       if (o.s <= ab[0] && ab[2] > ini) d = ab[2] - ini;            // abre: empurra para a hora exata (ex.: 09:30 → 09:40)
@@ -115,11 +117,11 @@
     const e = op.equipe;
     const diasTrab = e.escala === '6x1' ? 6 : 5;
     const jornada = (e.cargaSemanal * 60) / diasTrab; // jornada diária exata (ex.: 44h na 5x2 = 8h48)
-    const trabMin = Math.round(jornada / 30) * 30; // na escala, arredondada para blocos de 30 min
+    const trabMin = Math.round(jornada / B) * B; // na escala, arredondada para blocos de 10 min
     const intervalo = intervaloBloco(e, trabMin);
-    const slotsNeed = need.map((row) => Array.from({ length: 48 }, (_, s) => row[Math.floor(s / 2)]));
+    const slotsNeed = need.map((row) => Array.from({ length: NB }, (_, s) => row[Math.floor(s / PH)]));
     const abertura = DIAS.map((d) => faixaDia(op.funcionamento[d]));
-    const cob = Array.from({ length: 7 }, () => Array(48).fill(0));
+    const cob = Array.from({ length: 7 }, () => Array(NB).fill(0));
     const pessoas = [];
     const maxF = Math.max(1, Math.min(10, Math.round(+e.maxFolgaDia || 1)));
     const folgasDia = Array(7).fill(0);
@@ -130,16 +132,16 @@
         const ab = abertura[wd];
         if (!ab) { opcoes.push(null); continue; }
         const [a, b] = ab;
-        const len = Math.min(b - a, (trabMin + intervalo) / 30);
-        const intSlots = Math.min(intervalo / 30, Math.max(0, len - trabMin / 30));
+        const len = Math.min(b - a, (trabMin + intervalo) / B);
+        const intSlots = Math.min(intervalo / B, Math.max(0, len - trabMin / B));
         let melhor = null;
         for (let s = a; s + len <= b; s++) {
           // intervalo: no meio do turno, onde a necessidade é menor
           let pausa = null;
           if (intSlots) {
             let menor = Infinity;
-            for (let x = s + Math.floor(len / 2) - 2; x <= s + Math.floor(len / 2) + 1; x++) {
-              if (x < s + 4 || x + intSlots > s + len - 4) continue;
+            for (let x = s + Math.floor(len / 2) - 2 * K; x <= s + Math.floor(len / 2) + K; x++) {
+              if (x < s + 4 * K || x + intSlots > s + len - 4 * K) continue;
               const v = slotsNeed[wd][x] - cob[wd][x];
               if (v < menor) { menor = v; pausa = x; }
             }
@@ -151,7 +153,7 @@
             const falta = slotsNeed[wd][x] - cob[wd][x];
             ganho += falta > 0 ? (cob[wd][x] === 0 ? 3 : 1) : 0; // cobrir horário vazio vale mais
           }
-          ganho += 2 * encaixe(prefs[p], s, len, ab); // preferência de turno (menos que cobrir horário vazio)
+          ganho += 2 * K * encaixe(prefs[p], s, len, ab); // preferência de turno (menos que cobrir horário vazio)
           if (!melhor || ganho > melhor.ganho) melhor = { ganho, s, len, pausa, intSlots };
         }
         opcoes.push(melhor);
@@ -175,14 +177,14 @@
     for (let wd = 0; wd < 7; wd++) {
       const ab = abertura[wd];
       if (!ab) continue;
-      const lista = pessoas.map((t, i) => (t[wd] ? { i, pref: prefs[i], o: { s: t[wd].ini / 30, len: (t[wd].fim - t[wd].ini) / 30, t: t[wd] } } : null)).filter(Boolean);
+      const lista = pessoas.map((t, i) => (t[wd] ? { i, pref: prefs[i], o: { s: t[wd].ini / B, len: (t[wd].fim - t[wd].ini) / B, t: t[wd] } } : null)).filter(Boolean);
       trocarPorPreferencia(lista, ab);
       lista.forEach((x) => { pessoas[x.i][wd] = x.o.t; });
     }
     // faltas
     let descoberto = 0, abaixo = 0;
-    const faltas = Array.from({ length: 7 }, () => Array(48).fill(0));
-    for (let wd = 0; wd < 7; wd++) for (let s = 0; s < 48; s++) {
+    const faltas = Array.from({ length: 7 }, () => Array(NB).fill(0));
+    for (let wd = 0; wd < 7; wd++) for (let s = 0; s < NB; s++) {
       const f = slotsNeed[wd][s] - cob[wd][s];
       if (slotsNeed[wd][s] > 0 && f > 0) { faltas[wd][s] = f; if (cob[wd][s] === 0) descoberto += 0.5; else abaixo += 0.5; }
     }
@@ -235,23 +237,23 @@
   TS.pessoasEquipe = pessoasDe;
   const mdc = (a, b) => (b ? mdc(b, a % b) : a);
 
-  /** melhor turno de uma pessoa num dia, dada a cobertura atual (blocos de 30 min) */
+  /** melhor turno de uma pessoa num dia, dada a cobertura atual (blocos de B min) */
   function melhorTurno(wd, cob, slotsNeed, abertura, trabMin, intervalo, pref) {
     const ab = abertura[wd];
     if (!ab) return null;
     const [a, b] = ab;
-    const len = Math.min(b - a, (trabMin + intervalo) / 30);
-    const intSlots = Math.min(intervalo / 30, Math.max(0, len - trabMin / 30));
+    const len = Math.min(b - a, (trabMin + intervalo) / B);
+    const intSlots = Math.min(intervalo / B, Math.max(0, len - trabMin / B));
     // horários das pontas (abertura/fechamento) só são cobertos por poucos turnos: valem mais
     const nIni = Math.max(1, b - len - a + 1);
-    const raro = (x) => { const lo = Math.max(a, x - len + 1), hi = Math.min(b - len, x); return 1 + 4 / Math.max(1, Math.min(nIni, hi - lo + 1)); };
+    const raro = (x) => { const lo = Math.max(a, x - len + 1), hi = Math.min(b - len, x); return 1 + 4 / Math.max(1, Math.ceil(Math.min(nIni, hi - lo + 1) / K)); };
     let melhor = null;
     for (let s0 = a; s0 + len <= b; s0++) {
       let pausa = null;
       if (intSlots) {
         let menor = Infinity;
-        for (let x = s0 + Math.floor(len / 2) - 2; x <= s0 + Math.floor(len / 2) + 1; x++) {
-          if (x < s0 + 4 || x + intSlots > s0 + len - 4) continue;
+        for (let x = s0 + Math.floor(len / 2) - 2 * K; x <= s0 + Math.floor(len / 2) + K; x++) {
+          if (x < s0 + 4 * K || x + intSlots > s0 + len - 4 * K) continue;
           const v = slotsNeed[wd][x] - cob[wd][x];
           if (v < menor) { menor = v; pausa = x; }
         }
@@ -263,7 +265,7 @@
         const falta = slotsNeed[wd][x] - cob[wd][x];
         ganho += falta > 0 ? (cob[wd][x] === 0 ? 10 * raro(x) : 1) : 0;
       }
-      ganho += PESO_PREF * encaixe(pref, s0, len, ab);
+      ganho += PESO_PREF * K * encaixe(pref, s0, len, ab);
       if (!melhor || ganho > melhor.ganho) melhor = { ganho, s: s0, len, pausa, intSlots };
     }
     return melhor;
@@ -281,9 +283,9 @@
     const seis = e.escala === '6x1';
     const diasBase = seis ? 6 : 5;
     const jornada = (e.cargaSemanal * 60) / diasBase;
-    const trabMin = Math.round(jornada / 30) * 30;
+    const trabMin = Math.round(jornada / B) * B;
     const intervalo = intervaloBloco(e, trabMin);
-    const slotsNeed = need.map((row) => Array.from({ length: 48 }, (_, x) => row[Math.floor(x / 2)]));
+    const slotsNeed = need.map((row) => Array.from({ length: NB }, (_, x) => row[Math.floor(x / PH)]));
     const abertura = DIAS.map((d) => faixaDia(op.funcionamento[d]));
     const DOM = 6, SEG = 0;
     const domAberto = !!abertura[DOM];
@@ -318,7 +320,7 @@
       const folgaDom = new Set();
       if (!domAberto) pessoas.forEach((_, i) => folgaDom.add(i));
       else for (let j = 0; j < folgamDom; j++) folgaDom.add((w * folgamDom + j) % N);
-      const cob = Array.from({ length: 7 }, () => Array(48).fill(0));
+      const cob = Array.from({ length: 7 }, () => Array(NB).fill(0));
       const turnosP = pessoas.map(() => Array(7).fill(null));
       const motivos = pessoas.map(() => Array(7).fill(''));
       // folgas da semana: quem folga no domingo folga também na segunda; os demais folgam no(s) dia(s) fixo(s).
@@ -375,11 +377,11 @@
       const problemas = [];
       for (let wd = 0; wd < 7; wd++) {
         let ini = null, pior = null;
-        for (let x = 0; x <= 48; x++) {
-          const n = x < 48 ? slotsNeed[wd][x] : 0, c = x < 48 ? cob[wd][x] : 0;
+        for (let x = 0; x <= NB; x++) {
+          const n = x < NB ? slotsNeed[wd][x] : 0, c = x < NB ? cob[wd][x] : 0;
           const falta = n > 0 && c < n;
           if (falta) { if (c === 0) descoberto += 0.5; else abaixo += 0.5; if (ini == null) { ini = x; pior = { c, n }; } else if (c < pior.c) pior = { c, n }; }
-          if (!falta && ini != null) { problemas.push({ wd, ini: ini * 30, fim: x * 30, c: pior.c, n: pior.n }); ini = null; }
+          if (!falta && ini != null) { problemas.push({ wd, ini: ini * B, fim: x * B, c: pior.c, n: pior.n }); ini = null; }
         }
       }
       semanas.push({ turnosP, motivos, cob, descoberto, abaixo, problemas, folgaDom, folgasSem, excesso });
@@ -461,7 +463,7 @@
         campo('Atendimentos por pessoa por hora', num('capacidade', { min: 1, max: 100, step: 1 }), 'Acima disso, precisa de mais uma pessoa.')),
       (() => {
         const dias = e.escala === '6x1' ? 6 : 5, jorn = (e.cargaSemanal * 60) / dias, iv = intervaloMin(e, jorn);
-        const txt = `Jornada desta loja: ${Math.floor(jorn / 60)}h${String(Math.round(jorn % 60)).padStart(2, '0')} por dia → intervalo de ${iv} min${iv % 30 ? ' (na escala automática, arredondado para ' + intervaloBloco(e, jorn) + ' min)' : ''}.`;
+        const txt = `Jornada desta loja: ${Math.floor(jorn / 60)}h${String(Math.round(jorn % 60)).padStart(2, '0')} por dia → intervalo de ${iv} min${iv % B ? ' (na escala automática, arredondado para ' + intervaloBloco(e, jorn) + ' min)' : ''}.`;
         return h('p', { class: 'op-int-info ' + (abaixoClt(jorn, iv) ? 'neg' : 'muted') }, txt, abaixoClt(jorn, iv) ? ' Abaixo do mínimo da CLT para essa jornada: confira com a convenção coletiva.' : '');
       })(),
       h('div', { class: 'f-label', style: { marginTop: '14px' } }, 'Regras da escala'),
@@ -623,7 +625,7 @@
       : esc.abaixo > 0 ? h('div', { class: 'notice' }, `Loja sempre coberta, mas faltam pessoas nos picos durante ${fmt.n1(esc.abaixo)} h por semana. ${ideal.tudo ? `Com ${ideal.tudo} pessoas os picos ficam cobertos.` : ''}`)
         : h('div', { class: 'notice ok' }, 'Essa equipe cobre todos os horários e picos.');
     Q.append(h('div', { class: 'mt' }, TS.card(`Semana-modelo sugerida (${op.equipe.escala})`,
-      `Jornada de ${Math.floor(esc.jornada / 60)}h${String(Math.round(esc.jornada % 60)).padStart(2, '0')} por dia (horários arredondados de 30 em 30 min)${esc.intervalo ? ` + ${esc.intervalo} min de intervalo` : ''}, ${esc.diasTrab} dias por semana. Sugestão automática: ajuste ao que combinou com a equipe e confira as regras da CLT e da convenção coletiva (ex.: folga aos domingos periodicamente).`,
+      `Jornada de ${Math.floor(esc.jornada / 60)}h${String(Math.round(esc.jornada % 60)).padStart(2, '0')} por dia (horários de 10 em 10 min)${esc.intervalo ? ` + ${esc.intervalo} min de intervalo` : ''}, ${esc.diasTrab} dias por semana. Sugestão automática: ajuste ao que combinou com a equipe e confira as regras da CLT e da convenção coletiva (ex.: folga aos domingos periodicamente).`,
       avisoEsc,
       h('div', { class: 'table-wrap free' }, h('table', { class: 'escala-t' }, h('thead', null, h('tr', null, h('th', { class: 'l' }, ''), DIAS_NOME.map((d) => h('th', null, d)))), h('tbody', null, linhasEsc))),
       h('div', { class: 'f-label', style: { marginTop: '16px' } }, 'Cobertura da escala'),
@@ -676,7 +678,7 @@
     if (ajustes && need) {
       const e = op.equipe;
       const diasBase = e.escala === '6x1' ? 6 : 5;
-      const trabMin = Math.round(((e.cargaSemanal * 60) / diasBase) / 30) * 30;
+      const trabMin = Math.round(((e.cargaSemanal * 60) / diasBase) / B) * B;
       const intervalo = intervaloBloco(e, trabMin);
       dias.forEach((iso, k) => {
         const aj = ajustes[iso];
@@ -686,9 +688,9 @@
         const hf = fer && TS.horarioFeriado ? TS.horarioFeriado({ ...(cfg || {}), operacao: op }, iso) : null;
         const f = op.funcionamento[DIAS[wd]];
         const ab = hf && !hf.fechado ? faixaDia(hf) : faixaDia(f);
-        const sNeed = [Array.from({ length: 48 }, (_, x) => (ab && x >= ab[0] && x < ab[1] ? need[wd][Math.floor(x / 2)] || 1 : 0))];
-        const cob = [Array(48).fill(0)];
-        const aplica = (c, sinal) => { if (c && c.tipo === 'trab') for (let x = Math.floor(c.ini / 30); x < Math.ceil(c.fim / 30); x++) if (!(c.pausa && x * 30 >= c.pausa[0] && x * 30 < c.pausa[1])) cob[0][x] += sinal; };
+        const sNeed = [Array.from({ length: NB }, (_, x) => (ab && x >= ab[0] && x < ab[1] ? need[wd][Math.floor(x / PH)] || 1 : 0))];
+        const cob = [Array(NB).fill(0)];
+        const aplica = (c, sinal) => { if (c && c.tipo === 'trab') for (let x = Math.floor(c.ini / B); x < Math.ceil(c.fim / B); x++) if (!(c.pausa && x * B >= c.pausa[0] && x * B < c.pausa[1])) cob[0][x] += sinal; };
         // travados
         pessoas.forEach((p, i) => {
           const a = aj[p.nome.trim().toUpperCase()];
@@ -698,7 +700,7 @@
             const ini = hm(a.ini), fim = hm(a.fim), dur = fim - ini;
             let pausa = null;
             const ivA = +e.intervalo || 0; const iv = dur - ivA > 480 ? ivA : intervaloMin(e, dur - intervaloMin(e, Math.min(dur, 480))); // horário digitado já inclui o intervalo
-            if (iv && dur - iv > 240) { const m = Math.round((ini + (dur - iv) / 2) / 30) * 30; pausa = [m, m + iv]; }
+            if (iv && dur - iv > 240) { const m = Math.round((ini + (dur - iv) / 2) / B) * B; pausa = [m, m + iv]; }
             cel[i][k] = { tipo: 'trab', ini, fim, pausa, aj: true, feriado: fer && fer.nome };
           }
           aplica(cel[i][k], 1);
@@ -710,7 +712,7 @@
         for (const i of livres) { const o = melhorTurno(0, cob, sNeed, [ab], trabMin, intervalo, pessoas[i].turno); if (o) { cel[i][k] = turno(o); aplica(cel[i][k], 1); } }
         for (let r = 0; r < 2; r++) for (const i of livres) { aplica(cel[i][k], -1); const o = melhorTurno(0, cob, sNeed, [ab], trabMin, intervalo, pessoas[i].turno); if (o) cel[i][k] = turno(o); aplica(cel[i][k], 1); }
         { // troca entre os recalculados quando respeita melhor a preferência (mesma duração)
-          const lista = livres.filter((i) => cel[i][k].tipo === 'trab').map((i) => ({ i, pref: pessoas[i].turno, o: { s: cel[i][k].ini / 30, len: (cel[i][k].fim - cel[i][k].ini) / 30, c: cel[i][k] } }));
+          const lista = livres.filter((i) => cel[i][k].tipo === 'trab').map((i) => ({ i, pref: pessoas[i].turno, o: { s: cel[i][k].ini / B, len: (cel[i][k].fim - cel[i][k].ini) / B, c: cel[i][k] } }));
           trocarPorPreferencia(lista, ab);
           lista.forEach((x) => { cel[x.i][k] = x.o.c; });
         }
