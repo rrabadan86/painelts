@@ -116,8 +116,36 @@
         h('button', { type: 'button', class: 'btn primary', onclick: () => { aberto ? abertos.delete('nova') : abertos.add('nova'); pintar(); } }, aberto ? 'Fechar' : '+ Nova loja')));
       if (aberto) box.append(formNovaLoja());
     }
-    if (!est.lojas.length) box.append(h('div', { class: 'card' }, TS.empty('Nenhuma loja cadastrada ainda.')));
-    for (const l of est.lojas) box.append(cartaoLoja(l));
+    if (!est.lojas.length) { box.append(h('div', { class: 'card' }, TS.empty('Nenhuma loja cadastrada ainda.'))); return; }
+    // uma loja aberta por vez: o detalhe dela no lugar da lista (com "‹ Lojas" para voltar); com uma loja só, vai direto
+    const aberta = est.lojas.length === 1 ? est.lojas[0] : est.lojas.find((l) => abertos.has('loja:' + l.id));
+    if (aberta) {
+      if (est.lojas.length > 1) box.append(h('div', { class: 'cfg-voltar' }, h('button', { type: 'button', class: 'btn', onclick: () => { for (const k of [...abertos]) if (k.startsWith('loja:')) abertos.delete(k); pintar(); } }, '‹ Lojas')));
+      box.append(cartaoLoja(aberta));
+      return;
+    }
+    box.append(tabelaLojas());
+  }
+  /** todas as lojas numa tabela (padrão do painel): situação dos dados de cada uma; tocar abre a loja */
+  function tabelaLojas() {
+    const abrir = (l) => { for (const k of [...abertos]) if (k.startsWith('loja:')) abertos.delete(k); abertos.add('loja:' + l.id); pintar(); window.scrollTo(0, 0); };
+    const ORD_SIT = { erro: 0, espera: 1, rodando: 2, ok: 3 };
+    const linhas = est.lojas.map((l) => ({ ...l, _info: infoItens(l, l.base.importacoes[0]), _sit: situacao(l) }));
+    // na tabela o nome do item já está no cabeçalho da coluna: a célula leva só o ponto colorido e a data
+    const cel = (k) => (r) => { if (!r._info[k]) return h('span', { class: 'muted' }, '—'); const c = r._info[k].cloneNode(true); c.querySelector('b')?.remove(); return c; };
+    const cols = [
+      { key: 'nome', label: 'Loja', align: 'l', sticky: true, wrap: true, render: (r) => h('div', null, h('b', null, r.nome), h('small', { class: 'muted cfg-loja-sub2' }, `${r.id}${r.appnext ? ' · ' + r.appnext : ''}`)) },
+      { key: 'vendas', label: 'Vendas', align: 'l', title: 'Período das vendas no painel. Verde = em dia; amarelo = sem vendas novas há mais de 2 dias; cinza = sem dados.', render: cel('Vendas'), sortVal: (r) => (r.base && r.base.ultimaVenda) || '' },
+      { key: 'xml', label: 'XML', align: 'l', title: 'Notas com CPF/CNPJ (XML dos cupons) importadas. Amarelo = mais de 7 dias atrás das vendas.', render: cel('XML'), sortVal: (r) => (r.xml && r.xml.ate) || '' },
+      { key: 'estoque', label: 'Estoque', align: 'l', title: 'Última planilha de estoque e custos do AppNext. Amarelo = mais de 2 dias.', render: cel('Estoque'), sortVal: (r) => (r.estoque && r.estoque.em) || '' },
+      est.lojas.some((l) => { const fx = l.fixe || {}; return fx.url || fx.ultimo || fx.logs; }) ? { key: 'fixe', label: 'FIXE', align: 'l', title: 'Cadastro de clientes e pontos (FIXE): última importação.', render: cel('FIXE'), sortVal: () => 0 } : null,
+      { key: 'sit', label: 'Situação', align: 'l', render: (r) => h('span', { class: 'badge ' + r._sit[0] }, r._sit[1]), sortVal: (r) => ORD_SIT[r._sit[0]] ?? 9 },
+      { key: 'acoes', label: '', align: 'l', render: (r) => h('button', { type: 'button', class: 'btn cfg-abrir', onclick: (e) => { e.stopPropagation(); abrir(r); } }, 'Abrir ›'), sortVal: () => 0 },
+    ].filter(Boolean);
+    const tab = TS.table({ cols, rows: linhas, sortKey: 'sit', sortDir: 'asc', search: 'Buscar loja…', searchKeys: ['nome', 'id', 'appnext'], cls: 'cfg-lojas-t', onRowClick: abrir,
+      empty: 'Nenhuma loja com esse nome.' });
+    const nErro = linhas.filter((r) => r._sit[0] === 'erro').length;
+    return TS.card('Lojas', `${fmt.int(linhas.length)} lojas${nErro ? ` · ${fmt.int(nErro)} com problema na atualização` : ' · todas em dia'}. Toque numa loja para ver os dados, metas, equipe, integrações e mensagens dela.`, tab);
   }
 
   function formNovaLoja() {
@@ -162,11 +190,13 @@
     location.hash = '#config';
   };
   /** cabeçalho da loja: até quando estão vendas, XML e estoque (verde em dia, amarelo atrasado, cinza sem dados) */
-  function infoCabecalho(l, ult) {
+  function infoCabecalho(l, ult) { return h('div', { class: 'cfg-loja-info' }, ...Object.values(infoItens(l, ult))); }
+  /** os mesmos itens separados ({ Vendas, XML, Estoque, FIXE }): colunas da tabela de lojas */
+  function infoItens(l, ult) {
     const DIA = 86400e3, hoje = Date.now();
     const diasDesde = (iso) => (iso ? Math.floor((hoje - new Date(iso.length === 10 ? iso + 'T12:00:00' : iso).getTime()) / DIA) : null);
     const curto = (iso) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(2, 4)}` : '');
-    const item = (rot, st, txt, dica) => h('span', { class: 'cfg-per', title: dica || null }, h('i', { class: 'cfg-per-p ' + st }), h('b', null, rot), ' ', txt);
+    const item = (rot, st, txt, dica) => h('span', { class: 'cfg-per', title: dica || null, 'data-rot': rot }, h('i', { class: 'cfg-per-p ' + st }), h('b', null, rot), ' ', txt);
     const out = [];
     // vendas
     if (l.base.linhas) {
@@ -197,7 +227,7 @@
       else if (em) out.push(item('FIXE', d != null && d > 2 ? 'atr' : 'ok', dt(em), `Base de leads ${u ? dt(u.em) : '—'} · Logs ${fx.logs && fx.logs.em ? dt(fx.logs.em) : '—'}${d != null && d > 2 ? ` · ${d} dias sem atualizar` : ''}`));
       else out.push(item('FIXE', 'nada', 'não importado', 'Vem na atualização da noite ou em "Atualizar agora" com FIXE marcado'));
     }
-    return h('div', { class: 'cfg-loja-info' }, ...out);
+    return Object.fromEntries(out.map((el) => [el.dataset.rot, el]));
   }
   function cartaoLoja(l) {
     const chave = 'loja:' + l.id;

@@ -1,17 +1,20 @@
 const { test, expect } = require('@playwright/test');
 
 // Configurações → Lojas: nenhuma seção pode escrever "null"/"undefined" na tela (ex.: linha opcional vazia em replaceChildren)
-test('Configurações: todas as seções das lojas abrem sem "null" ou "undefined" escrito na tela', async ({ page }) => {
+test('Configurações: lojas em tabela; cada loja abre e todas as seções aparecem sem "null" ou "undefined"', async ({ page }) => {
   const erros = []; page.on('pageerror', (e) => erros.push(e.message));
   await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS.db);
   await page.evaluate(() => { location.hash = '#config'; });
-  await expect(page.locator('.cfg-loja-cab').first()).toBeVisible();
-  const cards = await page.locator('.cfg-loja-cab').count();
-  for (let c = 0; c < cards; c++) {
-    // abre a loja (as lojas começam fechadas) e passa por todas as seções
-    const cab = page.locator('.cfg-loja-cab').nth(c);
-    if ((await cab.getAttribute('aria-expanded')) !== 'true') await cab.evaluate((b) => b.click());
-    const card = page.locator('.cfg-loja').nth(c);
+  // lista de lojas em tabela (padrão do painel); "Abrir ›" mostra a loja e "‹ Lojas" volta
+  const tab = page.locator('table.cfg-lojas-t');
+  await expect(tab).toBeVisible();
+  const total = await tab.locator('tbody tr').count();
+  expect(total).toBeGreaterThan(1);
+  for (let c = 0; c < total; c++) {
+    if (await page.locator('.cfg-voltar button').count()) await page.locator('.cfg-voltar button').click();
+    await tab.locator('.cfg-abrir').nth(c).click();
+    const card = page.locator('.cfg-loja');
+    await expect(card).toHaveCount(1);
     await expect(card.locator('.cfg-sub')).toBeVisible();
     const links = card.locator('.cfg-sub a');
     const n = await links.count();

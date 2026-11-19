@@ -5,7 +5,8 @@ paths:
 # Padrão visual do painel (construção de layout)
 
 Toda tela nova ou mexida segue estas peças, nesta ordem. Antes de inventar um componente, procure um igual numa tela pronta
-(Estoque → Notas fiscais e ⭐ Sugestões são as referências de lista; Estoque é a de tabela com filtros e quadros).
+(Estoque → Notas fiscais, ⭐ Sugestões e Configurações → Lojas são as referências de lista; Estoque é a de tabela com filtros e quadros).
+Lista que abre um detalhe: a tabela some e o detalhe aparece no lugar, com "‹ Voltar" no topo (Inventário → contagem, Configurações → loja).
 
 ## Estrutura da página (de cima para baixo)
 1. **Submenu do grupo**: `TS.subEstoque(tela)` / `TS.subGrupo(tela)` — nunca um menu próprio.
