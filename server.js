@@ -282,7 +282,7 @@ const APP_SCRIPTS = [
   'core.js', 'components.js', 'dicas.js', 'rules.js', 'pages.js', 'fidelidade.js',
   'clientes.js', 'campanhas.js', 'espera.js', 'extras.js', 'contabilidade.js',
   'ruptura.js', 'estoque.js', 'devolucao.js', 'precos.js', 'inventario.js', 'sugestoes.js', 'validade.js', 'nfsaida.js', 'creditos.js', 'orcamento.js', 'checklist.js',
-  'site.js', 'inicio.js', 'pedido.js', 'ia.js', 'dre.js', 'equipe.js', 'mapa.js', 'feriados.js', 'fidretorno.js',
+  'site.js', 'inicio.js', 'pedido.js', 'ia.js', 'dre.js', 'comprasvendas.js', 'efeitopreco.js', 'equipe.js', 'mapa.js', 'feriados.js', 'fidretorno.js',
   'config.js', 'script.js', 'fechamento.js', 'sistema.js', 'main.js',
 ];
 let bundleMem = null, bundleCheckEm = 0;
@@ -511,7 +511,8 @@ app.get('/api/demo/estoque', (req, res) => {
     const foraDeLinha = { desde: dia(200), dias: 90, indisp: Object.fromEntries(comSaldo.slice(2, 6).map((i, k) => [String(i.cod), dia(k < 3 ? 120 + k * 10 : 20)])) };
     // lista de espera fictícia: clientes aguardando dois produtos zerados que venderam há pouco (têm nota de compra recente)
     const espera = Object.fromEntries((e.estoque.itens || []).filter((i) => !(i.qtd > 0) && i.custo > 0 && e.compras.itens[i.cod]).slice(0, 2).map((i, k) => [String(i.cod), k + 1]));
-    res.json({ estoque: e.estoque, cfg: ESd.cfg({ estoqueCfg: e.estoqueCfg }), classe: ESd.classeCfg({}), historico: e.historico, compras: e.compras, tabela, foraDeLinha, espera });
+    res.json({ estoque: e.estoque, cfg: ESd.cfg({ estoqueCfg: e.estoqueCfg }), classe: ESd.classeCfg({}), historico: e.historico,
+      compras: require('./src/demo-compras').comprasDoAno(e.compras, e.estoque, e.historico, (DEMO.partes().find((x) => x.id === req.query.loja) || {}).vendas), tabela, foraDeLinha, espera });
   } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
 });
 // inventário na apresentação: o catálogo fictício (a contagem fica só no navegador; nada é salvo)
@@ -1891,7 +1892,7 @@ app.put('/api/estoque/cfg', express.json({ limit: '20kb' }), (req, res) => {
   const v = ES.validarCfg(req.body || {});
   if (v.erro) return res.status(400).json({ erro: v.erro });
   C.alterar((cfg) => { cfg.lojas.find((l) => l.id === loja.id).estoqueCfg = v.ok; });
-  C.auditar(req.user, 'alterou configuração de estoque', loja.id, { loja: loja.id, entregaDias: v.ok.entregaDias, coberturaDias: v.ok.coberturaDias });
+  C.auditar(req.user, 'alterou configuração de estoque', loja.id, { loja: loja.id, entregaDias: v.ok.entregaDias, coberturaDias: v.ok.coberturaDias, comprasTetoPct: v.ok.comprasTetoPct });
   res.json({ ok: true, cfg: v.ok });
 });
 
