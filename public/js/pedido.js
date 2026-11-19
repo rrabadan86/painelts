@@ -464,6 +464,7 @@
     corpo.append(h('div', { class: 'grid g-kpi mt' }, kpis));
     if (R.obTotal) corpo.append(h('div', { class: 'card mt ped-compo-card' }, h('div', { class: 'card-title' }, 'Composição do pedido'), R.novoCompo()));
     corpo.append(h('div', { class: 'mt' }, cartaoObrigatorio(corpo, loja, M, e, p, R)));
+    if (TS.iaPedido && TS.eu && ['admin', 'franqueado', 'gerente'].includes(TS.eu.perfil)) corpo.append(cartaoIA(corpo, loja, M, e, p, R, editados, chave));
     if (modo === 'evento' && R.evInfo.atual[0] - R.hoje > R.ent + R.N) corpo.append(h('div', { class: 'notice mt' }, `Faltam ${fmt.int(R.evInfo.atual[0] - R.hoje)} dias para o ${R.ev.nome}: isto é uma prévia. O consumo normal até lá foi limitado a ${R.ent + R.N} dias (entrega + intervalo de pedidos), porque as reposições normais cobrem o resto. Refaça perto da data, com o estoque de então.`));
     if (modo === 'evento' && R.evInfo.atual[0] - R.hoje < R.ent) corpo.append(h('div', { class: 'notice warn mt' }, `A entrega leva ${R.ent} dias e o ${R.ev.nome} começa antes disso: o pedido pode chegar atrasado.`));
 
@@ -1098,6 +1099,102 @@
     return j.obrigatorio;
   }
   const dataBR = (iso) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : '');
+  // ---------- revisão com IA: o olhar de comprador sobre o pedido calculado (sazonalidade, validade, espera) ----------
+  const revisoesIA = new Map(); // chave da tela → { rev, em, aplicados: Set }
+  function dadosParaIA(loja, M, R) {
+    const db = TS.db, hoje = R.hoje, acc = new Map();
+    const rd = (v, n = 3) => Math.round(v * 10 ** n) / 10 ** n;
+    for (let i = 0; i < db.n; i++) {
+      const d = db.day[i];
+      if (d < hoje - 395 || d >= hoje) continue;
+      for (const [it, q] of M.consumo(i)) {
+        const k = String(it.cod);
+        let a = acc.get(k); if (!a) acc.set(k, (a = { v30: 0, v90: 0, lyp: 0, lyu: 0 }));
+        if (d >= hoje - 30) a.v30 += q;
+        if (d >= hoje - 90) a.v90 += q;
+        if (d >= hoje - 365 && d <= hoje - 336) a.lyp += q;
+        if (d >= hoje - 395 && d <= hoje - 366) a.lyu += q;
+      }
+    }
+    const z = { v30: 0, v90: 0, lyp: 0, lyu: 0 };
+    const linhas = R.linhas.filter((r) => r.pedir > 0 || (!r.extra && (r.sugerido > 0 || r.urgente || r.esp)) || ((acc.get(String(r.cod)) || z).v30 > 0 && r.qtd > 0))
+      .sort((a, b) => (b.pedir * (b.preco || 0)) - (a.pedir * (a.preco || 0)) || (acc.get(String(b.cod)) || z).v30 - (acc.get(String(a.cod)) || z).v30).slice(0, 160);
+    const nomeLoja = ((TS.lojas || []).find((l) => l.id === loja) || {}).nome || loja;
+    return {
+      loja: nomeLoja, hoje: TS.dayToIso(hoje), modo: R.ev ? 'data comemorativa' : 'reposição',
+      evento: R.ev ? { nome: R.ev.nome, de: TS.dayToIso(R.evInfo.atual[0]), ate: TS.dayToIso(R.evInfo.atual[1]), vendas_ano_passado: Math.round(R.evLyVt || 0) } : null,
+      limite_valor: R.orcamento != null ? Math.round(R.orcamento) : null, total_atual: Math.round(R.linhas.reduce((s, r) => s + r.pedir * (r.preco || 0), 0)),
+      dias_entrega: R.ent, dias_ate_proximo_pedido: R.N, crescimento_loja_8_semanas: rd((R.crescLoja || 1) - 1, 3),
+      legenda: 'vd30/vd90 = venda média por dia (unidade do item) nos últimos 30/90 dias; sazonal = quanto saiu nos 30 dias seguintes a esta data no ano passado (ly_prox30) e nos 30 dias antes (ly_ult30); vence = lote que vence em X dias; espera = clientes na lista de espera; pedir = quantidade no pedido agora; sugerido = conta do painel.',
+      itens: linhas.map((r) => {
+        const a = acc.get(String(r.cod)) || z, v = VAL.get(String(r.cod));
+        return {
+          cod: String(r.cod), produto: r.produto, grupo: r.grupoTxt, un: r.it && r.it.un === 'Kg' ? 'Kg' : 'Un', mult: (r.c && r.c.mult) || 1,
+          estoque: rd(r.qtd || 0), chega: r.chega ? rd(r.chega) : 0, vd30: rd(a.v30 / 30), vd90: rd(a.v90 / 90), sazonal: { ly_prox30: rd(a.lyp, 2), ly_ult30: rd(a.lyu, 2) },
+          cobertura_dias: r.dias != null ? Math.round(r.dias) : null, sugerido: r.sugeridoPedir ?? r.sugerido, pedir: r.pedir, preco: r.preco != null ? Math.round(r.preco * 100) / 100 : null,
+          classe: r.classe || null, margem: r.margem != null ? rd(r.margem, 2) : null, vence: v ? { qtd: rd(v.kg || 0), dias: v.dias } : null, espera: r.esp ? r.esp.pedidos : 0,
+          obrigatorio: !!r.obrig, no_site: r.site === 'ok' ? 'disponível' : r.site === 'indisp' ? 'indisponível' : r.site === 'fora' ? 'fora do catálogo' : r.site,
+        };
+      }),
+    };
+  }
+  function cartaoIA(corpo, loja, M, e, p, R, editados, chave) {
+    const box = h('div', { class: 'card mt ped-ia' });
+    const st = revisoesIA.get(chave);
+    const linhaDe = (cod) => R.linhas.find((r) => String(r.cod) === String(cod));
+    const pode = (r) => r && !r.obrig && (r.site === 'ok' || r.site === 'sem');
+    const qtdTxtR = (r, v) => (r ? qtdTxt(v, r.it) : fmt.n1(v));
+    const aplicar = (aj) => {
+      const r = linhaDe(aj.cod);
+      if (!pode(r)) return;
+      const v = Math.max(0, +aj.qtd || 0);
+      if (v === r.sugeridoPedir) editados.delete(String(r.cod)); else editados.set(String(r.cod), v);
+      st.aplicados.add(aj.cod);
+    };
+    const revisar = async () => {
+      box.replaceChildren(h('div', { class: 'card-title' }, '🤖 Revisão com IA'), h('div', { class: 'loading' }, h('div', null, h('div', { class: 'spinner' }), h('p', null, 'A IA está revisando o pedido… (uns 20 a 60 segundos)'))));
+      try {
+        const j = await TS.iaPedido(loja, dadosParaIA(loja, M, R));
+        revisoesIA.set(chave, { rev: j.revisao, em: Date.now(), aplicados: new Set(), simulada: !!j.simulada });
+        pintar(corpo, loja, M, e, p);
+      } catch (err) {
+        box.replaceChildren(h('div', { class: 'card-title' }, '🤖 Revisão com IA'), h('div', { class: 'notice err' }, err.message),
+          err.status === 409 && TS.eu.pode && TS.eu.pode.configurar ? h('a', { href: '#config', onclick: () => { state.cfgAba = 'ia'; } }, 'Configurações → Inteligência artificial') : null,
+          h('div', { class: 'cfg-acoes' }, h('button', { type: 'button', class: 'btn', onclick: revisar }, 'Tentar de novo')));
+      }
+    };
+    if (!st) {
+      box.append(h('div', { class: 'card-title' }, '🤖 Revisão com IA'),
+        h('p', { class: 'muted' }, 'A IA confere este pedido com a mesma época do ano passado, a tendência das últimas semanas, a validade dos lotes e a lista de espera, e sugere ajustes com o motivo de cada um. Você escolhe o que aplicar.'),
+        h('div', { class: 'cfg-acoes' }, h('button', { type: 'button', class: 'btn primary', onclick: revisar }, 'Revisar este pedido')));
+      return box;
+    }
+    const rv = st.rev || {};
+    const ajustes = (rv.ajustes || []).filter((a) => a && a.cod != null);
+    const pendentes = ajustes.filter((a) => !st.aplicados.has(a.cod) && pode(linhaDe(a.cod)));
+    const linhasAj = ajustes.map((aj) => {
+      const r = linhaDe(aj.cod), ok = pode(r), feito = st.aplicados.has(aj.cod);
+      return h('tr', { class: feito ? 'ped-ia-feito' : null },
+        h('td', { class: 'l' }, h('b', null, r ? r.produto : `cód. ${aj.cod}`), h('small', { class: 'muted' }, ` ${aj.cod}`)),
+        h('td', null, r ? qtdTxtR(r, r.pedir) : '—'), h('td', null, h('b', null, qtdTxtR(r, +aj.qtd || 0))),
+        h('td', { class: 'l ped-ia-mot' }, aj.motivo || ''),
+        h('td', null, feito ? h('span', { class: 'pos' }, 'aplicado ✓') : ok ? h('button', { type: 'button', class: 'btn', onclick: () => { aplicar(aj); pintar(corpo, loja, M, e, p); } }, 'Aplicar')
+          : h('small', { class: 'muted' }, r ? (r.obrig ? 'obrigatório' : 'fora do site') : 'não está na lista')));
+    });
+    box.append(
+      h('div', { class: 'card-title' }, '🤖 Revisão com IA', h('small', { class: 'muted' }, ` · ${new Date(st.em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}${st.simulada ? ' · simulada (apresentação)' : ''}`)),
+      TS.iaMd ? TS.iaMd(rv.resumo || '') : h('p', null, rv.resumo || ''),
+      (rv.alertas || []).length ? h('ul', { class: 'ped-ia-alertas' }, rv.alertas.map((a) => h('li', null, '⚠️ ', a))) : null,
+      ajustes.length ? h('div', { class: 'tbl-wrap' }, h('table', { class: 'ped-ia-t' },
+        h('thead', null, h('tr', null, h('th', { class: 'l' }, 'Produto'), h('th', null, 'No pedido'), h('th', null, 'IA sugere'), h('th', { class: 'l' }, 'Por quê'), h('th'))),
+        h('tbody', null, linhasAj))) : h('p', { class: 'pos' }, 'Nenhum ajuste: a IA achou o pedido coerente.'),
+      h('div', { class: 'cfg-acoes' },
+        pendentes.length > 1 ? h('button', { type: 'button', class: 'btn primary', onclick: () => { pendentes.forEach(aplicar); pintar(corpo, loja, M, e, p); } }, `Aplicar os ${pendentes.length} ajustes`) : null,
+        h('button', { type: 'button', class: 'btn', onclick: revisar }, 'Revisar de novo'),
+        h('small', { class: 'muted' }, 'Os ajustes mudam só as quantidades nesta tela; o carrinho continua sendo montado por você.')));
+    return box;
+  }
+
   function cartaoObrigatorio(corpo, loja, M, e, p, R) {
     const lista = (p.obrigatorio && p.obrigatorio.lista) || [];
     const refazer = (ob) => { p.obrigatorio = ob; pintar(corpo, loja, M, e, p); };

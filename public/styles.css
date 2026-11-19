@@ -2455,3 +2455,60 @@ details.vl-ajuda summary { cursor: pointer; font-weight: 600; }
 .orc-cli-info { margin-top: 8px; font-size: 13px; color: #444; }
 .orc-cli-info:empty { display: none; }
 .orc-salve { display: block; text-align: center; } .orc-salve:empty { display: none; } .orc-acoes .btn:disabled { opacity: .45; cursor: not-allowed; }
+
+/* ---------- IA: Pergunte ao painel, revisão do pedido, configuração ---------- */
+.ia-btn { font-size: 18px; }
+.ia-gaveta { display: flex; flex-direction: column; padding: 18px 18px 12px; overflow: hidden; width: min(620px, 100%); }
+.ia-cab { padding-right: 44px; }
+.ia-sub { font-size: 13px; margin-top: 2px; }
+.ia-lista { flex: 1; min-height: 0; overflow-y: auto; padding: 10px 2px; display: flex; flex-direction: column; gap: 10px; }
+.ia-rodape { display: flex; gap: 8px; align-items: flex-end; border-top: 1px solid var(--line); padding-top: 10px; }
+.ia-txt { flex: 1; resize: none; min-height: 44px; max-height: 140px; font-size: 15px; }
+.ia-nota { display: block; margin-top: 6px; font-size: 11.5px; }
+.ia-msg { border-radius: 12px; padding: 10px 12px; max-width: 100%; line-height: 1.45; font-size: 14.5px; }
+.ia-eu { align-self: flex-end; background: var(--green); color: #fff; max-width: 85%; white-space: pre-wrap; }
+.ia-ela { align-self: stretch; background: var(--cream-2); border: 1px solid var(--line); }
+.ia-erro { border-color: var(--bad); color: var(--bad); }
+.ia-passos { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+.ia-pensando { color: var(--muted); font-size: 13px; }
+.ia-md p { margin: 0 0 8px; }
+.ia-md p:last-child { margin-bottom: 0; }
+.ia-md ul, .ia-md ol { margin: 0 0 8px; padding-left: 20px; }
+.ia-md li { margin: 2px 0; }
+.ia-md .ia-tit { font-weight: 700; color: var(--dark); }
+.ia-md code { background: var(--sage-l); border-radius: 4px; padding: 0 4px; font-size: 13px; }
+.ia-tab-w { overflow-x: auto; margin: 4px 0 8px; }
+.ia-tab { border-collapse: collapse; font-size: 13px; width: 100%; }
+.ia-tab th, .ia-tab td { border-bottom: 1px solid var(--line); padding: 4px 8px; text-align: left; white-space: nowrap; }
+.ia-tab th { color: var(--muted); font-weight: 600; }
+.ia-tab td.n { text-align: right; font-variant-numeric: tabular-nums; }
+.ia-graf { margin-top: 8px; background: #fff; border-radius: 10px; padding: 8px; border: 1px solid var(--line); }
+.ia-graf-t { font-weight: 600; font-size: 13px; margin-bottom: 4px; }
+.ia-graf-box { height: 220px; }
+.ia-cli { margin-top: 8px; }
+.ia-acoes { margin-top: 6px; text-align: right; }
+.ia-vazio p { color: var(--muted); margin: 6px 0 10px; }
+.ia-sugs { display: flex; flex-direction: column; gap: 8px; }
+.ia-sug { text-align: left; background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; cursor: pointer; font: inherit; font-size: 14px; color: var(--ink); }
+.ia-sug:hover { border-color: var(--sage); background: var(--sage-l); }
+.ia-aviso .notice { margin: 8px 0 0; }
+@media (max-width: 600px) { .ia-gaveta { padding: 14px 12px 10px; } .ia-eu { max-width: 92%; } }
+.ia-chave { margin-top: 12px; display: grid; gap: 8px; }
+.ia-chave-cab { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; }
+.ia-uso { display: grid; gap: 4px; }
+.ia-barra { height: 8px; background: var(--sage-l); border-radius: 6px; overflow: hidden; max-width: 420px; }
+.ia-barra span { display: block; height: 100%; background: var(--green-2); }
+.ia-barra span.alto { background: var(--bad); }
+.ia-chave-acoes label { display: inline-flex; align-items: center; gap: 6px; }
+.ia-form { margin-top: 12px; display: grid; gap: 10px; }
+.ia-cks { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; }
+.ia-ck { display: inline-flex; align-items: center; gap: 4px; }
+.ia-passo { margin-top: 6px; }
+.ped-ia .ia-md { margin: 6px 0; }
+.ped-ia-alertas { margin: 6px 0; padding-left: 4px; list-style: none; }
+.ped-ia-alertas li { margin: 3px 0; }
+.ped-ia-t { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.ped-ia-t th, .ped-ia-t td { padding: 6px 8px; border-bottom: 1px solid var(--line); text-align: right; vertical-align: top; }
+.ped-ia-t .l { text-align: left; }
+.ped-ia-mot { min-width: 220px; color: var(--ink); }
+.ped-ia-feito td { opacity: .65; }

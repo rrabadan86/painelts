@@ -264,7 +264,7 @@ const APP_SCRIPTS = [
   'core.js', 'components.js', 'dicas.js', 'rules.js', 'pages.js', 'fidelidade.js',
   'clientes.js', 'campanhas.js', 'espera.js', 'extras.js', 'contabilidade.js',
   'estoque.js', 'devolucao.js', 'precos.js', 'inventario.js', 'validade.js', 'nfsaida.js', 'creditos.js', 'orcamento.js', 'checklist.js',
-  'site.js', 'inicio.js', 'pedido.js', 'dre.js', 'mapa.js', 'feriados.js',
+  'site.js', 'inicio.js', 'pedido.js', 'ia.js', 'dre.js', 'mapa.js', 'feriados.js',
   'config.js', 'script.js', 'fechamento.js', 'sistema.js', 'main.js',
 ];
 let bundleMem = null, bundleCheckEm = 0;
@@ -423,6 +423,22 @@ app.get(['/apresentacao', '/apresentacao/'], (req, res) => {
 // a apresentação entra como administrador (tudo visível, nada é salvo: o navegador barra qualquer alteração)
 app.get('/api/demo/eu', (req, res) => res.json({ usuario: 'apresentacao', nome: 'Visitante', demo: true, perfil: 'admin', vendedor: '',
   pode: { configurar: true, admin: true, clientes: true, custos: true }, telas: null, lojas: DEMO.lojasDemo().map((l) => ({ ...l, marca: { nome: l.nome, logo: false } })) }));
+// ---------- IA na apresentação: respostas simuladas (nada vai para a Anthropic, nada é salvo) ----------
+const IAd = require('./src/ia'), IAPd = require('./src/iaprompts');
+app.get('/api/demo/ia/estado', (req, res) => res.json({ ativa: true, demo: true, pode: true, podeConfigurar: true }));
+app.get('/api/demo/ia/config', (req, res) => res.json({ demo: true, porLoja: DEMO.lojasDemo().map((l) => ({ loja: l.id, nome: l.nome, chave: null })), chaves: [], preco: { entrada: 3, saida: 15 }, tetoPadrao: IAd.TETO_PADRAO, podeConfigurar: true }));
+app.put('/api/demo/ia/chave', (req, res) => res.status(400).json({ erro: 'Na apresentação nada é salvo.' }));
+app.post('/api/demo/ia/perguntar', express.json({ limit: '300kb' }), (req, res) => {
+  const b = req.body || {};
+  const e = IAPd.conferirMensagens(b.mensagens);
+  if (e) return res.status(400).json({ erro: e });
+  const j = IAd.simular({ messages: b.mensagens, tools: IAPd.ferramentas({ clientes: true, custos: true }) });
+  res.json({ content: j.content, stop_reason: j.stop_reason, simulada: true });
+});
+app.post('/api/demo/ia/pedido', express.json({ limit: '200kb' }), (req, res) => {
+  const j = IAd.simular({ messages: [{ role: 'user', content: 'Dados: ' + JSON.stringify((req.body && req.body.dados) || {}) }], tool_choice: { type: 'tool', name: 'revisar_pedido' } });
+  res.json({ revisao: j.content[0].input, simulada: true });
+});
 const ESd = require('./src/estoque'), PEDd = require('./src/pedido');
 const lojaDemo = (req) => DEMO.lojasDemo().find((l) => l.id === String(req.query.loja || ''));
 app.get('/api/demo/estoque', (req, res) => {
@@ -1457,6 +1473,100 @@ app.delete('/api/orcamentos/:id', (req, res) => {
   if (r.erro) return res.status(400).json({ erro: r.erro });
   res.json({ ok: true });
 });
+// ======================= Inteligência artificial (chave da Anthropic de cada franqueado) =======================
+const IA = require('./src/ia'), IAP = require('./src/iaprompts');
+const podeIA = (req) => req.perfil === 'admin' || req.perfil === 'franqueado' || req.perfil === 'gerente';
+/** loja da conversa: a escolhida (ou, em "todas", a primeira das lojas da pessoa que tem chave) */
+const lojaIA = (req, res, id) => {
+  if (!podeIA(req)) { res.status(403).json({ erro: 'A IA é para o admin, o franqueado e o gerente.' }); return null; }
+  id = String(id || '');
+  const loja = id === 'todas' ? req.lojas.find((l) => IA.chaveDaLoja(l.id)) || req.lojas[0] : req.lojas.find((l) => l.id === id);
+  if (!loja) { res.status(400).json({ erro: 'Escolha uma loja.' }); return null; }
+  return loja;
+};
+const iaErro = (res, e) => (e instanceof IA.ErroIA ? res.status(e.status).json({ erro: e.message }) : (console.error('[ia]', e), res.status(500).json({ erro: 'Falha na IA: ' + e.message })));
+app.get('/api/ia/estado', (req, res) => {
+  if (!podeIA(req)) return res.json({ ativa: false, pode: false });
+  const id = String(req.query.loja || '');
+  const lojas = id === 'todas' ? req.lojas : req.lojas.filter((l) => l.id === id);
+  const k = lojas.map((l) => IA.chaveDaLoja(l.id)).find(Boolean);
+  res.json({ ativa: !!k, pode: true, podeConfigurar: podeContabilidade(req) });
+});
+app.get('/api/ia/config', (req, res) => {
+  if (!podeContabilidade(req)) return res.status(403).json({ erro: 'Só o admin e o franqueado configuram a IA.' });
+  res.json({ ...IA.situacao(req.lojas, req.user, req.perfil), podeConfigurar: true });
+});
+app.use('/api/ia', (req, res, next) => (req.method === 'GET' || req.get('X-Painel') === '1' ? next() : res.status(403).json({ erro: 'Pedido inválido.' })));
+app.put('/api/ia/chave', express.json({ limit: '4kb' }), async (req, res) => {
+  if (!podeContabilidade(req)) return res.status(403).json({ erro: 'Só o admin e o franqueado configuram a IA.' });
+  if (tooMany('iachave:' + req.user, 10)) return res.status(429).json({ erro: 'Muitas tentativas. Espere alguns minutos.' });
+  falhou('iachave:' + req.user);
+  const b = req.body || {};
+  const lojas = (Array.isArray(b.lojas) ? b.lojas : []).map(String).filter((id) => req.lojas.some((l) => l.id === id));
+  if (!IA.formatoOk(b.chave)) return res.status(400).json({ erro: 'Essa não parece uma chave da API da Anthropic (começa com "sk-ant-").' });
+  const t = await IA.testar(b.chave);
+  if (t.erro) return res.status(400).json({ erro: t.erro });
+  const r = IA.salvar({ chave: b.chave, lojas, teto: b.teto, user: req.user });
+  if (r.erro) return res.status(400).json({ erro: r.erro });
+  C.auditar(req.user, 'cadastrou a chave da IA', lojas[0], { lojas, final: r.ok.fim });
+  res.json({ ok: true, fim: r.ok.fim });
+});
+app.patch('/api/ia/chave/:id', express.json({ limit: '4kb' }), (req, res) => {
+  if (!podeContabilidade(req)) return res.status(403).json({ erro: 'Só o admin e o franqueado configuram a IA.' });
+  const r = IA.alterar(String(req.params.id), req.body || {}, req.user, req.perfil, req.lojas.map((l) => l.id));
+  if (r.erro) return res.status(400).json({ erro: r.erro });
+  C.auditar(req.user, 'alterou a configuração da IA', null, { teto: req.body && req.body.teto, lojas: req.body && req.body.lojas });
+  res.json({ ok: true });
+});
+app.delete('/api/ia/chave/:id', (req, res) => {
+  if (!podeContabilidade(req)) return res.status(403).json({ erro: 'Só o admin e o franqueado configuram a IA.' });
+  const r = IA.remover(String(req.params.id), req.user, req.perfil);
+  if (r.erro) return res.status(400).json({ erro: r.erro });
+  C.auditar(req.user, 'removeu a chave da IA', null, {});
+  res.json({ ok: true });
+});
+// "Pergunte ao painel": o navegador roda as ferramentas sobre os dados que a pessoa já vê; aqui só a chamada à IA
+app.post('/api/ia/perguntar', express.json({ limit: '300kb' }), async (req, res) => {
+  const b = req.body || {};
+  const loja = lojaIA(req, res, b.loja); if (!loja) return;
+  if (tooMany('ia:' + req.user, 150)) return res.status(429).json({ erro: 'Muitas perguntas em pouco tempo. Espere alguns minutos.' });
+  falhou('ia:' + req.user);
+  const e = IAP.conferirMensagens(b.mensagens);
+  if (e) return res.status(400).json({ erro: e });
+  const pode = { clientes: podeClientes(req), custos: podeCustos(req) && b.loja !== 'todas', perfil: req.perfil };
+  try {
+    const j = await IA.mensagens(loja.id, {
+      max_tokens: 2500,
+      system: [{ type: 'text', text: IAP.sistemaPergunta(b.contexto, pode), cache_control: { type: 'ephemeral' } }],
+      tools: IAP.ferramentas(pode),
+      messages: b.mensagens,
+    });
+    if (b.mensagens.length === 1) C.auditar(req.user, 'perguntou à IA', loja.id, { loja: loja.id });
+    res.json({ content: j.content, stop_reason: j.stop_reason });
+  } catch (err) { iaErro(res, err); }
+});
+// revisão do pedido sugerido (aba Pedido)
+app.post('/api/ia/pedido', express.json({ limit: '200kb' }), async (req, res) => {
+  const b = req.body || {};
+  if (!podeTela(req, 'pedido')) return res.status(403).json({ erro: 'Sem permissão.' });
+  const loja = req.lojas.find((l) => l.id === String(b.loja || ''));
+  if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  if (tooMany('ia:' + req.user, 150)) return res.status(429).json({ erro: 'Muitos pedidos à IA em pouco tempo. Espere alguns minutos.' });
+  falhou('ia:' + req.user);
+  const dados = b.dados && typeof b.dados === 'object' ? b.dados : null;
+  if (!dados || !Array.isArray(dados.itens) || !dados.itens.length) return res.status(400).json({ erro: 'Pedido vazio.' });
+  try {
+    const j = await IA.mensagens(loja.id, {
+      max_tokens: 3000, system: IAP.SISTEMA_PEDIDO, tools: [IAP.FERR_PEDIDO], tool_choice: { type: 'tool', name: 'revisar_pedido' },
+      messages: [{ role: 'user', content: 'Dados do pedido (JSON):\n' + JSON.stringify(dados) }],
+    });
+    const t = (j.content || []).find((x) => x.type === 'tool_use' && x.name === 'revisar_pedido');
+    if (!t) return res.status(502).json({ erro: 'A IA não devolveu a revisão. Tente de novo.' });
+    C.auditar(req.user, 'pediu à IA a revisão do pedido', loja.id, { loja: loja.id });
+    res.json({ revisao: t.input });
+  } catch (err) { iaErro(res, err); }
+});
+
 // "Sincronizar agora" nas notas de entrada: o coletor busca só o estoque + notas de compra do AppNext (só admin dispara)
 app.get('/api/estoque/notas/sincronizar', async (req, res) => {
   if (req.perfil !== 'admin') return res.status(403).json({ erro: 'Só o admin sincroniza.' });

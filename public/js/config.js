@@ -94,12 +94,13 @@
     if (est.erro) { root.append(h('div', { class: 'notice err' }, est.erro)); fim(); return; }
     const abas = [['Lojas', 'lojas'], ['Usuários', 'usuarios']];
     if (est.perfil === 'admin') abas.push(['Atualização automática', 'coletor'], ['Resumo diário', 'resumo']);
+    if ((est.perfil === 'admin' || est.perfil === 'franqueado') && TS.abaIA) abas.push(['Inteligência artificial', 'ia']);
     abas.push(['Histórico de alterações', 'historico']);
     state.cfgAba = abas.some(([, v]) => v === state.cfgAba) ? state.cfgAba : 'lojas';
     root.append(h('div', { class: 'cfg-abas' }, TS.seg(abas, state.cfgAba, (v) => { state.cfgAba = v; pintar(); })));
     const corpo = h('div', { class: 'cfg-corpo' });
     root.append(corpo);
-    ({ lojas: abaLojas, usuarios: abaUsuarios, coletor: abaColetor, resumo: abaResumo, historico: abaHistorico })[state.cfgAba](corpo);
+    ({ lojas: abaLojas, usuarios: abaUsuarios, coletor: abaColetor, resumo: abaResumo, historico: abaHistorico, ia: (b) => TS.abaIA(b, pintar) })[state.cfgAba](corpo);
     fim();
   }
 
