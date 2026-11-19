@@ -1306,16 +1306,14 @@ app.post('/api/conta-franquia/email/previa', express.json({ limit: '10kb' }), (r
   const ult = COB.historico(loja.id).find((x) => x.tipo === tipo) || null;
   res.json({ ...r, para, ultima: ult, anexos: tipo === 'fidelidade' ? ['planilha com a relação dos resgates (.xlsx)'] : r.itens.map(() => null).length ? ['XML de cada nota de devolução'] : [] });
 });
-app.post('/api/conta-franquia/email/enviar', express.json({ limit: '20kb' }), async (req, res) => {
-  if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
-  const loja = lojaCF(req, res, true); if (!loja) return;
-  const tipo = req.body.tipo === 'fidelidade' ? 'fidelidade' : 'devolucoes';
-  const p = COB.validarPara(req.body.para);
-  if (p.erro) return res.status(400).json({ erro: p.erro });
-  const { conta, r } = rascunhoCob(loja, req.body);
-  if (!r.itens.length) return res.status(400).json({ erro: 'Nada para cobrar.' });
-  const assunto = String(req.body.assunto || r.assunto).replace(/[\r\n]+/g, ' ').trim().slice(0, 200);
-  const mensagem = String(req.body.mensagem ?? r.mensagem).slice(0, 5000);
+/** monta e envia a cobrança (pela tela ou pelo agendamento); devolve { ok, itens, total } ou { erro } */
+async function enviarCobranca(loja, tipo, b, por) {
+  const p = COB.validarPara(b.para);
+  if (p.erro) return { erro: p.erro };
+  const { conta, r } = rascunhoCob(loja, { ...b, tipo });
+  if (!r.itens.length) return { erro: 'Nada para cobrar.', vazio: true };
+  const assunto = String(b.assunto || r.assunto).replace(/[\r\n]+/g, ' ').trim().slice(0, 200);
+  const mensagem = String(b.mensagem ?? r.mensagem).slice(0, 5000);
   const NOTIF = require('./src/notificacoes');
   const cfgN = NOTIF.ler();
   const lc = (cfgN.lojas || {})[loja.id];
@@ -1331,11 +1329,47 @@ app.post('/api/conta-franquia/email/enviar', express.json({ limit: '20kb' }), as
       }
     }
     await NOTIF.enviarEmail(p.ok.join(', '), assunto, `${mensagem}\n\n${r.tabelaTexto}`, COB.html(mensagem, r.tabelaHtml), smtp, anexos);
-  } catch (e) { return res.status(502).json({ erro: 'O e-mail não saiu: ' + (e.message || e) }); }
-  COB.registrar(loja.id, tipo, p.ok, r.itens, r.total, req.user);
-  C.auditar(req.user, tipo === 'fidelidade' ? 'enviou cobrança à franquia (prêmios de fidelidade)' : 'enviou cobrança à franquia (devoluções)', loja.id, { loja: loja.id, para: p.ok, itens: r.itens, total: r.total });
-  res.json({ ok: true, para: p.ok, historico: COB.historico(loja.id).slice(0, 20) });
+  } catch (e) { return { erro: 'O e-mail não saiu: ' + (e.message || e) }; }
+  COB.registrar(loja.id, tipo, p.ok, r.itens, r.total, por);
+  C.auditar(por, (tipo === 'fidelidade' ? 'enviou cobrança à franquia (prêmios de fidelidade)' : 'enviou cobrança à franquia (devoluções)') + (por === 'agendado' ? ' — automático' : ''), loja.id, { loja: loja.id, para: p.ok, itens: r.itens, total: r.total });
+  return { ok: true, para: p.ok, itens: r.itens, total: r.total };
+}
+app.post('/api/conta-franquia/email/enviar', express.json({ limit: '20kb' }), async (req, res) => {
+  if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
+  const loja = lojaCF(req, res, true); if (!loja) return;
+  const tipo = req.body.tipo === 'fidelidade' ? 'fidelidade' : 'devolucoes';
+  const x = await enviarCobranca(loja, tipo, req.body, req.user);
+  if (x.erro) return res.status(x.vazio ? 400 : 502).json({ erro: x.erro });
+  res.json({ ok: true, para: x.para, historico: COB.historico(loja.id).slice(0, 20) });
 });
+// envio automático todo mês (ligado em Configurações → Mensagens)
+app.get('/api/conta-franquia/auto', (req, res) => {
+  const loja = lojaCF(req, res); if (!loja) return;
+  res.json({ ...COB.auto(loja.id), para: { devolucoes: COB.emails(loja.id, 'devolucoes') || DEV.destinatarios(loja.id), fidelidade: COB.emails(loja.id, 'fidelidade') || DEV.destinatarios(loja.id) } });
+});
+app.put('/api/conta-franquia/auto', express.json({ limit: '5kb' }), (req, res) => {
+  if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
+  if (!(req.perfil === 'admin' || req.perfil === 'franqueado')) return res.status(403).json({ erro: 'Só o admin ou o franqueado liga o envio automático.' });
+  const loja = lojaCF(req, res, true); if (!loja) return;
+  const r = COB.salvarAuto(loja.id, req.body || {});
+  if (r.erro) return res.status(400).json({ erro: r.erro });
+  C.auditar(req.user, 'configurou a cobrança automática à franquia', loja.id, { loja: loja.id, devolucoes: r.ok.devolucoes, fidelidade: r.ok.fidelidade, dia: r.ok.dia, hora: r.ok.hora });
+  res.json(r.ok);
+});
+setInterval(async () => {
+  const agora = new Date().toLocaleString('sv-SE', { timeZone: 'America/Sao_Paulo' }).replace(' ', 'T');
+  for (const loja of C.get().lojas || []) {
+    for (const tipo of ['devolucoes', 'fidelidade']) {
+      try {
+        if (!COB.devidoAgora(loja.id, tipo, agora)) continue;
+        const para = COB.emails(loja.id, tipo) || DEV.destinatarios(loja.id);
+        const x = await enviarCobranca(loja, tipo, { para }, 'agendado');
+        COB.marcarAuto(loja.id, tipo, agora.slice(0, 7), x.erro ? (x.vazio ? { ok: true, nada: true } : { ok: false, erro: x.erro }) : { ok: true, itens: x.itens.length, total: x.total });
+        console.log(`[cobrança] ${loja.id} ${tipo}: ${x.erro || 'enviada'}`);
+      } catch (e) { console.error('[cobrança]', loja.id, tipo, e.message); }
+    }
+  }
+}, 5 * 60 * 1000).unref();
 app.get('/api/conta-franquia', (req, res) => {
   const loja = lojaCF(req, res); if (!loja) return;
   try { res.json(contaDaLoja(loja)); } catch (e) { console.error('[conta-franquia]', e); res.status(500).json({ erro: 'Erro ao montar a conta com a franquia: ' + e.message }); }

@@ -213,7 +213,7 @@
       ['loja', 'Loja e equipe', 'Horário de funcionamento, equipe, logo e dados da loja', () => [blocoOperacao(l), blocoMarca(l), admin ? blocoEditar(l) : null]],
       gestor && TS.blocoEstoqueCfg ? ['estoque', 'Estoque e margem', 'Impostos, maquininha, custos da loja por categoria, reposição e embalagens', () => [TS.blocoEstoqueCfg(l.id)]] : null,
       ['integracoes', 'Integrações', 'AppNext, Sistema de Pedidos, FIXE e e-mail das devoluções', () => [admin ? blocoAppNext(l) : null, admin && TS.blocoPedidoAcesso ? TS.blocoPedidoAcesso(l.id) : null, blocoFixe(l), blocoDevolucao(l)]],
-      ['avisos', 'Mensagens', 'Fechamento do dia por e-mail e mensagens de WhatsApp', () => [blocoFechamento(l), blocoWpp(l)]],
+      ['avisos', 'Mensagens', 'Fechamento do dia por e-mail, mensagens de WhatsApp e cobrança à franquia', () => [blocoFechamento(l), blocoWpp(l), gestor ? blocoCobranca(l) : null]],
     ].filter(Boolean);
     const atual = SECOES.some((x) => x[0] === secaoLoja.get(l.id)) ? secaoLoja.get(l.id) : SECOES[0][0];
     const sec = SECOES.find((x) => x[0] === atual);
@@ -880,6 +880,38 @@
   }
 
   // ---- modelos de mensagem de WhatsApp (tela Clientes)
+  /** cobrança à franquia por e-mail, todo mês no dia escolhido (devoluções sem desconto e prêmios de fidelidade) */
+  function blocoCobranca(l) {
+    const sec = h('section', { class: 'cfg-bloco cfg-form' }, h('h3', null, 'Cobrança à franquia (automática)'), h('p', { class: 'muted' }, 'Carregando…'));
+    if (TS.demo) { sec.replaceChildren(h('h3', null, 'Cobrança à franquia (automática)'), h('p', { class: 'muted' }, 'Na apresentação nada é enviado.')); return sec; }
+    const url = `/api/conta-franquia/auto?loja=${encodeURIComponent(l.id)}`;
+    fetch(url, { credentials: 'same-origin' }).then((r) => r.json().then((j) => { if (!r.ok) throw new Error(j.erro || 'Falha.'); return j; })).then((a) => {
+      const dev = h('input', { type: 'checkbox', checked: a.devolucoes || null });
+      const fid = h('input', { type: 'checkbox', checked: a.fidelidade || null });
+      const dia = inp({ type: 'number', min: 1, max: 28, value: a.dia, style: { maxWidth: '90px' } });
+      const hora = inp({ type: 'time', value: a.hora, style: { maxWidth: '140px' } });
+      const paraD = inp({ value: (a.para.devolucoes || []).join(', '), placeholder: 'incidencias@…, financeiro@…' });
+      const paraF = inp({ value: (a.para.fidelidade || []).join(', '), placeholder: 'financeiro@…' });
+      const res = (t) => { const x = a.resultado && a.resultado[t]; if (!x) return null; const q = new Date(x.em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+        return h('small', { class: x.ok ? 'muted' : 'neg' }, x.ok ? (x.nada ? `Último mês (${q}): nada para cobrar, não enviou.` : `Último envio: ${q} · ${x.itens} item(ns) · R$ ${String((x.total || 0).toFixed(2)).replace('.', ',')}`) : `Último envio falhou (${q}): ${x.erro}`); };
+      sec.replaceChildren(
+        h('h3', null, 'Cobrança à franquia (automática)'),
+        h('p', { class: 'muted' }, 'Todo mês, no dia e horário escolhidos, o painel envia por e-mail (pelo mesmo e-mail das devoluções) a cobrança do que está pendente. Se não houver nada pendente, não envia. É o mesmo e-mail do botão "Cobrar a franquia" em Notas fiscais → Créditos com a franquia.'),
+        h('label', { class: 'cfg-check-l' }, dev, ' Incidências: notas de devolução sem desconto há mais de 30 dias (com os XMLs)'), res('devolucoes'),
+        h('label', { class: 'f-label' }, 'Para (incidências)'), paraD,
+        h('label', { class: 'cfg-check-l' }, fid, ' Fidelidade: prêmios com o desconto dos royalties atrasado ou que veio a menos (com a planilha dos resgates)'), res('fidelidade'),
+        h('label', { class: 'f-label' }, 'Para (fidelidade)'), paraF,
+        h('div', { class: 'cfg-grid' }, h('label', null, h('span', { class: 'f-label' }, 'Dia do mês'), dia), h('label', null, h('span', { class: 'f-label' }, 'A partir de'), hora)),
+        h('div', { class: 'cfg-acoes' }, acao('Salvar', async () => {
+          const r = await fetch(url, { method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-Painel': '1' }, body: JSON.stringify({ devolucoes: dev.checked, fidelidade: fid.checked, dia: dia.value, hora: hora.value, para: { devolucoes: paraD.value, fidelidade: paraF.value } }) });
+          const j = await r.json().catch(() => ({}));
+          if (!r.ok) throw new Error(j.erro || 'Falha ao salvar.');
+          return (j.devolucoes || j.fidelidade) ? `Pronto: a cobrança sai todo dia ${j.dia}, a partir das ${j.hora}.` : 'Cobrança automática desligada.';
+        }, 'btn primary')));
+    }).catch((e) => sec.replaceChildren(h('h3', null, 'Cobrança à franquia (automática)'), h('p', { class: 'neg' }, e.message)));
+    return sec;
+  }
+
   function blocoWpp(l) {
     const lista = (l.wppModelos && l.wppModelos.length ? l.wppModelos : TS.WPP_PADRAO || []).map((m) => ({ ...m }));
     const sec0 = h('section', { class: 'cfg-bloco cfg-form' }, h('h3', null, 'Mensagens de WhatsApp'));

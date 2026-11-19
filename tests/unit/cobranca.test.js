@@ -47,5 +47,21 @@ test('destinatários e histórico', () => {
   COB.registrar('lj', 'devolucoes', ['a@x.com'], ['a'], 181.2, 'ger');
   assert.deepEqual(COB.emails('lj', 'devolucoes'), ['a@x.com']);
   assert.equal(COB.historico('lj')[0].tipo, 'devolucoes');
+});
+
+test('envio automático: dia 2 a partir do horário, uma vez por mês e por tipo', () => {
+  assert.equal(COB.devidoAgora('la', 'devolucoes', '2026-12-02T10:00'), false, 'desligado');
+  assert.match(COB.salvarAuto('la', { dia: 31 }).erro, /1 e 28/);
+  assert.match(COB.salvarAuto('la', { para: { fidelidade: 'ruim' } }).erro, /ruim/);
+  const a = COB.salvarAuto('la', { devolucoes: true, fidelidade: true, dia: 2, hora: '09:00', para: { fidelidade: 'fin@x.com' } }).ok;
+  assert.deepEqual([a.devolucoes, a.dia, a.hora], [true, 2, '09:00']);
+  assert.deepEqual(COB.emails('la', 'fidelidade'), ['fin@x.com']);
+  assert.equal(COB.devidoAgora('la', 'devolucoes', '2026-12-02T08:59'), false);
+  assert.equal(COB.devidoAgora('la', 'devolucoes', '2026-12-02T09:05'), true);
+  assert.equal(COB.devidoAgora('la', 'devolucoes', '2026-12-03T09:05'), false);
+  COB.marcarAuto('la', 'devolucoes', '2026-12', { ok: true, itens: 2, total: 100 });
+  assert.equal(COB.devidoAgora('la', 'devolucoes', '2026-12-02T15:00'), false, 'já foi neste mês');
+  assert.equal(COB.devidoAgora('la', 'fidelidade', '2026-12-02T15:00'), true, 'o outro tipo ainda não');
+  assert.equal(COB.devidoAgora('la', 'devolucoes', '2027-01-02T09:00'), true, 'mês seguinte');
   fs.rmSync(tmp, { recursive: true, force: true });
 });

@@ -11,7 +11,7 @@ const path = require('path');
 const C = require('./config');
 
 const arq = (id) => path.join(C.pastaLoja(id), 'cobrancas.json');
-const ler = (id) => { try { const j = JSON.parse(fs.readFileSync(arq(id), 'utf8')); return { emails: j.emails || {}, enviadas: j.enviadas || [] }; } catch { return { emails: {}, enviadas: [] }; } };
+const ler = (id) => { try { const j = JSON.parse(fs.readFileSync(arq(id), 'utf8')); return { emails: j.emails || {}, enviadas: j.enviadas || [], auto: j.auto || {} }; } catch { return { emails: {}, enviadas: [], auto: {} }; } };
 const gravar = (id, d) => { fs.mkdirSync(C.pastaLoja(id), { recursive: true }); C.gravarAtomico(arq(id), JSON.stringify(d), 0o640); };
 const EMAIL = /^[^\s@<>,;]{1,64}@[^\s@<>,;]{1,190}\.[a-z]{2,}$/i;
 const brl = (v) => 'R$ ' + (Number(v) || 0).toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
@@ -106,4 +106,33 @@ function html(mensagem, tabelaHtml) {
   return `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5;color:#1d2b22">${corpo}${tabelaHtml}</div>`;
 }
 
-module.exports = { montar, planilhaFidelidade, emails, registrar, historico, validarPara, html, itensDevolucoes, itensFidelidade };
+/** envio automático todo mês (Configurações → Mensagens): { devolucoes, fidelidade, dia, hora, ultima: { tipo: 'AAAA-MM' }, erro } */
+const AUTO_PADRAO = { devolucoes: false, fidelidade: false, dia: 2, hora: '09:00', ultima: {}, resultado: {} };
+function auto(id) { return { ...AUTO_PADRAO, ...ler(id).auto }; }
+function salvarAuto(id, b) {
+  const d = ler(id);
+  const a = { ...AUTO_PADRAO, ...d.auto };
+  if (typeof b.devolucoes === 'boolean') a.devolucoes = b.devolucoes;
+  if (typeof b.fidelidade === 'boolean') a.fidelidade = b.fidelidade;
+  if (b.dia != null) { const n = parseInt(b.dia, 10); if (!(n >= 1 && n <= 28)) return { erro: 'Dia do mês entre 1 e 28.' }; a.dia = n; }
+  if (b.hora != null) { if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(String(b.hora))) return { erro: 'Horário inválido.' }; a.hora = b.hora; }
+  for (const t of ['devolucoes', 'fidelidade']) if (b.para && b.para[t] != null) { const v = validarPara(b.para[t]); if (v.erro) return v; d.emails[t] = v.ok; }
+  d.auto = a; gravar(id, d);
+  return { ok: a };
+}
+/** é hora de mandar? (dia e horário do mês, ainda não enviado neste mês) */
+function devidoAgora(id, tipo, agora) {
+  const a = auto(id);
+  if (!a[tipo]) return false;
+  const ym = agora.slice(0, 7), dd = +agora.slice(8, 10), hm = agora.slice(11, 16);
+  return dd === a.dia && hm >= a.hora && a.ultima[tipo] !== ym;
+}
+function marcarAuto(id, tipo, ym, resultado) {
+  const d = ler(id);
+  d.auto = { ...AUTO_PADRAO, ...d.auto };
+  d.auto.ultima = { ...d.auto.ultima, [tipo]: ym };
+  d.auto.resultado = { ...d.auto.resultado, [tipo]: { ...resultado, em: new Date().toISOString() } };
+  gravar(id, d);
+}
+
+module.exports = { auto, salvarAuto, devidoAgora, marcarAuto, montar, planilhaFidelidade, emails, registrar, historico, validarPara, html, itensDevolucoes, itensFidelidade };
