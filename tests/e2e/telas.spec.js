@@ -34,6 +34,22 @@ for (const tela of TELAS) {
     if (info.project.name === 'celular') {
       const sobra = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
       expect(sobra, 'página mais larga que a tela do celular').toBeLessThanOrEqual(1);
+      // nada pode sair do cartão (tabela que vira cartão no celular): data, caixa de escolha ou texto comprido empurrando a coluna
+      const vazam = await page.evaluate(() => {
+        const out = [];
+        for (const tr of document.querySelectorAll('main .t.t-mob > tbody > tr')) {
+          tr.style.contentVisibility = 'visible';
+          const lim = tr.getBoundingClientRect().right + 1;
+          for (const e of tr.querySelectorAll('*')) {
+            if (!e.getClientRects().length || e.closest('canvas, svg, .chart-box')) continue;
+            const r = e.getBoundingClientRect();
+            if (r.width > 3 && r.right > lim) { out.push(`${(e.textContent || e.tagName).trim().slice(0, 40)} (+${Math.round(r.right - lim)}px)`); break; }
+          }
+          if (out.length >= 3) break;
+        }
+        return out;
+      });
+      expect(vazam, 'algo sai do cartão no celular').toEqual([]);
     }
     expect(erros, 'erros no navegador').toEqual([]);
   });

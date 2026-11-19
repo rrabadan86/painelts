@@ -301,3 +301,21 @@ test('Nota de entrada: no celular o amarelo vale também para os cartões em pos
   expect(cor[1]).toBe(cor[0]);
   expect(cor[0]).not.toBe('rgb(255, 255, 255)');
 });
+
+test('Rentabilidade no celular: "ver por pacote" mostra a conta como tabela compacta (não um cartão por linha) e cabe na tela', async ({ page }, info) => {
+  test.skip(info.project.name !== 'celular');
+  await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS.db);
+  await page.evaluate(() => { location.hash = '#rentab'; });
+  const bt = page.locator('.est-prod-btn').first();
+  await expect(bt).toBeVisible();
+  await bt.click();
+  const det = page.locator('tr.est-det').first();
+  await expect(det.locator('.cupom-items tr').first()).toBeVisible();
+  const r = await det.evaluate((d) => ({
+    display: getComputedStyle(d.querySelector('.cupom-items tr')).display,
+    direita: Math.max(...[...d.querySelectorAll('*')].map((e) => e.getBoundingClientRect().right)),
+    largura: innerWidth,
+  }));
+  expect(r.display).toBe('table-row');
+  expect(r.direita).toBeLessThanOrEqual(r.largura);
+});

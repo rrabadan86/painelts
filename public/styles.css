@@ -1687,22 +1687,31 @@ body.com-camada .ped-barra { display: none; }
 @media (max-width: 760px) {
   .table-wrap:has(> .t-mob) { overflow: visible; max-height: none !important; border: 0; background: transparent; box-shadow: none; }
   .t.t-mob { display: block; width: 100%; min-width: 0 !important; border: 0; }
-  .t.t-mob thead { display: none; }
-  .t.t-mob tbody, .t.t-mob tfoot { display: block; }
-  .t.t-mob tr { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; padding: 10px 12px; margin: 0 0 10px; border: 1px solid var(--line, #E2DCCF); border-radius: 12px; background: #fff; }
+  /* só as linhas da tabela principal viram cartão (tabelas dentro de um cartão — ex.: a conta por pacote — continuam tabelas) */
+  .t.t-mob > thead { display: none; }
+  .t.t-mob > tbody, .t.t-mob > tfoot { display: block; }
+  /* minmax(0, 1fr): a coluna encolhe; sem isso uma data, uma caixa de escolha ou um texto comprido empurrava a outra coluna para fora do cartão */
+  .t.t-mob > tbody > tr, .t.t-mob > tfoot > tr { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 6px 12px; padding: 10px 12px; margin: 0 0 10px; border: 1px solid var(--line, #E2DCCF); border-radius: 12px; background: #fff; }
   /* cartão fora da tela: o navegador só calcula quando chega perto (troca de tela mais rápida no celular) */
-  .t.t-mob tbody tr { content-visibility: auto; contain-intrinsic-size: auto 180px; }
-  .t.t-mob tbody tr:nth-child(even) { background: #fff; }
-  .t.t-mob td { display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-start; gap: 1px; padding: 0 !important; border: 0 !important; text-align: left !important; white-space: normal !important; min-width: 0; position: static !important; background: transparent !important; font-size: 14px; overflow-wrap: anywhere; }
-  .t.t-mob td::before { content: attr(data-l); font-size: 11px; font-weight: 500; color: var(--muted, #7a7a7a); text-transform: none; letter-spacing: 0; }
-  .t.t-mob td:not([data-l])::before, .t.t-mob td[data-l=""]::before { content: none; }
-  .t.t-mob td.mob-tit { grid-column: 1 / -1; font-size: 15px; font-weight: 600; padding-bottom: 6px !important; border-bottom: 1px solid #F0EBE0 !important; }
-  .t.t-mob td.mob-tit::before { content: none; }
-  .t.t-mob td[data-l=""], .t.t-mob td:not([data-l]):not(.mob-tit) { grid-column: 1 / -1; }
-  .t.t-mob td:empty { display: none; }
-  .t.t-mob td[colspan] { grid-column: 1 / -1; }
-  .t.t-mob tfoot tr { background: #F4F0E6; font-weight: 700; }
+  .t.t-mob > tbody > tr { content-visibility: auto; contain-intrinsic-size: auto 180px; }
+  .t.t-mob > tbody > tr:nth-child(even) { background: #fff; }
+  .t.t-mob > tbody > tr > td, .t.t-mob > tfoot > tr > td { display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-start; gap: 1px; padding: 0 !important; border: 0 !important; text-align: left !important; white-space: normal !important; min-width: 0 !important; max-width: 100%; position: static !important; background: transparent !important; font-size: 14px; overflow-wrap: anywhere; }
+  .t.t-mob > tbody > tr > td > *, .t.t-mob > tfoot > tr > td > * { max-width: 100%; min-width: 0; }
+  .t.t-mob > tbody > tr > td input, .t.t-mob > tbody > tr > td select { max-width: 100%; min-width: 0; }
+  .t.t-mob > tbody > tr > td::before, .t.t-mob > tfoot > tr > td::before { content: attr(data-l); font-size: 11px; font-weight: 500; color: var(--muted, #7a7a7a); text-transform: none; letter-spacing: 0; }
+  .t.t-mob > tbody > tr > td:not([data-l])::before, .t.t-mob > tbody > tr > td[data-l=""]::before, .t.t-mob > tfoot > tr > td:not([data-l])::before { content: none; }
+  .t.t-mob > tbody > tr > td.mob-tit, .t.t-mob > tfoot > tr > td.mob-tit { grid-column: 1 / -1; font-size: 15px; font-weight: 600; padding-bottom: 6px !important; border-bottom: 1px solid #F0EBE0 !important; }
+  .t.t-mob > tbody > tr > td.mob-tit::before { content: none; }
+  .t.t-mob > tbody > tr > td[data-l=""], .t.t-mob > tbody > tr > td:not([data-l]):not(.mob-tit) { grid-column: 1 / -1; }
+  .t.t-mob > tbody > tr > td:empty, .t.t-mob > tfoot > tr > td:empty { display: none; }
+  .t.t-mob > tbody > tr > td[colspan] { grid-column: 1 / -1; }
+  .t.t-mob > tfoot > tr { background: #F4F0E6; font-weight: 700; }
   .t.t-mob td .est-tam, .t.t-mob td small { white-space: normal; }
+  /* linha aberta embaixo de um cartão (conta por pacote, deduções…): ocupa a largura toda, sem moldura de cartão */
+  .t.t-mob > tbody > tr.est-det { display: block; padding: 0; border: 0; background: transparent; margin: -4px 0 12px; content-visibility: visible; }
+  .t.t-mob > tbody > tr.est-det > td { display: block; }
+  .t.t-mob .est-det-box { width: auto !important; max-width: 100%; }
+  .t.t-mob .est-det-grid { grid-template-columns: 1fr !important; }
   .tab-ord-w { display: flex; gap: 8px; margin: 0 0 10px; }
   .tab-ord { flex: 1; font-size: 14px; }
   .tab-ord-d { min-width: 44px; font-size: 18px; }
@@ -1729,7 +1738,11 @@ body.com-camada .ped-barra { display: none; }
 @media (max-width: 760px) {
   /* alvos de toque pequenos ficam com pelo menos 40 px */
   .exp-btn, .icon-btn, .ped-ab, .prc-ver { min-width: 40px; min-height: 40px; }
-  .est-cl-sel { max-width: none !important; min-width: 44px; height: 36px; font-size: 14px; }
+  /* classe na Rentabilidade: etiqueta e a escolha (travar) uma embaixo da outra, sem passar do cartão */
+  .est-cl-of { display: flex; flex-wrap: wrap; white-space: normal; max-width: 100%; }
+  .est-cl-sel { max-width: 100% !important; width: 100%; min-width: 0; height: 36px; font-size: 14px; }
+  .est-cl-res { max-width: 100%; }
+  .est-cl-res .est-tam { white-space: normal; }
   .link-btn { padding: 6px 2px; }
   .ped-menu > summary { min-height: 40px; display: inline-flex; align-items: center; }
 }
