@@ -265,4 +265,8 @@ function simular(req) {
   return { stop_reason: 'end_turn', usage, content: [{ type: 'text', text: txt }] };
 }
 
-module.exports = { comFerramenta, umaVez, situacao, salvar, alterar, remover, testar, mensagens, chaveDaLoja, usoDoMes, custo, formatoOk, simular, ErroIA, cifrar, decifrar, MODELO, TETO_PADRAO };
+/** quem usa a IA (✨, análise do Início, revisão do pedido): só admin e franqueado (decisão do dono) */
+const PERFIS_IA = ['admin', 'franqueado'];
+const podeUsar = (perfil) => PERFIS_IA.includes(perfil);
+
+module.exports = { PERFIS_IA, podeUsar, comFerramenta, umaVez, situacao, salvar, alterar, remover, testar, mensagens, chaveDaLoja, usoDoMes, custo, formatoOk, simular, ErroIA, cifrar, decifrar, MODELO, TETO_PADRAO };

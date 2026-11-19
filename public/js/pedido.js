@@ -464,7 +464,7 @@
     corpo.append(h('div', { class: 'grid g-kpi mt' }, kpis));
     if (R.obTotal) corpo.append(h('div', { class: 'card mt ped-compo-card' }, h('div', { class: 'card-title' }, 'Composição do pedido'), R.novoCompo()));
     corpo.append(h('div', { class: 'mt' }, cartaoObrigatorio(corpo, loja, M, e, p, R)));
-    if (TS.iaPedido && TS.eu && ['admin', 'franqueado', 'gerente'].includes(TS.eu.perfil)) corpo.append(cartaoIA(corpo, loja, M, e, p, R, editados, chave));
+    if (TS.iaPedido && TS.eu && ['admin', 'franqueado'].includes(TS.eu.perfil)) corpo.append(cartaoIA(corpo, loja, M, e, p, R, editados, chave));
     if (modo === 'evento' && R.evInfo.atual[0] - R.hoje > R.ent + R.N) corpo.append(h('div', { class: 'notice mt' }, `Faltam ${fmt.int(R.evInfo.atual[0] - R.hoje)} dias para o ${R.ev.nome}: isto é uma prévia. O consumo normal até lá foi limitado a ${R.ent + R.N} dias (entrega + intervalo de pedidos), porque as reposições normais cobrem o resto. Refaça perto da data, com o estoque de então.`));
     if (modo === 'evento' && R.evInfo.atual[0] - R.hoje < R.ent) corpo.append(h('div', { class: 'notice warn mt' }, `A entrega leva ${R.ent} dias e o ${R.ev.nome} começa antes disso: o pedido pode chegar atrasado.`));
 

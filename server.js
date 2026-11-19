@@ -1518,10 +1518,10 @@ app.delete('/api/orcamentos/:id', (req, res) => {
 });
 // ======================= Inteligência artificial (chave da Anthropic de cada franqueado) =======================
 const IA = require('./src/ia'), IAP = require('./src/iaprompts');
-const podeIA = (req) => req.perfil === 'admin' || req.perfil === 'franqueado' || req.perfil === 'gerente';
+const podeIA = (req) => IA.podeUsar(req.perfil); // só admin e franqueado
 /** loja da conversa: a escolhida (ou, em "todas", a primeira das lojas da pessoa que tem chave) */
 const lojaIA = (req, res, id) => {
-  if (!podeIA(req)) { res.status(403).json({ erro: 'A IA é para o admin, o franqueado e o gerente.' }); return null; }
+  if (!podeIA(req)) { res.status(403).json({ erro: 'A IA é só para o admin e o franqueado.' }); return null; }
   id = String(id || '');
   const loja = id === 'todas' ? req.lojas.find((l) => IA.chaveDaLoja(l.id)) || req.lojas[0] : req.lojas.find((l) => l.id === id);
   if (!loja) { res.status(400).json({ erro: 'Escolha uma loja.' }); return null; }
@@ -1628,8 +1628,8 @@ app.post('/api/ia/diagnostico', express.json({ limit: '150kb' }), async (req, re
   if (!fatos) return res.status(400).json({ erro: 'Sem dados.' });
   const txt = JSON.stringify(fatos);
   if (txt.length > 120000) return res.status(400).json({ erro: 'Dados demais.' });
-  // UMA análise por loja por dia, a mesma para toda a equipe (admin, franqueado e gerente): quem abrir primeiro gera,
-  // os outros leem a guardada. Os números que vão para a IA são só de vendas, que esses três perfis já veem.
+  // UMA análise por loja por dia, a mesma para admin e franqueado (só eles veem a IA): quem abrir primeiro gera,
+  // os outros leem a guardada. Os números que vão para a IA são só de vendas.
   const pasta = path.join(C.pastaLoja(loja.id), 'ia');
   const dia = C.hojeBR();
   const qual = String(b.loja) === 'todas' ? 'todas-' + crypto.createHash('sha256').update(req.lojas.map((l) => l.id).sort().join(',')).digest('hex').slice(0, 10) : 'loja';
@@ -1655,7 +1655,7 @@ app.post('/api/ia/diagnostico', express.json({ limit: '150kb' }), async (req, re
 // revisão do pedido sugerido (aba Pedido)
 app.post('/api/ia/pedido', express.json({ limit: '200kb' }), async (req, res) => {
   const b = req.body || {};
-  if (!podeTela(req, 'pedido')) return res.status(403).json({ erro: 'Sem permissão.' });
+  if (!podeTela(req, 'pedido') || !podeIA(req)) return res.status(403).json({ erro: 'Sem permissão.' });
   const loja = req.lojas.find((l) => l.id === String(b.loja || ''));
   if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
   if (tooMany('ia:' + req.user, 150)) return res.status(429).json({ erro: 'Muitos pedidos à IA em pouco tempo. Espere alguns minutos.' });

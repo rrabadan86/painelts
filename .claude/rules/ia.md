@@ -18,6 +18,7 @@ paths:
   O que o perfil não pode ver não existe ali, então também não vai para a IA.
 
 ## Regras
+- **Quem usa a IA: só admin e franqueado** (✨, análise do Início, revisão do pedido). Gerente e vendedora não veem nem usam: `IA.podeUsar` no servidor e a mesma lista na tela.
 - Permissão em dois lugares: o servidor só oferece a ferramenta se o perfil pode (`clientes`, `custos`) **e** `executar` confere `pode` de novo.
 - Vendedora: sem custo/margem/estoque e sem dados de clientes. Clientes: só primeiro nome + inicial, nunca CPF, telefone ou e-mail.
 - A IA só consulta: nada de ferramenta que grave.

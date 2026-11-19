@@ -132,3 +132,11 @@ test('IA: diagnóstico do Início é gerado uma vez por arquivo (loja + dia), me
   assert.equal(await IA.umaVez(arq2, async () => null), null);
   assert.ok(!fs.existsSync(arq2));
 });
+
+test('IA: só admin e franqueado usam (gerente e vendedora não)', () => {
+  assert.equal(IA.podeUsar('admin'), true);
+  assert.equal(IA.podeUsar('franqueado'), true);
+  assert.equal(IA.podeUsar('gerente'), false);
+  assert.equal(IA.podeUsar('vendedor'), false);
+  assert.equal(IA.podeUsar(undefined), false);
+});

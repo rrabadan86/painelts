@@ -36,6 +36,7 @@ Hooks (`.claude/settings.json`): bloqueiam commit/push de segredos e limpam os r
 - Vendedora não recebe dados de clientes.
 - Orçamento: só admin e franqueado.
 - Só o admin dispara o coletor ("Sincronizar agora").
+- IA (✨, análise do Início, revisão do pedido): só admin e franqueado.
 
 **AppNext, FIXE e NF-e** (detalhes em `coletor.md` e `nfe.md`)
 - AppNext: só grava em fluxos aprovados pelo dono (clique no painel + confirmação, conferido item a item, auditado). Explorando: só olhar, nunca Concluir, Homologar ou Salvar.
