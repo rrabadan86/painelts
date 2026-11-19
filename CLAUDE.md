@@ -12,6 +12,13 @@ Painel de vendas das lojas Tea Shop (substitui o Power BI). Responda sempre em *
 - **Apresentação:** `/apresentacao` mostra dados fictícios (`src/demo.js`, rotas `/api/demo/...`) e **nunca grava nem envia nada**.
 - **IA:** `src/ia.js` (chave da Anthropic por loja, criptografada; teto e uso por mês), `src/iaprompts.js` (instruções e ferramentas), `src/iaconversas.js` (histórico), `public/js/ia.js` (✨ Pergunte ao painel; as consultas rodam no navegador sobre os dados que o perfil já vê). Na apresentação e nos testes (`IA_FALSO=1`) as respostas são simuladas.
 
+## Convenções de código
+- Rota que grava exige o cabeçalho `X-Painel: 1`; ações importantes vão para a auditoria (`C.auditar`).
+- Toda tela/rota nova precisa funcionar na apresentação: crie a rota `/api/demo/...` (dados fictícios ou resposta simulada, sem gravar).
+- Permissões no servidor (`req.perfil`, `podeTela`, `podeClientes`, `podeCustos`), não só escondendo na tela.
+- Testes: unidade em `tests/unit/*.test.js` (`node --test`); tela em `tests/e2e/*.spec.js` (Playwright, sempre na apresentação, projetos "computador" e "celular"). Mudou algo visível: confira no celular (390 px).
+- Textos da tela simples e diretos, em português; nada de termos técnicos para a vendedora.
+
 ## Antes de cada commit
 ```bash
 npm test
@@ -42,3 +49,10 @@ rm -rf test-results playwright-report tests/.dados
 **WhatsApp e testes**
 - Envio manual: um clique por mensagem, sem insistir com o cliente.
 - Dados temporários de teste: apague depois.
+- Pergunte antes de abrir o AppNext no Chrome. Ele guarda a sessão por aba: cada aba nova pede login ao dono.
+
+## Pendências combinadas (o dono pediu para depois)
+- Conferência do boleto de royalties (ler o PDF e conferir os descontos de devoluções e da fidelidade).
+- Reserva de estoque para encomenda (ligada ao Orçamento).
+- Meta do dia dividida pela escala, em vez da participação nas vendas.
+- A confirmar com o dono: a linha "campos de desconto no AppNext" no log da sincronização das notas; a primeira NF-e real emitida pelo painel ou pelo Orçamento.
