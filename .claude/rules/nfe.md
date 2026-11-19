@@ -1,6 +1,8 @@
 ---
 paths:
   - "src/nfe.js"
+  - "src/cobranca.js"
+  - "public/js/precos.js"
   - "src/nfsaida.js"
   - "src/devolucao.js"
   - "src/xmlarquivos.js"
@@ -33,3 +35,4 @@ paths:
 - Explorando o AppNext: nunca Concluir, Homologar ou Salvar fora desse fluxo.
 - Na apresentação nada vai para o robô: resposta simulada.
 - A confirmar com o dono: a primeira NF-e real emitida pelo painel ou pelo Orçamento; a linha "campos de desconto no AppNext" no log.
+- **Reajuste de custo → franquia:** na nota de entrada, o aviso "O custo subiu" tem "✉ Enviar para a franquia" (só admin e franqueado, `podeReajuste` no servidor). A pessoa marca os itens, edita para/assunto/mensagem e envia pelo e-mail da loja (`POST /api/reajuste/enviar`, `src/cobranca.js` → `tabelaReajuste`); fica em `cobrancas.json` (tipo `reajuste`, lembra os destinatários) e na auditoria. Apresentação: `/api/demo/reajuste/...` simula, nada é enviado.

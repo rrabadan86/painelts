@@ -573,6 +573,12 @@ app.post('/api/demo/conta-franquia/email/previa', express.json({ limit: '10kb' }
 });
 app.post('/api/demo/conta-franquia/acao', (req, res) => res.status(400).json({ erro: 'Na apresentação nada é salvo.' }));
 app.post('/api/demo/conta-franquia/royalties', (req, res) => res.status(400).json({ erro: 'Na apresentação nada é salvo.' }));
+app.get('/api/demo/reajuste/para', (req, res) => res.json({ para: ['compras@franquia-exemplo.com.br'], loja: 'Tea Shop Centro' }));
+app.post('/api/demo/reajuste/enviar', express.json({ limit: '40kb' }), (req, res) => {
+  const it = COB.conferirItensReajuste((req.body || {}).itens);
+  if (it.erro) return res.status(400).json({ erro: it.erro });
+  res.json({ ok: true, simulado: true, para: ['compras@franquia-exemplo.com.br'] }); // apresentação: nada é enviado
+});
 app.post('/api/demo/conta-franquia/email/enviar', (req, res) => res.status(400).json({ erro: 'Na apresentação nenhum e-mail é enviado.' }));
 app.get('/api/demo/nfsaida', (req, res) => { if (!lojaDemo(req)) return res.status(400).json({ erro: 'Escolha uma loja.' }); res.json({ notas: nfsDemo(req.query.loja).map(cabNfs), temXml: true }); });
 app.get('/api/demo/nfsaida/nota', (req, res) => { const n = lojaDemo(req) && nfsDemo(req.query.loja).find((x) => x.chave === req.query.chave); if (!n) return res.status(404).json({ erro: 'Nota não encontrada.' }); res.json(n); });
@@ -1409,6 +1415,37 @@ app.post('/api/conta-franquia/email/enviar', express.json({ limit: '20kb' }), as
   const x = await enviarCobranca(loja, tipo, req.body, req.user);
   if (x.erro) return res.status(x.vazio ? 400 : 502).json({ erro: x.erro });
   res.json({ ok: true, para: x.para, historico: COB.historico(loja.id).slice(0, 20) });
+});
+// reajuste de custo numa nota de entrada → e-mail para a franquia (admin e franqueado; revisado e enviado com um clique)
+const podeReajuste = (req) => req.perfil === 'admin' || req.perfil === 'franqueado';
+app.get('/api/reajuste/para', (req, res) => {
+  if (!podeReajuste(req)) return res.status(403).json({ erro: 'Só o admin ou o franqueado fala com a franquia.' });
+  const loja = lojaCF(req, res); if (!loja) return;
+  res.json({ para: COB.emails(loja.id, 'reajuste') || DEV.destinatarios(loja.id) || [], loja: nomeLojaCF(loja) });
+});
+app.post('/api/reajuste/enviar', express.json({ limit: '40kb' }), async (req, res) => {
+  if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
+  if (!podeReajuste(req)) return res.status(403).json({ erro: 'Só o admin ou o franqueado fala com a franquia.' });
+  const loja = lojaCF(req, res, true); if (!loja) return;
+  const b = req.body || {};
+  const p = COB.validarPara(b.para);
+  if (p.erro) return res.status(400).json({ erro: p.erro });
+  const it = COB.conferirItensReajuste(b.itens);
+  if (it.erro) return res.status(400).json({ erro: it.erro });
+  const assunto = String(b.assunto || '').replace(/[\r\n]+/g, ' ').trim().slice(0, 200);
+  if (!assunto) return res.status(400).json({ erro: 'Escreva o assunto.' });
+  const mensagem = String(b.mensagem || '').slice(0, 5000);
+  const t = COB.tabelaReajuste(it.ok);
+  const NOTIF = require('./src/notificacoes');
+  const cfgN = NOTIF.ler();
+  const lc = (cfgN.lojas || {})[loja.id];
+  const smtp = lc && lc.email && lc.email.host ? lc.email : cfgN.email;
+  if (!smtp || !smtp.host) return res.status(400).json({ erro: 'A loja ainda não tem o e-mail configurado (Configurações → Lojas).' });
+  try { await NOTIF.enviarEmail(p.ok.join(', '), assunto, `${mensagem}\n\n${t.tabelaTexto}`, COB.html(mensagem, t.tabelaHtml), smtp); } catch (e) { return res.status(502).json({ erro: 'O e-mail não saiu: ' + (e.message || e) }); }
+  const nf = String(b.nf || '').slice(0, 30);
+  COB.registrar(loja.id, 'reajuste', p.ok, it.ok.map((x) => x.cod || x.nome), 0, req.user);
+  C.auditar(req.user, 'enviou à franquia reclamação de reajuste de custo', loja.id, { loja: loja.id, nf, para: p.ok, itens: it.ok.map((x) => `${x.nome}: ${x.antes} → ${x.depois}`) });
+  res.json({ ok: true, para: p.ok });
 });
 // envio automático todo mês (ligado em Configurações → Mensagens)
 app.get('/api/conta-franquia/auto', (req, res) => {

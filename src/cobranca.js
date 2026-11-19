@@ -135,4 +135,31 @@ function marcarAuto(id, tipo, ym, resultado) {
   gravar(id, d);
 }
 
-module.exports = { auto, salvarAuto, devidoAgora, marcarAuto, montar, planilhaFidelidade, emails, registrar, historico, validarPara, html, itensDevolucoes, itensFidelidade };
+/**
+ * Reclamação de reajuste de custo (nota de entrada → "Enviar para a franquia"): tabela dos itens escolhidos,
+ * com o custo antes, o custo nesta nota e o aumento. itens: [{ cod, nome, antes, depois }] (já conferidos).
+ */
+function tabelaReajuste(itens) {
+  const pct = (a, d) => `${d >= a ? '+' : ''}${((d / a - 1) * 100).toFixed(1).replace('.', ',')}%`;
+  const linhas = itens.map((i) => [i.nome + (i.cod ? ` (cód. ${i.cod})` : ''), brl(i.antes), brl(i.depois), pct(i.antes, i.depois)]);
+  const cab = ['Produto', 'Custo antes', 'Custo nesta nota', 'Aumento'];
+  return {
+    tabelaHtml: tabela(cab, linhas),
+    tabelaTexto: [cab.join(' | '), ...linhas.map((l) => l.join(' | '))].join('\n'),
+  };
+}
+/** confere os itens que vêm da tela (até 100; custo antes e depois positivos) */
+function conferirItensReajuste(lista) {
+  if (!Array.isArray(lista) || !lista.length) return { erro: 'Marque pelo menos um produto.' };
+  if (lista.length > 100) return { erro: 'Produtos demais (máximo 100).' };
+  const ok = [];
+  for (const x of lista) {
+    const antes = Number(x && x.antes), depois = Number(x && x.depois);
+    const nome = String((x && x.nome) || '').replace(/[\r\n]+/g, ' ').trim().slice(0, 120);
+    if (!nome || !(antes > 0) || !(depois > 0) || antes > 1e6 || depois > 1e6) return { erro: `Produto inválido: ${nome || '(sem nome)'}` };
+    ok.push({ cod: String((x && x.cod) || '').replace(/[^\w.-]/g, '').slice(0, 30), nome, antes: Math.round(antes * 100) / 100, depois: Math.round(depois * 100) / 100 });
+  }
+  return { ok };
+}
+
+module.exports = { tabelaReajuste, conferirItensReajuste, auto, salvarAuto, devidoAgora, marcarAuto, montar, planilhaFidelidade, emails, registrar, historico, validarPara, html, itensDevolucoes, itensFidelidade };

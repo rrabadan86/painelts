@@ -680,6 +680,64 @@
       document.body.append(cam);
       document.addEventListener('keydown', escP, true);
     };
+    // reclamar do reajuste com a franquia: escolhe os itens, revisa destinatários/assunto/mensagem e envia (admin e franqueado)
+    const abrirEnvioFranquia = () => {
+      document.querySelector('.prc-popup-camada')?.remove();
+      const fecharP = () => { cam.remove(); document.removeEventListener('keydown', escP, true); };
+      const escP = (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); fecharP(); } };
+      const vistos = new Set();
+      const itens = linhas.filter((r) => r.varC != null && r.varC > 0.0005 && r.antes > 0 && !vistos.has(String(r.cod)) && vistos.add(String(r.cod)))
+        .sort((a, b) => b.varC - a.varC).map((r) => ({ cod: String(r.cod), nome: r.nome, antes: r.antes, depois: r.custo, varC: r.varC, origem: r.origemAntes, on: true }));
+      const nomeLoja = (TS.lojas || []).find((l) => l.id === D.loja)?.nome || '';
+      const quem = String((TS.eu && TS.eu.nome) || '').trim().split(/\s+/)[0] || '';
+      const iPara = h('input', { type: 'text', class: 'input', placeholder: 'e-mail da franquia (separe vários por vírgula)', 'aria-label': 'Para' });
+      const iAssunto = h('input', { type: 'text', class: 'input', maxlength: 200, 'aria-label': 'Assunto',
+        value: `Reajuste de custo — NF ${n.nfTxt}${n.fornecedor ? ' — ' + n.fornecedor : ''}${nomeLoja ? ' — ' + nomeLoja : ''}` });
+      const iMsg = h('textarea', { class: 'input nf-fr-msg', rows: 6, maxlength: 5000, 'aria-label': 'Mensagem' });
+      iMsg.value = `Olá,\n\nNa nota fiscal ${n.nfTxt}${n.entrada ? ` (entrada em ${quando(n.entrada)})` : ''}${n.fornecedor ? `, de ${n.fornecedor},` : ''} os produtos abaixo chegaram com custo maior do que na compra anterior. Podem conferir se o reajuste está correto?\n\nObrigado${quem ? ',\n' + quem : '.'}`;
+      const status = h('div', { class: 'nf-fr-st', role: 'status' });
+      const conta = h('span', { class: 'muted' });
+      const btEnviar = h('button', { type: 'button', class: 'btn primary' }, '✉ Enviar');
+      const pintarConta = () => { const k = itens.filter((x) => x.on).length; conta.textContent = `${k} de ${itens.length} ${itens.length === 1 ? 'produto marcado' : 'produtos marcados'}`; btEnviar.disabled = !k; };
+      const marcarTodos = h('input', { type: 'checkbox', checked: true, 'aria-label': 'Marcar todos', onchange: (e) => { for (const x of itens) x.on = e.target.checked; lista.querySelectorAll('input[type=checkbox]').forEach((c) => { c.checked = e.target.checked; }); pintarConta(); } });
+      const lista = h('div', { class: 'nf-fr-lista' }, ...itens.map((x) => h('label', { class: 'nf-fr-item' },
+        h('input', { type: 'checkbox', checked: true, onchange: (e) => { x.on = e.target.checked; marcarTodos.checked = itens.every((y) => y.on); pintarConta(); } }),
+        h('span', { class: 'nf-fr-nome' }, x.nome, h('small', { class: 'muted' }, `cód. ${x.cod}${x.origem ? ' · antes: ' + x.origem : ''}`)),
+        h('span', { class: 'nf-fr-val' }, h('s', { class: 'muted' }, fmt.brl(x.antes)), ' → ', h('b', null, fmt.brl(x.depois)), h('span', { class: 'prc-badge prc-ruim' }, pctTxt(x.varC))))));
+      btEnviar.addEventListener('click', async () => {
+        const marcados = itens.filter((x) => x.on);
+        if (!marcados.length) return;
+        if (!iPara.value.trim()) { status.className = 'nf-fr-st neg'; status.textContent = 'Informe para quem enviar.'; iPara.focus(); return; }
+        if (!confirm(`Enviar o e-mail para ${iPara.value.trim()} com ${marcados.length} ${marcados.length === 1 ? 'produto' : 'produtos'}?`)) return;
+        btEnviar.disabled = true; status.className = 'nf-fr-st muted'; status.textContent = 'Enviando…';
+        try {
+          const r = await fetch(TS.api('reajuste/enviar'), { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-Painel': '1' },
+            body: JSON.stringify({ loja: D.loja, nf: n.nfTxt, para: iPara.value, assunto: iAssunto.value, mensagem: iMsg.value, itens: marcados.map(({ cod, nome, antes, depois }) => ({ cod, nome, antes, depois })) }) });
+          const j = await r.json().catch(() => ({}));
+          if (!r.ok) throw new Error(j.erro || 'Falha ao enviar.');
+          status.className = 'nf-fr-st ok';
+          status.textContent = j.simulado ? '✓ Na apresentação o e-mail não é enviado — na loja de verdade ele sairia agora.' : `✓ Enviado para ${(j.para || []).join(', ')}.`;
+        } catch (e) { status.className = 'nf-fr-st neg'; status.textContent = TS.erroDeRede && TS.erroDeRede(e) ? 'Sem conexão com o painel agora: tente de novo.' : e.message; btEnviar.disabled = false; }
+      });
+      pintarConta();
+      const campo = (rot, el) => h('label', { class: 'nf-fr-campo' }, h('span', { class: 'f-label' }, rot), el);
+      const pop = h('aside', { class: 'card prc-popup nf-fr-pop', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Enviar para a franquia' },
+        h('button', { type: 'button', class: 'icon-btn exp-fechar', title: 'Fechar (Esc)', 'aria-label': 'Fechar', onclick: fecharP }, '✕'),
+        h('div', { class: 'card-title' }, '✉ Enviar para a franquia'),
+        h('div', { class: 'card-sub' }, `NF ${n.nfTxt}${n.fornecedor ? ' · ' + n.fornecedor : ''}. Marque os produtos do reajuste que quer questionar; o e-mail leva a tabela com o custo antes, o desta nota e o aumento.`),
+        campo('Para', iPara), campo('Assunto', iAssunto),
+        h('div', { class: 'nf-fr-cab' }, h('label', { class: 'nf-fr-todos' }, marcarTodos, ' Produtos com custo maior'), conta),
+        lista,
+        campo('Mensagem', iMsg),
+        h('div', { class: 'nf-fr-acoes' }, h('button', { type: 'button', class: 'btn', onclick: fecharP }, 'Cancelar'), btEnviar),
+        status);
+      const cam = h('div', { class: 'prc-popup-camada', onmousedown: (e) => { if (e.target === cam) fecharP(); } }, pop);
+      document.body.append(cam);
+      document.addEventListener('keydown', escP, true);
+      fetch(TS.api(`reajuste/para?loja=${encodeURIComponent(D.loja)}`), { credentials: 'same-origin' }).then((r) => (r.ok ? r.json() : null)).then((j) => { if (j && j.para && !iPara.value) iPara.value = j.para.join(', '); }).catch(() => {});
+      setTimeout(() => iPara.focus(), 50);
+    };
+    TS.abrirEnvioFranquiaTeste = abrirEnvioFranquia; // testes
     // histórico de compras do item: todas as notas de compra que o painel tem (Estoque → Entrada de Produtos do AppNext)
     const abrirHistorico = (r) => {
       const kg = unTxt(r.un) === 'kg';
@@ -763,7 +821,8 @@
           h('div', null,
             h('div', { class: 'f-label' }, `⚠ O custo subiu: ${imp.length} ${imp.length === 1 ? 'produto à venda ficou' : 'produtos à venda ficaram'} com margem menor`),
             h('small', { class: 'muted' }, `Em amarelo na lista abaixo (${fmt.int(nItens)} ${nItens === 1 ? 'item da nota' : 'itens da nota'}). Nos chás, toque em "ver" para os pacotes.`)),
-          btSo)));
+          h('div', { class: 'nf-impacto-bts' }, btSo,
+            TS.eu && ['admin', 'franqueado'].includes(TS.eu.perfil) ? h('button', { type: 'button', class: 'btn nf-fr-btn', onclick: abrirEnvioFranquia }, '✉ Enviar para a franquia') : null))));
       montarTab();
     }).catch(() => null);
     const vinculadas = saidasDeNota(j, n);

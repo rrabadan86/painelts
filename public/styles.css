@@ -2636,3 +2636,20 @@ details.vl-ajuda summary { cursor: pointer; font-weight: 600; }
 /* Preços: motivo provável da diferença entre vendas e cadastro */
 .prc-tabpor { display: flex; align-items: center; gap: 4px; font-size: 11.5px; color: var(--muted); margin-top: 2px; }
 .prc-badge.prc-neutro { background: var(--sage-l, #eef0ea); color: var(--muted); }
+
+/* Nota de entrada → Enviar para a franquia (reclamar do reajuste) */
+.nf-impacto-bts { display: flex; flex-wrap: wrap; gap: 8px; }
+.nf-fr-pop { max-width: 640px; width: calc(100vw - 32px); max-height: calc(100vh - 32px); overflow: auto; display: flex; flex-direction: column; gap: 10px; }
+.nf-fr-campo { display: flex; flex-direction: column; gap: 4px; }
+.nf-fr-campo .input { width: 100%; box-sizing: border-box; }
+.nf-fr-msg { min-height: 120px; resize: vertical; font: inherit; }
+.nf-fr-cab { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+.nf-fr-todos { display: flex; align-items: center; gap: 6px; font-weight: 600; }
+.nf-fr-lista { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 10px; max-height: 260px; overflow: auto; }
+.nf-fr-item { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 8px 10px; border-bottom: 1px solid var(--line); cursor: pointer; }
+.nf-fr-item:last-child { border-bottom: 0; }
+.nf-fr-nome { min-width: 0; display: flex; flex-direction: column; overflow-wrap: anywhere; }
+.nf-fr-val { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; justify-content: flex-end; white-space: nowrap; }
+.nf-fr-acoes { display: flex; justify-content: flex-end; gap: 8px; }
+.nf-fr-st.ok { color: var(--pos, #2C5234); font-weight: 600; }
+@media (max-width: 600px) { .nf-fr-item { grid-template-columns: auto minmax(0, 1fr); } .nf-fr-val { grid-column: 2; justify-content: flex-start; } }

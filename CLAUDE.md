@@ -37,6 +37,7 @@ Hooks (`.claude/settings.json`): bloqueiam commit/push de segredos e limpam os r
 - Custo e margem nunca aparecem para vendedora.
 - Vendedora não recebe dados de clientes.
 - Orçamento: só admin e franqueado.
+- Enviar para a franquia (reclamar do reajuste de custo na nota de entrada): só admin e franqueado.
 - Só o admin dispara o coletor ("Sincronizar agora").
 - IA (✨, análise do Início, revisão do pedido): só admin e franqueado.
 
