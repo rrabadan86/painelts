@@ -1,0 +1,25 @@
+---
+paths:
+  - "coletor/**"
+  - "src/coletor.js"
+  - "config/coletor/**"
+---
+# Coletor (robôs do AppNext, FIXE e Sistema de Pedidos)
+
+- Python + Playwright, um script por tarefa (`nextsoft_*.py` = AppNext, `fixe_*.py` = FIXE). `coletor.py` é o serviço que roda na VPS
+  e enfileira as lojas; `nextsoft_sessao.py` faz um login só e roda os módulos em sequência (mantenha o marcador `### nextsoft_<modulo>.py ###`).
+- O painel fala com o coletor por `src/coletor.js` (API interna do docker compose, cabeçalho `X-Coletor-Token`).
+- Só o admin dispara o coletor ("Sincronizar agora"): confira a permissão no servidor.
+- Credenciais ficam em `config/coletor/<loja>.env` (nunca no Git; o modelo é `exemplo.env.modelo`). O Claude nunca digita nem pede senha:
+  quem faz login no AppNext e no FIXE é o dono.
+
+## O que o robô pode fazer
+- **AppNext:** só grava em fluxos aprovados pelo dono (clique no painel + confirmação, conferido item a item, auditado). Na dúvida, para sem salvar.
+- **Explorando o AppNext** (descobrir telas, seletores): só olhar, nunca Concluir, Homologar ou Salvar. Use `SIMULAR=1` quando o script tiver.
+- **FIXE:** só observar.
+- Pergunte antes de abrir o AppNext no Chrome. Ele guarda a sessão por aba: cada aba nova pede login ao dono.
+
+## Ao mexer
+- Saídas do robô em JSON (`SAIDA_RESULTADO`/`SAIDA_SESSAO`): o painel lê esses arquivos; mantenha os campos que ele já usa.
+- Logs não podem ter senha, token, CPF completo nem e-mail pessoal do dono.
+- Dados temporários de teste: apague depois.
