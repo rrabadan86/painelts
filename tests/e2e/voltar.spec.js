@@ -276,7 +276,7 @@ test('Nota de entrada: tocar no produto abre o histórico de compras (gráfico e
   await nota.locator('.nf-hist-lnk').first().evaluate((b) => b.click());
   const pop = page.locator('.nf-hist-pop');
   await expect(pop).toContainText('Histórico de compras');
-  await expect(pop).toContainText('2 notas');
+  await expect(pop).toContainText(/[2-9] notas/); // a apresentação já traz compras de meses anteriores (compras × vendas)
   await expect(pop.locator('canvas')).toHaveCount(1);
   await expect(pop.locator('.prc-badge').first()).toContainText('+');
   await expect(pop).toContainText('esta nota');
