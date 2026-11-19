@@ -16,8 +16,8 @@ test('devolução: valida itens, fotos e destinatários', async () => {
   assert.match(DEV.criar('lj', nota, { itens: [{ cod: '406', tipo: 'danificado', qtd: 2, fotos: [] }] }, 'g').erro, /foto/);
   assert.match(DEV.criar('lj', nota, { itens: [{ cod: '406', tipo: 'faltou', qtd: 11 }] }, 'g').erro, /passa/);
   assert.match(DEV.criar('lj', nota, { itens: [{ cod: '11106CX', qtdDanificado: 2, qtdFaltou: 5, fotos: [jpg] }] }, 'g').erro, /passa/);
-  const sp = DEV.criar('lj', nota, { itens: [{ cod: '11106CX', qtdDanificado: 2, qtdFaltou: 4, obs: 'quebrado', fotos: [jpg] }] }, 'g').ok;
-  assert.deepEqual(sp.itens.map((i) => [i.tipo, i.qtd, i.fotos]), [['danificado', 2, 1], ['faltou', 4, 0]]);
+  const sp = DEV.criar('lj', nota, { itens: [{ cod: '11106CX', qtdDanificado: 2, qtdFaltou: 3, obs: 'quebrado', fotos: [jpg] }] }, 'g').ok; // sobra 1 na nota para a próxima devolução
+  assert.deepEqual(sp.itens.map((i) => [i.tipo, i.qtd, i.fotos]), [['danificado', 2, 1], ['faltou', 3, 0]]);
   assert.match(DEV.criar('lj', nota, { itens: [{ cod: '999', tipo: 'faltou', qtd: 1 }] }, 'g').erro, /não está/);
   assert.match(DEV.criar('lj', nota, { itens: [{ cod: '406', tipo: 'danificado', qtd: 1, fotos: ['data:image/png;base64,AAAA'] }] }, 'g').erro, /foto/);
   const d = DEV.criar('lj', nota, { itens: [{ cod: '406', tipo: 'danificado', qtd: 2, obs: 'vencida', fotos: [jpg, jpg] }, { cod: '11106CX', tipo: 'faltou', qtd: 1 }] }, 'g').ok;

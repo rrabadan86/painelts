@@ -76,10 +76,24 @@ const arqHist = (id) => path.join(pasta(id), 'custos.json');
 /** histórico de custo por código: { cod: [[AAAA-MM-DD, custo], …] } — um ponto novo só quando o custo muda */
 // pontos com data que não dá para ler (estoque antigo com a data do título no formato americano) ficam de fora
 const limparHist = (h) => { for (const k of Object.keys(h)) { h[k] = h[k].filter(([d]) => /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(d))); if (!h[k].length) delete h[k]; } return h; };
+// leitura com memória: o arquivo só é lido e convertido de novo quando muda (data ou tamanho), como o estoque atual.
+// Vale para o que o painel grava (gravação troca o arquivo) e para o que o coletor grava (compras.json).
+function lerComCache(cache, id, arquivo, montar) {
+  let st;
+  try { st = fs.statSync(arquivo); } catch { cache.delete(id); return undefined; }
+  const hit = cache.get(id);
+  if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size && hit.ino === st.ino) return hit.val;
+  let val;
+  try { val = montar(JSON.parse(fs.readFileSync(arquivo, 'utf8'))); } catch { cache.delete(id); return undefined; }
+  cache.set(id, { mtimeMs: st.mtimeMs, size: st.size, ino: st.ino, val });
+  return val;
+}
+const histCache = new Map(), comprasCache = new Map(), notasCache = new Map();
 function historico(id) {
-  try { return limparHist(JSON.parse(fs.readFileSync(arqHist(id), 'utf8'))); } catch { /* ainda não existe */ }
+  let h = lerComCache(histCache, id, arqHist(id), limparHist);
+  if (h) return { ...h };
   const a = atual(id); // começa pelo estoque que já está no painel
-  if (a && a.itens) { registrarCustos(id, a.itens, a.em); try { return JSON.parse(fs.readFileSync(arqHist(id), 'utf8')); } catch { /* sem custos */ } }
+  if (a && a.itens) { registrarCustos(id, a.itens, a.em); h = lerComCache(histCache, id, arqHist(id), (j) => j); if (h) return { ...h }; }
   return {};
 }
 const lerHist = (id) => { try { return JSON.parse(fs.readFileSync(arqHist(id), 'utf8')); } catch { return {}; } };
@@ -105,8 +119,10 @@ const arqCompras = (id) => path.join(pasta(id), 'compras.json');
  *  { cod: [[AAAA-MM-DD da entrada, custo unitário, nº da NF, quantidade, fornecedor], …] } — só compras (sem devolução/troca)
  *  + atualizado. Chás chegam em kg: custo por kg, como no estoque. */
 function compras(id) {
-  let j;
-  try { j = JSON.parse(fs.readFileSync(arqCompras(id), 'utf8')); } catch { return null; }
+  const v = lerComCache(comprasCache, id, arqCompras(id), montarCompras);
+  return v ? { ...v } : null;
+}
+function montarCompras(j) {
   const out = {};
   for (const n of j.notas || []) {
     if (!/compra/i.test(n.motivo || '') || !/^conclu/i.test(n.status || '')) continue;
@@ -123,8 +139,10 @@ function compras(id) {
 
 /** notas de entrada guardadas pelo coletor, inteiras (para a lista e o detalhe na tela Preços) */
 function notas(id) {
-  let j;
-  try { j = JSON.parse(fs.readFileSync(arqCompras(id), 'utf8')); } catch { return null; }
+  const v = lerComCache(notasCache, id, arqCompras(id), montarNotas);
+  return v ? { ...v } : null;
+}
+function montarNotas(j) {
   return { atualizado: j.atualizado || null, desde: j.desde || null, notas: (j.notas || []).map((n) => ({
     id: n.id, nf: n.nf, serie: n.serie, chave: n.chave || '', emissao: n.emissao || '', entrada: n.entrada || '', status: n.status || '', motivo: n.motivo || '', cfop: n.cfop || '',
     fornecedor: n.fornecedor || '', fornecedorDoc: n.fornecedorDoc || '', total: n.total, desconto: n.desconto ?? null,
@@ -147,10 +165,24 @@ function atual(id) {
 }
 
 /** grava a planilha nova; o que sumiu fica com quantidade 0 (o relatório esconde itens zerados) */
-async function importar(id, buf, origem = 'painel') {
+/**
+ * trava da planilha parcial: quem não vem na planilha fica com estoque zero; se vieram menos da metade dos
+ * produtos que tinham saldo, é quase sempre exportação incompleta (filtro ligado, página cortada). Devolve o
+ * texto do erro ou null. Lojas com poucos produtos com saldo (< MIN_TRAVA) ficam de fora.
+ */
+const MIN_TRAVA = 20;
+function travaParcial(antes, novo) {
+  const comSaldo = ((antes && antes.itens) || []).filter((i) => i.qtd > 0).length;
+  const n = ((novo && novo.itens) || []).length;
+  if (comSaldo < MIN_TRAVA || n >= comSaldo * 0.5) return null;
+  return `A planilha trouxe só ${n} produtos, mas o painel tem ${comSaldo} com estoque: os outros ficariam zerados. Nada foi gravado (parece exportação incompleta).`;
+}
+async function importar(id, buf, origem = 'painel', opts = {}) {
   const { linhasDeBuffer } = require('./sources');
   const novo = ler(await linhasDeBuffer(buf));
   const antes = atual(id);
+  const trava = opts.forcar ? null : travaParcial(antes, novo);
+  if (trava) { const e = new Error(trava); e.parcial = true; throw e; }
   const vistos = new Set(novo.itens.map((i) => i.cod));
   const zerados = antes ? antes.itens.filter((i) => !vistos.has(i.cod)).map((i) => ({ ...i, qtd: 0, zerado: true })) : [];
   const dados = { em: novo.em || new Date().toISOString(), importadoEm: new Date().toISOString(), origem, itens: [...novo.itens, ...zerados] };
@@ -312,4 +344,4 @@ function alterarClasse(atual, b, quem) {
   return { ok: c };
 }
 
-module.exports = { ler, atual, historico, compras, notas, importar, pendentes, processar, cfg, validarCfg, quantidade, PADRAO, classeCfg, alterarClasse };
+module.exports = { travaParcial, ler, atual, historico, compras, notas, importar, pendentes, processar, cfg, validarCfg, quantidade, PADRAO, classeCfg, alterarClasse };

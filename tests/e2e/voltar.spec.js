@@ -306,6 +306,7 @@ test('Rentabilidade no celular: "ver por pacote" mostra a conta como tabela comp
   test.skip(info.project.name !== 'celular');
   await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS.db);
   await page.evaluate(() => { location.hash = '#rentab'; });
+  await page.locator('.est-abas button', { hasText: 'Produtos' }).click();
   const bt = page.locator('.est-prod-btn').first();
   await expect(bt).toBeVisible();
   await bt.click();

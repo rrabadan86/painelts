@@ -29,7 +29,7 @@
       body: corpo == null ? undefined : raw ? corpo : JSON.stringify(corpo),
     });
     const j = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(j.erro || `Erro ${res.status}`);
+    if (!res.ok) { const e = new Error(j.erro || `Erro ${res.status}`); e.dados = j; throw e; }
     return j;
   }
   function toast(msg, erro) {
@@ -715,6 +715,11 @@
       h('label', { class: 'cfg-campo' }, h('span', null, 'Assunto'), assunto),
       h('small', { class: 'muted' }, 'Campos do assunto: {loja} · {nf} (nota de entrada) · {fornecedor} · {nfDevolucao} (número da NF-e de devolução)'),
       h('div', { class: 'cfg-acoes' }, salvar, msg));
+    // para quem vai o e-mail: só admin e franqueado mudam (o servidor confere); os outros veem travado
+    if (!(TS.eu && ['admin', 'franqueado'].includes(TS.eu.perfil))) {
+      emails.disabled = true; assunto.disabled = true; salvar.hidden = true;
+      msg.textContent = 'Só o admin ou o franqueado muda os destinatários.';
+    }
     return b;
   }
   function blocoFixe(l) {
@@ -821,7 +826,14 @@
         const f = arq.files[0];
         if (!f) throw new Error('Escolha o arquivo.');
         // Logs do FIXE vão pelo mesmo envio do cadastro: o painel reconhece pela planilha
-        const r = await api('POST', `/lojas/${l.id}/upload/${tipo.value === 'FIXE_Logs' ? 'Dados_Clientes' : tipo.value}`, f, { 'X-Arquivo': encodeURIComponent(f.name) });
+        const urlEnvio = `/lojas/${l.id}/upload/${tipo.value === 'FIXE_Logs' ? 'Dados_Clientes' : tipo.value}`;
+        let r;
+        try { r = await api('POST', urlEnvio, f, { 'X-Arquivo': encodeURIComponent(f.name) }); }
+        catch (e) {
+          // estoque com bem menos produtos que o atual: só grava se quem enviou confirmar
+          if (!(e.dados && e.dados.podeForcar) || !confirm(e.message + '\n\nSe a planilha está certa (a loja realmente ficou com poucos produtos), clique em OK para gravar assim mesmo.')) throw e;
+          r = await api('POST', urlEnvio + '?forcar=1', f, { 'X-Arquivo': encodeURIComponent(f.name) });
+        }
         arq.value = '';
         setTimeout(() => TS.recarregar && TS.recarregar(true), 4000);
         if (r && r.estoque) {

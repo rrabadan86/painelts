@@ -174,4 +174,24 @@ function conferirParceiros(id) {
   return { lista: l, mudou };
 }
 
-module.exports = { cadastros, erroCadastros, prepararCadastros, lista, criar, emitir, erro, marcarXml, conferir, criarParceiro, listaParceiros, erroParceiro, conferirParceiros, cpfOk, cnpjOk };
+/** limpeza: pedidos ao robô (envio/<id>.json e <id>.resultado.json) com mais de 90 dias, ou que já saíram das listas
+ *  (rascunhos, parceiros e os ids em "manter", ex.: devoluções) há mais de 1 dia. Não mexe em cadastros.resultado.json,
+ *  nas listas nem em XML de nota. Devolve quantos arquivos apagou. */
+function limparEnvios(id, manter = [], agora = Date.now()) {
+  let fsx = [];
+  try { fsx = fs.readdirSync(envio(id)); } catch { return 0; }
+  const vivos = new Set([...lista(id), ...listaParceiros(id)].map((x) => x.id).concat([...manter].map(String)));
+  let n = 0;
+  for (const f of fsx) {
+    const m = /^([a-f0-9]{12})(?:\.resultado)?\.json$/.exec(f);
+    if (!m) continue;
+    const arqF = path.join(envio(id), f);
+    let st;
+    try { st = fs.statSync(arqF); } catch { continue; }
+    const idade = agora - st.mtimeMs;
+    if (idade > 90 * 864e5 || (idade > 864e5 && !vivos.has(m[1]))) { try { fs.unlinkSync(arqF); n++; } catch { /* ok */ } }
+  }
+  return n;
+}
+
+module.exports = { limparEnvios, cadastros, erroCadastros, prepararCadastros, lista, criar, emitir, erro, marcarXml, conferir, criarParceiro, listaParceiros, erroParceiro, conferirParceiros, cpfOk, cnpjOk };

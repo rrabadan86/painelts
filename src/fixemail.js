@@ -12,6 +12,11 @@ const path = require('path');
 const C = require('./config');
 
 const REMETENTE = 'fixe@fixecrm.com.br';
+const DOMINIO = REMETENTE.split('@')[1];
+// de onde o painel aceita baixar a planilha: o domínio do FIXE (e subdomínios). Se o FIXE passar a mandar o link por
+// outro endereço, o dono libera em FIXE_LINK_DOMINIOS (separados por vírgula), sem mexer no código.
+const dominiosLink = () => [DOMINIO, 'epossible.com.br', ...String(process.env.FIXE_LINK_DOMINIOS || '').toLowerCase().split(/[,\s]+/).filter((d) => /^[a-z0-9.-]+\.[a-z]{2,}$/.test(d))];
+const doDominio = (host, dom) => { const h = String(host || '').toLowerCase().replace(/\.$/, ''); return h === dom || h.endsWith('.' + dom); };
 const ESPERA_MAX = 3 * 3600e3; // depois de 3 h sem e-mail, desiste e avisa
 const pasta = (id) => path.join(C.pastaLoja(id), 'fixe');
 const arq = (id, n) => path.join(pasta(id), n);
@@ -48,12 +53,26 @@ function comApelido(email, lojaId) {
   return `${u}+${tag}@${d}`;
 }
 
-/** link "Baixar agora" do e-mail */
-function linkDoEmail(html) {
+/** o link é https e de um endereço do FIXE? (devolve o host quando NÃO é, para avisar) */
+function linkPermitido(link) {
+  let u;
+  try { u = new URL(link); } catch { return false; }
+  return u.protocol === 'https:' && !u.username && !u.password && dominiosLink().some((d) => doDominio(u.hostname, d));
+}
+/** link "Baixar agora" do e-mail, do jeito que veio (qualquer endereço) */
+function linkCandidato(html) {
   const as = [...String(html || '').matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)];
   const txt = (s) => s.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
-  const a = as.find((m) => /baixar/.test(txt(m[2]))) || as.find((m) => /download|export|\.xlsx|\.csv/i.test(m[1]));
-  return a ? a[1].replace(/&amp;/g, '&') : null;
+  const limpo = (m) => m[1].replace(/&amp;/g, '&').trim();
+  // primeiro os que são do FIXE: um link estranho no mesmo e-mail não passa na frente
+  const ord = [...as.filter((m) => linkPermitido(limpo(m))), ...as.filter((m) => !linkPermitido(limpo(m)))];
+  const a = ord.find((m) => /baixar/.test(txt(m[2]))) || ord.find((m) => /download|export|\.xlsx|\.csv/i.test(m[1]));
+  return a ? limpo(a) : null;
+}
+/** link "Baixar agora" do e-mail: só https e só do domínio do FIXE (qualquer outro é ignorado) */
+function linkDoEmail(html) {
+  const l = linkCandidato(html);
+  return l && linkPermitido(l) ? l : null;
 }
 
 const dns = require('dns').promises;
@@ -102,14 +121,35 @@ async function baixar(url) {
   throw new Error('redirecionamentos demais no link do FIXE');
 }
 
-function remetenteAutenticado(p, ehSpam) {
+/**
+ * O e-mail é mesmo do FIXE? Só vale com a conferência do servidor que recebeu (Authentication-Results do topo, o que o
+ * Gmail escreve; os de baixo podem ter vindo prontos de quem mandou) dizendo que a assinatura do DOMÍNIO DO FIXE passou:
+ *   dkim=pass com header.i/header.d do fixecrm.com.br, ou dmarc=pass com header.from do fixecrm.com.br
+ *   (DMARC só passa com DKIM ou SPF alinhados a esse domínio).
+ * spf=pass sozinho (vale para o domínio de quem enviou, não para o "De") e e-mail sem conferência não entram.
+ */
+function remetenteAutenticado(p) {
   const de = ((p.from && p.from.value) || []).map((x) => String(x.address || '').toLowerCase());
-  if (!de.includes(REMETENTE)) return false;
-  const ar = [].concat((p.headers && p.headers.get('authentication-results')) || []).map((x) => (typeof x === 'string' ? x : x && x.text) || '').join(' ');
-  if (!ar) return !ehSpam;
-  if (/\bdkim=pass\b/i.test(ar) || /\bspf=pass\b/i.test(ar)) return true;
-  if (ehSpam || (/\bdkim=(fail|none)\b/i.test(ar) && /\bspf=(fail|softfail|none)\b/i.test(ar))) return false;
-  return true;
+  if (de.length !== 1 || de[0] !== REMETENTE) return false;
+  const topo = [].concat((p.headers && p.headers.get('authentication-results')) || [])[0];
+  const ar = String((typeof topo === 'string' ? topo : topo && topo.text) || '').replace(/\([^)]*\)/g, ' '); // sem os comentários
+  if (!ar) return false;
+  for (const parte of ar.split(';')) {
+    if (/^\s*dkim=pass\b/i.test(parte)) {
+      const m = /\bheader\.i=\S*@([a-z0-9.-]+)/i.exec(parte) || /\bheader\.d=([a-z0-9.-]+)/i.exec(parte);
+      if (m && doDominio(m[1], DOMINIO)) return true;
+    }
+    // SPF alinhado: quem enviou (envelope) é do próprio domínio do FIXE
+    if (/^\s*spf=pass\b/i.test(parte)) {
+      const m = /\bsmtp\.mailfrom=(?:\S*@)?([a-z0-9.-]+)/i.exec(parte);
+      if (m && doDominio(m[1], DOMINIO)) return true;
+    }
+    if (/^\s*dmarc=pass\b/i.test(parte)) {
+      const m = /\bheader\.from=([a-z0-9.-]+)/i.exec(parte);
+      if (m && doDominio(m[1], DOMINIO)) return true;
+    }
+  }
+  return false;
 }
 
 /**
@@ -155,12 +195,19 @@ async function verificar(id, smtp, importar) {
           if (vistos.has(mid) || new Date(msg.internalDate) < desde) continue;
           const p = await simpleParser(msg.source);
           if (!/export/i.test(p.subject || '')) continue;
-          if (!remetenteAutenticado(p, cx === spam)) continue;
+          if (!remetenteAutenticado(p)) { console.warn(`[fixe] ${id}: e-mail com o remetente do FIXE ignorado: a assinatura (DKIM/DMARC) do domínio ${DOMINIO} não foi confirmada pelo servidor de e-mail.`); continue; }
           // pedido para o apelido da loja (usuario+loja@gmail.com): só vale o e-mail endereçado a ele — outra loja pode usar o mesmo Gmail
           if (apelido && !destinatarios(p).includes(apelido)) continue;
           // pedido para o endereço normal: ignora o que foi mandado ao apelido de outra loja (usuario+outra@gmail.com)
           if (!apelido) { const ds = destinatarios(p); if (ds.length && ds.every((x) => /\+[^@]+@/.test(x))) continue; }
-          const link = linkDoEmail(p.html || p.textAsHtml || '');
+          const corpo = p.html || p.textAsHtml || '';
+          const link = linkDoEmail(corpo);
+          if (!link) {
+            // e-mail do FIXE confirmado, mas o link aponta para outro endereço: não baixa e avisa (em vez de esperar 3 h calado)
+            const fora = linkCandidato(corpo);
+            let host = ''; try { host = new URL(fora).hostname; } catch { /* sem link */ }
+            if (host) throw new Error(`O link do e-mail do FIXE aponta para "${host.slice(0, 80)}", que não é um endereço do FIXE (${DOMINIO}). Por segurança o arquivo não foi baixado. Se o FIXE mudou o endereço, avise o suporte do painel.`);
+          }
           if (link) daCaixa.push({ uid, spam: cx === spam, mid, link, recebido: msg.internalDate });
         }
         for (const x of daCaixa) {
@@ -191,4 +238,4 @@ async function verificar(id, smtp, importar) {
   }
 }
 
-module.exports = { verificar, situacao, linkDoEmail, destinatarios, comApelido };
+module.exports = { verificar, situacao, linkDoEmail, linkPermitido, remetenteAutenticado, destinatarios, comApelido };

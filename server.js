@@ -31,6 +31,7 @@ const SESSION_HOURS = +process.env.SESSION_HOURS || 12;
 const SECURE_COOKIE = process.env.COOKIE_SECURE === 'true';
 const MAX_UPLOAD_MB = +process.env.MAX_UPLOAD_MB || 80;
 if (!process.env.SESSION_SECRET) console.warn('⚠️  SESSION_SECRET não definido: as sessões caem a cada reinício.');
+if (!SECURE_COOKIE && process.env.NODE_ENV !== 'test') console.warn('⚠️  COOKIE_SECURE não está "true": o cookie da sessão também viaja por http. Em produção (https) defina COOKIE_SECURE=true no .env.');
 {
   const cfg = C.get();
   console.log(`[config] ${fs.existsSync(C.CONFIG_FILE) ? C.CONFIG_FILE : 'sem lojas.json — usando o .env (uma loja)'}; dados em ${C.DATA_DIR}`);
@@ -44,7 +45,13 @@ function makeToken(user) {
   return `${payload}.${sign(payload)}`;
 }
 // cookies de quem clicou em "Sair" (valem até expirar; a lista se limpa sozinha)
+// ficam também no disco: depois de um reinício o cookie de quem saiu continua sem valer (só a assinatura e a validade; nada do usuário)
 const encerrados = new Map(); // assinatura -> exp
+const ARQ_ENCERRADOS = path.join(C.DATA_DIR, 'sessoes-encerradas.json');
+try { for (const [s, exp] of JSON.parse(fs.readFileSync(ARQ_ENCERRADOS, 'utf8'))) if (typeof s === 'string' && exp > Date.now()) encerrados.set(s, exp); } catch { /* ainda não tem */ }
+function gravarEncerrados() {
+  try { fs.mkdirSync(C.DATA_DIR, { recursive: true }); C.gravarAtomico(ARQ_ENCERRADOS, JSON.stringify([...encerrados].filter(([, exp]) => exp > Date.now()).slice(-5000)), 0o600); } catch (e) { console.error('[sessão] não consegui guardar a saída:', e.message); }
+}
 function readToken(tok) {
   if (!tok || !tok.includes('.')) return null;
   const [payload, sig] = tok.split('.');
@@ -81,7 +88,9 @@ function lruSet(map, k, v, max) {
   map.set(k, v);
 }
 
-// tentativas de login erradas: por IP (10 em 15 min), por IP+usuário (8 em 15 min) e teto global por usuário (30 em 15 min)
+// tentativas de login erradas: por IP (10 em 15 min) e por IP+usuário (8 em 15 min) bloqueiam.
+// Por usuário somando todos os IPs NÃO bloqueia (senão qualquer um travaria a conta de outra pessoa errando a senha de
+// propósito): a partir de 10 erros cada tentativa espera cada vez mais (até 5 s) e só 4 ficam na espera ao mesmo tempo.
 const attempts = new Map();
 const JANELA = 15 * 60e3;
 function tooMany(chave, limite = 10, janela = JANELA) {
@@ -98,10 +107,20 @@ function falhou(chave) {
   a.push(Date.now());
   attempts.set(chave, a);
 }
+const errosRecentes = (chave) => { tooMany(chave, Infinity); return (attempts.get(chave) || []).length; }; // já sem os antigos
+/** espera (ms) antes de conferir a senha de um usuário que está levando muitos erros, venham de onde vierem */
+const LOGIN_ESPERA_MAX = +process.env.LOGIN_ESPERA_MAX_MS || 5000;
+function atrasoLogin(erros) { return erros < 10 ? 0 : Math.min(LOGIN_ESPERA_MAX, 500 * 2 ** Math.min(4, Math.floor((erros - 10) / 5))); }
+const esperandoLogin = new Map(); // usuário -> quantas tentativas estão na espera agora
+const MAX_ESPERA_LOGIN = 4;
+const ataqueAud = new Map(); // usuário -> último aviso na auditoria
 setInterval(() => {
   const now = Date.now();
+  for (const [k, t] of ataqueAud) if (now - t > 3600e3) ataqueAud.delete(k);
   for (const [k, a] of attempts) if (!a.length || now - a[a.length - 1] > JANELA) attempts.delete(k);
-  for (const [s, exp] of encerrados) if (exp < now) encerrados.delete(s);
+  let saiu = false;
+  for (const [s, exp] of encerrados) if (exp < now) { encerrados.delete(s); saiu = true; }
+  if (saiu) gravarEncerrados();
 }, 5 * 60e3).unref();
 
 // ---------- cache por loja ----------
@@ -159,9 +178,8 @@ function filtrarPorPerfil(data, perfilDados) {
     const nomesVendas = [...new Set(data.vendas.map((v) => v.vendedor))].filter((n) => n && n.trim().toUpperCase() !== eu);
     const nomesExtras = (data.metaCfgs || []).flatMap((m) => [
       ...((m.ferias || []).map((f) => f && f.vendedor)),
-      ...((m.regras && m.regras.semMeta) || []),
-      ...((m.regras && m.regras.semComissao) || []),
-      ...((m.regras && m.regras.rateio && m.regras.rateio.exclui) || []),
+      // listas do modelo da loja + regras gravadas (loja sem regras usa o modelo, que também tem nomes)
+      ...Object.values(require('./src/regrasvend').listasEfetivas(m)).flat(),
     ]).filter((n) => n && String(n).trim().toUpperCase() !== eu && !/^SEM VENDEDOR$/i.test(String(n).trim()));
     const todosOutros = new Map();
     for (const n of [...nomesVendas, ...nomesExtras]) {
@@ -198,18 +216,13 @@ function filtrarPorPerfil(data, perfilDados) {
           equipe: m.operacao.equipe ? { ...m.operacao.equipe, nomes: undefined, pessoas: undefined } : m.operacao.equipe,
         } : null,
         ferias: (m.ferias || []).map((f) => ({ ...f, vendedor: mapearNome(f.vendedor) })),
-        regras: m.regras ? {
-          ...m.regras,
-          semMeta: Array.isArray(m.regras.semMeta) ? m.regras.semMeta.map(mapearNome) : m.regras.semMeta,
-          semComissao: Array.isArray(m.regras.semComissao) ? m.regras.semComissao.map(mapearNome) : m.regras.semComissao,
-          rateio: m.regras.rateio ? { ...m.regras.rateio, exclui: Array.isArray(m.regras.rateio.exclui) ? m.regras.rateio.exclui.map(mapearNome) : [] } : m.regras.rateio,
-        } : null,
+        regras: require('./src/regrasvend').regrasAnonimas(m, mapearNome),
       }));
     }
   }
   return out;
 }
-const packCache = new Map(); // chave -> { k, buf, gz, etag }
+const packCache = new Map(); // chave -> { k, gz, br, etag } (sem a cópia sem compressão: quase nenhum navegador pede; sai do gzip quando precisa)
 async function pacote(lojas, force, perfilDados = 'completo', desde = null) {
   const entradas = await Promise.all(lojas.map((l) => dadosLoja(l, force)));
   // metas vêm sempre da configuração atual (mudam pelo painel sem recarregar as planilhas)
@@ -224,7 +237,7 @@ async function pacote(lojas, force, perfilDados = 'completo', desde = null) {
   const pc = lruGet(packCache, chave);
   const stale = entradas.map((e) => e.stale).filter(Boolean).join(' | ') || null;
   const at = Math.min(...entradas.map((e) => e.at));
-  if (pc && pc.k === k) return { buf: pc.buf, gz: pc.gz, br: pc.br, etag: pc.etag, at, stale };
+  if (pc && pc.k === k) return { buf: pc.buf || null, gz: pc.gz, br: pc.br, etag: pc.etag, at, stale };
   let data = lojas.length === 1 ? { ...entradas[0].raw } : juntar(entradas.map((e) => e.raw));
   data.metaCfgs = metaCfgs;
   data.meta = metaCfgs.some((m) => m.padrao != null) ? metaCfgs.reduce((s, m) => s + (m.padrao || 0), 0) : null;
@@ -241,7 +254,7 @@ async function pacote(lojas, force, perfilDados = 'completo', desde = null) {
     ? await Promise.all([gzipAsync(buf, { level: 6 }), brotliAsync(buf, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 5, [zlib.constants.BROTLI_PARAM_SIZE_HINT]: buf.length } })])
     : [null, null];
   const etag = '"' + crypto.createHash('sha1').update(buf).digest('base64').slice(0, 27) + '"';
-  lruSet(packCache, chave, { k, buf, gz, br, etag }, 40);
+  lruSet(packCache, chave, { k, buf: gz ? null : buf, gz, br, etag }, 120);
   return { buf, gz, br, etag, at, stale };
 }
 
@@ -316,7 +329,8 @@ function responderAsset(req, res, asset, contentType, imutavel, etag) {
 }
 obterBundle(); // aquece na subida
 
-app.get('/health', (req, res) => res.json({ ok: true, lojasEmCache: [...cacheLoja.entries()].filter(([, e]) => e.at).map(([id, e]) => ({ id, em: new Date(e.at).toISOString() })) }));
+// sem login: só diz que está de pé (nada de ids de loja nem horários)
+app.get('/health', (req, res) => res.json({ ok: true }));
 app.get('/login', (req, res) => res.sendFile(path.join(pub, 'login.html')));
 ['login.css', 'login.js', 'favicon.svg', 'trocar-senha.js'].forEach((f) => app.get('/' + f, (req, res) => res.sendFile(path.join(pub, f))));
 const CHART_JS = path.join(path.dirname(require.resolve('chart.js')), 'chart.umd.min.js');
@@ -334,8 +348,16 @@ app.post('/login', express.urlencoded({ extended: false }), async (req, res) => 
   const user = String(req.body.usuario || '').trim().toLowerCase().slice(0, 80);
   const pass = String(req.body.senha || '').slice(0, 200);
   const chaveU = `u:${ip}:${user}`, chaveUG = `ug:${user}`;
-  if (tooMany(ip) || (user && (tooMany(chaveU, 8) || tooMany(chaveUG, 30)))) return res.redirect('/login?e=limite');
+  if (tooMany(ip) || (user && tooMany(chaveU, 8))) return res.redirect('/login?e=limite');
   const u = user && user !== '*' ? cfg.usuarios[user] : null;
+  // muitos erros neste usuário (de qualquer lugar): não bloqueia a conta, só atrasa cada tentativa — a senha certa continua entrando
+  const espera = user ? atrasoLogin(errosRecentes(chaveUG)) : 0;
+  if (espera) {
+    if ((esperandoLogin.get(user) || 0) >= MAX_ESPERA_LOGIN) return res.redirect('/login?e=limite');
+    if (u && Date.now() - (ataqueAud.get(user) || 0) > 3600e3) { ataqueAud.set(user, Date.now()); C.auditar('sistema', 'muitas senhas erradas para um usuário (o login dele ficou mais lento, sem bloquear)', 'login', { usuario: user, erros: errosRecentes(chaveUG) }); }
+    esperandoLogin.set(user, (esperandoLogin.get(user) || 0) + 1);
+    try { await new Promise((ok) => setTimeout(ok, espera)); } finally { const n = (esperandoLogin.get(user) || 1) - 1; if (n > 0) esperandoLogin.set(user, n); else esperandoLogin.delete(user); }
+  }
   // verifica sempre com scrypt assíncrono em tempo constante (mesmo se o usuário não existir ou estiver inativo)
   const senhaOk = await C.confereSenhaAsync(pass, u && u.ativo ? u.senha : null);
   if (u && u.ativo && senhaOk) {
@@ -360,7 +382,7 @@ app.post('/login', express.urlencoded({ extended: false }), async (req, res) => 
 app.post('/logout', (req, res) => {
   if (!mesmaOrigemForm(req)) return res.status(403).type('text/plain; charset=utf-8').send('Origem inválida.');
   const s = readToken(cookies(req).ts_sess);
-  if (s) encerrados.set(s.sig, s.exp);
+  if (s) { encerrados.set(s.sig, s.exp); gravarEncerrados(); }
   res.clearCookie('ts_sess', { httpOnly: true, sameSite: 'lax', secure: SECURE_COOKIE });
   res.redirect('/login');
 });
@@ -381,7 +403,7 @@ function autenticarUpload(req, res, next) {
   req.tokenUpload = loja && loja.uploadToken && safeEq(dado, loja.uploadToken) ? 'loja' : 'geral';
   if (!loja) return res.status(404).json({ erro: `Loja "${req.params.loja}" não existe no lojas.json.` });
   const nome = String(req.params.arquivo).replace(/\.xlsx$/i, '');
-  if (!C.ARQUIVOS[nome]) return res.status(400).json({ erro: `Arquivo inválido. Use um destes: ${Object.keys(C.ARQUIVOS).join(', ')}` });
+  if (!Object.hasOwn(C.ARQUIVOS, nome)) return res.status(400).json({ erro: `Arquivo inválido. Use um destes: ${Object.keys(C.ARQUIVOS).join(', ')}` });
   req.lojaUpload = loja;
   req.nomeUpload = nome;
   next();
@@ -404,7 +426,7 @@ app.post('/api/upload/:loja/:arquivo', autenticarUpload, express.raw({ type: () 
     res.json({ ok: true, loja: loja.id, arquivo: `${nome}.xlsx`, bytes: buf.length });
   } catch (e) {
     console.error('[upload] erro:', e.message);
-    res.status(500).json({ erro: e.message });
+    res.status(500).json({ erro: C.msgErro(e) });
   }
 });
 
@@ -424,6 +446,14 @@ app.get(['/apresentacao', '/apresentacao/'], (req, res) => {
   res.set('X-Robots-Tag', 'noindex');
   const b = obterBundle();
   responderAsset(req, res, b.html, 'text/html; charset=utf-8', false, `"html-${b.v}"`);
+});
+// a apresentação é pública: as rotas que aceitam corpo (POST/PUT/DELETE) têm um limite simples por IP (240 por minuto)
+app.use('/api/demo', (req, res, next) => {
+  if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return next();
+  const k = 'demo:' + req.ip;
+  if (tooMany(k, 240, 60e3)) return res.status(429).json({ erro: 'Muitos pedidos seguidos na apresentação. Espere um minuto.' });
+  falhou(k);
+  next();
 });
 // a apresentação entra como administrador (tudo visível, nada é salvo: o navegador barra qualquer alteração)
 app.get('/api/demo/eu', (req, res) => res.json({ usuario: 'apresentacao', nome: 'Visitante', demo: true, perfil: 'admin', vendedor: '',
@@ -480,7 +510,7 @@ app.get('/api/demo/estoque', (req, res) => {
     const dia = (n) => new Date(Date.now() - n * 864e5).toISOString().slice(0, 10);
     const foraDeLinha = { desde: dia(200), dias: 90, indisp: Object.fromEntries(comSaldo.slice(2, 6).map((i, k) => [String(i.cod), dia(k < 3 ? 120 + k * 10 : 20)])) };
     res.json({ estoque: e.estoque, cfg: ESd.cfg({ estoqueCfg: e.estoqueCfg }), classe: ESd.classeCfg({}), historico: e.historico, compras: e.compras, tabela, foraDeLinha });
-  } catch (e) { res.status(500).json({ erro: e.message }); }
+  } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
 });
 // inventário na apresentação: o catálogo fictício (a contagem fica só no navegador; nada é salvo)
 app.get('/api/demo/inventario/catalogo', (req, res) => {
@@ -619,7 +649,7 @@ app.get('/api/demo/estoque/notas', (req, res) => {
       n.total = Math.round((n.total + custo * qtd) * 100) / 100;
     }
     res.json({ atualizado: e.compras.atualizado, notas: [...porNf.values()].sort((a, b) => (a.entrada < b.entrada ? -1 : 1)) });
-  } catch (err) { res.status(500).json({ erro: err.message }); }
+  } catch (err) { res.status(500).json({ erro: C.msgErro(err) }); }
 });
 app.get('/api/demo/pedido', (req, res) => {
   if (!lojaDemo(req)) return res.status(400).json({ erro: 'Escolha uma loja.' });
@@ -627,7 +657,7 @@ app.get('/api/demo/pedido', (req, res) => {
     const disp = e.catalogo.itens.filter((c) => c.disp).slice(5, 11);
     const ate = new Date(Date.now() + 20 * 86400e3).toISOString().slice(0, 10);
     const obrigatorio = { lista: [{ id: 'demo', nome: 'Pedido obrigatório de dezembro (exemplo)', ate, ativo: true, por: 'franquia', em: new Date().toISOString(), itens: disp.map((c, k) => ({ cod: c.cod, nome: c.nome, qtd: k % 2 ? 2 : 6, preco: c.preco })) }] };
-    res.json({ catalogo: e.catalogo, carrinho: null, cfg: PEDd.cfg({}), obrigatorio, robo: { disponivel: false }, podeRobo: false }); } catch (e) { res.status(500).json({ erro: e.message }); }
+    res.json({ catalogo: e.catalogo, carrinho: null, cfg: PEDd.cfg({}), obrigatorio, robo: { disponivel: false }, podeRobo: false }); } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
 });
 // ⭐ sugestões fictícias da equipe (a tela guarda as mudanças só no navegador)
 function sugestoesDemo(lojaId) {
@@ -653,14 +683,14 @@ function sugestoesDemo(lojaId) {
 }
 app.get('/api/demo/sugestoes', (req, res) => {
   if (!lojaDemo(req)) return res.status(400).json({ erro: 'Escolha uma loja.' });
-  try { const SUGd = require('./src/sugestoes'); res.json({ itens: SUGd.comEstoque(sugestoesDemo(req.query.loja).reverse(), DEMO.estoqueDemo(req.query.loja).estoque, true), todos: true, motivos: SUGd.MOTIVOS }); } catch (e) { res.status(500).json({ erro: e.message }); }
+  try { const SUGd = require('./src/sugestoes'); res.json({ itens: SUGd.comEstoque(sugestoesDemo(req.query.loja).reverse(), DEMO.estoqueDemo(req.query.loja).estoque, true), todos: true, motivos: SUGd.MOTIVOS }); } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
 });
 app.get('/api/demo/sugestoes/produtos', (req, res) => {
   if (!lojaDemo(req)) return res.status(400).json({ erro: 'Escolha uma loja.' });
-  try { res.json({ produtos: require('./src/sugestoes').buscar(DEMO.estoqueDemo(req.query.loja).estoque, String(req.query.q || '').slice(0, 60)) }); } catch (e) { res.status(500).json({ erro: e.message }); }
+  try { res.json({ produtos: require('./src/sugestoes').buscar(DEMO.estoqueDemo(req.query.loja).estoque, String(req.query.q || '').slice(0, 60)) }); } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
 });
 app.get('/api/demo/pedido/acesso', (req, res) => res.json({ temLogin: false, usuario: '' }));
-app.get('/api/demo/admin/estado', (req, res) => { try { res.json(DEMO.estadoDemo()); } catch (e) { res.status(500).json({ erro: e.message }); } });
+app.get('/api/demo/admin/estado', (req, res) => { try { res.json(DEMO.estadoDemo()); } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); } });
 app.get('/api/demo/admin/notif', (req, res) => res.json({ ativo: true, horario: '08:00', ultimoEnvio: null, alertas: true, fechamento: { ativo: true, horario: '23:30', ultimoEnvio: null }, avisos: { email: 'admin@exemplo.com' },
   telegram: { configurado: false, destinos: [] }, email: { host: 'smtp.exemplo.com', port: 587, secure: false, user: 'painel@exemplo.com', from: 'Painel <painel@exemplo.com>', temSenha: true, configurado: true,
     destinos: [{ email: 'franqueado@exemplo.com', nome: 'Franqueado(a)', lojas: ['*'] }] } }));
@@ -668,12 +698,29 @@ app.get('/api/demo/classificacao', (req, res) => res.json({ produtos: {} }));
 app.get('/api/demo/site', (req, res) => res.json({ demo: true, em: new Date().toISOString(), origem: 'agendada', itens: [] }));
 app.get('/api/demo/contatos', (req, res) => res.json({ contatos: {} }));
 app.get('/api/demo/xmls/resumo', (req, res) => res.json({ meses: [] }));
-app.get('/api/demo/dados', (req, res) => {
+const demoComp = new Map(); // corpo da apresentação já comprimido (br/gz), por loja: refeito quando o corpo muda (a cada hora)
+app.get('/api/demo/dados', async (req, res) => {
   try {
     const d = DEMO.pacoteDemo(String(req.query.loja || ''));
     res.set('Cache-Control', 'public, max-age=300');
     res.set('X-Dados-Em', new Date(d.at).toISOString());
-    res.type('application/json').send(d.body);
+    let c = demoComp.get(d.chave);
+    if (!c || c.body !== d.body) {
+      const buf = Buffer.from(d.body);
+      const [gz, br] = await Promise.all([gzipAsync(buf, { level: 6 }), brotliAsync(buf, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 5, [zlib.constants.BROTLI_PARAM_SIZE_HINT]: buf.length } })]);
+      c = { body: d.body, gz, br, etag: 'W/"' + crypto.createHash('sha1').update(buf).digest('base64').slice(0, 27) + '"' };
+      demoComp.set(d.chave, c);
+    }
+    // nada mudou desde o último pedido (o painel guarda os dados no aparelho e confere pelo ETag)
+    res.set({ ETag: c.etag, Vary: 'Accept-Encoding' });
+    if (req.get('If-None-Match') === c.etag) return res.status(304).end();
+    const aceita = String(req.headers['accept-encoding'] || '');
+    const querBr = /\bbr\b/.test(aceita), querGz = /\bgzip\b/.test(aceita);
+    res.set('Content-Type', 'application/json; charset=utf-8');
+    if (!querBr && !querGz) return res.end(d.body);
+    // já vai comprimido (o compression() não comprime de novo o que tem Content-Encoding)
+    res.set('Content-Encoding', querBr ? 'br' : 'gzip');
+    res.end(querBr ? c.br : c.gz);
   } catch (e) {
     console.error('[demo] erro:', e.message);
     res.status(500).json({ erro: 'Apresentação indisponível no momento.' });
@@ -682,7 +729,7 @@ app.get('/api/demo/dados', (req, res) => {
 
 // dados fictícios também para o comparativo com a rede e os alertas da apresentação
 app.get('/api/demo/rede', (req, res) => {
-  try { res.json(IND.rede(DEMO.partes(), String(req.query.ym || ''), String(req.query.loja || ''), 3)); } catch (e) { res.status(500).json({ erro: e.message }); }
+  try { res.json(IND.rede(DEMO.partes(), String(req.query.ym || ''), String(req.query.loja || ''), 3)); } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
 });
 app.get('/api/demo/fechamento', (req, res) => {
   const p = DEMO.partes().find((x) => x.id === String(req.query.loja || ''));
@@ -876,7 +923,9 @@ app.put('/api/campanhas/:id', express.json({ limit: '20kb' }), (req, res) => {
 app.post('/api/campanhas/:id/rodadas', express.json({ limit: '600kb' }), (req, res) => {
   const id = lojaCamp(req);
   if (!id) return res.status(400).json({ erro: 'Escolha uma loja.' });
-  respCamp(res, CAMP.novaRodada(id, req.params.id, (req.body || {}).lista, req.user));
+  const r = CAMP.novaRodada(id, req.params.id, (req.body || {}).lista, req.user);
+  if (r.repetida) return res.json({ ok: true, campanha: r.ok, repetida: true }); // a lista deste período já existia
+  respCamp(res, r);
 });
 app.put('/api/campanhas/:id/rodadas/:rid', express.json({ limit: '600kb' }), (req, res) => {
   const id = lojaCamp(req);
@@ -946,7 +995,8 @@ app.get('/api/dados', async (req, res) => {
   try {
     const perfilDados = req.perfil === 'vendedor' ? `vendedor:${req.vendedor}` : podeClientes(req) ? 'completo' : 'gerente';
     const desde = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.desde || '')) ? String(req.query.desde) : null;
-    const d = await pacote(lojas, req.query.atualizar === '1', perfilDados, desde);
+    // reler as planilhas na hora (atualizar=1) é pesado: a vendedora recebe o que já está carregado
+    const d = await pacote(lojas, req.query.atualizar === '1' && req.perfil !== 'vendedor', perfilDados, desde);
     res.set('Cache-Control', 'no-store');
     res.set('ETag', d.etag);
     // nada mudou desde o último pedido: não manda tudo de novo
@@ -963,10 +1013,10 @@ app.get('/api/dados', async (req, res) => {
       res.set('Content-Encoding', 'gzip');
       return res.end(d.gz);
     }
-    res.end(d.buf);
+    res.end(d.buf || zlib.gunzipSync(d.gz));
   } catch (e) {
     console.error('[dados] erro:', e.message);
-    res.status(502).json({ erro: e.message });
+    res.status(502).json({ erro: C.msgErro(e) });
   }
 });
 
@@ -990,7 +1040,7 @@ app.get('/api/rede', async (req, res) => {
     if (!r) { r = IND.rede(partes, ym, loja.id); lruSet(redeCache, chave, r, 40); }
     res.set('Cache-Control', 'no-store');
     res.json(r);
-  } catch (e) { res.status(500).json({ erro: e.message }); }
+  } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
 });
 // média da franquia nos gráficos de Vendas → Comparativos (anônima; mesmas regras do navegador)
 const RCOMP = require('./src/redecomp');
@@ -1008,13 +1058,13 @@ app.get('/api/rede/comparativos', async (req, res) => {
     if (!r) { r = RCOMP.comparativos(partes, de, ate, tipo); lruSet(redeCompCache, chave, r, 40); }
     res.set('Cache-Control', 'no-store');
     res.json(r);
-  } catch (e) { res.status(500).json({ erro: e.message }); }
+  } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
 });
 app.get('/api/alertas', async (req, res) => {
   if (req.perfil === 'vendedor') return res.json({ alertas: [] });
   const loja = req.lojas.find((l) => l.id === String(req.query.loja || ''));
   if (!loja) return res.json({ alertas: [] });
-  try { res.json({ alertas: IND.alertas(await dadosParaIndicadores(loja)) }); } catch (e) { res.status(500).json({ erro: e.message }); }
+  try { res.json({ alertas: IND.alertas(await dadosParaIndicadores(loja)) }); } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
 });
 
 // ---------- fechamento do dia (substitui a planilha preenchida à mão) ----------
@@ -1030,7 +1080,7 @@ app.get('/api/fechamento', async (req, res) => {
     if (!dia) return res.json({ vazio: true });
     const f = FECH.calcular(d, dia);
     res.json({ ...f, html: FECH.html(f) });
-  } catch (e) { res.status(500).json({ erro: e.message }); }
+  } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
 });
 
 // ---------- estoque e custo (só admin e franqueado) ----------
@@ -1221,6 +1271,8 @@ app.get('/api/devolucoes/:id/foto/:n/:k', (req, res) => {
 });
 app.use('/api/devolucoes', (req, res, next) => (req.method === 'GET' || req.get('X-Painel') === '1' ? next() : res.status(403).json({ erro: 'Pedido inválido.' })));
 app.put('/api/devolucoes/destinatarios', express.json({ limit: '4kb' }), (req, res) => {
+  // para quem vai o e-mail da franquia/fornecedor: só admin e franqueado (o gerente registra a devolução, mas não muda o destino)
+  if (!(req.perfil === 'admin' || req.perfil === 'franqueado')) return res.status(403).json({ erro: 'Só o admin ou o franqueado muda os destinatários.' });
   const loja = lojaDev(req, res); if (!loja) return;
   const b = req.body || {};
   const r = DEV.salvarDestinatarios(loja.id, b.emails);
@@ -1308,7 +1360,7 @@ app.post('/api/nfe/cadastros', express.json({ limit: '2kb' }), async (req, res) 
   try {
     const x = await COL.nfe(loja.id, 'cadastros', 'cadastros', req.user);
     if (x.status >= 400) return res.status(x.status === 409 ? 409 : 400).json({ erro: (x.json && x.json.erro) || 'O coletor recusou.' });
-  } catch (e) { return res.status(502).json({ erro: 'Não consegui falar com o coletor: ' + e.message }); }
+  } catch (e) { return res.status(502).json({ erro: 'Não consegui falar com o coletor: ' + C.msgErro(e) }); }
   res.json({ ok: true });
 });
 // emitir a NF-e de venda: a partir de um teste conferido (o robô conclui e homologa; confere se o total é o do teste)
@@ -1320,7 +1372,7 @@ app.post('/api/nfe/emitir', express.json({ limit: '2kb' }), async (req, res) => 
   try {
     const x = await COL.nfe(loja.id, r.ok.id, 'rascunho', req.user);
     if (x.status >= 400) { const erro = (x.json && x.json.erro) || 'O coletor recusou.'; NFE.erro(loja.id, r.ok.id, erro); return res.status(x.status === 409 ? 409 : 400).json({ erro }); }
-  } catch (e) { NFE.erro(loja.id, r.ok.id, 'sem resposta do coletor'); return res.status(502).json({ erro: 'Não consegui falar com o coletor: ' + e.message }); }
+  } catch (e) { NFE.erro(loja.id, r.ok.id, 'sem resposta do coletor'); return res.status(502).json({ erro: 'Não consegui falar com o coletor: ' + C.msgErro(e) }); }
   C.auditar(req.user, 'mandou EMITIR NF-e de venda (concluir e transmitir à SEFAZ)', loja.id, { loja: loja.id, parceiro: r.ok.parceiro.nome, itens: r.ok.itens.length, total: r.ok.totalAppNext ?? r.ok.total });
   res.json({ ok: true, rascunho: r.ok });
 });
@@ -1347,7 +1399,7 @@ app.post('/api/nfe/parceiro', express.json({ limit: '4kb' }), async (req, res) =
   try {
     const x = await COL.nfe(loja.id, r.ok.id, 'parceiro', req.user);
     if (x.status >= 400) { const erro = (x.json && x.json.erro) || 'O coletor recusou.'; NFE.erroParceiro(loja.id, r.ok.id, erro); return res.status(x.status === 409 ? 409 : 400).json({ erro }); }
-  } catch (e) { NFE.erroParceiro(loja.id, r.ok.id, 'sem resposta do coletor'); return res.status(502).json({ erro: 'Não consegui falar com o coletor: ' + e.message }); }
+  } catch (e) { NFE.erroParceiro(loja.id, r.ok.id, 'sem resposta do coletor'); return res.status(502).json({ erro: 'Não consegui falar com o coletor: ' + C.msgErro(e) }); }
   C.auditar(req.user, r.ok.simular ? 'pediu teste de cadastro de parceiro no AppNext (sem salvar)' : 'pediu cadastro de parceiro no AppNext', loja.id, { loja: loja.id, tipo: r.ok.tipo, nome: r.ok.nome });
   res.json({ ok: true, parceiro: r.ok });
 });
@@ -1359,7 +1411,7 @@ app.post('/api/nfe/rascunho', express.json({ limit: '30kb' }), async (req, res) 
   try {
     const x = await COL.nfe(loja.id, r.ok.id, 'rascunho', req.user);
     if (x.status >= 400) { const erro = (x.json && x.json.erro) || 'O coletor recusou.'; NFE.erro(loja.id, r.ok.id, erro); return res.status(x.status === 409 ? 409 : 400).json({ erro }); }
-  } catch (e) { NFE.erro(loja.id, r.ok.id, 'sem resposta do coletor'); return res.status(502).json({ erro: 'Não consegui falar com o coletor: ' + e.message }); }
+  } catch (e) { NFE.erro(loja.id, r.ok.id, 'sem resposta do coletor'); return res.status(502).json({ erro: 'Não consegui falar com o coletor: ' + C.msgErro(e) }); }
   C.auditar(req.user, r.ok.simular ? 'pediu teste de NF-e no AppNext (sem salvar)' : 'pediu rascunho de NF-e no AppNext', loja.id, { loja: loja.id, parceiro: r.ok.parceiro.nome, itens: r.ok.itens.length, total: r.ok.total });
   res.json({ ok: true, rascunho: r.ok });
 });
@@ -1467,7 +1519,7 @@ app.post('/api/conta-franquia/email/enviar', express.json({ limit: '20kb' }), as
   const loja = lojaCF(req, res, true); if (!loja) return;
   const tipo = req.body.tipo === 'fidelidade' ? 'fidelidade' : 'devolucoes';
   let x;
-  try { x = await enviarCobranca(loja, tipo, req.body, req.user); } catch (e) { console.error('[cobrança]', e); return res.status(500).json({ erro: 'Erro ao montar a cobrança: ' + e.message }); }
+  try { x = await enviarCobranca(loja, tipo, req.body, req.user); } catch (e) { console.error('[cobrança]', e); return res.status(500).json({ erro: 'Erro ao montar a cobrança: ' + C.msgErro(e) }); }
   if (x.erro) return res.status(x.vazio ? 400 : 502).json({ erro: x.erro });
   res.json({ ok: true, para: x.para, historico: COB.historico(loja.id).slice(0, 20) });
 });
@@ -1541,7 +1593,7 @@ setInterval(async () => {
 }, 5 * 60 * 1000).unref();
 app.get('/api/conta-franquia', (req, res) => {
   const loja = lojaCF(req, res); if (!loja) return;
-  try { res.json(contaDaLoja(loja)); } catch (e) { console.error('[conta-franquia]', e); res.status(500).json({ erro: 'Erro ao montar a conta com a franquia: ' + e.message }); }
+  try { res.json(contaDaLoja(loja)); } catch (e) { console.error('[conta-franquia]', e); res.status(500).json({ erro: 'Erro ao montar a conta com a franquia: ' + C.msgErro(e) }); }
 });
 app.post('/api/conta-franquia/acao', express.json({ limit: '5kb' }), (req, res) => {
   if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
@@ -1636,7 +1688,7 @@ const lojaIA = (req, res, id) => {
   if (!loja) { res.status(400).json({ erro: 'Escolha uma loja.' }); return null; }
   return loja;
 };
-const iaErro = (res, e) => (e instanceof IA.ErroIA ? res.status(e.status).json({ erro: e.message }) : (console.error('[ia]', e), res.status(500).json({ erro: 'Falha na IA: ' + e.message })));
+const iaErro = (res, e) => (e instanceof IA.ErroIA ? res.status(e.status).json({ erro: C.msgErro(e) }) : (console.error('[ia]', e), res.status(500).json({ erro: 'Falha na IA: ' + C.msgErro(e) })));
 app.get('/api/ia/estado', (req, res) => {
   if (!podeIA(req)) return res.json({ ativa: false, pode: false });
   const id = String(req.query.loja || '');
@@ -1755,7 +1807,10 @@ app.post('/api/ia/diagnostico', express.json({ limit: '150kb' }), async (req, re
       if (!diag) return null;
       // guarda só os últimos 7 dias
       try { for (const f of fs.readdirSync(pasta)) { const m = /^diag-(\d{4}-\d{2}-\d{2})-/.exec(f); if (m && Date.parse(dia) - Date.parse(m[1]) > 7 * 864e5) fs.unlinkSync(path.join(pasta, f)); } } catch { /* ok */ }
-      return { diagnostico: diag, em: new Date().toISOString(), dia };
+      // os números vêm do navegador de quem abriu primeiro: fica registrado quem gerou (aparece na tela e na auditoria)
+      const quem = C.usuario(req.user);
+      C.auditar(req.user, 'gerou a análise do dia (IA)', loja.id, { loja: loja.id, dia });
+      return { diagnostico: diag, em: new Date().toISOString(), dia, por: String((quem && quem.nome) || req.user).slice(0, 60) };
     });
     if (!out) return res.status(502).json({ erro: 'A IA não devolveu a explicação. Tente de novo.' });
     res.json(out);
@@ -1793,7 +1848,7 @@ app.get('/api/estoque/notas/sincronizar', async (req, res) => {
     res.json({ estado: x.estado || 'parado', itens: x.itens || null, gatilho: x.gatilho || null, por: x.por || null, criado: x.criado || null, inicio: x.inicio || null, fim: x.fim || null, fila: s.fila || 0,
       log: (x.estado === 'rodando' ? x.aoVivo : x.log) || [], robo: r.livre ? null : { gatilho: r.gatilho || null, inicio: r.inicio || null, outraLoja: !!r.outraLoja },
       atualizado: (ES.notas(loja.id) || {}).atualizado || null });
-  } catch (e) { res.status(502).json({ erro: e.message }); }
+  } catch (e) { res.status(502).json({ erro: C.msgErro(e) }); }
 });
 app.post('/api/estoque/notas/sincronizar', express.json({ limit: '1kb' }), async (req, res) => {
   if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
@@ -1806,7 +1861,7 @@ app.post('/api/estoque/notas/sincronizar', express.json({ limit: '1kb' }), async
     if (x.status !== 200) return res.status(x.status).json({ erro: (x.json && x.json.erro) || 'Falha no coletor.' });
     C.auditar(req.user, 'sincronizou as notas de entrada (estoque) com o AppNext', loja.id, { loja: loja.id });
     res.json({ ok: true });
-  } catch (e) { res.status(502).json({ erro: e.message }); }
+  } catch (e) { res.status(502).json({ erro: C.msgErro(e) }); }
 });
 // classe oficial (Estrela, Volume…): janela de 3, 6 ou 12 meses e classes travadas à mão (admin e franqueado)
 app.put('/api/estoque/classe', express.json({ limit: '5kb' }), (req, res) => {
@@ -1906,12 +1961,13 @@ app.get('/api/inventario', async (req, res) => {
   for (const i of cat) if (i.grupo && i.sub) { const k = i.grupo + '|' + i.sub; subs.set(k, (subs.get(k) || 0) + 1); }
   const fams = new Map();
   for (const i of cat) { const f = INV.familia(i.tipo); if (f) fams.set(f, (fams.get(f) || 0) + 1); }
-  const contagens = req.perfil === 'vendedor' ? INV.lista(loja.id).map((x) => ({ ...x, ajuste: null })) : INV.lista(loja.id);
+  const todas = INV.lista(loja.id);
+  const contagens = req.perfil === 'vendedor' ? todas.map((x) => ({ ...x, ajuste: null })) : todas;
   res.json({
     contagens, estoqueEm: est && est.em, perfil: req.perfil,
     grupos: conta('grupo'), subs: [...subs].map(([k, n]) => [...k.split('|'), n]), tipos: conta('tipo'), familias: [...fams].sort((a, b) => a[0].localeCompare(b[0], 'pt-BR')),
     kg: cat.filter(INV.ehChaGranel).length,
-    cobertura: INV.cobertura(loja.id, cat, INV.lista(loja.id)),
+    cobertura: INV.cobertura(loja.id, cat, todas),
   });
 });
 // busca de itens (para escolher ou incluir): nome, código ou código de barras
@@ -1992,7 +2048,7 @@ app.post('/api/inventario/contagem/:id/enviar', express.json({ limit: '2kb' }), 
   try {
     const x = await COL.inventario(loja.id, c.id, tipo, req.user);
     if (x.status >= 400) { const erro = (x.json && x.json.erro) || 'O coletor recusou.'; INV.erroEnvio(loja.id, c.id, erro); return res.status(x.status === 409 ? 409 : 400).json({ erro }); }
-  } catch (e) { INV.erroEnvio(loja.id, c.id, 'sem resposta do coletor'); return res.status(502).json({ erro: 'Não consegui falar com o coletor: ' + e.message }); }
+  } catch (e) { INV.erroEnvio(loja.id, c.id, 'sem resposta do coletor'); return res.status(502).json({ erro: 'Não consegui falar com o coletor: ' + C.msgErro(e) }); }
   C.auditar(req.user, tipo === 'importar' ? 'mandou o robô importar um inventário no AppNext' : 'mandou o robô desfazer um inventário no AppNext', loja.id, { loja: loja.id, nome: c.nome, itens: linhas.length, zerados: linhas.filter((l) => l.zerado).length });
   res.json({ ok: true });
 });
@@ -2022,6 +2078,38 @@ app.post('/api/inventario/contagem/:id/itens', express.json({ limit: '50kb' }), 
   if (r.erro) return res.status(400).json({ erro: r.erro });
   res.json({ ok: true });
 });
+// gerar a planilha fecha a contagem (st "gerado") e guarda o que foi para o AppNext: por isso é POST com X-Painel, nunca GET
+app.post('/api/inventario/contagem/:id/planilha', async (req, res) => {
+  if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
+  const loja = lojaInv(req, res); if (!loja) return;
+  if (req.perfil === 'vendedor') return res.status(403).json({ erro: 'Peça para a gerente gerar a planilha.' });
+  const c = INV.ler(loja.id, String(req.params.id));
+  if (!c) return res.status(404).json({ erro: 'Contagem não encontrada.' });
+  if (!c.itens.some((i) => i.cont != null)) return res.status(400).json({ erro: 'Nenhum item contado.' });
+  if (c.st === 'importado' || c.st === 'revertido') return res.status(400).json({ erro: 'Esta contagem já foi importada; o que foi enviado está no histórico.' });
+  try {
+    const linhas = INV.linhasPlanilha(c, ES.atual(loja.id), await catInv(loja));
+    const buf = await INV.planilha(linhas);
+    INV.marcarGerado(loja.id, c.id, req.user, linhas);
+    C.auditar(req.user, 'gerou a planilha de inventário', loja.id, { loja: loja.id, nome: c.nome, itens: linhas.length, zerados: linhas.filter((l) => l.zerado).length });
+    const nome = `Inventario_${String(loja.nome).normalize('NFD').replace(/[^\w]+/g, '_')}_${C.hojeBR()}.xlsx`;
+    res.set('Content-Disposition', `attachment; filename="${nome}"`).type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet').send(Buffer.from(buf));
+  } catch (e) { console.error('[inventário] planilha:', e); res.status(500).json({ erro: 'Não deu para montar a planilha. Tente de novo.' }); }
+});
+app.post('/api/inventario/contagem/:id/desfazer', async (req, res) => {
+  if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
+  const loja = lojaInv(req, res); if (!loja) return;
+  if (req.perfil === 'vendedor') return res.status(403).json({ erro: 'Sem permissão.' });
+  const c = INV.ler(loja.id, String(req.params.id));
+  if (!c || c.st !== 'importado' || !c.planilha) return res.status(400).json({ erro: 'Só dá para desfazer uma contagem importada.' });
+  try {
+    const linhas = INV.linhasDesfazer(c, ES.atual(loja.id));
+    const buf = await INV.planilha(linhas);
+    INV.marcarDesfazer(loja.id, c.id, req.user, 'gerado');
+    C.auditar(req.user, 'gerou a planilha para desfazer um inventário', loja.id, { loja: loja.id, nome: c.nome, itens: linhas.length });
+    res.set('Content-Disposition', `attachment; filename="Desfazer_inventario_${C.hojeBR()}.xlsx"`).type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet').send(Buffer.from(buf));
+  } catch (e) { console.error('[inventário] desfazer:', e); res.status(500).json({ erro: 'Não deu para montar a planilha. Tente de novo.' }); }
+});
 app.post('/api/inventario/contagem/:id/:acao', express.json({ limit: '2kb' }), (req, res) => {
   const loja = lojaInv(req, res); if (!loja) return;
   const a = String(req.params.acao);
@@ -2038,33 +2126,30 @@ app.post('/api/inventario/contagem/:id/:acao', express.json({ limit: '2kb' }), (
   res.json({ ok: true });
 });
 // planilha no modelo do AppNext (Estoque → Auditoria/Inventário → Novo → Por Excel)
+// GET só relê a planilha já gerada (não muda nada); quem gera e fecha a contagem é o POST acima (X-Painel)
 app.get('/api/inventario/contagem/:id/planilha', async (req, res) => {
   const loja = lojaInv(req, res); if (!loja) return;
   if (req.perfil === 'vendedor') return res.status(403).json({ erro: 'Peça para a gerente gerar a planilha.' });
   const c = INV.ler(loja.id, String(req.params.id));
   if (!c) return res.status(404).json({ erro: 'Contagem não encontrada.' });
-  if (!c.itens.some((i) => i.cont != null)) return res.status(400).json({ erro: 'Nenhum item contado.' });
-  if (c.st === 'importado' || c.st === 'revertido') return res.status(400).json({ erro: 'Esta contagem já foi importada; o que foi enviado está no histórico.' });
-  const linhas = INV.linhasPlanilha(c, ES.atual(loja.id), await catInv(loja));
-  const buf = await INV.planilha(linhas);
-  INV.marcarGerado(loja.id, c.id, req.user, linhas);
-  C.auditar(req.user, 'gerou a planilha de inventário', loja.id, { loja: loja.id, nome: c.nome, itens: linhas.length, zerados: linhas.filter((l) => l.zerado).length });
-  const nome = `Inventario_${String(loja.nome).normalize('NFD').replace(/[^\w]+/g, '_')}_${C.hojeBR()}.xlsx`;
-  res.set('Content-Disposition', `attachment; filename="${nome}"`).type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet').send(Buffer.from(buf));
+  if (!c.planilha || !Array.isArray(c.planilha.itens)) return res.status(409).json({ erro: 'A planilha ainda não foi gerada. Gere pelo botão na tela do Inventário.' });
+  try {
+    const buf = await INV.planilha(c.planilha.itens);
+    const nome = `Inventario_${String(loja.nome).normalize('NFD').replace(/[^\w]+/g, '_')}_${C.hojeBR()}.xlsx`;
+    res.set('Content-Disposition', `attachment; filename="${nome}"`).type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet').send(Buffer.from(buf));
+  } catch (e) { console.error('[inventário] planilha:', e); res.status(500).json({ erro: 'Não deu para montar a planilha. Tente de novo.' }); }
 });
 
-// desfazer: planilha que volta os itens da contagem importada ao que eram antes (mantendo o que vendeu/entrou depois)
+// desfazer: GET só relê (depois de gerada pelo POST); nada muda de estado aqui
 app.get('/api/inventario/contagem/:id/desfazer', (req, res) => {
   const loja = lojaInv(req, res); if (!loja) return;
   if (req.perfil === 'vendedor') return res.status(403).json({ erro: 'Sem permissão.' });
   const c = INV.ler(loja.id, String(req.params.id));
   if (!c || c.st !== 'importado' || !c.planilha) return res.status(400).json({ erro: 'Só dá para desfazer uma contagem importada.' });
-  const linhas = INV.linhasDesfazer(c, ES.atual(loja.id));
-  INV.planilha(linhas).then((buf) => {
-    INV.marcarDesfazer(loja.id, c.id, req.user, 'gerado');
-    C.auditar(req.user, 'gerou a planilha para desfazer um inventário', loja.id, { loja: loja.id, nome: c.nome, itens: linhas.length });
+  if (!c.desfazer) return res.status(409).json({ erro: 'A planilha de desfazer ainda não foi gerada. Gere pelo botão na tela do Inventário.' });
+  INV.planilha(INV.linhasDesfazer(c, ES.atual(loja.id))).then((buf) => {
     res.set('Content-Disposition', `attachment; filename="Desfazer_inventario_${C.hojeBR()}.xlsx"`).type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet').send(Buffer.from(buf));
-  }).catch((e) => res.status(500).json({ erro: e.message }));
+  }).catch((e) => { console.error('[inventário] desfazer:', e); res.status(500).json({ erro: 'Não deu para montar a planilha. Tente de novo.' }); });
 });
 
 // ---------- validade e lotes do chá a granel (Estoque → Validade): a equipe informa o lote; o painel faz o resto ----------
@@ -2193,14 +2278,26 @@ app.get('/api/espera', async (req, res) => {
   res.json({ pedidos: d.pedidos, modelo: d.modelo, dias: ESP.DIAS_COMPRA, podeModelo: req.perfil !== 'vendedor', lojaNome: loja.nome, vendedoras });
 });
 // produtos para escolher: o cadastro do AppNext (com o tamanho) e o que já foi vendido; marca o que está em falta
+const espProdCache = new Map(); // loja -> { tab, raw, m }
 app.get('/api/espera/produtos', async (req, res) => {
   const loja = lojaEsp(req);
   if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
   const q = ESP.ESQ(req.query.q || '');
   if (q.length < 2) return res.json({ produtos: [] });
-  const m = new Map();
-  for (const i of (TAB.resumo(loja.id) || { itens: [] }).itens || []) if (i.desc && i.preco !== 0.01) m.set(ESP.ESQ(i.desc), { desc: i.desc, cod: String(i.cod), vendidos: 0 });
-  try { for (const v of (await dadosLoja(loja)).raw.vendas) { const k = ESP.ESQ(v.descricao); const a = m.get(k) || m.set(k, { desc: v.descricao, cod: v.cod != null ? String(v.cod) : null, vendidos: 0 }).get(k); a.vendidos += v.qtd || 0; if (!a.cod && v.cod != null) a.cod = String(v.cod); } } catch { /* ok */ }
+  // o mapa descrição → vendidos só é refeito quando as vendas ou o cadastro da loja mudam (a busca roda a cada tecla)
+  const tab = TAB.resumo(loja.id);
+  let dl = null;
+  try { dl = await dadosLoja(loja); } catch { /* ok */ }
+  const raw = dl ? dl.raw : null; // objeto novo a cada recarga das vendas da loja
+  let memo = espProdCache.get(loja.id);
+  if (!memo || memo.tab !== tab || memo.raw !== raw || !raw) {
+    const novo = new Map();
+    for (const i of (tab || { itens: [] }).itens || []) if (i.desc && i.preco !== 0.01) novo.set(ESP.ESQ(i.desc), { desc: i.desc, cod: String(i.cod), vendidos: 0 });
+    try { for (const v of raw.vendas) { const k = ESP.ESQ(v.descricao); const a = novo.get(k) || novo.set(k, { desc: v.descricao, cod: v.cod != null ? String(v.cod) : null, vendidos: 0 }).get(k); a.vendidos += v.qtd || 0; if (!a.cod && v.cod != null) a.cod = String(v.cod); } } catch { /* ok */ }
+    memo = { tab, raw, m: novo };
+    if (raw) espProdCache.set(loja.id, memo); else espProdCache.delete(loja.id);
+  }
+  const m = memo.m;
   const est = ES.atual(loja.id);
   // chá a granel sem o pacote ("valeriana"): o item do estoque em kg, que vale para qualquer tamanho
   const gen = ((est && est.itens) || []).filter((i) => i.un === 'Kg' && ESP.ESQ(i.desc).includes(q)).slice(0, 4)
@@ -2212,6 +2309,8 @@ app.get('/api/espera/produtos', async (req, res) => {
   });
   res.json({ produtos: [...gen, ...achou0.filter((x) => !gen.some((g) => ESP.ESQ(g.desc) === ESP.ESQ(x.desc)))] });
 });
+const ESPERA_BUSCAS_DIA = +process.env.ESPERA_BUSCAS_DIA || 300, ESPERA_BUSCAS_AVISO = Math.ceil(ESPERA_BUSCAS_DIA / 2);
+const buscasEspera = new Map(); // usuário -> { dia, n }
 // clientes para escolher (nome, CPF ou celular): no máximo 8; sem acesso a Clientes exige 6+ dígitos para CPF/celular e aplica limite de consultas
 app.get('/api/espera/clientes', async (req, res) => {
   const loja = lojaEsp(req);
@@ -2219,12 +2318,24 @@ app.get('/api/espera/clientes', async (req, res) => {
   const amplo = podeClientes(req);
   const minDig = amplo ? 3 : 6;
   const q = String(req.query.q || '').trim(), qn = ESP.ESQ(q), qd = q.replace(/\D/g, '');
-  const temNome = qn.length >= 3 && /[a-z]/.test(qn);
+  // sem acesso a Clientes (vendedora): o nome precisa de 4 letras ou mais, para a busca não virar uma lista da base
+  const letras = qn.replace(/[^a-z]/g, '').length;
+  const temNome = letras >= (amplo ? 3 : 4);
   const temDig = qd.length >= minDig;
-  if (!temNome && !temDig) return res.json({ clientes: [] });
+  if (!temNome && !temDig) return res.json({ clientes: [], ...(!amplo && letras === 3 ? { dica: 'Digite pelo menos 4 letras do nome (ou o CPF/celular).' } : {}) });
   if (!amplo) {
     const kEsp = 'espcli:' + req.user;
     if (tooMany(kEsp, 45, 60e3)) return res.status(429).json({ erro: 'Muitas buscas seguidas. Aguarde um instante.' });
+    // teto do dia por pessoa (300) e registro na auditoria quando o volume foge do normal (150 e 300)
+    const dia = C.hojeBR();
+    let d = buscasEspera.get(req.user);
+    if (!d || d.dia !== dia) { d = { dia, n: 0 }; buscasEspera.set(req.user, d); }
+    if (d.n >= ESPERA_BUSCAS_DIA) {
+      if (!d.avisouTeto) { d.avisouTeto = true; C.auditar(req.user, 'chegou ao limite diário de buscas de clientes na Lista de espera', loja.id, { loja: loja.id, buscas: d.n }); }
+      return res.status(429).json({ erro: 'Você chegou ao limite de buscas de clientes de hoje. Fale com a gerente.' });
+    }
+    d.n++;
+    if (d.n === ESPERA_BUSCAS_AVISO) C.auditar(req.user, 'fez muitas buscas de clientes na Lista de espera hoje', loja.id, { loja: loja.id, buscas: d.n });
     falhou(kEsp);
   }
   let cl = [];
@@ -2406,7 +2517,7 @@ app.post('/api/pedido/robo', express.json({ limit: '200kb' }), async (req, res) 
     if (r.status !== 200) return res.status(r.status).json({ erro: r.json.erro || 'Falha no coletor.' });
     C.auditar(req.user, b.acao === 'carrinho' ? 'mandou montar o carrinho do pedido' : 'pediu o catálogo do Sistema de Pedidos', loja.id, { loja: loja.id, itens: Array.isArray(b.itens) ? b.itens.length : 0 });
     res.json({ ok: true, fora });
-  } catch (e) { res.status(502).json({ erro: e.message }); }
+  } catch (e) { res.status(502).json({ erro: C.msgErro(e) }); }
 });
 
 // ---------- cadastro de clientes do FIXE: lê o e-mail da exportação (Gmail da loja) e importa ----------
@@ -2473,7 +2584,7 @@ function pedidoContabilidade(req, res) {
 }
 async function enviarContabilidade(req, res, p, anexos, acao) {
   try { await p.NOTIF.enviarEmail(p.lista.join(', '), p.sub, p.sub, p.corpo, p.smtp, anexos); }
-  catch (e) { return res.status(502).json({ erro: `Não foi possível enviar: ${e.message}` }); }
+  catch (e) { return res.status(502).json({ erro: `Não foi possível enviar: ${C.msgErro(e)}` }); }
   C.alterar((cfg) => { const l = cfg.lojas.find((y) => y.id === p.loja.id); if (l) l.contabilidade = p.lista; });
   C.auditar(req.user, acao, p.loja.id, { loja: p.loja.id, ym: p.ym || undefined, para: p.lista });
   res.json({ ok: true, para: p.lista });
@@ -2495,7 +2606,7 @@ app.get('/api/xmls/resumo', (req, res) => {
   if (!podeContabilidade(req)) return res.status(403).json({ erro: 'Sem permissão.' });
   const loja = req.lojas.find((l) => l.id === String(req.query.loja || ''));
   if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
-  try { res.json(XA.resumo(loja.id, String(req.query.ym || ''))); } catch (e) { res.status(400).json({ erro: e.message }); }
+  try { res.json(XA.resumo(loja.id, String(req.query.ym || ''))); } catch (e) { res.status(400).json({ erro: C.msgErro(e) }); }
 });
 app.post('/api/faturamento/enviar', express.json({ limit: '1mb' }), async (req, res) => {
   const p = pedidoContabilidade(req, res);
@@ -2521,7 +2632,7 @@ app.put('/api/classificacao', express.json({ limit: '20kb' }), (req, res) => {
     C.auditar(req.user, r ? 'classificou produto' : 'tirou classificação de produto', 'produtos', { produto: CLS.chave(produto), classe: classe || null });
     packCache.clear();
     res.json({ ok: true, item: r });
-  } catch (e) { res.status(400).json({ erro: e.message }); }
+  } catch (e) { res.status(400).json({ erro: C.msgErro(e) }); }
 });
 app.put('/api/feriados', express.json({ limit: '200kb' }), (req, res) => {
   if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
@@ -2640,6 +2751,8 @@ function lojaDoPedido(req) {
 }
 
 app.get('/api/script', async (req, res) => {
+  // andamento do coletor (horários, janela, execução): não é da vendedora
+  if (req.perfil === 'vendedor') return res.status(403).json({ disponivel: false, motivo: 'Sem permissão.' });
   const loja = lojaDoPedido(req);
   if (!loja) return res.json({ disponivel: false, motivo: 'Selecione uma loja.' });
   const admin = (C.get().usuarios[req.user]?.lojas || []).includes('*') || req.user === '*';
@@ -2650,7 +2763,7 @@ app.get('/api/script', async (req, res) => {
       if (s.configurada) return res.json({ disponivel: true, origem: 'vps', horarios: s.horarios, janela: s.janela, temFixe: s.temFixe, execucao: s.execucao });
     } catch (e) {
       console.error(`[script] coletor: ${e.message}`);
-      return res.json({ disponivel: true, origem: 'vps', erro: e.message });
+      return res.json({ disponivel: true, origem: 'vps', erro: C.msgErro(e) });
     }
   }
   // 2º) GitHub Actions
@@ -2670,7 +2783,7 @@ app.get('/api/script', async (req, res) => {
     res.json({ disponivel: true, origem: 'github', execucao, aguardando: !!aguardando, disparo: d ? { em: new Date(d.em).toISOString(), por: d.por } : null });
   } catch (e) {
     console.error(`[script] ${loja.id}: ${e.message}`);
-    res.json({ disponivel: true, origem: 'github', erro: e.message.replace(/Bearer\s+\S+/g, '') });
+    res.json({ disponivel: true, origem: 'github', erro: C.msgErro(e).replace(/Bearer\s+\S+/g, '') });
   }
 });
 
@@ -2691,7 +2804,7 @@ app.post('/api/script', express.json({ limit: '2kb' }), async (req, res) => {
         return res.status(r.status === 200 ? 200 : r.status).json(r.status === 200 ? { ok: true } : { erro: r.json.erro || 'Falha no coletor.' });
       }
     } catch (e) {
-      return res.status(502).json({ erro: e.message });
+      return res.status(502).json({ erro: C.msgErro(e) });
     }
   }
   if (!loja.github) return res.status(400).json({ erro: 'Loja sem script configurado.' });
@@ -2710,7 +2823,7 @@ app.post('/api/script', express.json({ limit: '2kb' }), async (req, res) => {
     res.json({ ok: true });
   } catch (e) {
     console.error(`[script] ${loja.id}: ${e.message}`);
-    res.status(502).json({ erro: e.message });
+    res.status(502).json({ erro: C.msgErro(e) });
   }
 });
 
@@ -2754,6 +2867,19 @@ setInterval(async () => {
     eventosRodando = false;
   }
 }, 60e3).unref();
+
+// limpeza dos pedidos antigos ao robô (NF-e e inventário): 10 min depois de ligar e uma vez por dia.
+// Só arquivos de envio (pedido/resultado/planilha); XML de nota, contagens e vendas nunca são apagados.
+function limparEnviosAntigos() {
+  for (const l of C.get().lojas) {
+    try {
+      const n = NFE.limparEnvios(l.id, DEV.lista(l.id).map((d) => d.id)) + INV.limparEnvios(l.id);
+      if (n) console.log(`[limpeza] ${l.id}: ${n} arquivo(s) de envio antigos apagados`);
+    } catch (e) { console.error(`[limpeza] ${l.id}:`, e.message); }
+  }
+}
+setTimeout(limparEnviosAntigos, 10 * 60e3).unref();
+setInterval(limparEnviosAntigos, 24 * 3600e3).unref();
 
 // avisos de falha para o administrador (coleta, FIXE, loja sem vendas de ontem): a cada 5 minutos
 setInterval(() => {

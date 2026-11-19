@@ -8,6 +8,23 @@ test.describe('regras', () => {
     await page.waitForFunction(() => window.TS && TS.db && TS.fx);
   });
 
+  test('comissionamento: meta 0 avisa "meta não cadastrada" e a meta simulada some ao mudar o mês', async ({ page }) => {
+    await page.evaluate(() => { TS.state.com.meta = 0; TS.state.com.metaYm = TS.metaPeriodo().ym; location.hash = '#comissionamento'; });
+    const aviso = page.locator('.notice.warn[data-aviso="sem-meta"]');
+    await expect(aviso).toContainText('Meta não cadastrada');
+    // sem meta ninguém cai em "acima de 120%": a comissão de cada linha é a taxa mínima da categoria
+    const ok = await page.evaluate(() => {
+      const R = TS.rules, base = TS.filtrar();
+      const res = R.comissionamento({ base, baseSemVend: base, metaLoja: 0, vendBonus: '', ym: TS.metaPeriodo().ym });
+      return res.rows.length > 0 && res.rows.every((r) => { const f = R.regrasDe(r.loja).comissao; return r.naoRecebe || Math.abs(r.cArom - r.arom * f.arom.abaixo) < 0.005; });
+    });
+    expect(ok).toBe(true);
+    // muda o período para outro mês: a meta simulada (0) é esquecida e vale a cadastrada
+    await page.evaluate(() => { const f = TS.state.f; f.ate = TS.db.maxDay - 45; f.de = TS.db.maxDay - 60; TS.render(); });
+    await expect(aviso).toHaveCount(0);
+    expect(await page.evaluate(() => TS.state.com.meta)).toBeNull();
+  });
+
   test('saldo do FIXE = saldo sincronizado + movimentos dos Logs depois da leitura', async ({ page }) => {
     const r = await page.evaluate(() => {
       TS.db.fidelidade = [{ id: 't', regras: { validadeMeses: 12, minResgate: 6, prazoResgate: 90 }, nomes: ['Ana'], lojas: ['L1'], propria: [true], vendaLoja: null, em: '2026-11-17T01:00:00Z',
@@ -61,6 +78,7 @@ test.describe('regras', () => {
 
   test('Produtos por lucro: visão Resumo cabe sem rolar para o lado', async ({ page }) => {
     await page.evaluate(() => { location.hash = '#rentab'; });
+    await page.locator('.est-abas button', { hasText: 'Produtos' }).click();
     const t = page.locator('.est-t-lucro');
     await expect(t).toBeVisible();
     await page.locator('.est-vis button', { hasText: 'Resumo' }).click();

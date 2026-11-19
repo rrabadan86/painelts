@@ -131,7 +131,11 @@ function avaliar(id, ctx) {
   if (!d.pedidos.length) return [];
   const novos = [];
   let mudou = false;
-  const notas = ((ctx.notas && ctx.notas.notas) || []).map((n) => ({ ...n, dia: String(n.entrada || n.emissao || '').slice(0, 10) }));
+  // só nota de entrada concluída e que não seja devolução/troca (igual às sugestões do pedido): nota em digitação
+  // ou devolvida não quer dizer que o produto chegou
+  const notas = ((ctx.notas && ctx.notas.notas) || [])
+    .filter((n) => /^conclu/i.test(n.status || '') && !/devolu|troca/i.test(n.motivo || ''))
+    .map((n) => ({ ...n, dia: String(n.entrada || n.emissao || '').slice(0, 10) }));
   const estEm = ctx.estoque && ctx.estoque.em ? Date.parse(ctx.estoque.em) : 0;
   // compras por CPF: cupons com CPF na nota e compras no FIXE
   const compras = new Map();

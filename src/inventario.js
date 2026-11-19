@@ -28,13 +28,29 @@ function ler(id, cid) {
   return c;
 }
 function gravar(id, c) { fs.mkdirSync(pasta(id), { recursive: true }); C.gravarAtomico(arq(id, c.id), JSON.stringify(c), 0o640); }
+// resumo de cada contagem em memória: o arquivo só é lido de novo quando muda (toda gravação troca o arquivo)
+const resumoCache = new Map(); // caminho do arquivo -> { mtimeMs, size, ino, val }
+function resumoDe(f) {
+  let st;
+  try { st = fs.statSync(f); } catch { resumoCache.delete(f); return null; }
+  const hit = resumoCache.get(f);
+  if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size && hit.ino === st.ino) return hit.val;
+  let val = null;
+  try { val = resumir(JSON.parse(fs.readFileSync(f, 'utf8'))); } catch { val = null; }
+  if (resumoCache.size >= 3000) resumoCache.delete(resumoCache.keys().next().value);
+  resumoCache.set(f, { mtimeMs: st.mtimeMs, size: st.size, ino: st.ino, val });
+  return val;
+}
 function lista(id) {
   let fsx = [];
   try { fsx = fs.readdirSync(pasta(id)).filter((f) => /^[a-f0-9]{12}\.json$/.test(f)); } catch { return []; }
-  return fsx.map((f) => { try { return JSON.parse(fs.readFileSync(path.join(pasta(id), f), 'utf8')); } catch { return null; } }).filter(Boolean)
-    .map((c) => ({ id: c.id, nome: c.nome, criadoEm: c.criadoEm, por: c.por, cega: c.cega, st: c.st, itens: c.itens.length, contados: c.itens.filter((i) => i.cont != null).length, geradoEm: c.geradoEm || null, importadoEm: c.importadoEm || null, importadoPor: c.importadoPor || null, canceladoEm: c.canceladoEm || null, canceladoPor: c.canceladoPor || null, escopo: (c.zerar && c.zerar.escopo) || null, zerar: !!(c.zerar && c.zerar.ativo),
-      ajuste: c.planilha ? c.planilha.itens.reduce((s, l) => s + (l.nova - l.antes) * (l.custo || 0), 0) : null, naPlanilha: c.planilha ? c.planilha.itens.length : null, zerados: c.planilha ? c.planilha.itens.filter((l) => l.zerado).length : null, revertidoEm: c.desfazer && c.desfazer.importadoEm || null }))
+  return fsx.map((f) => resumoDe(path.join(pasta(id), f))).filter(Boolean).map((r) => ({ ...r }))
     .sort((a, b) => (a.criadoEm < b.criadoEm ? 1 : -1));
+}
+function resumir(c) {
+  return [c]
+    .map((c) => ({ id: c.id, nome: c.nome, criadoEm: c.criadoEm, por: c.por, cega: c.cega, st: c.st, itens: c.itens.length, contados: c.itens.filter((i) => i.cont != null).length, geradoEm: c.geradoEm || null, importadoEm: c.importadoEm || null, importadoPor: c.importadoPor || null, canceladoEm: c.canceladoEm || null, canceladoPor: c.canceladoPor || null, escopo: (c.zerar && c.zerar.escopo) || null, zerar: !!(c.zerar && c.zerar.ativo),
+      ajuste: c.planilha ? c.planilha.itens.reduce((s, l) => s + (l.nova - l.antes) * (l.custo || 0), 0) : null, naPlanilha: c.planilha ? c.planilha.itens.length : null, zerados: c.planilha ? c.planilha.itens.filter((l) => l.zerado).length : null, revertidoEm: c.desfazer && c.desfazer.importadoEm || null }))[0];
 }
 
 /**
@@ -301,6 +317,23 @@ function marcarDesfazer(id, cid, por, etapa) {
 
 // ---------- enviar direto para o AppNext (robô do coletor) ----------
 const pastaEnvio = (id) => path.join(pasta(id), 'envio');
+/** limpeza: planilhas e listas de envio ao robô com mais de 90 dias (ou de contagem que não existe mais, depois de 1 dia).
+ *  Só mexe em envio/<contagem>-<tipo>.{xlsx,json,resultado.json}; as contagens ficam. Devolve quantos arquivos apagou. */
+function limparEnvios(id, agora = Date.now()) {
+  let fsx = [];
+  try { fsx = fs.readdirSync(pastaEnvio(id)); } catch { return 0; }
+  let n = 0;
+  for (const f of fsx) {
+    const m = /^([a-f0-9]{12})-[a-z]+\.(?:xlsx|json|resultado\.json)$/.exec(f);
+    if (!m) continue;
+    const arqF = path.join(pastaEnvio(id), f);
+    let st;
+    try { st = fs.statSync(arqF); } catch { continue; }
+    const idade = agora - st.mtimeMs;
+    if (idade > 90 * 864e5 || (idade > 864e5 && !fs.existsSync(arq(id, m[1])))) { try { fs.unlinkSync(arqF); n++; } catch { /* ok */ } }
+  }
+  return n;
+}
 /** deixa a planilha e a lista do que tem de ser lido (código → quantidade) para o robô; grava o envio na contagem */
 async function prepararEnvio(id, cid, tipo, linhas, por) {
   if (!ler(id, cid)) return { erro: 'Contagem não encontrada.' };
@@ -387,4 +420,4 @@ function cobertura(id, cat, contagens, hist = historicoAppNext(id)) {
   return out;
 }
 
-module.exports = { podeReabrir, cobertura, historicoAppNext, ehChaGranel, escopoDe, erroEnvio, prepararEnvio, conferirEnvio, lista, ler, catalogo, familia, criar, contar, adicionar, acao, paraUsuario, planilha, linhasPlanilha, marcarGerado, resto, zerar, gruposFora, linhasDesfazer, marcarDesfazer };
+module.exports = { limparEnvios, podeReabrir, cobertura, historicoAppNext, ehChaGranel, escopoDe, erroEnvio, prepararEnvio, conferirEnvio, lista, ler, catalogo, familia, criar, contar, adicionar, acao, paraUsuario, planilha, linhasPlanilha, marcarGerado, resto, zerar, gruposFora, linhasDesfazer, marcarDesfazer };

@@ -286,7 +286,7 @@
     // ---------- 1) Para resolver: notas de compra com desconto que pedem você ----------
     const PEND = ['sugestao', 'conferir', 'sem_par', 'sem_credito'];
     const pend = d.notas.filter((n) => PEND.includes(n.situacao));
-    const naoEhDev = (n) => () => { const obs = prompt('De que é este desconto? (opcional)', ''); if (obs !== null) acao({ tipo: 'ignorar', nota: n.id, obs }, 'Marcado como desconto que não é de devolução.'); };
+    const naoEhDev = (n) => async () => { const obs = await TS.perguntar('De que é este desconto?', { chips: ['Bonificação', 'Campanha da franquia', 'Acerto de preço', 'Frete'], rotulo: 'De que é (opcional)', ok: 'Marcar' }); if (obs !== null) acao({ tipo: 'ignorar', nota: n.id, obs }, 'Marcado como desconto que não é de devolução.'); };
     const itemPend = (n) => {
       const cs = (n.creditos || []).map((id) => porId.get(id)).filter(Boolean);
       const sug = n.situacao === 'sugestao' || n.situacao === 'conferir';
@@ -323,12 +323,12 @@
     const maisCredito = (c) => {
       if (c.situacao === 'compensado') return null;
       if (c.situacao === 'manual') return menuMais([['↺ Desfazer (volta ao automático)', () => acao({ tipo: 'desfazer', credito: c.id }, 'Voltou para o automático.')]]);
-      const marcar = (tipo, como, pergunta) => () => { const obs = prompt(pergunta, ''); if (obs === null) return; acao(tipo === 'cancelar' ? { tipo, credito: c.id, obs } : { tipo, credito: c.id, como, obs }, 'Devolução atualizada.'); };
+      const marcar = (tipo, como, pergunta, chips) => async () => { const obs = await TS.perguntar(pergunta, { chips, rotulo: 'Observação (opcional)', texto: `Devolução NF-e ${c.numero ?? '—'}`, ok: 'Marcar' }); if (obs === null) return; acao(tipo === 'cancelar' ? { tipo, credito: c.id, obs } : { tipo, credito: c.id, como, obs }, 'Devolução atualizada.'); };
       return menuMais([
-        ['Compensada no boleto', marcar('compensar', 'boleto', 'Observação (opcional): data, nº do boleto…')],
-        ['Compensada nos royalties', marcar('compensar', 'royalties', 'Observação (opcional): mês dos royalties…')],
-        ['Compensada de outro jeito', marcar('compensar', 'outro', 'Como foi compensada? (opcional)')],
-        ['Cancelada / não vai ser paga', marcar('cancelar', null, 'Por que não vai ser paga? (opcional)')]]);
+        ['Compensada no boleto', marcar('compensar', 'boleto', 'Compensada no boleto: quer anotar a data ou o nº do boleto?')],
+        ['Compensada nos royalties', marcar('compensar', 'royalties', 'Compensada nos royalties: quer anotar o mês?')],
+        ['Compensada de outro jeito', marcar('compensar', 'outro', 'Como foi compensada?', ['Crédito em outro pedido', 'Produto enviado no lugar', 'Depósito / Pix'])],
+        ['Cancelada / não vai ser paga', marcar('cancelar', null, 'Por que não vai ser paga?', ['A franquia recusou', 'Fora do prazo', 'Lançada em duplicidade', 'Valor pequeno'])]]);
     };
     const tab = TS.table({
       cols: [

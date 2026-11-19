@@ -225,15 +225,15 @@
     const vNome = vendDe(p);
     const fazer = async (acao, conf, extra) => {
       if (conf && !confirm(conf)) return;
-      if (TS.demo) { alert('Na apresentação nada é salvo.'); return; }
-      try { const r = await api('POST', `espera/${p.id}/${acao}`, { loja, ...(extra || {}) }); Object.assign(p, r.pedido); repintar(); } catch (e) { alert(e.message); }
+      if (TS.demo) { TS.avisar('Na apresentação nada é salvo.'); return; }
+      try { const r = await api('POST', `espera/${p.id}/${acao}`, { loja, ...(extra || {}) }); Object.assign(p, r.pedido); repintar(); } catch (e) { TS.avisarErro(e); }
     };
     const msg = h('textarea', { class: 'f-input esp-msg', rows: 2 }, textoDe(d.modelo, p, d.lojaNome));
     const linkW = () => wpp(p.cliente.celular, msg.value);
     const btnW = (rot) => h('a', { class: 'btn primary esp-wpp', href: '#', onclick: (e) => {
       e.preventDefault();
       const u = linkW();
-      if (!u) { alert('Este cliente está sem celular válido.'); return; }
+      if (!u) { TS.avisar('Este cliente está sem celular válido. Corrija o celular no cadastro do AppNext para avisar pelo WhatsApp.'); return; }
       if (!TS.demo) window.open(u, '_blank', 'noopener');
       fazer('avisado', null, vNome ? { vendedora: vNome } : null);
     } }, rot);
@@ -246,7 +246,7 @@
               : `Cancelado ${dataTxt(p.cancelado && p.cancelado.em)} por ${(p.cancelado && p.cancelado.por) || '—'}`;
     const acoes = p.st === 'chegou' ? [btnW('Avisar no WhatsApp ›'), h('button', { type: 'button', class: 'btn', onclick: () => fazer('cancelar', 'Cancelar este pedido da lista de espera?') }, 'Cancelar')]
       : p.st === 'esperando' ? [h('button', { type: 'button', class: 'btn', title: 'Use se o produto chegou e a nota ainda não apareceu no painel', onclick: () => fazer('chegou') }, 'Já chegou'), h('button', { type: 'button', class: 'btn', onclick: () => fazer('cancelar', 'Cancelar este pedido da lista de espera?') }, 'Cancelar')]
-        : p.st === 'avisado' ? [h('a', { class: 'btn', href: TS.demo ? '#' : (wpp(p.cliente.celular, '') || '#'), target: TS.demo ? null : '_blank', rel: TS.demo ? null : 'noopener', onclick: TS.demo ? (e) => { e.preventDefault(); alert('Na apresentação nada é enviado.'); } : null }, 'Abrir conversa'), h('button', { type: 'button', class: 'btn', onclick: () => fazer('cancelar', 'Cancelar este pedido?') }, 'Cancelar')]
+        : p.st === 'avisado' ? [h('a', { class: 'btn', href: TS.demo ? '#' : (wpp(p.cliente.celular, '') || '#'), target: TS.demo ? null : '_blank', rel: TS.demo ? null : 'noopener', onclick: TS.demo ? (e) => { e.preventDefault(); TS.avisar('Na apresentação nada é enviado.'); } : null }, 'Abrir conversa'), h('button', { type: 'button', class: 'btn', onclick: () => fazer('cancelar', 'Cancelar este pedido?') }, 'Cancelar')]
           : p.st === 'naocomprou' || p.st === 'cancelado' ? [h('button', { type: 'button', class: 'btn', onclick: () => fazer('reabrir') }, 'Reabrir')] : [];
 
     // seletor discreto para definir/trocar a vendedora do pedido quando necessário
@@ -325,8 +325,8 @@
     const det = h('details', { class: 'esp-modelo' }, h('summary', null, 'Mensagem padrão'),
       h('small', { class: 'muted' }, 'Campos: {nome} primeiro nome · {produto} o que pediu · {loja} · {vendedora}'), ta,
       h('button', { type: 'button', class: 'btn', onclick: async () => {
-        if (TS.demo) { alert('Na apresentação nada é salvo.'); return; }
-        try { const r = await api('PUT', 'espera/modelo', { loja, modelo: ta.value }); d.modelo = r.modelo; repintar(); } catch (e) { alert(e.message); }
+        if (TS.demo) { TS.avisar('Na apresentação nada é salvo.'); return; }
+        try { const r = await api('PUT', 'espera/modelo', { loja, modelo: ta.value }); d.modelo = r.modelo; repintar(); } catch (e) { TS.avisarErro(e); }
       } }, 'Salvar mensagem'));
     return det;
   }
@@ -354,10 +354,10 @@
       const q = buscaCli.value.trim();
       if (q.length < 3) { sugCli.hidden = true; return; }
       tCli = setTimeout(async () => {
-        let lista = [];
+        let lista = [], dica = '';
         if (TS.demo) { const qn = TS.norm(q); lista = ((TS.cli && TS.cli.lista) || []).filter((c) => TS.norm(c.nome).includes(qn) || c.cpf.startsWith(q.replace(/\D/g, '') || '#')).slice(0, 8).map((c) => ({ cpf: c.cpf, nome: c.nome, celular: c.celular })); }
-        else { try { lista = (await (await fetch(TS.api(`espera/clientes?loja=${encodeURIComponent(loja)}&q=${encodeURIComponent(q)}`), { credentials: 'same-origin' })).json()).clientes || []; } catch { lista = []; } }
-        sugCli.replaceChildren(...lista.map((c) => h('button', { type: 'button', class: 'cp-sug-it', onmousedown: (e) => { e.preventDefault(); escolher(c); } }, h('span', null, c.nome || '(sem nome)'), h('small', null, telTxt(c.celular) || 'sem celular'))),
+        else { try { const j = await (await fetch(TS.api(`espera/clientes?loja=${encodeURIComponent(loja)}&q=${encodeURIComponent(q)}`), { credentials: 'same-origin' })).json(); lista = j.clientes || []; dica = j.dica || j.erro || ''; } catch { lista = []; } }
+        sugCli.replaceChildren(dica ? h('small', { class: 'muted cp-sug-dica' }, dica) : '', ...lista.map((c) => h('button', { type: 'button', class: 'cp-sug-it', onmousedown: (e) => { e.preventDefault(); escolher(c); } }, h('span', null, c.nome || '(sem nome)'), h('small', null, telTxt(c.celular) || 'sem celular'))),
           h('button', { type: 'button', class: 'cp-sug-it cp-sug-todos', onmousedown: (e) => { e.preventDefault(); sugCli.hidden = true; novoBox.hidden = false; nNome.value = /\d/.test(q) ? '' : q; if (/\d{10,}/.test(q.replace(/\D/g, '')) && q.replace(/\D/g, '').length <= 11 && !/^\d{11}$/.test(q)) nCel.value = q; nNome.focus(); } }, h('span', null, 'Cliente novo (não está na base)'), h('small', null, 'nome e celular')));
         sugCli.hidden = false;
       }, 250);

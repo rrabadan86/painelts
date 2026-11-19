@@ -463,7 +463,7 @@
       const exps = r.explicacoes || [];
       lista.replaceChildren(h('div', { class: 'ia-an' }, ...[
         h('p', { class: 'ia-an-m' }, r.manchete),
-        h('small', { class: 'muted ia-an-meta' }, `Feita às ${hora}${j.simulada ? ' (simulada na apresentação)' : ''} · uma por dia, a mesma para admin e franqueado · a próxima sai amanhã`),
+        h('small', { class: 'muted ia-an-meta' }, `Feita às ${hora}${j.por ? ` por ${j.por}` : ''}${j.simulada ? ' (simulada na apresentação)' : ''} · uma por dia, a mesma para admin e franqueado · a próxima sai amanhã`),
         ...exps.map((x, k) => h('details', { class: 'ia-an-b', open: k === 0 || null },
           h('summary', null, x.titulo),
           x.porque ? h('div', { class: 'ia-an-porque' }, TS.iaMd(x.porque)) : null,

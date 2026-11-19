@@ -129,7 +129,7 @@
 
   /** chamado pelo main.js quando a loja muda */
   TS.scriptLoja = function () {
-    if (TS.demo) return;
+    if (TS.demo || (TS.eu && TS.eu.perfil === 'vendedor')) return; // a vendedora não acompanha o coletor
     acompanhando = false; ultimoEstado = null; info = null;
     pop.hidden = true;
     consultar();

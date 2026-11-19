@@ -53,14 +53,20 @@ function foto(dataUrl) {
 /**
  * nota = a nota de entrada (ES.notas); b = { itens: [{ cod, tipo: 'danificado'|'faltou', qtd, obs, fotos: [dataUrl] }], obs }
  */
+/** a devolução ocupa quantidade da nota? (tudo, menos NF-e com erro ou cancelada) */
+function contaComoDevolvido(d) {
+  const n = (d && d.nfe) || {};
+  return n.estado !== 'erro' && n.situacao !== 'cancelada';
+}
 function criar(id, nota, b, por) {
   if (!nota) return { erro: 'Nota de entrada não encontrada.' };
   const porCod = new Map(nota.itens.map((i) => [String(i.cod), i]));
-  // desconta itens que já tiveram NF-e de devolução gravada no AppNext para esta mesma nota
+  // desconta o que já está em outra devolução desta mesma nota: NF-e gravada (ok), concluída, em teste, na fila
+  // ou ainda por emitir (pendente). Só não conta a que deu erro ou foi cancelada.
   const jaDevolvido = new Map();
   if (nota.id != null) {
     for (const ant of lista(id)) {
-      if (String(ant.nota && ant.nota.id) !== String(nota.id) || !(ant.nfe && ant.nfe.estado === 'ok' && ant.nfe.situacao !== 'cancelada')) continue;
+      if (String(ant.nota && ant.nota.id) !== String(nota.id) || !contaComoDevolvido(ant)) continue;
       for (const it of ant.itens || []) jaDevolvido.set(String(it.cod), (jaDevolvido.get(String(it.cod)) || 0) + (it.qtd || 0));
     }
   }
@@ -78,7 +84,7 @@ function criar(id, nota, b, por) {
     const prev = jaDevolvido.get(cod) || 0;
     const acum = Math.round(((somaPorCod.get(cod) || 0) + dan + fal) * 1000) / 1000;
     if (acum + prev > (i.qtd || 0) + 1e-9) {
-      return { erro: prev > 0 ? `${i.nome}: ${acum} + ${prev} já devolvidos em NF-e anterior passa da quantidade da nota (${i.qtd}).` : `${i.nome}: ${acum} passa da quantidade da nota (${i.qtd}).` };
+      return { erro: prev > 0 ? `${i.nome}: ${acum} + ${prev} já devolvidos em outra devolução desta nota passa da quantidade da nota (${i.qtd}).` : `${i.nome}: ${acum} passa da quantidade da nota (${i.qtd}).` };
     }
     somaPorCod.set(cod, acum);
     if (dan > 0) {
@@ -222,4 +228,4 @@ function conferirNfe(id, d) {
 }
 function erroNfe(id, did, erro) { return atualizar(id, did, (x) => { x.nfe = { ...(x.nfe || {}), estado: 'erro', erro, fim: new Date().toISOString() }; }); }
 
-module.exports = { ASSUNTO_PADRAO, assunto, salvarAssunto, montarAssunto, pedirNfe, conferirNfe, erroNfe, destinatarios, salvarDestinatarios, criar, ler, atualizar, excluir, lista, arqFoto, planilha, textoEmail, pastaDev };
+module.exports = { contaComoDevolvido, ASSUNTO_PADRAO, assunto, salvarAssunto, montarAssunto, pedirNfe, conferirNfe, erroNfe, destinatarios, salvarDestinatarios, criar, ler, atualizar, excluir, lista, arqFoto, planilha, textoEmail, pastaDev };

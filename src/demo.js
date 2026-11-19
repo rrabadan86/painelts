@@ -194,7 +194,7 @@ function pacoteDemo(id) {
     dados.meta = dados.metaCfgs.reduce((s, m) => s + (m.padrao || 0), 0);
     cache.corpos.set(k, JSON.stringify(pack(dados, { loja: k, demo: true })));
   }
-  return { body: cache.corpos.get(k), at: cache.at };
+  return { body: cache.corpos.get(k), at: cache.at, chave: k };
 }
 
 /** lojas fictícias no formato dos indicadores (rede/alertas) */
