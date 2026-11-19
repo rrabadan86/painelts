@@ -274,7 +274,7 @@
   }
 
   TS.iaInit = function (eu) {
-    if (!eu || !['admin', 'franqueado', 'gerente'].includes(eu.perfil) || document.getElementById('btnIA')) return;
+    if (!eu || !['admin', 'franqueado'].includes(eu.perfil) || document.getElementById('btnIA')) return;
     const b = h('button', { class: 'icon-btn ia-btn', id: 'btnIA', type: 'button', title: 'Pergunte ao painel (IA)', 'aria-label': 'Pergunte ao painel (IA)', onclick: () => abrir() }, '✨');
     const alvo = document.querySelector('.topbar-right');
     const upd = document.getElementById('updated');
@@ -468,7 +468,7 @@
       if (d.erro) { corpo.replaceChildren(tit, h('div', { class: 'notice err' }, d.erro)); return; }
       const m = cfgMsg.get(lojaId); cfgMsg.delete(lojaId);
       const k = d.chave;
-      const intro = h('p', { class: 'muted' }, 'Com a IA ligada nesta loja: o botão ✨ responde perguntas sobre vendas, equipe, clientes e estoque; o Início explica por que as vendas mudaram; e o Pedido ganha a revisão do pedido sugerido. '
+      const intro = h('p', { class: 'muted' }, 'Com a IA ligada nesta loja: o botão ✨ responde perguntas sobre vendas, equipe, clientes e estoque; o Início explica por que as vendas mudaram; e o Pedido ganha a revisão do pedido sugerido. Só o admin e o franqueado usam a IA (gerente e vendedora não veem). '
         + `O uso é cobrado na conta da Anthropic dona desta chave: uma pergunta comum fica em torno de US$ 0,01 a 0,05 (estimativa: ${usd(d.preco.entrada)} por milhão de tokens de entrada e ${usd(d.preco.saida)} de saída).`);
       const passos = h('details', { class: 'ia-passo' }, h('summary', null, 'Como criar a chave (5 minutos)'), h('ol', { class: 'cfg-passos' },
         h('li', null, 'Entre em ', h('a', { href: 'https://console.anthropic.com', target: '_blank', rel: 'noopener' }, 'console.anthropic.com'), ' e crie uma conta (pode ser uma por loja ou a mesma conta para várias).'),

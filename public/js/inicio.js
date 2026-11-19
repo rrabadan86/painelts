@@ -144,14 +144,14 @@
 
   /** cartão "Por que isso está acontecendo" (IA). A resposta fica guardada no servidor: a mesma situação não é cobrada de novo. */
   async function cartaoPorque(box, lista, a) {
-    if (!TS.iaApi || !TS.eu || !['admin', 'franqueado', 'gerente'].includes(TS.eu.perfil)) return;
+    if (!TS.iaApi || !TS.eu || !['admin', 'franqueado'].includes(TS.eu.perfil)) return;
     let st;
     try { st = await TS.iaApi('GET', `ia/estado?loja=${encodeURIComponent(state.loja || '')}`); } catch { return; }
     if (!st.ativa || !box.isConnected) return;
     const card = h('div', { class: 'card mt ini-porque' }, h('div', { class: 'card-title' }, '✨ Por que isso está acontecendo'),
       h('div', { class: 'ini-porque-c' }, h('span', { class: 'cfg-pulso' }), ' A IA está lendo os números e os avisos…'));
     box.replaceChildren(card);
-    // a análise é UMA por loja por dia, a mesma para admin, franqueado e gerente: vai só o que os três veem
+    // a análise é UMA por loja por dia, a mesma para admin e franqueado (gerente e vendedora não veem a IA): vai só o que todos eles veem
     // (números de vendas e os avisos de vendas). Custo, estoque, franquia, site e inventário ficam de fora.
     const fatos = { ...a, avisos: lista.filter((x) => x.padrao && x.nivel !== 'ok').map((x) => `${x.titulo}${x.texto ? ' — ' + x.texto : ''}`.slice(0, 400)) };
     const pintarRes = (j) => {
