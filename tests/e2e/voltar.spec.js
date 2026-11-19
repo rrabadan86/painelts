@@ -68,3 +68,19 @@ test('Créditos: botões da linha não abrem a nota; "ligar" lista também as de
   await expect(page.locator('.cf-menu-lista:visible')).toContainText('Compensada no boleto');
   await expect(page.locator('.camada-cheia, .prc-drawer-camada')).toHaveCount(0);
 });
+
+test('Créditos: prêmios de fidelidade (50% do custo) × desconto nos royalties, com o mês de referência', async ({ page }, info) => {
+  test.skip(info.project.name !== 'computador');
+  await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS.db);
+  await page.evaluate(() => { location.hash = '#creditos'; });
+  const card = page.locator('.card', { hasText: 'Prêmios de fidelidade · desconto nos royalties' });
+  await expect(card).toContainText('Veio a menos');
+  await expect(card).toContainText('Recebido certo');
+  await expect(card).toContainText(/royalty de /);
+  await card.locator('tbody tr').first().click();
+  await expect(page.locator('.cfr-mes')).toContainText('Prêmios de');
+  await page.locator('.cfr-mes').getByRole('button', { name: 'Fechar' }).click();
+  await card.getByRole('button', { name: '+ Lançar desconto nos royalties' }).click();
+  await expect(page.locator('.cf-ligar')).toContainText('Royalty de referência');
+  await expect(page.locator('.cf-ligar')).toContainText('Referente aos prêmios de');
+});

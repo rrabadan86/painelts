@@ -43,10 +43,103 @@
     return box;
   }
 
+  const mesTxt = (ym) => (ym ? `${TS.MESES_LONGOS[+ym.slice(5, 7) - 1].toLowerCase()}/${ym.slice(0, 4)}` : '—');
+  const somaMes = (ym, k) => { const x = new Date(Date.UTC(+ym.slice(0, 4), +ym.slice(5, 7) - 1 + k, 1)); return x.toISOString().slice(0, 7); };
+  const PST = { ok: ['Recebido certo', 'cf-ok'], faltou: ['Veio a menos', 'cf-atrasado'], veio_mais: ['Veio a mais', 'cf-aberto'], atrasado: ['Atrasado', 'cf-atrasado'], aguardando: ['Aguardando royalty', 'cf-aberto'], mes_aberto: ['Mês em andamento', 'cf-cinza'] };
+
+  /** janela: lançar o desconto que veio num royalty (mês de referência do royalty + mês dos prêmios que ele cobre) */
+  function lancarRoyalty(fid, acaoRoy, mesPremios) {
+    const hoje = new Date().toISOString().slice(0, 7);
+    const ref = h('input', { type: 'month', class: 'f-input', value: mesPremios ? somaMes(mesPremios, 1) : hoje, max: somaMes(hoje, 1) });
+    const meses = fid.meses.map((m) => m.mes);
+    const prem = h('select', { class: 'f-input' }, ...meses.map((m) => h('option', { value: m, selected: m === (mesPremios || somaMes(ref.value, -1)) || null }, mesTxt(m))));
+    const valor = h('input', { class: 'f-input', inputmode: 'decimal', placeholder: '0,00' });
+    const obs = h('input', { class: 'f-input', maxlength: 200, placeholder: 'Opcional: nº do boleto, observação…' });
+    const info = h('div', { class: 'cfr-info' });
+    const pintarInfo = () => { const m = fid.meses.find((x) => x.mes === prem.value); info.replaceChildren(m ? h('span', null, `Prêmios de ${mesTxt(m.mes)}: custo ${fmt.brl(m.custo)} · a receber `, h('b', null, fmt.brl(m.devido)), m.recebido ? ` · já lançado ${fmt.brl(m.recebido)}` : '') : ''); };
+    ref.addEventListener('change', () => { if (!mesPremios && ref.value) { const p = somaMes(ref.value, -1); if (meses.includes(p)) prem.value = p; pintarInfo(); } });
+    prem.addEventListener('change', pintarInfo);
+    const fundo = h('div', { class: 'cp-modal-bg' });
+    const fechar = () => fundo.remove();
+    fundo.addEventListener('click', (e) => { if (e.target === fundo) fechar(); });
+    const ok = h('button', { type: 'button', class: 'btn primary', onclick: async () => { ok.disabled = true; const feito = await acaoRoy({ ref: ref.value, premios: prem.value, valor: valor.value, obs: obs.value }, 'Desconto nos royalties lançado.'); if (feito) fechar(); else ok.disabled = false; } }, 'Lançar');
+    const campo = (rot, el, dica) => h('label', { class: 'cfr-campo' }, h('span', null, rot), el, dica ? h('small', { class: 'muted' }, dica) : null);
+    fundo.append(h('div', { class: 'card cp-copiar cf-ligar' },
+      h('div', { class: 'cfl-cab' }, h('div', null, h('h3', null, 'Desconto nos royalties (fidelidade)'), h('small', { class: 'muted' }, 'O que a franquia descontou no boleto de royalties pelos prêmios de fidelidade')), h('button', { type: 'button', class: 'cf-b', 'aria-label': 'Fechar', onclick: fechar }, '✕')),
+      h('div', { class: 'cfr-grade' },
+        campo('Royalty de referência', ref, 'O mês do royalty em que veio o desconto'),
+        campo('Valor do desconto (R$)', valor),
+        campo('Referente aos prêmios de', prem, 'Normalmente o mês anterior ao do royalty'),
+        campo('Observação', obs)),
+      info,
+      h('div', { class: 'cp-acoes' }, h('span', { style: { flex: 1 } }), h('button', { type: 'button', class: 'btn', onclick: fechar }, 'Cancelar'), ok)));
+    pintarInfo();
+    document.body.append(fundo);
+    valor.focus();
+  }
+
+  /** janela: os resgates do mês, com o custo de cada prêmio, e os descontos lançados */
+  function verMes(m, acaoRoy, fid) {
+    const fundo = h('div', { class: 'cp-modal-bg' });
+    const fechar = () => fundo.remove();
+    fundo.addEventListener('click', (e) => { if (e.target === fundo) fechar(); });
+    const linhas = m.resgates.flatMap((r) => r.produtos.map((p) => ({ data: r.data, cliente: r.cliente, nome: p.nome, custo: p.custo })));
+    const tab = TS.table({
+      cols: [
+        { key: 'data', label: 'Data', align: 'l', fmt: (v) => fmt.date(v) },
+        { key: 'nome', label: 'Prêmio', align: 'l', wrap: true, render: (x) => h('span', null, x.nome, x.cliente ? h('small', { class: 'est-tam' }, x.cliente) : null) },
+        { key: 'custo', label: 'Custo', render: (x) => (x.custo == null ? h('span', { class: 'cf-sobra', title: 'O painel não achou este produto no estoque: confira o custo' }, 'sem custo') : fmt.brl(x.custo)), sortVal: (x) => x.custo ?? -1 },
+      ],
+      rows: linhas, sortKey: 'data', sortDir: 'asc', maxHeight: '40vh', cls: 'est-t', cartao: false,
+      total: { data: `${fmt.int(linhas.length)} prêmios`, custo: fmt.brl(m.custo) },
+    });
+    fundo.append(h('div', { class: 'card cp-copiar cf-ligar cfr-mes' },
+      h('div', { class: 'cfl-cab' }, h('div', null, h('h3', null, `Prêmios de ${mesTxt(m.mes)}`), h('small', { class: 'muted' }, `${fmt.int(m.resgates.length)} resgates · custo ${fmt.brl(m.custo)} · a receber ${fmt.int(fid.pct * 100)}% = ${fmt.brl(m.devido)}`)), h('button', { type: 'button', class: 'cf-b', 'aria-label': 'Fechar', onclick: fechar }, '✕')),
+      m.semCusto ? h('div', { class: 'notice' }, `${fmt.int(m.semCusto)} prêmio(s) sem custo no painel (produto não achado no estoque): o valor a receber pode estar abaixo do certo.`) : null,
+      tab,
+      h('div', { class: 'cfr-lanc' }, h('b', null, 'Descontos lançados'),
+        m.lancamentos.length ? h('div', null, ...m.lancamentos.map((l) => h('div', { class: 'cfr-lanc-l' }, h('span', null, `Royalty de ${mesTxt(l.ref)}: `, h('b', null, fmt.brl(l.valor)), l.obs ? h('small', { class: 'muted' }, ` · ${l.obs}`) : null, l.por ? h('small', { class: 'muted' }, ` · ${l.por}`) : null),
+          h('button', { type: 'button', class: 'link-btn', onclick: async () => { if (!confirm('Apagar este lançamento?')) return; if (await acaoRoy({ tipo: 'apagar', id: l.id }, 'Lançamento apagado.')) fechar(); } }, 'apagar'))))
+          : h('p', { class: 'muted' }, 'Nenhum desconto lançado para os prêmios deste mês.'),
+        h('div', { class: 'cp-acoes' }, h('span', { style: { flex: 1 } }), h('button', { type: 'button', class: 'btn primary', onclick: () => { fechar(); lancarRoyalty(fid, acaoRoy, m.mes); } }, '+ Lançar desconto deste mês')))));
+    document.body.append(fundo);
+  }
+
+  function premiosCard(d, loja, acaoRoy) {
+    const fid = d.fidelidade;
+    if (!fid) return null;
+    const r = fid.resumo;
+    const tab = fid.meses.length ? TS.table({
+      cols: [
+        { key: 'mes', label: 'Prêmios de', align: 'l', render: (m) => h('span', null, h('a', { href: '#', class: 'prc-nome', onclick: (e) => { e.preventDefault(); e.stopPropagation(); verMes(m, acaoRoy, fid); } }, h('b', null, mesTxt(m.mes))), h('small', { class: 'est-tam' }, `${fmt.int(m.resgates.length)} resgates`)), sortVal: (m) => m.mes },
+        { key: 'custo', label: 'Custo dos prêmios', render: (m) => h('span', null, fmt.brl(m.custo), m.semCusto ? h('small', { class: 'cf-sobra', title: 'Prêmios sem custo no painel' }, ` +${m.semCusto}?`) : null), sortVal: (m) => m.custo },
+        { key: 'devido', label: `A receber (${fmt.int(fid.pct * 100)}%)`, fmt: fmt.brl },
+        { key: 'recebido', label: 'Recebido nos royalties', render: (m) => (m.lancamentos.length ? h('span', null, fmt.brl(m.recebido), h('small', { class: 'est-tam' }, m.lancamentos.map((l) => `royalty de ${mesTxt(l.ref)}`).join(' + '))) : h('span', { class: 'muted' }, '—')), sortVal: (m) => m.recebido },
+        { key: 'diferenca', label: 'Diferença', render: (m) => (m.situacao === 'ok' ? h('span', { class: 'muted' }, '—') : !m.lancamentos.length ? h('span', { class: 'muted' }, '—') : h('b', { class: m.diferenca > 0 ? 'neg' : 'pos' }, (m.diferenca > 0 ? 'faltam ' : 'a mais ') + fmt.brl(Math.abs(m.diferenca)))), sortVal: (m) => m.diferenca },
+        { key: 'situacao', label: 'Situação', align: 'l', render: (m) => { const [t, cls] = PST[m.situacao] || [m.situacao, '']; return h('span', { class: 'cf-st ' + cls }, t); } },
+        { key: 'acao', label: '', align: 'r', render: (m) => (m.situacao === 'mes_aberto' ? null : h('span', { onclick: (e) => e.stopPropagation() }, h('button', { type: 'button', class: 'cf-b' + (m.situacao === 'atrasado' || m.situacao === 'aguardando' ? ' cf-b-ok' : ''), onclick: () => lancarRoyalty(fid, acaoRoy, m.mes) }, '+ Lançar'))) },
+      ],
+      rows: fid.meses, sortKey: 'mes', pageSize: 12, cls: 'est-t', onRowClick: (m) => verMes(m, acaoRoy, fid),
+    }) : null;
+    return h('div', { class: 'card mt' },
+      h('div', { class: 'cfr-topo' }, h('div', null, h('div', { class: 'card-title' }, 'Prêmios de fidelidade · desconto nos royalties'),
+        h('div', { class: 'card-sub' }, `A franquia devolve ${fmt.int(fid.pct * 100)}% do custo dos prêmios resgatados no FIXE, como desconto no boleto de royalties (normalmente no royalty do mês seguinte). Lance o desconto que veio, com o mês de referência do royalty, e o painel confere.`)),
+        fid.meses.length ? h('button', { type: 'button', class: 'btn primary', onclick: () => lancarRoyalty(fid, acaoRoy) }, '+ Lançar desconto nos royalties') : null),
+      fid.meses.length ? h('div', { class: 'cfr-res' },
+        h('div', { class: r.nAtrasado ? 'ruim' : '' }, h('small', null, 'Atrasado'), h('b', null, fmt.brl(r.atrasado)), h('small', null, r.nAtrasado ? `${r.nAtrasado} mês(es) sem desconto` : 'nada atrasado')),
+        h('div', { class: r.nFaltou ? 'ruim' : '' }, h('small', null, 'Veio a menos'), h('b', null, fmt.brl(r.faltou)), h('small', null, r.nFaltou ? `${r.nFaltou} mês(es) com diferença` : 'nenhuma diferença')),
+        h('div', null, h('small', null, 'Aguardando'), h('b', null, fmt.brl(r.aguardando)), h('small', null, 'meses que ainda não venceram')),
+        h('div', null, h('small', null, 'Recebido'), h('b', null, fmt.brl(r.recebido)), h('small', null, 'lançado nos royalties'))) : null,
+      tab || h('p', { class: 'muted' }, 'Nenhum resgate de prêmio no FIXE desta loja ainda. Os resgates vêm da importação dos Logs do FIXE.'));
+  }
+
   function pintar(corpo, loja, d) {
     const r = d.resumo;
     const acao = async (b, msg) => {
       try { const nd = await api('POST', 'conta-franquia/acao', { loja, ...b }); if (msg) toast(msg); pintar(corpo, loja, nd); } catch (e) { toast(e.message, true); }
+    };
+    const acaoRoy = async (b, msg) => {
+      try { const nd = await api('POST', 'conta-franquia/royalties', { loja, ...b }); if (msg) toast(msg); pintar(corpo, loja, nd); return true; } catch (e) { toast(e.message, true); return false; }
     };
     const porId = new Map(d.creditos.map((c) => [c.id, c]));
     const abrirDev = (c) => { if (c.xml && TS.abrirNFe) TS.abrirNFe(c.id, loja); else toast('O XML desta NF-e ainda não chegou ao painel.', true); };
@@ -117,8 +210,10 @@
           h('div', { class: 'cfp-desc' }, h('small', null, 'Desconto'), h('b', null, fmt.brl(n.desconto)))),
         detalhe,
         h('div', { class: 'cfp-acoes' },
-          sug ? h('button', { type: 'button', class: 'cf-b cf-b-ok', title: 'Estas devoluções vieram nesta nota', onclick: () => acao({ tipo: 'confirmar', nota: n.id, creditos: n.creditos }, 'Confirmado.') }, '✓ Confirmar') : null,
-          h('button', { type: 'button', class: 'cf-b' + (sug ? '' : ' cf-b-ok'), onclick: () => ligar(n) }, sug ? 'Trocar' : 'Escolher devoluções'),
+          // posições fixas (botão principal · secundário · ⋯): ficam alinhados de nota para nota
+          sug ? h('button', { type: 'button', class: 'cf-b cf-b-ok cfp-b1', title: 'Estas devoluções vieram nesta nota', onclick: () => acao({ tipo: 'confirmar', nota: n.id, creditos: n.creditos }, 'Confirmado.') }, '✓ Confirmar')
+            : h('button', { type: 'button', class: 'cf-b cf-b-ok cfp-b1', onclick: () => ligar(n) }, 'Escolher devoluções'),
+          sug ? h('button', { type: 'button', class: 'cf-b cfp-b2', onclick: () => ligar(n) }, 'Trocar') : h('span', { class: 'cfp-b2' }),
           menuMais([...(sug ? [['✕ Recusar a sugestão', () => acao({ tipo: 'recusar', nota: n.id }, 'Sugestão recusada.'), 'As devoluções voltam a ficar em aberto para as próximas notas']] : []),
             ['Não é devolução (promoção, bonificação…)', naoEhDev(n)]])));
     };
@@ -176,6 +271,8 @@
       h('summary', null, h('b', null, `Notas de compra já resolvidas (${feitas.length})`), h('small', { class: 'muted' }, ' — desconto ligado às devoluções ou marcado como outra coisa')),
       h('div', { class: 'cff-lista' }, ...feitas.map(linhaFeita))) : null;
 
+    // ---------- 4) Prêmios de fidelidade: 50% do custo, como desconto nos royalties ----------
+    const cardPremios = premiosCard(d, loja, acaoRoy);
     corpo.replaceChildren(...[
       h('div', { class: 'grid g-kpi' },
         TS.kpi('A receber, atrasado', fmt.brl(r.atrasado), r.nAtrasado ? `${fmt.int(r.nAtrasado)} devolução(ões) há mais de ${d.prazo} dias` : 'nada atrasado'),
@@ -187,6 +284,7 @@
       h('div', { class: 'card mt' }, h('div', { class: 'card-title' }, 'Devoluções'),
         h('div', { class: 'card-sub' }, `Cada NF-e de devolução autorizada${variosForn ? '' : ` para ${d.creditos[0] ? d.creditos[0].fornecedor : 'a franquia'}`}. Sem desconto em ${d.prazo} dias = atrasada. Clique para abrir a NF-e.`),
         h('div', { class: 'est-tools' }, tab.searchBox, seg), tab),
+      cardPremios,
       cardFeitas].filter(Boolean));
   }
 })();

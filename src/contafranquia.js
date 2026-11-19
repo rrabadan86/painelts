@@ -21,7 +21,7 @@ const TOL = 0.06;            // diferença aceita por crédito (arredondamento d
 const MAX_COMB = 18;         // créditos em aberto testados por nota (combinações)
 
 const arq = (id) => path.join(C.pastaLoja(id), 'conta-franquia.json');
-const ler = (id) => { try { const j = JSON.parse(fs.readFileSync(arq(id), 'utf8')); return { manual: j.manual || {}, ignorar: j.ignorar || {}, recusar: j.recusar || {} }; } catch { return { manual: {}, ignorar: {}, recusar: {} }; } };
+const ler = (id) => { try { const j = JSON.parse(fs.readFileSync(arq(id), 'utf8')); return { manual: j.manual || {}, ignorar: j.ignorar || {}, recusar: j.recusar || {}, royalties: j.royalties || [] }; } catch { return { manual: {}, ignorar: {}, recusar: {}, royalties: [] }; } };
 const gravar = (id, d) => { fs.mkdirSync(C.pastaLoja(id), { recursive: true }); C.gravarAtomico(arq(id), JSON.stringify(d), 0o640); };
 const r2 = (v) => Math.round((Number(v) || 0) * 100) / 100;
 const dia = (iso) => String(iso || '').slice(0, 10);
@@ -187,4 +187,89 @@ function acao(id, b, por) {
   return { ok: true };
 }
 
-module.exports = { conta, acao, creditos, combinar, parcial, descontoDaNota, PRAZO_DIAS };
+// ---------- prêmios de fidelidade: a franquia devolve PCT_PREMIO do custo dos produtos resgatados, como desconto nos royalties ----------
+const PCT_PREMIO = 0.5;
+const YM = /^\d{4}-(0[1-9]|1[0-2])$/;
+const somaMes = (ym, k) => { const d = new Date(Date.UTC(+ym.slice(0, 4), +ym.slice(5, 7) - 1 + k, 1)); return d.toISOString().slice(0, 7); };
+const gramas = (nome) => { const m = /(\d+(?:[.,]\d+)?)\s*(G|GR|GRS|KG)\b/i.exec(String(nome || '')); if (!m) return null; const v = +m[1].replace(',', '.'); return /KG/i.test(m[2]) ? v * 1000 : v; };
+
+/**
+ * resgates do mês com o custo de cada produto: custo da última nota de compra antes do resgate; senão o custo do estoque.
+ * Chá a granel (kg): custo do kg × gramas do nome ("… 50G"). Produto que o painel não achou: custo null (aparece para conferir).
+ */
+function premios({ eventos, estoque, compras, codsDe }) {
+  const itens = (estoque && estoque.itens) || [];
+  const porCod = new Map(itens.map((i) => [String(i.cod), i]));
+  const hist = new Map(); // cod → [[data, custo]] das notas de compra
+  for (const n of compras || []) for (const i of n.itens || []) {
+    const k = String(i.cod); if (!hist.has(k)) hist.set(k, []);
+    hist.get(k).push([dia(n.entrada || n.emissao), i.custo]);
+  }
+  for (const l of hist.values()) l.sort((a, b) => a[0].localeCompare(b[0]));
+  const custoEm = (cod, data) => {
+    const l = hist.get(cod) || []; let c = null;
+    for (const [d, v] of l) { if (d <= data) c = v; else break; }
+    if (c == null) { const e = porCod.get(cod); c = e && e.custo != null ? e.custo : null; }
+    return c;
+  };
+  const meses = new Map();
+  for (const e of eventos || []) {
+    if (e.tipo !== 'resgate' || !e.data) continue;
+    const ym = e.data.slice(0, 7);
+    if (!meses.has(ym)) meses.set(ym, { mes: ym, resgates: [], custo: 0, semCusto: 0 });
+    const m = meses.get(ym);
+    const prods = (e.produtos || []).map((nome) => {
+      const cods = codsDe ? codsDe(nome) : [];
+      const cod = cods[0] || null, it = cod && porCod.get(cod);
+      let custo = cod ? custoEm(cod, e.data) : null;
+      if (custo != null && it && /^kg$/i.test(it.un || '')) { const g = gramas(nome); custo = g ? custo * g / 1000 : null; }
+      if (custo == null) m.semCusto++; else m.custo += custo;
+      return { nome, cod, custo: custo == null ? null : r2(custo) };
+    });
+    m.resgates.push({ data: e.data, pontos: e.pontos || 0, cliente: e.nome || '', produtos: prods });
+  }
+  return [...meses.values()].map((m) => ({ ...m, custo: r2(m.custo), devido: r2(m.custo * PCT_PREMIO) })).sort((a, b) => b.mes.localeCompare(a.mes));
+}
+
+/** os prêmios de cada mês × os descontos lançados nos royalties (cada lançamento diz o mês de referência do royalty) */
+function contaPremios(id, entrada, hoje = new Date().toISOString()) {
+  const m = ler(id);
+  const ms = premios(entrada);
+  const mesHoje = hoje.slice(0, 7);
+  const linhas = ms.map((x) => {
+    const lanc = m.royalties.filter((r) => r.premios === x.mes);
+    const recebido = r2(lanc.reduce((s, r) => s + r.valor, 0));
+    const dif = r2(x.devido - recebido);
+    // os prêmios do mês M vêm no royalty de M+1: depois do fim de M+1 sem desconto = atrasado
+    const situacao = x.mes >= mesHoje ? 'mes_aberto' : Math.abs(dif) <= 0.5 ? 'ok' : recebido > 0 ? (dif > 0 ? 'faltou' : 'veio_mais') : somaMes(x.mes, 1) < mesHoje ? 'atrasado' : 'aguardando';
+    return { ...x, lancamentos: lanc, recebido, diferenca: dif, situacao };
+  });
+  const soma = (f, k) => r2(linhas.filter(f).reduce((s, x) => s + x[k], 0));
+  return {
+    pct: PCT_PREMIO, meses: linhas,
+    resumo: {
+      atrasado: soma((x) => x.situacao === 'atrasado', 'devido'), nAtrasado: linhas.filter((x) => x.situacao === 'atrasado').length,
+      faltou: soma((x) => x.situacao === 'faltou', 'diferenca'), nFaltou: linhas.filter((x) => x.situacao === 'faltou').length,
+      aguardando: soma((x) => x.situacao === 'aguardando' || x.situacao === 'mes_aberto', 'devido'),
+      recebido: soma(() => true, 'recebido'),
+    },
+  };
+}
+
+/** lançar / apagar desconto nos royalties: { ref: mês do royalty (AAAA-MM), premios: mês dos prêmios, valor, obs } */
+function royalties(id, b, por) {
+  const m = ler(id);
+  if (b.tipo === 'apagar') {
+    m.royalties = m.royalties.filter((r) => r.id !== String(b.id || ''));
+  } else {
+    const valor = Math.round(Number(String(b.valor).replace(/\./g, '').replace(',', '.')) * 100) / 100;
+    if (!YM.test(String(b.ref || ''))) return { erro: 'Informe o mês de referência do royalty.' };
+    const premiosMes = YM.test(String(b.premios || '')) ? b.premios : somaMes(b.ref, -1);
+    if (!Number.isFinite(valor) || valor <= 0 || valor > 1e6) return { erro: 'Valor do desconto inválido.' };
+    m.royalties.push({ id: require('crypto').randomBytes(6).toString('hex'), ref: b.ref, premios: premiosMes, valor, obs: String(b.obs || '').replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, 200), por, em: new Date().toISOString() });
+  }
+  gravar(id, m);
+  return { ok: true };
+}
+
+module.exports = { premios, contaPremios, royalties, PCT_PREMIO, conta, acao, creditos, combinar, parcial, descontoDaNota, PRAZO_DIAS };

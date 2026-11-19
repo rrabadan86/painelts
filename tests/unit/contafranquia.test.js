@@ -68,3 +68,35 @@ test('conta: desconto da nota compensa as devoluções; o que sobra fica em aber
   assert.match(CF.acao('lj', { tipo: 'xyz' }, 'g').erro, /inválida/);
   fs.rmSync(tmp, { recursive: true, force: true });
 });
+
+test('prêmios de fidelidade: 50% do custo dos resgates do mês; desconto lançado no royalty de referência; atrasado/veio a menos', () => {
+  const tmp2 = fs.mkdtempSync(path.join(os.tmpdir(), 'cf2-'));
+  process.env.DATA_DIR = tmp2;
+  delete require.cache[require.resolve('../../src/config')]; delete require.cache[require.resolve('../../src/contafranquia')];
+  const CF2 = require('../../src/contafranquia');
+  const estoque = { itens: [{ cod: '1', desc: 'MEDIDA INOX', un: 'Un', custo: 20 }, { cod: '3', desc: 'ROOIBOS ORIGINAL', un: 'Kg', custo: 200 }] };
+  const compras = [{ entrada: '2026-08-01', itens: [{ cod: '1', custo: 16 }] }, { entrada: '2026-10-15', itens: [{ cod: '1', custo: 18 }] }];
+  const codsDe = (n) => (/medida/i.test(n) ? ['1'] : /rooibos/i.test(n) ? ['3'] : []);
+  const eventos = [
+    { tipo: 'resgate', data: '2026-09-10', produtos: ['Medida Inox'] },            // custo da nota de 01/08: 16
+    { tipo: 'resgate', data: '2026-09-20', produtos: ['Rooibos Original 50G'] },   // 200/kg × 50 g = 10
+    { tipo: 'resgate', data: '2026-10-20', produtos: ['Medida Inox', 'Xícara X'] }, // 18 + sem custo
+    { tipo: 'pontos', data: '2026-10-21', produtos: ['Medida Inox'] },
+  ];
+  const ent = { eventos, estoque, compras, codsDe };
+  const x = CF2.contaPremios('lf', ent, '2026-11-18T12:00:00Z');
+  const set = x.meses.find((m) => m.mes === '2026-09'), out = x.meses.find((m) => m.mes === '2026-10');
+  assert.deepEqual([set.custo, set.devido, set.situacao], [26, 13, 'atrasado']);
+  assert.deepEqual([out.custo, out.devido, out.semCusto, out.situacao], [18, 9, 1, 'aguardando']);
+  assert.match(CF2.royalties('lf', { ref: '2026-13', valor: '10' }, 'g').erro, /mês/);
+  assert.ok(CF2.royalties('lf', { ref: '2026-10', valor: '10,00', obs: 'boleto' }, 'g').ok); // prêmios = mês anterior (setembro)
+  const y = CF2.contaPremios('lf', ent, '2026-11-18T12:00:00Z');
+  const s2 = y.meses.find((m) => m.mes === '2026-09');
+  assert.deepEqual([s2.recebido, s2.diferenca, s2.situacao, s2.lancamentos[0].ref], [10, 3, 'faltou', '2026-10']);
+  assert.ok(CF2.royalties('lf', { ref: '2026-11', premios: '2026-09', valor: '3' }, 'g').ok);
+  assert.equal(CF2.contaPremios('lf', ent, '2026-11-18T12:00:00Z').meses.find((m) => m.mes === '2026-09').situacao, 'ok');
+  const id = CF2.contaPremios('lf', ent, '2026-11-18T12:00:00Z').meses.find((m) => m.mes === '2026-09').lancamentos[0].id;
+  assert.ok(CF2.royalties('lf', { tipo: 'apagar', id }, 'g').ok);
+  assert.equal(CF2.contaPremios('lf', ent, '2026-11-18T12:00:00Z').meses.find((m) => m.mes === '2026-09').recebido, 3);
+  fs.rmSync(tmp2, { recursive: true, force: true });
+});

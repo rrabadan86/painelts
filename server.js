@@ -501,9 +501,23 @@ app.get('/api/demo/conta-franquia', (req, res) => {
   const compras = [ent('e1', 19001, 70, 0), ent('e2', 19050, 55, 0), ent('e3', 19120, 22, 350), ent('e4', 19180, 8, 120)];
   const dev = (n, dias, valor, ref) => ({ chave: String(n).padStart(44, '4'), numero: n, serie: 1, emissao: d(dias), finalidade: 'Devolução', situacao: 'autorizada', valor, refs: [ref], dest: { nome: forn } });
   const saidas = [dev(512, 60, 200, compras[0].chave), dev(518, 48, 150, compras[1].chave), dev(531, 41, 60.9, compras[1].chave), dev(540, 12, 87.4, compras[2].chave)];
-  res.json(CFd.conta('__demo__', { saidas, compras, devsPainel: [] }));
+  const ym = (k) => { const x = new Date(); x.setUTCDate(1); x.setUTCMonth(x.getUTCMonth() - k); return x.toISOString().slice(0, 7); };
+  const estoqueD = { itens: [{ cod: '1', desc: 'MEDIDA INOX', un: 'Un', custo: 18.4 }, { cod: '2', desc: 'CANECA DE VIDRO DUPLO', un: 'Un', custo: 31.31 }, { cod: '3', desc: 'ROOIBOS ORIGINAL', un: 'Kg', custo: 210 }] };
+  const ev = [];
+  for (const [k, n] of [[3, 6], [2, 5], [1, 7], [0, 2]]) for (let i = 0; i < n; i++) ev.push({ tipo: 'resgate', data: `${ym(k)}-${String(3 + i * 3).padStart(2, '0')}`, pontos: 10, produtos: [['Medida Inox', 'Caneca De Vidro Duplo', 'Rooibos Original 50G'][i % 3]] });
+  const codsDe = (nome) => (/medida/i.test(nome) ? ['1'] : /caneca/i.test(nome) ? ['2'] : /rooibos/i.test(nome) ? ['3'] : []);
+  const fidelidade = CFd.contaPremios('__demo__', { eventos: ev, estoque: estoqueD, compras: [], codsDe });
+  // royalties de exemplo: o mês de 3 meses atrás veio certo; o de 2 meses atrás veio a menos
+  for (const x of fidelidade.meses) {
+    if (x.mes === ym(3)) Object.assign(x, { lancamentos: [{ id: 'd1', ref: ym(2), premios: x.mes, valor: x.devido, obs: 'boleto de royalties', por: 'apresentacao' }], recebido: x.devido, diferenca: 0, situacao: 'ok' });
+    if (x.mes === ym(2)) { const v = Math.round(x.devido * 70) / 100; Object.assign(x, { lancamentos: [{ id: 'd2', ref: ym(1), premios: x.mes, valor: v, obs: '', por: 'apresentacao' }], recebido: v, diferenca: Math.round((x.devido - v) * 100) / 100, situacao: 'faltou' }); }
+  }
+  { const ls = fidelidade.meses, soma = (f, k) => Math.round(ls.filter(f).reduce((a, x) => a + x[k], 0) * 100) / 100;
+    Object.assign(fidelidade.resumo, { atrasado: soma((x) => x.situacao === 'atrasado', 'devido'), nAtrasado: ls.filter((x) => x.situacao === 'atrasado').length, faltou: soma((x) => x.situacao === 'faltou', 'diferenca'), nFaltou: ls.filter((x) => x.situacao === 'faltou').length, recebido: soma(() => true, 'recebido') }); }
+  res.json({ ...CFd.conta('__demo__', { saidas, compras, devsPainel: [] }), fidelidade });
 });
 app.post('/api/demo/conta-franquia/acao', (req, res) => res.status(400).json({ erro: 'Na apresentação nada é salvo.' }));
+app.post('/api/demo/conta-franquia/royalties', (req, res) => res.status(400).json({ erro: 'Na apresentação nada é salvo.' }));
 app.get('/api/demo/nfsaida', (req, res) => { if (!lojaDemo(req)) return res.status(400).json({ erro: 'Escolha uma loja.' }); res.json({ notas: nfsDemo(req.query.loja).map(cabNfs), temXml: true }); });
 app.get('/api/demo/nfsaida/nota', (req, res) => { const n = lojaDemo(req) && nfsDemo(req.query.loja).find((x) => x.chave === req.query.chave); if (!n) return res.status(404).json({ erro: 'Nota não encontrada.' }); res.json(n); });
 app.get('/api/demo/nfsaida/danfe', (req, res) => { const n = lojaDemo(req) && nfsDemo(req.query.loja).find((x) => x.chave === req.query.chave); if (!n) return res.status(404).send('Nota não encontrada.'); res.set('X-Robots-Tag', 'noindex').type('html').send(NFSd.danfe(n)); });
@@ -1245,7 +1259,25 @@ const lojaCF = (req, res, corpo) => {
   if (!loja) { res.status(400).json({ erro: 'Escolha uma loja.' }); return null; }
   return loja;
 };
-const contaDaLoja = (loja) => CF.conta(loja.id, { saidas: NFS.lista(loja.id).notas, compras: (ES.notas(loja.id) || { notas: [] }).notas, devsPainel: DEV.lista(loja.id) });
+const premiosDaLoja = (loja, compras) => {
+  const FIn = require('./src/fidelidade'), ESPn = require('./src/espera');
+  const evs = FIn.eventos(loja.id) || [];
+  const proprios = FIn.nomesProprios(evs);
+  const estoque = ES.atual(loja.id);
+  return CF.contaPremios(loja.id, { eventos: evs.filter((e) => e.tipo === 'resgate' && (!e.loja || proprios.has(e.loja))), estoque, compras, codsDe: (nome) => ESPn.codsEstoque({ desc: nome }, estoque) });
+};
+const contaDaLoja = (loja) => {
+  const compras = (ES.notas(loja.id) || { notas: [] }).notas;
+  return { ...CF.conta(loja.id, { saidas: NFS.lista(loja.id).notas, compras, devsPainel: DEV.lista(loja.id) }), fidelidade: premiosDaLoja(loja, compras) };
+};
+app.post('/api/conta-franquia/royalties', express.json({ limit: '5kb' }), (req, res) => {
+  if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
+  const loja = lojaCF(req, res, true); if (!loja) return;
+  const r = CF.royalties(loja.id, req.body || {}, req.user);
+  if (r.erro) return res.status(400).json({ erro: r.erro });
+  C.auditar(req.user, req.body.tipo === 'apagar' ? 'apagou desconto nos royalties (fidelidade)' : 'lançou desconto nos royalties (fidelidade)', loja.id, { loja: loja.id, ref: req.body.ref || null, premios: req.body.premios || null, valor: req.body.valor || null });
+  res.json(contaDaLoja(loja));
+});
 app.get('/api/conta-franquia', (req, res) => { const loja = lojaCF(req, res); if (loja) res.json(contaDaLoja(loja)); });
 app.post('/api/conta-franquia/acao', express.json({ limit: '5kb' }), (req, res) => {
   if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });

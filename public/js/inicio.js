@@ -145,6 +145,8 @@
     const d = await r.json();
     const ir = { link: '#creditos', ir: 'ver créditos ›', antes: () => { state.cfFil = 'atrasado'; } };
     if (d.resumo.nAtrasado) lista.push({ nivel: 'warn', titulo: `Franquia: ${fmt.int(d.resumo.nAtrasado)} ${d.resumo.nAtrasado === 1 ? 'devolução sem desconto' : 'devoluções sem desconto'} há mais de ${d.prazo} dias · ${fmt.brl(d.resumo.atrasado)}`, texto: 'Nenhuma nota de compra trouxe esse desconto ainda. Cobre a franquia ou marque como compensado.', ...ir });
+    const fr = d.fidelidade && d.fidelidade.resumo;
+    if (fr && (fr.nAtrasado || fr.nFaltou)) lista.push({ nivel: 'warn', titulo: `Franquia: desconto dos prêmios de fidelidade ${fr.nAtrasado ? `atrasado em ${fr.nAtrasado} mês(es) (${fmt.brl(fr.atrasado)})` : ''}${fr.nAtrasado && fr.nFaltou ? ' e ' : ''}${fr.nFaltou ? `a menos em ${fr.nFaltou} mês(es) (${fmt.brl(fr.faltou)})` : ''}`, texto: 'Confira o boleto de royalties e lance o desconto que veio.', link: '#creditos', ir: 'ver ›' });
     if (d.resumo.conferir) lista.push({ nivel: 'info', titulo: `Franquia: ${fmt.int(d.resumo.conferir)} ${d.resumo.conferir === 1 ? 'nota de compra com desconto' : 'notas de compra com desconto'} para conferir`, texto: 'O desconto não fechou com as devoluções em aberto.', link: '#creditos', ir: 'conferir ›', antes: () => { state.cfFil = 'todos'; } });
   }
 
