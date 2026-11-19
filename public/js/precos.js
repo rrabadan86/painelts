@@ -563,7 +563,7 @@
       const cA = fixo + parte * it.antes, cD = fixo + parte * it.depois;
       const mA = (t.preco - cA) / t.preco, mD = (t.preco - cD) / t.preco;
       const sug = mA < 0.95 ? Math.ceil((cD / (1 - mA)) - 0.9) + 0.9 : null;
-      out.push({ cod: t.cod, desc: t.desc, preco: t.preco, item: it.nome, cA, cD, mA, mD, sug: sug && sug > t.preco ? sug : null });
+      out.push({ cod: t.cod, desc: t.desc, preco: t.preco, item: it.nome, itCod: String(it.cod), cA, cD, mA, mD, sug: sug && sug > t.preco ? sug : null });
     }
     return out.sort((a, b) => (a.mD - a.mA) - (b.mD - b.mA));
   }
@@ -610,9 +610,49 @@
       else box.append(h('span', { class: 'muted' }, '—'));
       return box;
     };
-    const tab = TS.table({
+    // margem menor por causa desta nota: { cod do item → produtos à venda afetados } (chega depois, com os custos)
+    let impPorItem = new Map(), soImpacto = false;
+    const celImpacto = (r) => {
+      const ps = impPorItem.get(String(r.cod));
+      if (!ps) return null;
+      // o próprio produto é o que se vende (acessório): a informação vai na linha
+      if (ps.length === 1 && String(ps[0].cod) === String(r.cod)) {
+        const x = ps[0];
+        return h('small', { class: 'nf-marg-info' }, `Margem ${fmt.pct(x.mA, 1)} → `, h('b', null, fmt.pct(x.mD, 1)), x.sug ? ` · p/ manter: ${fmt.brl(x.sug)}` : ' · o preço atual ainda mantém a margem');
+      }
+      // chá a granel e o que é feito com o item: os pacotes numa janela
+      return h('button', { type: 'button', class: 'nf-marg-info nf-marg-btn', onclick: (e) => { e.stopPropagation(); abrirPacotes(r, ps); } },
+        `Margem menor em ${ps.length} ${ps.length === 1 ? (r.un && unTxt(r.un) === 'kg' ? 'pacote' : 'produto') : (r.un && unTxt(r.un) === 'kg' ? 'pacotes' : 'produtos')} · ver ›`);
+    };
+    const abrirPacotes = (r, ps) => {
+      document.querySelector('.prc-popup-camada')?.remove();
+      const fecharP = () => { cam.remove(); document.removeEventListener('keydown', escP, true); };
+      const escP = (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); fecharP(); } };
+      const lista = [...ps].sort((a, b) => a.preco - b.preco);
+      const pop = h('aside', { class: 'card prc-popup nf-marg-pop', role: 'dialog', 'aria-modal': 'true', 'aria-label': `Margem de ${r.nome}` },
+        h('button', { type: 'button', class: 'icon-btn exp-fechar', title: 'Fechar (Esc)', 'aria-label': 'Fechar', onclick: fecharP }, '✕'),
+        h('div', { class: 'card-title' }, r.nome),
+        h('div', { class: 'card-sub' }, `Custo ${r.antes != null ? fmt.brl(r.antes) + ' → ' : ''}${fmt.brl(r.custo)}${r.varC != null ? ' (' + pctTxt(r.varC) + ')' : ''}. Produtos à venda feitos com este item:`),
+        TS.table({
+          cols: [
+            { key: 'desc', label: 'Produto à venda', align: 'l', wrap: true },
+            { key: 'preco', label: 'Preço atual', fmt: fmt.brl },
+            { key: 'cD', label: 'Custo agora', render: (x) => h('span', null, fmt.brl(x.cD), h('small', { class: 'est-tam' }, `antes ${fmt.brl(x.cA)}`)), sortVal: (x) => x.cD },
+            { key: 'mD', label: 'Margem bruta', render: (x) => h('span', null, h('b', { class: x.mD < x.mA - 0.02 ? 'neg' : '' }, fmt.pct(x.mD, 1)), h('small', { class: 'est-tam' }, `era ${fmt.pct(x.mA, 1)}`)), sortVal: (x) => x.mD - x.mA },
+            { key: 'sug', label: 'Preço p/ manter a margem', render: (x) => (x.sug ? h('b', null, fmt.brl(x.sug)) : h('span', { class: 'muted' }, 'já mantém')), sortVal: (x) => x.sug || 0 },
+          ],
+          rows: lista, sortKey: 'preco', sortDir: 'asc', cls: 'est-t',
+        }),
+        h('small', { class: 'muted' }, 'Preço da tabela de preço do AppNext. "Preço p/ manter a margem" = custo novo ÷ (1 − margem de antes), arredondado para ,90. Mude o preço no AppNext se fizer sentido.'));
+      const cam = h('div', { class: 'prc-popup-camada', onmousedown: (e) => { if (e.target === cam) fecharP(); } }, pop);
+      document.body.append(cam);
+      document.addEventListener('keydown', escP, true);
+    };
+    const tabBox = h('div');
+    const montarTab = () => tabBox.replaceChildren(TS.table({
+      rowClass: (r) => (impPorItem.has(String(r.cod)) ? 'nf-marg' : ''),
       cols: [
-        { key: 'nome', label: 'Produto', align: 'l', sticky: true, wrap: true, render: (r) => h('span', null, r.nome, h('small', { class: 'est-tam' }, `cód. ${r.cod}${r.grupo ? ' · ' + r.grupo : ''}`)) },
+        { key: 'nome', label: 'Produto', align: 'l', sticky: true, wrap: true, render: (r) => h('span', null, r.nome, h('small', { class: 'est-tam' }, `cód. ${r.cod}${r.grupo ? ' · ' + r.grupo : ''}`), celImpacto(r)) },
         { key: 'qtd', label: 'Qtd', render: (r) => `${unTxt(r.un) === 'kg' ? fmt.kg(r.qtd) : fmt.n2(r.qtd).replace(/,00$/, '')} ${unTxt(r.un)}` },
         { key: 'vu', label: 'Valor unit. (nota)', title: 'Valor unitário escrito na nota (sem IPI e rateios)', fmt: (v) => (v == null ? '—' : fmt.brl(v)) },
         { key: 'custo', label: 'Custo unit.', title: 'Valor líquido do item ÷ quantidade (com IPI e rateios): é o "custo último" que o AppNext usa', fmt: fmt.brl },
@@ -621,29 +661,31 @@
         { key: 'varC', label: 'Custo antes', title: 'Custo do mesmo produto antes desta nota (entrada anterior ou importação de estoque) e a variação', render: (r) => (r.antes == null ? h('span', { class: 'muted' }, 'primeira entrada') : h('div', { class: 'prc-v', title: r.origemAntes }, h('span', null, fmt.brl(r.antes)), r.varC != null && Math.abs(r.varC) >= 0.0005 ? h('span', { class: 'prc-badge ' + (r.varC > 0 ? 'prc-ruim' : 'prc-bom') }, pctTxt(r.varC)) : h('span', { class: 'muted' }, 'igual'))), sortVal: (r) => r.varC ?? -99 },
         ...(temGranel ? [{ key: 'lote', label: 'Lote · validade', align: 'l', title: 'Chá a granel: digite o nº do lote do pacote. A validade vem com 12 meses da entrada; corrija se o pacote disser outra data. Salva sozinho.', render: celLote, sortVal: (r) => (lotesNota && lotesNota.porCod.has(String(r.cod)) ? (lotesNota.porCod.get(String(r.cod)).some((x) => x.lote === '0') ? 0 : 1) : 2) }] : []),
       ],
-      rows: linhas, sortKey: 'total', maxHeight: '60vh', search: 'Buscar produto…', searchKeys: ['nome', 'cod'], cls: 'est-t',
+      rows: soImpacto ? linhas.filter((r) => impPorItem.has(String(r.cod))) : linhas, sortKey: 'total', maxHeight: '60vh', search: 'Buscar produto…', searchKeys: ['nome', 'cod'], cls: 'est-t',
       total: { nome: `${fmt.int(linhas.length)} itens`, total: linhas.reduce((a, r) => a + r.total, 0), ...(n.itens.some((i) => i.desc > 0.005) ? { desc: linhas.reduce((a, r) => a + (r.desc || 0), 0) } : {}) },
-    });
+    }));
+    montarTab();
     const subiu = linhas.filter((r) => r.varC != null && r.varC > 0.0005).length, desceu = linhas.filter((r) => r.varC != null && r.varC < -0.0005).length;
     // preço de venda × custo novo (admin e franqueado): margem antes e agora e o preço que mantém a margem
     const blocoImpacto = h('div');
     if (subiu && TS.custosLoja) TS.custosLoja().then((M) => {
       const imp = impactoCusto(M, D.tabela, linhas.map((r) => ({ cod: r.cod, nome: r.nome, antes: r.antes, depois: r.custo })));
       if (!imp.length || !blocoImpacto.isConnected) return;
-      const tabI = TS.table({
-        cols: [
-          { key: 'desc', label: 'Produto à venda', align: 'l', wrap: true, render: (x) => h('span', null, x.desc, h('small', { class: 'est-tam' }, `feito com ${x.item}`)) },
-          { key: 'preco', label: 'Preço atual', fmt: fmt.brl },
-          { key: 'cD', label: 'Custo agora', render: (x) => h('span', null, fmt.brl(x.cD), h('small', { class: 'est-tam' }, `antes ${fmt.brl(x.cA)}`)), sortVal: (x) => x.cD },
-          { key: 'mD', label: 'Margem bruta', render: (x) => h('span', null, h('b', { class: x.mD < x.mA - 0.02 ? 'neg' : '' }, fmt.pct(x.mD, 1)), h('small', { class: 'est-tam' }, `era ${fmt.pct(x.mA, 1)}`)), sortVal: (x) => x.mD - x.mA },
-          { key: 'sug', label: 'Preço p/ manter a margem', render: (x) => (x.sug ? h('b', null, fmt.brl(x.sug)) : h('span', { class: 'muted' }, '—')), sortVal: (x) => x.sug || 0 },
-        ],
-        rows: imp, sortKey: 'mD', sortDir: 'asc', maxHeight: '40vh', cls: 'est-t',
-      });
+      impPorItem = new Map();
+      for (const x of imp) { if (!impPorItem.has(x.itCod)) impPorItem.set(x.itCod, []); impPorItem.get(x.itCod).push(x); }
+      // a mesma linha pode vir repetida na nota: a conta é uma vez por produto
+      const nItens = linhas.filter((r, k) => impPorItem.has(String(r.cod)) && linhas.findIndex((y) => String(y.cod) === String(r.cod)) === k).length;
+      const btSo = h('button', { type: 'button', class: 'btn nf-marg-filtro' });
+      const pintarBt = () => { btSo.textContent = soImpacto ? 'Mostrar todos os produtos' : 'Mostrar só esses'; };
+      btSo.addEventListener('click', () => { soImpacto = !soImpacto; pintarBt(); montarTab(); });
+      pintarBt();
       blocoImpacto.replaceChildren(h('div', { class: 'nf-impacto' },
-        h('div', { class: 'f-label mt' }, `⚠ O custo subiu: ${imp.length} ${imp.length === 1 ? 'produto à venda ficou' : 'produtos à venda ficaram'} com margem menor`),
-        h('small', { class: 'muted' }, 'Preço da tabela de preço do AppNext. "Preço p/ manter a margem" = custo novo ÷ (1 − margem de antes), arredondado para ,90. Mude o preço no AppNext se fizer sentido.'),
-        tabI));
+        h('div', { class: 'nf-impacto-l' },
+          h('div', null,
+            h('div', { class: 'f-label' }, `⚠ O custo subiu: ${imp.length} ${imp.length === 1 ? 'produto à venda ficou' : 'produtos à venda ficaram'} com margem menor`),
+            h('small', { class: 'muted' }, `Em amarelo na lista abaixo (${fmt.int(nItens)} ${nItens === 1 ? 'item da nota' : 'itens da nota'}). Nos chás, toque em "ver" para os pacotes.`)),
+          btSo)));
+      montarTab();
     }).catch(() => null);
     const vinculadas = saidasDeNota(j, n);
     const card = h('aside', { class: 'card prc-drawer prc-drawer-largo', role: 'dialog', 'aria-modal': 'true', 'aria-label': `Nota ${n.nfTxt}` },
@@ -659,7 +701,7 @@
       TS.devolucao && !TS.demo ? TS.devolucao.barra(n, () => card, aoMudar) : null,
       blocoImpacto,
       h('div', { class: 'f-label mt' }, 'Produtos da nota', temGranel ? h('span', null, ' ', faltaLote) : null, h('button', { type: 'button', class: 'exp-btn prt-btn prc-nf-prt', title: 'Imprimir a nota', onclick: () => TS.imprimir(card) }, '🖨', h('span', null, 'Imprimir'))),
-      tab);
+      tabBox);
     if (temGranel) TS.validade.lotesDaNota(D.loja, n, aoSalvarLote).then((ln) => {
       lotesNota = ln;
       contarLotes();

@@ -2425,7 +2425,19 @@ details.vl-ajuda summary { cursor: pointer; font-weight: 600; }
 .orc-doc-t td { padding: 6px 8px; border-bottom: 1px solid #e6e0d2; }
 .orc-doc-t .tot td { font-weight: 700; font-size: 15px; background: #e8efe7; }
 .orc-doc-cond { margin-top: 14px; display: flex; flex-direction: column; gap: 4px; }
-.nf-impacto { border: 1px solid #f0c9a8; background: #fff8f1; border-radius: 10px; padding: 8px 12px 12px; margin-top: 10px; } .nf-impacto .f-label { margin-top: 0; color: #9a4a12; }
+.nf-impacto { border: 1px solid #f0c9a8; background: #fff8f1; border-radius: 10px; padding: 10px 12px; margin-top: 10px; } .nf-impacto .f-label { margin-top: 0; color: #9a4a12; }
+.nf-impacto-l { display: flex; align-items: center; gap: 12px; justify-content: space-between; flex-wrap: wrap; }
+.nf-impacto-l > div { flex: 1 1 260px; min-width: 0; }
+.nf-marg-filtro { flex: 0 0 auto; }
+/* item da nota cujo custo novo baixou a margem de produto à venda: fundo amarelo */
+.t tbody tr.nf-marg td, .t tbody tr.nf-marg:hover td { background: #FFF6CC; }
+.t.t-mob tr.nf-marg { background: #FFF6CC; border-color: #EBCB5B; }
+.t.t-mob tr.nf-marg td { background: transparent; }
+.nf-marg-info { display: block; margin-top: 4px; font-size: 12px; font-weight: 400; color: #7A5A00; line-height: 1.35; white-space: normal; }
+.nf-marg-info b { color: var(--bad); }
+.nf-marg-btn { background: none; border: 0; padding: 0; cursor: pointer; text-align: left; text-decoration: underline; text-underline-offset: 2px; font: inherit; font-size: 12px; color: #7A5A00; }
+.nf-marg-pop .card-sub { margin-bottom: 10px; padding-right: 44px; }
+.nf-marg-pop > small { display: block; margin-top: 10px; }
 /* Hoje: meta do dia */
 .md-card { margin-bottom: 12px; }
 .md-topo { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }

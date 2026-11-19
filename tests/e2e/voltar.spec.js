@@ -226,3 +226,34 @@ test('Orçamento: o cliente sai da base de clientes (nome ou CPF/CNPJ)', async (
   await expect(page.locator('.cfr-campo', { hasText: 'CNPJ / CPF' }).locator('input')).not.toHaveValue('');
   await expect(page.locator('.orc-cli-info')).toContainText('Cliente da base');
 });
+
+test('Nota de entrada: custo que baixou a margem fica em amarelo na lista; chá abre os pacotes numa janela', async ({ page }) => {
+  await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS.db);
+  await page.evaluate(() => { location.hash = '#notas'; });
+  const links = page.locator('a.prc-nome');
+  await expect(links.first()).toBeVisible();
+  // acha uma nota fictícia em que o custo subiu
+  let achou = false;
+  for (let k = 0; k < Math.min(await links.count(), 30) && !achou; k++) {
+    await page.evaluate(() => document.querySelector('.prc-drawer-camada')?.remove());
+    await links.nth(k).evaluate((a) => a.click());
+    achou = await page.locator('.nf-impacto').waitFor({ timeout: 2500 }).then(() => true, () => false);
+  }
+  expect(achou).toBe(true);
+  const aviso = page.locator('.nf-impacto');
+  await expect(aviso).toContainText('O custo subiu');
+  await expect(aviso.locator('table')).toHaveCount(0); // só o aviso no topo; os produtos ficam na lista da nota
+  await expect(page.locator('tr.nf-marg')).not.toHaveCount(0);
+  await aviso.getByRole('button', { name: 'Mostrar só esses' }).click();
+  await expect(page.locator('.prc-drawer tbody tr:not(.nf-marg)')).toHaveCount(0);
+  await aviso.getByRole('button', { name: 'Mostrar todos os produtos' }).click();
+  const ver = page.locator('.nf-marg-btn').first();
+  if (await ver.count()) {
+    await ver.evaluate((b) => b.click());
+    const pop = page.locator('.nf-marg-pop');
+    await expect(pop).toContainText('Preço p/ manter a margem');
+    await page.keyboard.press('Escape');
+    await expect(pop).toHaveCount(0);
+    await expect(page.locator('.prc-drawer')).toBeVisible(); // o Esc fecha só a janela dos pacotes
+  }
+});
