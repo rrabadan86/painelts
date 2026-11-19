@@ -290,7 +290,45 @@
   function abrirFormParceiro(loja, aoPedir) {
     const v = { tipo: 'PJ', tipoIe: '9', crt: '1' };
     const campo = (rot, el, dica) => h('label', { class: 'nfe-campo np-campo' }, h('span', null, rot, dica ? TS.dica(dica) : null), el);
-    const inp = (k, ph, extra = {}) => { const i = h('input', { class: 'f-input', placeholder: ph || '', autocomplete: 'off', ...extra }); i.addEventListener('input', () => { v[k] = i.value; }); return i; };
+    const els = {};
+    const inp = (k, ph, extra = {}) => { const i = h('input', { class: 'f-input', placeholder: ph || '', autocomplete: 'off', value: v[k] || '', ...extra }); i.addEventListener('input', () => { v[k] = i.value; }); els[k] = i; return i; };
+    // preenche só o que ainda está vazio (não apaga o que a pessoa digitou)
+    const por = (k, val) => { if (!val || String(v[k] || '').trim()) return; v[k] = val; if (els[k]) els[k].value = val; };
+    // CNPJ completo: busca na Receita (BrasilAPI) e preenche razão social, nome fantasia, CEP, número, telefone
+    const infoCnpj = h('small', { class: 'np-consulta muted' });
+    let ultimoCnpj = '';
+    const consultarCnpj = async () => {
+      const d = String(v.doc || '').toUpperCase().replace(/[^0-9A-Z]/g, '');
+      if (v.tipo !== 'PJ' || !TS.brasil.pareceCnpj(d) || d === ultimoCnpj) return;
+      ultimoCnpj = d;
+      infoCnpj.className = 'np-consulta muted'; infoCnpj.textContent = 'Consultando o CNPJ na Receita…';
+      try {
+        const e = await TS.brasil.cnpj(d);
+        if (d !== ultimoCnpj) return;
+        if (!e) { infoCnpj.className = 'np-consulta neg'; infoCnpj.textContent = 'CNPJ não encontrado na Receita: confira os números.'; return; }
+        por('razaoSocial', e.razaoSocial); por('nomeFantasia', e.nomeFantasia); por('cep', e.cep); por('numero', e.numero); por('complemento', e.complemento); por('telefone', e.telefone);
+        infoCnpj.className = 'np-consulta ' + (e.ativa ? 'pos' : 'neg');
+        infoCnpj.textContent = (e.ativa ? '✓ Achado na Receita (ativa) · ' : `Atenção: na Receita a empresa está ${String(e.situacao || 'sem situação').toLowerCase()} · `) + TS.brasil.enderecoTxt(e);
+        if (e.cep) consultarCep();
+      } catch (err) { infoCnpj.className = 'np-consulta muted'; infoCnpj.textContent = err.message; ultimoCnpj = ''; }
+    };
+    // CEP completo: mostra rua, bairro e cidade para conferir (o AppNext preenche o endereço pelo CEP)
+    const infoCep = h('small', { class: 'np-consulta muted' });
+    let ultimoCep = '';
+    const consultarCep = async () => {
+      const c = String(v.cep || '').replace(/\D/g, '');
+      if (c.length !== 8) { if (!c) infoCep.textContent = ''; return; }
+      if (c === ultimoCep) return;
+      ultimoCep = c;
+      infoCep.className = 'np-consulta muted'; infoCep.textContent = 'Buscando o endereço…';
+      try {
+        const e = await TS.brasil.cep(c);
+        if (c !== ultimoCep) return;
+        infoCep.className = 'np-consulta ' + (e ? 'pos' : 'neg');
+        infoCep.textContent = e ? TS.brasil.enderecoTxt(e) : 'CEP não encontrado: confira os números.';
+      } catch (err) { infoCep.className = 'np-consulta muted'; infoCep.textContent = err.message; ultimoCep = ''; }
+    };
+    let tCnpj = null, tCep = null;
     const corpoTipo = h('div', { class: 'np-grade' });
     const pintarTipo = () => {
       if (v.tipo === 'PJ') {
@@ -300,7 +338,9 @@
         ie.addEventListener('change', () => { v.tipoIe = ie.value; ieBox.hidden = v.tipoIe !== '1'; });
         const crt = h('select', { class: 'f-input' }, [['1', 'Simples Nacional'], ['2', 'Simples Nacional - excesso de sublimite'], ['3', 'Regime Normal'], ['4', 'Simples Nacional - MEI']].map(([c, t]) => h('option', { value: c, selected: v.crt === c || null }, t)));
         crt.addEventListener('change', () => { v.crt = crt.value; });
-        corpoTipo.replaceChildren(campo('CNPJ', inp('doc', '00.000.000/0000-00', { inputmode: 'numeric' })), campo('Razão social', inp('razaoSocial', '')),
+        const docEl = inp('doc', '00.000.000/0000-00', { inputmode: 'numeric' });
+        docEl.addEventListener('input', () => { clearTimeout(tCnpj); tCnpj = setTimeout(consultarCnpj, 400); });
+        corpoTipo.replaceChildren(h('div', { class: 'np-campo-cheio' }, campo('CNPJ', docEl, 'Com o CNPJ completo, o painel busca na Receita e preenche o que estiver vazio.'), infoCnpj), campo('Razão social', inp('razaoSocial', '')),
           campo('Nome fantasia', inp('nomeFantasia', 'se vazio, a razão social')), campo('Situação no ICMS', ie), ieBox, campo('Regime tributário', crt),
           campo('Inscrição municipal', inp('im', 'opcional')));
       } else {
@@ -308,7 +348,7 @@
           campo('Data de nascimento', inp('nascimento', 'DD/MM/AAAA', { inputmode: 'numeric', maxlength: 10 }), 'O AppNext exige a data de nascimento para pessoa física.'), campo('Apelido', inp('apelido', 'se vazio, o primeiro nome')));
       }
     };
-    const tipoSeg = TS.seg([['Empresa (CNPJ)', 'PJ'], ['Pessoa física (CPF)', 'PF']], v.tipo, (t) => { for (const k of ['doc', 'nome', 'apelido', 'nascimento', 'razaoSocial', 'nomeFantasia', 'ie', 'im']) delete v[k]; v.tipo = t; tipoSeg.querySelectorAll('button').forEach((b, k) => b.classList.toggle('on', (k === 0 ? 'PJ' : 'PF') === t)); pintarTipo(); });
+    const tipoSeg = TS.seg([['Empresa (CNPJ)', 'PJ'], ['Pessoa física (CPF)', 'PF']], v.tipo, (t) => { for (const k of ['doc', 'nome', 'apelido', 'nascimento', 'razaoSocial', 'nomeFantasia', 'ie', 'im']) delete v[k]; v.tipo = t; ultimoCnpj = ''; infoCnpj.textContent = ''; tipoSeg.querySelectorAll('button').forEach((b, k) => b.classList.toggle('on', (k === 0 ? 'PJ' : 'PF') === t)); pintarTipo(); });
     pintarTipo();
     const msg = h('div', { class: 'muted' });
     const fundo = h('div', { class: 'cp-modal-bg' });
@@ -329,7 +369,8 @@
       h('h3', null, 'Cadastrar parceiro novo no AppNext'),
       h('p', { class: 'muted' }, 'O robô preenche Parceiros → Cadastrar no AppNext e salva. Rua, bairro, cidade e UF vêm do CEP. Entra no grupo "Clientes". Depois ele já aparece na nota.'),
       tipoSeg, corpoTipo,
-      h('div', { class: 'np-grade' }, campo('Telefone', inp('telefone', 'DDD + número (opcional)', { inputmode: 'tel' })), campo('CEP', inp('cep', '00000-000', { inputmode: 'numeric' })),
+      h('div', { class: 'np-grade' }, campo('Telefone', inp('telefone', 'DDD + número (opcional)', { inputmode: 'tel' })),
+        h('div', { class: 'np-campo-cheio' }, campo('CEP', (() => { const c = inp('cep', '00000-000', { inputmode: 'numeric' }); c.addEventListener('input', () => { clearTimeout(tCep); tCep = setTimeout(consultarCep, 400); }); return c; })()), infoCep),
         campo('Número', inp('numero', 'S/N se não tiver')), campo('Complemento', inp('complemento', 'opcional'))),
       msg,
       h('div', { class: 'cp-acoes' }, h('button', { type: 'button', class: 'btn', title: 'O robô preenche e confere, mas não salva', onclick: () => mandar(true) }, 'Testar sem salvar'), h('span', { style: { flex: 1 } }),

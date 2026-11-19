@@ -7,6 +7,7 @@ const crypto = require('crypto');
 const zlib = require('zlib');
 const { promisify } = require('util');
 const gzipAsync = promisify(zlib.gzip);
+const BR = require('./src/brasilapi');
 const brotliAsync = promisify(zlib.brotliCompress);
 const express = require('express');
 const compression = require('compression');
@@ -450,6 +451,17 @@ app.post('/api/demo/ia/diagnostico', express.json({ limit: '150kb' }), (req, res
 app.post('/api/demo/ia/pedido', express.json({ limit: '200kb' }), (req, res) => {
   const j = IAd.simular({ messages: [{ role: 'user', content: 'Dados: ' + JSON.stringify((req.body && req.body.dados) || {}) }], tool_choice: { type: 'tool', name: 'revisar_pedido' } });
   res.json({ revisao: j.content[0].input, simulada: true });
+});
+// consulta de CNPJ/CEP na apresentação: dados fictícios (nada sai para a internet)
+app.get('/api/demo/brasil/cnpj/:doc', (req, res) => {
+  if (!BR.cnpjValido(req.params.doc)) return res.status(400).json({ erro: 'CNPJ inválido: confira os números.' });
+  res.json({ empresa: { cnpj: BR.limparCnpj(req.params.doc), razaoSocial: 'EMPÓRIO EXEMPLO COMÉRCIO DE PRESENTES LTDA', nomeFantasia: 'Empório Exemplo', situacao: 'ATIVA', ativa: true,
+    cep: '01310100', rua: 'Avenida Paulista', numero: '1000', complemento: 'Loja 2', bairro: 'Bela Vista', cidade: 'São Paulo', uf: 'SP', telefone: '1130000000', email: 'contato@exemplo.com.br' }, demo: true });
+});
+app.get('/api/demo/brasil/cep/:cep', (req, res) => {
+  const c = String(req.params.cep).replace(/\D/g, '');
+  if (c.length !== 8) return res.status(400).json({ erro: 'CEP inválido: são 8 números.' });
+  res.json({ endereco: { cep: c, rua: 'Rua de Exemplo', bairro: 'Centro', cidade: 'São Paulo', uf: 'SP' }, demo: true });
 });
 const ESd = require('./src/estoque'), PEDd = require('./src/pedido');
 const lojaDemo = (req) => DEMO.lojasDemo().find((l) => l.id === String(req.query.loja || ''));
@@ -1255,6 +1267,20 @@ app.post('/api/nfe/emitir', express.json({ limit: '2kb' }), async (req, res) => 
   res.json({ ok: true, rascunho: r.ok });
 });
 // parceiro novo: o robô cadastra em Parceiros → Cadastrar do AppNext (só com o clique e a confirmação de quem pediu)
+// consulta pública de CNPJ e CEP (BrasilAPI) para preencher parceiro e cliente do orçamento; vendedora não usa
+async function consultaBR(req, res, fn, chaveResp) {
+  if (req.perfil === 'vendedor') return res.status(403).json({ erro: 'Sem permissão.' });
+  if (tooMany('br:' + req.user, 60)) return res.status(429).json({ erro: 'Muitas consultas em pouco tempo. Espere alguns minutos.' });
+  falhou('br:' + req.user);
+  try {
+    const r = await fn();
+    if (!r) return res.status(404).json({ erro: chaveResp === 'empresa' ? 'CNPJ não encontrado na Receita.' : 'CEP não encontrado.' });
+    res.json({ [chaveResp]: r });
+  } catch (e) { res.status(e instanceof BR.ErroBR ? e.status : 502).json({ erro: e instanceof BR.ErroBR ? e.message : 'Falha na consulta.' }); }
+}
+app.get('/api/brasil/cnpj/:doc', (req, res) => consultaBR(req, res, () => BR.cnpj(req.params.doc), 'empresa'));
+app.get('/api/brasil/cep/:cep', (req, res) => consultaBR(req, res, () => BR.cep(req.params.cep), 'endereco'));
+
 app.post('/api/nfe/parceiro', express.json({ limit: '4kb' }), async (req, res) => {
   const loja = lojaNfe(req, res); if (!loja) return;
   if (!COL.ativo()) return res.status(400).json({ erro: 'O coletor não está ligado nesta VPS.' });

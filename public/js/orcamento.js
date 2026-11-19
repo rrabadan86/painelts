@@ -174,9 +174,30 @@
       o.cliente.cpf = x.cpf || String(x.doc || '').replace(/\D/g, '');
       pintarInfo();
     };
+    // CNPJ completo de empresa que não está na base: dados públicos da Receita (BrasilAPI) preenchem o que estiver vazio
+    const infoRec = h('div', { class: 'orc-rec-info np-consulta' });
+    let ultimoCnpj = '';
+    const consultarCnpj = async () => {
+      const d = String(o.cliente.doc || '').toUpperCase().replace(/[^0-9A-Z]/g, '');
+      if (travado || !TS.brasil.pareceCnpj(d) || d === ultimoCnpj) return;
+      ultimoCnpj = d;
+      infoRec.className = 'orc-rec-info np-consulta muted'; infoRec.textContent = 'Consultando o CNPJ na Receita…';
+      try {
+        const e = await TS.brasil.cnpj(d);
+        if (d !== ultimoCnpj) return;
+        if (!e) { infoRec.className = 'orc-rec-info np-consulta neg'; infoRec.textContent = 'CNPJ não encontrado na Receita: confira os números.'; return; }
+        const por = (k, val) => { if (!val || String(o.cliente[k] || '').trim()) return; o.cliente[k] = val; if (campos[k]) campos[k].value = val; };
+        por('empresa', e.razaoSocial); por('telefone', telFmt(e.telefone)); por('email', e.email);
+        if (!o.cliente.cpf) o.cliente.cpf = d;
+        infoRec.className = 'orc-rec-info np-consulta ' + (e.ativa ? 'pos' : 'neg');
+        infoRec.textContent = (e.ativa ? '✓ Receita: empresa ativa' : `Atenção: na Receita a empresa está ${String(e.situacao || 'sem situação').toLowerCase()}`) + (e.nomeFantasia ? ` · ${e.nomeFantasia}` : '') + ` · ${TS.brasil.enderecoTxt(e)}`;
+      } catch (err) { infoRec.className = 'orc-rec-info np-consulta muted'; infoRec.textContent = err.message; ultimoCnpj = ''; }
+    };
+    let tCnpj = null;
     const autoCli = (k, attrs) => {
       const el = inp(o.cliente, k, attrs);
       campos[k] = el;
+      if (k === 'doc') el.addEventListener('input', () => { clearTimeout(tCnpj); tCnpj = setTimeout(consultarCnpj, 500); });
       const box = h('div', { class: 'orc-sugs orc-cli-sugs' });
       let t = null;
       el.addEventListener('input', () => {
@@ -316,11 +337,11 @@
       h('div', { class: 'orc-grade mt' },
         h('div', null,
           h('div', { class: 'card' }, h('div', { class: 'card-title' }, 'Cliente'),
-            h('small', { class: 'muted' }, 'Digite o nome, o CNPJ ou o CPF: o painel procura na base de clientes e nos orçamentos anteriores.'),
+            h('small', { class: 'muted' }, 'Digite o nome, o CNPJ ou o CPF: o painel procura na base de clientes e nos orçamentos anteriores. Com um CNPJ novo, busca os dados da empresa na Receita.'),
             h('div', { class: 'cfr-grade' }, campo('Empresa', autoCli('empresa', { placeholder: 'Razão social ou nome' })), campo('CNPJ / CPF', autoCli('doc', { inputmode: 'numeric' })),
               campo('Contato', autoCli('contato', { placeholder: 'Quem pediu' })), campo('Telefone / WhatsApp', (campos.telefone = inp(o.cliente, 'telefone', { inputmode: 'tel' }))),
               campo('E-mail', (campos.email = inp(o.cliente, 'email', { type: 'email' }))), campo('Título (opcional)', inp(o, 'titulo', { placeholder: 'Ex.: kits de fim de ano' }))),
-            infoCli),
+            infoCli, infoRec),
           h('div', { class: 'card mt' }, h('div', { class: 'card-title' }, 'Produtos'),
             travado ? null : h('div', { class: 'orc-busca' }, busca, sugs), linhasBox),
           h('div', { class: 'card mt' }, h('div', { class: 'card-title' }, 'Condições'),

@@ -543,6 +543,22 @@
   TS.axisNum = (f) => ({ ticks: { callback: (v) => f(v) }, grid: { color: '#EEE9DF' }, border: { display: false } });
   TS.axisCat = { grid: { display: false }, border: { display: false } };
   TS.color = (i) => PALETA[i % PALETA.length];
+  /** consulta pública (BrasilAPI, pelo servidor): dados da empresa pelo CNPJ e endereço pelo CEP. Devolve null se não achou. */
+  const consultaBR = async (rota) => {
+    const r = await fetch(TS.api(rota), { credentials: 'same-origin' });
+    const j = await r.json().catch(() => ({}));
+    if (r.status === 404) return null;
+    if (!r.ok) throw new Error(j.erro || 'Falha na consulta.');
+    return j;
+  };
+  TS.brasil = {
+    /** 14 caracteres (números, ou letras e números no CNPJ novo) */
+    pareceCnpj: (v) => /^[0-9A-Z]{12}\d{2}$/.test(String(v || '').toUpperCase().replace(/[^0-9A-Z]/g, '')),
+    cnpj: async (v) => { const j = await consultaBR('brasil/cnpj/' + encodeURIComponent(String(v).toUpperCase().replace(/[^0-9A-Z]/g, ''))); return j && j.empresa; },
+    cep: async (v) => { const j = await consultaBR('brasil/cep/' + String(v).replace(/\D/g, '')); return j && j.endereco; },
+    enderecoTxt: (e) => (e ? [[e.rua, e.numero].filter(Boolean).join(', '), e.bairro, [e.cidade, e.uf].filter(Boolean).join('/')].filter(Boolean).join(' · ') : ''),
+  };
+
   TS.alpha = (hex, a) => {
     const n = parseInt(hex.slice(1), 16);
     return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
