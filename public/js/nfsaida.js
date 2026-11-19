@@ -99,7 +99,15 @@
         }
       }
       clearTimeout(timer);
+      // nota emitida esperando o XML (o coletor importa logo depois): confere de novo a cada 20 s por até 15 min
+      const esperandoXml = info && (info.rascunhos || []).some((r) => r.estado === 'autorizada' && r.nfe && r.nfe.chave && !r.temXml && r.xml === 'pedido' && Date.now() - Date.parse(r.xmlEm || r.fim || r.em) < 15 * 60e3);
       if (trabalhando) timer = setTimeout(carregar, 4000);
+      else if (esperandoXml) timer = setTimeout(async () => {
+        const antes = new Set((info.rascunhos || []).filter((r) => r.temXml).map((r) => r.id));
+        await carregar();
+        // o XML chegou: redesenha a tela para a nota entrar também em "Notas de saída" (só se ninguém está montando uma nota)
+        if (!aberto && box.isConnected && info && (info.rascunhos || []).some((r) => r.temXml && !antes.has(r.id))) TS.render();
+      }, 20000);
     };
     const roboVivo = () => {
       const r = info && info.robo;
@@ -119,6 +127,15 @@
         aberto ? formulario() : (info && info.robo && info.robo.acao === 'rascunho' ? roboVivo() : null),
         ras.length ? listaRascunhos(ras) : null].filter(Boolean));
     }
+    /** nota emitida: DANFE e XML (quando o XML já foi importado) ou o aviso de quando chegam */
+    const docsNfe = (r, grande) => {
+      if (r.estado !== 'autorizada' || !r.nfe || !r.nfe.chave) return null;
+      if (r.temXml) return h('span', { class: 'nf-acoes' },
+        h('a', { class: grande ? 'btn primary' : 'btn prc-ver', href: url('danfe', loja, r.nfe.chave), target: '_blank', rel: 'noopener', title: 'DANFE para imprimir ou salvar em PDF', onclick: (e) => e.stopPropagation() }, grande ? 'DANFE (imprimir / PDF)' : 'DANFE'),
+        h('a', { class: 'btn prc-ver', href: url('xml', loja, r.nfe.chave), title: 'Baixar o XML da nota', onclick: (e) => e.stopPropagation() }, 'XML'));
+      return h('small', { class: 'muted nfe-xml-esp', title: 'O DANFE e o XML saem do XML que o coletor baixa do AppNext. Depois disso a nota também aparece em "Notas de saída (NF-e)", abaixo.' },
+        r.xml === 'pedido' ? '⏳ DANFE e XML: importando do AppNext (alguns minutos)' : '⏳ DANFE e XML chegam na próxima coleta do AppNext');
+    };
     /** rascunhos pedidos ao robô: tabela no padrão das notas de saída (filtro, busca, paginação) */
     function listaRascunhos(ras) {
       const ult = info.robo && info.robo.ultima;
@@ -141,6 +158,7 @@
           { key: 'total', label: 'Total', fmt: (v) => (v == null ? '—' : fmt.brl(v)) },
           { key: 'situ', label: 'Situação', align: 'l', render: situCel },
           { key: 'log', label: '', align: 'l', sortVal: () => 0, render: (r) => h('span', { class: 'nf-acoes' },
+            docsNfe(r),
             r.estado === 'erro' && podeRefazer(r) ? h('button', { type: 'button', class: 'btn nfe-refazer', title: 'Abre a nota já preenchida com os mesmos dados para ajustar e testar de novo', onclick: (e) => { e.stopPropagation(); refazer(r); } }, '↻ Refazer') : null,
             podeEmitir(r) ? h('button', { type: 'button', class: 'btn primary nfe-emitir', title: 'Concluir e transmitir esta nota à SEFAZ (o robô confere se o total continua o do teste)', onclick: (e) => { e.stopPropagation(); emitirTeste(r); } }, 'Emitir NF-e') : null,
             (r.estado === 'erro' || r.estado === 'concluida') && ult && ult.id === r.id && ult.log && ult.log.length ? h('button', { type: 'button', class: 'btn prc-ver', onclick: (e) => { e.stopPropagation(); verLog(r, ult.log); } }, 'Log') : null) },
@@ -206,11 +224,12 @@
         h('div', { class: 'nfe-det-cab' }, h('h3', null, r.parceiro.nome), h('span', { class: 'nfe-st ' + stCls }, stTxt)),
         h('div', { class: 'muted nfe-det-info' }, [r.parceiro.doc ? docTxt(r.parceiro.doc) : null, r.vendedor && `vendedor ${r.vendedor}`, r.pagamento, `pedido em ${quandoTZ(r.em)}${r.por ? ' por ' + r.por : ''}`].filter(Boolean).join(' · ')),
         r.erro ? h('div', { class: 'notice err nfe-det-erro' }, r.erro) : null,
-        r.estado === 'autorizada' && r.nfe ? h('div', { class: 'notice ok' }, `NF-e nº ${r.nfe.numero}${r.nfe.protocolo ? ' · protocolo ' + r.nfe.protocolo : ''}`) : null,
+        r.estado === 'autorizada' && r.nfe ? h('div', { class: 'notice ok' }, `NF-e nº ${r.nfe.numero}${r.nfe.protocolo ? ' · protocolo ' + r.nfe.protocolo : ''}${r.nfe.chave ? ' · chave ' + r.nfe.chave : ''}`) : null,
         tab,
         h('div', { class: 'nfe-det-tot' }, 'Total: ', h('b', null, fmt.brl(r.total)), r.totalAppNext != null ? h('span', { class: 'muted' }, ` · no AppNext: ${fmt.brl(r.totalAppNext)}`) : null),
         h('div', { class: 'cp-acoes' },
-          podeRefazer(r) ? h('button', { type: 'button', class: 'btn primary', onclick: () => { fechar(); refazer(r); } }, '↻ Refazer esta nota') : null,
+          docsNfe(r, true),
+          podeRefazer(r) ? h('button', { type: 'button', class: r.estado === 'autorizada' ? 'btn' : 'btn primary', onclick: () => { fechar(); refazer(r); } }, '↻ Refazer esta nota') : null,
           podeEmitir(r) ? h('button', { type: 'button', class: 'btn primary', onclick: () => { fechar(); emitirTeste(r); } }, 'Emitir NF-e') : null,
           (r.estado === 'erro' || r.estado === 'concluida') && ult && ult.id === r.id && ult.log && ult.log.length ? h('button', { type: 'button', class: 'btn', onclick: () => { fechar(); verLog(r, ult.log); } }, 'Ver log do robô') : null,
           r.estado === 'concluida' ? h('small', { class: 'neg' }, 'A saída foi concluída no AppNext: confira lá antes de refazer (para não duplicar).') : null,

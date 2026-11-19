@@ -79,6 +79,8 @@ function emitir(id, ridTeste, por) {
   gravarLista(id, [reg, ...l]);
   return { ok: reg };
 }
+/** situação do XML da nota emitida: 'pedido' (importação pedida ao coletor) ou 'proxima' (vem na próxima coleta) */
+function marcarXml(id, rid, sit) { const l = lista(id); const r = l.find((x) => x.id === rid); if (r) { r.xml = sit; r.xmlEm = new Date().toISOString(); gravarLista(id, l); } }
 function erro(id, rid, msg) { const l = lista(id); const r = l.find((x) => x.id === rid); if (r) { r.estado = 'erro'; r.erro = msg; r.fim = new Date().toISOString(); gravarLista(id, l); } }
 /** resultado do robô para os rascunhos na fila */
 function conferir(id) {
@@ -172,4 +174,4 @@ function conferirParceiros(id) {
   return { lista: l, mudou };
 }
 
-module.exports = { cadastros, erroCadastros, prepararCadastros, lista, criar, emitir, erro, conferir, criarParceiro, listaParceiros, erroParceiro, conferirParceiros, cpfOk, cnpjOk };
+module.exports = { cadastros, erroCadastros, prepararCadastros, lista, criar, emitir, erro, marcarXml, conferir, criarParceiro, listaParceiros, erroParceiro, conferirParceiros, cpfOk, cnpjOk };

@@ -1278,6 +1278,11 @@ app.get('/api/nfe', async (req, res) => {
   const loja = lojaNfe(req, res); if (!loja) return;
   const { lista, mudou } = NFE.conferir(loja.id);
   for (const r of mudou) C.auditar(r.por || 'sistema', r.estado === 'ok' ? 'robô salvou rascunho de NF-e no AppNext' : r.estado === 'teste' ? 'robô testou uma NF-e (nada salvo)' : r.estado === 'autorizada' ? 'robô emitiu NF-e (autorizada pela SEFAZ)' : r.estado === 'concluida' ? 'robô concluiu a NF-e mas ela não foi autorizada' : 'robô não conseguiu salvar o rascunho de NF-e', loja.id, { loja: loja.id, parceiro: r.parceiro.nome, total: r.total, nfe: r.nfe || null, erro: r.erro || null });
+  // NF-e autorizada: pede ao coletor o XML do dia para ela aparecer em Notas de saída (DANFE e XML); ocupado → vem na próxima coleta
+  for (const r of mudou) if (r.estado === 'autorizada' && COL.ativo()) {
+    const hoje = C.hojeBR();
+    try { const x = await COL.historico(loja.id, [{ de: hoje, ate: hoje }], r.por || 'sistema', 'xml'); NFE.marcarXml(loja.id, r.id, x.status === 200 ? 'pedido' : 'proxima'); } catch { NFE.marcarXml(loja.id, r.id, 'proxima'); }
+  }
   let robo = null;
   if (COL.ativo()) { try { robo = (await COL.status(loja.id)).nfe; } catch { /* ok */ } }
   // pedido perdido (o coletor reiniciou com ele na fila): vira erro
@@ -1290,7 +1295,10 @@ app.get('/api/nfe', async (req, res) => {
   // estoque da última planilha do AppNext: a tela avisa na hora o produto da nota sem estoque suficiente (o AppNext recusa ao concluir)
   const est = ES.atual(loja.id);
   const estoque = est && est.itens ? { em: est.em, qtd: Object.fromEntries(est.itens.map((i) => [String(i.cod), Number(i.qtd) || 0])) } : null;
-  res.json({ cadastros: cad, erroCadastros: NFE.erroCadastros(loja.id), rascunhos: NFE.lista(loja.id).slice(0, 100), parceiros: NFE.listaParceiros(loja.id).slice(0, 10), robo, podeRobo: COL.ativo(), estoque });
+  // a nota emitida já tem XML guardado? (então a linha mostra DANFE e XML)
+  let rascunhos = NFE.lista(loja.id).slice(0, 100);
+  if (rascunhos.some((r) => r.nfe && r.nfe.chave)) { const tem = NFS.chaves(loja.id); rascunhos = rascunhos.map((r) => (r.nfe && r.nfe.chave ? { ...r, temXml: tem.has(r.nfe.chave) } : r)); }
+  res.json({ cadastros: cad, erroCadastros: NFE.erroCadastros(loja.id), rascunhos, parceiros: NFE.listaParceiros(loja.id).slice(0, 10), robo, podeRobo: COL.ativo(), estoque });
 });
 app.use('/api/nfe', (req, res, next) => (req.method === 'GET' || req.get('X-Painel') === '1' ? next() : res.status(403).json({ erro: 'Pedido inválido.' })));
 app.post('/api/nfe/cadastros', express.json({ limit: '2kb' }), async (req, res) => {
