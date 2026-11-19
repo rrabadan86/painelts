@@ -715,6 +715,11 @@
       h('label', { class: 'cfg-campo' }, h('span', null, 'Assunto'), assunto),
       h('small', { class: 'muted' }, 'Campos do assunto: {loja} · {nf} (nota de entrada) · {fornecedor} · {nfDevolucao} (número da NF-e de devolução)'),
       h('div', { class: 'cfg-acoes' }, salvar, msg));
+    // para quem vai o e-mail: só admin e franqueado mudam (o servidor confere); os outros veem travado
+    if (!(TS.eu && ['admin', 'franqueado'].includes(TS.eu.perfil))) {
+      emails.disabled = true; assunto.disabled = true; salvar.hidden = true;
+      msg.textContent = 'Só o admin ou o franqueado muda os destinatários.';
+    }
     return b;
   }
   function blocoFixe(l) {

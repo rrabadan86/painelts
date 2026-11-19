@@ -26,6 +26,16 @@
     if (!r.ok) throw new Error(j.erro || 'Não deu certo.');
     return j;
   }
+  /** gera e baixa a planilha: é POST (gerar fecha a contagem), então link, prévia ou "abrir em nova aba" não disparam sozinhos */
+  async function baixarPost(url, nomePadrao) {
+    const r = await fetch(TS.api(url), { method: 'POST', credentials: 'same-origin', headers: { 'X-Painel': '1' } });
+    if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.erro || 'Não deu para gerar a planilha.'); }
+    const blob = await r.blob();
+    const m = /filename="([^"]+)"/.exec(r.headers.get('Content-Disposition') || '');
+    const a = h('a', { href: URL.createObjectURL(blob), download: (m && m[1]) || nomePadrao });
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 30000);
+  }
   async function demoCat(loja) { if (!DEMO.cat) DEMO.cat = (await req('GET', `inventario/catalogo?loja=${encodeURIComponent(loja)}`)).itens; return DEMO.cat; }
   const familia = (t) => { const s = String(t || '').toUpperCase().replace(/\s+(AROMATIZADO|PURO)$/, '').trim(); return s ? s[0] + s.slice(1).toLowerCase().replace(/\bchá\b/gi, 'Chá') : ''; };
   const escolheDemo = (cat, b) => { const cods = new Set(b.cods || []), f = b.filtro || {}; return cat.filter((i) => cods.has(i.cod) || (f.grupo && i.grupo === f.grupo && (!f.sub || i.sub === f.sub)) || (f.tipo && i.tipo === f.tipo) || (f.familia && familia(i.tipo) === f.familia) || (f.tudoKg && ehKg(i.un) && (Math.abs(i.qtd || 0) > 0.0005 || i.tipo))); };
@@ -463,11 +473,12 @@
       empty: { dif: 'Nenhuma diferença: tudo confere com o sistema. 👏', iguais: 'Nenhum item contado igual ao sistema.', zerados: 'Nenhum item zerado: tudo o que vai para o AppNext foi contado.', todos: 'Nada nesta contagem.' }[filV],
     });
     const [stT, stC] = ST[c.st];
-    const baixar = h('a', { class: 'btn primary', href: TS.demo ? '#' : TS.api(`inventario/contagem/${c.id}/planilha?loja=${encodeURIComponent(loja)}`), onclick: (e) => {
-      if (TS.demo) { e.preventDefault(); toast('Na apresentação a planilha não é gerada.'); return; }
-      if (!contados.length) { e.preventDefault(); toast('Nenhum item contado.', true); return; }
-      if (z.ativo && zerados.length && !confirm(`A planilha vai ZERAR no AppNext ${fmt.int(zerados.length)} produtos que não estão nesta contagem (${fmt.brl(valorZ)} em custo). Confirma?`)) { e.preventDefault(); return; }
-      setTimeout(repintar, 1500);
+    const baixar = h('a', { class: 'btn primary', href: '#', role: 'button', onclick: (e) => {
+      e.preventDefault();
+      if (TS.demo) { toast('Na apresentação a planilha não é gerada.'); return; }
+      if (!contados.length) { toast('Nenhum item contado.', true); return; }
+      if (z.ativo && zerados.length && !confirm(`A planilha vai ZERAR no AppNext ${fmt.int(zerados.length)} produtos que não estão nesta contagem (${fmt.brl(valorZ)} em custo). Confirma?`)) return;
+      baixarPost(`inventario/contagem/${c.id}/planilha?loja=${encodeURIComponent(loja)}`, 'Inventario.xlsx').then(repintar).catch((err) => toast(err.message, true));
     } }, c.st === 'gerado' ? 'Baixar a planilha de novo' : 'Baixar planilha do AppNext');
     const fazer = (a, conf) => async () => { if (conf && !confirm(conf)) return; try { await API.acao(loja, c.id, a); if (a === 'cancelar') state.invId = null; TS.render(); } catch (e) { toast(e.message, true); } };
     // enviar direto para o AppNext pelo robô (confere o que o AppNext leu antes de salvar)
@@ -548,10 +559,11 @@
       if (!c.planilha) return null;
       const pl = c.planilha.itens.map((l) => ({ ...l, dif: Math.round((l.nova - l.antes) * 1000) / 1000, v: (l.nova - l.antes) * (l.custo || 0) }));
       const ajuste = pl.reduce((s0, l) => s0 + l.v, 0);
-      const btnDesf = c.st === 'importado' ? h('a', { class: 'btn ghost-danger', href: TS.demo ? '#' : TS.api(`inventario/contagem/${c.id}/desfazer?loja=${encodeURIComponent(loja)}`), onclick: (e) => {
-        if (TS.demo) { e.preventDefault(); toast('Na apresentação não dá para desfazer.'); return; }
-        if (!confirm('Baixar a planilha que DESFAZ este inventário? Cada item volta ao que era antes, mantendo o que vendeu ou entrou depois. Depois importe no AppNext do mesmo jeito.')) { e.preventDefault(); return; }
-        setTimeout(repintar, 1500);
+      const btnDesf = c.st === 'importado' ? h('a', { class: 'btn ghost-danger', href: '#', role: 'button', onclick: (e) => {
+        e.preventDefault();
+        if (TS.demo) { toast('Na apresentação não dá para desfazer.'); return; }
+        if (!confirm('Baixar a planilha que DESFAZ este inventário? Cada item volta ao que era antes, mantendo o que vendeu ou entrou depois. Depois importe no AppNext do mesmo jeito.')) return;
+        baixarPost(`inventario/contagem/${c.id}/desfazer?loja=${encodeURIComponent(loja)}`, 'Desfazer_inventario.xlsx').then(repintar).catch((err) => toast(err.message, true));
       } }, 'Desfazer este inventário') : null;
       return h('div', { class: 'card mt' }, h('div', { class: 'card-title' }, 'O que foi para o AppNext'),
         h('div', { class: 'card-sub' }, `Planilha gerada ${quando(c.planilha.em)} por ${c.planilha.por || '—'}: ${fmt.int(pl.length)} produtos${pl.some((l) => l.zerado) ? ` (${fmt.int(pl.filter((l) => l.zerado).length)} zerados por estarem fora da contagem)` : ''} · ajuste de ${fmt.brl(ajuste)} em custo.`),

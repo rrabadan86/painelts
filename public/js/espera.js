@@ -354,10 +354,10 @@
       const q = buscaCli.value.trim();
       if (q.length < 3) { sugCli.hidden = true; return; }
       tCli = setTimeout(async () => {
-        let lista = [];
+        let lista = [], dica = '';
         if (TS.demo) { const qn = TS.norm(q); lista = ((TS.cli && TS.cli.lista) || []).filter((c) => TS.norm(c.nome).includes(qn) || c.cpf.startsWith(q.replace(/\D/g, '') || '#')).slice(0, 8).map((c) => ({ cpf: c.cpf, nome: c.nome, celular: c.celular })); }
-        else { try { lista = (await (await fetch(TS.api(`espera/clientes?loja=${encodeURIComponent(loja)}&q=${encodeURIComponent(q)}`), { credentials: 'same-origin' })).json()).clientes || []; } catch { lista = []; } }
-        sugCli.replaceChildren(...lista.map((c) => h('button', { type: 'button', class: 'cp-sug-it', onmousedown: (e) => { e.preventDefault(); escolher(c); } }, h('span', null, c.nome || '(sem nome)'), h('small', null, telTxt(c.celular) || 'sem celular'))),
+        else { try { const j = await (await fetch(TS.api(`espera/clientes?loja=${encodeURIComponent(loja)}&q=${encodeURIComponent(q)}`), { credentials: 'same-origin' })).json(); lista = j.clientes || []; dica = j.dica || j.erro || ''; } catch { lista = []; } }
+        sugCli.replaceChildren(dica ? h('small', { class: 'muted cp-sug-dica' }, dica) : '', ...lista.map((c) => h('button', { type: 'button', class: 'cp-sug-it', onmousedown: (e) => { e.preventDefault(); escolher(c); } }, h('span', null, c.nome || '(sem nome)'), h('small', null, telTxt(c.celular) || 'sem celular'))),
           h('button', { type: 'button', class: 'cp-sug-it cp-sug-todos', onmousedown: (e) => { e.preventDefault(); sugCli.hidden = true; novoBox.hidden = false; nNome.value = /\d/.test(q) ? '' : q; if (/\d{10,}/.test(q.replace(/\D/g, '')) && q.replace(/\D/g, '').length <= 11 && !/^\d{11}$/.test(q)) nCel.value = q; nNome.focus(); } }, h('span', null, 'Cliente novo (não está na base)'), h('small', null, 'nome e celular')));
         sugCli.hidden = false;
       }, 250);

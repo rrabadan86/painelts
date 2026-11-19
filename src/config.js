@@ -304,6 +304,22 @@ function registrarAcesso(user) {
   if (acessosTimer.unref) acessosTimer.unref();
 }
 
+/**
+ * Texto de um erro para devolver à tela. Erro do sistema (arquivo/pasta: ENOENT, EACCES… ou mensagem com caminho do
+ * servidor) vira uma frase genérica e o detalhe fica só no log; mensagem escrita à mão (validação) passa como está.
+ */
+const MSG_ERRO_INTERNO = 'Erro interno no painel. Tente de novo; se continuar, avise o suporte (o detalhe ficou no registro do servidor).';
+function erroDeSistema(e) {
+  if (!e || typeof e !== 'object') return false;
+  if (typeof e.code === 'string' && /^E[A-Z0-9_]+$/.test(e.code) && e.path != null) return true; // erro de arquivo/pasta (os de rede não trazem caminho)
+  const m = String(e.message || '');
+  return [DATA_DIR, CONFIG_DIR, process.cwd()].some((d) => d && d.length > 3 && m.includes(d)) || /\b(ENOENT|EACCES|EPERM|EISDIR|ENOTDIR|EMFILE|ENOSPC|EEXIST|EROFS)\b/.test(m);
+}
+function msgErro(e, onde) {
+  if (erroDeSistema(e)) { console.error(`[erro interno]${onde ? ' ' + onde : ''}:`, e); return MSG_ERRO_INTERNO; }
+  return String((e && e.message) || e || 'Erro.');
+}
+
 /** meta da loja num mês (AAAA-MM): meta do mês, senão a padrão */
 function metaDoMes(loja, ym) {
   return (loja.metas && loja.metas[ym] != null ? loja.metas[ym] : loja.meta) ?? null;
@@ -311,5 +327,5 @@ function metaDoMes(loja, ym) {
 
 module.exports = {
   get, hashSenha, hashSenhaAsync, confereSenha, confereSenhaAsync, chaveSessao, lojasDoUsuario, pastaLoja, usuario, alterar, gravarAtomico, auditar, lerAuditoria,
-  registrarAcesso, flushAcessos, lerAcessos, expirado, hojeBR, diaSP, somaMeses, metaDoMes, PERFIS, TELAS, TELAS_GERENTE_PADRAO, telasDo, ARQUIVOS, CONFIG_FILE, CONFIG_DIR, COLETOR_DIR, DATA_DIR,
+  registrarAcesso, flushAcessos, lerAcessos, msgErro, erroDeSistema, MSG_ERRO_INTERNO, expirado, hojeBR, diaSP, somaMeses, metaDoMes, PERFIS, TELAS, TELAS_GERENTE_PADRAO, telasDo, ARQUIVOS, CONFIG_FILE, CONFIG_DIR, COLETOR_DIR, DATA_DIR,
 };
