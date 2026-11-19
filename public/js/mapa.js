@@ -8,6 +8,7 @@
   const hm = (s) => +s.slice(0, 2) * 60 + +s.slice(3, 5);
   // escala em blocos de 10 min (entrada, saída e intervalo em qualquer horário de 10 em 10 min)
   const B = 10, NB = 1440 / B, PH = 60 / B, K = 30 / B; // K: quantos blocos cabem em meia hora (as regras foram pensadas em meias horas)
+  const ordemSem = (e) => (e && e.inicioSemana === 'seg' ? [0, 1, 2, 3, 4, 5, 6] : [6, 0, 1, 2, 3, 4, 5]); // ordem dos dias na semana da escala
   const hLiq = (m) => `${Math.floor(m / 60)}h${m % 60 ? String(m % 60).padStart(2, '0') : ''}`; // 8h20, 8h
   const hhmm = (m) => `${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
   /**
@@ -344,10 +345,13 @@
       return [f1, f2];
     });
     const semanas = [];
+    const seg = semanaSeg(e);
+    // quem folga no domingo de cada semana do ciclo (gira igualmente)
+    const domDe = (w) => { const f = new Set(); if (domAberto) for (let j = 0; j < folgamDom; j++) f.add((((w % L) + L) % L * folgamDom + j) % N); return f; };
     for (let w = 0; w < L; w++) {
-      const folgaDom = new Set();
-      if (!domAberto) pessoas.forEach((_, i) => folgaDom.add(i));
-      else for (let j = 0; j < folgamDom; j++) folgaDom.add((w * folgamDom + j) % N);
+      const folgaDom = domAberto ? domDe(w) : new Set(pessoas.map((_, i) => i));
+      // semana de segunda a domingo: a segunda desta semana é a folga de quem folgou no domingo da semana anterior
+      const segDoAnterior = seg && domAberto ? domDe(w - 1) : null;
       const cob = Array.from({ length: 7 }, () => Array(NB).fill(0));
       const turnosP = pessoas.map(() => Array(7).fill(null));
       const motivos = pessoas.map(() => Array(7).fill(''));
@@ -358,14 +362,19 @@
       const folgasSem = pessoas.map(() => []);
       pessoas.forEach((_, i) => {
         if (!domAberto) { offs[i].add(DOM); motivos[i][DOM] = 'Fechado'; return; }
-        if (folgaDom.has(i)) { offs[i].add(DOM); offs[i].add(SEG); cont[DOM]++; cont[SEG]++; motivos[i][DOM] = 'Folga (rodízio)'; motivos[i][SEG] = 'Folga (após domingo)'; }
+        if (seg) {
+          if (folgaDom.has(i)) { offs[i].add(DOM); cont[DOM]++; motivos[i][DOM] = 'Folga (rodízio)'; }
+          if (segDoAnterior.has(i)) { offs[i].add(SEG); cont[SEG]++; motivos[i][SEG] = 'Folga (após domingo)'; }
+        } else if (folgaDom.has(i)) { offs[i].add(DOM); offs[i].add(SEG); cont[DOM]++; cont[SEG]++; motivos[i][DOM] = 'Folga (rodízio)'; motivos[i][SEG] = 'Folga (após domingo)'; }
       });
-      const precisa = (i) => (domAberto ? (folgaDom.has(i) ? 0 : seis ? 1 : 2) : seis ? 0 : 1);
+      // folgas que ainda faltam na semana (5x2: 2; 6x1: 1), descontando as que o domingo já deu
+      const precisa = (i) => Math.max(0, (seis ? 1 : 2) - offs[i].size);
       const manuais = (i) => [pessoas[i].folga, pessoas[i].folga2].filter((f) => f && f !== 'auto').length;
       const ordemP = pessoas.map((_, i) => i).sort((x, y) => manuais(y) - manuais(x) || ((x - w + N * 9) % N) - ((y - w + N * 9) % N));
       for (const i of ordemP) {
         const cfgDias = [pessoas[i].folga, pessoas[i].folga2];
-        for (let j = 0; j < precisa(i); j++) {
+        const nPrecisa = precisa(i); // contado antes: cada folga marcada aumenta offs[i]
+        for (let j = 0; j < nPrecisa; j++) {
           let d = cfgDias[j] && cfgDias[j] !== 'auto' ? DIAS.indexOf(cfgDias[j]) : -1;
           const manual = d >= 0 && !offs[i].has(d);
           if (!manual) {
@@ -450,8 +459,10 @@
       h('option', { value: 'rodizio', selected: e.modelo === 'rodizio' || null }, 'Rodízio de domingo (folga no domingo puxa a segunda)'));
     modelo.addEventListener('change', () => { e.modelo = modelo.value; aoMudar && aoMudar(); });
     const inicio = h('input', { class: 'f-input', type: 'date', value: e.inicioRodizio || '2026-01-04' });
+    const iniSem = h('select', { class: 'f-input' }, h('option', { value: 'dom', selected: e.inicioSemana !== 'seg' || null }, 'Domingo (domingo a sábado)'), h('option', { value: 'seg', selected: e.inicioSemana === 'seg' || null }, 'Segunda (segunda a domingo)'));
+    iniSem.addEventListener('change', () => { e.inicioSemana = iniSem.value; aoMudar && aoMudar(); });
     TS.aoConfirmar(inicio, () => { if (inicio.value) { e.inicioRodizio = inicio.value; aoMudar && aoMudar(); } });
-    const ordemSemana = [6, 0, 1, 2, 3, 4, 5]; // domingo a sábado
+    const ordemSemana = ordemSem(e); // na ordem da semana da escala
     e.minimoDia = e.minimoDia || {};
     if (e.maxFolgaDia == null) e.maxFolgaDia = 1;
     const minimos = h('div', { class: 'op-minimos' }, ordemSemana.map((i) => {
@@ -495,8 +506,9 @@
         return h('p', { class: 'op-int-info ' + (abaixoClt(jorn, iv) ? 'neg' : 'muted') }, txt, abaixoClt(jorn, iv) ? ' Abaixo do mínimo da CLT para essa jornada: confira com a convenção coletiva.' : '');
       })(),
       h('div', { class: 'f-label', style: { marginTop: '14px' } }, 'Regras da escala'),
-      h('div', { class: 'cfg-grid' }, campo('Modelo', modelo, e.modelo === 'rodizio' ? 'Semana de domingo a sábado. As folgas de domingo giram igualmente entre a equipe.' : null),
-        e.modelo === 'rodizio' ? campo('A "Semana 1" do rodízio começa no domingo', inicio, 'Use um domingo em que a Pessoa 1 folgou. A escala do mês segue a partir dele.') : null),
+      h('div', { class: 'cfg-grid' }, campo('Modelo', modelo, e.modelo === 'rodizio' ? `Semana de ${semanaSeg(e) ? 'segunda a domingo' : 'domingo a sábado'}. As folgas de domingo giram igualmente entre a equipe${semanaSeg(e) ? '; a folga da segunda cai na semana seguinte e entra na conta dela' : ''}.` : null),
+        campo('A semana começa no', iniSem, 'Vale para a escala do mês, os totais por semana e o rodízio.'),
+        e.modelo === 'rodizio' ? campo(`A "Semana 1" do rodízio começa ${semanaSeg(e) ? 'na semana de' : 'no domingo'}`, inicio, semanaSeg(e) ? 'Escolha uma data da semana (segunda a domingo) em que a Pessoa 1 folgou no domingo. A escala do mês segue a partir dela.' : 'Use um domingo em que a Pessoa 1 folgou. A escala do mês segue a partir dele.') : null),
       h('div', { class: 'cfg-grid', style: { marginTop: '10px' } }, campo('Máximo de pessoas de folga no mesmo dia', num('maxFolgaDia', { min: 1, max: 10, step: 1 }), 'Vale para todos os dias, inclusive domingo. Padrão: 1.')),
       h('div', { class: 'f-label', style: { marginTop: '10px' } }, 'Mínimo de pessoas na loja, por dia'),
       minimos,
@@ -668,6 +680,10 @@
   const diaMs = (iso) => Date.parse(iso + 'T12:00:00Z');
   /** domingo da semana (semana de domingo a sábado) */
   const domingoDe = (iso) => { const d = new Date(iso + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() - d.getUTCDay()); return d.toISOString().slice(0, 10); };
+  /** semana da escala: de domingo a sábado (padrão) ou de segunda a domingo (equipe.inicioSemana = 'seg') */
+  const semanaSeg = (e) => !!e && e.inicioSemana === 'seg';
+  const segundaDe = (iso) => { const d = new Date(iso + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7)); return d.toISOString().slice(0, 10); };
+  const inicioDe = (e, iso) => (semanaSeg(e) ? segundaDe(iso) : domingoDe(iso));
   const INICIO_PADRAO = '2026-01-04';
 
   /** monta a escala de cada dia do mês: { dias:[iso], pessoas:[nome], cel[i][k] = {tipo, ini, fim, pausa, motivo} } */
@@ -676,12 +692,12 @@
     const pessoas = pessoasDe(op.equipe);
     const nD = new Date(Date.UTC(+ym.slice(0, 4), +ym.slice(5, 7), 0)).getUTCDate();
     const dias = Array.from({ length: nD }, (_, k) => `${ym}-${String(k + 1).padStart(2, '0')}`);
-    const ancora = domingoDe(op.equipe.inicioRodizio || INICIO_PADRAO);
+    const ancora = inicioDe(op.equipe, op.equipe.inicioRodizio || INICIO_PADRAO);
     const feriados = new Map(TS.feriadosDoMes ? TS.feriadosDoMes(cfg, ym).map((f) => [f.data, f]) : []);
     const ferias = (cfg && cfg.ferias) || [];
     const cel = pessoas.map((p) => dias.map((iso) => {
       const wd = wdDe(iso);
-      const w = L > 1 ? (((Math.round((diaMs(domingoDe(iso)) - diaMs(ancora)) / (7 * 86400000)) % L) + L) % L) : 0;
+      const w = L > 1 ? (((Math.round((diaMs(inicioDe(op.equipe, iso)) - diaMs(ancora)) / (7 * 86400000)) % L) + L) % L) : 0;
       const sem = semanas[w];
       const i = pessoas.indexOf(p);
       const fer = feriados.get(iso);
@@ -775,15 +791,16 @@
     const bruto = (c) => (c.tipo === 'trab' ? c.fim - c.ini : 0);
     const liquido = (c) => (c.tipo === 'trab' ? c.fim - c.ini - (c.pausa ? c.pausa[1] - c.pausa[0] : 0) : 0);
     const hTxt = (m) => `${Math.floor(m / 60)}h${m % 60 ? String(m % 60).padStart(2, '0') : ''}`;
-    // semanas de domingo a sábado que cobrem o mês
+    // semanas que cobrem o mês (de domingo a sábado, ou de segunda a domingo)
     const semanasMes = [];
     for (let k = 0; k < E.dias.length;) {
-      const dom = domingoDe(E.dias[k]);
+      const dom = inicioDe(op.equipe, E.dias[k]);
       const datas = Array.from({ length: 7 }, (_, j) => { const d = new Date(dom + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + j); return d.toISOString().slice(0, 10); });
       semanasMes.push(datas);
       k = E.dias.indexOf(datas[6]) + 1 || E.dias.length;
     }
-    const DSN = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+    const DSN = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']; // por getUTCDay
+    const dowDe = (d) => new Date(d + 'T12:00:00Z').getUTCDay();
     const celula = (i, iso, paraPdf) => {
       const k = E.dias.indexOf(iso);
       if (k < 0) return h('td', { class: 'fora' });
@@ -811,7 +828,7 @@
               const hfx = fer && TS.horarioFeriado ? TS.horarioFeriado({ ...(cfg || {}), operacao: op }, d) : null;
               const hTxtF = hfx ? (hfx.fechado ? 'fechada' : `${hfx.abre}–${hfx.fecha}`) : '';
               const origF = hfx ? { data: 'horário próprio desta data (tela Feriados)', feriados: 'padrão de feriados (Horário e equipe)', semana: 'horário normal do dia' }[hfx.origem] : '';
-              return h('th', { class: (j === 0 ? 'dom' : '') + (fer ? ' fer' : '') + (E.dias.includes(d) ? '' : ' fora'), title: fer ? `${fer.nome}${hfx ? ` · loja ${hTxtF} (${origF})` : ''}` : '' }, h('span', null, DSN[j]), h('b', null, `${d.slice(8)}/${d.slice(5, 7)}`),
+              return h('th', { class: (dowDe(d) === 0 ? 'dom' : '') + (fer ? ' fer' : '') + (E.dias.includes(d) ? '' : ' fora'), title: fer ? `${fer.nome}${hfx ? ` · loja ${hTxtF} (${origF})` : ''}` : '' }, h('span', null, DSN[dowDe(d)]), h('b', null, `${d.slice(8)}/${d.slice(5, 7)}`),
                 fer ? h('small', null, fer.nome) : null, hfx ? h('small', { class: 'fer-hor' + (hfx.origem === 'data' ? ' proprio' : '') }, hfx.origem === 'data' ? `${hTxtF} ✎` : hTxtF) : null);
             }),
             h('th', { class: 'tot' }, 'Total'), h('th', { class: 'tot' }, 'Líquida'))),
@@ -958,8 +975,8 @@
     };
     // replicar os ajustes para outro mês mantendo a alternância: cada dia recebe os ajustes do dia do mês de origem
     // com o MESMO dia da semana e a MESMA semana do rodízio (quem folga no domingo continua girando). Feriados e férias ficam de fora.
-    const ancoraR = domingoDe(op.equipe.inicioRodizio || INICIO_PADRAO);
-    const semR = (iso) => (L > 1 ? (((Math.round((diaMs(domingoDe(iso)) - diaMs(ancoraR)) / (7 * 86400000)) % L) + L) % L) : 0);
+    const ancoraR = inicioDe(op.equipe, op.equipe.inicioRodizio || INICIO_PADRAO);
+    const semR = (iso) => (L > 1 ? (((Math.round((diaMs(inicioDe(op.equipe, iso)) - diaMs(ancoraR)) / (7 * 86400000)) % L) + L) % L) : 0);
     const nomesEq = new Set(pessoasDe(op.equipe).map((q) => q.nome.trim().toUpperCase()));
     const deFerias = (nome, iso) => ((cfg && cfg.ferias) || []).some((f) => String(f.vendedor).trim().toUpperCase() === nome && f.de <= iso && f.ate >= iso);
     function replicar(srcYm, dstYm, src) {
@@ -1000,7 +1017,7 @@
       nAj ? h('button', { type: 'button', class: 'btn ghost-danger', onclick: () => { AJ.dados = {}; AJ.sujo = true; AJ.sel = null; TS.render(); } }, 'Desfazer ajustes do mês') : null,
       TS.demo && AJ.sujo ? h('span', { class: 'muted' }, '(na apresentação os ajustes não são salvos)') : null);
 
-    return TS.cardWithTools('Escala do mês', `Dia a dia, com feriados e férias. ${L > 1 ? `Rodízio de ${L} semanas contado a partir do domingo ${TS.fmt.date(domingoDe(op.equipe.inicioRodizio || INICIO_PADRAO))}.` : 'A semana-modelo se repete todas as semanas.'}`,
+    return TS.cardWithTools('Escala do mês', `Dia a dia, com feriados e férias. ${L > 1 ? `Rodízio de ${L} semanas contado a partir ${semanaSeg(op.equipe) ? 'da segunda' : 'do domingo'} ${TS.fmt.date(inicioDe(op.equipe, op.equipe.inicioRodizio || INICIO_PADRAO))}.` : 'A semana-modelo se repete todas as semanas.'}`,
       h('div', { class: 'table-tools mes-tools' }, h('div', { class: 'mes-tools-esq' }, sel, btnTrazer, btnReplicar), h('button', { type: 'button', class: 'btn primary', onclick: imprimir }, '⎙ Exportar PDF')),
       alertas.length ? h('div', { class: 'notice' }, h('b', null, 'Atenção: '), alertas.slice(0, 6).join(' · '), alertas.length > 6 ? ` e mais ${alertas.length - 6}` : '') : null,
       barraAj, editor,
@@ -1011,7 +1028,7 @@
   function cartaoRodizio(need, op, horas, ideal) {
     const pessoas = pessoasDe(op.equipe);
     const r = montarRodizio(need, op, pessoas);
-    const ORDEM = [6, 0, 1, 2, 3, 4, 5]; // dom..sáb
+    const ORDEM = ordemSem(op.equipe); // dom..sáb ou seg..dom
     const tot = resumoRodizio(r);
     const sem = Math.min(state.escSemana || 0, r.L - 1);
     const fixosTxt = pessoas.map((p, i) => {
@@ -1055,7 +1072,7 @@
       : tot.abaixo > 0 ? h('div', { class: 'notice' }, `A loja nunca fica sozinha, mas faltam pessoas nos picos ou no mínimo do dia em ${fmt.n1(tot.abaixo / r.L)} h por semana, em média. Veja os alertas de cada semana.${ideal.tudo ? ` Com ${ideal.tudo} pessoas fica tudo coberto.` : ''}`)
         : h('div', { class: 'notice ok' }, 'Essa equipe cumpre o rodízio, os mínimos de cada dia e os picos.');
     return TS.cardWithTools(`Semana-modelo do rodízio de domingo (${op.equipe.escala})`,
-      `Semana de domingo a sábado. ${r.kDom ? `${r.kDom} pessoa(s) trabalham em cada domingo; ${r.folgamDom} folga(m) — e folga(m) também na segunda.` : 'Loja fechada no domingo.'} O ciclo se repete a cada ${r.L} semana(s). Jornada de ${Math.floor(r.jornada / 60)}h${String(Math.round(r.jornada % 60)).padStart(2, '0')} por dia${r.intervalo ? ` + ${r.intervalo} min de intervalo` : ''}. Confira a CLT e a convenção coletiva.`,
+      `Semana de ${semanaSeg(op.equipe) ? 'segunda a domingo' : 'domingo a sábado'}. ${r.kDom ? `${r.kDom} pessoa(s) trabalham em cada domingo; ${r.folgamDom} folga(m) — e folga(m) também na segunda${semanaSeg(op.equipe) ? ' seguinte' : ''}.` : 'Loja fechada no domingo.'} O ciclo se repete a cada ${r.L} semana(s). Jornada de ${Math.floor(r.jornada / 60)}h${String(Math.round(r.jornada % 60)).padStart(2, '0')} por dia${r.intervalo ? ` + ${r.intervalo} min de intervalo` : ''}. Confira a CLT e a convenção coletiva.`,
       seg, aviso,
       excessos.length ? h('div', { class: 'notice err' }, `Não deu para manter no máximo ${r.maxF} pessoa(s) de folga por dia em: ${excessos.map(([k, x]) => `semana ${k + 1} (${x.map((wd) => DIAS_NOME[wd]).join(', ')})`).join('; ')}. Revise as folgas fixas escolhidas à mão ou o limite em "Horário e equipe".`) : null,
       h('p', { class: 'muted rod-fixos' }, h('b', null, `Folgas nas semanas em que trabalha no domingo (no máximo ${r.maxF} de folga por dia): `), fixosTxt),
