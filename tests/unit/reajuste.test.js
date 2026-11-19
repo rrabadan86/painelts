@@ -30,3 +30,15 @@ test('Reajuste para a franquia: gráficos só PNG de verdade, ligados aos itens 
   assert.match(t.tabelaHtml, /<img src="cid:hist-0@painel"/);
   assert.match(t.tabelaHtml, /Spicy Strawberry — histórico de compras/);
 });
+
+test('Cadastro do AppNext: histórico do preço guarda só as mudanças, sem reescrever o passado', () => {
+  const TAB = require('../../src/tabela');
+  const h = {};
+  TAB.registrarPreco(h, '100', '2026-01-10', 600);
+  TAB.registrarPreco(h, '100', '2026-02-10', 600);   // igual: não anota
+  TAB.registrarPreco(h, '100', '2026-10-05', 680.1); // mudou
+  TAB.registrarPreco(h, '100', '2026-03-01', 500);   // planilha mais antiga: ignora
+  TAB.registrarPreco(h, '100', '2026-10-05', 681);   // mesmo dia: corrige
+  TAB.registrarPreco(h, '200', '2026-10-05', 0.01);  // sem preço: ignora
+  assert.deepEqual(h, { 100: [['2026-01-10', 600], ['2026-10-05', 681]] });
+});

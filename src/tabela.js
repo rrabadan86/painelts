@@ -64,12 +64,29 @@ function atual(id) {
   try { return JSON.parse(fs.readFileSync(arq(id), 'utf8')); } catch { return null; }
 }
 
+/** anota o preço de cadastro de um código numa data (só quando muda); dia no formato AAAA-MM-DD */
+function registrarPreco(hist, cod, dia, preco) {
+  if (!cod || !/^\d{4}-\d{2}-\d{2}$/.test(dia) || !(preco > 0.011)) return;
+  const l = hist[cod] || (hist[cod] = []);
+  const ult = l[l.length - 1];
+  if (ult && ult[0] > dia) return; // planilha mais antiga que a última anotada: não reescreve o passado
+  if (ult && Math.abs(ult[1] - preco) < 0.005) return;
+  if (ult && ult[0] === dia) ult[1] = preco; else l.push([dia, Math.round(preco * 100) / 100]);
+}
+
 const resumoCache = new Map(); // id -> { mtimeMs, size, val }
 
 async function importar(id, buf, origem = 'painel') {
   const { linhasDeBuffer } = require('./sources');
   const novo = ler(await linhasDeBuffer(buf));
   const d = atual(id) || {};
+  // histórico do preço de cadastro: { cod: [[AAAA-MM-DD, preço], …] } — guarda só quando o preço muda
+  // (na primeira vez, a lista anterior entra como ponto de partida)
+  d.historico = d.historico || {};
+  const anotar = (lista, em) => { for (const i of lista || []) registrarPreco(d.historico, i.cod, String(em || '').slice(0, 10), i.preco); };
+  if (d[novo.tipo] && !d.historicoDesde) anotar(d[novo.tipo].itens, d[novo.tipo].em);
+  anotar(novo.itens, novo.em);
+  d.historicoDesde = d.historicoDesde || String(novo.em).slice(0, 10);
   d[novo.tipo] = { em: novo.em, importadoEm: new Date().toISOString(), origem, itens: novo.itens };
   fs.mkdirSync(pasta(id), { recursive: true });
   C.gravarAtomico(arq(id), JSON.stringify(d), 0o640);
@@ -118,9 +135,10 @@ function resumo(id) {
   if (!d) return null;
   const itens = new Map();
   for (const t of ['simples', 'compostos']) for (const i of (d[t] && d[t].itens) || []) itens.set(i.cod, { ...i, composto: t === 'compostos' });
-  const val = { simples: d.simples ? { em: d.simples.em, origem: d.simples.origem, n: d.simples.itens.length } : null, compostos: d.compostos ? { em: d.compostos.em, origem: d.compostos.origem, n: d.compostos.itens.length } : null, itens: [...itens.values()] };
+  const val = { simples: d.simples ? { em: d.simples.em, origem: d.simples.origem, n: d.simples.itens.length } : null, compostos: d.compostos ? { em: d.compostos.em, origem: d.compostos.origem, n: d.compostos.itens.length } : null, itens: [...itens.values()],
+    historico: d.historico || {}, historicoDesde: d.historicoDesde || null };
   resumoCache.set(id, { mtimeMs: st.mtimeMs, size: st.size, val });
   return val;
 }
 
-module.exports = { ler, atual, importar, pendentes, processar, resumo };
+module.exports = { ler, atual, importar, pendentes, processar, resumo, registrarPreco };
