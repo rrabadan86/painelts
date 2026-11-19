@@ -23,8 +23,20 @@
     const pintar = () => {
       const ord = { erro: 0, warn: 1, info: 2, ok: 3 };
       lista.sort((a, b) => ord[a.nivel] - ord[b.nivel]);
-      avisos.replaceChildren(...(lista.length ? lista.map(item) : [h('p', { class: 'muted' }, 'Nada pedindo atenção por enquanto. 👏')]));
+      // "lembrar depois": o aviso que se repete some por 7 dias para esta pessoa, neste aparelho. Aviso vermelho nunca é escondido.
+      const ad = adiados.ler();
+      const some = (a) => !!(a.id && a.nivel !== 'erro' && ad[a.id]);
+      const mostra = lista.filter((a) => !some(a)), nAd = lista.length - mostra.length;
+      const linhas = mostra.map((a) => item(a, a.id && a.nivel !== 'erro' ? () => { adiados.adiar(a.id); pintar(); } : null));
+      avisos.replaceChildren(...[
+        ...(linhas.length ? linhas : [h('p', { class: 'muted' }, nAd ? 'Nada novo pedindo atenção. 👏' : 'Nada pedindo atenção por enquanto. 👏')]),
+        nAd ? h('div', { class: 'muted ini-adiados' }, `${fmt.int(nAd)} ${nAd === 1 ? 'aviso adiado' : 'avisos adiados'} (${nAd === 1 ? 'volta' : 'voltam'} em até 7 dias). `, h('button', { type: 'button', class: 'link-btn', onclick: () => { adiados.limpar(); pintar(); } }, 'Mostrar agora')) : null,
+      ].filter(Boolean));
     };
+    // com "Todas as lojas" os avisos que são de cada loja não aparecem: uma linha diz por quê
+    if ((!state.loja || state.loja === 'todas') && ['estoque', 'pedido', 'inventario', 'notas'].some((t) => (TS.telasEstoque || []).includes(t))) {
+      lista.push({ nivel: 'info', titulo: 'Escolha uma loja para ver os avisos de estoque, inventário e franquia', texto: 'Com todas as lojas juntas aparecem só os avisos de vendas, site e atualizações. Troque a loja no seletor do topo.' });
+    }
     const analise = TS.db && TS.db.n && TS.eu && TS.eu.perfil !== 'vendedor' ? analisar() : null;
     const tarefas = [avisosEspera(lista), avisosVendas(lista), avisosEstoque(lista), avisosSite(lista), avisosAtualizacoes(lista), avisosInventario(lista, analise), avisosCreditos(lista), avisosCusto(lista), avisosPadrao(lista, analise)].map((p) => p.catch(() => null).then(() => { if (avisos.isConnected) pintar(); }));
     Promise.all(tarefas).then(() => { pend.remove(); });
@@ -129,15 +141,15 @@
     const ds = a.desconto.altos;
     if (ds.length) {
       const soma = ds.reduce((s, c) => s + c.desconto, 0);
-      lista.push({ nivel: 'warn', padrao: true, titulo: `Desconto fora do padrão: ${fmt.int(ds.length)} ${ds.length === 1 ? 'cupom' : 'cupons'} nos últimos 7 dias (${fmt.brl0(soma)})`,
+      lista.push({ nivel: 'warn', padrao: true, id: 'desconto-cupons', titulo: `Desconto fora do padrão: ${fmt.int(ds.length)} ${ds.length === 1 ? 'cupom' : 'cupons'} nos últimos 7 dias (${fmt.brl0(soma)})`,
         texto: ds.slice(0, 3).map((c) => `cupom ${c.cupom} em ${fmt.date(c.dia).slice(0, 5)}, ${c.vendedora.split(' ')[0]}: ${c.pct}% (${fmt.brl0(c.desconto)})`).join(' · ') + `. Acima de ${a.desconto.corte_pct}% (o normal da loja).`,
         link: '#cupons', ir: 'ver cupons ›' });
     }
     for (const v of a.desconto.vendedoras) {
-      lista.push({ nivel: 'info', padrao: true, titulo: `${v.vendedora}: desconto médio de ${fmt.n1(v.desconto_pct)}% nos últimos 30 dias`, texto: `A média da loja é ${fmt.n1(v.media_loja_pct)}% (${fmt.brl0(v.desconto_reais)} em descontos). Vale entender o motivo.`, link: '#cupons', ir: 'ver cupons ›' });
+      lista.push({ nivel: 'info', padrao: true, id: 'desconto-vendedora', titulo: `${v.vendedora}: desconto médio de ${fmt.n1(v.desconto_pct)}% nos últimos 30 dias`, texto: `A média da loja é ${fmt.n1(v.media_loja_pct)}% (${fmt.brl0(v.desconto_reais)} em descontos). Vale entender o motivo.`, link: '#cupons', ir: 'ver cupons ›' });
     }
     if (a.diasFracos.length) {
-      lista.push({ nivel: 'info', padrao: true, titulo: `${a.diasFracos.length === 1 ? 'Um dia' : `${a.diasFracos.length} dias`} com venda muito abaixo do normal nas últimas 2 semanas`,
+      lista.push({ nivel: 'info', padrao: true, id: 'dias-fracos', titulo: `${a.diasFracos.length === 1 ? 'Um dia' : `${a.diasFracos.length} dias`} com venda muito abaixo do normal nas últimas 2 semanas`,
         texto: a.diasFracos.slice(0, 3).map((d) => `${fmt.date(d.dia).slice(0, 5)} (${d.dia_semana}): ${fmt.brl0(d.vendido)}, o normal é ${fmt.brl0(d.normal)}`).join(' · ') + '. Loja fechada, feriado ou venda que não chegou ao painel?',
         link: '#resumo', ir: 'ver vendas ›' });
     }
@@ -207,15 +219,38 @@
   async function avisosEspera(lista) {
     if (!TS.esperaResumo) return;
     const r = await TS.esperaResumo();
-    if (r && r.chegou) lista.push({ nivel: 'warn', titulo: `Lista de espera: ${fmt.int(r.chegou)} ${r.chegou === 1 ? 'cliente para avisar' : 'clientes para avisar'}`, texto: 'O produto que eles pediram chegou. A mensagem do WhatsApp já está pronta.', link: '#espera', ir: 'avisar ›', antes: () => { state.espAba = 'avisar'; } });
+    if (r && r.chegou) lista.push({ nivel: 'warn', id: 'espera', titulo: `Lista de espera: ${fmt.int(r.chegou)} ${r.chegou === 1 ? 'cliente para avisar' : 'clientes para avisar'}`, texto: 'O produto que eles pediram chegou. A mensagem do WhatsApp já está pronta.', link: '#espera', ir: 'avisar ›', antes: () => { state.espAba = 'avisar'; } });
   }
 
-  function item(a) {
+  // ---------- "lembrar depois" (7 dias, por pessoa, só neste aparelho) ----------
+  // Guarda só o código do aviso (ex.: "inv-grupos") e até quando; nada do conteúdo do aviso nem dado de cliente.
+  const adiados = (() => {
+    const CHAVE = 'teashop.ini.adiar', DIAS = 7;
+    // a pessoa entra na chave por um número (não o nome), para cada um ter os seus adiados no mesmo aparelho
+    const quem = () => { const u = (TS.demo ? 'demo:' : '') + String((TS.eu && (TS.eu.usuario || TS.eu.nome)) || ''); let x = 0; for (let k = 0; k < u.length; k++) x = (x * 31 + u.charCodeAt(k)) >>> 0; return x.toString(36); };
+    const pre = () => `${quem()}|${state.loja || 'todas'}|`;
+    const tudo = () => { try { const j = JSON.parse(localStorage.getItem(CHAVE) || '{}'); return j && typeof j === 'object' ? j : {}; } catch { return {}; } };
+    const gravar = (j) => { try { localStorage.setItem(CHAVE, JSON.stringify(j)); } catch { /* sem armazenamento: o aviso só não fica adiado */ } };
+    return {
+      /** { id: true } dos avisos adiados desta pessoa nesta loja que ainda não venceram (os vencidos são apagados) */
+      ler() {
+        const j = tudo(), p = pre(), out = {}; let mudou = false;
+        for (const k of Object.keys(j)) { if (!(j[k] > Date.now())) { delete j[k]; mudou = true; } else if (k.startsWith(p)) out[k.slice(p.length)] = true; }
+        if (mudou) gravar(j);
+        return out;
+      },
+      adiar(id) { const j = tudo(); j[pre() + id] = Date.now() + DIAS * 864e5; gravar(j); },
+      limpar() { const j = tudo(), p = pre(); for (const k of Object.keys(j)) if (k.startsWith(p)) delete j[k]; gravar(j); },
+    };
+  })();
+
+  function item(a, adiar) {
     const ir = () => { if (a.antes) a.antes(); if (a.link) location.hash = a.link; if (a.acao) a.acao(); };
     return h('div', { class: 'ini-aviso ini-' + a.nivel, role: a.link || a.acao ? 'button' : null, tabindex: a.link || a.acao ? '0' : null, onclick: a.link || a.acao ? ir : null, onkeydown: (e) => { if ((a.link || a.acao) && e.key === 'Enter') ir(); } },
       h('span', { class: 'ini-ico' }, { erro: '!', warn: '•', info: 'i', ok: '✓' }[a.nivel]),
       h('div', null, h('b', null, a.titulo), a.texto ? h('div', { class: 'muted' }, a.texto) : null),
-      a.link || a.acao ? h('span', { class: 'ini-ir' }, a.ir || 'abrir ›') : null);
+      a.link || a.acao ? h('span', { class: 'ini-ir' }, a.ir || 'abrir ›') : null,
+      adiar ? h('button', { type: 'button', class: 'ini-adiar', title: 'Esconde este aviso por 7 dias, só para você neste aparelho', onclick: (e) => { e.stopPropagation(); adiar(); }, onkeydown: (e) => e.stopPropagation() }, 'lembrar depois') : null);
   }
 
   // ---------- vendas ----------
@@ -275,9 +310,9 @@
     const acabou = e.estoque.itens.filter((it) => it.un !== 'Kg' && (it.qtd || 0) <= 0 && vendeu30.has(String(it.cod)) && it.tipo !== 'MC');
     const nomes = (xs) => xs.slice(0, 4).map((x) => x.desc).join(', ') + (xs.length > 4 ? ` e mais ${xs.length - 4}` : '');
     const temPedido = telas.includes('pedido');
-    if (abaixo500.length) lista.push({ nivel: 'erro', titulo: `${fmt.int(abaixo500.length)} chá(s) a granel com menos de 500 g`, texto: nomes(abaixo500), link: temPedido ? '#pedido' : '#estoque', ir: temPedido ? 'ver no pedido ›' : 'ver estoque ›', antes: () => { state.pedFiltro = 'pedido'; } });
-    if (estrela700.length) lista.push({ nivel: 'warn', titulo: `${fmt.int(estrela700.length)} chá(s) Estrela com menos de 700 g`, texto: nomes(estrela700), link: temPedido ? '#pedido' : '#estoque', ir: temPedido ? 'ver no pedido ›' : 'ver estoque ›' });
-    if (acabou.length) lista.push({ nivel: 'warn', titulo: `${fmt.int(acabou.length)} produto(s) acabaram e venderam no último mês`, texto: nomes(acabou), link: '#estoque', ir: 'o que repor ›', antes: () => { state.estSit = 'repor'; } });
+    if (abaixo500.length) lista.push({ nivel: 'erro', titulo: `${fmt.int(abaixo500.length)} ${abaixo500.length === 1 ? 'chá' : 'chás'} a granel com menos de 500 g`, texto: nomes(abaixo500), link: temPedido ? '#pedido' : '#estoque', ir: temPedido ? 'ver no pedido ›' : 'ver estoque ›', antes: () => { state.pedFiltro = 'pedido'; } });
+    if (estrela700.length) lista.push({ nivel: 'warn', id: 'estrela700', titulo: `${fmt.int(estrela700.length)} ${estrela700.length === 1 ? 'chá' : 'chás'} Estrela com menos de 700 g`, texto: nomes(estrela700), link: temPedido ? '#pedido' : '#estoque', ir: temPedido ? 'ver no pedido ›' : 'ver estoque ›' });
+    if (acabou.length) lista.push({ nivel: 'warn', id: 'acabou', titulo: `${fmt.int(acabou.length)} ${acabou.length === 1 ? 'produto acabou e vendeu' : 'produtos acabaram e venderam'} no último mês`, texto: nomes(acabou), link: '#estoque', ir: 'o que repor ›', antes: () => { state.estSit = 'repor'; } });
   }
 
   // ---------- inventário: grupo ou tipo de chá há 25 dias ou mais sem inventário importado ----------
@@ -292,7 +327,7 @@
     const grandes = (d.contagens || []).filter((c) => c.st === 'importado' && c.importadoEm && !c.revertidoEm && c.ajuste != null && Math.abs(c.ajuste) >= LIM_AJUSTE && Date.now() - Date.parse(c.importadoEm) < 30 * 864e5);
     if (grandes.length) {
       const txt = grandes.slice(0, 3).map((c) => `${c.nome} (${fmt.date(c.importadoEm.slice(0, 10))}): ${c.ajuste > 0 ? '+' : '−'}${fmt.brl0(Math.abs(c.ajuste))}`).join(' · ');
-      lista.push({ nivel: 'warn', padrao: true, titulo: `Inventário com ajuste grande no estoque: ${fmt.int(grandes.length)} ${grandes.length === 1 ? 'contagem' : 'contagens'} nos últimos 30 dias`, texto: txt + '. Vale conferir se faltou contar algo ou se houve perda.', link: '#inventario', ir: 'ver ›', antes: () => { state.invId = null; } });
+      lista.push({ nivel: 'warn', padrao: true, id: 'inv-ajuste', titulo: `Inventário com ajuste grande no estoque: ${fmt.int(grandes.length)} ${grandes.length === 1 ? 'contagem' : 'contagens'} nos últimos 30 dias`, texto: txt + '. Vale conferir se faltou contar algo ou se houve perda.', link: '#inventario', ir: 'ver ›', antes: () => { state.invId = null; } });
       if (analise) analise.inventario = grandes.slice(0, 5).map((c) => ({ contagem: c.nome, aplicado: c.importadoEm.slice(0, 10), ajuste_reais: Math.round(c.ajuste), itens_ajustados: c.naPlanilha, zerados: c.zerados }));
     }
     const fam = TS.invFamilia || ((x) => x);
@@ -317,8 +352,8 @@
       return [com.length ? com.map((x) => `${x.nome} (${x.dias} dias)`).join(', ') : '', sem.length ? `${cob && cob.appnextEm ? 'Nenhum inventário (painel ou AppNext)' : 'Nenhuma contagem no painel'}: ${sem.map((x) => x.nome).join(', ')}` : ''].filter(Boolean).join('. ');
     };
     const ir = { link: '#inventario', ir: 'fazer inventário ›', antes: () => { state.invId = null; } };
-    if (gAtr.length) lista.push({ nivel: 'warn', titulo: `Inventário: ${fmt.int(gAtr.length)} ${gAtr.length === 1 ? 'grupo está' : 'grupos estão'} há ${DIAS_INV} dias ou mais sem contagem`, texto: txt(gAtr), ...ir });
-    if (tAtr.length) lista.push({ nivel: 'warn', titulo: `Inventário: ${fmt.int(tAtr.length)} ${tAtr.length === 1 ? 'tipo de chá está' : 'tipos de chá estão'} há ${DIAS_INV} dias ou mais sem contagem`, texto: txt(tAtr), ...ir });
+    if (gAtr.length) lista.push({ nivel: 'warn', id: 'inv-grupos', titulo: `Inventário: ${fmt.int(gAtr.length)} ${gAtr.length === 1 ? 'grupo está' : 'grupos estão'} há ${DIAS_INV} dias ou mais sem contagem`, texto: txt(gAtr), ...ir });
+    if (tAtr.length) lista.push({ nivel: 'warn', id: 'inv-tipos', titulo: `Inventário: ${fmt.int(tAtr.length)} ${tAtr.length === 1 ? 'tipo de chá está' : 'tipos de chá estão'} há ${DIAS_INV} dias ou mais sem contagem`, texto: txt(tAtr), ...ir });
   }
 
   // ---------- custo subiu nas notas recentes: produtos à venda com margem menor (admin e franqueado) ----------
@@ -339,7 +374,7 @@
     }
     const imp = TS.impactoCusto(M, (e.tabela && e.tabela.itens) || [], itens).filter((x) => x.mD < x.mA - 0.01);
     if (!imp.length) return;
-    lista.push({ nivel: 'warn', titulo: `Custo subiu: ${fmt.int(imp.length)} ${imp.length === 1 ? 'produto à venda ficou' : 'produtos à venda ficaram'} com margem menor`,
+    lista.push({ nivel: 'warn', id: 'custo-subiu', titulo: `Custo subiu: ${fmt.int(imp.length)} ${imp.length === 1 ? 'produto à venda ficou' : 'produtos à venda ficaram'} com margem menor`,
       texto: `Notas de entrada dos últimos 14 dias. ${imp.slice(0, 3).map((x) => `${x.desc} (${fmt.pct(x.mA, 0)} → ${fmt.pct(x.mD, 0)})`).join(', ')}${imp.length > 3 ? ` e mais ${imp.length - 3}` : ''}.`,
       link: '#notas', ir: 'ver as notas ›', antes: () => { state.prcNotasFil = 'subiu'; } });
   }
@@ -351,10 +386,10 @@
     if (!r.ok) return;
     const d = await r.json();
     const ir = { link: '#creditos', ir: 'ver créditos ›', antes: () => { state.cfFil = 'atrasado'; } };
-    if (d.resumo.nAtrasado) lista.push({ nivel: 'warn', titulo: `Franquia: ${fmt.int(d.resumo.nAtrasado)} ${d.resumo.nAtrasado === 1 ? 'devolução sem desconto' : 'devoluções sem desconto'} há mais de ${d.prazo} dias · ${fmt.brl(d.resumo.atrasado)}`, texto: 'Nenhuma nota de compra trouxe esse desconto ainda. Cobre a franquia ou marque como compensado.', ...ir });
+    if (d.resumo.nAtrasado) lista.push({ nivel: 'warn', id: 'cred-atrasado', titulo: `Franquia: ${fmt.int(d.resumo.nAtrasado)} ${d.resumo.nAtrasado === 1 ? 'devolução sem desconto' : 'devoluções sem desconto'} há mais de ${d.prazo} dias · ${fmt.brl(d.resumo.atrasado)}`, texto: 'Nenhuma nota de compra trouxe esse desconto ainda. Cobre a franquia ou marque como compensado.', ...ir });
     const fr = d.fidelidade && d.fidelidade.resumo;
-    if (fr && (fr.nAtrasado || fr.nFaltou)) lista.push({ nivel: 'warn', titulo: `Franquia: desconto dos prêmios de fidelidade ${fr.nAtrasado ? `atrasado em ${fr.nAtrasado} mês(es) (${fmt.brl(fr.atrasado)})` : ''}${fr.nAtrasado && fr.nFaltou ? ' e ' : ''}${fr.nFaltou ? `a menos em ${fr.nFaltou} mês(es) (${fmt.brl(fr.faltou)})` : ''}`, texto: 'Confira o boleto de royalties e lance o desconto que veio.', link: '#creditos', ir: 'ver ›' });
-    if (d.resumo.conferir) lista.push({ nivel: 'info', titulo: `Franquia: ${fmt.int(d.resumo.conferir)} ${d.resumo.conferir === 1 ? 'nota de compra com desconto' : 'notas de compra com desconto'} para conferir`, texto: 'O desconto não fechou com as devoluções em aberto.', link: '#creditos', ir: 'conferir ›', antes: () => { state.cfFil = 'todos'; } });
+    if (fr && (fr.nAtrasado || fr.nFaltou)) lista.push({ nivel: 'warn', id: 'cred-fidelidade', titulo: `Franquia: desconto dos prêmios de fidelidade ${fr.nAtrasado ? `atrasado em ${fr.nAtrasado} ${fr.nAtrasado === 1 ? 'mês' : 'meses'} (${fmt.brl(fr.atrasado)})` : ''}${fr.nAtrasado && fr.nFaltou ? ' e ' : ''}${fr.nFaltou ? `a menos em ${fr.nFaltou} ${fr.nFaltou === 1 ? 'mês' : 'meses'} (${fmt.brl(fr.faltou)})` : ''}`, texto: 'Confira o boleto de royalties e lance o desconto que veio.', link: '#creditos', ir: 'ver ›' });
+    if (d.resumo.conferir) lista.push({ nivel: 'info', id: 'cred-conferir', titulo: `Franquia: ${fmt.int(d.resumo.conferir)} ${d.resumo.conferir === 1 ? 'nota de compra com desconto' : 'notas de compra com desconto'} para conferir`, texto: 'O desconto não fechou com as devoluções em aberto.', link: '#creditos', ir: 'conferir ›', antes: () => { state.cfFil = 'todos'; } });
   }
 
   // ---------- site ----------
@@ -373,7 +408,7 @@
       if (a[1] == null && x.de != null) promoNova++;
       else if (Math.abs(a[0] - x.preco) >= 0.01 || (a[1] ?? null) !== (x.de ?? null)) mudou++;
     }
-    if (promoNova || mudou) lista.push({ nivel: 'info', titulo: `Site: ${promoNova ? `${fmt.int(promoNova)} produto(s) entraram em promoção` : ''}${promoNova && mudou ? ' e ' : ''}${mudou ? `${fmt.int(mudou)} mudaram de preço` : ''}`, texto: `Desde a consulta de ${new Date(d.anterior.em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}.`, link: '#site', ir: 'ver no site ›', antes: () => { state.siteFiltro = 'mudou'; } });
+    if (promoNova || mudou) lista.push({ nivel: 'info', id: 'site-mudou', titulo: `Site: ${promoNova ? `${fmt.int(promoNova)} ${promoNova === 1 ? 'produto entrou' : 'produtos entraram'} em promoção` : ''}${promoNova && mudou ? ' e ' : ''}${mudou ? `${fmt.int(mudou)} ${mudou === 1 ? 'mudou' : 'mudaram'} de preço` : ''}`, texto: `Desde a consulta de ${new Date(d.anterior.em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}.`, link: '#site', ir: 'ver no site ›', antes: () => { state.siteFiltro = 'mudou'; } });
   }
 
   // ---------- atualizações ----------
@@ -388,7 +423,7 @@
       const falhas = (l.eventos || []).filter((x) => x.ok === false && Date.parse(x.em) >= limite);
       if (falhas.length) {
         const NOME = { vendas: 'vendas', xml: 'XML', estoque: 'estoque', compras: 'notas de compra', caixa: 'caixa', fixe: 'FIXE', fixeEmail: 'FIXE' };
-        lista.push({ nivel: 'erro', titulo: `${l.nome}: ${fmt.int(falhas.length)} atualização(ões) falharam nas últimas 48 h`, texto: [...new Set(falhas.map((x) => NOME[x.parte] || x.parte))].join(', '), acao: () => TS.abrirHistAtualizacoes(), ir: 'ver histórico ›' });
+        lista.push({ nivel: 'erro', titulo: `${l.nome}: ${fmt.int(falhas.length)} ${falhas.length === 1 ? 'atualização falhou' : 'atualizações falharam'} nas últimas 48 h`, texto: [...new Set(falhas.map((x) => NOME[x.parte] || x.parte))].join(', '), acao: () => TS.abrirHistAtualizacoes(), ir: 'ver histórico ›' });
       }
     }
   }

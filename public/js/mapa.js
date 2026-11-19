@@ -885,15 +885,19 @@
           h('td', null, String(row.filter((c) => c.tipo === 'ferias').length)), h('td', { class: 'tot' }, hTxt(row.reduce((s, c) => s + bruto(c), 0))), h('td', { class: 'tot liq' }, hTxt(row.reduce((s, c) => s + liquido(c), 0))));
       })));
     const tabela = (paraPdf) => h('div', { class: 'semanas' }, semanasMes.map((datas, n) => blocoSemana(datas, n + 1, paraPdf)), resumoMes(paraPdf));
-    const legenda = () => h('div', { class: 'mes-leg' }, h('span', { class: 'l-trab' }, 'entrada–saída (int. = intervalo)'), h('span', { class: 'l-folga' }, 'folga'), h('span', { class: 'l-rod' }, 'folga do rodízio (domingo e segunda)'),
-      h('span', { class: 'l-ferias' }, 'férias'), h('span', { class: 'l-fer' }, 'feriado'), h('span', null, '• ou * = ajuste manual'), h('span', null, 'Total = com intervalo · Líquida (e "líquidas" em cada dia) = sem intervalo'), h('span', { class: 'fer-hor proprio' }, '✎ = horário próprio do feriado (tela Feriados)'));
+    // na tela: só as cores numa linha e o resto em "Como ler ▸"; no PDF/impressão a legenda sai inteira
+    const legenda = (paraPdf) => (!paraPdf ? h('div', { class: 'mes-leg' }, h('span', { class: 'l-trab' }, 'trabalho'), h('span', { class: 'l-folga' }, 'folga'), h('span', { class: 'l-rod' }, 'folga do rodízio'), h('span', { class: 'l-ferias' }, 'férias'), h('span', { class: 'l-fer' }, 'feriado'),
+      h('details', { class: 'est-como' }, h('summary', null, 'Como ler ▸'),
+        h('p', null, 'Cada dia mostra entrada–saída (int. = intervalo). Folga do rodízio = domingo e segunda. • ou * = ajuste manual. Total = horas com o intervalo; Líquida (e "líquidas" em cada dia) = sem o intervalo. ✎ = horário próprio do feriado (tela Feriados).')))
+      : h('div', { class: 'mes-leg' }, h('span', { class: 'l-trab' }, 'entrada–saída (int. = intervalo)'), h('span', { class: 'l-folga' }, 'folga'), h('span', { class: 'l-rod' }, 'folga do rodízio (domingo e segunda)'),
+      h('span', { class: 'l-ferias' }, 'férias'), h('span', { class: 'l-fer' }, 'feriado'), h('span', null, '• ou * = ajuste manual'), h('span', null, 'Total = com intervalo · Líquida (e "líquidas" em cada dia) = sem intervalo'), h('span', { class: 'fer-hor proprio' }, '✎ = horário próprio do feriado (tela Feriados)')));
     const ferMes = [...E.feriados.values()];
     const imprimir = () => {
       document.getElementById('impressao')?.remove();
       const el = h('div', { id: 'impressao' }, h('section', { class: 'imp-pag imp-escala' },
         h('div', { class: 'imp-cab' }, h('div', null, h('div', { class: 'imp-marca' }, 'Tea Shop'), h('div', null, lojaNome || '')),
           h('div', { class: 'imp-dir' }, h('div', { class: 'imp-tit' }, 'Escala de trabalho'), h('div', null, `${TS.MESES_LONGOS[+ym.slice(5, 7) - 1]} de ${ym.slice(0, 4)}`), h('div', null, `Escala ${op.equipe.escala}${op.equipe.modelo === 'rodizio' ? ' · rodízio de domingo' : ''}`))),
-        tabela(true), legenda(),
+        tabela(true), legenda(true),
         ferMes.length ? h('p', { class: 'imp-obs' }, 'Feriados: ' + ferMes.map((f) => `${f.data.slice(8)}/${f.data.slice(5, 7)} ${f.nome}`).join(' · ')) : null,
         alertas.length ? h('p', { class: 'imp-obs' }, 'Atenção: ' + alertas.join(' · ')) : null,
         h('p', { class: 'imp-obs' }, `Intervalo: ${op.equipe.intervalo || 0} min nas jornadas acima de 8h${op.equipe.intervaloAte8 != null ? `, ${op.equipe.intervaloAte8} min nas de 4h a 8h` : ''}. Emitido em ${new Date().toLocaleString('pt-BR')}.`),

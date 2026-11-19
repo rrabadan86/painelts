@@ -309,7 +309,7 @@
     };
     const mudarSit = async (sit) => {
       let motivo = '';
-      if (sit === 'perdido') { motivo = prompt('Por que perdemos? (preço, prazo, desistência, concorrente…)', ''); if (!motivo) return; }
+      if (sit === 'perdido') { motivo = await TS.perguntar('Por que perdemos este orçamento?', { chips: ['Preço', 'Prazo', 'Desistência', 'Concorrente', 'Sem resposta do cliente'], obrigatorio: true, rotulo: 'Motivo', falta: 'Escolha um motivo ou escreva o que aconteceu.', ok: 'Marcar como perdido' }); if (!motivo) return; }
       if (!o.id) { if (!(await salvar())) return; }
       try { const r = await api('POST', `orcamentos/${o.id}/situacao`, { loja, situacao: sit, motivo }); Object.assign(o, r.ok); toast(`Orçamento #${o.numero}: ${SIT[sit][0].toLowerCase()}.`); editor(corpo, loja, cat, o); } catch (e) { toast(e.message, true); }
     };

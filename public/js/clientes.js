@@ -1621,13 +1621,13 @@
           h('div', { class: 'cfg-inline' },
             h('a', { class: 'btn primary', href: '#', onclick: async (e) => {
               e.preventDefault();
-              if (!lido) { alert('Conferindo o estoque… tente de novo em um instante.'); return; }
-              if (faltando) { alert(`${faltando} está sem estoque: escolha outra mensagem.`); return; }
+              if (!lido) { TS.avisar('Conferindo o estoque… tente de novo em um instante.'); return; }
+              if (faltando) { TS.avisar(`${faltando} está sem estoque: escolha outra mensagem.`); return; }
               const rr = recebeuRecente(c);
-              if (rr) { alert(`${c.nome || 'Este cliente'} recebeu mensagem da loja há ${rr.dias} ${rr.dias === 1 ? 'dia' : 'dias'}${rr.ct.motivo ? ' (' + rr.ct.motivo + ')' : ''}. Para não ser insistente, a próxima só a partir de ${rr.ate.toLocaleDateString('pt-BR')} (uma mensagem a cada ${rr.iv} dias).`); return; }
-              if (TS.demo) { alert('Na apresentação o WhatsApp não abre (número fictício). A mensagem seria:\n\n' + textoWpp(atual(), c)); }
+              if (rr) { TS.avisar(`${c.nome || 'Este cliente'} recebeu mensagem da loja há ${rr.dias} ${rr.dias === 1 ? 'dia' : 'dias'}${rr.ct.motivo ? ' (' + rr.ct.motivo + ')' : ''}. Para não ser insistente, a próxima só a partir de ${rr.ate.toLocaleDateString('pt-BR')} (uma mensagem a cada ${rr.iv} dias).`); return; }
+              if (TS.demo) { await TS.avisar(textoWpp(atual(), c), { titulo: 'Na apresentação o WhatsApp não abre (número fictício). A mensagem seria:' }); }
               else window.open(linkWpp(c, textoWpp(atual(), c)), '_blank', 'noopener');
-              try { await marcar(c, 'contatado', atual().nome); pintar(); } catch (er) { alert(er.message); }
+              try { await marcar(c, 'contatado', atual().nome); pintar(); } catch (er) { TS.avisarErro(er); }
             } }, 'Abrir no WhatsApp'),
             h('small', { class: 'muted' }, 'Ao abrir, o cliente fica marcado como contatado.'))));
       }
@@ -1637,7 +1637,7 @@
         ct.em ? h('button', { type: 'button', class: 'btn', onclick: () => agir('limpar') }, 'Desfazer contato') : null,
         h('button', { type: 'button', class: 'btn ghost-danger', title: 'LGPD: a pessoa sai das listas de contato e da exportação para WhatsApp', onclick: () => { if (confirm('Marcar que este cliente NÃO quer receber mensagens?')) agir('optout'); } }, 'Não quer mensagens')));
     };
-    const agir = async (acao, motivo) => { try { await marcar(c, acao, motivo); pintar(); } catch (e) { alert(e.message); } };
+    const agir = async (acao, motivo) => { try { await marcar(c, acao, motivo); pintar(); } catch (e) { TS.avisarErro(e); } };
     pintar();
     return box;
   }
@@ -1648,7 +1648,7 @@
   /** para lista de transmissão / campanha: só quem tem WhatsApp e não pediu para não receber mensagens */
   function baixarCSVWpp(lista) {
     const ok = lista.filter((r) => r.c.wpp && !(contatoDe(r.c) || {}).optout);
-    if (!ok.length) { alert('Nenhum cliente da lista tem WhatsApp (ou todos pediram para não receber mensagens).'); return; }
+    if (!ok.length) { TS.avisar('Nenhum cliente da lista tem WhatsApp (ou todos pediram para não receber mensagens).'); return; }
     const esc = (v) => { const s = v == null ? '' : String(v); return /[;"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
     const cel = (c) => { const d = c.celular.replace(/\D/g, ''); return d.startsWith('55') && d.length >= 12 ? '+' + d : '+55' + d; };
     const linhas = [['Nome', 'Celular'].join(';'), ...ok.map((r) => [r.c.nome, TS.demo ? '' : cel(r.c)].map(esc).join(';'))];

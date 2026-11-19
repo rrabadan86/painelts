@@ -2757,3 +2757,33 @@ details.vl-ajuda summary { cursor: pointer; font-weight: 600; }
 .nfe-det-info { font-size: 12.5px; }
 .nfe-det-erro { margin: 0; overflow-wrap: anywhere; }
 .nfe-det-tot { text-align: right; }
+
+/* janelas TS.perguntar / TS.avisar (no lugar do prompt/alert do navegador) */
+.ts-perg h3 { margin: 0; }
+.ts-perg .chips { margin-top: 0; }
+.ts-perg .chip { min-height: 32px; }
+.ts-perg-campo { display: grid; gap: 4px; }
+.ts-perg-msg { white-space: pre-line; overflow-wrap: anywhere; }
+.ts-perg-acoes { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+/* telas que não usam a lateral de filtros (Início, Resultado): a coluna some */
+body.pg-semfiltros .layout { grid-template-columns: 1fr; }
+body.pg-semfiltros .sidebar, body.pg-semfiltros #btnFiltros { display: none; }
+/* Início: "lembrar depois" nos avisos */
+.ini-adiar { flex: none; border: 0; background: none; font: inherit; font-size: 12px; color: var(--muted); cursor: pointer; text-decoration: underline; padding: 8px 4px; min-height: 32px; }
+.ini-adiar:hover { color: var(--green); }
+.ini-adiados { font-size: 12px; margin-top: 2px; }
+@media (max-width: 760px) {
+  .ini-aviso { flex-wrap: wrap; }
+  .ini-aviso > div { flex-basis: calc(100% - 40px); }
+  .ini-aviso .ini-ir, .ini-aviso .ini-adiar { margin-left: 38px; }
+  .ini-aviso .ini-adiar { margin-left: auto; order: 5; }
+}
+/* "Como funciona ▸": explicação longa recolhida numa frase */
+.est-como { display: inline; font-size: 12px; }
+.est-como[open] { display: block; margin-top: 4px; }
+.est-como > summary { display: inline; cursor: pointer; color: var(--green); list-style: none; }
+.est-como > summary::-webkit-details-marker { display: none; }
+.est-como > p { margin: 4px 0 0; max-width: 70ch; }
+.est-como > :not(summary) { color: var(--muted); }
+.est-abas { display: flex; }
+.est-abas .seg { max-width: 100%; }

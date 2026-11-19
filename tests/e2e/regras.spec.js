@@ -61,6 +61,7 @@ test.describe('regras', () => {
 
   test('Produtos por lucro: visão Resumo cabe sem rolar para o lado', async ({ page }) => {
     await page.evaluate(() => { location.hash = '#rentab'; });
+    await page.locator('.est-abas button', { hasText: 'Produtos' }).click();
     const t = page.locator('.est-t-lucro');
     await expect(t).toBeVisible();
     await page.locator('.est-vis button', { hasText: 'Resumo' }).click();
