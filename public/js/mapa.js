@@ -63,19 +63,23 @@
   const abaixoClt = (jorn, int) => (jorn > 360 ? int < 60 : jorn > 240 ? int < 15 : false);
   TS._intervalo = { intervaloMin, abaixoClt, pausaDoTurno: (...a) => pausaDoTurno(...a) };
   /**
-   * Replicar/Trazer mês: cada dia do destino recebe os ajustes do dia EQUIVALENTE da origem — mesma chave (semana do rodízio +
-   * dia da semana) e a mesma ocorrência no mês (1ª, 2ª…). Ajuste pontual vai só para um dia (decisão do dono). Feriados ficam de fora.
+   * Replicar/Trazer mês: só vão os ajustes marcados para repetir ("neste e nos próximos <dia da semana>") — em todos os
+   * mesmos dias da semana do outro mês. Ajuste pontual fica só no dia dele (decisão do dono). Feriados do destino ficam de fora.
+   * Se a mesma pessoa tem ajustes que repetem diferentes no mesmo dia da semana, vale o mais recente.
    * Devolve { 'AAAA-MM-DD': { NOME: ajuste } } (sem filtrar equipe/férias).
    */
-  function diasEquivalentes(srcYm, dstYm, src, chave, ferSrc = new Set(), ferDst = new Set()) {
-    const diasDe = (m) => Array.from({ length: new Date(Date.UTC(+m.slice(0, 4), +m.slice(5, 7), 0)).getUTCDate() }, (_, k) => `${m}-${String(k + 1).padStart(2, '0')}`);
-    const filas = new Map();
-    for (const d of diasDe(srcYm)) { const ch = chave(d); (filas.get(ch) || filas.set(ch, []).get(ch)).push(ferSrc.has(d) ? null : (src || {})[d] || null); }
-    const usados = new Map(), out = {};
-    for (const d of diasDe(dstYm)) {
-      const ch = chave(d), k = usados.get(ch) || 0;
-      usados.set(ch, k + 1);
-      const a = !ferDst.has(d) && (filas.get(ch) || [])[k];
+  function ajustesQueRepetem(srcYm, dstYm, src, ferDst = new Set()) {
+    const wdIso = (iso) => new Date(iso + 'T12:00:00Z').getUTCDay();
+    const porWd = new Map(); // dia da semana → { NOME: ajuste }
+    for (const d of Object.keys(src || {}).sort()) {
+      if (!d.startsWith(srcYm)) continue;
+      for (const [nome, a] of Object.entries(src[d] || {})) if (a && a.repete) (porWd.get(wdIso(d)) || porWd.set(wdIso(d), {}).get(wdIso(d)))[nome] = a;
+    }
+    const nD = new Date(Date.UTC(+dstYm.slice(0, 4), +dstYm.slice(5, 7), 0)).getUTCDate();
+    const out = {};
+    for (let k = 1; k <= nD; k++) {
+      const d = `${dstYm}-${String(k).padStart(2, '0')}`;
+      const a = !ferDst.has(d) && porWd.get(wdIso(d));
       if (a && Object.keys(a).length) out[d] = a;
     }
     return out;
@@ -452,7 +456,7 @@
     }
     return { semanas, L, kDom, folgamDom, trabMin, jornada, intervalo, diasBase, fixos, maxF };
   }
-  TS._escala = { montarRodizio: (...a) => montarRodizio(...a), montarEscala: (...a) => montarEscala(...a), diasEquivalentes, B, PH };
+  TS._escala = { montarRodizio: (...a) => montarRodizio(...a), montarEscala: (...a) => montarEscala(...a), ajustesQueRepetem, B, PH };
   const resumoRodizio = (r) => ({ descoberto: r.semanas.reduce((s, w) => s + w.descoberto, 0), abaixo: r.semanas.reduce((s, w) => s + w.abaixo, 0) });
 
   // ---------- editor de horário e equipe (usado aqui e em Configurações) ----------
@@ -946,47 +950,46 @@
       conferir();
       const blocoTroca = h('div', { class: 'aj-linha' }, h('span', null, 'Com'), com);
       const mostrar = () => { blocoHora.hidden = modo.value !== 'trab'; blocoTroca.hidden = modo.value !== 'troca'; };
+      const DSP0 = ['domingos', 'segundas', 'terças', 'quartas', 'quintas', 'sextas', 'sábados'];
+      const wdSel0 = new Date(iso + 'T12:00:00Z').getUTCDay();
+      // pontual (só este dia) ou repete (este e os próximos do mesmo dia da semana, e nos próximos meses ao replicar)
+      const vale = h('select', { class: 'f-input aj-vale', 'aria-label': 'Vale para' },
+        h('option', { value: 'dia', selected: !ajAtual?.repete || null }, 'Só neste dia (pontual)'),
+        h('option', { value: 'repete', selected: ajAtual?.repete || null }, `Neste e nos próximos ${DSP0[wdSel0]} (também nos próximos meses)`));
+      const blocoVale = h('div', { class: 'aj-linha' }, h('span', null, 'Vale para'), vale);
+      const mostrarVale = () => { blocoVale.hidden = modo.value === 'auto'; };
+      modo.addEventListener('change', mostrarVale); mostrarVale();
       modo.addEventListener('change', mostrar); mostrar();
       const comoAjuste = (c) => (c.tipo === 'trab' ? { tipo: 'trab', ini: hhmm(c.ini), fim: hhmm(c.fim) } : { tipo: 'folga' });
       const erro = h('span', { class: 'neg' });
       const aplicar = () => {
-        const d = (AJ.dados[iso] ||= {});
-        if (modo.value === 'auto') delete d[N];
-        else if (modo.value === 'folga') d[N] = { tipo: 'folga' };
-        else if (modo.value === 'trab') { if (!ini.value || !fim.value || ini.value >= fim.value) { erro.textContent = 'A entrada precisa ser antes da saída.'; return; } d[N] = { tipo: 'trab', ini: ini.value, fim: fim.value }; }
-        else { const j = +com.value; const outra = E.pessoas[j].nome.trim().toUpperCase(); d[N] = comoAjuste(E.cel[j][k]); d[outra] = comoAjuste(atual); }
-        if (!Object.keys(d).length) delete AJ.dados[iso];
-        AJ.sujo = true; AJ.sel = null; AJ.msg = ''; TS.render();
+        const novos = {}; // NOME → ajuste (ou null = tirar)
+        if (modo.value === 'auto') novos[N] = null;
+        else if (modo.value === 'folga') novos[N] = { tipo: 'folga' };
+        else if (modo.value === 'trab') { if (!ini.value || !fim.value || ini.value >= fim.value) { erro.textContent = 'A entrada precisa ser antes da saída.'; return; } novos[N] = { tipo: 'trab', ini: ini.value, fim: fim.value }; }
+        else { const j = +com.value; const outra = E.pessoas[j].nome.trim().toUpperCase(); novos[N] = comoAjuste(E.cel[j][k]); novos[outra] = comoAjuste(atual); }
+        const repete = modo.value !== 'auto' && vale.value === 'repete';
+        // repete: este dia e os próximos do mesmo dia da semana no mês (feriados e férias ficam de fora); pontual: só este dia
+        const dias = repete ? [iso, ...E.dias.filter((x) => x > iso && new Date(x + 'T12:00:00Z').getUTCDay() === wdSel0 && !E.feriados.has(x))] : [iso];
+        let n = 0;
+        for (const dd of dias) {
+          const k2 = E.dias.indexOf(dd);
+          const alvo = (AJ.dados[dd] ||= {});
+          for (const [nome, aj] of Object.entries(novos)) {
+            if (aj == null) { delete alvo[nome]; continue; }
+            const j = E.pessoas.findIndex((q) => q.nome.trim().toUpperCase() === nome);
+            if (dd !== iso && j >= 0 && E.cel[j][k2].tipo === 'ferias') continue; // férias prevalecem
+            alvo[nome] = repete ? { ...aj, repete: true } : { ...aj }; n++;
+          }
+          if (!Object.keys(alvo).length) delete AJ.dados[dd];
+        }
+        AJ.sujo = true; AJ.sel = null; AJ.msg = repete ? `Ajuste aplicado em ${dias.length} ${DSP0[wdSel0]} deste mês; ao replicar, vai também para os próximos meses.` : ''; TS.render();
       };
       const DSN = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
-      const DSP = ['domingos', 'segundas', 'terças', 'quartas', 'quintas', 'sextas', 'sábados'];
-      // repetir os ajustes deste dia nos mesmos dias da semana seguintes (no mês), menos feriados
-      const wdSel = new Date(iso + 'T12:00:00Z').getUTCDay();
-      const ajDia = AJ.dados[iso] || {};
-      const proximos = E.dias.filter((d) => d > iso && new Date(d + 'T12:00:00Z').getUTCDay() === wdSel && !E.feriados.has(d));
-      const repetir = () => {
-        let n = 0;
-        for (const d of proximos) {
-          const k2 = E.dias.indexOf(d);
-          const alvo = (AJ.dados[d] ||= {});
-          for (const [nome, aj] of Object.entries(ajDia)) {
-            const j = E.pessoas.findIndex((q) => q.nome.trim().toUpperCase() === nome);
-            if (j >= 0 && E.cel[j][k2].tipo === 'ferias') continue; // férias prevalecem
-            alvo[nome] = { ...aj }; n++;
-          }
-          if (!Object.keys(alvo).length) delete AJ.dados[d];
-        }
-        AJ.sujo = true; AJ.sel = null; AJ.msg = `${n} ajuste(s) repetido(s) em ${proximos.length} ${DSP[wdSel]}.`; TS.render();
-      };
-      const nAjDia = Object.keys(ajDia).length;
-      const blocoRepetir = nAjDia && proximos.length ? h('div', { class: 'aj-repetir' },
-        h('button', { type: 'button', class: 'btn', onclick: repetir }, `↻ Repetir os ajustes deste dia nos próximos ${DSP[wdSel]}`),
-        h('small', { class: 'muted' }, `${nAjDia} ajuste(s) de ${iso.slice(8)}/${iso.slice(5, 7)} (${Object.keys(ajDia).map((nm) => (E.pessoas.find((q) => q.nome.trim().toUpperCase() === nm) || { nome: nm }).nome).join(', ')}) vão para ${proximos.map((d) => `${d.slice(8)}/${d.slice(5, 7)}`).join(', ')}. Feriados e férias ficam de fora.`)) : null;
       return h('div', { class: 'aj-editor' },
         h('div', { class: 'aj-tit' }, `${p.nome} · ${iso.slice(8)}/${iso.slice(5, 7)} (${DSN[new Date(iso + 'T12:00:00Z').getUTCDay()]})`, h('small', null, ` — hoje: ${atual.tipo === 'trab' ? `${hhmm(atual.ini)}–${hhmm(atual.fim)}` : atual.motivo || 'folga'}`)),
-        h('div', { class: 'aj-linha' }, modo), blocoHora, blocoTroca,
+        h('div', { class: 'aj-linha' }, modo), blocoHora, blocoTroca, blocoVale,
         h('div', { class: 'aj-linha' }, h('button', { type: 'button', class: 'btn primary', onclick: aplicar }, 'Aplicar'), h('button', { type: 'button', class: 'btn', onclick: () => { AJ.sel = null; TS.render(); } }, 'Cancelar'), erro),
-        blocoRepetir,
         h('small', { class: 'muted' }, 'O painel trava a sua escolha e refaz os turnos das outras pessoas nesse dia para manter a loja coberta.'));
     })();
     const salvarAj = async (btn) => {
@@ -1011,7 +1014,7 @@
       const ferSrc = new Set(TS.feriadosDoMes ? TS.feriadosDoMes(cfg, srcYm).map((f) => f.data) : []);
       const ferDst = new Set(TS.feriadosDoMes ? TS.feriadosDoMes(cfg, dstYm).map((f) => f.data) : []);
       const out = {}; let n = 0;
-      for (const [d, a] of Object.entries(diasEquivalentes(srcYm, dstYm, src, (iso) => `${semR(iso)}|${wdDe(iso)}`, ferSrc, ferDst))) {
+      for (const [d, a] of Object.entries(ajustesQueRepetem(srcYm, dstYm, src, ferDst))) {
         for (const [nome, x] of Object.entries(a)) if (nomesEq.has(nome) && !deFerias(nome, d)) { (out[d] ||= {})[nome] = { ...x }; n++; }
       }
       return { out, n };
@@ -1019,18 +1022,20 @@
     const iM = meses.indexOf(ym), prox = meses[iM + 1], ant = meses[iM - 1];
     const salvos = (m) => ((cfg && cfg.escalaAjustes) || {})[m] || {};
     const nomeMes = (m) => TS.MESES_LONGOS[+m.slice(5, 7) - 1].toLowerCase();
-    const btnReplicar = pode && prox && nAj ? h('button', { type: 'button', class: 'btn', title: `Leva os ajustes deste mês para ${nomeMes(prox)}, cada um para o dia equivalente (mesma semana do rodízio e mesmo dia da semana): ajuste pontual vai só para um dia. Você confere lá antes de salvar.`, onclick: () => {
+    // junta: o que já existe no destino continua (pontuais); os que repetem chegam por cima, só onde não houver ajuste da pessoa
+    const juntar = (base, vindo) => { const out = JSON.parse(JSON.stringify(base || {})); for (const [d, a] of Object.entries(vindo)) for (const [nome, x] of Object.entries(a)) if (!(out[d] && out[d][nome])) (out[d] ||= {})[nome] = x; return out; };
+    const nRepete = (dados) => Object.values(dados || {}).reduce((t, a) => t + Object.values(a).filter((x) => x && x.repete).length, 0);
+    const btnReplicar = pode && prox && nAj ? h('button', { type: 'button', class: 'btn', title: `Leva para ${nomeMes(prox)} só os ajustes marcados para repetir ("neste e nos próximos…"), em todos os mesmos dias da semana. Ajuste pontual fica só no dia dele. Você confere lá antes de salvar.`, onclick: () => {
       if (AJ.sujo) { alert('Salve os ajustes deste mês antes de replicar.'); return; }
-      if (Object.keys(salvos(prox)).length && !confirm(`${TS.MESES_LONGOS[+prox.slice(5, 7) - 1]} já tem ajustes salvos. Substituir pelos deste mês? (você ainda confere antes de salvar)`)) return;
+      if (!nRepete(AJ.dados)) { alert('Nenhum ajuste deste mês está marcado para repetir: os pontuais ficam só no dia deles. Para levar um ajuste aos próximos meses, abra o dia e escolha "Neste e nos próximos…".'); return; }
       const r = replicar(ym, prox, AJ.dados);
       state.escMesYm = prox;
-      state.escAj = { chave: `${(cfg && cfg.id) || 'loja'}|${prox}`, dados: r.out, sujo: true, sel: null, msg: `${r.n} ajuste(s) trazidos de ${nomeMes(ym)} seguindo o rodízio. Confira e salve.` };
+      state.escAj = { chave: `${(cfg && cfg.id) || 'loja'}|${prox}`, dados: juntar(salvos(prox), r.out), sujo: true, sel: null, msg: `${r.n} ajuste(s) que repetem trazidos de ${nomeMes(ym)} (os pontuais ficaram lá). Confira e salve.` };
       TS.render();
     } }, `Replicar para ${nomeMes(prox)} ›`) : null;
-    const btnTrazer = pode && ant && Object.keys(salvos(ant)).length ? h('button', { type: 'button', class: 'btn', title: `Traz os ajustes salvos de ${nomeMes(ant)} para este mês, seguindo o rodízio. Você confere antes de salvar.`, onclick: () => {
-      if (nAj && !confirm(`Substituir os ${nAj} ajuste(s) deste mês pelos de ${nomeMes(ant)}?`)) return;
+    const btnTrazer = pode && ant && nRepete(salvos(ant)) ? h('button', { type: 'button', class: 'btn', title: `Traz de ${nomeMes(ant)} só os ajustes marcados para repetir, em todos os mesmos dias da semana deste mês (os pontuais ficam lá). Você confere antes de salvar.`, onclick: () => {
       const r = replicar(ant, ym, salvos(ant));
-      AJ.dados = r.out; AJ.sujo = true; AJ.sel = null; AJ.msg = `${r.n} ajuste(s) trazidos de ${nomeMes(ant)} seguindo o rodízio. Confira e salve.`;
+      AJ.dados = juntar(AJ.dados, r.out); AJ.sujo = true; AJ.sel = null; AJ.msg = `${r.n} ajuste(s) que repetem trazidos de ${nomeMes(ant)} (os pontuais ficaram lá). Confira e salve.`;
       TS.render();
     } }, `‹ Trazer de ${nomeMes(ant)}`) : null;
     const barraAj = h('div', { class: 'aj-barra' },

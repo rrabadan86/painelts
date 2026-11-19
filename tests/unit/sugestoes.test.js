@@ -164,3 +164,12 @@ test('revisão: obrigatório conta como pedido; registrar 2× no mesmo dia não 
   assert.strictEqual(SUG.avaliarNotas('l5', { notas: [N('1', '2026-11-20', 'Concluída'), N('2', '2026-11-22', 'Digitação')] }, '2026-11-23').mudou, 0);
   assert.strictEqual(SUG.avaliarNotas('l5', { notas: [N('3', '2026-11-23', 'Concluída')] }, '2026-11-23').mudou, 2, 'as duas estrelas do A1 saem');
 });
+
+test('estoque agora: quem decide vê a quantidade; quem só sugere, só a situação', () => {
+  const est = { itens: [{ cod: 'Q1', desc: 'Chá Q', un: 'Kg', qtd: 0.45 }] };
+  const [a] = SUG.comEstoque([{ cod: 'Q1' }], est, true);
+  assert.deepStrictEqual(a.agora, { situacao: 'pouco', un: 'Kg', qtd: 0.45 });
+  const [b] = SUG.comEstoque([{ cod: 'Q1' }], est, false);
+  assert.deepStrictEqual(b.agora, { situacao: 'pouco', un: 'Kg' });
+  assert.strictEqual(SUG.comEstoque([{ cod: 'X' }], est, true)[0].agora, null);
+});
