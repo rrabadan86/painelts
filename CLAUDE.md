@@ -19,12 +19,17 @@ Painel de vendas das lojas Tea Shop (substitui o Power BI). Responda sempre em *
 - Testes: unidade em `tests/unit/*.test.js` (`node --test`); tela em `tests/e2e/*.spec.js` (Playwright, sempre na apresentação, projetos "computador" e "celular"). Mudou algo visível: confira no celular (390 px).
 - Textos da tela simples e diretos, em português; nada de termos técnicos para a vendedora.
 
-## Antes de cada commit
+## Testes (economizar tokens e tempo)
+- **Durante os ajustes:** `npm test` + só os testes de tela da parte mexida, ex.: `npx playwright test tests/e2e/ia.spec.js` (ou `-g "nome do teste"`).
+- **Antes de subir para o GitHub:** a bateria completa, uma vez:
 ```bash
 npm test
 npx playwright test          # se precisar: CHROME_PATH=<chromium> npx playwright test
 rm -rf test-results playwright-report tests/.dados
 ```
+- O GitHub roda tudo de novo antes de liberar a instalação: se algo escapar, a versão não entra.
+
+## Antes de cada commit
 - Comece sempre com `git fetch origin main && git merge --ff-only FETCH_HEAD` (o dono também sobe mudanças).
 - Faça commit e push de cada mudança. A instalação na VPS é pelo painel ("Atualizações do painel"): só versões que passam nos testes do GitHub entram. Depois é Ctrl+F5.
 
