@@ -15,23 +15,43 @@ const raiz = (id) => path.join(C.pastaLoja(id), 'xmls');
 const ehNFe = (ch) => CHAVE.test(ch) && ch.slice(20, 22) === '55';
 
 /** arquivos de NF-e da loja: { chave, arq, sit } (a mais recente de cada chave; cancelada vence a ativa) */
-function arquivos(id) {
-  const out = new Map();
+// Índice em memória por loja: em vez de listar todas as pastas a cada chamada (são milhares de cupons), confere só a data
+// de alteração de cada pasta (muda quando entra, sai ou troca um arquivo) e relê quando alguma mudou. Pasta mexida há
+// menos de 2 s não vale como "igual" (a data da pasta pode não ter mudado ainda): relê na próxima chamada.
+const indice = new Map(); // id -> { sig, estavel, lista, porChave, temXml, notas, notasEm }
+const FOLGA_MS = 2000;
+function indiceDe(id) {
+  const r = raiz(id), agora = Date.now();
   let meses = [];
-  try { meses = fs.readdirSync(raiz(id)).filter((m) => /^\d{4}-\d{2}$/.test(m)); } catch { return []; }
+  try { meses = fs.readdirSync(r).filter((m) => /^\d{4}-\d{2}$/.test(m)); } catch { indice.delete(id); return { lista: [], porChave: new Map(), temXml: false }; }
+  const pastas = [];
+  let sig = '', ultima = 0;
   for (const ym of meses) {
     for (const sit of ['ativos', 'cancelados']) {
-      let fs_ = [];
-      try { fs_ = fs.readdirSync(path.join(raiz(id), ym, sit)); } catch { continue; }
-      for (const f of fs_) {
-        const m = /^\d{8}_(\d{44})\.xml$/.exec(f);
-        if (!m || !ehNFe(m[1])) continue;
-        const atual = out.get(m[1]);
-        if (!atual || sit === 'cancelados') out.set(m[1], { chave: m[1], arq: path.join(raiz(id), ym, sit, f), sit });
-      }
+      const dir = path.join(r, ym, sit);
+      let st;
+      try { st = fs.statSync(dir); } catch { continue; }
+      pastas.push({ dir, sit });
+      sig += `${ym}/${sit}:${st.mtimeMs}|`;
+      if (st.mtimeMs > ultima) ultima = st.mtimeMs;
     }
   }
-  return [...out.values()];
+  const hit = indice.get(id);
+  if (hit && hit.estavel && hit.sig === sig) return hit;
+  const out = new Map();
+  for (const { dir, sit } of pastas) {
+    let fs_ = [];
+    try { fs_ = fs.readdirSync(dir); } catch { continue; }
+    for (const f of fs_) {
+      const m = /^\d{8}_(\d{44})\.xml$/.exec(f);
+      if (!m || !ehNFe(m[1])) continue;
+      const atual = out.get(m[1]);
+      if (!atual || sit === 'cancelados') out.set(m[1], { chave: m[1], arq: path.join(dir, f), sit });
+    }
+  }
+  const novo = { sig, estavel: agora - ultima > FOLGA_MS, lista: [...out.values()], porChave: out, temXml: meses.length > 0, notas: null, notasEm: 0 };
+  indice.set(id, novo);
+  return novo;
 }
 
 // ---- leitura do XML (sem dependências: as tags da NF-e são fixas)
@@ -108,18 +128,24 @@ function cabecalho(a) {
 }
 
 /** lista das NF-e da loja (mais recentes primeiro) */
+// Enquanto as pastas não mudam, a lista pronta é reaproveitada (sem conferir arquivo por arquivo); no máximo por 5 min,
+// para o caso raro de um XML ser regravado por cima sem a pasta mudar.
+const LISTA_MS = 5 * 60e3;
 function lista(id) {
-  const notas = arquivos(id).map(cabecalho).filter(Boolean).sort((a, b) => (b.emissao || '').localeCompare(a.emissao || '') || (b.numero || 0) - (a.numero || 0));
-  let temXml = false;
-  try { temXml = fs.readdirSync(raiz(id)).some((m) => /^\d{4}-\d{2}$/.test(m)); } catch { /* ok */ }
-  return { notas, temXml };
+  const ix = indiceDe(id);
+  let notas = ix.estavel && ix.notas && Date.now() - ix.notasEm < LISTA_MS ? ix.notas : null;
+  if (!notas) {
+    notas = ix.lista.map(cabecalho).filter(Boolean).sort((a, b) => (b.emissao || '').localeCompare(a.emissao || '') || (b.numero || 0) - (a.numero || 0));
+    if (ix.estavel) { ix.notas = notas; ix.notasEm = Date.now(); }
+  }
+  return { notas: notas.map((n) => ({ ...n })), temXml: ix.temXml };
 }
 
 /** chaves das NF-e que já têm XML guardado (para a lista do robô mostrar DANFE/XML sem ler cada arquivo) */
-const chaves = (id) => new Set(arquivos(id).map((a) => a.chave));
+const chaves = (id) => new Set(indiceDe(id).porChave.keys());
 function achar(id, chave) {
   if (!CHAVE.test(String(chave || ''))) return null;
-  return arquivos(id).find((a) => a.chave === chave) || null;
+  return indiceDe(id).porChave.get(chave) || null;
 }
 /** nota completa, com os itens */
 function nota(id, chave) {

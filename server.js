@@ -209,7 +209,7 @@ function filtrarPorPerfil(data, perfilDados) {
   }
   return out;
 }
-const packCache = new Map(); // chave -> { k, buf, gz, etag }
+const packCache = new Map(); // chave -> { k, gz, br, etag } (sem a cópia sem compressão: quase nenhum navegador pede; sai do gzip quando precisa)
 async function pacote(lojas, force, perfilDados = 'completo', desde = null) {
   const entradas = await Promise.all(lojas.map((l) => dadosLoja(l, force)));
   // metas vêm sempre da configuração atual (mudam pelo painel sem recarregar as planilhas)
@@ -224,7 +224,7 @@ async function pacote(lojas, force, perfilDados = 'completo', desde = null) {
   const pc = lruGet(packCache, chave);
   const stale = entradas.map((e) => e.stale).filter(Boolean).join(' | ') || null;
   const at = Math.min(...entradas.map((e) => e.at));
-  if (pc && pc.k === k) return { buf: pc.buf, gz: pc.gz, br: pc.br, etag: pc.etag, at, stale };
+  if (pc && pc.k === k) return { buf: pc.buf || null, gz: pc.gz, br: pc.br, etag: pc.etag, at, stale };
   let data = lojas.length === 1 ? { ...entradas[0].raw } : juntar(entradas.map((e) => e.raw));
   data.metaCfgs = metaCfgs;
   data.meta = metaCfgs.some((m) => m.padrao != null) ? metaCfgs.reduce((s, m) => s + (m.padrao || 0), 0) : null;
@@ -241,7 +241,7 @@ async function pacote(lojas, force, perfilDados = 'completo', desde = null) {
     ? await Promise.all([gzipAsync(buf, { level: 6 }), brotliAsync(buf, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 5, [zlib.constants.BROTLI_PARAM_SIZE_HINT]: buf.length } })])
     : [null, null];
   const etag = '"' + crypto.createHash('sha1').update(buf).digest('base64').slice(0, 27) + '"';
-  lruSet(packCache, chave, { k, buf, gz, br, etag }, 40);
+  lruSet(packCache, chave, { k, buf: gz ? null : buf, gz, br, etag }, 120);
   return { buf, gz, br, etag, at, stale };
 }
 
@@ -668,12 +668,29 @@ app.get('/api/demo/classificacao', (req, res) => res.json({ produtos: {} }));
 app.get('/api/demo/site', (req, res) => res.json({ demo: true, em: new Date().toISOString(), origem: 'agendada', itens: [] }));
 app.get('/api/demo/contatos', (req, res) => res.json({ contatos: {} }));
 app.get('/api/demo/xmls/resumo', (req, res) => res.json({ meses: [] }));
-app.get('/api/demo/dados', (req, res) => {
+const demoComp = new Map(); // corpo da apresentação já comprimido (br/gz), por loja: refeito quando o corpo muda (a cada hora)
+app.get('/api/demo/dados', async (req, res) => {
   try {
     const d = DEMO.pacoteDemo(String(req.query.loja || ''));
     res.set('Cache-Control', 'public, max-age=300');
     res.set('X-Dados-Em', new Date(d.at).toISOString());
-    res.type('application/json').send(d.body);
+    let c = demoComp.get(d.chave);
+    if (!c || c.body !== d.body) {
+      const buf = Buffer.from(d.body);
+      const [gz, br] = await Promise.all([gzipAsync(buf, { level: 6 }), brotliAsync(buf, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 5, [zlib.constants.BROTLI_PARAM_SIZE_HINT]: buf.length } })]);
+      c = { body: d.body, gz, br, etag: 'W/"' + crypto.createHash('sha1').update(buf).digest('base64').slice(0, 27) + '"' };
+      demoComp.set(d.chave, c);
+    }
+    // nada mudou desde o último pedido (o painel guarda os dados no aparelho e confere pelo ETag)
+    res.set({ ETag: c.etag, Vary: 'Accept-Encoding' });
+    if (req.get('If-None-Match') === c.etag) return res.status(304).end();
+    const aceita = String(req.headers['accept-encoding'] || '');
+    const querBr = /\bbr\b/.test(aceita), querGz = /\bgzip\b/.test(aceita);
+    res.set('Content-Type', 'application/json; charset=utf-8');
+    if (!querBr && !querGz) return res.end(d.body);
+    // já vai comprimido (o compression() não comprime de novo o que tem Content-Encoding)
+    res.set('Content-Encoding', querBr ? 'br' : 'gzip');
+    res.end(querBr ? c.br : c.gz);
   } catch (e) {
     console.error('[demo] erro:', e.message);
     res.status(500).json({ erro: 'Apresentação indisponível no momento.' });
@@ -963,7 +980,7 @@ app.get('/api/dados', async (req, res) => {
       res.set('Content-Encoding', 'gzip');
       return res.end(d.gz);
     }
-    res.end(d.buf);
+    res.end(d.buf || zlib.gunzipSync(d.gz));
   } catch (e) {
     console.error('[dados] erro:', e.message);
     res.status(502).json({ erro: e.message });
@@ -1906,12 +1923,13 @@ app.get('/api/inventario', async (req, res) => {
   for (const i of cat) if (i.grupo && i.sub) { const k = i.grupo + '|' + i.sub; subs.set(k, (subs.get(k) || 0) + 1); }
   const fams = new Map();
   for (const i of cat) { const f = INV.familia(i.tipo); if (f) fams.set(f, (fams.get(f) || 0) + 1); }
-  const contagens = req.perfil === 'vendedor' ? INV.lista(loja.id).map((x) => ({ ...x, ajuste: null })) : INV.lista(loja.id);
+  const todas = INV.lista(loja.id);
+  const contagens = req.perfil === 'vendedor' ? todas.map((x) => ({ ...x, ajuste: null })) : todas;
   res.json({
     contagens, estoqueEm: est && est.em, perfil: req.perfil,
     grupos: conta('grupo'), subs: [...subs].map(([k, n]) => [...k.split('|'), n]), tipos: conta('tipo'), familias: [...fams].sort((a, b) => a[0].localeCompare(b[0], 'pt-BR')),
     kg: cat.filter(INV.ehChaGranel).length,
-    cobertura: INV.cobertura(loja.id, cat, INV.lista(loja.id)),
+    cobertura: INV.cobertura(loja.id, cat, todas),
   });
 });
 // busca de itens (para escolher ou incluir): nome, código ou código de barras
@@ -2193,14 +2211,26 @@ app.get('/api/espera', async (req, res) => {
   res.json({ pedidos: d.pedidos, modelo: d.modelo, dias: ESP.DIAS_COMPRA, podeModelo: req.perfil !== 'vendedor', lojaNome: loja.nome, vendedoras });
 });
 // produtos para escolher: o cadastro do AppNext (com o tamanho) e o que já foi vendido; marca o que está em falta
+const espProdCache = new Map(); // loja -> { tab, raw, m }
 app.get('/api/espera/produtos', async (req, res) => {
   const loja = lojaEsp(req);
   if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
   const q = ESP.ESQ(req.query.q || '');
   if (q.length < 2) return res.json({ produtos: [] });
-  const m = new Map();
-  for (const i of (TAB.resumo(loja.id) || { itens: [] }).itens || []) if (i.desc && i.preco !== 0.01) m.set(ESP.ESQ(i.desc), { desc: i.desc, cod: String(i.cod), vendidos: 0 });
-  try { for (const v of (await dadosLoja(loja)).raw.vendas) { const k = ESP.ESQ(v.descricao); const a = m.get(k) || m.set(k, { desc: v.descricao, cod: v.cod != null ? String(v.cod) : null, vendidos: 0 }).get(k); a.vendidos += v.qtd || 0; if (!a.cod && v.cod != null) a.cod = String(v.cod); } } catch { /* ok */ }
+  // o mapa descrição → vendidos só é refeito quando as vendas ou o cadastro da loja mudam (a busca roda a cada tecla)
+  const tab = TAB.resumo(loja.id);
+  let dl = null;
+  try { dl = await dadosLoja(loja); } catch { /* ok */ }
+  const raw = dl ? dl.raw : null; // objeto novo a cada recarga das vendas da loja
+  let memo = espProdCache.get(loja.id);
+  if (!memo || memo.tab !== tab || memo.raw !== raw || !raw) {
+    const novo = new Map();
+    for (const i of (tab || { itens: [] }).itens || []) if (i.desc && i.preco !== 0.01) novo.set(ESP.ESQ(i.desc), { desc: i.desc, cod: String(i.cod), vendidos: 0 });
+    try { for (const v of raw.vendas) { const k = ESP.ESQ(v.descricao); const a = novo.get(k) || novo.set(k, { desc: v.descricao, cod: v.cod != null ? String(v.cod) : null, vendidos: 0 }).get(k); a.vendidos += v.qtd || 0; if (!a.cod && v.cod != null) a.cod = String(v.cod); } } catch { /* ok */ }
+    memo = { tab, raw, m: novo };
+    if (raw) espProdCache.set(loja.id, memo); else espProdCache.delete(loja.id);
+  }
+  const m = memo.m;
   const est = ES.atual(loja.id);
   // chá a granel sem o pacote ("valeriana"): o item do estoque em kg, que vale para qualquer tamanho
   const gen = ((est && est.itens) || []).filter((i) => i.un === 'Kg' && ESP.ESQ(i.desc).includes(q)).slice(0, 4)
@@ -2754,6 +2784,19 @@ setInterval(async () => {
     eventosRodando = false;
   }
 }, 60e3).unref();
+
+// limpeza dos pedidos antigos ao robô (NF-e e inventário): 10 min depois de ligar e uma vez por dia.
+// Só arquivos de envio (pedido/resultado/planilha); XML de nota, contagens e vendas nunca são apagados.
+function limparEnviosAntigos() {
+  for (const l of C.get().lojas) {
+    try {
+      const n = NFE.limparEnvios(l.id, DEV.lista(l.id).map((d) => d.id)) + INV.limparEnvios(l.id);
+      if (n) console.log(`[limpeza] ${l.id}: ${n} arquivo(s) de envio antigos apagados`);
+    } catch (e) { console.error(`[limpeza] ${l.id}:`, e.message); }
+  }
+}
+setTimeout(limparEnviosAntigos, 10 * 60e3).unref();
+setInterval(limparEnviosAntigos, 24 * 3600e3).unref();
 
 // avisos de falha para o administrador (coleta, FIXE, loja sem vendas de ontem): a cada 5 minutos
 setInterval(() => {
