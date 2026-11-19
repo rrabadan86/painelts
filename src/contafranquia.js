@@ -159,8 +159,9 @@ function acao(id, b, por) {
   const cid = (x) => /^[\w-]{3,60}$/.test(String(x || ''));
   if (b.tipo === 'ligar') {
     if (!b.nota || !Array.isArray(b.creditos) || !b.creditos.length || !b.creditos.every(cid)) return { erro: 'Escolha a nota e os créditos.' };
+    for (const [c, x] of Object.entries(m.manual)) if (x.nota === b.nota) delete m.manual[c]; // a nova escolha substitui a anterior
     for (const c of b.creditos) m.manual[c] = { nota: String(b.nota).slice(0, 60), obs, por, em };
-    delete m.ignorar[b.nota];
+    delete m.ignorar[b.nota]; delete m.recusar[b.nota];
   } else if (b.tipo === 'compensar' || b.tipo === 'cancelar') {
     if (!cid(b.credito)) return { erro: 'Crédito inválido.' };
     m.manual[b.credito] = { como: b.tipo === 'cancelar' ? 'cancelado' : (['boleto', 'royalties', 'outro'].includes(b.como) ? b.como : 'outro'), obs, por, em };
