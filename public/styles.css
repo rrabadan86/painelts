@@ -1700,6 +1700,8 @@ body.com-camada .ped-barra { display: none; }
   .t.t-mob > tbody > tr > td input, .t.t-mob > tbody > tr > td select { max-width: 100%; min-width: 0; }
   .t.t-mob > tbody > tr > td::before, .t.t-mob > tfoot > tr > td::before { content: attr(data-l); font-size: 11px; font-weight: 500; color: var(--muted, #7a7a7a); text-transform: none; letter-spacing: 0; }
   .t.t-mob > tbody > tr > td:not([data-l])::before, .t.t-mob > tbody > tr > td[data-l=""]::before, .t.t-mob > tfoot > tr > td:not([data-l])::before { content: none; }
+  .t.t-mob > tbody > tr > td.com-dica::before { content: none; }
+  .t.t-mob > tbody > tr > td.com-dica > .mob-rot { display: flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 500; color: var(--muted, #7a7a7a); }
   .t.t-mob > tbody > tr > td.mob-tit, .t.t-mob > tfoot > tr > td.mob-tit { grid-column: 1 / -1; font-size: 15px; font-weight: 600; padding-bottom: 6px !important; border-bottom: 1px solid #F0EBE0 !important; }
   .t.t-mob > tbody > tr > td.mob-tit::before { content: none; }
   .t.t-mob > tbody > tr > td[data-l=""], .t.t-mob > tbody > tr > td:not([data-l]):not(.mob-tit) { grid-column: 1 / -1; }
@@ -2630,3 +2632,33 @@ details.vl-ajuda summary { cursor: pointer; font-weight: 600; }
 /* pontinho: análise do dia ainda não lida */
 .ia-btn { position: relative; } /* o .ia-fab já é fixed */
 .ia-btn.ia-novidade::after, .ia-fab.ia-novidade::after { content: ''; position: absolute; top: 4px; right: 4px; width: 11px; height: 11px; border-radius: 50%; background: #E0A800; box-shadow: 0 0 0 2px #fff; }
+
+/* Preços: motivo provável da diferença entre vendas e cadastro */
+.prc-tabpor { display: flex; align-items: center; gap: 4px; font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+.prc-badge.prc-neutro { background: var(--sage-l, #eef0ea); color: var(--muted); }
+
+/* Nota de entrada → Enviar para a franquia (reclamar do reajuste) */
+.nf-impacto-bts { display: flex; flex-wrap: wrap; gap: 8px; }
+.nf-fr-pop { max-width: 640px; width: calc(100vw - 32px); max-height: calc(100vh - 32px); overflow: auto; display: flex; flex-direction: column; gap: 10px; }
+.nf-fr-campo { display: flex; flex-direction: column; gap: 4px; }
+.nf-fr-campo .input { width: 100%; box-sizing: border-box; }
+.nf-fr-msg { min-height: 120px; resize: vertical; font: inherit; }
+.nf-fr-cab { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+.nf-fr-todos { display: flex; align-items: center; gap: 6px; font-weight: 600; }
+.nf-fr-lista { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 10px; max-height: 260px; overflow: auto; }
+.nf-fr-item { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 8px 10px; border-bottom: 1px solid var(--line); cursor: pointer; }
+.nf-fr-item:last-child { border-bottom: 0; }
+.nf-fr-nome { min-width: 0; display: flex; flex-direction: column; overflow-wrap: anywhere; }
+.nf-fr-val { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; justify-content: flex-end; white-space: nowrap; }
+.nf-fr-acoes { display: flex; justify-content: flex-end; gap: 8px; }
+.nf-fr-st.ok { color: var(--pos, #2C5234); font-weight: 600; }
+@media (max-width: 600px) { .nf-fr-item { grid-template-columns: auto minmax(0, 1fr); } .nf-fr-val { grid-column: 2; justify-content: flex-start; } }
+.nf-fr-graf { font-weight: 500; font-size: 14px; }
+
+/* Escala → ajuste manual: atalhos (abre/meio/fecha) e resumo da jornada */
+.aj-atalhos { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px; }
+.aj-atalho { display: flex; flex-direction: column; align-items: flex-start; gap: 0; padding: 6px 12px; line-height: 1.2; }
+.aj-atalho small { color: var(--muted); font-weight: 500; }
+.aj-resumo { display: block; margin-top: 6px; }
+.aj-horas { flex-wrap: wrap; }
+.aj-horas > label { display: flex; align-items: center; gap: 8px; }
