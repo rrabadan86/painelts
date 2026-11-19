@@ -902,7 +902,7 @@
       const paraF = inp({ value: (a.para.fidelidade || []).join(', '), placeholder: 'financeiro@…' });
       const res = (t) => { const x = a.resultado && a.resultado[t]; if (!x) return null; const q = new Date(x.em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
         return h('small', { class: x.ok ? 'muted' : 'neg' }, x.ok ? (x.nada ? `Último mês (${q}): nada para cobrar, não enviou.` : `Último envio: ${q} · ${x.itens} item(ns) · R$ ${String((x.total || 0).toFixed(2)).replace('.', ',')}`) : `Último envio falhou (${q}): ${x.erro}`); };
-      sec.replaceChildren(
+      sec.replaceChildren(...[ // sem envio anterior, res() é null: filter(Boolean) evita escrever "null" na tela
         h('h3', null, 'Cobrança à franquia (automática)'),
         h('p', { class: 'muted' }, 'Todo mês, no dia e horário escolhidos, o painel envia por e-mail (pelo mesmo e-mail das devoluções) a cobrança do que está pendente. Se não houver nada pendente, não envia. É o mesmo e-mail do botão "Cobrar a franquia" em Notas fiscais → Créditos com a franquia.'),
         h('label', { class: 'cfg-check-l' }, dev, ' Incidências: notas de devolução sem desconto há mais de 30 dias (com os XMLs)'), res('devolucoes'),
@@ -911,11 +911,11 @@
         h('label', { class: 'f-label' }, 'Para (fidelidade)'), paraF,
         h('div', { class: 'cfg-grid' }, h('label', null, h('span', { class: 'f-label' }, 'Dia do mês'), dia), h('label', null, h('span', { class: 'f-label' }, 'A partir de'), hora)),
         h('div', { class: 'cfg-acoes' }, acao('Salvar', async () => {
-          const r = await fetch(url, { method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-Painel': '1' }, body: JSON.stringify({ devolucoes: dev.checked, fidelidade: fid.checked, dia: dia.value, hora: hora.value, para: { devolucoes: paraD.value, fidelidade: paraF.value } }) });
+          const r = await fetch(url, { method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-Painel': '1' }, body: JSON.stringify({ loja: l.id, devolucoes: dev.checked, fidelidade: fid.checked, dia: dia.value, hora: hora.value, para: { devolucoes: paraD.value, fidelidade: paraF.value } }) });
           const j = await r.json().catch(() => ({}));
           if (!r.ok) throw new Error(j.erro || 'Falha ao salvar.');
           return (j.devolucoes || j.fidelidade) ? `Pronto: a cobrança sai todo dia ${j.dia}, a partir das ${j.hora}.` : 'Cobrança automática desligada.';
-        }, 'btn primary')));
+        }, 'btn primary'))].filter(Boolean));
     }).catch((e) => sec.replaceChildren(h('h3', null, 'Cobrança à franquia (automática)'), h('p', { class: 'neg' }, e.message)));
     return sec;
   }
