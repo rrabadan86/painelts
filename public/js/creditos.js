@@ -127,6 +127,7 @@
   function premiosCard(d, loja, acaoRoy) {
     const fid = d.fidelidade;
     if (!fid) return null;
+    if (fid.erro) return h('div', { class: 'notice err mt' }, fid.erro);
     const r = fid.resumo;
     const tab = fid.meses.length ? TS.table({
       cols: [

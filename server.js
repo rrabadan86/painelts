@@ -1261,14 +1261,18 @@ const lojaCF = (req, res, corpo) => {
 };
 const premiosDaLoja = (loja, compras) => {
   const FIn = require('./src/fidelidade'), ESPn = require('./src/espera');
-  const evs = FIn.eventos(loja.id) || [];
+  const fx = FIn.eventos(loja.id); // { em, eventos, cadastros }
+  const evs = (fx && Array.isArray(fx.eventos) ? fx.eventos : Array.isArray(fx) ? fx : []);
   const proprios = FIn.nomesProprios(evs);
   const estoque = ES.atual(loja.id);
   return CF.contaPremios(loja.id, { eventos: evs.filter((e) => e.tipo === 'resgate' && (!e.loja || proprios.has(e.loja))), estoque, compras, codsDe: (nome) => ESPn.codsEstoque({ desc: nome }, estoque) });
 };
 const contaDaLoja = (loja) => {
   const compras = (ES.notas(loja.id) || { notas: [] }).notas;
-  return { ...CF.conta(loja.id, { saidas: NFS.lista(loja.id).notas, compras, devsPainel: DEV.lista(loja.id) }), fidelidade: premiosDaLoja(loja, compras) };
+  // os prêmios de fidelidade nunca derrubam a tela das devoluções
+  let fidelidade = null;
+  try { fidelidade = premiosDaLoja(loja, compras); } catch (e) { console.error('[conta-franquia] prêmios:', e.message); fidelidade = { erro: 'Não deu para calcular os prêmios de fidelidade.', meses: [], resumo: {} }; }
+  return { ...CF.conta(loja.id, { saidas: NFS.lista(loja.id).notas, compras, devsPainel: DEV.lista(loja.id) }), fidelidade };
 };
 app.post('/api/conta-franquia/royalties', express.json({ limit: '5kb' }), (req, res) => {
   if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
@@ -1278,7 +1282,10 @@ app.post('/api/conta-franquia/royalties', express.json({ limit: '5kb' }), (req, 
   C.auditar(req.user, req.body.tipo === 'apagar' ? 'apagou desconto nos royalties (fidelidade)' : 'lançou desconto nos royalties (fidelidade)', loja.id, { loja: loja.id, ref: req.body.ref || null, premios: req.body.premios || null, valor: req.body.valor || null });
   res.json(contaDaLoja(loja));
 });
-app.get('/api/conta-franquia', (req, res) => { const loja = lojaCF(req, res); if (loja) res.json(contaDaLoja(loja)); });
+app.get('/api/conta-franquia', (req, res) => {
+  const loja = lojaCF(req, res); if (!loja) return;
+  try { res.json(contaDaLoja(loja)); } catch (e) { console.error('[conta-franquia]', e); res.status(500).json({ erro: 'Erro ao montar a conta com a franquia: ' + e.message }); }
+});
 app.post('/api/conta-franquia/acao', express.json({ limit: '5kb' }), (req, res) => {
   if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
   const loja = lojaCF(req, res, true); if (!loja) return;
