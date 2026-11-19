@@ -244,10 +244,10 @@
     const admin = est.perfil === 'admin', gestor = admin || est.perfil === 'franqueado';
     const SECOES = [
       ['dados', 'Dados e atualização', 'Situação dos dados, coleta automática e envio de planilhas', () => [blocoDados(l), blocoHorarios(l), blocoPlanilhas(l)]],
-      ['metas', 'Metas e comissão', 'Meta do mês, regras de comissão e férias da equipe', () => [blocoMetas(l), blocoFerias(l), admin ? blocoRegras(l) : null]],
-      ['loja', 'Loja e equipe', 'Horário de funcionamento, equipe, logo e dados da loja', () => [blocoOperacao(l), blocoMarca(l), admin ? blocoEditar(l) : null]],
+      ['metas', 'Metas e comissão', 'Meta do mês, regras de comissão e férias da equipe', () => [blocoMetas(l), blocoFerias(l), gestor ? blocoRegras(l) : null]],
+      ['loja', 'Loja e equipe', 'Horário de funcionamento, equipe, logo e dados da loja', () => [blocoOperacao(l), blocoMarca(l), gestor ? blocoEditar(l) : null]],
       gestor && TS.blocoEstoqueCfg ? ['estoque', 'Estoque e margem', 'Impostos, maquininha, custos da loja por categoria, reposição e embalagens', () => [TS.blocoEstoqueCfg(l.id)]] : null,
-      ['integracoes', 'Integrações', 'AppNext, Sistema de Pedidos, FIXE e e-mail das devoluções', () => [admin ? blocoAppNext(l) : null, admin && TS.blocoPedidoAcesso ? TS.blocoPedidoAcesso(l.id) : null, blocoFixe(l), blocoDevolucao(l)]],
+      ['integracoes', 'Integrações', 'AppNext, Sistema de Pedidos, FIXE e e-mail das devoluções', () => [gestor ? blocoAppNext(l) : null, gestor && TS.blocoPedidoAcesso ? TS.blocoPedidoAcesso(l.id) : null, blocoFixe(l), blocoDevolucao(l)]],
       gestor && TS.blocoIA ? ['ia', 'Inteligência artificial', 'Chave da Anthropic desta loja, teto e uso do mês', () => [TS.blocoIA(l.id)]] : null,
       ['avisos', 'Mensagens', 'Fechamento do dia por e-mail, mensagens de WhatsApp e cobrança à franquia', () => [blocoFechamento(l), blocoWpp(l), gestor ? blocoCobranca(l) : null]],
     ].filter(Boolean);
@@ -395,7 +395,7 @@
     const ex = l.status && l.status.execucao;
     const lote = l.status && l.status.lote;
     if (!est.coletorAtivo) b.append(h('p', { class: 'muted' }, 'O coletor (atualização automática) não está ligado nesta VPS.'));
-    else if (!l.coletor.configurado) b.append(h('p', { class: 'muted' }, est.perfil === 'admin' ? 'Cadastre o acesso ao AppNext (ao lado) para a loja atualizar sozinha.' : 'O administrador ainda não cadastrou o acesso ao AppNext desta loja.'));
+    else if (!l.coletor.configurado) b.append(h('p', { class: 'muted' }, est.perfil === 'admin' ? 'Cadastre o acesso ao AppNext (ao lado) para a loja atualizar sozinha.' : 'Cadastre o acesso ao AppNext em Integrações para a loja atualizar sozinha.'));
     const ocupado = ex && ['rodando', 'na_fila'].includes(ex.estado);
     const GATILHO = { agendado: 'automática', manual: 'manual', historico: 'do histórico' };
     const quem = (e) => `${GATILHO[e.gatilho] || ''}${e.por && e.gatilho === 'manual' ? ` (${e.por})` : ''}`;
@@ -1149,8 +1149,9 @@
     return h('section', { class: 'cfg-bloco cfg-form' }, h('h3', null, 'Dados da loja'),
       h('div', { class: 'cfg-grid' }, campo('Nome', nome), campo('Nome no AppNext', appnext), campo('Identificador', inp({ value: l.id, disabled: true }))),
       h('div', { class: 'cfg-acoes' }, acao('Salvar', async () => { await api('PUT', `/lojas/${l.id}`, { nome: nome.value, appnext: appnext.value }); return 'Loja atualizada.'; }, 'btn primary'),
-        conf ? acao(`Confirmar: remover ${l.nome}`, async () => { await api('DELETE', `/lojas/${l.id}`); abertos.delete('rem:' + l.id); return 'Loja removida (os dados continuam guardados na VPS).'; }, 'btn danger')
-          : h('button', { type: 'button', class: 'btn ghost-danger', onclick: () => { abertos.add('rem:' + l.id); pintar(); } }, 'Remover loja…')),
+        est.perfil !== 'admin' ? null // remover a loja: só o admin (é da rede)
+          : conf ? acao(`Confirmar: remover ${l.nome}`, async () => { await api('DELETE', `/lojas/${l.id}`); abertos.delete('rem:' + l.id); return 'Loja removida (os dados continuam guardados na VPS).'; }, 'btn danger')
+            : h('button', { type: 'button', class: 'btn ghost-danger', onclick: () => { abertos.add('rem:' + l.id); pintar(); } }, 'Remover loja…')),
       conf ? h('p', { class: 'muted' }, 'Os usuários perdem o acesso a ela e a atualização automática para. As planilhas e o histórico ficam guardados na VPS.') : null);
   }
 

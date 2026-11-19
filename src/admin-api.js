@@ -142,6 +142,8 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     next();
   });
   const soAdmin = (req, res, next) => (req.perfil === 'admin' ? next() : res.status(403).json({ erro: 'Só o administrador pode fazer isso.' }));
+  // franqueado: tudo da configuração das lojas DELE (o lojaPermitida limita); o coletor e o que é da rede toda continuam só do admin
+  const soGestor = (req, res, next) => (req.perfil === 'admin' || req.perfil === 'franqueado' ? next() : res.status(403).json({ erro: 'Só o administrador ou o franqueado pode fazer isso.' }));
   const minhasLojas = (req) => (req.perfil === 'admin' ? C.get().lojas : req.lojas);
   const lojaPermitida = (req, res, next) => {
     const loja = minhasLojas(req).find((l) => l.id === req.params.id);
@@ -276,7 +278,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
   });
 
   // ---------- regras de comissão ----------
-  r.put('/lojas/:id/regras', soAdmin, lojaPermitida, json, (req, res) => {
+  r.put('/lojas/:id/regras', soGestor, lojaPermitida, json, (req, res) => {
     const g = req.body && req.body.regras;
     if (g === null) {
       C.alterar((cfg) => { delete cfg.lojas.find((x) => x.id === req.loja.id).regras; });
@@ -303,7 +305,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
   });
 
   // ---------- acesso ao AppNext (coletor) ----------
-  r.put('/lojas/:id/appnext', soAdmin, lojaPermitida, json, (req, res) => {
+  r.put('/lojas/:id/appnext', soGestor, lojaPermitida, json, (req, res) => {
     const b = req.body || {};
     const rede = semQuebra(b.rede), usuario = semQuebra(b.usuario);
     if (!rede || !usuario) return res.status(400).json({ erro: 'Informe a rede e o usuário do AppNext.' });

@@ -2348,14 +2348,14 @@ app.put('/api/pedido/cfg', express.json({ limit: '20kb' }), (req, res) => {
   res.json({ ok: true, cfg: v.ok });
 });
 app.get('/api/pedido/acesso', (req, res) => {
-  if (req.perfil !== 'admin') return res.status(403).json({ erro: 'Só o administrador.' });
+  if (req.perfil !== 'admin' && req.perfil !== 'franqueado') return res.status(403).json({ erro: 'Só o administrador ou o franqueado da loja.' }); // req.lojas: só as lojas dele
   const loja = req.lojas.find((l) => l.id === String(req.query.loja || ''));
   if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
   res.json(PED.acesso(loja.id));
 });
 app.put('/api/pedido/acesso', express.json({ limit: '4kb' }), (req, res) => {
   if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
-  if (req.perfil !== 'admin') return res.status(403).json({ erro: 'Só o administrador.' });
+  if (req.perfil !== 'admin' && req.perfil !== 'franqueado') return res.status(403).json({ erro: 'Só o administrador ou o franqueado da loja.' }); // req.lojas: só as lojas dele
   const loja = req.lojas.find((l) => l.id === String(req.query.loja || ''));
   if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
   const b = req.body || {};
