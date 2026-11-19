@@ -57,6 +57,10 @@ rm -rf test-results playwright-report tests/.dados
 - Pergunte antes de abrir o AppNext no Chrome. Ele guarda a sessão por aba: cada aba nova pede login ao dono.
 
 ## Pendências combinadas (o dono pediu para depois)
+- **Autorizado, fazer na próxima sessão:** organizar a pasta `.claude/` para gastar menos tokens:
+  - rules com `paths` em `.claude/rules/`: `coletor.md` (coletor/**), `ia.md` (arquivos da IA), `nfe.md` (NF-e e devolução), `tela.md` (public/js/**), tirando do CLAUDE.md o que for específico (ele fica curto: visão geral, segredos, perfis);
+  - skills em `.claude/skills/`: `subir-versao` (fetch/merge, bateria completa, limpeza, commit no formato, push), `conferir-celular` (script pronto: apresentação a 390 px + print), `nova-tela` (checklist: APP_SCRIPTS, menu, rota demo, permissão no servidor, testes computador/celular), `nova-consulta-ia` (como ensinar uma consulta nova ao ✨);
+  - hooks em `.claude/settings.json`: bloquear commit de segredos (`.env`, `config/lojas.json`, `config/coletor/*.env`, `config/ia.json`, `config/ia-mestra.key`, `dados/`) e limpar `test-results`/`playwright-report` depois dos testes.
 - Conferência do boleto de royalties (ler o PDF e conferir os descontos de devoluções e da fidelidade).
 - Reserva de estoque para encomenda (ligada ao Orçamento).
 - Meta do dia dividida pela escala, em vez da participação nas vendas.
