@@ -1615,13 +1615,9 @@ app.post('/api/ia/diagnostico', express.json({ limit: '150kb' }), async (req, re
   if (tooMany('ia:' + req.user, 150)) return res.status(429).json({ erro: 'Muitos pedidos à IA em pouco tempo. Espere alguns minutos.' });
   falhou('ia:' + req.user);
   try {
-    const j = await IA.mensagens(loja.id, {
-      max_tokens: 6000, system: IAP.SISTEMA_DIAG, tools: [IAP.FERR_DIAG], tool_choice: { type: 'tool', name: 'diagnostico' },
-      messages: [{ role: 'user', content: 'Números do painel (JSON):\n' + txt }],
-    });
-    const t = (j.content || []).find((x) => x.type === 'tool_use' && x.name === 'diagnostico');
-    if (!t) return res.status(502).json({ erro: 'A IA não devolveu a explicação.' });
-    const out = { diagnostico: t.input, em: new Date().toISOString() };
+    const diag = await IA.comFerramenta(loja.id, { max_tokens: 6000, system: IAP.SISTEMA_DIAG, ferramenta: IAP.FERR_DIAG, conteudo: 'Números do painel (JSON):\n' + txt });
+    if (!diag) return res.status(502).json({ erro: 'A IA não devolveu a explicação. Tente de novo.' });
+    const out = { diagnostico: diag, em: new Date().toISOString() };
     fs.mkdirSync(pasta, { recursive: true });
     C.gravarAtomico(arq, JSON.stringify(out), 0o640);
     // guarda só os últimos 7 dias
@@ -1640,14 +1636,10 @@ app.post('/api/ia/pedido', express.json({ limit: '200kb' }), async (req, res) =>
   const dados = b.dados && typeof b.dados === 'object' ? b.dados : null;
   if (!dados || !Array.isArray(dados.itens) || !dados.itens.length) return res.status(400).json({ erro: 'Pedido vazio.' });
   try {
-    const j = await IA.mensagens(loja.id, {
-      max_tokens: 10000, system: IAP.SISTEMA_PEDIDO, tools: [IAP.FERR_PEDIDO], tool_choice: { type: 'tool', name: 'revisar_pedido' },
-      messages: [{ role: 'user', content: 'Dados do pedido (JSON):\n' + JSON.stringify(dados) }],
-    });
-    const t = (j.content || []).find((x) => x.type === 'tool_use' && x.name === 'revisar_pedido');
-    if (!t) return res.status(502).json({ erro: 'A IA não devolveu a revisão. Tente de novo.' });
+    const revisao = await IA.comFerramenta(loja.id, { max_tokens: 10000, system: IAP.SISTEMA_PEDIDO, ferramenta: IAP.FERR_PEDIDO, conteudo: 'Dados do pedido (JSON):\n' + JSON.stringify(dados) });
+    if (!revisao) return res.status(502).json({ erro: 'A IA não devolveu a revisão. Tente de novo.' });
     C.auditar(req.user, 'pediu à IA a revisão do pedido', loja.id, { loja: loja.id });
-    res.json({ revisao: t.input });
+    res.json({ revisao });
   } catch (err) { iaErro(res, err); }
 });
 

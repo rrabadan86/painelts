@@ -180,11 +180,31 @@ async function mensagens(lojaId, corpo) {
   return j;
 }
 
+/**
+ * pede uma resposta que vem por uma ferramenta (diagnóstico, revisão do pedido).
+ * Os modelos novos não aceitam forçar a ferramenta (tool_choice "tool"/"any" dá erro 400): vai com "auto", a instrução
+ * pede a ferramenta e, se a IA responder só com texto, pede de novo uma vez. Devolve o input da ferramenta (ou null).
+ */
+async function comFerramenta(lojaId, { max_tokens, system, ferramenta, conteudo }) {
+  const nome = ferramenta.name;
+  const messages = [{ role: 'user', content: conteudo }];
+  const achar = (j) => (j.content || []).find((x) => x.type === 'tool_use' && x.name === nome);
+  let j = await mensagens(lojaId, { max_tokens, system, tools: [ferramenta], tool_choice: { type: 'auto' }, messages });
+  let t = achar(j);
+  if (!t && j.stop_reason === 'end_turn') {
+    messages.push({ role: 'assistant', content: j.content }, { role: 'user', content: `Entregue a resposta chamando a ferramenta ${nome}, como nas instruções.` });
+    j = await mensagens(lojaId, { max_tokens, system, tools: [ferramenta], tool_choice: { type: 'auto' }, messages });
+    t = achar(j);
+  }
+  return t ? t.input : null;
+}
+
 // ---------- respostas simuladas (testes e apresentação) ----------
 function simular(req) {
   const usage = { input_tokens: 1200, output_tokens: 150 };
   const ultima = req.messages[req.messages.length - 1];
-  const forcada = req.tool_choice && req.tool_choice.type === 'tool' ? req.tool_choice.name : null;
+  const unica = Array.isArray(req.tools) && req.tools.length === 1 && ['diagnostico', 'revisar_pedido'].includes(req.tools[0].name) ? req.tools[0].name : null;
+  const forcada = req.tool_choice && req.tool_choice.type === 'tool' ? req.tool_choice.name : unica;
   if (forcada === 'revisar_pedido') {
     let dados = {};
     try { dados = JSON.parse(String(ultima.content).replace(/^[^{]*/, '')); } catch { /* ok */ }
@@ -227,4 +247,4 @@ function simular(req) {
   return { stop_reason: 'end_turn', usage, content: [{ type: 'text', text: txt }] };
 }
 
-module.exports = { situacao, salvar, alterar, remover, testar, mensagens, chaveDaLoja, usoDoMes, custo, formatoOk, simular, ErroIA, cifrar, decifrar, MODELO, TETO_PADRAO };
+module.exports = { comFerramenta, situacao, salvar, alterar, remover, testar, mensagens, chaveDaLoja, usoDoMes, custo, formatoOk, simular, ErroIA, cifrar, decifrar, MODELO, TETO_PADRAO };
