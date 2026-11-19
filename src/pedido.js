@@ -232,6 +232,7 @@ function alterarObrig(id, b, por) {
   const d = ler(arqObrig(id)) || { lista: [] };
   let o = b.id ? d.lista.find((x) => x.id === b.id) : null;
   if (b.id && !o) return { erro: 'Pedido obrigatório não encontrado.' };
+  if (!o && (b.apagar || b.encerrar || b.reabrir)) return { erro: 'Diga qual pedido obrigatório (falta o id).' };
   if (b.apagar) d.lista = d.lista.filter((x) => x !== o);
   else if (b.encerrar || b.reabrir) { o.encerrado = !!b.encerrar; o.encerradoEm = b.encerrar ? new Date().toISOString() : null; }
   else {

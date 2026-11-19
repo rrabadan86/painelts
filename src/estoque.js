@@ -147,10 +147,24 @@ function atual(id) {
 }
 
 /** grava a planilha nova; o que sumiu fica com quantidade 0 (o relatório esconde itens zerados) */
-async function importar(id, buf, origem = 'painel') {
+/**
+ * trava da planilha parcial: quem não vem na planilha fica com estoque zero; se vieram menos da metade dos
+ * produtos que tinham saldo, é quase sempre exportação incompleta (filtro ligado, página cortada). Devolve o
+ * texto do erro ou null. Lojas com poucos produtos com saldo (< MIN_TRAVA) ficam de fora.
+ */
+const MIN_TRAVA = 20;
+function travaParcial(antes, novo) {
+  const comSaldo = ((antes && antes.itens) || []).filter((i) => i.qtd > 0).length;
+  const n = ((novo && novo.itens) || []).length;
+  if (comSaldo < MIN_TRAVA || n >= comSaldo * 0.5) return null;
+  return `A planilha trouxe só ${n} produtos, mas o painel tem ${comSaldo} com estoque: os outros ficariam zerados. Nada foi gravado (parece exportação incompleta).`;
+}
+async function importar(id, buf, origem = 'painel', opts = {}) {
   const { linhasDeBuffer } = require('./sources');
   const novo = ler(await linhasDeBuffer(buf));
   const antes = atual(id);
+  const trava = opts.forcar ? null : travaParcial(antes, novo);
+  if (trava) { const e = new Error(trava); e.parcial = true; throw e; }
   const vistos = new Set(novo.itens.map((i) => i.cod));
   const zerados = antes ? antes.itens.filter((i) => !vistos.has(i.cod)).map((i) => ({ ...i, qtd: 0, zerado: true })) : [];
   const dados = { em: novo.em || new Date().toISOString(), importadoEm: new Date().toISOString(), origem, itens: [...novo.itens, ...zerados] };
@@ -312,4 +326,4 @@ function alterarClasse(atual, b, quem) {
   return { ok: c };
 }
 
-module.exports = { ler, atual, historico, compras, notas, importar, pendentes, processar, cfg, validarCfg, quantidade, PADRAO, classeCfg, alterarClasse };
+module.exports = { travaParcial, ler, atual, historico, compras, notas, importar, pendentes, processar, cfg, validarCfg, quantidade, PADRAO, classeCfg, alterarClasse };

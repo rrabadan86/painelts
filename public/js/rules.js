@@ -119,11 +119,20 @@
   // ---------- comissões ($) ----------
   /** faixas: ≥120% da meta / ≥100% / abaixo; modo "simples": bateu ou não bateu */
   function comissao(valor, meta, modo, f) {
+    // sem meta cadastrada (0, vazia) não existe "bateu a meta": vale a taxa mínima
+    if (!(meta > 0)) return valor * f.abaixo;
     if (modo === 'simples') return valor >= meta ? valor * f.bate : valor * f.abaixo;
     if (valor >= meta * 1.2) return valor * f.acima120;
     if (valor >= meta) return valor * f.bate;
     return valor * f.abaixo;
   }
+
+  R.comissaoFaixa = comissao;
+  /** alíquota do bônus sobre os outros vendedores; sem meta da loja (> 0) fica na menor faixa */
+  R.aliquotaBonus = function (totLoja, metaLoja, bonus) {
+    if (!(metaLoja > 0)) return bonus.abaixo;
+    return totLoja >= metaLoja * 1.2 ? bonus.acima120 : totLoja >= metaLoja ? bonus.bate : bonus.abaixo;
+  };
 
   /** [PremiacaoFuncionario] */
   R.premiacao = function (ind, rg) {
@@ -241,7 +250,7 @@
             if (db.vend[i] === v) totVend += db.vt[i] || 0;
           }
         }
-        const aliq = totLoja >= metaLoja * 1.2 ? rg.bonus.acima120 : totLoja >= metaLoja ? rg.bonus.bate : rg.bonus.abaixo;
+        const aliq = R.aliquotaBonus(totLoja, metaLoja, rg.bonus);
         bonus = Math.max(0, totLoja - totVend) * aliq;
       }
       todas.push({

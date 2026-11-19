@@ -451,10 +451,12 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     if (tipo === 'Estoque') {
       if (req.perfil !== 'admin' && req.perfil !== 'franqueado') return res.status(403).json({ erro: 'Só admin e franqueado.' });
       try {
-        const r = await ES.importar(req.loja.id, buf);
-        aud(req, 'enviou estoque', req.loja.id, { loja: req.loja.id, arquivo: semQuebra(req.get('X-Arquivo') || '').slice(0, 80), itens: r.itens });
+        // planilha com menos da metade dos produtos com saldo é recusada; quem enviou pode confirmar (?forcar=1)
+        const forcar = req.query.forcar === '1';
+        const r = await ES.importar(req.loja.id, buf, 'painel', { forcar });
+        aud(req, 'enviou estoque', req.loja.id, { loja: req.loja.id, arquivo: semQuebra(req.get('X-Arquivo') || '').slice(0, 80), itens: r.itens, ...(forcar ? { forcado: true } : {}) });
         return res.json({ ok: true, estoque: r });
-      } catch (e) { return res.status(400).json({ erro: e.message }); }
+      } catch (e) { return res.status(400).json({ erro: e.message, ...(e.parcial ? { podeForcar: true } : {}) }); }
     }
     if (tipo === 'Produtos') {
       // preço de tabela: Produtos ou Produtos Compostos do AppNext (o painel reconhece pelo título)
