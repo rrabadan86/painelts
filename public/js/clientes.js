@@ -722,7 +722,7 @@
     if (!ehLista) {
       root.append(...baseDeClientes(lista));
       root.append(TS.section('Comportamento dos clientes'), h('div', { class: 'grid g-2 rfm-grid' }, cartaoRfm(), cartaoSafras()));
-      if (TS.cli.fixe) { root.append(TS.section('Fidelidade')); const cr = cartaoResgate(TS.cli.fixe); if (cr) root.append(cr); root.append(cartaoFixe(TS.cli.fixe)); }
+      if (TS.cli.fixe) { root.append(TS.section('Fidelidade')); const cr = cartaoResgate(TS.cli.fixe); if (cr) root.append(cr); const rf = TS.cartaoRetornoFid && TS.cartaoRetornoFid(TS.cli.fixe); if (rf) root.append(rf); root.append(cartaoFixe(TS.cli.fixe)); }
       root.append(TS.section('Perfil dos clientes'));
     }
 

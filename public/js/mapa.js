@@ -556,10 +556,10 @@
     root.append(h('div', { class: 'page-head' }, h('div', null, h('h1', { class: 'page-title' }, 'Movimento e escala'), h('div', { class: 'page-sub' }, 'A escala do mês da equipe, o movimento da loja por hora e as regras que montam a escala.')),
       h('div', { class: 'active-filters' }, h('span', { class: 'af' }, TS.periodoTexto()))));
     // três abas: Escala do mês (o dia a dia) · Movimento (por que a escala é assim) · Equipe e regras (o que monta a escala)
-    const ABAS = [['escala', 'Escala do mês'], ['movimento', 'Movimento da loja'], ['equipe', 'Equipe e regras']];
+    const ABAS = [['escala', 'Escala do mês'], ['movimento', 'Movimento da loja'], ['equipe', 'Equipe e regras'], ...(TS.equipe && TS.eu && TS.eu.perfil !== 'vendedor' ? [['rendimento', 'Rendimento da equipe']] : [])];
     const temLoja = state.loja && state.loja !== 'todas';
     const aba = ABAS.some(([k]) => k === state.mapaAba) ? state.mapaAba : temLoja ? 'escala' : 'movimento';
-    const cx = { escala: h('div', { class: 'mapa-aba' }), movimento: h('div', { class: 'mapa-aba' }), equipe: h('div', { class: 'mapa-aba' }) };
+    const cx = { escala: h('div', { class: 'mapa-aba' }), movimento: h('div', { class: 'mapa-aba' }), equipe: h('div', { class: 'mapa-aba' }), rendimento: h('div', { class: 'mapa-aba' }) };
     root.append(h('div', { class: 'mapa-abas', role: 'tablist' }, ...ABAS.map(([k, t]) => h('button', { type: 'button', role: 'tab', 'aria-selected': String(k === aba), class: 'mapa-aba-btn' + (k === aba ? ' on' : ''), onclick: () => { state.mapaAba = k; TS.render(); } }, t))), cx[aba]);
     const M = cx.movimento, Q = cx.equipe, ES = cx.escala;
     const cfgMapa = state.loja && state.loja !== 'todas' ? (db.metas || []).find((m) => m.id === state.loja) : null;
@@ -615,7 +615,7 @@
     // ---- equipe e escala
     if (!opInfo) {
       const aviso = () => h('div', { class: 'notice mt' }, 'Escolha uma loja no seletor do topo para ver a escala, as pessoas necessárias por hora e as regras da equipe.');
-      M.append(aviso()); ES.append(aviso()); Q.append(aviso());
+      M.append(aviso()); ES.append(aviso()); Q.append(aviso()); cx.rendimento.append(aviso());
       return;
     }
     const need = necessidade(g.p80, op);
@@ -673,10 +673,13 @@
     Q.append(cartaoAjustes(opInfo));
 
     const cfgLoja = (db.metas || []).find((m) => m.id === opInfo.id) || null;
+    // venda por hora trabalhada e ficha da equipe (public/js/equipe.js): usa as horas desta mesma escala
+    const rendimento = (semanas, L) => { if (aba === 'rendimento' && TS.equipe) TS.equipe.render(cx.rendimento, { salva: opInfo.salva, pessoas: () => pessoasDe(op.equipe).map((p) => p.nome), turnos: (deIso, ateIso) => turnosDoPeriodo({ op, cfg: cfgLoja, semanas, L, need, deIso, ateIso }) }); };
     if (rodizio) {
       Q.append(h('div', { class: 'mt' }, cartaoRodizio(need, op, horas, ideal)));
       const rr = montarRodizio(need, op, pessoasDe(op.equipe));
       ES.append(h('div', { class: 'mt' }, cartaoMes({ op, cfg: cfgLoja, semanas: rr.semanas, L: rr.L, need, lojaNome: opInfo.nome })));
+      rendimento(rr.semanas, rr.L);
       return;
     }
     // escala
@@ -703,6 +706,7 @@
       h('div', { class: 'table-wrap free mapa-wrap' }, cobertura),
       h('div', { class: 'mapa-leg' }, h('span', { class: 'ok' }, 'na medida'), h('span', { class: 'sobra' }, 'sobra gente'), h('span', { class: 'falta' }, 'falta gente no pico'), h('span', { class: 'vazio' }, 'loja sozinha')))));
     ES.append(h('div', { class: 'mt' }, cartaoMes({ op, cfg: cfgLoja, semanas: [{ turnosP: esc.pessoas, motivos: null }], L: 1, need, lojaNome: opInfo.nome })));
+    rendimento([{ turnosP: esc.pessoas, motivos: null }], 1);
   };
 
   // ---------- escala do mês (datas reais, feriados e férias) ----------
@@ -792,6 +796,19 @@
       });
     }
     return { dias, pessoas, cel, feriados };
+  }
+
+  /** turnos de trabalho da escala entre duas datas (regras atuais + ajustes salvos de cada mês): [{ nome, iso, ini, fim, pausa }] */
+  function turnosDoPeriodo({ op, cfg, semanas, L, need, deIso, ateIso }) {
+    const out = [];
+    for (let ym = deIso.slice(0, 7); ym <= ateIso.slice(0, 7); ym = new Date(Date.UTC(+ym.slice(0, 4), +ym.slice(5, 7), 1)).toISOString().slice(0, 7)) {
+      const E = escalaDoMes({ op, cfg, semanas, L, ym, need, ajustes: ((cfg && cfg.escalaAjustes) || {})[ym] || {} });
+      E.dias.forEach((iso, k) => {
+        if (iso < deIso || iso > ateIso) return;
+        E.pessoas.forEach((p, i) => { const c = E.cel[i][k]; if (c.tipo === 'trab') out.push({ nome: p.nome, iso, ini: c.ini, fim: c.fim, pausa: c.pausa || null }); });
+      });
+    }
+    return out;
   }
 
   function cartaoMes({ op, cfg, semanas, L, need, lojaNome }) {
