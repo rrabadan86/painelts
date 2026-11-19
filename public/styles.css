@@ -2532,7 +2532,8 @@ details.vl-ajuda summary { cursor: pointer; font-weight: 600; }
 .ia-tab-w { overflow-x: auto; margin: 4px 0 8px; }
 .ia-tab { border-collapse: collapse; font-size: 13px; width: 100%; }
 .ia-tab th, .ia-tab td { border-bottom: 1px solid var(--line); padding: 4px 8px; text-align: left; white-space: nowrap; }
-.ia-tab th { color: var(--muted); font-weight: 600; }
+.ia-tab th { color: var(--muted); font-weight: 600; white-space: normal; vertical-align: bottom; }
+.ia-tab td:first-child { white-space: normal; min-width: 110px; } /* nome do produto quebra a linha; números ficam inteiros */
 .ia-tab td.n { text-align: right; font-variant-numeric: tabular-nums; }
 .ia-graf { margin-top: 8px; background: #fff; border-radius: 10px; padding: 8px; border: 1px solid var(--line); }
 .ia-graf-t { font-weight: 600; font-size: 13px; margin-bottom: 4px; }

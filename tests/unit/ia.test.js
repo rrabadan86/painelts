@@ -69,6 +69,9 @@ test('IA: conferência das mensagens e ferramentas por perfil', () => {
   assert.ok(!nomes({ clientes: false, custos: false }).includes('consultar_clientes'));
   assert.ok(!nomes({ clientes: false, custos: false }).includes('consultar_estoque'));
   assert.ok(nomes({ clientes: true, custos: true }).includes('consultar_estoque'));
+  assert.ok(nomes({ clientes: true, custos: true }).includes('consultar_compras'));
+  assert.ok(!nomes({ clientes: true, custos: false }).includes('consultar_compras'), 'compras e margem só para quem vê custo');
+  assert.match(IAP.sistemaPergunta({}, { clientes: true, custos: true, perfil: 'admin' }), /consultar_compras/);
   const sis = IAP.sistemaPergunta({ hoje: '2026-11-18', loja: 'X' }, { clientes: false, custos: false, perfil: 'gerente' });
   assert.match(sis, /não vê dados de clientes/);
   assert.match(sis, /não vê custo/);

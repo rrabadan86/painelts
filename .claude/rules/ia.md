@@ -22,6 +22,8 @@ paths:
 - Modelos novos da Anthropic **recusam forçar ferramenta** (`tool_choice` `tool`/`any` dá 400): use `IA.comFerramenta` (vai com `auto` e pede de novo se vier só texto).
 - `public/js/ia.js`: as consultas **rodam no navegador** sobre os dados que o perfil já vê (`executar(nome, inp, pode, resp)`).
   O que o perfil não pode ver não existe ali, então também não vai para a IA.
+- **Margem ao longo do tempo / custo de compra:** `consultar_compras` (só com `custos`) lê as **notas de entrada** (`compras.itens` do estoque) × preço de tabela atual do AppNext, mês a mês, e lista o que não teve compra no período. Não usa as vendas. `consultar_vendas` com `incluir_lucro` é a margem do que foi vendido.
+- Erro de rede ("Failed to fetch": celular pausou a página ao trocar de aba, internet caiu): `iaApi` e `carregar` esperam a página voltar (`TS.esperarVisivel`) e tentam uma vez; se falhar, mensagem em português, nunca o texto do navegador.
 
 ## Regras
 - **Quem usa a IA: só admin e franqueado** (✨, análise do Início, revisão do pedido). Gerente e vendedora não veem nem usam: `IA.podeUsar` no servidor e a mesma lista na tela.

@@ -74,6 +74,22 @@ function ferramentas({ clientes, custos }) {
         },
       },
     });
+    t.push({
+      name: 'consultar_compras',
+      description: 'Compras da loja escolhida pelas NOTAS DE ENTRADA (não usa as vendas): para cada item comprado no período, o custo médio e a quantidade de cada mês, '
+        + 'as notas, o custo antes do período, o custo no estoque hoje e a margem bruta que esse custo dá nos produtos à venda (preço de tabela ATUAL do AppNext; '
+        + 'o painel não tem o histórico do preço de tabela). "margem" resume a tendência entre os meses com compra: subiu (custo caiu a cada compra), caiu, oscilou ou uma_compra_so. '
+        + 'Também conta (e com filtro=sem_compra lista) os itens que NÃO tiveram compra no período. Use para custo de compra, nota de entrada, reajuste de fornecedor e margem de produto ao longo do tempo.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          periodo: { ...PERIODO, description: 'Período das notas (data de entrada). de/ate (AAAA-MM-DD) ou ultimos_dias até hoje. Sem período = últimos 90 dias.' },
+          busca: { type: 'string', description: 'Texto no nome ou código do item.' },
+          filtro: { type: 'string', enum: ['todos', 'margem_subiu', 'margem_caiu', 'sem_compra'] },
+          limite: { type: 'integer', minimum: 1, maximum: 100, description: 'Máximo de itens (padrão 40).' },
+        },
+      },
+    });
   }
   t.push({
     name: 'mostrar_grafico',
@@ -103,6 +119,7 @@ function sistemaPergunta(ctx, { clientes, custos, perfil }) {
     '- Todo número vem das ferramentas. Nunca invente, estime de cabeça nem arredonde de forma que mude o sentido. Se os dados não permitem responder, diga o que falta.',
     '- Diga sempre o período que usou (ex.: "de 01/10 a 31/10"). Datas no formato DD/MM/AAAA; dinheiro em R$ com vírgula decimal.',
     '- Comparações: faça as duas consultas e mostre a variação em %. Mês corrente está incompleto: compare com o mesmo número de dias do outro período quando fizer sentido.',
+    custos ? '- Margem de produto ao longo do tempo, custo de compra ou nota de entrada: use consultar_compras (notas de entrada × preço de tabela). consultar_vendas com incluir_lucro é a margem do que foi vendido: só use se a pergunta for sobre as vendas. Liste também o que não teve compra no período quando a pergunta pedir comparação.' : '',
     '- Termine com 1 ou 2 sugestões práticas só quando os números apontarem algo claro.',
     '- Use mostrar_grafico quando uma evolução ou comparação ficar mais clara em gráfico. O gráfico aparece onde você escrever, numa linha sozinha, {{grafico}} (ou {{grafico 2}} para o segundo); sem a marcação, vai no fim. Não repita no texto todos os números do gráfico.',
     '- Formato: Markdown simples (negrito, listas, subitens com 2 espaços de recuo, tabelas pequenas). Sem títulos grandes.',
