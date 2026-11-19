@@ -2270,3 +2270,28 @@ details.vl-ajuda summary { cursor: pointer; font-weight: 600; }
 .nf-desc { color: #1f5a2b; }
 .cf-sobra { color: #9b2c1c; }
 .cf-conf { padding: 3px 10px; font-size: 12px; min-height: 0; }
+/* Créditos: botões da nota e janela "Escolher devoluções" */
+.cf-btns { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.cf-b { border: 1px solid var(--line, #d9d2c2); background: #fff; color: var(--green, #2C5234); border-radius: 8px; padding: 5px 10px; font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.cf-b:hover { background: #f4f1ea; }
+.cf-b-ok { background: var(--green, #2C5234); color: #fff; border-color: var(--green, #2C5234); }
+.cf-b-ok:hover { background: #24452b; }
+.cf-b-cinza { color: #6b6b6b; }
+.cf-ligar { width: min(560px, 94vw); }
+.cfl-cab { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; margin-bottom: 10px; }
+.cfl-cab h3 { margin: 0 0 2px; }
+.cfl-lista { border: 1px solid var(--line, #e3ddcf); border-radius: 10px; overflow: hidden; max-height: 46vh; overflow-y: auto; }
+.cfl-tit, .cfl-linha { display: grid; grid-template-columns: 28px 1fr 1fr 100px; gap: 8px; align-items: center; padding: 8px 12px; }
+.cfl-tit { background: #f4f1ea; font-size: 11.5px; color: #6b6b6b; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; }
+.cfl-linha { border-top: 1px solid #eee8db; cursor: pointer; }
+.cfl-linha:hover { background: #faf8f3; }
+.cfl-linha.on { background: #eef6ef; }
+.cfl-nf small { display: block; color: #6b6b6b; font-size: 12px; }
+.cfl-onde { font-size: 12.5px; color: #6b6b6b; }
+.cfl-valor { text-align: right; }
+.cfl-soma { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 12px 0 4px; }
+.cfl-soma > div { background: #f4f1ea; border-radius: 10px; padding: 8px 12px; }
+.cfl-soma small { display: block; font-size: 11.5px; color: #6b6b6b; }
+.cfl-soma.ok > div:last-child { background: #d9efdc; color: #1f5a2b; }
+.cfl-soma.passou > div:last-child { background: #f8dcd6; color: #9b2c1c; }
+@media (max-width: 560px) { .cfl-tit, .cfl-linha { grid-template-columns: 24px 1fr 80px; } .cfl-onde, .cfl-tit span:nth-child(3) { display: none; } .cf-btns { justify-content: flex-start; } }

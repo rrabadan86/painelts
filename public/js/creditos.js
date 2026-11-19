@@ -87,20 +87,38 @@
         .sort((a, b) => a.emissao.localeCompare(b.emissao));
       if (!abertos.length) { toast('Nenhuma devolução emitida antes desta nota está livre para ligar.', true); return; }
       const marc = new Set((n.creditos || []).filter((id) => abertos.some((c) => c.id === id)));
-      const soma = h('b');
-      const pintarSoma = () => { const s = [...marc].reduce((a, id) => a + porId.get(id).valor, 0); soma.textContent = `${fmt.brl(s)} de ${fmt.brl(n.desconto)}`; soma.className = Math.abs(s - n.desconto) < 0.1 ? 'pos' : ''; };
+      const soma = h('div', { class: 'cfl-soma' });
+      const btnOk = h('button', { type: 'button', class: 'btn primary' });
+      const pintarSoma = () => {
+        const s0 = [...marc].reduce((a, id) => a + porId.get(id).valor, 0), dif = Math.round((n.desconto - s0) * 100) / 100;
+        const ok = Math.abs(dif) < 0.1;
+        soma.className = 'cfl-soma ' + (ok ? 'ok' : dif < 0 ? 'passou' : '');
+        soma.replaceChildren(
+          h('div', null, h('small', null, 'Marcado'), h('b', null, fmt.brl(s0))),
+          h('div', null, h('small', null, 'Desconto da nota'), h('b', null, fmt.brl(n.desconto))),
+          h('div', null, h('small', null, ok ? 'Fecha' : dif > 0 ? 'Sobra de desconto' : 'Passou do desconto'), h('b', null, ok ? '✓ certinho' : fmt.brl(Math.abs(dif)))));
+        btnOk.disabled = !marc.size;
+        btnOk.textContent = marc.size ? `Ligar ${marc.size} ${marc.size === 1 ? 'devolução' : 'devoluções'}` : 'Marque ao menos uma';
+      };
       const fundo = h('div', { class: 'cp-modal-bg' });
       const fechar = () => fundo.remove();
       fundo.addEventListener('click', (e) => { if (e.target === fundo) fechar(); });
+      const linha = (c) => {
+        const cb = h('input', { type: 'checkbox', checked: marc.has(c.id) || null, 'aria-label': `NF-e ${c.numero}` });
+        const el = h('label', { class: 'cfl-linha' + (marc.has(c.id) ? ' on' : '') }, cb,
+          h('span', { class: 'cfl-nf' }, h('b', null, `NF-e ${c.numero}`), h('small', null, dataTxt(c.emissao))),
+          h('span', { class: 'cfl-onde' }, c.situacao === 'confirmar' && c.compensado && c.compensado.nota && c.compensado.nota.id !== n.id ? `sugerida na NF ${c.compensado.nota.nf}` : c.situacao === 'atrasado' ? 'atrasada' : (n.creditos || []).includes(c.id) ? 'nesta nota' : 'em aberto'),
+          h('b', { class: 'cfl-valor' }, fmt.brl(c.valor)));
+        cb.addEventListener('change', () => { if (cb.checked) marc.add(c.id); else marc.delete(c.id); el.classList.toggle('on', cb.checked); pintarSoma(); });
+        return el;
+      };
+      btnOk.addEventListener('click', () => { if (!marc.size) return; fechar(); acao({ tipo: 'ligar', nota: n.id, creditos: [...marc] }, 'Nota ligada às devoluções.'); });
       fundo.append(h('div', { class: 'card cp-copiar cf-ligar' },
-        h('h3', null, `NF ${n.nf}: desconto de ${fmt.brl(n.desconto)}`),
-        h('p', { class: 'muted' }, 'Marque as devoluções que a franquia descontou nesta nota.'),
-        h('div', { class: 'cf-lista' }, ...abertos.map((c) => h('label', { class: 'cf-item' }, h('input', { type: 'checkbox', checked: marc.has(c.id) || null, onchange: (e) => { if (e.target.checked) marc.add(c.id); else marc.delete(c.id); pintarSoma(); } }),
-          h('span', null, `NF-e ${c.numero} · ${dataTxt(c.emissao)} · `, h('b', null, fmt.brl(c.valor)),
-            c.situacao === 'confirmar' && c.compensado && c.compensado.nota && c.compensado.nota.id !== n.id ? h('small', { class: 'muted' }, ` · sugerida na NF ${c.compensado.nota.nf}`) : c.situacao === 'atrasado' ? h('small', { class: 'cf-sobra' }, ' · atrasada') : null)))),
-        h('p', null, 'Marcado: ', soma),
-        h('div', { class: 'cp-acoes' }, h('span', { style: { flex: 1 } }), h('button', { type: 'button', class: 'btn', onclick: fechar }, 'Cancelar'),
-          h('button', { type: 'button', class: 'btn primary', onclick: () => { if (!marc.size) return; fechar(); acao({ tipo: 'ligar', nota: n.id, creditos: [...marc] }, 'Nota ligada às devoluções.'); } }, 'Ligar'))));
+        h('div', { class: 'cfl-cab' }, h('div', null, h('h3', null, `Quais devoluções vieram na NF ${n.nf}?`), h('small', { class: 'muted' }, `Emitida em ${dataTxt(n.emissao)} · só aparecem devoluções emitidas antes dela`)),
+          h('button', { type: 'button', class: 'cf-b', 'aria-label': 'Fechar', onclick: fechar }, '✕')),
+        h('div', { class: 'cfl-lista' }, h('div', { class: 'cfl-tit' }, h('span'), h('span', null, 'Devolução'), h('span', null, 'Situação'), h('span', null, 'Valor')), ...abertos.map(linha)),
+        soma,
+        h('div', { class: 'cp-acoes' }, h('span', { style: { flex: 1 } }), h('button', { type: 'button', class: 'btn', onclick: fechar }, 'Cancelar'), btnOk)));
       pintarSoma();
       document.body.append(fundo);
     };
@@ -115,12 +133,12 @@
             n.sobra > 0.05 ? h('span', { class: 'cf-sobra' }, ` · sobram ${fmt.brl(n.sobra)} de desconto sem devolução`) : null) : null);
         } },
         { key: 'acao', label: '', align: 'l', render: (n) => (n.situacao === 'ignorada'
-          ? h('button', { type: 'button', class: 'link-btn', onclick: (e) => { e.stopPropagation(); acao({ tipo: 'considerar', nota: n.id }, 'Desconto volta a ser conferido.'); } }, 'é de devolução')
-          : h('span', { class: 'cf-acoes', onclick: (e) => e.stopPropagation() },
-            n.situacao === 'sugestao' || n.situacao === 'conferir' ? h('button', { type: 'button', class: 'btn primary cf-conf', onclick: () => acao({ tipo: 'confirmar', nota: n.id, creditos: n.creditos }, 'Confirmado.') }, 'confirmar') : null,
-            n.situacao === 'sugestao' || n.situacao === 'conferir' ? h('button', { type: 'button', class: 'link-btn', title: 'Estas devoluções não foram descontadas nesta nota: elas voltam a ficar em aberto', onclick: () => acao({ tipo: 'recusar', nota: n.id }, 'Sugestão recusada.') }, 'não é isso') : null,
-            n.situacao !== 'compensou' ? h('button', { type: 'button', class: 'link-btn', onclick: () => ligar(n) }, 'ligar às devoluções') : null,
-            n.situacao === 'manual' ? null : h('button', { type: 'button', class: 'link-btn', title: 'Promoção, bonificação…', onclick: () => { const obs = prompt('De que é este desconto? (opcional)', ''); if (obs !== null) acao({ tipo: 'ignorar', nota: n.id, obs }, 'Marcado como desconto que não é de devolução.'); } }, 'não é de devolução'))) },
+          ? h('div', { class: 'cf-btns' }, h('button', { type: 'button', class: 'cf-b', onclick: (e) => { e.stopPropagation(); acao({ tipo: 'considerar', nota: n.id }, 'Desconto volta a ser conferido.'); } }, '↺ É de devolução'))
+          : h('div', { class: 'cf-btns', onclick: (e) => e.stopPropagation() },
+            n.situacao === 'sugestao' || n.situacao === 'conferir' ? h('button', { type: 'button', class: 'cf-b cf-b-ok', title: 'As devoluções sugeridas vieram nesta nota', onclick: () => acao({ tipo: 'confirmar', nota: n.id, creditos: n.creditos }, 'Confirmado.') }, '✓ Confirmar') : null,
+            n.situacao !== 'compensou' ? h('button', { type: 'button', class: 'cf-b', title: 'Escolher à mão quais devoluções vieram nesta nota', onclick: () => ligar(n) }, n.situacao === 'manual' ? '✎ Trocar devoluções' : '✎ Escolher devoluções') : null,
+            n.situacao === 'sugestao' || n.situacao === 'conferir' ? h('button', { type: 'button', class: 'cf-b', title: 'A sugestão está errada: as devoluções voltam a ficar em aberto para as próximas notas', onclick: () => acao({ tipo: 'recusar', nota: n.id }, 'Sugestão recusada.') }, '✕ Recusar sugestão') : null,
+            n.situacao === 'manual' ? null : h('button', { type: 'button', class: 'cf-b cf-b-cinza', title: 'Desconto de promoção, bonificação…: sai da conferência', onclick: () => { const obs = prompt('De que é este desconto? (opcional)', ''); if (obs !== null) acao({ tipo: 'ignorar', nota: n.id, obs }, 'Marcado como desconto que não é de devolução.'); } }, 'Não é devolução'))) },
       ],
       rows: d.notas, sortKey: 'nf', pageSize: 10, cls: 'est-t', onRowClick: (n) => abrirCompra(n.nf),
     }) : null;

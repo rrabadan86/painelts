@@ -55,9 +55,9 @@ test('Créditos: botões da linha não abrem a nota; "ligar" lista também as de
   await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS.db);
   await page.evaluate(() => { location.hash = '#creditos'; });
   await page.locator('.seg button', { hasText: 'Todas' }).first().click();
-  await page.getByRole('button', { name: 'ligar às devoluções' }).first().click();
+  await page.getByRole('button', { name: /Escolher devoluções/ }).first().click();
   await expect(page.locator('.cf-ligar')).toBeVisible();
-  await expect(page.locator('.cf-ligar .cf-item').first()).toBeVisible();
+  await expect(page.locator('.cf-ligar .cfl-linha').first()).toBeVisible();
   expect(await page.evaluate(() => location.hash)).toBe('#creditos');
   await expect(page.locator('.prc-drawer')).toHaveCount(0);
 });
