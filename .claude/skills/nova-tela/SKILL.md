@@ -9,7 +9,7 @@ Antes de começar, leia uma tela parecida já pronta (ex.: `public/js/checklist.
 ## Servidor
 - [ ] Regras em `src/<assunto>.js` (funções puras, testáveis); rotas no `server.js`.
 - [ ] **Permissão no servidor** em toda rota: `req.perfil`, `podeTela(req, '<tela>')`, `podeClientes(req)`, custos. Esconder na tela não basta.
-  - Custo/margem nunca para vendedora; dados de clientes nunca para vendedora; Orçamento só admin e franqueado.
+  - Custo/margem nunca para vendedora; dados de clientes nunca para vendedora; Orçamento e IA só admin e franqueado.
 - [ ] Tela liberável para gerente? Inclua o id em `TELAS` de `src/config.js` (e em `TELAS_GERENTE_PADRAO` só se for para todos os gerentes).
 - [ ] Rota que grava: exige `X-Painel: 1` (na rota ou num `app.use` do grupo, como `/api/nfe`), limita o tamanho do corpo (`express.json({ limit })`) e registra com `C.auditar(...)` se for importante.
 - [ ] **Apresentação:** rota `/api/demo/...` com dados fictícios (`src/demo.js`) ou resposta simulada — nunca grava nem envia nada.
@@ -25,5 +25,5 @@ Antes de começar, leia uma tela parecida já pronta (ex.: `public/js/checklist.
 ## Testes
 - [ ] Unidade: `tests/unit/<assunto>.test.js` para as contas e permissões (`node --test tests/unit/<assunto>.test.js`).
 - [ ] Tela: adicione o id em `TELAS` de `tests/e2e/telas.spec.js` (roda no computador e no celular) e, se tiver interação, um teste próprio.
-- [ ] `npx playwright test tests/e2e/telas.spec.js -g "<tela>"` e a skill `conferir-celular`.
+- [ ] `npx playwright test tests/e2e/telas.spec.js -g "<tela>"` (no celular ele também confere que nada sai do cartão) e a skill `conferir-celular`.
 - [ ] Para subir: skill `subir-versao`.

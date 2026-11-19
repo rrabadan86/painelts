@@ -26,4 +26,13 @@ description: Sobe uma mudança do painel para o GitHub — atualiza com o main, 
    `IA: respostas não param mais no meio`). Detalhes, se precisar, em parágrafo abaixo. Termine com as linhas de atribuição pedidas pela sessão.
 6. **Push** para o ramo combinado na sessão (`git push -u origin <ramo>`; erro de rede: tente de novo até 4 vezes, esperando mais a cada vez).
 7. **PR e merge (autorizado pelo dono para todas as sessões):** se o ramo não for o `main`, abra o PR para o `main`, espere os testes do GitHub terminarem e, com ✓, faça o merge sem perguntar. Com ✗: corrija, suba de novo e espere outra vez — nunca faça merge com teste falhando.
-8. Conte ao dono: o que mudou, resultado dos testes e que a instalação na VPS é por "Atualizações do painel" (só versões que passam nos testes do GitHub), depois Ctrl+F5.
+   - O merge pede o SHA **completo** (40 caracteres) do último commit do ramo: `git ls-remote origin <ramo>` (o curto dá erro; um SHA antigo dá 409).
+   - Um PR por vez: se ainda há um PR aberto do mesmo ramo, espere o merge dele antes de subir outra mudança (ou ela entra no PR aberto — atualize a descrição).
+8. **Versão de segurança (quando o dono pedir, ou ao fim de um conjunto grande de mudanças):** tag anotada no `main` já com o merge, no formato `DDMMAAAA-Claude`
+   (as anteriores: `17112026-Antigravity`, `pre-fase1e2-Antigravity`…):
+   ```bash
+   git fetch origin main && git tag -a 19112026-Claude origin/main -m "Resumo do que entrou" && git push origin 19112026-Claude
+   ```
+   Não há ferramenta para criar o "Release" em si: entregue ao dono o link `https://github.com/rrabadan86/painelts/releases/new?tag=<tag>` e o texto das notas para colar.
+   Para voltar a uma versão: "Atualizações do painel" ou `git checkout <tag>` num ramo novo — nunca reescreva o `main`.
+9. Conte ao dono: o que mudou, resultado dos testes e que a instalação na VPS é por "Atualizações do painel" (só versões que passam nos testes do GitHub), depois Ctrl+F5.
