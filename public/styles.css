@@ -2719,3 +2719,7 @@ details.vl-ajuda summary { cursor: pointer; font-weight: 600; }
 .neg { color: var(--bad); }
 .muted { color: var(--muted); }
 .sug-agora { white-space: nowrap; }
+.cfg-voltar { margin-bottom: 12px; }
+.cfg-loja-sub2 { display: block; font-size: 11px; }
+.cfg-lojas-t .cfg-per { font-size: 12px; overflow-wrap: anywhere; }
+@media (min-width: 761px) { .cfg-lojas-t .cfg-per { white-space: nowrap; } }
