@@ -258,8 +258,8 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 | PRC-20 | Compras = notas "Compra" concluídas | `src/estoque.js` | — | ❌ |
 | PRC-21 | Planilha de estoque do AppNext lida corretamente | `src/estoque.js` | `blind` "cadastro, estoque e tabela…" | ✅ |
 | PRC-22 | Item que some da planilha fica com 0 e mantém o custo | `src/estoque.js` | — | ❌ |
-| PRC-30 | Venda e margem pelo preço do CADASTRO; sem cadastro, pelo caixa | `precos.js` `vendaPeloCadastro` | `dicas.spec` "venda e margem pelo preço do cadastro" | 🟡 |
-| PRC-31 | Coluna "No caixa" é só conferência, com ⓘ | `precos.js` | `dicas.spec` "ⓘ explica a coluna No caixa" | ✅ |
+| PRC-30 | Venda e margem pelo preço do CADASTRO (coluna "No sistema"); sem cadastro, pelo caixa ("sem cadastro" + "margem pelo caixa") | `precos.js` `vendaPeloCadastro` | `dicas.spec` "venda e margem pelo preço do cadastro", "No sistema e No caixa lado a lado" | 🟡 |
+| PRC-31 | Colunas "No sistema" (cadastro) e "No caixa" (cupons) lado a lado; "No caixa" é só conferência, com ⓘ | `precos.js` | `dicas.spec` "ⓘ explica a coluna No caixa" | ✅ |
 | PRC-32 | Motivo provável da diferença caixa × cadastro | `precos.js` `porQueDifere` | `dicas.spec` "motivo provável…" | ✅ |
 | PRC-33 | Histórico do cadastro só anota mudanças | `tabela.js` `registrarPreco` | `reajuste.test` "histórico do preço…" | ✅ |
 | PRC-34 | Importação do cadastro (composto vale sobre simples) | `tabela.js` | `blind` (só `.erro`) | 🟡 |

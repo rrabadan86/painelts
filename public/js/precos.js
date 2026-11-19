@@ -193,6 +193,7 @@
     for (const r of linhas) {
       // preço de venda = o do CADASTRO do AppNext (não o que saiu no caixa); o do caixa fica só como informação
       r.vCx = r.vAt;
+      r.cx = { vAnt: r.vAnt, vAt: r.vAt, vVar: r.vVar, vDia: r.vDia }; // o caixa antes → agora (fica na coluna "No caixa")
       r.tab = D.tabela && D.tabela.has(r.cod) ? D.tabela.get(r.cod) : null;
       if (r.tab != null) vendaPeloCadastro(r, D, de, ate); else r.base = 'caixa'; // sem cadastro: continua pelo caixa
       r.status = r.nC && r.nV ? 'ambos' : r.nC ? 'custo' : r.nV ? 'venda' : 'nada';
@@ -208,7 +209,7 @@
       venda: ['Venda alterada', (r) => r.nV > 0],
       margem: ['Margem reduzida', (r) => r.perdeu],
       sem: ['Sem reajuste', (r) => r.status === 'nada'],
-      ...(D.tabela && D.tabela.size ? { cad: ['Diferente do cadastro', (r) => r.tabDif != null] } : {}),
+      ...(D.tabela && D.tabela.size ? { cad: ['Caixa ≠ sistema', (r) => r.tabDif != null] } : {}),
     };
     const filtro = state.precoFil || 'todos';
     const media = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
@@ -240,16 +241,20 @@
 
   function tabela(linhas, FIL, filtro, corpo, D) {
     const rows = linhas.filter(FIL[filtro][1]);
+    const temCad = !!(D.tabela && D.tabela.size); // com a planilha de preços: "No sistema" (cadastro) e "No caixa" lado a lado
     const STATUS = { ambos: ['Custo + Venda', 'prc-st-a'], custo: ['Só custo', 'prc-st-c'], venda: ['Só venda', 'prc-st-v'], nada: ['Sem reajuste', 'prc-st-n'] };
     const tab = TS.table({
       cols: [
         { key: 'nome', label: 'Produto', align: 'l', sticky: true, wrap: true, render: (r) => h('a', { href: '#', class: 'prc-nome', onclick: (e) => { e.preventDefault(); abrirProduto(r); } }, r.nome, h('small', { class: 'est-tam' }, r.cat)) },
         { key: 'cVar', label: 'Custo (antes → agora)', title: 'Quanto custa 1 unidade vendida (pacote, lata, caneca…) pelo custo do estoque/notas de entrada. Riscado = custo antes do período; em negrito = custo no fim dele; a % é a variação (vermelho = subiu) e a data é quando mudou. Só um valor = o custo não mudou no período.', render: (r) => variacao(r.cAnt, r.cAt, r.cVar, r.cDia, true), sortVal: (r) => r.cVar ?? -99 },
-        { key: 'vVar', label: 'Venda (antes → agora)', title: 'Preço de venda do CADASTRO do AppNext (Produtos / Produtos Compostos): antes do período → no fim dele; a % e a data aparecem quando o cadastro mudou. O "antes" vem do histórico que o painel guarda a cada planilha de preços importada. Produto sem cadastro: usa o preço do caixa e aparece "pelo caixa".',
-          render: (r) => h('div', null, variacao(r.vAnt, r.vAt, r.vVar, r.vDia, false), r.base === 'caixa' ? h('small', { class: 'prc-tabpor' }, 'pelo caixa (sem cadastro)') : null), sortVal: (r) => r.vVar ?? -99 },
-        D.tabela && D.tabela.size ? { key: 'tab', label: 'No caixa', title: 'Preço que saiu nos cupons (o mais vendido nas últimas semanas). Só para conferência: a margem é calculada pelo cadastro. A etiqueta mostra quanto o caixa ficou abaixo (−) ou acima (+) do cadastro e, embaixo, o motivo provável: "última venda dd/mm" = não vende mais e o preço é antigo; "promoção?" = parte das vendas no cadastro e parte em outro preço; "PDV ≠ cadastro" ou "desde dd/mm" = todas as vendas fora do cadastro. Desconto dado no caixa não entra (fica separado no cupom).',
-          render: (r) => (r.tab == null ? h('span', { class: 'muted' }, '—') : h('div', { class: 'prc-v' }, h('b', null, fmt.brl(r.vCx)), r.tabDif != null ? h('span', { class: 'prc-badge ' + (r.tabPor && r.tabPor.tipo === 'parado' ? 'prc-neutro' : 'prc-ruim') }, `${pctTxt(r.tabDif)} do cadastro`) : h('span', { class: 'muted' }, 'igual ao cadastro'),
-            r.tabPor ? h('small', { class: 'prc-tabpor' }, r.tabPor.curto, TS.dica(r.tabPor.longo)) : null)), sortVal: (r) => (r.tabDif == null ? -99 : Math.abs(r.tabDif)) } : null,
+        temCad ? { key: 'vVar', label: 'No sistema (antes → agora)', title: 'Preço de venda CADASTRADO no AppNext (Produtos / Produtos Compostos): antes do período → no fim dele; a % e a data aparecem quando o cadastro mudou. O "antes" vem do histórico que o painel guarda a cada planilha de preços importada. É este preço que entra na margem. "Sem cadastro" = o produto não está na planilha de preços: a margem usa o preço do caixa.',
+          render: (r) => (r.base === 'caixa' ? h('span', { class: 'muted' }, 'sem cadastro') : variacao(r.vAnt, r.vAt, r.vVar, r.vDia, false)), sortVal: (r) => (r.base === 'caixa' ? -100 : r.vVar ?? -99) } : null,
+        { key: 'cx', label: temCad ? 'No caixa' : 'Venda (antes → agora)', title: temCad ? 'Preço que saiu nos cupons (o mais vendido nas últimas semanas). Produto com cadastro: é só conferência (a margem usa o preço do sistema); a etiqueta mostra quanto o caixa ficou abaixo (−) ou acima (+) do sistema e, embaixo, o motivo provável: "última venda dd/mm" = não vende mais e o preço é antigo; "promoção?" = parte das vendas no preço do sistema e parte em outro; "PDV ≠ cadastro" ou "desde dd/mm" = todas as vendas fora do sistema. Produto sem cadastro: mostra antes → agora e é este preço que entra na margem. Desconto dado no caixa não entra (fica separado no cupom).' : 'Preço de tabela que saiu nos cupons (sem desconto): antes do período → no fim dele. Conta como reajuste quando o preço novo se mantém.',
+          render: (r) => {
+            if (r.base === 'caixa') return h('div', null, variacao(r.cx.vAnt, r.cx.vAt, r.cx.vVar, r.cx.vDia, false), temCad ? h('small', { class: 'prc-tabpor' }, 'margem pelo caixa') : null);
+            return h('div', { class: 'prc-v' }, h('b', null, fmt.brl(r.vCx)), r.tabDif != null ? h('span', { class: 'prc-badge ' + (r.tabPor && r.tabPor.tipo === 'parado' ? 'prc-neutro' : 'prc-ruim') }, `${pctTxt(r.tabDif)} do sistema`) : h('span', { class: 'muted' }, 'igual ao sistema'),
+              r.tabPor ? h('small', { class: 'prc-tabpor' }, r.tabPor.curto, TS.dica(r.tabPor.longo)) : null);
+          }, sortVal: (r) => (r.base === 'caixa' ? (temCad ? -100 : r.cx.vVar ?? -99) : r.tabDif == null ? -99 : Math.abs(r.tabDif)) },
         { key: 'status', label: 'O que mudou', align: 'l', title: 'O que teve reajuste no período: Custo + Venda = os dois mudaram; Só custo = o custo mudou e o preço não (a margem mexeu); Só venda = o preço mudou e o custo não; Sem reajuste = nenhum dos dois mudou.', render: (r) => { const [t, c] = STATUS[r.status]; return h('span', { class: 'prc-st ' + c }, t); }, sortVal: (r) => ({ ambos: 3, custo: 2, venda: 1, nada: 0 })[r.status] },
         { key: 'difMargem', label: 'Margem bruta (antes → agora)', title: 'Margem bruta = (preço de venda − custo) ÷ preço de venda, sem impostos, comissão nem royalties. Riscado = antes do período; em negrito = agora; a etiqueta mostra quantos pontos percentuais (p.p.) ganhou ou perdeu.', render: (r) => (r.mAt == null ? '—' : h('div', { class: 'prc-v' },
           r.difMargem != null && Math.abs(r.difMargem) >= 0.0005 ? h('s', { class: 'muted' }, fmt.pct(r.mAnt)) : null, h('b', { class: r.perdeu ? 'neg' : null }, fmt.pct(r.mAt)),
@@ -261,7 +266,7 @@
       empty: 'Nenhum produto neste filtro no período.',
     });
     const cont = (k) => linhas.filter(FIL[k][1]).length;
-    return TS.cardWithTools('Produtos', `Clique no produto para ver o gráfico de custo × venda e todos os reajustes. Custo e venda são de 1 unidade vendida (pacote, lata, caneca…). O preço de venda e a margem vêm do cadastro do AppNext${D.tabHistDesde ? ` (reajustes do cadastro desde ${quando(D.tabHistDesde)})` : ' (o histórico de reajustes do cadastro começa a ser guardado agora, a cada planilha de preços importada)'}.`,
+    return TS.cardWithTools('Produtos', `Clique no produto para ver o gráfico de custo × venda e todos os reajustes. Custo e venda são de 1 unidade vendida (pacote, lata, caneca…). "No sistema" é o preço cadastrado no AppNext (é ele que entra na margem); "No caixa" é o que saiu nos cupons, para conferência${D.tabHistDesde ? ` (reajustes do cadastro desde ${quando(D.tabHistDesde)})` : ' (o histórico de reajustes do cadastro começa a ser guardado agora, a cada planilha de preços importada)'}.`,
       h('div', { class: 'est-tools' }, tab.searchBox && (tab.searchBox.classList.add('est-busca'), tab.searchBox),
         TS.seg(Object.entries(FIL).map(([k, [t]]) => [`${t} (${cont(k)})`, k]), filtro, (v) => { state.precoFil = v; pintar(corpo, D); })),
       tab);
