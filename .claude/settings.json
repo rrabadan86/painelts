@@ -5,7 +5,11 @@
       {
         "matcher": "Bash",
         "hooks": [
-          { "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/segredos.js\"", "timeout": 20 }
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/segredos.js\"",
+            "timeout": 20
+          }
         ]
       }
     ],
@@ -13,7 +17,16 @@
       {
         "matcher": "Bash",
         "hooks": [
-          { "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/limpar-testes.js\"", "timeout": 30 }
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/limpar-testes.js\"",
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/lembrar-docs.js\"",
+            "timeout": 20
+          }
         ]
       }
     ]

@@ -23,7 +23,8 @@ Hooks (`.claude/settings.json`): bloqueiam commit/push de segredos e limpam os r
 ## Antes de cada commit
 - Comece sempre com `git fetch origin main && git merge --ff-only FETCH_HEAD` (o dono também sobe mudanças).
 - Faça commit e push de cada mudança (skill `subir-versao`). A instalação na VPS é pelo painel ("Atualizações do painel"): só versões que passam nos testes do GitHub entram. Depois é Ctrl+F5.
-- **Versões de segurança:** tag `DDMMAAAA-Claude` no `main` (passo 8 da skill `subir-versao`); o dono transforma em Release no GitHub.
+- **Instruções sempre em dia:** se a mudança cria regra, permissão, fluxo, tela ou convenção nova, atualize no mesmo PR o CLAUDE.md, a regra da área (`.claude/rules/`) ou a skill. O hook `lembrar-docs.js` avisa depois de cada commit quando a área mexida não teve a instrução atualizada.
+- **Versões de segurança:** tag `DDMMAAAA-Claude` no `main` (passo 9 da skill `subir-versao`); o dono transforma em Release no GitHub.
 - **Autorizado pelo dono (vale para todas as sessões):** o Claude pode abrir o PR e fazer o merge no `main` sozinho, sem perguntar, depois que os testes do GitHub do PR passarem (✓). Testes falharam: corrija antes; nunca faça merge com ✗ nem pule testes.
 
 ## Regras que não mudam
