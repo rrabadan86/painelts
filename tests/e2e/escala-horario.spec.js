@@ -267,3 +267,22 @@ test('Escala (revisão): 09:40 sem "loja sozinha" falso, segunda fechada na 5x2 
   for (let k = 1; k < r.ivs.length; k++) expect(r.ivs[k]).toBeGreaterThanOrEqual(r.ivs[k - 1]);
   for (const t of r.trab) expect(t, 'mais de 6h de trabalho com intervalo curto').toBeLessThanOrEqual(360);
 });
+
+// Replicar/Trazer mês: ajuste pontual vai só para o dia equivalente (não se multiplica pelas outras terças) — decisão do dono
+test('Escala: replicar mês leva cada ajuste para um dia só (o equivalente), sem multiplicar', async ({ page }) => {
+  await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS._escala && TS._escala.diasEquivalentes);
+  const r = await page.evaluate(() => {
+    const wd = (iso) => new Date(iso + 'T12:00:00Z').getUTCDay();
+    const chave = (iso) => `0|${wd(iso)}`; // modelo livre: uma semana só (todas as terças têm a mesma chave)
+    const src = { '2026-11-10': { ANA: { tipo: 'folga' } } }; // 2ª terça de novembro
+    const um = TS._escala.diasEquivalentes('2026-11', '2026-12', src, chave);
+    // dois ajustes diferentes em terças diferentes: cada um para a sua ocorrência
+    const dois = TS._escala.diasEquivalentes('2026-11', '2026-12', { '2026-11-03': { ANA: { tipo: 'folga' } }, '2026-11-17': { BIA: { tipo: 'folga' } } }, chave);
+    // feriado no destino: não recebe
+    const fer = TS._escala.diasEquivalentes('2026-11', '2026-12', src, chave, new Set(), new Set(['2026-12-08']));
+    return { um, dois, fer };
+  });
+  expect(Object.keys(r.um)).toEqual(['2026-12-08']); // 2ª terça de dezembro
+  expect(r.dois).toEqual({ '2026-12-01': { ANA: { tipo: 'folga' } }, '2026-12-15': { BIA: { tipo: 'folga' } } });
+  expect(r.fer).toEqual({});
+});

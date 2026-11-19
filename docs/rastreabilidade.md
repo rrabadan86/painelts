@@ -461,7 +461,7 @@ Todos os da lista A foram conferidos no código, um por um.
 | E-18 | Orçamento: "1.234,56" virava 0; NF-e do orçamento com centavos diferentes sem aviso | `orcamento.js` | ✅ (aviso antes de abrir a nota) |
 | E-19 | Rota assíncrona com erro sem tratamento derrubava o painel; demo aceitava 16 MB sem login; histórico de inventário com NaN | `server.js`, `nextsoft_invhist.py` | ✅ |
 | E-20 | Repetir sozinho um POST da IA depois de erro de rede pode cobrar 2× (se a resposta caiu depois de cobrada) | `ia.js` `iaApi` | 🟡 Mantido (o dono pediu a nova tentativa automática); risco baixo |
-| E-21 | "Replicar/Trazer mês" aplica o ajuste em todos os dias com a mesma semana do rodízio e dia da semana | `mapa.js` | 🟡 É o comportamento combinado (ajuste segue o rodízio); conferir com o dono se um ajuste pontual deve ir só para o dia equivalente |
+| E-21 | "Replicar/Trazer mês" aplicava um ajuste pontual em todos os dias com a mesma semana do rodízio e dia da semana | `mapa.js` `diasEquivalentes` | ✅ Decisão do dono: ajuste pontual vai só para o dia equivalente (mesma ocorrência); `escala-horario.spec` "replicar mês" |
 | E-22 | Feriado que abre em dia normalmente fechado fica sem ninguém e sem alerta | `mapa.js` | ❌ A fazer |
 
 ## Resumo em números

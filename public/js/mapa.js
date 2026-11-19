@@ -62,6 +62,24 @@
   /** abaixo do mínimo da CLT? (acima de 6h: 1h; de 4h a 6h: 15 min) */
   const abaixoClt = (jorn, int) => (jorn > 360 ? int < 60 : jorn > 240 ? int < 15 : false);
   TS._intervalo = { intervaloMin, abaixoClt, pausaDoTurno: (...a) => pausaDoTurno(...a) };
+  /**
+   * Replicar/Trazer mês: cada dia do destino recebe os ajustes do dia EQUIVALENTE da origem — mesma chave (semana do rodízio +
+   * dia da semana) e a mesma ocorrência no mês (1ª, 2ª…). Ajuste pontual vai só para um dia (decisão do dono). Feriados ficam de fora.
+   * Devolve { 'AAAA-MM-DD': { NOME: ajuste } } (sem filtrar equipe/férias).
+   */
+  function diasEquivalentes(srcYm, dstYm, src, chave, ferSrc = new Set(), ferDst = new Set()) {
+    const diasDe = (m) => Array.from({ length: new Date(Date.UTC(+m.slice(0, 4), +m.slice(5, 7), 0)).getUTCDate() }, (_, k) => `${m}-${String(k + 1).padStart(2, '0')}`);
+    const filas = new Map();
+    for (const d of diasDe(srcYm)) { const ch = chave(d); (filas.get(ch) || filas.set(ch, []).get(ch)).push(ferSrc.has(d) ? null : (src || {})[d] || null); }
+    const usados = new Map(), out = {};
+    for (const d of diasDe(dstYm)) {
+      const ch = chave(d), k = usados.get(ch) || 0;
+      usados.set(ch, k + 1);
+      const a = !ferDst.has(d) && (filas.get(ch) || [])[k];
+      if (a && Object.keys(a).length) out[d] = a;
+    }
+    return out;
+  }
   function paraTurno(o, ab) {
     let ini = o.s * B, fim = (o.s + o.len) * B;
     let pausa = o.pausa != null && o.intSlots ? [o.pausa * B, (o.pausa + o.intSlots) * B] : null;
@@ -434,7 +452,7 @@
     }
     return { semanas, L, kDom, folgamDom, trabMin, jornada, intervalo, diasBase, fixos, maxF };
   }
-  TS._escala = { montarRodizio: (...a) => montarRodizio(...a), montarEscala: (...a) => montarEscala(...a), B, PH };
+  TS._escala = { montarRodizio: (...a) => montarRodizio(...a), montarEscala: (...a) => montarEscala(...a), diasEquivalentes, B, PH };
   const resumoRodizio = (r) => ({ descoberto: r.semanas.reduce((s, w) => s + w.descoberto, 0), abaixo: r.semanas.reduce((s, w) => s + w.abaixo, 0) });
 
   // ---------- editor de horário e equipe (usado aqui e em Configurações) ----------
@@ -982,8 +1000,9 @@
         AJ.sujo = false; AJ.msg = ''; TS.render();
       } catch (e) { btn.textContent = e.message; btn.disabled = false; }
     };
-    // replicar os ajustes para outro mês mantendo a alternância: cada dia recebe os ajustes do dia do mês de origem
-    // com o MESMO dia da semana e a MESMA semana do rodízio (quem folga no domingo continua girando). Feriados e férias ficam de fora.
+    // replicar os ajustes para outro mês mantendo a alternância: cada dia recebe os ajustes do dia EQUIVALENTE do mês de origem
+    // (mesmo dia da semana, mesma semana do rodízio e a mesma ocorrência no mês: 1ª terça dessa semana do rodízio → 1ª terça).
+    // Ajuste pontual vai só para um dia (decisão do dono). Feriados e férias ficam de fora.
     const ancoraR = inicioDe(op.equipe, op.equipe.inicioRodizio || INICIO_PADRAO);
     const semR = (iso) => (L > 1 ? (((Math.round((diaMs(inicioDe(op.equipe, iso)) - diaMs(ancoraR)) / (7 * 86400000)) % L) + L) % L) : 0);
     const nomesEq = new Set(pessoasDe(op.equipe).map((q) => q.nome.trim().toUpperCase()));
@@ -991,14 +1010,8 @@
     function replicar(srcYm, dstYm, src) {
       const ferSrc = new Set(TS.feriadosDoMes ? TS.feriadosDoMes(cfg, srcYm).map((f) => f.data) : []);
       const ferDst = new Set(TS.feriadosDoMes ? TS.feriadosDoMes(cfg, dstYm).map((f) => f.data) : []);
-      const porChave = new Map(); // "semana|dia da semana" → ajustes do último dia assim no mês de origem
-      for (const d of Object.keys(src).sort()) if (!ferSrc.has(d) && Object.keys(src[d] || {}).length) porChave.set(`${semR(d)}|${wdDe(d)}`, src[d]);
-      const nD = new Date(Date.UTC(+dstYm.slice(0, 4), +dstYm.slice(5, 7), 0)).getUTCDate();
       const out = {}; let n = 0;
-      for (let k = 1; k <= nD; k++) {
-        const d = `${dstYm}-${String(k).padStart(2, '0')}`;
-        const a = !ferDst.has(d) && porChave.get(`${semR(d)}|${wdDe(d)}`);
-        if (!a) continue;
+      for (const [d, a] of Object.entries(diasEquivalentes(srcYm, dstYm, src, (iso) => `${semR(iso)}|${wdDe(iso)}`, ferSrc, ferDst))) {
         for (const [nome, x] of Object.entries(a)) if (nomesEq.has(nome) && !deFerias(nome, d)) { (out[d] ||= {})[nome] = { ...x }; n++; }
       }
       return { out, n };
@@ -1006,7 +1019,7 @@
     const iM = meses.indexOf(ym), prox = meses[iM + 1], ant = meses[iM - 1];
     const salvos = (m) => ((cfg && cfg.escalaAjustes) || {})[m] || {};
     const nomeMes = (m) => TS.MESES_LONGOS[+m.slice(5, 7) - 1].toLowerCase();
-    const btnReplicar = pode && prox && nAj ? h('button', { type: 'button', class: 'btn', title: `Leva os ajustes deste mês para ${nomeMes(prox)}, seguindo o rodízio (mesma semana do rodízio e mesmo dia da semana). Você confere lá antes de salvar.`, onclick: () => {
+    const btnReplicar = pode && prox && nAj ? h('button', { type: 'button', class: 'btn', title: `Leva os ajustes deste mês para ${nomeMes(prox)}, cada um para o dia equivalente (mesma semana do rodízio e mesmo dia da semana): ajuste pontual vai só para um dia. Você confere lá antes de salvar.`, onclick: () => {
       if (AJ.sujo) { alert('Salve os ajustes deste mês antes de replicar.'); return; }
       if (Object.keys(salvos(prox)).length && !confirm(`${TS.MESES_LONGOS[+prox.slice(5, 7) - 1]} já tem ajustes salvos. Substituir pelos deste mês? (você ainda confere antes de salvar)`)) return;
       const r = replicar(ym, prox, AJ.dados);
