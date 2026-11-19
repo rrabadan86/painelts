@@ -1,6 +1,6 @@
 const { test, expect } = require('@playwright/test');
 
-// ⭐ Sugestões da equipe: marcar na tela própria, revisar no Pedido ("Não agora" com motivo, registrar) e a resposta voltar
+// ⭐ Sugestões da equipe: marcar na tela própria, revisar no Pedido ("Não pedir" com motivo, registrar) e a resposta voltar
 test('Sugestões: marcar produto, justificar quando tem na loja e revisar no Pedido', async ({ page }) => {
   page.on('dialog', (d) => d.accept());
   await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS.db && TS.sug && TS.state.loja && TS.state.loja !== 'todas');
@@ -27,15 +27,19 @@ test('Sugestões: marcar produto, justificar quando tem na loja e revisar no Ped
   await linha.getByRole('button', { name: '⭐ Confirmar sugestão' }).click();
   await expect(page.locator('.sug-t tbody tr', { hasText: prod.desc })).toContainText('Aguardando o próximo pedido');
 
-  // no Pedido: quadro com as sugestões, "Não agora" com motivo e registrar
+  // no Pedido: quadro em tabela com abas, "Não pedir" com motivo (janela com escolhas rápidas) e registrar
   await page.evaluate(() => { location.hash = '#pedido'; });
   const quadro = page.locator('.sug-ped-card');
   await expect(quadro).toBeVisible({ timeout: 20000 });
-  const minha = quadro.locator('.sug-ped', { hasText: prod.desc });
+  await quadro.locator('.seg button', { hasText: 'Todas' }).click();
+  const minha = quadro.locator('.sug-ped-t tbody tr', { hasText: prod.desc });
   await expect(minha).toContainText('Cliente leva sempre 3 de presente');
-  await minha.getByRole('button', { name: 'Não agora ▾' }).click();
-  await minha.getByRole('button', { name: 'Vende pouco' }).click();
-  await expect(quadro.locator('.sug-ped', { hasText: prod.desc })).toContainText('Não agora: Vende pouco');
+  await minha.getByRole('button', { name: 'Não pedir', exact: true }).click();
+  const perg = page.locator('.cp-modal-bg .ts-perg');
+  await perg.locator('.chip', { hasText: 'Vende pouco' }).click();
+  await perg.getByRole('button', { name: 'Não pedir' }).click();
+  await expect(quadro.locator('.sug-ped-t tbody tr', { hasText: prod.desc })).toContainText('Não pedir: Vende pouco');
+  await expect(quadro.locator('.seg button', { hasText: 'Não pedir (1)' })).toBeVisible();
   await quadro.getByRole('button', { name: 'Registrar o pedido nas sugestões' }).click();
   await expect(page.locator('.sug-ped-msg').first()).toContainText('Sugestões respondidas');
 
@@ -43,4 +47,40 @@ test('Sugestões: marcar produto, justificar quando tem na loja e revisar no Ped
   await page.evaluate(() => { location.hash = '#sugestoes'; });
   await expect(page.locator('.sug-t tbody tr', { hasText: prod.desc })).toContainText('Não entrou');
   await expect(page.locator('.sug-t tbody tr', { hasText: prod.desc })).toContainText('continua marcada para o próximo');
+});
+
+// Pedido: o quadro é uma tabela com abas; cada linha tem "+ Adicionar ao pedido"; 🛒 no quadro e ⭐ na tabela do pedido
+test('Pedido: adicionar a sugestão pela linha, 🛒 "no pedido" no quadro e ⭐ da equipe na tabela do pedido', async ({ page }, info) => {
+  const celular = info.project.name === 'celular';
+  await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS.db && TS.sug && TS.state.loja && TS.state.loja !== 'todas');
+  await page.evaluate(() => { location.hash = '#pedido'; });
+  const quadro = page.locator('.sug-ped-card');
+  await expect(quadro).toBeVisible({ timeout: 30000 });
+  // tabela (não pilha de cartões), com abas com contagem; no celular a lista grande começa recolhida
+  await expect(quadro.locator('.seg button', { hasText: /^Todas \(\d+\)$/ })).toBeVisible();
+  await quadro.locator('.seg button', { hasText: 'Dá para pedir' }).click();
+  await expect(quadro.locator('.seg button.on')).toContainText('Dá para pedir');
+  const linha = quadro.locator('.sug-ped-t tbody tr').filter({ has: page.locator('.sug-ped-add') }).first();
+  await expect(linha).toBeVisible();
+  const nome = (await linha.locator('b').first().innerText()).trim();
+  const antes = await quadro.locator('.sug-ped-t tbody tr').count();
+  await linha.locator('.sug-ped-add').click();
+  // saiu de "Dá para pedir" e foi para "Já no pedido", com o ícone 🛒 e a quantidade
+  await expect(quadro.locator('.sug-ped-t tbody tr').filter({ has: page.locator('.sug-ped-add') })).toHaveCount(antes - 1);
+  await quadro.locator('.seg button', { hasText: 'Já no pedido' }).click();
+  const no = quadro.locator('.sug-ped-t tbody tr', { hasText: nome }).first();
+  await expect(no.locator('.sug-ped-ico')).toBeVisible();
+  await expect(no.locator('.sug-ped-no')).toContainText('no pedido:');
+  const txt = await no.locator('.sug-ped-no').innerText();
+  // na tabela do pedido o produto ganhou o ⭐ da equipe, com quem pediu no tooltip
+  if (celular) await page.locator('.ped-cards-busca').fill(nome);
+  const prodLinha = page.locator(celular ? '.ped-card' : '.ped-t tbody tr', { hasText: nome }).first();
+  await expect(prodLinha.locator('.ped-sug')).toHaveAttribute('title', /^Pedido da equipe: \S/);
+  // mexer na quantidade do pedido atualiza o "no pedido: X" do quadro
+  if (celular) await prodLinha.getByRole('button', { name: 'Mais' }).click();
+  else { const q = prodLinha.locator('input.ped-q'); const v = +(await q.inputValue()), passo = +(await q.getAttribute('step')) || 1; await q.fill(String(v + passo)); await q.blur(); }
+  await expect(quadro.locator('.sug-ped-t tbody tr', { hasText: nome }).first().locator('.sug-ped-no')).not.toHaveText(txt);
+  // "Tirar" devolve a sugestão para "Dá para pedir"
+  await quadro.locator('.sug-ped-t tbody tr', { hasText: nome }).first().getByRole('button', { name: 'Tirar' }).click();
+  await expect(quadro.locator('.sug-ped-t tbody tr', { hasText: nome }).locator('.sug-ped-no')).toHaveCount(0);
 });

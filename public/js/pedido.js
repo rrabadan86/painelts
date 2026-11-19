@@ -579,8 +579,10 @@
     const totalAgora = R.linhas.reduce((s, r) => s + r.pedir * (r.preco || 0), 0);
     const sobra = R.orcamento != null ? R.orcamento - totalAgora : null;
     const MOBILE = matchMedia('(max-width: 760px)').matches;
+    // ⭐ ao lado do nome: quem da equipe pediu e o recado (a decisão é no quadro "⭐ Sugestões da equipe")
+    const tituloSug = (g) => { const rec = g.notas.map((n) => [n.justificativa, n.recado].filter(Boolean).join(' · ')).filter(Boolean).join(' | '); return `Pedido da equipe: ${g.pessoas.join(', ')}${rec ? ` — ${rec}` : ''}. A estrela não muda a conta do pedido.`; };
     const cols = [
-        { key: 'produto', label: 'Produto', align: 'l', sticky: true, wrap: true, render: (r) => h('span', null, r.produto, r.sug ? h('span', { class: 'ped-prio ped-sug', title: `Sugerido pela equipe: ${r.sug.pessoas.join(', ')}. Não muda a conta do pedido: decida no quadro "⭐ Sugestões da equipe".` }, `⭐ ${r.sug.pessoas.length > 1 ? r.sug.pessoas.length + ' pediram' : 'equipe'}`) : null, r.obrig ? h('span', { class: 'ped-tag-obr', title: 'Vem no pedido obrigatório: não vai para o carrinho' }, '🔒 obrigatório') : r.chega ? h('span', { class: 'ped-tag-obr', title: `O pedido obrigatório já traz ${qtdTxt(r.chega, r.it)} deste produto (já descontado do "Precisa"). O que estiver em "Pedir" é a mais e vai para o carrinho.` }, `+ ${qtdTxt(r.chega, r.it)} no obrigatório`) : null, r.esp ? h('a', { class: 'ped-prio ped-esp', href: '#espera', title: `Na lista de espera: ${r.esp.clientes.join(', ')}${r.esp.pedidos > r.esp.clientes.length ? '…' : ''}. Quando a nota chegar, eles aparecem para avisar.`, onclick: (e) => e.stopPropagation() }, `⏳ ${r.esp.pedidos} esperando`) : null, VAL.has(String(r.cod)) ? (() => { const v = VAL.get(String(r.cod)); return h('a', { class: 'pd-vl', href: '#validade', title: `${qtdTxt(v.kg, r.it)} em lote${v.dias < 0 ? ' já vencido' : ` que vence em ${v.dias} dias`}: venda o que tem antes de comprar mais (Estoque → Validade)`, onclick: (e) => e.stopPropagation() }, TS.validade.badge(v.faixa)); })() : null, r.prior && r.prior < 3 ? h('span', { class: 'ped-prio', title: r.prior === 2 ? 'Prioridade: estoque abaixo de 500 g' : 'Prioridade: Estrela com estoque abaixo de 700 g' }, r.prior === 2 ? '< 500 g' : 'Estrela < 700 g') : null, h('small', { class: 'est-tam' }, `cód. ${r.cod}`)) },
+        { key: 'produto', label: 'Produto', align: 'l', sticky: true, wrap: true, render: (r) => h('span', null, r.produto, r.sug ? h('span', { class: 'ped-prio ped-sug', title: tituloSug(r.sug) }, `⭐ ${r.sug.pessoas.length > 1 ? r.sug.pessoas.length + ' pediram' : 'equipe'}`) : null, r.obrig ? h('span', { class: 'ped-tag-obr', title: 'Vem no pedido obrigatório: não vai para o carrinho' }, '🔒 obrigatório') : r.chega ? h('span', { class: 'ped-tag-obr', title: `O pedido obrigatório já traz ${qtdTxt(r.chega, r.it)} deste produto (já descontado do "Precisa"). O que estiver em "Pedir" é a mais e vai para o carrinho.` }, `+ ${qtdTxt(r.chega, r.it)} no obrigatório`) : null, r.esp ? h('a', { class: 'ped-prio ped-esp', href: '#espera', title: `Na lista de espera: ${r.esp.clientes.join(', ')}${r.esp.pedidos > r.esp.clientes.length ? '…' : ''}. Quando a nota chegar, eles aparecem para avisar.`, onclick: (e) => e.stopPropagation() }, `⏳ ${r.esp.pedidos} esperando`) : null, VAL.has(String(r.cod)) ? (() => { const v = VAL.get(String(r.cod)); return h('a', { class: 'pd-vl', href: '#validade', title: `${qtdTxt(v.kg, r.it)} em lote${v.dias < 0 ? ' já vencido' : ` que vence em ${v.dias} dias`}: venda o que tem antes de comprar mais (Estoque → Validade)`, onclick: (e) => e.stopPropagation() }, TS.validade.badge(v.faixa)); })() : null, r.prior && r.prior < 3 ? h('span', { class: 'ped-prio', title: r.prior === 2 ? 'Prioridade: estoque abaixo de 500 g' : 'Prioridade: Estrela com estoque abaixo de 700 g' }, r.prior === 2 ? '< 500 g' : 'Estrela < 700 g') : null, h('small', { class: 'est-tam' }, `cód. ${r.cod}`)) },
         { key: 'grupoTxt', label: 'Grupo', align: 'l' },
         { key: 'classe', label: 'Classe', align: 'l', title: `Classe oficial: o que sai por mês (a mediana dos últimos ${R.classeMeses} meses fechados, então um mês de promoção pesa pouco) × margem bruta, comparados com a mediana dos outros produtos. Não muda com o filtro de período. 🔒 = travada à mão na Rentabilidade. Estrela: vende muito e tem margem boa. Volume: vende muito, margem menor. Joia: margem boa, vende pouco. Peso morto: vende pouco e margem baixa`,
           render: (r) => (r.classe ? h('span', { class: 'ped-cl ped-cl-' + r.classe, title: r.classeFixa ? 'Travada à mão na Rentabilidade' : null }, (r.classeFixa ? '🔒 ' : '') + CLASSES[r.classe]) : h('span', { class: 'muted' }, '—')), sortVal: (r) => ({ estrela: 4, volume: 3, joia: 2, peso: 1 })[r.classe] || 0 },
@@ -662,49 +664,75 @@
         ? h('span', { class: 'pos' }, `cabe no valor (sobram ${fmt.brl0(sobra)}): use ＋`)
         : h('span', { class: 'warn-t' }, `passa do valor em ${fmt.brl0(custo - Math.max(0, sobra))}`);
     }
-    // ---------- ⭐ sugestões da equipe: adicionar, "não agora" com motivo, ou automático quando o site não tem ----------
+    // ---------- ⭐ sugestões da equipe: tabela com abas; por linha, "+ Adicionar ao pedido" ou "Não pedir" com motivo ----------
     function cartaoSugestoes() {
-      const grupos = [...SUG.values()];
       // o mesmo produto pode ter a linha normal e a do pedido obrigatório: decide pela normal; o obrigatório já conta como no pedido
       const linhaDe = (g) => { const xs = R.linhas.filter((r) => String(r.cod) === String(g.cod)); return xs.find((r) => !r.obrig) || xs[0] || null; };
       const noObrig = (g) => R.linhas.some((r) => r.obrig && String(r.cod) === String(g.cod) && r.pedir > 0);
-      const pend = grupos.filter((g) => { const r = linhaDe(g); return !g.aguardando && !noObrig(g) && !(r && r.pedir > 0) && !(r && (r.site === 'indisp' || r.site === 'fora')) && !g.decisao; }).length;
+      const itens = [...SUG.values()].map((g) => {
+        const r = linhaDe(g), ob = noObrig(g);
+        const semSite = !r || r.site === 'indisp' || r.site === 'fora';
+        const noPed = (r && r.pedir > 0 && !semSite) || ob;
+        const aba = g.aguardando || noPed ? 'nopedido' : semSite ? 'semsite' : g.decisao ? 'nao' : 'pedir';
+        const notas = g.notas.filter((n) => n.justificativa || n.recado).map((n) => `${n.nome}: ${[n.justificativa, n.recado].filter(Boolean).join(' · ')}`);
+        return { g, r, semSite, noPed, aba, cod: g.cod, desc: g.desc, quem: g.pessoas.join(', '), recados: notas.join(' | '), notas };
+      });
+      const ABAS = { pedir: 'Dá para pedir', nopedido: 'Já no pedido', semsite: 'Sem estoque no site', nao: 'Não pedir', todas: 'Todas' };
+      const cont = (k) => (k === 'todas' ? itens.length : itens.filter((x) => x.aba === k).length);
+      // abre na primeira aba que tiver itens; depois vale a que a pessoa escolheu. No celular, lista grande começa recolhida
+      if (!state.pedSug || state.pedSug.loja !== loja) state.pedSug = { loja, aba: ['pedir', 'nopedido', 'semsite', 'nao'].find(cont) || 'todas', aberto: !(TS.ehCelular() && itens.length > 6) };
+      const ver = state.pedSug;
+      if (ver.aba === 'nao' && !cont('nao')) ver.aba = 'todas';
+      const lista = ver.aba === 'todas' ? itens : itens.filter((x) => x.aba === ver.aba);
       const msg = h('div', { class: state.pedSugMsg ? 'pos sug-ped-msg' : 'muted sug-ped-msg' }, state.pedSugMsg || '');
       state.pedSugMsg = null;
-      const item = (g) => {
-        const r = linhaDe(g);
-        const semSite = r && (r.site === 'indisp' || r.site === 'fora');
-        const ob = noObrig(g);
-        const noPed = (r && r.pedir > 0 && !semSite) || ob;
-        const decidir = async (res, motivo) => {
-          try { g.decisao = await TS.sug.decidir(loja, g.cod, res, motivo); repintar(); } catch (err) { alert(err.message); }
-        };
-        const adicionar = () => {
-          const passo = passoDe(r.c, r.it);
-          const v = Math.round(Math.ceil(Math.max(r.sugerido || 0, passo) / passo - 1e-9) * passo * 1000) / 1000;
-          r.pedir = v;
-          if (v === r.sugeridoPedir) editados.delete(String(r.cod)); else editados.set(String(r.cod), v);
-          if (g.decisao) decidir(null); else repintar();
-        };
-        const tirar = () => { r.pedir = 0; if (r.sugeridoPedir === 0) editados.delete(String(r.cod)); else editados.set(String(r.cod), 0); repintar(); };
-        let acao;
-        if (g.aguardando) acao = h('span', { class: 'sug-aguarda' }, `🛒 Pedido em ${TS.sug.dataTxt(g.aguardando.em)}: aguardando entrega. A estrela sai quando a nota da TSB Franquias chegar com o produto; se não vier na entrega, volta para cá.`);
-        else if (semSite) acao = h('span', { class: 'warn-t' }, '🚫 Sem estoque no site: a equipe fica sabendo sozinha');
-        else if (noPed) acao = h('span', null, h('span', { class: 'pos' }, ob && !(r && !r.obrig && r.pedir > 0) ? '✅ Vem no pedido obrigatório ' : `✅ No pedido: ${qtdTxt(r.pedir, r.it)} `), r && !r.obrig && r.pedir > 0 ? h('button', { type: 'button', class: 'btn sug-ped-btn', onclick: tirar }, 'Tirar') : null);
-        else if (g.decisao) acao = h('span', null, h('span', { class: 'neg' }, `Não agora: ${g.decisao.motivo} `), h('button', { type: 'button', class: 'btn sug-ped-btn', onclick: () => decidir(null) }, 'Desfazer'));
-        else {
-          const motivos = h('span', { class: 'sug-motivos', hidden: true }, TS.sug.MOTIVOS.map((m) => h('button', { type: 'button', class: 'chip', onclick: () => decidir('nao', m) }, m)));
-          acao = h('span', { class: 'sug-ped-acoes' },
-            r && (r.site === 'ok' || r.site === 'sem') ? h('button', { type: 'button', class: 'btn primary sug-ped-btn', onclick: adicionar }, `＋ Adicionar${r.sugerido > 0 ? ` (${qtdTxt(r.sugerido, r.it)})` : ''}`) : h('span', { class: 'muted' }, 'fora da lista do pedido '),
-            h('button', { type: 'button', class: 'btn sug-ped-btn', onclick: () => { motivos.hidden = !motivos.hidden; } }, 'Não agora ▾'), motivos);
-        }
-        return h('div', { class: 'sug-ped' + (noPed ? ' on' : '') },
-          h('div', { class: 'sug-ped-cab' }, h('b', null, '⭐ ', g.desc),
-            r ? h('small', { class: 'muted' }, ` · estoque ${qtdTxt(r.qtd, r.it)}${r.sugerido > 0 ? ` · precisa ${qtdTxt(r.sugerido, r.it)}` : ' · a conta não pede agora'}`) : null),
-          h('div', { class: 'sug-ped-quem muted' }, `${g.pessoas.join(', ')} · desde ${TS.sug.dataTxt(g.desde)}${g.pedidos ? ` · já passou por ${g.pedidos} ${g.pedidos === 1 ? 'pedido' : 'pedidos'}` : ''}`),
-          ...g.notas.filter((n) => n.justificativa || n.recado).map((n) => h('div', { class: 'sug-ped-nota' }, h('small', null, `${n.nome}: `), [n.justificativa, n.recado].filter(Boolean).join(' · '))),
-          h('div', { class: 'sug-ped-acao' }, acao));
+
+      const decidir = async (g, res, motivo) => {
+        try { g.decisao = await TS.sug.decidir(loja, g.cod, res, motivo); repintar(); } catch (err) { TS.avisar(err.message); }
       };
+      // quantidade que o botão põe: o que a conta sugere; se ela não pede, a menor quantidade do site (ou 1)
+      const qtdAdd = (r) => { const passo = passoDe(r.c, r.it); return Math.round(Math.ceil(Math.max(r.sugerido || 0, passo) / passo - 1e-9) * passo * 1000) / 1000; };
+      const definir = (r, v) => { r.pedir = v; if (v === r.sugeridoPedir) editados.delete(String(r.cod)); else editados.set(String(r.cod), v); };
+      const adicionar = (x) => { definir(x.r, qtdAdd(x.r)); if (x.g.decisao) decidir(x.g, null); else repintar(); };
+      const naoPedir = async (x) => {
+        const motivo = await TS.perguntar(`Não pedir ${x.desc} agora?`, { texto: 'A equipe vê o motivo. O produto continua marcado para o próximo pedido.', chips: TS.sug.MOTIVOS, obrigatorio: true, max: 120, ok: 'Não pedir' });
+        if (motivo) decidir(x.g, 'nao', motivo);
+      };
+      const bt = (txt, cls, fn, title) => h('button', { type: 'button', class: `btn sug-ped-btn ${cls || ''}`.trim(), title: title || null, onclick: fn }, txt);
+      const acao = (x) => {
+        const { g, r } = x;
+        if (g.aguardando) return h('span', { class: 'sug-aguarda' }, `🛒 pedido em ${TS.sug.dataTxt(g.aguardando.em)}`, h('small', { class: 'muted sug-motivo' }, 'aguardando entrega'));
+        if (x.noPed) {
+          const meu = r && !r.obrig && r.pedir > 0;
+          return h('span', { class: 'sug-ped-acoes' }, h('span', { class: 'pos sug-ped-no' }, meu ? `🛒 no pedido: ${qtdTxt(r.pedir, r.it)}` : '🔒 vem no pedido obrigatório'),
+            meu ? bt('Tirar', '', () => { definir(r, 0); repintar(); }, 'Tirar do pedido') : null);
+        }
+        if (x.semSite) return h('span', { class: 'muted' }, '—');
+        if (g.decisao) return h('span', { class: 'sug-ped-acoes' }, h('span', { class: 'neg' }, `Não pedir: ${g.decisao.motivo}`), bt('Desfazer', '', () => decidir(g, null)));
+        return h('span', { class: 'sug-ped-acoes' },
+          bt('+ Adicionar ao pedido', 'primary sug-ped-add', () => adicionar(x), `Põe ${qtdTxt(qtdAdd(r), r.it)} na tabela do pedido${r.sugerido > 0 ? ' (o que a conta sugere)' : ' (a conta não pede agora: vai a menor quantidade do site)'}. Depois dá para mudar a quantidade lá.`),
+          bt('Não pedir', '', () => naoPedir(x), 'Não entra neste pedido: escolha o motivo para a equipe ver'));
+      };
+      const SITE = (x) => (!x.r || x.r.site === 'fora' ? ['Fora do catálogo', 'cinza'] : x.r.site === 'indisp' ? ['Sem estoque no site', 'erro'] : x.r.site === 'sem' ? ['Sem catálogo', 'cinza'] : ['Disponível', 'ok']);
+      const cols = [
+        { key: 'desc', label: 'Produto', align: 'l', sticky: true, wrap: true, title: 'Produto que a equipe marcou com ⭐, quem pediu, desde quando e o recado. 🛒 = já está na tabela do pedido.',
+          render: (x) => h('div', { class: 'sug-prod-cel' },
+            x.noPed ? h('span', { class: 'sug-ped-ico', title: 'Já está no pedido' }, '🛒 ') : null, h('b', null, x.desc),
+            h('small', { class: 'muted sug-motivo' }, `${x.quem} · desde ${TS.sug.dataTxt(x.g.desde)}${x.g.pedidos ? ` · já passou por ${x.g.pedidos} ${x.g.pedidos === 1 ? 'pedido' : 'pedidos'}` : ''}`),
+            x.notas.map((t) => h('small', { class: 'sug-motivo sug-ped-rec' }, t))) },
+        { key: 'qtd', label: 'Estoque agora', title: 'Quanto tem na loja agora (estoque do AppNext).', render: (x) => (x.r ? qtdTxt(x.r.qtd, x.r.it) : h('span', { class: 'muted' }, '—')), sortVal: (x) => (x.r ? x.r.qtd : null) },
+        { key: 'precisa', label: 'Precisa', title: 'O que a conta do pedido sugere para este produto (venda prevista − estoque). A estrela não muda essa conta: "—" quer dizer que, pela conta, não precisa agora.',
+          render: (x) => (x.r && x.r.sugerido > 0 ? h('span', { class: 'est-dica', title: x.r.conta }, qtdTxt(x.r.sugerido, x.r.it)) : h('span', { class: 'muted' }, '—')), sortVal: (x) => (x.r ? x.r.sugerido : null) },
+        { key: 'site', label: 'No site', align: 'l', title: 'Situação no Sistema de Pedidos da franquia. Sem estoque no site ou fora do catálogo: não dá para pedir agora; a equipe é avisada sozinha e o produto continua marcado para o próximo pedido.',
+          render: (x) => { const [t, c] = SITE(x); return h('span', { class: 'badge ' + c }, t); }, sortVal: (x) => SITE(x)[0] },
+        { key: 'acao', label: 'Pedido', align: 'l', wrap: true, title: '"+ Adicionar ao pedido" põe o produto na tabela do pedido (dá para mudar a quantidade lá). "Não pedir" guarda o motivo para a equipe. 🛒 mostra quanto já está no pedido.',
+          render: acao, sortVal: (x) => (x.r ? x.r.pedir : 0) },
+      ];
+      const tabela = () => TS.table({
+        cols, rows: lista, maxHeight: '340px', cls: 'est-t sug-ped-t', rowClass: (x) => (x.noPed ? 'sug-ped-on' : null),
+        search: lista.length > 8 ? 'Buscar produto, pessoa ou recado…' : null, searchKeys: ['desc', 'cod', 'quem', 'recados'],
+        empty: { pedir: 'Nada para decidir agora. 👏', nopedido: 'Nenhuma sugestão no pedido ainda.', semsite: 'Nenhuma sugestão sem estoque no site.', nao: 'Nenhuma marcada como "Não pedir".', todas: 'Nenhuma sugestão aberta.' }[ver.aba],
+      });
       const registrar = h('button', { type: 'button', class: 'btn' }, 'Registrar o pedido nas sugestões');
       registrar.addEventListener('click', async () => {
         if (!confirm('Registrar este pedido nas sugestões da equipe?\n\nO que está no pedido fica "aguardando entrega" (a estrela sai quando a nota da franquia chegar com o produto); o que não está fica marcado para o próximo, com o motivo; sem estoque no site é automático.')) return;
@@ -713,16 +741,21 @@
         try { n = await registrarSugestoes(); p.sugestoes = await TS.sug.paraPedido(loja, { sugestoes: n.abertas }); }
         catch (err) { msg.className = 'neg'; msg.textContent = err.message; registrar.disabled = false; return; }
         state.pedSugMsg = resumoSug(n);
+        if (state.pedSug) state.pedSug.aba = 'todas'; // as situações mudaram: mostra tudo
         repintar();
         // nada mais aberto: o quadro some; o resumo fica num aviso
         if (!p.sugestoes.length && state.pedSugMsg) { corpo.querySelector('.ped-ctl')?.after(h('div', { class: 'notice ok mt sug-ped-msg' }, state.pedSugMsg)); state.pedSugMsg = null; }
       });
+      const abas = Object.keys(ABAS).filter((k) => k !== 'nao' || cont('nao'));
       return h('div', { class: 'card mt sug-ped-card' },
-        h('div', { class: 'card-title' }, `⭐ Sugestões da equipe (${grupos.length})`),
-        h('p', { class: 'muted' }, 'Produtos que a equipe pediu. A estrela não muda a conta do pedido: você decide. ', pend ? h('b', null, `${pend} para revisar. `) : null,
+        h('div', { class: 'card-head' },
+          h('div', null, h('div', { class: 'card-title' }, `⭐ Sugestões da equipe (${itens.length})`)),
+          h('button', { type: 'button', class: 'btn sug-ped-btn sug-ped-abre', 'aria-expanded': String(ver.aberto), onclick: () => { ver.aberto = !ver.aberto; repintar(); } }, ver.aberto ? 'Recolher ▴' : 'Mostrar ▾')),
+        h('p', { class: 'muted' }, 'Produtos que a equipe pediu. A estrela não muda a conta do pedido: você decide, linha a linha. ', cont('pedir') ? h('b', null, `${cont('pedir')} para decidir. `) : null,
           h('details', { class: 'est-como' }, h('summary', null, 'Como funciona ▸'),
-            h('p', null, 'Ao montar o carrinho, a resposta vai para a equipe sozinha. O que foi no pedido fica "aguardando entrega" até a nota da TSB Franquias chegar: com o produto, a estrela sai (não importa quanto demore); se a primeira nota chegar sem ele e nenhuma outra o trouxer em 5 dias, volta para cá. O que não entrou continua marcado para o próximo pedido.'))),
-        h('div', { class: 'sug-ped-lista' }, grupos.map(item)),
+            h('p', null, 'Ao montar o carrinho (ou em "Registrar o pedido nas sugestões"), a resposta vai para a equipe sozinha. O que foi no pedido fica "aguardando entrega" até a nota da TSB Franquias chegar: com o produto, a estrela sai (não importa quanto demore); se a primeira nota chegar sem ele e nenhuma outra o trouxer em 5 dias, volta para cá. O que não entrou, ou está sem estoque no site, continua marcado para o próximo pedido.'))),
+        TS.seg(abas.map((k) => [`${ABAS[k]} (${cont(k)})`, k]), ver.aberto ? ver.aba : null, (v) => { ver.aba = v; ver.aberto = true; repintar(); }),
+        ver.aberto ? tabela() : null,
         h('div', { class: 'cfg-acoes' }, registrar, msg));
     }
     /** registra o pedido de agora nas sugestões abertas (também chamado ao montar o carrinho) */
