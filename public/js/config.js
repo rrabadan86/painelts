@@ -2,14 +2,12 @@
 'use strict';
 (function () {
   const { h, fmt, state } = TS;
-  const TELAS_NOME = [['resumo', 'Resumo'], ['comparativos', 'Comparativos'], ['comissionamento', 'Comissionamento'], ['promocao', 'Promoção'], ['cupons', 'Vendas → Cupons (itens de cada venda)'], ['mapa', 'Movimento e escala (mapa de calor)'], ['clientes', 'Clientes (CPF e telefone)'], ['minha', 'Comissão de cada vendedor'], ['rentab', 'Produtos → Rentabilidade'], ['precos', 'Produtos → Preços'], ['site', 'Produtos → Site (preços do e-commerce)'], ['estoque', 'Estoque → Estoque'], ['pedido', 'Estoque → Pedido'], ['notas', 'Estoque → Notas fiscais (entrada e saída)'], ['inventario', 'Estoque → Inventário (contagem; a vendedora sempre conta)'], ['espera', 'Clientes → Lista de espera (a vendedora sempre usa)'], ['validade', 'Estoque → Validade (lotes do chá a granel)'], ['dre', 'Resultado (DRE)']];
-  const TELAS_PADRAO = ['resumo', 'comparativos', 'comissionamento', 'promocao', 'mapa', 'minha', 'validade'];
   const PERFIL_NOME = { admin: 'Administrador', franqueado: 'Franqueado', gerente: 'Gerente', vendedor: 'Vendedor' };
   const PERFIL_DESC = {
     admin: 'Tudo: todas as lojas, acessos, horários e usuários.',
     franqueado: 'Tudo das lojas dele, inclusive criar gerentes e vendedores.',
-    gerente: 'As telas que você liberar (padrão: todas, menos Clientes).',
-    vendedor: 'Só a própria comissão e o andamento da meta.',
+    gerente: 'As telas que você marcar (padrão: Vendas, Equipe, Lista de espera, Validade e ⭐ Sugestões; sem Clientes e sem custos).',
+    vendedor: 'Fixas: Minha comissão, Lista de espera, Validade, Inventário, ⭐ Sugestões e Checklist. Nunca custo nem dados de clientes (exceto a Lista de espera).',
   };
   let est = null;          // último /api/admin/estado
   let timer = null;
@@ -1185,20 +1183,41 @@
     };
     meses.addEventListener('input', dicaPrazo); dicaPrazo();
     const campoPrazo = h('label', { class: 'cfg-campo', style: { marginBottom: '12px' } }, h('span', null, 'Acesso por (meses)'), h('div', { class: 'cfg-inline' }, meses, atalhos), prazoTxt);
-    const telasSel = new Set(u && u.telas ? u.telas : TELAS_PADRAO);
-    const telasBox = h('div', { class: 'cfg-checks' }, TELAS_NOME.map(([k, nomeT]) => {
-      const cb = h('input', { type: 'checkbox', value: k, checked: telasSel.has(k) || null });
-      cb.addEventListener('change', () => { cb.checked ? telasSel.add(k) : telasSel.delete(k); });
-      return h('label', null, cb, ' ', nomeT);
-    }));
-    const campoTelas = campo('Telas que o gerente pode ver', telasBox, 'Clientes mostra CPF, telefone e histórico de compras. Rentabilidade, Preços, Estoque, Pedido, Notas fiscais e Resultado mostram custos, margens e o lucro da loja. Site mostra só os preços do e-commerce comparados com os da loja (sem custos). Libere só para quem precisa. Os custos e as configurações continuam só com admin e franqueado.');
+    // telas: a lista única do servidor (src/telas.js), agrupada como no menu; regras fixas vêm travadas
+    const CAT = est.telas || [];
+    const padraoGer = CAT.flatMap((g) => g.telas.filter((t) => t.gerente === 'escolha' && t.padrao).map((t) => t.id));
+    const telasSel = new Set(u && u.perfil === 'gerente' && u.telas ? u.telas : padraoGer);
+    const telasBox = h('div', { class: 'cfg-telas' });
+    function pintarTelas() {
+      const p = perfil.value;
+      const ger = p === 'gerente';
+      telasBox.replaceChildren(
+        h('p', { class: 'muted cfg-telas-leg' }, ger
+          ? 'Marque o que este gerente pode ver. 🔒 = regra fixa (não muda aqui). "padrão" = vem marcada para gerente novo.'
+          : p === 'vendedor' ? 'A vendedora tem telas fixas (🔒): não dá para mudar aqui.' : 'Admin e franqueado veem todas as telas das suas lojas.'),
+        ...CAT.map((g) => h('fieldset', { class: 'cfg-telas-g' }, h('legend', null, g.grupo),
+          ...g.telas.map((t) => {
+            const r = t[p] || 'nunca';
+            const trava = r !== 'escolha';
+            const cb = h('input', { type: 'checkbox', value: t.id, 'data-tela': t.id, checked: (trava ? r === 'sempre' : telasSel.has(t.id)) || null, disabled: trava || null });
+            if (!trava) cb.addEventListener('change', () => { cb.checked ? telasSel.add(t.id) : telasSel.delete(t.id); });
+            const porque = trava ? (p === 'vendedor' && r === 'nunca' && t.fixaVendedor) || t.fixa || (r === 'sempre' ? 'Sempre para este perfil.' : p === 'vendedor' ? 'A vendedora não usa esta tela.' : 'Não disponível para este perfil.') : null;
+            return h('label', { class: 'cfg-tela' + (trava ? ' trava' : ''), title: porque || t.dica || null },
+              cb, ' ', h('span', null, t.nome), trava ? h('span', { class: 'cfg-tela-lock', 'aria-label': 'regra fixa' }, ' 🔒') : null,
+              ger && !trava && t.padrao ? h('span', { class: 'badge cfg-tela-pad' }, 'padrão') : null,
+              porque ? h('small', { class: 'muted cfg-tela-pq' }, porque) : t.dica ? h('small', { class: 'muted cfg-tela-pq' }, t.dica) : null);
+          }))),
+        ger ? h('div', { class: 'cfg-acoes' }, h('button', { type: 'button', class: 'btn', onclick: () => { telasSel.clear(); padraoGer.forEach((x) => telasSel.add(x)); pintarTelas(); } }, 'Voltar ao padrão do gerente')) : null);
+    }
+    // div (não label): os itens já são <label> com a própria caixa
+    const campoTelas = ((rot, el, dica) => h('div', { class: 'cfg-campo' }, h('span', null, rot), el, h('small', null, dica)))('Telas', telasBox, 'Custo e margem (Rentabilidade, Preços, Estoque, Pedido, Notas fiscais, Resultado) e Clientes (CPF e telefone): libere só para quem precisa. O servidor confere a marcação: tela desmarcada também não entrega os dados.');
     const campoVend = campo('Quem é no sistema (nome do vendedor)', vendSel, 'Liga o usuário às vendas dele.');
     function pintarLojas() {
       const p = perfil.value;
       lojasBox.textContent = '';
       campoLojas.hidden = p === 'admin';
       campoVend.hidden = p !== 'vendedor';
-      campoTelas.hidden = p !== 'gerente';
+      pintarTelas();
       for (const l of est.todasLojas) {
         const cb = h('input', { type: p === 'vendedor' ? 'radio' : 'checkbox', name: 'lojas-' + (u ? u.nome : 'novo'), value: l.id, checked: marcadas.has(l.id) || null });
         cb.addEventListener('change', () => { if (p === 'vendedor') marcadas.clear(); cb.checked ? marcadas.add(l.id) : marcadas.delete(l.id); pintarVend(); });
@@ -1230,7 +1249,7 @@
       campoPrazo, campoLojas, campoVend, campoTelas,
       h('div', { class: 'cfg-acoes' },
         acao(novo ? 'Criar usuário' : 'Salvar', async () => {
-          const corpo = { perfil: perfil.value, lojas: [...marcadas], vendedor: vendSel.value, ativo: ativo.checked, trocarSenha: trocar.disabled ? undefined : trocar.checked, senha: senha.value || undefined, acessoMeses: meses.value.trim() === '' || proprio ? undefined : Math.round(+meses.value), telas: perfil.value === 'gerente' ? TELAS_NOME.map(([k]) => k).filter((k) => telasSel.has(k)) : undefined };
+          const corpo = { perfil: perfil.value, lojas: [...marcadas], vendedor: vendSel.value, ativo: ativo.checked, trocarSenha: trocar.disabled ? undefined : trocar.checked, senha: senha.value || undefined, acessoMeses: meses.value.trim() === '' || proprio ? undefined : Math.round(+meses.value), telas: perfil.value === 'gerente' ? CAT.flatMap((g) => g.telas.filter((t) => t.gerente === 'escolha' && telasSel.has(t.id)).map((t) => t.id)) : undefined };
           if (novo) { await api('POST', '/usuarios', { nome: nome.value.trim().toLowerCase(), ...corpo }); abertos.delete('novoUser'); }
           else { await api('PUT', `/usuarios/${encodeURIComponent(u.nome)}`, corpo); state.cfgEdit = null; }
           return novo ? `Usuário criado.${corpo.senha ? ' Envie a senha para a pessoa.' : ''}` : 'Usuário atualizado.';

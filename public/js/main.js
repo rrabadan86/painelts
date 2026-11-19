@@ -469,7 +469,9 @@
     const grupoEst = eu.pode?.configurar ? EST : EST.filter((p) => (eu.telas || []).includes(p));
     if (eu.perfil === 'vendedor' && !grupoEst.includes('inventario')) grupoEst.push('inventario'); // a vendedora conta o estoque
     if (eu.perfil === 'vendedor' && !grupoEst.includes('validade')) grupoEst.unshift('validade'); // e acompanha a validade dos lotes
-    if (!grupoEst.includes('sugestoes')) grupoEst.push('sugestoes'); // ⭐ sugestões para o pedido: toda a equipe da loja
+    // ⭐ sugestões para o pedido: vendedora sempre; gerente só com a tela marcada (sem escolha = padrão, que inclui)
+    const veSug = eu.perfil !== 'gerente' || !Array.isArray(eu.telas) || eu.telas.includes('sugestoes');
+    if (veSug && !grupoEst.includes('sugestoes')) grupoEst.push('sugestoes');
     TS.telasEstoque = grupoEst;
     PAGES = [...PAGES.filter((p) => !grupoEst.includes(p)), ...grupoEst, ...(grupoEst.includes('notas') ? ['nfsaida', 'creditos'] : [])];
     // checklist de abertura e fechamento: todo mundo da loja

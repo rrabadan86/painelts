@@ -191,7 +191,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     const auditoria = C.lerAuditoria(4000).filter((e) => req.perfil === 'admin' || e.por === req.user || (e.detalhe && minhas.has(e.detalhe.loja)) || minhas.has(e.alvo)).slice(0, 3000);
     res.json({
       perfil: req.perfil, usuario: req.user, coletorAtivo: COL.ativo(), horarios: saude?.horarios || [], agenda: AG.ler().padrao, janela: saude?.janela || null, coletorOk: saude ? saude.ok !== false : null,
-      lojas: itens, usuarios: usuariosVisiveis(req), auditoria,
+      lojas: itens, usuarios: usuariosVisiveis(req), auditoria, telas: require('./telas').paraTela(),
       todasLojas: C.get().lojas.map((l) => ({ id: l.id, nome: l.nome })).filter((l) => req.perfil === 'admin' || minhas.has(l.id)),
     });
   });
@@ -769,7 +769,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     lojas: b.perfil === 'admin' ? ['*'] : [...new Set((Array.isArray(b.lojas) ? b.lojas : []).map((x) => String(x).toLowerCase()))].filter((x) => x !== '*'),
     vendedor: b.perfil === 'vendedor' ? semQuebra(b.vendedor).toUpperCase() : '',
     telas: b.perfil === 'gerente' && Array.isArray(b.telas) ? [...new Set(b.telas.map(String))].filter((t) => C.TELAS.includes(t)) : undefined,
-    telasV: 7, // telas escolhidas uma a uma no menu novo (Produtos: Rentabilidade, Preços, Site; Estoque: Estoque, Pedido, Notas fiscais)
+    telasV: 8, // telas escolhidas uma a uma no menu novo (Produtos: Rentabilidade, Preços, Site; Estoque: Estoque, Pedido, Notas fiscais)
     ativo: b.ativo !== false,
     acessoAte: /^\d{4}-\d{2}-\d{2}$/.test(String(b.acessoAte || '')) ? String(b.acessoAte) : null,
   });

@@ -2691,3 +2691,20 @@ details.vl-ajuda summary { cursor: pointer; font-weight: 600; }
 .sug-ped-btn { font-size: 12px; padding: 4px 10px; }
 .sug-motivos { display: flex; flex-wrap: wrap; gap: 6px; width: 100%; }
 .sug-motivos[hidden] { display: none; }
+
+/* Configurações → Usuários: telas agrupadas como no menu, regras fixas travadas */
+.cfg-telas { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; font-weight: 400; min-width: 0; max-width: 100%; }
+.cfg-telas-leg { margin: 0; font-size: 12px; }
+.cfg-telas-g { border: 1px solid var(--line); border-radius: 10px; padding: 6px 12px 10px; margin: 0; min-width: 0; display: grid; gap: 6px; }
+.cfg-telas-g legend { font-weight: 600; font-size: 13px; padding: 0 4px; }
+.cfg-tela { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px; font-size: 13px; cursor: pointer; min-width: 0; overflow-wrap: anywhere; }
+.cfg-tela > span:first-of-type { min-width: 0; flex: 1 1 0; }
+.cfg-campo:has(> .cfg-telas) { min-width: 0; max-width: 100%; }
+.cfg-tela.trava { cursor: default; color: var(--muted); }
+.cfg-tela input { margin: 0; align-self: center; }
+.cfg-tela-pq { flex-basis: 100%; padding-left: 22px; font-size: 11px; }
+.cfg-tela-pad { font-size: 10px; padding: 0 6px; }
+/* celular: o formulário de usuário fica dentro da tabela (que rola para o lado); ele cabe na largura da tela e acompanha a rolagem */
+@media (max-width: 760px) {
+  .cfg-edit-row .cfg-user-form { position: sticky; left: 0; width: calc(100vw - 64px); max-width: calc(100vw - 64px); box-sizing: border-box; }
+}

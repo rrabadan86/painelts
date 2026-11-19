@@ -22,7 +22,7 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 | PERF-02 | Só existem 4 perfis (admin, franqueado, gerente, vendedor) | `config.js` (~24, 86), `admin-api.js` (~753) | — | ❌ |
 | PERF-03 | Cada pessoa só lê e grava nas lojas dela | `req.lojas.find(...)` em todas as rotas; `admin-api.js` `lojaPermitida` | — | ❌ |
 | PERF-04 | Vendedora nunca recebe custo nem margem do servidor | `/api/dados` sem custo (`sources.js`); `podeTela`/`podeCustos`; validade `semCusto`; inventário `paraUsuario` | `inventario.test`, `lotes.test`, `ia.test` (funções) | 🟡 |
-| PERF-05 | Gerente só vê custo com uma tela de custo liberada (Rentabilidade, Estoque, Preços, Notas, Pedido ou Resultado) | `server.js` `podeTela`/`podeCustos` | — | ❌ |
+| PERF-05 | Gerente só vê custo com uma tela de custo liberada (Rentabilidade, Estoque, Preços, Notas, Pedido ou Resultado) | `server.js` `podeTela`/`podeCustos` | `permissoes-telas.test` (`/api/estoque` 403 para gerente sem tela de custo e vendedora) | 🟡 |
 | PERF-06 | Vendedora não recebe dados de clientes | `filtrarPorPerfil`, `podeClientes`, contatos, campanhas | `ia.test` (só a IA) | 🟡 — **furo: Lista de espera, ver A-01** |
 | PERF-07 | Gerente só recebe dados de clientes com a tela Clientes | `podeClientes`, `perfilDados` | — | ❌ — **furo: conta com a franquia, ver A-02** |
 | PERF-08 | Vendedora não vê nome nem dados das colegas ("COLEGA N") | `filtrarPorPerfil` (~156-209) | — | ❌ — **furo: Lista de espera, ver A-01** |
@@ -36,14 +36,14 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 | PERF-16 | Configurações: admin e franqueado; lojas, AppNext, sistema, backup, coletor: só admin | `admin-api.js` roteador + `soAdmin` | — | ❌ |
 | PERF-17 | Franqueado só administra gerentes e vendedores das próprias lojas; ninguém muda o próprio perfil/prazo | `admin-api.js` `usuariosVisiveis`, rotas de usuário | — | ❌ |
 | PERF-18 | Vendedor: uma loja e um nome de vendedor; gerente: pelo menos uma tela; admin: loja `*` | `admin-api.js` (~760-771) | — | ❌ |
-| PERF-19 | Gerente só usa as telas liberadas | `podeTela` nas rotas de tela; menu em `main.js` | — | ❌ — telas de vendas só escondidas, ver D-05 |
+| PERF-19 | Gerente só usa as telas marcadas em Configurações → Usuários; a lista única de telas (grupos do menu, regra de cada perfil, regras fixas travadas) fica em `src/telas.js` | `telas.js`; `config.js` `TELAS`/`TELAS_GERENTE_PADRAO`; `podeTela` nas rotas; menu em `main.js`; `config.js` (tela) | `telas.test` (tela nova fora da lista avisa; regras fixas); `permissoes-telas.test` (servidor de verdade por perfil); `config-telas.spec` | 🟡 — telas de vendas só escondidas, ver D-05 |
 | PERF-20 | Envios à contabilidade: só admin e franqueado; e-mail geral só admin | `server.js` (~2311-2372) | — | ❌ |
-| PERF-21 | Feriados trabalhados: gerente com Comissionamento; ajuste de escala: gerente com Mapa | `/api/feriados`, `/api/escala-ajustes` | `esc` (como admin) | ❌ (permissão) |
+| PERF-21 | Feriados trabalhados: gerente com Comissionamento; ajuste de escala: gerente com Mapa | `/api/feriados`, `/api/escala-ajustes` | `permissoes-telas.test` (escala: gerente sem Movimento e escala 403, com 200) | 🟡 |
 | PERF-22 | Config. de estoque, classe e "consultar site": admin/franqueado; classificação da rede: só admin | `server.js` (~1742-1785, 2376) | — | ❌ |
 | PERF-23 | Pedido sugerido/obrigatório/carrinho: admin, franqueado, gerente com Pedido | `server.js` (~1794, 2198-2242) | `ia.spec` (como admin) | ❌ (permissão) |
 | PERF-24 | Inventário: vendedora conta às cegas, sem custo; não envia, não zera, não desfaz | `inventario.js` `paraUsuario`; rotas `/api/inventario` | `inventario.test` "cega para vendedora" | 🟡 |
 | PERF-25 | Validade: custo do lote só para quem vê custos | `semCusto` | `lotes.test` (lógica) | ❌ (rota) |
-| PERF-26 | Lista de espera: vendedora sempre; gerente com a tela; modelo da mensagem não é da vendedora | middleware `/api/espera` | `regras.spec` (como admin) | ❌ (permissão) |
+| PERF-26 | Lista de espera: vendedora sempre; gerente com a tela; modelo da mensagem não é da vendedora | middleware `/api/espera` | `regras.spec` (como admin); `permissoes-telas.test` (vendedora 200; gerente sem a tela 403; padrão inclui) | ✅ |
 | PERF-27 | Checklist: todos marcam; só quem não é vendedora edita a lista | `server.js` (~1504-1518) | `checklist.test` (lógica) | ❌ (permissão) |
 | PERF-28 | Contatos e campanhas de WhatsApp só para quem vê clientes | `server.js` (~779-885) | `regras.spec` (como admin) | ❌ (permissão) |
 | PERF-29 | A apresentação entra como admin e nunca grava | `server.js` (~428-430) | todos os e2e | ✅ |
@@ -223,9 +223,9 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 | EST-37 | Envio pelo robô só marca importado com resultado real | `inventario.js` | `inventario.test` | ✅ |
 | EST-38 | Etapas: gerar planilha, importado, reabrir | `inventario.js` | `regras.spec` | 🟡 |
 | EST-41 | Reabrir para contar só no mesmo dia (Brasília) em que a contagem foi aberta; depois, a tela avisa e pede contagem nova (decisão do dono) | `inventario.js` `podeReabrir` (servidor) e `mesmoDia` (tela) | `inventario.test` "reabrir para contar: só no mesmo dia"; `regras.spec` "reabrir para contar só no mesmo dia" | ✅ |
-| EST-42 | ⭐ Sugestões: toda a equipe marca produto para o próximo pedido; a vendedora vê só nome e situação (tem/pouco/acabou) e só as próprias | `sugestoes.js` (`buscar`, `lista`); `server.js` `/api/sugestoes` | `sugestoes.test` "situação…", "pedido…"; `sugestoes.spec` | ✅ |
+| EST-42 | ⭐ Sugestões: vendedora sempre e gerente com a tela marcada (padrão inclui) sugerem produto para o próximo pedido; a vendedora vê só nome e situação (tem/pouco/acabou) e só as próprias | `sugestoes.js` (`buscar`, `lista`); `server.js` `/api/sugestoes` | `sugestoes.test` "situação…", "pedido…"; `sugestoes.spec`; `permissoes-telas.test` | ✅ |
 | EST-43 | Sugestão com estoque na loja exige justificativa (chá a granel < 700 g não) | `sugestoes.js` `criar` | `sugestoes.test` "criar…"; `sugestoes.spec` | ✅ |
-| EST-44 | A estrela não muda a conta do pedido; quem faz o pedido decide (Adicionar / Não agora com motivo) | `pedido.js` `cartaoSugestoes`; `PUT /api/pedido/sugestoes/decisao` (tela Pedido) | `sugestoes.spec` | 🟡 (permissão da rota sem teste de servidor) |
+| EST-44 | A estrela não muda a conta do pedido; quem faz o pedido decide (Adicionar / Não agora com motivo) | `pedido.js` `cartaoSugestoes`; `PUT /api/pedido/sugestoes/decisao` (tela Pedido) | `sugestoes.spec`; `permissoes-telas.test` (sem a tela Pedido: 403) | ✅ |
 | EST-45 | Ao registrar o pedido: entrou encerra; sem estoque no site é automático e continua; não entrou guarda o motivo e continua para o próximo; histórico guardado e aviso de resposta nova | `sugestoes.js` `fechar`/`visto`; `pedido.js` (montar carrinho) | `sugestoes.test` "pedido…"; `sugestoes.spec` | ✅ |
 | EST-46 | Fora de linha: produto indisponível no Sistema de Pedidos há 90+ dias seguidos (ou que saiu do catálogo) vira "Fora de linha · liquidar" no Estoque, sai de "O que repor" e de "Parados" (decisão do dono) | `pedido.js` (servidor) `atualizarDisp`/`foraDeLinha`; `estoque.js` `foraLinhaDe` | `foradelinha.test`; `foradelinha.spec`; `estoque.spec` | ✅ |
 | EST-39 | Cobertura do inventário e aviso de 25 dias | `inventario.js` | `inventario.test`; `regras.spec` | ✅ |

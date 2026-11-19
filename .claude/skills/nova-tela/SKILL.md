@@ -10,7 +10,8 @@ Antes de começar, leia uma tela parecida já pronta (ex.: `public/js/checklist.
 - [ ] Regras em `src/<assunto>.js` (funções puras, testáveis); rotas no `server.js`.
 - [ ] **Permissão no servidor** em toda rota: `req.perfil`, `podeTela(req, '<tela>')`, `podeClientes(req)`, custos. Esconder na tela não basta.
   - Custo/margem nunca para vendedora; dados de clientes nunca para vendedora; Orçamento e IA só admin e franqueado.
-- [ ] Tela liberável para gerente? Inclua o id em `TELAS` de `src/config.js` (e em `TELAS_GERENTE_PADRAO` só se for para todos os gerentes).
+- [ ] Inclua a tela em `src/telas.js` (grupo do menu, regra de cada perfil: `sempre`/`nunca`/`escolha`, `padrao` do gerente, texto da regra fixa). `TELAS` e `TELAS_GERENTE_PADRAO` de `src/config.js` saem daí, e Configurações → Usuários mostra sozinha. O teste `tests/unit/telas.test.js` falha se a página (`TS.pages.x`) ou o rótulo do menu não estiverem lá.
+- [ ] Gerente escolhe? O servidor confere com `podeTela(req, '<id>')` (vendedora com regra `sempre`: `req.perfil === 'vendedor' || podeTela(...)`) e há caso em `tests/unit/permissoes-telas.test.js`. Gerente que já tinha telas escolhidas: migração em `server.js` (`telasV`) para não perder a tela nova.
 - [ ] Rota que grava: exige `X-Painel: 1` (na rota ou num `app.use` do grupo, como `/api/nfe`), limita o tamanho do corpo (`express.json({ limit })`) e registra com `C.auditar(...)` se for importante.
 - [ ] **Apresentação:** rota `/api/demo/...` com dados fictícios (`src/demo.js`) ou resposta simulada — nunca grava nem envia nada.
   Alternativa usada em telas simples: `if (TS.demo)` no próprio script guardando só na página (veja `checklist.js`).
