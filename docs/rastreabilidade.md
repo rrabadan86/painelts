@@ -33,7 +33,7 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 | PERF-13 | A IA só recebe as ferramentas que o perfil pode; sem custo em "todas as lojas" | `server.js` (~1621), `iaprompts.js` `ferramentas` | `ia.test` "ferramentas por perfil" | 🟡 |
 | PERF-14 | NF-e (rascunho/emitir/parceiro): admin, franqueado e gerente com Notas fiscais | `lojaNfe` | — | ❌ — **furo: devolução, ver A-03** |
 | PERF-15 | Conta com a franquia: admin, franqueado, gerente com Notas; envio automático só admin/franqueado | `lojaCF` | `contafranquia.test` (lógica) | ❌ (permissão) |
-| PERF-16 | Configurações: admin e franqueado; lojas, AppNext, sistema, backup, coletor: só admin | `admin-api.js` roteador + `soAdmin` | — | ❌ |
+| PERF-16 | Configurações: admin e franqueado; o franqueado configura tudo das lojas dele (AppNext, Sistema de Pedidos, regras de comissão, dados da loja); criar/remover loja, coletor, horários, resumo diário, sistema e backup: só admin | `admin-api.js` roteador + `soAdmin`/`soGestor` + `lojaPermitida`; `/api/pedido/acesso` | `permissoes-telas.test` "franqueado configura tudo da loja dele" | 🟡 |
 | PERF-17 | Franqueado só administra gerentes e vendedores das próprias lojas; ninguém muda o próprio perfil/prazo | `admin-api.js` `usuariosVisiveis`, rotas de usuário | — | ❌ |
 | PERF-18 | Vendedor: uma loja e um nome de vendedor; gerente: pelo menos uma tela; admin: loja `*` | `admin-api.js` (~760-771) | — | ❌ |
 | PERF-19 | Gerente só usa as telas marcadas em Configurações → Usuários; a lista única de telas (grupos do menu, regra de cada perfil, regras fixas travadas) fica em `src/telas.js` | `telas.js`; `config.js` `TELAS`/`TELAS_GERENTE_PADRAO`; `podeTela` nas rotas; menu em `main.js`; `config.js` (tela) | `telas.test` (tela nova fora da lista avisa; regras fixas); `permissoes-telas.test` (servidor de verdade por perfil); `config-telas.spec` | 🟡 — telas de vendas só escondidas, ver D-05 |
@@ -463,6 +463,7 @@ Todos os da lista A foram conferidos no código, um por um.
 | E-20 | Repetir sozinho um POST da IA depois de erro de rede pode cobrar 2× (se a resposta caiu depois de cobrada) | `ia.js` `iaApi` | 🟡 Mantido (o dono pediu a nova tentativa automática); risco baixo |
 | E-21 | "Replicar/Trazer mês" multiplicava ajuste pontual | `mapa.js` `ajustesQueRepetem`, editor "Vale para" | ✅ Decisão do dono: no ajuste a pessoa escolhe **Só neste dia (pontual)** ou **Neste e nos próximos <dia da semana>** (também nos próximos meses). Replicar/Trazer leva só os que repetem, em todos os mesmos dias da semana; pontual fica no dia dele. `escala-horario.spec` "replicar mês", "Vale para" |
 | E-22 | Feriado que abre em dia normalmente fechado fica sem ninguém e sem alerta | `mapa.js` | ❌ A fazer |
+| E-23 | NF-e de venda: o teste passava e a emissão falhava ao concluir por falta de estoque ("não possui estoque suficiente"), obrigando a refazer tudo | `nfsaida.js` (estoque por produto + aviso antes do robô), `nextsoft_nfe.py` (lê o estoque do produto no AppNext na conferência) | ✅ A tela avisa na hora; o robô para no teste quando o AppNext informa o estoque (o campo é registrado no log para conferência) |
 
 ## Resumo em números
 

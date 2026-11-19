@@ -159,7 +159,9 @@ PREENCHER = "async (p) => {" + JS_BASE + """
   const invalida = acha('validaCampos').validaCampos(); // true = tem erro em alguma aba
   return {
     invalida, parceiro: parc.nome, doc: String(parc.cnpjCpf || ''), consumidorFinal: S.consumidorFinal, vendedor: vend.nome, pagamento: pag.descricao,
-    total: Number(S.valorTotalLiquido), itens: S.itens.map((i) => { const pr = (acha('onSubmitProduct').selectList.produtos || []).find((x) => x.id === i.produtoId) || {}; return { produtoId: i.produtoId, codigo: String(pr.codigo ?? ''), nome: pr.nome || '', qtd: Number(i.quantidade), preco: Number(i.valorUnitario), total: Number(i.valorTotalBruto ?? i.valorTotal ?? 0) }; }),
+    total: Number(S.valorTotalLiquido), itens: S.itens.map((i) => { const pr = (acha('onSubmitProduct').selectList.produtos || []).find((x) => x.id === i.produtoId) || {}; return { produtoId: i.produtoId, codigo: String(pr.codigo ?? ''), nome: pr.nome || '', qtd: Number(i.quantidade), preco: Number(i.valorUnitario), total: Number(i.valorTotalBruto ?? i.valorTotal ?? 0),
+      // estoque que o AppNext informa do produto (só leitura): campos com "estoque"/"saldo" no nome que sejam número
+      estoque: Object.keys(pr).filter((k) => /estoq|saldo/i.test(k) && !/min|max|ideal|control|unid|local|id$/i.test(k) && typeof pr[k] !== 'boolean' && pr[k] !== null && pr[k] !== '' && Number.isFinite(Number(pr[k]))).map((k) => [k, Number(pr[k])]) }; }),
   };
 }"""
 
@@ -792,6 +794,19 @@ def main():
                 log(f"   {'✓' if ok else '✗'} {lido['codigo']} {lido['nome'][:40]}: {lido['qtd']:g} × R$ {lido['preco']:.2f}")
                 if not ok:
                     erros.append(f"produto {esp.get('codigo')} diferente do pedido")
+            # estoque: o AppNext só recusa na hora de concluir ("não possui estoque suficiente"); o teste já avisa antes
+            CAMPO_ESTOQUE = re.compile(r"^(estoque|estoqueatual|saldo|saldoestoque|saldoatual|quantidadeestoque|qtdestoque)$", re.I)
+            sem_campo = True
+            for lido in r["itens"]:
+                cands = lido.get("estoque") or []
+                if cands:
+                    sem_campo = False
+                    log(f"   estoque no AppNext · {lido['codigo']}: " + ", ".join(f"{k}={v:g}" for k, v in cands))
+                certo = next((v for k, v in cands if CAMPO_ESTOQUE.match(k)), None)
+                if certo is not None and certo + 1e-9 < lido["qtd"]:
+                    erros.append(f"sem estoque no AppNext: {lido['codigo']} {lido['nome'][:40]} tem {certo:g} e a nota pede {lido['qtd']:g}")
+            if sem_campo:
+                log("   (o AppNext não informou o estoque dos produtos nesta tela: a falta só aparece ao concluir)")
             esperado = pedido.get("total")
             log(f"   total da nota: R$ {r['total']:.2f}" + (f" · painel: R$ {esperado:.2f}" if esperado is not None else ""))
             if esperado is not None and abs(r["total"] - esperado) > 0.01 * max(1, len(r["itens"])):

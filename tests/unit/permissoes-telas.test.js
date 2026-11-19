@@ -20,7 +20,7 @@ before(async () => {
   const senha = await C.hashSenhaAsync('senha-teste-123');
   const u = (perfil, extra) => ({ senha, perfil, lojas: ['l1'], ativo: true, ...extra });
   fs.writeFileSync(CONFIG_FILE, JSON.stringify({
-    lojas: [{ id: 'l1', nome: 'Loja 1' }],
+    lojas: [{ id: 'l1', nome: 'Loja 1' }, { id: 'l2', nome: 'Loja 2 (de outro franqueado)' }],
     usuarios: {
       dono: u('franqueado'),
       ger_sem: u('gerente', { telas: ['resumo', 'mapa'], telasV: 8 }),
@@ -104,4 +104,16 @@ test('checklist: a vendedora vê "você" ou "equipe", nunca o login da colega', 
   assert.ok(!JSON.stringify(j).includes('vend2'));
   const jd = await (await fetch(BASE + '/api/checklist?loja=l1', { headers: { Cookie: cookies.dono } })).json();
   assert.strictEqual(jd.marcados.abertura[item.id].por, 'vend2');
+});
+
+test('franqueado configura tudo da loja dele (login do Sistema de Pedidos, regras de comissão); não a loja dos outros; gerente não', async () => {
+  assert.strictEqual(await status('dono', '/api/pedido/acesso?loja=l1'), 200);
+  assert.strictEqual(await status('dono', '/api/pedido/acesso?loja=l2'), 400, 'loja de outro franqueado');
+  assert.strictEqual(await status('ger_pad', '/api/pedido/acesso?loja=l1'), 403);
+  assert.strictEqual(await status('dono', '/api/admin/lojas/l1/regras', { method: 'PUT', body: JSON.stringify({ regras: null }) }), 200);
+  assert.strictEqual(await status('dono', '/api/admin/lojas/l2/regras', { method: 'PUT', body: JSON.stringify({ regras: null }) }), 404);
+  assert.strictEqual(await status('ger_pad', '/api/admin/lojas/l1/regras', { method: 'PUT', body: JSON.stringify({ regras: null }) }), 403);
+  // continua só do admin: disparar o coletor e remover a loja
+  assert.strictEqual(await status('dono', '/api/admin/lojas/l1/rodar', { method: 'POST', body: '{}' }), 403);
+  assert.strictEqual(await status('dono', '/api/admin/lojas/l1', { method: 'DELETE' }), 403);
 });

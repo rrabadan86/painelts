@@ -223,6 +223,11 @@
       // ---- produtos
       const tabela = h('div', { class: 'nfe-itens' });
       const totalEl = h('b');
+      // estoque da última planilha do AppNext (o AppNext recusa concluir a nota sem estoque suficiente): avisa já aqui
+      const ESTQ = info.estoque;
+      const estqDe = (it) => (ESTQ && ESTQ.qtd && ESTQ.qtd[String(it.codigo)] != null ? ESTQ.qtd[String(it.codigo)] : null);
+      const faltas = () => form.itens.filter((it) => { const e = estqDe(it); return e != null && it.qtd > e + 1e-9; });
+      TS.nfeFaltasTeste = faltas; // testes
       const pintarItens = () => {
         const tot = form.itens.reduce((s, i) => s + Math.round(i.qtd * i.preco * 100) / 100, 0);
         totalEl.textContent = fmt.brl(tot);
@@ -230,10 +235,13 @@
           const q = h('input', { class: 'f-input nfe-num', type: 'number', min: 0, step: 'any', value: it.qtd });
           const pr = h('input', { class: 'f-input nfe-num', type: 'number', min: 0, step: '0.01', value: it.preco });
           const lin = h('small', { class: 'nfe-lin' }, fmt.brl(it.qtd * it.preco));
-          q.addEventListener('input', () => { it.qtd = Number(q.value) || 0; lin.textContent = fmt.brl(it.qtd * it.preco); totalEl.textContent = fmt.brl(form.itens.reduce((s, i) => s + Math.round(i.qtd * i.preco * 100) / 100, 0)); });
+          const eq = h('small', { class: 'nfe-estq' });
+          const pintarEstq = () => { const e = estqDe(it); eq.className = 'nfe-estq ' + (e == null ? 'muted' : it.qtd > e + 1e-9 ? 'neg' : 'muted'); eq.textContent = e == null ? 'estoque: —' : it.qtd > e + 1e-9 ? `⚠ estoque ${fmt.n2(e).replace(/,00$/, '')} — falta ${fmt.n2(it.qtd - e).replace(/,00$/, '')}` : `estoque ${fmt.n2(e).replace(/,00$/, '')}`; };
+          pintarEstq();
+          q.addEventListener('input', () => { it.qtd = Number(q.value) || 0; lin.textContent = fmt.brl(it.qtd * it.preco); pintarEstq(); totalEl.textContent = fmt.brl(form.itens.reduce((s, i) => s + Math.round(i.qtd * i.preco * 100) / 100, 0)); });
           pr.addEventListener('input', () => { it.preco = Number(pr.value) || 0; lin.textContent = fmt.brl(it.qtd * it.preco); totalEl.textContent = fmt.brl(form.itens.reduce((s, i) => s + Math.round(i.qtd * i.preco * 100) / 100, 0)); });
           return h('div', { class: 'nfe-item' }, h('div', { class: 'nfe-item-n' }, h('b', null, it.nome), h('small', { class: 'muted' }, ` cód. ${it.codigo}${it.un ? ' · ' + it.un : ''}`)),
-            h('label', null, 'Qtd ', q), h('label', null, 'R$ ', pr), lin,
+            h('label', null, 'Qtd ', q, eq), h('label', null, 'R$ ', pr), lin,
             h('button', { type: 'button', class: 'link-btn', onclick: () => { form.itens.splice(k, 1); pintarItens(); } }, 'remover'));
         }), ...(form.itens.length ? [] : [h('small', { class: 'muted' }, 'Nenhum produto ainda.')]));
       };
@@ -257,6 +265,13 @@
         if (!form.itens.length) { msg.textContent = 'Adicione pelo menos um produto.'; return; }
         if (form.itens.some((i) => !(i.qtd > 0) || !(i.preco > 0))) { msg.textContent = 'Confira quantidade e preço de cada produto.'; return; }
         const tot = form.itens.reduce((s, i) => s + Math.round(i.qtd * i.preco * 100) / 100, 0);
+        const fs = faltas();
+        if (fs.length) {
+          const quando = ESTQ.em ? new Date(ESTQ.em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' }) : '';
+          msg.className = 'neg';
+          msg.textContent = `Sem estoque suficiente (planilha do AppNext de ${quando}): ${fs.map((i) => `${i.nome} — tem ${fmt.n2(estqDe(i)).replace(/,00$/, '')}, a nota pede ${fmt.n2(i.qtd).replace(/,00$/, '')}`).join('; ')}. O AppNext não deixa emitir assim: ajuste a quantidade ou dê entrada no estoque.`;
+          if (!confirm(`${fs.length === 1 ? 'Um produto está' : `${fs.length} produtos estão`} sem estoque suficiente pela planilha do AppNext de ${quando}:\n\n${fs.map((i) => `• ${i.nome}: tem ${fmt.n2(estqDe(i)).replace(/,00$/, '')}, pede ${fmt.n2(i.qtd).replace(/,00$/, '')}`).join('\n')}\n\nO AppNext recusa concluir a nota sem estoque. Se o estoque já mudou (entrada recente), continue: o robô confere o estoque de agora no AppNext. Continuar mesmo assim?`)) return;
+        }
         if (!simular && !confirm(`Criar o rascunho da NF-e no AppNext?\n\n${form.parceiro.nome}${form.consumidorFinal ? ' (consumidor final)' : ''}\n${form.itens.length} ${form.itens.length === 1 ? 'produto' : 'produtos'} · ${fmt.brl(tot)}\n\nO robô salva como RASCUNHO: a nota só é emitida quando a loja conferir e transmitir no AppNext.`)) return;
         enviar.disabled = true; testar.disabled = true; msg.className = 'muted'; msg.textContent = 'Enviando ao robô…';
         try {
