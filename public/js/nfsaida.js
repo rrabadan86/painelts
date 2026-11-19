@@ -119,7 +119,9 @@
     function pintar() {
       const bt = h('button', { type: 'button', class: 'btn ' + (aberto ? '' : 'primary') }, aberto ? 'Fechar' : '＋ Nova NF-e');
       bt.addEventListener('click', () => { aberto = !aberto; pintar(); });
-      const ras = (info && info.rascunhos) || [];
+      // a lista mostra só o que ainda pede atenção: nota emitida que já tem DANFE/XML vai para "Notas de saída";
+      // teste que já virou nota (ou venceu as 2 horas) some
+      const ras = ((info && info.rascunhos) || []).filter((r) => (r.estado === 'autorizada' ? !r.temXml : r.estado === 'teste' ? !r.emitidaEm && Date.now() - Date.parse(r.fim || r.em) < 2 * 3600e3 : true));
       box.replaceChildren(...[
         h('div', { class: 'nfe-topo' }, bt, h('small', { class: 'muted' }, 'Para emitir pelo painel: o robô testa a nota no AppNext (sem salvar), você confere o total e clica em "Emitir NF-e" — ele conclui e transmite à SEFAZ. Se preferir, "Só salvar rascunho" deixa a nota no AppNext para transmitir lá.')),
         info && info.erroGeral ? h('div', { class: 'notice err mt' }, info.erroGeral) : null,
@@ -139,7 +141,7 @@
     /** rascunhos pedidos ao robô: tabela no padrão das notas de saída (filtro, busca, paginação) */
     function listaRascunhos(ras) {
       const ult = info.robo && info.robo.ultima;
-      const FIL = { todos: ['Todos', () => true], aut: ['Emitidas', (r) => r.estado === 'autorizada'], ok: ['Rascunhos salvos', (r) => r.estado === 'ok'], erro: ['Com problema', (r) => r.estado === 'erro' || r.estado === 'concluida'], fila: ['Na fila', (r) => r.estado === 'na_fila'], teste: ['Testes', (r) => r.estado === 'teste'] };
+      const FIL = { todos: ['Todos', () => true], aut: ['Aguardando DANFE/XML', (r) => r.estado === 'autorizada'], ok: ['Rascunhos salvos', (r) => r.estado === 'ok'], erro: ['Com problema', (r) => r.estado === 'erro' || r.estado === 'concluida'], fila: ['Na fila', (r) => r.estado === 'na_fila'], teste: ['Testes', (r) => r.estado === 'teste'] };
       const contaF = (k) => ras.filter(FIL[k][1]).length;
       const fil = FIL[state.nfeRasFil] && contaF(state.nfeRasFil) ? state.nfeRasFil : 'todos';
       const rows = ras.filter(FIL[fil][1]).map((r) => ({ ...r, quando: r.em, parcNome: r.parceiro.nome, nItens: r.itens.length, situ: { na_fila: 0, concluida: 1, erro: 2, teste: 3, ok: 4, autorizada: 5 }[r.estado] ?? 6 }));
@@ -168,18 +170,19 @@
         onRowClick: (r) => detalhes(r),
         empty: 'Nenhum rascunho com esse filtro.',
       });
-      return TS.cardWithTools(`Notas pedidas ao robô (${fmt.int(ras.length)})`, 'Teste conferido → "Emitir NF-e" na linha. "Rascunho salvo" = está no AppNext (Estoque → Saída de Produtos) esperando a loja transmitir. "Não foi salvo" = nada foi gravado no AppNext (o motivo aparece embaixo).',
+      return TS.cardWithTools(`Notas pedidas ao robô (${fmt.int(ras.length)})`, 'Só o que ainda pede atenção: teste para emitir, rascunho salvo no AppNext e o que deu erro ("↻ Refazer" vale só no dia do pedido). Nota emitida vai para "Notas de saída", abaixo, com DANFE e XML.',
         h('div', { class: 'est-tools' }, tab.searchBox && (tab.searchBox.classList.add('est-busca'), tab.searchBox),
           TS.seg(Object.entries(FIL).filter(([k]) => k === 'todos' || contaF(k)).map(([k, [t]]) => [`${t} (${fmt.int(contaF(k))})`, k]), fil, (v) => { state.nfeRasFil = v; pintar(); })),
         tab);
     }
     /** refazer: abre o formulário já preenchido com o pedido (parceiro, vendedor, pagamento, produtos) para ajustar e testar de novo */
-    const podeRefazer = (r) => ['erro', 'teste', 'ok', 'autorizada'].includes(r.estado) && !(info.robo && (info.robo.estado === 'na_fila' || info.robo.estado === 'rodando'));
+    const diaBR = (ms) => new Date(ms).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+    /** refazer só no dia do pedido (horário de Brasília); nota já emitida não se refaz */
+    const podeRefazer = (r) => ['erro', 'teste', 'ok'].includes(r.estado) && diaBR(Date.parse(r.em)) === diaBR(Date.now()) && !(info.robo && (info.robo.estado === 'na_fila' || info.robo.estado === 'rodando'));
     function refazer(r) {
       const cad = info && info.cadastros;
       if (!cad) { alert('Busque os cadastros do AppNext primeiro.'); return; }
       if (r.estado === 'ok' && !confirm('Este pedido já está salvo como rascunho no AppNext. Refazer cria outra nota (o rascunho antigo continua lá: apague no AppNext se não for usar). Continuar?')) return;
-      if (r.estado === 'autorizada' && !confirm('Esta nota já foi emitida. Refazer monta uma NOTA NOVA com os mesmos dados. Continuar?')) return;
       const falta = [];
       const doc = String(r.parceiro.doc || '').replace(/\D/g, '');
       form.parceiro = cad.parceiros.find((x) => doc && String(x.doc || '').replace(/\D/g, '') === doc) || cad.parceiros.find((x) => ESQ(x.nome) === ESQ(r.parceiro.nome)) || null;
