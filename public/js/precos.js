@@ -594,10 +594,10 @@
         TS.seg(Object.entries(FIL).map(([k, [t, fn]]) => [`${t} (${fmt.int(todas.filter(fn).length)})`, k]), fil, (v) => { state.prcNotasFil = v; const c = document.querySelector('.prc-notas > .mt'); if (c) c.replaceChildren(listaNotas(D, j, aoMudar)); })),
       sincEl && sincEl._log, tab);
   }
-  /** "Sincronizar agora" (só admin): o coletor busca o estoque e as notas de compra do AppNext; acompanha até terminar */
+  /** "Sincronizar agora" (admin ou franqueado da loja): o coletor busca o estoque e as notas de compra do AppNext; acompanha até terminar */
   const sinc = {}; // loja -> timer
   function botaoSincronizar(D, j) {
-    if (TS.demo || !TS.eu || TS.eu.perfil !== 'admin') return null;
+    if (TS.demo || !TS.eu || !['admin', 'franqueado'].includes(TS.eu.perfil)) return null;
     const loja = D.loja;
     const st = h('small', { class: 'muted nf-sinc-st' });
     // log do robô, como nas outras telas: ao vivo enquanto roda; depois, o final da última execução

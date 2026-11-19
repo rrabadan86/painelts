@@ -370,7 +370,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     depois(req.loja.id);
     res.json({ ok: true });
   });
-  r.post('/lojas/:id/fixe/rodar', soAdmin, lojaPermitida, async (req, res) => {
+  r.post('/lojas/:id/fixe/rodar', soGestor, lojaPermitida, async (req, res) => {
     if (!COL.ativo()) return res.status(400).json({ erro: 'O coletor não está ligado nesta VPS.' });
     const env = lerEnv(req.loja.id);
     if (!env || !env.FIXE_URL || !env.FIXE_PASS) return res.status(400).json({ erro: 'Cadastre primeiro o acesso ao FIXE desta loja.' });
@@ -383,7 +383,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     } catch (e) { res.status(502).json({ erro: C.msgErro(e) }); }
   });
 
-  r.post('/lojas/:id/fixe/saldos', soAdmin, lojaPermitida, async (req, res) => {
+  r.post('/lojas/:id/fixe/saldos', soGestor, lojaPermitida, async (req, res) => {
     if (!COL.ativo()) return res.status(400).json({ erro: 'O coletor não está ligado nesta VPS.' });
     const env = lerEnv(req.loja.id);
     if (!env || !env.FIXE_URL || !env.FIXE_PASS) return res.status(400).json({ erro: 'Cadastre primeiro o acesso ao FIXE desta loja.' });
@@ -396,7 +396,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     } catch (e) { res.status(502).json({ erro: C.msgErro(e) }); }
   });
 
-  r.post('/lojas/:id/rodar', soAdmin, lojaPermitida, async (req, res) => {
+  r.post('/lojas/:id/rodar', soGestor, lojaPermitida, async (req, res) => {
     if (!COL.ativo()) return res.status(400).json({ erro: 'O coletor não está ligado nesta VPS.' });
     if (!lerEnv(req.loja.id)) return res.status(400).json({ erro: 'Cadastre primeiro o acesso ao AppNext desta loja.' });
     try {
@@ -407,7 +407,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     } catch (e) { res.status(502).json({ erro: C.msgErro(e) }); }
   });
 
-  r.post('/lojas/:id/historico', soAdmin, lojaPermitida, json, async (req, res) => {
+  r.post('/lojas/:id/historico', soGestor, lojaPermitida, json, async (req, res) => {
     if (!COL.ativo()) return res.status(400).json({ erro: 'O coletor não está ligado nesta VPS.' });
     if (!lerEnv(req.loja.id)) return res.status(400).json({ erro: 'Cadastre primeiro o acesso ao AppNext desta loja.' });
     const { de, ate } = req.body || {};
@@ -434,7 +434,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     } catch (e) { res.status(502).json({ erro: C.msgErro(e) }); }
   });
 
-  r.post('/lojas/:id/cancelar', soAdmin, lojaPermitida, async (req, res) => {
+  r.post('/lojas/:id/cancelar', soGestor, lojaPermitida, async (req, res) => {
     try {
       const x = await COL.cancelar(req.loja.id, req.user);
       aud(req, 'cancelou coleta', req.loja.id, { loja: req.loja.id });
@@ -575,7 +575,19 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
   });
 
   // ---------- resumo diário ----------
-  r.get('/notif', soAdmin, (req, res) => res.json(NOTIF.publico()));
+  // Franqueado: abre a tela e cuida só do que é das lojas dele. Horário, ativação, token do Telegram, SMTP e
+  // e-mail dos avisos são da rede (só o admin); destinatário "dele" = todas as lojas do destinatário são dele (nunca '*').
+  const idsMeus = (req) => new Set(minhasLojas(req).map((l) => l.id));
+  const destinoMeu = (req, d) => req.perfil === 'admin' || (Array.isArray(d.lojas) && d.lojas.length > 0 && d.lojas.every((x) => x !== '*' && idsMeus(req).has(x)));
+  r.get('/notif', (req, res) => {
+    const p = NOTIF.publico();
+    if (req.perfil === 'admin') return res.json(p);
+    res.json({
+      restrito: true, ativo: p.ativo, horario: p.horario, ultimoEnvio: p.ultimoEnvio, alertas: p.alertas, fechamento: p.fechamento,
+      telegram: { configurado: p.telegram.configurado, destinos: p.telegram.destinos.filter((d) => destinoMeu(req, d)) },
+      email: { configurado: p.email.configurado, destinos: p.email.destinos.filter((d) => destinoMeu(req, d)) },
+    });
+  });
   r.put('/notif', soAdmin, json, (req, res) => {
     const b = req.body || {};
     const c = NOTIF.ler();
@@ -616,7 +628,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
   r.get('/notif/telegram/conversas', soAdmin, async (req, res) => {
     try { res.json({ conversas: await NOTIF.conversasTelegram() }); } catch (e) { res.status(400).json({ erro: C.msgErro(e) }); }
   });
-  r.post('/notif/destinos', soAdmin, json, (req, res) => {
+  r.post('/notif/destinos', json, (req, res) => {
     const { canal, id, nome, lojas, remover } = req.body || {};
     const c = NOTIF.ler();
     const lista = canal === 'telegram' ? c.telegram.destinos : canal === 'email' ? c.email.destinos : null;
@@ -626,6 +638,15 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     if (canal === 'email' && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(ident)) return res.status(400).json({ erro: 'E-mail inválido.' });
     if (canal === 'telegram' && !/^-?\d{3,20}$/.test(ident)) return res.status(400).json({ erro: 'Conversa inválida.' });
     const i = lista.findIndex((d) => String(d[chave]) === ident);
+    if (req.perfil !== 'admin') {
+      // franqueado: só mexe em destinatário das lojas dele; o que é da rede ou de outra loja ele nem altera nem sobrescreve
+      if (i >= 0 && !destinoMeu(req, lista[i])) return res.status(403).json({ erro: 'Este destinatário é da rede: peça ao administrador.' });
+      if (remover && i < 0) return res.status(404).json({ erro: 'Destinatário não encontrado.' });
+      if (!remover) {
+        if (i < 0 && canal === 'telegram') return res.status(403).json({ erro: 'Só o administrador vincula uma conversa nova do Telegram.' });
+        if (!Array.isArray(lojas) || !lojas.length || !destinoMeu(req, { lojas: lojas.map(String) })) return res.status(403).json({ erro: 'Escolha só lojas suas.' });
+      }
+    }
     if (remover) { if (i >= 0) lista.splice(i, 1); }
     else {
       const ls = Array.isArray(lojas) && lojas.length ? lojas.map(String) : ['*'];
@@ -637,9 +658,14 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     aud(req, remover ? 'removeu destinatário' : 'salvou destinatário', 'notificações', { canal, para: nome || ident });
     res.json({ ok: true });
   });
-  r.post('/notif/teste', soAdmin, json, async (req, res) => {
+  r.post('/notif/teste', json, async (req, res) => {
     try {
       const soDestino = { canal: req.body.canal, id: String(req.body.id || '') };
+      if (req.perfil !== 'admin') { // franqueado: só testa destinatário das lojas dele
+        const c = NOTIF.ler();
+        const d = soDestino.canal === 'telegram' ? c.telegram.destinos.find((y) => String(y.chatId) === soDestino.id) : soDestino.canal === 'email' ? c.email.destinos.find((y) => y.email === soDestino.id) : null;
+        if (!d || !destinoMeu(req, d)) return res.status(404).json({ erro: 'Destinatário não encontrado.' });
+      }
       const r2 = req.body.tipo === 'fechamento' ? await NOTIF.enviarFechamento(obterIndicadores, { soDestino }) : await NOTIF.enviarTodos(obterIndicadores, { soDestino });
       if (!r2.length) return res.status(400).json({ erro: 'Destinatário não encontrado ou canal não configurado.' });
       if (!r2[0].ok) return res.status(502).json({ erro: r2[0].erro });
@@ -709,17 +735,25 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
   });
 
-  // fechamento do dia: enviar agora para todos os destinatários (com os dados de hoje)
-  r.post('/notif/fechamento/enviar', soAdmin, async (req, res) => {
+  // fechamento do dia: enviar agora para todos os destinatários (com os dados de hoje); o franqueado envia só o das lojas dele
+  r.post('/notif/fechamento/enviar', async (req, res) => {
     try {
-      const r2 = await NOTIF.enviarFechamento(obterIndicadores);
+      const soMinhas = req.perfil === 'admin' ? null : [...idsMeus(req)];
+      const r2 = await NOTIF.enviarFechamento(obterIndicadores, soMinhas ? { lojas: soMinhas } : {});
       if (!r2.length) return res.status(400).json({ erro: 'Nenhum destinatário cadastrado (ou e-mail/Telegram não configurado).' });
-      aud(req, 'enviou fechamento do dia agora', 'notificações', { envios: r2.length, falhas: r2.filter((x) => !x.ok).map((x) => `${x.para}: ${x.erro}`) });
+      aud(req, 'enviou fechamento do dia agora', soMinhas && soMinhas.length === 1 ? soMinhas[0] : 'notificações', { ...(soMinhas && soMinhas.length === 1 ? { loja: soMinhas[0] } : {}), lojas: soMinhas || undefined, envios: r2.length, falhas: r2.filter((x) => !x.ok).map((x) => `${x.para}: ${x.erro}`) });
       res.json({ ok: true, envios: r2 });
     } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
   });
-  r.get('/notif/previa', soAdmin, async (req, res) => {
-    try { res.json({ texto: (await NOTIF.montarTexto([String(req.query.loja || '*')], obterIndicadores, NOTIF.ler().alertas)) || 'Sem dados.' }); } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
+  r.get('/notif/previa', async (req, res) => {
+    let ids = [String(req.query.loja || '*')];
+    if (req.perfil !== 'admin') { // franqueado: prévia só das lojas dele ('*' = as dele)
+      const meus = idsMeus(req);
+      if (ids[0] === '*') ids = [...meus];
+      else if (!meus.has(ids[0])) return res.status(404).json({ erro: 'Loja não encontrada.' });
+      if (!ids.length) return res.json({ texto: 'Sem dados.' });
+    }
+    try { res.json({ texto: (await NOTIF.montarTexto(ids, obterIndicadores, NOTIF.ler().alertas)) || 'Sem dados.' }); } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
   });
 
   // ---------- horários do coletor ----------

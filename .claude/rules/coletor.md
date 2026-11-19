@@ -9,7 +9,7 @@ paths:
 - Python + Playwright, um script por tarefa (`nextsoft_*.py` = AppNext, `fixe_*.py` = FIXE). `coletor.py` é o serviço que roda na VPS
   e enfileira as lojas; `nextsoft_sessao.py` faz um login só e roda os módulos em sequência (mantenha o marcador `### nextsoft_<modulo>.py ###`).
 - O painel fala com o coletor por `src/coletor.js` (API interna do docker compose, cabeçalho `X-Coletor-Token`).
-- Só o admin dispara o coletor ("Sincronizar agora"): confira a permissão no servidor.
+- Quem dispara o coletor ("Sincronizar agora", "Atualizar agora", importar histórico, FIXE, robô do Sistema de Pedidos): o admin em qualquer loja e o **franqueado só nas lojas dele**. Confira no servidor a permissão e a loja (`soGestor` + `lojaPermitida` em `src/admin-api.js`; `req.lojas` em `server.js`). Gerente e vendedora nunca. Horários e janela da rede continuam só do admin.
 - Credenciais ficam em `config/coletor/<loja>.env` (nunca no Git; o modelo é `exemplo.env.modelo`). O Claude nunca digita nem pede senha:
   quem faz login no AppNext e no FIXE é o dono.
 

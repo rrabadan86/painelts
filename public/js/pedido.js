@@ -946,7 +946,7 @@
     const ha = horas == null ? '' : horas < 1 ? `há ${Math.max(1, Math.round(horas * 60))} min` : horas < 48 ? `há ${Math.round(horas)} h` : `há ${Math.round(horas / 24)} dias`;
     const info = h('div', { class: 'ped-cat-info' }, em ? h('span', { class: horas > 12 ? 'neg' : null }, 'Estoque do AppNext: ', h('b', null, quando(em)), ` (${ha})`) : h('span', { class: 'neg' }, 'Sem data do estoque'));
     const st = h('div', { class: 'ped-cat-st' });
-    if (TS.eu?.perfil !== 'admin' || TS.demo) return { info, st, acao: null };
+    if (!['admin', 'franqueado'].includes(TS.eu?.perfil) || TS.demo) return { info, st, acao: null }; // admin ou franqueado da loja
     const btn = h('button', { type: 'button', class: 'btn' }, '↻ Atualizar estoque');
     const desenhar = (x) => {
       const ex = x && x.execucao;

@@ -1840,9 +1840,9 @@ app.post('/api/ia/pedido', express.json({ limit: '200kb' }), async (req, res) =>
   } catch (err) { iaErro(res, err); }
 });
 
-// "Sincronizar agora" nas notas de entrada: o coletor busca só o estoque + notas de compra do AppNext (só admin dispara)
+// "Sincronizar agora" nas notas de entrada: o coletor busca só o estoque + notas de compra do AppNext (admin ou franqueado da loja)
 app.get('/api/estoque/notas/sincronizar', async (req, res) => {
-  if (req.perfil !== 'admin') return res.status(403).json({ erro: 'Só o admin sincroniza.' });
+  if (req.perfil !== 'admin' && req.perfil !== 'franqueado') return res.status(403).json({ erro: 'Só o admin ou o franqueado da loja sincroniza.' }); // req.lojas: só as lojas dele
   const loja = req.lojas.find((l) => l.id === String(req.query.loja || ''));
   if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
   if (!COL.ativo()) return res.json({ estado: 'sem_coletor' });
@@ -1858,7 +1858,7 @@ app.get('/api/estoque/notas/sincronizar', async (req, res) => {
 });
 app.post('/api/estoque/notas/sincronizar', express.json({ limit: '1kb' }), async (req, res) => {
   if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
-  if (req.perfil !== 'admin') return res.status(403).json({ erro: 'Só o admin sincroniza.' });
+  if (req.perfil !== 'admin' && req.perfil !== 'franqueado') return res.status(403).json({ erro: 'Só o admin ou o franqueado da loja sincroniza.' }); // req.lojas: só as lojas dele
   const loja = req.lojas.find((l) => l.id === String((req.body && req.body.loja) || ''));
   if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
   if (!COL.ativo()) return res.status(400).json({ erro: 'O coletor não está ligado nesta VPS.' });
@@ -1932,12 +1932,12 @@ app.get('/api/pedido', async (req, res) => {
       const s = await COL.status(loja.id);
       if (s.configurada) {
         const p = s.pedido || {};
-        const u = p.ultima ? { ...p.ultima, log: req.perfil === 'admin' ? p.ultima.log : undefined } : null;
+        const u = p.ultima ? { ...p.ultima, log: req.perfil === 'admin' || req.perfil === 'franqueado' ? p.ultima.log : undefined } : null;
         robo = { disponivel: true, temLogin: s.temPedido, estado: p.estado || 'parado', acao: p.acao || null, ultima: u };
       }
     } catch (e) { robo = { disponivel: false, erro: e.message }; }
   }
-  res.json({ catalogo: PED.catalogo(loja.id), carrinho: PED.carrinho(loja.id), cfg: PED.cfg(C.get().lojas.find((l) => l.id === loja.id)), obrigatorio: PED.obrigatorios(loja.id), espera: ESP.resumoPorCod(loja.id), sugestoes: (() => { const S = require('./src/sugestoes'); try { S.avaliarNotas(loja.id, ES.notas(loja.id)); } catch { /* segue */ } return S.paraPedido(loja.id); })(), robo, podeRobo: req.perfil === 'admin' });
+  res.json({ catalogo: PED.catalogo(loja.id), carrinho: PED.carrinho(loja.id), cfg: PED.cfg(C.get().lojas.find((l) => l.id === loja.id)), obrigatorio: PED.obrigatorios(loja.id), espera: ESP.resumoPorCod(loja.id), sugestoes: (() => { const S = require('./src/sugestoes'); try { S.avaliarNotas(loja.id, ES.notas(loja.id)); } catch { /* segue */ } return S.paraPedido(loja.id); })(), robo, podeRobo: req.perfil === 'admin' || req.perfil === 'franqueado' });
 });
 // ---------- inventário (Estoque → Inventário): contar pelo celular e gerar a planilha do AppNext ----------
 const INV = require('./src/inventario');
@@ -2506,7 +2506,7 @@ app.post('/api/pedido/carrinho', express.json({ limit: '200kb' }), (req, res) =>
 });
 app.post('/api/pedido/robo', express.json({ limit: '200kb' }), async (req, res) => {
   if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
-  if (req.perfil !== 'admin') return res.status(403).json({ erro: 'Só o administrador aciona o robô do Sistema de Pedidos.' });
+  if (req.perfil !== 'admin' && req.perfil !== 'franqueado') return res.status(403).json({ erro: 'Só o administrador ou o franqueado da loja aciona o robô do Sistema de Pedidos.' }); // req.lojas: só as lojas dele
   const loja = req.lojas.find((l) => l.id === String(req.query.loja || ''));
   if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
   if (!COL.ativo()) return res.status(400).json({ erro: 'O coletor da VPS não está ativo.' });
@@ -2761,7 +2761,7 @@ app.get('/api/script', async (req, res) => {
   if (req.perfil === 'vendedor') return res.status(403).json({ disponivel: false, motivo: 'Sem permissão.' });
   const loja = lojaDoPedido(req);
   if (!loja) return res.json({ disponivel: false, motivo: 'Selecione uma loja.' });
-  const admin = (C.get().usuarios[req.user]?.lojas || []).includes('*') || req.user === '*';
+  const admin = (C.get().usuarios[req.user]?.lojas || []).includes('*') || req.user === '*' || req.perfil === 'franqueado'; // log da coleta: admin ou franqueado da loja (a loja já veio de req.lojas)
   // 1º) script rodando na própria VPS (coletor)
   if (COL.ativo()) {
     try {
@@ -2795,7 +2795,7 @@ app.get('/api/script', async (req, res) => {
 
 app.post('/api/script', express.json({ limit: '2kb' }), async (req, res) => {
   if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
-  if (req.perfil !== 'admin') return res.status(403).json({ erro: 'Só o administrador pode rodar a coleta.' });
+  if (req.perfil !== 'admin' && req.perfil !== 'franqueado') return res.status(403).json({ erro: 'Só o administrador ou o franqueado da loja pode rodar a coleta.' }); // lojaDoPedido: só as lojas dele
   const loja = lojaDoPedido(req);
   if (!loja) return res.status(400).json({ erro: 'Loja inválida.' });
   if (COL.ativo()) {

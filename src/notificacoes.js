@@ -208,10 +208,10 @@ async function enviarFechamentoLoja(obter, lojaId, { dia, soPara } = {}) {
   }
   return res;
 }
-/** teste de um destinatário geral: um envio por loja que ele acompanha */
-async function enviarFechamento(obter, { soDestino, dia } = {}) {
+/** teste de um destinatário geral: um envio por loja que ele acompanha; lojas: limita às lojas dadas */
+async function enviarFechamento(obter, { soDestino, dia, lojas } = {}) {
   const c = ler();
-  const ids = C.get().lojas.map((l) => l.id);
+  const ids = C.get().lojas.map((l) => l.id).filter((id) => !lojas || lojas.includes(id)); // lojas: só estas (franqueado)
   const res = [];
   for (const id of ids) {
     const lista = soDestino && soDestino.canal === 'telegram' ? c.telegram.destinos : c.email.destinos;

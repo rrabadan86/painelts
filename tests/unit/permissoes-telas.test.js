@@ -113,7 +113,10 @@ test('franqueado configura tudo da loja dele (login do Sistema de Pedidos, regra
   assert.strictEqual(await status('dono', '/api/admin/lojas/l1/regras', { method: 'PUT', body: JSON.stringify({ regras: null }) }), 200);
   assert.strictEqual(await status('dono', '/api/admin/lojas/l2/regras', { method: 'PUT', body: JSON.stringify({ regras: null }) }), 404);
   assert.strictEqual(await status('ger_pad', '/api/admin/lojas/l1/regras', { method: 'PUT', body: JSON.stringify({ regras: null }) }), 403);
-  // continua só do admin: disparar o coletor e remover a loja
-  assert.strictEqual(await status('dono', '/api/admin/lojas/l1/rodar', { method: 'POST', body: '{}' }), 403);
+  // disparar o coletor: o franqueado também, só na loja dele (aqui o coletor está desligado: passa da permissão e para no 400); detalhes em franqueado-loja.test.js
+  assert.strictEqual(await status('dono', '/api/admin/lojas/l1/rodar', { method: 'POST', body: '{}' }), 400);
+  assert.strictEqual(await status('dono', '/api/admin/lojas/l2/rodar', { method: 'POST', body: '{}' }), 404);
+  assert.strictEqual(await status('ger_pad', '/api/admin/lojas/l1/rodar', { method: 'POST', body: '{}' }), 403);
+  // continua só do admin: remover a loja
   assert.strictEqual(await status('dono', '/api/admin/lojas/l1', { method: 'DELETE' }), 403);
 });
