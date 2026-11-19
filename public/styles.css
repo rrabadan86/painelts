@@ -2419,3 +2419,4 @@ details.vl-ajuda summary { cursor: pointer; font-weight: 600; }
 .orc-doc-t td { padding: 6px 8px; border-bottom: 1px solid #e6e0d2; }
 .orc-doc-t .tot td { font-weight: 700; font-size: 15px; background: #e8efe7; }
 .orc-doc-cond { margin-top: 14px; display: flex; flex-direction: column; gap: 4px; }
+.nf-impacto { border: 1px solid #f0c9a8; background: #fff8f1; border-radius: 10px; padding: 8px 12px 12px; margin-top: 10px; } .nf-impacto .f-label { margin-top: 0; color: #9a4a12; }

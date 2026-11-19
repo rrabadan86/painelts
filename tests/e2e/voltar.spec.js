@@ -160,3 +160,21 @@ test('Orçamento: monta com margem bruta e líquida, salva, aprova e o documento
   await page.getByRole('button', { name: '‹ Orçamentos' }).click();
   await expect(page.locator('.card', { hasText: 'Orçamentos' })).toContainText('Empresa Exemplo Ltda');
 });
+
+test('Custo subiu: margem antes × agora e preço sugerido para manter a margem', async ({ page }, info) => {
+  test.skip(info.project.name !== 'computador');
+  await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS.db);
+  await page.evaluate(() => { location.hash = '#notas'; });
+  await page.waitForFunction(() => TS.impactoCusto);
+  const r = await page.evaluate(async () => {
+    const M = await TS.custosLoja(); const e = await TS.estoqueBuscar(TS.state.loja);
+    const t = e.tabela.itens.find((x) => !/100G/.test(x.desc));
+    const it = M.porCod.get(String(t.cod));
+    const imp = TS.impactoCusto(M, e.tabela.itens, [{ cod: t.cod, nome: t.desc, antes: it.custo, depois: it.custo * 1.2 }]);
+    return { n: imp.length, x: imp[0], preco: t.preco, custo: it.custo };
+  });
+  expect(r.n).toBe(1);
+  expect(r.x.mD).toBeLessThan(r.x.mA);
+  expect(r.x.sug).toBeGreaterThan(r.preco);
+  expect(Math.round((r.x.sug * 100)) % 100).toBe(90);
+});

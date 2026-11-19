@@ -375,7 +375,7 @@
     const loja = state.loja;
     TS.estoqueBuscar(loja).then((e) => {
       if (!corpo.isConnected) return;
-      corpo.replaceChildren(cartaoNotas({ loja, hist: e.historico || {}, comprasItens: (e.compras && e.compras.itens) || {} }));
+      corpo.replaceChildren(cartaoNotas({ loja, hist: e.historico || {}, comprasItens: (e.compras && e.compras.itens) || {}, tabela: (e.tabela && e.tabela.itens) || [] }));
     }).catch((err) => corpo.replaceChildren(h('div', { class: 'notice err' }, err.message)));
   };
   const cacheNotas = new Map();
@@ -455,7 +455,8 @@
     const temAlgumaDev = todas.some((n) => !!devAtivaDeNota(j, n));
     const temPend = Object.keys(j.lotesPend || {}).length > 0;
     const temDescLido = todas.some((n) => n.desconto != null);
-    const FIL = { per: ['No período', noPer], todas: ['Todas', () => true], ...(todas.some((n) => n.desconto > 0.005) ? { desc: ['Com desconto', (n) => n.desconto > 0.005] } : {}), ...(temAlgumaDev ? { dev: ['Com devolução', (n) => !!devAtivaDeNota(j, n)] } : {}), ...(temPend ? { lote: ['Lote pendente', (n) => !!j.lotesPend[n.id]] } : {}) };
+    const subiuCusto = (n) => n.itens.some((i) => { const a = custoAntes(D, i.cod, n.dia, n.nf); return a && a.v > 0 && i.custo > a.v * 1.005; });
+    const FIL = { per: ['No período', noPer], todas: ['Todas', () => true], ...(todas.some((n) => n.desconto > 0.005) ? { desc: ['Com desconto', (n) => n.desconto > 0.005] } : {}), subiu: ['Custo subiu', subiuCusto], ...(temAlgumaDev ? { dev: ['Com devolução', (n) => !!devAtivaDeNota(j, n)] } : {}), ...(temPend ? { lote: ['Lote pendente', (n) => !!j.lotesPend[n.id]] } : {}) };
     const fil = FIL[state.prcNotasFil] ? state.prcNotasFil : 'per';
     const rows = todas.filter(FIL[fil][1]);
     const tab = TS.table({
@@ -541,6 +542,34 @@
   }
 
   /** custo de um item antes da nota: a entrada anterior (outra nota) ou a importação de estoque anterior */
+  /**
+   * custo que subiu numa nota × preço de venda: para cada produto da tabela de preço feito com o item
+   * (o próprio item, ou o pacote de chá feito com a matéria-prima), a margem bruta antes e agora e o preço
+   * que mantém a margem de antes (arredondado para ,90). itens: [{ cod, nome, antes, depois }]
+   */
+  function impactoCusto(M, tabela, itens) {
+    if (!M || !tabela || !tabela.length) return [];
+    const subiu = new Map(itens.filter((i) => i.antes > 0 && i.depois > i.antes * 1.005).map((i) => [String(i.cod), i]));
+    if (!subiu.size) return [];
+    const out = [];
+    for (const t of tabela) {
+      if (!(t.preco > 0.011)) continue;
+      const c = M.custoCadastro(t.cod, t.desc);
+      if (!c || !c.it) continue;
+      const it = subiu.get(String(c.it.cod));
+      if (!it) continue;
+      const parte = c.kg ? (c.g / 1000) : 1;          // quanto do item vai no produto
+      const fixo = c.custo - parte * (c.it.custo || 0); // embalagem (pacote de chá)
+      const cA = fixo + parte * it.antes, cD = fixo + parte * it.depois;
+      const mA = (t.preco - cA) / t.preco, mD = (t.preco - cD) / t.preco;
+      const sug = mA < 0.95 ? Math.ceil((cD / (1 - mA)) - 0.9) + 0.9 : null;
+      out.push({ cod: t.cod, desc: t.desc, preco: t.preco, item: it.nome, cA, cD, mA, mD, sug: sug && sug > t.preco ? sug : null });
+    }
+    return out.sort((a, b) => (a.mD - a.mA) - (b.mD - b.mA));
+  }
+  TS.impactoCusto = impactoCusto;
+  TS.custoAntesNota = (D, cod, dia, nf) => custoAntes(D, cod, dia, nf);
+
   function custoAntes(D, cod, dia, nf) {
     let v = null, d0 = -Infinity, origem = '';
     for (const [d, c, n] of (D.comprasItens && D.comprasItens[cod]) || []) { const dd = TS.isoToDay(d); if ((dd < dia || (dd === dia && n !== nf)) && dd >= d0) { v = c; d0 = dd; origem = `NF ${n} de ${quando(d)}`; } }
@@ -596,6 +625,26 @@
       total: { nome: `${fmt.int(linhas.length)} itens`, total: linhas.reduce((a, r) => a + r.total, 0), ...(n.itens.some((i) => i.desc > 0.005) ? { desc: linhas.reduce((a, r) => a + (r.desc || 0), 0) } : {}) },
     });
     const subiu = linhas.filter((r) => r.varC != null && r.varC > 0.0005).length, desceu = linhas.filter((r) => r.varC != null && r.varC < -0.0005).length;
+    // preço de venda × custo novo (admin e franqueado): margem antes e agora e o preço que mantém a margem
+    const blocoImpacto = h('div');
+    if (subiu && TS.custosLoja) TS.custosLoja().then((M) => {
+      const imp = impactoCusto(M, D.tabela, linhas.map((r) => ({ cod: r.cod, nome: r.nome, antes: r.antes, depois: r.custo })));
+      if (!imp.length || !blocoImpacto.isConnected) return;
+      const tabI = TS.table({
+        cols: [
+          { key: 'desc', label: 'Produto à venda', align: 'l', wrap: true, render: (x) => h('span', null, x.desc, h('small', { class: 'est-tam' }, `feito com ${x.item}`)) },
+          { key: 'preco', label: 'Preço atual', fmt: fmt.brl },
+          { key: 'cD', label: 'Custo agora', render: (x) => h('span', null, fmt.brl(x.cD), h('small', { class: 'est-tam' }, `antes ${fmt.brl(x.cA)}`)), sortVal: (x) => x.cD },
+          { key: 'mD', label: 'Margem bruta', render: (x) => h('span', null, h('b', { class: x.mD < x.mA - 0.02 ? 'neg' : '' }, fmt.pct(x.mD, 1)), h('small', { class: 'est-tam' }, `era ${fmt.pct(x.mA, 1)}`)), sortVal: (x) => x.mD - x.mA },
+          { key: 'sug', label: 'Preço p/ manter a margem', render: (x) => (x.sug ? h('b', null, fmt.brl(x.sug)) : h('span', { class: 'muted' }, '—')), sortVal: (x) => x.sug || 0 },
+        ],
+        rows: imp, sortKey: 'mD', sortDir: 'asc', maxHeight: '40vh', cls: 'est-t',
+      });
+      blocoImpacto.replaceChildren(h('div', { class: 'nf-impacto' },
+        h('div', { class: 'f-label mt' }, `⚠ O custo subiu: ${imp.length} ${imp.length === 1 ? 'produto à venda ficou' : 'produtos à venda ficaram'} com margem menor`),
+        h('small', { class: 'muted' }, 'Preço da tabela de preço do AppNext. "Preço p/ manter a margem" = custo novo ÷ (1 − margem de antes), arredondado para ,90. Mude o preço no AppNext se fizer sentido.'),
+        tabI));
+    }).catch(() => null);
     const vinculadas = saidasDeNota(j, n);
     const card = h('aside', { class: 'card prc-drawer prc-drawer-largo', role: 'dialog', 'aria-modal': 'true', 'aria-label': `Nota ${n.nfTxt}` },
       h('button', { type: 'button', class: 'icon-btn exp-fechar', title: 'Fechar (Esc)', 'aria-label': 'Fechar', onclick: fechar }, '✕'),
@@ -608,6 +657,7 @@
       h('div', { class: 'prc-nota-info muted' }, [n.motivo && `Tipo: ${n.motivo}`, n.status && `Situação: ${n.status}`, n.cfop && `CFOP ${n.cfop}`, `${fmt.int(linhas.length)} itens`, subiu || desceu ? `custo subiu em ${fmt.int(subiu)} e caiu em ${fmt.int(desceu)}` : ''].filter(Boolean).join(' · ')),
       blocoSaidasVinculadas(D.loja, vinculadas),
       TS.devolucao && !TS.demo ? TS.devolucao.barra(n, () => card, aoMudar) : null,
+      blocoImpacto,
       h('div', { class: 'f-label mt' }, 'Produtos da nota', temGranel ? h('span', null, ' ', faltaLote) : null, h('button', { type: 'button', class: 'exp-btn prt-btn prc-nf-prt', title: 'Imprimir a nota', onclick: () => TS.imprimir(card) }, '🖨', h('span', null, 'Imprimir'))),
       tab);
     if (temGranel) TS.validade.lotesDaNota(D.loja, n, aoSalvarLote).then((ln) => {

@@ -23,7 +23,7 @@
       lista.sort((a, b) => ord[a.nivel] - ord[b.nivel]);
       avisos.replaceChildren(...(lista.length ? lista.map(item) : [h('p', { class: 'muted' }, 'Nada pedindo atenção por enquanto. 👏')]));
     };
-    const tarefas = [avisosEspera(lista), avisosVendas(lista), avisosEstoque(lista), avisosSite(lista), avisosAtualizacoes(lista), avisosInventario(lista), avisosCreditos(lista)].map((p) => p.catch(() => null).then(() => { if (avisos.isConnected) pintar(); }));
+    const tarefas = [avisosEspera(lista), avisosVendas(lista), avisosEstoque(lista), avisosSite(lista), avisosAtualizacoes(lista), avisosInventario(lista), avisosCreditos(lista), avisosCusto(lista)].map((p) => p.catch(() => null).then(() => { if (avisos.isConnected) pintar(); }));
     Promise.all(tarefas).then(() => pend.remove());
   };
 
@@ -135,6 +135,29 @@
     const ir = { link: '#inventario', ir: 'fazer inventário ›', antes: () => { state.invId = null; } };
     if (gAtr.length) lista.push({ nivel: 'warn', titulo: `Inventário: ${fmt.int(gAtr.length)} ${gAtr.length === 1 ? 'grupo está' : 'grupos estão'} há ${DIAS_INV} dias ou mais sem contagem`, texto: txt(gAtr), ...ir });
     if (tAtr.length) lista.push({ nivel: 'warn', titulo: `Inventário: ${fmt.int(tAtr.length)} ${tAtr.length === 1 ? 'tipo de chá está' : 'tipos de chá estão'} há ${DIAS_INV} dias ou mais sem contagem`, texto: txt(tAtr), ...ir });
+  }
+
+  // ---------- custo subiu nas notas recentes: produtos à venda com margem menor (admin e franqueado) ----------
+  async function avisosCusto(lista) {
+    if (!state.loja || state.loja === 'todas' || !TS.custosLoja || !TS.impactoCusto || !TS.custoAntesNota) return;
+    const M = await TS.custosLoja();
+    if (!M) return;
+    const [e, r] = await Promise.all([TS.estoqueBuscar(state.loja), fetch(TS.api(`estoque/notas?loja=${encodeURIComponent(state.loja)}`), { credentials: 'same-origin' })]);
+    if (!r.ok) return;
+    const j = await r.json();
+    const D = { hist: e.historico || {}, comprasItens: (e.compras && e.compras.itens) || {} };
+    const limite = TS.todayDay() - 14;
+    const itens = [];
+    for (const n of j.notas || []) {
+      const dia = TS.isoToDay(n.entrada || n.emissao);
+      if (dia < limite) continue;
+      for (const i of n.itens) { const a = TS.custoAntesNota(D, i.cod, dia, n.nf); if (a) itens.push({ cod: i.cod, nome: i.nome, antes: a.v, depois: i.custo }); }
+    }
+    const imp = TS.impactoCusto(M, (e.tabela && e.tabela.itens) || [], itens).filter((x) => x.mD < x.mA - 0.01);
+    if (!imp.length) return;
+    lista.push({ nivel: 'warn', titulo: `Custo subiu: ${fmt.int(imp.length)} ${imp.length === 1 ? 'produto à venda ficou' : 'produtos à venda ficaram'} com margem menor`,
+      texto: `Notas de entrada dos últimos 14 dias. ${imp.slice(0, 3).map((x) => `${x.desc} (${fmt.pct(x.mA, 0)} → ${fmt.pct(x.mD, 0)})`).join(', ')}${imp.length > 3 ? ` e mais ${imp.length - 3}` : ''}.`,
+      link: '#notas', ir: 'ver as notas ›', antes: () => { state.prcNotasFil = 'subiu'; } });
   }
 
   // ---------- créditos com a franquia: devoluções sem desconto há mais de 30 dias ----------
