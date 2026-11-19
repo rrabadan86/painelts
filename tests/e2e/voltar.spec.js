@@ -257,3 +257,47 @@ test('Nota de entrada: custo que baixou a margem fica em amarelo na lista; chá 
     await expect(page.locator('.prc-drawer')).toBeVisible(); // o Esc fecha só a janela dos pacotes
   }
 });
+
+test('Nota de entrada: tocar no produto abre o histórico de compras (gráfico e variação); Esc fecha só a janela', async ({ page }) => {
+  // na apresentação cada item tem uma compra só: acrescenta uma 6 meses antes, 10% mais barata
+  await page.route('**/api/demo/estoque?*', async (route) => {
+    const j = await (await route.fetch()).json();
+    const it = (j.compras && j.compras.itens) || {};
+    for (const k of Object.keys(it)) { const [dia, custo, , qtd, forn] = it[k][0]; it[k].unshift([new Date(Date.parse(dia) - 180 * 864e5).toISOString().slice(0, 10), Math.round(custo * 90) / 100, 1111, qtd, forn]); }
+    await route.fulfill({ json: j });
+  });
+  await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS.db);
+  await page.evaluate(() => { location.hash = '#notas'; });
+  const link = page.locator('a.prc-nome').first();
+  await expect(link).toBeVisible();
+  await link.evaluate((a) => a.click());
+  const nota = page.locator('.prc-drawer');
+  await expect(nota).toBeVisible();
+  await nota.locator('.nf-hist-lnk').first().evaluate((b) => b.click());
+  const pop = page.locator('.nf-hist-pop');
+  await expect(pop).toContainText('Histórico de compras');
+  await expect(pop).toContainText('2 notas');
+  await expect(pop.locator('canvas')).toHaveCount(1);
+  await expect(pop.locator('.prc-badge').first()).toContainText('+');
+  await expect(pop).toContainText('esta nota');
+  await page.keyboard.press('Escape');
+  await expect(pop).toHaveCount(0);
+  await expect(nota).toBeVisible();
+});
+
+test('Nota de entrada: no celular o amarelo vale também para os cartões em posição par', async ({ page }, info) => {
+  test.skip(info.project.name !== 'celular');
+  await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS.db);
+  await page.evaluate(() => { location.hash = '#notas'; });
+  await expect(page.locator('a.prc-nome').first()).toBeVisible();
+  const cor = await page.evaluate(() => {
+    const t = document.createElement('table'); t.className = 't t-mob';
+    t.innerHTML = '<tbody><tr class="nf-marg"><td>a</td></tr><tr class="nf-marg"><td>b</td></tr></tbody>';
+    document.body.append(t);
+    const c = [...t.querySelectorAll('tr')].map((tr) => getComputedStyle(tr).backgroundColor);
+    t.remove();
+    return c;
+  });
+  expect(cor[1]).toBe(cor[0]);
+  expect(cor[0]).not.toBe('rgb(255, 255, 255)');
+});
