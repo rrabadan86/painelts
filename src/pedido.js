@@ -162,7 +162,8 @@ function gravarAcesso(id, { usuario, senha, apagar }, por) {
 const crypto = require('crypto');
 const SITE = (process.env.PEDIDO_SITE || 'https://grnteashop.nextsoft.com.br/Pedidos/').replace(/\/?$/, '/');
 const ORIGENS = new Set([new URL(SITE).origin, new URL(SITE).origin.replace(/^https:/, 'http:')]);
-const codigos = new Map(); // código → { loja, itens, por, expira }
+const codigos = new Map(); // código → { loja, itens, por, expira, criado }
+const CODIGO_TETO_MS = 3 * 3600e3;
 const STATUS = new Set(['ok', 'sem_estoque', 'recusado', 'indisponivel', 'nao_encontrado', 'acima_do_maximo', 'sem_confirmacao', 'erro']);
 function limparCodigos() { const t = Date.now(); for (const [k, v] of codigos) if (v.expira < t) codigos.delete(k); }
 function criarCodigo(id, itens, por) {
@@ -173,7 +174,7 @@ function criarCodigo(id, itens, por) {
   const porCod = new Map(cat.itens.map((x) => [String(x.cod), x]));
   const lista = itens.map((x) => { const k = porCod.get(String(x.cod)) || {}; return { cod: x.cod, nome: x.nome, qtd: x.qtd, mult: k.mult || null, min: k.min || null, max: k.max || null }; });
   const expira = Date.now() + 30 * 60e3;
-  codigos.set(c, { loja: id, itens: lista, por, expira });
+  codigos.set(c, { loja: id, itens: lista, por, expira, criado: Date.now() });
   fs.mkdirSync(pasta(id), { recursive: true });
   C.gravarAtomico(path.join(pasta(id), 'carrinho.json'), JSON.stringify({ modo: 'navegador', inicio: new Date().toISOString(), por, total: lista.length, itens: [], site: SITE, expira: new Date(expira).toISOString(), aguardando: true }), 0o640);
   return { codigo: c, url: `${SITE}Abertura.aspx#teashop=${c}`, expira: new Date(expira).toISOString() };
@@ -194,7 +195,8 @@ function progresso(c, b) {
   const cods = new Set(x.itens.map((i) => String(i.cod)));
   const itens = (Array.isArray(b.itens) ? b.itens : []).slice(0, 400).filter((i) => cods.has(String(i.cod)) && STATUS.has(i.status))
     .map((i) => ({ cod: String(i.cod), nome: txt(i.nome, 120), pedido: num(i.pedido), qtd: num(i.qtd), preco: num(i.preco), status: i.status, erro: i.erro ? txt(i.erro, 200) : undefined }));
-  x.expira = Math.max(x.expira, Date.now() + 15 * 60e3); // em uso: não vence no meio
+  // em uso: não vence no meio — mas só até 3 h depois de gerado (um código vazado não se renova para sempre)
+  x.expira = Math.max(x.expira, Math.min(Date.now() + 15 * 60e3, (x.criado || Date.now()) + CODIGO_TETO_MS));
   const novo = { ...atual, aguardando: false, itens, total: x.itens.length, atual: b.atual ? txt(b.atual, 120) : undefined, expira: new Date(x.expira).toISOString(),
     fim: b.fim ? new Date().toISOString() : undefined, carrinhoDepois: b.carrinhoDepois ? { texto: txt(b.carrinhoDepois.texto, 80) } : atual.carrinhoDepois, ok: !!b.fim };
   C.gravarAtomico(f, JSON.stringify(novo), 0o640);

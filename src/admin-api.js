@@ -214,7 +214,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
         const u = cfg.usuarios[req.user];
         if (u && !(u.lojas || []).includes('*') && !(u.lojas || []).includes(id)) u.lojas = [...(u.lojas || []), id];
       });
-    } catch (e) { return res.status(400).json({ erro: e.message }); }
+    } catch (e) { return res.status(400).json({ erro: C.msgErro(e) }); }
     fs.mkdirSync(C.pastaLoja(id), { recursive: true });
     aud(req, 'criou loja', id, { loja: id, nome });
     depois();
@@ -380,7 +380,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
       if (x.status >= 400) return res.status(400).json({ erro: (x.json && x.json.erro) || 'Falha ao pedir.' });
       aud(req, 'pediu cadastro de clientes do FIXE', req.loja.id, { loja: req.loja.id });
       res.json({ ok: true });
-    } catch (e) { res.status(502).json({ erro: e.message }); }
+    } catch (e) { res.status(502).json({ erro: C.msgErro(e) }); }
   });
 
   r.post('/lojas/:id/fixe/saldos', soAdmin, lojaPermitida, async (req, res) => {
@@ -393,7 +393,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
       if (x.status >= 400) return res.status(400).json({ erro: (x.json && x.json.erro) || 'Falha ao pedir.' });
       aud(req, 'sincronizou saldos de pontos com o FIXE', req.loja.id, { loja: req.loja.id });
       res.json({ ok: true });
-    } catch (e) { res.status(502).json({ erro: e.message }); }
+    } catch (e) { res.status(502).json({ erro: C.msgErro(e) }); }
   });
 
   r.post('/lojas/:id/rodar', soAdmin, lojaPermitida, async (req, res) => {
@@ -404,7 +404,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
       if (x.status !== 200) return res.status(x.status).json({ erro: x.json.erro || 'Falha no coletor.' });
       aud(req, 'rodou atualização', req.loja.id, { loja: req.loja.id });
       res.json({ ok: true });
-    } catch (e) { res.status(502).json({ erro: e.message }); }
+    } catch (e) { res.status(502).json({ erro: C.msgErro(e) }); }
   });
 
   r.post('/lojas/:id/historico', soAdmin, lojaPermitida, json, async (req, res) => {
@@ -431,7 +431,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
       if (x.status !== 200) return res.status(x.status).json({ erro: x.json.erro || 'Falha no coletor.' });
       aud(req, 'importou histórico', req.loja.id, { loja: req.loja.id, de, ate, partes: partes.length, tipo, extras: req.body.extras || undefined });
       res.json({ ok: true, partes: partes.length });
-    } catch (e) { res.status(502).json({ erro: e.message }); }
+    } catch (e) { res.status(502).json({ erro: C.msgErro(e) }); }
   });
 
   r.post('/lojas/:id/cancelar', soAdmin, lojaPermitida, async (req, res) => {
@@ -439,14 +439,14 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
       const x = await COL.cancelar(req.loja.id, req.user);
       aud(req, 'cancelou coleta', req.loja.id, { loja: req.loja.id });
       res.status(x.status).json(x.json);
-    } catch (e) { res.status(502).json({ erro: e.message }); }
+    } catch (e) { res.status(502).json({ erro: C.msgErro(e) }); }
   });
 
   // ---------- envio de planilhas ----------
   const TIPOS = { vendas: null, historico: null, Xml: 'Xml', Dados_Clientes: 'Dados_Clientes', Meta: 'Meta', Estoque: null, Produtos: null };
   r.post('/lojas/:id/upload/:tipo', lojaPermitida, express.raw({ type: () => true, limit: `${MAX_UPLOAD_MB}mb` }), async (req, res) => {
     const tipo = req.params.tipo;
-    if (!(tipo in TIPOS)) return res.status(400).json({ erro: 'Tipo de planilha inválido.' });
+    if (!Object.hasOwn(TIPOS, tipo)) return res.status(400).json({ erro: 'Tipo de planilha inválido.' });
     const buf = req.body;
     if (tipo === 'Estoque') {
       if (req.perfil !== 'admin' && req.perfil !== 'franqueado') return res.status(403).json({ erro: 'Só admin e franqueado.' });
@@ -454,7 +454,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
         const r = await ES.importar(req.loja.id, buf);
         aud(req, 'enviou estoque', req.loja.id, { loja: req.loja.id, arquivo: semQuebra(req.get('X-Arquivo') || '').slice(0, 80), itens: r.itens });
         return res.json({ ok: true, estoque: r });
-      } catch (e) { return res.status(400).json({ erro: e.message }); }
+      } catch (e) { return res.status(400).json({ erro: C.msgErro(e) }); }
     }
     if (tipo === 'Produtos') {
       // preço de tabela: Produtos ou Produtos Compostos do AppNext (o painel reconhece pelo título)
@@ -463,7 +463,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
         const r = await require('./tabela').importar(req.loja.id, buf);
         aud(req, 'enviou preço de tabela', req.loja.id, { loja: req.loja.id, tipo: r.tipo, arquivo: semQuebra(req.get('X-Arquivo') || '').slice(0, 80), itens: r.itens });
         return res.json({ ok: true, tabela: r });
-      } catch (e) { return res.status(400).json({ erro: e.message }); }
+      } catch (e) { return res.status(400).json({ erro: C.msgErro(e) }); }
     }
     if (tipo === 'Dados_Clientes' && Buffer.isBuffer(buf) && buf.length >= 100) {
       // cadastro: modelo do painel ou exportação do FIXE; junta com o que já existe
@@ -480,7 +480,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
         aud(req, 'enviou cadastro de clientes', req.loja.id, { loja: req.loja.id, formato: r.formato, arquivo: semQuebra(req.get('X-Arquivo') || '').slice(0, 80), novos: r.novos, atualizados: r.atualizados, total: r.total });
         depois(req.loja.id);
         return res.json({ ok: true, cadastro: r });
-      } catch (e) { return res.status(400).json({ erro: e.message }); }
+      } catch (e) { return res.status(400).json({ erro: C.msgErro(e) }); }
     }
     if (!Buffer.isBuffer(buf) || buf.length < 100 || buf[0] !== 0x50 || buf[1] !== 0x4b) return res.status(400).json({ erro: 'O arquivo não é uma planilha .xlsx.' });
     if (tipo === 'historico') {
@@ -495,7 +495,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
         aud(req, 'enviou histórico antigo de vendas', req.loja.id, { loja: req.loja.id, arquivo: semQuebra(req.get('X-Arquivo') || '').slice(0, 80), linhas: r.linhas, de: r.de, ate: r.ate });
         depois(req.loja.id);
         return res.json({ ok: true, historico: r });
-      } catch (e) { return res.status(400).json({ erro: e.message }); }
+      } catch (e) { return res.status(400).json({ erro: C.msgErro(e) }); }
     }
     const nomeOrig = semQuebra(req.get('X-Arquivo') || '').slice(0, 80);
     if (tipo === 'vendas') B.receber(req.loja.id, buf, { origem: 'painel' });
@@ -612,7 +612,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     res.json({ ok: true });
   });
   r.get('/notif/telegram/conversas', soAdmin, async (req, res) => {
-    try { res.json({ conversas: await NOTIF.conversasTelegram() }); } catch (e) { res.status(400).json({ erro: e.message }); }
+    try { res.json({ conversas: await NOTIF.conversasTelegram() }); } catch (e) { res.status(400).json({ erro: C.msgErro(e) }); }
   });
   r.post('/notif/destinos', soAdmin, json, (req, res) => {
     const { canal, id, nome, lojas, remover } = req.body || {};
@@ -642,7 +642,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
       if (!r2.length) return res.status(400).json({ erro: 'Destinatário não encontrado ou canal não configurado.' });
       if (!r2[0].ok) return res.status(502).json({ erro: r2[0].erro });
       res.json({ ok: true });
-    } catch (e) { res.status(500).json({ erro: e.message }); }
+    } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
   });
   // ---------- fechamento do dia por loja (Gmail e destinatários da própria franquia) ----------
   const EMAIL_OK = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
@@ -704,7 +704,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
       if (!r2.length) return res.status(400).json({ erro: soPara ? 'Destinatário não encontrado.' : 'Nenhum destinatário para esta loja (ou sem vendas para montar o fechamento).' });
       aud(req, soPara ? 'testou fechamento' : 'enviou fechamento do dia agora', req.loja.id, { loja: req.loja.id, envios: r2.length, falhas: r2.filter((y) => !y.ok).map((y) => `${y.para}: ${y.erro}`) });
       res.json({ ok: true, envios: r2 });
-    } catch (e) { res.status(500).json({ erro: e.message }); }
+    } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
   });
 
   // fechamento do dia: enviar agora para todos os destinatários (com os dados de hoje)
@@ -714,10 +714,10 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
       if (!r2.length) return res.status(400).json({ erro: 'Nenhum destinatário cadastrado (ou e-mail/Telegram não configurado).' });
       aud(req, 'enviou fechamento do dia agora', 'notificações', { envios: r2.length, falhas: r2.filter((x) => !x.ok).map((x) => `${x.para}: ${x.erro}`) });
       res.json({ ok: true, envios: r2 });
-    } catch (e) { res.status(500).json({ erro: e.message }); }
+    } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
   });
   r.get('/notif/previa', soAdmin, async (req, res) => {
-    try { res.json({ texto: (await NOTIF.montarTexto([String(req.query.loja || '*')], obterIndicadores, NOTIF.ler().alertas)) || 'Sem dados.' }); } catch (e) { res.status(500).json({ erro: e.message }); }
+    try { res.json({ texto: (await NOTIF.montarTexto([String(req.query.loja || '*')], obterIndicadores, NOTIF.ler().alertas)) || 'Sem dados.' }); } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
   });
 
   // ---------- horários do coletor ----------
@@ -728,7 +728,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
       if (!Object.values(sem).some((x) => x.length)) return res.status(400).json({ erro: 'Deixe pelo menos um dia com horário.' });
       aud(req, 'alterou horários da rede', 'coletor', { semana: sem });
       res.json({ ok: true, semana: sem });
-    } catch (e) { res.status(400).json({ erro: e.message }); }
+    } catch (e) { res.status(400).json({ erro: C.msgErro(e) }); }
   });
   // horários próprios de uma loja (administrador ou franqueado da loja); { semana } ou { propria: false } para voltar aos da rede
   r.put('/lojas/:id/horarios', lojaPermitida, json, (req, res) => {
@@ -737,7 +737,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
       const sem = req.body.propria === false ? AG.gravarLoja(req.loja.id, null) : AG.gravarLoja(req.loja.id, req.body.semana);
       aud(req, sem ? 'alterou horários da loja' : 'voltou aos horários da rede', req.loja.id, { loja: req.loja.id, semana: sem || undefined });
       res.json({ ok: true, semana: sem });
-    } catch (e) { res.status(400).json({ erro: e.message }); }
+    } catch (e) { res.status(400).json({ erro: C.msgErro(e) }); }
   });
 
   r.put('/janela', soAdmin, json, (req, res) => {
@@ -802,7 +802,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
         if (cfg.usuarios[nome]) throw new Error(`O usuário "${nome}" já existe.`);
         cfg.usuarios[nome] = { senha: hash, ...d, trocarSenha: req.body.trocarSenha !== false, criadoEm: new Date().toISOString() };
       });
-    } catch (e) { return res.status(400).json({ erro: e.message }); }
+    } catch (e) { return res.status(400).json({ erro: C.msgErro(e) }); }
     aud(req, 'criou usuário', nome, { perfil: d.perfil, lojas: d.lojas, acessoAte: d.acessoAte || 'sem prazo', trocarSenha: req.body.trocarSenha !== false, loja: lojaUnicaAud(d.lojas) });
     res.json({ ok: true });
   });
@@ -913,7 +913,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     if (!b.instalado) return res.status(400).json({ erro: 'O atualizador ainda não foi instalado na VPS.' });
     if (b.estado === 'nao_configurado' || !b.estado) return res.status(400).json({ erro: 'O backup ainda não foi configurado na VPS (scripts/backup-configurar.sh).' });
     if (b.estado === 'rodando' || b.pedido) return res.status(409).json({ erro: 'Já tem um backup em andamento.' });
-    try { fs.writeFileSync(path.join(SIS, 'backup.pedido'), `${req.user} ${new Date().toISOString()}\n`); } catch (e) { return res.status(500).json({ erro: 'Não consegui pedir: ' + e.message }); }
+    try { fs.writeFileSync(path.join(SIS, 'backup.pedido'), `${req.user} ${new Date().toISOString()}\n`); } catch (e) { return res.status(500).json({ erro: 'Não consegui pedir: ' + C.msgErro(e) }); }
     aud(req, 'pediu backup no Google Drive', 'sistema', {});
     res.json({ ok: true });
   });
@@ -925,7 +925,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     if (acao === 'atualizar' && s.status && s.status.estado === 'atualizando') return res.status(409).json({ erro: 'Já tem uma atualização em andamento.' });
     const forcar = acao === 'atualizar' && req.query.forcar === '1';
     if (acao === 'atualizar' && s.testes && !s.alvo && !forcar) return res.status(409).json({ erro: 'Nenhuma novidade passou nos testes automáticos ainda.' });
-    try { fs.writeFileSync(path.join(SIS, `${acao}.pedido`), `${req.user} ${new Date().toISOString()}${forcar ? ' forcar' : ''}\n`); } catch (e) { return res.status(500).json({ erro: 'Não consegui gravar o pedido: ' + e.message }); }
+    try { fs.writeFileSync(path.join(SIS, `${acao}.pedido`), `${req.user} ${new Date().toISOString()}${forcar ? ' forcar' : ''}\n`); } catch (e) { return res.status(500).json({ erro: 'Não consegui gravar o pedido: ' + C.msgErro(e) }); }
     if (acao === 'atualizar') aud(req, forcar ? 'pediu atualização do painel SEM esperar os testes' : 'pediu atualização do painel', 'sistema', { de: s.atual && s.atual.sha, para: forcar ? 'tudo' : s.alvo, novidades: s.novidades.length });
     res.json({ ok: true });
   });
