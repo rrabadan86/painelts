@@ -299,7 +299,7 @@
    * Menu por assunto: Vendas · Clientes · Equipe · Estoque e Margem · ⚙. Cada grupo mostra só as telas que a pessoa pode ver;
    * grupo com uma tela só vira uma aba com o nome da tela; com mais de uma, a tela tem um submenu no topo.
    */
-  const ROTULO = { inicio: 'Início', resumo: 'Resumo', comparativos: 'Comparativos', promocao: 'Promoção', cupons: 'Cupons', nfsaida: 'Notas fiscais', creditos: 'Notas fiscais', orcamento: 'Orçamento', hoje: 'Hoje', clilista: 'Lista de clientes', clientes: 'Indicadores', campanhas: 'Campanhas', espera: 'Lista de espera',
+  const ROTULO = { inicio: 'Início', resumo: 'Resumo', comparativos: 'Comparativos', promocao: 'Promoção', cupons: 'Cupons', nfsaida: 'Notas fiscais', creditos: 'Notas fiscais', orcamento: 'Orçamento', checklist: 'Checklist', hoje: 'Hoje', clilista: 'Lista de clientes', clientes: 'Indicadores', campanhas: 'Campanhas', espera: 'Lista de espera',
     comissionamento: 'Comissionamento', minha: 'Minha comissão', mapa: 'Movimento e escala', rentab: 'Rentabilidade', precos: 'Preços', site: 'Site', estoque: 'Estoque', pedido: 'Pedido', notas: 'Notas fiscais', inventario: 'Inventário', validade: 'Validade', dre: 'Resultado' };
   TS.GRUPOS = [];
   function montarMenu(grupoEst, temConfig) {
@@ -308,7 +308,7 @@
       ['Início', ['inicio']],
       ['Vendas', ['resumo', 'comparativos', 'promocao', 'cupons', 'orcamento']],
       ['Clientes', ['hoje', 'clilista', 'clientes', 'campanhas', 'espera']],
-      ['Equipe', ['comissionamento', 'minha', 'mapa']],
+      ['Equipe', ['comissionamento', 'minha', 'mapa', 'checklist']],
       ['Produtos', grupoEst.filter((p) => ['rentab', 'precos', 'site'].includes(p))],
       ['Estoque', grupoEst.filter((p) => ['estoque', 'validade', 'pedido', 'notas', 'inventario'].includes(p))],
       ['Resultado', grupoEst.filter((p) => p === 'dre')],
@@ -336,6 +336,7 @@
     if (!eu.perfil) {
       if (!PAGES.includes('campanhas')) PAGES.splice(PAGES.indexOf('clientes'), 1, 'hoje', 'clilista', 'clientes', 'campanhas', 'espera');
       PAGES = PAGES.filter((p) => p !== 'minha');
+      if (!PAGES.includes('checklist')) PAGES.push('checklist');
       montarMenu([], false);
       return;
     }
@@ -362,6 +363,8 @@
     if (eu.perfil === 'vendedor' && !grupoEst.includes('validade')) grupoEst.unshift('validade'); // e acompanha a validade dos lotes
     TS.telasEstoque = grupoEst;
     PAGES = [...PAGES.filter((p) => !grupoEst.includes(p)), ...grupoEst, ...(grupoEst.includes('notas') ? ['nfsaida', 'creditos'] : [])];
+    // checklist de abertura e fechamento: todo mundo da loja
+    PAGES = [...PAGES.filter((p) => p !== 'checklist'), 'checklist'];
     // orçamento para empresas: só admin e franqueado (mostra custo e margem)
     if (eu.perfil === 'admin' || eu.perfil === 'franqueado' || eu.pode?.configurar) PAGES = [...PAGES.filter((p) => p !== 'orcamento'), 'orcamento'];
     if (eu.pode?.configurar) PAGES = [...PAGES, 'config'];

@@ -263,7 +263,7 @@ const pub = path.join(__dirname, 'public');
 const APP_SCRIPTS = [
   'core.js', 'components.js', 'dicas.js', 'rules.js', 'pages.js', 'fidelidade.js',
   'clientes.js', 'campanhas.js', 'espera.js', 'extras.js', 'contabilidade.js',
-  'estoque.js', 'devolucao.js', 'precos.js', 'inventario.js', 'validade.js', 'nfsaida.js', 'creditos.js', 'orcamento.js',
+  'estoque.js', 'devolucao.js', 'precos.js', 'inventario.js', 'validade.js', 'nfsaida.js', 'creditos.js', 'orcamento.js', 'checklist.js',
   'site.js', 'inicio.js', 'pedido.js', 'dre.js', 'mapa.js', 'feriados.js',
   'config.js', 'script.js', 'fechamento.js', 'sistema.js', 'main.js',
 ];
@@ -1390,6 +1390,39 @@ app.post('/api/conta-franquia/acao', express.json({ limit: '5kb' }), (req, res) 
   if (r.erro) return res.status(400).json({ erro: r.erro });
   C.auditar(req.user, 'conta com a franquia: ' + String(req.body.tipo), loja.id, { loja: loja.id, nota: req.body.nota || null, creditos: req.body.creditos || (req.body.credito ? [req.body.credito] : []) });
   res.json(contaDaLoja(loja));
+});
+// checklist de abertura e fechamento: qualquer pessoa da loja marca (com nome e hora); a lista muda em Configurações
+const CK = require('./src/checklist');
+const hojeSPiso = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+const lojaCk = (req, res, corpo) => {
+  const id = String((corpo ? req.body && req.body.loja : req.query.loja) || '');
+  const loja = req.lojas.find((l) => l.id === id);
+  if (!loja) { res.status(400).json({ erro: 'Escolha uma loja.' }); return null; }
+  return loja;
+};
+app.get('/api/checklist', (req, res) => {
+  const loja = lojaCk(req, res); if (!loja) return;
+  const dia = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.dia || '')) ? String(req.query.dia) : hojeSPiso();
+  res.json({ dia, hoje: hojeSPiso(), itens: CK.itens(loja.id), marcados: CK.doDia(loja.id, dia), historico: CK.historico(loja.id), podeEditar: req.perfil !== 'vendedor' });
+});
+app.post('/api/checklist/marcar', express.json({ limit: '5kb' }), (req, res) => {
+  if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
+  const loja = lojaCk(req, res, true); if (!loja) return;
+  const dia = String(req.body.dia || '');
+  const hoje = hojeSPiso(), ontem = new Date(Date.parse(hoje + 'T12:00:00Z') - 864e5).toISOString().slice(0, 10);
+  if (dia !== hoje && dia !== ontem) return res.status(400).json({ erro: 'Só dá para marcar o checklist de hoje (ou de ontem, para o fechamento depois da meia-noite).' });
+  const r = CK.marcar(loja.id, dia, String(req.body.tipo || ''), String(req.body.item || ''), !!req.body.feito, req.user, req.body.obs);
+  if (r.erro) return res.status(400).json({ erro: r.erro });
+  res.json({ ok: true, marcados: r.ok });
+});
+app.put('/api/checklist/itens', express.json({ limit: '20kb' }), (req, res) => {
+  if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
+  if (req.perfil === 'vendedor') return res.status(403).json({ erro: 'Peça para a gerente.' });
+  const loja = lojaCk(req, res, true); if (!loja) return;
+  const r = CK.salvarItens(loja.id, req.body || {});
+  if (r.erro) return res.status(400).json({ erro: r.erro });
+  C.auditar(req.user, 'alterou o checklist de abertura e fechamento', loja.id, { loja: loja.id });
+  res.json({ ok: r.ok });
 });
 // orçamentos para empresas (só admin e franqueado: mostram custo e margem)
 const ORC = require('./src/orcamentos');

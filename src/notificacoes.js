@@ -159,7 +159,10 @@ async function montarFechamento(lojasIds, obter, dia, { semCaixa } = {}) {
       const f = F.calcular(d, dia);
       if (semCaixa) f.caixa = null;
       if (!f.temVendas) { textos.push(`━━ ${f.loja.nome} ━━\nSem vendas registradas em ${dia.split('-').reverse().join('/')} (a coleta da noite já rodou?).`); htmls.push(`<p><b>${esc(f.loja.nome)}</b>: sem vendas registradas no dia.</p>`); continue; }
-      textos.push(F.texto(f)); htmls.push(F.html(f));
+      // checklist de abertura e fechamento do dia (quem fez, a hora e o que faltou)
+      let ck = null; try { ck = require('./checklist').textoFechamento(id, dia); } catch { /* sem checklist */ }
+      textos.push(F.texto(f) + (ck ? `\n\n${ck}` : ''));
+      htmls.push(F.html(f) + (ck ? `<div style="margin-top:10px;padding:8px 10px;background:#f4f1ea;border-radius:8px;font-size:13px">${ck.split('\n').map((l, k) => (k ? esc(l) : `<b>${esc(l)}</b>`)).join('<br>')}</div>` : ''));
     } catch (e) { textos.push(`━━ ${id} ━━\nNão foi possível montar o fechamento: ${e.message}`); }
   }
   if (!textos.length) return null;

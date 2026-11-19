@@ -1,0 +1,31 @@
+'use strict';
+const { test } = require('node:test');
+const assert = require('node:assert');
+const os = require('os');
+const fs = require('fs');
+const path = require('path');
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ck-'));
+process.env.DATA_DIR = tmp;
+const CK = require('../../src/checklist');
+
+test('checklist: lista padrão, marcar com quem/hora, resumo e linha do e-mail de fechamento', () => {
+  const its = CK.itens('lj');
+  assert.ok(its.abertura.length >= 5 && its.fechamento.length >= 5);
+  assert.match(CK.marcar('lj', '2026-11-18', 'abertura', 'zz', true, 'ana').erro, /Item/);
+  for (const x of its.abertura) assert.ok(CK.marcar('lj', '2026-11-18', 'abertura', x.id, true, 'ana').ok);
+  CK.marcar('lj', '2026-11-18', 'fechamento', its.fechamento[0].id, true, 'bia');
+  CK.marcar('lj', '2026-11-18', 'fechamento', null, null, 'bia', 'faltou energia às 21h');
+  const r = CK.resumo('lj', '2026-11-18');
+  assert.equal(r.abertura.feitos, r.abertura.total);
+  assert.equal(r.fechamento.feitos, 1);
+  const t = CK.textoFechamento('lj', '2026-11-18');
+  assert.match(t, /Abertura: ✓ completa/);
+  assert.match(t, /Fechamento: 1 de \d+ · faltou:/);
+  assert.match(t, /faltou energia/);
+  assert.equal(CK.textoFechamento('lj', '2026-11-17'), null);
+  assert.match(CK.salvarItens('lj', { abertura: [], fechamento: [{ texto: 'x' }] }).erro, /abertura/);
+  const s = CK.salvarItens('lj', { abertura: [{ id: 'a1', texto: 'Abrir' }], fechamento: [{ texto: 'Fechar' }] }).ok;
+  assert.equal(s.abertura[0].id, 'a1');
+  assert.ok(s.fechamento[0].id);
+  fs.rmSync(tmp, { recursive: true, force: true });
+});

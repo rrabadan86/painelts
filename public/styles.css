@@ -2433,3 +2433,20 @@ details.vl-ajuda summary { cursor: pointer; font-weight: 600; }
 .md-v .md-barra { grid-column: 1 / -1; margin-top: 2px; }
 .md-alvo small { color: #6b6b6b; }
 .md-nota { display: block; margin-top: 8px; }
+/* Checklist */
+.ck-dia { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.ck-editar { margin-left: auto; }
+.ck-grade { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: start; }
+.ck-parte.ok { border-left: 4px solid #8fbf96; }
+.ck-topo { display: flex; justify-content: space-between; align-items: center; }
+.ck-cont { color: var(--green, #2C5234); }
+.ck-lista { display: flex; flex-direction: column; margin: 10px 0; }
+.ck-item { display: grid; grid-template-columns: 26px 1fr auto; gap: 8px; align-items: center; padding: 10px 4px; border-top: 1px solid #f0ebe0; cursor: pointer; font-size: 14.5px; }
+.ck-item input { width: 20px; height: 20px; }
+.ck-item.on .ck-txt { color: #6b6b6b; text-decoration: line-through; }
+.ck-quem { color: #1f5a2b; font-size: 12px; white-space: nowrap; }
+.ck-obs { min-height: 54px; }
+.ck-ed { width: min(860px, 96vw); max-height: 92vh; overflow: auto; }
+.ck-ed-grade { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.ck-ed-l { display: grid; grid-template-columns: 1fr auto auto; gap: 6px; margin-bottom: 6px; }
+@media (max-width: 760px) { .ck-grade, .ck-ed-grade { grid-template-columns: 1fr; } }

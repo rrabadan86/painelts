@@ -188,3 +188,16 @@ test('Hoje: meta do dia da loja e a parte de cada vendedora', async ({ page }, i
   await expect(c).toContainText(/Falta R\$/);
   await expect(c.locator('.md-v').first()).toBeVisible();
 });
+
+test('Checklist: marcar item guarda quem e a hora; editar os itens', async ({ page }, info) => {
+  test.skip(info.project.name !== 'computador');
+  await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS.db);
+  await page.evaluate(() => { location.hash = '#checklist'; });
+  const ab = page.locator('.ck-parte').first();
+  await expect(ab).toContainText('Abertura');
+  await ab.locator('.ck-item input').first().check();
+  await expect(page.locator('.ck-parte').first().locator('.ck-quem').first()).toContainText('apresentacao');
+  await expect(page.locator('.ck-parte').first()).toContainText('1 de 4');
+  await page.getByRole('button', { name: 'Editar os itens' }).click();
+  await expect(page.locator('.ck-ed')).toContainText('Fechamento');
+});
