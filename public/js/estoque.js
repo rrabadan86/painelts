@@ -19,9 +19,14 @@
   }
 
   const TAM_DIGITO = { 1: 50, 2: 100, 3: 250, 4: 500, 5: 1000 };
-  /** casa cada linha de venda com o item do estoque e calcula o custo */
-  function motor(estoque, cfg) {
+  /** casa cada linha de venda com o item do estoque e calcula o custo.
+   *  hist = { historico, compras } de /api/estoque: com ele, a venda de MÊS PASSADO usa o custo da data da venda
+   *  (custodata.js: notas de compra + fotos do custo; antes do primeiro custo conhecido, o mais antigo, marcado como estimado).
+   *  O mês em andamento continua com o custo de hoje do estoque (bate com o AppNext). Sem hist: tudo pelo custo de hoje. */
+  function motor(estoque, cfg, hist) {
     const db = TS.db, I = TS.rules.ids;
+    const CD = hist && TS.custoData && (hist.historico || hist.compras) ? TS.custoData.montar(hist.historico, hist.compras && hist.compras.itens) : null;
+    const ymHoje = TS.hojeSP().slice(0, 7);
     const porCod = new Map(), porNome = new Map(), porNomeKg = new Map();
     for (const it of estoque.itens) {
       porCod.set(String(it.cod), it);
@@ -55,13 +60,29 @@
       return r;
     }
     const taxa = (i) => I.taxas.has(db.desc[i]) || (db.vu[i] != null && Math.abs(db.vu[i] - 0.01) < 1e-7);
-    /** custo da linha (R$) ou null */
-    function custo(i) {
+    /** custo da linha pelo custo de HOJE do estoque (R$) ou null */
+    function custoHoje(i) {
       const c = casar(i);
       if (!c || !c.it.custo) return null;
       const q = db.qtd[i] || 0;
       return c.kg ? q * ((c.g / 1000) * c.it.custo + custoEmb(c.g)) : q * c.it.custo;
     }
+    /** custo da linha com a origem: { v (R$), est (parte dele é estimada), naData (usou o custo da data da venda) } ou null.
+     *  Mês passado: custo de cada item na data da venda; mês em andamento (ou sem histórico carregado): custo de hoje. */
+    function custoDet(i) {
+      if (!CD || !(db.ym[i] < ymHoje)) { const v = custoHoje(i); return v == null ? null : { v, est: false, naData: false }; }
+      const c = casar(i);
+      if (!c) return null;
+      const dia = db.day[i], q = db.qtd[i] || 0;
+      const a = CD.custoEm(c.it, dia);
+      if (!(a.v > 0)) return null;
+      if (!c.kg) return { v: q * a.v, est: a.est, naData: true };
+      let e = 0, est = a.est;
+      for (const x of emb[c.g] || []) { const b = CD.custoEm(x.it, dia); e += (b.v || 0) * x.qtd; est = est || (b.v > 0 && b.est); }
+      return { v: q * ((c.g / 1000) * a.v + e), est, naData: true };
+    }
+    /** custo da linha (R$) ou null: o da data da venda nos meses passados, o de hoje no mês em andamento */
+    const custo = (i) => { const d = custoDet(i); return d ? d.v : null; };
     /** consumo de estoque da linha: [[item, quantidade na unidade do item]] */
     function consumo(i) {
       const c = casar(i);
@@ -96,7 +117,7 @@
       it = porNome.get(ESQ(desc));
       return it && it.custo ? { custo: it.custo, kg: false, it } : null;
     }
-    return { casar, custo, consumo, taxa, porCod, materiaPrima, custoEmbLinha, custoCadastro, cfg };
+    return { casar, custo, custoDet, custoHoje, custoNaData: CD ? CD.custoNaData : null, custoInicio: CD ? CD.inicio : null, consumo, taxa, porCod, materiaPrima, custoEmbLinha, custoCadastro, cfg };
   }
 
   /** motor de custos da loja escolhida (ou null se não houver estoque / permissão) */
@@ -282,7 +303,7 @@
     const x = await buscar(state.loja);
     if (!x.estoque || !x.estoque.itens || !x.estoque.itens.length) return null;
     let m = motores.get(TS.db);
-    if (!m || m.est !== x.estoque || m.cfg !== x.cfg) { m = { est: x.estoque, cfg: x.cfg, M: motor(x.estoque, x.cfg) }; m.M.ded = criarDeducoes(m.M, x.cfg); motores.set(TS.db, m); }
+    if (!m || m.est !== x.estoque || m.cfg !== x.cfg || m.hist !== x.historico || m.comp !== x.compras) { m = { est: x.estoque, cfg: x.cfg, hist: x.historico, comp: x.compras, M: motor(x.estoque, x.cfg, { historico: x.historico, compras: x.compras }) }; m.M.ded = criarDeducoes(m.M, x.cfg); motores.set(TS.db, m); }
     return m.M;
   };
 
@@ -417,7 +438,7 @@
       return;
     }
     const db = TS.db;
-    const M = motor(estoque, cfg);
+    const M = motor(estoque, cfg, { historico, compras });
     const temCod = db.D.cod && db.D.cod.some((c) => c);
     put(!EQ, h('div', { class: 'muted est-origem' }, `Estoque e custos do AppNext de ${new Date(estoque.em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })} · ${fmt.int(estoque.itens.length)} produtos`,
       temCod ? null : ' · ', temCod ? null : h('details', { class: 'est-como' }, h('summary', null, 'As vendas estão sem o código do produto. Como funciona ▸'),
@@ -427,7 +448,7 @@
 
     // ---------- rentabilidade no período e filtros escolhidos ----------
     const base = TS.filtrar();
-    let fat = 0, fatCusto = 0, custoTot = 0;
+    let fat = 0, fatCusto = 0, custoTot = 0, custoNaDataTot = 0, custoEstTot = 0;
     const dedTot = { com: 0, roy: 0, imp: 0, maq: 0, out: 0 };
     const outrosTot = OUTROS.map(() => 0);
     const porProd = new Map(), porVend = new Map(), semCusto = new Map();
@@ -440,7 +461,8 @@
       if (M.taxa(i)) continue;
       const vt = db.vt[i] || 0;
       fat += vt;
-      const c = M.custo(i);
+      const cd = M.custoDet(i), c = cd ? cd.v : null;
+      if (cd && cd.naData) { custoNaDataTot += c; if (cd.est) custoEstTot += c; }
       const d = db.D.descricao[db.desc[i]];
       if (c == null) {
         const cs0 = M.casar(i);
@@ -485,6 +507,9 @@
     }
     for (const i of base) { if (M.taxa(i)) continue; const v = porVend.get(db.D.vendedor[db.vend[i]] || '—'); if (v) v.fat += db.vt[i] || 0; }
     put(R && nResg > 0, h('div', { class: 'muted est-origem' }, `${fmt.int(nResg)} ${nResg === 1 ? 'item saiu' : 'itens saíram'} a R$ 0,01 (prêmios de fidelidade e brindes): ${nResg === 1 ? 'fica' : 'ficam'} fora da margem de cada produto e ${nResg === 1 ? 'entra' : 'entram'} só no total da loja (custo de ${fmt.brl(custoResg)}).`));
+    // custo da data da venda: avisa (linha discreta) quanto do custo do período veio da data e quanto é estimado
+    put(R && custoNaDataTot > 0, h('div', { class: 'muted est-origem est-custo-data' }, `Custo da data da venda: ${fmt.pct(custoNaDataTot / custoTot, 0)} do custo do período${custoEstTot > 0 ? ` · ${fmt.pct(custoEstTot / custoTot, 0)} estimado` : ''} `,
+      TS.dica(`Venda de mês passado usa o custo que o produto tinha no dia da venda (notas de compra do AppNext + o custo que o painel guarda a cada planilha de estoque), não o custo de hoje: se o custo subiu depois, a margem daquele mês não piora sozinha.\n\nVenda do mês em andamento usa o custo de hoje do estoque.\n\nNeste período: ${fmt.brl0(custoNaDataTot)} de ${fmt.brl0(custoTot)} do custo vieram da data da venda${custoEstTot > 0 ? `; ${fmt.brl0(custoEstTot)} (${fmt.pct(custoEstTot / custoTot, 0)}) são ESTIMADOS: a venda é anterior ao primeiro custo que o painel conhece do produto${Number.isFinite(M.custoInicio) ? ` (o histórico de custos começa em ${fmt.date(TS.dayToIso(M.custoInicio))})` : ''}, então vale o custo mais antigo conhecido` : ' e nada precisou ser estimado'}.`)));
     const lucro = fatCusto - custoTot;
     const tamTxt = (m) => [...m].sort((a, b) => a[0] - b[0]).map(([g, q]) => `${fmt.int(q)}× ${g >= 1000 ? g / 1000 + ' kg' : g + 'g'}`).join(' · ');
     const prods = [...porProd.values()].filter((p) => p.vt > 0).map((p) => {
@@ -1121,7 +1146,7 @@
         { key: 'tend', label: 'Tendência', title: 'O que saiu por mês no período escolhido comparado com a mediana mensal da classe oficial. ↑ vendendo 20% ou mais acima do normal; ↓ 20% ou mais abaixo. Com períodos curtos (poucos dias) a conta oscila mais', render: (r) => celTend(r), sortVal: (r) => (r.tend == null ? -9 : r.tend) },
         { key: 'giro', label: 'Vendido', title: 'Quanto saiu no período. Chá a granel em kg, somando todos os tamanhos; os outros em unidades', render: (r) => (r.granel ? `${fmt.kg(r.giro)} kg` : `${fmt.int(r.giro)} un.`), sortVal: (r) => r.giro },
         { key: 'vt', label: 'Faturamento', title: 'Valor vendido no período (sem taxa de serviço)', fmt: fmt.brl },
-        { key: 'custo', label: 'Custo', title: 'Custo do AppNext × quantidade vendida. No chá a granel: kg × custo do kg + saco kraft e etiquetas de cada pacote', fmt: fmt.brl },
+        { key: 'custo', label: 'Custo', title: 'Custo do produto × quantidade vendida. Venda de mês passado: o custo que o produto tinha na data da venda (notas de compra e histórico de custos do painel); mês em andamento: o custo de hoje do AppNext. No chá a granel: kg × custo do kg + saco kraft e etiquetas de cada pacote', fmt: fmt.brl },
         { key: 'lucro', label: 'Lucro bruto', title: 'Faturamento − custo', fmt: fmt.brl, cls: (r) => (r.lucro < 0 ? 'miss' : '') },
         { key: 'margem', label: 'Margem bruta', title: 'Lucro bruto ÷ faturamento. Em vermelho quando fica abaixo de 30%', fmt: (v) => fmt.pct(v), cls: (r) => (r.margem < 0.3 ? 'miss' : '') },
         { key: 'margemTab', label: 'Margem de tabela', title: 'Margem bruta pelo preço de tabela do cadastro do AppNext (sem desconto) com o custo atual. A diferença para a margem bruta praticada é o efeito dos descontos. Chá a granel: média dos pacotes pela quantidade vendida de cada tamanho', render: (r) => (r.margemTab == null ? h('span', { class: 'muted' }, '—') : h('span', { title: r.margemTab - r.margem > 0.005 ? `${fmt.n1((r.margemTab - r.margem) * 100)} pontos a mais que a praticada: é o que o desconto levou` : '' }, fmt.pct(r.margemTab))), sortVal: (r) => r.margemTab },
@@ -1135,7 +1160,7 @@
       // Resumo: classe oficial com a do período e a tendência embaixo (uma coluna em vez de três)
       { key: 'classeRes', label: 'Classe', align: 'l', title: `Em cima, a classe oficial (mediana de ${CO.meses} meses, a que o Pedido usa${podeTravar ? '; escolha para travar à mão 🔒' : ''}). Embaixo, a classe só no período do filtro e a tendência (o que saiu por mês no período × o normal). ${COMO_CLASSE}`,
         render: (r) => h('div', { class: 'est-cl-res' }, celOficial(r), h('small', { class: 'est-tam' }, 'no período: ', r.classe ? CLASSE[r.classe][0] : '—', r.tend != null ? h('span', null, ' · ', celTend(r)) : null)), sortVal: (r) => ORD_CL[r.oficial] || 0 },
-      { key: 'lucroRes', label: 'Lucro bruto', title: 'Faturamento − custo. Embaixo, o custo', render: (r) => h('span', { class: r.lucro < 0 ? 'neg' : null }, fmt.brl(r.lucro), h('small', { class: 'est-tam' }, 'custo ' + fmt.brl(r.custo))), sortVal: (r) => r.lucro },
+      { key: 'lucroRes', label: 'Lucro bruto', title: 'Faturamento − custo. Embaixo, o custo (o da data da venda nos meses passados; o de hoje no mês em andamento)', render: (r) => h('span', { class: r.lucro < 0 ? 'neg' : null }, fmt.brl(r.lucro), h('small', { class: 'est-tam' }, 'custo ' + fmt.brl(r.custo))), sortVal: (r) => r.lucro },
     ];
     const VIS = {
       resumo: ['Resumo', ['produto', 'abc', 'classeRes', 'giro', 'vt', 'lucroRes', 'margem', 'margemContrib'], 'Classe, venda, lucro e margens (as outras colunas em "Lucro e margens")'],
