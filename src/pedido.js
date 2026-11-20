@@ -194,7 +194,10 @@ function progresso(c, b) {
   const num = (v) => (Number.isFinite(+v) ? Math.round(+v * 1000) / 1000 : null);
   const cods = new Set(x.itens.map((i) => String(i.cod)));
   const itens = (Array.isArray(b.itens) ? b.itens : []).slice(0, 400).filter((i) => cods.has(String(i.cod)) && STATUS.has(i.status))
-    .map((i) => ({ cod: String(i.cod), nome: txt(i.nome, 120), pedido: num(i.pedido), qtd: num(i.qtd), preco: num(i.preco), status: i.status, erro: i.erro ? txt(i.erro, 200) : undefined }));
+    .map((i) => ({ cod: String(i.cod), nome: txt(i.nome, 120), pedido: num(i.pedido), qtd: num(i.qtd), preco: num(i.preco), status: i.status, erro: i.erro ? txt(i.erro, 200) : undefined,
+      // venda conjunta: o que o site exigiu colocar junto (ex.: o infusor da mug) — só código, nome, quantidade e preço
+      junto: Array.isArray(i.junto) && i.junto.length ? i.junto.slice(0, 10).map((j) => ({ cod: txt(j.cod, 30), nome: txt(j.nome, 120), qtd: num(j.qtd), preco: num(j.preco) })).filter((j) => j.nome) : undefined }));
+  if (b.fim) guardarConjuntos(x.loja, itens);
   // em uso: não vence no meio — mas só até 3 h depois de gerado (um código vazado não se renova para sempre)
   x.expira = Math.max(x.expira, Math.min(Date.now() + 15 * 60e3, (x.criado || Date.now()) + CODIGO_TETO_MS));
   const novo = { ...atual, aguardando: false, itens, total: x.itens.length, atual: b.atual ? txt(b.atual, 120) : undefined, expira: new Date(x.expira).toISOString(),
@@ -202,6 +205,43 @@ function progresso(c, b) {
   C.gravarAtomico(f, JSON.stringify(novo), 0o640);
   // o servidor usa no fim para responder as ⭐ sugestões que o site recusou (só a loja e o resultado; nada vai ao favorito)
   return { ok: true, _loja: x.loja, _fim: !!b.fim, _itens: itens };
+}
+
+// ---------- carrinho salvo (Estoque → Pedido → "Salvar carrinho"): as quantidades de cada produto, para terminar depois ----------
+// dados/<loja>/pedido/rascunho.json = { itens: { cod: qtd }, por, em }; vale 5 dias e é um por loja (quem tem a tela Pedido continua de onde o outro parou)
+const RASCUNHO_DIAS = 5;
+const arqRasc = (id) => path.join(pasta(id), 'rascunho.json');
+function rascunho(id, agora = Date.now()) {
+  const d = ler(arqRasc(id));
+  if (!d || !d.em || !d.itens || typeof d.itens !== 'object') return null;
+  const expira = Date.parse(d.em) + RASCUNHO_DIAS * 864e5;
+  if (!(expira > agora)) return null; // venceu: é como se não existisse (o arquivo é trocado no próximo salvar)
+  return { itens: d.itens, por: d.por || '', em: d.em, expira: new Date(expira).toISOString(), dias: RASCUNHO_DIAS };
+}
+function salvarRascunho(id, itens, por) {
+  if (!itens || typeof itens !== 'object' || Array.isArray(itens)) return { erro: 'Carrinho inválido.' };
+  const out = {};
+  for (const [cod, q] of Object.entries(itens).slice(0, 2000)) {
+    const c = String(cod).trim(), n = Math.round(Number(q) * 1000) / 1000;
+    if (!/^[A-Za-z0-9._-]{1,30}$/.test(c) || !Number.isFinite(n) || n < 0 || n > 100000) continue;
+    out[c] = n;
+  }
+  if (!Object.values(out).some((q) => q > 0)) return { erro: 'O carrinho está vazio: não há o que salvar.' };
+  fs.mkdirSync(pasta(id), { recursive: true });
+  C.gravarAtomico(arqRasc(id), JSON.stringify({ itens: out, por: String(por || ''), em: new Date().toISOString() }), 0o640);
+  return { ok: rascunho(id) };
+}
+function apagarRascunho(id) { try { fs.unlinkSync(arqRasc(id)); } catch { /* já não havia */ } return { ok: true }; }
+
+// venda conjunta do site (ex.: a mug só é vendida com o infusor dela): o que o favorito viu fica guardado por produto
+const arqConj = (id) => path.join(pasta(id), 'conjuntos.json');
+const conjuntos = (id) => ler(arqConj(id)) || {};
+function guardarConjuntos(id, itens) {
+  const com = (itens || []).filter((i) => i.junto && i.junto.length);
+  if (!com.length) return;
+  const d = conjuntos(id);
+  for (const i of com) d[i.cod] = { nome: i.nome, junto: i.junto.map((j) => ({ cod: j.cod, nome: j.nome, porUnidade: i.qtd > 0 && j.qtd > 0 ? Math.round((j.qtd / i.qtd) * 1000) / 1000 : null, preco: j.preco })), em: new Date().toISOString() };
+  try { fs.mkdirSync(pasta(id), { recursive: true }); C.gravarAtomico(arqConj(id), JSON.stringify(d), 0o640); } catch { /* só um registro: o carrinho segue */ }
 }
 
 // ---------- pedido obrigatório: o que a franquia manda de qualquer forma (entra no valor e conta como estoque chegando) ----------
@@ -249,4 +289,4 @@ function alterarObrig(id, b, por) {
   return { ok: obrigatorios(id), item: o };
 }
 
-module.exports = { foraDeLinha, atualizarDisp, FORA_DE_LINHA_DIAS, obrigatorios, alterarObrig, ORIGENS, criarCodigo, lerCodigo, progresso, acesso, gravarAcesso, catalogo, carrinho, gravarEntrada, cfg, validarCfg, validarItens, EVENTOS };
+module.exports = { rascunho, salvarRascunho, apagarRascunho, RASCUNHO_DIAS, conjuntos, foraDeLinha, atualizarDisp, FORA_DE_LINHA_DIAS, obrigatorios, alterarObrig, ORIGENS, criarCodigo, lerCodigo, progresso, acesso, gravarAcesso, catalogo, carrinho, gravarEntrada, cfg, validarCfg, validarItens, EVENTOS };

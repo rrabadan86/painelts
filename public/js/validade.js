@@ -174,76 +174,84 @@
   const pendentes = (loja) => (req('GET', `validade/notas?loja=${encodeURIComponent(loja)}`).then((j) => j.pendentes || {}).catch(() => ({})));
 
   /**
-   * Janela "Pacotes deste chá" (aberta pelo Estoque e pela Validade): os lotes do chá do mais antigo para o mais novo, o que está na lata
-   * e os pacotes fechados. Aqui a loja informa "abri um pacote" (hoje ou outra data) ou corrige a data do que já está aberto.
+   * Janela dos lotes de um chá (a mesma no Estoque e na Validade, ao clicar no nome do chá).
+   * Em cima, o chá ABERTO: nota, chegada, abertura, vencimento depois de aberto e quantidade (datas editáveis).
+   * Embaixo, os lotes FECHADOS, do mais antigo para o mais novo: nota, chegada, validade do pacote, quantidade e "Abrir lote"
+   * (marca a abertura hoje; o vencimento passa a ser 6 meses depois).
    */
   function janelaPacotes(loja, cod, desc, aoMudar) {
     document.querySelectorAll('.vl-pac-bg').forEach((x) => x.remove());
     const fundo = h('div', { class: 'cp-modal-bg vl-pac-bg' });
-    const caixa = h('div', { class: 'card vl-pac', role: 'dialog', 'aria-modal': 'true', 'aria-label': `Pacotes de ${desc}` }, h('p', { class: 'muted' }, 'Carregando…'));
+    const caixa = h('div', { class: 'card vl-pac', role: 'dialog', 'aria-modal': 'true', 'aria-label': `Lotes de ${desc}` }, h('p', { class: 'muted' }, 'Carregando…'));
     fundo.append(caixa); document.body.append(fundo);
     const fechar = () => fundo.remove();
     fundo.addEventListener('click', (e) => { if (e.target === fundo) fechar(); });
     fundo.addEventListener('keydown', (e) => { if (e.key === 'Escape') fechar(); });
-    const enviar = (l, corpo, el, msg) => {
+    const enviar = (rota, corpo, el, msg) => {
       if (TS.demo) { toast(TS.DEMO_AVISO); return; }
       el.disabled = true;
-      req('PUT', 'validade/abertura', { loja, chave: l.chave, ...corpo }).then(() => { cache.delete(loja); toast(msg); if (aoMudar) aoMudar(); carregar(); }).catch((e) => { el.disabled = false; toast(e.message, true); });
+      req('PUT', rota, { loja, ...corpo }).then(() => { cache.delete(loja); toast(msg); if (aoMudar) aoMudar(); carregar(); }).catch((e) => { el.disabled = false; toast(e.message, true); });
     };
-    const gravar = (l, dia, el) => enviar(l, { dia }, el, dia ? 'Abertura salva.' : 'Abertura desfeita.');
-    const campoData = (l, valor, rotulo) => {
-      const i = h('input', { class: 'f-input vl-abriu-data', type: 'date', value: valor || '', min: l.entrada || null, 'aria-label': rotulo });
-      TS.aoConfirmar(i, () => { if (i.value && i.value !== valor) gravar(l, i.value, i); }); // só ao sair do campo
+    /** campo de data que só grava ao sair do campo */
+    const data = (valor, attrs, aoMudarData) => {
+      const i = h('input', { class: 'f-input vl-pac-data', type: 'date', value: valor || '', ...attrs });
+      TS.aoConfirmar(i, () => { if (i.value && i.value !== (valor || '')) aoMudarData(i.value, i); });
       return i;
     };
-    function linha(l, d) {
-      const P = d.pacoteKg || 1, M = d.mesesAberto || 6, partes = [];
-      if (l.pacoteN > 0 && l.abertoEm) {
-        const i = campoData(l, l.abertoEm, `Dia em que ${desc} foi para a lata`); i.max = d.hoje;
-        partes.push(h('div', { class: 'vl-pac-sit' }, h('b', null, `🫙 Na lata: ${kgTxt(l.aberto)}`),
-          h('div', null, 'Foi para a lata em ', i, l.abertoEstimado ? h('span', { class: 'badge cinza', title: 'O painel estimou esta data pelo ritmo do chá. Se a loja sabe o dia certo, troque a data.' }, 'estimado') : h('span', { class: 'muted' }, l.abertoPor ? ` informado por ${l.abertoPor}` : '')),
-          (() => {
-            const ate = h('input', { class: 'f-input vl-abriu-data vl-ate', type: 'date', value: l.validadeAberto || '', min: l.abertoEm, 'aria-label': `Consumir ${desc} até` });
-            TS.aoConfirmar(ate, () => { if (ate.value && ate.value !== l.validadeAberto) enviar(l, { ate: ate.value }, ate, 'Vencimento salvo.'); }); // só ao sair do campo
-            return h('div', { class: l.motivo === 'aberto' && l.dias < 30 ? 'neg' : null }, 'Consumir até ', ate,
-              TS.dica(`Data de vencimento do chá que está na lata. Vem preenchida com ${M} meses depois da abertura e pode ser trocada. Depois de aberto, é esta a validade do chá.`),
-              l.validadeAbertoEditada ? h('button', { type: 'button', class: 'link-btn', title: `Volta para a data sugerida: ${fmt.date(l.validadeAbertoPadrao)}.`, onclick: (e) => enviar(l, { ate: '' }, e.target, 'Vencimento voltou para a data sugerida.') }, `voltar para ${fmt.date(l.validadeAbertoPadrao)}`) : null);
-          })(),
-          h('small', { class: 'muted' }, `Validade do pacote (para os fechados): ${l.validadePacote ? fmt.date(l.validadePacote) : '—'}.`),
-          !l.abertoEstimado ? h('button', { type: 'button', class: 'link-btn', title: 'Apaga a data informada. Se o estoque mostrar que o pacote está aberto, o painel volta a estimar; senão o pacote volta a contar como fechado.', onclick: (e) => gravar(l, '', e.target) }, 'desfazer a data informada') : null));
-      }
-      if (l.fechado > 0.0005) {
-        const n = Math.round(l.fechado / P);
-        const hoje = h('button', { type: 'button', class: 'btn' + (l.abrirOrdem === 1 ? ' primary' : ''), title: `Registra que um pacote deste lote foi para a lata hoje. A partir de hoje ele tem ${M} meses para ser consumido.` }, 'Abri um pacote hoje');
-        hoje.addEventListener('click', () => gravar(l, d.hoje, hoje));
-        const outra = campoData(l, '', `Outro dia em que um pacote de ${desc} foi aberto`); outra.max = d.hoje;
-        partes.push(h('div', { class: 'vl-pac-sit' }, h('b', null, `📦 ${n > 0 ? `${fmt.int(n)} ${n === 1 ? 'pacote fechado' : 'pacotes fechados'}` : `${kgTxt(l.fechado)} fechado`} · ${l.abrirOrdem === 1 ? 'o próximo a abrir' : `abrir em ${l.abrirOrdem}º`}`),
-          (() => {
-            const v = h('input', { class: 'f-input vl-abriu-data vl-val-pac', type: 'date', value: l.validadePacote || '', min: l.entrada || null, 'aria-label': `Validade do pacote de ${desc}` });
-            TS.aoConfirmar(v, () => { if (v.value === (l.validadePacote || '')) return; if (TS.demo) { toast(TS.DEMO_AVISO); return; } v.disabled = true;
-              req('PUT', 'validade/lote', { loja, chave: l.chave, validade: v.value }).then(() => { cache.delete(loja); toast('Validade do pacote salva.'); if (aoMudar) aoMudar(); carregar(); }).catch((e) => { v.disabled = false; toast(e.message, true); }); });
-            return h('div', null, 'Fechado, vale a validade do pacote: ', v, TS.dica('A data impressa no pacote. Vem preenchida com 12 meses depois da chegada: troque pela que está no pacote.'));
-          })(),
-          l.pacoteN > 0 ? null : h('div', { class: 'vl-pac-acoes' }, hoje, h('span', { class: 'muted' }, 'ou em'), outra, TS.dica('Use quando o pacote foi aberto e ainda não vendeu nada dele, ou quando abriram este antes de acabar o anterior. Não muda o estoque: só marca desde quando o chá está na lata.'))));
-      }
-      if (!partes.length) partes.push(h('small', { class: 'muted' }, l.entrada ? 'Sem pacote para abrir.' : 'Saldo sem nota: o painel não sabe de qual pacote veio. Acerte pelo inventário por lote.'));
-      return h('div', { class: 'vl-pac-lote' },
-        h('div', { class: 'vl-pac-cab' },
-          h('b', null, l.entrada ? `NF ${l.nf} · chegou em ${fmt.date(l.entrada)}` : 'Saldo sem nota',
-            l.pacoteN > 0 ? h('span', { class: 'badge warn vl-pac-est', title: 'Tem chá deste lote fora do pacote, na lata.' }, l.fechado > 0.0005 ? 'Aberto + fechado' : 'Aberto')
-              : l.fechado > 0.0005 ? h('span', { class: 'badge cinza vl-pac-est', title: 'Todos os pacotes deste lote estão fechados.' }, 'Fechado') : null),
-          h('span', { class: 'muted' }, `${l.lote && l.lote !== '0' ? `lote ${l.lote} · ` : 'sem nº de lote · '}saldo ${kgTxt(l.saldo)}`)),
-        l.venceEm ? h('div', { class: 'vl-pac-vence' }, 'Vence em ', h('b', null, fmt.date(l.venceEm)), ' ', badge(l.faixa), h('small', { class: 'muted' }, l.motivo === 'aberto' ? ' pela data de depois de aberto' : ' pela validade do pacote')) : null,
-        ...partes);
-    }
+    const campo = (rotulo, valor, dica, marca) => h('div', { class: 'vl-pac-campo' }, h('small', null, rotulo, dica ? TS.dica(dica) : null, marca || null), h('div', null, valor));
+    const nfTxt = (l) => (l.entrada ? `NF ${l.nf}` : 'sem nota');
     function carregar() {
       dados(loja, true).then((d) => {
         if (!fundo.isConnected) return;
+        const M = d.mesesAberto || 6, P = d.pacoteKg || 1;
         const ls = d.lotes.filter((l) => String(l.cod) === String(cod)).sort((a, b) => (String(a.entrada || '') < String(b.entrada || '') ? -1 : 1));
+        // ---- aberto: uma linha por pacote na lata ----
+        const abertos = ls.flatMap((l) => (l.abertos || []).map((a) => ({ l, a }))).sort((x, y) => (x.a.abertoEm < y.a.abertoEm ? -1 : 1));
+        const linhaAberto = ({ l, a }) => h('div', { class: 'vl-pac-linha vl-pac-aberto' },
+          campo('Nota de entrada', h('b', null, nfTxt(l)), l.lote && l.lote !== '0' ? `Lote ${l.lote}.` : 'Sem nº de lote digitado.'),
+          campo('Chegou em', fmt.date(l.entrada)),
+          campo('Aberto em', data(a.abertoEm, { min: l.entrada || null, max: d.hoje, 'aria-label': `Dia em que o chá da ${nfTxt(l)} foi aberto` }, (v, el) => enviar('validade/abertura', { chave: l.chave, n: a.n, dia: v }, el, 'Data de abertura salva.')),
+            a.estimado ? 'O painel estimou esta data pelo ritmo do chá (ele não vê o pacote sendo aberto). Se a loja sabe o dia certo, troque.' : `Informado por ${a.por || 'alguém da equipe'}. Pode trocar.`,
+            a.estimado ? h('span', { class: 'vl-pac-marca' }, 'estimado') : null),
+          campo('Vence em', data(a.validade, { min: a.abertoEm, class: 'f-input vl-pac-data vl-ate', 'aria-label': `Vencimento do chá aberto da ${nfTxt(l)}` }, (v, el) => enviar('validade/abertura', { chave: l.chave, n: a.n, ate: v }, el, 'Vencimento salvo.')),
+            `Depois de aberto, o chá vale ${M} meses. A data vem preenchida (abertura + ${M} meses) e pode ser trocada.`,
+            a.editada ? h('button', { type: 'button', class: 'link-btn vl-pac-marca', title: `Volta para ${fmt.date(a.validadePadrao)} (${M} meses depois da abertura).`, onclick: (e) => enviar('validade/abertura', { chave: l.chave, n: a.n, ate: '' }, e.target, 'Vencimento voltou para a data calculada.') }, 'voltar à calculada') : null),
+          campo('Quantidade', h('b', null, kgTxt(a.kg)), 'Quanto deste pacote ainda está na lata, pelo estoque do AppNext.'),
+          !a.estimado ? h('div', { class: 'vl-pac-acao' }, h('button', { type: 'button', class: 'link-btn', title: 'Apaga a abertura informada. Se o estoque mostrar que o pacote está aberto, o painel volta a estimar a data; senão o pacote volta a contar como fechado.', onclick: (e) => enviar('validade/abertura', { chave: l.chave, n: a.n, dia: '' }, e.target, 'Abertura desfeita.') }, 'desfazer')) : null);
+        // ---- fechado: uma linha por lote com pacote fechado, do mais antigo para o mais novo ----
+        const fechados = ls.filter((l) => l.fechado > 0.0005 && l.entrada);
+        const linhaFechado = (l, k) => {
+          const n = Math.round(l.fechado / P);
+          const abrir = h('button', { type: 'button', class: 'btn vl-pac-abrir' + (k === 0 ? ' primary' : ''), title: `Marca um pacote desta nota como aberto hoje (${fmt.date(d.hoje)}). O vencimento dele passa a ser ${M} meses depois. Dá para corrigir a data em seguida, na parte de cima.` }, 'Abrir lote');
+          abrir.addEventListener('click', () => enviar('validade/abertura', { chave: l.chave, abrir: true }, abrir, 'Lote aberto hoje.'));
+          return h('div', { class: 'vl-pac-linha vl-pac-fechado' },
+            campo('Nota de entrada', h('b', null, nfTxt(l)), l.lote && l.lote !== '0' ? `Lote ${l.lote}.` : 'Sem nº de lote digitado.'),
+            campo('Chegou em', fmt.date(l.entrada)),
+            campo('Validade do pacote', data(l.validadePacote, { min: l.entrada || null, 'aria-label': `Validade do pacote da ${nfTxt(l)}` }, (v, el) => enviar('validade/lote', { chave: l.chave, validade: v }, el, 'Validade do pacote salva.')),
+              'A data impressa no pacote, que vale enquanto ele está fechado. Vem preenchida com 12 meses depois da chegada: troque pela do pacote.'),
+            campo('Quantidade', h('span', null, h('b', null, kgTxt(l.fechado)), n > 0 ? h('small', { class: 'muted' }, ` · ${fmt.int(n)} ${n === 1 ? 'pacote' : 'pacotes'}`) : null)),
+            h('div', { class: 'vl-pac-acao' }, abrir, h('small', { class: 'muted' }, k === 0 ? 'o próximo a abrir' : `abrir em ${k + 1}º`)));
+        };
+        const semNota = ls.filter((l) => !l.entrada);
         caixa.replaceChildren(...[
-          h('div', { class: 'vl-pac-topo' }, h('h3', null, `Pacotes de ${desc}`), h('button', { type: 'button', class: 'link-btn', onclick: fechar }, 'Fechar ✕')),
-          h('p', { class: 'muted' }, `Do mais antigo para o mais novo: abra sempre o primeiro da lista. Fechado, vale a validade do pacote. Depois que vai para a lata, vale o "consumir até" (vem com ${d.mesesAberto || 6} meses da abertura). Todas as datas vêm preenchidas e podem ser trocadas.`),
-          ls.length ? h('div', { class: 'vl-pac-lista' }, ls.map((l) => linha(l, d))) : h('p', { class: 'muted' }, 'Este chá não tem saldo no estoque agora.'),
+          h('div', { class: 'vl-pac-topo' }, h('h3', null, `Lotes de ${desc}`), h('button', { type: 'button', class: 'link-btn', onclick: fechar }, 'Fechar ✕')),
+          h('div', { class: 'vl-pac-sec' }, h('h4', null, '🫙 Chá aberto', TS.dica(`O chá que já saiu do pacote e está na lata. Vale ${M} meses a partir da abertura. O painel descobre pelo estoque qual está aberto; "Abrir lote", embaixo, marca um pacote como aberto hoje.`)),
+            abertos.length ? abertos.map(linhaAberto) : h('p', { class: 'muted vl-pac-vazio' }, fechados.length ? 'Nenhum pacote aberto: pelo estoque, estão todos fechados. Abriu um? Use "Abrir lote" abaixo.' : 'Nenhum pacote aberto.')),
+          h('div', { class: 'vl-pac-sec' }, h('h4', null, '📦 Lotes fechados', TS.dica('Pacotes ainda fechados, do mais antigo para o mais novo: abra sempre o primeiro da lista. Fechado, vale a validade do pacote.')),
+            fechados.length ? fechados.map(linhaFechado) : h('p', { class: 'muted vl-pac-vazio' }, 'Nenhum pacote fechado deste chá.')),
+          (() => {
+            const hs = (d.historico || []).filter((x) => String(x.cod) === String(cod));
+            if (!hs.length) return h('p', { class: 'muted vl-pac-hist-vazio' }, 'Histórico: ainda não há pacote deste chá que tenha acabado desde que o painel passou a registrar as aberturas.');
+            return h('details', { class: 'vl-pac-hist' }, h('summary', null, `Histórico de aberturas (${fmt.int(hs.length)})`, TS.dica('Pacotes deste chá que já acabaram: de qual nota eram, quando chegaram, quando foram abertos (estimado pelo painel ou informado por alguém), até quando valiam e quando acabaram. Fica guardado por 3 anos. As alterações feitas à mão também aparecem em Configurações → Histórico de alterações.')),
+              h('div', { class: 'vl-pac-hist-l' }, hs.map((x) => h('div', { class: 'vl-pac-linha vl-pac-hist-i' },
+                campo('Nota de entrada', h('b', null, x.nf ? `NF ${x.nf}` : 'sem nota'), x.lote ? `Lote ${x.lote}.` : null),
+                campo('Chegou em', fmt.date(x.entrada)),
+                campo('Aberto em', h('span', null, fmt.date(x.abertoEm), h('small', { class: 'muted' }, x.estimado ? ' · estimado' : x.por ? ` · por ${x.por}` : ''))),
+                campo('Valia até', h('span', { class: x.acabouEm > x.validade ? 'neg' : null, title: x.acabouEm > x.validade ? 'Acabou depois do vencimento.' : null }, fmt.date(x.validade))),
+                campo('Acabou em', fmt.date(x.acabouEm))))));
+          })(),
+          semNota.length ? h('p', { class: 'muted vl-pac-semnota' }, `Saldo sem nota: ${kgTxt(semNota.reduce((x, l) => x + l.saldo, 0))}. O painel não sabe de qual pacote veio: acerte pelo inventário por lote.`) : null,
+          !ls.length ? h('p', { class: 'muted' }, 'Este chá não tem saldo no estoque agora.') : null,
         ].filter(Boolean));
       }).catch((e) => caixa.replaceChildren(h('div', { class: 'notice err' }, e.message), h('button', { type: 'button', class: 'btn', onclick: fechar }, 'Fechar')));
     }

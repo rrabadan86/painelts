@@ -120,6 +120,10 @@ test('a primeira observação guarda a data (não fica mudando); pacote que acab
     L.observarAberturas('l1', HOJE);
     reg = JSON.parse(fs.readFileSync(arq, 'utf8')).aberturas;
     assert.deepStrictEqual(Object.keys(reg), ['102|10|2026-05-01#1']);
+    // o pacote que acabou vai para o histórico do chá: nota, chegada, abertura (quem informou), vencimento e quando acabou
+    assert.deepStrictEqual(L.historicoAberturas('l1'), [{ cod: '10', nf: '101', entrada: '2026-03-01', lote: '', n: 1, abertoEm: '2026-10-01', estimado: false, por: 'ana', validade: '2027-04-01', acabouEm: HOJE }]);
+    L.observarAberturas('l1', HOJE);
+    assert.strictEqual(L.historicoAberturas('l1').length, 1, 'não duplica');
     // aviso: pacote aberto que entrou nos últimos 30 dias do prazo sai uma vez só
     qtd = 1.7;
     L.editarAbertura('l1', { chave: '102|10|2026-05-01', dia: '2026-06-01' }, 'ana', HOJE); // aberto há 5 meses e 19 dias; pacote vale até 05/2027
@@ -159,6 +163,8 @@ test('"abri um pacote hoje": pacote aberto que ainda não vendeu nada (ou aberto
     L.observarAberturas('l2', HOJE);
     l = L.daLoja('l2', HOJE).lotes.find((x) => x.nf === '102');
     assert.deepStrictEqual([l.pacoteN, l.aberto, l.fechado, l.abertoEm, l.abertoEstimado], [1, 0.8, 1, HOJE, false]);
+    // o estoque voltou atrás (ajuste para cima) e o pacote deixou de estar aberto: sai da lista sem virar histórico (ele não acabou)
+    assert.deepStrictEqual(L.historicoAberturas('l2'), []);
     // desfazer a data informada com o pacote ainda inteiro: volta a contar como fechado
     qtd = 2;
     L.editarAbertura('l2', { chave: l.chave, dia: '' }, 'ana', HOJE);
@@ -166,6 +172,46 @@ test('"abri um pacote hoje": pacote aberto que ainda não vendeu nada (ou aberto
     assert.deepStrictEqual([l.pacoteN, l.fechado], [0, 2]);
     // saldo sem nota não tem pacote para abrir
     qtd = 3.5;
-    assert.match(L.editarAbertura('l2', { chave: 'inicial|10', dia: HOJE }, 'ana', HOJE).erro, /não tem pacote para abrir/);
+    assert.match(L.editarAbertura('l2', { chave: 'inicial|10', dia: HOJE }, 'ana', HOJE).erro, /não tem pacote fechado para abrir/);
   } finally { ES.atual = orig.atual; ES.compras = orig.compras; }
 });
+
+test('"Abrir lote" com outro pacote do mesmo lote ainda na lata: os dois contam como abertos, cada um com a sua data e o seu vencimento', () => {
+  const ES = require('../../src/estoque');
+  const orig = { atual: ES.atual, compras: ES.compras };
+  const comp = compras(['2026-11-18', 19218, 4]);
+  let qtd = 3.45; // 450 g na lata + 3 pacotes fechados, tudo da mesma nota
+  ES.atual = () => estoque(qtd); ES.compras = () => comp;
+  try {
+    let l = L.daLoja('l3', HOJE).lotes[0];
+    assert.deepStrictEqual([l.abertos.length, l.abertos[0].n, l.abertos[0].kg, l.fechado, l.abrirOrdem], [1, 1, 0.45, 3, 1]);
+    assert.deepStrictEqual([l.abertos[0].abertoEm, l.abertos[0].estimado, l.abertos[0].validade], ['2026-11-18', true, '2027-05-18']);
+    // botão "Abrir lote": sem data = hoje; vencimento 6 meses depois
+    assert.deepStrictEqual(L.editarAbertura('l3', { chave: l.chave, abrir: true }, 'ana', HOJE).ok, { dia: HOJE });
+    l = L.daLoja('l3', HOJE).lotes[0];
+    assert.deepStrictEqual(l.abertos.map((a) => [a.n, a.kg, a.abertoEm, a.estimado, a.por, a.validade]), [[1, 0.45, '2026-11-18', true, null, '2027-05-18'], [2, 1, HOJE, false, 'ana', '2027-05-20']]);
+    assert.deepStrictEqual([l.aberto, l.fechado, l.saldo], [1.45, 2, 3.45]);
+    assert.deepStrictEqual([l.venceEm, l.kgVence], ['2027-05-18', 0.45], 'o lote mostra o aberto que vence primeiro');
+    // corrigir a data e o vencimento do 2º pacote aberto (pelo número dele), sem mexer no 1º
+    assert.deepStrictEqual(L.editarAbertura('l3', { chave: l.chave, n: 2, dia: '2026-11-19' }, 'ana', HOJE).ok, { dia: '2026-11-19' });
+    assert.deepStrictEqual(L.editarAbertura('l3', { chave: l.chave, n: 2, ate: '2027-04-30' }, 'ana', HOJE).ok, { dia: '2026-11-19', ate: '2027-04-30' });
+    l = L.daLoja('l3', HOJE).lotes[0];
+    assert.deepStrictEqual(l.abertos.map((a) => [a.n, a.abertoEm, a.validade, a.editada]), [[1, '2026-11-18', '2027-05-18', false], [2, '2026-11-19', '2027-04-30', true]]);
+    assert.deepStrictEqual([l.venceEm, l.kgVence], ['2027-04-30', 1]);
+    assert.match(L.editarAbertura('l3', { chave: l.chave, n: 9, dia: HOJE }, 'ana', HOJE).erro, /Pacote não encontrado/);
+    // o 1º pacote acaba: o 2º continua aberto com a data que foi informada (não vira estimativa)
+    L.observarAberturas('l3', HOJE);
+    qtd = 2.8;
+    L.observarAberturas('l3', HOJE);
+    l = L.daLoja('l3', HOJE).lotes[0];
+    assert.deepStrictEqual(l.abertos.map((a) => [a.n, a.kg, a.abertoEm, a.estimado]), [[2, 0.8, '2026-11-19', false]]);
+    assert.strictEqual(l.fechado, 2);
+    // abrir todos os que restam e tentar mais um
+    L.editarAbertura('l3', { chave: l.chave, abrir: true }, 'ana', HOJE);
+    L.editarAbertura('l3', { chave: l.chave, abrir: true }, 'ana', HOJE);
+    l = L.daLoja('l3', HOJE).lotes[0];
+    assert.deepStrictEqual([l.abertos.length, l.fechado, l.abrirOrdem], [3, 0, null]);
+    assert.match(L.editarAbertura('l3', { chave: l.chave, abrir: true }, 'ana', HOJE).erro, /não tem pacote fechado para abrir/);
+  } finally { ES.atual = orig.atual; ES.compras = orig.compras; }
+});
+

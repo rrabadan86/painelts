@@ -99,6 +99,24 @@ def login(page):
     log(f"Login ok ({quem or page.url}).")
 
 
+def venda_conjunta(page):
+    """Janela "Venda Conjunta" do site: se estiver aberta, lê os itens exigidos e clica em "Colocar Todos no Carrinho".
+    Devolve a lista [{cod, nome, qtd, preco}] (pode ser vazia) ou None quando a janela não está na tela."""
+    itens = page.evaluate("""() => {
+      const vis = (e) => { const s = getComputedStyle(e); return s.display !== 'none' && s.visibility !== 'hidden' && e.offsetHeight > 0; };
+      const b = [...document.querySelectorAll('a,button,input[type=button],input[type=submit]')]
+        .find((x) => /colocar\\s+todos\\s+no\\s+carrinho/i.test((x.textContent || x.value || '').replace(/\\s+/g, ' ')) && vis(x));
+      if (!b) return null;
+      const num = (t) => { const m = /-?[\\d.]*\\d(?:,\\d+)?/.exec(String(t || '')); return m ? +m[0].replace(/\\./g, '').replace(',', '.') : null; };
+      const j = b.closest('.modal, .modal-content, [role=dialog]') || document;
+      const itens = [...j.querySelectorAll('table tr')].map((tr) => [...tr.querySelectorAll('td')].map((td) => td.textContent.replace(/\\s+/g, ' ').trim()))
+        .filter((c) => c.length >= 4 && /\\d/.test(c[0])).map((c) => ({ cod: c[0], nome: c[1], qtd: num(c[c.length - 2]), preco: num(c[c.length - 1]) }));
+      b.click();
+      return itens;
+    }""")
+    return itens
+
+
 def carrinho_txt(page):
     return page.evaluate("""() => { const t = [...document.querySelectorAll('a,span,div')].map(e => e.textContent.replace(/\\s+/g, ' ').trim())
       .filter(t => t.length < 60 && /Ite(m|ns)\\s*-\\s*R\\$/i.test(t)); return t.sort((a, b) => a.length - b.length)[0] || '' }""")
@@ -306,9 +324,23 @@ def modo_carrinho(page):
                     botao.click()
                     esperar(page, 900)
                     depois = carrinho_txt(page)
+                    aceitou = False
                     for _ in range(12):  # o topo ("N Itens - R$ …") pode atualizar depois
                         if depois != antes_t:
                             break
+                        # "Venda Conjunta" (ex.: a mug só é vendida com o infusor dela): decisão do dono é aceitar
+                        # em "Colocar Todos no Carrinho". Uma vez por produto; o que veio junto fica no resultado.
+                        if not aceitou:
+                            try:
+                                junto = venda_conjunta(page)
+                                if junto is not None:
+                                    aceitou = True
+                                    if junto:
+                                        r["junto"] = junto
+                                    log(f"   venda conjunta: {', '.join(j['nome'] for j in junto) or 'itens do site'} — Colocar Todos no Carrinho")
+                                    esperar(page, 900)
+                            except Exception:  # noqa: BLE001
+                                pass
                         page.wait_for_timeout(700)
                         depois = carrinho_txt(page)
                     r["status"] = "ok" if depois != antes_t else "sem_confirmacao"

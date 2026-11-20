@@ -1363,14 +1363,14 @@
     const avisoNotas = h('div', { class: 'est-notas-depois' });
     const celEstoque = (r) => {
       const es = entradas.get(String(r.cod));
-      // chá a granel: abre os pacotes do chá (o que está na lata, os fechados na ordem) para informar a abertura
-      const pac = r.it.un === 'Kg' && r.qtd > 0 && TS.validade && TS.validade.janelaPacotes
-        ? h('button', { type: 'button', class: 'link-btn est-pac', title: 'Pacotes deste chá: o que está na lata, desde quando, e os pacotes fechados na ordem de abrir. Abriu um pacote hoje? Informe aqui.', onclick: (e) => { e.stopPropagation(); TS.validade.janelaPacotes(state.loja, r.cod, r.produto); } }, '🫙 pacotes') : null;
-      return h('span', null, qtdTxt(r.qtd, r.it), pac, es ? h('small', { class: 'est-entrada', title: es.map((e) => `NF ${e.nf} lançada em ${fmt.date(e.dia)}${e.mesmoDia ? ' (mesmo dia da planilha: pode já estar no saldo)' : ''}`).join('\n') },
+      return h('span', null, qtdTxt(r.qtd, r.it), es ? h('small', { class: 'est-entrada', title: es.map((e) => `NF ${e.nf} lançada em ${fmt.date(e.dia)}${e.mesmoDia ? ' (mesmo dia da planilha: pode já estar no saldo)' : ''}`).join('\n') },
         `+ ${qtdTxt(es.reduce((a, e) => a + (e.qtd || 0), 0), r.it)} da NF ${es.map((e) => e.nf).join(', ')}`, es.every((e) => e.mesmoDia) ? ' (talvez já no saldo)' : ' ainda não está no saldo') : null);
     };
     const colsT = [
-          { key: 'produto', label: 'Produto', align: 'l', sticky: true, wrap: true, render: (r) => h('span', null, r.produto, podePed ? h('a', { href: '#pedido', class: 'est-ir', title: 'Abrir o Pedido já buscando este produto', onclick: (e) => { e.preventDefault(); TS.irParaPedido(r.produto); } }, 'no pedido ›') : null) },
+          { key: 'produto', label: 'Produto', align: 'l', sticky: true, wrap: true, title: 'Chá a granel: clique no nome para ver os lotes dele (o que está aberto, desde quando e até quando vale; os pacotes fechados na ordem de abrir) e para marcar "Abrir lote".',
+            render: (r) => h('span', null, r.it.un === 'Kg' && TS.validade && TS.validade.janelaPacotes
+              ? h('button', { type: 'button', class: 'vl-nome est-nome-cha', title: 'Ver os lotes deste chá: aberto, fechado, abertura e vencimento.', onclick: (e) => { e.stopPropagation(); TS.validade.janelaPacotes(state.loja, r.cod, r.produto); } }, r.produto)
+              : r.produto, podePed ? h('a', { href: '#pedido', class: 'est-ir', title: 'Abrir o Pedido já buscando este produto', onclick: (e) => { e.preventDefault(); TS.irParaPedido(r.produto); } }, 'no pedido ›') : null) },
           { key: 'tipo', label: 'Tipo', align: 'l', title: 'Chá a granel (em kg, vendido em pacotes de vários tamanhos), produto pronto ou insumo/embalagem (saco kraft, etiqueta…)' },
           { key: 'est', label: 'Situação', align: 'l', title: 'Passe o mouse (ou toque) na etiqueta para ver o motivo', render: (r) => h('span', { class: 'badge ' + SIT_T[r.est][1], title: porqueT(r) }, SIT_T[r.est][0]), sortVal: (r) => -SIT_T[r.est][2] },
           { key: 'qtd', label: 'Estoque', title: 'Saldo da última planilha de estoque do AppNext (data no topo). Nota de entrada lançada depois aparece embaixo do saldo', render: celEstoque },

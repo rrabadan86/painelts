@@ -271,3 +271,23 @@ test('configuração guiada: abre sozinha uma vez para o franqueado, só na loja
   g = await ler('chefe');
   assert.ok(g.lojas.length >= 2 && g.lojas.every((l) => l.abrir === false));
 });
+
+// ---------- carrinho salvo do Pedido ----------
+test('carrinho salvo: quem tem a tela Pedido salva e descarta, só na loja dele; vendedora barrada; X-Painel obrigatório', async () => {
+  const corpo = JSON.stringify({ itens: { 100: 2, 200: 0 } });
+  assert.strictEqual(await status('vend1', '/api/pedido/rascunho?loja=l1', { method: 'PUT', body: corpo }), 403, 'vendedora');
+  assert.strictEqual(await status('dono1', '/api/pedido/rascunho?loja=l2', { method: 'PUT', body: corpo }), 400, 'loja dos outros');
+  assert.strictEqual(await status('dono1', '/api/pedido/rascunho?loja=l1', { method: 'PUT', body: corpo, headers: { 'X-Painel': '' } }), 403, 'sem X-Painel');
+  assert.strictEqual(await status('dono1', '/api/pedido/rascunho?loja=l1', { method: 'PUT', body: JSON.stringify({ itens: {} }) }), 400, 'vazio');
+  const r = await pedir('dono1', '/api/pedido/rascunho?loja=l1', { method: 'PUT', body: corpo });
+  assert.strictEqual(r.status, 200);
+  const j = await r.json();
+  assert.deepStrictEqual(j.rascunho.itens, { 100: 2, 200: 0 }); assert.strictEqual(j.rascunho.por, 'dono1');
+  // a tela do Pedido recebe o carrinho salvo; o admin também vê (é da loja, não da pessoa)
+  assert.deepStrictEqual((await (await pedir('chefe', '/api/pedido?loja=l1')).json()).rascunho.itens, { 100: 2, 200: 0 });
+  assert.strictEqual((await (await pedir('chefe', '/api/pedido?loja=l2')).json()).rascunho, null);
+  assert.strictEqual(await status('vend1', '/api/pedido/rascunho?loja=l1', { method: 'DELETE' }), 403);
+  assert.strictEqual(await status('dono1', '/api/pedido/rascunho?loja=l1', { method: 'DELETE' }), 200);
+  assert.strictEqual((await (await pedir('dono1', '/api/pedido?loja=l1')).json()).rascunho, null);
+});
+

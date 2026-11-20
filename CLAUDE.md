@@ -59,6 +59,7 @@ Hooks (`.claude/settings.json`): bloqueiam commit/push de segredos e limpam os r
 - AppNext: só grava em fluxos aprovados pelo dono (clique no painel + confirmação, conferido item a item, auditado). Explorando: só olhar, nunca Concluir, Homologar ou Salvar.
 - O robô conclui e homologa NF-e (venda e devolução) só depois da revisão, para admin, franqueado e gerentes com Notas fiscais.
 - FIXE: só observar.
+- Sistema de Pedidos: o favorito e o robô só colocam no carrinho (inclusive aceitar a "Venda Conjunta" em "Colocar Todos no Carrinho"); **nunca finalizam o pedido**. Carrinho salvo do painel (`pedido/rascunho.json`, 5 dias, um por loja) é só do painel: não mexe no site.
 - Pergunte antes de abrir o AppNext no Chrome. Ele guarda a sessão por aba: cada aba nova pede login ao dono.
 
 **WhatsApp e testes**
@@ -69,7 +70,7 @@ Hooks (`.claude/settings.json`): bloqueiam commit/push de segredos e limpam os r
 **Validade do chá a granel (duas datas)**
 - **Validade do chá aberto = 6 meses a partir da abertura** (decisão do dono; `MESES_ABERTO`, `PACOTE_KG` em `src/lotes.js`). A data da chegada e a validade digitada na chegada continuam guardadas, mas no lote com chá aberto a data que vale e que aparece (coluna Validade, `dias`, `faixa`) é a data final de consumo, sem teto pela validade do pacote. Lote só com pacote fechado: a validade do pacote (12 meses da chegada até alguém digitar a impressa). Toda data vem preenchida e pode ser editada; "voltar à data final de consumo" desfaz a edição.
 - O painel não tem estoque próprio dos lotes: o total é sempre o do AppNext, distribuído entre os lotes (saída sai do mais antigo, como venda; entrada sem nota vira "saldo sem nota"; inventário por lote vale como a foto certa). A abertura segue a mesma conta: o que falta para um número inteiro de quilos está na lata.
-- A data de abertura é estimada (ritmo de compra do chá, nunca antes da chegada) e guardada na primeira observação (`observarAberturas`, que roda depois de cada atualização dos dados, nunca numa leitura de tela). A equipe só corrige se souber o dia certo, ou informa "Abri um pacote hoje" na janela de pacotes do chá (`TS.validade.janelaPacotes`, aberta pelo Estoque e pela Validade), que vale mesmo sem venda daquele pacote. Quem usa `dias`/`faixa` do lote já recebe a data que vale; valor em risco e perdas contam só o que está na lata quando o prazo é o da abertura (`kgVence`).
+- A data de abertura é estimada (ritmo de compra do chá, nunca antes da chegada) e guardada na primeira observação (`observarAberturas`, que roda depois de cada atualização dos dados, nunca numa leitura de tela). A equipe só corrige se souber o dia certo, ou usa "Abrir lote" na janela dos lotes do chá (`TS.validade.janelaPacotes`, a mesma ao clicar no nome do chá no Estoque e na Validade: aberto em cima, fechados embaixo), que marca a abertura hoje mesmo sem venda daquele pacote ou com outro pacote da mesma nota ainda na lata (`l.abertos` pode ter mais de um). Quando o pacote acaba, a abertura dele vai para o histórico do chá (`historico` em `validade/lotes.json`, 3 anos; mostrado na janela dos lotes). Quem usa `dias`/`faixa` do lote já recebe a data que vale; valor em risco e perdas contam só o que está na lata quando o prazo é o da abertura (`kgVence`).
 
 **Notificações no aparelho (Web Push)**
 - Sem biblioteca: `src/webpush.js` usa só o crypto do Node (RFC 8291 e RFC 8292). Mexeu na cifra ou no VAPID: confira de novo contra `http_ece` e `web-push` numa pasta de rascunho, sem adicioná-las ao projeto (o teste tem o vetor do RFC).
@@ -80,7 +81,7 @@ Hooks (`.claude/settings.json`): bloqueiam commit/push de segredos e limpam os r
 - Teste em navegador: `tests/e2e/aplicativo.spec.js` usa o Chromium completo com perfil normal (no "sem tela" enxuto e em janela anônima as notificações vêm bloqueadas).
 
 ## Pendências combinadas (o dono pediu para depois)
-- Infusor obrigatório das mugs (Harmony, Classic, Super Jumbo, All in One Mug e Jumbo) no Pedido e no favorito do carrinho: o par mug → infusor vem da pergunta do Sistema de Pedidos (o dono manda o print quando o site abrir). Mug Uki e a linha de pinturas não têm infusor. Decisão: não agrupar estampas nos indicadores.
+- Infusor obrigatório das mugs: **feito no carrinho** — quando o site abre a janela "Venda Conjunta", o favorito (`carrinho-site.js`) e o robô (`nextsoft_pedido.py`) clicam em "Colocar Todos no Carrinho" (decisão do dono) e o par mug → infusor fica guardado em `pedido/conjuntos.json`. **Falta:** o Pedido somar o infusor no valor e na proporção antes de montar o carrinho (usar `PED.conjuntos`). Mug Uki e a linha de pinturas não têm infusor. Decisão: não agrupar estampas nos indicadores.
 - Conferência do boleto de royalties (ler o PDF e conferir os descontos de devoluções e da fidelidade).
 - Reserva de estoque para encomenda (ligada ao Orçamento).
 - A confirmar com o dono: a linha "campos de desconto no AppNext" no log da sincronização das notas; a primeira NF-e real emitida pelo painel ou pelo Orçamento.

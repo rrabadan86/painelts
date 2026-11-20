@@ -509,7 +509,10 @@ app.get('/api/demo/estoque', (req, res) => {
     const its = (e.estoque.itens || []).filter((i) => i.custo > 0);
     const tabela = { itens: [
       ...its.filter((i) => i.un !== 'Kg').map((i) => ({ cod: String(i.cod), desc: i.desc, grupo: 'ACESSÓRIOS', preco: Math.round(i.custo * 2.2 * 10) / 10 })),
-      ...its.filter((i) => i.un === 'Kg' && /^\d{4,6}$/.test(String(i.cod))).map((i) => ({ cod: String(i.cod) + '2', desc: `${i.desc} 100G`, grupo: 'CHÁS', preco: Math.round(i.custo * 0.1 * 2.6 * 10) / 10 })),
+      // chá a granel: pacotes de 50 g e 100 g, com subgrupo fictício (o Pedido filtra por ele e mostra a margem bruta do pacote)
+      ...its.filter((i) => i.un === 'Kg' && /^\d{4,6}$/.test(String(i.cod))).flatMap((i, k) => { const s = ['CHÁ VERDE', 'CHÁ PRETO', 'ROOIBOS', 'INFUSÕES'][k % 4]; return [
+        { cod: String(i.cod) + '1', desc: `${i.desc} 50G`, grupo: 'CHÁS', sub: s, preco: Math.round(i.custo * 0.05 * 2.9 * 10) / 10 },
+        { cod: String(i.cod) + '2', desc: `${i.desc} 100G`, grupo: 'CHÁS', sub: s, preco: Math.round(i.custo * 0.1 * 2.6 * 10) / 10 }]; }),
     ] };
     // fora de linha fictício: 3 acessórios com saldo indisponíveis no Sistema de Pedidos há ~4 meses e 1 há 20 dias
     const comSaldo = its.filter((i) => i.un !== 'Kg' && i.qtd > 0);
@@ -553,6 +556,8 @@ app.get('/api/demo/validade', (req, res) => {
   if (!lojaDemo(req)) return res.status(400).json({ erro: 'Escolha uma loja.' });
   const { LOTd, e, comp, em, lotes } = lotesDemo(req.query.loja);
   res.json({ em, hoje: LOTd.hojeSP(), meses: LOTd.MESES_VALIDADE, mesesAberto: LOTd.MESES_ABERTO, pacoteKg: LOTd.PACOTE_KG, riscoDias: LOTd.RISCO_DIAS, custos: true, faixas: LOTd.FAIXAS.map((f) => ({ id: f.id, nome: f.nome, ate: Number.isFinite(f.ate) ? f.ate : null })),
+    // histórico fictício: os dois primeiros chás abertos já tiveram um pacote anterior que acabou
+    historico: lotes.filter((l) => l.pacoteN > 0 && l.entrada).slice(0, 2).map((l, k) => { const ab = LOTd.somarMeses(l.entrada, -4 - k), fim = LOTd.somarMeses(l.entrada, -1); return { cod: l.cod, nf: String(9000 + k), entrada: LOTd.somarMeses(l.entrada, -5 - k), lote: '', n: 1, abertoEm: ab, estimado: k === 0, por: k === 0 ? '' : 'gerente', validade: LOTd.somarMeses(ab, LOTd.MESES_ABERTO), acabouEm: fim }; }),
     resumo: LOTd.resumo(lotes), lotes: lotes.map((l) => ({ ...l, tipo: '', familia: '' })), granel: LOTd.granelEstoque({ estoque: e.estoque, compras: e.compras }), entradas: LOTd.entradasRecentes({ estoque: e.estoque, compras: comp, edits: { lotes: {} } }) });
 });
 // perdas do mês para o Resultado (apresentação): chá vencido dos lotes fictícios + faltas de inventário inventadas
@@ -698,7 +703,10 @@ app.get('/api/demo/pedido', (req, res) => {
     const disp = e.catalogo.itens.filter((c) => c.disp).slice(5, 11);
     const ate = new Date(Date.now() + 20 * 86400e3).toISOString().slice(0, 10);
     const obrigatorio = { lista: [{ id: 'demo', nome: 'Pedido obrigatório de dezembro (exemplo)', ate, ativo: true, por: 'franquia', em: new Date().toISOString(), itens: disp.map((c, k) => ({ cod: c.cod, nome: c.nome, qtd: k % 2 ? 2 : 6, preco: c.preco })) }] };
-    res.json({ catalogo: e.catalogo, carrinho: null, cfg: PEDd.cfg({}), obrigatorio, robo: { disponivel: false }, podeRobo: false }); } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
+    // carrinho salvo fictício (ontem, por outra pessoa): 4 produtos do catálogo que não estão no obrigatório
+    const salvo = e.catalogo.itens.filter((c) => c.disp).slice(20, 24), emR = Date.now() - 26 * 3600e3;
+    const rascunho = { itens: Object.fromEntries(salvo.map((c, k) => [String(c.cod), (k + 1) * (c.mult > 1 ? c.mult : 1)])), por: 'gerente', em: new Date(emR).toISOString(), expira: new Date(emR + PEDd.RASCUNHO_DIAS * 864e5).toISOString(), dias: PEDd.RASCUNHO_DIAS };
+    res.json({ rascunho, catalogo: e.catalogo, carrinho: null, cfg: PEDd.cfg({}), obrigatorio, robo: { disponivel: false }, podeRobo: false }); } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
 });
 // ⭐ sugestões fictícias da equipe (a tela guarda as mudanças só no navegador)
 function sugestoesDemo(lojaId) {
@@ -2083,7 +2091,29 @@ app.get('/api/pedido', async (req, res) => {
       }
     } catch (e) { robo = { disponivel: false, erro: e.message }; }
   }
-  res.json({ catalogo: PED.catalogo(loja.id), carrinho: PED.carrinho(loja.id), cfg: PED.cfg(C.get().lojas.find((l) => l.id === loja.id)), obrigatorio: PED.obrigatorios(loja.id), espera: ESP.resumoPorCod(loja.id), sugestoes: (() => { const S = require('./src/sugestoes'); try { S.avaliarNotas(loja.id, ES.notas(loja.id)); } catch { /* segue */ } return S.paraPedido(loja.id); })(), robo, podeRobo: req.perfil === 'admin' || req.perfil === 'franqueado' });
+  res.json({ rascunho: PED.rascunho(loja.id), catalogo: PED.catalogo(loja.id), carrinho: PED.carrinho(loja.id), cfg: PED.cfg(C.get().lojas.find((l) => l.id === loja.id)), obrigatorio: PED.obrigatorios(loja.id), espera: ESP.resumoPorCod(loja.id), sugestoes: (() => { const S = require('./src/sugestoes'); try { S.avaliarNotas(loja.id, ES.notas(loja.id)); } catch { /* segue */ } return S.paraPedido(loja.id); })(), robo, podeRobo: req.perfil === 'admin' || req.perfil === 'franqueado' });
+});
+// carrinho salvo: guarda as quantidades do pedido por 5 dias, para terminar depois (um por loja; quem tem a tela Pedido)
+app.put('/api/pedido/rascunho', express.json({ limit: '200kb' }), (req, res) => {
+  if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
+  if (!podeTela(req, 'pedido')) return res.status(403).json({ erro: 'Sem permissão.' });
+  const loja = req.lojas.find((l) => l.id === String(req.query.loja || ''));
+  if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  try {
+    const r = PED.salvarRascunho(loja.id, (req.body || {}).itens, req.user);
+    if (r.erro) return res.status(400).json({ erro: r.erro });
+    C.auditar(req.user, 'salvou o carrinho do pedido', loja.id, { loja: loja.id, produtos: Object.values(r.ok.itens).filter((q) => q > 0).length });
+    res.json({ ok: true, rascunho: r.ok });
+  } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
+});
+app.delete('/api/pedido/rascunho', (req, res) => {
+  if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
+  if (!podeTela(req, 'pedido')) return res.status(403).json({ erro: 'Sem permissão.' });
+  const loja = req.lojas.find((l) => l.id === String(req.query.loja || ''));
+  if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  PED.apagarRascunho(loja.id);
+  C.auditar(req.user, 'descartou o carrinho salvo do pedido', loja.id, { loja: loja.id });
+  res.json({ ok: true });
 });
 // ---------- inventário (Estoque → Inventário): contar pelo celular e gerar a planilha do AppNext ----------
 const INV = require('./src/inventario');
@@ -2328,6 +2358,7 @@ app.get('/api/validade', async (req, res) => {
   res.json({
     em, hoje: LOT.hojeSP(), meses: LOT.MESES_VALIDADE, mesesAberto: LOT.MESES_ABERTO, pacoteKg: LOT.PACOTE_KG, riscoDias: LOT.RISCO_DIAS, custos, faixas: LOT.FAIXAS.map((f) => ({ id: f.id, nome: f.nome, ate: Number.isFinite(f.ate) ? f.ate : null })),
     resumo: r, lotes: lotes.map((l) => semCusto(req, { ...l, tipo: tipos.get(l.cod) || '', familia: INV.familia(tipos.get(l.cod) || '') })),
+    historico: LOT.historicoAberturas(loja.id), // pacotes de chá que já acabaram: quando abriram, até quando valiam e quando acabaram
     entradas: LOT.entradasRecentes(ctx), // para contar por lote no inventário
     granel: LOT.granelEstoque(ctx), // chá a granel com/sem estoque (Clientes → Hoje não oferece chá que a loja não tem)
   });

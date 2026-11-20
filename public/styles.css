@@ -3122,3 +3122,42 @@ tr.conf-conta td:first-child { box-shadow: inset 3px 0 0 var(--bad); }
 .vl-pac-est { margin-left: 8px; }
 .vl-pac-vence small { display: inline; }
 .vl-val-aberto { border-color: var(--gold); }
+
+/* ---------- pedido: classe como ícone no nome, subgrupo e linha que mudou de aba ---------- */
+.ped-cl-ico { display: inline-block; margin-right: 6px; cursor: help; }
+.ped-sub { display: block; color: var(--muted); font-size: 11px; }
+.ped-ficou { margin-left: 8px; white-space: nowrap; }
+
+/* ---------- pedido: carrinho salvo e venda conjunta ---------- */
+.ped-rasc { display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+.ped-rasc > div:first-child { flex: 1; min-width: 220px; }
+.ped-rasc-acoes { display: flex; gap: 8px; flex-wrap: wrap; }
+.ped-rasc-ok { margin: 6px 0; }
+.ped-junto { display: block; }
+
+/* ---------- validade: janela dos lotes do chá (aberto em cima, fechados embaixo) ---------- */
+.vl-pac { width: min(760px, 100%); }
+.vl-pac-sec { display: grid; gap: 0; border-top: 1px solid var(--line); padding-top: 12px; }
+.vl-pac-sec h4 { margin: 0 0 4px; font-size: 14px; }
+.vl-pac-linha { display: grid; grid-template-columns: 1.1fr .9fr 1.5fr 1.5fr 1fr auto; gap: 10px 14px; align-items: start; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.vl-pac-linha:last-child { border-bottom: 0; }
+.vl-pac-fechado { grid-template-columns: 1.1fr .9fr 1.5fr 1.5fr auto; }
+.vl-pac-campo { min-width: 0; }
+.vl-pac-campo > small { display: flex; align-items: center; color: var(--muted); font-size: 11px; margin-bottom: 3px; white-space: nowrap; }
+.vl-pac-campo > div { min-height: 30px; display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
+.vl-pac-marca { margin-left: 6px; padding: 0 6px; border-radius: 999px; background: var(--line); color: var(--muted); font-size: 10px; font-weight: 600; }
+button.vl-pac-marca { background: none; text-decoration: underline; cursor: pointer; border: 0; }
+.vl-pac-data { width: 100%; max-width: 150px; height: 30px; padding: 2px 6px; }
+.vl-pac-acao { display: grid; gap: 2px; justify-items: end; text-align: right; }
+.vl-pac-abrir { white-space: nowrap; }
+.vl-pac-vazio, .vl-pac-semnota { margin: 6px 0; }
+@media (max-width: 720px) {
+  .vl-pac-linha, .vl-pac-fechado { grid-template-columns: 1fr 1fr; }
+  .vl-pac-acao { grid-column: 1 / -1; justify-items: stretch; text-align: left; }
+  .vl-pac-abrir { width: 100%; }
+}
+.vl-pac-hist { border-top: 1px solid var(--line); padding-top: 10px; }
+.vl-pac-hist summary { cursor: pointer; font-weight: 600; font-size: 13px; }
+.vl-pac-hist-i { grid-template-columns: 1.1fr .9fr 1.4fr 1fr 1fr; }
+.vl-pac-hist-vazio { margin: 0; font-size: 12px; }
+@media (max-width: 720px) { .vl-pac-hist-i { grid-template-columns: 1fr 1fr; } }

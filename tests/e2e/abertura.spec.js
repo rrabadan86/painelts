@@ -37,31 +37,45 @@ test('Validade: mostra o que está na lata com a data de abertura e os pacotes f
   await busca.fill(fechados[0].desc);
   await expect(page.locator('.vl-fechado').first()).toContainText(/(pacotes? fechados?|fechado) · (o próximo a abrir|abrir em \dº)/);
   await busca.fill(abertos[0].desc);
-  // "corrigir" abre os pacotes do chá: a data de abertura (até hoje) e o "consumir até" vêm preenchidos e podem ser trocados
+  // "corrigir" abre os lotes do chá: em cima o aberto (nota, chegada, abertura, vencimento e quantidade), datas preenchidas e editáveis
   await page.locator('.vl-lata').first().locator('.vl-abriu').click();
   const j = page.locator('.vl-pac');
-  await expect(j.locator('h3')).toHaveText(`Pacotes de ${abertos[0].desc}`);
-  const aberto = d.lotes.filter((l) => l.cod === abertos[0].cod && l.pacoteN > 0)[0];
-  const sit = j.locator('.vl-pac-sit', { hasText: 'Na lata' }).first();
+  await expect(j.locator('h3')).toHaveText(`Lotes de ${abertos[0].desc}`);
+  await expect(j.locator('.vl-pac-sec h4')).toHaveText([/Chá aberto/, /Lotes fechados/]);
+  const aberto = d.lotes.filter((l) => l.cod === abertos[0].cod && l.pacoteN > 0).sort((x, y) => (x.abertos[0].abertoEm < y.abertos[0].abertoEm ? -1 : 1))[0];
+  const sit = j.locator('.vl-pac-aberto').first();
+  await expect(sit.locator('.vl-pac-campo > small')).toHaveText([/Nota de entrada/, /Chegou em/, /Aberto em/, /Vence em/, /Quantidade/]);
+  await expect(sit).toContainText(`NF ${aberto.nf}`);
   const [dAbriu, dAte] = [sit.locator('input[type=date]').nth(0), sit.locator('input[type=date].vl-ate')];
-  await expect(dAbriu).toHaveValue(aberto.abertoEm);
+  await expect(dAbriu).toHaveValue(aberto.abertos[0].abertoEm);
   await expect(dAbriu).toHaveAttribute('max', d.hoje);
-  await expect(dAte).toHaveValue(aberto.validadeAberto);
-  await expect(dAte).toHaveAttribute('min', aberto.abertoEm);
-  await expect(sit.locator('.dica-i')).toHaveCount(1);
+  await expect(dAte).toHaveValue(aberto.abertos[0].validade);
+  await expect(dAte).toHaveAttribute('min', aberto.abertos[0].abertoEm);
   // trocar o vencimento na apresentação: avisa e nada muda
   await dAte.fill('2030-01-01'); await dAte.blur();
   await expect(page.locator('.toast')).toContainText('nada é salvo');
   await j.getByRole('button', { name: 'Fechar' }).click();
   await expect(page.locator('.vl-pac')).toHaveCount(0);
-  // clicar no nome do chá abre a mesma janela: nota, chegada, aberto ou fechado, vencimento
+  // clicar no nome do chá abre a mesma janela
   await page.waitForFunction(() => !(history.state && history.state.camada));
   await page.locator('.vl-nome', { hasText: abertos[0].desc }).first().click();
-  await expect(j.locator('h3')).toHaveText(`Pacotes de ${abertos[0].desc}`);
-  await expect(j.locator('.vl-pac-cab').first()).toContainText(/NF .* chegou em \d{2}\/\d{2}\/\d{4}|Saldo sem nota/);
-  await expect(j.locator('.vl-pac-est').first()).toHaveText(/Aberto|Fechado/);
-  await expect(j.locator('.vl-pac-vence').first()).toContainText(/Vence em \d{2}\/\d{2}\/\d{4}/);
+  await expect(j.locator('h3')).toHaveText(`Lotes de ${abertos[0].desc}`);
+  await expect(j.locator('.vl-pac-aberto').first()).toContainText(/NF \d+/);
   await j.getByRole('button', { name: 'Fechar' }).click();
+  await expect(page.locator('.vl-pac')).toHaveCount(0);
+  // histórico: pacotes do chá que já acabaram (nota, chegada, abertura, validade e quando acabou)
+  expect(d.historico.length).toBeGreaterThan(0);
+  const hist = d.historico[0], doHist = d.lotes.find((l) => l.cod === hist.cod);
+  await page.waitForFunction(() => !(history.state && history.state.camada));
+  await page.evaluate(([cod, desc]) => TS.validade.janelaPacotes(TS.state.loja, cod, desc), [hist.cod, doHist.desc]);
+  const hd = page.locator('.vl-pac-hist');
+  await expect(hd.locator('summary')).toContainText(`Histórico de aberturas (${d.historico.filter((x) => x.cod === hist.cod).length})`);
+  await hd.locator('summary').click();
+  await expect(hd.locator('.vl-pac-hist-i').first().locator('.vl-pac-campo > small')).toHaveText([/Nota de entrada/, /Chegou em/, /Aberto em/, /Valia até/, /Acabou em/]);
+  await expect(hd.locator('.vl-pac-hist-i').first()).toContainText(`NF ${hist.nf}`);
+  expect(await page.locator('.vl-pac').evaluate((el) => el.scrollWidth - el.clientWidth), 'a janela não rola para o lado').toBeLessThanOrEqual(1);
+  if (process.env.PRINTS) await page.screenshot({ path: `${process.env.PRINTS}/historico-${info.project.name}.png` });
+  await page.locator('.vl-pac').getByRole('button', { name: 'Fechar' }).click();
   await expect(page.locator('.vl-pac')).toHaveCount(0);
   // chá aberto: a coluna Validade mostra a data final de consumo (a que vale), editável; o "voltar" só aparece quando alguém trocou
   const ab = d.lotes.find((l) => l.motivo === 'aberto' && l.validadeAberto);
@@ -82,7 +96,7 @@ test('Validade: mostra o que está na lata com a data de abertura e os pacotes f
   expect(erros).toEqual([]);
 });
 
-test('Estoque: "🫙 pacotes" no chá a granel abre os lotes do chá na ordem; dá para informar que abriu um pacote (apresentação: nada é gravado)', async ({ page }, info) => {
+test('Estoque: clicar no nome do chá a granel abre os lotes dele (aberto em cima, fechados embaixo com "Abrir lote"); apresentação: nada é gravado', async ({ page }, info) => {
   const erros = [];
   page.on('pageerror', (e) => erros.push(e.message));
   const saiu = [];
@@ -96,16 +110,22 @@ test('Estoque: "🫙 pacotes" no chá a granel abre os lotes do chá na ordem; d
   const doCha = d.lotes.filter((l) => l.cod === alvo.cod);
   await page.evaluate(([cod, desc]) => TS.validade.janelaPacotes(TS.state.loja, cod, desc), [alvo.cod, alvo.desc]);
   const j = page.locator('.vl-pac');
-  await expect(j.locator('h3')).toHaveText(`Pacotes de ${alvo.desc}`);
-  await expect(j.locator('.vl-pac-lote')).toHaveCount(doCha.length);
-  // do mais antigo para o mais novo
-  const datas = (await j.locator('.vl-pac-cab b').allTextContents()).filter((t) => /chegou em/.test(t)).map((t) => t.match(/(\d{2})\/(\d{2})\/(\d{4})/).slice(1).reverse().join('-'));
-  expect(datas).toEqual([...datas].sort());
-  const botao = j.getByRole('button', { name: 'Abri um pacote hoje' }).first();
-  await expect(botao).toHaveAttribute('title', /6 meses/);
+  await expect(j.locator('h3')).toHaveText(`Lotes de ${alvo.desc}`);
+  // embaixo, os lotes fechados do mais antigo para o mais novo: nota, chegada, validade do pacote, quantidade e "Abrir lote"
+  const fech = doCha.filter((l) => l.entrada && l.fechado > 0.0005).sort((x, y) => (x.entrada < y.entrada ? -1 : 1));
+  const linhas = j.locator('.vl-pac-fechado');
+  await expect(linhas).toHaveCount(fech.length);
+  await expect(linhas.first().locator('.vl-pac-campo > small')).toHaveText([/Nota de entrada/, /Chegou em/, /Validade do pacote/, /Quantidade/]);
+  await expect(linhas.first()).toContainText(`NF ${fech[0].nf}`);
+  await expect(linhas.first()).toContainText('o próximo a abrir');
+  await expect(linhas.first().locator('input[type=date]')).toHaveValue(fech[0].validadePacote);
+  const botao = linhas.first().getByRole('button', { name: 'Abrir lote' });
+  await expect(botao).toHaveAttribute('title', /6 meses depois/);
   await botao.click();
   await expect(page.locator('.toast')).toContainText('nada é salvo');
   expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth), 'rolagem para o lado').toBeLessThanOrEqual(1);
+  // nada passa da borda da janela
+  expect(await j.evaluate((el) => el.scrollWidth - el.clientWidth), 'a janela não rola para o lado').toBeLessThanOrEqual(1);
   if (process.env.PRINTS) await page.screenshot({ path: `${process.env.PRINTS}/pacotes-${info.project.name}.png` });
   await j.getByRole('button', { name: 'Fechar' }).click();
   await expect(page.locator('.vl-pac')).toHaveCount(0);
@@ -117,10 +137,13 @@ test('Estoque: "🫙 pacotes" no chá a granel abre os lotes do chá na ordem; d
   await page.locator('.seg button', { hasText: /^Todos/ }).first().click();
   await page.locator('.est-t').first().waitFor();
   await page.getByPlaceholder(/Buscar/).first().fill(alvo.desc);
-  await expect.poll(async () => page.locator('.est-pac').count(), { timeout: 30000 }).toBeGreaterThan(0);
-  await expect(page.locator('.est-pac').first()).toHaveAttribute('title', /Abriu um pacote hoje/);
-  await page.locator('.est-pac').first().click();
-  await expect(page.locator('.vl-pac h3')).toContainText('Pacotes de ');
+  // no Estoque, clicar no nome do chá a granel abre a mesma janela
+  const nomeCha = page.locator('.est-nome-cha', { hasText: alvo.desc }).first();
+  await expect(nomeCha).toBeVisible({ timeout: 30000 });
+  await expect(nomeCha).toHaveAttribute('title', /lotes deste chá/);
+  await nomeCha.click();
+  await expect(page.locator('.vl-pac h3')).toHaveText(`Lotes de ${alvo.desc}`);
+  await expect(page.locator('.vl-pac .vl-pac-sec h4')).toHaveText([/Chá aberto/, /Lotes fechados/]);
   expect(saiu, 'nada sai do navegador na apresentação').toEqual([]);
   expect(erros).toEqual([]);
 });
