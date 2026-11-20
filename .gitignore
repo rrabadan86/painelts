@@ -24,6 +24,9 @@ test-results/
 playwright-report/
 config/ia.json
 config/ia-mestra.key
+# notificações no aparelho: chave privada VAPID e aparelhos de cada pessoa
+config/push-vapid.json
+config/push.json
 
 # configurações locais do Claude Code (de cada pessoa)
 .claude/settings.local.json

@@ -46,12 +46,20 @@ async function lerOptouts(lojaId, agora, zap) {
   ZF.mudarEstado(lojaId, (s) => { s.optoutsDesde = new Date(agora - 60e3).toISOString(); }); // um minuto de folga: repetido não faz mal
 }
 
+/** notificação no aparelho de quem cuida do robô (sem texto de mensagem nem número de cliente) */
+function avisarAparelhos(lojaId, chave, texto) {
+  try {
+    const l = C.get().lojas.find((x) => x.id === lojaId);
+    require('./push').avisarDepois({ tipo: 'zap', loja: lojaId, chave: `zap:${lojaId}:${chave}`, titulo: `Robô do WhatsApp · ${l ? l.nome : lojaId}`, texto, link: '/#campanhas' });
+  } catch (e) { console.error('[zap] aviso no aparelho:', C.msgErro(e)); }
+}
 /** a conexão caiu com o robô ligado: marca para a tela e o Início avisarem (uma vez na auditoria) */
 function marcarQueda(lojaId, estadoZap, agora) {
   const antes = ZF.lerEstado(lojaId).conexao;
   if (antes && antes.estado === estadoZap) return;
   ZF.mudarEstado(lojaId, (s) => { s.conexao = { estado: estadoZap, desde: new Date(agora).toISOString() }; });
   if (!antes) C.auditar(POR, 'robô do WhatsApp: a conexão caiu', lojaId, { loja: lojaId, situacao: estadoZap });
+  if (!antes) avisarAparelhos(lojaId, `queda:${new Date(agora).toISOString()}`, 'A conexão com o WhatsApp da loja caiu. As campanhas do robô estão paradas até conectar de novo.');
 }
 
 /**
@@ -113,6 +121,7 @@ async function passo(lojaId, agora = Date.now(), { zap = require('./zap'), rnd =
   });
   console.error(`[zap] ${lojaId}: falha ao enviar para ···${ZF.fim4(msg.para)} (${falhas} seguidas)`);
   if (pausou) C.auditar(POR, 'robô do WhatsApp pausou sozinho', lojaId, { loja: lojaId, falhas });
+  if (pausou) avisarAparelhos(lojaId, `pausa:${new Date(agora).toISOString()}`, `O robô pausou sozinho depois de ${falhas} ${falhas === 1 ? 'falha' : 'falhas seguidas'} ao enviar. Nada mais é enviado até alguém religar.`);
   return { motivo: 'falha', pausou, msg };
 }
 

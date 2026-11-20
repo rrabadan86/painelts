@@ -8,6 +8,7 @@ Painel de vendas das lojas Tea Shop (substitui o Power BI). Responda sempre em *
 - **Coletor (robôs):** Python + Playwright em `coletor/` (AppNext, FIXE, Sistema de Pedidos).
 - **Robô do WhatsApp:** serviço Node em `zap/` (opcional no compose, `--profile zap`); só conecta e envia o que o painel manda.
 - **Apresentação:** `/apresentacao` mostra dados fictícios (`src/demo.js`, rotas `/api/demo/...`) e **nunca grava nem envia nada**.
+- **Aplicativo e notificações:** o painel é instalável (`public/manifest.webmanifest`, `public/icones/`, `public/sw.js`) e avisa no aparelho com o painel fechado (Web Push: `src/webpush.js` cifra e entrega, `src/push.js` decide quem recebe, `src/push-api.js`, tela em `public/js/notificacoes.js`, no menu da pessoa).
 - **IA:** ✨ Pergunte ao painel, diagnóstico do Início e revisão do pedido (`src/ia*.js`, `public/js/ia.js`).
 
 Regras por parte do código ficam em `.claude/rules/` e carregam sozinhas ao mexer nos arquivos: `tela.md`, `visual.md` (padrão de layout: cabeçalho, avisos, quadros, card com abas e `TS.table`, cores por classe, celular), `coletor.md`, `ia.md`, `nfe.md`, `zap.md` (robô do WhatsApp).
@@ -36,7 +37,7 @@ Hooks (`.claude/settings.json`): bloqueiam commit/push de segredos e limpam os r
 
 ## Regras que não mudam
 **Segredos e dados**
-- Nunca suba para o Git: `.env` (inclui `ZAP_TOKEN`), `zap-work/` (sessão do WhatsApp), `config/lojas.json`, `config/coletor/*.env`, `config/ia.json`, `config/ia-mestra.key`, `dados/`, backups, IDs reais.
+- Nunca suba para o Git: `.env` (inclui `ZAP_TOKEN`), `zap-work/` (sessão do WhatsApp), `config/lojas.json`, `config/coletor/*.env`, `config/ia.json`, `config/ia-mestra.key`, `config/push-vapid.json` (chave privada das notificações), `config/push.json` (aparelhos), `dados/`, backups, IDs reais.
 - Senhas e chaves: o Claude nunca digita, nunca pede no chat e o painel nunca devolve para a tela (só os 4 últimos caracteres). Quem faz login no AppNext e no FIXE é o dono.
 - Os e-mails pessoais do dono não vão para código, commit nem log.
 
@@ -64,6 +65,14 @@ Hooks (`.claude/settings.json`): bloqueiam commit/push de segredos e limpam os r
 - Envio manual: um clique por mensagem, sem insistir com o cliente.
 - **Exceção (decisão do dono): robô do WhatsApp das campanhas.** Campanha marcada "Enviar pelo robô" sai sozinha pelo número da loja (serviço `zap/`), com todas as travas no servidor (`src/zapfila.js`, `src/zaplaco.js`): ritmo aleatório, horário e dias, máximo por dia do número, limite da campanha, intervalo da loja, quem não quer mensagens (inclusive quem responde "parar"), pausa sozinho após falhas. Admin, franqueado da loja e gerente com a tela Clientes conectam, ligam e configuram (decisão do dono: é a gerente quem lê o QR na loja; ela faz isso por Clientes → Campanhas → "Conectar e configurar"); vendedora nada. Log e auditoria sem o texto das mensagens e sem número completo (só os 4 últimos dígitos). Detalhes em `.claude/rules/zap.md`.
 - Dados temporários de teste: apague depois.
+
+**Notificações no aparelho (Web Push)**
+- Sem biblioteca: `src/webpush.js` usa só o crypto do Node (RFC 8291 e RFC 8292). Mexeu na cifra ou no VAPID: confira de novo contra `http_ece` e `web-push` numa pasta de rascunho, sem adicioná-las ao projeto (o teste tem o vetor do RFC).
+- Endereço de entrega: só https dos serviços conhecidos (`enderecoOk`). Nunca afrouxe: sem isso o servidor chama qualquer endereço.
+- A permissão é conferida **a cada envio** (`podeReceber`: usuário ativo, com a loja e com a tela do assunto), não só ao ativar. Cada pessoa só vê e remove os próprios aparelhos; a tela nunca recebe chave nem endereço.
+- Evento novo: um item em `TIPOS` (`src/push.js`, com a regra de quem pode) + `PUSH.avisarDepois({ tipo, loja, chave, titulo, texto, link, menos })` no ponto do evento. A `chave` identifica o evento e é marcada antes do envio (nunca repete). O texto segue as regras de perfil: sem custo, sem dado de cliente, sem texto de mensagem do WhatsApp.
+- O service worker só mostra a notificação e abre o painel; não guarda página em cache (o painel sempre vem do servidor) e só aceita link começando com "/".
+- Teste em navegador: `tests/e2e/aplicativo.spec.js` usa o Chromium completo com perfil normal (no "sem tela" enxuto e em janela anônima as notificações vêm bloqueadas).
 
 ## Pendências combinadas (o dono pediu para depois)
 - Infusor obrigatório das mugs (Harmony, Classic, Super Jumbo, All in One Mug e Jumbo) no Pedido e no favorito do carrinho: o par mug → infusor vem da pergunta do Sistema de Pedidos (o dono manda o print quando o site abrir). Mug Uki e a linha de pinturas não têm infusor. Decisão: não agrupar estampas nos indicadores.

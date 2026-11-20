@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Tea Shop · Painel de vendas</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#1F3D2B">
+  <link rel="apple-touch-icon" href="/icones/apple-touch-icon.png">
   <link rel="stylesheet" href="/styles.css?v=20261120d">
 </head>
 <body>
@@ -45,6 +48,7 @@
           <span class="user-ini" id="userIni">?</span><span class="user-nome" id="userNome"></span><span aria-hidden="true">▾</span>
         </button>
         <div class="script-pop user-pop" id="userPop" role="menu" hidden>
+          <button type="button" class="user-item" id="btnNotif" role="menuitem">🔔 Notificações e aplicativo</button>
           <a class="user-item" id="btnSenha" href="/trocar-senha" role="menuitem">Trocar minha senha</a>
           <form method="post" action="/logout" class="logout-form"><button class="user-item" role="menuitem">Sair</button></form>
         </div>

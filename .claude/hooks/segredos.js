@@ -17,6 +17,8 @@ const PROIBIDOS = [
   [/^config\/coletor\/[^/]*\.env/, 'config/coletor/*.env'],
   [/^config\/ia\.json$/, 'config/ia.json'],
   [/^config\/ia-mestra\.key$/, 'config/ia-mestra.key'],
+  [/^config\/push-vapid\.json$/, 'config/push-vapid.json (chave privada das notificações)'],
+  [/^config\/push\.json$/, 'config/push.json (aparelhos das notificações)'],
   [/^dados\//, 'dados/'],
   [/^config\/backups\//, 'backups'],
   [/(^|\/)[^/]*backup[^/]*\.(zip|tar|gz|tgz|json)$/i, 'backups'],
