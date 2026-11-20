@@ -3,9 +3,12 @@
  * Campanhas de WhatsApp da tela Clientes → Campanhas.
  *   dados/<loja>/campanhas.json = [{ id, nome, criadaEm, por, filtros, mensagem, janela, recorrente, ativa,
  *                                    robo (enviada pelo robô do WhatsApp; src/zapfila.js),
+ *                                    comparar (guarda 10% da lista sem mensagem; public/js/campretorno.js),
  *                                    rodadas: [{ id, em, lista: [{ cpf, nome, st, em?, por? }] }] }]
  * A lista de cada rodada é a foto do momento em que foi criada (os filtros rodam no navegador, com os dados do painel).
- * st: 'p' pendente · 'e' enviada (clicou em "Abrir no WhatsApp") · 'o' não quer mensagens · 'x' pulada.
+ * st: 'p' pendente · 'e' enviada (clicou em "Abrir no WhatsApp") · 'o' não quer mensagens · 'x' pulada ·
+ *     'c' grupo de comparação: sorteado aqui, no servidor, ao criar a lista (estável por CPF + campanha; só lista com 50+).
+ *     Quem é 'c' NUNCA recebe: não é pendente (o robô e a fila manual só olham 'p') e não pode ser marcado nem voltar para a fila.
  * O celular não é guardado aqui: no envio o painel usa o do cadastro.
  */
 const fs = require('fs');
@@ -16,6 +19,7 @@ const C = require('./config');
 const arq = (id) => path.join(C.pastaLoja(id), 'campanhas.json');
 const CPF_OK = /^\d{11}(\d{3})?$/;
 const M = require('../public/js/msgwpp');
+const RET = require('../public/js/campretorno');
 const RECORRENCIAS = ['', 'diaria', 'semanal', 'mensal'];
 const ST = ['p', 'e', 'o', 'x'];
 
@@ -65,12 +69,15 @@ function dadosOk(b, atual = {}) {
   if (!(limiteDia >= 0 && limiteDia <= 500)) return { erro: 'Limite por dia: de 0 a 500.' };
   // robo: a campanha é enviada pelo robô do WhatsApp (padrão desligado; as outras continuam manuais)
   const robo = b.robo == null ? !!atual.robo : b.robo === true;
+  // comparar: guarda 10% de cada lista nova sem mensagem, para medir o efeito da campanha (padrão ligado em campanha nova;
+  // campanha que já existia sem a opção continua como estava até alguém marcar)
+  const comparar = b.comparar == null ? (atual.id ? !!atual.comparar : true) : b.comparar === true;
   // período da campanha (opcional): fora dele nada é enviado (robô ou manual) e a recorrente não monta lista nova
   const data = (v) => (v == null || v === '' ? null : String(v).slice(0, 10));
   const inicio = data(b.inicio !== undefined ? b.inicio : atual.inicio), fim = data(b.fim !== undefined ? b.fim : atual.fim);
   for (const d of [inicio, fim]) if (d && !(/^\d{4}-\d{2}-\d{2}$/.test(d) && Number.isFinite(Date.parse(d + 'T12:00:00Z')))) return { erro: 'Data de início ou de término inválida.' };
   if (inicio && fim && fim < inicio) return { erro: 'O término da campanha não pode ser antes do início.' };
-  return { ok: { nome, mensagem, variacoes, limiteDia, janela, recorrente, robo, inicio, fim, ativa: b.ativa == null ? atual.ativa ?? true : !!b.ativa, filtros: b.filtros ? filtrosOk(b.filtros) : atual.filtros || {} } };
+  return { ok: { nome, mensagem, variacoes, limiteDia, janela, recorrente, robo, comparar, inicio, fim, ativa: b.ativa == null ? atual.ativa ?? true : !!b.ativa, filtros: b.filtros ? filtrosOk(b.filtros) : atual.filtros || {} } };
 }
 
 function criar(id, b, por) {
@@ -81,7 +88,8 @@ function criar(id, b, por) {
   const todas = ler(id);
   if (todas.length >= 200) return { erro: 'No máximo 200 campanhas por loja: apague as antigas.' };
   const agora = new Date().toISOString();
-  const c = { id: novoId(), ...d.ok, criadaEm: agora, por, rodadas: [{ id: novoId(), em: agora, por, lista: l.ok }] };
+  const cid = novoId();
+  const c = { id: cid, ...d.ok, criadaEm: agora, por, rodadas: [{ id: novoId(), em: agora, por, lista: RET.separar(l.ok, cid, { ligado: d.ok.comparar, em: agora }) }] };
   todas.unshift(c);
   gravar(id, todas);
   return { ok: c };
@@ -114,13 +122,14 @@ function novaRodada(id, cid, lista, por, agora = Date.now()) {
   if (c.recorrente && c.rodadas.length && M.foraDoPeriodo(c, C.diaSP(agora))) return { ok: c, repetida: true, foraDoPeriodo: true }; // recorrente fora do período: não monta lista nova
   const l = listaOk(lista);
   if (l.erro) return l;
-  c.rodadas.unshift({ id: novoId(), em: new Date(agora).toISOString(), por, lista: l.ok });
+  const em = new Date(agora).toISOString();
+  c.rodadas.unshift({ id: novoId(), em, por, lista: RET.separar(l.ok, c.id, { ligado: c.comparar === true, em }) });
   if (c.rodadas.length > 60) c.rodadas.length = 60;
   gravar(id, todas);
   return { ok: c };
 }
-/** critérios mudaram: a lista da rodada é refeita — quem já foi enviado, pulado ou pediu para não receber continua
- *  como está; os pendentes passam a ser os da lista nova */
+/** critérios mudaram: a lista da rodada é refeita — quem já foi enviado, pulado, pediu para não receber ou está no grupo
+ *  de comparação continua como está; os pendentes passam a ser os da lista nova (com o mesmo sorteio da comparação) */
 function refazerLista(id, cid, rid, lista) {
   const todas = ler(id);
   const c = todas.find((x) => x.id === cid);
@@ -130,7 +139,8 @@ function refazerLista(id, cid, rid, lista) {
   if (l.erro) return l;
   const feitos = r.lista.filter((x) => x.st !== 'p');
   const ja = new Set(feitos.map((x) => x.cpf));
-  r.lista = [...feitos, ...l.ok.filter((x) => !ja.has(x.cpf))];
+  const novos = l.ok.filter((x) => !ja.has(x.cpf));
+  r.lista = [...feitos, ...RET.separar(novos, c.id, { ligado: c.comparar === true, em: r.em, tamanho: feitos.length + novos.length })];
   gravar(id, todas);
   return { ok: c };
 }
@@ -141,6 +151,7 @@ function marcar(id, cid, rid, cpf, st, por, motivo, variacao) {
   const r = c && c.rodadas.find((x) => x.id === rid);
   const it = r && r.lista.find((x) => x.cpf === cpf);
   if (!it) return { erro: 'Cliente não está nesta campanha.' };
+  if (it.st === 'c') return { erro: 'Este cliente está no grupo de comparação desta lista: fica sem mensagem para medir o efeito da campanha.' };
   it.st = st;
   delete it.v;
   if (st === 'e' && Number.isInteger(variacao) && variacao >= 0 && variacao <= 4) it.v = variacao;
@@ -169,7 +180,7 @@ function copiar(origem, nomeOrigem, cid, destinos, por) {
   if (!ds.length) return { erro: 'Escolha pelo menos uma loja.' };
   for (const d of ds) {
     const l = lerCopias(d).filter((x) => !(x.deLoja === origem && x.deCampanha === cid)); // a mesma campanha mandada de novo substitui
-    l.unshift({ id: novoId(), nome: c.nome, mensagem: c.mensagem, janela: c.janela, recorrente: c.recorrente, filtros: c.filtros || {}, deLoja: origem, deNome: nomeOrigem, deCampanha: cid, por, em: new Date().toISOString() });
+    l.unshift({ id: novoId(), nome: c.nome, mensagem: c.mensagem, janela: c.janela, recorrente: c.recorrente, comparar: c.comparar === true, filtros: c.filtros || {}, deLoja: origem, deNome: nomeOrigem, deCampanha: cid, por, em: new Date().toISOString() });
     fs.mkdirSync(path.dirname(arqCopias(d)), { recursive: true });
     C.gravarAtomico(arqCopias(d), JSON.stringify(l.slice(0, 50)), 0o640);
   }

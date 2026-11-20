@@ -153,6 +153,29 @@ test('só campanhas ativas marcadas para o robô; enviado e pulado não recebem 
   assert.strictEqual(ZF.decidir(cena({ campanhas: [c] })).motivo, 'sem_pendentes');
 });
 
+test('grupo de comparação (st "c"): o robô nunca envia, não conta como pendente e não entra na lista conferida', () => {
+  const c = camp('a');
+  c.rodadas[0].lista[0].st = 'c'; c.rodadas[0].lista[0].em = c.rodadas[0].em; // o primeiro da fila foi sorteado para ficar sem mensagem
+  const d = ZF.decidir(cena({ campanhas: [c] }));
+  assert.strictEqual(d.msg.cliente.cpf, CPF[1], 'pula o cliente da comparação e segue para o próximo pendente');
+  assert.deepStrictEqual(d.marcar, [], 'não marca o cliente da comparação como pulado');
+  // só sobraram clientes da comparação: não há pendentes (nem "conferir a lista")
+  c.rodadas[0].lista[1].st = 'e'; c.rodadas[0].lista[2].st = 'c';
+  assert.strictEqual(ZF.decidir(cena({ campanhas: [c] })).motivo, 'sem_pendentes');
+  assert.strictEqual(ZF.decidir(cena({ campanhas: [c], preparo: {} })).motivo, 'sem_pendentes');
+  // a lista conferida só guarda pendentes: quem é da comparação fica de fora mesmo que a tela mande
+  CAMP.criar('l1', { nome: 'Comparar', mensagem: 'Oi {nome}', robo: true, comparar: false, lista: CPF.slice(0, 3).map((cpf) => ({ cpf, nome: 'x' })) }, 'dono');
+  const todas = CAMP.ler('l1'), nova = todas[0];
+  nova.rodadas[0].lista[0].st = 'c';
+  fs.writeFileSync(path.join(C.pastaLoja('l1'), 'campanhas.json'), JSON.stringify(todas));
+  const g = ZF.gravarPreparo('l1', nova.id, CPF.slice(0, 3).map((cpf, k) => ({ cpf, para: NUM[k], v: valores('C' + k) })), 'dono');
+  assert.strictEqual(g.ok.clientes, 2);
+  assert.ok(!ZF.lerPreparo('l1')[nova.id].itens[CPF[0]]);
+  // e o cliente da comparação não pode ser marcado como enviado pela rota de marcar
+  assert.match(CAMP.marcar('l1', nova.id, nova.rodadas[0].id, CPF[0], 'e', 'robô').erro, /grupo de comparação/);
+  CAMP.apagar('l1', nova.id);
+});
+
 test('duas campanhas: acabou uma (ou bateu o limite dela), passa para a próxima, sempre na mesma ordem', () => {
   const nova = camp('b', { criadaEm: '2026-03-02T12:00:00.000Z', rodadas: [{ id: 'rb', em: '2026-03-02T12:00:00.000Z', lista: [{ cpf: CPF[3], nome: 'Cliente 4', st: 'p' }] }] });
   const velha = camp('a');

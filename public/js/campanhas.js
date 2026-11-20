@@ -1,5 +1,6 @@
 /* Clientes → Campanhas: lista de clientes por critérios (pontos, vencimento, produto, ausência…), mensagem de WhatsApp
- * personalizada, envio em fila (um clique por cliente, no WhatsApp da loja) e o retorno: quem comprou nos N dias seguintes.
+ * personalizada, envio em fila (um clique por cliente, no WhatsApp da loja) e o retorno: quem comprou nos N dias seguintes
+ * (a conta do retorno e do grupo de comparação fica em campretorno.js).
  * Só clientes com celular e que não pediram para não receber mensagens. Campanha recorrente: uma lista nova por semana
  * ou por mês, montada com os mesmos critérios quando a tela é aberta (campanha do robô: o servidor monta sozinho,
  * com as contas deste arquivo — TS.campanhasCalc, src/zapauto.js). */
@@ -26,10 +27,11 @@
     const m = /\/api\/campanhas(?:\/([^/?]+))?(?:\/(\w+))?/.exec(url);
     const c = m[1] && demo.lista.find((x) => x.id === m[1]);
     if (met === 'GET') return { campanhas: demo.lista.slice() };
-    if (met === 'POST' && !m[1]) { const n = { id: id(), nome: b.nome, mensagem: b.mensagem, janela: b.janela, recorrente: b.recorrente, ativa: true, filtros: b.filtros, criadaEm: agora, por: 'você', rodadas: [{ id: id(), em: agora, lista: b.lista.map((x) => ({ ...x, st: 'p' })) }] }; demo.lista.unshift(n); return { campanha: n }; }
+    const sep = (cid, l, ligado, tamanho) => TS.campRetorno.separar(l.map((x) => ({ ...x, st: 'p' })), cid, { ligado, em: agora, tamanho });
+    if (met === 'POST' && !m[1]) { const cid = id(), comparar = b.comparar !== false; const n = { id: cid, nome: b.nome, mensagem: b.mensagem, janela: b.janela, recorrente: b.recorrente, comparar, ativa: true, filtros: b.filtros, criadaEm: agora, por: 'você', rodadas: [{ id: id(), em: agora, lista: sep(cid, b.lista, comparar) }] }; demo.lista.unshift(n); return { campanha: n }; }
     if (met === 'PUT' && !m[2]) { const { loja, ...resto } = b; Object.assign(c, resto); return { campanha: c }; }
-    if (met === 'PUT' && m[2] === 'rodadas') { const r = c.rodadas[0]; const feitos = r.lista.filter((x) => x.st !== 'p'); const ja = new Set(feitos.map((x) => x.cpf)); r.lista = [...feitos, ...b.lista.filter((x) => !ja.has(x.cpf)).map((x) => ({ ...x, st: 'p' }))]; return { campanha: c }; }
-    if (m[2] === 'rodadas') { c.rodadas.unshift({ id: id(), em: agora, lista: b.lista.map((x) => ({ ...x, st: 'p' })) }); return { campanha: c }; }
+    if (met === 'PUT' && m[2] === 'rodadas') { const r = c.rodadas[0]; const feitos = r.lista.filter((x) => x.st !== 'p'); const ja = new Set(feitos.map((x) => x.cpf)); const novos = b.lista.filter((x) => !ja.has(x.cpf)); r.lista = [...feitos, ...sep(c.id, novos, c.comparar === true, feitos.length + novos.length)]; return { campanha: c }; }
+    if (m[2] === 'rodadas') { c.rodadas.unshift({ id: id(), em: agora, lista: sep(c.id, b.lista, c.comparar === true) }); return { campanha: c }; }
     if (m[2] === 'marcar') { const it = c.rodadas.find((r) => r.id === b.rodada).lista.find((x) => x.cpf === b.cpf); it.st = b.st; if (b.st === 'p') { delete it.em; delete it.por; } else { it.em = agora; it.por = 'você'; } return { item: it }; }
     if (met === 'DELETE') { demo.lista = demo.lista.filter((x) => x !== c); return { ok: true }; }
     return {};
@@ -192,39 +194,49 @@
     return feitas;
   }
 
-  /** retorno: quem comprou do dia do envio até N dias depois (cupons com CPF) */
-  function retorno(item, janela) {
-    if (item.st !== 'e' || !item.em) return null;
-    const c = TS.cli.porCPF && TS.cli.porCPF.get(item.cpf);
-    const e = isoDia(item.em);
-    const ks = c ? c.cupons.filter((k) => k.day >= e && k.day <= e + janela) : [];
-    return { voltou: ks.length > 0, vt: ks.reduce((t, k) => t + k.vt, 0), primeira: ks.length ? Math.min(...ks.map((k) => k.day)) : null, aberto: dia() - e < janela };
-  }
+  /** retorno: quem comprou DEPOIS do envio (do dia seguinte até N dias depois; cupons com CPF). A conta é a de campretorno.js */
+  const cuponsDe = (cpf) => { const c = TS.cli.porCPF && TS.cli.porCPF.get(cpf); return c ? c.cupons : []; };
+  const retorno = (item, janela) => TS.campRetorno.retornoItem(item, cuponsDe(item.cpf), janela, dia());
+  const pctVoltou = (g) => (g.taxa == null ? '—' : fmt.pct(g.taxa, 0));
   /** retorno por variação da mensagem: enviadas, voltaram e faturamento de cada uma */
   function cartaoVariacoes(r, camp, textos) {
     const linhas = textos.map((t, k) => {
-      const its = r.lista.filter((x) => x.st === 'e' && x.v === k);
-      let volt = 0, vt = 0, aberto = 0;
-      for (const it of its) { const x = retorno(it, camp.janela); if (x.voltou) { volt++; vt += x.vt; } if (x.aberto) aberto++; }
-      return { k: k + 1, texto: t, env: its.length, volt, pct: its.length ? volt / its.length : null, vt, aberto };
+      const g = TS.campRetorno.resumo(r.lista, cuponsDe, camp.janela, dia(), (x) => x.st === 'e' && x.v === k).rec;
+      return { k: k + 1, texto: t, env: g.n, fech: g.fechados, volt: g.voltFech, pct: g.taxa, vt: g.vt, aberto: g.abertos };
     });
-    const melhor = linhas.filter((l) => l.env >= 10).sort((a, b) => b.pct - a.pct)[0];
-    return TS.card('Retorno por variação', `Cada cliente recebeu uma versão da mensagem · com poucas mensagens (menos de 10 por variação) a diferença ainda é sorte`, TS.table({
+    const melhor = linhas.filter((l) => l.fech >= 10).sort((a, b) => b.pct - a.pct)[0];
+    return TS.card('Retorno por variação', `Cada cliente recebeu uma versão da mensagem · o % conta só quem já teve o prazo inteiro · com menos de 10 por variação a diferença ainda é sorte`, TS.table({
       cols: [
         { key: 'k', label: 'Variação', align: 'l', render: (l) => h('span', null, `${l.k}`, melhor && melhor.k === l.k ? h('span', { class: 'cli-tag t-repor' }, ' melhor até agora') : null) },
         { key: 'texto', label: 'Mensagem', align: 'l', render: (l) => h('small', { class: 'cp-var-txt' }, l.texto.length > 110 ? l.texto.slice(0, 110) + '…' : l.texto) },
-        { key: 'env', label: 'Enviadas', fmt: fmt.int }, { key: 'pct', label: 'Voltaram', render: (l) => (l.pct == null ? '—' : `${fmt.pct(l.pct, 0)} (${fmt.int(l.volt)})`) },
+        { key: 'env', label: 'Enviadas', fmt: fmt.int }, { key: 'pct', label: 'Voltaram', title: 'Voltaram ÷ enviadas cujo prazo já fechou (compra do dia seguinte ao envio em diante). Entre parênteses: quantos voltaram de quantos já fecharam. "poucos dados" = menos de 10 com o prazo fechado.', render: (l) => (l.pct == null ? h('span', { class: 'muted' }, l.aberto ? 'ainda no prazo' : '—') : h('span', null, `${fmt.pct(l.pct, 0)} (${fmt.int(l.volt)} de ${fmt.int(l.fech)})`, l.fech < 10 ? h('small', { class: 'muted' }, ' poucos dados') : null)), sortVal: (l) => l.pct ?? -1 },
         { key: 'vt', label: 'Faturamento', fmt: fmt.brl0 },
       ], rows: linhas, sortKey: 'k', sortDir: 'asc',
     }));
   }
-  function resumoRodada(r, janela) {
-    let env = 0, pend = 0, opt = 0, volt = 0, vt = 0, aberto = 0;
-    for (const it of r.lista) {
-      if (it.st === 'p') pend++; else if (it.st === 'o') opt++;
-      if (it.st === 'e') { env++; const x = retorno(it, janela); if (x.voltou) { volt++; vt += x.vt; } if (x.aberto) aberto++; }
-    }
-    return { total: r.lista.length, env, pend, opt, volt, vt, aberto };
+  /** resumo da lista: a conta de campretorno.js (rec = quem recebeu; ctl = grupo de comparação; efeito = a diferença) */
+  const resumoRodada = (r, janela) => TS.campRetorno.resumo(r.lista, cuponsDe, janela, dia());
+  /** cartão "Efeito da campanha": quem recebeu × quem não recebeu, na mesma janela */
+  function cartaoEfeito(s, camp) {
+    const R = TS.campRetorno, e = s.efeito;
+    if (!s.comp) return h('div', { class: 'muted cp-semcomp' }, h('b', null, 'Sem comparação: '), 'parte destes clientes voltaria de qualquer jeito, com ou sem mensagem. ',
+      TS.dica(`Esta lista não tem grupo de comparação${camp.comparar ? ` (ela tem menos de ${R.MIN_LISTA} clientes)` : ''}. Para medir o efeito de verdade, marque "Guardar ${R.PCT}% da lista sem mensagem para comparar" em "Editar campanha": vale nas próximas listas com ${R.MIN_LISTA} clientes ou mais.`));
+    const pp = (v) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${fmt.n1(Math.abs(v) * 100)} p.p.`;
+    const rs = (v) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${fmt.brl(Math.abs(v))}`;
+    const linha = (nome, g, det) => ({ nome, det, n: `${fmt.int(g.fechados)}${g.abertos ? ` (+${fmt.int(g.abertos)} no prazo)` : ''}`, taxa: g.taxa == null ? '—' : `${fmt.pct(g.taxa)} (${fmt.int(g.voltFech)} de ${fmt.int(g.fechados)})`, gasto: g.gasto == null ? '—' : fmt.brl(g.gasto) });
+    const rows = [linha('Receberam a mensagem', s.rec, 'enviadas'), linha('Não receberam', s.ctl, `grupo de comparação · ${R.PCT}% da lista, por sorteio`)];
+    if (e) rows.push({ nome: 'Efeito da campanha', det: 'receberam − não receberam', forte: true, n: '', taxa: pp(e.taxa), gasto: rs(e.gasto), cls: e.poucos ? '' : e.gasto > 0 ? 'pos' : e.gasto < 0 ? 'neg' : '' });
+    const aviso = !e ? h('div', { class: 'muted' }, 'Ainda não dá para comparar: falta fechar o prazo de retorno dos dois grupos.')
+      : e.poucos ? h('div', { class: 'notice' }, h('b', null, 'Poucos dados: '), `com menos de ${R.MIN_GRUPO} clientes de prazo fechado em cada grupo, a diferença ainda pode ser sorte. Leia como tendência, não como resultado.`)
+        : h('div', { class: e.vendasAMais > 0 ? 'notice ok' : 'notice' }, e.vendasAMais > 0 ? h('span', null, 'A campanha trouxe cerca de ', h('b', null, fmt.brl0(e.vendasAMais)), ` a mais do que estes ${fmt.int(s.rec.fechados)} clientes comprariam sem a mensagem.`) : 'Quem recebeu a mensagem não comprou mais do que quem não recebeu: nesta lista a campanha não mostrou efeito.');
+    return TS.card('Efeito da campanha', `Quem recebeu × quem ficou sem mensagem, nos mesmos ${camp.janela} dias. Só entra quem já teve o prazo inteiro.`, aviso, TS.table({
+      cols: [
+        { key: 'nome', label: 'Grupo', align: 'l', wrap: true, render: (x) => h('span', null, h('b', null, x.nome), x.det ? h('small', { class: 'muted cp-cel' }, x.det) : null) },
+        { key: 'n', label: 'Clientes com prazo fechado', title: `Clientes cujo prazo de ${camp.janela} dias já acabou. Para quem recebeu, o prazo conta do dia do envio; para o grupo de comparação, do dia em que a lista foi criada. "no prazo" = ainda podem voltar (não entram no %).` },
+        { key: 'taxa', label: 'Voltaram', title: `Compraram (cupom com CPF) do dia seguinte até ${camp.janela} dias depois ÷ clientes com prazo fechado. Na linha do efeito: a diferença, em pontos percentuais (p.p.).`, render: (x) => (x.forte ? h('b', { class: x.cls }, x.taxa) : x.taxa) },
+        { key: 'gasto', label: 'Gasto médio por cliente', title: 'Soma das compras no prazo ÷ todos os clientes do grupo com prazo fechado (quem não voltou conta como R$ 0). Na linha do efeito: quanto cada cliente que recebeu gastou a mais do que quem não recebeu. Efeito × clientes que receberam = vendas a mais estimadas.', render: (x) => (x.forte ? h('b', { class: x.cls }, x.gasto) : x.gasto) },
+      ], rows,
+    }));
   }
 
   function pintarLista(corpo, lista, novas) {
@@ -237,8 +249,8 @@
           h('div', null, h('b', null, fmt.int(s.total)), h('small', null, 'na lista')),
           h('div', null, h('b', null, fmt.int(s.env)), h('small', null, 'enviadas')),
           h('div', null, h('b', null, fmt.int(s.pend)), h('small', null, 'pendentes')),
-          h('div', { class: 'ok' }, h('b', null, s.env ? fmt.pct(s.volt / s.env, 0) : '—'), h('small', null, `voltaram (${c.janela} dias)`))),
-        h('div', { class: 'cp-barra' }, h('span', { style: { width: (s.total ? (s.env + s.opt) / s.total * 100 : 0) + '%' } })));
+          h('div', { class: 'ok', title: `Voltaram ÷ enviadas cujo prazo de ${c.janela} dias já fechou${s.rec.abertos ? ` · ${fmt.int(s.rec.abertos)} ainda no prazo` : ''}` }, h('b', null, pctVoltou(s.rec)), h('small', null, s.rec.taxa == null && s.rec.abertos ? 'ainda no prazo' : `voltaram (${c.janela} dias)`))),
+        h('div', { class: 'cp-barra' }, h('span', { style: { width: (s.total - s.comp ? (s.env + s.opt) / (s.total - s.comp) * 100 : 0) + '%' } })));
     });
     const copias = (lista.copias || []).map((cp) => h('div', { class: 'card cp-recebida' },
       h('div', null, h('b', null, cp.nome), h('small', { class: 'muted' }, ` · copiada de ${cp.deNome || cp.deLoja} por ${cp.por || '—'} em ${fmt.date(cp.em.slice(0, 10))}`),
@@ -296,6 +308,9 @@
     const dIni = h('input', { class: 'f-input', type: 'date', value: (base && base.inicio) || '', 'aria-label': 'Início da campanha' });
     const dFim = h('input', { class: 'f-input', type: 'date', value: (base && base.fim) || '', 'aria-label': 'Término da campanha' });
     const limite = h('input', { class: 'f-input cp-num', type: 'number', min: 0, max: 500, value: base && base.limiteDia != null ? base.limiteDia : 20 });
+    // grupo de comparação: campanha nova (ou duplicada) começa marcada; a que já existia mostra como está
+    const comp = h('input', { type: 'checkbox', checked: (editando ? base.comparar === true : !base || base.comparar !== false) || null });
+    const CR = TS.campRetorno;
     // variações da mensagem (até 4 além da principal): cada cliente recebe uma, em rodízio; o retorno é medido por variação
     let alvoMsg = msg;
     msg.addEventListener('focus', () => { alvoMsg = msg; });
@@ -333,7 +348,8 @@
     if (TS.estoqueDisp && state.loja && state.loja !== 'todas') TS.estoqueDisp(state.loja).then((d0) => { dispForm = d0; atualizar(); }).catch(() => null);
     let atualizar = TS.debounce(() => {
       sel_ = selecionar(f);
-      contagem.replaceChildren(h('b', null, fmt.int(sel_.length)), ` ${sel_.length === 1 ? 'cliente' : 'clientes'} com celular entram na campanha`);
+      contagem.replaceChildren(h('b', null, fmt.int(sel_.length)), ` ${sel_.length === 1 ? 'cliente' : 'clientes'} com celular entram na campanha`,
+        comp.checked ? h('small', { class: 'muted cp-comp-n' }, sel_.length >= CR.MIN_LISTA ? `cerca de ${fmt.int(Math.round(sel_.length * CR.PCT / 100))} ficam sem mensagem, para comparar` : `sem grupo de comparação: a lista tem menos de ${CR.MIN_LISTA} clientes`) : null);
       const c0 = sel_[0] && sel_[0].c;
       // quem não tem o dado de um campo usado (ex.: sem chá favorito) recebe o texto de reserva: avisa quantos
       const faltam = (TS.CAMPOS_MSG || []).filter(([k, , falta]) => falta && msg.value.includes('{' + k + '}'))
@@ -355,6 +371,7 @@
       }) : TS.empty('Nenhum cliente com celular atende a esses critérios.'), sel_.length > 300 ? h('small', { class: 'muted' }, `Mostrando 300 de ${fmt.int(sel_.length)}. A campanha guarda todos.`) : null);
     }, 250);
     msg.addEventListener('input', atualizar);
+    comp.addEventListener('change', () => atualizar());
     function camposMsg() {
       const lista = [...(TS.CAMPOS_MSG || []), ['produto', 'produtos escolhidos nos critérios']];
       return h('div', { class: 'cp-campos' }, ...lista.map(([k, dica]) => {
@@ -381,7 +398,7 @@
       salvar.disabled = true;
       if (editando) {
         try {
-          const r = await api('PUT', `/api/campanhas/${base.id}`, { loja: state.loja, nome: nome.value.trim(), mensagem: msg.value.trim(), variacoes: textosVar(), limiteDia: +limite.value || 0, janela: +janela.value || 30, recorrente: rec.value, inicio: dIni.value || null, fim: dFim.value || null, filtros: f });
+          const r = await api('PUT', `/api/campanhas/${base.id}`, { loja: state.loja, nome: nome.value.trim(), mensagem: msg.value.trim(), variacoes: textosVar(), limiteDia: +limite.value || 0, janela: +janela.value || 30, recorrente: rec.value, comparar: comp.checked, inicio: dIni.value || null, fim: dFim.value || null, filtros: f });
           Object.assign(base, r.campanha);
           if (refazer.checked && JSON.stringify(f) !== filtrosAntes && base.rodadas[0]) {
             const r2 = await api('PUT', `/api/campanhas/${base.id}/rodadas/${base.rodadas[0].id}`, { loja: state.loja, lista: sel_.map(({ c }) => ({ cpf: c.cpf, nome: c.nome })) });
@@ -392,7 +409,7 @@
         return;
       }
       try {
-        const r = await api('POST', '/api/campanhas', { loja: state.loja, nome: nome.value.trim(), mensagem: msg.value.trim(), variacoes: textosVar(), limiteDia: +limite.value || 0, janela: +janela.value || 30, recorrente: rec.value, inicio: dIni.value || null, fim: dFim.value || null, filtros: f, lista: sel_.map(({ c }) => ({ cpf: c.cpf, nome: c.nome })) });
+        const r = await api('POST', '/api/campanhas', { loja: state.loja, nome: nome.value.trim(), mensagem: msg.value.trim(), variacoes: textosVar(), limiteDia: +limite.value || 0, janela: +janela.value || 30, recorrente: rec.value, comparar: comp.checked, inicio: dIni.value || null, fim: dFim.value || null, filtros: f, lista: sel_.map(({ c }) => ({ cpf: c.cpf, nome: c.nome })) });
         lista.unshift(r.campanha);
         if (base && base.copia) { api('DELETE', `/api/campanhas/copias/${base.copia}?${qs()}`).catch(() => null); lista.copias = (lista.copias || []).filter((x) => x.id !== base.copia); }
         abrirCampanha(corpo, lista, r.campanha);
@@ -496,7 +513,8 @@
               varBox, h('div', { class: 'cp-var-acoes' }, btVar, h('small', { class: 'muted' }, ' Até 5 versões da mesma mensagem. Cada cliente recebe uma, em rodízio, e o painel mostra qual trouxe mais clientes de volta.')),
               h('div', { class: 'cp-passo' }, h('span', { class: 'cp-n' }, '3'), h('div', null, h('b', null, 'Envio e retorno'))),
               linha('Enviar no máximo', limite, 'mensagens por dia nesta campanha', TS.dica('Ao chegar no limite, a fila para e continua no dia seguinte. 0 = sem limite. Poucas mensagens por dia, para quem tem motivo de receber, mantêm o número da loja saudável.')),
-              linha('Medir o retorno em', janela, 'dias', TS.dica('Conta como "voltou" quem comprar (cupom com CPF) do dia do envio até N dias depois.')),
+              linha('Medir o retorno em', janela, 'dias', TS.dica('Conta como "voltou" quem comprar (cupom com CPF) depois da mensagem: do dia seguinte ao envio até N dias depois. Compra do mesmo dia não conta, porque o painel não sabe se foi antes ou depois da mensagem.')),
+              h('label', { class: 'cp-campo cp-check' }, comp, h('span', null, `Guardar ${CR.PCT}% da lista sem mensagem para comparar`, TS.dica(`Para saber se a campanha funciona de verdade: parte de quem recebe a mensagem voltaria de qualquer jeito.\n\nCom esta opção, ${CR.PCT}% da lista (sorteio feito pelo painel) fica sem mensagem. Depois o painel mostra lado a lado quem recebeu × quem não recebeu, no mesmo prazo: a diferença é o efeito da campanha.\n\nVale para listas com ${CR.MIN_LISTA} clientes ou mais (em lista menor o grupo ficaria pequeno demais). Quem está no grupo de comparação não recebe nem pelo robô nem pela fila manual; numa campanha que se repete, o mesmo cliente fica sempre do mesmo lado.`))),
               linha('Período', h('span', { class: 'cp-periodo' }, 'de ', dIni, ' até ', dFim), TS.dica('Data de início e de término da campanha (as duas são opcionais).\n\nAntes do início e depois do término nada é enviado: o robô pula a campanha e a fila manual fica travada. Campanha que se repete também não monta lista nova fora do período.\n\nEm branco: começa já e não tem data para acabar. Ex.: Black Friday de 23/11 a 30/11.')),
               linha('Repetir', rec, TS.dica('Todo dia, toda semana ou todo mês uma lista nova é montada com estes critérios.\n\nTodo dia: serve para critérios que mudam a cada dia (aniversariantes, quem acabou de completar os pontos, quem está há X dias sem comprar). Quem já recebeu não recebe de novo antes do intervalo da loja.\n\nEnvio manual: a lista nova nasce quando a tela de campanhas é aberta. Campanha enviada pelo robô: o painel monta sozinho, sem ninguém abrir a tela.')),
               refazerBox))),
@@ -602,10 +620,10 @@
             h('button', { type: 'button', class: 'btn danger-txt', onclick: async () => { if (!confirm(`${c.nome || 'Este cliente'} não quer receber mensagens?`)) return; await marcarSt(atual, 'o').catch(() => {}); if (!TS.demo) await A().marcar(c, 'optout').catch(() => {}); repintar(); } }, 'Não quer mensagens'))));
     } else {
       fila = esperandoEstoque.size ? TS.card('Fila de envio', null, h('div', { class: 'cp-fim' }, h('b', null, 'Só faltam clientes esperando estoque.'), ' Eles entram na fila quando chegar a nota de entrada do produto.'))
-        : TS.card('Fila de envio', null, h('div', { class: 'cp-fim' }, h('b', null, '✓ Todas as mensagens desta lista foram enviadas.'), ` O retorno é medido até ${camp.janela} dias depois de cada envio.`));
+        : TS.card('Fila de envio', null, h('div', { class: 'cp-fim' }, h('b', null, '✓ Todas as mensagens desta lista foram enviadas.'), ` O retorno é medido do dia seguinte até ${camp.janela} dias depois de cada envio.`));
     }
     // lista com situação e retorno
-    const ST = { p: ['Pendente', ''], e: ['Enviada', 'ok'], o: ['Não quer', 'neg'], x: ['Pulada', ''] };
+    const ST = { p: ['Pendente', ''], e: ['Enviada', 'ok'], o: ['Não quer', 'neg'], x: ['Pulada', ''], c: ['Comparação (sem mensagem)', ''] };
     const linhas = r.lista.map((it) => {
       const c = clienteDe(it.cpf), ret = retorno(it, camp.janela);
       return { it, cpf: it.cpf, nome: it.nome || c.nome || '—', cel: A().fmtTel(c.celular), st: it.st, em: it.em ? isoDia(it.em) : null, por: it.por || '', voltou: ret ? (ret.voltou ? 2 : ret.aberto ? 1 : 0) : -1, ret };
@@ -614,9 +632,9 @@
       cols: [
         { key: 'nome', label: 'Cliente', align: 'l', render: (x) => h('span', null, x.nome, h('small', { class: 'muted cp-cel' }, 'CPF ' + A().fmtCPF(x.cpf))) },
         { key: 'cel', label: 'Celular', align: 'l' },
-        { key: 'st', label: 'Situação', align: 'l', title: 'Pendente, Enviada (com a data e quem enviou: 🤖 robô = enviada pelo robô do WhatsApp), Pulada (com o motivo) ou Não quer mensagens.', render: (x) => h('span', { class: 'cp-st ' + ST[x.st][1] }, x.st === 'p' && esperandoEstoque.has(x.cpf) ? `Esperando estoque (${esperandoEstoque.get(x.cpf)})` : ST[x.st][0], x.em != null ? h('small', null, ` ${d(x.em)}${x.por ? ' · ' + (x.por === 'robô' ? '🤖 robô' : x.por) : ''}`) : null, x.it.motivo ? h('small', { class: 'cp-motivo' }, x.it.motivo) : null), sortVal: (x) => ({ e: 3, x: 2, o: 1, p: 0 })[x.st] },
-        { key: 'voltou', label: `Voltou em ${camp.janela} dias`, align: 'l', render: (x) => (!x.ret ? '—' : x.ret.voltou ? h('span', { class: 'cp-st ok' }, `Sim · ${d(x.ret.primeira)} · ${fmt.brl0(x.ret.vt)}`) : x.ret.aberto ? h('span', { class: 'muted' }, 'ainda no prazo') : h('span', { class: 'muted' }, 'não')) },
-        { key: 'acao', label: '', align: 'l', render: (x) => (x.st !== 'p' ? h('button', { type: 'button', class: 'link-btn', onclick: async (e) => { e.stopPropagation(); await marcarSt(x.it, 'p', x.it.motivo ? 'liberado' : null).catch((er) => alert(er.message)); repintar(); } }, 'voltar para a fila') : null), sortVal: () => 0 },
+        { key: 'st', label: 'Situação', align: 'l', title: 'Pendente, Enviada (com a data e quem enviou: 🤖 robô = enviada pelo robô do WhatsApp), Pulada (com o motivo), Não quer mensagens ou Comparação (sorteado para ficar sem mensagem: serve para medir o efeito da campanha).', render: (x) => h('span', { class: 'cp-st ' + ST[x.st][1] }, x.st === 'p' && esperandoEstoque.has(x.cpf) ? `Esperando estoque (${esperandoEstoque.get(x.cpf)})` : ST[x.st][0], x.em != null && x.st !== 'c' ? h('small', null, ` ${d(x.em)}${x.por ? ' · ' + (x.por === 'robô' ? '🤖 robô' : x.por) : ''}`) : null, x.it.motivo ? h('small', { class: 'cp-motivo' }, x.it.motivo) : null), sortVal: (x) => ({ e: 3, x: 2, o: 1, c: 4, p: 0 })[x.st] },
+        { key: 'voltou', label: `Voltou em ${camp.janela} dias`, align: 'l', title: `Comprou (cupom com CPF) do dia seguinte ao envio até ${camp.janela} dias depois. No grupo de comparação o prazo conta do dia em que a lista foi criada. "ainda no prazo" = pode voltar.`, render: (x) => (!x.ret ? '—' : x.ret.voltou ? h('span', { class: 'cp-st ok' }, `Sim · ${d(x.ret.primeira)} · ${fmt.brl0(x.ret.vt)}`) : x.ret.aberto ? h('span', { class: 'muted' }, 'ainda no prazo') : h('span', { class: 'muted' }, 'não')) },
+        { key: 'acao', label: '', align: 'l', render: (x) => (x.st !== 'p' && x.st !== 'c' ? h('button', { type: 'button', class: 'link-btn', onclick: async (e) => { e.stopPropagation(); await marcarSt(x.it, 'p', x.it.motivo ? 'liberado' : null).catch((er) => alert(er.message)); repintar(); } }, 'voltar para a fila') : null), sortVal: () => 0 },
       ],
       rows: linhas.map((x) => ({ ...x, cpfTxt: A().fmtCPF(x.cpf) + ' ' + x.cpf })), search: 'Buscar por nome, CPF ou celular', searchKeys: ['nome', 'cpfTxt', 'cel'], sortKey: 'st', sortDir: 'asc', rowClass: (x) => (x.st === 'e' ? 'cp-enviada' : null), onRowClick: (x) => A().abrirClientes([x.cpf]),
     });
@@ -635,16 +653,18 @@
         (TS.lojas || []).length > 1 && !TS.demo ? h('button', { type: 'button', class: 'btn', onclick: () => copiarPara(camp) }, 'Copiar para outra loja') : null,
         h('button', { type: 'button', class: 'btn danger-txt', onclick: async () => { if (!confirm(`Apagar a campanha "${camp.nome}"? As listas e o retorno somem.`)) return; await api('DELETE', `/api/campanhas/${camp.id}?${qs()}`).catch((e) => alert(e.message)); lista.splice(lista.indexOf(camp), 1); pintarLista(corpo, lista, []); } }, 'Apagar')),
       h('div', { class: 'page-head cp-head' }, h('div', null, h('h2', { class: 'page-title' }, camp.nome),
-        h('div', { class: 'page-sub' }, `${camp.recorrente ? (camp.recorrente === 'diaria' ? 'Todo dia · ' : camp.recorrente === 'semanal' ? 'Toda semana · ' : 'Todo mês · ') : ''}lista de ${fmt.date(r.em.slice(0, 10))} · retorno medido em ${camp.janela} dias`))),
+        h('div', { class: 'page-sub' }, `${camp.recorrente ? (camp.recorrente === 'diaria' ? 'Todo dia · ' : camp.recorrente === 'semanal' ? 'Toda semana · ' : 'Todo mês · ') : ''}lista de ${fmt.date(r.em.slice(0, 10))} · retorno medido em ${camp.janela} dias${camp.comparar ? ` · guarda ${TS.campRetorno.PCT}% sem mensagem para comparar` : ''}`))),
       h('div', { class: 'grid g-kpi' },
-        kpi('Na lista', fmt.int(s.total), `${fmt.int(s.pend)} pendentes`),
-        kpi('Enviadas', fmt.int(s.env), s.total ? `${fmt.pct(s.env / s.total, 0)} da lista${pelosRobo ? ` · 🤖 ${fmt.int(pelosRobo)} pelo robô` : ''}` : null, 'Mensagens abertas no WhatsApp pela fila (clique em "Abrir no WhatsApp") ou enviadas pelo robô do WhatsApp (🤖).'),
-        kpi('Voltaram', s.env ? fmt.pct(s.volt / s.env, 0) : '—', `${fmt.int(s.volt)} de ${fmt.int(s.env)} enviados${s.aberto ? ` · ${fmt.int(s.aberto)} ainda no prazo` : ''}`, `Clientes que compraram (cupom com CPF) do dia do envio até ${camp.janela} dias depois.`),
-        kpi('Faturamento do retorno', fmt.brl0(s.vt), s.volt ? `ticket ${fmt.brl0(s.vt / s.volt)}` : null, 'Soma das compras desses clientes no prazo do retorno.'),
+        kpi('Na lista', fmt.int(s.total), `${fmt.int(s.pend)} pendentes${s.comp ? ` · ${fmt.int(s.comp)} sem mensagem (comparação)` : ''}`, s.comp ? `Clientes desta lista. ${fmt.int(s.comp)} foram sorteados para ficar sem mensagem (grupo de comparação): não entram na fila nem no robô.` : 'Clientes desta lista.'),
+        kpi('Enviadas', fmt.int(s.env), s.total - s.comp ? `${fmt.pct(s.env / (s.total - s.comp), 0)} de quem recebe${pelosRobo ? ` · 🤖 ${fmt.int(pelosRobo)} pelo robô` : ''}` : null, 'Mensagens abertas no WhatsApp pela fila (clique em "Abrir no WhatsApp") ou enviadas pelo robô do WhatsApp (🤖). O % é sobre quem recebe mensagem (sem o grupo de comparação).'),
+        kpi('Voltaram', pctVoltou(s.rec), s.rec.fechados ? `${fmt.int(s.rec.voltFech)} de ${fmt.int(s.rec.fechados)} com o prazo fechado${s.rec.abertos ? ` · ${fmt.int(s.rec.abertos)} ainda no prazo` : ''}` : s.rec.abertos ? `${fmt.int(s.rec.abertos)} ainda no prazo${s.rec.voltAbertos ? ` (${fmt.int(s.rec.voltAbertos)} já voltaram)` : ''}` : 'nenhuma enviada ainda',
+          `Voltaram ÷ enviadas cujo prazo de ${camp.janela} dias JÁ FECHOU.\n\n"Voltou" = comprou (cupom com CPF) depois da mensagem: do dia seguinte ao envio até ${camp.janela} dias depois. Compra do mesmo dia do envio não conta (o painel não sabe se foi antes ou depois da mensagem).\n\nQuem ainda está no prazo fica de fora do % (ainda pode voltar) e aparece separado.${s.comp ? '' : '\n\nSem grupo de comparação este número não é o efeito da campanha: parte destes clientes voltaria de qualquer jeito.'}`),
+        kpi('Faturamento do retorno', fmt.brl0(s.rec.vt), s.rec.volt ? `ticket ${fmt.brl0(s.rec.vt / s.rec.volt)} · ${fmt.int(s.rec.volt)} ${s.rec.volt === 1 ? 'cliente' : 'clientes'}` : null, `Soma das compras de quem recebeu a mensagem e voltou no prazo (do dia seguinte ao envio até ${camp.janela} dias depois), inclusive de quem ainda está no prazo. Não é tudo "da campanha": parte compraria de qualquer jeito — o cartão "Efeito da campanha" mostra a diferença para quem não recebeu.`),
         kpi('Não querem', fmt.int(s.opt), 'saíram das próximas campanhas')),
       avisoEstoque ? h('div', { class: 'mt' }, avisoEstoque) : null,
       opcaoRobo ? h('div', { class: 'mt' }, opcaoRobo) : null,
       h('div', { class: 'mt' }, fila),
+      s.env || s.comp ? h('div', { class: 'mt' }, cartaoEfeito(s, camp)) : null,
       textos.length > 1 ? h('div', { class: 'mt' }, cartaoVariacoes(r, camp, textos)) : null,
       h('div', { class: 'mt' }, TS.cardWithTools('Clientes da campanha', 'Enviadas ficam em verde · clique num cliente para ver a ficha', h('div', { class: 'cp-acoes', style: { margin: 0 } }, tab.searchBox, csvBt), tab)));
   }
