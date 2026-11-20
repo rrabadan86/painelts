@@ -13,7 +13,8 @@ test('Configuração guiada: não abre sozinha na apresentação; o atalho das C
   const erros = [];
   page.on('pageerror', (e) => erros.push(e.message));
   const gravou = [];
-  page.on('request', (r) => { if (r.method() !== 'GET' && /\/api\//.test(r.url())) gravou.push(r.url()); });
+  // só o que iria para o painel de verdade: as rotas /api/demo/ são as respostas simuladas da apresentação (ex.: a análise do Início) e não gravam nada
+  page.on('request', (r) => { if (r.method() !== 'GET' && /\/api\//.test(r.url()) && !/\/api\/demo\//.test(r.url())) gravou.push(r.url()); });
   await abrir(page, '#config');
   await expect(page.locator('.page-title')).toHaveText('Configurações');
   await expect(page.locator('.guia')).toHaveCount(0);
