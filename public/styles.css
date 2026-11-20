@@ -3156,3 +3156,8 @@ button.vl-pac-marca { background: none; text-decoration: underline; cursor: poin
   .vl-pac-acao { grid-column: 1 / -1; justify-items: stretch; text-align: left; }
   .vl-pac-abrir { width: 100%; }
 }
+.vl-pac-hist { border-top: 1px solid var(--line); padding-top: 10px; }
+.vl-pac-hist summary { cursor: pointer; font-weight: 600; font-size: 13px; }
+.vl-pac-hist-i { grid-template-columns: 1.1fr .9fr 1.4fr 1fr 1fr; }
+.vl-pac-hist-vazio { margin: 0; font-size: 12px; }
+@media (max-width: 720px) { .vl-pac-hist-i { grid-template-columns: 1fr 1fr; } }

@@ -239,6 +239,17 @@
             abertos.length ? abertos.map(linhaAberto) : h('p', { class: 'muted vl-pac-vazio' }, fechados.length ? 'Nenhum pacote aberto: pelo estoque, estão todos fechados. Abriu um? Use "Abrir lote" abaixo.' : 'Nenhum pacote aberto.')),
           h('div', { class: 'vl-pac-sec' }, h('h4', null, '📦 Lotes fechados', TS.dica('Pacotes ainda fechados, do mais antigo para o mais novo: abra sempre o primeiro da lista. Fechado, vale a validade do pacote.')),
             fechados.length ? fechados.map(linhaFechado) : h('p', { class: 'muted vl-pac-vazio' }, 'Nenhum pacote fechado deste chá.')),
+          (() => {
+            const hs = (d.historico || []).filter((x) => String(x.cod) === String(cod));
+            if (!hs.length) return h('p', { class: 'muted vl-pac-hist-vazio' }, 'Histórico: ainda não há pacote deste chá que tenha acabado desde que o painel passou a registrar as aberturas.');
+            return h('details', { class: 'vl-pac-hist' }, h('summary', null, `Histórico de aberturas (${fmt.int(hs.length)})`, TS.dica('Pacotes deste chá que já acabaram: de qual nota eram, quando chegaram, quando foram abertos (estimado pelo painel ou informado por alguém), até quando valiam e quando acabaram. Fica guardado por 3 anos. As alterações feitas à mão também aparecem em Configurações → Histórico de alterações.')),
+              h('div', { class: 'vl-pac-hist-l' }, hs.map((x) => h('div', { class: 'vl-pac-linha vl-pac-hist-i' },
+                campo('Nota de entrada', h('b', null, x.nf ? `NF ${x.nf}` : 'sem nota'), x.lote ? `Lote ${x.lote}.` : null),
+                campo('Chegou em', fmt.date(x.entrada)),
+                campo('Aberto em', h('span', null, fmt.date(x.abertoEm), h('small', { class: 'muted' }, x.estimado ? ' · estimado' : x.por ? ` · por ${x.por}` : ''))),
+                campo('Valia até', h('span', { class: x.acabouEm > x.validade ? 'neg' : null, title: x.acabouEm > x.validade ? 'Acabou depois do vencimento.' : null }, fmt.date(x.validade))),
+                campo('Acabou em', fmt.date(x.acabouEm))))));
+          })(),
           semNota.length ? h('p', { class: 'muted vl-pac-semnota' }, `Saldo sem nota: ${kgTxt(semNota.reduce((x, l) => x + l.saldo, 0))}. O painel não sabe de qual pacote veio: acerte pelo inventário por lote.`) : null,
           !ls.length ? h('p', { class: 'muted' }, 'Este chá não tem saldo no estoque agora.') : null,
         ].filter(Boolean));

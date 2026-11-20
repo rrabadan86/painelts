@@ -556,6 +556,8 @@ app.get('/api/demo/validade', (req, res) => {
   if (!lojaDemo(req)) return res.status(400).json({ erro: 'Escolha uma loja.' });
   const { LOTd, e, comp, em, lotes } = lotesDemo(req.query.loja);
   res.json({ em, hoje: LOTd.hojeSP(), meses: LOTd.MESES_VALIDADE, mesesAberto: LOTd.MESES_ABERTO, pacoteKg: LOTd.PACOTE_KG, riscoDias: LOTd.RISCO_DIAS, custos: true, faixas: LOTd.FAIXAS.map((f) => ({ id: f.id, nome: f.nome, ate: Number.isFinite(f.ate) ? f.ate : null })),
+    // histórico fictício: os dois primeiros chás abertos já tiveram um pacote anterior que acabou
+    historico: lotes.filter((l) => l.pacoteN > 0 && l.entrada).slice(0, 2).map((l, k) => { const ab = LOTd.somarMeses(l.entrada, -4 - k), fim = LOTd.somarMeses(l.entrada, -1); return { cod: l.cod, nf: String(9000 + k), entrada: LOTd.somarMeses(l.entrada, -5 - k), lote: '', n: 1, abertoEm: ab, estimado: k === 0, por: k === 0 ? '' : 'gerente', validade: LOTd.somarMeses(ab, LOTd.MESES_ABERTO), acabouEm: fim }; }),
     resumo: LOTd.resumo(lotes), lotes: lotes.map((l) => ({ ...l, tipo: '', familia: '' })), granel: LOTd.granelEstoque({ estoque: e.estoque, compras: e.compras }), entradas: LOTd.entradasRecentes({ estoque: e.estoque, compras: comp, edits: { lotes: {} } }) });
 });
 // perdas do mês para o Resultado (apresentação): chá vencido dos lotes fictícios + faltas de inventário inventadas
@@ -2356,6 +2358,7 @@ app.get('/api/validade', async (req, res) => {
   res.json({
     em, hoje: LOT.hojeSP(), meses: LOT.MESES_VALIDADE, mesesAberto: LOT.MESES_ABERTO, pacoteKg: LOT.PACOTE_KG, riscoDias: LOT.RISCO_DIAS, custos, faixas: LOT.FAIXAS.map((f) => ({ id: f.id, nome: f.nome, ate: Number.isFinite(f.ate) ? f.ate : null })),
     resumo: r, lotes: lotes.map((l) => semCusto(req, { ...l, tipo: tipos.get(l.cod) || '', familia: INV.familia(tipos.get(l.cod) || '') })),
+    historico: LOT.historicoAberturas(loja.id), // pacotes de chá que já acabaram: quando abriram, até quando valiam e quando acabaram
     entradas: LOT.entradasRecentes(ctx), // para contar por lote no inventário
     granel: LOT.granelEstoque(ctx), // chá a granel com/sem estoque (Clientes → Hoje não oferece chá que a loja não tem)
   });

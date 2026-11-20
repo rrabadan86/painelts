@@ -63,6 +63,20 @@ test('Validade: mostra o que está na lata com a data de abertura e os pacotes f
   await expect(j.locator('.vl-pac-aberto').first()).toContainText(/NF \d+/);
   await j.getByRole('button', { name: 'Fechar' }).click();
   await expect(page.locator('.vl-pac')).toHaveCount(0);
+  // histórico: pacotes do chá que já acabaram (nota, chegada, abertura, validade e quando acabou)
+  expect(d.historico.length).toBeGreaterThan(0);
+  const hist = d.historico[0], doHist = d.lotes.find((l) => l.cod === hist.cod);
+  await page.waitForFunction(() => !(history.state && history.state.camada));
+  await page.evaluate(([cod, desc]) => TS.validade.janelaPacotes(TS.state.loja, cod, desc), [hist.cod, doHist.desc]);
+  const hd = page.locator('.vl-pac-hist');
+  await expect(hd.locator('summary')).toContainText(`Histórico de aberturas (${d.historico.filter((x) => x.cod === hist.cod).length})`);
+  await hd.locator('summary').click();
+  await expect(hd.locator('.vl-pac-hist-i').first().locator('.vl-pac-campo > small')).toHaveText([/Nota de entrada/, /Chegou em/, /Aberto em/, /Valia até/, /Acabou em/]);
+  await expect(hd.locator('.vl-pac-hist-i').first()).toContainText(`NF ${hist.nf}`);
+  expect(await page.locator('.vl-pac').evaluate((el) => el.scrollWidth - el.clientWidth), 'a janela não rola para o lado').toBeLessThanOrEqual(1);
+  if (process.env.PRINTS) await page.screenshot({ path: `${process.env.PRINTS}/historico-${info.project.name}.png` });
+  await page.locator('.vl-pac').getByRole('button', { name: 'Fechar' }).click();
+  await expect(page.locator('.vl-pac')).toHaveCount(0);
   // chá aberto: a coluna Validade mostra a data final de consumo (a que vale), editável; o "voltar" só aparece quando alguém trocou
   const ab = d.lotes.find((l) => l.motivo === 'aberto' && l.validadeAberto);
   if (ab) {

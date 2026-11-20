@@ -120,6 +120,10 @@ test('a primeira observação guarda a data (não fica mudando); pacote que acab
     L.observarAberturas('l1', HOJE);
     reg = JSON.parse(fs.readFileSync(arq, 'utf8')).aberturas;
     assert.deepStrictEqual(Object.keys(reg), ['102|10|2026-05-01#1']);
+    // o pacote que acabou vai para o histórico do chá: nota, chegada, abertura (quem informou), vencimento e quando acabou
+    assert.deepStrictEqual(L.historicoAberturas('l1'), [{ cod: '10', nf: '101', entrada: '2026-03-01', lote: '', n: 1, abertoEm: '2026-10-01', estimado: false, por: 'ana', validade: '2027-04-01', acabouEm: HOJE }]);
+    L.observarAberturas('l1', HOJE);
+    assert.strictEqual(L.historicoAberturas('l1').length, 1, 'não duplica');
     // aviso: pacote aberto que entrou nos últimos 30 dias do prazo sai uma vez só
     qtd = 1.7;
     L.editarAbertura('l1', { chave: '102|10|2026-05-01', dia: '2026-06-01' }, 'ana', HOJE); // aberto há 5 meses e 19 dias; pacote vale até 05/2027
@@ -159,6 +163,8 @@ test('"abri um pacote hoje": pacote aberto que ainda não vendeu nada (ou aberto
     L.observarAberturas('l2', HOJE);
     l = L.daLoja('l2', HOJE).lotes.find((x) => x.nf === '102');
     assert.deepStrictEqual([l.pacoteN, l.aberto, l.fechado, l.abertoEm, l.abertoEstimado], [1, 0.8, 1, HOJE, false]);
+    // o estoque voltou atrás (ajuste para cima) e o pacote deixou de estar aberto: sai da lista sem virar histórico (ele não acabou)
+    assert.deepStrictEqual(L.historicoAberturas('l2'), []);
     // desfazer a data informada com o pacote ainda inteiro: volta a contar como fechado
     qtd = 2;
     L.editarAbertura('l2', { chave: l.chave, dia: '' }, 'ana', HOJE);

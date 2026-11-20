@@ -509,10 +509,26 @@ function observarAberturas(id, hoje = hojeSP()) {
     const d = a.validade ? dias(hoje, a.validade) : null;
     if (d != null && d <= 30 && !reg[k].avisado) { reg[k].avisado = hoje; mudou = true; perto.push({ chave: l.chave, n: a.n, desc: l.desc, dias: d }); }
   }
-  for (const k of Object.keys(reg)) if (!vivos.has(k)) { delete reg[k]; mudou = true; }
+  // pacote que não está mais aberto: se acabou (o saldo do lote passou dele), vai para o histórico do chá; se o estoque voltou
+  // atrás (ajuste para cima), só sai da lista. O histórico guarda 3 anos.
+  const porChave = new Map(lotes.map((l) => [l.chave, l]));
+  for (const k of Object.keys(reg)) {
+    if (vivos.has(k)) continue;
+    const i = k.lastIndexOf('#'), chave = k.slice(0, i), n = +k.slice(i + 1), l = porChave.get(chave);
+    const acabou = !l || (l.qtdEntrada != null && Math.floor((r3(l.qtdEntrada - l.saldo) + 1e-6) / PACOTE_KG) >= n);
+    if (acabou && DIA.test(reg[k].dia || '')) {
+      const [nf, cod, entrada] = chave.split('|');
+      (d.historico || (d.historico = [])).unshift({ chave, n, cod, nf, entrada, lote: (d.lotes[chave] && d.lotes[chave].lote) || '', abertoEm: reg[k].dia, estimado: !reg[k].por, por: reg[k].por || '',
+        validade: DIA.test(reg[k].ate || '') ? reg[k].ate : somarMeses(reg[k].dia, MESES_ABERTO), acabouEm: hoje });
+    }
+    delete reg[k]; mudou = true;
+  }
+  if (d.historico) { const corte = somarMeses(hoje, -36); d.historico = d.historico.filter((x) => (x.acabouEm || '') >= corte).slice(0, 5000); }
   if (mudou) { d.aberturas = reg; gravar(id, d); }
   return perto;
 }
+/** histórico dos pacotes que já acabaram (do mais recente para o mais antigo): nota, chegada, abertura, vencimento e quando acabou */
+const historicoAberturas = (id) => (ler(id).historico || []).map(({ cod, nf, entrada, lote, n, abertoEm, estimado, por, validade, acabouEm }) => ({ cod, nf, entrada, lote, n, abertoEm, estimado: !!estimado, por: por || '', validade, acabouEm }));
 /** a equipe corrige a data em que o pacote aberto foi para a lata (dia vazio = volta para a estimativa do painel) */
 function editarAbertura(id, b, por, hoje = hojeSP()) {
   const chave = String((b && b.chave) || ''), l = daLoja(id, hoje).lotes.find((x) => x.chave === chave);
@@ -587,4 +603,4 @@ function linhasResumo(id) {
     ...top];
 }
 
-module.exports = { PACOTE_KG, MESES_ABERTO, pacotesDoLote, ritmoCompra, estimarAbertura, comAbertura, observarAberturas, editarAbertura, escolherAjuste, MESES_VALIDADE, FAIXAS, RISCO_DIAS, ler, calcular, resumo, editar, editarSaldo, daLoja, daNota, granelEstoque, disponivel, pendentesNotas, entradasDoCod, entradasRecentes, linhasResumo, somarMeses, precosKg, faixa, hojeSP };
+module.exports = { historicoAberturas, PACOTE_KG, MESES_ABERTO, pacotesDoLote, ritmoCompra, estimarAbertura, comAbertura, observarAberturas, editarAbertura, escolherAjuste, MESES_VALIDADE, FAIXAS, RISCO_DIAS, ler, calcular, resumo, editar, editarSaldo, daLoja, daNota, granelEstoque, disponivel, pendentesNotas, entradasDoCod, entradasRecentes, linhasResumo, somarMeses, precosKg, faixa, hojeSP };
