@@ -32,7 +32,7 @@
     if (met === 'PUT' && !m[2]) { const { loja, ...resto } = b; Object.assign(c, resto); return { campanha: c }; }
     if (met === 'PUT' && m[2] === 'rodadas') { const r = c.rodadas[0]; const feitos = r.lista.filter((x) => x.st !== 'p'); const ja = new Set(feitos.map((x) => x.cpf)); const novos = b.lista.filter((x) => !ja.has(x.cpf)); r.lista = [...feitos, ...sep(c.id, novos, c.comparar === true, feitos.length + novos.length)]; return { campanha: c }; }
     if (m[2] === 'rodadas') { c.rodadas.unshift({ id: id(), em: agora, lista: sep(c.id, b.lista, c.comparar === true) }); return { campanha: c }; }
-    if (m[2] === 'marcar') { const it = c.rodadas.find((r) => r.id === b.rodada).lista.find((x) => x.cpf === b.cpf); it.st = b.st; if (b.st === 'p') { delete it.em; delete it.por; } else { it.em = agora; it.por = 'você'; } return { item: it }; }
+    if (m[2] === 'marcar') { const it = c.rodadas.find((r) => r.id === b.rodada).lista.find((x) => x.cpf === b.cpf); it.st = b.st; if (b.st === 'p') { delete it.em; delete it.por; } else { it.em = agora; it.por = 'você'; } return { item: { ...it } }; } // cópia: quem chama limpa o item antes de aplicar a resposta
     if (met === 'DELETE') { demo.lista = demo.lista.filter((x) => x !== c); return { ok: true }; }
     return {};
   }
@@ -235,7 +235,7 @@
         { key: 'n', label: 'Clientes com prazo fechado', title: `Clientes cujo prazo de ${camp.janela} dias já acabou. Para quem recebeu, o prazo conta do dia do envio; para o grupo de comparação, do dia em que a lista foi criada. "no prazo" = ainda podem voltar (não entram no %).` },
         { key: 'taxa', label: 'Voltaram', title: `Compraram (cupom com CPF) do dia seguinte até ${camp.janela} dias depois ÷ clientes com prazo fechado. Na linha do efeito: a diferença, em pontos percentuais (p.p.).`, render: (x) => (x.forte ? h('b', { class: x.cls }, x.taxa) : x.taxa) },
         { key: 'gasto', label: 'Gasto médio por cliente', title: 'Soma das compras no prazo ÷ todos os clientes do grupo com prazo fechado (quem não voltou conta como R$ 0). Na linha do efeito: quanto cada cliente que recebeu gastou a mais do que quem não recebeu. Efeito × clientes que receberam = vendas a mais estimadas.', render: (x) => (x.forte ? h('b', { class: x.cls }, x.gasto) : x.gasto) },
-      ], rows,
+      ], rows, cartao: true,
     }));
   }
 

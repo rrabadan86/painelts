@@ -280,7 +280,7 @@ const pub = path.join(__dirname, 'public');
 // ---------- pacote único de JS/CSS da tela (pré-comprimido em Brotli + Gzip, cache imutável por hash) ----------
 const APP_SCRIPTS = [
   'core.js', 'components.js', 'dicas.js', 'rules.js', 'pages.js', 'fidelidade.js',
-  'msgwpp.js', 'clientes.js', 'campretorno.js', 'campanhas.js', 'zap.js', 'espera.js', 'extras.js', 'contabilidade.js',
+  'msgwpp.js', 'recompra.js', 'clientes.js', 'campretorno.js', 'campanhas.js', 'zap.js', 'espera.js', 'extras.js', 'contabilidade.js',
   'ruptura.js', 'classeprod.js', 'custodata.js', 'estoque.js', 'devolucao.js', 'precos.js', 'inventario.js', 'sugestoes.js', 'validade.js', 'nfsaida.js', 'creditos.js', 'orcamento.js', 'checklist.js',
   'site.js', 'inicio.js', 'pedido.js', 'ia.js', 'dre.js', 'comprasvendas.js', 'efeitopreco.js', 'equipe.js', 'mapa.js', 'feriados.js', 'fidretorno.js',
   'config.js', 'script.js', 'fechamento.js', 'sistema.js', 'main.js',
@@ -921,7 +921,7 @@ app.post('/api/campanhas', express.json({ limit: '600kb' }), (req, res) => {
   if (!id) return res.status(400).json({ erro: 'Escolha uma loja.' });
   if ((req.body || {}).robo && !gestorCamp(req)) return res.status(403).json({ erro: SO_GESTOR_ROBO });
   const r = CAMP.criar(id, req.body || {}, req.user);
-  if (r.ok) C.auditar(req.user, 'criou campanha', id, { loja: id, nome: r.ok.nome, clientes: r.ok.rodadas[0].lista.length });
+  if (r.ok) C.auditar(req.user, 'criou campanha', id, { loja: id, nome: r.ok.nome, clientes: r.ok.rodadas[0].lista.length, semMensagemParaComparar: r.ok.rodadas[0].lista.filter((x) => x.st === 'c').length });
   respCamp(res, r);
 });
 app.put('/api/campanhas/:id', express.json({ limit: '20kb' }), (req, res) => {
@@ -935,6 +935,7 @@ app.put('/api/campanhas/:id', express.json({ limit: '20kb' }), (req, res) => {
     // mensagem ou critérios mudaram: a lista conferida para o robô deixa de valer (a tela confere de novo ao abrir a campanha)
     if (['mensagem', 'variacoes', 'filtros'].some((k) => k in b)) ZF.limparPreparo(id, req.params.id);
     if (antes && !!antes.robo !== !!r.ok.robo) C.auditar(req.user, r.ok.robo ? 'campanha: ligou o envio pelo robô' : 'campanha: tirou do robô', id, { loja: id, nome: r.ok.nome });
+    if (antes && !!antes.comparar !== !!r.ok.comparar) C.auditar(req.user, r.ok.comparar ? 'campanha: ligou o grupo de comparação (10% sem mensagem)' : 'campanha: desligou o grupo de comparação', id, { loja: id, nome: r.ok.nome });
   }
   respCamp(res, r);
 });
