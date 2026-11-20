@@ -8,6 +8,7 @@ services:
     environment:
       TZ: America/Sao_Paulo
       COLETOR_URL: http://coletor:8000
+      ZAP_URL: http://zap:8010
     volumes:
       - ./config:/app/config   # lojas.json (lojas, usuários, tokens)
       - ./dados:/data          # planilhas de cada loja: dados/<loja>/<arquivo>.xlsx
@@ -41,6 +42,30 @@ services:
       - ./config/coletor:/config:ro   # <loja>.env com as credenciais do AppNext
       - ./dados:/data                 # grava dados/<loja>/importacaoA.xlsx
       - ./coletor-work:/work          # sessão do navegador e logs de cada loja
+    shm_size: "1gb"                   # o Chromium precisa de memória compartilhada
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  # Robô do WhatsApp das campanhas (whatsapp-web.js + Chromium), uma sessão por loja.
+  # Sem portas publicadas: só o painel fala com ele, pela rede interna do compose (X-Zap-Token).
+  zap:
+    build: ./zap
+    # Opcional: só sobe com `docker compose --profile zap up -d --build zap`. Assim a atualização do painel
+    # (`docker compose up -d --build`) não depende da construção do robô — se ela falhasse, a atualização inteira seria desfeita.
+    profiles: ["zap"]
+    container_name: teashop-zap
+    init: true
+    restart: unless-stopped
+    user: "1000:1000"
+    stop_grace_period: 30s            # dá tempo de fechar os navegadores sem estragar a sessão
+    # Só o que o robô precisa (o .env do painel não vai para cá).
+    environment:
+      TZ: America/Sao_Paulo
+      HOME: /work
+      ZAP_TOKEN: ${ZAP_TOKEN:-}
+    volumes:
+      - ./zap-work:/work              # sessão do WhatsApp de cada loja (fora do Git)
     shm_size: "1gb"                   # o Chromium precisa de memória compartilhada
     logging:
       driver: json-file

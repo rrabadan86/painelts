@@ -6,10 +6,11 @@ Painel de vendas das lojas Tea Shop (substitui o Power BI). Responda sempre em *
 - **Servidor:** Node/Express — `server.js` (rotas) e `src/*.js` (regras: estoque, inventário, NF-e, conta com a franquia, cobrança, orçamentos, checklist, IA…).
 - **Tela:** JavaScript puro em `public/js/*.js`, namespace `TS`.
 - **Coletor (robôs):** Python + Playwright em `coletor/` (AppNext, FIXE, Sistema de Pedidos).
+- **Robô do WhatsApp:** serviço Node em `zap/` (opcional no compose, `--profile zap`); só conecta e envia o que o painel manda.
 - **Apresentação:** `/apresentacao` mostra dados fictícios (`src/demo.js`, rotas `/api/demo/...`) e **nunca grava nem envia nada**.
 - **IA:** ✨ Pergunte ao painel, diagnóstico do Início e revisão do pedido (`src/ia*.js`, `public/js/ia.js`).
 
-Regras por parte do código ficam em `.claude/rules/` e carregam sozinhas ao mexer nos arquivos: `tela.md`, `visual.md` (padrão de layout: cabeçalho, avisos, quadros, card com abas e `TS.table`, cores por classe, celular), `coletor.md`, `ia.md`, `nfe.md`.
+Regras por parte do código ficam em `.claude/rules/` e carregam sozinhas ao mexer nos arquivos: `tela.md`, `visual.md` (padrão de layout: cabeçalho, avisos, quadros, card com abas e `TS.table`, cores por classe, celular), `coletor.md`, `ia.md`, `nfe.md`, `zap.md` (robô do WhatsApp).
 Roteiros em `.claude/skills/`: `subir-versao`, `conferir-celular`, `nova-tela`, `nova-consulta-ia`.
 Hooks (`.claude/settings.json`): bloqueiam commit/push de segredos e limpam os restos dos testes de tela.
 
@@ -33,7 +34,7 @@ Hooks (`.claude/settings.json`): bloqueiam commit/push de segredos e limpam os r
 
 ## Regras que não mudam
 **Segredos e dados**
-- Nunca suba para o Git: `.env`, `config/lojas.json`, `config/coletor/*.env`, `config/ia.json`, `config/ia-mestra.key`, `dados/`, backups, IDs reais.
+- Nunca suba para o Git: `.env` (inclui `ZAP_TOKEN`), `zap-work/` (sessão do WhatsApp), `config/lojas.json`, `config/coletor/*.env`, `config/ia.json`, `config/ia-mestra.key`, `dados/`, backups, IDs reais.
 - Senhas e chaves: o Claude nunca digita, nunca pede no chat e o painel nunca devolve para a tela (só os 4 últimos caracteres). Quem faz login no AppNext e no FIXE é o dono.
 - Os e-mails pessoais do dono não vão para código, commit nem log.
 
@@ -57,6 +58,7 @@ Hooks (`.claude/settings.json`): bloqueiam commit/push de segredos e limpam os r
 
 **WhatsApp e testes**
 - Envio manual: um clique por mensagem, sem insistir com o cliente.
+- **Exceção (decisão do dono): robô do WhatsApp das campanhas.** Campanha marcada "Enviar pelo robô" sai sozinha pelo número da loja (serviço `zap/`), com todas as travas no servidor (`src/zapfila.js`, `src/zaplaco.js`): ritmo aleatório, horário e dias, máximo por dia do número, limite da campanha, intervalo da loja, quem não quer mensagens (inclusive quem responde "parar"), pausa sozinho após falhas. Só admin e franqueado da loja conectam, ligam e configuram; gerente com Clientes vê e pausa; vendedora nada. Log e auditoria sem o texto das mensagens e sem número completo (só os 4 últimos dígitos). Detalhes em `.claude/rules/zap.md`.
 - Dados temporários de teste: apague depois.
 
 ## Pendências combinadas (o dono pediu para depois)

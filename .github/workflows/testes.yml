@@ -22,6 +22,9 @@ jobs:
       - run: npm ci
       - name: Contas (unitários)
         run: npm test
+      # usa um WhatsApp de mentira: não instala a biblioteca do WhatsApp nem o Chromium
+      - name: Robô do WhatsApp (unitários)
+        run: node --test zap/tests/*.test.js
       - name: Navegador
         run: npx playwright install --with-deps chromium
       - name: Telas (computador e celular)

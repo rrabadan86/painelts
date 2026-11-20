@@ -280,7 +280,7 @@ const pub = path.join(__dirname, 'public');
 // ---------- pacote único de JS/CSS da tela (pré-comprimido em Brotli + Gzip, cache imutável por hash) ----------
 const APP_SCRIPTS = [
   'core.js', 'components.js', 'dicas.js', 'rules.js', 'pages.js', 'fidelidade.js',
-  'clientes.js', 'campanhas.js', 'espera.js', 'extras.js', 'contabilidade.js',
+  'msgwpp.js', 'clientes.js', 'campanhas.js', 'zap.js', 'espera.js', 'extras.js', 'contabilidade.js',
   'ruptura.js', 'estoque.js', 'devolucao.js', 'precos.js', 'inventario.js', 'sugestoes.js', 'validade.js', 'nfsaida.js', 'creditos.js', 'orcamento.js', 'checklist.js',
   'site.js', 'inicio.js', 'pedido.js', 'ia.js', 'dre.js', 'comprasvendas.js', 'efeitopreco.js', 'equipe.js', 'mapa.js', 'feriados.js', 'fidretorno.js',
   'config.js', 'script.js', 'fechamento.js', 'sistema.js', 'main.js',
@@ -700,6 +700,7 @@ app.get('/api/demo/admin/notif', (req, res) => res.json({ ativo: true, horario: 
 app.get('/api/demo/classificacao', (req, res) => res.json({ produtos: {} }));
 app.get('/api/demo/site', (req, res) => res.json({ demo: true, em: new Date().toISOString(), origem: 'agendada', itens: [] }));
 app.get('/api/demo/contatos', (req, res) => res.json({ contatos: {} }));
+require('./src/zap-api').demo(app); // robô do WhatsApp na apresentação: tudo simulado, nada é conectado nem enviado
 app.get('/api/demo/xmls/resumo', (req, res) => res.json({ meses: [] }));
 const demoComp = new Map(); // corpo da apresentação já comprimido (br/gz), por loja: refeito quando o corpo muda (a cada hora)
 app.get('/api/demo/dados', async (req, res) => {
@@ -887,7 +888,7 @@ app.post('/api/contatos', express.json({ limit: '4kb' }), (req, res) => {
   const agora = new Date().toISOString();
   if (acao === 'contatado') Object.assign(c, { em: agora, por: req.user, motivo: String(motivo || '').slice(0, 40) });
   else if (acao === 'optout') Object.assign(c, { optout: true, optoutEm: agora, optoutPor: req.user });
-  else if (acao === 'aceita') { delete c.optout; delete c.optoutEm; delete c.optoutPor; }
+  else if (acao === 'aceita') { delete c.optout; delete c.optoutEm; delete c.optoutPor; delete c.optoutOrigem; require('./src/zapfila').voltouAAceitar(loja, cpf); }
   else { delete c.em; delete c.por; delete c.motivo; }
   if (Object.keys(c).length) todos[cpf] = c; else delete todos[cpf];
   C.gravarAtomico(arqContatos(loja), JSON.stringify(todos), 0o640);
@@ -911,9 +912,14 @@ app.use('/api/campanhas', (req, res, next) => {
   if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
   next();
 });
+// "Enviar pelo robô": só admin e franqueado ligam; numa campanha do robô o gerente só pausa a repetição ou tira do robô
+const ZF = require('./src/zapfila');
+const gestorCamp = (req) => req.perfil === 'admin' || req.perfil === 'franqueado';
+const SO_GESTOR_ROBO = 'Só o administrador ou o franqueado da loja liga ou altera uma campanha enviada pelo robô do WhatsApp.';
 app.post('/api/campanhas', express.json({ limit: '600kb' }), (req, res) => {
   const id = lojaCamp(req);
   if (!id) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  if ((req.body || {}).robo && !gestorCamp(req)) return res.status(403).json({ erro: SO_GESTOR_ROBO });
   const r = CAMP.criar(id, req.body || {}, req.user);
   if (r.ok) C.auditar(req.user, 'criou campanha', id, { loja: id, nome: r.ok.nome, clientes: r.ok.rodadas[0].lista.length });
   respCamp(res, r);
@@ -921,7 +927,16 @@ app.post('/api/campanhas', express.json({ limit: '600kb' }), (req, res) => {
 app.put('/api/campanhas/:id', express.json({ limit: '20kb' }), (req, res) => {
   const id = lojaCamp(req);
   if (!id) return res.status(400).json({ erro: 'Escolha uma loja.' });
-  respCamp(res, CAMP.alterar(id, req.params.id, req.body || {}));
+  const b = req.body || {};
+  const antes = CAMP.ler(id).find((x) => x.id === req.params.id);
+  if (!gestorCamp(req) && (b.robo || (antes && antes.robo && Object.keys(b).some((k) => !['loja', 'ativa', 'robo'].includes(k))))) return res.status(403).json({ erro: SO_GESTOR_ROBO });
+  const r = CAMP.alterar(id, req.params.id, b);
+  if (r.ok) {
+    // mensagem ou critérios mudaram: a lista conferida para o robô deixa de valer (a tela confere de novo ao abrir a campanha)
+    if (['mensagem', 'variacoes', 'filtros'].some((k) => k in b)) ZF.limparPreparo(id, req.params.id);
+    if (antes && !!antes.robo !== !!r.ok.robo) C.auditar(req.user, r.ok.robo ? 'campanha: ligou o envio pelo robô' : 'campanha: tirou do robô', id, { loja: id, nome: r.ok.nome });
+  }
+  respCamp(res, r);
 });
 app.post('/api/campanhas/:id/rodadas', express.json({ limit: '600kb' }), (req, res) => {
   const id = lojaCamp(req);
@@ -970,6 +985,10 @@ app.delete('/api/campanhas/:id', (req, res) => {
   C.auditar(req.user, 'apagou campanha', id, { loja: id });
   res.json({ ok: true });
 });
+
+// ---------- robô do WhatsApp das campanhas: rotas /api/zap/* e o laço de envio (a cada ~30 s; sem ZAP_URL/ZAP_TOKEN nada roda) ----------
+require('./src/zap-api').registrar(app, { podeClientes });
+require('./src/zaplaco').iniciar();
 
 // versão dos arquivos da tela (o hash automático do bundle): a aba aberta compara e oferece recarregar depois de uma atualização
 app.get('/api/versao', (req, res) => {

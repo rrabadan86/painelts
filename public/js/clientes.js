@@ -374,7 +374,7 @@
       const a = { ...(TS.cli.contatos[c.cpf] || {}) };
       if (acao === 'contatado') Object.assign(a, { em: new Date().toISOString(), por: 'você', motivo });
       if (acao === 'optout') a.optout = true;
-      if (acao === 'aceita') delete a.optout;
+      if (acao === 'aceita') { delete a.optout; delete a.optoutOrigem; }
       if (acao === 'limpar') { delete a.em; delete a.motivo; }
       novo = a;
     } else {
@@ -395,7 +395,7 @@
   ];
   const modelosDe = (lojaId) => { const m = (TS.db.metas || []).find((x) => x.id === lojaId); return (m && m.wpp && m.wpp.length ? m.wpp : TS.WPP_PADRAO); };
   const nomeBonito = (n) => String(n || '').trim().toLowerCase().split(/\s+/).map((p, k) => (k && /^(da|de|do|das|dos|e)$/.test(p) ? p : p.charAt(0).toUpperCase() + p.slice(1))).join(' ');
-  const saudacao = () => { const hh = new Date().getHours(); return hh < 12 ? 'Bom dia' : hh < 18 ? 'Boa tarde' : 'Boa noite'; };
+  const saudacao = () => TS.msgWpp.saudacao(new Date().getHours());
   /** campos da mensagem (campanhas e WhatsApp): chave, o que é, e o que vai quando o cliente não tem o dado */
   TS.CAMPOS_MSG = [
     ['nome', 'primeiro nome'], ['nomecompleto', 'nome completo'], ['saudacao', 'Bom dia / Boa tarde / Boa noite (na hora do envio)'],
@@ -407,19 +407,20 @@
     ['aniversario', 'dia e mês do aniversário', (c) => !c.aniv], ['loja', 'nome da loja'],
   ];
   const primeiroNome = (n) => { const p = String(n || '').trim().split(/\s+/)[0] || ''; return p ? p[0].toUpperCase() + p.slice(1).toLowerCase() : ''; };
-  function textoWpp(modelo, c) {
+  /** valores dos {campos} da mensagem para este cliente (o robô do WhatsApp recebe estes mesmos valores) */
+  function valoresWpp(c) {
     const lid = lojaIdDe(c);
     const loja = ((TS.lojas || []).find((l) => l.id === lid) || {}).nome || 'Tea Shop';
     const fx = c.fx || {};
-    const v = {
+    return {
       nome: primeiroNome(c.nome) || 'tudo bem', nomecompleto: nomeBonito(c.nome) || 'tudo bem', loja, cha: c.chaFavorito || 'chá',
       ultimocha: c.chaUltimo || c.chaFavorito || 'chá', pacote: c.pacote ? `${c.pacote}g` : '', vendedora: primeiroNome(c.vendedoraPref) || `equipe da ${loja}`, // "Aqui é a {vendedora}" → "Aqui é a equipe da Tea Shop…"
       pontos: fmt.int(fx.saldo || 0), vence: fx.prox != null ? fmt.date(TS.dayToIso(fx.prox)) : '—', vencepts: fmt.int(fx.proxPts || 0),
       ultimacompra: c.ultima != null ? fmt.date(TS.dayToIso(c.ultima)) : '—', dias: c.ausencia != null ? fmt.int(c.ausencia) : '—',
       aniversario: c.aniv || '—', visitas: fmt.int(c.visitas || 0), saudacao: saudacao(),
     };
-    return modelo.texto.replace(/\{([a-z]+)\}/g, (m, k) => (k in v ? v[k] : m)).replace(/ {2,}/g, ' ');
   }
+  const textoWpp = (modelo, c) => TS.msgWpp.montar(modelo.texto, valoresWpp(c));
   const linkWpp = (c, txt) => (TS.demo ? '#demo' : c.wpp + '?text=' + encodeURIComponent(txt));
 
   const digits = (s) => String(s || '').replace(/\D/g, '');
@@ -1565,7 +1566,7 @@
   TS.cliApi = {
     abrirClientes: (cpfs) => abrirClientes(cpfs), contatoDe: (c) => contatoDe(c), intervalo: () => intervaloDe(state.loja), recarregarContatos: () => recarregarContatos(), marcar: (c, acao, motivo) => marcar(c, acao, motivo),
     carregarContatos: () => carregarContatos(), modelos: () => modelosDe(state.loja), fmtTel: (x) => fmtTel(x), fmtCPF: (x) => fmtCPF(x), csv: (a, b, c) => csv(a, b, c),
-    texto: (txt, c, extra = {}) => { let t = textoWpp({ texto: txt }, c); for (const [k, v] of Object.entries(extra)) t = t.split('{' + k + '}').join(v); return t; },
+    texto: (txt, c, extra = {}) => TS.msgWpp.montar(txt, valoresWpp(c), extra), valores: (c) => valoresWpp(c),
     linkWpp: (c, txt) => linkWpp(c, txt),
     /** todos os clientes que podem entrar numa campanha: os da lista + quem só aparece no FIXE (com cadastro) */
     universo() {
@@ -1595,7 +1596,7 @@
       const ct = contatoDe(c) || {};
       box.replaceChildren();
       if (ct.optout) {
-        box.append(h('span', { class: 'muted' }, 'Pediu para não receber mensagens. '), h('button', { type: 'button', class: 'btn', onclick: () => agir('aceita') }, 'Voltou a aceitar'));
+        box.append(h('span', { class: 'muted' }, ct.optoutOrigem ? `Não recebe mensagens: ${ct.optoutOrigem}${ct.optoutEm ? ' em ' + fmt.date(ct.optoutEm.slice(0, 10)) : ''}. Se foi engano, clique em "Voltou a aceitar". ` : 'Pediu para não receber mensagens. '), h('button', { type: 'button', class: 'btn', onclick: () => agir('aceita') }, 'Voltou a aceitar'));
         return;
       }
       if (c.wpp) {
