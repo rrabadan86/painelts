@@ -200,15 +200,13 @@ function comAbertura(lotes, entradasPorCod, dEst, reg, hoje) {
         l.abertoEstimado = !(r && r.por);
         l.abertoPor = (r && r.por) || null;
         if (l.abertoEm) {
-          // "consumir até" do que está na lata: vem preenchido com abertura + 6 meses (sem passar da validade impressa no pacote, quando a
-          // equipe digitou uma) e a equipe pode trocar. Depois de aberto, é essa data que vale para o chá da lata (sobrepõe a da chegada).
-          const sugerido = somarMeses(l.abertoEm, MESES_ABERTO);
-          l.validadeAbertoPadrao = !l.padrao && l.validade && l.validade < sugerido ? l.validade : sugerido;
+          // decisão do dono: a validade do chá aberto é 6 meses a partir da abertura (a data da chegada continua guardada, mas não é mais
+          // a que vale). Vem preenchida e a equipe pode trocar.
+          l.validadeAbertoPadrao = somarMeses(l.abertoEm, MESES_ABERTO);
           l.validadeAbertoEditada = !!(r && DIA.test(r.ate || ''));
           l.validadeAberto = l.validadeAbertoEditada ? r.ate : l.validadeAbertoPadrao;
-          // o lote vence pelo que chegar primeiro entre a lata e os pacotes ainda fechados (que seguem a validade do pacote)
-          const fechadoAntes = pk.fechado > 0.0005 && l.validade && l.validade < l.validadeAberto;
-          if (!fechadoAntes) { l.venceEm = l.validadeAberto; l.motivo = 'aberto'; l.kgVence = pk.aberto; } else l.kgVence = pk.fechado;
+          // lote com chá aberto mostra a validade do que está aberto (os pacotes ainda fechados do mesmo lote aparecem na janela do chá)
+          l.venceEm = l.validadeAberto; l.motivo = 'aberto'; l.kgVence = pk.aberto;
           l.dias = dias(hoje, l.venceEm); l.faixa = faixa(l.dias);
         }
       }

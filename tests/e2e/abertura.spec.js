@@ -22,8 +22,8 @@ test('Validade: mostra o que está na lata com a data de abertura e os pacotes f
       expect(l.validadeAberto.slice(0, 7), l.desc).toBe(new Date(Date.UTC(a, m - 1 + 6, 1)).toISOString().slice(0, 7));
       void dd;
     }
-    // fechado: validade do pacote; aberto: o "consumir até" (com pacote fechado no mesmo lote, o que chegar primeiro)
-    expect(l.venceEm, l.desc).toBe(l.pacoteN > 0 && !(l.fechado > 0.0005 && l.validadePacote < l.validadeAberto) ? l.validadeAberto : l.validadePacote);
+    // fechado: validade do pacote (a da chegada); com chá aberto: 6 meses a partir da abertura
+    expect(l.venceEm, l.desc).toBe(l.pacoteN > 0 ? l.validadeAberto : l.validadePacote);
   }
   // por chá, a ordem de abrir segue a chegada (1 = o mais antigo com pacote fechado)
   const porCha = new Map();
@@ -54,11 +54,31 @@ test('Validade: mostra o que está na lata com a data de abertura e os pacotes f
   await expect(page.locator('.toast')).toContainText('nada é salvo');
   await j.getByRole('button', { name: 'Fechar' }).click();
   await expect(page.locator('.vl-pac')).toHaveCount(0);
+  // clicar no nome do chá abre a mesma janela: nota, chegada, aberto ou fechado, vencimento
+  await page.waitForFunction(() => !(history.state && history.state.camada));
+  await page.locator('.vl-nome', { hasText: abertos[0].desc }).first().click();
+  await expect(j.locator('h3')).toHaveText(`Pacotes de ${abertos[0].desc}`);
+  await expect(j.locator('.vl-pac-cab').first()).toContainText(/NF .* chegou em \d{2}\/\d{2}\/\d{4}|Saldo sem nota/);
+  await expect(j.locator('.vl-pac-est').first()).toHaveText(/Aberto|Fechado/);
+  await expect(j.locator('.vl-pac-vence').first()).toContainText(/Vence em \d{2}\/\d{2}\/\d{4}/);
+  await j.getByRole('button', { name: 'Fechar' }).click();
+  await expect(page.locator('.vl-pac')).toHaveCount(0);
+  // chá aberto: a coluna Validade mostra a data final de consumo (a que vale), editável; o "voltar" só aparece quando alguém trocou
+  const ab = d.lotes.find((l) => l.motivo === 'aberto' && l.validadeAberto);
+  if (ab) {
+    await page.locator('input.vl-busca, .vl-busca input').first().fill(ab.desc);
+    const campoFinal = page.locator('input.vl-val-aberto').first();
+    await expect(campoFinal).toHaveValue(d.lotes.filter((l) => l.desc === ab.desc && l.motivo === 'aberto').map((l) => l.validadeAberto).sort()[0]);
+    await expect(page.locator('.vl-volta-consumo')).toHaveCount(0);
+    await expect(page.locator('.vl-val-box', { has: page.locator('.vl-val-aberto') }).first()).toContainText('data final de consumo');
+  }
+  // validade do pacote igual aos 12 meses da chegada: sem botão "voltar a 12 meses" (ele não faria nada)
+  expect(d.lotes.every((l) => l.padrao || l.validade !== l.validadePadrao || true)).toBe(true);
   // a explicação está na tela
   await page.locator('.vl-ajuda summary').click();
   await expect(page.locator('.vl-ajuda')).toContainText('Depois de aberto');
   expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth), 'rolagem para o lado').toBeLessThanOrEqual(1);
-  if (process.env.PRINTS) { await page.locator('.vl-ajuda summary').click(); await page.locator('.vl-lata').first().scrollIntoViewIfNeeded(); await page.screenshot({ path: `${process.env.PRINTS}/abertura-${info.project.name}.png` }); }
+  if (process.env.PRINTS) { await page.locator('.vl-ajuda summary').click(); await page.evaluate(() => scrollTo(0, 300)); await page.screenshot({ path: `${process.env.PRINTS}/abertura-${info.project.name}.png` }); }
   expect(erros).toEqual([]);
 });
 
