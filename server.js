@@ -285,7 +285,7 @@ const APP_SCRIPTS = [
   'msgwpp.js', 'recompra.js', 'clientes.js', 'campretorno.js', 'campanhas.js', 'zap.js', 'espera.js', 'extras.js', 'contabilidade.js',
   'ruptura.js', 'visaodono.js', 'classeprod.js', 'custodata.js', 'estoque.js', 'devolucao.js', 'precos.js', 'inventario.js', 'sugestoes.js', 'validade.js', 'nfsaida.js', 'creditos.js', 'orcamento.js', 'checklist.js',
   'site.js', 'conferencia.js', 'conferencia-tela.js', 'inicio.js', 'pedido.js', 'ia.js', 'dre.js', 'apagar.js', 'comprasvendas.js', 'efeitopreco.js', 'equipe.js', 'mapa.js', 'feriados.js', 'fidretorno.js',
-  'guia.js', 'config.js', 'script.js', 'fechamento.js', 'sistema.js', 'main.js',
+  'guia.js', 'notificacoes.js', 'config.js', 'script.js', 'fechamento.js', 'sistema.js', 'main.js',
 ];
 let bundleMem = null, bundleCheckEm = 0;
 function comprimirAsset(buf) {
@@ -335,6 +335,10 @@ obterBundle(); // aquece na subida
 app.get('/health', (req, res) => res.json({ ok: true }));
 app.get('/login', (req, res) => res.sendFile(path.join(pub, 'login.html')));
 ['login.css', 'login.js', 'favicon.svg', 'trocar-senha.js'].forEach((f) => app.get('/' + f, (req, res) => res.sendFile(path.join(pub, f))));
+// aplicativo instalável e notificações: o navegador busca o manifesto, o service worker e os ícones sem login
+app.get('/manifest.webmanifest', (req, res) => res.sendFile(path.join(pub, 'manifest.webmanifest'), { headers: { 'Content-Type': 'application/manifest+json; charset=utf-8', 'Cache-Control': 'public, max-age=3600' } }));
+app.get('/sw.js', (req, res) => res.sendFile(path.join(pub, 'sw.js'), { headers: { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'no-cache' } }));
+['icone-192.png', 'icone-512.png', 'icone-mascara-512.png', 'apple-touch-icon.png', 'selo-96.png'].forEach((f) => app.get('/icones/' + f, (req, res) => res.sendFile(path.join(pub, 'icones', f), { maxAge: '7d' })));
 const CHART_JS = path.join(path.dirname(require.resolve('chart.js')), 'chart.umd.min.js');
 app.get('/vendor/chart.umd.js', (req, res) => res.sendFile(CHART_JS, { maxAge: '7d' }));
 // PDF no navegador (fechamento do mês que vai anexado ao e-mail da contabilidade)
@@ -736,6 +740,7 @@ app.get('/api/demo/admin/notif', (req, res) => res.json({ ativo: true, horario: 
 app.get('/api/demo/classificacao', (req, res) => res.json({ produtos: {} }));
 app.get('/api/demo/site', (req, res) => res.json({ demo: true, em: new Date().toISOString(), origem: 'agendada', itens: [] }));
 app.get('/api/demo/contatos', (req, res) => res.json({ contatos: {} }));
+require('./src/push-api').demo(app); // notificações na apresentação: aparelho fictício, nada é ativado nem enviado
 require('./src/zap-api').demo(app); // robô do WhatsApp na apresentação: tudo simulado, nada é conectado nem enviado
 app.get('/api/demo/xmls/resumo', (req, res) => res.json({ meses: [] }));
 const demoComp = new Map(); // corpo da apresentação já comprimido (br/gz), por loja: refeito quando o corpo muda (a cada hora)
@@ -1031,6 +1036,8 @@ app.delete('/api/campanhas/:id', (req, res) => {
 
 // ---------- robô do WhatsApp das campanhas: rotas /api/zap/* e o laço de envio (a cada ~30 s; sem ZAP_URL/ZAP_TOKEN nada roda) ----------
 require('./src/zap-api').registrar(app, { podeClientes });
+require('./src/push-api').registrar(app); // notificações no aparelho: cada pessoa só mexe nos próprios aparelhos
+const PUSH = require('./src/push');
 require('./src/zaplaco').iniciar();
 // o robô não depende de alguém abrir a tela Campanhas: o servidor refaz a lista conferida e cria a lista nova das
 // recorrentes (src/zapauto.js roda a conta da própria tela com o mesmo pacote de dados de /api/dados de quem vê tudo)
@@ -2400,6 +2407,9 @@ async function avaliarEspera(loja) {
       for (const p of novos) for (const i of p.itens) porProd.set(i.desc, (porProd.get(i.desc) || 0) + 1);
       const txt = `⏳ Lista de espera · ${loja.nome}\nChegou:\n` + [...porProd].map(([d, n]) => `• ${d}: ${n} ${n === 1 ? 'cliente esperando' : 'clientes esperando'}`).join('\n') + '\nAbra Clientes → Lista de espera para avisar.';
       NOTIF.avisarLoja(loja.id, txt).catch((e) => console.error('[espera] aviso:', e.message));
+      // no aparelho de quem usa a Lista de espera (uma vez por chegada: a chave são os pedidos que chegaram)
+      PUSH.avisarDepois({ tipo: 'espera', loja: loja.id, chave: `espera:${loja.id}:${novos.map((p) => p.id).sort().join(',')}`.slice(0, 400), titulo: `Lista de espera · ${loja.nome}`,
+        texto: 'Chegou: ' + [...porProd].map(([d, n]) => `${d} (${n} ${n === 1 ? 'cliente' : 'clientes'})`).join(', '), link: '/#espera' });
     }
     return novos;
   } finally {
@@ -2564,6 +2574,8 @@ app.post('/api/sugestoes', express.json({ limit: '4kb' }), (req, res) => {
   const r = SUG.criar(loja.id, req.body || {}, req.user, u.vendedor || u.nome || req.user, ES.atual(loja.id));
   if (r.erro) return res.status(400).json({ erro: r.erro });
   C.auditar(req.user, 'sugeriu produto para o pedido', loja.id, { loja: loja.id, produto: r.ok.desc });
+  // quem decide o pedido fica sabendo (menos quem sugeriu)
+  PUSH.avisarDepois({ tipo: 'sugestao', loja: loja.id, chave: `sugestao:${loja.id}:${r.ok.id}`, menos: req.user, titulo: `⭐ Sugestão para o pedido · ${loja.nome}`, texto: `${u.vendedor || u.nome || req.user} sugeriu ${r.ok.desc}.`, link: '/#pedido' });
   res.json({ ok: true, sugestao: SUG.comEstoque([r.ok], ES.atual(loja.id), decidePedido(req))[0] });
 });
 app.post('/api/sugestoes/visto', express.json({ limit: '2kb' }), (req, res) => {
