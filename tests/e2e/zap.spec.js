@@ -85,4 +85,35 @@ test.describe('robô do WhatsApp', () => {
     expect(pedidos.filter((p) => !p.includes('/api/demo/zap/')), 'só as rotas da apresentação').toEqual([]);
     expect(erros).toEqual([]);
   });
+  // O robô não depende da tela: o servidor roda a conta dos MESMOS arquivos da tela (src/zapauto.js). Aqui a prova de
+  // que dá o mesmo resultado: o navegador e o servidor, com os mesmos dados fictícios, montam a mesma lista e os mesmos valores.
+  test('lista e valores da campanha: o servidor calcula igual ao navegador', async ({ page }) => {
+    const ZA = require('../../src/zapauto');
+    await page.evaluate(() => { location.hash = '#campanhas'; });
+    await page.waitForFunction(() => TS.cli && TS.campanhasCalc && TS.db && !TS.db.desde && TS.state.loja && TS.state.loja !== 'todas');
+    const FILTROS = [{ ptsMin: 5 }, { venceDias: 60 }, { segs: ['sumido', 'repor'] }, { rfm: ['campeao', 'risco'] }, { ausMin: 30, ausMax: 120, visMin: 2 }, { aniv: 'proximo' }, { lojaPref: 'nossa', compraDias: 90 }];
+    const camp = (lista) => ({ id: 'c', mensagem: '{saudacao}, {nome}! Seu {cha} acabou? Você tem {pontos} pontos.', variacoes: ['Oi, {nome}: que tal o {ultimocha}?'], filtros: {}, rodadas: [{ id: 'r', lista: lista.slice(0, 400).map((x) => ({ ...x, st: 'p' })) }] });
+    const naTela = await page.evaluate(async ({ FILTROS, campTxt }) => {
+      const camp = new Function('return ' + campTxt)();
+      const disp = await TS.estoqueDisp(TS.state.loja);
+      const listas = FILTROS.map((f) => TS.campanhasCalc.listaDe(f));
+      return { loja: TS.state.loja, nome: (TS.lojas.find((l) => l.id === TS.state.loja) || {}).nome, geradoEm: TS.db.geradoEm, listas, itens: TS.campanhasCalc.itensPreparo(camp(listas[0]), disp) };
+    }, { FILTROS, campTxt: camp.toString() });
+    const dados = await page.request.get('/api/demo/dados?loja=' + encodeURIComponent(naTela.loja));
+    const corpo = await dados.text();
+    test.skip(JSON.parse(corpo).geradoEm !== naTela.geradoEm, 'os dados fictícios foram refeitos entre as duas leituras (virada da hora)');
+    const estoque = await (await page.request.get('/api/demo/estoque/disponivel?loja=' + encodeURIComponent(naTela.loja))).json();
+    const t = ZA.tela({ loja: { id: naTela.loja, nome: naTela.nome }, corpo, contatos: {}, disponivel: () => estoque });
+    const noServidor = { listas: FILTROS.map((f) => t.listaDe(f)), itens: await t.itens(camp(naTela.listas[0])) };
+    expect(naTela.listas.reduce((n, l) => n + l.length, 0), 'os critérios de exemplo trazem clientes').toBeGreaterThan(50);
+    expect(noServidor.listas).toEqual(naTela.listas);
+    // na apresentação o link do WhatsApp é de mentira (sem número): compara os valores dos campos e a trava de estoque.
+    // A {saudacao} fica de fora: o servidor não guarda (ZF.gravarPreparo) e refaz na hora do envio, no horário de Brasília.
+    const semNumero = (l) => l.map(({ para, v: { saudacao, ...v }, ...x }) => JSON.parse(JSON.stringify({ ...x, v })));
+    expect(naTela.itens.length).toBeGreaterThan(10);
+    expect(naTela.itens.every((x) => x.para === null), 'apresentação: nenhum número de verdade').toBe(true);
+    expect(semNumero(noServidor.itens)).toEqual(semNumero(naTela.itens));
+    expect(pedidos.filter((p) => !/\/api\/demo\//.test(p))).toEqual([]);
+    expect(erros).toEqual([]);
+  });
 });

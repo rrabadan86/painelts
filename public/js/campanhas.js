@@ -1,7 +1,8 @@
 /* Clientes → Campanhas: lista de clientes por critérios (pontos, vencimento, produto, ausência…), mensagem de WhatsApp
  * personalizada, envio em fila (um clique por cliente, no WhatsApp da loja) e o retorno: quem comprou nos N dias seguintes.
  * Só clientes com celular e que não pediram para não receber mensagens. Campanha recorrente: uma lista nova por semana
- * ou por mês, montada com os mesmos critérios quando a tela é aberta. */
+ * ou por mês, montada com os mesmos critérios quando a tela é aberta (campanha do robô: o servidor monta sozinho,
+ * com as contas deste arquivo — TS.campanhasCalc, src/zapauto.js). */
 (function () {
   const { h, fmt, state } = TS;
   const A = () => TS.cliApi;
@@ -64,7 +65,8 @@
       prodOk = new Uint8Array(db.D.descricao.length);
       db.D.descricao.forEach((t, i) => { const n = TS.norm(t); if (exatos.has(n) || partes.some((q) => n.includes(q))) prodOk[i] = 1; });
     }
-    const mesAniv = f.aniv === 'atual' ? new Date().getMonth() + 1 : f.aniv === 'proximo' ? ((new Date().getMonth() + 1) % 12) + 1 : num(f.aniv);
+    const mesHoje = +TS.hojeSP().slice(5, 7); // mês de Brasília (a mesma conta roda no servidor, que pode estar em outro fuso)
+    const mesAniv = f.aniv === 'atual' ? mesHoje : f.aniv === 'proximo' ? (mesHoje % 12) + 1 : num(f.aniv);
     const out = [];
     for (const c of A().universo()) {
       if (!c.wpp) continue;
@@ -130,28 +132,39 @@
 
   // ---------- robô do WhatsApp: a lista conferida que o servidor usa para montar o mesmo texto do envio manual ----------
   let faixaRobo = null;
-  /** para cada pendente: o número (o do link do envio manual), os valores dos {campos} e se a mensagem ofereceria
-   *  produto sem estoque. Vai ao abrir a tela, ao abrir a campanha e ao marcar "Enviar pelo robô". */
+  /** a "lista conferida" de uma campanha — para cada pendente: o número (o do link do envio manual), os valores dos
+   *  {campos} e se a mensagem ofereceria produto sem estoque. `disp` = leitura do estoque (TS.estoqueDisp) ou null. */
+  function itensPreparo(camp, disp, porCpf) {
+    const r = camp.rodadas && camp.rodadas[0];
+    if (!r) return [];
+    porCpf = porCpf || new Map(A().universo().map((c) => [c.cpf, c]));
+    const textos = TS.msgWpp.textos(camp);
+    const prods = listaProdutos(camp.filtros || {}).filter((x) => !x.contem).map((x) => x.t);
+    const itens = [];
+    for (const it of r.lista) {
+      if (it.st !== 'p') continue;
+      const c = porCpf.get(it.cpf);
+      if (!c) continue; // cliente fora dos dados carregados agora: o robô espera a próxima conferência
+      const oferece = TS.produtosDaMensagem ? textos.some((t) => TS.produtosDaMensagem(t, c, { produtos: prods }).length) : false;
+      const falta = disp && TS.semEstoqueNaMensagem ? textos.map((t) => TS.semEstoqueNaMensagem(disp, t, c, { produtos: prods })).find(Boolean) : null;
+      itens.push({ cpf: it.cpf, para: TS.msgWpp.paraDoLink(c.wpp), v: A().valores(c), espera: falta || (oferece && !disp ? 'estoque não conferido' : undefined) });
+    }
+    return itens;
+  }
+  /** quem entra na lista de uma campanha com estes critérios (o que vai gravado na rodada) */
+  const listaDe = (filtros) => selecionar({ ...PADRAO, ...filtros }).map(({ c }) => ({ cpf: c.cpf, nome: c.nome }));
+  // As duas contas acima são as mesmas que o servidor roda sozinho, todo dia, para o robô (src/zapauto.js carrega
+  // ESTE arquivo): mudou aqui, mudou lá. Não copie a regra para outro lugar.
+  TS.campanhasCalc = { listaDe, itensPreparo };
+  /** manda a lista conferida ao abrir a tela, ao abrir a campanha e ao marcar "Enviar pelo robô" */
   async function prepararRobo(camps, dispLido) {
     if (TS.demo || !TS.zapPreparar || !camps.length) return;
     let disp = dispLido || null;
     if (!disp && TS.estoqueDisp) { try { disp = await TS.estoqueDisp(state.loja); } catch { /* sem leitura do estoque: quem receberia oferta de produto espera */ } }
     const porCpf = new Map(A().universo().map((c) => [c.cpf, c]));
     for (const camp of camps) {
-      const r = camp.rodadas[0];
-      if (!r) continue;
-      const textos = TS.msgWpp.textos(camp);
-      const prods = listaProdutos(camp.filtros || {}).filter((x) => !x.contem).map((x) => x.t);
-      const itens = [];
-      for (const it of r.lista) {
-        if (it.st !== 'p') continue;
-        const c = porCpf.get(it.cpf);
-        if (!c) continue; // cliente fora dos dados carregados agora: o robô espera a próxima conferência
-        const oferece = TS.produtosDaMensagem ? textos.some((t) => TS.produtosDaMensagem(t, c, { produtos: prods }).length) : false;
-        const falta = disp && TS.semEstoqueNaMensagem ? textos.map((t) => TS.semEstoqueNaMensagem(disp, t, c, { produtos: prods })).find(Boolean) : null;
-        itens.push({ cpf: it.cpf, para: TS.msgWpp.paraDoLink(c.wpp), v: A().valores(c), espera: falta || (oferece && !disp ? 'estoque não conferido' : undefined) });
-      }
-      await TS.zapPreparar(state.loja, camp.id, itens);
+      if (!camp.rodadas[0]) continue;
+      await TS.zapPreparar(state.loja, camp.id, itensPreparo(camp, disp, porCpf));
     }
     if (faixaRobo && faixaRobo.atualizar) faixaRobo.atualizar();
   }
@@ -165,8 +178,7 @@
       const agora = new Date();
       const vence = !ult || (c.recorrente === 'semanal' ? agora - ult >= 7 * 864e5 : agora.getFullYear() * 12 + agora.getMonth() > ult.getFullYear() * 12 + ult.getMonth());
       if (!vence) continue;
-      const sel = selecionar({ ...PADRAO, ...c.filtros });
-      try { const r = await api('POST', `/api/campanhas/${c.id}/rodadas`, { loja: state.loja, lista: sel.map(({ c: x }) => ({ cpf: x.cpf, nome: x.nome })) }); Object.assign(c, r.campanha); if (!r.repetida) feitas.push(c.nome); } catch { /* tenta de novo na próxima vez */ }
+      try { const r = await api('POST', `/api/campanhas/${c.id}/rodadas`, { loja: state.loja, lista: listaDe(c.filtros) }); Object.assign(c, r.campanha); if (!r.repetida) feitas.push(c.nome); } catch { /* tenta de novo na próxima vez */ }
     }
     return feitas;
   }
@@ -473,7 +485,7 @@
               h('div', { class: 'cp-passo' }, h('span', { class: 'cp-n' }, '3'), h('div', null, h('b', null, 'Envio e retorno'))),
               linha('Enviar no máximo', limite, 'mensagens por dia nesta campanha', TS.dica('Ao chegar no limite, a fila para e continua no dia seguinte. 0 = sem limite. Poucas mensagens por dia, para quem tem motivo de receber, mantêm o número da loja saudável.')),
               linha('Medir o retorno em', janela, 'dias', TS.dica('Conta como "voltou" quem comprar (cupom com CPF) do dia do envio até N dias depois.')),
-              linha('Repetir', rec, TS.dica('Toda semana ou todo mês uma lista nova é montada com estes critérios quando a tela de campanhas é aberta.')),
+              linha('Repetir', rec, TS.dica('Toda semana ou todo mês uma lista nova é montada com estes critérios quando a tela de campanhas é aberta. Campanha enviada pelo robô: o painel monta sozinho, sem ninguém abrir a tela.')),
               refazerBox))),
         h('div', { class: 'cp-dir' },
           h('div', { class: 'card cp-resumo-fixo' }, contagem, h('div', { class: 'cp-salvar' }, salvar, erro)),
