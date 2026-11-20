@@ -53,3 +53,33 @@ test('Favorito do carrinho: reconhece a janela "Venda Conjunta", lê o que vem j
   await page.setContent('<div class="modal" style="display:none"><a>Colocar Todos no Carrinho</a></div><button>Colocar no Carrinho</button>');
   expect(await page.evaluate(`(() => { ${num}; ${fn}; return vendaConjunta(document); })()`)).toBeNull();
 });
+
+test('Pedido: o registro do carrinho montado pergunta se o pedido foi feito, com "Confirmar" e "Excluir" (apresentação: nada é gravado)', async ({ page }, info) => {
+  const erros = [];
+  page.on('pageerror', (e) => erros.push(e.message));
+  const saiu = [];
+  page.on('request', (r) => { if (r.method() !== 'GET' && /\/api\//.test(r.url()) && !/\/api\/demo\//.test(r.url())) saiu.push(r.url()); });
+  await page.goto('/apresentacao');
+  await page.waitForFunction(() => window.TS && TS.db && TS.state.loja && TS.state.loja !== 'todas', null, { timeout: 60000 });
+  await page.evaluate(() => { location.hash = '#pedido'; });
+  const reg = page.locator('.ped-ult');
+  await expect(reg).toBeVisible({ timeout: 40000 });
+  await expect(reg.locator('summary')).toContainText('carrinho montado em');
+  await expect(reg.locator('.ped-conf-sit')).toHaveText('falta confirmar');
+  const perg = reg.locator('.ped-conf');
+  await expect(perg).toContainText('Este pedido foi finalizado no site?');
+  const sim = perg.getByRole('button', { name: '✓ Sim, o pedido foi feito' }), nao = perg.getByRole('button', { name: 'Não fiz: excluir' });
+  await expect(nao).toHaveAttribute('title', /como se o carrinho não tivesse sido montado/);
+  await perg.scrollIntoViewIfNeeded();
+  if (process.env.PRINTS) await page.screenshot({ path: `${process.env.PRINTS}/carrinho-confirmar-${info.project.name}.png` });
+  await sim.click();
+  await expect(page.locator('.toast')).toContainText('nada é salvo');
+  page.once('dialog', (d) => d.accept());
+  await nao.click();
+  await expect(page.locator('.toast')).toContainText('nada é salvo');
+  await expect(reg).toBeVisible(); // na apresentação o registro continua
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth), 'rolagem para o lado').toBeLessThanOrEqual(1);
+  expect(saiu).toEqual([]);
+  expect(erros).toEqual([]);
+});
+

@@ -59,7 +59,7 @@ Hooks (`.claude/settings.json`): bloqueiam commit/push de segredos e limpam os r
 - AppNext: só grava em fluxos aprovados pelo dono (clique no painel + confirmação, conferido item a item, auditado). Explorando: só olhar, nunca Concluir, Homologar ou Salvar.
 - O robô conclui e homologa NF-e (venda e devolução) só depois da revisão, para admin, franqueado e gerentes com Notas fiscais.
 - FIXE: só observar.
-- Sistema de Pedidos: o favorito e o robô só colocam no carrinho (inclusive aceitar a "Venda Conjunta" em "Colocar Todos no Carrinho"); **nunca finalizam o pedido**. Carrinho salvo do painel (`pedido/rascunho.json`, 5 dias, um por loja) é só do painel: não mexe no site.
+- Sistema de Pedidos: o favorito e o robô só colocam no carrinho (inclusive aceitar a "Venda Conjunta" em "Colocar Todos no Carrinho"); **nunca finalizam o pedido**. Carrinho salvo do painel (`pedido/rascunho.json`, 5 dias, um por loja) é só do painel: não mexe no site. Montar o carrinho não é fazer o pedido: o registro (`pedido/carrinho.json`) fica "falta confirmar" até a pessoa clicar em Confirmar ou Excluir (excluir devolve as ⭐ sugestões que tinham ido para "aguardando entrega").
 - Pergunte antes de abrir o AppNext no Chrome. Ele guarda a sessão por aba: cada aba nova pede login ao dono.
 
 **WhatsApp e testes**

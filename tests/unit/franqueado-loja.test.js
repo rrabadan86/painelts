@@ -291,3 +291,13 @@ test('carrinho salvo: quem tem a tela Pedido salva e descarta, só na loja dele;
   assert.strictEqual((await (await pedir('dono1', '/api/pedido?loja=l1')).json()).rascunho, null);
 });
 
+test('carrinho montado: confirmar e excluir só para quem tem a tela Pedido, na loja dele e com X-Painel', async () => {
+  for (const rota of ['confirmar', 'excluir']) {
+    assert.strictEqual(await status('vend1', `/api/pedido/carrinho/${rota}?loja=l1`, { method: 'POST' }), 403, 'vendedora');
+    assert.strictEqual(await status('dono1', `/api/pedido/carrinho/${rota}?loja=l2`, { method: 'POST' }), 400, 'loja dos outros');
+    assert.strictEqual(await status('dono1', `/api/pedido/carrinho/${rota}?loja=l1`, { method: 'POST', headers: { 'X-Painel': '' } }), 403, 'sem X-Painel');
+    const r = await pedir('dono1', `/api/pedido/carrinho/${rota}?loja=l1`, { method: 'POST' });
+    assert.strictEqual(r.status, 400); assert.match((await r.json()).erro, /Não há carrinho montado/);
+  }
+});
+

@@ -1242,7 +1242,7 @@
         return h('div', { class: 'ped-obr-aviso' }, h('b', null, `🛒 Vão para o carrinho só os ${fmt.int(n0)} produtos que você compra.`), ` O pedido obrigatório (${fmt.int(ob.length)} produtos, ${fmt.brl0(v)}) não vai: a franquia já manda e pedir de novo duplicaria. Produto que está no obrigatório e também aparece no seu pedido vai só com a quantidade a mais.`, R.novoCompo ? R.novoCompo() : null);
       })(),
       h('div', { class: 'cfg-acoes' }, btnCarrinho), msg, statusBox,
-      h('div', { class: 'ped-andamento' }, ativo ? null : resultadoCarrinho(p.carrinho)));
+      h('div', { class: 'ped-andamento' }, ativo ? null : resultadoCarrinho(p.carrinho, loja, (novo) => { p.carrinho = novo; state.pedSugMsg = ''; TS.render(); })));
   }
 
   const progressoCat = (robo) => h('div', { class: 'notice ped-prog' }, h('span', { class: 'spinner sm' }),
@@ -1263,7 +1263,7 @@
       c.atual ? h('small', null, `Agora: ${c.atual}`) : null);
   }
 
-  function resultadoCarrinho(c) {
+  function resultadoCarrinho(c, loja, aoMudar) {
     if (!c || !Array.isArray(c.itens) || (c.modo === 'navegador' && !c.itens.length)) return null;
     const ST = { ok: ['No carrinho', 'ok'], sem_estoque: ['Sem estoque no fornecedor', 'erro'], recusado: ['O site recusou', 'erro'], indisponivel: ['Indisponível', 'erro'], nao_encontrado: ['Não achou no site', 'erro'], acima_do_maximo: ['Acima do máximo', 'warn'], sem_confirmacao: ['Sem confirmação', 'warn'], erro: ['Erro', 'erro'] };
     const ok = c.itens.filter((x) => x.status === 'ok').length, prob = c.itens.length - ok;
@@ -1274,11 +1274,34 @@
         site ? h('a', { href: site, target: '_blank', rel: 'noopener' }, 'Abrir o Sistema de Pedidos ↗') : null)
       : h('div', { class: 'notice warn' }, `O carrinho parou em ${c.itens.length} de ${c.total} produtos (a aba do site foi fechada ou o link venceu). Clique em "Montar carrinho no site" de novo para refazer.`);
     const quando = new Date(c.inicio).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+    // o painel não sabe se o pedido foi finalizado no site: a pessoa confirma, ou exclui o registro (montou para testar e não pediu)
+    const acaoCarrinho = async (rota, b) => {
+      if (TS.demo) { toast(TS.DEMO_AVISO); return; }
+      b.disabled = true;
+      try {
+        const r = await fetch(`/api/pedido/carrinho/${rota}?loja=${encodeURIComponent(loja)}`, { method: 'POST', credentials: 'same-origin', headers: { 'X-Painel': '1' } });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.erro || 'Não deu certo.');
+        toast(rota === 'confirmar' ? 'Pedido confirmado.' : `Registro excluído.${j.sugestoesDevolvidas ? ` ${j.sugestoesDevolvidas} ${j.sugestoesDevolvidas === 1 ? 'sugestão da equipe voltou' : 'sugestões da equipe voltaram'} para o próximo pedido.` : ''}`);
+        if (aoMudar) aoMudar(rota === 'confirmar' ? j.carrinho : null);
+      } catch (err) { toast(err.message, true); b.disabled = false; }
+    };
+    const btnExcluir = (rot, cls) => { const b = h('button', { type: 'button', class: cls, title: 'Apaga este registro: é como se o carrinho não tivesse sido montado. As ⭐ sugestões da equipe que foram para "aguardando entrega" por causa dele voltam para o próximo pedido. Não mexe no site: se o carrinho de lá ainda tiver itens, esvazie por lá.' }, rot);
+      b.addEventListener('click', () => { if (confirm('Excluir o registro deste carrinho? Use quando o pedido NÃO foi feito no site (montou para testar ou desistiu).\n\nO painel não mexe no site: se o carrinho de lá ainda tiver itens, esvazie por lá.')) acaoCarrinho('excluir', b); }); return b; };
+    const btnConfirmar = h('button', { type: 'button', class: 'btn primary', title: 'Marca que este pedido foi finalizado no site. Fica registrado quem confirmou e quando.' }, '✓ Sim, o pedido foi feito');
+    btnConfirmar.addEventListener('click', () => acaoCarrinho('confirmar', btnConfirmar));
+    const dataHoraC = (iso) => new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+    const situacaoCarrinho = !loja ? null : c.confirmado
+      ? h('p', { class: 'pos ped-conf-ok' }, `✅ Pedido feito: confirmado${c.confirmado.por ? ` por ${c.confirmado.por}` : ''} em ${dataHoraC(c.confirmado.em)}. `, btnExcluir('excluir o registro', 'link-btn'))
+      : h('div', { class: 'notice ped-conf' }, h('div', null, h('b', null, 'Este pedido foi finalizado no site? '), 'O painel só monta o carrinho; ele não sabe se você concluiu a compra. Confirme, ou exclua o registro se não fez o pedido.'),
+        h('div', { class: 'ped-rasc-acoes' }, btnConfirmar, btnExcluir('Não fiz: excluir', 'btn ghost-danger')));
     // registro do carrinho anterior: fechado, para não parecer que vai junto com o pedido de agora
-    const recente = Date.now() - Date.parse(c.inicio) < 2 * 3600e3; // acabou de montar: fica aberto para conferir
+    const recente = Date.now() - Date.parse(c.inicio) < 2 * 3600e3 || (!c.confirmado && !!loja); // falta confirmar: fica aberto até a pessoa responder // acabou de montar: fica aberto para conferir
     return h('details', { class: 'ped-ult mt', open: recente || null },
       h('summary', null, h('b', null, '🕘 Histórico: carrinho montado em ' + quando), c.por ? ` por ${c.por}` : '', ` · ${ok} de ${c.total || c.itens.length} produtos`,
+        h('span', { class: 'badge ' + (c.confirmado ? 'ok' : 'warn') + ' ped-conf-sit' }, c.confirmado ? 'pedido feito' : 'falta confirmar'),
         h('small', { class: 'muted' }, ' — registro do que já foi feito: não entra no pedido de agora')),
+      situacaoCarrinho,
       h('p', { class: 'muted ped-ult-nota' }, 'É só o registro da última vez que o favorito montou o carrinho no site. O pedido de agora é o da tabela acima: ao clicar em "Montar carrinho no site", o favorito coloca esses produtos (se o carrinho do site ainda tiver itens antigos, confira lá antes de finalizar).'),
       c.erro ? h('div', { class: 'notice err' }, c.erro) : null,
       c.modo === 'navegador' ? fimTxt : null,

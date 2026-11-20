@@ -3161,3 +3161,7 @@ button.vl-pac-marca { background: none; text-decoration: underline; cursor: poin
 .vl-pac-hist-i { grid-template-columns: 1.1fr .9fr 1.4fr 1fr 1fr; }
 .vl-pac-hist-vazio { margin: 0; font-size: 12px; }
 @media (max-width: 720px) { .vl-pac-hist-i { grid-template-columns: 1fr 1fr; } }
+.ped-conf { display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; margin: 8px 0; }
+.ped-conf > div:first-child { flex: 1; min-width: 220px; }
+.ped-conf-sit { margin-left: 8px; }
+.ped-conf-ok { margin: 6px 0; }

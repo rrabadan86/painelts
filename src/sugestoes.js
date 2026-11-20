@@ -141,6 +141,24 @@ const diaBR = (iso) => C.diaSP(iso);
 const dm = (dia) => `${dia.slice(8, 10)}/${dia.slice(5, 7)}`;
 const STATUS_CARRINHO = { erro: 'erro ao pôr no carrinho', sem_estoque: 'sem estoque no fornecedor', recusado: 'o site recusou', indisponivel: 'indisponível no site', nao_encontrado: 'o site não achou o produto', acima_do_maximo: 'acima do máximo do site' };
 
+/**
+ * O carrinho montado foi excluído (a pessoa montou e não fez o pedido): as sugestões que tinham ido para "aguardando entrega"
+ * naquele carrinho voltam a esperar o próximo pedido. `desde` = início do carrinho (ISO). → { ok: quantas voltaram }
+ */
+function desfazerPedido(id, desde, por) {
+  const d = ler(id), t0 = Date.parse(desde || '') - 60e3;
+  if (!Number.isFinite(t0)) return { ok: 0 };
+  const em = new Date().toISOString();
+  let n = 0;
+  for (const s of d.itens) {
+    if (s.st !== 'aberta' || !s.aguardando || !(Date.parse(s.aguardando.em) >= t0)) continue;
+    (s.hist = s.hist || []).push({ em, res: 'naopediu', motivo: 'O carrinho foi excluído: o pedido não foi feito', por: String(por || '') });
+    delete s.aguardando; s.decisao = null; n++;
+  }
+  if (n) gravar(id, d);
+  return { ok: n };
+}
+
 /** fim do carrinho montado pelo favorito: o que o site não aceitou volta para o próximo pedido */
 function resultadoCarrinho(id, itens) {
   const d = ler(id);
@@ -260,4 +278,4 @@ function comEstoque(itens, estoque, todos) {
   });
 }
 
-module.exports = { comEstoque, ler, situacao, precisaJustificar, buscar, criar, retirar, decidir, fechar, resultadoCarrinho, avaliarNotas, visto, lista, paraPedido, MOTIVOS, POUCO_KG };
+module.exports = { desfazerPedido, comEstoque, ler, situacao, precisaJustificar, buscar, criar, retirar, decidir, fechar, resultadoCarrinho, avaliarNotas, visto, lista, paraPedido, MOTIVOS, POUCO_KG };
