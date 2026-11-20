@@ -60,3 +60,35 @@ test('o favorito e o robô aceitam a venda conjunta em "Colocar Todos no Carrinh
   // nenhum dos dois clica em finalizar/fechar pedido
   for (const [nome, t] of [['favorito', fav], ['robô', robo]]) assert.ok(!/(click|clicar)[^\n]{0,80}(finalizar|fechar pedido|concluir pedido)/i.test(t), nome);
 });
+
+test('carrinho montado: confirmar marca quem e quando; excluir apaga o registro, invalida o código do favorito e devolve as sugestões da equipe', () => {
+  const S = require('../../src/sugestoes');
+  assert.match(P.confirmarCarrinho('l9', 'ana').erro, /Não há carrinho/);
+  assert.match(P.excluirCarrinho('l9').erro, /Não há carrinho/);
+  const { codigo } = P.criarCodigo('l9', [{ cod: '500', nome: 'Chá X', qtd: 2 }, { cod: '600', nome: 'Chá Y', qtd: 1 }], 'ana');
+  assert.match(P.confirmarCarrinho('l9', 'ana').erro, /ainda está sendo montado/);
+  P.progresso(codigo, { fim: true, itens: [{ cod: '500', nome: 'Chá X', pedido: 2, qtd: 2, preco: 10, status: 'ok' }, { cod: '600', nome: 'Chá Y', pedido: 1, status: 'sem_confirmacao' }] });
+  assert.strictEqual(P.carrinho('l9').confirmado, undefined, 'montar não é confirmar');
+  // confirmar
+  const c = P.confirmarCarrinho('l9', 'bia').ok;
+  assert.strictEqual(c.confirmado.por, 'bia'); assert.ok(Date.parse(c.confirmado.em));
+  assert.strictEqual(P.carrinho('l9').confirmado.por, 'bia');
+  // sugestões da equipe que foram para "aguardando entrega" neste carrinho e uma antiga, de outro pedido
+  const ini = P.carrinho('l9').inicio, arq = path.join(tmp, 'l9', 'sugestoes.json');
+  const sug = (id, cod, em) => ({ id, cod, desc: 'Chá ' + cod, st: 'aberta', por: 'vend', em: '2026-11-01T10:00:00.000Z', hist: [{ em, res: 'pedido', motivo: '', por: 'ana' }], aguardando: { em, por: 'ana', qtd: 1 } });
+  const dSug = S.ler('l9');
+  dSug.itens = [sug('a1', '500', new Date(Date.parse(ini) + 5000).toISOString()), sug('a2', '700', '2026-10-01T10:00:00.000Z')];
+  fs.mkdirSync(path.dirname(arq), { recursive: true }); fs.writeFileSync(arq, JSON.stringify(dSug));
+  // excluir: some o registro, o código do favorito deixa de valer e só a sugestão deste carrinho volta
+  const x = P.excluirCarrinho('l9').ok;
+  assert.deepStrictEqual([x.produtos, x.confirmado, x.por], [1, true, 'ana']);
+  assert.strictEqual(P.carrinho('l9'), null);
+  assert.match(P.progresso(codigo, { itens: [] }).erro, /Código vencido/);
+  assert.deepStrictEqual(S.desfazerPedido('l9', x.inicio, 'bia'), { ok: 1 });
+  const depois = S.ler('l9').itens;
+  assert.strictEqual(depois.find((i) => i.id === 'a1').aguardando, undefined);
+  assert.match(depois.find((i) => i.id === 'a1').hist.slice(-1)[0].motivo, /carrinho foi excluído/);
+  assert.ok(depois.find((i) => i.id === 'a2').aguardando, 'a de outro pedido continua aguardando entrega');
+  assert.deepStrictEqual(S.desfazerPedido('l9', x.inicio, 'bia'), { ok: 0 }, 'não repete');
+});
+

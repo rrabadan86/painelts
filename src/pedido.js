@@ -207,6 +207,24 @@ function progresso(c, b) {
   return { ok: true, _loja: x.loja, _fim: !!b.fim, _itens: itens };
 }
 
+// ---------- carrinho montado no site: a pessoa confirma que fez o pedido, ou exclui o registro (montou para testar e não pediu) ----------
+function confirmarCarrinho(id, por) {
+  const f = path.join(pasta(id), 'carrinho.json'), c = ler(f);
+  if (!c || !Array.isArray(c.itens)) return { erro: 'Não há carrinho montado para confirmar.' };
+  if (!c.fim && c.modo === 'navegador' && !c.itens.length) return { erro: 'O carrinho ainda está sendo montado.' };
+  c.confirmado = { por: String(por || ''), em: new Date().toISOString() };
+  C.gravarAtomico(f, JSON.stringify(c), 0o640);
+  return { ok: c };
+}
+/** apaga o registro do carrinho montado e o código de uso dele; devolve o que foi apagado (para a auditoria e as sugestões) */
+function excluirCarrinho(id) {
+  const f = path.join(pasta(id), 'carrinho.json'), c = ler(f);
+  if (!c) return { erro: 'Não há carrinho montado para excluir.' };
+  for (const [k, v] of codigos) if (v.loja === id) codigos.delete(k); // o favorito não continua um carrinho excluído
+  try { fs.unlinkSync(f); } catch { /* já não havia */ }
+  return { ok: { inicio: c.inicio, por: c.por, produtos: (c.itens || []).filter((i) => i.status === 'ok').length, confirmado: !!c.confirmado } };
+}
+
 // ---------- carrinho salvo (Estoque → Pedido → "Salvar carrinho"): as quantidades de cada produto, para terminar depois ----------
 // dados/<loja>/pedido/rascunho.json = { itens: { cod: qtd }, por, em }; vale 5 dias e é um por loja (quem tem a tela Pedido continua de onde o outro parou)
 const RASCUNHO_DIAS = 5;
@@ -289,4 +307,4 @@ function alterarObrig(id, b, por) {
   return { ok: obrigatorios(id), item: o };
 }
 
-module.exports = { rascunho, salvarRascunho, apagarRascunho, RASCUNHO_DIAS, conjuntos, foraDeLinha, atualizarDisp, FORA_DE_LINHA_DIAS, obrigatorios, alterarObrig, ORIGENS, criarCodigo, lerCodigo, progresso, acesso, gravarAcesso, catalogo, carrinho, gravarEntrada, cfg, validarCfg, validarItens, EVENTOS };
+module.exports = { confirmarCarrinho, excluirCarrinho, rascunho, salvarRascunho, apagarRascunho, RASCUNHO_DIAS, conjuntos, foraDeLinha, atualizarDisp, FORA_DE_LINHA_DIAS, obrigatorios, alterarObrig, ORIGENS, criarCodigo, lerCodigo, progresso, acesso, gravarAcesso, catalogo, carrinho, gravarEntrada, cfg, validarCfg, validarItens, EVENTOS };

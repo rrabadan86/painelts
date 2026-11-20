@@ -706,7 +706,11 @@ app.get('/api/demo/pedido', (req, res) => {
     // carrinho salvo fictício (ontem, por outra pessoa): 4 produtos do catálogo que não estão no obrigatório
     const salvo = e.catalogo.itens.filter((c) => c.disp).slice(20, 24), emR = Date.now() - 26 * 3600e3;
     const rascunho = { itens: Object.fromEntries(salvo.map((c, k) => [String(c.cod), (k + 1) * (c.mult > 1 ? c.mult : 1)])), por: 'gerente', em: new Date(emR).toISOString(), expira: new Date(emR + PEDd.RASCUNHO_DIAS * 864e5).toISOString(), dias: PEDd.RASCUNHO_DIAS };
-    res.json({ rascunho, catalogo: e.catalogo, carrinho: null, cfg: PEDd.cfg({}), obrigatorio, robo: { disponivel: false }, podeRobo: false }); } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
+    // carrinho montado fictício (anteontem, ainda sem confirmar): mostra o "Confirmar / Excluir" do registro
+    const montado = e.catalogo.itens.filter((c) => c.disp).slice(30, 35), iniC = Date.now() - 50 * 3600e3;
+    const carrinho = { modo: 'navegador', inicio: new Date(iniC).toISOString(), fim: new Date(iniC + 4 * 60e3).toISOString(), por: 'gerente', total: montado.length, ok: true, site: 'https://exemplo.invalid/Pedidos/', carrinhoDepois: { texto: `(${montado.length - 1}) Itens` },
+      itens: montado.map((c, k) => ({ cod: String(c.cod), nome: c.nome, pedido: 1, qtd: 1, preco: c.preco, status: k === 4 ? 'sem_confirmacao' : 'ok' })) };
+    res.json({ rascunho, catalogo: e.catalogo, carrinho, cfg: PEDd.cfg({}), obrigatorio, robo: { disponivel: false }, podeRobo: false }); } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
 });
 // ⭐ sugestões fictícias da equipe (a tela guarda as mudanças só no navegador)
 function sugestoesDemo(lojaId) {
@@ -2092,6 +2096,34 @@ app.get('/api/pedido', async (req, res) => {
     } catch (e) { robo = { disponivel: false, erro: e.message }; }
   }
   res.json({ rascunho: PED.rascunho(loja.id), catalogo: PED.catalogo(loja.id), carrinho: PED.carrinho(loja.id), cfg: PED.cfg(C.get().lojas.find((l) => l.id === loja.id)), obrigatorio: PED.obrigatorios(loja.id), espera: ESP.resumoPorCod(loja.id), sugestoes: (() => { const S = require('./src/sugestoes'); try { S.avaliarNotas(loja.id, ES.notas(loja.id)); } catch { /* segue */ } return S.paraPedido(loja.id); })(), robo, podeRobo: req.perfil === 'admin' || req.perfil === 'franqueado' });
+});
+// carrinho montado no site: "Confirmar" (o pedido foi feito) ou "Excluir" (montou e não pediu: o registro some e as ⭐ sugestões voltam)
+const lojaCarrinho = (req, res) => {
+  if (req.get('X-Painel') !== '1') { res.status(403).json({ erro: 'Pedido inválido.' }); return null; }
+  if (!podeTela(req, 'pedido')) { res.status(403).json({ erro: 'Sem permissão.' }); return null; }
+  const loja = req.lojas.find((l) => l.id === String(req.query.loja || ''));
+  if (!loja) { res.status(400).json({ erro: 'Escolha uma loja.' }); return null; }
+  return loja;
+};
+app.post('/api/pedido/carrinho/confirmar', (req, res) => {
+  const loja = lojaCarrinho(req, res); if (!loja) return;
+  try {
+    const r = PED.confirmarCarrinho(loja.id, req.user);
+    if (r.erro) return res.status(400).json({ erro: r.erro });
+    C.auditar(req.user, 'confirmou que o pedido do carrinho foi feito', loja.id, { loja: loja.id, montadoEm: r.ok.inicio });
+    res.json({ ok: true, carrinho: r.ok });
+  } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
+});
+app.post('/api/pedido/carrinho/excluir', (req, res) => {
+  const loja = lojaCarrinho(req, res); if (!loja) return;
+  try {
+    const r = PED.excluirCarrinho(loja.id);
+    if (r.erro) return res.status(400).json({ erro: r.erro });
+    let voltaram = 0;
+    try { voltaram = require('./src/sugestoes').desfazerPedido(loja.id, r.ok.inicio, req.user).ok; } catch (e) { console.error('[sugestões] carrinho excluído:', e.message); }
+    C.auditar(req.user, 'excluiu o registro do carrinho montado (pedido não feito)', loja.id, { loja: loja.id, montadoEm: r.ok.inicio, montadoPor: r.ok.por, produtos: r.ok.produtos, jaConfirmado: r.ok.confirmado, sugestoesDevolvidas: voltaram });
+    res.json({ ok: true, sugestoesDevolvidas: voltaram });
+  } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
 });
 // carrinho salvo: guarda as quantidades do pedido por 5 dias, para terminar depois (um por loja; quem tem a tela Pedido)
 app.put('/api/pedido/rascunho', express.json({ limit: '200kb' }), (req, res) => {
