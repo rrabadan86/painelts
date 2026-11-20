@@ -311,11 +311,17 @@
   TS.empty = (t = 'Sem dados para os filtros escolhidos.') => h('div', { class: 'empty' }, t);
 
   TS.seg = function (items, current, onPick) {
-    const el = h('div', { class: 'seg', role: 'tablist' });
-    for (const [lab, val] of items) {
-      el.append(h('button', { type: 'button', class: val === current ? 'on' : '', onclick: () => onPick(val) }, lab));
+    const el = h('div', { class: 'seg', role: 'group' });
+    for (const [lab, val, dica] of items) { // dica (opcional): explicação da opção, aparece ao passar o mouse / tocar e segurar
+      // o seletor marca sozinho a opção clicada: quem redesenha só a tabela (sem refazer o seletor) não fica com a aba errada marcada
+      el.append(h('button', { type: 'button', class: val === current ? 'on' : '', 'aria-pressed': val === current ? 'true' : 'false', 'data-val': String(val), title: dica || null,
+        onclick: (e) => { TS.segMarcar(el, e.currentTarget); onPick(val); } }, lab));
     }
     return el;
+  };
+  /** marca uma opção do seletor (pelo botão ou pelo valor): use quando outra coisa (um quadro clicável) muda a aba */
+  TS.segMarcar = function (el, alvo) {
+    for (const b of el.querySelectorAll(':scope > button')) { const on = typeof alvo === 'object' ? b === alvo : b.dataset.val === String(alvo); b.classList.toggle('on', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); }
   };
 
   // ---------- tabela ordenável ----------

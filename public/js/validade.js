@@ -118,7 +118,7 @@
       };
       lote.addEventListener('change', () => { lote.value = lote.value.trim().toUpperCase(); lote.classList.toggle('vl-vazio', !lote.value); enviar({ lote: lote.value }, lote); });
       lote.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); lote.blur(); } });
-      val.addEventListener('change', () => enviar({ validade: val.value }, val));
+      TS.aoConfirmar(val, () => { if (val.value !== (it.validade || '')) enviar({ validade: val.value }, val); }); // só ao sair do campo: digitar o dia já disparava "change" e a tela redesenhava
       return { lote, val };
     }
   }
@@ -300,7 +300,7 @@
         } },
         { key: 'validade', label: 'Validade', align: 'l', render: (l) => {
           const i = h('input', { class: 'f-input vl-val', type: 'date', value: l.validade || '', min: l.entrada || null, 'aria-label': `Validade de ${l.desc}` });
-          i.addEventListener('change', () => salvar(l, { validade: i.value }, i));
+          TS.aoConfirmar(i, () => { if (i.value !== (l.validade || '')) salvar(l, { validade: i.value }, i); }); // só ao sair do campo (o Chrome dispara "change" a cada parte da data)
           const volta = !l.padrao && l.validadePadrao ? h('button', { type: 'button', class: 'link-btn', title: `Voltar para 12 meses da entrada (${fmt.date(l.validadePadrao)})`, onclick: () => salvar(l, { validade: '' }, i) }, 'voltar a 12 meses') : null;
           return h('div', { class: 'vl-val-box' }, i, volta, !l.padrao && l.editadoPor ? h('small', { class: 'muted vl-sub' }, `corrigida por ${l.editadoPor}`) : null);
         } },

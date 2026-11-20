@@ -402,7 +402,7 @@
     return box;
   };
 
-  function pintar(corpo, { estoque, cfg, historico, classe: ccfg, tabela, foraDeLinha, espera }, modo = 'estoque') {
+  function pintar(corpo, { estoque, cfg, historico, classe: ccfg, tabela, foraDeLinha, espera, compras }, modo = 'estoque') {
     corpo.replaceChildren();
     // cada tela põe só a sua parte (a conta é a mesma)
     const R = modo === 'rentab', E = modo === 'estoque', EQ = modo === 'equilibrio';
@@ -686,6 +686,8 @@
         return { ...t, custo, kg: !!(c && c.kg), g: c ? c.g : null, it: c ? c.it : null, margem: custo != null ? (t.preco - custo) / t.preco : null };
       });
     }
+    /** histórico de compras do produto (a mesma janela da nota de entrada); chá a granel: as compras do chá em kg */
+    const abrirCompras = (r) => { const mp = r.kg && r.it ? r.it : null; TS.histCompras({ nome: mp ? `${r.nome} (compras de ${mp.desc}, em kg)` : r.nome, cod: mp ? mp.cod : r.cod, un: mp ? 'kg' : 'un', grupo: r.grupoTxt }, (compras && compras.itens) || {}, null); };
     /** Margem de tabela: todos os produtos do cadastro, vendidos ou não */
     function cartaoTabela() {
       const quem = TS.eu && TS.eu.pode && TS.eu.pode.configurar;
@@ -732,7 +734,8 @@
         h('div', { class: 'est-tab-fx' }, TS.seg(Object.entries(F).map(([k, [t]]) => [`${t} (${fmt.int(conta(k))})`, k]), f, (v) => { state.estTabF = v; TS.render(); }), selG),
         TS.table({
           cols: [
-            { key: 'nome', label: 'Produto', align: 'l', sticky: true, wrap: true, render: (r) => h('span', null, r.nome, h('small', { class: 'est-tam' }, `cód. ${r.cod}${r.grupoTxt ? ' · ' + r.grupoTxt : ''}`)) },
+            { key: 'nome', label: 'Produto', align: 'l', sticky: true, wrap: true, title: 'Clique no produto para ver o histórico de compras: cada nota, a quantidade e como o custo variou (no chá a granel, as compras do chá em kg).',
+              render: (r) => h('span', null, TS.histCompras ? h('button', { type: 'button', class: 'nf-hist-btn', title: 'Ver o histórico de compras deste produto', onclick: (e) => { e.stopPropagation(); abrirCompras(r); } }, r.nome) : r.nome, h('small', { class: 'est-tam' }, `cód. ${r.cod}${r.grupoTxt ? ' · ' + r.grupoTxt : ''}`)) },
             { key: 'preco', label: 'Preço de tabela', fmt: fmt.brl },
             { key: 'custo', label: 'Custo', title: 'Custo atual do AppNext (chá a granel: gramas × custo do kg + saco kraft e etiquetas)', fmt: (v) => (v == null ? '—' : fmt.brl(v)) },
             { key: 'margem', label: 'Margem bruta', fmt: (v) => (v == null ? '—' : fmt.pct(v)), cls: (r) => (r.margem != null && r.margem < 0.3 ? 'miss' : '') },
@@ -1283,13 +1286,13 @@
       : r.est === 'novo' ? 'Tem saldo e ainda não vendeu no histórico do painel (produto novo ou matéria-prima de pacotes que ainda não saíram).'
         : r.est === 'semsaldo' ? 'Sem saldo no AppNext e sem venda nos últimos 30 dias.' : porque(r));
     const FILTROS = {
-      repor: ['O que repor', (r) => repor.includes(r)],
-      falta: ['Perdendo venda', (r) => !!r.rup],
-      parados: ['Parados', (r) => r.parado && !r.foraLinha],
-      sobrando: ['Sobrando', (r) => !!r.exc],
-      ...(todos.some((r) => r.foraLinha && r.qtd > 0) ? { liquidar: ['Fora de linha · liquidar', (r) => r.foraLinha && r.qtd > 0] } : {}),
-      saldo: ['Com saldo', (r) => r.qtd > 0],
-      todos: ['Todos', () => true],
+      repor: ['O que repor', (r) => repor.includes(r), 'Produtos que vendem e cujo saldo não cobre a entrega + o período do pedido: é a lista do que pedir agora.'],
+      falta: ['Perdendo venda', (r) => !!r.rup, 'Produtos zerados que vendiam: quanto a loja deixa de vender por dia sem eles (estimativa pela venda antes de zerar).'],
+      parados: ['Parados', (r) => r.parado && !r.foraLinha, 'Têm saldo e não vendem há 60 dias ou mais: dinheiro parado na prateleira.'],
+      sobrando: ['Sobrando', (r) => !!r.exc, 'Vendem, mas o saldo dura muito mais que o necessário: dinheiro sobrando em estoque.'],
+      ...(todos.some((r) => r.foraLinha && r.qtd > 0) ? { liquidar: ['Fora de linha · liquidar', (r) => r.foraLinha && r.qtd > 0, 'Indisponíveis há 90 dias ou mais no Sistema de Pedidos e ainda com saldo: não voltam, vale liquidar.'] } : {}),
+      saldo: ['Com saldo', (r) => r.qtd > 0, 'Tudo que tem saldo hoje na planilha do AppNext.'],
+      todos: ['Todos', () => true, 'Todos os produtos da planilha de estoque do AppNext, com ou sem saldo.'],
     };
     // "todos" antigo era "Tudo que vende"; o Início manda "repor"
     let filtroT = FILTROS[state.estSit] ? state.estSit : 'repor';
@@ -1348,7 +1351,7 @@
         empty: q ? 'Nenhum produto com esse nome ou código na planilha de estoque do AppNext.' : { repor: 'Nada para repor agora. 👏', falta: 'Nenhum produto zerado que vendia. 👏', sobrando: 'Nenhum produto com saldo demais. 👏', parados: 'Nada parado. 👏', saldo: 'Nenhum produto com saldo.', todos: 'Nenhum produto.' }[filtroT],
       }));
     }
-    const segT = TS.seg(Object.entries(FILTROS).map(([k, [t]]) => [`${t} (${fmt.int(conta(k))})`, k]), filtroT, (v) => { filtroT = v; state.estSit = v; if (busca.value) { busca.value = ''; state.estBusca = ''; } montarT(); });
+    const segT = TS.seg(Object.entries(FILTROS).map(([k, [t, , dica]]) => [`${t} (${fmt.int(conta(k))})`, k, dica]), filtroT, (v) => { filtroT = v; state.estSit = v; if (busca.value) { busca.value = ''; state.estBusca = ''; } montarT(); });
     let tBusca = null;
     busca.addEventListener('input', () => { clearTimeout(tBusca); tBusca = setTimeout(() => { state.estBusca = busca.value; montarT(); }, 200); });
     montarT();
@@ -1382,7 +1385,7 @@
     cardT.id = 'est-tabela';
     put(E, h('div', { class: 'mt' }, cardT));
     // os quadros do topo filtram a tabela
-    TS.estFiltrar = (k) => { filtroT = k; state.estSit = k; busca.value = ''; state.estBusca = ''; segT.querySelectorAll('button').forEach((b, i) => b.classList.toggle('on', Object.keys(FILTROS)[i] === k)); montarT(); cardT.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+    TS.estFiltrar = (k) => { filtroT = k; state.estSit = k; busca.value = ''; state.estBusca = ''; TS.segMarcar(segT, k); montarT(); cardT.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
 
     put(R, h('p', { class: 'muted mt' }, 'Reajustes de custo e de venda e o efeito na margem de cada produto: ', h('a', { href: '#precos' }, 'Produtos → Preços'), '.'));
     put(E, h('p', { class: 'muted mt' }, 'Margem e lucro de cada produto: ', h('a', { href: '#rentab' }, 'Produtos → Rentabilidade'), ' · notas de entrada: ', h('a', { href: '#notas' }, 'Estoque → Notas fiscais'), '.'));

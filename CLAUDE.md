@@ -17,6 +17,7 @@ Hooks (`.claude/settings.json`): bloqueiam commit/push de segredos e limpam os r
 - Rota que grava exige o cabeçalho `X-Painel: 1`; ações importantes vão para a auditoria (`C.auditar`).
 - Toda tela/rota nova precisa funcionar na apresentação: crie a rota `/api/demo/...` (dados fictícios ou resposta simulada, sem gravar).
 - **Layout sempre no padrão** de `.claude/rules/visual.md`: lista com mais de ~5 itens é `TS.table` (busca, ordenação, páginas, cartão no celular), nunca pilha de cartões; cores por classe/token; conferir prints no computador e no celular.
+- **Princípios de tela do dono** (lista completa no topo de `visual.md`): simplicidade, sem rolagem horizontal, seletor que reflete a tela, explicação (ⓘ) em toda coluna/quadro/opção, produto clicável com histórico, ícones nos dois sentidos, ação por linha, data que não grava a cada dígito.
 - Permissões no servidor (`req.perfil`, `podeTela`, `podeClientes`, `podeCustos`), não só escondendo na tela.
 - Testes: unidade em `tests/unit/*.test.js` (`node --test`); tela em `tests/e2e/*.spec.js` (Playwright, sempre na apresentação, projetos "computador" e "celular").
 - **Matriz de rastreabilidade:** `docs/rastreabilidade.md` liga cada regra (código PERF-01, ESC-16…) ao código e ao teste que a cobre. Mudou ou criou regra: atualize a linha no mesmo PR (onde está, teste, cobertura); achou erro ou lacuna: registre nos Achados.
@@ -44,8 +45,8 @@ Hooks (`.claude/settings.json`): bloqueiam commit/push de segredos e limpam os r
 - ⭐ Sugestões para o pedido (Estoque → Sugestões): vendedora sempre; gerente com a tela marcada (vem no padrão). A vendedora vê só o nome e a situação do produto (tem / pouco / acabou), nunca quantidade nem custo, e só as próprias sugestões; quem decide é quem tem a tela Pedido. A estrela não muda a conta do pedido sugerido.
 - Orçamento: só admin e franqueado.
 - Falar com a franquia por e-mail (reajuste de custo, cobrança de devoluções e de fidelidade, envio automático): só admin e franqueado.
-- Configurações da loja: o **franqueado configura tudo das lojas dele** (acesso ao AppNext, login do Sistema de Pedidos, regras de comissão, dados da loja, FIXE, mensagens, IA). Continua só do admin o que é da rede: criar/remover loja, horários e janela do coletor, resumo diário, sistema e backup.
-- Só o admin dispara o coletor ("Sincronizar agora").
+- **Franqueado = admin das lojas dele** (decisão do dono): na loja dele faz tudo o que o admin faz — configurações (AppNext, Sistema de Pedidos, comissão, dados da loja, FIXE, mensagens, IA), coletor ("Atualizar agora", "Sincronizar agora", importar histórico, cancelar, FIXE, robô do Sistema de Pedidos) e resumo diário (destinatários, teste, prévia e envio só das lojas dele). Nunca vê nem altera outra loja: toda rota confere a loja no servidor (`soGestor` + `lojaPermitida`, `req.lojas`).
+- Continua só do admin o que é da rede (não tem "loja dele"): criar/remover loja, horários e janela da rede, horário/ativação/token do Telegram/SMTP do resumo, vincular conversa nova do Telegram, classificação dos produtos, sistema, atualizações, backup, usuários admin/franqueado. Na tela do franqueado isso aparece travado (🔒) ou a aba fica oculta.
 - IA (✨, análise do Início, revisão do pedido): só admin e franqueado.
 
 **AppNext, FIXE e NF-e** (detalhes em `coletor.md` e `nfe.md`)

@@ -1,13 +1,13 @@
 const { test, expect } = require('@playwright/test');
 
 // Preços: cada coluna tem ⓘ que explica o campo — no cabeçalho (computador) e no rótulo do cartão (celular)
-test('Preços: ⓘ explica a coluna "No caixa" no computador e no celular', async ({ page }, info) => {
+test('Preços: ⓘ explica a coluna "Preço de venda" no computador e no celular', async ({ page }, info) => {
   await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS.db);
   await page.evaluate(() => { location.hash = '#precos'; });
   const tab = page.locator('table.prc-t');
   await expect(tab).toBeVisible();
   const celular = info.project.name === 'celular';
-  const alvo = celular ? tab.locator('tbody td.com-dica .mob-rot', { hasText: 'No caixa' }).first() : tab.locator('thead th', { hasText: 'No caixa' });
+  const alvo = celular ? tab.locator('tbody td.com-dica .mob-rot', { hasText: 'Preço de venda' }).first() : tab.locator('thead th', { hasText: 'Preço de venda' });
   await expect(alvo).toBeVisible();
   // a tabela de Preços pode se redesenhar quando chegam os dados do cadastro: se o toque cair no meio, toca de novo
   await expect(async () => {
@@ -15,7 +15,9 @@ test('Preços: ⓘ explica a coluna "No caixa" no computador e no celular', asyn
     await expect(page.locator('.dica-balao')).toContainText('a margem usa o preço do sistema', { timeout: 2000 });
   }).toPass({ timeout: 15000 });
   // ⓘ no cabeçalho não reordena a tabela
-  if (!celular) await expect(tab.locator('thead th.sorted')).not.toContainText('No caixa');
+  if (!celular) await expect(tab.locator('thead th.sorted')).not.toContainText('Preço de venda');
+  // toda coluna tem ⓘ
+  if (!celular) expect(await tab.locator('thead th .dica-i').count()).toBe(await tab.locator('thead th').count());
   // o rótulo do cartão continua um só (sem o rótulo do CSS repetido)
   if (celular) {
     const antes = await tab.locator('tbody td.com-dica').first().evaluate((td) => getComputedStyle(td, '::before').content);
@@ -69,20 +71,71 @@ test('Preços: venda e margem pelo preço do cadastro, com o histórico de reaju
   expect(r.c.vAnt).toBe(680.1); expect(r.c.nV).toBe(0);
 });
 
-// Preço do sistema (cadastro) e do caixa em colunas separadas: produto sem cadastro mostra "sem cadastro" no sistema e o caixa com antes → agora
-test('Preços: colunas "No sistema" e "No caixa" lado a lado', async ({ page }, info) => {
+// Um preço de venda por linha (o do sistema; sem cadastro, o do caixa); "No sistema" e "No caixa" lado a lado só na aba Caixa ≠ sistema
+test('Preços: preço de venda numa coluna; sistema e caixa lado a lado na aba "Caixa ≠ sistema"', async ({ page }, info) => {
   test.skip(info.project.name === 'celular', 'cabeçalho só no computador');
   await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS.db);
   await page.evaluate(() => { location.hash = '#precos'; });
   const tab = page.locator('table.prc-t');
   await expect(tab).toBeVisible();
-  const ths = await tab.locator('thead th').allInnerTexts();
-  const iSis = ths.findIndex((t) => t.includes('No sistema')), iCx = ths.findIndex((t) => t.includes('No caixa'));
-  expect(iSis).toBeGreaterThan(0); expect(iCx).toBe(iSis + 1);
-  expect(ths.some((t) => t.includes('Venda (antes'))).toBe(false);
-  // a apresentação não tem códigos de produto: tudo "sem cadastro", margem pelo caixa
+  const titulos = () => tab.locator('thead th').evaluateAll((l) => l.map((th) => { const c = th.cloneNode(true); c.querySelectorAll('.dica-i, .arrow').forEach((x) => x.remove()); return c.textContent.trim(); }));
+  const ths = await titulos();
+  expect(ths).toEqual(['Produto', 'Custo', 'Preço de venda', 'Margem bruta']);
+  // a apresentação não tem códigos de produto: tudo "sem cadastro", margem pelo caixa; o que mudou vem como etiqueta no nome
   const linha = tab.locator('tbody tr').first();
-  await expect(linha.locator('td').nth(iSis)).toContainText('sem cadastro');
-  await expect(linha.locator('td').nth(iCx)).toContainText('margem pelo caixa');
-  await expect(linha.locator('td').nth(iCx)).toContainText('R$');
+  await expect(linha.locator('td').nth(2)).toContainText('sem cadastro · margem pelo caixa');
+  await expect(linha.locator('td').nth(2)).toContainText('R$');
+  await expect(linha.locator('td').first().locator('.prc-st')).toHaveText(/Custo \+ Venda|Só custo|Só venda|Sem reajuste/);
+  // o que saiu da tabela está no painel do produto
+  await linha.locator('a.prc-nome').click();
+  const gaveta = page.locator('.prc-drawer');
+  await expect(gaveta.locator('.card-sub .prc-st')).toBeVisible();
+  await expect(gaveta).toContainText('Composição do custo');
+  await expect(gaveta).toContainText('Margem bruta');
+  await page.keyboard.press('Escape');
+  await page.locator('.est-tools .seg button', { hasText: 'Caixa ≠ sistema' }).click();
+  await expect(tab.locator('thead th').nth(1)).toContainText('No sistema');
+  const cad = await titulos();
+  expect(cad).toEqual(['Produto', 'No sistema', 'No caixa', 'Motivo provável']);
+});
+
+// Princípio do dono: tabela sem rolagem para o lado no computador (1280 e 1100 px), em todas as abas; no celular, cartões dentro da borda
+test('Preços: nenhuma aba rola para o lado (1280 e 1100 px) e o celular fica em cartões', async ({ page }, info) => {
+  const celular = info.project.name === 'celular';
+  await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS.db);
+  await page.evaluate(() => { location.hash = '#precos'; });
+  await expect(page.locator('table.prc-t')).toBeVisible();
+  const medir = () => page.evaluate(() => {
+    const w = document.querySelector('table.prc-t').closest('.table-wrap');
+    const borda = w.getBoundingClientRect().right + 1;
+    return { sobra: w.scrollWidth - w.clientWidth, pagina: document.documentElement.scrollWidth - window.innerWidth,
+      fora: [...w.querySelectorAll('tbody td, tbody td *')].filter((e) => e.getBoundingClientRect().right > borda).length, mob: w.querySelector('table').classList.contains('t-mob') };
+  });
+  const conferir = async (onde) => {
+    await expect(page.locator('table.prc-t tbody tr').first()).toBeVisible();
+    const m = await medir();
+    expect(m.sobra, `rolagem lateral na tabela · ${onde}`).toBeLessThanOrEqual(1);
+    expect(m.pagina, `página mais larga que a tela · ${onde}`).toBeLessThanOrEqual(1);
+    if (celular) { expect(m.mob, `cartões no celular · ${onde}`).toBe(true); expect(m.fora, `conteúdo fora do cartão · ${onde}`).toBe(0); }
+  };
+  for (const largura of celular ? [390] : [1280, 1100]) {
+    if (!celular) await page.setViewportSize({ width: largura, height: 900 });
+    const abas = page.locator('.est-tools .seg button');
+    const n = await abas.count();
+    expect(n).toBeGreaterThanOrEqual(6);
+    for (let i = 0; i < n; i++) {
+      const nome = (await abas.nth(i).innerText()).trim();
+      await abas.nth(i).click();
+      await expect(page.locator('.est-tools .seg button.on')).toHaveText(nome);
+      await conferir(`${largura}px · ${nome}`);
+      // aba Reajustes: os filtros de dentro (Avaliados, Cedo demais, Sem comparação, Todos…)
+      const dentro = page.locator('.efp-fil .seg button');
+      for (let k = 0; k < await dentro.count(); k++) {
+        const sub = (await dentro.nth(k).innerText()).trim();
+        await dentro.nth(k).click();
+        await expect(page.locator('.efp-fil .seg button.on')).toHaveText(sub);
+        await conferir(`${largura}px · ${nome} · ${sub}`);
+      }
+    }
+  }
 });

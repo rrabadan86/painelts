@@ -2637,6 +2637,17 @@ details.vl-ajuda summary { cursor: pointer; font-weight: 600; }
 /* Preços: motivo provável da diferença entre vendas e cadastro */
 .prc-tabpor { display: flex; align-items: center; gap: 4px; font-size: 11.5px; color: var(--muted); margin-top: 2px; }
 .prc-badge.prc-neutro { background: var(--sage-l, #eef0ea); color: var(--muted); }
+/* Preços: célula empilhada — valor de agora em destaque + etiqueta; "antes", data e detalhe embaixo (tabela sem rolagem para o lado) */
+.prc-c { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
+.prc-c1 { display: inline-flex; align-items: baseline; gap: 5px; }
+.prc-c small { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--muted); }
+/* a linha de detalhe quebra em vez de alargar a tabela (fontes mais largas não podem trazer a rolagem lateral de volta) */
+.t:not(.t-mob) .prc-c small { flex-wrap: wrap; justify-content: flex-end; white-space: normal; text-align: right; row-gap: 0; }
+.t:not(.t-mob) td:has(> .prc-c) { white-space: normal; }
+.prc-c1 { flex-wrap: wrap; justify-content: flex-end; }
+.prc-t .prc-st { font-size: 10.5px; padding: 1px 7px; }
+.t.t-mob .prc-c { align-items: flex-start; }
+.t.est-t.efp-t td.wrap { min-width: 150px; }
 
 /* Nota de entrada → Enviar para a franquia (reclamar do reajuste) */
 .nf-impacto-bts { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -2677,21 +2688,28 @@ details.vl-ajuda summary { cursor: pointer; font-weight: 600; }
 .sug-form { display: grid; gap: 8px; margin-top: 8px; }
 .sug-form textarea { width: 100%; box-sizing: border-box; }
 .sug-aviso { margin: 0; font-size: 13px; }
-.sug-lista, .sug-ped-lista { display: grid; gap: 10px; margin-top: 10px; }
-.sug-item, .sug-ped { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: #fff; display: grid; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
+.sug-lista { display: grid; gap: 10px; margin-top: 10px; }
+.sug-item { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: #fff; display: grid; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
 .sug-item.novo { border-color: #e2b93b; box-shadow: 0 0 0 2px #fff4c7; }
-.sug-ped.on { background: #f3faf4; }
-.sug-item-meta, .sug-ped-quem { font-size: 12px; }
-.sug-item-txt, .sug-ped-nota { font-size: 13px; }
-.sug-item-txt small, .sug-ped-nota small { color: var(--muted); }
+.sug-ped-t tr.sug-ped-on td { background: #f3faf4; }
+.sug-item-meta { font-size: 12px; }
+.sug-item-txt { font-size: 13px; }
+.sug-item-txt small { color: var(--muted); }
 .sug-hist { font-size: 12px; color: var(--muted); }
 .sug-hist ul { margin: 4px 0 0; padding-left: 18px; }
 .sug-tirar { justify-self: start; font-size: 12px; padding: 4px 10px; }
-.sug-ped-acao { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 4px; }
 .sug-ped-acoes { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .sug-ped-btn { font-size: 12px; padding: 4px 10px; }
-.sug-motivos { display: flex; flex-wrap: wrap; gap: 6px; width: 100%; }
-.sug-motivos[hidden] { display: none; }
+.sug-ped-card .seg { margin: 6px 0 8px; flex-wrap: wrap; }
+.sug-ped-rec { font-weight: 400; }
+.sug-ped-no { white-space: nowrap; }
+/* a célula "Pedido" quebra a linha em vez de alargar a tabela (sem rolagem para o lado no computador) */
+.sug-ped-t .sug-ped-acoes { display: block; }
+.sug-ped-t .sug-ped-acoes .sug-ped-btn { margin: 2px 6px 2px 0; }
+.sug-ped-t.est-t td.wrap { min-width: 170px; }
+@media (max-width: 760px) {
+  .sug-ped-t.t-mob td:last-child { grid-column: 1 / -1; }
+}
 
 /* Configurações → Usuários: telas agrupadas como no menu, regras fixas travadas */
 .cfg-telas { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; font-weight: 400; min-width: 0; max-width: 100%; }

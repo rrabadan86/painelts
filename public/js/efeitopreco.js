@@ -138,10 +138,12 @@
     return { lista, bons: n('bom'), ruins: n('ruim'), iguais: n('igual'), cedo: n('cedo'), sem: n('sem') };
   }
 
+  // valor de depois em destaque + etiqueta da variação; o de antes embaixo, em letra pequena (cabe sem rolagem para o lado)
   const antesDepois = (a, d, v, f, bomSeSobe) => {
     if (a == null || d == null) return h('span', { class: 'muted' }, '—');
-    return h('div', { class: 'prc-v' }, h('s', { class: 'muted' }, f(a)), h('b', null, f(d)),
-      v != null ? h('span', { class: 'prc-badge ' + (Math.abs(v) < 0.0005 || bomSeSobe == null ? 'prc-neutro' : (v > 0) === bomSeSobe ? 'prc-bom' : 'prc-ruim') }, pctTxt(v)) : null);
+    return h('div', { class: 'prc-c' }, h('span', { class: 'prc-c1' }, h('b', null, f(d)),
+      v != null ? h('span', { class: 'prc-badge ' + (Math.abs(v) < 0.0005 || bomSeSobe == null ? 'prc-neutro' : (v > 0) === bomSeSobe ? 'prc-bom' : 'prc-ruim') }, pctTxt(v)) : null),
+      h('small', null, `antes ${f(a)}`));
   };
   const etiqueta = (r) => { const [t, c] = ESTADO[r.estado]; return h('span', { class: 'badge ' + c }, t); };
   const porque = (r) => {
@@ -174,24 +176,21 @@
     const fil = FIL[state.efeitoFil] ? state.efeitoFil : E.lista.some(FIL.aval[1]) ? 'aval' : 'todos'; // começa pelos que já dá para julgar
     const tab = TS.table({
       cols: [
-        { key: 'nome', label: 'Produto', align: 'l', sticky: true, wrap: true, render: (r) => h('span', null,
+        { key: 'nome', label: 'Produto', align: 'l', sticky: true, wrap: true, title: 'Clique no nome para abrir o histórico do produto, com a conta completa de cada reajuste (inclusive a receita por dia). A etiqueta é o resultado do reajuste — Bom, Ruim, Igual, Cedo demais ou Sem comparação — e embaixo vem o motivo.', render: (r) => h('span', null,
           h('a', { href: '#', class: 'prc-nome', onclick: (e) => { e.preventDefault(); abrirProduto(r.nome); } }, h('b', null, r.nome)), ' ', etiqueta(r),
           h('small', { class: 'muted efp-det' }, porque(r))) },
-        { key: 'dia', label: 'Reajuste', title: 'Quando o preço de venda mudou e de quanto para quanto. "cadastro" = mudou o preço cadastrado no AppNext (histórico que o painel guarda a cada planilha de preços). "caixa" = o preço mais vendido nos cupons mudou e se manteve (usado antes de o painel ter o histórico do cadastro, ou para produto fora dele).',
-          render: (r) => h('div', { class: 'prc-v' }, h('s', { class: 'muted' }, fmt.brl(r.de)), h('b', null, fmt.brl(r.para)), h('span', { class: 'prc-badge prc-neutro' }, pctTxt(r.variacao)),
-            h('small', { class: 'muted' }, `${quando(r.dia)} · ${r.fonte}`)) },
-        { key: 'varQ', label: 'Vendeu por dia', title: 'Unidades vendidas por dia: 30 dias antes (riscado) → 30 dias depois do reajuste, e a variação. Por dia, para comparar períodos de tamanhos diferentes. Resgates da fidelidade (R$ 0,01) ficam fora.',
+        { key: 'dia', label: 'Reajuste', title: 'O preço de venda novo em destaque, a variação e, embaixo, o preço de antes, a data e de onde veio. "cadastro" = mudou o preço cadastrado no AppNext (histórico que o painel guarda a cada planilha de preços). "caixa" = o preço mais vendido nos cupons mudou e se manteve (usado antes de o painel ter o histórico do cadastro, ou para produto fora dele).',
+          render: (r) => h('div', { class: 'prc-c' }, h('span', { class: 'prc-c1' }, h('b', null, fmt.brl(r.para)), h('span', { class: 'prc-badge prc-neutro' }, pctTxt(r.variacao))),
+            h('small', null, `antes ${fmt.brl(r.de)}`), h('small', null, `${quando(r.dia)} · ${r.fonte}`)) },
+        { key: 'varQ', label: 'Vendeu por dia', title: 'Unidades vendidas por dia nos 30 dias depois do reajuste (em destaque), a variação e, embaixo, os 30 dias antes. Por dia, para comparar períodos de tamanhos diferentes. Resgates da fidelidade (R$ 0,01) ficam fora. A receita por dia está no histórico do produto (clique no nome).',
           render: (r) => (r.antes ? antesDepois(r.antes.q, r.depois.q, r.varQ, n2, true) : '—'), sortVal: (r) => r.varQ ?? -99 },
-        { key: 'varV', label: 'Receita por dia', title: 'Valor vendido do produto por dia (já com os descontos dados): antes → depois do reajuste.',
-          render: (r) => (r.antes ? antesDepois(r.antes.v, r.depois.v, r.varV, fmt.brl, true) : '—'), sortVal: (r) => r.varV ?? -99 },
-        { key: 'varL', label: 'Lucro por dia', title: 'Lucro bruto por dia = receita − custo do produto na data de cada venda (chá: kg × tamanho + embalagem). Sem impostos, comissão nem royalties. "—" = produto sem custo no estoque.',
+        { key: 'varL', label: 'Lucro por dia', title: 'Lucro bruto por dia = receita − custo do produto na data de cada venda (chá: kg × tamanho + embalagem): depois do reajuste em destaque, antes embaixo. Sem impostos, comissão nem royalties. "—" = produto sem custo no estoque.',
           render: (r) => (r.antes && r.antes.l != null && r.depois.l != null ? antesDepois(r.antes.l, r.depois.l, r.varL, fmt.brl, true) : '—'), sortVal: (r) => r.varL ?? -99 },
-        { key: 'varLoja', label: 'Loja no período', title: 'Quanto a receita da loja inteira (por dia) subiu ou caiu entre os mesmos dois períodos. Serve para separar o efeito do preço do efeito da época: se a loja toda caiu 10%, o produto cair 10% não é culpa do preço.',
-          render: (r) => (r.varLoja == null ? '—' : h('span', { class: 'muted' }, pctTxt(r.varLoja))), sortVal: (r) => r.varLoja ?? -99 },
-        { key: 'adjL', label: 'Lucro descontando a loja', title: 'Variação do lucro por dia do produto ÷ variação da receita da loja no mesmo período. É este número que decide Bom (acima de +2%), Ruim (abaixo de −2%) ou Igual. Embaixo, a quantidade na mesma conta. É uma comparação simples: promoção, falta de estoque ou campanha no período também mexem no resultado.',
-          render: (r) => (r.adjL == null ? '—' : h('div', null, h('b', { class: r.adjL > FAIXA ? 'pos' : r.adjL < -FAIXA ? 'neg' : null }, pctTxt(r.adjL)), r.adjQ != null ? h('small', { class: 'muted efp-det' }, `quantidade ${pctTxt(r.adjQ)}`) : null)), sortVal: (r) => r.adjL ?? -99 },
+        { key: 'adjL', label: 'Descontando a loja', title: 'Variação do lucro por dia do produto ÷ variação da receita da loja no mesmo período. É este número que decide Bom (acima de +2%), Ruim (abaixo de −2%) ou Igual. Embaixo: a quantidade na mesma conta e quanto a receita da loja inteira (por dia) subiu ou caiu entre os dois períodos — se a loja toda caiu 10%, o produto cair 10% não é culpa do preço. É uma comparação simples: promoção, falta de estoque ou campanha no período também mexem no resultado.',
+          render: (r) => (r.adjL == null && r.varLoja == null ? '—' : h('div', { class: 'prc-c' }, h('span', { class: 'prc-c1' }, h('b', { class: r.adjL > FAIXA ? 'pos' : r.adjL < -FAIXA ? 'neg' : null }, r.adjL == null ? '—' : `lucro ${pctTxt(r.adjL)}`)),
+            r.adjQ != null ? h('small', null, `quantidade ${pctTxt(r.adjQ)}`) : null, r.varLoja != null ? h('small', null, `loja ${pctTxt(r.varLoja)}`) : null)), sortVal: (r) => r.adjL ?? -99 },
       ],
-      rows: E.lista.filter(FIL[fil][1]), sortKey: 'dia', sortDir: 'desc', maxHeight: '640px', search: 'Buscar produto…', searchKeys: ['nome', 'cat'], produto: 'nome', cls: 'est-t prc-t efp-t',
+      rows: E.lista.filter(FIL[fil][1]), sortKey: 'dia', sortDir: 'desc', maxHeight: '640px', search: 'Buscar produto…', searchKeys: ['nome', 'cat'], produto: 'nome', cls: 'est-t prc-t efp-t', cartao: true,
       empty: E.lista.length ? 'Nenhum reajuste neste filtro.' : 'Nenhum reajuste de preço de venda nos últimos 12 meses.',
     });
     const cont = (k) => E.lista.filter(FIL[k][1]).length;
