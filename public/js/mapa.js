@@ -811,6 +811,35 @@
     return out;
   }
 
+  /** Turnos da escala SALVA da loja escolhida entre duas datas, para outras telas (cartão "Meta de hoje"): a mesma conta da
+   *  aba Escala do mês (movimento do período da tela → pessoas necessárias → escala + ajustes do mês).
+   *  → { pessoas: [nome], turnos: [{ nome, iso, ini, fim, pausa }] } ou null (sem loja, escala não lançada, sem os nomes da
+   *  equipe — a vendedora não recebe — ou sem hora nas vendas). */
+  TS.escalaTurnos = function (deIso, ateIso) {
+    try {
+      const db = TS.db, opInfo = operacaoDaLoja();
+      if (!db || !db.n || !opInfo || !opInfo.salva) return null;
+      const op = opInfo.op, e = op.equipe || {};
+      if (!((e.pessoas || []).some((p) => p && p.nome) || (e.nomes || []).some(Boolean))) return null;
+      const cfg = (db.metas || []).find((m) => m.id === opInfo.id) || null;
+      const feriados = TS.datasFeriado ? TS.datasFeriado(cfg, +TS.dayToIso(db.minDay).slice(0, 4), +TS.dayToIso(db.maxDay).slice(0, 4)) : new Set();
+      const ehFeriado = (day) => feriados.has(TS.dayToIso(day));
+      const comHora = (base) => cupons(base).lista.filter((c) => !ehFeriado(c.day));
+      let lista = comHora(TS.filtrar()), noPeriodo = true;
+      if (!lista.length) { lista = comHora(TS.filtrar({ ignorar: ['datas', 'vendedores', 'grupos', 'cats', 'produto'] })); noPeriodo = false; }
+      if (!lista.length) return null;
+      let prim = Infinity, ult = -Infinity;
+      for (const c of lista) { if (c.day < prim) prim = c.day; if (c.day > ult) ult = c.day; }
+      const de = noPeriodo ? Math.max(state.f.de ?? db.minDay, db.minDay, prim) : prim, ate = noPeriodo ? Math.min(state.f.ate ?? db.maxDay, db.maxDay, ult) : ult;
+      const need = necessidade(grade(lista, de, ate, state.mapaMetrica || 'cupons', ehFeriado).p80, op);
+      const pessoas = pessoasDe(e);
+      let semanas, L = 1;
+      if (e.modelo === 'rodizio') { const rr = montarRodizio(need, op, pessoas); semanas = rr.semanas; L = rr.L; }
+      else semanas = [{ turnosP: montarEscala(need, op, e.funcionarios).pessoas, motivos: null }];
+      return { pessoas: pessoas.map((p) => p.nome), turnos: turnosDoPeriodo({ op, cfg, semanas, L, need, deIso, ateIso }) };
+    } catch (err) { console.error('[escala]', err); return null; }
+  };
+
   function cartaoMes({ op, cfg, semanas, L, need, lojaNome }) {
     const hoje = new Date();
     const meses = [];

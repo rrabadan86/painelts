@@ -226,6 +226,7 @@
     const corpo = h('div', null, h('div', { class: 'card' }, h('div', { class: 'loading' }, h('div', null, h('div', { class: 'spinner' }), h('p', null, 'Carregando os lotes…')))));
     root.append(corpo);
     const loja = state.loja;
+    if (state.valFaixa) { F.faixa = state.valFaixa; state.valFaixa = null; } // veio de um aviso do Início já filtrado
     dados(loja, true).then((d) => { if (corpo.isConnected) pintar(corpo, loja, d); })
       .catch((e) => corpo.replaceChildren(h('div', { class: 'notice err' }, TS.demo ? 'A validade dos lotes não está na apresentação.' : e.message)));
   };
