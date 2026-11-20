@@ -26,3 +26,4 @@ paths:
 - Dado que vem do AppNext pode faltar ou vir em outro formato: número com `?? 0`, data com `Date.parse` conferida — um `NaN`/data inválida gravado no JSON derruba a leitura no painel.
 - Planilha de estoque com menos de 50% dos produtos que tinham saldo é recusada (vira `.erro`); só o envio manual pode confirmar (`?forcar=1`, auditado).
 - E-mail do FIXE: só vale com DKIM/DMARC/SPF alinhados ao domínio do FIXE; link só nos domínios conhecidos (`FIXE_LINK_DOMINIOS` libera outro).
+- Robô do WhatsApp (serviço `zap/`, separado do coletor): o painel fala com ele só por `src/zap.js` (`ZAP_URL`, `ZAP_TOKEN`, cabeçalho `X-Zap-Token`). O serviço não decide nada: fila e travas em `src/zapfila.js`, laço de 30 s em `src/zaplaco.js` (uma mensagem por vez, só com o estado `conectado`; `desconectado` não marca o cliente nem conta como falha; id estável campanha-rodada-CPF). Log e auditoria: nunca o texto da mensagem nem o número completo (só os 4 últimos dígitos).

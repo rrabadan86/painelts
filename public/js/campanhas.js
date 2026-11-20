@@ -101,17 +101,8 @@
     return out.sort((a, b) => b.saldo - a.saldo || (a.c.nome || '').localeCompare(b.c.nome || '', 'pt-BR'));
   }
   const clienteDe = (cpf) => A().universo().find((c) => c.cpf === cpf) || { cpf, nome: '', cupons: [], tags: new Set() };
-  /** produtos do filtro: [{ t, contem }]. "~texto" = todos os produtos que contêm o texto; o campo antigo "produto" vira "contém" */
-  function listaProdutos(f) {
-    const l = Array.isArray(f.produtos) && f.produtos.length ? f.produtos : f.produto ? ['~' + f.produto] : [];
-    return l.filter(Boolean).map((x) => (x[0] === '~' ? { t: x.slice(1), contem: true } : { t: x, contem: false }));
-  }
-  /** {produto} na mensagem: os nomes escolhidos ("African Sunset 250G e African Sunset 100G") */
-  const nomesProdutos = (f) => {
-    const n = listaProdutos(f || {}).map((x) => x.t.replace(/\s+/g, ' ').trim());
-    return n.length <= 1 ? n[0] || '' : n.slice(0, -1).join(', ') + ' e ' + n[n.length - 1];
-  };
-  const extras = (camp) => ({ produto: nomesProdutos(camp.filtros) });
+  // produtos do filtro, {produto} da mensagem, rodízio das variações e quem sai da fila: iguais na tela e no robô (msgwpp.js)
+  const { listaProdutos, extras } = TS.msgWpp;
 
   // ---------- página ----------
   TS.pages.campanhas = function (root) {
@@ -128,11 +119,42 @@
       lista.copias = j.copias || [];
       const novas = await rodadasRecorrentes(lista);
       if (!corpo.isConnected) return;
+      // faixa do robô do WhatsApp (fica acima da lista e da campanha aberta)
+      if (TS.zapFaixa) { faixaRobo = TS.zapFaixa(state.loja, () => lista.some((c) => c.robo)); corpo.before(faixaRobo); }
       pintarLista(corpo, lista, novas);
+      prepararRobo(lista.filter((c) => c.robo && c.ativa !== false)).catch(() => null);
       // vinda de Estoque → Validade: a campanha já montada para quem comprou o chá perto de vencer
       if (TS.campanhaPronta) { const b = TS.campanhaPronta; TS.campanhaPronta = null; criar(corpo, lista, b); }
     }).catch((e) => corpo.replaceChildren(h('div', { class: 'notice err' }, e.message)));
   };
+
+  // ---------- robô do WhatsApp: a lista conferida que o servidor usa para montar o mesmo texto do envio manual ----------
+  let faixaRobo = null;
+  /** para cada pendente: o número (o do link do envio manual), os valores dos {campos} e se a mensagem ofereceria
+   *  produto sem estoque. Vai ao abrir a tela, ao abrir a campanha e ao marcar "Enviar pelo robô". */
+  async function prepararRobo(camps, dispLido) {
+    if (TS.demo || !TS.zapPreparar || !camps.length) return;
+    let disp = dispLido || null;
+    if (!disp && TS.estoqueDisp) { try { disp = await TS.estoqueDisp(state.loja); } catch { /* sem leitura do estoque: quem receberia oferta de produto espera */ } }
+    const porCpf = new Map(A().universo().map((c) => [c.cpf, c]));
+    for (const camp of camps) {
+      const r = camp.rodadas[0];
+      if (!r) continue;
+      const textos = TS.msgWpp.textos(camp);
+      const prods = listaProdutos(camp.filtros || {}).filter((x) => !x.contem).map((x) => x.t);
+      const itens = [];
+      for (const it of r.lista) {
+        if (it.st !== 'p') continue;
+        const c = porCpf.get(it.cpf);
+        if (!c) continue; // cliente fora dos dados carregados agora: o robô espera a próxima conferência
+        const oferece = TS.produtosDaMensagem ? textos.some((t) => TS.produtosDaMensagem(t, c, { produtos: prods }).length) : false;
+        const falta = disp && TS.semEstoqueNaMensagem ? textos.map((t) => TS.semEstoqueNaMensagem(disp, t, c, { produtos: prods })).find(Boolean) : null;
+        itens.push({ cpf: it.cpf, para: TS.msgWpp.paraDoLink(c.wpp), v: A().valores(c), espera: falta || (oferece && !disp ? 'estoque não conferido' : undefined) });
+      }
+      await TS.zapPreparar(state.loja, camp.id, itens);
+    }
+    if (faixaRobo && faixaRobo.atualizar) faixaRobo.atualizar();
+  }
 
   /** campanha recorrente: semanal = uma lista nova a cada 7 dias; mensal = uma por mês */
   async function rodadasRecorrentes(lista) {
@@ -188,7 +210,7 @@
     const cards = lista.map((c) => {
       const r = c.rodadas[0], s = resumoRodada(r, c.janela);
       return h('div', { class: 'card cp-card', role: 'button', tabindex: 0, onclick: () => abrirCampanha(corpo, lista, c), onkeydown: (e) => { if (e.key === 'Enter') abrirCampanha(corpo, lista, c); } },
-        h('div', { class: 'cp-card-top' }, h('b', null, c.nome), c.recorrente ? h('span', { class: 'cli-tag t-repor' }, c.recorrente === 'semanal' ? 'toda semana' : 'todo mês') : null, c.ativa === false ? h('span', { class: 'cli-tag' }, 'pausada') : null),
+        h('div', { class: 'cp-card-top' }, h('b', null, c.nome), c.recorrente ? h('span', { class: 'cli-tag t-repor' }, c.recorrente === 'semanal' ? 'toda semana' : 'todo mês') : null, c.robo ? h('span', { class: 'cli-tag', title: 'Enviada pelo robô do WhatsApp' }, '🤖 robô') : null, c.ativa === false ? h('span', { class: 'cli-tag' }, 'pausada') : null),
         h('small', { class: 'muted' }, `${c.recorrente ? 'Lista de ' : 'Criada em '}${fmt.date(r.em.slice(0, 10))} · por ${r.por || c.por || '—'}`),
         h('div', { class: 'cp-mini' },
           h('div', null, h('b', null, fmt.int(s.total)), h('small', null, 'na lista')),
@@ -477,19 +499,13 @@
     };
     // quem recebeu mensagem de OUTRA campanha (ou pelo painel) há menos de N dias, ou pediu para não receber,
     // sai da fila sozinho como "pulada" com o motivo; "voltar para a fila" libera manualmente
-    const dias = Math.max(Number(String((camp.filtros || {}).semContato ?? '').replace(',', '.')) || 0, A().intervalo ? A().intervalo() : 21); // nunca menos que o intervalo da loja
-    const minha = 'Campanha: ' + camp.nome.slice(0, 28);
+    const dias = TS.msgWpp.prazoCampanha(camp, A().intervalo ? A().intervalo() : 21); // nunca menos que o intervalo da loja
+    const minha = TS.msgWpp.motivoCampanha(camp.nome);
+    // o intervalo da loja vale sempre (até para esta mesma campanha e para quem foi "voltado para a fila");
+    // o prazo maior pedido na campanha pode ser liberado à mão
     const bloqueio = (it) => {
-      if (it.st !== 'p') return null;
-      const ct = A().contatoDe(clienteDe(it.cpf));
-      if (!ct) return null;
-      if (ct.optout) return 'não quer mensagens';
-      const iv = A().intervalo ? A().intervalo() : 21;
-      const ha = ct.em ? Date.now() - Date.parse(ct.em) : Infinity;
-      // o intervalo da loja vale sempre (até para esta mesma campanha e para quem foi "voltado para a fila");
-      // o prazo maior pedido na campanha pode ser liberado à mão
-      if (ct.em && (ha < iv * 864e5 || (!it.liberado && dias && ha < dias * 864e5 && ct.motivo !== minha))) return `já recebeu em ${fmt.date(ct.em.slice(0, 10))}${ct.motivo ? ' (' + ct.motivo.replace(/^Campanha: /, 'campanha ') + ')' : ''}`;
-      return null;
+      const b = TS.msgWpp.bloqueio(it, A().contatoDe(clienteDe(it.cpf)), { intervalo: A().intervalo ? A().intervalo() : 21, dias, minha, agora: Date.now() });
+      return b ? TS.msgWpp.textoBloqueio(b) : null;
     };
     const bloqueados = r.lista.map((it) => [it, bloqueio(it)]).filter(([, m]) => m);
     if (bloqueados.length) {
@@ -510,14 +526,22 @@
     const avisoEstoque = esperandoEstoque.size ? h('div', { class: 'notice cp-estoque' }, h('b', null, `🚫 ${fmt.int(esperandoEstoque.size)} ${esperandoEstoque.size === 1 ? 'cliente esperando' : 'clientes esperando'} estoque: `),
       `a mensagem ofereceria ${faltam.slice(0, 4).join(', ')}${faltam.length > 4 ? '…' : ''}, que está sem estoque. Eles continuam na lista e entram na fila quando chegar a nota de entrada.`)
       : !disp ? h('div', { class: 'notice' }, 'Não consegui ler o estoque agora: a fila não está conferindo se o produto citado tem em estoque.') : null;
+    // robô: manda a lista conferida (depois de tirar da fila quem não pode receber)
+    if (camp.robo && camp.ativa !== false && r === camp.rodadas[0]) prepararRobo([camp], disp).catch(() => null);
+    const opcaoRobo = TS.zapOpcao ? TS.zapOpcao(camp, async (quer) => {
+      const x = await api('PUT', `/api/campanhas/${camp.id}`, { loja: state.loja, robo: quer });
+      Object.assign(camp, x.campanha);
+      repintar();
+    }) : null;
+    const pelosRobo = r.lista.filter((x) => x.st === 'e' && x.por === 'robô').length;
     // limite por dia: conta os envios de hoje desta campanha (todas as listas)
     const hojeIso = new Date().toLocaleDateString('sv-SE');
     const limiteDia = camp.limiteDia != null ? camp.limiteDia : 20;
     const enviadosHoje = camp.rodadas.reduce((n, rr) => n + rr.lista.filter((x) => x.st === 'e' && x.em && new Date(x.em).toLocaleDateString('sv-SE') === hojeIso).length, 0);
     const noLimite = limiteDia > 0 && enviadosHoje >= limiteDia;
     // variações: rodízio pela quantidade já enviada (cada uma recebe mais ou menos o mesmo número)
-    const textos = [camp.mensagem, ...(camp.variacoes || [])];
-    const varAtual = r.lista.filter((x) => x.st === 'e').length % textos.length;
+    const textos = TS.msgWpp.textos(camp);
+    const varAtual = TS.msgWpp.variacaoDaVez(r.lista, textos.length);
     const contaHoje = limiteDia > 0 ? h('span', { class: 'cp-hoje' + (noLimite ? ' fim' : '') }, `Hoje: ${fmt.int(enviadosHoje)} de ${fmt.int(limiteDia)}`) : null;
     let fila;
     if (atual && noLimite) {
@@ -530,7 +554,7 @@
       enviar.addEventListener('click', async (e) => {
         if (!c.wpp || TS.demo) e.preventDefault();
         enviar.classList.add('carregando');
-        try { await marcarSt(atual, 'e', null, textos.length > 1 ? varAtual : null); if (!TS.demo) await A().marcar(c, 'contatado', 'Campanha: ' + camp.nome.slice(0, 28)).catch(() => {}); } catch (err) { alert(err.message); }
+        try { await marcarSt(atual, 'e', null, textos.length > 1 ? varAtual : null); if (!TS.demo) await A().marcar(c, 'contatado', minha).catch(() => {}); } catch (err) { alert(err.message); }
         repintar();
       });
       fila = TS.card('Fila de envio', `${fmt.int(pend.length)} pendentes${textos.length > 1 ? ` · variação ${varAtual + 1} de ${textos.length}` : ''} · com o WhatsApp da loja aberto neste computador, clique, confira e aperte Enter no WhatsApp`, contaHoje,
@@ -561,7 +585,7 @@
       cols: [
         { key: 'nome', label: 'Cliente', align: 'l', render: (x) => h('span', null, x.nome, h('small', { class: 'muted cp-cel' }, 'CPF ' + A().fmtCPF(x.cpf))) },
         { key: 'cel', label: 'Celular', align: 'l' },
-        { key: 'st', label: 'Situação', align: 'l', render: (x) => h('span', { class: 'cp-st ' + ST[x.st][1] }, x.st === 'p' && esperandoEstoque.has(x.cpf) ? `Esperando estoque (${esperandoEstoque.get(x.cpf)})` : ST[x.st][0], x.em != null ? h('small', null, ` ${d(x.em)}${x.por ? ' · ' + x.por : ''}`) : null, x.it.motivo ? h('small', { class: 'cp-motivo' }, x.it.motivo) : null), sortVal: (x) => ({ e: 3, x: 2, o: 1, p: 0 })[x.st] },
+        { key: 'st', label: 'Situação', align: 'l', title: 'Pendente, Enviada (com a data e quem enviou: 🤖 robô = enviada pelo robô do WhatsApp), Pulada (com o motivo) ou Não quer mensagens.', render: (x) => h('span', { class: 'cp-st ' + ST[x.st][1] }, x.st === 'p' && esperandoEstoque.has(x.cpf) ? `Esperando estoque (${esperandoEstoque.get(x.cpf)})` : ST[x.st][0], x.em != null ? h('small', null, ` ${d(x.em)}${x.por ? ' · ' + (x.por === 'robô' ? '🤖 robô' : x.por) : ''}`) : null, x.it.motivo ? h('small', { class: 'cp-motivo' }, x.it.motivo) : null), sortVal: (x) => ({ e: 3, x: 2, o: 1, p: 0 })[x.st] },
         { key: 'voltou', label: `Voltou em ${camp.janela} dias`, align: 'l', render: (x) => (!x.ret ? '—' : x.ret.voltou ? h('span', { class: 'cp-st ok' }, `Sim · ${d(x.ret.primeira)} · ${fmt.brl0(x.ret.vt)}`) : x.ret.aberto ? h('span', { class: 'muted' }, 'ainda no prazo') : h('span', { class: 'muted' }, 'não')) },
         { key: 'acao', label: '', align: 'l', render: (x) => (x.st !== 'p' ? h('button', { type: 'button', class: 'link-btn', onclick: async (e) => { e.stopPropagation(); await marcarSt(x.it, 'p', x.it.motivo ? 'liberado' : null).catch((er) => alert(er.message)); repintar(); } }, 'voltar para a fila') : null), sortVal: () => 0 },
       ],
@@ -585,11 +609,12 @@
         h('div', { class: 'page-sub' }, `${camp.recorrente ? (camp.recorrente === 'semanal' ? 'Toda semana · ' : 'Todo mês · ') : ''}lista de ${fmt.date(r.em.slice(0, 10))} · retorno medido em ${camp.janela} dias`))),
       h('div', { class: 'grid g-kpi' },
         kpi('Na lista', fmt.int(s.total), `${fmt.int(s.pend)} pendentes`),
-        kpi('Enviadas', fmt.int(s.env), s.total ? `${fmt.pct(s.env / s.total, 0)} da lista` : null, 'Mensagens abertas no WhatsApp pela fila (clique em "Abrir no WhatsApp").'),
+        kpi('Enviadas', fmt.int(s.env), s.total ? `${fmt.pct(s.env / s.total, 0)} da lista${pelosRobo ? ` · 🤖 ${fmt.int(pelosRobo)} pelo robô` : ''}` : null, 'Mensagens abertas no WhatsApp pela fila (clique em "Abrir no WhatsApp") ou enviadas pelo robô do WhatsApp (🤖).'),
         kpi('Voltaram', s.env ? fmt.pct(s.volt / s.env, 0) : '—', `${fmt.int(s.volt)} de ${fmt.int(s.env)} enviados${s.aberto ? ` · ${fmt.int(s.aberto)} ainda no prazo` : ''}`, `Clientes que compraram (cupom com CPF) do dia do envio até ${camp.janela} dias depois.`),
         kpi('Faturamento do retorno', fmt.brl0(s.vt), s.volt ? `ticket ${fmt.brl0(s.vt / s.volt)}` : null, 'Soma das compras desses clientes no prazo do retorno.'),
         kpi('Não querem', fmt.int(s.opt), 'saíram das próximas campanhas')),
       avisoEstoque ? h('div', { class: 'mt' }, avisoEstoque) : null,
+      opcaoRobo ? h('div', { class: 'mt' }, opcaoRobo) : null,
       h('div', { class: 'mt' }, fila),
       textos.length > 1 ? h('div', { class: 'mt' }, cartaoVariacoes(r, camp, textos)) : null,
       h('div', { class: 'mt' }, TS.cardWithTools('Clientes da campanha', 'Enviadas ficam em verde · clique num cliente para ver a ficha', h('div', { class: 'cp-acoes', style: { margin: 0 } }, tab.searchBox, csvBt), tab)));

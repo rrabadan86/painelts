@@ -249,7 +249,7 @@
       gestor && TS.blocoEstoqueCfg ? ['estoque', 'Estoque e margem', 'Impostos, maquininha, custos da loja por categoria, reposição e embalagens', () => [TS.blocoEstoqueCfg(l.id)]] : null,
       ['integracoes', 'Integrações', 'AppNext, Sistema de Pedidos, FIXE e e-mail das devoluções', () => [gestor ? blocoAppNext(l) : null, gestor && TS.blocoPedidoAcesso ? TS.blocoPedidoAcesso(l.id) : null, blocoFixe(l), blocoDevolucao(l)]],
       gestor && TS.blocoIA ? ['ia', 'Inteligência artificial', 'Chave da Anthropic desta loja, teto e uso do mês', () => [TS.blocoIA(l.id)]] : null,
-      ['avisos', 'Mensagens', 'Fechamento do dia por e-mail, mensagens de WhatsApp e cobrança à franquia', () => [blocoFechamento(l), blocoWpp(l), gestor ? blocoCobranca(l) : null]],
+      ['avisos', 'Mensagens', 'Fechamento do dia por e-mail, mensagens de WhatsApp, robô do WhatsApp e cobrança à franquia', () => [blocoFechamento(l), blocoWpp(l), gestor && TS.blocoZap ? TS.blocoZap(l.id) : null, gestor ? blocoCobranca(l) : null]],
     ].filter(Boolean);
     const atual = SECOES.some((x) => x[0] === secaoLoja.get(l.id)) ? secaoLoja.get(l.id) : SECOES[0][0];
     const sec = SECOES.find((x) => x[0] === atual);

@@ -69,6 +69,7 @@ function normalizar(cfg) {
     escalaAjustes: l.escalaAjustes && typeof l.escalaAjustes === 'object' ? l.escalaAjustes : {},
     wppModelos: Array.isArray(l.wppModelos) ? l.wppModelos : null,
     wppIntervalo: Number.isInteger(l.wppIntervalo) ? l.wppIntervalo : null, // dias mínimos entre duas mensagens para o mesmo cliente
+    zap: l.zap && typeof l.zap === 'object' ? l.zap : null, // robô do WhatsApp das campanhas: ritmo, horário, dias, teto e falhas (src/zapfila.js)
     estoqueCfg: l.estoqueCfg && typeof l.estoqueCfg === 'object' ? l.estoqueCfg : null,
     pedidoCfg: l.pedidoCfg && typeof l.pedidoCfg === 'object' ? l.pedidoCfg : null,
     classeCfg: l.classeCfg && typeof l.classeCfg === 'object' ? l.classeCfg : null,
