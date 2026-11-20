@@ -2974,3 +2974,12 @@ body.pg-semfiltros .sidebar, body.pg-semfiltros #btnFiltros { display: none; }
 .conf-campo .conf-tol { width: 120px; }
 tr.conf-conta td:first-child { box-shadow: inset 3px 0 0 var(--bad); }
 @media (max-width: 760px) { .conf-t td.wrap { max-width: none; } .conf-campo, .conf-campo .f-input, .conf-campo .conf-tol { width: 100%; max-width: none; } }
+/* ===== Caixa a pagar e exportação para o contador (Resultado) ===== */
+.dre-abas { margin-bottom: 12px; }
+.dre-topo .ap-exportar { margin-left: auto; }
+.ap-topo .ap-saldo { width: 130px; }
+.ap-sit { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.ap-btn { padding: 4px 10px; font-size: 12px; min-height: 32px; }
+.ap-alerta { font-weight: 600; }
+.est-cat-t .est-dia { width: 104px; min-width: 0; }
+@media (max-width: 760px) { .dre-topo .ap-exportar { margin-left: 0; } }

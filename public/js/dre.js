@@ -96,16 +96,21 @@
     ['= Resultado do mês', (m) => m.resultado, 'tot', 'Margem de contribuição − custos fixos'],
   ];
 
+  TS.dreCalcular = calcular; // o caixa a pagar usa os mesmos royalties e impostos do Resultado
   TS.pages.dre = function (root) {
     if (TS.subEstoque) root.append(TS.subEstoque('dre'));
     root.append(h('div', { class: 'page-head' }, h('div', null, h('h1', { class: 'page-title' }, 'Resultado do mês'),
       h('div', { class: 'page-sub' }, 'Do faturamento ao lucro: impostos, custo dos produtos, comissões e custos fixos, mês a mês'))));
     if (!state.loja || state.loja === 'todas') { root.append(h('div', { class: 'notice' }, 'O resultado é de cada loja: escolha uma loja no seletor do topo.')); return; }
     const corpo = h('div', null, h('div', { class: 'loading' }, h('div', null, h('div', { class: 'spinner' }), h('p', null, 'Calculando…'))));
+    // abas da tela: o resultado (lucro) e o caixa a pagar (o que vence, com a previsão do que entra — apagar.js)
+    const aba = TS.aPagar && state.dreAba === 'apagar' ? 'apagar' : 'resultado';
+    if (TS.aPagar) root.append(h('div', { class: 'dre-abas' }, TS.seg([['Resultado do mês', 'resultado', 'Do faturamento ao lucro, mês a mês.'], ['A pagar', 'apagar', 'O que vence nos próximos 30 ou 60 dias, com a previsão do que entra: lucro no papel não paga boleto.']], aba, (v) => { state.dreAba = v; TS.render(); })));
     root.append(corpo);
     TS.custosLoja().then((M) => {
       if (!corpo.isConnected) return;
       if (!M) { corpo.replaceChildren(h('div', { class: 'notice' }, 'Ainda não há estoque desta loja: o resultado precisa do custo dos produtos. Envie a planilha de estoque em Configurações → Lojas.')); return; }
+      if (aba === 'apagar') { TS.aPagar.pagina(corpo, M); return; }
       pintar(corpo, M);
       // ponto de equilíbrio do mês (quanto vender para pagar os fixos) logo depois dos quadros do mês
       if (TS.cartaoEquilibrio) { const eq = TS.cartaoEquilibrio(state.loja); const ref = corpo.querySelector('.dre-eq-aqui'); ref ? ref.replaceWith(eq) : corpo.append(eq); }
@@ -152,7 +157,8 @@
     // cartões do topo
     const kp = (rot, v, sub, cls) => TS.kpi(rot, v == null ? '—' : fmt.brl0(v), sub, null);
     const varA = (k) => (aDias && aDias[k] ? h('span', null, TS.deltaSpan(m[k] / aDias[k] - 1), ` vs. ${m.parcial ? `${rotAnt} (dias 1 a ${diaAte})` : rotAnt}`) : null);
-    corpo.append(h('div', { class: 'dre-topo' }, h('label', null, 'Mês ', opMes), h('span', { class: 'muted' }, 'Todos os dias do mês, sem os filtros do topo. Custos fixos e % com os valores cadastrados hoje.')),
+    corpo.append(h('div', { class: 'dre-topo' }, h('label', null, 'Mês ', opMes), h('span', { class: 'muted' }, 'Todos os dias do mês, sem os filtros do topo. Custos fixos e % com os valores cadastrados hoje.'),
+      TS.aPagar ? TS.aPagar.botaoExportar(m, LINHAS(grupos, new Set()), cats) : null),
       ...avisos.map((t) => h('div', { class: 'notice' }, t)),
       h('div', { class: 'grid g-kpi' },
         kp('Faturamento', m.fat, varA('fat')),

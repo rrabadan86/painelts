@@ -316,8 +316,8 @@ function estoqueDemo(id) {
     estoqueCfg: {
       simplesPct: 6, cartaoPct: 2.2, segurancaPct: 50,
       outros: [
-        { nome: 'Aluguel e condomínio', tipo: 'mes', valor: Math.round((cache.partes[i].meta * 0.13) / 100) * 100, aplica: 'tudo', cat: 'imovel' },
-        { nome: 'Salários e encargos (fixo)', tipo: 'mes', valor: Math.round((cache.partes[i].meta * 0.16) / 100) * 100, aplica: 'tudo', cat: 'func' },
+        { nome: 'Aluguel e condomínio', tipo: 'mes', valor: Math.round((cache.partes[i].meta * 0.13) / 100) * 100, aplica: 'tudo', cat: 'imovel', dia: 10 },
+        { nome: 'Salários e encargos (fixo)', tipo: 'mes', valor: Math.round((cache.partes[i].meta * 0.16) / 100) * 100, aplica: 'tudo', cat: 'func', dia: 5 },
         { nome: 'Sistemas', tipo: 'mes', valor: 650, aplica: 'tudo', cat: 'sistemas' },
         { nome: 'Fundo de propaganda', tipo: 'pct', valor: 1, aplica: 'loja', cat: 'outros' },
       ],
