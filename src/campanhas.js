@@ -2,6 +2,7 @@
 /**
  * Campanhas de WhatsApp da tela Clientes → Campanhas.
  *   dados/<loja>/campanhas.json = [{ id, nome, criadaEm, por, filtros, mensagem, janela, recorrente, ativa,
+ *                                    robo (enviada pelo robô do WhatsApp; src/zapfila.js),
  *                                    rodadas: [{ id, em, lista: [{ cpf, nome, st, em?, por? }] }] }]
  * A lista de cada rodada é a foto do momento em que foi criada (os filtros rodam no navegador, com os dados do painel).
  * st: 'p' pendente · 'e' enviada (clicou em "Abrir no WhatsApp") · 'o' não quer mensagens · 'x' pulada.
@@ -61,7 +62,9 @@ function dadosOk(b, atual = {}) {
   // limite de envios por dia nesta campanha (0 = sem limite)
   const limiteDia = Math.round(+(b.limiteDia ?? atual.limiteDia ?? 20));
   if (!(limiteDia >= 0 && limiteDia <= 500)) return { erro: 'Limite por dia: de 0 a 500.' };
-  return { ok: { nome, mensagem, variacoes, limiteDia, janela, recorrente, ativa: b.ativa == null ? atual.ativa ?? true : !!b.ativa, filtros: b.filtros ? filtrosOk(b.filtros) : atual.filtros || {} } };
+  // robo: a campanha é enviada pelo robô do WhatsApp (padrão desligado; as outras continuam manuais)
+  const robo = b.robo == null ? !!atual.robo : b.robo === true;
+  return { ok: { nome, mensagem, variacoes, limiteDia, janela, recorrente, robo, ativa: b.ativa == null ? atual.ativa ?? true : !!b.ativa, filtros: b.filtros ? filtrosOk(b.filtros) : atual.filtros || {} } };
 }
 
 function criar(id, b, por) {
