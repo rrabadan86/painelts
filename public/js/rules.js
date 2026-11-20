@@ -262,17 +262,21 @@
       let bonus = null;
       if (vendBonusId !== null && v === vendBonusId) {
         const lojaId = loja == null ? null : db.D.loja.indexOf(loja);
-        // mesma base do "% da meta": só as vendas da meta (chá aromatizado, chá puro e acessórios, sem Espaço Gourmet)
-        let totLoja = 0, totVend = 0;
+        // FAIXA do bônus: a mesma base do "% da meta" (só as vendas da meta: chá aromatizado, chá puro e acessórios) — o quadro
+        // e a faixa não podem discordar. VALOR pago: continua sobre as vendas dos outros vendedores da loja como sempre foi
+        // (tudo menos a taxa de serviço): mudar a base paga é decisão do dono, não correção.
+        let metaLojaVend = 0, totLoja = 0, totVend = 0;
         if (lojaId !== null) {
           for (const i of bAll) {
-            const g = db.grupoC[i];
-            if (db.loja[i] !== lojaId || !(I.arom.has(g) || I.puro.has(g) || I.acess.has(g))) continue;
-            totLoja += (db.vt[i] || 0) * K;
-            if (db.vend[i] === v) totVend += (db.vt[i] || 0) * K;
+            if (db.loja[i] !== lojaId) continue;
+            const g = db.grupoC[i], vt = (db.vt[i] || 0) * K;
+            if (I.arom.has(g) || I.puro.has(g) || I.acess.has(g)) metaLojaVend += vt;
+            if (I.taxaServico.has(db.desc[i])) continue;
+            totLoja += vt;
+            if (db.vend[i] === v) totVend += vt;
           }
         }
-        const aliq = R.aliquotaBonus(totLoja, metaLoja, rg.bonus);
+        const aliq = R.aliquotaBonus(metaLojaVend, metaLoja, rg.bonus);
         bonus = Math.max(0, totLoja - totVend) * aliq;
       }
       todas.push({

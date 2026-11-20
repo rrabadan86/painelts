@@ -250,20 +250,20 @@ test('META-03 mês em andamento: até o dia 7 todos com venda dividem; depois o 
 });
 
 // ======================= bônus sobre os outros vendedores =======================
-test('BON-01 bônus: a faixa e a base usam as vendas da meta (não o que está fora da meta)', () => {
+test('BON-01 bônus: a FAIXA usa as vendas da meta (igual ao "% da meta"); o valor pago continua sobre as vendas dos outros', () => {
   // vendas da meta: ANA 6.000 + BIA 4.000 + CAU 300 = 10.300; fora da meta: livros R$ 3.000 (SEM VENDEDOR)
   const linhas = mesOutubro([venda('2026-10-21', 950, 'SEM VENDEDOR', 3000, OUTRO)]);
   const TS = tela(linhas);
   const b = TS.filtrar();
   const res = TS.rules.comissionamento({ base: b, baseSemVend: b, metaLoja: 11000, vendBonus: 'ANA', ym: '2026-10' });
   const ana = res.rows.find((r) => r.vendedor === 'ANA');
-  // ANTES: total da loja 13.300 ≥ 120% de 11.000 (13.200) → 1,5% × (13.300 − 6.000) = 109,50 — "≥ 120%" com a loja a 94% da meta
+  // ANTES: total da loja 13.300 ≥ 120% de 11.000 (13.200) → faixa de 1,5% com a loja a 94% da meta: 1,5% × 7.300 = 109,50
   perto((13300 - 6000) * 0.015, 109.5);
-  // DEPOIS: vendas da meta 10.300 < 11.000 → 0,5% × (10.300 − 6.000) = 21,50
-  perto(ana.bonus, 21.5);
-  // batendo a meta pelas vendas da meta, a faixa sobe: meta 10.000 → 1% × 4.300 = 43
+  // DEPOIS: a faixa segue as vendas da meta (10.300 < 11.000 → 0,5%); a base paga não mudou (13.300 − 6.000): 0,5% × 7.300 = 36,50
+  perto(ana.bonus, 36.5);
+  // batendo a meta pelas vendas da meta, a faixa sobe: meta 10.000 → 1% × 7.300 = 73
   const r2 = TS.rules.comissionamento({ base: b, baseSemVend: b, metaLoja: 10000, vendBonus: 'ANA', ym: '2026-10' });
-  perto(r2.rows.find((r) => r.vendedor === 'ANA').bonus, 43);
+  perto(r2.rows.find((r) => r.vendedor === 'ANA').bonus, 73);
 });
 
 // ======================= premiação: mínimo de atendimentos =======================
