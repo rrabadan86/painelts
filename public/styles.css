@@ -3011,3 +3011,7 @@ tr.conf-conta td:first-child { box-shadow: inset 3px 0 0 var(--bad); }
   .vd-acao { align-items: flex-start; flex-wrap: wrap; }
   .vd-acao .ini-ir { flex-basis: 100%; padding-left: 36px; }
 }
+/* lojas lado a lado: 8 colunas — cabeçalho e células quebram a linha em vez de alargar a tabela (fonte mais larga não pode trazer a rolagem lateral) */
+.t.vd-t:not(.t-mob) th, .t.vd-t:not(.t-mob) td { white-space: normal; }
+.t.vd-t:not(.t-mob) th { vertical-align: bottom; line-height: 1.2; }
+.t.vd-t:not(.t-mob) td:not(:first-child), .t.vd-t:not(.t-mob) th:not(:first-child) { min-width: 0; }
