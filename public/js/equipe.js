@@ -377,7 +377,7 @@
             { key: 'descPct', label: 'Desconto médio', fmt: (v) => fmt.pct(v, 1), title: 'Desconto dado ÷ preço cheio.' },
             { key: 'rph', label: 'R$ por hora', fmt: fmt.brl, title: 'Vendas ÷ horas líquidas escaladas no mês. ' + LIMITES },
             { key: 'horas', label: 'Horas', fmt: (v) => (v == null ? '—' : hTxt(v)), title: 'Horas líquidas escaladas no mês.' },
-            ...(M ? [{ key: 'lucro', label: 'Lucro gerado', fmt: fmt.brl, title: 'Vendido − custo dos produtos (custo de hoje no estoque), nos itens com custo. Lucro bruto. Só para quem vê custo.' }] : []),
+            ...(M ? [{ key: 'lucro', label: 'Lucro gerado', fmt: fmt.brl, title: 'Vendido − custo dos produtos (o custo da data da venda nos meses passados; o de hoje no mês em andamento), nos itens com custo. Lucro bruto. Só para quem vê custo.' }] : []),
           ],
           rows, sortKey: 'ym', sortDir: 'desc', cls: 'eq-t', maxHeight: 'free',
           empty: 'Sem vendas desta pessoa nos últimos 12 meses.',

@@ -19,9 +19,14 @@
   }
 
   const TAM_DIGITO = { 1: 50, 2: 100, 3: 250, 4: 500, 5: 1000 };
-  /** casa cada linha de venda com o item do estoque e calcula o custo */
-  function motor(estoque, cfg) {
+  /** casa cada linha de venda com o item do estoque e calcula o custo.
+   *  hist = { historico, compras } de /api/estoque: com ele, a venda de MÊS PASSADO usa o custo da data da venda
+   *  (custodata.js: notas de compra + fotos do custo; antes do primeiro custo conhecido, o mais antigo, marcado como estimado).
+   *  O mês em andamento continua com o custo de hoje do estoque (bate com o AppNext). Sem hist: tudo pelo custo de hoje. */
+  function motor(estoque, cfg, hist) {
     const db = TS.db, I = TS.rules.ids;
+    const CD = hist && TS.custoData && (hist.historico || hist.compras) ? TS.custoData.montar(hist.historico, hist.compras && hist.compras.itens) : null;
+    const ymHoje = TS.hojeSP().slice(0, 7);
     const porCod = new Map(), porNome = new Map(), porNomeKg = new Map();
     for (const it of estoque.itens) {
       porCod.set(String(it.cod), it);
@@ -56,13 +61,29 @@
     }
     // fora do faturamento: linha de taxa e item a R$ 0,01 — a definição única (TS.contaFat, public/js/contas.js)
     const taxa = (i) => !TS.contaFat(i);
-    /** custo da linha (R$) ou null */
-    function custo(i) {
+    /** custo da linha pelo custo de HOJE do estoque (R$) ou null */
+    function custoHoje(i) {
       const c = casar(i);
       if (!c || !c.it.custo) return null;
       const q = db.qtd[i] || 0;
       return c.kg ? q * ((c.g / 1000) * c.it.custo + custoEmb(c.g)) : q * c.it.custo;
     }
+    /** custo da linha com a origem: { v (R$), est (parte dele é estimada), naData (usou o custo da data da venda) } ou null.
+     *  Mês passado: custo de cada item na data da venda; mês em andamento (ou sem histórico carregado): custo de hoje. */
+    function custoDet(i) {
+      if (!CD || !(db.ym[i] < ymHoje)) { const v = custoHoje(i); return v == null ? null : { v, est: false, naData: false }; }
+      const c = casar(i);
+      if (!c) return null;
+      const dia = db.day[i], q = db.qtd[i] || 0;
+      const a = CD.custoEm(c.it, dia);
+      if (!(a.v > 0)) return null;
+      if (!c.kg) return { v: q * a.v, est: a.est, naData: true };
+      let e = 0, est = a.est;
+      for (const x of emb[c.g] || []) { const b = CD.custoEm(x.it, dia); e += (b.v || 0) * x.qtd; est = est || (b.v > 0 && b.est); }
+      return { v: q * ((c.g / 1000) * a.v + e), est, naData: true };
+    }
+    /** custo da linha (R$) ou null: o da data da venda nos meses passados, o de hoje no mês em andamento */
+    const custo = (i) => { const d = custoDet(i); return d ? d.v : null; };
     /** consumo de estoque da linha: [[item, quantidade na unidade do item]] */
     function consumo(i) {
       const c = casar(i);
@@ -97,7 +118,7 @@
       it = porNome.get(ESQ(desc));
       return it && it.custo ? { custo: it.custo, kg: false, it } : null;
     }
-    return { casar, custo, consumo, taxa, porCod, materiaPrima, custoEmbLinha, custoCadastro };
+    return { casar, custo, custoDet, custoHoje, custoNaData: CD ? CD.custoNaData : null, custoInicio: CD ? CD.inicio : null, consumo, taxa, porCod, materiaPrima, custoEmbLinha, custoCadastro, cfg };
   }
 
   /** motor de custos da loja escolhida (ou null se não houver estoque / permissão) */
@@ -240,18 +261,25 @@
   /** Classe oficial de cada produto (Estrela, Volume, Joia, Peso morto), fixa e separada do filtro de período.
    *  Últimos 3, 6 ou 12 meses fechados (só loja). Giro = a MEDIANA do que saiu por mês (um mês de promoção pesa pouco);
    *  margem bruta = (venda − custo) ÷ venda no período todo. Chá a granel (kg) só se compara com chá; o resto entre si.
-   *  Classes travadas à mão valem acima da conta. Devolve Map(cod → { classe, auto, fixa, giro, margem }). */
+   *  A conta é a de classeprod.js: além da mediana, a margem sem fixos do produto contra as margens mínima e alvo da loja.
+   *  Classes travadas à mão valem acima da conta. Devolve Map(cod → { classe, auto, fixa, giro, margem, margemSf, porque… })
+   *  e, no próprio Map, .meses .de .ate .min .alvo (as margens da loja usadas, em fração). */
   const memoCl = { k: null, v: null };
   TS.classeOficial = function (M, ccfg) {
     const db = TS.db, I = TS.rules.ids;
     const meses = [3, 6, 12].includes(ccfg && ccfg.meses) ? ccfg.meses : 6;
     const fixas = (ccfg && ccfg.fixas) || {};
-    const chave = [db.n, db.maxDay, meses, JSON.stringify(fixas)].join('|');
+    const cfgM = M.cfg || {};
+    const min = (cfgM.margemMin ?? 15) / 100, alvo = (cfgM.margemAlvo ?? 30) / 100;
+    const chave = [db.n, db.maxDay, meses, JSON.stringify(fixas), min, alvo].join('|');
     if (memoCl.k === chave && memoCl.M === M) return memoCl.v;
     const ymAtual = TS.dayToIso(db.maxDay).slice(0, 7);
     const lista = [];
     { let d = new Date(ymAtual + '-01T12:00:00Z'); for (let k = 0; k < meses; k++) { d = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - 1, 1)); lista.push(d.toISOString().slice(0, 7)); } }
     const idx = new Map(lista.map((ym, k) => [ym, k]));
+    // deduções variáveis de cada venda (comissão, royalties, Simples, maquininha, custos em %): para a margem sem fixos
+    let DD = null;
+    try { DD = M.ded || (M.cfg ? (M.ded = criarDeducoes(M, M.cfg)) : null); } catch (e) { DD = null; }
     const prods = new Map();
     for (let i = 0; i < db.n; i++) {
       const k = idx.get(db.ym[i]);
@@ -261,24 +289,21 @@
       const c = M.casar(i);
       if (!c || !c.it) continue;
       const cod = String(c.it.cod);
-      const p = prods.get(cod) || prods.set(cod, { kg: !!c.kg, vt: 0, custo: 0, mes: new Array(meses).fill(0) }).get(cod);
+      const p = prods.get(cod) || prods.set(cod, { kg: !!c.kg, vt: 0, custo: 0, dedVar: 0, mes: new Array(meses).fill(0) }).get(cod);
       const q = db.qtd[i] || 0;
       p.mes[k] += c.kg ? (q * c.g) / 1000 : q;
       p.vt += db.vt[i] || 0; p.custo += cu;
+      if (DD && p.dedVar != null) { try { p.dedVar += DD.deducoes(i).var; } catch (e) { p.dedVar = null; } }
     }
-    const mediana = (xs) => { const s = [...xs].sort((a, b) => a - b); const n = s.length; return !n ? 0 : n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2; };
+    const CP = TS.classeProd, mediana = CP.mediana;
     const out = new Map();
     for (const kg of [true, false]) {
-      const xs = [...prods.entries()].filter(([, p]) => p.kg === kg && p.vt > 0).map(([cod, p]) => ({ cod, giro: mediana(p.mes), margem: (p.vt - p.custo) / p.vt }));
-      const mq = mediana(xs.map((x) => x.giro)), mm = mediana(xs.map((x) => x.margem));
-      for (const x of xs) {
-        const alto = x.giro > 0 && x.giro >= mq, boa = x.margem >= mm;
-        out.set(x.cod, { auto: alto ? (boa ? 'estrela' : 'volume') : (boa ? 'joia' : 'peso'), giro: x.giro, margem: x.margem, kg, medGiro: mq, medMargem: mm });
-      }
+      const xs = [...prods.entries()].filter(([, p]) => p.kg === kg && p.vt > 0).map(([cod, p]) => ({ cod, giro: mediana(p.mes), margem: (p.vt - p.custo) / p.vt, margemSf: DD && p.dedVar != null ? (p.vt - p.custo - p.dedVar) / p.vt : null }));
+      for (const [cod, x] of CP.classificar(xs, { min, alvo })) out.set(cod, { ...x, kg });
     }
     for (const [cod, x] of out) { const f = fixas[cod]; x.fixa = f ? f : null; x.classe = f ? f.classe : x.auto; }
     for (const [cod, f] of Object.entries(fixas)) if (!out.has(cod)) out.set(cod, { auto: null, fixa: f, classe: f.classe, giro: 0, margem: null });
-    out.meses = meses; out.de = lista[lista.length - 1]; out.ate = lista[0];
+    out.meses = meses; out.de = lista[lista.length - 1]; out.ate = lista[0]; out.min = min; out.alvo = alvo;
     memoCl.k = chave; memoCl.M = M; memoCl.v = out;
     return out;
   };
@@ -296,7 +321,7 @@
     const x = await buscar(state.loja);
     if (!x.estoque || !x.estoque.itens || !x.estoque.itens.length) return null;
     let m = motores.get(TS.db);
-    if (!m || m.est !== x.estoque || m.cfg !== x.cfg) { m = { est: x.estoque, cfg: x.cfg, M: motor(x.estoque, x.cfg) }; m.M.ded = criarDeducoes(m.M, x.cfg); motores.set(TS.db, m); }
+    if (!m || m.est !== x.estoque || m.cfg !== x.cfg || m.hist !== x.historico || m.comp !== x.compras) { m = { est: x.estoque, cfg: x.cfg, hist: x.historico, comp: x.compras, M: motor(x.estoque, x.cfg, { historico: x.historico, compras: x.compras }) }; m.M.ded = criarDeducoes(m.M, x.cfg); motores.set(TS.db, m); }
     return m.M;
   };
 
@@ -431,17 +456,17 @@
       return;
     }
     const db = TS.db;
-    const M = motor(estoque, cfg);
+    const M = motor(estoque, cfg, { historico, compras });
     const temCod = db.D.cod && db.D.cod.some((c) => c);
     put(!EQ, h('div', { class: 'muted est-origem' }, `Estoque e custos do AppNext de ${new Date(estoque.em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })} · ${fmt.int(estoque.itens.length)} produtos`,
       temCod ? null : ' · ', temCod ? null : h('details', { class: 'est-como' }, h('summary', null, 'As vendas estão sem o código do produto. Como funciona ▸'),
         h('p', null, 'Sem o código, o painel acha o custo de cada venda pelo nome do produto. Se o nome da venda for diferente do nome no estoque, o custo não é achado e a venda fica fora da margem' + (R ? ': confira a lista "Vendas sem custo" no fim desta tela.' : ' (a lista fica em Produtos → Rentabilidade, "Vendas sem custo").')))));
 
-    const { deducoes, OUTROS, taxaOutro, mediaFat, ONDE_FAT, pSimples, pCartao, CATS, catDe, pontuaisDoMes } = criarDeducoes(M, cfg);
+    const { deducoes, OUTROS, taxaOutro, mediaFat, ONDE_FAT, pSimples, pCartao, CATS, catDe, pontuaisDoMes } = (M.ded = criarDeducoes(M, cfg));
 
     // ---------- rentabilidade no período e filtros escolhidos ----------
     const base = TS.filtrar();
-    let fat = 0, fatCusto = 0, custoTot = 0;
+    let fat = 0, fatCusto = 0, custoTot = 0, custoNaDataTot = 0, custoEstTot = 0;
     const dedTot = { com: 0, roy: 0, imp: 0, maq: 0, out: 0 };
     const outrosTot = OUTROS.map(() => 0);
     const porProd = new Map(), porVend = new Map(), semCusto = new Map();
@@ -454,7 +479,8 @@
       if (M.taxa(i)) continue;
       const vt = db.vt[i] || 0;
       fat += vt;
-      const c = M.custo(i);
+      const cd = M.custoDet(i), c = cd ? cd.v : null;
+      if (cd && cd.naData) { custoNaDataTot += c; if (cd.est) custoEstTot += c; }
       const d = db.D.descricao[db.desc[i]];
       if (c == null) {
         const cs0 = M.casar(i);
@@ -499,6 +525,9 @@
     }
     for (const i of base) { if (M.taxa(i)) continue; const v = porVend.get(db.D.vendedor[db.vend[i]] || '—'); if (v) v.fat += db.vt[i] || 0; }
     put(R && nResg > 0, h('div', { class: 'muted est-origem' }, `${fmt.int(nResg)} ${nResg === 1 ? 'item saiu' : 'itens saíram'} a R$ 0,01 (prêmios de fidelidade e brindes): ${nResg === 1 ? 'fica' : 'ficam'} fora da margem de cada produto e ${nResg === 1 ? 'entra' : 'entram'} só no total da loja (custo de ${fmt.brl(custoResg)}).`));
+    // custo da data da venda: avisa (linha discreta) quanto do custo do período veio da data e quanto é estimado
+    put(R && custoNaDataTot > 0, h('div', { class: 'muted est-origem est-custo-data' }, `Custo da data da venda: ${fmt.pct(custoNaDataTot / custoTot, 0)} do custo do período${custoEstTot > 0 ? ` · ${fmt.pct(custoEstTot / custoTot, 0)} estimado` : ''} `,
+      TS.dica(`Venda de mês passado usa o custo que o produto tinha no dia da venda (notas de compra do AppNext + o custo que o painel guarda a cada planilha de estoque), não o custo de hoje: se o custo subiu depois, a margem daquele mês não piora sozinha.\n\nVenda do mês em andamento usa o custo de hoje do estoque.\n\nNeste período: ${fmt.brl0(custoNaDataTot)} de ${fmt.brl0(custoTot)} do custo vieram da data da venda${custoEstTot > 0 ? `; ${fmt.brl0(custoEstTot)} (${fmt.pct(custoEstTot / custoTot, 0)}) são ESTIMADOS: a venda é anterior ao primeiro custo que o painel conhece do produto${Number.isFinite(M.custoInicio) ? ` (o histórico de custos começa em ${fmt.date(TS.dayToIso(M.custoInicio))})` : ''}, então vale o custo mais antigo conhecido` : ' e nada precisou ser estimado'}.`)));
     const lucro = fatCusto - custoTot;
     const tamTxt = (m) => [...m].sort((a, b) => a[0] - b[0]).map(([g, q]) => `${fmt.int(q)}× ${g >= 1000 ? g / 1000 + ' kg' : g + 'g'}`).join(' · ');
     const prods = [...porProd.values()].filter((p) => p.vt > 0).map((p) => {
@@ -1005,14 +1034,15 @@
     if (EQ) { corpo.append(cartaoEquilibrio()); return; }
 
     // ---------- matriz giro × margem ----------
-    const med = (xs) => { const s = [...xs].sort((a, b) => a - b); return s.length ? s[Math.floor(s.length / 2)] : 0; };
     const CLASSE = { estrela: ['Estrela', '#1F5FBF'], volume: ['Volume', '#C9A227'], joia: ['Joia', '#2C5234'], peso: ['Peso morto', '#B5452B'] };
-    // chá a granel compara com chá (kg, somando 50g, 100g, 250g…); acessórios e envasados entre si (unidades)
+    // chá a granel compara com chá (kg, somando 50g, 100g, 250g…); acessórios e envasados entre si (unidades).
+    // A conta é a mesma da classe oficial (classeprod.js): mediana + margens mínima e alvo da loja, só que com as vendas do período
     const MED = {};
     for (const gr of [true, false]) {
       const xs = prods.filter((p) => p.granel === gr);
-      MED[gr] = { q: med(xs.map((p) => p.giro)), m: med(xs.map((p) => p.margem)) };
-      for (const p of xs) p.classe = p.giro >= MED[gr].q ? (p.margem >= MED[gr].m ? 'estrela' : 'volume') : (p.margem >= MED[gr].m ? 'joia' : 'peso');
+      const cl = TS.classeProd.classificar(xs.map((p) => ({ cod: p, giro: p.giro, margem: p.margem, margemSf: p.margemContrib })), { min: margemMin, alvo: margemAlvo });
+      MED[gr] = { q: TS.classeProd.mediana(xs.map((p) => p.giro)), m: TS.classeProd.mediana(xs.map((p) => p.margem)) };
+      for (const p of xs) p.classe = cl.get(p).auto;
     }
     // classe oficial (fixa, últimos 3/6/12 meses fechados) e a tendência: o que saiu por mês no período × a mediana mensal oficial
     const CO = TS.classeOficial(M, ccfg);
@@ -1042,6 +1072,8 @@
       p.tend = p.of && p.of.giro > 0 && p.porMes != null ? p.porMes / p.of.giro - 1 : null;
     }
     const podeTravar = !!(TS.eu && TS.eu.pode && TS.eu.pode.configurar) && state.loja && state.loja !== 'todas';
+    // a regra da classe em palavras (vai nos ⓘ): mediana + margens mínima e alvo da loja
+    const COMO_CLASSE = `Como é a conta: "vende muito" = vende pelo menos a mediana (metade dos produtos do mesmo tipo vende menos). "Margem boa" = margem bruta na mediana ou acima E margem sem fixos de pelo menos ${fmt.pct(margemMin, 0)} (a margem mínima da loja). Vende muito: Estrela com margem boa, Volume sem ela. Vende pouco: Joia com margem boa ou com margem sem fixos de ${fmt.pct(margemAlvo, 0)} ou mais (a margem alvo da loja); Peso morto só quando vende pouco E a margem sem fixos fica abaixo de ${fmt.pct(margemAlvo, 0)}. As duas margens mudam em Configurações → Lojas → Estoque e margem.`;
     const ORD_CL = { estrela: 4, volume: 3, joia: 2, peso: 1 };
     const tagCl = (k, extra) => h('span', { class: 'est-tag', style: { '--cor': CLASSE[k][1] } }, (extra || '') + CLASSE[k][0]);
     async function travar(p, valor, sel) {
@@ -1055,7 +1087,7 @@
       const tag = tagCl(p.oficial, p.of.fixa ? '🔒 ' : '');
       const dica = p.of.fixa
         ? `Travada à mão por ${p.of.fixa.por || '—'}${p.of.fixa.em ? ' em ' + new Date(p.of.fixa.em).toLocaleDateString('pt-BR') : ''}. Pela conta seria ${p.of.auto ? CLASSE[p.of.auto][0] : '—'}.`
-        : `Pela conta: vende ${p.granel ? fmt.kg(p.of.giro) + ' kg' : fmt.n2(p.of.giro).replace(/,00$/, '') + ' un.'} por mês (mediana de ${CO.meses} meses; metade dos ${p.granel ? 'chás' : 'produtos'} vende mais de ${p.granel ? fmt.kg(p.of.medGiro) + ' kg' : fmt.n2(p.of.medGiro).replace(/,00$/, '') + ' un.'}) e margem de ${fmt.pct(p.of.margem)} (mediana ${fmt.pct(p.of.medMargem)}).`;
+        : `Pela conta: vende ${p.granel ? fmt.kg(p.of.giro) + ' kg' : fmt.n2(p.of.giro).replace(/,00$/, '') + ' un.'} por mês (mediana de ${CO.meses} meses; metade dos ${p.granel ? 'chás' : 'produtos'} vende mais de ${p.granel ? fmt.kg(p.of.medGiro) + ' kg' : fmt.n2(p.of.medGiro).replace(/,00$/, '') + ' un.'}) e margem bruta de ${fmt.pct(p.of.margem)} (mediana ${fmt.pct(p.of.medMargem)})${p.of.margemSf != null ? `; margem sem fixos de ${fmt.pct(p.of.margemSf)} (mínima da loja ${fmt.pct(CO.min, 0)}, alvo ${fmt.pct(CO.alvo, 0)})` : ''}.${p.of.porque === 'min' ? ' A margem passa da mediana, mas fica abaixo da mínima da loja: não conta como margem boa.' : p.of.porque === 'alvo' ? ' Vende pouco e a margem fica abaixo da mediana, mas chega na margem alvo da loja: é Joia, não Peso morto.' : ''}`;
       if (!podeTravar) return h('span', { title: dica }, tag);
       const sel = h('select', { class: 'est-cl-sel', title: 'Travar a classe à mão (vale no Pedido também). "Automática" volta para a conta.' },
         h('option', { value: '' }, `Automática${p.of.auto ? ' (' + CLASSE[p.of.auto][0] + ')' : ''}`),
@@ -1090,10 +1122,10 @@
     const un = grSel ? 'kg' : 'un.';
     const fq = (v) => (grSel ? `${fmt.kg(v)} kg` : `${fmt.int(v)} un.`);
     const DESC = {
-      estrela: 'Vende muito e tem margem boa. Não pode faltar.',
+      estrela: `Vende muito e tem margem boa (acima da metade dos produtos e da mínima da loja, ${fmt.pct(margemMin, 0)}). Não pode faltar.`,
       volume: 'Vende muito, mas a margem é menor. Vale rever preço ou custo.',
       joia: 'Margem boa, mas vende pouco. Merece vitrine, degustação e indicação.',
-      peso: 'Vende pouco e a margem é menor. Candidato a promoção ou a sair do mix.',
+      peso: `Vende pouco e a margem sem fixos fica abaixo do alvo da loja (${fmt.pct(margemAlvo, 0)}). Candidato a promoção ou a sair do mix.`,
     };
     const sel = CLASSE[state.estClasse] ? state.estClasse : null;
     const mq = MED[grSel];
@@ -1133,12 +1165,12 @@
 
         { key: 'produto', label: 'Produto', align: 'l', sticky: true, wrap: true, render: (r) => h('span', null, (r.granel && r.porTam ? h('button', { type: 'button', class: 'est-prod-btn', title: 'Ver lucro e margem de cada tamanho de pacote', onclick: (e) => abrirTamanhos(e, r) }, h('span', { class: 'est-seta', 'aria-hidden': 'true' }, '▸'), h('span', null, h('span', { class: 'est-prod-nome' }, r.produto), h('small', { class: 'est-tam' }, r.tamanhos, h('span', { class: 'est-ver' }, ' · ver por pacote')))) : r.granel ? h('span', null, r.produto, h('small', { class: 'est-tam' }, r.tamanhos)) : r.produto), (TS.telasEstoque || []).includes('pedido') ? h('a', { href: '#pedido', class: 'est-ir', title: 'Abrir o Pedido já buscando este produto', onclick: (e) => { e.preventDefault(); TS.irParaPedido(r.produto); } }, 'no pedido ›') : null) },
         { key: 'abc', label: 'ABC', title: 'Curva ABC pelo lucro: A = produtos que somam 80% do lucro do período; B = os próximos 15%; C = o resto', cls: (r) => (r.abc === 'A' ? 'hit' : '') },
-        { key: 'classe', label: 'No período', align: 'l', title: 'Classe só com as vendas do filtro de período (a do gráfico acima). Mostra o momento: uma promoção pode puxar um produto para cima aqui', render: (r) => tagCl(r.classe), sortVal: (r) => ORD_CL[r.classe] || 0 },
-        { key: 'oficial', label: 'Oficial', align: 'l', title: `Classe oficial: a mediana do que saiu por mês nos últimos ${CO.meses} meses fechados × a margem bruta. Um mês de promoção pesa pouco. Não muda com o filtro e é a que o Pedido usa. ${podeTravar ? 'Escolha uma classe para travar à mão (🔒); "Automática" volta para a conta.' : '🔒 = travada à mão.'}`, render: (r) => celOficial(r), sortVal: (r) => ORD_CL[r.oficial] || 0 },
+        { key: 'classe', label: 'No período', align: 'l', title: 'Classe só com as vendas do filtro de período (a do gráfico acima), pela mesma conta da oficial. Mostra o momento: uma promoção pode puxar um produto para cima aqui', render: (r) => tagCl(r.classe), sortVal: (r) => ORD_CL[r.classe] || 0 },
+        { key: 'oficial', label: 'Oficial', align: 'l', title: `Classe oficial: a mediana do que saiu por mês nos últimos ${CO.meses} meses fechados × a margem. Um mês de promoção pesa pouco. Não muda com o filtro e é a que o Pedido usa. ${COMO_CLASSE} ${podeTravar ? 'Escolha uma classe para travar à mão (🔒); "Automática" volta para a conta.' : '🔒 = travada à mão.'}`, render: (r) => celOficial(r), sortVal: (r) => ORD_CL[r.oficial] || 0 },
         { key: 'tend', label: 'Tendência', title: 'O que saiu por mês no período escolhido comparado com a mediana mensal da classe oficial. ↑ vendendo 20% ou mais acima do normal; ↓ 20% ou mais abaixo. Com períodos curtos (poucos dias) a conta oscila mais', render: (r) => celTend(r), sortVal: (r) => (r.tend == null ? -9 : r.tend) },
         { key: 'giro', label: 'Vendido', title: 'Quanto saiu no período. Chá a granel em kg, somando todos os tamanhos; os outros em unidades', render: (r) => (r.granel ? `${fmt.kg(r.giro)} kg` : `${fmt.int(r.giro)} un.`), sortVal: (r) => r.giro },
         { key: 'vt', label: 'Faturamento', title: 'Valor vendido no período (sem taxa de serviço)', fmt: fmt.brl },
-        { key: 'custo', label: 'Custo', title: 'Custo do AppNext × quantidade vendida. No chá a granel: kg × custo do kg + saco kraft e etiquetas de cada pacote', fmt: fmt.brl },
+        { key: 'custo', label: 'Custo', title: 'Custo do produto × quantidade vendida. Venda de mês passado: o custo que o produto tinha na data da venda (notas de compra e histórico de custos do painel); mês em andamento: o custo de hoje do AppNext. No chá a granel: kg × custo do kg + saco kraft e etiquetas de cada pacote', fmt: fmt.brl },
         { key: 'lucro', label: 'Lucro bruto', title: 'Faturamento − custo', fmt: fmt.brl, cls: (r) => (r.lucro < 0 ? 'miss' : '') },
         { key: 'margem', label: 'Margem bruta', title: 'Lucro bruto ÷ faturamento. Em vermelho quando fica abaixo de 30%', fmt: (v) => fmt.pct(v), cls: (r) => (r.margem < 0.3 ? 'miss' : '') },
         { key: 'margemTab', label: 'Margem de tabela', title: 'Margem bruta pelo preço de tabela do cadastro do AppNext (sem desconto) com o custo atual. A diferença para a margem bruta praticada é o efeito dos descontos. Chá a granel: média dos pacotes pela quantidade vendida de cada tamanho', render: (r) => (r.margemTab == null ? h('span', { class: 'muted' }, '—') : h('span', { title: r.margemTab - r.margem > 0.005 ? `${fmt.n1((r.margemTab - r.margem) * 100)} pontos a mais que a praticada: é o que o desconto levou` : '' }, fmt.pct(r.margemTab))), sortVal: (r) => r.margemTab },
@@ -1150,9 +1182,9 @@
 
 
       // Resumo: classe oficial com a do período e a tendência embaixo (uma coluna em vez de três)
-      { key: 'classeRes', label: 'Classe', align: 'l', title: `Em cima, a classe oficial (mediana de ${CO.meses} meses, a que o Pedido usa${podeTravar ? '; escolha para travar à mão 🔒' : ''}). Embaixo, a classe só no período do filtro e a tendência (o que saiu por mês no período × o normal)`,
+      { key: 'classeRes', label: 'Classe', align: 'l', title: `Em cima, a classe oficial (mediana de ${CO.meses} meses, a que o Pedido usa${podeTravar ? '; escolha para travar à mão 🔒' : ''}). Embaixo, a classe só no período do filtro e a tendência (o que saiu por mês no período × o normal). ${COMO_CLASSE}`,
         render: (r) => h('div', { class: 'est-cl-res' }, celOficial(r), h('small', { class: 'est-tam' }, 'no período: ', r.classe ? CLASSE[r.classe][0] : '—', r.tend != null ? h('span', null, ' · ', celTend(r)) : null)), sortVal: (r) => ORD_CL[r.oficial] || 0 },
-      { key: 'lucroRes', label: 'Lucro bruto', title: 'Faturamento − custo. Embaixo, o custo', render: (r) => h('span', { class: r.lucro < 0 ? 'neg' : null }, fmt.brl(r.lucro), h('small', { class: 'est-tam' }, 'custo ' + fmt.brl(r.custo))), sortVal: (r) => r.lucro },
+      { key: 'lucroRes', label: 'Lucro bruto', title: 'Faturamento − custo. Embaixo, o custo (o da data da venda nos meses passados; o de hoje no mês em andamento)', render: (r) => h('span', { class: r.lucro < 0 ? 'neg' : null }, fmt.brl(r.lucro), h('small', { class: 'est-tam' }, 'custo ' + fmt.brl(r.custo))), sortVal: (r) => r.lucro },
     ];
     const VIS = {
       resumo: ['Resumo', ['produto', 'abc', 'classeRes', 'giro', 'vt', 'lucroRes', 'margem', 'margemContrib'], 'Classe, venda, lucro e margens (as outras colunas em "Lucro e margens")'],

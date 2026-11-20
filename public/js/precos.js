@@ -64,34 +64,9 @@
   function calcular(M, historico, compras) {
     const db = TS.db;
     const semana = (d) => Math.floor((d + 3) / 7); // semanas começando na segunda
-    // ---- custo de cada item do estoque ao longo do tempo
-    // notas de compra (Entrada de Produtos) + fotos do estoque (custos.json), em ordem de data. Na mesma data vale a nota;
-    // uma foto do estoque só vira ponto se mudar o custo em 1% ou mais (o "custo último" do AppNext é o da última nota)
-    const hist = new Map();
-    const cods = new Set([...Object.keys(historico || {}), ...Object.keys(compras?.itens || {})]);
-    for (const cod of cods) {
-      const pts = [
-        ...(compras?.itens?.[cod] || []).map(([d, v, nf, q, forn]) => ({ d: TS.isoToDay(d), v, o: { nf, q, forn, data: d } })),
-        ...(historico?.[cod] || []).map(([d, v]) => ({ d: TS.isoToDay(d), v, o: null })),
-      ].sort((a, b) => a.d - b.d || (a.o ? 1 : 0) - (b.o ? 1 : 0));
-      const l = [];
-      for (const x of pts) {
-        const ult = l[l.length - 1];
-        if (ult && ult[0] === x.d) { if (x.o || !ult[2]) { ult[1] = x.v; ult[2] = x.o || ult[2]; } continue; }
-        if (!x.o && ult && Math.abs(x.v / ult[1] - 1) < 0.01) continue;
-        l.push([x.d, x.v, x.o]);
-      }
-      hist.set(cod, l);
-    }
-    // nota de compra que valia num dia (o último ponto do histórico até o dia, se veio de uma NF)
-    const origemEm = (it, dia) => { let o = null; for (const [d, , x] of hist.get(String(it.cod)) || []) { if (d <= dia) o = x; else break; } return o; };
-    const custoEm = (it, dia) => {
-      const l = hist.get(String(it.cod));
-      if (!l || !l.length) return { v: it.custo || null, est: true };
-      let v = null;
-      for (const [d, c] of l) { if (d <= dia) v = c; else break; }
-      return v == null ? { v: l[0][1], est: true } : { v, est: false };
-    };
+    // ---- custo de cada item do estoque ao longo do tempo: a conta única de custodata.js (a mesma do motor de custos —
+    // Resultado, Rentabilidade): notas de compra + fotos do estoque, em ordem de data; antes do primeiro ponto, o mais antigo (estimado)
+    const { hist, origemEm, custoEm } = TS.custoData.montar(historico, compras && compras.itens);
     // ---- vendas: por produto vendido (descrição), preço de tabela mais comum de cada semana + composição do custo
     const prods = new Map();
     for (let i = 0; i < db.n; i++) {

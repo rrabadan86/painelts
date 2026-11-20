@@ -25,6 +25,10 @@ test('PRC-EF-02 preço subiu e a venda caiu demais → lucro caiu (ruim); quase 
   perto(r.varQ, -0.5); perto(r.varL, 8 / 12 - 1);
   assert.equal(r.estado, 'ruim');
   assert.equal(EF.avaliar({ dia: 1000 }, cenario({ pB: 10.05 })).estado, 'igual'); // lucro +0,8%
+  // faixa de ±5%: lucro +4% (antes era "bom" com a faixa de 2%) agora é igual; +6% é bom; −6% é ruim
+  assert.equal(EF.avaliar({ dia: 1000 }, cenario({ pB: 10.24 })).estado, 'igual');
+  assert.equal(EF.avaliar({ dia: 1000 }, cenario({ pB: 10.36 })).estado, 'bom');
+  assert.equal(EF.avaliar({ dia: 1000 }, cenario({ pB: 9.64 })).estado, 'ruim');
 });
 
 test('PRC-EF-03 desconta o movimento da loja: lucro subiu 10% mas a loja subiu 25% → ruim', () => {
@@ -51,7 +55,7 @@ test('PRC-EF-05 sem base não inventa: pouco histórico, não vendia antes, pouc
   r = EF.avaliar({ dia: 1000 }, cenario({ qA: 0 }));
   assert.equal(r.estado, 'sem'); assert.equal(r.varQ, null); assert.match(r.motivo, /não vendeu/);
   r = EF.avaliar({ dia: 1000 }, cenario({ qA: 0.1, qB: 0.1 })); // 6 unidades em 60 dias
-  assert.equal(r.estado, 'sem'); assert.match(r.motivo, /pouco para comparar/);
+  assert.equal(r.estado, 'pouco'); assert.match(r.motivo, /vendeu só 6 un.*mínimo 30/);
   r = EF.avaliar({ dia: 1000 }, cenario({ custo: null }));
   assert.equal(r.estado, 'sem'); assert.equal(r.varL, null); perto(r.varV, 0.2); assert.match(r.motivo, /sem custo/);
   r = EF.avaliar({ dia: 1000, prox: 1005 }, cenario({}));
@@ -76,4 +80,20 @@ test('PRC-EF-06 de onde vêm os reajustes: cadastro; caixa só antes do históri
   l = EF.reajustesDe([[200, 11], [310, 12.5], [320, 12.5]], caixa, 200);
   assert.deepEqual(l.map((e) => [e.dia, e.fonte, e.de, e.para]), [[100, 'caixa', 10, 11], [310, 'cadastro', 11, 12.5]]);
   assert.deepEqual(EF.reajustesDe([[200, 11]], [], 200), []);
+});
+
+test('PRC-EF-07 amostra mínima: menos de 30 unidades nos dois períodos = "poucos dados", nunca Bom/Ruim/Igual', () => {
+  assert.equal(EF.MIN_VENDAS, 30); assert.equal(EF.FAIXA, 0.05);
+  // 12 un. antes + 12 depois = 24 (antes da mudança, com o mínimo de 10, isto saía "bom" com lucro +33%)
+  let r = EF.avaliar({ dia: 1000 }, cenario({ qA: 0.4, qB: 0.4 }));
+  assert.equal(r.estado, 'pouco'); assert.equal(r.poucas, true); perto(r.varL, 16 / 12 - 1); // os números continuam à mostra
+  assert.match(r.motivo, /vendeu só 24 un/);
+  // 24 un. com lucro praticamente igual: também "poucos dados" (não "igual")
+  assert.equal(EF.avaliar({ dia: 1000 }, cenario({ qA: 0.4, qB: 0.4, pB: 10.05 })).estado, 'pouco');
+  // exatamente 30 un. (15 + 15): já dá veredito
+  r = EF.avaliar({ dia: 1000 }, cenario({ qA: 0.5, qB: 0.5 }));
+  assert.equal(r.estado, 'bom'); assert.equal(r.poucas, false);
+  // cedo demais continua "cedo" (sem tendência quando a venda é pouca)
+  r = EF.avaliar({ dia: 1000 }, cenario({ qA: 0.4, qB: 0.4, hoje: 1014 }));
+  assert.equal(r.estado, 'cedo'); assert.equal(r.tendencia, null);
 });

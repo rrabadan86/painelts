@@ -25,6 +25,15 @@ test('COMP-02 mês em andamento: teto pela projeção das vendas, pedido somado 
   assert.equal(m.soma, 8000);
   assert.equal(Math.round(m.cabe), 1600);
   assert.equal(m.estado, 'ok');
+  // COMP-02b o % do mês em andamento é "até agora": 6.000 comprados ÷ 10.000 vendidos ATÉ HOJE = 60% (antes: ÷ projeção de 30.000 = 20%, "dentro do teto")
+  assert.equal(m.pct, 0.6); assert.equal(m.acima, true); assert.equal(m.parcial, true);
+  assert.equal(Math.round(m.folga), 3600); // a folga continua pelo teto projetado: 9.600 − 6.000
+  // comprou 3.000 até agora: 30% das vendas até hoje → até agora dentro do teto (32%)
+  const d = CV.resumo({ vendas, compras: { ...compras, '2026-11': { valor: 3000, notas: 1 } }, desde: '2026-10-01', hoje: '2026-11-11' }).mes;
+  assert.equal(d.pct, 0.3); assert.equal(d.acima, false);
+  // mês em andamento ainda sem venda: sem %, sem etiqueta (não divide por zero)
+  const z0 = CV.resumo({ vendas: { '2026-10': vendas['2026-10'] }, compras, desde: '2026-10-01', hoje: '2026-11-02' }).mes;
+  assert.equal(z0.pct, null); assert.equal(z0.acima, null);
   // pedido maior: perto (acima de 90% do teto) e depois acima
   assert.equal(CV.resumo({ vendas, compras, desde: '2026-10-01', hoje: '2026-11-11', pedido: 3000 }).mes.estado, 'perto');
   const ac = CV.resumo({ vendas, compras, desde: '2026-10-01', hoje: '2026-11-11', pedido: 5000 }).mes;

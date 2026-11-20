@@ -56,8 +56,16 @@ test('Preços: efeito dos reajustes de venda', async ({ page }) => {
   const nome = page.locator('.efp-t a.prc-nome').first();
   await expect(nome).toBeVisible();
   await semLixo(page.locator('.efp-t'));
-  // os avaliados têm etiqueta Bom, Ruim ou Igual, nunca "cedo demais"
-  await expect(page.locator('.efp-t .badge.warn')).toHaveCount(0);
+  // os avaliados têm etiqueta Bom, Ruim ou Igual, nunca "cedo demais" (sem nenhum avaliado, a aba começa em "Todos")
+  if (/Avaliados/.test(await page.locator('.efp-fil .seg button.on').innerText())) await expect(page.locator('.efp-t .badge.warn')).toHaveCount(0);
+  // amostra mínima: quem vendeu menos de 30 unidades fica em "Poucos dados", sem veredito (nunca Bom/Ruim)
+  const poucos = page.locator('.efp-fil .seg button', { hasText: 'Poucos dados' });
+  if (await poucos.count()) {
+    await poucos.click();
+    await expect(page.locator('.efp-t .badge.cinza').first()).toHaveText('Poucos dados');
+    await expect(page.locator('.efp-t .badge.ok, .efp-t .badge.erro')).toHaveCount(0);
+    await expect(page.locator('.efp-t')).toContainText('pouco para dizer se foi o preço');
+  }
   await nome.evaluate((a) => a.click());
   const det = page.locator('.prc-drawer .efp-detalhe');
   await expect(det).toBeVisible();

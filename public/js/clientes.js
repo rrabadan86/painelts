@@ -1120,7 +1120,10 @@
     }
     let nTot = 0, vtTot = 0, nCpf = 0, vtCpf = 0;
     const porVend = new Map();
-    const pv = (v) => { let a = porVend.get(v); if (!a) porVend.set(v, (a = { nome: v, cupons: 0, cpf: 0, novos: 0, voltaram: 0, cliFixe: 0, semFixe: 0 })); return a; };
+    const pv = (v) => { let a = porVend.get(v); if (!a) porVend.set(v, (a = { nome: v, cupons: 0, cpf: 0, novos: 0, lnovos: [], cliFixe: 0, semFixe: 0 })); return a; };
+    // "voltou" só para quem já teve o prazo inteiro (recompra.js): o cliente do fim do período teve menos tempo para voltar
+    const RC = TS.recompra, hojeRC = Math.min(db.maxDay, TS.todayDay());
+    const partida = (ref, c) => ({ ref, dias: c.cupons.map((k) => k.day) });
     for (const [k, x] of cupons) {
       const temCpf = TS.cli.cuponsCPF.has(k);
       nTot++; vtTot += x.vt;
@@ -1133,7 +1136,7 @@
       const k1 = c.cupons[c.cupons.length - 1];
       if (lojasOk && !lojasOk.has(k1.lojaId)) continue;
       for (const v of new Set(k1.itens.map((i) => db.D.vendedor[db.vend[i]]).filter((v) => v && !/^sem vendedor$/i.test(v)))) {
-        const a = pv(v); a.novos++; if (c.visitas >= 2) a.voltaram++;
+        const a = pv(v); a.novos++; a.lnovos.push(partida(c.primeira, c));
       }
     }
     // compras de clientes do FIXE (entre o cadastro e a data dos Logs) e quantas passaram sem FIXE
@@ -1149,12 +1152,17 @@
         }
       }
     }
-    const recompra = lista.length ? lista.filter((r) => r.visitas >= 2).length / lista.length : null;
+    // recompra: dos clientes do filtro, quem comprou de novo em até 90 dias depois da primeira compra do período
+    const REC = RC.recompra(lista.map((r) => partida(Math.min(...r.cupons.map((k) => k.day)), r.c)), hojeRC);
+    const inicioDados = fmt.date(TS.dayToIso(db.minDay));
     const kpis = h('div', { class: 'grid g-kpi' },
       TS.kpi('Vendas com CPF', fmt.pct(nTot ? nCpf / nTot : null, 1), `${fmt.int(nCpf)} de ${fmt.int(nTot)} cupons do período`, 'Cupons de venda em que o cliente informou o CPF (e a nota foi encontrada)'),
       TS.kpi('Ticket do cliente identificado', fmt.brl(nCpf ? vtCpf / nCpf : null), h('span', null, 'geral: ', fmt.brl(nTot ? vtTot / nTot : null))),
-      TS.kpi('Recompra', fmt.pct(recompra, 0), 'dos clientes do filtro compraram 2 vezes ou mais no período'),
-      TS.kpi('Clientes novos no período', fmt.int(TS.cli.lista.filter((c) => c.primeira != null && noPer(c.primeira)).length), 'primeira compra identificada'));
+      TS.kpi(`Recompra em ${RC.PRAZO} dias`, REC.pouco ? '—' : fmt.pct(REC.pct, 0),
+        REC.pouco ? `poucos dados: ${fmt.int(REC.elegiveis)} ${REC.elegiveis === 1 ? 'cliente' : 'clientes'} com ${RC.PRAZO} dias completos${REC.elegiveis ? ` (${fmt.int(REC.voltaram)} ${REC.voltaram === 1 ? 'voltou' : 'voltaram'})` : ''}` : `${fmt.int(REC.voltaram)} de ${fmt.int(REC.elegiveis)} clientes${REC.semPrazo ? ` · ${fmt.int(REC.semPrazo)} ainda no prazo` : ''}`,
+        `Dos clientes do filtro, quantos compraram de novo em até ${RC.PRAZO} dias depois da primeira compra deles no período.\n\nSó entra quem já teve os ${RC.PRAZO} dias inteiros para voltar: o cliente que comprou na semana passada ainda não teve tempo e fica separado ("ainda no prazo"), para não puxar o % para baixo.\n\nCom menos de ${RC.MIN} clientes de prazo completo aparece "poucos dados" em vez do %: com tão pouca gente o número muda a cada compra. Em período curto e recente (este mês, últimos 30 dias) é normal não haver ninguém com o prazo completo.`),
+      TS.kpi('Clientes novos no período', fmt.int(TS.cli.lista.filter((c) => c.primeira != null && noPer(c.primeira)).length), 'primeira compra com CPF',
+        `Clientes cuja primeira compra com CPF (na nota ou ligada pelo FIXE) caiu no período, dentro do histórico que o painel tem (vendas desde ${inicioDados}).\n\n"Novo" aqui é novo para o painel: cliente antigo que só agora informou o CPF, ou que comprou antes de ${inicioDados}, também aparece como novo. Nos primeiros meses do histórico o número fica inflado por isso.`));
     // novos × recorrentes por mês (últimos 12 meses do período)
     // agrupado pelo período: sem período (Tudo) = últimos 12 meses por mês; com período = por dia, semana ou mês
     const pp = state.cli.per;
@@ -1183,29 +1191,30 @@
         { label: 'Recorrentes', data: meses.map((m) => rec[m]), backgroundColor: '#2C5234', borderRadius: 3 }] },
       options: { plugins: { tooltip: { mode: 'index', intersect: false } }, scales: { x: { stacked: true, ...TS.axisCat }, y: { stacked: true, ...TS.axisNum(fmt.int) } } },
     }));
-    const rows = [...porVend.values()].filter((a) => a.cupons > 0).map((a) => ({ ...a, pct: a.cupons ? a.cpf / a.cupons : null, pctVolta: a.novos ? a.voltaram / a.novos : null, pctSemFixe: a.cliFixe ? a.semFixe / a.cliFixe : null }));
+    const rows = [...porVend.values()].filter((a) => a.cupons > 0).map((a) => { const rc = RC.recompra(a.lnovos, hojeRC); return { ...a, rc, voltaram: rc.voltaram, pct: a.cupons ? a.cpf / a.cupons : null, pctVolta: rc.pouco ? -1 : rc.pct, pctSemFixe: a.cliFixe ? a.semFixe / a.cliFixe : null }; });
+    const rcTot = RC.recompra(rows.flatMap((r) => r.lnovos), hojeRC);
+    const celVolta = (rc) => (!rc ? '—' : rc.pouco ? h('span', { class: 'muted', title: `Só ${fmt.int(rc.elegiveis)} ${rc.elegiveis === 1 ? 'cliente novo' : 'clientes novos'} com ${RC.PRAZO} dias completos (mínimo ${RC.MIN}): pouco para virar %.` }, 'poucos dados') : fmt.pct(rc.pct, 0));
     const tab = TS.table({
       cols: [
         { key: 'nome', label: 'Vendedora', align: 'l' },
         { key: 'cupons', label: 'Cupons', fmt: fmt.int },
         { key: 'cpf', label: 'Com CPF', fmt: fmt.int },
         { key: 'pct', label: '% com CPF', fmt: (v) => fmt.pct(v, 0) },
-        { key: 'novos', label: 'Clientes novos', fmt: fmt.int },
-        { key: 'voltaram', label: 'Voltaram', fmt: fmt.int },
-        { key: 'pctVolta', label: '% voltaram', fmt: (v) => (v == null ? '—' : fmt.pct(v, 0)) },
+        { key: 'novos', label: 'Clientes novos', fmt: fmt.int, title: 'Clientes cuja primeira compra com CPF (dentro do histórico do painel) foi no período e foi atendida por ela.' },
+        { key: 'voltaram', label: 'Voltaram', title: `Dos clientes novos dela que já tiveram ${RC.PRAZO} dias inteiros para voltar, quantos compraram de novo nesse prazo (com qualquer vendedora). Ex.: "3 de 12" = 12 com o prazo completo, 3 voltaram.`, fmt: (v, r) => (r.rc ? `${fmt.int(r.rc.voltaram)} de ${fmt.int(r.rc.elegiveis)}` : '—') },
+        { key: 'pctVolta', label: '% voltaram', title: `Voltaram ÷ clientes novos com ${RC.PRAZO} dias completos. O cliente novo do fim do período ainda não teve tempo de voltar e fica de fora. Com menos de ${RC.MIN} clientes de prazo completo aparece "poucos dados": o % mudaria a cada compra e não serve para comparar vendedoras.`, fmt: (v, r) => celVolta(r.rc) },
         ...(comFixe ? [
           { key: 'semFixe', label: 'Sem FIXE', fmt: fmt.int },
           { key: 'pctSemFixe', label: '% sem FIXE', fmt: (v) => (v == null ? '—' : fmt.pct(v, 0)) },
         ] : []),
       ],
       rows, sortKey: 'pct',
-      total: { nome: 'Total', cupons: nTot, cpf: nCpf, pct: nTot ? nCpf / nTot : null, novos: rows.reduce((t, r) => t + r.novos, 0), voltaram: rows.reduce((t, r) => t + r.voltaram, 0),
-        pctVolta: (() => { const n = rows.reduce((t, r) => t + r.novos, 0); return n ? rows.reduce((t, r) => t + r.voltaram, 0) / n : null; })(),
+      total: { nome: 'Total', cupons: nTot, cpf: nCpf, pct: nTot ? nCpf / nTot : null, novos: rows.reduce((t, r) => t + r.novos, 0), rc: rcTot, voltaram: rcTot.voltaram, pctVolta: rcTot.pouco ? -1 : rcTot.pct,
         ...(comFixe ? (() => { const cf = rows.reduce((t, r) => t + r.cliFixe, 0), sf = rows.reduce((t, r) => t + r.semFixe, 0); return { semFixe: sf, pctSemFixe: cf ? sf / cf : null }; })() : {}) },
     });
     return [TS.section('Base de clientes'), kpis,
       h('div', { class: 'grid mt', style: { alignItems: 'start' } }, grafico,
-        TS.card('Vendedoras e clientes', '% de vendas com CPF (pedir o CPF faz a base crescer) · clientes novos = primeira compra atendida por ela · voltaram = compraram de novo depois' + (comFixe ? ' · sem FIXE = compras de clientes do FIXE sem lançamento no dia (o cliente pode não ter informado)' : ''), tab))];
+        TS.card('Vendedoras e clientes', '% de vendas com CPF (pedir o CPF faz a base crescer) · clientes novos = primeira compra atendida por ela · voltaram = compraram de novo em até 90 dias (só quem já teve o prazo inteiro)' + (comFixe ? ' · sem FIXE = compras de clientes do FIXE sem lançamento no dia (o cliente pode não ter informado)' : ''), tab))];
   }
 
   // ---------- ficha e ações ----------

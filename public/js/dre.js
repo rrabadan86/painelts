@@ -83,7 +83,7 @@
     ['− Maquininha', (m) => m.maq, 'menos', 'Taxa média da maquininha sobre as vendas'],
     ['− Royalties + marketing', (m) => m.roy, 'menos', 'Pelas regras da loja: loja + marketing; Espaço Gourmet: EG + marketing EG'],
     ['= Receita líquida', (m) => m.recLiq, 'sub', 'Faturamento − impostos e taxas sobre a venda'],
-    ['− Custo dos produtos', (m) => m.cmv, 'menos', 'Custo do AppNext das vendas (chá pelo kg + saco e etiquetas). Vendas sem custo no estoque entram pelo mesmo % das outras (estimado)'],
+    ['− Custo dos produtos', (m) => m.cmv, 'menos', 'Custo dos produtos vendidos (chá pelo kg + saco e etiquetas). Mês passado: o custo que cada produto tinha na data da venda (notas de compra e histórico de custos do painel; antes do primeiro custo conhecido vale o mais antigo, estimado). Mês em andamento: o custo de hoje do AppNext. Vendas sem custo no estoque entram pelo mesmo % das outras (estimado)'],
     ['= Lucro bruto', (m) => m.lucroBruto, 'sub', 'Receita líquida − custo dos produtos'],
     ['− Comissões e premiações', (m) => m.com, 'menos', 'O que a loja pagou no mês (comissões, premiação e bônus), como no Comissionamento. Na projeção do mês em andamento: a comissão que cada pessoa receberia com a venda projetada dela contra a meta (na faixa em que fecharia), não a comissão de agora multiplicada'],
     ['− Outros custos em %', (m) => m.varPct, 'menos', 'Custos da loja cadastrados como % das vendas'],

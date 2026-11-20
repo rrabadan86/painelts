@@ -6,7 +6,8 @@
  *   (a mesma detecção da tela Preços: o preço mais comum da semana mudou e se manteve).
  * - Época do ano: a receita da loja inteira nos mesmos dois períodos mostra se o movimento subiu ou caiu;
  *   "descontando a loja" = variação do produto ÷ variação da loja.
- * - Menos de 10 unidades vendidas nos dois períodos somados = sem comparação (seria sorte, não efeito do preço).
+ * - Menos de 30 unidades vendidas nos dois períodos somados = "poucos dados" (seria sorte, não efeito do preço): mostra os
+ *   números, mas não dá veredito. Com amostra, só é Bom/Ruim quando o lucro por dia muda mais de 5%; dentro disso é "Igual".
  * - Menos de 30 dias depois = "cedo demais" (parcial, com aviso). Menos de 14 dias antes (ou outro reajuste logo
  *   em seguida) = sem comparação: aparece "—" e o motivo, nunca um número inventado.
  * Fica em Preços (aba "Reajustes" e o painel lateral do produto): só para quem tem a tela Preços (vê custo). */
@@ -15,8 +16,8 @@
   const JANELA = 30;      // dias antes e depois
   const MIN_BASE = 14;    // mínimo de dias de cada lado para comparar
   const MIN_PARCIAL = 7;  // mínimo de dias depois para mostrar a prévia
-  const MIN_VENDAS = 10;  // unidades vendidas (antes + depois) para a comparação não ser sorte
-  const FAIXA = 0.02;     // até 2% para cima ou para baixo conta como "igual"
+  const MIN_VENDAS = 30;  // unidades vendidas (antes + depois) para dar veredito: abaixo disso é "poucos dados"
+  const FAIXA = 0.05;     // até 5% para cima ou para baixo conta como "igual"
 
   /**
    * ev: { dia, ant, prox } — dia do reajuste, do reajuste anterior e do próximo do mesmo produto (dias desde 1970; null = não há)
@@ -48,7 +49,7 @@
     r.varLoja = vr(lB, lA);
     const adj = (x) => (x == null || r.varLoja == null ? null : (1 + x) / (1 + r.varLoja) - 1);
     r.adjQ = adj(r.varQ); r.adjV = adj(r.varV); r.adjL = adj(r.varL);
-    if (r.poucas) { r.estado = cedo ? 'cedo' : 'sem'; r.parcial = cedo; r.motivo = `vendeu só ${Math.round(A.q + B.q)} un. nos dois períodos: pouco para comparar (mínimo ${MIN_VENDAS})`; return r; }
+    if (r.poucas) { r.estado = cedo ? 'cedo' : 'pouco'; r.parcial = cedo; r.motivo = `vendeu só ${Math.round(A.q + B.q)} un. nos dois períodos: pouco para dizer se foi o preço (mínimo ${MIN_VENDAS})`; return r; }
     if (r.antes.l == null || r.depois.l == null) { r.motivo = 'produto sem custo no estoque: não dá para calcular o lucro'; return r; }
     // o veredito olha o lucro por dia já descontado o movimento da loja; sem isso (lucro antes ≤ 0), a diferença em R$
     const base = r.adjL != null ? r.adjL : r.varL;
@@ -74,7 +75,7 @@
       .map((e, k, l) => ({ ...e, ant: k ? l[k - 1].dia : null, prox: k < l.length - 1 ? l[k + 1].dia : null, variacao: e.para / e.de - 1 }));
   }
 
-  const API = { avaliar, reajustesDe, JANELA, MIN_BASE, MIN_PARCIAL, MIN_VENDAS };
+  const API = { avaliar, reajustesDe, JANELA, MIN_BASE, MIN_PARCIAL, MIN_VENDAS, FAIXA };
   if (typeof module !== 'undefined' && module.exports) { module.exports = API; return; }
 
   // ---------------------------------------------------------------- tela ----------------------------------------------------------------
@@ -84,7 +85,8 @@
   const ESTADO = {
     bom: ['Bom', 'ok', 'O lucro por dia subiu depois do reajuste, já descontado o movimento da loja.'],
     ruim: ['Ruim', 'erro', 'O lucro por dia caiu depois do reajuste, já descontado o movimento da loja.'],
-    igual: ['Igual', 'cinza', 'O lucro por dia ficou praticamente igual (menos de 2% de diferença).'],
+    igual: ['Igual', 'cinza', 'O lucro por dia ficou praticamente igual (menos de 5% de diferença), com venda suficiente para comparar.'],
+    pouco: ['Poucos dados', 'cinza', `Vendeu menos de ${MIN_VENDAS} unidades nos dois períodos somados: a diferença pode ser sorte, não efeito do preço.`],
     cedo: ['Cedo demais', 'warn', 'Ainda não passaram 30 dias desde o reajuste.'],
     sem: ['Sem comparação', 'cinza', 'Não dá para comparar com honestidade.'],
   };
@@ -135,7 +137,7 @@
       p.efeitos.sort((a, b) => b.dia - a.dia);
     }
     const n = (k) => lista.filter((r) => r.estado === k).length;
-    return { lista, bons: n('bom'), ruins: n('ruim'), iguais: n('igual'), cedo: n('cedo'), sem: n('sem') };
+    return { lista, bons: n('bom'), ruins: n('ruim'), iguais: n('igual'), cedo: n('cedo'), poucos: n('pouco'), sem: n('sem') };
   }
 
   // valor de depois em destaque + etiqueta da variação; o de antes embaixo, em letra pequena (cabe sem rolagem para o lado)
@@ -159,8 +161,8 @@
   function kpi(E, abrir) {
     const julgados = E.bons + E.ruins + E.iguais;
     const k = TS.kpi('Reajustes de venda avaliados', fmt.int(julgados),
-      E.lista.length ? h('span', null, h('b', { class: 'pos' }, `${fmt.int(E.bons)} ${E.bons === 1 ? 'bom' : 'bons'}`), ' · ', h('b', { class: E.ruins ? 'neg' : null }, `${fmt.int(E.ruins)} ${E.ruins === 1 ? 'ruim' : 'ruins'}`), E.cedo ? ` · ${fmt.int(E.cedo)} cedo demais` : '') : 'nenhum reajuste de venda em 12 meses',
-      'Depois que o preço mudou, vendeu menos? O lucro subiu? Para cada reajuste de venda dos últimos 12 meses o painel compara os 30 dias antes com os 30 dias depois (quantidade, receita e lucro por dia) e desconta o movimento da loja no mesmo período. Clique para ver a lista. Não segue o período da lateral.');
+      E.lista.length ? h('span', null, h('b', { class: 'pos' }, `${fmt.int(E.bons)} ${E.bons === 1 ? 'bom' : 'bons'}`), ' · ', h('b', { class: E.ruins ? 'neg' : null }, `${fmt.int(E.ruins)} ${E.ruins === 1 ? 'ruim' : 'ruins'}`), E.cedo ? ` · ${fmt.int(E.cedo)} cedo demais` : '', E.poucos ? ` · ${fmt.int(E.poucos)} com poucos dados` : '') : 'nenhum reajuste de venda em 12 meses',
+      `Depois que o preço mudou, vendeu menos? O lucro subiu? Para cada reajuste de venda dos últimos 12 meses o painel compara os 30 dias antes com os 30 dias depois (quantidade, receita e lucro por dia) e desconta o movimento da loja no mesmo período. Só dá veredito (Bom ou Ruim) quando o produto vendeu pelo menos ${MIN_VENDAS} unidades nos dois períodos somados e o lucro por dia mudou mais de ${FAIXA * 100}%; com menos venda aparece "poucos dados". Clique para ver a lista. Não segue o período dos filtros.`);
     k.classList.add('est-kpi-click'); k.setAttribute('role', 'button'); k.tabIndex = 0;
     k.addEventListener('click', (ev) => { if (!ev.target.closest('.dica-i')) abrir(); });
     k.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') abrir(); });
@@ -171,12 +173,12 @@
   function cartao(E, segTela, abrirProduto, repintar) {
     const FIL = {
       aval: ['Avaliados', (r) => r.estado === 'bom' || r.estado === 'ruim' || r.estado === 'igual'], bom: ['Bons', (r) => r.estado === 'bom'], ruim: ['Ruins', (r) => r.estado === 'ruim'], igual: ['Iguais', (r) => r.estado === 'igual'],
-      cedo: ['Cedo demais', (r) => r.estado === 'cedo'], sem: ['Sem comparação', (r) => r.estado === 'sem'], todos: ['Todos', () => true],
+      cedo: ['Cedo demais', (r) => r.estado === 'cedo'], pouco: ['Poucos dados', (r) => r.estado === 'pouco'], sem: ['Sem comparação', (r) => r.estado === 'sem'], todos: ['Todos', () => true],
     };
     const fil = FIL[state.efeitoFil] ? state.efeitoFil : E.lista.some(FIL.aval[1]) ? 'aval' : 'todos'; // começa pelos que já dá para julgar
     const tab = TS.table({
       cols: [
-        { key: 'nome', label: 'Produto', align: 'l', sticky: true, wrap: true, title: 'Clique no nome para abrir o histórico do produto, com a conta completa de cada reajuste (inclusive a receita por dia). A etiqueta é o resultado do reajuste — Bom, Ruim, Igual, Cedo demais ou Sem comparação — e embaixo vem o motivo.', render: (r) => h('span', null,
+        { key: 'nome', label: 'Produto', align: 'l', sticky: true, wrap: true, title: 'Clique no nome para abrir o histórico do produto, com a conta completa de cada reajuste (inclusive a receita por dia). A etiqueta é o resultado do reajuste — Bom, Ruim, Igual, Cedo demais, Poucos dados (vendeu menos de 30 unidades nos dois períodos: os números aparecem, mas não dá para culpar o preço) ou Sem comparação — e embaixo vem o motivo.', render: (r) => h('span', null,
           h('a', { href: '#', class: 'prc-nome', onclick: (e) => { e.preventDefault(); abrirProduto(r.nome); } }, h('b', null, r.nome)), ' ', etiqueta(r),
           h('small', { class: 'muted efp-det' }, porque(r))) },
         { key: 'dia', label: 'Reajuste', title: 'O preço de venda novo em destaque, a variação e, embaixo, o preço de antes, a data e de onde veio. "cadastro" = mudou o preço cadastrado no AppNext (histórico que o painel guarda a cada planilha de preços). "caixa" = o preço mais vendido nos cupons mudou e se manteve (usado antes de o painel ter o histórico do cadastro, ou para produto fora dele).',
@@ -186,8 +188,8 @@
           render: (r) => (r.antes ? antesDepois(r.antes.q, r.depois.q, r.varQ, n2, true) : '—'), sortVal: (r) => r.varQ ?? -99 },
         { key: 'varL', label: 'Lucro por dia', title: 'Lucro bruto por dia = receita − custo do produto na data de cada venda (chá: kg × tamanho + embalagem): depois do reajuste em destaque, antes embaixo. Sem impostos, comissão nem royalties. "—" = produto sem custo no estoque.',
           render: (r) => (r.antes && r.antes.l != null && r.depois.l != null ? antesDepois(r.antes.l, r.depois.l, r.varL, fmt.brl, true) : '—'), sortVal: (r) => r.varL ?? -99 },
-        { key: 'adjL', label: 'Descontando a loja', title: 'Variação do lucro por dia do produto ÷ variação da receita da loja no mesmo período. É este número que decide Bom (acima de +2%), Ruim (abaixo de −2%) ou Igual. Embaixo: a quantidade na mesma conta e quanto a receita da loja inteira (por dia) subiu ou caiu entre os dois períodos — se a loja toda caiu 10%, o produto cair 10% não é culpa do preço. É uma comparação simples: promoção, falta de estoque ou campanha no período também mexem no resultado.',
-          render: (r) => (r.adjL == null && r.varLoja == null ? '—' : h('div', { class: 'prc-c' }, h('span', { class: 'prc-c1' }, h('b', { class: r.adjL > FAIXA ? 'pos' : r.adjL < -FAIXA ? 'neg' : null }, r.adjL == null ? '—' : `lucro ${pctTxt(r.adjL)}`)),
+        { key: 'adjL', label: 'Descontando a loja', title: 'Variação do lucro por dia do produto ÷ variação da receita da loja no mesmo período. É este número que decide Bom (acima de +5%), Ruim (abaixo de −5%) ou Igual — e só quando o produto vendeu pelo menos 30 unidades nos dois períodos somados; com menos, a etiqueta é "Poucos dados". Embaixo: a quantidade na mesma conta e quanto a receita da loja inteira (por dia) subiu ou caiu entre os dois períodos — se a loja toda caiu 10%, o produto cair 10% não é culpa do preço. É uma comparação simples: promoção, falta de estoque ou campanha no período também mexem no resultado.',
+          render: (r) => (r.adjL == null && r.varLoja == null ? '—' : h('div', { class: 'prc-c' }, h('span', { class: 'prc-c1' }, h('b', { class: r.estado === 'pouco' || r.poucas ? null : r.adjL > FAIXA ? 'pos' : r.adjL < -FAIXA ? 'neg' : null }, r.adjL == null ? '—' : `lucro ${pctTxt(r.adjL)}`)),
             r.adjQ != null ? h('small', null, `quantidade ${pctTxt(r.adjQ)}`) : null, r.varLoja != null ? h('small', null, `loja ${pctTxt(r.varLoja)}`) : null)), sortVal: (r) => r.adjL ?? -99 },
       ],
       rows: E.lista.filter(FIL[fil][1]), sortKey: 'dia', sortDir: 'desc', maxHeight: '640px', search: 'Buscar produto…', searchKeys: ['nome', 'cat'], produto: 'nome', cls: 'est-t prc-t efp-t', cartao: true,
@@ -195,7 +197,7 @@
     });
     const cont = (k) => E.lista.filter(FIL[k][1]).length;
     return TS.cardWithTools('Efeito dos reajustes de venda',
-      'Depois que o preço mudou, vendeu menos? O lucro subiu? Cada linha é um reajuste dos últimos 12 meses (não segue o período dos filtros): 30 dias antes × 30 dias depois, por dia, e o mesmo descontando o movimento da loja. Com menos de 30 dias depois é só uma prévia ("cedo demais").',
+      'Depois que o preço mudou, vendeu menos? O lucro subiu? Cada linha é um reajuste dos últimos 12 meses (não segue o período dos filtros): 30 dias antes × 30 dias depois, por dia, e o mesmo descontando o movimento da loja. Com menos de 30 dias depois é só uma prévia ("cedo demais"); com menos de 30 unidades vendidas nos dois períodos é "poucos dados" (sem veredito).',
       h('div', { class: 'est-tools' }, tab.searchBox && (tab.searchBox.classList.add('est-busca'), tab.searchBox), segTela),
       h('div', { class: 'efp-fil' }, TS.seg(Object.entries(FIL).filter(([k]) => k === 'todos' || k === fil || cont(k)).map(([k, [t]]) => [`${t} (${cont(k)})`, k]), fil, (v) => { state.efeitoFil = v; repintar(); })),
       tab);

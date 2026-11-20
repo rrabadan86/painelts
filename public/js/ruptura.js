@@ -6,6 +6,7 @@
   const MAX_DIAS = 90; // última venda mais antiga que isso: a procura já não diz nada (fica de fora, como o fora de linha)
   const MIN_DIAS_VENDA = 2; // dias diferentes com venda na janela para a média valer
   const KG_MIN = 0.05; // chá a granel: menos que um pacote de 50 g não dá para vender
+  const MAX_ACUM = 30; // "perdido até agora" conta no máximo 30 dias zerado: produto lento não acumula desde a última venda de meses atrás
   const FATOR_EXCESSO = 2; // sobrando = dura mais que 2× (entrega + período do pedido)
 
   /** saldo que não dá mais para vender: zero (ou menos de 50 g no chá a granel) */
@@ -15,9 +16,9 @@
    *  vendas: [{ d: dia (número), q: quantidade na unidade do estoque, v: R$ vendidos }] — já sem taxas e resgates.
    *  hoje: último dia com dados; inicio: primeiro dia com dados da loja (para não dividir por dias que o painel não tem).
    *  Devolve null (não está zerado, nunca vendeu ou a última venda é antiga demais) ou
-   *  { desde, diasZerado, diasBase, diasVenda, qtdDia, perdaDia, acumulado, motivo }.
+   *  { desde, diasZerado, diasAcum (dias que entram no acumulado: no máximo maxAcum), diasBase, diasVenda, qtdDia, perdaDia, acumulado, motivo }.
    *  Sem histórico suficiente: perdaDia/acumulado = null e motivo = 'pouco'. */
-  function perda({ vendas, qtd, un, hoje, inicio, janela = JANELA, maxDias = MAX_DIAS }) {
+  function perda({ vendas, qtd, un, hoje, inicio, janela = JANELA, maxDias = MAX_DIAS, maxAcum = MAX_ACUM }) {
     if (!zerado(qtd, un) || !vendas || !vendas.length) return null;
     let ult = -Infinity;
     for (const x of vendas) if (x.q > 0 && x.d <= hoje && x.d > ult) ult = x.d;
@@ -33,10 +34,11 @@
       q += x.q || 0; v += x.v || 0;
       if (x.q > 0) dias.add(x.d);
     }
-    const base = { desde: ult, diasZerado, diasBase, diasVenda: dias.size };
+    const diasAcum = Math.min(diasZerado, maxAcum);
+    const base = { desde: ult, diasZerado, diasAcum, diasBase, diasVenda: dias.size };
     if (dias.size < MIN_DIAS_VENDA || !(v > 0) || diasBase < 1) return { ...base, qtdDia: null, perdaDia: null, acumulado: null, motivo: 'pouco' };
     const perdaDia = v / diasBase;
-    return { ...base, qtdDia: q / diasBase, perdaDia, acumulado: perdaDia * diasZerado, motivo: null };
+    return { ...base, qtdDia: q / diasBase, perdaDia, acumulado: perdaDia * diasAcum, motivo: null };
   }
 
   /** Excesso de UM produto que vende: saldo que dura mais que `fator` × (entrega + período do pedido).
@@ -63,7 +65,7 @@
     return { falta, sobra };
   }
 
-  const API = { perda, excesso, zerado, totais, JANELA, MAX_DIAS, MIN_DIAS_VENDA, KG_MIN, FATOR_EXCESSO };
+  const API = { perda, excesso, zerado, totais, JANELA, MAX_DIAS, MAX_ACUM, MIN_DIAS_VENDA, KG_MIN, FATOR_EXCESSO };
   if (typeof module !== 'undefined' && module.exports) { module.exports = API; return; }
 
   // ---------- tela (só no navegador) ----------
@@ -98,7 +100,7 @@
   const contaPerda = (r) => {
     const x = r.rup;
     if (x.motivo === 'pouco') return `Zerado e a última venda foi em ${fmt.date(TS.dayToIso(x.desde))}, mas vendeu em menos de ${MIN_DIAS_VENDA} dias diferentes nos ${fmt.int(x.diasBase)} dias antes: pouco para estimar quanto se perde.`;
-    return `Estimativa: nos ${fmt.int(x.diasBase)} dias antes de zerar vendeu ${fmt.brl(x.perdaDia * x.diasBase)} (em ${fmt.int(x.diasVenda)} dias com venda) = ${fmt.brl(x.perdaDia)} por dia. Zerado há ${diasTxt(x.diasZerado)} (última venda em ${fmt.date(TS.dayToIso(x.desde))}).`;
+    return `Estimativa: nos ${fmt.int(x.diasBase)} dias antes de zerar vendeu ${fmt.brl(x.perdaDia * x.diasBase)} (em ${fmt.int(x.diasVenda)} dias com venda) = ${fmt.brl(x.perdaDia)} por dia. Zerado há ${diasTxt(x.diasZerado)} (última venda em ${fmt.date(TS.dayToIso(x.desde))}).${x.diasZerado > x.diasAcum ? ` O "perdido até agora" conta só ${fmt.int(x.diasAcum)} dias.` : ''}`;
   };
   const LIMITES = `O painel não guarda o saldo de cada dia: considera que o produto zerou no dia da última venda. É uma estimativa pelo preço de venda (não é lucro) e não desconta o cliente que levou outro produto no lugar.`;
 
@@ -108,7 +110,7 @@
     return {
       falta: TS.kpi('Perdendo por falta', f.comConta ? `${fmt.brl0(f.perdaDia)}/dia` : '—',
         h('span', { class: f.n ? 'down' : '' }, f.n ? `${fmt.int(f.n)} ${f.n === 1 ? 'produto zerado' : 'produtos zerados'}${f.comConta ? ` · ${fmt.brl0(f.acumulado)} até agora` : ''}${f.esperando ? ` · ⏳ ${fmt.int(f.esperando)} com cliente esperando` : ''}` : 'nenhum produto zerado que vendia'),
-        `Quanto a loja deixa de vender por dia em produto zerado: média de venda por dia nos ${JANELA} dias antes de zerar, em R$. ${LIMITES} Só entra quem vendeu nos últimos ${MAX_DIAS} dias; fora de linha, taxas e resgates ficam de fora.${f.n && !f.comConta ? ' Os produtos zerados têm pouco histórico para estimar.' : ''} Toque para ver na tabela e priorizar o pedido.`),
+        `Quanto a loja deixa de vender por dia em produto zerado: média de venda por dia nos ${JANELA} dias antes de zerar, em R$. ${LIMITES} O "até agora" soma no máximo ${MAX_ACUM} dias de cada produto. Só entra quem vendeu nos últimos ${MAX_DIAS} dias; fora de linha, taxas e resgates ficam de fora.${f.n && !f.comConta ? ' Os produtos zerados têm pouco histórico para estimar.' : ''} Toque para ver na tabela e priorizar o pedido.`),
       sobra: TS.kpi('Dinheiro sobrando', s.n ? fmt.brl0(s.valor) : '—',
         s.n ? `${fmt.int(s.n)} ${s.n === 1 ? 'produto que vende devagar' : 'produtos que vendem devagar'}` : 'nenhum produto com saldo demais',
         `Produto que vende, mas tem saldo para mais de ${fmt.int(FATOR_EXCESSO * H)} dias (${FATOR_EXCESSO}× a entrega + o período do pedido, ${fmt.int(H)} dias). O valor é o que passa do necessário para ${fmt.int(H)} dias, a custo. Diferente de "parado", que não vende. Toque para ver na tabela: segure a compra desses produtos.`),
@@ -123,8 +125,8 @@
         render: (r) => (!r.rup ? '—' : r.rup.perdaDia == null ? semConta(r) : h('b', { class: 'neg est-dica', title: contaPerda(r) }, fmt.brl(r.rup.perdaDia))), sortVal: (r) => (r.rup ? (r.rup.perdaDia == null ? 0 : r.rup.perdaDia) : -1) },
       zeradoHa: { key: 'zeradoHa', label: 'Zerado há', title: 'Dias desde a última venda (o painel considera que o produto zerou nesse dia). A data é a da última venda',
         render: (r) => (r.rup ? h('span', null, diasTxt(r.rup.diasZerado), h('small', { class: 'est-tam' }, `desde ${fmt.date(TS.dayToIso(r.rup.desde))}`)) : '—'), sortVal: (r) => (r.rup ? r.rup.diasZerado : -1) },
-      acumulado: { key: 'acumulado', label: 'Perdido até agora', title: 'Perdendo R$/dia × dias zerado. Estimativa: quanto mais tempo zerado, menos certa (a procura muda com a época do ano)',
-        render: (r) => (r.rup && r.rup.acumulado != null ? fmt.brl(r.rup.acumulado) : '—'), sortVal: (r) => (r.rup && r.rup.acumulado != null ? r.rup.acumulado : -1) },
+      acumulado: { key: 'acumulado', label: 'Perdido até agora', title: `Perdendo R$/dia × dias zerado, contando no máximo ${MAX_ACUM} dias. Produto que vende devagar pode ter zerado ontem e a última venda ser de meses atrás: por isso o painel não soma além de ${MAX_ACUM} dias (aparece "máx. ${MAX_ACUM} dias" embaixo). Estimativa: a procura muda com a época do ano`,
+        render: (r) => (r.rup && r.rup.acumulado != null ? h('span', null, fmt.brl(r.rup.acumulado), r.rup.diasZerado > r.rup.diasAcum ? h('small', { class: 'est-tam' }, `máx. ${MAX_ACUM} dias`) : null) : '—'), sortVal: (r) => (r.rup && r.rup.acumulado != null ? r.rup.acumulado : -1) },
       vendiaDia: { key: 'vendiaDia', label: 'Vendia/dia', title: `Quantidade média por dia nos ${JANELA} dias antes de zerar (chá a granel em kg, somando os tamanhos)`,
         render: (r) => (r.rup && r.rup.qtdDia != null ? (r.it.un === 'Kg' ? `${fmt.kg(r.rup.qtdDia)} kg` : fmt.n2(r.rup.qtdDia)) : '—'), sortVal: (r) => (r.rup && r.rup.qtdDia != null ? r.rup.qtdDia : -1) },
       esperando: { key: 'esperando', label: 'Na lista de espera', title: 'Clientes aguardando este produto em Clientes → Lista de espera. Com cliente esperando, a venda é quase certa quando o produto chegar',
