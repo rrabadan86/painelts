@@ -90,14 +90,15 @@ test('Início: plural certo, "lembrar depois" por 7 dias e aviso vermelho sem ad
   await page.evaluate(() => { const j = {}; j[Object.keys(JSON.parse(localStorage.getItem('teashop.ini.adiar') || '{}'))[0] || 'x|y|z'] = Date.now() - 1000; localStorage.setItem('teashop.ini.adiar', JSON.stringify(j)); });
 });
 
-test('Início com todas as lojas: uma linha explica por que os avisos de cada loja não aparecem', async ({ page }) => {
+test('Início com todas as lojas: uma linha explica que os avisos de cada loja aparecem ao abrir a loja (tabela lado a lado)', async ({ page }) => {
   await abrir(page);
   const tem = await page.evaluate(() => [...document.querySelectorAll('header select option')].some((o) => o.value === 'todas'));
   test.skip(!tem, 'a apresentação não tem "Todas as lojas"');
   await page.locator('header select').first().selectOption('todas');
   await page.waitForFunction(() => TS.state.loja === 'todas' && TS.db && TS.db.n);
   await ir(page, 'inicio');
-  await expect(page.locator('.ini-aviso b', { hasText: 'Escolha uma loja para ver os avisos de estoque, inventário e franquia' })).toBeVisible();
+  await expect(page.locator('.ini-aviso b', { hasText: 'Os avisos de estoque, inventário e franquia são de cada loja' })).toBeVisible();
+  await expect(page.locator('main .vd-lojas')).toBeVisible();
 });
 
 test('Início e Resultado não mostram a lateral de filtros; Estoque continua mostrando', async ({ page }, info) => {

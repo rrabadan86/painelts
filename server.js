@@ -281,9 +281,9 @@ const pub = path.join(__dirname, 'public');
 
 // ---------- pacote único de JS/CSS da tela (pré-comprimido em Brotli + Gzip, cache imutável por hash) ----------
 const APP_SCRIPTS = [
-  'core.js', 'contas.js', 'components.js', 'dicas.js', 'rules.js', 'pages.js', 'fidelidade.js',
+  'core.js', 'contas.js', 'metadia.js', 'components.js', 'dicas.js', 'rules.js', 'pages.js', 'fidelidade.js',
   'msgwpp.js', 'recompra.js', 'clientes.js', 'campretorno.js', 'campanhas.js', 'zap.js', 'espera.js', 'extras.js', 'contabilidade.js',
-  'ruptura.js', 'classeprod.js', 'custodata.js', 'estoque.js', 'devolucao.js', 'precos.js', 'inventario.js', 'sugestoes.js', 'validade.js', 'nfsaida.js', 'creditos.js', 'orcamento.js', 'checklist.js',
+  'ruptura.js', 'visaodono.js', 'classeprod.js', 'custodata.js', 'estoque.js', 'devolucao.js', 'precos.js', 'inventario.js', 'sugestoes.js', 'validade.js', 'nfsaida.js', 'creditos.js', 'orcamento.js', 'checklist.js',
   'site.js', 'conferencia.js', 'conferencia-tela.js', 'inicio.js', 'pedido.js', 'ia.js', 'dre.js', 'apagar.js', 'comprasvendas.js', 'efeitopreco.js', 'equipe.js', 'mapa.js', 'feriados.js', 'fidretorno.js',
   'config.js', 'script.js', 'fechamento.js', 'sistema.js', 'main.js',
 ];
@@ -532,10 +532,10 @@ app.get('/api/demo/estoque/disponivel', (req, res) => {
   res.json(require('./src/lotes').disponivel({ estoque: e.estoque, compras: e.compras }));
 });
 // validade na apresentação: as entradas fictícias "envelhecidas" para mostrar todas as faixas (nada é salvo)
-app.get('/api/demo/validade', (req, res) => {
-  if (!lojaDemo(req)) return res.status(400).json({ erro: 'Escolha uma loja.' });
+/** lotes fictícios da loja (entradas "envelhecidas" de 0 a 13 meses): os mesmos na Validade, no Início e nas perdas do Resultado */
+function lotesDemo(lojaId) {
   const LOTd = require('./src/lotes');
-  const e = DEMO.estoqueDemo(req.query.loja);
+  const e = DEMO.estoqueDemo(lojaId);
   const comp = { itens: {} };
   for (const [cod, l] of Object.entries((e.compras && e.compras.itens) || {})) {
     const k = [...cod].reduce((a, c) => a + c.charCodeAt(0), 0) % 14; // 0 a 13 meses para trás
@@ -543,8 +543,19 @@ app.get('/api/demo/validade', (req, res) => {
   }
   const { em, lotes } = LOTd.calcular({ estoque: e.estoque, compras: comp, tabela: null, edits: { lotes: {} } });
   for (const l of lotes) if (l.precoKg == null && l.custoKg) l.precoKg = Math.round(l.custoKg * 2.6);
+  return { LOTd, e, comp, em, lotes };
+}
+app.get('/api/demo/validade', (req, res) => {
+  if (!lojaDemo(req)) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  const { LOTd, e, comp, em, lotes } = lotesDemo(req.query.loja);
   res.json({ em, hoje: LOTd.hojeSP(), meses: LOTd.MESES_VALIDADE, riscoDias: LOTd.RISCO_DIAS, custos: true, faixas: LOTd.FAIXAS.map((f) => ({ id: f.id, nome: f.nome, ate: Number.isFinite(f.ate) ? f.ate : null })),
     resumo: LOTd.resumo(lotes), lotes: lotes.map((l) => ({ ...l, tipo: '', familia: '' })), granel: LOTd.granelEstoque({ estoque: e.estoque, compras: e.compras }), entradas: LOTd.entradasRecentes({ estoque: e.estoque, compras: comp, edits: { lotes: {} } }) });
+});
+// perdas do mês para o Resultado (apresentação): chá vencido dos lotes fictícios + faltas de inventário inventadas
+app.get('/api/demo/perdas', (req, res) => {
+  if (!lojaDemo(req)) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  const PERd = require('./src/perdas'), { LOTd, lotes } = lotesDemo(req.query.loja);
+  res.json({ hoje: LOTd.hojeSP(), meses: PERd.porMes({ lotes, contagens: PERd.contagensDemo(req.query.loja, LOTd.hojeSP()) }) });
 });
 // NF-e de saída fictícias (vendas com nota, transferência, devolução), montadas com os produtos da apresentação
 const NFSd = require('./src/nfsaida');
@@ -2311,6 +2322,16 @@ app.get('/api/validade', async (req, res) => {
     entradas: LOT.entradasRecentes(ctx), // para contar por lote no inventário
     granel: LOT.granelEstoque(ctx), // chá a granel com/sem estoque (Clientes → Hoje não oferece chá que a loja não tem)
   });
+});
+// perdas do mês para o Resultado (linha "− Perdas"): chá vencido ainda no estoque + faltas do inventário, a custo.
+// Só quem vê custo (admin, franqueado, gerente com tela de custo) e só da loja da pessoa.
+app.get('/api/perdas', (req, res) => {
+  if (!podeCustos(req)) return res.status(403).json({ erro: 'Sem permissão.' });
+  const loja = req.lojas.find((l) => l.id === String(req.query.loja || ''));
+  if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  try {
+    res.json({ hoje: LOT.hojeSP(), meses: require('./src/perdas').porMes({ lotes: LOT.daLoja(loja.id).lotes, contagens: INV.lista(loja.id) }) });
+  } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
 });
 // "deste lote ainda tem X" (ou voltar para a regra automática neste chá)
 app.put('/api/validade/saldo', express.json({ limit: '4kb' }), (req, res) => {

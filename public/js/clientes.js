@@ -545,8 +545,9 @@
   };
   const hojeF = { motivo: '', vend: '' };
   /** meta do dia: (meta do mês − VENDAS DA META até ontem) ÷ dias de loja aberta que faltam (com hoje), e a parte de
-   *  cada vendedora pela participação dela nas vendas da meta dos últimos 30 dias. Vendas da meta = chá aromatizado,
-   *  chá puro e acessórios, sem Espaço Gourmet: a mesma base da meta e do Comissionamento. */
+   *  cada vendedora pelas HORAS dela na escala de hoje (TS.escalaTurnos, mapa.js); sem escala, partes iguais entre quem
+   *  não está de férias — a conta é TS.metaDia.dividir (metadia.js). Vendas da meta = chá aromatizado, chá puro e
+   *  acessórios, sem Espaço Gourmet: a mesma base da meta e do Comissionamento. Não muda a meta do mês nem a comissão. */
   function cartaoMetaDia() {
     const db = TS.db;
     if (!db || !db.n || !TS.metaCalc) return null;
@@ -568,7 +569,7 @@
     const falta = Math.max(0, meta - ateOntem);
     const metaHoje = restam ? falta / restam : falta;
     const vendHoje = soma(hojeIdx);
-    // participação de cada vendedora nos últimos 30 dias
+    // quem vende na loja: quem teve pelo menos 3% das vendas da meta nos últimos 30 dias
     const part = new Map();
     for (const i of idx(hojeD - 30, hojeD - 1)) { const v = db.D.vendedor[db.vend[i]]; if (v) part.set(v, (part.get(v) || 0) + (db.vt[i] || 0)); }
     const tot30 = [...part.values()].reduce((a, b) => a + b, 0);
@@ -576,7 +577,20 @@
     for (const i of hojeIdx) { const v = db.D.vendedor[db.vend[i]]; if (v) hojeV.set(v, (hojeV.get(v) || 0) + (db.vt[i] || 0)); }
     const souVend = TS.eu && TS.eu.perfil === 'vendedor';
     const eu = souVend ? String(TS.eu.vendedor || '').toUpperCase() : null;
-    const vends = [...part].filter(([v, x]) => x / tot30 >= 0.03 && (!eu || String(v).toUpperCase() === eu)).sort((a, b) => b[1] - a[1]);
+    const semV = (v) => /^SEM VENDEDOR$/i.test(String(v).trim());
+    const quemVende = [...part].filter(([v, x]) => !semV(v) && x / tot30 >= 0.03).map(([v]) => v);
+    // horas de cada pessoa na escala de hoje (a vendedora não recebe a escala dos colegas: partes iguais)
+    const esc = !souVend && TS.escalaTurnos && TS.equipe ? TS.escalaTurnos(hojeIso, hojeIso) : null;
+    let horas = null, semNome = [];
+    if (esc) {
+      const par = TS.equipe.calc.casarNomes(esc.pessoas, [...part.keys()].filter((v) => !semV(v)));
+      horas = esc.turnos.filter((t) => par.has(t.nome)).map((t) => [par.get(t.nome), TS.equipe.calc.liquido(t)]);
+      semNome = [...new Set(esc.turnos.filter((t) => !par.has(t.nome)).map((t) => t.nome))];
+    }
+    const DV = TS.metaDia.dividir({ meta: metaHoje, pessoas: quemVende, horas, semEscala: souVend ? 'sem-acesso' : 'nao-lancada', ferias: (cfg && cfg.ferias) || [], hoje: hojeIso });
+    const vends = DV.partes.filter((p) => !eu || String(p.nome).toUpperCase() === eu);
+    const hTxt = (min) => `${Math.floor(min / 60)}h${min % 60 ? String(Math.round(min % 60)).padStart(2, '0') : ''}`;
+    const nomeBonito = (v) => String(v).toLowerCase().replace(/(^|\s)\S/g, (c) => c.toUpperCase());
     const temHoje = db.maxDay >= hojeD;
     const barra = (feito, alvo) => h('div', { class: 'md-barra' }, h('i', { style: { width: Math.min(100, alvo ? (feito / alvo) * 100 : 0) + '%' } }));
     return h('div', { class: 'card md-card' },
@@ -586,13 +600,16 @@
             TS.dica(`Meta de hoje = (meta do mês ${fmt.brl0(meta)} − vendas da meta até ontem ${fmt.brl0(ateOntem)}) ÷ ${restam} ${restam === 1 ? 'dia' : 'dias'} de loja aberta que faltam, contando hoje.\n\nVendas da meta = chá aromatizado, chá puro e acessórios, sem Espaço Gourmet: a mesma base do Comissionamento. O faturamento da loja (Resumo) é maior porque inclui o Espaço Gourmet e os outros grupos.`))),
         h('div', { class: 'md-num' }, h('b', null, fmt.brl0(metaHoje)), temHoje ? h('small', null, `vendas da meta hoje: ${fmt.brl0(vendHoje)}`) : h('small', null, 'as vendas de hoje chegam na próxima atualização'))),
       temHoje ? barra(vendHoje, metaHoje) : null,
-      vends.length ? h('div', { class: 'md-vends' }, ...vends.map(([v, x]) => {
-        const alvo = metaHoje * (x / tot30), feito = hojeV.get(v) || 0;
-        return h('div', { class: 'md-v' }, h('span', { class: 'md-nome' }, String(v).toLowerCase().replace(/(^|\s)\S/g, (c) => c.toUpperCase())),
+      vends.length ? h('div', { class: 'md-vends' }, ...vends.map((p) => {
+        const alvo = p.alvo, feito = hojeV.get(p.nome) || 0;
+        return h('div', { class: 'md-v' }, h('span', { class: 'md-nome' }, nomeBonito(p.nome), p.minutos != null ? h('small', { class: 'muted' }, ` · ${hTxt(p.minutos)} na escala`) : null),
           h('span', { class: 'md-alvo' }, h('b', null, fmt.brl0(alvo)), temHoje ? h('small', null, ` · fez ${fmt.brl0(feito)}${feito >= alvo ? ' ✓' : ''}`) : null),
           temHoje ? barra(feito, alvo) : null);
       })) : null,
-      h('small', { class: 'muted md-nota' }, 'Conta só as vendas da meta (chás e acessórios, sem Espaço Gourmet). A parte de cada vendedora segue a participação dela nessas vendas nos últimos 30 dias.'));
+      h('small', { class: 'muted md-nota', 'data-divisao': DV.modo }, 'Conta só as vendas da meta (chás e acessórios, sem Espaço Gourmet). ', TS.metaDia.comoDividiu(DV),
+        !eu && DV.fora.length ? ` ${DV.foraPorque === 'ferias' ? 'De férias hoje' : 'Sem turno na escala de hoje (folga, férias ou nome diferente do vendedor)'}: ${DV.fora.map(nomeBonito).join(', ')}.` : '',
+        !eu && semNome.length ? ` Na escala de hoje, mas sem venda com esse nome: ${semNome.join(', ')} (as horas não entram na divisão).` : '',
+        TS.dica(`Meta de hoje da loja: ${fmt.brl0(metaHoje)}.\n\nCom escala lançada: parte de cada pessoa = meta de hoje × horas dela na escala de hoje ÷ horas de todos que trabalham hoje (horas líquidas, sem o intervalo; a escala é a de Equipe → Movimento e escala, com os ajustes do mês).${DV.modo === 'escala' ? `\n\nHoje: ${DV.partes.map((p) => `${nomeBonito(p.nome)} ${hTxt(p.minutos)}`).join(' + ')} = ${hTxt(DV.total)}.` : ''}\n\nSem escala lançada (ou sem ninguém da escala com o mesmo nome do vendedor): partes iguais entre quem teve pelo menos 3% das vendas da meta nos últimos 30 dias e não está de férias hoje.\n\nÉ só o alvo do dia: a meta do mês e a comissão continuam como no Comissionamento.`)));
   }
 
   TS.pages.hoje = function (root) {

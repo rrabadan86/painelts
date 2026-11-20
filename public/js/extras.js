@@ -32,7 +32,8 @@
    * Vendas até o último dia COMPLETO (o dia de hoje fica de fora e vem à parte em `hoje`) + cada dia que falta pela média
    * do mesmo dia da semana nas últimas 8 semanas (dia de loja fechada conta zero).
    * opts: base 'loja' (faturamento da loja) | 'meta' (vendas da meta); ate = fim do período da tela (dia do painel);
-   *       todas = ignora também o filtro de loja (Resultado e equilíbrio: a loja escolhida no topo, sem filtros).
+   *       todas = ignora também o filtro de loja (Resultado e equilíbrio: a loja escolhida no topo, sem filtros);
+   *       lojaId = só essa loja, com o horário dela (Início com "Todas as lojas": uma projeção por loja).
    * Segue só o filtro de loja: vendedor, grupo e produto não mudam a projeção.
    * → null se o mês já fechou ou não há histórico; senão o resultado da conta + { hoje, acumulado, proj (nunca abaixo do já vendido) }
    */
@@ -45,18 +46,20 @@
     const limite = Math.min(opts.ate ?? db.maxDay, db.maxDay);
     const completo = Math.min(limite, hojeD - 1); // hoje ainda está acontecendo
     if (completo >= fimMes || limite < iniMes) return null;
-    const ign = ['vendedores', 'grupos', 'cats', 'produto', ...(opts.todas ? ['lojas'] : [])];
-    const chave = `${ym}|${base}|${limite}|${hojeD}|${opts.todas ? '*' : [...state.f.lojas].sort().join(',')}|${state.loja || ''}`;
+    const metaLoja = opts.lojaId ? (db.metas || []).find((m) => m.id === opts.lojaId) || null : null;
+    const soLoja = metaLoja ? new Set((metaLoja.nomesVenda || []).map((n) => db.D.loja.indexOf(n)).filter((x) => x >= 0)) : null;
+    const ign = ['vendedores', 'grupos', 'cats', 'produto', ...(opts.todas || soLoja ? ['lojas'] : [])];
+    const chave = `${ym}|${base}|${limite}|${hojeD}|${soLoja ? '#' + opts.lojaId : opts.todas ? '*' : [...state.f.lojas].sort().join(',')}|${state.loja || ''}`;
     const cache = db._projMes || (db._projMes = new Map());
     if (cache.has(chave)) return cache.get(chave);
     const I = R().ids, porDia = new Map();
-    for (const i of TS.filtrar({ de: completo - 62, ate: Math.min(limite, fimMes), ignorar: ign, mesLivre: true })) {
+    for (const i of TS.filtrar({ de: completo - 62, ate: Math.min(limite, fimMes), ignorar: ign, mesLivre: true, extra: soLoja ? (k) => soLoja.has(db.loja[k]) : null })) {
       let v = 0;
       if (base === 'loja') v = TS.contaFat(i) ? db.vt[i] || 0 : 0;
       else { const g = db.grupoC[i]; v = !I.eg.has(db.cat[i]) && (I.arom.has(g) || I.puro.has(g) || I.acess.has(g)) ? db.vt[i] || 0 : 0; }
       if (v) porDia.set(db.day[i], (porDia.get(db.day[i]) || 0) + v);
     }
-    const cfg = state.loja && state.loja !== 'todas' ? (db.metas || []).find((m) => m.id === state.loja) || null : null;
+    const cfg = metaLoja || (state.loja && state.loja !== 'todas' ? (db.metas || []).find((m) => m.id === state.loja) || null : null);
     const P = TS.contas.projecaoMes({ ym, ate: TS.dayToIso(completo), valorDia: (iso) => porDia.get(dia(iso)) || 0, aberto: (iso) => TS.lojaAberta(cfg, iso), inicio: TS.dayToIso(db.minDay) });
     let out = null;
     if (P && !P.fechado && P.proj != null) {

@@ -2983,3 +2983,31 @@ tr.conf-conta td:first-child { box-shadow: inset 3px 0 0 var(--bad); }
 .ap-alerta { font-weight: 600; }
 .est-cat-t .est-dia { width: 104px; min-width: 0; }
 @media (max-width: 760px) { .dre-topo .ap-exportar { margin-left: 0; } }
+/* ===== Visão do dono no Início (visaodono.js): Sua semana e Minhas lojas lado a lado ===== */
+.vd-sub { display: block; color: var(--muted); font-size: 11px; font-weight: 400; white-space: normal; }
+.vd-semana { margin-bottom: 16px; }
+.vd-sem-t { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; cursor: pointer; padding: 4px 2px 10px; list-style: none; }
+.vd-sem-t::-webkit-details-marker { display: none; }
+.vd-sem-t::before { content: '▸'; color: var(--muted); font-size: 12px; }
+.vd-semana[open] > .vd-sem-t::before { content: '▾'; }
+.vd-sem-t .card-title { margin: 0; }
+.vd-sem-p { font-size: 12px; }
+.vd-acoes-card { margin-top: 12px; }
+.vd-acoes-t { display: flex; align-items: center; gap: 6px; }
+.vd-acoes > p { margin: 6px 0 0; }
+.vd-acao { display: flex; align-items: center; gap: 12px; padding: 10px 2px; border-top: 1px solid var(--line); cursor: pointer; }
+.vd-acao:first-child { border-top: 0; }
+.vd-acao:hover b, .vd-acao:focus-visible b { color: var(--green); }
+.vd-acao > div { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.vd-acao .muted { font-size: 12px; margin-top: 2px; }
+.vd-acao-n { flex: none; width: 24px; height: 24px; border-radius: 50%; background: var(--sage-l); color: var(--dark); font-weight: 700; font-size: 12px; display: inline-flex; align-items: center; justify-content: center; }
+.vd-loja { border: 0; background: none; padding: 0; cursor: pointer; color: inherit; font: inherit; text-align: left; }
+.vd-loja:hover b, .vd-loja:focus-visible b { color: var(--green); text-decoration: underline; }
+.t.vd-t td { white-space: normal; vertical-align: top; }
+.t.vd-t td .badge { white-space: nowrap; }
+.dre-perdas { font-size: 12px; margin: 8px 0 0; }
+.dre-perdas a { white-space: nowrap; }
+@media (max-width: 760px) {
+  .vd-acao { align-items: flex-start; flex-wrap: wrap; }
+  .vd-acao .ini-ir { flex-basis: 100%; padding-left: 36px; }
+}

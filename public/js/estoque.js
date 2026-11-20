@@ -257,6 +257,7 @@
   }
 
   TS.estoqueBuscar = buscar;
+  TS.motorEstoque = motor; // Início com todas as lojas (visaodono.js): o mesmo motor, com o estoque de cada loja
 
   /** Classe oficial de cada produto (Estrela, Volume, Joia, Peso morto), fixa e separada do filtro de período.
    *  Últimos 3, 6 ou 12 meses fechados (só loja). Giro = a MEDIANA do que saiu por mês (um mês de promoção pesa pouco);
@@ -936,8 +937,7 @@
     // fora de linha: indisponível no Sistema de Pedidos há 90+ dias seguidos (o painel acompanha o catálogo desde foraDeLinha.desde)
     const FL_DIAS = (foraDeLinha && foraDeLinha.dias) || 90;
     const foraLinhaDe = (cod) => {
-      const d = foraDeLinha && foraDeLinha.indisp && foraDeLinha.indisp[String(cod)];
-      return d && TS.todayDay() - TS.isoToDay(d) >= FL_DIAS ? d : null;
+      return TS.visaoDono.foraLinhaDe(foraDeLinha, cod, TS.todayDay()); // a mesma regra do Início (lojas lado a lado)
     };
     TS.estoqueForaLinhaDe = foraLinhaDe; // testes
     const repo = [];
@@ -960,7 +960,7 @@
       else if (dias != null && dias < H) sit = 'pedir';
       const ult = ultimaVenda.get(it.cod);
       const vendeuAlgumaVez = ult != null;
-      if (qtd > 0 && it.custo && !foraLinhaDe(it.cod) && (vendeuAlgumaVez || (temCod && it.tipo === 'PN')) && (!vendeuAlgumaVez || fim - ult >= cfg.paradoDias)) { // fora de linha conta à parte (liquidar)
+      if (TS.visaoDono.ehParado({ qtd, custo: it.custo, foraLinha: foraLinhaDe(it.cod), ult, fim, paradoDias: cfg.paradoDias, novoPN: temCod && it.tipo === 'PN' })) { // fora de linha conta à parte (liquidar)
         const v = qtd * it.custo; valorParado += v;
         parados.push({ cod: it.cod, produto: it.desc, tipo: TIPO_ITEM(it), qtd, it, valor: v, ultima: vendeuAlgumaVez ? TS.dayToIso(ult) : null, dias: vendeuAlgumaVez ? fim - ult : null });
       }
