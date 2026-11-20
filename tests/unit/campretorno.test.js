@@ -133,3 +133,30 @@ test('CAMP-CMP-02 servidor: cria o grupo ao criar a lista, na lista nova da reco
   const p = CAMP.criar('cmp', { nome: 'Pequena', mensagem: 'Oi', lista: lista.slice(0, 49) }, 'adm');
   assert.ok(p.ok.rodadas[0].lista.every((x) => x.st === 'p'));
 });
+
+test('CAMP-CMP-03 campanha que se repete, criada antes do grupo de comparação: passa a guardar os 10% na próxima lista; lista única antiga não muda', () => {
+  const fs = require('fs'), os = require('os'), path = require('path');
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cmp-'));
+  process.env.DATA_DIR = tmp;
+  for (const k of Object.keys(require.cache)) if (/src[\\/](campanhas|config)\.js$/.test(k)) delete require.cache[k];
+  const C = require('../../src/config'), CAMP = require('../../src/campanhas');
+  const dir = path.join(C.pastaLoja('lz'), 'clientes');
+  const achar = () => { const base = C.pastaLoja('lz'); const out = []; const anda = (d) => { for (const f of fs.readdirSync(d, { withFileTypes: true })) { const p = path.join(d, f.name); if (f.isDirectory()) anda(p); else out.push(p); } }; try { anda(base); } catch { /* vazio */ } return out; };
+  // cria uma campanha nova só para descobrir onde o arquivo fica, depois grava o formato antigo (sem "comparar")
+  const lista = Array.from({ length: 60 }, (_, i) => ({ cpf: String(10000000000 + i), nome: 'C' + i }));
+  CAMP.criar('lz', { nome: 'X', mensagem: 'oi', lista }, 'dono');
+  const arq = achar().find((f) => /campanha/i.test(f));
+  assert.ok(arq, 'arquivo das campanhas');
+  const antigas = [{ id: 'rec1', nome: 'Toda semana', mensagem: 'oi', recorrente: 'semanal', ativa: true, filtros: {}, rodadas: [{ id: 'r0', em: '2026-01-01T12:00:00.000Z', lista: [] }] },
+    { id: 'uni1', nome: 'Única', mensagem: 'oi', recorrente: '', ativa: true, filtros: {}, rodadas: [{ id: 'r0', em: '2026-01-01T12:00:00.000Z', lista: [] }] },
+    { id: 'rec2', nome: 'Desmarcada', mensagem: 'oi', recorrente: 'mensal', comparar: false, ativa: true, filtros: {}, rodadas: [{ id: 'r0', em: '2026-01-01T12:00:00.000Z', lista: [] }] }];
+  fs.writeFileSync(arq, JSON.stringify(antigas));
+  const lidas = Object.fromEntries(CAMP.ler('lz').map((c) => [c.id, c.comparar]));
+  assert.deepEqual(lidas, { rec1: true, uni1: undefined, rec2: false });
+  const r = CAMP.novaRodada('lz', 'rec1', lista, 'robô', Date.parse('2026-11-20T12:00:00Z'));
+  const nova = r.ok.rodadas[0].lista;
+  assert.ok(nova.some((x) => x.st === 'c'), 'a lista nova tem grupo de comparação');
+  assert.ok(nova.filter((x) => x.st === 'c').length <= 12);
+  fs.rmSync(tmp, { recursive: true, force: true });
+  void dir;
+});

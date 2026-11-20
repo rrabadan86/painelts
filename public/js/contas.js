@@ -153,7 +153,10 @@
    * → { piso, pisoAplicado, fechado, dia, dentro: [nome], fora: [{ nome, dias }], todosAbaixo }
    * Se ninguém alcança o piso, todos com venda dividem (a meta nunca fica sem divisor).
    */
-  function divisoresMeta({ dias, piso, ym, ultimoDia }) {
+  /* sempre: quem tem férias lançadas no mês — é da equipe (não é folguista), então divide a meta mesmo abaixo do piso;
+     a meta dela já é proporcional aos dias trabalhados (metasIndividuais) */
+  function divisoresMeta({ dias, piso, ym, ultimoDia, sempre }) {
+    const S = new Set(sempre || []);
     const P = Math.max(1, Math.round(+piso) || PISO_DIAS_META);
     const lista = [...(dias || [])].filter(([, k]) => k > 0);
     let aplicado = P, fechado = true, dia = null;
@@ -163,11 +166,11 @@
       dia = fechado ? n : ultimoDia < ym + '-01' ? 0 : +ultimoDia.slice(8, 10);
       if (!fechado) aplicado = dia <= 7 ? 1 : Math.max(1, Math.floor((P * dia) / n));
     }
-    let dentro = lista.filter(([, k]) => k >= aplicado).map(([x]) => x);
-    let fora = lista.filter(([, k]) => k < aplicado).map(([x, k]) => ({ nome: x, dias: k }));
+    let dentro = lista.filter(([x, k]) => k >= aplicado || S.has(x)).map(([x]) => x);
+    let fora = lista.filter(([x, k]) => k < aplicado && !S.has(x)).map(([x, k]) => ({ nome: x, dias: k }));
     const todosAbaixo = !dentro.length && lista.length > 0;
     if (todosAbaixo) { dentro = lista.map(([x]) => x); fora = []; }
-    return { piso: P, pisoAplicado: aplicado, fechado, dia, dentro, fora, todosAbaixo };
+    return { piso: P, pisoAplicado: aplicado, fechado, dia, dentro, fora, todosAbaixo, porFerias: lista.filter(([x, k]) => k < aplicado && S.has(x)).map(([x]) => x) };
   }
 
   const MIN_ATEND_PREMIACAO = 20;

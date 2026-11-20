@@ -4,6 +4,8 @@
  *   que venderam nos últimos 90 dias, e produtos que acabaram e venderam nos últimos 30 dias.
  * - Site (quem vê o Site): mudanças de preço e promoção desde a consulta anterior.
  * - Atualizações (admin e franqueado): coletas que falharam nas últimas 48 h; vendas atrasadas.
+ * - Validade (quem vê Validade, com uma loja escolhida): chá a granel vencido e o que vence em 30 dias (visaodono.js).
+ * - Visão do dono (visaodono.js): "Sua semana" (admin e franqueado) e, com "Todas as lojas", as lojas lado a lado.
  * - Inventário (quem vê Inventário): Acessórios, Alimentação, Consumíveis, Sachês, Tea Moments e cada tipo de chá há 25 dias ou mais sem inventário (contagem do painel ou inventário feito direto no AppNext, lido toda madrugada). */
 (function () {
   const { h, fmt, state } = TS;
@@ -20,7 +22,10 @@
     const avisos = h('div', { class: 'ini-avisos' });
     const pend = h('div', { class: 'muted ini-pend' }, 'Conferindo estoque, site e atualizações…');
     const faixa = h('div', { class: 'ini-faixa-ia', hidden: true });
-    root.append(faixa, blocoVendas(), h('div', { class: 'mt' }, h('div', { class: 'card' }, h('div', { class: 'card-title' }, 'Avisos'), avisos, pend)));
+    // visão do dono (visaodono.js): "Sua semana" primeiro para admin e franqueado; com "Todas as lojas", as lojas lado a lado
+    const VD = TS.visaoDono || null;
+    const semanaDono = VD ? VD.blocoSemana() : null, lojasLado = VD ? VD.tabelaLojas() : null;
+    root.append(...[faixa, semanaDono, blocoVendas(), lojasLado ? h('div', { class: 'mt' }, lojasLado) : null, h('div', { class: 'mt' }, h('div', { class: 'card' }, h('div', { class: 'card-title' }, 'Avisos'), avisos, pend))].filter(Boolean));
     faixaIA(faixa);
     const lista = [];
     const pintar = () => {
@@ -46,12 +51,14 @@
     };
     // com "Todas as lojas" os avisos que são de cada loja não aparecem: uma linha diz por quê
     if ((!state.loja || state.loja === 'todas') && ['estoque', 'pedido', 'inventario', 'notas'].some((t) => (TS.telasEstoque || []).includes(t))) {
-      lista.push({ nivel: 'info', area: 'outros', titulo: 'Escolha uma loja para ver os avisos de estoque, inventário e franquia', texto: 'Com todas as lojas juntas aparecem só os avisos de vendas, site e atualizações. Troque a loja no seletor do topo.' });
+      lista.push(lojasLado
+        ? { nivel: 'info', area: 'outros', titulo: 'Os avisos de estoque, inventário e franquia são de cada loja', texto: 'Aqui aparecem só os de vendas, site e atualizações. Clique numa loja na tabela "Minhas lojas lado a lado" para ver os avisos dela.' }
+        : { nivel: 'info', area: 'outros', titulo: 'Escolha uma loja para ver os avisos de estoque, inventário e franquia', texto: 'Com todas as lojas juntas aparecem só os avisos de vendas, site e atualizações. Troque a loja no seletor do topo.' });
     }
     const analise = TS.db && TS.db.n && TS.eu && TS.eu.perfil !== 'vendedor' ? analisar() : null;
     // cada origem entrega os avisos já com a área dela (ninguém classifica aviso pelo texto)
     const de = (area) => ({ push: (...as) => lista.push(...as.map((a) => ({ area, ...a }))) });
-    const tarefas = [TS.zapAvisos ? TS.zapAvisos(de('outros')) : Promise.resolve(), avisosEspera(de('vendas')), avisosVendas(de('vendas')), avisosEstoque(de('estoque')), avisosSite(de('outros')), avisosAtualizacoes(de('outros')), avisosInventario(de('inventario'), analise), avisosCreditos(de('franquia')), avisosCusto(de('estoque')), avisosPadrao(de('vendas'), analise)].map((p) => p.catch(() => null).then(() => { if (avisos.isConnected) pintar(); }));
+    const tarefas = [TS.zapAvisos ? TS.zapAvisos(de('outros')) : Promise.resolve(), TS.conferenciaAvisos ? TS.conferenciaAvisos(de('vendas')) : Promise.resolve(), avisosEspera(de('vendas')), avisosVendas(de('vendas')), avisosEstoque(de('estoque')), VD ? VD.avisosValidade(de('estoque')) : Promise.resolve(), avisosSite(de('outros')), avisosAtualizacoes(de('outros')), avisosInventario(de('inventario'), analise), avisosCreditos(de('franquia')), avisosCusto(de('estoque')), avisosPadrao(de('vendas'), analise)].map((p) => p.catch(() => null).then(() => { if (avisos.isConnected) pintar(); }));
     Promise.all(tarefas).then(() => { pend.remove(); });
   };
 

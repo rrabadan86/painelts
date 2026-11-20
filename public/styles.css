@@ -2961,3 +2961,57 @@ body.pg-semfiltros .sidebar, body.pg-semfiltros #btnFiltros { display: none; }
 /* ===== Contas oficiais (auditoria X): comissionamento e resultado ===== */
 .card-title .com-parcial { margin-left: 8px; font-weight: 600; vertical-align: middle; white-space: normal; }
 .com-fora { margin: 8px 2px 0; font-size: 13px; }
+
+/* ===== Vendas → Conferência (caixa × painel, cancelados, saúde dos dados) ===== */
+.conf-abas { margin-bottom: 4px; flex-wrap: wrap; }
+.conf-sub { display: block; font-weight: 400; line-height: 1.35; white-space: normal; }
+.conf-t td.wrap { max-width: 420px; }
+.conf-t .badge + .conf-sub { margin-top: 3px; }
+.conf-rec { margin-left: 6px; }
+.conf-nota { margin: 10px 2px 0; font-size: 13px; }
+.conf-campo { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.conf-campo .f-input { height: 34px; width: auto; max-width: 320px; }
+.conf-campo .conf-tol { width: 120px; }
+tr.conf-conta td:first-child { box-shadow: inset 3px 0 0 var(--bad); }
+@media (max-width: 760px) { .conf-t td.wrap { max-width: none; } .conf-campo, .conf-campo .f-input, .conf-campo .conf-tol { width: 100%; max-width: none; } }
+/* ===== Caixa a pagar e exportação para o contador (Resultado) ===== */
+.dre-abas { margin-bottom: 12px; }
+.dre-topo .ap-exportar { margin-left: auto; }
+.ap-topo .ap-saldo { width: 130px; }
+.ap-sit { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.ap-btn { padding: 4px 10px; font-size: 12px; min-height: 32px; }
+.ap-alerta { font-weight: 600; }
+.est-cat-t .est-dia { width: 104px; min-width: 0; }
+@media (max-width: 760px) { .dre-topo .ap-exportar { margin-left: 0; } }
+/* ===== Visão do dono no Início (visaodono.js): Sua semana e Minhas lojas lado a lado ===== */
+.vd-sub { display: block; color: var(--muted); font-size: 11px; font-weight: 400; white-space: normal; }
+.vd-semana { margin-bottom: 16px; }
+.vd-sem-t { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; cursor: pointer; padding: 4px 2px 10px; list-style: none; }
+.vd-sem-t::-webkit-details-marker { display: none; }
+.vd-sem-t::before { content: '▸'; color: var(--muted); font-size: 12px; }
+.vd-semana[open] > .vd-sem-t::before { content: '▾'; }
+.vd-sem-t .card-title { margin: 0; }
+.vd-sem-p { font-size: 12px; }
+.vd-acoes-card { margin-top: 12px; }
+.vd-acoes-t { display: flex; align-items: center; gap: 6px; }
+.vd-acoes > p { margin: 6px 0 0; }
+.vd-acao { display: flex; align-items: center; gap: 12px; padding: 10px 2px; border-top: 1px solid var(--line); cursor: pointer; }
+.vd-acao:first-child { border-top: 0; }
+.vd-acao:hover b, .vd-acao:focus-visible b { color: var(--green); }
+.vd-acao > div { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.vd-acao .muted { font-size: 12px; margin-top: 2px; }
+.vd-acao-n { flex: none; width: 24px; height: 24px; border-radius: 50%; background: var(--sage-l); color: var(--dark); font-weight: 700; font-size: 12px; display: inline-flex; align-items: center; justify-content: center; }
+.vd-loja { border: 0; background: none; padding: 0; cursor: pointer; color: inherit; font: inherit; text-align: left; }
+.vd-loja:hover b, .vd-loja:focus-visible b { color: var(--green); text-decoration: underline; }
+.t.vd-t td { white-space: normal; vertical-align: top; }
+.t.vd-t td .badge { white-space: nowrap; }
+.dre-perdas { font-size: 12px; margin: 8px 0 0; }
+.dre-perdas a { white-space: nowrap; }
+@media (max-width: 760px) {
+  .vd-acao { align-items: flex-start; flex-wrap: wrap; }
+  .vd-acao .ini-ir { flex-basis: 100%; padding-left: 36px; }
+}
+/* lojas lado a lado: 8 colunas — cabeçalho e células quebram a linha em vez de alargar a tabela (fonte mais larga não pode trazer a rolagem lateral) */
+.t.vd-t:not(.t-mob) th, .t.vd-t:not(.t-mob) td { white-space: normal; }
+.t.vd-t:not(.t-mob) th { vertical-align: bottom; line-height: 1.2; }
+.t.vd-t:not(.t-mob) td:not(:first-child), .t.vd-t:not(.t-mob) th:not(:first-child) { min-width: 0; }

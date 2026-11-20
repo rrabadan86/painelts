@@ -89,7 +89,8 @@
         // crescimento: últimas 8 semanas × as mesmas 8 do ano passado (igual ao card "Próximas semanas")
         if (d >= d56) cresA += vt; else if (d >= d56 - 364 && d <= fim - 364) cresB += vt;
         if (evLy0 != null && d >= evLy0 && d <= evLy1) evLyVt += vt;
-        if (meses.has(ymDe(i))) { const cu = M.custo(i); if (cu != null) { cmvVt += vt; cmvCusto += cu; } }
+        // limite do pedido = quanto custa REPOR: custo de hoje (decisão do dono); Resultado e Rentabilidade usam o custo da data da venda
+        if (meses.has(ymDe(i))) { const cu = (M.custoHoje || M.custo)(i); if (cu != null) { cmvVt += vt; cmvCusto += cu; } }
       }
       const cs = M.consumo(i);
       cs.forEach(([it, q], k) => {
@@ -368,7 +369,7 @@
     const lbl = (t, el, suf, dica, nota) => h('label', { title: dica || null }, h('span', null, t, dica ? h('span', { class: 'ped-i', 'aria-hidden': 'true' }, 'ⓘ') : null), h('div', null, el, suf ? ' ' + suf : ''), nota || null);
     const mesTxt = (ym) => new Date(ym + '-15T12:00:00Z').toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' }).replace('. de ', '/').replace('.', '');
     const dicaCmv = R.cmvReal == null ? 'Percentual do faturamento da loja (sem Espaço Gourmet) que vira pedido. Ainda não dá para calcular o CMV real: faltam vendas com custo nos 3 últimos meses fechados.'
-      : `Percentual do faturamento da loja (sem Espaço Gourmet) que vira pedido.\n\nAutomático: o CMV real: ${fmt.pct(R.cmvReal)}.\nCMV = custo dos produtos vendidos ÷ faturamento, só loja, nos 3 últimos meses fechados (${R.cmvMeses.map(mesTxt).join(', ')}):\n${fmt.brl0(R.cmvCusto)} de custo ÷ ${fmt.brl0(R.cmvVt)} vendidos = ${fmt.pct(R.cmvReal)}.\n\nOu seja: o pedido repõe o que saiu da loja. Digite outro % para pedir mais ou menos (vira manual; "voltar ao automático" desfaz).`;
+      : `Percentual do faturamento da loja (sem Espaço Gourmet) que vira pedido.\n\nAutomático: o CMV real: ${fmt.pct(R.cmvReal)}.\nCMV = custo dos produtos vendidos ÷ faturamento, só loja, nos 3 últimos meses fechados (${R.cmvMeses.map(mesTxt).join(', ')}):\n${fmt.brl0(R.cmvCusto)} de custo ÷ ${fmt.brl0(R.cmvVt)} vendidos = ${fmt.pct(R.cmvReal)}.\nO custo é o de hoje (quanto custa repor agora), não o da data da venda.\n\nOu seja: o pedido repõe o que saiu da loja. Digite outro % para pedir mais ou menos (vira manual; "voltar ao automático" desfaz).`;
     const voltar = (campo) => h('a', { href: '#', onclick: (x) => { x.preventDefault(); par[campo] = null; editados.clear(); pintar(corpo, loja, M, e, p); } }, 'voltar ao automático');
     const notaCmv = h('small', { class: 'ped-nota' }, par.cmvPct == null ? 'automático: CMV real' : h('span', null, `manual · CMV real ${fmt.pct(R.cmvReal)} · `, voltar('cmvPct')));
     const notaCresc = h('small', { class: 'ped-nota' }, par.crescimentoPct == null ? 'automático: últimas 8 semanas' : h('span', null, `manual · da loja ${fmt.pct(R.crescLoja - 1)} · `, voltar('crescimentoPct')));

@@ -150,6 +150,8 @@ async function dadosLoja(loja, force) {
         const raw = await loadLoja(loja);
         raw.lojaNome = loja.nome;
         CLS.aplicar(raw.vendas); // produtos reclassificados pelo painel (contam na meta, comissão e royalties)
+        // cupons cancelados: só saem das vendas se a loja escolheu "tirar das vendas" em Vendas → Conferência (padrão: só avisar)
+        { const x = require('./src/conferencia').aplicarCancelados(loja, raw.vendas); raw.vendas = x.vendas; raw.canceladosFora = x.fora; }
         Object.assign(e, { sig: sigAgora, at: Date.now(), raw, erro: null });
         console.log(`[dados] ${loja.id}: ${raw.vendas.length} vendas, ${raw.xml.length} cupons c/ CPF, ${raw.clientes.length} clientes em ${raw.ms} ms`);
         if (raw.avisos.length) console.warn(`[dados] ${loja.id} avisos:`, raw.avisos.join(' | '));
@@ -279,10 +281,10 @@ const pub = path.join(__dirname, 'public');
 
 // ---------- pacote único de JS/CSS da tela (pré-comprimido em Brotli + Gzip, cache imutável por hash) ----------
 const APP_SCRIPTS = [
-  'core.js', 'contas.js', 'components.js', 'dicas.js', 'rules.js', 'pages.js', 'fidelidade.js',
+  'core.js', 'contas.js', 'metadia.js', 'components.js', 'dicas.js', 'rules.js', 'pages.js', 'fidelidade.js',
   'msgwpp.js', 'recompra.js', 'clientes.js', 'campretorno.js', 'campanhas.js', 'zap.js', 'espera.js', 'extras.js', 'contabilidade.js',
-  'ruptura.js', 'classeprod.js', 'custodata.js', 'estoque.js', 'devolucao.js', 'precos.js', 'inventario.js', 'sugestoes.js', 'validade.js', 'nfsaida.js', 'creditos.js', 'orcamento.js', 'checklist.js',
-  'site.js', 'inicio.js', 'pedido.js', 'ia.js', 'dre.js', 'comprasvendas.js', 'efeitopreco.js', 'equipe.js', 'mapa.js', 'feriados.js', 'fidretorno.js',
+  'ruptura.js', 'visaodono.js', 'classeprod.js', 'custodata.js', 'estoque.js', 'devolucao.js', 'precos.js', 'inventario.js', 'sugestoes.js', 'validade.js', 'nfsaida.js', 'creditos.js', 'orcamento.js', 'checklist.js',
+  'site.js', 'conferencia.js', 'conferencia-tela.js', 'inicio.js', 'pedido.js', 'ia.js', 'dre.js', 'apagar.js', 'comprasvendas.js', 'efeitopreco.js', 'equipe.js', 'mapa.js', 'feriados.js', 'fidretorno.js',
   'config.js', 'script.js', 'fechamento.js', 'sistema.js', 'main.js',
 ];
 let bundleMem = null, bundleCheckEm = 0;
@@ -530,10 +532,10 @@ app.get('/api/demo/estoque/disponivel', (req, res) => {
   res.json(require('./src/lotes').disponivel({ estoque: e.estoque, compras: e.compras }));
 });
 // validade na apresentação: as entradas fictícias "envelhecidas" para mostrar todas as faixas (nada é salvo)
-app.get('/api/demo/validade', (req, res) => {
-  if (!lojaDemo(req)) return res.status(400).json({ erro: 'Escolha uma loja.' });
+/** lotes fictícios da loja (entradas "envelhecidas" de 0 a 13 meses): os mesmos na Validade, no Início e nas perdas do Resultado */
+function lotesDemo(lojaId) {
   const LOTd = require('./src/lotes');
-  const e = DEMO.estoqueDemo(req.query.loja);
+  const e = DEMO.estoqueDemo(lojaId);
   const comp = { itens: {} };
   for (const [cod, l] of Object.entries((e.compras && e.compras.itens) || {})) {
     const k = [...cod].reduce((a, c) => a + c.charCodeAt(0), 0) % 14; // 0 a 13 meses para trás
@@ -541,8 +543,19 @@ app.get('/api/demo/validade', (req, res) => {
   }
   const { em, lotes } = LOTd.calcular({ estoque: e.estoque, compras: comp, tabela: null, edits: { lotes: {} } });
   for (const l of lotes) if (l.precoKg == null && l.custoKg) l.precoKg = Math.round(l.custoKg * 2.6);
+  return { LOTd, e, comp, em, lotes };
+}
+app.get('/api/demo/validade', (req, res) => {
+  if (!lojaDemo(req)) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  const { LOTd, e, comp, em, lotes } = lotesDemo(req.query.loja);
   res.json({ em, hoje: LOTd.hojeSP(), meses: LOTd.MESES_VALIDADE, riscoDias: LOTd.RISCO_DIAS, custos: true, faixas: LOTd.FAIXAS.map((f) => ({ id: f.id, nome: f.nome, ate: Number.isFinite(f.ate) ? f.ate : null })),
     resumo: LOTd.resumo(lotes), lotes: lotes.map((l) => ({ ...l, tipo: '', familia: '' })), granel: LOTd.granelEstoque({ estoque: e.estoque, compras: e.compras }), entradas: LOTd.entradasRecentes({ estoque: e.estoque, compras: comp, edits: { lotes: {} } }) });
+});
+// perdas do mês para o Resultado (apresentação): chá vencido dos lotes fictícios + faltas de inventário inventadas
+app.get('/api/demo/perdas', (req, res) => {
+  if (!lojaDemo(req)) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  const PERd = require('./src/perdas'), { LOTd, lotes } = lotesDemo(req.query.loja);
+  res.json({ hoje: LOTd.hojeSP(), meses: PERd.porMes({ lotes, contagens: PERd.contagensDemo(req.query.loja, LOTd.hojeSP()) }) });
 });
 // NF-e de saída fictícias (vendas com nota, transferência, devolução), montadas com os produtos da apresentação
 const NFSd = require('./src/nfsaida');
@@ -638,11 +651,9 @@ app.get('/api/demo/validade/notas', (req, res) => {
   res.json({ pendentes: LOTd.pendentesNotas({ notas, ...ctxN }), notas: notas.filter((n) => !so || String(n.id) === so).sort((a, b) => b.entrada.localeCompare(a.entrada))
     .map((n) => ({ id: n.id, nf: n.nf, entrada: n.entrada, fornecedor: n.fornecedor, itens: LOTd.daNota({ nota: n, ...ctxN }) })).filter((n) => n.itens.length).slice(0, 15) });
 });
-app.get('/api/demo/estoque/notas', (req, res) => {
-  if (!lojaDemo(req)) return res.status(400).json({ erro: 'Escolha uma loja.' });
-  try {
-    // notas fictícias: as entradas da apresentação agrupadas pelo número da nota
-    const e = DEMO.estoqueDemo(req.query.loja);
+// notas fictícias: as entradas da apresentação agrupadas pelo número da nota
+function notasEntradaDemo(lojaId) {
+    const e = DEMO.estoqueDemo(lojaId);
     const nome = new Map(e.estoque.itens.map((i) => [i.cod, i]));
     const porNf = new Map();
     for (const [cod, l] of Object.entries(e.compras.itens || {})) for (const [dia, custo, nf, qtd, forn] of l) {
@@ -651,8 +662,31 @@ app.get('/api/demo/estoque/notas', (req, res) => {
       n.itens.push({ cod, nome: it.desc || cod, un: it.un || 'Un', qtd, vu: custo, custo, grupo: '' });
       n.total = Math.round((n.total + custo * qtd) * 100) / 100;
     }
-    res.json({ atualizado: e.compras.atualizado, notas: [...porNf.values()].sort((a, b) => (a.entrada < b.entrada ? -1 : 1)) });
-  } catch (err) { res.status(500).json({ erro: C.msgErro(err) }); }
+    return { atualizado: e.compras.atualizado, notas: [...porNf.values()].sort((a, b) => (a.entrada < b.entrada ? -1 : 1)) };
+}
+app.get('/api/demo/estoque/notas', (req, res) => {
+  if (!lojaDemo(req)) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  try { res.json(notasEntradaDemo(req.query.loja)); } catch (err) { res.status(500).json({ erro: C.msgErro(err) }); }
+});
+// caixa a pagar e planilha do contador na apresentação: nada é gravado; a planilha sai com os dados fictícios
+const APGd = require('./src/apagar'), CTDd = require('./src/contador');
+app.get('/api/demo/apagar', (req, res) => { if (!lojaDemo(req)) return res.status(400).json({ erro: 'Escolha uma loja.' }); res.json({ pagos: {}, cartao: { pct: 0.73, dias: 60 }, demo: true }); });
+app.post('/api/demo/apagar/pago', express.json({ limit: '4kb' }), (req, res) => {
+  if (!APGd.ID_OK.test(String((req.body || {}).id || ''))) return res.status(400).json({ erro: 'Conta inválida.' });
+  res.json({ ok: true, simulado: true });
+});
+app.post('/api/demo/resultado/exportar', express.json({ limit: '200kb' }), async (req, res) => {
+  const b = req.body || {};
+  const p = DEMO.partes().find((x) => x.id === String(b.loja || '')), lj = DEMO.lojasDemo().find((l) => l.id === String(b.loja || ''));
+  if (!p || !lj) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  if (!CTDd.mesFechado(b.ym, IND.hojeSP().iso)) return res.status(400).json({ erro: 'A exportação é do mês fechado: escolha um mês que já terminou.' });
+  try {
+    // caixa fictício: as vendas do dia repartidas nas formas de pagamento (as mesmas proporções do fechamento da apresentação)
+    const fatDia = new Map(CTDd.vendasPorDia(p.vendas, b.ym, null).map((d) => [d.dia, d.fat]));
+    const caixa = (dia) => { const t = fatDia.get(dia) || 0, x = (k) => Math.round(t * k * 100) / 100; return { vazio: false, totalVendas: t, formas: [{ k: 'credito', valor: x(0.52) }, { k: 'debito', valor: x(0.21) }, { k: 'dinheiro', valor: x(0.05) }, { k: 'pix', valor: Math.round((t - x(0.52) - x(0.21) - x(0.05)) * 100) / 100 }] }; };
+    const buf = await CTDd.planilha({ loja: lj, ym: b.ym, geradoEm: IND.hojeSP().iso, resumo: b.resumo, despesas: b.despesas, vendas: p.vendas, caixa, notasEntrada: notasEntradaDemo(lj.id).notas, notasSaida: nfsDemo(lj.id).map(cabNfs) });
+    res.set('Content-Disposition', `attachment; filename="contador-${lj.id}-${b.ym}.xlsx"`).type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet').send(buf);
+  } catch (e) { console.error('[contador demo]', e); res.status(500).json({ erro: 'Não deu para montar a planilha. Tente de novo.' }); }
 });
 app.get('/api/demo/pedido', (req, res) => {
   if (!lojaDemo(req)) return res.status(400).json({ erro: 'Escolha uma loja.' });
@@ -751,6 +785,12 @@ app.get('/api/demo/fechamento', (req, res) => {
     formas: formas.map(([k, rot, valor]) => ({ k, rot, valor, informado: valor, dif: 0 })), totalVendas: t, suprimento: 0, sangria: 20, abertura: 300, fechamento: deveria + 1, deveria, diferenca: 1, movimentos: [] };
   res.json({ ...f, html: F2.html(f) });
 });
+app.get('/api/demo/conferencia', (req, res) => {
+  const p = DEMO.partes().find((x) => x.id === String(req.query.loja || ''));
+  if (!p) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  try { res.json({ ...require('./src/conferencia').demo(p, IND.hojeSP().iso), podeCfg: true }); } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
+});
+app.put('/api/demo/conferencia/cfg', (req, res) => res.status(400).json({ erro: 'Na apresentação nada é salvo.' }));
 app.get('/api/demo/alertas', (req, res) => {
   const p = DEMO.partes().find((x) => x.id === String(req.query.loja || ''));
   res.json({ alertas: p ? IND.alertas(p) : [] });
@@ -1110,6 +1150,34 @@ app.get('/api/fechamento', async (req, res) => {
     const f = FECH.calcular(d, dia);
     res.json({ ...f, html: FECH.html(f) });
   } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
+});
+
+// ---------- confiança nos dados: conferência com o caixa, cupons cancelados e saúde das fontes ----------
+// admin, franqueado e gerente com a tela Conferência; a vendedora nunca (mostra o faturamento da loja e o caixa por operador)
+const CONF = require('./src/conferencia');
+app.get('/api/conferencia', async (req, res) => {
+  if (!podeTela(req, 'conferencia')) return res.status(403).json({ erro: 'Sem permissão.' });
+  const loja = req.lojas.find((l) => l.id === String(req.query.loja || ''));
+  if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  try {
+    const e = await dadosLoja(loja);
+    res.set('Cache-Control', 'no-store');
+    res.json({ ...CONF.daLoja(loja, e.raw.vendas, e.raw.canceladosFora || [], IND.hojeSP().iso), podeCfg: podeContabilidade(req) });
+  } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
+});
+// tolerância da conferência e o que fazer com cupom cancelado (tirar das vendas muda a comissão): só admin e franqueado da loja
+app.put('/api/conferencia/cfg', express.json({ limit: '2kb' }), (req, res) => {
+  if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
+  if (!podeContabilidade(req)) return res.status(403).json({ erro: 'Sem permissão.' });
+  const loja = req.lojas.find((l) => l.id === String(req.query.loja || ''));
+  if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  const antes = CONF.cfg(C.get().lojas.find((l) => l.id === loja.id));
+  const v = CONF.validarCfg(req.body || {}, antes);
+  if (v.erro) return res.status(400).json({ erro: v.erro });
+  C.alterar((cfg) => { cfg.lojas.find((l) => l.id === loja.id).conferencia = v.ok; });
+  if (antes.cancelados !== v.ok.cancelados) cacheLoja.delete(loja.id); // as vendas são relidas com (ou sem) os cupons cancelados
+  C.auditar(req.user, v.ok.cancelados !== antes.cancelados ? (v.ok.cancelados === 'excluir' ? 'passou a TIRAR das vendas os cupons cancelados (muda meta e comissão)' : 'voltou a só avisar sobre cupons cancelados (continuam nas vendas)') : 'alterou a tolerância da conferência do caixa', loja.id, { loja: loja.id, antes, depois: v.ok });
+  res.json({ ok: true, cfg: v.ok });
 });
 
 // ---------- estoque e custo (só admin e franqueado) ----------
@@ -1919,8 +1987,50 @@ app.put('/api/estoque/cfg', express.json({ limit: '20kb' }), (req, res) => {
   const v = ES.validarCfg(req.body || {});
   if (v.erro) return res.status(400).json({ erro: v.erro });
   C.alterar((cfg) => { cfg.lojas.find((l) => l.id === loja.id).estoqueCfg = v.ok; });
-  C.auditar(req.user, 'alterou configuração de estoque', loja.id, { loja: loja.id, entregaDias: v.ok.entregaDias, coberturaDias: v.ok.coberturaDias, comprasTetoPct: v.ok.comprasTetoPct });
+  C.auditar(req.user, 'alterou configuração de estoque', loja.id, { loja: loja.id, entregaDias: v.ok.entregaDias, coberturaDias: v.ok.coberturaDias, comprasTetoPct: v.ok.comprasTetoPct, prazoNotasDias: v.ok.prazoNotasDias, cartaoDias: v.ok.cartaoDias, royaltiesDia: v.ok.royaltiesDia });
   res.json({ ok: true, cfg: v.ok });
+});
+
+// ---------- caixa a pagar e planilha para o contador (Resultado): admin, franqueado e gerente com a tela Resultado ----------
+// o calendário é montado na tela; aqui ficam o que foi marcado como pago (por loja), a parte das vendas em cartão e a planilha do mês fechado
+const APG = require('./src/apagar'), CTD = require('./src/contador'), CXA = require('./src/caixa');
+const lojaDre = (req, res, id) => {
+  if (!podeTela(req, 'dre')) { res.status(403).json({ erro: 'Sem permissão.' }); return null; }
+  const loja = req.lojas.find((l) => l.id === String(id || ''));
+  if (!loja) { res.status(400).json({ erro: 'Escolha uma loja.' }); return null; }
+  return loja;
+};
+app.get('/api/apagar', (req, res) => {
+  const loja = lojaDre(req, res, req.query.loja); if (!loja) return;
+  let cartao = null;
+  try { cartao = APG.parteCartao(CXA.ler(loja.id).fechamentos, C.diaSP()); } catch (e) { console.error('[a pagar] caixa:', e.message); }
+  res.json({ pagos: APG.ler(loja.id).pagos, cartao });
+});
+app.post('/api/apagar/pago', express.json({ limit: '4kb' }), (req, res) => {
+  if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
+  const b = req.body || {};
+  const loja = lojaDre(req, res, b.loja); if (!loja) return;
+  try {
+    const r = APG.marcar(loja.id, b, req.user);
+    if (r.erro) return res.status(400).json({ erro: r.erro });
+    C.auditar(req.user, b.pago ? 'marcou conta como paga (A pagar)' : 'desfez conta paga (A pagar)', loja.id, { loja: loja.id, conta: String(b.nome || b.id).slice(0, 80), vence: b.pago ? b.vence : undefined, valor: b.pago ? Math.round(Number(b.valor) * 100) / 100 : undefined });
+    res.json({ ok: true, pagos: r.ok.pagos });
+  } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
+});
+// planilha do mês fechado: POST porque fica na auditoria e leva as linhas do Resultado que a tela calculou
+app.post('/api/resultado/exportar', express.json({ limit: '200kb' }), async (req, res) => {
+  if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
+  const b = req.body || {};
+  const loja = lojaDre(req, res, b.loja); if (!loja) return;
+  if (!CTD.mesFechado(b.ym, C.diaSP())) return res.status(400).json({ erro: 'A exportação é do mês fechado: escolha um mês que já terminou.' });
+  try {
+    const d = await dadosParaIndicadores(loja);
+    const buf = await CTD.planilha({ loja, ym: b.ym, geradoEm: C.diaSP(), resumo: b.resumo, despesas: b.despesas, vendas: d.vendas, caixa: (dia) => CXA.doDia(loja.id, dia),
+      notasEntrada: (ES.notas(loja.id) || { notas: [] }).notas, notasSaida: NFS.lista(loja.id).notas,
+      comDestinatario: podeTela(req, 'notas') }); // nome e documento do destinatário da NF-e: só quem já vê as Notas fiscais
+    C.auditar(req.user, 'exportou o mês para o contador', loja.id, { loja: loja.id, ym: b.ym, kb: Math.round(buf.length / 1024) });
+    res.set('Content-Disposition', `attachment; filename="contador-${loja.id}-${b.ym}.xlsx"`).type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet').send(buf);
+  } catch (e) { console.error('[contador]', e); res.status(500).json({ erro: 'Não deu para montar a planilha. Tente de novo.' }); }
 });
 
 // ---------- preços do e-commerce (www.teashop.com.br): consulta às 10h e "Consultar agora" ----------
@@ -2212,6 +2322,16 @@ app.get('/api/validade', async (req, res) => {
     entradas: LOT.entradasRecentes(ctx), // para contar por lote no inventário
     granel: LOT.granelEstoque(ctx), // chá a granel com/sem estoque (Clientes → Hoje não oferece chá que a loja não tem)
   });
+});
+// perdas do mês para o Resultado (linha "− Perdas"): chá vencido ainda no estoque + faltas do inventário, a custo.
+// Só quem vê custo (admin, franqueado, gerente com tela de custo) e só da loja da pessoa.
+app.get('/api/perdas', (req, res) => {
+  if (!podeCustos(req)) return res.status(403).json({ erro: 'Sem permissão.' });
+  const loja = req.lojas.find((l) => l.id === String(req.query.loja || ''));
+  if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  try {
+    res.json({ hoje: LOT.hojeSP(), meses: require('./src/perdas').porMes({ lotes: LOT.daLoja(loja.id).lotes, contagens: INV.lista(loja.id) }) });
+  } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
 });
 // "deste lote ainda tem X" (ou voltar para a regra automática neste chá)
 app.put('/api/validade/saldo', express.json({ limit: '4kb' }), (req, res) => {

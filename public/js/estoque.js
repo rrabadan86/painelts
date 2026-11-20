@@ -257,6 +257,7 @@
   }
 
   TS.estoqueBuscar = buscar;
+  TS.motorEstoque = motor; // Início com todas as lojas (visaodono.js): o mesmo motor, com o estoque de cada loja
 
   /** Classe oficial de cada produto (Estrela, Volume, Joia, Peso morto), fixa e separada do filtro de período.
    *  Últimos 3, 6 ou 12 meses fechados (só loja). Giro = a MEDIANA do que saiu por mês (um mês de promoção pesa pouco);
@@ -936,8 +937,7 @@
     // fora de linha: indisponível no Sistema de Pedidos há 90+ dias seguidos (o painel acompanha o catálogo desde foraDeLinha.desde)
     const FL_DIAS = (foraDeLinha && foraDeLinha.dias) || 90;
     const foraLinhaDe = (cod) => {
-      const d = foraDeLinha && foraDeLinha.indisp && foraDeLinha.indisp[String(cod)];
-      return d && TS.todayDay() - TS.isoToDay(d) >= FL_DIAS ? d : null;
+      return TS.visaoDono.foraLinhaDe(foraDeLinha, cod, TS.todayDay()); // a mesma regra do Início (lojas lado a lado)
     };
     TS.estoqueForaLinhaDe = foraLinhaDe; // testes
     const repo = [];
@@ -960,7 +960,7 @@
       else if (dias != null && dias < H) sit = 'pedir';
       const ult = ultimaVenda.get(it.cod);
       const vendeuAlgumaVez = ult != null;
-      if (qtd > 0 && it.custo && !foraLinhaDe(it.cod) && (vendeuAlgumaVez || (temCod && it.tipo === 'PN')) && (!vendeuAlgumaVez || fim - ult >= cfg.paradoDias)) { // fora de linha conta à parte (liquidar)
+      if (TS.visaoDono.ehParado({ qtd, custo: it.custo, foraLinha: foraLinhaDe(it.cod), ult, fim, paradoDias: cfg.paradoDias, novoPN: temCod && it.tipo === 'PN' })) { // fora de linha conta à parte (liquidar)
         const v = qtd * it.custo; valorParado += v;
         parados.push({ cod: it.cod, produto: it.desc, tipo: TIPO_ITEM(it), qtd, it, valor: v, ultima: vendeuAlgumaVez ? TS.dayToIso(ult) : null, dias: vendeuAlgumaVez ? fim - ult : null });
       }
@@ -1481,6 +1481,10 @@
     const mMin = h('input', { class: 'f-input', type: 'number', min: -50, max: 95, step: '0.5', value: cfg.margemMin ?? 15, style: { maxWidth: '110px' } });
     const mAlvo = h('input', { class: 'f-input', type: 'number', min: -50, max: 95, step: '0.5', value: cfg.margemAlvo ?? 30, style: { maxWidth: '110px' } });
     const teto = h('input', { class: 'f-input', type: 'number', min: 1, max: 90, step: '0.5', value: cfg.comprasTetoPct ?? 32, style: { maxWidth: '110px' } }); // Compras × vendas (comprasvendas.js)
+    // caixa a pagar (Resultado → A pagar, apagar.js): prazo das notas de compra, dias do cartão e dia dos royalties
+    const prazoNf = num(cfg.prazoNotasDias ?? 30, 0, 180), cartDias = num(cfg.cartaoDias ?? 1, 0, 60), royDia = num(cfg.royaltiesDia ?? 10, 1, 31);
+    const diaVenc = (x) => h('input', { class: 'f-input est-dia', type: 'number', min: 1, max: 31, step: 1, value: x.dia ?? '', placeholder: 'fim do mês', 'aria-label': 'Dia do vencimento',
+      title: 'Dia do mês em que vence (para o calendário "A pagar" do Resultado). Vazio = último dia do mês.', oninput: (e) => { x.dia = e.target.value; } });
     // ---------- outros custos, agrupados por categoria (Funcionários, Imóvel, Sistemas, Outros…) ----------
     const cats = (cfg.categorias || []).map((c) => ({ ...c }));
     if (!cats.some((c) => c.id === 'outros')) cats.push({ id: 'outros', nome: 'Outros' });
@@ -1505,12 +1509,13 @@
       totais.clear();
       const linhaItem = (x) => {
         const nome = h('input', { class: 'f-input', value: x.nome, placeholder: 'Ex.: Aluguel', maxlength: 40, oninput: (e) => { x.nome = e.target.value; } });
-        const tipo = h('select', { class: 'f-input', onchange: (e) => { x.tipo = e.target.value; atualizarTotais(); } }, h('option', { value: 'mes', selected: x.tipo === 'mes' || null }, 'R$ por mês'), h('option', { value: 'pct', selected: x.tipo === 'pct' || null }, '% das vendas'));
+        const dia = diaVenc(x); dia.disabled = x.tipo !== 'mes';
+        const tipo = h('select', { class: 'f-input', onchange: (e) => { x.tipo = e.target.value; dia.disabled = x.tipo !== 'mes'; atualizarTotais(); } }, h('option', { value: 'mes', selected: x.tipo === 'mes' || null }, 'R$ por mês'), h('option', { value: 'pct', selected: x.tipo === 'pct' || null }, '% das vendas'));
         const valor = h('input', { class: 'f-input', type: 'number', min: 0, step: '0.01', value: x.valor, placeholder: '0', oninput: (e) => { x.valor = e.target.value; atualizarTotais(); } });
         const aplica = h('select', { class: 'f-input', onchange: (e) => { x.aplica = e.target.value; } }, [['tudo', 'Todas as vendas'], ['loja', 'Só loja'], ['eg', 'Só Espaço Gourmet']].map(([v, t]) => h('option', { value: v, selected: x.aplica === v || null }, t)));
         const cat = h('select', { class: 'f-input', title: 'Mudar de categoria', onchange: (e) => { x.cat = e.target.value; pintarOutros(); sujo(); } }, cats.map((c) => h('option', { value: c.id, selected: x.cat === c.id || null }, c.nome)));
         const rem = h('button', { type: 'button', class: 'est-outro-rem', title: 'Remover este custo', onclick: () => { itens.splice(itens.indexOf(x), 1); pintarOutros(); sujo(); } }, '✕');
-        return h('tr', null, h('td', null, nome), h('td', null, tipo), h('td', null, valor), h('td', null, aplica), h('td', null, cat), h('td', null, rem));
+        return h('tr', null, h('td', null, nome), h('td', null, tipo), h('td', null, valor), h('td', null, dia), h('td', null, aplica), h('td', null, cat), h('td', null, rem));
       };
       const corpoT = h('tbody');
       for (const c of cats) {
@@ -1520,8 +1525,8 @@
         const nomeCat = h('input', { class: 'f-input est-cat-nome', value: c.nome, maxlength: 30, title: 'Nome da categoria (clique para mudar)', oninput: (e) => { c.nome = e.target.value; } });
         const add = h('button', { type: 'button', class: 'btn est-cat-add', onclick: () => { itens.push({ nome: '', tipo: 'mes', valor: '', aplica: 'tudo', cat: c.id }); pintarOutros(); sujo(); const ins = outrosBox.querySelectorAll(`tr[data-cat="${c.id}"] input`); } }, '+ Custo');
         const remCat = c.id !== 'outros' && !l.length ? h('button', { type: 'button', class: 'est-outro-rem', title: 'Apagar esta categoria (vazia)', onclick: () => { cats.splice(cats.indexOf(c), 1); pintarOutros(); sujo(); } }, '✕ categoria') : null;
-        corpoT.append(h('tr', { class: 'est-cat-cab' }, h('td', { colspan: 6 }, h('div', { class: 'est-cat-l' }, nomeCat, tot, add, remCat))));
-        if (!l.length) corpoT.append(h('tr', { class: 'est-cat-vazia' }, h('td', { colspan: 6, class: 'muted' }, 'Nenhum custo nesta categoria.')));
+        corpoT.append(h('tr', { class: 'est-cat-cab' }, h('td', { colspan: 7 }, h('div', { class: 'est-cat-l' }, nomeCat, tot, add, remCat))));
+        if (!l.length) corpoT.append(h('tr', { class: 'est-cat-vazia' }, h('td', { colspan: 7, class: 'muted' }, 'Nenhum custo nesta categoria.')));
         l.forEach((x) => { const tr = linhaItem(x); tr.dataset.cat = c.id; corpoT.append(tr); });
       }
       const geral = h('span');
@@ -1529,8 +1534,8 @@
       const novaCat = h('button', { type: 'button', class: 'btn', onclick: () => { const nome = prompt('Nome da nova categoria (ex.: Marketing):'); if (!nome || !nome.trim()) return; let id = nome.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 20) || 'cat'; while (cats.some((c) => c.id === id)) id += '1'; cats.splice(cats.length - 1, 0, { id, nome: nome.trim().slice(0, 30) }); pintarOutros(); sujo(); } }, '+ Nova categoria');
       outrosBox.replaceChildren(
         h('div', { class: 'table-wrap free' }, h('table', { class: 't est-cat-t' },
-          h('thead', null, h('tr', null, ['Custo', 'Tipo', 'Valor', 'Onde se aplica', 'Categoria', ''].map((t) => h('th', { class: 'l' }, t)))), corpoT,
-          h('tfoot', null, h('tr', null, h('td', { colspan: 6 }, h('b', null, 'Total: '), geral))))),
+          h('thead', null, h('tr', null, ['Custo', 'Tipo', 'Valor', 'Vence no dia', 'Onde se aplica', 'Categoria', ''].map((t) => h('th', { class: 'l' }, t)))), corpoT,
+          h('tfoot', null, h('tr', null, h('td', { colspan: 7 }, h('b', null, 'Total: '), geral))))),
         h('div', { class: 'cfg-acoes' }, novaCat));
       atualizarTotais();
       pintarPontuais();
@@ -1548,12 +1553,12 @@
         const cat = h('select', { class: 'f-input', onchange: (e) => { x.cat = e.target.value; } }, cats.map((c) => h('option', { value: c.id, selected: x.cat === c.id || null }, c.nome)));
         const anual = h('label', { class: 'est-pont-anual', title: 'Lança também no mesmo mês dos anos seguintes' }, h('input', { type: 'checkbox', checked: x.anual || null, onchange: (e) => { x.anual = e.target.checked; } }), ' todo ano');
         const rem = h('button', { type: 'button', class: 'est-outro-rem', title: 'Remover', onclick: () => { pont.splice(pont.indexOf(x), 1); pintarPontuais(); sujo(); } }, '✕');
-        tb.append(h('tr', null, h('td', null, nome), h('td', null, mes), h('td', null, valor), h('td', null, cat), h('td', null, anual), h('td', null, rem)));
+        tb.append(h('tr', null, h('td', null, nome), h('td', null, mes), h('td', null, diaVenc(x)), h('td', null, valor), h('td', null, cat), h('td', null, anual), h('td', null, rem)));
       }
-      if (!pont.length) tb.append(h('tr', null, h('td', { colspan: 6, class: 'muted', style: { padding: '8px 10px' } }, 'Nenhuma despesa pontual.')));
+      if (!pont.length) tb.append(h('tr', null, h('td', { colspan: 7, class: 'muted', style: { padding: '8px 10px' } }, 'Nenhuma despesa pontual.')));
       const add = h('button', { type: 'button', class: 'btn', onclick: () => { const d = new Date(); pont.push({ nome: '', ym: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`, valor: '', cat: 'outros', anual: false }); pintarPontuais(); sujo(); } }, '+ Despesa pontual');
       pontBox.replaceChildren(h('div', { class: 'table-wrap free' }, h('table', { class: 't est-cat-t' },
-        h('thead', null, h('tr', null, ['Despesa', 'Mês', 'Valor (R$)', 'Categoria', 'Repete', ''].map((t) => h('th', { class: 'l' }, t)))), tb)),
+        h('thead', null, h('tr', null, ['Despesa', 'Mês', 'Vence no dia', 'Valor (R$)', 'Categoria', 'Repete', ''].map((t) => h('th', { class: 'l' }, t)))), tb)),
         h('div', { class: 'cfg-acoes' }, add));
     }
     pintarOutros();
@@ -1574,7 +1579,7 @@
       try {
         const embalagens = Object.fromEntries(embs.map(([g, i]) => [g, i.value.split(',').map((s) => s.trim()).filter(Boolean).map((s) => { const [cod, q] = s.split(/[×x*]/i); return { cod: (cod || '').trim(), qtd: +(q || 1) }; })]));
         const r = await fetch(`/api/estoque/cfg?loja=${encodeURIComponent(lojaId)}`, { method: 'PUT', credentials: 'same-origin', headers: { 'X-Painel': '1', 'Content-Type': 'application/json' },
-          body: JSON.stringify({ entregaDias: +ent.value, coberturaDias: +cob.value, paradoDias: +par.value, segurancaPct: +seg.value, simplesPct: simp.value, cartaoPct: maq.value, margemMin: mMin.value, margemAlvo: mAlvo.value, comprasTetoPct: teto.value, outros: itens.map((x) => ({ nome: x.nome, tipo: x.tipo, valor: x.valor, aplica: x.aplica, cat: x.cat })), categorias: cats.map((c) => ({ id: c.id, nome: c.nome })), pontuais: pont.map((x) => ({ nome: x.nome, ym: x.ym, valor: x.valor, cat: x.cat, anual: !!x.anual })), embalagens }) });
+          body: JSON.stringify({ entregaDias: +ent.value, coberturaDias: +cob.value, paradoDias: +par.value, segurancaPct: +seg.value, simplesPct: simp.value, cartaoPct: maq.value, margemMin: mMin.value, margemAlvo: mAlvo.value, comprasTetoPct: teto.value, prazoNotasDias: prazoNf.value, cartaoDias: cartDias.value, royaltiesDia: royDia.value, outros: itens.map((x) => ({ nome: x.nome, tipo: x.tipo, valor: x.valor, aplica: x.aplica, cat: x.cat, dia: x.dia })), categorias: cats.map((c) => ({ id: c.id, nome: c.nome })), pontuais: pont.map((x) => ({ nome: x.nome, ym: x.ym, valor: x.valor, cat: x.cat, anual: !!x.anual, dia: x.dia })), embalagens }) });
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j.erro || 'Falha ao salvar.');
         cache.delete(lojaId);
@@ -1584,7 +1589,15 @@
       salvar.disabled = salvar2.disabled = false;
     });
     const ouvir = (el) => { el.addEventListener('input', sujo); el.addEventListener('change', sujo); return el; };
-    [ent, cob, par, seg, simp, maq, mMin, mAlvo, teto, outrosBox, pontBox].forEach(ouvir);
+    [ent, cob, par, seg, simp, maq, mMin, mAlvo, teto, prazoNf, cartDias, royDia, outrosBox, pontBox].forEach(ouvir);
+    const blocoCaixa = [
+      h('div', { class: 'f-label', style: { marginTop: '14px' }, id: `cfg-caixa-${lojaId}` }, 'Caixa a pagar (Resultado → A pagar)'),
+      h('div', { class: 'est-cfg-g' },
+        h('label', null, h('span', null, 'Prazo das notas de compra', TS.dica('Em quantos dias a franquia cobra a nota depois que ela dá entrada. O painel não tem a data do boleto: o vencimento de cada nota é estimado por este prazo (entrada + dias).')), h('div', null, prazoNf, ' dias depois da entrada')),
+        h('label', null, h('span', null, 'Dias para receber do cartão', TS.dica('Quantos dias a maquininha leva para pôr na conta o que foi vendido em cartão (crédito e débito). 1 = cai no dia seguinte; 30 = recebe em 30 dias.')), h('div', null, cartDias, ' dias')),
+        h('label', null, h('span', null, 'Royalties vencem no dia', TS.dica('Dia do mês seguinte em que a loja paga os royalties e o marketing do mês.')), h('div', null, royDia, ' do mês seguinte'))),
+      h('small', { class: 'muted' }, 'Usados só no calendário "A pagar" do Resultado. O dia de vencimento de cada custo fixo e de cada despesa fica na coluna "Vence no dia" das tabelas acima (vazio = último dia do mês).'),
+    ];
     embs.forEach(([, i]) => ouvir(i));
     outrosBox.addEventListener('click', (e) => { if (e.target.closest('.est-outro-rem')) sujo(); });
     if (opts.so === 'custos') {
@@ -1595,6 +1608,7 @@
         h('div', { class: 'f-label', style: { marginTop: '14px' }, id: `cfg-pontuais-${lojaId}` }, 'Despesas de um mês só'),
         h('small', { class: 'muted' }, 'IPTU e IPVA no começo do ano, 13º salário, uma manutenção… Entram cheias no Resultado do mês escolhido, dentro da categoria. "Todo ano" repete no mesmo mês dos anos seguintes.'),
         pontBox,
+        ...blocoCaixa,
         h('div', { class: 'cfg-acoes' }, salvar2, msg2),
       ];
     }
@@ -1613,6 +1627,7 @@
       h('div', { class: 'f-label', style: { marginTop: '14px' }, id: `cfg-pontuais-${lojaId}` }, 'Despesas de um mês só'),
       h('small', { class: 'muted' }, 'Gastos que caem num mês específico, como IPTU e IPVA no começo do ano, 13º salário ou uma manutenção. Entram no Resultado do mês escolhido, dentro da categoria. Marque "todo ano" para repetir no mesmo mês dos anos seguintes. Não entram no rateio da margem de cada produto.'),
       pontBox,
+      ...blocoCaixa,
       h('div', { class: 'cfg-acoes' }, salvar2, msg2),
       h('div', { class: 'f-label', style: { marginTop: '14px' } }, 'Reposição'),
       h('div', { class: 'est-cfg-g' },

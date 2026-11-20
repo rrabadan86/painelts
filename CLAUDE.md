@@ -46,6 +46,7 @@ Hooks (`.claude/settings.json`): bloqueiam commit/push de segredos e limpam os r
 - Gerente recebe as vendas de toda a loja mesmo sem as telas de vendas liberadas (decisão do dono); custo só com tela de custo liberada (Estoque, Preços, Rentabilidade, Notas, Pedido, Resultado) — inclusive no Inventário.
 - Telas por perfil: a lista única fica em `src/telas.js` (grupos do menu, regra de cada perfil, padrão do gerente, regras fixas travadas em Configurações → Usuários). Tela nova entra lá; o teste `tests/unit/telas.test.js` avisa se faltar. Tela que o gerente escolhe precisa de `podeTela(req, '<id>')` no servidor.
 - ⭐ Sugestões para o pedido (Estoque → Sugestões): vendedora sempre; gerente com a tela marcada (vem no padrão). A vendedora vê só o nome e a situação do produto (tem / pouco / acabou), nunca quantidade nem custo, e só as próprias sugestões; quem decide é quem tem a tela Pedido. A estrela não muda a conta do pedido sugerido.
+- Conferência (caixa × painel, cancelados, saúde dos dados): gerente só com a tela marcada (não vem no padrão); ajustes só admin e franqueado. A pagar e exportação para o contador: quem tem a tela Resultado.
 - Orçamento: só admin e franqueado.
 - Falar com a franquia por e-mail (reajuste de custo, cobrança de devoluções e de fidelidade, envio automático): só admin e franqueado.
 - **Franqueado = admin das lojas dele** (decisão do dono): na loja dele faz tudo o que o admin faz — configurações (AppNext, Sistema de Pedidos, comissão, dados da loja, FIXE, mensagens, IA), coletor ("Atualizar agora", "Sincronizar agora", importar histórico, cancelar, FIXE, robô do Sistema de Pedidos) e resumo diário (destinatários, teste, prévia e envio só das lojas dele). Nunca vê nem altera outra loja: toda rota confere a loja no servidor (`soGestor` + `lojaPermitida`, `req.lojas`).
@@ -67,5 +68,4 @@ Hooks (`.claude/settings.json`): bloqueiam commit/push de segredos e limpam os r
 - Infusor obrigatório das mugs (Harmony, Classic, Super Jumbo, All in One Mug e Jumbo) no Pedido e no favorito do carrinho: o par mug → infusor vem da pergunta do Sistema de Pedidos (o dono manda o print quando o site abrir). Mug Uki e a linha de pinturas não têm infusor. Decisão: não agrupar estampas nos indicadores.
 - Conferência do boleto de royalties (ler o PDF e conferir os descontos de devoluções e da fidelidade).
 - Reserva de estoque para encomenda (ligada ao Orçamento).
-- Meta do dia dividida pela escala, em vez da participação nas vendas.
 - A confirmar com o dono: a linha "campos de desconto no AppNext" no log da sincronização das notas; a primeira NF-e real emitida pelo painel ou pelo Orçamento.

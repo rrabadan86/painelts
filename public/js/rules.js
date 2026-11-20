@@ -222,7 +222,14 @@
       const mesAcabou = Math.max(db.maxDay, TS.todayDay() - 1) >= fimMes;
       ultimoDia = TS.dayToIso(mesAcabou ? lim : Math.min(lim, db.maxDay));
     }
-    const div = TS.contas.divisoresMeta({ dias: [...diasVenda].map(([v, s]) => [v, s.size]), piso: rgCtx.pisoDiasMeta, ym: ym || null, ultimoDia });
+    // quem tem férias lançadas no mês divide a meta mesmo abaixo do piso (decisão do dono): é da equipe, não folguista
+    const comFerias = new Set();
+    if (ym && lojaCtx) {
+      const ini = ym + '-01', fim = `${ym}-${String(TS.contas.diasNoMes(ym)).padStart(2, '0')}`;
+      const nomes = new Set(R.feriasDe(lojaCtx).filter((f) => f.de <= fim && f.ate >= ini).map((f) => String(f.vendedor).trim().toUpperCase()));
+      for (const v of diasVenda.keys()) if (nomes.has(String(db.D.vendedor[v] || '').trim().toUpperCase())) comFerias.add(v);
+    }
+    const div = TS.contas.divisoresMeta({ dias: [...diasVenda].map(([v, s]) => [v, s.size]), piso: rgCtx.pisoDiasMeta, ym: ym || null, ultimoDia, sempre: comFerias });
     const elegiveis = new Set(div.dentro);
     const qtdVend = elegiveis.size;
 

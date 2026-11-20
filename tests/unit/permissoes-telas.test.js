@@ -120,3 +120,31 @@ test('franqueado configura tudo da loja dele (login do Sistema de Pedidos, regra
   // continua só do admin: remover a loja
   assert.strictEqual(await status('dono', '/api/admin/lojas/l1', { method: 'DELETE' }), 403);
 });
+
+test('caixa a pagar e planilha do contador: só quem tem a tela Resultado; gravar exige X-Painel; nunca a loja dos outros', async () => {
+  const pago = (o = {}) => ({ method: 'POST', body: JSON.stringify({ loja: 'l1', id: 'fixo|aluguel|2026-12', pago: true, nome: 'Aluguel', valor: 8000, vence: '2026-12-10', ...o }) });
+  const exp = (o = {}) => ({ method: 'POST', body: JSON.stringify({ loja: 'l1', ym: '2020-01', resumo: [{ rot: 'Faturamento', valor: 0 }], despesas: [], ...o }) });
+  for (const quem of ['vend', 'ger_sem', 'ger_notas', 'ger_pad']) {
+    assert.strictEqual(await status(quem, '/api/apagar?loja=l1'), 403, `${quem} não lê o caixa a pagar`);
+    assert.strictEqual(await status(quem, '/api/apagar/pago', pago()), 403, `${quem} não marca conta paga`);
+    assert.strictEqual(await status(quem, '/api/resultado/exportar', exp()), 403, `${quem} não exporta`);
+  }
+  assert.strictEqual(await status('dono', '/api/apagar?loja=l1'), 200);
+  assert.strictEqual(await status('dono', '/api/apagar?loja=l2'), 400, 'loja de outro franqueado');
+  assert.strictEqual(await status('dono', '/api/apagar/pago', { ...pago(), headers: { 'X-Painel': '0' } }), 403, 'sem o cabeçalho do painel não grava');
+  assert.strictEqual(await status('dono', '/api/apagar/pago', pago({ loja: 'l2' })), 400);
+  assert.strictEqual(await status('dono', '/api/apagar/pago', pago({ id: '../x' })), 400);
+  assert.strictEqual(await status('dono', '/api/apagar/pago', pago()), 200);
+  const j = await (await fetch(BASE + '/api/apagar?loja=l1', { headers: { Cookie: cookies.dono } })).json();
+  assert.strictEqual(j.pagos['fixo|aluguel|2026-12'].por, 'dono');
+  assert.strictEqual(await status('dono', '/api/apagar/pago', pago({ pago: false })), 200);
+  // planilha: só mês fechado, com o cabeçalho do painel, só da loja dele
+  const hoje = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
+  assert.strictEqual(await status('dono', '/api/resultado/exportar', exp({ ym: hoje.slice(0, 7) })), 400, 'mês em andamento');
+  assert.strictEqual(await status('dono', '/api/resultado/exportar', { ...exp(), headers: { 'X-Painel': '0' } }), 403);
+  assert.strictEqual(await status('dono', '/api/resultado/exportar', exp({ loja: 'l2' })), 400);
+  const r = await fetch(BASE + '/api/resultado/exportar', { ...exp(), headers: { Cookie: cookies.dono, 'X-Painel': '1', 'Content-Type': 'application/json' } });
+  assert.strictEqual(r.status, 200);
+  assert.match(r.headers.get('content-type'), /spreadsheetml/);
+  assert.strictEqual(Buffer.from(await r.arrayBuffer()).subarray(0, 2).toString(), 'PK');
+});

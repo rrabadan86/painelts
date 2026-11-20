@@ -73,6 +73,8 @@ function normalizar(cfg) {
     estoqueCfg: l.estoqueCfg && typeof l.estoqueCfg === 'object' ? l.estoqueCfg : null,
     pedidoCfg: l.pedidoCfg && typeof l.pedidoCfg === 'object' ? l.pedidoCfg : null,
     classeCfg: l.classeCfg && typeof l.classeCfg === 'object' ? l.classeCfg : null,
+    // Vendas → Conferência: tolerância (R$) e o que fazer com cupom cancelado ('avisar' | 'excluir')
+    conferencia: l.conferencia && typeof l.conferencia === 'object' ? l.conferencia : null,
     contabilidade: Array.isArray(l.contabilidade) ? l.contabilidade.map(String).slice(0, 10) : [],
     criadaEm: l.criadaEm || null,
     uploadToken: l.uploadToken || null,

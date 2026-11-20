@@ -11,6 +11,7 @@ Lista que abre um detalhe: a tabela some e o detalhe aparece no lugar, com "‹ 
 ## Princípios do dono (valem para toda tela nova ou mexida)
 1. **Simplicidade e usabilidade primeiro**: a pessoa entende a tela sem manual; uma ação principal por bloco; poucos cliques.
 2. **Sem rolagem horizontal** em tabela no computador (1100–1400 px): junte informações na mesma célula (valor + detalhe pequeno embaixo), cada aba mostra só as colunas dela, o resto vai para a janela do produto. No celular vira cartão.
+   Tabela larga precisa de folga: cabeçalho e células que quebram a linha (`white-space: normal`), nunca largura contada no pixel. A fonte do servidor de testes e do navegador do usuário é mais larga que a daqui — confira a tabela também com `* { letter-spacing: 1.2px }` (já pegou duas vezes: Preços e lojas lado a lado).
 3. **O seletor reflete o que está na tela**: quadro clicável, aba (`TS.seg`) e filtro mostram o mesmo estado. `TS.seg` marca sozinho a opção clicada; quando outra coisa muda a aba (um quadro), use `TS.segMarcar(seg, valor)`.
 4. **Tudo tem explicação** (indicador de decisão: a conta aberta, passo a passo, com os números da loja — veja `comoPrevisao` em `comprasvendas.js`): toda coluna e todo quadro com `title` (ⓘ) e toda opção de seletor com dica (`[rótulo, valor, dica]` no `TS.seg`) — o que é, de onde vem, como ler.
 5. **Produto é clicável** e abre o histórico dele: `TS.histCompras(r, comprasItens, nfAtual)` (a janela da nota de entrada: notas, quantidade, custo e variação) ou o painel do produto da tela.

@@ -4,28 +4,45 @@
 (function () {
   const { h, fmt, state } = TS;
 
-  /** números de cada mês da loja (todos os dias do mês, sem os filtros do topo) */
-  /** opts: { soYm, ateDia, frac } — um mês só, até o dia ateDia (comparação do mês em andamento com os mesmos dias) */
-  function calcular(M, opts = {}) {
+  const novo = () => ({ fat: 0, fatCusto: 0, custo: 0, imp: 0, maq: 0, roy: 0, com: 0, varPct: 0, gorjeta: 0, desc: 0, dias: new Set(), eg: 0 });
+  /** soma uma linha de venda nas contas do Resultado (a mesma regra para o mês e para um intervalo de dias) */
+  function somarLinha(m, i, M) {
     const db = TS.db, I = TS.rules.ids, D = M.ded;
+    if (I.taxaServico.has(db.desc[i])) { m.gorjeta += db.vt[i] || 0; return; }
+    if (M.taxa(i)) return;
+    const vt = db.vt[i] || 0;
+    m.fat += vt; m.dias.add(db.day[i]);
+    if (I.eg.has(db.cat[i])) m.eg += vt;
+    m.desc += TS.descontos([i]);
+    const dd = D.deducoes(i);
+    m.imp += dd.imp; m.maq += dd.maq; m.roy += dd.roy; m.com += dd.com;
+    m.varPct += dd.outros.reduce((a, v, k) => a + (D.OUTROS[k].tipo === 'pct' ? v : 0), 0);
+    const c = M.custo(i);
+    if (c != null) { m.fatCusto += vt; m.custo += c; }
+  }
+  /** Margem de contribuição de um intervalo de dias (Início → "Sua semana"): as mesmas linhas do Resultado até a margem de
+   *  contribuição — faturamento − Simples, maquininha e royalties − custo dos produtos (vendas sem custo pelo mesmo %) −
+   *  comissões (% efetivo do mês) − custos em %. Sem perdas e sem custos fixos, que são do mês. Todos os dias, sem os filtros.
+   *  → { fat, contrib (null sem custo nenhum), cobre } */
+  TS.dreContribDias = function (M, de, ate) {
+    const db = TS.db, m = novo();
+    for (let i = 0; i < db.n; i++) { const d = db.day[i]; if (d >= de && d <= ate) somarLinha(m, i, M); }
+    const cmv = m.fatCusto ? m.custo + (m.fat - m.fatCusto) * (m.custo / m.fatCusto) : null;
+    return { fat: m.fat, contrib: cmv == null ? null : m.fat - m.imp - m.maq - m.roy - cmv - m.com - m.varPct, cobre: m.fat ? m.fatCusto / m.fat : 0 };
+  };
+
+  /** números de cada mês da loja (todos os dias do mês, sem os filtros do topo) */
+  /** opts: { soYm, ateDia, frac } — um mês só, até o dia ateDia (comparação do mês em andamento com os mesmos dias)
+   *  opts.perdas: { 'AAAA-MM': { total, vencidos, inventario, … } } de /api/perdas (src/perdas.js); sem ele a linha fica "—" e não desconta */
+  function calcular(M, opts = {}) {
+    const db = TS.db, D = M.ded;
     const porMes = new Map();
-    const novo = () => ({ fat: 0, fatCusto: 0, custo: 0, imp: 0, maq: 0, roy: 0, com: 0, varPct: 0, gorjeta: 0, desc: 0, dias: new Set(), eg: 0 });
     for (let i = 0; i < db.n; i++) {
       const ym = db.ym[i];
       if (opts.soYm && (ym !== opts.soYm || +db.iso[i].slice(8, 10) > opts.ateDia)) continue;
       let m = porMes.get(ym);
       if (!m) porMes.set(ym, (m = novo()));
-      if (I.taxaServico.has(db.desc[i])) { m.gorjeta += db.vt[i] || 0; continue; }
-      if (M.taxa(i)) continue;
-      const vt = db.vt[i] || 0;
-      m.fat += vt; m.dias.add(db.day[i]);
-      if (I.eg.has(db.cat[i])) m.eg += vt;
-      m.desc += TS.descontos([i]);
-      const dd = D.deducoes(i);
-      m.imp += dd.imp; m.maq += dd.maq; m.roy += dd.roy; m.com += dd.com;
-      m.varPct += dd.outros.reduce((a, v, k) => a + (D.OUTROS[k].tipo === 'pct' ? v : 0), 0);
-      const c = M.custo(i);
-      if (c != null) { m.fatCusto += vt; m.custo += c; }
+      somarLinha(m, i, M);
     }
     const fixos = D.OUTROS.filter((x) => x.tipo === 'mes');
     const hoje = TS.todayDay(), ymHoje = TS.dayToIso(hoje).slice(0, 7);
@@ -48,10 +65,13 @@
       const fixoTot = fixosMes.reduce((a, x) => a + x.valor, 0);
       const impostos = m.imp + m.maq + m.roy;
       const recLiq = m.fat - impostos;
-      const lucroBruto = cmv == null ? null : recLiq - cmv;
+      // perdas do mês (chá vencido ainda no estoque + faltas do inventário, a custo): entram depois do custo dos produtos
+      const perdasDet = opts.perdas ? opts.perdas[ym] || { total: 0, vencidos: 0, inventario: 0, nVencidos: 0, nContagens: 0 } : null;
+      const perdas = perdasDet ? perdasDet.total : null;
+      const lucroBruto = cmv == null ? null : recLiq - cmv - (perdas || 0);
       const contrib = lucroBruto == null ? null : lucroBruto - m.com - m.varPct;
       const resultado = contrib == null ? null : contrib - fixoTot;
-      const r = { ym, parcial, frac, ultimo, diasMes, decorridos, ...m, dias: m.dias.size, cmv, cmvPct, cobre: m.fat ? m.fatCusto / m.fat : 0, fixosMes, fixoTot, impostos, recLiq, lucroBruto, contrib, resultado };
+      const r = { ym, parcial, frac, ultimo, diasMes, decorridos, ...m, dias: m.dias.size, cmv, cmvPct, perdas, perdasDet, cobre: m.fat ? m.fatCusto / m.fat : 0, fixosMes, fixoTot, impostos, recLiq, lucroBruto, contrib, resultado };
       if (parcial) r.proj = projetar(r, D);
       out.push(r);
     }
@@ -69,7 +89,7 @@
       gorjeta: m.gorjeta * k, desc: m.desc * k, eg: m.eg * k, cmv: x(m.cmv) };
     p.impostos = p.imp + p.maq + p.roy;
     p.recLiq = p.fat - p.impostos;
-    p.lucroBruto = p.cmv == null ? null : p.recLiq - p.cmv;
+    p.lucroBruto = p.cmv == null ? null : p.recLiq - p.cmv - (p.perdas || 0); // as perdas não crescem com as vendas: ficam as de agora
     p.contrib = p.lucroBruto == null ? null : p.lucroBruto - p.com - p.varPct;
     p.resultado = p.contrib == null ? null : p.contrib - p.fixoTot;
     return p;
@@ -84,7 +104,8 @@
     ['− Royalties + marketing', (m) => m.roy, 'menos', 'Pelas regras da loja: loja + marketing; Espaço Gourmet: EG + marketing EG'],
     ['= Receita líquida', (m) => m.recLiq, 'sub', 'Faturamento − impostos e taxas sobre a venda'],
     ['− Custo dos produtos', (m) => m.cmv, 'menos', 'Custo dos produtos vendidos (chá pelo kg + saco e etiquetas). Mês passado: o custo que cada produto tinha na data da venda (notas de compra e histórico de custos do painel; antes do primeiro custo conhecido vale o mais antigo, estimado). Mês em andamento: o custo de hoje do AppNext. Vendas sem custo no estoque entram pelo mesmo % das outras (estimado)'],
-    ['= Lucro bruto', (m) => m.lucroBruto, 'sub', 'Receita líquida − custo dos produtos'],
+    ['− Perdas (vencidos e inventário)', (m) => m.perdas, 'menos', 'O que a loja pagou e não vai vender, a custo: (1) chá a granel VENCIDO que ainda está no estoque, no mês em que a validade venceu (saldo do lote × custo do kg, os lotes da tela Validade); (2) faltas do INVENTÁRIO: contagens aplicadas no AppNext no mês, pelo saldo dos ajustes (contado − sistema) × custo — sobra compensa falta, e só o saldo negativo do mês entra. Na projeção ficam as perdas de agora (não crescem com as vendas). "—" = o painel não conseguiu ler as perdas'],
+    ['= Lucro bruto', (m) => m.lucroBruto, 'sub', 'Receita líquida − custo dos produtos − perdas'],
     ['− Comissões e premiações', (m) => m.com, 'menos', 'O que a loja pagou no mês (comissões, premiação e bônus), como no Comissionamento. Na projeção do mês em andamento: a comissão que cada pessoa receberia com a venda projetada dela contra a meta (na faixa em que fecharia), não a comissão de agora multiplicada'],
     ['− Outros custos em %', (m) => m.varPct, 'menos', 'Custos da loja cadastrados como % das vendas'],
     ['= Margem de contribuição', (m) => m.contrib, 'sub', 'O que sobra para pagar os custos fixos'],
@@ -96,25 +117,57 @@
     ['= Resultado do mês', (m) => m.resultado, 'tot', 'Margem de contribuição − custos fixos'],
   ];
 
+  TS.dreCalcular = calcular; // o caixa a pagar usa os mesmos royalties e impostos do Resultado
   TS.pages.dre = function (root) {
     if (TS.subEstoque) root.append(TS.subEstoque('dre'));
     root.append(h('div', { class: 'page-head' }, h('div', null, h('h1', { class: 'page-title' }, 'Resultado do mês'),
       h('div', { class: 'page-sub' }, 'Do faturamento ao lucro: impostos, custo dos produtos, comissões e custos fixos, mês a mês'))));
     if (!state.loja || state.loja === 'todas') { root.append(h('div', { class: 'notice' }, 'O resultado é de cada loja: escolha uma loja no seletor do topo.')); return; }
     const corpo = h('div', null, h('div', { class: 'loading' }, h('div', null, h('div', { class: 'spinner' }), h('p', null, 'Calculando…'))));
+    // abas da tela: o resultado (lucro) e o caixa a pagar (o que vence, com a previsão do que entra — apagar.js)
+    const aba = TS.aPagar && state.dreAba === 'apagar' ? 'apagar' : 'resultado';
+    if (TS.aPagar) root.append(h('div', { class: 'dre-abas' }, TS.seg([['Resultado do mês', 'resultado', 'Do faturamento ao lucro, mês a mês.'], ['A pagar', 'apagar', 'O que vence nos próximos 30 ou 60 dias, com a previsão do que entra: lucro no papel não paga boleto.']], aba, (v) => { state.dreAba = v; TS.render(); })));
     root.append(corpo);
-    TS.custosLoja().then((M) => {
+    Promise.all([TS.custosLoja(), buscarPerdas(state.loja)]).then(([M, perdas]) => {
       if (!corpo.isConnected) return;
       if (!M) { corpo.replaceChildren(h('div', { class: 'notice' }, 'Ainda não há estoque desta loja: o resultado precisa do custo dos produtos. Envie a planilha de estoque em Configurações → Lojas.')); return; }
-      pintar(corpo, M);
+      if (aba === 'apagar') { TS.aPagar.pagina(corpo, M); return; }
+      pintar(corpo, M, perdas);
       // ponto de equilíbrio do mês (quanto vender para pagar os fixos) logo depois dos quadros do mês
       if (TS.cartaoEquilibrio) { const eq = TS.cartaoEquilibrio(state.loja); const ref = corpo.querySelector('.dre-eq-aqui'); ref ? ref.replaceWith(eq) : corpo.append(eq); }
     }).catch((e) => corpo.replaceChildren(h('div', { class: 'notice err' }, e.message)));
   };
 
-  function pintar(corpo, M) {
+  /** linha discreta depois dos quadros: quanto de perdas o resultado do mês já inclui e como seria sem elas */
+  function linhaPerdas(m, sel) {
+    const d = m.perdasDet;
+    if (!d || m.resultado == null) return null;
+    const partes = [d.vencidos > 0 ? `${fmt.brl0(d.vencidos)} de chá vencido (${fmt.int(d.nVencidos)} ${d.nVencidos === 1 ? 'lote' : 'lotes'})` : null, d.inventario > 0 ? `${fmt.brl0(d.inventario)} de faltas no inventário (${fmt.int(d.nContagens)} ${d.nContagens === 1 ? 'contagem' : 'contagens'})` : null].filter(Boolean);
+    const como = `Perdas = o que a loja pagou e não vai vender, a custo.\n\n1. Chá a granel vencido que ainda está no estoque: saldo do lote × custo do kg, no mês em que a validade venceu (os lotes de Estoque → Validade).${d.semCusto ? ` ${fmt.int(d.semCusto)} lote(s) vencido(s) sem custo no AppNext entraram com zero.` : ''}\n\n2. Faltas do inventário: contagens aplicadas no AppNext no mês, (contado − sistema) × custo. As contagens do mês são somadas: sobra compensa falta, e só o saldo negativo vira perda${d.nContagens ? ` (faltas ${fmt.brl0(d.faltasInv || 0)} − sobras ${fmt.brl0(d.sobrasInv || 0)})` : ''}.\n\nLimites: o painel só conhece o chá vencido que ainda está no estoque de hoje — quando ele é jogado fora e o inventário zera o saldo, a perda passa a aparecer nas faltas do inventário, no mês da contagem. Produto que não é chá a granel só entra pelo inventário.`;
+    if (!partes.length) return h('p', { class: 'dre-perdas muted', 'data-perdas': '0' }, `Sem perdas em ${TS.ymLabel(sel)}: nenhum lote venceu no estoque e o inventário não teve falta.`, TS.dica(como));
+    return h('p', { class: 'dre-perdas muted', 'data-perdas': String(m.perdas) }, h('b', null, `O resultado de ${TS.ymLabel(sel)} inclui ${fmt.brl0(m.perdas)} de perdas`), `: ${partes.join(' + ')}. Sem as perdas seria ${fmt.brl0(m.resultado + m.perdas)}. `,
+      d.vencidos > 0 ? h('a', { href: '#validade' }, 'ver a validade ›') : h('a', { href: '#inventario' }, 'ver o inventário ›'), TS.dica(como));
+  }
+
+  /** perdas por mês da loja (/api/perdas; 2 min em memória). null se o painel não conseguiu ler: a linha fica "—" */
+  const perdasCache = new Map();
+  TS.aoLimparCache && TS.aoLimparCache(() => perdasCache.clear());
+  async function buscarPerdas(loja) {
+    const c = perdasCache.get(loja);
+    if (c && Date.now() - c.at < 120e3) return c.meses;
+    try {
+      const r = await fetch(TS.api(`perdas?loja=${encodeURIComponent(loja)}`), { credentials: 'same-origin' });
+      if (!r.ok) return null;
+      const j = await r.json();
+      perdasCache.set(loja, { at: Date.now(), meses: j.meses || {} });
+      return j.meses || {};
+    } catch { return null; }
+  }
+  TS.dreCalcular = calcular; // testes de tela
+
+  function pintar(corpo, M, perdas) {
     corpo.replaceChildren();
-    const meses = calcular(M);
+    const meses = calcular(M, { perdas });
     if (!meses.length) { corpo.append(TS.empty()); return; }
     const fixos = M.ded.OUTROS.filter((x) => x.tipo === 'mes');
     const fixosNomes = fixos.map((x) => x.nome);
@@ -134,7 +187,7 @@
     // o faturamento do topo também se compara com os mesmos dias do ano anterior
     const diaAte = +TS.dayToIso(m.ultimo).slice(8, 10);
     const a = meses.find((x) => x.ym === ymAnt) || null;
-    const aDias = m.parcial ? (calcular(M, { soYm: ymAnt, ateDia: diaAte })[0] || null) : a;
+    const aDias = m.parcial ? (calcular(M, { soYm: ymAnt, ateDia: diaAte, perdas })[0] || null) : a;
     const rotAnt = TS.ymLabel(ymAnt);
     const P = m.proj || null;
     const base = P || m; // o que a coluna "Variação" compara com o ano anterior
@@ -145,6 +198,7 @@
     opMes.addEventListener('change', () => { state.dreMes = opMes.value; TS.render(); });
     const avisos = [];
     if (!fixosNomes.length && !(M.ded.PONTUAIS || []).length) avisos.push('Cadastre os custos fixos (aluguel, salários, energia…) pelo link "+ Adicionar ou editar custos da loja", logo abaixo da tabela, para o resultado ficar completo.');
+    if (!perdas) avisos.push('O painel não conseguiu ler as perdas (chá vencido e faltas do inventário): o resultado abaixo está SEM esse desconto.');
     if (m.cobre < 0.95) avisos.push(`${fmt.pct(1 - m.cobre, 0)} das vendas de ${TS.ymLabel(sel)} não têm custo no estoque: o custo delas foi estimado pelo mesmo % das outras (${fmt.pct(m.cmvPct)}).`);
     // mês em andamento: uma linha discreta depois dos quadros, com a explicação completa no ⓘ
     const andamento = !m.parcial ? null : `${TS.ymLabel(sel)} está em andamento (vendas até ${fmt.date(TS.dayToIso(m.ultimo))}, ${m.decorridos} de ${m.diasMes} dias). "Até hoje" usa as vendas até agora e os custos fixos inteiros: enquanto der negativo, é o que ainda falta cobrir. "Projeção do mês" leva as vendas no ritmo atual até o fim do mês (impostos, custo dos produtos, comissões e custos em % acompanham as vendas; os fixos ficam iguais).`;
@@ -152,17 +206,19 @@
     // cartões do topo
     const kp = (rot, v, sub, cls) => TS.kpi(rot, v == null ? '—' : fmt.brl0(v), sub, null);
     const varA = (k) => (aDias && aDias[k] ? h('span', null, TS.deltaSpan(m[k] / aDias[k] - 1), ` vs. ${m.parcial ? `${rotAnt} (dias 1 a ${diaAte})` : rotAnt}`) : null);
-    corpo.append(h('div', { class: 'dre-topo' }, h('label', null, 'Mês ', opMes), h('span', { class: 'muted' }, 'Todos os dias do mês, sem os filtros do topo. Custos fixos e % com os valores cadastrados hoje.')),
+    corpo.append(h('div', { class: 'dre-topo' }, h('label', null, 'Mês ', opMes), h('span', { class: 'muted' }, 'Todos os dias do mês, sem os filtros do topo. Custos fixos e % com os valores cadastrados hoje.'),
+      TS.aPagar ? TS.aPagar.botaoExportar(m, LINHAS(grupos, new Set()), cats) : null),
       ...avisos.map((t) => h('div', { class: 'notice' }, t)),
       h('div', { class: 'grid g-kpi' },
         kp('Faturamento', m.fat, varA('fat')),
-        kp('Lucro bruto', m.lucroBruto, h('span', null, `margem ${pc(m.lucroBruto, m.fat)}`)),
+        TS.kpi('Lucro bruto', m.lucroBruto == null ? '—' : fmt.brl0(m.lucroBruto), h('span', null, `margem ${pc(m.lucroBruto, m.fat)}${m.perdas > 0 ? ` · já sem ${fmt.brl0(m.perdas)} de perdas` : ''}`), 'Receita líquida − custo dos produtos − perdas (chá vencido ainda no estoque e faltas do inventário, a custo).'),
         kp('Margem de contribuição', m.contrib, h('span', null, `${pc(m.contrib, m.fat)} do faturamento`)),
         m.parcial
-          ? TS.kpi('Resultado até hoje', m.resultado == null ? '—' : fmt.brl0(m.resultado), h('span', { class: m.resultado >= 0 ? 'up' : 'down' }, m.resultado == null ? '' : m.resultado >= 0 ? 'custos fixos do mês já cobertos' : `falta cobrir ${fmt.brl0(-m.resultado)} dos custos fixos`), 'Margem de contribuição até hoje − custos fixos do mês inteiro')
-          : TS.kpi('Resultado do mês', m.resultado == null ? '—' : fmt.brl0(m.resultado), h('span', { class: m.resultado >= 0 ? 'up' : 'down' }, `${pc(m.resultado, m.fat)} do faturamento`), 'Margem de contribuição − custos fixos'),
+          ? TS.kpi('Resultado até hoje', m.resultado == null ? '—' : fmt.brl0(m.resultado), h('span', { class: m.resultado >= 0 ? 'up' : 'down' }, m.resultado == null ? '' : m.resultado >= 0 ? 'custos fixos do mês já cobertos' : `falta cobrir ${fmt.brl0(-m.resultado)} dos custos fixos`, m.perdas > 0 ? ` · inclui ${fmt.brl0(m.perdas)} de perdas` : ''), 'Margem de contribuição até hoje − custos fixos do mês inteiro. As perdas do mês (chá vencido e faltas do inventário) já foram descontadas no lucro bruto.')
+          : TS.kpi('Resultado do mês', m.resultado == null ? '—' : fmt.brl0(m.resultado), h('span', { class: m.resultado >= 0 ? 'up' : 'down' }, `${pc(m.resultado, m.fat)} do faturamento${m.perdas > 0 ? ` · inclui ${fmt.brl0(m.perdas)} de perdas` : ''}`), 'Margem de contribuição − custos fixos. As perdas do mês (chá vencido e faltas do inventário) já foram descontadas no lucro bruto.'),
         P ? TS.kpi('Projeção do mês', P.resultado == null ? '—' : fmt.brl0(P.resultado), h('span', { class: P.resultado >= 0 ? 'up' : 'down' }, `vendendo ${fmt.brl0(P.fat)} no mês (ritmo atual)`),
           `Resultado se as vendas seguirem o ritmo de agora até o fim do mês. Impostos, custo dos produtos e custos em % acompanham as vendas; a comissão é recalculada com a venda projetada de cada pessoa contra a meta; os custos fixos ficam iguais.${P.projMes ? '\n\nFaturamento projetado:\n' + TS.comoProjecao(P.projMes) : ''}`) : null),
+      linhaPerdas(m, sel),
       andamento ? h('p', { class: 'dre-andamento muted' }, `Mês em andamento: ${m.decorridos} de ${m.diasMes} dias. "Até hoje" usa as vendas até agora e os custos fixos inteiros.`, TS.dica(andamento)) : null,
       h('div', { class: 'dre-eq-aqui' }));
 

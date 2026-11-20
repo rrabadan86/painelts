@@ -23,7 +23,10 @@ const RET = require('../public/js/campretorno');
 const RECORRENCIAS = ['', 'diaria', 'semanal', 'mensal'];
 const ST = ['p', 'e', 'o', 'x'];
 
-function ler(id) { try { const j = JSON.parse(fs.readFileSync(arq(id), 'utf8')); return Array.isArray(j) ? j : []; } catch { return []; } }
+/** campanha que se repete, criada antes do grupo de comparação existir (comparar indefinido): passa a guardar os 10% a partir da
+ *  próxima lista (decisão do dono). Lista única antiga continua como estava; quem desmarcou (false) continua desmarcado. */
+const comCompara = (c) => (c && c.comparar == null && c.recorrente ? { ...c, comparar: true } : c);
+function ler(id) { try { const j = JSON.parse(fs.readFileSync(arq(id), 'utf8')); return Array.isArray(j) ? j.map(comCompara) : []; } catch { return []; } }
 function gravar(id, lista) { fs.mkdirSync(path.dirname(arq(id)), { recursive: true }); C.gravarAtomico(arq(id), JSON.stringify(lista), 0o640); }
 const novoId = () => crypto.randomBytes(6).toString('hex');
 const texto = (v, max) => String(v ?? '').replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '').trim().slice(0, max);
