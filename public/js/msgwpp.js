@@ -60,7 +60,9 @@
   const dataBR = (iso) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
   const textoBloqueio = (b) => (b.tipo === 'optout' ? 'não quer mensagens' : `já recebeu em ${dataBR(b.em.slice(0, 10))}${b.motivo ? ' (' + b.motivo.replace(/^Campanha: /, 'campanha ') + ')' : ''}`);
 
-  const API = { CAMPOS, saudacao, montar, paraDoLink, linkDoCelular, listaProdutos, nomesProdutos, extras, textos, variacaoDaVez, motivoCampanha, prazoCampanha, bloqueio, textoBloqueio };
+  /** período da campanha: 'antes' (ainda não começou), 'depois' (já terminou) ou null (dentro, ou sem datas). dia = 'AAAA-MM-DD' de Brasília */
+  const foraDoPeriodo = (c, dia) => (c && c.inicio && dia < c.inicio ? 'antes' : c && c.fim && dia > c.fim ? 'depois' : null);
+  const API = { foraDoPeriodo, CAMPOS, saudacao, montar, paraDoLink, linkDoCelular, listaProdutos, nomesProdutos, extras, textos, variacaoDaVez, motivoCampanha, prazoCampanha, bloqueio, textoBloqueio };
   if (typeof module !== 'undefined' && module.exports) { module.exports = API; return; }
   TS.msgWpp = API;
 })();

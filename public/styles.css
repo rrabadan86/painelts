@@ -2844,3 +2844,7 @@ body.pg-semfiltros .sidebar, body.pg-semfiltros #btnFiltros { display: none; }
 .zap-opcao { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: 13px; min-width: 0; }
 .zap-opcao .cfg-check-l { margin: 0; }
 .zap-opcao small { flex: 1 1 240px; min-width: 0; }
+
+/* campanha: período (início e término) */
+.cp-periodo { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.cp-periodo .f-input { width: auto; max-width: 160px; }

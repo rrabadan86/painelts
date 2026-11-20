@@ -22,6 +22,7 @@ Hooks (`.claude/settings.json`): bloqueiam commit/push de segredos e limpam os r
 - Permissões no servidor (`req.perfil`, `podeTela`, `podeClientes`, `podeCustos`), não só escondendo na tela.
 - Testes: unidade em `tests/unit/*.test.js` (`node --test`); tela em `tests/e2e/*.spec.js` (Playwright, sempre na apresentação, projetos "computador" e "celular").
 - **Matriz de rastreabilidade:** `docs/rastreabilidade.md` liga cada regra (código PERF-01, ESC-16…) ao código e ao teste que a cobre. Mudou ou criou regra: atualize a linha no mesmo PR (onde está, teste, cobertura); achou erro ou lacuna: registre nos Achados.
+- A conta de clientes e campanhas roda também no servidor (`src/zapauto.js` carrega os arquivos de `public/js` listados em `ZA.ARQUIVOS`): esses arquivos não podem tocar na página ao carregar, e "hoje" é sempre `TS.hojeSP`/`TS.todayDay`. Regra de cliente ou campanha nunca é copiada para o servidor.
 - **GET nunca muda estado** (gerar/fechar é POST com `X-Painel`); resposta de erro usa `C.msgErro(e)` (sem caminho de arquivo). Cache de leitura é por loja, nunca com dado já filtrado por perfil, e invalida pela data/tamanho do arquivo; a limpeza automática só apaga `envio/`, nunca XML de nota nem vendas.
 - Durante os ajustes: `npm test` + só os testes de tela da parte mexida (`npx playwright test tests/e2e/ia.spec.js`, ou `-g "nome"`). A bateria completa é uma vez, antes de subir.
 

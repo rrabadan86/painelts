@@ -10,8 +10,10 @@
  *   dados/<loja>/zap/naoquer.json  { <número>: { em, cpfs } } — quem respondeu "parar": não recebe pelo robô
  *                                  (até a loja marcar "Voltou a aceitar" na ficha do cliente)
  *   dados/<loja>/zap/enviados.json { <número>: { em, cpf } } — último envio do robô para cada número
- * O texto sai igual ao do envio manual: o navegador manda os valores dos {campos} de cada cliente (os mesmos que a
- * tela usa, calculados com os dados de vendas e do FIXE) e a montagem é a de public/js/msgwpp.js nos dois lados.
+ * O texto sai igual ao do envio manual: os valores dos {campos} de cada cliente são os mesmos que a tela usa
+ * (calculados com os dados de vendas e do FIXE) e a montagem é a de public/js/msgwpp.js nos dois lados. Quem manda
+ * esses valores (o `preparo`): o servidor sozinho, todo dia (src/zapauto.js, a conta da própria tela), e o navegador
+ * de quem abre Campanhas.
  */
 const fs = require('fs');
 const path = require('path');
@@ -74,7 +76,7 @@ function mudarContato(id, cpf, fn) {
 }
 
 const lerPreparo = (id) => lerJson(id, 'preparo');
-/** o navegador de quem tem a tela Clientes manda os valores dos campos e o número de cada cliente pendente */
+/** os valores dos campos e o número de cada cliente pendente: do servidor (src/zapauto.js) ou do navegador de quem tem a tela Clientes */
 function gravarPreparo(id, campId, itens, por, agora = Date.now()) {
   const c = CAMP.ler(id).find((x) => x.id === campId);
   const rod = c && c.rodadas && c.rodadas[0];
@@ -127,10 +129,11 @@ const MOTIVOS = {
   teto: 'O máximo de mensagens de hoje foi atingido. Continua no próximo dia de envio.',
   ritmo: 'Esperando o intervalo entre uma mensagem e outra.',
   sem_campanha: 'Nenhuma campanha está marcada para enviar pelo robô.',
-  conferir_lista: 'A lista precisa ser conferida: abra a tela Campanhas (o painel confere sozinho ao abrir).',
+  conferir_lista: 'A lista precisa ser conferida: o painel não conseguiu conferir sozinho. Abra a tela Campanhas (ela confere ao abrir).',
   limite_campanha: 'As campanhas chegaram ao limite de hoje. Continua amanhã.',
   esperando_estoque: 'Só faltam clientes esperando estoque do produto oferecido.',
   sem_pendentes: 'Todas as mensagens das campanhas do robô já foram enviadas.',
+  fora_periodo: 'As campanhas do robô estão fora do período (data de início ou de término).',
 };
 const ordem = (a, b) => String(a.criadaEm || '').localeCompare(String(b.criadaEm || '')) || String(a.id).localeCompare(String(b.id));
 /** campanhas que o robô envia: ligadas para o robô e não pausadas, da mais antiga para a mais nova (ordem estável) */
@@ -152,8 +155,10 @@ function decidir({ cfg, estado, campanhas, contatos, preparo, naoquer, enviados,
   if (r.min < hm(cfg.das) || r.min >= hm(cfg.as)) return fim('fora_janela');
   if (enviadosHoje(estado, agora) >= cfg.teto) return fim('teto');
   if (estado.proximoEm && agora < Date.parse(estado.proximoEm)) return fim('ritmo');
-  const robos = campanhasDoRobo(campanhas);
-  if (!robos.length) return fim('sem_campanha');
+  const todasRobo = campanhasDoRobo(campanhas);
+  if (!todasRobo.length) return fim('sem_campanha');
+  const robos = todasRobo.filter((c) => !M.foraDoPeriodo(c, r.dia)); // só as campanhas dentro do período (início e término)
+  if (!robos.length) return fim('fora_periodo');
   contatos = contatos || {}; preparo = preparo || {}; naoquer = naoquer || {}; enviados = enviados || {};
   let conferir = false, limite = false, estoque = false;
   for (const c of robos) {
