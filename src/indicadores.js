@@ -5,13 +5,10 @@
  *  - alertas inteligentes
  *  - resumo diário (Telegram / e-mail)
  */
-const G_AROM = new Set(['CHÁ AROMATIZADO', 'CHÁS ENVASADOS', 'INFUSÕES', 'ROOIBOS AROMATIZADO', 'SACHÊS PIRAMIDAIS', 'TEA MOMENTS']);
-const G_PURO = new Set(['CHÁ PURO', 'CHÁS ENVASADOS PUROS']);
-const G_ACESS = new Set(['ACESSÓRIOS', 'ALIMENTAÇÃO', 'CONSUMÍVEIS - COM CONTROLE DE ESTOQUE', 'COSMÉTICOS']);
-const EG = 'ESPAÇO GOURMET';
-const CHA_TOTAL = new Set(['CHÁS PARA MINITINS', 'ROOIBOS PURO', 'ROOIBOS AROMATIZADO', 'CHÁ BRANCO PURO', 'CHÁ BRANCO AROMATIZADO', 'INFUSÕES', 'CHÁ OOLONG PURO', 'CHÁ OOLONG AROMATIZADO', 'CHÁ PRETO PURO', 'CHÁ PRETO AROMATIZADO', 'CHÁ VERDE PURO', 'CHÁ VERDE AROMATIZADO', 'CHÁ VERMELHO PURO', 'CHÁ VERMELHO AROMATIZADO']);
+// Definições oficiais (faturamento, vendas da meta, atendimentos, projeção, divisão da meta): as MESMAS das telas
+const CT = require('../public/js/contas');
+const EG = CT.EG;
 const SEM_META_PADRAO = ['amanda oliveira', 'corporativo', 'adriane puccini', 'sem vendedor', ''];
-const semVendedor = (v) => !v || /^sem vendedor$/i.test(String(v).trim());
 
 const DIA = 86400000;
 const isoDia = (d) => new Date(d * DIA).toISOString().slice(0, 10);
@@ -22,26 +19,43 @@ function hojeSP() {
   return { iso: `${p.year}-${p.month}-${p.day}`, hhmm: `${p.hour === '24' ? '00' : p.hour}:${p.minute}` };
 }
 
-/** "CONSUMÍVEIS - SEM CONTROLE DE ESTOQUE" (ex.: sacos de amostra) entra no faturamento, mas não conta como item (PMA/IPA) */
-const semItem = (v) => /^CONSUM[IÍ]VEIS\b.*SEM CONTROLE/i.test(String(v.grupoC || v.grupo || '').trim());
-
-/** indicadores de um conjunto de vendas (sem "SEM VENDEDOR", como no Resumo) */
+/**
+ * Indicadores de um conjunto de vendas pela definição única (public/js/contas.js):
+ * vt = faturamento da loja (com Espaço Gourmet e vendas sem vendedor; sem taxas e sem itens a R$ 0,01);
+ * metaLoja = vendas da meta (chá aromatizado, chá puro e acessórios, sem Espaço Gourmet); cupons = cupons únicos.
+ */
 function metricas(vendas) {
-  let vt = 0, qtd = 0, kg = 0, eg = 0, arom = 0, puro = 0, acess = 0, metaLoja = 0;
-  const cupons = new Set();
+  const r = CT.resumo(vendas);
+  const lv = r.vendasMeta;
+  return { vt: r.fat, cupons: r.cupons, qtd: r.itens, tkm: r.tkm, pma: r.pma, ipa: r.ipa, kg: r.kg, pctEG: r.fat ? r.eg / r.fat : null, arom: r.arom, puro: r.puro, acess: r.acess,
+    lojaVend: lv, pctPuro: lv ? r.puro / lv : null, pctAcess: lv ? r.acess / lv : null, metaLoja: lv };
+}
+/** a loja abre neste dia? Dia da semana fechado no horário de funcionamento ou data marcada como fechada.
+ *  (Os feriados nacionais sem horário próprio só existem na tela; aqui contam como dia normal.) */
+const DIAS_OP = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab'];
+function lojaAberta(loja, iso) {
+  const esp = loja && loja.feriadosHorario && loja.feriadosHorario[iso];
+  if (esp) return !esp.fechado;
+  const func = loja && loja.operacao && loja.operacao.funcionamento;
+  const f = func && func[DIAS_OP[new Date(iso + 'T12:00:00Z').getUTCDay()]];
+  return !(f && f.fechado);
+}
+/**
+ * Projeção do mês pela conta única (CT.projecaoMes): vendas até `ate` (último dia COMPLETO) + cada dia que falta pela média
+ * do mesmo dia da semana nas últimas 8 semanas. base: 'meta' (vendas da meta) | 'loja' (faturamento da loja).
+ */
+function projecaoMes({ loja, vendas, ym, ate, base = 'meta' }) {
+  const de = isoDia(diaIso(ate) - 62), porDia = new Map();
+  let inicio = null;
   for (const v of vendas) {
-    // meta da loja (gerente): chás e acessórios de TODAS as vendas, inclusive "SEM VENDEDOR" — igual ao Comissionamento
-    if (G_AROM.has(v.grupoC) || G_PURO.has(v.grupoC) || G_ACESS.has(v.grupoC)) metaLoja += v.vt || 0;
-    if (semVendedor(v.vendedor)) continue;
-    const x = v.vt || 0;
-    vt += x; qtd += semItem(v) ? 0 : v.qtd || 0;
-    cupons.add((v.data || '') + '|' + v.cupom + '|' + v.loja);
-    if (CHA_TOTAL.has(v.grupo)) kg += v.qtdCha || 0;
-    if (v.grupoC === EG) eg += x;
-    if (G_AROM.has(v.grupoC)) arom += x; else if (G_PURO.has(v.grupoC)) puro += x; else if (G_ACESS.has(v.grupoC)) acess += x;
+    if (!v.data) continue;
+    if (!inicio || v.data < inicio) inicio = v.data;
+    if (v.data < de || v.data > ate || !CT.contaFat(v.descricao, v.vu)) continue;
+    const x = base === 'loja' ? v.vt || 0 : CT.classeMeta(v.grupoC, v.cat) ? v.vt || 0 : 0;
+    if (x) porDia.set(v.data, (porDia.get(v.data) || 0) + x);
   }
-  const c = cupons.size;
-  return { vt, cupons: c, qtd, tkm: c ? vt / c : null, pma: qtd ? vt / qtd : null, ipa: c ? qtd / c : null, kg, pctEG: vt ? eg / vt : null, arom, puro, acess, lojaVend: arom + puro + acess, pctPuro: arom + puro + acess ? puro / (arom + puro + acess) : null, pctAcess: arom + puro + acess ? acess / (arom + puro + acess) : null, metaLoja };
+  if (!inicio) return null;
+  return CT.projecaoMes({ ym, ate, valorDia: (iso) => porDia.get(iso) || 0, aberto: (iso) => lojaAberta(loja, iso), inicio });
 }
 const entre = (vendas, de, ate) => vendas.filter((v) => v.data >= de && v.data <= ate);
 
@@ -75,28 +89,14 @@ function metaMes(loja, ym, metaPlanilha, vendas) {
   return loja.meta ?? metaPlanilha ?? null;
 }
 
-/** meta individual com férias (mesma regra do painel): meta diária dividida entre quem trabalha no dia */
-function metasIndividuais(metaLoja, ym, nomes, ferias) {
-  const N = nomes.map((n) => String(n).trim().toUpperCase());
-  const out = new Map(N.map((n) => [n, 0]));
-  if (!N.length) return out;
-  const nDias = diasNoMes(ym), ini = ym + '-01', fim = `${ym}-${String(nDias).padStart(2, '0')}`;
-  const fm = (ferias || []).filter((f) => f.de <= fim && f.ate >= ini && N.includes(String(f.vendedor).trim().toUpperCase()));
-  if (!fm.length) { N.forEach((n) => out.set(n, metaLoja / N.length)); return out; }
-  for (let d = 1; d <= nDias; d++) {
-    const iso = `${ym}-${String(d).padStart(2, '0')}`;
-    const fora = new Set(fm.filter((f) => f.de <= iso && f.ate >= iso).map((f) => String(f.vendedor).trim().toUpperCase()));
-    const ativos = N.filter((n) => !fora.has(n));
-    ativos.forEach((n) => out.set(n, out.get(n) + metaLoja / nDias / ativos.length));
-  }
-  return out;
-}
+/** meta individual com férias: a mesma função das telas (public/js/contas.js) → Map(NOME → meta) */
+const metasIndividuais = (metaLoja, ym, nomes, ferias) => CT.metasIndividuais(metaLoja, ym, nomes, ferias).metas;
 
 // ======================= REDE (anônimo) =======================
 const METRICAS_REDE = [
   ['vt', 'Faturamento', 'brl0'], ['cupons', 'Atendimentos (cupons)', 'int'], ['tkm', 'Ticket médio (TKM)', 'brl'], ['pma', 'Preço médio (PMA)', 'brl'],
   ['ipa', 'Itens por atendimento (IPA)', 'n2'], ['kg', 'Chá vendido (kg)', 'kg'], ['pctPuro', 'Chá puro (% da loja)', 'pct'], ['pctAcess', 'Acessórios (% da loja)', 'pct'], ['pctEG', 'Espaço Gourmet (% do faturamento)', 'pct'],
-  ['cresc', 'Crescimento vs. mesmo mês do ano anterior', 'delta'], ['pctMeta', 'Meta atingida', 'pct'],
+  ['cresc', 'Crescimento vs. mesmo mês do ano anterior', 'delta'], ['pctMeta', 'Ritmo da meta', 'pct'],
   ['ret90', 'Clientes novos que voltaram em 90 dias', 'pct'],
 ];
 /**
@@ -165,8 +165,10 @@ function rede(partes, ym, lojaId, minimo = MIN_LOJAS_REDE) {
     const ant = metricas(entre(p.vendas, antDe, antAte));
     m.cresc = ant.vt ? m.vt / ant.vt - 1 : null;
     const meta = metaMes(p.loja, ym, p.metaPlanilha, p.vendas);
-    const prop = corte < ate ? +corte.slice(8, 10) / diasNoMes(ym) : 1;
-    m.pctMeta = meta ? m.metaLoja / (meta * prop) : null;
+    // ritmo da meta: mês fechado = vendas da meta ÷ meta; mês em andamento = projeção das vendas da meta ÷ meta
+    // (a mesma projeção das telas, com todas as lojas cortadas no mesmo dia)
+    const pj = corte < ate ? projecaoMes({ loja: p.loja, vendas: p.vendas, ym, ate: corte, base: 'meta' }) : null;
+    m.pctMeta = !meta ? null : pj && pj.proj != null ? pj.proj / meta : m.metaLoja / meta;
     m.ret90 = retencao90(p.vendas, p.xml, corte);
     return { id: p.id, m };
   });
@@ -191,9 +193,13 @@ function rede(partes, ym, lojaId, minimo = MIN_LOJAS_REDE) {
  * Alertas da loja, olhando até "hoje" (último dia com vendas).
  * tipo: 'queda' | 'alta' | 'meta' | 'vendedor'
  */
-function alertas({ loja, vendas, metaPlanilha }) {
+function alertas({ loja, vendas, metaPlanilha, hoje }) {
   if (!vendas.length) return [];
-  const ultimo = vendas.reduce((m, v) => (v.data > m ? v.data : m), '');
+  const ultimoDado = vendas.reduce((m, v) => (v.data > m ? v.data : m), '');
+  // o dia de hoje ainda está acontecendo: as comparações fecham no último dia COMPLETO (não misturam dia parcial com dia cheio)
+  const hj = hoje || hojeSP().iso;
+  const primeiro = vendas.reduce((m, v) => (v.data && v.data < m ? v.data : m), ultimoDado);
+  const ultimo = ultimoDado >= hj && primeiro < hj ? isoDia(diaIso(hj) - 1) : ultimoDado;
   const u = diaIso(ultimo);
   const out = [];
   const brl = (x) => 'R$ ' + Math.round(x).toLocaleString('pt-BR');
@@ -214,12 +220,12 @@ function alertas({ loja, vendas, metaPlanilha }) {
     if (dir === 'queda') out.push({ tipo: 'queda', gravidade: d <= -0.4 ? 2 : 1, texto: `${nome}: queda de ${p} nos últimos 7 dias em relação à média das 4 semanas anteriores (${brl(sem[k])} contra ${brl(base)} por semana).` });
     else out.push({ tipo: 'alta', gravidade: 0, texto: `${nome}: alta de ${p} nos últimos 7 dias em relação à média das 4 semanas anteriores.` });
   }
-  // 2) indicadores dos últimos 30 dias vs. 30 anteriores
-  const m30 = metricas(entre(vendas, isoDia(u - 29), ultimo)), p30 = metricas(entre(vendas, isoDia(u - 59), isoDia(u - 30)));
+  // 2) indicadores dos últimos 28 dias vs. 28 anteriores (4 semanas inteiras: a mesma quantidade de cada dia da semana)
+  const m30 = metricas(entre(vendas, isoDia(u - 27), ultimo)), p30 = metricas(entre(vendas, isoDia(u - 55), isoDia(u - 28)));
   for (const [k, nome] of [['tkm', 'O ticket médio (TKM)'], ['ipa', 'Os itens por atendimento (IPA)']]) {
     if (!m30[k] || !p30[k] || m30.cupons < 30) continue;
     const d = m30[k] / p30[k] - 1;
-    if (d <= -0.15) out.push({ tipo: 'queda', gravidade: 1, texto: `${nome} caiu ${Math.round(Math.abs(d) * 100)}% nos últimos 30 dias em relação aos 30 anteriores.` });
+    if (d <= -0.15) out.push({ tipo: 'queda', gravidade: 1, texto: `${nome} caiu ${Math.round(Math.abs(d) * 100)}% nos últimos 28 dias em relação aos 28 anteriores.` });
   }
   // 3) ritmo da meta no mês
   const ym = ultimo.slice(0, 7);
@@ -227,10 +233,12 @@ function alertas({ loja, vendas, metaPlanilha }) {
   const diaMes = +ultimo.slice(8, 10), n = diasNoMes(ym);
   if (meta && diaMes >= 5) {
     const mes = metricas(entre(vendas, ym + '-01', ultimo));
-    const proj = (mes.metaLoja / diaMes) * n;
+    // projeção única (vendas da meta até o último dia completo + cada dia que falta pela média do dia da semana)
+    const pj = diaMes < n ? projecaoMes({ loja, vendas, ym, ate: ultimo, base: 'meta' }) : null;
+    const proj = pj && pj.proj != null ? pj.proj : mes.metaLoja;
     if (proj < meta * 0.9) {
-      const falta = Math.max(0, meta - mes.metaLoja), rest = n - diaMes;
-      out.push({ tipo: 'meta', gravidade: proj < meta * 0.75 ? 2 : 1, texto: `No ritmo atual o mês fecha em ${brl(proj)} (${Math.round((proj / meta) * 100)}% da meta de ${brl(meta)}).${rest ? ` Para bater, são ${brl(falta / rest)} por dia nos ${rest} dias restantes.` : ''}` });
+      const falta = Math.max(0, meta - mes.metaLoja), rest = pj ? pj.restantes : 0;
+      out.push({ tipo: 'meta', gravidade: proj < meta * 0.75 ? 2 : 1, texto: `No ritmo atual as vendas da meta fecham o mês em ${brl(proj)} (${Math.round((proj / meta) * 100)}% da meta de ${brl(meta)}).${rest ? ` Para bater, são ${brl(falta / rest)} por dia nos ${rest} dias de loja aberta que faltam.` : ''}` });
     } else if (mes.metaLoja >= meta) out.push({ tipo: 'alta', gravidade: 0, texto: `Meta do mês batida: ${brl(mes.metaLoja)} de ${brl(meta)}.` });
   }
   // 4) vendedores abaixo da meta individual nos 3 últimos meses fechados
@@ -241,16 +249,23 @@ function alertas({ loja, vendas, metaPlanilha }) {
   for (const fm of fechados) {
     const mt = metaMes(loja, fm, metaPlanilha, vendas);
     if (!mt) { abaixo.clear(); break; }
-    const mv = entre(vendas, fm + '-01', `${fm}-${diasNoMes(fm)}`).filter((v) => v.grupoC !== EG && v.cat !== EG);
-    const porV = new Map();
+    const fimFm = `${fm}-${String(diasNoMes(fm)).padStart(2, '0')}`;
+    const mv = entre(vendas, fm + '-01', fimFm).filter((v) => v.grupoC !== EG && v.cat !== EG);
+    const porV = new Map(), diasV = new Map();
     for (const v of mv) {
-      if (!(G_AROM.has(v.grupoC) || G_PURO.has(v.grupoC) || G_ACESS.has(v.grupoC))) continue;
+      // dias com venda (qualquer produto da loja, sem Espaço Gourmet): o piso de quem divide a meta, como no Comissionamento
+      if ((v.vt || 0) > 0) (diasV.get(v.vendedor) || diasV.set(v.vendedor, new Set()).get(v.vendedor)).add(v.data);
+      if (!CT.classeMeta(v.grupoC, v.cat)) continue;
       porV.set(v.vendedor, (porV.get(v.vendedor) || 0) + (v.vt || 0));
     }
-    const eleg = [...porV].filter(([n, x]) => x > 0 && !semMeta.has(String(n).toLowerCase()));
+    const comMeta = (n) => !semMeta.has(String(n).trim().toLowerCase());
+    const eleg = [...porV].filter(([n, x]) => x > 0 && comMeta(n));
     if (!eleg.length) { abaixo.clear(); break; }
-    const mis = metasIndividuais(mt, fm, eleg.map(([n]) => n), loja.ferias || []);
-    for (const [nome, x] of eleg) if (x < (mis.get(String(nome).trim().toUpperCase()) || 0)) abaixo.set(nome, (abaixo.get(nome) || 0) + 1);
+    // quem divide a meta: a mesma regra das telas (piso de dias com venda; mês fechado = piso inteiro)
+    const div = CT.divisoresMeta({ dias: [...diasV].filter(([n]) => comMeta(n)).map(([n, d]) => [n, d.size]), piso: loja.regras && loja.regras.pisoDiasMeta, ym: fm, ultimoDia: fimFm });
+    const mis = metasIndividuais(mt, fm, div.dentro, loja.ferias || []);
+    const metaDosDemais = div.dentro.length ? mt / div.dentro.length : 0;
+    for (const [nome, x] of eleg) if (x < (mis.get(String(nome).trim().toUpperCase()) ?? metaDosDemais)) abaixo.set(nome, (abaixo.get(nome) || 0) + 1);
   }
   for (const [nome, c] of abaixo) if (c === 3) out.push({ tipo: 'vendedor', gravidade: 1, texto: `${nome} ficou abaixo da meta individual nos últimos 3 meses (${fechados.slice().reverse().map((x) => x.slice(5) + '/' + x.slice(2, 4)).join(', ')}).` });
   return out.sort((a, b) => b.gravidade - a.gravidade);
@@ -272,7 +287,9 @@ function resumoDiario({ loja, vendas, metaPlanilha }) {
   const mes = metricas(entre(vendas, ym + '-01', dia));
   const meta = metaMes(loja, ym, metaPlanilha, vendas);
   const diaMes = +dia.slice(8, 10), n = diasNoMes(ym);
-  const proj = (mes.metaLoja / diaMes) * n;
+  // projeção única: vendas da meta até o dia do resumo (dia completo) + cada dia que falta pela média do dia da semana
+  const pj = diaMes < n ? projecaoMes({ loja, vendas, ym, ate: dia, base: 'meta' }) : null;
+  const proj = pj && pj.proj != null ? pj.proj : mes.metaLoja;
   const nomeDia = new Date(dia + 'T12:00:00Z').toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit', timeZone: 'UTC' });
   const linhas = [
     `📅 ${nomeDia}${dia !== ontem ? ' (último dia com vendas)' : ''}`,
@@ -280,10 +297,10 @@ function resumoDiario({ loja, vendas, metaPlanilha }) {
     `🧾 ${d.cupons} atendimentos · TKM ${br2(d.tkm)} · IPA ${d.ipa == null ? '—' : d.ipa.toFixed(2).replace('.', ',')}`,
     `🍵 Chá: ${d.kg.toFixed(2).replace('.', ',')} kg`,
     '',
-    `📈 Mês até agora: ${brl(mes.metaLoja)} em chás e acessórios${meta ? ` (${Math.round((mes.metaLoja / meta) * 100)}% da meta de ${brl(meta)})` : ''}`,
-    meta && diaMes < n ? `🔮 Projeção: ${brl(proj)} (${Math.round((proj / meta) * 100)}% da meta)${proj < meta ? ` · faltam ${brl((meta - mes.metaLoja) / (n - diaMes))}/dia` : ''}` : null,
+    `📈 Mês até agora: faturamento ${brl(mes.vt)} · vendas da meta (chás e acessórios) ${brl(mes.metaLoja)}${meta ? ` = ${Math.round((mes.metaLoja / meta) * 100)}% da meta de ${brl(meta)}` : ''}`,
+    meta && pj ? `🔮 Projeção das vendas da meta: ${brl(proj)} (${Math.round((proj / meta) * 100)}% da meta)${proj < meta && pj.restantes ? ` · faltam ${brl((meta - mes.metaLoja) / pj.restantes)}/dia nos ${pj.restantes} dias de loja aberta` : ''}` : null,
   ].filter((x) => x != null);
   return { titulo: loja.nome, dia, linhas, alertas: alertas({ loja, vendas, metaPlanilha }) };
 }
 
-module.exports = { retencao90, metaMes, totaisSemEG, metricas, rede, alertas, resumoDiario, hojeSP, MIN_LOJAS_REDE };
+module.exports = { retencao90, metaMes, totaisSemEG, metricas, projecaoMes, lojaAberta, rede, alertas, resumoDiario, hojeSP, MIN_LOJAS_REDE };

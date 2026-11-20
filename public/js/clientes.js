@@ -544,8 +544,9 @@
     atencao: { nome: '👀 Precisa de atenção', modelo: 'Novidades', peso: 40 },
   };
   const hojeF = { motivo: '', vend: '' };
-  /** meta do dia: (meta do mês − vendido até ontem) ÷ dias de loja aberta que faltam (com hoje), e a parte de
-   *  cada vendedora pela participação dela nas vendas dos últimos 30 dias */
+  /** meta do dia: (meta do mês − VENDAS DA META até ontem) ÷ dias de loja aberta que faltam (com hoje), e a parte de
+   *  cada vendedora pela participação dela nas vendas da meta dos últimos 30 dias. Vendas da meta = chá aromatizado,
+   *  chá puro e acessórios, sem Espaço Gourmet: a mesma base da meta e do Comissionamento. */
   function cartaoMetaDia() {
     const db = TS.db;
     if (!db || !db.n || !TS.metaCalc) return null;
@@ -553,25 +554,17 @@
     const meta = TS.metaCalc(ym).valor;
     if (!meta) return null;
     const ini = TS.isoToDay(ym + '-01');
-    const taxas = TS.rules.ids.taxas;
-    const idx = (de, ate) => TS.filtrar({ de, ate, ignorar: ['vendedores', 'grupos', 'cats', 'produto'], mesLivre: true }).filter((i) => !taxas.has(db.desc[i]));
+    const I = TS.rules.ids;
+    const naMeta = (i) => { const g = db.grupoC[i]; return !I.eg.has(db.cat[i]) && (I.arom.has(g) || I.puro.has(g) || I.acess.has(g)); };
+    const idx = (de, ate) => TS.filtrar({ de, ate, ignorar: ['vendedores', 'grupos', 'cats', 'produto'], mesLivre: true }).filter(naMeta);
     const soma = (ii) => ii.reduce((s, i) => s + (db.vt[i] || 0), 0);
     const ateOntem = hojeD > ini ? soma(idx(ini, hojeD - 1)) : 0;
     const hojeIdx = db.maxDay >= hojeD ? idx(hojeD, hojeD) : [];
     // dias de loja aberta que faltam no mês (com hoje): horário de funcionamento da loja e feriados fechados
     const cfg = (db.metas || []).find((m) => m.id === state.loja) || null;
-    const op = cfg && cfg.operacao;
-    const DIAS_OP = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab'];
     const ultimo = TS.isoToDay(new Date(Date.UTC(+ym.slice(0, 4), +ym.slice(5, 7), 0)).toISOString().slice(0, 10));
-    const fer = new Map(TS.feriadosDoMes ? TS.feriadosDoMes(cfg, ym).map((f) => [f.data, f]) : []);
     let restam = 0;
-    for (let d = hojeD; d <= ultimo; d++) {
-      const iso = TS.dayToIso(d), wd = new Date(iso + 'T12:00:00Z').getUTCDay();
-      const f = op && op.funcionamento && op.funcionamento[DIAS_OP[wd]];
-      if (f && f.fechado) continue;
-      if (fer.has(iso) && TS.horarioFeriado && (TS.horarioFeriado({ ...(cfg || {}), operacao: op }, iso) || {}).fechado) continue;
-      restam++;
-    }
+    for (let d = hojeD; d <= ultimo; d++) if (TS.lojaAberta(cfg, TS.dayToIso(d))) restam++; // o mesmo "dia de loja aberta" da projeção
     const falta = Math.max(0, meta - ateOntem);
     const metaHoje = restam ? falta / restam : falta;
     const vendHoje = soma(hojeIdx);
@@ -589,8 +582,9 @@
     return h('div', { class: 'card md-card' },
       h('div', { class: 'md-topo' },
         h('div', null, h('div', { class: 'card-title' }, 'Meta de hoje'),
-          h('div', { class: 'card-sub' }, `Falta ${fmt.brl0(falta)} para a meta do mês (${fmt.brl0(meta)}) em ${restam} ${restam === 1 ? 'dia' : 'dias'} de loja aberta`)),
-        h('div', { class: 'md-num' }, h('b', null, fmt.brl0(metaHoje)), temHoje ? h('small', null, `vendido hoje: ${fmt.brl0(vendHoje)}`) : h('small', null, 'as vendas de hoje chegam na próxima atualização'))),
+          h('div', { class: 'card-sub' }, `Falta ${fmt.brl0(falta)} para a meta do mês (${fmt.brl0(meta)}) em ${restam} ${restam === 1 ? 'dia' : 'dias'} de loja aberta`,
+            TS.dica(`Meta de hoje = (meta do mês ${fmt.brl0(meta)} − vendas da meta até ontem ${fmt.brl0(ateOntem)}) ÷ ${restam} ${restam === 1 ? 'dia' : 'dias'} de loja aberta que faltam, contando hoje.\n\nVendas da meta = chá aromatizado, chá puro e acessórios, sem Espaço Gourmet: a mesma base do Comissionamento. O faturamento da loja (Resumo) é maior porque inclui o Espaço Gourmet e os outros grupos.`))),
+        h('div', { class: 'md-num' }, h('b', null, fmt.brl0(metaHoje)), temHoje ? h('small', null, `vendas da meta hoje: ${fmt.brl0(vendHoje)}`) : h('small', null, 'as vendas de hoje chegam na próxima atualização'))),
       temHoje ? barra(vendHoje, metaHoje) : null,
       vends.length ? h('div', { class: 'md-vends' }, ...vends.map(([v, x]) => {
         const alvo = metaHoje * (x / tot30), feito = hojeV.get(v) || 0;
@@ -598,7 +592,7 @@
           h('span', { class: 'md-alvo' }, h('b', null, fmt.brl0(alvo)), temHoje ? h('small', null, ` · fez ${fmt.brl0(feito)}${feito >= alvo ? ' ✓' : ''}`) : null),
           temHoje ? barra(feito, alvo) : null);
       })) : null,
-      h('small', { class: 'muted md-nota' }, 'A parte de cada vendedora segue a participação dela nas vendas dos últimos 30 dias.'));
+      h('small', { class: 'muted md-nota' }, 'Conta só as vendas da meta (chás e acessórios, sem Espaço Gourmet). A parte de cada vendedora segue a participação dela nessas vendas nos últimos 30 dias.'));
   }
 
   TS.pages.hoje = function (root) {

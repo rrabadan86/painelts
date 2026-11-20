@@ -11,29 +11,103 @@
   /** meta das lojas (nomes de venda) num mês */
   TS.metaDoMes = function (ym, nomes) { return TS.metaCalc(ym, nomes).valor; };
 
+  // ---------- dia de loja aberta: o mesmo critério da "Meta de hoje", da escala e da projeção ----------
+  const DIAS_OP = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab'];
+  const ferCache = new Map();
+  /** a loja abre neste dia? Horário de funcionamento do dia da semana e feriado marcado como fechado. Sem cadastro: abre. */
+  TS.lojaAberta = function (cfg, iso) {
+    const func = cfg && cfg.operacao && cfg.operacao.funcionamento;
+    const f = func && func[DIAS_OP[new Date(iso + 'T12:00:00Z').getUTCDay()]];
+    if (f && f.fechado) return false;
+    if (!cfg || !TS.feriadosDoMes || !TS.horarioFeriado) return true;
+    const k = `${cfg.id || ''}|${iso.slice(0, 7)}`;
+    let fer = ferCache.get(k);
+    if (!fer) { if (ferCache.size > 60) ferCache.clear(); ferCache.set(k, (fer = new Set(TS.feriadosDoMes(cfg, iso.slice(0, 7)).map((x) => x.data)))); }
+    return !(fer.has(iso) && (TS.horarioFeriado(cfg, iso) || {}).fechado);
+  };
+  TS.aoLimparCache && TS.aoLimparCache(() => ferCache.clear());
+
   /**
-   * Projeção linear do mês em andamento (pelo último dia com vendas).
-   * Devolve null se o mês já fechou.
+   * Projeção do mês — UMA conta para todas as telas (TS.contas.projecaoMes, a mesma do servidor).
+   * Vendas até o último dia COMPLETO (o dia de hoje fica de fora e vem à parte em `hoje`) + cada dia que falta pela média
+   * do mesmo dia da semana nas últimas 8 semanas (dia de loja fechada conta zero).
+   * opts: base 'loja' (faturamento da loja) | 'meta' (vendas da meta); ate = fim do período da tela (dia do painel);
+   *       todas = ignora também o filtro de loja (Resultado e equilíbrio: a loja escolhida no topo, sem filtros).
+   * Segue só o filtro de loja: vendedor, grupo e produto não mudam a projeção.
+   * → null se o mês já fechou ou não há histórico; senão o resultado da conta + { hoje, acumulado, proj (nunca abaixo do já vendido) }
    */
-  TS.projecao = function (valor, meta, ym) {
+  TS.projecaoMes = function (ym, opts = {}) {
     const db = TS.db;
-    if (ym !== ymDe(db.maxDay)) return null;
-    const n = diasNoMes(ym), d = +TS.dayToIso(db.maxDay).slice(8, 10);
-    const proj = d ? (valor / d) * n : null;
-    const restantes = Math.max(0, n - d);
+    if (!db || !db.n) return null;
+    const base = opts.base === 'meta' ? 'meta' : 'loja';
+    const hojeD = TS.todayDay();
+    const iniMes = dia(ym + '-01'), fimMes = iniMes + diasNoMes(ym) - 1;
+    const limite = Math.min(opts.ate ?? db.maxDay, db.maxDay);
+    const completo = Math.min(limite, hojeD - 1); // hoje ainda está acontecendo
+    if (completo >= fimMes || limite < iniMes) return null;
+    const ign = ['vendedores', 'grupos', 'cats', 'produto', ...(opts.todas ? ['lojas'] : [])];
+    const chave = `${ym}|${base}|${limite}|${hojeD}|${opts.todas ? '*' : [...state.f.lojas].sort().join(',')}|${state.loja || ''}`;
+    const cache = db._projMes || (db._projMes = new Map());
+    if (cache.has(chave)) return cache.get(chave);
+    const I = R().ids, porDia = new Map();
+    for (const i of TS.filtrar({ de: completo - 62, ate: Math.min(limite, fimMes), ignorar: ign, mesLivre: true })) {
+      let v = 0;
+      if (base === 'loja') v = TS.contaFat(i) ? db.vt[i] || 0 : 0;
+      else { const g = db.grupoC[i]; v = !I.eg.has(db.cat[i]) && (I.arom.has(g) || I.puro.has(g) || I.acess.has(g)) ? db.vt[i] || 0 : 0; }
+      if (v) porDia.set(db.day[i], (porDia.get(db.day[i]) || 0) + v);
+    }
+    const cfg = state.loja && state.loja !== 'todas' ? (db.metas || []).find((m) => m.id === state.loja) || null : null;
+    const P = TS.contas.projecaoMes({ ym, ate: TS.dayToIso(completo), valorDia: (iso) => porDia.get(dia(iso)) || 0, aberto: (iso) => TS.lojaAberta(cfg, iso), inicio: TS.dayToIso(db.minDay) });
+    let out = null;
+    if (P && !P.fechado && P.proj != null) {
+      // o dia em andamento (se o período da tela chega até ele) é mostrado à parte
+      const temHoje = limite >= hojeD && hojeD >= iniMes && hojeD <= fimMes;
+      const hoje = temHoje ? porDia.get(hojeD) || 0 : null;
+      const acumulado = P.realizado + (hoje || 0);
+      out = { ...P, base, hoje, acumulado, projPura: P.proj, proj: Math.max(P.proj, acumulado) };
+    }
+    cache.set(chave, out);
+    return out;
+  };
+
+  /** a conta da projeção, passo a passo, com os números da loja (vai no ⓘ) */
+  TS.comoProjecao = function (P) {
+    if (!P) return '';
+    const NOMES = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
+    const oQue = P.base === 'meta' ? 'Vendas da meta (chás e acessórios, sem Espaço Gourmet)' : 'Faturamento da loja (com Espaço Gourmet, sem taxas e sem itens a R$ 0,01)';
+    const p1 = P.ate ? `${oQue} do dia 1 até ${fmt.date(P.ate).slice(0, 5)} (${P.feitos} ${P.feitos === 1 ? 'dia completo' : 'dias completos'}): ${fmt.brl0(P.realizado)}.` : `${oQue}: o mês ainda não tem um dia completo.`;
+    const p2 = P.metodo === 'semana'
+      ? `Dias que faltam: ${P.restantes} de loja aberta. Cada um entra pela média do mesmo dia da semana nas últimas ${P.semanas} semanas (${[1, 2, 3, 4, 5, 6, 0].map((w) => `${NOMES[w]} ${fmt.brl0(P.medias[w])}`).join(' · ')}); dia de loja fechada conta zero. Soma: ${fmt.brl0(P.estimado)}.`
+      : `Dias que faltam: ${P.restantes} de loja aberta. A loja tem menos de 4 semanas de vendas no painel, então cada dia entra pela média simples por dia aberto (${fmt.brl0(P.mediaSimples)}). Soma: ${fmt.brl0(P.estimado)}.`;
+    const p3 = `Projeção = ${fmt.brl0(P.realizado)} + ${fmt.brl0(P.estimado)} = ${fmt.brl0(P.projPura)}.`;
+    const p4 = P.hoje != null ? `O dia de hoje ainda está acontecendo: fica de fora da conta e entra pela média do dia da semana (hoje até agora: ${fmt.brl0(P.hoje)}).${P.proj > P.projPura ? ' Como o que já foi vendido passou dessa conta, a projeção mostra o já vendido.' : ''}` : '';
+    return [p1, p2, p3, p4].filter(Boolean).join('\n\n');
+  };
+
+  /**
+   * Projeção de um valor da tela no mês em andamento. `valor` é o que a tela mostra (até o último dia com vendas);
+   * com filtro de vendedor/grupo, o valor é levado na mesma proporção da projeção da loja. Devolve null se o mês já fechou.
+   */
+  TS.projecao = function (valor, meta, ym, opts = {}) {
+    const P = TS.projecaoMes(ym, opts);
+    if (!P) return null;
+    const parte = P.acumulado > 0 ? Math.min(1, Math.max(0, valor / P.acumulado)) : null;
+    const proj = parte == null ? null : P.proj * parte;
+    const restantes = P.restantes; // dias de loja aberta que faltam (com hoje)
     const falta = meta != null ? Math.max(0, meta - valor) : null;
-    return { proj, d, n, restantes, falta, porDia: falta != null && restantes ? falta / restantes : null, pctProj: meta ? proj / meta : null };
+    return { proj, d: P.feitos, n: P.n, restantes, falta, porDia: falta != null && restantes ? falta / restantes : null, pctProj: meta && proj != null ? proj / meta : null, P, parte };
   };
 
   /** cartão de projeção (usado no Resumo, Comissionamento e Minha comissão) */
-  TS.kpiProjecao = function (valor, meta, ym, rotulo = 'Projeção do mês') {
-    const p = TS.projecao(valor, meta, ym);
-    if (!p) return null;
+  TS.kpiProjecao = function (valor, meta, ym, rotulo = 'Projeção do mês', opts = {}) {
+    const p = TS.projecao(valor, meta, ym, opts);
+    if (!p || p.proj == null) return null;
     const foot = meta
       ? h('span', null, h('span', { class: p.pctProj >= 1 ? 'up' : 'down' }, `${fmt.pct(p.pctProj, 0)} da meta`),
-        p.falta > 0 && p.restantes ? ` · faltam ${fmt.brl0(p.porDia)}/dia nos ${p.restantes} dias restantes` : p.falta === 0 ? ' · meta já batida' : '')
-      : `no ritmo de ${p.d} de ${p.n} dias`;
-    return TS.kpi(rotulo, fmt.brl0(p.proj), foot, `Faturamento até o dia ${p.d} ÷ ${p.d} dias × ${p.n} dias do mês`);
+        p.falta > 0 && p.restantes ? ` · faltam ${fmt.brl0(p.porDia)}/dia nos ${p.restantes} dias de loja aberta` : p.falta === 0 ? ' · meta já batida' : '')
+      : `${p.d} de ${p.n} dias completos · faltam ${p.restantes} de loja aberta`;
+    const filtro = p.parte != null && p.parte < 0.999 ? `\n\nA tela está com filtro (vendedor, grupo ou produto): o valor mostrado é ${fmt.pct(p.parte, 0)} do total e a projeção segue essa mesma proporção.` : '';
+    return TS.kpi(rotulo, fmt.brl0(p.proj), foot, TS.comoProjecao(p.P) + filtro);
   };
 
   // ======================= AVISO DE DADOS ATRASADOS =======================
@@ -104,12 +178,13 @@
         const minhas = res.feriasMes.filter((f) => String(f.vendedor).trim().toUpperCase() === NOME);
         if (minhas.length) return `menor por causa das férias (${minhas.map((f) => `${fmt.date(f.de).slice(0, 5)} a ${fmt.date(f.ate).slice(0, 5)}`).join(', ')})`;
         if (res.feriasMes.length) return 'inclui a parte de quem está de férias';
-        return `meta da loja ${fmt.brl0(metaLoja)} ÷ ${res.qtdVend} vendedores`;
-      })()),
-      TS.kpiProjecao(row.total, row.metaInd || null, ym, 'Se continuar neste ritmo') || TS.kpi('Mês', 'Fechado', TS.ymLabel(ym))));
+        if (!row.divide && !row.semMeta) return `a mesma dos colegas (meta da loja ÷ ${res.qtdVend}); você ainda não entra na divisão: ${row.diasVenda} de ${res.piso.aplicado} dias com venda`;
+        return `meta da loja ${fmt.brl0(metaLoja)} ÷ ${res.qtdVend} ${res.qtdVend === 1 ? 'pessoa' : 'pessoas'}`;
+      })(), `A meta da loja é dividida entre quem tem pelo menos ${res.piso.dias} dias com venda no mês${res.piso.fechado ? '' : ` (mês em andamento: por enquanto ${res.piso.aplicado})`}. Quem está de férias não divide a meta dos dias de férias.`),
+      TS.kpiProjecao(row.total, row.metaInd || null, ym, 'Se continuar neste ritmo', { base: 'meta' }) || TS.kpi('Mês', 'Fechado', TS.ymLabel(ym))));
 
     // por categoria
-    const proj = TS.projecao(1, 1, ym);
+    const proj = TS.projecao(1, 1, ym, { base: 'meta' });
     const cats = [['arom', 'Chá aromatizado', 'metaArom', 'cArom'], ['puro', 'Chá puro', 'metaPuro', 'cPuro'], ['acess', 'Acessórios', 'metaAcess', 'cAcess']];
     const blocos = cats.map(([k, nomeCat, mk, ck]) => {
       const v = row[k] || 0, m = row[mk] || 0, f = rg.comissao[k];
@@ -136,7 +211,9 @@
     root.append(h('div', { class: 'grid g-2 mt' },
       pr.ativa ? TS.card('Premiação', `${fmt.brl0(pr.valor)} por indicador quando ${pr.minimo} ou mais estão no mínimo · você está com ${nOk} de 3`,
         h('div', { class: 'minha-inds' }, ind('Ticket médio (TKM)', row.tkm, pr.tkm, fmt.brl), ind('Itens por atendimento (IPA)', row.ipa, pr.ipa, fmt.n2), ind('Preço médio (PMA)', row.pma, pr.pma, fmt.brl)),
-        h('div', { class: 'minha-dica' + (row.premiacao ? ' ok' : '') }, row.premiacao ? `Premiação garantida até agora: ${fmt.brl0(row.premiacao)}` : `Falta${pr.minimo - nOk > 1 ? 'm' : ''} ${pr.minimo - nOk} indicador(es) para a premiação.`))
+        h('div', { class: 'minha-dica' + (row.premiacao ? ' ok' : '') }, row.premiacao ? `Premiação garantida até agora: ${fmt.brl0(row.premiacao)}`
+          : row.poucosAtend ? `Poucos atendimentos (${fmt.int(row.atend)} de ${fmt.int(R().minAtendPremiacao(rg))}): a premiação vale para quem tem pelo menos ${fmt.int(R().minAtendPremiacao(rg))} atendimentos no mês.`
+            : `Falta${pr.minimo - nOk > 1 ? 'm' : ''} ${Math.max(0, pr.minimo - nOk)} indicador(es) para a premiação.`))
         : TS.card('Indicadores', 'Seu desempenho no mês', h('div', { class: 'minha-inds' }, ind('TKM', row.tkm, 0, fmt.brl), ind('IPA', row.ipa, 0, fmt.n2), ind('PMA', row.pma, 0, fmt.brl))),
       graficoAcumulado(baseLoja, NOME, ym, row.metaInd)));
     root.append(h('p', { class: 'muted minha-obs' }, 'Valores estimados com as vendas até ', fmt.date(TS.dayToIso(Math.min(db.maxDay, ate))), '. O valor final é fechado pela loja no fim do mês.'));
@@ -196,7 +273,7 @@
           h('td', { class: 'r' }, fmt.brl(rg.rateio && rg.rateio.ativo ? 0 : r.premiacao)), h('td', { class: 'r' }, fmt.brl(gorj.get(r.vendedor) || 0)), h('td', { class: 'r b' }, fmt.brl(totalDe(r))), temFeriado ? h('td', { class: 'r' }, TS.horasTxt(minTot(r.vendedor))) : null))),
         h('tfoot', null, h('tr', null, h('td', null, 'Total'), h('td', { class: 'r' }, fmt.brl(res.total.total)), h('td', { class: 'r' }, fmt.brl0(meta)), h('td', { class: 'r' }, fmt.brl(res.total.aPagar)),
           h('td', { class: 'r' }, fmt.brl(rg.rateio && rg.rateio.ativo ? 0 : res.total.premiacao)), h('td', { class: 'r' }, fmt.brl(linhas.reduce((s, r) => s + (gorj.get(r.vendedor) || 0), 0))), h('td', { class: 'r b' }, fmt.brl(linhas.reduce((s, r) => s + totalDe(r), 0))), temFeriado ? h('td', { class: 'r' }, TS.horasTxt(linhas.reduce((s, r) => s + minTot(r.vendedor), 0))) : null))),
-      h('p', { class: 'imp-obs' }, `Meta da loja: ${fmt.brl0(meta)} · ${res.qtdVend} vendedores dividem a meta${res.feriasMes && res.feriasMes.length ? ` · férias no mês: ${res.feriasMes.map((f) => `${f.vendedor} (${fmt.date(f.de)} a ${fmt.date(f.ate)})`).join(', ')} — nesses dias a meta diária foi dividida entre quem estava trabalhando` : ''}. Vendas sem Espaço Gourmet. Emitido em ${emitido}.`)));
+      h('p', { class: 'imp-obs' }, `Meta da loja: ${fmt.brl0(meta)} · meta dividida entre ${res.qtdVend} ${res.qtdVend === 1 ? 'pessoa' : 'pessoas'} (quem tem pelo menos ${res.piso ? res.piso.aplicado : 1} ${res.piso && res.piso.aplicado === 1 ? 'dia' : 'dias'} com venda no mês)${res.foraDaMeta && res.foraDaMeta.length ? ` · fora da divisão: ${res.foraDaMeta.map((x) => `${x.vendedor} (${x.dias} ${x.dias === 1 ? 'dia' : 'dias'})`).join(', ')}` : ''}${res.feriasMes && res.feriasMes.length ? ` · férias no mês: ${res.feriasMes.map((f) => `${f.vendedor} (${fmt.date(f.de)} a ${fmt.date(f.ate)})`).join(', ')} — nesses dias a meta diária foi dividida entre quem estava trabalhando` : ''}. Vendas sem Espaço Gourmet. Emitido em ${emitido}.`)));
     // um por vendedor
     for (const r of linhas) {
       const cat = (rot, v, m, c) => h('tr', null, h('td', null, rot), h('td', { class: 'r' }, fmt.brl0(m)), h('td', { class: 'r' }, fmt.brl(v)), h('td', { class: 'r' }, m ? fmt.pct(v / m, 0) : '—'), h('td', { class: 'r' }, fmt.brl(c)));

@@ -2957,3 +2957,7 @@ body.pg-semfiltros .sidebar, body.pg-semfiltros #btnFiltros { display: none; }
   .fx-pop[hidden] { display: none; }
   .fx-pop > .f-sep, .fx-pop > .f-section, .fx-pop > .f-hint { grid-column: 1 / -1; }
 }
+
+/* ===== Contas oficiais (auditoria X): comissionamento e resultado ===== */
+.card-title .com-parcial { margin-left: 8px; font-weight: 600; vertical-align: middle; white-space: normal; }
+.com-fora { margin: 8px 2px 0; font-size: 13px; }

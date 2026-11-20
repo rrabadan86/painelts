@@ -27,7 +27,7 @@ test('computador: a faixa de filtros fica no topo e o conteúdo usa a largura to
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), { message: 'a página não rola para o lado em ' + largura + ' px' }).toBeLessThanOrEqual(0);
   }
   const faixa = page.locator('#sidebar');
-  await expect(faixa.locator('.chip', { hasText: '30 dias' })).toBeVisible();
+  await expect(faixa.locator('.chip', { hasText: '28 dias' })).toBeVisible();
   await expect(faixa.locator('input[type=date]')).toHaveCount(2);
   await expect(page.locator('#btnMaisFiltros')).toBeVisible();
   await expect(page.locator('#btnMaisFiltros')).toHaveAttribute('aria-expanded', 'false');
@@ -112,7 +112,7 @@ test('celular: os filtros continuam na gaveta, sem faixa nem "Mais filtros"', as
   await page.locator('#btnFiltros').click();
   await expect(page.locator('#sidebar .f-label', { hasText: 'Vendedor' })).toBeVisible();
   await expect(page.locator('#sidebar .f-label', { hasText: 'Produto contém' })).toBeVisible();
-  await expect(page.locator('#sidebar .chip', { hasText: '30 dias' })).toBeVisible();
+  await expect(page.locator('#sidebar .chip', { hasText: '28 dias' })).toBeVisible();
   await page.locator('#btnFecharFiltros').click();
   await expect(page.locator('body')).not.toHaveClass(/filters-open/);
 });
