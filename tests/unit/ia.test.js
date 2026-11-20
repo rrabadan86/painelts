@@ -143,3 +143,24 @@ test('IA: só admin e franqueado usam (gerente e vendedora não)', () => {
   assert.equal(IA.podeUsar('vendedor'), false);
   assert.equal(IA.podeUsar(undefined), false);
 });
+
+test('IA: desligar guarda a chave e bloqueia o uso; ligar volta; trocar a chave liga de novo', async () => {
+  IA.salvar({ chave: CHAVE, loja: 'a', teto: 5, user: 'fr' });
+  assert.equal(IA.situacao('a').chave.ligada, true);
+  assert.ok(IA.chaveAtiva('a'));
+  assert.deepEqual(IA.alterar('a', { ligada: false }), { ok: true });
+  assert.equal(IA.situacao('a').chave.ligada, false);
+  assert.equal(IA.situacao('a').chave.fim, 'AB12', 'a chave continua guardada');
+  assert.equal(IA.chaveAtiva('a'), null);
+  assert.ok(IA.chaveDaLoja('a'), 'continua cadastrada');
+  await assert.rejects(() => IA.mensagens('a', { messages: [{ role: 'user', content: 'oi' }] }), (e) => e instanceof IA.ErroIA && e.status === 409 && /desligada/.test(e.message));
+  // mexer no teto não religa
+  IA.alterar('a', { teto: 8 });
+  assert.equal(IA.situacao('a').chave.ligada, false);
+  IA.alterar('a', { ligada: true });
+  assert.ok(IA.chaveAtiva('a'));
+  IA.alterar('a', { ligada: false });
+  IA.salvar({ chave: CHAVE, loja: 'a', teto: 5, user: 'fr' });
+  assert.equal(IA.situacao('a').chave.ligada, true, 'chave nova entra ligada');
+  assert.ok(IA.alterar('zz', { ligada: false }).erro);
+});

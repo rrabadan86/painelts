@@ -1690,7 +1690,7 @@ const podeIA = (req) => IA.podeUsar(req.perfil); // só admin e franqueado
 const lojaIA = (req, res, id) => {
   if (!podeIA(req)) { res.status(403).json({ erro: 'A IA é só para o admin e o franqueado.' }); return null; }
   id = String(id || '');
-  const loja = id === 'todas' ? req.lojas.find((l) => IA.chaveDaLoja(l.id)) || req.lojas[0] : req.lojas.find((l) => l.id === id);
+  const loja = id === 'todas' ? req.lojas.find((l) => IA.chaveAtiva(l.id)) || req.lojas[0] : req.lojas.find((l) => l.id === id);
   if (!loja) { res.status(400).json({ erro: 'Escolha uma loja.' }); return null; }
   return loja;
 };
@@ -1699,8 +1699,8 @@ app.get('/api/ia/estado', (req, res) => {
   if (!podeIA(req)) return res.json({ ativa: false, pode: false });
   const id = String(req.query.loja || '');
   const lojas = id === 'todas' ? req.lojas : req.lojas.filter((l) => l.id === id);
-  const k = lojas.map((l) => IA.chaveDaLoja(l.id)).find(Boolean);
-  res.json({ ativa: !!k, pode: true, podeConfigurar: podeContabilidade(req) });
+  const k = lojas.map((l) => IA.chaveAtiva(l.id)).find(Boolean); // IA desligada conta como sem IA: o ✨ some
+  res.json({ ativa: !!k, desligada: !k && lojas.some((l) => { const c = IA.chaveDaLoja(l.id); return !!(c && c.desligada); }), pode: true, podeConfigurar: podeContabilidade(req) });
 });
 const lojaCfgIA = (req, res, id) => {
   if (!podeContabilidade(req)) { res.status(403).json({ erro: 'Só o admin e o franqueado configuram a IA.' }); return null; }
@@ -1728,7 +1728,8 @@ app.patch('/api/ia/chave', express.json({ limit: '4kb' }), (req, res) => {
   const loja = lojaCfgIA(req, res, b.loja); if (!loja) return;
   const r = IA.alterar(loja.id, b);
   if (r.erro) return res.status(400).json({ erro: r.erro });
-  C.auditar(req.user, 'alterou o teto da IA', loja.id, { loja: loja.id, teto: b.teto ?? null });
+  if (b.ligada !== undefined) C.auditar(req.user, b.ligada ? 'ligou a IA' : 'desligou a IA', loja.id, { loja: loja.id });
+  if (b.teto !== undefined) C.auditar(req.user, 'alterou o teto da IA', loja.id, { loja: loja.id, teto: b.teto ?? null });
   res.json({ ok: true });
 });
 app.delete('/api/ia/chave', (req, res) => {

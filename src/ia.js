@@ -68,6 +68,8 @@ function chaveDaLoja(lojaId, d = ler()) {
   const r = d.chaves[lojaId];
   return r ? { id: lojaId, ...r } : null;
 }
+/** chave em uso: a loja tem chave E a IA está ligada (dá para desligar sem remover a chave) */
+function chaveAtiva(lojaId, d = ler()) { const k = chaveDaLoja(lojaId, d); return k && !k.desligada ? k : null; }
 function usoDoMes(lojaId, d = ler(), ym = mesAtual()) {
   const u = (d.uso[lojaId] || {})[ym] || {};
   return { pedidos: u.pedidos || 0, entrada: u.entrada || 0, saida: u.saida || 0, usd: u.usd || 0 };
@@ -78,7 +80,7 @@ function situacao(lojaId) {
   const d = ler();
   const k = d.chaves[lojaId];
   return {
-    chave: k ? { fim: k.fim, dono: (C.usuario(k.dono) || {}).nome || k.dono, teto: k.teto ?? null, criadaEm: k.criadaEm || null, testadaEm: k.testadaEm || null } : null,
+    chave: k ? { fim: k.fim, dono: (C.usuario(k.dono) || {}).nome || k.dono, teto: k.teto ?? null, ligada: !k.desligada, criadaEm: k.criadaEm || null, testadaEm: k.testadaEm || null } : null,
     uso: usoDoMes(lojaId, d), modelo: MODELO(), preco: PRECO(), tetoPadrao: TETO_PADRAO,
   };
 }
@@ -100,7 +102,7 @@ function tetoValido(t, ant) {
   if (Number.isFinite(n) && n >= 1 && n <= 1000) return Math.round(n * 100) / 100;
   return ant !== undefined ? ant : TETO_PADRAO;
 }
-function alterar(loja, { teto }) {
+function alterar(loja, { teto, ligada }) {
   const d = ler();
   const r = d.chaves[loja];
   if (!r) return { erro: 'Esta loja não tem chave.' };
@@ -109,6 +111,7 @@ function alterar(loja, { teto }) {
     if (n !== null && !(Number.isFinite(n) && n >= 1 && n <= 1000)) return { erro: 'O teto por mês vai de US$ 1 a US$ 1.000 (ou em branco, sem teto).' };
     r.teto = tetoValido(teto, r.teto);
   }
+  if (ligada !== undefined) { if (ligada) delete r.desligada; else r.desligada = true; } // desligar guarda a chave; nada é cobrado enquanto desligada
   gravar(d);
   return { ok: true };
 }
@@ -158,6 +161,7 @@ async function mensagens(lojaId, corpo) {
   const onde = `Configurações → Lojas → ${(C.get().lojas.find((l) => l.id === lojaId) || {}).nome || lojaId} → Inteligência artificial`;
   const k = chaveDaLoja(lojaId, d);
   if (!k) throw new ErroIA(`A IA não está ligada nesta loja: o franqueado cadastra a chave em ${onde}.`, 409);
+  if (k.desligada) throw new ErroIA(`A IA está desligada nesta loja. Para voltar a usar, ligue em ${onde}.`, 409);
   const uso = usoDoMes(k.id, d);
   if (k.teto != null && uso.usd >= k.teto) throw new ErroIA(`O teto de US$ ${k.teto.toFixed(2)} deste mês foi atingido. Aumente em ${onde} ou espere o mês virar.`, 429);
   const req = { model: MODELO(), max_tokens: corpo.max_tokens || 2048, ...corpo };
@@ -283,4 +287,4 @@ function simular(req) {
 const PERFIS_IA = ['admin', 'franqueado'];
 const podeUsar = (perfil) => PERFIS_IA.includes(perfil);
 
-module.exports = { PERFIS_IA, podeUsar, comFerramenta, umaVez, situacao, salvar, alterar, remover, testar, mensagens, chaveDaLoja, usoDoMes, custo, formatoOk, simular, ErroIA, cifrar, decifrar, MODELO, TETO_PADRAO };
+module.exports = { PERFIS_IA, podeUsar, comFerramenta, umaVez, situacao, salvar, alterar, remover, testar, mensagens, chaveDaLoja, chaveAtiva, usoDoMes, custo, formatoOk, simular, ErroIA, cifrar, decifrar, MODELO, TETO_PADRAO };
