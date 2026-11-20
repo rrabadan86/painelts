@@ -238,7 +238,11 @@ const EMB_PADRAO = {
 };
 // categorias dos outros custos (editáveis); "outros" sempre existe e recebe o que não tem categoria
 const CATEGORIAS = [{ id: 'func', nome: 'Funcionários' }, { id: 'imovel', nome: 'Imóvel' }, { id: 'sistemas', nome: 'Sistemas' }, { id: 'outros', nome: 'Outros' }];
-const PADRAO = { categorias: CATEGORIAS, entregaDias: 10, coberturaDias: 30, paradoDias: 60, segurancaPct: 50, simplesPct: 0, cartaoPct: 0, outros: [], margemMin: 15, margemAlvo: 30, comprasTetoPct: 32, embalagens: EMB_PADRAO };
+const PADRAO = { categorias: CATEGORIAS, entregaDias: 10, coberturaDias: 30, paradoDias: 60, segurancaPct: 50, simplesPct: 0, cartaoPct: 0, outros: [], margemMin: 15, margemAlvo: 30, comprasTetoPct: 32, embalagens: EMB_PADRAO,
+  // caixa a pagar (Resultado → A pagar): prazo das notas de compra, dias para o cartão cair na conta e dia dos royalties
+  prazoNotasDias: 30, cartaoDias: 1, royaltiesDia: 10 };
+/** dia de vencimento (1 a 31) de um custo; vazio ou inválido = sem dia (vence no fim do mês) */
+const diaVenc = (v) => { const x = Math.round(+v); return v !== '' && v != null && x >= 1 && x <= 31 ? x : null; };
 function cfg(loja) {
   const c = (loja && loja.estoqueCfg) || {};
   return {
@@ -259,6 +263,11 @@ function cfg(loja) {
     // teto das compras do mês: % das vendas (Compras × vendas, no Pedido e no Resultado)
     comprasTetoPct: c.comprasTetoPct >= 1 && c.comprasTetoPct <= 90 ? c.comprasTetoPct : PADRAO.comprasTetoPct,
     embalagens: c.embalagens && typeof c.embalagens === 'object' ? c.embalagens : EMB_PADRAO,
+    // caixa a pagar: sem o prazo cadastrado vale o padrão (prazoNotasInformado diz se a loja já escolheu)
+    prazoNotasDias: Number.isInteger(c.prazoNotasDias) && c.prazoNotasDias >= 0 && c.prazoNotasDias <= 180 ? c.prazoNotasDias : PADRAO.prazoNotasDias,
+    prazoNotasInformado: Number.isInteger(c.prazoNotasDias),
+    cartaoDias: Number.isInteger(c.cartaoDias) && c.cartaoDias >= 0 && c.cartaoDias <= 60 ? c.cartaoDias : PADRAO.cartaoDias,
+    royaltiesDia: Number.isInteger(c.royaltiesDia) && c.royaltiesDia >= 1 && c.royaltiesDia <= 31 ? c.royaltiesDia : PADRAO.royaltiesDia,
   };
 }
 function validarCfg(b) {
@@ -274,6 +283,12 @@ function validarCfg(b) {
   // teto das compras do mês (% das vendas); quem salva sem o campo fica com o padrão
   out.comprasTetoPct = Math.round(Number(String(b.comprasTetoPct ?? PADRAO.comprasTetoPct).replace(',', '.')) * 10) / 10;
   if (!(out.comprasTetoPct >= 1 && out.comprasTetoPct <= 90)) return { erro: 'Teto de compras: use um percentual entre 1 e 90.' };
+  // caixa a pagar: quem salva sem os campos fica com o padrão
+  const nx = (v, d, a, z) => { const x = Math.round(Number(v === '' || v == null ? d : v)); return x >= a && x <= z ? x : null; };
+  out.prazoNotasDias = nx(b.prazoNotasDias, PADRAO.prazoNotasDias, 0, 180);
+  out.cartaoDias = nx(b.cartaoDias, PADRAO.cartaoDias, 0, 60);
+  out.royaltiesDia = nx(b.royaltiesDia, PADRAO.royaltiesDia, 1, 31);
+  if (out.prazoNotasDias == null || out.cartaoDias == null || out.royaltiesDia == null) return { erro: 'Caixa a pagar: prazo das notas de 0 a 180 dias, cartão de 0 a 60 dias e dia dos royalties de 1 a 31.' };
   // categorias: nome curto; "outros" sempre fica
   const cats = Array.isArray(b.categorias) ? b.categorias : CATEGORIAS;
   if (cats.length > 12) return { erro: 'No máximo 12 categorias.' };
@@ -298,7 +313,8 @@ function validarCfg(b) {
     if (!['pct', 'mes'].includes(x.tipo)) return { erro: `Custo "${nome}": escolha % das vendas ou R$ por mês.` };
     if (!['tudo', 'loja', 'eg'].includes(x.aplica)) return { erro: `Custo "${nome}": escolha onde se aplica.` };
     if (!(valor >= 0) || (x.tipo === 'pct' ? valor > 100 : valor > 10000000)) return { erro: `Custo "${nome}": valor inválido.` };
-    out.outros.push({ nome, tipo: x.tipo, valor, aplica: x.aplica, cat: idsCat.has(x.cat) ? x.cat : 'outros' });
+    const dv = x.tipo === 'mes' ? diaVenc(x.dia) : null; // dia de vencimento (só custo em R$ por mês)
+    out.outros.push({ nome, tipo: x.tipo, valor, aplica: x.aplica, cat: idsCat.has(x.cat) ? x.cat : 'outros', ...(dv ? { dia: dv } : {}) });
   }
   const pontuais = Array.isArray(b.pontuais) ? b.pontuais : [];
   if (pontuais.length > 60) return { erro: 'No máximo 60 despesas pontuais.' };
@@ -310,7 +326,8 @@ function validarCfg(b) {
     if (!nome) return { erro: 'Dê um nome a cada despesa pontual.' };
     if (!/^20\d\d-(0[1-9]|1[0-2])$/.test(String(x.ym || ''))) return { erro: `Despesa "${nome}": escolha o mês.` };
     if (!(valor > 0 && valor <= 10000000)) return { erro: `Despesa "${nome}": valor inválido.` };
-    out.pontuais.push({ nome, valor, ym: x.ym, anual: !!x.anual, cat: idsCat.has(x.cat) ? x.cat : 'outros' });
+    const dp = diaVenc(x.dia);
+    out.pontuais.push({ nome, valor, ym: x.ym, anual: !!x.anual, cat: idsCat.has(x.cat) ? x.cat : 'outros', ...(dp ? { dia: dp } : {}) });
   }
   const emb = {};
   for (const [g, lista] of Object.entries(b.embalagens || {})) {

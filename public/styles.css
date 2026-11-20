@@ -2961,3 +2961,13 @@ body.pg-semfiltros .sidebar, body.pg-semfiltros #btnFiltros { display: none; }
 /* ===== Contas oficiais (auditoria X): comissionamento e resultado ===== */
 .card-title .com-parcial { margin-left: 8px; font-weight: 600; vertical-align: middle; white-space: normal; }
 .com-fora { margin: 8px 2px 0; font-size: 13px; }
+
+/* ===== Caixa a pagar e exportação para o contador (Resultado) ===== */
+.dre-abas { margin-bottom: 12px; }
+.dre-topo .ap-exportar { margin-left: auto; }
+.ap-topo .ap-saldo { width: 130px; }
+.ap-sit { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.ap-btn { padding: 4px 10px; font-size: 12px; min-height: 32px; }
+.ap-alerta { font-weight: 600; }
+.est-cat-t .est-dia { width: 104px; min-width: 0; }
+@media (max-width: 760px) { .dre-topo .ap-exportar { margin-left: 0; } }
