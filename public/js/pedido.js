@@ -7,6 +7,7 @@
 (function () {
   const { h, fmt, state } = TS;
   const DIA = 86400e3;
+  const toast = (msg, erro) => { document.querySelectorAll('.toast').forEach((x) => x.remove()); const t = h('div', { class: 'toast' + (erro ? ' err' : ''), role: 'status' }, msg); document.body.append(t); setTimeout(() => t.remove(), erro ? 7000 : 4000); };
   const CLASSES = { estrela: 'Estrela', volume: 'Volume', joia: 'Joia', peso: 'Peso morto' };
   // a classe vai como ícone ao lado do nome (pedido do dono: sobra espaço na tabela); o nome e a regra ficam na dica
   const CLASSE_ICO = { estrela: '⭐', joia: '👍', volume: '📦', peso: '💤' };
@@ -888,6 +889,59 @@
     const sub = modo === 'repor'
       ? `Compra só o que precisa para ${R.ent} dias de entrega + ${R.N} dias até o próximo pedido, com a época do ano. Urgentes primeiro; depois quem deixa mais lucro sem fixos por dia. ${catInfo}`
       : `O que vendeu no ${R.ev.nome} do ano passado × crescimento, + o consumo normal até lá − estoque. Sem limite de valor: ajuste as quantidades. ${catInfo}`;
+    // ---------- carrinho salvo: guarda as quantidades por 5 dias para terminar depois (um por loja) ----------
+    const rascVisto = state.pedRasc || (state.pedRasc = {});
+    const carrinhoAgora = () => { const o = {}; for (const r of R.linhas) { if (r.obrig || !(r.site === 'ok' || r.site === 'sem')) continue; if (r.pedir > 0) o[String(r.cod)] = r.pedir; else if (editados.get(String(r.cod)) === 0) o[String(r.cod)] = 0; } return o; };
+    const dataHora = (iso) => new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    const btnSalvar = h('button', { type: 'button', class: 'btn ped-salvar', title: 'Guarda as quantidades do pedido como estão agora, para você (ou outra pessoa com a tela Pedido) terminar depois. Fica salvo por 5 dias. Não envia nada ao site.' }, '💾 Salvar carrinho');
+    btnSalvar.addEventListener('click', async () => {
+      const itens = carrinhoAgora();
+      if (!Object.values(itens).some((q) => q > 0)) { toast('O pedido está vazio: não há o que salvar.', true); return; }
+      if (TS.demo) { toast(TS.DEMO_AVISO); return; }
+      btnSalvar.disabled = true;
+      try {
+        const r = await fetch(`/api/pedido/rascunho?loja=${encodeURIComponent(loja)}`, { method: 'PUT', credentials: 'same-origin', headers: { 'X-Painel': '1', 'Content-Type': 'application/json' }, body: JSON.stringify({ itens }) });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.erro || 'Não deu para salvar.');
+        p.rascunho = j.rascunho; rascVisto[loja] = j.rascunho.em; // é o carrinho desta tela: não pergunta se quer continuar
+        toast(`Carrinho salvo. Fica guardado até ${dataHora(j.rascunho.expira)}.`);
+        repintar();
+      } catch (err) { toast(err.message, true); btnSalvar.disabled = false; }
+    });
+    const rasc = p.rascunho;
+    const aplicarRasc = () => {
+      editados.clear();
+      let fora = 0;
+      const tem = new Set();
+      for (const r of R.linhas) {
+        if (r.obrig || !(r.site === 'ok' || r.site === 'sem')) continue;
+        tem.add(String(r.cod));
+        const v = rasc.itens[String(r.cod)] ?? 0;
+        if (v !== r.sugeridoPedir) editados.set(String(r.cod), v);
+      }
+      for (const [cod, q] of Object.entries(rasc.itens)) if (q > 0 && !tem.has(cod)) fora++;
+      rascVisto[loja] = rasc.em;
+      state.pedFiltro = 'pedido';
+      pintar(corpo, loja, M, e, p);
+      toast(fora ? `Carrinho salvo carregado. ${fora} ${fora === 1 ? 'produto não está' : 'produtos não estão'} mais disponível no site e ficou de fora.` : 'Carrinho salvo carregado.');
+    };
+    const descartarRasc = async (b) => {
+      if (!confirm('Descartar o carrinho salvo? O pedido da tela continua como está.')) return;
+      b.disabled = true;
+      try {
+        const r = await fetch(`/api/pedido/rascunho?loja=${encodeURIComponent(loja)}`, { method: 'DELETE', credentials: 'same-origin', headers: { 'X-Painel': '1' } });
+        if (!r.ok) throw new Error((await r.json().catch(() => ({}))).erro || 'Não deu para descartar.');
+        p.rascunho = null; repintar();
+      } catch (err) { toast(err.message, true); b.disabled = false; }
+    };
+    const nRasc = rasc ? Object.values(rasc.itens).filter((q) => q > 0).length : 0;
+    const avisoRasc = !rasc ? null : rascVisto[loja] === rasc.em
+      ? h('p', { class: 'muted ped-rasc-ok' }, `💾 Carrinho salvo em ${dataHora(rasc.em)}${rasc.por ? ` por ${rasc.por}` : ''} · fica guardado até ${dataHora(rasc.expira)}. `, h('button', { type: 'button', class: 'link-btn', title: 'Apaga o carrinho salvo. O pedido da tela não muda.', onclick: (ev) => descartarRasc(ev.target) }, 'descartar o salvo'))
+      : h('div', { class: 'notice ped-rasc' }, h('div', null, h('b', null, `💾 Tem um carrinho salvo${rasc.por ? ` por ${rasc.por}` : ''} em ${dataHora(rasc.em)}: `), `${fmt.int(nRasc)} ${nRasc === 1 ? 'produto' : 'produtos'}. Fica guardado até ${dataHora(rasc.expira)}.`),
+        h('div', { class: 'ped-rasc-acoes' },
+          h('button', { type: 'button', class: 'btn primary', title: 'Troca as quantidades da tela pelas do carrinho salvo. Produto que saiu do catálogo fica de fora.', onclick: aplicarRasc }, 'Continuar de onde parei'),
+          h('button', { type: 'button', class: 'btn', title: 'Esconde este aviso e segue com o pedido sugerido. O carrinho salvo continua guardado.', onclick: () => { rascVisto[loja] = rasc.em; repintar(); } }, 'Agora não'),
+          h('button', { type: 'button', class: 'btn ghost-danger', onclick: (ev) => descartarRasc(ev.target) }, 'Descartar')));
     const btnCsv = h('button', { type: 'button', class: 'btn', title: 'O pedido como está na tela (sem o pedido obrigatório, que a franquia já manda)', onclick: () => baixarCsv(R.linhas.filter((r) => r.pedir > 0 && !r.obrig), loja) }, '⬇ CSV');
     // Limpar: zera as quantidades do pedido (tudo ou um grupo); "Voltar à sugestão" desfaz
     const zerar = (g) => {
@@ -935,8 +989,8 @@
       filtro !== 'obrig' ? h('button', { type: 'button', class: 'link-btn', onclick: () => { state.pedFiltro = 'obrig'; pintar(corpo, loja, M, e, p); } }, 'Ver o obrigatório') : null) : null;
     corpo.append(h('div', { class: 'mt' }, TS.cardWithTools('Produtos', sub,
       h('div', { class: 'est-tools ped-tools' }, !MOBILE && tab.searchBox && (tab.searchBox.classList.add('est-busca'), tab.searchBox),
-        TS.seg(Object.entries(FILTROS).map(([k, [t]]) => [`${t} (${cont(k)})`, k]), filtro, (v) => { state.pedFiltro = v; pintar(corpo, loja, M, e, p); }), menuLimpar, btnCsv),
-      avisoObr, MOBILE ? h('details', { class: 'ped-fx-mob', open: (fx.g || fx.s || fx.c || fx.m) ? true : null }, h('summary', null, `Filtros${[fx.g, fx.s, fx.c, fx.m].filter(Boolean).length ? ` (${[fx.g, fx.s, fx.c, fx.m].filter(Boolean).length})` : ''} · ${fmt.int(linhas.length)} produtos`), filtrosExtra) : filtrosExtra, MOBILE ? listaMobile() : tab)));
+        TS.seg(Object.entries(FILTROS).map(([k, [t]]) => [`${t} (${cont(k)})`, k]), filtro, (v) => { state.pedFiltro = v; pintar(corpo, loja, M, e, p); }), menuLimpar, btnSalvar, btnCsv),
+      avisoRasc, avisoObr, MOBILE ? h('details', { class: 'ped-fx-mob', open: (fx.g || fx.s || fx.c || fx.m) ? true : null }, h('summary', null, `Filtros${[fx.g, fx.s, fx.c, fx.m].filter(Boolean).length ? ` (${[fx.g, fx.s, fx.c, fx.m].filter(Boolean).length})` : ''} · ${fmt.int(linhas.length)} produtos`), filtrosExtra) : filtrosExtra, MOBILE ? listaMobile() : tab)));
     if (editados.size) corpo.append(h('p', { class: 'muted' }, `${editados.size} quantidade(s) alterada(s) à mão. `, h('a', { href: '#', onclick: (x) => { x.preventDefault(); editados.clear(); pintar(corpo, loja, M, e, p); } }, 'Voltar à sugestão')));
 
     if (blocoIA) corpo.append(blocoIA);
@@ -1230,7 +1284,8 @@
       c.modo === 'navegador' ? fimTxt : null,
       TS.table({
         cols: [
-          { key: 'nome', label: 'Produto', align: 'l', wrap: true },
+          { key: 'nome', label: 'Produto', align: 'l', wrap: true, title: 'Produto que foi para o carrinho. "+ junto" é o que o site exigiu colocar junto (venda conjunta, ex.: o infusor da mug): o favorito aceitou e ele também está no carrinho.',
+            render: (r) => h('span', null, r.nome, (r.junto || []).map((j) => h('small', { class: 'est-tam ped-junto' }, `+ junto: ${j.nome}${j.qtd ? ` (${fmt.n2(j.qtd).replace(/,00$/, '')}${j.preco ? ` × ${fmt.brl(j.preco)}` : ''})` : ''}`))) },
           { key: 'status', label: 'Resultado', align: 'l', render: (r) => { const s = ST[r.status] || [r.status, '']; return h('span', null, h('span', { class: 'badge ' + s[1], title: r.erro || null }, s[0]), r.erro && (r.status === 'sem_estoque' || r.status === 'recusado') ? h('small', { class: 'est-tam' }, r.erro) : null); } },
           { key: 'pedido', label: 'Pedido', fmt: fmt.n2 },
           { key: 'qtd', label: 'No carrinho', fmt: (v, r) => (v && r.status === 'ok' ? fmt.n2(v) : '—') },

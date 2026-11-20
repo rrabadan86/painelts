@@ -79,6 +79,19 @@
     try { fechar ? fechar.click() : m.querySelector('[data-dismiss]')?.click(); } catch { /* ok */ }
     return txt || 'O site mostrou um aviso.';
   }
+  /**
+   * "Venda Conjunta": o site só vende o produto junto com outro (ex.: a mug com o infusor dela) e pede para confirmar.
+   * Decisão do dono: aceitar em "Colocar Todos no Carrinho". → { botao, itens: [{ cod, nome, qtd, preco }] } ou null
+   */
+  function vendaConjunta(d) {
+    const vis = (e) => { const s = d.defaultView.getComputedStyle(e); return s.display !== 'none' && s.visibility !== 'hidden' && e.offsetHeight > 0; };
+    const botao = [...d.querySelectorAll('a,button,input[type=button],input[type=submit]')].find((b) => /colocar\s+todos\s+no\s+carrinho/i.test((b.textContent || b.value || '').replace(/\s+/g, ' ')) && vis(b));
+    if (!botao) return null;
+    const janela = botao.closest('.modal, .modal-content, [role=dialog]') || d;
+    const itens = [...janela.querySelectorAll('table tr')].map((tr) => [...tr.querySelectorAll('td')].map((td) => td.textContent.replace(/\s+/g, ' ').trim())).filter((c) => c.length >= 4 && /\d/.test(c[0]))
+      .map((c) => ({ cod: c[0], nome: c[1], qtd: num(c[c.length - 2]), preco: num(c[c.length - 1]) }));
+    return { botao, itens };
+  }
   const ajustar = (qtd, c) => { let q = Math.max(qtd, c.min || 0); q = Math.round(Math.ceil(q / c.mult - 1e-9) * c.mult * 1000) / 1000; if (c.max && q > c.max) q = Math.floor(c.max / c.mult + 1e-9) * c.mult; return q; };
 
   async function abrirFornecedor() {
@@ -117,9 +130,16 @@
       if (!botao) return { ...r, status: 'erro', erro: 'botão "Colocar no Carrinho" não encontrado' };
       // o clique pode recarregar o quadro ou só atualizar o topo: espera um dos dois
       const recarregou = agir(() => botao.click()).catch(() => null);
-      let depois = antes, aviso = null;
-      for (let k = 0; k < 30 && depois === antes && !aviso; k++) { await Promise.race([recarregou, espera(500)]); depois = topoCarrinho(doc()); aviso = avisoDoSite(doc()); }
-      if (depois !== antes) return { ...r, qtd: q, preco: alvo.preco, status: 'ok' };
+      let depois = antes, aviso = null, junto = null;
+      for (let k = 0; k < 40 && depois === antes && !aviso; k++) {
+        await Promise.race([recarregou, espera(500)]);
+        // venda conjunta (mug + infusor): aceita "Colocar Todos no Carrinho" uma vez e continua esperando o carrinho mudar
+        const vc = junto ? null : vendaConjunta(doc());
+        if (vc) { junto = vc.itens; const de = agir(() => vc.botao.click()).catch(() => null); await Promise.race([de, espera(900)]); depois = topoCarrinho(doc()); continue; }
+        depois = topoCarrinho(doc());
+        if (depois === antes) aviso = avisoDoSite(doc());
+      }
+      if (depois !== antes) return { ...r, qtd: q, preco: alvo.preco, status: 'ok', junto: junto && junto.length ? junto : undefined };
       if (aviso) return { ...r, qtd: q, preco: alvo.preco, status: /estoque/i.test(aviso) ? 'sem_estoque' : 'recusado', erro: aviso };
       return { ...r, qtd: q, preco: alvo.preco, status: 'sem_confirmacao' };
     } catch (e) {
@@ -139,7 +159,7 @@
       const x = res.get(it.cod);
       const li = document.createElement('li');
       const [t, c] = x ? ROT[x.status] : it.nome === atual ? ['colocando…', 'tsc-pe'] : ['na fila', 'tsc-pe'];
-      li.innerHTML = `<span>${esc(it.nome)}${x && x.qtd ? ` <small>(${br(x.qtd, x.qtd % 1 ? 2 : 0)})</small>` : ''}${x && x.erro && (x.status === 'sem_estoque' || x.status === 'recusado') ? `<br><small class="tsc-av-t">Site: ${esc(x.erro)}</small>` : ''}</span><em class="st ${c}" title="${x && x.erro ? esc(x.erro) : ''}">${t}</em>`;
+      li.innerHTML = `<span>${esc(it.nome)}${x && x.qtd ? ` <small>(${br(x.qtd, x.qtd % 1 ? 2 : 0)})</small>` : ''}${x && x.junto ? x.junto.map((j) => `<br><small>+ junto: ${esc(j.nome)}${j.qtd ? ` (${br(j.qtd, j.qtd % 1 ? 2 : 0)})` : ''}</small>`).join('') : ''}${x && x.erro && (x.status === 'sem_estoque' || x.status === 'recusado') ? `<br><small class="tsc-av-t">Site: ${esc(x.erro)}</small>` : ''}</span><em class="st ${c}" title="${x && x.erro ? esc(x.erro) : ''}">${t}</em>`;
       if (x && !['ok', 'indisponivel', 'sem_estoque'].includes(x.status) && !rodando) {
         const b = document.createElement('button'); b.className = 'tb'; b.textContent = 'Tentar de novo';
         b.title = x.status === 'sem_confirmacao' ? 'O site não confirmou. Ele pode já estar no carrinho: confira antes para não dobrar.' : '';

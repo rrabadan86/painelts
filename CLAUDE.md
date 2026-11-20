@@ -59,6 +59,7 @@ Hooks (`.claude/settings.json`): bloqueiam commit/push de segredos e limpam os r
 - AppNext: só grava em fluxos aprovados pelo dono (clique no painel + confirmação, conferido item a item, auditado). Explorando: só olhar, nunca Concluir, Homologar ou Salvar.
 - O robô conclui e homologa NF-e (venda e devolução) só depois da revisão, para admin, franqueado e gerentes com Notas fiscais.
 - FIXE: só observar.
+- Sistema de Pedidos: o favorito e o robô só colocam no carrinho (inclusive aceitar a "Venda Conjunta" em "Colocar Todos no Carrinho"); **nunca finalizam o pedido**. Carrinho salvo do painel (`pedido/rascunho.json`, 5 dias, um por loja) é só do painel: não mexe no site.
 - Pergunte antes de abrir o AppNext no Chrome. Ele guarda a sessão por aba: cada aba nova pede login ao dono.
 
 **WhatsApp e testes**
@@ -80,7 +81,7 @@ Hooks (`.claude/settings.json`): bloqueiam commit/push de segredos e limpam os r
 - Teste em navegador: `tests/e2e/aplicativo.spec.js` usa o Chromium completo com perfil normal (no "sem tela" enxuto e em janela anônima as notificações vêm bloqueadas).
 
 ## Pendências combinadas (o dono pediu para depois)
-- Infusor obrigatório das mugs (Harmony, Classic, Super Jumbo, All in One Mug e Jumbo) no Pedido e no favorito do carrinho: o par mug → infusor vem da pergunta do Sistema de Pedidos (o dono manda o print quando o site abrir). Mug Uki e a linha de pinturas não têm infusor. Decisão: não agrupar estampas nos indicadores.
+- Infusor obrigatório das mugs: **feito no carrinho** — quando o site abre a janela "Venda Conjunta", o favorito (`carrinho-site.js`) e o robô (`nextsoft_pedido.py`) clicam em "Colocar Todos no Carrinho" (decisão do dono) e o par mug → infusor fica guardado em `pedido/conjuntos.json`. **Falta:** o Pedido somar o infusor no valor e na proporção antes de montar o carrinho (usar `PED.conjuntos`). Mug Uki e a linha de pinturas não têm infusor. Decisão: não agrupar estampas nos indicadores.
 - Conferência do boleto de royalties (ler o PDF e conferir os descontos de devoluções e da fidelidade).
 - Reserva de estoque para encomenda (ligada ao Orçamento).
 - A confirmar com o dono: a linha "campos de desconto no AppNext" no log da sincronização das notas; a primeira NF-e real emitida pelo painel ou pelo Orçamento.

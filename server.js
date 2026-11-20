@@ -701,7 +701,10 @@ app.get('/api/demo/pedido', (req, res) => {
     const disp = e.catalogo.itens.filter((c) => c.disp).slice(5, 11);
     const ate = new Date(Date.now() + 20 * 86400e3).toISOString().slice(0, 10);
     const obrigatorio = { lista: [{ id: 'demo', nome: 'Pedido obrigatório de dezembro (exemplo)', ate, ativo: true, por: 'franquia', em: new Date().toISOString(), itens: disp.map((c, k) => ({ cod: c.cod, nome: c.nome, qtd: k % 2 ? 2 : 6, preco: c.preco })) }] };
-    res.json({ catalogo: e.catalogo, carrinho: null, cfg: PEDd.cfg({}), obrigatorio, robo: { disponivel: false }, podeRobo: false }); } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
+    // carrinho salvo fictício (ontem, por outra pessoa): 4 produtos do catálogo que não estão no obrigatório
+    const salvo = e.catalogo.itens.filter((c) => c.disp).slice(20, 24), emR = Date.now() - 26 * 3600e3;
+    const rascunho = { itens: Object.fromEntries(salvo.map((c, k) => [String(c.cod), (k + 1) * (c.mult > 1 ? c.mult : 1)])), por: 'gerente', em: new Date(emR).toISOString(), expira: new Date(emR + PEDd.RASCUNHO_DIAS * 864e5).toISOString(), dias: PEDd.RASCUNHO_DIAS };
+    res.json({ rascunho, catalogo: e.catalogo, carrinho: null, cfg: PEDd.cfg({}), obrigatorio, robo: { disponivel: false }, podeRobo: false }); } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
 });
 // ⭐ sugestões fictícias da equipe (a tela guarda as mudanças só no navegador)
 function sugestoesDemo(lojaId) {
@@ -2086,7 +2089,29 @@ app.get('/api/pedido', async (req, res) => {
       }
     } catch (e) { robo = { disponivel: false, erro: e.message }; }
   }
-  res.json({ catalogo: PED.catalogo(loja.id), carrinho: PED.carrinho(loja.id), cfg: PED.cfg(C.get().lojas.find((l) => l.id === loja.id)), obrigatorio: PED.obrigatorios(loja.id), espera: ESP.resumoPorCod(loja.id), sugestoes: (() => { const S = require('./src/sugestoes'); try { S.avaliarNotas(loja.id, ES.notas(loja.id)); } catch { /* segue */ } return S.paraPedido(loja.id); })(), robo, podeRobo: req.perfil === 'admin' || req.perfil === 'franqueado' });
+  res.json({ rascunho: PED.rascunho(loja.id), catalogo: PED.catalogo(loja.id), carrinho: PED.carrinho(loja.id), cfg: PED.cfg(C.get().lojas.find((l) => l.id === loja.id)), obrigatorio: PED.obrigatorios(loja.id), espera: ESP.resumoPorCod(loja.id), sugestoes: (() => { const S = require('./src/sugestoes'); try { S.avaliarNotas(loja.id, ES.notas(loja.id)); } catch { /* segue */ } return S.paraPedido(loja.id); })(), robo, podeRobo: req.perfil === 'admin' || req.perfil === 'franqueado' });
+});
+// carrinho salvo: guarda as quantidades do pedido por 5 dias, para terminar depois (um por loja; quem tem a tela Pedido)
+app.put('/api/pedido/rascunho', express.json({ limit: '200kb' }), (req, res) => {
+  if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
+  if (!podeTela(req, 'pedido')) return res.status(403).json({ erro: 'Sem permissão.' });
+  const loja = req.lojas.find((l) => l.id === String(req.query.loja || ''));
+  if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  try {
+    const r = PED.salvarRascunho(loja.id, (req.body || {}).itens, req.user);
+    if (r.erro) return res.status(400).json({ erro: r.erro });
+    C.auditar(req.user, 'salvou o carrinho do pedido', loja.id, { loja: loja.id, produtos: Object.values(r.ok.itens).filter((q) => q > 0).length });
+    res.json({ ok: true, rascunho: r.ok });
+  } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
+});
+app.delete('/api/pedido/rascunho', (req, res) => {
+  if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
+  if (!podeTela(req, 'pedido')) return res.status(403).json({ erro: 'Sem permissão.' });
+  const loja = req.lojas.find((l) => l.id === String(req.query.loja || ''));
+  if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  PED.apagarRascunho(loja.id);
+  C.auditar(req.user, 'descartou o carrinho salvo do pedido', loja.id, { loja: loja.id });
+  res.json({ ok: true });
 });
 // ---------- inventário (Estoque → Inventário): contar pelo celular e gerar a planilha do AppNext ----------
 const INV = require('./src/inventario');
