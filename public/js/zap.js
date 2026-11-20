@@ -17,7 +17,8 @@
   }
   const qs = (loja) => 'loja=' + encodeURIComponent(loja);
   const hhmm = (iso) => new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-  const gestor = () => !!(TS.eu && TS.eu.pode && TS.eu.pode.configurar);
+  // quem cuida do robô: admin, franqueado e gerente com a tela Clientes (a vendedora não vê Campanhas)
+  const gestor = () => !!(TS.eu && TS.eu.perfil !== 'vendedor');
 
   /** etiqueta da conexão com o WhatsApp: [classe, texto] */
   function sitConexao(s) {
@@ -149,6 +150,19 @@
 
   // ---------- Clientes → Campanhas: faixa de situação do robô ----------
   /** some sozinha quando o robô não está instalado e nenhuma campanha usa o robô */
+  /** o cartão do robô numa janela, por cima da tela Campanhas (a gerente não tem a tela Configurações) */
+  function abrirJanela(lojaId) {
+    const fundo = h('div', { class: 'cp-modal-bg' });
+    const fechar = () => { fundo.remove(); document.removeEventListener('keydown', esc, true); if (TS.state.page === 'campanhas') TS.render(); };
+    const esc = (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); fechar(); } };
+    fundo.addEventListener('mousedown', (e) => { if (e.target === fundo) fechar(); });
+    fundo.append(h('div', { class: 'card cp-copiar zap-janela', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Robô do WhatsApp' },
+      h('button', { type: 'button', class: 'icon-btn exp-fechar', title: 'Fechar (Esc)', 'aria-label': 'Fechar', onclick: fechar }, '✕'),
+      TS.blocoZap(lojaId)));
+    document.body.append(fundo);
+    document.addEventListener('keydown', esc, true);
+  }
+  TS.zapAbrirJanela = abrirJanela;
   TS.zapFaixa = function (lojaId, temCampanhaRobo) {
     const box = h('div', { class: 'zap-faixa', hidden: true });
     let s = null, timer = null;
@@ -179,7 +193,7 @@
         h('div', { class: 'zap-faixa-b' },
           s.servico && andando ? btPausar : null,
           s.servico && !andando && s.pode.configurar && s.conexao.estado === 'conectado' ? btLigar : null,
-          s.pode.configurar ? h('a', { class: 'btn', href: '#config', title: 'Conectar o WhatsApp, ritmo, horário e máximo por dia: Configurações → loja → Mensagens' }, 'Configurar ›') : null),
+          s.pode.configurar ? h('button', { type: 'button', class: 'btn', title: 'Conectar o WhatsApp da loja (QR ou código) e ajustar ritmo, horário e máximo por dia', onclick: () => abrirJanela(lojaId) }, s.conexao.estado === 'conectado' ? 'Configurar ›' : 'Conectar e configurar ›') : null),
       ].filter(Boolean));
     }
     box.atualizar = carregar;

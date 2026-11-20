@@ -1,7 +1,7 @@
 'use strict';
 // Robô do WhatsApp: quem pode o quê nas rotas /api/zap/* e na opção "Enviar pelo robô" das campanhas.
 // Sobe o painel de verdade (dados temporários) e um robô de mentira em HTTP que só anota o que foi pedido.
-//   admin e franqueado da loja → tudo · gerente com a tela Clientes → vê e PAUSA · vendedora e gerente sem Clientes → nada
+//   admin, franqueado da loja e gerente com a tela Clientes → tudo (decisão do dono: a gerente lê o QR) · vendedora e gerente sem Clientes → nada
 const { test, before, after } = require('node:test');
 const assert = require('node:assert');
 const os = require('os');
@@ -81,32 +81,36 @@ test('situação: admin, franqueado da loja e gerente com Clientes veem; vendedo
   assert.deepStrictEqual(s.cfg, { min: 900, max: 1200, das: '09:00', as: '18:30', dias: [1, 2, 3, 4, 5, 6], teto: 30, falhas: 3 }, 'padrões do dono');
   assert.strictEqual(s.ligado, false, 'começa desligado');
   assert.deepStrictEqual(s.pode, { configurar: true, pausar: true });
-  assert.deepStrictEqual((await (await pedir('gercli', '/api/zap/situacao?loja=l1')).json()).pode, { configurar: false, pausar: true });
+  assert.deepStrictEqual((await (await pedir('gercli', '/api/zap/situacao?loja=l1')).json()).pode, { configurar: true, pausar: true }, 'gerente com Clientes também configura');
 });
 
-test('QR e código de pareamento só chegam a quem conecta (admin e franqueado)', async () => {
+test('QR e código de pareamento só chegam a quem conecta (admin, franqueado e gerente com Clientes); nunca à vendedora nem ao gerente sem Clientes', async () => {
   robo.estado = 'qr';
   try {
     assert.strictEqual((await (await pedir('dono1', '/api/zap/situacao?loja=l1')).json()).conexao.qr, QR);
     const g = await (await pedir('gercli', '/api/zap/situacao?loja=l1')).json();
     assert.strictEqual(g.conexao.estado, 'qr');
-    assert.ok(!('qr' in g.conexao) && !('codigo' in g.conexao));
+    assert.strictEqual(g.conexao.qr, QR, 'a gerente com Clientes lê o QR');
+    for (const nome of ['gersem', 'vend1']) { const r = await pedir(nome, '/api/zap/situacao?loja=l1'); assert.strictEqual(r.status, 403, nome); assert.ok(!(await r.text()).includes(QR)); }
     robo.estado = 'codigo';
     assert.strictEqual((await (await pedir('chefe', '/api/zap/situacao?loja=l1')).json()).conexao.codigo, 'ABCD1234');
-    assert.ok(!JSON.stringify(await (await pedir('gercli', '/api/zap/situacao?loja=l1')).json()).includes('ABCD1234'));
+    assert.strictEqual((await (await pedir('gercli', '/api/zap/situacao?loja=l1')).json()).conexao.codigo, 'ABCD1234');
+    for (const nome of ['gersem', 'vend1']) assert.ok(!(await (await pedir(nome, '/api/zap/situacao?loja=l1')).text()).includes('ABCD1234'), nome);
   } finally { robo.estado = 'conectado'; }
 });
 
 for (const [rota, noRobo] of [['conectar', 'POST /conectar/'], ['desconectar', 'POST /desconectar/']]) {
-  test(`${rota}: só admin e franqueado da loja; nada chega ao robô para os outros`, async () => {
+  test(`${rota}: admin, franqueado da loja e gerente com Clientes; nada chega ao robô para os outros`, async () => {
     chamadas.length = 0;
-    for (const nome of ['gercli', 'gersem', 'vend1']) assert.strictEqual((await post(nome, `/api/zap/${rota}`, { loja: 'l1' })).status, 403, nome);
+    assert.strictEqual((await post('gercli', `/api/zap/${rota}`, { loja: 'l2' })).status, 400, 'gerente na loja dos outros');
+    for (const nome of ['gersem', 'vend1']) assert.strictEqual((await post(nome, `/api/zap/${rota}`, { loja: 'l1' })).status, 403, nome);
     assert.strictEqual((await post('dono1', `/api/zap/${rota}`, { loja: 'l2' })).status, 400, 'franqueado na loja dos outros');
     assert.strictEqual((await pedir('dono1', `/api/zap/${rota}`, { method: 'POST', body: JSON.stringify({ loja: 'l1' }), headers: { 'X-Painel': '' } })).status, 403, 'sem X-Painel');
     assert.deepStrictEqual(chamadas, []);
     assert.strictEqual((await post('dono1', `/api/zap/${rota}`, { loja: 'l1' })).status, 200, 'franqueado na loja dele');
     assert.strictEqual((await post('chefe', `/api/zap/${rota}`, { loja: 'l2' })).status, 200, 'admin em qualquer loja');
-    assert.deepStrictEqual(chamadas, [noRobo + 'l1', noRobo + 'l2']);
+    assert.strictEqual((await post('gercli', `/api/zap/${rota}`, { loja: 'l1' })).status, 200, 'gerente com Clientes na loja dele');
+    assert.deepStrictEqual(chamadas, [noRobo + 'l1', noRobo + 'l2', noRobo + 'l1']);
   });
 }
 test('conectar com código: valida o número e a auditoria guarda só os 4 últimos dígitos', async () => {
@@ -117,8 +121,8 @@ test('conectar com código: valida o número e a auditoria guarda só os 4 últi
   assert.ok(auditoria().some((a) => a.acao === 'robô do WhatsApp: pediu para conectar' && a.detalhe.fim === '1234' && a.detalhe.modo === 'código'));
 });
 
-test('ligar: só admin e franqueado, e só com o WhatsApp conectado; pausar: também o gerente com Clientes', async () => {
-  for (const nome of ['gercli', 'gersem', 'vend1']) assert.strictEqual((await post(nome, '/api/zap/ligar', { loja: 'l1' })).status, 403, nome);
+test('ligar e pausar: admin, franqueado e gerente com Clientes; ligar só com o WhatsApp conectado', async () => {
+  for (const nome of ['gersem', 'vend1']) assert.strictEqual((await post(nome, '/api/zap/ligar', { loja: 'l1' })).status, 403, nome);
   assert.strictEqual((await post('dono1', '/api/zap/ligar', { loja: 'l2' })).status, 400);
   assert.ok(!(estado('l1') || {}).ligado);
   robo.estado = 'caiu';
@@ -137,17 +141,19 @@ test('ligar: só admin e franqueado, e só com o WhatsApp conectado; pausar: tam
   assert.strictEqual(p.status, 200);
   assert.strictEqual(estado('l1').pausa.por, 'gercli');
   assert.strictEqual((await p.json()).motivo.cod, 'pausado');
-  // o gerente pausa, mas não liga de novo
-  assert.strictEqual((await post('gercli', '/api/zap/ligar', { loja: 'l1' })).status, 403);
+  // o gerente com Clientes também liga de novo (só na loja dele)
+  assert.strictEqual((await post('gercli', '/api/zap/ligar', { loja: 'l2' })).status, 400);
   assert.ok(estado('l1').pausa);
-  assert.strictEqual((await post('chefe', '/api/zap/ligar', { loja: 'l1' })).status, 200);
+  assert.strictEqual((await post('gercli', '/api/zap/ligar', { loja: 'l1' })).status, 200);
   assert.strictEqual(estado('l1').pausa, null);
+  assert.strictEqual((await post('chefe', '/api/zap/ligar', { loja: 'l1' })).status, 200);
   const acoes = auditoria().map((a) => `${a.por}: ${a.acao}`);
-  for (const a of ['dono1: robô do WhatsApp: ligou', 'gercli: robô do WhatsApp: pausou', 'chefe: robô do WhatsApp: ligou']) assert.ok(acoes.includes(a), a);
+  for (const a of ['dono1: robô do WhatsApp: ligou', 'gercli: robô do WhatsApp: pausou', 'gercli: robô do WhatsApp: ligou', 'chefe: robô do WhatsApp: ligou']) assert.ok(acoes.includes(a), a);
 });
 
-test('configuração: só admin e franqueado da loja; valores validados no servidor e auditados', async () => {
-  for (const nome of ['gercli', 'gersem', 'vend1']) assert.strictEqual((await put(nome, '/api/zap/config', { loja: 'l1', ...CFG })).status, 403, nome);
+test('configuração: admin, franqueado da loja e gerente com Clientes; valores validados no servidor e auditados', async () => {
+  assert.strictEqual((await put('gercli', '/api/zap/config', { loja: 'l2', ...CFG })).status, 400, 'gerente na loja dos outros');
+  for (const nome of ['gersem', 'vend1']) assert.strictEqual((await put(nome, '/api/zap/config', { loja: 'l1', ...CFG })).status, 403, nome);
   assert.strictEqual((await put('dono1', '/api/zap/config', { loja: 'l2', ...CFG })).status, 400, 'franqueado na loja dos outros');
   for (const ruim of [{ min: 59 }, { min: 1000, max: 900 }, { max: 7201 }, { das: '18:00', as: '09:00' }, { das: '25:00' }, { dias: [] }, { dias: [9] }, { teto: 0 }, { teto: 201 }, { falhas: 0 }, { falhas: 11 }])
     assert.strictEqual((await put('dono1', '/api/zap/config', { loja: 'l1', ...CFG, ...ruim })).status, 400, JSON.stringify(ruim));
@@ -159,27 +165,28 @@ test('configuração: só admin e franqueado da loja; valores validados no servi
   assert.deepStrictEqual(lojas[0].zap, CFG);
   assert.strictEqual(lojas[1].zap, undefined, 'a outra loja não muda');
   assert.ok(auditoria().some((a) => a.por === 'dono1' && a.acao === 'robô do WhatsApp: mudou a configuração' && a.detalhe.teto === 12));
+  assert.strictEqual((await put('gercli', '/api/zap/config', { loja: 'l1', ...CFG })).status, 200, 'gerente com Clientes configura a loja dele');
+  assert.ok(auditoria().some((a) => a.por === 'gercli' && a.acao === 'robô do WhatsApp: mudou a configuração'));
 });
 
-test('campanha "Enviar pelo robô": só admin e franqueado ligam; o gerente não altera campanha do robô, só tira ou pausa', async () => {
+test('campanha "Enviar pelo robô": admin, franqueado e gerente com Clientes ligam e alteram; vendedora e gerente sem Clientes não', async () => {
   const lista = [{ cpf: '11111111111', nome: 'Ana' }, { cpf: '22222222222', nome: 'Bia' }];
   const nova = (nome, extra) => post(nome, '/api/campanhas', { loja: 'l1', nome: 'Teste', mensagem: 'Oi, {nome}!', lista, ...extra });
-  assert.strictEqual((await nova('gercli', { robo: true })).status, 403, 'gerente não cria campanha do robô');
+  for (const nome of ['gersem', 'vend1']) assert.notStrictEqual((await nova(nome, { robo: true })).status, 200, nome);
   const c = (await (await nova('gercli')).json()).campanha;
   assert.strictEqual(c.robo, false, 'padrão desligado');
-  assert.strictEqual((await put('gercli', `/api/campanhas/${c.id}`, { loja: 'l1', robo: true })).status, 403);
-  const r = await put('dono1', `/api/campanhas/${c.id}`, { loja: 'l1', robo: true });
-  assert.strictEqual(r.status, 200);
+  const r = await put('gercli', `/api/campanhas/${c.id}`, { loja: 'l1', robo: true });
+  assert.strictEqual(r.status, 200, 'gerente com Clientes liga o robô na campanha');
   assert.strictEqual((await r.json()).campanha.robo, true);
   // editar sem falar do robô não desliga
   assert.strictEqual((await (await put('dono1', `/api/campanhas/${c.id}`, { loja: 'l1', nome: 'Teste 2' })).json()).campanha.robo, true);
-  // gerente: não muda a mensagem de uma campanha do robô…
-  assert.strictEqual((await put('gercli', `/api/campanhas/${c.id}`, { loja: 'l1', mensagem: 'Outra coisa' })).status, 403);
-  assert.strictEqual((await (await pedir('gercli', '/api/campanhas?loja=l1')).json()).campanhas[0].mensagem, 'Oi, {nome}!');
-  // …mas pode tirar do robô (segurança)
+  // gerente com Clientes muda a mensagem de uma campanha do robô
+  assert.strictEqual((await put('gercli', `/api/campanhas/${c.id}`, { loja: 'l1', mensagem: 'Outra coisa' })).status, 200);
+  // quem não tem a tela Clientes não alcança a campanha
+  for (const nome of ['gersem', 'vend1']) assert.notStrictEqual((await put(nome, `/api/campanhas/${c.id}`, { loja: 'l1', robo: false })).status, 200, nome);
   assert.strictEqual((await (await put('gercli', `/api/campanhas/${c.id}`, { loja: 'l1', robo: false })).json()).campanha.robo, false);
   const acoes = auditoria().map((a) => `${a.por}: ${a.acao}`);
-  assert.ok(acoes.includes('dono1: campanha: ligou o envio pelo robô'));
+  assert.ok(acoes.includes('gercli: campanha: ligou o envio pelo robô'));
   assert.ok(acoes.includes('gercli: campanha: tirou do robô'));
 });
 
