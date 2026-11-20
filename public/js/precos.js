@@ -171,7 +171,7 @@
   TS.pages.precos = function (root) {
     if (TS.subEstoque) root.append(TS.subEstoque('precos'));
     root.append(h('div', { class: 'page-head' }, h('div', null, h('h1', { class: 'page-title' }, 'Preços'),
-      h('div', { class: 'page-sub' }, 'Reajustes de custo e de venda de cada produto e o efeito na margem bruta · período do filtro da lateral'))));
+      h('div', { class: 'page-sub' }, 'Reajustes de custo e de venda de cada produto e o efeito na margem bruta · período escolhido nos filtros'))));
     if (!state.loja || state.loja === 'todas') { root.append(h('div', { class: 'notice' }, 'Escolha uma loja no seletor do topo.')); return; }
     const corpo = h('div', null, h('div', { class: 'loading' }, h('div', null, h('div', { class: 'spinner' }), h('p', null, 'Montando o histórico de preços…'))));
     root.append(corpo);

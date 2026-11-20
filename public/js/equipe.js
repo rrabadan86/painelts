@@ -271,7 +271,7 @@
     const como = h('details', { class: 'mapa-como' }, h('summary', null, 'Como a conta é feita e o que ela não vê'),
       h('ul', null,
         h('li', null, h('b', null, 'Horas: '), 'horas líquidas da escala do mês (entrada–saída menos o intervalo), dia a dia, do período escolhido. Folga, férias, feriado fechado e dia sem turno contam zero. ', LIMITES),
-        h('li', null, h('b', null, 'Vendas: '), 'tudo o que a pessoa vendeu no período com os filtros da lateral, sem taxa de serviço/entrega e sem os prêmios de fidelidade (R$ 0,01).'),
+        h('li', null, h('b', null, 'Vendas: '), 'tudo o que a pessoa vendeu no período com os filtros escolhidos, sem taxa de serviço/entrega e sem os prêmios de fidelidade (R$ 0,01).'),
         h('li', null, h('b', null, 'R$ por hora = '), 'vendas ÷ horas. ', h('b', null, 'Atendimentos por hora = '), 'cupons ÷ horas. Sem hora escalada no período a conta não é feita ("—").'),
         h('li', null, h('b', null, 'Por horário e por dia: '), 'só as vendas de quem está na escala ÷ as horas de pessoa escaladas naquela faixa. Cupom sem hora registrada fica fora da visão por horário', R.semHora ? ` (${fmt.int(R.semHora)} neste período).` : '.'),
         h('li', null, h('b', null, 'Nomes: '), 'a pessoa da escala é ligada ao vendedor pelo nome igual ou pelo primeiro nome, quando só há um par possível.')));
@@ -281,7 +281,7 @@
         cols: [
           { key: 'nome', label: 'Pessoa', align: 'l', sticky: true, wrap: true, render: (r) => h('div', null, h('b', null, r.nome), r.naEscala ? null : h('span', { class: 'badge cinza', style: { marginLeft: '6px' } }, 'fora da escala'),
             r.naEscala && r.pctFora > 0.1 ? h('small', { class: 'muted', style: { display: 'block' } }, `${fmt.pct(r.pctFora, 0)} das vendas em dia sem turno na escala`) : null) },
-          { key: 'vendas', label: 'Vendas', fmt: fmt.brl, title: 'Tudo o que a pessoa vendeu no período (com os filtros da lateral), sem taxas e sem prêmios de fidelidade a R$ 0,01.' },
+          { key: 'vendas', label: 'Vendas', fmt: fmt.brl, title: 'Tudo o que a pessoa vendeu no período (com os filtros escolhidos), sem taxas e sem prêmios de fidelidade a R$ 0,01.' },
           { key: 'pctMeta', label: '% da meta', fmt: (v) => fmt.pct(v, 0), cls: (r) => (r.pctMeta == null ? '' : r.pctMeta >= 1 ? 'pos' : 'neg'), title: 'Vendido em chás e acessórios ÷ meta individual do mês (a mesma conta do Comissionamento). Só aparece quando o período escolhido cabe num mês, porque a meta é mensal; quem não tem meta fica em "—".' },
           { key: 'ticket', label: 'Ticket médio', fmt: fmt.brl, title: 'Vendas ÷ número de atendimentos (cupons).' },
           { key: 'ipa', label: 'Itens por atendimento', fmt: fmt.n2, title: 'Itens vendidos ÷ atendimentos. Mostra quem oferece mais um produto.' },

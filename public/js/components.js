@@ -433,7 +433,7 @@
       else if (psGuardado) { pageSize = psGuardado; psGuardado = null; paint(); }
     };
     paint();
-    if (fProd) wrap.append(h('div', { class: 'tab-fprod' }, `Só produtos com “${TS.state.f.produto}” (filtro Produto contém, na lateral) · `, h('button', { type: 'button', class: 'link-btn', onclick: () => { TS.state.f.produto = ''; document.querySelectorAll('.sidebar input[type=search]').forEach((i) => { if (i.placeholder === 'Ex.: earl grey') i.value = ''; }); TS.render(); } }, 'tirar o filtro')));
+    if (fProd) wrap.append(h('div', { class: 'tab-fprod' }, `Só produtos com “${TS.state.f.produto}” (filtro Produto contém) · `, h('button', { type: 'button', class: 'link-btn', onclick: () => { TS.state.f.produto = ''; document.querySelectorAll('.sidebar input[type=search]').forEach((i) => { if (i.placeholder === 'Ex.: earl grey') i.value = ''; }); TS.render(); } }, 'tirar o filtro')));
     // a busca aparece em cima da tabela; quem quiser pôr em outro lugar (barra de ferramentas do cartão) só move o campo
     if (searchBox) { searchBox.classList.add('tab-busca'); wrap.prepend(searchBox); }
     if (MOB) {
