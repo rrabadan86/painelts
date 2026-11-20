@@ -467,7 +467,7 @@
         `Vendas previstas: ritmo dos últimos ${R.N} dias × ${fmt.int(ate)} dias até começar + ${R.ev.nome} do ano passado × ${fmt.n2(R.cresc)}. Se o pedido sugerido passar muito disso, há estoque sobrando ou produtos de giro alto; confira as quantidades.`));
     }
     corpo.append(h('div', { class: 'grid g-kpi mt' }, kpis));
-    if (TS.comprasVendas) corpo.append((cvQuadro = TS.comprasVendas.quadroPedido(M, e, total())));
+    if (TS.comprasVendas) corpo.append((cvQuadro = TS.comprasVendas.quadroPedido(M, e, total(), { janela: R.ent + R.N, eventos: p.cfg.eventos || [], evento: modo === 'evento' ? ev : null })));
     if (R.obTotal) corpo.append(h('div', { class: 'card mt ped-compo-card' }, h('div', { class: 'card-title' }, 'Composição do pedido'), R.novoCompo()));
     if (SUG.size) corpo.append(cartaoSugestoes());
     corpo.append(h('div', { class: 'mt' }, cartaoObrigatorio(corpo, loja, M, e, p, R)));

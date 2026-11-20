@@ -1335,6 +1335,9 @@ tr.est-det > td { padding: 0 !important; background: #FBF9F4 !important; }
 .dica-i { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; margin-left: 6px; padding: 0; border-radius: 50%; border: 1px solid currentColor; background: transparent; color: var(--muted); font: italic 700 10.5px/1 Georgia, serif; cursor: help; vertical-align: 2px; opacity: .75; flex: none; }
 .dica-i:hover, .dica-i:focus-visible { opacity: 1; color: var(--green); }
 .dica-balao { position: fixed; z-index: 2000; max-width: min(320px, calc(100vw - 16px)); padding: 9px 12px; border-radius: 10px; background: #1F3A2A; color: #fff; font-size: 12.5px; line-height: 1.45; box-shadow: 0 6px 24px rgba(0,0,0,.18); pointer-events: none; }
+/* explicação detalhada (a conta aberta, em parágrafos): respeita as quebras de linha e fica mais larga para caber na tela */
+.dica-balao { white-space: pre-line; }
+.dica-balao.dica-longa { max-width: min(460px, calc(100vw - 16px)); }
 .cli-tag.t-premio { background: #F3E3F2; color: #7A2D74; margin-left: 6px; }
 .cupom-items tr.premio td { background: #FBF5FA; }
 

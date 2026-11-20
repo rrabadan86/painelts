@@ -3,7 +3,9 @@
  *   custo × quantidade de cada item, pelo dia de entrada da nota.
  * - Vendas: faturamento da loja no mês (com Espaço Gourmet, sem taxas e sem itens a R$ 0,01), como no Resultado.
  * - Teto: % das vendas que a loja aceita gastar em compras (Configurações → Lojas → Estoque e margem; padrão 32%).
- *   No mês em andamento o teto usa a projeção das vendas no ritmo atual (vendas ÷ dias que passaram × dias do mês).
+ *   Nos quadros (Pedido e Resultado) o teto olha para a FRENTE: % × vendas previstas para os próximos dias (entrega + período do
+ *   pedido) = ritmo dos últimos 30 dias × época do ano (ano passado, com as datas comemorativas do Pedido), contra o que foi comprado
+ *   nos últimos dias (mesmo tamanho de período) + o pedido da tela. Na tabela mês a mês, o teto de cada mês é % × vendas do mês.
  * Aparece no Pedido (quadros antes da lista, com o valor do pedido somado) e no Resultado (mês a mês).
  * Só para quem vê custo: os dados vêm de /api/estoque, que o servidor só entrega a quem tem tela de custo. */
 (function () {
@@ -85,7 +87,97 @@
     return { tetoPct: pct * 100, meses: lista, mes, total, inicioCompras, desde: dDesde, temCompras: !!compras };
   }
 
-  const API = { comprasPorMes, resumo, TETO_PADRAO };
+  // ---------------------------------------------------------------- teto pela previsão ----------------------------------------------------------------
+  const DIA = 864e5;
+  const paraDia = (iso) => Math.round(Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10)) / DIA);
+  const paraIso = (d) => new Date(d * DIA).toISOString().slice(0, 10);
+  const segundoDomingoMaio = (ano) => { const d = new Date(Date.UTC(ano, 4, 1)); return Math.floor(d.getTime() / DIA) + ((7 - d.getUTCDay()) % 7) + 7; };
+  /** janela de uma data comemorativa num ano, em dias: { de: 'MM-DD', ate: 'MM-DD' } ou { regra: 'maes', diasAntes } (as do Pedido) */
+  function janelaEvento(ev, ano) {
+    if (ev.regra === 'maes') { const d = segundoDomingoMaio(ano); return [d - (+ev.diasAntes || 0), d]; }
+    if (!/^\d{2}-\d{2}$/.test(String(ev.de)) || !/^\d{2}-\d{2}$/.test(String(ev.ate))) return null;
+    const d0 = paraDia(`${ano}-${ev.de}`); let d1 = paraDia(`${ano}-${ev.ate}`);
+    if (d1 < d0) d1 = paraDia(`${ano + 1}-${ev.ate}`);
+    return [d0, d1];
+  }
+  const lim = (f) => Math.min(3, Math.max(0.4, f));
+
+  /**
+   * Vendas previstas para os próximos dias (a base do teto de compras): o ritmo de agora × a época do ano.
+   *   dias: { 'AAAA-MM-DD': faturamento do dia }; ult: último dia com venda no painel; janela: dias à frente (entrega + período do pedido);
+   *   eventos: datas comemorativas do Pedido; ateEvento: evento escolhido no modo "Data comemorativa" (a janela vai até o fim dele).
+   * Época do ano: para cada dia à frente, as vendas do mesmo dia no ano passado (364 dias antes: mesmo dia da semana); dia dentro de
+   * uma data comemorativa usa o dia correspondente dessa data no ano passado (resolve as que mudam de dia, como o Dia das Mães).
+   * fator = (média por dia da janela no ano passado) ÷ (média por dia dos 30 dias anteriores a ela no ano passado), entre 0,4 e 3.
+   */
+  function previsao({ dias = {}, ult, janela = 40, eventos = [], ateEvento = null }) {
+    if (!ult || !/^\d{4}-\d{2}-\d{2}$/.test(ult)) return null;
+    const u = paraDia(ult), v = (d) => dias[paraIso(d)] || 0;
+    const datas = Object.keys(dias).sort(), primeiro = datas.length ? paraDia(datas[0]) : u;
+    const evs = [];
+    for (const ev of eventos || []) for (const ano of [+ult.slice(0, 4) - 1, +ult.slice(0, 4), +ult.slice(0, 4) + 1]) {
+      const a = janelaEvento(ev, ano), b = janelaEvento(ev, ano - 1);
+      if (a && b) evs.push({ ev, a, b });
+    }
+    let W = Math.max(7, Math.round(janela) || 40), esticada = null;
+    if (ateEvento) {
+      const x = evs.filter((e) => e.ev === ateEvento || (ateEvento.id != null && e.ev.id === ateEvento.id)).find((e) => e.a[1] > u);
+      if (x && x.a[1] - u > W) { W = Math.min(150, x.a[1] - u); esticada = x.ev.nome || 'data comemorativa'; }
+    }
+    // o dia do ano passado que corresponde a d
+    const anoPassado = (d) => { const e = evs.find((x) => d >= x.a[0] && d <= x.a[1]); return e ? Math.min(e.b[1], e.b[0] + (d - e.a[0])) : d - 364; };
+    const nBase = Math.min(30, u - primeiro + 1);
+    let base = 0; for (let d = u - nBase + 1; d <= u; d++) base += v(d);
+    const baseDia = nBase >= 7 && base > 0 ? base / nBase : null;
+    let A = 0, B = 0; const dentro = new Map();
+    for (let d = u + 1; d <= u + W; d++) { A += v(anoPassado(d)); const e = evs.find((x) => d >= x.a[0] && d <= x.a[1]); if (e) dentro.set(e.ev, e); }
+    // a base do ano passado são os 30 dias logo antes do primeiro dia correspondente (sem encostar na própria data comemorativa)
+    const ly0 = anoPassado(u + 1);
+    for (let d = ly0 - 30; d < ly0; d++) B += v(d);
+    const temAno = primeiro <= ly0 - 30;
+    const semEpoca = !temAno ? 'o painel ainda não tem um ano de vendas desta loja' : !(A > 0 && B > 0) ? 'não há vendas no mesmo período do ano passado' : null;
+    const bruto = semEpoca ? 1 : (A / W) / (B / 30), fator = lim(bruto);
+    return {
+      janela: W, esticada, de: paraIso(u + 1), ate: paraIso(u + W), ult, baseDias: nBase, base, baseDia,
+      lyJanela: semEpoca ? null : A, lyBase: semEpoca ? null : B, lyDe: paraIso(ly0), lyAte: paraIso(anoPassado(u + W)),
+      fator, fatorBruto: bruto, limitado: !semEpoca && Math.abs(bruto - fator) > 1e-9, semEpoca,
+      crescAno: !semEpoca && B > 0 && nBase === 30 ? base / B - 1 : null,
+      eventos: [...dentro.values()].map((e) => ({ nome: e.ev.nome || 'Data comemorativa', de: paraIso(Math.max(e.a[0], u + 1)), ate: paraIso(Math.min(e.a[1], u + W)), lyDe: paraIso(e.b[0]), lyAte: paraIso(e.b[1]) })),
+      previsao: baseDia == null ? null : baseDia * fator * W,
+    };
+  }
+
+  /** compras (notas que deram entrada) num intervalo de dias, a partir dos itens das notas */
+  function comprasNoPeriodo(itens, de, ate) {
+    let valor = 0; const nfs = new Set();
+    for (const lista of Object.values(itens || {})) for (const [dia, custo, nf, qtd] of lista || []) {
+      if (!(dia >= de && dia <= ate) || !(custo > 0) || !(qtd > 0)) continue;
+      valor += custo * qtd; nfs.add(String(nf));
+    }
+    return { valor: Math.round(valor * 100) / 100, notas: nfs.size };
+  }
+
+  /**
+   * Teto de compras pela previsão: % × vendas previstas para os próximos W dias, contra o que já foi comprado nos últimos W dias
+   * (mesmo tamanho de período) + o pedido da tela.
+   */
+  function tetoJanela({ prev, itens = null, desde = null, hoje, tetoPct = TETO_PADRAO, pedido = 0 }) {
+    if (!prev) return null;
+    const pct = (tetoPct > 0 ? tetoPct : TETO_PADRAO) / 100, W = prev.janela;
+    const cDe = paraIso(paraDia(hoje) - W + 1);
+    const c = itens ? comprasNoPeriodo(itens, cDe, hoje) : null;
+    const dDesde = /^\d{4}-\d{2}-\d{2}/.test(String(desde || '')) ? String(desde).slice(0, 10) : null;
+    const ped = pedido > 0 ? pedido : 0;
+    const teto = prev.previsao != null ? prev.previsao * pct : null;
+    const soma = c ? c.valor + ped : null;
+    const cabe = teto != null && soma != null ? teto - soma : null;
+    return { ...prev, tetoPct: pct * 100, teto, compras: c ? c.valor : null, notas: c ? c.notas : null, comprasDe: cDe, comprasAte: hoje,
+      comprasParcial: !!(c && dDesde && dDesde > cDe), desde: dDesde, pedido: ped, soma, cabe,
+      pctSoma: soma != null && prev.previsao ? soma / prev.previsao : null,
+      estado: cabe == null ? 'sem' : cabe < -0.005 ? 'acima' : soma > teto * 0.9 ? 'perto' : 'ok' };
+  }
+
+  const API = { comprasPorMes, resumo, previsao, comprasNoPeriodo, tetoJanela, janelaEvento, TETO_PADRAO };
   if (typeof module !== 'undefined' && module.exports) { module.exports = API; return; }
 
   // ---------------------------------------------------------------- tela ----------------------------------------------------------------
@@ -112,6 +204,33 @@
     return out;
   }
 
+  /** vendas de cada dia da loja (mesmas regras de vendasPorMes) e o último dia com venda */
+  const memoDia = new WeakMap();
+  function vendasPorDia(M) {
+    const db = TS.db;
+    const hit = memoDia.get(db);
+    if (hit && hit.M === M) return hit.out;
+    const dias = {}; let ult = '';
+    for (let i = 0; i < db.n; i++) {
+      if (M.taxa(i)) continue;
+      const iso = db.iso[i];
+      dias[iso] = (dias[iso] || 0) + (db.vt[i] || 0);
+      if (iso > ult) ult = iso;
+    }
+    const out = { dias, ult };
+    memoDia.set(db, { M, out });
+    return out;
+  }
+  /** o teto pela previsão dos próximos dias; o = { janela, eventos, evento } (o Pedido manda as datas comemorativas e a escolhida) */
+  function montarJanela(M, e, pedido, o = {}) {
+    const { dias, ult } = vendasPorDia(M);
+    const cfg = (e && e.cfg) || {};
+    const janela = o.janela || ((+cfg.entregaDias || 10) + (+cfg.coberturaDias || 30));
+    const prev = previsao({ dias, ult, janela, eventos: o.eventos || [], ateEvento: o.evento || null });
+    const c = e && e.compras;
+    return tetoJanela({ prev, itens: c ? c.itens : null, desde: c ? c.desde : null, hoje: TS.hojeSP(), tetoPct: cfg.comprasTetoPct ?? TETO_PADRAO, pedido });
+  }
+
   /** junta o que o painel já tem (vendas, custos e notas de compra) → resumo */
   function montar(M, e, pedido) {
     const c = e && e.compras;
@@ -120,46 +239,62 @@
   }
 
   const ONDE = 'Mude o teto em Configurações → Lojas → Estoque e margem → Reposição.';
-  const comoTeto = (R) => {
-    const m = R.mes;
-    if (!m) return '';
-    return m.projecao != null
-      ? `Teto = ${fmt.n1(R.tetoPct)}% das vendas previstas para o mês. Previsão no ritmo atual: ${fmt.brl0(m.vendas)} vendidos em ${m.decorridos} ${m.decorridos === 1 ? 'dia' : 'dias'} ÷ ${m.decorridos} × ${m.diasMes} dias = ${fmt.brl0(m.projecao)}.${m.ritmoCurto ? ' Com poucos dias de venda, a previsão ainda balança muito.' : ''} ${ONDE}`
-      : `Teto = ${fmt.n1(R.tetoPct)}% das vendas previstas para o mês. Ainda não há vendas neste mês para prever. ${ONDE}`;
-  };
   const semNotas = () => h('div', { class: 'notice' }, 'Compras × vendas: o painel ainda não tem as notas de compra desta loja (o robô traz do AppNext, em Entrada de Produtos).');
 
-  /** os quadros do mês em andamento; comPedido: mostra o quadro "Este pedido" (tela Pedido) */
-  function quadrosMes(R, comPedido) {
-    const m = R.mes, rot = m ? TS.ymLabel(m.ym) : '';
-    if (!m) return [];
-    const kComprado = TS.kpi(`Comprado em ${rot}`, m.compras == null ? '—' : fmt.brl0(m.compras),
-      m.compras == null ? 'sem notas de compra deste mês' : `${fmt.int(m.notas)} ${m.notas === 1 ? 'nota' : 'notas'}${m.pct != null ? ` · ${fmt.pct(m.pct)} das vendas previstas` : ''}`,
-      'Soma das notas de compra do mês que já entraram no AppNext (custo × quantidade de cada item; só compra concluída, sem devolução nem troca). Nota que ainda não deu entrada não conta.');
-    const kPedido = comPedido ? TS.kpi('Este pedido', fmt.brl0(m.pedido), m.soma == null ? 'soma às compras do mês' : h('span', null, 'com ele, o mês vai a ', h('b', null, fmt.brl0(m.soma))),
-      'O valor do pedido que está na tela agora (carrinho + pedido obrigatório). Ele só vira compra quando a nota chegar: se a entrega cair no mês que vem, a nota entra no outro mês.') : null;
-    const kTeto = TS.kpi('Teto de compras do mês', m.teto == null ? '—' : fmt.brl0(m.teto),
-      m.teto == null ? 'sem vendas no mês para prever' : `${fmt.n1(R.tetoPct)}% de ${fmt.brl0(m.projecao)} previstos${m.ritmoCurto ? ' · poucos dias, ainda instável' : ''}`, comoTeto(R));
-    const vCabe = m.cabe == null ? '—' : h('span', { class: m.estado === 'acima' ? 'neg' : m.estado === 'perto' ? 'warn-t' : 'pos' }, fmt.brl0(Math.abs(m.cabe)));
-    const kCabe = TS.kpi(m.estado === 'acima' ? 'Passou do teto' : 'Ainda cabe comprar', vCabe,
-      m.cabe == null ? (m.compras == null ? 'faltam as notas de compra' : 'falta a previsão de vendas')
-        : m.estado === 'acima' ? `compras${comPedido ? ' + pedido' : ''} = ${fmt.pct(m.pctSoma)} das vendas previstas`
-          : `${comPedido ? 'depois deste pedido' : 'até o fim do mês'} · usado ${fmt.pct(m.soma / m.teto, 0)} do teto`,
-      `Teto − o que já foi comprado no mês${comPedido ? ' − este pedido' : ''}. Verde: cabe com folga; amarelo: passou de 90% do teto; vermelho: passou do teto (a loja está comprando mais do que o combinado para o que vende).`);
-    return [kComprado, kPedido, kTeto, kCabe].filter(Boolean);
+  const dm = (iso) => fmt.date(iso).slice(0, 5);
+  const fx = (f) => '×' + fmt.n2(f);
+  /** explicação completa da previsão (vai nos ⓘ): a conta aberta, com os números da loja */
+  function comoPrevisao(J) {
+    const l = [];
+    l.push(`O que a loja deve vender de ${dm(J.de)} a ${dm(J.ate)} (${J.janela} dias): é para esse período que a compra de agora serve.`);
+    l.push(J.esticada ? `Os ${J.janela} dias vão até o fim de "${J.esticada}", a data comemorativa escolhida no Pedido.` : `${J.janela} dias = prazo de entrega + período do pedido (os mesmos do Pedido).`);
+    if (J.baseDia == null) { l.push('Ainda não há vendas suficientes (pelo menos 7 dias) para prever.'); return l.join('\n\n'); }
+    l.push(`1) Ritmo de agora: ${fmt.brl0(J.base)} vendidos nos últimos ${J.baseDias} dias = ${fmt.brl0(J.baseDia)} por dia.`);
+    if (J.semEpoca) l.push(`2) Época do ano: não entrou na conta (${J.semEpoca}). A previsão usa só o ritmo de agora, então pode ficar baixa antes de uma data forte.`);
+    else {
+      l.push(`2) Época do ano: no ano passado, os mesmos ${J.janela} dias (${dm(J.lyDe)} a ${dm(J.lyAte)}) venderam ${fmt.brl0(J.lyJanela / J.janela)} por dia, contra ${fmt.brl0(J.lyBase / 30)} por dia nos 30 dias antes deles. Ou seja, a época vende ${fx(J.fatorBruto)} o ritmo de antes${J.limitado ? ` (a conta limita a ${fx(J.fator)}, entre ×0,40 e ×3,00, para um ano fora do comum não distorcer)` : ''}.`);
+      if (J.eventos.length) l.push('Datas comemorativas do Pedido dentro do período: ' + J.eventos.map((x) => `${x.nome} (${dm(x.de)} a ${dm(x.ate)}; usa as vendas de ${dm(x.lyDe)} a ${dm(x.lyAte)} do ano passado)`).join('; ') + '. Assim a data que muda de dia, como o Dia das Mães, é comparada com ela mesma.');
+      if (J.crescAno != null) l.push(`O crescimento da loja já está no ritmo de agora: os últimos 30 dias estão ${J.crescAno >= 0 ? '+' : ''}${fmt.n1(J.crescAno * 100)}% contra os mesmos dias do ano passado.`);
+    }
+    l.push(`3) Previsão = ${fmt.brl0(J.baseDia)} por dia ${fx(J.fator)} × ${J.janela} dias = ${fmt.brl0(J.previsao)}.`);
+    l.push('É uma estimativa: promoção, clima ou falta de produto mudam o resultado.');
+    return l.join('\n\n');
+  }
+  /** os quadros do teto pela previsão; comPedido: mostra o quadro "Este pedido" (tela Pedido) */
+  function quadrosJanela(J, comPedido) {
+    if (!J) return [];
+    const W = J.janela;
+    const kPrev = TS.kpi(`Vendas previstas · próximos ${W} dias`, J.previsao == null ? '—' : fmt.brl0(J.previsao),
+      J.previsao == null ? 'faltam vendas para prever' : `${dm(J.de)} a ${dm(J.ate)} · ${J.semEpoca ? 'só o ritmo de agora' : `época do ano ${fx(J.fator)}`}${J.eventos.length ? ' · ' + J.eventos.map((x) => x.nome).join(', ') : ''}`,
+      comoPrevisao(J));
+    const kTeto = TS.kpi('Teto de compras', J.teto == null ? '—' : fmt.brl0(J.teto),
+      J.teto == null ? 'sem previsão de vendas' : `${fmt.n1(J.tetoPct)}% das vendas previstas`,
+      `Quanto a loja pode comprar para abastecer os próximos ${W} dias.\n\nTeto = ${fmt.n1(J.tetoPct)}% × vendas previstas${J.previsao != null ? ` (${fmt.brl0(J.previsao)}) = ${fmt.brl0(J.teto)}` : ''}.\n\nComo a previsão olha para a frente, o teto sobe sozinho antes de uma época forte (Natal, Dia das Mães) e encolhe depois dela.\n\nO percentual é o quanto das vendas a loja aceita gastar em compras; fica perto do custo do que vende (CMV). ${ONDE}\n\nÉ só um aviso: não trava o pedido nem muda o pedido sugerido.`);
+    const kComprado = TS.kpi(`Comprado nos últimos ${W} dias`, J.compras == null ? '—' : fmt.brl0(J.compras),
+      J.compras == null ? 'sem notas de compra' : `${fmt.int(J.notas)} ${J.notas === 1 ? 'nota' : 'notas'} · ${dm(J.comprasDe)} a ${dm(J.comprasAte)}${J.comprasParcial ? ' · notas incompletas' : ''}`,
+      `Soma das notas de compra que deram entrada no AppNext de ${dm(J.comprasDe)} a ${dm(J.comprasAte)} (custo × quantidade de cada item; só compra concluída, sem devolução nem troca).\n\nUsa o mesmo número de dias da previsão (${W}) para comparar períodos do mesmo tamanho: o que entrou nos últimos ${W} dias contra o que deve sair nos próximos ${W}.\n\nNota que ainda não deu entrada não conta.${J.comprasParcial ? `\n\nAtenção: o painel só tem as notas desde ${fmt.date(J.desde)}; o valor pode estar menor que o real.` : ''}`);
+    const kPedido = comPedido ? TS.kpi('Este pedido', fmt.brl0(J.pedido), J.soma == null ? 'soma às compras' : h('span', null, 'com ele, as compras vão a ', h('b', null, fmt.brl0(J.soma))),
+      'O valor do pedido que está na tela agora (carrinho + pedido obrigatório). Muda na hora quando você altera as quantidades.\n\nEle entra na conta como compra, mesmo antes de a nota chegar.') : null;
+    const vCabe = J.cabe == null ? '—' : h('span', { class: J.estado === 'acima' ? 'neg' : J.estado === 'perto' ? 'warn-t' : 'pos' }, fmt.brl0(Math.abs(J.cabe)));
+    const kCabe = TS.kpi(J.estado === 'acima' ? 'Passou do teto' : 'Ainda cabe comprar', vCabe,
+      J.cabe == null ? (J.compras == null ? 'faltam as notas de compra' : 'falta a previsão de vendas')
+        : J.estado === 'acima' ? `compras${comPedido ? ' + pedido' : ''} = ${fmt.pct(J.pctSoma)} das vendas previstas`
+          : `${comPedido ? 'depois deste pedido · ' : ''}usado ${fmt.pct(J.soma / J.teto, 0)} do teto`,
+      `Teto − comprado nos últimos ${W} dias${comPedido ? ' − este pedido' : ''}${J.cabe != null ? ` = ${fmt.brl0(J.teto)} − ${fmt.brl0(J.compras)}${comPedido ? ` − ${fmt.brl0(J.pedido)}` : ''} = ${fmt.brl0(J.cabe)}` : ''}.\n\nVerde: cabe com folga. Amarelo: já usou mais de 90% do teto. Vermelho: passou do teto, ou seja, a loja está comprando mais do que a previsão de vendas comporta — veja se há produto sobrando (Estoque → Sobrando) antes de fechar o pedido.`);
+    return [kPrev, kTeto, kComprado, kPedido, kCabe].filter(Boolean);
   }
 
   /** Pedido: "já comprado no mês × teto", com o valor do pedido da tela somado. el.atualizar(valor) refaz quando o pedido muda */
-  function quadroPedido(M, e, pedido) {
+  function quadroPedido(M, e, pedido, o = {}) {
     const el = h('div', { class: 'cv-pedido mt' });
     el.atualizar = (valor) => {
       if (!e || !e.compras) { el.replaceChildren(semNotas()); return; }
-      const R = montar(M, e, valor);
-      const m = R.mes;
+      const J = montarJanela(M, e, valor, o);
       el.replaceChildren(...[
-        h('div', { class: 'section-label' }, `Compras do mês × teto${m ? ` · ${TS.ymLabel(m.ym)}` : ''} `, h('a', { href: '#dre', class: 'cv-link' }, 'ver mês a mês no Resultado')),
-        m && m.estado === 'acima' ? h('div', { class: 'notice warn' }, `Com este pedido, as compras de ${TS.ymLabel(m.ym)} passam o teto em ${fmt.brl0(-m.cabe)} (${fmt.pct(m.pctSoma)} das vendas previstas; o teto é ${fmt.n1(R.tetoPct)}%). Veja se dá para tirar o que tem estoque sobrando.`) : null,
-        h('div', { class: 'grid g-kpi' }, quadrosMes(R, true)),
+        h('div', { class: 'section-label' }, `Compras × teto${J ? ` · para vender de ${dm(J.de)} a ${dm(J.ate)}` : ''} `, h('a', { href: '#dre', class: 'cv-link' }, 'ver mês a mês no Resultado')),
+        J && J.estado === 'acima' ? h('div', { class: 'notice warn' }, `Com este pedido, as compras passam o teto em ${fmt.brl0(-J.cabe)} (${fmt.pct(J.pctSoma)} das vendas previstas para os próximos ${J.janela} dias; o teto é ${fmt.n1(J.tetoPct)}%). Veja se dá para tirar o que tem estoque sobrando.`) : null,
+        J && J.semEpoca && J.previsao != null ? h('div', { class: 'notice' }, `A previsão usa só o ritmo de agora: ${J.semEpoca}. Antes de uma data forte, o teto pode ficar baixo.`) : null,
+        h('div', { class: 'grid g-kpi' }, quadrosJanela(J, true)),
       ].filter(Boolean));
     };
     el.atualizar(pedido);
@@ -173,17 +308,17 @@
     TS.estoqueBuscar(loja).then((e) => {
       if (!el.isConnected) return;
       if (!e || !e.compras) { el.replaceChildren(semNotas()); return; }
-      pintarResultado(el, montar(M, e, 0));
+      pintarResultado(el, montar(M, e, 0), montarJanela(M, e, 0));
     }).catch(() => el.remove());
     return el;
   }
 
-  function pintarResultado(el, R) {
+  function pintarResultado(el, R, J) {
     const fil = state.cvFil || 'todos';
     const comCompras = R.meses.filter((x) => x.compras != null);
     const FIL = { todos: ['Todos os meses', () => true], acima: ['Acima do teto', (x) => x.acima === true], dentro: ['Dentro do teto', (x) => x.acima === false] };
     const cont = (k) => R.meses.filter(FIL[k][1]).length;
-    const ir = (k) => { state.cvFil = k; pintarResultado(el, R); };
+    const ir = (k) => { state.cvFil = k; pintarResultado(el, R, J); };
     const T = R.total;
     const kPer = TS.kpi(`Compras ÷ vendas · ${T.meses} ${T.meses === 1 ? 'mês fechado' : 'meses fechados'}`, T.pct == null ? '—' : h('span', { class: T.pct > R.tetoPct / 100 ? 'neg' : 'pos' }, fmt.pct(T.pct)),
       T.pct == null ? 'ainda sem mês fechado com notas' : `teto ${fmt.n1(R.tetoPct)}%${T.cmvPct != null ? ` · custo do que vendeu ${fmt.pct(T.cmvPct)}` : ''}`,
@@ -229,12 +364,13 @@
     });
     el.replaceChildren(
       h('div', { class: 'section-label' }, 'Compras × vendas'),
-      h('div', { class: 'grid g-kpi' }, ...quadrosMes(R, false), kPer, kAcima),
+      h('div', { class: 'grid g-kpi' }, ...quadrosJanela(J, false), kAcima),
+      h('div', { class: 'grid g-kpi mt' }, kPer),
       h('div', { class: 'mt' }, TS.cardWithTools('Compras × vendas mês a mês',
         `Estou comprando mais do que vendo? Compras = notas de compra que entraram no AppNext; teto = ${fmt.n1(R.tetoPct)}% das vendas. * mês em andamento: teto pela previsão de vendas.${R.inicioCompras ? ` Notas de compra desde ${R.desde ? fmt.date(R.desde) : TS.ymLabel(R.inicioCompras)}.` : ''}`,
         TS.seg(Object.entries(FIL).map(([k, [t]]) => [`${t} (${cont(k)})`, k]), FIL[fil] ? fil : 'todos', ir),
         graf, tab)));
   }
 
-  TS.comprasVendas = { ...API, vendasPorMes, montar, quadroPedido, cartaoResultado };
+  TS.comprasVendas = { ...API, vendasPorMes, vendasPorDia, montar, montarJanela, quadroPedido, cartaoResultado };
 })();

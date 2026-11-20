@@ -7,19 +7,24 @@ const abrir = async (page, tela, antes) => {
 const semRolagem = async (page) => expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(1);
 const semLixo = async (loc) => expect(await loc.innerText()).not.toMatch(/(^|[\s>(\d])(null|undefined|NaN|\[object Object\])(?=$|[\s<).,])/m);
 
-// Compras × vendas no Pedido: quadros do mês com o pedido da tela somado; mudar o pedido refaz a conta
-test('Pedido: compras do mês × teto, com o pedido somado', async ({ page }) => {
+// Compras × teto no Pedido: o teto olha para a frente (vendas previstas dos próximos dias); mudar o pedido refaz a conta
+test('Pedido: compras × teto pela previsão dos próximos dias, com o pedido somado e a conta explicada', async ({ page }) => {
   await abrir(page, 'pedido');
   const q = page.locator('.cv-pedido');
-  await expect(q.locator('.kpi')).toHaveCount(4);
-  await expect(q).toContainText('Comprado em');
+  await expect(q.locator('.kpi')).toHaveCount(5);
+  await expect(q).toContainText(/Vendas previstas · próximos \d+ dias/);
+  await expect(q).toContainText(/Comprado nos últimos \d+ dias/);
   await expect(q).toContainText('Este pedido');
-  await expect(q).toContainText('Teto de compras do mês');
-  await expect(q).toContainText(/32,0% de R\$/);
+  await expect(q).toContainText('Teto de compras');
+  await expect(q).toContainText('32,0% das vendas previstas');
   await semLixo(q);
-  // a conta fecha: teto − comprado − pedido = cabe (ou passou)
-  const r = await page.evaluate(async () => { const e = await TS.estoqueBuscar(TS.state.loja), M = await TS.custosLoja(); const m = TS.comprasVendas.montar(M, e, 1000).mes; return { ok: Math.abs(m.teto - m.compras - 1000 - m.cabe) < 0.01, soma: m.soma, compras: m.compras }; });
-  expect(r.ok).toBe(true); expect(r.soma).toBeCloseTo(r.compras + 1000, 2);
+  // todo quadro tem a explicação (ⓘ)
+  expect(await q.locator('.kpi .dica-i').count()).toBe(5);
+  // a conta fecha: teto = % × previsão; teto − comprado − pedido = cabe; a janela é entrega + período do pedido
+  const r = await page.evaluate(async () => { const e = await TS.estoqueBuscar(TS.state.loja), M = await TS.custosLoja(); const J = TS.comprasVendas.montarJanela(M, e, 1000, { janela: 40 });
+    return { teto: Math.abs(J.teto - J.previsao * 0.32) < 0.01, cabe: Math.abs(J.teto - J.compras - 1000 - J.cabe) < 0.01, janela: J.janela, fator: J.fator, prev: J.previsao }; });
+  expect(r.teto).toBe(true); expect(r.cabe).toBe(true); expect(r.janela).toBe(40); expect(r.prev).toBeGreaterThan(0);
+  expect(r.fator).toBeGreaterThanOrEqual(0.4); expect(r.fator).toBeLessThanOrEqual(3);
   await semRolagem(page);
 });
 
