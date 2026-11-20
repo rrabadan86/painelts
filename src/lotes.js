@@ -187,7 +187,12 @@ function comAbertura(lotes, entradasPorCod, dEst, reg, hoje) {
     const ritmo = ritmoCompra(entradasPorCod.get(cod) || [], dEst);
     let ordem = 0;
     for (const l of ls.slice().sort((a, b) => String(a.entrada || '') < String(b.entrada || '') ? -1 : 1)) { // do mais antigo para o mais novo
-      const pk = pacotesDoLote(l);
+      let pk = pacotesDoLote(l);
+      // a equipe avisou que abriu o próximo pacote e ainda não saiu nada dele (ou abriu antes de acabar o anterior): o pacote inteiro está na lata
+      if (pk.n === 0 && pk.fechado > 0.0005 && l.qtdEntrada != null) {
+        const prox = Math.floor((r3(l.qtdEntrada - (l.saldo || 0)) + 1e-6) / PACOTE_KG) + 1, r = reg && reg[`${l.chave}#${prox}`];
+        if (r && r.por && DIA.test(r.dia || '')) { const ab = Math.min(PACOTE_KG, pk.fechado); pk = { n: prox, aberto: r3(ab), fechado: r3(pk.fechado - ab) }; }
+      }
       Object.assign(l, { aberto: pk.aberto, fechado: pk.fechado, pacoteN: pk.n, validadePacote: l.validade, venceEm: l.validade, motivo: 'pacote', abertoEm: null, abertoEstimado: false, validadeAberto: null, abrirOrdem: null });
       if (pk.n > 0) {
         const r = reg && reg[`${l.chave}#${pk.n}`];
@@ -500,8 +505,10 @@ function observarAberturas(id, hoje = hojeSP()) {
 function editarAbertura(id, b, por, hoje = hojeSP()) {
   const chave = String((b && b.chave) || ''), l = daLoja(id, hoje).lotes.find((x) => x.chave === chave);
   if (!l) return { erro: 'Lote não encontrado (o estoque pode ter mudado): atualize a tela.' };
-  if (!(l.pacoteN > 0)) return { erro: 'Este lote não tem pacote aberto: pelo estoque, os pacotes dele estão fechados.' };
-  const dia = String((b && b.dia) ?? '').trim(), d = ler(id), reg = d.aberturas || (d.aberturas = {}), k = `${chave}#${l.pacoteN}`;
+  // pacote aberto: corrige a data dele. Lote só com pacote fechado: registra que o próximo pacote foi aberto (ainda sem venda).
+  if (!(l.pacoteN > 0) && !(l.fechado > 0.0005 && l.qtdEntrada != null)) return { erro: 'Este lote não tem pacote para abrir.' };
+  const n = l.pacoteN > 0 ? l.pacoteN : Math.floor((r3(l.qtdEntrada - l.saldo) + 1e-6) / PACOTE_KG) + 1;
+  const dia = String((b && b.dia) ?? '').trim(), d = ler(id), reg = d.aberturas || (d.aberturas = {}), k = `${chave}#${n}`;
   const antes = reg[k] ? reg[k].dia : null;
   if (dia === '') delete reg[k];
   else {

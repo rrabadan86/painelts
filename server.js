@@ -2306,7 +2306,7 @@ app.get('/api/inventario/contagem/:id/desfazer', (req, res) => {
 
 // ---------- validade e lotes do chá a granel (Estoque → Validade): a equipe informa o lote; o painel faz o resto ----------
 const LOT = require('./src/lotes');
-const podeValidade = (req) => req.perfil === 'vendedor' || podeTela(req, 'validade', 'notas', 'precos'); // quem abre a nota de entrada também informa o lote
+const podeValidade = (req) => req.perfil === 'vendedor' || podeTela(req, 'validade', 'notas', 'precos', 'estoque'); // no Estoque dá para informar a abertura do pacote // quem abre a nota de entrada também informa o lote
 const podeCustos = (req) => podeTela(req, 'rentab', 'estoque', 'precos', 'notas', 'pedido', 'dre');
 const lojaVal = (req, res) => {
   if (!podeValidade(req)) { res.status(403).json({ erro: 'Sem permissão.' }); return null; }

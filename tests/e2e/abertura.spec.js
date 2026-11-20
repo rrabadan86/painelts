@@ -51,3 +51,46 @@ test('Validade: mostra o que está na lata com a data de abertura e os pacotes f
   if (process.env.PRINTS) { await page.locator('.vl-ajuda summary').click(); await page.locator('.vl-lata').first().scrollIntoViewIfNeeded(); await page.screenshot({ path: `${process.env.PRINTS}/abertura-${info.project.name}.png` }); }
   expect(erros).toEqual([]);
 });
+
+test('Estoque: "🫙 pacotes" no chá a granel abre os lotes do chá na ordem; dá para informar que abriu um pacote (apresentação: nada é gravado)', async ({ page }, info) => {
+  const erros = [];
+  page.on('pageerror', (e) => erros.push(e.message));
+  const saiu = [];
+  page.on('request', (r) => { if (r.method() !== 'GET' && /\/api\//.test(r.url()) && !/\/api\/demo\//.test(r.url())) saiu.push(r.url()); });
+  await page.goto('/apresentacao');
+  await page.waitForFunction(() => window.TS && TS.db && TS.state.loja && TS.state.loja !== 'todas', null, { timeout: 60000 });
+  // um chá com pacote fechado, para a janela ter o botão "Abri um pacote hoje"
+  const d = await page.evaluate(async () => (await fetch(`/api/demo/validade?loja=${encodeURIComponent(TS.state.loja)}`)).json());
+  const alvo = d.lotes.find((l) => l.entrada && l.pacoteN === 0 && l.fechado > 0.0005);
+  expect(alvo, 'a apresentação tem chá com pacote fechado').toBeTruthy();
+  const doCha = d.lotes.filter((l) => l.cod === alvo.cod);
+  await page.evaluate(([cod, desc]) => TS.validade.janelaPacotes(TS.state.loja, cod, desc), [alvo.cod, alvo.desc]);
+  const j = page.locator('.vl-pac');
+  await expect(j.locator('h3')).toHaveText(`Pacotes de ${alvo.desc}`);
+  await expect(j.locator('.vl-pac-lote')).toHaveCount(doCha.length);
+  // do mais antigo para o mais novo
+  const datas = (await j.locator('.vl-pac-cab b').allTextContents()).filter((t) => /chegou em/.test(t)).map((t) => t.match(/(\d{2})\/(\d{2})\/(\d{4})/).slice(1).reverse().join('-'));
+  expect(datas).toEqual([...datas].sort());
+  const botao = j.getByRole('button', { name: 'Abri um pacote hoje' }).first();
+  await expect(botao).toHaveAttribute('title', /6 meses/);
+  await botao.click();
+  await expect(page.locator('.toast')).toContainText('nada é salvo');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth), 'rolagem para o lado').toBeLessThanOrEqual(1);
+  if (process.env.PRINTS) await page.screenshot({ path: `${process.env.PRINTS}/pacotes-${info.project.name}.png` });
+  await j.getByRole('button', { name: 'Fechar' }).click();
+  await expect(page.locator('.vl-pac')).toHaveCount(0);
+  // no Estoque, o chá a granel com saldo tem o atalho na célula do estoque
+  await page.waitForFunction(() => !(history.state && history.state.camada));
+  await page.evaluate(() => { location.hash = '#estoque'; });
+  await expect(page.locator('.page-title')).toContainText('Estoque');
+  // a tabela é paginada (no celular, 40 por vez): mostra todos os produtos e procura o chá pelo nome
+  await page.locator('.seg button', { hasText: /^Todos/ }).first().click();
+  await page.locator('.est-t').first().waitFor();
+  await page.getByPlaceholder(/Buscar/).first().fill(alvo.desc);
+  await expect.poll(async () => page.locator('.est-pac').count(), { timeout: 30000 }).toBeGreaterThan(0);
+  await expect(page.locator('.est-pac').first()).toHaveAttribute('title', /Abriu um pacote hoje/);
+  await page.locator('.est-pac').first().click();
+  await expect(page.locator('.vl-pac h3')).toContainText('Pacotes de ');
+  expect(saiu, 'nada sai do navegador na apresentação').toEqual([]);
+  expect(erros).toEqual([]);
+});
