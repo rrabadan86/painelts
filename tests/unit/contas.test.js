@@ -333,3 +333,18 @@ test('CFG-01 regras da loja: piso de dias da meta (1 a 31) e mínimo de atendime
   const ok = base(); ok.pisoDiasMeta = 1; ok.premiacao.minAtend = 0;
   assert.equal(validarRegras(ok), null);
 });
+
+test('META-04 férias lançadas: quem volta de férias divide a meta mesmo abaixo do piso (é da equipe, não folguista)', () => {
+  // mês fechado, piso 4: ANA 20 dias, BIA (férias até o dia 27) 3 dias, CAU (folguista) 1 dia
+  const dias = [['ANA', 20], ['BIA', 3], ['CAU', 1]];
+  const sem = CT.divisoresMeta({ dias, piso: 4, ym: '2026-10', ultimoDia: '2026-10-31' });
+  assert.deepEqual(sem.dentro, ['ANA']);
+  assert.deepEqual(sem.fora.map((x) => x.nome), ['BIA', 'CAU']);
+  const com = CT.divisoresMeta({ dias, piso: 4, ym: '2026-10', ultimoDia: '2026-10-31', sempre: ['BIA'] });
+  assert.deepEqual(com.dentro, ['ANA', 'BIA']);
+  assert.deepEqual(com.fora.map((x) => x.nome), ['CAU'], 'a folguista continua fora');
+  assert.deepEqual(com.porFerias, ['BIA']);
+  // a meta da BIA é só a dos dias trabalhados: meta 31.000 em outubro (1.000/dia), férias de 01 a 27 → 4 dias × 500 = 2.000
+  const m = CT.metasIndividuais(31000, '2026-10', ['ANA', 'BIA'], [{ vendedor: 'BIA', de: '2026-10-01', ate: '2026-10-27' }]).metas;
+  assert.equal(Math.round(m.get('BIA')), 2000); assert.equal(Math.round(m.get('ANA')), 29000);
+});
