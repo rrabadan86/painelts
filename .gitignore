@@ -5,6 +5,8 @@ dados/
 config/lojas.json
 config/coletor/*.env
 coletor-work/
+zap-work/
+zap/node_modules/
 config/acessos.json
 config/notificacoes.json
 config/auditoria.jsonl
