@@ -100,3 +100,17 @@ test('totais dos quadros: soma só o que tem conta e conta os produtos', () => {
   assert.deepStrictEqual(T.falta, { n: 2, comConta: 1, perdaDia: 10, acumulado: 50, esperando: 1 });
   assert.deepStrictEqual(T.sobra, { n: 2, valor: 200, semCusto: 1 });
 });
+
+test('venda perdida: "perdido até agora" conta no máximo 30 dias (produto lento não acumula desde a última venda de meses atrás)', () => {
+  assert.strictEqual(R.MAX_ACUM, 30);
+  // R$ 6 por dia; última venda há 80 dias. Antes: 6 × 80 = R$ 480. Agora: 6 × 30 = R$ 180
+  const vendas = [950, 960, 970, 980, 990, 1000].map((d) => ({ d, q: 2, v: 60 }));
+  const x = R.perda({ vendas, qtd: 0, un: 'Un', hoje: 1080, inicio: 100 });
+  assert.strictEqual(x.diasZerado, 80);
+  assert.strictEqual(x.diasAcum, 30);
+  perto(x.acumulado, 6 * 30);
+  // no limite (30 dias) e abaixo dele nada muda
+  perto(R.perda({ vendas, qtd: 0, un: 'Un', hoje: 1030, inicio: 100 }).acumulado, 6 * 30);
+  const y = R.perda({ vendas, qtd: 0, un: 'Un', hoje: 1029, inicio: 100 });
+  assert.strictEqual(y.diasAcum, 29); perto(y.acumulado, 6 * 29);
+});

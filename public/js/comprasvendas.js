@@ -56,14 +56,16 @@
         const cmv = cmvPct == null ? null : v.custo + (fat - v.fatCusto) * cmvPct; // vendas sem custo entram pelo mesmo %
         const decorridos = parcial && v.ultimo && v.ultimo.slice(0, 7) === ym ? Math.min(dm, Math.max(1, +v.ultimo.slice(8, 10))) : null;
         const projecao = parcial ? (decorridos && fat > 0 ? (fat * dm) / decorridos : null) : null;
-        const base = parcial ? projecao : fat; // o teto do mês em andamento usa a projeção
+        const base = parcial ? projecao : fat; // o teto (R$) do mês em andamento usa a projeção: fica na coluna da folga
         const teto = base > 0 ? base * pct : null;
+        // o % do mês em andamento é "até agora": compras até hoje ÷ vendas ATÉ HOJE (dividir pela projeção misturava o comprado de verdade com venda que ainda não aconteceu)
+        const pctMes = c != null && fat > 0 ? c / fat : null;
         lista.push({
           ym, parcial, diasMes: dm, decorridos, vendas: fat, projecao, base: base > 0 ? base : null,
           compras: c, notas: sabe ? ((compras[ym] && compras[ym].notas) || 0) : null,
           comprasParcial: sabe && ym === inicioCompras && !!dDesde && dDesde.slice(8, 10) !== '01',
-          pct: c != null && base > 0 ? c / base : null, teto, folga: teto != null && c != null ? teto - c : null,
-          acima: teto != null && c != null ? c > teto + 0.005 : null,
+          pct: pctMes, teto, folga: teto != null && c != null ? teto - c : null,
+          acima: parcial ? (pctMes == null ? null : pctMes > pct + 1e-9) : teto != null && c != null ? c > teto + 0.005 : null,
           cmv, cmvPct, saldo: c != null && cmv != null ? c - cmv : null,
         });
       }
@@ -344,15 +346,15 @@
     const tab = TS.table({
       cols: [
         { key: 'ym', label: 'Mês', align: 'l', sticky: true, wrap: true, render: (x) => h('span', null, h('b', null, TS.ymLabel(x.ym)), ' ',
-          x.acima === true ? h('span', { class: 'badge erro' }, 'acima do teto') : x.acima === false ? h('span', { class: 'badge ok' }, 'dentro do teto') : h('span', { class: 'badge cinza' }, 'sem notas'),
+          x.acima === true ? h('span', { class: 'badge ' + (x.parcial ? 'warn' : 'erro') }, x.parcial ? 'até agora acima do teto' : 'acima do teto') : x.acima === false ? h('span', { class: 'badge ok' }, x.parcial ? 'até agora dentro do teto' : 'dentro do teto') : h('span', { class: 'badge cinza' }, x.compras == null ? 'sem notas' : 'sem vendas'),
           x.parcial ? h('small', { class: 'muted cv-det' }, `em andamento · ${x.decorridos || 0} de ${x.diasMes} dias`) : x.comprasParcial ? h('small', { class: 'muted cv-det' }, `notas só a partir de ${fmt.date(R.desde)}`) : null) },
         { key: 'vendas', label: 'Vendas', title: 'Faturamento da loja no mês (com Espaço Gourmet, sem taxa de serviço, entrega e itens a R$ 0,01), igual ao Resultado. No mês em andamento: o vendido até agora e, embaixo, a previsão no ritmo atual.',
           render: (x) => h('div', null, fmt.brl0(x.vendas), x.parcial && x.projecao != null ? h('small', { class: 'muted cv-det' }, `previsão ${fmt.brl0(x.projecao)}`) : null) },
         { key: 'compras', label: 'Compras', title: 'Notas de compra que deram entrada no mês (custo × quantidade de cada item; só compra concluída, sem devolução nem troca). "—" = o painel não tem as notas daquele mês.',
           render: (x) => (x.compras == null ? '—' : h('div', null, fmt.brl0(x.compras), h('small', { class: 'muted cv-det' }, `${fmt.int(x.notas)} ${x.notas === 1 ? 'nota' : 'notas'}`))), sortVal: (x) => x.compras ?? -1 },
-        { key: 'pct', label: 'Compras ÷ vendas', title: `Quanto das vendas virou compra. Vermelho = passou do teto de ${fmt.n1(R.tetoPct)}%. No mês em andamento a conta usa a previsão de vendas do mês.`,
+        { key: 'pct', label: 'Compras ÷ vendas', title: `Quanto das vendas virou compra. Vermelho = passou do teto de ${fmt.n1(R.tetoPct)}%. Mês fechado: compras do mês ÷ vendas do mês. Mês em andamento: compras até hoje ÷ vendas ATÉ HOJE (não a previsão) — por isso a etiqueta diz "até agora". No começo do mês é normal ficar alto: uma nota grande já entrou e as vendas ainda estão no início; veja a folga ao lado, que usa a previsão do mês inteiro.`,
           render: (x) => (x.pct == null ? '—' : h('b', { class: x.acima ? 'neg' : 'pos' }, fmt.pct(x.pct))), sortVal: (x) => x.pct ?? -1 },
-        { key: 'folga', label: 'Folga no teto', title: `Teto (${fmt.n1(R.tetoPct)}% das vendas) − compras. Positivo: ainda cabia comprar; negativo: comprou além do teto.`,
+        { key: 'folga', label: 'Folga no teto', title: `Teto (${fmt.n1(R.tetoPct)}% das vendas) − compras. Positivo: ainda cabia comprar; negativo: comprou além do teto. No mês em andamento o teto é ${fmt.n1(R.tetoPct)}% da previsão de vendas do mês inteiro (vendido até agora ÷ dias que passaram × dias do mês).`,
           render: (x) => (x.folga == null ? '—' : h('div', null, h('span', { class: x.folga < 0 ? 'neg' : null }, fmt.brl0(x.folga)), h('small', { class: 'muted cv-det' }, `teto ${fmt.brl0(x.teto)}`))), sortVal: (x) => x.folga ?? -1e12 },
         { key: 'cmv', label: 'Custo do que vendeu', title: 'CMV: custo dos produtos vendidos no mês, pelo custo de hoje do estoque (o mesmo do Resultado; vendas sem custo entram pelo mesmo % das outras). É o que a loja precisaria comprar só para repor o que saiu.',
           render: (x) => (x.cmv == null ? '—' : h('div', null, fmt.brl0(x.cmv), h('small', { class: 'muted cv-det' }, `${fmt.pct(x.cmvPct)} das vendas`))), sortVal: (x) => x.cmv ?? -1 },
@@ -367,7 +369,7 @@
       h('div', { class: 'grid g-kpi' }, ...quadrosJanela(J, false), kAcima),
       h('div', { class: 'grid g-kpi mt' }, kPer),
       h('div', { class: 'mt' }, TS.cardWithTools('Compras × vendas mês a mês',
-        `Estou comprando mais do que vendo? Compras = notas de compra que entraram no AppNext; teto = ${fmt.n1(R.tetoPct)}% das vendas. * mês em andamento: teto pela previsão de vendas.${R.inicioCompras ? ` Notas de compra desde ${R.desde ? fmt.date(R.desde) : TS.ymLabel(R.inicioCompras)}.` : ''}`,
+        `Estou comprando mais do que vendo? Compras = notas de compra que entraram no AppNext; teto = ${fmt.n1(R.tetoPct)}% das vendas. * mês em andamento: o % é o de até agora (compras ÷ vendas até hoje) e o teto da folga usa a previsão do mês.${R.inicioCompras ? ` Notas de compra desde ${R.desde ? fmt.date(R.desde) : TS.ymLabel(R.inicioCompras)}.` : ''}`,
         TS.seg(Object.entries(FIL).map(([k, [t]]) => [`${t} (${cont(k)})`, k]), FIL[fil] ? fil : 'todos', ir),
         graf, tab)));
   }
