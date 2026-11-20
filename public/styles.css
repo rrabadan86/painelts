@@ -3122,3 +3122,8 @@ tr.conf-conta td:first-child { box-shadow: inset 3px 0 0 var(--bad); }
 .vl-pac-est { margin-left: 8px; }
 .vl-pac-vence small { display: inline; }
 .vl-val-aberto { border-color: var(--gold); }
+
+/* ---------- pedido: classe como ícone no nome, subgrupo e linha que mudou de aba ---------- */
+.ped-cl-ico { display: inline-block; margin-right: 6px; cursor: help; }
+.ped-sub { display: block; color: var(--muted); font-size: 11px; }
+.ped-ficou { margin-left: 8px; white-space: nowrap; }

@@ -509,7 +509,10 @@ app.get('/api/demo/estoque', (req, res) => {
     const its = (e.estoque.itens || []).filter((i) => i.custo > 0);
     const tabela = { itens: [
       ...its.filter((i) => i.un !== 'Kg').map((i) => ({ cod: String(i.cod), desc: i.desc, grupo: 'ACESSÓRIOS', preco: Math.round(i.custo * 2.2 * 10) / 10 })),
-      ...its.filter((i) => i.un === 'Kg' && /^\d{4,6}$/.test(String(i.cod))).map((i) => ({ cod: String(i.cod) + '2', desc: `${i.desc} 100G`, grupo: 'CHÁS', preco: Math.round(i.custo * 0.1 * 2.6 * 10) / 10 })),
+      // chá a granel: pacotes de 50 g e 100 g, com subgrupo fictício (o Pedido filtra por ele e mostra a margem bruta do pacote)
+      ...its.filter((i) => i.un === 'Kg' && /^\d{4,6}$/.test(String(i.cod))).flatMap((i, k) => { const s = ['CHÁ VERDE', 'CHÁ PRETO', 'ROOIBOS', 'INFUSÕES'][k % 4]; return [
+        { cod: String(i.cod) + '1', desc: `${i.desc} 50G`, grupo: 'CHÁS', sub: s, preco: Math.round(i.custo * 0.05 * 2.9 * 10) / 10 },
+        { cod: String(i.cod) + '2', desc: `${i.desc} 100G`, grupo: 'CHÁS', sub: s, preco: Math.round(i.custo * 0.1 * 2.6 * 10) / 10 }]; }),
     ] };
     // fora de linha fictício: 3 acessórios com saldo indisponíveis no Sistema de Pedidos há ~4 meses e 1 há 20 dias
     const comSaldo = its.filter((i) => i.un !== 'Kg' && i.qtd > 0);

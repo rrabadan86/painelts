@@ -365,7 +365,7 @@
   /** tela de celular (até 760 px): algumas telas mudam o jeito de mostrar; o computador não muda */
   TS.ehCelular = () => window.matchMedia('(max-width: 760px)').matches;
 
-  TS.table = function ({ cols, rows, total, sortKey, sortDir = 'desc', maxHeight, pageSize, search, searchKeys, searchInit, onSearch, onRowClick, rowClass, empty, cls, imprimir, produto, cartao }) {
+  TS.table = function ({ cols, rows, total, sortKey, sortDir = 'desc', maxHeight, pageSize, search, searchKeys, searchInit, onSearch, onRowClick, rowClass, empty, cls, imprimir, produto, cartao, estado }) {
     // produto: colunas com o nome do produto — o filtro "Produto contém" da lateral também vale nesta tabela
     const fProd = produto && TS.state.f.produto ? TS.norm(TS.state.f.produto) : '';
     if (fProd) { const ks = [].concat(produto); rows = rows.filter((row) => ks.some((k) => TS.norm(row[k]).includes(fProd))); }
@@ -376,6 +376,8 @@
     const chaveBusca = search ? search + '|' + (searchKeys || []).join(',') : null;
     if (chaveBusca && searchInit == null && mem.v[chaveBusca]) searchInit = mem.v[chaveBusca];
     let sk = sortKey, sd = sortDir, page = 0, q = searchInit ? TS.norm(searchInit) : '';
+    // estado: objeto de quem chama ({ page, sk, sd }) para a página e a ordem sobreviverem quando a tela se redesenha (ex.: Pedido ao mudar uma quantidade)
+    if (estado) { if (estado.sk && cols.some((c) => c.key === estado.sk)) { sk = estado.sk; sd = estado.sd || sd; } page = estado.page > 0 ? estado.page : 0; }
     // celular: tabela com 5 colunas ou mais vira cartões (cada linha um cartão, "rótulo: valor"); só no celular
     const MOB = TS.ehCelular() && (cols.length >= 5 || cartao === true);
     // páginas: montar centenas de linhas de uma vez travava a troca de tela (o navegador calcula o layout de todas).
@@ -422,6 +424,8 @@
       thead.append(trh); tbl.append(thead);
       const all = sorted();
       const tb = h('tbody');
+      if (pageSize && page > 0 && page * pageSize >= all.length) page = Math.max(0, Math.ceil(all.length / pageSize) - 1); // a lista encolheu: fica na última página que existe
+      if (estado) Object.assign(estado, { page, sk, sd });
       const start = pageSize ? page * pageSize : 0;
       const slice = pageSize ? all.slice(start, start + pageSize) : all;
       for (const row of slice) {
