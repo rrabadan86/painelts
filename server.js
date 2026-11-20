@@ -989,6 +989,12 @@ app.delete('/api/campanhas/:id', (req, res) => {
 // ---------- robô do WhatsApp das campanhas: rotas /api/zap/* e o laço de envio (a cada ~30 s; sem ZAP_URL/ZAP_TOKEN nada roda) ----------
 require('./src/zap-api').registrar(app, { podeClientes });
 require('./src/zaplaco').iniciar();
+// o robô não depende de alguém abrir a tela Campanhas: o servidor refaz a lista conferida e cria a lista nova das
+// recorrentes (src/zapauto.js roda a conta da própria tela com o mesmo pacote de dados de /api/dados de quem vê tudo)
+require('./src/zapauto').iniciar({
+  corpo: async (loja) => { const d = await pacote([loja], false, 'completo'); return { sig: d.etag, json: () => (d.buf || zlib.gunzipSync(d.gz)).toString('utf8') }; },
+  disponivel: (id) => LOT.disponivel({ estoque: ES.atual(id), compras: ES.compras(id) }),
+});
 
 // versão dos arquivos da tela (o hash automático do bundle): a aba aberta compara e oferece recarregar depois de uma atualização
 app.get('/api/versao', (req, res) => {
