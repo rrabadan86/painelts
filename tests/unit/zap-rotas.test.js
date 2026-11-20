@@ -12,7 +12,7 @@ const { spawn } = require('child_process');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'zapr-'));
 const CONFIG_FILE = path.join(tmp, 'lojas.json');
-const PORTA = 5600 + Math.floor(Math.random() * 300); // faixa só deste arquivo (3200–3799 permissões, 3900–4499 segurança, 4600–4899 e 5000–5299 franqueado): faixas sobrepostas derrubam o vizinho quando o sorteio coincide
+const PORTA = 5600 + Math.floor(Math.random() * 300); // faixa só deste arquivo (3200–3799 permissões, 3900–4099 segurança, 4100–4299 conferência, 4300–4499 perdas, 4600–4899 franqueado); serviço de mentira sempre em listen(0): faixas sobrepostas derrubam o vizinho quando o sorteio coincide
 const BASE = `http://127.0.0.1:${PORTA}`;
 const SENHA = 'senha-teste-123';
 const QR = 'data:image/png;base64,AAAA';

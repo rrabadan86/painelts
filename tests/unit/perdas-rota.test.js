@@ -9,7 +9,7 @@ const { spawn } = require('child_process');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'perdas-'));
 const CONFIG_FILE = path.join(tmp, 'lojas.json');
-const PORTA = 3900 + Math.floor(Math.random() * 600);
+const PORTA = 4300 + Math.floor(Math.random() * 200); // faixa só deste arquivo
 const BASE = `http://127.0.0.1:${PORTA}`;
 let srv;
 const cookies = {};

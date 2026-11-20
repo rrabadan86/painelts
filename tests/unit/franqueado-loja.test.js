@@ -13,7 +13,6 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'frq-'));
 const CONFIG_FILE = path.join(tmp, 'lojas.json');
 const NOTIF_ARQ = path.join(tmp, 'notificacoes.json');
 const PORTA = 4600 + Math.floor(Math.random() * 300);
-const PORTA_COL = PORTA + 400;
 const BASE = `http://127.0.0.1:${PORTA}`;
 const SENHA = 'senha-teste-123';
 const TOKEN_TG = '123456789:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
@@ -56,7 +55,8 @@ before(async () => {
     res.setHeader('Content-Type', 'application/json');
     res.end(JSON.stringify(req.url.startsWith('/status/') ? { configurada: true, horarios: [], estado: 'parado', temPedido: true } : { ok: true }));
   });
-  await new Promise((ok) => col.listen(PORTA_COL, '127.0.0.1', ok));
+  await new Promise((ok) => col.listen(0, '127.0.0.1', ok)); // porta livre escolhida pelo sistema: sorteio fixo já colidiu no GitHub
+  const PORTA_COL = col.address().port;
   srv = spawn(process.execPath, ['server.js'], { cwd: path.join(__dirname, '../..'), stdio: 'ignore',
     env: { ...process.env, PORT: String(PORTA), DATA_DIR: tmp, CONFIG_FILE, SESSION_SECRET: 'teste-franqueado', NODE_ENV: 'test', IA_FALSO: '1', COLETOR_URL: `http://127.0.0.1:${PORTA_COL}`, COLETOR_TOKEN: 'token-de-teste', GITHUB_TOKEN: '' } });
   for (let k = 0; k < 100; k++) { try { const r = await fetch(BASE + '/login'); if (r.status < 500) break; } catch { /* subindo */ } await new Promise((ok) => setTimeout(ok, 100)); }
