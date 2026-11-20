@@ -8,6 +8,9 @@
 (function () {
   const { h, fmt, state } = TS;
 
+  // grupos da lista de avisos, na ordem em que aparecem
+  const AREAS = [['estoque', 'Estoque'], ['inventario', 'Inventário'], ['franquia', 'Franquia'], ['vendas', 'Vendas'], ['outros', 'Outros']];
+
   TS.pages.inicio = function (root) {
     const nome = String((TS.eu && (TS.eu.nome || TS.eu.usuario)) || '').split(' ')[0];
     const hora = new Date().getHours();
@@ -27,7 +30,15 @@
       const ad = adiados.ler();
       const some = (a) => !!(a.id && a.nivel !== 'erro' && ad[a.id]);
       const mostra = lista.filter((a) => !some(a)), nAd = lista.length - mostra.length;
-      const linhas = mostra.map((a) => item(a, a.id && a.nivel !== 'erro' ? () => { adiados.adiar(a.id); pintar(); } : null));
+      // uma lista só, agrupada pela área de onde o aviso veio (campo `area`, posto na origem); dentro do grupo, os vermelhos primeiro
+      const linhas = [];
+      for (const [area, rotulo] of AREAS) {
+        const doGrupo = mostra.filter((a) => (AREAS.some(([k]) => k === a.area) ? a.area : 'outros') === area);
+        if (!doGrupo.length) continue;
+        linhas.push(h('div', { class: 'ini-grupo', role: 'group', 'aria-label': rotulo, 'data-area': area },
+          h('div', { class: 'ini-grupo-t' }, rotulo, h('span', null, fmt.int(doGrupo.length))),
+          ...doGrupo.map((a) => item(a, a.id && a.nivel !== 'erro' ? () => { adiados.adiar(a.id); pintar(); } : null))));
+      }
       avisos.replaceChildren(...[
         ...(linhas.length ? linhas : [h('p', { class: 'muted' }, nAd ? 'Nada novo pedindo atenção. 👏' : 'Nada pedindo atenção por enquanto. 👏')]),
         nAd ? h('div', { class: 'muted ini-adiados' }, `${fmt.int(nAd)} ${nAd === 1 ? 'aviso adiado' : 'avisos adiados'} (${nAd === 1 ? 'volta' : 'voltam'} em até 7 dias). `, h('button', { type: 'button', class: 'link-btn', onclick: () => { adiados.limpar(); pintar(); } }, 'Mostrar agora')) : null,
@@ -35,10 +46,12 @@
     };
     // com "Todas as lojas" os avisos que são de cada loja não aparecem: uma linha diz por quê
     if ((!state.loja || state.loja === 'todas') && ['estoque', 'pedido', 'inventario', 'notas'].some((t) => (TS.telasEstoque || []).includes(t))) {
-      lista.push({ nivel: 'info', titulo: 'Escolha uma loja para ver os avisos de estoque, inventário e franquia', texto: 'Com todas as lojas juntas aparecem só os avisos de vendas, site e atualizações. Troque a loja no seletor do topo.' });
+      lista.push({ nivel: 'info', area: 'outros', titulo: 'Escolha uma loja para ver os avisos de estoque, inventário e franquia', texto: 'Com todas as lojas juntas aparecem só os avisos de vendas, site e atualizações. Troque a loja no seletor do topo.' });
     }
     const analise = TS.db && TS.db.n && TS.eu && TS.eu.perfil !== 'vendedor' ? analisar() : null;
-    const tarefas = [TS.zapAvisos ? TS.zapAvisos(lista) : Promise.resolve(), avisosEspera(lista), avisosVendas(lista), avisosEstoque(lista), avisosSite(lista), avisosAtualizacoes(lista), avisosInventario(lista, analise), avisosCreditos(lista), avisosCusto(lista), avisosPadrao(lista, analise)].map((p) => p.catch(() => null).then(() => { if (avisos.isConnected) pintar(); }));
+    // cada origem entrega os avisos já com a área dela (ninguém classifica aviso pelo texto)
+    const de = (area) => ({ push: (...as) => lista.push(...as.map((a) => ({ area, ...a }))) });
+    const tarefas = [TS.zapAvisos ? TS.zapAvisos(de('outros')) : Promise.resolve(), avisosEspera(de('vendas')), avisosVendas(de('vendas')), avisosEstoque(de('estoque')), avisosSite(de('outros')), avisosAtualizacoes(de('outros')), avisosInventario(de('inventario'), analise), avisosCreditos(de('franquia')), avisosCusto(de('estoque')), avisosPadrao(de('vendas'), analise)].map((p) => p.catch(() => null).then(() => { if (avisos.isConnected) pintar(); }));
     Promise.all(tarefas).then(() => { pend.remove(); });
   };
 

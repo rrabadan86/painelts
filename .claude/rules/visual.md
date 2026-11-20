@@ -21,10 +21,19 @@ Lista que abre um detalhe: a tabela some e o detalhe aparece no lugar, com "‹ 
 ## Estrutura da página (de cima para baixo)
 1. **Submenu do grupo**: `TS.subEstoque(tela)` / `TS.subGrupo(tela)` — nunca um menu próprio.
 2. **Cabeçalho**: `page-head` com `h1.page-title` (com o ícone da tela, se tiver) e `div.page-sub` — uma frase do que a tela faz.
-3. **Avisos** (`div.notice`, `notice ok`, `notice warn`, `notice err`): só o que pede ação agora, uma linha, no topo.
+3. **Avisos** (`div.notice`, `notice ok`, `notice warn`, `notice err`): só o que pede ação agora, uma linha, no topo. Informação que não pede ação (ex.: "mês em andamento") é uma linha discreta `muted` com ⓘ (`TS.dica`), depois dos quadros — não um aviso amarelo.
 4. **Quadros de número** (`TS.kpi` dentro de `div.grid.g-kpi`): 3 a 5, cada um com rodapé curto e `title` explicando a conta. Quadro que filtra a tabela abaixo é clicável.
+   - **Barra lateral só com estado**: vermelha (`kpi-ruim`) quando a comparação principal piorou, verde (`kpi-bom`) quando melhorou; quadro neutro não tem barra. O estado vem do 5º argumento (`TS.kpi(rótulo, valor, rodapé, dica, 'bom' | 'ruim' | null)`) ou, sem ele, do primeiro elemento com `up`/`pos` (bom) ou `down`/`neg` (ruim) no rodapé e, na falta, no valor. Rodapé trocado depois de montado: chame `TS.kpiEstado(quadro)` de novo.
+   - Variações (`TS.linhasVar`) na mesma linha, curtas ("· 30 dias", "· ano"), com a frase completa no `title`.
+   - A grade divide os quadros em linhas parecidas quando não cabem numa só (4 a 9 quadros): nunca um sozinho na linha de baixo; no celular, o que sobra ocupa a largura toda.
 5. **Ação principal** (formulário curto, busca, "+ Novo…") num `TS.card`.
 6. **A lista**: um `TS.card`/`TS.cardWithTools` com título, uma frase de explicação, as **abas com contagem** (`TS.seg` → "Esperando (6)") e o **`TS.table`**.
+
+**Cartão (`.card`)**: um só recurso separa os blocos — a borda fina, **sem sombra**. Sombra é só do que fica por cima da página (janela, gaveta, menu, balão ⓘ). Nada de caixa dentro de caixa: itens dentro do cartão são linhas com divisória.
+**Texto de apoio do cartão**: uma frase. Subtítulo (texto) com mais de ~140 caracteres o `TS.card`/`TS.cardWithTools` corta sozinho na primeira frase e guarda o resto em "Como ler ▸" (`details.est-como`; o texto todo continua na página).
+**Ações do cabeçalho** (Compartilhar, Imprimir, Expandir): juntas, no canto direito do `card-head`.
+**Lista de avisos (Início)**: uma lista só, com divisórias, agrupada por área com cabeçalho pequeno e contagem (`.ini-grupo`: Estoque, Inventário, Franquia, Vendas, Outros). A área vem da origem do aviso (campo `area`, posto por quem cria — `de('estoque')` em `inicio.js`), nunca do texto; vermelhos primeiro no grupo; "lembrar depois" aparece ao passar o mouse/focar a linha (no celular, sempre).
+**Linha de ajustes (Pedido, `.ped-ctl`)**: seletor de modo + campos + "Salvar como padrão" à direita numa linha, alinhados pelos campos; situação e botões de atualizar numa linha discreta abaixo, com divisória; no celular empilha.
 
 ## Listas: sempre `TS.table`, nunca pilha de cartões soltos
 - Mais de ~5 itens que se repetem = tabela (`TS.table`): ela já tem busca, ordenação, páginas (100 no computador, 40 no celular), imprimir/expandir e vira cartão de 2 colunas no celular. Pilha de `div` por item fica ilegível com muitos itens (foi o caso da primeira versão das ⭐ Sugestões).

@@ -655,23 +655,24 @@
       const resultado = proj * contrib - F;
       const conta = `Custos fixos ${fmt.brl0(F)} (${fixos.map((x) => x.nome).join(', ')}) ÷ margem de contribuição ${fmt.pct(contrib)} = ${fmt.brl0(equilibrio)}. Margem de contribuição = o que sobra de cada venda depois do custo do produto, comissão, royalties, Simples, maquininha e dos custos em % (vendas com custo deste mês).`;
       return TS.card(titulo, 'Quanto a loja precisa vender no mês para pagar os custos fixos (o mês inteiro, sem os filtros)',
-        h('div', { class: 'est-eq' },
-          h('div', { class: 'est-eq-nums' },
-            h('div', null, h('span', null, 'Equilíbrio'), h('b', { title: conta }, fmt.brl0(equilibrio)), h('small', null, `margem sem fixos ${fmt.pct(contrib)}`)),
-            h('div', null, h('span', null, `Vendido até ${fmt.date(TS.dayToIso(ultimoDia))}`), h('b', null, fmt.brl0(vendas)), h('small', null, `${fmt.pct(vendas / equilibrio, 0)} do equilíbrio`)),
-            h('div', null, h('span', null, falta > 0 ? 'Falta' : 'Equilíbrio atingido'), h('b', { class: falta > 0 ? 'neg' : 'pos' }, falta > 0 ? fmt.brl0(falta) : diaEq != null ? fmt.date(TS.dayToIso(diaEq)) : 'sim'),
-              h('small', null, falta > 0 ? `${fmt.brl0(falta / Math.max(1, diasMes - dias))} por dia nos ${diasMes - dias} dias que faltam` : 'daqui para frente é lucro')),
-            h('div', null, h('span', null, 'No ritmo atual'), h('b', { class: resultado >= 0 ? 'pos' : 'neg' }, fmt.brl0(proj)), h('small', null, `${resultado >= 0 ? 'sobra' : 'falta'} ${fmt.brl0(Math.abs(resultado))} de resultado no mês`))),
-          (() => {
-            // escala: o maior entre equilíbrio, vendido e projeção; a barra é o vendido, o traço vermelho é o equilíbrio
-            const esc = Math.max(equilibrio, proj, vendas) || 1;
-            return h('div', { class: 'est-eq-barra', title: `Vendido ${fmt.brl0(vendas)} · equilíbrio ${fmt.brl0(equilibrio)} · projeção ${fmt.brl0(proj)}` },
+        (() => {
+          // uma frase diz o que falta (ou que já passou do equilíbrio); os números de apoio e a conta ficam no ⓘ e no title da barra
+          const restam = diasMes - dias;
+          const nums = `Equilíbrio ${fmt.brl0(equilibrio)} (margem sem fixos ${fmt.pct(contrib)}) · vendido até ${fmt.date(TS.dayToIso(ultimoDia))} ${fmt.brl0(vendas)} (${fmt.pct(vendas / equilibrio, 0)} do equilíbrio) · no ritmo atual ${fmt.brl0(proj)} (${resultado >= 0 ? 'sobra' : 'falta'} ${fmt.brl0(Math.abs(resultado))} de resultado no mês)`;
+          const frase = falta > 0
+            ? h('p', { class: 'est-eq-frase' }, 'Faltam ', h('b', { class: 'neg' }, fmt.brl0(falta)), ' para pagar os custos fixos',
+              restam > 0 ? ` · ${fmt.brl0(falta / restam)} por dia ${restam === 1 ? 'no dia que falta' : `nos ${restam} dias que faltam`}` : '', ` · equilíbrio em ${fmt.brl0(equilibrio)}`, TS.dica(`${nums}.\n\n${conta}`))
+            : h('p', { class: 'est-eq-frase' }, h('b', { class: 'pos' }, diaEq != null ? `Custos fixos do mês pagos desde ${fmt.date(TS.dayToIso(diaEq)).slice(0, 5)}` : 'Custos fixos do mês já pagos'), ': daqui para frente é lucro',
+              ` · já passou ${fmt.brl0(-falta)} do equilíbrio de ${fmt.brl0(equilibrio)}`, TS.dica(`${nums}.\n\n${conta}`));
+          // escala: o maior entre equilíbrio, vendido e projeção; a barra é o vendido, o traço vermelho é o equilíbrio
+          const esc = Math.max(equilibrio, proj, vendas) || 1;
+          return h('div', { class: 'est-eq' }, frase,
+            h('div', { class: 'est-eq-barra', title: nums },
               h('i', { style: { width: ((vendas / esc) * 100).toFixed(1) + '%' } }),
               h('em', { style: { left: ((equilibrio / esc) * 100).toFixed(1) + '%' }, title: `Equilíbrio ${fmt.brl0(equilibrio)}` }),
-              h('u', { style: { left: ((proj / esc) * 100).toFixed(1) + '%' }, title: `Projeção do mês ${fmt.brl0(proj)}` }));
-          })(),
-          h('div', { class: 'est-eq-leg' }, h('span', null, h('i', { class: 'l-v' }), 'vendido'), h('span', null, h('i', { class: 'l-e' }), 'equilíbrio'), h('span', null, h('i', { class: 'l-p' }), 'projeção do mês')),
-          h('p', { class: 'muted est-eq-nota' }, conta)));
+              h('u', { style: { left: ((proj / esc) * 100).toFixed(1) + '%' }, title: `Projeção do mês ${fmt.brl0(proj)}` })),
+            h('div', { class: 'est-eq-leg' }, h('span', null, h('i', { class: 'l-v' }), 'vendido'), h('span', null, h('i', { class: 'l-e' }), 'equilíbrio'), h('span', null, h('i', { class: 'l-p' }), 'projeção do mês')));
+        })());
     }
 
     // ---------- margem abaixo do mínimo, com o principal motivo ----------
