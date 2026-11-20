@@ -368,6 +368,7 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 | CLI-11 | Lista de espera: esperando → chegou → avisado → comprou/não comprou | `espera.js` | `espera.test` (6) | ✅ |
 | CLI-12 | Lista de espera: permissões (ver PERF-26) | servidor | — | ❌ |
 | CLI-13 | Exceção decidida pelo dono (D-01): na Lista de espera a vendedora busca e vê nome, CPF e celular do cliente | `/api/espera`, `/api/espera/clientes` | — | ❌ |
+| CLI-14 | Campanha, "O que comprou": mínimo de compras do produto ou grupo escolhido (conta cupons, não unidades; vários produtos somam; respeita "nos últimos X dias"); a mesma conta na tela e no robô | `campanhas.js` `selecionar` (`compraVezes`) | `zapauto.test` "quem entra na lista" | ✅ |
 
 ## 14. Orçamento (ORC)
 

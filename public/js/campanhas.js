@@ -41,7 +41,7 @@
 
   // ---------- critérios ----------
   const SEGS = [['vip', 'VIP'], ['fiel', 'Fiéis'], ['sumido', 'Sumidos'], ['repor', 'Hora de repor'], ['vence', 'Pontos vencendo'], ['novo', 'Novos do mês'], ['uma', 'Uma compra só']];
-  const PADRAO = { ptsMin: '', ptsMax: '', venceDias: '', produto: '', produtos: [], grupo: '', compraDias: '', ausMin: '', ausMax: '', visMin: '', visMax: '', aniv: '', segs: [], rfm: [], tipos: [], vendedora: '', lojaPref: '', semContato: 30 };
+  const PADRAO = { ptsMin: '', ptsMax: '', venceDias: '', produto: '', produtos: [], grupo: '', compraDias: '', compraVezes: '', ausMin: '', ausMax: '', visMin: '', visMax: '', aniv: '', segs: [], rfm: [], tipos: [], vendedora: '', lojaPref: '', semContato: 30 };
   // tipo de chá pela família do grupo de venda: "CHÁ PRETO AROMATIZADO" e "CHÁ PRETO PURO" → "Chá preto"
   const NAO_TIPO = /ACESS|ENVASAD|ALIMENT|TEA ROOM|TEA MOMENT|CONSUM|MATERIA|SACH|FIDELIDADE|KIT|PRESENTE|EMBALA|LATA|MINITIN|ESPA[ÇC]O GOURMET|COSM/i;
   const familiaCha = (g) => { const x = String(g || '').toUpperCase().replace(/\s+(AROMATIZADO|PURO)S?$/, '').trim(); return x && !NAO_TIPO.test(x) ? x.charAt(0) + x.slice(1).toLowerCase().replace(/\bchá\b/g, 'Chá') : ''; };
@@ -97,8 +97,10 @@
       let qProd = null;
       if (prodOk || grupoId >= 0) {
         qProd = 0;
-        for (const k of c.cupons) { if (k.day < desde) continue; for (const i of k.itens) if ((!prodOk || prodOk[db.desc[i]]) && (grupoId < 0 || db.grupoC[i] === grupoId)) qProd++; }
+        let vezes = 0; // compras (cupons) em que o produto apareceu: dois pacotes no mesmo cupom contam uma compra
+        for (const k of c.cupons) { if (k.day < desde) continue; let teve = false; for (const i of k.itens) if ((!prodOk || prodOk[db.desc[i]]) && (grupoId < 0 || db.grupoC[i] === grupoId)) { qProd++; teve = true; } if (teve) vezes++; }
         if (!qProd) continue;
+        if (num(f.compraVezes) != null && vezes < num(f.compraVezes)) continue;
       } else if (num(f.compraDias) != null && !c.cupons.some((k) => k.day >= desde)) continue;
       out.push({ c, saldo, qProd });
     }
@@ -463,10 +465,11 @@
       bloco('Pontos no FIXE', ['ptsMin', 'ptsMax', 'venceDias'],
         linha('Saldo entre', num_('ptsMin', 'mín.'), 'e', num_('ptsMax', 'máx.'), 'pontos'),
         linha('Com pontos vencendo nos próximos', num_('venceDias', 'ex.: 30'), 'dias', TS.dica('Só quem tem pontos que vencem nos próximos N dias. Vazio = não filtra.'))),
-      bloco('O que comprou', ['produtos', 'grupo', 'compraDias'],
+      bloco('O que comprou', ['produtos', 'grupo', 'compraDias', 'compraVezes'],
         h('div', { class: 'cp-prod' }, h('span', { class: 'cp-rot' }, 'Comprou', TS.dica('Escolha um ou mais produtos (com o tamanho). Entra quem comprou qualquer um deles. Use {produto} na mensagem para citar os nomes.')),
           h('div', { class: 'cp-prod-box' }, chipsProd, h('div', { class: 'cp-prod-campo' }, buscaProd, sugest))),
         linha('ou algo do grupo', sel('grupo', [['', 'qualquer grupo'], ...grupos.map((g) => [g, g])])),
+        linha('pelo menos', num_('compraVezes', '1'), 'compras', TS.dica('Quantas vezes, no mínimo, o cliente comprou o produto (ou algo do grupo) escolhido acima. Conta cada compra (cupom) uma vez: dois pacotes no mesmo cupom são uma compra. Com mais de um produto escolhido, somam as compras de qualquer um deles. Se preencher "nos últimos X dias", contam só as compras desse período. Vazio = basta uma compra. Só vale com produto ou grupo escolhido.')),
         linha('nos últimos', num_('compraDias', 'todos'), 'dias', TS.dica('Vazio = em qualquer época.'))),
       bloco('Frequência', ['ausMin', 'ausMax', 'visMin', 'visMax'],
         linha('Está sem comprar há', num_('ausMin', 'ex.: 60'), 'a', num_('ausMax', 'máx.'), 'dias', TS.dica('Dias desde a última compra com CPF.')),
@@ -485,7 +488,7 @@
         ptsMin: () => (f.ptsMin !== '' || f.ptsMax !== '' ? `saldo ${f.ptsMin || 0}${f.ptsMax !== '' ? '–' + f.ptsMax : '+'} pts` : ''),
         venceDias: () => (f.venceDias !== '' ? `vencendo em ${f.venceDias} dias` : ''),
         produtos: () => (f.produtos.length ? `${f.produtos.length} produto${f.produtos.length > 1 ? 's' : ''}` : ''),
-        grupo: () => f.grupo || '', compraDias: () => (f.compraDias !== '' ? `últimos ${f.compraDias} dias` : ''),
+        grupo: () => f.grupo || '', compraDias: () => (f.compraDias !== '' ? `últimos ${f.compraDias} dias` : ''), compraVezes: () => (f.compraVezes !== '' && +f.compraVezes > 1 ? `${f.compraVezes}+ vezes` : ''),
         ausMin: () => (f.ausMin !== '' || f.ausMax !== '' ? `sem comprar ${f.ausMin || 0}${f.ausMax !== '' ? '–' + f.ausMax : '+'} dias` : ''),
         visMin: () => (f.visMin !== '' || f.visMax !== '' ? `${f.visMin || 0}${f.visMax !== '' ? '–' + f.visMax : '+'} compras` : ''),
         aniv: () => (f.aniv ? 'aniversário' : ''), vendedora: () => f.vendedora || '', lojaPref: () => (f.lojaPref ? 'loja preferida' : ''),
