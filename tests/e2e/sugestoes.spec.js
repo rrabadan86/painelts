@@ -59,7 +59,9 @@ test('Pedido: adicionar a sugestão pela linha, 🛒 "no pedido" no quadro e ⭐
   // tabela (não pilha de cartões), com abas com contagem; no celular a lista grande começa recolhida
   await expect(quadro.locator('.seg button', { hasText: /^Todas \(\d+\)$/ })).toBeVisible();
   await quadro.locator('.seg button', { hasText: 'Dá para pedir' }).click();
-  await expect(quadro.locator('.seg button.on')).toContainText('Dá para pedir');
+  await expect(quadro.locator('.seg').first().locator('button.on')).toContainText('Dá para pedir'); // o 2º seletor do quadro é "Classe pelos últimos 3/6/12 meses"
+  await expect(quadro.locator('.sug-ped-cl')).toContainText(/[Cc]lasse pelos últimos/);
+  await expect(quadro.locator('table thead')).toContainText('Classe');
   const linha = quadro.locator('.sug-ped-t tbody tr').filter({ has: page.locator('.sug-ped-add') }).first();
   await expect(linha).toBeVisible();
   const nome = (await linha.locator('b').first().innerText()).trim();
@@ -83,4 +85,15 @@ test('Pedido: adicionar a sugestão pela linha, 🛒 "no pedido" no quadro e ⭐
   // "Tirar" devolve a sugestão para "Dá para pedir"
   await quadro.locator('.sug-ped-t tbody tr', { hasText: nome }).first().getByRole('button', { name: 'Tirar' }).click();
   await expect(quadro.locator('.sug-ped-t tbody tr', { hasText: nome }).locator('.sug-ped-no')).toHaveCount(0);
+});
+
+test('Pedido: ordem da tela — ajustes, Proporção, quadros, Pedido obrigatório, Sugestões, Produtos e Revisão com a IA', async ({ page }) => {
+  await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS.db && TS.state.loja && TS.state.loja !== 'todas');
+  await page.evaluate(() => { location.hash = '#pedido'; });
+  await expect(page.locator('.sug-ped-card')).toBeVisible();
+  // os blocos da tela, de cima para baixo, pelo título de cada um
+  const blocos = await page.evaluate(() => [...document.querySelector('.sug-ped-card').parentElement.children]
+    .map((e) => (e.classList.contains('ped-ctl') ? 'Ajustes' : e.classList.contains('cv-pedido') ? 'Compras × teto' : (e.querySelector('.card-title, .section-label')?.textContent || '')))
+    .map((t) => ['Ajustes', 'Proporção do pedido', 'Compras × teto', 'Pedido obrigatório', 'Sugestões da equipe', 'Produtos', 'Revisão com IA'].find((n) => t.includes(n))).filter(Boolean));
+  expect(blocos).toEqual(['Ajustes', 'Proporção do pedido', 'Compras × teto', 'Pedido obrigatório', 'Sugestões da equipe', 'Produtos', 'Revisão com IA']);
 });

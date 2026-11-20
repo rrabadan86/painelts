@@ -2814,3 +2814,6 @@ body.pg-semfiltros .sidebar, body.pg-semfiltros #btnFiltros { display: none; }
 .cv-det, .efp-det { display: block; font-weight: 400; }
 .efp-fil { margin: 0 0 10px; overflow-x: auto; }
 @media (max-width: 760px) { .efp-fil .seg { flex-wrap: wrap; } }
+
+/* ⭐ Sugestões no Pedido: seletor "Classe pelos últimos 3/6/12 meses" acima da tabela */
+.sug-ped-cl { display: flex; justify-content: flex-end; margin: 8px 0 4px; }
