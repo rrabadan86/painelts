@@ -15,7 +15,7 @@ const C = require('./config');
 
 const arq = (id) => path.join(C.pastaLoja(id), 'campanhas.json');
 const CPF_OK = /^\d{11}(\d{3})?$/;
-const RECORRENCIAS = ['', 'semanal', 'mensal'];
+const RECORRENCIAS = ['', 'diaria', 'semanal', 'mensal'];
 const ST = ['p', 'e', 'o', 'x'];
 
 function ler(id) { try { const j = JSON.parse(fs.readFileSync(arq(id), 'utf8')); return Array.isArray(j) ? j : []; } catch { return []; } }
@@ -90,10 +90,11 @@ function alterar(id, cid, b) {
   gravar(id, todas);
   return { ok: c };
 }
-/** campanha recorrente: a última lista ainda vale? (semanal = menos de 7 dias; mensal = mesmo mês, em Brasília) */
+/** campanha recorrente: a última lista ainda vale? (diária = mesmo dia; semanal = menos de 7 dias; mensal = mesmo mês, em Brasília) */
 function rodadaEmDia(c, agora = Date.now()) {
   const ult = c && c.recorrente && c.rodadas && c.rodadas[0] ? Date.parse(c.rodadas[0].em) : NaN;
   if (!Number.isFinite(ult)) return false;
+  if (c.recorrente === 'diaria') return C.diaSP(agora) <= C.diaSP(ult); // todo dia: uma lista por dia (Brasília)
   if (c.recorrente === 'semanal') return agora - ult < 7 * 864e5;
   return C.diaSP(agora).slice(0, 7) <= C.diaSP(ult).slice(0, 7);
 }

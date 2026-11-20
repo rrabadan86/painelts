@@ -169,14 +169,15 @@
     if (faixaRobo && faixaRobo.atualizar) faixaRobo.atualizar();
   }
 
-  /** campanha recorrente: semanal = uma lista nova a cada 7 dias; mensal = uma por mês */
+  /** campanha recorrente: diária = uma lista nova por dia; semanal = a cada 7 dias; mensal = uma por mês */
   async function rodadasRecorrentes(lista) {
     const feitas = [];
     for (const c of lista) {
       if (!c.recorrente || c.ativa === false) continue;
       const ult = c.rodadas[0] && new Date(c.rodadas[0].em);
       const agora = new Date();
-      const vence = !ult || (c.recorrente === 'semanal' ? agora - ult >= 7 * 864e5 : agora.getFullYear() * 12 + agora.getMonth() > ult.getFullYear() * 12 + ult.getMonth());
+      const diaBR = (d) => d.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+      const vence = !ult || (c.recorrente === 'diaria' ? diaBR(agora) > diaBR(ult) : c.recorrente === 'semanal' ? agora - ult >= 7 * 864e5 : agora.getFullYear() * 12 + agora.getMonth() > ult.getFullYear() * 12 + ult.getMonth());
       if (!vence) continue;
       try { const r = await api('POST', `/api/campanhas/${c.id}/rodadas`, { loja: state.loja, lista: listaDe(c.filtros) }); Object.assign(c, r.campanha); if (!r.repetida) feitas.push(c.nome); } catch { /* tenta de novo na próxima vez */ }
     }
@@ -222,7 +223,7 @@
     const cards = lista.map((c) => {
       const r = c.rodadas[0], s = resumoRodada(r, c.janela);
       return h('div', { class: 'card cp-card', role: 'button', tabindex: 0, onclick: () => abrirCampanha(corpo, lista, c), onkeydown: (e) => { if (e.key === 'Enter') abrirCampanha(corpo, lista, c); } },
-        h('div', { class: 'cp-card-top' }, h('b', null, c.nome), c.recorrente ? h('span', { class: 'cli-tag t-repor' }, c.recorrente === 'semanal' ? 'toda semana' : 'todo mês') : null, c.robo ? h('span', { class: 'cli-tag', title: 'Enviada pelo robô do WhatsApp' }, '🤖 robô') : null, c.ativa === false ? h('span', { class: 'cli-tag' }, 'pausada') : null),
+        h('div', { class: 'cp-card-top' }, h('b', null, c.nome), c.recorrente ? h('span', { class: 'cli-tag t-repor' }, c.recorrente === 'diaria' ? 'todo dia' : c.recorrente === 'semanal' ? 'toda semana' : 'todo mês') : null, c.robo ? h('span', { class: 'cli-tag', title: 'Enviada pelo robô do WhatsApp' }, '🤖 robô') : null, c.ativa === false ? h('span', { class: 'cli-tag' }, 'pausada') : null),
         h('small', { class: 'muted' }, `${c.recorrente ? 'Lista de ' : 'Criada em '}${fmt.date(r.em.slice(0, 10))} · por ${r.por || c.por || '—'}`),
         h('div', { class: 'cp-mini' },
           h('div', null, h('b', null, fmt.int(s.total)), h('small', null, 'na lista')),
@@ -302,7 +303,7 @@
     function numerar() { [...varBox.children].forEach((el, k) => { el.querySelector('small').textContent = `Variação ${k + 2}`; }); btVar.hidden = variacoes.length >= 4; }
     for (const v of (base && base.variacoes) || []) addVar(v);
     const textosVar = () => variacoes.map((t) => t.value.trim()).filter(Boolean);
-    const rec = h('select', { class: 'f-input' }, h('option', { value: '' }, 'Não (lista única)'), h('option', { value: 'semanal', selected: base && base.recorrente === 'semanal' || null }, 'Toda semana'), h('option', { value: 'mensal', selected: base && base.recorrente === 'mensal' || null }, 'Todo mês'));
+    const rec = h('select', { class: 'f-input' }, h('option', { value: '' }, 'Não (lista única)'), h('option', { value: 'diaria', selected: base && base.recorrente === 'diaria' || null }, 'Todo dia'), h('option', { value: 'semanal', selected: base && base.recorrente === 'semanal' || null }, 'Toda semana'), h('option', { value: 'mensal', selected: base && base.recorrente === 'mensal' || null }, 'Todo mês'));
     const segBox = h('div', { class: 'chips' }, ...SEGS.map(([k, t]) => { const b = h('button', { type: 'button', class: 'chip' + (f.segs.includes(k) ? ' on' : '') }, t); b.addEventListener('click', () => { f.segs = f.segs.includes(k) ? f.segs.filter((x) => x !== k) : [...f.segs, k]; b.classList.toggle('on'); atualizar(); }); return b; }));
     if (!Array.isArray(f.rfm)) f.rfm = []; if (!Array.isArray(f.tipos)) f.tipos = [];
     const chipsDe = (k, opcoes) => h('div', { class: 'chips' }, ...opcoes.map(([v, t, dica]) => { const b = h('button', { type: 'button', class: 'chip' + (f[k].includes(v) ? ' on' : ''), title: dica || null }, t); b.addEventListener('click', () => { f[k] = f[k].includes(v) ? f[k].filter((x) => x !== v) : [...f[k], v]; b.classList.toggle('on'); atualizar(); }); return b; }));
@@ -485,7 +486,7 @@
               h('div', { class: 'cp-passo' }, h('span', { class: 'cp-n' }, '3'), h('div', null, h('b', null, 'Envio e retorno'))),
               linha('Enviar no máximo', limite, 'mensagens por dia nesta campanha', TS.dica('Ao chegar no limite, a fila para e continua no dia seguinte. 0 = sem limite. Poucas mensagens por dia, para quem tem motivo de receber, mantêm o número da loja saudável.')),
               linha('Medir o retorno em', janela, 'dias', TS.dica('Conta como "voltou" quem comprar (cupom com CPF) do dia do envio até N dias depois.')),
-              linha('Repetir', rec, TS.dica('Toda semana ou todo mês uma lista nova é montada com estes critérios quando a tela de campanhas é aberta. Campanha enviada pelo robô: o painel monta sozinho, sem ninguém abrir a tela.')),
+              linha('Repetir', rec, TS.dica('Todo dia, toda semana ou todo mês uma lista nova é montada com estes critérios.\n\nTodo dia: serve para critérios que mudam a cada dia (aniversariantes, quem acabou de completar os pontos, quem está há X dias sem comprar). Quem já recebeu não recebe de novo antes do intervalo da loja.\n\nEnvio manual: a lista nova nasce quando a tela de campanhas é aberta. Campanha enviada pelo robô: o painel monta sozinho, sem ninguém abrir a tela.')),
               refazerBox))),
         h('div', { class: 'cp-dir' },
           h('div', { class: 'card cp-resumo-fixo' }, contagem, h('div', { class: 'cp-salvar' }, salvar, erro)),
@@ -618,7 +619,7 @@
         (TS.lojas || []).length > 1 && !TS.demo ? h('button', { type: 'button', class: 'btn', onclick: () => copiarPara(camp) }, 'Copiar para outra loja') : null,
         h('button', { type: 'button', class: 'btn danger-txt', onclick: async () => { if (!confirm(`Apagar a campanha "${camp.nome}"? As listas e o retorno somem.`)) return; await api('DELETE', `/api/campanhas/${camp.id}?${qs()}`).catch((e) => alert(e.message)); lista.splice(lista.indexOf(camp), 1); pintarLista(corpo, lista, []); } }, 'Apagar')),
       h('div', { class: 'page-head cp-head' }, h('div', null, h('h2', { class: 'page-title' }, camp.nome),
-        h('div', { class: 'page-sub' }, `${camp.recorrente ? (camp.recorrente === 'semanal' ? 'Toda semana · ' : 'Todo mês · ') : ''}lista de ${fmt.date(r.em.slice(0, 10))} · retorno medido em ${camp.janela} dias`))),
+        h('div', { class: 'page-sub' }, `${camp.recorrente ? (camp.recorrente === 'diaria' ? 'Todo dia · ' : camp.recorrente === 'semanal' ? 'Toda semana · ' : 'Todo mês · ') : ''}lista de ${fmt.date(r.em.slice(0, 10))} · retorno medido em ${camp.janela} dias`))),
       h('div', { class: 'grid g-kpi' },
         kpi('Na lista', fmt.int(s.total), `${fmt.int(s.pend)} pendentes`),
         kpi('Enviadas', fmt.int(s.env), s.total ? `${fmt.pct(s.env / s.total, 0)} da lista${pelosRobo ? ` · 🤖 ${fmt.int(pelosRobo)} pelo robô` : ''}` : null, 'Mensagens abertas no WhatsApp pela fila (clique em "Abrir no WhatsApp") ou enviadas pelo robô do WhatsApp (🤖).'),

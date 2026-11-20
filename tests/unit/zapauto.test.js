@@ -258,3 +258,13 @@ test('a tarefa falha: o robô segue com a lista conferida por 3 dias e depois pa
   assert.strictEqual((await ZL.passo('l5', domingo + 60e3, { zap, rnd })).enviou, true);
   assert.strictEqual(zap.enviados[1].texto, 'Bom dia, Bia! Faz 16 dias que você não vem.');
 });
+
+test('campanha recorrente "todo dia": uma lista por dia de Brasília (não cria outra no mesmo dia; cria na virada)', () => {
+  const CAMP = require('../../src/campanhas');
+  const em = '2026-11-20T12:00:00.000Z'; // 09:00 em Brasília
+  const c = { recorrente: 'diaria', rodadas: [{ id: 'r1', em, lista: [] }] };
+  assert.equal(CAMP.rodadaEmDia(c, Date.parse('2026-11-20T23:00:00.000Z')), true, '20:00 do mesmo dia');
+  assert.equal(CAMP.rodadaEmDia(c, Date.parse('2026-11-21T02:30:00.000Z')), true, '23:30 ainda é dia 20 em Brasília');
+  assert.equal(CAMP.rodadaEmDia(c, Date.parse('2026-11-21T03:30:00.000Z')), false, '00:30 do dia 21: lista nova');
+  assert.equal(CAMP.rodadaEmDia({ recorrente: 'diaria', rodadas: [] }, Date.now()), false);
+});
