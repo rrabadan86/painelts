@@ -269,12 +269,13 @@
   const fecharBalao = () => { if (balao) { balao.remove(); balao = null; } };
   const abrirBalao = (alvo, texto) => {
     fecharBalao();
-    balao = h('div', { class: 'dica-balao', role: 'tooltip' }, texto);
+    balao = h('div', { class: 'dica-balao' + (String(texto).length > 320 ? ' dica-longa' : ''), role: 'tooltip' }, texto);
     balao._alvo = alvo; balao._em = Date.now();
     document.body.append(balao);
     const r = alvo.getBoundingClientRect(), b = balao.getBoundingClientRect(), m = 8;
     let x = r.left + r.width / 2 - b.width / 2; x = Math.max(m, Math.min(x, window.innerWidth - b.width - m));
     let y = r.bottom + 6; if (y + b.height > window.innerHeight - m) y = Math.max(m, r.top - b.height - 6);
+    if (y + b.height > window.innerHeight - m) y = Math.max(m, window.innerHeight - b.height - m); // texto longo: encosta na borda em vez de sair da tela
     balao.style.left = x + 'px'; balao.style.top = y + 'px';
   };
   document.addEventListener('scroll', fecharBalao, true);

@@ -93,3 +93,60 @@ test('COMP-05 apresentação: compras fictícias dos meses anteriores sem mexer 
   assert.equal(r.desde, '2025-12-01');
   assert.equal(D.comprasDoAno({ itens: {} }, estoque, {}, vendas).desde, undefined);
 });
+
+// ---------- teto pela previsão dos próximos dias ----------
+const DIAMS = 864e5;
+const serie = (de, ate, f) => { const o = {}; for (let t = Date.parse(de + 'T00:00:00Z'); t <= Date.parse(ate + 'T00:00:00Z'); t += DIAMS) { const iso = new Date(t).toISOString().slice(0, 10); o[iso] = f(iso); } return o; };
+
+test('previsão: ritmo de agora × época do ano (Natal do ano passado dobra a previsão) e o teto acompanha', () => {
+  const natal = (iso) => (iso >= '2025-11-21' && iso <= '2025-12-31') ? 2000 : 1000;
+  const p = CV.previsao({ dias: serie('2025-10-01', '2026-11-19', natal), ult: '2026-11-19', janela: 40 });
+  assert.deepEqual([p.janela, p.de, p.ate, p.baseDia, p.semEpoca], [40, '2026-11-20', '2026-12-29', 1000, null]);
+  assert.ok(p.fator > 1.8 && p.fator <= 2, 'a época vende quase o dobro: ' + p.fator);
+  assert.equal(Math.round(p.previsao), Math.round(1000 * p.fator * 40));
+  assert.equal(p.crescAno, 0, 'a loja está igual ao ano passado nos últimos 30 dias');
+  const itens = { 1: [['2026-11-01', 10, 5, 100, 'F'], ['2026-09-01', 10, 4, 100, 'F']] }; // só a nota de 01/11 cai nos últimos 40 dias
+  const t = CV.tetoJanela({ prev: p, itens, hoje: '2026-11-20', tetoPct: 32, pedido: 500 });
+  assert.deepEqual([t.compras, t.notas, t.soma, t.estado], [1000, 1, 1500, 'ok']);
+  assert.ok(Math.abs(t.teto - p.previsao * 0.32) < 1e-6 && Math.abs(t.cabe - (t.teto - 1500)) < 1e-6);
+  assert.equal(CV.tetoJanela({ prev: p, itens, hoje: '2026-11-20', pedido: 1e6 }).estado, 'acima');
+  // depois da época forte o teto encolhe
+  const jan = CV.previsao({ dias: serie('2025-10-01', '2026-12-31', (i) => ((i >= '2025-11-21' && i <= '2025-12-31') || (i >= '2026-11-21' && i <= '2026-12-31') ? 2000 : 1000)), ult: '2026-12-31', janela: 40 });
+  assert.ok(jan.fator < 0.7, 'janeiro vende menos que dezembro: ' + jan.fator);
+});
+
+test('previsão: sem um ano de histórico usa só o ritmo de agora e diz por quê; pouca venda → sem número', () => {
+  const p = CV.previsao({ dias: serie('2026-09-01', '2026-11-19', () => 500), ult: '2026-11-19', janela: 40 });
+  assert.equal(p.fator, 1); assert.match(p.semEpoca, /um ano/); assert.equal(p.previsao, 500 * 40);
+  assert.equal(CV.previsao({ dias: { '2026-11-19': 900 }, ult: '2026-11-19' }).previsao, null);
+  assert.equal(CV.previsao({ dias: {}, ult: null }), null);
+  assert.equal(CV.tetoJanela({ prev: null, hoje: '2026-11-20' }), null);
+  // sem notas de compra: teto existe, "cabe" não
+  const t = CV.tetoJanela({ prev: p, itens: null, hoje: '2026-11-20' });
+  assert.ok(t.teto > 0); assert.deepEqual([t.compras, t.cabe, t.estado], [null, null, 'sem']);
+});
+
+test('previsão: data comemorativa do Pedido — a que muda de dia é comparada com ela mesma, e a escolhida estica a janela', () => {
+  // Dia das Mães: 11/05/2025 e 10/05/2026; as duas semanas antes vendem o triplo
+  const maes = (iso) => ((iso >= '2025-04-27' && iso <= '2025-05-11') ? 3000 : 1000);
+  const ev = [{ id: 'm', nome: 'Dia das Mães', regra: 'maes', diasAntes: 14 }];
+  const dias = serie('2025-01-01', '2026-04-25', maes);
+  const com = CV.previsao({ dias, ult: '2026-04-25', janela: 15, eventos: ev });
+  assert.deepEqual(com.eventos.map((x) => [x.nome, x.de, x.ate, x.lyDe, x.lyAte]), [['Dia das Mães', '2026-04-26', '2026-05-10', '2025-04-27', '2025-05-11']]);
+  assert.equal(com.fatorBruto, 3); assert.equal(com.fator, 3);
+  // data fixa (Natal) dentro da janela: usa os mesmos dias do calendário do ano passado, não 364 dias antes
+  const nat = { id: 'n', nome: 'Natal', de: '12-01', ate: '12-24' };
+  const dn = serie('2025-01-01', '2026-11-30', (i) => ((i >= '2025-12-01' && i <= '2025-12-24') ? 2000 : 1000));
+  const cn = CV.previsao({ dias: dn, ult: '2026-11-30', janela: 24, eventos: [nat] });
+  assert.equal(cn.fatorBruto, 2, 'os 24 dias do Natal contra os 24 do Natal passado');
+  assert.ok(CV.previsao({ dias: dn, ult: '2026-11-30', janela: 24 }).fatorBruto < 2, 'sem a data cadastrada, 364 dias antes pega um dia fora do Natal');
+  // limite: ano fora do comum não passa de ×3
+  const lim = CV.previsao({ dias: serie('2025-01-01', '2026-04-25', (i) => ((i >= '2025-04-27' && i <= '2025-05-11') ? 9000 : 1000)), ult: '2026-04-25', janela: 15, eventos: ev });
+  assert.deepEqual([lim.fator, lim.limitado], [3, true]);
+  // modo "Data comemorativa": a janela vai até o fim do Natal escolhido
+  const natal = { id: 'n', nome: 'Natal', de: '12-01', ate: '12-24' };
+  const e = CV.previsao({ dias: serie('2025-01-01', '2026-10-20', () => 1000), ult: '2026-10-20', janela: 40, eventos: [natal], ateEvento: natal });
+  assert.deepEqual([e.janela, e.esticada, e.ate], [65, 'Natal', '2026-12-24']);
+  assert.deepEqual(CV.janelaEvento(natal, 2026).map((d) => new Date(d * DIAMS).toISOString().slice(0, 10)), ['2026-12-01', '2026-12-24']);
+  assert.deepEqual(CV.comprasNoPeriodo({ 1: [['2026-11-01', 10, 5, 2], ['2026-11-01', 5, 5, 2], ['2026-10-01', 10, 4, 1]] }, '2026-10-15', '2026-11-20'), { valor: 30, notas: 1 });
+});
