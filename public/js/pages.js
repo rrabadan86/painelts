@@ -6,7 +6,7 @@
 
   // ======================= PERÍODO =======================
   const PRESETS = [
-    ['Hoje', 'hoje'], ['Semana atual', 'semana'], ['Mês atual', 'mes'], ['Mês anterior', 'mesAnt'], ['30 dias', '30d'], ['Ano atual', 'ano'], ['12 meses', '12m'], ['Tudo', 'tudo'],
+    ['Hoje', 'hoje'], ['Semana atual', 'semana'], ['Mês atual', 'mes'], ['Mês anterior', 'mesAnt'], ['28 dias', '30d'], ['Ano atual', 'ano'], ['12 meses', '12m'], ['Tudo', 'tudo'],
   ];
   TS.PRESETS = PRESETS;
   /** referência = último dia com venda (evita "mês atual" vazio quando a planilha ainda não foi atualizada) */
@@ -20,7 +20,8 @@
     else if (p === 'semana') { const hj = TS.todayDay(); const wd = (new Date(hj * 86400000).getUTCDay() + 6) % 7; f.de = hj - wd; f.ate = f.de + 6; } // segunda a domingo
     else if (p === 'mes') { f.de = d(y, m, 1); f.ate = db.maxDay; }
     else if (p === 'mesAnt') { f.de = d(y, m - 1, 1); f.ate = d(y, m, 0); }
-    else if (p === '30d') { f.de = db.maxDay - 29; f.ate = db.maxDay; }
+    // "28 dias" (4 semanas inteiras: mesma quantidade de cada dia da semana; a chave continua '30d' por causa do estado salvo)
+    else if (p === '30d') { f.de = db.maxDay - 27; f.ate = db.maxDay; }
     else if (p === 'ano') { f.de = d(y, 0, 1); f.ate = db.maxDay; }
     else if (p === '12m') { f.de = d(y, m - 11, 1); f.ate = db.maxDay; }
     else if (p === 'tudo') { f.de = null; f.ate = null; }
@@ -193,7 +194,6 @@
     return h('div', { class: 'page-head' }, h('div', null, h('h1', { class: 'page-title' }, titulo), h('div', { class: 'page-sub' }, sub)), h('div', { class: 'active-filters' }, tags));
   }
 
-  const semSemVendedor = (idx) => idx.filter((i) => !R().ids.semVendedor.has(TS.db.vend[i]));
   /** período anterior de mesmo tamanho (para as variações dos cartões) */
   function periodoAnterior() {
     const f = state.f;
@@ -236,12 +236,14 @@
     return { tipo, chave, chaves, rotulo, nome, porX };
   };
 
-  /** mesmas datas no ano anterior e no mês anterior (até o último dia com vendas): usado no Resumo e nos Comparativos */
+  /** os mesmos dias da semana um ano antes (364 dias) e as mesmas datas no mês anterior (até o último dia com vendas): Resumo e Comparativos */
+  TS.DICA_ANO = 'vs. ano anterior: o mesmo período 364 dias antes (52 semanas), para comparar os mesmos dias da semana — segunda com segunda, sábado com sábado';
   TS.periodosIguais = function (de, ate) {
     const db = TS.db;
     if (de == null) return null;
     const fim = Math.max(de, Math.min(ate ?? db.maxDay, db.maxDay));
-    const anoAntes = (d) => { const iso = TS.dayToIso(d); const y = +iso.slice(0, 4) - 1; const md = iso.slice(5) === '02-29' ? '02-28' : iso.slice(5); return TS.isoToDay(`${y}-${md}`); };
+    // ano anterior = 364 dias antes (52 semanas): segunda compara com segunda, sábado com sábado
+    const anoAntes = (d) => d - 364;
     const mesAntes = (day) => { const d = new Date(day * 86400000), y = d.getUTCFullYear(), m = d.getUTCMonth() - 1; const ult = new Date(Date.UTC(y, m + 1, 0)).getUTCDate(); return Math.floor(Date.UTC(y, m, Math.min(d.getUTCDate(), ult)) / 86400000); };
     return { ano: { de: anoAntes(de), ate: anoAntes(fim) }, mes: { de: mesAntes(de), ate: mesAntes(fim) } };
   };
@@ -253,7 +255,16 @@
   };
   TS.linhasVar = (...ls) => {
     const v = ls.filter((l) => l && l[1] != null && l[1] !== 0 && l[0] != null);
-    return v.length ? h('span', { class: 'kpi-vars' }, ...v.map(([a, b, txt]) => { const c = varCurta(txt); return h('span', { title: c !== txt ? txt : null }, TS.deltaSpan(a / b - 1), ' ' + c); })) : null;
+    return v.length ? h('span', { class: 'kpi-vars' }, ...v.map(([a, b, txt]) => { const c = varCurta(txt); return h('span', { title: txt === 'vs. ano anterior' ? TS.DICA_ANO : c !== txt ? txt : null }, TS.deltaSpan(a / b - 1), ' ' + c); })) : null;
+  };
+
+  /** o período da tela fica dentro de UM mês? → 'AAAA-MM' (senão null). Meta, comissão e projeção são do mês. */
+  TS.periodoUmMes = function () {
+    const f = state.f, db = TS.db;
+    if (f.de == null || (f.preset === 'anomes' && !(f.ano && f.mes))) return null;
+    const ymDe = TS.dayToIso(f.de).slice(0, 7);
+    const fim = Math.max(f.de, Math.min(f.ate ?? db.maxDay, db.maxDay));
+    return TS.dayToIso(fim).slice(0, 7) === ymDe && (f.ate == null || TS.dayToIso(f.ate).slice(0, 7) === ymDe) ? ymDe : null;
   };
 
   /** tabela em árvore Mês (todos os anos) → Ano → Vendedor */
@@ -387,7 +398,7 @@
   TS.pages = {};
   TS.pages.resumo = function (root) {
     const db = TS.db, I = R().ids;
-    const base = semSemVendedor(TS.filtrar());
+    const base = TS.filtrar();
     root.append(cabecalho('Resumo de Vendas', 'Desempenho por vendedor, produto e tipo de chá'));
     if (!base.length) { root.append(TS.card(null, null, TS.empty())); return; }
 
@@ -396,14 +407,14 @@
     const pa = periodoAnterior();
     let prev = null;
     if (pa) {
-      const pidx = semSemVendedor(TS.filtrar({ de: pa.de, ate: pa.ate }));
+      const pidx = TS.filtrar({ de: pa.de, ate: pa.ate });
       if (pidx.length) prev = { ...TS.indicadores(pidx), kg: pidx.reduce((s, i) => s + (I.chaTotal.has(db.grupo[i]) ? db.cha[i] || 0 : 0), 0) };
     }
     // segunda linha: mesmo período do ano anterior (quando a primeira já não é ela)
     const pi = TS.periodosIguais(state.f.de, state.f.ate);
     let prevAno = null;
     if (pi && !/ano anterior/.test(pa?.txt || '')) {
-      const ia = semSemVendedor(TS.filtrar({ de: pi.ano.de, ate: pi.ano.ate }));
+      const ia = TS.filtrar({ de: pi.ano.de, ate: pi.ano.ate });
       if (ia.length) prevAno = { ...TS.indicadores(ia), kg: ia.reduce((s, i) => s + (I.chaTotal.has(db.grupo[i]) ? db.cha[i] || 0 : 0), 0) };
     }
     const d = (a, b, k) => TS.linhasVar(prev && b ? [a, b, pa.txt.replace('mesmo período do ', '')] : null, prevAno && k ? [a, prevAno[k], 'vs. ano anterior'] : null);
@@ -415,9 +426,10 @@
       TS.kpi('Itens por atendimento (IPA)', fmt.n2(ind.ipa), d(ind.ipa, prev?.ipa, 'ipa'), 'Itens ÷ cupons'),
       TS.kpi('Chá vendido', fmt.kg(kgTotal) + ' kg', d(kgTotal, prev?.kg, 'kg')),
       TS.kpi('Espaço Gourmet', fmt.pct(R().pctEG(base)), 'do faturamento'),
-      // projeção: só quando o período é o mês em andamento
-      (['mes', 'anomes'].includes(state.f.preset) || state.f.preset === 'custom') && state.f.de != null && TS.dayToIso(state.f.de).slice(8) === '01'
-        ? TS.kpiProjecao(ind.vt, null, TS.dayToIso(state.f.de).slice(0, 7), 'Projeção do faturamento') : null));
+      // projeção: só quando o período começa no dia 1 e fica dentro de UM mês (o mês em andamento); período
+      // personalizado que termina antes de hoje projeta a partir do fim do período, não do dia de hoje
+      TS.periodoUmMes() && TS.dayToIso(state.f.de).slice(8) === '01'
+        ? TS.kpiProjecao(ind.vt, null, TS.dayToIso(state.f.de).slice(0, 7), 'Projeção do faturamento', { base: 'loja', ate: state.f.ate }) : null));
 
     const al = TS.cartaoAlertas && TS.cartaoAlertas();
     if (al) root.append(al);
@@ -551,24 +563,23 @@
   // ======================= COMPARATIVOS =======================
   TS.pages.comparativos = function (root) {
     const db = TS.db, I = R().ids;
-    const base = semSemVendedor(TS.filtrar({ usarTamanho: true }));
+    const base = TS.filtrar({ usarTamanho: true });
     root.append(cabecalho('Comparativos', 'Evolução mês a mês, ano contra ano e por vendedor'));
     if (!base.length) { root.append(TS.card(null, null, TS.empty())); return; }
 
     // ---- dados do ano anterior para o YoY
     const f = state.f;
     const de = f.de ?? db.minDay, ate = f.ate ?? db.maxDay;
-    // mesmo período do ano anterior pelas MESMAS DATAS do calendário (01/11 a 13/11 → 01/11 a 13/11 do ano anterior),
-    // até o último dia com vendas — a mesma regra da tabela "Evolução mensal" (antes: de − 366 dias, um dia a mais)
-    const anoAntes = (d) => { const iso = TS.dayToIso(d); const y = +iso.slice(0, 4) - 1; const md = iso.slice(5) === '02-29' ? '02-28' : iso.slice(5); return TS.isoToDay(`${y}-${md}`); };
+    // "vs. ano anterior" dos quadros = os mesmos dias da semana, 364 dias antes (a mesma conta do Resumo);
+    // a tabela "Evolução mensal" continua comparando mês com o mesmo mês do calendário
     // sem data de início ("Tudo" ou só o mês) não existe "mesmo período do ano anterior": não compara
-    const prevIdx = f.de == null ? [] : semSemVendedor(TS.filtrar({ usarTamanho: true, de: anoAntes(de), ate: anoAntes(Math.min(ate, db.maxDay)) }));
+    const prevIdx = f.de == null ? [] : TS.filtrar({ usarTamanho: true, de: de - 364, ate: Math.min(ate, db.maxDay) - 364 });
     const pctEG = R().pctEG(base);
     const indAll = TS.indicadores(base);
     const indPrev = prevIdx.length ? TS.indicadores(prevIdx) : null;
     // mês anterior: as mesmas datas um mês antes (a mesma conta do Resumo com "Mês atual")
     const pi = f.de != null ? TS.periodosIguais(de, ate) : null;
-    const mesIdx = pi ? semSemVendedor(TS.filtrar({ usarTamanho: true, de: pi.mes.de, ate: pi.mes.ate })) : [];
+    const mesIdx = pi ? TS.filtrar({ usarTamanho: true, de: pi.mes.de, ate: pi.mes.ate }) : [];
     const indMes = mesIdx.length ? TS.indicadores(mesIdx) : null;
     const vars = (k) => TS.linhasVar(indPrev ? [indAll[k], indPrev[k], 'vs. ano anterior'] : null, indMes ? [indAll[k], indMes[k], 'vs. mês anterior'] : null) || 'sem dados para comparar';
     root.append(h('div', { class: 'grid g-kpi' },
@@ -599,7 +610,7 @@
     const temFr = !!(fr && !fr.minimo);
     const FR = 'Média da franquia';
     const dsFr = (data) => TS.dsMedia(FR, data, { borderColor: '#6B3FA0', backgroundColor: '#6B3FA0', borderDash: [2, 3], borderWidth: 2.5 });
-    const prevAll = semSemVendedor(TS.filtrar({ usarTamanho: true, ignorar: ['datas'] }));
+    const prevAll = TS.filtrar({ usarTamanho: true, ignorar: ['datas'] });
     const porMesAll = TS.agrupar(prevAll, (i) => db.ym[i]);
     const tabM = arvoreMensal(base, porMesAll, { de, ate: Math.min(ate, db.maxDay) });
     // ---- mix por vendedor
@@ -709,9 +720,19 @@
     const base = TS.filtrar();
     const baseSemVend = TS.filtrar({ ignorar: ['vendedores'] });
     root.append(cabecalho('Comissionamento', 'Metas, comissões, premiações, gorjetas e royalties'));
+    // a meta é do mês: período que passa de um mês somaria dois meses contra UMA meta — não calcula, pede o mês
+    const umMes = TS.periodoUmMes();
+    if (!umMes) {
+      const ir = (p) => h('button', { type: 'button', class: 'btn', onclick: () => { TS.aplicarPreset(p); TS.render(); } }, p === 'mes' ? 'Ver o mês atual' : 'Ver o mês anterior');
+      root.append(h('div', { class: 'notice', 'data-aviso': 'escolha-um-mes' }, h('b', null, 'Escolha um mês. '),
+        'A meta e a comissão são do mês: com um período que passa de um mês, as vendas de dois meses seriam comparadas com a meta de um só. Use "Mês atual", "Mês anterior", Ano + Mês ou datas dentro do mesmo mês. ',
+        h('span', { class: 'cfg-inline' }, ir('mes'), ir('mesAnt'))));
+      return;
+    }
     if (!base.length) { root.append(TS.card(null, null, TS.empty())); return; }
 
-    const res = R().comissionamento({ base, baseSemVend, metaLoja: meta, vendBonus: c.vendBonus, ym: TS.metaPeriodo().ym });
+    const ateDia = Math.min(state.f.ate ?? db.maxDay, db.maxDay);
+    const res = R().comissionamento({ base, baseSemVend, metaLoja: meta, vendBonus: c.vendBonus, ym: TS.metaPeriodo().ym, ate: ateDia });
     if (!(meta > 0)) root.append(h('div', { class: 'notice warn', 'data-aviso': 'sem-meta' }, h('b', null, 'Meta não cadastrada: '),
       `sem a meta de ${TS.ymLabel(TS.metaPeriodo().ym)} a comissão sai pela taxa mínima (abaixo da meta) e o bônus pela menor faixa. Cadastre a meta em Configurações → Lojas.`));
     if (res.feriasMes.length) root.append(h('div', { class: 'notice' }, h('b', null, 'Férias no mês: '),
@@ -801,21 +822,34 @@
       if (!TS.classificacao && !TS._clsCarregando) TS.carregarClassificacao().then(() => { if (state.page === 'comissionamento') TS.render(); });
     }
     if (res.lojasNoPeriodo > 1) root.append(h('div', { class: 'notice' }, 'Há mais de uma loja no filtro. As regras de comissão mudam por loja, então selecione uma loja para ver os valores corretos.'));
-    const mensal = ['mes', 'mesAnt', 'custom'].includes(state.f.preset) || (state.f.preset === 'anomes' && state.f.ano && state.f.mes);
-    if (!mensal) root.append(h('div', { class: 'notice' }, 'A meta é mensal. Para fechar a comissão, use "Mês atual", "Mês anterior" ou escolha Ano + Mês no período.'));
+    const mensal = true; // só chega aqui com o período dentro de um mês (TS.periodoUmMes)
 
     const vendido = res.total.total;
     const naMeta = res.rows.filter((r) => r.metaInd > 0 && r.total >= r.metaInd).length;
     const comMeta = res.rows.filter((r) => r.metaInd > 0).length;
     const rg = res.regras, pr = rg.premiacao;
     const ymMeta = TS.metaPeriodo().ym;
+    // mês em andamento: a faixa de cada pessoa ainda pode mudar até o fim do mês
+    const fimMes = TS.isoToDay(`${ymMeta}-${String(TS.contas.diasNoMes(ymMeta)).padStart(2, '0')}`);
+    const parcial = ymMeta === TS.dayToIso(db.maxDay).slice(0, 7) && Math.max(db.maxDay, TS.todayDay() - 1) < fimMes;
+    const minAt = R().minAtendPremiacao(rg);
+    const P = res.piso;
+    const dicaPiso = `A meta da loja é dividida entre quem tem pelo menos ${P.dias} ${P.dias === 1 ? 'dia' : 'dias'} com venda no mês (regras da loja em Configurações → Lojas → Regras de comissão).`
+      + (P.fechado ? '' : `\n\nMês em andamento (dia ${P.dia}): o piso acompanha os dias corridos — até o dia 7 todos com venda dividem; depois vale ${P.dias} × dia do mês ÷ dias do mês, arredondado para baixo. Hoje: ${P.aplicado} ${P.aplicado === 1 ? 'dia' : 'dias'}.`)
+      + (P.todosAbaixo ? '\n\nNinguém alcançou o piso: todos com venda dividem.' : '')
+      + '\n\nQuem fica abaixo do piso não aumenta o número de pessoas que dividem a meta, mas continua recebendo a comissão pela faixa: a venda dela é comparada com a mesma meta individual dos demais.'
+      + (res.foraDaMeta.length ? `\n\nFora da divisão agora: ${res.foraDaMeta.map((x) => `${x.vendedor} (${x.dias} ${x.dias === 1 ? 'dia' : 'dias'} com venda; precisa de ${P.aplicado})`).join(', ')}.` : '');
     root.append(h('div', { class: 'grid g-kpi' },
-      TS.kpi('Meta da loja', fmt.brl0(meta), `${res.qtdVend} vendedores dividem a meta`),
-      TS.kpi('Vendido (chás + acessórios)', fmt.brl0(vendido), h('span', { class: vendido >= meta ? 'up' : 'down' }, `${fmt.pct(meta ? vendido / meta : null)} da meta`)),
-      mensal ? TS.kpiProjecao(vendido, meta || null, ymMeta) : null,
+      TS.kpi('Meta da loja', fmt.brl0(meta), h('span', { 'data-meta-div': String(res.qtdVend) }, `Meta dividida entre ${res.qtdVend} ${res.qtdVend === 1 ? 'pessoa' : 'pessoas'}${res.foraDaMeta.length ? ` · ${res.foraDaMeta.length} fora` : ''}`), dicaPiso),
+      TS.kpi('Vendas da meta', fmt.brl0(vendido), h('span', { class: vendido >= meta ? 'up' : 'down' }, `${fmt.pct(meta ? vendido / meta : null)} da meta`),
+        'Vendas que contam para a meta e a comissão: chá aromatizado, chá puro e acessórios, sem Espaço Gourmet. É a base do "% da meta" em todas as telas (Início, Meta de hoje, resumo diário). O faturamento da loja (Resumo, Resultado) é maior: inclui o Espaço Gourmet e os outros grupos.'),
+      mensal ? TS.kpiProjecao(vendido, meta || null, ymMeta, 'Projeção do mês', { base: 'meta', ate: state.f.ate }) : null,
       TS.kpi('Total a pagar', fmt.brl(res.total.aPagar), rg.rateio && rg.rateio.ativo ? 'rateio igual entre a equipe' : 'comissões + bônus'),
-      pr.ativa ? TS.kpi('Premiações', fmt.brl0(res.total.premiacao), `TKM ≥ ${fmt.n2(pr.tkm)}, IPA ≥ ${fmt.n2(pr.ipa)}, PMA ≥ ${fmt.n2(pr.pma)}`) : null,
+      pr.ativa ? TS.kpi('Premiações', fmt.brl0(res.total.premiacao), `TKM ≥ ${fmt.n2(pr.tkm)}, IPA ≥ ${fmt.n2(pr.ipa)}, PMA ≥ ${fmt.n2(pr.pma)}`,
+        `${fmt.brl0(pr.valor)} por indicador quando ${pr.minimo} ou mais estão no mínimo. TKM = vendas ÷ atendimentos; PMA = vendas ÷ itens; IPA = itens ÷ atendimentos (vendas da meta de cada pessoa; o cupom atendido por duas pessoas conta para as duas).${minAt ? ` Só concorre quem tem pelo menos ${fmt.int(minAt)} atendimentos no mês: com poucos cupons o indicador é sorte, não desempenho.` : ''}`) : null,
       TS.kpi('Na meta individual', `${naMeta} de ${comMeta}`, 'vendedores')));
+    if (res.foraDaMeta.length) root.append(h('p', { class: 'muted com-fora', 'data-fora-meta': String(res.foraDaMeta.length) },
+      `Meta dividida entre ${res.qtdVend} ${res.qtdVend === 1 ? 'pessoa' : 'pessoas'}. Fora da divisão (menos de ${P.aplicado} ${P.aplicado === 1 ? 'dia' : 'dias'} com venda${P.fechado ? '' : ' até agora'}): ${res.foraDaMeta.map((x) => `${x.vendedor} (${x.dias} ${x.dias === 1 ? 'dia' : 'dias'})`).join(', ')}.`, TS.dica(dicaPiso)));
     const eg = R().espacoGourmet({ base, baseSemVend });
     const cfgLoja = res.loja ? (db.metas || []).find((m) => (m.nomesVenda || []).includes(res.loja)) : null;
     const lojaTxt = res.loja ? (TS.lojas || []).find((l) => (db.metas.find((m) => m.id === l.id)?.nomesVenda || []).includes(res.loja))?.nome || res.loja : 'Várias lojas';
@@ -839,9 +873,10 @@
       cols: [
         { key: 'vendedor', label: 'Vendedor', align: 'l', sticky: true },
         { key: 'aPagar', label: 'A pagar', fmt: fmt.brl, cls: () => 'hit' },
-        { key: 'premiacao', label: 'Premiação', fmt: (v) => (v ? fmt.brl0(v) : '—') },
-        { key: 'metaInd', label: 'Meta ind.', fmt: fmt.brl0 },
-        { key: 'total', label: 'Vendido', fmt: fmt.brl },
+        { key: 'premiacao', label: 'Premiação', title: `${fmt.brl0(pr.valor)} por indicador (TKM, IPA, PMA) no mínimo${minAt ? `; só concorre quem tem pelo menos ${fmt.int(minAt)} atendimentos no mês` : ''}`,
+          fmt: (v, r) => (r && r.poucosAtend ? h('small', { class: 'muted' }, `poucos atendimentos (${fmt.int(r.atend)} de ${fmt.int(minAt)})`) : v ? fmt.brl0(v) : '—') },
+        { key: 'metaInd', label: 'Meta ind.', fmt: fmt.brl0, title: 'Meta da loja ÷ pessoas que dividem a meta (quem tem o mínimo de dias com venda no mês; férias descontadas). Quem está fora da divisão é comparado com a mesma meta dos demais' },
+        { key: 'total', label: 'Vendas da meta', fmt: fmt.brl, title: 'Chá aromatizado + chá puro + acessórios, sem Espaço Gourmet' },
         { key: 'metaArom', label: 'Meta arom.', fmt: fmt.brl0 },
         { key: 'arom', label: 'Aromatizado', fmt: fmt.brl, cls: hitCls('arom', 'metaArom') },
         { key: 'cArom', label: 'Com. arom.', fmt: fmt.brl },
@@ -854,11 +889,11 @@
         { key: 'tkm', label: 'TKM', fmt: fmt.brl, cls: (r) => (pr.ativa && r.tkm >= pr.tkm ? 'hit' : '') },
         { key: 'pma', label: 'PMA', fmt: fmt.brl, cls: (r) => (pr.ativa && r.pma >= pr.pma ? 'hit' : '') },
         { key: 'ipa', label: 'IPA', fmt: fmt.n2, cls: (r) => (pr.ativa && r.ipa >= pr.ipa ? 'hit' : '') },
-        { key: 'bonus', label: 'Bônus', fmt: (v) => (v == null ? '—' : fmt.brl(v)), title: 'Bônus sobre outros vendedores' },
+        { key: 'bonus', label: 'Bônus', fmt: (v) => (v == null ? '—' : fmt.brl(v)), title: 'Bônus sobre outros vendedores: % sobre as vendas da meta dos demais. A faixa do % usa as vendas da meta da loja contra a meta da loja (a mesma base do "% da meta")' },
       ],
       rows: res.rows, total: res.total, sortKey: 'aPagar', imprimir: ['vendedor', 'aPagar', 'premiacao', 'metaInd', 'total', 'arom', 'puro', 'acess', 'tkm', 'pma', 'ipa', 'bonus'],
     });
-    root.append(TS.section('Comissão por vendedor'), TS.card('Comissão por vendedor',
+    root.append(TS.section('Comissão por vendedor'), TS.card(h('span', null, 'Comissão por vendedor', parcial ? h('span', { class: 'badge warn com-parcial', title: 'Mês em andamento: os valores usam as vendas até agora contra a meta do mês inteiro. Quem ainda está "abaixo da meta" pode mudar de faixa (e de % de comissão) até o fim do mês.' }, 'parcial: a faixa pode mudar até o fim do mês') : null),
       h('span', null, 'Sem Espaço Gourmet. ', h('b', { class: 'hit', style: { color: '#1F5FBF' } }, 'Azul'), ' = meta batida, ', h('b', { style: { color: '#B5452B' } }, 'vermelho'), ' = abaixo da meta. A linha Total soma os vendedores.'), tab));
 
     // feriados do mês (horas trabalhadas por pessoa → PDF do fechamento)
@@ -1083,7 +1118,8 @@
     // sugestões para a próxima promoção (validade dos lotes): logo abaixo dos números do período
     const sugestoes = TS.validade ? TS.validade.secaoPromocao(state.loja) : null;
     if (f.de == null) { root.append(h('div', { class: 'notice' }, 'Escolha um período (por exemplo, as datas da promoção) para comparar com os dias anteriores.'), sugestoes || ''); return; }
-    const excl = (idx) => idx.filter((i) => !TS.rules.ids.semVendedor.has(db.vend[i]));
+    // faturamento da loja: com as vendas sem vendedor (definição única)
+    const excl = (idx) => idx;
     const atual = excl(TS.filtrar());
     const ant = excl(TS.filtrar({ de: f.de - N, ate: f.de - 1 }));
     const a = TS.indicadores(atual), p = TS.indicadores(ant);

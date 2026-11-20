@@ -237,16 +237,31 @@ TS.filtrar = function (opts = {}) {
   return out;
 };
 
-/** Agrupa índices por chave e calcula as métricas básicas */
+/**
+ * A linha entra no faturamento da loja? Definição única (public/js/contas.js): linha de taxa (serviço, entrega) e item a
+ * R$ 0,01 (resgate de pontos, brinde) não são venda. Todas as telas e o servidor usam esta mesma conta.
+ */
+TS.contaFat = function (i) {
+  const db = TS.db;
+  if (!db._taxaDesc || db._taxaDescN !== db.D.descricao.length) {
+    db._taxaDesc = new Uint8Array(db.D.descricao.length);
+    db.D.descricao.forEach((t, k) => { if (TS.contas.ehTaxa(t)) db._taxaDesc[k] = 1; });
+    db._taxaDescN = db.D.descricao.length;
+  }
+  return !db._taxaDesc[db.desc[i]] && !TS.contas.ehCentavo(db.vu[i]);
+};
+
+/** métricas básicas de um conjunto de linhas: faturamento, itens e cupons pela definição única (TS.contaFat) */
 TS.metricas = function (idx) {
   const db = TS.db;
   let vt = 0, qtd = 0, cha = 0, du = 0;
   const cupons = new Set();
   for (const i of idx) {
-    vt += db.vt[i] || 0;
-    qtd += TS.qtdItem(i);
     cha += db.cha[i] || 0;
     du += (db.du[i] || 0) * (TS.descontoPorUnidade() ? db.qtd[i] || 0 : 1);
+    if (!TS.contaFat(i)) continue;
+    vt += db.vt[i] || 0;
+    qtd += TS.qtdItem(i);
     cupons.add(TS.chaveCupom(i));
   }
   return { vt, qtd, cha, du, cupons: cupons.size, linhas: idx.length };
@@ -265,20 +280,13 @@ TS.agrupar = function (idx, keyFn) {
 };
 
 /**
- * Cupons únicos como no DAX [CuponsUnicos]: quando há vários vendedores,
- * soma os cupons distintos de cada vendedor (um cupom com 2 vendedores conta 2x).
+ * Atendimentos = cupons únicos (cupom + loja + dia). O total nunca soma duas vezes o cupom de dois vendedores;
+ * no recorte por vendedor (quem chama passa só as linhas dele) o cupom conta para cada vendedor que participou.
  */
 TS.cuponsUnicos = function (idx) {
-  const db = TS.db;
-  const porVend = new Map();
-  for (const i of idx) {
-    let s = porVend.get(db.vend[i]);
-    if (!s) porVend.set(db.vend[i], (s = new Set()));
-    s.add(TS.chaveCupom(i));
-  }
-  let t = 0;
-  for (const s of porVend.values()) t += s.size;
-  return t;
+  const s = new Set();
+  for (const i of idx) if (TS.contaFat(i)) s.add(TS.chaveCupom(i));
+  return s.size;
 };
 
 /** quantidade que conta como item no PMA e no IPA: "CONSUMÍVEIS - SEM CONTROLE DE ESTOQUE" (ex.: 200 sacos de amostra
@@ -310,11 +318,12 @@ TS.ehResgate = function (i) {
   return !!db._nomesVendidos[db.desc[i]] || /\bfidelidade\b/.test(TS.norm(db.D.descricao[db.desc[i]]));
 };
 
-/** TKM, PMA e IPA como no relatório */
+/** Faturamento, atendimentos, TKM (faturamento ÷ atendimentos), PMA (÷ itens) e IPA (itens ÷ atendimentos), todos na
+ *  mesma base: só as linhas que contam no faturamento (TS.contaFat) — linha de taxa não é item nem atendimento */
 TS.indicadores = function (idx) {
   const db = TS.db;
   let vt = 0, qtd = 0;
-  for (const i of idx) { vt += db.vt[i] || 0; qtd += TS.qtdItem(i); }
+  for (const i of idx) { if (!TS.contaFat(i)) continue; vt += db.vt[i] || 0; qtd += TS.qtdItem(i); }
   const cup = TS.cuponsUnicos(idx);
   return { vt, qtd, cupons: cup, tkm: cup ? vt / cup : null, pma: qtd ? vt / qtd : null, ipa: cup ? qtd / cup : null };
 };

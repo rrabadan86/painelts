@@ -70,7 +70,7 @@
       const r = { vt: 0, itens: 0, cup: new Set(), grupo: new Map(), vend: new Map(), wd: new Map(), dias: new Set() };
       for (let i = 0; i < db.n; i++) {
         const d = db.day[i];
-        if (d < de || d > ate || taxas.has(db.desc[i])) continue;
+        if (d < de || d > ate || !TS.contaFat(i)) continue; // faturamento da loja (definição única)
         const v = db.vt[i] || 0, k = TS.chaveCupom(i);
         r.vt += v; r.itens += TS.qtdItem(i); r.cup.add(k); r.dias.add(d);
         const g = db.D.grupoC[db.grupoC[i]] || '—', vd = db.D.vendedor[db.vend[i]] || '(sem vendedor)', w = db.wd[i];
@@ -137,7 +137,7 @@
       .map(([v, x]) => ({ vendedora: v, desconto_pct: +((x.d / x.b) * 100).toFixed(1), media_loja_pct: +(media * 100).toFixed(1), desconto_reais: Math.round(x.d) }));
     // dia muito abaixo do normal: menos de 40% da mediana do mesmo dia da semana nas 8 semanas anteriores
     const porDia = new Map();
-    for (let i = 0; i < db.n; i++) { const d = db.day[i]; if (d < u - 13 - 56 || d > u || taxas.has(db.desc[i])) continue; porDia.set(d, (porDia.get(d) || 0) + (db.vt[i] || 0)); }
+    for (let i = 0; i < db.n; i++) { const d = db.day[i]; if (d < u - 13 - 56 || d > u || !TS.contaFat(i)) continue; porDia.set(d, (porDia.get(d) || 0) + (db.vt[i] || 0)); }
     const fracos = [];
     for (let d = u - 13; d <= u; d++) {
       const ant = [1, 2, 3, 4, 5, 6, 7, 8].map((k) => porDia.get(d - 7 * k) || 0).filter((v) => v > 0).sort((a, b) => a - b);
@@ -267,35 +267,40 @@
   }
 
   // ---------- vendas ----------
+  /** faturamento da loja, atendimentos e vendas da meta de um intervalo (definições únicas: TS.indicadores e TS.rules.vendasMeta) */
   function somaDias(de, ate) {
     const idx = TS.filtrar({ de, ate, ignorar: ['vendedores', 'grupos', 'cats', 'produto'], mesLivre: true });
-    const taxas = TS.rules.ids.taxas;
-    let vt = 0; const cup = new Set();
-    for (const i of idx) { if (taxas.has(TS.db.desc[i])) continue; vt += TS.db.vt[i] || 0; cup.add(TS.chaveCupom(i)); }
-    return { vt, cupons: cup.size };
+    const ind = TS.indicadores(idx);
+    return { vt: ind.vt, cupons: ind.cupons, meta: TS.rules.vendasMeta(idx) };
   }
   function blocoVendas() {
     const db = TS.db;
     if (!db || !db.n) return h('div');
-    const d = db.maxDay;
+    const hoje = TS.todayDay();
+    // o dia de hoje ainda está acontecendo: a comparação com a média usa o último dia COMPLETO e hoje aparece à parte
+    const temHoje = db.maxDay >= hoje && db.maxDay > db.minDay;
+    const d = temHoje ? hoje - 1 : db.maxDay;
     const ult = somaDias(d, d);
+    const parcial = temHoje ? somaDias(hoje, hoje) : null;
     const ant = [7, 14, 21, 28].map((k) => somaDias(d - k, d - k)).filter((x) => x.vt > 0);
     const media = ant.length ? ant.reduce((a, x) => a + x.vt, 0) / ant.length : null;
-    const ym = TS.dayToIso(d).slice(0, 7), ini = TS.isoToDay(ym + '-01');
-    const mes = somaDias(ini, d);
+    const ym = TS.dayToIso(db.maxDay).slice(0, 7), ini = TS.isoToDay(ym + '-01');
+    const mes = somaDias(ini, db.maxDay);
     const meta = TS.metaCalc(ym).valor;
-    const diasMes = new Date(Date.UTC(+ym.slice(0, 4), +ym.slice(5, 7), 0)).getUTCDate(), feitos = d - ini + 1;
-    const proj = feitos > 0 ? (mes.vt / feitos) * diasMes : null;
+    // projeção: a mesma conta de todas as telas (TS.projecaoMes); a meta é comparada com as VENDAS DA META projetadas
+    const P = TS.projecaoMes(ym, { base: 'loja' }), Pm = meta ? TS.projecaoMes(ym, { base: 'meta' }) : null;
     const dia = TS.dayToIso(d);
     const nomeDia = new Date(dia + 'T12:00:00Z').toLocaleDateString('pt-BR', { weekday: 'long', timeZone: 'UTC' });
+    const hojeTxt = parcial ? ` · hoje até agora ${fmt.brl0(parcial.vt)}` : '';
     return h('div', { class: 'grid g-kpi' },
-      TS.kpi(`Vendas de ${d === TS.todayDay() ? 'hoje' : d === TS.todayDay() - 1 ? 'ontem' : fmt.date(dia)}`, fmt.brl0(ult.vt),
-        media ? h('span', { class: ult.vt >= media ? 'up' : 'down' }, `${ult.vt >= media ? '+' : ''}${fmt.n1((ult.vt / media - 1) * 100)}% vs. média ${/sábado|domingo/.test(nomeDia) ? 'dos últimos' : 'das últimas'} ${nomeDia.replace(/-feira$/, 's-feiras').replace(/(sábado|domingo)$/, '$1s')}`) : `${fmt.int(ult.cupons)} cupons`,
-        'Faturamento do último dia com venda no painel, comparado com a média do mesmo dia da semana nas 4 semanas anteriores'),
-      TS.kpi('Mês até agora', fmt.brl0(mes.vt), meta ? `${fmt.pct(mes.vt / meta, 0)} da meta de ${fmt.brl0(meta)}` : `${fmt.int(mes.cupons)} cupons`),
-      TS.kpi('Projeção do mês', proj != null ? fmt.brl0(proj) : '—', meta && proj != null ? h('span', { class: proj >= meta ? 'up' : 'down' }, proj >= meta ? 'bate a meta no ritmo atual' : `faltam ${fmt.brl0(meta - proj)} no ritmo atual`) : 'no ritmo atual',
-        'Vendas do mês ÷ dias passados × dias do mês'),
-      TS.kpi('Cupons no mês', fmt.int(mes.cupons), mes.cupons ? `ticket médio ${fmt.brl(mes.vt / mes.cupons)}` : ''));
+      TS.kpi(`Vendas de ${d === hoje - 1 ? 'ontem' : d === hoje ? 'hoje' : fmt.date(dia)}`, fmt.brl0(ult.vt),
+        media ? h('span', null, h('span', { class: ult.vt >= media ? 'up' : 'down' }, `${ult.vt >= media ? '+' : ''}${fmt.n1((ult.vt / media - 1) * 100)}% vs. média ${/sábado|domingo/.test(nomeDia) ? 'dos últimos' : 'das últimas'} ${nomeDia.replace(/-feira$/, 's-feiras').replace(/(sábado|domingo)$/, '$1s')}`), hojeTxt) : `${fmt.int(ult.cupons)} atendimentos${hojeTxt}`,
+        'Faturamento da loja no último dia COMPLETO (com Espaço Gourmet e vendas sem vendedor; sem taxas de serviço e entrega e sem itens a R$ 0,01), comparado com a média do mesmo dia da semana nas 4 semanas anteriores. O dia de hoje ainda está acontecendo: aparece à parte ("hoje até agora") e não entra na comparação.'),
+      TS.kpi('Mês até agora', fmt.brl0(mes.vt), meta ? h('span', { 'data-pct-meta': (mes.meta / meta).toFixed(4) }, `vendas da meta ${fmt.brl0(mes.meta)} = ${fmt.pct(mes.meta / meta, 0)} da meta de ${fmt.brl0(meta)}`) : `${fmt.int(mes.cupons)} atendimentos`,
+        'O número grande é o faturamento da loja no mês (com Espaço Gourmet e vendas sem vendedor; sem taxas e sem itens a R$ 0,01) — o mesmo do Resumo e do Resultado.\n\nO "% da meta" usa as VENDAS DA META: só chá aromatizado, chá puro e acessórios, sem Espaço Gourmet — a mesma base do Comissionamento. Por isso o % é calculado com um valor menor que o faturamento.'),
+      TS.kpi('Projeção do mês', P ? fmt.brl0(P.proj) : '—', P && Pm && meta ? h('span', { class: Pm.proj >= meta ? 'up' : 'down' }, Pm.proj >= meta ? `vendas da meta ${fmt.brl0(Pm.proj)}: bate a meta` : `vendas da meta ${fmt.brl0(Pm.proj)}: faltam ${fmt.brl0(meta - Pm.proj)}`) : P ? `${P.feitos} de ${P.n} dias completos` : 'mês fechado',
+        P ? TS.comoProjecao(P) + (Pm ? `\n\nA comparação com a meta usa as vendas da meta projetadas pela mesma conta: ${fmt.brl0(Pm.proj)}.` : '') : 'Só no mês em andamento.'),
+      TS.kpi('Atendimentos no mês', fmt.int(mes.cupons), mes.cupons ? `ticket médio ${fmt.brl(mes.vt / mes.cupons)}` : '', 'Cupons únicos do mês (o cupom atendido por duas pessoas conta uma vez). Ticket médio = faturamento da loja ÷ atendimentos.'));
   }
   async function avisosVendas(lista) {
     const db = TS.db;

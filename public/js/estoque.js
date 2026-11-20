@@ -54,7 +54,8 @@
       memo.set(k, r);
       return r;
     }
-    const taxa = (i) => I.taxas.has(db.desc[i]) || (db.vu[i] != null && Math.abs(db.vu[i] - 0.01) < 1e-7);
+    // fora do faturamento: linha de taxa e item a R$ 0,01 — a definição única (TS.contaFat, public/js/contas.js)
+    const taxa = (i) => !TS.contaFat(i);
     /** custo da linha (R$) ou null */
     function custo(i) {
       const c = casar(i);
@@ -126,6 +127,23 @@
       } catch (e) { /* sem regras: sem comissão */ }
       taxaCom.set(ym, t);
       return t;
+    };
+    /** comissão do mês PROJETADO: as vendas de cada pessoa × fator (projeção ÷ vendido até agora) contra a meta do mês,
+     *  cada uma na faixa em que fecharia — não a comissão parcial multiplicada. → R$ (comissões + premiação) */
+    const comProj = new Map();
+    const comProjetada = (ym, fator) => {
+      const k = `${ym}|${fator}`;
+      if (comProj.has(k)) return comProj.get(k);
+      const idx = [];
+      for (let i = 0; i < db.n; i++) if (db.ym[i] === ym) idx.push(i);
+      let v = null;
+      try {
+        const res = RR.comissionamento({ base: idx, baseSemVend: idx, metaLoja: (TS.metaCalc(ym).valor) || 0, vendBonus: '', ym, projFator: fator });
+        const T = res.total, rateio = res.regras.rateio && res.regras.rateio.ativo;
+        v = rateio ? T.aPagar : T.aPagar + (T.premiacao || 0);
+      } catch (e) { /* sem regras: sem comissão */ }
+      comProj.set(k, v);
+      return v;
     };
     const rgLoja = RR.regrasDe(db.D.loja[db.loja[0]]);
     const pSimples = (cfg.simplesPct || 0) / 100, pCartao = (cfg.cartaoPct || 0) / 100;
@@ -214,7 +232,7 @@
       const fix = OUTROS.filter((x) => x.tipo === 'mes' && x.aplica !== 'eg').reduce((s, x) => s + taxaOutro(x), 0);
       return { roy: (ry.loja || 0) + (ry.mkt || 0), imp: pSimples, maq: pCartao, com, outrosPct: pct, outrosFix: fix, mesCom: ant };
     };
-    return { deducoes, OUTROS, taxaOutro, dicaOutro, mediaFat, ONDE_FAT, pSimples, pCartao, CATS, catDe, PONTUAIS, pontuaisDoMes, taxasVenda };
+    return { deducoes, OUTROS, taxaOutro, dicaOutro, mediaFat, ONDE_FAT, pSimples, pCartao, CATS, catDe, PONTUAIS, pontuaisDoMes, taxasVenda, comDoMes, comProjetada };
   }
 
   TS.estoqueBuscar = buscar;
@@ -419,7 +437,7 @@
       temCod ? null : ' · ', temCod ? null : h('details', { class: 'est-como' }, h('summary', null, 'As vendas estão sem o código do produto. Como funciona ▸'),
         h('p', null, 'Sem o código, o painel acha o custo de cada venda pelo nome do produto. Se o nome da venda for diferente do nome no estoque, o custo não é achado e a venda fica fora da margem' + (R ? ': confira a lista "Vendas sem custo" no fim desta tela.' : ' (a lista fica em Produtos → Rentabilidade, "Vendas sem custo").')))));
 
-    const { deducoes, OUTROS, taxaOutro, mediaFat, ONDE_FAT, pSimples, pCartao, CATS, catDe } = criarDeducoes(M, cfg);
+    const { deducoes, OUTROS, taxaOutro, mediaFat, ONDE_FAT, pSimples, pCartao, CATS, catDe, pontuaisDoMes } = criarDeducoes(M, cfg);
 
     // ---------- rentabilidade no período e filtros escolhidos ----------
     const base = TS.filtrar();
@@ -629,8 +647,11 @@
     // ---------- ponto de equilíbrio do mês (sem os filtros: mês corrente inteiro da loja) ----------
     function cartaoEquilibrio() {
       const fixos = OUTROS.filter((x) => x.tipo === 'mes');
-      const F = fixos.reduce((a, x) => a + x.valor, 0);
       const ymAgora = TS.dayToIso(TS.todayDay()).slice(0, 7);
+      // despesas de um mês só (IPTU, 13º…): as mesmas que o Resultado soma neste mês também precisam ser pagas
+      const pontuais = pontuaisDoMes(ymAgora);
+      const PE = TS.contas.pontoEquilibrio({ fixos, pontuais, margem: null });
+      const Fp = PE.pontuais, F = PE.total;
       const ini = TS.isoToDay(ymAgora + '-01'), diasMes = new Date(Date.UTC(+ymAgora.slice(0, 4), +ymAgora.slice(5, 7), 0)).getUTCDate();
       let vendas = 0, vtC = 0, cus = 0, varDed = 0, ultimoDia = ini - 1;
       const porDia = new Map();
@@ -647,13 +668,16 @@
       if (!F) return TS.card(titulo, 'Quanto a loja precisa vender no mês para pagar os custos fixos', h('p', { class: 'muted' }, 'Cadastre os custos fixos (aluguel, salários, energia…) em R$ por mês em Configurações → Lojas → Estoque e margem → Outros custos da loja.'));
       const contrib = vtC ? (vtC - cus - varDed) / vtC : null;
       if (!(contrib > 0)) return TS.card(titulo, null, h('p', { class: 'muted' }, 'Ainda não há vendas com custo neste mês para calcular.'));
-      const equilibrio = F / contrib;
+      const equilibrio = TS.contas.pontoEquilibrio({ fixos, pontuais, margem: contrib }).equilibrio;
       const dias = Math.max(1, ultimoDia - ini + 1);
-      const proj = (vendas / dias) * diasMes;
+      // projeção: a mesma conta de todas as telas (dia da semana, loja aberta, sem o dia em andamento)
+      const PM = TS.projecaoMes ? TS.projecaoMes(ymAgora, { base: 'loja', todas: true }) : null;
+      const proj = PM ? PM.proj : vendas;
       const falta = equilibrio - vendas;
       const diaEq = (() => { let acc = 0; for (let d = ini; d <= ultimoDia; d++) { acc += porDia.get(d) || 0; if (acc >= equilibrio) return d; } return null; })();
       const resultado = proj * contrib - F;
-      const conta = `Custos fixos ${fmt.brl0(F)} (${fixos.map((x) => x.nome).join(', ')}) ÷ margem de contribuição ${fmt.pct(contrib)} = ${fmt.brl0(equilibrio)}. Margem de contribuição = o que sobra de cada venda depois do custo do produto, comissão, royalties, Simples, maquininha e dos custos em % (vendas com custo deste mês).`;
+      const txtPont = Fp ? ` · inclui ${fmt.brl0(Fp)} de despesas só deste mês` : '';
+      const conta = `Custos fixos ${fmt.brl0(F)} (${[...fixos, ...pontuais].map((x) => x.nome).join(', ')}${Fp ? `; ${fmt.brl0(Fp)} são despesas só deste mês: ${pontuais.map((x) => x.nome).join(', ')}` : ''}) ÷ margem de contribuição ${fmt.pct(contrib)} = ${fmt.brl0(equilibrio)}. Margem de contribuição = o que sobra de cada venda depois do custo do produto, comissão, royalties, Simples, maquininha e dos custos em % (vendas com custo deste mês).`;
       return TS.card(titulo, 'Quanto a loja precisa vender no mês para pagar os custos fixos (o mês inteiro, sem os filtros)',
         (() => {
           // uma frase diz o que falta (ou que já passou do equilíbrio); os números de apoio e a conta ficam no ⓘ e no title da barra
@@ -661,9 +685,9 @@
           const nums = `Equilíbrio ${fmt.brl0(equilibrio)} (margem sem fixos ${fmt.pct(contrib)}) · vendido até ${fmt.date(TS.dayToIso(ultimoDia))} ${fmt.brl0(vendas)} (${fmt.pct(vendas / equilibrio, 0)} do equilíbrio) · no ritmo atual ${fmt.brl0(proj)} (${resultado >= 0 ? 'sobra' : 'falta'} ${fmt.brl0(Math.abs(resultado))} de resultado no mês)`;
           const frase = falta > 0
             ? h('p', { class: 'est-eq-frase' }, 'Faltam ', h('b', { class: 'neg' }, fmt.brl0(falta)), ' para pagar os custos fixos',
-              restam > 0 ? ` · ${fmt.brl0(falta / restam)} por dia ${restam === 1 ? 'no dia que falta' : `nos ${restam} dias que faltam`}` : '', ` · equilíbrio em ${fmt.brl0(equilibrio)}`, TS.dica(`${nums}.\n\n${conta}`))
+              restam > 0 ? ` · ${fmt.brl0(falta / restam)} por dia ${restam === 1 ? 'no dia que falta' : `nos ${restam} dias que faltam`}` : '', ` · equilíbrio em ${fmt.brl0(equilibrio)}`, txtPont, TS.dica(`${nums}.\n\n${conta}${PM ? '\n\nRitmo atual (projeção do mês):\n' + TS.comoProjecao(PM) : ''}`))
             : h('p', { class: 'est-eq-frase' }, h('b', { class: 'pos' }, diaEq != null ? `Custos fixos do mês pagos desde ${fmt.date(TS.dayToIso(diaEq)).slice(0, 5)}` : 'Custos fixos do mês já pagos'), ': daqui para frente é lucro',
-              ` · já passou ${fmt.brl0(-falta)} do equilíbrio de ${fmt.brl0(equilibrio)}`, TS.dica(`${nums}.\n\n${conta}`));
+              ` · já passou ${fmt.brl0(-falta)} do equilíbrio de ${fmt.brl0(equilibrio)}`, txtPont, TS.dica(`${nums}.\n\n${conta}`));
           // escala: o maior entre equilíbrio, vendido e projeção; a barra é o vendido, o traço vermelho é o equilíbrio
           const esc = Math.max(equilibrio, proj, vendas) || 1;
           return h('div', { class: 'est-eq' }, frase,

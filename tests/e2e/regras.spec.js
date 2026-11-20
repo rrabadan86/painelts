@@ -9,7 +9,8 @@ test.describe('regras', () => {
   });
 
   test('comissionamento: meta 0 avisa "meta não cadastrada" e a meta simulada some ao mudar o mês', async ({ page }) => {
-    await page.evaluate(() => { TS.state.com.meta = 0; TS.state.com.metaYm = TS.metaPeriodo().ym; location.hash = '#comissionamento'; });
+    // a comissão só é calculada com o período dentro de um mês: abre no mês atual
+    await page.evaluate(() => { TS.aplicarPreset('mes'); TS.state.com.meta = 0; TS.state.com.metaYm = TS.metaPeriodo().ym; location.hash = '#comissionamento'; });
     const aviso = page.locator('.notice.warn[data-aviso="sem-meta"]');
     await expect(aviso).toContainText('Meta não cadastrada');
     // sem meta ninguém cai em "acima de 120%": a comissão de cada linha é a taxa mínima da categoria
