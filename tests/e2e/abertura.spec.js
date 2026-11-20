@@ -22,7 +22,8 @@ test('Validade: mostra o que está na lata com a data de abertura e os pacotes f
       expect(l.validadeAberto.slice(0, 7), l.desc).toBe(new Date(Date.UTC(a, m - 1 + 6, 1)).toISOString().slice(0, 7));
       void dd;
     }
-    expect(l.venceEm, l.desc).toBe(l.validadeAberto && l.validadeAberto < l.validadePacote ? l.validadeAberto : l.validadePacote);
+    // fechado: validade do pacote; aberto: o "consumir até" (com pacote fechado no mesmo lote, o que chegar primeiro)
+    expect(l.venceEm, l.desc).toBe(l.pacoteN > 0 && !(l.fechado > 0.0005 && l.validadePacote < l.validadeAberto) ? l.validadeAberto : l.validadePacote);
   }
   // por chá, a ordem de abrir segue a chegada (1 = o mais antigo com pacote fechado)
   const porCha = new Map();
@@ -36,14 +37,23 @@ test('Validade: mostra o que está na lata com a data de abertura e os pacotes f
   await busca.fill(fechados[0].desc);
   await expect(page.locator('.vl-fechado').first()).toContainText(/(pacotes? fechados?|fechado) · (o próximo a abrir|abrir em \dº)/);
   await busca.fill(abertos[0].desc);
-  // corrigir a data: campo de data limitado entre a chegada e hoje; na apresentação muda só na tela
-  const lata = page.locator('.vl-lata').first();
-  await lata.locator('.vl-abriu').click();
-  const campo = lata.locator('input[type=date]');
-  await expect(campo).toHaveAttribute('max', d.hoje);
-  await lata.getByRole('button', { name: 'hoje' }).click();
+  // "corrigir" abre os pacotes do chá: a data de abertura (até hoje) e o "consumir até" vêm preenchidos e podem ser trocados
+  await page.locator('.vl-lata').first().locator('.vl-abriu').click();
+  const j = page.locator('.vl-pac');
+  await expect(j.locator('h3')).toHaveText(`Pacotes de ${abertos[0].desc}`);
+  const aberto = d.lotes.filter((l) => l.cod === abertos[0].cod && l.pacoteN > 0)[0];
+  const sit = j.locator('.vl-pac-sit', { hasText: 'Na lata' }).first();
+  const [dAbriu, dAte] = [sit.locator('input[type=date]').nth(0), sit.locator('input[type=date].vl-ate')];
+  await expect(dAbriu).toHaveValue(aberto.abertoEm);
+  await expect(dAbriu).toHaveAttribute('max', d.hoje);
+  await expect(dAte).toHaveValue(aberto.validadeAberto);
+  await expect(dAte).toHaveAttribute('min', aberto.abertoEm);
+  await expect(sit.locator('.dica-i')).toHaveCount(1);
+  // trocar o vencimento na apresentação: avisa e nada muda
+  await dAte.fill('2030-01-01'); await dAte.blur();
   await expect(page.locator('.toast')).toContainText('nada é salvo');
-  await expect(lata).toContainText('consumir até'); // volta a mostrar a linha, sem mudar nada
+  await j.getByRole('button', { name: 'Fechar' }).click();
+  await expect(page.locator('.vl-pac')).toHaveCount(0);
   // a explicação está na tela
   await page.locator('.vl-ajuda summary').click();
   await expect(page.locator('.vl-ajuda')).toContainText('Depois de aberto');

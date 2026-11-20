@@ -2380,7 +2380,7 @@ app.put('/api/validade/abertura', express.json({ limit: '4kb' }), (req, res) => 
     const r = LOT.editarAbertura(loja.id, req.body || {}, req.user);
     if (r.erro) return res.status(400).json({ erro: r.erro });
     const [nf, cod, entrada] = String(req.body.chave).split('|');
-    C.auditar(req.user, 'alterou a data de abertura do chá', loja.id, { loja: loja.id, cod, nf, entrada, antes: r.antes, depois: r.ok.dia });
+    C.auditar(req.user, r.ok.ate !== undefined ? 'alterou o vencimento do chá aberto' : 'alterou a data de abertura do chá', loja.id, { loja: loja.id, cod, nf, entrada, antes: r.antes, depois: r.ok.ate !== undefined ? r.ok.ate : r.ok.dia });
     const novo = LOT.daLoja(loja.id).lotes.find((x) => x.chave === String(req.body.chave));
     res.json({ ok: true, lote: novo ? semCusto(req, novo) : null });
   } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }

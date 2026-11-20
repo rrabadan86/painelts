@@ -48,11 +48,17 @@ test('data de abertura estimada pelo ritmo de compra; vale a data que chegar pri
   assert.strictEqual(a.abertoEstimado, true);
   assert.strictEqual(a.validadeAberto, '2027-03-08');
   assert.strictEqual(a.validadePacote, '2027-03-01', 'pacote: 12 meses da entrada');
-  assert.deepStrictEqual([a.venceEm, a.motivo], ['2027-03-01', 'pacote'], 'o pacote vence antes');
-  // pacote com validade longa informada pela equipe: quem manda é a abertura, e só o que está na lata corre o risco
-  const b = do_(calc(2.4, comp, { lotes: { '101|10|2026-03-01': { validade: '2028-01-01' } } }), 101);
-  assert.deepStrictEqual([b.venceEm, b.motivo, b.kgVence], ['2027-03-08', 'aberto', 0.4]);
-  assert.strictEqual(b.dias, 108); assert.strictEqual(b.faixa, 'ok');
+  // depois de aberto vale o "consumir até" (abertura + 6 meses), no lugar da validade da chegada (que é só o palpite de 12 meses)
+  assert.deepStrictEqual([a.venceEm, a.motivo, a.kgVence, a.validadeAbertoEditada], ['2027-03-08', 'aberto', 0.4, false]);
+  assert.strictEqual(a.dias, 108); assert.strictEqual(a.faixa, 'ok');
+  // validade impressa no pacote digitada pela equipe e mais curta: o "consumir até" já vem preenchido sem passar dela
+  const b = do_(calc(2.4, comp, { lotes: { '101|10|2026-03-01': { validade: '2027-01-15' } } }), 101);
+  assert.deepStrictEqual([b.validadeAbertoPadrao, b.venceEm, b.motivo], ['2027-01-15', '2027-01-15', 'aberto']);
+  // validade impressa mais longa: fica abertura + 6 meses
+  assert.strictEqual(do_(calc(2.4, comp, { lotes: { '101|10|2026-03-01': { validade: '2028-01-01' } } }), 101).venceEm, '2027-03-08');
+  // a equipe troca o "consumir até": vale o que ela digitou, mesmo depois da validade do pacote
+  const c = do_(calc(2.4, comp, { lotes: {}, aberturas: { '101|10|2026-03-01#1': { dia: '2026-09-08', auto: true, ate: '2027-06-30', atePor: 'ana' } } }), 101);
+  assert.deepStrictEqual([c.validadeAberto, c.validadeAbertoEditada, c.validadeAbertoPadrao, c.venceEm, c.abertoEstimado], ['2027-06-30', true, '2027-03-08', '2027-06-30', true]);
   // a estimativa nunca é anterior à chegada do pacote; sem histórico de compra, usa a chegada (pior caso)
   const novo = calc(0.2, compras(['2026-11-10', 300, 1]))[0];
   assert.strictEqual(novo.abertoEm, '2026-11-10');
@@ -66,6 +72,9 @@ test('chá parado: aberto há mais de 6 meses vence pela abertura mesmo com o pa
   assert.deepStrictEqual([l.validadeAberto, l.motivo, l.faixa], ['2026-10-10', 'aberto', 'vencido']);
   assert.ok(l.dias < 0);
   assert.strictEqual(l.validade, '2027-02-01', 'a validade do pacote continua a mesma (os fechados seguem ela)');
+  // lote com lata e pacote fechado: vale o que chegar primeiro. Pacote fechado que vence antes do "consumir até" da lata puxa o lote
+  const m = calc(1.3, comp, { lotes: { '500|10|2026-02-01': { validade: '2026-12-05' } }, aberturas: { '500|10|2026-02-01#1': { dia: '2026-11-01', por: 'ana', ate: '2027-05-01' } } })[0];
+  assert.deepStrictEqual([m.validadeAberto, m.venceEm, m.motivo, m.kgVence], ['2027-05-01', '2026-12-05', 'pacote', 1]);
   const r = L.resumo([l]);
   assert.strictEqual(r.porFaixa.vencido.kg, 0.3, 'só os 300 g da lata; o pacote fechado não está vencido');
   assert.strictEqual(r.risco.custo, 30);
@@ -137,6 +146,14 @@ test('"abri um pacote hoje": pacote aberto que ainda não vendeu nada (ou aberto
     assert.deepStrictEqual([l.abertoEm, l.abertoEstimado, l.abertoPor, l.validadeAberto], [HOJE, false, 'ana', '2027-05-20']);
     assert.strictEqual(l.motivo, 'aberto', 'o pacote vale até 08/2027, mas aberto hoje vence em 05/2027');
     assert.strictEqual(l.kgVence, 1);
+    // a data de vencimento depois de aberto também pode ser trocada (e voltar para a sugerida); a data de abertura continua a informada
+    assert.match(L.editarAbertura('l2', { chave: l.chave, ate: '2026-01-01' }, 'bia', HOJE).erro, /Consumir até: entre 20\/11\/2026/);
+    assert.deepStrictEqual(L.editarAbertura('l2', { chave: l.chave, ate: '2027-04-10' }, 'bia', HOJE).ok, { dia: HOJE, ate: '2027-04-10' });
+    l = L.daLoja('l2', HOJE).lotes.find((x) => x.nf === '102');
+    assert.deepStrictEqual([l.validadeAberto, l.validadeAbertoEditada, l.venceEm, l.abertoEm, l.abertoPor], ['2027-04-10', true, '2027-04-10', HOJE, 'ana']);
+    L.editarAbertura('l2', { chave: l.chave, ate: '' }, 'bia', HOJE);
+    l = L.daLoja('l2', HOJE).lotes.find((x) => x.nf === '102');
+    assert.deepStrictEqual([l.validadeAberto, l.validadeAbertoEditada], ['2027-05-20', false]);
     // a atualização dos dados não apaga o que a equipe informou; quando vender, a data continua a mesma
     L.observarAberturas('l2', HOJE);
     qtd = 1.8;

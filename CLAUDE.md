@@ -67,7 +67,7 @@ Hooks (`.claude/settings.json`): bloqueiam commit/push de segredos e limpam os r
 - Dados temporários de teste: apague depois.
 
 **Validade do chá a granel (duas datas)**
-- Vale a data que chegar primeiro: a validade do pacote (12 meses da entrada, corrigível) ou 6 meses depois que o pacote de 1 kg vai para a lata (`MESES_ABERTO`, `PACOTE_KG` em `src/lotes.js`).
+- Pacote fechado: vale a validade do pacote (vem com 12 meses da entrada; a equipe troca pela impressa). Pacote aberto: vale o "consumir até", que vem com 6 meses depois que o pacote de 1 kg vai para a lata (`MESES_ABERTO`, `PACOTE_KG` em `src/lotes.js`) e **sobrepõe a data da chegada** (decisão do dono). Se a equipe digitou a validade impressa e ela é mais curta, o "consumir até" já vem sem passar dela. Lote com lata e pacote fechado: a que chegar primeiro. Toda data vem preenchida e pode ser editada.
 - O painel não tem estoque próprio dos lotes: o total é sempre o do AppNext, distribuído entre os lotes (saída sai do mais antigo, como venda; entrada sem nota vira "saldo sem nota"; inventário por lote vale como a foto certa). A abertura segue a mesma conta: o que falta para um número inteiro de quilos está na lata.
 - A data de abertura é estimada (ritmo de compra do chá, nunca antes da chegada) e guardada na primeira observação (`observarAberturas`, que roda depois de cada atualização dos dados, nunca numa leitura de tela). A equipe só corrige se souber o dia certo, ou informa "Abri um pacote hoje" na janela de pacotes do chá (`TS.validade.janelaPacotes`, aberta pelo Estoque e pela Validade), que vale mesmo sem venda daquele pacote. Quem usa `dias`/`faixa` do lote já recebe a data que vale; valor em risco e perdas contam só o que está na lata quando o prazo é o da abertura (`kgVence`).
 
