@@ -206,7 +206,7 @@
             const ate = h('input', { class: 'f-input vl-abriu-data vl-ate', type: 'date', value: l.validadeAberto || '', min: l.abertoEm, 'aria-label': `Consumir ${desc} até` });
             TS.aoConfirmar(ate, () => { if (ate.value && ate.value !== l.validadeAberto) enviar(l, { ate: ate.value }, ate, 'Vencimento salvo.'); }); // só ao sair do campo
             return h('div', { class: l.motivo === 'aberto' && l.dias < 30 ? 'neg' : null }, 'Consumir até ', ate,
-              TS.dica(`Data de vencimento do chá que está na lata. Vem preenchida com ${M} meses depois da abertura (sem passar da validade do pacote, quando a loja digitou a que está impressa). Pode trocar. Depois de aberto, é esta data que vale para o chá da lata.`),
+              TS.dica(`Data de vencimento do chá que está na lata. Vem preenchida com ${M} meses depois da abertura e pode ser trocada. Depois de aberto, é esta a validade do chá.`),
               l.validadeAbertoEditada ? h('button', { type: 'button', class: 'link-btn', title: `Volta para a data sugerida: ${fmt.date(l.validadeAbertoPadrao)}.`, onclick: (e) => enviar(l, { ate: '' }, e.target, 'Vencimento voltou para a data sugerida.') }, `voltar para ${fmt.date(l.validadeAbertoPadrao)}`) : null);
           })(),
           h('small', { class: 'muted' }, `Validade do pacote (para os fechados): ${l.validadePacote ? fmt.date(l.validadePacote) : '—'}.`),
@@ -380,7 +380,7 @@
     function desenharTabela() {
       const rows = linhas();
       const cols = [
-        { key: 'dias', label: 'Vence', align: 'l', title: `Pacote fechado: a validade do pacote. Depois que vai para a lata: o "consumir até" (${d.mesesAberto || 6} meses da abertura, se ninguém trocar), que passa a valer no lugar da data da chegada. Lote com lata e pacote fechado: a que chegar primeiro.`,
+        { key: 'dias', label: 'Vence', align: 'l', title: `Pacote fechado: a validade do pacote. Depois que vai para a lata: o "consumir até" (${d.mesesAberto || 6} meses da abertura, se ninguém trocar), que passa a valer no lugar da data da chegada. Lote com chá aberto mostra a validade do que está aberto.`,
           render: (l) => h('div', null, badge(l.faixa), h('small', { class: 'vl-dias' }, diasTxt(l.dias)),
             l.motivo === 'aberto' ? h('small', { class: 'vl-sub vl-motivo', title: `O chá foi para a lata em ${fmt.date(l.abertoEm)}: depois de aberto vale o "consumir até" (${fmt.date(l.validadeAberto)}), no lugar da validade da chegada (${fmt.date(l.validadePacote)}).` }, '🫙 depois de aberto') : null) },
         { key: 'desc', label: 'Chá', align: 'l', title: 'Clique no nome do chá para ver os lotes dele: nota de entrada, chegada, se está aberto ou fechado, abertura e vencimento, e para informar que abriu um pacote.',
@@ -399,10 +399,23 @@
           i.addEventListener('keydown', (e) => { if (e.key === 'Enter') i.blur(); });
           return i;
         } },
-        { key: 'validade', label: 'Validade', align: 'l', render: (l) => {
+        { key: 'validade', label: 'Validade', align: 'l', title: 'A data que está valendo, já preenchida e editável. Pacote fechado: a validade do pacote (12 meses da chegada até alguém digitar a impressa). Chá aberto (🫙): a data final de consumo, que vem com 6 meses depois da abertura.', render: (l) => {
+          // chá aberto: o campo é a data final de consumo (a que vale); a validade do pacote continua editável na janela do chá
+          if (l.motivo === 'aberto' && l.validadeAberto) {
+            const ia = h('input', { class: 'f-input vl-val vl-val-aberto', type: 'date', value: l.validadeAberto, min: l.abertoEm || null, 'aria-label': `Data final de consumo de ${l.desc}` });
+            const mandar = (ate) => {
+              if (TS.demo) { toast(TS.DEMO_AVISO); ia.value = l.validadeAberto; return; }
+              ia.classList.add('vl-salvando');
+              req('PUT', 'validade/abertura', { loja, chave: l.chave, ate }).then(() => { cache.delete(loja); repintar(); }).catch((e) => { ia.classList.remove('vl-salvando'); ia.value = l.validadeAberto; toast(e.message, true); });
+            };
+            TS.aoConfirmar(ia, () => { if (ia.value && ia.value !== l.validadeAberto) mandar(ia.value); }); // só ao sair do campo
+            const voltaA = l.validadeAbertoEditada ? h('button', { type: 'button', class: 'link-btn vl-volta-consumo', title: `Volta para a data final de consumo calculada pelo painel: ${fmt.date(l.validadeAbertoPadrao)} (${d.mesesAberto || 6} meses depois da abertura).`, onclick: () => mandar('') }, 'voltar à data final de consumo') : null;
+            return h('div', { class: 'vl-val-box' }, ia, voltaA,
+              h('small', { class: 'muted vl-sub', title: `Depois de aberto vale a data final de consumo. A validade do pacote (${l.validadePacote ? fmt.date(l.validadePacote) : 'sem data'}) fica na janela do chá: clique no nome.` }, `🫙 data final de consumo${l.validadeAbertoEditada ? ' · corrigida' : ''}`));
+          }
           const i = h('input', { class: 'f-input vl-val', type: 'date', value: l.validade || '', min: l.entrada || null, 'aria-label': `Validade de ${l.desc}` });
           TS.aoConfirmar(i, () => { if (i.value !== (l.validade || '')) salvar(l, { validade: i.value }, i); }); // só ao sair do campo (o Chrome dispara "change" a cada parte da data)
-          const volta = !l.padrao && l.validadePadrao ? h('button', { type: 'button', class: 'link-btn', title: `Voltar para 12 meses da entrada (${fmt.date(l.validadePadrao)})`, onclick: () => salvar(l, { validade: '' }, i) }, 'voltar a 12 meses') : null;
+          const volta = !l.padrao && l.validadePadrao && l.validade !== l.validadePadrao ? h('button', { type: 'button', class: 'link-btn', title: `Voltar para 12 meses da entrada (${fmt.date(l.validadePadrao)})`, onclick: () => salvar(l, { validade: '' }, i) }, 'voltar a 12 meses') : null;
           return h('div', { class: 'vl-val-box' }, i, volta, !l.padrao && l.editadoPor ? h('small', { class: 'muted vl-sub' }, `corrigida por ${l.editadoPor}`) : null);
         } },
         { key: 'venda', label: d.custos ? 'Valor (venda · custo)' : 'Valor (venda)', render: (l) => h('div', { class: 'vl-valor' }, h('span', null, l.precoKg ? fmt.brl0(l.saldo * l.precoKg) : '—'),

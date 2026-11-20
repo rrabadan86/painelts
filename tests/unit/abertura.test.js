@@ -51,10 +51,9 @@ test('data de abertura estimada pelo ritmo de compra; vale a data que chegar pri
   // depois de aberto vale o "consumir até" (abertura + 6 meses), no lugar da validade da chegada (que é só o palpite de 12 meses)
   assert.deepStrictEqual([a.venceEm, a.motivo, a.kgVence, a.validadeAbertoEditada], ['2027-03-08', 'aberto', 0.4, false]);
   assert.strictEqual(a.dias, 108); assert.strictEqual(a.faixa, 'ok');
-  // validade impressa no pacote digitada pela equipe e mais curta: o "consumir até" já vem preenchido sem passar dela
+  // a validade digitada na chegada (mais curta ou mais longa) continua guardada, mas no chá aberto vale sempre abertura + 6 meses
   const b = do_(calc(2.4, comp, { lotes: { '101|10|2026-03-01': { validade: '2027-01-15' } } }), 101);
-  assert.deepStrictEqual([b.validadeAbertoPadrao, b.venceEm, b.motivo], ['2027-01-15', '2027-01-15', 'aberto']);
-  // validade impressa mais longa: fica abertura + 6 meses
+  assert.deepStrictEqual([b.validade, b.validadePacote, b.validadeAbertoPadrao, b.venceEm, b.motivo], ['2027-01-15', '2027-01-15', '2027-03-08', '2027-03-08', 'aberto']);
   assert.strictEqual(do_(calc(2.4, comp, { lotes: { '101|10|2026-03-01': { validade: '2028-01-01' } } }), 101).venceEm, '2027-03-08');
   // a equipe troca o "consumir até": vale o que ela digitou, mesmo depois da validade do pacote
   const c = do_(calc(2.4, comp, { lotes: {}, aberturas: { '101|10|2026-03-01#1': { dia: '2026-09-08', auto: true, ate: '2027-06-30', atePor: 'ana' } } }), 101);
@@ -72,9 +71,9 @@ test('chá parado: aberto há mais de 6 meses vence pela abertura mesmo com o pa
   assert.deepStrictEqual([l.validadeAberto, l.motivo, l.faixa], ['2026-10-10', 'aberto', 'vencido']);
   assert.ok(l.dias < 0);
   assert.strictEqual(l.validade, '2027-02-01', 'a validade do pacote continua a mesma (os fechados seguem ela)');
-  // lote com lata e pacote fechado: vale o que chegar primeiro. Pacote fechado que vence antes do "consumir até" da lata puxa o lote
-  const m = calc(1.3, comp, { lotes: { '500|10|2026-02-01': { validade: '2026-12-05' } }, aberturas: { '500|10|2026-02-01#1': { dia: '2026-11-01', por: 'ana', ate: '2027-05-01' } } })[0];
-  assert.deepStrictEqual([m.validadeAberto, m.venceEm, m.motivo, m.kgVence], ['2027-05-01', '2026-12-05', 'pacote', 1]);
+  // lote com lata e pacote fechado: a validade mostrada é a do chá que está aberto
+  const m = calc(1.3, comp, { lotes: { '500|10|2026-02-01': { validade: '2026-12-05' } }, aberturas: { '500|10|2026-02-01#1': { dia: '2026-11-01', por: 'ana' } } })[0];
+  assert.deepStrictEqual([m.validadeAberto, m.venceEm, m.motivo, m.kgVence, m.fechado], ['2027-05-01', '2027-05-01', 'aberto', 0.3, 1]);
   const r = L.resumo([l]);
   assert.strictEqual(r.porFaixa.vencido.kg, 0.3, 'só os 300 g da lata; o pacote fechado não está vencido');
   assert.strictEqual(r.risco.custo, 30);
