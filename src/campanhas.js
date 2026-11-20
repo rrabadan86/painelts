@@ -15,6 +15,7 @@ const C = require('./config');
 
 const arq = (id) => path.join(C.pastaLoja(id), 'campanhas.json');
 const CPF_OK = /^\d{11}(\d{3})?$/;
+const M = require('../public/js/msgwpp');
 const RECORRENCIAS = ['', 'diaria', 'semanal', 'mensal'];
 const ST = ['p', 'e', 'o', 'x'];
 
@@ -64,7 +65,12 @@ function dadosOk(b, atual = {}) {
   if (!(limiteDia >= 0 && limiteDia <= 500)) return { erro: 'Limite por dia: de 0 a 500.' };
   // robo: a campanha é enviada pelo robô do WhatsApp (padrão desligado; as outras continuam manuais)
   const robo = b.robo == null ? !!atual.robo : b.robo === true;
-  return { ok: { nome, mensagem, variacoes, limiteDia, janela, recorrente, robo, ativa: b.ativa == null ? atual.ativa ?? true : !!b.ativa, filtros: b.filtros ? filtrosOk(b.filtros) : atual.filtros || {} } };
+  // período da campanha (opcional): fora dele nada é enviado (robô ou manual) e a recorrente não monta lista nova
+  const data = (v) => (v == null || v === '' ? null : String(v).slice(0, 10));
+  const inicio = data(b.inicio !== undefined ? b.inicio : atual.inicio), fim = data(b.fim !== undefined ? b.fim : atual.fim);
+  for (const d of [inicio, fim]) if (d && !(/^\d{4}-\d{2}-\d{2}$/.test(d) && Number.isFinite(Date.parse(d + 'T12:00:00Z')))) return { erro: 'Data de início ou de término inválida.' };
+  if (inicio && fim && fim < inicio) return { erro: 'O término da campanha não pode ser antes do início.' };
+  return { ok: { nome, mensagem, variacoes, limiteDia, janela, recorrente, robo, inicio, fim, ativa: b.ativa == null ? atual.ativa ?? true : !!b.ativa, filtros: b.filtros ? filtrosOk(b.filtros) : atual.filtros || {} } };
 }
 
 function criar(id, b, por) {
@@ -105,6 +111,7 @@ function novaRodada(id, cid, lista, por, agora = Date.now()) {
   const c = todas.find((x) => x.id === cid);
   if (!c) return { erro: 'Campanha não encontrada.' };
   if (rodadaEmDia(c, agora)) return { ok: c, repetida: true };
+  if (c.recorrente && c.rodadas.length && M.foraDoPeriodo(c, C.diaSP(agora))) return { ok: c, repetida: true, foraDoPeriodo: true }; // recorrente fora do período: não monta lista nova
   const l = listaOk(lista);
   if (l.erro) return l;
   c.rodadas.unshift({ id: novoId(), em: new Date(agora).toISOString(), por, lista: l.ok });
@@ -176,4 +183,4 @@ function descartarCopia(id, cpid) {
   return { ok: true };
 }
 
-module.exports = { rodadaEmDia, lerCopias, copiar, descartarCopia, ler, criar, alterar, novaRodada, refazerLista, marcar, apagar };
+module.exports = { dadosOk, rodadaEmDia, lerCopias, copiar, descartarCopia, ler, criar, alterar, novaRodada, refazerLista, marcar, apagar };

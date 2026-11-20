@@ -31,3 +31,4 @@ Decisão do dono: campanhas marcadas "Enviar pelo robô" saem sozinhas pelo núm
 - Não dá para testar com WhatsApp de verdade no ambiente de desenvolvimento: os testes usam um cliente de mentira (`zap/tests`, `tests/unit/zap-integracao.test.js`). Mudança em `zap/wa.js` precisa ser conferida pelo dono na VPS.
 - Instalação: serviço opcional (`docker compose --profile zap up -d --build zap`); a atualização pelo painel não mexe nele (ver `zap/README.md`).
 - Apresentação: tudo simulado, nada conecta nem envia.
+- **Período da campanha** (`inicio`, `fim`, opcionais; `M.foraDoPeriodo`): fora dele o robô pula a campanha (`fora_periodo`), a fila manual fica travada e a recorrente não monta lista nova. Recorrência: `diaria` (uma lista por dia de Brasília), `semanal`, `mensal`.

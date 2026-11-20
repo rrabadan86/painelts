@@ -439,3 +439,18 @@ test('cliente do serviço: manda o token, segue o contrato e não roda sem ZAP_U
     await assert.rejects(ZAP.status('l1'), /ZAP_TOKEN diferente/);
   } finally { delete process.env.ZAP_URL; delete process.env.ZAP_TOKEN; await new Promise((ok) => srv.close(ok)); }
 });
+
+test('período da campanha: antes do início e depois do término o robô não envia; com outra campanha no período, segue por ela', () => {
+  // QUARTA_10H = 04/03/2026 em Brasília
+  const s = cena(); s.campanhas[0].inicio = '2026-03-05';
+  assert.strictEqual(ZF.decidir(s).motivo, 'fora_periodo');
+  const t = cena(); t.campanhas[0].fim = '2026-03-03';
+  assert.strictEqual(ZF.decidir(t).motivo, 'fora_periodo');
+  const u = cena(); Object.assign(u.campanhas[0], { inicio: '2026-03-04', fim: '2026-03-04' });
+  assert.ok(ZF.decidir(u).msg, 'no dia do início e do término envia');
+  // duas campanhas: a que terminou é pulada, a outra envia
+  const v = cena(); const b = camp('b', { criadaEm: '2026-03-02T12:00:00.000Z' });
+  v.campanhas[0].fim = '2026-03-01'; v.campanhas.push(b); v.preparo.b = prep(b);
+  assert.strictEqual(ZF.decidir(v).msg.campanha, 'b');
+  assert.ok(ZF.MOTIVOS.fora_periodo);
+});

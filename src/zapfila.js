@@ -133,6 +133,7 @@ const MOTIVOS = {
   limite_campanha: 'As campanhas chegaram ao limite de hoje. Continua amanhã.',
   esperando_estoque: 'Só faltam clientes esperando estoque do produto oferecido.',
   sem_pendentes: 'Todas as mensagens das campanhas do robô já foram enviadas.',
+  fora_periodo: 'As campanhas do robô estão fora do período (data de início ou de término).',
 };
 const ordem = (a, b) => String(a.criadaEm || '').localeCompare(String(b.criadaEm || '')) || String(a.id).localeCompare(String(b.id));
 /** campanhas que o robô envia: ligadas para o robô e não pausadas, da mais antiga para a mais nova (ordem estável) */
@@ -154,8 +155,10 @@ function decidir({ cfg, estado, campanhas, contatos, preparo, naoquer, enviados,
   if (r.min < hm(cfg.das) || r.min >= hm(cfg.as)) return fim('fora_janela');
   if (enviadosHoje(estado, agora) >= cfg.teto) return fim('teto');
   if (estado.proximoEm && agora < Date.parse(estado.proximoEm)) return fim('ritmo');
-  const robos = campanhasDoRobo(campanhas);
-  if (!robos.length) return fim('sem_campanha');
+  const todasRobo = campanhasDoRobo(campanhas);
+  if (!todasRobo.length) return fim('sem_campanha');
+  const robos = todasRobo.filter((c) => !M.foraDoPeriodo(c, r.dia)); // só as campanhas dentro do período (início e término)
+  if (!robos.length) return fim('fora_periodo');
   contatos = contatos || {}; preparo = preparo || {}; naoquer = naoquer || {}; enviados = enviados || {};
   let conferir = false, limite = false, estoque = false;
   for (const c of robos) {

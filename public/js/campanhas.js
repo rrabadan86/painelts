@@ -169,6 +169,14 @@
     if (faixaRobo && faixaRobo.atualizar) faixaRobo.atualizar();
   }
 
+  /** etiqueta do período da campanha: "começa em", "terminou em" ou "até dd/mm" */
+  const periodoTag = (c) => {
+    if (!c.inicio && !c.fim) return null;
+    const f = TS.msgWpp.foraDoPeriodo(c, TS.hojeSP());
+    const d = (iso) => fmt.date(iso).slice(0, 5);
+    return h('span', { class: 'badge ' + (f ? 'cinza' : 'ok'), title: `Período da campanha: ${c.inicio ? 'de ' + fmt.date(c.inicio) : 'já começou'}${c.fim ? ' até ' + fmt.date(c.fim) : ', sem data para acabar'}. Fora dele nada é enviado.` },
+      f === 'antes' ? `começa em ${d(c.inicio)}` : f === 'depois' ? `terminou em ${d(c.fim)}` : c.fim ? `até ${d(c.fim)}` : `desde ${d(c.inicio)}`);
+  };
   /** campanha recorrente: diária = uma lista nova por dia; semanal = a cada 7 dias; mensal = uma por mês */
   async function rodadasRecorrentes(lista) {
     const feitas = [];
@@ -223,7 +231,7 @@
     const cards = lista.map((c) => {
       const r = c.rodadas[0], s = resumoRodada(r, c.janela);
       return h('div', { class: 'card cp-card', role: 'button', tabindex: 0, onclick: () => abrirCampanha(corpo, lista, c), onkeydown: (e) => { if (e.key === 'Enter') abrirCampanha(corpo, lista, c); } },
-        h('div', { class: 'cp-card-top' }, h('b', null, c.nome), c.recorrente ? h('span', { class: 'cli-tag t-repor' }, c.recorrente === 'diaria' ? 'todo dia' : c.recorrente === 'semanal' ? 'toda semana' : 'todo mês') : null, c.robo ? h('span', { class: 'cli-tag', title: 'Enviada pelo robô do WhatsApp' }, '🤖 robô') : null, c.ativa === false ? h('span', { class: 'cli-tag' }, 'pausada') : null),
+        h('div', { class: 'cp-card-top' }, h('b', null, c.nome), periodoTag(c), c.recorrente ? h('span', { class: 'cli-tag t-repor' }, c.recorrente === 'diaria' ? 'todo dia' : c.recorrente === 'semanal' ? 'toda semana' : 'todo mês') : null, c.robo ? h('span', { class: 'cli-tag', title: 'Enviada pelo robô do WhatsApp' }, '🤖 robô') : null, c.ativa === false ? h('span', { class: 'cli-tag' }, 'pausada') : null),
         h('small', { class: 'muted' }, `${c.recorrente ? 'Lista de ' : 'Criada em '}${fmt.date(r.em.slice(0, 10))} · por ${r.por || c.por || '—'}`),
         h('div', { class: 'cp-mini' },
           h('div', null, h('b', null, fmt.int(s.total)), h('small', null, 'na lista')),
@@ -284,6 +292,9 @@
     const modSel = h('select', { class: 'f-input' }, h('option', { value: '' }, 'Usar um modelo…'), ...modelos.map((m, k) => h('option', { value: k }, m.nome)));
     modSel.addEventListener('change', () => { if (modSel.value !== '') { msg.value = modelos[+modSel.value].texto; atualizar(); } modSel.value = ''; });
     const janela = h('input', { class: 'f-input', type: 'number', min: 1, max: 365, value: base ? base.janela : 30 });
+    // período da campanha (opcional): fora dele nada é enviado, pelo robô ou à mão
+    const dIni = h('input', { class: 'f-input', type: 'date', value: (base && base.inicio) || '', 'aria-label': 'Início da campanha' });
+    const dFim = h('input', { class: 'f-input', type: 'date', value: (base && base.fim) || '', 'aria-label': 'Término da campanha' });
     const limite = h('input', { class: 'f-input cp-num', type: 'number', min: 0, max: 500, value: base && base.limiteDia != null ? base.limiteDia : 20 });
     // variações da mensagem (até 4 além da principal): cada cliente recebe uma, em rodízio; o retorno é medido por variação
     let alvoMsg = msg;
@@ -370,7 +381,7 @@
       salvar.disabled = true;
       if (editando) {
         try {
-          const r = await api('PUT', `/api/campanhas/${base.id}`, { loja: state.loja, nome: nome.value.trim(), mensagem: msg.value.trim(), variacoes: textosVar(), limiteDia: +limite.value || 0, janela: +janela.value || 30, recorrente: rec.value, filtros: f });
+          const r = await api('PUT', `/api/campanhas/${base.id}`, { loja: state.loja, nome: nome.value.trim(), mensagem: msg.value.trim(), variacoes: textosVar(), limiteDia: +limite.value || 0, janela: +janela.value || 30, recorrente: rec.value, inicio: dIni.value || null, fim: dFim.value || null, filtros: f });
           Object.assign(base, r.campanha);
           if (refazer.checked && JSON.stringify(f) !== filtrosAntes && base.rodadas[0]) {
             const r2 = await api('PUT', `/api/campanhas/${base.id}/rodadas/${base.rodadas[0].id}`, { loja: state.loja, lista: sel_.map(({ c }) => ({ cpf: c.cpf, nome: c.nome })) });
@@ -381,7 +392,7 @@
         return;
       }
       try {
-        const r = await api('POST', '/api/campanhas', { loja: state.loja, nome: nome.value.trim(), mensagem: msg.value.trim(), variacoes: textosVar(), limiteDia: +limite.value || 0, janela: +janela.value || 30, recorrente: rec.value, filtros: f, lista: sel_.map(({ c }) => ({ cpf: c.cpf, nome: c.nome })) });
+        const r = await api('POST', '/api/campanhas', { loja: state.loja, nome: nome.value.trim(), mensagem: msg.value.trim(), variacoes: textosVar(), limiteDia: +limite.value || 0, janela: +janela.value || 30, recorrente: rec.value, inicio: dIni.value || null, fim: dFim.value || null, filtros: f, lista: sel_.map(({ c }) => ({ cpf: c.cpf, nome: c.nome })) });
         lista.unshift(r.campanha);
         if (base && base.copia) { api('DELETE', `/api/campanhas/copias/${base.copia}?${qs()}`).catch(() => null); lista.copias = (lista.copias || []).filter((x) => x.id !== base.copia); }
         abrirCampanha(corpo, lista, r.campanha);
@@ -486,6 +497,7 @@
               h('div', { class: 'cp-passo' }, h('span', { class: 'cp-n' }, '3'), h('div', null, h('b', null, 'Envio e retorno'))),
               linha('Enviar no máximo', limite, 'mensagens por dia nesta campanha', TS.dica('Ao chegar no limite, a fila para e continua no dia seguinte. 0 = sem limite. Poucas mensagens por dia, para quem tem motivo de receber, mantêm o número da loja saudável.')),
               linha('Medir o retorno em', janela, 'dias', TS.dica('Conta como "voltou" quem comprar (cupom com CPF) do dia do envio até N dias depois.')),
+              linha('Período', h('span', { class: 'cp-periodo' }, 'de ', dIni, ' até ', dFim), TS.dica('Data de início e de término da campanha (as duas são opcionais).\n\nAntes do início e depois do término nada é enviado: o robô pula a campanha e a fila manual fica travada. Campanha que se repete também não monta lista nova fora do período.\n\nEm branco: começa já e não tem data para acabar. Ex.: Black Friday de 23/11 a 30/11.')),
               linha('Repetir', rec, TS.dica('Todo dia, toda semana ou todo mês uma lista nova é montada com estes critérios.\n\nTodo dia: serve para critérios que mudam a cada dia (aniversariantes, quem acabou de completar os pontos, quem está há X dias sem comprar). Quem já recebeu não recebe de novo antes do intervalo da loja.\n\nEnvio manual: a lista nova nasce quando a tela de campanhas é aberta. Campanha enviada pelo robô: o painel monta sozinho, sem ninguém abrir a tela.')),
               refazerBox))),
         h('div', { class: 'cp-dir' },
@@ -557,7 +569,11 @@
     const varAtual = TS.msgWpp.variacaoDaVez(r.lista, textos.length);
     const contaHoje = limiteDia > 0 ? h('span', { class: 'cp-hoje' + (noLimite ? ' fim' : '') }, `Hoje: ${fmt.int(enviadosHoje)} de ${fmt.int(limiteDia)}`) : null;
     let fila;
-    if (atual && noLimite) {
+    const fora = TS.msgWpp.foraDoPeriodo(camp, TS.hojeSP());
+    if (atual && fora) {
+      // fora do período da campanha: nada é enviado (o robô também pula)
+      fila = TS.card('Fila de envio', `${fmt.int(pend.length)} pendentes`, h('div', { class: 'cp-fim' }, h('b', null, fora === 'antes' ? `A campanha começa em ${fmt.date(camp.inicio)}.` : `A campanha terminou em ${fmt.date(camp.fim)}.`), ' Fora do período nada é enviado. Dá para mudar as datas em "Editar campanha".'));
+    } else if (atual && noLimite) {
       fila = TS.card('Fila de envio', `${fmt.int(pend.length)} pendentes`, h('div', { class: 'cp-fim' }, contaHoje, h('b', null, ' Limite de hoje atingido.'), ` A fila continua amanhã. Dá para mudar o limite em "Editar campanha".`));
     } else if (atual) {
       const c = clienteDe(atual.cpf);

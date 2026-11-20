@@ -268,3 +268,18 @@ test('campanha recorrente "todo dia": uma lista por dia de Brasília (não cria 
   assert.equal(CAMP.rodadaEmDia(c, Date.parse('2026-11-21T03:30:00.000Z')), false, '00:30 do dia 21: lista nova');
   assert.equal(CAMP.rodadaEmDia({ recorrente: 'diaria', rodadas: [] }, Date.now()), false);
 });
+
+test('período da campanha: início e término valem para o robô, para a recorrente e na validação', () => {
+  const M = require('../../public/js/msgwpp');
+  const CAMP = require('../../src/campanhas');
+  const c = { inicio: '2026-11-23', fim: '2026-11-30' };
+  assert.deepEqual(['2026-11-22', '2026-11-23', '2026-11-30', '2026-12-01'].map((d) => M.foraDoPeriodo(c, d)), ['antes', null, null, 'depois']);
+  assert.equal(M.foraDoPeriodo({}, '2026-11-22'), null);
+  assert.equal(M.foraDoPeriodo({ fim: '2026-11-30' }, '2026-01-01'), null);
+  const base = { nome: 'Black', mensagem: 'Oi {nome}' };
+  assert.match(CAMP.dadosOk({ ...base, inicio: '2026-11-30', fim: '2026-11-23' }).erro, /término/);
+  assert.match(CAMP.dadosOk({ ...base, inicio: '30/11/2026' }).erro, /inválida/);
+  const ok = CAMP.dadosOk({ ...base, inicio: '2026-11-23', fim: '2026-11-30' }).ok;
+  assert.deepEqual([ok.inicio, ok.fim], ['2026-11-23', '2026-11-30']);
+  assert.deepEqual([CAMP.dadosOk({ ...base }).ok.inicio, CAMP.dadosOk({ ...base, fim: '' }, ok).ok.fim], [null, null], 'em branco = sem data');
+});
