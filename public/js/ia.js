@@ -565,7 +565,7 @@
     iaApi('GET', `ia/estado?loja=${encodeURIComponent(state.loja || '')}`).then((s) => {
       if (s.ativa) return;
       aviso.replaceChildren(h('div', { class: 'notice' }, s.podeConfigurar
-        ? h('span', null, 'A IA ainda não está ligada nesta loja. ', h('a', { href: '#config', onclick: () => { TS.cfgIrIA && TS.cfgIrIA(state.loja); fechar(); } }, 'Cadastre a chave da Anthropic desta loja em Configurações'), '.')
+        ? h('span', null, s.desligada ? 'A IA está desligada nesta loja. ' : 'A IA ainda não está ligada nesta loja. ', h('a', { href: '#config', onclick: () => { TS.cfgIrIA && TS.cfgIrIA(state.loja); fechar(); } }, s.desligada ? 'Ligue de novo em Configurações' : 'Cadastre a chave da Anthropic desta loja em Configurações'), '.')
         : 'A IA ainda não está ligada nesta loja: peça ao franqueado para cadastrar a chave em Configurações.'));
     }).catch(() => {});
     if (typeof pergunta === 'string' && pergunta.trim()) perguntar(pergunta.trim()); else if (aba === 'perguntar') setTimeout(() => txt.focus(), 50);
@@ -626,12 +626,19 @@
           try { await iaApi('DELETE', `ia/chave?loja=${encodeURIComponent(lojaId)}`); cfgMsg.set(lojaId, ['ok', 'Chave removida: a IA está desligada nesta loja.']); } catch (e) { cfgMsg.set(lojaId, ['err', e.message]); }
           recarregar();
         });
+        const ligada = k.ligada !== false;
+        const btLiga = h('button', { type: 'button', class: ligada ? 'btn' : 'btn primary', title: ligada ? 'Desliga a IA nesta loja sem apagar a chave: o ✨, a análise do Início e a revisão do pedido param de funcionar e nada é cobrado. Dá para ligar de novo quando quiser.' : 'Volta a usar a chave guardada: o ✨, a análise do Início e a revisão do pedido voltam a funcionar.' }, ligada ? 'Desligar a IA' : 'Ligar a IA');
+        btLiga.addEventListener('click', async () => {
+          btLiga.disabled = true;
+          try { await iaApi('PATCH', 'ia/chave', { loja: lojaId, ligada: !ligada }); cfgMsg.set(lojaId, ['ok', ligada ? 'IA desligada nesta loja. A chave continua guardada.' : 'IA ligada nesta loja.']); } catch (e) { cfgMsg.set(lojaId, ['err', e.message]); }
+          recarregar();
+        });
         partes.push(
-          h('div', { class: 'ia-chave-cab' }, h('span', { class: 'cf-st cf-ok' }, 'IA ligada ✓'), h('span', null, ` chave ···· ${k.fim}`), h('small', { class: 'muted' }, ` · cadastrada por ${k.dono}${k.criadaEm ? ' em ' + fmt.date(k.criadaEm.slice(0, 10)) : ''}`)),
+          h('div', { class: 'ia-chave-cab' }, ligada ? h('span', { class: 'cf-st cf-ok' }, 'IA ligada ✓') : h('span', { class: 'cf-st cf-off badge cinza' }, 'IA desligada'), h('span', null, ` chave ···· ${k.fim}`), h('small', { class: 'muted' }, ` · cadastrada por ${k.dono}${k.criadaEm ? ' em ' + fmt.date(k.criadaEm.slice(0, 10)) : ''}`)),
           h('div', { class: 'ia-uso' },
             h('div', null, 'Uso neste mês: ', h('b', null, usd(d.uso.usd)), k.teto ? ` de ${usd(k.teto)}` : ' (sem teto)', h('small', { class: 'muted' }, ` · ${fmt.int(d.uso.pedidos)} chamadas · estimativa`)),
             k.teto ? h('div', { class: 'ia-barra' }, h('span', { style: { width: `${pct * 100}%` }, class: pct >= 0.9 ? 'alto' : null })) : null),
-          h('div', { class: 'cfg-acoes ia-chave-acoes' }, h('label', null, 'Teto por mês (US$) ', teto), btTeto,
+          h('div', { class: 'cfg-acoes ia-chave-acoes' }, btLiga, h('label', null, 'Teto por mês (US$) ', teto), btTeto,
             h('button', { type: 'button', class: 'btn', onclick: () => { trocando = true; pintar(); } }, 'Trocar a chave'), btRem),
           intro);
       } else {
