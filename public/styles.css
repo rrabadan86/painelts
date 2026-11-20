@@ -162,7 +162,7 @@ a { color: var(--green); }
 .section-label::before { content: ""; width: 4px; height: 16px; background: var(--gold); border-radius: 2px; }
 
 .card {
-  background: #fff; border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow);
+  background: #fff; border: 1px solid var(--line); border-radius: var(--radius);
   padding: 14px 16px; min-width: 0;
 }
 .card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
@@ -173,11 +173,11 @@ a { color: var(--green); }
 .chart-box.short { height: 220px; }
 .empty { color: var(--muted); text-align: center; padding: 40px 10px; font-size: 13px; }
 
-.kpi { position: relative; padding: 14px 16px 12px 18px; overflow: hidden; }
-.kpi::before { content: ""; position: absolute; left: 0; top: 12px; bottom: 12px; width: 4px; border-radius: 0 3px 3px 0; background: var(--gold); }
+.kpi { position: relative; padding: 14px 16px 12px 16px; overflow: hidden; }
+.kpi::before { content: ""; position: absolute; left: 0; top: 12px; bottom: 12px; width: 4px; border-radius: 0 3px 3px 0; background: transparent; }
 .kpi-label { font-size: 12px; color: var(--muted); }
-.kpi-value { font-size: 24px; font-weight: 700; color: var(--dark); margin-top: 2px; white-space: nowrap; }
-.kpi-foot { font-size: 12px; margin-top: 2px; color: var(--muted); }
+.kpi-value { font-size: 26px; letter-spacing: -.01em; font-weight: 700; color: var(--dark); margin-top: 2px; white-space: nowrap; }
+.kpi-foot { font-size: 12px; margin-top: 2px; color: var(--muted); line-height: 1.35; }
 .up { color: var(--good); font-weight: 600; }
 .down { color: var(--bad); font-weight: 600; }
 
@@ -1098,16 +1098,9 @@ tr.est-det > td { padding: 0 !important; background: #FBF9F4 !important; }
 .est-det-grid .cupom-items td:first-child { text-align: left; }
 .est-det-grid .cupom-rodape { text-align: left; }
 /* ponto de equilíbrio */
-.est-eq-nums { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
-.est-eq-nums > div { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; background: var(--cream-2, #F6F2EA); border-radius: 10px; }
-.est-eq-nums span { font-size: 12px; color: var(--muted); }
-.est-eq-nums b { font-size: 22px; color: var(--green, #2C5234); }
-.est-eq-nums b.neg { color: #8E321C; } .est-eq-nums b.pos { color: #2C5234; }
-.est-eq-nums small { font-size: 11.5px; color: var(--muted); }
 .est-eq-barra { position: relative; height: 12px; background: #EEE9DF; border-radius: 6px; margin: 14px 0 6px; overflow: visible; }
 .est-eq-barra i { position: absolute; left: 0; top: 0; bottom: 0; background: linear-gradient(90deg, #C9A227, #2C5234); border-radius: 6px; }
 .est-eq-barra em { position: absolute; top: -4px; bottom: -4px; width: 2px; background: #8E321C; }
-.est-eq-nota { font-size: 11.5px; margin: 6px 0 0; }
 /* simulador nos cartões por pacote */
 .est-sim { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; padding: 6px 10px; border-top: 1px dashed #E2DCCF; font-size: 12px; }
 .est-sim label { display: flex; align-items: center; gap: 4px; }
@@ -1364,7 +1357,7 @@ tr.est-det > td { padding: 0 !important; background: #FBF9F4 !important; }
 .fi.fi-top b { white-space: nowrap; text-align: right; display: flex; flex-direction: column; align-items: flex-end; }
 .fi.fi-top b small { font-weight: 400; color: var(--muted); font-size: 11.5px; }
 .fi.fi-top span { min-width: 0; }
-.kpi-vars { display: flex; flex-direction: column; gap: 2px; }
+.kpi-vars { display: flex; flex-flow: row wrap; gap: 0 12px; }
 
 /* janela do cliente: cabeçalho com resumo e blocos no padrão do painel */
 .cli-janela-cab { padding: 2px 0 14px; }
@@ -1522,7 +1515,7 @@ tr.cp-enviada td { background: #EEF5EC !important; }
 .est-cl-erro { display: block; }
 /* KPI: número longo encolhe para caber (container query pela largura do cartão) */
 .kpi { container-type: inline-size; min-width: 0; }
-.kpi-value[style*="--n"] { font-size: clamp(14px, calc((100cqi - 4px) / (var(--n) * 0.54)), 24px); }
+.kpi-value[style*="--n"] { font-size: clamp(14px, calc((100cqi - 4px) / (var(--n) * 0.54)), 26px); }
 /* clientes: aviso de cupons com CPF sem venda abre a lista */
 .cli-semvenda { cursor: pointer; }
 .cli-semvenda:hover { filter: brightness(0.98); }
@@ -2852,3 +2845,115 @@ body.pg-semfiltros .sidebar, body.pg-semfiltros #btnFiltros { display: none; }
 /* robô do WhatsApp aberto em janela a partir de Campanhas */
 .zap-janela { width: min(820px, calc(100vw - 24px)); max-height: calc(100vh - 32px); overflow-y: auto; position: relative; }
 .zap-janela > section, .zap-janela > .card { box-shadow: none; border: 0; padding: 0; margin: 0; }
+
+/* ============ leiaute: cartões sem sombra, quadros com estado, texto de apoio curto ============ */
+/* cartão: só a borda fina separa os blocos; janelas e gavetas (por cima da página) continuam com sombra */
+.camada-cheia .card.card-cheio, .card.cp-copiar, .card.prc-drawer, .card.cfg-popup, .card.zap-janela { box-shadow: 0 16px 40px rgba(0, 0, 0, .25); }
+/* quadro de número: a barra lateral só aparece quando há estado (TS.kpiEstado) */
+.kpi.kpi-bom::before { background: var(--good); }
+.kpi.kpi-ruim::before { background: var(--bad); }
+.kpi-vars > span { white-space: nowrap; }
+.kpi .dica-i { opacity: .45; }
+.kpi:hover .dica-i, .kpi .dica-i:hover, .kpi .dica-i:focus-visible { opacity: 1; }
+/* grade de quadros no computador: quando não cabem todos numa linha, divide em linhas parecidas (nunca um quadro sozinho na de baixo).
+   O clamp devolve 140px se os N cabem lado a lado (largura ≥ N×140 + espaços) e, se não cabem, a fração que limita as colunas. */
+@media (min-width: 761px) {
+  .g-kpi:has(> :nth-child(4):last-child) { grid-template-columns: repeat(auto-fit, minmax(clamp(140px, (608px - 100%) * 999, (100% - 16px) / 2), 1fr)); }
+  .g-kpi:has(> :nth-child(5):last-child) { grid-template-columns: repeat(auto-fit, minmax(clamp(140px, (764px - 100%) * 999, (100% - 32px) / 3), 1fr)); }
+  .g-kpi:has(> :nth-child(6):last-child) { grid-template-columns: repeat(auto-fit, minmax(clamp(140px, (920px - 100%) * 999, (100% - 32px) / 3), 1fr)); }
+  .g-kpi:has(> :nth-child(7):last-child) { grid-template-columns: repeat(auto-fit, minmax(clamp(140px, (1076px - 100%) * 999, (100% - 48px) / 4), 1fr)); }
+  .g-kpi:has(> :nth-child(8):last-child) { grid-template-columns: repeat(auto-fit, minmax(clamp(140px, (1232px - 100%) * 999, (100% - 48px) / 4), 1fr)); }
+  .g-kpi:has(> :nth-child(9):last-child) { grid-template-columns: repeat(auto-fit, minmax(clamp(140px, (1388px - 100%) * 999, (100% - 64px) / 5), 1fr)); }
+}
+/* texto de apoio do cartão: a primeira frase à vista; o resto em "Como ler ▸" */
+.card-sub { max-width: 110ch; }
+.card-sub .card-como > p { margin: 2px 0 0; max-width: none; font-size: 12px; }
+
+/* ============ Início: avisos numa lista só, agrupada por área ============ */
+.ini-avisos { gap: 0; margin-top: 6px; }
+.ini-grupo + .ini-grupo { margin-top: 12px; }
+.ini-grupo-t { display: flex; align-items: center; gap: 8px; padding: 4px 2px 2px; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.ini-grupo-t span { background: var(--cream); border-radius: 999px; padding: 0 7px; letter-spacing: 0; }
+.ini-grupo .ini-aviso { border: 0; border-top: 1px solid var(--line); border-radius: 0; background: none; padding: 7px 2px; }
+.ini-grupo .ini-grupo-t + .ini-aviso { border-top: 0; }
+.ini-grupo .ini-aviso[role=button]:hover, .ini-grupo .ini-aviso:focus-visible { background: var(--cream-2); }
+.ini-grupo .ini-ico { width: 18px; height: 18px; font-size: 11px; }
+.ini-grupo .ini-aviso .muted { margin-top: 0; }
+.ini-avisos > .ini-adiados { margin-top: 10px; }
+/* "lembrar depois": no computador aparece ao passar o mouse ou focar a linha; no toque fica sempre à vista */
+@media (hover: hover) and (min-width: 761px) {
+  .ini-aviso .ini-adiar { opacity: 0; order: -1; min-height: 0; padding: 2px 4px; }
+  .ini-aviso > .ini-ico { order: -3; } .ini-aviso > div { order: -2; }
+  .ini-aviso:hover .ini-adiar, .ini-aviso:focus-within .ini-adiar, .ini-aviso:focus .ini-adiar { opacity: 1; }
+}
+@media (max-width: 760px) { .ini-grupo .ini-aviso .ini-adiar { font-size: 11px; } }
+
+/* ============ Pedido: ajustes numa linha só; situação do estoque/catálogo numa linha discreta abaixo ============ */
+.ped-ctl { display: block; padding: 14px 18px; }
+.ped-ctl-linha { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px 28px; }
+/* o seletor e o botão descem a altura do rótulo dos campos: tudo alinhado pela base dos campos */
+.ped-ctl-linha > .ped-ctl-l, .ped-ctl-linha > .ped-ctl-salvar { padding-top: 22px; }
+.ped-ctl-linha > .ped-ctl-g { gap: 12px 24px; align-items: flex-start; }
+.ped-ctl-linha > .ped-ctl-l .seg, .ped-ctl-linha > .ped-ctl-salvar .btn { min-height: 36px; }
+.ped-ctl-salvar { margin-left: auto; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; }
+.ped-ctl-salvar > span { font-size: 12px; max-width: 46ch; }
+.ped-ctl-salvar > span:empty { display: none; }
+.ped-ctl .ped-cat { margin-top: 12px; padding-top: 8px; border-top: 1px solid var(--line); gap: 4px 14px; }
+.ped-ctl .ped-cat-info { font-size: 12px; }
+.ped-cat-acoes { margin-left: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.ped-cat-acoes:empty { display: none; }
+.ped-cat-acoes .btn { padding: 4px 10px; font-size: 12px; }
+@media (max-width: 760px) {
+  .ped-ctl { padding: 12px 14px; }
+  .ped-ctl-linha { flex-direction: column; align-items: stretch; gap: 12px; }
+  .ped-ctl-linha > .ped-ctl-l, .ped-ctl-linha > .ped-ctl-salvar { padding-top: 0; }
+  .ped-ctl-salvar { margin-left: 0; justify-content: flex-start; }
+  .ped-cat-acoes { margin-left: 0; flex-basis: 100%; }
+  .ped-cat-acoes .btn { min-height: 32px; }
+}
+/* ============ cabeçalho do cartão: as ações (Compartilhar, Imprimir, Expandir) ficam juntas no canto direito ============ */
+.card-head .exp-btn + .exp-btn { margin-left: 0; }
+@media (min-width: 761px) { .card-head > div:first-child:not(:only-child) { flex: 1 1 260px; min-width: 0; } }
+
+/* ============ Resultado: quadros do mês primeiro; ponto de equilíbrio numa frase + a barra ============ */
+.est-eq-frase { font-size: 15px; margin: 2px 0 12px; color: var(--ink); }
+.est-eq .est-eq-barra { height: 14px; margin-top: 0; }
+.dre-andamento { font-size: 12px; margin: 8px 0 0; }
+.dre-eq-aqui:empty { display: none; }
+/* celular: quadro que sobra sozinho na última linha ocupa a largura toda */
+@media (max-width: 760px) { .g-kpi > .kpi:last-child:nth-child(odd) { grid-column: 1 / -1; } }
+/* ---------- filtros em faixa no topo (computador) ----------
+   A coluna lateral virou uma faixa horizontal acima do conteúdo: período na faixa, o resto em "Mais filtros".
+   No celular (até 860 px) nada muda: os filtros continuam na gaveta aberta pelo botão de filtros. */
+.fx-btn { display: inline-flex; align-items: center; gap: 6px; height: 32px; border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 0 14px; font: inherit; font-size: 13px; font-weight: 600; color: var(--dark); cursor: pointer; white-space: nowrap; }
+.fx-btn:hover, .fx-btn[aria-expanded=true], .fx-btn.on { border-color: var(--green); }
+.fx-btn:focus-visible, .fx-tag button:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+.fx-n { background: var(--green); color: #fff; border-radius: 999px; padding: 1px 7px; font-size: 11px; font-weight: 700; }
+.fx-tags { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.fx-tags:empty { display: none; }
+.fx-tag { display: inline-flex; align-items: center; gap: 2px; max-width: 100%; background: var(--sage-l); color: var(--dark); border-radius: 999px; padding: 2px 4px 2px 10px; font-size: 12px; }
+.fx-tag > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px; }
+.fx-tag button { border: 0; background: none; color: inherit; cursor: pointer; width: 22px; height: 22px; border-radius: 50%; font-size: 11px; line-height: 1; padding: 0; }
+.fx-tag button:hover { background: var(--green); color: #fff; }
+.page-sub, .card-sub { max-width: 110ch; } /* com a largura inteira, a linha de texto não pode ficar comprida demais */
+@media (min-width: 861px) {
+  .layout { display: block; }
+  .sidebar { position: static; height: auto; overflow: visible; display: flex; align-items: flex-start; gap: 12px; border-right: 0; border-bottom: 1px solid var(--line); padding: 8px 24px; }
+  body.fx-vazia .sidebar { display: none; }
+  .sidebar-head { order: 2; flex: none; margin: 0; min-height: 32px; }
+  .sidebar-head > span { display: none; }
+  body.fx-simples .sidebar-head { display: none; }
+  #filtros { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+  #filtros > .f-group { flex: 1 1 0; margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-width: 0; }
+  #filtros > .f-group > .f-label { margin: 0; white-space: nowrap; display: inline-flex; align-items: center; }
+  #filtros > .f-group > .chips { margin: 0; }
+  #filtros > .f-group > .f-row { order: 3; display: flex; gap: 6px; }
+  #filtros > .f-group > .f-row input[type=date] { width: 128px; height: 32px; }
+  #filtros > .f-group > .f-input { width: 220px; height: 32px; }
+  #filtros > .fx-mais { order: 2; flex: none; align-self: flex-start; margin-left: auto; position: relative; }
+  #filtros > .fx-tags { order: 3; flex-basis: 100%; } /* etiquetas numa linha própria: o botão "Mais filtros" não muda de lugar */
+  .fx-pop { position: absolute; z-index: 40; right: 0; top: calc(100% + 6px); width: min(520px, calc(100vw - 48px)); background: #fff; border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 10px 30px rgba(31,61,43,.15); padding: 4px 16px 16px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; align-items: start; }
+  .fx-pop.larga { width: min(760px, calc(100vw - 48px)); grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .fx-pop[hidden] { display: none; }
+  .fx-pop > .f-sep, .fx-pop > .f-section, .fx-pop > .f-hint { grid-column: 1 / -1; }
+}

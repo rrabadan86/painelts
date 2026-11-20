@@ -245,10 +245,15 @@
     const mesAntes = (day) => { const d = new Date(day * 86400000), y = d.getUTCFullYear(), m = d.getUTCMonth() - 1; const ult = new Date(Date.UTC(y, m + 1, 0)).getUTCDate(); return Math.floor(Date.UTC(y, m, Math.min(d.getUTCDate(), ult)) / 86400000); };
     return { ano: { de: anoAntes(de), ate: anoAntes(fim) }, mes: { de: mesAntes(de), ate: mesAntes(fim) } };
   };
-  /** linhas de variação de um cartão: [[valor atual, valor anterior, 'vs. …'], …] (sem dado anterior a linha some) */
+  /** linhas de variação de um cartão: [[valor atual, valor anterior, 'vs. …'], …] (sem dado anterior a linha some).
+   *  No quadro o texto sai curto ("· 30 dias", "· ano"); a frase completa fica no title. */
+  const varCurta = (txt) => {
+    const m = /^vs\. (\d+) dias anteriores$/.exec(txt);
+    return m ? `· ${m[1]} dias` : txt === 'vs. ano anterior' ? '· ano' : txt;
+  };
   TS.linhasVar = (...ls) => {
     const v = ls.filter((l) => l && l[1] != null && l[1] !== 0 && l[0] != null);
-    return v.length ? h('span', { class: 'kpi-vars' }, ...v.map(([a, b, txt]) => h('span', null, TS.deltaSpan(a / b - 1), ' ' + txt))) : null;
+    return v.length ? h('span', { class: 'kpi-vars' }, ...v.map(([a, b, txt]) => { const c = varCurta(txt); return h('span', { title: c !== txt ? txt : null }, TS.deltaSpan(a / b - 1), ' ' + c); })) : null;
   };
 
   /** tabela em árvore Mês (todos os anos) → Ano → Vendedor */

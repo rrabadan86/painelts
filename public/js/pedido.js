@@ -374,7 +374,8 @@
     const notaCresc = h('small', { class: 'ped-nota' }, par.crescimentoPct == null ? 'automático: últimas 8 semanas' : h('span', null, `manual · da loja ${fmt.pct(R.crescLoja - 1)} · `, voltar('crescimentoPct')));
     const cat = blocoCatalogo(corpo, loja, M, e, p);
     const est = blocoEstoque(loja, e);
-    const controles = h('div', { class: 'card ped-ctl' },
+    // ajustes numa linha só (modo + campos + salvar à direita); a situação do estoque/catálogo e os botões de atualizar ficam numa linha discreta abaixo
+    const controles = h('div', { class: 'card ped-ctl' }, h('div', { class: 'ped-ctl-linha' },
       h('div', { class: 'ped-ctl-l' },
         TS.seg([['Reposição', 'repor'], ['Data comemorativa', 'evento']], modo, (v) => { state.pedModo = v; pintar(corpo, loja, M, e, p); }),
         modo === 'evento' ? h('select', { class: 'f-input', onchange: (x) => { state.pedEvento = x.target.value; pintar(corpo, loja, M, e, p); } },
@@ -384,7 +385,8 @@
         modo === 'repor' ? lbl('Vendas de', iDias, 'dias', 'Período de vendas usado no valor e intervalo até o próximo pedido (ex.: 7 para pedido semanal, 14 para quinzenal).') : null,
         modo === 'repor' ? lbl('Folga da proporção', iFolga, '%', 'Quanto cada grupo (chás, envasados, acessórios) pode passar da sua parte antes de o valor ir para os outros.') : null,
         modo === 'evento' ? lbl('Crescimento', iCresc, '%', `Quanto a mais (ou a menos) que no ano passado se vende na data.\n\nAutomático: o crescimento da loja nas últimas 8 semanas contra as mesmas 8 semanas do ano passado (${fmt.pct(R.crescLoja - 1)}), o mesmo do card "Próximas semanas" em Estoque e margem.\n\nDigite outro valor se espera mais ou menos movimento.`, notaCresc) : null),
-      h('div', { class: 'cfg-acoes' }, salvar, est.acao, cat.acao, msg), h('div', { class: 'ped-cat' }, est.info, cat.info, est.st, cat.st));
+      h('div', { class: 'ped-ctl-salvar' }, msg, salvar)),
+      h('div', { class: 'ped-cat' }, est.info, cat.info, h('span', { class: 'ped-cat-acoes' }, est.acao, cat.acao), est.st, cat.st));
     corpo.append(controles);
     if (modo === 'evento') corpo.append(editorEventos(loja, p, par, () => pintar(corpo, loja, M, e, p)));
 
@@ -635,9 +637,9 @@
       const desenhar = () => {
         const q = TS.norm(busca.value.trim());
         const xs = q ? ord.filter((r) => TS.norm(r.produto + ' ' + r.cod).includes(q)) : ord;
-        box.replaceChildren(...xs.slice(0, quantos).map(cartao),
+        box.replaceChildren(...[...xs.slice(0, quantos).map(cartao),
           xs.length > quantos ? h('button', { type: 'button', class: 'btn ped-cards-mais', onclick: () => { quantos += 60; desenhar(); } }, `Mostrar mais (${fmt.int(xs.length - quantos)})`) : null,
-          !xs.length ? h('p', { class: 'muted' }, 'Nenhum produto aqui.') : null);
+          !xs.length ? h('p', { class: 'muted' }, 'Nenhum produto aqui.') : null].filter(Boolean));
       };
       busca.addEventListener('input', TS.debounce(() => { state.pedBuscaMob = busca.value; quantos = 40; desenhar(); }, 250));
       desenhar();

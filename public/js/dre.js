@@ -4,7 +4,7 @@
 (function () {
   const { h, fmt, state } = TS;
 
-  /** números de cada mês da loja (todos os dias do mês, sem os filtros da lateral) */
+  /** números de cada mês da loja (todos os dias do mês, sem os filtros do topo) */
   /** opts: { soYm, ateDia, frac } — um mês só, até o dia ateDia (comparação do mês em andamento com os mesmos dias) */
   function calcular(M, opts = {}) {
     const db = TS.db, I = TS.rules.ids, D = M.ded;
@@ -103,8 +103,8 @@
       if (!corpo.isConnected) return;
       if (!M) { corpo.replaceChildren(h('div', { class: 'notice' }, 'Ainda não há estoque desta loja: o resultado precisa do custo dos produtos. Envie a planilha de estoque em Configurações → Lojas.')); return; }
       pintar(corpo, M);
-      // ponto de equilíbrio do mês (quanto vender para pagar os fixos) logo depois dos números do topo
-      if (TS.cartaoEquilibrio) { const eq = TS.cartaoEquilibrio(state.loja); const ref = corpo.children[1]; ref ? corpo.insertBefore(eq, ref) : corpo.append(eq); }
+      // ponto de equilíbrio do mês (quanto vender para pagar os fixos) logo depois dos quadros do mês
+      if (TS.cartaoEquilibrio) { const eq = TS.cartaoEquilibrio(state.loja); const ref = corpo.querySelector('.dre-eq-aqui'); ref ? ref.replaceWith(eq) : corpo.append(eq); }
     }).catch((e) => corpo.replaceChildren(h('div', { class: 'notice err' }, e.message)));
   };
 
@@ -142,12 +142,13 @@
     const avisos = [];
     if (!fixosNomes.length && !(M.ded.PONTUAIS || []).length) avisos.push('Cadastre os custos fixos (aluguel, salários, energia…) pelo link "+ Adicionar ou editar custos da loja", logo abaixo da tabela, para o resultado ficar completo.');
     if (m.cobre < 0.95) avisos.push(`${fmt.pct(1 - m.cobre, 0)} das vendas de ${TS.ymLabel(sel)} não têm custo no estoque: o custo delas foi estimado pelo mesmo % das outras (${fmt.pct(m.cmvPct)}).`);
-    if (m.parcial) avisos.push(`${TS.ymLabel(sel)} está em andamento (vendas até ${fmt.date(TS.dayToIso(m.ultimo))}, ${m.decorridos} de ${m.diasMes} dias). "Até hoje" usa as vendas até agora e os custos fixos inteiros: enquanto der negativo, é o que ainda falta cobrir. "Projeção do mês" leva as vendas no ritmo atual até o fim do mês (impostos, custo dos produtos, comissões e custos em % acompanham as vendas; os fixos ficam iguais).`);
+    // mês em andamento: uma linha discreta depois dos quadros, com a explicação completa no ⓘ
+    const andamento = !m.parcial ? null : `${TS.ymLabel(sel)} está em andamento (vendas até ${fmt.date(TS.dayToIso(m.ultimo))}, ${m.decorridos} de ${m.diasMes} dias). "Até hoje" usa as vendas até agora e os custos fixos inteiros: enquanto der negativo, é o que ainda falta cobrir. "Projeção do mês" leva as vendas no ritmo atual até o fim do mês (impostos, custo dos produtos, comissões e custos em % acompanham as vendas; os fixos ficam iguais).`;
 
     // cartões do topo
     const kp = (rot, v, sub, cls) => TS.kpi(rot, v == null ? '—' : fmt.brl0(v), sub, null);
     const varA = (k) => (aDias && aDias[k] ? h('span', null, TS.deltaSpan(m[k] / aDias[k] - 1), ` vs. ${m.parcial ? `${rotAnt} (dias 1 a ${diaAte})` : rotAnt}`) : null);
-    corpo.append(h('div', { class: 'dre-topo' }, h('label', null, 'Mês ', opMes), h('span', { class: 'muted' }, 'Todos os dias do mês, sem os filtros da lateral. Custos fixos e % com os valores cadastrados hoje.')),
+    corpo.append(h('div', { class: 'dre-topo' }, h('label', null, 'Mês ', opMes), h('span', { class: 'muted' }, 'Todos os dias do mês, sem os filtros do topo. Custos fixos e % com os valores cadastrados hoje.')),
       ...avisos.map((t) => h('div', { class: 'notice' }, t)),
       h('div', { class: 'grid g-kpi' },
         kp('Faturamento', m.fat, varA('fat')),
@@ -156,7 +157,9 @@
         m.parcial
           ? TS.kpi('Resultado até hoje', m.resultado == null ? '—' : fmt.brl0(m.resultado), h('span', { class: m.resultado >= 0 ? 'up' : 'down' }, m.resultado == null ? '' : m.resultado >= 0 ? 'custos fixos do mês já cobertos' : `falta cobrir ${fmt.brl0(-m.resultado)} dos custos fixos`), 'Margem de contribuição até hoje − custos fixos do mês inteiro')
           : TS.kpi('Resultado do mês', m.resultado == null ? '—' : fmt.brl0(m.resultado), h('span', { class: m.resultado >= 0 ? 'up' : 'down' }, `${pc(m.resultado, m.fat)} do faturamento`), 'Margem de contribuição − custos fixos'),
-        P ? TS.kpi('Projeção do mês', P.resultado == null ? '—' : fmt.brl0(P.resultado), h('span', { class: P.resultado >= 0 ? 'up' : 'down' }, `vendendo ${fmt.brl0(P.fat)} no mês (ritmo atual)`), 'Resultado se as vendas seguirem no ritmo de agora até o fim do mês') : null));
+        P ? TS.kpi('Projeção do mês', P.resultado == null ? '—' : fmt.brl0(P.resultado), h('span', { class: P.resultado >= 0 ? 'up' : 'down' }, `vendendo ${fmt.brl0(P.fat)} no mês (ritmo atual)`), 'Resultado se as vendas seguirem no ritmo de agora até o fim do mês') : null),
+      andamento ? h('p', { class: 'dre-andamento muted' }, `Mês em andamento: ${m.decorridos} de ${m.diasMes} dias. "Até hoje" usa as vendas até agora e os custos fixos inteiros.`, TS.dica(andamento)) : null,
+      h('div', { class: 'dre-eq-aqui' }));
 
     // DRE do mês × mesmo mês do ano anterior
     const tb = h('table', { class: 't dre-t' });

@@ -291,21 +291,53 @@
     return el;
   };
   const tituloCom = (title, cls) => { const d = TS.dicaDe && typeof title === 'string' ? TS.dica(TS.dicaDe(title)) : null; return h('div', { class: cls }, title, d); };
+  // texto de apoio do cartão: com mais de ~140 caracteres fica só a primeira frase; o resto vai para "Como ler ▸" (continua na página)
+  const SUB_MAX = 140;
+  const subCurto = (sub) => {
+    if (typeof sub !== 'string' || sub.length <= SUB_MAX) return sub;
+    // fim da primeira frase: ponto final seguido de espaço e maiúscula (não corta "R$ 1.234" nem "vs. 30 dias"), fora de parênteses
+    let corte = -1, par = 0;
+    for (let i = 0; i < sub.length - 2; i++) {
+      const c = sub[i];
+      if (c === '(') par++; else if (c === ')') par = Math.max(0, par - 1);
+      else if (c === '.' && !par && i >= 30 && sub[i + 1] === ' ' && /[A-ZÀ-Ý"“]/.test(sub[i + 2]) && !/\b(vs|ex|obs|nº|n)$/i.test(sub.slice(Math.max(0, i - 3), i))) { corte = i + 1; break; }
+    }
+    if (corte < 0 || sub.length - corte < 30) return sub;
+    return [sub.slice(0, corte), ' ', h('details', { class: 'est-como card-como' }, h('summary', null, 'Como ler ▸'), h('p', null, sub.slice(corte + 1)))];
+  };
+  const subDe = (sub) => (sub ? h('div', { class: 'card-sub' }, subCurto(sub)) : null);
   TS.card = (title, sub, ...body) => h('div', { class: 'card' },
-    (title || sub) ? h('div', { class: 'card-head' }, h('div', null, tituloCom(title, 'card-title'), sub ? h('div', { class: 'card-sub' }, sub) : null)) : null,
+    (title || sub) ? h('div', { class: 'card-head' }, h('div', null, tituloCom(title, 'card-title'), subDe(sub))) : null,
     ...body);
   TS.cardWithTools = (title, sub, tools, ...body) => h('div', { class: 'card' },
-    h('div', { class: 'card-head' }, h('div', null, tituloCom(title, 'card-title'), sub ? h('div', { class: 'card-sub' }, sub) : null), tools),
+    h('div', { class: 'card-head' }, h('div', null, tituloCom(title, 'card-title'), subDe(sub)), tools),
     ...body);
   // explicação do indicador: a que veio no código; se for curta (ex.: "Faturamento ÷ cupons"), a do dicionário, mais completa
   const dicaKpi = (label, title) => { const d = TS.dicaDe && TS.dicaDe(label); return title && (title.length >= 40 || !d) ? title : d || title; };
   // número grande (R$ 9.511.881,00; 3.870,220 kg) diminui a fonte para caber no cartão (pela largura do cartão e o tamanho do texto)
-  TS.kpi = (label, value, foot, title) => {
+  // estado: 'bom' | 'ruim' | null (neutro). Sem estado explícito, vale o primeiro sinal de bom/ruim do rodapé (a comparação principal) e, na falta, o do valor.
+  const KPI_BOM = ['up', 'pos'], KPI_RUIM = ['down', 'neg'];
+  const sinalDe = (el) => {
+    if (!el) return null;
+    for (const x of [el, ...el.querySelectorAll('.up, .pos, .down, .neg')]) {
+      if (KPI_RUIM.some((c) => x.classList.contains(c))) return 'ruim';
+      if (KPI_BOM.some((c) => x.classList.contains(c))) return 'bom';
+    }
+    return null;
+  };
+  /** marca o estado do quadro (barra lateral verde/vermelha; neutro fica sem barra). Chame de novo quando o rodapé mudar depois de montado. */
+  TS.kpiEstado = (el, estado) => {
+    if (!el) return el;
+    const e = estado !== undefined ? estado : sinalDe(el.querySelector('.kpi-foot')) || sinalDe(el.querySelector('.kpi-value'));
+    el.classList.toggle('kpi-bom', e === 'bom'); el.classList.toggle('kpi-ruim', e === 'ruim');
+    return el;
+  };
+  TS.kpi = (label, value, foot, title, estado) => {
     const v = h('div', { class: 'kpi-value' }, value);
     const n = (v.textContent || '').length;
     if (n > 9) v.style.setProperty('--n', n);
-    return h('div', { class: 'card kpi' },
-      h('div', { class: 'kpi-label' }, label, TS.dica(dicaKpi(label, title))), v, foot ? h('div', { class: 'kpi-foot' }, foot) : null);
+    return TS.kpiEstado(h('div', { class: 'card kpi' },
+      h('div', { class: 'kpi-label' }, label, TS.dica(dicaKpi(label, title))), v, foot ? h('div', { class: 'kpi-foot' }, foot) : null), estado);
   };
   TS.deltaSpan = (v) => h('span', { class: v > 0 ? 'up' : v < 0 ? 'down' : '' }, fmt.delta(v));
   TS.section = (t) => h('div', { class: 'section-label' }, t);
@@ -433,7 +465,7 @@
       else if (psGuardado) { pageSize = psGuardado; psGuardado = null; paint(); }
     };
     paint();
-    if (fProd) wrap.append(h('div', { class: 'tab-fprod' }, `Só produtos com “${TS.state.f.produto}” (filtro Produto contém, na lateral) · `, h('button', { type: 'button', class: 'link-btn', onclick: () => { TS.state.f.produto = ''; document.querySelectorAll('.sidebar input[type=search]').forEach((i) => { if (i.placeholder === 'Ex.: earl grey') i.value = ''; }); TS.render(); } }, 'tirar o filtro')));
+    if (fProd) wrap.append(h('div', { class: 'tab-fprod' }, `Só produtos com “${TS.state.f.produto}” (filtro Produto contém) · `, h('button', { type: 'button', class: 'link-btn', onclick: () => { TS.state.f.produto = ''; document.querySelectorAll('.sidebar input[type=search]').forEach((i) => { if (i.placeholder === 'Ex.: earl grey') i.value = ''; }); TS.render(); } }, 'tirar o filtro')));
     // a busca aparece em cima da tabela; quem quiser pôr em outro lugar (barra de ferramentas do cartão) só move o campo
     if (searchBox) { searchBox.classList.add('tab-busca'); wrap.prepend(searchBox); }
     if (MOB) {
