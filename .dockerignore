@@ -7,4 +7,6 @@ config/lojas.json
 config/coletor
 coletor
 coletor-work
+zap
+zap-work
 README.md
