@@ -281,7 +281,7 @@ const pub = path.join(__dirname, 'public');
 const APP_SCRIPTS = [
   'core.js', 'components.js', 'dicas.js', 'rules.js', 'pages.js', 'fidelidade.js',
   'msgwpp.js', 'clientes.js', 'campanhas.js', 'zap.js', 'espera.js', 'extras.js', 'contabilidade.js',
-  'ruptura.js', 'estoque.js', 'devolucao.js', 'precos.js', 'inventario.js', 'sugestoes.js', 'validade.js', 'nfsaida.js', 'creditos.js', 'orcamento.js', 'checklist.js',
+  'ruptura.js', 'classeprod.js', 'estoque.js', 'devolucao.js', 'precos.js', 'inventario.js', 'sugestoes.js', 'validade.js', 'nfsaida.js', 'creditos.js', 'orcamento.js', 'checklist.js',
   'site.js', 'inicio.js', 'pedido.js', 'ia.js', 'dre.js', 'comprasvendas.js', 'efeitopreco.js', 'equipe.js', 'mapa.js', 'feriados.js', 'fidretorno.js',
   'config.js', 'script.js', 'fechamento.js', 'sistema.js', 'main.js',
 ];

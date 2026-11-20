@@ -87,7 +87,7 @@ TS.DICAS = {
   'Lucro sem fixos': 'Lucro bruto − deduções que acompanham a venda (comissão, royalties, Simples, maquininha e custos em %), antes do aluguel e outros fixos.',
   'Lucro com fixos': 'Lucro sem fixos − custos fixos do mês (aluguel, salários…) rateados pelo faturamento.',
   'O que repor': 'Sugestão de reposição pelo consumo médio, prazo de entrega e cobertura configurados na loja.',
-  'Giro × margem': 'Cada produto pela quantidade vendida (giro) e pela margem. Estrela = vende muito e com boa margem; Peso morto = pouco das duas.',
+  'Giro × margem': 'Cada produto pela quantidade vendida (giro) e pela margem. Estrela = vende muito e com boa margem (acima da metade dos produtos e da margem mínima da loja); Peso morto = vende pouco e a margem fica abaixo da margem alvo da loja.',
   'Margem sem fixos abaixo de': 'Produtos que deixam menos que a margem mínima depois do custo e das deduções variáveis.',
   'Qual pacote oferecer': 'Lucro sem fixos a cada 100 g de chá em cada tamanho de pacote, para saber quando vale oferecer o maior.',
   'Produtos por lucro': 'Curva ABC: A = produtos que somam 80% do lucro, B = os próximos 15%, C = o resto.',
