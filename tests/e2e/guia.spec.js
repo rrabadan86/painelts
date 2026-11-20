@@ -74,6 +74,9 @@ test('Configuração guiada: o Início lembra o que falta e a aba Integrações 
   await aviso.click();
   await expect(page.locator('.guia .guia-p.at b')).toHaveText('3. FIXE');
   await page.locator('.guia-x').click();
+  await expect(page.locator('.guia')).toHaveCount(0);
+  // fechar a janela desfaz a entrada que ela pôs no histórico (o "voltar" do celular): espera assentar antes de trocar de tela
+  await page.waitForFunction(() => !(history.state && history.state.camada));
   await page.evaluate(() => { location.hash = '#config'; });
   await expect(page.locator('.page-title')).toHaveText('Configurações');
   const loja = page.locator('.cfg-lojas-t tbody tr').first();
