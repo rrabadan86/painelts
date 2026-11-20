@@ -2,9 +2,9 @@
 /**
  * Rotas do robô do WhatsApp das campanhas (/api/zap/*) e a versão da apresentação (/api/demo/zap/*).
  * Quem pode (conferido aqui, no servidor):
- *   admin e franqueado da loja → tudo (conectar, desconectar, ligar, pausar, configurar);
- *   gerente com a tela Clientes → vê a situação e pode PAUSAR (segurança); não liga, não conecta, não configura;
- *   vendedora e gerente sem Clientes → nada.
+ *   admin, franqueado da loja e gerente com a tela Clientes → tudo (conectar, desconectar, ligar, pausar, configurar)
+ *     — decisão do dono: é a gerente quem está na loja com o celular para ler o QR;
+ *   vendedora e gerente sem Clientes → nada (barrados antes, por podeClientes).
  * A loja vem sempre de req.lojas (franqueado nunca alcança a loja dos outros). Tudo o que muda vai para a auditoria.
  */
 const express = require('express');
@@ -13,7 +13,7 @@ const CAMP = require('./campanhas');
 const ZAP = require('./zap');
 const ZF = require('./zapfila');
 
-const gestor = (req) => req.perfil === 'admin' || req.perfil === 'franqueado';
+const gestor = (req) => ['admin', 'franqueado', 'gerente'].includes(req.perfil); // o gerente só chega aqui com a tela Clientes (podeClientes)
 const lojaDe = (req) => { const id = String((req.body && req.body.loja) || req.query.loja || ''); return (req.lojas || []).some((l) => l.id === id) ? id : null; };
 const motivoTxt = (cod) => ({ cod, texto: ZF.MOTIVOS[cod] || '' });
 
@@ -51,7 +51,7 @@ function registrar(app, { podeClientes }) {
     if (req.method !== 'GET' && req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
     next();
   });
-  const soGestor = (req, res, next) => (gestor(req) ? next() : res.status(403).json({ erro: 'Só o administrador ou o franqueado da loja mexe no robô do WhatsApp.' }));
+  const soGestor = (req, res, next) => (gestor(req) ? next() : res.status(403).json({ erro: 'Sem permissão para mexer no robô do WhatsApp.' }));
   const comLoja = (req, res, next) => { const id = lojaDe(req); if (!id) return res.status(400).json({ erro: 'Escolha uma loja.' }); req.zapLoja = id; next(); };
   const responder = async (req, res) => { try { res.json({ ok: true, ...(await situacao(req.zapLoja, gestor(req))) }); } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); } };
   const semServico = (res) => res.status(400).json({ erro: ZF.MOTIVOS.sem_servico });

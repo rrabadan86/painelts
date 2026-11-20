@@ -914,8 +914,8 @@ app.use('/api/campanhas', (req, res, next) => {
 });
 // "Enviar pelo robô": só admin e franqueado ligam; numa campanha do robô o gerente só pausa a repetição ou tira do robô
 const ZF = require('./src/zapfila');
-const gestorCamp = (req) => req.perfil === 'admin' || req.perfil === 'franqueado';
-const SO_GESTOR_ROBO = 'Só o administrador ou o franqueado da loja liga ou altera uma campanha enviada pelo robô do WhatsApp.';
+const gestorCamp = (req) => ['admin', 'franqueado', 'gerente'].includes(req.perfil); // gerente com a tela Clientes também cuida do robô (decisão do dono); a vendedora nem chega a estas rotas
+const SO_GESTOR_ROBO = 'Sem permissão para ligar ou alterar uma campanha enviada pelo robô do WhatsApp.';
 app.post('/api/campanhas', express.json({ limit: '600kb' }), (req, res) => {
   const id = lojaCamp(req);
   if (!id) return res.status(400).json({ erro: 'Escolha uma loja.' });

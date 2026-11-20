@@ -117,3 +117,18 @@ test.describe('robô do WhatsApp', () => {
     expect(erros).toEqual([]);
   });
 });
+
+test('Campanhas: "Configurar" abre o cartão do robô numa janela (é por aqui que a gerente conecta e ajusta)', async ({ page }) => {
+  await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS.db && TS.state.loja && TS.state.loja !== 'todas');
+  await page.evaluate(() => { location.hash = '#campanhas'; });
+  const bt = page.getByRole('button', { name: /Configurar ›|Conectar e configurar ›/ }).first();
+  await expect(bt).toBeVisible();
+  await bt.evaluate((b) => b.click());
+  const j = page.locator('.zap-janela');
+  await expect(j).toBeVisible();
+  await expect(j).toContainText('Robô do WhatsApp');
+  await expect(j).toContainText('Ritmo');
+  expect(await j.evaluate((e) => e.scrollWidth - e.clientWidth)).toBeLessThanOrEqual(1);
+  await page.keyboard.press('Escape');
+  await expect(j).toHaveCount(0);
+});

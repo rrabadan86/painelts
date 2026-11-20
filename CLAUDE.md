@@ -59,7 +59,7 @@ Hooks (`.claude/settings.json`): bloqueiam commit/push de segredos e limpam os r
 
 **WhatsApp e testes**
 - Envio manual: um clique por mensagem, sem insistir com o cliente.
-- **Exceção (decisão do dono): robô do WhatsApp das campanhas.** Campanha marcada "Enviar pelo robô" sai sozinha pelo número da loja (serviço `zap/`), com todas as travas no servidor (`src/zapfila.js`, `src/zaplaco.js`): ritmo aleatório, horário e dias, máximo por dia do número, limite da campanha, intervalo da loja, quem não quer mensagens (inclusive quem responde "parar"), pausa sozinho após falhas. Só admin e franqueado da loja conectam, ligam e configuram; gerente com Clientes vê e pausa; vendedora nada. Log e auditoria sem o texto das mensagens e sem número completo (só os 4 últimos dígitos). Detalhes em `.claude/rules/zap.md`.
+- **Exceção (decisão do dono): robô do WhatsApp das campanhas.** Campanha marcada "Enviar pelo robô" sai sozinha pelo número da loja (serviço `zap/`), com todas as travas no servidor (`src/zapfila.js`, `src/zaplaco.js`): ritmo aleatório, horário e dias, máximo por dia do número, limite da campanha, intervalo da loja, quem não quer mensagens (inclusive quem responde "parar"), pausa sozinho após falhas. Admin, franqueado da loja e gerente com a tela Clientes conectam, ligam e configuram (decisão do dono: é a gerente quem lê o QR na loja; ela faz isso por Clientes → Campanhas → "Conectar e configurar"); vendedora nada. Log e auditoria sem o texto das mensagens e sem número completo (só os 4 últimos dígitos). Detalhes em `.claude/rules/zap.md`.
 - Dados temporários de teste: apague depois.
 
 ## Pendências combinadas (o dono pediu para depois)
