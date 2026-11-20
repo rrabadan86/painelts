@@ -336,6 +336,26 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     res.json({ ok: true });
   });
 
+  // ---------- configuração guiada (os 4 acessos da loja no primeiro uso) ----------
+  // só diz o que está pronto e se a pessoa já viu a janela; cada acesso é gravado pela rota dele
+  const GUIA = require('./guia');
+  const guiaDe = (req) => {
+    const u = C.get().usuarios[req.user] || {}, vistos = Array.isArray(u.guiaVisto) ? u.guiaVisto : [];
+    return minhasLojas(req).map((l) => {
+      let pedido = null; try { pedido = require('./pedido').acesso(l.id); } catch { /* sem login salvo */ }
+      const passos = GUIA.situacao({ env: lerEnv(l.id), pedido, fechEmail: NOTIF.publicoLoja(l.id) });
+      const visto = vistos.includes(l.id);
+      return { id: l.id, nome: l.nome, passos, visto, abrir: GUIA.abreSozinha(req.perfil, passos, visto) };
+    });
+  };
+  r.get('/guia', soGestor, (req, res) => { try { res.json({ lojas: guiaDe(req) }); } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); } });
+  r.post('/lojas/:id/guia/visto', soGestor, lojaPermitida, (req, res) => {
+    try {
+      C.alterar((cfg) => { const u = cfg.usuarios[req.user]; if (!u) return; u.guiaVisto = [...new Set([...(Array.isArray(u.guiaVisto) ? u.guiaVisto : []), req.loja.id])].slice(-200); });
+      res.json({ ok: true });
+    } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
+  });
+
   // ---------- acesso ao FIXE (cadastro de clientes) ----------
   r.put('/lojas/:id/fixe', lojaPermitida, json, (req, res) => {
     const b = req.body || {};

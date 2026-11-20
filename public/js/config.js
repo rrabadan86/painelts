@@ -53,9 +53,12 @@
   const campo = (rotulo, el, dica) => h('label', { class: 'cfg-campo' }, h('span', null, rotulo), el, dica ? h('small', null, dica) : null);
   const inp = (attrs) => h('input', { class: 'f-input', ...attrs });
 
+  // a configuração guiada salvou algum acesso: a tela mostra o que mudou
+  document.addEventListener('ts-guia', () => { if (state.page === 'config' && raiz && raiz.isConnected) carregar(); });
   let sujo = false; // há campo editado e não salvo: a atualização automática não redesenha a tela
   async function carregar(auto) {
     try { est = await api('GET', '/estado'); } catch (e) { if (auto) return; est = { erro: e.message }; }
+    if (!auto && TS.guia && !est.erro && (est.perfil === 'admin' || est.perfil === 'franqueado')) await TS.guia.carregar(); // o que falta configurar em cada loja
     if (state.page === 'config' && raiz && raiz.isConnected && !(auto && sujo)) pintar();
     clearTimeout(timer);
     const ocupado = est.lojas && est.lojas.some((l) => l.status && ((l.status.execucao && ['rodando', 'na_fila'].includes(l.status.execucao.estado)) || (l.status.saldos && ['rodando', 'na_fila'].includes(l.status.saldos.estado))));
@@ -95,7 +98,10 @@
       window.scrollTo({ top: scroll, behavior: 'instant' });
     };
     root.append(h('div', { class: 'page-head' }, h('div', null, h('h1', { class: 'page-title' }, 'Configurações'),
-      h('div', { class: 'page-sub' }, est.perfil === 'admin' ? 'Lojas, acesso ao AppNext, metas, usuários e horários' : 'Metas, planilhas e usuários das suas lojas'))));
+      h('div', { class: 'page-sub' }, est.perfil === 'admin' ? 'Lojas, acesso ao AppNext, metas, usuários e horários' : 'Metas, planilhas e usuários das suas lojas')),
+      // atalho de fácil acesso: os 4 acessos da loja, um passo de cada vez (abre na loja escolhida no topo ou na primeira com algo faltando)
+      TS.guia && !est.erro && (est.perfil === 'admin' || est.perfil === 'franqueado') && (est.lojas || []).length ? h('button', { type: 'button', class: 'btn cfg-guia-btn', title: 'Abre a configuração guiada: AppNext, Sistema de Pedidos, FIXE e o Gmail da loja, um passo de cada vez, com a explicação de cada campo. Dá para terminar o que ficou para depois ou editar o que já está salvo.',
+        onclick: () => { const ab = est.lojas.find((l) => abertos.has('loja:' + l.id)), falta = est.lojas.find((l) => { const s = TS.guia.situacao(l.id); return s && Object.values(s.passos).some((v) => !v); }); TS.guia.abrir((ab || est.lojas.find((l) => l.id === state.loja) || falta || est.lojas[0]).id); } }, '🧭 Configuração guiada') : null));
     if (est.erro) { root.append(h('div', { class: 'notice err' }, est.erro)); fim(); return; }
     const abas = [['Lojas', 'lojas'], ['Usuários', 'usuarios']];
     if (est.perfil === 'admin' || est.perfil === 'franqueado') abas.push(['Atualização automática', 'coletor'], ['Resumo diário', 'resumo']); // o franqueado vê a parte das lojas dele
@@ -247,7 +253,7 @@
       ['metas', 'Metas e comissão', 'Meta do mês, regras de comissão e férias da equipe', () => [blocoMetas(l), blocoFerias(l), gestor ? blocoRegras(l) : null]],
       ['loja', 'Loja e equipe', 'Horário de funcionamento, equipe, logo e dados da loja', () => [blocoOperacao(l), blocoMarca(l), gestor ? blocoEditar(l) : null]],
       gestor && TS.blocoEstoqueCfg ? ['estoque', 'Estoque e margem', 'Impostos, maquininha, custos da loja por categoria, reposição e embalagens', () => [TS.blocoEstoqueCfg(l.id)]] : null,
-      ['integracoes', 'Integrações', 'AppNext, Sistema de Pedidos, FIXE e e-mail das devoluções', () => [gestor ? blocoAppNext(l) : null, gestor && TS.blocoPedidoAcesso ? TS.blocoPedidoAcesso(l.id) : null, blocoFixe(l), blocoDevolucao(l)]],
+      ['integracoes', 'Integrações', 'AppNext, Sistema de Pedidos, FIXE e e-mail das devoluções', () => [gestor && TS.guia ? TS.guia.bloco(l.id) : null, gestor ? blocoAppNext(l) : null, gestor && TS.blocoPedidoAcesso ? TS.blocoPedidoAcesso(l.id) : null, blocoFixe(l), blocoDevolucao(l)]],
       gestor && TS.blocoIA ? ['ia', 'Inteligência artificial', 'Chave da Anthropic desta loja, teto e uso do mês', () => [TS.blocoIA(l.id)]] : null,
       ['avisos', 'Mensagens', 'Fechamento do dia por e-mail, mensagens de WhatsApp, robô do WhatsApp e cobrança à franquia', () => [blocoFechamento(l), blocoWpp(l), gestor && TS.blocoZap ? TS.blocoZap(l.id) : null, gestor ? blocoCobranca(l) : null]],
     ].filter(Boolean);

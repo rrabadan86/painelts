@@ -100,6 +100,8 @@ function normalizar(cfg) {
       senhaTrocadaEm: typeof v.senhaTrocadaEm === 'string' ? v.senhaTrocadaEm : null,
       // aumenta quando a senha muda ou o admin encerra as sessões: os cookies antigos deixam de valer
       sessao: Number.isInteger(v.sessao) && v.sessao >= 0 ? v.sessao : 0,
+      // lojas em que a pessoa já viu a configuração guiada (a janela abre sozinha só uma vez por loja)
+      guiaVisto: Array.isArray(v.guiaVisto) && v.guiaVisto.length ? v.guiaVisto.filter((x) => typeof x === 'string').slice(-200) : undefined,
     };
   }
   return { lojas, usuarios, uploadToken: cfg.uploadToken || process.env.UPLOAD_TOKEN || null };
