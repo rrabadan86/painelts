@@ -51,6 +51,9 @@ services:
   # Sem portas publicadas: só o painel fala com ele, pela rede interna do compose (X-Zap-Token).
   zap:
     build: ./zap
+    # Opcional: só sobe com `docker compose --profile zap up -d --build zap`. Assim a atualização do painel
+    # (`docker compose up -d --build`) não depende da construção do robô — se ela falhasse, a atualização inteira seria desfeita.
+    profiles: ["zap"]
     container_name: teashop-zap
     init: true
     restart: unless-stopped

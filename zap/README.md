@@ -16,10 +16,10 @@ echo "ZAP_TOKEN=$(openssl rand -hex 32)" >> .env
 # 2) pasta da sessão, com o mesmo usuário dos contêineres
 mkdir -p zap-work && chown -R 1000:1000 zap-work
 # 3) construir e subir o robô, e reiniciar o painel para ele enxergar o ZAP_TOKEN
-docker compose up -d --build zap
+docker compose --profile zap up -d --build zap
 docker compose up -d teashop-painel
 # 4) conferir
-docker compose logs --tail 20 zap      # "ouvindo na porta 8010"
+docker compose --profile zap logs --tail 20 zap      # "ouvindo na porta 8010"
 ```
 
 Depois é pelo painel: Configurações → loja → WhatsApp → **Conectar** (lê o QR no celular da loja em *Aparelhos conectados → Conectar um aparelho*, ou usa o código de 8 caracteres).
@@ -29,9 +29,9 @@ A primeira construção baixa o Chromium (demora alguns minutos e ocupa perto de
 ## Dia a dia
 
 - **Atualizações do painel** reconstroem este serviço junto; as lojas voltam sozinhas com a sessão salva.
-- **Ver o que está acontecendo:** `docker compose logs -f zap`.
+- **Ver o que está acontecendo:** `docker compose --profile zap logs -f zap`.
 - **Loja "caiu":** o WhatsApp encerrou a conexão (aparelho removido no celular, número aberto em outro WhatsApp Web, muito tempo com o celular sem internet). Conecte de novo pelo painel.
-- **Trocar a senha interna:** mude `ZAP_TOKEN` no `.env` e rode `docker compose up -d zap teashop-painel`.
+- **Trocar a senha interna:** mude `ZAP_TOKEN` no `.env` e rode `docker compose --profile zap up -d zap teashop-painel`.
 - **Apagar tudo de uma loja:** desconecte pelo painel (sai do WhatsApp e apaga `zap-work/<loja>/session`).
 - **O WhatsApp Web mudou e parou de conectar/enviar:** quase sempre é a biblioteca. Troque a versão de `whatsapp-web.js` em `zap/package.json`, rode `npm install --package-lock-only` nesta pasta e suba a versão.
 
@@ -61,3 +61,7 @@ Detalhes que o painel pode contar:
 - `sessoes.js` — as regras acima, sem conhecer o WhatsApp de verdade (é o que os testes exercitam).
 - `wa.js` — o cliente de verdade (whatsapp-web.js + Chromium); só é carregado ao rodar o serviço.
 - `tests/` — `node --test zap/tests/*.test.js` (da raiz) ou `npm test` (nesta pasta). Usam um WhatsApp de mentira: nada conecta nem envia, e não precisam de `npm install`.
+
+## Atualizações
+O robô é um serviço opcional (`profiles: ["zap"]`): a atualização pelo painel não mexe nele. Quando uma versão nova mudar a pasta `zap/`,
+rode de novo na VPS `docker compose --profile zap up -d --build zap` (a sessão do WhatsApp fica em `zap-work/` e é mantida).
