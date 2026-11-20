@@ -246,3 +246,28 @@ test('NOTIF.enviarFechamento({ lojas }): só monta o fechamento das lojas pedida
   await NOTIF.enviarFechamento(async (id) => { vistas.push(id); return null; });
   assert.deepStrictEqual(vistas, ['l1', 'l2']);
 });
+
+// ---------- configuração guiada (os 4 acessos da loja no primeiro uso) ----------
+test('configuração guiada: abre sozinha uma vez para o franqueado, só na loja dele; gerente e vendedora barrados; nunca devolve usuário nem senha', async () => {
+  assert.strictEqual(await status('ger1', '/api/admin/guia'), 403, 'gerente');
+  assert.strictEqual(await status('vend1', '/api/admin/guia'), 403, 'vendedora');
+  const ler = async (nome) => (await pedir(nome, '/api/admin/guia')).json();
+  let g = await ler('dono1');
+  assert.deepStrictEqual(g.lojas.map((l) => l.id), ['l1'], 'só a loja dele');
+  assert.deepStrictEqual(Object.keys(g.lojas[0].passos), ['appnext', 'pedido', 'fixe', 'email']);
+  assert.ok(Object.values(g.lojas[0].passos).some((v) => v === false), 'tem acesso faltando');
+  assert.strictEqual(g.lojas[0].abrir, true, 'primeira vez: abre sozinha');
+  assert.deepStrictEqual(Object.keys(g.lojas[0]).sort(), ['abrir', 'id', 'nome', 'passos', 'visto'], 'só sim/não: nenhum usuário nem senha');
+  assert.ok(Object.values(g.lojas[0].passos).every((v) => typeof v === 'boolean'));
+  // marcar como vista: só na loja dele e só com X-Painel
+  assert.strictEqual((await post('dono1', '/api/admin/lojas/l2/guia/visto')).status, 404, 'loja dos outros');
+  assert.strictEqual(await status('dono1', '/api/admin/lojas/l1/guia/visto', { method: 'POST', headers: { 'X-Painel': '' } }), 403, 'sem X-Painel');
+  assert.strictEqual(await status('ger1', '/api/admin/lojas/l1/guia/visto', { method: 'POST' }), 403, 'gerente');
+  assert.strictEqual((await post('dono1', '/api/admin/lojas/l1/guia/visto')).status, 200);
+  g = await ler('dono1');
+  assert.strictEqual(g.lojas[0].visto, true);
+  assert.strictEqual(g.lojas[0].abrir, false, 'não abre de novo sozinha');
+  // admin: vê todas as lojas, mas a janela nunca abre sozinha para ele
+  g = await ler('chefe');
+  assert.ok(g.lojas.length >= 2 && g.lojas.every((l) => l.abrir === false));
+});

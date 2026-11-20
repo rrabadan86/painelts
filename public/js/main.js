@@ -582,6 +582,7 @@
       configurarAbas(eu);
       TS.sistemaInit && TS.sistemaInit(eu);
       TS.iaInit && TS.iaInit(eu);
+      TS.guia && TS.guia.conferir(); // primeiro acesso do franqueado: abre a configuração guiada da loja (uma vez)
       const salvo = localStorage.getItem(TS.demo ? 'teashop.demo.loja' : 'teashop.loja');
       const ids = TS.lojas.map((l) => l.id);
       if (TS.lojas.length > 1) ids.push('todas');

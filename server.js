@@ -285,7 +285,7 @@ const APP_SCRIPTS = [
   'msgwpp.js', 'recompra.js', 'clientes.js', 'campretorno.js', 'campanhas.js', 'zap.js', 'espera.js', 'extras.js', 'contabilidade.js',
   'ruptura.js', 'visaodono.js', 'classeprod.js', 'custodata.js', 'estoque.js', 'devolucao.js', 'precos.js', 'inventario.js', 'sugestoes.js', 'validade.js', 'nfsaida.js', 'creditos.js', 'orcamento.js', 'checklist.js',
   'site.js', 'conferencia.js', 'conferencia-tela.js', 'inicio.js', 'pedido.js', 'ia.js', 'dre.js', 'apagar.js', 'comprasvendas.js', 'efeitopreco.js', 'equipe.js', 'mapa.js', 'feriados.js', 'fidretorno.js',
-  'config.js', 'script.js', 'fechamento.js', 'sistema.js', 'main.js',
+  'guia.js', 'config.js', 'script.js', 'fechamento.js', 'sistema.js', 'main.js',
 ];
 let bundleMem = null, bundleCheckEm = 0;
 function comprimirAsset(buf) {
@@ -727,6 +727,8 @@ app.get('/api/demo/sugestoes/produtos', (req, res) => {
   try { res.json({ produtos: require('./src/sugestoes').buscar(DEMO.estoqueDemo(req.query.loja).estoque, String(req.query.q || '').slice(0, 60)) }); } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
 });
 app.get('/api/demo/pedido/acesso', (req, res) => res.json({ temLogin: false, usuario: '' }));
+// configuração guiada na apresentação: uma loja com o FIXE por fazer; a janela não abre sozinha e nada é gravado
+app.get('/api/demo/admin/guia', (req, res) => { try { res.json({ lojas: DEMO.estadoDemo().lojas.map((l, i) => ({ id: l.id, nome: l.nome, passos: { appnext: true, pedido: true, fixe: i !== 0, email: true }, visto: true, abrir: false })) }); } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); } });
 app.get('/api/demo/admin/estado', (req, res) => { try { res.json(DEMO.estadoDemo()); } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); } });
 app.get('/api/demo/admin/notif', (req, res) => res.json({ ativo: true, horario: '08:00', ultimoEnvio: null, alertas: true, fechamento: { ativo: true, horario: '23:30', ultimoEnvio: null }, avisos: { email: 'admin@exemplo.com' },
   telegram: { configurado: false, destinos: [] }, email: { host: 'smtp.exemplo.com', port: 587, secure: false, user: 'painel@exemplo.com', from: 'Painel <painel@exemplo.com>', temSenha: true, configurado: true,
