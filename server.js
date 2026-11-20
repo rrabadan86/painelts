@@ -150,6 +150,8 @@ async function dadosLoja(loja, force) {
         const raw = await loadLoja(loja);
         raw.lojaNome = loja.nome;
         CLS.aplicar(raw.vendas); // produtos reclassificados pelo painel (contam na meta, comissão e royalties)
+        // cupons cancelados: só saem das vendas se a loja escolheu "tirar das vendas" em Vendas → Conferência (padrão: só avisar)
+        { const x = require('./src/conferencia').aplicarCancelados(loja, raw.vendas); raw.vendas = x.vendas; raw.canceladosFora = x.fora; }
         Object.assign(e, { sig: sigAgora, at: Date.now(), raw, erro: null });
         console.log(`[dados] ${loja.id}: ${raw.vendas.length} vendas, ${raw.xml.length} cupons c/ CPF, ${raw.clientes.length} clientes em ${raw.ms} ms`);
         if (raw.avisos.length) console.warn(`[dados] ${loja.id} avisos:`, raw.avisos.join(' | '));
@@ -282,7 +284,7 @@ const APP_SCRIPTS = [
   'core.js', 'contas.js', 'components.js', 'dicas.js', 'rules.js', 'pages.js', 'fidelidade.js',
   'msgwpp.js', 'recompra.js', 'clientes.js', 'campretorno.js', 'campanhas.js', 'zap.js', 'espera.js', 'extras.js', 'contabilidade.js',
   'ruptura.js', 'classeprod.js', 'custodata.js', 'estoque.js', 'devolucao.js', 'precos.js', 'inventario.js', 'sugestoes.js', 'validade.js', 'nfsaida.js', 'creditos.js', 'orcamento.js', 'checklist.js',
-  'site.js', 'inicio.js', 'pedido.js', 'ia.js', 'dre.js', 'comprasvendas.js', 'efeitopreco.js', 'equipe.js', 'mapa.js', 'feriados.js', 'fidretorno.js',
+  'site.js', 'conferencia.js', 'conferencia-tela.js', 'inicio.js', 'pedido.js', 'ia.js', 'dre.js', 'comprasvendas.js', 'efeitopreco.js', 'equipe.js', 'mapa.js', 'feriados.js', 'fidretorno.js',
   'config.js', 'script.js', 'fechamento.js', 'sistema.js', 'main.js',
 ];
 let bundleMem = null, bundleCheckEm = 0;
@@ -751,6 +753,12 @@ app.get('/api/demo/fechamento', (req, res) => {
     formas: formas.map(([k, rot, valor]) => ({ k, rot, valor, informado: valor, dif: 0 })), totalVendas: t, suprimento: 0, sangria: 20, abertura: 300, fechamento: deveria + 1, deveria, diferenca: 1, movimentos: [] };
   res.json({ ...f, html: F2.html(f) });
 });
+app.get('/api/demo/conferencia', (req, res) => {
+  const p = DEMO.partes().find((x) => x.id === String(req.query.loja || ''));
+  if (!p) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  try { res.json({ ...require('./src/conferencia').demo(p, IND.hojeSP().iso), podeCfg: true }); } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
+});
+app.put('/api/demo/conferencia/cfg', (req, res) => res.status(400).json({ erro: 'Na apresentação nada é salvo.' }));
 app.get('/api/demo/alertas', (req, res) => {
   const p = DEMO.partes().find((x) => x.id === String(req.query.loja || ''));
   res.json({ alertas: p ? IND.alertas(p) : [] });
@@ -1110,6 +1118,34 @@ app.get('/api/fechamento', async (req, res) => {
     const f = FECH.calcular(d, dia);
     res.json({ ...f, html: FECH.html(f) });
   } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
+});
+
+// ---------- confiança nos dados: conferência com o caixa, cupons cancelados e saúde das fontes ----------
+// admin, franqueado e gerente com a tela Conferência; a vendedora nunca (mostra o faturamento da loja e o caixa por operador)
+const CONF = require('./src/conferencia');
+app.get('/api/conferencia', async (req, res) => {
+  if (!podeTela(req, 'conferencia')) return res.status(403).json({ erro: 'Sem permissão.' });
+  const loja = req.lojas.find((l) => l.id === String(req.query.loja || ''));
+  if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  try {
+    const e = await dadosLoja(loja);
+    res.set('Cache-Control', 'no-store');
+    res.json({ ...CONF.daLoja(loja, e.raw.vendas, e.raw.canceladosFora || [], IND.hojeSP().iso), podeCfg: podeContabilidade(req) });
+  } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
+});
+// tolerância da conferência e o que fazer com cupom cancelado (tirar das vendas muda a comissão): só admin e franqueado da loja
+app.put('/api/conferencia/cfg', express.json({ limit: '2kb' }), (req, res) => {
+  if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
+  if (!podeContabilidade(req)) return res.status(403).json({ erro: 'Sem permissão.' });
+  const loja = req.lojas.find((l) => l.id === String(req.query.loja || ''));
+  if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  const antes = CONF.cfg(C.get().lojas.find((l) => l.id === loja.id));
+  const v = CONF.validarCfg(req.body || {}, antes);
+  if (v.erro) return res.status(400).json({ erro: v.erro });
+  C.alterar((cfg) => { cfg.lojas.find((l) => l.id === loja.id).conferencia = v.ok; });
+  if (antes.cancelados !== v.ok.cancelados) cacheLoja.delete(loja.id); // as vendas são relidas com (ou sem) os cupons cancelados
+  C.auditar(req.user, v.ok.cancelados !== antes.cancelados ? (v.ok.cancelados === 'excluir' ? 'passou a TIRAR das vendas os cupons cancelados (muda meta e comissão)' : 'voltou a só avisar sobre cupons cancelados (continuam nas vendas)') : 'alterou a tolerância da conferência do caixa', loja.id, { loja: loja.id, antes, depois: v.ok });
+  res.json({ ok: true, cfg: v.ok });
 });
 
 // ---------- estoque e custo (só admin e franqueado) ----------

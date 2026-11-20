@@ -3,7 +3,7 @@
 (function () {
   const { h, fmt, state } = TS;
   const content = document.getElementById('content');
-  let PAGES = ['inicio', 'resumo', 'comparativos', 'comissionamento', 'promocao', 'cupons', 'mapa', 'clientes', 'minha'];
+  let PAGES = ['inicio', 'resumo', 'comparativos', 'comissionamento', 'promocao', 'cupons', 'conferencia', 'mapa', 'clientes', 'minha'];
   TS.paginas = () => PAGES;
 
   // ---- manter o campo em que a pessoa está digitando quando a tela é redesenhada ----
@@ -96,7 +96,7 @@
     document.body.classList.toggle('pg-config', state.page === 'config');
     document.getElementById('btnUsuario')?.classList.toggle('on', state.page === 'config');
     document.body.classList.toggle('pg-minha', state.page === 'minha');
-    document.body.classList.toggle('pg-semfiltros', state.page === 'inicio' || state.page === 'dre'); // não usam os filtros
+    document.body.classList.toggle('pg-semfiltros', state.page === 'inicio' || state.page === 'dre' || state.page === 'conferencia'); // não usam os filtros
     if (state.page === 'config') {
       TS.destroyCharts();
       const root = h('div');
@@ -491,14 +491,14 @@
    * Menu por assunto: Vendas · Clientes · Equipe · Estoque e Margem · ⚙. Cada grupo mostra só as telas que a pessoa pode ver;
    * grupo com uma tela só vira uma aba com o nome da tela; com mais de uma, a tela tem um submenu no topo.
    */
-  const ROTULO = { inicio: 'Início', resumo: 'Resumo', comparativos: 'Comparativos', promocao: 'Promoção', cupons: 'Cupons', nfsaida: 'Notas fiscais', creditos: 'Notas fiscais', orcamento: 'Orçamento', checklist: 'Checklist', hoje: 'Hoje', clilista: 'Lista de clientes', clientes: 'Indicadores', campanhas: 'Campanhas', espera: 'Lista de espera',
+  const ROTULO = { inicio: 'Início', resumo: 'Resumo', comparativos: 'Comparativos', promocao: 'Promoção', cupons: 'Cupons', conferencia: 'Conferência', nfsaida: 'Notas fiscais', creditos: 'Notas fiscais', orcamento: 'Orçamento', checklist: 'Checklist', hoje: 'Hoje', clilista: 'Lista de clientes', clientes: 'Indicadores', campanhas: 'Campanhas', espera: 'Lista de espera',
     comissionamento: 'Comissionamento', minha: 'Minha comissão', mapa: 'Movimento e escala', rentab: 'Rentabilidade', precos: 'Preços', site: 'Site', estoque: 'Estoque', pedido: 'Pedido', notas: 'Notas fiscais', inventario: 'Inventário', sugestoes: '⭐ Sugestões', validade: 'Validade', dre: 'Resultado' };
   TS.GRUPOS = [];
   function montarMenu(grupoEst, temConfig) {
     const tabs = document.getElementById('tabs');
     const G = [
       ['Início', ['inicio']],
-      ['Vendas', ['resumo', 'comparativos', 'promocao', 'cupons', 'orcamento']],
+      ['Vendas', ['resumo', 'comparativos', 'promocao', 'cupons', 'conferencia', 'orcamento']],
       ['Clientes', ['hoje', 'clilista', 'clientes', 'campanhas', 'espera']],
       ['Equipe', ['comissionamento', 'minha', 'mapa', 'checklist']],
       ['Produtos', grupoEst.filter((p) => ['rentab', 'precos', 'site'].includes(p))],

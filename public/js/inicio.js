@@ -51,7 +51,7 @@
     const analise = TS.db && TS.db.n && TS.eu && TS.eu.perfil !== 'vendedor' ? analisar() : null;
     // cada origem entrega os avisos já com a área dela (ninguém classifica aviso pelo texto)
     const de = (area) => ({ push: (...as) => lista.push(...as.map((a) => ({ area, ...a }))) });
-    const tarefas = [TS.zapAvisos ? TS.zapAvisos(de('outros')) : Promise.resolve(), avisosEspera(de('vendas')), avisosVendas(de('vendas')), avisosEstoque(de('estoque')), avisosSite(de('outros')), avisosAtualizacoes(de('outros')), avisosInventario(de('inventario'), analise), avisosCreditos(de('franquia')), avisosCusto(de('estoque')), avisosPadrao(de('vendas'), analise)].map((p) => p.catch(() => null).then(() => { if (avisos.isConnected) pintar(); }));
+    const tarefas = [TS.zapAvisos ? TS.zapAvisos(de('outros')) : Promise.resolve(), TS.conferenciaAvisos ? TS.conferenciaAvisos(de('vendas')) : Promise.resolve(), avisosEspera(de('vendas')), avisosVendas(de('vendas')), avisosEstoque(de('estoque')), avisosSite(de('outros')), avisosAtualizacoes(de('outros')), avisosInventario(de('inventario'), analise), avisosCreditos(de('franquia')), avisosCusto(de('estoque')), avisosPadrao(de('vendas'), analise)].map((p) => p.catch(() => null).then(() => { if (avisos.isConnected) pintar(); }));
     Promise.all(tarefas).then(() => { pend.remove(); });
   };
 
