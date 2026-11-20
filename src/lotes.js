@@ -187,30 +187,36 @@ function comAbertura(lotes, entradasPorCod, dEst, reg, hoje) {
     const ritmo = ritmoCompra(entradasPorCod.get(cod) || [], dEst);
     let ordem = 0;
     for (const l of ls.slice().sort((a, b) => String(a.entrada || '') < String(b.entrada || '') ? -1 : 1)) { // do mais antigo para o mais novo
-      let pk = pacotesDoLote(l);
-      // a equipe avisou que abriu o próximo pacote e ainda não saiu nada dele (ou abriu antes de acabar o anterior): o pacote inteiro está na lata
-      if (pk.n === 0 && pk.fechado > 0.0005 && l.qtdEntrada != null) {
-        const prox = Math.floor((r3(l.qtdEntrada - (l.saldo || 0)) + 1e-6) / PACOTE_KG) + 1, r = reg && reg[`${l.chave}#${prox}`];
-        if (r && r.por && DIA.test(r.dia || '')) { const ab = Math.min(PACOTE_KG, pk.fechado); pk = { n: prox, aberto: r3(ab), fechado: r3(pk.fechado - ab) }; }
-      }
-      Object.assign(l, { aberto: pk.aberto, fechado: pk.fechado, pacoteN: pk.n, validadePacote: l.validade, venceEm: l.validade, motivo: 'pacote', abertoEm: null, abertoEstimado: false, validadeAberto: null, abrirOrdem: null });
-      if (pk.n > 0) {
-        const r = reg && reg[`${l.chave}#${pk.n}`];
-        l.abertoEm = r && DIA.test(r.dia || '') ? r.dia : estimarAbertura(l, pk, ritmo, dEst);
-        l.abertoEstimado = !(r && r.por);
-        l.abertoPor = (r && r.por) || null;
-        if (l.abertoEm) {
-          // decisão do dono: a validade do chá aberto é 6 meses a partir da abertura (a data da chegada continua guardada, mas não é mais
-          // a que vale). Vem preenchida e a equipe pode trocar.
-          l.validadeAbertoPadrao = somarMeses(l.abertoEm, MESES_ABERTO);
-          l.validadeAbertoEditada = !!(r && DIA.test(r.ate || ''));
-          l.validadeAberto = l.validadeAbertoEditada ? r.ate : l.validadeAbertoPadrao;
-          // lote com chá aberto mostra a validade do que está aberto (os pacotes ainda fechados do mesmo lote aparecem na janela do chá)
-          l.venceEm = l.validadeAberto; l.motivo = 'aberto'; l.kgVence = pk.aberto;
-          l.dias = dias(hoje, l.venceEm); l.faixa = faixa(l.dias);
+      const pk = pacotesDoLote(l);
+      // pacotes abertos deste lote: o que o saldo mostra (sobra de um pacote na lata) e os que a equipe avisou que abriu
+      // (botão "Abrir lote": o pacote inteiro vai para a lata, mesmo sem venda ou antes de acabar o anterior)
+      const chaveN = (n) => `${l.chave}#${n}`;
+      const abertos = [];
+      let fechado = pk.fechado;
+      if (pk.n > 0) abertos.push({ n: pk.n, kg: pk.aberto, r: reg && reg[chaveN(pk.n)], natural: true });
+      if (l.qtdEntrada != null) {
+        let prox = (pk.n > 0 ? pk.n : Math.floor((r3(l.qtdEntrada - (l.saldo || 0)) + 1e-6) / PACOTE_KG)) + 1;
+        for (let r = reg && reg[chaveN(prox)]; fechado > 0.0005 && r && r.por && DIA.test(r.dia || ''); prox++, r = reg && reg[chaveN(prox)]) {
+          const kg = Math.min(PACOTE_KG, fechado);
+          abertos.push({ n: prox, kg: r3(kg), r });
+          fechado = r3(fechado - kg);
         }
       }
-      if (pk.fechado > 0.0005) l.abrirOrdem = ++ordem;
+      l.abertos = abertos.map((a) => {
+        const abertoEm = a.r && DIA.test(a.r.dia || '') ? a.r.dia : estimarAbertura(l, { aberto: a.kg }, ritmo, dEst);
+        // decisão do dono: a validade do chá aberto é 6 meses a partir da abertura; vem preenchida e a equipe pode trocar
+        const padrao = abertoEm ? somarMeses(abertoEm, MESES_ABERTO) : null, editada = !!(a.r && DIA.test(a.r.ate || ''));
+        return { n: a.n, kg: a.kg, abertoEm, estimado: !(a.r && a.r.por), por: (a.r && a.r.por) || null, validade: editada ? a.r.ate : padrao, validadePadrao: padrao, editada };
+      }).filter((a) => a.abertoEm);
+      const somaAb = r3(l.abertos.reduce((x, a) => x + a.kg, 0));
+      Object.assign(l, { aberto: somaAb, fechado: l.qtdEntrada == null ? 0 : r3((l.saldo || 0) - somaAb), pacoteN: l.abertos.length ? l.abertos[0].n : 0, validadePacote: l.validade, venceEm: l.validade, motivo: 'pacote', abertoEm: null, abertoEstimado: false, validadeAberto: null, abrirOrdem: null });
+      if (l.abertos.length) {
+        // o lote mostra a validade do chá aberto que vence primeiro (os pacotes ainda fechados aparecem na janela do chá)
+        const a = l.abertos.slice().sort((x, y) => (x.validade < y.validade ? -1 : 1))[0];
+        Object.assign(l, { abertoEm: a.abertoEm, abertoEstimado: a.estimado, abertoPor: a.por, validadeAberto: a.validade, validadeAbertoPadrao: a.validadePadrao, validadeAbertoEditada: a.editada, venceEm: a.validade, motivo: 'aberto', kgVence: a.kg });
+        l.dias = dias(hoje, l.venceEm); l.faixa = faixa(l.dias);
+      }
+      if (l.fechado > 0.0005) l.abrirOrdem = ++ordem;
     }
   }
   return lotes;
@@ -496,12 +502,12 @@ function observarAberturas(id, hoje = hojeSP()) {
   const { lotes } = daLoja(id, hoje);
   const d = ler(id), reg = d.aberturas || {}, vivos = new Set(), perto = [];
   let mudou = false;
-  for (const l of lotes) {
-    if (!(l.pacoteN > 0) || !l.abertoEm) continue;
-    const k = `${l.chave}#${l.pacoteN}`;
+  for (const l of lotes) for (const a of l.abertos || []) {
+    const k = `${l.chave}#${a.n}`;
     vivos.add(k);
-    if (!reg[k]) { reg[k] = { dia: l.abertoEm, auto: true, em: new Date().toISOString() }; mudou = true; }
-    if (l.motivo === 'aberto' && l.dias != null && l.dias <= 30 && !reg[k].avisado) { reg[k].avisado = hoje; mudou = true; perto.push({ chave: l.chave, n: l.pacoteN, desc: l.desc, dias: l.dias }); }
+    if (!reg[k]) { reg[k] = { dia: a.abertoEm, auto: true, em: new Date().toISOString() }; mudou = true; }
+    const d = a.validade ? dias(hoje, a.validade) : null;
+    if (d != null && d <= 30 && !reg[k].avisado) { reg[k].avisado = hoje; mudou = true; perto.push({ chave: l.chave, n: a.n, desc: l.desc, dias: d }); }
   }
   for (const k of Object.keys(reg)) if (!vivos.has(k)) { delete reg[k]; mudou = true; }
   if (mudou) { d.aberturas = reg; gravar(id, d); }
@@ -511,25 +517,35 @@ function observarAberturas(id, hoje = hojeSP()) {
 function editarAbertura(id, b, por, hoje = hojeSP()) {
   const chave = String((b && b.chave) || ''), l = daLoja(id, hoje).lotes.find((x) => x.chave === chave);
   if (!l) return { erro: 'Lote não encontrado (o estoque pode ter mudado): atualize a tela.' };
-  // pacote aberto: corrige a data dele. Lote só com pacote fechado: registra que o próximo pacote foi aberto (ainda sem venda).
-  if (!(l.pacoteN > 0) && !(l.fechado > 0.0005 && l.qtdEntrada != null)) return { erro: 'Este lote não tem pacote para abrir.' };
-  const n = l.pacoteN > 0 ? l.pacoteN : Math.floor((r3(l.qtdEntrada - l.saldo) + 1e-6) / PACOTE_KG) + 1;
-  const dia = String((b && b.dia) ?? '').trim(), d = ler(id), reg = d.aberturas || (d.aberturas = {}), k = `${chave}#${n}`;
+  // b.abrir (ou data num lote sem nada aberto): o próximo pacote fechado do lote passa a contar como aberto (hoje, se não vier data).
+  // Senão: corrige o pacote aberto de número b.n (padrão: o primeiro aberto do lote).
+  const abrir = b && (b.abrir === true || (!(l.abertos || []).length && String(b.dia ?? '').trim() !== ''));
+  let n;
+  if (abrir) {
+    if (!(l.fechado > 0.0005) || l.qtdEntrada == null) return { erro: 'Este lote não tem pacote fechado para abrir.' };
+    n = (l.abertos.length ? Math.max(...l.abertos.map((a) => a.n)) : Math.floor((r3(l.qtdEntrada - l.saldo) + 1e-6) / PACOTE_KG)) + 1;
+  } else {
+    const a = (l.abertos || []).find((x) => (b && b.n != null ? x.n === +b.n : true));
+    if (!a) return { erro: (l.abertos || []).length ? 'Pacote não encontrado (o estoque pode ter mudado): atualize a tela.' : 'Este lote não tem pacote aberto.' };
+    n = a.n;
+  }
+  const dia = abrir && String((b && b.dia) ?? '').trim() === '' ? hoje : String((b && b.dia) ?? '').trim(), d = ler(id), reg = d.aberturas || (d.aberturas = {}), k = `${chave}#${n}`;
   const antes = reg[k] ? reg[k].dia : null;
   // só o "consumir até" (a data de vencimento do que está na lata): vazio = volta para abertura + 6 meses
   if (b && b.ate !== undefined && (b.dia === undefined || b.dia === null)) {
-    if (!(l.pacoteN > 0) || !l.abertoEm) return { erro: 'Este lote não tem pacote aberto.' };
-    const ate = String(b.ate ?? '').trim(), atual = reg[k] || { dia: l.abertoEm, auto: true, em: new Date().toISOString() };
+    const ab = (l.abertos || []).find((x) => x.n === n);
+    if (!ab) return { erro: 'Este lote não tem pacote aberto.' };
+    const ate = String(b.ate ?? '').trim(), atual = reg[k] || { dia: ab.abertoEm, auto: true, em: new Date().toISOString() };
     if (ate === '') { delete atual.ate; delete atual.atePor; }
     else {
       if (!DIA.test(ate) || Number.isNaN(ms(ate))) return { erro: 'Data de vencimento inválida.' };
-      const max = somarMeses(l.abertoEm, 36);
-      if (ate < l.abertoEm || ate > max) return { erro: `Consumir até: entre ${l.abertoEm.split('-').reverse().join('/')} e ${max.split('-').reverse().join('/')}.` };
+      const max = somarMeses(ab.abertoEm, 36);
+      if (ate < ab.abertoEm || ate > max) return { erro: `Consumir até: entre ${ab.abertoEm.split('-').reverse().join('/')} e ${max.split('-').reverse().join('/')}.` };
       atual.ate = ate; atual.atePor = String(por || '');
     }
     reg[k] = atual;
     gravar(id, d);
-    return { ok: { dia: atual.dia, ate: ate || null }, antes: l.validadeAberto };
+    return { ok: { dia: atual.dia, ate: ate || null }, antes: ab.validade };
   }
   if (dia === '') delete reg[k];
   else {
