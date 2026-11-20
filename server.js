@@ -552,7 +552,7 @@ function lotesDemo(lojaId) {
 app.get('/api/demo/validade', (req, res) => {
   if (!lojaDemo(req)) return res.status(400).json({ erro: 'Escolha uma loja.' });
   const { LOTd, e, comp, em, lotes } = lotesDemo(req.query.loja);
-  res.json({ em, hoje: LOTd.hojeSP(), meses: LOTd.MESES_VALIDADE, riscoDias: LOTd.RISCO_DIAS, custos: true, faixas: LOTd.FAIXAS.map((f) => ({ id: f.id, nome: f.nome, ate: Number.isFinite(f.ate) ? f.ate : null })),
+  res.json({ em, hoje: LOTd.hojeSP(), meses: LOTd.MESES_VALIDADE, mesesAberto: LOTd.MESES_ABERTO, pacoteKg: LOTd.PACOTE_KG, riscoDias: LOTd.RISCO_DIAS, custos: true, faixas: LOTd.FAIXAS.map((f) => ({ id: f.id, nome: f.nome, ate: Number.isFinite(f.ate) ? f.ate : null })),
     resumo: LOTd.resumo(lotes), lotes: lotes.map((l) => ({ ...l, tipo: '', familia: '' })), granel: LOTd.granelEstoque({ estoque: e.estoque, compras: e.compras }), entradas: LOTd.entradasRecentes({ estoque: e.estoque, compras: comp, edits: { lotes: {} } }) });
 });
 // perdas do mês para o Resultado (apresentação): chá vencido dos lotes fictícios + faltas de inventário inventadas
@@ -2306,7 +2306,7 @@ app.get('/api/inventario/contagem/:id/desfazer', (req, res) => {
 
 // ---------- validade e lotes do chá a granel (Estoque → Validade): a equipe informa o lote; o painel faz o resto ----------
 const LOT = require('./src/lotes');
-const podeValidade = (req) => req.perfil === 'vendedor' || podeTela(req, 'validade', 'notas', 'precos'); // quem abre a nota de entrada também informa o lote
+const podeValidade = (req) => req.perfil === 'vendedor' || podeTela(req, 'validade', 'notas', 'precos', 'estoque'); // no Estoque dá para informar a abertura do pacote // quem abre a nota de entrada também informa o lote
 const podeCustos = (req) => podeTela(req, 'rentab', 'estoque', 'precos', 'notas', 'pedido', 'dre');
 const lojaVal = (req, res) => {
   if (!podeValidade(req)) { res.status(403).json({ erro: 'Sem permissão.' }); return null; }
@@ -2326,7 +2326,7 @@ app.get('/api/validade', async (req, res) => {
   const custos = podeCustos(req);
   if (!custos) { for (const p of [...Object.values(r.porFaixa), r.risco]) { p.custo = null; delete p.semCusto; } }
   res.json({
-    em, hoje: LOT.hojeSP(), meses: LOT.MESES_VALIDADE, riscoDias: LOT.RISCO_DIAS, custos, faixas: LOT.FAIXAS.map((f) => ({ id: f.id, nome: f.nome, ate: Number.isFinite(f.ate) ? f.ate : null })),
+    em, hoje: LOT.hojeSP(), meses: LOT.MESES_VALIDADE, mesesAberto: LOT.MESES_ABERTO, pacoteKg: LOT.PACOTE_KG, riscoDias: LOT.RISCO_DIAS, custos, faixas: LOT.FAIXAS.map((f) => ({ id: f.id, nome: f.nome, ate: Number.isFinite(f.ate) ? f.ate : null })),
     resumo: r, lotes: lotes.map((l) => semCusto(req, { ...l, tipo: tipos.get(l.cod) || '', familia: INV.familia(tipos.get(l.cod) || '') })),
     entradas: LOT.entradasRecentes(ctx), // para contar por lote no inventário
     granel: LOT.granelEstoque(ctx), // chá a granel com/sem estoque (Clientes → Hoje não oferece chá que a loja não tem)
@@ -2372,6 +2372,19 @@ app.put('/api/validade/lote', express.json({ limit: '4kb' }), (req, res) => {
   const novo = LOT.daLoja(loja.id).lotes.find((x) => x.chave === String(req.body.chave));
   res.json({ ok: true, lote: novo ? semCusto(req, novo) : null, editado: r.ok });
 });
+// a equipe corrige a data em que o pacote aberto foi para a lata (vazio = volta para a estimativa do painel)
+app.put('/api/validade/abertura', express.json({ limit: '4kb' }), (req, res) => {
+  if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
+  const loja = lojaVal(req, res); if (!loja) return;
+  try {
+    const r = LOT.editarAbertura(loja.id, req.body || {}, req.user);
+    if (r.erro) return res.status(400).json({ erro: r.erro });
+    const [nf, cod, entrada] = String(req.body.chave).split('|');
+    C.auditar(req.user, r.ok.ate !== undefined ? 'alterou o vencimento do chá aberto' : 'alterou a data de abertura do chá', loja.id, { loja: loja.id, cod, nf, entrada, antes: r.antes, depois: r.ok.ate !== undefined ? r.ok.ate : r.ok.dia });
+    const novo = LOT.daLoja(loja.id).lotes.find((x) => x.chave === String(req.body.chave));
+    res.json({ ok: true, lote: novo ? semCusto(req, novo) : null });
+  } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
+});
 // lotes das notas de entrada (Estoque → Notas fiscais e Validade → "Notas que chegaram"): sem esperar o estoque
 app.get('/api/validade/notas', (req, res) => {
   const loja = lojaVal(req, res); if (!loja) return;
@@ -2401,6 +2414,11 @@ async function avaliarEspera(loja) {
     try { raw = (await dadosLoja(loja)).raw; } catch { /* sem vendas: confere só a chegada */ }
     const fx = FIx.eventos(loja.id);
     try { require('./src/sugestoes').avaliarNotas(loja.id, ES.notas(loja.id)); } catch (e) { console.error('[sugestões] notas:', e.message); }
+    // chá a granel: guarda a data dos pacotes que o painel vê abertos pela primeira vez e avisa os que entraram nos últimos 30 dias do prazo
+    try {
+      for (const p of LOT.observarAberturas(loja.id)) PUSH.avisarDepois({ tipo: 'validade', loja: loja.id, chave: `aberto:${loja.id}:${p.chave}#${p.n}`.slice(0, 400), titulo: `Chá aberto perto do prazo · ${loja.nome}`,
+        texto: `${p.desc}: ${p.dias < 0 ? 'passou dos 6 meses depois de aberto' : `faltam ${p.dias} dias para completar 6 meses aberto`}. Venda primeiro.`, link: '/#validade' });
+    } catch (e) { console.error('[validade] abertura:', C.msgErro(e)); }
     const novos = ESP.avaliar(loja.id, { notas: ES.notas(loja.id), estoque: ES.atual(loja.id), xml: raw ? raw.xml : [], vendas: raw ? raw.vendas : null, fixe: fx ? fx.eventos : [] });
     if (novos.length) {
       const porProd = new Map();

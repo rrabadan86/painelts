@@ -74,6 +74,8 @@ test('notificação: o service worker fica ativo e mostra o que o painel manda, 
     const sw = await page.evaluate(async () => { const r = await navigator.serviceWorker.ready; await new Promise((ok) => { if (r.active.state === 'activated') ok(); else r.active.addEventListener('statechange', () => r.active.state === 'activated' && ok()); }); return { estado: r.active.state, escopo: r.scope, url: r.active.scriptURL }; });
     expect(sw).toEqual({ estado: 'activated', escopo: origem + '/', url: origem + '/sw.js' });
     expect(await page.evaluate(() => Notification.permission)).toBe('granted');
+    // espera o service worker assumir a página (clients.claim) antes de entregar a primeira mensagem
+    await page.waitForFunction(() => !!navigator.serviceWorker.controller, null, { timeout: 15000 });
     // o service worker não guarda página nenhuma
     expect(await page.evaluate(() => caches.keys())).toEqual([]);
     await expect.poll(() => regs.find((r) => r.scopeURL === origem + '/')).toBeTruthy();
@@ -81,8 +83,13 @@ test('notificação: o service worker fica ativo e mostra o que o painel manda, 
     const entregar = async (data) => {
       await page.evaluate(async () => { const r = await navigator.serviceWorker.ready; (await r.getNotifications()).forEach((n) => n.close()); });
       await expect.poll(() => page.evaluate(async () => (await (await navigator.serviceWorker.ready).getNotifications()).length)).toBe(0); // a anterior fechou de fato
-      await cdp.send('ServiceWorker.deliverPushMessage', { origin: origem, registrationId, data });
-      await expect.poll(() => page.evaluate(async () => (await (await navigator.serviceWorker.ready).getNotifications()).length)).toBe(1);
+      // a entrega pelo CDP pode cair no vazio se o service worker ainda está assumindo a página: entrega de novo se nada aparecer em 3 s
+      const quantas = () => page.evaluate(async () => (await (await navigator.serviceWorker.ready).getNotifications()).length);
+      for (let k = 0; k < 4 && !(await quantas()); k++) {
+        await cdp.send('ServiceWorker.deliverPushMessage', { origin: origem, registrationId, data });
+        await expect.poll(quantas, { timeout: 3000 }).toBeGreaterThan(0).catch(() => null);
+      }
+      expect(await quantas()).toBe(1);
       return page.evaluate(async () => { const n = (await (await navigator.serviceWorker.ready).getNotifications())[0]; return { titulo: n.title, texto: n.body, link: n.data && n.data.link, icone: new URL(n.icon).pathname, selo: n.badge ? new URL(n.badge).pathname : '', tag: n.tag }; });
     };
     // aviso de verdade, no formato que o servidor manda

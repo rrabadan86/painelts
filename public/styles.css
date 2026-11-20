@@ -3097,3 +3097,23 @@ tr.conf-conta td:first-child { box-shadow: inset 3px 0 0 var(--bad); }
   .notif { border-radius: 14px 14px 0 0; max-height: 94vh; }
   .notif-ap { flex-wrap: wrap; }
 }
+
+/* ---------- validade: pacote aberto (na lata) e pacotes fechados ---------- */
+.vl-pacotes { display: grid; gap: 2px; margin-top: 3px; }
+.vl-pacotes small { display: block; overflow-wrap: anywhere; }
+.vl-lata { color: var(--dark); }
+.vl-fechado { color: var(--muted); }
+.vl-motivo { display: block; color: var(--dark); }
+.vl-abriu-data { display: inline-block; width: auto; height: 30px; padding: 2px 6px; margin: 0 4px; }
+.vl-pac { width: min(560px, 100%); max-height: 92vh; overflow: auto; display: grid; gap: 12px; }
+.vl-pac-topo { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.vl-pac-topo h3, .vl-pac p { margin: 0; }
+.vl-pac-lista { display: grid; }
+.vl-pac-lote { display: grid; gap: 8px; padding: 12px 0; border-top: 1px solid var(--line); }
+.vl-pac-cab { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.vl-pac-sit { display: grid; gap: 4px; }
+.vl-pac-sit small { display: block; overflow-wrap: anywhere; }
+.vl-pac-acoes { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.est-pac { display: block; padding: 0; margin-top: 2px; white-space: nowrap; }
+.vl-ver-pac { padding: 0; text-align: left; justify-self: start; }
+@media (max-width: 720px) { .vl-pac-bg { padding: 0; align-items: flex-end; } .vl-pac { border-radius: 14px 14px 0 0; } }

@@ -29,8 +29,11 @@ test('lotes: só chá a granel, estoque distribuído da entrada mais nova para a
   assert.ok(!lotes.some((l) => l.cod === '406' || l.cod === '80300'));
   const dez = val.find((l) => l.entrada === '2025-12-01');
   assert.equal(dez.validade, '2026-12-01');
-  assert.equal(dez.dias, 13);
-  assert.equal(dez.faixa, 'critica');
+  // o pacote de dezembro está aberto (0,5 kg na lata): depois de aberto vale o "consumir até" (abertura estimada + 6 meses),
+  // no lugar dos 12 meses da chegada (decisão do dono: a data de abertura sobrepõe a da chegada)
+  assert.deepEqual([dez.pacoteN, dez.aberto, dez.abertoEm, dez.validadeAberto, dez.motivo], [1, 0.5, '2026-09-18', '2027-03-18', 'aberto']);
+  assert.equal(dez.dias, 120);
+  assert.equal(dez.faixa, 'ok');
   assert.equal(dez.lote, '0');
   assert.equal(dez.precoKg, 300); // pacote de 100 g a R$ 30 → R$ 300/kg
   const eg = lotes.find((l) => l.cod === '80200');
@@ -60,9 +63,9 @@ test('lotes: edição do nº do lote e da validade, resumo e valor em risco', ()
   const l = lotes.find((x) => x.chave === ch);
   assert.deepEqual([l.lote, l.validade, l.padrao, l.faixa, l.editadoPor], ['L2603-A', '2026-12-20', false, 'acao', 'vendedora']);
   const r = L.resumo(lotes);
-  // em risco (< 60 dias): EG vencido 0,4 kg + valeriana dez 0,5 kg + valeriana março 2 kg
-  assert.equal(r.risco.kg, 2.9);
-  assert.equal(r.risco.custo, 0.4 * 100 + 0.5 * 120 + 2 * 120);
+  // em risco (< 60 dias): EG vencido 0,4 kg + valeriana março 2 kg (a de dezembro está aberta e vale até março pelo "consumir até")
+  assert.equal(r.risco.kg, 2.4);
+  assert.equal(r.risco.custo, 0.4 * 100 + 2 * 120);
   assert.equal(r.porFaixa.vencido.lotes, 1);
   assert.equal(r.semLote, lotes.length - 1);
   // validade vazia volta para 12 meses da entrada; lote "0" apaga o número

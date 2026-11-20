@@ -24,10 +24,12 @@ function porMes({ lotes, contagens }) {
   const out = {};
   const mes = (ym) => out[ym] || (out[ym] = novo());
   for (const l of lotes || []) {
-    if (!l || l.dias == null || !(l.dias < 0) || !l.validade || !(l.saldo > 0)) continue;
-    const m = mes(String(l.validade).slice(0, 7));
-    m.nVencidos++; m.kgVencidos += l.saldo;
-    if (l.custoKg > 0) m.vencidos += l.saldo * l.custoKg; else m.semCusto++;
+    // venceu pela data que chegou primeiro (pacote ou 6 meses depois de aberto); pela abertura, só o que está na lata é perda
+    const venceu = l && (l.venceEm || l.validade), kg = l && (l.kgVence ?? l.saldo);
+    if (!l || l.dias == null || !(l.dias < 0) || !venceu || !(kg > 0)) continue;
+    const m = mes(String(venceu).slice(0, 7));
+    m.nVencidos++; m.kgVencidos += kg;
+    if (l.custoKg > 0) m.vencidos += kg * l.custoKg; else m.semCusto++;
   }
   for (const c of contagens || []) {
     if (!c || c.st !== 'importado' || !c.importadoEm || c.revertidoEm || c.ajuste == null || !Number.isFinite(+c.ajuste)) continue;

@@ -31,6 +31,7 @@ function temTela(u, id) {
 /** tipos de aviso: quem pode receber cada um (a mesma regra de quem vê a tela do assunto) */
 const TIPOS = [
   { id: 'espera', nome: 'Lista de espera: produto chegou', dica: 'Quando chega um produto que tem cliente esperando. Para quem usa a Lista de espera.', pode: (u) => temTela(u, 'espera') },
+  { id: 'validade', nome: 'Chá aberto perto dos 6 meses', dica: 'Quando um chá a granel que já foi para a lata entra nos últimos 30 dias do prazo de 6 meses depois de aberto. Para quem usa a tela Validade.', pode: (u) => temTela(u, 'validade') },
   { id: 'sugestao', nome: '⭐ Nova sugestão da equipe para o pedido', dica: 'Quando alguém da equipe sugere um produto para o pedido. Para quem tem a tela Pedido (é quem decide).', pode: (u) => u.perfil !== 'vendedor' && temTela(u, 'pedido') },
   { id: 'zap', nome: 'Robô do WhatsApp parou', dica: 'Quando o robô das campanhas pausa sozinho depois de falhas ou a conexão com o WhatsApp da loja cai. Para admin, franqueado e gerente com a tela Clientes.', pode: (u) => u.perfil !== 'vendedor' && temTela(u, 'clientes') },
 ];
