@@ -54,6 +54,15 @@ test('Validade: mostra o que está na lata com a data de abertura e os pacotes f
   await expect(page.locator('.toast')).toContainText('nada é salvo');
   await j.getByRole('button', { name: 'Fechar' }).click();
   await expect(page.locator('.vl-pac')).toHaveCount(0);
+  // clicar no nome do chá abre a mesma janela: nota, chegada, aberto ou fechado, vencimento
+  await page.waitForFunction(() => !(history.state && history.state.camada));
+  await page.locator('.vl-nome', { hasText: abertos[0].desc }).first().click();
+  await expect(j.locator('h3')).toHaveText(`Pacotes de ${abertos[0].desc}`);
+  await expect(j.locator('.vl-pac-cab').first()).toContainText(/NF .* chegou em \d{2}\/\d{2}\/\d{4}|Saldo sem nota/);
+  await expect(j.locator('.vl-pac-est').first()).toHaveText(/Aberto|Fechado/);
+  await expect(j.locator('.vl-pac-vence').first()).toContainText(/Vence em \d{2}\/\d{2}\/\d{4}/);
+  await j.getByRole('button', { name: 'Fechar' }).click();
+  await expect(page.locator('.vl-pac')).toHaveCount(0);
   // a explicação está na tela
   await page.locator('.vl-ajuda summary').click();
   await expect(page.locator('.vl-ajuda')).toContainText('Depois de aberto');

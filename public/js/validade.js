@@ -228,7 +228,12 @@
       }
       if (!partes.length) partes.push(h('small', { class: 'muted' }, l.entrada ? 'Sem pacote para abrir.' : 'Saldo sem nota: o painel não sabe de qual pacote veio. Acerte pelo inventário por lote.'));
       return h('div', { class: 'vl-pac-lote' },
-        h('div', { class: 'vl-pac-cab' }, h('b', null, l.entrada ? `NF ${l.nf} · chegou em ${fmt.date(l.entrada)}` : 'Saldo sem nota'), h('span', { class: 'muted' }, `${l.lote && l.lote !== '0' ? `lote ${l.lote} · ` : ''}saldo ${kgTxt(l.saldo)}`)),
+        h('div', { class: 'vl-pac-cab' },
+          h('b', null, l.entrada ? `NF ${l.nf} · chegou em ${fmt.date(l.entrada)}` : 'Saldo sem nota',
+            l.pacoteN > 0 ? h('span', { class: 'badge warn vl-pac-est', title: 'Tem chá deste lote fora do pacote, na lata.' }, l.fechado > 0.0005 ? 'Aberto + fechado' : 'Aberto')
+              : l.fechado > 0.0005 ? h('span', { class: 'badge cinza vl-pac-est', title: 'Todos os pacotes deste lote estão fechados.' }, 'Fechado') : null),
+          h('span', { class: 'muted' }, `${l.lote && l.lote !== '0' ? `lote ${l.lote} · ` : 'sem nº de lote · '}saldo ${kgTxt(l.saldo)}`)),
+        l.venceEm ? h('div', { class: 'vl-pac-vence' }, 'Vence em ', h('b', null, fmt.date(l.venceEm)), ' ', badge(l.faixa), h('small', { class: 'muted' }, l.motivo === 'aberto' ? ' pela data de depois de aberto' : ' pela validade do pacote')) : null,
         ...partes);
     }
     function carregar() {
@@ -378,7 +383,10 @@
         { key: 'dias', label: 'Vence', align: 'l', title: `Pacote fechado: a validade do pacote. Depois que vai para a lata: o "consumir até" (${d.mesesAberto || 6} meses da abertura, se ninguém trocar), que passa a valer no lugar da data da chegada. Lote com lata e pacote fechado: a que chegar primeiro.`,
           render: (l) => h('div', null, badge(l.faixa), h('small', { class: 'vl-dias' }, diasTxt(l.dias)),
             l.motivo === 'aberto' ? h('small', { class: 'vl-sub vl-motivo', title: `O chá foi para a lata em ${fmt.date(l.abertoEm)}: depois de aberto vale o "consumir até" (${fmt.date(l.validadeAberto)}), no lugar da validade da chegada (${fmt.date(l.validadePacote)}).` }, '🫙 depois de aberto') : null) },
-        { key: 'desc', label: 'Chá', align: 'l', render: (l) => h('div', null, h('b', null, l.desc),
+        { key: 'desc', label: 'Chá', align: 'l', title: 'Clique no nome do chá para ver os lotes dele: nota de entrada, chegada, se está aberto ou fechado, abertura e vencimento, e para informar que abriu um pacote.',
+          render: (l) => h('div', null, l.entrada || l.pacoteN > 0
+            ? h('button', { type: 'button', class: 'vl-nome', title: 'Ver os lotes deste chá: nota, chegada, aberto ou fechado, abertura e vencimento.', onclick: () => janelaPacotes(loja, l.cod, l.desc, repintar) }, l.desc)
+            : h('b', null, l.desc),
           h('small', { class: 'muted vl-sub' }, [l.familia, l.entrada ? `entrada ${fmt.date(l.entrada)} · NF ${l.nf}` : 'saldo sem nota'].filter(Boolean).join(' · ')),
           pacotes(l)) },
         { key: 'saldo', label: 'Saldo', render: (l) => h('div', { class: 'vl-saldo' },
