@@ -466,12 +466,22 @@
       kpis.push(TS.kpi('Referência pelo CMV', R.pct != null ? fmt.brl0(prevVendas * R.pct) : '—', `${fmt.pct(R.pct)} de ${fmt.brl0(prevVendas)} previstos até o fim`,
         `Vendas previstas: ritmo dos últimos ${R.N} dias × ${fmt.int(ate)} dias até começar + ${R.ev.nome} do ano passado × ${fmt.n2(R.cresc)}. Se o pedido sugerido passar muito disso, há estoque sobrando ou produtos de giro alto; confira as quantidades.`));
     }
+    // ordem da tela (decisão do dono): ajustes → Proporção do pedido → quadros → Pedido obrigatório → ⭐ Sugestões → Produtos → Revisão com a IA
+    const marcaProp = h('span', { hidden: true }); corpo.append(marcaProp); // a Proporção é montada mais abaixo e entra aqui
     corpo.append(h('div', { class: 'grid g-kpi mt' }, kpis));
     if (TS.comprasVendas) corpo.append((cvQuadro = TS.comprasVendas.quadroPedido(M, e, total(), { janela: R.ent + R.N, eventos: p.cfg.eventos || [], evento: modo === 'evento' ? ev : null })));
     if (R.obTotal) corpo.append(h('div', { class: 'card mt ped-compo-card' }, h('div', { class: 'card-title' }, 'Composição do pedido'), R.novoCompo()));
-    if (SUG.size) corpo.append(cartaoSugestoes());
+    // janela da classe oficial (3, 6 ou 12 meses): o mesmo controle na tabela de Produtos e nas ⭐ Sugestões da equipe
+    const ctlClasseMeses = () => (TS.eu && TS.eu.pode && TS.eu.pode.configurar && modo === 'repor'
+        ? h('span', { class: 'ped-cl-meses', title: 'Classe oficial: a mediana do que cada produto vendeu por mês nestes meses fechados × a margem. Vale também na Rentabilidade' },
+          h('span', { class: 'f-label' }, 'Classe pelos últimos'),
+          TS.seg([['3', '3'], ['6', '6'], ['12 meses', '12']], String(R.classeMeses), async (v) => {
+            try { await TS.salvarClasse(loja, { meses: +v }); pintar(corpo, loja, M, e, p); } catch (err) { alert(err.message); }
+          }))
+        : h('span', { class: 'muted ped-fx-n' }, `classe pelos últimos ${R.classeMeses} meses`));
     corpo.append(h('div', { class: 'mt' }, cartaoObrigatorio(corpo, loja, M, e, p, R)));
-    if (TS.iaPedido && TS.eu && ['admin', 'franqueado'].includes(TS.eu.perfil)) corpo.append(cartaoIA(corpo, loja, M, e, p, R, editados, chave));
+    if (SUG.size) corpo.append(cartaoSugestoes());
+    const blocoIA = TS.iaPedido && TS.eu && ['admin', 'franqueado'].includes(TS.eu.perfil) ? cartaoIA(corpo, loja, M, e, p, R, editados, chave) : null; // entra depois dos Produtos
     if (modo === 'evento' && R.evInfo.atual[0] - R.hoje > R.ent + R.N) corpo.append(h('div', { class: 'notice mt' }, `Faltam ${fmt.int(R.evInfo.atual[0] - R.hoje)} dias para o ${R.ev.nome}: isto é uma prévia. O consumo normal até lá foi limitado a ${R.ent + R.N} dias (entrega + intervalo de pedidos), porque as reposições normais cobrem o resto. Refaça perto da data, com o estoque de então.`));
     if (modo === 'evento' && R.evInfo.atual[0] - R.hoje < R.ent) corpo.append(h('div', { class: 'notice warn mt' }, `A entrega leva ${R.ent} dias e o ${R.ev.nome} começa antes disso: o pedido pode chegar atrasado.`));
 
@@ -528,7 +538,7 @@
           h('button', { type: 'button', class: 'chip', onclick: () => aplicarP({ cha: 100, env: 0, acess: 0 }) }, '100% chás'),
           h('button', { type: 'button', class: 'chip', onclick: () => aplicarP({ cha: 0, env: 0, acess: 100 }) }, '100% acessórios')) : null,
         h('small', { class: 'muted' }, R.propManual ? 'Grupo com 0% fica fora do pedido sugerido (dá para pôr à mão). "Salvar como padrão da loja" guarda esta proporção.' : 'Automático: a parte de cada grupo nas vendas do período.'));
-      corpo.append(h('div', { class: 'mt' }, TS.card('Proporção do pedido', `Parte de cada grupo ${R.propManual ? 'definida por você' : `nas vendas dos últimos ${R.N} dias`} (cinza) e no pedido (verde). Embalagens e insumos (saco kraft, etiquetas) entram antes, fora da proporção.`, ctlP, mix, comoFeito())));
+      marcaProp.replaceWith(h('div', { class: 'mt ped-sec-prop' }, TS.card('Proporção do pedido', `Parte de cada grupo ${R.propManual ? 'definida por você' : `nas vendas dos últimos ${R.N} dias`} (cinza) e no pedido (verde). Embalagens e insumos (saco kraft, etiquetas) entram antes, fora da proporção.`, ctlP, mix, comoFeito())));
     }
     pintarTotal();
 
@@ -569,13 +579,7 @@
       fx.g || fx.s || fx.c || fx.m ? h('button', { type: 'button', class: 'btn ped-fx-limpa', onclick: () => { state.pedFx = { g: '', s: '', c: '', m: '' }; pintar(corpo, loja, M, e, p); } }, '✕ Tirar filtros') : null,
       h('span', { class: 'muted ped-fx-n' }, `${fmt.int(linhas.length)} ${linhas.length === 1 ? 'produto' : 'produtos'}`),
       // janela da classe oficial (a mesma do Estoque e margem): muda a classe e a prioridade "Estrela abaixo de 700 g"
-      TS.eu && TS.eu.pode && TS.eu.pode.configurar && modo === 'repor'
-        ? h('span', { class: 'ped-cl-meses', title: 'Classe oficial: a mediana do que cada produto vendeu por mês nestes meses fechados × a margem. Vale também na Rentabilidade' },
-          h('span', { class: 'f-label' }, 'Classe pelos últimos'),
-          TS.seg([['3', '3'], ['6', '6'], ['12 meses', '12']], String(R.classeMeses), async (v) => {
-            try { await TS.salvarClasse(loja, { meses: +v }); pintar(corpo, loja, M, e, p); } catch (err) { alert(err.message); }
-          }))
-        : h('span', { class: 'muted ped-fx-n' }, `classe pelos últimos ${R.classeMeses} meses`));
+      ctlClasseMeses());
     const totalAgora = R.linhas.reduce((s, r) => s + r.pedir * (r.preco || 0), 0);
     const sobra = R.orcamento != null ? R.orcamento - totalAgora : null;
     const MOBILE = matchMedia('(max-width: 760px)').matches;
@@ -724,6 +728,9 @@
         { key: 'qtd', label: 'Estoque agora', title: 'Quanto tem na loja agora (estoque do AppNext).', render: (x) => (x.r ? qtdTxt(x.r.qtd, x.r.it) : h('span', { class: 'muted' }, '—')), sortVal: (x) => (x.r ? x.r.qtd : null) },
         { key: 'precisa', label: 'Precisa', title: 'O que a conta do pedido sugere para este produto (venda prevista − estoque). A estrela não muda essa conta: "—" quer dizer que, pela conta, não precisa agora.',
           render: (x) => (x.r && x.r.sugerido > 0 ? h('span', { class: 'est-dica', title: x.r.conta }, qtdTxt(x.r.sugerido, x.r.it)) : h('span', { class: 'muted' }, '—')), sortVal: (x) => (x.r ? x.r.sugerido : null) },
+        { key: 'classe', label: 'Classe', align: 'l', title: `Classe oficial do produto (a mesma da tabela de Produtos e da Rentabilidade): o que sai por mês (mediana dos últimos ${R.classeMeses} meses fechados) × margem bruta. Estrela = vende muito e dá margem; Volume = vende muito, margem menor; Joia = vende pouco, margem alta; Peso morto = vende pouco e dá pouca margem. Ajuda a decidir: sugestão de Estrela ou Volume costuma valer o pedido. Mude os meses no seletor "Classe pelos últimos" acima da tabela.`,
+          render: (x) => (x.r && x.r.classe ? h('span', { class: 'ped-cl ped-cl-' + x.r.classe, title: x.r.classeFixa ? 'Travada à mão na Rentabilidade' : null }, (x.r.classeFixa ? '🔒 ' : '') + CLASSES[x.r.classe]) : h('span', { class: 'muted' }, '—')),
+          sortVal: (x) => ({ estrela: 4, volume: 3, joia: 2, peso: 1 }[x.r && x.r.classe] || 0) },
         { key: 'site', label: 'No site', align: 'l', title: 'Situação no Sistema de Pedidos da franquia. Sem estoque no site ou fora do catálogo: não dá para pedir agora; a equipe é avisada sozinha e o produto continua marcado para o próximo pedido.',
           render: (x) => { const [t, c] = SITE(x); return h('span', { class: 'badge ' + c }, t); }, sortVal: (x) => SITE(x)[0] },
         { key: 'acao', label: 'Pedido', align: 'l', wrap: true, title: '"+ Adicionar ao pedido" põe o produto na tabela do pedido (dá para mudar a quantidade lá). "Não pedir" guarda o motivo para a equipe. 🛒 mostra quanto já está no pedido.',
@@ -756,6 +763,7 @@
           h('details', { class: 'est-como' }, h('summary', null, 'Como funciona ▸'),
             h('p', null, 'Ao montar o carrinho (ou em "Registrar o pedido nas sugestões"), a resposta vai para a equipe sozinha. O que foi no pedido fica "aguardando entrega" até a nota da TSB Franquias chegar: com o produto, a estrela sai (não importa quanto demore); se a primeira nota chegar sem ele e nenhuma outra o trouxer em 5 dias, volta para cá. O que não entrou, ou está sem estoque no site, continua marcado para o próximo pedido.'))),
         TS.seg(abas.map((k) => [`${ABAS[k]} (${cont(k)})`, k, DICA_ABA[k]]), ver.aberto ? ver.aba : null, (v) => { ver.aba = v; ver.aberto = true; repintar(); }),
+        ver.aberto ? h('div', { class: 'sug-ped-cl' }, ctlClasseMeses()) : null,
         ver.aberto ? tabela() : null,
         h('div', { class: 'cfg-acoes' }, registrar, msg));
     }
@@ -884,6 +892,7 @@
       avisoObr, MOBILE ? h('details', { class: 'ped-fx-mob', open: (fx.g || fx.s || fx.c || fx.m) ? true : null }, h('summary', null, `Filtros${[fx.g, fx.s, fx.c, fx.m].filter(Boolean).length ? ` (${[fx.g, fx.s, fx.c, fx.m].filter(Boolean).length})` : ''} · ${fmt.int(linhas.length)} produtos`), filtrosExtra) : filtrosExtra, MOBILE ? listaMobile() : tab)));
     if (editados.size) corpo.append(h('p', { class: 'muted' }, `${editados.size} quantidade(s) alterada(s) à mão. `, h('a', { href: '#', onclick: (x) => { x.preventDefault(); editados.clear(); pintar(corpo, loja, M, e, p); } }, 'Voltar à sugestão')));
 
+    if (blocoIA) corpo.append(blocoIA);
     corpo.append(h('div', { class: 'mt ped-robo' }, cartaoRobo(corpo, loja, M, e, p, R)));
     if (barra) { pintarBarra(); corpo.append(barra); corpo.classList.add('com-barra'); }
   }
