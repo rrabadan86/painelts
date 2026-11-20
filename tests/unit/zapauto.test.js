@@ -102,6 +102,12 @@ test('quem entra na lista: os critérios da tela (com celular, sem "não quer me
   assert.deepStrictEqual(t.listaDe({ ausMin: 30 }), [{ cpf: ANA, nome: 'ANA SOUZA' }]);
   assert.deepStrictEqual(t.listaDe({ ausMin: 10, tipos: ['Chá verde'] }).map((x) => x.cpf), [ANA], 'tipo de chá que já comprou');
   assert.deepStrictEqual(t.listaDe({ produtos: ['~caneca'], compraDias: 30 }).map((x) => x.cpf), [BIA], 'comprou o produto nos últimos 30 dias');
+  // mínimo de compras do produto: conta cupons (2 unidades no mesmo cupom = 1 compra); vários produtos somam; respeita o período
+  assert.deepStrictEqual(t.listaDe({ produtos: ['~earl', '~sencha'], compraVezes: 2 }).map((x) => x.cpf), [ANA], 'duas compras somando os dois produtos');
+  assert.deepStrictEqual(t.listaDe({ produtos: ['~earl', '~sencha'], compraVezes: 3 }), [], 'não chegou a três');
+  assert.deepStrictEqual(t.listaDe({ produtos: ['~earl'], compraVezes: 2 }), [], 'duas unidades no mesmo cupom são uma compra');
+  assert.deepStrictEqual(t.listaDe({ produtos: ['~earl', '~sencha'], compraVezes: 2, compraDias: 60 }), [], 'só uma das duas compras está nos últimos 60 dias');
+  assert.deepStrictEqual(t.listaDe({ produtos: ['~caneca'], compraVezes: 1, compraDias: 30 }).map((x) => x.cpf), [BIA], 'mínimo 1 = como sem o mínimo');
   assert.deepStrictEqual(t.listaDe({ aniv: 'atual' }).map((x) => x.cpf), [ANA], 'aniversário no mês atual (março, pelo relógio injetado)');
   assert.deepStrictEqual(t.listaDe({ ptsMin: 1 }), [], 'ninguém tem pontos');
   // sem o contato recente do Edu ele entra: a lista segue os contatos da loja
