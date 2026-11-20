@@ -54,6 +54,13 @@ Lista que abre um detalhe: a tabela some e o detalhe aparece no lugar, com "‹ 
 - Número sempre formatado (`TS.fmt`): `R$ 1.234,56`, `12,5%`, `0,500 kg`, `dd/mm`.
 - Nunca "null", "undefined", "NaN": `replaceChildren(...[...].filter(Boolean))` e `fmt` devolve "—".
 
+## Filtros: faixa no topo (não existe mais coluna lateral)
+- Computador (acima de 860 px): os filtros ficam numa **faixa horizontal** logo abaixo do menu (`aside.sidebar`, agora deitado) e o conteúdo usa a largura inteira. Na faixa: "Período" (atalhos + as duas datas), as etiquetas dos filtros que estão valendo ("Vendedor: Ana ✕"), o botão **"Mais filtros"** com o contador dos ativos e o "Limpar". O resto (ano e mês, vendedor, grupo, categoria, produto contém e os campos próprios da tela) abre no painel do botão (`#maisFiltros`, `role="dialog"`, fecha com Esc ou clique fora). A faixa não é fixa ao rolar.
+- Tela de um filtro só (Estoque, Pedido, Site): o campo vai sozinho na faixa, sem "Mais filtros". Tela sem filtro: sem faixa (`pg-semfiltros` ou, quando `TS.renderFiltros` não devolve campo nenhum, `fx-vazia`). A frase de contexto da tela (`f-uso`) vira um ⓘ ao lado do rótulo.
+- Celular (até 860 px): a gaveta de sempre, aberta pelo botão de filtros (`#btnFiltros`), com todos os campos em coluna.
+- Quem decide os campos de cada tela continua sendo `TS.renderFiltros` (pages.js) / `TS.filtrosClientes`; `montarFaixa()` (main.js) só muda de lugar. Filtro novo dentro do painel: acrescente a linha dele em `filtrosAtivos()` (main.js) com o mesmo rótulo do campo, senão ele não ganha etiqueta nem entra no contador. Texto de tela diz "nos filtros", nunca "na lateral".
+- Com a largura inteira, parágrafo não pode virar linha comprida: `page-sub` e `card-sub` têm largura máxima; limite o texto, nunca a tabela. Teste: `tests/e2e/filtros-topo.spec.js`.
+
 ## Telas de ajustes (Configurações → loja e parecidas)
 - Menu das seções na lateral (computador) / em cima (celular); conteúdo numa coluna (até ~900 px), **um cartão por assunto** (`section.cfg-bloco`): título, uma frase do que é, campos curtos lado a lado e o Salvar no rodapé do cartão.
 - Ajuda longa de campo vira ⓘ ao lado do nome; explicação extensa fica em "Como funciona ▸" recolhido (`enxugar()` em `config.js` faz isso sozinho para o `campo(rótulo, controle, dica)` e os parágrafos além do primeiro).

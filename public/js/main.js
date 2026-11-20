@@ -96,7 +96,7 @@
     document.body.classList.toggle('pg-config', state.page === 'config');
     document.getElementById('btnUsuario')?.classList.toggle('on', state.page === 'config');
     document.body.classList.toggle('pg-minha', state.page === 'minha');
-    document.body.classList.toggle('pg-semfiltros', state.page === 'inicio' || state.page === 'dre'); // não usam a lateral de filtros
+    document.body.classList.toggle('pg-semfiltros', state.page === 'inicio' || state.page === 'dre'); // não usam os filtros
     if (state.page === 'config') {
       TS.destroyCharts();
       const root = h('div');
@@ -108,6 +108,7 @@
     TS.destroyCharts();
     if (TS.db.n && TELAS_CLI.has(state.page)) TS.garantirClientes();
     TS.renderFiltros();
+    montarFaixa();
     const root = h('div');
     if (!TS.db.n) {
       root.append(h('div', { class: 'card vazio-loja' }, h('h2', null, 'Aguardando os primeiros dados desta loja'),
@@ -129,6 +130,83 @@
     content.replaceChildren(root, TS.credito());
     salvarEstado();
   }
+
+  // ---------- filtros em faixa no topo (computador); no celular continuam na gaveta ----------
+  // TS.renderFiltros monta os campos que a tela usa; aqui eles só mudam de lugar: o período fica na faixa e o resto vai
+  // para o painel "Mais filtros". O estado (TS.state) e o que cada tela usa não mudam.
+  const mqGaveta = matchMedia('(max-width: 860px)');
+  let maisAberto = false, maisPagina = null;
+  const anoMesTxt = (p) => (p.ano && p.mes ? `${TS.MESES_LONGOS[p.mes - 1]} de ${p.ano}` : p.ano ? `Ano de ${p.ano}` : `${TS.MESES_LONGOS[p.mes - 1]} (todos os anos)`);
+  const faixaTxt = (a, b) => (a !== '' && b !== '' ? (String(a) === String(b) ? String(a) : `${a} a ${b}`) : a !== '' ? `${a} ou mais` : b !== '' ? `até ${b}` : '');
+  const nomesSet = (set, campo) => { const n = [...set].map((i) => (campo ? TS.db.D[campo][i] : i)).filter((x) => x != null); return n.length > 2 ? `${n.length} selecionados` : n.join(', '); };
+  /** filtros do painel "Mais filtros" que estão valendo agora: rótulo do campo, nome na etiqueta, texto e como tirar */
+  function filtrosAtivos() {
+    const f = state.f, s = state.cli, c = state.com, p = state.promo, L = [];
+    const add = (rotulo, nome, texto, limpar) => { if (texto) L.push({ rotulo, nome, texto: String(texto), limpar }); };
+    if (state.page === 'clientes' || state.page === 'clilista') {
+      add('Ano e mês', 'Ano e mês', s.per.preset === 'anomes' ? anoMesTxt(s.per) : '', () => TS.aplicarAnoMes(null, null, s.per, 'tudo'));
+      for (const [rot, k] of [['Nome', 'nome'], ['CPF', 'cpf'], ['Cupom', 'cupom'], ['Produto comprado', 'produto']]) add(rot, rot, s[k], () => { s[k] = ''; });
+      add('Visitas (cupons)', 'Visitas', faixaTxt(s.visMin, s.visMax), () => { s.visMin = ''; s.visMax = ''; });
+      add('Dias sem comprar', 'Dias sem comprar', faixaTxt(s.ausMin, s.ausMax), () => { s.ausMin = ''; s.ausMax = ''; });
+      add('Aniversário', 'Aniversário', s.aniv ? TS.MESES_LONGOS[+s.aniv - 1] : '', () => { s.aniv = ''; });
+      add('Loja', 'Loja', nomesSet(s.lojas, 'loja'), () => s.lojas.clear());
+      add('Grupo comprado', 'Grupo comprado', nomesSet(s.grupos, 'grupoC'), () => s.grupos.clear());
+      add('Cidade (cadastro)', 'Cidade', nomesSet(s.cidade, null), () => s.cidade.clear());
+      return L;
+    }
+    add('Ano e mês', 'Ano e mês', f.preset === 'anomes' ? anoMesTxt(f) : '', () => TS.aplicarAnoMes(null, null, f));
+    add('Loja', 'Loja', nomesSet(f.lojas, 'loja'), () => f.lojas.clear());
+    add('Vendedor', 'Vendedor', nomesSet(f.vendedores, 'vendedor'), () => f.vendedores.clear());
+    add('Grupo', 'Grupo', nomesSet(f.grupos, 'grupoC'), () => f.grupos.clear());
+    add('Categoria', 'Categoria', nomesSet(f.cats, 'cat'), () => f.cats.clear());
+    add('Produto contém', 'Produto', f.produto, () => { f.produto = ''; });
+    add('Tamanho do pacote', 'Pacote', [...f.tamanhos].sort((a, b) => a - b).map((t) => (t >= 1000 ? '1 kg' : `${t}g`)).join(', '), () => f.tamanhos.clear());
+    add('Meta da loja (R$)', 'Meta simulada', c.meta != null ? fmt.brl(c.meta) : '', () => { c.meta = null; c.metaYm = null; });
+    add('Bônus sobre outros vendedores', 'Bônus', c.vendBonus, () => { c.vendBonus = ''; });
+    add('Buscar cupom', 'Cupom', c.cupom, () => { c.cupom = ''; });
+    add('Comparar com os dias anteriores', 'Comparar com', p.dias !== 30 ? `${p.dias} dias anteriores` : '', () => { p.dias = 30; });
+    return L;
+  }
+  function abrirMais(abrir, foco) {
+    maisAberto = !!abrir;
+    const bt = document.getElementById('btnMaisFiltros'), pop = document.getElementById('maisFiltros');
+    if (!bt || !pop) return;
+    if (!maisAberto) pop.querySelectorAll('.ms.open .ms-btn').forEach((b) => b.click()); // fecha junto a lista (Vendedor, Grupo…) que ficou aberta
+    pop.hidden = !maisAberto; bt.setAttribute('aria-expanded', String(maisAberto));
+    if (!foco) return;
+    if (maisAberto) { const alvo = pop.querySelector('select, input, button'); if (alvo) alvo.focus(); } else bt.focus();
+  }
+  function montarFaixa() {
+    const box = document.getElementById('filtros');
+    if (state.page !== maisPagina) { maisAberto = false; maisPagina = state.page; }
+    let itens = [...box.children];
+    if (itens.length === 1 && itens[0].tagName === 'DIV' && !itens[0].className) itens = [...itens[0].children]; // Clientes entrega tudo numa caixa só
+    const grupos = itens.filter((e) => e.classList.contains('f-group'));
+    const periodo = grupos.find((g) => g.querySelector('input[type=date]') && g.querySelector('.chips'));
+    const simples = !periodo && grupos.length <= 2; // tela de um filtro só (Estoque, Pedido, Site): o campo vai sozinho na faixa
+    document.body.classList.toggle('fx-vazia', !grupos.length); // tela sem filtro: sem faixa no computador
+    document.body.classList.toggle('fx-simples', simples);
+    if (mqGaveta.matches || !grupos.length) return; // celular: a gaveta de sempre
+    const uso = itens.find((e) => e.classList.contains('f-uso'));
+    const resto = simples ? [] : itens.filter((e) => e !== uso && e !== periodo);
+    const ativos = filtrosAtivos().filter((a) => resto.some((g) => g.classList.contains('f-group') && g.querySelector('.f-label')?.textContent === a.rotulo));
+    // a frase de contexto ("Estoque de agora…") e a dica do período viram um ⓘ ao lado do rótulo
+    const rot = (periodo || grupos[0]).querySelector('.f-label');
+    if (uso && rot) rot.append(TS.dica(uso.textContent));
+    if (periodo && rot) for (const d of [...periodo.children].filter((e) => e.tagName === 'SMALL' || e.classList.contains('f-hint'))) { rot.append(TS.dica(d.textContent)); d.remove(); }
+    if (simples) { box.replaceChildren(...grupos); return; }
+    const pop = h('div', { class: 'fx-pop' + (resto.filter((e) => e.classList.contains('f-group')).length > 6 ? ' larga' : ''), id: 'maisFiltros', role: 'dialog', 'aria-label': 'Mais filtros', hidden: !maisAberto }, resto);
+    const bt = h('button', { type: 'button', class: 'fx-btn' + (ativos.length ? ' on' : ''), id: 'btnMaisFiltros', 'aria-haspopup': 'dialog', 'aria-controls': 'maisFiltros', 'aria-expanded': String(maisAberto),
+      title: ativos.length ? `${ativos.length} filtro${ativos.length > 1 ? 's' : ''} valendo além do período` : null, onclick: () => abrirMais(!maisAberto, true) },
+    'Mais filtros', ativos.length ? h('small', { class: 'fx-n' }, String(ativos.length)) : null);
+    const tags = ativos.map((a) => h('span', { class: 'fx-tag' }, h('span', null, `${a.nome}: ${a.texto}`),
+      h('button', { type: 'button', 'aria-label': `Tirar o filtro ${a.nome}`, title: 'Tirar este filtro', onclick: () => { a.limpar(); TS.render(); document.getElementById('btnMaisFiltros')?.focus(); } }, '✕')));
+    // ordem fixa (período, botão + painel, etiquetas): o campo em que a pessoa digita continua no mesmo lugar quando a tela é redesenhada
+    box.replaceChildren(...[periodo, resto.length ? h('div', { class: 'fx-mais' }, bt, pop) : null, h('div', { class: 'fx-tags' }, tags)].filter(Boolean));
+  }
+  document.addEventListener('click', (e) => { if (maisAberto && !e.target.closest('.fx-mais')) abrirMais(false); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && maisAberto) abrirMais(false, true); });
+  mqGaveta.addEventListener('change', () => { maisAberto = false; document.body.classList.remove('filters-open'); if (TS.db) TS.render(); });
 
   // ---------- estado na URL/localStorage (filtros lembrados) ----------
   const keyFiltros = () => 'teashop.filtros.v2.' + (TS.demo ? 'demo.' : '') + (state.loja || 'padrao');

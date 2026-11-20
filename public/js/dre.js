@@ -4,7 +4,7 @@
 (function () {
   const { h, fmt, state } = TS;
 
-  /** números de cada mês da loja (todos os dias do mês, sem os filtros da lateral) */
+  /** números de cada mês da loja (todos os dias do mês, sem os filtros do topo) */
   /** opts: { soYm, ateDia, frac } — um mês só, até o dia ateDia (comparação do mês em andamento com os mesmos dias) */
   function calcular(M, opts = {}) {
     const db = TS.db, I = TS.rules.ids, D = M.ded;
@@ -148,7 +148,7 @@
     // cartões do topo
     const kp = (rot, v, sub, cls) => TS.kpi(rot, v == null ? '—' : fmt.brl0(v), sub, null);
     const varA = (k) => (aDias && aDias[k] ? h('span', null, TS.deltaSpan(m[k] / aDias[k] - 1), ` vs. ${m.parcial ? `${rotAnt} (dias 1 a ${diaAte})` : rotAnt}`) : null);
-    corpo.append(h('div', { class: 'dre-topo' }, h('label', null, 'Mês ', opMes), h('span', { class: 'muted' }, 'Todos os dias do mês, sem os filtros da lateral. Custos fixos e % com os valores cadastrados hoje.')),
+    corpo.append(h('div', { class: 'dre-topo' }, h('label', null, 'Mês ', opMes), h('span', { class: 'muted' }, 'Todos os dias do mês, sem os filtros do topo. Custos fixos e % com os valores cadastrados hoje.')),
       ...avisos.map((t) => h('div', { class: 'notice' }, t)),
       h('div', { class: 'grid g-kpi' },
         kp('Faturamento', m.fat, varA('fat')),
