@@ -92,6 +92,7 @@
       creditos: [[], 'Créditos com a franquia: mostra tudo, sem período.'],
       orcamento: [[], 'O orçamento não usa estes filtros.'],
       checklist: [[], 'O checklist não usa estes filtros.'],
+      conferencia: [[], 'A conferência mostra sempre os últimos 60 dias e não usa estes filtros.'],
       dre: [[], 'O Resultado mostra mês a mês e não usa estes filtros.'],
       inicio: [[], 'O Início mostra o que pede atenção hoje e não usa estes filtros.'],
       espera: [[], 'A lista de espera não usa estes filtros.'],

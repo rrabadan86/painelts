@@ -32,7 +32,10 @@ const r2 = (x) => Math.round((x || 0) * 100) / 100;
 
 /** resumo do caixa de um dia (AAAA-MM-DD); null se não há fechamento no dia */
 function doDia(id, dia) {
-  const j = ler(id);
+  return resumir(ler(id), dia);
+}
+/** a mesma conta, a partir do arquivo já lido ({ atualizado, fechamentos }): usada também pela conferência com o painel */
+function resumir(j, dia) {
   const fs_ = (j.fechamentos || []).filter((f) => f.dia === dia && f.fechamento).sort((a, b) => (a.abertura || '').localeCompare(b.abertura || ''));
   if (!fs_.length) return { dia, vazio: true, atualizado: j.atualizado || null };
   const formas = FORMAS.map(([k, rot]) => ({ k, rot, valor: 0, informado: 0, dif: 0 }));
@@ -83,4 +86,4 @@ function doDia(id, dia) {
   };
 }
 
-module.exports = { ler, doDia };
+module.exports = { ler, doDia, resumir };

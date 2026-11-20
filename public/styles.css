@@ -2961,3 +2961,16 @@ body.pg-semfiltros .sidebar, body.pg-semfiltros #btnFiltros { display: none; }
 /* ===== Contas oficiais (auditoria X): comissionamento e resultado ===== */
 .card-title .com-parcial { margin-left: 8px; font-weight: 600; vertical-align: middle; white-space: normal; }
 .com-fora { margin: 8px 2px 0; font-size: 13px; }
+
+/* ===== Vendas → Conferência (caixa × painel, cancelados, saúde dos dados) ===== */
+.conf-abas { margin-bottom: 4px; flex-wrap: wrap; }
+.conf-sub { display: block; font-weight: 400; line-height: 1.35; white-space: normal; }
+.conf-t td.wrap { max-width: 420px; }
+.conf-t .badge + .conf-sub { margin-top: 3px; }
+.conf-rec { margin-left: 6px; }
+.conf-nota { margin: 10px 2px 0; font-size: 13px; }
+.conf-campo { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.conf-campo .f-input { height: 34px; width: auto; max-width: 320px; }
+.conf-campo .conf-tol { width: 120px; }
+tr.conf-conta td:first-child { box-shadow: inset 3px 0 0 var(--bad); }
+@media (max-width: 760px) { .conf-t td.wrap { max-width: none; } .conf-campo, .conf-campo .f-input, .conf-campo .conf-tol { width: 100%; max-width: none; } }

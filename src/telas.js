@@ -21,6 +21,8 @@ const GRUPOS = [
     { id: 'comparativos', nome: 'Comparativos', ...ADM, gerente: E, padrao: true, vendedor: N },
     { id: 'promocao', nome: 'Promoção', ...ADM, gerente: E, padrao: true, vendedor: N },
     { id: 'cupons', nome: 'Cupons (itens de cada venda)', ...ADM, gerente: E, padrao: true, vendedor: N },
+    { id: 'conferencia', nome: 'Conferência (caixa × painel, cancelados, saúde dos dados)', ...ADM, gerente: E, padrao: false, vendedor: N,
+      dica: 'Mostra o faturamento da loja, o fechamento do caixa por operador e os cupons cancelados por vendedor. A parte de custo só aparece para quem tem uma tela de custo.' },
     { id: 'orcamento', nome: 'Orçamento', ...ADM, gerente: N, vendedor: N, fixa: 'Orçamento mostra custo e margem: só admin e franqueado.' },
   ]],
   ['Clientes', [
