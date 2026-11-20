@@ -3097,3 +3097,11 @@ tr.conf-conta td:first-child { box-shadow: inset 3px 0 0 var(--bad); }
   .notif { border-radius: 14px 14px 0 0; max-height: 94vh; }
   .notif-ap { flex-wrap: wrap; }
 }
+
+/* ---------- validade: pacote aberto (na lata) e pacotes fechados ---------- */
+.vl-pacotes { display: grid; gap: 2px; margin-top: 3px; }
+.vl-pacotes small { display: block; overflow-wrap: anywhere; }
+.vl-lata { color: var(--dark); }
+.vl-fechado { color: var(--muted); }
+.vl-motivo { display: block; color: var(--dark); }
+.vl-abriu-data { display: inline-block; width: auto; height: 30px; padding: 2px 6px; margin: 0 4px; }

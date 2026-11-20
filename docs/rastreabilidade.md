@@ -269,6 +269,10 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 | EST-57 | Robô e login do Sistema de Pedidos: só admin; senha nunca volta | `server.js`; `src/pedido.js` | — | ❌ |
 | EST-58 | Revisão do pedido pela IA: admin e franqueado com Pedido | `server.js` | `ia.spec`; `ia.test` | ✅ |
 | EST-59 | Aviso de validade no pedido | `pedido.js` | — | ❌ |
+| EST-ABERTO-01 | Chá a granel tem duas validades e vale a que chegar primeiro: a do pacote ou 6 meses depois que o pacote de 1 kg vai para a lata; o pacote aberto é deduzido pelo saldo (o que falta para um número inteiro de quilos) e os fechados ganham a ordem de abertura (o mais antigo primeiro) | `src/lotes.js` (`pacotesDoLote`, `comAbertura`); `validade.js` (`pacotes`) | `abertura.test` (4); `abertura.spec` | ✅ |
+| EST-ABERTO-02 | Data de abertura estimada pelo ritmo de compra, nunca antes da chegada; guardada na primeira observação (depois de cada atualização dos dados, não em leitura de tela); a equipe pode corrigir (entre a chegada e hoje), auditado | `lotes.js` (`estimarAbertura`, `observarAberturas`, `editarAbertura`); `PUT /api/validade/abertura` | `abertura.test` "primeira observação"; `abertura.spec` | 🟡 — a estimativa em si não tem como ser conferida sem a loja; a rota de correção não tem teste de permissão próprio (usa `lojaVal`, o mesmo do lote) |
+| EST-ABERTO-03 | Saída e entrada pelo AppNext: saída sai do lote mais antigo e abre o próximo pacote; entrada sem nota vira saldo sem data; valor em risco e perdas contam só o que está na lata quando o prazo é o da abertura | `lotes.js` (`distribuir`, `resumo`, `kgVence`); `perdas.js` | `abertura.test` "entrada e saída", "chá parado" | ✅ |
+| EST-ABERTO-04 | Aviso no aparelho quando um chá aberto entra nos últimos 30 dias do prazo, uma vez por pacote, para quem usa a Validade | `server.js` (`avaliarEspera`); `push.js` (tipo `validade`) | `abertura.test` "não repete"; `push.test` | 🟡 — o disparo de ponta a ponta não é testado |
 
 ## 10. Preços, custos e notas de entrada (PRC)
 

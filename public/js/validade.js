@@ -283,12 +283,47 @@
         if ('validade' in corpoReq) repintar();
       }).catch((e) => { el.classList.remove('vl-salvando'); toast(e.message, true); });
     }
+    /** situação dos pacotes do lote: o que está na lata (com a data de abertura) e os fechados, com a ordem para abrir */
+    function pacotes(l) {
+      const P = d.pacoteKg || 1, out = [];
+      if (l.pacoteN > 0 && l.abertoEm) {
+        const caixa = h('small', { class: 'vl-sub vl-lata' });
+        const mostrar = () => caixa.replaceChildren(
+          h('span', { title: `Pelo estoque, ${kgTxt(l.aberto)} deste lote já estão fora do pacote fechado (na lata). Depois de aberto, consumir em até ${d.mesesAberto || 6} meses: até ${fmt.date(l.validadeAberto)}.` },
+            `🫙 na lata ${kgTxt(l.aberto)} · aberto em ${fmt.date(l.abertoEm)}${l.abertoEstimado ? ' (estimado)' : ''} · consumir até ${fmt.date(l.validadeAberto)}`),
+          h('button', { type: 'button', class: 'link-btn vl-abriu', title: l.abertoEstimado ? 'O painel estimou esta data pelo ritmo do chá (ele não vê o pacote sendo aberto). Se a loja sabe o dia certo em que o pacote foi para a lata, informe aqui.' : `Informada por ${l.abertoPor || 'alguém da equipe'}. Clique para mudar.`, onclick: editar }, 'corrigir a data'));
+        const gravar = (dia, el) => {
+          if (TS.demo) { toast(TS.DEMO_AVISO); mostrar(); return; } // apresentação: nada muda
+          el.disabled = true;
+          req('PUT', 'validade/abertura', { loja, chave: l.chave, dia }).then(() => { cache.delete(loja); toast('Data de abertura salva.'); repintar(); }).catch((e) => { el.disabled = false; toast(e.message, true); });
+        };
+        function editar() {
+          const i = h('input', { class: 'f-input vl-abriu-data', type: 'date', value: l.abertoEm, min: l.entrada || null, max: d.hoje, 'aria-label': `Dia em que ${l.desc} foi para a lata` });
+          TS.aoConfirmar(i, () => { if (i.value && i.value !== l.abertoEm) gravar(i.value, i); }); // só ao sair do campo
+          caixa.replaceChildren(h('span', null, 'Foi para a lata em '), i,
+            h('button', { type: 'button', class: 'link-btn', title: 'O pacote foi aberto hoje.', onclick: (e) => gravar(d.hoje, e.target) }, 'hoje'),
+            h('button', { type: 'button', class: 'link-btn', onclick: mostrar }, 'cancelar'));
+          i.focus();
+        }
+        mostrar();
+        out.push(caixa);
+      }
+      if (l.fechado > 0.0005) {
+        const n = Math.round(l.fechado / P);
+        out.push(h('small', { class: 'vl-sub vl-fechado', title: `Pacotes ainda fechados deste lote. A ordem é a de chegada: abra sempre o mais antigo primeiro. Os fechados seguem só a validade do pacote.` },
+          `📦 ${n > 0 ? `${fmt.int(n)} ${n === 1 ? 'pacote fechado' : 'pacotes fechados'}` : `${kgTxt(l.fechado)} fechado`} · ${l.abrirOrdem === 1 ? 'o próximo a abrir' : `abrir em ${l.abrirOrdem}º`}`));
+      }
+      return out.length ? h('div', { class: 'vl-pacotes' }, out) : null;
+    }
     function desenharTabela() {
       const rows = linhas();
       const cols = [
-        { key: 'dias', label: 'Vence', align: 'l', render: (l) => h('div', null, badge(l.faixa), h('small', { class: 'vl-dias' }, diasTxt(l.dias))) },
+        { key: 'dias', label: 'Vence', align: 'l', title: `Vale a data que chegar primeiro: a validade do pacote ou ${d.mesesAberto || 6} meses depois que o chá foi para a lata. Embaixo, qual das duas está valendo.`,
+          render: (l) => h('div', null, badge(l.faixa), h('small', { class: 'vl-dias' }, diasTxt(l.dias)),
+            l.motivo === 'aberto' ? h('small', { class: 'vl-sub vl-motivo', title: `O pacote vale até ${fmt.date(l.validadePacote)}, mas o chá foi para a lata em ${fmt.date(l.abertoEm)}: depois de aberto são ${d.mesesAberto || 6} meses.` }, '🫙 por estar aberto') : null) },
         { key: 'desc', label: 'Chá', align: 'l', render: (l) => h('div', null, h('b', null, l.desc),
-          h('small', { class: 'muted vl-sub' }, [l.familia, l.entrada ? `entrada ${fmt.date(l.entrada)} · NF ${l.nf}` : 'saldo sem nota'].filter(Boolean).join(' · '))) },
+          h('small', { class: 'muted vl-sub' }, [l.familia, l.entrada ? `entrada ${fmt.date(l.entrada)} · NF ${l.nf}` : 'saldo sem nota'].filter(Boolean).join(' · ')),
+          pacotes(l)) },
         { key: 'saldo', label: 'Saldo', render: (l) => h('div', { class: 'vl-saldo' },
           h('span', { title: l.qtdEntrada ? `chegaram ${kgTxt(l.qtdEntrada)}` : null }, kgTxt(l.saldo)),
           l.ajuste ? h('small', { class: 'vl-sub vl-aj', title: `${l.ajuste.tipo === 'inventario' ? 'Contado por lote no inventário' : 'Ajustado na tela'}${l.ajuste.por ? ' por ' + l.ajuste.por : ''} em ${new Date(l.ajuste.em).toLocaleDateString('pt-BR')}; as vendas depois disso saem do lote mais antigo` }, l.ajuste.tipo === 'inventario' ? 'contado no inventário' : 'ajustado') : null,
@@ -331,6 +366,8 @@
         h('li', null, 'Cada entrada de chá a granel é um lote. Digite o nº do lote que está no pacote na nota de entrada (Estoque → Notas fiscais) ou aqui. A validade já vem com 12 meses da entrada; se o pacote disser outra data, corrija.'),
         h('li', null, 'O saldo de cada lote sai do estoque do AppNext: o que sobrou fica nas entradas mais novas, porque o mais antigo é vendido primeiro. Por isso, venda sempre o lote mais antigo.'),
         h('li', null, 'Abriram o pacote novo antes do antigo? Em "⚖ ajustar", pese quanto tem de cada lote. O ajustar não é inventário: não muda o AppNext, só divide o estoque entre os lotes. Se o total estiver errado, use o Inventário (o chá a granel pode ser contado por lote).'),
+        h('li', null, `Depois de aberto: o chá chega em pacotes de ${d.pacoteKg || 1} kg e, quando o pacote vai para a lata, tem ${d.mesesAberto || 6} meses para ser consumido. O painel vê pelo estoque qual pacote está aberto (🫙) e estima o dia em que foi aberto; vale a data que chegar primeiro, a do pacote ou a da abertura. Os pacotes fechados (📦) mostram a ordem para abrir: sempre o mais antigo. Só é preciso mexer em "corrigir a data" se a loja souber o dia certo.`),
+        h('li', null, 'Saída ou entrada lançada no AppNext (perda, ajuste, inventário) muda o total: saída sai do lote mais antigo, como uma venda; entrada sem nota vira "saldo sem nota".'),
         h('li', null, '⚫ Vencido: tire da venda e lance a perda no AppNext. 🔴 e 🟠: degustação, oferta e campanha. 🟡: deixe na frente da prateleira.'),
         h('li', null, 'Os lotes em risco aparecem também em Vendas → Promoção, no Pedido (para não comprar mais do mesmo chá) e no resumo diário.'))));
     desenharTabela();

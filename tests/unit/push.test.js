@@ -147,7 +147,7 @@ test('aparelhos: cada pessoa só vê e remove os próprios; a tela não recebe c
   assert.deepStrictEqual(P.mudarTipos('ger', r.ok.id, ['zap', 'inventado', 'zap']).ok.tipos, ['zap']);
   const v = aparelho(3);
   assert.deepStrictEqual(P.ativar('vend', { ...v.sub, tipos: ['espera', 'zap', 'sugestao'] }, '').ok.tipos, ['espera'], 'vendedora: só a Lista de espera');
-  assert.deepStrictEqual(P.tiposDe('vend').map((t) => t.id), ['espera']);
+  assert.deepStrictEqual(P.tiposDe('vend').map((t) => t.id), ['espera', 'validade'], 'vendedora: Lista de espera e Validade (as telas fixas dela)');
   assert.deepStrictEqual(P.tiposDe('ger_sem'), []);
   // recusados
   assert.match(P.ativar('ger', { endpoint: 'https://evil.com/x', keys: a.sub.keys }, '').erro, /não conhece/);

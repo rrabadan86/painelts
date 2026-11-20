@@ -1,0 +1,123 @@
+// Segunda validade do chá a granel: depois que o pacote de 1 kg vai para a lata, 6 meses para consumir.
+// O painel deduz o pacote aberto pelo saldo, estima a data pelo ritmo de compra e guarda a primeira observação.
+const { test, after } = require('node:test');
+const assert = require('node:assert');
+const os = require('os');
+const fs = require('fs');
+const path = require('path');
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'abertura-'));
+process.env.DATA_DIR = tmp; process.env.CONFIG_FILE = path.join(tmp, 'lojas.json');
+const L = require('../../src/lotes');
+after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+
+const HOJE = '2026-11-20';
+const estoque = (qtd, extra = []) => ({ em: HOJE + 'T08:00:00.000Z', itens: [{ cod: '10', desc: 'BERRY FIELD', un: 'Kg', qtd, custo: 100 }, ...extra] });
+// compras.itens = { cod: [[dia, custo, nf, qtd]] }
+const compras = (...ents) => ({ itens: { 10: ents.map(([dia, nf, qtd]) => [dia, 100, nf, qtd]) } });
+const calc = (qtd, comp, edits = { lotes: {} }, extra) => L.calcular({ estoque: estoque(qtd, extra), compras: comp, edits, hoje: HOJE }).lotes;
+const do_ = (ls, nf) => ls.find((l) => l.nf === String(nf));
+
+test('pacotes: o que falta para um número inteiro de quilos está na lata; lote intocado fica todo fechado', () => {
+  assert.deepStrictEqual(L.pacotesDoLote({ qtdEntrada: 3, saldo: 3 }), { n: 0, aberto: 0, fechado: 3 });
+  assert.deepStrictEqual(L.pacotesDoLote({ qtdEntrada: 3, saldo: 2.4 }), { n: 1, aberto: 0.4, fechado: 2 });
+  assert.deepStrictEqual(L.pacotesDoLote({ qtdEntrada: 3, saldo: 2 }), { n: 0, aberto: 0, fechado: 2 }, 'o 1º acabou e o 2º ainda não foi aberto');
+  assert.deepStrictEqual(L.pacotesDoLote({ qtdEntrada: 3, saldo: 1.25 }), { n: 2, aberto: 0.25, fechado: 1 });
+  assert.deepStrictEqual(L.pacotesDoLote({ qtdEntrada: 1, saldo: 0.05 }), { n: 1, aberto: 0.05, fechado: 0 });
+  assert.strictEqual(L.pacotesDoLote({ qtdEntrada: null, saldo: 0.7 }).semNota, true);
+});
+
+test('três quilos do mesmo chá, de notas diferentes: o mais antigo é o aberto e os outros ganham a ordem de abertura', () => {
+  // 3 notas de 1 kg; estoque 2,3 kg → saiu 0,7 kg do mais antigo
+  const ls = calc(2.3, compras(['2026-06-10', 101, 1], ['2026-08-15', 102, 1], ['2026-10-20', 103, 1]));
+  assert.strictEqual(ls.length, 3);
+  const a = do_(ls, 101), b = do_(ls, 102), c = do_(ls, 103);
+  assert.deepStrictEqual([a.pacoteN, a.aberto, a.fechado, a.abrirOrdem], [1, 0.3, 0, null]);
+  assert.deepStrictEqual([b.pacoteN, b.fechado, b.abrirOrdem], [0, 1, 1], 'próximo a abrir');
+  assert.deepStrictEqual([c.pacoteN, c.fechado, c.abrirOrdem], [0, 1, 2]);
+  assert.strictEqual(b.abertoEm, null); assert.strictEqual(b.motivo, 'pacote');
+  // uma nota com 3 pacotes: 1 na lata, 2 fechados no mesmo lote
+  const um = calc(2.6, compras(['2026-09-01', 200, 3]))[0];
+  assert.deepStrictEqual([um.pacoteN, um.aberto, um.fechado, um.abrirOrdem], [1, 0.6, 2, 1]);
+});
+
+test('data de abertura estimada pelo ritmo de compra; vale a data que chegar primeiro (pacote ou abertura + 6 meses)', () => {
+  // compra 3 kg em 12 meses → 3/365 kg por dia; saíram 0,6 kg do pacote aberto → aberto há 73 dias
+  const comp = compras(['2026-03-01', 101, 1], ['2026-05-01', 102, 1], ['2026-06-01', 103, 1]);
+  const a = do_(calc(2.4, comp), 101);
+  assert.strictEqual(a.abertoEm, '2026-09-08');
+  assert.strictEqual(a.abertoEstimado, true);
+  assert.strictEqual(a.validadeAberto, '2027-03-08');
+  assert.strictEqual(a.validadePacote, '2027-03-01', 'pacote: 12 meses da entrada');
+  assert.deepStrictEqual([a.venceEm, a.motivo], ['2027-03-01', 'pacote'], 'o pacote vence antes');
+  // pacote com validade longa informada pela equipe: quem manda é a abertura, e só o que está na lata corre o risco
+  const b = do_(calc(2.4, comp, { lotes: { '101|10|2026-03-01': { validade: '2028-01-01' } } }), 101);
+  assert.deepStrictEqual([b.venceEm, b.motivo, b.kgVence], ['2027-03-08', 'aberto', 0.4]);
+  assert.strictEqual(b.dias, 108); assert.strictEqual(b.faixa, 'ok');
+  // a estimativa nunca é anterior à chegada do pacote; sem histórico de compra, usa a chegada (pior caso)
+  const novo = calc(0.2, compras(['2026-11-10', 300, 1]))[0];
+  assert.strictEqual(novo.abertoEm, '2026-11-10');
+});
+
+test('chá parado: aberto há mais de 6 meses vence pela abertura mesmo com o pacote no prazo; o resumo conta só o que está na lata', () => {
+  const comp = compras(['2026-02-01', 500, 2]);
+  const edits = { lotes: {}, aberturas: { '500|10|2026-02-01#1': { dia: '2026-04-10', por: 'ana' } } };
+  const l = calc(1.3, comp, edits)[0];
+  assert.deepStrictEqual([l.abertoEm, l.abertoEstimado, l.abertoPor], ['2026-04-10', false, 'ana']);
+  assert.deepStrictEqual([l.validadeAberto, l.motivo, l.faixa], ['2026-10-10', 'aberto', 'vencido']);
+  assert.ok(l.dias < 0);
+  assert.strictEqual(l.validade, '2027-02-01', 'a validade do pacote continua a mesma (os fechados seguem ela)');
+  const r = L.resumo([l]);
+  assert.strictEqual(r.porFaixa.vencido.kg, 0.3, 'só os 300 g da lata; o pacote fechado não está vencido');
+  assert.strictEqual(r.risco.custo, 30);
+});
+
+test('entrada e saída pelo AppNext: saída sai do mais antigo e abre o próximo; entrada sem nota vira saldo sem data', () => {
+  const comp = compras(['2026-06-10', 101, 1], ['2026-08-15', 102, 1], ['2026-10-20', 103, 1]);
+  // saída de 0,5 kg (perda ou ajuste): o estoque cai de 2,3 para 1,8 → o pacote da nota 101 acabou e o da 102 passa a ser o aberto
+  let ls = calc(1.8, comp);
+  assert.strictEqual(do_(ls, 101), undefined);
+  assert.deepStrictEqual([do_(ls, 102).pacoteN, do_(ls, 102).aberto], [1, 0.8]);
+  assert.deepStrictEqual([do_(ls, 103).abrirOrdem], [1]);
+  // entrada sem nota (ajuste para cima): o que passa das notas vira "saldo sem nota", sem data de abertura
+  ls = calc(3.5, comp);
+  const semNota = ls.find((l) => l.chave === 'inicial|10');
+  assert.strictEqual(semNota.saldo, 0.5); assert.strictEqual(semNota.abertoEm, null); assert.strictEqual(semNota.pacoteN, 0);
+  assert.ok(ls.filter((l) => l.nf).every((l) => l.pacoteN === 0), 'os pacotes das notas voltam a contar como fechados');
+});
+
+test('a primeira observação guarda a data (não fica mudando); pacote que acabou é esquecido; a equipe pode corrigir', () => {
+  const ES = require('../../src/estoque');
+  const orig = { atual: ES.atual, compras: ES.compras };
+  const comp = compras(['2026-03-01', 101, 1], ['2026-05-01', 102, 1], ['2026-06-01', 103, 1]);
+  let qtd = 2.4;
+  ES.atual = () => estoque(qtd); ES.compras = () => comp;
+  try {
+    assert.deepStrictEqual(L.observarAberturas('l1', HOJE), []);
+    const arq = path.join(tmp, 'l1', 'validade', 'lotes.json');
+    let reg = JSON.parse(fs.readFileSync(arq, 'utf8')).aberturas;
+    assert.deepStrictEqual(Object.keys(reg), ['101|10|2026-03-01#1']);
+    assert.strictEqual(reg['101|10|2026-03-01#1'].dia, '2026-09-08');
+    // vendeu mais: a estimativa mudaria, mas a data guardada fica
+    qtd = 2.1;
+    L.observarAberturas('l1', HOJE);
+    assert.strictEqual(L.daLoja('l1', HOJE).lotes.find((l) => l.nf === '101').abertoEm, '2026-09-08');
+    // a equipe corrige: abriu em outra data
+    assert.match(L.editarAbertura('l1', { chave: '101|10|2026-03-01', dia: '2027-01-01' }, 'ana', HOJE).erro, /futuro/);
+    assert.match(L.editarAbertura('l1', { chave: '101|10|2026-03-01', dia: '2026-01-01' }, 'ana', HOJE).erro, /chegou em 01\/03\/2026/);
+    assert.match(L.editarAbertura('l1', { chave: '102|10|2026-05-01', dia: '2026-10-01' }, 'ana', HOJE).erro, /não tem pacote aberto/);
+    assert.deepStrictEqual(L.editarAbertura('l1', { chave: '101|10|2026-03-01', dia: '2026-10-01' }, 'ana', HOJE).ok, { dia: '2026-10-01' });
+    const l = L.daLoja('l1', HOJE).lotes.find((x) => x.nf === '101');
+    assert.deepStrictEqual([l.abertoEm, l.abertoEstimado, l.abertoPor], ['2026-10-01', false, 'ana']);
+    // o pacote acabou: o registro some e o próximo é observado
+    qtd = 1.7;
+    L.observarAberturas('l1', HOJE);
+    reg = JSON.parse(fs.readFileSync(arq, 'utf8')).aberturas;
+    assert.deepStrictEqual(Object.keys(reg), ['102|10|2026-05-01#1']);
+    // aviso: pacote aberto que entrou nos últimos 30 dias do prazo sai uma vez só
+    qtd = 1.7;
+    L.editarAbertura('l1', { chave: '102|10|2026-05-01', dia: '2026-06-01' }, 'ana', HOJE); // aberto há 5 meses e 19 dias; pacote vale até 05/2027
+    const perto = L.observarAberturas('l1', HOJE);
+    assert.deepStrictEqual(perto.map((p) => [p.chave, p.n, p.desc, p.dias]), [['102|10|2026-05-01', 1, 'BERRY FIELD', 11]]);
+    assert.deepStrictEqual(L.observarAberturas('l1', HOJE), [], 'não repete');
+  } finally { ES.atual = orig.atual; ES.compras = orig.compras; }
+});

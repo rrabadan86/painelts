@@ -75,9 +75,9 @@ test('rotas: só os próprios aparelhos; resposta sem chave nem endereço; X-Pai
   let r = await pedir('dono', '/api/push');
   let j = await r.json();
   assert.strictEqual(Buffer.from(j.chave, 'base64url').length, 65, 'só a parte pública da chave VAPID');
-  assert.deepStrictEqual(j.tipos.map((t) => t.id), ['espera', 'sugestao', 'zap']);
+  assert.deepStrictEqual(j.tipos.map((t) => t.id), ['espera', 'validade', 'sugestao', 'zap']);
   assert.deepStrictEqual(j.aparelhos, []);
-  assert.deepStrictEqual((await (await pedir('vend', '/api/push')).json()).tipos.map((t) => t.id), ['espera'], 'vendedora: só a Lista de espera');
+  assert.deepStrictEqual((await (await pedir('vend', '/api/push')).json()).tipos.map((t) => t.id), ['espera', 'validade'], 'vendedora: só as telas fixas dela');
   // a chave privada fica no arquivo, fora do git, e nunca na resposta
   const v = JSON.parse(fs.readFileSync(path.join(tmp, 'push-vapid.json'), 'utf8'));
   assert.strictEqual(v.publica, j.chave);

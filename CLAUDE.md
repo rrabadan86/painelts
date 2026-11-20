@@ -66,6 +66,11 @@ Hooks (`.claude/settings.json`): bloqueiam commit/push de segredos e limpam os r
 - **Exceção (decisão do dono): robô do WhatsApp das campanhas.** Campanha marcada "Enviar pelo robô" sai sozinha pelo número da loja (serviço `zap/`), com todas as travas no servidor (`src/zapfila.js`, `src/zaplaco.js`): ritmo aleatório, horário e dias, máximo por dia do número, limite da campanha, intervalo da loja, quem não quer mensagens (inclusive quem responde "parar"), pausa sozinho após falhas. Admin, franqueado da loja e gerente com a tela Clientes conectam, ligam e configuram (decisão do dono: é a gerente quem lê o QR na loja; ela faz isso por Clientes → Campanhas → "Conectar e configurar"); vendedora nada. Log e auditoria sem o texto das mensagens e sem número completo (só os 4 últimos dígitos). Detalhes em `.claude/rules/zap.md`.
 - Dados temporários de teste: apague depois.
 
+**Validade do chá a granel (duas datas)**
+- Vale a data que chegar primeiro: a validade do pacote (12 meses da entrada, corrigível) ou 6 meses depois que o pacote de 1 kg vai para a lata (`MESES_ABERTO`, `PACOTE_KG` em `src/lotes.js`).
+- O painel não tem estoque próprio dos lotes: o total é sempre o do AppNext, distribuído entre os lotes (saída sai do mais antigo, como venda; entrada sem nota vira "saldo sem nota"; inventário por lote vale como a foto certa). A abertura segue a mesma conta: o que falta para um número inteiro de quilos está na lata.
+- A data de abertura é estimada (ritmo de compra do chá, nunca antes da chegada) e guardada na primeira observação (`observarAberturas`, que roda depois de cada atualização dos dados, nunca numa leitura de tela). A equipe só corrige se souber o dia certo. Quem usa `dias`/`faixa` do lote já recebe a data que vale; valor em risco e perdas contam só o que está na lata quando o prazo é o da abertura (`kgVence`).
+
 **Notificações no aparelho (Web Push)**
 - Sem biblioteca: `src/webpush.js` usa só o crypto do Node (RFC 8291 e RFC 8292). Mexeu na cifra ou no VAPID: confira de novo contra `http_ece` e `web-push` numa pasta de rascunho, sem adicioná-las ao projeto (o teste tem o vetor do RFC).
 - Endereço de entrega: só https dos serviços conhecidos (`enderecoOk`). Nunca afrouxe: sem isso o servidor chama qualquer endereço.

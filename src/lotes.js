@@ -6,7 +6,11 @@
  *  - saldo de cada lote: o estoque atual do AppNext distribuído de trás para frente (a entrada mais nova fica com o
  *    que sobrou primeiro: o mais antigo foi vendido antes, regra PEPS). Assim o saldo nunca diverge do estoque real;
  *  - o que o estoque tem a mais do que as entradas conhecidas vira "saldo sem nota" (sem data: a equipe informa).
- * Edições em dados/<loja>/validade/lotes.json: { lotes: { chave: { lote, validade, por, em } } }
+ *  - segunda validade (depois de aberto): cada lote é uma pilha de pacotes de 1 kg. O painel deduz o pacote aberto pelo saldo
+ *    (o que falta para um número inteiro de pacotes está na lata) e estima a data de abertura pelo ritmo de compra do chá;
+ *    a primeira vez que vê o pacote aberto guarda a data (não fica mudando). A equipe só corrige se abrir fora da ordem.
+ *    Vale a data que chegar primeiro: validade do pacote ou abertura + 6 meses. Pacotes fechados ganham a ordem de abertura.
+ * Edições em dados/<loja>/validade/lotes.json: { lotes: { chave: { lote, validade, por, em } }, aberturas: { "<chave>#<nº do pacote>": { dia, auto|por, em } } }
  * chave do lote = "<nº da NF>|<código>|<AAAA-MM-DD da entrada>"; saldo sem nota = "inicial|<código>".
  */
 const fs = require('fs');
@@ -15,6 +19,8 @@ const C = require('./config');
 const ES = require('./estoque');
 
 const MESES_VALIDADE = 12;
+// o chá chega em pacotes fechados de 1 kg e vai para a lata da loja quando o pacote é aberto: depois de aberto, 6 meses para consumir
+const PACOTE_KG = 1, MESES_ABERTO = 6;
 // faixas por dias para vencer: vencido < 0 ≤ crítica < 30 ≤ ação < 60 ≤ atenção < 90 ≤ saudável
 const FAIXAS = [
   { id: 'vencido', nome: 'Vencido', ate: 0 },
@@ -145,6 +151,60 @@ function escolherAjuste(lista, estEm) {
     .map((x) => x.a)[0] || null;
 }
 
+/** quanto do lote está na lata (pacote aberto) e quanto está em pacote fechado; n = nº do pacote aberto dentro do lote (0 = nenhum) */
+function pacotesDoLote(l, P = PACOTE_KG) {
+  const saldo = l.saldo || 0;
+  if (l.qtdEntrada == null) return { n: 0, aberto: 0, fechado: 0, semNota: true }; // saldo sem nota: não dá para saber
+  const consumido = r3(l.qtdEntrada - saldo);
+  if (!(consumido > 0.0005)) return { n: 0, aberto: 0, fechado: saldo }; // ninguém mexeu ainda: tudo fechado
+  const fechado = r3(Math.floor((saldo + 1e-6) / P) * P), aberto = r3(saldo - fechado);
+  return aberto > 0.0005 ? { n: Math.floor((consumido + 1e-6) / P) + 1, aberto, fechado } : { n: 0, aberto: 0, fechado };
+}
+/** kg por dia que a loja compra deste chá (12 meses até o estoque): no longo prazo é o ritmo de consumo */
+function ritmoCompra(entradas, dEst) {
+  if (!DIA.test(dEst)) return 0;
+  const de = somarMeses(dEst, -12);
+  const kg = entradas.filter((e) => e.entrada > de && e.entrada <= dEst).reduce((x, e) => x + e.qtdEntrada, 0);
+  return kg / 365;
+}
+/** data estimada em que o pacote aberto foi para a lata: quanto já saiu dele ÷ o ritmo do chá, nunca antes da entrada do lote */
+function estimarAbertura(l, pk, ritmo, dEst, P = PACOTE_KG) {
+  if (!DIA.test(dEst) || !l.entrada) return l.entrada || null;
+  const saiu = Math.max(0, P - pk.aberto);
+  if (!(ritmo > 0)) return l.entrada;
+  const d = new Date(ms(dEst) - Math.min(730, Math.ceil(saiu / ritmo)) * 864e5).toISOString().slice(0, 10);
+  return d < l.entrada ? l.entrada : d;
+}
+/**
+ * Acrescenta a cada lote a situação dos pacotes e a segunda validade (depois de aberto), e recalcula dias/faixa pela data que
+ * chegar primeiro. reg = edits.aberturas. Campos: aberto, fechado (kg), pacoteN, abertoEm, abertoEstimado, validadeAberto,
+ * validadePacote, venceEm, motivo ('aberto' | 'pacote'), abrirOrdem (pacotes fechados: 1 = o próximo a abrir).
+ */
+function comAbertura(lotes, entradasPorCod, dEst, reg, hoje) {
+  const porCod = new Map();
+  for (const l of lotes) { if (!porCod.has(l.cod)) porCod.set(l.cod, []); porCod.get(l.cod).push(l); }
+  for (const [cod, ls] of porCod) {
+    const ritmo = ritmoCompra(entradasPorCod.get(cod) || [], dEst);
+    let ordem = 0;
+    for (const l of ls.slice().sort((a, b) => String(a.entrada || '') < String(b.entrada || '') ? -1 : 1)) { // do mais antigo para o mais novo
+      const pk = pacotesDoLote(l);
+      Object.assign(l, { aberto: pk.aberto, fechado: pk.fechado, pacoteN: pk.n, validadePacote: l.validade, venceEm: l.validade, motivo: 'pacote', abertoEm: null, abertoEstimado: false, validadeAberto: null, abrirOrdem: null });
+      if (pk.n > 0) {
+        const r = reg && reg[`${l.chave}#${pk.n}`];
+        l.abertoEm = r && DIA.test(r.dia || '') ? r.dia : estimarAbertura(l, pk, ritmo, dEst);
+        l.abertoEstimado = !(r && r.por);
+        l.abertoPor = (r && r.por) || null;
+        if (l.abertoEm) {
+          l.validadeAberto = somarMeses(l.abertoEm, MESES_ABERTO);
+          if (!l.validade || l.validadeAberto < l.validade) { l.venceEm = l.validadeAberto; l.motivo = 'aberto'; l.dias = dias(hoje, l.venceEm); l.faixa = faixa(l.dias); l.kgVence = pk.aberto; }
+        }
+      }
+      if (pk.fechado > 0.0005) l.abrirOrdem = ++ordem;
+    }
+  }
+  return lotes;
+}
+
 /**
  * Lotes em aberto do chá a granel.
  * estoque = ES.atual; compras = ES.compras; tabela = TAB.resumo; edits = ler(id); ajustes = { cod: [ajuste] }; hoje = AAAA-MM-DD
@@ -157,13 +217,14 @@ function calcular({ estoque, compras, tabela, edits, ajustes, hoje = hojeSP() })
   const ajs = ajustes || (edits && edits.ajustes) || {};
   const precos = precosKg(tabela, estoque);
   const ent = (compras && compras.itens) || {};
-  const lotes = [];
+  const lotes = [], entradasPorCod = new Map();
   for (const it of estoque.itens) {
     if (it.un !== 'Kg' || ENVASADO.test(it.desc || '')) continue; // só o chá a granel tem validade (lata, minitin, sachê… não)
     const cod = String(it.cod);
     const S = Math.max(0, r3(Number(it.qtd) || 0));
     if (!(S > 0)) continue;
     const todas = entradasDoCod(cod, ent), inicial = `inicial|${cod}`;
+    entradasPorCod.set(cod, todas);
     const anc = escolherAjuste(ajs[cod], estoque.em);
     // sem ajuste: só as entradas que já estavam no estoque exportado (as de depois ainda não contam no saldo)
     const dist = anc ? aPartirDoAjuste(S, anc, todas, dEst, inicial) : distribuir(S, todas.filter((e) => !DIA.test(dEst) || e.entrada <= dEst), inicial);
@@ -175,6 +236,7 @@ function calcular({ estoque, compras, tabela, edits, ajustes, hoje = hojeSP() })
       lotes.push({ ...montar(chave, it, base, ed[chave], hoje, precos), ajuste: aj });
     }
   }
+  comAbertura(lotes, entradasPorCod, dEst, (edits && edits.aberturas) || {}, hoje);
   lotes.sort((a, b) => (a.dias ?? -1e9) - (b.dias ?? -1e9) || a.desc.localeCompare(b.desc, 'pt-BR'));
   return { em: estoque.em || null, lotes };
 }
@@ -198,9 +260,11 @@ function resumo(lotes) {
   const r2 = (v) => Math.round(v * 100) / 100;
   for (const l of lotes) {
     const p = porFaixa[l.faixa];
-    p.lotes++; p.kg += l.saldo; p.custo += l.saldo * (l.custoKg || 0); p.venda += l.saldo * (l.precoKg || 0);
+    // prazo puxado pela abertura: só o que está na lata corre esse risco (os pacotes fechados do mesmo lote seguem a validade deles)
+    const kg = l.kgVence ?? l.saldo;
+    p.lotes++; p.kg += kg; p.custo += kg * (l.custoKg || 0); p.venda += kg * (l.precoKg || 0);
     if (l.dias != null && l.dias < RISCO_DIAS) {
-      risco.lotes++; risco.kg += l.saldo; risco.custo += l.saldo * (l.custoKg || 0); risco.venda += l.saldo * (l.precoKg || 0);
+      risco.lotes++; risco.kg += kg; risco.custo += kg * (l.custoKg || 0); risco.venda += kg * (l.precoKg || 0);
       if (!l.custoKg) risco.semCusto++;
       if (!l.precoKg) risco.semPreco++;
     }
@@ -412,6 +476,44 @@ function disponivel({ estoque, compras }) {
   return { em: (estoque && estoque.em) || null, itens };
 }
 
+/**
+ * Guarda a data de abertura de cada pacote que o painel vê aberto pela primeira vez (roda depois de cada atualização dos dados,
+ * nunca numa leitura da tela) e esquece os pacotes que já acabaram. → os pacotes abertos que entraram agora nos últimos 30 dias
+ * do prazo [{ chave, n, desc, dias }] (para o aviso).
+ */
+function observarAberturas(id, hoje = hojeSP()) {
+  const { lotes } = daLoja(id, hoje);
+  const d = ler(id), reg = d.aberturas || {}, vivos = new Set(), perto = [];
+  let mudou = false;
+  for (const l of lotes) {
+    if (!(l.pacoteN > 0) || !l.abertoEm) continue;
+    const k = `${l.chave}#${l.pacoteN}`;
+    vivos.add(k);
+    if (!reg[k]) { reg[k] = { dia: l.abertoEm, auto: true, em: new Date().toISOString() }; mudou = true; }
+    if (l.motivo === 'aberto' && l.dias != null && l.dias <= 30 && !reg[k].avisado) { reg[k].avisado = hoje; mudou = true; perto.push({ chave: l.chave, n: l.pacoteN, desc: l.desc, dias: l.dias }); }
+  }
+  for (const k of Object.keys(reg)) if (!vivos.has(k)) { delete reg[k]; mudou = true; }
+  if (mudou) { d.aberturas = reg; gravar(id, d); }
+  return perto;
+}
+/** a equipe corrige a data em que o pacote aberto foi para a lata (dia vazio = volta para a estimativa do painel) */
+function editarAbertura(id, b, por, hoje = hojeSP()) {
+  const chave = String((b && b.chave) || ''), l = daLoja(id, hoje).lotes.find((x) => x.chave === chave);
+  if (!l) return { erro: 'Lote não encontrado (o estoque pode ter mudado): atualize a tela.' };
+  if (!(l.pacoteN > 0)) return { erro: 'Este lote não tem pacote aberto: pelo estoque, os pacotes dele estão fechados.' };
+  const dia = String((b && b.dia) ?? '').trim(), d = ler(id), reg = d.aberturas || (d.aberturas = {}), k = `${chave}#${l.pacoteN}`;
+  const antes = reg[k] ? reg[k].dia : null;
+  if (dia === '') delete reg[k];
+  else {
+    if (!DIA.test(dia) || Number.isNaN(ms(dia))) return { erro: 'Data de abertura inválida.' };
+    if (dia > hoje) return { erro: 'A data de abertura não pode ser no futuro.' };
+    if (l.entrada && dia < l.entrada) return { erro: `O pacote chegou em ${l.entrada.split('-').reverse().join('/')}: a abertura não pode ser antes.` };
+    reg[k] = { dia, por: String(por || ''), em: new Date().toISOString() };
+  }
+  gravar(id, d);
+  return { ok: { dia: dia || null }, antes };
+}
+
 /** lotes da loja já calculados (arquivos do estoque, das compras e da tabela, ajustes da tela e do inventário) */
 function daLoja(id, hoje) {
   const TAB = require('./tabela');
@@ -441,4 +543,4 @@ function linhasResumo(id) {
     ...top];
 }
 
-module.exports = { escolherAjuste, MESES_VALIDADE, FAIXAS, RISCO_DIAS, ler, calcular, resumo, editar, editarSaldo, daLoja, daNota, granelEstoque, disponivel, pendentesNotas, entradasDoCod, entradasRecentes, linhasResumo, somarMeses, precosKg, faixa, hojeSP };
+module.exports = { PACOTE_KG, MESES_ABERTO, pacotesDoLote, ritmoCompra, estimarAbertura, comAbertura, observarAberturas, editarAbertura, escolherAjuste, MESES_VALIDADE, FAIXAS, RISCO_DIAS, ler, calcular, resumo, editar, editarSaldo, daLoja, daNota, granelEstoque, disponivel, pendentesNotas, entradasDoCod, entradasRecentes, linhasResumo, somarMeses, precosKg, faixa, hojeSP };
