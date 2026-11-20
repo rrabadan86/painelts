@@ -31,6 +31,10 @@ test('Pedido: colunas novas (margem bruta do pacote, classe em ícone) e filtro 
   if (info.project.name === 'celular') { // no celular a lista é em cartões e os filtros ficam recolhidos: confere só o ícone da classe e a largura
     const ic = page.locator('.ped-cl-ico').first();
     await expect(ic).toHaveText(/^(⭐|👍|📦|💤)$/);
+    // sem a coluna Grupo, o subgrupo aparece ao lado do código
+    const sub = page.locator('.ped-card .est-tam .ped-cod-sub').first();
+    await expect(sub).toBeVisible();
+    expect(linhas.subs).toContain(await sub.innerText());
     expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth), 'rolagem para o lado').toBeLessThanOrEqual(1);
     expect(erros).toEqual([]);
     return;

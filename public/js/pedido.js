@@ -670,8 +670,12 @@
         const [t, c] = SITU(r);
         const tot = h('b', { class: 'ped-tot' }, r.pedir > 0 ? fmt.brl(r.pedir * (r.preco || 0)) : '—');
         r._tot = tot;
+        // no celular não há a coluna Grupo: o subgrupo vai ao lado do código
+        const nome = col('produto').render(r);
+        const codEl = r.sub && nome.querySelector('.est-tam');
+        if (codEl) codEl.append(' · ', h('span', { class: 'ped-cod-sub', title: 'Subgrupo do cadastro de preços do AppNext (no chá a granel, o dos pacotes dele).' }, r.sub));
         return h('div', { class: 'ped-card' + (r.obrig ? ' obr' : r.pedir > 0 ? ' on' : '') },
-          h('div', { class: 'ped-card-top' }, h('div', { class: 'ped-card-nome' }, col('produto').render(r)), h('span', { class: 'badge ' + c }, t)),
+          h('div', { class: 'ped-card-top' }, h('div', { class: 'ped-card-nome' }, nome), h('span', { class: 'badge ' + c }, t)),
           h('div', { class: 'ped-card-meta' }, r.grupoTxt, r.margemPac != null ? ` · margem bruta ${fmt.pct(r.margemPac)}` : null),
           h('div', { class: 'ped-card-nums' },
             h('div', null, h('small', null, 'Estoque'), h('b', null, qtdTxt(r.qtd, r.it))),
