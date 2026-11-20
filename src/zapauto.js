@@ -23,7 +23,7 @@ const ZF = require('./zapfila');
 
 const POR = 'robô';
 // ordem do pacote da tela (APP_SCRIPTS, server.js): só os arquivos de que a conta precisa
-const ARQUIVOS = ['core.js', 'rules.js', 'fidelidade.js', 'msgwpp.js', 'clientes.js', 'campanhas.js', 'validade.js'];
+const ARQUIVOS = ['core.js', 'contas.js', 'rules.js', 'fidelidade.js', 'msgwpp.js', 'clientes.js', 'campanhas.js', 'validade.js'];
 const PUB = path.join(__dirname, '..', 'public', 'js');
 const scripts = new Map(); // arquivo → { mtime, script }
 function script(nome) {

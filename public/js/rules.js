@@ -7,10 +7,8 @@
   const EG = 'ESPAÇO GOURMET';
   const TAXA_SERVICO = 'Taxa de Serviço';
 
-  // grupos usados nas metas ([ChaAromatizado], [ChaPuro], [Acessorio])
-  const G_AROM = ['CHÁ AROMATIZADO', 'CHÁS ENVASADOS', 'INFUSÕES', 'ROOIBOS AROMATIZADO', 'SACHÊS PIRAMIDAIS', 'TEA MOMENTS'];
-  const G_PURO = ['CHÁ PURO', 'CHÁS ENVASADOS PUROS'];
-  const G_ACESS = ['ACESSÓRIOS', 'ALIMENTAÇÃO', 'CONSUMÍVEIS - COM CONTROLE DE ESTOQUE', 'COSMÉTICOS'];
+  // os grupos que contam para a meta (chá aromatizado, chá puro, acessórios) e os que somam no kg de chá ficam em
+  // public/js/contas.js (TS.contas): a mesma lista vale para as telas e para o servidor
   // vendedores que não recebem meta individual (comparação sem diferenciar maiúsculas, como no DAX)
   const SEM_META = ['amanda oliveira', 'corporativo', 'adriane puccini', 'sem vendedor'];
 
@@ -25,7 +23,6 @@
     ['Vermelho', ['CHÁ VERMELHO PURO', 'CHÁ VERMELHO AROMATIZADO']],
     ['Amarelo', ['CHÁ AMARELO PURO', 'CHÁ AMARELO']],
   ];
-  const CHA_TOTAL = ['CHÁS PARA MINITINS', 'ROOIBOS PURO', 'ROOIBOS AROMATIZADO', 'CHÁ BRANCO PURO', 'CHÁ BRANCO AROMATIZADO', 'INFUSÕES', 'CHÁ OOLONG PURO', 'CHÁ OOLONG AROMATIZADO', 'CHÁ PRETO PURO', 'CHÁ PRETO AROMATIZADO', 'CHÁ VERDE PURO', 'CHÁ VERDE AROMATIZADO', 'CHÁ VERMELHO PURO', 'CHÁ VERMELHO AROMATIZADO'];
   // categorias usadas no "mix" (% aromatizado / % puro) e nos gráficos de kg
   const CAT_AROM_PCT = ['Chás aromatizados, Chás, Rooibos e Infusões Aromatizados, LOJA', 'Chás aromatizados, Chás Envasados Aromatizados, LOJA', 'Chás aromatizados, LOJA, SACHÊS PIRAMIDAIS'];
   const CAT_PURO_PCT = ['Chás Envasados Puros, Chás Puros, LOJA', 'Chás Puros, Chás, Rooibos e Infusões Puros, LOJA'];
@@ -38,7 +35,10 @@
   const PADRAO = {
     divisaoMeta: { arom: 0.55, puro: 0.15, acess: 0.30 },
     comissao: { modo: 'faixas', arom: { acima120: 0.05, bate: 0.04, abaixo: 0.02 }, puro: { acima120: 0.06, bate: 0.05, abaixo: 0.025 }, acess: { acima120: 0.025, bate: 0.02, abaixo: 0.01 } },
-    premiacao: { ativa: true, valor: 50, tkm: 260, ipa: 3, pma: 86.66, minimo: 2 },
+    // minAtend: mínimo de atendimentos no mês para concorrer à premiação (com poucos cupons o TKM/IPA/PMA é sorte)
+    premiacao: { ativa: true, valor: 50, tkm: 260, ipa: 3, pma: 86.66, minimo: 2, minAtend: 20 },
+    // divide a meta da loja quem tem pelo menos N dias com venda no mês (1 = qualquer venda, como era antes)
+    pisoDiasMeta: 4,
     bonus: { abaixo: 0.005, bate: 0.01, acima120: 0.015 },
     rateio: { ativo: false, exclui: [] },
     gorjeta: { modo: 'proporcional', percentual: 0.8 },
@@ -81,8 +81,9 @@
       D[field].forEach((t, i) => { if ((ci ? want.includes(t.toLowerCase()) : want.includes(t))) s.add(i); });
       return s;
     };
+    const GM = TS.contas.GRUPOS_META;
     R.ids = {
-      arom: ids('grupoC', G_AROM), puro: ids('grupoC', G_PURO), acess: ids('grupoC', G_ACESS),
+      arom: ids('grupoC', GM.arom), puro: ids('grupoC', GM.puro), acess: ids('grupoC', GM.acess),
       semMeta: ids('vendedor', [...new Set([...SEM_META, 'sem vendedor', ...(TS.db.metas || []).flatMap((m) => (m.regras && m.regras.semMeta) || [])])], true),
       semVendedor: ids('vendedor', ['SEM VENDEDOR', ''], true),
       excluiComparativos: ids('vendedor', ['', 'Adriane Puccini', 'SEM VENDEDOR'], true),
@@ -90,9 +91,9 @@
       eg: ids('cat', [EG]),
       egGrupoC: ids('grupoC', [EG]),
       taxaServico: ids('descricao', [TAXA_SERVICO]),
-      taxas: ids('descricao', ['Taxa de Serviço', 'Taxa Delivery']),
+      taxas: new Set(D.descricao.map((t, i) => (TS.contas.ehTaxa(t) ? i : -1)).filter((i) => i >= 0)),
       tipos: TIPOS_CHA.map(([n, gs]) => [n, ids('grupo', gs)]),
-      chaTotal: ids('grupo', CHA_TOTAL),
+      chaTotal: ids('grupo', TS.contas.CHA_TOTAL),
       catAromPct: ids('cat', CAT_AROM_PCT),
       catPuroPct: ids('cat', CAT_PURO_PCT),
       grupoAcessPct: ids('grupo', ['ACESSÓRIOS', 'ALIMENTAÇÃO']),
@@ -109,12 +110,17 @@
     const db = TS.db, I = R.ids;
     let arom = 0, puro = 0, acess = 0, nA = 0, nP = 0, nC = 0;
     for (const i of idx) {
+      if (!TS.contaFat(i)) continue; // linha de taxa e item a R$ 0,01 não são venda (definição única)
       const g = db.grupoC[i], v = db.vt[i] || 0;
       if (I.arom.has(g)) { arom += v; nA++; } else if (I.puro.has(g)) { puro += v; nP++; } else if (I.acess.has(g)) { acess += v; nC++; }
     }
     const tem = nA + nP + nC > 0;
     return { arom, puro, acess, total: arom + puro + acess, tem };
   };
+  /** "Vendas da meta": só os grupos que contam para a meta e a comissão (chá aromatizado, chá puro e acessórios),
+   *  sem Espaço Gourmet — a base do "% da meta" em todas as telas (a mesma do Comissionamento) */
+  R.semEG = (idx) => idx.filter((i) => !R.ids.eg.has(TS.db.cat[i]));
+  R.vendasMeta = (idx) => R.mix(R.semEG(idx)).total;
 
   // ---------- comissões ($) ----------
   /** faixas: ≥120% da meta / ≥100% / abaixo; modo "simples": bateu ou não bateu */
@@ -134,10 +140,15 @@
     return totLoja >= metaLoja * 1.2 ? bonus.acima120 : totLoja >= metaLoja ? bonus.bate : bonus.abaixo;
   };
 
-  /** [PremiacaoFuncionario] */
+  /** mínimo de atendimentos no mês para concorrer à premiação (regras da loja; padrão 20; 0 = sem mínimo) */
+  R.minAtendPremiacao = (rg) => { const v = rg && rg.premiacao && rg.premiacao.minAtend; return v == null ? TS.contas.MIN_ATEND_PREMIACAO : Math.max(0, +v || 0); };
+  /** poucos atendimentos para concorrer à premiação? */
+  R.poucosAtend = (ind, rg) => !!(rg && rg.premiacao && rg.premiacao.ativa) && (ind.cupons || 0) < R.minAtendPremiacao(rg);
+  /** [PremiacaoFuncionario] — só concorre quem tem o mínimo de atendimentos no mês */
   R.premiacao = function (ind, rg) {
     const p = rg.premiacao;
     if (!p || !p.ativa) return 0;
+    if (R.poucosAtend(ind, rg)) return 0;
     const tkm = ind.tkm >= p.tkm ? p.valor : 0, ipa = ind.ipa >= p.ipa ? p.valor : 0, pma = ind.pma >= p.pma ? p.valor : 0;
     const ok = (tkm > 0) + (ipa > 0) + (pma > 0);
     return ok >= p.minimo ? tkm + ipa + pma : 0;
@@ -170,32 +181,20 @@
    * está trabalhando. Sem férias no mês = meta ÷ quantidade de vendedores.
    * nomes: vendedores que dividem a meta; devolve Map(nomeMaiúsculo → meta) e as férias do mês.
    */
-  R.metasIndividuais = function (metaLoja, ym, nomes, ferias) {
-    const out = new Map();
-    const N = nomes.map((n) => String(n).trim().toUpperCase());
-    if (!N.length) return { metas: out, feriasMes: [] };
-    const nDias = new Date(Date.UTC(+ym.slice(0, 4), +ym.slice(5, 7), 0)).getUTCDate();
-    const ini = ym + '-01', fim = `${ym}-${String(nDias).padStart(2, '0')}`;
-    const fm = (ferias || []).filter((f) => f.de <= fim && f.ate >= ini && N.includes(String(f.vendedor).trim().toUpperCase()));
-    if (!fm.length || !ym) { N.forEach((n) => out.set(n, metaLoja / N.length)); return { metas: out, feriasMes: [] }; }
-    const diaria = metaLoja / nDias;
-    N.forEach((n) => out.set(n, 0));
-    for (let d = 1; d <= nDias; d++) {
-      const iso = `${ym}-${String(d).padStart(2, '0')}`;
-      const fora = new Set(fm.filter((f) => f.de <= iso && f.ate >= iso).map((f) => String(f.vendedor).trim().toUpperCase()));
-      const ativos = N.filter((n) => !fora.has(n));
-      if (!ativos.length) continue;
-      ativos.forEach((n) => out.set(n, out.get(n) + diaria / ativos.length));
-    }
-    return { metas: out, feriasMes: fm };
-  };
+  R.metasIndividuais = (metaLoja, ym, nomes, ferias) => TS.contas.metasIndividuais(metaLoja, ym, nomes, ferias);
 
   /** vendedores sem meta individual da loja (lista configurada nas regras + "sem vendedor") */
   const semMetaDe = (rg) => new Set([...((rg && rg.semMeta) || []), 'sem vendedor', ''].map((x) => String(x).trim().toLowerCase()));
   R.semMetaDe = semMetaDe;
 
-  R.comissionamento = function ({ base, baseSemVend, metaLoja, vendBonus, ym }) {
+  /**
+   * ate: último dia considerado (dia do painel) — define o piso de quem divide a meta no mês em andamento; sem ele, o
+   *      último dia com vendas (ou o fim do mês, se já fechou).
+   * projFator: multiplica as vendas de cada pessoa antes de achar a faixa (comissão do mês PROJETADO, usada no Resultado).
+   */
+  R.comissionamento = function ({ base, baseSemVend, metaLoja, vendBonus, ym, ate, projFator }) {
     const db = TS.db, I = R.ids;
+    const K = projFator > 0 ? projFator : 1;
     const semEG = (idx) => idx.filter((i) => !I.eg.has(db.cat[i]));
     const b = semEG(base), bAll = semEG(baseSemVend);
     const nomeV = (v) => String(db.D.vendedor[v] || '').trim().toLowerCase();
@@ -205,9 +204,26 @@
     const SM = semMetaDe(rgCtx);
     const semMeta = (v) => SM.has(nomeV(v));
 
-    // quantidade de vendedores que dividem a meta
-    const elegiveis = new Set();
-    for (const i of bAll) if ((db.vt[i] || 0) > 0 && !semMeta(db.vend[i])) elegiveis.add(db.vend[i]);
+    // quem divide a meta: quem tem pelo menos N dias com venda no mês (regras da loja → pisoDiasMeta; padrão 4).
+    // Quem fica abaixo do piso não aumenta o número de divisores, mas continua com a comissão pela faixa
+    // (a venda dela contra a meta individual dos demais).
+    const diasVenda = new Map();
+    for (const i of bAll) {
+      if (!((db.vt[i] || 0) > 0) || semMeta(db.vend[i])) continue;
+      let s = diasVenda.get(db.vend[i]);
+      if (!s) diasVenda.set(db.vend[i], (s = new Set()));
+      s.add(db.day[i]);
+    }
+    let ultimoDia = null;
+    if (ym) {
+      const fimMes = TS.isoToDay(`${ym}-${String(TS.contas.diasNoMes(ym)).padStart(2, '0')}`);
+      // mês que já acabou (pelo calendário ou pelas vendas): vale o piso inteiro, ou o fim do período escolhido
+      const lim = Math.min(ate ?? fimMes, fimMes);
+      const mesAcabou = Math.max(db.maxDay, TS.todayDay() - 1) >= fimMes;
+      ultimoDia = TS.dayToIso(mesAcabou ? lim : Math.min(lim, db.maxDay));
+    }
+    const div = TS.contas.divisoresMeta({ dias: [...diasVenda].map(([v, s]) => [v, s.size]), piso: rgCtx.pisoDiasMeta, ym: ym || null, ultimoDia });
+    const elegiveis = new Set(div.dentro);
     const qtdVend = elegiveis.size;
 
     // calcula TODOS os vendedores (o rateio precisa do total da loja) e depois mostra só os do filtro
@@ -220,6 +236,7 @@
     for (const [v, idx] of porVend) {
       const m = R.mix(idx);
       if (!m.tem) continue; // visual filtra [Total] em branco
+      if (K !== 1) { m.arom *= K; m.puro *= K; m.acess *= K; m.total *= K; }
       const loja = lojaUnica(idx);
       const rg = R.regrasDe(loja);
       const mi = semMeta(v) ? 0 : (mInd.metas.get(String(db.D.vendedor[v]).trim().toUpperCase()) ?? (qtdVend ? metaLoja / qtdVend : 0));
@@ -236,18 +253,23 @@
       const cPuro = comV(m.puro, metaPuro, cm.puro);
       const cAcess = comV(m.acess, metaAcess, cm.acess);
       const ind = TS.indicadores(idx);
-      const prem = naoRecebe ? 0 : R.premiacao(ind, rg);
+      // no mês projetado (projFator) os atendimentos também crescem: o mínimo é conferido com os projetados
+      const indP = K !== 1 ? { ...ind, cupons: (ind.cupons || 0) * K } : ind;
+      const prem = naoRecebe ? 0 : R.premiacao(indP, rg);
+      const poucos = !naoRecebe && R.poucosAtend(indP, rg);
 
       // [BonusSobreOutrosVendedores] — só na linha do vendedor escolhido
       let bonus = null;
       if (vendBonusId !== null && v === vendBonusId) {
         const lojaId = loja == null ? null : db.D.loja.indexOf(loja);
+        // mesma base do "% da meta": só as vendas da meta (chá aromatizado, chá puro e acessórios, sem Espaço Gourmet)
         let totLoja = 0, totVend = 0;
         if (lojaId !== null) {
           for (const i of bAll) {
-            if (db.loja[i] !== lojaId || I.taxaServico.has(db.desc[i])) continue;
-            totLoja += db.vt[i] || 0;
-            if (db.vend[i] === v) totVend += db.vt[i] || 0;
+            const g = db.grupoC[i];
+            if (db.loja[i] !== lojaId || !(I.arom.has(g) || I.puro.has(g) || I.acess.has(g))) continue;
+            totLoja += (db.vt[i] || 0) * K;
+            if (db.vend[i] === v) totVend += (db.vt[i] || 0) * K;
           }
         }
         const aliq = R.aliquotaBonus(totLoja, metaLoja, rg.bonus);
@@ -256,6 +278,7 @@
       todas.push({
         vendedorId: v, vendedor: db.D.vendedor[v] || '(sem nome)', loja,
         metaInd: mi, total: m.total, semMeta: semMeta(v), naoRecebe,
+        divide: elegiveis.has(v), diasVenda: (diasVenda.get(v) || { size: 0 }).size, atend: ind.cupons, poucosAtend: poucos,
         metaArom, arom: m.arom, cArom, metaPuro, puro: m.puro, cPuro, metaAcess, acess: m.acess, cAcess,
         tkm: ind.tkm, pma: ind.pma, ipa: ind.ipa, premiacao: prem, bonus,
         base: cArom + cPuro + cAcess + (bonus || 0),
@@ -282,7 +305,10 @@
       metaArom: metaLoja * rgCtx.divisaoMeta.arom, metaPuro: metaLoja * rgCtx.divisaoMeta.puro, metaAcess: metaLoja * rgCtx.divisaoMeta.acess,
       ...(() => { const ind = TS.indicadores(b); return { tkm: ind.tkm, pma: ind.pma, ipa: ind.ipa }; })(),
     };
-    return { rows, total, qtdVend, feriasMes: mInd.feriasMes, loja: lojaCtx, regras: rgCtx, lojasNoPeriodo: new Set(b.map((i) => db.loja[i])).size };
+    // quem ficou fora da divisão da meta e por quê (só nomes que aparecem na tabela desta pessoa)
+    const foraDaMeta = div.fora.map((x) => ({ vendedor: db.D.vendedor[x.nome] || '(sem nome)', dias: x.dias }));
+    return { rows, total, qtdVend, piso: { dias: div.piso, aplicado: div.pisoAplicado, fechado: div.fechado, dia: div.dia, todosAbaixo: div.todosAbaixo }, foraDaMeta,
+      feriasMes: mInd.feriasMes, loja: lojaCtx, regras: rgCtx, lojasNoPeriodo: new Set(b.map((i) => db.loja[i])).size };
   };
 
   /** Página Comissionamento — Espaço Gourmet (gorjeta/taxa de serviço) */

@@ -279,7 +279,7 @@ const pub = path.join(__dirname, 'public');
 
 // ---------- pacote único de JS/CSS da tela (pré-comprimido em Brotli + Gzip, cache imutável por hash) ----------
 const APP_SCRIPTS = [
-  'core.js', 'components.js', 'dicas.js', 'rules.js', 'pages.js', 'fidelidade.js',
+  'core.js', 'contas.js', 'components.js', 'dicas.js', 'rules.js', 'pages.js', 'fidelidade.js',
   'msgwpp.js', 'clientes.js', 'campanhas.js', 'zap.js', 'espera.js', 'extras.js', 'contabilidade.js',
   'ruptura.js', 'estoque.js', 'devolucao.js', 'precos.js', 'inventario.js', 'sugestoes.js', 'validade.js', 'nfsaida.js', 'creditos.js', 'orcamento.js', 'checklist.js',
   'site.js', 'inicio.js', 'pedido.js', 'ia.js', 'dre.js', 'comprasvendas.js', 'efeitopreco.js', 'equipe.js', 'mapa.js', 'feriados.js', 'fidretorno.js',

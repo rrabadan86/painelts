@@ -119,6 +119,10 @@ function validarRegras(g) {
   for (const k of ['arom', 'puro', 'acess']) if (!c[k] || ![c[k].acima120, c[k].bate, c[k].abaixo].every(pct)) return 'Percentual de comissão inválido.';
   const p = g.premiacao;
   if (!p || typeof p.ativa !== 'boolean' || ![p.valor, p.tkm, p.ipa, p.pma].every(num) || ![1, 2, 3].includes(p.minimo)) return 'Premiação inválida.';
+  // mínimo de atendimentos no mês para concorrer à premiação (0 = sem mínimo; sem o campo vale o padrão, 20)
+  if (p.minAtend != null && !(Number.isInteger(p.minAtend) && p.minAtend >= 0 && p.minAtend <= 2000)) return 'Mínimo de atendimentos da premiação inválido (0 a 2000).';
+  // divide a meta quem tem pelo menos N dias com venda no mês (1 = qualquer venda; sem o campo vale o padrão, 4)
+  if (g.pisoDiasMeta != null && !(Number.isInteger(g.pisoDiasMeta) && g.pisoDiasMeta >= 1 && g.pisoDiasMeta <= 31)) return 'Dias com venda para dividir a meta: de 1 a 31.';
   const b = g.bonus;
   if (!b || ![b.abaixo, b.bate, b.acima120].every(pct)) return 'Bônus inválido.';
   if (!g.rateio || typeof g.rateio.ativo !== 'boolean' || !Array.isArray(g.rateio.exclui)) return 'Rateio inválido.';
@@ -287,8 +291,12 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     }
     const erro = validarRegras(g);
     if (erro) return res.status(400).json({ erro });
+    const antes = req.loja.regras || {};
     C.alterar((cfg) => { cfg.lojas.find((x) => x.id === req.loja.id).regras = g; });
-    aud(req, 'alterou regras de comissão', req.loja.id, { loja: req.loja.id, modelo: g.modelo });
+    // pisos que mudam quem divide a meta e quem concorre à premiação: ficam na auditoria com o valor de antes
+    aud(req, 'alterou regras de comissão', req.loja.id, { loja: req.loja.id, modelo: g.modelo,
+      pisoDiasMeta: g.pisoDiasMeta ?? null, pisoDiasMetaAntes: antes.pisoDiasMeta ?? null,
+      minAtendPremiacao: g.premiacao.minAtend ?? null, minAtendPremiacaoAntes: (antes.premiacao && antes.premiacao.minAtend) ?? null });
     depois();
     res.json({ ok: true });
   });
@@ -969,4 +977,4 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
   app.use('/api/admin', r);
 }
 
-module.exports = { registrar };
+module.exports = { registrar, validarRegras };

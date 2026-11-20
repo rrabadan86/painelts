@@ -46,7 +46,8 @@ test('Vendas → Resumo: variações curtas com a frase completa no title e nenh
   await expect(fat.locator('.kpi-vars')).toBeVisible({ timeout: 20000 });
   const linhas = await fat.locator('.kpi-vars > span').evaluateAll((xs) => xs.map((x) => [x.textContent, x.title]));
   expect(linhas.some(([t, dica]) => /· \d+ dias$/.test(t) && /^vs\. \d+ dias anteriores$/.test(dica))).toBe(true);
-  expect(linhas.some(([t, dica]) => /· ano$/.test(t) && dica === 'vs. ano anterior')).toBe(true);
+  // "· ano" = os mesmos dias da semana, 364 dias antes (a frase completa diz isso)
+  expect(linhas.some(([t, dica]) => /· ano$/.test(t) && /^vs\. ano anterior: o mesmo período 364 dias antes/.test(dica))).toBe(true);
   if (info.project.name === 'computador') {
     // 7 quadros: divididos em linhas parecidas, a última nunca com um só
     const porLinha = await page.locator('.g-kpi').first().evaluate((g) => { const m = new Map(); for (const k of g.children) { const y = Math.round(k.getBoundingClientRect().top); m.set(y, (m.get(y) || 0) + 1); } return [...m.values()]; });

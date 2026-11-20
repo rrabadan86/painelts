@@ -1,15 +1,14 @@
 'use strict';
 /**
  * Média da franquia para os gráficos de Vendas → Comparativos (anônima: só médias, nunca uma loja).
- * As regras são as mesmas do navegador (public/js/rules.js e pages.js); o teste unitário confere que
- * as listas abaixo continuam iguais às de lá.
+ * As regras são as mesmas do navegador: os grupos da meta e o que conta como faturamento vêm de public/js/contas.js
+ * (a definição única); as listas de categoria continuam iguais às de rules.js (o teste unitário confere).
  *
  * Entra: partes = [{ id, vendas }] de todas as lojas; de/ate = dias (desde 1970) do filtro; tipo = 'dia' | 'semana' | 'mes'.
  * Sai: { lojas, mix, hist, met, pacotes } ou { lojas, minimo } quando há poucas lojas (a média revelaria cada uma).
  */
-const G_AROM = ['CHÁ AROMATIZADO', 'CHÁS ENVASADOS', 'INFUSÕES', 'ROOIBOS AROMATIZADO', 'SACHÊS PIRAMIDAIS', 'TEA MOMENTS'];
-const G_PURO = ['CHÁ PURO', 'CHÁS ENVASADOS PUROS'];
-const G_ACESS = ['ACESSÓRIOS', 'ALIMENTAÇÃO', 'CONSUMÍVEIS - COM CONTROLE DE ESTOQUE', 'COSMÉTICOS'];
+const CT = require('../public/js/contas');
+const G_AROM = CT.GRUPOS_META.arom, G_PURO = CT.GRUPOS_META.puro, G_ACESS = CT.GRUPOS_META.acess;
 const CAT_AROM_PCT = ['Chás aromatizados, Chás, Rooibos e Infusões Aromatizados, LOJA', 'Chás aromatizados, Chás Envasados Aromatizados, LOJA', 'Chás aromatizados, LOJA, SACHÊS PIRAMIDAIS'];
 const CAT_PURO_PCT = ['Chás Envasados Puros, Chás Puros, LOJA', 'Chás Puros, Chás, Rooibos e Infusões Puros, LOJA'];
 const CAT_CHA_KG = ['Chás aromatizados, Chás, Rooibos e Infusões Aromatizados, LOJA', 'Chás Puros, Chás, Rooibos e Infusões Puros, LOJA'];
@@ -37,7 +36,9 @@ function comparativos(partes, de, ate, tipo) {
   const chave = chaveDe(tipo);
   const lojas = [];
   for (const p of partes) {
-    const vs = p.vendas.filter((v) => { const d = diaDe(v.data); return d >= de && d <= ate && !semVend(v.vendedor); });
+    // só o que conta no faturamento (sem linha de taxa e sem item a R$ 0,01); as vendas sem vendedor entram no
+    // faturamento da loja (histórico) e ficam fora só dos recortes por vendedor (mix e indicadores)
+    const vs = p.vendas.filter((v) => { const d = diaDe(v.data); return d >= de && d <= ate && CT.contaFat(v.descricao, v.vu); });
     if (vs.length) lojas.push({ id: p.id, vs });
   }
   if (lojas.length < MIN_LOJAS) return { lojas: lojas.length, minimo: MIN_LOJAS };
@@ -46,6 +47,7 @@ function comparativos(partes, de, ate, tipo) {
   const mixes = lojas.map(({ vs }) => {
     let a = 0, p = 0, c = 0, t = 0;
     for (const v of vs) {
+      if (semVend(v.vendedor)) continue;
       const x = v.vt || 0;
       if (mixTotal.has(v.grupoC)) t += x;
       if (v.grupoOrig !== undefined) {

@@ -52,16 +52,20 @@
       const contrib = lucroBruto == null ? null : lucroBruto - m.com - m.varPct;
       const resultado = contrib == null ? null : contrib - fixoTot;
       const r = { ym, parcial, frac, ultimo, diasMes, decorridos, ...m, dias: m.dias.size, cmv, cmvPct, cobre: m.fat ? m.fatCusto / m.fat : 0, fixosMes, fixoTot, impostos, recLiq, lucroBruto, contrib, resultado };
-      if (parcial) r.proj = projetar(r);
+      if (parcial) r.proj = projetar(r, D);
       out.push(r);
     }
     return out;
   }
-  /** mês em andamento no ritmo atual: o que depende das vendas cresce na mesma proporção; os custos fixos ficam iguais (já são cheios) */
-  function projetar(m) {
-    const k = m.diasMes / m.decorridos;
+  /** mês em andamento projetado: o faturamento vem da projeção única (TS.projecaoMes: vendas até ontem + cada dia que falta
+   *  pela média do dia da semana); o que depende das vendas cresce na mesma proporção; os custos fixos ficam iguais (já são
+   *  cheios). A comissão NÃO é a parcial multiplicada: é recalculada com a venda projetada de cada pessoa contra a meta. */
+  function projetar(m, D) {
+    const PM = TS.projecaoMes ? TS.projecaoMes(m.ym, { base: 'loja', todas: true }) : null;
+    const k = PM && m.fat > 0 ? PM.proj / m.fat : m.diasMes / m.decorridos;
     const x = (v) => (v == null ? null : v * k);
-    const p = { ...m, parcial: false, projecao: true, fat: m.fat * k, fatCusto: m.fatCusto * k, custo: m.custo * k, imp: m.imp * k, maq: m.maq * k, roy: m.roy * k, com: m.com * k, varPct: m.varPct * k,
+    const comP = D && D.comProjetada ? D.comProjetada(m.ym, k) : null;
+    const p = { ...m, parcial: false, projecao: true, fat: m.fat * k, fatCusto: m.fatCusto * k, custo: m.custo * k, imp: m.imp * k, maq: m.maq * k, roy: m.roy * k, com: comP != null ? comP : m.com * k, varPct: m.varPct * k, projMes: PM, fator: k,
       gorjeta: m.gorjeta * k, desc: m.desc * k, eg: m.eg * k, cmv: x(m.cmv) };
     p.impostos = p.imp + p.maq + p.roy;
     p.recLiq = p.fat - p.impostos;
@@ -74,14 +78,14 @@
   // linhas da DRE: [rótulo, chave/função, tipo] tipo: 'sub' (subtotal), 'tot' (resultado), 'menos', 'info'
   /** grupos: [{ id, nome, itens:[índice em fixosMes] }] — cada categoria vira uma linha com o subtotal, que abre os custos */
   const LINHAS = (grupos, abertos) => [
-    ['Faturamento', (m) => m.fat, 'base', 'Vendas da loja (com Espaço Gourmet), já com os descontos, sem taxa de serviço e entrega'],
+    ['Faturamento', (m) => m.fat, 'base', 'Faturamento da loja: tudo o que foi vendido, com Espaço Gourmet e vendas sem vendedor, já com os descontos; sem taxa de serviço e entrega e sem itens a R$ 0,01 (resgates e brindes). É o mesmo número do Resumo e do Início'],
     ['− Simples Nacional', (m) => m.imp, 'menos', '% do Simples (Configurações → Lojas → Estoque e margem) sobre as vendas'],
     ['− Maquininha', (m) => m.maq, 'menos', 'Taxa média da maquininha sobre as vendas'],
     ['− Royalties + marketing', (m) => m.roy, 'menos', 'Pelas regras da loja: loja + marketing; Espaço Gourmet: EG + marketing EG'],
     ['= Receita líquida', (m) => m.recLiq, 'sub', 'Faturamento − impostos e taxas sobre a venda'],
     ['− Custo dos produtos', (m) => m.cmv, 'menos', 'Custo do AppNext das vendas (chá pelo kg + saco e etiquetas). Vendas sem custo no estoque entram pelo mesmo % das outras (estimado)'],
     ['= Lucro bruto', (m) => m.lucroBruto, 'sub', 'Receita líquida − custo dos produtos'],
-    ['− Comissões e premiações', (m) => m.com, 'menos', 'O que a loja pagou no mês (comissões, premiação e bônus), como no Comissionamento'],
+    ['− Comissões e premiações', (m) => m.com, 'menos', 'O que a loja pagou no mês (comissões, premiação e bônus), como no Comissionamento. Na projeção do mês em andamento: a comissão que cada pessoa receberia com a venda projetada dela contra a meta (na faixa em que fecharia), não a comissão de agora multiplicada'],
     ['− Outros custos em %', (m) => m.varPct, 'menos', 'Custos da loja cadastrados como % das vendas'],
     ['= Margem de contribuição', (m) => m.contrib, 'sub', 'O que sobra para pagar os custos fixos'],
     ...grupos.flatMap((g) => [
@@ -157,7 +161,8 @@
         m.parcial
           ? TS.kpi('Resultado até hoje', m.resultado == null ? '—' : fmt.brl0(m.resultado), h('span', { class: m.resultado >= 0 ? 'up' : 'down' }, m.resultado == null ? '' : m.resultado >= 0 ? 'custos fixos do mês já cobertos' : `falta cobrir ${fmt.brl0(-m.resultado)} dos custos fixos`), 'Margem de contribuição até hoje − custos fixos do mês inteiro')
           : TS.kpi('Resultado do mês', m.resultado == null ? '—' : fmt.brl0(m.resultado), h('span', { class: m.resultado >= 0 ? 'up' : 'down' }, `${pc(m.resultado, m.fat)} do faturamento`), 'Margem de contribuição − custos fixos'),
-        P ? TS.kpi('Projeção do mês', P.resultado == null ? '—' : fmt.brl0(P.resultado), h('span', { class: P.resultado >= 0 ? 'up' : 'down' }, `vendendo ${fmt.brl0(P.fat)} no mês (ritmo atual)`), 'Resultado se as vendas seguirem no ritmo de agora até o fim do mês') : null),
+        P ? TS.kpi('Projeção do mês', P.resultado == null ? '—' : fmt.brl0(P.resultado), h('span', { class: P.resultado >= 0 ? 'up' : 'down' }, `vendendo ${fmt.brl0(P.fat)} no mês (ritmo atual)`),
+          `Resultado se as vendas seguirem o ritmo de agora até o fim do mês. Impostos, custo dos produtos e custos em % acompanham as vendas; a comissão é recalculada com a venda projetada de cada pessoa contra a meta; os custos fixos ficam iguais.${P.projMes ? '\n\nFaturamento projetado:\n' + TS.comoProjecao(P.projMes) : ''}`) : null),
       andamento ? h('p', { class: 'dre-andamento muted' }, `Mês em andamento: ${m.decorridos} de ${m.diasMes} dias. "Até hoje" usa as vendas até agora e os custos fixos inteiros.`, TS.dica(andamento)) : null,
       h('div', { class: 'dre-eq-aqui' }));
 
@@ -166,7 +171,8 @@
     tb.append(h('thead', null, h('tr', null, h('th', { class: 'l' }, ''),
       h('th', null, P ? `Até hoje (dia ${diaAte})` : TS.ymLabel(sel)), h('th', null, '%'),
       P ? h('th', { class: 'dre-proj' }, 'Projeção do mês') : null, P ? h('th', { class: 'dre-proj' }, '%') : null,
-      h('th', null, a ? rotAnt : 'Ano anterior'), h('th', null, '%'), h('th', { title: P ? 'Projeção do mês contra o mesmo mês inteiro do ano anterior' : null }, P ? 'Variação (projeção)' : 'Variação'))));
+      h('th', null, a ? `${rotAnt}${P ? ' (mês inteiro)' : ''}` : 'Ano anterior'), h('th', null, '%'),
+      h('th', { class: 'dre-var', title: P ? `Projeção do mês de ${TS.ymLabel(sel)} contra ${rotAnt} INTEIRO (o mês fechado do ano anterior, não só os mesmos dias)` : `${TS.ymLabel(sel)} contra ${rotAnt}, os dois meses inteiros` }, P ? `Projeção × ${rotAnt} inteiro` : 'Variação'))));
     const body = h('tbody');
     const alternar = (id) => { if (abertos.has(id)) abertos.delete(id); else abertos.add(id); TS.render(); };
     for (const [rot, f, tipo, dica, gid] of linhas) {

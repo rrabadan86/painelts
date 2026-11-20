@@ -1100,6 +1100,8 @@
       const prAtiva = h('input', { type: 'checkbox', checked: pr.ativa || null });
       const prV = numIn(pr.valor, 5), prT = numIn(pr.tkm, 1), prI = numIn(pr.ipa, 0.1), prP = numIn(pr.pma, 0.01);
       const prMin = h('select', { class: 'f-input' }, [1, 2, 3].map((n) => h('option', { value: n, selected: pr.minimo === n || null }, `${n} de 3`)));
+      const prAt = inp({ type: 'number', min: 0, max: 2000, step: 1, value: pr.minAtend ?? TS.contas.MIN_ATEND_PREMIACAO, 'data-regra': 'minAtend' });
+      const pisoMeta = inp({ type: 'number', min: 1, max: 31, step: 1, value: rg.pisoDiasMeta ?? TS.contas.PISO_DIAS_META, 'data-regra': 'pisoDiasMeta' });
       const bn = { acima120: pctIn(rg.bonus.acima120), bate: pctIn(rg.bonus.bate), abaixo: pctIn(rg.bonus.abaixo) };
       const rtAtivo = h('input', { type: 'checkbox', checked: rg.rateio.ativo || null });
       const rtExc = inp({ value: (rg.rateio.exclui || []).join(', '), placeholder: 'nomes separados por vírgula' });
@@ -1116,7 +1118,8 @@
         h('div', { class: 'table-wrap free', style: { marginTop: '12px' } }, tabCom),
         h('div', { class: 'f-label', style: { marginTop: '14px' } }, 'Premiação por indicadores'),
         h('label', { class: 'cfg-check-l' }, prAtiva, ' Pagar premiação'),
-        h('div', { class: 'cfg-grid c3' }, campo('Valor por critério (R$)', prV), campo('TKM mínimo (R$)', prT), campo('IPA mínimo', prI), campo('PMA mínimo (R$)', prP), campo('Critérios necessários', prMin)),
+        h('div', { class: 'cfg-grid c3' }, campo('Valor por critério (R$)', prV), campo('TKM mínimo (R$)', prT), campo('IPA mínimo', prI), campo('PMA mínimo (R$)', prP), campo('Critérios necessários', prMin),
+          campo('Mínimo de atendimentos no mês', prAt, 'Só concorre à premiação quem atendeu pelo menos esse número de cupons no mês (padrão 20; 0 = sem mínimo). Com poucos atendimentos, TKM, IPA e PMA são sorte, não desempenho. Abaixo disso a tela mostra "poucos atendimentos".')),
         h('div', { class: 'f-label', style: { marginTop: '14px' } }, 'Bônus sobre as vendas dos outros vendedores (vendedor escolhido nos filtros)'),
         h('div', { class: 'cfg-grid c3' }, campo('Loja abaixo da meta %', bn.abaixo), campo('Loja bateu a meta %', bn.bate), campo('Loja ≥ 120% %', bn.acima120)),
         h('div', { class: 'f-label', style: { marginTop: '14px' } }, 'Rateio'),
@@ -1126,6 +1129,7 @@
         h('div', { class: 'cfg-grid' }, campo('Como divide', gjModo), campo('% da taxa repassada aos vendedores', gjPct)),
         h('div', { class: 'f-label', style: { marginTop: '14px' } }, 'Royalties'),
         h('div', { class: 'cfg-grid c3' }, campo('Loja %', ry.loja), campo('Marketing %', ry.mkt), campo('Espaço Gourmet %', ry.eg), campo('EG marketing %', ry.egMkt)),
+        campo('Divide a meta quem tem pelo menos (dias com venda no mês)', pisoMeta, 'Padrão 4. A meta da loja é dividida só entre quem vendeu em pelo menos esse número de dias no mês; quem cobriu um ou dois dias não diminui a meta dos outros (e continua recebendo a comissão pela faixa, comparada com a mesma meta individual dos demais). No mês em andamento o piso acompanha os dias corridos: até o dia 7 todos com venda dividem. Use 1 para voltar à regra antiga (qualquer venda divide).'),
         campo('Vendedores sem meta individual', semMeta, 'Não dividem a meta da loja (ex.: corporativo, gerente) e recebem a comissão mínima (a taxa "abaixo da meta") sobre o que venderam.'),
         campo('Não recebem comissão', semCom, 'Ficam sem comissão e sem premiação (a gorjeta continua). Ex.: corporativo, sócio.'),
         h('div', { class: 'cfg-acoes' },
@@ -1135,7 +1139,8 @@
               modelo: modelo.value,
               divisaoMeta: { arom: lePct(dv.arom), puro: lePct(dv.puro), acess: lePct(dv.acess) },
               comissao: { modo: modo.value, ...Object.fromEntries(Object.entries(cm).map(([k, o]) => [k, { acima120: lePct(o.acima120), bate: lePct(o.bate), abaixo: lePct(o.abaixo) }])) },
-              premiacao: { ativa: prAtiva.checked, valor: +prV.value, tkm: +prT.value, ipa: +prI.value, pma: +prP.value, minimo: +prMin.value },
+              premiacao: { ativa: prAtiva.checked, valor: +prV.value, tkm: +prT.value, ipa: +prI.value, pma: +prP.value, minimo: +prMin.value, minAtend: Math.max(0, Math.round(+prAt.value || 0)) },
+              pisoDiasMeta: Math.min(31, Math.max(1, Math.round(+pisoMeta.value || TS.contas.PISO_DIAS_META))),
               bonus: { abaixo: lePct(bn.abaixo), bate: lePct(bn.bate), acima120: lePct(bn.acima120) },
               rateio: { ativo: rtAtivo.checked, exclui: lista(rtExc) },
               gorjeta: { modo: gjModo.value, percentual: lePct(gjPct) },
