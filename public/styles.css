@@ -3165,3 +3165,25 @@ button.vl-pac-marca { background: none; text-decoration: underline; cursor: poin
 .ped-conf > div:first-child { flex: 1; min-width: 220px; }
 .ped-conf-sit { margin-left: 8px; }
 .ped-conf-ok { margin: 6px 0; }
+
+/* ---------- Foto do produto (TS.foto): miniatura nas listas e janela da foto grande ---------- */
+.foto-cel { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
+.foto-txt { min-width: 0; flex: 1; }
+.foto-mini { flex: none; width: 40px; height: 40px; padding: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--cream-2); overflow: hidden; cursor: zoom-in; }
+.foto-mini:hover, .foto-mini:focus-visible { border-color: var(--green-2); outline: 2px solid var(--sage-l); }
+.foto-img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.foto-janela { width: min(520px, 100%); max-height: calc(100vh - 32px); overflow: auto; padding: 0; box-shadow: var(--shadow); }
+.foto-cab { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+.foto-x { border: 0; background: transparent; font-size: 18px; color: var(--muted); cursor: pointer; padding: 4px 8px; }
+.foto-grande { background: var(--cream-2); display: grid; place-items: center; min-height: 220px; }
+.foto-grande .foto-img { width: 100%; height: auto; max-height: 60vh; object-fit: contain; }
+.foto-grande .foto-erro { visibility: hidden; }
+.foto-minis { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; padding: 10px 14px 0; }
+.foto-outra { width: 48px; height: 48px; padding: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--cream-2); cursor: pointer; }
+.foto-outra.on { border: 2px solid var(--green); }
+.foto-info { padding: 10px 14px 0; font-size: 13px; }
+.foto-info small { display: block; margin-top: 2px; }
+.foto-acoes { padding: 12px 14px 14px; }
+@media (max-width: 860px) {
+  .foto-mini { width: 52px; height: 52px; border-radius: 10px; }
+}

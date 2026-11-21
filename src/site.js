@@ -1,12 +1,22 @@
 /* Preços do e-commerce (www.teashop.com.br, loja Shopify): lê o catálogo público (/products.json) uma vez por dia
  * às 10h (horário de Brasília) e quando alguém pede "Consultar agora". Guarda em dados/site/precos.json só o que é
- * público no site: produto, variante, SKU, preço, preço "de" (quando está em promoção), disponibilidade e o link.
+ * público no site: produto, variante, SKU, preço, preço "de" (quando está em promoção), disponibilidade, o link e o
+ * endereço das fotos (o painel não copia as fotos: o navegador mostra direto do site; só endereços https dos
+ * servidores de imagem conhecidos, `HOSTS_FOTO`, os mesmos liberados no cabeçalho de segurança do painel).
  * A comparação com os preços das lojas é feita no navegador, com as vendas. */
 const fs = require('fs');
 const path = require('path');
 const C = require('./config');
 
 const SITE = 'https://www.teashop.com.br';
+// servidores de onde o painel aceita mostrar foto de produto (têm de estar também no img-src do cabeçalho de segurança, server.js)
+const HOSTS_FOTO = ['cdn.shopify.com', 'www.teashop.com.br'];
+const MAX_FOTOS = 4;
+/** endereço de foto aceito: https, sem usuário/porta, de um servidor conhecido e de tamanho normal */
+function fotoOk(u) {
+  if (typeof u !== 'string' || u.length > 400) return false;
+  try { const x = new URL(u); return x.protocol === 'https:' && !x.username && !x.port && HOSTS_FOTO.includes(x.hostname); } catch { return false; }
+}
 const pasta = () => path.join(C.DATA_DIR, 'site');
 const arq = () => path.join(pasta(), 'precos.json');
 // histórico: só os pontos em que algo mudou em cada variante — { id: [[data ISO, preço, preço "de" ou null, disponível 1/0], …] }
@@ -43,6 +53,39 @@ function registrar(hist, em, itens) {
 
 const num = (v) => { const x = Number(v); return Number.isFinite(x) ? Math.round(x * 100) / 100 : null; };
 
+/** variantes de uma página do catálogo (products.json): preço, link e fotos (a da variante primeiro, depois as do produto) */
+function itensDe(ps) {
+  const itens = [];
+  for (const p of ps || []) {
+    const doProd = (Array.isArray(p.images) ? p.images : []).map((i) => i && i.src).filter(fotoOk);
+    for (const v of p.variants || []) {
+      const preco = num(v.price), de = num(v.compare_at_price);
+      if (preco == null) continue;
+      const daVar = v.featured_image && fotoOk(v.featured_image.src) ? v.featured_image.src : null;
+      const imgs = [...new Set([daVar, ...doProd].filter(Boolean))].slice(0, MAX_FOTOS);
+      itens.push({
+        id: String(v.id), produto: String(p.title || '').trim(), variante: v.title && v.title !== 'Default Title' ? String(v.title).trim() : '',
+        sku: String(v.sku || '').trim(), tipo: String(p.product_type || '').trim(), preco, de: de != null && de > preco + 0.004 ? de : null,
+        disponivel: v.available !== false, url: `${SITE}/products/${encodeURIComponent(p.handle)}?variant=${v.id}`,
+        ...(imgs.length ? { imgs } : {}),
+      });
+    }
+  }
+  return itens;
+}
+
+/** fotos por produto, para as listas do painel: [{ s: SKU, n: nome, v: variante, u: link, i: [fotos] }] (só quem tem foto) */
+let fotosMemo = null; // { chave, val }
+function fotos() {
+  let chave = '';
+  try { const st = fs.statSync(arq()); chave = `${st.mtimeMs}|${st.size}`; } catch { return { em: null, itens: [] }; }
+  if (fotosMemo && fotosMemo.chave === chave) return fotosMemo.val;
+  const d = ler() || { itens: [] };
+  const val = { em: d.em || null, itens: (d.itens || []).filter((x) => Array.isArray(x.imgs) && x.imgs.some(fotoOk)).map((x) => ({ s: x.sku || '', n: x.produto, v: x.variante || '', u: x.url, i: x.imgs.filter(fotoOk).slice(0, MAX_FOTOS) })) };
+  fotosMemo = { chave, val };
+  return val;
+}
+
 /** baixa o catálogo inteiro (até 40 páginas de 250 produtos) */
 async function baixar() {
   const itens = [];
@@ -52,17 +95,7 @@ async function baixar() {
     const j = await r.json();
     const ps = Array.isArray(j.products) ? j.products : [];
     if (!ps.length) break;
-    for (const p of ps) {
-      for (const v of p.variants || []) {
-        const preco = num(v.price), de = num(v.compare_at_price);
-        if (preco == null) continue;
-        itens.push({
-          id: String(v.id), produto: String(p.title || '').trim(), variante: v.title && v.title !== 'Default Title' ? String(v.title).trim() : '',
-          sku: String(v.sku || '').trim(), tipo: String(p.product_type || '').trim(), preco, de: de != null && de > preco + 0.004 ? de : null,
-          disponivel: v.available !== false, url: `${SITE}/products/${encodeURIComponent(p.handle)}?variant=${v.id}`,
-        });
-      }
-    }
+    itens.push(...itensDe(ps));
     if (ps.length < 250) break;
   }
   if (!itens.length) throw new Error('o site não devolveu nenhum produto');
@@ -121,4 +154,4 @@ function agendar() {
   setInterval(tick, 60e3).unref();
 }
 
-module.exports = { ler, lerHist, atualizar, agendar, rodando: () => !!rodando, semear };
+module.exports = { ler, lerHist, atualizar, agendar, rodando: () => !!rodando, semear, fotos, fotoOk, itensDe, HOSTS_FOTO };
