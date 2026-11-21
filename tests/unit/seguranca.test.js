@@ -19,7 +19,7 @@ const ipNovo = () => `203.0.113.${ipSeq++}`; // faixa reservada para documentaç
 
 async function subir() {
   srv = spawn(process.execPath, ['server.js'], { cwd: path.join(__dirname, '../..'), env: { ...process.env, ...ENV }, stdio: 'ignore' });
-  for (let k = 0; k < 100; k++) { try { const r = await fetch(BASE + '/login'); if (r.status < 500) break; } catch { /* subindo */ } await new Promise((ok) => setTimeout(ok, 100)); }
+  for (let k = 0; k < 300; k++) { try { const r = await fetch(BASE + '/login'); if (r.status < 500) break; } catch { /* subindo */ } await new Promise((ok) => setTimeout(ok, 100)); }
 }
 async function parar() { if (srv) { const fim = new Promise((ok) => srv.once('exit', ok)); srv.kill(); await fim; srv = null; } }
 const entrar = (usuario, senha, ip) => fetch(BASE + '/login', { method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Forwarded-For': ip || ipNovo() }, body: `usuario=${usuario}&senha=${encodeURIComponent(senha)}` });

@@ -51,7 +51,8 @@ before(async () => {
   fs.writeFileSync(path.join(dir, `${D2.replace(/-/g, '')}_${chave(900)}.xml`), xml(900, '500.00', '<finNFe>4</finNFe>'));
 
   srv = spawn(process.execPath, ['server.js'], { cwd: path.join(__dirname, '../..'), env: { ...process.env, PORT: String(PORTA), DATA_DIR: tmp, CONFIG_FILE, SESSION_SECRET: 'teste-conferencia', NODE_ENV: 'test' }, stdio: 'ignore' });
-  for (let k = 0; k < 100; k++) { try { const r = await fetch(BASE + '/login'); if (r.status < 500) break; } catch { /* subindo */ } await new Promise((ok) => setTimeout(ok, 100)); }
+  // até 30 s para o servidor subir: com os outros testes rodando juntos a máquina do GitHub pode passar de 10 s
+  for (let k = 0; k < 300; k++) { try { const r = await fetch(BASE + '/login'); if (r.status < 500) break; } catch { /* subindo */ } await new Promise((ok) => setTimeout(ok, 100)); }
   for (const nome of ['dono', 'ger_com', 'ger_sem', 'ger_pad', 'vend']) {
     const r = await fetch(BASE + '/login', { method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: `usuario=${nome}&senha=senha-teste-123` });
     const c = (r.headers.get('set-cookie') || '').split(';')[0];

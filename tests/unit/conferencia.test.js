@@ -179,7 +179,8 @@ test('CONF-DEMO-01: na apresentação o exemplo de caixa fechado depois da meia-
   const DEMO = require('../../src/demo'), CF = require('../../src/conferencia'), IND = require('../../src/indicadores');
   const partes = DEMO.partes(), base = Date.parse(IND.hojeSP().iso + 'T12:00:00Z');
   const ruins = [];
-  for (let i = 0; i < 60; i++) {
+  // duas semanas, um dia sim e outro não (cobre todos os dias da semana): leve, para não roubar a máquina dos outros testes
+  for (let i = 0; i < 28; i += 2) {
     const hoje = new Date(base - i * 864e5).toISOString().slice(0, 10);
     for (const p of partes) {
       const v = CF.demo(p, hoje).lista.filter((x) => x.cod === 'virada');
