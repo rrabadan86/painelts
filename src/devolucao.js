@@ -212,7 +212,7 @@ function pedirNfe(id, d, simular, emitir) {
   }
   fs.mkdirSync(envioNfe(id), { recursive: true });
   try { fs.unlinkSync(path.join(envioNfe(id), d.id + '.resultado.json')); } catch { /* ok */ }
-  C.gravarAtomico(path.join(envioNfe(id), d.id + '.json'), JSON.stringify({ entradaId: d.nota.id, itens: [...d.itens.reduce((m, i) => m.set(i.cod, Math.round(((m.get(i.cod) || 0) + i.qtd) * 1000) / 1000), new Map())].map(([codigo, qtd]) => ({ codigo, qtd })), simular: !!simular, emitir: !!emitir, totalTeste }), 0o640);
+  C.gravarAtomico(path.join(envioNfe(id), d.id + '.json'), JSON.stringify({ cfop: require('./nfecfop').daLoja(id).devolucao || undefined, entradaId: d.nota.id, itens: [...d.itens.reduce((m, i) => m.set(i.cod, Math.round(((m.get(i.cod) || 0) + i.qtd) * 1000) / 1000), new Map())].map(([codigo, qtd]) => ({ codigo, qtd })), simular: !!simular, emitir: !!emitir, totalTeste }), 0o640);
   return { ok: atualizar(id, d.id, (x) => { x.nfe = { estado: 'na_fila', em: new Date().toISOString(), simular: !!simular, emitir: !!emitir }; }) };
 }
 /** resultado do robô para a NF-e de devolução */

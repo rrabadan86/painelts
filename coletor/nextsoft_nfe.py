@@ -95,6 +95,8 @@ LER_CADASTROS = "async () => {" + JS_BASE + """
     produtos: ((acha('onSubmitProduct') || {}).selectList || {}).produtos.filter(ativo).map((x) => ({ id: x.id, codigo: String(x.codigo ?? ''), nome: x.nome || '', preco: Number(x.precoVenda) || 0,
       un: typeof x.unidadeMedida === 'string' ? x.unidadeMedida : (x.unidadeMedida && (x.unidadeMedida.sigla || x.unidadeMedida.nome)) || '' })),
     pagamentos: (sl.formasPagamento || []).map((x) => ({ codigo: String(x.codigo), descricao: x.descricao })),
+    // CFOPs de saída da loja (para a escolha do CFOP de venda e de devolução nas Configurações do painel)
+    cfops: (sl.cfops || []).map((x) => ({ codigo: String(x.codigo ?? ''), descricao: x.descricao || x.nome || '' })).filter((x) => /^[56][0-9]{3}$/.test(x.codigo)),
   };
 }"""
 
@@ -104,7 +106,9 @@ PREENCHER = "async (p) => {" + JS_BASE + """
   const cod = (arr, c) => (arr || []).find((x) => String(x.codigo) === String(c));
   const erro = (t) => { throw new Error(t); };
   const motivo = cod(sl.motivosMovimentacao, 1) || erro('motivo [1] Venda não existe nesta loja');
-  const cfop = cod(sl.cfops, '5102') || erro('CFOP 5102 não existe nesta loja');
+  // CFOP: o escolhido pela loja no painel (Configurações → Integrações → Notas fiscais) ou 5102, como sempre foi
+  const cfopCod = p.cfop || '5102';
+  const cfop = cod(sl.cfops, cfopCod) || erro(`CFOP ${cfopCod} não existe nesta loja${p.cfop ? ' (é o escolhido nas Configurações do painel → Integrações → Notas fiscais)' : ''}`);
   const pag = cod(sl.formasPagamento, p.pagamento) || erro(`forma de pagamento [${p.pagamento}] não existe nesta loja`);
   const fin = cod(sl.finalidades, 1) || erro('finalidade NF-e normal não existe');
   const serie = (sl.serieNfe || []).find((x) => x.descricao === 'NF-e') || erro('série "NF-e" não existe');
@@ -133,7 +137,9 @@ PREENCHER = "async (p) => {" + JS_BASE + """
     for (let k = 0; k < 40 && !f.item.sequenciaFiscalId; k++) await espera(250);
     if (!f.item.sequenciaFiscalId) {
       // a janela não escolheu sozinha: a regra de Venda que inclui o produto (a mesma que o AppNext procura)
-      const seq = (f.selectList.sequenciasFiscal || []).find((q) => q.motivoMovimentacao && q.motivoMovimentacao.id === motivo.id && (q.produtosLoja || []).some((e) => e.id === prod.id));
+      const cands = (f.selectList.sequenciasFiscal || []).filter((q) => q.motivoMovimentacao && q.motivoMovimentacao.id === motivo.id && (q.produtosLoja || []).some((e) => e.id === prod.id));
+      // com CFOP escolhido, a regra dele primeiro
+      const seq = cands.find((q) => q.cfop && String(q.cfop.codigo) === String(cfopCod)) || cands[0];
       if (seq) { f.$set(f.item, 'sequenciaFiscalId', seq.id); for (let k = 0; k < 20 && !(f.item.imposto && f.item.imposto.cfopId); k++) await espera(250); }
     }
     await espera(800);
@@ -252,7 +258,12 @@ DEVOLVER = "async (p) => {" + JS_BASE.replace("acha('salvarRascunho')", "acha('m
   const cfops = [...new Map((sl.cfops || []).filter((c) => c && ehGuid(c.id)).map((c) => [c.id, c])).values()];
   if (!cfops.length) erro('não há regra fiscal (sequência) de Devolução ao Fornecedor nesta loja no AppNext');
   let cfopEscolhido = cfops[0];
-  if (cfops.length > 1) {
+  if (p.cfop) {
+    // CFOP escolhido pela loja no painel: só ele; se não houver regra fiscal de devolução com ele, para (nunca usa outro)
+    const so = cfops.filter((c) => String(c.codigo) === String(p.cfop));
+    if (!so.length) erro(`o CFOP ${p.cfop} escolhido nas Configurações do painel não tem regra fiscal (sequência) de devolução nesta loja no AppNext; há: ${cfops.map((c) => c.codigo).join(', ')}`);
+    cfopEscolhido = so[0];
+  } else if (cfops.length > 1) {
     const c5 = cfops.filter((c) => String(c.codigo).startsWith('5')), c6 = cfops.filter((c) => String(c.codigo).startsWith('6'));
     const ufEnd = String((((forn && forn.enderecoSelecionado && forn.enderecoSelecionado.cidade) || (S.enderecoReferencia && S.enderecoReferencia.cidade) || {}).uf) || '').toUpperCase();
     const ufLoja = String((((tela.lojaAtual && tela.lojaAtual.endereco && tela.lojaAtual.endereco.cidade) || {}).uf) || (tela.lojaAtual && tela.lojaAtual.uf) || '').toUpperCase();

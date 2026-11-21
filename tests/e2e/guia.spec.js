@@ -23,7 +23,9 @@ test('Configuração guiada: não abre sozinha na apresentação; o atalho das C
   await expect(botao).toHaveAttribute('title', /um passo de cada vez/);
   await botao.click();
   const g = page.locator('.guia');
-  await expect(g.locator('.guia-trilha .guia-p')).toHaveCount(4);
+  await expect(g.locator('.guia-trilha .guia-p')).toHaveCount(5);
+  await expect(g.locator('.guia-p').nth(4)).toContainText('5. Notas fiscais');
+  await expect(g.locator('.guia-p').nth(4)).toContainText('opcional');
   // a primeira loja da apresentação tem só o FIXE faltando: abre nele
   await expect(g.locator('.guia-p.at b')).toHaveText('3. FIXE');
   await expect(g.locator('.guia-p.ok')).toHaveCount(3);
@@ -53,8 +55,22 @@ test('Configuração guiada: não abre sozinha na apresentação; o atalho das C
   await g.locator('.guia-pular').click();
   await g.locator('.guia-pular').click();
   await g.locator('.guia-pular').click();
+  // passo 5 (opcional): CFOP da venda e da devolução, com a lista lida do AppNext e o automático como padrão
+  await expect(g.locator('h3')).toHaveText('CFOP das notas fiscais');
+  await expect(g.locator('.guia-p.at b')).toHaveText('5. Notas fiscais');
+  const cxs = g.locator('.nfe-cfop select');
+  await expect(cxs).toHaveCount(2);
+  await expect(cxs.nth(0).locator('option').first()).toHaveText('Automático (5102, como hoje)');
+  await expect(cxs.nth(0).locator('option', { hasText: '5102 · Venda' })).toHaveCount(1);
+  await expect(cxs.nth(1).locator('option', { hasText: '5202 · Devolução' })).toHaveCount(1);
+  await expect(g.locator('.nfe-cfop')).toContainText('nunca emite com outro');
+  await semRolagem(page);
+  await print(page, info, 'cfop');
+  await cxs.nth(1).selectOption('5202');
+  await g.locator('.guia-pe .btn.primary').click();
+  await expect(page.locator('.toast')).toContainText('nada é salvo');
   // tela final: o que ficou pronto e o que falta, com o caminho para concluir
-  await expect(g.locator('.guia-li')).toHaveCount(4);
+  await expect(g.locator('.guia-li')).toHaveCount(5);
   await expect(g.locator('.guia-li.pu')).toContainText('FIXE');
   await expect(g.locator('.guia-nota')).toContainText('Configurações → Integrações');
   await semRolagem(page);
@@ -87,4 +103,23 @@ test('Configuração guiada: o Início lembra o que falta e a aba Integrações 
   await bloco.locator('.btn').click();
   await expect(page.locator('.guia .guia-p.at b')).toHaveText('3. FIXE');
   await semRolagem(page);
+});
+
+test('Configurações → Integrações: cartão do CFOP das notas fiscais (o mesmo formulário do passo 5)', async ({ page }) => {
+  const erros = [];
+  page.on('pageerror', (e) => erros.push(e.message));
+  await abrir(page, '#config');
+  await expect(page.locator('.page-title')).toHaveText('Configurações');
+  const loja = page.locator('.cfg-lojas-t tbody tr').first();
+  if (await loja.count()) await loja.click();
+  await page.locator('nav.cfg-sub a', { hasText: 'Integrações' }).click();
+  const card = page.locator('.cfg-nfe-cfop');
+  await expect(card).toBeVisible({ timeout: 20000 });
+  await expect(card.locator('h3')).toHaveText('Notas fiscais: CFOP');
+  await expect(card.locator('select')).toHaveCount(2);
+  await expect(card.locator('.cfg-campo .dica-i')).toHaveCount(2);
+  await card.getByRole('button', { name: 'Salvar CFOP' }).click();
+  await expect(page.locator('.toast')).toContainText('nada é salvo');
+  await semRolagem(page);
+  expect(erros).toEqual([]);
 });

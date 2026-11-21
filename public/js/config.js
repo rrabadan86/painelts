@@ -253,7 +253,7 @@
       ['metas', 'Metas e comissão', 'Meta do mês, regras de comissão e férias da equipe', () => [blocoMetas(l), blocoFerias(l), gestor ? blocoRegras(l) : null]],
       ['loja', 'Loja e equipe', 'Horário de funcionamento, equipe, logo e dados da loja', () => [blocoOperacao(l), blocoMarca(l), gestor ? blocoEditar(l) : null]],
       gestor && TS.blocoEstoqueCfg ? ['estoque', 'Estoque e margem', 'Impostos, maquininha, custos da loja por categoria, reposição e embalagens', () => [TS.blocoEstoqueCfg(l.id)]] : null,
-      ['integracoes', 'Integrações', 'AppNext, Sistema de Pedidos, FIXE e e-mail das devoluções', () => [gestor && TS.guia ? TS.guia.bloco(l.id) : null, gestor ? blocoAppNext(l) : null, gestor && TS.blocoPedidoAcesso ? TS.blocoPedidoAcesso(l.id) : null, blocoFixe(l), blocoDevolucao(l)]],
+      ['integracoes', 'Integrações', 'AppNext, Sistema de Pedidos, FIXE e e-mail das devoluções', () => [gestor && TS.guia ? TS.guia.bloco(l.id) : null, gestor ? blocoAppNext(l) : null, gestor && TS.blocoPedidoAcesso ? TS.blocoPedidoAcesso(l.id) : null, blocoFixe(l), blocoDevolucao(l), gestor ? blocoNfeCfop(l) : null]],
       gestor && TS.blocoIA ? ['ia', 'Inteligência artificial', 'Chave da Anthropic desta loja, teto e uso do mês', () => [TS.blocoIA(l.id)]] : null,
       ['avisos', 'Mensagens', 'Fechamento do dia por e-mail, mensagens de WhatsApp, robô do WhatsApp e cobrança à franquia', () => [blocoFechamento(l), blocoWpp(l), gestor && TS.blocoZap ? TS.blocoZap(l.id) : null, gestor ? blocoCobranca(l) : null]],
     ].filter(Boolean);
@@ -625,6 +625,16 @@
   }
 
   // ---- AppNext
+  /** CFOP das NF-e que o robô emite (o mesmo formulário do passo 5 da configuração guiada) */
+  function blocoNfeCfop(l) {
+    if (!TS.guia || !TS.guia.formCfop) return null;
+    const f = TS.guia.formCfop(l.id, l.nfeCfop, l.cfopsAppNext);
+    return h('section', { class: 'cfg-bloco cfg-form cfg-nfe-cfop' }, h('h3', null, 'Notas fiscais: CFOP'),
+      h('p', { class: 'muted' }, 'Qual CFOP o robô usa ao emitir no AppNext a NF-e de venda e a de devolução ao fornecedor.'),
+      f.el,
+      h('div', { class: 'cfg-acoes' }, acao('Salvar CFOP', async () => { const v = await f.salvar(); l.nfeCfop = v; return 'CFOP salvo. Vale para as próximas notas.'; }, 'btn primary')));
+  }
+
   function blocoAppNext(l) {
     const c = l.coletor;
     const rede = inp({ value: c.rede || 'teashop', autocomplete: 'off' });

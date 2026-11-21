@@ -27,6 +27,12 @@ paths:
 - `coletor/nextsoft_nfe.py`: `ACAO=cadastros` só lê; `ACAO=rascunho` preenche e salva rascunho, e com `emitir` conclui e homologa.
   Confere produtos, quantidades, preços e total antes de salvar; se algo não bater, **para sem salvar**. `SIMULAR=1` faz tudo menos o clique final.
 
+## CFOP das notas (decisão do dono)
+- A loja escolhe o CFOP da NF-e de **venda** e o da **devolução ao fornecedor** em Configurações → Integrações → "Notas fiscais: CFOP" ou no **passo 5 (opcional) da configuração guiada** — o mesmo formulário (`TS.guia.formCfop`) e a mesma rota (`PUT /api/admin/lojas/:id/nfe-cfop`, só admin e franqueado da loja, auditada). Fica em `loja.nfeCfop = { venda, devolucao }` (`src/nfecfop.js`); vazio = automático, como sempre foi (venda 5102; devolução pela regra fiscal da loja).
+- As opções são os CFOPs de saída que o robô leu do AppNext em "Buscar cadastros" (`cadastros.cfops`); sem a lista, dá para digitar o número (4 dígitos, começando por 5 ou 6).
+- O pedido ao robô leva `cfop` (`src/nfe.js` na venda, `src/devolucao.js` na devolução). Com CFOP escolhido o robô usa **só ele**: na venda, CFOP da nota e regra fiscal do produto com esse CFOP primeiro; na devolução, só a regra com esse CFOP — se não houver, para e diz quais existem (nunca emite com outro).
+- Perda (inventário) **não** tem nota no painel; fica para depois, conforme o contador do dono responder (CFOP 5.927 no Simples Nacional).
+
 ## Regras que não mudam
 - O robô conclui e homologa NF-e (venda e devolução) **só depois da revisão** (teste conferido no painel, total igual ao do teste),
   e só para admin, franqueado e gerentes com a tela Notas fiscais. Confira no servidor, não só na tela.
