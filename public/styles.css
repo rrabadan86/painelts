@@ -3187,3 +3187,9 @@ button.vl-pac-marca { background: none; text-decoration: underline; cursor: poin
 @media (max-width: 860px) {
   .foto-mini { width: 52px; height: 52px; border-radius: 10px; }
 }
+
+/* Pedido: as 5 abas quebram em linhas (sem rolar para o lado), como o seletor das sugestões */
+.ped-tools .seg, .ped-tools .seg button { flex-wrap: wrap; overflow-x: visible; }
+.ped-tools .seg { border-radius: 18px; }
+.ped-tools .seg button { flex: 0 1 auto; white-space: normal; text-align: left; }
+.ped-ver-nota { margin: 8px 0 0; font-size: 12.5px; }

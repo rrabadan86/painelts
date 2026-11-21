@@ -13,7 +13,7 @@ test('Pedido: miniatura da foto ao lado do nome; tocar abre a foto grande, troca
   page.on('pageerror', (e) => erros.push(e.message));
   const celular = info.project.name === 'celular';
   await abrir(page, '#pedido');
-  await page.locator('.seg button', { hasText: /^Todos \(/ }).click();
+  await page.locator('.seg button', { hasText: /^Site de pedidos completo \(/ }).click();
   const linha = page.locator(celular ? '.ped-card' : '.ped-t tbody tr').filter({ has: page.locator('.foto-mini') }).first();
   await expect(linha).toBeVisible({ timeout: 40000 });
   const mini = linha.locator('.foto-mini');

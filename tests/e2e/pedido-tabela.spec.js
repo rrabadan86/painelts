@@ -6,7 +6,7 @@ async function abrir(page) {
   await page.goto('/apresentacao');
   await page.waitForFunction(() => window.TS && TS.db && TS.state.loja && TS.state.loja !== 'todas', null, { timeout: 60000 });
   await page.evaluate(() => { location.hash = '#pedido'; });
-  await expect(page.locator('.seg button', { hasText: /^Todos \(/ })).toBeVisible({ timeout: 40000 });
+  await expect(page.locator('.seg button', { hasText: /^Site de pedidos completo \(/ })).toBeVisible({ timeout: 40000 });
 }
 const aba = (page, nome) => page.locator('.seg button', { hasText: nome }).first();
 
@@ -14,7 +14,7 @@ test('Pedido: colunas novas (margem bruta do pacote, classe em ícone) e filtro 
   const erros = [];
   page.on('pageerror', (e) => erros.push(e.message));
   await abrir(page);
-  await aba(page, /^Todos \(/).click();
+  await aba(page, /^Site de pedidos completo \(/).click();
   const linhas = await page.evaluate(async () => {
     // as mesmas linhas da tela: pega do cadastro o que a tabela deve mostrar
     const e = await (await fetch(`/api/demo/estoque?loja=${encodeURIComponent(TS.state.loja)}`)).json();
@@ -98,7 +98,7 @@ test('Pedido: adicionar na 2ª página não volta para a 1ª; a linha que muda d
   const erros = [];
   page.on('pageerror', (e) => erros.push(e.message));
   await abrir(page);
-  await aba(page, /^Todos \(/).click();
+  await aba(page, /^Site de pedidos completo \(/).click();
   const pager = page.locator('.card', { has: page.locator('.ped-t') }).getByRole('button', { name: 'Próxima ›' });
   await expect(pager).toBeVisible();
   await pager.click();
@@ -111,11 +111,9 @@ test('Pedido: adicionar na 2ª página não volta para a 1ª; a linha que muda d
   await mais.click();
   await expect(page.locator('.ped-t tbody tr', { hasText: nome }).first().locator('.ped-ab.tira')).toBeVisible();
   expect(await faixa.innerText(), 'continua na mesma página').toBe(antes);
-  // numa aba de onde a linha sai ("Ficou de fora" ou "Resto do catálogo"): ela fica, marcada, até trocar de aba
-  for (const rot of [/^Ficou de fora \(/, /^Resto do catálogo \(/]) {
-    await aba(page, rot).click();
-    if (await page.locator('.ped-t tbody .ped-ab.poe').count()) break;
-  }
+  // numa aba de onde a linha sai ("Verificar"): ela fica, marcada, até trocar de aba
+  await aba(page, /^Verificar \(/).click();
+  await expect(page.locator('.ped-t tbody .ped-ab.poe').first()).toBeVisible();
   const b = page.locator('.ped-t tbody .ped-ab.poe').first();
   const tr = b.locator('xpath=ancestor::tr');
   const prod = (await tr.locator('td').first().innerText()).match(/cód\. \S+/)[0]; // o código identifica a linha
@@ -123,11 +121,11 @@ test('Pedido: adicionar na 2ª página não volta para a 1ª; a linha que muda d
   const ficou = page.locator('.ped-t tbody tr', { has: page.locator('.ped-ficou') });
   await expect(ficou).toHaveCount(1);
   await expect(ficou).toContainText(prod);
-  await expect(ficou.locator('.ped-ficou')).toContainText('foi para "No pedido"');
+  await expect(ficou.locator('.ped-ficou')).toContainText('foi para "Complemento"');
   await page.waitForTimeout(700); // não some sozinha depois
   await expect(ficou).toHaveCount(1);
-  // trocou de aba e voltou: aí sim ela não está mais aqui; está em "No pedido"
-  await aba(page, /^No pedido \(/).click();
+  // trocou de aba e voltou: aí sim ela não está mais aqui; está em "Complemento"
+  await aba(page, /^Complemento \(/).click();
   await expect(page.locator('.ped-t tbody tr', { hasText: prod }).first()).toBeVisible();
   await expect(page.locator('.ped-ficou')).toHaveCount(0);
   expect(erros).toEqual([]);
