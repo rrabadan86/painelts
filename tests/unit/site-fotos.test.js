@@ -49,3 +49,25 @@ test('FOTO-03: a lista para as telas só traz quem tem foto, sem preço; refaz q
   assert.deepStrictEqual(f.itens, [{ s: '20715', n: 'Mug Harmony', v: 'Rosae', u: 'https://www.teashop.com.br/products/mug-harmony?variant=1', i: [CDN + 'b.jpg'] }]);
   assert.ok(!JSON.stringify(f).includes('99.9'), 'sem preço');
 });
+
+test('FOTO-04: a tela liga a foto ao produto pelo código (sem zeros; com ou sem a letra que o site põe no fim) e pelo nome sem o " - Tea Shop"', () => {
+  const F = require('../../public/js/fotoprod');
+  const idx = F.montar([
+    { s: '66367', n: 'Travel Tea Bambo Mystic Feathers', v: '', u: 'u1', i: [CDN + 'a.jpg'] },
+    { s: '65404C', n: 'Caneca de Porcelana Mug Harmony Samurai - Tea Shop', v: '', u: 'u2', i: [CDN + 'b.jpg'] },
+    { s: '065500', n: 'Infusor Color Filter Azul - Tea Shop', v: '', u: 'u3', i: [CDN + 'c.jpg'] },
+    { s: '70001A', n: 'Lata A', v: '', u: 'u4', i: [CDN + 'd.jpg'] }, { s: '70001', n: 'Lata Sem Letra', v: '', u: 'u5', i: [CDN + 'e.jpg'] },
+    { s: '', n: 'Kit Sem Código - Tea Shop', v: '', u: 'u6', i: [CDN + 'f.jpg'] },
+    { s: '99999', n: 'Sem foto', v: '', u: 'u7', i: [] },
+  ]);
+  const de = (cod, nome) => idx.porCod.get(F.semZeros(cod)) || idx.porNome.get(F.norm(F.nomeSite(nome))) || null;
+  assert.strictEqual(de('66367', 'qualquer').url, 'u1');
+  assert.strictEqual(de('65404', 'Mug Harmony Samurai').url, 'u2', 'código do site com letra no fim');
+  assert.strictEqual(de('65404C', 'x').url, 'u2');
+  assert.strictEqual(de('65500', 'x').url, 'u3', 'zeros à esquerda não contam');
+  assert.strictEqual(de('70001', 'x').url, 'u5', 'o código sem letra de outro produto não é trocado');
+  assert.strictEqual(de('123', 'kit sem codigo').url, 'u6', 'pelo nome, sem acento e sem o " - Tea Shop"');
+  assert.strictEqual(idx.porCod.get('65404').nome, 'Caneca de Porcelana Mug Harmony Samurai');
+  assert.strictEqual(de('99999', 'Sem foto'), null);
+  assert.strictEqual(F.montar([]).n, 0, 'lista vazia é reconhecida (a tela tenta de novo em seguida)');
+});

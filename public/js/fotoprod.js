@@ -1,31 +1,40 @@
 /* Foto do produto (TS.foto): miniatura ao lado do nome nas listas e janela com a foto grande.
  * As fotos são as do site da Tea Shop (consulta diária de src/site.js); o painel não copia: o navegador mostra direto
  * do site, só dos servidores liberados no cabeçalho de segurança. A ligação com o produto da loja é pelo código (SKU do
- * site = código do produto, sem zeros à esquerda) e, sem código igual, pelo nome idêntico. Chá a granel não tem foto.
+ * site = código do produto, sem zeros à esquerda; o site põe uma letra no fim de alguns, ex. 65404C) e, sem código
+ * igual, pelo nome idêntico (o site acrescenta " - Tea Shop" no fim: não conta). Chá a granel não tem foto.
  * Sem foto, a lista fica como era (nenhum espaço vazio). */
 (function () {
   'use strict';
-  const h = TS.h;
+  const h = (...a) => TS.h(...a);
   const norm = (s) => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
   const semZeros = (c) => String(c ?? '').trim().replace(/^0+/, '');
-  let indice = null, pedido = null, chave = null; // { porCod, porNome }; na apresentação as fotos fictícias são por loja
+  // nome sem o " - Tea Shop" que o site põe no fim
+  const nomeSite = (s) => String(s ?? '').replace(/\s*[-–|]\s*tea\s*shop\s*$/i, '');
+  let indice = null, pedido = null, chave = null, quando = 0; // { porCod, porNome, n }; na apresentação as fotos fictícias são por loja
+  const VALE_MS = 10 * 60e3, VAZIO_MS = 20e3; // relê depois de 10 min; sem foto nenhuma (site ainda não consultado), tenta de novo logo
 
   function montar(itens) {
     const porCod = new Map(), porNome = new Map();
     for (const x of itens || []) {
       if (!x || !Array.isArray(x.i) || !x.i.length) continue;
-      const f = { imgs: x.i, url: x.u || '', nome: [x.n, x.v].filter(Boolean).join(' · ') };
+      const nome = nomeSite(x.n);
+      const f = { imgs: x.i, url: x.u || '', nome: [nome, x.v].filter(Boolean).join(' · ') };
       const c = semZeros(x.s);
       if (c && !porCod.has(c)) porCod.set(c, f);
-      for (const n of [norm(x.n + ' ' + (x.v || '')), norm(x.n)]) if (n && !porNome.has(n)) porNome.set(n, f);
+      for (const n of [norm(nome + ' ' + (x.v || '')), norm(nome)]) if (n && !porNome.has(n)) porNome.set(n, f);
     }
-    return { porCod, porNome };
+    // código do site com letra no fim (65404C): vale também sem a letra, se esse código não for de outro produto
+    for (const [c, f] of [...porCod]) { const m = /^(\d{4,})[a-z]{1,2}$/i.exec(c); if (m && !porCod.has(m[1])) porCod.set(m[1], f); }
+    return { porCod, porNome, n: porCod.size + porNome.size };
   }
-  /** busca as fotos uma vez por sessão do painel; nunca derruba a tela (sem fotos = listas como antes) */
+  /** busca as fotos e guarda por 10 minutos (se veio vazio, por 20 s: o site pode ter acabado de ser consultado);
+   *  nunca derruba a tela (sem fotos = listas como antes) */
   function carregar() {
     const k = TS.demo ? String(TS.state.loja || '') : 'painel';
-    if (pedido && chave === k) return pedido;
-    chave = k;
+    const idade = Date.now() - quando;
+    if (pedido && chave === k && idade < (indice && !indice.n ? VAZIO_MS : VALE_MS)) return pedido;
+    chave = k; quando = Date.now();
     pedido = fetch(`${TS.api('site/fotos')}?loja=${encodeURIComponent(TS.state.loja || '')}`, { credentials: 'same-origin' })
       .then((r) => (r.ok ? r.json() : { itens: [] })).then((d) => { indice = montar(d && d.itens); return indice; })
       .catch(() => { pedido = null; indice = montar([]); return indice; });
@@ -34,7 +43,7 @@
   /** foto do produto: { imgs, url, nome } ou null (só depois de `carregar()`) */
   function de(cod, nome) {
     if (!indice) return null;
-    return indice.porCod.get(semZeros(cod)) || indice.porNome.get(norm(nome)) || null;
+    return indice.porCod.get(semZeros(cod)) || indice.porNome.get(norm(nomeSite(nome))) || null;
   }
   // a loja do site entrega a foto no tamanho pedido: miniatura leve na lista, grande só na janela
   const tam = (u, w) => (/^data:/.test(u) ? u : u + (u.includes('?') ? '&' : '?') + 'width=' + w);
@@ -84,5 +93,8 @@
     return m ? h('span', { class: 'foto-cel' }, m, h('span', { class: 'foto-txt' }, conteudo)) : conteudo;
   }
 
-  TS.foto = { carregar, de, mini, comMini, abrir, montar };
+  /** esquece o que estava guardado (depois de "Consultar agora" na tela Site) */
+  const limpar = () => { pedido = null; quando = 0; };
+  if (typeof module !== 'undefined' && module.exports) { module.exports = { montar, norm, nomeSite, semZeros }; return; }
+  TS.foto = { carregar, de, mini, comMini, abrir, montar, limpar };
 })();
