@@ -41,3 +41,13 @@ test('GRP-04: sem venda devolve null; base vazia ou ausente não quebra', () => 
   assert.strictEqual(G.montar(null).de('1', 'x', true), null);
   assert.strictEqual(G.montar({ n: 0, D: {} }).de('1', 'x'), null);
 });
+
+test('GRP-05: grupo do cadastro vira o grupo do filtro das Vendas pela relação que as vendas mostram; grupo que nunca vendeu fica sem', () => {
+  const idx = G.montar(base(VENDAS));
+  assert.strictEqual(idx.vendasDe('CHÁ VERDE AROMATIZADO'), 'CHÁ AROMATIZADO');
+  assert.strictEqual(idx.vendasDe(' chá verde aromatizado '), 'CHÁ AROMATIZADO', 'sem diferenciar maiúsculas nem espaços');
+  assert.strictEqual(idx.vendasDe('ACESSÓRIOS'), 'ACESSÓRIOS');
+  assert.strictEqual(idx.vendasDe('GRUPO QUE NUNCA VENDEU'), '');
+  assert.strictEqual(idx.vendasDe(''), '');
+  assert.strictEqual(G.montar(null).vendasDe('ACESSÓRIOS'), '');
+});

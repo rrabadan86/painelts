@@ -520,7 +520,7 @@
     if (atual === 'nfsaida' || atual === 'creditos') atual = 'notas'; // Notas fiscais → Saída fica dentro de Notas fiscais
     const g = TS.GRUPOS.find(([, ps]) => ps.includes(atual));
     if (!g || g[1].length < 2) return document.createDocumentFragment();
-    return h('nav', { class: 'submenu', 'aria-label': g[0] }, g[1].map((p) => h('a', { href: '#' + p, class: p === atual ? 'on' : null, 'aria-current': p === atual ? 'page' : null }, ROTULO[p])));
+    return TS.ativoVisivel(h('nav', { class: 'submenu', 'aria-label': g[0] }, g[1].map((p) => h('a', { href: '#' + p, class: p === atual ? 'on' : null, 'aria-current': p === atual ? 'page' : null }, ROTULO[p]))));
   };
 
   /** abas conforme o perfil */
