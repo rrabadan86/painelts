@@ -585,17 +585,19 @@
       }
     }
     // ---------- tabela ----------
-    const filtro = state.pedFiltro || 'pedido';
+    // Abas na ordem em que a pessoa pensa o pedido (decisão do dono): o que chega → o que a franquia manda → o que eu ponho →
+    // o que falta decidir → tudo o que existe. [rótulo, quais linhas, explicação]
+    const daPraPedir = (r) => r.site === 'ok' || r.site === 'sem';
+    // precisa repor (ou a equipe pediu) e ainda não está no carrinho
+    const aVerificar = (r) => !r.obrig && !(r.pedir > 0) && (!r.extra || !!r.sug);
     const FILTROS = {
-      pedido: ['No pedido', (r) => r.pedir > 0 && !r.obrig],
-      fora: ['Ficou de fora', (r) => !r.extra && !(r.pedir > 0) && (r.site === 'ok' || r.site === 'sem')],
-      indisp: ['Indisponível no site', (r) => !r.extra && r.site === 'indisp'],
-      cat: ['Fora do catálogo', (r) => r.site === 'fora'],
-      resto: ['Resto do catálogo', (r) => r.extra],
-      ...(SUG.size ? { sug: ['⭐ Da equipe', (r) => !!r.sug] } : {}),
-      ...(R.obTotal ? { obrig: ['🔒 Obrigatório', (r) => r.obrig] } : {}),
-      todos: ['Todos', () => true],
+      carrinho: ['Carrinho completo', (r) => r.pedir > 0, 'Tudo o que vai chegar: o pedido obrigatório da franquia mais o que você adicionou.'],
+      ...(R.obTotal ? { obrig: ['Pedido obrigatório', (r) => r.obrig, 'O que a franquia manda de qualquer forma. Não vai para o carrinho (pedir de novo duplicaria).'] } : {}),
+      pedido: ['Complemento', (r) => r.pedir > 0 && !r.obrig, 'O que você adicionou: é isto que vai para o carrinho do Sistema de Pedidos.'],
+      ver: ['Verificar', (r) => aVerificar(r) && (daPraPedir(r) || !!state.pedVerTudo), 'O que precisa repor pela conta do painel ou que a equipe pediu (⭐) e ainda não está no carrinho. Só o que dá para pedir agora.'],
+      site: ['Site de pedidos completo', (r) => !r.obrig, 'Todos os produtos: o catálogo inteiro da franquia e o que a loja tem. Use o filtro "No site" para ver só os disponíveis, os indisponíveis ou os fora do catálogo.'],
     };
+    const filtro = FILTROS[state.pedFiltro] ? state.pedFiltro : 'pedido';
     const SITK = (r) => (r.obrig ? 'obrig' : r.extra ? (r.semEstoque ? 'semest' : 'semnec') : r.qtd <= 0 ? 'acabou' : r.urgente ? 'falta' : r.dias != null && r.dias < R.ent + R.N ? 'pedir' : 'ok');
     const SITS = { acabou: ['Acabou', 'erro'], falta: ['Falta antes da entrega', 'erro'], pedir: ['Pedir', 'warn'], ok: ['OK', 'ok'], semnec: ['Não precisa agora', 'ok'], semest: ['Fora do estoque', 'muted'], obrig: ['🔒 Obrigatório', 'warn'] };
     const SITU = (r) => SITS[SITK(r)];
@@ -646,7 +648,7 @@
     const tituloSug = (g) => { const rec = g.notas.map((n) => [n.justificativa, n.recado].filter(Boolean).join(' · ')).filter(Boolean).join(' | '); return `Pedido da equipe: ${g.pessoas.join(', ')}${rec ? ` — ${rec}` : ''}. A estrela não muda a conta do pedido.`; };
     const cols = [
         { key: 'produto', label: 'Produto', align: 'l', sticky: true, wrap: true, title: 'O ícone antes do nome é a classe do produto: ⭐ Estrela (sai muito, boa margem) · 👍 Joia (sai pouco, boa margem) · 📦 Volume (sai muito, margem menor) · 💤 Peso morto (sai pouco, pouca margem). É a classe oficial, a mesma da Rentabilidade; 🔒 = travada à mão. Passe o mouse no ícone para ver. A etiqueta "⭐ equipe" (com texto) é outra coisa: pedido da equipe.',
-          render: (r) => fotoCel(r, h('span', null, r.classe ? h('span', { class: 'ped-cl-ico', title: `${CLASSE_DICA[r.classe]}${r.classeFixa ? ' (🔒 travada à mão na Rentabilidade)' : ''}`, 'aria-label': 'Classe ' + CLASSES[r.classe] }, CLASSE_ICO[r.classe]) : null, r.produto, r.ficou ? h('span', { class: 'badge cinza ped-ficou', title: 'Esta linha mudou de aba com a sua alteração. Ela continua aqui até você trocar de aba ou de filtro, para não sumir da frente.' }, r.pedir > 0 ? '→ foi para "No pedido"' : '→ saiu do pedido') : null, r.sug ? h('span', { class: 'ped-prio ped-sug', title: tituloSug(r.sug) }, `⭐ ${r.sug.pessoas.length > 1 ? r.sug.pessoas.length + ' pediram' : 'equipe'}`) : null, r.obrig ? h('span', { class: 'ped-tag-obr', title: 'Vem no pedido obrigatório: não vai para o carrinho' }, '🔒 obrigatório') : r.chega ? h('span', { class: 'ped-tag-obr', title: `O pedido obrigatório já traz ${qtdTxt(r.chega, r.it)} deste produto (já descontado do "Precisa"). O que estiver em "Pedir" é a mais e vai para o carrinho.` }, `+ ${qtdTxt(r.chega, r.it)} no obrigatório`) : null, r.esp ? h('a', { class: 'ped-prio ped-esp', href: '#espera', title: `Na lista de espera: ${r.esp.clientes.join(', ')}${r.esp.pedidos > r.esp.clientes.length ? '…' : ''}. Quando a nota chegar, eles aparecem para avisar.`, onclick: (e) => e.stopPropagation() }, `⏳ ${r.esp.pedidos} esperando`) : null, VAL.has(String(r.cod)) ? (() => { const v = VAL.get(String(r.cod)); return h('a', { class: 'pd-vl', href: '#validade', title: `${qtdTxt(v.kg, r.it)} em lote${v.dias < 0 ? ' já vencido' : ` que vence em ${v.dias} dias`}: venda o que tem antes de comprar mais (Estoque → Validade)`, onclick: (e) => e.stopPropagation() }, TS.validade.badge(v.faixa)); })() : null, r.prior && r.prior < 3 ? h('span', { class: 'ped-prio', title: r.prior === 2 ? 'Prioridade: estoque abaixo de 500 g' : 'Prioridade: Estrela com estoque abaixo de 700 g' }, r.prior === 2 ? '< 500 g' : 'Estrela < 700 g') : null, h('small', { class: 'est-tam' }, `cód. ${r.cod}`))) },
+          render: (r) => fotoCel(r, h('span', null, r.classe ? h('span', { class: 'ped-cl-ico', title: `${CLASSE_DICA[r.classe]}${r.classeFixa ? ' (🔒 travada à mão na Rentabilidade)' : ''}`, 'aria-label': 'Classe ' + CLASSES[r.classe] }, CLASSE_ICO[r.classe]) : null, r.produto, r.ficou ? h('span', { class: 'badge cinza ped-ficou', title: 'Esta linha mudou de aba com a sua alteração. Ela continua aqui até você trocar de aba ou de filtro, para não sumir da frente.' }, r.pedir > 0 ? '→ foi para "Complemento"' : '→ saiu do pedido') : null, r.sug ? h('span', { class: 'ped-prio ped-sug', title: tituloSug(r.sug) }, `⭐ ${r.sug.pessoas.length > 1 ? r.sug.pessoas.length + ' pediram' : 'equipe'}`) : null, r.obrig ? h('span', { class: 'ped-tag-obr', title: 'Vem no pedido obrigatório: não vai para o carrinho' }, '🔒 obrigatório') : r.chega ? h('span', { class: 'ped-tag-obr', title: `O pedido obrigatório já traz ${qtdTxt(r.chega, r.it)} deste produto (já descontado do "Precisa"). O que estiver em "Pedir" é a mais e vai para o carrinho.` }, `+ ${qtdTxt(r.chega, r.it)} no obrigatório`) : null, r.esp ? h('a', { class: 'ped-prio ped-esp', href: '#espera', title: `Na lista de espera: ${r.esp.clientes.join(', ')}${r.esp.pedidos > r.esp.clientes.length ? '…' : ''}. Quando a nota chegar, eles aparecem para avisar.`, onclick: (e) => e.stopPropagation() }, `⏳ ${r.esp.pedidos} esperando`) : null, VAL.has(String(r.cod)) ? (() => { const v = VAL.get(String(r.cod)); return h('a', { class: 'pd-vl', href: '#validade', title: `${qtdTxt(v.kg, r.it)} em lote${v.dias < 0 ? ' já vencido' : ` que vence em ${v.dias} dias`}: venda o que tem antes de comprar mais (Estoque → Validade)`, onclick: (e) => e.stopPropagation() }, TS.validade.badge(v.faixa)); })() : null, r.prior && r.prior < 3 ? h('span', { class: 'ped-prio', title: r.prior === 2 ? 'Prioridade: estoque abaixo de 500 g' : 'Prioridade: Estrela com estoque abaixo de 700 g' }, r.prior === 2 ? '< 500 g' : 'Estrela < 700 g') : null, h('small', { class: 'est-tam' }, `cód. ${r.cod}`))) },
         { key: 'grpTxt', label: 'Grupo', align: 'l', title: 'Grupo do produto no AppNext, como sai nas vendas (ex.: CHÁ VERDE AROMATIZADO) e, embaixo, o subgrupo do cadastro. No chá a granel, os dos pacotes dele. Produto que ainda não vendeu mostra o grupo do cadastro de preços; sem cadastro, fica sem grupo.', render: (r) => h('span', null, r.grpTxt || h('span', { class: 'muted' }, '—'), r.sub ? h('small', { class: 'ped-sub' }, r.sub) : null) },
         { key: 'sit', label: 'Situação', align: 'l', render: (r) => { const [t, c] = SITU(r); return h('span', { class: 'badge ' + c }, t); }, sortVal: (r) => (r.qtd <= 0 ? 3 : r.urgente ? 2 : 1) },
         { key: 'qtd', label: 'Estoque', render: (r) => qtdTxt(r.qtd, r.it) },
@@ -747,8 +749,9 @@
       const DICA_ABA = { pedir: 'Sugestões de produto disponível no Sistema de Pedidos que ainda não estão neste pedido.', nopedido: 'Sugestões que já estão na tabela do pedido (🛒).', semsite: 'O site não tem o produto agora: a sugestão fica guardada para o próximo pedido e a equipe é avisada.', nao: 'Sugestões que você decidiu não pedir desta vez (com o motivo).', todas: 'Todas as sugestões abertas da equipe.' };
       const ABAS = { pedir: 'Dá para pedir', nopedido: 'Já no pedido', semsite: 'Sem estoque no site', nao: 'Não pedir', todas: 'Todas' };
       const cont = (k) => (k === 'todas' ? itens.length : itens.filter((x) => x.aba === k).length);
-      // abre na primeira aba que tiver itens; depois vale a que a pessoa escolheu. No celular, lista grande começa recolhida
-      if (!state.pedSug || state.pedSug.loja !== loja) state.pedSug = { loja, aba: ['pedir', 'nopedido', 'semsite', 'nao'].find(cont) || 'todas', aberto: !(TS.ehCelular() && itens.length > 6) };
+      // começa recolhido (decisão do dono: as sugestões já aparecem na aba "Verificar" com a ⭐): o cabeçalho diz quantas há para
+      // decidir e clicar numa aba abre. Depois vale o que a pessoa escolheu
+      if (!state.pedSug || state.pedSug.loja !== loja) state.pedSug = { loja, aba: ['pedir', 'nopedido', 'semsite', 'nao'].find(cont) || 'todas', aberto: false };
       const ver = state.pedSug;
       if (ver.aba === 'nao' && !cont('nao')) ver.aba = 'todas';
       const lista = ver.aba === 'todas' ? itens : itens.filter((x) => x.aba === ver.aba);
@@ -1015,14 +1018,19 @@
         h('button', { type: 'button', class: 'ped-menu-volta', disabled: !editados.size || null, onclick: () => { editados.clear(); pintar(corpo, loja, M, e, p); } }, 'Voltar à sugestão', h('small', null, editados.size ? `${editados.size} alterado(s)` : 'nada alterado'))));
     const foraMenu = (x) => { if (!menuLimpar.contains(x.target)) menuLimpar.open = false; };
     menuLimpar.addEventListener('toggle', () => { if (menuLimpar.open) document.addEventListener('mousedown', foraMenu); else document.removeEventListener('mousedown', foraMenu); });
+    // "Verificar" mostra só o que dá para pedir; o que precisa repor e o site não tem fica numa linha discreta, com "mostrar"
+    const semComoPedir = filtro === 'ver' ? R.linhas.filter((r) => aVerificar(r) && !daPraPedir(r) && passa(r)).length : 0;
+    const avisoVer = semComoPedir ? h('p', { class: 'muted ped-ver-nota' },
+      `${fmt.int(semComoPedir)} ${semComoPedir === 1 ? 'produto que precisa repor não dá para pedir agora' : 'produtos que precisam repor não dá para pedir agora'} (indisponível no site ou fora do catálogo). `,
+      h('button', { type: 'button', class: 'link-btn', onclick: () => { state.pedVerTudo = !state.pedVerTudo; pintar(corpo, loja, M, e, p); } }, state.pedVerTudo ? 'Esconder' : 'Mostrar')) : null;
     const obrN = R.linhas.filter((r) => r.obrig).length;
     const avisoObr = obrN ? h('div', { class: 'ped-obr-aviso' }, h('b', null, `🔒 Pedido obrigatório: ${fmt.int(obrN)} produtos · ${fmt.brl0(R.obTotal)}`),
-      ' — a franquia manda de qualquer forma. Eles ', h('b', null, 'não vão para o carrinho'), ' (pedir de novo duplicaria). Ficam na aba "🔒 Obrigatório"; as outras abas mostram só o que você compra. ',
+      ' — a franquia manda de qualquer forma. Eles ', h('b', null, 'não vão para o carrinho'), ' (pedir de novo duplicaria). Ficam em "Pedido obrigatório" e no "Carrinho completo". ',
       filtro !== 'obrig' ? h('button', { type: 'button', class: 'link-btn', onclick: () => { state.pedFiltro = 'obrig'; pintar(corpo, loja, M, e, p); } }, 'Ver o obrigatório') : null) : null;
     corpo.append(h('div', { class: 'mt' }, TS.cardWithTools('Produtos', sub,
       h('div', { class: 'est-tools ped-tools' }, !MOBILE && tab.searchBox && (tab.searchBox.classList.add('est-busca'), tab.searchBox),
-        TS.seg(Object.entries(FILTROS).map(([k, [t]]) => [`${t} (${cont(k)})`, k]), filtro, (v) => { state.pedFiltro = v; pintar(corpo, loja, M, e, p); }), menuLimpar, btnSalvar, btnCsv),
-      avisoRasc, avisoObr, MOBILE ? h('details', { class: 'ped-fx-mob', open: (fx.g || fx.gp || fx.d || fx.sb || fx.s || fx.c || fx.m) ? true : null }, h('summary', null, `Filtros${[fx.g, fx.gp, fx.d, fx.sb, fx.s, fx.c, fx.m].filter(Boolean).length ? ` (${[fx.g, fx.gp, fx.d, fx.sb, fx.s, fx.c, fx.m].filter(Boolean).length})` : ''} · ${fmt.int(linhas.length)} produtos`), filtrosExtra) : filtrosExtra, MOBILE ? listaMobile() : tab)));
+        TS.seg(Object.entries(FILTROS).map(([k, [t, , dica]]) => [`${t} (${cont(k)})`, k, dica]), filtro, (v) => { state.pedFiltro = v; pintar(corpo, loja, M, e, p); }), menuLimpar, btnSalvar, btnCsv),
+      avisoRasc, avisoObr, avisoVer, MOBILE ? h('details', { class: 'ped-fx-mob', open: (fx.g || fx.gp || fx.d || fx.sb || fx.s || fx.c || fx.m) ? true : null }, h('summary', null, `Filtros${[fx.g, fx.gp, fx.d, fx.sb, fx.s, fx.c, fx.m].filter(Boolean).length ? ` (${[fx.g, fx.gp, fx.d, fx.sb, fx.s, fx.c, fx.m].filter(Boolean).length})` : ''} · ${fmt.int(linhas.length)} produtos`), filtrosExtra) : filtrosExtra, MOBILE ? listaMobile() : tab)));
     if (editados.size) corpo.append(h('p', { class: 'muted' }, `${editados.size} quantidade(s) alterada(s) à mão. `, h('a', { href: '#', onclick: (x) => { x.preventDefault(); editados.clear(); pintar(corpo, loja, M, e, p); } }, 'Voltar à sugestão')));
 
     if (blocoIA) corpo.append(blocoIA);

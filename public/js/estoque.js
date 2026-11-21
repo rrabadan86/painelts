@@ -432,10 +432,10 @@
     buscar(state.loja).then((x) => { if (corpo.isConnected) pintar(corpo, x, modo); }).catch((e) => corpo.replaceChildren(h('div', { class: 'notice err' }, e.message)));
   }
   TS.pages.estoque = (root) => telaEstoque(root, 'estoque');
-  /** abre o Pedido na aba "Todos" já buscando o produto */
+  /** abre o Pedido na aba "Site de pedidos completo" (todos os produtos) já buscando o produto */
   TS.irParaPedido = (nome) => {
     TS._buscas = { tela: '#pedido', v: { 'Buscar produto…|produto,cod': nome } };
-    state.pedFiltro = 'todos';
+    state.pedFiltro = 'site';
     location.hash = '#pedido';
   };
   TS.pages.rentab = (root) => telaEstoque(root, 'rentab');

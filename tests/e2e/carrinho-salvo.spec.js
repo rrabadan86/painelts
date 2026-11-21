@@ -24,7 +24,7 @@ test('Pedido: aviso do carrinho salvo, "Continuar de onde parei" troca as quanti
   await expect(page.locator('.toast')).toContainText('Carrinho salvo carregado');
   await expect(page.locator('.ped-rasc')).toHaveCount(0);
   await expect(page.locator('.ped-rasc-ok')).toContainText('Carrinho salvo em');
-  await expect(page.locator('.seg button', { hasText: /^No pedido \(/ })).toHaveText(`No pedido (${Object.values(salvo.itens).filter((q) => q > 0).length})`);
+  await expect(page.locator('.seg button', { hasText: /^Complemento \(/ })).toHaveText(`Complemento (${Object.values(salvo.itens).filter((q) => q > 0).length})`);
   // salvar na apresentação: avisa e nada sai do navegador
   const salvar = page.locator('.ped-salvar');
   await expect(salvar).toHaveAttribute('title', /5 dias/);
