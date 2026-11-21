@@ -447,7 +447,7 @@
       if (!q) { sugest.hidden = true; return; }
       const achou = todosProd.filter((x) => x.n.includes(q) && !f.produtos.includes(x.t)).slice(0, 9);
       sugest.replaceChildren(...[
-        ...achou.map((x) => h('button', { type: 'button', class: 'cp-sug-it', role: 'option', onmousedown: (e) => { e.preventDefault(); addProd(x.t); } }, h('span', null, x.t), h('small', null, `${fmt.int(x.q)} vendidos`))),
+        ...achou.map((x) => h('button', { type: 'button', class: 'cp-sug-it', role: 'option', onmousedown: (e) => { e.preventDefault(); addProd(x.t); } }, h('span', null, x.t), h('small', null, [TS.grupoProd ? TS.grupoProd.texto(null, x.t) : '', `${fmt.int(x.q)} vendidos`].filter(Boolean).join(' · ')))),
         h('button', { type: 'button', class: 'cp-sug-it cp-sug-todos', onmousedown: (e) => { e.preventDefault(); addProd('~' + buscaProd.value.trim()); } }, h('span', null, `Todos os produtos com "${buscaProd.value.trim()}"`), h('small', null, 'todos os tamanhos e variações')),
         !achou.length ? h('div', { class: 'cp-sug-vazio' }, 'Nenhum produto vendido com esse nome.') : null].filter(Boolean));
       sugest.hidden = false;

@@ -120,7 +120,7 @@
         antC = c.v;
       }
       if (!custoEv.length) { const c = custoNoDia(TS.todayDay()); if (c.v != null) custoEv.push({ dia: null, v: c.v, inicio: true, est: true }); }
-      lista.push({ ultDia: db.day[p.ult], semanas: p.semanas, nome: p.nome, cat: p.cat, cod: db.D.cod ? String(db.D.cod[db.cod[p.ult]] ?? '') : '', comp, custoNoDia, custoEm, origemEm, vendaEv, custoEv, vt: p.vt, qtd: p.qtd, kg: comp.some(([it]) => it.un === 'Kg') });
+      lista.push({ ultDia: db.day[p.ult], semanas: p.semanas, nome: p.nome, cat: p.cat, grp: (db.D.grupo && db.D.grupo[db.grupo[p.ult]]) || '', cod: db.D.cod ? String(db.D.cod[db.cod[p.ult]] ?? '') : '', comp, custoNoDia, custoEm, origemEm, vendaEv, custoEv, vt: p.vt, qtd: p.qtd, kg: comp.some(([it]) => it.un === 'Kg') });
     }
     return { lista, temCompras: !!(compras && Object.keys(compras.itens || {}).length), inicioCusto: Math.min(...[...hist.values()].map((l) => (l.length ? l[0][0] : Infinity))) };
   }
@@ -277,7 +277,7 @@
     // etiqueta no nome; cada aba mostra só as colunas dela (Caixa ≠ sistema: sistema, caixa e motivo). O resto fica no painel do produto.
     const cNome = { key: 'nome', label: 'Produto', align: 'l', sticky: true, wrap: true,
       title: 'Clique no nome para abrir o histórico do produto: gráfico de custo × venda, composição do custo, vendas por mês e todos os reajustes. A etiqueta diz o que teve reajuste no período: Custo + Venda = os dois mudaram; Só custo = o custo mudou e o preço não (a margem mexeu); Só venda = o preço mudou e o custo não; Sem reajuste = nenhum dos dois mudou.',
-      render: (r) => { const [t, c] = ST_PROD[r.status]; return h('span', null, h('a', { href: '#', class: 'prc-nome', onclick: (e) => { e.preventDefault(); abrirProduto(r); } }, r.nome), filtro === 'sem' ? null : ' ', filtro === 'sem' ? null : h('span', { class: 'prc-st ' + c }, t), h('small', { class: 'est-tam' }, r.cat)); } };
+      render: (r) => { const [t, c] = ST_PROD[r.status]; return h('span', null, h('a', { href: '#', class: 'prc-nome', onclick: (e) => { e.preventDefault(); abrirProduto(r); } }, r.nome), filtro === 'sem' ? null : ' ', filtro === 'sem' ? null : h('span', { class: 'prc-st ' + c }, t), h('small', { class: 'est-tam' }, r.grp ? h('span', { class: 'grp-prod', title: TS.grupoProd.DICA }, r.grp) : null, r.grp && r.cat && r.cat.toUpperCase() !== r.grp.toUpperCase() ? ' · ' + r.cat : r.grp ? null : r.cat)); } };
     const cCusto = { key: 'cVar', label: 'Custo', title: 'Quanto custa 1 unidade vendida (pacote, lata, caneca…) pelo custo do estoque/notas de entrada. Em negrito = custo no fim do período; a etiqueta é a variação no período (vermelho = subiu); embaixo, o custo de antes e a data em que mudou. Só um valor = o custo não mudou no período.', render: (r) => variacao(r.cAnt, r.cAt, r.cVar, r.cDia, true), sortVal: (r) => r.cVar ?? -99 };
     const cPreco = { key: 'vVar', label: 'Preço de venda', title: temCad ? 'Preço de venda CADASTRADO no AppNext (Produtos / Produtos Compostos) no fim do período: a margem usa o preço do sistema. A etiqueta é o reajuste no período (verde = subiu); embaixo, o preço de antes e a data — o "antes" vem do histórico que o painel guarda a cada planilha de preços importada. A linha "caixa R$ …" só aparece quando os cupons saíram a um preço diferente do sistema (− abaixo, + acima): o ⓘ ao lado diz o motivo provável e a aba "Caixa ≠ sistema" mostra todos. "Sem cadastro" = o produto não está na planilha de preços: vale o preço do caixa. Desconto dado no caixa não entra (fica separado no cupom).' : 'Preço de tabela que saiu nos cupons (sem desconto) no fim do período. A etiqueta é o reajuste no período (verde = subiu); embaixo, o preço de antes e a data. Conta como reajuste quando o preço novo se mantém.',
       render: (r) => variacao(r.vAnt, r.vAt, r.vVar, r.vDia, false,
@@ -297,7 +297,7 @@
     const ehCad = filtro === 'cad';
     const tab = TS.table({
       cols: ehCad ? [cNome, cSistema, cCaixa, cMotivo] : [cNome, cCusto, cPreco, cMargem],
-      rows, sortKey: ehCad ? 'cx' : filtro === 'margem' ? 'difMargem' : 'cVar', sortDir: filtro === 'margem' ? 'asc' : 'desc', maxHeight: '640px', search: 'Buscar produto…', searchKeys: ['nome', 'cat'], produto: 'nome', cls: 'est-t prc-t', cartao: true,
+      rows, sortKey: ehCad ? 'cx' : filtro === 'margem' ? 'difMargem' : 'cVar', sortDir: filtro === 'margem' ? 'asc' : 'desc', maxHeight: '640px', search: 'Buscar produto…', searchKeys: ['nome', 'cat', 'grp'], produto: 'nome', cls: 'est-t prc-t', cartao: true,
       empty: 'Nenhum produto neste filtro no período.',
     });
     return TS.cardWithTools('Produtos', `Clique no produto para ver o gráfico de custo × venda e todos os reajustes. Custo e preço são de 1 unidade vendida (pacote, lata, caneca…): o valor em destaque é o do fim do período e, embaixo, o de antes. ${temCad ? `O preço de venda é o cadastrado no AppNext (é ele que entra na margem); quando o caixa cobrou diferente, aparece embaixo${D.tabHistDesde ? ` (reajustes do cadastro desde ${quando(D.tabHistDesde)})` : ' (o histórico de reajustes do cadastro começa a ser guardado agora, a cada planilha de preços importada)'}.` : 'O preço de venda é o que saiu nos cupons.'}`,

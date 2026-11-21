@@ -731,6 +731,9 @@
 
     // ---------- margem abaixo do mínimo, com o principal motivo ----------
     /** cadastro com preço e custo de cada produto (preço R$ 0,01 = simbólico: fica de fora) */
+    // grupo do produto no AppNext (definição única: grupoprod.js); sem venda, o grupo do cadastro de preços
+    const tabGrp = new Map(((tabela && tabela.itens) || []).map((t) => [String(t.cod), t.grupo || '']));
+    const grpDe = (r) => (r.grp != null ? r.grp : (r.grp = TS.grupoProd.texto(r.cod, r.produto, r.it ? r.it.un === 'Kg' : !!r.granel, tabGrp.get(String(r.cod)))));
     function tabelaLista() {
       let itens = tabela && tabela.itens;
       if (!itens && TS.demo) itens = tabelaDemo(M, estoque);
@@ -821,7 +824,7 @@
       if (!baixos.length) return TS.card(`Margem sem fixos abaixo de ${fmt.pct(margemMin, 0)}`, null, h('p', { class: 'muted' }, `Nenhum produto abaixo da margem mínima no período. 👏 (Mude o mínimo em Configurações → Lojas → Estoque e margem.)`));
       return TS.card(`Margem sem fixos abaixo de ${fmt.pct(margemMin, 0)}`, `${fmt.int(baixos.length)} produto(s) no período. Margem sem fixos = o que o produto deixa depois do custo e das deduções variáveis, antes do aluguel e outros fixos. Abaixo do mínimo ele ajuda pouco a pagar os fixos; negativa, ele custa dinheiro à loja. Motivo = o que mais pesa no preço desse produto comparado com a média da loja.`, TS.table({
         cols: [
-          { key: 'produto', label: 'Produto', align: 'l', sticky: true, wrap: true, render: (r) => (r.granel ? h('span', null, r.produto, h('small', { class: 'est-tam' }, r.tamanhos)) : r.produto) },
+          TS.grupoProd.coluna({ key: 'produto', label: 'Produto', align: 'l', sticky: true, wrap: true, render: (r) => (r.granel ? h('span', null, r.produto, h('small', { class: 'est-tam' }, r.tamanhos)) : r.produto) }, grpDe),
           { key: 'pv', label: 'Preço de venda', title: 'Preço médio vendido no período (chá a granel: por kg; o resto: por unidade)', render: (r) => h('span', null, fmt.brl(r.pv), h('small', { class: 'est-tam' }, r.granel ? 'por kg' : 'por un.')), sortVal: (r) => r.pv },
           { key: 'pc', label: 'Preço de custo', title: 'Custo médio no período (chá a granel: por kg, com saco e etiquetas; o resto: por unidade)', render: (r) => h('span', null, fmt.brl(r.pc), h('small', { class: 'est-tam' }, r.granel ? 'por kg' : 'por un.')), sortVal: (r) => r.pc },
           { key: 'vt', label: 'Faturamento', fmt: fmt.brl },
@@ -1192,10 +1195,12 @@
       tudo: ['Todas as colunas', ['produto', 'abc', 'classe', 'oficial', 'tend', 'giro', 'vt', 'custo', 'lucro', 'margem', 'margemTab', 'contrib', 'margemContrib', 'ded', 'lucroLiq', 'margemLiq'], 'Tudo (rola para o lado)'],
     };
     const vis = VIS[state.estColVis] ? state.estColVis : 'resumo';
+    COLS[0] = TS.grupoProd.coluna(COLS[0], grpDe);
     const porKey = new Map(COLS.map((c) => [c.key, c]));
+    prods.forEach(grpDe); // a busca também acha pelo grupo
     const tabLucro = TS.table({
       cols: VIS[vis][1].map((k) => porKey.get(k)).filter(Boolean),
-      rows: sel ? prods.filter((p) => p.classe === sel) : prods, sortKey: 'lucro', maxHeight: '520px', search: 'Buscar produto…', searchKeys: ['produto'], produto: 'produto', imprimir: ['produto', 'abc', 'oficial', 'classeRes', 'giro', 'vt', 'lucro', 'lucroRes', 'margem', 'margemTab', 'contrib', 'margemContrib'], cls: 'est-t est-t-lucro est-vis-' + vis,
+      rows: sel ? prods.filter((p) => p.classe === sel) : prods, sortKey: 'lucro', maxHeight: '520px', search: 'Buscar produto ou grupo…', searchKeys: ['produto', 'grp'], produto: 'produto', imprimir: ['produto', 'abc', 'oficial', 'classeRes', 'giro', 'vt', 'lucro', 'lucroRes', 'margem', 'margemTab', 'contrib', 'margemContrib'], cls: 'est-t est-t-lucro est-vis-' + vis,
       total: { produto: 'Total', vt: fatCusto, custo: custoTot, lucro, lucroRes: fmt.brl(lucro), margem: fatCusto ? lucro / fatCusto : null, contrib: contribTot, margemContrib: fatCusto ? contribTot / fatCusto : null, ded: dedSoma, lucroLiq: lucroLiqTot, margemLiq: fatCusto ? lucroLiqTot / fatCusto : null },
     });
     const segVis = h('div', { class: 'est-vis' }, h('span', { class: 'f-label' }, 'Colunas:'),
@@ -1388,6 +1393,7 @@
     ];
     // abas "Perdendo venda" e "Sobrando": só as colunas que explicam a conta (ruptura.js); nas outras, entra "Perdendo R$/dia"
     const RC = TS.ruptura.colunas({ qtdTxt, H });
+    colsT[0] = TS.grupoProd.coluna(colsT[0], grpDe);
     const col = (k) => colsT.find((c) => c.key === k);
     const COLS_ABA = {
       falta: ['produto', 'tipo', RC.perdaDia, RC.zeradoHa, RC.acumulado, RC.vendiaDia, RC.esperando, 'pedir', 'custoPedido'].map((c) => (typeof c === 'string' ? col(c) : c)),
@@ -1395,13 +1401,13 @@
     };
     colsT.splice(colsT.findIndex((c) => c.key === 'qtd'), 0, RC.perdaDia);
     // busca: procura em TODOS os produtos, qualquer que seja o filtro
-    const busca = h('input', { class: 'f-input est-busca', type: 'search', placeholder: 'Buscar qualquer produto (nome ou código)…', value: state.estBusca || '', autocomplete: 'off' });
+    const busca = h('input', { class: 'f-input est-busca', type: 'search', placeholder: 'Buscar qualquer produto (nome, código ou grupo)…', value: state.estBusca || '', autocomplete: 'off' });
     const tabBoxT = h('div');
     const infoBusca = h('small', { class: 'muted est-busca-info' });
     const ORD = { repor: 'est', falta: 'perdaDia', sobrando: 'sobraValor', parados: 'valor', liquidar: 'valor', saldo: 'valor', todos: 'produto' };
     function montarT() {
       const q = ESQ(busca.value), qd = busca.value.replace(/\D/g, '');
-      const rows = q ? todos.filter((r) => ESQ(r.produto).includes(q) || (qd && String(r.cod).includes(qd))) : todos.filter(FILTROS[filtroT][1]);
+      const rows = q ? todos.filter((r) => ESQ(r.produto).includes(q) || ESQ(grpDe(r)).includes(q) || (qd && String(r.cod).includes(qd))) : todos.filter(FILTROS[filtroT][1]);
       infoBusca.textContent = !q ? '' : rows.length ? `${fmt.int(rows.length)} ${rows.length === 1 ? 'produto encontrado' : 'produtos encontrados'} entre todos os ${fmt.int(todos.length)} (a busca procura em todos, qualquer que seja o filtro)` : '';
       segT.classList.toggle('est-seg-off', !!q);
       tabBoxT.replaceChildren(TS.table({

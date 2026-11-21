@@ -83,13 +83,11 @@
     const fatG = { cha: 0, env: 0, acess: 0 };
     let vendasN = 0, cmvVt = 0, cmvCusto = 0, cresA = 0, cresB = 0, evLyVt = 0;
     const lim0 = Math.min(lyB0, evLy0 ?? Infinity, d90 - 365, d56 - 365);
-    const grpVenda = new Map(); // código do estoque → { grupo do AppNext nas vendas → [linhas, grupo do filtro das Vendas] }
     for (let i = 0; i < db.n; i++) {
       const d = db.day[i];
       if (d < lim0) continue;
       const loja = ehLoja(i), vt = db.vt[i] || 0;
       const c = M.casar(i);
-      if (c && c.it) { const k = String(c.it.cod), m = grpVenda.get(k) || grpVenda.set(k, new Map()).get(k), x = m.get(db.grupo[i]); if (x) x[0]++; else m.set(db.grupo[i], [1, db.grupoC[i]]); }
       if (loja) {
         if (d >= dN) { vendasN += vt; fatG[grupoLinha(i, c)] += vt; }
         // crescimento: últimas 8 semanas × as mesmas 8 do ano passado (igual ao card "Próximas semanas")
@@ -294,15 +292,6 @@
     for (const r of linhas) {
       r.sugeridoPedir = r.pedir;
       if (editados && editados.has(String(r.cod)) && (r.site === 'ok' || r.site === 'sem')) r.pedir = editados.get(String(r.cod));
-    }
-    // grupo de cada produto como o AppNext vende (ex.: CHÁ VERDE AROMATIZADO) e o grupo do filtro das Vendas (CHÁ AROMATIZADO):
-    // o que mais aparece nas vendas daquele item do estoque (um chá a granel sai em vários pacotes do mesmo grupo)
-    for (const r of linhas) {
-      const m = grpVenda.get(String(r.cod));
-      if (!m) continue;
-      const [g, [, gc]] = [...m].sort((a, b) => b[1][0] - a[1][0])[0];
-      r.tipo = (db.D.grupo && db.D.grupo[g]) || '';
-      r.grpV = (db.D.grupoC && db.D.grupoC[gc]) || '';
     }
     return { linhas, vendasN, cmvReal, cmvVt, cmvCusto, cmvMeses: [...meses].sort(), pct, orcamento, share, shareVendas, propManual: manual, classeMeses: CO.meses, obTotal, obG, obAtivos, fatG, crescLoja, cresc, evInfo, ev, evLyVt, temAnoPassado, N, ent, hoje };
   }
@@ -614,9 +603,9 @@
     if (fx.sb == null) fx.sb = '';
     if (fx.gp == null) fx.gp = '';
     // subgrupo e margem bruta de cada produto, pelo cadastro de preços (o chá a granel junta os pacotes dele)
-    // o grupo mostrado é o do AppNext (CHÁ VERDE AROMATIZADO) e o do filtro é o mesmo do filtro das Vendas (CHÁ AROMATIZADO);
+    // o grupo mostrado é o do AppNext (CHÁ VERDE AROMATIZADO: definição única em grupoprod.js) e o do filtro é o mesmo do filtro das Vendas (CHÁ AROMATIZADO);
     // produto sem venda usa o grupo do cadastro de preços e, sem cadastro, a parte do pedido
-    if (!R._cad) { R._cad = true; cadastroDasLinhas(R.linhas); for (const r of R.linhas) { r.grpTxt = r.tipo || r.grp || r.grupoTxt; r.gpTxt = r.grpV || r.grp || r.grupoTxt; } }
+    if (!R._cad) { R._cad = true; cadastroDasLinhas(R.linhas); for (const r of R.linhas) { const g = TS.grupoProd.de(r.cod, r.produto, r.it && r.it.un === 'Kg'); r.grpTxt = (g && g.grupo) || r.grp || r.grupoTxt; r.gpTxt = (g && g.grupoVendas) || r.grp || r.grupoTxt; } }
     // página e ordem da tabela sobrevivem quando a tela se redesenha (mudar uma quantidade não volta para a 1ª página);
     // a linha que mudou de aba com a alteração fica onde está até trocar de aba ou de filtro (não some da frente)
     const chaveVista = filtro + '|' + JSON.stringify(fx);
@@ -791,7 +780,7 @@
       const cols = [
         { key: 'desc', label: 'Produto', align: 'l', sticky: true, wrap: true, title: 'Produto que a equipe marcou com ⭐, quem pediu, desde quando e o recado. 🛒 = já está na tabela do pedido.',
           render: (x) => h('div', { class: 'sug-prod-cel' },
-            x.noPed ? h('span', { class: 'sug-ped-ico', title: 'Já está no pedido' }, '🛒 ') : null, h('b', null, x.desc),
+            x.noPed ? h('span', { class: 'sug-ped-ico', title: 'Já está no pedido' }, '🛒 ') : null, h('b', null, x.desc), TS.grupoProd.marca(x.r ? x.r.grpTxt : TS.grupoProd.texto(x.cod, x.desc)),
             h('small', { class: 'muted sug-motivo' }, `${x.quem} · desde ${TS.sug.dataTxt(x.g.desde)}${x.g.pedidos ? ` · já passou por ${x.g.pedidos} ${x.g.pedidos === 1 ? 'pedido' : 'pedidos'}` : ''}`),
             x.notas.map((t) => h('small', { class: 'sug-motivo sug-ped-rec' }, t))) },
         { key: 'qtd', label: 'Estoque agora', title: 'Quanto tem na loja agora (estoque do AppNext).', render: (x) => (x.r ? qtdTxt(x.r.qtd, x.r.it) : h('span', { class: 'muted' }, '—')), sortVal: (x) => (x.r ? x.r.qtd : null) },

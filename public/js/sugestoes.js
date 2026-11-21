@@ -147,7 +147,7 @@
     } }, 'Tirar estrela') : null);
     const cols = [
       { key: 'desc', label: 'Produto', align: 'l', sticky: true, wrap: true, title: 'A etiqueta é a situação na loja quando o produto foi marcado: tem, pouco (chá abaixo de 700 g) ou acabou.',
-        render: (s) => { const [t, c] = SIT[s.situacao] || ['', '']; return h('div', { class: 'sug-prod-cel' }, h('b', null, (s.st === 'aberta' ? '⭐ ' : '') + s.desc), ' ', t ? h('span', { class: 'badge ' + c }, t) : null, s.novo ? h('span', { class: 'badge warn' }, 'novo') : null,
+        render: (s) => { const [t, c] = SIT[s.situacao] || ['', '']; return h('div', { class: 'sug-prod-cel' }, h('b', null, (s.st === 'aberta' ? '⭐ ' : '') + s.desc), ' ', t ? h('span', { class: 'badge ' + c }, t) : null, s.novo ? h('span', { class: 'badge warn' }, 'novo') : null, TS.grupoProd.marca(s.grp),
           s.st === 'aberta' && s.equipe > 1 ? h('small', { class: 'muted sug-motivo' }, `${s.equipe} pessoas da equipe pediram`) : null); } },
       { key: 'agora', label: 'Estoque agora', title: d.todos ? 'Quanto tem na loja agora (planilha de estoque do AppNext). A etiqueta da coluna Produto é a situação quando a estrela foi marcada.' : 'Se o produto tem na loja agora (tem / pouco / acabou).',
         render: (s) => { const a = s.agora; if (!a) return h('span', { class: 'muted' }, '—'); const [t, c] = SIT[a.situacao] || ['', '']; return a.qtd != null ? h('div', { class: 'sug-agora' }, h('b', null, /^kg$/i.test(a.un) ? `${TS.fmt.kg(a.qtd)} kg` : `${TS.fmt.int(a.qtd)} ${String(a.un || 'un').toLowerCase()}`), ' ', h('span', { class: 'badge ' + c }, t)) : h('span', { class: 'badge ' + c }, t); },
@@ -163,8 +163,9 @@
         sortVal: (s) => (ultimo(s) || {}).em || s.em },
       { key: 'acoes', label: '', align: 'l', render: tirar, sortVal: () => 0 },
     ].filter(Boolean);
+    for (const s of lista) if (s.grp == null) s.grp = TS.grupoProd.texto(s.cod, s.desc, s.agora && s.agora.un ? /^kg$/i.test(s.agora.un) : undefined);
     return TS.table({
-      cols, rows: lista, sortKey: 'em', sortDir: 'desc', maxHeight: '620px', search: 'Buscar produto, pessoa ou recado…', searchKeys: ['desc', 'cod', 'nome', 'recado', 'justificativa'], produto: 'desc', cls: 'est-t sug-t',
+      cols, rows: lista, sortKey: 'em', sortDir: 'desc', maxHeight: '620px', search: 'Buscar produto, pessoa ou recado…', searchKeys: ['desc', 'cod', 'nome', 'recado', 'justificativa', 'grp'], produto: 'desc', cls: 'est-t sug-t',
       rowClass: (s) => (s.novo ? 'sug-novo' : null),
       empty: { abertas: 'Nenhuma sugestão esperando o pedido.', entrega: 'Nada aguardando entrega.', encerradas: 'Nenhuma sugestão encerrada ainda.' }[aba],
     });
