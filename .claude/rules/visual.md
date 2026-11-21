@@ -74,6 +74,7 @@ Lista que abre um detalhe: a tabela some e o detalhe aparece no lugar, com "‹ 
 ## Celular (390 px)
 - Nada passa da borda: `min-width: 0` em filhos de flex/grid com texto longo, `overflow-wrap: anywhere` em nomes. Formulário dentro de linha de tabela usa `position: sticky; left: 0` e a largura da tela.
 - Toque: botões com área de pelo menos ~32 px; o ✨ flutuante não cobre ação.
+- **Legibilidade (revisão com as regras do impeccable, 21/11/2026):** letra de pelo menos **12 px** (o `<small>` também: `max(12px, .833em)`; só ficam menores o "i" do ⓘ, as setas de ordenação e as grades densas de escala/horários/calendário); texto com contraste ≥ 4,5:1 contra o fundo real (o `--muted` foi escurecido para valer também no creme e nos avisos; cor nova de texto: confira o contraste); alvo de toque de pelo menos 24 px no celular (o ⓘ tem 16 px de desenho e 28 px de área pelo `::after`; links pequenos de ação ganham altura no celular). Emojis como marca, barra lateral de estado e cartões continuam como estão (decisão do dono). Medição: script de auditoria descrito no achado C-13 de `docs/rastreabilidade.md`.
 - Confira com a skill `conferir-celular` (computador também: `--largura=1100`) e olhe o print antes de subir.
 
 ## Antes de subir uma tela mexida

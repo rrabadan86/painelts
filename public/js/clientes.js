@@ -421,7 +421,7 @@
     };
   }
   const textoWpp = (modelo, c) => TS.msgWpp.montar(modelo.texto, valoresWpp(c));
-  const linkWpp = (c, txt) => (TS.demo ? '#demo' : c.wpp + '?text=' + encodeURIComponent(txt));
+  const linkWpp = (c, txt) => (TS.demo ? '#demo' : TS.msgWpp.linkComTexto(c.wpp, txt));
 
   const digits = (s) => String(s || '').replace(/\D/g, '');
   function idade(iso) {

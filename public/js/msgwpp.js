@@ -24,6 +24,18 @@
     return local.length >= 10 && local.length <= 11 ? 'https://wa.me/55' + local : null;
   }
 
+  /**
+   * Link do envio manual com o texto já escrito. Usa api.whatsapp.com/send em vez de wa.me/…?text=: no celular, o desvio do
+   * wa.me estragava os emojis (chegavam ao cliente como "��"; acentos passavam). wpp = link do cadastro ("https://wa.me/55…")
+   * ou só o número; sem número, o WhatsApp abre para escolher o contato. O texto vai bem formado (emoji partido vira nada, não erro).
+   */
+  function linkComTexto(wpp, texto) {
+    const m = /(\d{10,13})\/?$/.exec(String(wpp || ''));
+    const t = String(texto ?? '');
+    const bom = typeof t.toWellFormed === 'function' ? t.toWellFormed() : t.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '');
+    return 'https://api.whatsapp.com/send?' + (m ? 'phone=' + m[1] + '&' : '') + 'text=' + encodeURIComponent(bom);
+  }
+
   /** produtos do filtro: [{ t, contem }]. "~texto" = todos os produtos que contêm o texto; o campo antigo "produto" vira "contém" */
   function listaProdutos(f) {
     f = f || {};
@@ -62,7 +74,7 @@
 
   /** período da campanha: 'antes' (ainda não começou), 'depois' (já terminou) ou null (dentro, ou sem datas). dia = 'AAAA-MM-DD' de Brasília */
   const foraDoPeriodo = (c, dia) => (c && c.inicio && dia < c.inicio ? 'antes' : c && c.fim && dia > c.fim ? 'depois' : null);
-  const API = { foraDoPeriodo, CAMPOS, saudacao, montar, paraDoLink, linkDoCelular, listaProdutos, nomesProdutos, extras, textos, variacaoDaVez, motivoCampanha, prazoCampanha, bloqueio, textoBloqueio };
+  const API = { foraDoPeriodo, CAMPOS, saudacao, montar, paraDoLink, linkDoCelular, linkComTexto, listaProdutos, nomesProdutos, extras, textos, variacaoDaVez, motivoCampanha, prazoCampanha, bloqueio, textoBloqueio };
   if (typeof module !== 'undefined' && module.exports) { module.exports = API; return; }
   TS.msgWpp = API;
 })();

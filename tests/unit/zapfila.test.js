@@ -477,3 +477,19 @@ test('período da campanha: antes do início e depois do término o robô não e
   assert.strictEqual(ZF.decidir(v).msg.campanha, 'b');
   assert.ok(ZF.MOTIVOS.fora_periodo);
 });
+
+test('WPP-EMOJI-01: link do envio manual vai por api.whatsapp.com com o texto bem codificado (emoji inteiro, acento, quebra de linha)', () => {
+  const W = require('../../public/js/msgwpp');
+  const txt = 'Lienny, tudo bem? 😊🍵\n\nO Rooibos Provence voltou ao estoque! ✨ Será um prazer 💚';
+  const l = W.linkComTexto('https://wa.me/5562999998888', txt);
+  assert.match(l, /^https:\/\/api\.whatsapp\.com\/send\?phone=5562999998888&text=/);
+  assert.strictEqual(decodeURIComponent(l.split('text=')[1]), txt, 'o texto volta igual, com os emojis');
+  assert.ok(!l.includes('%EF%BF%BD'), 'nenhum caractere de substituição');
+  assert.match(l, /%F0%9F%98%8A/, 'emoji codificado em 4 bytes');
+  // só o número, com ou sem 55; sem número abre para escolher o contato
+  assert.match(W.linkComTexto('5562999998888', 'oi'), /phone=5562999998888&text=oi$/);
+  assert.strictEqual(W.linkComTexto('', 'oi'), 'https://api.whatsapp.com/send?text=oi');
+  // emoji partido (metade de um par) não derruba o envio: some, o resto vai
+  const partido = 'oi ' + '😊'.slice(0, 1) + ' fim';
+  assert.strictEqual(decodeURIComponent(W.linkComTexto('5562999998888', partido).split('text=')[1]).replace(/\uFFFD/g, ''), 'oi  fim');
+});
