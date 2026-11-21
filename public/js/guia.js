@@ -54,9 +54,10 @@
   /**
    * Escolha do CFOP da NF-e de venda e de devolução (passo 5 do guia e Configurações → Integrações → Notas fiscais).
    * As opções são os CFOPs que o robô leu do AppNext (botão "Buscar no AppNext" aqui mesmo, ou "Buscar cadastros" em Notas fiscais → Nova NF-e). Sem a lista, dá para
-   * digitar o número. → { el, salvar } (salvar grava pela rota da loja e devolve o que ficou)
+   * digitar o número. `trava` (opcional): motivo para o botão de buscar ficar desligado (sem acesso ao AppNext salvo ou sem robô),
+   * com `irPasso1` para o link. → { el, salvar } (salvar grava pela rota da loja e devolve o que ficou)
    */
-  G.formCfop = (lojaId, atual, cfops) => {
+  G.formCfop = (lojaId, atual, cfops, trava, irPasso1) => {
     let lista = (cfops && cfops.lista) || [], em = cfops && cfops.em;
     const cx = (tipo, padrao, dica) => {
       const v = (atual && atual[tipo]) || '';
@@ -81,6 +82,7 @@
       info.textContent = lista.length ? `Lista lida do AppNext${quando ? ' em ' + quando : ''}. Cadastrou regra fiscal nova lá? Atualize.` : 'O painel ainda não leu os CFOPs do AppNext: busque aqui ou digite o número (ex.: 5102).';
     };
     const espera = (ms) => new Promise((r) => setTimeout(r, ms));
+    if (trava) { btBuscar.disabled = true; btBuscar.title = trava; }
     btBuscar.addEventListener('click', async () => {
       if (TS.demo) { toast(TS.DEMO_AVISO); return; }
       btBuscar.disabled = true; vivo.hidden = false; vivo.className = 'nfe-cfop-vivo muted'; vivo.textContent = '⏳ O robô está lendo o AppNext… (1 a 2 minutos; pode continuar aqui)';
@@ -109,6 +111,7 @@
     pintar();
     const el = h('div', { class: 'nfe-cfop' }, grade,
       h('div', { class: 'nfe-cfop-at' }, info, btBuscar), vivo,
+      trava ? h('div', { class: 'notice warn' }, trava + ' ', irPasso1 ? h('button', { type: 'button', class: 'link-btn', onclick: irPasso1 }, 'Ir para o passo 1') : null) : null,
       h('div', { class: 'guia-nota' }, '🔒 O robô usa só o CFOP escolhido, com a regra fiscal (sequência) do AppNext desse CFOP — é ela que traz os impostos. Se a nota tiver um produto sem regra fiscal com esse CFOP, ele para e avisa qual é: nunca emite com outro.'));
     const salvar = async () => {
       const corpo = { venda: venda.value.trim(), devolucao: devol.value.trim() };
@@ -276,7 +279,9 @@
     };
     // passo 5 (opcional): CFOP da NF-e de venda e de devolução; grava pela mesma rota das Configurações
     PASSO.nfe = () => {
-      const f = G.formCfop(L.id, L.nfeCfop, L.cfops);
+      // buscar no AppNext usa o login do passo 1 (já gravado ao clicar em "Salvar e continuar" lá)
+      const trava = TS.demo ? null : !L.passos.appnext ? 'Para buscar a lista, o robô precisa do acesso ao AppNext: salve primeiro o passo 1 (ou digite o CFOP).' : !est.coletorAtivo ? 'O robô não está ligado nesta VPS: digite o CFOP.' : null;
+      const f = G.formCfop(L.id, L.nfeCfop, L.cfops, trava, !L.passos.appnext ? () => { i = 0; pintar(); } : null);
       return [corpo('CFOP das notas fiscais', 'Qual CFOP o robô usa quando emite a NF-e de venda e a de devolução ao fornecedor no AppNext. Passo opcional: no automático fica como sempre foi.', f.el),
         pe(async () => { L.nfeCfop = await f.salvar(); })];
     };
