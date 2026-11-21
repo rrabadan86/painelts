@@ -26,7 +26,7 @@ description: Sobe uma mudança do painel para o GitHub — atualiza com o main, 
 6. **Commit no formato do projeto:** uma linha em português, `Assunto: o que muda para quem usa` (ex.: `Checklist: observação por turno`,
    `IA: respostas não param mais no meio`). Detalhes, se precisar, em parágrafo abaixo. Termine com as linhas de atribuição pedidas pela sessão.
 7. **Push** para o ramo combinado na sessão (`git push -u origin <ramo>`; erro de rede: tente de novo até 4 vezes, esperando mais a cada vez).
-8. **PR e merge (autorizado pelo dono para todas as sessões):** se o ramo não for o `main`, abra o PR para o `main`, espere os testes do GitHub terminarem e, com ✓, faça o merge sem perguntar. Com ✗: corrija, suba de novo e espere outra vez — nunca faça merge com teste falhando.
+8. **PR e merge (autorizado pelo dono para todas as sessões)** — o passo a passo detalhado (lembretes, log de falha, testes do main, aviso ao dono) está na skill `conferir-pr`: se o ramo não for o `main`, abra o PR para o `main`, espere os testes do GitHub terminarem e, com ✓, faça o merge sem perguntar. Com ✗: corrija, suba de novo e espere outra vez — nunca faça merge com teste falhando.
    - O merge pede o SHA **completo** (40 caracteres) do último commit do ramo: `git ls-remote origin <ramo>` (o curto dá erro; um SHA antigo dá 409).
    - Um PR por vez: se ainda há um PR aberto do mesmo ramo, espere o merge dele antes de subir outra mudança (ou ela entra no PR aberto — atualize a descrição).
 9. **Versão de segurança (quando o dono pedir, ou ao fim de um conjunto grande de mudanças):** tag anotada no `main` já com o merge, no formato `DDMMAAAA-Claude`

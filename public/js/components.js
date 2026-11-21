@@ -461,7 +461,7 @@
         });
         tb.append(tr);
       }
-      if (!slice.length) tb.append(h('tr', null, h('td', { colspan: cols.length, class: 'l muted' }, empty || 'Nada encontrado.')));
+      if (!slice.length) tb.append(h('tr', null, h('td', { colspan: cols.length, class: 'l muted t-vazio' }, empty || 'Nada encontrado.')));
       tbl.append(tb);
       if (total) {
         const tf = h('tfoot'), tr = h('tr');
