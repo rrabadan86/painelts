@@ -240,7 +240,7 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 | EST-24 | Contagem por lote vira ponto de partida | `lotes.js`; `inventario.js` | `regras.spec` (tela) | 🟡 |
 | EST-25 | Valor em risco (vence em menos de 60 dias) | `lotes.js` | `lotes.test` | ✅ |
 | EST-26 | Lote pendente na nota de entrada | `lotes.js` | `lotes.test` (2); `regras.spec` | ✅ |
-| EST-27 | Trava de estoque nas mensagens | `lotes.js` `disponivel` | `lotes.test`; `regras.spec` | ✅ |
+| EST-27 | Trava de estoque nas mensagens (chá a granel só com pelo menos 100 g: `MINIMO_GRANEL_KG`, decisão do dono) | `lotes.js` `disponivel` | `lotes.test` ("pelo menos 100 g"); `regras.spec` | ✅ |
 | EST-28 | "Vender primeiro" na Promoção | `validade.js` | `regras.spec` | 🟡 |
 | EST-30 | Catálogo do inventário | `inventario.js` | `inventario.test` | ✅ |
 | EST-31 | Como se conta (kg com casas, unidade inteira) | `inventario.js` | `inventario.test`; `regras.spec` | ✅ |

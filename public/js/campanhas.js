@@ -364,7 +364,7 @@
           const textosF = [msg.value, ...textosVar()];
           const semP = /\{produto\}/.test(textosF.join(' ')) ? prods.filter((p) => dispForm.tem(p) === false) : [];
           let n = 0; for (const { c } of sel_) if (textosF.some((t) => TS.semEstoqueNaMensagem(dispForm, t, c, { produtos: prods }))) n++;
-          return n ? [h('small', { class: 'cp-faltam cp-sem-estoque' }, `🚫 ${fmt.int(n)} ${n === 1 ? 'cliente receberia' : 'clientes receberiam'} oferta de produto sem estoque${semP.length ? ` (${semP.slice(0, 3).join(', ')})` : ''}: eles ficam esperando a nota de entrada e não entram na fila de envio.`)] : [];
+          return n ? [h('small', { class: 'cp-faltam cp-sem-estoque' }, `🚫 ${fmt.int(n)} ${n === 1 ? 'cliente receberia' : 'clientes receberiam'} oferta de produto sem estoque (no chá a granel, menos de 100 g)${semP.length ? ` (${semP.slice(0, 3).join(', ')})` : ''}: eles ficam esperando a nota de entrada e não entram na fila de envio.`)] : [];
         })());
       por(previa, sel_.length ? TS.table({
         cols: [{ key: 'nome', label: 'Cliente', align: 'l', render: (r) => h('span', null, r.nome, h('small', { class: 'muted cp-cel' }, `${r.cel} · CPF ${A().fmtCPF(r.cpf)}`)) }, { key: 'saldo', label: 'Pontos', fmt: fmt.int }, { key: 'vence', label: 'Vencem', align: 'l' }, { key: 'ultima', label: 'Última compra', align: 'l', render: (r) => d(r.ult) }],
@@ -570,7 +570,7 @@
     const atual = pend[0];
     const faltam = [...new Set(esperandoEstoque.values())];
     const avisoEstoque = esperandoEstoque.size ? h('div', { class: 'notice cp-estoque' }, h('b', null, `🚫 ${fmt.int(esperandoEstoque.size)} ${esperandoEstoque.size === 1 ? 'cliente esperando' : 'clientes esperando'} estoque: `),
-      `a mensagem ofereceria ${faltam.slice(0, 4).join(', ')}${faltam.length > 4 ? '…' : ''}, que está sem estoque. Eles continuam na lista e entram na fila quando chegar a nota de entrada.`)
+      `a mensagem ofereceria ${faltam.slice(0, 4).join(', ')}${faltam.length > 4 ? '…' : ''}, que está sem estoque (no chá a granel, menos de 100 g). Eles continuam na lista e entram na fila quando chegar a nota de entrada.`)
       : !disp ? h('div', { class: 'notice' }, 'Não consegui ler o estoque agora: a fila não está conferindo se o produto citado tem em estoque.') : null;
     // robô: manda a lista conferida (depois de tirar da fila quem não pode receber)
     if (camp.robo && camp.ativa !== false && r === camp.rodadas[0]) prepararRobo([camp], disp).catch(() => null);

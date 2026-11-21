@@ -647,7 +647,7 @@
         if (oferta) ms.push('validade');
         if (c.tags.has('vence')) ms.push('vence');
         if (!ms.length) continue;
-        // a mensagem do motivo cita o chá ({cha}/{ultimocha})? se ele está sem estoque, o motivo sai (volta quando chegar a nota)
+        // a mensagem do motivo cita o chá ({cha}/{ultimocha})? se ele está sem estoque (chá a granel: menos de 100 g), o motivo sai (volta quando chegar a nota)
         const mods0 = modelosDe(lojaIdDe(c));
         const txtDe = (m) => { const x = MOTIVOS_HOJE[m]; return x.texto || ((mods0.find((y) => y.nome === x.modelo) || mods0[0] || {}).texto || ''); };
         const antes = ms.length;
@@ -692,7 +692,7 @@
           h('div', { class: 'hj-ferr' }, chips, selV),
           sel.length ? h('div', { class: 'hj-lista' }, ...sel.slice(0, LIM).map(linha)) : TS.empty('Ninguém para contatar com esses filtros. 🎉'),
           sel.length > LIM ? h('p', { class: 'muted' }, `Mostrando os ${LIM} mais importantes de ${fmt.int(sel.length)}. Depois de contatar, a lista anda.`) : null,
-          foraSemEstoque ? h('p', { class: 'muted hj-fora' }, `🚫 ${fmt.int(foraSemEstoque)} cliente${foraSemEstoque === 1 ? '' : 's'} fora da lista: a mensagem citaria um chá que está sem estoque. Voltam quando chegar a nota de entrada do chá.`) : null,
+          foraSemEstoque ? h('p', { class: 'muted hj-fora' }, `🚫 ${fmt.int(foraSemEstoque)} cliente${foraSemEstoque === 1 ? '' : 's'} fora da lista: a mensagem citaria um chá sem estoque (no chá a granel, menos de 100 g). Voltam quando chegar a nota de entrada do chá.`) : null,
           h('small', { class: 'muted hj-rodape' }, 'Ordem: quem é mais importante primeiro (clientes bons sumindo, aniversário, hora de repor…). Ao abrir o WhatsApp, o cliente fica marcado como contatado e sai da lista. Mande poucas por vez para o WhatsApp não restringir o número.')));
     };
     // espera o estoque (chá a granel) para não mostrar quem receberia mensagem de chá que a loja não tem
@@ -1631,7 +1631,7 @@
         const pv = () => {
           prev.textContent = textoWpp(atual(), c);
           faltando = TS.semEstoqueNaMensagem ? TS.semEstoqueNaMensagem(disp, atual().texto, c) : null;
-          aviso.hidden = !faltando; aviso.textContent = faltando ? `🚫 ${faltando} está sem estoque: esta mensagem oferece um produto que a loja não tem. Escolha outra mensagem ou espere a nota de entrada.` : '';
+          aviso.hidden = !faltando; aviso.textContent = faltando ? `🚫 ${faltando} está sem estoque (no chá a granel, menos de 100 g): esta mensagem oferece um produto que a loja não tem. Escolha outra mensagem ou espere a nota de entrada.` : '';
           const bt = box.querySelector('.cli-wpp a.btn.primary'); if (bt) bt.classList.toggle('desab', !!faltando);
         };
         sel.addEventListener('change', pv); pv();
@@ -1643,7 +1643,7 @@
             h('a', { class: 'btn primary', href: '#', onclick: async (e) => {
               e.preventDefault();
               if (!lido) { TS.avisar('Conferindo o estoque… tente de novo em um instante.'); return; }
-              if (faltando) { TS.avisar(`${faltando} está sem estoque: escolha outra mensagem.`); return; }
+              if (faltando) { TS.avisar(`${faltando} está sem estoque (no chá a granel, menos de 100 g): escolha outra mensagem.`); return; }
               const rr = recebeuRecente(c);
               if (rr) { TS.avisar(`${c.nome || 'Este cliente'} recebeu mensagem da loja há ${rr.dias} ${rr.dias === 1 ? 'dia' : 'dias'}${rr.ct.motivo ? ' (' + rr.ct.motivo + ')' : ''}. Para não ser insistente, a próxima só a partir de ${rr.ate.toLocaleDateString('pt-BR')} (uma mensagem a cada ${rr.iv} dias).`); return; }
               if (TS.demo) { await TS.avisar(textoWpp(atual(), c), { titulo: 'Na apresentação o WhatsApp não abre (número fictício). A mensagem seria:' }); }

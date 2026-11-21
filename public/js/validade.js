@@ -261,7 +261,8 @@
   TS.validade = { dados, badge, campanhaDoCha, lotesDoCha, camposLotes, rotLote, blocoNota, lotesDaNota, pendentes, janelaPacotes };
 
   /**
-   * Trava de estoque das mensagens: toda mensagem que oferece produto só sai se a loja tiver.
+   * Trava de estoque das mensagens: toda mensagem que oferece produto só sai se a loja tiver (chá a granel: pelo menos 100 g;
+   * a conta é do servidor, LOT.disponivel).
    * TS.estoqueDisp(loja) → { tem(nome) → true | false | null (produto que o painel não achou no estoque: não trava) }
    * O nome pode ser o do pacote ("Valeriana Garden 100G"): vale o chá a granel ("VALERIANA GARDEN").
    */

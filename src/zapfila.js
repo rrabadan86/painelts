@@ -131,7 +131,7 @@ const MOTIVOS = {
   sem_campanha: 'Nenhuma campanha está marcada para enviar pelo robô.',
   conferir_lista: 'A lista precisa ser conferida: o painel não conseguiu conferir sozinho. Abra a tela Campanhas (ela confere ao abrir).',
   limite_campanha: 'As campanhas chegaram ao limite de hoje. Continua amanhã.',
-  esperando_estoque: 'Só faltam clientes esperando estoque do produto oferecido.',
+  esperando_estoque: 'Só faltam clientes esperando estoque do produto oferecido (no chá a granel, pelo menos 100 g).',
   sem_pendentes: 'Todas as mensagens das campanhas do robô já foram enviadas.',
   fora_periodo: 'As campanhas do robô estão fora do período (data de início ou de término).',
 };
