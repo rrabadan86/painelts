@@ -57,7 +57,7 @@ function criar(id, b, por) {
   const rid = crypto.randomBytes(6).toString('hex');
   fs.mkdirSync(envio(id), { recursive: true });
   const simular = !!b.simular; // teste: o robô preenche e confere, mas não salva
-  C.gravarAtomico(path.join(envio(id), rid + '.json'), JSON.stringify({ parceiroId: parc.id, consumidorFinal: !!b.consumidorFinal, vendedorId: vend.id, pagamento: pag.codigo, itens: itens.map(({ nome, ...i }) => i), total, simular }), 0o640);
+  C.gravarAtomico(path.join(envio(id), rid + '.json'), JSON.stringify({ cfop: require('./nfecfop').daLoja(id).venda || undefined, parceiroId: parc.id, consumidorFinal: !!b.consumidorFinal, vendedorId: vend.id, pagamento: pag.codigo, itens: itens.map(({ nome, ...i }) => i), total, simular }), 0o640);
   const reg = { id: rid, em: new Date().toISOString(), por, parceiro: { nome: parc.nome, doc: parc.doc }, consumidorFinal: !!b.consumidorFinal, vendedor: vend.nome, pagamento: pag.descricao,
     obs: txt(b.obs, 200), itens, total, simular, estado: 'na_fila' };
   gravarLista(id, [reg, ...lista(id)]);

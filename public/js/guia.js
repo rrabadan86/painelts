@@ -5,9 +5,11 @@
 (function () {
   const { h, state } = TS;
   const G = (TS.guia = {});
-  const ORDEM = ['appnext', 'pedido', 'fixe', 'email'];
-  const ROT = { appnext: 'AppNext', pedido: 'Sistema de Pedidos', fixe: 'FIXE', email: 'E-mail' };
-  const SEM = { appnext: 'O painel fica sem vendas, estoque e notas.', pedido: 'O pedido à franquia fica sem o catálogo e os preços do site.', fixe: 'Clientes, Campanhas e Fidelidade ficam vazios.', email: 'O fechamento do dia não sai pelo e-mail da loja e o painel não recebe as planilhas do FIXE.' };
+  const ORDEM = ['appnext', 'pedido', 'fixe', 'email', 'nfe'];
+  // o passo 5 (CFOP das notas) é opcional: sem ele vale o automático; não conta como pendente
+  const OBRIG = ['appnext', 'pedido', 'fixe', 'email'];
+  const ROT = { appnext: 'AppNext', pedido: 'Sistema de Pedidos', fixe: 'FIXE', email: 'E-mail', nfe: 'Notas fiscais' };
+  const SEM = { appnext: 'O painel fica sem vendas, estoque e notas.', pedido: 'O pedido à franquia fica sem o catálogo e os preços do site.', fixe: 'Clientes, Campanhas e Fidelidade ficam vazios.', email: 'O fechamento do dia não sai pelo e-mail da loja e o painel não recebe as planilhas do FIXE.' , nfe: 'Opcional: o robô usa o CFOP automático (venda 5102; devolução pela regra fiscal da loja).' };
   let situ = null; // última resposta de /api/admin/guia
   const toast = (msg, erro) => { document.querySelectorAll('.toast').forEach((x) => x.remove()); const t = h('div', { class: 'toast' + (erro ? ' err' : ''), role: 'status' }, msg); document.body.append(t); setTimeout(() => t.remove(), erro ? 7000 : 4000); };
   async function chamar(metodo, url, corpo) {
@@ -19,7 +21,7 @@
   /** o mesmo Gmail, mesmo escrito com o apelido "+loja" ou com maiúsculas */
   const caixa = (email) => { const [u, d] = String(email || '').trim().toLowerCase().split('@'); return d ? `${u.split('+')[0]}@${d}` : ''; };
   G.mesmoGmail = (a, b) => !!caixa(a) && caixa(a) === caixa(b);
-  const faltam = (l) => ORDEM.filter((p) => !l.passos[p]);
+  const faltam = (l) => OBRIG.filter((p) => !l.passos[p]);
 
   G.carregar = async () => { try { situ = await chamar('GET', '/api/admin/guia'); } catch { situ = situ || { lojas: [] }; } return situ; };
   G.situacao = (lojaId) => (situ && situ.lojas.find((l) => l.id === lojaId)) || null;
@@ -49,6 +51,36 @@
       h('button', { type: 'button', class: 'btn' + (f.length ? ' primary' : ''), onclick: () => G.abrir(lojaId) }, f.length ? 'Abrir configuração guiada' : 'Rever na configuração guiada'));
   };
 
+  /**
+   * Escolha do CFOP da NF-e de venda e de devolução (passo 5 do guia e Configurações → Integrações → Notas fiscais).
+   * As opções são os CFOPs que o robô leu do AppNext ("Buscar cadastros" em Notas fiscais → Nova NF-e). Sem a lista, dá para
+   * digitar o número. → { el, salvar } (salvar grava pela rota da loja e devolve o que ficou)
+   */
+  G.formCfop = (lojaId, atual, cfops) => {
+    const lista = (cfops && cfops.lista) || [];
+    const cx = (tipo, padrao, dica) => {
+      const v = (atual && atual[tipo]) || '';
+      if (!lista.length) return h('input', { class: 'f-input', inputmode: 'numeric', maxlength: 4, placeholder: padrao, value: v, 'aria-label': `CFOP de ${tipo === 'venda' ? 'venda' : 'devolução'}`, title: dica });
+      const op = (c) => h('option', { value: c.codigo, selected: c.codigo === v || null }, `${c.codigo}${c.descricao ? ' · ' + c.descricao : ''}`);
+      return h('select', { class: 'f-input', 'aria-label': `CFOP de ${tipo === 'venda' ? 'venda' : 'devolução'}`, title: dica },
+        h('option', { value: '' }, padrao), ...(v && !lista.some((c) => c.codigo === v) ? [op({ codigo: v, descricao: 'não está na última lista do AppNext' })] : []), ...lista.map(op));
+    };
+    const venda = cx('venda', 'Automático (5102, como hoje)', 'O CFOP da NF-e de venda. Automático = 5102, como o robô sempre usou.');
+    const devol = cx('devolucao', 'Automático (regra da loja)', 'O CFOP da NF-e de devolução ao fornecedor. Automático = o da regra fiscal (sequência) de devolução da loja; se a loja tiver mais de um, o robô escolhe pelo estado do fornecedor ou pede para fazer à mão.');
+    const quando = cfops && cfops.em ? new Date(cfops.em).toLocaleDateString('pt-BR') : null;
+    const el = h('div', { class: 'nfe-cfop' },
+      h('div', { class: 'guia-g2' }, campo('CFOP da venda', venda, 'O CFOP da NF-e de venda. Automático = 5102, como o robô sempre usou.'), campo('CFOP da devolução ao fornecedor', devol, 'O CFOP da NF-e de devolução. Automático = o da regra fiscal (sequência) de devolução da loja.')),
+      h('small', { class: 'muted' }, lista.length ? `Lista lida do AppNext${quando ? ' em ' + quando : ''}. Para atualizar: Notas fiscais → Nova NF-e → "Buscar cadastros".` : 'O painel ainda não leu os CFOPs do AppNext: digite o número (ex.: 5102) ou busque em Notas fiscais → Nova NF-e → "Buscar cadastros" e volte aqui.'),
+      h('div', { class: 'guia-nota' }, '🔒 O robô usa só o CFOP escolhido. Se a nota tiver um produto sem regra fiscal com esse CFOP no AppNext, ele para e avisa qual é: nunca emite com outro.'));
+    const salvar = async () => {
+      const corpo = { venda: venda.value.trim(), devolucao: devol.value.trim() };
+      if (TS.demo) { toast(TS.DEMO_AVISO); return corpo; }
+      const j = await chamar('PUT', `/api/admin/lojas/${encodeURIComponent(lojaId)}/nfe-cfop`, corpo);
+      return j.nfeCfop;
+    };
+    return { el, salvar };
+  };
+
   const campo = (rotulo, el, dica, sub) => h('label', { class: 'cfg-campo' }, h('span', null, rotulo, TS.dica ? TS.dica(dica) : null), el, sub ? h('small', null, sub) : null);
   const inp = (a) => h('input', { class: 'f-input', autocomplete: 'off', ...a });
   const senhaInp = (tem, ph) => inp({ type: 'password', autocomplete: 'new-password', placeholder: tem ? '•••••••• (guardada)' : ph });
@@ -75,9 +107,9 @@
       if (!s) throw new Error('Nenhuma loja para configurar.');
       const l = (est.lojas || []).find((x) => x.id === s.id) || {};
       ped = await chamar('GET', `/api/pedido/acesso?loja=${encodeURIComponent(s.id)}`).catch(() => ({}));
-      L = { id: s.id, nome: s.nome, passos: { ...s.passos }, col: l.coletor || {}, appnext: l.appnext || '', fixe: l.fixe || {}, mail: (l.fechEmail && l.fechEmail.email) || {} };
+      L = { id: s.id, nome: s.nome, passos: { ...s.passos }, col: l.coletor || {}, appnext: l.appnext || '', fixe: l.fixe || {}, mail: (l.fechEmail && l.fechEmail.email) || {}, nfeCfop: l.nfeCfop || { venda: '', devolucao: '' }, cfops: l.cfopsAppNext || { lista: [] } };
       pulados.clear(); fim = false;
-      const prim = ORDEM.findIndex((p) => !L.passos[p]);
+      const prim = OBRIG.findIndex((p) => !L.passos[p]);
       i = passo && ORDEM.includes(passo) ? ORDEM.indexOf(passo) : prim < 0 ? 0 : prim;
       passo = null;
     };
@@ -85,7 +117,7 @@
     const trilha = () => h('div', { class: 'guia-trilha' }, ORDEM.map((k, n) => {
       const e = estado(k);
       return h('button', { type: 'button', class: 'guia-p ' + e, title: `Ir para o passo ${n + 1}: ${ROT[k]}`, onclick: () => { fim = false; i = n; pintar(); } },
-        h('i'), h('b', null, `${n + 1}. ${ROT[k]}`), h('span', null, { ok: '✓ pronto', at: 'agora', pu: 'pulado', '': 'falta' }[e]));
+        h('i'), h('b', null, `${n + 1}. ${ROT[k]}`), h('span', null, { ok: '✓ pronto', at: 'agora', pu: 'pulado', '': OBRIG.includes(k) ? 'falta' : 'opcional' }[e]));
     }));
     const topo = (titulo, sub) => {
       const outras = situ.lojas.length > 1 ? h('select', { class: 'f-input guia-loja', 'aria-label': 'Loja', title: 'Trocar a loja que está sendo configurada', onchange: async (e) => { await carregarLoja(e.target.value); pintar(); } }, situ.lojas.map((x) => h('option', { value: x.id, selected: x.id === L.id || null }, x.nome))) : null;
@@ -204,27 +236,33 @@
         })];
       },
     };
+    // passo 5 (opcional): CFOP da NF-e de venda e de devolução; grava pela mesma rota das Configurações
+    PASSO.nfe = () => {
+      const f = G.formCfop(L.id, L.nfeCfop, L.cfops);
+      return [corpo('CFOP das notas fiscais', 'Qual CFOP o robô usa quando emite a NF-e de venda e a de devolução ao fornecedor no AppNext. Passo opcional: no automático fica como sempre foi.', f.el),
+        pe(async () => { L.nfeCfop = await f.salvar(); })];
+    };
     const telaFim = () => {
-      const prontos = ORDEM.filter((k) => L.passos[k]).length;
-      const FEITO = { appnext: 'Acesso salvo. A primeira busca de vendas e estoque roda na próxima atualização automática.', pedido: 'Acesso salvo. O catálogo é lido na atualização da noite.', fixe: 'Acesso salvo. O cadastro de clientes chega depois da próxima atualização.', email: 'Gmail da loja salvo.' };
+      const prontos = OBRIG.filter((k) => L.passos[k]).length;
+      const FEITO = { nfe: 'CFOP das notas salvo.', appnext: 'Acesso salvo. A primeira busca de vendas e estoque roda na próxima atualização automática.', pedido: 'Acesso salvo. O catálogo é lido na atualização da noite.', fixe: 'Acesso salvo. O cadastro de clientes chega depois da próxima atualização.', email: 'Gmail da loja salvo.' };
       const buscar = L.passos.appnext && est.coletorAtivo ? h('button', { type: 'button', class: 'btn', title: 'Pede ao robô para buscar agora as vendas e o estoque no AppNext, sem esperar a atualização automática. Leva alguns minutos.' }, 'Buscar agora') : null;
       if (buscar) buscar.addEventListener('click', async () => {
         buscar.disabled = true;
         try { if (TS.demo) toast(TS.DEMO_AVISO); else { await chamar('POST', `/api/admin/lojas/${encodeURIComponent(L.id)}/rodar`, {}); toast('Busca pedida ao robô. Em alguns minutos os dados aparecem.'); } } catch (e) { toast(e.message, true); buscar.disabled = false; }
       });
       return [h('div', { class: 'guia-corpo' },
-        h('div', { class: 'guia-lista' }, ORDEM.map((k, n) => h('div', { class: 'guia-li ' + (L.passos[k] ? 'ok' : 'pu') },
+        h('div', { class: 'guia-lista' }, ORDEM.map((k, n) => h('div', { class: 'guia-li ' + (L.passos[k] ? 'ok' : OBRIG.includes(k) ? 'pu' : 'op') },
           h('span', { class: 'guia-ic' }, L.passos[k] ? '✓' : '!'),
-          h('div', null, h('b', null, ROT[k] + (L.passos[k] ? '' : pulados.has(k) ? ' — pulado' : ' — falta')), h('small', { class: 'muted' }, L.passos[k] ? FEITO[k] : SEM[k])),
+          h('div', null, h('b', null, ROT[k] + (L.passos[k] ? '' : !OBRIG.includes(k) ? ' — opcional' : pulados.has(k) ? ' — pulado' : ' — falta')), h('small', { class: 'muted' }, L.passos[k] ? FEITO[k] : SEM[k])),
           L.passos[k] ? (k === 'appnext' ? buscar : null) : h('button', { type: 'button', class: 'btn', onclick: () => { fim = false; i = n; pintar(); } }, 'Configurar')))),
-        nota(prontos === ORDEM.length ? 'Para mudar qualquer acesso depois: Configurações → Integrações → "Configuração guiada".'
+        nota(prontos === OBRIG.length ? 'Para mudar qualquer acesso depois: Configurações → Integrações → "Configuração guiada".'
           : 'O que ficou para depois está em Configurações → Integrações → "Configuração guiada". O Início mostra um lembrete até você concluir; esta janela não abre de novo sozinha.')),
       h('div', { class: 'guia-pe' }, h('span', { class: 'guia-esp' }), h('button', { type: 'button', class: 'btn primary', onclick: fechar }, 'Ir para o painel'))];
     };
     function pintar() {
-      const prontos = ORDEM.filter((k) => L.passos[k]).length;
+      const prontos = OBRIG.filter((k) => L.passos[k]).length;
       const partes = fim ? telaFim() : PASSO[ORDEM[i]]();
-      caixaEl.replaceChildren(fim ? topo(prontos === ORDEM.length ? 'Loja pronta' : 'Loja quase pronta', `${L.nome} · ${prontos} de 4 configurados`) : topo('Vamos deixar a loja pronta', `${L.nome} · passo ${i + 1} de 4`), trilha(), ...partes);
+      caixaEl.replaceChildren(fim ? topo(prontos === OBRIG.length ? 'Loja pronta' : 'Loja quase pronta', `${L.nome} · ${prontos} de 4 configurados`) : topo('Vamos deixar a loja pronta', `${L.nome} · passo ${i + 1} de ${ORDEM.length}${ORDEM[i] === 'nfe' ? ' (opcional)' : ''}`), trilha(), ...partes);
       const prim = caixaEl.querySelector('.guia-corpo input:not([type=checkbox])');
       if (prim && !fim && window.matchMedia('(min-width: 721px)').matches) prim.focus();
     }

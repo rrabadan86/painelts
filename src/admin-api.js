@@ -185,6 +185,8 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
       return {
         logo: !!arquivoLogo(l.id), operacao: l.operacao, ferias: l.ferias,
         metaAuto: l.metaAuto, totaisSemEG: totaisSemEG(l.id),
+        // CFOP das NF-e (escolhido e os que o robô leu do AppNext)
+        nfeCfop: require('./nfecfop').daLoja(l.id), cfopsAppNext: (() => { const NFEc = require('./nfecfop'); try { const cad = require('./nfe').cadastros(l.id); return { em: cad ? cad.em : null, lista: NFEc.opcoes(cad) }; } catch { return { em: null, lista: [] }; } })(),
         id: l.id, nome: l.nome, appnext: l.appnext, meta: l.meta, metas: l.metas, criadaEm: l.criadaEm, regras: l.regras, marca: l.marca, wppModelos: l.wppModelos, wppIntervalo: l.wppIntervalo ?? null,
         nomesVenda: (() => { const raw = rawDe(l.id); return raw ? [...new Set(raw.vendas.slice(-500).map((v) => v.loja).filter(Boolean))] : []; })(),
         base: B.resumo(l.id), xml: XB.resumo(l.id), estoque: (() => { const e = ES.atual(l.id); return e ? { em: e.em, itens: e.itens.length, origem: e.origem || '' } : null; })(), fechEmail: NOTIF.publicoLoja(l.id), eventos: require('./eventos').lista(l.id), horarios: (() => { const a = AG.ler(); return { propria: !!a.lojas[l.id], semana: a.lojas[l.id] || a.padrao, hoje: AG.doDia(l.id) }; })(), fontes, vendedores: vendedoresDe(l.id),
@@ -343,7 +345,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     const u = C.get().usuarios[req.user] || {}, vistos = Array.isArray(u.guiaVisto) ? u.guiaVisto : [];
     return minhasLojas(req).map((l) => {
       let pedido = null; try { pedido = require('./pedido').acesso(l.id); } catch { /* sem login salvo */ }
-      const passos = GUIA.situacao({ env: lerEnv(l.id), pedido, fechEmail: NOTIF.publicoLoja(l.id) });
+      const passos = GUIA.situacao({ env: lerEnv(l.id), pedido, fechEmail: NOTIF.publicoLoja(l.id), nfeCfop: l.nfeCfop });
       const visto = vistos.includes(l.id);
       return { id: l.id, nome: l.nome, passos, visto, abrir: GUIA.abreSozinha(req.perfil, passos, visto) };
     });
@@ -353,6 +355,17 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     try {
       C.alterar((cfg) => { const u = cfg.usuarios[req.user]; if (!u) return; u.guiaVisto = [...new Set([...(Array.isArray(u.guiaVisto) ? u.guiaVisto : []), req.loja.id])].slice(-200); });
       res.json({ ok: true });
+    } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
+  });
+
+  // ---------- CFOP das NF-e de venda e de devolução (Integrações → Notas fiscais e passo 5 da configuração guiada) ----------
+  r.put('/lojas/:id/nfe-cfop', soGestor, lojaPermitida, json, (req, res) => {
+    const v = require('./nfecfop').validar(req.body);
+    if (v.erro) return res.status(400).json({ erro: v.erro });
+    try {
+      C.alterar((cfg) => { cfg.lojas.find((l) => l.id === req.loja.id).nfeCfop = v.ok; });
+      C.auditar(req.user, 'mudou o CFOP das NF-e emitidas pelo robô', req.loja.id, { loja: req.loja.id, venda: v.ok.venda || 'automático (5102)', devolucao: v.ok.devolucao || 'automático' });
+      res.json({ ok: true, nfeCfop: v.ok });
     } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
   });
 

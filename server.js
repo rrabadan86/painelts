@@ -747,8 +747,10 @@ app.get('/api/demo/sugestoes/produtos', (req, res) => {
 });
 app.get('/api/demo/pedido/acesso', (req, res) => res.json({ temLogin: false, usuario: '' }));
 // configuração guiada na apresentação: uma loja com o FIXE por fazer; a janela não abre sozinha e nada é gravado
-app.get('/api/demo/admin/guia', (req, res) => { try { res.json({ lojas: DEMO.estadoDemo().lojas.map((l, i) => ({ id: l.id, nome: l.nome, passos: { appnext: true, pedido: true, fixe: i !== 0, email: true }, visto: true, abrir: false })) }); } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); } });
-app.get('/api/demo/admin/estado', (req, res) => { try { res.json(DEMO.estadoDemo()); } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); } });
+app.get('/api/demo/admin/guia', (req, res) => { try { res.json({ lojas: DEMO.estadoDemo().lojas.map((l, i) => ({ id: l.id, nome: l.nome, passos: { appnext: true, pedido: true, fixe: i !== 0, email: true, nfe: false }, visto: true, abrir: false })) }); } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); } });
+// CFOP das notas na apresentação: automático, com a lista que o robô leria do AppNext
+const CFOPS_DEMO = [['5102', 'Venda de mercadoria adquirida de terceiros'], ['5405', 'Venda de mercadoria com ST (substituído)'], ['5202', 'Devolução de compra para comercialização'], ['5411', 'Devolução de compra com ST'], ['6202', 'Devolução de compra para comercialização (fora do estado)']].map(([codigo, descricao]) => ({ codigo, descricao }));
+app.get('/api/demo/admin/estado', (req, res) => { try { const e = DEMO.estadoDemo(); res.json({ ...e, lojas: (e.lojas || []).map((l) => ({ nfeCfop: { venda: '', devolucao: '' }, cfopsAppNext: { em: new Date().toISOString(), lista: CFOPS_DEMO }, ...l })) }); } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); } });
 app.get('/api/demo/admin/notif', (req, res) => res.json({ ativo: true, horario: '08:00', ultimoEnvio: null, alertas: true, fechamento: { ativo: true, horario: '23:30', ultimoEnvio: null }, avisos: { email: 'admin@exemplo.com' },
   telegram: { configurado: false, destinos: [] }, email: { host: 'smtp.exemplo.com', port: 587, secure: false, user: 'painel@exemplo.com', from: 'Painel <painel@exemplo.com>', temSenha: true, configurado: true,
     destinos: [{ email: 'franqueado@exemplo.com', nome: 'Franqueado(a)', lojas: ['*'] }] } }));

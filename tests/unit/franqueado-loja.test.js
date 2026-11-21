@@ -254,7 +254,7 @@ test('configuração guiada: abre sozinha uma vez para o franqueado, só na loja
   const ler = async (nome) => (await pedir(nome, '/api/admin/guia')).json();
   let g = await ler('dono1');
   assert.deepStrictEqual(g.lojas.map((l) => l.id), ['l1'], 'só a loja dele');
-  assert.deepStrictEqual(Object.keys(g.lojas[0].passos), ['appnext', 'pedido', 'fixe', 'email']);
+  assert.deepStrictEqual(Object.keys(g.lojas[0].passos), ['appnext', 'pedido', 'fixe', 'email', 'nfe'], 'os 4 acessos + o passo opcional do CFOP');
   assert.ok(Object.values(g.lojas[0].passos).some((v) => v === false), 'tem acesso faltando');
   assert.strictEqual(g.lojas[0].abrir, true, 'primeira vez: abre sozinha');
   assert.deepStrictEqual(Object.keys(g.lojas[0]).sort(), ['abrir', 'id', 'nome', 'passos', 'visto'], 'só sim/não: nenhum usuário nem senha');
@@ -301,3 +301,23 @@ test('carrinho montado: confirmar e excluir só para quem tem a tela Pedido, na 
   }
 });
 
+
+test('CFOP das NF-e (passo 5 da configuração guiada): franqueado e admin gravam na loja deles; gerente, vendedora e outra loja não; valor inválido é recusado', async () => {
+  const put = (nome, loja, corpo) => pedir(nome, `/api/admin/lojas/${loja}/nfe-cfop`, { method: 'PUT', body: JSON.stringify(corpo) });
+  assert.strictEqual((await put('ger1', 'l1', { venda: '5102' })).status, 403, 'gerente não configura');
+  assert.strictEqual((await put('vend1', 'l1', { venda: '5102' })).status, 403, 'vendedora não configura');
+  assert.strictEqual((await put('dono1', 'l2', { venda: '5102' })).status, 404, 'franqueado não mexe na loja dos outros (nem a enxerga)');
+  assert.strictEqual((await put('dono1', 'l1', { venda: '9999' })).status, 400, 'CFOP de entrada/inválido recusado');
+  assert.strictEqual((await put('dono1', 'l1', { devolucao: 'abc' })).status, 400);
+  const r = await put('dono1', 'l1', { venda: '5405', devolucao: '' });
+  assert.strictEqual(r.status, 200);
+  assert.deepStrictEqual((await r.json()).nfeCfop, { venda: '5405', devolucao: '' });
+  const est = await (await pedir('dono1', '/api/admin/estado')).json();
+  const l1 = est.lojas.find((l) => l.id === 'l1');
+  assert.deepStrictEqual(l1.nfeCfop, { venda: '5405', devolucao: '' });
+  assert.ok(Array.isArray(l1.cfopsAppNext.lista));
+  // o passo opcional fica "pronto" depois de salvo, sem virar pendência antes
+  const g = await (await pedir('dono1', '/api/admin/guia')).json();
+  assert.strictEqual(g.lojas.find((l) => l.id === 'l1').passos.nfe, true);
+  assert.strictEqual((await put('chefe', 'l2', { venda: '', devolucao: '6202' })).status, 200, 'admin grava em qualquer loja');
+});
