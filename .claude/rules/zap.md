@@ -33,3 +33,4 @@ Decisão do dono: campanhas marcadas "Enviar pelo robô" saem sozinhas pelo núm
 - Apresentação: tudo simulado, nada conecta nem envia.
 - **Período da campanha** (`inicio`, `fim`, opcionais; `M.foraDoPeriodo`): fora dele o robô pula a campanha (`fora_periodo`), a fila manual fica travada e a recorrente não monta lista nova. Recorrência: `diaria` (uma lista por dia de Brasília), `semanal`, `mensal`.
 - Grupo de comparação da campanha (st `'c'`): ~10% da lista (listas com 50+), sorteio estável por CPF+campanha no servidor; o robô e a fila manual nunca enviam para eles nem os contam como pendentes.
+- Envio manual (link): sempre `TS.msgWpp.linkComTexto(wpp, texto)` (`api.whatsapp.com/send`). Nunca `wa.me/…?text=`: no celular o desvio do wa.me estragava os emojis ("��"). O robô não usa link e não tem esse problema.

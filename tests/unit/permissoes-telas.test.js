@@ -32,7 +32,7 @@ before(async () => {
     },
   }));
   srv = spawn(process.execPath, ['server.js'], { cwd: path.join(__dirname, '../..'), env: { ...process.env, PORT: String(PORTA), DATA_DIR: tmp, CONFIG_FILE, SESSION_SECRET: 'teste-permissoes', NODE_ENV: 'test' }, stdio: 'ignore' });
-  for (let k = 0; k < 100; k++) { try { const r = await fetch(BASE + '/login'); if (r.status < 500) break; } catch { /* subindo */ } await new Promise((ok) => setTimeout(ok, 100)); }
+  for (let k = 0; k < 300; k++) { try { const r = await fetch(BASE + '/login'); if (r.status < 500) break; } catch { /* subindo */ } await new Promise((ok) => setTimeout(ok, 100)); }
   for (const nome of ['dono', 'ger_sem', 'ger_com', 'ger_pad', 'ger_notas', 'vend', 'vend2']) {
     const r = await fetch(BASE + '/login', { method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: `usuario=${nome}&senha=senha-teste-123` });
     const c = (r.headers.get('set-cookie') || '').split(';')[0];

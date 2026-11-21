@@ -2,9 +2,12 @@ const { test, expect } = require('@playwright/test');
 test('voltar do celular fecha a janela por cima e fica na mesma tela', async ({ page }, info) => {
   test.skip(info.project.name !== 'computador');
   await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS.db);
-  await page.evaluate(() => { location.hash = '#inicio'; }); await page.waitForTimeout(800);
+  // esperas pela condição, não por tempo fixo (achado C-11: com a máquina carregada 800 ms não bastavam)
+  await page.evaluate(() => { location.hash = '#inicio'; });
+  await expect(page.locator('#content .page-title, .page-title').first()).toBeVisible({ timeout: 30000 });
   await page.evaluate(() => { location.hash = '#cupons'; });
-  await page.waitForTimeout(800);
+  await expect(page.locator('.exp-btn:not(.prt-btn)').first()).toBeVisible({ timeout: 30000 });
+  await expect.poll(() => page.evaluate(() => location.hash)).toBe('#cupons');
   await page.locator('.exp-btn:not(.prt-btn)').first().click();
   await expect(page.locator('.camada-cheia')).toHaveCount(1);
   await page.goBack();
@@ -15,11 +18,11 @@ test('voltar do celular fecha a janela por cima e fica na mesma tela', async ({ 
   await expect(page.locator('.camada-cheia')).toHaveCount(1);
   await page.keyboard.press('Escape');
   await expect(page.locator('.camada-cheia')).toHaveCount(0);
-  await page.waitForTimeout(300);
+  // a janela fechada já saiu do histórico antes do próximo "voltar"
+  await expect.poll(() => page.evaluate(() => !(history.state && history.state.camada))).toBe(true);
   expect(await page.evaluate(() => location.hash)).toBe('#cupons');
   await page.goBack();
-  await page.waitForTimeout(300);
-  expect(await page.evaluate(() => location.hash)).toBe('#inicio');
+  await expect.poll(() => page.evaluate(() => location.hash)).toBe('#inicio');
 });
 
 test('gráfico: botão Compartilhar gera a imagem (no computador, baixa o PNG)', async ({ page }, info) => {

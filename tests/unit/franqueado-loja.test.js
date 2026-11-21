@@ -59,7 +59,7 @@ before(async () => {
   const PORTA_COL = col.address().port;
   srv = spawn(process.execPath, ['server.js'], { cwd: path.join(__dirname, '../..'), stdio: 'ignore',
     env: { ...process.env, PORT: String(PORTA), DATA_DIR: tmp, CONFIG_FILE, SESSION_SECRET: 'teste-franqueado', NODE_ENV: 'test', IA_FALSO: '1', COLETOR_URL: `http://127.0.0.1:${PORTA_COL}`, COLETOR_TOKEN: 'token-de-teste', GITHUB_TOKEN: '' } });
-  for (let k = 0; k < 100; k++) { try { const r = await fetch(BASE + '/login'); if (r.status < 500) break; } catch { /* subindo */ } await new Promise((ok) => setTimeout(ok, 100)); }
+  for (let k = 0; k < 300; k++) { try { const r = await fetch(BASE + '/login'); if (r.status < 500) break; } catch { /* subindo */ } await new Promise((ok) => setTimeout(ok, 100)); }
   for (const nome of ['chefe', 'dono1', 'ger1', 'vend1']) {
     const r = await fetch(BASE + '/login', { method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Forwarded-For': `203.0.113.${ipSeq++}` }, body: `usuario=${nome}&senha=${encodeURIComponent(SENHA)}` });
     const c = (r.headers.get('set-cookie') || '').split(';')[0];

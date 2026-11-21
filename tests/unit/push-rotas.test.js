@@ -24,7 +24,7 @@ before(async () => {
   const u = (perfil, extra) => ({ senha, perfil, lojas: ['l1'], ativo: true, ...extra });
   fs.writeFileSync(CONFIG_FILE, JSON.stringify({ lojas: [{ id: 'l1', nome: 'Loja 1' }], usuarios: { dono: u('franqueado'), vend: u('vendedor', { vendedor: 'ANA' }), novo: u('gerente', { trocarSenha: true }) } }));
   srv = spawn(process.execPath, ['server.js'], { cwd: path.join(__dirname, '../..'), env: { ...process.env, PORT: String(PORTA), DATA_DIR: tmp, CONFIG_FILE, SESSION_SECRET: 'teste-push', NODE_ENV: 'test', COLETOR_URL: '', GITHUB_TOKEN: '' }, stdio: 'ignore' });
-  for (let k = 0; k < 100; k++) { try { const r = await fetch(BASE + '/login'); if (r.status < 500) break; } catch { /* subindo */ } await new Promise((ok) => setTimeout(ok, 100)); }
+  for (let k = 0; k < 300; k++) { try { const r = await fetch(BASE + '/login'); if (r.status < 500) break; } catch { /* subindo */ } await new Promise((ok) => setTimeout(ok, 100)); }
   let ip = 10;
   for (const nome of ['dono', 'vend', 'novo']) {
     const r = await fetch(BASE + '/login', { method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Forwarded-For': `203.0.113.${ip++}` }, body: `usuario=${nome}&senha=senha-teste-123` });

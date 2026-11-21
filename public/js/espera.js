@@ -13,7 +13,7 @@
   const dataTxt = (iso) => (iso ? new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : '—');
   const quandoTxt = (iso) => (iso ? new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—');
   const telTxt = (d) => { d = String(d || '').replace(/\D/g, ''); if (d.length >= 12 && d.startsWith('55')) d = d.slice(2); return d.length === 11 ? `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}` : d.length === 10 ? `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}` : d; };
-  const wpp = (cel, texto) => { let d = String(cel || '').replace(/\D/g, ''); if (d.length >= 12 && d.startsWith('55')) d = d.slice(2); return d.length >= 10 ? `https://wa.me/55${d}?text=${encodeURIComponent(texto)}` : null; };
+  const wpp = (cel, texto) => { let d = String(cel || '').replace(/\D/g, ''); if (d.length >= 12 && d.startsWith('55')) d = d.slice(2); return d.length >= 10 ? TS.msgWpp.linkComTexto('55' + d, texto) : null; };
   // grupo do produto no AppNext (definição única: grupoprod.js); '' quando o produto ainda não vendeu
   const grupoIt = (it) => (TS.grupoProd ? TS.grupoProd.texto(it.cod, it.desc) : '');
   const gruposItens = (p) => [...new Set(p.itens.map(grupoIt).filter(Boolean))].join(' · ');
