@@ -11,7 +11,8 @@
 
   /** índice das vendas: db do painel (colunas db.cod, db.desc, db.prod, db.grupo, db.grupoC e os dicionários db.D) */
   function montar(db) {
-    const porCod = new Map(), porBase = new Map(), porNome = new Map();
+    const porCod = new Map(), porBase = new Map(), porNome = new Map(), paraVendas = new Map();
+    const chaveG = (g) => String(g ?? '').trim().toUpperCase();
     const D = (db && db.D) || {};
     const soma = (mapa, k, g, gc, n) => {
       if (!k) return;
@@ -30,6 +31,7 @@
         const g = D.grupo ? D.grupo[db.grupo[i]] : '';
         if (!g) continue;
         const gc = (D.grupoC && db.grupoC ? D.grupoC[db.grupoC[i]] : '') || g;
+        soma(paraVendas, chaveG(g), gc, gc, n); // grupo do AppNext → grupo do filtro das Vendas (o que mais aparece)
         const cod = D.cod && db.cod ? String(D.cod[db.cod[i]] ?? '') : '';
         if (cod) {
           soma(porCod, cod, g, gc, n);
@@ -55,7 +57,10 @@
       return (kg ? melhor(porBase.get(cod)) || melhor(porCod.get(cod)) : melhor(porCod.get(cod)) || (kg == null ? melhor(porBase.get(cod)) : null))
         || (n ? melhor(porNome.get(n)) : null);
     }
-    return { de };
+    /** grupo do filtro das Vendas de um grupo do AppNext (ex.: do cadastro de preços): CHÁ BRANCO AROMATIZADO → CHÁ AROMATIZADO.
+     *  Grupo que nunca apareceu nas vendas devolve '' (a tela põe em "sem grupo"): o filtro só lista grupos que existem nas Vendas. */
+    const vendasDe = (grupo) => { const m = melhor(paraVendas.get(chaveG(grupo))); return m ? m.grupo : ''; };
+    return { de, vendasDe };
   }
 
   let memo = null; // { db, idx }: um índice por base carregada
@@ -76,5 +81,5 @@
   const marca = (g) => (g ? TS.h('small', { class: 'est-tam grp-prod', title: DICA }, g) : null);
   /** devolve a coluna do nome com o grupo embaixo; `grupoDe(linha)` dá o texto do grupo */
   const coluna = (col, grupoDe) => ({ ...col, render: (r) => { const el = col.render ? col.render(r) : r[col.key], m = marca(grupoDe(r)); return m ? TS.h('span', null, el, m) : el; } });
-  TS.grupoProd = { ...API, de: (cod, desc, kg) => doPainel().de(cod, desc, kg), texto, marca, coluna, DICA };
+  TS.grupoProd = { ...API, de: (cod, desc, kg) => doPainel().de(cod, desc, kg), vendasDe: (g) => doPainel().vendasDe(g), texto, marca, coluna, DICA };
 })();

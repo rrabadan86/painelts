@@ -343,6 +343,25 @@
   TS.section = (t) => h('div', { class: 'section-label' }, t);
   TS.empty = (t = 'Sem dados para os filtros escolhidos.') => h('div', { class: 'empty' }, t);
 
+  /**
+   * Faixa que rola para o lado (abas, submenu) e é refeita a cada clique: sem isto ela voltava para o começo e a opção
+   * escolhida (a última, por exemplo) sumia da vista. Rola só a faixa, o mínimo para a opção marcada aparecer inteira.
+   */
+  TS.ativoVisivel = function (el, sel) {
+    const ajustar = () => {
+      if (!el.isConnected || el.scrollWidth <= el.clientWidth + 1) return el.isConnected;
+      const a = el.querySelector(sel || ':scope > .on');
+      if (!a) return true;
+      const r = a.getBoundingClientRect(), c = el.getBoundingClientRect(), m = 12;
+      if (r.left < c.left + m) el.scrollLeft -= c.left + m - r.left;
+      else if (r.right > c.right - m) el.scrollLeft += r.right - (c.right - m);
+      return true;
+    };
+    // a faixa é criada antes de entrar na página: ajusta no próximo quadro (e de novo logo depois, se ainda não tinha entrado)
+    const quadro = typeof requestAnimationFrame === 'function' ? requestAnimationFrame : (f) => setTimeout(f, 0);
+    quadro(() => { if (!ajustar()) setTimeout(ajustar, 80); });
+    return el;
+  };
   TS.seg = function (items, current, onPick) {
     const el = h('div', { class: 'seg', role: 'group' });
     for (const [lab, val, dica] of items) { // dica (opcional): explicação da opção, aparece ao passar o mouse / tocar e segurar
@@ -350,7 +369,7 @@
       el.append(h('button', { type: 'button', class: val === current ? 'on' : '', 'aria-pressed': val === current ? 'true' : 'false', 'data-val': String(val), title: dica || null,
         onclick: (e) => { TS.segMarcar(el, e.currentTarget); onPick(val); } }, lab));
     }
-    return el;
+    return TS.ativoVisivel(el);
   };
   /** marca uma opção do seletor (pelo botão ou pelo valor): use quando outra coisa (um quadro clicável) muda a aba */
   TS.segMarcar = function (el, alvo) {

@@ -45,6 +45,8 @@ test('Pedido: colunas novas (margem bruta do pacote, classe em ícone) e filtro 
   const gruposTela = (await selGrupo.locator('option').allInnerTexts()).slice(1).map((t) => t.replace(/^Grupo: /, '').replace(/ \(\d+\)$/, ''));
   expect(gruposTela.length).toBeGreaterThan(1);
   expect(gruposTela.some((g) => linhas.grupos.includes(g)), gruposTela.join(', ')).toBe(true);
+  // só grupos que existem no filtro das Vendas (o que não tem grupo vai para "sem grupo"): nada de grupo detalhado do cadastro nem parte do pedido
+  expect(gruposTela.filter((g) => g !== 'sem grupo' && !linhas.grupos.includes(g)), 'grupos fora do filtro das Vendas').toEqual([]);
   expect(gruposTela).not.toContain('Chás a granel');
   await expect(page.locator('select.ped-fx[aria-label="Parte do pedido"]')).toContainText('Chás a granel');
   const gAlvo = gruposTela.find((g) => linhas.grupos.includes(g));
@@ -54,6 +56,15 @@ test('Pedido: colunas novas (margem bruta do pacote, classe em ícone) e filtro 
     const cel = (await page.locator('.ped-t tbody tr').first().locator('td').nth(1).innerText()).split('\n')[0].trim();
     expect(linhas.tipos, cel).toContain(cel);
   }
+  await page.locator('.ped-fx-limpa').click();
+  // filtro "No site": só o que dá para colocar no carrinho agora
+  const selSite = page.locator('select.ped-fx[aria-label="No site"]');
+  const antesSite = +(await page.locator('.ped-fx-n').innerText()).replace(/\D/g, '');
+  await selSite.selectOption('ok');
+  const soDisp = +(await page.locator('.ped-fx-n').innerText()).replace(/\D/g, '');
+  expect(soDisp).toBeGreaterThan(0);
+  expect(soDisp).toBeLessThan(antesSite);
+  expect(await page.evaluate(() => TS.state.pedFx.d)).toBe('ok');
   await page.locator('.ped-fx-limpa').click();
   // filtro por subgrupo: aparece, filtra e conta
   const selSub = page.locator('select.ped-fx[aria-label="Subgrupo"]');
