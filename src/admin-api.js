@@ -186,7 +186,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
         logo: !!arquivoLogo(l.id), operacao: l.operacao, ferias: l.ferias,
         metaAuto: l.metaAuto, totaisSemEG: totaisSemEG(l.id),
         // CFOP das NF-e (escolhido e os que o robô leu do AppNext)
-        nfeCfop: require('./nfecfop').daLoja(l.id), cfopsAppNext: (() => { const NFEc = require('./nfecfop'); try { const cad = require('./nfe').cadastros(l.id); return { em: cad ? cad.em : null, lista: NFEc.opcoes(cad) }; } catch { return { em: null, lista: [] }; } })(),
+        nfeCfop: require('./nfecfop').daLoja(l.id), cfopsAppNext: require('./nfecfop').listaAppNext(l.id),
         id: l.id, nome: l.nome, appnext: l.appnext, meta: l.meta, metas: l.metas, criadaEm: l.criadaEm, regras: l.regras, marca: l.marca, wppModelos: l.wppModelos, wppIntervalo: l.wppIntervalo ?? null,
         nomesVenda: (() => { const raw = rawDe(l.id); return raw ? [...new Set(raw.vendas.slice(-500).map((v) => v.loja).filter(Boolean))] : []; })(),
         base: B.resumo(l.id), xml: XB.resumo(l.id), estoque: (() => { const e = ES.atual(l.id); return e ? { em: e.em, itens: e.itens.length, origem: e.origem || '' } : null; })(), fechEmail: NOTIF.publicoLoja(l.id), eventos: require('./eventos').lista(l.id), horarios: (() => { const a = AG.ler(); return { propria: !!a.lojas[l.id], semana: a.lojas[l.id] || a.padrao, hoje: AG.doDia(l.id) }; })(), fontes, vendedores: vendedoresDe(l.id),
@@ -359,6 +359,11 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
   });
 
   // ---------- CFOP das NF-e de venda e de devolução (Integrações → Notas fiscais e passo 5 da configuração guiada) ----------
+  // o que está escolhido e a lista lida do AppNext (a tela relê depois do "Buscar no AppNext")
+  r.get('/lojas/:id/nfe-cfop', soGestor, lojaPermitida, (req, res) => {
+    const N = require('./nfecfop');
+    res.json({ nfeCfop: N.daLoja(req.loja.id), cfopsAppNext: N.listaAppNext(req.loja.id) });
+  });
   r.put('/lojas/:id/nfe-cfop', soGestor, lojaPermitida, json, (req, res) => {
     const v = require('./nfecfop').validar(req.body);
     if (v.erro) return res.status(400).json({ erro: v.erro });

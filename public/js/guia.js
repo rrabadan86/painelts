@@ -53,11 +53,11 @@
 
   /**
    * Escolha do CFOP da NF-e de venda e de devolução (passo 5 do guia e Configurações → Integrações → Notas fiscais).
-   * As opções são os CFOPs que o robô leu do AppNext ("Buscar cadastros" em Notas fiscais → Nova NF-e). Sem a lista, dá para
+   * As opções são os CFOPs que o robô leu do AppNext (botão "Buscar no AppNext" aqui mesmo, ou "Buscar cadastros" em Notas fiscais → Nova NF-e). Sem a lista, dá para
    * digitar o número. → { el, salvar } (salvar grava pela rota da loja e devolve o que ficou)
    */
   G.formCfop = (lojaId, atual, cfops) => {
-    const lista = (cfops && cfops.lista) || [];
+    let lista = (cfops && cfops.lista) || [], em = cfops && cfops.em;
     const cx = (tipo, padrao, dica) => {
       const v = (atual && atual[tipo]) || '';
       if (!lista.length) return h('input', { class: 'f-input', inputmode: 'numeric', maxlength: 4, placeholder: padrao, value: v, 'aria-label': `CFOP de ${tipo === 'venda' ? 'venda' : 'devolução'}`, title: dica });
@@ -65,13 +65,51 @@
       return h('select', { class: 'f-input', 'aria-label': `CFOP de ${tipo === 'venda' ? 'venda' : 'devolução'}`, title: dica },
         h('option', { value: '' }, padrao), ...(v && !lista.some((c) => c.codigo === v) ? [op({ codigo: v, descricao: 'não está na última lista do AppNext' })] : []), ...lista.map(op));
     };
-    const venda = cx('venda', 'Automático (5102, como hoje)', 'O CFOP da NF-e de venda. Automático = 5102, como o robô sempre usou.');
-    const devol = cx('devolucao', 'Automático (regra da loja)', 'O CFOP da NF-e de devolução ao fornecedor. Automático = o da regra fiscal (sequência) de devolução da loja; se a loja tiver mais de um, o robô escolhe pelo estado do fornecedor ou pede para fazer à mão.');
-    const quando = cfops && cfops.em ? new Date(cfops.em).toLocaleDateString('pt-BR') : null;
-    const el = h('div', { class: 'nfe-cfop' },
-      h('div', { class: 'guia-g2' }, campo('CFOP da venda', venda, 'O CFOP da NF-e de venda. Automático = 5102, como o robô sempre usou.'), campo('CFOP da devolução ao fornecedor', devol, 'O CFOP da NF-e de devolução. Automático = o da regra fiscal (sequência) de devolução da loja.')),
-      h('small', { class: 'muted' }, lista.length ? `Lista lida do AppNext${quando ? ' em ' + quando : ''}. Para atualizar: Notas fiscais → Nova NF-e → "Buscar cadastros".` : 'O painel ainda não leu os CFOPs do AppNext: digite o número (ex.: 5102) ou busque em Notas fiscais → Nova NF-e → "Buscar cadastros" e volte aqui.'),
-      h('div', { class: 'guia-nota' }, '🔒 O robô usa só o CFOP escolhido. Se a nota tiver um produto sem regra fiscal com esse CFOP no AppNext, ele para e avisa qual é: nunca emite com outro.'));
+    const DV = 'O CFOP da NF-e de venda. Automático = 5102, como o robô sempre usou. O robô usa a regra fiscal (sequência) do AppNext com esse CFOP, que já traz os impostos.';
+    const DD = 'O CFOP da NF-e de devolução ao fornecedor. Automático = o da regra fiscal (sequência) de devolução da loja; se a loja tiver mais de um, o robô escolhe pelo estado do fornecedor ou pede para fazer à mão.';
+    let venda, devol;
+    const grade = h('div', { class: 'guia-g2' }), info = h('small', { class: 'muted' }), vivo = h('small', { class: 'nfe-cfop-vivo', hidden: true });
+    const btBuscar = h('button', { type: 'button', class: 'btn', title: 'Pede ao robô para ler agora, no AppNext, os CFOPs e as regras fiscais da loja (só lê, não altera nada). Leva 1 a 2 minutos.' }, '↻ Buscar no AppNext');
+    const pintar = () => {
+      // guarda o que a pessoa já escolheu antes de refazer as caixas
+      if (venda) atual = { venda: venda.value.trim(), devolucao: devol.value.trim() };
+      venda = cx('venda', 'Automático (5102, como hoje)', DV);
+      devol = cx('devolucao', 'Automático (regra da loja)', DD);
+      grade.replaceChildren(campo('CFOP da venda', venda, DV), campo('CFOP da devolução ao fornecedor', devol, DD));
+      const quando = em ? new Date(em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : null;
+      btBuscar.textContent = lista.length ? '↻ Atualizar do AppNext' : '↻ Buscar no AppNext';
+      info.textContent = lista.length ? `Lista lida do AppNext${quando ? ' em ' + quando : ''}. Cadastrou regra fiscal nova lá? Atualize.` : 'O painel ainda não leu os CFOPs do AppNext: busque aqui ou digite o número (ex.: 5102).';
+    };
+    const espera = (ms) => new Promise((r) => setTimeout(r, ms));
+    btBuscar.addEventListener('click', async () => {
+      if (TS.demo) { toast(TS.DEMO_AVISO); return; }
+      btBuscar.disabled = true; vivo.hidden = false; vivo.className = 'nfe-cfop-vivo muted'; vivo.textContent = '⏳ O robô está lendo o AppNext… (1 a 2 minutos; pode continuar aqui)';
+      const antes = em ? Date.parse(em) : 0, ini = Date.now();
+      try {
+        await chamar('POST', '/api/nfe/cadastros', { loja: lojaId });
+        let erro = null;
+        for (;;) {
+          await espera(4000);
+          const j = await chamar('GET', `/api/nfe?loja=${encodeURIComponent(lojaId)}`);
+          const cad = j.cadastros, ec = j.erroCadastros;
+          if (cad && Date.parse(cad.em) > antes) break;
+          if (ec && Date.parse(ec.em) >= ini - 5000) { erro = ec.erro || 'a leitura falhou'; break; }
+          const ocupado = j.robo && (j.robo.estado === 'na_fila' || j.robo.estado === 'rodando');
+          if (!ocupado && Date.now() - ini > 30000) { erro = 'o robô terminou sem trazer a lista'; break; }
+          if (Date.now() - ini > 5 * 60e3) { erro = 'o robô demorou demais; tente de novo em alguns minutos'; break; }
+        }
+        if (erro) throw new Error('Não consegui ler o AppNext: ' + erro);
+        const r = await chamar('GET', `/api/admin/lojas/${encodeURIComponent(lojaId)}/nfe-cfop`);
+        lista = (r.cfopsAppNext && r.cfopsAppNext.lista) || []; em = r.cfopsAppNext && r.cfopsAppNext.em;
+        pintar();
+        vivo.className = 'nfe-cfop-vivo pos'; vivo.textContent = lista.length ? `✅ ${lista.length} CFOP(s) lidos do AppNext. Escolha e salve.` : '⚠️ O AppNext não devolveu nenhum CFOP de saída para esta loja.';
+      } catch (e) { vivo.className = 'nfe-cfop-vivo neg'; vivo.textContent = e.message; }
+      btBuscar.disabled = false;
+    });
+    pintar();
+    const el = h('div', { class: 'nfe-cfop' }, grade,
+      h('div', { class: 'nfe-cfop-at' }, info, btBuscar), vivo,
+      h('div', { class: 'guia-nota' }, '🔒 O robô usa só o CFOP escolhido, com a regra fiscal (sequência) do AppNext desse CFOP — é ela que traz os impostos. Se a nota tiver um produto sem regra fiscal com esse CFOP, ele para e avisa qual é: nunca emite com outro.'));
     const salvar = async () => {
       const corpo = { venda: venda.value.trim(), devolucao: devol.value.trim() };
       if (TS.demo) { toast(TS.DEMO_AVISO); return corpo; }

@@ -29,4 +29,9 @@ function opcoes(cadastros) {
   return [...m.values()].sort((a, b) => a.codigo.localeCompare(b.codigo));
 }
 
-module.exports = { validar, daLoja, opcoes, limpar };
+/** a lista lida do AppNext para a loja: { em, lista } (vazia quando o robô ainda não buscou os cadastros) */
+function listaAppNext(id) {
+  try { const cad = require('./nfe').cadastros(id); return { em: cad ? cad.em : null, lista: opcoes(cad) }; } catch { return { em: null, lista: [] }; }
+}
+
+module.exports = { validar, daLoja, opcoes, limpar, listaAppNext };
