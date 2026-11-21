@@ -891,8 +891,11 @@
         b.title = tem ? 'Tirar do pedido' : `Adicionar ao pedido (${qtdTxt(r.sugerido, r.it)}), mesmo passando do valor`;
         b.setAttribute('aria-label', b.title);
       };
+      // máximo por pedido que o Sistema de Pedidos aceita deste produto (0 = sem limite), no múltiplo do site
+      const maxPed = r.c && r.c.max > 0 ? Math.floor(r.c.max / passo + 1e-9) * passo : 0;
       const definir = (v) => {
         if (v > 0) v = Math.round(Math.ceil(v / passo - 1e-9) * passo * 1000) / 1000;
+        if (maxPed && v > maxPed) { v = maxPed; toast(`O site só deixa pedir até ${qtdTxt(maxPed, r.it)} deste produto por pedido.`); }
         i.value = v;
         r.pedir = v;
         if (v === r.sugeridoPedir) editados.delete(String(r.cod)); else editados.set(String(r.cod), v);
@@ -917,14 +920,15 @@
       pintarB();
       const mult = multDe(r);
       const chip = mult ? h('span', { class: 'ped-mult', title: `No site só dá para pedir de ${fmt.n2(mult).replace(/,00$/, '')} em ${fmt.n2(mult).replace(/,00$/, '')}${r.c.max ? ` (máximo ${fmt.n2(r.c.max).replace(/,00$/, '')})` : ''}. A quantidade é arredondada para cima.` }, `×${fmt.n2(mult).replace(/,00$/, '')}`) : null;
+      const chipMax = maxPed ? h('span', { class: 'ped-mult ped-max', title: `O Sistema de Pedidos só aceita até ${qtdTxt(maxPed, r.it)} deste produto por pedido. O painel não deixa passar disso.` }, `máx. ${fmt.n2(maxPed).replace(/,00$/, '')}`) : null;
       if (MOBILE) {
         // celular: − e ＋ grandes (de um passo do site), o número no meio
         const menos = h('button', { type: 'button', class: 'ped-step', 'aria-label': 'Menos', onclick: () => definir(Math.max(0, Math.round((r.pedir - passo) * 1000) / 1000)) }, '−');
         const mais = h('button', { type: 'button', class: 'ped-step', 'aria-label': 'Mais', onclick: () => definir(r.pedir > 0 ? Math.round((r.pedir + passo) * 1000) / 1000 : (r.sugerido || passo)) }, '＋');
         i.setAttribute('inputmode', 'decimal');
-        return h('span', { class: 'ped-q-w ped-q-mob' }, menos, i, mais, h('small', null, unid(r.it)), chip);
+        return h('span', { class: 'ped-q-w ped-q-mob' }, menos, i, mais, h('small', null, unid(r.it)), chip, chipMax);
       }
-      return h('span', { class: 'ped-q-w' }, i, h('small', null, unid(r.it)), chip, b);
+      return h('span', { class: 'ped-q-w' }, i, h('small', null, unid(r.it)), chip, chipMax, b);
     }
     const catInfo = p.catalogo
       ? `Preços e disponibilidade do Sistema de Pedidos de ${new Date(p.catalogo.em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}.`

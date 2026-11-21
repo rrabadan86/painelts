@@ -70,7 +70,8 @@
   /** aviso do site depois do clique (janela "Atenção", ex.: "O produto X não possui estoque suficiente.") */
   function avisoDoSite(d) {
     const vis = (e) => { const s = d.defaultView.getComputedStyle(e); return s.display !== 'none' && s.visibility !== 'hidden' && e.offsetHeight > 0; };
-    const m = [...d.querySelectorAll('.modal')].find((e) => e.id !== 'modalCarregamentoAjax' && e.id !== 'modalCarrinho' && vis(e));
+    // a janela "Venda Conjunta" não é aviso: quem cuida dela é vendaConjunta() (aqui ela seria fechada)
+    const m = [...d.querySelectorAll('.modal')].find((e) => e.id !== 'modalCarregamentoAjax' && e.id !== 'modalCarrinho' && vis(e) && !/colocar\s+todos\s+no\s+carrinho/i.test(e.textContent || ''));
     if (!m) return null;
     const corpo = m.querySelector('.modal-body') || m;
     const txt = corpo.textContent.replace(/\s+/g, ' ').trim();
@@ -83,14 +84,42 @@
    * "Venda Conjunta": o site só vende o produto junto com outro (ex.: a mug com o infusor dela) e pede para confirmar.
    * Decisão do dono: aceitar em "Colocar Todos no Carrinho". → { botao, itens: [{ cod, nome, qtd, preco }] } ou null
    */
+  const RE_TODOS = /^colocar\s+todos\s+no\s+carrinho$/i;
   function vendaConjunta(d) {
-    const vis = (e) => { const s = d.defaultView.getComputedStyle(e); return s.display !== 'none' && s.visibility !== 'hidden' && e.offsetHeight > 0; };
-    const botao = [...d.querySelectorAll('a,button,input[type=button],input[type=submit]')].find((b) => /colocar\s+todos\s+no\s+carrinho/i.test((b.textContent || b.value || '').replace(/\s+/g, ' ')) && vis(b));
-    if (!botao) return null;
-    const janela = botao.closest('.modal, .modal-content, [role=dialog]') || d;
+    const w = d.defaultView;
+    const txt = (e) => String(e.tagName === 'INPUT' ? e.value || '' : e.textContent || '').replace(/\s+/g, ' ').trim();
+    // janela fechada = ele ou um pai com display:none. Não exige tamanho nem "visível": o quadro de trabalho é invisível e,
+    // no site de verdade, a checagem por tamanho deixava a janela passar sem ser aceita
+    const fechado = (e) => { for (let x = e; x && x.nodeType === 1; x = x.parentElement) if (w.getComputedStyle(x).display === 'none') return true; return false; };
+    const achados = [...d.querySelectorAll('a,button,input,span,div,label,td')].filter((b) => RE_TODOS.test(txt(b)) && !fechado(b));
+    if (!achados.length) return null;
+    const el = achados[achados.length - 1]; // o mais interno com o texto
+    const botao = el.closest('a,button,input,[onclick]') || el;
+    const janela = botao.closest('.modal, .modal-content, [role=dialog], .ui-dialog') || d;
     const itens = [...janela.querySelectorAll('table tr')].map((tr) => [...tr.querySelectorAll('td')].map((td) => td.textContent.replace(/\s+/g, ' ').trim())).filter((c) => c.length >= 4 && /\d/.test(c[0]))
       .map((c) => ({ cod: c[0], nome: c[1], qtd: num(c[c.length - 2]), preco: num(c[c.length - 1]) }));
     return { botao, itens };
+  }
+  /** clique como o de uma pessoa (alguns botões do site só reagem ao toque completo) */
+  function clicar(el) {
+    const w = el.ownerDocument.defaultView;
+    for (const t of ['mousedown', 'mouseup']) { try { el.dispatchEvent(new w.MouseEvent(t, { bubbles: true, cancelable: true, view: w })); } catch { /* segue com o clique */ } }
+    el.click();
+  }
+  /** segunda tentativa: se o botão é um link do site ("javascript:…"), segue o link direto */
+  function seguirLink(el) {
+    const hr = el.getAttribute && el.getAttribute('href');
+    if (hr && /^javascript:/i.test(hr)) { try { el.ownerDocument.defaultView.eval(decodeURIComponent(hr.replace(/^javascript:/i, ''))); return; } catch { /* cai no clique */ } }
+    clicar(el);
+  }
+  /** o que havia na página quando o site não confirmou: ajuda a descobrir por que (sem dado de cliente; só janelas e botões) */
+  function diagnostico(d) {
+    try {
+      const w = d.defaultView;
+      const jan = [...d.querySelectorAll('.modal,[role=dialog],.ui-dialog')].map((m) => `${m.id || String(m.className).split(' ')[0] || m.tagName}=${w.getComputedStyle(m).display}`).slice(0, 6).join(' ');
+      const bot = [...d.querySelectorAll('*')].filter((e) => !e.children.length && /colocar\s+todos/i.test(e.tagName === 'INPUT' ? e.value || '' : e.textContent || '')).map((e) => `${e.tagName.toLowerCase()}${e.id ? '#' + e.id : ''}`).slice(0, 3).join(' ');
+      return `janelas: ${jan || 'nenhuma'} | botão "Colocar Todos": ${bot || 'não achei'} | texto "Venda Conjunta": ${/venda\s+conjunta/i.test(d.body ? d.body.textContent : '') ? 'sim' : 'não'}`.slice(0, 190);
+    } catch { return ''; }
   }
   const ajustar = (qtd, c) => { let q = Math.max(qtd, c.min || 0); q = Math.round(Math.ceil(q / c.mult - 1e-9) * c.mult * 1000) / 1000; if (c.max && q > c.max) q = Math.floor(c.max / c.mult + 1e-9) * c.mult; return q; };
 
@@ -130,18 +159,26 @@
       if (!botao) return { ...r, status: 'erro', erro: 'botão "Colocar no Carrinho" não encontrado' };
       // o clique pode recarregar o quadro ou só atualizar o topo: espera um dos dois
       const recarregou = agir(() => botao.click()).catch(() => null);
-      let depois = antes, aviso = null, junto = null;
-      for (let k = 0; k < 40 && depois === antes && !aviso; k++) {
+      let depois = antes, aviso = null, junto = null, aceitou = 0;
+      for (let k = 0; k < 50 && depois === antes && !aviso; k++) {
         await Promise.race([recarregou, espera(500)]);
-        // venda conjunta (mug + infusor): aceita "Colocar Todos no Carrinho" uma vez e continua esperando o carrinho mudar
-        const vc = junto ? null : vendaConjunta(doc());
-        if (vc) { junto = vc.itens; const de = agir(() => vc.botao.click()).catch(() => null); await Promise.race([de, espera(900)]); depois = topoCarrinho(doc()); continue; }
+        // venda conjunta (mug + infusor): aceita "Colocar Todos no Carrinho" e continua esperando o carrinho mudar.
+        // Se a janela continuar aberta depois do clique, tenta mais uma vez seguindo o link do botão
+        const vc = aceitou < 2 ? vendaConjunta(doc()) : null;
+        if (vc) {
+          if (!junto) junto = vc.itens;
+          aceitou++;
+          const de = agir(() => (aceitou === 1 ? clicar(vc.botao) : seguirLink(vc.botao))).catch(() => null);
+          await Promise.race([de, espera(1500)]);
+          depois = topoCarrinho(doc());
+          continue;
+        }
         depois = topoCarrinho(doc());
         if (depois === antes) aviso = avisoDoSite(doc());
       }
       if (depois !== antes) return { ...r, qtd: q, preco: alvo.preco, status: 'ok', junto: junto && junto.length ? junto : undefined };
       if (aviso) return { ...r, qtd: q, preco: alvo.preco, status: /estoque/i.test(aviso) ? 'sem_estoque' : 'recusado', erro: aviso };
-      return { ...r, qtd: q, preco: alvo.preco, status: 'sem_confirmacao' };
+      return { ...r, qtd: q, preco: alvo.preco, status: 'sem_confirmacao', erro: `${aceitou ? `aceitei a venda conjunta ${aceitou}× e o carrinho não mudou · ` : ''}${diagnostico(doc())}` };
     } catch (e) {
       return { ...r, status: 'erro', erro: String(e.message || e).slice(0, 200) };
     }
@@ -159,7 +196,7 @@
       const x = res.get(it.cod);
       const li = document.createElement('li');
       const [t, c] = x ? ROT[x.status] : it.nome === atual ? ['colocando…', 'tsc-pe'] : ['na fila', 'tsc-pe'];
-      li.innerHTML = `<span>${esc(it.nome)}${x && x.qtd ? ` <small>(${br(x.qtd, x.qtd % 1 ? 2 : 0)})</small>` : ''}${x && x.junto ? x.junto.map((j) => `<br><small>+ junto: ${esc(j.nome)}${j.qtd ? ` (${br(j.qtd, j.qtd % 1 ? 2 : 0)})` : ''}</small>`).join('') : ''}${x && x.erro && (x.status === 'sem_estoque' || x.status === 'recusado') ? `<br><small class="tsc-av-t">Site: ${esc(x.erro)}</small>` : ''}</span><em class="st ${c}" title="${x && x.erro ? esc(x.erro) : ''}">${t}</em>`;
+      li.innerHTML = `<span>${esc(it.nome)}${x && x.qtd ? ` <small>(${br(x.qtd, x.qtd % 1 ? 2 : 0)})</small>` : ''}${x && x.junto ? x.junto.map((j) => `<br><small>+ junto: ${esc(j.nome)}${j.qtd ? ` (${br(j.qtd, j.qtd % 1 ? 2 : 0)})` : ''}</small>`).join('') : ''}${x && x.erro && (x.status === 'sem_estoque' || x.status === 'recusado') ? `<br><small class="tsc-av-t">Site: ${esc(x.erro)}</small>` : ''}${x && x.erro && x.status === 'sem_confirmacao' ? `<br><small style="color:#666">Diagnóstico: ${esc(x.erro)}</small>` : ''}</span><em class="st ${c}" title="${x && x.erro ? esc(x.erro) : ''}">${t}</em>`;
       if (x && !['ok', 'indisponivel', 'sem_estoque'].includes(x.status) && !rodando) {
         const b = document.createElement('button'); b.className = 'tb'; b.textContent = 'Tentar de novo';
         b.title = x.status === 'sem_confirmacao' ? 'O site não confirmou. Ele pode já estar no carrinho: confira antes para não dobrar.' : '';

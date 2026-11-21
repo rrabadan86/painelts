@@ -75,6 +75,14 @@ test('Pedido no celular: apertar ＋ várias vezes mantém o cartão no mesmo lu
     await expect(cartoes.nth(k)).toContainText(cod); // continua na mesma posição depois de cada toque
   }
   expect(await vizinhos(), 'os vizinhos do cartão são os mesmos').toEqual(antes);
+  // o máximo por pedido do site aparece ao lado da quantidade e o painel não deixa passar dele
+  const max = cartoes.nth(k).locator('.ped-max');
+  await expect(max).toHaveText(/^máx\. \d/);
+  const limite = +(await max.innerText()).replace(/[^\d,]/g, '').replace(',', '.');
+  await cartoes.nth(k).locator('input.ped-q').fill(String(limite * 3));
+  await cartoes.nth(k).locator('input.ped-q').blur();
+  await expect(page.locator('.toast')).toContainText('só deixa pedir até');
+  expect(+(await cartoes.nth(k).locator('input.ped-q').inputValue())).toBeLessThanOrEqual(limite);
   await expect(cartoes.nth(k)).toHaveClass(/\bon\b/);
   expect(+(await cartoes.nth(k).locator('input.ped-q').inputValue())).toBeGreaterThan(0);
   // trocar de aba e voltar: aí sim a lista se reorganiza (o que está no pedido vem primeiro)

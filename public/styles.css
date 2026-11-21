@@ -3193,3 +3193,4 @@ button.vl-pac-marca { background: none; text-decoration: underline; cursor: poin
 .ped-tools .seg { border-radius: 18px; }
 .ped-tools .seg button { flex: 0 1 auto; white-space: normal; text-align: left; }
 .ped-ver-nota { margin: 8px 0 0; font-size: 12.5px; }
+.ped-max { color: var(--muted); background: var(--cream); }

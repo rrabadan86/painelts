@@ -38,7 +38,7 @@ test('Pedido: aviso do carrinho salvo, "Continuar de onde parei" troca as quanti
 test('Favorito do carrinho: reconhece a janela "Venda Conjunta", lê o que vem junto e clica em "Colocar Todos no Carrinho"', async ({ page }) => {
   // a função do favorito, tirada do arquivo, rodando numa página igual à janela do site
   const fonte = fs.readFileSync(path.join(__dirname, '../../public/js/carrinho-site.js'), 'utf8');
-  const fn = fonte.slice(fonte.indexOf('function vendaConjunta(d) {'), fonte.indexOf('const ajustar = '));
+  const fn = fonte.slice(fonte.indexOf('const RE_TODOS ='), fonte.indexOf('const ajustar = '));
   const num = /const num = [^\n]+/.exec(fonte)[0];
   await page.setContent(`<div class="modal" style="display:block"><div class="modal-content"><h4>Venda Conjunta</h4>
     <div class="modal-body"><p>Na compra de <b>Mug Harmony Royal Horse</b>, também devem ser adicionados no carrinho os produtos da lista abaixo.</p>
