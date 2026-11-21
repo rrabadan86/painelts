@@ -3211,3 +3211,13 @@ button.vl-pac-marca { background: none; text-decoration: underline; cursor: poin
   .link-btn, .est-ir, .cpf-link, .vl-nome, .prc-nome, .est-conta, .pd-vl { display: inline-block; padding-top: 5px; padding-bottom: 5px; }
   summary { padding-top: 5px; padding-bottom: 5px; }
 }
+/* Campanha Resumo diário (campanhas.js) e marca do robô na tela Hoje (clientes.js) */
+.hj-resumo { margin: 4px 0 12px; }
+.hj-robo { display: inline-flex; align-items: center; min-height: 32px; font-size: 13px; color: var(--muted); }
+.cp-resumo { display: grid; gap: 12px; }
+.cp-resumo-motivos { display: grid; gap: 8px; }
+.cp-resumo-mot { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 8px; }
+.cp-resumo-mot.on { border-color: var(--green); }
+.cp-resumo-cab { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; cursor: pointer; }
+.cp-resumo-cab b { font-weight: 600; }
+.cp-resumo-mot textarea { min-width: 0; width: 100%; }

@@ -485,11 +485,15 @@ function granelEstoque({ estoque, compras }) {
     .map((i) => [i.desc || '', Math.round((Number(i.qtd) || 0) * 1000) / 1000, (ent[String(i.cod)] || []).some(([dia]) => DIA.test(dEst) && dia > dEst) ? 1 : 0]);
 }
 
-/** o que tem em estoque: [nome, unidade, 1 = tem (ou chegou nota depois do estoque exportado) / 0 = não tem] — sem quantidade nem custo */
+/** chá a granel só conta como "tem" para as mensagens com pelo menos 100 g (decisão do dono: menos que isso não dá para oferecer) */
+const MINIMO_GRANEL_KG = 0.1;
+/** o que tem em estoque: [nome, unidade, 1 = tem (ou chegou nota depois do estoque exportado) / 0 = não tem] — sem quantidade nem custo.
+ *  Chá a granel (Kg, não envasado) só "tem" com pelo menos 100 g; o resto, com qualquer quantidade. */
 function disponivel({ estoque, compras }) {
   const dEst = String((estoque && estoque.em) || '').slice(0, 10);
   const ent = (compras && compras.itens) || {};
-  const itens = ((estoque && estoque.itens) || []).map((i) => [i.desc || '', i.un || '', (Number(i.qtd) || 0) > 0.0005 || (ent[String(i.cod)] || []).some(([dia]) => DIA.test(dEst) && dia > dEst) ? 1 : 0]);
+  const minimo = (i) => (String(i.un || '').toLowerCase() === 'kg' && !ENVASADO.test(i.desc || '') ? MINIMO_GRANEL_KG - 0.0005 : 0.0005);
+  const itens = ((estoque && estoque.itens) || []).map((i) => [i.desc || '', i.un || '', (Number(i.qtd) || 0) > minimo(i) || (ent[String(i.cod)] || []).some(([dia]) => DIA.test(dEst) && dia > dEst) ? 1 : 0]);
   return { em: (estoque && estoque.em) || null, itens };
 }
 
@@ -603,4 +607,4 @@ function linhasResumo(id) {
     ...top];
 }
 
-module.exports = { historicoAberturas, PACOTE_KG, MESES_ABERTO, pacotesDoLote, ritmoCompra, estimarAbertura, comAbertura, observarAberturas, editarAbertura, escolherAjuste, MESES_VALIDADE, FAIXAS, RISCO_DIAS, ler, calcular, resumo, editar, editarSaldo, daLoja, daNota, granelEstoque, disponivel, pendentesNotas, entradasDoCod, entradasRecentes, linhasResumo, somarMeses, precosKg, faixa, hojeSP };
+module.exports = { historicoAberturas, PACOTE_KG, MESES_ABERTO, pacotesDoLote, ritmoCompra, estimarAbertura, comAbertura, observarAberturas, editarAbertura, escolherAjuste, MESES_VALIDADE, FAIXAS, RISCO_DIAS, ler, calcular, resumo, editar, editarSaldo, daLoja, daNota, granelEstoque, disponivel, MINIMO_GRANEL_KG, pendentesNotas, entradasDoCod, entradasRecentes, linhasResumo, somarMeses, precosKg, faixa, hojeSP };

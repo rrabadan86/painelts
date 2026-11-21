@@ -154,3 +154,10 @@ test('lotes: disponível (sem quantidade nem custo) para a trava das mensagens',
   assert.deepEqual(r.itens, [['VALERIANA', 'Kg', 0], ['CANECA', 'Un', 1], ['MATE', 'Kg', 1]]);
   assert.ok(!JSON.stringify(r).includes('custo'));
 });
+
+test('lotes: chá a granel só conta como disponível para as mensagens com pelo menos 100 g (decisão do dono)', () => {
+  const estoque = { em: '2026-11-18T09:00:00Z', itens: [{ cod: '1', desc: 'CHAI', un: 'Kg', qtd: 0.099 }, { cod: '2', desc: 'ROOIBOS', un: 'Kg', qtd: 0.1 }, { cod: '3', desc: 'MATE', un: 'Kg', qtd: 0.03 }, { cod: '4', desc: 'CANECA', un: 'Un', qtd: 1 }] };
+  const r = L.disponivel({ estoque, compras: { itens: { 3: [['2026-11-19', 1, 1, 1, 'T']] } } });
+  assert.deepEqual(r.itens.map((x) => x[2]), [0, 1, 1, 1], '99 g não; 100 g sim; com nota nova depois do estoque, sim; outro produto, com 1 já tem');
+  assert.strictEqual(L.MINIMO_GRANEL_KG, 0.1);
+});

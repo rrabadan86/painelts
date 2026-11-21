@@ -4,7 +4,8 @@
  *   dados/<loja>/campanhas.json = [{ id, nome, criadaEm, por, filtros, mensagem, janela, recorrente, ativa,
  *                                    robo (enviada pelo robô do WhatsApp; src/zapfila.js),
  *                                    comparar (guarda 10% da lista sem mensagem; public/js/campretorno.js),
- *                                    rodadas: [{ id, em, lista: [{ cpf, nome, st, em?, por? }] }] }]
+ *                                    porMotivo (Campanha Resumo diário: o texto de cada motivo; filtros.resumo = motivos escolhidos),
+ *                                    rodadas: [{ id, em, lista: [{ cpf, nome, st, em?, por?, m? (motivo), o? (chá oferecido) }] }] }]
  * A lista de cada rodada é a foto do momento em que foi criada (os filtros rodam no navegador, com os dados do painel).
  * st: 'p' pendente · 'e' enviada (clicou em "Abrir no WhatsApp") · 'o' não quer mensagens · 'x' pulada ·
  *     'c' grupo de comparação: sorteado aqui, no servidor, ao criar a lista (estável por CPF + campanha; só lista com 50+).
@@ -52,7 +53,9 @@ function listaOk(l) {
     const cpf = String(x && x.cpf || '');
     if (!CPF_OK.test(cpf) || vistos.has(cpf)) continue;
     vistos.add(cpf);
-    out.push({ cpf, nome: texto(x.nome, 80), st: 'p' });
+    // Resumo diário: o motivo do cliente (escolhe o texto) e o chá perto da validade oferecido ({chaoferta})
+    const m = M.MOTIVOS_RESUMO.includes(x.m) ? x.m : null, o = m ? texto(x.o, 120) : '';
+    out.push({ cpf, nome: texto(x.nome, 80), st: 'p', ...(m ? { m } : {}), ...(o ? { o } : {}) });
   }
   return { ok: out };
 }
@@ -74,13 +77,17 @@ function dadosOk(b, atual = {}) {
   const robo = b.robo == null ? !!atual.robo : b.robo === true;
   // comparar: guarda 10% de cada lista nova sem mensagem, para medir o efeito da campanha (padrão ligado em campanha nova;
   // campanha que já existia sem a opção continua como estava até alguém marcar)
+  // Resumo diário: um texto por motivo (só os motivos conhecidos)
+  const pm = b.porMotivo !== undefined ? b.porMotivo : atual.porMotivo;
+  const porMotivo = {};
+  if (pm && typeof pm === 'object') for (const k of M.MOTIVOS_RESUMO) { const t = texto(pm[k], 1000); if (t) porMotivo[k] = t; }
   const comparar = b.comparar == null ? (atual.id ? !!atual.comparar : true) : b.comparar === true;
   // período da campanha (opcional): fora dele nada é enviado (robô ou manual) e a recorrente não monta lista nova
   const data = (v) => (v == null || v === '' ? null : String(v).slice(0, 10));
   const inicio = data(b.inicio !== undefined ? b.inicio : atual.inicio), fim = data(b.fim !== undefined ? b.fim : atual.fim);
   for (const d of [inicio, fim]) if (d && !(/^\d{4}-\d{2}-\d{2}$/.test(d) && Number.isFinite(Date.parse(d + 'T12:00:00Z')))) return { erro: 'Data de início ou de término inválida.' };
   if (inicio && fim && fim < inicio) return { erro: 'O término da campanha não pode ser antes do início.' };
-  return { ok: { nome, mensagem, variacoes, limiteDia, janela, recorrente, robo, comparar, inicio, fim, ativa: b.ativa == null ? atual.ativa ?? true : !!b.ativa, filtros: b.filtros ? filtrosOk(b.filtros) : atual.filtros || {} } };
+  return { ok: { ...(Object.keys(porMotivo).length ? { porMotivo } : {}), nome, mensagem, variacoes, limiteDia, janela, recorrente, robo, comparar, inicio, fim, ativa: b.ativa == null ? atual.ativa ?? true : !!b.ativa, filtros: b.filtros ? filtrosOk(b.filtros) : atual.filtros || {} } };
 }
 
 function criar(id, b, por) {

@@ -40,12 +40,14 @@ function script(nome) {
  *   corpo      texto JSON do pacote de dados da loja (o de /api/dados para quem vê tudo, histórico completo)
  *   contatos   dados/<loja>/contatos.json (quem foi contatado / não quer mensagens)
  *   disponivel () → o que /api/estoque/disponivel devolve (trava de estoque); se falhar, quem receberia oferta espera
+ *   validade   () → { lotes: [{ desc, dias }] } (Campanha Resumo diário: chá perto da validade); sem ela, o motivo fica de fora
  *   agora      relógio (ms) — a tela usa "hoje" em várias contas ({dias}, aniversário, quem foi contatado há pouco)
  */
-function tela({ loja, corpo, contatos, disponivel, agora = Date.now() }) {
+function tela({ loja, corpo, contatos, disponivel, validade, agora = Date.now() }) {
   const caixa = {
     console: { log() {}, warn() {}, error() {} }, setTimeout, clearTimeout, URLSearchParams, __agora: agora,
     __disp: async () => JSON.stringify(await disponivel(loja.id)), // falhou: a tela trata como "estoque não conferido"
+    __val: async () => { if (!validade) throw new Error('sem validade'); return JSON.stringify(await validade(loja.id)); },
   };
   const ctx = vm.createContext(caixa);
   // relógio injetado: `new Date()` e `Date.now()` dos arquivos da tela passam a ser o `agora` desta conferência.
@@ -57,8 +59,9 @@ function tela({ loja, corpo, contatos, disponivel, agora = Date.now() }) {
       globalThis.Date = class extends D { constructor(...a) { if (a.length) super(...a); else super(t); } static now() { return t; } };
     })();
     globalThis.fetch = async function (url) {
-      if (String(url).indexOf('/api/estoque/disponivel?') !== 0) throw new Error('sem rede no servidor');
-      const s = await __disp();
+      const u = String(url);
+      if (u.indexOf('/api/estoque/disponivel?') !== 0 && u.indexOf('/api/validade?') !== 0) throw new Error('sem rede no servidor');
+      const s = u.indexOf('/api/validade?') === 0 ? await __val() : await __disp();
       return { ok: true, status: 200, json: async () => JSON.parse(s) };
     };`, ctx);
   for (const f of ARQUIVOS) {
@@ -80,6 +83,10 @@ function tela({ loja, corpo, contatos, disponivel, agora = Date.now() }) {
   const chamar = (codigo, ...args) => vm.runInContext(codigo, ctx)(...args.map((a) => JSON.stringify(a)));
   return {
     listaDe: (filtros) => JSON.parse(chamar('(f) => JSON.stringify(TS.campanhasCalc.listaDe(JSON.parse(f)))', filtros || {})),
+    /** a lista nova de uma campanha (a Campanha Resumo diário lê a validade e o estoque, como na tela) */
+    async lista(filtros) {
+      return JSON.parse(await chamar('async (f, l) => JSON.stringify(await TS.campanhasCalc.listaAgora(JSON.parse(f), JSON.parse(l)))', filtros || {}, loja.id));
+    },
     async itens(camp) {
       const s = await chamar(`async (camp, lojaId) => {
         let disp = null;
@@ -101,7 +108,7 @@ async function conferir(lojaId, agora = Date.now(), deps) {
   if (!loja || !ZF.temEstado(lojaId) || !ZF.lerEstado(lojaId).ligado) return { motivo: 'desligado' };
   if (!ZF.campanhasDoRobo(CAMP.ler(lojaId)).length) return { motivo: 'sem_campanha' };
   const d = await deps.corpo(loja);
-  const t = tela({ loja, corpo: d.json(), contatos: ZF.lerContatos(lojaId), disponivel: deps.disponivel, agora });
+  const t = tela({ loja, corpo: d.json(), contatos: ZF.lerContatos(lojaId), disponivel: deps.disponivel, validade: deps.validade, agora });
   const rodadas = [];
   let clientes = 0, campanhas = 0;
   // relê a cada passo: a tela (ou o laço de envio) pode ter mexido nas campanhas enquanto os dados carregavam
@@ -109,7 +116,7 @@ async function conferir(lojaId, agora = Date.now(), deps) {
     let c = CAMP.ler(lojaId).find((x) => x.id === id);
     if (!c || c.robo !== true || c.ativa === false) continue;
     if (c.recorrente && !CAMP.rodadaEmDia(c, agora)) {
-      const r = CAMP.novaRodada(lojaId, id, t.listaDe(c.filtros), POR, agora);
+      const r = CAMP.novaRodada(lojaId, id, await t.lista(c.filtros), POR, agora);
       if (r.erro) throw new Error(r.erro);
       c = r.ok;
       if (!r.repetida) {

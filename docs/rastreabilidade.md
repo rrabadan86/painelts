@@ -240,7 +240,7 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 | EST-24 | Contagem por lote vira ponto de partida | `lotes.js`; `inventario.js` | `regras.spec` (tela) | 🟡 |
 | EST-25 | Valor em risco (vence em menos de 60 dias) | `lotes.js` | `lotes.test` | ✅ |
 | EST-26 | Lote pendente na nota de entrada | `lotes.js` | `lotes.test` (2); `regras.spec` | ✅ |
-| EST-27 | Trava de estoque nas mensagens | `lotes.js` `disponivel` | `lotes.test`; `regras.spec` | ✅ |
+| EST-27 | Trava de estoque nas mensagens (chá a granel só com pelo menos 100 g: `MINIMO_GRANEL_KG`, decisão do dono) | `lotes.js` `disponivel` | `lotes.test` ("pelo menos 100 g"); `regras.spec` | ✅ |
 | EST-28 | "Vender primeiro" na Promoção | `validade.js` | `regras.spec` | 🟡 |
 | EST-30 | Catálogo do inventário | `inventario.js` | `inventario.test` | ✅ |
 | EST-31 | Como se conta (kg com casas, unidade inteira) | `inventario.js` | `inventario.test`; `regras.spec` | ✅ |
@@ -385,6 +385,7 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 | CLI-04 | "Não quer mensagens" tira o cliente de tudo | `server.js` contatos; telas | — | ❌ |
 | CLI-05 | Campanha: limite por dia e rodízio das variações | `campanhas.js` | `regras.spec` (outra coisa) | ❌ |
 | CLI-06 | Trava de estoque: não oferece produto sem estoque | `clientes.js`; `campanhas.js` | `regras.spec` "Trava de estoque…" | ✅ |
+| RESUMO-01…06 | Campanha Resumo diário: lista de Clientes → Hoje só com os motivos escolhidos, um cliente por motivo mais importante, texto do motivo com a vendedora (`{apresentacao}`), mesma conta na tela e no servidor; regra forte do envio manual (409 com explicação: já recebeu no intervalo, não quer, está na fila do robô) | `clientes.js` (`hojeItens`, `enviarWpp`); `campanhas.js` (`listaResumo`, `listaAgora`, `editarResumo`); `msgwpp.js` (`MOTIVOS_RESUMO`, `textosDe`); `campanhas.js` (servidor: `porMotivo`, `m`/`o`); `zapfila.js` (`decidir`, `envioManualBloqueado`); `zapauto.js` (`lista`, `deps.validade`); `server.js` (`/api/contatos`) | `zapfila.test` RESUMO-01…03; `zapauto.test` RESUMO-04; `zap-rotas.test` RESUMO-05; `resumo-diario.spec` RESUMO-06 | ✅ (envio real pelo WhatsApp conferido só com o robô de mentira) |
 | CLI-07 | Fidelidade: Logs do FIXE lidos sem repetir | `fidelidade.js` | `fidelidade.test` (3) | ✅ |
 | CLI-08 | Saldo de pontos por lotes que vencem; cancelamento via PDV | `public/js/fidelidade.js` | `blind`; `regras.spec` | 🟡 |
 | CLI-09 | Ciclo de resgate | `public/js/fidelidade.js` | `blind` | 🟡 |

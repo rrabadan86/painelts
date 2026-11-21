@@ -220,6 +220,19 @@ test('"Voltou a aceitar" na ficha desfaz o "parar" que veio pelo WhatsApp', asyn
   assert.deepStrictEqual(Object.keys(JSON.parse(fs.readFileSync(path.join(pasta, 'zap', 'naoquer.json'), 'utf8'))), ['5562955550000'], 'só o número desse cliente saiu');
 });
 
+test('RESUMO-05: envio manual (Hoje, ficha, Campanhas): o servidor recusa com 409 e a explicação quem já recebeu no intervalo; sem "envio" só registra', async () => {
+  const cpf = '66666666666';
+  const ok = await post('dono1', '/api/contatos', { loja: 'l1', cpf, acao: 'contatado', motivo: 'Hoje · Hora de repor', envio: true });
+  assert.strictEqual(ok.status, 200, 'primeira mensagem: pode');
+  const r = await post('dono1', '/api/contatos', { loja: 'l1', cpf, acao: 'contatado', motivo: 'Campanha: X', envio: true });
+  assert.strictEqual(r.status, 409, 'segunda dentro do intervalo: não pode');
+  const j = await r.json();
+  assert.strictEqual(j.bloqueado, true);
+  assert.match(j.erro, /já recebeu mensagem em .* \(Hoje · Hora de repor\)\. Regra da loja: uma mensagem a cada \d+ dias/);
+  // "Marcar como contatado" (ligação) não é envio: só registra
+  assert.strictEqual((await post('dono1', '/api/contatos', { loja: 'l1', cpf, acao: 'contatado', motivo: 'ligação/outro' })).status, 200);
+});
+
 test('apresentação: tudo simulado, nada chega ao robô nem é gravado', async () => {
   chamadas.length = 0;
   const antes = JSON.stringify(estado('l1'));

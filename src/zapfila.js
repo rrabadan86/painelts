@@ -131,7 +131,7 @@ const MOTIVOS = {
   sem_campanha: 'Nenhuma campanha está marcada para enviar pelo robô.',
   conferir_lista: 'A lista precisa ser conferida: o painel não conseguiu conferir sozinho. Abra a tela Campanhas (ela confere ao abrir).',
   limite_campanha: 'As campanhas chegaram ao limite de hoje. Continua amanhã.',
-  esperando_estoque: 'Só faltam clientes esperando estoque do produto oferecido.',
+  esperando_estoque: 'Só faltam clientes esperando estoque do produto oferecido (no chá a granel, pelo menos 100 g).',
   sem_pendentes: 'Todas as mensagens das campanhas do robô já foram enviadas.',
   fora_periodo: 'As campanhas do robô estão fora do período (data de início ou de término).',
 };
@@ -170,7 +170,6 @@ function decidir({ cfg, estado, campanhas, contatos, preparo, naoquer, enviados,
     const prepOk = prep && prep.rodada === rod.id && prep.itens && agora - Date.parse(prep.em) < PREPARO_DIAS * 864e5;
     const dias = M.prazoCampanha(c, intervalo), minha = M.motivoCampanha(c.nome);
     const sai = (it, st, motivo, extra) => marcar.push({ campanha: c.id, rodada: rod.id, cpf: it.cpf, st, motivo, ...extra });
-    const textos = M.textos(c);
     for (const it of rod.lista) {
       if (it.st !== 'p') continue;
       const b = M.bloqueio(it, contatos[it.cpf], { intervalo, dias, minha, agora });
@@ -183,6 +182,7 @@ function decidir({ cfg, estado, campanhas, contatos, preparo, naoquer, enviados,
       if (!NUMERO.test(p.para || '')) { sai(it, 'x', 'sem celular válido'); continue; }
       const ja = enviados[p.para];
       if (ja && ja.cpf !== it.cpf && agora - Date.parse(ja.em) < intervalo * 864e5) { sai(it, 'x', 'mesmo celular de outro cliente que já recebeu'); continue; }
+      const textos = M.textosDe(c, it); // Resumo diário: o texto do motivo do cliente
       const k = M.variacaoDaVez(rod.lista, textos.length);
       const texto = M.montar(textos[k], { ...p.v, saudacao: M.saudacao(r.hora) }, M.extras(c)).trim();
       if (!texto) { sai(it, 'x', 'mensagem vazia'); continue; }
@@ -220,10 +220,36 @@ function voltouAAceitar(id, cpf) {
   if (mudou) gravarJson(id, 'naoquer', n);
 }
 
+/**
+ * Regra forte do envio manual (decisão do dono): antes de o WhatsApp abrir na tela (Hoje, ficha do cliente, fila de Campanhas),
+ * o servidor confere. → null (pode) ou a explicação em português de por que não pode:
+ *   pediu para não receber (inclusive "parar" respondido ao robô) · já recebeu mensagem dentro do intervalo da loja (de qualquer
+ *   tela, campanha ou do robô) · está na fila de hoje de uma campanha do robô ligado (o robô é quem manda; `campanha` = a própria
+ *   campanha da fila manual não conta).
+ */
+function envioManualBloqueado({ lojaId, cpf, contato, campanha, agora = Date.now() }) {
+  const loja = C.get().lojas.find((l) => l.id === lojaId);
+  const intervalo = (loja && loja.wppIntervalo) || 21;
+  const ct = contato || {};
+  const nq = lerJson(lojaId, 'naoquer');
+  if (ct.optout || Object.values(nq).some((e) => e && Array.isArray(e.cpfs) && e.cpfs.includes(cpf))) return 'Mensagem não enviada: este cliente pediu para não receber mensagens.';
+  if (ct.em && agora - Date.parse(ct.em) < intervalo * 864e5) {
+    const quando = new Date(ct.em).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+    const ate = new Date(Date.parse(ct.em) + intervalo * 864e5).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+    const deQuem = ct.por === 'robô' ? 'pelo robô do WhatsApp' : ct.por ? `por ${ct.por}` : '';
+    return `Mensagem não enviada: este cliente já recebeu mensagem em ${quando}${deQuem ? ' ' + deQuem : ''}${ct.motivo ? ` (${String(ct.motivo).replace(/^Campanha: /, 'campanha ')})` : ''}. Regra da loja: uma mensagem a cada ${intervalo} dias por cliente — a próxima pode sair a partir de ${ate}.`;
+  }
+  if (temEstado(lojaId) && lerEstado(lojaId).ligado && !lerEstado(lojaId).pausa) {
+    const c = campanhasDoRobo(CAMP.ler(lojaId)).find((x) => x.id !== campanha && x.rodadas[0].lista.some((it) => it.cpf === cpf && it.st === 'p'));
+    if (c) return `Mensagem não enviada: este cliente está na fila do robô do WhatsApp (${c.nome}). O robô envia sozinho; mandar pela equipe também seria mensagem em dobro.`;
+  }
+  return null;
+}
+
 /** próximo horário dentro do ritmo "de X a Y segundos" (sorteio; o gerador é injetado nos testes) */
 const sortear = (cfg, agora, rnd = Math.random) => agora + (cfg.min + Math.floor(rnd() * (cfg.max - cfg.min + 1))) * 1000;
 
 module.exports = {
-  PADRAO, PREPARO_DIAS, ORIGEM_RESPOSTA, ligarNumeroAoCliente, voltouAAceitar, MOTIVOS, NUMERO, fim4, cfgDe, validarCfg, relogio, enviadosHoje, campanhasDoRobo, decidir, proxima, sortear,
+  envioManualBloqueado, PADRAO, PREPARO_DIAS, ORIGEM_RESPOSTA, ligarNumeroAoCliente, voltouAAceitar, MOTIVOS, NUMERO, fim4, cfgDe, validarCfg, relogio, enviadosHoje, campanhasDoRobo, decidir, proxima, sortear,
   lerEstado, temEstado, mudarEstado, lerContatos, mudarContato, lerPreparo, gravarPreparo, limparPreparo, lerJson, gravarJson,
 };

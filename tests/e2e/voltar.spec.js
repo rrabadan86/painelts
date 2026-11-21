@@ -10,6 +10,9 @@ test('voltar do celular fecha a janela por cima e fica na mesma tela', async ({ 
   await expect.poll(() => page.evaluate(() => location.hash)).toBe('#cupons');
   await page.locator('.exp-btn:not(.prt-btn)').first().click();
   await expect(page.locator('.camada-cheia')).toHaveCount(1);
+  // a entrada da janela vai para o histórico logo depois de ela aparecer (setTimeout em main.js): espera, como faria a pessoa
+  // (no GitHub o "voltar" saiu antes e voltou para #inicio)
+  await expect.poll(() => page.evaluate(() => !!(history.state && history.state.camada))).toBe(true);
   await page.goBack();
   await expect(page.locator('.camada-cheia')).toHaveCount(0);
   expect(await page.evaluate(() => location.hash)).toBe('#cupons');
