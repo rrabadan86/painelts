@@ -29,7 +29,9 @@ paths:
 
 ## CFOP das notas (decisão do dono)
 - A loja escolhe o CFOP da NF-e de **venda** e o da **devolução ao fornecedor** em Configurações → Integrações → "Notas fiscais: CFOP" ou no **passo 5 (opcional) da configuração guiada** — o mesmo formulário (`TS.guia.formCfop`) e a mesma rota (`PUT /api/admin/lojas/:id/nfe-cfop`, só admin e franqueado da loja, auditada). Fica em `loja.nfeCfop = { venda, devolucao }` (`src/nfecfop.js`); vazio = automático, como sempre foi (venda 5102; devolução pela regra fiscal da loja).
-- As opções são os CFOPs de saída que o robô leu do AppNext em "Buscar cadastros" (`cadastros.cfops`); sem a lista, dá para digitar o número (4 dígitos, começando por 5 ou 6).
+- As opções são os CFOPs de saída que o robô leu do AppNext (`cadastros.cfops`). O botão "↻ Buscar no AppNext" fica no próprio formulário (pede `POST /api/nfe/cadastros`, acompanha por `GET /api/nfe` e relê a lista por `GET /api/admin/lojas/:id/nfe-cfop`); é a mesma leitura do "Buscar cadastros" de Notas fiscais → Nova NF-e. Sem a lista, dá para digitar o número (4 dígitos, começando por 5 ou 6).
+- O CFOP é a chave: o robô usa a **regra fiscal (sequência) do AppNext** com esse CFOP, e é ela que traz impostos, CST e modalidade do ICMS. O painel não guarda nem copia esses parâmetros.
+- O botão usa o login do AppNext já salvo (passo 1 do guia, ou cartão "Acesso ao AppNext"). Sem ele, ou sem o robô ligado, o botão fica desligado com o motivo (e o link para o passo 1); dá para digitar o CFOP.
 - O pedido ao robô leva `cfop` (`src/nfe.js` na venda, `src/devolucao.js` na devolução). Com CFOP escolhido o robô usa **só ele**: na venda, CFOP da nota e regra fiscal do produto com esse CFOP primeiro; na devolução, só a regra com esse CFOP — se não houver, para e diz quais existem (nunca emite com outro).
 - Perda (inventário) **não** tem nota no painel; fica para depois, conforme o contador do dono responder (CFOP 5.927 no Simples Nacional).
 

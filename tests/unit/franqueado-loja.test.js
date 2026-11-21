@@ -320,4 +320,14 @@ test('CFOP das NF-e (passo 5 da configuração guiada): franqueado e admin grava
   const g = await (await pedir('dono1', '/api/admin/guia')).json();
   assert.strictEqual(g.lojas.find((l) => l.id === 'l1').passos.nfe, true);
   assert.strictEqual((await put('chefe', 'l2', { venda: '', devolucao: '6202' })).status, 200, 'admin grava em qualquer loja');
+  // leitura depois do "Buscar no AppNext": a mesma permissão da gravação
+  const ler = (nome, loja) => pedir(nome, `/api/admin/lojas/${loja}/nfe-cfop`);
+  const lido = await ler('dono1', 'l1');
+  assert.strictEqual(lido.status, 200);
+  const lj = await lido.json();
+  assert.deepStrictEqual(lj.nfeCfop, { venda: '5405', devolucao: '' });
+  assert.ok(Array.isArray(lj.cfopsAppNext.lista));
+  assert.strictEqual((await ler('ger1', 'l1')).status, 403, 'gerente não lê');
+  assert.strictEqual((await ler('vend1', 'l1')).status, 403, 'vendedora não lê');
+  assert.strictEqual((await ler('dono1', 'l2')).status, 404, 'franqueado não lê a loja dos outros');
 });

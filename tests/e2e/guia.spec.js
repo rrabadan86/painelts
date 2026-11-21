@@ -64,6 +64,11 @@ test('Configuração guiada: não abre sozinha na apresentação; o atalho das C
   await expect(cxs.nth(0).locator('option', { hasText: '5102 · Venda' })).toHaveCount(1);
   await expect(cxs.nth(1).locator('option', { hasText: '5202 · Devolução' })).toHaveCount(1);
   await expect(g.locator('.nfe-cfop')).toContainText('nunca emite com outro');
+  // o botão de ler o AppNext fica aqui mesmo (na apresentação só avisa que nada é feito)
+  const bt = g.locator('.nfe-cfop-at button');
+  await expect(bt).toHaveText('↻ Atualizar do AppNext');
+  await bt.click();
+  await expect(page.locator('.toast')).toBeVisible();
   await semRolagem(page);
   await print(page, info, 'cfop');
   await cxs.nth(1).selectOption('5202');

@@ -23,8 +23,14 @@ before(async () => {
   const senha = await C.hashSenhaAsync('senha-teste-123');
   const u = (perfil, extra) => ({ senha, perfil, lojas: ['l1'], ativo: true, ...extra });
   fs.writeFileSync(CONFIG_FILE, JSON.stringify({ lojas: [{ id: 'l1', nome: 'Loja 1' }], usuarios: { dono: u('franqueado'), vend: u('vendedor', { vendedor: 'ANA' }), novo: u('gerente', { trocarSenha: true }) } }));
-  srv = spawn(process.execPath, ['server.js'], { cwd: path.join(__dirname, '../..'), env: { ...process.env, PORT: String(PORTA), DATA_DIR: tmp, CONFIG_FILE, SESSION_SECRET: 'teste-push', NODE_ENV: 'test', COLETOR_URL: '', GITHUB_TOKEN: '' }, stdio: 'ignore' });
-  for (let k = 0; k < 300; k++) { try { const r = await fetch(BASE + '/login'); if (r.status < 500) break; } catch { /* subindo */ } await new Promise((ok) => setTimeout(ok, 100)); }
+  srv = spawn(process.execPath, ['server.js'], { cwd: path.join(__dirname, '../..'), env: { ...process.env, PORT: String(PORTA), DATA_DIR: tmp, CONFIG_FILE, SESSION_SECRET: 'teste-push', NODE_ENV: 'test', COLETOR_URL: '', GITHUB_TOKEN: '' }, stdio: ['ignore', 'ignore', 'pipe'] });
+  // no GitHub, com os outros arquivos subindo servidor ao mesmo tempo, já passou de 30 s: espera até 90 s, para na hora se o
+  // servidor cair e mostra o erro dele (antes ficava só "fetch failed", sem pista)
+  let saida = '', caiu = null, subiu = false;
+  srv.stderr.on('data', (d) => { saida = (saida + d).slice(-4000); });
+  srv.once('exit', (c) => { caiu = c; });
+  for (let k = 0; k < 900 && caiu === null; k++) { try { const r = await fetch(BASE + '/login'); if (r.status < 500) { subiu = true; break; } } catch { /* subindo */ } await new Promise((ok) => setTimeout(ok, 100)); }
+  assert.ok(subiu, `o servidor de teste não subiu na porta ${PORTA}${caiu !== null ? ` (saiu com código ${caiu})` : ' em 90 s'}:\n${saida}`);
   let ip = 10;
   for (const nome of ['dono', 'vend', 'novo']) {
     const r = await fetch(BASE + '/login', { method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Forwarded-For': `203.0.113.${ip++}` }, body: `usuario=${nome}&senha=senha-teste-123` });

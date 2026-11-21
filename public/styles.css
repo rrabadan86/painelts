@@ -3047,6 +3047,9 @@ tr.conf-conta td:first-child { box-shadow: inset 3px 0 0 var(--bad); }
 .guia-corpo h3 + p { margin: 4px 0 0; font-size: 13px; line-height: 1.45; }
 .guia-g2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .guia-nota { background: var(--cream-2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; font-size: 12.5px; color: var(--muted); line-height: 1.45; }
+.nfe-cfop-at { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap; margin: 6px 0 4px; }
+.nfe-cfop-at small { flex: 1 1 220px; min-width: 0; }
+.nfe-cfop-vivo { display: block; margin: 2px 0 8px; }
 .guia-mesmo { display: grid; gap: 8px; background: var(--gold-l); border: 1px solid #E8D79A; color: #5C4A0E; border-radius: 10px; padding: 12px; font-size: 12.5px; line-height: 1.45; }
 .guia-mesmo .cfg-campo { color: var(--dark); }
 .guia-confere.neg { font-weight: 600; }
