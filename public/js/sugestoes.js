@@ -62,15 +62,29 @@
     const porCod = new Map(), em = new Date().toISOString(), n = { pedido: 0, semsite: 0, nao: 0 };
     for (const x of itens) { const vai = x.pedir > 0 && ['ok', 'sem', 'obrig'].includes(x.site), a = porCod.get(String(x.cod)); if (!a) porCod.set(String(x.cod), { pedir: vai ? x.pedir : 0, site: vai ? 'ok' : x.site }); else if (vai) { a.pedir += x.pedir; a.site = 'ok'; } }
     for (const s of DEMO.d.itens) {
-      if (s.st !== 'aberta' || s.aguardando) continue;
+      if (s.st !== 'aberta') continue;
       const x = porCod.get(s.cod);
+      if (s.aguardando) { if (x && x.pedir > 0 && (x.site === 'ok' || x.site === 'sem') && s.aguardando.conf !== true) s.aguardando = { em, qtd: x.pedir, conf: false }; continue; }
       let hh;
-      if (x && x.pedir > 0 && (x.site === 'ok' || x.site === 'sem')) { hh = { em, res: 'pedido', motivo: '' }; s.aguardando = { em, qtd: x.pedir }; }
+      if (x && x.pedir > 0 && (x.site === 'ok' || x.site === 'sem')) { hh = { em, res: 'pedido', motivo: '' }; s.aguardando = { em, qtd: x.pedir, conf: false }; }
       else if (x && (x.site === 'indisp' || x.site === 'fora')) hh = { em, res: 'semsite', motivo: 'Sem estoque no site da franquia (automático)' };
       else hh = { em, res: 'nao', motivo: (s.decisao && s.decisao.motivo) || 'Não entrou desta vez' };
       (s.hist = s.hist || []).push(hh); s.decisao = null; n[hh.res]++;
     }
     return { ok: true, ...n };
+  }
+  /** "Não fiz este pedido": o que estava aguardando entrega volta para o próximo pedido (cods = produtos; sem cods = tudo o que não foi confirmado) */
+  async function devolver(loja, cods) {
+    if (!TS.demo) return (await enviar('POST', `/api/pedido/sugestoes/devolver?${q(loja)}`, { cods: cods || null })).devolvidas;
+    await carregar(loja);
+    const quais = cods && cods.length ? new Set(cods.map(String)) : null, em = new Date().toISOString();
+    let n = 0;
+    for (const s of DEMO.d.itens) {
+      if (s.st !== 'aberta' || !s.aguardando || (quais ? !quais.has(String(s.cod)) : s.aguardando.conf === true)) continue;
+      (s.hist = s.hist || []).push({ em, res: 'naopediu', motivo: 'Marcado como não pedido: volta para o próximo pedido' });
+      delete s.aguardando; s.decisao = null; n++;
+    }
+    return n;
   }
   /** as abertas agrupadas por produto (a mesma conta do servidor, para a apresentação) */
   function agrupar(itens) {
@@ -89,7 +103,7 @@
   }
   /** para o Pedido: as abertas agrupadas (servidor manda em p.sugestoes; na apresentação vêm daqui) */
   async function paraPedido(loja, p) { return TS.demo ? agrupar((await carregar(loja)).itens) : (p && p.sugestoes) || []; }
-  TS.sug = { carregar, decidir, fechar, paraPedido, agrupar, MOTIVOS, RES, SIT, dataTxt };
+  TS.sug = { carregar, decidir, fechar, devolver, paraPedido, agrupar, MOTIVOS, RES, SIT, dataTxt };
 
   // ---------- tela ----------
   TS.pages.sugestoes = function (root) {

@@ -764,7 +764,8 @@
       const bt = (txt, cls, fn, title) => h('button', { type: 'button', class: `btn sug-ped-btn ${cls || ''}`.trim(), title: title || null, onclick: fn }, txt);
       const acao = (x) => {
         const { g, r } = x;
-        if (g.aguardando) return h('span', { class: 'sug-aguarda' }, `🛒 pedido em ${TS.sug.dataTxt(g.aguardando.em)}`, h('small', { class: 'muted sug-motivo' }, 'aguardando entrega'));
+        if (g.aguardando) return h('span', { class: 'sug-ped-acoes' }, h('span', { class: 'sug-aguarda' }, `🛒 pedido em ${TS.sug.dataTxt(g.aguardando.em)}`, h('small', { class: 'muted sug-motivo' }, g.aguardando.conf === true ? 'pedido confirmado · aguardando entrega' : 'aguardando entrega')),
+          bt('Não pedi', 'sug-naopedi', () => devolver([g.cod], `"${g.desc}" não foi pedido?\n\nA sugestão volta para "Dá para pedir" e a equipe vê que o pedido não foi feito.`), 'Este produto não foi pedido (o carrinho foi desfeito ou o pedido não saiu): a sugestão volta para o próximo pedido.'));
         if (x.noPed) {
           const meu = r && !r.obrig && r.pedir > 0;
           return h('span', { class: 'sug-ped-acoes' }, h('span', { class: 'pos sug-ped-no' }, meu ? `🛒 no pedido: ${qtdTxt(r.pedir, r.it)}` : '🔒 vem no pedido obrigatório'),
@@ -799,6 +800,22 @@
         search: lista.length > 8 ? 'Buscar produto, pessoa ou recado…' : null, searchKeys: ['desc', 'cod', 'quem', 'recados'],
         empty: { pedir: 'Nada para decidir agora. 👏', nopedido: 'Nenhuma sugestão no pedido ainda.', semsite: 'Nenhuma sugestão sem estoque no site.', nao: 'Nenhuma marcada como "Não pedir".', todas: 'Nenhuma sugestão aberta.' }[ver.aba],
       });
+      // "Não fiz este pedido": devolve o que está aguardando entrega sem ter o pedido confirmado (um produto, pelo botão da linha, ou todos)
+      async function devolver(cods, pergunta) {
+        if (!confirm(pergunta)) return;
+        try {
+          const n = await TS.sug.devolver(loja, cods);
+          let abertas = null;
+          if (!TS.demo) { try { abertas = (await buscar(loja)).sugestoes || []; } catch { abertas = null; } }
+          p.sugestoes = await TS.sug.paraPedido(loja, abertas ? { sugestoes: abertas } : p);
+          state.pedSugMsg = n ? `${n} ${n === 1 ? 'sugestão voltou' : 'sugestões voltaram'} para o próximo pedido.` : 'Nenhuma sugestão estava aguardando entrega.';
+          if (state.pedSug) state.pedSug.aba = 'todas';
+          repintar();
+        } catch (err) { TS.avisar(err.message); }
+      }
+      const semConf = itens.filter((x) => x.g.aguardando && x.g.aguardando.conf !== true).length;
+      const naoFiz = semConf ? h('button', { type: 'button', class: 'btn ghost-danger sug-naofiz', title: 'Use quando o pedido não foi feito (o carrinho foi desfeito ou você desistiu): tudo o que está "aguardando entrega" sem pedido confirmado volta para "Dá para pedir". Pedido já confirmado não muda.',
+        onclick: () => devolver(null, `O pedido não foi feito?\n\n${semConf} ${semConf === 1 ? 'sugestão que está' : 'sugestões que estão'} "aguardando entrega" ${semConf === 1 ? 'volta' : 'voltam'} para "Dá para pedir". Pedido já confirmado não muda.`) }, `Não fiz este pedido (${semConf})`) : null;
       const registrar = h('button', { type: 'button', class: 'btn' }, 'Registrar o pedido nas sugestões');
       registrar.addEventListener('click', async () => {
         if (!confirm('Registrar este pedido nas sugestões da equipe?\n\nO que está no pedido fica "aguardando entrega" (a estrela sai quando a nota da franquia chegar com o produto); o que não está fica marcado para o próximo, com o motivo; sem estoque no site é automático.')) return;
@@ -823,7 +840,7 @@
         TS.seg(abas.map((k) => [`${ABAS[k]} (${cont(k)})`, k, DICA_ABA[k]]), ver.aberto ? ver.aba : null, (v) => { ver.aba = v; ver.aberto = true; repintar(); }),
         ver.aberto ? h('div', { class: 'sug-ped-cl' }, ctlClasseMeses()) : null,
         ver.aberto ? tabela() : null,
-        h('div', { class: 'cfg-acoes' }, registrar, msg));
+        h('div', { class: 'cfg-acoes' }, registrar, naoFiz, msg));
     }
     /** registra o pedido de agora nas sugestões abertas (também chamado ao montar o carrinho) */
     async function registrarSugestoes() {

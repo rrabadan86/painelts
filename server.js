@@ -2110,6 +2110,7 @@ app.post('/api/pedido/carrinho/confirmar', (req, res) => {
   try {
     const r = PED.confirmarCarrinho(loja.id, req.user);
     if (r.erro) return res.status(400).json({ erro: r.erro });
+    try { require('./src/sugestoes').confirmarPedido(loja.id, r.ok.inicio); } catch (e) { console.error('[sugestões] carrinho confirmado:', e.message); }
     C.auditar(req.user, 'confirmou que o pedido do carrinho foi feito', loja.id, { loja: loja.id, montadoEm: r.ok.inicio });
     res.json({ ok: true, carrinho: r.ok });
   } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
@@ -2120,7 +2121,7 @@ app.post('/api/pedido/carrinho/excluir', (req, res) => {
     const r = PED.excluirCarrinho(loja.id);
     if (r.erro) return res.status(400).json({ erro: r.erro });
     let voltaram = 0;
-    try { voltaram = require('./src/sugestoes').desfazerPedido(loja.id, r.ok.inicio, req.user).ok; } catch (e) { console.error('[sugestões] carrinho excluído:', e.message); }
+    try { voltaram = require('./src/sugestoes').desfazerPedido(loja.id, r.ok.inicio, req.user, r.ok.confirmado).ok; } catch (e) { console.error('[sugestões] carrinho excluído:', e.message); }
     C.auditar(req.user, 'excluiu o registro do carrinho montado (pedido não feito)', loja.id, { loja: loja.id, montadoEm: r.ok.inicio, montadoPor: r.ok.por, produtos: r.ok.produtos, jaConfirmado: r.ok.confirmado, sugestoesDevolvidas: voltaram });
     res.json({ ok: true, sugestoesDevolvidas: voltaram });
   } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
@@ -2690,6 +2691,20 @@ app.post('/api/pedido/sugestoes/fechar', express.json({ limit: '300kb' }), (req,
   const r = SUG.fechar(loja.id, (req.body || {}).itens, req.user);
   C.auditar(req.user, 'respondeu as sugestões da equipe no pedido', loja.id, { loja: loja.id, ...r.ok });
   res.json({ ok: true, ...r.ok });
+});
+
+// "Não fiz este pedido": o que estava "aguardando entrega" volta para o próximo pedido (um produto, ou tudo o que não foi confirmado)
+app.post('/api/pedido/sugestoes/devolver', express.json({ limit: '100kb' }), (req, res) => {
+  if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
+  if (!decidePedido(req)) return res.status(403).json({ erro: 'Sem permissão.' });
+  const loja = lojaSug(req);
+  if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  try {
+    const cods = Array.isArray((req.body || {}).cods) ? req.body.cods.slice(0, 500).map(String) : null;
+    const r = SUG.devolver(loja.id, cods, req.user);
+    C.auditar(req.user, 'marcou sugestões da equipe como não pedidas', loja.id, { loja: loja.id, devolvidas: r.ok, ...(cods ? { produtos: cods.slice(0, 30) } : { todas: true }) });
+    res.json({ ok: true, devolvidas: r.ok });
+  } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
 });
 
 // pedido obrigatório da franquia: criar, alterar, encerrar, reabrir, apagar

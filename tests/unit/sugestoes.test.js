@@ -173,3 +173,47 @@ test('estoque agora: quem decide vê a quantidade; quem só sugere, só a situa�
   assert.deepStrictEqual(b.agora, { situacao: 'pouco', un: 'Kg' });
   assert.strictEqual(SUG.comEstoque([{ cod: 'X' }], est, true)[0].agora, null);
 });
+
+test('SUG-CARR-01: carrinho refeito e excluído devolve a sugestão (a espera passa para o carrinho novo enquanto o pedido não foi confirmado)', async () => {
+  const est = { itens: [{ cod: 'R1', desc: 'Chá R1', un: 'Kg', qtd: 0 }, { cod: 'R2', desc: 'Chá R2', un: 'Kg', qtd: 0 }] };
+  SUG.criar('l7', { cod: 'R1' }, 'vend', 'Vend', est);
+  SUG.criar('l7', { cod: 'R2' }, 'vend', 'Vend', est);
+  // 1º carrinho: os dois vão para "aguardando entrega"
+  SUG.fechar('l7', [{ cod: 'R1', pedir: 1, site: 'ok' }, { cod: 'R2', pedir: 1, site: 'ok' }], 'ger');
+  const arq = path.join(tmp, 'l7', 'sugestoes.json');
+  const d = SUG.ler('l7'); for (const s of d.itens) s.aguardando.em = '2026-11-20T10:00:00.000Z'; fs.writeFileSync(arq, JSON.stringify(d));
+  // a pessoa desfaz e monta outro carrinho, só com o R1
+  await new Promise((r) => setTimeout(r, 5));
+  const inicio2 = new Date().toISOString();
+  SUG.fechar('l7', [{ cod: 'R1', pedir: 2, site: 'ok' }, { cod: 'R2', pedir: 0, site: 'ok' }], 'ger');
+  const a = SUG.ler('l7').itens;
+  assert.ok(Date.parse(a.find((s) => s.cod === 'R1').aguardando.em) >= Date.parse(inicio2), 'a espera do R1 agora é do carrinho novo');
+  assert.strictEqual(a.find((s) => s.cod === 'R1').aguardando.qtd, 2);
+  assert.strictEqual(a.find((s) => s.cod === 'R2').aguardando.em, '2026-11-20T10:00:00.000Z', 'o que não entrou no carrinho novo não muda');
+  // excluir o carrinho novo devolve o R1 (antes ficava "pedido em 20/11" para sempre)
+  assert.deepStrictEqual(SUG.desfazerPedido('l7', inicio2, 'ger'), { ok: 1 });
+  assert.strictEqual(SUG.ler('l7').itens.find((s) => s.cod === 'R1').aguardando, undefined);
+  // o R2 ficou sem carrinho para excluir: "Não fiz este pedido" devolve o que não foi confirmado
+  assert.deepStrictEqual(SUG.devolver('l7', null, 'ger'), { ok: 1 });
+  const fim = SUG.ler('l7').itens.find((s) => s.cod === 'R2');
+  assert.strictEqual(fim.aguardando, undefined);
+  assert.match(fim.hist.slice(-1)[0].motivo, /não pedido/);
+  assert.strictEqual(fim.st, 'aberta', 'continua esperando o próximo pedido');
+});
+
+test('SUG-CARR-02: pedido confirmado fica firme: outro carrinho não leva a espera e "Não fiz este pedido" (todos) não mexe; por produto, devolve', async () => {
+  const est = { itens: [{ cod: 'F1', desc: 'Chá F1', un: 'Kg', qtd: 0 }] };
+  SUG.criar('l8', { cod: 'F1' }, 'vend', 'Vend', est);
+  const inicio = new Date().toISOString();
+  SUG.fechar('l8', [{ cod: 'F1', pedir: 1, site: 'ok' }], 'ger');
+  assert.strictEqual(SUG.ler('l8').itens[0].aguardando.conf, false);
+  assert.deepStrictEqual(SUG.confirmarPedido('l8', inicio), { ok: 1 });
+  const em1 = SUG.ler('l8').itens[0].aguardando.em;
+  await new Promise((r) => setTimeout(r, 5));
+  const inicio2 = new Date().toISOString();
+  SUG.fechar('l8', [{ cod: 'F1', pedir: 3, site: 'ok' }], 'ger'); // segundo carrinho com o mesmo produto
+  assert.strictEqual(SUG.ler('l8').itens[0].aguardando.em, em1, 'a espera continua sendo a do pedido confirmado');
+  assert.deepStrictEqual(SUG.desfazerPedido('l8', inicio2, 'ger'), { ok: 0 }, 'excluir o 2º carrinho não desfaz o pedido confirmado');
+  assert.deepStrictEqual(SUG.devolver('l8', null, 'ger'), { ok: 0 });
+  assert.deepStrictEqual(SUG.devolver('l8', ['F1'], 'ger'), { ok: 1 }, 'por produto, a pessoa pode dizer que não pediu');
+});

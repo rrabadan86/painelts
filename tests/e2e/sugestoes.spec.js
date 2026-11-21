@@ -97,3 +97,30 @@ test('Pedido: ordem da tela — ajustes, Proporção, quadros, Pedido obrigatór
     .map((t) => ['Ajustes', 'Proporção do pedido', 'Compras × teto', 'Pedido obrigatório', 'Sugestões da equipe', 'Produtos', 'Revisão com IA'].find((n) => t.includes(n))).filter(Boolean));
   expect(blocos).toEqual(['Ajustes', 'Proporção do pedido', 'Compras × teto', 'Pedido obrigatório', 'Sugestões da equipe', 'Produtos', 'Revisão com IA']);
 });
+
+// "aguardando entrega" sem o pedido ter sido feito: dá para devolver por linha ("Não pedi") e todas de uma vez ("Não fiz este pedido")
+test('Pedido: sugestão registrada e não pedida volta com "Não fiz este pedido"', async ({ page }, info) => {
+  page.on('dialog', (d) => d.accept());
+  await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS.db && TS.sug && TS.state.loja && TS.state.loja !== 'todas');
+  await page.evaluate(() => { location.hash = '#pedido'; });
+  const quadro = page.locator('.sug-ped-card');
+  await expect(quadro).toBeVisible({ timeout: 30000 });
+  if (info.project.name === 'celular' && !(await quadro.locator('.seg').first().isVisible())) await quadro.locator('.sug-ped-abrir').click();
+  await quadro.locator('.seg button', { hasText: 'Dá para pedir' }).click();
+  const linha = quadro.locator('.sug-ped-t tbody tr').filter({ has: page.locator('.sug-ped-add') }).first();
+  const nome = (await linha.locator('b').first().innerText()).trim();
+  await linha.locator('.sug-ped-add').click();
+  await quadro.getByRole('button', { name: 'Registrar o pedido nas sugestões' }).click();
+  await expect(page.locator('.sug-ped-msg').first()).toContainText('Sugestões respondidas');
+  // ficou aguardando entrega, com a saída por linha e a de todas
+  const reg = quadro.locator('.sug-ped-t tbody tr', { hasText: nome }).first();
+  await expect(reg.locator('.sug-aguarda')).toContainText('aguardando entrega');
+  await expect(reg.locator('.sug-naopedi')).toBeVisible();
+  const todas = quadro.locator('.sug-naofiz');
+  await expect(todas).toHaveText(/^Não fiz este pedido \(\d+\)$/);
+  await todas.click();
+  await expect(page.locator('.sug-ped-msg').first()).toContainText(/volt(ou|aram) para o próximo pedido/);
+  await expect(quadro.locator('.sug-aguarda')).toHaveCount(0);
+  await expect(quadro.locator('.sug-naofiz')).toHaveCount(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth), 'rolagem para o lado').toBeLessThanOrEqual(1);
+});
