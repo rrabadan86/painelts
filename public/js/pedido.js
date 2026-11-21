@@ -622,6 +622,8 @@
     for (const r of R.linhas) r.ficou = false;
     const linhas = R.linhas.filter((r) => { if (!passa(r)) return false; if (FILTROS[filtro][1](r)) return true; if (estTab.ficam.has(String(r.cod))) { r.ficou = true; return true; } return false; });
     const naAba = R.linhas.filter(FILTROS[filtro][1]);
+    // subgrupo só aparece quando diz algo além do nome (no cadastro, o subgrupo de muitos chás é o próprio nome do chá)
+    const subDif = (r) => !!r.sub && TS.norm(r.sub) !== TS.norm(r.produto);
     const seletor = (chave, rot, todos, opcoes, valorDe, dica) => {
       const n = (v) => naAba.filter((r) => passa(r, chave) && valorDe(r) === v).length;
       const s = h('select', { class: 'f-input ped-fx' + (fx[chave] ? ' on' : ''), 'aria-label': rot, title: dica || null, onchange: (x) => { fx[chave] = x.target.value; pintar(corpo, loja, M, e, p); } },
@@ -649,7 +651,7 @@
     const cols = [
         { key: 'produto', label: 'Produto', align: 'l', sticky: true, wrap: true, title: 'O ícone antes do nome é a classe do produto: ⭐ Estrela (sai muito, boa margem) · 👍 Joia (sai pouco, boa margem) · 📦 Volume (sai muito, margem menor) · 💤 Peso morto (sai pouco, pouca margem). É a classe oficial, a mesma da Rentabilidade; 🔒 = travada à mão. Passe o mouse no ícone para ver. A etiqueta "⭐ equipe" (com texto) é outra coisa: pedido da equipe.',
           render: (r) => fotoCel(r, h('span', null, r.classe ? h('span', { class: 'ped-cl-ico', title: `${CLASSE_DICA[r.classe]}${r.classeFixa ? ' (🔒 travada à mão na Rentabilidade)' : ''}`, 'aria-label': 'Classe ' + CLASSES[r.classe] }, CLASSE_ICO[r.classe]) : null, r.produto, r.ficou ? h('span', { class: 'badge cinza ped-ficou', title: 'Esta linha mudou de aba com a sua alteração. Ela continua aqui até você trocar de aba ou de filtro, para não sumir da frente.' }, r.pedir > 0 ? '→ foi para "Complemento"' : '→ saiu do pedido') : null, r.sug ? h('span', { class: 'ped-prio ped-sug', title: tituloSug(r.sug) }, `⭐ ${r.sug.pessoas.length > 1 ? r.sug.pessoas.length + ' pediram' : 'equipe'}`) : null, r.obrig ? h('span', { class: 'ped-tag-obr', title: 'Vem no pedido obrigatório: não vai para o carrinho' }, '🔒 obrigatório') : r.chega ? h('span', { class: 'ped-tag-obr', title: `O pedido obrigatório já traz ${qtdTxt(r.chega, r.it)} deste produto (já descontado do "Precisa"). O que estiver em "Pedir" é a mais e vai para o carrinho.` }, `+ ${qtdTxt(r.chega, r.it)} no obrigatório`) : null, r.esp ? h('a', { class: 'ped-prio ped-esp', href: '#espera', title: `Na lista de espera: ${r.esp.clientes.join(', ')}${r.esp.pedidos > r.esp.clientes.length ? '…' : ''}. Quando a nota chegar, eles aparecem para avisar.`, onclick: (e) => e.stopPropagation() }, `⏳ ${r.esp.pedidos} esperando`) : null, VAL.has(String(r.cod)) ? (() => { const v = VAL.get(String(r.cod)); return h('a', { class: 'pd-vl', href: '#validade', title: `${qtdTxt(v.kg, r.it)} em lote${v.dias < 0 ? ' já vencido' : ` que vence em ${v.dias} dias`}: venda o que tem antes de comprar mais (Estoque → Validade)`, onclick: (e) => e.stopPropagation() }, TS.validade.badge(v.faixa)); })() : null, r.prior && r.prior < 3 ? h('span', { class: 'ped-prio', title: r.prior === 2 ? 'Prioridade: estoque abaixo de 500 g' : 'Prioridade: Estrela com estoque abaixo de 700 g' }, r.prior === 2 ? '< 500 g' : 'Estrela < 700 g') : null, h('small', { class: 'est-tam' }, `cód. ${r.cod}`))) },
-        { key: 'grpTxt', label: 'Grupo', align: 'l', title: 'Grupo do produto no AppNext, como sai nas vendas (ex.: CHÁ VERDE AROMATIZADO) e, embaixo, o subgrupo do cadastro. No chá a granel, os dos pacotes dele. Produto que ainda não vendeu mostra o grupo do cadastro de preços; sem cadastro, fica sem grupo.', render: (r) => h('span', null, r.grpTxt || h('span', { class: 'muted' }, '—'), r.sub ? h('small', { class: 'ped-sub' }, r.sub) : null) },
+        { key: 'grpTxt', label: 'Grupo', align: 'l', title: 'Grupo do produto no AppNext, como sai nas vendas (ex.: CHÁ VERDE AROMATIZADO) e, embaixo, o subgrupo do cadastro. No chá a granel, os dos pacotes dele. Produto que ainda não vendeu mostra o grupo do cadastro de preços; sem cadastro, fica sem grupo.', render: (r) => h('span', null, r.grpTxt || h('span', { class: 'muted' }, '—'), subDif(r) ? h('small', { class: 'ped-sub' }, r.sub) : null) },
         { key: 'sit', label: 'Situação', align: 'l', render: (r) => { const [t, c] = SITU(r); return h('span', { class: 'badge ' + c }, t); }, sortVal: (r) => (r.qtd <= 0 ? 3 : r.urgente ? 2 : 1) },
         { key: 'qtd', label: 'Estoque', render: (r) => qtdTxt(r.qtd, r.it) },
         { key: 'dias', label: 'Dura', fmt: (v) => (v == null ? '—' : v > 365 ? '+1 ano' : `${fmt.int(v)} dias`) },
@@ -677,7 +679,13 @@
     function listaMobile() {
       const box = h('div', { class: 'ped-cards' });
       const busca = h('input', { class: 'f-input ped-cards-busca', type: 'search', placeholder: 'Buscar produto ou código…', value: state.pedBuscaMob || '' });
-      const ord = [...linhas].sort((a, b) => (b.pedir > 0) - (a.pedir > 0) || (b.prior || 0) - (a.prior || 0) || (b.qtd <= 0) - (a.qtd <= 0) || b.urgente - a.urgente || (b.lucroDia || 0) - (a.lucroDia || 0));
+      // A ordem é decidida uma vez por aba/filtro e fica: mudar uma quantidade redesenha a lista, e o cartão em que a pessoa está
+      // mexendo não pode pular de lugar (ela aperta ＋ três vezes para pedir 3 kg). Só reordena ao trocar de aba ou de filtro
+      const chaveL = (r) => `${r.cod}|${r.obrig ? 1 : 0}`;
+      const natural = (a, b) => (b.pedir > 0) - (a.pedir > 0) || (b.prior || 0) - (a.prior || 0) || (b.qtd <= 0) - (a.qtd <= 0) || b.urgente - a.urgente || (b.lucroDia || 0) - (a.lucroDia || 0);
+      const pos = estTab.ordMob ? new Map(estTab.ordMob.map((k, i) => [k, i])) : null;
+      const ord = [...linhas].sort(pos ? (a, b) => (pos.has(chaveL(a)) ? pos.get(chaveL(a)) : 1e9) - (pos.has(chaveL(b)) ? pos.get(chaveL(b)) : 1e9) || natural(a, b) : natural);
+      estTab.ordMob = ord.map(chaveL);
       let quantos = estTab.mob || 40; // "mostrar mais" sobrevive ao redesenho
       const cartao = (r) => {
         const [t, c] = SITU(r);
@@ -685,7 +693,7 @@
         r._tot = tot;
         // no celular não há a coluna Grupo: o subgrupo vai ao lado do código
         const nome = col('produto').render(r);
-        const codEl = r.sub && nome.querySelector('.est-tam');
+        const codEl = subDif(r) && nome.querySelector('.est-tam');
         if (codEl) codEl.append(' · ', h('span', { class: 'ped-cod-sub', title: 'Subgrupo do cadastro de preços do AppNext (no chá a granel, o dos pacotes dele).' }, r.sub));
         return h('div', { class: 'ped-card' + (r.obrig ? ' obr' : r.pedir > 0 ? ' on' : '') },
           h('div', { class: 'ped-card-top' }, h('div', { class: 'ped-card-nome' }, nome), h('span', { class: 'badge ' + c }, t)),
