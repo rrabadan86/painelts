@@ -960,6 +960,12 @@ app.post('/api/contatos', express.json({ limit: '4kb' }), (req, res) => {
   const todos = lerContatos(loja);
   const c = todos[cpf] || {};
   const agora = new Date().toISOString();
+  // regra forte (decisão do dono): mensagem pelo painel (Hoje, ficha, Campanhas) é conferida AQUI, antes de o WhatsApp abrir —
+  // nunca para quem não quer, para quem já recebeu dentro do intervalo da loja nem para quem o robô vai mandar hoje
+  if (acao === 'contatado' && req.body.envio === true) {
+    const b = require('./src/zapfila').envioManualBloqueado({ lojaId: loja, cpf, contato: c, campanha: String(req.body.campanha || ''), agora: Date.now() });
+    if (b) return res.status(409).json({ erro: b, bloqueado: true });
+  }
   if (acao === 'contatado') Object.assign(c, { em: agora, por: req.user, motivo: String(motivo || '').slice(0, 40) });
   else if (acao === 'optout') Object.assign(c, { optout: true, optoutEm: agora, optoutPor: req.user });
   else if (acao === 'aceita') { delete c.optout; delete c.optoutEm; delete c.optoutPor; delete c.optoutOrigem; require('./src/zapfila').voltouAAceitar(loja, cpf); }
@@ -1007,7 +1013,7 @@ app.put('/api/campanhas/:id', express.json({ limit: '20kb' }), (req, res) => {
   const r = CAMP.alterar(id, req.params.id, b);
   if (r.ok) {
     // mensagem ou critérios mudaram: a lista conferida para o robô deixa de valer (a tela confere de novo ao abrir a campanha)
-    if (['mensagem', 'variacoes', 'filtros'].some((k) => k in b)) ZF.limparPreparo(id, req.params.id);
+    if (['mensagem', 'variacoes', 'filtros', 'porMotivo'].some((k) => k in b)) ZF.limparPreparo(id, req.params.id);
     if (antes && !!antes.robo !== !!r.ok.robo) C.auditar(req.user, r.ok.robo ? 'campanha: ligou o envio pelo robô' : 'campanha: tirou do robô', id, { loja: id, nome: r.ok.nome });
     if (antes && !!antes.comparar !== !!r.ok.comparar) C.auditar(req.user, r.ok.comparar ? 'campanha: ligou o grupo de comparação (10% sem mensagem)' : 'campanha: desligou o grupo de comparação', id, { loja: id, nome: r.ok.nome });
   }
@@ -1071,6 +1077,8 @@ require('./src/zaplaco').iniciar();
 require('./src/zapauto').iniciar({
   corpo: async (loja) => { const d = await pacote([loja], false, 'completo'); return { sig: d.etag, json: () => (d.buf || zlib.gunzipSync(d.gz)).toString('utf8') }; },
   disponivel: (id) => LOT.disponivel({ estoque: ES.atual(id), compras: ES.compras(id) }),
+  // Campanha Resumo diário: os lotes de chá perto da validade (motivo "Chá dele perto da validade"), só nome e dias
+  validade: (id) => ({ lotes: LOT.daLoja(id).lotes.map((l) => ({ desc: l.desc, dias: l.dias })) }),
 });
 
 // versão dos arquivos da tela (o hash automático do bundle): a aba aberta compara e oferece recarregar depois de uma atualização

@@ -92,7 +92,8 @@ test('a conta que roda no servidor é a dos arquivos da tela (nenhuma cópia da 
   for (const regra of ['ausencia', 'chaFavorito', 'optout', 'semContato', 'vendedoraPref']) assert.ok(!src.includes(regra), `"${regra}" é conta da tela: não pode ser refeita em src/zapauto.js`);
   const tela = fs.readFileSync(path.join(__dirname, '..', '..', 'public', 'js', 'campanhas.js'), 'utf8');
   assert.match(tela, /TS\.zapPreparar\(state\.loja, camp\.id, itensPreparo\(/, 'a tela manda a lista conferida feita pela mesma função');
-  assert.match(tela, /lista: listaDe\(c\.filtros\)/, 'a tela cria a lista da recorrente pela mesma função');
+  assert.match(tela, /lista: await listaAgora\(c\.filtros, state\.loja\)/, 'a tela cria a lista da recorrente pela mesma função');
+  assert.match(tela, /function listaAgora[\s\S]*?return listaDe\(filtros\)/, 'listaAgora = listaDe (ou a do Resumo diário)');
 });
 
 test('quem entra na lista: os critérios da tela (com celular, sem "não quer mensagens", sem contato recente)', () => {
@@ -127,7 +128,7 @@ test('valores dos campos e número de cada pendente: os que a tela calcula', asy
   const { saudacao, ...v } = ana.v;
   assert.ok(['Bom dia', 'Boa tarde', 'Boa noite'].includes(saudacao), 'a saudação é refeita na hora do envio');
   assert.deepStrictEqual(v, { nome: 'Ana', nomecompleto: 'Ana Souza', loja: 'Loja Um', cha: 'EARL GREY', ultimocha: 'SENCHA', pacote: '100g', vendedora: 'Maria',
-    pontos: '0', vence: '—', vencepts: '0', ultimacompra: '10/01/2026', dias: '53', aniversario: '15/03', visitas: '2' });
+    pontos: '0', vence: '—', vencepts: '0', ultimacompra: '10/01/2026', dias: '53', aniversario: '15/03', visitas: '2', apresentacao: 'Aqui é a Maria, da Loja Um', chaoferta: 'EARL GREY' });
   assert.deepStrictEqual({ cha: bia.v.cha, pacote: bia.v.pacote, vendedora: bia.v.vendedora, dias: bia.v.dias, visitas: bia.v.visitas, aniversario: bia.v.aniversario },
     { cha: 'chá', pacote: '', vendedora: 'Joana', dias: '12', visitas: '1', aniversario: '—' });
   assert.strictEqual(ana.espera, undefined);
@@ -288,4 +289,23 @@ test('período da campanha: início e término valem para o robô, para a recorr
   const ok = CAMP.dadosOk({ ...base, inicio: '2026-11-23', fim: '2026-11-30' }).ok;
   assert.deepEqual([ok.inicio, ok.fim], ['2026-11-23', '2026-11-30']);
   assert.deepEqual([CAMP.dadosOk({ ...base }).ok.inicio, CAMP.dadosOk({ ...base, fim: '' }, ok).ok.fim], [null, null], 'em branco = sem data');
+});
+
+test('RESUMO-04: Campanha Resumo diário no servidor — a lista de Clientes → Hoje, um motivo por cliente, com a validade lida do servidor', async () => {
+  const M = require('../../public/js/msgwpp');
+  let leuValidade = 0;
+  const t = ZA.tela({ loja: { id: 'l1', nome: 'Loja Um' }, corpo: corpoDe('l1'), contatos: CONTATOS, disponivel: () => ESTOQUE,
+    validade: () => { leuValidade++; return { lotes: [{ desc: 'EARL GREY', dias: 20 }] }; }, agora: QUARTA_10H });
+  const todos = await t.lista({ resumo: M.MOTIVOS_RESUMO });
+  assert.ok(leuValidade >= 1, 'leu os lotes perto da validade');
+  assert.strictEqual(new Set(todos.map((x) => x.cpf)).size, todos.length, 'uma mensagem por cliente');
+  for (const x of todos) assert.ok(M.MOTIVOS_RESUMO.includes(x.m), 'todo cliente com o motivo dele');
+  assert.ok(!todos.some((x) => [DUDA, EDU].includes(x.cpf)), 'sem quem não quer e sem quem recebeu há pouco');
+  // Ana gosta de Earl Grey, que tem lote vencendo: entra pelo motivo mais importante, "chá perto da validade", com o chá oferecido
+  const ana = todos.find((x) => x.cpf === ANA);
+  assert.deepStrictEqual(ana && { m: ana.m, o: ana.o }, { m: 'validade', o: 'EARL GREY' });
+  // só os motivos escolhidos; nenhum motivo = ninguém; campanha comum continua pela conta de sempre
+  assert.ok((await t.lista({ resumo: ['aniv'] })).every((x) => x.m === 'aniv'));
+  assert.deepStrictEqual(await t.lista({ resumo: [] }), []);
+  assert.deepStrictEqual(await t.lista({ ausMin: 10 }), t.listaDe({ ausMin: 10 }));
 });

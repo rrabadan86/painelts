@@ -367,7 +367,7 @@
       if (j.contatos && (state.loja || '') === lojaAlvo && TS.cli) { TS.cli.contatos = j.contatos; TS.cli.contatosLoja = lojaAlvo; }
     } catch { /* fica o que tinha */ }
   }
-  async function marcar(c, acao, motivo) {
+  async function marcar(c, acao, motivo, envio) {
     const loja = lojaIdDe(c);
     let novo;
     if (TS.demo) {
@@ -378,12 +378,26 @@
       if (acao === 'limpar') { delete a.em; delete a.motivo; }
       novo = a;
     } else {
-      const r = await fetch('/api/contatos', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-Painel': '1' }, body: JSON.stringify({ loja, cpf: c.cpf, acao, motivo }) });
+      const r = await fetch('/api/contatos', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-Painel': '1' }, body: JSON.stringify({ loja, cpf: c.cpf, acao, motivo, ...(envio ? { envio: true, campanha: envio.campanha || '' } : {}) }) });
       const j = await r.json();
-      if (!r.ok) throw new Error(j.erro || 'Falha ao salvar.');
+      if (!r.ok) { const e = new Error(j.erro || 'Falha ao salvar.'); e.bloqueado = !!j.bloqueado; throw e; }
       novo = j.contato ? { ...j.contato, loja } : null;
     }
     if (novo && Object.keys(novo).length) TS.cli.contatos[c.cpf] = novo; else delete TS.cli.contatos[c.cpf];
+  }
+  /**
+   * Envio manual pelo WhatsApp (Hoje, ficha do cliente, fila de Campanhas). Regra forte (decisão do dono): o servidor confere
+   * ANTES de o WhatsApp abrir — quem já recebeu mensagem dentro do intervalo da loja, quem não quer e quem está na fila do robô
+   * não recebem; a pessoa vê o porquê (erro com `bloqueado`). A janela é aberta já no clique (senão o navegador a bloqueia) e
+   * fecha se o servidor recusar. → true quando abriu.
+   */
+  async function enviarWpp(c, txt, motivo, campanha) {
+    if (TS.demo) { await marcar(c, 'contatado', motivo); alert('Na apresentação o WhatsApp não abre (número fictício). A mensagem seria:\n\n' + txt); return true; }
+    const w = window.open('about:blank', '_blank');
+    try { await marcar(c, 'contatado', motivo, { campanha }); } catch (e) { if (w) w.close(); throw e; }
+    const link = linkWpp(c, txt);
+    if (w) { try { w.opener = null; } catch { /* ok */ } w.location.href = link; } else window.location.href = link;
+    return true;
   }
   // modelos de mensagem (editáveis em Configurações → Lojas → Mensagens de WhatsApp)
   TS.WPP_PADRAO = [
@@ -400,6 +414,7 @@
   TS.CAMPOS_MSG = [
     ['nome', 'primeiro nome'], ['nomecompleto', 'nome completo'], ['saudacao', 'Bom dia / Boa tarde / Boa noite (na hora do envio)'],
     ['vendedora', 'vendedora que mais atendeu o cliente (só quem vendeu nos últimos 60 dias; sem ela: "equipe da <loja>")', (c) => !c.vendedoraPref],
+    ['apresentacao', '"Aqui é a <vendedora>, da <loja>" (sem vendedora: "Aqui é a equipe da <loja>")'],
     ['cha', 'chá favorito', (c) => !c.chaFavorito], ['ultimocha', 'último chá que comprou', (c) => !c.chaUltimo],
     ['pacote', 'tamanho de pacote que costuma levar (ex.: 100g)', (c) => !c.pacote],
     ['pontos', 'saldo de pontos'], ['vencepts', 'pontos que vencem na próxima data'], ['vence', 'data em que os próximos pontos vencem', (c) => !(c.fx && c.fx.prox != null)],
@@ -418,6 +433,7 @@
       pontos: fmt.int(fx.saldo || 0), vence: fx.prox != null ? fmt.date(TS.dayToIso(fx.prox)) : '—', vencepts: fmt.int(fx.proxPts || 0),
       ultimacompra: c.ultima != null ? fmt.date(TS.dayToIso(c.ultima)) : '—', dias: c.ausencia != null ? fmt.int(c.ausencia) : '—',
       aniversario: c.aniv || '—', visitas: fmt.int(c.visitas || 0), saudacao: saudacao(),
+      apresentacao: primeiroNome(c.vendedoraPref) ? `Aqui é a ${primeiroNome(c.vendedoraPref)}, da ${loja}` : `Aqui é a equipe da ${loja}`, // Resumo diário: a vendedora que mais atende o cliente
     };
   }
   const textoWpp = (modelo, c) => TS.msgWpp.montar(modelo.texto, valoresWpp(c));
@@ -612,31 +628,25 @@
         TS.dica(`Meta de hoje da loja: ${fmt.brl0(metaHoje)}.\n\nCom escala lançada: parte de cada pessoa = meta de hoje × horas dela na escala de hoje ÷ horas de todos que trabalham hoje (horas líquidas, sem o intervalo; a escala é a de Equipe → Movimento e escala, com os ajustes do mês).${DV.modo === 'escala' ? `\n\nHoje: ${DV.partes.map((p) => `${nomeBonito(p.nome)} ${hTxt(p.minutos)}`).join(' + ')} = ${hTxt(DV.total)}.` : ''}\n\nSem escala lançada (ou sem ninguém da escala com o mesmo nome do vendedor): partes iguais entre quem teve pelo menos 3% das vendas da meta nos últimos 30 dias e não está de férias hoje.\n\nÉ só o alvo do dia: a meta do mês e a comissão continuam como no Comissionamento.`)));
   }
 
-  TS.pages.hoje = function (root) {
-    if (TS.subClientes) root.append(TS.subClientes('hoje'));
-    root.append(h('div', { class: 'page-head' }, h('div', null, h('h1', { class: 'page-title' }, 'Hoje'),
-      h('div', { class: 'page-sub' }, `Quem contatar hoje e por quê. Uma mensagem por cliente, pelo WhatsApp da loja; quem recebeu mensagem nos últimos ${intervaloDe(state.loja)} dias (de qualquer tela ou campanha) ou pediu para não receber não aparece.`))));
-    if (!TS.cli || !TS.cli.lista) { root.append(h('div', { class: 'notice' }, 'Os clientes ainda não foram carregados.')); return; }
-    if (!state.loja || state.loja === 'todas') { root.append(h('div', { class: 'notice' }, 'Escolha uma loja no seletor do topo.')); return; }
-    carregarContatos();
-    const md = cartaoMetaDia();
-    if (md) root.append(md);
-    const corpo = h('div');
-    root.append(corpo);
-    const pintar = (val) => {
+  /**
+   * Quem contatar hoje e por quê (tela Clientes → Hoje e Campanha Resumo diário, que roda também no servidor pelo robô):
+   * com WhatsApp, sem "não quer", sem mensagem dentro do intervalo da loja; motivos em ordem de importância; o motivo cuja
+   * mensagem cita um chá sem estoque (chá a granel: menos de 100 g) sai. val = TS.validade.dados (lotes), disp = TS.estoqueDisp.
+   * → { itens: [{ c, ms, oferta, peso }], foraSemEstoque, contatadosHoje }
+   */
+  function hojeItens(val, disp) {
       // chás perto da validade (Estoque → Validade): nome normalizado → dias
       const perto = new Map();
       for (const l of (val && val.lotes) || []) if (l.dias != null && l.dias >= 0 && l.dias < 60) { const k = TS.norm(l.desc); if (!perto.has(k) || l.dias < perto.get(k).dias) perto.set(k, { dias: l.dias, desc: l.desc }); }
       const semTam = (t) => TS.norm(String(t || '')).replace(/\s*[-–]?\s*\d+\s*(g|gr|grs|gramas)\b.*$/, '').trim();
       // trava: não oferecer produto que a loja não tem (estoque 0 no AppNext e nenhuma nota de entrada depois do estoque)
-      const disp = (val && val.disp) || null;
       let foraSemEstoque = 0;
-      const hojeIso = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+      const hojeIso = TS.hojeSP();
       let contatadosHoje = 0;
       const itens = [];
       for (const c of TS.cli.lista) {
         const ct = contatoDe(c);
-        if (ct && ct.em && ct.em.slice(0, 10) === hojeIso) contatadosHoje++;
+        if (ct && ct.em && new Date(ct.em).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }) === hojeIso) contatadosHoje++;
         if (!c.wpp || (ct && (ct.optout || (ct.em && Date.now() - Date.parse(ct.em) < intervaloDe(lojaIdDe(c)) * 864e5)))) continue;
         const ms = [];
         if (c.rfm && (c.rfm.g === 'naoperder' || c.rfm.g === 'risco' || c.rfm.g === 'atencao')) ms.push(c.rfm.g);
@@ -657,6 +667,33 @@
         itens.push({ c, ms, oferta, peso: MOTIVOS_HOJE[ms[0]].peso + ms.length + Math.min(9, (c.gasto12 || 0) / 500) });
       }
       itens.sort((a, b) => b.peso - a.peso);
+      return { itens, foraSemEstoque, contatadosHoje };
+  }
+
+  TS.pages.hoje = function (root) {
+    if (TS.subClientes) root.append(TS.subClientes('hoje'));
+    root.append(h('div', { class: 'page-head' }, h('div', null, h('h1', { class: 'page-title' }, 'Hoje'),
+      h('div', { class: 'page-sub' }, `Quem contatar hoje e por quê. Uma mensagem por cliente, pelo WhatsApp da loja; quem recebeu mensagem nos últimos ${intervaloDe(state.loja)} dias (de qualquer tela ou campanha) ou pediu para não receber não aparece.`))));
+    if (!TS.cli || !TS.cli.lista) { root.append(h('div', { class: 'notice' }, 'Os clientes ainda não foram carregados.')); return; }
+    if (!state.loja || state.loja === 'todas') { root.append(h('div', { class: 'notice' }, 'Escolha uma loja no seletor do topo.')); return; }
+    carregarContatos();
+    const md = cartaoMetaDia();
+    if (md) root.append(md);
+    const corpo = h('div');
+    root.append(corpo);
+    const pintar = (val) => {
+      const disp = (val && val.disp) || null;
+      const { itens, foraSemEstoque, contatadosHoje } = hojeItens(val, disp);
+      // Campanha Resumo diário com o robô: quem está na lista de hoje dele aparece com "🤖 o robô envia hoje" (sem botão)
+      const rs = (val && val.resumo) || null;
+      for (const x of itens) { x.robo = !!(rs && rs.pendentes.has(x.c.cpf)); x.comp = !!(rs && rs.comparacao && rs.comparacao.has(x.c.cpf)); }
+      const nRobo = itens.filter((x) => x.robo).length;
+      const irResumo = h('button', { type: 'button', class: 'link-btn', onclick: () => { TS.abrirResumo = true; location.hash = '#campanhas'; } }, rs ? 'Abrir a campanha' : 'Criar a Campanha Resumo diário');
+      const faixaResumo = !TS.msgWpp ? null : h('p', { class: 'muted hj-resumo' }, '🤖 ',
+        rs && rs.robo ? `${TS.msgWpp.NOME_RESUMO}: o robô do WhatsApp envia hoje ${fmt.int(nRobo)} ${nRobo === 1 ? 'mensagem' : 'mensagens'} desta lista (marcados com "o robô envia hoje"). O resto é com a equipe. `
+          : rs ? `${TS.msgWpp.NOME_RESUMO} existe, mas não está enviando pelo robô agora: a equipe envia por aqui. `
+            : 'Quer que o robô do WhatsApp envie parte desta lista sozinho, todo dia? ',
+        irResumo, TS.dica('A Campanha Resumo diário usa esta mesma lista, só com os motivos escolhidos, uma mensagem por cliente (o motivo mais importante dele), assinada pela vendedora que mais o atende. Valem as mesmas travas: intervalo entre mensagens, quem não quer e estoque.'));
       const vends = [...new Set(itens.map((x) => x.c.vendedoraPref).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
       const sel = itens.filter((x) => (!hojeF.motivo || x.ms.includes(hojeF.motivo)) && (!hojeF.vend || x.c.vendedoraPref === hojeF.vend));
       const conta = (m) => itens.filter((x) => x.ms.includes(m)).length;
@@ -674,11 +711,9 @@
             h('div', { class: 'hj-motivos' }, ...x.ms.map((m) => h('span', { class: 'hj-mot hj-' + m }, MOTIVOS_HOJE[m].nome))),
             h('small', { class: 'muted' }, [c.vendedoraPref && `atende: ${c.vendedoraPref}`, c.chaFavorito && `gosta de ${c.chaFavorito}`, x.oferta && `oferecer: ${x.oferta}`, c.ausencia != null && `${fmt.int(c.ausencia)} d sem vir`].filter(Boolean).join(' · '))),
           h('div', { class: 'hj-msg', title: txt }, txt),
-          h('div', { class: 'hj-acoes' }, h('a', { class: 'btn primary', href: '#', onclick: async (e) => {
+          h('div', { class: 'hj-acoes' }, x.comp ? h('span', { class: 'hj-robo', title: 'Sorteado hoje para o grupo de comparação da Campanha Resumo diário: fica sem mensagem para medir se a campanha traz clientes de volta. Mandar mensagem estragaria a medida.' }, '🤖 sem mensagem hoje (comparação)') : x.robo ? h('span', { class: 'hj-robo', title: 'Este cliente está na lista de hoje da Campanha Resumo diário: o robô do WhatsApp manda a mensagem sozinho. A equipe não envia (seria mensagem em dobro).' }, '🤖 o robô envia hoje') : h('a', { class: 'btn primary', href: '#', onclick: async (e) => {
             e.preventDefault();
-            if (TS.demo) alert('Na apresentação o WhatsApp não abre (número fictício). A mensagem seria:\n\n' + txt);
-            else window.open(linkWpp(c, txt), '_blank', 'noopener');
-            try { await marcar(c, 'contatado', 'Hoje · ' + m0.nome.replace(/^\S+\s/, '')); el.classList.add('hj-feito'); setTimeout(() => pintar(val), 900); } catch (er) { alert(er.message); }
+            try { await enviarWpp(c, txt, 'Hoje · ' + m0.nome.replace(/^\S+\s/, '')); el.classList.add('hj-feito'); setTimeout(() => pintar(val), 900); } catch (er) { if (er.bloqueado) { TS.avisar(er.message); await recarregarContatos(); pintar(val); } else alert(er.message); }
           } }, 'WhatsApp')));
         return el;
       };
@@ -688,6 +723,7 @@
           TS.kpi('Para contatar hoje', fmt.int(itens.length), `com WhatsApp e sem mensagem nos últimos ${intervaloDe(state.loja)} dias`),
           TS.kpi('Contatados hoje', fmt.int(contatadosHoje), 'pelo painel (Hoje, Lista e Campanhas)'),
           TS.kpi('Em risco ou não pode perder', fmt.int(itens.filter((x) => x.ms.includes('risco') || x.ms.includes('naoperder')).length), 'clientes bons que estão sumindo')),
+        faixaResumo,
         h('div', { class: 'card' },
           h('div', { class: 'hj-ferr' }, chips, selV),
           sel.length ? h('div', { class: 'hj-lista' }, ...sel.slice(0, LIM).map(linha)) : TS.empty('Ninguém para contatar com esses filtros. 🎉'),
@@ -699,9 +735,9 @@
     if (!TS.validade) pintar(null);
     else {
       corpo.replaceChildren(h('div', { class: 'card' }, h('div', { class: 'loading' }, h('div', null, h('div', { class: 'spinner' }), h('p', null, 'Conferindo o estoque dos chás…')))));
-      Promise.all([TS.validade.dados(state.loja).catch(() => null), TS.estoqueDisp(state.loja).catch(() => null)]).then(([v, disp]) => {
+      Promise.all([TS.validade.dados(state.loja).catch(() => null), TS.estoqueDisp(state.loja).catch(() => null), TS.resumoDoDia ? TS.resumoDoDia(state.loja).catch(() => null) : null]).then(([v, disp, resumo]) => {
         if (!corpo.isConnected) return;
-        pintar({ ...(v || {}), disp });
+        pintar({ ...(v || {}), disp, resumo });
         if (!disp) corpo.prepend(h('div', { class: 'notice' }, 'Não consegui ler o estoque agora: a lista não está conferindo se o produto citado na mensagem tem em estoque.'));
       });
     }
@@ -1587,7 +1623,8 @@
     abrirClientes: (cpfs) => abrirClientes(cpfs), contatoDe: (c) => contatoDe(c), intervalo: () => intervaloDe(state.loja), recarregarContatos: () => recarregarContatos(), marcar: (c, acao, motivo) => marcar(c, acao, motivo),
     carregarContatos: () => carregarContatos(), modelos: () => modelosDe(state.loja), fmtTel: (x) => fmtTel(x), fmtCPF: (x) => fmtCPF(x), csv: (a, b, c) => csv(a, b, c),
     texto: (txt, c, extra = {}) => TS.msgWpp.montar(txt, valoresWpp(c), extra), valores: (c) => valoresWpp(c),
-    linkWpp: (c, txt) => linkWpp(c, txt),
+    linkWpp: (c, txt) => linkWpp(c, txt), enviarWpp: (c, txt, motivo, campanha) => enviarWpp(c, txt, motivo, campanha),
+    hojeItens: (val, disp) => hojeItens(val, disp), MOTIVOS_HOJE,
     /** todos os clientes que podem entrar numa campanha: os da lista + quem só aparece no FIXE (com cadastro) */
     universo() {
       const out = [...TS.cli.lista];
@@ -1646,9 +1683,9 @@
               if (faltando) { TS.avisar(`${faltando} está sem estoque (no chá a granel, menos de 100 g): escolha outra mensagem.`); return; }
               const rr = recebeuRecente(c);
               if (rr) { TS.avisar(`${c.nome || 'Este cliente'} recebeu mensagem da loja há ${rr.dias} ${rr.dias === 1 ? 'dia' : 'dias'}${rr.ct.motivo ? ' (' + rr.ct.motivo + ')' : ''}. Para não ser insistente, a próxima só a partir de ${rr.ate.toLocaleDateString('pt-BR')} (uma mensagem a cada ${rr.iv} dias).`); return; }
-              if (TS.demo) { await TS.avisar(textoWpp(atual(), c), { titulo: 'Na apresentação o WhatsApp não abre (número fictício). A mensagem seria:' }); }
-              else window.open(linkWpp(c, textoWpp(atual(), c)), '_blank', 'noopener');
-              try { await marcar(c, 'contatado', atual().nome); pintar(); } catch (er) { TS.avisarErro(er); }
+              if (TS.demo) { await TS.avisar(textoWpp(atual(), c), { titulo: 'Na apresentação o WhatsApp não abre (número fictício). A mensagem seria:' }); try { await marcar(c, 'contatado', atual().nome); pintar(); } catch (er) { TS.avisarErro(er); } return; }
+              // o servidor confere a regra da loja antes de abrir (regra forte: uma mensagem por cliente no intervalo)
+              try { await enviarWpp(c, textoWpp(atual(), c), atual().nome); pintar(); } catch (er) { if (er.bloqueado) { TS.avisar(er.message); await recarregarContatos(); pintar(); } else TS.avisarErro(er); }
             } }, 'Abrir no WhatsApp'),
             h('small', { class: 'muted' }, 'Ao abrir, o cliente fica marcado como contatado.'))));
       }

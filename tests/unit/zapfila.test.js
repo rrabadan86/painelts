@@ -493,3 +493,56 @@ test('WPP-EMOJI-01: link do envio manual vai por api.whatsapp.com com o texto be
   const partido = 'oi ' + '😊'.slice(0, 1) + ' fim';
   assert.strictEqual(decodeURIComponent(W.linkComTexto('5562999998888', partido).split('text=')[1]).replace(/\uFFFD/g, ''), 'oi  fim');
 });
+
+// ---------- Campanha Resumo diário (decisão do dono) ----------
+test('RESUMO-01: Resumo diário — cada cliente recebe o texto do motivo dele, com a vendedora que mais o atende', () => {
+  const c = camp('r', {
+    nome: M.NOME_RESUMO, mensagem: 'reserva', filtros: { resumo: ['vence', 'repor'] },
+    porMotivo: { vence: '{nome}, {apresentacao}: seus {pontos} pontos vencem em {vence}.', repor: '{nome}, {apresentacao}: seu {cha} está acabando?' },
+    rodadas: [{ id: 'rr', em: '2026-03-04T09:00:00.000Z', lista: [{ cpf: CPF[0], nome: 'A', st: 'e' }, { cpf: CPF[1], nome: 'B', st: 'p', m: 'repor' }, { cpf: CPF[2], nome: 'C', st: 'p', m: 'vence' }] }],
+  });
+  const v = (nome) => ({ ...valores(nome), apresentacao: 'Aqui é a Ana, da Loja Um' });
+  const pr = { em: new Date(QUARTA_10H - 3600e3).toISOString(), por: 'robô', rodada: 'rr', itens: { [CPF[1]]: { para: NUM[1], v: v('Bia') }, [CPF[2]]: { para: NUM[2], v: v('Caio') } } };
+  const d = ZF.decidir(cena({ campanhas: [c], preparo: { r: pr } }));
+  assert.strictEqual(d.msg.texto, 'Bia, Aqui é a Ana, da Loja Um: seu Earl Grey está acabando?');
+  assert.strictEqual(d.msg.v, null, 'texto do motivo não tem variação');
+  // o mesmo item, na tela: TS.msgWpp.textosDe dá o mesmo texto
+  assert.deepStrictEqual(M.textosDe(c, { m: 'vence' }), [c.porMotivo.vence]);
+  assert.deepStrictEqual(M.textosDe(c, { m: 'aniv' }), ['reserva'], 'motivo sem texto: a mensagem principal');
+  assert.deepStrictEqual(M.textosDe(camp('x'), { m: 'vence' }), [camp('x').mensagem], 'campanha comum: ignora o motivo');
+});
+
+test('RESUMO-02: a campanha guarda o texto de cada motivo e o motivo de cada cliente (só os conhecidos)', () => {
+  const r = CAMP.criar('l1', { nome: M.NOME_RESUMO, mensagem: 'x', recorrente: 'diaria', comparar: false, filtros: { resumo: ['repor'] }, porMotivo: { repor: 'oi {nome}', inventado: 'não' },
+    lista: [{ cpf: CPF[0], nome: 'A', m: 'repor' }, { cpf: CPF[1], nome: 'B', m: 'qualquer', o: 'x' }, { cpf: CPF[2], nome: 'C', m: 'validade', o: 'EARL GREY' }] }, 'dono');
+  assert.ok(r.ok, r.erro);
+  assert.deepStrictEqual(r.ok.porMotivo, { repor: 'oi {nome}' });
+  assert.deepStrictEqual(r.ok.rodadas[0].lista.map((x) => [x.m || null, x.o || null]), [['repor', null], [null, null], ['validade', 'EARL GREY']]);
+  assert.ok(M.ehResumo(r.ok));
+  CAMP.apagar('l1', r.ok.id);
+});
+
+test('RESUMO-03: regra forte do envio manual — já recebeu, não quer ou está na fila do robô: o servidor recusa e explica', () => {
+  const agora = QUARTA_10H, SO_ROBO = '55555555555'; // cliente que só está nesta campanha
+  ZF.mudarEstado('l1', (s) => { s.ligado = false; }); // os testes de cima deixaram o robô ligado
+  // pode: nunca recebeu
+  assert.strictEqual(ZF.envioManualBloqueado({ lojaId: 'l1', cpf: CPF[0], contato: {}, agora }), null);
+  // não quer
+  assert.match(ZF.envioManualBloqueado({ lojaId: 'l1', cpf: CPF[0], contato: { optout: true }, agora }), /pediu para não receber/);
+  // recebeu há 5 dias (intervalo da loja 21): explica quando e até quando
+  const b = ZF.envioManualBloqueado({ lojaId: 'l1', cpf: CPF[0], contato: { em: new Date(agora - 5 * DIA).toISOString(), por: 'robô', motivo: 'Campanha: Campanha Resumo diário' }, agora });
+  assert.match(b, /já recebeu mensagem em 27\/02\/2026 pelo robô do WhatsApp \(campanha Campanha Resumo diário\)/);
+  assert.match(b, /uma mensagem a cada 21 dias/);
+  assert.match(b, /a partir de 20\/03\/2026/);
+  // passou o intervalo: pode
+  assert.strictEqual(ZF.envioManualBloqueado({ lojaId: 'l1', cpf: CPF[0], contato: { em: new Date(agora - 22 * DIA).toISOString() }, agora }), null);
+  // na fila do robô ligado: não (mas a própria campanha da fila manual não conta; robô pausado também não segura)
+  const c = CAMP.criar('l1', { nome: 'Robô X', mensagem: 'oi', comparar: false, robo: true, lista: [{ cpf: SO_ROBO, nome: 'D' }] }, 'dono').ok;
+  ZF.mudarEstado('l1', (s) => { s.ligado = true; s.pausa = null; });
+  assert.match(ZF.envioManualBloqueado({ lojaId: 'l1', cpf: SO_ROBO, contato: {}, agora }), /fila do robô do WhatsApp \(Robô X\)/);
+  assert.strictEqual(ZF.envioManualBloqueado({ lojaId: 'l1', cpf: SO_ROBO, contato: {}, campanha: c.id, agora }), null);
+  ZF.mudarEstado('l1', (s) => { s.pausa = { em: new Date(agora).toISOString() }; });
+  assert.strictEqual(ZF.envioManualBloqueado({ lojaId: 'l1', cpf: SO_ROBO, contato: {}, agora }), null);
+  ZF.mudarEstado('l1', (s) => { s.ligado = false; s.pausa = null; });
+  CAMP.apagar('l1', c.id);
+});

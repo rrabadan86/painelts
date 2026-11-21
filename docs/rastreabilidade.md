@@ -385,6 +385,7 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 | CLI-04 | "Não quer mensagens" tira o cliente de tudo | `server.js` contatos; telas | — | ❌ |
 | CLI-05 | Campanha: limite por dia e rodízio das variações | `campanhas.js` | `regras.spec` (outra coisa) | ❌ |
 | CLI-06 | Trava de estoque: não oferece produto sem estoque | `clientes.js`; `campanhas.js` | `regras.spec` "Trava de estoque…" | ✅ |
+| RESUMO-01…06 | Campanha Resumo diário: lista de Clientes → Hoje só com os motivos escolhidos, um cliente por motivo mais importante, texto do motivo com a vendedora (`{apresentacao}`), mesma conta na tela e no servidor; regra forte do envio manual (409 com explicação: já recebeu no intervalo, não quer, está na fila do robô) | `clientes.js` (`hojeItens`, `enviarWpp`); `campanhas.js` (`listaResumo`, `listaAgora`, `editarResumo`); `msgwpp.js` (`MOTIVOS_RESUMO`, `textosDe`); `campanhas.js` (servidor: `porMotivo`, `m`/`o`); `zapfila.js` (`decidir`, `envioManualBloqueado`); `zapauto.js` (`lista`, `deps.validade`); `server.js` (`/api/contatos`) | `zapfila.test` RESUMO-01…03; `zapauto.test` RESUMO-04; `zap-rotas.test` RESUMO-05; `resumo-diario.spec` RESUMO-06 | ✅ (envio real pelo WhatsApp conferido só com o robô de mentira) |
 | CLI-07 | Fidelidade: Logs do FIXE lidos sem repetir | `fidelidade.js` | `fidelidade.test` (3) | ✅ |
 | CLI-08 | Saldo de pontos por lotes que vencem; cancelamento via PDV | `public/js/fidelidade.js` | `blind`; `regras.spec` | 🟡 |
 | CLI-09 | Ciclo de resgate | `public/js/fidelidade.js` | `blind` | 🟡 |

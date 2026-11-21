@@ -28,7 +28,7 @@
     const c = m[1] && demo.lista.find((x) => x.id === m[1]);
     if (met === 'GET') return { campanhas: demo.lista.slice() };
     const sep = (cid, l, ligado, tamanho) => TS.campRetorno.separar(l.map((x) => ({ ...x, st: 'p' })), cid, { ligado, em: agora, tamanho });
-    if (met === 'POST' && !m[1]) { const cid = id(), comparar = b.comparar !== false; const n = { id: cid, nome: b.nome, mensagem: b.mensagem, janela: b.janela, recorrente: b.recorrente, comparar, ativa: true, filtros: b.filtros, criadaEm: agora, por: 'você', rodadas: [{ id: id(), em: agora, lista: sep(cid, b.lista, comparar) }] }; demo.lista.unshift(n); return { campanha: n }; }
+    if (met === 'POST' && !m[1]) { const cid = id(), comparar = b.comparar !== false; const n = { id: cid, nome: b.nome, mensagem: b.mensagem, porMotivo: b.porMotivo, limiteDia: b.limiteDia, janela: b.janela, recorrente: b.recorrente, comparar, ativa: true, filtros: b.filtros, criadaEm: agora, por: 'você', rodadas: [{ id: id(), em: agora, lista: sep(cid, b.lista, comparar) }] }; demo.lista.unshift(n); return { campanha: n }; }
     if (met === 'PUT' && !m[2]) { const { loja, ...resto } = b; Object.assign(c, resto); return { campanha: c }; }
     if (met === 'PUT' && m[2] === 'rodadas') { const r = c.rodadas[0]; const feitos = r.lista.filter((x) => x.st !== 'p'); const ja = new Set(feitos.map((x) => x.cpf)); const novos = b.lista.filter((x) => !ja.has(x.cpf)); r.lista = [...feitos, ...sep(c.id, novos, c.comparar === true, feitos.length + novos.length)]; return { campanha: c }; }
     if (m[2] === 'rodadas') { c.rodadas.unshift({ id: id(), em: agora, lista: sep(c.id, b.lista, c.comparar === true) }); return { campanha: c }; }
@@ -44,6 +44,8 @@
   const PADRAO = { ptsMin: '', ptsMax: '', venceDias: '', produto: '', produtos: [], grupo: '', compraDias: '', compraVezes: '', ausMin: '', ausMax: '', visMin: '', visMax: '', aniv: '', segs: [], rfm: [], tipos: [], vendedora: '', lojaPref: '', semContato: 30 };
   // tipo de chá pela família do grupo de venda: "CHÁ PRETO AROMATIZADO" e "CHÁ PRETO PURO" → "Chá preto"
   const NAO_TIPO = /ACESS|ENVASAD|ALIMENT|TEA ROOM|TEA MOMENT|CONSUM|MATERIA|SACH|FIDELIDADE|KIT|PRESENTE|EMBALA|LATA|MINITIN|ESPA[ÇC]O GOURMET|COSM/i;
+  /** nomes dos motivos do Resumo diário (os mesmos da tela Clientes → Hoje) */
+  const NOME_MOTIVO = { validade: '🍃 Chá dele perto da validade', vence: '★ Pontos vencendo', repor: '🍵 Hora de repor', aniv: '🎂 Aniversário', naoperder: '🚨 Não pode perder', risco: '⚠️ Em risco', atencao: '👀 Precisa de atenção' };
   const familiaCha = (g) => { const x = String(g || '').toUpperCase().replace(/\s+(AROMATIZADO|PURO)S?$/, '').trim(); return x && !NAO_TIPO.test(x) ? x.charAt(0) + x.slice(1).toLowerCase().replace(/\bchá\b/g, 'Chá') : ''; };
   /** famílias de chá que o cliente já comprou (guardado no cliente) */
   const familiasDe = (c) => {
@@ -131,6 +133,8 @@
       prepararRobo(lista.filter((c) => c.robo && c.ativa !== false)).catch(() => null);
       // vinda de Estoque → Validade: a campanha já montada para quem comprou o chá perto de vencer
       if (TS.campanhaPronta) { const b = TS.campanhaPronta; TS.campanhaPronta = null; criar(corpo, lista, b); }
+      // vinda de Clientes → Hoje: abre a Campanha Resumo diário (ou o formulário para criar)
+      if (TS.abrirResumo) { TS.abrirResumo = false; const rc = resumoDe(lista); if (rc) abrirCampanha(corpo, lista, rc); else editarResumo(corpo, lista, null); }
     }).catch((e) => corpo.replaceChildren(h('div', { class: 'notice err' }, e.message)));
   };
 
@@ -142,24 +146,58 @@
     const r = camp.rodadas && camp.rodadas[0];
     if (!r) return [];
     porCpf = porCpf || new Map(A().universo().map((c) => [c.cpf, c]));
-    const textos = TS.msgWpp.textos(camp);
     const prods = listaProdutos(camp.filtros || {}).filter((x) => !x.contem).map((x) => x.t);
     const itens = [];
     for (const it of r.lista) {
       if (it.st !== 'p') continue;
       const c = porCpf.get(it.cpf);
       if (!c) continue; // cliente fora dos dados carregados agora: o robô espera a próxima conferência
-      const oferece = TS.produtosDaMensagem ? textos.some((t) => TS.produtosDaMensagem(t, c, { produtos: prods }).length) : false;
-      const falta = disp && TS.semEstoqueNaMensagem ? textos.map((t) => TS.semEstoqueNaMensagem(disp, t, c, { produtos: prods })).find(Boolean) : null;
-      itens.push({ cpf: it.cpf, para: TS.msgWpp.paraDoLink(c.wpp), v: A().valores(c), espera: falta || (oferece && !disp ? 'estoque não conferido' : undefined) });
+      const textos = TS.msgWpp.textosDe(camp, it); // Resumo diário: o texto do motivo do cliente
+      const ext = { produtos: prods, chaoferta: it.o || undefined };
+      const oferece = TS.produtosDaMensagem ? textos.some((t) => TS.produtosDaMensagem(t, c, ext).length) : false;
+      const falta = disp && TS.semEstoqueNaMensagem ? textos.map((t) => TS.semEstoqueNaMensagem(disp, t, c, ext)).find(Boolean) : null;
+      itens.push({ cpf: it.cpf, para: TS.msgWpp.paraDoLink(c.wpp), v: { ...A().valores(c), chaoferta: it.o || c.chaFavorito || 'chá' }, espera: falta || (oferece && !disp ? 'estoque não conferido' : undefined) });
     }
     return itens;
   }
   /** quem entra na lista de uma campanha com estes critérios (o que vai gravado na rodada) */
   const listaDe = (filtros) => selecionar({ ...PADRAO, ...filtros }).map(({ c }) => ({ cpf: c.cpf, nome: c.nome }));
-  // As duas contas acima são as mesmas que o servidor roda sozinho, todo dia, para o robô (src/zapauto.js carrega
+  /**
+   * Campanha Resumo diário: a lista de Clientes → Hoje (a mesma conta, TS.cliApi.hojeItens), só com os motivos escolhidos;
+   * cada cliente entra uma vez, pelo motivo mais importante dele (ordem de TS.msgWpp.MOTIVOS_RESUMO).
+   */
+  function listaResumo(filtros, val, disp) {
+    const quer = new Set((filtros && filtros.resumo) || []);
+    const ordem = TS.msgWpp.MOTIVOS_RESUMO.filter((m) => quer.has(m));
+    const out = [];
+    for (const x of A().hojeItens(val, disp).itens) {
+      const m = ordem.find((k) => x.ms.includes(k));
+      if (m) out.push({ cpf: x.c.cpf, nome: x.c.nome, m, ...(m === 'validade' && x.oferta ? { o: x.oferta } : {}) });
+    }
+    return out;
+  }
+  /** a lista de uma campanha agora (o Resumo diário lê a validade e o estoque da loja antes) */
+  async function listaAgora(filtros, loja) {
+    if (!(filtros && Array.isArray(filtros.resumo))) return listaDe(filtros);
+    const val = TS.validade ? await TS.validade.dados(loja).catch(() => null) : null;
+    const disp = TS.estoqueDisp ? await TS.estoqueDisp(loja).catch(() => null) : null;
+    return listaResumo(filtros, val, disp);
+  }
+  // As contas acima são as mesmas que o servidor roda sozinho, todo dia, para o robô (src/zapauto.js carrega
   // ESTE arquivo): mudou aqui, mudou lá. Não copie a regra para outro lugar.
-  TS.campanhasCalc = { listaDe, itensPreparo };
+  TS.campanhasCalc = { listaDe, listaResumo, listaAgora, itensPreparo };
+  /** para a tela Clientes → Hoje: a Campanha Resumo diário da loja (ou null) e quem o robô manda hoje (pendentes da lista de hoje,
+   *  só com a campanha ativa e marcada para o robô) */
+  TS.resumoDoDia = async function (loja) {
+    const j = await api('GET', '/api/campanhas?loja=' + encodeURIComponent(loja));
+    const camp = resumoDe(j.campanhas || []);
+    if (!camp) return null;
+    const r = camp.rodadas[0];
+    const hoje = r && new Date(r.em).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }) === TS.hojeSP();
+    const robo = camp.robo === true && camp.ativa !== false;
+    const de = (st) => new Set(hoje && robo ? r.lista.filter((x) => x.st === st).map((x) => x.cpf) : []);
+    return { camp, robo, pendentes: de('p'), comparacao: de('c') }; // comparação: sorteados para ficar sem mensagem (medir o efeito)
+  };
   /** manda a lista conferida ao abrir a tela, ao abrir a campanha e ao marcar "Enviar pelo robô" */
   async function prepararRobo(camps, dispLido) {
     if (TS.demo || !TS.zapPreparar || !camps.length) return;
@@ -191,7 +229,7 @@
       const diaBR = (d) => d.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
       const vence = !ult || (c.recorrente === 'diaria' ? diaBR(agora) > diaBR(ult) : c.recorrente === 'semanal' ? agora - ult >= 7 * 864e5 : agora.getFullYear() * 12 + agora.getMonth() > ult.getFullYear() * 12 + ult.getMonth());
       if (!vence) continue;
-      try { const r = await api('POST', `/api/campanhas/${c.id}/rodadas`, { loja: state.loja, lista: listaDe(c.filtros) }); Object.assign(c, r.campanha); if (!r.repetida) feitas.push(c.nome); } catch { /* tenta de novo na próxima vez */ }
+      try { const r = await api('POST', `/api/campanhas/${c.id}/rodadas`, { loja: state.loja, lista: await listaAgora(c.filtros, state.loja) }); Object.assign(c, r.campanha); if (!r.repetida) feitas.push(c.nome); } catch { /* tenta de novo na próxima vez */ }
     }
     return feitas;
   }
@@ -263,7 +301,8 @@
     por(corpo,
       novas.length ? h('div', { class: 'notice' }, `Nova lista criada para: ${novas.join(', ')} (campanha recorrente).`) : null,
       copias.length ? h('div', { class: 'cp-recebidas' }, h('div', { class: 'cp-recebidas-tit' }, h('b', null, `Recebidas de outras lojas (${copias.length})`), h('small', { class: 'muted' }, ' · a mensagem e os critérios vêm prontos; a lista é montada com os clientes desta loja')), ...copias) : null,
-      h('div', { class: 'cp-acoes' }, h('button', { type: 'button', class: 'btn primary', onclick: () => criar(corpo, lista) }, '+ Criar campanha')),
+      h('div', { class: 'cp-acoes' }, h('button', { type: 'button', class: 'btn primary', onclick: () => criar(corpo, lista) }, '+ Criar campanha'),
+        !resumoDe(lista) ? h('button', { type: 'button', class: 'btn', title: 'A lista da tela Clientes → Hoje, todo dia, enviada pelo robô do WhatsApp (uma mensagem por cliente).', onclick: () => editarResumo(corpo, lista, null) }, '🤖 ' + TS.msgWpp.NOME_RESUMO) : null),
       lista.length ? h('div', { class: 'cp-grid' }, ...cards) : TS.card(null, null, TS.empty('Nenhuma campanha ainda. Clique em "Criar campanha" para montar a primeira.')));
   }
 
@@ -291,6 +330,87 @@
       h('div', { class: 'cp-lojas' }, ...itens), erro,
       h('div', { class: 'cp-acoes' }, h('span', { style: { flex: 1 } }), h('button', { type: 'button', class: 'btn', onclick: fechar }, 'Cancelar'), ok)));
     document.body.append(fundo);
+  }
+
+  // ---------- Campanha Resumo diário (decisão do dono): a lista de Clientes → Hoje, todo dia, para o robô ----------
+  /** textos padrão de cada motivo: começam com a vendedora que mais atende o cliente ({apresentacao}) */
+  const TEXTO_RESUMO = {
+    validade: 'Oi, {nome}! {apresentacao} 😊 O {chaoferta} que você gosta está com condição especial esta semana. Quer que a gente separe um pacote para você?',
+    vence: 'Oi, {nome}! {apresentacao} 😊 Você tem {pontos} pontos no programa de fidelidade, e parte deles vence em {vence}. Que tal usar numa visita? 🍵',
+    repor: 'Oi, {nome}! {apresentacao} 😊 Seu {cha} já deve estar acabando. Quer que a gente separe um pacote para você?',
+    aniv: 'Oi, {nome}! {apresentacao} 😊 Feliz aniversário! 🎉 Que tal passar na loja esta semana para comemorar com um chá?',
+    naoperder: 'Oi, {nome}! {apresentacao} 😊 Faz um tempinho que você não passa na loja. Chegaram novidades que têm a sua cara — vem provar! 🍵',
+    risco: 'Oi, {nome}! {apresentacao} 😊 Faz um tempinho que você não passa na loja. Chegaram novidades que têm a sua cara — vem provar! 🍵',
+    atencao: 'Oi, {nome}! {apresentacao} 😊 Temos novidades na loja e lembrei de você. Posso te mandar as opções?',
+  };
+  const DICA_MOTIVO = {
+    validade: 'O chá favorito (ou o último) do cliente tem lote vencendo em menos de 60 dias. {chaoferta} = esse chá.',
+    vence: 'Parte dos pontos do programa de fidelidade vence logo.',
+    repor: 'Pelo ritmo de compra, o chá dele já deve estar acabando.',
+    aniv: 'Faz aniversário nos próximos 7 dias.',
+    naoperder: 'Estava entre os melhores clientes e parou de vir.',
+    risco: 'Cliente bom que está demorando mais que o normal para voltar.',
+    atencao: 'Comprava com frequência e começou a espaçar.',
+  };
+  const resumoDe = (lista) => lista.find((c) => TS.msgWpp.ehResumo(c));
+  async function editarResumo(corpo, lista, camp) {
+    por(corpo, h('div', { class: 'loading' }, h('div', null, h('div', { class: 'spinner' }), h('p', null, 'Conferindo a lista de hoje…'))));
+    const val = TS.validade ? await TS.validade.dados(state.loja).catch(() => null) : null;
+    const disp = TS.estoqueDisp ? await TS.estoqueDisp(state.loja).catch(() => null) : null;
+    if (!corpo.isConnected) return;
+    const todos = listaResumo({ resumo: TS.msgWpp.MOTIVOS_RESUMO }, val, disp);
+    const conta = (m) => todos.filter((x) => x.m === m).length;
+    const marcados = new Set((camp && camp.filtros.resumo) || TS.msgWpp.RESUMO_PADRAO);
+    const textos = {};
+    for (const m of TS.msgWpp.MOTIVOS_RESUMO) textos[m] = h('textarea', { class: 'f-input cp-msg', rows: 3, 'aria-label': 'Mensagem: ' + NOME_MOTIVO[m] }, (camp && camp.porMotivo && camp.porMotivo[m]) || TEXTO_RESUMO[m]);
+    const limite = h('input', { class: 'f-input', type: 'number', min: 0, max: 500, value: camp && camp.limiteDia != null ? camp.limiteDia : 20, style: { maxWidth: '110px' } });
+    const resumoTxt = h('small', { class: 'muted' });
+    const linhas = h('div', { class: 'cp-resumo-motivos' });
+    const pintarMotivos = () => {
+      // quem tem mais de um motivo entra pelo mais importante dos marcados: a conta de verdade é a da lista
+      const sel = listaResumo({ resumo: [...marcados] }, val, disp).length;
+      resumoTxt.textContent = `Hoje entrariam ${fmt.int(sel)} ${sel === 1 ? 'cliente' : 'clientes'}, uma mensagem para cada.`;
+      linhas.replaceChildren(...TS.msgWpp.MOTIVOS_RESUMO.map((m) => {
+        const cx = h('input', { type: 'checkbox', checked: marcados.has(m) || null });
+        cx.addEventListener('change', () => { cx.checked ? marcados.add(m) : marcados.delete(m); pintarMotivos(); });
+        return h('div', { class: 'cp-resumo-mot' + (marcados.has(m) ? ' on' : '') },
+          h('label', { class: 'cp-resumo-cab' }, cx, h('b', null, NOME_MOTIVO[m]), h('small', { class: 'muted' }, ` · ${fmt.int(conta(m))} hoje`), TS.dica(DICA_MOTIVO[m])),
+          marcados.has(m) ? textos[m] : null);
+      }));
+    };
+    pintarMotivos();
+    const salvar = h('button', { type: 'button', class: 'btn primary' }, camp ? 'Salvar' : 'Criar a campanha');
+    salvar.addEventListener('click', async () => {
+      if (!marcados.size) { TS.avisar('Marque pelo menos um motivo.'); return; }
+      const ms = TS.msgWpp.MOTIVOS_RESUMO.filter((m) => marcados.has(m));
+      const porMotivo = Object.fromEntries(ms.map((m) => [m, textos[m].value.trim() || TEXTO_RESUMO[m]]));
+      const corpoReq = { loja: state.loja, nome: TS.msgWpp.NOME_RESUMO, mensagem: porMotivo[ms[ms.length - 1]], porMotivo, limiteDia: +limite.value || 0, filtros: { resumo: ms } };
+      salvar.disabled = true;
+      try {
+        const nova = listaResumo({ resumo: ms }, val, disp);
+        if (camp) {
+          const x = await api('PUT', `/api/campanhas/${camp.id}`, corpoReq);
+          Object.assign(camp, x.campanha);
+          // a lista de hoje acompanha os motivos novos (quem já recebeu continua como está)
+          const r = camp.rodadas[0];
+          if (r && new Date(r.em).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }) === TS.hojeSP()) { const y = await api('PUT', `/api/campanhas/${camp.id}/rodadas/${r.id}`, { loja: state.loja, lista: nova }); Object.assign(camp, y.campanha); }
+          abrirCampanha(corpo, lista, camp);
+        } else {
+          const x = await api('POST', '/api/campanhas', { ...corpoReq, recorrente: 'diaria', janela: 30, comparar: true, lista: nova });
+          lista.unshift(x.campanha);
+          abrirCampanha(corpo, lista, x.campanha);
+        }
+      } catch (e) { TS.avisarErro ? TS.avisarErro(e) : alert(e.message); salvar.disabled = false; }
+    });
+    por(corpo,
+      h('div', { class: 'cp-acoes' }, h('button', { type: 'button', class: 'btn', onclick: () => (camp ? abrirCampanha(corpo, lista, camp) : pintarLista(corpo, lista, [])) }, '‹ Voltar')),
+      TS.card('🤖 ' + TS.msgWpp.NOME_RESUMO, 'Todo dia, a lista de Clientes → Hoje vira esta campanha: uma mensagem por cliente, pelo motivo mais importante dele, com o nome da vendedora que mais o atende. Valem as mesmas travas de sempre: uma mensagem a cada tantos dias por cliente, quem não quer, e chá sem estoque (no chá a granel, menos de 100 g) não é oferecido.',
+        h('div', { class: 'cp-resumo' },
+          h('p', { class: 'muted' }, 'Motivos que o robô envia (ordem de importância: o cliente que está em mais de um recebe só a do primeiro). Os não marcados continuam na tela Hoje para a equipe.'),
+          linhas, resumoTxt,
+          h('label', { class: 'cp-campo' }, h('span', null, 'Máximo de mensagens por dia nesta campanha', TS.dica('Comece baixo (15 a 20) e suba aos poucos: mais mensagens automáticas aumentam o risco de o WhatsApp restringir o número da loja. O robô também respeita o máximo por dia do número.')), limite),
+          h('small', { class: 'muted' }, 'Campos: {nome}, {apresentacao} ("Aqui é a Gabrielly, da …"), {cha}, {chaoferta}, {pontos}, {vence}, {loja}. Depois de criar, ligue "Enviar pelo robô" na campanha; dá para desligar quando quiser.'),
+          h('div', { class: 'cfg-acoes' }, salvar))));
   }
 
   // ---------- criar ----------
@@ -561,9 +681,8 @@
       document.body.append(t); setTimeout(() => t.remove(), 6000);
     }
     // fila: próximo pendente (quem receberia oferta de produto sem estoque espera, sem sair da lista: volta quando chegar a nota)
-    const textos0 = [camp.mensagem, ...(camp.variacoes || [])];
     const prodsCamp = listaProdutos(camp.filtros || {}).filter((x) => !x.contem).map((x) => x.t);
-    const faltaPara = (it) => { const c = clienteDe(it.cpf); for (const t of textos0) { const f = TS.semEstoqueNaMensagem ? TS.semEstoqueNaMensagem(disp, t, c, { produtos: prodsCamp }) : null; if (f) return f; } return null; };
+    const faltaPara = (it) => { const c = clienteDe(it.cpf); for (const t of TS.msgWpp.textosDe(camp, it)) { const f = TS.semEstoqueNaMensagem ? TS.semEstoqueNaMensagem(disp, t, c, { produtos: prodsCamp, chaoferta: it.o || undefined }) : null; if (f) return f; } return null; };
     const esperandoEstoque = new Map();
     for (const it of r.lista) if (it.st === 'p') { const f = faltaPara(it); if (f) esperandoEstoque.set(it.cpf, f); }
     const pend = r.lista.filter((x) => x.st === 'p' && !esperandoEstoque.has(x.cpf));
@@ -587,7 +706,9 @@
     const noLimite = limiteDia > 0 && enviadosHoje >= limiteDia;
     // variações: rodízio pela quantidade já enviada (cada uma recebe mais ou menos o mesmo número)
     const textos = TS.msgWpp.textos(camp);
-    const varAtual = TS.msgWpp.variacaoDaVez(r.lista, textos.length);
+    // Resumo diário: cada cliente com o texto do motivo dele (sem variações)
+    const textosAtual = atual ? TS.msgWpp.textosDe(camp, atual) : textos;
+    const varAtual = TS.msgWpp.variacaoDaVez(r.lista, textosAtual.length);
     const contaHoje = limiteDia > 0 ? h('span', { class: 'cp-hoje' + (noLimite ? ' fim' : '') }, `Hoje: ${fmt.int(enviadosHoje)} de ${fmt.int(limiteDia)}`) : null;
     let fila;
     const fora = TS.msgWpp.foraDoPeriodo(camp, TS.hojeSP());
@@ -598,16 +719,29 @@
       fila = TS.card('Fila de envio', `${fmt.int(pend.length)} pendentes`, h('div', { class: 'cp-fim' }, contaHoje, h('b', null, ' Limite de hoje atingido.'), ` A fila continua amanhã. Dá para mudar o limite em "Editar campanha".`));
     } else if (atual) {
       const c = clienteDe(atual.cpf);
-      const txt = A().texto(textos[varAtual], c, extras(camp));
+      const txt = A().texto(textosAtual[varAtual], c, { ...extras(camp), chaoferta: atual.o || c.chaFavorito || 'chá' });
       const ct = A().contatoDe(c);
-      const enviar = h('a', { class: 'btn primary cp-enviar', href: c.wpp ? A().linkWpp(c, txt) : '#', target: '_blank', rel: 'noopener' }, 'Abrir no WhatsApp e ir para o próximo ›');
+      const enviar = h('a', { class: 'btn primary cp-enviar', href: '#' }, 'Abrir no WhatsApp e ir para o próximo ›');
       enviar.addEventListener('click', async (e) => {
-        if (!c.wpp || TS.demo) e.preventDefault();
+        e.preventDefault();
+        if (!c.wpp) return;
         enviar.classList.add('carregando');
-        try { await marcarSt(atual, 'e', null, textos.length > 1 ? varAtual : null); if (!TS.demo) await A().marcar(c, 'contatado', minha).catch(() => {}); } catch (err) { alert(err.message); }
+        try {
+          // regra forte: o servidor confere antes de abrir o WhatsApp (já recebeu no intervalo, não quer, está com o robô)
+          if (!TS.demo) {
+            try { await A().enviarWpp(c, txt, minha, camp.id); } catch (err) {
+              if (!err.bloqueado) throw err;
+              await marcarSt(atual, 'x', err.message.replace(/^Mensagem não enviada: /, '').slice(0, 120)).catch(() => {});
+              TS.avisar(err.message);
+              repintar();
+              return;
+            }
+          }
+          await marcarSt(atual, 'e', null, textosAtual.length > 1 ? varAtual : null);
+        } catch (err) { alert(err.message); }
         repintar();
       });
-      fila = TS.card('Fila de envio', `${fmt.int(pend.length)} pendentes${textos.length > 1 ? ` · variação ${varAtual + 1} de ${textos.length}` : ''} · com o WhatsApp da loja aberto neste computador, clique, confira e aperte Enter no WhatsApp`, contaHoje,
+      fila = TS.card('Fila de envio', `${fmt.int(pend.length)} pendentes${textosAtual.length > 1 ? ` · variação ${varAtual + 1} de ${textosAtual.length}` : atual.m ? ` · motivo: ${NOME_MOTIVO[atual.m] || atual.m}` : ''} · com o WhatsApp da loja aberto neste computador, clique, confira e aperte Enter no WhatsApp`, contaHoje,
         h('div', { class: 'cp-fila' },
           h('div', { class: 'cp-fila-cli' },
             h('div', { class: 'cj-nome' }, c.nome || 'Cliente'),
@@ -635,7 +769,7 @@
       cols: [
         { key: 'nome', label: 'Cliente', align: 'l', render: (x) => h('span', null, x.nome, h('small', { class: 'muted cp-cel' }, 'CPF ' + A().fmtCPF(x.cpf))) },
         { key: 'cel', label: 'Celular', align: 'l' },
-        { key: 'st', label: 'Situação', align: 'l', title: 'Pendente, Enviada (com a data e quem enviou: 🤖 robô = enviada pelo robô do WhatsApp), Pulada (com o motivo), Não quer mensagens ou Comparação (sorteado para ficar sem mensagem: serve para medir o efeito da campanha).', render: (x) => h('span', { class: 'cp-st ' + ST[x.st][1] }, x.st === 'p' && esperandoEstoque.has(x.cpf) ? `Esperando estoque (${esperandoEstoque.get(x.cpf)})` : ST[x.st][0], x.em != null && x.st !== 'c' ? h('small', null, ` ${d(x.em)}${x.por ? ' · ' + (x.por === 'robô' ? '🤖 robô' : x.por) : ''}`) : null, x.it.motivo ? h('small', { class: 'cp-motivo' }, x.it.motivo) : null), sortVal: (x) => ({ e: 3, x: 2, o: 1, c: 4, p: 0 })[x.st] },
+        { key: 'st', label: 'Situação', align: 'l', title: 'Pendente, Enviada (com a data e quem enviou: 🤖 robô = enviada pelo robô do WhatsApp), Pulada (com o motivo), Não quer mensagens ou Comparação (sorteado para ficar sem mensagem: serve para medir o efeito da campanha).', render: (x) => h('span', { class: 'cp-st ' + ST[x.st][1] }, x.st === 'p' && esperandoEstoque.has(x.cpf) ? `Esperando estoque (${esperandoEstoque.get(x.cpf)})` : ST[x.st][0], x.em != null && x.st !== 'c' ? h('small', null, ` ${d(x.em)}${x.por ? ' · ' + (x.por === 'robô' ? '🤖 robô' : x.por) : ''}`) : null, x.it.motivo ? h('small', { class: 'cp-motivo' }, x.it.motivo) : null, x.it.m ? h('small', { class: 'cp-motivo' }, NOME_MOTIVO[x.it.m] || x.it.m) : null), sortVal: (x) => ({ e: 3, x: 2, o: 1, c: 4, p: 0 })[x.st] },
         { key: 'voltou', label: `Voltou em ${camp.janela} dias`, align: 'l', title: `Comprou (cupom com CPF) do dia seguinte ao envio até ${camp.janela} dias depois. No grupo de comparação o prazo conta do dia em que a lista foi criada. "ainda no prazo" = pode voltar.`, render: (x) => (!x.ret ? '—' : x.ret.voltou ? h('span', { class: 'cp-st ok' }, `Sim · ${d(x.ret.primeira)} · ${fmt.brl0(x.ret.vt)}`) : x.ret.aberto ? h('span', { class: 'muted' }, 'ainda no prazo') : h('span', { class: 'muted' }, 'não')) },
         { key: 'acao', label: '', align: 'l', render: (x) => (x.st !== 'p' && x.st !== 'c' ? h('button', { type: 'button', class: 'link-btn', onclick: async (e) => { e.stopPropagation(); await marcarSt(x.it, 'p', x.it.motivo ? 'liberado' : null).catch((er) => alert(er.message)); repintar(); } }, 'voltar para a fila') : null), sortVal: () => 0 },
       ],
@@ -650,10 +784,10 @@
         h('button', { type: 'button', class: 'btn', onclick: () => pintarLista(corpo, lista, []) }, '‹ Voltar às campanhas'),
         rodSel,
         h('span', { style: { flex: 1 } }),
-        h('button', { type: 'button', class: 'btn', onclick: () => criar(corpo, lista, camp, true) }, 'Editar campanha'),
+        h('button', { type: 'button', class: 'btn', onclick: () => (TS.msgWpp.ehResumo(camp) ? editarResumo(corpo, lista, camp) : criar(corpo, lista, camp, true)) }, 'Editar campanha'),
         camp.recorrente ? h('button', { type: 'button', class: 'btn', onclick: async () => { try { const x = await api('PUT', `/api/campanhas/${camp.id}`, { loja: state.loja, ativa: camp.ativa === false }); Object.assign(camp, x.campanha); repintar(); } catch (e) { alert(e.message); } } }, camp.ativa === false ? 'Retomar repetição' : 'Pausar repetição') : null,
-        h('button', { type: 'button', class: 'btn', onclick: () => criar(corpo, lista, camp) }, 'Duplicar'),
-        (TS.lojas || []).length > 1 && !TS.demo ? h('button', { type: 'button', class: 'btn', onclick: () => copiarPara(camp) }, 'Copiar para outra loja') : null,
+        TS.msgWpp.ehResumo(camp) ? null : h('button', { type: 'button', class: 'btn', onclick: () => criar(corpo, lista, camp) }, 'Duplicar'),
+        (TS.lojas || []).length > 1 && !TS.demo && !TS.msgWpp.ehResumo(camp) ? h('button', { type: 'button', class: 'btn', onclick: () => copiarPara(camp) }, 'Copiar para outra loja') : null,
         h('button', { type: 'button', class: 'btn danger-txt', onclick: async () => { if (!confirm(`Apagar a campanha "${camp.nome}"? As listas e o retorno somem.`)) return; await api('DELETE', `/api/campanhas/${camp.id}?${qs()}`).catch((e) => alert(e.message)); lista.splice(lista.indexOf(camp), 1); pintarLista(corpo, lista, []); } }, 'Apagar')),
       h('div', { class: 'page-head cp-head' }, h('div', null, h('h2', { class: 'page-title' }, camp.nome),
         h('div', { class: 'page-sub' }, `${camp.recorrente ? (camp.recorrente === 'diaria' ? 'Todo dia · ' : camp.recorrente === 'semanal' ? 'Toda semana · ' : 'Todo mês · ') : ''}lista de ${fmt.date(r.em.slice(0, 10))} · retorno medido em ${camp.janela} dias${camp.comparar ? ` · guarda ${TS.campRetorno.PCT}% sem mensagem para comparar` : ''}`))),

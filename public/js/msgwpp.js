@@ -3,7 +3,7 @@
  * e o servidor (robô do WhatsApp, src/zapfila.js). Testes: tests/unit/zapfila.test.js. */
 (function () {
   /** campos que a mensagem aceita ({nome}, {cha}…); {saudacao} é calculada na hora do envio */
-  const CAMPOS = ['nome', 'nomecompleto', 'loja', 'cha', 'ultimocha', 'pacote', 'vendedora', 'pontos', 'vence', 'vencepts', 'ultimacompra', 'dias', 'aniversario', 'visitas', 'saudacao'];
+  const CAMPOS = ['nome', 'nomecompleto', 'loja', 'cha', 'ultimocha', 'pacote', 'vendedora', 'apresentacao', 'pontos', 'vence', 'vencepts', 'ultimacompra', 'dias', 'aniversario', 'visitas', 'chaoferta', 'saudacao'];
   const saudacao = (hora) => (hora < 12 ? 'Bom dia' : hora < 18 ? 'Boa tarde' : 'Boa noite');
   const tem = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
 
@@ -51,6 +51,17 @@
 
   /** mensagem principal + variações, e qual é a da vez (rodízio pela quantidade já enviada na lista) */
   const textos = (camp) => [camp.mensagem, ...(camp.variacoes || [])];
+
+  /**
+   * Campanha Resumo diário (decisão do dono): a lista do dia é a da tela Clientes → Hoje, só com os motivos escolhidos, uma
+   * mensagem por cliente — a do motivo mais importante dele, nesta ordem. Cada motivo tem o próprio texto (camp.porMotivo).
+   */
+  const MOTIVOS_RESUMO = ['validade', 'vence', 'repor', 'aniv', 'naoperder', 'risco', 'atencao'];
+  const RESUMO_PADRAO = ['validade', 'vence', 'repor'];
+  const NOME_RESUMO = 'Campanha Resumo diário';
+  const ehResumo = (camp) => !!(camp && camp.filtros && Array.isArray(camp.filtros.resumo));
+  /** os textos que valem para este cliente da lista: o do motivo dele (Resumo diário) ou a mensagem + variações */
+  const textosDe = (camp, it) => (ehResumo(camp) && it && it.m && camp.porMotivo && camp.porMotivo[it.m] ? [camp.porMotivo[it.m]] : textos(camp));
   const variacaoDaVez = (lista, n) => (n > 0 ? lista.filter((x) => x.st === 'e').length % n : 0);
 
   /** marca do contato feito por esta campanha (fica no cadastro de contatos do cliente) */
@@ -74,7 +85,7 @@
 
   /** período da campanha: 'antes' (ainda não começou), 'depois' (já terminou) ou null (dentro, ou sem datas). dia = 'AAAA-MM-DD' de Brasília */
   const foraDoPeriodo = (c, dia) => (c && c.inicio && dia < c.inicio ? 'antes' : c && c.fim && dia > c.fim ? 'depois' : null);
-  const API = { foraDoPeriodo, CAMPOS, saudacao, montar, paraDoLink, linkDoCelular, linkComTexto, listaProdutos, nomesProdutos, extras, textos, variacaoDaVez, motivoCampanha, prazoCampanha, bloqueio, textoBloqueio };
+  const API = { MOTIVOS_RESUMO, RESUMO_PADRAO, NOME_RESUMO, ehResumo, textosDe, foraDoPeriodo, CAMPOS, saudacao, montar, paraDoLink, linkDoCelular, linkComTexto, listaProdutos, nomesProdutos, extras, textos, variacaoDaVez, motivoCampanha, prazoCampanha, bloqueio, textoBloqueio };
   if (typeof module !== 'undefined' && module.exports) { module.exports = API; return; }
   TS.msgWpp = API;
 })();
