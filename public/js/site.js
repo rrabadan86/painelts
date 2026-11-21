@@ -124,6 +124,7 @@
         const r = await fetch(TS.api('site/consultar'), { method: 'POST', credentials: 'same-origin', headers: { 'X-Painel': '1' } });
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j.erro || 'Não consegui consultar o site.');
+        if (TS.foto) TS.foto.limpar(); // as fotos dos produtos vêm desta consulta: as listas buscam de novo
         pintar(corpo, comTabela(await buscar()));
       } catch (e) { btn.disabled = false; btn.textContent = 'Consultar agora'; msg.className = 'neg'; msg.textContent = e.message; }
     } }, d.rodando ? 'Consultando…' : 'Consultar agora') : null;
