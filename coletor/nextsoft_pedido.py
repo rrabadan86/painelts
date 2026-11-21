@@ -103,12 +103,15 @@ def venda_conjunta(page):
     """Janela "Venda Conjunta" do site: se estiver aberta, lê os itens exigidos e clica em "Colocar Todos no Carrinho".
     Devolve a lista [{cod, nome, qtd, preco}] (pode ser vazia) ou None quando a janela não está na tela."""
     itens = page.evaluate("""() => {
-      const vis = (e) => { const s = getComputedStyle(e); return s.display !== 'none' && s.visibility !== 'hidden' && e.offsetHeight > 0; };
-      const b = [...document.querySelectorAll('a,button,input[type=button],input[type=submit]')]
-        .find((x) => /colocar\\s+todos\\s+no\\s+carrinho/i.test((x.textContent || x.value || '').replace(/\\s+/g, ' ')) && vis(x));
-      if (!b) return null;
+      // janela fechada = ele ou um pai com display:none (não exige tamanho: no site de verdade a checagem por tamanho falhava)
+      const fechado = (e) => { for (let x = e; x && x.nodeType === 1; x = x.parentElement) if (getComputedStyle(x).display === 'none') return true; return false; };
+      const txt = (e) => String(e.tagName === 'INPUT' ? e.value || '' : e.textContent || '').replace(/\\s+/g, ' ').trim();
+      const achados = [...document.querySelectorAll('a,button,input,span,div,label,td')].filter((x) => /^colocar\\s+todos\\s+no\\s+carrinho$/i.test(txt(x)) && !fechado(x));
+      if (!achados.length) return null;
+      const el = achados[achados.length - 1];
+      const b = el.closest('a,button,input,[onclick]') || el;
       const num = (t) => { const m = /-?[\\d.]*\\d(?:,\\d+)?/.exec(String(t || '')); return m ? +m[0].replace(/\\./g, '').replace(',', '.') : null; };
-      const j = b.closest('.modal, .modal-content, [role=dialog]') || document;
+      const j = b.closest('.modal, .modal-content, [role=dialog], .ui-dialog') || document;
       const itens = [...j.querySelectorAll('table tr')].map((tr) => [...tr.querySelectorAll('td')].map((td) => td.textContent.replace(/\\s+/g, ' ').trim()))
         .filter((c) => c.length >= 4 && /\\d/.test(c[0])).map((c) => ({ cod: c[0], nome: c[1], qtd: num(c[c.length - 2]), preco: num(c[c.length - 1]) }));
       b.click();

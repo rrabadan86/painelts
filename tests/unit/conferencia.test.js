@@ -173,3 +173,18 @@ test('saúde dos dados: casamento por código × nome × não casado, vendas sem
   assert.deepStrictEqual(CF.sinalFonte({ em: null }, agora), { sinal: 'cinza', horas: null, idade: 'nunca' });
   assert.strictEqual(CF.sinalFonte({ em: 'data ruim' }, agora).sinal, 'cinza');
 });
+
+test('CONF-DEMO-01: na apresentação o exemplo de caixa fechado depois da meia-noite aparece em qualquer data (dois dias seguidos, sem taxa)', () => {
+  // já falhou na virada do dia: o exemplo usava sempre o 10º e o 11º dia de venda, que em certas datas não eram vizinhos ou tinham taxa
+  const DEMO = require('../../src/demo'), CF = require('../../src/conferencia'), IND = require('../../src/indicadores');
+  const partes = DEMO.partes(), base = Date.parse(IND.hojeSP().iso + 'T12:00:00Z');
+  const ruins = [];
+  for (let i = 0; i < 60; i++) {
+    const hoje = new Date(base - i * 864e5).toISOString().slice(0, 10);
+    for (const p of partes) {
+      const v = CF.demo(p, hoje).lista.filter((x) => x.cod === 'virada');
+      if (v.length !== 2 || !/depois da meia-noite/.test(v[0].motivo)) ruins.push(`${hoje} ${p.id}`);
+    }
+  }
+  assert.deepStrictEqual(ruins, []);
+});

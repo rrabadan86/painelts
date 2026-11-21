@@ -54,7 +54,8 @@ test('o favorito e o robô aceitam a venda conjunta em "Colocar Todos no Carrinh
   const fav = fs.readFileSync(path.join(raiz, 'public/js/carrinho-site.js'), 'utf8'), robo = fs.readFileSync(path.join(raiz, 'coletor/nextsoft_pedido.py'), 'utf8');
   assert.match(fav, /function vendaConjunta\(d\)/);
   assert.match(fav, /colocar\\s\+todos\\s\+no\\s\+carrinho/);
-  assert.match(fav, /const vc = junto \? null : vendaConjunta\(doc\(\)\)/, 'uma vez por produto');
+  assert.match(fav, /const vc = aceitou < 2 \? vendaConjunta\(doc\(\)\) : null/, 'no máximo duas tentativas por produto');
+  assert.match(fav, /function diagnostico\(d\)/, 'quando o site não confirma, diz o que havia na página');
   assert.match(robo, /def venda_conjunta\(page\)/);
   assert.match(robo, /junto = venda_conjunta\(page\)/);
   // nenhum dos dois clica em finalizar/fechar pedido

@@ -183,13 +183,23 @@ function demo(parte, hoje) {
   const dias = [...painel.keys()].filter((d) => d < hoje).sort();
   const OPS = ['Operadora Ana', 'Operadora Bia', 'Operador Caio'];
   const fechamentos = [];
+  // caixa fechado depois da meia-noite: parte de um dia cai no seguinte. Só existe entre dois dias SEGUIDOS no calendário; como a
+  // loja fictícia tem dias sem venda, procura o par seguido mais perto de 10 dias de venda atrás (antes eram sempre o 10º e o 11º,
+  // que em certas datas não eram vizinhos e o exemplo sumia da tela)
+  const nDe = (k) => dias.length - 1 - k; // há quantos dias de venda
+  let virada = -1; // índice do dia que recebe a parte do dia anterior
+  // dois dias sem taxa de serviço nem item de centavo (com elas a diferença dos dois dias não se anula e a tela não reconhece a virada)
+  const limpo = (k) => { const x = painel.get(dias[k]); return !(x.taxas > 0) && !(x.centavos > 0); };
+  const seguidos = (k) => CT.diaDe(dias[k]) - CT.diaDe(dias[k - 1]) === 1 && ![nDe(k), nDe(k - 1)].includes(17);
+  for (let k = dias.length - 1 - 8; k >= 1 && virada < 0; k--) if (seguidos(k) && limpo(k) && limpo(k - 1)) virada = k;
+  for (let k = dias.length - 1 - 8; k >= 1 && virada < 0; k--) if (seguidos(k)) virada = k; // sem par "limpo": o primeiro par seguido
   dias.forEach((dia, k) => {
-    const p = painel.get(dia), n = dias.length - 1 - k; // n = há quantos dias de venda
+    const p = painel.get(dia), n = nDe(k);
     if (n === 0) return; // ontem: o caixa ainda não foi lido
     let total = r2(p.fat + p.taxas + p.centavos);
     if (n === 4) total = r2(total + 37.9); // um dia que não bate
-    if (n === 11) total = r2(total - 120); // caixa fechado depois da meia-noite: parte cai no dia seguinte
-    if (n === 10) total = r2(total + 120);
+    if (k === virada - 1) total = r2(total - 120); // parte cai no dia seguinte
+    if (k === virada) total = r2(total + 120);
     if (n === 17) total = r2(total - 15.5);
     const gaveta = n === 6 ? -12 : n === 13 ? 5 : n === 20 ? -8.5 : n === 27 ? -20 : n === 34 ? 3 : 0;
     const formas = [['Cartão de Crédito', 0.5], ['Cartão de Débito', 0.22], ['Pix', 0.22]].map(([forma, x]) => ({ forma, venda: r2(total * x), informado: r2(total * x), dif: 0 }));
