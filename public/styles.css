@@ -2354,6 +2354,8 @@ details.vl-ajuda summary { cursor: pointer; font-weight: 600; }
 .cf-menu-lista button { background: none; border: 0; text-align: left; padding: 8px 10px; border-radius: 7px; font: inherit; font-size: 13.5px; cursor: pointer; color: #222; }
 .cf-menu-lista button:hover { background: #f4f1ea; }
 .cf-tab td:last-child { width: 1%; }
+/* frase de lista vazia: ocupa a linha toda (sem isto, a regra "última coluna estreita" de algumas tabelas a espremia a 3 px e o texto saía uma letra por linha no celular) */
+.t td.t-vazio { width: auto !important; white-space: normal; text-align: center; padding: 18px 12px; }
 .cff summary { cursor: pointer; padding: 2px 0; }
 .cff-lista { margin-top: 10px; display: flex; flex-direction: column; }
 .cff-linha { display: grid; grid-template-columns: 200px 110px 1fr auto; gap: 10px; align-items: center; padding: 8px 4px; border-top: 1px solid #eee8db; font-size: 13.5px; }
