@@ -13,7 +13,7 @@ Painel de vendas das lojas Tea Shop (substitui o Power BI). Responda sempre em *
 
 Regras por parte do código ficam em `.claude/rules/` e carregam sozinhas ao mexer nos arquivos: `tela.md`, `visual.md` (padrão de layout: cabeçalho, avisos, quadros, card com abas e `TS.table`, cores por classe, celular), `coletor.md`, `ia.md`, `nfe.md`, `zap.md` (robô do WhatsApp).
 Roteiros em `.claude/skills/`: `subir-versao`, `conferir-pr` (do PR até o dono poder instalar), `conferir-celular`, `nova-tela`, `nova-consulta-ia`, `testar-favorito` (favorito e robô do Sistema de Pedidos em páginas de mentira).
-Hooks (`.claude/settings.json`): bloqueiam commit/push de segredos e limpam os restos dos testes de tela.
+Hooks (`.claude/settings.json`): bloqueiam commit/push de segredos, limpam os restos dos testes de tela, lembram de atualizar as instruções (`lembrar-docs`), **bloqueiam o commit que mexe no favorito do carrinho ou no robô do Sistema de Pedidos se os testes deles falharem** (`testar-favorito`, roda a skill de mesmo nome sozinho) e, **depois de todo push, lembram de seguir a skill `conferir-pr` até o fim** (`conferir-pr`).
 
 ## Convenções de código
 - Rota que grava exige o cabeçalho `X-Painel: 1`; ações importantes vão para a auditoria (`C.auditar`).

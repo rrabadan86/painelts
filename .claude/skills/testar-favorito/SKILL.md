@@ -26,3 +26,5 @@ description: Testa o favorito "Carrinho Tea Shop" (public/js/carrinho-site.js) e
 
 Outros casos que a mesma técnica cobre: aviso "não possui estoque suficiente" (`avisoDoSite`), máximo por pedido (`ajustar`), produto não achado
 pela busca (`cartoes`). Para cada novo formato de página do site, acrescente um caso ao `carrinho-conjunta.spec`.
+
+**Automático:** o hook `testar-favorito` (`.claude/hooks/`) roda os passos 4 sozinho antes de todo commit que mexe no favorito ou no robô e bloqueia o commit se falhar.

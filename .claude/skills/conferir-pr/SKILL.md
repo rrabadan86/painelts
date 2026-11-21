@@ -22,3 +22,5 @@ description: O ciclo depois do push — abrir o PR, acompanhar os testes do GitH
 5. **Testes do main ✓:** avise o dono em poucas linhas — pode instalar (**Atualizações do painel → instalar**, recarregar a página), o que muda
    para ele e o que conferir no uso real (o que só foi testado na apresentação). ✗ no main: mesmo caminho do passo 3, num PR novo.
 6. **Avisos repetidos** (assinatura criada, PR fechado, lembrete antigo): uma linha dizendo o estado atual, sem repetir o relatório.
+
+**Automático:** o hook `conferir-pr` (`.claude/hooks/`) entrega este roteiro ao Claude logo depois de todo `git push` de ramo (tag de versão não conta).
