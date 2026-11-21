@@ -56,3 +56,31 @@ test('submenu no celular: abrir a última tela do grupo mantém o item marcado �
   await expect(marcado).toHaveText(nome, { timeout: 40000 });
   await expect.poll(() => dentro(marcado)).toBe(true);
 });
+
+// no celular a lista é em cartões e se refaz a cada toque: o cartão em que a pessoa está mexendo não pode mudar de lugar
+test('Pedido no celular: apertar ＋ várias vezes mantém o cartão no mesmo lugar (não sobe para junto dos pedidos)', async ({ page }, info) => {
+  test.skip(info.project.name !== 'celular', 'no computador é tabela, que já guarda a ordem');
+  await abrir(page, '#pedido');
+  await page.locator('.ped-tools .seg button', { hasText: /^Site de pedidos completo/ }).click();
+  const cartoes = page.locator('.ped-cards .ped-card');
+  await expect(cartoes.first()).toBeVisible({ timeout: 40000 });
+  // um cartão ainda sem quantidade, lá no meio da lista (depois dos que já estão no pedido)
+  const k = await cartoes.evaluateAll((els) => els.findIndex((el, i) => i >= 8 && el.querySelector('.ped-step[aria-label="Mais"]') && !el.classList.contains('on') && !el.classList.contains('obr')));
+  expect(k).toBeGreaterThan(0);
+  const cod = (await cartoes.nth(k).locator('.est-tam').first().innerText()).match(/cód\. \S+/)[0];
+  const vizinhos = async () => (await cartoes.evaluateAll((els, i) => els.slice(i - 1, i + 2).map((el) => (el.querySelector('.est-tam') || el).textContent.match(/cód\. \S+/)[0]), k));
+  const antes = await vizinhos();
+  for (let n = 0; n < 3; n++) {
+    await cartoes.nth(k).locator('.ped-step[aria-label="Mais"]').click();
+    await expect(cartoes.nth(k)).toContainText(cod); // continua na mesma posição depois de cada toque
+  }
+  expect(await vizinhos(), 'os vizinhos do cartão são os mesmos').toEqual(antes);
+  await expect(cartoes.nth(k)).toHaveClass(/\bon\b/);
+  expect(+(await cartoes.nth(k).locator('input.ped-q').inputValue())).toBeGreaterThan(0);
+  // trocar de aba e voltar: aí sim a lista se reorganiza (o que está no pedido vem primeiro)
+  await page.locator('.ped-tools .seg button', { hasText: /^Complemento/ }).click();
+  await page.locator('.ped-tools .seg button', { hasText: /^Site de pedidos completo/ }).click();
+  const novo = await page.locator('.ped-cards .ped-card').evaluateAll((els, c) => els.findIndex((el) => el.textContent.includes(c)), cod);
+  expect(novo).toBeGreaterThanOrEqual(0);
+  expect(novo).toBeLessThan(k);
+});
