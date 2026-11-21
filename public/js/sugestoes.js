@@ -114,7 +114,7 @@
     const corpo = h('div', null, h('div', { class: 'card' }, h('div', { class: 'loading' }, h('div', null, h('div', { class: 'spinner' }), h('p', null, 'Carregando…')))));
     root.append(corpo);
     const loja = state.loja;
-    carregar(loja).then((d) => { if (corpo.isConnected) pintar(corpo, loja, d); }).catch((e) => corpo.replaceChildren(h('div', { class: 'notice err' }, e.message)));
+    Promise.all([carregar(loja), TS.foto ? TS.foto.carregar() : null]).then(([d]) => { if (corpo.isConnected) pintar(corpo, loja, d); }).catch((e) => corpo.replaceChildren(h('div', { class: 'notice err' }, e.message)));
   };
 
   function pintar(corpo, loja, d) {
@@ -161,8 +161,8 @@
     } }, 'Tirar estrela') : null);
     const cols = [
       { key: 'desc', label: 'Produto', align: 'l', sticky: true, wrap: true, title: 'A etiqueta é a situação na loja quando o produto foi marcado: tem, pouco (chá abaixo de 700 g) ou acabou.',
-        render: (s) => { const [t, c] = SIT[s.situacao] || ['', '']; return h('div', { class: 'sug-prod-cel' }, h('b', null, (s.st === 'aberta' ? '⭐ ' : '') + s.desc), ' ', t ? h('span', { class: 'badge ' + c }, t) : null, s.novo ? h('span', { class: 'badge warn' }, 'novo') : null, TS.grupoProd.marca(s.grp),
-          s.st === 'aberta' && s.equipe > 1 ? h('small', { class: 'muted sug-motivo' }, `${s.equipe} pessoas da equipe pediram`) : null); } },
+        render: (s) => { const [t, c] = SIT[s.situacao] || ['', '']; const comFoto = (el) => (TS.foto && !(s.agora && /^kg$/i.test(s.agora.un || s.un || '')) ? TS.foto.comMini(el, s.cod, s.desc, { grupo: s.grp }) : el); return comFoto(h('div', { class: 'sug-prod-cel' }, h('b', null, (s.st === 'aberta' ? '⭐ ' : '') + s.desc), ' ', t ? h('span', { class: 'badge ' + c }, t) : null, s.novo ? h('span', { class: 'badge warn' }, 'novo') : null, TS.grupoProd.marca(s.grp),
+          s.st === 'aberta' && s.equipe > 1 ? h('small', { class: 'muted sug-motivo' }, `${s.equipe} pessoas da equipe pediram`) : null)); } },
       { key: 'agora', label: 'Estoque agora', title: d.todos ? 'Quanto tem na loja agora (planilha de estoque do AppNext). A etiqueta da coluna Produto é a situação quando a estrela foi marcada.' : 'Se o produto tem na loja agora (tem / pouco / acabou).',
         render: (s) => { const a = s.agora; if (!a) return h('span', { class: 'muted' }, '—'); const [t, c] = SIT[a.situacao] || ['', '']; return a.qtd != null ? h('div', { class: 'sug-agora' }, h('b', null, /^kg$/i.test(a.un) ? `${TS.fmt.kg(a.qtd)} kg` : `${TS.fmt.int(a.qtd)} ${String(a.un || 'un').toLowerCase()}`), ' ', h('span', { class: 'badge ' + c }, t)) : h('span', { class: 'badge ' + c }, t); },
         sortVal: (s) => (s.agora ? (s.agora.qtd != null ? s.agora.qtd : { acabou: 0, pouco: 1, tem: 2 }[s.agora.situacao]) : -1) },

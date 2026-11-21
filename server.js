@@ -260,6 +260,9 @@ async function pacote(lojas, force, perfilDados = 'completo', desde = null) {
   return { buf, gz, br, etag, at, stale };
 }
 
+// fotos de produto vêm direto do site da Tea Shop: só imagens (img-src) e só destes servidores (src/site.js)
+const { HOSTS_FOTO } = require('./src/site');
+
 // ---------- app ----------
 const app = express();
 app.disable('x-powered-by');
@@ -268,7 +271,7 @@ app.use(compression());
 app.use((req, res, next) => {
   res.set({
     'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY', 'Referrer-Policy': 'same-origin',
-    'Content-Security-Policy': "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'",
+    'Content-Security-Policy': `default-src 'self'; img-src 'self' data: ${HOSTS_FOTO.map((x) => 'https://' + x).join(' ')}; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'`,
     'Permissions-Policy': 'camera=(self), microphone=(), geolocation=(), payment=()',
     'Cross-Origin-Opener-Policy': 'same-origin',
     // HTTPS sempre (só quando o painel roda atrás do HTTPS, COOKIE_SECURE=true)
@@ -283,7 +286,7 @@ const pub = path.join(__dirname, 'public');
 const APP_SCRIPTS = [
   'core.js', 'contas.js', 'metadia.js', 'components.js', 'dicas.js', 'rules.js', 'pages.js', 'fidelidade.js',
   'msgwpp.js', 'recompra.js', 'clientes.js', 'campretorno.js', 'campanhas.js', 'zap.js', 'espera.js', 'extras.js', 'contabilidade.js',
-  'ruptura.js', 'visaodono.js', 'classeprod.js', 'grupoprod.js', 'custodata.js', 'estoque.js', 'devolucao.js', 'precos.js', 'inventario.js', 'sugestoes.js', 'validade.js', 'nfsaida.js', 'creditos.js', 'orcamento.js', 'checklist.js',
+  'ruptura.js', 'visaodono.js', 'classeprod.js', 'grupoprod.js', 'fotoprod.js', 'custodata.js', 'estoque.js', 'devolucao.js', 'precos.js', 'inventario.js', 'sugestoes.js', 'validade.js', 'nfsaida.js', 'creditos.js', 'orcamento.js', 'checklist.js',
   'site.js', 'conferencia.js', 'conferencia-tela.js', 'inicio.js', 'pedido.js', 'ia.js', 'dre.js', 'apagar.js', 'comprasvendas.js', 'efeitopreco.js', 'equipe.js', 'mapa.js', 'feriados.js', 'fidretorno.js',
   'guia.js', 'notificacoes.js', 'config.js', 'script.js', 'fechamento.js', 'sistema.js', 'main.js',
 ];
@@ -750,6 +753,16 @@ app.get('/api/demo/admin/notif', (req, res) => res.json({ ativo: true, horario: 
   telegram: { configurado: false, destinos: [] }, email: { host: 'smtp.exemplo.com', port: 587, secure: false, user: 'painel@exemplo.com', from: 'Painel <painel@exemplo.com>', temSenha: true, configurado: true,
     destinos: [{ email: 'franqueado@exemplo.com', nome: 'Franqueado(a)', lojas: ['*'] }] } }));
 app.get('/api/demo/classificacao', (req, res) => res.json({ produtos: {} }));
+// fotos fictícias (desenho com a "estampa" de cada produto) para os acessórios da apresentação
+app.get('/api/demo/site/fotos', (req, res) => {
+  try {
+    const CORES = [['#F3E3D8', '#D9716A', '#6E9A6B'], ['#DCE9F2', '#3F6FA3', '#9DB9D4'], ['#F7EFD2', '#C9A227', '#2C5234'], ['#EDE3F2', '#8A5FA8', '#D9A7C7'], ['#E2F0E4', '#2C7A4B', '#F6C94B']];
+    const svg = ([f, a, b], k) => 'data:image/svg+xml,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="#FAF8F3"/><path d="M70 40h8a12 12 0 010 24h-8" fill="none" stroke="#b9b2a2" stroke-width="5"/><rect x="24" y="26" width="48" height="52" rx="8" fill="${f}"/>${[0, 1, 2, 3].map((n) => `<circle cx="${36 + (n % 2) * 24}" cy="${42 + Math.floor(n / 2) * 22}" r="${k ? 4 : 6}" fill="${n % 2 ? a : b}"/>`).join('')}</svg>`);
+    const itens = ((DEMO.estoqueDemo(req.query.loja).estoque.itens) || []).filter((i) => i.un !== 'Kg').slice(0, 1500)
+      .map((i, k) => ({ s: String(i.cod), n: i.desc, v: '', u: '#', i: [svg(CORES[k % CORES.length], 0), svg(CORES[(k + 2) % CORES.length], 1)] }));
+    res.json({ demo: true, em: new Date().toISOString(), itens });
+  } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
+});
 app.get('/api/demo/site', (req, res) => res.json({ demo: true, em: new Date().toISOString(), origem: 'agendada', itens: [] }));
 app.get('/api/demo/contatos', (req, res) => res.json({ contatos: {} }));
 require('./src/push-api').demo(app); // notificações na apresentação: aparelho fictício, nada é ativado nem enviado
@@ -2066,6 +2079,10 @@ app.get('/api/site', (req, res) => {
   // ainda sem histórico (consultas de antes desta versão): começa pela consulta atual
   if (!hist) hist = SITE.semear(d);
   res.json({ ...(d || { itens: [] }), historico: hist || {}, tabela: tabela ? tabela.itens.filter((t) => t.preco > 0.011).map((t) => ({ cod: t.cod, desc: t.desc, preco: t.preco })) : null, rodando: SITE.rodando(), podeConsultar: podeContabilidade(req) });
+});
+// fotos dos produtos (públicas no site): para a miniatura nas listas (Pedido, ⭐ Sugestões). Qualquer pessoa logada; sem preço nem custo
+app.get('/api/site/fotos', (req, res) => {
+  try { res.json(SITE.fotos()); } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
 });
 let siteUltimoManual = 0;
 app.post('/api/site/consultar', async (req, res) => {
