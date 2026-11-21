@@ -62,15 +62,29 @@
     const porCod = new Map(), em = new Date().toISOString(), n = { pedido: 0, semsite: 0, nao: 0 };
     for (const x of itens) { const vai = x.pedir > 0 && ['ok', 'sem', 'obrig'].includes(x.site), a = porCod.get(String(x.cod)); if (!a) porCod.set(String(x.cod), { pedir: vai ? x.pedir : 0, site: vai ? 'ok' : x.site }); else if (vai) { a.pedir += x.pedir; a.site = 'ok'; } }
     for (const s of DEMO.d.itens) {
-      if (s.st !== 'aberta' || s.aguardando) continue;
+      if (s.st !== 'aberta') continue;
       const x = porCod.get(s.cod);
+      if (s.aguardando) { if (x && x.pedir > 0 && (x.site === 'ok' || x.site === 'sem') && s.aguardando.conf !== true) s.aguardando = { em, qtd: x.pedir, conf: false }; continue; }
       let hh;
-      if (x && x.pedir > 0 && (x.site === 'ok' || x.site === 'sem')) { hh = { em, res: 'pedido', motivo: '' }; s.aguardando = { em, qtd: x.pedir }; }
+      if (x && x.pedir > 0 && (x.site === 'ok' || x.site === 'sem')) { hh = { em, res: 'pedido', motivo: '' }; s.aguardando = { em, qtd: x.pedir, conf: false }; }
       else if (x && (x.site === 'indisp' || x.site === 'fora')) hh = { em, res: 'semsite', motivo: 'Sem estoque no site da franquia (automático)' };
       else hh = { em, res: 'nao', motivo: (s.decisao && s.decisao.motivo) || 'Não entrou desta vez' };
       (s.hist = s.hist || []).push(hh); s.decisao = null; n[hh.res]++;
     }
     return { ok: true, ...n };
+  }
+  /** "Não fiz este pedido": o que estava aguardando entrega volta para o próximo pedido (cods = produtos; sem cods = tudo o que não foi confirmado) */
+  async function devolver(loja, cods) {
+    if (!TS.demo) return (await enviar('POST', `/api/pedido/sugestoes/devolver?${q(loja)}`, { cods: cods || null })).devolvidas;
+    await carregar(loja);
+    const quais = cods && cods.length ? new Set(cods.map(String)) : null, em = new Date().toISOString();
+    let n = 0;
+    for (const s of DEMO.d.itens) {
+      if (s.st !== 'aberta' || !s.aguardando || (quais ? !quais.has(String(s.cod)) : s.aguardando.conf === true)) continue;
+      (s.hist = s.hist || []).push({ em, res: 'naopediu', motivo: 'Marcado como não pedido: volta para o próximo pedido' });
+      delete s.aguardando; s.decisao = null; n++;
+    }
+    return n;
   }
   /** as abertas agrupadas por produto (a mesma conta do servidor, para a apresentação) */
   function agrupar(itens) {
@@ -89,7 +103,7 @@
   }
   /** para o Pedido: as abertas agrupadas (servidor manda em p.sugestoes; na apresentação vêm daqui) */
   async function paraPedido(loja, p) { return TS.demo ? agrupar((await carregar(loja)).itens) : (p && p.sugestoes) || []; }
-  TS.sug = { carregar, decidir, fechar, paraPedido, agrupar, MOTIVOS, RES, SIT, dataTxt };
+  TS.sug = { carregar, decidir, fechar, devolver, paraPedido, agrupar, MOTIVOS, RES, SIT, dataTxt };
 
   // ---------- tela ----------
   TS.pages.sugestoes = function (root) {
@@ -147,7 +161,7 @@
     } }, 'Tirar estrela') : null);
     const cols = [
       { key: 'desc', label: 'Produto', align: 'l', sticky: true, wrap: true, title: 'A etiqueta é a situação na loja quando o produto foi marcado: tem, pouco (chá abaixo de 700 g) ou acabou.',
-        render: (s) => { const [t, c] = SIT[s.situacao] || ['', '']; return h('div', { class: 'sug-prod-cel' }, h('b', null, (s.st === 'aberta' ? '⭐ ' : '') + s.desc), ' ', t ? h('span', { class: 'badge ' + c }, t) : null, s.novo ? h('span', { class: 'badge warn' }, 'novo') : null,
+        render: (s) => { const [t, c] = SIT[s.situacao] || ['', '']; return h('div', { class: 'sug-prod-cel' }, h('b', null, (s.st === 'aberta' ? '⭐ ' : '') + s.desc), ' ', t ? h('span', { class: 'badge ' + c }, t) : null, s.novo ? h('span', { class: 'badge warn' }, 'novo') : null, TS.grupoProd.marca(s.grp),
           s.st === 'aberta' && s.equipe > 1 ? h('small', { class: 'muted sug-motivo' }, `${s.equipe} pessoas da equipe pediram`) : null); } },
       { key: 'agora', label: 'Estoque agora', title: d.todos ? 'Quanto tem na loja agora (planilha de estoque do AppNext). A etiqueta da coluna Produto é a situação quando a estrela foi marcada.' : 'Se o produto tem na loja agora (tem / pouco / acabou).',
         render: (s) => { const a = s.agora; if (!a) return h('span', { class: 'muted' }, '—'); const [t, c] = SIT[a.situacao] || ['', '']; return a.qtd != null ? h('div', { class: 'sug-agora' }, h('b', null, /^kg$/i.test(a.un) ? `${TS.fmt.kg(a.qtd)} kg` : `${TS.fmt.int(a.qtd)} ${String(a.un || 'un').toLowerCase()}`), ' ', h('span', { class: 'badge ' + c }, t)) : h('span', { class: 'badge ' + c }, t); },
@@ -163,8 +177,9 @@
         sortVal: (s) => (ultimo(s) || {}).em || s.em },
       { key: 'acoes', label: '', align: 'l', render: tirar, sortVal: () => 0 },
     ].filter(Boolean);
+    for (const s of lista) if (s.grp == null) s.grp = TS.grupoProd.texto(s.cod, s.desc, s.agora && s.agora.un ? /^kg$/i.test(s.agora.un) : undefined);
     return TS.table({
-      cols, rows: lista, sortKey: 'em', sortDir: 'desc', maxHeight: '620px', search: 'Buscar produto, pessoa ou recado…', searchKeys: ['desc', 'cod', 'nome', 'recado', 'justificativa'], produto: 'desc', cls: 'est-t sug-t',
+      cols, rows: lista, sortKey: 'em', sortDir: 'desc', maxHeight: '620px', search: 'Buscar produto, pessoa ou recado…', searchKeys: ['desc', 'cod', 'nome', 'recado', 'justificativa', 'grp'], produto: 'desc', cls: 'est-t sug-t',
       rowClass: (s) => (s.novo ? 'sug-novo' : null),
       empty: { abertas: 'Nenhuma sugestão esperando o pedido.', entrega: 'Nada aguardando entrega.', encerradas: 'Nenhuma sugestão encerrada ainda.' }[aba],
     });

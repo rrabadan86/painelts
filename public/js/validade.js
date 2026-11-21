@@ -395,7 +395,7 @@
           render: (l) => h('div', null, l.entrada || l.pacoteN > 0
             ? h('button', { type: 'button', class: 'vl-nome', title: 'Ver os lotes deste chá: nota, chegada, aberto ou fechado, abertura e vencimento.', onclick: () => janelaPacotes(loja, l.cod, l.desc, repintar) }, l.desc)
             : h('b', null, l.desc),
-          h('small', { class: 'muted vl-sub' }, [l.familia, l.entrada ? `entrada ${fmt.date(l.entrada)} · NF ${l.nf}` : 'saldo sem nota'].filter(Boolean).join(' · ')),
+          h('small', { class: 'muted vl-sub' }, [l.tipo || (TS.grupoProd ? TS.grupoProd.texto(l.cod, l.desc, true) : '') || l.familia, l.entrada ? `entrada ${fmt.date(l.entrada)} · NF ${l.nf}` : 'saldo sem nota'].filter(Boolean).join(' · ')),
           pacotes(l)) },
         { key: 'saldo', label: 'Saldo', render: (l) => h('div', { class: 'vl-saldo' },
           h('span', { title: l.qtdEntrada ? `chegaram ${kgTxt(l.qtdEntrada)}` : null }, kgTxt(l.saldo)),

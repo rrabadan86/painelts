@@ -550,7 +550,7 @@
     pintarTotal();
 
     /**
-     * Subgrupo e margem bruta de tabela de cada linha, pelo cadastro de preços do AppNext (e.tabela).
+     * Grupo, subgrupo e margem bruta de tabela de cada linha, pelo cadastro de preços do AppNext (e.tabela).
      * Chá a granel (em kg): os pacotes dele no cadastro; margem = média entre o de 50 g e o de 100 g (ou o que existir).
      */
     function cadastroDasLinhas(ls) {
@@ -560,15 +560,16 @@
       for (const t of itens) {
         if (!(t.preco > 0.011)) continue; // R$ 0,01 = preço simbólico
         const c = M.custoCadastro(t.cod, t.desc);
-        if (!c || !c.it) { if (t.sub) { const k = 's:' + String(t.cod); porEst.set(k, [{ sub: t.sub }]); } continue; }
+        if (!c || !c.it) { if (t.sub || t.grupo) { const k = 's:' + String(t.cod); porEst.set(k, [{ sub: t.sub || '', grupo: t.grupo || '' }]); } continue; }
         const k = String(c.it.cod);
-        (porEst.get(k) || porEst.set(k, []).get(k)).push({ g: c.kg ? c.g : null, margem: (t.preco - c.custo) / t.preco, preco: t.preco, custo: c.custo, sub: t.sub || '' });
+        (porEst.get(k) || porEst.set(k, []).get(k)).push({ g: c.kg ? c.g : null, margem: (t.preco - c.custo) / t.preco, preco: t.preco, custo: c.custo, sub: t.sub || '', grupo: t.grupo || '' });
       }
       const media = (xs) => xs.reduce((a, x) => a + x.margem, 0) / xs.length;
       for (const r of ls) {
         const ps = porEst.get(String(r.cod)) || [];
         const sub = (ps.find((x) => x.sub) || porEst.get('s:' + String(r.cod))?.[0] || {}).sub || '';
         r.sub = sub;
+        r.grp = (ps.find((x) => x.grupo) || porEst.get('s:' + String(r.cod))?.[0] || {}).grupo || '';
         const com = ps.filter((x) => x.margem != null && isFinite(x.margem));
         if (!com.length) { r.margemPac = null; r.margemTxt = ''; continue; }
         if (r.it.un === 'Kg') {
@@ -597,34 +598,39 @@
     const SITS = { acabou: ['Acabou', 'erro'], falta: ['Falta antes da entrega', 'erro'], pedir: ['Pedir', 'warn'], ok: ['OK', 'ok'], semnec: ['Não precisa agora', 'ok'], semest: ['Fora do estoque', 'muted'], obrig: ['🔒 Obrigatório', 'warn'] };
     const SITU = (r) => SITS[SITK(r)];
     // filtros extras (valem em qualquer aba): grupo, situação e classe
-    const fx = state.pedFx || (state.pedFx = { g: '', s: '', c: '', m: '', sb: '' });
+    const FX0 = () => ({ g: '', gp: '', s: '', c: '', m: '', sb: '' });
+    const fx = state.pedFx || (state.pedFx = FX0());
     if (fx.sb == null) fx.sb = '';
+    if (fx.gp == null) fx.gp = '';
     // subgrupo e margem bruta de cada produto, pelo cadastro de preços (o chá a granel junta os pacotes dele)
-    if (!R._cad) { R._cad = true; cadastroDasLinhas(R.linhas); }
+    // o grupo mostrado é o do AppNext (CHÁ VERDE AROMATIZADO: definição única em grupoprod.js) e o do filtro é o mesmo do filtro das Vendas (CHÁ AROMATIZADO);
+    // produto sem venda usa o grupo do cadastro de preços e, sem cadastro, a parte do pedido
+    if (!R._cad) { R._cad = true; cadastroDasLinhas(R.linhas); for (const r of R.linhas) { const g = TS.grupoProd.de(r.cod, r.produto, r.it && r.it.un === 'Kg'); r.grpTxt = (g && g.grupo) || r.grp || r.grupoTxt; r.gpTxt = (g && g.grupoVendas) || r.grp || r.grupoTxt; } }
     // página e ordem da tabela sobrevivem quando a tela se redesenha (mudar uma quantidade não volta para a 1ª página);
     // a linha que mudou de aba com a alteração fica onde está até trocar de aba ou de filtro (não some da frente)
     const chaveVista = filtro + '|' + JSON.stringify(fx);
     const estTab = state.pedTab && state.pedTab.k === chaveVista ? state.pedTab : (state.pedTab = { k: chaveVista, page: 0, ficam: new Set() });
     const multDe = (r) => (r.c && r.c.mult > 1 ? r.c.mult : 0);
-    const passa = (r, sem) => (sem === 'm' || !fx.m || (fx.m === 'sim') === (multDe(r) > 0)) && (sem === 'sb' || !fx.sb || (r.sub || 'sem') === fx.sb) && (sem === 'g' || !fx.g || r.grupo === fx.g) && (sem === 's' || !fx.s || SITK(r) === fx.s) && (sem === 'c' || !fx.c || (r.classe || 'sem') === fx.c);
+    const passa = (r, sem) => (sem === 'm' || !fx.m || (fx.m === 'sim') === (multDe(r) > 0)) && (sem === 'sb' || !fx.sb || (r.sub || 'sem') === fx.sb) && (sem === 'gp' || !fx.gp || r.gpTxt === fx.gp) && (sem === 'g' || !fx.g || r.grupo === fx.g) && (sem === 's' || !fx.s || SITK(r) === fx.s) && (sem === 'c' || !fx.c || (r.classe || 'sem') === fx.c);
     const cont = (k) => R.linhas.filter((r) => FILTROS[k][1](r) && passa(r)).length;
     for (const r of R.linhas) r.ficou = false;
     const linhas = R.linhas.filter((r) => { if (!passa(r)) return false; if (FILTROS[filtro][1](r)) return true; if (estTab.ficam.has(String(r.cod))) { r.ficou = true; return true; } return false; });
     const naAba = R.linhas.filter(FILTROS[filtro][1]);
-    const seletor = (chave, rot, todos, opcoes, valorDe) => {
+    const seletor = (chave, rot, todos, opcoes, valorDe, dica) => {
       const n = (v) => naAba.filter((r) => passa(r, chave) && valorDe(r) === v).length;
-      const s = h('select', { class: 'f-input ped-fx' + (fx[chave] ? ' on' : ''), 'aria-label': rot, onchange: (x) => { fx[chave] = x.target.value; pintar(corpo, loja, M, e, p); } },
+      const s = h('select', { class: 'f-input ped-fx' + (fx[chave] ? ' on' : ''), 'aria-label': rot, title: dica || null, onchange: (x) => { fx[chave] = x.target.value; pintar(corpo, loja, M, e, p); } },
         h('option', { value: '' }, `${rot}: ${todos}`),
         opcoes.filter(([v]) => n(v) || fx[chave] === v).map(([v, t]) => h('option', { value: v, selected: fx[chave] === v || null }, `${rot}: ${t} (${n(v)})`)));
       return s;
     };
     const filtrosExtra = h('div', { class: 'ped-fxs' },
-      seletor('g', 'Grupo', 'todos', ordemG.map((g) => [g, GRUPOS[g]]), (r) => r.grupo),
+      seletor('gp', 'Grupo', 'todos', [...new Set(naAba.map((r) => r.gpTxt))].sort((x, y) => x.localeCompare(y, 'pt-BR')).map((v) => [v, v]), (r) => r.gpTxt, 'Os mesmos grupos do filtro das Vendas (CHÁ AROMATIZADO junta todos os aromatizados; no chá a granel, o dos pacotes dele).'),
       (() => { const subs = [...new Set(naAba.filter((r) => passa(r, 'sb')).map((r) => r.sub || 'sem'))].sort((x, y) => (x === 'sem') - (y === 'sem') || x.localeCompare(y, 'pt-BR')); return subs.length > 1 || fx.sb ? seletor('sb', 'Subgrupo', 'todos', subs.map((v) => [v, v === 'sem' ? 'sem subgrupo' : v]), (r) => r.sub || 'sem') : null; })(),
       seletor('s', 'Situação', 'todas', Object.entries(SITS).map(([k, [t]]) => [k, t]), SITK),
       seletor('c', 'Classe', 'todas', [...Object.entries(CLASSES), ['sem', 'sem classe']], (r) => r.classe || 'sem'),
       seletor('m', 'Múltiplo', 'todos', [['sim', 'vende em múltiplos'], ['nao', 'unidade']], (r) => (multDe(r) ? 'sim' : 'nao')),
-      fx.g || fx.s || fx.c || fx.m || fx.sb ? h('button', { type: 'button', class: 'btn ped-fx-limpa', onclick: () => { state.pedFx = { g: '', s: '', c: '', m: '', sb: '' }; pintar(corpo, loja, M, e, p); } }, '✕ Tirar filtros') : null,
+      seletor('g', 'Parte do pedido', 'todas', ordemG.map((g) => [g, GRUPOS[g]]), (r) => r.grupo, 'As partes da "Proporção do pedido" (chás a granel, envasados, acessórios, embalagens): é por elas que o painel divide o valor do pedido.'),
+      fx.g || fx.gp || fx.s || fx.c || fx.m || fx.sb ? h('button', { type: 'button', class: 'btn ped-fx-limpa', onclick: () => { state.pedFx = FX0(); pintar(corpo, loja, M, e, p); } }, '✕ Tirar filtros') : null,
       h('span', { class: 'muted ped-fx-n' }, `${fmt.int(linhas.length)} ${linhas.length === 1 ? 'produto' : 'produtos'}`),
       // janela da classe oficial (a mesma do Estoque e margem): muda a classe e a prioridade "Estrela abaixo de 700 g"
       ctlClasseMeses());
@@ -636,7 +642,7 @@
     const cols = [
         { key: 'produto', label: 'Produto', align: 'l', sticky: true, wrap: true, title: 'O ícone antes do nome é a classe do produto: ⭐ Estrela (sai muito, boa margem) · 👍 Joia (sai pouco, boa margem) · 📦 Volume (sai muito, margem menor) · 💤 Peso morto (sai pouco, pouca margem). É a classe oficial, a mesma da Rentabilidade; 🔒 = travada à mão. Passe o mouse no ícone para ver. A etiqueta "⭐ equipe" (com texto) é outra coisa: pedido da equipe.',
           render: (r) => h('span', null, r.classe ? h('span', { class: 'ped-cl-ico', title: `${CLASSE_DICA[r.classe]}${r.classeFixa ? ' (🔒 travada à mão na Rentabilidade)' : ''}`, 'aria-label': 'Classe ' + CLASSES[r.classe] }, CLASSE_ICO[r.classe]) : null, r.produto, r.ficou ? h('span', { class: 'badge cinza ped-ficou', title: 'Esta linha mudou de aba com a sua alteração. Ela continua aqui até você trocar de aba ou de filtro, para não sumir da frente.' }, r.pedir > 0 ? '→ foi para "No pedido"' : '→ saiu do pedido') : null, r.sug ? h('span', { class: 'ped-prio ped-sug', title: tituloSug(r.sug) }, `⭐ ${r.sug.pessoas.length > 1 ? r.sug.pessoas.length + ' pediram' : 'equipe'}`) : null, r.obrig ? h('span', { class: 'ped-tag-obr', title: 'Vem no pedido obrigatório: não vai para o carrinho' }, '🔒 obrigatório') : r.chega ? h('span', { class: 'ped-tag-obr', title: `O pedido obrigatório já traz ${qtdTxt(r.chega, r.it)} deste produto (já descontado do "Precisa"). O que estiver em "Pedir" é a mais e vai para o carrinho.` }, `+ ${qtdTxt(r.chega, r.it)} no obrigatório`) : null, r.esp ? h('a', { class: 'ped-prio ped-esp', href: '#espera', title: `Na lista de espera: ${r.esp.clientes.join(', ')}${r.esp.pedidos > r.esp.clientes.length ? '…' : ''}. Quando a nota chegar, eles aparecem para avisar.`, onclick: (e) => e.stopPropagation() }, `⏳ ${r.esp.pedidos} esperando`) : null, VAL.has(String(r.cod)) ? (() => { const v = VAL.get(String(r.cod)); return h('a', { class: 'pd-vl', href: '#validade', title: `${qtdTxt(v.kg, r.it)} em lote${v.dias < 0 ? ' já vencido' : ` que vence em ${v.dias} dias`}: venda o que tem antes de comprar mais (Estoque → Validade)`, onclick: (e) => e.stopPropagation() }, TS.validade.badge(v.faixa)); })() : null, r.prior && r.prior < 3 ? h('span', { class: 'ped-prio', title: r.prior === 2 ? 'Prioridade: estoque abaixo de 500 g' : 'Prioridade: Estrela com estoque abaixo de 700 g' }, r.prior === 2 ? '< 500 g' : 'Estrela < 700 g') : null, h('small', { class: 'est-tam' }, `cód. ${r.cod}`)) },
-        { key: 'grupoTxt', label: 'Grupo', align: 'l', title: 'Grupo do pedido e, embaixo, o subgrupo do cadastro de preços do AppNext (no chá a granel, o dos pacotes dele).', render: (r) => h('span', null, r.grupoTxt, r.sub ? h('small', { class: 'ped-sub' }, r.sub) : null) },
+        { key: 'grpTxt', label: 'Grupo', align: 'l', title: 'Grupo do produto no AppNext, como sai nas vendas (ex.: CHÁ VERDE AROMATIZADO) e, embaixo, o subgrupo do cadastro. No chá a granel, os dos pacotes dele. Produto que ainda não vendeu mostra o grupo do cadastro de preços ou a parte do pedido.', render: (r) => h('span', null, r.grpTxt, r.sub ? h('small', { class: 'ped-sub' }, r.sub) : null) },
         { key: 'sit', label: 'Situação', align: 'l', render: (r) => { const [t, c] = SITU(r); return h('span', { class: 'badge ' + c }, t); }, sortVal: (r) => (r.qtd <= 0 ? 3 : r.urgente ? 2 : 1) },
         { key: 'qtd', label: 'Estoque', render: (r) => qtdTxt(r.qtd, r.it) },
         { key: 'dias', label: 'Dura', fmt: (v) => (v == null ? '—' : v > 365 ? '+1 ano' : `${fmt.int(v)} dias`) },
@@ -657,7 +663,7 @@
         if (!ped.length) return null;
         const un = ped.filter((r) => r.it.un !== 'Kg').reduce((s, r) => s + r.pedir, 0), kg = ped.filter((r) => r.it.un === 'Kg').reduce((s, r) => s + r.pedir, 0);
         return { produto: `Total · ${fmt.int(ped.length)} ${ped.length === 1 ? 'produto' : 'produtos'}`, pedir: [kg ? `${fmt.kg(kg)} kg` : '', un ? `${fmt.int(un)} un` : ''].filter(Boolean).join(' + '), total: fmt.brl(ped.reduce((s, r) => s + r.pedir * (r.preco || 0), 0)) };
-      })(), sortKey: 'lucroDia', estado: estTab, maxHeight: '620px', pageSize: linhas.length > 300 ? 200 : undefined, search: 'Buscar produto…', searchKeys: ['produto', 'cod', 'sub'], produto: 'produto', imprimir: ['produto', 'grupoTxt', 'sit', 'qtd', 'sugerido', 'pedir', 'preco', 'total'], cls: 'est-t ped-t',
+      })(), sortKey: 'lucroDia', estado: estTab, maxHeight: '620px', pageSize: linhas.length > 300 ? 200 : undefined, search: 'Buscar produto…', searchKeys: ['produto', 'cod', 'sub', 'grpTxt'], produto: 'produto', imprimir: ['produto', 'grpTxt', 'sit', 'qtd', 'sugerido', 'pedir', 'preco', 'total'], cls: 'est-t ped-t',
       empty: { pedido: 'Nada no pedido.', fora: 'Nada ficou de fora.', indisp: 'Nenhum produto necessário está indisponível no site.', cat: 'Todos os produtos necessários estão no catálogo.', resto: 'Sem catálogo do Sistema de Pedidos: use "Atualizar catálogo".', todos: 'Nenhum produto.' }[filtro],
     });
     // ---------- celular: um cartão por produto, com o essencial e o − / ＋ ----------
@@ -670,9 +676,13 @@
         const [t, c] = SITU(r);
         const tot = h('b', { class: 'ped-tot' }, r.pedir > 0 ? fmt.brl(r.pedir * (r.preco || 0)) : '—');
         r._tot = tot;
+        // no celular não há a coluna Grupo: o subgrupo vai ao lado do código
+        const nome = col('produto').render(r);
+        const codEl = r.sub && nome.querySelector('.est-tam');
+        if (codEl) codEl.append(' · ', h('span', { class: 'ped-cod-sub', title: 'Subgrupo do cadastro de preços do AppNext (no chá a granel, o dos pacotes dele).' }, r.sub));
         return h('div', { class: 'ped-card' + (r.obrig ? ' obr' : r.pedir > 0 ? ' on' : '') },
-          h('div', { class: 'ped-card-top' }, h('div', { class: 'ped-card-nome' }, col('produto').render(r)), h('span', { class: 'badge ' + c }, t)),
-          h('div', { class: 'ped-card-meta' }, r.grupoTxt, r.margemPac != null ? ` · margem bruta ${fmt.pct(r.margemPac)}` : null),
+          h('div', { class: 'ped-card-top' }, h('div', { class: 'ped-card-nome' }, nome), h('span', { class: 'badge ' + c }, t)),
+          h('div', { class: 'ped-card-meta' }, r.grpTxt, r.margemPac != null ? ` · margem bruta ${fmt.pct(r.margemPac)}` : null),
           h('div', { class: 'ped-card-nums' },
             h('div', null, h('small', null, 'Estoque'), h('b', null, qtdTxt(r.qtd, r.it))),
             h('div', null, h('small', null, 'Dura'), h('b', null, r.dias == null ? '—' : r.dias > 365 ? '+1 ano' : `${fmt.int(r.dias)} d`)),
@@ -754,7 +764,8 @@
       const bt = (txt, cls, fn, title) => h('button', { type: 'button', class: `btn sug-ped-btn ${cls || ''}`.trim(), title: title || null, onclick: fn }, txt);
       const acao = (x) => {
         const { g, r } = x;
-        if (g.aguardando) return h('span', { class: 'sug-aguarda' }, `🛒 pedido em ${TS.sug.dataTxt(g.aguardando.em)}`, h('small', { class: 'muted sug-motivo' }, 'aguardando entrega'));
+        if (g.aguardando) return h('span', { class: 'sug-ped-acoes' }, h('span', { class: 'sug-aguarda' }, `🛒 pedido em ${TS.sug.dataTxt(g.aguardando.em)}`, h('small', { class: 'muted sug-motivo' }, g.aguardando.conf === true ? 'pedido confirmado · aguardando entrega' : 'aguardando entrega')),
+          bt('Não pedi', 'sug-naopedi', () => devolver([g.cod], `"${g.desc}" não foi pedido?\n\nA sugestão volta para "Dá para pedir" e a equipe vê que o pedido não foi feito.`), 'Este produto não foi pedido (o carrinho foi desfeito ou o pedido não saiu): a sugestão volta para o próximo pedido.'));
         if (x.noPed) {
           const meu = r && !r.obrig && r.pedir > 0;
           return h('span', { class: 'sug-ped-acoes' }, h('span', { class: 'pos sug-ped-no' }, meu ? `🛒 no pedido: ${qtdTxt(r.pedir, r.it)}` : '🔒 vem no pedido obrigatório'),
@@ -770,7 +781,7 @@
       const cols = [
         { key: 'desc', label: 'Produto', align: 'l', sticky: true, wrap: true, title: 'Produto que a equipe marcou com ⭐, quem pediu, desde quando e o recado. 🛒 = já está na tabela do pedido.',
           render: (x) => h('div', { class: 'sug-prod-cel' },
-            x.noPed ? h('span', { class: 'sug-ped-ico', title: 'Já está no pedido' }, '🛒 ') : null, h('b', null, x.desc),
+            x.noPed ? h('span', { class: 'sug-ped-ico', title: 'Já está no pedido' }, '🛒 ') : null, h('b', null, x.desc), TS.grupoProd.marca(x.r ? x.r.grpTxt : TS.grupoProd.texto(x.cod, x.desc)),
             h('small', { class: 'muted sug-motivo' }, `${x.quem} · desde ${TS.sug.dataTxt(x.g.desde)}${x.g.pedidos ? ` · já passou por ${x.g.pedidos} ${x.g.pedidos === 1 ? 'pedido' : 'pedidos'}` : ''}`),
             x.notas.map((t) => h('small', { class: 'sug-motivo sug-ped-rec' }, t))) },
         { key: 'qtd', label: 'Estoque agora', title: 'Quanto tem na loja agora (estoque do AppNext).', render: (x) => (x.r ? qtdTxt(x.r.qtd, x.r.it) : h('span', { class: 'muted' }, '—')), sortVal: (x) => (x.r ? x.r.qtd : null) },
@@ -789,6 +800,22 @@
         search: lista.length > 8 ? 'Buscar produto, pessoa ou recado…' : null, searchKeys: ['desc', 'cod', 'quem', 'recados'],
         empty: { pedir: 'Nada para decidir agora. 👏', nopedido: 'Nenhuma sugestão no pedido ainda.', semsite: 'Nenhuma sugestão sem estoque no site.', nao: 'Nenhuma marcada como "Não pedir".', todas: 'Nenhuma sugestão aberta.' }[ver.aba],
       });
+      // "Não fiz este pedido": devolve o que está aguardando entrega sem ter o pedido confirmado (um produto, pelo botão da linha, ou todos)
+      async function devolver(cods, pergunta) {
+        if (!confirm(pergunta)) return;
+        try {
+          const n = await TS.sug.devolver(loja, cods);
+          let abertas = null;
+          if (!TS.demo) { try { abertas = (await buscar(loja)).sugestoes || []; } catch { abertas = null; } }
+          p.sugestoes = await TS.sug.paraPedido(loja, abertas ? { sugestoes: abertas } : p);
+          state.pedSugMsg = n ? `${n} ${n === 1 ? 'sugestão voltou' : 'sugestões voltaram'} para o próximo pedido.` : 'Nenhuma sugestão estava aguardando entrega.';
+          if (state.pedSug) state.pedSug.aba = 'todas';
+          repintar();
+        } catch (err) { TS.avisar(err.message); }
+      }
+      const semConf = itens.filter((x) => x.g.aguardando && x.g.aguardando.conf !== true).length;
+      const naoFiz = semConf ? h('button', { type: 'button', class: 'btn ghost-danger sug-naofiz', title: 'Use quando o pedido não foi feito (o carrinho foi desfeito ou você desistiu): tudo o que está "aguardando entrega" sem pedido confirmado volta para "Dá para pedir". Pedido já confirmado não muda.',
+        onclick: () => devolver(null, `O pedido não foi feito?\n\n${semConf} ${semConf === 1 ? 'sugestão que está' : 'sugestões que estão'} "aguardando entrega" ${semConf === 1 ? 'volta' : 'voltam'} para "Dá para pedir". Pedido já confirmado não muda.`) }, `Não fiz este pedido (${semConf})`) : null;
       const registrar = h('button', { type: 'button', class: 'btn' }, 'Registrar o pedido nas sugestões');
       registrar.addEventListener('click', async () => {
         if (!confirm('Registrar este pedido nas sugestões da equipe?\n\nO que está no pedido fica "aguardando entrega" (a estrela sai quando a nota da franquia chegar com o produto); o que não está fica marcado para o próximo, com o motivo; sem estoque no site é automático.')) return;
@@ -813,7 +840,7 @@
         TS.seg(abas.map((k) => [`${ABAS[k]} (${cont(k)})`, k, DICA_ABA[k]]), ver.aberto ? ver.aba : null, (v) => { ver.aba = v; ver.aberto = true; repintar(); }),
         ver.aberto ? h('div', { class: 'sug-ped-cl' }, ctlClasseMeses()) : null,
         ver.aberto ? tabela() : null,
-        h('div', { class: 'cfg-acoes' }, registrar, msg));
+        h('div', { class: 'cfg-acoes' }, registrar, naoFiz, msg));
     }
     /** registra o pedido de agora nas sugestões abertas (também chamado ao montar o carrinho) */
     async function registrarSugestoes() {
@@ -990,7 +1017,7 @@
     corpo.append(h('div', { class: 'mt' }, TS.cardWithTools('Produtos', sub,
       h('div', { class: 'est-tools ped-tools' }, !MOBILE && tab.searchBox && (tab.searchBox.classList.add('est-busca'), tab.searchBox),
         TS.seg(Object.entries(FILTROS).map(([k, [t]]) => [`${t} (${cont(k)})`, k]), filtro, (v) => { state.pedFiltro = v; pintar(corpo, loja, M, e, p); }), menuLimpar, btnSalvar, btnCsv),
-      avisoRasc, avisoObr, MOBILE ? h('details', { class: 'ped-fx-mob', open: (fx.g || fx.s || fx.c || fx.m) ? true : null }, h('summary', null, `Filtros${[fx.g, fx.s, fx.c, fx.m].filter(Boolean).length ? ` (${[fx.g, fx.s, fx.c, fx.m].filter(Boolean).length})` : ''} · ${fmt.int(linhas.length)} produtos`), filtrosExtra) : filtrosExtra, MOBILE ? listaMobile() : tab)));
+      avisoRasc, avisoObr, MOBILE ? h('details', { class: 'ped-fx-mob', open: (fx.g || fx.gp || fx.sb || fx.s || fx.c || fx.m) ? true : null }, h('summary', null, `Filtros${[fx.g, fx.gp, fx.sb, fx.s, fx.c, fx.m].filter(Boolean).length ? ` (${[fx.g, fx.gp, fx.sb, fx.s, fx.c, fx.m].filter(Boolean).length})` : ''} · ${fmt.int(linhas.length)} produtos`), filtrosExtra) : filtrosExtra, MOBILE ? listaMobile() : tab)));
     if (editados.size) corpo.append(h('p', { class: 'muted' }, `${editados.size} quantidade(s) alterada(s) à mão. `, h('a', { href: '#', onclick: (x) => { x.preventDefault(); editados.clear(); pintar(corpo, loja, M, e, p); } }, 'Voltar à sugestão')));
 
     if (blocoIA) corpo.append(blocoIA);
@@ -1631,7 +1658,7 @@
     const esc = (v) => { const s = v == null ? '' : String(v); return /[;"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
     const n = (v, d) => (v == null ? '' : v.toFixed(d).replace('.', ','));
     const linhas = [['Código', 'Produto', 'Grupo', 'Unidade', 'Múltiplo', 'Estoque', 'Pedir', 'Preço', 'Total', 'Site'].join(';'),
-      ...lista.map((r) => [r.cod, r.produto, r.grupoTxt, r.it.un, r.c && r.c.mult > 1 ? n(r.c.mult, 0) : '', n(r.qtd, 3), n(r.pedir, 3), n(r.preco || 0, 2), n(r.pedir * (r.preco || 0), 2), { ok: 'disponível', sem: 'sem catálogo', indisp: 'indisponível', fora: 'fora do catálogo' }[r.site]].map(esc).join(';'))];
+      ...lista.map((r) => [r.cod, r.produto, r.grpTxt || r.grupoTxt, r.it.un, r.c && r.c.mult > 1 ? n(r.c.mult, 0) : '', n(r.qtd, 3), n(r.pedir, 3), n(r.preco || 0, 2), n(r.pedir * (r.preco || 0), 2), { ok: 'disponível', sem: 'sem catálogo', indisp: 'indisponível', fora: 'fora do catálogo' }[r.site]].map(esc).join(';'))];
     const blob = new Blob(['﻿' + linhas.join('\r\n')], { type: 'text/csv;charset=utf-8' });
     const a = h('a', { href: URL.createObjectURL(blob), download: `pedido-sugerido-${loja}-${new Date().toISOString().slice(0, 10)}.csv` });
     document.body.append(a); a.click(); a.remove();

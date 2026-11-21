@@ -116,14 +116,21 @@ function fechar(id, itens, por) {
   const n = { pedido: 0, semsite: 0, nao: 0 };
   const aguardam = new Set(d.itens.filter((s) => s.st === 'aberta' && s.aguardando).map((s) => s.cod));
   for (const s of d.itens) {
-    if (s.st !== 'aberta' || s.aguardando || aguardam.has(s.cod)) continue; // já pedido: espera a nota
-    const ult = (s.hist || [])[(s.hist || []).length - 1];
+    if (s.st !== 'aberta') continue;
     const x = porCod.get(s.cod);
     const vai = x && x.pedir > 0 && x.site === 'ok';
+    if (s.aguardando) {
+      // já pedido: espera a nota. Se o pedido de antes ainda não foi confirmado e o produto entrou de novo, a espera passa a ser
+      // deste carrinho: assim "Excluir" o carrinho novo devolve a sugestão (antes ela ficava presa na data do carrinho antigo)
+      if (vai && s.aguardando.conf !== true) s.aguardando = { em, por, qtd: x.pedir, conf: false };
+      continue;
+    }
+    if (aguardam.has(s.cod)) continue;
+    const ult = (s.hist || [])[(s.hist || []).length - 1];
     // registrar de novo no mesmo dia (montar o carrinho e depois "Registrar"): só muda quem passou a ir no pedido
     if (ult && ['nao', 'semsite'].includes(ult.res) && C.diaSP(ult.em) === hoje && !vai) continue;
     let h;
-    if (vai) { h = { em, res: 'pedido', motivo: '', por }; s.aguardando = { em, por, qtd: x.pedir }; }
+    if (vai) { h = { em, res: 'pedido', motivo: '', por }; s.aguardando = { em, por, qtd: x.pedir, conf: false }; }
     else if (x && (x.site === 'indisp' || x.site === 'fora')) h = { em, res: 'semsite', motivo: 'Sem estoque no site da franquia (automático)', por };
     else h = { em, res: 'nao', motivo: (s.decisao && s.decisao.motivo) || 'Não entrou desta vez', por };
     (s.hist = s.hist || []).push(h);
@@ -145,14 +152,44 @@ const STATUS_CARRINHO = { erro: 'erro ao pôr no carrinho', sem_estoque: 'sem es
  * O carrinho montado foi excluído (a pessoa montou e não fez o pedido): as sugestões que tinham ido para "aguardando entrega"
  * naquele carrinho voltam a esperar o próximo pedido. `desde` = início do carrinho (ISO). → { ok: quantas voltaram }
  */
-function desfazerPedido(id, desde, por) {
+function desfazerPedido(id, desde, por, confirmado) {
   const d = ler(id), t0 = Date.parse(desde || '') - 60e3;
   if (!Number.isFinite(t0)) return { ok: 0 };
   const em = new Date().toISOString();
   let n = 0;
   for (const s of d.itens) {
     if (s.st !== 'aberta' || !s.aguardando || !(Date.parse(s.aguardando.em) >= t0)) continue;
+    // espera de um pedido já confirmado só sai se o carrinho excluído é o próprio confirmado (não a de um pedido anterior)
+    if (s.aguardando.conf === true && !confirmado) continue;
     (s.hist = s.hist || []).push({ em, res: 'naopediu', motivo: 'O carrinho foi excluído: o pedido não foi feito', por: String(por || '') });
+    delete s.aguardando; s.decisao = null; n++;
+  }
+  if (n) gravar(id, d);
+  return { ok: n };
+}
+
+/** o carrinho foi confirmado (o pedido foi feito mesmo): as sugestões dele ficam firmes, um carrinho novo não as leva embora */
+function confirmarPedido(id, desde) {
+  const d = ler(id), t0 = Date.parse(desde || '') - 60e3;
+  if (!Number.isFinite(t0)) return { ok: 0 };
+  let n = 0;
+  for (const s of d.itens) if (s.st === 'aberta' && s.aguardando && s.aguardando.conf !== true && Date.parse(s.aguardando.em) >= t0) { s.aguardando.conf = true; n++; }
+  if (n) gravar(id, d);
+  return { ok: n };
+}
+
+/**
+ * "Não fiz este pedido": a pessoa diz que o que está "aguardando entrega" não foi pedido (sem carrinho para excluir, ou
+ * registrado pelo botão). cods = produtos escolhidos; sem cods = tudo o que ainda não teve o pedido confirmado.
+ */
+function devolver(id, cods, por) {
+  const d = ler(id), em = new Date().toISOString();
+  const quais = Array.isArray(cods) && cods.length ? new Set(cods.map(String)) : null;
+  let n = 0;
+  for (const s of d.itens) {
+    if (s.st !== 'aberta' || !s.aguardando) continue;
+    if (quais ? !quais.has(String(s.cod)) : s.aguardando.conf === true) continue;
+    (s.hist = s.hist || []).push({ em, res: 'naopediu', motivo: 'Marcado como não pedido: volta para o próximo pedido', por: String(por || '') });
     delete s.aguardando; s.decisao = null; n++;
   }
   if (n) gravar(id, d);
@@ -278,4 +315,4 @@ function comEstoque(itens, estoque, todos) {
   });
 }
 
-module.exports = { desfazerPedido, comEstoque, ler, situacao, precisaJustificar, buscar, criar, retirar, decidir, fechar, resultadoCarrinho, avaliarNotas, visto, lista, paraPedido, MOTIVOS, POUCO_KG };
+module.exports = { desfazerPedido, confirmarPedido, devolver, comEstoque, ler, situacao, precisaJustificar, buscar, criar, retirar, decidir, fechar, resultadoCarrinho, avaliarNotas, visto, lista, paraPedido, MOTIVOS, POUCO_KG };

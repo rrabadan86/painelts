@@ -491,16 +491,16 @@
     const rowsP = [...porProd].map(([p, idx]) => {
       let q = 0, kg = 0, v = 0;
       for (const i of idx) { q += db.qtd[i] || 0; kg += db.cha[i] || 0; v += db.vt[i] || 0; }
-      return { produto: db.D.produto[p], qtd: q, kg, vt: v };
+      return { produto: db.D.produto[p], grp: (db.D.grupo && db.D.grupo[db.grupo[idx[0]]]) || '', qtd: q, kg, vt: v };
     });
     const tabProd = TS.table({
       cols: [
-        { key: 'produto', label: 'Produto', align: 'l', wrap: true },
+        TS.grupoProd.coluna({ key: 'produto', label: 'Produto', align: 'l', wrap: true }, (r) => r.grp),
         { key: 'qtd', label: 'Qtd', fmt: fmt.int },
         { key: 'kg', label: 'Kg', fmt: kgFmt },
         { key: 'vt', label: 'Faturamento', fmt: fmt.brl },
       ],
-      rows: rowsP, sortKey: 'vt', maxHeight: '300px', search: 'Buscar produto…', searchKeys: ['produto'], cls: 't-compacta',
+      rows: rowsP, sortKey: 'vt', maxHeight: '300px', search: 'Buscar produto ou grupo…', searchKeys: ['produto', 'grp'], cls: 't-compacta',
       total: { produto: 'Total', qtd: rowsP.reduce((s, r) => s + r.qtd, 0), kg: rowsP.reduce((s, r) => s + r.kg, 0), vt: rowsP.reduce((s, r) => s + r.vt, 0) },
     });
     root.append(h('div', { class: 'grid g-3-2 mt' },

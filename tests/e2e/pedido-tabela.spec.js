@@ -18,7 +18,7 @@ test('Pedido: colunas novas (margem bruta do pacote, classe em ícone) e filtro 
   const linhas = await page.evaluate(async () => {
     // as mesmas linhas da tela: pega do cadastro o que a tabela deve mostrar
     const e = await (await fetch(`/api/demo/estoque?loja=${encodeURIComponent(TS.state.loja)}`)).json();
-    return { subs: [...new Set(e.tabela.itens.map((t) => t.sub).filter(Boolean))].sort(), cha50: e.tabela.itens.filter((t) => / 50G$/.test(t.desc)).length, cha100: e.tabela.itens.filter((t) => / 100G$/.test(t.desc)).length };
+    return { grupos: TS.db.D.grupoC.filter(Boolean), tipos: TS.db.D.grupo.filter(Boolean), subs: [...new Set(e.tabela.itens.map((t) => t.sub).filter(Boolean))].sort(), cha50: e.tabela.itens.filter((t) => / 50G$/.test(t.desc)).length, cha100: e.tabela.itens.filter((t) => / 100G$/.test(t.desc)).length };
   });
   expect(linhas.subs.length).toBeGreaterThan(1);
   expect(linhas.cha50).toBeGreaterThan(0);
@@ -31,10 +31,30 @@ test('Pedido: colunas novas (margem bruta do pacote, classe em ícone) e filtro 
   if (info.project.name === 'celular') { // no celular a lista é em cartões e os filtros ficam recolhidos: confere só o ícone da classe e a largura
     const ic = page.locator('.ped-cl-ico').first();
     await expect(ic).toHaveText(/^(⭐|👍|📦|💤)$/);
+    // sem a coluna Grupo, o subgrupo aparece ao lado do código
+    const sub = page.locator('.ped-card .est-tam .ped-cod-sub').first();
+    await expect(sub).toBeVisible();
+    expect(linhas.subs).toContain(await sub.innerText());
     expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth), 'rolagem para o lado').toBeLessThanOrEqual(1);
     expect(erros).toEqual([]);
     return;
   }
+  // filtro Grupo: os mesmos grupos do filtro das Vendas, não as partes do pedido (essas ficam em "Parte do pedido");
+  // a coluna mostra o grupo do AppNext como sai na venda (ex.: CHÁ VERDE AROMATIZADO)
+  const selGrupo = page.locator('select.ped-fx[aria-label="Grupo"]');
+  const gruposTela = (await selGrupo.locator('option').allInnerTexts()).slice(1).map((t) => t.replace(/^Grupo: /, '').replace(/ \(\d+\)$/, ''));
+  expect(gruposTela.length).toBeGreaterThan(1);
+  expect(gruposTela.some((g) => linhas.grupos.includes(g)), gruposTela.join(', ')).toBe(true);
+  expect(gruposTela).not.toContain('Chás a granel');
+  await expect(page.locator('select.ped-fx[aria-label="Parte do pedido"]')).toContainText('Chás a granel');
+  const gAlvo = gruposTela.find((g) => linhas.grupos.includes(g));
+  await selGrupo.selectOption(gAlvo);
+  expect(+(await page.locator('.ped-fx-n').innerText()).replace(/\D/g, '')).toBeGreaterThan(0);
+  if (info.project.name === 'computador') {
+    const cel = (await page.locator('.ped-t tbody tr').first().locator('td').nth(1).innerText()).split('\n')[0].trim();
+    expect(linhas.tipos, cel).toContain(cel);
+  }
+  await page.locator('.ped-fx-limpa').click();
   // filtro por subgrupo: aparece, filtra e conta
   const selSub = page.locator('select.ped-fx[aria-label="Subgrupo"]');
   await expect(selSub).toBeVisible();

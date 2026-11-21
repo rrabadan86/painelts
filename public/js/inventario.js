@@ -460,7 +460,7 @@
     const vis = { dif: div, iguais, zerados: zeroRows, todos: [...rows, ...zeroRows] }[filV];
     const tab = TS.table({
       cols: [
-        { key: 'desc', label: 'Produto', align: 'l', sticky: true, wrap: true, render: (r) => h('span', null, r.desc, h('small', { class: 'est-tam' }, `cód. ${r.cod}${r.zeroRow ? ` · ${r.motivo}: vai como 0` : r.por ? ` · contou ${r.por} ${quando(r.em)}` : ''}`)) },
+        { key: 'desc', label: 'Produto', align: 'l', sticky: true, wrap: true, render: (r) => h('span', null, r.desc, h('small', { class: 'est-tam' }, `cód. ${r.cod}${r.tipo || r.grupo ? ` · ${r.tipo || r.grupo}` : ''}${r.zeroRow ? ` · ${r.motivo}: vai como 0` : r.por ? ` · contou ${r.por} ${quando(r.em)}` : ''}`)) },
         { key: 'sis', label: 'Sistema', render: (r) => qtdTxt(r.sis, r.un), sortVal: (r) => r.sis },
         { key: 'cont', label: 'Contado', render: (r) => (r.zeroRow ? h('span', { class: 'muted', title: r.motivo === 'não contado' ? 'Ninguém contou: vai como 0' : 'Fora da contagem, com "zerar os não listados": vai como 0' }, '0 (zerado)') : h('b', null, qtdTxt(r.cont, r.un))), sortVal: (r) => r.cont },
         { key: 'dq', label: 'Diferença', render: (r) => h('span', { class: r.dq > 0 ? 'pos' : r.dq < 0 ? 'neg' : 'muted' }, r.dq === 0 ? 'confere' : `${r.dq > 0 ? '+' : '−'}${qtdTxt(Math.abs(r.dq), r.un)}`), sortVal: (r) => r.dq },
@@ -572,7 +572,7 @@
         c.st === 'revertido' ? h('p', { class: 'muted' }, `Desfeito ${quando(c.desfazer.importadoEm)} por ${c.desfazer.importadoPor || '—'}.`) : null,
         h('details', null, h('summary', null, 'Ver item a item'), TS.table({
           cols: [
-            { key: 'desc', label: 'Produto', align: 'l', wrap: true, render: (r) => h('span', null, r.desc, r.zerado ? h('span', { class: 'inv-st inv-st-canc', style: { marginLeft: '6px' } }, 'zerado') : null, h('small', { class: 'est-tam' }, `cód. ${r.cod}`)) },
+            { key: 'desc', label: 'Produto', align: 'l', wrap: true, render: (r) => h('span', null, r.desc, r.zerado ? h('span', { class: 'inv-st inv-st-canc', style: { marginLeft: '6px' } }, 'zerado') : null, h('small', { class: 'est-tam' }, `cód. ${r.cod}${r.grupo ? ` · ${r.grupo}` : ''}`)) },
             { key: 'antes', label: 'Antes', render: (r) => qtdTxt(r.antes, r.un), sortVal: (r) => r.antes },
             { key: 'nova', label: 'Ficou', render: (r) => h('b', null, qtdTxt(r.nova, r.un)), sortVal: (r) => r.nova },
             { key: 'v', label: 'Ajuste (custo)', fmt: fmt.brl, render: (r) => h('span', { class: r.v > 0 ? 'pos' : r.v < 0 ? 'neg' : 'muted' }, fmt.brl(r.v)), sortVal: (r) => r.v },

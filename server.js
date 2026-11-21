@@ -283,7 +283,7 @@ const pub = path.join(__dirname, 'public');
 const APP_SCRIPTS = [
   'core.js', 'contas.js', 'metadia.js', 'components.js', 'dicas.js', 'rules.js', 'pages.js', 'fidelidade.js',
   'msgwpp.js', 'recompra.js', 'clientes.js', 'campretorno.js', 'campanhas.js', 'zap.js', 'espera.js', 'extras.js', 'contabilidade.js',
-  'ruptura.js', 'visaodono.js', 'classeprod.js', 'custodata.js', 'estoque.js', 'devolucao.js', 'precos.js', 'inventario.js', 'sugestoes.js', 'validade.js', 'nfsaida.js', 'creditos.js', 'orcamento.js', 'checklist.js',
+  'ruptura.js', 'visaodono.js', 'classeprod.js', 'grupoprod.js', 'custodata.js', 'estoque.js', 'devolucao.js', 'precos.js', 'inventario.js', 'sugestoes.js', 'validade.js', 'nfsaida.js', 'creditos.js', 'orcamento.js', 'checklist.js',
   'site.js', 'conferencia.js', 'conferencia-tela.js', 'inicio.js', 'pedido.js', 'ia.js', 'dre.js', 'apagar.js', 'comprasvendas.js', 'efeitopreco.js', 'equipe.js', 'mapa.js', 'feriados.js', 'fidretorno.js',
   'guia.js', 'notificacoes.js', 'config.js', 'script.js', 'fechamento.js', 'sistema.js', 'main.js',
 ];
@@ -510,9 +510,9 @@ app.get('/api/demo/estoque', (req, res) => {
     const tabela = { itens: [
       ...its.filter((i) => i.un !== 'Kg').map((i) => ({ cod: String(i.cod), desc: i.desc, grupo: 'ACESSÓRIOS', preco: Math.round(i.custo * 2.2 * 10) / 10 })),
       // chá a granel: pacotes de 50 g e 100 g, com subgrupo fictício (o Pedido filtra por ele e mostra a margem bruta do pacote)
-      ...its.filter((i) => i.un === 'Kg' && /^\d{4,6}$/.test(String(i.cod))).flatMap((i, k) => { const s = ['CHÁ VERDE', 'CHÁ PRETO', 'ROOIBOS', 'INFUSÕES'][k % 4]; return [
-        { cod: String(i.cod) + '1', desc: `${i.desc} 50G`, grupo: 'CHÁS', sub: s, preco: Math.round(i.custo * 0.05 * 2.9 * 10) / 10 },
-        { cod: String(i.cod) + '2', desc: `${i.desc} 100G`, grupo: 'CHÁS', sub: s, preco: Math.round(i.custo * 0.1 * 2.6 * 10) / 10 }]; }),
+      ...its.filter((i) => i.un === 'Kg' && /^\d{4,6}$/.test(String(i.cod))).flatMap((i, k) => { const s = ['CHÁ VERDE', 'CHÁ PRETO', 'ROOIBOS', 'INFUSÕES'][k % 4], g = k % 4 === 3 ? 'INFUSÕES' : k % 2 ? 'CHÁ PURO' : 'CHÁ AROMATIZADO'; return [
+        { cod: String(i.cod) + '1', desc: `${i.desc} 50G`, grupo: g, sub: s, preco: Math.round(i.custo * 0.05 * 2.9 * 10) / 10 },
+        { cod: String(i.cod) + '2', desc: `${i.desc} 100G`, grupo: g, sub: s, preco: Math.round(i.custo * 0.1 * 2.6 * 10) / 10 }]; }),
     ] };
     // fora de linha fictício: 3 acessórios com saldo indisponíveis no Sistema de Pedidos há ~4 meses e 1 há 20 dias
     const comSaldo = its.filter((i) => i.un !== 'Kg' && i.qtd > 0);
@@ -2110,6 +2110,7 @@ app.post('/api/pedido/carrinho/confirmar', (req, res) => {
   try {
     const r = PED.confirmarCarrinho(loja.id, req.user);
     if (r.erro) return res.status(400).json({ erro: r.erro });
+    try { require('./src/sugestoes').confirmarPedido(loja.id, r.ok.inicio); } catch (e) { console.error('[sugestões] carrinho confirmado:', e.message); }
     C.auditar(req.user, 'confirmou que o pedido do carrinho foi feito', loja.id, { loja: loja.id, montadoEm: r.ok.inicio });
     res.json({ ok: true, carrinho: r.ok });
   } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
@@ -2120,7 +2121,7 @@ app.post('/api/pedido/carrinho/excluir', (req, res) => {
     const r = PED.excluirCarrinho(loja.id);
     if (r.erro) return res.status(400).json({ erro: r.erro });
     let voltaram = 0;
-    try { voltaram = require('./src/sugestoes').desfazerPedido(loja.id, r.ok.inicio, req.user).ok; } catch (e) { console.error('[sugestões] carrinho excluído:', e.message); }
+    try { voltaram = require('./src/sugestoes').desfazerPedido(loja.id, r.ok.inicio, req.user, r.ok.confirmado).ok; } catch (e) { console.error('[sugestões] carrinho excluído:', e.message); }
     C.auditar(req.user, 'excluiu o registro do carrinho montado (pedido não feito)', loja.id, { loja: loja.id, montadoEm: r.ok.inicio, montadoPor: r.ok.por, produtos: r.ok.produtos, jaConfirmado: r.ok.confirmado, sugestoesDevolvidas: voltaram });
     res.json({ ok: true, sugestoesDevolvidas: voltaram });
   } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
@@ -2690,6 +2691,20 @@ app.post('/api/pedido/sugestoes/fechar', express.json({ limit: '300kb' }), (req,
   const r = SUG.fechar(loja.id, (req.body || {}).itens, req.user);
   C.auditar(req.user, 'respondeu as sugestões da equipe no pedido', loja.id, { loja: loja.id, ...r.ok });
   res.json({ ok: true, ...r.ok });
+});
+
+// "Não fiz este pedido": o que estava "aguardando entrega" volta para o próximo pedido (um produto, ou tudo o que não foi confirmado)
+app.post('/api/pedido/sugestoes/devolver', express.json({ limit: '100kb' }), (req, res) => {
+  if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
+  if (!decidePedido(req)) return res.status(403).json({ erro: 'Sem permissão.' });
+  const loja = lojaSug(req);
+  if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  try {
+    const cods = Array.isArray((req.body || {}).cods) ? req.body.cods.slice(0, 500).map(String) : null;
+    const r = SUG.devolver(loja.id, cods, req.user);
+    C.auditar(req.user, 'marcou sugestões da equipe como não pedidas', loja.id, { loja: loja.id, devolvidas: r.ok, ...(cods ? { produtos: cods.slice(0, 30) } : { todas: true }) });
+    res.json({ ok: true, devolvidas: r.ok });
+  } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
 });
 
 // pedido obrigatório da franquia: criar, alterar, encerrar, reabrir, apagar

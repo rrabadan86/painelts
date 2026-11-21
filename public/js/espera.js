@@ -14,6 +14,9 @@
   const quandoTxt = (iso) => (iso ? new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—');
   const telTxt = (d) => { d = String(d || '').replace(/\D/g, ''); if (d.length >= 12 && d.startsWith('55')) d = d.slice(2); return d.length === 11 ? `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}` : d.length === 10 ? `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}` : d; };
   const wpp = (cel, texto) => { let d = String(cel || '').replace(/\D/g, ''); if (d.length >= 12 && d.startsWith('55')) d = d.slice(2); return d.length >= 10 ? `https://wa.me/55${d}?text=${encodeURIComponent(texto)}` : null; };
+  // grupo do produto no AppNext (definição única: grupoprod.js); '' quando o produto ainda não vendeu
+  const grupoIt = (it) => (TS.grupoProd ? TS.grupoProd.texto(it.cod, it.desc) : '');
+  const gruposItens = (p) => [...new Set(p.itens.map(grupoIt).filter(Boolean))].join(' · ');
   const nomesItens = (p) => { const n = p.itens.map((i) => (i.qtd > 1 ? `${i.qtd}× ` : '') + i.desc); return n.length <= 1 ? n[0] || '' : n.slice(0, -1).join(', ') + ' e ' + n[n.length - 1]; };
   const primeiro = (nome) => { const p = String(nome || '').trim().split(/\s+/)[0] || ''; return p ? p[0].toUpperCase() + p.slice(1).toLowerCase() : ''; };
   const bonito = (s) => {
@@ -195,7 +198,7 @@
           const det = h('details', { class: 'esp-grupo esp-grupo-prod', open: !state.espFechados[chKey] || null },
             h('summary', { class: 'esp-grupo-cab' },
               h('div', { class: 'esp-grupo-esq' },
-                h('b', { class: 'esp-grupo-nome' }, g.nome),
+                h('b', { class: 'esp-grupo-nome' }, g.nome), grupoIt({ desc: g.nome }) ? h('small', { class: 'muted esp-grp grp-prod', title: TS.grupoProd.DICA }, ' ' + grupoIt({ desc: g.nome })) : null,
                 h('span', { class: 'esp-grupo-qtd' }, `${fmt.int(g.pedidos.length)} ${g.pedidos.length === 1 ? 'cliente' : 'clientes'}${g.unid > g.pedidos.length ? ` · ${fmt.int(g.unid)} un.` : ''}`)),
               vTxt ? h('span', { class: 'esp-grupo-resumo muted' }, `Vendedoras: ${vTxt}`) : null),
             h('div', { class: 'esp-grupo-corpo' }, ...g.pedidos.map((p) => cartao(p, loja, d, repintar, false))));
@@ -287,6 +290,7 @@
         h('div', { class: 'esp-tags-dir' }, !dentroGrupoVend || !vNome ? vendWrap : null, h('span', { class: 'esp-st ' + stCls }, stTxt))),
       h('div', { class: 'esp-meio' },
         h('span', { class: 'esp-prod' }, nomesItens(p)),
+        gruposItens(p) ? h('small', { class: 'muted esp-grp grp-prod', title: TS.grupoProd.DICA }, ' · ' + gruposItens(p)) : null,
         h('span', { class: 'esp-sit' }, ' · ' + sit),
         p.obs ? h('span', { class: 'esp-obs' }, ` · “${p.obs}”`) : null),
       h('div', { class: 'esp-meta muted' },
@@ -387,7 +391,7 @@
         else { try { lista = (await (await fetch(TS.api(`espera/produtos?loja=${encodeURIComponent(loja)}&q=${encodeURIComponent(q)}`), { credentials: 'same-origin' })).json()).produtos || []; } catch { lista = []; } }
         const add = (x) => { if (!f.itens.some((i) => i.desc === x.desc)) f.itens.push({ desc: x.desc, cod: x.cod, qtd: 1, falta: x.falta, generico: !!x.generico }); buscaP.value = ''; sugP.hidden = true; pintarChips(); buscaP.focus(); };
         sugP.replaceChildren(...[...lista.map((x) => h('button', { type: 'button', class: 'cp-sug-it' + (x.generico ? ' esp-sug-gen' : ''), onmousedown: (e) => { e.preventDefault(); add(x); } },
-          h('span', null, x.desc, x.generico ? h('em', null, ' · qualquer tamanho') : null), h('small', null, [x.falta === true ? 'em falta' : x.falta === false ? 'tem no estoque' : '', x.vendidos ? `${fmt.int(x.vendidos)} vendidos` : ''].filter(Boolean).join(' · ')))),
+          h('span', null, x.desc, x.generico ? h('em', null, ' · qualquer tamanho') : null), h('small', null, [grupoIt(x), x.falta === true ? 'em falta' : x.falta === false ? 'tem no estoque' : '', x.vendidos ? `${fmt.int(x.vendidos)} vendidos` : ''].filter(Boolean).join(' · ')))),
         h('button', { type: 'button', class: 'cp-sug-it cp-sug-todos', onmousedown: (e) => { e.preventDefault(); add({ desc: q, cod: null, generico: true }); } }, h('span', null, `Anotar "${q}" como o cliente falou`), h('small', null, 'o painel procura no estoque pelo nome'))].filter(Boolean));
         sugP.hidden = false;
       }, 250);
