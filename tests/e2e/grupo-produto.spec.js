@@ -11,11 +11,13 @@ for (const [nome, hash] of [['Estoque', '#estoque'], ['Rentabilidade', '#rentab'
     const erros = [];
     page.on('pageerror', (e) => erros.push(e.message));
     await abrir(page, hash);
-    const marca = page.locator(hash === '#pedido' ? '.ped-t tbody td:nth-child(2), .ped-card-meta' : '.grp-prod').first();
+    // a tela se redesenha quando os dados chegam: pega a primeira marca visível e com texto, e lê pelo textContent
+    const marca = page.locator(hash === '#pedido' ? '.ped-t tbody td:nth-child(2):visible, .ped-card-meta:visible' : '.grp-prod:visible').filter({ hasText: /\S/ }).first();
     await expect(marca).toBeVisible({ timeout: 40000 });
+    await expect(marca).toHaveText(/\S/);
     // é um grupo que existe nas vendas ou no cadastro (nunca "Chás a granel", que é parte do pedido)
     const grupos = await page.evaluate(() => TS.db.D.grupo.filter(Boolean));
-    const txt = (await marca.innerText()).split(/\n| · /)[0].trim();
+    const txt = ((await marca.textContent()) || '').split(/\n| · /)[0].trim();
     expect(txt).not.toBe('');
     expect(txt).not.toBe('Chás a granel');
     if (hash !== '#pedido') expect(grupos.concat(['ACESSÓRIOS', 'CHÁ AROMATIZADO', 'CHÁ PURO', 'INFUSÕES']), txt).toContain(txt);
