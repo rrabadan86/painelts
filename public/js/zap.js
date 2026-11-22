@@ -36,11 +36,23 @@
     if (s.pausa) return ['warn', 'Pausado'];
     return s.ligado ? ['ok', 'Ligado'] : ['cinza', 'Desligado'];
   }
+  /** "amanhã", "segunda (24/11)"… para a volta do robô */
+  function dataCurta(d) {
+    const iso = (x) => x.toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+    const amanha = iso(new Date(Date.now() + 864e5));
+    if (iso(d) === amanha) return 'amanhã';
+    return `${d.toLocaleDateString('pt-BR', { weekday: 'long', timeZone: 'America/Sao_Paulo' }).replace('-feira', '')} (${fmt.date(iso(d)).slice(0, 5)})`;
+  }
   /** "Hoje: 12 de 30 · próxima mensagem por volta de 10:42" e, quando está parado, o motivo */
   function linhaHoje(s) {
     const partes = [`Hoje: ${fmt.int(s.hoje.n)} de ${fmt.int(s.hoje.teto)} ${s.hoje.teto === 1 ? 'mensagem' : 'mensagens'}`];
     const andando = s.ligado && !s.pausa && s.conexao.estado === 'conectado';
-    if (andando && s.proximoEm && (!s.motivo || s.motivo.cod === 'ritmo')) partes.push(`próxima mensagem por volta de ${hhmm(s.proximoEm)}`);
+    if (andando && s.proximoEm && (!s.motivo || s.motivo.cod === 'ritmo')) {
+      // a próxima "por volta de" pode cair depois do fim do horário (ou num dia sem envio): aí diz quando volta de verdade
+      const est = s.cfg ? estimar({ pend: 1, limite: 0, cfg: s.cfg, agora: Date.parse(s.proximoEm) }) : null;
+      if (est && !est.agoraNoHorario && est.primeira) partes.push(`hoje não sai mais nenhuma (o horário acaba às ${s.cfg.as}) · volta ${dataCurta(est.primeira)} às ${s.cfg.das}`);
+      else partes.push(`próxima mensagem por volta de ${hhmm(s.proximoEm)}`);
+    }
     else if (andando && !s.motivo) partes.push('próxima mensagem em instantes');
     return partes.join(' · ');
   }

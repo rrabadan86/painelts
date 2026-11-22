@@ -61,7 +61,8 @@ test.describe('robô do WhatsApp', () => {
     await expect(faixa).toContainText('Robô do WhatsApp');
     await expect(faixa.locator('.badge', { hasText: 'Ligado' })).toBeVisible();
     await expect(faixa).toContainText('Hoje: 12 de 30');
-    await expect(faixa).toContainText('próxima mensagem por volta de');
+    // dentro do horário: "próxima mensagem por volta de HH:MM"; quando a próxima cairia depois do horário (ou num dia sem envio), diz quando volta
+    await expect(faixa).toContainText(/próxima mensagem por volta de \d\d:\d\d|hoje não sai mais nenhuma .* volta .* às \d\d:\d\d/);
     await semVazar(page, faixa);
     // uma campanha de exemplo (fica só na memória do navegador)
     await page.getByRole('button', { name: 'Criar campanha' }).click();
@@ -106,6 +107,24 @@ test.describe('robô do WhatsApp', () => {
     await expect(faixa.locator('.badge', { hasText: 'Pausado' })).toBeVisible();
     await expect(faixa).toContainText('Nada é enviado até alguém ligar de novo');
     expect(pedidos.filter((p) => !p.includes('/api/demo/zap/')), 'só as rotas da apresentação').toEqual([]);
+    expect(erros).toEqual([]);
+  });
+  test('Campanhas: ao criar, "Quem envia" = robô já abre a janela de ligar com os números (pedido do dono)', async ({ page }) => {
+    await page.evaluate(() => { location.hash = '#campanhas'; });
+    await expect(page.locator('.zap-faixa')).toBeVisible();
+    await page.getByRole('button', { name: 'Criar campanha' }).click();
+    await page.locator('.cp-nome input').fill('Teste quem envia');
+    await expect.poll(async () => +(await page.locator('.cp-contagem b').innerText()).replace(/\D/g, '')).toBeGreaterThan(0);
+    await page.getByLabel('Quem envia').selectOption('robo');
+    await page.getByRole('button', { name: 'Salvar campanha' }).click();
+    const conf = page.locator('.ts-conf');
+    await expect(conf).toContainText('quase todos os clientes');
+    await conf.getByRole('button', { name: 'Salvar assim mesmo' }).click();
+    // a janela de ligar abre sozinha; o robô só liga se confirmar
+    await expect(conf).toContainText('Ligar o robô para "Teste quem envia"?');
+    await expect(conf).toContainText(/Vai enviar para: [\d.]+ clientes/);
+    await conf.getByRole('button', { name: 'Ligar o robô' }).click();
+    await expect(page.locator('.zap-opcao')).toContainText('Robô ligado nesta campanha');
     expect(erros).toEqual([]);
   });
   // O robô não depende da tela: o servidor roda a conta dos MESMOS arquivos da tela (src/zapauto.js). Aqui a prova de
