@@ -181,7 +181,7 @@
     TS.aplicarPreset('30d');
     Object.assign(state.com, { cupom: '', meta: null, vendBonus: '' });
     state.promo.dias = 30;
-    Object.assign(state.cli, { nome: '', cpf: '', cupom: '', produto: '', aniv: '', visMin: '', visMax: '', ausMin: '', ausMax: '', seg: '' });
+    Object.assign(state.cli, { nome: '', cpf: '', tel: '', cupom: '', produto: '', aniv: '', visMin: '', visMax: '', ausMin: '', ausMax: '', seg: '' });
     Object.assign(state.cli.per, { preset: 'tudo', de: null, ate: null, ano: null, mes: null });
     state.cli.cidade.clear(); state.cli.grupos.clear(); state.cli.lojas.clear();
     TS._buscas = null; // buscas digitadas nas tabelas também

@@ -538,6 +538,7 @@
     box.append(
       txt('Nome', 'nome', 'Nome do cliente'),
       txt('CPF', 'cpf', 'Somente números', 'numeric'),
+      txt('Telefone', 'tel', 'Número ou parte dele', 'tel'),
       txt('Cupom', 'cupom', 'Nº do cupom', 'numeric'),
       txt('Produto comprado', 'produto', 'Ex.: earl grey'),
       faixaNum('Visitas (cupons)', 'visMin', 'visMax', [['1', 1, 1], ['2 a 4', 2, 4], ['5+', 5, '']]),
@@ -563,9 +564,20 @@
   }
 
   // ---------- aplicação dos filtros ----------
+  /** telefone digitado na busca: só os dígitos, sem o 55 do Brasil na frente (quando veio com ele) */
+  function telBusca(t) { const d = String(t).replace(/\D/g, ''); return d.length >= 12 && d.startsWith('55') ? d.slice(2) : d; }
+  /** o celular do cliente tem esse número (ou parte dele)? Aceita com ou sem o 9 da frente do celular */
+  function telConfere(cel, q) {
+    const d = telBusca(cel || '');
+    if (!d || !q) return false;
+    if (d.includes(q)) return true;
+    const sem9 = (x) => (x.length === 11 && x[2] === '9' ? x.slice(0, 2) + x.slice(3) : null); // DDD + 9 + 8 dígitos → sem o 9
+    const com9 = (x) => (x.length === 10 ? x.slice(0, 2) + '9' + x.slice(2) : null);
+    return [sem9(q), com9(q)].some((v) => v && d.includes(v)) || [sem9(d), com9(d)].some((v) => v && v.includes(q));
+  }
   function filtrar() {
     const s = state.cli, db = TS.db;
-    const nome = TS.norm(s.nome), cpf = s.cpf.replace(/\D/g, ''), cupom = s.cupom.replace(/\D/g, ''), prod = TS.norm(s.produto);
+    const nome = TS.norm(s.nome), cpf = s.cpf.replace(/\D/g, ''), tel = telBusca(s.tel || ''), cupom = s.cupom.replace(/\D/g, ''), prod = TS.norm(s.produto);
     const num = (v) => (v === '' || v == null ? null : +v);
     const vMin = num(s.visMin), vMax = num(s.visMax), aMin = num(s.ausMin), aMax = num(s.ausMax);
     const filtraItens = prod || s.grupos.size;
@@ -576,6 +588,7 @@
     for (const c of TS.cli.lista) {
       if (nome && !TS.norm(c.nome).includes(nome)) continue;
       if (cpf && !c.cpf.includes(cpf)) continue;
+      if (tel && !telConfere(c.celular, tel)) continue;
       if ((aMin != null || aMax != null) && c.ausencia == null) continue;
       if (aMin != null && c.ausencia < aMin) continue;
       if (aMax != null && c.ausencia > aMax) continue;
@@ -1730,6 +1743,7 @@
   }
   // usado pela tela Campanhas
   TS.cliApi = {
+    telConfere: (cel, q) => telConfere(cel, telBusca(q)),
     abrirClientes: (cpfs) => abrirClientes(cpfs), contatoDe: (c) => contatoDe(c), intervalo: () => intervaloDe(state.loja), recarregarContatos: () => recarregarContatos(), marcar: (c, acao, motivo) => marcar(c, acao, motivo),
     carregarContatos: () => carregarContatos(), modelos: () => modelosDe(state.loja), fmtTel: (x) => fmtTel(x), fmtCPF: (x) => fmtCPF(x), csv: (a, b, c) => csv(a, b, c),
     texto: (txt, c, extra = {}) => TS.msgWpp.montar(txt, valoresWpp(c), extra), valores: (c) => valoresWpp(c),
