@@ -6,7 +6,7 @@
 
   // ======================= PERÍODO =======================
   const PRESETS = [
-    ['Hoje', 'hoje'], ['Semana atual', 'semana'], ['Mês atual', 'mes'], ['Mês anterior', 'mesAnt'], ['28 dias', '30d'], ['Ano atual', 'ano'], ['12 meses', '12m'], ['Tudo', 'tudo'],
+    ['Hoje', 'hoje'], ['Ontem', 'ontem'], ['Semana atual', 'semana'], ['Mês atual', 'mes'], ['Mês anterior', 'mesAnt'], ['28 dias', '30d'], ['Ano atual', 'ano'], ['12 meses', '12m'], ['Tudo', 'tudo'],
   ];
   TS.PRESETS = PRESETS;
   /** referência = último dia com venda (evita "mês atual" vazio quando a planilha ainda não foi atualizada) */
@@ -17,6 +17,7 @@
     const d = (yy, mm, dd) => Math.floor(Date.UTC(yy, mm, dd) / 86400000);
     f.preset = p; f.ano = null; f.mes = null;
     if (p === 'hoje') { f.de = TS.todayDay(); f.ate = f.de; }
+    else if (p === 'ontem') { f.de = TS.todayDay() - 1; f.ate = f.de; } // o dia anterior ao de hoje (Brasília)
     else if (p === 'semana') { const hj = TS.todayDay(); const wd = (new Date(hj * 86400000).getUTCDay() + 6) % 7; f.de = hj - wd; f.ate = f.de + 6; } // segunda a domingo
     else if (p === 'mes') { f.de = d(y, m, 1); f.ate = db.maxDay; }
     else if (p === 'mesAnt') { f.de = d(y, m - 1, 1); f.ate = d(y, m, 0); }
@@ -45,6 +46,7 @@
       return `${TS.MESES_LONGOS[f.mes - 1]} (todos os anos)`;
     }
     if (f.preset === 'hoje') return `Hoje · ${fmt.date(TS.dayToIso(f.de))}`;
+    if (f.preset === 'ontem') return `Ontem · ${fmt.date(TS.dayToIso(f.de))}`;
     if (f.preset === 'semana') return `Semana atual · ${fmt.date(TS.dayToIso(f.de))} a ${fmt.date(TS.dayToIso(f.ate))}`;
     if (f.de == null && f.ate == null) return 'Todo o histórico';
     return `${fmt.date(TS.dayToIso(f.de ?? TS.db.minDay))} a ${fmt.date(TS.dayToIso(f.ate ?? TS.db.maxDay))}`;
@@ -207,7 +209,7 @@
       return Math.floor(Date.UTC(y, m, Math.min(d.getUTCDate(), ult)) / 86400000);
     };
     if (f.preset === 'mes' || f.preset === 'mesAnt') return { de: shift(f.de, -1), ate: f.preset === 'mesAnt' ? f.de - 1 : shift(fim, -1), txt: 'vs. mesmo período do mês anterior' };
-    if (f.preset === 'hoje') return { de: f.de - 7, ate: f.de - 7, txt: 'vs. mesmo dia da semana passada' };
+    if (f.preset === 'hoje' || f.preset === 'ontem') return { de: f.de - 7, ate: f.de - 7, txt: 'vs. mesmo dia da semana passada' };
     if (f.preset === 'semana') { const ateReal = Math.min(f.ate, Math.max(TS.db.maxDay, f.de)); return { de: f.de - 7, ate: ateReal - 7, txt: 'vs. mesmos dias da semana passada' }; }
     if (f.preset === 'anomes' && f.ano && f.mes) return { de: shift(f.de, -12), ate: shift(fim, -12), txt: 'vs. mesmo mês do ano anterior' };
     if (f.preset === 'anomes' && f.ano) return { de: shift(f.de, -12), ate: shift(fim, -12), txt: 'vs. ano anterior' };
