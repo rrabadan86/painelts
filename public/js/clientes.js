@@ -2,6 +2,12 @@
 'use strict';
 (function () {
   const { h, fmt, state } = TS;
+  /**
+   * celular trocado pelo painel (vínculo da conversa do WhatsApp, src/celulares.js): o servidor já entrega o número novo
+   * em `celular`; aqui só vêm junto o do FIXE (`celFixe`) e quem/quando trocou (`celVinc`), para a ficha mostrar.
+   * `celTirado`: o número do FIXE deste cliente foi ligado a outro cliente pelo painel (fica sem celular).
+   */
+  const celInfo = (info) => (info && (info.celVinc || info.celTirado) ? { celFixe: info.celFixe || '', celVinc: info.celVinc || null, celTirado: !!info.celTirado } : {});
 
   /**
    * Monta (uma vez) o índice cliente → cupons → itens.
@@ -33,7 +39,7 @@
         const nome = (info.nome || nomeAlt || '').replace(/^[\s\-–—]+/, '').trim();
         const cel = digits(info.celular);
         const local = cel.length >= 12 && cel.startsWith('55') ? cel.slice(2) : cel; // aceita com o 55 na frente
-        c = { cpf, empresa: cpf.length === 14, nome, celular: cel, wpp: local.length >= 10 && local.length <= 11 ? TS.demo ? '#demo' : 'https://wa.me/55' + local : null, nascimento: info.nascimento || null, cidade: info.cidade || '', email: info.email || '', cupons: [], semVenda: 0, divergencias: [] };
+        c = { cpf, empresa: cpf.length === 14, nome, celular: cel, wpp: local.length >= 10 && local.length <= 11 ? TS.demo ? '#demo' : 'https://wa.me/55' + local : null, nascimento: info.nascimento || null, cidade: info.cidade || '', email: info.email || '', cupons: [], semVenda: 0, divergencias: [], ...celInfo(info) };
         porCPF.set(cpf, c);
       }
       return c;
@@ -1029,7 +1035,7 @@
       const f = blocoFidelidade(c);
       const item = (rot, val) => (val ? h('div', { class: 'fi' }, h('span', null, rot), h('b', null, val)) : null);
       const tel = fmtTel(c.celular);
-      const contato = [item('Celular', tel), item('E-mail', c.email), item('Cidade', c.cidade), item('Aniversário', c.aniv ? `${c.aniv}${c.idade != null ? ` · ${c.idade} anos` : ''}` : null)].filter(Boolean);
+      const contato = [tel ? h('div', { class: 'fi' }, h('span', null, 'Celular', celDica(c)), h('b', null, tel), celNota(c)) : celNota(c), item('E-mail', c.email), item('Cidade', c.cidade), item('Aniversário', c.aniv ? `${c.aniv}${c.idade != null ? ` · ${c.idade} anos` : ''}` : null)].filter(Boolean);
       out.push(h('div', { class: 'cli-ficha' }, contato.length ? h('div', { class: 'fi-bloco' }, h('div', { class: 'fi-tit' }, 'Contato (cadastro do FIXE)'), ...contato) : null,
         f || h('div', { class: 'fi-bloco fi-largo' }, h('div', { class: 'fi-nota' }, 'Sem dados no FIXE.'))),
         h('p', { class: 'muted', style: { margin: '0 0 8px', fontSize: '12px' } }, 'Nenhuma compra com este CPF na nota foi encontrada nas vendas.'));
@@ -1122,7 +1128,7 @@
       const nasc = info.nascimento || null;
       c = { cpf, empresa: cpf.length === 14, nome: (info.nome || (fxc && fxc.nome) || '').trim(), celular: cel, wpp: local.length >= 10 && local.length <= 11 ? (TS.demo ? '#demo' : 'https://wa.me/55' + local) : null,
         nascimento: nasc, idade: idade(nasc), aniv: nasc ? nasc.slice(8, 10) + '/' + nasc.slice(5, 7) : '', cidade: info.cidade || '', email: info.email || '',
-        cupons: [], divergencias: [], tags: new Set(), semVenda: 0 };
+        cupons: [], divergencias: [], tags: new Set(), semVenda: 0, ...celInfo(info) };
     }
     if (!c.fx && fxc) c.fx = fxc;
     if (!c.tags) c.tags = new Set();
@@ -1410,7 +1416,7 @@
       : `Na última compra de chá (${d(c.ultimaCha)}) levou ${c.gramasUltima} g. Pelo histórico, consome ~${fmt.n1(c.gDia)} g por dia: dura ~${c.intervaloCha} dias.`;
     return h('div', { class: 'cli-ficha' }, ...[
       bloco('Contato',
-        tel ? h('div', { class: 'fi' }, h('span', null, 'Celular'), h('b', null, tel, c.wpp ? linkConversa(c, ' WhatsApp') : null)) : null,
+        tel ? h('div', { class: 'fi' }, h('span', null, 'Celular', celDica(c)), h('b', null, tel, c.wpp ? linkConversa(c, ' WhatsApp') : null), celNota(c)) : celNota(c),
         item('E-mail', c.email || null),
         item('Cidade', c.cidade || null),
         item('Aniversário', c.aniv ? `${c.aniv}${c.idade != null ? ` · ${c.idade} anos` : ''}` : null)),
@@ -1743,6 +1749,7 @@
   }
   // usado pela tela Campanhas
   TS.cliApi = {
+    aplicarCelular: (cpf, vinc) => aplicarCelular(cpf, vinc), mesmoTel: (a, b) => mesmoTel(a, b),
     telConfere: (cel, q) => telConfere(cel, telBusca(q)),
     abrirClientes: (cpfs) => abrirClientes(cpfs), contatoDe: (c) => contatoDe(c), intervalo: () => intervaloDe(state.loja), recarregarContatos: () => recarregarContatos(), marcar: (c, acao, motivo) => marcar(c, acao, motivo),
     carregarContatos: () => carregarContatos(), modelos: () => modelosDe(state.loja), fmtTel: (x) => fmtTel(x), fmtCPF: (x) => fmtCPF(x), csv: (a, b, c) => csv(a, b, c),
@@ -1759,7 +1766,7 @@
         const cel = digits(info.celular);
         const local = cel.length >= 12 && cel.startsWith('55') ? cel.slice(2) : cel;
         out.push({ cpf, nome: (info.nome || f.nome || '').trim(), celular: cel, wpp: local.length >= 10 && local.length <= 11 ? 'https://wa.me/55' + local : null,
-          nascimento: info.nascimento || null, cupons: [], visitas: 0, ultima: null, ausencia: null, tags: new Set(f.em30 > 0 ? ['vence'] : []), fx: f, soFixe: true });
+          nascimento: info.nascimento || null, cupons: [], visitas: 0, ultima: null, ausencia: null, tags: new Set(f.em30 > 0 ? ['vence'] : []), fx: f, soFixe: true, ...celInfo(info) });
       }
       return out;
     },
@@ -1771,6 +1778,50 @@
     if (d.length === 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
     return d || null;
   };
+  // ---------- celular trocado pelo painel (vínculo da conversa do WhatsApp) ----------
+  const soLocal = (n) => { const d = String(n || '').replace(/\D/g, ''); return d.length >= 12 && d.startsWith('55') ? d.slice(2) : d; };
+  /** chave do celular, a mesma do servidor (`ZF.foneChave`, src/zapfila.js): 55 + DDD + número, com o 9 do celular —
+   *  com e sem o 9 é o mesmo número (pedido do dono). '' quando não tem DDD */
+  const telChave = (n) => { let d = String(n || '').replace(/\D/g, ''); if (d.length === 10 || d.length === 11) d = '55' + d; if (d.length === 12 && d.startsWith('55') && /[6-9]/.test(d[4])) d = d.slice(0, 4) + '9' + d.slice(4); return /^55\d{10,11}$/.test(d) ? d : ''; };
+  const mesmoTel = (a, b) => { const ka = telChave(a); return !!ka && ka === telChave(b); };
+  /** ⓘ do celular na ficha: de onde vem o número */
+  function celDica(c) {
+    if (!c.celVinc) return c.celTirado ? TS.dica('O número que este cliente tinha no FIXE foi ligado a outro cliente pelo painel (pela conversa do WhatsApp). Ele fica sem celular no painel até o FIXE ter outro número.') : null;
+    const quando = c.celVinc.em ? fmt.date(c.celVinc.em.slice(0, 10)) : '';
+    return TS.dica(`Número trocado pelo painel${quando ? ' em ' + quando : ''}${c.celVinc.por ? ' por ' + c.celVinc.por : ''}, pela conversa do WhatsApp. É ele que vale no Hoje, nas campanhas e no robô. O FIXE não foi mudado.`);
+  }
+  /** linha embaixo do celular: o número do FIXE (igual, outro ou o antigo) */
+  function celNota(c) {
+    if (c.celTirado && !c.celVinc) return h('div', { class: 'fi' }, h('span', null, 'Celular', celDica(c)), h('b', { class: 'muted' }, 'ligado a outro cliente pelo painel'));
+    if (!c.celVinc) return null;
+    const fixe = c.celFixe || '', antigo = c.celVinc.antigo || '';
+    const quando = c.celVinc.em ? fmt.date(c.celVinc.em.slice(0, 10)) : '';
+    let txt;
+    if (fixe && mesmoTel(fixe, c.celular)) txt = 'igual ao do FIXE';
+    else if (fixe && antigo && !mesmoTel(fixe, antigo)) return h('small', { class: 'warn-t cel-nota' }, `Trocado pelo painel${quando ? ' em ' + quando : ''}. O FIXE tem outro número agora: ${fmtTel(fixe)} — desfaça o vínculo na conversa para usar o do FIXE.`);
+    else txt = `trocado pelo painel${quando ? ' em ' + quando : ''}${c.celVinc.por ? ' por ' + c.celVinc.por : ''}${fixe ? ` · no FIXE: ${fmtTel(fixe)}` : ''}`;
+    return h('small', { class: 'muted cel-nota' }, txt);
+  }
+  /**
+   * aplica o vínculo na memória da tela (depois de vincular/desfazer: o próximo /api/dados já vem com ele do servidor).
+   * vinc = { cel, em, por, antigo } ou null (desfazer: volta o do FIXE).
+   */
+  function aplicarCelular(cpf, vinc) {
+    if (TS.garantirClientes) TS.garantirClientes();
+    const cad = TS.cli && TS.cli.cad;
+    if (!cad) return;
+    let info = cad.get(cpf);
+    if (!info) { info = { cpf, nome: '', celular: '' }; cad.set(cpf, info); if (TS.db && TS.db.clientes) TS.db.clientes.push(info); }
+    const wppDe = (cel) => { const l = soLocal(cel); return l.length >= 10 && l.length <= 11 ? (TS.demo ? '#demo' : 'https://wa.me/55' + l) : null; };
+    const alvos = (k) => [cad.get(k), TS.cli.porCPF && TS.cli.porCPF.get(k)].filter(Boolean);
+    if (vinc) {
+      // outro cliente com o mesmo número fica sem ele (um número, um cliente)
+      for (const [k, o] of cad) if (k !== cpf && o && mesmoTel(o.celular, vinc.cel)) for (const x of alvos(k)) { if (x.celVinc) { x.celular = x.celFixe || ''; delete x.celVinc; } else { x.celFixe = x.celular; x.celular = ''; x.celTirado = true; } x.wpp = wppDe(x.celular); }
+      for (const x of alvos(cpf)) { if (!x.celVinc) x.celFixe = x.celular || ''; x.celular = vinc.cel; x.celVinc = { em: vinc.em, por: vinc.por, antigo: vinc.antigo || x.celFixe || '' }; x.celTirado = false; x.wpp = wppDe(vinc.cel); }
+    } else {
+      for (const x of alvos(cpf)) { if (x.celVinc) { x.celular = x.celFixe || ''; delete x.celVinc; x.wpp = wppDe(x.celular); } }
+    }
+  }
   function acoesCliente(c) {
     const box = h('div', { class: 'cli-acoes' });
     const pintar = () => {

@@ -157,14 +157,14 @@ test('CONV-11: "sem resposta" na lista, abre pelo teclado, a atualização não 
     await expect(page.locator('.cv-conversa')).toHaveCount(0);
     await expect(lista.locator('.cv-item').first()).toBeVisible();
     expect(await page.evaluate(() => location.hash)).toBe('#conversas');
-    await lista.locator('.cv-item').first().click();
   } else {
     // computador: abrir não cria entrada no histórico (a lista está sempre ao lado)
     expect(await page.evaluate(() => !!(history.state && history.state.conversa))).toBe(false);
-    await lista.locator('.cv-item').first().click();
   }
-  // sobe a leitura e a atualização automática não a leva para o fim
+  // a chave antes do toque: no celular a conversa entra no lugar da lista
   const primeira = await lista.locator('.cv-item').first().getAttribute('data-chave');
+  await lista.locator('.cv-item').first().click();
+  // sobe a leitura e a atualização automática não a leva para o fim
   await expect(page.locator(`.cv-msgs[data-chave="${primeira}"]`)).toBeVisible();
   await page.addStyleTag({ content: '.cv-msgs { max-height: 120px !important; } .cv-split .cv-msgs-w { flex: 0 0 auto !important; }' });
   await page.evaluate(() => { document.querySelector('.cv-msgs').scrollTop = 0; });
@@ -177,5 +177,40 @@ test('CONV-11: "sem resposta" na lista, abre pelo teclado, a atualização não 
     await expect(page.locator('.cv-conversa')).toHaveCount(0);
     await expect.poll(() => page.evaluate(() => !(history.state && history.state.conversa))).toBe(true);
   }
+  expect(erros).toEqual([]);
+});
+
+test('CONV-13: vincular a conversa a um cliente (trocou de número) — a conversa passa a mostrar o cliente e o número novo vale no painel; desfazer volta o do FIXE', async ({ page }) => {
+  const erros = [];
+  page.on('pageerror', (e) => erros.push(e.message));
+  const lista = await abrirTela(page);
+  await lista.locator('.cv-item', { hasText: 'sem cadastro' }).first().click();
+  const conv = page.locator('.cv-conversa');
+  await expect(conv.getByRole('button', { name: 'Vincular a um cliente' })).toBeVisible();
+  const fone = (await conv.locator('.cv-fone').textContent()).trim();
+  // escolhe um cliente da apresentação pela busca (nome) e confirma
+  const alvo = await page.evaluate(() => { const c = TS.cli.lista.find((x) => x.nome && x.celular && x.nome.split(' ').length > 1); return { cpf: c.cpf, nome: c.nome, antes: c.celular }; });
+  await conv.getByRole('button', { name: 'Vincular a um cliente' }).click();
+  const janela = page.getByRole('dialog', { name: 'Vincular a um cliente' });
+  await janela.getByRole('searchbox', { name: 'Buscar cliente' }).fill(alvo.nome);
+  await janela.locator('.cv-vinc-item', { hasText: alvo.nome }).first().click();
+  const conf = page.getByRole('dialog', { name: 'Trocar o celular do cliente?' });
+  await expect(conf).toContainText(alvo.nome);
+  await expect(conf).toContainText(fone);
+  await expect(conf).toContainText('O FIXE não muda');
+  await conf.getByRole('button', { name: 'Trocar o celular' }).click();
+  // a conversa agora é do cliente; o número dele no painel é o da conversa
+  await expect(conv.locator('.cv-nome')).toHaveText(alvo.nome);
+  await expect(conv.getByRole('button', { name: 'Ver cliente' })).toBeVisible();
+  await expect(conv.getByRole('button', { name: 'Desfazer vínculo' })).toBeVisible();
+  const depois = await page.evaluate((cpf) => { const c = TS.cli.porCPF.get(cpf); return { cel: c.celular, fixe: c.celFixe, vinc: !!c.celVinc, fone: TS.foneConversa(c) }; }, alvo.cpf);
+  expect(depois.vinc).toBe(true);
+  expect(depois.fixe).toBe(alvo.antes);
+  expect(depois.fone.slice(-4)).toBe(fone.replace(/\D/g, '').slice(-4));
+  // desfazer: volta o número do FIXE e a conversa fica sem cliente
+  await conv.getByRole('button', { name: 'Desfazer vínculo' }).click();
+  await page.getByRole('dialog', { name: 'Desfazer o vínculo?' }).getByRole('button', { name: 'Desfazer' }).click();
+  await expect(conv.getByRole('button', { name: 'Vincular a um cliente' })).toBeVisible();
+  expect(await page.evaluate((cpf) => TS.cli.porCPF.get(cpf).celular, alvo.cpf)).toBe(alvo.antes);
   expect(erros).toEqual([]);
 });

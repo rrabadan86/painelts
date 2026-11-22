@@ -3333,6 +3333,16 @@ button.vl-pac-marca { background: none; text-decoration: underline; cursor: poin
 .cv-topo { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .cv-topo-c { display: grid; min-width: 0; flex: 1; }
 .cv-topo .cv-nome { font-size: 17px; overflow-wrap: anywhere; }
+.cv-topo-acoes { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+/* vínculo da conversa com o cliente: janela de busca */
+.cv-vinc { max-width: 460px; width: calc(100vw - 32px); }
+.cv-vinc .f-input { width: 100%; margin: 6px 0 8px; }
+.cv-vinc-lista { list-style: none; margin: 0; padding: 0; max-height: 50vh; overflow-y: auto; border-top: 1px solid var(--line); }
+.cv-vinc-lista li { border-bottom: 1px solid var(--line); }
+.cv-vinc-dica { padding: 10px 2px; }
+.cv-vinc-item { display: grid; gap: 2px; width: 100%; text-align: left; background: none; border: 0; padding: 10px 6px; min-height: 44px; font: inherit; color: inherit; cursor: pointer; }
+.cv-vinc-item:hover, .cv-vinc-item:focus-visible { background: var(--cream-2); }
+.cel-nota { display: block; margin-top: 2px; }
 .cv-escolha { display: grid; place-items: center; align-content: center; gap: 6px; text-align: center; height: 100%; min-height: 240px; color: var(--muted); }
 .cv-escolha b { color: var(--ink); font-size: 16px; }
 .cv-escolha-ico { font-size: 34px; }
