@@ -6,7 +6,7 @@
   const btn = document.getElementById('btnSistema');
   const pop = document.getElementById('sistemaPop');
   const nEl = btn.querySelector('.sis-n');
-  let info = null, timer = null, acompanhando = false, versaoAntes = null;
+  let info = null, timer = null, acompanhando = false, versaoAntes = null, semAtualizador = false;
 
   const quando = (iso) => (iso ? new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '');
   const dia = (iso) => (iso ? new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : '');
@@ -104,7 +104,14 @@
       const r = await fetch('/api/admin/sistema', { credentials: 'same-origin' });
       if (r.status === 401) { location.href = '/login'; return; }
       if (!r.ok) throw new Error('fora do ar');
-      info = await r.json();
+      const novo = await r.json();
+      // o atualizador acabou de reescrever os arquivos (ou está no meio): já estava instalado, então mantém o que tinha e confere de novo logo
+      if (!novo.instalado && !semAtualizador) {
+        // já estava instalado, ou é a primeira consulta: o atualizador pode estar reescrevendo o arquivo agora — confere de novo antes de pedir para instalar
+        semAtualizador = true; clearTimeout(timer); timer = setTimeout(consultar, 15e3); pintar(); return;
+      }
+      semAtualizador = !novo.instalado;
+      info = novo;
       // terminou a atualização que acompanhamos
       if (acompanhando && !atualizando() && info.status) {
         acompanhando = false;
