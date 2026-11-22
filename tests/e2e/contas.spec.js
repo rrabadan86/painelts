@@ -20,34 +20,27 @@ test('Faturamento do mês: o mesmo número no Resumo, no Início e no Resultado'
   expect(oficial).toBeGreaterThan(0);
   // Resumo, mês atual
   await page.evaluate(() => { TS.aplicarPreset('mes'); location.hash = '#resumo'; });
-  const fatResumo = page.locator('main .kpi', { hasText: 'Faturamento' }).first().locator('.kpi-value');
+  // redesenho: o faturamento fica no cartão-herói do Resumo
+  const fatResumo = page.locator('main .heroi-col', { hasText: 'Faturamento' }).first().locator('.heroi-num');
   await expect(fatResumo).toBeVisible({ timeout: 20000 });
   expect(Math.abs(num(await fatResumo.textContent()) - oficial)).toBeLessThanOrEqual(1);
-  // Início
+  // Início (redesenho de 22/11/2026): o herói mostra o % da meta pelas VENDAS DA META (chás e acessórios, sem Espaço Gourmet),
+  // a mesma base do Comissionamento; o faturamento do mês fica no Resumo e no Resultado (um número por fato)
   await ir(page, 'inicio');
-  const mes = page.locator('main .kpi', { hasText: 'Mês até agora' });
-  await expect(mes).toBeVisible();
-  expect(Math.abs(num(await mes.locator('.kpi-value').textContent()) - oficial)).toBeLessThanOrEqual(1);
-  // o "% da meta" usa as vendas da meta (chás e acessórios, sem Espaço Gourmet), e o texto diz isso
-  // com "Sua semana" na tela (admin e franqueado), o % da meta fica só no quadro "Meta do mês" de lá (um número por fato)
-  const comSemana = await page.locator('.vd-semana').count();
-  if (comSemana) {
-    await expect(mes.locator('.kpi-foot')).toContainText(/vendas da meta R\$\s[\d.]+ · o % da meta está em Sua semana/);
-    const kMeta = page.locator('.vd-semana .kpi', { hasText: 'Meta do mês' });
-    const pctTela = +(await kMeta.locator('.kpi-value').textContent()).replace(/[^\d]/g, '');
-    const esp = await page.evaluate(() => { const db = TS.db, ym = TS.dayToIso(db.maxDay).slice(0, 7); const idx = TS.filtrar({ de: TS.isoToDay(ym + '-01'), ate: db.maxDay, mesLivre: true }); return Math.round((TS.rules.vendasMeta(idx) / TS.metaCalc(ym).valor) * 100); });
-    expect(Math.abs(pctTela - esp)).toBeLessThanOrEqual(1);
-  } else await expect(mes.locator('.kpi-foot')).toContainText(/vendas da meta R\$\s[\d.]+ = \d+% da meta de R\$/);
-  const pct = await mes.locator('[data-pct-meta]').getAttribute('data-pct-meta');
+  const her = page.locator('main .ini-heroi .heroi-pri');
+  await expect(her).toBeVisible();
+  const pct = await her.getAttribute('data-pct-meta');
   const esperado = await page.evaluate(() => { const db = TS.db, ym = TS.dayToIso(db.maxDay).slice(0, 7); const idx = TS.filtrar({ de: TS.isoToDay(ym + '-01'), ate: db.maxDay, mesLivre: true }); return TS.rules.vendasMeta(idx) / TS.metaCalc(ym).valor; });
   expect(Math.abs(+pct - esperado)).toBeLessThan(0.0002);
-  // o dia em andamento fica fora da comparação e da projeção; a projeção abre a conta no ⓘ
-  const proj = page.locator('main .kpi', { hasText: 'Projeção do mês' });
-  await expect(proj.locator('.dica-i')).toHaveAttribute('aria-label', /média do mesmo dia da semana|média simples por dia aberto/);
+  // o número grande é o primeiro texto do .heroi-num (o "R$ x de R$ y" vem junto, em .heroi-sub)
+  expect(+(await her.locator('.heroi-num').evaluate((el) => el.firstChild.textContent)).replace(/[^\d]/g, '')).toBe(Math.round(esperado * 100));
+  await expect(her.locator('.dica-i').first()).toHaveAttribute('aria-label', /vendas da meta do mês|Vendas da meta do mês/i);
+  // a projeção ("no ritmo de agora") abre a conta no ⓘ
+  await expect(page.locator('main .ini-heroi .heroi-col').nth(1).locator('.dica-i')).toHaveAttribute('aria-label', /média do mesmo dia da semana|média simples por dia aberto/);
   await semRolagemLateral(page);
   // Resultado
   await ir(page, 'dre');
-  const fatDre = page.locator('main .g-kpi .kpi', { hasText: 'Faturamento' }).first().locator('.kpi-value');
+  const fatDre = page.locator('main .heroi .heroi-col', { hasText: 'Faturamento' }).first().locator('.heroi-num');
   await expect(fatDre).toBeVisible({ timeout: 30000 });
   expect(Math.abs(num(await fatDre.textContent()) - oficial)).toBeLessThanOrEqual(1);
   // a coluna da variação diz com o que compara (o mês inteiro do ano anterior)
@@ -60,17 +53,23 @@ test('Projeção: uma conta só no Início, no Resumo, no Resultado e no equilí
   await abrir(page);
   const p = await page.evaluate(() => { const ym = TS.dayToIso(TS.db.maxDay).slice(0, 7); const P = TS.projecaoMes(ym, { base: 'loja' }); return P ? { proj: Math.round(P.proj), real: P.realizado, hoje: P.hoje, feitos: P.feitos, n: P.n } : null; });
   test.skip(!p, 'a apresentação está com o mês fechado');
+  // Início: o herói compara com a meta a projeção das VENDAS DA META, pela mesma conta (TS.projecaoMes)
+  const pm = await page.evaluate(() => { const ym = TS.dayToIso(TS.db.maxDay).slice(0, 7); const P = TS.projecaoMes(ym, { base: 'meta' }); return P ? Math.round(P.proj) : null; });
   await ir(page, 'inicio');
-  const ini = page.locator('main .kpi', { hasText: 'Projeção do mês' }).locator('.kpi-value');
-  await expect(ini).toBeVisible();
-  expect(Math.abs(num(await ini.textContent()) - p.proj)).toBeLessThanOrEqual(1);
+  const her = page.locator('main .ini-heroi');
+  await expect(her).toBeVisible();
+  expect(Math.abs(+(await her.getAttribute('data-proj-loja')) - p.proj)).toBeLessThanOrEqual(1);
+  if (pm != null) {
+    expect(Math.abs(+(await her.getAttribute('data-proj-meta')) - pm)).toBeLessThanOrEqual(1);
+    await expect(her).toContainText(/No ritmo de agora, fecha em \d+% \(R\$\s[\d.]+\)|Meta batida/);
+  }
   await page.evaluate(() => { TS.aplicarPreset('mes'); location.hash = '#resumo'; });
-  const res = page.locator('main .kpi', { hasText: 'Projeção do faturamento' }).locator('.kpi-value');
+  const res = page.locator('main .heroi-col', { hasText: 'Projeção do faturamento' }).locator('.heroi-num');
   await expect(res).toBeVisible({ timeout: 20000 });
   expect(Math.abs(num(await res.textContent()) - p.proj)).toBeLessThanOrEqual(1);
   // Resultado: "vendendo R$ X no mês" é a mesma projeção; e a barra do equilíbrio também
   await ir(page, 'dre');
-  const dre = page.locator('main .g-kpi .kpi', { hasText: 'Projeção do mês' }).locator('.kpi-foot');
+  const dre = page.locator('main .heroi .heroi-col', { hasText: 'Projeção do mês' }).locator('.dre-h-proj');
   await expect(dre).toBeVisible({ timeout: 30000 });
   expect(Math.abs(num((await dre.textContent()).replace(/no mês.*$/, '')) - p.proj)).toBeLessThanOrEqual(1);
   const barra = page.locator('.est-eq .est-eq-barra u');
@@ -89,10 +88,11 @@ test('Comissionamento: só calcula dentro de um mês; meta dividida, vendas da m
     await aviso.getByRole('button', { name: 'Ver o mês atual' }).click();
   } else await page.evaluate(() => { TS.aplicarPreset('mes'); TS.render(); });
   await expect(aviso).toHaveCount(0);
-  const meta = page.locator('main .kpi', { hasText: 'Meta da loja' });
-  await expect(meta.locator('.kpi-foot')).toContainText(/Meta dividida entre \d+ pessoas?/);
+  // redesenho: meta da loja e a divisão ficam na linha da coluna "Vendas da meta" do cartão-herói (o ⓘ dela tem a regra do piso)
+  const meta = page.locator('main .heroi-col', { hasText: 'Vendas da meta' }).locator('.com-meta-loja');
+  await expect(meta).toContainText(/Meta da loja R\$\s[\d.]+ · Meta dividida entre \d+ pessoas?/);
   await expect(meta.locator('.dica-i')).toHaveAttribute('aria-label', /dias? com venda no mês/);
-  await expect(page.locator('main .kpi', { hasText: 'Vendas da meta' })).toBeVisible();
+  await expect(page.locator('main .heroi-col', { hasText: 'Vendas da meta' }).locator('.heroi-num')).toBeVisible();
   // o que a tela mostra é o que a regra devolve: divisores e quem ficou de fora
   const r = await page.evaluate(() => { const b = TS.filtrar(); const x = TS.rules.comissionamento({ base: b, baseSemVend: b, metaLoja: TS.metaPeriodo().valor || 0, vendBonus: '', ym: TS.metaPeriodo().ym, ate: TS.db.maxDay }); return { n: x.qtdVend, fora: x.foraDaMeta.length, poucos: x.rows.filter((y) => y.poucosAtend).length, piso: x.piso }; });
   await expect(meta.locator('[data-meta-div]')).toHaveAttribute('data-meta-div', String(r.n));
@@ -117,7 +117,7 @@ test('Período "28 dias" e "vs. ano anterior" pelos mesmos dias da semana', asyn
   });
   expect(r).toEqual({ dias: 28, preset: '30d', ano: 364, rotulo: '28 dias' });
   await ir(page, 'resumo');
-  const fat = page.locator('main .kpi', { hasText: 'Faturamento' }).first();
+  const fat = page.locator('main .heroi-col', { hasText: 'Faturamento' }).first();
   await expect(fat.locator('.kpi-vars')).toBeVisible({ timeout: 20000 });
   const linhas = await fat.locator('.kpi-vars > span').evaluateAll((xs) => xs.map((x) => [x.textContent, x.title]));
   expect(linhas.some(([t, d]) => /· 28 dias$/.test(t) && d === 'vs. 28 dias anteriores')).toBe(true);

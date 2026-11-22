@@ -12,12 +12,15 @@ test('Campanha: "pelo menos N compras" do produto escolhido diminui a lista e ap
   await page.getByRole('button', { name: '+ Criar campanha' }).click();
   const total = async () => +(await page.locator('.cp-contagem b').innerText()).replace(/\D/g, '');
   await expect.poll(total).toBeGreaterThan(0);
+  const semProduto = await total();
   const b = page.locator('.cp-bloco', { hasText: 'O que comprou' });
   if (!(await b.locator('.cp-prod-campo input').isVisible())) await b.locator('summary').click();
   // escolhe o primeiro produto sugerido
   await b.locator('.cp-prod-campo input').fill('cha');
   await b.locator('.cp-sug-it').first().dispatchEvent('mousedown');
   await expect(b.locator('.cp-bloco-res')).toContainText('1 produto');
+  // espera a contagem refletir o produto escolhido (a lista é refeita depois do clique; ler na hora pegava a contagem antiga)
+  await expect.poll(total).toBeLessThan(semProduto);
   await expect.poll(total).toBeGreaterThan(0);
   const comUma = await total();
   const linha = b.locator('.cp-linha', { hasText: 'pelo menos' });

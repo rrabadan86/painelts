@@ -60,7 +60,7 @@
       area.append(h('div', { class: 'notice warn' }, 'O painel ainda não leu nenhum fechamento de caixa desta loja. Ele é lido pelo robô junto com as vendas (AppNext → Vendas → Fechamentos de PDV): aparece depois da próxima atualização.'));
     } else if (d.recentes.length) {
       const m = d.recentes.reduce((a, x) => (Math.abs(x.dif) > Math.abs(a.dif) ? x : a));
-      area.append(h('div', { class: 'notice warn' }, `${fmt.int(d.recentes.length)} ${d.recentes.length === 1 ? 'dia recente não bate' : 'dias recentes não batem'} com o caixa. Maior diferença: ${sinal(m.dif)} em ${dm(m.dia)}. Veja o motivo provável na tabela.`));
+      area.append(h('div', { class: 'notice warn' }, TS.etqPrazo('semana'), ' ', `${fmt.int(d.recentes.length)} ${d.recentes.length === 1 ? 'dia recente não bate' : 'dias recentes não batem'} com o caixa. Maior diferença: ${sinal(m.dif)} em ${dm(m.dia)}. Veja o motivo provável na tabela.`));
     }
     let fil = state.confFil || (R.naobate ? 'naobate' : 'todos');
     const tabela = h('div');
@@ -170,7 +170,7 @@
   function abaCancelados(area, loja, d) {
     const c = d.cancelados, I = c.impacto, exc = d.cfg.cancelados === 'excluir';
     if (I.cupons) {
-      area.append(h('div', { class: 'notice warn' }, `${fmt.brl(I.valor)} em ${fmt.int(I.cupons)} ${I.cupons === 1 ? 'cupom cancelado ainda conta' : 'cupons cancelados ainda contam'} nas vendas do painel` + (I.valorMeta ? ` (${fmt.brl(I.valorMeta)} na base da meta e da comissão).` : '.') + (d.podeCfg ? ' Confira a lista; para tirar das vendas, mude em Caixa × painel → Ajustes da conferência.' : ' Avise o franqueado.')));
+      area.append(h('div', { class: 'notice warn' }, TS.etqPrazo('semana'), ' ', `${fmt.brl(I.valor)} em ${fmt.int(I.cupons)} ${I.cupons === 1 ? 'cupom cancelado ainda conta' : 'cupons cancelados ainda contam'} nas vendas do painel` + (I.valorMeta ? ` (${fmt.brl(I.valorMeta)} na base da meta e da comissão).` : '.') + (d.podeCfg ? ' Confira a lista; para tirar das vendas, mude em Caixa × painel → Ajustes da conferência.' : ' Avise o franqueado.')));
     } else if (!c.temXml) {
       area.append(h('div', { class: 'notice' }, 'O painel ainda não tem os XMLs das notas desta loja, então não sabe quais cupons foram cancelados. Eles vêm pelo robô (Configurações → loja → Coletor → Histórico → "Só XML").'));
     }
@@ -237,7 +237,7 @@
   function abaSaude(area, loja, d) {
     const fts = d.fontes || [];
     const ruins = fts.filter((f) => f.sinal === 'vermelho');
-    if (ruins.length) area.append(h('div', { class: 'notice warn' }, `${ruins.length === 1 ? 'Fonte parada' : 'Fontes paradas'} há mais de 3 dias: ${ruins.map((f) => f.nome).join(', ')}. Os números que dependem ${ruins.length === 1 ? 'dela' : 'delas'} estão velhos.`));
+    if (ruins.length) area.append(h('div', { class: 'notice warn' }, TS.etqPrazo('agora'), ' ', `${ruins.length === 1 ? 'Fonte parada' : 'Fontes paradas'} há mais de 3 dias: ${ruins.map((f) => f.nome).join(', ')}. Os números que dependem ${ruins.length === 1 ? 'dela' : 'delas'} estão velhos.`));
     const quadros = h('div', { class: 'grid g-kpi' }, h('div', { class: 'loading' }, h('div', { class: 'spinner' }), 'Casando as vendas com o estoque…'));
     const lista = h('div');
     area.append(quadros,

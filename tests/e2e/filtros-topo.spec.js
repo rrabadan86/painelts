@@ -22,8 +22,9 @@ test('computador: a faixa de filtros fica no topo e o conteúdo usa a largura to
     const faixa = await caixa(page, '#sidebar'), conteudo = await caixa(page, '#content');
     expect(faixa.bottom).toBeLessThanOrEqual(conteudo.top + 1); // em cima, não ao lado
     expect(faixa.height).toBeLessThan(140);
-    expect(conteudo.left).toBe(0);
-    expect(conteudo.width).toBeGreaterThan(largura - 20);
+    // moldura do redesenho: o conteúdo é uma coluna de até 1360 px, centralizada (sem coluna de filtros ao lado)
+    expect(conteudo.left).toBeLessThanOrEqual(Math.max(0, (largura - 1360) / 2) + 1);
+    expect(conteudo.width).toBeGreaterThan(Math.min(largura, 1360) - 20);
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), { message: 'a página não rola para o lado em ' + largura + ' px' }).toBeLessThanOrEqual(0);
   }
   const faixa = page.locator('#sidebar');
@@ -89,7 +90,7 @@ test('computador: tela de um filtro só não tem coluna nem "Mais filtros"; tela
     const faixa = await caixa(page, '#sidebar'), conteudo = await caixa(page, '#content');
     expect(faixa.height).toBeGreaterThan(0);
     expect(faixa.height).toBeLessThan(70);
-    expect(conteudo.left).toBe(0);
+    expect(conteudo.left).toBeLessThanOrEqual(4); // coluna de até 1360 px centralizada: em 1366 sobram 3 px de cada lado
     await expect(page.locator('#sidebar input[placeholder="Ex.: earl grey"]')).toBeVisible();
     await expect(page.locator('#btnMaisFiltros')).toHaveCount(0);
     await expect(page.locator('#sidebar .f-uso')).toHaveCount(0); // o aviso de contexto virou o ⓘ ao lado do rótulo

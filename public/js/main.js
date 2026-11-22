@@ -378,6 +378,7 @@
     else cliIdle = (window.requestIdleCallback || ((fn) => setTimeout(fn, 200)))(() => { cliIdle = null; TS.garantirClientes(); });
     TS.aviso = aviso ? 'Não consegui atualizar agora; mostrando os dados anteriores. Motivo: ' + aviso : null;
     const quando = new Date(em || body.geradoEm);
+    TS.atualizadoEm = quando; // a pílula "Vendas atualizadas hoje às HH:MM" do Início
     const upd = document.getElementById('updated');
     upd.replaceChildren('Atualizado', h('b', null, quando.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })));
     const podeHist = TS.eu && TS.eu.pode && TS.eu.pode.configurar && TS.abrirHistAtualizacoes && !TS.demo;

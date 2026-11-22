@@ -101,7 +101,7 @@
       h('div', { class: 'page-sub' }, est.perfil === 'admin' ? 'Lojas, acesso ao AppNext, metas, usuários e horários' : 'Metas, planilhas e usuários das suas lojas')),
       // atalho de fácil acesso: os 4 acessos da loja, um passo de cada vez (abre na loja escolhida no topo ou na primeira com algo faltando)
       TS.guia && !est.erro && (est.perfil === 'admin' || est.perfil === 'franqueado') && (est.lojas || []).length ? h('button', { type: 'button', class: 'btn cfg-guia-btn', title: 'Abre a configuração guiada: AppNext, Sistema de Pedidos, FIXE e o Gmail da loja, um passo de cada vez, com a explicação de cada campo. Dá para terminar o que ficou para depois ou editar o que já está salvo.',
-        onclick: () => { const ab = est.lojas.find((l) => abertos.has('loja:' + l.id)), falta = est.lojas.find((l) => { const s = TS.guia.situacao(l.id); return s && Object.values(s.passos).some((v) => !v); }); TS.guia.abrir((ab || est.lojas.find((l) => l.id === state.loja) || falta || est.lojas[0]).id); } }, '🧭 Configuração guiada') : null));
+        onclick: () => { const ab = est.lojas.find((l) => abertos.has('loja:' + l.id)), falta = est.lojas.find((l) => { const s = TS.guia.situacao(l.id); return s && Object.values(s.passos).some((v) => !v); }); TS.guia.abrir((ab || est.lojas.find((l) => l.id === state.loja) || falta || est.lojas[0]).id); } }, 'Configuração guiada') : null));
     if (est.erro) { root.append(h('div', { class: 'notice err' }, est.erro)); fim(); return; }
     const abas = [['Lojas', 'lojas'], ['Usuários', 'usuarios']];
     if (est.perfil === 'admin' || est.perfil === 'franqueado') abas.push(['Atualização automática', 'coletor'], ['Resumo diário', 'resumo']); // o franqueado vê a parte das lojas dele
@@ -116,7 +116,8 @@
 
   // ======================= LOJAS =======================
   function abaLojas(box) {
-    if (est.perfil === 'admin') {
+    const lojaAberta = est.lojas.length > 1 && est.lojas.some((l) => abertos.has('loja:' + l.id));
+    if (est.perfil === 'admin' && !lojaAberta) {
       const aberto = abertos.has('nova');
       box.append(h('div', { class: 'cfg-barra' },
         h('button', { type: 'button', class: 'btn primary', onclick: () => { aberto ? abertos.delete('nova') : abertos.add('nova'); pintar(); } }, aberto ? 'Fechar' : '+ Nova loja')));
@@ -240,11 +241,14 @@
     const aberto = abertos.has(chave) || est.lojas.length === 1;
     const [cls, txt] = situacao(l);
     const ult = l.base.importacoes[0];
+    // situação da loja como pílula (linguagem do redesenho): em dia = verde, rodando/esperando = amarelo, problema = vermelho
+    const sitPil = TS.pilulaSit ? TS.pilulaSit(cls === 'ok' ? 'ok' : cls === 'erro' ? 'err' : 'warn', txt) : h('span', { class: 'badge ' + cls }, txt);
     const cab = h('button', { type: 'button', class: 'cfg-loja-cab', 'aria-expanded': String(aberto), onclick: () => { aberto ? abertos.delete(chave) : abertos.add(chave); pintar(); } },
       h('div', null, h('div', { class: 'cfg-loja-nome' }, l.nome), h('div', { class: 'cfg-loja-sub' }, `${l.id}${l.appnext ? ' · ' + l.appnext : ''}`)),
       infoCabecalho(l, ult),
-      h('span', { class: 'badge ' + cls }, txt), h('span', { class: 'cfg-seta' }, aberto ? '▴' : '▾'));
-    const card = h('div', { class: 'card cfg-loja' }, cab);
+      sitPil, h('span', { class: 'cfg-seta', 'aria-hidden': 'true' }, aberto ? '▴' : '▾'));
+    // aberta: sem moldura de cartão por fora (cada assunto já é um cartão: nada de caixa dentro de caixa)
+    const card = h('div', { class: 'card cfg-loja' + (aberto ? ' cfg-loja-aberta' : '') }, cab);
     if (!aberto) return card;
     // seções da loja em abas (mesmo submenu do Estoque e Margem); só monta os blocos da aba aberta
     const admin = est.perfil === 'admin', gestor = admin || est.perfil === 'franqueado';
@@ -267,7 +271,7 @@
     // ajustes: menu das seções na lateral (no celular, em cima) e o conteúdo numa coluna, um cartão por assunto
     nav.classList.add('cfg-sub-v');
     card.append(h('div', { class: 'cfg-loja-layout' }, h('div', { class: 'cfg-loja-nav' }, nav),
-      h('div', { class: 'cfg-loja-main' }, h('div', { class: 'cfg-sec-cab' }, h('h2', null, sec[1]), h('div', { class: 'muted' }, sec[2])), grid)));
+      h('div', { class: 'cfg-loja-main' }, h('p', { class: 'cfg-sec-cab muted' }, sec[2]), grid)));
     return card;
   }
 
@@ -1192,8 +1196,7 @@
   // ======================= USUÁRIOS =======================
   function abaUsuarios(box) {
     const aberto = abertos.has('novoUser');
-    box.append(h('div', { class: 'cfg-barra' },
-      h('button', { type: 'button', class: 'btn primary', onclick: () => { aberto ? abertos.delete('novoUser') : abertos.add('novoUser'); state.cfgEdit = null; pintar(); } }, aberto ? 'Fechar' : '+ Novo usuário')));
+    const btNovo = h('button', { type: 'button', class: 'btn primary', onclick: () => { aberto ? abertos.delete('novoUser') : abertos.add('novoUser'); state.cfgEdit = null; pintar(); } }, aberto ? 'Fechar' : '+ Novo usuário');
     if (aberto) box.append(formUsuario(null));
     const nomeLoja = new Map(est.todasLojas.map((l) => [l.id, l.nome]));
     // filtros: perfil, loja e situação (guardados enquanto a tela está aberta)
@@ -1202,7 +1205,7 @@
     const passa = (u) => (!fu.perfil || u.perfil === fu.perfil) && (!fu.loja || u.lojas.includes('*') || u.lojas.includes(fu.loja)) && (!fu.situacao || situacaoDe(u) === fu.situacao || (fu.situacao === 'ativo' && ['ativo', 'vence', 'nunca'].includes(situacaoDe(u))));
     const selF = (k, rot, ops) => { const s = h('select', { class: 'f-input', 'aria-label': rot }, h('option', { value: '' }, rot), ops.map(([v, t]) => h('option', { value: v, selected: fu[k] === v || null }, t))); s.addEventListener('change', () => { fu[k] = s.value; pintar(); }); return s; };
     const usados = est.usuarios.filter(passa);
-    box.append(h('div', { class: 'cfg-usu-filtros' },
+    const filtros = (h('div', { class: 'cfg-usu-filtros' },
       selF('perfil', 'Todos os perfis', Object.keys(PERFIL_NOME).filter((p) => est.usuarios.some((u) => u.perfil === p)).map((p) => [p, PERFIL_NOME[p]])),
       est.todasLojas.length > 1 ? selF('loja', 'Todas as lojas', est.todasLojas.map((l) => [l.id, l.nome])) : null,
       selF('situacao', 'Todas as situações', [['ativo', 'Ativos'], ['nunca', 'Nunca acessaram'], ['vence', 'Acesso vence em até 7 dias'], ['expirado', 'Acesso terminou'], ['desativado', 'Desativados']]),
@@ -1224,10 +1227,12 @@
         h('td', null, h('button', { type: 'button', class: 'btn', onclick: () => { state.cfgEdit = state.cfgEdit === u.nome ? null : u.nome; abertos.delete('novoUser'); pintar(); } }, state.cfgEdit === u.nome ? 'Fechar' : 'Editar')));
       return state.cfgEdit === u.nome ? [tr, h('tr', { class: 'cfg-edit-row' }, h('td', { colspan: 6 }, formUsuario(u)))] : [tr];
     }).flat();
-    box.append(h('div', { class: 'card' }, h('div', { class: 'table-wrap free' }, h('table', { class: 't cfg-t' },
+    const tabela = h('div', { class: 'table-wrap free' }, h('table', { class: 't cfg-t' },
       h('thead', null, h('tr', null, ['Usuário', 'Perfil', 'Lojas', 'Último acesso', 'Situação', ''].map((t, i) => h('th', { class: i < 5 ? 'l' : '' }, t)))),
-      h('tbody', null, linhas.length ? linhas : h('tr', null, h('td', { colspan: 6, class: 'l muted' }, est.usuarios.length ? 'Nenhum usuário com esses filtros.' : 'Nenhum usuário.')))))));
-    box.append(h('div', { class: 'cfg-perfis' }, Object.entries(PERFIL_DESC).filter(([p]) => est.perfil === 'admin' || ['gerente', 'vendedor'].includes(p)).map(([p, d]) => h('div', null, h('span', { class: 'badge p-' + p }, PERFIL_NOME[p]), ' ', d))));
+      h('tbody', null, linhas.length ? linhas : h('tr', null, h('td', { colspan: 6, class: 'l muted' }, est.usuarios.length ? 'Nenhum usuário com esses filtros.' : 'Nenhum usuário.')))));
+    const perfis = h('div', { class: 'cfg-perfis' }, Object.entries(PERFIL_DESC).filter(([p]) => est.perfil === 'admin' || ['gerente', 'vendedor'].includes(p)).map(([p, d]) => h('div', null, h('span', { class: 'badge p-' + p }, PERFIL_NOME[p]), ' ', d)));
+    // cartão com título e "+ Novo usuário" no cabeçalho (o Imprimir/Expandir entra no mesmo cabeçalho); filtros e legenda dentro
+    box.append(TS.cardWithTools('Usuários', 'Quem entra no painel, com qual perfil e em quais lojas. O perfil decide o que a pessoa vê.', btNovo, filtros, tabela, perfis));
   }
 
   const dataBr = (iso) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : '');

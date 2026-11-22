@@ -180,12 +180,17 @@
       mudou: ['Mudou desde a consulta anterior', (r) => !!r.mudou],
     };
     const filtro = FILTROS[state.siteFiltro] ? state.siteFiltro : 'todos';
-    corpo.append(h('div', { class: 'grid g-kpi mt' },
-      TS.kpi('Produtos no site', fmt.int(linhas.length), `${fmt.int(conta((r) => !r.disponivel))} esgotados`, 'Cada tamanho (variante) conta como um produto'),
-      TS.kpi('Em promoção no site', fmt.int(conta((r) => r.promo)), linhas.some((r) => r.promo) ? `desconto médio de ${fmt.pct(linhas.filter((r) => r.promo).reduce((s, r) => s + r.desconto, 0) / conta((r) => r.promo), 0)}` : '', 'Produtos com preço "de" e "por" no site'),
-      TS.kpi('Preço diferente', fmt.int(conta((r) => r.dif)), `${fmt.int(conta((r) => r.dif && r.difV > 0))} mais caros no site · ${fmt.int(conta((r) => r.dif && r.difV < 0))} mais baratos`, `Preço cheio do site (sem a promoção) diferente do preço praticado ${lojaTxt}`),
-      TS.kpi('Iguais', fmt.int(conta((r) => r.sit === 'igual')), `mesmo preço ${lojaTxt}, sem promoção`),
-      TS.kpi('Sem correspondência', fmt.int(conta((r) => !r.nos)), 'não achei nas vendas', 'Produto do site que não casou com nenhum produto vendido (pelo código ou pelo nome e tamanho): só no site, ou o nome é bem diferente')));
+    // revisão de 22/11: o "como está" num cartão-herói; cada número leva à aba dele
+    const ir = (k, rot) => h('button', { type: 'button', class: 'link-btn est-heroi-conta', onclick: () => { state.siteFiltro = k; pintar(corpo, d); } }, rot);
+    const nPromo = conta((r) => r.promo), nDif = conta((r) => r.dif);
+    corpo.append(h('div', { class: 'mt' }, TS.heroi([
+      { rot: 'Preço diferente', num: fmt.int(nDif), estado: nDif ? 'ruim' : null, dica: `Preço cheio do site (sem a promoção) diferente do preço praticado ${lojaTxt}`,
+        linhas: [`${fmt.int(conta((r) => r.dif && r.difV > 0))} mais caros no site · ${fmt.int(conta((r) => r.dif && r.difV < 0))} mais baratos`, nDif ? ir('dif', 'ver os diferentes ›') : null] },
+      { rot: 'Em promoção no site', num: fmt.int(nPromo), dica: 'Produtos com preço "de" e "por" no site',
+        linhas: [nPromo ? `desconto médio de ${fmt.pct(linhas.filter((r) => r.promo).reduce((s2, r) => s2 + r.desconto, 0) / nPromo, 0)}` : 'nenhum agora', nPromo ? ir('promo', 'ver as promoções ›') : null] },
+      { rot: 'Produtos no site', num: fmt.int(linhas.length), dica: 'Cada tamanho (variante) conta como um produto. Iguais: mesmo preço da loja, sem promoção. Sem correspondência: produto do site que não casou com nenhum produto vendido (pelo código ou pelo nome e tamanho) — só no site, ou o nome é bem diferente',
+        linhas: [`${fmt.int(conta((r) => !r.disponivel))} esgotados · ${fmt.int(conta((r) => r.sit === 'igual'))} iguais ${lojaTxt}`, h('span', null, `${fmt.int(conta((r) => !r.nos))} sem correspondência nas vendas `, conta((r) => !r.nos) ? ir('sem', 'ver ›') : null)] },
+    ], { titulo: 'Site × loja' })));
 
     const SIT = { sem: ['Sem correspondência', 'muted'], promodif: ['Promoção + preço diferente', 'erro'], promo: ['Em promoção', 'warn'], dif: ['Preço diferente', 'erro'], igual: ['Igual', 'ok'] };
     const seg = TS.seg(Object.entries(FILTROS).map(([k, [t, f]]) => [`${t} (${fmt.int(conta(f))})`, k]), filtro, (v) => { state.siteFiltro = v; pintar(corpo, d); });
@@ -196,16 +201,17 @@
           r.variante ? h('small', { class: 'est-tam' }, r.variante) : null, !r.disponivel ? h('small', { class: 'est-tam neg' }, 'esgotado no site') : null) },
         { key: 'nossoTxt', label: 'Nas vendas', align: 'l', wrap: true, title: 'Produto das vendas que casou com o do site: pelo código (SKU) ou pelo nome e tamanho', render: (r) => (r.nos ? h('span', null, r.nos.nome, h('small', { class: 'est-tam' }, `${r.nos.cod ? 'cód. ' + r.nos.cod + ' · ' : ''}${r.como === 'sku' ? 'pelo código' : 'pelo nome'} · ${r.nos.ult != null ? 'última venda ' + fmt.date(TS.dayToIso(r.nos.ult)) : 'sem venda'}`)) : h('span', { class: 'muted' }, '—')) },
         { key: 'nosso', label: 'Nosso preço', title: 'Preço de tabela do cadastro do AppNext (com uma loja escolhida e o cadastro no painel); senão, o preço mais vendido nas últimas 4 semanas com venda (sem desconto)', render: (r) => (r.nosso == null ? '—' : h('span', null, fmt.brl(r.nosso), h('small', { class: 'est-tam' }, r.nos.fonte === 'cadastro' ? 'cadastro' : 'vendas'))), sortVal: (r) => r.nosso },
-        { key: 'cheio', label: 'Site: preço cheio', title: 'Preço do site sem a promoção (o preço "de" quando está em promoção)', fmt: fmt.brl, cls: (r) => (r.dif ? 'site-dif' : '') },
-        { key: 'preco', label: 'Site: agora', title: 'O preço que o cliente paga hoje no site', render: (r) => h('span', null, r.promo ? h('s', { class: 'muted site-de' }, fmt.brl(r.de)) : null, h('b', null, fmt.brl(r.preco))) },
-        { key: 'desconto', label: 'Desconto no site', fmt: (v) => (v != null ? `−${fmt.int(v * 100)}%` : '—'), cls: (r) => (r.promo ? 'site-promo' : '') },
-        { key: 'difP', label: 'Diferença', title: 'Preço cheio do site − nosso preço', render: (r) => (r.difV == null ? '—' : !r.dif ? h('span', { class: 'muted' }, 'igual') : h('span', { class: r.difV > 0 ? 'pos' : 'neg' }, `${r.difV > 0 ? '+' : '−'}${fmt.brl(Math.abs(r.difV))} (${r.difV > 0 ? '+' : '−'}${fmt.n1(Math.abs(r.difP) * 100)}%)`)), sortVal: (r) => r.difP },
-        { key: 'sit', label: 'Situação', align: 'l', render: (r) => { const [t, c] = SIT[r.sit]; return h('span', { class: 'badge ' + c }, t); }, sortVal: (r) => ({ promodif: 5, dif: 4, promo: 3, igual: 2, sem: 1 })[r.sit] },
-        { key: 'ultMud', label: 'Última mudança no site', align: 'l', wrap: true, title: 'A última vez que o site mudou o preço ou a promoção deste produto (o painel guarda o preço a cada consulta). Clique em Histórico para ver tudo', render: (r) => (r.ultMud ? h('span', { class: r.mudou ? 'warn-t' : null, title: r.ultMud.txt }, h('b', null, dataTxt(r.ultMud.em)), h('small', { class: 'est-tam' }, r.ultMud.txt)) : h('span', { class: 'muted' }, `sem mudança desde ${dataTxt(r.desde)}`)), sortVal: (r) => (r.ultMud ? Date.parse(r.ultMud.em) : 0) },
-        { key: 'hist', label: '', align: 'l', render: (r) => h('button', { type: 'button', class: 'btn prc-ver', onclick: () => abrirHistorico(r, r.pts) }, 'Histórico'), sortVal: () => 0 },
+        // revisão de 22/11 (sem rolagem para o lado): o preço do site numa coluna só (agora em cima; o preço cheio e o desconto embaixo),
+        // a diferença embaixo da situação e o botão Histórico junto da última mudança
+        { key: 'preco', label: 'Site', title: 'Em cima, o preço que o cliente paga hoje no site. Embaixo, o preço cheio (sem a promoção: o preço "de") e o desconto do site', render: (r) => h('span', null, h('b', null, fmt.brl(r.preco)),
+          h('small', { class: 'est-tam' + (r.dif ? ' site-dif' : '') }, r.promo ? h('span', null, 'de ', h('s', { class: 'site-de' }, fmt.brl(r.de)), h('span', { class: 'site-promo' }, ` · −${fmt.int(r.desconto * 100)}%`)) : 'preço cheio')), sortVal: (r) => r.preco },
+        { key: 'sit', label: 'Situação', align: 'l', title: 'Embaixo, a diferença: preço cheio do site − nosso preço', render: (r) => { const [t, c] = SIT[r.sit]; return h('span', null, h('span', { class: 'badge ' + c }, t),
+          r.difV == null || !r.dif ? null : h('small', { class: 'est-tam ' + (r.difV > 0 ? 'pos' : 'neg') }, `${r.difV > 0 ? '+' : '−'}${fmt.brl(Math.abs(r.difV))} (${r.difV > 0 ? '+' : '−'}${fmt.n1(Math.abs(r.difP) * 100)}%)`)); }, sortVal: (r) => ({ promodif: 5, dif: 4, promo: 3, igual: 2, sem: 1 })[r.sit] },
+        { key: 'ultMud', label: 'Última mudança no site', align: 'l', wrap: true, title: 'A última vez que o site mudou o preço ou a promoção deste produto (o painel guarda o preço a cada consulta). Toque em Histórico para ver tudo', render: (r) => h('span', null, r.ultMud ? h('span', { class: r.mudou ? 'warn-t' : null, title: r.ultMud.txt }, h('b', null, dataTxt(r.ultMud.em)), h('small', { class: 'est-tam' }, r.ultMud.txt)) : h('span', { class: 'muted' }, `sem mudança desde ${dataTxt(r.desde)}`),
+          h('button', { type: 'button', class: 'btn prc-ver site-hist', onclick: () => abrirHistorico(r, r.pts) }, 'Histórico')), sortVal: (r) => (r.ultMud ? Date.parse(r.ultMud.em) : 0) },
       ],
       rows: linhas.filter(FILTROS[filtro][1]), sortKey: 'sit', maxHeight: '640px', search: 'Buscar produto…', searchKeys: ['nomeTxt', 'nossoTxt', 'sku'], produto: ['nomeTxt', 'nossoTxt'],
-      imprimir: ['nomeTxt', 'nossoTxt', 'nosso', 'cheio', 'preco', 'desconto', 'difP', 'sit'], cls: 'site-t',
+      imprimir: ['nomeTxt', 'nossoTxt', 'nosso', 'preco', 'sit', 'ultMud'], cls: 'site-t',
       empty: 'Nenhum produto nesta aba.',
     });
     corpo.append(h('div', { class: 'mt' }, TS.card('Produtos do site', `Preço cheio do site comparado com o nosso preço ${lojaTxt}: o preço de tabela do cadastro do AppNext quando o painel tem, senão o preço mais vendido nas últimas 4 semanas. Em promoção = o site mostra preço "de" e "por". Clique no nome para abrir o produto no site.`, seg, tab)));

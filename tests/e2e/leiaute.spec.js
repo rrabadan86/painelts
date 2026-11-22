@@ -5,21 +5,23 @@ const { test, expect } = require('@playwright/test');
 const abrir = async (page) => { await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS.db && TS.state.loja && TS.state.loja !== 'todas'); };
 const ir = (page, tela) => page.evaluate((t) => { location.hash = '#' + t; }, tela);
 const semRolagemLateral = async (page) => { const d = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth); expect(d).toBeLessThanOrEqual(1); };
-const corBarra = (loc) => loc.evaluate((el) => getComputedStyle(el, '::before').backgroundColor);
+const barra = (loc) => loc.evaluate((el) => getComputedStyle(el, '::before').content);
 const token = (page, nome) => page.evaluate((n) => { const x = document.createElement('i'); x.style.color = `var(${n})`; document.body.append(x); const c = getComputedStyle(x).color; x.remove(); return c; }, nome);
 
-test('Quadros: barra vermelha/verde só com estado; neutro sem barra; cartão sem sombra', async ({ page }) => {
+test('Quadros: sem barra lateral (estado só na cor do texto e na marca kpi-bom/kpi-ruim); cartão sem sombra', async ({ page }) => {
   await abrir(page);
   await ir(page, 'estoque');
   const repor = page.locator('.kpi', { hasText: 'Para repor' });
   await expect(repor).toBeVisible({ timeout: 20000 });
   const [bad, good] = [await token(page, '--bad'), await token(page, '--good')];
-  // "Para repor" com urgentes = ruim (barra vermelha); "Estoque a custo" não compara nada = neutro (sem barra)
+  // decisão do dono, 22/11/2026 (visual limpo do protótipo do Início): nenhum quadro tem barra lateral; o estado fica na
+  // marca kpi-bom/kpi-ruim e na cor do texto da comparação. "Para repor" com urgentes = ruim; "Estoque a custo" = neutro.
   await expect(repor).toHaveClass(/kpi-ruim/);
-  expect(await corBarra(repor)).toBe(bad);
+  expect(await barra(repor)).toBe('none');
+  expect(await repor.locator('.kpi-foot .down, .kpi-foot .neg').first().evaluate((el) => getComputedStyle(el).color)).toBe(bad);
   const neutro = page.locator('.kpi', { hasText: 'Estoque a custo' });
   await expect(neutro).not.toHaveClass(/kpi-(bom|ruim)/);
-  expect(await corBarra(neutro)).toBe('rgba(0, 0, 0, 0)');
+  expect(await barra(neutro)).toBe('none');
   // o estado segue o primeiro sinal do rodapé (ou do valor): confere em todos os quadros da tela
   const incoerentes = await page.evaluate(() => [...document.querySelectorAll('.kpi')].filter((k) => {
     const s = (k.querySelector('.kpi-foot') || k).querySelector('.up, .pos, .down, .neg') || k.querySelector('.kpi-value .up, .kpi-value .pos, .kpi-value .down, .kpi-value .neg');
@@ -32,24 +34,33 @@ test('Quadros: barra vermelha/verde só com estado; neutro sem barra; cartão se
   expect(await page.locator('main .card').first().evaluate((el) => getComputedStyle(el).boxShadow)).toBe('none');
   await semRolagemLateral(page);
 
-  // Início: a projeção que bate a meta fica verde
+  // Início (redesenho de 22/11/2026): sem quadros com barra; no herói o "no ritmo de agora" é texto verde (bate a meta) ou vermelho
   await ir(page, 'inicio');
-  const proj = page.locator('.kpi', { hasText: 'Projeção do mês' });
-  await expect(proj).toBeVisible();
-  if (await proj.locator('.kpi-foot .up').count()) expect(await corBarra(proj)).toBe(good);
+  const her = page.locator('.ini-heroi');
+  await expect(her).toBeVisible();
+  await expect(page.locator('main .g-kpi')).toHaveCount(0);
+  const ritmo = her.locator('.heroi-linha', { hasText: 'No ritmo de agora' });
+  if (await ritmo.count()) {
+    const bate = +(await her.getAttribute('data-proj-meta')) >= (await page.evaluate(() => TS.metaCalc(TS.dayToIso(TS.db.maxDay).slice(0, 7)).valor));
+    await expect(ritmo).toHaveClass(bate ? /\bpos\b/ : /\bneg\b/);
+    expect(await ritmo.evaluate((el) => getComputedStyle(el).color)).toBe(bate ? good : bad);
+  }
+  expect(await her.evaluate((el) => getComputedStyle(el).borderLeftWidth)).toBe('1px');
+  expect(await her.evaluate((el) => getComputedStyle(el).boxShadow)).toBe('none');
 });
 
 test('Vendas → Resumo: variações curtas com a frase completa no title e nenhum quadro sozinho na última linha', async ({ page }, info) => {
   await abrir(page);
   await ir(page, 'resumo');
-  const fat = page.locator('.kpi', { hasText: 'Faturamento' }).first();
+  // redesenho: faturamento no cartão-herói; os indicadores de venda (TKM, PMA, IPA, chá, EG) na grade de apoio
+  const fat = page.locator('.heroi-col', { hasText: 'Faturamento' }).first();
   await expect(fat.locator('.kpi-vars')).toBeVisible({ timeout: 20000 });
   const linhas = await fat.locator('.kpi-vars > span').evaluateAll((xs) => xs.map((x) => [x.textContent, x.title]));
   expect(linhas.some(([t, dica]) => /· \d+ dias$/.test(t) && /^vs\. \d+ dias anteriores$/.test(dica))).toBe(true);
   // "· ano" = os mesmos dias da semana, 364 dias antes (a frase completa diz isso)
   expect(linhas.some(([t, dica]) => /· ano$/.test(t) && /^vs\. ano anterior: o mesmo período 364 dias antes/.test(dica))).toBe(true);
   if (info.project.name === 'computador') {
-    // 7 quadros: divididos em linhas parecidas, a última nunca com um só
+    // 5 quadros de apoio: divididos em linhas parecidas, a última nunca com um só
     const porLinha = await page.locator('.g-kpi').first().evaluate((g) => { const m = new Map(); for (const k of g.children) { const y = Math.round(k.getBoundingClientRect().top); m.set(y, (m.get(y) || 0) + 1); } return [...m.values()]; });
     if (porLinha.length > 1) expect(porLinha[porLinha.length - 1]).toBeGreaterThan(1);
   }
@@ -75,6 +86,7 @@ test('Início: avisos numa lista só, agrupados por área; "Dados e configuraç�
   await abrir(page);
   await ir(page, 'inicio');
   await expect(page.locator('.ini-pend')).toHaveCount(0, { timeout: 30000 });
+  await page.locator('.ini-ver-todos').click(); // a lista completa fica em "Ver todos" (redesenho de 22/11/2026)
   const grupos = page.locator('.ini-avisos .ini-grupo');
   expect(await grupos.count()).toBeGreaterThan(1);
   // todo aviso está dentro de um grupo; o cabeçalho traz o nome da área e a contagem certa
@@ -151,8 +163,10 @@ test('Resultado: quadros do mês primeiro; ponto de equilíbrio numa frase com a
   await ir(page, 'dre');
   const eq = page.locator('.est-eq');
   await expect(eq).toBeVisible({ timeout: 30000 });
-  const quadros = page.locator('main .g-kpi').first();
-  await expect(quadros.locator('.kpi').first()).toContainText('Faturamento');
+  // redesenho de 22/11: o resultado do mês é o cartão-herói (resultado, projeção, faturamento com as margens)
+  const quadros = page.locator('main .heroi').first();
+  await expect(quadros.locator('.heroi-col').first()).toContainText(/Resultado (do mês|até hoje)/);
+  await expect(quadros).toContainText('Faturamento');
   expect((await quadros.boundingBox()).y).toBeLessThan((await eq.boundingBox()).y);
   // uma frase (falta ou já passou) + a barra; os quatro números e a conta ficam no ⓘ / title
   await expect(eq.locator('.est-eq-frase')).toContainText(/Faltam R\$\s.* para pagar os custos fixos .* equilíbrio em R\$|Custos fixos do mês .* pagos/);
@@ -178,5 +192,5 @@ test('Estoque: Compartilhar e Imprimir juntos no canto direito do cabeçalho do 
   const c = await card.boundingBox(), s = await card.locator('.shr-btn').boundingBox(), p = await card.locator('.card-head .prt-btn').boundingBox();
   expect(p.x - (s.x + s.width)).toBeLessThan(16); // lado a lado
   expect(Math.abs(p.y - s.y)).toBeLessThan(4);
-  expect(c.x + c.width - (p.x + p.width)).toBeLessThan(24); // encostados na direita
+  expect(c.x + c.width - (p.x + p.width)).toBeLessThan(32); // encostados na direita (padding do cartão: 24 px)
 });

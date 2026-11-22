@@ -368,11 +368,17 @@
     // ---------- 4) Prêmios de fidelidade: 50% do custo, como desconto nos royalties ----------
     const cardPremios = premiosCard(d, loja, acaoRoy);
     corpo.replaceChildren(...[
-      h('div', { class: 'grid g-kpi' },
-        TS.kpi('A receber, atrasado', fmt.brl(r.atrasado), r.nAtrasado ? `${fmt.int(r.nAtrasado)} devolução(ões) há mais de ${d.prazo} dias` : 'nada atrasado'),
-        TS.kpi('A receber, no prazo', fmt.brl(r.aberto), `${fmt.int(r.nAberto)} devolução(ões) esperando desconto`),
-        TS.kpi('A confirmar', fmt.brl(r.confirmar || 0), r.nConfirmar ? `${fmt.int(r.nConfirmar)} devolução(ões) com sugestão` : 'nenhuma sugestão pendente'),
-        TS.kpi('Já compensado', fmt.brl(r.compensado), 'descontado em notas ou marcado à mão')),
+      // herói (redesenho de 22/11): o que a franquia deve à loja (atrasado decide), o que ainda está no prazo e o já compensado
+      TS.heroi([
+        { rot: 'A receber, atrasado', num: fmt.brl(r.atrasado), estado: r.atrasado > 0.005 ? 'ruim' : null,
+          linhas: [r.nAtrasado ? `${fmt.int(r.nAtrasado)} devolução(ões) há mais de ${d.prazo} dias` : 'nada atrasado'],
+          dica: `Devoluções autorizadas há mais de ${d.prazo} dias sem desconto numa nota de compra: cobre a franquia.` },
+        { rot: 'A receber, no prazo', num: fmt.brl(r.aberto),
+          linhas: [`${fmt.int(r.nAberto)} devolução(ões) esperando desconto`, h('span', { class: 'cfr-h-conf' }, `a confirmar: ${fmt.brl(r.confirmar || 0)}${r.nConfirmar ? ` · ${fmt.int(r.nConfirmar)} com sugestão` : ''}`)],
+          dica: `Devoluções dentro dos ${d.prazo} dias. "A confirmar" = o painel achou uma nota de compra com desconto que parece ser desta devolução: confira e confirme.` },
+        { rot: 'Já compensado', num: fmt.brl(r.compensado), estado: r.compensado > 0.005 ? 'bom' : null, linhas: ['descontado em notas ou marcado à mão'],
+          dica: 'Devoluções já descontadas numa nota de compra (ligadas pelo painel ou por você) ou marcadas à mão como compensadas.' },
+      ], { titulo: 'Devoluções à franquia' }),
       d.descontoLido ? null : h('div', { class: 'notice mt' }, h('b', null, 'Ainda sem o desconto das notas de compra. '), 'O robô passa a ler o desconto na próxima sincronização das notas de entrada. Até lá, as devoluções ficam em aberto.'),
       cardPend,
       h('div', { class: 'card mt' }, h('div', { class: 'cfr-topo' }, h('div', { class: 'card-title' }, 'Devoluções'), podeCobrar() && d.creditos.some((c) => c.situacao === 'atrasado' || c.situacao === 'aberto' || c.situacao === 'confirmar') ? h('button', { type: 'button', class: 'btn', onclick: () => cobrar('devolucoes', d, loja) }, '✉ Cobrar a franquia') : null),

@@ -204,20 +204,24 @@
     const andamento = !m.parcial ? null : `${TS.ymLabel(sel)} está em andamento (vendas até ${fmt.date(TS.dayToIso(m.ultimo))}, ${m.decorridos} de ${m.diasMes} dias). "Até hoje" usa as vendas até agora e os custos fixos inteiros: enquanto der negativo, é o que ainda falta cobrir. "Projeção do mês" leva as vendas no ritmo atual até o fim do mês (impostos, custo dos produtos, comissões e custos em % acompanham as vendas; os fixos ficam iguais).`;
 
     // cartões do topo
-    const kp = (rot, v, sub, cls) => TS.kpi(rot, v == null ? '—' : fmt.brl0(v), sub, null);
     const varA = (k) => (aDias && aDias[k] ? h('span', null, TS.deltaSpan(m[k] / aDias[k] - 1), ` vs. ${m.parcial ? `${rotAnt} (dias 1 a ${diaAte})` : rotAnt}`) : null);
     corpo.append(h('div', { class: 'dre-topo' }, h('label', null, 'Mês ', opMes), h('span', { class: 'muted' }, 'Todos os dias do mês, sem os filtros do topo. Custos fixos e % com os valores cadastrados hoje.'),
       TS.aPagar ? TS.aPagar.botaoExportar(m, LINHAS(grupos, new Set()), cats) : null),
       ...avisos.map((t) => h('div', { class: 'notice' }, t)),
-      h('div', { class: 'grid g-kpi' },
-        kp('Faturamento', m.fat, varA('fat')),
-        TS.kpi('Lucro bruto', m.lucroBruto == null ? '—' : fmt.brl0(m.lucroBruto), h('span', null, `margem ${pc(m.lucroBruto, m.fat)}${m.perdas > 0 ? ` · já sem ${fmt.brl0(m.perdas)} de perdas` : ''}`), 'Receita líquida − custo dos produtos − perdas (chá vencido ainda no estoque e faltas do inventário, a custo).'),
-        kp('Margem de contribuição', m.contrib, h('span', null, `${pc(m.contrib, m.fat)} do faturamento`)),
-        m.parcial
-          ? TS.kpi('Resultado até hoje', m.resultado == null ? '—' : fmt.brl0(m.resultado), h('span', { class: m.resultado >= 0 ? 'up' : 'down' }, m.resultado == null ? '' : m.resultado >= 0 ? 'custos fixos do mês já cobertos' : `falta cobrir ${fmt.brl0(-m.resultado)} dos custos fixos`, m.perdas > 0 ? ` · inclui ${fmt.brl0(m.perdas)} de perdas` : ''), 'Margem de contribuição até hoje − custos fixos do mês inteiro. As perdas do mês (chá vencido e faltas do inventário) já foram descontadas no lucro bruto.')
-          : TS.kpi('Resultado do mês', m.resultado == null ? '—' : fmt.brl0(m.resultado), h('span', { class: m.resultado >= 0 ? 'up' : 'down' }, `${pc(m.resultado, m.fat)} do faturamento${m.perdas > 0 ? ` · inclui ${fmt.brl0(m.perdas)} de perdas` : ''}`), 'Margem de contribuição − custos fixos. As perdas do mês (chá vencido e faltas do inventário) já foram descontadas no lucro bruto.'),
-        P ? TS.kpi('Projeção do mês', P.resultado == null ? '—' : fmt.brl0(P.resultado), h('span', { class: P.resultado >= 0 ? 'up' : 'down' }, `vendendo ${fmt.brl0(P.fat)} no mês (ritmo atual)`),
-          `Resultado se as vendas seguirem o ritmo de agora até o fim do mês. Impostos, custo dos produtos e custos em % acompanham as vendas; a comissão é recalculada com a venda projetada de cada pessoa contra a meta; os custos fixos ficam iguais.${P.projMes ? '\n\nFaturamento projetado:\n' + TS.comoProjecao(P.projMes) : ''}`) : null),
+      // herói (redesenho de 22/11): o resultado em primeiro, a projeção (mês em andamento) e o faturamento com as margens
+      TS.heroi([
+        { rot: m.parcial ? 'Resultado até hoje' : 'Resultado do mês', num: m.resultado == null ? '—' : fmt.brl0(m.resultado), estado: m.resultado == null ? null : m.resultado >= 0 ? 'bom' : 'ruim',
+          linhas: [m.parcial ? (m.resultado == null ? '' : m.resultado >= 0 ? 'custos fixos do mês já cobertos' : `falta cobrir ${fmt.brl0(-m.resultado)} dos custos fixos`) : `${pc(m.resultado, m.fat)} do faturamento`,
+            m.perdas > 0 ? `inclui ${fmt.brl0(m.perdas)} de perdas` : null],
+          dica: m.parcial ? 'Margem de contribuição até hoje − custos fixos do mês inteiro. As perdas do mês (chá vencido e faltas do inventário) já foram descontadas no lucro bruto.' : 'Margem de contribuição − custos fixos. As perdas do mês (chá vencido e faltas do inventário) já foram descontadas no lucro bruto.' },
+        P ? { rot: 'Projeção do mês', num: P.resultado == null ? '—' : fmt.brl0(P.resultado), estado: P.resultado == null ? null : P.resultado >= 0 ? 'bom' : 'ruim',
+          linhas: [h('span', { class: 'dre-h-proj' }, `vendendo ${fmt.brl0(P.fat)} no mês (ritmo atual)`)],
+          dica: `Resultado se as vendas seguirem o ritmo de agora até o fim do mês. Impostos, custo dos produtos e custos em % acompanham as vendas; a comissão é recalculada com a venda projetada de cada pessoa contra a meta; os custos fixos ficam iguais.${P.projMes ? '\n\nFaturamento projetado:\n' + TS.comoProjecao(P.projMes) : ''}` } : null,
+        { rot: 'Faturamento', num: m.fat == null ? '—' : fmt.brl0(m.fat), linhas: [varA('fat'),
+          h('span', { class: 'dre-h-lb' }, `Lucro bruto ${m.lucroBruto == null ? '—' : fmt.brl0(m.lucroBruto)} · margem ${pc(m.lucroBruto, m.fat)}${m.perdas > 0 ? ` · já sem ${fmt.brl0(m.perdas)} de perdas` : ''}`, TS.dica('Receita líquida − custo dos produtos − perdas (chá vencido ainda no estoque e faltas do inventário, a custo).')),
+          h('span', { class: 'dre-h-mc' }, `Margem de contribuição ${m.contrib == null ? '—' : fmt.brl0(m.contrib)} · ${pc(m.contrib, m.fat)} do faturamento`)],
+          dica: 'Faturamento do mês (todos os dias do mês, sem os filtros do topo), comparado com o mesmo período do ano anterior.' },
+      ], { titulo: m.parcial ? `${TS.ymLabel(sel)} até agora` : `Fechamento de ${TS.ymLabel(sel)}` }),
       linhaPerdas(m, sel),
       andamento ? h('p', { class: 'dre-andamento muted' }, `Mês em andamento: ${m.decorridos} de ${m.diasMes} dias. "Até hoje" usa as vendas até agora e os custos fixos inteiros.`, TS.dica(andamento)) : null,
       h('div', { class: 'dre-eq-aqui' }));

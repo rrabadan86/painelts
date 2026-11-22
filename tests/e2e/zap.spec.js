@@ -33,6 +33,21 @@ test.describe('robô do WhatsApp', () => {
     await expect(card.locator('input[type=time]').nth(0)).toHaveValue('09:00'); await expect(card.locator('input[type=time]').nth(1)).toHaveValue('18:30');
     await expect(nums.nth(2)).toHaveValue('30'); await expect(nums.nth(3)).toHaveValue('3');
     await expect(card.locator('.zap-dias input:checked')).toHaveCount(6);
+    // ZAP-HORA-LOJA: horário de envio igual ao funcionamento da loja (padrão), dia a dia, até 30 min antes de fechar
+    await expect(card.getByRole('radio', { name: 'Igual ao funcionamento da loja' })).toBeChecked();
+    const tab = card.locator('.zap-tab-hora');
+    await expect(tab).toBeVisible();
+    await expect(tab.locator('tr', { hasText: 'seg' })).toContainText('09:00 às 18:30');
+    await expect(tab.locator('tr', { hasText: 'sáb' })).toContainText('09:00 às 16:30');
+    await expect(tab.locator('tr', { hasText: 'dom' })).toContainText('fechada');
+    await expect(card).toContainText('Envia até 30 min antes de fechar');
+    await expect(card.locator('.zap-hora-proprio')).toBeHidden();
+    // horário próprio: aparecem das/às e os dias
+    await card.getByRole('radio', { name: 'Horário próprio' }).check();
+    await expect(card.locator('.zap-hora-proprio')).toBeVisible();
+    await expect(tab).toBeHidden();
+    await semVazar(page, card);
+    await card.getByRole('radio', { name: 'Igual ao funcionamento da loja' }).check();
     // ritmo abaixo de 300 s: aviso ⚠ ao sair do campo (não a cada dígito)
     const aviso = card.locator('.zap-aviso');
     await expect(aviso).toBeHidden();
@@ -83,7 +98,7 @@ test.describe('robô do WhatsApp', () => {
     await expect(conf).toContainText(/Vai enviar para: [\d.]+ clientes/);
     await expect(conf).toContainText('ficam sem mensagem, para comparar');
     await expect(conf).toContainText(/Por dia: até 20 desta campanha · 30 no número da loja/);
-    await expect(conf).toContainText(/Quando: seg, ter, qua, qui, sex, sáb, das 09:00 às 18:30/);
+    await expect(conf).toContainText(/Quando: seg a sex 09:00–18:30, sáb 09:00–16:30, dom fechado \(horário de Brasília, o mesmo do funcionamento da loja\)/);
     await expect(conf).toContainText(/Termina: por volta de \d\d\/\d\d\/\d{4} \([\d.]+ dias de envio/);
     await expect(conf).toContainText('A primeira sai');
     await expect(conf).toContainText('Exemplo da mensagem');
@@ -101,7 +116,7 @@ test.describe('robô do WhatsApp', () => {
     await expect(page.locator('.cp-enviar')).not.toHaveClass(/primary/);
     await semVazar(page, page.locator('#content, main').first());
     await page.getByRole('button', { name: '‹ Voltar às campanhas' }).click();
-    await expect(page.locator('.cp-card .cli-tag', { hasText: 'robô' })).toBeVisible();
+    await expect(page.locator('.cp-lin .cli-tag', { hasText: 'robô' }).first()).toBeVisible();
     // pausar pela faixa
     await faixa.getByRole('button', { name: 'Pausar o robô' }).click();
     await expect(faixa.locator('.badge', { hasText: 'Pausado' })).toBeVisible();
@@ -125,6 +140,23 @@ test.describe('robô do WhatsApp', () => {
     await expect(conf).toContainText(/Vai enviar para: [\d.]+ clientes/);
     await conf.getByRole('button', { name: 'Ligar o robô' }).click();
     await expect(page.locator('.zap-opcao')).toContainText('Robô ligado nesta campanha');
+    expect(erros).toEqual([]);
+  });
+  test('ZAP-SEMWPP: pausa por "sem WhatsApp" seguidos aparece como alerta na faixa, com o caminho para os pulados', async ({ page }) => {
+    await page.route('**/api/demo/zap/situacao*', async (route) => {
+      const r = await route.fetch(); const j = await r.json();
+      if (!j.cfg) return route.fulfill({ response: r });
+      j.pausa = { auto: true, semWpp: true, em: new Date().toISOString(), por: 'robô', motivo: '5 clientes seguidos sem WhatsApp — confira se a conferência do número está funcionando (abra um desses números no WhatsApp do celular)' };
+      j.proximoEm = null;
+      route.fulfill({ json: j });
+    });
+    await page.evaluate(() => { location.hash = '#campanhas'; });
+    const alerta = page.locator('.zap-faixa .zap-alerta');
+    await expect(alerta).toBeVisible();
+    await expect(alerta).toContainText('Robô pausado: 5 clientes seguidos sem WhatsApp');
+    await expect(alerta.getByRole('link', { name: 'Ver os pulados ›' })).toBeVisible();
+    await expect(page.locator('.zap-faixa .badge', { hasText: 'Pausou sozinho' })).toBeVisible();
+    await semVazar(page, page.locator('.zap-faixa'));
     expect(erros).toEqual([]);
   });
   // O robô não depende da tela: o servidor roda a conta dos MESMOS arquivos da tela (src/zapauto.js). Aqui a prova de

@@ -90,9 +90,10 @@ test('Configuração guiada: não abre sozinha na apresentação; o atalho das C
 
 test('Configuração guiada: o Início lembra o que falta e a aba Integrações tem o atalho da loja', async ({ page }) => {
   await abrir(page, '#inicio');
-  const aviso = page.locator('.ini-aviso', { hasText: 'Falta configurar FIXE' });
+  // linha de "Dados e configuração": sempre à vista no resumo dos avisos (redesenho de 22/11/2026)
+  const aviso = page.locator('.ini-resumo-i[data-area="dados"]', { hasText: 'Falta configurar FIXE' });
   await expect(aviso).toBeVisible({ timeout: 30000 });
-  await aviso.click();
+  await aviso.locator('.ini-resumo-ir').click();
   await expect(page.locator('.guia .guia-p.at b')).toHaveText('3. FIXE');
   await page.locator('.guia-x').click();
   await expect(page.locator('.guia')).toHaveCount(0);

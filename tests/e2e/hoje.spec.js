@@ -24,9 +24,9 @@ test.describe('Clientes → Hoje', () => {
     await expect(page.locator('main .md-card')).toHaveCount(0);
     await expect(page.locator('main .g-kpi')).toHaveCount(0);
     await expect(card.locator('.hj-conta')).toContainText(/[\d.]+ para contatar · \d+ contatados? hoje/);
-    // o primeiro WhatsApp aparece logo (antes eram ~1.450 px no celular)
+    // o primeiro WhatsApp aparece logo (antes eram ~1.450 px no celular; o título e os cartões do redesenho de 22/11 têm folga maior)
     const topo = await card.locator('.hj-wpp, .hj-robo').first().evaluate((el) => el.getBoundingClientRect().top + window.scrollY);
-    expect(topo).toBeLessThan(900);
+    expect(topo).toBeLessThan(960);
     const alt = await card.locator('.hj-nome').first().evaluate((el) => el.getBoundingClientRect().height);
     expect(alt).toBeGreaterThanOrEqual(24);
     // chips com dica e estado anunciado
@@ -80,10 +80,16 @@ test.describe('Clientes → Hoje', () => {
 
   test('Indicadores: "Saúde da base" no topo com o caminho para agir e o alcance dos filtros em cada seção', async ({ page }) => {
     await page.evaluate(() => { location.hash = '#clientes'; });
-    const saude = page.locator('.card', { hasText: 'Saúde da base' });
+    // redesenho: o "como está" num cartão-herói (clientes bons sumindo · vendas com CPF · recompra) e o "o que fazer" em ações numeradas
+    const saude = page.locator('.heroi', { hasText: 'Saúde da base' });
     await expect(saude).toBeVisible();
-    await expect(saude.getByRole('link', { name: 'Contatar → Hoje ›' })).toBeVisible();
-    await expect(page.locator('.cli-alcance').first()).toContainText('Período e loja dos filtros');
+    await expect(saude.locator('.heroi-col')).toHaveCount(3);
+    await expect(saude).toContainText('Clientes bons sumindo');
+    await expect(saude).toContainText('Vendas com CPF');
+    await expect(saude).toContainText('Recompra em 90 dias');
+    await expect(page.locator('.acoes-num').getByRole('link', { name: 'Contatar → Hoje ›' })).toBeVisible();
+    await expect(page.locator('.cli-alcance').first()).toContainText('Clientes sumindo: a loja toda');
+    await expect(page.locator('.cli-alcance', { hasText: 'Período e loja dos filtros (o gráfico' })).toBeVisible();
     await expect(page.locator('.cli-alcance', { hasText: 'não seguem o período nem os filtros de cliente' })).toBeVisible();
     // a lista de cartões não é montada nos Indicadores
     await expect(page.locator('.cli-list .cli-card, .cli-list > *')).toHaveCount(0);

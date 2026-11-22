@@ -61,6 +61,7 @@ test('Início: plural certo, "lembrar depois" por 7 dias e aviso vermelho sem ad
   await abrir(page);
   await ir(page, 'inicio');
   await expect(page.locator('.ini-pend')).toHaveCount(0, { timeout: 30000 });
+  await page.locator('.ini-ver-todos').click(); // a lista completa fica em "Ver todos" (redesenho de 22/11/2026)
   const avisos = page.locator('.ini-aviso');
   const antes = await avisos.count();
   expect(antes).toBeGreaterThan(1);
@@ -83,6 +84,7 @@ test('Início: plural certo, "lembrar depois" por 7 dias e aviso vermelho sem ad
   await page.waitForFunction(() => window.TS && TS.db);
   await ir(page, 'inicio');
   await expect(page.locator('.ini-pend')).toHaveCount(0, { timeout: 30000 });
+  if (!(await page.locator('.ini-todos').isVisible())) await page.locator('.ini-ver-todos').click(); // a lista aberta fica aberta na mesma visita
   await expect(page.locator('.ini-aviso b', { hasText: titulo })).toHaveCount(0);
   await page.locator('.ini-adiados button').click();
   await expect(page.locator('.ini-aviso b', { hasText: titulo })).toHaveCount(1);
@@ -97,7 +99,7 @@ test('Início com todas as lojas: uma linha explica que os avisos de cada loja a
   await page.locator('header select').first().selectOption('todas');
   await page.waitForFunction(() => TS.state.loja === 'todas' && TS.db && TS.db.n);
   await ir(page, 'inicio');
-  await expect(page.locator('.ini-aviso b', { hasText: 'Os avisos de estoque, inventário e franquia são de cada loja' })).toBeVisible();
+  await expect(page.locator('.ini-resumo-i', { hasText: 'Os avisos de estoque, inventário e franquia são de cada loja' })).toBeVisible();
   await expect(page.locator('main .vd-lojas')).toBeVisible();
 });
 

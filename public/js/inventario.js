@@ -583,11 +583,15 @@
 
     troca(corpo,
       h('div', { class: 'inv-cab' }, h('button', { type: 'button', class: 'btn', onclick: () => { state.invId = null; TS.render(); } }, '‹ Contagens'), h('div', null, h('b', { class: 'inv-titulo' }, c.nome), ' ', h('span', { class: 'inv-st ' + stC }, stT))),
-      h('div', { class: 'grid g-kpi mt' },
-        TS.kpi('Itens contados', `${fmt.int(contados.length)} de ${fmt.int(c.itens.length)}`, sem ? (c.semContarZero ? `${fmt.int(sem)} sem contar vão como 0` : `${fmt.int(sem)} sem contar ficam de fora`) : 'todos contados'),
-        TS.kpi('Com diferença', fmt.int(div.length), contados.length ? `${fmt.pct(div.length / contados.length, 0)} dos contados` : ''),
-        TS.kpi('Sobrou (custo)', fmt.brl(sobra), 'contado acima do sistema'),
-        TS.kpi('Faltou (custo)', fmt.brl(falta), zeroRows.length ? `inclui ${fmt.brl(valorZero)} dos ${fmt.int(zeroRows.length)} zerados` : 'contado abaixo do sistema')),
+      // revisão de 22/11: o "como está" da contagem num cartão-herói (contados com a barra, diferenças, o que faltou e sobrou a custo)
+      h('div', { class: 'mt' }, TS.heroi([
+        { rot: 'Itens contados', num: fmt.int(contados.length), sub: `de ${fmt.int(c.itens.length)}`,
+          barra: c.itens.length ? { pct: contados.length / c.itens.length * 100, rotulo: `${fmt.int(contados.length)} de ${fmt.int(c.itens.length)} itens contados` } : null,
+          linhas: [sem ? (c.semContarZero ? `${fmt.int(sem)} sem contar vão como 0` : `${fmt.int(sem)} sem contar ficam de fora`) : 'todos contados'] },
+        { rot: 'Com diferença', num: fmt.int(div.length), estado: div.length ? 'ruim' : null, linhas: [contados.length ? `${fmt.pct(div.length / contados.length, 0)} dos contados` : ''] },
+        { rot: 'Faltou (custo)', num: fmt.brl(falta), estado: falta > 0.005 ? 'ruim' : null, dica: 'Contado abaixo do sistema, a custo. Sobrou = contado acima do sistema.',
+          linhas: [zeroRows.length ? `inclui ${fmt.brl(valorZero)} dos ${fmt.int(zeroRows.length)} zerados` : 'contado abaixo do sistema', h('span', null, 'sobrou ', h('b', { class: 'pos' }, fmt.brl(sobra)), ' (contado acima do sistema)')] },
+      ], { titulo: 'Resultado da contagem' })),
       mudou.length ? h('div', { class: 'notice mt' }, `${fmt.int(mudou.length)} ${mudou.length === 1 ? 'item mudou' : 'itens mudaram'} no estoque do painel desde o começo da contagem (venda ou entrada). A planilha leva o que foi contado: se vendeu depois de contar, reconte esses itens antes de importar.`) : null,
       cartaoEnvio(),
       enviando ? null : cartaoZerar(),

@@ -341,17 +341,20 @@
       ...ids.filter((id) => pf[id].kg > 0).map((id) => h('i', { class: COR[id], style: { width: (pf[id].kg / totKg * 100).toFixed(2) + '%' }, title: `${NOME[id]}: ${kgTxt(pf[id].kg)}` })));
     const chip = (id, rot, n, kg) => h('button', { type: 'button', class: 'vl-chip ' + (COR[id] || '') + (F.faixa === id ? ' on' : ''), 'aria-pressed': String(F.faixa === id), onclick: () => filtroFaixa(id) },
       h('span', null, rot), h('b', null, fmt.int(n)), kg != null ? h('small', null, kgTxt(kg)) : null);
-    const resumo = h('div', { class: 'card vl-resumo' },
-      h('div', { class: 'vl-risco' },
-        h('small', null, `Valor em risco · vence em menos de ${d.riscoDias} dias`, TS.dica('A preço de venda (pacote de 100 g): o que deixa de entrar se o chá vencer. Inclui os vencidos.' + (d.custos ? ' A custo: o que a loja perde.' : ''))),
-        h('b', null, fmt.brl0(r.risco.venda)),
-        h('small', { class: 'muted' }, `${kgTxt(r.risco.kg)} em ${fmt.int(r.risco.lotes)} lote${r.risco.lotes === 1 ? '' : 's'}${d.custos && r.risco.custo != null ? ` · a custo ${fmt.brl0(r.risco.custo)}` : ''}`)),
-      h('div', { class: 'vl-faixas' }, barra,
-        h('div', { class: 'vl-chips' },
-          chip('risco', 'Vence em até 90 dias', emRisco),
-          ...ids.map((id) => chip(id, CURTO[id] === 'Vencido' ? '⚫ Vencido' : ICONE[id] + ' ' + CURTO[id], pf[id].lotes, pf[id].kg)),
-          chip('todos', 'Todos', d.lotes.length))));
-    const alerta = pf.vencido.lotes ? h('div', { class: 'notice vl-alerta' }, h('b', null, `⚫ ${fmt.int(pf.vencido.lotes)} lote${pf.vencido.lotes === 1 ? '' : 's'} vencido${pf.vencido.lotes === 1 ? '' : 's'} (${kgTxt(pf.vencido.kg)}): `),
+    // revisão de 22/11: o "como está" num cartão-herói — o valor em risco e os lotes por faixa (as faixas filtram a lista)
+    const resumo = TS.heroi([
+      { rot: `Valor em risco · vence em menos de ${d.riscoDias} dias`, num: fmt.brl0(r.risco.venda), estado: r.risco.venda > 0 ? 'ruim' : null,
+        dica: 'A preço de venda (pacote de 100 g): o que deixa de entrar se o chá vencer. Inclui os vencidos.' + (d.custos ? ' A custo: o que a loja perde.' : ''),
+        linhas: [h('span', { class: 'vl-risco' }, `${kgTxt(r.risco.kg)} em ${fmt.int(r.risco.lotes)} lote${r.risco.lotes === 1 ? '' : 's'}${d.custos && r.risco.custo != null ? ` · a custo ${fmt.brl0(r.risco.custo)}` : ''}`)] },
+      { rot: 'Lotes por validade', num: fmt.int(emRisco), sub: 'vencem em até 90 dias', dica: 'A barra mostra o chá a granel (em kg) por faixa de validade. Toque numa faixa para ver só esses lotes na lista.',
+        linhas: [h('div', { class: 'vl-faixas' }, barra,
+          h('div', { class: 'vl-chips' },
+            chip('risco', 'Vence em até 90 dias', emRisco),
+            ...ids.map((id) => chip(id, CURTO[id] === 'Vencido' ? '⚫ Vencido' : ICONE[id] + ' ' + CURTO[id], pf[id].lotes, pf[id].kg)),
+            chip('todos', 'Todos', d.lotes.length)))] },
+    ], { titulo: 'Validade do chá a granel' });
+    resumo.classList.add('vl-resumo');
+    const alerta = pf.vencido.lotes ? h('div', { class: 'notice vl-alerta' }, TS.etqPrazo('agora'), ' ', h('b', null, `${fmt.int(pf.vencido.lotes)} lote${pf.vencido.lotes === 1 ? '' : 's'} vencido${pf.vencido.lotes === 1 ? '' : 's'} (${kgTxt(pf.vencido.kg)}): `),
       'retire da venda e lance a perda no AppNext. ', F.faixa !== 'vencido' ? h('button', { type: 'button', class: 'link-btn', onclick: () => filtroFaixa('vencido') }, 'ver quais') : null) : null;
 
     // ---- filtros da lista ----
@@ -402,7 +405,7 @@
         { key: 'dias', label: 'Vence', align: 'l', title: `Pacote fechado: a validade do pacote. Depois que vai para a lata: o "consumir até" (${d.mesesAberto || 6} meses da abertura, se ninguém trocar), que passa a valer no lugar da data da chegada. Lote com chá aberto mostra a validade do que está aberto.`,
           render: (l) => h('div', null, badge(l.faixa), h('small', { class: 'vl-dias' }, diasTxt(l.dias)),
             l.motivo === 'aberto' ? h('small', { class: 'vl-sub vl-motivo', title: `O chá foi para a lata em ${fmt.date(l.abertoEm)}: depois de aberto vale o "consumir até" (${fmt.date(l.validadeAberto)}), no lugar da validade da chegada (${fmt.date(l.validadePacote)}).` }, '🫙 depois de aberto') : null) },
-        { key: 'desc', label: 'Chá', align: 'l', title: 'Clique no nome do chá para ver os lotes dele: nota de entrada, chegada, se está aberto ou fechado, abertura e vencimento, e para informar que abriu um pacote.',
+        { key: 'desc', label: 'Chá', align: 'l', wrap: true, title: 'Clique no nome do chá para ver os lotes dele: nota de entrada, chegada, se está aberto ou fechado, abertura e vencimento, e para informar que abriu um pacote.',
           render: (l) => h('div', null, l.entrada || l.pacoteN > 0
             ? h('button', { type: 'button', class: 'vl-nome', title: 'Ver os lotes deste chá: nota, chegada, aberto ou fechado, abertura e vencimento.', onclick: () => janelaPacotes(loja, l.cod, l.desc, repintar) }, l.desc)
             : h('b', null, l.desc),

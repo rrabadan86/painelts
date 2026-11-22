@@ -31,41 +31,111 @@
   TS.pages.inicio = function (root) {
     const nome = String((TS.eu && (TS.eu.nome || TS.eu.usuario)) || '').split(' ')[0];
     const hora = horaSP();
-    root.append(h('div', { class: 'page-head' }, h('div', null,
+    const db = TS.db;
+    // Redesenho de 22/11/2026 (aprovado pelo dono): a tela responde, nesta ordem, "como estou indo" (herói), "o que fazer agora"
+    // (ações numeradas) e "o que mais pede atenção" (os 4 avisos mais importantes + "Ver todos"); ao lado, a meta de hoje e o
+    // estoque em números. Um número por fato: as contas são as de sempre (visaodono.js, contas.js, projecaoMes).
+    const lojaNome = state.loja && state.loja !== 'todas' ? ((TS.lojas || []).find((l) => l.id === state.loja) || {}).nome || '' : 'Todas as lojas';
+    const dataTxt = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'long', day: 'numeric', month: 'long' }).format(new Date());
+    const pilula = h('div', { class: 'ini-pilula' }, pilulaVendas([]));
+    root.append(h('div', { class: 'ini-cab' }, h('div', null,
       h('h1', { class: 'page-title' }, `${hora < 12 ? 'Bom dia' : hora < 18 ? 'Boa tarde' : 'Boa noite'}${nome ? ', ' + nome : ''}`),
-      h('div', { class: 'page-sub' }, 'O que pede atenção hoje. Toque num aviso para ir à tela certa.'))));
+      h('div', { class: 'page-sub' }, `${dataTxt.charAt(0).toUpperCase() + dataTxt.slice(1)}${lojaNome ? ' · ' + lojaNome : ''}`)), pilula));
+
+    const VD = TS.visaoDono || null;
+    const dh = VD && db && db.n ? VD.dadosHeroi() : null;
+    const faixa = h('div', { class: 'ini-faixa-ia ini-ia-linha', hidden: true });
+    if (dh) root.append(heroi(dh), faixa); else root.append(faixa);
+    faixaIA(faixa);
+    const lojasLado = VD ? VD.tabelaLojas() : null; // com "Todas as lojas": as lojas lado a lado logo abaixo do herói (que mostra a rede)
+    if (lojasLado) root.append(h('div', { class: 'mt' }, lojasLado));
+
+    // ---------- o que fazer agora (admin e franqueado com uma loja; as mesmas ações de antes) ----------
+    let noTopo = new Set(); // tipos de ação que já estão em "O que fazer agora" (o aviso igual fica marcado, não repete solto)
+    const acoesBox = VD && VD.mostraSemana() ? h('div', null, h('p', { class: 'muted ini-acoes-vazio' }, 'Escolhendo as ações…')) : null;
+    const acoesCard = acoesBox ? TS.cardSec('O que fazer agora', { sub: 'em ordem de dinheiro em jogo', dica: VD.DICA_ACOES }, acoesBox) : null;
+    if (acoesCard) acoesCard.classList.add('ini-acoes');
+
+    // ---------- avisos: os 4 mais importantes + "Ver todos" (a lista completa agrupada de antes) ----------
+    const resumo = h('div', { class: 'ini-resumo-box' });
     const avisos = h('div', { class: 'ini-avisos' });
     const pend = h('div', { class: 'muted ini-pend' }, 'Conferindo estoque, site e atualizações…');
-    const faixa = h('div', { class: 'ini-faixa-ia', hidden: true });
-    // visão do dono (visaodono.js): "Sua semana" primeiro para admin e franqueado; com "Todas as lojas", as lojas lado a lado
-    const VD = TS.visaoDono || null;
-    let noTopo = new Set(); // tipos de ação que já estão em "O que fazer primeiro" (o aviso igual fica marcado, não repete solto)
-    const semanaDono = VD ? VD.blocoSemana({ aoAcoes: (tipos) => { noTopo = new Set(tipos); if (avisos.isConnected) pintar(); } }) : null, lojasLado = VD ? VD.tabelaLojas() : null;
-    // ordem (decisão do dono, revisão de 22/11/2026): o que fazer → avisos → números. No celular os avisos aparecem logo
-    // depois de "O que fazer primeiro", sem precisar rolar os quadros de vendas.
+    const todos = h('div', { class: 'ini-todos', hidden: !state.iniTodos || null }, avisos);
+    const verTodos = h('button', { type: 'button', class: 'ini-ver-todos', 'aria-expanded': state.iniTodos ? 'true' : 'false', hidden: true, onclick: () => { state.iniTodos = !state.iniTodos; pintar(); } });
+    const avisosCard = TS.cardSec('Também pede atenção', { link: verTodos, dica: 'Os avisos mais importantes agora, pela urgência: "Agora" (faça hoje), "Esta semana" e "Para saber". A linha dos dados (atualização, vendas atrasadas, configuração) aparece sempre: diz se os números da tela estão velhos. "Ver todos" abre a lista completa, agrupada por área, com "lembrar depois".' }, resumo, todos, pend);
+    avisosCard.classList.add('ini-avisos-card');
+
+    // ---------- lateral: meta de hoje e estoque em números ----------
     const metaHoje = TS.cartaoMetaDia ? TS.cartaoMetaDia() : null;
-    // Com "Todas as lojas", a tabela das lojas é o assunto da tela e vem antes dos avisos (que ali são poucos).
-    root.append(...[faixa, semanaDono, lojasLado ? h('div', { class: 'mt' }, lojasLado) : null, h('div', { class: 'mt' }, h('div', { class: 'card ini-avisos-card' }, h('div', { class: 'card-title' }, 'Avisos'), avisos, pend)),
-      metaHoje ? h('div', { class: 'mt' }, metaHoje) : null, h('div', { class: 'mt' }, blocoVendas(!!semanaDono))].filter(Boolean));
-    faixaIA(faixa);
+    const estBox = h('div', null, h('p', { class: 'muted' }, 'Conferindo o estoque…'));
+    const estCard = state.loja && state.loja !== 'todas' && dh ? TS.cardSec('Estoque em números', {}, estBox) : null;
+    if (estCard) estCard.classList.add('ini-estoque');
+    const corpo = TS.duasColunas([acoesCard, avisosCard], [metaHoje, estCard]);
+    corpo.classList.add('ini-corpo');
+    const lado = corpo.querySelector('.tela-2col-lat');
+    if (lado) lado.classList.add('ini-lado');
+    root.append(corpo);
+
+    if (dh && state.loja && state.loja !== 'todas') {
+      VD.carregarLoja(dh).then((r) => {
+        if (!corpo.isConnected || TS.db !== db) return;
+        if (acoesBox) {
+          const as = (r && r.acoes) || [];
+          noTopo = new Set(as.map((x) => x.tipo));
+          acoesBox.replaceChildren(as.length ? TS.acoesNum(as.map((a) => {
+            const t = VD.acaoTela(a, r.ctx);
+            const ir = (e) => { if (e) e.preventDefault(); if (t.antes) t.antes(); if (t.rolar) { const el = document.querySelector(t.rolar); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); } else location.hash = t.link; };
+            return { tipo: a.tipo, titulo: t.titulo, texto: t.texto, acao: { rotulo: t.ir, onclick: ir } };
+          })) : h('p', { class: 'muted ini-acoes-vazio' }, 'Nada urgente esta semana: sem produto zerado que vende, sem chá perto de vencer e a meta no ritmo. 👏'));
+          if (avisos.isConnected) pintar();
+        }
+        if (estCard) {
+          const lin = estoqueNumeros(r, dh);
+          if (lin.length) estBox.replaceChildren(TS.linhasNum(lin)); else estCard.remove();
+        }
+      }).catch((e) => {
+        console.error(e);
+        if (acoesBox && acoesBox.isConnected) acoesBox.replaceChildren(h('p', { class: 'muted' }, 'Não consegui montar as ações agora.'));
+        if (estCard && estCard.isConnected) estCard.remove();
+      });
+    }
+
     const lista = [];
     const falhas = []; // fontes de aviso que não responderam: a tela diz, nunca "nada pedindo atenção" no lugar
     let tarefas = [];
+    let terminou = false;
     const pintar = () => {
       // "lembrar depois": o aviso que se repete some por 7 dias para esta pessoa, neste aparelho. Aviso vermelho nunca é escondido.
       const ad = adiados.ler();
       const some = (a) => !!(a.id && a.nivel !== 'erro' && ad[a.id]);
       const mostra = lista.filter((a) => !some(a)), nAd = lista.length - mostra.length;
-      // uma lista só, agrupada pela área de onde o aviso veio (campo `area`, posto na origem); grupos pela gravidade, vermelhos primeiro
+      const nomesFalha = [...new Set(falhas)];
+      // resumo: a linha dos dados (atualização, vendas atrasadas, fonte parada, configuração) sempre à vista; depois os 4 mais importantes
+      const dados = mostra.filter((a) => a.area === 'dados');
+      const outros = mostra.map((a, i) => ({ a, i })).filter((x) => x.a.area !== 'dados')
+        .sort((x, y) => (NIVEL[x.a.nivel] ?? 3) - (NIVEL[y.a.nivel] ?? 3) || x.i - y.i).map((x) => x.a);
+      const top = outros.slice(0, 4);
+      const linhasResumo = [...dados, ...top].map((a) => linhaResumo(a, a.topo && noTopo.has(a.topo)));
+      resumo.replaceChildren(...[
+        nomesFalha.length ? h('div', { class: 'notice warn ini-falhou' }, `Não consegui conferir ${nomesFalha.join(', ')} agora. `, h('button', { type: 'button', class: 'link-btn', onclick: () => TS.render() }, 'Tentar de novo')) : null,
+        linhasResumo.length ? h('ul', { class: 'ini-resumo' }, ...linhasResumo)
+          : terminou || lista.length ? h('p', { class: 'muted ini-nada' }, nomesFalha.length ? 'Nenhum aviso nas partes que deu para conferir.' : nAd ? 'Nada novo pedindo atenção. 👏' : 'Nada pedindo atenção por enquanto. 👏') : null,
+      ].filter(Boolean));
+      const total = mostra.length + nAd;
+      const escondidos = total - linhasResumo.length;
+      verTodos.hidden = !(escondidos > 0 || state.iniTodos);
+      verTodos.textContent = state.iniTodos ? 'Fechar a lista completa' : `Ver todos os ${fmt.int(total)} avisos ›`;
+      verTodos.setAttribute('aria-expanded', state.iniTodos ? 'true' : 'false');
+      todos.hidden = !state.iniTodos;
+      // a lista completa: agrupada pela área de onde o aviso veio (campo `area`, posto na origem); grupos pela gravidade
       const linhas = ordemGrupos(mostra).map((g) => h('div', { class: 'ini-grupo', role: 'group', 'aria-label': g.rotulo, 'data-area': g.area },
         h('div', { class: 'ini-grupo-t' }, g.rotulo, h('span', null, fmt.int(g.avisos.length))),
         ...g.avisos.map((a) => item(a, a.id && a.nivel !== 'erro' ? () => { adiados.adiar(a.id); pintar(); } : null, a.topo && noTopo.has(a.topo)))));
-      const nomesFalha = [...new Set(falhas)];
       avisos.replaceChildren(...[
-        nomesFalha.length ? h('div', { class: 'notice warn ini-falhou' }, `Não consegui conferir ${nomesFalha.join(', ')} agora. `, h('button', { type: 'button', class: 'link-btn', onclick: () => TS.render() }, 'Tentar de novo')) : null,
         ...(linhas.length ? linhas : [h('p', { class: 'muted' }, nomesFalha.length ? 'Nenhum aviso nas partes que deu para conferir.' : nAd ? 'Nada novo pedindo atenção. 👏' : 'Nada pedindo atenção por enquanto. 👏')]),
         nAd ? h('div', { class: 'muted ini-adiados' }, `${fmt.int(nAd)} ${nAd === 1 ? 'aviso adiado' : 'avisos adiados'} (${nAd === 1 ? 'volta' : 'voltam'} em até 7 dias). `, h('button', { type: 'button', class: 'link-btn', onclick: () => { adiados.limpar(); pintar(); } }, 'Mostrar agora')) : null,
       ].filter(Boolean));
+      pilula.replaceChildren(...[pilulaVendas(mostra)].filter(Boolean));
     };
     // com "Todas as lojas" os avisos que são de cada loja não aparecem: uma linha diz por quê
     if ((!state.loja || state.loja === 'todas') && ['estoque', 'pedido', 'inventario', 'notas'].some((t) => (TS.telasEstoque || []).includes(t))) {
@@ -77,7 +147,7 @@
     // cada origem entrega os avisos já com a área dela (ninguém classifica aviso pelo texto). `mover` muda a área de um aviso
     // pelo código dele (ex.: "dados parados" da Conferência vai para Dados e configuração).
     const de = (area, mover) => ({ push: (...as) => lista.push(...as.map((a) => ({ area: (mover && a.id && mover[a.id]) || area, ...a }))) });
-    const fonte = (nome, fn) => [nome, fn];
+    const fonte = (nomeF, fn) => [nomeF, fn];
     tarefas = [
       fonte('a configuração da loja', () => (TS.guia ? TS.guia.avisos(de('dados')) : null)),
       fonte('o robô do WhatsApp', () => (TS.zapAvisos ? TS.zapAvisos(de('outros')) : null)),
@@ -93,56 +163,145 @@
       fonte('os custos das notas', () => avisosCusto(de('estoque'))),
       fonte('os descontos', () => avisosPadrao(de('vendas'), analise)),
     ].map(([nomeF, fn]) => Promise.resolve().then(fn).catch((e) => { console.error(`[início] ${nomeF}:`, e); falhas.push(nomeF); }).then(() => { if (avisos.isConnected) pintar(); }));
-    Promise.all(tarefas).then(() => { pend.remove(); });
+    Promise.all(tarefas).then(() => { terminou = true; pend.remove(); if (avisos.isConnected) pintar(); });
   };
+
+  /** uma linha do resumo de avisos: etiqueta de prazo em texto, título e o link da ação */
+  function linhaResumo(a, noTopo) {
+    const ir = () => { if (a.antes) a.antes(); if (a.link) location.hash = a.link; if (a.acao) a.acao(); };
+    const vai = !!(a.link || a.acao);
+    return h('li', { class: 'ini-resumo-i ini-' + a.nivel, 'data-area': a.area },
+      TS.etqPrazo(a.nivel),
+      h('span', { class: 'ini-resumo-t' }, a.titulo, noTopo ? h('small', { class: 'ini-topo-tag', title: 'Esta ação já aparece em "O que fazer agora", no alto da tela.' }, '↑ já em "O que fazer agora"') : null),
+      vai ? h('button', { type: 'button', class: 'ini-resumo-ir', onclick: ir }, String(a.ir || 'abrir ›').replace(/^./, (c) => c.toUpperCase())) : h('span'));
+  }
+
+  /** pílula de situação das vendas: verde (em dia), amarela (vendas atrasadas), vermelha (atualização com problema) */
+  function pilulaVendas(avisos) {
+    const db = TS.db;
+    if (!db || !db.n) return null;
+    const atraso = TS.todayDay() - db.maxDay;
+    if (avisos.some((a) => a.area === 'dados' && a.nivel === 'erro')) return TS.pilulaSit('err', 'Atualização com problema · veja os avisos');
+    if (atraso >= 2) return TS.pilulaSit('warn', `Vendas só até ${fmt.date(TS.dayToIso(db.maxDay)).slice(0, 5)}`);
+    const em = TS.atualizadoEm instanceof Date && !isNaN(TS.atualizadoEm) ? TS.atualizadoEm : null;
+    const hm = em ? new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }).format(em) : null;
+    return TS.pilulaSit('ok', atraso <= 0 ? `Vendas atualizadas hoje${hm ? ' às ' + hm : ''}` : `Vendas até ontem${hm ? ' · atualizado às ' + hm : ''}`);
+  }
+
+  /** "Como estou indo": o herói. dh = TS.visaoDono.dadosHeroi() (contas de sempre). */
+  function heroi(dh) {
+    const pct = (x) => fmt.pct(x, 0);
+    const nomeMes = new Date(dh.ym + '-15T12:00:00Z').toLocaleDateString('pt-BR', { month: 'long', timeZone: 'UTC' });
+    const cols = [];
+    if (dh.meta) {
+      const p = dh.mes.meta / dh.meta;
+      cols.push({ rot: `Meta de ${nomeMes}`, num: pct(p), sub: `${fmt.brl0(dh.mes.meta)} de ${fmt.brl0(dh.meta)}`,
+        barra: { pct: p * 100, esperado: dh.esperado != null ? dh.esperado * 100 : null, rotulo: `${pct(p)} da meta vendidos${dh.esperado != null ? `; o esperado até ontem era ${pct(dh.esperado)}` : ''}` },
+        linhas: [dh.esperado != null ? `A marca é onde a loja deveria estar até ontem (${pct(dh.esperado)}).` : null],
+        dica: `Vendas da meta do mês (${fmt.brl0(dh.mes.meta)}: chá aromatizado, chá puro e acessórios, sem Espaço Gourmet — a base do Comissionamento) ÷ meta da loja (${fmt.brl0(dh.meta)}).\n\nA marca na barra: dias de loja aberta já completos (${fmt.int(dh.passados)}) ÷ dias de loja aberta do mês (${fmt.int(dh.abertos)}) = ${dh.esperado != null ? pct(dh.esperado) : '—'}. Se a barra passa da marca, a loja está adiantada.` });
+      if (dh.mes.meta >= dh.meta) cols.push({ rot: 'Para bater a meta', num: 'Meta batida', linhas: [{ el: `${fmt.brl0(dh.mes.meta - dh.meta)} acima da meta`, cls: 'pos' }] });
+      else cols.push({ rot: 'Para bater a meta', num: dh.porDia > 0 ? fmt.brl0(dh.porDia) : fmt.brl0(dh.falta), sub: dh.porDia > 0 ? 'por dia' : null,
+        linhas: [dh.restam > 0 ? `nos ${fmt.int(dh.restam)} ${dh.restam === 1 ? 'dia' : 'dias'} de loja aberta que faltam` : 'faltam para a meta',
+          dh.Pm ? { el: `No ritmo de agora, fecha em ${pct(dh.Pm.proj / dh.meta)} (${fmt.brl0(dh.Pm.proj)})`, cls: dh.Pm.proj >= dh.meta ? 'pos' : 'neg' } : null],
+        dica: `Faltam ${fmt.brl0(dh.falta)} em vendas da meta ÷ ${fmt.int(dh.restam)} dias de loja aberta que faltam (com hoje) = ${fmt.brl0(dh.porDia)} por dia. É a mesma conta do cartão "Meta de hoje".${dh.Pm ? '\n\nNo ritmo de agora (projeção das vendas da meta):\n' + TS.comoProjecao(dh.Pm) : ''}` });
+    } else {
+      cols.push({ rot: `Vendas de ${nomeMes}`, num: fmt.brl0(dh.mes.vt), sub: `${fmt.int(dh.mes.cupons)} atendimentos`,
+        linhas: [dh.P ? `Projeção do mês: ${fmt.brl0(dh.P.proj)}` : null, 'Sem meta cadastrada (Configurações → Lojas).'],
+        dica: 'Faturamento da loja no mês (com Espaço Gourmet e vendas sem vendedor; sem taxas e sem itens a R$ 0,01) — o mesmo do Resumo e do Resultado.' + (dh.P ? '\n\nProjeção:\n' + TS.comoProjecao(dh.P) : '') });
+    }
+    if (dh.S && dh.cur) {
+      const pesou = dh.dv != null && dh.ant ? oQuePesou(dh.S) : null;
+      cols.push({ rot: 'Esta semana', num: fmt.brl0(dh.cur.vt),
+        linhas: [dh.dv != null ? { el: `${dh.dv >= 0 ? '+' : '−'}${fmt.n1(Math.abs(dh.dv) * 100)}% contra a semana passada`, cls: dh.dv >= 0 ? 'pos' : 'neg' } : 'sem a semana anterior para comparar', pesou],
+        dica: `Faturamento da loja ${dh.periodo}: de segunda até o último dia completo (hoje ainda está acontecendo e fica de fora).${dh.ant ? `\n\nComparado com os mesmos dias da semana anterior (${fmt.brl0(dh.ant.vt)}), para não comparar uma semana pela metade com uma inteira.` : ''}\n\n"O que mais pesou": a diferença dividida em movimento (atendimentos), itens por atendimento e preço médio por item; aparece a parte que mais mudou.` });
+    }
+    const box = TS.heroi(cols, { titulo: 'Como estou indo' });
+    box.classList.add('ini-heroi');
+    // os valores exatos ficam no elemento (testes conferem que é a mesma conta das outras telas)
+    const k = box.querySelector('.heroi-pri');
+    if (k) Object.assign(k.dataset, dh.meta ? { pctMeta: (dh.mes.meta / dh.meta).toFixed(4), esperado: dh.esperado != null ? dh.esperado.toFixed(4) : '' } : { fatMes: Math.round(dh.mes.vt) });
+    if (dh.Pm) box.dataset.projMeta = Math.round(dh.Pm.proj);
+    if (dh.P) box.dataset.projLoja = Math.round(dh.P.proj);
+    if (dh.cur) box.dataset.semana = Math.round(dh.cur.vt);
+    return box;
+  }
+  /** a parte que mais pesou na variação da semana (atendimentos, itens por atendimento ou preço por item): a decomposição da análise */
+  function oQuePesou(S) {
+    const c = comparar(blocos(S.de, S.ate), blocos(S.antDe, S.antAte), 1, '', '');
+    const e = c.explicado_por_reais, a = c.atual, b = c.anterior;
+    if (!e || !a || !b) return null;
+    const ROT = { movimento_atendimentos: ['mais atendimentos', 'menos atendimentos', 'atendimentos'], itens_por_atendimento: ['mais itens por atendimento', 'menos itens por atendimento', 'itens_por_atendimento'], preco_medio_por_item: ['preço médio por item maior', 'preço médio por item menor', 'preco_medio_item'] };
+    const sinal = Math.sign(c.diferenca_reais || 0);
+    const k = Object.keys(ROT).filter((x) => !sinal || Math.sign(e[x]) === sinal).sort((x, y) => Math.abs(e[y]) - Math.abs(e[x]))[0];
+    if (!k) return null;
+    const va = a[ROT[k][2]], vb = b[ROT[k][2]];
+    if (!vb) return null;
+    const v = va / vb - 1;
+    return `O que mais pesou: ${v < 0 ? ROT[k][1] : ROT[k][0]} (${v >= 0 ? '+' : '−'}${fmt.n1(Math.abs(v) * 100)}%)`;
+  }
+
+  /** "Estoque em números": linhas que levam à tela (só o que a pessoa pode ver) */
+  function estoqueNumeros(r, dh) {
+    if (!r) return [];
+    const out = [];
+    if (r.est) out.push({ rot: 'Zerados que vendem', num: fmt.int(r.est.zerados.n), estado: r.est.zerados.n ? 'ruim' : null, href: '#estoque', onclick: () => { state.estSit = 'falta'; },
+      dica: `Produtos com saldo zero (chá a granel: menos de 50 g) que venderam nos últimos 90 dias, fora os fora de linha.${r.est.zerados.comConta ? ` Perdendo cerca de ${fmt.brl0(r.est.zerados.perdaDia)} por dia em venda.` : ''} A mesma conta de Estoque → Perdendo venda.` });
+    if (r.val) out.push({ rot: r.val.vencidos ? 'Lotes vencidos ou vencendo em 30 dias' : 'Lotes vencendo em 30 dias', num: fmt.int(r.val.criticos + r.val.vencidos), estado: r.val.vencidos ? 'ruim' : r.val.criticos ? 'atencao' : null, href: '#validade', onclick: () => { state.valFaixa = r.val.vencidos ? 'vencido' : 'critica'; },
+      dica: `Lotes de chá a granel que vencem em até 30 dias (${fmt.int(r.val.criticos)}) e os já vencidos (${fmt.int(r.val.vencidos)}). Os lotes são os de Estoque → Validade.` });
+    if (r.C && r.C.contrib != null && r.C.fat > 0) out.push({ rot: 'Margem da semana', num: fmt.pct(r.C.contrib / r.C.fat, 0), estado: r.C.contrib < 0 ? 'ruim' : null, href: '#dre',
+      dica: `Margem de contribuição ${dh.periodo}: ${fmt.brl0(r.C.contrib)} de ${fmt.brl0(r.C.fat)} de faturamento — faturamento − Simples, maquininha e royalties − custo dos produtos − comissões − custos em %. As mesmas linhas do Resultado do mês, só nesses dias.` });
+    return out;
+  }
 
   // ======================= por que as vendas mudaram e o que está fora do padrão =======================
   // Sem IA: decompõe a variação em movimento (atendimentos) × itens por atendimento × preço médio por item,
   // mostra por onde mudou (grupos, vendedoras, dias da semana) e acha o que foge do padrão (desconto, dia atípico).
   // Com IA (chave do franqueado): a IA lê isso junto com os avisos e explica em poucas frases o porquê e o que fazer.
+  // por dia: vt, itens, cupons; e para os recortes (usado pela análise e pela linha "o que mais pesou" do herói)
+  const blocos = (de, ate) => {
+    const db = TS.db;
+    const r = { vt: 0, itens: 0, cup: new Set(), grupo: new Map(), vend: new Map(), wd: new Map(), dias: new Set() };
+    for (let i = 0; i < db.n; i++) {
+      const d = db.day[i];
+      if (d < de || d > ate || !TS.contaFat(i)) continue; // faturamento da loja (definição única)
+      const v = db.vt[i] || 0, k = TS.chaveCupom(i);
+      r.vt += v; r.itens += TS.qtdItem(i); r.cup.add(k); r.dias.add(d);
+      const g = db.D.grupoC[db.grupoC[i]] || '—', vd = db.D.vendedor[db.vend[i]] || '(sem vendedor)', w = db.wd[i];
+      r.grupo.set(g, (r.grupo.get(g) || 0) + v); r.vend.set(vd, (r.vend.get(vd) || 0) + v); r.wd.set(w, (r.wd.get(w) || 0) + v);
+    }
+    return r;
+  };
+  const ind = (r, f = 1) => ({ faturamento: Math.round(r.vt / f), atendimentos: Math.round(r.cup.size / f), itens_por_atendimento: r.cup.size ? +(r.itens / r.cup.size).toFixed(2) : null, preco_medio_item: r.itens ? +(r.vt / r.itens).toFixed(2) : null, ticket_medio: r.cup.size ? +(r.vt / r.cup.size).toFixed(2) : null });
+  /** compara A com B (B dividido por f, ex.: média de 4 semanas) e decompõe a diferença em R$ */
+  const comparar = (A, B, f, rotA, rotB) => {
+    const a = ind(A), b = ind(B, f);
+    const out = { periodo: rotA, base: rotB, atual: a, anterior: b };
+    if (!(a.faturamento > 0 && b.faturamento > 0 && a.atendimentos && b.atendimentos)) return out;
+    const dv = a.faturamento - b.faturamento, lv = Math.log(a.faturamento / b.faturamento);
+    const lc = Math.log(a.atendimentos / b.atendimentos), li = Math.log(a.itens_por_atendimento / b.itens_por_atendimento), lp = Math.log(a.preco_medio_item / b.preco_medio_item);
+    const parte = (x) => (Math.abs(lv) > 1e-9 ? Math.round((dv * x) / lv) : 0);
+    out.variacao_pct = +((a.faturamento / b.faturamento - 1) * 100).toFixed(1);
+    out.diferenca_reais = Math.round(dv);
+    out.explicado_por_reais = { movimento_atendimentos: parte(lc), itens_por_atendimento: parte(li), preco_medio_por_item: parte(lp) };
+    const mov = (mA, mB) => {
+      const ks = new Set([...mA.keys(), ...mB.keys()]);
+      const l = [...ks].map((k) => ({ k, d: Math.round((mA.get(k) || 0) - (mB.get(k) || 0) / f), atual: Math.round(mA.get(k) || 0) })).filter((x) => Math.abs(x.d) >= 50).sort((x, y) => x.d - y.d);
+      return { caiu: l.slice(0, 5).filter((x) => x.d < 0).map((x) => ({ nome: x.k, diferenca: x.d, atual: x.atual })), subiu: l.slice(-5).reverse().filter((x) => x.d > 0).map((x) => ({ nome: x.k, diferenca: x.d, atual: x.atual })) };
+    };
+    out.por_grupo = mov(A.grupo, B.grupo);
+    out.por_vendedora = mov(A.vend, B.vend);
+    const w = mov(A.wd, B.wd);
+    const nomeW = (x) => ({ ...x, nome: TS.DIAS_SEMANA[x.nome] });
+    out.por_dia_semana = { caiu: w.caiu.map(nomeW), subiu: w.subiu.map(nomeW) };
+    return out;
+  };
+
   function analisar() {
     const db = TS.db, taxas = TS.rules.ids.taxas, un = TS.descontoPorUnidade();
     const hoje = TS.todayDay();
     const u = db.maxDay === hoje && db.maxDay > db.minDay ? db.maxDay - 1 : db.maxDay; // hoje ainda está acontecendo: fecha em ontem
     const ini = Math.max(db.minDay, u - 400);
     const resg = (i) => TS.ehResgate(i);
-    // por dia: vt, itens, cupons; e para os recortes
-    const blocos = (de, ate) => {
-      const r = { vt: 0, itens: 0, cup: new Set(), grupo: new Map(), vend: new Map(), wd: new Map(), dias: new Set() };
-      for (let i = 0; i < db.n; i++) {
-        const d = db.day[i];
-        if (d < de || d > ate || !TS.contaFat(i)) continue; // faturamento da loja (definição única)
-        const v = db.vt[i] || 0, k = TS.chaveCupom(i);
-        r.vt += v; r.itens += TS.qtdItem(i); r.cup.add(k); r.dias.add(d);
-        const g = db.D.grupoC[db.grupoC[i]] || '—', vd = db.D.vendedor[db.vend[i]] || '(sem vendedor)', w = db.wd[i];
-        r.grupo.set(g, (r.grupo.get(g) || 0) + v); r.vend.set(vd, (r.vend.get(vd) || 0) + v); r.wd.set(w, (r.wd.get(w) || 0) + v);
-      }
-      return r;
-    };
-    const ind = (r, f = 1) => ({ faturamento: Math.round(r.vt / f), atendimentos: Math.round(r.cup.size / f), itens_por_atendimento: r.cup.size ? +(r.itens / r.cup.size).toFixed(2) : null, preco_medio_item: r.itens ? +(r.vt / r.itens).toFixed(2) : null, ticket_medio: r.cup.size ? +(r.vt / r.cup.size).toFixed(2) : null });
-    /** compara A com B (B dividido por f, ex.: média de 4 semanas) e decompõe a diferença em R$ */
-    const comparar = (A, B, f, rotA, rotB) => {
-      const a = ind(A), b = ind(B, f);
-      const out = { periodo: rotA, base: rotB, atual: a, anterior: b };
-      if (!(a.faturamento > 0 && b.faturamento > 0 && a.atendimentos && b.atendimentos)) return out;
-      const dv = a.faturamento - b.faturamento, lv = Math.log(a.faturamento / b.faturamento);
-      const lc = Math.log(a.atendimentos / b.atendimentos), li = Math.log(a.itens_por_atendimento / b.itens_por_atendimento), lp = Math.log(a.preco_medio_item / b.preco_medio_item);
-      const parte = (x) => (Math.abs(lv) > 1e-9 ? Math.round((dv * x) / lv) : 0);
-      out.variacao_pct = +((a.faturamento / b.faturamento - 1) * 100).toFixed(1);
-      out.diferenca_reais = Math.round(dv);
-      out.explicado_por_reais = { movimento_atendimentos: parte(lc), itens_por_atendimento: parte(li), preco_medio_por_item: parte(lp) };
-      const mov = (mA, mB) => {
-        const ks = new Set([...mA.keys(), ...mB.keys()]);
-        const l = [...ks].map((k) => ({ k, d: Math.round((mA.get(k) || 0) - (mB.get(k) || 0) / f), atual: Math.round(mA.get(k) || 0) })).filter((x) => Math.abs(x.d) >= 50).sort((x, y) => x.d - y.d);
-        return { caiu: l.slice(0, 5).filter((x) => x.d < 0).map((x) => ({ nome: x.k, diferenca: x.d, atual: x.atual })), subiu: l.slice(-5).reverse().filter((x) => x.d > 0).map((x) => ({ nome: x.k, diferenca: x.d, atual: x.atual })) };
-      };
-      out.por_grupo = mov(A.grupo, B.grupo);
-      out.por_vendedora = mov(A.vend, B.vend);
-      const w = mov(A.wd, B.wd);
-      const nomeW = (x) => ({ ...x, nome: TS.DIAS_SEMANA[x.nome] });
-      out.por_dia_semana = { caiu: w.caiu.map(nomeW), subiu: w.subiu.map(nomeW) };
-      return out;
-    };
     const iso = (d) => TS.dayToIso(d), br = (d) => fmt.date(iso(d)).slice(0, 5);
     const sem = comparar(blocos(u - 6, u), blocos(u - 34, u - 7), 4, `últimos 7 dias (${br(u - 6)} a ${br(u)})`, 'média das 4 semanas anteriores');
     const ym = iso(u).slice(0, 7), iniMes = TS.isoToDay(ym + '-01'), n = u - iniMes + 1;
@@ -259,10 +418,11 @@
       const r = (j && j.diagnostico) || {};
       if (!r.manchete) { box.hidden = true; return; }
       box.replaceChildren(
+        // uma linha discreta abaixo do herói (redesenho de 22/11/2026): a análise completa fica no ✨
         h('button', { type: 'button', class: 'ini-faixa-btn', onclick: abrir, title: 'Ler a análise completa' },
-          h('span', { class: 'ini-faixa-tag' }, '✨ Análise do dia'),
+          h('span', { class: 'ini-faixa-tag' }, '✨ Análise do dia:'),
           h('span', { class: 'ini-faixa-txt' }, r.manchete),
-          h('span', { class: 'ini-faixa-ir' }, 'ler a análise ›')));
+          h('span', { class: 'ini-faixa-ir' }, 'ler ›')));
       if (!TS.iaAnaliseLida()) TS.iaPontinho && TS.iaPontinho(true);
     } catch (e) {
       if (box.isConnected) box.replaceChildren(h('span', { class: 'ini-faixa-tag' }, '✨ Análise do dia'), h('span', { class: 'ini-faixa-txt muted' }, e.message));
@@ -298,55 +458,19 @@
     };
   })();
 
-  /** uma linha de aviso. noTopo = a mesma ação já está em "O que fazer primeiro" (fica marcada, não repete como novidade) */
+  /** uma linha de aviso. noTopo = a mesma ação já está em "O que fazer agora" (fica marcada, não repete como novidade) */
   function item(a, adiar, noTopo) {
     const ir = () => { if (a.antes) a.antes(); if (a.link) location.hash = a.link; if (a.acao) a.acao(); };
     const vai = !!(a.link || a.acao);
     return h('div', { class: 'ini-aviso ini-' + a.nivel + (noTopo ? ' ini-notopo' : ''), role: vai ? 'button' : null, tabindex: vai ? '0' : null, onclick: vai ? ir : null,
       onkeydown: (e) => { if (vai && e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); ir(); } } },
       h('span', { class: 'ini-ico', 'aria-hidden': 'true' }, { erro: '!', warn: '•', info: 'i', ok: '✓' }[a.nivel]),
-      h('div', null, h('b', null, a.titulo), noTopo ? h('small', { class: 'ini-topo-tag', title: 'Esta ação já aparece em "O que fazer primeiro", no alto da tela.' }, '↑ já em "O que fazer primeiro"') : null, a.texto ? h('div', { class: 'muted' }, a.texto) : null),
+      h('div', null, h('b', null, a.titulo), noTopo ? h('small', { class: 'ini-topo-tag', title: 'Esta ação já aparece em "O que fazer agora", no alto da tela.' }, '↑ já em "O que fazer agora"') : null, a.texto ? h('div', { class: 'muted' }, a.texto) : null),
       vai ? h('span', { class: 'ini-ir' }, a.ir || 'abrir ›') : null,
       adiar ? h('button', { type: 'button', class: 'ini-adiar', title: 'Esconde este aviso por 7 dias, só para você neste aparelho', onclick: (e) => { e.stopPropagation(); adiar(); }, onkeydown: (e) => e.stopPropagation() }, 'lembrar depois') : null);
   }
 
   // ---------- vendas ----------
-  /** faturamento da loja, atendimentos e vendas da meta de um intervalo (definições únicas: TS.indicadores e TS.rules.vendasMeta) */
-  function somaDias(de, ate) {
-    const idx = TS.filtrar({ de, ate, ignorar: ['vendedores', 'grupos', 'cats', 'produto'], mesLivre: true });
-    const ind = TS.indicadores(idx);
-    return { vt: ind.vt, cupons: ind.cupons, meta: TS.rules.vendasMeta(idx) };
-  }
-  /** comSemana = "Sua semana" está na tela: o % da meta e a projeção das vendas da meta ficam só lá (um número por fato) */
-  function blocoVendas(comSemana) {
-    const db = TS.db;
-    if (!db || !db.n) return h('div');
-    const hoje = TS.todayDay();
-    // o dia de hoje ainda está acontecendo: a comparação com a média usa o último dia COMPLETO e hoje aparece à parte
-    const temHoje = db.maxDay >= hoje && db.maxDay > db.minDay;
-    const d = temHoje ? hoje - 1 : db.maxDay;
-    const ult = somaDias(d, d);
-    const parcial = temHoje ? somaDias(hoje, hoje) : null;
-    const ant = [7, 14, 21, 28].map((k) => somaDias(d - k, d - k)).filter((x) => x.vt > 0);
-    const media = ant.length ? ant.reduce((a, x) => a + x.vt, 0) / ant.length : null;
-    const ym = TS.dayToIso(db.maxDay).slice(0, 7), ini = TS.isoToDay(ym + '-01');
-    const mes = somaDias(ini, db.maxDay);
-    const meta = TS.metaCalc(ym).valor;
-    // projeção: a mesma conta de todas as telas (TS.projecaoMes); a meta é comparada com as VENDAS DA META projetadas
-    const P = TS.projecaoMes(ym, { base: 'loja' }), Pm = meta ? TS.projecaoMes(ym, { base: 'meta' }) : null;
-    const dia = TS.dayToIso(d);
-    const nomeDia = new Date(dia + 'T12:00:00Z').toLocaleDateString('pt-BR', { weekday: 'long', timeZone: 'UTC' });
-    const hojeTxt = parcial ? ` · hoje até agora ${fmt.brl0(parcial.vt)}` : '';
-    return h('div', { class: 'grid g-kpi' },
-      TS.kpi(`Vendas de ${d === hoje - 1 ? 'ontem' : d === hoje ? 'hoje' : fmt.date(dia)}`, fmt.brl0(ult.vt),
-        media ? h('span', null, h('span', { class: ult.vt >= media ? 'up' : 'down' }, `${ult.vt >= media ? '+' : ''}${fmt.n1((ult.vt / media - 1) * 100)}% vs. média ${/sábado|domingo/.test(nomeDia) ? 'dos últimos' : 'das últimas'} ${nomeDia.replace(/-feira$/, 's-feiras').replace(/(sábado|domingo)$/, '$1s')}`), hojeTxt) : `${fmt.int(ult.cupons)} atendimentos${hojeTxt}`,
-        'Faturamento da loja no último dia COMPLETO (com Espaço Gourmet e vendas sem vendedor; sem taxas de serviço e entrega e sem itens a R$ 0,01), comparado com a média do mesmo dia da semana nas 4 semanas anteriores. O dia de hoje ainda está acontecendo: aparece à parte ("hoje até agora") e não entra na comparação.'),
-      TS.kpi('Mês até agora', fmt.brl0(mes.vt), comSemana && meta ? h('span', { 'data-pct-meta': (mes.meta / meta).toFixed(4) }, `vendas da meta ${fmt.brl0(mes.meta)} · o % da meta está em Sua semana`) : meta ? h('span', { 'data-pct-meta': (mes.meta / meta).toFixed(4) }, `vendas da meta ${fmt.brl0(mes.meta)} = ${fmt.pct(mes.meta / meta, 0)} da meta de ${fmt.brl0(meta)}`) : `${fmt.int(mes.cupons)} atendimentos`,
-        'O número grande é o faturamento da loja no mês (com Espaço Gourmet e vendas sem vendedor; sem taxas e sem itens a R$ 0,01) — o mesmo do Resumo e do Resultado.\n\nO "% da meta" usa as VENDAS DA META: só chá aromatizado, chá puro e acessórios, sem Espaço Gourmet — a mesma base do Comissionamento. Por isso o % é calculado com um valor menor que o faturamento.'),
-      TS.kpi('Projeção do mês', P ? fmt.brl0(P.proj) : '—', P && comSemana ? `faturamento · ${P.feitos} de ${P.n} dias completos` : P && Pm && meta ? h('span', { class: Pm.proj >= meta ? 'up' : 'down' }, Pm.proj >= meta ? `vendas da meta ${fmt.brl0(Pm.proj)}: bate a meta` : `vendas da meta ${fmt.brl0(Pm.proj)}: faltam ${fmt.brl0(meta - Pm.proj)}`) : P ? `${P.feitos} de ${P.n} dias completos` : 'mês fechado',
-        P ? TS.comoProjecao(P) + (Pm ? `\n\nA comparação com a meta usa as vendas da meta projetadas pela mesma conta: ${fmt.brl0(Pm.proj)}.` : '') : 'Só no mês em andamento.'),
-      TS.kpi('Atendimentos no mês', fmt.int(mes.cupons), mes.cupons ? `ticket médio ${fmt.brl(mes.vt / mes.cupons)}` : '', 'Cupons únicos do mês (o cupom atendido por duas pessoas conta uma vez). Ticket médio = faturamento da loja ÷ atendimentos.'));
-  }
   async function avisosVendas(lista) {
     const db = TS.db;
     if (!db || !db.n) return;

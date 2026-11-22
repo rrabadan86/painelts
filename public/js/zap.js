@@ -16,7 +16,7 @@
     return j;
   }
   const qs = (loja) => 'loja=' + encodeURIComponent(loja);
-  const hhmm = (iso) => new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  const hhmm = (iso) => new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' }); // horário de Brasília, como o robô
   // quem cuida do robô: admin, franqueado e gerente com a tela Clientes (a vendedora não vê Campanhas)
   const gestor = () => !!(TS.eu && TS.eu.perfil !== 'vendedor');
 
@@ -49,8 +49,10 @@
     const andando = s.ligado && !s.pausa && s.conexao.estado === 'conectado';
     if (andando && s.proximoEm && (!s.motivo || s.motivo.cod === 'ritmo')) {
       // a próxima "por volta de" pode cair depois do fim do horário (ou num dia sem envio): aí diz quando volta de verdade
-      const est = s.cfg ? estimar({ pend: 1, limite: 0, cfg: s.cfg, agora: Date.parse(s.proximoEm) }) : null;
-      if (est && !est.agoraNoHorario && est.primeira) partes.push(`hoje não sai mais nenhuma (o horário acaba às ${s.cfg.as}) · volta ${dataCurta(est.primeira)} às ${s.cfg.das}`);
+      const est = s.cfg ? estimar({ pend: 1, limite: 0, cfg: s.cfg, agora: Date.parse(s.proximoEm), agenda: s.agenda }) : null;
+      const temAgenda = !!(s.agenda && s.agenda.length), hoje = temAgenda ? s.agenda[0] : null;
+      const porque = temAgenda && !hoje ? ' (hoje não é dia de envio)' : ` (o horário acaba às ${hoje ? hoje.as : s.cfg.as})`;
+      if (est && !est.agoraNoHorario && est.primeira) partes.push(`hoje não sai mais nenhuma${porque} · volta ${dataCurta(est.primeira)} às ${hhmm(est.primeira.toISOString())}`);
       else partes.push(`próxima mensagem por volta de ${hhmm(s.proximoEm)}`);
     }
     else if (andando && !s.motivo) partes.push('próxima mensagem em instantes');
@@ -133,6 +135,24 @@
       const dias = new Set(g.dias);
       const cxDias = h('fieldset', { class: 'zap-dias' }, h('legend', null, 'Dias de envio ', TS.dica('O robô só envia nos dias marcados. Padrão: de segunda a sábado.')),
         ...DIAS.map(([d, t]) => { const cb = sujar(h('input', { type: 'checkbox', checked: dias.has(d) || null })); cb.addEventListener('change', () => { cb.checked ? dias.add(d) : dias.delete(d); }); return h('label', { class: 'zap-dia' }, cb, h('span', null, t)); }));
+      // horário de envio (decisão do dono): igual ao funcionamento da loja (padrão) ou um horário próprio
+      const hl = s.horarioLoja; // { seg: { abre, fecha } | null, … } ou null (a loja não tem o horário cadastrado)
+      const rLoja = sujar(h('input', { type: 'radio', name: 'zap-horario-' + lojaId, value: 'loja', checked: g.horario !== 'proprio' || null }));
+      const rProprio = sujar(h('input', { type: 'radio', name: 'zap-horario-' + lojaId, value: 'proprio', checked: g.horario === 'proprio' || null }));
+      const ehAdm = TS.eu && ['admin', 'franqueado'].includes(TS.eu.perfil);
+      const NOMES_D = [['seg', 'seg'], ['ter', 'ter'], ['qua', 'qua'], ['qui', 'qui'], ['sex', 'sex'], ['sab', 'sáb'], ['dom', 'dom']];
+      const tabelaLoja = hl ? h('table', { class: 'zap-tab-hora' }, h('tbody', null, ...NOMES_D.map(([k, t]) => h('tr', null, h('th', { scope: 'row' }, t), h('td', null, !hl[k] ? 'fechada' : hl[k].envia ? `${hl[k].envia.das} às ${hl[k].envia.as}` : 'sem envio'), h('td', { class: 'muted' }, hl[k] ? `loja ${hl[k].abre}–${hl[k].fecha}` : '')))))
+        : h('p', { class: 'warn-t' }, '⚠ A loja ainda não tem o horário de funcionamento cadastrado: enquanto isso, o robô usa o horário próprio abaixo. Cadastre em Configurações → Loja e equipe.');
+      const ondeMuda = hl ? h('small', { class: 'muted' }, 'Envia até 30 min antes de fechar ', TS.dica('Pelo horário da loja, o robô para 30 minutos antes do fechamento (decisão do dono): a resposta do cliente ainda chega com a loja aberta. Dia em que a loja abre por menos de 30 minutos fica sem envio.'), ' · feriado com horário especial ou loja fechada também vale. ', ehAdm ? h('a', { href: '#config' }, 'Mudar em Configurações → Loja e equipe ›') : 'O horário da loja é mudado em Configurações → Loja e equipe (administrador ou franqueado).') : null;
+      const blocoLoja = h('div', { class: 'zap-hora-loja' }, tabelaLoja, ondeMuda);
+      const blocoProprio = h('div', { class: 'zap-hora-proprio' });
+      const usarLoja = () => rLoja.checked && !!hl;
+      const mostrar = () => { blocoLoja.hidden = !rLoja.checked; blocoProprio.hidden = usarLoja(); };
+      rLoja.addEventListener('change', mostrar); rProprio.addEventListener('change', mostrar);
+      const escolhaHora = h('fieldset', { class: 'zap-horario' },
+        h('legend', null, 'Horário de envio ', TS.dica('Igual ao funcionamento da loja (padrão): o robô envia de cada dia o horário em que a loja está aberta — cada dia da semana com o seu horário, e nada nos dias em que a loja fecha (inclusive feriado marcado como fechado). Horário próprio: um horário só e os dias escolhidos aqui.')),
+        h('label', { class: 'cfg-check-l' }, rLoja, h('span', null, 'Igual ao funcionamento da loja')),
+        h('label', { class: 'cfg-check-l' }, rProprio, h('span', null, 'Horário próprio')));
       const avisoRitmo = h('small', { class: 'warn-t zap-aviso', role: 'status', hidden: true });
       const conferirRitmo = () => {
         const v = +min.value;
@@ -141,15 +161,16 @@
       };
       TS.aoConfirmar(min, conferirRitmo); conferirRitmo();
       const btSalvar = h('button', { type: 'button', class: 'btn primary' }, 'Salvar');
-      btSalvar.addEventListener('click', fazer(btSalvar, () => api('PUT', 'config', { loja: lojaId, min: min.value, max: max.value, das: das.value, as: as.value, dias: [...dias], teto: teto.value, falhas: falhas.value }), 'Configuração do robô salva.'));
+      btSalvar.addEventListener('click', fazer(btSalvar, () => api('PUT', 'config', { loja: lojaId, horario: rProprio.checked ? 'proprio' : 'loja', min: min.value, max: max.value, das: das.value, as: as.value, dias: [...dias], teto: teto.value, falhas: falhas.value }), 'Configuração do robô salva.'));
       const trava = !s.pode.configurar;
       const campos = h('div', { class: 'zap-campos' },
         h('div', { class: 'zap-linha' }, h('b', null, 'Ritmo'), TS.dica('Tempo entre uma mensagem e a próxima. O robô sorteia um valor diferente a cada envio, entre os dois números, para não parecer máquina. Padrão: de 900 a 1200 segundos (15 a 20 minutos). Mínimo aceito: 60.'), h('span', null, 'de'), min, h('span', null, 'a'), max, h('span', null, 'segundos entre as mensagens')),
         avisoRitmo,
-        h('div', { class: 'zap-linha' }, h('b', null, 'Horário'), TS.dica('O robô só envia dentro deste horário (de Brasília). Fora dele, espera o próximo dia de envio. Padrão: das 09:00 às 18:30.'), h('span', null, 'das'), das, h('span', null, 'às'), as),
-        cxDias,
+        escolhaHora, blocoLoja, blocoProprio,
         h('div', { class: 'zap-linha' }, h('b', null, 'Máximo por dia'), TS.dica('Quantas mensagens o robô manda por dia pelo número da loja, somando todas as campanhas. Chegou no máximo, continua no próximo dia de envio. Cada campanha ainda tem o próprio limite por dia. Padrão: 30.'), teto, h('span', null, 'mensagens por dia (todas as campanhas)')),
         h('div', { class: 'zap-linha' }, h('b', null, 'Parar sozinho'), TS.dica('Se o envio falhar esse número de vezes seguidas, o robô pausa, avisa aqui e no Início e só volta quando alguém ligar de novo. Protege o número quando algo está errado. Padrão: 3.'), h('span', null, 'depois de'), falhas, h('span', null, 'falhas seguidas')));
+      blocoProprio.append(h('div', { class: 'zap-linha' }, h('b', null, 'Horário'), TS.dica('O robô só envia dentro deste horário (de Brasília). Fora dele, espera o próximo dia de envio.'), h('span', null, 'das'), das, h('span', null, 'às'), as), cxDias);
+      mostrar();
       if (trava) for (const el of campos.querySelectorAll('input')) el.disabled = true;
       partes.push(campos, trava ? h('small', { class: 'muted' }, '🔒 Só o administrador, o franqueado da loja ou a gerente com a tela Clientes muda a configuração do robô.') : h('div', { class: 'cfg-acoes' }, btSalvar));
       sec.replaceChildren(...partes.filter(Boolean));
@@ -201,7 +222,11 @@
         h('div', { class: 'zap-faixa-t' }, h('b', null, '🤖 Robô do WhatsApp'),
           TS.dica(`Envia sozinho, pelo WhatsApp da loja, as campanhas com o robô ligado: uma mensagem por vez, no ritmo, horário e máximo por dia definidos ${s.pode.configurar ? 'no botão de configurar, aqui ao lado' : 'por quem cuida do robô (administrador, franqueado ou gerente)'}. Quem pediu para não receber ou recebeu mensagem há pouco tempo fica de fora. ` + RISCO),
           s.servico ? etiqueta(sitRobo(s)) : null, etiqueta(sitConexao(s))),
-        h('div', { class: 'zap-faixa-m' }, s.servico ? h('span', null, linhaHoje(s)) : null, mot ? h('small', { class: s.pausa && s.pausa.auto ? 'neg' : 'muted' }, mot) : null, erro),
+        // trava "sem WhatsApp seguidos" (decisão do dono): o alerta fica bem à vista, com o caminho para conferir os pulados
+        s.pausa && s.pausa.semWpp ? h('div', { class: 'notice err zap-alerta', role: 'alert' }, h('b', null, '⚠ Robô pausado: '), s.pausa.motivo, '. ',
+          h('a', { href: '#campanhas', onclick: (e) => { e.preventDefault(); const c = document.querySelector('.cp-card'); if (c) c.scrollIntoView({ behavior: 'smooth', block: 'start' }); } }, 'Ver os pulados ›'),
+          h('small', { class: 'muted' }, ' Abra a campanha: eles estão como "Pulada · sem WhatsApp" e voltam para a fila pelo botão da linha.')) : null,
+        h('div', { class: 'zap-faixa-m' }, s.servico ? h('span', null, linhaHoje(s)) : null, s.servico && s.cfg ? h('small', { class: 'muted zap-faixa-hora' }, `Envia ${horarioTxt(s)}${s.cfg.horario !== 'proprio' && s.horarioLoja ? ' (horário da loja, até 30 min antes de fechar)' : ''}`) : null, mot && !(s.pausa && s.pausa.semWpp) ? h('small', { class: s.pausa && s.pausa.auto ? 'neg' : 'muted' }, mot) : null, erro),
         h('div', { class: 'zap-faixa-b' },
           s.servico && andando ? btPausar : null,
           s.servico && !andando && s.pode.configurar && s.conexao.estado === 'conectado' ? btLigar : null,
@@ -239,30 +264,76 @@
    * por dia = o menor entre o limite da campanha, o máximo do número e o que cabe no horário no ritmo médio.
    * Conta só os dias de envio (cfg.dias), no horário de Brasília. → { porDia, dias, fim (Date), primeira (Date|null), agoraNoHorario }
    */
-  function estimar({ pend, limite, cfg, agora = Date.now() }) {
+  function estimar({ pend, limite, cfg, agora = Date.now(), agenda = null }) {
     const sp = (t) => {
       const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Sao_Paulo', weekday: 'short', hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(new Date(t)).map((x) => [x.type, x.value]));
-      return { dow: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(p.weekday), min: (+p.hour % 24) * 60 + +p.minute };
+      return { dow: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(p.weekday), min: (+p.hour % 24) * 60 + +p.minute, iso: new Date(t).toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }) };
     };
     const hm = (t) => +t.slice(0, 2) * 60 + +t.slice(3, 5);
-    const ini = hm(cfg.das), fim = hm(cfg.as), medio = (cfg.min + cfg.max) / 2;
-    const cabe = Math.max(1, Math.floor(((fim - ini) * 60) / medio) + 1);
-    const porDia = Math.max(1, Math.min(limite > 0 ? limite : Infinity, cfg.teto, cabe));
-    const agoraSP = sp(agora), envia = (dow) => cfg.dias.includes(dow);
-    const agoraNoHorario = envia(agoraSP.dow) && agoraSP.min >= ini && agoraSP.min < fim;
+    // a janela de cada dia: a agenda do servidor (horário de funcionamento da loja, dia a dia, com feriados) e, além dela,
+    // o mesmo dia da semana da agenda; sem agenda, das/as/dias da configuração
+    const porIso = new Map((agenda || []).filter(Boolean).map((a) => [a.dia, a]));
+    const diasAgenda = new Map(); // dia da semana → janela (do último dia da agenda com esse dia da semana)
+    (agenda || []).forEach((a) => { if (a) diasAgenda.set(a.sem, a); });
+    const janela = (t) => {
+      const d = sp(t);
+      if (agenda && agenda.length) {
+        if (porIso.has(d.iso)) { const a = porIso.get(d.iso); return { ini: hm(a.das), fim: hm(a.as) }; }
+        // dentro do período da agenda e sem entrada: dia fechado
+        const ultimo = agenda.length - 1, hojeAg = sp(Date.now()).iso;
+        const k = Math.round((Date.parse(d.iso + 'T12:00:00Z') - Date.parse(hojeAg + 'T12:00:00Z')) / 864e5);
+        if (k >= 0 && k <= ultimo) return null;
+        const a = diasAgenda.get(d.dow);
+        return a ? { ini: hm(a.das), fim: hm(a.as) } : null;
+      }
+      return cfg.dias.includes(d.dow) ? { ini: hm(cfg.das), fim: hm(cfg.as) } : null;
+    };
+    const medio = (cfg.min + cfg.max) / 2;
+    const porDiaDe = (j) => Math.max(1, Math.min(limite > 0 ? limite : Infinity, cfg.teto, Math.floor(((j.fim - j.ini) * 60) / medio) + 1));
+    const agoraSP = sp(agora), jHoje = janela(agora);
+    const agoraNoHorario = !!(jHoje && agoraSP.min >= jHoje.ini && agoraSP.min < jHoje.fim);
     // dias de envio a partir de hoje (hoje só conta se ainda dá tempo)
     const diasEnvio = [];
     for (let k = 0; diasEnvio.length < 400 && k < 800; k++) {
-      if (!envia(sp(agora + k * 864e5).dow)) continue;
-      if (k === 0 && agoraSP.min >= fim) continue;
-      diasEnvio.push(k);
+      const j = janela(agora + k * 864e5);
+      if (!j) continue;
+      if (k === 0 && agoraSP.min >= j.fim) continue;
+      diasEnvio.push({ k, j });
     }
-    const n = Math.max(1, Math.ceil(pend / porDia));
-    const k0 = diasEnvio[0] ?? 0, kFim = diasEnvio[Math.min(n, diasEnvio.length) - 1] ?? 0;
+    let falta = pend, n = 0, kFim = diasEnvio.length ? diasEnvio[0].k : 0;
+    for (const x of diasEnvio) { if (falta <= 0) break; falta -= porDiaDe(x.j); n++; kFim = x.k; }
+    const porDia = diasEnvio.length ? porDiaDe(diasEnvio[0].j) : 1;
+    const d0 = diasEnvio[0];
     // primeira fora do horário: no começo do próximo horário de envio
-    const primeira = agoraNoHorario ? null : new Date(agora + k0 * 864e5 + ((k0 === 0 ? Math.max(0, ini - agoraSP.min) : ini - agoraSP.min) * 60e3));
-    return { porDia, dias: n, fim: new Date(agora + kFim * 864e5), primeira, agoraNoHorario };
+    const primeira = agoraNoHorario || !d0 ? null : new Date(agora + d0.k * 864e5 + ((d0.k === 0 ? Math.max(0, d0.j.ini - agoraSP.min) : d0.j.ini - agoraSP.min) * 60e3));
+    return { porDia, dias: Math.max(1, n), fim: new Date(agora + kFim * 864e5), primeira, agoraNoHorario, inicio: d0 ? d0.j.ini : null };
   }
+  /** "seg a sex 09:00–19:00, sáb 09:00–17:00, dom fechado" pela agenda (ou pela configuração) */
+  function horarioTxt(s) {
+    const NOMES = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'], ORD = [1, 2, 3, 4, 5, 6, 0];
+    const porDow = new Map();
+    // por dia da semana: a primeira vez que aparece na agenda (sem feriado no meio, a semana típica)
+    for (let k = 0; k < 7; k++) {
+      const t = Date.now() + k * 864e5;
+      const iso = new Date(t).toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+      const dow = new Date(iso + 'T12:00:00Z').getUTCDay();
+      let txt = null;
+      if (s.agenda && s.agenda.length) { const a = s.agenda.find((x) => x && x.dia === iso); txt = a ? `${a.das}–${a.as}` : 'fechado'; }
+      else txt = s.cfg && s.cfg.dias.includes(dow) ? `${s.cfg.das}–${s.cfg.as}` : 'sem envio';
+      porDow.set(dow, txt);
+    }
+    // junta dias seguidos com o mesmo horário: "seg a sex 09:00–19:00"
+    const partes = [];
+    for (let i = 0; i < ORD.length;) {
+      const t = porDow.get(ORD[i]);
+      let j2 = i;
+      while (j2 + 1 < ORD.length && porDow.get(ORD[j2 + 1]) === t) j2++;
+      partes.push(`${NOMES[ORD[i]]}${j2 > i ? (j2 === i + 1 ? ' e ' : ' a ') + NOMES[ORD[j2]] : ''} ${t}`);
+      i = j2 + 1;
+    }
+    return partes.join(', ');
+  }
+  TS.zapHorarioTxt = horarioTxt;
   TS.zapEstimar = estimar;
 
   /**
@@ -284,8 +355,7 @@
       const pend = info.pendentes ? info.pendentes() : 0, comp = info.comparacao ? info.comparacao() : 0;
       const limite = camp.limiteDia != null ? camp.limiteDia : 20;
       const cfg = s && s.cfg;
-      const est = cfg ? estimar({ pend, limite, cfg }) : null;
-      const diasTxt = cfg ? DIAS.filter(([d]) => cfg.dias.includes(d)).map(([, t]) => t).join(', ') : '';
+      const est = cfg ? estimar({ pend, limite, cfg, agenda: s.agenda }) : null;
       const ex = info.exemplo ? info.exemplo() : null;
       const andando = s && s.ligado && !s.pausa && s.conexao && s.conexao.estado === 'conectado';
       const primeira = !est || !pend ? null
@@ -296,7 +366,7 @@
         h('ul', { class: 'zap-resumo' }, ...[
           linha('Vai enviar para', `${fmt.int(pend)} ${pend === 1 ? 'cliente' : 'clientes'}${comp ? ` (${fmt.int(comp)} ${comp === 1 ? 'fica' : 'ficam'} sem mensagem, para comparar)` : ''}`),
           linha('Por dia', `até ${limite > 0 ? fmt.int(limite) : 'sem limite'} desta campanha${cfg ? ` · ${fmt.int(cfg.teto)} no número da loja (somando todas as campanhas)` : ''}`),
-          cfg ? linha('Quando', `${diasTxt}, das ${cfg.das} às ${cfg.as} (horário de Brasília), uma mensagem a cada ${Math.round(cfg.min / 60)} a ${Math.round(cfg.max / 60)} minutos`) : null,
+          cfg ? linha('Quando', `${horarioTxt(s)} (horário de Brasília${cfg.horario !== 'proprio' && s.horarioLoja ? ', o mesmo do funcionamento da loja' : ''}), uma mensagem a cada ${Math.round(cfg.min / 60)} a ${Math.round(cfg.max / 60)} minutos`) : null,
           est && pend ? linha('Termina', `por volta de ${dataTxt(est.fim)} (${fmt.int(est.dias)} ${est.dias === 1 ? 'dia' : 'dias'} de envio, cerca de ${fmt.int(est.porDia)} por dia${s.fila && s.fila.campanhas ? '; com outras campanhas no robô, demora mais' : ''})`) : null,
           primeira ? linha('A primeira sai', primeira) : null,
         ].filter(Boolean)),

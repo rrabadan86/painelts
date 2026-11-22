@@ -103,11 +103,16 @@
     const desde = Date.now() - 90 * 864e5;
     const enc = d.pedidos.filter((p) => p.avisado && Date.parse(p.avisado.em) >= desde && (p.st === 'comprou' || p.st === 'naocomprou'));
     const compraram = enc.filter((p) => p.st === 'comprou').length;
-    const kpis = h('div', { class: 'grid g-kpi esp-kpis' },
-      TS.kpi('Chegaram · avisar', fmt.int(conta.avisar), conta.avisar ? 'clientes para avisar' : 'ninguém para avisar'),
-      TS.kpi('Esperando', fmt.int(conta.esperando), 'produto ainda não chegou'),
-      TS.kpi('Avisados', fmt.int(conta.avisados), `aguardando compra (até ${d.dias} dias)`),
-      TS.kpi('Voltaram para comprar', enc.length ? fmt.pct(compraram / enc.length, 0) : '—', enc.length ? `${fmt.int(compraram)} de ${fmt.int(enc.length)} avisados (90 dias)` : 'aparece depois dos primeiros avisos'));
+    // redesenho (decisão do dono, 22/11/2026): o "como está" num cartão-herói — quem avisar agora primeiro
+    const kpis = TS.heroi([
+      { rot: 'Chegaram · avisar', num: fmt.int(conta.avisar), estado: conta.avisar ? 'bom' : null, dica: 'Pedidos cujo produto chegou na nota de entrada: o cliente está esperando o aviso.',
+        linhas: [conta.avisar ? `${conta.avisar === 1 ? 'cliente para avisar' : 'clientes para avisar'} agora` : 'ninguém para avisar'] },
+      { rot: 'Esperando', num: fmt.int(conta.esperando), dica: `Esperando: o produto ainda não chegou. Avisados: o cliente já foi avisado e tem até ${d.dias} dias para comprar.`,
+        linhas: ['produto ainda não chegou', `${fmt.int(conta.avisados)} ${conta.avisados === 1 ? 'avisado' : 'avisados'} aguardando compra (até ${d.dias} dias)`] },
+      { rot: 'Voltaram para comprar', num: enc.length ? fmt.pct(compraram / enc.length, 0) : '—', dica: 'Dos avisados nos últimos 90 dias que já encerraram, quantos voltaram e compraram o produto.',
+        linhas: [enc.length ? `${fmt.int(compraram)} de ${fmt.int(enc.length)} avisados (90 dias)` : 'aparece depois dos primeiros avisos'] },
+    ], { titulo: 'Lista de espera agora' });
+    kpis.classList.add('esp-kpis');
     const novo = h('div');
     const btnNovo = h('button', { type: 'button', class: 'btn primary esp-novo-btn', onclick: () => { btnNovo.hidden = true; novo.replaceChildren(formNovo(loja, d, (p) => { d.pedidos.unshift(p); state.espAba = 'esperando'; repintar(); }, () => { btnNovo.hidden = false; novo.replaceChildren(); })); } }, '+ Anotar pedido');
     const abas = TS.seg(Object.entries(ABAS).map(([k, [t]]) => [`${t} (${fmt.int(conta[k])})`, k]), aba, (v) => { state.espAba = v; repintar(); });

@@ -3,31 +3,32 @@ html, body { margin: 0; height: 100%; }
 body {
   grid-auto-flow: row; align-content: center; gap: 14px;
   font-family: "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
-  background: radial-gradient(circle at 20% 10%, #2C5234 0, #1F3D2B 55%, #172E20 100%);
+  /* linguagem do redesenho: fundo creme liso, cartão branco com borda fina, sem sombra nem degradê */
+  background: #F4F1EA;
   display: grid; place-items: center; color: #24302A; padding: 16px;
 }
-.box { width: min(360px, 100%); background: #fff; border-radius: 16px; padding: 30px 28px 26px; box-shadow: 0 20px 60px rgba(0,0,0,.25); text-align: center; }
-h1 { margin: 8px 0 0; font-size: 24px; color: #1F3D2B; }
-.sub { margin: 2px 0 20px; color: #6B7A70; font-size: 13px; }
-form { text-align: left; display: grid; gap: 12px; }
-label { font-size: 12px; font-weight: 600; color: #1F3D2B; display: grid; gap: 5px; }
-input { height: 40px; border: 1px solid #DCD5C6; border-radius: 8px; padding: 0 12px; font: inherit; font-size: 14px; background: #F7F4EC; outline: none; }
+.box { width: min(380px, 100%); background: #fff; border: 1px solid #E6E0D4; border-radius: 14px; padding: 32px 28px 28px; text-align: center; }
+h1 { margin: 8px 0 0; font-size: 26px; color: #1F3D2B; }
+.sub { margin: 2px 0 22px; color: #56635B; font-size: 15px; }
+form { text-align: left; display: grid; gap: 14px; }
+label { font-size: 13px; font-weight: 600; color: #1F3D2B; display: grid; gap: 6px; }
+input { height: 44px; border: 1px solid #DCD5C6; border-radius: 10px; padding: 0 12px; font: inherit; font-size: 15px; background: #F7F4EC; outline: none; }
 input:focus { border-color: #2C5234; background: #fff; box-shadow: 0 0 0 3px rgba(44,82,52,.12); }
-button { height: 42px; border: 0; border-radius: 8px; background: #2C5234; color: #fff; font: inherit; font-weight: 600; font-size: 14px; cursor: pointer; margin-top: 4px; }
+button { height: 44px; border: 0; border-radius: 10px; background: #2C5234; color: #fff; font: inherit; font-weight: 600; font-size: 15px; cursor: pointer; margin-top: 4px; }
 button:hover { background: #1F3D2B; }
 .err { margin: 0; color: #B5452B; font-size: 13px; }
 .logo-loja { max-height: 72px; max-width: 220px; object-fit: contain; display: block; margin: 0 auto 6px; }
 /* trocar senha */
-.regras { list-style: none; margin: 0; padding: 0; font-size: 12px; color: #6B7A70; display: grid; gap: 3px; }
+.regras { list-style: none; margin: 0; padding: 0; font-size: 12px; color: #56635B; display: grid; gap: 3px; }
 .regras li::before { content: '○ '; }
 .regras li.ok { color: #2C5234; }
 .regras li.ok::before { content: '✓ '; }
 form.sair { display: block; margin-top: 10px; text-align: center; }
-button.link { background: none; color: #6B7A70; height: auto; font-weight: 500; font-size: 13px; text-decoration: underline; margin: 0; padding: 0; }
+button.link { background: none; color: #56635B; height: auto; font-weight: 500; font-size: 13px; text-decoration: underline; margin: 0; padding: 0; }
 button.link:hover { background: none; color: #1F3D2B; }
 .voltar { margin: 8px 0 0; font-size: 13px; }
 .voltar a { color: #2C5234; }
 
-.credito { margin: 0; text-align: center; font-size: 12px; color: rgba(255,255,255,.55); letter-spacing: .2px; }
-.credito b { color: rgba(255,255,255,.8); font-weight: 600; }
-.credito a { color: rgba(255,255,255,.8); }
+.credito { margin: 0; text-align: center; font-size: 13px; color: #56635B; letter-spacing: .2px; }
+.credito b { color: #1F3D2B; font-weight: 600; }
+.credito a { color: #2C5234; font-weight: 600; }

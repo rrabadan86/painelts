@@ -100,6 +100,7 @@ test('Início avisa quando um dia recente não bate com o caixa e leva à aba ce
   await page.goto('/apresentacao');
   await page.waitForFunction(() => window.TS && TS.db && TS.conferencia && TS.state.loja && TS.state.loja !== 'todas', null, { timeout: 60000 });
   await page.evaluate(() => { location.hash = '#inicio'; });
+  await page.locator('.ini-ver-todos').click(); // a lista completa fica em "Ver todos" (redesenho de 22/11/2026)
   const aviso = page.locator('.ini-grupo[data-area="vendas"]', { hasText: 'Caixa × painel' });
   await expect(aviso).toBeVisible({ timeout: 30000 });
   await expect(page.locator('.ini-avisos')).toContainText('ainda contam nas vendas');
