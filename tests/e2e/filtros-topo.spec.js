@@ -116,3 +116,17 @@ test('celular: os filtros continuam na gaveta, sem faixa nem "Mais filtros"', as
   await page.locator('#btnFecharFiltros').click();
   await expect(page.locator('body')).not.toHaveClass(/filters-open/);
 });
+
+test('PER-ONTEM: atalho "Ontem" no período — o dia anterior ao de hoje, comparado com o mesmo dia da semana passada', async ({ page }, info) => {
+  await abrir(page);
+  await ir(page, 'resumo');
+  if (info.project.name === 'celular') await page.locator('#btnFiltros').click();
+  const chip = page.locator(info.project.name === 'celular' ? '.chip' : '#sidebar .chip', { hasText: /^Ontem$/ }).first();
+  await expect(chip).toBeVisible();
+  await chip.click();
+  const r = await page.evaluate(() => ({ de: TS.state.f.de, ate: TS.state.f.ate, hoje: TS.todayDay(), txt: TS.periodoTexto(), preset: TS.state.f.preset }));
+  expect(r.preset).toBe('ontem');
+  expect([r.de, r.ate]).toEqual([r.hoje - 1, r.hoje - 1]);
+  expect(r.txt).toMatch(/^Ontem · \d{2}\/\d{2}\/\d{4}$/);
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
+});

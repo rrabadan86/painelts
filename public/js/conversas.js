@@ -86,12 +86,19 @@
     function voltar() {
       st.aberta = null;
       pintarLista();
-      const y = st.rolagem;
-      if (y != null) requestAnimationFrame(() => window.scrollTo(0, y));
+      // a lista rola dentro do próprio quadro (barra interna) e a página também: volta as duas
+      const y = st.rolagem, yl = st.rolagemLista;
+      requestAnimationFrame(() => {
+        const tw = corpo.querySelector('.table-wrap');
+        if (tw && yl) tw.scrollTop = yl;
+        if (y != null) window.scrollTo(0, y);
+      });
     }
 
     function pintarLista() {
       st.aberta = null;
+      // a atualização de 30 em 30 s redesenha a lista: a barra interna dela não volta para o topo
+      const tw0 = corpo.querySelector('.table-wrap'), manter = tw0 ? tw0.scrollTop : 0;
       const cli = mapaClientes();
       const linhas = dados.conversas.map((c) => {
         const cliente = cli.get(c.chave) || null;
@@ -114,7 +121,7 @@
         ],
         rows: sel.map((x) => ({ ...x, busca: `${x.nomeTxt} ${x.fone} ${x.chave} ${x.ult.texto || ''}` })), search: 'Buscar nome, telefone ou palavra', searchKeys: ['nomeTxt', 'busca'],
         sortKey: 'quandoSort', sortDir: 'desc', estado: st.tabEstado, rowClass: (x) => (x.chave === st.ultima ? 'cv-ultima' : null),
-        onRowClick: (x) => { st.rolagem = window.scrollY; st.ultima = x.chave; abrir(x.chave, true); },
+        onRowClick: (x) => { const tw = corpo.querySelector('.table-wrap'); st.rolagem = window.scrollY; st.rolagemLista = tw ? tw.scrollTop : 0; st.ultima = x.chave; abrir(x.chave, true); },
         empty: dados.conversas.length ? 'Nenhuma conversa nesta aba.' : 'Ainda não há conversas guardadas. Elas aparecem conforme chegam; para trazer as antigas, use "Reimportar histórico".',
       });
       corpo.replaceChildren(...[avisos(), h('div', { class: 'grid g-kpi' },
@@ -122,6 +129,7 @@
         TS.kpi('Não lidas', fmt.int(conta.naolidas), 'com mensagem nova do cliente', 'Conversas com mensagem do cliente que ninguém abriu aqui no painel. Abrir a conversa marca como lida.'),
         TS.kpi('Sem cadastro', fmt.int(conta.sem), 'celular sem cliente no painel', 'Quem conversou com a loja mas não tem cadastro com este celular: oportunidade de cadastrar no FIXE na próxima compra.')),
       TS.cardWithTools('Conversas do WhatsApp', 'Clique numa conversa para ler. As do robô aparecem com 🤖 e o nome da campanha.', h('div', { class: 'cv-ferr' }, tab.searchBox), h('div', null, seg, tab))].filter(Boolean));
+      if (manter) { const tw = corpo.querySelector('.table-wrap'); if (tw) tw.scrollTop = manter; }
     }
 
     function avisos() {
