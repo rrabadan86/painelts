@@ -79,6 +79,8 @@ test('VIS-06: celular — o ✨ some enquanto rola para baixo e o fim da página
   await abrir(page, '#estoque');
   const fab = page.locator('#fabIA');
   await expect(fab).toBeVisible({ timeout: 30000 });
+  // a lista do Estoque precisa estar na página: com a página ainda curta, 1200 px já é o fim (e no fim o ✨ volta)
+  await page.waitForFunction(() => document.documentElement.scrollHeight > window.innerHeight + 2500, null, { timeout: 30000 });
   await page.evaluate(() => window.scrollTo(0, 1200));
   await expect(fab).toHaveClass(/ia-fab-some/);
   await page.evaluate(() => window.scrollTo(0, 600));

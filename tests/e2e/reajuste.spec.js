@@ -23,9 +23,12 @@ test('Nota de entrada: enviar reclamação de reajuste para a franquia, escolhen
   await expect(pop.getByLabel('Para')).toHaveValue('compras@franquia-exemplo.com.br');
   await expect(pop.getByLabel('Assunto')).toHaveValue(/^Reajuste de custo — NF /);
   await pop.getByLabel('Assunto').fill('Reajuste fora do combinado');
+  await expect(pop.getByLabel('Assunto')).toHaveValue('Reajuste fora do combinado');
   await pop.getByLabel('Para').fill('compras@franquia-exemplo.com.br, gerente@franquia-exemplo.com.br');
   await expect(pop.getByLabel('Mensagem')).toHaveValue(/custo maior do que na compra anterior/);
   await pop.getByLabel('Mensagem').fill('Olá, podem conferir estes itens?');
+  // a janela não pode ter sido refeita (perderia o que foi digitado): o assunto continua o digitado
+  await expect(pop.getByLabel('Assunto')).toHaveValue('Reajuste fora do combinado');
   // todos marcados; desmarca o primeiro (se houver mais de um)
   const caixas = pop.locator('.nf-fr-item input[type=checkbox]');
   const n = await caixas.count();
