@@ -32,7 +32,8 @@ agora() { date -Iseconds; }
 # grava em dados/_sistema sem nunca seguir symlinks criados pelo container
 publicar() { # $1=nome_arquivo (lê da entrada padrão)
   [ -L "$SIS" ] && return 1
-  rm -f "$SIS/$1" 2>/dev/null
+  # sem apagar antes: o "mv -f" troca o arquivo (ou um symlink) de uma vez só. Apagar antes deixava o painel sem
+  # versao.txt enquanto o git buscava as novidades (segundos, a cada 5 min) e a tela pedia para "instalar o atualizador"
   local tmp
   tmp="$(mktemp "$SIS/.tmp.${1}.XXXXXX")" || return 1
   cat > "$tmp" && chmod 644 "$tmp" 2>/dev/null && mv -f "$tmp" "$SIS/$1"
