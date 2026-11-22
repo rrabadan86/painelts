@@ -1693,6 +1693,8 @@
         ct.em ? h('span', { class: 'muted' }, `Contatado em ${fmt.date(ct.em.slice(0, 10))}${ct.por ? ' por ' + ct.por : ''}${ct.motivo ? ' (' + ct.motivo + ')' : ''}.`) : null,
         h('button', { type: 'button', class: 'btn', onclick: () => agir('contatado', 'ligação/outro') }, ct.em ? 'Marcar contato de novo' : 'Marcar como contatado'),
         ct.em ? h('button', { type: 'button', class: 'btn', onclick: () => agir('limpar') }, 'Desfazer contato') : null,
+        // Conversas do WhatsApp: só admin e franqueado (decisão do dono)
+        c.wpp && (TS.demo || (TS.eu && ['admin', 'franqueado'].includes(TS.eu.perfil))) && TS.pages.conversas ? h('button', { type: 'button', class: 'btn', title: 'Abre a conversa do WhatsApp da loja com este cliente (Clientes → Conversas).', onclick: () => { TS.abrirConversa = TS.foneConversa ? TS.foneConversa(c) : ''; document.querySelectorAll('.camada-cheia').forEach((x) => x.remove()); document.body.classList.remove('com-camada'); location.hash = '#conversas'; } }, '💬 Ver conversa') : null,
         h('button', { type: 'button', class: 'btn ghost-danger', title: 'LGPD: a pessoa sai das listas de contato e da exportação para WhatsApp', onclick: () => { if (confirm('Marcar que este cliente NÃO quer receber mensagens?')) agir('optout'); } }, 'Não quer mensagens')));
     };
     const agir = async (acao, motivo) => { try { await marcar(c, acao, motivo); pintar(); } catch (e) { TS.avisarErro(e); } };

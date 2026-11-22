@@ -3221,3 +3221,24 @@ button.vl-pac-marca { background: none; text-decoration: underline; cursor: poin
 .cp-resumo-cab { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; cursor: pointer; }
 .cp-resumo-cab b { font-weight: 600; }
 .cp-resumo-mot textarea { min-width: 0; width: 100%; }
+/* Clientes → Conversas (conversas.js) */
+.cv-sit { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap; margin: 4px 0 12px; }
+.cv-sit small { flex: 1 1 240px; min-width: 0; }
+.cv-quem { display: grid; gap: 2px; min-width: 0; }
+.cv-quem .badge { justify-self: start; }
+.cv-ult { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.cv-conversa { display: grid; gap: 10px; }
+.cv-topo .cv-nome { font-size: 17px; }
+.cv-ficha { display: flex; align-items: center; gap: 6px 8px; flex-wrap: wrap; }
+.cv-msgs { display: flex; flex-direction: column; gap: 8px; max-height: 60vh; overflow-y: auto; padding: 8px; background: var(--cream-2); border: 1px solid var(--line); border-radius: 10px; }
+.cv-dia { text-align: center; }
+.cv-dia span { display: inline-block; font-size: 12px; color: var(--muted); background: #fff; border: 1px solid var(--line); border-radius: 999px; padding: 2px 10px; }
+.cv-msg { max-width: 82%; border-radius: 12px; padding: 8px 10px; background: #fff; border: 1px solid var(--line); overflow-wrap: anywhere; }
+.cv-msg.eu { align-self: flex-end; background: var(--sage-l); }
+.cv-msg.robo { border-style: dashed; }
+.cv-msg.ele { align-self: flex-start; }
+.cv-meta { display: block; color: var(--muted); margin-bottom: 2px; }
+.cv-txt { white-space: pre-wrap; }
+.cv-tipo { font-size: 13px; color: var(--muted); }
+.cv-rodape { margin: 0; }
+.cv-nomel { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }

@@ -55,7 +55,7 @@
   // (Clientes, "Tudo", "só o mês" em todos os anos, ou um período cujo ano anterior fica antes do que veio)
   TS.historicoCompleto = false;
   let buscandoCompleto = false, cliIdle = null;
-  const TELAS_CLI = new Set(['hoje', 'clientes', 'clilista', 'campanhas', 'cupons', 'espera', 'nfsaida']);
+  const TELAS_CLI = new Set(['hoje', 'clientes', 'clilista', 'campanhas', 'conversas', 'cupons', 'espera', 'nfsaida']);
   const desdeParcial = () => {
     const h0 = TS.hojeSP ? TS.hojeSP() : new Date().toISOString().slice(0, 10);
     return new Date(Date.UTC(+h0.slice(0, 4), +h0.slice(5, 7) - 1 - 24, 1)).toISOString().slice(0, 10);
@@ -96,7 +96,7 @@
     document.body.classList.toggle('pg-config', state.page === 'config');
     document.getElementById('btnUsuario')?.classList.toggle('on', state.page === 'config');
     document.body.classList.toggle('pg-minha', state.page === 'minha');
-    document.body.classList.toggle('pg-semfiltros', state.page === 'inicio' || state.page === 'dre' || state.page === 'conferencia'); // não usam os filtros
+    document.body.classList.toggle('pg-semfiltros', state.page === 'inicio' || state.page === 'dre' || state.page === 'conferencia' || state.page === 'conversas'); // não usam os filtros
     if (state.page === 'config') {
       TS.destroyCharts();
       const root = h('div');
@@ -491,7 +491,7 @@
    * Menu por assunto: Vendas · Clientes · Equipe · Estoque e Margem · ⚙. Cada grupo mostra só as telas que a pessoa pode ver;
    * grupo com uma tela só vira uma aba com o nome da tela; com mais de uma, a tela tem um submenu no topo.
    */
-  const ROTULO = { inicio: 'Início', resumo: 'Resumo', comparativos: 'Comparativos', promocao: 'Promoção', cupons: 'Cupons', conferencia: 'Conferência', nfsaida: 'Notas fiscais', creditos: 'Notas fiscais', orcamento: 'Orçamento', checklist: 'Checklist', hoje: 'Hoje', clilista: 'Lista de clientes', clientes: 'Indicadores', campanhas: 'Campanhas', espera: 'Lista de espera',
+  const ROTULO = { inicio: 'Início', resumo: 'Resumo', comparativos: 'Comparativos', promocao: 'Promoção', cupons: 'Cupons', conferencia: 'Conferência', nfsaida: 'Notas fiscais', creditos: 'Notas fiscais', orcamento: 'Orçamento', checklist: 'Checklist', hoje: 'Hoje', clilista: 'Lista de clientes', clientes: 'Indicadores', campanhas: 'Campanhas', conversas: 'Conversas', espera: 'Lista de espera',
     comissionamento: 'Comissionamento', minha: 'Minha comissão', mapa: 'Movimento e escala', rentab: 'Rentabilidade', precos: 'Preços', site: 'Site', estoque: 'Estoque', pedido: 'Pedido', notas: 'Notas fiscais', inventario: 'Inventário', sugestoes: '⭐ Sugestões', validade: 'Validade', dre: 'Resultado' };
   TS.GRUPOS = [];
   function montarMenu(grupoEst, temConfig) {
@@ -499,7 +499,7 @@
     const G = [
       ['Início', ['inicio']],
       ['Vendas', ['resumo', 'comparativos', 'promocao', 'cupons', 'conferencia', 'orcamento']],
-      ['Clientes', ['hoje', 'clilista', 'clientes', 'campanhas', 'espera']],
+      ['Clientes', ['hoje', 'clilista', 'clientes', 'campanhas', 'conversas', 'espera']],
       ['Equipe', ['comissionamento', 'minha', 'mapa', 'checklist']],
       ['Produtos', grupoEst.filter((p) => ['rentab', 'precos', 'site'].includes(p))],
       ['Estoque', grupoEst.filter((p) => ['estoque', 'validade', 'pedido', 'notas', 'inventario', 'sugestoes'].includes(p))],
@@ -526,7 +526,7 @@
   /** abas conforme o perfil */
   function configurarAbas(eu) {
     if (!eu.perfil) {
-      if (!PAGES.includes('campanhas')) PAGES.splice(PAGES.indexOf('clientes'), 1, 'hoje', 'clilista', 'clientes', 'campanhas', 'espera');
+      if (!PAGES.includes('campanhas')) PAGES.splice(PAGES.indexOf('clientes'), 1, 'hoje', 'clilista', 'clientes', 'campanhas', 'conversas', 'espera');
       PAGES = PAGES.filter((p) => p !== 'minha');
       if (!PAGES.includes('checklist')) PAGES.push('checklist');
       montarMenu([], false);
@@ -547,6 +547,8 @@
     PAGES = PAGES.filter((p) => p !== 'espera');
     if (PAGES.includes('clientes')) PAGES.splice(PAGES.indexOf('clientes'), 1, 'hoje', 'clilista', 'clientes', 'campanhas', ...(veEspera ? ['espera'] : []));
     else if (veEspera) PAGES.push('espera');
+    // Conversas do WhatsApp: só admin e franqueado (decisão do dono; o servidor também confere)
+    if (['admin', 'franqueado'].includes(eu.perfil) && PAGES.includes('campanhas')) PAGES.splice(PAGES.indexOf('campanhas') + 1, 0, 'conversas');
     // Estoque e Margem: admin e franqueado veem tudo; gerente só as telas liberadas em Configurações → Usuários
     // Produtos (Rentabilidade, Preços, Site), Estoque (Estoque, Pedido, Notas fiscais) e Resultado
     const EST = ['rentab', 'precos', 'site', 'estoque', 'validade', 'pedido', 'notas', 'inventario', 'dre'];

@@ -482,3 +482,54 @@ test('os testes não carregam a biblioteca do WhatsApp', () => {
   assert.ok(!Object.keys(require.cache).some((f) => /whatsapp-web\.js|puppeteer|[\\/]qrcode[\\/]/.test(f)));
   assert.ok(!Object.keys(require.cache).some((f) => f.endsWith(path.join('zap', 'wa.js'))));
 });
+
+// ---------- conversas (Clientes → Conversas do painel) ----------
+test('CONV-01: conversas — guarda as mensagens individuais (sem repetir), o painel busca de 500 em 500 e o texto não vai para o log', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'zap-teste-'));
+  try {
+    await comServidor(async ({ chamar, clientes, sessoes, logs }) => {
+      await sessoes.conectar('loja1', {});
+      const c = clientes.loja1;
+      c.emit('pronto', { numero: '5562911112222' });
+      const m = (k, o = {}) => ({ id: 'm' + k, chat: '5562999990001', deMim: false, em: '2026-01-10T12:0' + k + ':00Z', tipo: 'texto', texto: 'Oi SEGREDO-' + k, nome: 'Ana', ...o });
+      c.emit('conversa', m(1));
+      c.emit('conversa', m(2, { deMim: true, nome: 'não guarda' }));
+      c.emit('conversa', m(1));                                          // repetida: ignora
+      c.emit('conversa', m(3, { chat: 'lid:123456789', tipo: 'audio', texto: '' }));
+      c.emit('conversa', m(4, { chat: '120363@g.us' }));                 // grupo: não
+      c.emit('conversa', m(5, { tipo: 'chamada' }));                     // tipo desconhecido: não
+      let r = await chamar('GET', '/conversas/loja1');
+      assert.strictEqual(r.status, 200);
+      assert.strictEqual(r.json.ultimo, 3);
+      assert.deepStrictEqual(r.json.itens.map((x) => [x.seq, x.id, x.chat, x.deMim, x.tipo, x.nome || '']), [[1, 'm1', '5562999990001', false, 'texto', 'Ana'], [2, 'm2', '5562999990001', true, 'texto', ''], [3, 'm3', 'lid:123456789', false, 'audio', 'Ana']]);
+      r = await chamar('GET', '/conversas/loja1?desde=2');
+      assert.deepStrictEqual(r.json.itens.map((x) => x.id), ['m3']);
+      assert.strictEqual((await chamar('GET', '/conversas/loja1?desde=-1')).status, 400);
+      assert.ok(!logs.join('\n').includes('SEGREDO'), 'o texto das conversas nunca vai para o log');
+      // desconectar apaga as conversas daqui; a sequência continua (o painel não recebe de novo o que já tem)
+      await sessoes.desconectar('loja1');
+      r = await chamar('GET', '/conversas/loja1?desde=0');
+      assert.deepStrictEqual(r.json, { ultimo: 3, itens: [], mais: false });
+    }, { workDir: dir, agendar: (fn) => fn() });
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('CONV-02: histórico — só com o WhatsApp conectado; importa os últimos dias sem repetir e diz a situação no status', async () => {
+  await comServidor(async ({ chamar, clientes, sessoes, logs }) => {
+    assert.deepStrictEqual((await chamar('POST', '/historico/loja1', { dias: 30 })).json, { ok: false, erro: 'O WhatsApp desta loja não está conectado.' });
+    await sessoes.conectar('loja1', {});
+    const c = clientes.loja1;
+    let pediu = null;
+    c.historico = async (dias) => { pediu = dias; return [{ id: 'h1', chat: '5562999990001', deMim: false, em: '2026-01-01T10:00:00Z', tipo: 'texto', texto: 'antiga' }, { id: 'h1', chat: '5562999990001', deMim: false, em: '2026-01-01T10:00:00Z', tipo: 'texto', texto: 'antiga' }, { id: 'h2', chat: 'x', deMim: false, em: '2026-01-01T10:00:00Z', tipo: 'texto' }]; };
+    c.emit('pronto', { numero: '5562911112222' });
+    assert.strictEqual((await chamar('POST', '/historico/loja1', { dias: 200 })).status, 400, 'no máximo 90 dias');
+    assert.deepStrictEqual((await chamar('POST', '/historico/loja1', { dias: 30 })).json, { ok: true });
+    await tique(); await tique();
+    assert.strictEqual(pediu, 30);
+    const st = (await chamar('GET', '/status/loja1')).json;
+    assert.strictEqual(st.historico.estado, 'ok');
+    assert.strictEqual(st.historico.mensagens, 1, 'repetida e conversa sem número válido ficam de fora');
+    assert.deepStrictEqual((await chamar('GET', '/conversas/loja1')).json.itens.map((x) => x.id), ['h1']);
+    assert.match(logs.join('\n'), /histórico de 30 dias importado \(1 mensagens\)/);
+  });
+});

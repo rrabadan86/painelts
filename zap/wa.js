@@ -7,7 +7,8 @@
  * nunca vai para serviço de fora), pareamento por código, limpeza da trava do Chromium, conferência
  * do 9º dígito e o "pronto" confirmado pelo estado real quando o evento não chega.
  *
- * Aqui é uma sessão por loja, em /work/<loja>/session, só texto (sem mídia, grupos ou áudio).
+ * Aqui é uma sessão por loja, em /work/<loja>/session. Envia só texto. Lê as conversas individuais (Clientes → Conversas
+ * do painel): o texto e o tipo de cada mensagem (foto, áudio… só a marca, sem baixar a mídia); grupos, status e canais não.
  * Este arquivo só traduz a biblioteca para o formato que o sessoes.js espera; nenhuma regra mora
  * aqui. A biblioteca é carregada dentro da fábrica, para os testes não precisarem dela.
  */
@@ -104,6 +105,54 @@ function fabricaReal(loja, { pasta }) {
     try { const c = await msg.getContact(); return soDigitos(c && c.number); } catch (_) { return ''; }
   }
 
+  // ---------- conversas (Clientes → Conversas do painel) ----------
+  const TIPO = { chat: 'texto', image: 'imagem', video: 'video', ptt: 'audio', audio: 'audio', document: 'documento', sticker: 'figurinha', location: 'local', vcard: 'contato', multi_vcard: 'contato' };
+  const individual = (jid) => /@(c\.us|lid)$/.test(String(jid || ''));
+  const lidTel = new Map(); // "@lid" → telefone (ou a própria chave), para não perguntar ao WhatsApp a cada mensagem
+  /** a chave da conversa: o telefone (só dígitos) ou, quando o WhatsApp não diz, "lid:<número interno>" */
+  async function chaveDe(jid) {
+    const j = String(jid || '');
+    if (j.endsWith('@c.us')) return soDigitos(j.split('@')[0]);
+    if (lidTel.has(j)) return lidTel.get(j);
+    let tel = '';
+    try { const r = await client.getContactLidAndPhone([j]); const pn = r && r[0] && r[0].pn; if (pn) tel = soDigitos(String(pn).split('@')[0]); } catch (_) { /* sem o telefone */ }
+    const chave = tel || 'lid:' + soDigitos(j.split('@')[0]);
+    lidTel.set(j, chave);
+    return chave;
+  }
+  /** a mensagem no formato do serviço (ou null: tipo que não interessa, como aviso de segurança ou chamada) */
+  async function paraConversa(msg, chave) {
+    const tipo = TIPO[msg && msg.type];
+    if (!tipo || !msg.id) return null;
+    const jid = msg.fromMe ? msg.to : msg.from;
+    if (!individual(jid)) return null;
+    const chat = chave || (await chaveDe(jid));
+    return {
+      id: msg.id._serialized || String(msg.id.id || ''), chat, deMim: !!msg.fromMe, em: new Date((Number(msg.timestamp) || 0) * 1000).toISOString(), tipo,
+      texto: tipo === 'texto' || tipo === 'imagem' || tipo === 'video' || tipo === 'documento' ? String(msg.body || '') : '',
+      nome: msg.fromMe ? '' : String((msg._data && msg._data.notifyName) || ''),
+    };
+  }
+
+  /** mensagens das conversas individuais dos últimos `dias` (até 300 por conversa, até 1000 conversas) */
+  ev.historico = async (dias) => {
+    const corte = Date.now() - dias * 864e5;
+    const chats = await comRepeticao(() => client.getChats());
+    const out = [];
+    for (const chat of chats.slice(0, 1000)) {
+      const jid = chat && chat.id && chat.id._serialized;
+      if (!jid || chat.isGroup || !individual(jid) || (Number(chat.timestamp) || 0) * 1000 < corte) continue;
+      let msgs = [];
+      try { msgs = await comRepeticao(() => chat.fetchMessages({ limit: 300 })); } catch (_) { continue; }
+      const chave = await chaveDe(jid);
+      for (const m of msgs) {
+        if ((Number(m.timestamp) || 0) * 1000 < corte) continue;
+        try { const c = await paraConversa(m, chave); if (c) out.push(c); } catch (_) { /* mensagem que não deu para ler */ }
+      }
+    }
+    return out;
+  };
+
   ev.iniciar = async () => {
     fs.mkdirSync(pasta, { recursive: true });
     limparTrava(pasta);
@@ -144,6 +193,10 @@ function fabricaReal(loja, { pasta }) {
         const fone = await telefoneDe(msg);
         if (fone) ev.emit('mensagem', { de: fone, texto: msg.body, grupo: false, minha: false });
       } catch (_) { /* resposta que não deu para ler não derruba nada */ }
+    });
+    // toda mensagem de conversa individual, recebida ou enviada (pelo robô, pelo celular ou pelo WhatsApp Web)
+    client.on('message_create', async (msg) => {
+      try { const c = await paraConversa(msg); if (c) ev.emit('conversa', c); } catch (_) { /* não derruba nada */ }
     });
     await client.initialize();
   };
