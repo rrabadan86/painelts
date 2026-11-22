@@ -277,6 +277,7 @@
         cliente.ultima != null ? h('span', { class: 'chip' }, 'última compra ', fmt.date(TS.dayToIso(cliente.ultima))) : null,
         fx ? h('span', { class: 'chip' }, `★ ${fmt.int(fx.saldo || 0)} pts`) : null,
         cliente.vendedoraPref ? h('span', { class: 'chip' }, 'atende: ', cliente.vendedoraPref) : null,
+        cliente.celVinc && TS.cliApi.mesmoTel(cliente.celular, chave) ? h('small', { class: 'muted cv-vinc-nota' }, `Número ligado a este cliente pelo painel${cliente.celVinc.em ? ' em ' + fmt.date(cliente.celVinc.em.slice(0, 10)) : ''}: é o que vale no Hoje, nas campanhas e no robô.`) : null,
       ].filter(Boolean)) : h('div', { class: 'cv-ficha' }, h('span', { class: 'badge cinza' }, 'sem cadastro'), h('small', { class: 'muted' }, ' Este celular não bate com nenhum cliente do painel.'));
       // mensagens, com o dia em separador
       let dia = '';
@@ -298,7 +299,10 @@
         h('div', { class: 'cv-topo' },
           h('span', { class: 'cv-av ' + corAv(chave), 'aria-hidden': 'true' }, cliente || c.nome ? iniciais(nome) : '#'),
           h('div', { class: 'cv-topo-c' }, h('b', { class: 'cv-nome' }, nome), h('small', { class: 'muted cv-fone' }, foneTxt(chave))),
-          cliente ? h('button', { type: 'button', class: 'btn', onclick: () => TS.cliApi.abrirClientes([cliente.cpf]) }, 'Ver cliente') : null),
+          h('div', { class: 'cv-topo-acoes' }, ...[
+            cliente ? h('button', { type: 'button', class: 'btn', onclick: () => TS.cliApi.abrirClientes([cliente.cpf]) }, 'Ver cliente') : null,
+            botaoVinculo(chave, cliente),
+          ].filter(Boolean))),
         ficha, h('div', { class: 'cv-msgs-w' }, lista, btNovas),
         h('p', { class: 'muted cv-rodape' }, '🔒 Só leitura por enquanto: para responder, use o WhatsApp da loja (a resposta aparece aqui em seguida).'));
       if (largo()) {
@@ -317,6 +321,75 @@
         return;
       }
       lista.scrollTop = lista.scrollHeight; // abre na mensagem mais nova
+    }
+
+    // ---------- vínculo da conversa com o cliente (o cliente trocou de número: decisão do dono) ----------
+    /** "Vincular a um cliente" (sem cadastro), "Outro cliente?" (bate com alguém) ou "Desfazer vínculo" (trocado pelo painel) */
+    function botaoVinculo(chave, cliente) {
+      if (!/^\d{12,13}$/.test(chave) || !TS.cliApi || !TS.cliApi.aplicarCelular) return null; // sem o telefone (lid): não dá para ligar
+      if (cliente && cliente.celVinc && TS.cliApi.mesmoTel(cliente.celular, chave)) {
+        return h('button', { type: 'button', class: 'btn ghost-danger', title: 'Volta a usar o celular do FIXE para este cliente (Hoje, campanhas e robô). Esta conversa fica sem cliente.', onclick: () => desfazerVinculo(chave, cliente) }, 'Desfazer vínculo');
+      }
+      return h('button', { type: 'button', class: cliente ? 'btn' : 'btn primary', title: 'O cliente trocou de número? Ligue esta conversa ao cadastro dele: este número passa a ser o celular dele no painel (Hoje, campanhas e robô). O FIXE não muda.',
+        onclick: () => escolherCliente(chave, cliente) }, cliente ? 'É outro cliente?' : 'Vincular a um cliente');
+    }
+    /** janela de busca: nome ou CPF entre os clientes que a tela já tem */
+    function escolherCliente(chave, atual) {
+      const todos = (TS.cliApi.universo ? TS.cliApi.universo() : (TS.cli && TS.cli.lista) || []).filter((c) => c && c.cpf);
+      const fundo = h('div', { class: 'cp-modal-bg' });
+      const fechar = () => fundo.remove();
+      const busca = h('input', { class: 'f-input', type: 'search', placeholder: 'Nome ou CPF do cliente', 'aria-label': 'Buscar cliente', autocomplete: 'off' });
+      const res = h('ul', { class: 'cv-vinc-lista', role: 'list' });
+      const pintar = () => {
+        const q = TS.norm(busca.value.trim()), qd = soDig(busca.value);
+        if (q.length < 2 && qd.length < 3) { res.replaceChildren(h('li', { class: 'muted cv-vinc-dica' }, 'Digite pelo menos 2 letras do nome ou 3 números do CPF.')); return; }
+        const achou = todos.filter((c) => (q.length >= 2 && TS.norm(c.nome || '').includes(q)) || (qd.length >= 3 && String(c.cpf).includes(qd))).slice(0, 12);
+        res.replaceChildren(...(achou.length ? achou.map((c) => h('li', null, h('button', { type: 'button', class: 'cv-vinc-item', onclick: () => { fechar(); confirmarVinculo(chave, c); } },
+          h('b', null, c.nome || 'Cliente sem nome'), h('small', { class: 'muted' }, `CPF ${String(c.cpf).slice(0, 3)}.***.***-${String(c.cpf).slice(-2)}`, c.celular ? ` · celular ${foneTxt(foneDe(c) || soDig(c.celular))}` : ' · sem celular')))) : [h('li', { class: 'muted cv-vinc-dica' }, 'Nenhum cliente com esse nome ou CPF.')]));
+      };
+      busca.addEventListener('input', TS.debounce ? TS.debounce(pintar, 200) : pintar);
+      fundo.addEventListener('click', (e) => { if (e.target === fundo) fechar(); });
+      fundo.addEventListener('keydown', (e) => { if (e.key === 'Escape') fechar(); });
+      fundo.append(h('div', { class: 'card cp-copiar ts-perg cv-vinc', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Vincular a um cliente' },
+        h('h3', null, 'De quem é este número?'),
+        h('p', { class: 'muted' }, `${foneTxt(chave)}. Escolha o cliente: este número passa a ser o celular dele no painel.`, atual ? ` Hoje ele bate com ${atual.nome || 'outro cliente'}.` : ''),
+        busca, res,
+        h('div', { class: 'ts-perg-acoes' }, h('button', { type: 'button', class: 'btn', onclick: fechar }, 'Cancelar'))));
+      document.body.append(fundo);
+      pintar();
+      busca.focus();
+    }
+    /** depois de vincular/desfazer: a lista e a conversa aberta mostram o cliente certo (sem perder a posição da leitura) */
+    function refazerConversa(chave) {
+      const v = colConv.querySelector('.cv-msgs');
+      if (v) v.dataset.n = '-1'; // força redesenhar a conversa aberta
+      pintarItens();
+      abrir(chave, false);
+    }
+    async function confirmarVinculo(chave, c) {
+      const fixe = c.celVinc ? c.celFixe : c.celular;
+      const ok = await TS.janelaConfirmar('Trocar o celular do cliente?', [
+        h('p', null, 'O celular de ', h('b', null, c.nome || 'este cliente'), ' passa a ser ', h('b', null, foneTxt(chave)), ' no painel (Hoje, campanhas e robô).'),
+        fixe ? h('p', null, `O número do FIXE, ${foneTxt(foneDe({ celular: fixe }) || soDig(fixe))}, deixa de ser usado. O FIXE não muda.`) : h('p', null, 'No FIXE ele está sem celular. O FIXE não muda.'),
+        h('p', { class: 'muted' }, 'Se outro cliente tiver este mesmo número, ele fica sem celular no painel. Dá para desfazer aqui na conversa.'),
+      ], 'Trocar o celular');
+      if (!ok) return;
+      try {
+        const r = await api('POST', 'clientes/celular', { loja, cpf: c.cpf, cel: chave });
+        TS.cliApi.aplicarCelular(c.cpf, r.vinculo);
+        refazerConversa(chave);
+      } catch (e) { TS.avisarErro(e); }
+    }
+    async function desfazerVinculo(chave, c) {
+      const ok = await TS.janelaConfirmar('Desfazer o vínculo?', [
+        h('p', null, h('b', null, c.nome || 'O cliente'), ' volta a usar o celular do FIXE', c.celFixe ? `, ${foneTxt(foneDe({ celular: c.celFixe }) || soDig(c.celFixe))},` : '', ' no painel. Esta conversa fica sem cliente.'),
+      ], 'Desfazer');
+      if (!ok) return;
+      try {
+        await api('POST', 'clientes/celular/desfazer', { loja, cpf: c.cpf });
+        TS.cliApi.aplicarCelular(c.cpf, null);
+        refazerConversa(chave);
+      } catch (e) { TS.avisarErro(e); }
     }
 
     setTimeout(carregar, 0); // depois que a tela entra na página (o roteador anexa a raiz em seguida)

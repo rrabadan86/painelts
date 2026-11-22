@@ -234,13 +234,17 @@ async function pacote(lojas, force, perfilDados = 'completo', desde = null) {
     const r = entradas[i].raw;
     return { id: l.id, nome: atual.nome, nomesVenda: r.metaCfg?.nomesVenda || [], padrao: atual.meta ?? r.metaPlanilha ?? null, meses: atual.metas || {}, metaAuto: atual.metaAuto || null, regras: atual.regras || null, operacao: atual.operacao || null, ferias: atual.ferias || [], feriadosLocais: atual.feriadosLocais || [], feriadosHoras: atual.feriadosHoras || {}, feriadosHorario: atual.feriadosHorario || {}, escalaAjustes: atual.escalaAjustes || {}, wpp: atual.wppModelos || null, wppIntervalo: atual.wppIntervalo || 21, contabilidade: atual.contabilidade || [] };
   });
-  const k = entradas.map((e, i) => `${lojas[i].id}@${e.at}:${e.sig}`).join('|') + '#' + JSON.stringify(metaCfgs) + '#' + perfilDados + '#' + (desde || '');
+  // celular trocado pelo painel (vínculo da conversa do WhatsApp, src/celulares.js): entra na chave para o pacote mudar junto
+  const CEL = require('./src/celulares');
+  const k = entradas.map((e, i) => `${lojas[i].id}@${e.at}:${e.sig}:${CEL.sig(lojas[i].id)}`).join('|') + '#' + JSON.stringify(metaCfgs) + '#' + perfilDados + '#' + (desde || '');
   const chave = lojas.map((l) => l.id).join(',') + '|' + perfilDados + '|' + (desde || '');
   const pc = lruGet(packCache, chave);
   const stale = entradas.map((e) => e.stale).filter(Boolean).join(' | ') || null;
   const at = Math.min(...entradas.map((e) => e.at));
   if (pc && pc.k === k) return { buf: pc.buf || null, gz: pc.gz, br: pc.br, etag: pc.etag, at, stale };
   let data = lojas.length === 1 ? { ...entradas[0].raw } : juntar(entradas.map((e) => e.raw));
+  // o número vinculado pelo painel substitui o do FIXE: tela, robô (zapauto) e Lista de espera leem daqui
+  data.clientes = CEL.aplicar(data.clientes, Object.assign({}, ...lojas.map((l) => CEL.ler(l.id))));
   data.metaCfgs = metaCfgs;
   data.meta = metaCfgs.some((m) => m.padrao != null) ? metaCfgs.reduce((s, m) => s + (m.padrao || 0), 0) : null;
   data = filtrarPorPerfil(data, perfilDados);
@@ -887,6 +891,13 @@ app.get('/api/demo/conversas/mensagens', (req, res) => {
   res.json({ mensagens: demoConversa(chave, Date.now()) });
 });
 app.post('/api/demo/conversas/lida', (req, res) => res.json({ ok: true }));
+// vínculo da conversa com o cliente: na apresentação só responde (nada é gravado; a tela troca o número na memória)
+app.post('/api/demo/clientes/celular', express.json({ limit: '2kb' }), (req, res) => {
+  const l = require('./src/celulares').local((req.body || {}).cel);
+  if (!l) return res.status(400).json({ erro: 'Número inválido: precisa do DDD e do número.' });
+  res.json({ ok: true, vinculo: { cel: '55' + l, em: new Date().toISOString(), por: 'Visitante', antigo: '' }, tirouDe: 0 });
+});
+app.post('/api/demo/clientes/celular/desfazer', (req, res) => res.json({ ok: true }));
 // Meta de hoje da vendedora (Minha comissão): resposta fictícia, nada gravado (a apresentação roda como admin)
 app.get('/api/demo/meta-hoje', (req, res) => res.json({ minhaParte: 412, vendiHoje: 268.5, temHoje: true, modo: 'igual', restam: 8, semParte: null }));
 app.all('/api/demo/*', (req, res) => res.status(404).json({ erro: 'Isto não está disponível na apresentação.' }));
@@ -1115,6 +1126,34 @@ app.post('/api/conversas/historico', express.json({ limit: '2kb' }), async (req,
     if (!r.ok) return res.status(400).json({ erro: r.erro || 'O WhatsApp desta loja não está conectado.' });
     res.json({ ok: true });
   } catch (e) { res.status(502).json({ erro: 'Não consegui falar com o robô do WhatsApp: ' + C.msgErro(e) }); }
+});
+
+// ---------- celular trocado pelo painel (vínculo da conversa com o cliente; src/celulares.js) ----------
+// Só admin e franqueado da loja (quem vê as Conversas). O número passa a ser o do cliente em todo o painel e no robô.
+const celAudit = (cpf) => String(cpf).slice(0, 3) + '…' + String(cpf).slice(-2);
+app.post('/api/clientes/celular', express.json({ limit: '2kb' }), async (req, res) => {
+  if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
+  const id = lojaConv(req, res); if (!id) return;
+  const CEL = require('./src/celulares');
+  const b = req.body || {};
+  const cpf = String(b.cpf || '').replace(/\D/g, '');
+  const loja = req.lojas.find((l) => l.id === id);
+  let cl = [];
+  try { cl = (await dadosLoja(loja)).raw.clientes || []; } catch (e) { return res.status(503).json({ erro: 'Os dados da loja não carregaram: ' + C.msgErro(e) }); }
+  const c = cl.find((x) => x.cpf === cpf);
+  if (!c) return res.status(400).json({ erro: 'Cliente não encontrado nesta loja.' });
+  const r = CEL.vincular(id, { cpf, cel: b.cel, antigo: c.celular }, req.user);
+  if (r.erro) return res.status(400).json({ erro: r.erro });
+  C.auditar(req.user, 'trocou o celular do cliente pela conversa do WhatsApp', id, { loja: id, cpf: celAudit(cpf), fim: r.ok.cel.slice(-4), ...(r.tirouDe.length ? { tirouDe: r.tirouDe.map(celAudit) } : {}) });
+  res.json({ ok: true, vinculo: { cel: r.ok.cel, em: r.ok.em, por: r.ok.por, antigo: r.ok.antigo }, tirouDe: r.tirouDe.length });
+});
+app.post('/api/clientes/celular/desfazer', express.json({ limit: '2kb' }), (req, res) => {
+  if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
+  const id = lojaConv(req, res); if (!id) return;
+  const cpf = String((req.body || {}).cpf || '').replace(/\D/g, '');
+  if (!require('./src/celulares').desfazer(id, cpf)) return res.status(400).json({ erro: 'Este cliente não tem número trocado pelo painel.' });
+  C.auditar(req.user, 'desfez a troca de celular do cliente (volta o do FIXE)', id, { loja: id, cpf: celAudit(cpf) });
+  res.json({ ok: true });
 });
 
 // ---------- campanhas de WhatsApp (Clientes → Campanhas): admin, franqueado e gerente com a tela Clientes ----------
@@ -2774,7 +2813,7 @@ app.get('/api/espera/clientes', async (req, res) => {
     falhou(kEsp);
   }
   let cl = [];
-  try { cl = (await dadosLoja(loja)).raw.clientes || []; } catch { /* ok */ }
+  try { cl = require('./src/celulares').aplicar((await dadosLoja(loja)).raw.clientes || [], require('./src/celulares').ler(loja.id)); } catch { /* ok */ }
   const out = [];
   for (const c of cl) {
     const cel = String(c.celular || '').replace(/\D/g, '');

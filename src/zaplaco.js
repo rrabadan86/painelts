@@ -12,6 +12,7 @@ const ZF = require('./zapfila');
 const M = require('../public/js/msgwpp');
 
 const POR = 'robô';
+const CEL = require('./celulares');
 const mascara = (cpf) => String(cpf).slice(0, 3) + '…' + String(cpf).slice(-2);
 /** "não quer mensagens" vindo de uma resposta no WhatsApp: fica a origem, para a loja poder desfazer na ficha do cliente
  *  (uma frase curta como "vou sair agora" pode ser entendida errado) */
@@ -34,6 +35,8 @@ async function lerOptouts(lojaId, agora, zap) {
         const cpfs = new Set();
         if (enviados[x.de] && enviados[x.de].cpf) cpfs.add(enviados[x.de].cpf);
         for (const p of Object.values(preparo)) for (const [cpf, it] of Object.entries((p && p.itens) || {})) if (ZF.foneChave(it.para) === x.de) cpfs.add(cpf);
+        // celular trocado pelo painel (vínculo da conversa): o número novo é do cliente mesmo antes de o robô mandar algo
+        for (const [cpf, v] of Object.entries(CEL.ler(lojaId))) if (v && CEL.mesmoNumero(v.cel, x.de)) cpfs.add(cpf);
         naoquer[x.de] = { em: String(x.em || new Date(agora).toISOString()).slice(0, 30), cpfs: [...cpfs] };
         for (const cpf of cpfs) {
           naoQuer(lojaId, cpf, agora);
