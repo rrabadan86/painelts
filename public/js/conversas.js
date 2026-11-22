@@ -6,8 +6,17 @@
   const { h, fmt, state } = TS;
   const st = { aba: 'todas', aberta: null, tabEstado: {}, rolagem: null, ultima: null }; // rolagem/ultima: onde a lista estava ao abrir uma conversa
 
-  async function api(met, url, corpo) {
-    const r = await fetch(TS.api(url), { method: met, credentials: 'same-origin', headers: { 'X-Painel': '1', ...(corpo ? { 'Content-Type': 'application/json' } : {}) }, body: corpo ? JSON.stringify(corpo) : undefined });
+  /** pedido ao servidor. Falha de rede (celular pausou a página, internet caiu) espera a página voltar e tenta de novo uma
+   *  vez; se continuar, o erro sai em português e marcado com `rede` (a tela mantém o que já mostrava) */
+  async function api(met, url, corpo, tentou) {
+    let r;
+    try {
+      r = await fetch(TS.api(url), { method: met, credentials: 'same-origin', headers: { 'X-Painel': '1', ...(corpo ? { 'Content-Type': 'application/json' } : {}) }, body: corpo ? JSON.stringify(corpo) : undefined });
+    } catch (e) {
+      if (!TS.erroDeRede(e)) throw e;
+      if (!tentou) { await TS.esperarVisivel(); return api(met, url, corpo, true); }
+      const x = new Error('Sem conexão com o painel agora. As conversas voltam a atualizar sozinhas quando a internet voltar.'); x.rede = true; throw x;
+    }
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.erro || 'Não deu certo.');
     return j;
@@ -53,6 +62,7 @@
     const carregar = async () => {
       clearTimeout(timer);
       if (!corpo.isConnected || state.loja !== loja) return;
+      if (document.hidden && dados) { timer = setTimeout(carregar, 30000); return; } // página escondida: não busca à toa
       try {
         // na apresentação a tela manda os celulares (fictícios) dos primeiros clientes para montar conversas de mentira
         const extra = TS.demo ? '&fones=' + encodeURIComponent((TS.cli ? TS.cli.lista : []).map(foneDe).filter((x) => x.length >= 12).slice(0, 6).join(',')) : '';
@@ -65,7 +75,10 @@
           if (achou) st.aberta = achou.chave; else TS.avisar('Ainda não há conversa guardada com este cliente.');
         }
         if (st.aberta) await abrir(st.aberta); else pintarLista();
-      } catch (e) { if (corpo.isConnected) corpo.replaceChildren(h('div', { class: 'notice err' }, e.message)); }
+      } catch (e) {
+        // sem internet por um momento: com a lista já na tela, mantém e tenta de novo na próxima volta; sem nada, explica
+        if (corpo.isConnected && !(e.rede && dados)) corpo.replaceChildren(h('div', { class: e.rede ? 'notice warn' : 'notice err' }, e.message));
+      }
       if (corpo.isConnected) timer = setTimeout(carregar, 30000); // o servidor busca no WhatsApp a cada 30 s
     };
 
@@ -169,5 +182,8 @@
     }
 
     setTimeout(carregar, 0); // depois que a tela entra na página (o roteador anexa a raiz em seguida)
+    // voltou para a página (desbloqueou o celular, trocou de aplicativo e voltou): atualiza na hora
+    const aoVoltar = () => { if (!corpo.isConnected) { document.removeEventListener('visibilitychange', aoVoltar); return; } if (!document.hidden) carregar(); };
+    document.addEventListener('visibilitychange', aoVoltar);
   };
 })();
