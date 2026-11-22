@@ -27,5 +27,36 @@ test('CONV-08: Conversas — lista ligada aos clientes, abre a conversa (🤖 do
   expect(sw - cw, 'sem rolagem para o lado').toBeLessThanOrEqual(2);
   await page.getByRole('button', { name: '‹ Voltar' }).click();
   await expect(card.locator('table, .t-cards').first()).toBeVisible();
+  // volta para o mesmo lugar da lista, com a conversa aberta marcada
+  await expect(page.locator('.cv-ultima')).toHaveCount(1);
+  await expect(page.locator('.cv-ultima')).toContainText(nomes[0]);
+  // rolou até a última conversa, abriu e voltou: a lista continua onde estava
+  const ultima = card.getByText('Contato sem cadastro').first();
+  await ultima.scrollIntoViewIfNeeded();
+  const antes = await page.evaluate(() => window.scrollY);
+  await ultima.click();
+  await expect(page.locator('.cv-conversa')).toBeVisible();
+  await page.getByRole('button', { name: '‹ Voltar' }).click();
+  await expect(page.locator('.cv-ultima')).toContainText('Contato sem cadastro');
+  await expect.poll(async () => Math.abs((await page.evaluate(() => window.scrollY)) - antes), { message: 'volta perto de onde estava (não para o começo)' }).toBeLessThanOrEqual(100);
   expect(erros).toEqual([]);
+});
+
+test('CONV-09: sem internet por um momento — a lista continua na tela, sem "Failed to fetch", e atualiza quando a conexão volta', async ({ page, context }) => {
+  await page.goto('/apresentacao');
+  await page.waitForFunction(() => window.TS && TS.cli && TS.cli.lista);
+  await page.evaluate(() => { location.hash = '#conversas'; });
+  const card = page.locator('.card', { hasText: 'Conversas do WhatsApp' });
+  await expect(card).toContainText('Contato sem cadastro');
+  let pedidos = 0;
+  page.on('request', (r) => { if (/\/api\/demo\/conversas\?/.test(r.url())) pedidos++; });
+  await context.setOffline(true);
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange'))); // a página "voltou": tenta atualizar
+  await page.waitForTimeout(1500);
+  await expect(card).toContainText('Contato sem cadastro');
+  await expect(page.locator('#content')).not.toContainText(/failed to fetch/i);
+  await context.setOffline(false); // a internet voltou: tenta de novo sozinha
+  await expect.poll(() => pedidos).toBeGreaterThan(0);
+  await expect(card).toContainText('Contato sem cadastro');
+  await expect(page.locator('#content')).not.toContainText(/failed to fetch/i);
 });

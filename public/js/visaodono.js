@@ -139,17 +139,19 @@
     if (!x || !x.estoque || !x.estoque.itens || !x.estoque.itens.length) return null;
     const db = TS.db, M = TS.motorEstoque(x.estoque, x.cfg);
     const alvo = new Map(), ultima = new Map(), hojeD = TS.todayDay();
+    let fimLoja = -Infinity; // o último dia com venda DESTA loja: o mesmo "hoje" da tela Estoque dela (com "Todas as lojas", db.maxDay é o de qualquer loja)
     const fl = (cod) => foraLinhaDe(x.foraDeLinha, cod, hojeD);
     for (const it of x.estoque.itens) if (!fl(it.cod) && TS.ruptura.zerado(Math.max(0, it.qtd || 0), it.un)) alvo.set(String(it.cod), []);
     for (let i = 0; i < db.n; i++) {
       if (soLoja && !soLoja.has(db.loja[i])) continue;
       const d = db.day[i];
+      if (d > fimLoja) fimLoja = d;
       for (const [it] of M.consumo(i)) { const k = String(it.cod); if (!ultima.has(k) || d > ultima.get(k)) ultima.set(k, d); }
       if (M.taxa(i)) continue;
       const c = M.casar(i), l = c && alvo.get(String(c.it.cod));
       if (l) { const q = db.qtd[i] || 0; l.push({ d, q: c.kg ? (q * c.g) / 1000 : q, v: db.vt[i] || 0 }); }
     }
-    return estoqueLoja({ itens: x.estoque.itens, vendas: alvo, ultima, hoje: db.maxDay, inicio: db.minDay, paradoDias: (x.cfg && x.cfg.paradoDias) || 60, foraLinha: fl, temCod: !!(db.D.cod && db.D.cod.some((c) => c)) });
+    return estoqueLoja({ itens: x.estoque.itens, vendas: alvo, ultima, hoje: Number.isFinite(fimLoja) ? fimLoja : db.maxDay, inicio: db.minDay, paradoDias: (x.cfg && x.cfg.paradoDias) || 60, foraLinha: fl, temCod: !!(db.D.cod && db.D.cod.some((c) => c)) });
   }
   /** validade de uma loja: valor em risco (< 60 dias, com os vencidos), vencidos e o que vence em 30 dias */
   async function validadeDe(lojaId) {
