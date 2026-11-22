@@ -57,9 +57,9 @@ before(async () => {
   });
   await new Promise((ok) => col.listen(0, '127.0.0.1', ok)); // porta livre escolhida pelo sistema: sorteio fixo já colidiu no GitHub
   const PORTA_COL = col.address().port;
-  srv = spawn(process.execPath, ['server.js'], { cwd: path.join(__dirname, '../..'), stdio: 'ignore',
+  srv = spawn(process.execPath, ['server.js'], { cwd: path.join(__dirname, '../..'), stdio: ['ignore', 'ignore', 'pipe'],
     env: { ...process.env, PORT: String(PORTA), DATA_DIR: tmp, CONFIG_FILE, SESSION_SECRET: 'teste-franqueado', NODE_ENV: 'test', IA_FALSO: '1', COLETOR_URL: `http://127.0.0.1:${PORTA_COL}`, COLETOR_TOKEN: 'token-de-teste', GITHUB_TOKEN: '' } });
-  for (let k = 0; k < 300; k++) { try { const r = await fetch(BASE + '/login'); if (r.status < 500) break; } catch { /* subindo */ } await new Promise((ok) => setTimeout(ok, 100)); }
+  await require('./_subir')(srv, BASE); // até 90 s, e mostra o erro do servidor se ele cair
   for (const nome of ['chefe', 'dono1', 'ger1', 'vend1']) {
     const r = await fetch(BASE + '/login', { method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Forwarded-For': `203.0.113.${ipSeq++}` }, body: `usuario=${nome}&senha=${encodeURIComponent(SENHA)}` });
     const c = (r.headers.get('set-cookie') || '').split(';')[0];

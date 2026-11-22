@@ -23,14 +23,8 @@ before(async () => {
   const senha = await C.hashSenhaAsync('senha-teste-123');
   const u = (perfil, extra) => ({ senha, perfil, lojas: ['l1'], ativo: true, ...extra });
   fs.writeFileSync(CONFIG_FILE, JSON.stringify({ lojas: [{ id: 'l1', nome: 'Loja 1' }], usuarios: { dono: u('franqueado'), vend: u('vendedor', { vendedor: 'ANA' }), novo: u('gerente', { trocarSenha: true }) } }));
-  srv = spawn(process.execPath, ['server.js'], { cwd: path.join(__dirname, '../..'), env: { ...process.env, PORT: String(PORTA), DATA_DIR: tmp, CONFIG_FILE, SESSION_SECRET: 'teste-push', NODE_ENV: 'test', COLETOR_URL: '', GITHUB_TOKEN: '' }, stdio: ['ignore', 'ignore', 'pipe'] });
-  // no GitHub, com os outros arquivos subindo servidor ao mesmo tempo, já passou de 30 s: espera até 90 s, para na hora se o
-  // servidor cair e mostra o erro dele (antes ficava só "fetch failed", sem pista)
-  let saida = '', caiu = null, subiu = false;
-  srv.stderr.on('data', (d) => { saida = (saida + d).slice(-4000); });
-  srv.once('exit', (c) => { caiu = c; });
-  for (let k = 0; k < 900 && caiu === null; k++) { try { const r = await fetch(BASE + '/login'); if (r.status < 500) { subiu = true; break; } } catch { /* subindo */ } await new Promise((ok) => setTimeout(ok, 100)); }
-  assert.ok(subiu, `o servidor de teste não subiu na porta ${PORTA}${caiu !== null ? ` (saiu com código ${caiu})` : ' em 90 s'}:\n${saida}`);
+  srv = spawn(process.execPath, ['server.js'], { cwd: path.join(__dirname, '../..'), env: { ...process.env, PORT: String(PORTA), DATA_DIR: tmp, CONFIG_FILE, SESSION_SECRET: 'teste-push', NODE_ENV: 'test', SITE_CONTATO: 'https://exemplo.com/contato?a=1&b=2', COLETOR_URL: '', GITHUB_TOKEN: '' }, stdio: ['ignore', 'ignore', 'pipe'] });
+  await require('./_subir')(srv, BASE); // até 90 s, e mostra o erro do servidor se ele cair
   let ip = 10;
   for (const nome of ['dono', 'vend', 'novo']) {
     const r = await fetch(BASE + '/login', { method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Forwarded-For': `203.0.113.${ip++}` }, body: `usuario=${nome}&senha=senha-teste-123` });
@@ -117,4 +111,27 @@ test('rotas: só os próprios aparelhos; resposta sem chave nem endereço; X-Pai
   const aud = fs.readFileSync(path.join(tmp, 'auditoria.jsonl'), 'utf8');
   assert.match(aud, /ativou as notificações num aparelho/);
   assert.ok(!aud.includes('fcm.googleapis') && !aud.includes(a.keys.auth));
+});
+
+test('SITE-01: site público (/site e /site/tecnico) abre sem login, sem script, com o botão de contato do .env e o link da apresentação', async () => {
+  for (const url of ['/site', '/site/', '/site/tecnico']) {
+    const r = await fetch(BASE + url, { redirect: 'manual' });
+    assert.strictEqual(r.status, 200, url);
+    assert.match(r.headers.get('content-type'), /text\/html/);
+    assert.strictEqual(r.headers.get('x-robots-tag'), 'noindex');
+    const h = await r.text();
+    assert.ok(!/<script/i.test(h), url + ': página fixa, sem JavaScript');
+    assert.ok(h.includes('href="/apresentacao"'), url + ': leva à apresentação');
+    assert.ok(h.includes('href="https://exemplo.com/contato?a=1&amp;b=2"'), url + ': contato do SITE_CONTATO');
+    assert.ok(!h.includes('<!--CONTATO-->'));
+    assert.ok(!/@(gmail|hotmail|outlook)\./i.test(h), url + ': sem e-mail pessoal');
+  }
+  assert.match((await fetch(BASE + '/site/site.css')).headers.get('content-type'), /text\/css/);
+  const img = await fetch(BASE + '/site/img/cel-inicio.jpg');
+  assert.strictEqual(img.status, 200);
+  assert.match(img.headers.get('content-type'), /image\/jpeg/);
+  // só os arquivos do site: nada mais da pasta fica público
+  assert.notStrictEqual((await fetch(BASE + '/site/img/../../index.html', { redirect: 'manual' })).status, 200);
+  assert.strictEqual((await fetch(BASE + '/site/outra', { redirect: 'manual' })).status, 302, 'o resto continua pedindo login');
+  assert.ok((await (await fetch(BASE + '/login')).text()).includes('href="/site"'), 'a tela de entrar leva ao site');
 });

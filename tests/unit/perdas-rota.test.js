@@ -33,8 +33,8 @@ before(async () => {
   fs.mkdirSync(pasta, { recursive: true });
   fs.writeFileSync(path.join(pasta, 'abcdef012345.json'), JSON.stringify({ id: 'abcdef012345', nome: 'Acessórios', criadoEm: '2026-05-10T12:00:00.000Z', por: 'dono', cega: false, st: 'importado', importadoEm: '2026-05-10T15:00:00.000Z', itens: [],
     planilha: { em: '2026-05-10T14:00:00.000Z', por: 'dono', itens: [{ cod: '1', desc: 'Infusor', un: 'UN', antes: 5, nova: 3, custo: 25, zerado: false }] } }));
-  srv = spawn(process.execPath, ['server.js'], { cwd: path.join(__dirname, '../..'), env: { ...process.env, PORT: String(PORTA), DATA_DIR: tmp, CONFIG_FILE, SESSION_SECRET: 'teste-perdas', NODE_ENV: 'test' }, stdio: 'ignore' });
-  for (let k = 0; k < 300; k++) { try { const r = await fetch(BASE + '/login'); if (r.status < 500) break; } catch { /* subindo */ } await new Promise((ok) => setTimeout(ok, 100)); }
+  srv = spawn(process.execPath, ['server.js'], { cwd: path.join(__dirname, '../..'), env: { ...process.env, PORT: String(PORTA), DATA_DIR: tmp, CONFIG_FILE, SESSION_SECRET: 'teste-perdas', NODE_ENV: 'test' }, stdio: ['ignore', 'ignore', 'pipe'] });
+  await require('./_subir')(srv, BASE); // até 90 s, e mostra o erro do servidor se ele cair
   for (const nome of ['dono', 'ger_custo', 'ger_sem', 'vend']) {
     const r = await fetch(BASE + '/login', { method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: `usuario=${nome}&senha=senha-teste-123` });
     const c = (r.headers.get('set-cookie') || '').split(';')[0];

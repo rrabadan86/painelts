@@ -8,6 +8,7 @@ Painel de vendas das lojas Tea Shop (substitui o Power BI). Responda sempre em *
 - **Coletor (robôs):** Python + Playwright em `coletor/` (AppNext, FIXE, Sistema de Pedidos).
 - **Robô do WhatsApp:** serviço Node em `zap/` (opcional no compose, `--profile zap`); só conecta e envia o que o painel manda.
 - **Apresentação:** `/apresentacao` mostra dados fictícios (`src/demo.js`, rotas `/api/demo/...`) e **nunca grava nem envia nada**.
+- **Site público:** `/site` (para o franqueado conhecer o painel) e `/site/tecnico` (arquitetura, regras, skills, travas e testes), em `public/site/` — páginas fixas, sem login e sem JavaScript, com as imagens tiradas da apresentação. O botão de contato vem de `SITE_CONTATO` no `.env` (nunca no código). **Criou skill, arquivo de regras ou hook: acrescente na página técnica** (`tests/unit/site-publico.test.js` avisa). O site só promete o que as regras permitem e diz que é projeto independente (não é da franqueadora nem da NextSoft).
 - **Aplicativo e notificações:** o painel é instalável (`public/manifest.webmanifest`, `public/icones/`, `public/sw.js`) e avisa no aparelho com o painel fechado (Web Push: `src/webpush.js` cifra e entrega, `src/push.js` decide quem recebe, `src/push-api.js`, tela em `public/js/notificacoes.js`, no menu da pessoa).
 - **IA:** ✨ Pergunte ao painel, diagnóstico do Início e revisão do pedido (`src/ia*.js`, `public/js/ia.js`).
 
