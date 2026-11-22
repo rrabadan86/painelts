@@ -96,7 +96,7 @@
     document.body.classList.toggle('pg-config', state.page === 'config');
     document.getElementById('btnUsuario')?.classList.toggle('on', state.page === 'config');
     document.body.classList.toggle('pg-minha', state.page === 'minha');
-    document.body.classList.toggle('pg-semfiltros', state.page === 'inicio' || state.page === 'dre' || state.page === 'conferencia' || state.page === 'conversas'); // não usam os filtros
+    document.body.classList.toggle('pg-semfiltros', state.page === 'inicio' || state.page === 'dre' || state.page === 'conferencia' || state.page === 'conversas' || state.page === 'sugestoes'); // não usam os filtros
     if (state.page === 'config') {
       TS.destroyCharts();
       const root = h('div');
@@ -485,6 +485,7 @@
     if (t.scrollWidth > t.clientWidth + 2) document.body.classList.add('tabs-2l');
   }
   TS.ajustarTopo = ajustarTopo;
+  if (document.getElementById('tabs') && TS.sinalRolagem) TS.sinalRolagem(document.getElementById('tabs')); // borda esmaecida quando há abas escondidas
   window.addEventListener('resize', TS.debounce ? TS.debounce(ajustarTopo, 120) : ajustarTopo);
 
   /**

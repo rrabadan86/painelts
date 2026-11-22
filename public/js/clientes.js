@@ -264,6 +264,29 @@
     }
     return out;
   }
+  /**
+   * Indicadores: "Saúde da base" no topo — quem está sumindo (movimento dos grupos RFM nos últimos 30 dias) e o caminho
+   * para agir (a lista já filtrada e a tela Hoje). Mesmas contas do cartão dos grupos (cartaoRfm).
+   */
+  function cartaoSaude() {
+    const todos = TS.cli.lista.filter((c) => c.rfm);
+    if (!todos.length) return null;
+    const BONS = new Set(['campeao', 'leal']), RUINS = new Set(['atencao', 'risco', 'naoperder', 'hibernando', 'perdido']);
+    const pioraram = TS.cli.lista.filter((c) => c.rfm && c.rfmAntes && BONS.has(c.rfmAntes.g) && RUINS.has(c.rfm.g)).length;
+    const n = (g) => todos.filter((c) => c.rfm.g === g).length;
+    const antes = (g) => TS.cli.lista.filter((c) => c.rfmAntes && c.rfmAntes.g === g).length;
+    const risco = n('risco') + n('naoperder'), perdidos = n('perdido'), dPerd = perdidos - antes('perdido');
+    const ir = (g) => { state.cli.rfm = g; state.cli.seg = ''; location.hash = '#clilista'; };
+    const linha = (txt, acao) => h('div', { class: 'cli-saude-l' }, h('span', null, ...txt), acao);
+    const pode = TS.pages && TS.pages.hoje;
+    return TS.card('Saúde da base', 'Quem está sumindo e o que fazer agora. Todos os clientes da loja, comparados com 30 dias atrás.', h('div', { class: 'cli-saude' }, ...[
+      linha([h('b', { class: risco ? 'neg' : '' }, fmt.int(risco)), ` ${risco === 1 ? 'cliente bom está sumindo' : 'clientes bons estão sumindo'} (Não pode perder e Em risco)`, pioraram ? h('small', { class: 'muted' }, ` · ${fmt.int(pioraram)} ${pioraram === 1 ? 'era Campeão ou Leal' : 'eram Campeões ou Leais'} há 30 dias`) : null],
+        risco ? h('button', { type: 'button', class: 'link-btn', onclick: () => ir(n('naoperder') ? 'naoperder' : 'risco') }, 'Ver na Lista ›') : null),
+      linha([h('b', null, fmt.int(perdidos)), ` ${perdidos === 1 ? 'cliente perdido' : 'clientes perdidos'}`, dPerd ? h('small', { class: dPerd > 0 ? 'neg' : 'pos' }, ` · ${dPerd > 0 ? '+' : '−'}${fmt.int(Math.abs(dPerd))} em 30 dias`) : null],
+        perdidos ? h('button', { type: 'button', class: 'link-btn', onclick: () => ir('perdido') }, 'Ver na Lista ›') : null),
+      pode ? linha(['Mensagem para quem está sumindo, aniversariantes e hora de repor: a lista do dia já está pronta.'], h('a', { class: 'link-btn', href: '#hoje' }, 'Contatar → Hoje ›')) : null,
+    ].filter(Boolean)));
+  }
   /** Indicadores: quantos clientes em cada grupo (RFM), quanto gastaram e quem mudou de grupo nos últimos 30 dias */
   function cartaoRfm() {
     const todos = TS.cli.lista.filter((c) => c.rfm);
@@ -275,7 +298,7 @@
     const ir = (g) => { state.cli.rfm = g; state.cli.seg = ''; location.hash = '#clilista'; };
     const linhas = TS.RFM.GRUPOS.map((g) => {
       const x = por.get(g.id), d = x.n - x.antes;
-      return h('tr', { class: 'rfm-linha', role: 'button', tabindex: 0, title: `${g.dica} O que fazer: ${g.acao} (clique para ver a lista)`, onclick: () => ir(g.id), onkeydown: (e) => { if (e.key === 'Enter') ir(g.id); } },
+      return h('tr', { class: 'rfm-linha', role: 'button', tabindex: 0, title: `${g.dica} O que fazer: ${g.acao} (clique para ver a lista)`, onclick: () => ir(g.id), onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); ir(g.id); } } },
         h('td', { class: 'l' }, h('span', { class: 'cli-tag rfm-' + g.id }, g.nome)),
         h('td', null, fmt.int(x.n), h('small', { class: 'muted' }, ` ${fmt.pct(x.n / todos.length, 0)}`)),
         h('td', { class: d > 0 ? (['risco', 'naoperder', 'hibernando', 'perdido', 'atencao'].includes(g.id) ? 'neg' : 'pos') : d < 0 ? (['risco', 'naoperder', 'hibernando', 'perdido', 'atencao'].includes(g.id) ? 'pos' : 'neg') : 'muted' }, d === 0 ? '=' : (d > 0 ? '+' : '−') + fmt.int(Math.abs(d))),
@@ -369,22 +392,62 @@
   }
   async function marcar(c, acao, motivo, envio) {
     const loja = lojaIdDe(c);
-    let novo;
+    let novo, desfazerAte = null;
     if (TS.demo) {
       const a = { ...(TS.cli.contatos[c.cpf] || {}) };
       if (acao === 'contatado') Object.assign(a, { em: new Date().toISOString(), por: 'você', motivo });
       if (acao === 'optout') a.optout = true;
       if (acao === 'aceita') { delete a.optout; delete a.optoutOrigem; }
       if (acao === 'limpar') { delete a.em; delete a.motivo; }
+      if (acao === 'contatado' && envio) { const ant = TS.cli.contatos[c.cpf]; a.desfazer = { antes: ant && ant.em ? { em: ant.em, por: ant.por, motivo: ant.motivo } : null }; }
       novo = a;
+      if (envio) desfazerAte = new Date(Date.now() + 120e3).toISOString();
     } else {
       const r = await fetch('/api/contatos', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-Painel': '1' }, body: JSON.stringify({ loja, cpf: c.cpf, acao, motivo, ...(envio ? { envio: true, campanha: envio.campanha || '' } : {}) }) });
       const j = await r.json();
       if (!r.ok) { const e = new Error(j.erro || 'Falha ao salvar.'); e.bloqueado = !!j.bloqueado; throw e; }
       novo = j.contato ? { ...j.contato, loja } : null;
+      desfazerAte = j.desfazerAte || null;
     }
     if (novo && Object.keys(novo).length) TS.cli.contatos[c.cpf] = novo; else delete TS.cli.contatos[c.cpf];
+    return { desfazerAte };
   }
+  /** "Desfazer" (Hoje): a mensagem não foi enviada — volta a marca de antes (o servidor só aceita de quem enviou, até 2 minutos depois) */
+  async function desfazerEnvio(c) {
+    const loja = lojaIdDe(c);
+    if (TS.demo) {
+      const a = TS.cli.contatos[c.cpf] || {};
+      const antes = a.desfazer && a.desfazer.antes;
+      const { em, por, motivo, desfazer, ...resto } = a;
+      const novo = { ...resto, ...(antes || {}) };
+      if (Object.keys(novo).length) TS.cli.contatos[c.cpf] = novo; else delete TS.cli.contatos[c.cpf];
+      return;
+    }
+    const r = await fetch('/api/contatos/desfazer', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-Painel': '1' }, body: JSON.stringify({ loja, cpf: c.cpf }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.erro || 'Não deu para desfazer.');
+    if (j.contato && Object.keys(j.contato).length) TS.cli.contatos[c.cpf] = { ...j.contato, loja }; else delete TS.cli.contatos[c.cpf];
+  }
+  /**
+   * Link que abre a conversa vazia no WhatsApp (lista, tabela, ficha, janelas): regra forte também aqui (decisão do dono) —
+   * o servidor confere antes (intervalo da loja, não quer, fila do robô) e NÃO marca contatado. espera: true (Lista de espera,
+   * avisar que chegou é pedido do cliente) só trava quem não quer mensagens. A janela abre já no clique (senão o navegador bloqueia).
+   */
+  async function abrirConversaWpp(c, o = {}) {
+    if (!c || !c.wpp) return false;
+    if (TS.demo) { TS.avisar('Na apresentação o WhatsApp não abre (número fictício). No painel de verdade, o servidor confere antes se este cliente pode receber mensagem (intervalo da loja, não quer mensagens, fila do robô).'); return false; }
+    const w = window.open('about:blank', '_blank');
+    try {
+      const r = await fetch('/api/contatos/conferir', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-Painel': '1' }, body: JSON.stringify({ loja: lojaIdDe(c), cpf: c.cpf, espera: o.espera === true }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) { if (w) w.close(); if (j.bloqueado) { TS.avisar(j.erro, { titulo: 'WhatsApp não aberto' }); await recarregarContatos(); } else TS.avisarErro(new Error(j.erro || 'Não deu certo.')); return false; }
+    } catch (e) { if (w) w.close(); TS.avisarErro(e); return false; }
+    if (w) { try { w.opener = null; } catch { /* ok */ } w.location.href = c.wpp; } else window.location.href = c.wpp;
+    return true;
+  }
+  TS.abrirConversaWpp = (c, o) => abrirConversaWpp(c, o);
+  /** link "● WhatsApp" que passa pela conferência (a mesma aparência de antes) */
+  const linkConversa = (c, rot, cls = 'wpp') => h('a', { class: cls, href: '#', role: 'button', title: 'Abrir a conversa no WhatsApp (o painel confere antes se este cliente pode receber mensagem)', onclick: (e) => { e.preventDefault(); e.stopPropagation(); abrirConversaWpp(c); } }, rot);
   /**
    * Envio manual pelo WhatsApp (Hoje, ficha do cliente, fila de Campanhas). Regra forte (decisão do dono): o servidor confere
    * ANTES de o WhatsApp abrir — quem já recebeu mensagem dentro do intervalo da loja, quem não quer e quem está na fila do robô
@@ -392,12 +455,13 @@
    * fecha se o servidor recusar. → true quando abriu.
    */
   async function enviarWpp(c, txt, motivo, campanha) {
-    if (TS.demo) { await marcar(c, 'contatado', motivo); alert('Na apresentação o WhatsApp não abre (número fictício). A mensagem seria:\n\n' + txt); return true; }
+    if (TS.demo) { const r = await marcar(c, 'contatado', motivo, { campanha }); TS.avisar('Na apresentação o WhatsApp não abre (número fictício). A mensagem seria:\n\n' + txt, { titulo: 'Mensagem de exemplo' }); return r; }
     const w = window.open('about:blank', '_blank');
-    try { await marcar(c, 'contatado', motivo, { campanha }); } catch (e) { if (w) w.close(); throw e; }
+    let r;
+    try { r = await marcar(c, 'contatado', motivo, { campanha }); } catch (e) { if (w) w.close(); throw e; }
     const link = linkWpp(c, txt);
     if (w) { try { w.opener = null; } catch { /* ok */ } w.location.href = link; } else window.location.href = link;
-    return true;
+    return r;
   }
   // modelos de mensagem (editáveis em Configurações → Lojas → Mensagens de WhatsApp)
   TS.WPP_PADRAO = [
@@ -551,13 +615,13 @@
 
   // ---------- Clientes → Hoje: quem contatar hoje e por quê (gerente, franqueado e admin; a vendedora não vê clientes) ----------
   const MOTIVOS_HOJE = {
-    naoperder: { nome: '🚨 Não pode perder', modelo: 'Sentimos sua falta', peso: 100 },
-    risco: { nome: '⚠️ Em risco', modelo: 'Sentimos sua falta', peso: 90 },
-    aniv: { nome: '🎂 Aniversário', modelo: 'Aniversário', peso: 80 },
-    repor: { nome: '🍵 Hora de repor', modelo: 'Hora de repor', peso: 70 },
-    validade: { nome: '🍃 Chá dele perto da validade', peso: 60, texto: 'Oi, {nome}! O {chaoferta} que você gosta está com condição especial esta semana na {loja} 🍵 Quer que a gente separe um pacote para você?' },
-    vence: { nome: '★ Pontos vencendo', modelo: 'Pontos vencendo', peso: 50 },
-    atencao: { nome: '👀 Precisa de atenção', modelo: 'Novidades', peso: 40 },
+    naoperder: { nome: '🚨 Não pode perder', modelo: 'Sentimos sua falta', peso: 100, dica: 'Cliente que comprava muito e com frequência e está sumindo (grupo "Não pode perder" da análise RFM). É o primeiro a contatar.' },
+    risco: { nome: '⚠️ Em risco', modelo: 'Sentimos sua falta', peso: 90, dica: 'Cliente bom que está demorando mais que o normal para voltar (grupo "Em risco" da análise RFM).' },
+    aniv: { nome: '🎂 Aniversário', modelo: 'Aniversário', peso: 80, dica: 'Faz aniversário nos próximos dias (data do cadastro).' },
+    repor: { nome: '🍵 Hora de repor', modelo: 'Hora de repor', peso: 70, dica: 'Pelo ritmo de compra do cliente, o chá dele já deve estar acabando.' },
+    validade: { nome: '🍃 Chá dele perto da validade', peso: 60, dica: 'O chá favorito (ou o último que comprou) tem lote na loja vencendo em menos de 60 dias (Estoque → Validade): dá para oferecer com condição especial.', texto: 'Oi, {nome}! O {chaoferta} que você gosta está com condição especial esta semana na {loja} 🍵 Quer que a gente separe um pacote para você?' },
+    vence: { nome: '★ Pontos vencendo', modelo: 'Pontos vencendo', peso: 50, dica: 'Tem pontos do programa de fidelidade (FIXE) vencendo em breve.' },
+    atencao: { nome: '👀 Precisa de atenção', modelo: 'Novidades', peso: 40, dica: 'Cliente médio que começou a espaçar as compras (grupo "Precisa de atenção" da análise RFM).' },
   };
   const hojeF = { motivo: '', vend: '' };
   /** meta do dia: (meta do mês − VENDAS DA META até ontem) ÷ dias de loja aberta que faltam (com hoje), e a parte de
@@ -624,9 +688,19 @@
       })) : null,
       h('small', { class: 'muted md-nota', 'data-divisao': DV.modo }, 'Conta só as vendas da meta (chás e acessórios, sem Espaço Gourmet). ', TS.metaDia.comoDividiu(DV),
         !eu && DV.fora.length ? ` ${DV.foraPorque === 'ferias' ? 'De férias hoje' : 'Sem turno na escala de hoje (folga, férias ou nome diferente do vendedor)'}: ${DV.fora.map(nomeBonito).join(', ')}.` : '',
-        !eu && semNome.length ? ` Na escala de hoje, mas sem venda com esse nome: ${semNome.join(', ')} (as horas não entram na divisão).` : '',
-        TS.dica(`Meta de hoje da loja: ${fmt.brl0(metaHoje)}.\n\nCom escala lançada: parte de cada pessoa = meta de hoje × horas dela na escala de hoje ÷ horas de todos que trabalham hoje (horas líquidas, sem o intervalo; a escala é a de Equipe → Movimento e escala, com os ajustes do mês).${DV.modo === 'escala' ? `\n\nHoje: ${DV.partes.map((p) => `${nomeBonito(p.nome)} ${hTxt(p.minutos)}`).join(' + ')} = ${hTxt(DV.total)}.` : ''}\n\nSem escala lançada (ou sem ninguém da escala com o mesmo nome do vendedor): partes iguais entre quem teve pelo menos 3% das vendas da meta nos últimos 30 dias e não está de férias hoje.\n\nÉ só o alvo do dia: a meta do mês e a comissão continuam como no Comissionamento.`)));
+        '',
+        TS.dica(`Meta de hoje da loja: ${fmt.brl0(metaHoje)}.\n\nCom escala lançada: parte de cada pessoa = meta de hoje × horas dela na escala de hoje ÷ horas de todos que trabalham hoje (horas líquidas, sem o intervalo; a escala é a de Equipe → Movimento e escala, com os ajustes do mês).${DV.modo === 'escala' ? `\n\nHoje: ${DV.partes.map((p) => `${nomeBonito(p.nome)} ${hTxt(p.minutos)}`).join(' + ')} = ${hTxt(DV.total)}.` : ''}\n\nSem escala lançada (ou sem ninguém da escala com o mesmo nome do vendedor): partes iguais entre quem teve pelo menos 3% das vendas da meta nos últimos 30 dias e não está de férias hoje.\n\nÉ só o alvo do dia: a meta do mês e a comissão continuam como no Comissionamento.`)),
+      // nome da escala que não bate com o vendedor das vendas: problema de cadastro, uma linha para quem pode corrigir
+      !eu && semNome.length ? h('p', { class: 'warn-t md-escala' }, `⚠ Na escala de hoje, mas sem venda com esse nome: ${semNome.join(', ')} — as horas não entram na divisão. `,
+        h('a', { href: '#mapa' }, 'Corrigir a escala ›'), TS.dica('O nome na escala (Equipe → Movimento e escala) precisa ser igual ao do vendedor nas vendas do AppNext. Corrija o nome na escala para as horas dessa pessoa entrarem na divisão da meta.')) : null);
   }
+  /**
+   * Quadro "Meta de hoje" (decisão do dono: fica no Início, onde todo mundo começa o dia; saiu de Clientes → Hoje).
+   * TS.cartaoMetaDia() → elemento (card .md-card) ou null. Usa a loja do seletor (state.loja; com "todas" devolve null)
+   * e os dados já carregados (TS.db, TS.metaCalc, TS.rules, TS.metaDia; a escala por TS.escalaTurnos/TS.equipe quando a
+   * pessoa tem acesso). Não busca nada no servidor e não depende da lista de clientes.
+   */
+  TS.cartaoMetaDia = () => (state.loja && state.loja !== 'todas' ? cartaoMetaDia() : null);
 
   /**
    * Quem contatar hoje e por quê (tela Clientes → Hoje e Campanha Resumo diário, que roda também no servidor pelo robô):
@@ -673,14 +747,33 @@
   TS.pages.hoje = function (root) {
     if (TS.subClientes) root.append(TS.subClientes('hoje'));
     root.append(h('div', { class: 'page-head' }, h('div', null, h('h1', { class: 'page-title' }, 'Hoje'),
-      h('div', { class: 'page-sub' }, `Quem contatar hoje e por quê. Uma mensagem por cliente, pelo WhatsApp da loja; quem recebeu mensagem nos últimos ${intervaloDe(state.loja)} dias (de qualquer tela ou campanha) ou pediu para não receber não aparece.`))));
+      h('div', { class: 'page-sub' }, 'Quem contatar hoje e por quê: uma mensagem por cliente, pelo WhatsApp da loja.'))));
     if (!TS.cli || !TS.cli.lista) { root.append(h('div', { class: 'notice' }, 'Os clientes ainda não foram carregados.')); return; }
     if (!state.loja || state.loja === 'todas') { root.append(h('div', { class: 'notice' }, 'Escolha uma loja no seletor do topo.')); return; }
     carregarContatos();
-    const md = cartaoMetaDia();
-    if (md) root.append(md);
+    // a "Meta de hoje" foi para o Início (decisão do dono, TS.cartaoMetaDia): aqui fica só a lista, no topo
     const corpo = h('div');
     root.append(corpo);
+    let faixaDesf = null;
+    const tirarFaixa = () => { if (faixaDesf) { clearTimeout(faixaDesf.t); faixaDesf.remove(); faixaDesf = null; } };
+    /** depois de abrir o WhatsApp: "Fulana marcada como contatada · Desfazer" por 10 s (um toque sem querer não tira o cliente da lista) */
+    const mostrarDesfazer = (c, val) => {
+      tirarFaixa();
+      const nome = primeiroNome(c.nome) || 'Cliente';
+      const bt = h('button', { type: 'button', class: 'btn' }, 'Desfazer');
+      const el = h('div', { class: 'hj-desfazer', role: 'status' }, h('span', null, `${nome} marcada como contatada.`), bt);
+      bt.addEventListener('click', async () => {
+        bt.disabled = true;
+        try { await desfazerEnvio(c); tirarFaixa(); pintar(val); } catch (e) { tirarFaixa(); TS.avisarErro(e); await recarregarContatos(); pintar(val); }
+      });
+      el.t = setTimeout(tirarFaixa, 10000);
+      faixaDesf = el;
+      document.body.append(el);
+      // trocou de tela: a faixa vai junto
+      const ob = new MutationObserver(() => { if (!corpo.isConnected) { ob.disconnect(); tirarFaixa(); } });
+      ob.observe(document.body, { childList: true, subtree: true });
+      setTimeout(() => ob.disconnect(), 11000);
+    };
     const pintar = (val) => {
       const disp = (val && val.disp) || null;
       const { itens, foraSemEstoque, contatadosHoje } = hojeItens(val, disp);
@@ -697,39 +790,51 @@
       const vends = [...new Set(itens.map((x) => x.c.vendedoraPref).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
       const sel = itens.filter((x) => (!hojeF.motivo || x.ms.includes(hojeF.motivo)) && (!hojeF.vend || x.c.vendedoraPref === hojeF.vend));
       const conta = (m) => itens.filter((x) => x.ms.includes(m)).length;
-      const chips = h('div', { class: 'chips hj-chips' },
-        h('button', { type: 'button', class: 'chip' + (!hojeF.motivo ? ' on' : ''), onclick: () => { hojeF.motivo = ''; pintar(val); } }, `Todos (${fmt.int(itens.length)})`),
-        ...Object.entries(MOTIVOS_HOJE).filter(([m]) => conta(m)).map(([m, x]) => h('button', { type: 'button', class: 'chip' + (hojeF.motivo === m ? ' on' : ''), onclick: () => { hojeF.motivo = hojeF.motivo === m ? '' : m; pintar(val); } }, `${x.nome} (${fmt.int(conta(m))})`)));
+      const chip = (rot, valor, dica) => h('button', { type: 'button', class: 'chip' + (hojeF.motivo === valor ? ' on' : ''), 'aria-pressed': String(hojeF.motivo === valor), title: dica, onclick: () => { hojeF.motivo = valor && hojeF.motivo === valor ? '' : valor; pintar(val); } }, rot);
+      const chips = h('div', { class: 'chips hj-chips', role: 'group', 'aria-label': 'Motivo' },
+        chip(`Todos (${fmt.int(itens.length)})`, '', 'Todos os clientes para contatar hoje. Um cliente pode ter mais de um motivo: por isso a soma dos motivos passa do total.'),
+        ...Object.entries(MOTIVOS_HOJE).filter(([m]) => conta(m)).map(([m, x]) => chip(`${x.nome} (${fmt.int(conta(m))})`, m, x.dica)));
       const selV = vends.length ? h('select', { class: 'f-input hj-vend', 'aria-label': 'Vendedora' }, h('option', { value: '' }, 'Todas as vendedoras'), ...vends.map((v) => h('option', { value: v, selected: hojeF.vend === v || null }, v))) : null;
       if (selV) selV.addEventListener('change', () => { hojeF.vend = selV.value; pintar(val); });
       const linha = (x) => {
         const c = x.c, m0 = MOTIVOS_HOJE[x.ms[0]];
         const mods = modelosDe(lojaIdDe(c));
         const txt = m0.texto ? TS.cliApi.texto(m0.texto, c, { chaoferta: x.oferta || c.chaFavorito || 'chá' }) : textoWpp(mods.find((m) => m.nome === m0.modelo) || mods[0], c);
+        // a mensagem: duas linhas com reticências; tocar mostra inteira (o celular não mostra o title)
+        const msg = h('button', { type: 'button', class: 'hj-msg', title: 'Ver a mensagem inteira', 'aria-expanded': 'false' }, txt);
+        msg.addEventListener('click', () => { const ab = msg.classList.toggle('aberta'); msg.setAttribute('aria-expanded', String(ab)); });
         const el = h('div', { class: 'hj-item' },
           h('div', { class: 'hj-quem' }, h('button', { type: 'button', class: 'hj-nome', onclick: () => abrirClientes([c.cpf]), title: 'Abrir a ficha' }, c.nome || fmtCPF(c.cpf)),
-            h('div', { class: 'hj-motivos' }, ...x.ms.map((m) => h('span', { class: 'hj-mot hj-' + m }, MOTIVOS_HOJE[m].nome))),
+            h('div', { class: 'hj-motivos' }, ...x.ms.map((m) => h('span', { class: 'hj-mot hj-' + m, title: MOTIVOS_HOJE[m].dica }, MOTIVOS_HOJE[m].nome))),
             h('small', { class: 'muted' }, [c.vendedoraPref && `atende: ${c.vendedoraPref}`, c.chaFavorito && `gosta de ${c.chaFavorito}`, x.oferta && `oferecer: ${x.oferta}`, c.ausencia != null && `${fmt.int(c.ausencia)} d sem vir`].filter(Boolean).join(' · '))),
-          h('div', { class: 'hj-msg', title: txt }, txt),
-          h('div', { class: 'hj-acoes' }, x.comp ? h('span', { class: 'hj-robo', title: 'Sorteado hoje para o grupo de comparação da Campanha Resumo diário: fica sem mensagem para medir se a campanha traz clientes de volta. Mandar mensagem estragaria a medida.' }, '🤖 sem mensagem hoje (comparação)') : x.robo ? h('span', { class: 'hj-robo', title: 'Este cliente está na lista de hoje da Campanha Resumo diário: o robô do WhatsApp manda a mensagem sozinho. A equipe não envia (seria mensagem em dobro).' }, '🤖 o robô envia hoje') : h('a', { class: 'btn primary', href: '#', onclick: async (e) => {
-            e.preventDefault();
-            try { await enviarWpp(c, txt, 'Hoje · ' + m0.nome.replace(/^\S+\s/, '')); el.classList.add('hj-feito'); setTimeout(() => pintar(val), 900); } catch (er) { if (er.bloqueado) { TS.avisar(er.message); await recarregarContatos(); pintar(val); } else alert(er.message); }
+          msg,
+          h('div', { class: 'hj-acoes' }, x.comp ? h('span', { class: 'hj-robo', title: 'Sorteado hoje para o grupo de comparação da Campanha Resumo diário: fica sem mensagem para medir se a campanha traz clientes de volta. Mandar mensagem estragaria a medida.' }, '🤖 sem mensagem hoje (comparação)') : x.robo ? h('span', { class: 'hj-robo', title: 'Este cliente está na lista de hoje da Campanha Resumo diário: o robô do WhatsApp manda a mensagem sozinho. A equipe não envia (seria mensagem em dobro).' }, '🤖 o robô envia hoje') : h('button', { type: 'button', class: 'btn primary hj-wpp', onclick: async (e) => {
+            const bt = e.currentTarget;
+            bt.disabled = true;
+            try {
+              await enviarWpp(c, txt, 'Hoje · ' + m0.nome.replace(/^\S+\s/, ''));
+              pintar(val); // sai da lista e "contatados hoje" já conta
+              mostrarDesfazer(c, val);
+            } catch (er) { bt.disabled = false; if (er.bloqueado) { TS.avisar(er.message); await recarregarContatos(); pintar(val); } else TS.avisarErro(er); }
           } }, 'WhatsApp')));
         return el;
       };
       const LIM = 30;
+      const iv = intervaloDe(state.loja);
+      const emRisco = itens.filter((x) => x.ms.includes('risco') || x.ms.includes('naoperder')).length;
       corpo.replaceChildren(
-        h('div', { class: 'grid g-kpi' },
-          TS.kpi('Para contatar hoje', fmt.int(itens.length), `com WhatsApp e sem mensagem nos últimos ${intervaloDe(state.loja)} dias`),
-          TS.kpi('Contatados hoje', fmt.int(contatadosHoje), 'pelo painel (Hoje, Lista e Campanhas)'),
-          TS.kpi('Em risco ou não pode perder', fmt.int(itens.filter((x) => x.ms.includes('risco') || x.ms.includes('naoperder')).length), 'clientes bons que estão sumindo')),
-        faixaResumo,
-        h('div', { class: 'card' },
+        h('div', { class: 'card hj-card' },
+          h('div', { class: 'hj-cab' },
+            h('div', { class: 'card-title' }, 'Para contatar hoje', TS.dica(`Clientes com WhatsApp, sem mensagem nos últimos ${iv} dias (de qualquer tela, campanha ou do robô) e que não pediram para não receber, com pelo menos um motivo para contatar.\n\nContatados hoje: clientes com mensagem aberta hoje pelo painel (Hoje, Lista e Campanhas) ou enviada pelo robô.`)),
+            h('div', { class: 'hj-conta' }, h('b', null, fmt.int(itens.length)), ' para contatar · ', h('b', null, fmt.int(contatadosHoje)), ` ${contatadosHoje === 1 ? 'contatado' : 'contatados'} hoje`,
+              emRisco ? ' · ' : null,
+              emRisco ? h('button', { type: 'button', class: 'link-btn hj-risco', title: 'Mostrar só os clientes bons que estão sumindo (Não pode perder; sem nenhum, Em risco)', onclick: () => { hojeF.motivo = conta('naoperder') ? 'naoperder' : 'risco'; pintar(val); } }, `${fmt.int(emRisco)} em risco`) : null)),
+          faixaResumo,
           h('div', { class: 'hj-ferr' }, chips, selV),
           sel.length ? h('div', { class: 'hj-lista' }, ...sel.slice(0, LIM).map(linha)) : TS.empty('Ninguém para contatar com esses filtros. 🎉'),
           sel.length > LIM ? h('p', { class: 'muted' }, `Mostrando os ${LIM} mais importantes de ${fmt.int(sel.length)}. Depois de contatar, a lista anda.`) : null,
           foraSemEstoque ? h('p', { class: 'muted hj-fora' }, `🚫 ${fmt.int(foraSemEstoque)} cliente${foraSemEstoque === 1 ? '' : 's'} fora da lista: a mensagem citaria um chá sem estoque (no chá a granel, menos de 100 g). Voltam quando chegar a nota de entrada do chá.`) : null,
-          h('small', { class: 'muted hj-rodape' }, 'Ordem: quem é mais importante primeiro (clientes bons sumindo, aniversário, hora de repor…). Ao abrir o WhatsApp, o cliente fica marcado como contatado e sai da lista. Mande poucas por vez para o WhatsApp não restringir o número.')));
+          h('small', { class: 'muted hj-rodape' }, 'Ordem: quem é mais importante primeiro (clientes bons sumindo, aniversário, hora de repor…). Ao abrir o WhatsApp, o cliente fica marcado como contatado e sai da lista (se a mensagem não foi enviada, dá para desfazer por alguns segundos). Mande poucas por vez para o WhatsApp não restringir o número.')));
     };
     // espera o estoque (chá a granel) para não mostrar quem receberia mensagem de chá que a loja não tem
     if (!TS.validade) pintar(null);
@@ -768,10 +873,15 @@
     }
 
     if (!ehLista) {
+      // o veredito primeiro (decisão do dono, revisão de 22/11): quem está sumindo e o caminho para agir
+      const saude = cartaoSaude();
+      if (saude) root.append(saude);
+      // cada seção diz a quais filtros responde (antes o filtro mudava um quadro e não os outros, sem aviso)
+      const alcance = (t) => h('p', { class: 'muted cli-alcance' }, t);
       root.append(...baseDeClientes(lista));
-      root.append(TS.section('Comportamento dos clientes'), h('div', { class: 'grid g-2 rfm-grid' }, cartaoRfm(), cartaoSafras()));
+      root.append(TS.section('Comportamento dos clientes'), alcance('Todos os clientes da loja, pelos últimos 12 meses: não seguem o período nem os filtros de cliente.'), h('div', { class: 'grid g-2 rfm-grid' }, cartaoRfm(), cartaoSafras()));
       if (TS.cli.fixe) { root.append(TS.section('Fidelidade')); const cr = cartaoResgate(TS.cli.fixe); if (cr) root.append(cr); const rf = TS.cartaoRetornoFid && TS.cartaoRetornoFid(TS.cli.fixe); if (rf) root.append(rf); root.append(cartaoFixe(TS.cli.fixe)); }
-      root.append(TS.section('Perfil dos clientes'));
+      root.append(TS.section('Perfil dos clientes'), alcance('Seguem todos os filtros (período, loja e os filtros de cliente).'));
     }
 
     const ordem = s.ordem;
@@ -803,7 +913,7 @@
       mais.style.display = mostrados < lista.length ? 'block' : 'none';
     };
     mais.addEventListener('click', paint);
-    paint();
+    if (ehLista) paint(); // nos Indicadores a lista não aparece: não monta os cartões à toa
 
     const segBar = h('div', { class: 'cli-segs' }, h('span', { class: 'f-label' }, 'Segmentos:'),
       Object.entries(NOMES_SEG).filter(([k]) => !['vence', 'semfixe', 'forafixe'].includes(k) || TS.cli.fixe).map(([k, nome]) => h('button', { type: 'button', class: 'chip' + (s.seg === k ? ' on' : '') + (k === 'hoje' ? ' chip-destaque' : ''), title: DICA_SEG[k], onclick: () => { s.seg = s.seg === k ? '' : k; TS.render(); } }, nome)),
@@ -874,7 +984,7 @@
           chipRfm(c),
           ...[...(c.tags || [])].map((t) => h('span', { class: 'cli-tag t-' + t, title: DICA_SEG[t] }, NOMES_SEG[t])),
           (() => { const ct = contatoDe(c); return ct && ct.optout ? h('span', { class: 'cli-tag t-optout', title: 'Pediu para não receber mensagens' }, 'não quer mensagens') : ct && ct.em ? h('span', { class: 'cli-tag t-contato', title: `Contatado por ${ct.por || '?'}${ct.motivo ? ' · ' + ct.motivo : ''}` }, 'contatado ' + fmt.date(ct.em.slice(0, 10))) : null; })(),
-          c.wpp ? h('a', { class: 'wpp', href: c.wpp, target: TS.demo ? null : '_blank', rel: 'noopener', title: TS.demo ? 'Na apresentação o WhatsApp não abre (número fictício)' : null, onclick: (e) => { e.stopPropagation(); if (TS.demo) e.preventDefault(); } }, '● WhatsApp') : null)),
+          c.wpp ? linkConversa(c, '● WhatsApp') : null)),
       h('div', { class: 'cli-stat' }, fmt.int(r.visitas), h('small', null, 'visitas')),
       h('div', { class: 'cli-stat' }, fmt.brl0(r.vt), h('small', null, 'total')),
       h('div', { class: 'cli-stat hide-sm' }, fmt.brl(r.tkm), h('small', null, 'ticket')),
@@ -1034,7 +1144,7 @@
       return { ...x, nome: c.nome || '—', cpfN: x.cpf, cpf: fmtCPF(x.cpf), cel: ct.optout ? 'não quer mensagens' : fmtTel(c.celular) || '—', wpp: !ct.optout && c.wpp, saldo: c.fx ? c.fx.saldo : null, ultima: c.ultima, ultimaTxt: d(c.ultima) };
     });
     const cols = [
-      { key: 'nome', label: 'Cliente', align: 'l', render: (r) => h('span', null, r.nome, r.wpp ? h('a', { class: 'wpp', href: TS.demo ? '#' : r.wpp, target: '_blank', rel: 'noopener', onclick: (e) => { e.stopPropagation(); if (TS.demo) e.preventDefault(); } }, ' ● WhatsApp') : null) },
+      { key: 'nome', label: 'Cliente', align: 'l', render: (r) => h('span', null, r.nome, r.wpp ? linkConversa(clientePorCpf(r.cpfN).c, ' ● WhatsApp') : null) },
       { key: 'cpf', label: 'CPF', align: 'l', render: (r) => cpfLink(r.cpfN) },
       { key: 'cel', label: 'Celular', align: 'l' },
       ...colsExtra,
@@ -1102,7 +1212,7 @@
               h('div', { class: 'cli-meta' }, h('span', null, fmtCPF(c.cpf)),
                 ...[...c.tags].map((t) => h('span', { class: 'cli-tag t-' + t, title: DICA_SEG[t] }, NOMES_SEG[t])),
                 ct && ct.optout ? h('span', { class: 'cli-tag t-optout' }, 'não quer mensagens') : null)),
-            c.wpp && !(ct && ct.optout) ? h('a', { class: 'btn cj-wpp', href: TS.demo ? '#' : c.wpp, target: '_blank', rel: 'noopener', onclick: (e) => { if (TS.demo) e.preventDefault(); } }, 'WhatsApp') : null),
+            c.wpp && !(ct && ct.optout) ? linkConversa(c, 'WhatsApp', 'btn cj-wpp') : null),
           h('div', { class: 'cj-kpis' },
             h('div', null, h('small', null, 'Compras'), h('b', null, fmt.int(r.visitas))),
             h('div', null, h('small', null, 'Total gasto'), h('b', null, fmt.brl0(r.vt))),
@@ -1214,7 +1324,7 @@
       TS.kpi(`Recompra em ${RC.PRAZO} dias`, REC.pouco ? '—' : fmt.pct(REC.pct, 0),
         REC.pouco ? `poucos dados: ${fmt.int(REC.elegiveis)} ${REC.elegiveis === 1 ? 'cliente' : 'clientes'} com ${RC.PRAZO} dias completos${REC.elegiveis ? ` (${fmt.int(REC.voltaram)} ${REC.voltaram === 1 ? 'voltou' : 'voltaram'})` : ''}` : `${fmt.int(REC.voltaram)} de ${fmt.int(REC.elegiveis)} clientes${REC.semPrazo ? ` · ${fmt.int(REC.semPrazo)} ainda no prazo` : ''}`,
         `Dos clientes do filtro, quantos compraram de novo em até ${RC.PRAZO} dias depois da primeira compra deles no período.\n\nSó entra quem já teve os ${RC.PRAZO} dias inteiros para voltar: o cliente que comprou na semana passada ainda não teve tempo e fica separado ("ainda no prazo"), para não puxar o % para baixo.\n\nCom menos de ${RC.MIN} clientes de prazo completo aparece "poucos dados" em vez do %: com tão pouca gente o número muda a cada compra. Em período curto e recente (este mês, últimos 30 dias) é normal não haver ninguém com o prazo completo.`),
-      TS.kpi('Clientes novos no período', fmt.int(TS.cli.lista.filter((c) => c.primeira != null && noPer(c.primeira)).length), 'primeira compra com CPF',
+      TS.kpi('Clientes novos no período', fmt.int(lista.filter((r) => r.c.primeira != null && noPer(r.c.primeira)).length), 'primeira compra com CPF',
         `Clientes cuja primeira compra com CPF (na nota ou ligada pelo FIXE) caiu no período, dentro do histórico que o painel tem (vendas desde ${inicioDados}).\n\n"Novo" aqui é novo para o painel: cliente antigo que só agora informou o CPF, ou que comprou antes de ${inicioDados}, também aparece como novo. Nos primeiros meses do histórico o número fica inflado por isso.`));
     // novos × recorrentes por mês (últimos 12 meses do período)
     // agrupado pelo período: sem período (Tudo) = últimos 12 meses por mês; com período = por dia, semana ou mês
@@ -1265,7 +1375,7 @@
       total: { nome: 'Total', cupons: nTot, cpf: nCpf, pct: nTot ? nCpf / nTot : null, novos: rows.reduce((t, r) => t + r.novos, 0), rc: rcTot, voltaram: rcTot.voltaram, pctVolta: rcTot.pouco ? -1 : rcTot.pct,
         ...(comFixe ? (() => { const cf = rows.reduce((t, r) => t + r.cliFixe, 0), sf = rows.reduce((t, r) => t + r.semFixe, 0); return { semFixe: sf, pctSemFixe: cf ? sf / cf : null }; })() : {}) },
     });
-    return [TS.section('Base de clientes'), kpis,
+    return [TS.section('Base de clientes'), h('p', { class: 'muted cli-alcance' }, 'Período e loja dos filtros. Recompra e Clientes novos seguem também os filtros de cliente (nome, CPF, cupom…).'), kpis,
       h('div', { class: 'grid mt', style: { alignItems: 'start' } }, grafico,
         TS.card('Vendedoras e clientes', '% de vendas com CPF (pedir o CPF faz a base crescer) · clientes novos = primeira compra atendida por ela · voltaram = compraram de novo em até 90 dias (só quem já teve o prazo inteiro)' + (comFixe ? ' · sem FIXE = compras de clientes do FIXE sem lançamento no dia (o cliente pode não ter informado)' : ''), tab))];
   }
@@ -1287,7 +1397,7 @@
       : `Na última compra de chá (${d(c.ultimaCha)}) levou ${c.gramasUltima} g. Pelo histórico, consome ~${fmt.n1(c.gDia)} g por dia: dura ~${c.intervaloCha} dias.`;
     return h('div', { class: 'cli-ficha' }, ...[
       bloco('Contato',
-        tel ? h('div', { class: 'fi' }, h('span', null, 'Celular'), h('b', null, tel, c.wpp ? h('a', { class: 'wpp', href: TS.demo ? '#' : c.wpp, target: '_blank', rel: 'noopener', onclick: (e) => { if (TS.demo) e.preventDefault(); } }, ' WhatsApp') : null)) : null,
+        tel ? h('div', { class: 'fi' }, h('span', null, 'Celular'), h('b', null, tel, c.wpp ? linkConversa(c, ' WhatsApp') : null)) : null,
         item('E-mail', c.email || null),
         item('Cidade', c.cidade || null),
         item('Aniversário', c.aniv ? `${c.aniv}${c.idade != null ? ` · ${c.idade} anos` : ''}` : null)),
@@ -1600,12 +1710,12 @@
     const card = TS.card('Fidelidade (FIXE)', `Compras do programa de fidelidade ligadas aos cupons de venda${em ? ` · logs de ${fmt.date(em.slice(0, 10))}` : ''} · clique nos indicadores com "ver lista"`,
       fx.temLogs ? grupo('Ligação das compras do FIXE aos cupons',
         stat('Compras no FIXE', fmt.int(fx.alvos), 'nesta loja, no período das vendas', 'Movimentos de compra do FIXE desta loja em dias que têm vendas no painel'),
-        stat('Cupom confirmado', fmt.int(fx.confirmadas), 'mesmo CPF na nota e no FIXE', 'Compras do FIXE ligadas a um cupom que saiu com o mesmo CPF na nota: tudo certo.', 'ok'),
-        stat('Cliente achado pelo FIXE', fmt.int(fx.porFixe), 'nota sem CPF', 'A nota saiu sem CPF: a compra passou a contar para o cliente do FIXE', 'ok'),
+        stat('Cupom confirmado', fmt.int(fx.confirmadas), 'mesmo CPF na nota e no FIXE', 'Compras do FIXE ligadas a um cupom que saiu com o mesmo CPF na nota: tudo certo.'),
+        stat('Cliente achado pelo FIXE', fmt.int(fx.porFixe), 'nota sem CPF', 'A nota saiu sem CPF: a compra passou a contar para o cliente do FIXE'),
         stat('Sem cupom', fmt.int(sem), sem && fx.alvos ? fmt.pct(sem / fx.alvos, 0) + ' das compras do FIXE' : null, 'Não achou um cupom claramente igual (hora ou produtos diferentes, ou mais de um parecido)')) : null,
       grupo('Para conferir e corrigir',
-        fx.temLogs ? stat('CPF diferente', fmt.int(fx.divergencias.length), 'nota num CPF, pontos em outro', 'Compra feita num CPF, mas foi usado outro CPF no FIXE. Clique para ver as compras.', 'alerta', janelas.div) : null,
-        fx.temLogs ? stat('Vendas sem FIXE', fmt.int(semFixe.length), ptsSem ? `${fmt.int(ptsSem)} pts não lançados` : 'sem lançamento no dia', 'Nota no CPF de quem está no FIXE e nenhum movimento no FIXE no dia. Clique para ver as vendas.', 'alerta', janelas.sem) : null,
+        fx.temLogs ? stat('CPF diferente', fmt.int(fx.divergencias.length), 'nota num CPF, pontos em outro', 'Compra feita num CPF, mas foi usado outro CPF no FIXE. Clique para ver as compras.', fx.divergencias.length ? 'alerta' : null, janelas.div) : null,
+        fx.temLogs ? stat('Vendas sem FIXE', fmt.int(semFixe.length), ptsSem ? `${fmt.int(ptsSem)} pts não lançados` : 'sem lançamento no dia', 'Nota no CPF de quem está no FIXE e nenhum movimento no FIXE no dia. Clique para ver as vendas.', semFixe.length ? 'alerta' : null, janelas.sem) : null,
         fx.temLeads ? stat('Fora do FIXE', fmt.int(fora.length), 'deram CPF, não estão na base', 'Clientes com CPF na nota que não estão na Base de leads do FIXE desta loja: dá para convidar a se cadastrar. Clique para ver quem.', null, janelas.fora) : null));
     // "Como funciona" vai para o ⓘ do título (texto com as lojas desta base)
     const ic = card.querySelector('.card-title .dica-i');

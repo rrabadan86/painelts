@@ -54,7 +54,7 @@ test.describe('robô do WhatsApp', () => {
     expect(erros).toEqual([]);
   });
 
-  test('Campanhas: faixa de situação do robô com Pausar; campanha ganha a opção "Enviar pelo robô"', async ({ page }) => {
+  test('Campanhas: faixa de situação do robô com Pausar; ligar o robô na campanha mostra antes quantos recebem, limites e término (ZAP-LIGAR)', async ({ page }) => {
     await page.evaluate(() => { location.hash = '#campanhas'; });
     const faixa = page.locator('.zap-faixa');
     await expect(faixa).toBeVisible();
@@ -68,13 +68,36 @@ test.describe('robô do WhatsApp', () => {
     await page.locator('.cp-nome input').fill('Teste do robô');
     await expect.poll(async () => +(await page.locator('.cp-contagem b').innerText()).replace(/\D/g, '')).toBeGreaterThan(0);
     await page.getByRole('button', { name: 'Salvar campanha' }).click();
+    // sem critério a lista pega quase a base inteira: aviso e confirmação (decisão do dono)
+    const conf = page.locator('.ts-conf');
+    await expect(conf).toContainText('quase todos os clientes');
+    await conf.getByRole('button', { name: 'Salvar assim mesmo' }).click();
     const opcao = page.locator('.zap-opcao');
-    await expect(opcao).toContainText('Enviar pelo robô');
-    await expect(opcao.locator('input')).not.toBeChecked();
-    page.once('dialog', (d) => { expect(d.message()).toContain('pode bloquear o número'); d.accept(); });
-    await opcao.locator('input').check();
-    await expect(page.locator('.zap-opcao input')).toBeChecked();
+    await expect(opcao).toContainText('Desligado: só o envio manual');
+    // ligar: a janela do painel (não o confirm do navegador) diz o que vai acontecer antes
+    let dialogo = false;
+    page.on('dialog', (d) => { dialogo = true; d.dismiss(); });
+    await opcao.getByRole('button', { name: '🤖 Ligar o robô para esta campanha' }).click();
+    await expect(conf).toBeVisible();
+    await expect(conf).toContainText(/Vai enviar para: [\d.]+ clientes/);
+    await expect(conf).toContainText('ficam sem mensagem, para comparar');
+    await expect(conf).toContainText(/Por dia: até 20 desta campanha · 30 no número da loja/);
+    await expect(conf).toContainText(/Quando: seg, ter, qua, qui, sex, sáb, das 09:00 às 18:30/);
+    await expect(conf).toContainText(/Termina: por volta de \d\d\/\d\d\/\d{4} \([\d.]+ dias de envio/);
+    await expect(conf).toContainText('A primeira sai');
+    await expect(conf).toContainText('Exemplo da mensagem');
+    await expect(conf).toContainText('pode bloquear o número');
+    await semVazar(page, conf);
+    // cancelar não liga
+    await conf.getByRole('button', { name: 'Cancelar' }).click();
+    await expect(page.locator('.zap-opcao')).toContainText('Desligado');
+    await opcao.getByRole('button', { name: '🤖 Ligar o robô para esta campanha' }).click();
+    await conf.getByRole('button', { name: 'Ligar o robô' }).click();
+    await expect(page.locator('.zap-opcao')).toContainText('Robô ligado nesta campanha');
     await expect(page.locator('.zap-opcao')).toContainText('O robô envia os pendentes desta lista');
+    expect(dialogo, 'sem confirm() do navegador').toBe(false);
+    // com o robô ligado, o envio manual deixa de ser o botão principal
+    await expect(page.locator('.cp-enviar')).not.toHaveClass(/primary/);
     await semVazar(page, page.locator('#content, main').first());
     await page.getByRole('button', { name: '‹ Voltar às campanhas' }).click();
     await expect(page.locator('.cp-card .cli-tag', { hasText: 'robô' })).toBeVisible();

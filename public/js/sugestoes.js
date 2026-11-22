@@ -114,30 +114,53 @@
     const corpo = h('div', null, h('div', { class: 'card' }, h('div', { class: 'loading' }, h('div', null, h('div', { class: 'spinner' }), h('p', null, 'Carregando…')))));
     root.append(corpo);
     const loja = state.loja;
-    Promise.all([carregar(loja), TS.foto ? TS.foto.carregar() : null]).then(([d]) => { if (corpo.isConnected) pintar(corpo, loja, d); }).catch((e) => corpo.replaceChildren(h('div', { class: 'notice err' }, e.message)));
+    state.sugMsg = null; // a confirmação de "marcado" vale só nesta visita à tela
+    Promise.all([carregar(loja), TS.foto ? TS.foto.carregar() : null]).then(([d]) => {
+      if (!corpo.isConnected) return;
+      // respostas novas: ficam em destaque durante esta visita inteira (trocar de aba não apaga); o servidor é avisado uma vez
+      const novos = d.itens.filter((s) => s.novo);
+      const vis = { novos: new Set(novos.map((s) => s.id)), avisoNovos: novos.map((s) => ({ desc: s.desc, res: resultadoTxt(s) })) };
+      if (novos.length) {
+        // abre na aba onde está a primeira resposta
+        const ab = novos[0].st !== 'aberta' ? 'encerradas' : novos[0].aguardando ? 'entrega' : 'abertas';
+        state.sugAba = ab;
+        if (!TS.demo) enviar('POST', `/api/sugestoes/visto?${q(loja)}`).catch(() => {});
+        for (const x of novos) x.novo = false; // na próxima visita já não é novidade
+      }
+      pintar(corpo, loja, d, vis);
+    }).catch((e) => corpo.replaceChildren(h('div', { class: 'notice err' }, e.message)));
   };
 
-  function pintar(corpo, loja, d) {
-    const repintar = () => pintar(corpo, loja, d);
+  /** o que aconteceu com a sugestão, em poucas palavras (para o aviso de resposta) */
+  function resultadoTxt(s) {
+    const ult = s.hist && s.hist.length ? s.hist[s.hist.length - 1] : null;
+    if (s.st === 'atendida') return s.chegou ? 'chegou na loja' : 'entrou no pedido';
+    if (s.st === 'retirada') return 'estrela tirada';
+    if (s.aguardando) return 'está no pedido, aguardando entrega';
+    if (ult) return (RES[ult.res] || [''])[0].replace(/^\S+\s/, '').toLowerCase() || 'respondida';
+    return 'respondida';
+  }
+
+  function pintar(corpo, loja, d, vis) {
+    const repintar = () => pintar(corpo, loja, d, vis);
     const ABAS = {
       abertas: ['Esperando o pedido', (s) => s.st === 'aberta' && !s.aguardando],
       entrega: ['Aguardando entrega', (s) => s.st === 'aberta' && !!s.aguardando],
       encerradas: ['Encerradas', (s) => s.st !== 'aberta'],
     };
-    const novos = d.itens.filter((s) => s.novo);
+    const av = vis.avisoNovos;
     const aba = ABAS[state.sugAba] ? state.sugAba : 'abertas';
     const lista = d.itens.filter(ABAS[aba][1]);
     corpo.replaceChildren(...[
-      novos.length ? h('div', { class: 'notice ok sug-novos' }, `🔔 ${novos.length === 1 ? '1 sugestão sua recebeu resposta' : `${novos.length} sugestões suas receberam resposta`}: veja abaixo (em destaque).`) : null,
-      cartaoNova(loja, d, (x) => { d.itens.unshift(x); state.sugAba = 'abertas'; repintar(); }),
+      av.length ? h('div', { class: 'notice ok sug-novos' }, `🔔 ${av.length === 1 ? 'Sua sugestão recebeu resposta' : `${av.length} sugestões suas receberam resposta`}: `,
+        av.slice(0, 3).map((x) => `${x.desc} (${x.res})`).join(' · ') + (av.length > 3 ? ` e mais ${av.length - 3}` : '') + '. Em destaque na lista.') : null,
+      cartaoNova(loja, d, (x) => { d.itens.unshift(x); vis.recem = x.id; state.sugAba = 'abertas'; repintar(); }),
       h('div', { class: 'card mt' },
         h('div', { class: 'card-title' }, d.todos ? 'Sugestões da equipe' : 'Minhas sugestões'),
         d.todos ? h('p', { class: 'muted' }, 'A decisão é tomada em ', h('a', { href: '#pedido' }, 'Estoque → Pedido'), ', no quadro "⭐ Sugestões da equipe". O pedido sugerido não muda sozinho por causa da estrela.') : null,
         TS.seg(Object.entries(ABAS).map(([k, [t, f]]) => [`${t} (${d.itens.filter(f).length})`, k]), aba, (v) => { state.sugAba = v; repintar(); }),
-        tabela(loja, d, lista, aba, repintar)),
+        tabela(loja, d, lista, aba, repintar, vis)),
     ].filter(Boolean));
-    if (novos.length && !TS.demo) enviar('POST', `/api/sugestoes/visto?${q(loja)}`).catch(() => {});
-    if (novos.length) for (const x of novos) x.novo = false;
   }
 
   const R = (x) => RES[x.res] || ['', 'muted'];
@@ -148,23 +171,26 @@
     if (s.st === 'atendida') return s.chegou ? h('span', { class: 'pos' }, `✅ Chegou na loja: NF ${s.chegou.nf} de ${TS.fmt.date(s.chegou.dia).slice(0, 5)}`) : h('span', { class: 'pos' }, `✅ Entrou no pedido de ${dataTxt(s.fimEm)}`);
     if (s.st === 'retirada') return h('span', { class: 'muted' }, `Estrela tirada em ${dataTxt(s.fimEm)}`);
     if (s.aguardando) return h('span', { class: 'sug-aguarda' }, `🛒 No pedido de ${dataTxt(s.aguardando.em)}: aguardando entrega`, TS.dica('A estrela sai quando a nota da TSB Franquias chegar com o produto (não importa quanto demore). Se a primeira nota chegar sem ele, o painel espera mais 5 dias por outra nota; sem o produto, a sugestão volta para o próximo pedido — e, se ele chegar depois, a estrela sai do mesmo jeito.'));
-    if (ult) return h('span', { class: R(ult)[1] }, `${R(ult)[0]} · ${dataTxt(ult.em)}`, ult.motivo && ult.res !== 'semsite' ? h('small', { class: 'muted sug-motivo' }, ult.motivo) : null, h('small', { class: 'muted sug-motivo' }, 'continua marcada para o próximo pedido'));
+    if (ult) return h('span', { class: R(ult)[1] }, `${R(ult)[0]} · ${dataTxt(ult.em)}`, ult.motivo && ult.res !== 'semsite' ? h('small', { class: 'muted sug-motivo' }, ult.motivo) : null, s.st === 'aberta' ? h('small', { class: 'muted sug-motivo' }, 'continua marcada para o próximo pedido') : null);
     return h('span', { class: 'muted' }, '🕓 Aguardando o próximo pedido');
   }
-  function tabela(loja, d, lista, aba, repintar) {
+  function tabela(loja, d, lista, aba, repintar, vis) {
+    const novo = (s) => vis.novos.has(s.id);
     const meu = (s) => !d.todos || s.nome === 'Você' || s.por === (TS.eu && TS.eu.usuario);
     const tirar = (s) => (s.st === 'aberta' && !s.aguardando && (meu(s) || d.todos) ? h('button', { type: 'button', class: 'btn ghost-danger sug-tirar', onclick: async (ev) => {
       ev.stopPropagation();
-      if (!confirm(`Tirar a estrela de ${s.desc}?`)) return;
+      if (!confirm(`Tirar a estrela de ${s.desc}${d.todos && s.nome && !meu(s) ? ` (sugestão de ${s.nome})` : ''}?`)) return;
       ev.target.disabled = true;
-      try { Object.assign(s, await retirar(loja, s.id)); repintar(); } catch (e) { alert(e.message); ev.target.disabled = false; }
+      try { Object.assign(s, await retirar(loja, s.id)); repintar(); } catch (e) { TS.avisarErro(e); ev.target.disabled = false; }
     } }, 'Tirar estrela') : null);
     const cols = [
       { key: 'desc', label: 'Produto', align: 'l', sticky: true, wrap: true, title: 'A etiqueta é a situação na loja quando o produto foi marcado: tem, pouco (chá abaixo de 700 g) ou acabou.',
-        render: (s) => { const [t, c] = SIT[s.situacao] || ['', '']; const comFoto = (el) => (TS.foto && !(s.agora && /^kg$/i.test(s.agora.un || s.un || '')) ? TS.foto.comMini(el, s.cod, s.desc, { grupo: s.grp }) : el); return comFoto(h('div', { class: 'sug-prod-cel' }, h('b', null, (s.st === 'aberta' ? '⭐ ' : '') + s.desc), ' ', t ? h('span', { class: 'badge ' + c }, t) : null, s.novo ? h('span', { class: 'badge warn' }, 'novo') : null, TS.grupoProd.marca(s.grp),
+        render: (s) => { const [t, c] = SIT[s.situacao] || ['', '']; const comFoto = (el) => (TS.foto && !(s.agora && /^kg$/i.test(s.agora.un || s.un || '')) ? TS.foto.comMini(el, s.cod, s.desc, { grupo: s.grp }) : el); return comFoto(h('div', { class: 'sug-prod-cel' }, h('b', null, (s.st === 'aberta' ? '⭐ ' : '') + s.desc), ' ', t ? h('span', { class: 'badge ' + c }, t) : null, novo(s) ? h('span', { class: 'badge warn' }, 'novo') : null, TS.grupoProd.marca(s.grp),
           s.st === 'aberta' && s.equipe > 1 ? h('small', { class: 'muted sug-motivo' }, `${s.equipe} pessoas da equipe pediram`) : null)); } },
-      { key: 'agora', label: 'Estoque agora', title: d.todos ? 'Quanto tem na loja agora (planilha de estoque do AppNext). A etiqueta da coluna Produto é a situação quando a estrela foi marcada.' : 'Se o produto tem na loja agora (tem / pouco / acabou).',
-        render: (s) => { const a = s.agora; if (!a) return h('span', { class: 'muted' }, '—'); const [t, c] = SIT[a.situacao] || ['', '']; return a.qtd != null ? h('div', { class: 'sug-agora' }, h('b', null, /^kg$/i.test(a.un) ? `${TS.fmt.kg(a.qtd)} kg` : `${TS.fmt.int(a.qtd)} ${String(a.un || 'un').toLowerCase()}`), ' ', h('span', { class: 'badge ' + c }, t)) : h('span', { class: 'badge ' + c }, t); },
+      { key: 'agora', label: 'Estoque agora', title: d.todos ? 'Quanto tem na loja agora (planilha de estoque do AppNext). A etiqueta da coluna Produto é a situação quando a estrela foi marcada.' : 'Aparece só quando a situação mudou desde que você marcou (ex.: era acabou → agora tem).',
+        render: (s) => { const a = s.agora; if (!a) return null; const [t, c] = SIT[a.situacao] || ['', ''];
+          // para a vendedora, só quando mudou desde que ela marcou (a etiqueta de quando marcou já está ao lado do nome)
+          if (!d.todos) return a.situacao === s.situacao || s.st !== 'aberta' ? null : h('span', null, h('small', { class: 'muted' }, `era ${(SIT[s.situacao] || [''])[0].toLowerCase()} → agora `), h('span', { class: 'badge ' + c }, t)); return a.qtd != null ? h('div', { class: 'sug-agora' }, h('b', null, /^kg$/i.test(a.un) ? `${TS.fmt.kg(a.qtd)} kg` : `${TS.fmt.int(a.qtd)} ${String(a.un || 'un').toLowerCase()}`), ' ', h('span', { class: 'badge ' + c }, t)) : h('span', { class: 'badge ' + c }, t); },
         sortVal: (s) => (s.agora ? (s.agora.qtd != null ? s.agora.qtd : { acabou: 0, pouco: 1, tem: 2 }[s.agora.situacao]) : -1) },
       d.todos ? { key: 'nome', label: 'Quem', align: 'l' } : null,
       { key: 'em', label: 'Marcado em', render: (s) => dataTxt(s.em), sortVal: (s) => s.em },
@@ -179,8 +205,8 @@
     ].filter(Boolean);
     for (const s of lista) if (s.grp == null) s.grp = TS.grupoProd.texto(s.cod, s.desc, s.agora && s.agora.un ? /^kg$/i.test(s.agora.un) : undefined);
     return TS.table({
-      cols, rows: lista, sortKey: 'em', sortDir: 'desc', maxHeight: '620px', search: 'Buscar produto, pessoa ou recado…', searchKeys: ['desc', 'cod', 'nome', 'recado', 'justificativa', 'grp'], produto: 'desc', cls: 'est-t sug-t',
-      rowClass: (s) => (s.novo ? 'sug-novo' : null),
+      cols, rows: lista, sortKey: 'em', sortDir: 'desc', maxHeight: '620px', search: d.todos ? 'Buscar produto, pessoa ou recado…' : 'Buscar produto ou recado…', searchKeys: ['desc', 'cod', 'nome', 'recado', 'justificativa', 'grp'], produto: 'desc', cls: 'est-t sug-t',
+      rowClass: (s) => (novo(s) || s.id === vis.recem ? 'sug-novo' : null),
       empty: { abertas: 'Nenhuma sugestão esperando o pedido.', entrega: 'Nada aguardando entrega.', encerradas: 'Nenhuma sugestão encerrada ainda.' }[aba],
     });
   }
@@ -188,7 +214,8 @@
   function cartaoNova(loja, d, aoCriar) {
     const busca = h('input', { class: 'f-input sug-busca', type: 'search', placeholder: 'Buscar produto (nome ou código)…', autocomplete: 'off' });
     const res = h('div', { class: 'sug-res' });
-    const msg = h('div', { class: 'muted' });
+    // a confirmação fica até a pessoa sair da tela (antes sumia no mesmo instante, porque a lista é redesenhada)
+    const msg = h('div', { class: state.sugMsg ? 'notice ok sug-ok' : 'muted', role: 'status' }, state.sugMsg || '');
     let seq = 0;
     const procurar = TS.debounce(async () => {
       const t = busca.value.trim();
@@ -200,24 +227,32 @@
         res.replaceChildren(...(ps.length ? ps.map((p) => linhaProduto(p)) : [h('p', { class: 'muted' }, 'Nenhum produto com esse nome no estoque da loja.')]));
       } catch (e) { res.replaceChildren(h('div', { class: 'notice err' }, e.message)); }
     }, 250);
-    busca.addEventListener('input', procurar);
+    busca.addEventListener('input', () => { if (state.sugMsg) { state.sugMsg = null; msg.className = 'muted'; msg.textContent = ''; } procurar(); });
     const jaMarcou = (cod) => d.itens.some((s) => s.st === 'aberta' && s.cod === cod && (s.nome === 'Você' || !d.todos || s.por === (TS.eu && TS.eu.usuario)));
     function linhaProduto(p) {
       const [t, c] = SIT[p.situacao] || ['', ''];
       const box = h('div', { class: 'sug-prod' });
       const abrir = () => {
-        const recado = h('textarea', { class: 'f-input', rows: 2, maxlength: 300, placeholder: 'Recado para quem faz o pedido (opcional): ex. "cliente pergunta toda semana"' });
-        const just = p.justificar ? h('textarea', { class: 'f-input sug-just', rows: 2, maxlength: 300, placeholder: 'Ainda tem na loja: por que pedir mais? (obrigatório)' }) : null;
-        const err = h('div', { class: 'neg' });
+        const recado = h('textarea', { class: 'f-input sug-ta', id: `sug-rec-${p.cod}`, rows: 2, maxlength: 300, placeholder: 'ex.: cliente pergunta toda semana' });
+        const just = p.justificar ? h('textarea', { class: 'f-input sug-ta sug-just', id: `sug-just-${p.cod}`, rows: 2, maxlength: 300, placeholder: 'ex.: vende muito no fim de semana', 'aria-required': 'true' }) : null;
+        const errJust = h('div', { class: 'neg sug-err', role: 'alert', id: `sug-err-${p.cod}` });
+        const err = h('div', { class: 'neg sug-err', role: 'alert' });
+        const campo = (rot, el, extra) => h('label', { class: 'sug-campo', for: el.id }, h('span', { class: 'f-label' }, rot), el, extra || null);
         const ok = h('button', { type: 'button', class: 'btn primary' }, '⭐ Confirmar sugestão');
         ok.addEventListener('click', async () => {
-          ok.disabled = true; err.textContent = '';
-          try { const s = await criar(loja, p, recado.value.trim(), just ? just.value.trim() : ''); busca.value = ''; res.replaceChildren(); msg.className = 'pos'; msg.textContent = `⭐ ${p.desc} marcado para o próximo pedido.`; aoCriar(s); }
-          catch (e) { err.textContent = e.message; ok.disabled = false; }
+          ok.disabled = true; err.textContent = ''; errJust.textContent = '';
+          if (just) { just.removeAttribute('aria-invalid'); just.removeAttribute('aria-describedby'); }
+          try { const s = await criar(loja, p, recado.value.trim(), just ? just.value.trim() : ''); busca.value = ''; res.replaceChildren(); state.sugMsg = `⭐ ${p.desc} marcado para o próximo pedido. Está em destaque na lista abaixo.`; aoCriar(s); }
+          catch (e) {
+            // o erro da justificativa aparece embaixo do campo dela (e o campo fica marcado)
+            if (just && !just.value.trim()) { errJust.textContent = e.message; just.setAttribute('aria-invalid', 'true'); just.setAttribute('aria-describedby', errJust.id); just.focus(); } else err.textContent = e.message;
+            ok.disabled = false;
+          }
         });
         box.replaceChildren(cab(true), h('div', { class: 'sug-form' },
           p.justificar ? h('p', { class: 'warn-t sug-aviso' }, 'Este produto ainda tem na loja. Para sugerir, conte o motivo.') : null,
-          just, recado, err, h('div', { class: 'cfg-acoes' }, ok, h('button', { type: 'button', class: 'btn', onclick: () => box.replaceChildren(cab(false)) }, 'Cancelar'))));
+          just ? campo('Por que pedir mais? (obrigatório)', just, errJust) : null, campo('Recado para quem faz o pedido (opcional)', recado), err,
+          h('div', { class: 'cfg-acoes' }, ok, h('button', { type: 'button', class: 'btn', onclick: () => box.replaceChildren(cab(false)) }, 'Cancelar'))));
         (just || recado).focus();
       };
       const cab = (aberto) => h('div', { class: 'sug-prod-cab' },

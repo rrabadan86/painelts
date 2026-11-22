@@ -364,6 +364,16 @@
     if (alvo) alvo.insertBefore(b, upd ? upd.nextSibling : alvo.firstChild);
     // celular: botão flutuante no canto (o topo não tem espaço)
     document.body.append(h('button', { class: 'ia-fab', id: 'fabIA', type: 'button', title: 'Pergunte ao painel (IA)', 'aria-label': 'Pergunte ao painel (IA)', onclick: () => abrir() }, '✨'));
+    // o ✨ não cobre ação: some enquanto a pessoa rola para baixo; volta ao rolar para cima, no topo e no fim da página (que tem folga para ele)
+    let ultY = window.scrollY;
+    window.addEventListener('scroll', () => {
+      const fab = document.getElementById('fabIA'), y = window.scrollY;
+      if (!fab) return;
+      const fim = y + window.innerHeight >= document.documentElement.scrollHeight - 40;
+      if (Math.abs(y - ultY) < 6 && !fim) return;
+      fab.classList.toggle('ia-fab-some', y > 120 && y > ultY && !fim);
+      ultY = y;
+    }, { passive: true });
     // a barra fixa do Pedido no rodapé: o botão sobe para não ficar por cima
     new MutationObserver(() => document.body.classList.toggle('com-ped-barra', !!document.querySelector('.ped-barra'))).observe(document.getElementById('content') || document.body, { childList: true, subtree: true });
   };

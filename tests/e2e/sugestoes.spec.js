@@ -21,11 +21,22 @@ test('Sugestões: marcar produto, justificar quando tem na loja e revisar no Ped
   await expect(linha.locator('.badge')).toHaveText('Tem na loja');
   await expect(linha).not.toContainText(/R\$/);
   await linha.getByRole('button', { name: '☆ Sugerir' }).click();
+  // caixas de texto com rótulo visível e a letra do painel (não a de máquina de escrever)
+  await expect(linha.locator('.sug-campo .f-label').first()).toContainText('Por que pedir mais?');
+  expect(await linha.locator('.sug-just').evaluate((el) => getComputedStyle(el).fontFamily)).toBe(await page.evaluate(() => getComputedStyle(document.body).fontFamily));
   await linha.getByRole('button', { name: '⭐ Confirmar sugestão' }).click();
-  await expect(linha.locator('.neg')).toContainText('ainda tem na loja');
+  await expect(linha.locator('.neg:not(:empty)')).toContainText('ainda tem na loja');
+  // o erro fica embaixo do campo da justificativa, que fica marcado
+  await expect(linha.locator('.sug-just')).toHaveAttribute('aria-invalid', 'true');
   await linha.locator('.sug-just').fill('Cliente leva sempre 3 de presente');
   await linha.getByRole('button', { name: '⭐ Confirmar sugestão' }).click();
   await expect(page.locator('.sug-t tbody tr', { hasText: prod.desc })).toContainText('Aguardando o próximo pedido');
+  // a confirmação fica na tela (antes sumia no mesmo instante) e a linha nova fica em destaque, mesmo trocando de aba
+  await expect(page.locator('.sug-ok')).toContainText('marcado para o próximo pedido');
+  await expect(page.locator('.sug-t tbody tr.sug-novo', { hasText: prod.desc })).toHaveCount(1);
+  await page.locator('.seg button', { hasText: 'Encerradas' }).click();
+  await page.locator('.seg button', { hasText: 'Esperando o pedido' }).click();
+  await expect(page.locator('.sug-ok')).toContainText('marcado para o próximo pedido');
 
   // no Pedido: quadro em tabela com abas, "Não pedir" com motivo (janela com escolhas rápidas) e registrar
   await page.evaluate(() => { location.hash = '#pedido'; });
@@ -123,4 +134,20 @@ test('Pedido: sugestão registrada e não pedida volta com "Não fiz este pedido
   await expect(quadro.locator('.sug-aguarda')).toHaveCount(0);
   await expect(quadro.locator('.sug-naofiz')).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth), 'rolagem para o lado').toBeLessThanOrEqual(1);
+});
+
+// a resposta a uma sugestão: o aviso diz o produto e o resultado, abre na aba certa e não some ao trocar de aba
+test('Sugestões: aviso de resposta com produto e resultado, na aba certa, que não some no primeiro toque', async ({ page }) => {
+  await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS.db && TS.sug && TS.state.loja && TS.state.loja !== 'todas');
+  // marca uma sugestão encerrada da apresentação como resposta nova (como o servidor manda para quem a criou)
+  const desc = await page.evaluate(async () => { const d = await TS.sug.carregar(TS.state.loja); const s = d.itens.find((x) => x.st !== 'aberta') || d.itens[0]; s.novo = true; return s.desc; });
+  await page.evaluate(() => { TS.state.sugAba = 'abertas'; location.hash = '#sugestoes'; });
+  const aviso = page.locator('.sug-novos');
+  await expect(aviso).toContainText(desc);
+  const aba = page.locator('.sug-t').locator('xpath=ancestor::div[contains(@class,"card")][1]').locator('.seg button.on');
+  await expect(page.locator('.sug-t tbody tr.sug-novo', { hasText: desc })).toHaveCount(1);
+  // trocar de aba e voltar: o aviso e o destaque continuam
+  await page.locator('.seg button', { hasText: 'Aguardando entrega' }).click();
+  await expect(aviso).toContainText(desc);
+  await expect(aba).toContainText('Aguardando entrega');
 });

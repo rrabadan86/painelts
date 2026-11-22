@@ -29,7 +29,15 @@ test('Faturamento do mês: o mesmo número no Resumo, no Início e no Resultado'
   await expect(mes).toBeVisible();
   expect(Math.abs(num(await mes.locator('.kpi-value').textContent()) - oficial)).toBeLessThanOrEqual(1);
   // o "% da meta" usa as vendas da meta (chás e acessórios, sem Espaço Gourmet), e o texto diz isso
-  await expect(mes.locator('.kpi-foot')).toContainText(/vendas da meta R\$\s[\d.]+ = \d+% da meta de R\$/);
+  // com "Sua semana" na tela (admin e franqueado), o % da meta fica só no quadro "Meta do mês" de lá (um número por fato)
+  const comSemana = await page.locator('.vd-semana').count();
+  if (comSemana) {
+    await expect(mes.locator('.kpi-foot')).toContainText(/vendas da meta R\$\s[\d.]+ · o % da meta está em Sua semana/);
+    const kMeta = page.locator('.vd-semana .kpi', { hasText: 'Meta do mês' });
+    const pctTela = +(await kMeta.locator('.kpi-value').textContent()).replace(/[^\d]/g, '');
+    const esp = await page.evaluate(() => { const db = TS.db, ym = TS.dayToIso(db.maxDay).slice(0, 7); const idx = TS.filtrar({ de: TS.isoToDay(ym + '-01'), ate: db.maxDay, mesLivre: true }); return Math.round((TS.rules.vendasMeta(idx) / TS.metaCalc(ym).valor) * 100); });
+    expect(Math.abs(pctTela - esp)).toBeLessThanOrEqual(1);
+  } else await expect(mes.locator('.kpi-foot')).toContainText(/vendas da meta R\$\s[\d.]+ = \d+% da meta de R\$/);
   const pct = await mes.locator('[data-pct-meta]').getAttribute('data-pct-meta');
   const esperado = await page.evaluate(() => { const db = TS.db, ym = TS.dayToIso(db.maxDay).slice(0, 7); const idx = TS.filtrar({ de: TS.isoToDay(ym + '-01'), ate: db.maxDay, mesLivre: true }); return TS.rules.vendasMeta(idx) / TS.metaCalc(ym).valor; });
   expect(Math.abs(+pct - esperado)).toBeLessThan(0.0002);

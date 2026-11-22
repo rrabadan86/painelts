@@ -136,6 +136,41 @@
 
   // ======================= MINHA COMISSÃO =======================
   TS.PAGINAS_VENDEDOR = ['minha'];
+  /**
+   * "Sua meta de hoje" (Minha comissão, só para a vendedora; decisão do dono de 22/11/2026). A vendedora recebe só as
+   * vendas dela, então a conta da loja é feita no servidor (GET /api/meta-hoje, src/metahoje.js, a mesma do cartão do
+   * Início): ela recebe só a parte dela e o que ela vendeu hoje — nunca a meta da loja, o faturamento nem as colegas.
+   */
+  function cartaoMinhaMetaHoje() {
+    const lojaId = state.loja && state.loja !== 'todas' ? state.loja : ((TS.eu && TS.eu.lojas) || [])[0]?.id;
+    const card = h('div', { class: 'card md-card md-minha' }, h('div', { class: 'card-title' }, 'Sua meta de hoje'), h('small', { class: 'muted' }, 'Calculando…'));
+    if (!lojaId) return h('span');
+    fetch(TS.api('meta-hoje?loja=' + encodeURIComponent(lojaId)), { credentials: 'same-origin' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((m) => {
+        if (!card.isConnected) return; // a pessoa já saiu da tela
+        if (!m || (m.minhaParte == null && !m.semParte)) { card.remove(); return; } // sem meta no mês: sem cartão
+        const dica = TS.dica('A meta de hoje da loja é o que falta para a meta do mês dividido pelos dias de loja aberta que ainda faltam (contando hoje).\n\n'
+          + 'Ela é dividida em partes iguais entre quem vendeu nos últimos 30 dias e não está de férias hoje. Conta só as vendas da meta: chás e acessórios, sem o Espaço Gourmet — a mesma base da sua comissão.\n\n'
+          + 'É só o alvo do dia: a meta do mês e a comissão continuam como abaixo.');
+        if (m.minhaParte == null) {
+          card.replaceChildren(h('div', { class: 'card-title' }, 'Sua meta de hoje', dica),
+            h('p', { class: 'muted' }, m.semParte === 'ferias' ? 'Você está de férias hoje: sem meta do dia. 🌴' : 'Você ainda não entra na divisão da meta de hoje (conta quem vendeu nos últimos 30 dias).'));
+          return;
+        }
+        const pct = m.vendiHoje != null && m.minhaParte ? Math.min(100, (m.vendiHoje / m.minhaParte) * 100) : 0;
+        card.replaceChildren(
+          h('div', { class: 'md-topo' },
+            h('div', null, h('div', { class: 'card-title' }, 'Sua meta de hoje', dica),
+              h('div', { class: 'card-sub' }, `Faltam ${m.restam} ${m.restam === 1 ? 'dia' : 'dias'} de loja aberta no mês, contando hoje.`)),
+            h('div', { class: 'md-num' }, h('b', null, fmt.brl0(m.minhaParte)),
+              m.temHoje ? h('small', null, `você vendeu hoje: ${fmt.brl0(m.vendiHoje)}${m.vendiHoje >= m.minhaParte ? ' ✓' : ''}`) : h('small', null, 'as vendas de hoje chegam na próxima atualização'))),
+          m.temHoje ? h('div', { class: 'md-barra' }, h('i', { style: { width: pct + '%' } })) : null);
+      })
+      .catch(() => card.remove());
+    return card;
+  }
+
   TS.pages.minha = function (root) {
     const db = TS.db;
     const souVendedor = TS.eu?.perfil === 'vendedor';
@@ -159,6 +194,7 @@
     }
     root.append(h('div', { class: 'page-head' }, h('div', null, h('h1', { class: 'page-title' }, souVendedor ? 'Minha comissão' : `Comissão de ${nome || '—'}`),
       h('div', { class: 'page-sub' }, souVendedor ? `Olá! Acompanhe sua meta e quanto vai receber em ${TS.MESES_LONGOS[+ym.slice(5, 7) - 1].toLowerCase()}.` : 'Como o vendedor vê a própria comissão')), ferramentas));
+    if (souVendedor) root.append(cartaoMinhaMetaHoje()); // a parte dela da meta de hoje (o servidor faz a conta da loja)
     const NOME = nome.trim().toUpperCase(); // comparação sem diferenciar maiúsculas ("Gabrielly" = "GABRIELLY")
     if (!nome) { root.append(TS.card(null, null, TS.empty(souVendedor ? 'Seu usuário ainda não está ligado a um vendedor. Fale com o gerente.' : 'Nenhum vendedor com vendas neste mês.'))); return; }
 

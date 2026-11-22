@@ -51,6 +51,14 @@
     if (j[1] < hoje) { a = ano + 1; j = janela(ev, a); }
     return { atual: j, anterior: janela(ev, a - 1), ano: a };
   }
+  /** a data comemorativa que a tela abre quando ninguém escolheu: a PRÓXIMA (a que começa antes, entre as que ainda não
+   *  terminaram), nunca a primeira da lista — em novembro abria o Dia das Mães, com o Natal a um mês */
+  function eventoPadrao(eventos, hoje) {
+    let melhor = null, d0 = Infinity;
+    for (const ev of eventos || []) { const a = proximo(ev, hoje).atual[0]; if (a < d0) { d0 = a; melhor = ev; } }
+    return melhor;
+  }
+  TS.pedidoCalc = { proximo, eventoPadrao };
 
   /** o cálculo: tudo que a tela mostra */
   let VAL = new Map(); // cod → { dias, faixa, kg } do lote mais urgente (< 90 dias)
@@ -323,7 +331,7 @@
     corpo.replaceChildren();
     const modo = state.pedModo || 'repor';
     const eventos = p.cfg.eventos || [];
-    const ev = modo === 'evento' ? (eventos.find((x) => x.id === state.pedEvento) || eventos[0]) : null;
+    const ev = modo === 'evento' ? (eventos.find((x) => x.id === state.pedEvento) || eventoPadrao(eventos, TS.db.maxDay + 1)) : null;
     // parâmetros desta tela (começam pelos salvos; só valem para a loja depois de "Salvar")
     const par = state.pedPar && state.pedPar.loja === loja ? state.pedPar : (state.pedPar = { loja, ...p.cfg });
     const chave = `${loja}|${modo}|${ev ? ev.id : ''}`;
@@ -382,7 +390,9 @@
     const cat = blocoCatalogo(corpo, loja, M, e, p);
     const est = blocoEstoque(loja, e);
     // ajustes numa linha só (modo + campos + salvar à direita); a situação do estoque/catálogo e os botões de atualizar ficam numa linha discreta abaixo
-    const controles = h('div', { class: 'card ped-ctl' }, h('div', { class: 'ped-ctl-linha' },
+    // no celular os ajustes ficam recolhidos numa linha de resumo (a tela abre pelos números do pedido); toque para mudar
+    const MOB_CTL = matchMedia('(max-width: 760px)').matches;
+    const linhaCtl = h('div', { class: 'ped-ctl-linha' },
       h('div', { class: 'ped-ctl-l' },
         TS.seg([['Reposição', 'repor'], ['Data comemorativa', 'evento']], modo, (v) => { state.pedModo = v; pintar(corpo, loja, M, e, p); }),
         modo === 'evento' ? h('select', { class: 'f-input', onchange: (x) => { state.pedEvento = x.target.value; pintar(corpo, loja, M, e, p); } },
@@ -392,8 +402,29 @@
         modo === 'repor' ? lbl('Vendas de', iDias, 'dias', 'Período de vendas usado no valor e intervalo até o próximo pedido (ex.: 7 para pedido semanal, 14 para quinzenal).') : null,
         modo === 'repor' ? lbl('Folga da proporção', iFolga, '%', 'Quanto cada grupo (chás, envasados, acessórios) pode passar da sua parte antes de o valor ir para os outros.') : null,
         modo === 'evento' ? lbl('Crescimento', iCresc, '%', `Quanto a mais (ou a menos) que no ano passado se vende na data.\n\nAutomático: o crescimento da loja nas últimas 8 semanas contra as mesmas 8 semanas do ano passado (${fmt.pct(R.crescLoja - 1)}), o mesmo do card "Próximas semanas" em Estoque e margem.\n\nDigite outro valor se espera mais ou menos movimento.`, notaCresc) : null),
-      h('div', { class: 'ped-ctl-salvar' }, msg, salvar)),
+      h('div', { class: 'ped-ctl-salvar' }, msg, salvar));
+    const resumoCtl = modo === 'evento' ? `Data comemorativa · ${ev ? ev.nome : 'nenhuma'}` : `Reposição · ${R.pct != null ? fmt.pct(R.pct) + ' das vendas' : 'valor automático'} · ${fmt.int(par.dias)} dias`;
+    const controles = h('div', { class: 'card ped-ctl' },
+      MOB_CTL ? h('details', { class: 'ped-ctl-rec', open: state.pedCtlAberto || (state.pedMsg && state.pedMsg[0] === 'neg') || null, ontoggle: (x) => { state.pedCtlAberto = x.target.open; } },
+        h('summary', { title: 'Toque para mudar o modo, o valor do pedido e os dias' }, h('b', null, resumoCtl), h('span', { class: 'ped-ctl-ed' }, ' ✎ mudar')), linhaCtl) : linhaCtl,
       h('div', { class: 'ped-cat' }, est.info, cat.info, h('span', { class: 'ped-cat-acoes' }, est.acao, cat.acao), est.st, cat.st));
+    // pendências no topo (revisão de 22/11/2026): o carrinho anterior que falta confirmar e o carrinho salvo mudam o que fazer
+    // antes de tudo. Os detalhes continuam nos lugares de sempre (histórico no cartão do robô, carrinho salvo nos Produtos).
+    const pendTopo = h('div', { class: 'ped-pend' });
+    corpo.append(pendTopo);
+    {
+      const c = p.carrinho;
+      if (c && !c.confirmado && !carrinhoAtivo(c) && Array.isArray(c.itens) && !(c.modo === 'navegador' && !c.itens.length)) {
+        const aoMudar = (novo) => { p.carrinho = novo; state.pedSugMsg = ''; TS.render(); };
+        const quando = new Date(c.inicio).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit' });
+        const sim = h('button', { type: 'button', class: 'btn primary', title: 'Marca que este pedido foi finalizado no site. Fica registrado quem confirmou e quando.' }, '✓ Sim, foi feito');
+        sim.addEventListener('click', () => acaoCarrinho(loja, 'confirmar', sim, aoMudar));
+        const nao = h('button', { type: 'button', class: 'btn ghost-danger', title: 'Apaga o registro: use quando o pedido NÃO foi feito no site. As ⭐ sugestões da equipe que foram para "aguardando entrega" por causa dele voltam para o próximo pedido.' }, 'Não fiz');
+        nao.addEventListener('click', () => { if (confirm('Excluir o registro deste carrinho? Use quando o pedido NÃO foi feito no site (montou para testar ou desistiu).\n\nO painel não mexe no site: se o carrinho de lá ainda tiver itens, esvazie por lá.')) acaoCarrinho(loja, 'excluir', nao, aoMudar); });
+        pendTopo.append(h('div', { class: 'notice warn ped-pend-car' }, h('div', null, h('b', null, `Carrinho de ${quando}${c.por ? ` (${c.por})` : ''} ainda sem confirmar. `), 'Este pedido foi finalizado no site?'),
+          h('div', { class: 'ped-rasc-acoes' }, sim, nao)));
+      }
+    }
     corpo.append(controles);
     if (modo === 'evento') corpo.append(editorEventos(loja, p, par, () => pintar(corpo, loja, M, e, p)));
 
@@ -439,7 +470,7 @@
       barra.replaceChildren(
         h('div', null, h('small', null, `🛒 Carrinho · ${fmt.int(car.length)} itens`), h('b', null, fmt.brl0(v)),
           R.orcamento != null ? h('small', { class: t > R.orcamento * 1.02 ? 'down' : '' }, t <= R.orcamento ? `sobram ${fmt.brl0(R.orcamento - t)}` : `passa ${fmt.brl0(t - R.orcamento)}`) : null),
-        h('button', { type: 'button', class: 'btn primary', onclick: () => { const c = corpo.querySelector('.ped-robo'); if (c) c.scrollIntoView({ behavior: 'smooth', block: 'start' }); } }, 'Montar carrinho ›'));
+        h('button', { type: 'button', class: 'btn primary', title: 'Leva até o cartão do robô, onde o carrinho é montado no Sistema de Pedidos.', onclick: () => { const c = corpo.querySelector('.ped-robo'); if (c) c.scrollIntoView({ behavior: 'smooth', block: 'start' }); } }, 'Ir para o carrinho ›'));
     };
     let cvQuadro = null;
     const pintarTotal = () => {
@@ -485,7 +516,7 @@
         ? h('span', { class: 'ped-cl-meses', title: 'Classe oficial: a mediana do que cada produto vendeu por mês nestes meses fechados × a margem. Vale também na Rentabilidade' },
           h('span', { class: 'f-label' }, 'Classe pelos últimos'),
           TS.seg([['3', '3'], ['6', '6'], ['12 meses', '12']], String(R.classeMeses), async (v) => {
-            try { await TS.salvarClasse(loja, { meses: +v }); pintar(corpo, loja, M, e, p); } catch (err) { alert(err.message); }
+            try { await TS.salvarClasse(loja, { meses: +v }); pintar(corpo, loja, M, e, p); } catch (err) { TS.avisarErro(err); }
           }))
         : h('span', { class: 'muted ped-fx-n' }, `classe pelos últimos ${R.classeMeses} meses`));
     corpo.append(h('div', { class: 'mt' }, cartaoObrigatorio(corpo, loja, M, e, p, R)));
@@ -695,7 +726,8 @@
         const nome = col('produto').render(r);
         const codEl = subDif(r) && nome.querySelector('.est-tam');
         if (codEl) codEl.append(' · ', h('span', { class: 'ped-cod-sub', title: 'Subgrupo do cadastro de preços do AppNext (no chá a granel, o dos pacotes dele).' }, r.sub));
-        return h('div', { class: 'ped-card' + (r.obrig ? ' obr' : r.pedir > 0 ? ' on' : '') },
+        // a faixa verde "no carrinho" só onde ela diferencia (Site completo, Verificar); no Complemento todos estariam marcados
+        return h('div', { class: 'ped-card' + (r.obrig ? ' obr' : r.pedir > 0 && (filtro === 'site' || filtro === 'ver') ? ' on' : '') },
           h('div', { class: 'ped-card-top' }, h('div', { class: 'ped-card-nome' }, nome), h('span', { class: 'badge ' + c }, t)),
           h('div', { class: 'ped-card-meta' }, [r.grpTxt, r.margemPac != null ? `margem bruta ${fmt.pct(r.margemPac)}` : ''].filter(Boolean).join(' · ')),
           h('div', { class: 'ped-card-nums' },
@@ -790,7 +822,7 @@
         if (x.semSite) return h('span', { class: 'muted' }, '—');
         if (g.decisao) return h('span', { class: 'sug-ped-acoes' }, h('span', { class: 'neg' }, `Não pedir: ${g.decisao.motivo}`), bt('Desfazer', '', () => decidir(g, null)));
         return h('span', { class: 'sug-ped-acoes' },
-          bt('+ Adicionar ao pedido', 'primary sug-ped-add', () => adicionar(x), `Põe ${qtdTxt(qtdAdd(r), r.it)} na tabela do pedido${r.sugerido > 0 ? ' (o que a conta sugere)' : ' (a conta não pede agora: vai a menor quantidade do site)'}. Depois dá para mudar a quantidade lá.`),
+          bt('+ Adicionar ao pedido', 'sug-ped-add', () => adicionar(x), `Põe ${qtdTxt(qtdAdd(r), r.it)} na tabela do pedido${r.sugerido > 0 ? ' (o que a conta sugere)' : ' (a conta não pede agora: vai a menor quantidade do site)'}. Depois dá para mudar a quantidade lá.`),
           bt('Não pedir', '', () => naoPedir(x), 'Não entra neste pedido: escolha o motivo para a equipe ver'));
       };
       const SITE = (x) => (!x.r || x.r.site === 'fora' ? ['Fora do catálogo', 'cinza'] : x.r.site === 'indisp' ? ['Sem estoque no site', 'erro'] : x.r.site === 'sem' ? ['Sem catálogo', 'cinza'] : ['Disponível', 'ok']);
@@ -842,6 +874,8 @@
         state.pedSugMsg = resumoSug(n);
         if (state.pedSug) state.pedSug.aba = 'todas'; // as situações mudaram: mostra tudo
         repintar();
+        // o resultado aparece ao lado do botão: rola até ele (a tabela aberta empurrava a mensagem para fora da tela)
+        const mv = corpo.querySelector('.sug-ped-card .sug-ped-msg'); if (mv && mv.textContent) mv.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
         // nada mais aberto: o quadro some; o resumo fica num aviso
         if (!p.sugestoes.length && state.pedSugMsg) { corpo.querySelector('.ped-ctl')?.after(h('div', { class: 'notice ok mt sug-ped-msg' }, state.pedSugMsg)); state.pedSugMsg = null; }
       });
@@ -866,7 +900,8 @@
       return n;
     }
     R.registrarSugestoes = SUG.size ? registrarSugestoes : null;
-    const resumoSug = (n) => `Sugestões respondidas: ${n.pedido} no pedido (aguardando entrega), ${n.nao} ficaram para o próximo${n.semsite ? `, ${n.semsite} sem estoque no site` : ''}.`;
+    // conta SUGESTÕES (uma por pessoa que pediu), não produtos: as abas do quadro contam produtos, por isso a frase diz "sugestões"
+    const resumoSug = (n) => { const sg = (k) => `${k} ${k === 1 ? 'sugestão' : 'sugestões'}`; return `Sugestões respondidas: ${sg(n.pedido)} no pedido (aguardando entrega), ${sg(n.nao)} para o próximo${n.semsite ? `, ${sg(n.semsite)} sem estoque no site` : ''}.`; };
     R.resumoSug = resumoSug;
     /** redesenha mantendo a rolagem da tabela e da página */
     function repintar() {
@@ -986,9 +1021,10 @@
       ? h('p', { class: 'muted ped-rasc-ok' }, `💾 Carrinho salvo em ${dataHora(rasc.em)}${rasc.por ? ` por ${rasc.por}` : ''} · fica guardado até ${dataHora(rasc.expira)}. `, h('button', { type: 'button', class: 'link-btn', title: 'Apaga o carrinho salvo. O pedido da tela não muda.', onclick: (ev) => descartarRasc(ev.target) }, 'descartar o salvo'))
       : h('div', { class: 'notice ped-rasc' }, h('div', null, h('b', null, `💾 Tem um carrinho salvo${rasc.por ? ` por ${rasc.por}` : ''} em ${dataHora(rasc.em)}: `), `${fmt.int(nRasc)} ${nRasc === 1 ? 'produto' : 'produtos'}. Fica guardado até ${dataHora(rasc.expira)}.`),
         h('div', { class: 'ped-rasc-acoes' },
-          h('button', { type: 'button', class: 'btn primary', title: 'Troca as quantidades da tela pelas do carrinho salvo. Produto que saiu do catálogo fica de fora.', onclick: aplicarRasc }, 'Continuar de onde parei'),
+          h('button', { type: 'button', class: 'btn', title: 'Troca as quantidades da tela pelas do carrinho salvo. Produto que saiu do catálogo fica de fora.', onclick: aplicarRasc }, 'Continuar de onde parei'),
           h('button', { type: 'button', class: 'btn', title: 'Esconde este aviso e segue com o pedido sugerido. O carrinho salvo continua guardado.', onclick: () => { rascVisto[loja] = rasc.em; repintar(); } }, 'Agora não'),
           h('button', { type: 'button', class: 'btn ghost-danger', onclick: (ev) => descartarRasc(ev.target) }, 'Descartar')));
+    if (avisoRasc && !avisoRasc.classList.contains('ped-rasc-ok')) pendTopo.append(avisoRasc); // "tem um carrinho salvo": no topo
     const btnCsv = h('button', { type: 'button', class: 'btn', title: 'O pedido como está na tela (sem o pedido obrigatório, que a franquia já manda)', onclick: () => baixarCsv(R.linhas.filter((r) => r.pedir > 0 && !r.obrig), loja) }, '⬇ CSV');
     // Limpar: zera as quantidades do pedido (tudo ou um grupo); "Voltar à sugestão" desfaz
     const zerar = (g) => {
@@ -1042,7 +1078,7 @@
     corpo.append(h('div', { class: 'mt' }, TS.cardWithTools('Produtos', sub,
       h('div', { class: 'est-tools ped-tools' }, !MOBILE && tab.searchBox && (tab.searchBox.classList.add('est-busca'), tab.searchBox),
         TS.seg(Object.entries(FILTROS).map(([k, [t, , dica]]) => [`${t} (${cont(k)})`, k, dica]), filtro, (v) => { state.pedFiltro = v; pintar(corpo, loja, M, e, p); }), menuLimpar, btnSalvar, btnCsv),
-      avisoRasc, avisoObr, avisoVer, MOBILE ? h('details', { class: 'ped-fx-mob', open: (fx.g || fx.gp || fx.d || fx.sb || fx.s || fx.c || fx.m) ? true : null }, h('summary', null, `Filtros${[fx.g, fx.gp, fx.d, fx.sb, fx.s, fx.c, fx.m].filter(Boolean).length ? ` (${[fx.g, fx.gp, fx.d, fx.sb, fx.s, fx.c, fx.m].filter(Boolean).length})` : ''} · ${fmt.int(linhas.length)} produtos`), filtrosExtra) : filtrosExtra, MOBILE ? listaMobile() : tab)));
+      avisoRasc && avisoRasc.classList.contains('ped-rasc-ok') ? avisoRasc : null, avisoObr, avisoVer, MOBILE ? h('details', { class: 'ped-fx-mob', open: (fx.g || fx.gp || fx.d || fx.sb || fx.s || fx.c || fx.m) ? true : null }, h('summary', null, `Filtros${[fx.g, fx.gp, fx.d, fx.sb, fx.s, fx.c, fx.m].filter(Boolean).length ? ` (${[fx.g, fx.gp, fx.d, fx.sb, fx.s, fx.c, fx.m].filter(Boolean).length})` : ''} · ${fmt.int(linhas.length)} produtos`), filtrosExtra) : filtrosExtra, MOBILE ? listaMobile() : tab)));
     if (editados.size) corpo.append(h('p', { class: 'muted' }, `${editados.size} quantidade(s) alterada(s) à mão. `, h('a', { href: '#', onclick: (x) => { x.preventDefault(); editados.clear(); pintar(corpo, loja, M, e, p); } }, 'Voltar à sugestão')));
 
     if (blocoIA) corpo.append(blocoIA);
@@ -1211,7 +1247,7 @@
     if (!robo.disponivel) acao = h('small', { class: 'muted' }, robo.erro ? `Coletor indisponível: ${robo.erro}` : 'O catálogo é lido pelo coletor da VPS.');
     else if (!robo.temLogin) acao = h('small', null, 'Falta o login do Sistema de Pedidos: ', p.podeRobo ? h('a', { href: '#config' }, 'Configurações → Lojas') : 'peça ao administrador');
     else if (p.podeRobo) {
-      const btn = h('button', { type: 'button', class: 'btn primary', disabled: ocupado || null, title: 'Lê de novo no site o preço, o que está disponível e o múltiplo de cada produto. Também é lido sozinho toda noite.' }, '↻ Atualizar catálogo');
+      const btn = h('button', { type: 'button', class: 'btn', disabled: ocupado || null, title: 'Lê de novo no site o preço, o que está disponível e o múltiplo de cada produto. Também é lido sozinho toda noite.' }, '↻ Atualizar catálogo');
       btn.addEventListener('click', async () => {
         btn.disabled = true;
         try {
@@ -1263,7 +1299,7 @@
       } catch (err) { if (aba) aba.close(); msg.className = 'neg'; msg.textContent = err.message; }
       btnCarrinho.disabled = false;
     });
-    const fav = h('a', { class: 'ped-fav', href: linkFavorito(), title: 'Arraste para a barra de favoritos', onclick: (ev) => { ev.preventDefault(); alert('Arraste este botão para a barra de favoritos do navegador (Ctrl+Shift+B mostra a barra). Depois, use-o dentro do Sistema de Pedidos.'); } }, '🛒 Carrinho Tea Shop');
+    const fav = h('a', { class: 'ped-fav', href: linkFavorito(), title: 'Arraste para a barra de favoritos', onclick: (ev) => { ev.preventDefault(); TS.avisar('Arraste este botão para a barra de favoritos do navegador (Ctrl+Shift+B mostra a barra). Depois, use-o dentro do Sistema de Pedidos.'); } }, '🛒 Carrinho Tea Shop');
     const passos = h('ol', { class: 'ped-passos' },
       h('li', null, h('b', null, 'Uma vez só: '), 'arraste o botão ', fav, ' para a barra de favoritos do navegador.'),
       h('li', null, 'Clique em ', h('b', null, 'Montar carrinho no site'), '. O Sistema de Pedidos abre em outra aba (entre com o login da loja, se pedir).'),
@@ -1286,7 +1322,8 @@
     const semCatalogo = !p.catalogo;
     return TS.card('Carrinho no Sistema de Pedidos', 'O carrinho do site vale só para a sessão de quem entrou; por isso ele é montado no seu navegador, com o seu login. O favorito procura cada produto pelo nome, confere o nome exato, ajusta ao múltiplo e coloca no carrinho. Ele para na etapa 2.',
       semCatalogo ? h('div', { class: 'notice' }, 'Leia o catálogo primeiro (botão "Atualizar catálogo", no topo): só vão para o carrinho os produtos disponíveis no site.') : null,
-      passos, celular,
+      // os passos do favorito: abertos até o primeiro carrinho montado; depois ficam em "Como montar ▸"
+      h('details', { class: 'ped-como-montar', open: !p.carrinho || null }, h('summary', null, 'Como montar o carrinho (favorito 🛒 Carrinho Tea Shop) ▸'), passos, celular),
       (() => {
         const ob = R.linhas.filter((r) => r.obrig);
         if (!ob.length) return null;
@@ -1315,6 +1352,19 @@
       c.atual ? h('small', null, `Agora: ${c.atual}`) : null);
   }
 
+  /** confirmar ou excluir o registro do carrinho (o mesmo nos dois lugares: aviso do topo e histórico no cartão do robô) */
+  async function acaoCarrinho(loja, rota, b, aoMudar) {
+    if (TS.demo) { toast(TS.DEMO_AVISO); return; }
+    b.disabled = true;
+    try {
+      const r = await fetch(`/api/pedido/carrinho/${rota}?loja=${encodeURIComponent(loja)}`, { method: 'POST', credentials: 'same-origin', headers: { 'X-Painel': '1' } });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.erro || 'Não deu certo.');
+      toast(rota === 'confirmar' ? 'Pedido confirmado.' : `Registro excluído.${j.sugestoesDevolvidas ? ` ${j.sugestoesDevolvidas} ${j.sugestoesDevolvidas === 1 ? 'sugestão da equipe voltou' : 'sugestões da equipe voltaram'} para o próximo pedido.` : ''}`);
+      if (aoMudar) aoMudar(rota === 'confirmar' ? j.carrinho : null);
+    } catch (err) { toast(err.message, true); b.disabled = false; }
+  }
+
   function resultadoCarrinho(c, loja, aoMudar) {
     if (!c || !Array.isArray(c.itens) || (c.modo === 'navegador' && !c.itens.length)) return null;
     const ST = { ok: ['No carrinho', 'ok'], sem_estoque: ['Sem estoque no fornecedor', 'erro'], recusado: ['O site recusou', 'erro'], indisponivel: ['Indisponível', 'erro'], nao_encontrado: ['Não achou no site', 'erro'], acima_do_maximo: ['Acima do máximo', 'warn'], sem_confirmacao: ['Sem confirmação', 'warn'], erro: ['Erro', 'erro'] };
@@ -1323,25 +1373,15 @@
     const fimTxt = c.fim
       ? h('div', { class: 'notice ok' }, h('b', null, `Carrinho pronto: ${ok} de ${c.total || c.itens.length} produtos.`), c.carrinhoDepois && c.carrinhoDepois.texto ? ` No site: ${c.carrinhoDepois.texto}.` : '',
         prob ? ` ${prob} com problema: no quadro do favorito, no site, cada um tem "Tentar de novo".` : '', ' Confira e finalize no site. ',
-        site ? h('a', { href: site, target: '_blank', rel: 'noopener' }, 'Abrir o Sistema de Pedidos ↗') : null)
+        site ? h('a', { class: 'ped-site-link', href: site, target: '_blank', rel: 'noopener' }, 'Abrir o Sistema de Pedidos ↗') : null)
       : h('div', { class: 'notice warn' }, `O carrinho parou em ${c.itens.length} de ${c.total} produtos (a aba do site foi fechada ou o link venceu). Clique em "Montar carrinho no site" de novo para refazer.`);
     const quando = new Date(c.inicio).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
     // o painel não sabe se o pedido foi finalizado no site: a pessoa confirma, ou exclui o registro (montou para testar e não pediu)
-    const acaoCarrinho = async (rota, b) => {
-      if (TS.demo) { toast(TS.DEMO_AVISO); return; }
-      b.disabled = true;
-      try {
-        const r = await fetch(`/api/pedido/carrinho/${rota}?loja=${encodeURIComponent(loja)}`, { method: 'POST', credentials: 'same-origin', headers: { 'X-Painel': '1' } });
-        const j = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(j.erro || 'Não deu certo.');
-        toast(rota === 'confirmar' ? 'Pedido confirmado.' : `Registro excluído.${j.sugestoesDevolvidas ? ` ${j.sugestoesDevolvidas} ${j.sugestoesDevolvidas === 1 ? 'sugestão da equipe voltou' : 'sugestões da equipe voltaram'} para o próximo pedido.` : ''}`);
-        if (aoMudar) aoMudar(rota === 'confirmar' ? j.carrinho : null);
-      } catch (err) { toast(err.message, true); b.disabled = false; }
-    };
+    const acaoCarrinhoAqui = (rota, b) => acaoCarrinho(loja, rota, b, aoMudar);
     const btnExcluir = (rot, cls) => { const b = h('button', { type: 'button', class: cls, title: 'Apaga este registro: é como se o carrinho não tivesse sido montado. As ⭐ sugestões da equipe que foram para "aguardando entrega" por causa dele voltam para o próximo pedido. Não mexe no site: se o carrinho de lá ainda tiver itens, esvazie por lá.' }, rot);
-      b.addEventListener('click', () => { if (confirm('Excluir o registro deste carrinho? Use quando o pedido NÃO foi feito no site (montou para testar ou desistiu).\n\nO painel não mexe no site: se o carrinho de lá ainda tiver itens, esvazie por lá.')) acaoCarrinho('excluir', b); }); return b; };
+      b.addEventListener('click', () => { if (confirm('Excluir o registro deste carrinho? Use quando o pedido NÃO foi feito no site (montou para testar ou desistiu).\n\nO painel não mexe no site: se o carrinho de lá ainda tiver itens, esvazie por lá.')) acaoCarrinhoAqui('excluir', b); }); return b; };
     const btnConfirmar = h('button', { type: 'button', class: 'btn primary', title: 'Marca que este pedido foi finalizado no site. Fica registrado quem confirmou e quando.' }, '✓ Sim, o pedido foi feito');
-    btnConfirmar.addEventListener('click', () => acaoCarrinho('confirmar', btnConfirmar));
+    btnConfirmar.addEventListener('click', () => acaoCarrinhoAqui('confirmar', btnConfirmar));
     const dataHoraC = (iso) => new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
     const situacaoCarrinho = !loja ? null : c.confirmado
       ? h('p', { class: 'pos ped-conf-ok' }, `✅ Pedido feito: confirmado${c.confirmado.por ? ` por ${c.confirmado.por}` : ''} em ${dataHoraC(c.confirmado.em)}. `, btnExcluir('excluir o registro', 'link-btn'))
@@ -1469,7 +1509,7 @@
     if (!st) {
       box.append(h('div', { class: 'card-title' }, '🤖 Revisão com IA'),
         h('p', { class: 'muted' }, 'A IA confere este pedido com a mesma época do ano passado, a tendência das últimas semanas, a validade dos lotes e a lista de espera, e sugere ajustes com o motivo de cada um. Você escolhe o que aplicar.'),
-        h('div', { class: 'cfg-acoes' }, h('button', { type: 'button', class: 'btn primary', onclick: revisar }, 'Revisar este pedido')));
+        h('div', { class: 'cfg-acoes' }, h('button', { type: 'button', class: 'btn', onclick: revisar }, 'Revisar este pedido')));
       return box;
     }
     const rv = st.rev || {};
@@ -1516,7 +1556,7 @@
     const sub = R.obTotal
       ? `A franquia manda de qualquer forma: ${fmt.brl0(R.obTotal)} já ocupam o valor do pedido e as quantidades contam como estoque chegando. Esses itens não vão para o carrinho.`
       : 'Quando a franquia avisar do pedido obrigatório, cadastre aqui: o valor sai do limite do pedido e as quantidades contam como estoque chegando, para não pedir duas vezes.';
-    return TS.cardWithTools('Pedido obrigatório', sub, h('button', { type: 'button', class: 'btn primary', onclick: () => editarObrig(loja, p, M, null, refazer) }, '＋ Pedido obrigatório'),
+    return TS.cardWithTools('Pedido obrigatório', sub, h('button', { type: 'button', class: 'btn', onclick: () => editarObrig(loja, p, M, null, refazer) }, '＋ Pedido obrigatório'),
       ...(ativos.length ? ativos.map(linha) : [h('p', { class: 'muted' }, 'Nenhum pedido obrigatório valendo agora.')]),
       antigos.length ? h('details', { class: 'ped-obr-ant' }, h('summary', null, `Anteriores (${antigos.length})`), ...antigos.map(linha)) : null, msg);
   }
@@ -1679,7 +1719,7 @@
   }
 
   function baixarCsv(lista, loja) {
-    if (!lista.length) { alert('Nada no pedido.'); return; }
+    if (!lista.length) { TS.avisar('Nada no pedido.'); return; }
     const esc = (v) => { const s = v == null ? '' : String(v); return /[;"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
     const n = (v, d) => (v == null ? '' : v.toFixed(d).replace('.', ','));
     const linhas = [['Código', 'Produto', 'Grupo', 'Unidade', 'Múltiplo', 'Estoque', 'Pedir', 'Preço', 'Total', 'Site'].join(';'),

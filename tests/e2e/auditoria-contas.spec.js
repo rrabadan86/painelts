@@ -22,6 +22,8 @@ test('Campanha: guarda 10% da lista sem mensagem e mostra o efeito ao lado de qu
   await expect(page.locator('.cp-comp-n')).toContainText(n >= 50 ? 'ficam sem mensagem, para comparar' : 'sem grupo de comparação');
   await page.getByPlaceholder('Ex.: Pontos vencendo em dezembro').fill('Teste de comparação');
   await page.getByRole('button', { name: 'Salvar campanha' }).click();
+  // sem critério a lista pega quase a base inteira: o painel avisa e pede confirmação (decisão do dono)
+  await page.locator('.ts-conf').getByRole('button', { name: 'Salvar assim mesmo' }).click();
   await expect(page.locator('.kpi', { hasText: 'Voltaram' })).toBeVisible();
   const r = await page.evaluate(() => {
     const R = TS.campRetorno;

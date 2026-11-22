@@ -99,6 +99,8 @@
       inicio: [[], 'O Início mostra o que pede atenção hoje e não usa estes filtros.'],
       espera: [[], 'A lista de espera não usa estes filtros.'],
       inventario: [[], 'O inventário não usa estes filtros.'],
+      sugestoes: [[], 'As sugestões não usam estes filtros.'],
+      conversas: [[], 'As conversas não usam estes filtros.'],
     }[state.page];
     const usa = (k) => !USO || USO[0].includes(k);
     if (USO) box.append(h('div', { class: 'f-hint f-uso' }, USO[1]));
@@ -517,7 +519,7 @@
       options: {
         indexAxis: 'y', layout: { padding: { right: 90 } },
         plugins: { legend: { display: false }, valueLabels: { display: true, format: labelFmt }, tooltip: { callbacks: { label: (c) => fmtVal(c.raw) } } },
-        scales: { x: { display: false, grid: { display: false } }, y: { grid: { display: false }, border: { display: false }, ticks: { autoSkip: false, font: { size: 11 } } } },
+        scales: { x: { display: false, grid: { display: false } }, y: { grid: { display: false }, border: { display: false }, ticks: { autoSkip: false, font: { size: 12 } } } },
       },
     }); el.style.height = Math.max(120, rows.length * 28 + 30) + 'px'; return el; };
     const somaPor = (idx, valFn) => {

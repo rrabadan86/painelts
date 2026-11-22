@@ -233,6 +233,69 @@ test('RESUMO-05: envio manual (Hoje, ficha, Campanhas): o servidor recusa com 40
   assert.strictEqual((await post('dono1', '/api/contatos', { loja: 'l1', cpf, acao: 'contatado', motivo: 'ligação/outro' })).status, 200);
 });
 
+test('RESUMO-07: link que abre a conversa vazia (Clientes, ficha, janelas) passa pela mesma regra forte e não marca contatado; Lista de espera só trava quem não quer', async () => {
+  const cpf = '77777777777', livre = '77777777770';
+  const lerC = () => JSON.parse(fs.readFileSync(path.join(tmp, 'l1', 'contatos.json'), 'utf8'));
+  // livre: pode abrir e nada é gravado
+  const a = await post('gercli', '/api/contatos/conferir', { loja: 'l1', cpf: livre });
+  assert.strictEqual(a.status, 200);
+  assert.strictEqual(lerC()[livre], undefined, 'conferir não marca contatado');
+  // recebeu mensagem agora: o link vazio também é recusado, com a explicação
+  assert.strictEqual((await post('dono1', '/api/contatos', { loja: 'l1', cpf, acao: 'contatado', motivo: 'Hoje · Aniversário', envio: true })).status, 200);
+  const b = await post('gercli', '/api/contatos/conferir', { loja: 'l1', cpf });
+  assert.strictEqual(b.status, 409);
+  const jb = await b.json();
+  assert.strictEqual(jb.bloqueado, true);
+  assert.match(jb.erro, /^O WhatsApp não foi aberto: este cliente já recebeu mensagem em .*a partir de/);
+  // Lista de espera: avisar que chegou é pedido do cliente — o intervalo não trava, só "não quer"
+  assert.strictEqual((await post('vend1', '/api/contatos/conferir', { loja: 'l1', cpf, espera: true })).status, 200, 'espera: intervalo não trava (a vendedora usa a Lista de espera)');
+  assert.strictEqual((await post('dono1', '/api/contatos', { loja: 'l1', cpf, acao: 'optout' })).status, 200);
+  const c = await post('vend1', '/api/contatos/conferir', { loja: 'l1', cpf, espera: true });
+  assert.strictEqual(c.status, 409, 'espera: quem não quer mensagens trava');
+  assert.match((await c.json()).erro, /pediu para não receber mensagens/);
+  // vendedora fora da Lista de espera, sem X-Painel e loja dos outros: não
+  assert.strictEqual((await post('vend1', '/api/contatos/conferir', { loja: 'l1', cpf: livre })).status, 403);
+  assert.strictEqual((await pedir('gercli', '/api/contatos/conferir', { method: 'POST', body: JSON.stringify({ loja: 'l1', cpf: livre }), headers: { 'X-Painel': '' } })).status, 403);
+  assert.strictEqual((await post('dono1', '/api/contatos/conferir', { loja: 'l2', cpf: livre })).status, 400);
+  assert.strictEqual((await (await fetch(BASE + '/api/demo/contatos/conferir', { method: 'POST' })).json()).ok, true, 'apresentação: responde sem gravar');
+});
+
+test('RESUMO-08: "Desfazer" depois de abrir o WhatsApp volta a marca de antes — só quem enviou, só o último envio, auditado sem o texto', async () => {
+  const cpf = '88888888888', novo = '88888888880';
+  const lerC = () => JSON.parse(fs.readFileSync(path.join(tmp, 'l1', 'contatos.json'), 'utf8'));
+  // cliente sem marca: envio + desfazer → some a marca (volta a aparecer no Hoje)
+  const e1 = await post('gercli', '/api/contatos', { loja: 'l1', cpf: novo, acao: 'contatado', motivo: 'Hoje · Hora de repor', envio: true });
+  const j1 = await e1.json();
+  assert.ok(j1.desfazerAte, 'o envio avisa até quando dá para desfazer');
+  assert.strictEqual(j1.contato.desfazer, undefined, 'a marca de antes fica só no servidor');
+  assert.strictEqual((await post('dono1', '/api/contatos/desfazer', { loja: 'l1', cpf: novo })).status, 409, 'outra pessoa não desfaz');
+  const d1 = await post('gercli', '/api/contatos/desfazer', { loja: 'l1', cpf: novo });
+  assert.strictEqual(d1.status, 200);
+  assert.strictEqual((await d1.json()).contato, null);
+  assert.strictEqual(lerC()[novo], undefined);
+  assert.strictEqual((await post('gercli', '/api/contatos/desfazer', { loja: 'l1', cpf: novo })).status, 409, 'desfazer duas vezes não');
+  // cliente com marca antiga (fora do intervalo): desfazer volta a marca antiga, não apaga
+  const todos = lerC();
+  todos[cpf] = { em: new Date(Date.now() - 60 * 864e5).toISOString(), por: 'chefe', motivo: 'Campanha: antiga' };
+  fs.writeFileSync(path.join(tmp, 'l1', 'contatos.json'), JSON.stringify(todos));
+  assert.strictEqual((await post('gercli', '/api/contatos', { loja: 'l1', cpf, acao: 'contatado', motivo: 'Hoje · Em risco', envio: true })).status, 200);
+  const d2 = await (await post('gercli', '/api/contatos/desfazer', { loja: 'l1', cpf })).json();
+  assert.strictEqual(d2.contato.motivo, 'Campanha: antiga');
+  assert.strictEqual(d2.contato.por, 'chefe');
+  // passou o tempo: não desfaz
+  assert.strictEqual((await post('gercli', '/api/contatos', { loja: 'l1', cpf: novo, acao: 'contatado', motivo: 'Hoje', envio: true })).status, 200);
+  const t = lerC(); t[novo].em = new Date(Date.now() - 3 * 60e3).toISOString();
+  fs.writeFileSync(path.join(tmp, 'l1', 'contatos.json'), JSON.stringify(t));
+  assert.strictEqual((await post('gercli', '/api/contatos/desfazer', { loja: 'l1', cpf: novo })).status, 409, 'depois de 2 minutos não');
+  // GET não devolve a marca de antes; vendedora não desfaz; auditoria sem texto de mensagem
+  const g = await (await pedir('gercli', '/api/contatos?loja=l1')).json();
+  assert.ok(!JSON.stringify(g).includes('desfazer'));
+  assert.strictEqual((await post('vend1', '/api/contatos/desfazer', { loja: 'l1', cpf: novo })).status, 403);
+  const aud = auditoria().filter((x) => /desfez a marca/.test(x.acao || ''));
+  assert.strictEqual(aud.length, 2);
+  assert.ok(!JSON.stringify(aud).includes(cpf), 'CPF só abreviado');
+});
+
 test('apresentação: tudo simulado, nada chega ao robô nem é gravado', async () => {
   chamadas.length = 0;
   const antes = JSON.stringify(estado('l1'));

@@ -227,12 +227,14 @@ function voltouAAceitar(id, cpf) {
  *   tela, campanha ou do robô) · está na fila de hoje de uma campanha do robô ligado (o robô é quem manda; `campanha` = a própria
  *   campanha da fila manual não conta).
  */
-function envioManualBloqueado({ lojaId, cpf, contato, campanha, agora = Date.now() }) {
+function envioManualBloqueado({ lojaId, cpf, contato, campanha, agora = Date.now(), soOptout = false }) {
   const loja = C.get().lojas.find((l) => l.id === lojaId);
   const intervalo = (loja && loja.wppIntervalo) || 21;
   const ct = contato || {};
   const nq = lerJson(lojaId, 'naoquer');
   if (ct.optout || Object.values(nq).some((e) => e && Array.isArray(e.cpfs) && e.cpfs.includes(cpf))) return 'Mensagem não enviada: este cliente pediu para não receber mensagens.';
+  // Lista de espera (avisar que o produto chegou, pedido do próprio cliente): só "não quer mensagens" trava
+  if (soOptout) return null;
   if (ct.em && agora - Date.parse(ct.em) < intervalo * 864e5) {
     const quando = new Date(ct.em).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
     const ate = new Date(Date.parse(ct.em) + intervalo * 864e5).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });

@@ -182,11 +182,19 @@
   function janelaPacotes(loja, cod, desc, aoMudar) {
     document.querySelectorAll('.vl-pac-bg').forEach((x) => x.remove());
     const fundo = h('div', { class: 'cp-modal-bg vl-pac-bg' });
-    const caixa = h('div', { class: 'card vl-pac', role: 'dialog', 'aria-modal': 'true', 'aria-label': `Lotes de ${desc}` }, h('p', { class: 'muted' }, 'Carregando…'));
+    const caixa = h('div', { class: 'card vl-pac', role: 'dialog', 'aria-modal': 'true', 'aria-label': `Lotes de ${desc}`, tabindex: '-1' }, h('p', { class: 'muted' }, 'Carregando…'));
     fundo.append(caixa); document.body.append(fundo);
-    const fechar = () => fundo.remove();
+    // foco: entra na janela ao abrir e volta para quem a abriu (o nome do chá) ao fechar; Esc fecha de qualquer lugar
+    const origem = document.activeElement;
+    let focou = false;
+    caixa.focus();
+    const esc = (e) => { if (e.key === 'Escape' && fundo.isConnected && [...document.querySelectorAll('.cp-modal-bg')].pop() === fundo) { e.preventDefault(); fechar(); } };
+    const fechar = () => {
+      fundo.remove(); document.removeEventListener('keydown', esc);
+      if (origem && origem.isConnected && origem.focus) origem.focus();
+    };
     fundo.addEventListener('click', (e) => { if (e.target === fundo) fechar(); });
-    fundo.addEventListener('keydown', (e) => { if (e.key === 'Escape') fechar(); });
+    document.addEventListener('keydown', esc);
     const enviar = (rota, corpo, el, msg) => {
       if (TS.demo) { toast(TS.DEMO_AVISO); return; }
       el.disabled = true;
@@ -234,7 +242,7 @@
         };
         const semNota = ls.filter((l) => !l.entrada);
         caixa.replaceChildren(...[
-          h('div', { class: 'vl-pac-topo' }, h('h3', null, `Lotes de ${desc}`), h('button', { type: 'button', class: 'link-btn', onclick: fechar }, 'Fechar ✕')),
+          h('div', { class: 'vl-pac-topo' }, h('h3', null, `Lotes de ${desc}`), h('button', { type: 'button', class: 'link-btn vl-pac-fechar', onclick: fechar }, 'Fechar ✕')),
           h('div', { class: 'vl-pac-sec' }, h('h4', null, '🫙 Chá aberto', TS.dica(`O chá que já saiu do pacote e está na lata. Vale ${M} meses a partir da abertura. O painel descobre pelo estoque qual está aberto; "Abrir lote", embaixo, marca um pacote como aberto hoje.`)),
             abertos.length ? abertos.map(linhaAberto) : h('p', { class: 'muted vl-pac-vazio' }, fechados.length ? 'Nenhum pacote aberto: pelo estoque, estão todos fechados. Abriu um? Use "Abrir lote" abaixo.' : 'Nenhum pacote aberto.')),
           h('div', { class: 'vl-pac-sec' }, h('h4', null, '📦 Lotes fechados', TS.dica('Pacotes ainda fechados, do mais antigo para o mais novo: abra sempre o primeiro da lista. Fechado, vale a validade do pacote.')),
@@ -253,6 +261,8 @@
           semNota.length ? h('p', { class: 'muted vl-pac-semnota' }, `Saldo sem nota: ${kgTxt(semNota.reduce((x, l) => x + l.saldo, 0))}. O painel não sabe de qual pacote veio: acerte pelo inventário por lote.`) : null,
           !ls.length ? h('p', { class: 'muted' }, 'Este chá não tem saldo no estoque agora.') : null,
         ].filter(Boolean));
+        // na primeira vez, o foco vai para o "Fechar ✕" (o teclado e o leitor de tela já estão dentro da janela)
+        if (!focou) { focou = true; const f = caixa.querySelector('.vl-pac-fechar'); if (f && caixa.contains(document.activeElement)) f.focus(); }
       }).catch((e) => caixa.replaceChildren(h('div', { class: 'notice err' }, e.message), h('button', { type: 'button', class: 'btn', onclick: fechar }, 'Fechar')));
     }
     carregar();
