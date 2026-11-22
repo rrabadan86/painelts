@@ -41,6 +41,7 @@
 
   // ---------- critérios ----------
   const SEGS = [['vip', 'VIP'], ['fiel', 'Fiéis'], ['sumido', 'Sumidos'], ['repor', 'Hora de repor'], ['vence', 'Pontos vencendo'], ['novo', 'Novos do mês'], ['uma', 'Uma compra só']];
+  const BASE_INTEIRA = 0.3; // acima disto da base com celular, a campanha avisa (decisão do dono)
   const PADRAO = { ptsMin: '', ptsMax: '', venceDias: '', produto: '', produtos: [], grupo: '', compraDias: '', compraVezes: '', ausMin: '', ausMax: '', visMin: '', visMax: '', aniv: '', segs: [], rfm: [], tipos: [], vendedora: '', lojaPref: '', semContato: 30 };
   // tipo de chá pela família do grupo de venda: "CHÁ PRETO AROMATIZADO" e "CHÁ PRETO PURO" → "Chá preto"
   const NAO_TIPO = /ACESS|ENVASAD|ALIMENT|TEA ROOM|TEA MOMENT|CONSUM|MATERIA|SACH|FIDELIDADE|KIT|PRESENTE|EMBALA|LATA|MINITIN|ESPA[ÇC]O GOURMET|COSM/i;
@@ -198,7 +199,7 @@
     const de = (st) => new Set(hoje && robo ? r.lista.filter((x) => x.st === st).map((x) => x.cpf) : []);
     return { camp, robo, pendentes: de('p'), comparacao: de('c') }; // comparação: sorteados para ficar sem mensagem (medir o efeito)
   };
-  /** manda a lista conferida ao abrir a tela, ao abrir a campanha e ao marcar "Enviar pelo robô" */
+  /** manda a lista conferida ao abrir a tela, ao abrir a campanha e ao ligar o robô na campanha */
   async function prepararRobo(camps, dispLido) {
     if (TS.demo || !TS.zapPreparar || !camps.length) return;
     let disp = dispLido || null;
@@ -409,7 +410,7 @@
           h('p', { class: 'muted' }, 'Motivos que o robô envia (ordem de importância: o cliente que está em mais de um recebe só a do primeiro). Os não marcados continuam na tela Hoje para a equipe.'),
           linhas, resumoTxt,
           h('label', { class: 'cp-campo' }, h('span', null, 'Máximo de mensagens por dia nesta campanha', TS.dica('Comece baixo (15 a 20) e suba aos poucos: mais mensagens automáticas aumentam o risco de o WhatsApp restringir o número da loja. O robô também respeita o máximo por dia do número.')), limite),
-          h('small', { class: 'muted' }, 'Campos: {nome}, {apresentacao} ("Aqui é a Gabrielly, da …"), {cha}, {chaoferta}, {pontos}, {vence}, {loja}. Depois de criar, ligue "Enviar pelo robô" na campanha; dá para desligar quando quiser.'),
+          h('small', { class: 'muted' }, 'Campos: {nome}, {apresentacao} ("Aqui é a Gabrielly, da …"), {cha}, {chaoferta}, {pontos}, {vence}, {loja}. Depois de criar, use "🤖 Ligar o robô para esta campanha"; dá para desligar quando quiser.'),
           h('div', { class: 'cfg-acoes' }, salvar))));
   }
 
@@ -422,7 +423,8 @@
     const inp = (k, ph, tipo = 'number') => { const i = h('input', { class: 'f-input', type: tipo, placeholder: ph, value: f[k] ?? '', min: tipo === 'number' ? 0 : null }); i.addEventListener('input', () => { f[k] = i.value; atualizar(); }); return i; };
     const sel = (k, opcoes) => { const s = h('select', { class: 'f-input' }, ...opcoes.map(([v, t]) => h('option', { value: v, selected: String(f[k]) === String(v) || null }, t))); s.addEventListener('change', () => { f[k] = s.value; atualizar(); }); return s; };
     const nome = h('input', { class: 'f-input', placeholder: 'Ex.: Pontos vencendo em dezembro', value: base ? base.nome + (editando || base.copia || base.pronta ? '' : ' (cópia)') : '' });
-    const msg = h('textarea', { class: 'f-input cp-msg', rows: 4 }, base ? base.mensagem : (modelos.find((m) => /pontos/i.test(m.nome)) || modelos[0] || { texto: '' }).texto);
+    // campanha nova: modelo neutro (o de "Pontos vencendo" supunha um critério de pontos que a campanha nova não tem)
+    const msg = h('textarea', { class: 'f-input cp-msg', rows: 4 }, base ? base.mensagem : (modelos.find((m) => /novidade/i.test(m.nome)) || modelos[0] || { texto: '' }).texto);
     const modSel = h('select', { class: 'f-input' }, h('option', { value: '' }, 'Usar um modelo…'), ...modelos.map((m, k) => h('option', { value: k }, m.nome)));
     modSel.addEventListener('change', () => { if (modSel.value !== '') { msg.value = modelos[+modSel.value].texto; atualizar(); } modSel.value = ''; });
     const janela = h('input', { class: 'f-input', type: 'number', min: 1, max: 365, value: base ? base.janela : 30 });
@@ -468,10 +470,14 @@
     let sel_ = [];
     let dispForm = null;
     if (TS.estoqueDisp && state.loja && state.loja !== 'todas') TS.estoqueDisp(state.loja).then((d0) => { dispForm = d0; atualizar(); }).catch(() => null);
+    // decisão do dono: campanha que pega quase a base inteira (mais de 30% dos clientes com celular) avisa e pede confirmação ao salvar
+    const baseCel = TS.cli.lista.filter((c) => c.wpp).length;
+    const quaseTodos = () => baseCel >= 20 && sel_.length > baseCel * BASE_INTEIRA;
     let atualizar = TS.debounce(() => {
       sel_ = selecionar(f);
-      contagem.replaceChildren(h('b', null, fmt.int(sel_.length)), ` ${sel_.length === 1 ? 'cliente' : 'clientes'} com celular entram na campanha`,
-        comp.checked ? h('small', { class: 'muted cp-comp-n' }, sel_.length >= CR.MIN_LISTA ? `cerca de ${fmt.int(Math.round(sel_.length * CR.PCT / 100))} ficam sem mensagem, para comparar` : `sem grupo de comparação: a lista tem menos de ${CR.MIN_LISTA} clientes`) : null);
+      contagem.replaceChildren(...[h('b', null, fmt.int(sel_.length)), ` ${sel_.length === 1 ? 'cliente' : 'clientes'} com celular entram na campanha`,
+        comp.checked ? h('small', { class: 'muted cp-comp-n' }, sel_.length >= CR.MIN_LISTA ? `cerca de ${fmt.int(Math.round(sel_.length * CR.PCT / 100))} ficam sem mensagem, para comparar` : `sem grupo de comparação: a lista tem menos de ${CR.MIN_LISTA} clientes`) : null,
+        quaseTodos() ? h('div', { class: 'notice warn cp-quase' }, `⚠ ${fmt.pct(sel_.length / baseCel, 0)} dos clientes com celular: quase a base inteira. Confira os critérios (pontos, segmento, última compra…) antes de salvar.`) : null].filter(Boolean));
       const c0 = sel_[0] && sel_[0].c;
       // quem não tem o dado de um campo usado (ex.: sem chá favorito) recebe o texto de reserva: avisa quantos
       const faltam = (TS.CAMPOS_MSG || []).filter(([k, , falta]) => falta && msg.value.includes('{' + k + '}'))
@@ -489,7 +495,7 @@
       por(previa, sel_.length ? TS.table({
         cols: [{ key: 'nome', label: 'Cliente', align: 'l', render: (r) => h('span', null, r.nome, h('small', { class: 'muted cp-cel' }, `${r.cel} · CPF ${A().fmtCPF(r.cpf)}`)) }, { key: 'saldo', label: 'Pontos', fmt: fmt.int }, { key: 'vence', label: 'Vencem', align: 'l' }, { key: 'ultima', label: 'Última compra', align: 'l', render: (r) => d(r.ult) }],
         rows: sel_.slice(0, 300).map(({ c, saldo }) => ({ cpf: c.cpf, nome: c.nome || '—', cel: A().fmtTel(c.celular), saldo, vence: c.fx && c.fx.prox != null ? `${fmt.int(c.fx.proxPts)} em ${d(c.fx.prox)}` : '—', ult: c.ultima, ultima: c.ultima ?? -1 })),
-        sortKey: 'saldo', onRowClick: (r) => A().abrirClientes([r.cpf]),
+        sortKey: 'saldo', cartao: true, onRowClick: (r) => A().abrirClientes([r.cpf]),
       }) : TS.empty('Nenhum cliente com celular atende a esses critérios.'), sel_.length > 300 ? h('small', { class: 'muted' }, `Mostrando 300 de ${fmt.int(sel_.length)}. A campanha guarda todos.`) : null);
     }, 250);
     msg.addEventListener('input', atualizar);
@@ -517,6 +523,10 @@
       erro.textContent = '';
       if (!nome.value.trim()) { erro.textContent = 'Dê um nome à campanha.'; nome.focus(); return; }
       if (!sel_.length && !editando) { erro.textContent = 'Nenhum cliente na lista.'; return; }
+      if (quaseTodos() && TS.janelaConfirmar && !(await TS.janelaConfirmar('Esta campanha pega quase todos os clientes', [
+        h('p', null, `${fmt.int(sel_.length)} de ${fmt.int(baseCel)} clientes com celular (${fmt.pct(sel_.length / baseCel, 0)}) entram na lista.`),
+        h('p', { class: 'muted' }, 'Campanha para quase todo mundo costuma ser mensagem que não serve para a maioria. Para mirar melhor, escolha um critério (pontos vencendo, segmento, tempo sem comprar, tipo de chá…).'),
+      ], 'Salvar assim mesmo', 'Voltar e escolher critérios'))) return;
       salvar.disabled = true;
       if (editando) {
         try {
@@ -697,6 +707,11 @@
       const x = await api('PUT', `/api/campanhas/${camp.id}`, { loja: state.loja, robo: quer });
       Object.assign(camp, x.campanha);
       repintar();
+    }, {
+      // o que a janela de "Ligar o robô" mostra: pendentes da lista atual (sem quem espera estoque), comparação e a mensagem do 1º
+      pendentes: () => (r === camp.rodadas[0] ? pend.length : camp.rodadas[0].lista.filter((x) => x.st === 'p').length),
+      comparacao: () => camp.rodadas[0].lista.filter((x) => x.st === 'c').length,
+      exemplo: () => { if (!atual) return null; const c = clienteDe(atual.cpf); return A().texto(textosAtual[varAtual], c, { ...extras(camp), chaoferta: atual.o || c.chaFavorito || 'chá' }); },
     }) : null;
     const pelosRobo = r.lista.filter((x) => x.st === 'e' && x.por === 'robô').length;
     // limite por dia: conta os envios de hoje desta campanha (todas as listas)
@@ -721,7 +736,8 @@
       const c = clienteDe(atual.cpf);
       const txt = A().texto(textosAtual[varAtual], c, { ...extras(camp), chaoferta: atual.o || c.chaFavorito || 'chá' });
       const ct = A().contatoDe(c);
-      const enviar = h('a', { class: 'btn primary cp-enviar', href: '#' }, 'Abrir no WhatsApp e ir para o próximo ›');
+      // com o robô ligado nesta campanha, o envio manual continua possível, mas deixa de ser o botão principal
+      const enviar = h('a', { class: 'btn cp-enviar' + (camp.robo ? ' cp-enviar-sec' : ' primary'), href: '#', role: 'button' }, 'Abrir no WhatsApp e ir para o próximo ›');
       enviar.addEventListener('click', async (e) => {
         e.preventDefault();
         if (!c.wpp) return;
@@ -738,10 +754,10 @@
             }
           }
           await marcarSt(atual, 'e', null, textosAtual.length > 1 ? varAtual : null);
-        } catch (err) { alert(err.message); }
+        } catch (err) { TS.avisarErro(err); }
         repintar();
       });
-      fila = TS.card('Fila de envio', `${fmt.int(pend.length)} pendentes${textosAtual.length > 1 ? ` · variação ${varAtual + 1} de ${textosAtual.length}` : atual.m ? ` · motivo: ${NOME_MOTIVO[atual.m] || atual.m}` : ''} · com o WhatsApp da loja aberto neste computador, clique, confira e aperte Enter no WhatsApp`, contaHoje,
+      fila = TS.card('Fila de envio', `${fmt.int(pend.length)} pendentes${textosAtual.length > 1 ? ` · variação ${varAtual + 1} de ${textosAtual.length}` : atual.m ? ` · motivo: ${NOME_MOTIVO[atual.m] || atual.m}` : ''} · toque, confira a mensagem e envie pelo WhatsApp da loja`, contaHoje,
         h('div', { class: 'cp-fila' },
           h('div', { class: 'cp-fila-cli' },
             h('div', { class: 'cj-nome' }, c.nome || 'Cliente'),
@@ -797,7 +813,7 @@
         kpi('Voltaram', pctVoltou(s.rec), s.rec.fechados ? `${fmt.int(s.rec.voltFech)} de ${fmt.int(s.rec.fechados)} com o prazo fechado${s.rec.abertos ? ` · ${fmt.int(s.rec.abertos)} ainda no prazo` : ''}` : s.rec.abertos ? `${fmt.int(s.rec.abertos)} ainda no prazo${s.rec.voltAbertos ? ` (${fmt.int(s.rec.voltAbertos)} já voltaram)` : ''}` : 'nenhuma enviada ainda',
           `Voltaram ÷ enviadas cujo prazo de ${camp.janela} dias JÁ FECHOU.\n\n"Voltou" = comprou (cupom com CPF) depois da mensagem: do dia seguinte ao envio até ${camp.janela} dias depois. Compra do mesmo dia do envio não conta (o painel não sabe se foi antes ou depois da mensagem).\n\nQuem ainda está no prazo fica de fora do % (ainda pode voltar) e aparece separado.${s.comp ? '' : '\n\nSem grupo de comparação este número não é o efeito da campanha: parte destes clientes voltaria de qualquer jeito.'}`),
         kpi('Faturamento do retorno', fmt.brl0(s.rec.vt), s.rec.volt ? `ticket ${fmt.brl0(s.rec.vt / s.rec.volt)} · ${fmt.int(s.rec.volt)} ${s.rec.volt === 1 ? 'cliente' : 'clientes'}` : null, `Soma das compras de quem recebeu a mensagem e voltou no prazo (do dia seguinte ao envio até ${camp.janela} dias depois), inclusive de quem ainda está no prazo. Não é tudo "da campanha": parte compraria de qualquer jeito — o cartão "Efeito da campanha" mostra a diferença para quem não recebeu.`),
-        kpi('Não querem', fmt.int(s.opt), 'saíram das próximas campanhas')),
+        kpi('Não querem', fmt.int(s.opt), 'saíram das próximas campanhas', 'Clientes desta lista marcados como "não quer mensagens" (pela fila, pela ficha ou porque responderam "parar" ao robô). Não recebem mais nenhuma campanha da loja, nem pelo robô, até alguém marcar "Voltou a aceitar" na ficha.')),
       avisoEstoque ? h('div', { class: 'mt' }, avisoEstoque) : null,
       opcaoRobo ? h('div', { class: 'mt' }, opcaoRobo) : null,
       h('div', { class: 'mt' }, fila),

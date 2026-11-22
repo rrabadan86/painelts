@@ -233,11 +233,28 @@
     };
     const msg = h('textarea', { class: 'f-input esp-msg', rows: 2 }, textoDe(d.modelo, p, d.lojaNome));
     const linkW = () => wpp(p.cliente.celular, msg.value);
-    const btnW = (rot) => h('a', { class: 'btn primary esp-wpp', href: '#', onclick: (e) => {
+    /**
+     * Regra forte na Lista de espera (decisão do dono): avisar que chegou é pedido do próprio cliente, então só trava quem
+     * pediu para não receber mensagens (o servidor confere; sem CPF não há o que conferir). A janela abre no clique.
+     */
+    const abrirW = async (u) => {
+      if (TS.demo) return true;
+      const w = window.open('about:blank', '_blank');
+      if (p.cliente.cpf) {
+        try {
+          const r = await fetch('/api/contatos/conferir', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-Painel': '1' }, body: JSON.stringify({ loja, cpf: p.cliente.cpf, espera: true }) });
+          const j = await r.json().catch(() => ({}));
+          if (!r.ok) { if (w) w.close(); if (j.bloqueado) TS.avisar(j.erro, { titulo: 'WhatsApp não aberto' }); else TS.avisarErro(new Error(j.erro || 'Não deu certo.')); return false; }
+        } catch (e) { if (w) w.close(); TS.avisarErro(e); return false; }
+      }
+      if (w) { try { w.opener = null; } catch { /* ok */ } w.location.href = u; } else window.location.href = u;
+      return true;
+    };
+    const btnW = (rot) => h('a', { class: 'btn primary esp-wpp', href: '#', onclick: async (e) => {
       e.preventDefault();
       const u = linkW();
       if (!u) { TS.avisar('Este cliente está sem celular válido. Corrija o celular no cadastro do AppNext para avisar pelo WhatsApp.'); return; }
-      if (!TS.demo) window.open(u, '_blank', 'noopener');
+      if (!(await abrirW(u))) return;
       fazer('avisado', null, vNome ? { vendedora: vNome } : null);
     } }, rot);
     const quemAvisou = (p.avisado && bonito(p.avisado.vendedora || (!LOGIN_GEN.test(p.avisado.por || '') ? p.avisado.por : ''))) || vNome || (p.avisado && p.avisado.por) || '—';
@@ -249,7 +266,7 @@
               : `Cancelado ${dataTxt(p.cancelado && p.cancelado.em)} por ${(p.cancelado && p.cancelado.por) || '—'}`;
     const acoes = p.st === 'chegou' ? [btnW('Avisar no WhatsApp ›'), h('button', { type: 'button', class: 'btn', onclick: () => fazer('cancelar', 'Cancelar este pedido da lista de espera?') }, 'Cancelar')]
       : p.st === 'esperando' ? [h('button', { type: 'button', class: 'btn', title: 'Use se o produto chegou e a nota ainda não apareceu no painel', onclick: () => fazer('chegou') }, 'Já chegou'), h('button', { type: 'button', class: 'btn', onclick: () => fazer('cancelar', 'Cancelar este pedido da lista de espera?') }, 'Cancelar')]
-        : p.st === 'avisado' ? [h('a', { class: 'btn', href: TS.demo ? '#' : (wpp(p.cliente.celular, '') || '#'), target: TS.demo ? null : '_blank', rel: TS.demo ? null : 'noopener', onclick: TS.demo ? (e) => { e.preventDefault(); TS.avisar('Na apresentação nada é enviado.'); } : null }, 'Abrir conversa'), h('button', { type: 'button', class: 'btn', onclick: () => fazer('cancelar', 'Cancelar este pedido?') }, 'Cancelar')]
+        : p.st === 'avisado' ? [h('a', { class: 'btn', href: '#', onclick: (e) => { e.preventDefault(); if (TS.demo) { TS.avisar('Na apresentação nada é enviado.'); return; } const u = wpp(p.cliente.celular, ''); if (!u) { TS.avisar('Este cliente está sem celular válido.'); return; } abrirW(u); } }, 'Abrir conversa'), h('button', { type: 'button', class: 'btn', onclick: () => fazer('cancelar', 'Cancelar este pedido?') }, 'Cancelar')]
           : p.st === 'naocomprou' || p.st === 'cancelado' ? [h('button', { type: 'button', class: 'btn', onclick: () => fazer('reabrir') }, 'Reabrir')] : [];
 
     // seletor discreto para definir/trocar a vendedora do pedido quando necessário

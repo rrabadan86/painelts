@@ -139,7 +139,7 @@
         h('div', { class: 'zap-linha' }, h('b', null, 'Máximo por dia'), TS.dica('Quantas mensagens o robô manda por dia pelo número da loja, somando todas as campanhas. Chegou no máximo, continua no próximo dia de envio. Cada campanha ainda tem o próprio limite por dia. Padrão: 30.'), teto, h('span', null, 'mensagens por dia (todas as campanhas)')),
         h('div', { class: 'zap-linha' }, h('b', null, 'Parar sozinho'), TS.dica('Se o envio falhar esse número de vezes seguidas, o robô pausa, avisa aqui e no Início e só volta quando alguém ligar de novo. Protege o número quando algo está errado. Padrão: 3.'), h('span', null, 'depois de'), falhas, h('span', null, 'falhas seguidas')));
       if (trava) for (const el of campos.querySelectorAll('input')) el.disabled = true;
-      partes.push(campos, trava ? h('small', { class: 'muted' }, '🔒 Só o administrador ou o franqueado da loja muda a configuração do robô.') : h('div', { class: 'cfg-acoes' }, btSalvar));
+      partes.push(campos, trava ? h('small', { class: 'muted' }, '🔒 Só o administrador, o franqueado da loja ou a gerente com a tela Clientes muda a configuração do robô.') : h('div', { class: 'cfg-acoes' }, btSalvar));
       sec.replaceChildren(...partes.filter(Boolean));
       agendar();
     }
@@ -178,7 +178,7 @@
       box.hidden = false;
       const erro = h('small', { class: 'neg', role: 'alert' });
       const btPausar = h('button', { type: 'button', class: 'btn' }, 'Pausar o robô');
-      btPausar.title = 'Para os envios do robô agora. Só o administrador ou o franqueado liga de novo.';
+      btPausar.title = s.pode.configurar ? 'Para os envios do robô agora. Para voltar, use "Ligar de novo".' : 'Para os envios do robô agora. Só o administrador, o franqueado ou a gerente com a tela Clientes liga de novo.';
       btPausar.addEventListener('click', async () => { btPausar.disabled = true; try { s = await api('POST', 'pausar', { loja: lojaId }); pintar(); } catch (e) { erro.textContent = e.message; btPausar.disabled = false; } });
       const btLigar = h('button', { type: 'button', class: 'btn primary' }, s.pausa ? 'Ligar de novo' : 'Ligar o robô');
       btLigar.addEventListener('click', async () => { btLigar.disabled = true; try { s = await api('POST', 'ligar', { loja: lojaId }); pintar(); } catch (e) { erro.textContent = e.message; btLigar.disabled = false; } });
@@ -187,7 +187,7 @@
       box.className = 'zap-faixa card' + (s.pausa && s.pausa.auto ? ' zap-erro' : '');
       box.replaceChildren(...[
         h('div', { class: 'zap-faixa-t' }, h('b', null, '🤖 Robô do WhatsApp'),
-          TS.dica('Envia sozinho, pelo WhatsApp da loja, as campanhas marcadas com "Enviar pelo robô": uma mensagem por vez, no ritmo, horário e máximo por dia definidos em Configurações → loja → Mensagens. Quem pediu para não receber ou recebeu mensagem há pouco tempo fica de fora. ' + RISCO),
+          TS.dica(`Envia sozinho, pelo WhatsApp da loja, as campanhas com o robô ligado: uma mensagem por vez, no ritmo, horário e máximo por dia definidos ${s.pode.configurar ? 'no botão de configurar, aqui ao lado' : 'por quem cuida do robô (administrador, franqueado ou gerente)'}. Quem pediu para não receber ou recebeu mensagem há pouco tempo fica de fora. ` + RISCO),
           s.servico ? etiqueta(sitRobo(s)) : null, etiqueta(sitConexao(s))),
         h('div', { class: 'zap-faixa-m' }, s.servico ? h('span', null, linhaHoje(s)) : null, mot ? h('small', { class: s.pausa && s.pausa.auto ? 'neg' : 'muted' }, mot) : null, erro),
         h('div', { class: 'zap-faixa-b' },
@@ -201,22 +201,111 @@
     return box;
   };
 
-  /** opção "Enviar pelo robô" de uma campanha (só admin e franqueado ligam; os outros veem travado) */
-  TS.zapOpcao = function (camp, aoMudar) {
+  /**
+   * Janela de confirmação do painel (no lugar do confirm() do navegador): título, conteúdo (elementos) e dois botões.
+   * → Promise<boolean>. Esc, clique fora e o "voltar" do celular contam como cancelar.
+   */
+  TS.janelaConfirmar = function (titulo, conteudo, ok = 'Confirmar', cancelar = 'Cancelar') {
+    return new Promise((resolver) => {
+      const fundo = h('div', { class: 'cp-modal-bg' });
+      let feito = false;
+      const sair = (v) => { if (feito) return; feito = true; fundo.remove(); resolver(v); };
+      const btOk = h('button', { type: 'button', class: 'btn primary', onclick: () => sair(true) }, ok);
+      fundo.addEventListener('click', (e) => { if (e.target === fundo) sair(false); });
+      fundo.addEventListener('keydown', (e) => { if (e.key === 'Escape') sair(false); });
+      fundo.append(h('div', { class: 'card cp-copiar ts-perg ts-conf', role: 'dialog', 'aria-modal': 'true', 'aria-label': titulo },
+        h('h3', null, titulo), h('div', { class: 'ts-conf-corpo' }, ...[].concat(conteudo).filter(Boolean)),
+        h('div', { class: 'ts-perg-acoes' }, h('button', { type: 'button', class: 'btn', onclick: () => sair(false) }, cancelar), btOk)));
+      new MutationObserver((_, ob) => { if (!fundo.isConnected) { ob.disconnect(); if (!feito) { feito = true; resolver(false); } } }).observe(document.body, { childList: true });
+      document.body.append(fundo);
+      btOk.focus();
+    });
+  };
+
+  /**
+   * Quanto tempo a campanha leva no robô (só estimativa para a pessoa decidir; quem manda de verdade é src/zapfila.js):
+   * por dia = o menor entre o limite da campanha, o máximo do número e o que cabe no horário no ritmo médio.
+   * Conta só os dias de envio (cfg.dias), no horário de Brasília. → { porDia, dias, fim (Date), primeira (Date|null), agoraNoHorario }
+   */
+  function estimar({ pend, limite, cfg, agora = Date.now() }) {
+    const sp = (t) => {
+      const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Sao_Paulo', weekday: 'short', hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(new Date(t)).map((x) => [x.type, x.value]));
+      return { dow: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(p.weekday), min: (+p.hour % 24) * 60 + +p.minute };
+    };
+    const hm = (t) => +t.slice(0, 2) * 60 + +t.slice(3, 5);
+    const ini = hm(cfg.das), fim = hm(cfg.as), medio = (cfg.min + cfg.max) / 2;
+    const cabe = Math.max(1, Math.floor(((fim - ini) * 60) / medio) + 1);
+    const porDia = Math.max(1, Math.min(limite > 0 ? limite : Infinity, cfg.teto, cabe));
+    const agoraSP = sp(agora), envia = (dow) => cfg.dias.includes(dow);
+    const agoraNoHorario = envia(agoraSP.dow) && agoraSP.min >= ini && agoraSP.min < fim;
+    // dias de envio a partir de hoje (hoje só conta se ainda dá tempo)
+    const diasEnvio = [];
+    for (let k = 0; diasEnvio.length < 400 && k < 800; k++) {
+      if (!envia(sp(agora + k * 864e5).dow)) continue;
+      if (k === 0 && agoraSP.min >= fim) continue;
+      diasEnvio.push(k);
+    }
+    const n = Math.max(1, Math.ceil(pend / porDia));
+    const k0 = diasEnvio[0] ?? 0, kFim = diasEnvio[Math.min(n, diasEnvio.length) - 1] ?? 0;
+    // primeira fora do horário: no começo do próximo horário de envio
+    const primeira = agoraNoHorario ? null : new Date(agora + k0 * 864e5 + ((k0 === 0 ? Math.max(0, ini - agoraSP.min) : ini - agoraSP.min) * 60e3));
+    return { porDia, dias: n, fim: new Date(agora + kFim * 864e5), primeira, agoraNoHorario };
+  }
+  TS.zapEstimar = estimar;
+
+  /**
+   * Robô de uma campanha (decisão do dono, revisão de 22/11): ligar mostra antes o que vai acontecer — quantos recebem, quantos
+   * ficam para comparar, limites, dias e horário, término estimado, primeira mensagem e um exemplo. Desligar é um toque.
+   * Quem liga: administrador, franqueado da loja e gerente com a tela Clientes (o servidor confere).
+   * info: { pendentes(), comparacao(), exemplo() } da tela Campanhas.
+   */
+  TS.zapOpcao = function (camp, aoMudar, info = {}) {
     const pode = gestor();
     if (!pode && !camp.robo) return null;
-    const cb = h('input', { type: 'checkbox', checked: camp.robo || null, disabled: pode ? null : true });
     const erro = h('small', { class: 'neg', role: 'alert' });
-    cb.addEventListener('change', async () => {
-      const quer = cb.checked;
-      if (quer && !confirm(`Enviar "${camp.nome}" pelo robô?\n\nO robô manda as mensagens pendentes sozinho, pelo WhatsApp da loja, no ritmo e horário de Configurações.\n\n${RISCO}`)) { cb.checked = false; return; }
-      cb.disabled = true; erro.textContent = '';
-      try { await aoMudar(quer); } catch (e) { cb.checked = !quer; erro.textContent = e.message; }
-      cb.disabled = false;
-    });
-    return h('div', { class: 'zap-opcao' }, h('label', { class: 'cfg-check-l' }, cb, h('b', null, '🤖 Enviar pelo robô'), pode ? null : h('span', { title: 'Só o administrador ou o franqueado da loja liga ou desliga' }, ' 🔒')),
-      TS.dica('Marcada: o robô do WhatsApp envia os pendentes desta lista sozinho, um por vez, respeitando o limite por dia da campanha e o ritmo, horário e máximo por dia da loja. Desmarcada: só o envio manual, um clique por mensagem. Mesmo marcada, dá para enviar à mão. ' + RISCO),
-      camp.robo ? h('small', { class: 'muted' }, 'O robô envia os pendentes desta lista. Para ele usar os dados mais novos de cada cliente (pontos, chá, estoque), abra esta tela a cada 2 ou 3 dias.') : null, erro);
+    const dica = TS.dica('Robô ligado: o robô do WhatsApp envia os pendentes desta lista sozinho, um por vez, respeitando o limite por dia da campanha e o ritmo, horário e máximo por dia da loja. A lista é conferida de novo pelo próprio servidor todo dia (pontos, chá, estoque), sem ninguém abrir a tela. Mesmo ligado, dá para enviar à mão. ' + RISCO);
+    const dataTxt = (d) => fmt.date(d.toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }));
+    const ligar = async (bt) => {
+      bt.disabled = true; erro.textContent = '';
+      let s = null;
+      try { s = await api('GET', 'situacao?' + qs(state.loja)); } catch { /* sem situação: confirma sem os números do robô */ }
+      const pend = info.pendentes ? info.pendentes() : 0, comp = info.comparacao ? info.comparacao() : 0;
+      const limite = camp.limiteDia != null ? camp.limiteDia : 20;
+      const cfg = s && s.cfg;
+      const est = cfg ? estimar({ pend, limite, cfg }) : null;
+      const diasTxt = cfg ? DIAS.filter(([d]) => cfg.dias.includes(d)).map(([, t]) => t).join(', ') : '';
+      const ex = info.exemplo ? info.exemplo() : null;
+      const andando = s && s.ligado && !s.pausa && s.conexao && s.conexao.estado === 'conectado';
+      const primeira = !est || !pend ? null
+        : !andando ? (s.pausa ? 'quando alguém ligar o robô de novo (está pausado)' : s.conexao && s.conexao.estado !== 'conectado' ? 'quando o WhatsApp da loja estiver conectado' : 'quando o robô da loja for ligado (faixa do robô, acima)')
+          : est.agoraNoHorario ? (s.proximoEm ? `por volta de ${hhmm(s.proximoEm)}` : 'em instantes') : `${dataTxt(est.primeira)} por volta de ${hhmm(est.primeira.toISOString())}`;
+      const linha = (rot, val) => h('li', null, h('b', null, rot + ': '), val);
+      const sim = await TS.janelaConfirmar(`Ligar o robô para "${camp.nome}"?`, [
+        h('ul', { class: 'zap-resumo' }, ...[
+          linha('Vai enviar para', `${fmt.int(pend)} ${pend === 1 ? 'cliente' : 'clientes'}${comp ? ` (${fmt.int(comp)} ${comp === 1 ? 'fica' : 'ficam'} sem mensagem, para comparar)` : ''}`),
+          linha('Por dia', `até ${limite > 0 ? fmt.int(limite) : 'sem limite'} desta campanha${cfg ? ` · ${fmt.int(cfg.teto)} no número da loja (somando todas as campanhas)` : ''}`),
+          cfg ? linha('Quando', `${diasTxt}, das ${cfg.das} às ${cfg.as} (horário de Brasília), uma mensagem a cada ${Math.round(cfg.min / 60)} a ${Math.round(cfg.max / 60)} minutos`) : null,
+          est && pend ? linha('Termina', `por volta de ${dataTxt(est.fim)} (${fmt.int(est.dias)} ${est.dias === 1 ? 'dia' : 'dias'} de envio, cerca de ${fmt.int(est.porDia)} por dia${s.fila && s.fila.campanhas ? '; com outras campanhas no robô, demora mais' : ''})`) : null,
+          primeira ? linha('A primeira sai', primeira) : null,
+        ].filter(Boolean)),
+        ex ? h('div', null, h('small', { class: 'muted' }, 'Exemplo da mensagem:'), h('div', { class: 'cli-msg' }, ex)) : null,
+        h('p', { class: 'muted' }, 'Quem pediu para não receber, recebeu mensagem dentro do intervalo da loja ou receberia oferta de produto sem estoque fica de fora. ' + RISCO),
+      ], 'Ligar o robô', 'Cancelar');
+      if (!sim) { bt.disabled = false; return; }
+      try { await aoMudar(true); } catch (e) { erro.textContent = e.message; bt.disabled = false; }
+    };
+    if (!camp.robo) {
+      const bt = h('button', { type: 'button', class: 'btn zap-ligar' }, '🤖 Ligar o robô para esta campanha');
+      bt.addEventListener('click', () => ligar(bt));
+      return h('div', { class: 'card zap-opcao' }, h('div', { class: 'zap-opcao-t' }, h('b', null, 'Robô do WhatsApp'), dica),
+        h('small', { class: 'muted' }, 'Desligado: só o envio manual, um toque por mensagem.'), bt, erro);
+    }
+    const bt = h('button', { type: 'button', class: 'btn' }, 'Desligar o robô');
+    bt.addEventListener('click', async () => { bt.disabled = true; erro.textContent = ''; try { await aoMudar(false); } catch (e) { erro.textContent = e.message; bt.disabled = false; } });
+    const pend = info.pendentes ? info.pendentes() : null;
+    return h('div', { class: 'card zap-opcao zap-opcao-on' }, h('div', { class: 'zap-opcao-t' }, h('b', null, '🤖 Robô ligado nesta campanha'), dica),
+      h('small', { class: 'muted' }, `O robô envia os pendentes desta lista sozinho${pend != null ? ` (${fmt.int(pend)} na fila)` : ''}, no ritmo e horário da loja. A situação dele está na faixa do robô, acima.`),
+      pode ? bt : h('span', { class: 'muted', title: 'Só o administrador, o franqueado ou a gerente com a tela Clientes desligam' }, '🔒'), erro);
   };
   /** manda ao servidor os valores dos campos e o número de cada pendente (o servidor monta o mesmo texto do envio manual) */
   TS.zapPreparar = (lojaId, campanha, itens) => (TS.demo ? Promise.resolve({ ok: true }) : api('PUT', 'preparo', { loja: lojaId, campanha, itens }));

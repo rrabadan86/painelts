@@ -196,10 +196,10 @@ test('Custo subiu: margem antes × agora e preço sugerido para manter a margem'
   expect(Math.round((r.x.sug * 100)) % 100).toBe(90);
 });
 
-test('Hoje: meta do dia da loja e a parte de cada vendedora', async ({ page }, info) => {
+test('Início: meta do dia da loja e a parte de cada vendedora (saiu de Clientes → Hoje)', async ({ page }, info) => {
   test.skip(info.project.name !== 'computador');
   await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS.db && TS.cli);
-  await page.evaluate(() => { location.hash = '#hoje'; });
+  await page.evaluate(() => { location.hash = '#inicio'; });
   const c = page.locator('.md-card');
   await expect(c).toContainText('Meta de hoje');
   await expect(c).toContainText(/Falta R\$/);

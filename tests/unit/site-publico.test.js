@@ -22,7 +22,9 @@ test('SITE-02: a página técnica cita cada skill, cada arquivo de regras e cada
 
 test('SITE-03: o site diz que é projeto independente e não promete o que as regras proíbem', () => {
   for (const h of [ini, tec]) {
-    assert.match(h, /Não é produto oficial da franqueadora nem da NextSoft/);
+    // decisão do dono (22/11/2026): a frase não diz mais "para a própria operação" (o painel pode ser oferecido a outros franqueados)
+    assert.match(h, /Projeto independente, criado por um franqueado a partir da operação das próprias lojas\. Não é produto da franqueadora nem da NextSoft/);
+    assert.ok(!/própria operação/.test(h));
     assert.ok(!/<script/i.test(h));
   }
   assert.match(ini, /Finalizar o pedido continua sendo com você/);

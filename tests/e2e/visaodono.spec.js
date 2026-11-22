@@ -192,12 +192,12 @@ test('Resultado: linha "− Perdas" depois do custo dos produtos, reduz o result
   await print(page, info, 'resultado-perdas');
 });
 
-test('Hoje: a meta de hoje é dividida pelas horas da escala; sem escala, partes iguais (e a tela diz)', async ({ page }, info) => {
+test('Início: a meta de hoje (saiu de Clientes → Hoje) é dividida pelas horas da escala; sem escala, partes iguais (e a tela diz)', async ({ page }, info) => {
   test.skip(info.project.name !== 'computador');
   await abrir(page);
   // escolhe uma loja da apresentação com a escala ligada aos nomes dos vendedores
   const loja = await page.evaluate(() => { const hoje = TS.dayToIso(TS.todayDay()); for (const l of TS.lojas) { if (l.id !== TS.state.loja) continue; const e = TS.escalaTurnos(hoje, hoje); return e ? { n: e.turnos.length } : null; } return null; });
-  await ir(page, 'hoje');
+  await ir(page, 'inicio');
   const c = page.locator('.md-card');
   await expect(c).toContainText('Meta de hoje');
   const r = await page.evaluate(() => {

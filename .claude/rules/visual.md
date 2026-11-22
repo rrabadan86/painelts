@@ -5,7 +5,7 @@ paths:
 # Padrão visual do painel (construção de layout)
 
 Toda tela nova ou mexida segue estas peças, nesta ordem. Antes de inventar um componente, procure um igual numa tela pronta
-(Estoque → Notas fiscais, ⭐ Sugestões e Configurações → Lojas são as referências de lista; Estoque é a de tabela com filtros e quadros).
+(Estoque → Notas fiscais, ⭐ Sugestões e Configurações → Lojas são as referências de lista; Estoque é a de tabela com filtros e quadros; no celular, o Estoque mostra em cada aba só nome, situação e os 2 ou 3 números que decidem aquela aba — `COLS_MOB` em `estoque.js`).
 Lista que abre um detalhe: a tabela some e o detalhe aparece no lugar, com "‹ Voltar" no topo (Inventário → contagem, Configurações → loja).
 
 ## Princípios do dono (valem para toda tela nova ou mexida)
@@ -33,7 +33,8 @@ Lista que abre um detalhe: a tabela some e o detalhe aparece no lugar, com "‹ 
 **Cartão (`.card`)**: um só recurso separa os blocos — a borda fina, **sem sombra**. Sombra é só do que fica por cima da página (janela, gaveta, menu, balão ⓘ). Nada de caixa dentro de caixa: itens dentro do cartão são linhas com divisória.
 **Texto de apoio do cartão**: uma frase. Subtítulo (texto) com mais de ~140 caracteres o `TS.card`/`TS.cardWithTools` corta sozinho na primeira frase e guarda o resto em "Como ler ▸" (`details.est-como`; o texto todo continua na página).
 **Ações do cabeçalho** (Compartilhar, Imprimir, Expandir): juntas, no canto direito do `card-head`.
-**Lista de avisos (Início)**: uma lista só, com divisórias, agrupada por área com cabeçalho pequeno e contagem (`.ini-grupo`: Estoque, Inventário, Franquia, Vendas, Outros). A área vem da origem do aviso (campo `area`, posto por quem cria — `de('estoque')` em `inicio.js`), nunca do texto; vermelhos primeiro no grupo; "lembrar depois" aparece ao passar o mouse/focar a linha (no celular, sempre).
+**Lista de avisos (Início)**: uma lista só, com divisórias, agrupada por área com cabeçalho pequeno e contagem (`.ini-grupo`: Dados e configuração, Estoque, Inventário, Franquia, Vendas, Outros). A área vem da origem do aviso (campo `area`, posto por quem cria — `de('estoque')` em `inicio.js`; `de('vendas', { 'conf-fontes': 'dados' })` muda a área pelo código do aviso), nunca do texto; vermelhos primeiro no grupo; "lembrar depois" aparece ao passar o mouse/focar a linha (no celular, sempre).
+**Ordem dos grupos (decisão do dono, 22/11/2026):** "Dados e configuração" (atualização que falhou, vendas atrasadas, fonte de dados parada, acesso que falta configurar) sempre primeiro — diz se os números da tela estão velhos; os outros grupos pela gravidade do pior aviso (vermelho > amarelo > azul), empate na ordem fixa (`ordemGrupos`, `TS.inicioCalc`). Aviso cuja ação já está em "O que fazer primeiro" (campo `topo` = tipo da ação) fica marcado "↑ já em O que fazer primeiro", não repete como novidade. Fonte de aviso que falha vira a linha "Não consegui conferir X agora · Tentar de novo" — nunca "Nada pedindo atenção" sem ter conferido. Ordem do Início: faixa da IA → Sua semana → (lojas lado a lado) → Avisos → Meta de hoje → quadros de vendas.
 **Linha de ajustes (Pedido, `.ped-ctl`)**: seletor de modo + campos + "Salvar como padrão" à direita numa linha, alinhados pelos campos; situação e botões de atualizar numa linha discreta abaixo, com divisória; no celular empilha.
 
 ## Listas: sempre `TS.table`, nunca pilha de cartões soltos
@@ -73,7 +74,10 @@ Lista que abre um detalhe: a tabela some e o detalhe aparece no lugar, com "‹ 
 
 ## Celular (390 px)
 - Nada passa da borda: `min-width: 0` em filhos de flex/grid com texto longo, `overflow-wrap: anywhere` em nomes. Formulário dentro de linha de tabela usa `position: sticky; left: 0` e a largura da tela.
-- Toque: botões com área de pelo menos ~32 px; o ✨ flutuante não cobre ação.
+- Toque: botões com área de pelo menos ~32 px; o ✨ flutuante não cobre ação: ele some enquanto a pessoa rola para baixo (volta ao rolar para cima, no topo e no fim) e o fim da página tem folga do tamanho dele (`.ia-fab-some`, `ia.js`). Links de ação no meio do texto ganham 5 px em cima e embaixo no celular (toque ≥ 24 px sem mudar as linhas).
+- **Texto de exemplo (placeholder):** uma regra só, `::placeholder { color: var(--muted) }` (≥ 4,5:1); não crie cor própria de placeholder. Caixa de texto (`textarea.f-input`) usa a letra do painel e cresce com as linhas.
+- **Barra do topo fixa:** `html, body` com `min-height: 100%`, nunca `height: 100%` (quebrava o `sticky` depois da primeira tela).
+- **Abas e submenu que rolam de lado:** a borda com opções escondidas esmaece (`TS.sinalRolagem`); abas que quebram em várias linhas ficam com canto menor (`seg-quebra`), nunca uma bolha grande.
 - **Legibilidade (revisão com as regras do impeccable, 21/11/2026):** letra de pelo menos **12 px** (o `<small>` também: `max(12px, .833em)`; só ficam menores o "i" do ⓘ, as setas de ordenação e as grades densas de escala/horários/calendário); texto com contraste ≥ 4,5:1 contra o fundo real (o `--muted` foi escurecido para valer também no creme e nos avisos; cor nova de texto: confira o contraste); alvo de toque de pelo menos 24 px no celular (o ⓘ tem 16 px de desenho e 28 px de área pelo `::after`; links pequenos de ação ganham altura no celular). Emojis como marca, barra lateral de estado e cartões continuam como estão (decisão do dono). Medição: script de auditoria descrito no achado C-13 de `docs/rastreabilidade.md`.
 - Confira com a skill `conferir-celular` (computador também: `--largura=1100`) e olhe o print antes de subir.
 

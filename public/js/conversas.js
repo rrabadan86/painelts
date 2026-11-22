@@ -44,7 +44,7 @@
   const foneTxt = (chave) => {
     if (!/^\d+$/.test(chave)) return 'número não informado pelo WhatsApp';
     const d = chave.startsWith('55') ? chave.slice(2) : chave;
-    return d.length >= 10 ? `(${d.slice(0, 2)}) ${d.slice(2, -4)}-${d.slice(-4)}` : chave;
+    return d.length >= 10 ? `(${d.slice(0, 2)}) ${d.slice(2, -4)}\u2011${d.slice(-4)}` : chave; // hífen que não quebra a linha
   };
   const TIPO = { imagem: '📷 Foto', video: '🎬 Vídeo', audio: '🎤 Áudio', documento: '📄 Documento', figurinha: '🙂 Figurinha', local: '📍 Localização', contato: '👤 Contato' };
   const resumoMsg = (m) => [m.deMim ? 'Loja: ' : '', m.tipo !== 'texto' ? TIPO[m.tipo] + (m.texto ? ' · ' : '') : '', m.texto || ''].join('');
@@ -53,12 +53,23 @@
   TS.pages.conversas = function (root) {
     if (TS.subClientes) root.append(TS.subClientes('conversas'));
     root.append(h('div', { class: 'page-head' }, h('div', null, h('h1', { class: 'page-title' }, 'Conversas'),
-      h('div', { class: 'page-sub' }, 'As conversas do WhatsApp da loja, ligadas aos clientes. Só admin e franqueado veem; para responder, use o WhatsApp da loja.'))));
+      h('div', { class: 'page-sub' }, 'As conversas do WhatsApp da loja, ligadas aos clientes. Para responder, use o WhatsApp da loja.'))));
     if (!state.loja || state.loja === 'todas') { root.append(h('div', { class: 'notice' }, 'As conversas são de cada loja: escolha uma loja no seletor do topo.')); return; }
     const corpo = h('div', null, h('div', { class: 'loading' }, h('div', null, h('div', { class: 'spinner' }), h('p', null, 'Carregando as conversas…'))));
     root.append(corpo);
     const loja = state.loja;
     let dados = null, timer = null;
+    // o "voltar" do celular fecha a conversa (em vez de sair da tela): abrir uma conversa cria uma entrada no histórico
+    const comEntrada = () => !!(history.state && history.state.conversa);
+    const abrirPeloToque = (chave) => {
+      if (!comEntrada()) history.pushState({ conversa: chave }, '', location.href);
+      abrir(chave, true);
+    };
+    const aoVoltarHist = () => {
+      if (!corpo.isConnected) { window.removeEventListener('popstate', aoVoltarHist); return; }
+      if (st.aberta && !comEntrada()) voltar();
+    };
+    window.addEventListener('popstate', aoVoltarHist);
     const carregar = async () => {
       clearTimeout(timer);
       if (!corpo.isConnected || state.loja !== loja) return;
@@ -72,7 +83,8 @@
         if (TS.abrirConversa) {
           const quer = variantes(TS.abrirConversa); TS.abrirConversa = null;
           const achou = dados.conversas.find((c) => quer.includes(c.chave));
-          if (achou) st.aberta = achou.chave; else TS.avisar('Ainda não há conversa guardada com este cliente.');
+          if (achou) { abrirPeloToque(achou.chave); return; }
+          TS.avisar('Ainda não há conversa guardada com este cliente.');
         }
         if (st.aberta) await abrir(st.aberta); else pintarLista();
       } catch (e) {
@@ -82,6 +94,8 @@
       if (corpo.isConnected) timer = setTimeout(carregar, 30000); // o servidor busca no WhatsApp a cada 30 s
     };
 
+    /** "‹ Voltar": se a conversa tem entrada no histórico, consome (o popstate chama voltar); senão volta direto */
+    const botaoVoltar = () => { if (comEntrada()) history.back(); else voltar(); };
     /** volta para a lista no mesmo lugar em que a pessoa estava (mesma aba, página e rolagem; a conversa aberta fica marcada) */
     function voltar() {
       st.aberta = null;
@@ -105,34 +119,34 @@
         const nome = cliente ? cliente.nome : c.nome || '';
         return { ...c, cliente, nomeTxt: nome || foneTxt(c.chave), fone: foneTxt(c.chave), ultTxt: resumoMsg(c.ult), quandoSort: c.ult.em };
       });
-      const conta = { todas: linhas.length, naolidas: linhas.filter((x) => x.naoLidas).length, clientes: linhas.filter((x) => x.cliente).length, sem: linhas.filter((x) => !x.cliente).length };
-      const sel = linhas.filter((x) => (st.aba === 'naolidas' ? x.naoLidas : st.aba === 'clientes' ? x.cliente : st.aba === 'sem' ? !x.cliente : true));
+      const conta = { todas: linhas.length, semresp: linhas.filter((x) => x.semResposta).length, clientes: linhas.filter((x) => x.cliente).length, sem: linhas.filter((x) => !x.cliente).length };
+      if (st.aba === 'naolidas') st.aba = 'semresp';
+      const sel = linhas.filter((x) => (st.aba === 'semresp' ? x.semResposta : st.aba === 'clientes' ? x.cliente : st.aba === 'sem' ? !x.cliente : true));
       const seg = TS.seg([
         [`Todas (${conta.todas})`, 'todas', 'Todas as conversas guardadas (últimos ' + dados.meses + ' meses).'],
-        [`Não lidas (${conta.naolidas})`, 'naolidas', 'Com mensagem do cliente que ninguém abriu aqui no painel.'],
+        [`Sem resposta (${conta.semresp})`, 'semresp', 'A última mensagem é do cliente: a loja ainda não respondeu (pelo celular da loja, pelo WhatsApp Web ou pelo robô).'],
         [`Clientes (${conta.clientes})`, 'clientes', 'O celular é de um cliente do painel (cadastro do FIXE ou das compras com CPF).'],
         [`Sem cadastro (${conta.sem})`, 'sem', 'O celular não bate com nenhum cliente do painel: pode ser alguém que ainda não comprou com CPF.'],
       ], st.aba, (v) => { st.aba = v; st.tabEstado = {}; pintarLista(); });
       const tab = TS.table({
         cols: [
           { key: 'nomeTxt', label: 'Conversa', align: 'l', sticky: true, wrap: true, title: 'Nome do cliente do painel (ou o nome que a pessoa usa no WhatsApp) e a última mensagem.',
-            render: (x) => h('span', { class: 'cv-quem' }, h('span', { class: 'cv-nomel' }, h('b', null, x.nomeTxt), x.naoLidas ? h('span', { class: 'badge ok', title: 'Mensagens do cliente depois da última vez que alguém abriu a conversa aqui.' }, `${fmt.int(x.naoLidas)} ${x.naoLidas === 1 ? 'nova' : 'novas'}`) : null), x.cliente ? null : h('span', { class: 'badge cinza' }, 'sem cadastro'), h('small', { class: 'muted cv-ult' }, x.ultTxt)) },
-          { key: 'quandoSort', label: 'Última', align: 'r', title: 'Quando foi a última mensagem (hoje só a hora). A etiqueta verde ao lado do nome diz quantas mensagens do cliente ninguém abriu aqui.', render: (x) => quando(x.ult.em) },
+            render: (x) => h('span', { class: 'cv-quem' }, h('span', { class: 'cv-nomel' }, h('b', null, x.nomeTxt), x.semResposta ? h('span', { class: 'badge warn', title: 'Mensagens do cliente depois da última resposta da loja: a conversa espera resposta.' }, `${fmt.int(x.semResposta)} sem resposta`) : null), x.cliente ? null : h('span', { class: 'badge cinza' }, 'sem cadastro'), h('small', { class: 'muted cv-ult' }, x.ult.robo ? '🤖 ' : '', x.ultTxt)) },
+          { key: 'quandoSort', label: 'Última', align: 'r', title: 'Quando foi a última mensagem (hoje só a hora). A etiqueta amarela ao lado do nome diz quantas mensagens do cliente chegaram depois da última resposta da loja.', render: (x) => quando(x.ult.em) },
         ],
-        rows: sel.map((x) => ({ ...x, busca: `${x.nomeTxt} ${x.fone} ${x.chave} ${x.ult.texto || ''}` })), search: 'Buscar nome, telefone ou palavra', searchKeys: ['nomeTxt', 'busca'],
+        rows: sel.map((x) => ({ ...x, busca: `${x.nomeTxt} ${x.fone} ${x.chave} ${x.ult.texto || ''}` })), search: 'Buscar nome ou telefone', searchKeys: ['nomeTxt', 'busca'],
         sortKey: 'quandoSort', sortDir: 'desc', estado: st.tabEstado, rowClass: (x) => (x.chave === st.ultima ? 'cv-ultima' : null),
-        onRowClick: (x) => { const tw = corpo.querySelector('.table-wrap'); st.rolagem = window.scrollY; st.rolagemLista = tw ? tw.scrollTop : 0; st.ultima = x.chave; abrir(x.chave, true); },
+        onRowClick: (x) => { const tw = corpo.querySelector('.table-wrap'); st.rolagem = window.scrollY; st.rolagemLista = tw ? tw.scrollTop : 0; st.ultima = x.chave; abrirPeloToque(x.chave); },
         empty: dados.conversas.length ? 'Nenhuma conversa nesta aba.' : 'Ainda não há conversas guardadas. Elas aparecem conforme chegam; para trazer as antigas, use "Reimportar histórico".',
       });
-      corpo.replaceChildren(...[avisos(), h('div', { class: 'grid g-kpi' },
-        TS.kpi('Conversas', fmt.int(conta.todas), `dos últimos ${dados.meses} meses`, 'Conversas individuais do WhatsApp da loja guardadas no painel (grupos não entram).'),
-        TS.kpi('Não lidas', fmt.int(conta.naolidas), 'com mensagem nova do cliente', 'Conversas com mensagem do cliente que ninguém abriu aqui no painel. Abrir a conversa marca como lida.'),
-        TS.kpi('Sem cadastro', fmt.int(conta.sem), 'celular sem cliente no painel', 'Quem conversou com a loja mas não tem cadastro com este celular: oportunidade de cadastrar no FIXE na próxima compra.')),
-      TS.cardWithTools('Conversas do WhatsApp', 'Clique numa conversa para ler. As do robô aparecem com 🤖 e o nome da campanha.', h('div', { class: 'cv-ferr' }, tab.searchBox), h('div', null, seg, tab))].filter(Boolean));
+      // lista no topo: as contagens ficam nas abas (sem quadros de número antes); "Reimportar histórico" vai para o fim do cartão
+      const card = TS.cardWithTools('Conversas do WhatsApp', 'Toque ou clique numa conversa para ler. A última mensagem que o robô mandou aparece com 🤖.', h('div', { class: 'cv-ferr' }, tab.searchBox), h('div', null, seg, tab), rodape());
+      card.classList.add('sem-imprimir'); // conversa de cliente é privada: esta lista não tem "Imprimir"
+      corpo.replaceChildren(...[avisos(), card].filter(Boolean));
       if (manter) { const tw = corpo.querySelector('.table-wrap'); if (tw) tw.scrollTop = manter; }
     }
 
-    function avisos() {
+    function rodape() {
       const hist = dados.historico;
       const bt = h('button', { type: 'button', class: 'btn', title: 'Traz de novo as conversas dos últimos 30 dias do WhatsApp da loja (o que já está guardado não se repete). Leva alguns minutos.' }, '↻ Reimportar histórico');
       bt.disabled = !dados.conectado || (hist && hist.estado === 'rodando') || null;
@@ -141,12 +155,16 @@
         bt.disabled = true;
         try { await api('POST', 'conversas/historico', { loja, dias: 30 }); TS.avisar('Importando as conversas dos últimos 30 dias. Elas aparecem aqui em alguns minutos.'); } catch (e) { TS.avisarErro(e); bt.disabled = false; }
       });
-      const histTxt = !hist ? '' : hist.estado === 'rodando' ? ' · ⏳ importando o histórico…' : hist.estado === 'ok' ? ` · histórico importado (${fmt.int(hist.mensagens || 0)} mensagens novas)` : ` · a importação do histórico falhou: ${hist.erro || 'erro'}`;
+      const histTxt = !hist ? '' : hist.estado === 'rodando' ? '⏳ importando o histórico…' : hist.estado === 'ok' ? `histórico importado (${fmt.int(hist.mensagens || 0)} mensagens novas)` : `a importação do histórico falhou: ${hist.erro || 'erro'}`;
+      return h('div', { class: 'cv-rodape-lista' }, bt, h('small', { class: 'muted' }, histTxt || 'Traz de novo as conversas dos últimos 30 dias (o que já está guardado não se repete).'));
+    }
+    function avisos() {
       return h('div', null,
         !dados.servico ? h('div', { class: 'notice' }, 'O robô do WhatsApp não está instalado neste servidor: as conversas não são lidas.') : null,
         dados.servico && !dados.conectado ? h('div', { class: 'notice warn' }, 'O WhatsApp da loja não está conectado: as conversas novas não chegam. Conecte em Clientes → Campanhas → "Conectar e configurar".') : null,
-        h('div', { class: 'cv-sit' }, h('small', { class: 'muted' }, dados.buscadoEm ? `Atualizado às ${quando(dados.buscadoEm)}` : 'Ainda não buscou nenhuma conversa', ` · guarda ${dados.meses} meses${histTxt}`,
-          TS.dica(`O painel busca as mensagens novas no WhatsApp da loja a cada 30 segundos (enviadas e recebidas, pelo celular, pelo WhatsApp Web ou pelo robô). Guarda ${dados.meses} meses; desconectar o WhatsApp da loja apaga tudo. Fotos e áudios aparecem só como marca.`)), bt));
+        h('div', { class: 'cv-sit' }, h('small', { class: 'muted' }, dados.buscadoEm ? `Atualizado às ${quando(dados.buscadoEm)}` : 'Ainda não buscou nenhuma conversa',
+          TS.dica('O painel busca as mensagens novas no WhatsApp da loja a cada 30 segundos (enviadas e recebidas, pelo celular, pelo WhatsApp Web ou pelo robô). Fotos e áudios aparecem só como marca.')),
+          h('small', { class: 'muted cv-priv' }, `🔒 Só o franqueado e o admin veem · guardado ${dados.meses} meses · some se o WhatsApp for desconectado`)));
     }
 
     async function abrir(chave, topo) {
@@ -154,8 +172,12 @@
       let msgs;
       try { msgs = (await api('GET', `conversas/mensagens?loja=${encodeURIComponent(loja)}&chave=${encodeURIComponent(chave)}`)).mensagens; } catch (e) { TS.avisarErro(e); st.aberta = null; return; }
       if (!corpo.isConnected || st.aberta !== chave) return;
-      const c = (dados.conversas || []).find((x) => x.chave === chave) || { chave, naoLidas: 0 };
-      if (c.naoLidas && !TS.demo) api('POST', 'conversas/lida', { loja, chave }).then(() => { c.naoLidas = 0; }).catch(() => null);
+      // atualização de 30 em 30 s com a conversa aberta: sem mensagem nova, não mexe em nada (a leitura continua onde estava);
+      // com mensagem nova e a pessoa lendo mais acima, mantém a posição e mostra "↓ N novas"
+      const velha = !topo && corpo.querySelector('.cv-msgs');
+      const antes = velha && velha.dataset.chave === chave ? { n: Number(velha.dataset.n) || 0, top: velha.scrollTop, noFim: velha.scrollHeight - velha.scrollTop - velha.clientHeight < 40, y: window.scrollY } : null;
+      if (antes && antes.n === msgs.length) return;
+      const c = (dados.conversas || []).find((x) => x.chave === chave) || { chave };
       const cliente = mapaClientes().get(chave) || null;
       const nome = cliente ? cliente.nome : c.nome || foneTxt(chave);
       // ficha resumida do cliente (os mesmos dados da lista de clientes)
@@ -178,14 +200,24 @@
           m.tipo !== 'texto' ? h('div', { class: 'cv-tipo' }, TIPO[m.tipo] || m.tipo) : null,
           m.texto ? h('div', { class: 'cv-txt' }, m.texto) : null));
       }
-      const lista = h('div', { class: 'cv-msgs' }, ...(bolhas.length ? bolhas : [TS.empty('Sem mensagens guardadas nesta conversa.')]));
+      const lista = h('div', { class: 'cv-msgs', 'data-chave': chave, 'data-n': String(msgs.length) }, ...(bolhas.length ? bolhas : [TS.empty('Sem mensagens guardadas nesta conversa.')]));
+      const novas = antes && !antes.noFim ? msgs.length - antes.n : 0;
+      const btNovas = novas > 0 ? h('button', { type: 'button', class: 'btn cv-novas', onclick: () => { lista.scrollTo({ top: lista.scrollHeight, behavior: 'smooth' }); btNovas.remove(); } }, `↓ ${fmt.int(novas)} ${novas === 1 ? 'nova' : 'novas'}`) : null;
+      if (btNovas) lista.addEventListener('scroll', () => { if (lista.scrollHeight - lista.scrollTop - lista.clientHeight < 40) btNovas.remove(); }, { passive: true });
       corpo.replaceChildren(
-        h('div', { class: 'cp-acoes' }, h('button', { type: 'button', class: 'btn', onclick: voltar }, '‹ Voltar')),
+        h('div', { class: 'cp-acoes' }, h('button', { type: 'button', class: 'btn', onclick: botaoVoltar }, '‹ Voltar')),
         h('div', { class: 'card cv-conversa' },
-          h('div', { class: 'cv-topo' }, h('div', null, h('b', { class: 'cv-nome' }, nome), h('small', { class: 'muted' }, ' ', foneTxt(chave)))),
-          ficha, lista,
+          h('div', { class: 'cv-topo' }, h('div', null, h('b', { class: 'cv-nome' }, nome), h('small', { class: 'muted cv-fone' }, ' ', foneTxt(chave)))),
+          ficha, h('div', { class: 'cv-msgs-w' }, lista, btNovas),
           h('p', { class: 'muted cv-rodape' }, '🔒 Só leitura por enquanto: para responder, use o WhatsApp da loja (a resposta aparece aqui em seguida).')));
-      if (topo) window.scrollTo(0, Math.max(0, corpo.getBoundingClientRect().top + window.scrollY - 80)); // a conversa aparece do começo
+      if (antes) {
+        window.scrollTo(0, antes.y);
+        lista.scrollTop = antes.noFim ? lista.scrollHeight : antes.top; // estava no fim: acompanha a nova; lendo acima: fica onde estava
+        return;
+      }
+      // a conversa aparece do começo, com o "‹ Voltar" abaixo da barra fixa do topo
+      const topoFixo = (document.querySelector('.topbar') || { offsetHeight: 60 }).offsetHeight + 12;
+      if (topo) window.scrollTo(0, Math.max(0, corpo.getBoundingClientRect().top + window.scrollY - topoFixo));
       lista.scrollTop = lista.scrollHeight; // abre na mensagem mais nova
     }
 

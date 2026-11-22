@@ -1014,7 +1014,7 @@
     const urgentes = repor.filter((r) => r.sit === 'acabou' || r.sit === 'falta').length;
 
     // ---------- KPIs ----------
-    const kpiFiltro = (el, k) => { el.classList.add('est-kpi-click'); el.setAttribute('role', 'button'); el.tabIndex = 0; const ir = () => TS.estFiltrar && TS.estFiltrar(k); el.addEventListener('click', ir); el.addEventListener('keydown', (e) => { if (e.key === 'Enter') ir(); }); return el; };
+    const kpiFiltro = (el, k) => { el.classList.add('est-kpi-click'); el.setAttribute('role', 'button'); el.tabIndex = 0; const ir = () => TS.estFiltrar && TS.estFiltrar(k); el.addEventListener('click', ir); el.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); ir(); } }); return el; };
     const kLiq = TS.kpi('Lucro com fixos', fmt.brl0(lucroLiqTot), h('span', null, `margem de ${fmt.pct(fatCusto ? lucroLiqTot / fatCusto : null)}`),
         `Lucro bruto − comissão ${fmt.brl0(dedTot.com)} − royalties ${fmt.brl0(dedTot.roy)} − Simples ${fmt.brl0(dedTot.imp)} (${fmt.pct(pSimples)}) − maquininha ${fmt.brl0(dedTot.maq)} (${fmt.pct(pCartao)})${OUTROS.length ? ` − outros custos ${fmt.brl0(dedTot.out)}` : ''}. Clique para ver a conta.${!pSimples && !pCartao ? ' Configure o % do Simples e da maquininha em Configurações → Lojas → Estoque e margem.' : ''}`);
     kLiq.classList.add('est-kpi-click');
@@ -1294,7 +1294,7 @@
     }
 
     // ---------- reposição ----------
-    put(E, h('div', { class: 'mt' }, cartaoSazonal()));
+    // "Próximas semanas" vai depois da tabela (put mais abaixo): os quadros de decisão ficam colados na lista de ação
     function cartaoSazonal() {
       if (!temAnoPassado) return TS.card('Próximas semanas', null, h('p', { class: 'muted' }, 'A previsão por época do ano aparece quando a loja tiver mais de um ano de vendas no painel. Até lá, a reposição usa o ritmo dos últimos 30 dias.'));
       // faturamento por semana (sem taxas): 8 semanas passadas e as 8 que vêm, este ano e o ano passado
@@ -1319,15 +1319,16 @@
       const compravel = (r) => { const n = TS.norm(r.produto); return !nomesTaxa.has(n) && !/^taxa\b|\bservico\b|\bconsumo eg\b/.test(n); };
       const picos = repo.filter((r) => compravel(r) && r.origem === 'item' && r.vel > 0 && r.fator >= 1.3).sort((a, b) => (b.prev - b.vel) * (b.it.custo || 1) - (a.prev - a.vel) * (a.it.custo || 1)).slice(0, 8);
       const quedas = repo.filter((r) => compravel(r) && r.origem === 'item' && r.vel > 0 && r.fator <= 0.75).sort((a, b) => a.fator - b.fator).slice(0, 6);
+      const tok = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim(); // cores dos tokens (nunca hex solto no JS)
       const item = (r) => h('li', null, h('b', null, r.produto), ` · ${r.fator > 1 ? '+' : '−'}${fmt.int(Math.abs(r.fator - 1) * 100)}% por dia · prever ${qtdTxt(r.prev * H, r.it)} em ${H} dias`);
       return TS.card('Próximas semanas', `Movimento da loja nas próximas 8 semanas pelo que aconteceu na mesma época do ano passado, corrigido pelo crescimento atual da loja (${cresc >= 1 ? '+' : ''}${fmt.pct(cresc - 1, 0)} nas últimas 8 semanas em relação ao ano passado).`,
         h('div', { class: 'est-saz-res' }, varEpoca == null ? null : h('span', null, 'No ano passado, as 8 semanas seguintes venderam ', h('b', { class: varEpoca >= 0 ? 'pos' : 'neg' }, `${varEpoca >= 0 ? '+' : ''}${fmt.pct(varEpoca, 0)}`), ' em relação às 8 anteriores.')),
         TS.chart({
           type: 'bar',
           data: { labels, datasets: [
-            { type: 'bar', label: 'Este ano', data: atual, backgroundColor: '#2C5234', borderRadius: 4 },
-            { type: 'bar', label: 'Ano passado', data: antes.map((v, k) => v ?? lyFut[k]), backgroundColor: '#D9D2C2', borderRadius: 4 },
-            { type: 'line', label: 'Previsão', data: prevFut, borderColor: '#C9A227', backgroundColor: '#C9A227', borderDash: [6, 4], pointRadius: 3, tension: 0.25, spanGaps: false },
+            { type: 'bar', label: 'Este ano', data: atual, backgroundColor: tok('--green'), borderRadius: 4 },
+            { type: 'bar', label: 'Ano passado', data: antes.map((v, k) => v ?? lyFut[k]), backgroundColor: tok('--bege'), borderRadius: 4 },
+            { type: 'line', label: 'Previsão', data: prevFut, borderColor: tok('--gold'), backgroundColor: tok('--gold'), borderDash: [6, 4], pointRadius: 3, tension: 0.25, spanGaps: false },
           ] },
           options: { plugins: { legend: { display: true }, tooltip: { callbacks: { title: (c) => `Semana de ${c[0].label}`, label: (c) => `${c.dataset.label}: ${fmt.brl0(c.raw)}` } } }, scales: { y: TS.axisNum(fmt.brl0), x: TS.axisCat } },
         }),
@@ -1400,6 +1401,16 @@
       sobrando: ['produto', 'tipo', 'qtd', 'prev', 'dias', RC.alvo, RC.sobraQtd, RC.sobraValor].map((c) => (typeof c === 'string' ? col(c) : c)),
     };
     colsT.splice(colsT.findIndex((c) => c.key === 'qtd'), 0, RC.perdaDia);
+    // celular: as colunas de cada aba (chaves de colsT/COLS_ABA)
+    const COLS_MOB = {
+      repor: ['produto', 'est', 'qtd', 'dias', 'pedir'],
+      falta: ['produto', 'perdaDia', RC.zeradoHa && RC.zeradoHa.key, RC.esperando && RC.esperando.key, 'pedir'],
+      parados: ['produto', 'est', 'qtd', 'valor', 'ultima'],
+      sobrando: ['produto', 'qtd', 'dias', RC.alvo && RC.alvo.key, RC.sobraValor && RC.sobraValor.key],
+      liquidar: ['produto', 'est', 'qtd', 'valor'],
+      saldo: ['produto', 'est', 'qtd', 'dias', 'valor'],
+      todos: ['produto', 'est', 'qtd', 'dias', 'pedir'],
+    };
     // busca: procura em TODOS os produtos, qualquer que seja o filtro
     const busca = h('input', { class: 'f-input est-busca', type: 'search', placeholder: 'Buscar qualquer produto (nome, código ou grupo)…', value: state.estBusca || '', autocomplete: 'off' });
     const tabBoxT = h('div');
@@ -1410,8 +1421,17 @@
       const rows = q ? todos.filter((r) => ESQ(r.produto).includes(q) || ESQ(grpDe(r)).includes(q) || (qd && String(r.cod).includes(qd))) : todos.filter(FILTROS[filtroT][1]);
       infoBusca.textContent = !q ? '' : rows.length ? `${fmt.int(rows.length)} ${rows.length === 1 ? 'produto encontrado' : 'produtos encontrados'} entre todos os ${fmt.int(todos.length)} (a busca procura em todos, qualquer que seja o filtro)` : '';
       segT.classList.toggle('est-seg-off', !!q);
+      let cols = (!q && COLS_ABA[filtroT]) || colsT;
+      // "Perdendo R$/dia" só onde algum produto está zerado com conta (nas outras abas seria uma coluna de "—")
+      if (!rows.some((r) => r.rup && r.rup.perdaDia != null)) cols = cols.filter((c) => c !== RC.perdaDia);
+      // celular: cartão enxuto — nome, situação e os 2 ou 3 números que decidem aquela aba (o resto fica no computador e no CSV)
+      if (TS.ehCelular()) {
+        const mob = (q ? COLS_MOB.todos : COLS_MOB[filtroT]) || COLS_MOB.todos;
+        const pega = new Set(mob);
+        cols = cols.filter((c) => pega.has(c.key) || pega.has(c));
+      }
       tabBoxT.replaceChildren(TS.table({
-        cols: (!q && COLS_ABA[filtroT]) || colsT, rows, sortKey: q ? 'produto' : ORD[filtroT], sortDir: q || filtroT === 'todos' ? 'asc' : 'desc', maxHeight: '600px', produto: 'produto', cls: 'est-t',
+        cols, rows, sortKey: q ? 'produto' : ORD[filtroT], sortDir: q || filtroT === 'todos' ? 'asc' : 'desc', maxHeight: '600px', produto: 'produto', cls: 'est-t',
         imprimir: !q && COLS_ABA[filtroT] ? null : ['produto', 'est', 'qtd', 'prev', 'dias', 'pedir', 'custoPedido', 'valor'],
         rowClass: (r) => (entradas.has(String(r.cod)) ? 'est-tem-entrada' : ''),
         empty: q ? 'Nenhum produto com esse nome ou código na planilha de estoque do AppNext.' : { repor: 'Nada para repor agora. 👏', falta: 'Nenhum produto zerado que vendia. 👏', sobrando: 'Nenhum produto com saldo demais. 👏', parados: 'Nada parado. 👏', saldo: 'Nenhum produto com saldo.', todos: 'Nenhum produto.' }[filtroT],
@@ -1440,16 +1460,18 @@
         montarT();
       }).catch(() => null);
     const csv = h('button', { type: 'button', class: 'btn', onclick: () => baixarPedido(repor) }, '⬇ Baixar pedido (CSV)');
+    const minRes = h('small', { class: 'muted est-minres' }, 'Mínimo do AppNext comparado com o sugerido: ',
+      h('b', { class: 'est-sug est-sug-baixo' }, `${fmt.int(repo.filter((r) => r.minSit === 'baixo').length)} baixos`), ' · ',
+      h('b', { class: 'est-sug est-sug-alto' }, `${fmt.int(repo.filter((r) => r.minSit === 'alto').length)} altos`), ' · ',
+      h('b', { class: 'est-sug est-sug-sem' }, `${fmt.int(repo.filter((r) => r.minSit === 'sem').length)} sem mínimo`));
+    // subtítulo como texto: o cartão corta sozinho na primeira frase e guarda o resto em "Como ler ▸"
     const cardT = TS.cardWithTools('Estoque',
-      h('span', null, `Todos os ${fmt.int(todos.length)} produtos da planilha do AppNext. Reposição pelo ritmo dos últimos 30 dias ajustado pela época do ano (coluna Previsão/dia) · entrega em ${ent} dias · pedido para ${cob} dias de venda. Chás a granel em kg (inclui o consumo de saco kraft e etiquetas). Parado = com saldo e sem venda há ${cfg.paradoDias}+ dias. Perdendo venda = zerado que vendia (estimativa pela venda dos ${TS.ruptura.JANELA} dias antes de zerar). Sobrando = vende, mas o saldo dura mais de ${TS.ruptura.FATOR_EXCESSO * H} dias.`,
-        h('span', { class: 'est-minres' }, ` Mínimo do AppNext comparado com o sugerido: `,
-          h('b', { class: 'est-sug est-sug-baixo' }, `${fmt.int(repo.filter((r) => r.minSit === 'baixo').length)} baixos`), ' · ',
-          h('b', { class: 'est-sug est-sug-alto' }, `${fmt.int(repo.filter((r) => r.minSit === 'alto').length)} altos`), ' · ',
-          h('b', { class: 'est-sug est-sug-sem' }, `${fmt.int(repo.filter((r) => r.minSit === 'sem').length)} sem mínimo`))),
+      `Todos os ${fmt.int(todos.length)} produtos da planilha do AppNext. Reposição pelo ritmo dos últimos 30 dias ajustado pela época do ano (coluna Previsão/dia) · entrega em ${ent} dias · pedido para ${cob} dias de venda. Chás a granel em kg (inclui o consumo de saco kraft e etiquetas). Parado = com saldo e sem venda há ${cfg.paradoDias}+ dias. Perdendo venda = zerado que vendia (estimativa pela venda dos ${TS.ruptura.JANELA} dias antes de zerar). Sobrando = vende, mas o saldo dura mais de ${TS.ruptura.FATOR_EXCESSO * H} dias.`,
       h('div', { class: 'est-tools' }, busca, segT, csv),
-      h('div', null, infoBusca, avisoNotas, tabBoxT));
+      h('div', null, minRes, infoBusca, avisoNotas, tabBoxT));
     cardT.id = 'est-tabela';
     put(E, h('div', { class: 'mt' }, cardT));
+    put(E, h('div', { class: 'mt' }, cartaoSazonal()));
     // os quadros do topo filtram a tabela
     TS.estFiltrar = (k) => { filtroT = k; state.estSit = k; busca.value = ''; state.estBusca = ''; TS.segMarcar(segT, k); montarT(); cardT.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
 

@@ -782,6 +782,8 @@ app.get('/api/demo/site/fotos', (req, res) => {
 });
 app.get('/api/demo/site', (req, res) => res.json({ demo: true, em: new Date().toISOString(), origem: 'agendada', itens: [] }));
 app.get('/api/demo/contatos', (req, res) => res.json({ contatos: {} }));
+// apresentação: a conferência do link responde "pode" (nada é aberto nem gravado; o desfazer é só no navegador)
+app.post('/api/demo/contatos/conferir', (req, res) => res.json({ ok: true }));
 require('./src/push-api').demo(app); // notificações na apresentação: aparelho fictício, nada é ativado nem enviado
 require('./src/zap-api').demo(app); // robô do WhatsApp na apresentação: tudo simulado, nada é conectado nem enviado
 app.get('/api/demo/xmls/resumo', (req, res) => res.json({ meses: [] }));
@@ -844,26 +846,49 @@ app.get('/api/demo/alertas', (req, res) => {
   const p = DEMO.partes().find((x) => x.id === String(req.query.loja || ''));
   res.json({ alertas: p ? IND.alertas(p) : [] });
 });
-// apresentação: conversas de mentira para os celulares (fictícios) que a tela manda; nada é lido nem gravado
+// apresentação: conversas de mentira para os celulares (fictícios) que a tela manda; nada é lido nem gravado.
+// A lista e a conversa aberta saem da mesma conta (demoConversa): a prévia da lista é sempre a última mensagem da conversa.
+const DEMO_CONV = [
+  { cli: 'Oi! Vocês ainda têm o chá de hibisco com morango?', loja: 'Temos sim! Quer que eu separe 100 g para você? 😊' },
+  { cli: 'Bom dia, que horas vocês abrem no domingo?', loja: 'Bom dia! Domingo abrimos das 14h às 20h. 🍵' },
+  { robo: 'Oi! Aqui é a equipe da Tea Shop 😊 Você tem pontos no programa de fidelidade, e parte deles vence este mês. Que tal usar numa visita? 🍵', cli: 'Recebi a mensagem dos pontos, valeu! Passo aí sábado.' },
+  { cli: 'Qual o preço da caneca de vidro?', loja: 'A caneca de vidro sai por R$ 89,90. Tem nas cores transparente e fumê.' },
+  { robo: 'Oi! Aqui é a equipe da Tea Shop 😊 Seu chá favorito chegou fresquinho. Quer que a gente separe?' },
+  { cli: 'Vocês entregam?', loja: 'Entregamos pelo app de entregas da loja e também separamos para retirar.' },
+];
+const DEMO_SEMCAD = '5500911112222';
+function demoConversa(chave, ag) {
+  const min = 60e3, em = (ms) => new Date(ms).toISOString();
+  if (chave === DEMO_SEMCAD) return [{ id: 'd-s1', deMim: false, em: em(ag - 30 * 3600e3), tipo: 'texto', texto: 'Oi, vi o anúncio de vocês. Têm chá para dormir?', nome: 'Contato sem cadastro' }];
+  const k = [...chave].reduce((x, c, i) => x + c.charCodeAt(0) * (i + 3) * 31, 0) % DEMO_CONV.length;
+  const t = DEMO_CONV[k], fim = ag - ((k * 95) + 12) * min;
+  const msgs = [
+    { id: 'd1', deMim: false, em: em(fim - 3 * 864e5), tipo: 'texto', texto: 'Oi! Passei aí semana passada e gostei muito do atendimento.' },
+    { id: 'd2', deMim: true, em: em(fim - 3 * 864e5 + 25 * min), tipo: 'texto', texto: 'Que bom! Volte sempre 😊' },
+  ];
+  if (t.robo) msgs.push({ id: 'd3', deMim: true, em: em(fim - (t.cli ? 40 : 0) * min), tipo: 'texto', texto: t.robo, robo: 'Campanha Resumo diário' });
+  if (t.cli) msgs.push({ id: 'd4', deMim: false, em: em(fim - (t.loja ? 18 : 0) * min), tipo: 'texto', texto: t.cli });
+  if (t.loja) msgs.push({ id: 'd5', deMim: true, em: em(fim), tipo: 'texto', texto: t.loja });
+  return msgs;
+}
 app.get('/api/demo/conversas', (req, res) => {
   const fones = String(req.query.fones || '').split(',').map((x) => x.replace(/\D/g, '')).filter((x) => /^\d{12,13}$/.test(x)).slice(0, 8);
-  const ag = Date.now(), min = 60e3;
-  const TXT = [['Oi! Vocês ainda têm o chá de hibisco com morango?', 'Temos sim! Quer que eu separe 100 g para você? 😊'], ['Bom dia, que horas vocês abrem no domingo?', 'Bom dia! Domingo abrimos das 14h às 20h. 🍵'], ['Recebi a mensagem dos pontos, obrigada! Passo aí sábado.', ''], ['Qual o preço da caneca de vidro?', 'A caneca de vidro sai por R$ 89,90. Tem nas cores transparente e fumê.'], ['', 'Oi! Aqui é a equipe da Tea Shop 😊 Seu chá favorito chegou fresquinho.'], ['Vocês entregam?', 'Entregamos pelo app de entregas da loja e também separamos para retirar.']];
-  const conversas = fones.map((f, k) => ({ chave: f, nome: '', n: 3, naoLidas: k < 2 ? 1 : 0, lidaEm: null, ult: { em: new Date(ag - (k * 95 + 12) * min).toISOString(), texto: TXT[k % TXT.length][1] || TXT[k % TXT.length][0], deMim: !!TXT[k % TXT.length][1], tipo: 'texto' } }));
-  conversas.push({ chave: '5500911112222', nome: 'Contato sem cadastro', n: 1, naoLidas: 1, lidaEm: null, ult: { em: new Date(ag - 30 * 3600e3).toISOString(), texto: 'Oi, vi o anúncio de vocês. Têm chá para dormir?', deMim: false, tipo: 'texto' } });
-  res.json({ conversas, buscadoEm: new Date(ag - min).toISOString(), servico: true, conectado: true, conexao: 'conectado', historico: null, meses: 12, demo: true });
+  const ag = Date.now();
+  const conversas = [...fones, DEMO_SEMCAD].map((chave) => {
+    const msgs = demoConversa(chave, ag), u = msgs[msgs.length - 1];
+    return { chave, nome: chave === DEMO_SEMCAD ? 'Contato sem cadastro' : '', n: msgs.length, ult: { em: u.em, texto: u.texto, deMim: u.deMim, tipo: u.tipo, robo: u.robo || null },
+      semResposta: CONV.semRespostaDe(msgs) };
+  });
+  res.json({ conversas, buscadoEm: new Date(ag - 60e3).toISOString(), servico: true, conectado: true, conexao: 'conectado', historico: null, meses: 12, demo: true });
 });
 app.get('/api/demo/conversas/mensagens', (req, res) => {
-  const ag = Date.now(), min = 60e3, k = Math.abs([...String(req.query.chave || '')].reduce((a, c) => a + c.charCodeAt(0), 0)) % 3;
-  const base = [
-    { id: 'd1', deMim: true, em: new Date(ag - 2 * 864e5).toISOString(), tipo: 'texto', texto: 'Oi! Aqui é a equipe da Tea Shop 😊 Você tem pontos no programa de fidelidade, e parte deles vence este mês. Que tal usar numa visita? 🍵', robo: 'Campanha Resumo diário' },
-    { id: 'd2', deMim: false, em: new Date(ag - 2 * 864e5 + 40 * min).toISOString(), tipo: 'texto', texto: ['Que bom, não sabia! Passo aí no sábado.', 'Obrigada pelo aviso!', 'Vou sim. Vocês têm o chá de hibisco?'][k] },
-    { id: 'd3', deMim: false, em: new Date(ag - 30 * min).toISOString(), tipo: k === 1 ? 'imagem' : 'texto', texto: k === 1 ? '' : 'Ainda têm a caneca de vidro?' },
-    { id: 'd4', deMim: true, em: new Date(ag - 12 * min).toISOString(), tipo: 'texto', texto: 'Temos sim! Separo uma para você?' },
-  ];
-  res.json({ mensagens: base });
+  const chave = String(req.query.chave || '');
+  if (!/^\d{12,13}$/.test(chave)) return res.status(400).json({ erro: 'Conversa inválida.' });
+  res.json({ mensagens: demoConversa(chave, Date.now()) });
 });
 app.post('/api/demo/conversas/lida', (req, res) => res.json({ ok: true }));
+// Meta de hoje da vendedora (Minha comissão): resposta fictícia, nada gravado (a apresentação roda como admin)
+app.get('/api/demo/meta-hoje', (req, res) => res.json({ minhaParte: 412, vendiHoje: 268.5, temHoje: true, modo: 'igual', restam: 8, semParte: null }));
 app.all('/api/demo/*', (req, res) => res.status(404).json({ erro: 'Isto não está disponível na apresentação.' }));
 
 // ---------- marca da loja (pública: usada na tela de login com ?loja=) ----------
@@ -978,12 +1003,46 @@ app.get('/api/contatos', (req, res) => {
   const out = {};
   for (const id of ids) {
     if (!req.lojas.some((l) => l.id === id)) continue;
-    for (const [cpf, c] of Object.entries(lerContatos(id))) {
+    for (const [cpf, c0] of Object.entries(lerContatos(id))) {
+      const { desfazer, ...c } = c0; // a marca de antes do "Desfazer" fica só no servidor
       const a = out[cpf];
       out[cpf] = !a ? { ...c, loja: id } : { ...a, ...(c.em > (a.em || '') ? { em: c.em, por: c.por, motivo: c.motivo } : {}), optout: a.optout || c.optout };
     }
   }
   res.json({ contatos: out });
+});
+/**
+ * Regra forte também no link que abre a conversa vazia (Clientes, ficha, janelas): só confere, não marca contatado.
+ * espera: true = Lista de espera (avisar que chegou é pedido do cliente) → só "não quer mensagens" trava.
+ */
+app.post('/api/contatos/conferir', express.json({ limit: '2kb' }), (req, res) => {
+  if (!podeClientes(req) && !(req.body && req.body.espera === true)) return res.status(403).json({ erro: 'Sem permissão.' });
+  if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
+  const { loja, cpf } = req.body || {};
+  if (!req.lojas.some((l) => l.id === loja)) return res.status(400).json({ erro: 'Loja inválida.' });
+  if (!CPF_OK.test(String(cpf || ''))) return res.status(400).json({ erro: 'CPF inválido.' });
+  const b = require('./src/zapfila').envioManualBloqueado({ lojaId: loja, cpf, contato: lerContatos(loja)[cpf], campanha: '', agora: Date.now(), soOptout: req.body.espera === true });
+  if (b) return res.status(409).json({ erro: b.replace(/^Mensagem não enviada: /, 'O WhatsApp não foi aberto: '), bloqueado: true });
+  res.json({ ok: true });
+});
+/** "Desfazer" logo depois de abrir o WhatsApp (Hoje): volta a marca de antes — só o último envio, da mesma pessoa, até 2 minutos depois */
+const DESFAZER_MS = 2 * 60e3;
+app.post('/api/contatos/desfazer', express.json({ limit: '2kb' }), (req, res) => {
+  if (!podeClientes(req)) return res.status(403).json({ erro: 'Sem permissão.' });
+  if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
+  const { loja, cpf } = req.body || {};
+  if (!req.lojas.some((l) => l.id === loja)) return res.status(400).json({ erro: 'Loja inválida.' });
+  if (!CPF_OK.test(String(cpf || ''))) return res.status(400).json({ erro: 'CPF inválido.' });
+  const todos = lerContatos(loja);
+  const c = todos[cpf];
+  const d = c && c.desfazer;
+  if (!d || d.por !== req.user || c.por !== req.user || Date.now() - Date.parse(c.em) > DESFAZER_MS) return res.status(409).json({ erro: 'Não dá mais para desfazer: passou o tempo ou outra pessoa mexeu neste cliente.' });
+  delete c.em; delete c.por; delete c.motivo; delete c.desfazer;
+  if (d.antes) Object.assign(c, d.antes);
+  if (Object.keys(c).length) todos[cpf] = c; else delete todos[cpf];
+  C.gravarAtomico(arqContatos(loja), JSON.stringify(todos), 0o640);
+  C.auditar(req.user, 'desfez a marca de contatado (não enviou a mensagem)', loja, { loja, cpf: cpf.slice(0, 3) + '…' + cpf.slice(-2) });
+  res.json({ ok: true, contato: todos[cpf] || null });
 });
 app.post('/api/contatos', express.json({ limit: '4kb' }), (req, res) => {
   if (!podeClientes(req)) return res.status(403).json({ erro: 'Sem permissão.' });
@@ -1001,14 +1060,21 @@ app.post('/api/contatos', express.json({ limit: '4kb' }), (req, res) => {
     const b = require('./src/zapfila').envioManualBloqueado({ lojaId: loja, cpf, contato: c, campanha: String(req.body.campanha || ''), agora: Date.now() });
     if (b) return res.status(409).json({ erro: b, bloqueado: true });
   }
-  if (acao === 'contatado') Object.assign(c, { em: agora, por: req.user, motivo: String(motivo || '').slice(0, 40) });
+  if (acao === 'contatado') {
+    // envio pelo painel: guarda a marca anterior para o "Desfazer" (2 minutos, só quem enviou)
+    const antes = c.em ? { em: c.em, por: c.por, motivo: c.motivo } : null;
+    delete c.desfazer;
+    Object.assign(c, { em: agora, por: req.user, motivo: String(motivo || '').slice(0, 40) });
+    if (req.body.envio === true) c.desfazer = { por: req.user, antes };
+  }
   else if (acao === 'optout') Object.assign(c, { optout: true, optoutEm: agora, optoutPor: req.user });
   else if (acao === 'aceita') { delete c.optout; delete c.optoutEm; delete c.optoutPor; delete c.optoutOrigem; require('./src/zapfila').voltouAAceitar(loja, cpf); }
-  else { delete c.em; delete c.por; delete c.motivo; }
+  else { delete c.em; delete c.por; delete c.motivo; delete c.desfazer; }
   if (Object.keys(c).length) todos[cpf] = c; else delete todos[cpf];
   C.gravarAtomico(arqContatos(loja), JSON.stringify(todos), 0o640);
   if (acao === 'optout' || acao === 'aceita') C.auditar(req.user, acao === 'optout' ? 'cliente não quer contato' : 'cliente voltou a aceitar contato', loja, { loja, cpf: cpf.slice(0, 3) + '…' + cpf.slice(-2) });
-  res.json({ ok: true, contato: todos[cpf] || null });
+  const { desfazer: _d, ...sai } = todos[cpf] || {};
+  res.json({ ok: true, contato: todos[cpf] ? sai : null, desfazerAte: _d ? new Date(Date.now() + DESFAZER_MS).toISOString() : null });
 });
 
 // ---------- Clientes → Conversas (decisão do dono): conversas do WhatsApp da loja; só admin e franqueado da loja ----------
@@ -1254,6 +1320,25 @@ app.get('/api/alertas', async (req, res) => {
   const loja = req.lojas.find((l) => l.id === String(req.query.loja || ''));
   if (!loja) return res.json({ alertas: [] });
   try { res.json({ alertas: IND.alertas(await dadosParaIndicadores(loja)) }); } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
+});
+
+// ---------- meta de hoje (a vendedora vê a parte dela em Minha comissão; decisão do dono, 22/11/2026) ----------
+// A conta é a da tela (src/metahoje.js, com contas.js e metadia.js). Só leitura. A vendedora recebe só a parte dela,
+// nunca a meta da loja, o faturamento nem as colegas. Cache por loja, pela assinatura dos dados e pelo dia.
+const MH = require('./src/metahoje');
+const metaHojeCache = new Map();
+app.get('/api/meta-hoje', async (req, res) => {
+  const loja = req.lojas.find((l) => l.id === String(req.query.loja || ''));
+  if (!loja) return res.status(403).json({ erro: 'Sem permissão para esta loja.' });
+  try {
+    const d = await dadosParaIndicadores(loja);
+    const hoje = IND.hojeSP().iso, chave = `${loja.id}|${d.sig}|${hoje}`;
+    let r = lruGet(metaHojeCache, chave);
+    if (r === undefined) { r = MH.calcular({ ...d, hoje }); lruSet(metaHojeCache, chave, r, 40); }
+    res.set('Cache-Control', 'no-store');
+    if (req.perfil === 'vendedor') return res.json(MH.daVendedora(r, req.vendedor));
+    res.json(MH.completa(r));
+  } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
 });
 
 // ---------- fechamento do dia (substitui a planilha preenchida à mão) ----------

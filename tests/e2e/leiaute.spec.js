@@ -71,7 +71,7 @@ test('Cartão: texto de apoio longo mostra a primeira frase e guarda o resto em 
   expect(r.curto).toBe(false);
 });
 
-test('Início: avisos numa lista só, agrupados por área, vermelhos primeiro', async ({ page }) => {
+test('Início: avisos numa lista só, agrupados por área; "Dados e configuração" primeiro e os grupos pela gravidade', async ({ page }) => {
   await abrir(page);
   await ir(page, 'inicio');
   await expect(page.locator('.ini-pend')).toHaveCount(0, { timeout: 30000 });
@@ -79,9 +79,14 @@ test('Início: avisos numa lista só, agrupados por área, vermelhos primeiro', 
   expect(await grupos.count()).toBeGreaterThan(1);
   // todo aviso está dentro de um grupo; o cabeçalho traz o nome da área e a contagem certa
   await expect(page.locator('.ini-avisos > .ini-aviso')).toHaveCount(0);
-  const dados = await grupos.evaluateAll((gs) => gs.map((g) => ({ area: g.dataset.area, n: +g.querySelector('.ini-grupo-t span').textContent, niveis: [...g.querySelectorAll('.ini-aviso')].map((a) => (a.classList.contains('ini-erro') ? 0 : 1)) })));
-  const ORDEM = ['estoque', 'inventario', 'franquia', 'vendas', 'outros'];
-  expect(dados.map((d) => ORDEM.indexOf(d.area))).toEqual([...dados.map((d) => ORDEM.indexOf(d.area))].sort((a, b) => a - b));
+  const dados = await grupos.evaluateAll((gs) => gs.map((g) => ({ area: g.dataset.area, n: +g.querySelector('.ini-grupo-t span').textContent, niveis: [...g.querySelectorAll('.ini-aviso')].map((a) => (a.classList.contains('ini-erro') ? 0 : 1)), niveis3: [...g.querySelectorAll('.ini-aviso')].map((a) => (a.classList.contains('ini-erro') ? 0 : a.classList.contains('ini-warn') ? 1 : 2)) })));
+  for (const d of dados) expect(d.niveis3).toEqual([...d.niveis3].sort((a, b) => a - b));
+  // ordem dos grupos (decisão do dono, 22/11/2026): Dados e configuração sempre primeiro; depois pelo pior aviso de cada
+  // grupo (vermelho > amarelo > azul); no empate, a ordem fixa das áreas
+  const ORDEM = ['dados', 'estoque', 'inventario', 'franquia', 'vendas', 'outros'];
+  const chave = (d) => [d.area === 'dados' ? -1 : Math.min(...d.niveis3), ORDEM.indexOf(d.area)];
+  const ks = dados.map(chave);
+  expect(ks).toEqual([...ks].sort((a, b) => a[0] - b[0] || a[1] - b[1]));
   for (const d of dados) { expect(d.niveis.length).toBe(d.n); expect(d.niveis).toEqual([...d.niveis].sort((a, b) => a - b)); }
   // a área vem da origem: inventário e franquia nos grupos deles
   await expect(page.locator('.ini-grupo[data-area="inventario"]')).toContainText(/sem contagem/);
@@ -91,9 +96,35 @@ test('Início: avisos numa lista só, agrupados por área, vermelhos primeiro', 
   await semRolagemLateral(page);
 });
 
+test('Início: a conta da ordem dos grupos e uma fonte que falha aparece (nunca "nada pedindo atenção")', async ({ page }) => {
+  await abrir(page);
+  await ir(page, 'inicio');
+  await expect(page.locator('.ini-pend')).toHaveCount(0, { timeout: 30000 });
+  const ord = await page.evaluate(() => TS.inicioCalc.ordemGrupos([
+    { area: 'estoque', nivel: 'warn' }, { area: 'vendas', nivel: 'erro' }, { area: 'outros', nivel: 'info' },
+    { area: 'dados', nivel: 'info' }, { area: 'franquia', nivel: 'warn' }, { area: 'xyz', nivel: 'warn' },
+  ]).map((g) => g.area + ':' + g.avisos.length));
+  // dados primeiro; o vermelho de Vendas sobe; estoque e franquia (amarelos) na ordem fixa; Outros junta o desconhecido
+  expect(ord).toEqual(['dados:1', 'vendas:1', 'estoque:1', 'franquia:1', 'outros:2']);
+  // saudação pelo relógio de São Paulo
+  expect(await page.evaluate(() => TS.inicioCalc.horaSP(new Date('2026-11-22T12:30:00Z')))).toBe(9);
+  // uma fonte quebra: a tela diz que não conferiu e oferece tentar de novo
+  await page.evaluate(() => { TS.estoqueBuscar = () => Promise.reject(new Error('falhou')); TS.render(); });
+  await expect(page.locator('.ini-falhou')).toContainText('Não consegui conferir');
+  await expect(page.locator('.ini-falhou')).toContainText('o estoque');
+  await expect(page.locator('.ini-avisos')).not.toContainText('Nada pedindo atenção');
+});
+
 test('Pedido: ajustes numa linha só no computador e empilhados no celular', async ({ page }, info) => {
   await abrir(page);
   await ir(page, 'pedido');
+  if (info.project.name === 'celular') {
+    // no celular os ajustes abrem recolhidos numa linha de resumo; tocar mostra os campos
+    const rec = page.locator('.ped-ctl .ped-ctl-rec > summary');
+    await expect(rec).toContainText(/Reposição · .* das vendas · \d+ dias/, { timeout: 30000 });
+    await expect(page.locator('.ped-ctl .ped-ctl-linha')).toBeHidden();
+    await rec.click();
+  }
   const linha = page.locator('.ped-ctl .ped-ctl-linha');
   await expect(linha).toBeVisible({ timeout: 30000 });
   const cx = async (sel) => page.locator(sel).first().boundingBox();

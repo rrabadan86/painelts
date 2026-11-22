@@ -94,7 +94,7 @@
    * Até 3 ações da semana, priorizadas pelo dinheiro em jogo. É só ordem: cada número já existe numa tela.
    *   c = { zerados { n, perdaDia }, vencidos { lotes, valor }, criticos { lotes, valor }, franquia { n, valor },
    *         parado { n, valor }, meta { falta, porDia, dias } } — o que não existe vem null.
-   * Peso: vencido × 3 (tem de sair da venda), zerado = 30 dias de venda perdida, vence em 30 dias e franquia pelo valor,
+   * Peso: vencido × 3 (tem de sair da venda), zerado = 30 dias de venda perdida, vence em 30 dias (a custo, se a pessoa vê custo) e franquia pelo valor,
    * parado × 0,1 (dinheiro que volta devagar). A meta só entra quando sobram menos de 3 ações.
    * → [{ tipo, n, valor, porDia, peso }]
    */
@@ -103,7 +103,7 @@
     const add = (tipo, x, peso) => { if (peso > 0) l.push({ tipo, ...x, peso }); };
     if (c.vencidos && c.vencidos.lotes > 0) add('vencidos', { n: c.vencidos.lotes, valor: c.vencidos.valor || 0 }, Math.max(1, (c.vencidos.valor || 0) * 3));
     if (c.zerados && c.zerados.n > 0) add('zerados', { n: c.zerados.n, porDia: c.zerados.perdaDia || 0 }, Math.max(1, (c.zerados.perdaDia || 0) * 30));
-    if (c.criticos && c.criticos.lotes > 0) add('criticos', { n: c.criticos.lotes, valor: c.criticos.valor || 0 }, Math.max(1, c.criticos.valor || 0));
+    if (c.criticos && c.criticos.lotes > 0) add('criticos', { n: c.criticos.lotes, valor: c.criticos.valor || 0, custo: !!c.criticos.custo }, Math.max(1, c.criticos.valor || 0));
     if (c.franquia && c.franquia.valor > 0) add('franquia', { n: c.franquia.n || 0, valor: c.franquia.valor }, c.franquia.valor);
     if (c.parado && c.parado.valor > 0) add('parado', { n: c.parado.n || 0, valor: c.parado.valor }, c.parado.valor * 0.1);
     l.sort((a, b) => b.peso - a.peso);
@@ -231,9 +231,9 @@
     const nomes = (faixa) => v.d.lotes.filter((l) => l.faixa === faixa).slice(0, 3).map((l) => `${l.desc} (${l.dias < 0 ? `venceu há ${fmt.int(-l.dias)} d` : `${fmt.int(l.dias)} d`})`).join(', ');
     const valor = (p) => (v.custos && p.custo != null ? ` · ${fmt.brl0(p.custo)} a custo` : '');
     const ven = v.pf.vencido, cri = v.pf.critica;
-    if (ven.lotes) lista.push({ nivel: 'erro', titulo: `Validade: ${fmt.int(ven.lotes)} ${ven.lotes === 1 ? 'lote de chá vencido' : 'lotes de chá vencidos'} (${kg(ven.kg)}${valor(ven)})`,
+    if (ven.lotes) lista.push({ nivel: 'erro', topo: 'vencidos', titulo: `Validade: ${fmt.int(ven.lotes)} ${ven.lotes === 1 ? 'lote de chá vencido' : 'lotes de chá vencidos'} (${kg(ven.kg)}${valor(ven)})`,
       texto: `Retire da venda e lance a perda no AppNext. ${nomes('vencido')}${ven.lotes > 3 ? ` e mais ${ven.lotes - 3}` : ''}.`, link: '#validade', ir: 'ver os vencidos ›', antes: () => { state.valFaixa = 'vencido'; } });
-    if (cri.lotes) lista.push({ nivel: 'warn', id: 'val-30', titulo: `Validade: ${fmt.int(cri.lotes)} ${cri.lotes === 1 ? 'lote de chá vence' : 'lotes de chá vencem'} em até 30 dias (${kg(cri.kg)}${valor(cri)})`,
+    if (cri.lotes) lista.push({ nivel: 'warn', id: 'val-30', topo: 'criticos', titulo: `Validade: ${fmt.int(cri.lotes)} ${cri.lotes === 1 ? 'lote de chá vence' : 'lotes de chá vencem'} em até 30 dias (${kg(cri.kg)}${valor(cri)})`,
       texto: `Ofereça primeiro ou faça uma promoção antes de perder. ${nomes('critica')}${cri.lotes > 3 ? ` e mais ${cri.lotes - 3}` : ''}.`, link: '#validade', ir: 'ver os lotes ›', antes: () => { state.valFaixa = 'critica'; } });
   };
 
@@ -246,12 +246,13 @@
     const pl = (n, um, mais) => `${fmt.int(n)} ${n === 1 ? um : mais}`;
     if (a.tipo === 'zerados') return { titulo: `Pedir ${pl(a.n, 'produto zerado que vende', 'produtos zerados que vendem')}${a.porDia > 0 ? ` ${fmt.brl0(a.porDia)}/dia` : ''}`, texto: 'Estão sem saldo e vendiam: cada dia sem eles é venda perdida.', link: ctx.temPedido ? '#pedido' : '#estoque', ir: ctx.temPedido ? 'montar o pedido ›' : 'ver quais ›', antes: () => { state.estSit = 'falta'; state.pedFiltro = 'pedido'; } };
     if (a.tipo === 'vencidos') return { titulo: `Retirar da venda ${pl(a.n, 'lote de chá vencido', 'lotes de chá vencidos')}${a.valor > 0 ? ` (${fmt.brl0(a.valor)} a custo)` : ''}`, texto: 'Chá vencido não pode ser vendido: tire da prateleira e lance a perda no AppNext.', link: '#validade', ir: 'ver os vencidos ›', antes: () => { state.valFaixa = 'vencido'; } };
-    if (a.tipo === 'criticos') return { titulo: `Liquidar ${pl(a.n, 'lote que vence', 'lotes que vencem')} em até 30 dias${a.valor > 0 ? ` (${fmt.brl0(a.valor)} a preço de venda)` : ''}`, texto: 'Ofereça primeiro ou faça uma promoção antes de virar perda.', link: '#validade', ir: 'ver os lotes ›', antes: () => { state.valFaixa = 'critica'; } };
+    if (a.tipo === 'criticos') return { titulo: `Liquidar ${pl(a.n, 'lote que vence', 'lotes que vencem')} em até 30 dias${a.valor > 0 ? ` (${fmt.brl0(a.valor)} ${a.custo ? 'a custo' : 'a preço de venda'})` : ''}`, texto: 'Ofereça primeiro ou faça uma promoção antes de virar perda.', link: '#validade', ir: 'ver os lotes ›', antes: () => { state.valFaixa = 'critica'; } };
     if (a.tipo === 'franquia') return { titulo: `Cobrar ${fmt.brl0(a.valor)} da franquia`, texto: `${pl(a.n, 'devolução sem desconto', 'devoluções sem desconto')} há mais de ${ctx.prazoFranquia || 30} dias.`, link: '#creditos', ir: 'ver os créditos ›', antes: () => { state.cfFil = 'atrasado'; } };
     if (a.tipo === 'parado') return { titulo: `Girar ${fmt.brl0(a.valor)} de estoque parado (${pl(a.n, 'produto', 'produtos')})`, texto: 'Têm saldo e não vendem: vale promoção, vitrine ou devolução.', link: '#estoque', ir: 'ver os parados ›', antes: () => { state.estSit = 'parados'; } };
-    return { titulo: `Vender ${fmt.brl0(a.porDia)} por dia para bater a meta`, texto: `Faltam ${fmt.brl0(a.valor)} em vendas da meta e ${pl(a.n, 'dia', 'dias')} de loja aberta.`, link: '#hoje', ir: 'ver a meta de hoje ›', antes: null };
+    return { titulo: `Vender ${fmt.brl0(a.porDia)} por dia para bater a meta`, texto: `Faltam ${fmt.brl0(a.valor)} em vendas da meta e ${pl(a.n, 'dia', 'dias')} de loja aberta.`, link: null, rolar: '.md-card', ir: 'ver a meta de hoje ↓', antes: null };
   }
-  API.blocoSemana = function () {
+  /** opts.aoAcoes(tipos) = avisa quais ações foram para "O que fazer primeiro" (o Início marca o aviso igual na lista) */
+  API.blocoSemana = function (opts = {}) {
     if (!API.mostraSemana()) return null;
     const db = TS.db, hojeD = TS.todayDay();
     const S = semana(hojeD, db.maxDay, db.minDay);
@@ -265,7 +266,7 @@
     const dv = ant && ant.vt > 0 ? cur.vt / ant.vt - 1 : null;
     const kVendas = TS.kpi('Vendas da semana', fmt.brl0(cur.vt), dv == null ? `${S.n} ${S.n === 1 ? 'dia' : 'dias'} · sem a semana anterior para comparar` : h('span', null, TS.deltaSpan(dv), ` vs. ${fmt.brl0(ant.vt)} nos mesmos ${S.n === 1 ? 'dia' : `${S.n} dias`} da semana anterior`),
       `Faturamento da loja ${periodo}: de segunda até o último dia completo (hoje ainda está acontecendo e fica de fora).\n\nComparado com os mesmos dias da semana anterior (${br(S.antDe)} a ${br(S.antAte)}), para não comparar uma semana pela metade com uma inteira.\n\nÉ o mesmo faturamento do Resumo: com Espaço Gourmet e vendas sem vendedor, sem taxas e sem itens a R$ 0,01.`);
-    const kMeta = TS.kpi('Meta do mês', meta ? fmt.pct(mes.meta / meta, 0) : '—', !meta ? 'sem meta cadastrada' : Pm ? h('span', { class: Pm.proj >= meta ? 'up' : 'down' }, `projeção ${fmt.brl0(Pm.proj)} = ${fmt.pct(Pm.proj / meta, 0)} da meta`) : `${fmt.brl0(mes.meta)} de ${fmt.brl0(meta)}`,
+    const kMeta = TS.kpi('Meta do mês', meta ? fmt.pct(mes.meta / meta, 0) : '—', !meta ? 'sem meta cadastrada' : Pm ? h('span', { class: Pm.proj >= meta ? 'up' : 'down' }, `vendas da meta projetadas ${fmt.brl0(Pm.proj)} = ${fmt.pct(Pm.proj / meta, 0)} da meta`) : `${fmt.brl0(mes.meta)} de ${fmt.brl0(meta)}`,
       meta ? `Vendas da meta do mês (${fmt.brl0(mes.meta)}: chá aromatizado, chá puro e acessórios, sem Espaço Gourmet) ÷ meta da loja (${fmt.brl0(meta)}).${Pm ? '\n\nProjeção:\n' + TS.comoProjecao(Pm) : ''}` : 'Cadastre a meta do mês em Configurações → Lojas.');
     const kMargem = TS.kpi('Margem de contribuição da semana', '…', 'calculando…', '');
     const kZer = TS.kpi('Zerados que vendem', '…', 'conferindo o estoque…', '');
@@ -277,7 +278,7 @@
     const box = h('details', { class: 'vd-semana', open: aberto || null },
       h('summary', { class: 'vd-sem-t' }, h('span', { class: 'card-title' }, 'Sua semana'), h('span', { class: 'muted vd-sem-p' }, periodo)),
       h('div', { class: 'grid g-kpi vd-sem-k' }, kVendas, kMeta, kMargem, kZer, kVal),
-      h('div', { class: 'card vd-acoes-card' }, h('div', { class: 'card-title vd-acoes-t' }, 'O que fazer primeiro', TS.dica('Até 3 ações, na ordem do dinheiro em jogo. Não é conta nova: cada número vem de uma tela do painel.\n\nChá vencido vem na frente (tem de sair da venda; peso de 3× o valor a custo). Produto zerado conta 30 dias da venda que ele fazia por dia. Lote que vence em 30 dias conta o valor a preço de venda; crédito atrasado da franquia, o valor a receber; estoque parado, 10% do valor a custo (dinheiro que volta devagar). A meta do mês entra quando sobra espaço.')),
+      h('div', { class: 'card vd-acoes-card' }, h('div', { class: 'card-title vd-acoes-t' }, 'O que fazer primeiro', TS.dica('Até 3 ações, na ordem do dinheiro em jogo. Não é conta nova: cada número vem de uma tela do painel.\n\nChá vencido vem na frente (tem de sair da venda; peso de 3× o valor a custo). Produto zerado conta 30 dias da venda que ele fazia por dia. Lote que vence em 30 dias conta o valor a custo (a preço de venda para quem não vê custo), o mesmo do quadro Validade em risco; crédito atrasado da franquia, o valor a receber; estoque parado, 10% do valor a custo (dinheiro que volta devagar). A meta do mês entra quando sobra espaço.')),
         lista));
     box.addEventListener('toggle', () => { try { localStorage.setItem(CHAVE_SEM, box.open ? 'aberto' : 'fechado'); } catch { /* ok */ } });
     const telas = TS.telasEstoque || [];
@@ -303,16 +304,17 @@
       const as = acoes({
         zerados: est ? est.zerados : null,
         vencidos: val && val.vencidos ? { lotes: val.vencidos, valor: val.custo != null ? val.pf.vencido.custo : 0 } : null,
-        criticos: val && val.criticos ? { lotes: val.criticos, valor: val.pf.critica.venda } : null,
+        criticos: val && val.criticos ? { lotes: val.criticos, valor: val.custo != null && val.pf.critica.custo != null ? val.pf.critica.custo : val.pf.critica.venda, custo: val.custo != null && val.pf.critica.custo != null } : null,
         franquia: cf && cf.resumo && cf.resumo.nAtrasado ? { n: cf.resumo.nAtrasado, valor: cf.resumo.atrasado } : null,
         parado: est ? est.parado : null,
         meta: faltaMeta > 0 && restam > 0 ? { falta: faltaMeta, porDia: faltaMeta / restam, dias: restam } : null,
       });
       const ctx = { temPedido: telas.includes('pedido'), prazoFranquia: cf && cf.prazo };
+      if (opts.aoAcoes) opts.aoAcoes(as.map((a) => a.tipo));
       lista.replaceChildren(...(as.length ? as.map((a, k) => {
         const t = acaoTela(a, ctx);
-        const ir = () => { if (t.antes) t.antes(); location.hash = t.link; };
-        return h('div', { class: 'vd-acao', role: 'button', tabindex: '0', 'data-acao': a.tipo, onclick: ir, onkeydown: (e) => { if (e.key === 'Enter') ir(); } },
+        const ir = () => { if (t.antes) t.antes(); if (t.rolar) { const el = document.querySelector(t.rolar); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); } else location.hash = t.link; };
+        return h('div', { class: 'vd-acao', role: 'button', tabindex: '0', 'data-acao': a.tipo, onclick: ir, onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); ir(); } } },
           h('span', { class: 'vd-acao-n' }, String(k + 1)), h('div', null, h('b', null, t.titulo), h('div', { class: 'muted' }, t.texto)), h('span', { class: 'ini-ir' }, t.ir));
       }) : [h('p', { class: 'muted' }, 'Nada urgente esta semana: sem produto zerado que vende, sem chá perto de vencer e a meta no ritmo. 👏')]));
     })().catch((e) => { console.error(e); if (lista.isConnected) lista.replaceChildren(h('p', { class: 'muted' }, 'Não consegui montar as ações agora.')); });

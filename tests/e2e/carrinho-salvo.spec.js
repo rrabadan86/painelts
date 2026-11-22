@@ -16,6 +16,8 @@ test('Pedido: aviso do carrinho salvo, "Continuar de onde parei" troca as quanti
   await expect(aviso).toContainText(/Tem um carrinho salvo por gerente em \d{2}\/\d{2}/);
   await expect(aviso).toContainText('4 produtos');
   await expect(aviso).toContainText('Fica guardado até');
+  // "tem um carrinho salvo" fica no topo da tela, antes dos ajustes
+  expect(await aviso.evaluate((el) => !!el.closest('.ped-pend'))).toBe(true);
   const salvo = await page.evaluate(async () => (await (await fetch(`/api/demo/pedido?loja=${encodeURIComponent(TS.state.loja)}`)).json()).rascunho);
   expect(Math.round((Date.parse(salvo.expira) - Date.parse(salvo.em)) / 864e5)).toBe(5);
   if (process.env.PRINTS) { await aviso.scrollIntoViewIfNeeded(); await page.screenshot({ path: `${process.env.PRINTS}/carrinho-salvo-${info.project.name}.png` }); }
@@ -64,6 +66,12 @@ test('Pedido: o registro do carrinho montado pergunta se o pedido foi feito, com
   await page.evaluate(() => { location.hash = '#pedido'; });
   const reg = page.locator('.ped-ult');
   await expect(reg).toBeVisible({ timeout: 40000 });
+  // a pendência também aparece numa linha no topo da tela (revisão de 22/11/2026), com as mesmas duas respostas
+  const topo = page.locator('.ped-pend .ped-pend-car');
+  await expect(topo).toContainText(/Carrinho de \d{2}\/\d{2}.* ainda sem confirmar/);
+  await expect(topo.getByRole('button', { name: '✓ Sim, foi feito' })).toBeVisible();
+  await expect(topo.getByRole('button', { name: 'Não fiz' })).toBeVisible();
+  expect(await topo.evaluate((el) => el.getBoundingClientRect().top < document.querySelector('.ped-ctl').getBoundingClientRect().top)).toBe(true);
   await expect(reg.locator('summary')).toContainText('carrinho montado em');
   await expect(reg.locator('.ped-conf-sit')).toHaveText('falta confirmar');
   const perg = reg.locator('.ped-conf');

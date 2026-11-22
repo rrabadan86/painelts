@@ -174,7 +174,7 @@
       const temTab = [...card.querySelectorAll('.table-wrap')].some((t) => t.closest('.card') === card);
       const temGraf = [...card.querySelectorAll('.chart-box')].some((t) => t.closest('.card') === card);
       if (!temTab && !temGraf) continue;
-      const temExp = !!card.querySelector(':scope > .card-head .exp-btn:not(.prt-btn):not(.shr-btn)'), temPrt = !!card.querySelector(':scope > .card-head .prt-btn');
+      const temExp = !!card.querySelector(':scope > .card-head .exp-btn:not(.prt-btn):not(.shr-btn)'), temPrt = !!card.querySelector(':scope > .card-head .prt-btn') || card.classList.contains('sem-imprimir'); // sem-imprimir: lista privada (Conversas)
       const temShr = !!card.querySelector(':scope > .card-head .shr-btn');
       if ((temExp || !temTab) && temPrt && (temShr || !temGraf)) continue;
       let head = card.querySelector(':scope > .card-head');
@@ -360,6 +360,29 @@
     // a faixa é criada antes de entrar na página: ajusta no próximo quadro (e de novo logo depois, se ainda não tinha entrado)
     const quadro = typeof requestAnimationFrame === 'function' ? requestAnimationFrame : (f) => setTimeout(f, 0);
     quadro(() => { if (!ajustar()) setTimeout(ajustar, 80); });
+    return TS.sinalRolagem(el);
+  };
+  /**
+   * faixa que rola para o lado (abas, submenu, menu do topo): a borda que tem mais opções escondidas fica esmaecida
+   * (classes rola-esq / rola-dir); abas que quebram em duas linhas ou mais ganham seg-quebra (canto menor, sem virar bolha)
+   */
+  TS.sinalRolagem = function (el) {
+    if (!el || el._sinal) return el;
+    el._sinal = true;
+    const marcar = () => {
+      if (!el.isConnected) return;
+      const sobra = el.scrollWidth - el.clientWidth;
+      el.classList.toggle('rola-esq', sobra > 2 && el.scrollLeft > 2);
+      el.classList.toggle('rola-dir', sobra > 2 && el.scrollLeft < sobra - 2);
+      if (el.classList.contains('seg')) {
+        const bs = el.querySelectorAll(':scope > button');
+        el.classList.toggle('seg-quebra', bs.length > 1 && bs[bs.length - 1].offsetTop > bs[0].offsetTop + 4);
+      }
+    };
+    el.addEventListener('scroll', marcar, { passive: true });
+    if (typeof ResizeObserver === 'function') new ResizeObserver(marcar).observe(el);
+    const quadro = typeof requestAnimationFrame === 'function' ? requestAnimationFrame : (f) => setTimeout(f, 0);
+    quadro(() => { marcar(); setTimeout(marcar, 120); });
     return el;
   };
   TS.seg = function (items, current, onPick) {
@@ -449,7 +472,12 @@
       const slice = pageSize ? all.slice(start, start + pageSize) : all;
       for (const row of slice) {
         const tr = h('tr', { class: rowClass ? rowClass(row) || null : null });
-        if (onRowClick) { tr.style.cursor = 'pointer'; tr.addEventListener('click', () => onRowClick(row)); }
+        if (onRowClick) {
+          // a linha abre também pelo teclado (Enter ou Espaço), não só com o mouse ou o dedo
+          tr.style.cursor = 'pointer'; tr.tabIndex = 0; tr.setAttribute('role', 'button');
+          tr.addEventListener('click', () => onRowClick(row));
+          tr.addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target === tr) { e.preventDefault(); onRowClick(row); } });
+        }
         cols.forEach((c) => {
           const v = row[c.key];
           const extra = c.cls ? c.cls(row) : '';
@@ -531,7 +559,15 @@
         if (!opts || !opts.display) return;
         const { ctx } = chart;
         ctx.save();
-        ctx.font = '11px "Segoe UI", sans-serif';
+        ctx.font = '12px "Segoe UI", sans-serif';
+        // texto dentro da barra: escuro em barra clara (dourada, sálvia), branco em barra escura — contraste ≥ 4,5
+        const dentro = (el) => {
+          const c = String((el.options && el.options.backgroundColor) || '');
+          const m = /^#([0-9a-f]{6})$/i.exec(c);
+          if (!m) return '#fff';
+          const l = [0, 2, 4].map((i) => { const v = parseInt(m[1].slice(i, i + 2), 16) / 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; });
+          return 0.2126 * l[0] + 0.7152 * l[1] + 0.0722 * l[2] > 0.18 ? '#24302A' : '#fff';
+        };
         chart.data.datasets.forEach((ds, di) => {
           const meta = chart.getDatasetMeta(di);
           if (meta.hidden) return;
@@ -546,12 +582,12 @@
             if (horiz) {
               ctx.textBaseline = 'middle';
               // não cabe à direita da barra: vai para dentro dela, em branco
-              if (barra && el.x + 6 + w > area.right && Math.abs(el.x - el.base) > w + 10) { ctx.textAlign = 'right'; ctx.fillStyle = '#fff'; ctx.fillText(txt, el.x - 6, el.y); }
+              if (barra && el.x + 6 + w > area.right && Math.abs(el.x - el.base) > w + 10) { ctx.textAlign = 'right'; ctx.fillStyle = dentro(el); ctx.fillText(txt, el.x - 6, el.y); }
               else { ctx.textAlign = 'left'; ctx.fillText(txt, Math.min(el.x + 6, area.right - w), el.y); }
             } else {
               ctx.textAlign = 'center';
               // não cabe acima da barra (passa do topo do gráfico): vai para dentro dela, em branco
-              if (barra && el.y - 4 - 13 < area.top && Math.abs(el.base - el.y) > 18) { ctx.textBaseline = 'top'; ctx.fillStyle = '#fff'; ctx.fillText(txt, el.x, el.y + 4); }
+              if (barra && el.y - 4 - 13 < area.top && Math.abs(el.base - el.y) > 18) { ctx.textBaseline = 'top'; ctx.fillStyle = dentro(el); ctx.fillText(txt, el.x, el.y + 4); }
               else { ctx.textBaseline = 'bottom'; ctx.fillText(txt, el.x, Math.max(el.y - 4, area.top + 13)); }
             }
           });

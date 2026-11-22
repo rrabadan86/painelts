@@ -23,7 +23,7 @@ test('CONV-03: guarda por conversa, sem repetir; índice com a última mensagem,
   CONV.aplicar('l1', [m('a3', { deMim: true, em: '2026-11-22T14:10:00Z', texto: 'Temos sim!', nome: 'ignora' })], AGORA);
   const l = CONV.lista('l1');
   assert.deepStrictEqual(l.map((x) => x.chave), ['5562999990001', 'lid:777777'], 'mais recente primeiro');
-  assert.deepStrictEqual({ n: l[0].n, nome: l[0].nome, naoLidas: l[0].naoLidas, ult: l[0].ult }, { n: 3, nome: 'Ana', naoLidas: 2, ult: { em: '2026-11-22T14:10:00.000Z', texto: 'Temos sim!', deMim: true, tipo: 'texto' } });
+  assert.deepStrictEqual({ n: l[0].n, nome: l[0].nome, naoLidas: l[0].naoLidas, semResposta: l[0].semResposta, ult: l[0].ult }, { n: 3, nome: 'Ana', naoLidas: 2, semResposta: 0, ult: { id: 'a3', em: '2026-11-22T14:10:00.000Z', texto: 'Temos sim!', deMim: true, tipo: 'texto' } });
   assert.deepStrictEqual(CONV.mensagens('l1', '5562999990001').map((x) => x.id), ['a1', 'a2', 'a3'], 'em ordem de data');
   assert.strictEqual(CONV.mensagens('l1', '../../etc'), null, 'chave inválida não lê arquivo nenhum');
 });
@@ -36,6 +36,29 @@ test('CONV-04: abrir marca como lida; mensagem nova do cliente volta a contar; o
   assert.strictEqual(CONV.lista('l1')[0].naoLidas, 1);
   const r = CONV.mensagens('l1', '5562999990001').find((x) => x.id === 'r1');
   assert.strictEqual(r.robo, 'Campanha Resumo diário');
+});
+
+test('CONV-10: "sem resposta" conta as mensagens do cliente depois da última resposta da loja; a lista marca a última do robô', () => {
+  assert.strictEqual(CONV.semRespostaDe([]), 0);
+  assert.strictEqual(CONV.semRespostaDe([{ deMim: false }, { deMim: true }, { deMim: false }, { deMim: false }]), 2);
+  assert.strictEqual(CONV.semRespostaDe([{ deMim: false }, { deMim: true }]), 0, 'a loja respondeu: zera (sem precisar abrir no painel)');
+  // depois do CONV-04 a última é do cliente (a4), depois do robô (r1)
+  assert.strictEqual(CONV.lista('l1')[0].semResposta, 1);
+  CONV.marcarRobo('l1', 'r2', 'Campanha Teste', AGORA);
+  CONV.aplicar('l1', [m('r2', { deMim: true, em: '2026-11-22T15:10:00Z', texto: 'Oi do robô' })], AGORA + 11 * 60e3);
+  const c = CONV.lista('l1')[0];
+  assert.strictEqual(c.semResposta, 0, 'o robô respondeu por último');
+  assert.strictEqual(c.ult.robo, 'Campanha Teste', 'a lista sabe que a última foi do robô (🤖)');
+  // índice antigo, gravado sem a marca: calcula pelas mensagens na primeira leitura
+  const arq = path.join(tmp, 'l1', 'conversas', 'indice.json');
+  assert.ok(fs.existsSync(arq), 'índice em ' + arq);
+  {
+    const ind = JSON.parse(fs.readFileSync(arq, 'utf8'));
+    for (const e of Object.values(ind)) delete e.semResposta;
+    fs.writeFileSync(arq, JSON.stringify(ind));
+    assert.strictEqual(CONV.lista('l1')[0].semResposta, 0);
+    assert.ok(Object.values(JSON.parse(fs.readFileSync(arq, 'utf8'))).every((e) => e.semResposta != null), 'guardou a marca calculada');
+  }
 });
 
 test('CONV-05: busca no serviço de 500 em 500, recomeça se o serviço zerou a contagem, e guarda 12 meses', async () => {

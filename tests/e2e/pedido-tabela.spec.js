@@ -130,3 +130,22 @@ test('Pedido: adicionar na 2ª página não volta para a 1ª; a linha que muda d
   await expect(page.locator('.ped-ficou')).toHaveCount(0);
   expect(erros).toEqual([]);
 });
+
+test('Pedido: "Data comemorativa" abre na PRÓXIMA data, não na primeira da lista (revisão de 22/11/2026)', async ({ page }, info) => {
+  test.skip(info.project.name !== 'computador');
+  await page.goto('/apresentacao');
+  await page.waitForFunction(() => window.TS && TS.db && TS.pedidoCalc && TS.state.loja && TS.state.loja !== 'todas', null, { timeout: 60000 });
+  const r = await page.evaluate(() => {
+    const ev = [{ id: 'maes', nome: 'Dia das Mães', regra: 'maes', diasAntes: 14 }, { id: 'natal', nome: 'Natal', de: '12-01', ate: '12-25' }, { id: 'pascoa', nome: 'Páscoa', de: '03-20', ate: '04-10' }];
+    const d = (iso) => TS.isoToDay(iso);
+    return { nov: TS.pedidoCalc.eventoPadrao(ev, d('2026-11-22')).id, jan: TS.pedidoCalc.eventoPadrao(ev, d('2027-01-05')).id, abr: TS.pedidoCalc.eventoPadrao(ev, d('2027-04-01')).id, vazio: TS.pedidoCalc.eventoPadrao([], d('2026-11-22')) };
+  });
+  // em novembro, o Natal; em janeiro, a Páscoa; durante a Páscoa, ela mesma (ainda não terminou)
+  expect(r).toEqual({ nov: 'natal', jan: 'pascoa', abr: 'pascoa', vazio: null });
+  // na tela: sem escolher, o seletor abre na próxima data pela data dos dados
+  await page.evaluate(() => { TS.state.pedModo = 'evento'; TS.state.pedEvento = null; location.hash = '#pedido'; });
+  const sel = page.locator('.ped-ctl select');
+  await expect(sel).toBeVisible({ timeout: 40000 });
+  const esperado = await page.evaluate(async () => { const p = await (await fetch(`/api/demo/pedido?loja=${encodeURIComponent(TS.state.loja)}`)).json(); return TS.pedidoCalc.eventoPadrao(p.cfg.eventos, TS.db.maxDay + 1).id; });
+  await expect(sel).toHaveValue(esperado);
+});
