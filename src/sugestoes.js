@@ -146,7 +146,7 @@ const JANELA_DIAS = 5, SEM_NOTA_DIAS = 30;
 const somaDias = (dia, n) => new Date(Date.parse(dia + 'T12:00:00Z') + n * 864e5).toISOString().slice(0, 10);
 const diaBR = (iso) => C.diaSP(iso);
 const dm = (dia) => `${dia.slice(8, 10)}/${dia.slice(5, 7)}`;
-const STATUS_CARRINHO = { erro: 'erro ao pôr no carrinho', sem_estoque: 'sem estoque no fornecedor', recusado: 'o site recusou', indisponivel: 'indisponível no site', nao_encontrado: 'o site não achou o produto', acima_do_maximo: 'acima do máximo do site' };
+const STATUS_CARRINHO = { erro: 'erro ao pôr no carrinho', sem_estoque: 'fora de estoque no fornecedor', recusado: 'o site recusou', indisponivel: 'indisponível no site', nao_encontrado: 'o site não achou o produto', acima_do_maximo: 'acima do máximo do site' };
 
 /**
  * O carrinho montado foi excluído (a pessoa montou e não fez o pedido): as sugestões que tinham ido para "aguardando entrega"

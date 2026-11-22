@@ -24,6 +24,8 @@ description: Testa o favorito "Carrinho Tea Shop" (public/js/carrinho-site.js) e
 5. **Contar ao dono:** o que o diagnóstico mostrou, o que mudou, que foi testado só em página de mentira, e pedir um teste com **uma** mug no
    site real (mandar o "Diagnóstico" de novo se falhar). Registre o caso na linha EST-PED-CONJ da `docs/rastreabilidade.md`.
 
+Aviso de estoque (janela "Atenção" fora do `.modal`, atrasada, de outro produto): `carrinho-conjunta.spec` tem os casos com atraso configurável (`ATENCAO(atraso, nome)`) e roda também o `AVISO_JS` do robô (tirado do `.py`); `donoDoAviso`/`dono_do_aviso` decidem de quem é o aviso (o robô tem teste em `carrinho-salvo.test`, com o Playwright de mentira). Os dois trechos ficam entre os marcadores `const RE_TODOS =` e `const ajustar = (qtd, c) =>`.
+
 Outros casos que a mesma técnica cobre: aviso "não possui estoque suficiente" (`avisoDoSite`), máximo por pedido (`ajustar`), produto não achado
 pela busca (`cartoes`). Para cada novo formato de página do site, acrescente um caso ao `carrinho-conjunta.spec`.
 

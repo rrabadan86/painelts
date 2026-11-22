@@ -1374,7 +1374,7 @@
 
   function resultadoCarrinho(c, loja, aoMudar) {
     if (!c || !Array.isArray(c.itens) || (c.modo === 'navegador' && !c.itens.length)) return null;
-    const ST = { ok: ['No carrinho', 'ok'], sem_estoque: ['Sem estoque no fornecedor', 'erro'], recusado: ['O site recusou', 'erro'], indisponivel: ['Indisponível', 'erro'], nao_encontrado: ['Não achou no site', 'erro'], acima_do_maximo: ['Acima do máximo', 'warn'], sem_confirmacao: ['Sem confirmação', 'warn'], erro: ['Erro', 'erro'] };
+    const ST = { ok: ['No carrinho', 'ok'], sem_estoque: ['Fora de estoque', 'erro'], recusado: ['O site recusou', 'erro'], indisponivel: ['Indisponível', 'erro'], nao_encontrado: ['Não achou no site', 'erro'], acima_do_maximo: ['Acima do máximo', 'warn'], sem_confirmacao: ['Sem confirmação', 'warn'], erro: ['Erro', 'erro'] };
     const ok = c.itens.filter((x) => x.status === 'ok').length, prob = c.itens.length - ok;
     const site = c.site ? `${c.site.replace(/Abertura\.aspx.*$/, '')}Abertura.aspx` : null;
     const fimTxt = c.fim

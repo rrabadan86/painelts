@@ -67,24 +67,65 @@
       return { q, nome: (iMin > 0 ? linhas.slice(0, iMin).filter((s) => !/^NOVIDADE$/i.test(s)).pop() : linhas[0]) || '', preco: num(g(/R\$\s*([\d.,]+)/)), min: min && !/livre/i.test(min) ? num(min) : null, max: num(g(/Pedido M[áa]ximo:\s*([^\n]+)/i)), mult: num(g(/M[úu]ltiplo de\s*([\d.,]+)/i)) || 1 };
     });
   }
-  /** aviso do site depois do clique (janela "Atenção", ex.: "O produto X não possui estoque suficiente.") */
-  function avisoDoSite(d) {
-    const vis = (e) => { const s = d.defaultView.getComputedStyle(e); return s.display !== 'none' && s.visibility !== 'hidden' && e.offsetHeight > 0; };
-    // a janela "Venda Conjunta" não é aviso: quem cuida dela é vendaConjunta() (aqui ela seria fechada)
-    const m = [...d.querySelectorAll('.modal')].find((e) => e.id !== 'modalCarregamentoAjax' && e.id !== 'modalCarrinho' && vis(e) && !/colocar\s+todos\s+no\s+carrinho/i.test(e.textContent || ''));
-    if (!m) return null;
-    const corpo = m.querySelector('.modal-body') || m;
-    const txt = corpo.textContent.replace(/\s+/g, ' ').trim();
-    // fecha a janela para seguir com o próximo produto
-    const fechar = [...m.querySelectorAll('button,a')].find((b) => /fechar|ok|×/i.test(b.textContent.trim()));
-    try { fechar ? fechar.click() : m.querySelector('[data-dismiss]')?.click(); } catch { /* ok */ }
-    return txt || 'O site mostrou um aviso.';
-  }
   /**
    * "Venda Conjunta": o site só vende o produto junto com outro (ex.: a mug com o infusor dela) e pede para confirmar.
    * Decisão do dono: aceitar em "Colocar Todos no Carrinho". → { botao, itens: [{ cod, nome, qtd, preco }] } ou null
    */
   const RE_TODOS = /^colocar\s+todos\s+no\s+carrinho$/i;
+  /**
+   * Aviso do site depois do clique (ex.: janela "Atenção" com "O produto X não possui estoque suficiente." e "Fechar").
+   * Na loja real (22/11/2026) o aviso não era o .modal de sempre e às vezes chegava atrasado: procura qualquer janela visível
+   * (.modal, role=dialog/alertdialog, .bootbox, .swal2-popup, .ui-dialog) e também qualquer bloco visível com o texto de estoque,
+   * fecha pelo "Fechar"/×/OK e devolve o texto. A janela "Venda Conjunta" não é aviso (quem cuida dela é vendaConjunta()).
+   */
+  const RE_ESTOQUE = /n[ãa]o\s+possui\s+estoque\s+suficiente|estoque\s+insuficiente/i;
+  const RE_FECHAR = /^(fechar|ok|×|x|fechar\s*×)$/i;
+  const BOTOES = 'button,a,input[type=button],input[type=submit],[onclick],.btn,span';
+  function avisoDoSite(d) {
+    const w = d.defaultView;
+    const fechado = (e) => { for (let x = e; x && x.nodeType === 1; x = x.parentElement) if (w.getComputedStyle(x).display === 'none') return true; return w.getComputedStyle(e).visibility === 'hidden'; };
+    const texto = (e) => (e.textContent || '').replace(/\s+/g, ' ').trim();
+    const ignorar = (e) => e.id === 'modalCarregamentoAjax' || e.id === 'modalCarrinho' || /colocar\s+todos\s+no\s+carrinho/i.test(e.textContent || '');
+    let janelas = [...d.querySelectorAll('.modal, [role=dialog], [role=alertdialog], .bootbox, .swal2-popup, .ui-dialog')]
+      .filter((e) => !ignorar(e) && !fechado(e) && texto(e));
+    janelas = janelas.filter((e) => !janelas.some((o) => o !== e && o.contains(e))); // a de fora, não o miolo dela
+    // bloco visível com o texto de estoque que não é janela padrão: sobe até o pai que tem o botão de fechar
+    if (!janelas.length) {
+      const folhas = [...d.querySelectorAll('div,p,span,td,li,section')].filter((e) => RE_ESTOQUE.test(e.textContent || '') && ![...e.children].some((c) => RE_ESTOQUE.test(c.textContent || '')) && !fechado(e) && !e.closest('[data-tsc-visto]'));
+      for (const f of folhas) {
+        // sem botão de fechar por perto, fica o próprio bloco (nunca sobe até a página inteira)
+        let c = f, achou = null;
+        for (let i = 0; i < 6 && c && c !== d.body; i++, c = c.parentElement) { if ([...c.querySelectorAll(BOTOES)].some((b) => RE_FECHAR.test(texto(b) || b.value || ''))) { achou = c; break; } }
+        const j = achou || f;
+        if (!ignorar(j)) janelas.push(j);
+      }
+    }
+    const m = janelas.find((e) => RE_ESTOQUE.test(e.textContent || '')) || janelas[0];
+    if (!m) return null;
+    const corpo = m.querySelector('.modal-body, .bootbox-body, .swal2-html-container') || m;
+    // o texto do aviso: o bloco mais interno com a frase de estoque (sem o título "Atenção" nem o botão)
+    const frase = [...m.querySelectorAll('*')].reverse().find((e) => RE_ESTOQUE.test(e.textContent || '') && ![...e.children].some((c) => RE_ESTOQUE.test(c.textContent || '')));
+    const txt = (frase ? texto(frase) : texto(corpo)).replace(/\s*(fechar|ok|×)\s*$/i, '').trim();
+    // fecha a janela para seguir com o próximo produto
+    const fechar = [...m.querySelectorAll(BOTOES)].find((b) => RE_FECHAR.test(texto(b) || b.value || '')) || m.querySelector('[data-dismiss],[aria-label=Close],.close');
+    try {
+      if (fechar) fechar.click();
+      else if (m.matches('.modal, [role=dialog], [role=alertdialog], .bootbox, .swal2-popup, .ui-dialog')) m.style.display = 'none';
+      else m.setAttribute('data-tsc-visto', '1'); // bloco sem botão de fechar: não conta de novo no próximo produto
+    } catch { /* ok */ }
+    return txt || 'O site mostrou um aviso.';
+  }
+  /**
+   * De quem é o aviso: "O produto Happy Pumpkin não possui estoque…" pode chegar atrasado, já durante o produto seguinte.
+   * Devolve o nome (de `atual` ou de um dos `anteriores`) citado no texto; sem nome no texto, é do produto atual.
+   */
+  function donoDoAviso(texto, atual, anteriores) {
+    const m = /produto\s+(.+?)\s+n[ãa]o\s+possui/i.exec(texto || '');
+    if (!m) return atual;
+    const n = esq(m[1]), parece = (x) => { const e = esq(x); return e === n || (e.length >= 4 && n.length >= 4 && (e.includes(n) || n.includes(e))); };
+    if (parece(atual)) return atual;
+    return (anteriores || []).find((x) => esq(x) === n) || (anteriores || []).find(parece) || atual;
+  }
   function vendaConjunta(d) {
     const w = d.defaultView;
     const txt = (e) => String(e.tagName === 'INPUT' ? e.value || '' : e.textContent || '').replace(/\s+/g, ' ').trim();
@@ -138,15 +179,34 @@
     if (!doc().getElementById(L + 'txtBusca')) throw new Error('A tela de produtos de FRANQUIAS não abriu.');
   }
 
+  /** aviso que ficou aberto de um produto anterior (chegou atrasado): fecha e marca aquele produto, nunca o atual */
+  const anteriores = (atualNome) => itens.filter((i) => res.has(i.cod) && i.nome !== atualNome).map((i) => i.nome);
+  function atribuirAviso(nome, aviso) {
+    const it = itens.find((i) => i.nome === nome), x = it && res.get(it.cod);
+    if (!x || x.status === 'ok') return;
+    res.set(it.cod, { ...x, status: RE_ESTOQUE.test(aviso) ? 'sem_estoque' : 'recusado', erro: aviso, atrasado: true });
+    pintar(); avisar(false);
+  }
+  /** confere se há aviso na tela: de outro produto → marca aquele e devolve null; deste → devolve o texto */
+  function avisoDe(nome) {
+    const a = avisoDoSite(doc());
+    if (!a) return null;
+    const dono = donoDoAviso(a, nome, anteriores(nome));
+    if (dono !== nome) { atribuirAviso(dono, a); return null; }
+    return a;
+  }
+
   async function colocar(it) {
     const r = { cod: it.cod, nome: it.nome, pedido: it.qtd };
     try {
+      avisoDe(null); // um aviso atrasado do produto anterior não pode cair neste
       let d = doc();
       const busca = d.getElementById(L + 'txtBusca');
       busca.value = it.nome;
       await agir(() => d.getElementById(L + 'btnBuscar').click());
       let alvo = null;
       for (let k = 0; k < 8 && !alvo; k++) { alvo = cartoes(doc()).find((c) => esq(c.nome) === esq(it.nome)); if (!alvo) await espera(600); }
+      avisoDe(null); // a busca recarrega o quadro: o aviso atrasado pode aparecer agora
       if (!alvo) return { ...r, status: 'nao_encontrado' };
       if (!alvo.preco || alvo.preco <= 0.011) return { ...r, status: 'indisponivel' };
       const q = ajustar(it.qtd, alvo);
@@ -174,10 +234,16 @@
           continue;
         }
         depois = topoCarrinho(doc());
-        if (depois === antes) aviso = avisoDoSite(doc());
+        if (depois === antes) aviso = avisoDe(it.nome);
+      }
+      // o carrinho não mudou e nada apareceu: o aviso do site às vezes chega bem depois — espera mais um pouco só por ele
+      for (let k = 0; k < 16 && depois === antes && !aviso; k++) {
+        await espera(500);
+        depois = topoCarrinho(doc());
+        if (depois === antes) aviso = avisoDe(it.nome);
       }
       if (depois !== antes) return { ...r, qtd: q, preco: alvo.preco, status: 'ok', junto: junto && junto.length ? junto : undefined };
-      if (aviso) return { ...r, qtd: q, preco: alvo.preco, status: /estoque/i.test(aviso) ? 'sem_estoque' : 'recusado', erro: aviso };
+      if (aviso) return { ...r, qtd: q, preco: alvo.preco, status: RE_ESTOQUE.test(aviso) || /estoque/i.test(aviso) ? 'sem_estoque' : 'recusado', erro: aviso };
       return { ...r, qtd: q, preco: alvo.preco, status: 'sem_confirmacao', erro: `${aceitou ? `aceitei a venda conjunta ${aceitou}× e o carrinho não mudou · ` : ''}${diagnostico(doc())}` };
     } catch (e) {
       return { ...r, status: 'erro', erro: String(e.message || e).slice(0, 200) };
@@ -186,7 +252,7 @@
 
   // ---------- estado e tela ----------
   let itens = [], res = new Map(), atual = null;
-  const ROT = { ok: ['no carrinho', 'tsc-ok'], sem_estoque: ['sem estoque no fornecedor', 'tsc-er'], recusado: ['o site recusou', 'tsc-er'], indisponivel: ['indisponível', 'tsc-er'], nao_encontrado: ['não achou', 'tsc-er'], acima_do_maximo: ['acima do máximo', 'tsc-av'], sem_confirmacao: ['sem confirmação', 'tsc-av'], erro: ['erro', 'tsc-er'] };
+  const ROT = { ok: ['no carrinho', 'tsc-ok'], sem_estoque: ['fora de estoque', 'tsc-er'], recusado: ['o site recusou', 'tsc-er'], indisponivel: ['indisponível', 'tsc-er'], nao_encontrado: ['não achou', 'tsc-er'], acima_do_maximo: ['acima do máximo', 'tsc-av'], sem_confirmacao: ['sem confirmação', 'tsc-av'], erro: ['erro', 'tsc-er'] };
   function pintar() {
     const feitos = itens.filter((i) => res.has(i.cod)).length, ok = [...res.values()].filter((x) => x.status === 'ok').length;
     el.bar.style.width = `${itens.length ? Math.round((feitos / itens.length) * 100) : 0}%`;

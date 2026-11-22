@@ -62,6 +62,30 @@ test('o favorito e o robô aceitam a venda conjunta em "Colocar Todos no Carrinh
   for (const [nome, t] of [['favorito', fav], ['robô', robo]]) assert.ok(!/(click|clicar)[^\n]{0,80}(finalizar|fechar pedido|concluir pedido)/i.test(t), nome);
 });
 
+test('robô: aviso de estoque atrasado vai para o produto citado (nunca o seguinte) e vira "sem_estoque"', (t) => {
+  const { spawnSync } = require('child_process');
+  if (spawnSync('python3', ['--version']).status !== 0) { t.skip('sem python3'); return; }
+  const raiz = path.join(__dirname, '../..');
+  // o robô importa o Playwright no topo: aqui um módulo de mentira (só as funções puras são testadas)
+  const prog = `
+import sys, types, json
+pw = types.ModuleType('playwright'); api = types.ModuleType('playwright.sync_api'); api.sync_playwright = None
+sys.modules['playwright'] = pw; sys.modules['playwright.sync_api'] = api
+sys.path.insert(0, ${JSON.stringify(path.join(raiz, 'coletor'))})
+import nextsoft_pedido as N
+av = 'O produto Happy Pumpkin não possui estoque suficiente.'
+print(json.dumps([
+  N.dono_do_aviso(av, 'Top E Tea 1Un', ['Calm Moment', 'Happy Pumpkin']),
+  N.dono_do_aviso(av, 'Happy Pumpkin', ['Calm Moment']),
+  N.dono_do_aviso('Não foi possível adicionar.', 'Top E Tea 1Un', ['Happy Pumpkin']),
+  N.dono_do_aviso(av, None, ['Calm Moment', 'Happy Pumpkin']),
+  N.status_do_aviso(av), N.status_do_aviso('Quantidade acima do permitido'),
+]))`;
+  const r = spawnSync('python3', ['-c', prog], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual(JSON.parse(r.stdout.trim().split('\n').pop()), ['Happy Pumpkin', 'Happy Pumpkin', 'Top E Tea 1Un', 'Happy Pumpkin', 'sem_estoque', 'recusado']);
+});
+
 test('carrinho montado: confirmar marca quem e quando; excluir apaga o registro, invalida o código do favorito e devolve as sugestões da equipe', () => {
   const S = require('../../src/sugestoes');
   assert.match(P.confirmarCarrinho('l9', 'ana').erro, /Não há carrinho/);

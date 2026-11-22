@@ -66,3 +66,67 @@ test('venda conjunta: janela fechada não conta, outro botão não é confundido
   expect(aberta.diag).toContain('modalVendaConjunta=block');
   expect(aberta.diag).toContain('a');
 });
+
+// Aviso de estoque (loja real, 22/11/2026): "Atenção — O produto Happy Pumpkin não possui estoque suficiente." numa janela que não é o
+// .modal de sempre e que às vezes chega atrasada, já durante o produto seguinte. O favorito (avisoDoSite + donoDoAviso) e o robô
+// (AVISO_JS em nextsoft_pedido.py, a mesma regra) precisam achar, fechar e marcar "fora de estoque" o produto CERTO.
+const py = fs.readFileSync(path.join(__dirname, '../../coletor/nextsoft_pedido.py'), 'utf8');
+const AVISO_PY = (() => { const i = py.indexOf('AVISO_JS = """') + 'AVISO_JS = """'.length; return py.slice(i, py.indexOf('"""', i)).replace(/\\\\/g, '\\'); })();
+const ATENCAO = (atraso, nome = 'Happy Pumpkin') => `<body><div id="ModalDeErro" class="modal" style="display:none"><div class="modal-body">x</div></div>
+  <div id="lista"><div class="card">Calm Moment<br>Pedido Mínimo: Livre<br><button>Colocar no Carrinho</button></div></div>
+  <script>setTimeout(() => { const j = document.createElement('div'); j.id = 'atencao'; j.style.cssText = 'position:fixed;top:30px;left:30%;width:480px;background:#fff';
+    j.innerHTML = '<div class="tit">Atenção</div><div class="txt">O produto ${nome} não possui estoque suficiente.</div><div><span class="btn" onclick="document.getElementById(\\'atencao\\').remove()">Fechar</span></div>';
+    document.body.append(j); }, ${atraso});</script></body>`;
+
+async function avisos(page, html, esperaMs) {
+  await page.setContent('<body></body>');
+  return page.evaluate(async ({ html, trecho, esperaMs, AVISO_PY }) => {
+    const quadro = async () => {
+      const fr = document.createElement('iframe');
+      fr.style.cssText = 'position:fixed;left:-3000px;top:0;width:1300px;height:900px;border:0;visibility:hidden';
+      document.body.append(fr);
+      fr.srcdoc = html;
+      await new Promise((r) => { fr.onload = r; });
+      return fr;
+    };
+    const num = (s) => { const m = /-?[\d.]*\d(?:,\d+)?/.exec(String(s || '')); return m ? +m[0].replace(/\./g, '').replace(',', '.') : null; };
+    const esq = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    const f = new Function('num', 'esq', `${trecho}; return { avisoDoSite, donoDoAviso };`)(num, esq);
+    // favorito
+    const fr = await quadro(), d = fr.contentDocument;
+    const antes = f.avisoDoSite(d); // o aviso ainda não chegou
+    await new Promise((r) => setTimeout(r, esperaMs));
+    const fav = f.avisoDoSite(d);
+    const fechou = !d.getElementById('atencao');
+    const deNovo = f.avisoDoSite(d);
+    // robô: o mesmo JS rodando dentro da página (é o que o page.evaluate do Playwright faz)
+    const fr2 = await quadro();
+    await new Promise((r) => setTimeout(r, esperaMs));
+    const rob = fr2.contentWindow.eval(`(${AVISO_PY})`)();
+    return { antes, fav, fechou, deNovo, rob, roboFechou: !fr2.contentDocument.getElementById('atencao'),
+      dono: [f.donoDoAviso(fav, 'Top E Tea 1Un', ['Calm Moment', 'Happy Pumpkin']), f.donoDoAviso(fav, 'Happy Pumpkin', ['Calm Moment']),
+        f.donoDoAviso('Não foi possível adicionar.', 'Top E Tea 1Un', ['Happy Pumpkin']), f.donoDoAviso(fav, null, ['Calm Moment', 'Happy Pumpkin'])] };
+  }, { html, trecho, esperaMs, AVISO_PY });
+}
+
+test('aviso de estoque atrasado fora do .modal: o favorito e o robô acham, fecham e o aviso vai para o produto certo', async ({ page }, info) => {
+  test.skip(info.project.name !== 'computador', 'não depende do tamanho da tela');
+  const r = await avisos(page, ATENCAO(300), 600);
+  expect(r.antes, 'antes de o aviso chegar não há aviso').toBeNull();
+  expect(r.fav).toBe('O produto Happy Pumpkin não possui estoque suficiente.');
+  expect(r.fechou, 'fecha pelo "Fechar"').toBe(true);
+  expect(r.deNovo, 'fechado não conta de novo').toBeNull();
+  expect(r.rob, 'o robô acha o mesmo aviso').toBe('O produto Happy Pumpkin não possui estoque suficiente.');
+  expect(r.roboFechou).toBe(true);
+  // aviso do produto A (Happy Pumpkin) chegando durante o produto B (Top E Tea): é de A, nunca de B
+  expect(r.dono).toEqual(['Happy Pumpkin', 'Happy Pumpkin', 'Top E Tea 1Un', 'Happy Pumpkin']);
+});
+
+test('aviso de estoque: bloco sem botão de fechar não esconde a página e não conta duas vezes; janela de venda conjunta não é aviso', async ({ page }, info) => {
+  test.skip(info.project.name !== 'computador', 'não depende do tamanho da tela');
+  const r = await avisos(page, '<body><main id="pagina"><section>Catálogo<p id="av">O produto Calm Moment não possui estoque suficiente.</p></section></main></body>', 0);
+  expect(r.antes).toBe('O produto Calm Moment não possui estoque suficiente.');
+  expect(r.fav, 'o mesmo bloco não volta a contar no produto seguinte').toBeNull();
+  const conj = await avisos(page, janela('<a href="#">Colocar Todos no Carrinho</a>'), 0);
+  expect(conj.antes).toBeNull();
+});
