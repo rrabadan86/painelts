@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Página técnica · Painel Tea Shop</title>
+  <meta name="description" content="Como o Painel Tea Shop é construído: arquitetura, regras fixas do projeto, roteiros (skills), travas automáticas, testes e o caminho de cada versão até a loja.">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <meta name="theme-color" content="#1F3D2B">
+  <link rel="stylesheet" href="/site/site.css">
+</head>
+<body class="tec">
+  <header class="topo">
+    <div class="larg">
+      <a class="marca" href="/site">
+        <svg viewBox="0 0 32 32" width="30" height="30" aria-hidden="true"><path d="M5 12h18v5a8 8 0 0 1-8 8h-2a8 8 0 0 1-8-8z" fill="#C9A227"/><path d="M23 14h2.5a3 3 0 0 1 0 6H22" stroke="#C9A227" stroke-width="2" fill="none"/><path d="M11 4c-1.5 2 1.5 3 0 5M15 3c-1.5 2 1.5 3 0 5" stroke="#7FA37A" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg>
+        <span>Painel Tea Shop<small>página técnica</small></span>
+      </a>
+      <nav aria-label="Seções">
+        <a class="some" href="#arquitetura">Arquitetura</a>
+        <a class="some" href="#regras">Regras</a>
+        <a class="some" href="#skills">Skills</a>
+        <a class="some" href="#testes">Testes</a>
+        <a href="/site">Voltar ao site</a>
+        <a class="bt ouro" href="/apresentacao">Testar agora</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="cab">
+    <div class="larg">
+      <h1>Como o painel é construído</h1>
+      <p>Para quem quer saber o que roda por baixo: as peças, as regras que nenhuma mudança pode quebrar, os roteiros de trabalho e os testes que cada versão precisa passar antes de chegar à loja.</p>
+    </div>
+  </div>
+
+  <main>
+    <section id="arquitetura">
+      <div class="larg">
+        <h2>Arquitetura</h2>
+        <p class="sub">Quatro peças, todas na instalação do próprio franqueado (Docker). Nenhum dado da loja passa por servidor de terceiros.</p>
+        <div class="rola">
+          <table class="tab">
+            <thead><tr><th>Peça</th><th>Tecnologia</th><th>O que faz</th></tr></thead>
+            <tbody>
+              <tr><td>Servidor</td><td>Node.js + Express</td><td>Rotas, permissões por perfil, regras de estoque, inventário, notas, pedido, campanhas, cobrança e auditoria. Os dados ficam em arquivos, numa pasta por loja.</td></tr>
+              <tr><td>Tela</td><td>JavaScript puro, sem framework</td><td>Um pacote só, comprimido, que funciona no computador e no celular. Pode ser instalado como aplicativo e recebe notificações (Web Push implementado só com a criptografia do Node, sem biblioteca).</td></tr>
+              <tr><td>Coletor</td><td>Python + Playwright</td><td>Os robôs que entram no AppNext, no FIXE e no Sistema de Pedidos com o acesso da loja, nos horários configurados ou quando alguém clica em "Atualizar agora".</td></tr>
+              <tr><td>Robô do WhatsApp</td><td>Node.js (serviço opcional)</td><td>Conecta o WhatsApp da loja e envia o que o painel manda. Não decide nada: quem, quando e quanto é decidido no servidor.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="grade" style="margin-top:16px">
+          <div class="cartao"><h3>Apresentação</h3><p>O mesmo código da tela, servido com dados inventados por rotas próprias. O navegador barra qualquer gravação: é impossível alterar algo por ali.</p></div>
+          <div class="cartao"><h3>IA opcional</h3><p>"Pergunte ao painel", a análise do dia e a revisão do pedido usam um modelo de linguagem com a chave configurada na instalação. Só admin e franqueado usam.</p></div>
+          <div class="cartao"><h3>Uma definição por indicador</h3><p>Faturamento, vendas da meta, atendimentos e projeção do mês têm uma conta só, usada pela tela e pelo servidor. Nenhuma tela refaz a fórmula.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="branca" id="regras">
+      <div class="larg">
+        <h2>Regras que não mudam</h2>
+        <p class="sub">O projeto tem um arquivo de instruções (<code>CLAUDE.md</code>) e um arquivo de regras para cada parte do código, em <code>.claude/rules/</code>. Elas valem para qualquer pessoa ou assistente que mexa no painel.</p>
+        <div class="grade tres">
+          <div class="cartao"><h3>Segredos e dados</h3><ul>
+            <li>Senhas, chaves, dados das lojas e backups nunca vão para o repositório. Uma trava bloqueia o envio.</li>
+            <li>O painel nunca devolve senha para a tela, só os 4 últimos caracteres.</li>
+            <li>Quem faz login nos sistemas é o dono da loja.</li>
+          </ul></div>
+          <div class="cartao"><h3>Perfis</h3><ul>
+            <li>Custo e margem nunca aparecem para a vendedora.</li>
+            <li>A vendedora não recebe a base de clientes.</li>
+            <li>O franqueado é administrador só das lojas dele: toda rota confere a loja no servidor.</li>
+            <li>Esconder na tela não é permissão: o servidor também nega.</li>
+          </ul></div>
+          <div class="cartao"><h3>Sistemas de fora</h3><ul>
+            <li>AppNext: só grava em fluxos aprovados, com clique, confirmação, conferência item a item e auditoria.</li>
+            <li>FIXE: só leitura.</li>
+            <li>Sistema de Pedidos: o robô coloca no carrinho e nunca finaliza o pedido.</li>
+          </ul></div>
+          <div class="cartao"><h3>WhatsApp</h3><ul>
+            <li>Todas as travas ficam no servidor: ritmo aleatório, horário, máximo por dia, intervalo por cliente, pausa após falhas.</li>
+            <li>Quem responde "parar" não recebe mais.</li>
+            <li>A equipe não consegue mandar mensagem para quem já recebeu dentro do intervalo.</li>
+            <li>Log e auditoria sem o texto das mensagens e sem o número completo.</li>
+          </ul></div>
+          <div class="cartao"><h3>Código</h3><ul>
+            <li>Rota que grava exige um cabeçalho próprio do painel; consulta nunca muda estado.</li>
+            <li>Toda tela nova precisa funcionar na apresentação, sem gravar.</li>
+            <li>Mensagem de erro nunca mostra caminho de arquivo.</li>
+            <li>Imagens de fora só dos servidores liberados no cabeçalho de segurança.</li>
+          </ul></div>
+          <div class="cartao"><h3>Tela</h3><ul>
+            <li>Simplicidade primeiro: uma ação principal por bloco.</li>
+            <li>Sem rolagem para o lado; no celular a tabela vira cartão.</li>
+            <li>Toda coluna, quadro e opção tem explicação (ⓘ).</li>
+            <li>Letra de pelo menos 12 px e contraste conferido.</li>
+          </ul></div>
+        </div>
+
+        <h3 style="margin-top:28px">Regras por parte do código</h3>
+        <p class="sub" style="margin-bottom:14px">Carregam sozinhas quando alguém mexe nos arquivos daquela área.</p>
+        <div class="rola">
+          <table class="tab">
+            <thead><tr><th>Arquivo</th><th>Cobre</th></tr></thead>
+            <tbody>
+              <tr><td><code>tela.md</code></td><td>Como as telas são montadas, o que cada tela pode mostrar a cada perfil, onde mora cada conta e como a apresentação funciona.</td></tr>
+              <tr><td><code>visual.md</code></td><td>O padrão de layout: cabeçalho, avisos, quadros, cartão com abas e tabela, cores por classe, filtros, formulários e celular.</td></tr>
+              <tr><td><code>coletor.md</code></td><td>O que os robôs podem ler e gravar no AppNext, no FIXE e no Sistema de Pedidos, e o formato do que devolvem.</td></tr>
+              <tr><td><code>nfe.md</code></td><td>Emissão de NF-e de venda e de devolução: revisão antes, conferência dos totais, CFOP escolhido pela loja.</td></tr>
+              <tr><td><code>ia.md</code></td><td>O que a IA pode consultar, por perfil, e como as respostas são simuladas na apresentação.</td></tr>
+              <tr><td><code>zap.md</code></td><td>O robô do WhatsApp: travas de envio, campanhas, conversas e o que nunca vai para log.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section id="skills">
+      <div class="larg">
+        <h2>Skills: os roteiros de trabalho</h2>
+        <p class="sub">Uma skill é um passo a passo escrito, em <code>.claude/skills/</code>, que o assistente de programação segue sempre do mesmo jeito. É o que garante que uma mudança de hoje passe pelos mesmos cuidados da de ontem.</p>
+        <div class="rola">
+          <table class="tab">
+            <thead><tr><th>Skill</th><th>Para que serve</th></tr></thead>
+            <tbody>
+              <tr><td><code>subir-versao</code></td><td>Atualiza com a versão principal, roda a bateria completa de testes, limpa os restos, faz o registro da mudança e envia.</td></tr>
+              <tr><td><code>conferir-pr</code></td><td>Do envio até a loja poder instalar: abre o pedido de mudança, acompanha os testes, lê o log se falhar, junta só com tudo verde e confere de novo a versão principal.</td></tr>
+              <tr><td><code>conferir-celular</code></td><td>Abre as telas mexidas como um celular, tira imagem e aponta erro, texto "null" ou rolagem para o lado.</td></tr>
+              <tr><td><code>nova-tela</code></td><td>Lista do que uma tela nova precisa: menu, permissão no servidor, versão da apresentação, auditoria e testes nos dois tamanhos.</td></tr>
+              <tr><td><code>nova-consulta-ia</code></td><td>Como ensinar uma consulta nova à IA do painel, com permissão por perfil e resposta simulada na apresentação.</td></tr>
+              <tr><td><code>testar-favorito</code></td><td>Testa a montagem do carrinho em páginas de mentira que imitam o site de pedidos: venda conjunta, aviso de estoque, máximo por pedido.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3 style="margin-top:28px">Travas automáticas (hooks)</h3>
+        <p class="sub" style="margin-bottom:14px">Rodam sozinhas, sem depender de alguém lembrar.</p>
+        <div class="grade">
+          <div class="cartao"><h3><code>segredos</code></h3><p>Bloqueia qualquer registro ou envio que contenha senha, chave ou dado de loja.</p></div>
+          <div class="cartao"><h3><code>testar-favorito</code></h3><p>Bloqueia a mudança no carrinho ou no robô de pedidos se os testes deles falharem.</p></div>
+          <div class="cartao"><h3><code>conferir-pr</code></h3><p>Depois de todo envio, cobra seguir o roteiro até a versão estar pronta para instalar.</p></div>
+          <div class="cartao"><h3><code>lembrar-docs</code></h3><p>Avisa quando uma área do código mudou e a regra escrita dela não foi atualizada.</p></div>
+          <div class="cartao"><h3><code>limpar-testes</code></h3><p>Apaga os arquivos temporários que os testes de tela deixam.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="branca" id="testes">
+      <div class="larg">
+        <h2>Testes e rastreabilidade</h2>
+        <p class="sub">Nenhuma versão é instalada sem passar por todos.</p>
+        <div class="grade">
+          <div class="cartao"><h3>Testes de unidade</h3><p>Mais de 350, sobre as contas e as regras: comissão, meta, estoque, validade, pedido, notas, permissões de cada rota, travas do WhatsApp.</p></div>
+          <div class="cartao"><h3>Testes de tela</h3><p>Mais de 300, num navegador de verdade, sempre na apresentação e sempre em dois tamanhos: computador e celular.</p></div>
+          <div class="cartao"><h3>Matriz de rastreabilidade</h3><p>Um documento liga cada regra do painel (mais de 400 linhas) ao código que a implementa e ao teste que a cobre. Regra nova entra com a linha dela.</p></div>
+        </div>
+
+        <h2 style="margin-top:44px">O caminho de cada versão</h2>
+        <ol class="passos">
+          <li><h3>Mudança num ramo</h3><p>Com os testes rodados antes do envio e as regras escritas atualizadas junto.</p></li>
+          <li><h3>Testes no GitHub</h3><p>A bateria inteira roda de novo, numa máquina limpa. Com qualquer falha, a mudança não entra.</p></li>
+          <li><h3>Versão aprovada</h3><p>Só depois de passar a versão é marcada como aprovada.</p></li>
+          <li><h3>Instalar pelo painel</h3><p>A tela "Atualizações do painel" só oferece versões aprovadas. Se a instalação falhar, volta sozinha para a anterior.</p></li>
+        </ol>
+      </div>
+    </section>
+
+    <section id="seguranca">
+      <div class="larg">
+        <h2>Segurança do acesso</h2>
+        <div class="grade tres">
+          <div class="cartao"><h3>Entrada</h3><p>Usuário e senha por pessoa, senha provisória que obriga a troca, limite de tentativas e sessão assinada.</p></div>
+          <div class="cartao"><h3>Navegador</h3><p>Cabeçalho de segurança restrito: scripts só do próprio painel, sem ser embutido em outra página, imagens de fora só dos servidores liberados.</p></div>
+          <div class="cartao"><h3>Notificações</h3><p>A permissão é conferida a cada envio. Cada pessoa só vê e remove os próprios aparelhos, e o endereço de entrega só pode ser dos serviços conhecidos.</p></div>
+          <div class="cartao"><h3>Dados no aparelho</h3><p>O painel guarda no navegador só o que o servidor já entrega àquela pessoa, e apaga ao sair, quando outra pessoa entra e após 7 dias.</p></div>
+          <div class="cartao"><h3>Backup</h3><p>Cópia dos dados da instalação para o Google Drive do dono, com situação e histórico na tela.</p></div>
+          <div class="cartao"><h3>Auditoria</h3><p>Quem fez, quando e em qual loja, para toda ação que grava algo importante.</p></div>
+        </div>
+        <p class="aviso" style="margin-top:20px">Projeto independente de um franqueado. Não é produto oficial da franqueadora nem da NextSoft, e depende dos acessos que a própria loja já tem a esses sistemas.</p>
+      </div>
+    </section>
+
+    <section class="fim">
+      <div class="larg">
+        <h2>Quer ver funcionando?</h2>
+        <p>A apresentação roda este mesmo código com dados fictícios.</p>
+        <div class="acoes">
+          <a class="bt ouro" href="/apresentacao">Abrir a apresentação</a>
+          <!--CONTATO-->
+          <a class="bt claro" href="/site">Voltar ao site</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="rodape">
+    <div class="larg">
+      <span>Desenvolvido por <b>Rodrigo Rabadan</b></span>
+      <span>Projeto independente de um franqueado. Não é produto oficial da franqueadora nem da NextSoft.</span>
+    </div>
+  </footer>
+</body>
+</html>

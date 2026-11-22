@@ -342,6 +342,21 @@ app.get('/login', (req, res) => res.sendFile(path.join(pub, 'login.html')));
 app.get('/manifest.webmanifest', (req, res) => res.sendFile(path.join(pub, 'manifest.webmanifest'), { headers: { 'Content-Type': 'application/manifest+json; charset=utf-8', 'Cache-Control': 'public, max-age=3600' } }));
 app.get('/sw.js', (req, res) => res.sendFile(path.join(pub, 'sw.js'), { headers: { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'no-cache' } }));
 ['icone-192.png', 'icone-512.png', 'icone-mascara-512.png', 'apple-touch-icon.png', 'selo-96.png'].forEach((f) => app.get('/icones/' + f, (req, res) => res.sendFile(path.join(pub, 'icones', f), { maxAge: '7d' })));
+// ---------- site público do painel (/site e /site/tecnico): páginas fixas, sem login, sem JavaScript e sem dado nenhum da instalação ----------
+// SITE_CONTATO (opcional, no .env): link do botão "Falar com a gente" — só https:// ou mailto: (o contato não fica no código)
+const SITE_DIR = path.join(pub, 'site');
+const siteContato = () => { const c = String(process.env.SITE_CONTATO || '').trim(); return /^(https:\/\/|mailto:)[^\s"'<>]{3,300}$/.test(c) ? c : ''; };
+const sitePagina = (arq) => (req, res) => {
+  let html;
+  try { html = fs.readFileSync(path.join(SITE_DIR, arq), 'utf8'); } catch { return res.status(404).type('text/plain; charset=utf-8').send('Página não encontrada.'); }
+  const c = siteContato();
+  html = html.replace(/<!--CONTATO-->/g, c ? `<a class="bt claro" href="${c.replace(/&/g, '&amp;')}" rel="noopener">Falar com a gente</a>` : '');
+  res.set({ 'Cache-Control': 'public, max-age=300', 'X-Robots-Tag': 'noindex' }).type('html').send(html);
+};
+app.get(['/site', '/site/'], sitePagina('index.html'));
+app.get('/site/tecnico', sitePagina('tecnico.html'));
+app.get('/site/site.css', (req, res) => res.sendFile(path.join(SITE_DIR, 'site.css'), { maxAge: '5m' }));
+['cel-inicio.jpg', 'cel-hoje.jpg', 'cel-pedido.jpg', 'cel-estoque.jpg', 'cel-conversas.jpg', 'pc-resumo.jpg'].forEach((f) => app.get('/site/img/' + f, (req, res) => res.sendFile(path.join(SITE_DIR, 'img', f), { maxAge: '7d' })));
 const CHART_JS = path.join(path.dirname(require.resolve('chart.js')), 'chart.umd.min.js');
 app.get('/vendor/chart.umd.js', (req, res) => res.sendFile(CHART_JS, { maxAge: '7d' }));
 // PDF no navegador (fechamento do mês que vai anexado ao e-mail da contabilidade)
