@@ -20,7 +20,7 @@ test('Painel abre na hora com os dados guardados no aparelho e a tela de entrar 
   await page.route('**/api/demo/dados*', async (route) => { await lento; await route.continue(); });
   await page.reload();
   await page.waitForFunction(() => window.TS && TS.db && TS.dadosGuardados === true, null, { timeout: 5000 });
-  await expect(page.locator('#content .kpi').first()).toBeVisible();
+  await expect(page.locator('#content .ini-heroi, #content .kpi').first()).toBeVisible(); // o Início abre pelo herói (redesenho de 22/11/2026)
   await expect(page.locator('#updated')).toHaveClass(/carregando/);
   liberar();
   await expect(page.locator('#updated')).not.toHaveClass(/carregando/);
@@ -31,7 +31,7 @@ test('Painel abre na hora com os dados guardados no aparelho e a tela de entrar 
   await page.route('**/api/demo/dados*', (route) => route.abort());
   await page.reload();
   await page.waitForFunction(() => window.TS && TS.db && TS.aviso && /guardados neste aparelho/.test(TS.aviso));
-  await expect(page.locator('#content .kpi').first()).toBeVisible();
+  await expect(page.locator('#content .ini-heroi, #content .kpi').first()).toBeVisible(); // o Início abre pelo herói (redesenho de 22/11/2026)
   await page.unroute('**/api/demo/dados*');
 
   // tela de entrar (sair ou sessão expirada): nada fica guardado

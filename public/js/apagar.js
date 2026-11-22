@@ -225,16 +225,20 @@
     const saldoFim = R.sems.length ? R.sems[R.sems.length - 1].acumulado : null;
     const comoEntra = !R.PM ? 'Ainda não há vendas neste mês para prever (a previsão aparece depois do primeiro dia de vendas do mês).'
       : `Previsão de vendas de cada dia, de hoje até ${dm(maisDias(R.hoje, dias - 1))}: a média do mesmo dia da semana nas últimas semanas (a mesma conta da projeção do mês; dia de loja fechada conta zero).\n\nMenos a taxa da maquininha (${fmt.pct(M.ded.pCartao)}).\n\nCartão: ${R.cartao && R.cartao.pct != null ? `${fmt.pct(R.parte, 0)} das vendas, pelos fechamentos de caixa dos últimos ${R.cartao.dias} dias com fechamento` : 'o painel não tem o fechamento do caixa desta loja, então considera tudo como cartão (conta conservadora)'}; cai na conta ${cfg.cartaoDias === 0 ? 'no mesmo dia' : `${cfg.cartaoDias} ${cfg.cartaoDias === 1 ? 'dia' : 'dias'} depois da venda`}. O resto (dinheiro, Pix) entra no dia.\n\nDepois do fim deste mês a previsão segue com as mesmas médias: não considera Natal, Dia das Mães nem promoção.`;
-    const kPagar = TS.kpi(`A pagar · próximos ${dias} dias`, fmt.brl0(T.aPagar), `${fmt.int(T.nAPagar)} ${T.nAPagar === 1 ? 'conta' : 'contas'}${T.estimado ? ` · ${fmt.brl0(T.estimado)} com data ou valor estimado` : ''}`,
-      `Tudo o que vence de hoje até ${dm(maisDias(R.hoje, dias - 1))} e ainda não foi marcado como pago: custos fixos, despesas do mês, notas de compra, royalties + marketing e Simples.\n\n"Estimado" = o painel não tem a data ou o valor exatos (nota de compra pelo prazo da franquia; royalties e Simples do mês em andamento pela projeção de vendas).\n\nNão entram: comissões e o que não estiver cadastrado como custo fixo ou despesa do mês (parcela de empréstimo, pró-labore…). Cadastre para aparecer aqui.`);
-    const kEntra = TS.kpi(`Entrada prevista · ${dias} dias`, R.entTotal == null ? '—' : fmt.brl0(R.entTotal), R.entTotal == null ? 'sem vendas no mês para prever' : `${fmt.brl0(R.entCartao)} em cartão`, comoEntra);
-    const kSaldo = TS.kpi(`Saldo previsto em ${dm(maisDias(R.hoje, dias - 1))}`, saldoFim == null ? '—' : h('span', { class: saldoFim < 0 ? 'neg' : 'pos' }, fmt.brl0(saldoFim)),
-      saldoFim == null ? 'falta a previsão de entrada' : state.apSaldo ? `partindo de ${fmt.brl0(state.apSaldo)} em conta` : 'sem contar o que já há em conta',
-      `Entrada prevista − contas a pagar no período${state.apSaldo ? ` + saldo informado (${fmt.brl0(state.apSaldo)})` : ''}.\n\n${R.entTotal != null ? `${fmt.brl0(R.entTotal)} − ${fmt.brl0(T.aPagar)}${state.apSaldo ? ` + ${fmt.brl0(state.apSaldo)}` : ''} = ${fmt.brl0(saldoFim)}.\n\n` : ''}Não é o lucro: lucro é o Resultado do mês. Aqui é só o dinheiro que entra e sai nas datas. Contas vencidas sem baixa ficam fora desta soma.`,
-      saldoFim == null ? null : saldoFim < 0 ? 'ruim' : 'bom');
-    const kVenc = TS.kpi('Vencidos sem baixa', T.nVencidos ? h('span', { class: 'warn-t' }, fmt.brl0(T.vencidos)) : fmt.brl0(0), T.nVencidos ? `${fmt.int(T.nVencidos)} ${T.nVencidos === 1 ? 'conta' : 'contas'} · clique para ver` : 'nada nos últimos 15 dias',
-      'Contas que venceram nos últimos 15 dias e não foram marcadas como pagas. O painel não sabe se foram pagas: marque "Pago" nas que já saíram. Elas ficam fora do saldo previsto.');
-    kVenc.classList.add('est-kpi-click'); kVenc.setAttribute('role', 'button'); kVenc.tabIndex = 0;
+    // herói (redesenho de 22/11): o saldo previsto decide; a pagar e a entrada explicam; vencidos sem baixa é uma linha clicável
+    const dicaPagar = `Tudo o que vence de hoje até ${dm(maisDias(R.hoje, dias - 1))} e ainda não foi marcado como pago: custos fixos, despesas do mês, notas de compra, royalties + marketing e Simples.\n\n"Estimado" = o painel não tem a data ou o valor exatos (nota de compra pelo prazo da franquia; royalties e Simples do mês em andamento pela projeção de vendas).\n\nNão entram: comissões e o que não estiver cadastrado como custo fixo ou despesa do mês (parcela de empréstimo, pró-labore…). Cadastre para aparecer aqui.`;
+    const kVenc = h('button', { type: 'button', class: 'link-btn ap-h-venc' + (T.nVencidos ? ' warn-t' : ''), title: 'Contas que venceram nos últimos 15 dias e não foram marcadas como pagas. O painel não sabe se foram pagas: marque "Pago" nas que já saíram. Elas ficam fora do saldo previsto.' },
+      T.nVencidos ? `Vencidos sem baixa: ${fmt.brl0(T.vencidos)} (${fmt.int(T.nVencidos)} ${T.nVencidos === 1 ? 'conta' : 'contas'}) · ver ›` : 'Vencidos sem baixa: nada nos últimos 15 dias');
+    const heroi = TS.heroi([
+      { rot: `Saldo previsto em ${dm(maisDias(R.hoje, dias - 1))}`, num: saldoFim == null ? '—' : fmt.brl0(saldoFim), estado: saldoFim == null ? null : saldoFim < 0 ? 'ruim' : 'bom',
+        linhas: [saldoFim == null ? 'falta a previsão de entrada' : state.apSaldo ? `partindo de ${fmt.brl0(state.apSaldo)} em conta` : 'sem contar o que já há em conta'],
+        dica: `Entrada prevista − contas a pagar no período${state.apSaldo ? ` + saldo informado (${fmt.brl0(state.apSaldo)})` : ''}.\n\n${R.entTotal != null ? `${fmt.brl0(R.entTotal)} − ${fmt.brl0(T.aPagar)}${state.apSaldo ? ` + ${fmt.brl0(state.apSaldo)}` : ''} = ${fmt.brl0(saldoFim)}.\n\n` : ''}Não é o lucro: lucro é o Resultado do mês. Aqui é só o dinheiro que entra e sai nas datas. Contas vencidas sem baixa ficam fora desta soma.` },
+      { rot: `A pagar · próximos ${dias} dias`, num: fmt.brl0(T.aPagar),
+        linhas: [h('span', { class: 'ap-h-pagar' }, `${fmt.int(T.nAPagar)} ${T.nAPagar === 1 ? 'conta' : 'contas'}${T.estimado ? ` · ${fmt.brl0(T.estimado)} com data ou valor estimado` : ''}`), kVenc], dica: dicaPagar },
+      { rot: `Entrada prevista · ${dias} dias`, num: R.entTotal == null ? '—' : fmt.brl0(R.entTotal),
+        linhas: [R.entTotal == null ? 'sem vendas no mês para prever' : `${fmt.brl0(R.entCartao)} em cartão`], dica: comoEntra },
+    ], { titulo: 'Caixa dos próximos dias' });
+    heroi.classList.add('ap-heroi');
 
     // ----- saldo por semana -----
     const tSem = TS.table({
@@ -286,7 +290,6 @@
     const seg = TS.seg(Object.entries(FIL).map(([k, [t, , d]]) => [`${t} (${cont(k)})`, k, d]), fil, (k) => { fil = state.apFil = k; pintarLista(); });
     const irVenc = (ev) => { if (ev.target.closest('.dica-i')) return; fil = state.apFil = 'vencidos'; TS.segMarcar(seg, 'vencidos'); pintarLista(); lista.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); };
     kVenc.addEventListener('click', irVenc);
-    kVenc.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') irVenc(ev); });
     pintarLista();
 
     corpo.replaceChildren(...[
@@ -294,7 +297,7 @@
         TS.seg([['Próximos 30 dias', 30, 'O que vence e o que deve entrar nos próximos 30 dias.'], ['Próximos 60 dias', 60, 'O mesmo calendário, olhando 60 dias à frente (a previsão de entrada fica menos precisa).']], dias, (v) => { state.apDias = v; refazer(); }),
         h('label', null, 'Saldo em conta hoje ', TS.dica('Opcional. Informe quanto há na conta hoje para o saldo acumulado partir dele. Não fica gravado: vale enquanto o painel estiver aberto.'), iSaldo)),
       ...avisos,
-      h('div', { class: 'grid g-kpi' }, kPagar, kEntra, kSaldo, kVenc),
+      heroi,
       h('p', { class: 'dre-andamento muted' }, NAO_E, TS.dica(`${NAO_E}\n\nO lucro do mês está na aba "Resultado do mês"; aqui é o dinheiro nas datas ("lucro no papel não paga boleto").\n\nNota de compra: o AppNext não informa a condição de pagamento, então o vencimento é o dia de entrada + ${cfg.prazoNotasDias} dias${cfg.prazoNotasInformado ? '' : ' (prazo padrão do painel: cadastre o prazo da franquia)'}.\n\nRoyalties + marketing: dia ${cfg.royaltiesDia} do mês seguinte. Simples: dia 20 do mês seguinte.\n\nCusto fixo sem dia cadastrado vence no último dia do mês.`)),
       h('div', { class: 'mt ap-semanas' }, TS.card('Saldo previsto por semana', 'O que deve entrar menos o que vence em cada semana.', tSem)),
       h('div', { class: 'mt ap-vence' }, TS.cardWithTools('O que vence', `Custos fixos, despesas do mês, notas de compra (vencimento estimado: entrada + ${cfg.prazoNotasDias} dias), royalties e Simples.`, seg, lista,

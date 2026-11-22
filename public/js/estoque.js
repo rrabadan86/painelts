@@ -802,7 +802,7 @@
             { key: 'mReal', label: 'Praticada', title: 'Margem bruta do que vendeu no período (com os descontos)', fmt: (v) => (v == null ? '—' : fmt.pct(v)) },
             { key: 'desconto', label: 'Desconto', title: 'Margem de tabela − praticada, em pontos: o quanto os descontos tiraram da margem', render: (r) => (r.desconto == null ? '—' : Math.abs(r.desconto) < 0.005 ? h('span', { class: 'muted' }, '0') : h('span', { class: r.desconto > 0.02 ? 'neg' : 'muted' }, `${r.desconto > 0 ? '−' : '+'}${fmt.n1(Math.abs(r.desconto) * 100)} pts`)), sortVal: (r) => r.desconto },
           ],
-          rows, sortKey: f === 'abaixo' ? 'mSf' : 'margem', sortDir: f === 'abaixo' ? 'asc' : 'desc', maxHeight: '520px', search: 'Buscar produto ou código…', searchKeys: ['nome', 'cod', 'grupoTxt'], produto: 'nome', cls: 'est-t', pageSize: rows.length > 400 ? 200 : undefined,
+          rows, sortKey: f === 'abaixo' ? 'mSf' : 'margem', sortDir: f === 'abaixo' ? 'asc' : 'desc', maxHeight: '520px', search: 'Buscar produto ou código…', searchKeys: ['nome', 'cod', 'grupoTxt'], produto: 'nome', cls: 'est-t est-t-larga', pageSize: rows.length > 400 ? 200 : undefined,
           empty: f === 'abaixo' ? 'Nenhum produto com margem de tabela abaixo da mínima. 👏' : 'Nenhum produto aqui.',
         }));
     }
@@ -834,7 +834,7 @@
           { key: 'margemLiq', label: 'Margem com fixos', title: 'Com os custos fixos rateados (informativa)', fmt: (v) => fmt.pct(v) },
           { key: 'motivo', label: 'Principal motivo', align: 'l', wrap: true },
         ],
-        rows: baixos, sortKey: 'margemContrib', sortDir: 'asc', maxHeight: '360px', cls: 'est-t',
+        rows: baixos, sortKey: 'margemContrib', sortDir: 'asc', maxHeight: '360px', cls: 'est-t est-t-larga',
       }));
     }
 
@@ -1015,18 +1015,19 @@
 
     // ---------- KPIs ----------
     const kpiFiltro = (el, k) => { el.classList.add('est-kpi-click'); el.setAttribute('role', 'button'); el.tabIndex = 0; const ir = () => TS.estFiltrar && TS.estFiltrar(k); el.addEventListener('click', ir); el.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); ir(); } }); return el; };
-    const kLiq = TS.kpi('Lucro com fixos', fmt.brl0(lucroLiqTot), h('span', null, `margem de ${fmt.pct(fatCusto ? lucroLiqTot / fatCusto : null)}`),
-        `Lucro bruto − comissão ${fmt.brl0(dedTot.com)} − royalties ${fmt.brl0(dedTot.roy)} − Simples ${fmt.brl0(dedTot.imp)} (${fmt.pct(pSimples)}) − maquininha ${fmt.brl0(dedTot.maq)} (${fmt.pct(pCartao)})${OUTROS.length ? ` − outros custos ${fmt.brl0(dedTot.out)}` : ''}. Clique para ver a conta.${!pSimples && !pCartao ? ' Configure o % do Simples e da maquininha em Configurações → Lojas → Estoque e margem.' : ''}`);
-    kLiq.classList.add('est-kpi-click');
-    const kCon = TS.kpi('Lucro sem fixos', fmt.brl0(contribTot), h('span', null, `margem de ${fmt.pct(fatCusto ? contribTot / fatCusto : null)}`),
-      'Lucro bruto − deduções variáveis (comissão, royalties, Simples, maquininha e custos em %). É o que as vendas deixam para pagar os custos fixos. Clique para ver a conta.');
-    kCon.classList.add('est-kpi-click');
-    kCon.addEventListener('click', (e) => abrirLiq(e, { produto: 'todos os produtos com custo', vt: fatCusto, custo: custoTot, lucro, ...dedTot, outros: outrosTot, ded: dedSoma, lucroLiq: lucroLiqTot }));
-    kLiq.addEventListener('click', (e) => abrirLiq(e, { produto: 'todos os produtos com custo', vt: fatCusto, custo: custoTot, lucro, ...dedTot, outros: outrosTot, ded: dedSoma, lucroLiq: lucroLiqTot }));
-    put(R, h('div', { class: 'grid g-kpi' },
-      TS.kpi('Lucro bruto', fmt.brl0(lucro), h('span', null, `margem de ${fmt.pct(fatCusto ? lucro / fatCusto : null)}`), 'Faturamento − custo dos produtos (com embalagem nos chás a granel), só das vendas que têm custo'),
-      kCon, kLiq,
-      TS.kpi('Vendas com custo', fmt.pct(fat ? fatCusto / fat : null, 0), `${fmt.brl0(fatCusto)} de ${fmt.brl0(fat)}`, 'Parte do faturamento (sem taxas) cujo custo o painel encontrou')));
+    // Rentabilidade (revisão de 22/11): o "como está" num cartão-herói — lucro bruto, sem fixos e com fixos, cada um com a margem;
+    // "ver a conta" abre a mesma janela de antes. A cobertura do custo fica numa linha do primeiro número.
+    const verConta = (rot) => h('button', { type: 'button', class: 'link-btn est-heroi-conta', onclick: (e) => abrirLiq(e, { produto: 'todos os produtos com custo', vt: fatCusto, custo: custoTot, lucro, ...dedTot, outros: outrosTot, ded: dedSoma, lucroLiq: lucroLiqTot }) }, rot);
+    const margemTxt = (v) => h('span', { class: v != null && v < 0 ? 'neg' : null }, `margem de ${fmt.pct(fatCusto ? v : null)}`);
+    put(R, h('div', { class: 'est-heroi' }, TS.heroi([
+      { rot: 'Lucro bruto', num: fmt.brl0(lucro), dica: 'Faturamento − custo dos produtos (com embalagem nos chás a granel), só das vendas que têm custo',
+        linhas: [margemTxt(fatCusto ? lucro / fatCusto : null), h('span', { class: 'muted', title: 'Parte do faturamento (sem taxas) cujo custo o painel encontrou' }, `vendas com custo: ${fmt.pct(fat ? fatCusto / fat : null, 0)} (${fmt.brl0(fatCusto)} de ${fmt.brl0(fat)})`)] },
+      { rot: 'Lucro sem fixos', num: fmt.brl0(contribTot), estado: contribTot < 0 ? 'ruim' : null, dica: 'Lucro bruto − deduções variáveis (comissão, royalties, Simples, maquininha e custos em %). É o que as vendas deixam para pagar os custos fixos.',
+        linhas: [margemTxt(fatCusto ? contribTot / fatCusto : null), verConta('ver a conta ›')] },
+      { rot: 'Lucro com fixos', num: fmt.brl0(lucroLiqTot), estado: lucroLiqTot < 0 ? 'ruim' : null,
+        dica: `Lucro bruto − comissão ${fmt.brl0(dedTot.com)} − royalties ${fmt.brl0(dedTot.roy)} − Simples ${fmt.brl0(dedTot.imp)} (${fmt.pct(pSimples)}) − maquininha ${fmt.brl0(dedTot.maq)} (${fmt.pct(pCartao)})${OUTROS.length ? ` − outros custos ${fmt.brl0(dedTot.out)}` : ''}.${!pSimples && !pCartao ? ' Configure o % do Simples e da maquininha em Configurações → Lojas → Estoque e margem.' : ''}`,
+        linhas: [margemTxt(fatCusto ? lucroLiqTot / fatCusto : null), verConta('ver a conta ›')] },
+    ], { titulo: 'Lucro do período' })));
     put(E, h('div', { class: 'grid g-kpi' },
       kpiFiltro(TS.kpi('Estoque a custo', fmt.brl0(valorEstoque), `${fmt.int(estoque.itens.filter((i) => i.qtd > 0).length)} produtos com saldo`, 'Toque para ver na tabela os produtos com saldo'), 'saldo'),
       kpiFiltro(TS.kpi('Para repor', fmt.int(repor.length), h('span', { class: urgentes ? 'down' : '' }, `${fmt.int(urgentes)} ${urgentes === 1 ? 'urgente' : 'urgentes'} · pedido ${fmt.brl0(repor.reduce((s, r) => s + r.custoPedido, 0))}`), 'Urgente = acabou ou acaba antes de o pedido chegar. Toque para ver na tabela'), 'repor'),
@@ -1224,7 +1225,7 @@
         { key: 'margemLiq', label: 'Margem com fixos', title: 'Lucro líquido ÷ faturamento das vendas com custo', fmt: (v) => fmt.pct(v) },
         { key: 'cobre', label: 'Com custo', fmt: (v) => fmt.pct(v, 0), title: 'Parte das vendas da vendedora cujo custo foi encontrado' },
       ],
-      rows: vends, sortKey: 'lucro', maxHeight: 'free',
+      rows: vends, sortKey: 'lucro', maxHeight: 'free', cls: 'est-t-larga',
     }))));
 
     // ---------- kits: produtos que saem juntos no mesmo cupom ----------
@@ -1288,7 +1289,7 @@
             { key: 'margemKitCon', label: 'Margem sem fixos', fmt: (v) => fmt.pct(v), cls: (r) => (r.margemKitCon != null && r.margemKitCon < margemMin ? 'miss' : ''), title: 'Margem bruta − deduções variáveis (comissão, royalties, Simples, maquininha e custos em %), já com o desconto do kit' },
             { key: 'margemKitLiq', label: 'Margem com fixos', fmt: (v) => fmt.pct(v), title: 'Margem de contribuição − custos fixos rateados (informativa)' },
           ],
-          rows: top, sortKey: 'lift', maxHeight: '520px', cls: 'est-t', search: 'Buscar produto…', searchKeys: ['kit'], produto: 'kit',
+          rows: top, sortKey: 'lift', maxHeight: '520px', cls: 'est-t est-t-larga', search: 'Buscar produto…', searchKeys: ['kit'], produto: 'kit',
         }) : h('p', { class: 'muted' }, `Ainda não há pares que saiam juntos em pelo menos ${minJuntos} cupons. Escolha um período maior (por exemplo, 12 meses).`),
         h('p', { class: 'muted est-kit-dica' }, 'Como usar: monte o kit com os pares de maior afinidade e margem boa, deixe-o na vitrine e treine as vendedoras para oferecer o segundo produto a quem leva o primeiro.'));
     }
@@ -1401,6 +1402,20 @@
       sobrando: ['produto', 'tipo', 'qtd', 'prev', 'dias', RC.alvo, RC.sobraQtd, RC.sobraValor].map((c) => (typeof c === 'string' ? col(c) : c)),
     };
     colsT.splice(colsT.findIndex((c) => c.key === 'qtd'), 0, RC.perdaDia);
+    // computador (revisão de 22/11, sem rolagem para o lado): cada aba mostra só as colunas dela, com o detalhe empilhado na célula
+    // (Mínimo do AppNext com o sugerido embaixo; Previsão/dia com a venda/dia embaixo; o tipo embaixo da situação)
+    const colMin = { key: 'min', label: 'Mínimo', title: `Em cima, o mínimo cadastrado no AppNext (— = sem mínimo). Embaixo, o mínimo sugerido pela venda: venda por dia × ${ent} dias de entrega + ${seg}% de segurança. Azul = o mínimo do AppNext está bom; vermelho = muito baixo (vai faltar); amarelo = muito alto (dinheiro parado). Use para corrigir o cadastro no AppNext`,
+      render: (r) => h('span', null, r.min ? qtdTxt(r.min, r.it) : '—', r.sug == null ? null : h('small', { class: 'est-tam' }, 'sugerido ', h('span', { class: 'est-sug est-sug-' + r.minSit, title: sugTxt(r) }, qtdTxt(r.sug, r.it)))), sortVal: (r) => r.min || 0 };
+    const colPrev = { ...col('prev'), title: col('prev').title + '. Embaixo, a venda por dia dos últimos 30 dias', render: (r) => h('span', null, col('prev').render(r), h('small', { class: 'est-tam' }, 'vendia ', r.it.un === 'Kg' ? `${fmt.kg(r.vel)} kg` : fmt.n1(r.vel), '/dia')) };
+    const colSit = { ...col('est'), title: col('est').title + '. Embaixo, o tipo: chá a granel, produto pronto ou insumo/embalagem', render: (r) => h('span', null, col('est').render(r), h('small', { class: 'est-tam' }, r.tipo)) };
+    const ABA_PC = {
+      repor: [colSit, RC.perdaDia, col('qtd'), colMin, colPrev, col('dias'), col('pedir'), col('custoPedido')],
+      parados: [colSit, col('qtd'), col('valor'), col('ultima'), col('dias')],
+      liquidar: [colSit, col('qtd'), col('valor'), col('ultima')],
+      saldo: [colSit, col('qtd'), col('valor'), col('dias'), col('ultima')],
+      todos: [colSit, RC.perdaDia, col('qtd'), colMin, colPrev, col('dias'), col('pedir'), col('valor'), col('ultima')],
+    };
+    for (const [k, cs] of Object.entries(ABA_PC)) COLS_ABA[k] = [colsT[0], ...cs];
     // celular: as colunas de cada aba (chaves de colsT/COLS_ABA)
     const COLS_MOB = {
       repor: ['produto', 'est', 'qtd', 'dias', 'pedir'],
@@ -1421,7 +1436,7 @@
       const rows = q ? todos.filter((r) => ESQ(r.produto).includes(q) || ESQ(grpDe(r)).includes(q) || (qd && String(r.cod).includes(qd))) : todos.filter(FILTROS[filtroT][1]);
       infoBusca.textContent = !q ? '' : rows.length ? `${fmt.int(rows.length)} ${rows.length === 1 ? 'produto encontrado' : 'produtos encontrados'} entre todos os ${fmt.int(todos.length)} (a busca procura em todos, qualquer que seja o filtro)` : '';
       segT.classList.toggle('est-seg-off', !!q);
-      let cols = (!q && COLS_ABA[filtroT]) || colsT;
+      let cols = (!q && COLS_ABA[filtroT]) || COLS_ABA.todos;
       // "Perdendo R$/dia" só onde algum produto está zerado com conta (nas outras abas seria uma coluna de "—")
       if (!rows.some((r) => r.rup && r.rup.perdaDia != null)) cols = cols.filter((c) => c !== RC.perdaDia);
       // celular: cartão enxuto — nome, situação e os 2 ou 3 números que decidem aquela aba (o resto fica no computador e no CSV)
@@ -1432,7 +1447,7 @@
       }
       tabBoxT.replaceChildren(TS.table({
         cols, rows, sortKey: q ? 'produto' : ORD[filtroT], sortDir: q || filtroT === 'todos' ? 'asc' : 'desc', maxHeight: '600px', produto: 'produto', cls: 'est-t',
-        imprimir: !q && COLS_ABA[filtroT] ? null : ['produto', 'est', 'qtd', 'prev', 'dias', 'pedir', 'custoPedido', 'valor'],
+        imprimir: !q && COLS_ABA[filtroT] && !ABA_PC[filtroT] ? null : ['produto', 'est', 'qtd', 'prev', 'dias', 'pedir', 'custoPedido', 'valor'],
         rowClass: (r) => (entradas.has(String(r.cod)) ? 'est-tem-entrada' : ''),
         empty: q ? 'Nenhum produto com esse nome ou código na planilha de estoque do AppNext.' : { repor: 'Nada para repor agora. 👏', falta: 'Nenhum produto zerado que vendia. 👏', sobrando: 'Nenhum produto com saldo demais. 👏', parados: 'Nada parado. 👏', saldo: 'Nenhum produto com saldo.', todos: 'Nenhum produto.' }[filtroT],
       }));

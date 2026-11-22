@@ -237,89 +237,73 @@
       texto: `Ofereça primeiro ou faça uma promoção antes de perder. ${nomes('critica')}${cri.lotes > 3 ? ` e mais ${cri.lotes - 3}` : ''}.`, link: '#validade', ir: 'ver os lotes ›', antes: () => { state.valFaixa = 'critica'; } });
   };
 
-  // ---------- "Sua semana" ----------
-  const CHAVE_SEM = 'teashop.ini.semana';
+  // ---------- Início: o herói ("como estou indo"), as ações e o estoque em números (decisão do dono, 22/11/2026) ----------
+  // Antes era o bloco "Sua semana" (5 quadros + ações). As contas são as mesmas: metaCalc, projecaoMes, soma, acoes.
   API.mostraSemana = () => !!(TS.db && TS.db.n && state.loja && state.loja !== 'todas' && TS.eu && ['admin', 'franqueado'].includes(TS.eu.perfil));
+  API.mostraHeroi = () => !!(TS.db && TS.db.n && TS.eu && TS.eu.perfil !== 'vendedor');
   const DS = ['segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado', 'domingo'];
-  /** texto, destino e explicação de cada ação */
-  function acaoTela(a, ctx) {
-    const pl = (n, um, mais) => `${fmt.int(n)} ${n === 1 ? um : mais}`;
-    if (a.tipo === 'zerados') return { titulo: `Pedir ${pl(a.n, 'produto zerado que vende', 'produtos zerados que vendem')}${a.porDia > 0 ? ` ${fmt.brl0(a.porDia)}/dia` : ''}`, texto: 'Estão sem saldo e vendiam: cada dia sem eles é venda perdida.', link: ctx.temPedido ? '#pedido' : '#estoque', ir: ctx.temPedido ? 'montar o pedido ›' : 'ver quais ›', antes: () => { state.estSit = 'falta'; state.pedFiltro = 'pedido'; } };
-    if (a.tipo === 'vencidos') return { titulo: `Retirar da venda ${pl(a.n, 'lote de chá vencido', 'lotes de chá vencidos')}${a.valor > 0 ? ` (${fmt.brl0(a.valor)} a custo)` : ''}`, texto: 'Chá vencido não pode ser vendido: tire da prateleira e lance a perda no AppNext.', link: '#validade', ir: 'ver os vencidos ›', antes: () => { state.valFaixa = 'vencido'; } };
-    if (a.tipo === 'criticos') return { titulo: `Liquidar ${pl(a.n, 'lote que vence', 'lotes que vencem')} em até 30 dias${a.valor > 0 ? ` (${fmt.brl0(a.valor)} ${a.custo ? 'a custo' : 'a preço de venda'})` : ''}`, texto: 'Ofereça primeiro ou faça uma promoção antes de virar perda.', link: '#validade', ir: 'ver os lotes ›', antes: () => { state.valFaixa = 'critica'; } };
-    if (a.tipo === 'franquia') return { titulo: `Cobrar ${fmt.brl0(a.valor)} da franquia`, texto: `${pl(a.n, 'devolução sem desconto', 'devoluções sem desconto')} há mais de ${ctx.prazoFranquia || 30} dias.`, link: '#creditos', ir: 'ver os créditos ›', antes: () => { state.cfFil = 'atrasado'; } };
-    if (a.tipo === 'parado') return { titulo: `Girar ${fmt.brl0(a.valor)} de estoque parado (${pl(a.n, 'produto', 'produtos')})`, texto: 'Têm saldo e não vendem: vale promoção, vitrine ou devolução.', link: '#estoque', ir: 'ver os parados ›', antes: () => { state.estSit = 'parados'; } };
-    return { titulo: `Vender ${fmt.brl0(a.porDia)} por dia para bater a meta`, texto: `Faltam ${fmt.brl0(a.valor)} em vendas da meta e ${pl(a.n, 'dia', 'dias')} de loja aberta.`, link: null, rolar: '.md-card', ir: 'ver a meta de hoje ↓', antes: null };
-  }
-  /** opts.aoAcoes(tipos) = avisa quais ações foram para "O que fazer primeiro" (o Início marca o aviso igual na lista) */
-  API.blocoSemana = function (opts = {}) {
-    if (!API.mostraSemana()) return null;
+  const brD = (d) => fmt.date(TS.dayToIso(d)).slice(0, 5);
+  /**
+   * Os números do herói, todos de contas que já existem. Com "Todas as lojas", a rede.
+   * → { ym, mes, meta, P, Pm, abertos, passados, esperado, restam, falta, porDia, S, periodo, cur, ant, dv }
+   *   esperado = dias de loja aberta já COMPLETOS ÷ dias de loja aberta do mês (a mesma base da projeção: hoje ainda está acontecendo)
+   */
+  API.dadosHeroi = function () {
+    if (!API.mostraHeroi()) return null;
     const db = TS.db, hojeD = TS.todayDay();
-    const S = semana(hojeD, db.maxDay, db.minDay);
-    if (!S) return null;
-    const br = (d) => fmt.date(TS.dayToIso(d)).slice(0, 5);
-    const periodo = S.n === 1 ? `${DS[0]} (${br(S.de)})` : `de segunda a ${DS[S.n - 1]} (${br(S.de)} a ${br(S.ate)})`;
-    const cur = soma(S.de, S.ate, null), ant = S.antDe >= db.minDay ? soma(S.antDe, S.antAte, null) : null;
     const ym = TS.dayToIso(db.maxDay).slice(0, 7), ini = TS.isoToDay(ym + '-01');
-    const mes = soma(ini, db.maxDay, null), meta = TS.metaCalc(ym).valor;
-    const Pm = meta ? TS.projecaoMes(ym, { base: 'meta' }) : null;
-    const dv = ant && ant.vt > 0 ? cur.vt / ant.vt - 1 : null;
-    const kVendas = TS.kpi('Vendas da semana', fmt.brl0(cur.vt), dv == null ? `${S.n} ${S.n === 1 ? 'dia' : 'dias'} · sem a semana anterior para comparar` : h('span', null, TS.deltaSpan(dv), ` vs. ${fmt.brl0(ant.vt)} nos mesmos ${S.n === 1 ? 'dia' : `${S.n} dias`} da semana anterior`),
-      `Faturamento da loja ${periodo}: de segunda até o último dia completo (hoje ainda está acontecendo e fica de fora).\n\nComparado com os mesmos dias da semana anterior (${br(S.antDe)} a ${br(S.antAte)}), para não comparar uma semana pela metade com uma inteira.\n\nÉ o mesmo faturamento do Resumo: com Espaço Gourmet e vendas sem vendedor, sem taxas e sem itens a R$ 0,01.`);
-    const kMeta = TS.kpi('Meta do mês', meta ? fmt.pct(mes.meta / meta, 0) : '—', !meta ? 'sem meta cadastrada' : Pm ? h('span', { class: Pm.proj >= meta ? 'up' : 'down' }, `vendas da meta projetadas ${fmt.brl0(Pm.proj)} = ${fmt.pct(Pm.proj / meta, 0)} da meta`) : `${fmt.brl0(mes.meta)} de ${fmt.brl0(meta)}`,
-      meta ? `Vendas da meta do mês (${fmt.brl0(mes.meta)}: chá aromatizado, chá puro e acessórios, sem Espaço Gourmet) ÷ meta da loja (${fmt.brl0(meta)}).${Pm ? '\n\nProjeção:\n' + TS.comoProjecao(Pm) : ''}` : 'Cadastre a meta do mês em Configurações → Lojas.');
-    const kMargem = TS.kpi('Margem de contribuição da semana', '…', 'calculando…', '');
-    const kZer = TS.kpi('Zerados que vendem', '…', 'conferindo o estoque…', '');
-    const kVal = TS.kpi('Validade em risco', '…', 'conferindo os lotes…', '');
-    const trocar = (velho, novoK) => { if (velho.isConnected) velho.replaceWith(novoK); return novoK; };
-    const lista = h('div', { class: 'vd-acoes' }, h('p', { class: 'muted' }, 'Escolhendo as ações da semana…'));
-    let aberto = true;
-    try { aberto = localStorage.getItem(CHAVE_SEM) !== 'fechado'; } catch { /* sem armazenamento: começa aberto */ }
-    const box = h('details', { class: 'vd-semana', open: aberto || null },
-      h('summary', { class: 'vd-sem-t' }, h('span', { class: 'card-title' }, 'Sua semana'), h('span', { class: 'muted vd-sem-p' }, periodo)),
-      h('div', { class: 'grid g-kpi vd-sem-k' }, kVendas, kMeta, kMargem, kZer, kVal),
-      h('div', { class: 'card vd-acoes-card' }, h('div', { class: 'card-title vd-acoes-t' }, 'O que fazer primeiro', TS.dica('Até 3 ações, na ordem do dinheiro em jogo. Não é conta nova: cada número vem de uma tela do painel.\n\nChá vencido vem na frente (tem de sair da venda; peso de 3× o valor a custo). Produto zerado conta 30 dias da venda que ele fazia por dia. Lote que vence em 30 dias conta o valor a custo (a preço de venda para quem não vê custo), o mesmo do quadro Validade em risco; crédito atrasado da franquia, o valor a receber; estoque parado, 10% do valor a custo (dinheiro que volta devagar). A meta do mês entra quando sobra espaço.')),
-        lista));
-    box.addEventListener('toggle', () => { try { localStorage.setItem(CHAVE_SEM, box.open ? 'aberto' : 'fechado'); } catch { /* ok */ } });
-    const telas = TS.telasEstoque || [];
-    (async () => {
-      const meuDb = TS.db;
-      const franquia = telas.includes('notas') ? quieto(fetch(TS.api(`conta-franquia?loja=${encodeURIComponent(state.loja)}`), { credentials: 'same-origin' }).then((r) => (r.ok ? r.json() : null))) : Promise.resolve(null);
-      const [M, est, val, cf] = await Promise.all([quieto(TS.custosLoja()), quieto(estoqueDe(state.loja, null)), quieto(validadeDe(state.loja)), franquia]);
-      if (!box.isConnected || TS.db !== meuDb) return;
-      const C = M && TS.dreContribDias ? TS.dreContribDias(M, S.de, S.ate) : null;
-      trocar(kMargem, TS.kpi('Margem de contribuição da semana', C && C.contrib != null ? fmt.brl0(C.contrib) : '—', C && C.contrib != null && C.fat > 0 ? `${fmt.pct(C.contrib / C.fat)} do faturamento` : 'sem o custo dos produtos desta loja',
-        `O que sobrou das vendas ${periodo} para pagar os custos fixos: faturamento − Simples, maquininha e royalties − custo dos produtos − comissões − custos em %. As mesmas linhas do Resultado do mês, só nesses dias (sem as perdas e sem os custos fixos, que são do mês).${C && C.cobre < 0.95 ? `\n\n${fmt.pct(1 - C.cobre, 0)} das vendas da semana não têm custo no estoque: entraram pelo mesmo % das outras (estimado).` : ''}\n\nA comissão usa o % efetivo do mês até agora.`, C && C.contrib != null ? (C.contrib >= 0 ? null : 'ruim') : null));
-      trocar(kZer, TS.kpi('Zerados que vendem', est ? fmt.int(est.zerados.n) : '—', !est ? 'sem o estoque desta loja' : est.zerados.n ? h('span', { class: 'down' }, est.zerados.comConta ? `perdendo ${fmt.brl0(est.zerados.perdaDia)}/dia` : 'pouco histórico para estimar') : 'nenhum produto zerado que vendia',
-        'Produtos com saldo zero (chá a granel: menos de 50 g) que venderam nos últimos 90 dias, fora os fora de linha. "Perdendo R$/dia" = quanto eles vendiam por dia nos 60 dias antes de zerar, a preço de venda (estimativa: o painel considera que zerou no dia da última venda). A mesma conta de Estoque → Perdendo venda.'));
-      const rv = val ? (val.custo != null ? val.custo : val.venda) : null;
-      trocar(kVal, TS.kpi('Validade em risco', val ? fmt.brl0(rv) : '—', !val ? 'sem os lotes desta loja' : h('span', { class: val.vencidos ? 'down' : null }, `${fmt.int(val.lotes)} ${val.lotes === 1 ? 'lote' : 'lotes'} em menos de ${val.dias} dias${val.vencidos ? ` · ${fmt.int(val.vencidos)} vencido${val.vencidos === 1 ? '' : 's'}` : ''}`),
-        `Chá a granel que vence em menos de ${val ? val.dias : 60} dias, com os vencidos, ${val && val.custo != null ? 'a custo (saldo do lote × custo do kg): o que a loja perde se vencer' : 'a preço de venda'}. Os lotes são os de Estoque → Validade.`));
-      // dias de loja aberta que faltam (com hoje), como no cartão "Meta de hoje"
-      const cfg = (db.metas || []).find((m) => m.id === state.loja) || null;
-      const ultimo = TS.isoToDay(`${ym}-${String(TS.contas.diasNoMes(ym)).padStart(2, '0')}`);
-      let restam = 0;
-      for (let d = Math.max(hojeD, ini); d <= ultimo; d++) if (TS.lojaAberta(cfg, TS.dayToIso(d))) restam++;
-      const faltaMeta = meta && Pm && Pm.proj < meta ? Math.max(0, meta - mes.meta) : 0;
-      const as = acoes({
-        zerados: est ? est.zerados : null,
-        vencidos: val && val.vencidos ? { lotes: val.vencidos, valor: val.custo != null ? val.pf.vencido.custo : 0 } : null,
-        criticos: val && val.criticos ? { lotes: val.criticos, valor: val.custo != null && val.pf.critica.custo != null ? val.pf.critica.custo : val.pf.critica.venda, custo: val.custo != null && val.pf.critica.custo != null } : null,
-        franquia: cf && cf.resumo && cf.resumo.nAtrasado ? { n: cf.resumo.nAtrasado, valor: cf.resumo.atrasado } : null,
-        parado: est ? est.parado : null,
-        meta: faltaMeta > 0 && restam > 0 ? { falta: faltaMeta, porDia: faltaMeta / restam, dias: restam } : null,
-      });
-      const ctx = { temPedido: telas.includes('pedido'), prazoFranquia: cf && cf.prazo };
-      if (opts.aoAcoes) opts.aoAcoes(as.map((a) => a.tipo));
-      lista.replaceChildren(...(as.length ? as.map((a, k) => {
-        const t = acaoTela(a, ctx);
-        const ir = () => { if (t.antes) t.antes(); if (t.rolar) { const el = document.querySelector(t.rolar); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); } else location.hash = t.link; };
-        return h('div', { class: 'vd-acao', role: 'button', tabindex: '0', 'data-acao': a.tipo, onclick: ir, onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); ir(); } } },
-          h('span', { class: 'vd-acao-n' }, String(k + 1)), h('div', null, h('b', null, t.titulo), h('div', { class: 'muted' }, t.texto)), h('span', { class: 'ini-ir' }, t.ir));
-      }) : [h('p', { class: 'muted' }, 'Nada urgente esta semana: sem produto zerado que vende, sem chá perto de vencer e a meta no ritmo. 👏')]));
-    })().catch((e) => { console.error(e); if (lista.isConnected) lista.replaceChildren(h('p', { class: 'muted' }, 'Não consegui montar as ações agora.')); });
-    return box;
+    const mes = soma(ini, db.maxDay, null), meta = TS.metaCalc(ym).valor || null;
+    const P = TS.projecaoMes(ym, { base: 'loja' }), Pm = meta ? TS.projecaoMes(ym, { base: 'meta' }) : null;
+    const cfg = state.loja && state.loja !== 'todas' ? (db.metas || []).find((m) => m.id === state.loja) || null : null;
+    const ultimo = TS.isoToDay(`${ym}-${String(TS.contas.diasNoMes(ym)).padStart(2, '0')}`);
+    const u = db.maxDay >= hojeD ? hojeD - 1 : db.maxDay; // último dia completo
+    let abertos = 0, passados = 0, restam = 0;
+    for (let d = ini; d <= ultimo; d++) {
+      if (!TS.lojaAberta(cfg, TS.dayToIso(d))) continue;
+      abertos++;
+      if (d <= u) passados++;
+      if (d >= Math.max(hojeD, ini)) restam++; // com hoje, como no cartão "Meta de hoje"
+    }
+    const falta = meta ? Math.max(0, meta - mes.meta) : 0;
+    const S = semana(hojeD, db.maxDay, db.minDay);
+    const cur = S ? soma(S.de, S.ate, null) : null, ant = S && S.antDe >= db.minDay ? soma(S.antDe, S.antAte, null) : null;
+    const periodo = !S ? '' : S.n === 1 ? `${DS[0]} (${brD(S.de)})` : `de segunda a ${DS[S.n - 1]} (${brD(S.de)} a ${brD(S.ate)})`;
+    return { ym, mes, meta, P, Pm, abertos, passados, esperado: abertos ? passados / abertos : null, restam, falta, porDia: falta > 0 && restam > 0 ? falta / restam : 0,
+      S, periodo, cur, ant, dv: ant && ant.vt > 0 && cur ? cur.vt / ant.vt - 1 : null };
   };
+  /**
+   * O que depende do estoque, da validade e da franquia (busca no servidor): margem da semana, zerados, lotes e as ações.
+   * As ações ("O que fazer agora") só para admin e franqueado com uma loja (como antes). → Promise<{ C, est, val, cf, acoes, ctx }>
+   */
+  API.carregarLoja = async function (dh) {
+    if (!state.loja || state.loja === 'todas' || !dh) return null;
+    const telas = TS.telasEstoque || [];
+    const comAcoes = API.mostraSemana();
+    const franquia = comAcoes && telas.includes('notas') ? quieto(fetch(TS.api(`conta-franquia?loja=${encodeURIComponent(state.loja)}`), { credentials: 'same-origin' }).then((r) => (r.ok ? r.json() : null))) : Promise.resolve(null);
+    const [M, est, val, cf] = await Promise.all([veCusto() ? quieto(TS.custosLoja()) : null, quieto(estoqueDe(state.loja, null)), quieto(validadeDe(state.loja)), franquia]);
+    const C = M && dh.S && TS.dreContribDias ? TS.dreContribDias(M, dh.S.de, dh.S.ate) : null;
+    const faltaMeta = dh.meta && dh.Pm && dh.Pm.proj < dh.meta ? dh.falta : 0;
+    const as = !comAcoes ? [] : acoes({
+      zerados: est ? est.zerados : null,
+      vencidos: val && val.vencidos ? { lotes: val.vencidos, valor: val.custo != null ? val.pf.vencido.custo : 0 } : null,
+      criticos: val && val.criticos ? { lotes: val.criticos, valor: val.custo != null && val.pf.critica.custo != null ? val.pf.critica.custo : val.pf.critica.venda, custo: val.custo != null && val.pf.critica.custo != null } : null,
+      franquia: cf && cf.resumo && cf.resumo.nAtrasado ? { n: cf.resumo.nAtrasado, valor: cf.resumo.atrasado } : null,
+      parado: est ? est.parado : null,
+      meta: faltaMeta > 0 && dh.restam > 0 ? { falta: faltaMeta, porDia: faltaMeta / dh.restam, dias: dh.restam } : null,
+    });
+    return { C, est, val, cf, acoes: as, comAcoes, ctx: { temPedido: telas.includes('pedido'), prazoFranquia: cf && cf.prazo } };
+  };
+  /** texto, destino e explicação de cada ação */
+  API.acaoTela = function (a, ctx) {
+    const pl = (n, um, mais) => `${fmt.int(n)} ${n === 1 ? um : mais}`;
+    if (a.tipo === 'zerados') return { titulo: `Pedir ${pl(a.n, 'produto zerado que vende', 'produtos zerados que vendem')}`, texto: a.porDia > 0 ? `Perdendo cerca de ${fmt.brl0(a.porDia)} por dia em venda.` : 'Estão sem saldo e vendiam: cada dia sem eles é venda perdida.', link: ctx.temPedido ? '#pedido' : '#estoque', ir: ctx.temPedido ? 'Ver no pedido' : 'Ver quais', antes: () => { state.estSit = 'falta'; state.pedFiltro = 'pedido'; } };
+    if (a.tipo === 'vencidos') return { titulo: `Retirar da venda ${pl(a.n, 'lote de chá vencido', 'lotes de chá vencidos')}`, texto: `${a.valor > 0 ? `${fmt.brl0(a.valor)} a custo · ` : ''}tire da prateleira e lance a perda no AppNext.`, link: '#validade', ir: 'Ver os vencidos', antes: () => { state.valFaixa = 'vencido'; } };
+    if (a.tipo === 'criticos') return { titulo: `Liquidar ${pl(a.n, 'lote que vence', 'lotes que vencem')} em até 30 dias`, texto: `${a.valor > 0 ? `${fmt.brl0(a.valor)} ${a.custo ? 'a custo' : 'a preço de venda'} · ` : ''}ofereça primeiro ou faça uma promoção.`, link: '#validade', ir: 'Ver os lotes', antes: () => { state.valFaixa = 'critica'; } };
+    if (a.tipo === 'franquia') return { titulo: `Cobrar ${fmt.brl0(a.valor)} da franquia`, texto: `${pl(a.n, 'devolução sem desconto', 'devoluções sem desconto')} há mais de ${ctx.prazoFranquia || 30} dias.`, link: '#creditos', ir: 'Ver os créditos', antes: () => { state.cfFil = 'atrasado'; } };
+    if (a.tipo === 'parado') return { titulo: `Girar ${fmt.brl0(a.valor)} de estoque parado`, texto: `${pl(a.n, 'produto tem', 'produtos têm')} saldo e não vende${a.n === 1 ? '' : 'm'}: promoção, vitrine ou devolução.`, link: '#estoque', ir: 'Ver os parados', antes: () => { state.estSit = 'parados'; } };
+    return { titulo: `Vender ${fmt.brl0(a.porDia)} por dia para bater a meta`, texto: `Faltam ${fmt.brl0(a.valor)} em vendas da meta e ${pl(a.n, 'dia', 'dias')} de loja aberta.`, link: null, rolar: '.md-card', ir: 'Ver a meta de hoje', antes: null };
+  };
+  API.DICA_ACOES = 'Até 3 ações, na ordem do dinheiro em jogo. Não é conta nova: cada número vem de uma tela do painel.\n\nChá vencido vem na frente (tem de sair da venda; peso de 3× o valor a custo). Produto zerado conta 30 dias da venda que ele fazia por dia. Lote que vence em 30 dias conta o valor a custo (a preço de venda para quem não vê custo), o mesmo do quadro Validade em risco; crédito atrasado da franquia, o valor a receber; estoque parado, 10% do valor a custo (dinheiro que volta devagar). A meta do mês entra quando sobra espaço.';
 
   TS.visaoDono = API;
 })();

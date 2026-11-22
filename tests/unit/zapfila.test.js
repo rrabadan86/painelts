@@ -267,14 +267,46 @@ test('número que respondeu "parar" e celular repetido em outro cliente: não re
 test('configuração: valida ritmo, horário, dias, teto e falhas', () => {
   const ok = (o) => ZF.validarCfg({ ...ZF.PADRAO, ...o });
   assert.deepStrictEqual(ok({}).ok, ZF.PADRAO);
-  assert.deepStrictEqual(ZF.PADRAO, { min: 900, max: 1200, das: '09:00', as: '18:30', dias: [1, 2, 3, 4, 5, 6], teto: 30, falhas: 3 });
+  assert.deepStrictEqual(ZF.PADRAO, { horario: 'loja', min: 900, max: 1200, das: '09:00', as: '18:30', dias: [1, 2, 3, 4, 5, 6], teto: 30, falhas: 3 });
   for (const ruim of [{ min: 59 }, { max: 7201 }, { min: 1300, max: 1200 }, { min: 'abc' }, { min: 90.5 }, { das: '9:00' }, { as: '24:00' }, { das: '18:30', as: '09:00' }, { das: '10:00', as: '10:00' },
-    { dias: [] }, { dias: [7] }, { dias: 'seg' }, { teto: 0 }, { teto: 201 }, { falhas: 0 }, { falhas: 11 }]) assert.ok(ok(ruim).erro, JSON.stringify(ruim));
+    { dias: [] }, { dias: [7] }, { dias: 'seg' }, { horario: 'sempre' }, { teto: 0 }, { teto: 201 }, { falhas: 0 }, { falhas: 11 }]) assert.ok(ok(ruim).erro, JSON.stringify(ruim));
   assert.deepStrictEqual(ok({ min: 60, max: 7200, dias: [6, 0, 0], teto: 200, falhas: 10 }).ok, { ...ZF.PADRAO, min: 60, max: 7200, dias: [0, 6], teto: 200, falhas: 10 });
   assert.deepStrictEqual(ok({ min: '300', max: '300', teto: '1' }).ok, { ...ZF.PADRAO, min: 300, max: 300, teto: 1 });
+  assert.strictEqual(ok({ horario: 'proprio' }).ok.horario, 'proprio');
+  assert.strictEqual(ZF.validarCfg({ min: 900, max: 1200, das: '09:00', as: '18:30', dias: [1], teto: 30, falhas: 3 }).ok.horario, 'loja', 'config antiga sem o campo: horário da loja (decisão do dono)');
   // configuração estragada no arquivo: volta ao padrão seguro
   assert.deepStrictEqual(ZF.cfgDe({ zap: { min: 1, max: 2 } }), ZF.PADRAO);
   assert.deepStrictEqual(ZF.cfgDe({ zap: { teto: 10 } }), { ...ZF.PADRAO, teto: 10 });
+});
+
+test('ZAP-HORA-LOJA: o robô envia no horário de funcionamento da loja, dia a dia, até 30 min antes de fechar', () => {
+  const F = (abre, fecha) => ({ abre, fecha, fechado: false }), FECH = { fechado: true };
+  const loja = { operacao: { funcionamento: { seg: F('09:00', '19:00'), ter: F('09:00', '19:00'), qua: F('09:00', '19:00'), qui: F('09:00', '19:00'), sex: F('10:00', '22:00'), sab: F('09:00', '17:00'), dom: FECH } },
+    feriadosHorario: { '2026-11-20': { fechado: true }, '2026-12-24': { abre: '09:00', fecha: '14:00', fechado: false }, '2026-12-31': { abre: '10:00', fecha: '10:20', fechado: false } } };
+  const cfg = { ...ZF.PADRAO }; // horario 'loja'
+  assert.strictEqual(ZF.MARGEM_FECHA_MIN, 30);
+  assert.deepStrictEqual(ZF.janelaDoDia(loja, cfg, '2026-11-23', 1), { das: '09:00', as: '18:30', origem: 'loja' }, 'segunda: 09:00 até 30 min antes das 19:00');
+  assert.deepStrictEqual(ZF.janelaDoDia(loja, cfg, '2026-11-27', 5), { das: '10:00', as: '21:30', origem: 'loja' }, 'sexta tem outro horário');
+  assert.deepStrictEqual(ZF.janelaDoDia(loja, cfg, '2026-11-28', 6), { das: '09:00', as: '16:30', origem: 'loja' });
+  assert.strictEqual(ZF.janelaDoDia(loja, cfg, '2026-11-22', 0), null, 'domingo: loja fechada, não envia');
+  assert.strictEqual(ZF.janelaDoDia(loja, cfg, '2026-11-20', 5), null, 'feriado marcado como fechado');
+  assert.deepStrictEqual(ZF.janelaDoDia(loja, cfg, '2026-12-24', 4), { das: '09:00', as: '13:30', origem: 'feriado' }, 'feriado com horário especial, também com a margem');
+  assert.strictEqual(ZF.janelaDoDia(loja, cfg, '2026-12-31', 4), null, 'abre menos de 30 min: sem envio');
+  // horário próprio, e loja sem funcionamento cadastrado: das/as/dias da configuração
+  assert.deepStrictEqual(ZF.janelaDoDia(loja, { ...cfg, horario: 'proprio' }, '2026-11-22', 0), null);
+  assert.deepStrictEqual(ZF.janelaDoDia(loja, { ...cfg, horario: 'proprio' }, '2026-11-23', 1), { das: '09:00', as: '18:30', origem: 'proprio' });
+  assert.deepStrictEqual(ZF.janelaDoDia({}, cfg, '2026-11-23', 1), { das: '09:00', as: '18:30', origem: 'proprio' });
+  // decidir com a janela de hoje (quarta 10h de Brasília)
+  assert.strictEqual(ZF.decidir(cena({ janela: null, horarioLoja: true })).motivo, 'loja_fechada');
+  assert.strictEqual(ZF.decidir(cena({ janela: null })).motivo, 'fora_dia');
+  assert.strictEqual(ZF.decidir(cena({ janela: { das: '11:00', as: '19:00' } })).motivo, 'fora_janela');
+  assert.strictEqual(ZF.decidir(cena({ janela: { das: '08:00', as: '09:59' } })).motivo, 'fora_janela', 'depois do fim');
+  assert.ok(ZF.decidir(cena({ janela: { das: '09:00', as: '18:30' } })).msg, 'dentro do horário: envia');
+  // agenda: 21 dias pela mesma função
+  const ag = ZF.agenda(loja, cfg, Date.parse('2026-11-23T13:00:00Z'));
+  assert.strictEqual(ag.length, 21);
+  assert.deepStrictEqual(ag[0], { dia: '2026-11-23', sem: 1, das: '09:00', as: '18:30' });
+  assert.strictEqual(ag[6], null, 'domingo 29/11');
 });
 
 // ---------- o laço, com um robô de mentira ----------
@@ -346,6 +378,41 @@ test('laço: número sem WhatsApp sai da fila com o motivo e não conta como fal
   const e = ZF.lerEstado('l1');
   assert.strictEqual(e.falhas, 0); assert.strictEqual(e.enviadosDia, 0); assert.strictEqual(e.pausa, null);
   assert.strictEqual(ZF.lerContatos('l1')[CPF[0]], undefined, 'não fica como contatado');
+});
+
+test('ZAP-SEMWPP: 5 clientes seguidos "sem WhatsApp" pausam o robô (a conferência do número pode ter falhado); um envio no meio zera', async () => {
+  assert.strictEqual(ZF.SEM_WPP_PAUSA, 5);
+  // já vinham 3 seguidos: mais 2 sem WhatsApp → pausa sozinho
+  ZF.mudarEstado('l1', (s) => { s.semWppSeguidos = 3; });
+  const zap = roboDeMentira({ resposta: () => ({ ok: false, motivo: 'sem_whatsapp' }) });
+  let r = await ZL.passo('l1', QUARTA_10H, { zap, rnd: () => 0 });
+  assert.strictEqual(r.pausou, false);
+  assert.strictEqual(ZF.lerEstado('l1').semWppSeguidos, 4);
+  r = await ZL.passo('l1', QUARTA_10H + 900e3, { zap, rnd: () => 0 });
+  assert.strictEqual(r.pausou, true);
+  const e = ZF.lerEstado('l1');
+  assert.strictEqual(e.pausa.auto, true); assert.strictEqual(e.pausa.semWpp, true);
+  assert.match(e.pausa.motivo, /^5 clientes seguidos sem WhatsApp — confira se a conferência do número está funcionando/);
+  assert.strictEqual(itemDe(CPF[1]).motivo, 'sem WhatsApp', 'os marcados continuam "Pulada · sem WhatsApp"');
+  const aud = C.lerAuditoria(200).find((x) => x.acao === 'robô do WhatsApp pausou sozinho');
+  assert.ok(aud && aud.detalhe.semWhatsappSeguidos === 5);
+  assert.ok(!JSON.stringify(aud).includes(NUM[1]), 'sem o número completo');
+  // pausado: nada mais sai
+  assert.strictEqual((await ZL.passo('l1', QUARTA_10H + 1800e3, { zap, rnd: () => 0 })).motivo, 'pausado');
+});
+
+test('ZAP-SEMWPP: um envio que dá certo no meio zera a contagem', async () => {
+  ZF.mudarEstado('l1', (s) => { s.semWppSeguidos = 3; });
+  let k = 0;
+  const zap = roboDeMentira({ resposta: () => (k++ === 1 ? { ok: true, idMsg: 'm' } : { ok: false, motivo: 'sem_whatsapp' }) });
+  await ZL.passo('l1', QUARTA_10H, { zap, rnd: () => 0 });
+  assert.strictEqual(ZF.lerEstado('l1').semWppSeguidos, 4);
+  await ZL.passo('l1', QUARTA_10H + 900e3, { zap, rnd: () => 0 });
+  assert.strictEqual(ZF.lerEstado('l1').semWppSeguidos, 0, 'enviou: zera');
+  const r = await ZL.passo('l1', QUARTA_10H + 1800e3, { zap, rnd: () => 0 });
+  assert.strictEqual(r.pausou, false);
+  assert.strictEqual(ZF.lerEstado('l1').semWppSeguidos, 1);
+  assert.strictEqual(ZF.lerEstado('l1').pausa, null);
 });
 
 test('laço: depois de N falhas seguidas pausa sozinho, avisa na auditoria e não envia mais', async () => {

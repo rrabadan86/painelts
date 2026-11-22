@@ -107,7 +107,7 @@ async function passo(lojaId, agora = Date.now(), { zap = require('./zap'), rnd =
     for (const k of Object.keys(env)) if (agora - Date.parse(env[k].em) > 120 * 864e5) delete env[k];
     env[ZF.foneChave(msg.para)] = { em: quando, cpf: msg.cliente.cpf };
     ZF.gravarJson(lojaId, 'enviados', env);
-    ZF.mudarEstado(lojaId, (s) => { s.enviadosDia = (s.dia === dia ? s.enviadosDia || 0 : 0) + 1; s.dia = dia; s.falhas = 0; s.proximoEm = proximoEm; s.ultimo = { em: quando, ok: true }; });
+    ZF.mudarEstado(lojaId, (s) => { s.enviadosDia = (s.dia === dia ? s.enviadosDia || 0 : 0) + 1; s.dia = dia; s.falhas = 0; s.semWppSeguidos = 0; s.proximoEm = proximoEm; s.ultimo = { em: quando, ok: true }; });
     console.log(`[zap] ${lojaId}: mensagem enviada para ···${ZF.fim4(msg.para)} (campanha ${msg.campanha})`);
     return { enviou: true, msg };
   }
@@ -115,8 +115,22 @@ async function passo(lojaId, agora = Date.now(), { zap = require('./zap'), rnd =
   if (motivo === 'sem_whatsapp') {
     // número sem WhatsApp: sai da fila com o motivo e o robô segue (não conta como falha nem no teto)
     CAMP.marcar(lojaId, msg.campanha, msg.rodada, msg.cliente.cpf, 'x', POR, 'sem WhatsApp');
-    ZF.mudarEstado(lojaId, (s) => { s.proximoEm = proximoEm; });
-    return { motivo: 'sem_whatsapp', msg };
+    // trava (decisão do dono): N clientes SEGUIDOS sem WhatsApp é sinal de que a conferência do número falhou —
+    // o robô pausa sozinho em vez de marcar a lista inteira por engano
+    let seguidos = 0, pausouSem = false;
+    ZF.mudarEstado(lojaId, (s) => {
+      s.proximoEm = proximoEm;
+      s.semWppSeguidos = seguidos = (s.semWppSeguidos || 0) + 1;
+      if (seguidos >= ZF.SEM_WPP_PAUSA && !s.pausa) {
+        pausouSem = true;
+        s.pausa = { auto: true, semWpp: true, em: new Date(agora).toISOString(), por: POR, motivo: `${seguidos} clientes seguidos sem WhatsApp — confira se a conferência do número está funcionando (abra um desses números no WhatsApp do celular)` };
+      }
+    });
+    if (pausouSem) {
+      C.auditar(POR, 'robô do WhatsApp pausou sozinho', lojaId, { loja: lojaId, semWhatsappSeguidos: seguidos, fim: ZF.fim4(msg.para) });
+      avisarAparelhos(lojaId, `pausa-semwpp:${new Date(agora).toISOString()}`, `O robô pausou sozinho: ${seguidos} clientes seguidos apareceram como "sem WhatsApp". Confira se a conferência do número está funcionando antes de religar.`);
+    }
+    return { motivo: 'sem_whatsapp', pausou: pausouSem, msg };
   }
   if (motivo === 'desconectado') { marcarQueda(lojaId, 'caiu', agora); return { motivo: 'desconectado' }; }
   let pausou = false, falhas = 0;

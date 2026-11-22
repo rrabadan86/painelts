@@ -47,7 +47,7 @@ test('IA: revisão do pedido sugere ajuste e aplica na quantidade', async ({ pag
   await expect(card).toContainText('simulada');
   await card.getByRole('button', { name: 'Aplicar' }).first().click();
   await expect(page.locator('.ped-ia')).toContainText('aplicado ✓');
-  await expect(page.locator('.kpi-label', { hasText: 'Seu pedido (com alterações)' })).toBeVisible();
+  await expect(page.locator('.ped-heroi .heroi-rot', { hasText: 'Seu pedido (com alterações)' })).toBeVisible();
 });
 
 test('IA: chave fica em Configurações → Lojas → (loja) → Inteligência artificial', async ({ page }, info) => {
@@ -70,10 +70,11 @@ test('IA: análise do dia — manchete no topo do Início, completa no ✨ (aba)
   const faixa = page.locator('.ini-faixa-btn');
   await expect(faixa).toBeVisible({ timeout: 30000 });
   await expect(faixa).toContainText('últimos 7 dias');
-  await expect(faixa).toContainText('ler a análise');
-  // a faixa vem antes dos números
-  const yF = (await faixa.boundingBox()).y, yK = (await page.locator('.g-kpi').first().boundingBox()).y;
-  expect(yF).toBeLessThan(yK);
+  await expect(faixa).toContainText('ler ›');
+  // redesenho de 22/11/2026: uma linha discreta logo abaixo do herói ("como estou indo") e antes das ações e dos avisos
+  const yH = (await page.locator('.ini-heroi').boundingBox()), yF = (await faixa.boundingBox()).y, yC = (await page.locator('.ini-corpo').boundingBox()).y;
+  expect(yF).toBeGreaterThan(yH.y + yH.height - 1);
+  expect(yF).toBeLessThan(yC);
   const bt = page.locator(info.project.name === 'celular' ? '#fabIA' : '#btnIA');
   await expect(bt).toHaveClass(/ia-novidade/);
   await faixa.click();

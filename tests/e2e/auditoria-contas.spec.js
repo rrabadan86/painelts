@@ -97,10 +97,11 @@ test('Rentabilidade: classe pelas margens da loja e custo da data da venda', asy
 
 test('Indicadores de clientes: recompra só de quem já teve o prazo e "% voltaram" com poucos dados', async ({ page }) => {
   await abrir(page, 'clientes');
-  const k = page.locator('.kpi', { hasText: 'Recompra em 90 dias' });
+  // redesenho: recompra e clientes novos ficam numa coluna do cartão-herói "Saúde da base"
+  const k = page.locator('.heroi-col', { hasText: 'Recompra em 90 dias' });
   await expect(k).toBeVisible();
   await expect(k).toContainText(/clientes|poucos dados/);
-  await expect(page.locator('.kpi', { hasText: 'Clientes novos no período' })).toContainText('primeira compra com CPF');
+  await expect(k.locator('.cli-novos')).toContainText('no período (primeira compra com CPF)');
   const card = page.locator('.card', { hasText: 'Vendedoras e clientes' });
   await expect(card).toContainText('% voltaram');
   await expect(card).toContainText(/\d+ de \d+/);

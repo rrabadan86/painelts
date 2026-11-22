@@ -238,17 +238,25 @@
     const media = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
     const comC = linhas.filter((r) => r.nC), comV = linhas.filter((r) => r.nV), perda = linhas.filter((r) => r.perdeu);
     const inicioCusto = Number.isFinite(D.inicioCusto) ? TS.dayToIso(D.inicioCusto) : null;
+    const irP = (k, rot) => h('button', { type: 'button', class: 'link-btn est-heroi-conta', onclick: () => { state.precoFil = k; pintar(corpo, D); } }, rot);
+    const mC = media(comC.map((r) => r.cVar)), mV = media(comV.map((r) => r.vVar));
+    const E = D.efeito, julgados = E ? E.bons + E.ruins + E.iguais : 0;
+    const heroiPrecos = () => TS.heroi([
+      { rot: 'Perderam margem', num: fmt.int(perda.length), estado: perda.length ? 'ruim' : null, dica: 'Margem bruta no fim do período menor que antes dele.',
+        linhas: [perda.length ? 'custo subiu mais que a venda' : 'nenhum no período', perda.length ? irP('margem', 'ver quais ›') : null] },
+      { rot: 'Custo alterado', num: fmt.int(comC.length), dica: 'Produtos vendidos cujo custo mudou no período (para chá a granel, o custo do pacote: kg × tamanho + embalagem).',
+        linhas: [comC.length ? h('span', null, 'variação média ', h('b', { class: mC > 0 ? 'neg' : 'pos' }, pctTxt(mC))) : 'nenhum no período', comC.length ? irP('custo', 'ver os reajustes de custo ›') : null] },
+      { rot: 'Venda alterada', num: fmt.int(comV.length), dica: 'Preço de tabela praticado nas vendas (sem desconto): conta quando o preço novo se mantém.',
+        linhas: [comV.length ? h('span', null, 'variação média ', h('b', null, pctTxt(mV))) : 'nenhum no período', comV.length ? irP('venda', 'ver os reajustes de venda ›') : null] },
+    ], { titulo: 'Reajustes no período', extra: h('div', { class: 'prc-heroi-extra' },
+      E ? TS.linhasNum([{ rot: 'Reajustes de venda avaliados (últimos 12 meses)', num: E.lista.length ? `${fmt.int(julgados)} · ${fmt.int(E.bons)} ${E.bons === 1 ? 'bom' : 'bons'} · ${fmt.int(E.ruins)} ${E.ruins === 1 ? 'ruim' : 'ruins'}` : 'nenhum',
+        estado: E.ruins ? 'ruim' : null, onclick: () => { state.precoFil = 'efeito'; pintar(corpo, D); },
+        dica: 'Depois que o preço mudou, vendeu menos? O lucro subiu? Cada reajuste de venda dos últimos 12 meses comparado nos 30 dias antes e depois, descontando o movimento da loja. Não segue o período dos filtros. Toque para ver a lista.' }]) : null,
+      h('p', { class: 'muted prc-heroi-hist' }, `Histórico de custo desde ${inicioCusto ? quando(inicioCusto) : '—'} · ${D.temCompras ? 'notas de compra do AppNext + importações de estoque' : 'o painel guarda o custo a cada importação de estoque'}`,
+        TS.dica('O AppNext só informa o custo de hoje. Antes desta data, o custo é estimado pelo mais antigo conhecido.'))) });
     corpo.replaceChildren(
-      h('div', { class: 'grid g-kpi' },
-        TS.kpi('Custo alterado', fmt.int(comC.length), comC.length ? h('span', null, 'variação média ', h('b', { class: media(comC.map((r) => r.cVar)) > 0 ? 'neg' : 'pos' }, pctTxt(media(comC.map((r) => r.cVar))))) : 'nenhum no período',
-          'Produtos vendidos cujo custo mudou no período (para chá a granel, o custo do pacote: kg × tamanho + embalagem).'),
-        TS.kpi('Venda alterada', fmt.int(comV.length), comV.length ? h('span', null, 'variação média ', h('b', null, pctTxt(media(comV.map((r) => r.vVar))))) : 'nenhum no período',
-          'Preço de tabela praticado nas vendas (sem desconto): conta quando o preço novo se mantém.'),
-        TS.kpi('Perderam margem', fmt.int(perda.length), perda.length ? h('span', { class: 'neg' }, 'custo subiu mais que a venda') : 'nenhum no período',
-          'Margem bruta no fim do período menor que antes dele.'),
-        TS.kpi('Histórico de custo desde', inicioCusto ? quando(inicioCusto) : '—', D.temCompras ? 'notas de compra do AppNext + importações de estoque' : 'o painel guarda o custo a cada importação de estoque',
-          'O AppNext só informa o custo de hoje. Antes desta data, o custo é estimado pelo mais antigo conhecido.'),
-        D.efeito ? TS.efeitoPreco.kpi(D.efeito, () => { state.precoFil = 'efeito'; pintar(corpo, D); }) : null),
+      // revisão de 22/11: o "como está" num cartão-herói (quem perdeu margem primeiro); cada número leva à aba dele
+      heroiPrecos(),
       h('div', { class: 'mt' }, tabela(linhas, FIL, filtro, corpo, D)),
       h('p', { class: 'muted mt' }, 'As notas de entrada, com os produtos e valores de cada uma, ficam em ', h('a', { href: '#notas' }, 'Estoque → Notas fiscais'), '.'));
   }

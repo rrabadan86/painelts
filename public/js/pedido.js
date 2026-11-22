@@ -421,7 +421,7 @@
         sim.addEventListener('click', () => acaoCarrinho(loja, 'confirmar', sim, aoMudar));
         const nao = h('button', { type: 'button', class: 'btn ghost-danger', title: 'Apaga o registro: use quando o pedido NÃO foi feito no site. As ⭐ sugestões da equipe que foram para "aguardando entrega" por causa dele voltam para o próximo pedido.' }, 'Não fiz');
         nao.addEventListener('click', () => { if (confirm('Excluir o registro deste carrinho? Use quando o pedido NÃO foi feito no site (montou para testar ou desistiu).\n\nO painel não mexe no site: se o carrinho de lá ainda tiver itens, esvazie por lá.')) acaoCarrinho(loja, 'excluir', nao, aoMudar); });
-        pendTopo.append(h('div', { class: 'notice warn ped-pend-car' }, h('div', null, h('b', null, `Carrinho de ${quando}${c.por ? ` (${c.por})` : ''} ainda sem confirmar. `), 'Este pedido foi finalizado no site?'),
+        pendTopo.append(h('div', { class: 'notice warn ped-pend-car' }, h('div', null, TS.etqPrazo('agora'), ' ', h('b', null, `Carrinho de ${quando}${c.por ? ` (${c.por})` : ''} ainda sem confirmar. `), 'Este pedido foi finalizado no site?'),
           h('div', { class: 'ped-rasc-acoes' }, sim, nao)));
       }
     }
@@ -438,8 +438,9 @@
     const noPedido = R.linhas.filter((r) => r.pedir > 0);
     const total = () => R.linhas.reduce((s, r) => s + r.pedir * (r.preco || 0), 0);
     const necessidade = R.linhas.filter((r) => r.site === 'ok' || r.site === 'sem').reduce((s, r) => s + r.sugerido * (r.preco || 0), 0);
-    const kTotal = h('div', { class: 'kpi-value' }, fmt.brl0(total()));
-    const kTotalFoot = h('div', { class: 'kpi-foot' });
+    // herói (redesenho de 22/11): "seu pedido desta semana" — o número que decide, com o limite e a barra; muda a cada ＋/−
+    const kTotal = h('span', { class: 'ped-h-total' }, fmt.brl0(total()));
+    const kTotalFoot = h('span', { class: 'ped-h-foot' });
     // composição do valor (com pedido obrigatório): obrigatório + carrinho (+ fora do catálogo) e o que sobra do limite
     const compos = [];
     const desenharCompo = (el) => {
@@ -482,33 +483,39 @@
       const nOb = R.linhas.filter((r) => r.obrig).length;
       kTotalFoot.replaceChildren(R.obTotal ? h('span', null, h('b', null, `🛒 ${fmt.int(n - nOb)} no carrinho ${fmt.brl0(t - R.obTotal)}`), ` + 🔒 ${fmt.int(nOb)} obrigatório ${fmt.brl0(R.obTotal)}`) : `${fmt.int(n)} ${n === 1 ? 'produto' : 'produtos'}`,
         R.orcamento ? h('span', { class: t > R.orcamento * 1.02 ? 'down' : '' }, ` · ${fmt.pct(t / R.orcamento, 0)} do valor · ${t <= R.orcamento ? `sobram ${fmt.brl0(R.orcamento - t)}` : `passa ${fmt.brl0(t - R.orcamento)}`}`) : '');
+      if (hBarra) { hBarra.style.width = `${R.orcamento ? Math.max(0, Math.min(100, (t / R.orcamento) * 100)) : 0}%`; hBarra.parentElement.setAttribute('aria-label', R.orcamento ? `${fmt.pct(t / R.orcamento, 0)} do limite do pedido` : 'sem limite de valor'); }
       mix && pintarMix();
     };
-    const kpis = [];
+    // herói: 1ª coluna = o pedido (total, itens, % do limite e barra); 2ª = o limite (ou a data comemorativa); 3ª = a referência
+    const colPedido = { rot: editados.size ? 'Seu pedido (com alterações)' : 'Pedido sugerido', num: kTotal, linhas: [kTotalFoot],
+      dica: 'Soma do que está no pedido (custo do site × quantidade), com o pedido obrigatório. Muda na hora a cada ＋/− nos produtos.',
+      barra: R.orcamento ? { pct: 0, rotulo: 'parte do limite do pedido' } : null };
+    let colMeio, colRef;
     if (modo === 'repor') {
-      kpis.push(TS.kpi(`Vendas da loja · ${R.N} dias`, fmt.brl0(R.vendasN), `até ${fmt.date(TS.dayToIso(R.hoje - 1))} · sem Espaço Gourmet`));
-      kpis.push(TS.kpi('Limite do pedido', fmt.brl0(R.orcamento), R.obTotal ? h('span', null, `obrigatório ${fmt.brl0(R.obTotal)} · `, h('b', null, `para pedir ${fmt.brl0(Math.max(0, R.orcamento - R.obTotal))}`)) : `${fmt.pct(R.pct)} das vendas${par.cmvPct == null ? ' (CMV real)' : ` · CMV real ${fmt.pct(R.cmvReal)}`}`,
-        `CMV real = custo dos produtos vendidos ÷ faturamento, só loja, nos 3 últimos meses fechados: ${fmt.pct(R.cmvReal)}.`));
+      colMeio = { rot: 'Limite do pedido', num: fmt.brl0(R.orcamento),
+        linhas: [R.obTotal ? h('span', null, `obrigatório ${fmt.brl0(R.obTotal)} · `, h('b', null, `para pedir ${fmt.brl0(Math.max(0, R.orcamento - R.obTotal))}`)) : `${fmt.pct(R.pct)} das vendas${par.cmvPct == null ? ' (CMV real)' : ` · CMV real ${fmt.pct(R.cmvReal)}`}`,
+          `vendas da loja em ${R.N} dias: ${fmt.brl0(R.vendasN)} (até ${fmt.date(TS.dayToIso(R.hoje - 1))}, sem Espaço Gourmet)`],
+        dica: `Limite = ${fmt.pct(R.pct, 1)} das vendas da loja dos últimos ${R.N} dias (${fmt.brl0(R.vendasN)}, sem Espaço Gourmet). CMV real = custo dos produtos vendidos ÷ faturamento, só loja, nos 3 últimos meses fechados: ${fmt.pct(R.cmvReal)}.` };
+      colRef = { rot: 'Tudo que precisa', num: fmt.brl0(necessidade), linhas: ['sem limite de valor'], dica: 'Custo de comprar toda a necessidade dos produtos disponíveis, sem o limite do valor do pedido.' };
     } else {
       const [a0, a1] = R.evInfo.atual, [l0, l1] = R.evInfo.anterior;
       const ate = a0 - R.hoje;
-      kpis.push(TS.kpi(R.ev.nome, `${fmt.date(TS.dayToIso(a0)).slice(0, 5)} a ${fmt.date(TS.dayToIso(a1)).slice(0, 5)}`, ate > 0 ? `começa em ${fmt.int(ate)} dias · peça até ${fmt.date(TS.dayToIso(a0 - R.ent)).slice(0, 5)}` : 'em andamento',
-        `Para chegar a tempo, peça até ${R.ent} dias (a entrega) antes de começar.`));
-      kpis.push(TS.kpi('Vendas no ano passado', fmt.brl0(R.evLyVt), `${fmt.date(TS.dayToIso(l0))} a ${fmt.date(TS.dayToIso(l1))} · previsão ${fmt.brl0(R.evLyVt * R.cresc)}`, `Só loja (sem Espaço Gourmet). Previsão = ano passado × crescimento ${fmt.n2(R.cresc)}.`));
-    }
-    const kT = h('div', { class: 'card kpi' }, h('div', { class: 'kpi-label' }, editados.size ? 'Seu pedido (com alterações)' : 'Pedido sugerido'), kTotal, kTotalFoot);
-    kpis.push(kT);
-    if (modo === 'repor') kpis.push(TS.kpi('Tudo que precisa', fmt.brl0(necessidade), 'sem limite de valor', 'Custo de comprar toda a necessidade dos produtos disponíveis, sem o limite do valor do pedido.'));
-    else {
+      const ateRef = Math.min(Math.max(0, R.evInfo.atual[0] - R.hoje), R.ent + R.N);
       // referência: o CMV sobre o que a loja deve vender até o fim da data (ritmo de agora até começar + previsão da data)
-      const ate = Math.min(Math.max(0, R.evInfo.atual[0] - R.hoje), R.ent + R.N);
-      const prevVendas = (R.vendasN / R.N) * ate + R.evLyVt * R.cresc;
-      kpis.push(TS.kpi('Referência pelo CMV', R.pct != null ? fmt.brl0(prevVendas * R.pct) : '—', `${fmt.pct(R.pct)} de ${fmt.brl0(prevVendas)} previstos até o fim`,
-        `Vendas previstas: ritmo dos últimos ${R.N} dias × ${fmt.int(ate)} dias até começar + ${R.ev.nome} do ano passado × ${fmt.n2(R.cresc)}. Se o pedido sugerido passar muito disso, há estoque sobrando ou produtos de giro alto; confira as quantidades.`));
+      const prevVendas = (R.vendasN / R.N) * ateRef + R.evLyVt * R.cresc;
+      colMeio = { rot: R.ev.nome, num: `${fmt.date(TS.dayToIso(a0)).slice(0, 5)} a ${fmt.date(TS.dayToIso(a1)).slice(0, 5)}`,
+        linhas: [ate > 0 ? `começa em ${fmt.int(ate)} dias · peça até ${fmt.date(TS.dayToIso(a0 - R.ent)).slice(0, 5)}` : 'em andamento',
+          `ano passado ${fmt.brl0(R.evLyVt)} (${fmt.date(TS.dayToIso(l0)).slice(0, 5)} a ${fmt.date(TS.dayToIso(l1)).slice(0, 5)}) · previsão ${fmt.brl0(R.evLyVt * R.cresc)}`],
+        dica: `Para chegar a tempo, peça até ${R.ent} dias (a entrega) antes de começar. Vendas no ano passado: só loja (sem Espaço Gourmet). Previsão = ano passado × crescimento ${fmt.n2(R.cresc)}.` };
+      colRef = { rot: 'Referência pelo CMV', num: R.pct != null ? fmt.brl0(prevVendas * R.pct) : '—', linhas: [`${fmt.pct(R.pct)} de ${fmt.brl0(prevVendas)} previstos até o fim`],
+        dica: `Vendas previstas: ritmo dos últimos ${R.N} dias × ${fmt.int(ateRef)} dias até começar + ${R.ev.nome} do ano passado × ${fmt.n2(R.cresc)}. Se o pedido sugerido passar muito disso, há estoque sobrando ou produtos de giro alto; confira as quantidades.` };
     }
+    const heroi = TS.heroi([colPedido, colMeio, colRef], { titulo: modo === 'repor' ? 'Seu pedido desta semana' : `Pedido para ${R.ev.nome}` });
+    heroi.classList.add('ped-heroi', 'mt');
+    const hBarra = heroi.querySelector('.heroi-barra-ok');
     // ordem da tela (decisão do dono): ajustes → Proporção do pedido → quadros → Pedido obrigatório → ⭐ Sugestões → Produtos → Revisão com a IA
     const marcaProp = h('span', { hidden: true }); corpo.append(marcaProp); // a Proporção é montada mais abaixo e entra aqui
-    corpo.append(h('div', { class: 'grid g-kpi mt' }, kpis));
+    corpo.append(heroi);
     if (TS.comprasVendas) corpo.append((cvQuadro = TS.comprasVendas.quadroPedido(M, e, total(), { janela: R.ent + R.N, eventos: p.cfg.eventos || [], evento: modo === 'evento' ? ev : null })));
     if (R.obTotal) corpo.append(h('div', { class: 'card mt ped-compo-card' }, h('div', { class: 'card-title' }, 'Composição do pedido'), R.novoCompo()));
     // janela da classe oficial (3, 6 ou 12 meses): o mesmo controle na tabela de Produtos e nas ⭐ Sugestões da equipe

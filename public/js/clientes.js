@@ -283,15 +283,18 @@
     const antes = (g) => TS.cli.lista.filter((c) => c.rfmAntes && c.rfmAntes.g === g).length;
     const risco = n('risco') + n('naoperder'), perdidos = n('perdido'), dPerd = perdidos - antes('perdido');
     const ir = (g) => { state.cli.rfm = g; state.cli.seg = ''; location.hash = '#clilista'; };
-    const linha = (txt, acao) => h('div', { class: 'cli-saude-l' }, h('span', null, ...txt), acao);
     const pode = TS.pages && TS.pages.hoje;
-    return TS.card('Saúde da base', 'Quem está sumindo e o que fazer agora. Todos os clientes da loja, comparados com 30 dias atrás.', h('div', { class: 'cli-saude' }, ...[
-      linha([h('b', { class: risco ? 'neg' : '' }, fmt.int(risco)), ` ${risco === 1 ? 'cliente bom está sumindo' : 'clientes bons estão sumindo'} (Não pode perder e Em risco)`, pioraram ? h('small', { class: 'muted' }, ` · ${fmt.int(pioraram)} ${pioraram === 1 ? 'era Campeão ou Leal' : 'eram Campeões ou Leais'} há 30 dias`) : null],
-        risco ? h('button', { type: 'button', class: 'link-btn', onclick: () => ir(n('naoperder') ? 'naoperder' : 'risco') }, 'Ver na Lista ›') : null),
-      linha([h('b', null, fmt.int(perdidos)), ` ${perdidos === 1 ? 'cliente perdido' : 'clientes perdidos'}`, dPerd ? h('small', { class: dPerd > 0 ? 'neg' : 'pos' }, ` · ${dPerd > 0 ? '+' : '−'}${fmt.int(Math.abs(dPerd))} em 30 dias`) : null],
-        perdidos ? h('button', { type: 'button', class: 'link-btn', onclick: () => ir('perdido') }, 'Ver na Lista ›') : null),
-      pode ? linha(['Mensagem para quem está sumindo, aniversariantes e hora de repor: a lista do dia já está pronta.'], h('a', { class: 'link-btn', href: '#hoje' }, 'Contatar → Hoje ›')) : null,
-    ].filter(Boolean)));
+    // redesenho (decisão do dono, 22/11/2026): o "como está" vira a 1ª coluna do herói e o "o que fazer" vira ações numeradas
+    const col = { rot: 'Clientes bons sumindo', num: fmt.int(risco), estado: risco ? 'ruim' : null,
+      dica: 'Clientes dos grupos "Não pode perder" e "Em risco": compravam bem e estão sumindo. Todos os clientes da loja, comparados com 30 dias atrás (não seguem o período nem os filtros).',
+      linhas: [h('span', null, 'Não pode perder e Em risco'), pioraram ? h('span', { class: 'muted' }, `${fmt.int(pioraram)} ${pioraram === 1 ? 'era Campeão ou Leal' : 'eram Campeões ou Leais'} há 30 dias`) : null,
+        h('span', null, `${fmt.int(perdidos)} ${perdidos === 1 ? 'perdido' : 'perdidos'}`, dPerd ? h('span', { class: dPerd > 0 ? 'neg' : 'pos' }, ` · ${dPerd > 0 ? '+' : '−'}${fmt.int(Math.abs(dPerd))} em 30 dias`) : null)] };
+    const acoes = [
+      pode ? { titulo: 'Mandar mensagem para quem está sumindo', texto: 'Sumindo, aniversariantes e hora de repor: a lista do dia já está pronta.', acao: { rotulo: 'Contatar → Hoje ›', href: '#hoje' } } : null,
+      risco ? { titulo: `Ver os ${fmt.int(risco)} ${risco === 1 ? 'cliente bom que está sumindo' : 'clientes bons que estão sumindo'}`, texto: 'Na Lista de clientes, já filtrada pelo grupo.', acao: { rotulo: 'Ver na Lista ›', onclick: () => ir(n('naoperder') ? 'naoperder' : 'risco') } } : null,
+      perdidos ? { titulo: `Ver os ${fmt.int(perdidos)} ${perdidos === 1 ? 'cliente perdido' : 'clientes perdidos'}`, texto: 'Não compram há muito tempo: uma oferta forte ou deixar de lado.', acao: { rotulo: 'Ver na Lista ›', onclick: () => ir('perdido') } } : null,
+    ].filter(Boolean);
+    return { col, acoes: acoes.length ? TS.cardSec('O que fazer agora', { sub: 'clientes da loja toda, comparados com 30 dias atrás' }, TS.acoesNum(acoes)) : null };
   }
   /** Indicadores: quantos clientes em cada grupo (RFM), quanto gastaram e quem mudou de grupo nos últimos 30 dias */
   function cartaoRfm() {
@@ -894,10 +897,13 @@
     if (!ehLista) {
       // o veredito primeiro (decisão do dono, revisão de 22/11): quem está sumindo e o caminho para agir
       const saude = cartaoSaude();
-      if (saude) root.append(saude);
       // cada seção diz a quais filtros responde (antes o filtro mudava um quadro e não os outros, sem aviso)
       const alcance = (t) => h('p', { class: 'muted cli-alcance' }, t);
-      root.append(...baseDeClientes(lista));
+      const base = baseDeClientes(lista);
+      root.append(TS.heroi([saude && saude.col, ...base.cols], { titulo: 'Saúde da base' }),
+        alcance('Clientes sumindo: a loja toda, comparada com 30 dias atrás. Vendas com CPF e recompra: período e loja dos filtros (a recompra e os clientes novos seguem também os filtros de cliente — nome, CPF, cupom…).'));
+      if (saude && saude.acoes) root.append(h('div', { class: 'mt' }, saude.acoes));
+      root.append(...base.resto);
       root.append(TS.section('Comportamento dos clientes'), alcance('Todos os clientes da loja, pelos últimos 12 meses: não seguem o período nem os filtros de cliente.'), h('div', { class: 'grid g-2 rfm-grid' }, cartaoRfm(), cartaoSafras()));
       if (TS.cli.fixe) { root.append(TS.section('Fidelidade')); const cr = cartaoResgate(TS.cli.fixe); if (cr) root.append(cr); const rf = TS.cartaoRetornoFid && TS.cartaoRetornoFid(TS.cli.fixe); if (rf) root.append(rf); root.append(cartaoFixe(TS.cli.fixe)); }
       root.append(TS.section('Perfil dos clientes'), alcance('Seguem todos os filtros (período, loja e os filtros de cliente).'));
@@ -1337,14 +1343,16 @@
     // recompra: dos clientes do filtro, quem comprou de novo em até 90 dias depois da primeira compra do período
     const REC = RC.recompra(lista.map((r) => partida(Math.min(...r.cupons.map((k) => k.day)), r.c)), hojeRC);
     const inicioDados = fmt.date(TS.dayToIso(db.minDay));
-    const kpis = h('div', { class: 'grid g-kpi' },
-      TS.kpi('Vendas com CPF', fmt.pct(nTot ? nCpf / nTot : null, 1), `${fmt.int(nCpf)} de ${fmt.int(nTot)} cupons do período`, 'Cupons de venda em que o cliente informou o CPF (e a nota foi encontrada)'),
-      TS.kpi('Ticket do cliente identificado', fmt.brl(nCpf ? vtCpf / nCpf : null), h('span', null, 'geral: ', fmt.brl(nTot ? vtTot / nTot : null))),
-      TS.kpi(`Recompra em ${RC.PRAZO} dias`, REC.pouco ? '—' : fmt.pct(REC.pct, 0),
-        REC.pouco ? `poucos dados: ${fmt.int(REC.elegiveis)} ${REC.elegiveis === 1 ? 'cliente' : 'clientes'} com ${RC.PRAZO} dias completos${REC.elegiveis ? ` (${fmt.int(REC.voltaram)} ${REC.voltaram === 1 ? 'voltou' : 'voltaram'})` : ''}` : `${fmt.int(REC.voltaram)} de ${fmt.int(REC.elegiveis)} clientes${REC.semPrazo ? ` · ${fmt.int(REC.semPrazo)} ainda no prazo` : ''}`,
-        `Dos clientes do filtro, quantos compraram de novo em até ${RC.PRAZO} dias depois da primeira compra deles no período.\n\nSó entra quem já teve os ${RC.PRAZO} dias inteiros para voltar: o cliente que comprou na semana passada ainda não teve tempo e fica separado ("ainda no prazo"), para não puxar o % para baixo.\n\nCom menos de ${RC.MIN} clientes de prazo completo aparece "poucos dados" em vez do %: com tão pouca gente o número muda a cada compra. Em período curto e recente (este mês, últimos 30 dias) é normal não haver ninguém com o prazo completo.`),
-      TS.kpi('Clientes novos no período', fmt.int(lista.filter((r) => r.c.primeira != null && noPer(r.c.primeira)).length), 'primeira compra com CPF',
-        `Clientes cuja primeira compra com CPF (na nota ou ligada pelo FIXE) caiu no período, dentro do histórico que o painel tem (vendas desde ${inicioDados}).\n\n"Novo" aqui é novo para o painel: cliente antigo que só agora informou o CPF, ou que comprou antes de ${inicioDados}, também aparece como novo. Nos primeiros meses do histórico o número fica inflado por isso.`));
+    // redesenho: os números que decidem vão para o herói da tela (colunas); ticket e clientes novos ficam como linhas de apoio
+    const novosN = lista.filter((r) => r.c.primeira != null && noPer(r.c.primeira)).length;
+    const cols = [
+      { rot: 'Vendas com CPF', num: fmt.pct(nTot ? nCpf / nTot : null, 1), dica: 'Cupons de venda em que o cliente informou o CPF (e a nota foi encontrada). Período e loja dos filtros.',
+        linhas: [`${fmt.int(nCpf)} de ${fmt.int(nTot)} cupons do período`, h('span', { class: 'cli-ticket', title: 'Ticket médio dos cupons com CPF × de todos os cupons do período' }, 'Ticket do cliente identificado ', h('b', null, fmt.brl(nCpf ? vtCpf / nCpf : null)), ` · geral ${fmt.brl(nTot ? vtTot / nTot : null)}`)] },
+      { rot: `Recompra em ${RC.PRAZO} dias`, num: REC.pouco ? '—' : fmt.pct(REC.pct, 0),
+        dica: `Dos clientes do filtro, quantos compraram de novo em até ${RC.PRAZO} dias depois da primeira compra deles no período.\n\nSó entra quem já teve os ${RC.PRAZO} dias inteiros para voltar: o cliente que comprou na semana passada ainda não teve tempo e fica separado ("ainda no prazo"), para não puxar o % para baixo.\n\nCom menos de ${RC.MIN} clientes de prazo completo aparece "poucos dados" em vez do %: com tão pouca gente o número muda a cada compra. Em período curto e recente (este mês, últimos 30 dias) é normal não haver ninguém com o prazo completo.\n\nClientes novos no período: primeira compra com CPF (na nota ou ligada pelo FIXE) dentro do histórico que o painel tem (vendas desde ${inicioDados}). "Novo" é novo para o painel: cliente antigo que só agora informou o CPF também aparece como novo.`,
+        linhas: [REC.pouco ? `poucos dados: ${fmt.int(REC.elegiveis)} ${REC.elegiveis === 1 ? 'cliente' : 'clientes'} com ${RC.PRAZO} dias completos${REC.elegiveis ? ` (${fmt.int(REC.voltaram)} ${REC.voltaram === 1 ? 'voltou' : 'voltaram'})` : ''}` : `${fmt.int(REC.voltaram)} de ${fmt.int(REC.elegiveis)} clientes${REC.semPrazo ? ` · ${fmt.int(REC.semPrazo)} ainda no prazo` : ''}`,
+          h('span', { class: 'cli-novos' }, h('b', null, fmt.int(novosN)), ` ${novosN === 1 ? 'cliente novo' : 'clientes novos'} no período (primeira compra com CPF)`)] },
+    ];
     // novos × recorrentes por mês (últimos 12 meses do período)
     // agrupado pelo período: sem período (Tudo) = últimos 12 meses por mês; com período = por dia, semana ou mês
     const pp = state.cli.per;
@@ -1394,9 +1402,9 @@
       total: { nome: 'Total', cupons: nTot, cpf: nCpf, pct: nTot ? nCpf / nTot : null, novos: rows.reduce((t, r) => t + r.novos, 0), rc: rcTot, voltaram: rcTot.voltaram, pctVolta: rcTot.pouco ? -1 : rcTot.pct,
         ...(comFixe ? (() => { const cf = rows.reduce((t, r) => t + r.cliFixe, 0), sf = rows.reduce((t, r) => t + r.semFixe, 0); return { semFixe: sf, pctSemFixe: cf ? sf / cf : null }; })() : {}) },
     });
-    return [TS.section('Base de clientes'), h('p', { class: 'muted cli-alcance' }, 'Período e loja dos filtros. Recompra e Clientes novos seguem também os filtros de cliente (nome, CPF, cupom…).'), kpis,
+    return { cols, resto: [TS.section('Base de clientes'), h('p', { class: 'muted cli-alcance' }, 'Período e loja dos filtros (o gráfico e a tabela das vendedoras).'),
       h('div', { class: 'grid mt', style: { alignItems: 'start' } }, grafico,
-        TS.card('Vendedoras e clientes', '% de vendas com CPF (pedir o CPF faz a base crescer) · clientes novos = primeira compra atendida por ela · voltaram = compraram de novo em até 90 dias (só quem já teve o prazo inteiro)' + (comFixe ? ' · sem FIXE = compras de clientes do FIXE sem lançamento no dia (o cliente pode não ter informado)' : ''), tab))];
+        TS.card('Vendedoras e clientes', '% de vendas com CPF (pedir o CPF faz a base crescer) · clientes novos = primeira compra atendida por ela · voltaram = compraram de novo em até 90 dias (só quem já teve o prazo inteiro)' + (comFixe ? ' · sem FIXE = compras de clientes do FIXE sem lançamento no dia (o cliente pode não ter informado)' : ''), tab))] };
   }
 
   // ---------- ficha e ações ----------

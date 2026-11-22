@@ -51,7 +51,7 @@
       const obs = h('textarea', { class: 'f-input ck-obs', rows: 2, placeholder: 'Observação (opcional): algo que aconteceu, o que faltou…', disabled: !podeMarcar || null }, (d.marcados.obs || {})[tipo] || '');
       obs.addEventListener('change', async () => { try { const r = await api('POST', 'checklist/marcar', { loja, dia: d.dia, tipo, obs: obs.value }); d.marcados = r.marcados; toast('Observação salva.'); } catch (e) { toast(e.message, true); } });
       return h('div', { class: 'card ck-parte' + (feitos === its.length ? ' ok' : '') },
-        h('div', { class: 'ck-topo' }, h('div', { class: 'card-title' }, NOMES[tipo]), h('b', { class: 'ck-cont' }, feitos === its.length ? '✓ completo' : `${feitos} de ${its.length}`)),
+        h('div', { class: 'ck-topo' }, h('h2', { class: 'card-title' }, NOMES[tipo]), feitos === its.length ? TS.etqPrazo('ok', '✓ completo') : h('b', { class: 'ck-cont' }, `${feitos} de ${its.length}`)),
         barra,
         h('div', { class: 'ck-lista' }, ...its.map((x) => {
           const feito = m[x.id];
@@ -77,7 +77,7 @@
         !podeMarcar ? h('small', { class: 'muted' }, 'Dia passado: só para consulta.') : null,
         d.podeEditar ? h('button', { type: 'button', class: 'link-btn ck-editar', onclick: () => editarItens(corpo, loja, d) }, 'Editar os itens') : null),
       h('div', { class: 'ck-grade' }, parte('abertura'), parte('fechamento')),
-      hist ? h('div', { class: 'card mt' }, h('div', { class: 'card-title' }, 'Últimos dias'), hist) : null].filter(Boolean));
+      hist ? h('div', { class: 'mt' }, TS.cardSec('Últimos dias', { sub: 'toque num dia para ver o checklist dele', dica: 'Cada dia com quantos itens de abertura e de fechamento foram marcados, a hora do último e quem marcou.' }, hist)) : null].filter(Boolean));
   }
 
   function editarItens(corpo, loja, d) {

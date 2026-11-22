@@ -17,12 +17,13 @@ test('Resultado → A pagar: quadros, saldo por semana, lista com abas e marcar 
   await expect(page.locator('.dre-abas').getByRole('button', { name: 'A pagar' })).toHaveClass(/on/);
 
   // quadros e a frase "não é contabilidade"
-  const kPagar = page.locator('.kpi', { hasText: 'A pagar · próximos 30 dias' });
-  await expect(kPagar.locator('.kpi-value')).toContainText('R$');
-  await expect(kPagar.locator('.kpi-foot')).toContainText(/\d+ contas?/);
-  await expect(page.locator('.kpi', { hasText: 'Entrada prevista · 30 dias' }).locator('.kpi-value')).toContainText('R$');
-  await expect(page.locator('.kpi', { hasText: 'Saldo previsto em' }).locator('.kpi-value')).toContainText('R$');
-  await expect(page.locator('.kpi', { hasText: 'Vencidos sem baixa' })).toBeVisible();
+  // redesenho de 22/11: cartão-herói (saldo previsto decide; a pagar com a linha dos vencidos; entrada prevista)
+  const kPagar = page.locator('.ap-heroi .heroi-col', { hasText: 'A pagar · próximos 30 dias' });
+  await expect(kPagar.locator('.heroi-num')).toContainText('R$');
+  await expect(kPagar.locator('.ap-h-pagar')).toContainText(/\d+ contas?/);
+  await expect(page.locator('.ap-heroi .heroi-col', { hasText: 'Entrada prevista · 30 dias' }).locator('.heroi-num')).toContainText('R$');
+  await expect(page.locator('.ap-heroi .heroi-col', { hasText: 'Saldo previsto em' }).locator('.heroi-num')).toContainText('R$');
+  await expect(page.locator('.ap-h-venc')).toContainText('Vencidos sem baixa');
   await expect(page.locator('#content')).toContainText('Não é contabilidade');
 
   // saldo por semana: uma linha por semana, com entrada, saída e acumulado
@@ -42,7 +43,7 @@ test('Resultado → A pagar: quadros, saldo por semana, lista com abas e marcar 
   expect(conta.origens).toEqual(expect.arrayContaining(['fixo', 'royalties']));
   expect(conta.estimadas).toBe(true);
   expect(conta.entra).toBeGreaterThan(0);
-  await expect(kPagar.locator('.kpi-foot')).toContainText(new RegExp(`^${conta.n} contas?`));
+  await expect(kPagar.locator('.ap-h-pagar')).toContainText(new RegExp(`^${conta.n} contas?`));
 
   // lista: abas com contagem; marcar como pago passa a conta para "Pagos" (na apresentação fica só na página)
   const lista = page.locator('.ap-vence');
@@ -60,13 +61,13 @@ test('Resultado → A pagar: quadros, saldo por semana, lista com abas e marcar 
   await lista.getByRole('button', { name: 'Desfazer' }).first().click();
   await expect(lista.getByRole('button', { name: /^Pagos \(\d+\)/ })).toContainText('(0)');
 
-  // quadro "Vencidos sem baixa" marca a aba dele
-  await page.locator('.kpi', { hasText: 'Vencidos sem baixa' }).locator('.kpi-value').click();
+  // a linha "Vencidos sem baixa" do herói marca a aba dele
+  await page.locator('.ap-h-venc').click();
   await expect(lista.getByRole('button', { name: /^Vencidos sem baixa \(\d+\)/ })).toHaveClass(/on/);
 
   // 60 dias: os quadros e as semanas acompanham
   await page.getByRole('button', { name: 'Próximos 60 dias' }).click();
-  await expect(page.locator('.kpi', { hasText: 'A pagar · próximos 60 dias' })).toBeVisible();
+  await expect(page.locator('.ap-heroi .heroi-col', { hasText: 'A pagar · próximos 60 dias' })).toBeVisible();
   expect(await page.locator('.ap-semanas').locator('tbody tr').count()).toBeGreaterThanOrEqual(8);
 
   // o atalho abre os custos da loja com o dia de vencimento de cada custo e os prazos do caixa a pagar

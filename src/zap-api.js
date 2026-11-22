@@ -41,7 +41,20 @@ async function situacao(lojaId, ehGestor) {
     servico, pode: { configurar: ehGestor, pausar: true }, ligado: !!e.ligado, pausa: e.pausa || null, conexao, cfg,
     hoje: { n: ZF.enviadosHoje(e, agora), teto: cfg.teto }, proximoEm: e.proximoEm && Date.parse(e.proximoEm) > agora ? e.proximoEm : null,
     motivo: cod ? motivoTxt(cod) : null, falhas: e.falhas || 0, fila: { campanhas: robos.length, pendentes }, validadeLista: ZF.PREPARO_DIAS,
+    // horário de envio dia a dia (igual ao funcionamento da loja, ou o próprio): a tela mostra e estima por ele
+    agenda: ZF.agenda(loja, cfg, agora), horarioLoja: horarioDaLoja(loja),
   };
+}
+/** o horário de funcionamento da loja por dia (só abre/fecha, para a tela mostrar) — null quando não está cadastrado */
+function horarioDaLoja(loja) {
+  if (!ZF.temFuncionamento(loja)) return null;
+  const f = loja.operacao.funcionamento;
+  // o horário de ENVIO de cada dia (abertura até 30 min antes de fechar), pela mesma função do robô
+  const SEM = { dom: 0, seg: 1, ter: 2, qua: 3, qui: 4, sex: 5, sab: 6 };
+  return Object.fromEntries(Object.keys(SEM).map((d) => {
+    const j = f[d].fechado ? null : ZF.janelaDoDia({ operacao: loja.operacao }, { horario: 'loja' }, '', SEM[d]);
+    return [d, f[d].fechado ? null : { abre: f[d].abre, fecha: f[d].fecha, envia: j ? { das: j.das, as: j.as } : null }];
+  }));
 }
 
 function registrar(app, { podeClientes }) {
@@ -86,7 +99,7 @@ function registrar(app, { podeClientes }) {
     try { st = await ZAP.status(req.zapLoja); } catch { /* cai na mensagem abaixo */ }
     if (!st || st.estado !== 'conectado') return res.status(400).json({ erro: 'Conecte o WhatsApp da loja antes de ligar o robô.' });
     // o próximo horário sorteado continua valendo: pausar e ligar de novo não fura o ritmo
-    ZF.mudarEstado(req.zapLoja, (s) => { s.ligado = true; s.pausa = null; s.falhas = 0; s.conexao = null; s.sessao = true; });
+    ZF.mudarEstado(req.zapLoja, (s) => { s.ligado = true; s.pausa = null; s.falhas = 0; s.semWppSeguidos = 0; s.conexao = null; s.sessao = true; });
     C.auditar(req.user, 'robô do WhatsApp: ligou', req.zapLoja, { loja: req.zapLoja });
     responder(req, res);
   });
@@ -116,11 +129,14 @@ function registrar(app, { podeClientes }) {
 const QR_DEMO = 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="220" height="220"><rect width="220" height="220" fill="#fff" stroke="#888"/><text x="110" y="104" font-size="15" text-anchor="middle" font-family="sans-serif" fill="#444">QR de exemplo</text><text x="110" y="128" font-size="12" text-anchor="middle" font-family="sans-serif" fill="#888">(apresentação)</text></svg>');
 function situacaoDemo(o = {}) {
   const agora = Date.now();
+  const lojaDemo = { operacao: require('./demo').OPERACAO['demo-centro'], feriadosHorario: {} }; // a loja fictícia: seg a sex 09–19, sáb 09–17, dom fechado
+  const cfgD = o.cfg || { ...ZF.PADRAO };
   const base = {
     ok: true, demo: true, servico: true, pode: { configurar: true, pausar: true }, ligado: true, pausa: null,
     conexao: { estado: 'conectado', numeroFim: '8888', desde: new Date(agora - 5 * 864e5).toISOString(), erro: null, qr: null, codigo: null },
-    cfg: { ...ZF.PADRAO }, hoje: { n: 12, teto: ZF.PADRAO.teto }, proximoEm: new Date(agora + 9 * 60e3).toISOString(),
+    cfg: cfgD, hoje: { n: 12, teto: ZF.PADRAO.teto }, proximoEm: new Date(agora + 9 * 60e3).toISOString(),
     motivo: motivoTxt('ritmo'), falhas: 0, fila: { campanhas: 1, pendentes: 18 }, validadeLista: ZF.PREPARO_DIAS,
+    agenda: ZF.agenda(lojaDemo, cfgD, agora), horarioLoja: horarioDaLoja(lojaDemo),
   };
   return { ...base, ...o };
 }

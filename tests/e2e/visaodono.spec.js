@@ -9,46 +9,96 @@ const num = (t) => +String(t).replace(/[^\d,-]/g, '').replace(',', '.');
 const semLixo = async (loc) => { expect(await loc.innerText()).not.toMatch(/\b(null|undefined|NaN)\b/); };
 const print = async (page, info, nome) => { if (process.env.PRINTS) await page.screenshot({ path: `${process.env.PRINTS}/${nome}-${info.project.name}.png`, fullPage: true }); };
 
-test('Início: "Sua semana" vem primeiro, com 5 números explicados e até 3 ações que levam à tela certa', async ({ page }, info) => {
+test('INI-HEROI: Início responde "como estou indo" num herói (meta com a marca do esperado, ritmo, semana) e "o que fazer agora" com um botão por ação', async ({ page }, info) => {
   await abrir(page);
   await ir(page, 'inicio');
-  const s = page.locator('main details.vd-semana');
-  await expect(s).toBeVisible();
-  // vem antes dos quadros de vendas do Início
-  const antes = await page.evaluate(() => { const a = document.querySelector('main details.vd-semana'), b = [...document.querySelectorAll('main > * .kpi, main .grid.g-kpi')].find((x) => !a.contains(x)); return !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING); });
-  expect(antes).toBe(true);
-  for (const rot of ['Vendas da semana', 'Meta do mês', 'Margem de contribuição da semana', 'Zerados que vendem', 'Validade em risco']) await expect(s.locator('.kpi', { hasText: rot })).toBeVisible();
-  // os três quadros que dependem do estoque terminam de calcular
-  await expect(s.locator('.kpi', { hasText: 'Margem de contribuição da semana' }).locator('.kpi-value')).not.toHaveText('…', { timeout: 30000 });
-  await expect(s.locator('.kpi', { hasText: 'Validade em risco' }).locator('.kpi-value')).toHaveText(/R\$/);
-  expect(await s.locator('.kpi .dica-i').count()).toBeGreaterThanOrEqual(5); // todo quadro tem ⓘ
-  const acoes = s.locator('.vd-acao');
-  await expect(acoes.first()).toBeVisible();
-  expect(await acoes.count()).toBeLessThanOrEqual(3);
-  await semLixo(s);
+  const her = page.locator('main .ini-heroi');
+  await expect(her).toBeVisible();
+  // a grade de quadros com barra saiu do Início (redesenho de 22/11/2026)
+  await expect(page.locator('main .g-kpi')).toHaveCount(0);
+  await expect(page.locator('main details.vd-semana')).toHaveCount(0);
+  // meta do mês: % pelas vendas da meta e a marca do esperado = dias de loja aberta completos ÷ dias de loja aberta do mês
+  const esp = await page.evaluate(() => {
+    const db = TS.db, ym = TS.dayToIso(db.maxDay).slice(0, 7), ini = TS.isoToDay(ym + '-01'), hoje = TS.todayDay();
+    const cfg = db.metas.find((m) => m.id === TS.state.loja) || null, fim = TS.isoToDay(`${ym}-${String(TS.contas.diasNoMes(ym)).padStart(2, '0')}`);
+    const u = db.maxDay >= hoje ? hoje - 1 : db.maxDay;
+    let ab = 0, pas = 0;
+    for (let d = ini; d <= fim; d++) if (TS.lojaAberta(cfg, TS.dayToIso(d))) { ab++; if (d <= u) pas++; }
+    const idx = TS.filtrar({ de: ini, ate: db.maxDay, mesLivre: true });
+    return { esperado: pas / ab, pct: TS.rules.vendasMeta(idx) / TS.metaCalc(ym).valor };
+  });
+  const k = her.locator('.heroi-pri');
+  expect(Math.abs(+(await k.getAttribute('data-esperado')) - esp.esperado)).toBeLessThan(0.0002);
+  expect(Math.abs(+(await k.getAttribute('data-pct-meta')) - esp.pct)).toBeLessThan(0.0002);
+  expect((await k.locator('.heroi-num').evaluate((el) => el.firstChild.textContent)).trim()).toMatch(new RegExp(`^${Math.round(esp.pct * 100)}\\s?%$`));
+  const marca = k.locator('.heroi-barra .heroi-barra-marca');
+  await expect(marca).toHaveCount(1);
+  const [bx, mx] = [await k.locator('.heroi-barra').boundingBox(), await marca.boundingBox()];
+  expect(Math.abs((mx.x + mx.width / 2 - bx.x) / bx.width - esp.esperado)).toBeLessThan(0.02);
+  await expect(k).toContainText(/R\$\s[\d.]+ de R\$\s[\d.]+/);
+  // para bater a meta + ritmo; a semana contra a anterior; cada coluna com ⓘ
+  await expect(her).toContainText(/PARA BATER A META|Para bater a meta/i);
+  await expect(her).toContainText(/ESTA SEMANA|Esta semana/i);
+  await expect(her.locator('.heroi-col').nth(2)).toContainText(/contra a semana passada|sem a semana anterior/);
+  expect(await her.locator('.dica-i').count()).toBe(await her.locator('.heroi-col').count());
+  // o que fazer agora: até 3 ações numeradas, cada uma com o próprio botão; a 1ª é a principal
+  const acoes = page.locator('main .ini-acoes .acao');
+  await expect(acoes.first()).toBeVisible({ timeout: 30000 });
+  const n = await acoes.count();
+  expect(n).toBeGreaterThan(0);
+  expect(n).toBeLessThanOrEqual(3);
+  expect(await page.locator('main .ini-acoes .acao .acao-btn').count()).toBe(n);
+  await expect(acoes.first().locator('.acao-btn')).toHaveClass(/primary/);
+  for (let i = 1; i < n; i++) await expect(acoes.nth(i).locator('.acao-btn')).not.toHaveClass(/primary/);
+  await expect(acoes.first().locator('.acao-n')).toHaveText('1');
+  const alto = await acoes.first().locator('.acao-btn').boundingBox();
+  expect(alto.height).toBeGreaterThanOrEqual(43);
+  await semLixo(page.locator('main'));
   await semRolagemLateral(page);
-  await print(page, info, 'inicio-semana');
+  await print(page, info, 'inicio-heroi');
   // a ação leva à tela dela
   const tipo = await acoes.first().getAttribute('data-acao');
-  await acoes.first().click();
-  const destino = { zerados: /#(pedido|estoque)/, vencidos: /#validade/, criticos: /#validade/, franquia: /#creditos/, parado: /#estoque/, meta: /#hoje/ }[tipo];
+  await acoes.first().locator('.acao-btn').click();
+  const destino = { zerados: /#(pedido|estoque)/, vencidos: /#validade/, criticos: /#validade/, franquia: /#creditos/, parado: /#estoque/, meta: /#inicio/ }[tipo];
   await expect(page).toHaveURL(destino);
 });
 
-test('Início: "Sua semana" recolhe e continua recolhida ao voltar; a vendedora e "Todas as lojas" não mostram', async ({ page }) => {
+test('INI-AVISOS: só os 4 avisos mais importantes com a etiqueta de prazo; a linha dos dados sempre à vista; "Ver todos" abre a lista completa', async ({ page }) => {
   await abrir(page);
   await ir(page, 'inicio');
-  const s = page.locator('main details.vd-semana');
-  await expect(s).toBeVisible();
-  await s.locator('summary').click();
-  await expect(s.locator('.kpi').first()).toBeHidden();
-  await ir(page, 'resumo'); await ir(page, 'inicio');
-  await expect(page.locator('main details.vd-semana')).toBeVisible();
-  expect(await page.locator('main details.vd-semana').evaluate((d) => d.open)).toBe(false);
-  await page.locator('main details.vd-semana summary').click();
-  // só admin e franqueado
-  const vend = await page.evaluate(() => { const p = TS.eu.perfil; TS.eu.perfil = 'vendedor'; const r = TS.visaoDono.mostraSemana() || TS.visaoDono.mostraLojas(); TS.eu.perfil = 'gerente'; const g = TS.visaoDono.mostraSemana(); TS.eu.perfil = p; return { r, g }; });
-  expect(vend).toEqual({ r: false, g: false });
+  await expect(page.locator('.ini-pend')).toHaveCount(0, { timeout: 30000 });
+  const lin = page.locator('.ini-resumo .ini-resumo-i');
+  const dados = page.locator('.ini-resumo .ini-resumo-i[data-area="dados"]');
+  const nDados = await dados.count();
+  expect(nDados).toBeGreaterThan(0); // a apresentação tem a configuração guiada pendente: linha de dados
+  // linhas dos dados primeiro, depois no máximo 4
+  expect(await lin.count() - nDados).toBeLessThanOrEqual(4);
+  const areas = await lin.evaluateAll((ls) => ls.map((l) => l.dataset.area));
+  expect(areas.slice(0, nDados).every((a) => a === 'dados')).toBe(true);
+  // etiqueta de prazo em texto, pela gravidade (vermelho = Agora, amarelo = Esta semana, azul = Para saber)
+  const etq = await lin.evaluateAll((ls) => ls.map((l) => [l.className.match(/ini-(erro|warn|info|ok)/)[1], l.querySelector('.etq-prazo').textContent]));
+  for (const [nivel, t] of etq) expect(t).toBe({ erro: 'Agora', warn: 'Esta semana', info: 'Para saber', ok: 'Ok' }[nivel]);
+  const ordem = etq.slice(nDados).map(([n]) => ({ erro: 0, warn: 1, info: 2, ok: 3 }[n]));
+  expect(ordem).toEqual([...ordem].sort((a, b) => a - b));
+  // contraste da etiqueta ≥ 4,5:1
+  const ctr = await page.locator('.ini-resumo .etq-prazo').evaluateAll((es) => es.map((e) => { const cs = getComputedStyle(e); const rgb = (c) => c.match(/\d+/g).slice(0, 3).map(Number); const L = (c) => { const [r, g, b] = rgb(c).map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; }; const a = L(cs.color), b = L(cs.backgroundColor); return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05); }));
+  for (const c of ctr) expect(c).toBeGreaterThanOrEqual(4.5);
+  // "Ver todos os N avisos" abre a lista completa agrupada (com "lembrar depois"), e fecha de novo
+  const ver = page.locator('.ini-ver-todos');
+  await expect(ver).toHaveText(/^Ver todos os \d+ avisos ›$/);
+  const total = num(await ver.textContent());
+  await expect(page.locator('.ini-todos')).toBeHidden();
+  await ver.click();
+  await expect(page.locator('.ini-todos')).toBeVisible();
+  await expect(page.locator('.ini-todos .ini-grupo').first()).toBeVisible();
+  expect(await page.locator('.ini-todos .ini-aviso').count()).toBe(total);
+  await expect(page.locator('.ini-todos .ini-grupo').first()).toHaveAttribute('data-area', 'dados');
+  await expect(ver).toHaveText('Fechar a lista completa');
+  await ver.click();
+  await expect(page.locator('.ini-todos')).toBeHidden();
+  // gerente: sem ações (como antes), mas com o herói
+  const g = await page.evaluate(() => { const p = TS.eu.perfil; TS.eu.perfil = 'gerente'; const r = { acoes: TS.visaoDono.mostraSemana(), heroi: TS.visaoDono.mostraHeroi() }; TS.eu.perfil = 'vendedor'; r.vend = TS.visaoDono.mostraHeroi() || TS.visaoDono.mostraLojas(); TS.eu.perfil = p; return r; });
+  expect(g).toEqual({ acoes: false, heroi: true, vend: false });
 });
 
 test('Início: aviso de validade no grupo Estoque (vencidos em vermelho, até 30 dias em amarelo) abre a Validade já filtrada', async ({ page }) => {
@@ -57,6 +107,7 @@ test('Início: aviso de validade no grupo Estoque (vencidos em vermelho, até 30
   const pf = await page.evaluate(async () => (await TS.validade.dados(TS.state.loja)).resumo.porFaixa);
   test.skip(!pf.vencido.lotes && !pf.critica.lotes, 'a loja da apresentação não tem lote vencido nem perto de vencer hoje');
   await ir(page, 'inicio');
+  await page.locator('.ini-ver-todos').click(); // a lista completa fica em "Ver todos" (redesenho de 22/11/2026)
   const grupo = page.locator('.ini-grupo[data-area=estoque]');
   const aviso = grupo.locator('.ini-aviso', { hasText: /^.*Validade: / }).first();
   await expect(aviso).toBeVisible({ timeout: 20000 });
@@ -111,7 +162,10 @@ test('Início com "Todas as lojas": uma linha por loja, com os mesmos números d
   await semLixo(card);
   await semRolagemLateral(page);
   if (!celular) expect(await card.locator('.table-wrap').evaluate((w) => w.scrollWidth - w.clientWidth)).toBeLessThanOrEqual(1);
-  await expect(page.locator('.ini-aviso b', { hasText: 'Os avisos de estoque, inventário e franquia são de cada loja' })).toBeVisible();
+  await expect(page.locator('.ini-resumo-i', { hasText: 'Os avisos de estoque, inventário e franquia são de cada loja' })).toBeVisible();
+  // com "Todas as lojas" o herói mostra a rede e as lojas lado a lado vêm logo abaixo dele
+  const yH = await page.locator('main .ini-heroi').boundingBox();
+  expect((await card.boundingBox()).y).toBeGreaterThan(yH.y + yH.height - 1);
   await print(page, info, 'inicio-lojas');
   // clicar na loja troca o seletor do topo e o Início passa a ser o dela
   const primeira = await card.locator('.vd-loja').first().innerText();
@@ -185,7 +239,7 @@ test('Resultado: linha "− Perdas" depois do custo dos produtos, reduz o result
   await expect(linha).toContainText('inclui R$');
   await expect(linha).toContainText('Sem as perdas seria');
   expect(Math.abs(num(/inclui (R\$\s?[\d.]+)/.exec(await linha.innerText())[1]) - Math.round(r.total))).toBeLessThanOrEqual(1);
-  await expect(page.locator('main .kpi', { hasText: /Resultado (do mês|até hoje)/ })).toContainText('de perdas');
+  await expect(page.locator('main .heroi-col', { hasText: /Resultado (do mês|até hoje)/ })).toContainText('de perdas');
   await expect(linha.locator('.dica-i')).toHaveCount(1);
   await semLixo(page.locator('main'));
   await semRolagemLateral(page);

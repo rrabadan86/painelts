@@ -174,10 +174,13 @@
       const temTab = [...card.querySelectorAll('.table-wrap')].some((t) => t.closest('.card') === card);
       const temGraf = [...card.querySelectorAll('.chart-box')].some((t) => t.closest('.card') === card);
       if (!temTab && !temGraf) continue;
-      const temExp = !!card.querySelector(':scope > .card-head .exp-btn:not(.prt-btn):not(.shr-btn)'), temPrt = !!card.querySelector(':scope > .card-head .prt-btn') || card.classList.contains('sem-imprimir'); // sem-imprimir: lista privada (Conversas)
-      const temShr = !!card.querySelector(':scope > .card-head .shr-btn');
+      // cartão de seção (TS.cardSec): os botões vão para a direita do próprio cabeçalho, junto do título
+      const sec = card.querySelector(':scope > .card-sec-head');
+      const cab = sec ? ':scope > .card-sec-head' : ':scope > .card-head';
+      const temExp = !!card.querySelector(cab + ' .exp-btn:not(.prt-btn):not(.shr-btn)'), temPrt = !!card.querySelector(cab + ' .prt-btn') || card.classList.contains('sem-imprimir'); // sem-imprimir: lista privada (Conversas)
+      const temShr = !!card.querySelector(cab + ' .shr-btn');
       if ((temExp || !temTab) && temPrt && (temShr || !temGraf)) continue;
-      let head = card.querySelector(':scope > .card-head');
+      let head = sec ? (sec.querySelector(':scope > .card-sec-dir') || sec.appendChild(h('div', { class: 'card-sec-dir' }))) : card.querySelector(':scope > .card-head');
       if (!head) { head = h('div', { class: 'card-head' }, h('div')); card.prepend(head); }
       // gráfico: compartilhar a imagem (no celular abre o menu do sistema, com o WhatsApp)
       if (temGraf && !temShr) head.append(h('button', { type: 'button', class: 'exp-btn shr-btn', title: 'Compartilhar a imagem do gráfico (WhatsApp, e-mail…)', 'aria-label': 'Compartilhar imagem', onclick: (e) => TS.compartilharGrafico(card, e.currentTarget) }, '📤', h('span', null, 'Compartilhar')));
@@ -325,7 +328,7 @@
     }
     return null;
   };
-  /** marca o estado do quadro (barra lateral verde/vermelha; neutro fica sem barra). Chame de novo quando o rodapé mudar depois de montado. */
+  /** marca o estado do quadro (kpi-bom / kpi-ruim; sem barra lateral desde 22/11/2026 — a cor está no texto da comparação). Chame de novo quando o rodapé mudar depois de montado. */
   TS.kpiEstado = (el, estado) => {
     if (!el) return el;
     const e = estado !== undefined ? estado : sinalDe(el.querySelector('.kpi-foot')) || sinalDe(el.querySelector('.kpi-value'));
@@ -342,6 +345,85 @@
   TS.deltaSpan = (v) => h('span', { class: v > 0 ? 'up' : v < 0 ? 'down' : '' }, fmt.delta(v));
   TS.section = (t) => h('div', { class: 'section-label' }, t);
   TS.empty = (t = 'Sem dados para os filtros escolhidos.') => h('div', { class: 'empty' }, t);
+
+  // ---------- peças do redesenho (decisão do dono, 22/11/2026: o visual limpo do protótipo do Início vale para o painel todo) ----------
+  // Regras em .claude/rules/visual.md. Nenhuma cor aqui: estado e nível só por classe (styles.css).
+  /** liga Enter e Espaço a um elemento que não é botão nem link (os botões e links de verdade já respondem sozinhos) */
+  const teclado = (el, fn) => { el.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fn(e); } }); return el; };
+  /** ação: { rotulo, href } vira link; { rotulo, onclick } vira botão */
+  const acaoEl = (a, cls) => (a.href
+    ? h('a', { class: cls, href: a.href, onclick: a.onclick || null }, a.rotulo)
+    : h('button', { type: 'button', class: cls, onclick: a.onclick || null }, a.rotulo));
+
+  /**
+   * Cartão-herói: a resposta de "como está" da tela, em 2–3 colunas separadas por uma linha vertical (no celular a primeira em cima).
+   * coluna = { rot, num, sub?, linhas?: [texto|elemento], estado?: 'bom'|'ruim', dica?, barra?: { pct, esperado?, rotulo } }
+   */
+  TS.heroi = (colunas, opts = {}) => {
+    const col = (c, i) => {
+      const linhas = (c.linhas || []).filter((x) => x != null && x !== '' && x !== false);
+      const barra = c.barra && Number.isFinite(c.barra.pct) ? h('div', { class: 'heroi-barra', role: 'img', 'aria-label': c.barra.rotulo || `${Math.round(c.barra.pct)}%` },
+        h('span', { class: 'heroi-barra-ok', style: { width: `${Math.max(0, Math.min(100, c.barra.pct))}%` } }),
+        Number.isFinite(c.barra.esperado) ? h('span', { class: 'heroi-barra-marca', style: { left: `${Math.max(0, Math.min(100, c.barra.esperado))}%` } }) : null) : null;
+      return h('div', { class: 'heroi-col' + (i === 0 ? ' heroi-pri' : '') },
+        h('div', { class: 'heroi-rot' }, h('span', null, c.rot), TS.dica(c.dica)),
+        h('div', { class: 'heroi-num' + (c.estado === 'bom' ? ' pos' : c.estado === 'ruim' ? ' neg' : '') }, c.num, c.sub ? h('span', { class: 'heroi-sub' }, ' ', c.sub) : null),
+        barra,
+        // linha: texto, elemento ou { el, cls } (cls = 'pos' | 'neg' para a comparação em cor de texto)
+        ...linhas.map((l) => (l && typeof l === 'object' && !(l instanceof Node) && 'el' in l ? h('div', { class: 'heroi-linha' + (l.cls ? ' ' + l.cls : '') }, l.el) : h('div', { class: 'heroi-linha' }, l))));
+    };
+    const cols = (colunas || []).filter(Boolean);
+    return h('section', { class: 'card heroi heroi-n' + cols.length, 'aria-label': opts.titulo || null },
+      opts.titulo ? h('h2', { class: 'heroi-titulo' }, opts.titulo) : null,
+      h('div', { class: 'heroi-cols' }, ...cols.map(col)),
+      opts.extra || null);
+  };
+
+  /** ações numeradas ("O que fazer agora"): [{ titulo, texto, acao: { rotulo, href? | onclick? }, principal? }]; sem `principal` em nenhuma, a 1ª é a principal */
+  TS.acoesNum = (itens) => {
+    const lista = (itens || []).filter(Boolean);
+    const temPri = lista.some((x) => x.principal);
+    return h('ol', { class: 'acoes-num' }, ...lista.map((x, i) => {
+      const pri = temPri ? !!x.principal : i === 0;
+      return h('li', { class: 'acao' + (pri ? ' acao-pri' : ''), 'data-acao': x.tipo || null },
+        h('span', { class: 'acao-n', 'aria-hidden': 'true' }, String(i + 1)),
+        h('div', { class: 'acao-txt' }, h('strong', null, x.titulo), x.texto ? h('span', { class: 'muted' }, x.texto) : null),
+        x.acao ? acaoEl(x.acao, 'btn acao-btn' + (pri ? ' primary' : ' contorno')) : null);
+    }));
+  };
+
+  /** etiqueta de prazo/estado em texto: 'agora' | 'semana' | 'saber' | 'ok' */
+  const PRAZO = { agora: 'Agora', semana: 'Esta semana', saber: 'Para saber', ok: 'Ok' };
+  const NIVEL = { erro: 'agora', warn: 'semana', aviso: 'semana', info: 'saber' }; // o nível dos avisos (erro/warn/info) vira o prazo
+  TS.etqPrazo = (nivel, texto) => { const n = NIVEL[nivel] || nivel; return h('span', { class: 'etq-prazo ' + (PRAZO[n] ? n : 'saber') }, texto || PRAZO[n] || PRAZO.saber); };
+
+  /** linhas "rótulo …… número" com divisória, clicáveis quando têm href/onclick: [{ rot, num, estado?, href? | onclick?, dica? }] */
+  TS.linhasNum = (itens) => h('ul', { class: 'linhas-num' }, ...(itens || []).filter(Boolean).map((x) => {
+    const num = h('strong', { class: 'linhas-num-v' + (x.estado === 'bom' ? ' pos' : x.estado === 'ruim' ? ' neg' : x.estado === 'atencao' ? ' warn-t' : '') }, x.num);
+    const rot = h('span', { class: 'linhas-num-r' }, x.rot, TS.dica(x.dica));
+    const corpo = x.href ? h('a', { class: 'linhas-num-a', href: x.href, onclick: x.onclick || null }, rot, num)
+      : x.onclick ? h('button', { type: 'button', class: 'linhas-num-a', onclick: x.onclick }, rot, num)
+        : h('div', { class: 'linhas-num-a' }, rot, num);
+    return h('li', null, corpo);
+  }));
+
+  /** pílula de situação (ex.: "Vendas atualizadas hoje às 14:32"): 'ok' | 'warn' | 'err' */
+  TS.pilulaSit = (nivel, texto) => h('p', { class: 'pilula-sit ' + (['ok', 'warn', 'err'].includes(nivel) ? nivel : 'ok') }, h('span', { class: 'pilula-sit-b', 'aria-hidden': 'true' }), texto);
+
+  /** tela em duas colunas no computador (principal 1.7fr / lateral 1fr); no celular empilha, a lateral depois */
+  TS.duasColunas = (principal, lateral) => h('div', { class: 'tela-2col' },
+    h('div', { class: 'tela-2col-pri' }, ...[].concat(principal || []).filter(Boolean)),
+    h('aside', { class: 'tela-2col-lat' }, ...[].concat(lateral || []).filter(Boolean)));
+
+  /** cartão de seção: título h2 + frase curta ou link "Ver todos ›" à direita (+ ferramentas) e o conteúdo */
+  TS.cardSec = (titulo, opts = {}, ...conteudo) => {
+    const dir = [opts.sub ? h('span', { class: 'card-sec-sub' }, opts.sub) : null,
+      opts.link ? (opts.link instanceof Node ? opts.link : acaoEl(opts.link, 'card-sec-link')) : null, opts.ferramentas || null].filter(Boolean);
+    return h('section', { class: 'card card-sec' },
+      h('div', { class: 'card-sec-head' }, h('h2', { class: 'card-sec-titulo' }, titulo, TS.dica(opts.dica)), dir.length ? h('div', { class: 'card-sec-dir' }, ...dir) : null),
+      ...conteudo.filter((x) => x != null && x !== false));
+  };
+  TS.teclado = teclado;
 
   /**
    * Faixa que rola para o lado (abas, submenu) e é refeita a cada clique: sem isto ela voltava para o começo e a opção

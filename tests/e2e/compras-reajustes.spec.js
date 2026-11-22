@@ -47,7 +47,8 @@ test('Resultado: compras × vendas mês a mês', async ({ page }) => {
 // Preços: aba "Reajustes (N)" com o efeito de cada reajuste e o detalhe no painel lateral do produto
 test('Preços: efeito dos reajustes de venda', async ({ page }) => {
   await abrir(page, 'precos');
-  const k = page.locator('.kpi', { hasText: 'Reajustes de venda avaliados' });
+  // revisão de 22/11: o número fica numa linha do cartão-herói ("Reajustes de venda avaliados"), que abre a aba
+  const k = page.locator('.heroi .linhas-num-a', { hasText: 'Reajustes de venda avaliados' });
   await expect(k).toBeVisible();
   await k.click();
   await expect(page.locator('.seg button.on').first()).toHaveText(/Reajustes \(\d+\)/);

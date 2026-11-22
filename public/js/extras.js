@@ -113,6 +113,21 @@
     return TS.kpi(rotulo, fmt.brl0(p.proj), foot, TS.comoProjecao(p.P) + filtro);
   };
 
+  /**
+   * A mesma projeção do TS.kpiProjecao, como coluna do cartão-herói (TS.heroi): o número projetado, a linha da meta
+   * (ou dos dias) e a conta aberta no ⓘ. → coluna ou null (sem projeção).
+   */
+  TS.heroiProjecao = function (valor, meta, ym, rotulo = 'Projeção do mês', opts = {}) {
+    const p = TS.projecao(valor, meta, ym, opts);
+    if (!p || p.proj == null) return null;
+    const linha = meta
+      ? h('span', null, h('span', { class: p.pctProj >= 1 ? 'up' : 'down' }, `${fmt.pct(p.pctProj, 0)} da meta`),
+        p.falta > 0 && p.restantes ? ` · faltam ${fmt.brl0(p.porDia)}/dia nos ${p.restantes} dias de loja aberta` : p.falta === 0 ? ' · meta já batida' : '')
+      : `${p.d} de ${p.n} dias completos · faltam ${p.restantes} de loja aberta`;
+    const filtro = p.parte != null && p.parte < 0.999 ? `\n\nA tela está com filtro (vendedor, grupo ou produto): o valor mostrado é ${fmt.pct(p.parte, 0)} do total e a projeção segue essa mesma proporção.` : '';
+    return { rot: rotulo, num: fmt.brl0(p.proj), linhas: [linha], dica: TS.comoProjecao(p.P) + filtro, estado: meta ? (p.pctProj >= 1 ? 'bom' : 'ruim') : null };
+  };
+
   // ======================= AVISO DE DADOS ATRASADOS =======================
   /** lojas cuja última venda tem mais de 2 dias */
   TS.lojasAtrasadas = function () {
@@ -210,17 +225,28 @@
     const premio = rg.rateio && rg.rateio.ativo ? 0 : row.premiacao; // no rateio a premiação já entra no montante
     const totalReceber = (row.aPagar || 0) + premio + gorjeta;
 
-    root.append(h('div', { class: 'grid g-kpi' },
-      TS.kpi('A receber (estimado)', fmt.brl(totalReceber), h('span', null, `comissão ${fmt.brl(row.aPagar)}`, premio ? ` + premiação ${fmt.brl0(premio)}` : '', gorjeta ? ` + gorjeta ${fmt.brl(gorjeta)}` : '')),
-      TS.kpi('Você vendeu', fmt.brl0(row.total), row.metaInd ? h('span', { class: row.total >= row.metaInd ? 'up' : 'down' }, `${fmt.pct(row.total / row.metaInd, 0)} da sua meta`) : 'sem meta individual'),
-      TS.kpi('Sua meta', row.metaInd ? fmt.brl0(row.metaInd) : '—', (() => {
-        const minhas = res.feriasMes.filter((f) => String(f.vendedor).trim().toUpperCase() === NOME);
-        if (minhas.length) return `menor por causa das férias (${minhas.map((f) => `${fmt.date(f.de).slice(0, 5)} a ${fmt.date(f.ate).slice(0, 5)}`).join(', ')})`;
-        if (res.feriasMes.length) return 'inclui a parte de quem está de férias';
-        if (!row.divide && !row.semMeta) return `a mesma dos colegas (meta da loja ÷ ${res.qtdVend}); você ainda não entra na divisão: ${row.diasVenda} de ${res.piso.aplicado} dias com venda`;
-        return `meta da loja ${fmt.brl0(metaLoja)} ÷ ${res.qtdVend} ${res.qtdVend === 1 ? 'pessoa' : 'pessoas'}`;
-      })(), `A meta da loja é dividida entre quem tem pelo menos ${res.piso.dias} dias com venda no mês${res.piso.fechado ? '' : ` (mês em andamento: por enquanto ${res.piso.aplicado})`}. Quem está de férias não divide a meta dos dias de férias.`),
-      TS.kpiProjecao(row.total, row.metaInd || null, ym, 'Se continuar neste ritmo', { base: 'meta' }) || TS.kpi('Mês', 'Fechado', TS.ymLabel(ym))));
+    // redesenho: herói com o que importa para quem vende — quanto vai receber, quanto vendeu (barra até a meta) e o ritmo
+    const metaTxt = (() => {
+      const minhas = res.feriasMes.filter((f) => String(f.vendedor).trim().toUpperCase() === NOME);
+      if (minhas.length) return `menor por causa das férias (${minhas.map((f) => `${fmt.date(f.de).slice(0, 5)} a ${fmt.date(f.ate).slice(0, 5)}`).join(', ')})`;
+      if (res.feriasMes.length) return 'inclui a parte de quem está de férias';
+      if (!row.divide && !row.semMeta) return `a mesma dos colegas (meta da loja ÷ ${res.qtdVend}); você ainda não entra na divisão: ${row.diasVenda} de ${res.piso.aplicado} dias com venda`;
+      return `meta da loja ${fmt.brl0(metaLoja)} ÷ ${res.qtdVend} ${res.qtdVend === 1 ? 'pessoa' : 'pessoas'}`;
+    })();
+    const dicaMeta = `A meta da loja é dividida entre quem tem pelo menos ${res.piso.dias} dias com venda no mês${res.piso.fechado ? '' : ` (mês em andamento: por enquanto ${res.piso.aplicado})`}. Quem está de férias não divide a meta dos dias de férias.`;
+    const pctInd = row.metaInd ? row.total / row.metaInd : null;
+    const pEsp = row.metaInd ? TS.projecao(row.total, row.metaInd, ym, { base: 'meta' }) : null;
+    const esperado = pEsp && pEsp.n ? (pEsp.d / pEsp.n) * 100 : null; // marca: a parte do mês já passada
+    root.append(TS.heroi([
+      { rot: 'A receber (estimado)', num: fmt.brl(totalReceber), linhas: [h('span', null, `comissão ${fmt.brl(row.aPagar)}`, premio ? ` + premiação ${fmt.brl0(premio)}` : '', gorjeta ? ` + gorjeta ${fmt.brl(gorjeta)}` : '')],
+        dica: 'Comissão das três categorias (abaixo) + premiação dos indicadores + gorjeta do Espaço Gourmet, com as vendas até agora. O valor final é fechado pela loja no fim do mês.' },
+      { rot: 'Você vendeu', num: fmt.brl0(row.total), estado: pctInd != null && pctInd >= 1 ? 'bom' : null,
+        barra: pctInd != null ? { pct: pctInd * 100, esperado, rotulo: `${fmt.pct(pctInd, 0)} da sua meta${esperado != null ? `; o esperado até agora era ${Math.round(esperado)}%` : ''}` } : null,
+        linhas: [row.metaInd ? h('span', { class: row.total >= row.metaInd ? 'up' : 'down' }, `${fmt.pct(pctInd, 0)} da sua meta`) : 'sem meta individual',
+          h('span', { class: 'minha-meta' }, `Sua meta: ${row.metaInd ? fmt.brl0(row.metaInd) : '—'} · ${metaTxt}`, TS.dica(dicaMeta))],
+        dica: 'Suas vendas que contam para a meta: chá aromatizado, chá puro e acessórios, sem o Espaço Gourmet.' },
+      TS.heroiProjecao(row.total, row.metaInd || null, ym, 'Se continuar neste ritmo', { base: 'meta' }) || { rot: 'Mês', num: 'Fechado', linhas: [TS.ymLabel(ym)] },
+    ], { titulo: souVendedor ? 'Seu mês' : `O mês de ${nome}` }));
 
     // por categoria
     const proj = TS.projecao(1, 1, ym, { base: 'meta' });
@@ -390,8 +416,11 @@
     fetch(TS.api(`alertas?loja=${encodeURIComponent(loja)}`), { credentials: 'same-origin' }).then((r) => r.json()).then((r) => {
       const al = (r.alertas || []).slice(0, 6);
       if (!al.length) return;
-      const ic = { queda: '▼', meta: '◎', vendedor: '●', alta: '▲' };
-      box.replaceChildren(h('div', { class: 'alertas-tit' }, 'Alertas e destaques'), h('ul', null, al.map((a) => h('li', { class: 'al-' + a.tipo + (a.gravidade >= 2 ? ' grave' : '') }, h('span', { class: 'al-ic' }, ic[a.tipo] || '•'), a.texto))));
+      // etiqueta de prazo em texto (redesenho): queda grave = agora; queda e meta = esta semana; alta = ok; o resto = para saber
+      const nivel = (a) => (a.tipo === 'alta' ? 'ok' : a.tipo === 'queda' && a.gravidade >= 2 ? 'agora' : a.tipo === 'queda' || a.tipo === 'meta' ? 'semana' : 'saber');
+      const ROT = { ok: 'Destaque' };
+      box.replaceChildren(TS.cardSec('Alertas e destaques', { dica: 'O que mudou nas vendas da loja: quedas e altas fortes, a meta e os vendedores fora do ritmo. A etiqueta diz a urgência.' },
+        h('ul', { class: 'alertas-l' }, al.map((a) => h('li', { class: 'al-' + a.tipo + (a.gravidade >= 2 ? ' grave' : '') }, TS.etqPrazo(nivel(a), ROT[nivel(a)]), h('span', null, a.texto))))));
       box.hidden = false;
     }).catch(() => {});
     return box;

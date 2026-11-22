@@ -21,7 +21,8 @@ const C = require('./config');
 const CAMP = require('./campanhas');
 const M = require('../public/js/msgwpp');
 
-const PADRAO = { min: 900, max: 1200, das: '09:00', as: '18:30', dias: [1, 2, 3, 4, 5, 6], teto: 30, falhas: 3 };
+// horario: 'loja' (padrão, decisão do dono) = envia no horário de funcionamento da loja, dia a dia; 'proprio' = das/as/dias abaixo
+const PADRAO = { horario: 'loja', min: 900, max: 1200, das: '09:00', as: '18:30', dias: [1, 2, 3, 4, 5, 6], teto: 30, falhas: 3 };
 const ORIGEM_RESPOSTA = 'respondeu parar pelo WhatsApp'; // fica no contato e na fila: a loja vê de onde veio e pode desfazer
 const PREPARO_DIAS = 3; // os valores dos campos ({pontos}, {dias}…) envelhecem: depois disso a lista precisa ser conferida de novo
 const HORA = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -75,7 +76,9 @@ function validarCfg(b) {
   if (!dias || !dias.length || dias.some((d) => !(Number.isInteger(d) && d >= 0 && d <= 6))) return { erro: 'Escolha pelo menos um dia da semana.' };
   if (!(Number.isInteger(teto) && teto >= 1 && teto <= 200)) return { erro: 'Máximo por dia: de 1 a 200 mensagens.' };
   if (!(Number.isInteger(falhas) && falhas >= 1 && falhas <= 10)) return { erro: 'Parar sozinho: de 1 a 10 falhas seguidas.' };
-  return { ok: { min, max, das, as, dias, teto, falhas } };
+  const horario = b.horario == null ? 'loja' : b.horario;
+  if (horario !== 'loja' && horario !== 'proprio') return { erro: 'Horário de envio: escolha "igual ao funcionamento da loja" ou "horário próprio".' };
+  return { ok: { horario, min, max, das, as, dias, teto, falhas } };
 }
 
 // ---------- arquivos ----------
@@ -140,6 +143,49 @@ function relogio(agora) {
   for (const x of FMT.formatToParts(new Date(agora))) p[x.type] = x.value;
   return { dia: C.diaSP(agora), sem: SEM[p.weekday], hora: +p.hour, min: +p.hour * 60 + +p.minute };
 }
+/**
+ * Janela de envio de um dia (decisão do dono: "igual ao funcionamento da loja, cada dia da semana um horário").
+ * → { das, as, origem: 'loja'|'feriado'|'proprio' } ou null (não envia nesse dia). iso = 'AAAA-MM-DD' (Brasília); sem = 0 (dom)…6 (sáb).
+ * horario 'loja' com o funcionamento cadastrado: horário especial da data (feriado: fechado → null) primeiro, depois o do dia da
+ * semana (fechado → null), da abertura até 30 minutos antes de fechar (MARGEM_FECHA_MIN). Sem funcionamento cadastrado (ou horario 'proprio'): das/as/dias.
+ */
+const DIAS_OP = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab'];
+const SEM_WPP_PAUSA = 5; // decisão do dono: 5 clientes seguidos "sem WhatsApp" pausam o robô (a conferência do número pode ter falhado)
+const MARGEM_FECHA_MIN = 30; // decisão do dono: pelo horário da loja, o robô para 30 minutos antes de fechar
+const menosMargem = (abre, fecha) => {
+  const fim = hm(fecha) - MARGEM_FECHA_MIN;
+  if (fim <= hm(abre)) return null; // não sobra tempo de envio nesse dia
+  return `${String(Math.floor(fim / 60)).padStart(2, '0')}:${String(fim % 60).padStart(2, '0')}`;
+};
+function temFuncionamento(loja) {
+  const f = loja && loja.operacao && loja.operacao.funcionamento;
+  return !!(f && DIAS_OP.every((d) => f[d] && typeof f[d] === 'object' && (f[d].fechado === true || (HORA.test(f[d].abre || '') && HORA.test(f[d].fecha || '')))));
+}
+function janelaDoDia(loja, cfg, iso, sem) {
+  cfg = cfg || PADRAO;
+  if (cfg.horario !== 'proprio' && temFuncionamento(loja)) {
+    const esp = loja.feriadosHorario && loja.feriadosHorario[iso];
+    if (esp && typeof esp === 'object') {
+      if (esp.fechado) return null;
+      if (HORA.test(esp.abre || '') && HORA.test(esp.fecha || '') && esp.abre < esp.fecha) { const as = menosMargem(esp.abre, esp.fecha); return as ? { das: esp.abre, as, origem: 'feriado' } : null; }
+    }
+    const f = loja.operacao.funcionamento[DIAS_OP[sem]];
+    if (f.fechado || !(f.abre < f.fecha)) return null;
+    const as = menosMargem(f.abre, f.fecha);
+    return as ? { das: f.abre, as, origem: 'loja' } : null;
+  }
+  return cfg.dias.includes(sem) ? { das: cfg.das, as: cfg.as, origem: 'proprio' } : null;
+}
+/** os próximos N dias de envio da loja (a tela usa para "volta segunda às 09:00" e o término estimado) */
+function agenda(loja, cfg, agora = Date.now(), n = 21) {
+  const out = [];
+  for (let k = 0; k < n; k++) {
+    const r = relogio(agora + k * 864e5);
+    const j = janelaDoDia(loja, cfg, r.dia, r.sem);
+    out.push(j ? { dia: r.dia, sem: r.sem, das: j.das, as: j.as } : null);
+  }
+  return out;
+}
 /** mensagens que o robô já mandou hoje pelo número da loja (todas as campanhas) */
 const enviadosHoje = (estado, agora) => (estado.dia === relogio(agora).dia ? estado.enviadosDia || 0 : 0);
 
@@ -150,6 +196,7 @@ const MOTIVOS = {
   desligado: 'O robô está desligado.',
   pausado: 'O robô está pausado.',
   fora_dia: 'Hoje não é dia de envio.',
+  loja_fechada: 'Hoje a loja está fechada: o robô envia no horário de funcionamento da loja.',
   fora_janela: 'Fora do horário de envio.',
   teto: 'O máximo de mensagens de hoje foi atingido. Continua no próximo dia de envio.',
   ritmo: 'Esperando o intervalo entre uma mensagem e outra.',
@@ -170,14 +217,16 @@ const enviadosCampanhaHoje = (c, dia) => c.rodadas.reduce((n, r) => n + r.lista.
  * → { marcar: [{ campanha, rodada, cpf, st, motivo, optout? }], msg?: { id, campanha, nome, rodada, cliente, para, texto, v }, motivo? }
  * `marcar` são os clientes que saem da fila sem receber (pediu para não receber, recebeu há pouco, sem celular válido).
  */
-function decidir({ cfg, estado, campanhas, contatos, preparo, naoquer, enviados, intervalo, agora }) {
+function decidir({ cfg, estado, campanhas, contatos, preparo, naoquer, enviados, intervalo, agora, janela, horarioLoja }) {
   const marcar = [];
   const fim = (motivo) => ({ marcar, motivo });
   if (!estado.ligado) return fim('desligado');
   if (estado.pausa) return fim('pausado');
   const r = relogio(agora);
-  if (!cfg.dias.includes(r.sem)) return fim('fora_dia');
-  if (r.min < hm(cfg.das) || r.min >= hm(cfg.as)) return fim('fora_janela');
+  // janela de hoje (quem chama calcula pelo horário da loja: janelaDoDia); sem ela, das/as/dias da configuração
+  const jan = janela !== undefined ? janela : (cfg.dias.includes(r.sem) ? { das: cfg.das, as: cfg.as } : null);
+  if (!jan) return fim(horarioLoja ? 'loja_fechada' : 'fora_dia');
+  if (r.min < hm(jan.das) || r.min >= hm(jan.as)) return fim('fora_janela');
   if (enviadosHoje(estado, agora) >= cfg.teto) return fim('teto');
   if (estado.proximoEm && agora < Date.parse(estado.proximoEm)) return fim('ritmo');
   const todasRobo = campanhasDoRobo(campanhas);
@@ -221,8 +270,10 @@ function decidir({ cfg, estado, campanhas, contatos, preparo, naoquer, enviados,
 function proxima(lojaId, agora = Date.now()) {
   const loja = C.get().lojas.find((l) => l.id === lojaId);
   if (!loja) return { marcar: [], motivo: 'desligado' };
+  const cfg = cfgDe(loja), r = relogio(agora);
   return decidir({
-    cfg: cfgDe(loja), estado: lerEstado(lojaId), campanhas: CAMP.ler(lojaId), contatos: lerContatos(lojaId), preparo: lerPreparo(lojaId),
+    janela: janelaDoDia(loja, cfg, r.dia, r.sem), horarioLoja: cfg.horario !== 'proprio' && temFuncionamento(loja),
+    cfg, estado: lerEstado(lojaId), campanhas: CAMP.ler(lojaId), contatos: lerContatos(lojaId), preparo: lerPreparo(lojaId),
     naoquer: lerJson(lojaId, 'naoquer'), enviados: lerJson(lojaId, 'enviados'), intervalo: loja.wppIntervalo || 21, agora,
   });
 }
@@ -278,7 +329,7 @@ function envioManualBloqueado({ lojaId, cpf, contato, campanha, agora = Date.now
 const sortear = (cfg, agora, rnd = Math.random) => agora + (cfg.min + Math.floor(rnd() * (cfg.max - cfg.min + 1))) * 1000;
 
 module.exports = {
-  foneChave, porChave,
+  foneChave, porChave, janelaDoDia, agenda, temFuncionamento, MARGEM_FECHA_MIN, SEM_WPP_PAUSA,
   envioManualBloqueado, PADRAO, PREPARO_DIAS, ORIGEM_RESPOSTA, ligarNumeroAoCliente, voltouAAceitar, MOTIVOS, NUMERO, fim4, cfgDe, validarCfg, relogio, enviadosHoje, campanhasDoRobo, decidir, proxima, sortear,
   lerEstado, temEstado, mudarEstado, lerContatos, mudarContato, lerPreparo, gravarPreparo, limparPreparo, lerJson, gravarJson,
 };

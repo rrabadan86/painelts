@@ -644,11 +644,17 @@
     });
     const horasNec = need.reduce((s, r) => s + r.reduce((a, b) => a + b, 0), 0);
     const horasDisp = op.equipe.funcionarios * op.equipe.cargaSemanal;
-    const kpis = () => h('div', { class: 'grid g-kpi mt' },
-      TS.kpi('Horas de trabalho necessárias', `${fmt.int(horasNec)} h/semana`, `para cobrir todos os horários e picos`),
-      TS.kpi('Horas da equipe atual', `${fmt.int(horasDisp)} h/semana`, h('span', { class: horasDisp >= horasNec ? 'up' : 'down' }, `${op.equipe.funcionarios} × ${op.equipe.cargaSemanal}h · ${horasDisp >= horasNec ? 'sobra' : 'faltam'} ${fmt.int(Math.abs(horasDisp - horasNec))} h`)),
-      TS.kpi('Equipe mínima', ideal.soAberto ? `${ideal.soAberto} pessoas` : '15+', 'para nunca deixar a loja sozinha'),
-      TS.kpi('Equipe ideal', ideal.tudo ? `${ideal.tudo} pessoas` : 'mais de 15', 'cobrindo também os picos'));
+    // redesenho: o "como está" da equipe num cartão-herói (horas que a loja pede × horas da equipe × tamanho da equipe)
+    const sobra = horasDisp >= horasNec;
+    const kpis = () => h('div', { class: 'mt' }, TS.heroi([
+      { rot: 'Horas necessárias', num: `${fmt.int(horasNec)} h`, sub: 'por semana', linhas: ['para cobrir todos os horários e picos'],
+        dica: 'Soma das pessoas necessárias em cada hora aberta da semana (pelo movimento de pico e pela capacidade por pessoa). A conta passo a passo está em "Como esses números são calculados", abaixo.' },
+      { rot: 'Horas da equipe atual', num: `${fmt.int(horasDisp)} h`, sub: 'por semana', estado: sobra ? 'bom' : 'ruim',
+        linhas: [h('span', { class: sobra ? 'up' : 'down' }, `${sobra ? 'sobra' : 'faltam'} ${fmt.int(Math.abs(horasDisp - horasNec))} h`), `${op.equipe.funcionarios} × ${op.equipe.cargaSemanal}h`],
+        dica: 'Funcionários × carga semanal de cada um (Configurações → Loja e equipe).' },
+      { rot: 'Equipe', num: ideal.tudo ? `${ideal.tudo} pessoas` : 'mais de 15', linhas: ['ideal: cobrindo também os picos', `mínima: ${ideal.soAberto ? `${ideal.soAberto} pessoas` : '15+'} (nunca deixar a loja sozinha)`],
+        dica: 'Equipe ideal: o menor número de pessoas em que todos os picos e o mínimo de cada dia ficam cobertos. Equipe mínima: o menor número em que nenhum horário fica com a loja sozinha.' },
+    ], { titulo: 'Equipe × movimento da loja' }));
     M.append(kpis(),
       h('details', { class: 'mapa-como' }, h('summary', null, 'Como esses números são calculados'),
         h('ol', null,
@@ -668,6 +674,7 @@
     const okEq = ideal.tudo && nEq >= ideal.tudo, minEq = ideal.soAberto && nEq >= ideal.soAberto;
     ES.append(h('div', { class: 'mapa-resumo ' + (okEq ? 'ok' : minEq ? 'warn' : 'err') },
       h('span', null, h('b', null, `${nEq} ${nEq === 1 ? 'pessoa' : 'pessoas'}`), ` · escala ${op.equipe.escala}${rodizio ? ' · rodízio de domingo' : ''} · ${op.equipe.cargaSemanal} h/semana`),
+      TS.etqPrazo(okEq ? 'ok' : minEq ? 'semana' : 'agora', okEq ? 'Equipe ok' : minEq ? 'Faltam nos picos' : 'Loja sozinha'),
       h('span', null, okEq ? '✓ cobre todos os horários e picos' : minEq ? `cobre a loja, mas a ideal é ${ideal.tudo || '15+'} pessoas para os picos` : `a loja fica sozinha em algum horário: mínimo ${ideal.soAberto || '15+'} pessoas`),
       h('button', { type: 'button', class: 'link-btn', onclick: () => { state.mapaAba = 'equipe'; TS.render(); } }, 'mudar equipe e regras ›')));
     Q.append(cartaoAjustes(opInfo));

@@ -22,11 +22,28 @@
     if (!r.ok) throw new Error(j.erro || 'Falha ao salvar.');
     return j;
   }
+  /** apresentação: uma campanha de exemplo já enviada pelo robô, com algumas não enviadas (para a aba "Não enviadas" ter o que mostrar) */
+  function semearDemo() {
+    if (demo.semeado || !TS.cli || !TS.cli.lista) return;
+    demo.semeado = true;
+    const cs = TS.cli.lista.filter((c) => c.wpp).slice(0, 24);
+    if (cs.length < 12) return;
+    const ontem = new Date(Date.now() - 864e5).toISOString();
+    const MOT = ['sem WhatsApp', 'sem WhatsApp', 'já recebeu em ' + new Date(Date.now() - 5 * 864e5).toLocaleDateString('pt-BR') + ' (campanha Pontos vencendo)', 'sem celular válido', 'mesmo celular de outro cliente que já recebeu'];
+    const lista = cs.map((c, k) => {
+      const it = { cpf: c.cpf, nome: c.nome, st: 'p' };
+      if (k < 8) Object.assign(it, { st: 'e', em: ontem, por: 'robô' });
+      else if (k < 8 + MOT.length) Object.assign(it, { st: 'x', em: ontem, por: 'robô', motivo: MOT[k - 8] });
+      else if (k === 8 + MOT.length) Object.assign(it, { st: 'o', em: ontem, por: 'robô' });
+      return it;
+    });
+    demo.lista.push({ id: 'demo-exemplo', nome: 'Exemplo: Sentimos sua falta', mensagem: '{saudacao}, {nome}! Faz um tempinho que você não passa na {loja}. Chegaram novidades que têm a sua cara 😊', variacoes: [], limiteDia: 20, janela: 30, recorrente: '', comparar: false, ativa: true, robo: false, filtros: { ausMin: 60 }, criadaEm: ontem, por: 'robô', rodadas: [{ id: 'demo-r1', em: ontem, por: 'robô', lista }] });
+  }
   function demoApi(met, url, b) {
     const id = () => Math.random().toString(16).slice(2, 14), agora = new Date().toISOString();
     const m = /\/api\/campanhas(?:\/([^/?]+))?(?:\/(\w+))?/.exec(url);
     const c = m[1] && demo.lista.find((x) => x.id === m[1]);
-    if (met === 'GET') return { campanhas: demo.lista.slice() };
+    if (met === 'GET') { semearDemo(); return { campanhas: demo.lista.slice() }; }
     const sep = (cid, l, ligado, tamanho) => TS.campRetorno.separar(l.map((x) => ({ ...x, st: 'p' })), cid, { ligado, em: agora, tamanho });
     if (met === 'POST' && !m[1]) { const cid = id(), comparar = b.comparar !== false; const n = { id: cid, nome: b.nome, mensagem: b.mensagem, porMotivo: b.porMotivo, limiteDia: b.limiteDia, janela: b.janela, recorrente: b.recorrente, comparar, ativa: true, filtros: b.filtros, criadaEm: agora, por: 'você', rodadas: [{ id: id(), em: agora, lista: sep(cid, b.lista, comparar) }] }; demo.lista.unshift(n); return { campanha: n }; }
     if (met === 'PUT' && !m[2]) { const { loja, ...resto } = b; Object.assign(c, resto); return { campanha: c }; }
@@ -280,19 +297,108 @@
     }));
   }
 
-  function pintarLista(corpo, lista, novas) {
-    const cards = lista.map((c) => {
-      const r = c.rodadas[0], s = resumoRodada(r, c.janela);
-      return h('div', { class: 'card cp-card', role: 'button', tabindex: 0, onclick: () => abrirCampanha(corpo, lista, c), onkeydown: (e) => { if (e.key === 'Enter') abrirCampanha(corpo, lista, c); } },
-        h('div', { class: 'cp-card-top' }, h('b', null, c.nome), periodoTag(c), c.recorrente ? h('span', { class: 'cli-tag t-repor' }, c.recorrente === 'diaria' ? 'todo dia' : c.recorrente === 'semanal' ? 'toda semana' : 'todo mês') : null, c.robo ? h('span', { class: 'cli-tag', title: 'Enviada pelo robô do WhatsApp' }, '🤖 robô') : null, c.ativa === false ? h('span', { class: 'cli-tag' }, 'pausada') : null),
-        h('small', { class: 'muted' }, `${c.recorrente ? 'Lista de ' : 'Criada em '}${fmt.date(r.em.slice(0, 10))} · por ${r.por || c.por || '—'}`),
-        h('div', { class: 'cp-mini' },
-          h('div', null, h('b', null, fmt.int(s.total)), h('small', null, 'na lista')),
-          h('div', null, h('b', null, fmt.int(s.env)), h('small', null, 'enviadas')),
-          h('div', null, h('b', null, fmt.int(s.pend)), h('small', null, 'pendentes')),
-          h('div', { class: 'ok', title: `Voltaram ÷ enviadas cujo prazo de ${c.janela} dias já fechou${s.rec.abertos ? ` · ${fmt.int(s.rec.abertos)} ainda no prazo` : ''}` }, h('b', null, pctVoltou(s.rec)), h('small', null, s.rec.taxa == null && s.rec.abertos ? 'ainda no prazo' : `voltaram (${c.janela} dias)`))),
-        h('div', { class: 'cp-barra' }, h('span', { style: { width: (s.total - s.comp ? (s.env + s.opt) / (s.total - s.comp) * 100 : 0) + '%' } })));
+  /** a mensagem deste cliente ofereceria produto sem estoque? → o que falta (texto) ou null. A mesma conta da fila e da aba "Não enviadas" */
+  function faltaEstoqueDe(camp, disp) {
+    const prodsCamp = listaProdutos(camp.filtros || {}).filter((x) => !x.contem).map((x) => x.t);
+    return (it) => { const c = clienteDe(it.cpf); for (const t of TS.msgWpp.textosDe(camp, it)) { const f = TS.semEstoqueNaMensagem ? TS.semEstoqueNaMensagem(disp, t, c, { produtos: prodsCamp, chaoferta: it.o || undefined }) : null; if (f) return f; } return null; };
+  }
+
+  // ---------- "Não enviadas" (pedido do dono): quem ficou sem a mensagem em todas as campanhas, com o motivo ----------
+  const MOT_NE = [['semwpp', 'Sem WhatsApp', 'O número do cadastro não tem WhatsApp (o robô tentou e o WhatsApp recusou). Corrija o celular no FIXE ou, se o cliente escreveu de outro número, vincule a conversa ao cliente em Clientes → Conversas; depois "Voltar para a fila".'],
+    ['recebeu', 'Já recebeu', 'Recebeu mensagem (desta ou de outra campanha, ou pelo painel) dentro do intervalo da loja, ou o mesmo celular já recebeu por outro cliente. Volta sozinho na próxima lista depois do intervalo; "Voltar para a fila" libera o prazo maior pedido pela campanha, nunca o intervalo da loja.'],
+    ['naoquer', 'Não quer', 'Pediu para não receber mensagens (pela fila, pela ficha ou respondeu "parar" ao robô). Só volta se alguém marcar "Voltou a aceitar" na ficha do cliente.'],
+    ['semcel', 'Sem celular', 'O cadastro não tem um celular válido (DDD + número). Corrija no FIXE.'],
+    ['estoque', 'Esperando estoque', 'Continuam na fila, mas a mensagem ofereceria um produto sem estoque (no chá a granel, menos de 100 g). Entram sozinhos quando chegar a nota de entrada.'],
+    ['outros', 'Outros', 'Puladas à mão na fila (com o motivo escrito) ou por outro motivo.']];
+  const motivoNE = (it) => {
+    if (it.st === 'o') return 'naoquer';
+    const m = String(it.motivo || '').toLowerCase();
+    if (/whatsapp/.test(m)) return 'semwpp';
+    if (/já recebeu|mesmo celular/.test(m)) return 'recebeu';
+    if (/não quer/.test(m)) return 'naoquer';
+    if (/celular válido|sem celular/.test(m)) return 'semcel';
+    return 'outros';
+  };
+  /** puladas + não quer da lista atual de cada campanha (o que a tela já tem; a lista antiga de uma recorrente não entra) */
+  const naoEnviadasDe = (c) => (c.rodadas && c.rodadas[0] ? c.rodadas[0].lista.filter((it) => it.st === 'x' || it.st === 'o') : []);
+  async function pintarNaoEnviadas(box, corpo, lista) {
+    if (!box.firstChild) box.append(h('div', { class: 'loading' }, h('div', null, h('div', { class: 'spinner' }), h('p', null, 'Juntando as não enviadas…'))));
+    let disp = null;
+    if (TS.estoqueDisp) { try { disp = await TS.estoqueDisp(state.loja); } catch { /* sem leitura do estoque: a aba "Esperando estoque" fica vazia */ } }
+    if (!box.isConnected) return;
+    const linhas = [];
+    for (const c of lista) {
+      const r = c.rodadas && c.rodadas[0];
+      if (!r) continue;
+      for (const it of naoEnviadasDe(c)) linhas.push({ c, r, it, mot: motivoNE(it) });
+      if (disp) { const falta = faltaEstoqueDe(c, disp); for (const it of r.lista) if (it.st === 'p') { const f = falta(it); if (f) linhas.push({ c, r, it, mot: 'estoque', falta: f }); } }
+    }
+    const rows = linhas.map((x) => { const cl = clienteDe(x.it.cpf); return { ...x, cpf: x.it.cpf, nome: x.it.nome || cl.nome || '—', cel: A().fmtTel(cl.celular) || '—', camp: x.c.nome, motivo: x.mot === 'estoque' ? `esperando estoque (${x.falta})` : x.it.st === 'o' ? 'não quer mensagens' : x.it.motivo || 'pulada', em: x.it.em ? isoDia(x.it.em) : null, por: x.it.por || '' }; });
+    const f = state.cpNE || (state.cpNE = { mot: '', camp: '' });
+    const camps = [...new Set(rows.map((x) => x.camp))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+    if (f.camp && !camps.includes(f.camp)) f.camp = '';
+    const daCamp = (x) => !f.camp || x.camp === f.camp;
+    const repintar = () => pintarNaoEnviadas(box, corpo, lista);
+    const voltar = async (x, bt) => {
+      bt.disabled = true;
+      try {
+        const y = await api('POST', `/api/campanhas/${x.c.id}/marcar`, { loja: state.loja, rodada: x.r.id, cpf: x.it.cpf, st: 'p', motivo: x.it.motivo ? 'liberado' : null });
+        for (const k of ['em', 'por', 'motivo', 'liberado', 'v']) delete x.it[k];
+        Object.assign(x.it, y.item);
+        pintarLista(corpo, lista, []); // a aba de cima (Não enviadas (N)) e a tabela da campanha mudam junto
+      } catch (e) { bt.disabled = false; if (TS.avisarErro) TS.avisarErro(e); else alert(e.message); }
+    };
+    const conta = (k) => rows.filter((x) => x.mot === k && daCamp(x)).length;
+    const abas = TS.seg([[`Todas (${fmt.int(rows.filter(daCamp).length)})`, '', 'Todas as não enviadas da lista atual de cada campanha.'], ...MOT_NE.map(([k, nome, dica]) => [`${nome} (${fmt.int(conta(k))})`, k, dica])], f.mot, (v) => { f.mot = v; repintar(); });
+    const selCamp = h('select', { class: 'f-input cp-ne-camp', 'aria-label': 'Campanha' }, h('option', { value: '' }, 'Todas as campanhas'), ...camps.map((n) => h('option', { value: n, selected: f.camp === n || null }, n)));
+    selCamp.addEventListener('change', () => { f.camp = selCamp.value; repintar(); });
+    const tab = TS.table({
+      cols: [
+        { key: 'nome', label: 'Cliente', align: 'l', wrap: true, sticky: true, render: (x) => h('span', null, h('b', null, x.nome), h('small', { class: 'muted cp-cel' }, x.cel)) },
+        { key: 'camp', label: 'Campanha', align: 'l', wrap: true },
+        { key: 'motivo', label: 'Motivo', align: 'l', wrap: true, title: 'O motivo gravado quando o cliente saiu da fila (pelo robô 🤖 ou por quem enviava à mão).', render: (x) => { const nome = (MOT_NE.find((m) => m[0] === x.mot) || [])[1]; const repete = TS.norm(x.motivo).startsWith(TS.norm(nome || '')) || (x.mot === 'naoquer' && /não quer/i.test(x.motivo)); return h('span', null, TS.etqPrazo(x.mot === 'naoquer' ? 'agora' : x.mot === 'semwpp' || x.mot === 'semcel' ? 'semana' : 'saber', nome), repete ? null : h('small', { class: 'muted cp-cel' }, x.motivo)); } },
+        { key: 'em', label: 'Quando', align: 'l', title: 'Dia em que saiu da fila e quem tirou (🤖 = o robô).', render: (x) => (x.em != null ? h('span', null, fmt.date(TS.dayToIso(x.em)), x.por ? h('small', { class: 'muted cp-cel' }, x.por === 'robô' ? '🤖 robô' : x.por) : null) : '—'), sortVal: (x) => x.em ?? -1 },
+        { key: 'acao', label: '', align: 'l', render: (x) => h('span', { class: 'cp-ne-acoes' },
+          x.mot !== 'estoque' ? h('button', { type: 'button', class: 'btn', onclick: (e) => { e.stopPropagation(); voltar(x, e.currentTarget); } }, 'Voltar para a fila') : null,
+          h('button', { type: 'button', class: 'btn', onclick: (e) => { e.stopPropagation(); A().abrirClientes([x.cpf]); } }, 'Ver cliente'),
+          x.mot === 'semwpp' ? TS.dica('Para corrigir: troque o celular no FIXE ou, se o cliente escreveu de outro número, abra a conversa em Clientes → Conversas e use "Vincular a um cliente". Depois toque em "Voltar para a fila".') : null), sortVal: () => 0 },
+      ],
+      rows: rows.filter((x) => (!f.mot || x.mot === f.mot) && daCamp(x)), sortKey: 'em', sortDir: 'desc', cartao: true, searchKeys: ['nome', 'cel', 'camp', 'motivo'],
+      empty: 'Nenhuma mensagem deixou de sair por esse motivo. 👏',
     });
+    box.replaceChildren(TS.cardWithTools(h('span', null, 'Não enviadas', TS.dica('Clientes da lista ATUAL de cada campanha que saíram da fila sem receber (puladas e "não quer") e os que esperam estoque. A lista antiga de uma campanha que se repete não entra. "Voltar para a fila" é a mesma ação da lista da campanha: o intervalo da loja e o "não quer" continuam valendo.')), 'Quem ficou sem a mensagem e por quê', h('div', { class: 'cp-ne-ferr' }, selCamp, tab.searchBox),
+      abas, tab));
+  }
+
+  function pintarLista(corpo, lista, novas) {
+    // redesenho (decisão do dono, 22/11/2026): as campanhas numa tabela escaneável (uma linha por campanha), não cartões com mini-quadros
+    const etiquetas = (c) => [periodoTag(c), c.recorrente ? h('span', { class: 'cli-tag t-repor' }, c.recorrente === 'diaria' ? 'todo dia' : c.recorrente === 'semanal' ? 'toda semana' : 'todo mês') : null, c.robo ? h('span', { class: 'cli-tag', title: 'Enviada pelo robô do WhatsApp' }, '🤖 robô') : null, c.ativa === false ? h('span', { class: 'cli-tag' }, 'pausada') : null].filter(Boolean);
+    const rowsC = lista.map((c) => {
+      const r = c.rodadas[0], s = resumoRodada(r, c.janela);
+      const quem = s.total - s.comp;
+      return { c, r, s, nome: c.nome, total: s.total, env: s.env, pend: s.pend, naoenv: naoEnviadasDe(c).length, voltou: s.rec.taxa == null ? -1 : s.rec.taxa, prog: quem ? (s.env + s.opt) / quem : 0, em: r.em.slice(0, 10) };
+    });
+    const tabC = rowsC.length ? TS.table({
+      cols: [
+        { key: 'nome', label: 'Campanha', align: 'l', wrap: true, sticky: true, render: (x) => h('span', { class: 'cp-lin' }, h('b', null, x.nome), h('span', { class: 'cp-lin-tags' }, ...etiquetas(x.c)),
+          h('small', { class: 'muted' }, `${x.c.recorrente ? 'Lista de ' : 'Criada em '}${fmt.date(x.em)} · por ${x.r.por || x.c.por || '—'}`)), sortVal: (x) => x.nome.toLocaleLowerCase('pt-BR') },
+        { key: 'total', label: 'Na lista', fmt: fmt.int, title: 'Clientes da lista atual da campanha (com o grupo de comparação, quando houver).' },
+        { key: 'env', label: 'Enviadas', title: 'Mensagens enviadas desta lista (pela fila manual ou pelo robô 🤖). A barra mostra quanto da lista já foi resolvido (enviada ou não quer mensagens).',
+          render: (x) => h('span', { class: 'cp-env' }, fmt.int(x.env), h('span', { class: 'cp-barra cp-barra-p', 'aria-hidden': 'true' }, h('span', { style: { width: Math.round(x.prog * 100) + '%' } }))) },
+        { key: 'pend', label: 'Pendentes', fmt: fmt.int, title: 'Clientes da lista que ainda não receberam (nem saíram da fila).' },
+        { key: 'naoenv', label: 'Não enviadas', title: 'Clientes desta lista que saíram da fila sem receber: puladas (sem WhatsApp, já recebeu, sem celular…) e "não quer". Toque no número para ver quem e por quê.',
+          render: (x) => (x.naoenv ? h('button', { type: 'button', class: 'link-btn cp-ne-link', title: 'Ver as não enviadas desta campanha', onclick: (e) => { e.stopPropagation(); state.cpNE = { mot: '', camp: x.nome }; state.cpVisao = 'naoenv'; pintarLista(corpo, lista, []); } }, fmt.int(x.naoenv)) : '0') },
+        { key: 'voltou', label: 'Voltaram', title: 'Voltaram ÷ enviadas cujo prazo de retorno já fechou (compraram com CPF do dia seguinte ao envio até o prazo da campanha). "ainda no prazo" = ninguém com o prazo fechado ainda.',
+          render: (x) => h('span', null, pctVoltou(x.s.rec), h('small', { class: 'muted cp-cel' }, x.s.rec.taxa == null && x.s.rec.abertos ? 'ainda no prazo' : `em ${x.c.janela} dias`)) },
+      ],
+      rows: rowsC, sortKey: 'em', sortDir: 'desc', cartao: true,
+      onRowClick: (x) => abrirCampanha(corpo, lista, x.c),
+    }) : null;
+    const totNE = lista.reduce((n, c) => n + naoEnviadasDe(c).length, 0);
+    const visaoSeg = TS.seg([['Campanhas', 'campanhas', 'A lista de campanhas da loja.'], [`Não enviadas (${fmt.int(totNE)})`, 'naoenv', 'Quem ficou sem a mensagem (puladas e "não quer") em todas as campanhas, com o motivo, para consultar e voltar para a fila.']], state.cpVisao === 'naoenv' ? 'naoenv' : 'campanhas', (v) => { state.cpVisao = v; pintarLista(corpo, lista, []); });
+    visaoSeg.classList.add('cp-visao');
+    const neBox = h('div', { class: 'cp-ne' });
+    if (state.cpVisao === 'naoenv') setTimeout(() => pintarNaoEnviadas(neBox, corpo, lista), 0);
     const copias = (lista.copias || []).map((cp) => h('div', { class: 'card cp-recebida' },
       h('div', null, h('b', null, cp.nome), h('small', { class: 'muted' }, ` · copiada de ${cp.deNome || cp.deLoja} por ${cp.por || '—'} em ${fmt.date(cp.em.slice(0, 10))}`),
         h('div', { class: 'muted cp-recebida-msg' }, cp.mensagem.length > 140 ? cp.mensagem.slice(0, 140) + '…' : cp.mensagem)),
@@ -304,7 +410,8 @@
       copias.length ? h('div', { class: 'cp-recebidas' }, h('div', { class: 'cp-recebidas-tit' }, h('b', null, `Recebidas de outras lojas (${copias.length})`), h('small', { class: 'muted' }, ' · a mensagem e os critérios vêm prontos; a lista é montada com os clientes desta loja')), ...copias) : null,
       h('div', { class: 'cp-acoes' }, h('button', { type: 'button', class: 'btn primary', onclick: () => criar(corpo, lista) }, '+ Criar campanha'),
         !resumoDe(lista) ? h('button', { type: 'button', class: 'btn', title: 'A lista da tela Clientes → Hoje, todo dia, enviada pelo robô do WhatsApp (uma mensagem por cliente).', onclick: () => editarResumo(corpo, lista, null) }, '🤖 ' + TS.msgWpp.NOME_RESUMO) : null),
-      lista.length ? h('div', { class: 'cp-grid' }, ...cards) : TS.card(null, null, TS.empty('Nenhuma campanha ainda. Clique em "Criar campanha" para montar a primeira.')));
+      lista.length ? visaoSeg : null,
+      lista.length && state.cpVisao === 'naoenv' ? neBox : lista.length ? TS.cardWithTools(h('span', null, `Campanhas (${fmt.int(lista.length)})`, TS.dica('Uma linha por campanha, a mais recente primeiro. "todo dia", "toda semana" e "todo mês" montam uma lista nova a cada período; 🤖 = enviada pelo robô do WhatsApp.')), 'Toque numa campanha para ver a fila, quem recebeu e quem voltou', null, tabC) : TS.card(null, null, TS.empty('Nenhuma campanha ainda. Clique em "Criar campanha" para montar a primeira.')));
   }
 
   /** escolher as lojas que recebem a campanha (mensagem e critérios; cada loja monta a própria lista) */
@@ -702,8 +809,7 @@
       document.body.append(t); setTimeout(() => t.remove(), 6000);
     }
     // fila: próximo pendente (quem receberia oferta de produto sem estoque espera, sem sair da lista: volta quando chegar a nota)
-    const prodsCamp = listaProdutos(camp.filtros || {}).filter((x) => !x.contem).map((x) => x.t);
-    const faltaPara = (it) => { const c = clienteDe(it.cpf); for (const t of TS.msgWpp.textosDe(camp, it)) { const f = TS.semEstoqueNaMensagem ? TS.semEstoqueNaMensagem(disp, t, c, { produtos: prodsCamp, chaoferta: it.o || undefined }) : null; if (f) return f; } return null; };
+    const faltaPara = faltaEstoqueDe(camp, disp);
     const esperandoEstoque = new Map();
     for (const it of r.lista) if (it.st === 'p') { const f = faltaPara(it); if (f) esperandoEstoque.set(it.cpf, f); }
     const pend = r.lista.filter((x) => x.st === 'p' && !esperandoEstoque.has(x.cpf));
