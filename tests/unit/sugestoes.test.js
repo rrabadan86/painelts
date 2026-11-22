@@ -95,7 +95,7 @@ test('entrega: fechou a janela sem o produto → "não veio no pedido" e volta; 
   assert.strictEqual(SUG.resultadoCarrinho('l2', [{ cod: '90002', status: 'sem_estoque' }, { cod: '90001', status: 'ok' }]).ok, 1);
   const cl = SUG.lista('l2', 'ana', false).find((s) => s.cod === '90002');
   assert.deepStrictEqual([cl.st, !!cl.aguardando, cl.hist.at(-1).res], ['aberta', false, 'naopediu']);
-  assert.match(cl.hist.at(-1).motivo, /sem estoque no fornecedor/);
+  assert.match(cl.hist.at(-1).motivo, /fora de estoque no fornecedor/);
   // a Hamsa: a entrega da franquia (com a janela fechada) veio sem ela
   const hoje = C.diaSP();
   const somar = (n) => new Date(Date.parse(hoje + 'T12:00:00Z') + n * 864e5).toISOString().slice(0, 10);

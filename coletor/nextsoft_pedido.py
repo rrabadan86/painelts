@@ -120,6 +120,70 @@ def venda_conjunta(page):
     return itens
 
 
+# Aviso do site depois do clique (ex.: janela "Atenção" com "O produto X não possui estoque suficiente." e "Fechar").
+# Na loja real (22/11/2026) o aviso não era o .modal de sempre e às vezes chegava atrasado. Mesma regra do favorito
+# (avisoDoSite em public/js/carrinho-site.js): qualquer janela visível ou bloco visível com o texto de estoque; fecha e devolve o texto.
+AVISO_JS = """() => {
+  const RE_ESTOQUE = /n[ãa]o\\s+possui\\s+estoque\\s+suficiente|estoque\\s+insuficiente/i;
+  const RE_FECHAR = /^(fechar|ok|×|x|fechar\\s*×)$/i;
+  const BOTOES = 'button,a,input[type=button],input[type=submit],[onclick],.btn,span';
+  const fechado = (e) => { for (let x = e; x && x.nodeType === 1; x = x.parentElement) if (getComputedStyle(x).display === 'none') return true; return getComputedStyle(e).visibility === 'hidden'; };
+  const texto = (e) => (e.textContent || '').replace(/\\s+/g, ' ').trim();
+  const ignorar = (e) => e.id === 'modalCarregamentoAjax' || e.id === 'modalCarrinho' || /colocar\\s+todos\\s+no\\s+carrinho/i.test(e.textContent || '');
+  let janelas = [...document.querySelectorAll('.modal, [role=dialog], [role=alertdialog], .bootbox, .swal2-popup, .ui-dialog')].filter((e) => !ignorar(e) && !fechado(e) && texto(e));
+  janelas = janelas.filter((e) => !janelas.some((o) => o !== e && o.contains(e)));
+  if (!janelas.length) {
+    const folhas = [...document.querySelectorAll('div,p,span,td,li,section')].filter((e) => RE_ESTOQUE.test(e.textContent || '') && ![...e.children].some((c) => RE_ESTOQUE.test(c.textContent || '')) && !fechado(e) && !e.closest('[data-tsc-visto]'));
+    for (const f of folhas) {
+      let c = f, achou = null;
+      for (let i = 0; i < 6 && c && c !== document.body; i++, c = c.parentElement) { if ([...c.querySelectorAll(BOTOES)].some((b) => RE_FECHAR.test(texto(b) || b.value || ''))) { achou = c; break; } }
+      const j = achou || f;
+      if (!ignorar(j)) janelas.push(j);
+    }
+  }
+  const m = janelas.find((e) => RE_ESTOQUE.test(e.textContent || '')) || janelas[0];
+  if (!m) return null;
+  const corpo = m.querySelector('.modal-body, .bootbox-body, .swal2-html-container') || m;
+  // o texto do aviso: o bloco mais interno com a frase de estoque (sem o título "Atenção" nem o botão)
+  const frase = [...m.querySelectorAll('*')].reverse().find((e) => RE_ESTOQUE.test(e.textContent || '') && ![...e.children].some((c) => RE_ESTOQUE.test(c.textContent || '')));
+  const txt = (frase ? texto(frase) : texto(corpo)).replace(/\\s*(fechar|ok|×)\\s*$/i, '').trim();
+  const fechar = [...m.querySelectorAll(BOTOES)].find((b) => RE_FECHAR.test(texto(b) || b.value || '')) || m.querySelector('[data-dismiss],[aria-label=Close],.close');
+  try {
+    if (fechar) fechar.click();
+    else if (m.matches('.modal, [role=dialog], [role=alertdialog], .bootbox, .swal2-popup, .ui-dialog')) m.style.display = 'none';
+    else m.setAttribute('data-tsc-visto', '1');
+  } catch (e) { /* ok */ }
+  return txt || 'O site mostrou um aviso.';
+}"""
+RE_ESTOQUE = re.compile(r"n[ãa]o\s+possui\s+estoque\s+suficiente|estoque\s+insuficiente", re.I)
+
+
+def aviso_do_site(page):
+    try:
+        return page.evaluate(AVISO_JS)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def dono_do_aviso(texto, atual, anteriores):
+    """De quem é o aviso ("O produto X não possui estoque…" pode chegar atrasado, já no produto seguinte)."""
+    m = re.search(r"produto\s+(.+?)\s+n[ãa]o\s+possui", texto or "", re.I)
+    if not m:
+        return atual
+    n = esq(m.group(1))
+
+    def parece(x):
+        e = esq(x or "")
+        return e == n or (len(e) >= 4 and len(n) >= 4 and (e in n or n in e))
+    if atual and parece(atual):
+        return atual
+    return next((x for x in anteriores if esq(x) == n), None) or next((x for x in anteriores if parece(x)), None) or atual
+
+
+def status_do_aviso(texto):
+    return "sem_estoque" if RE_ESTOQUE.search(texto or "") or re.search(r"estoque", texto or "", re.I) else "recusado"
+
+
 def carrinho_txt(page):
     return page.evaluate("""() => { const t = [...document.querySelectorAll('a,span,div')].map(e => e.textContent.replace(/\\s+/g, ' ').trim())
       .filter(t => t.length < 60 && /Ite(m|ns)\\s*-\\s*R\\$/i.test(t)); return t.sort((a, b) => a.length - b.length)[0] || '' }""")
@@ -300,7 +364,23 @@ def modo_carrinho(page):
         res["atual"] = it["nome"]
         salvar()
         r = {"cod": it.get("cod"), "nome": it["nome"], "pedido": float(it["qtd"])}
+
+        def aviso_de(nome):
+            """aviso na tela: de outro produto (atrasado) → marca aquele e devolve None; deste → devolve o texto"""
+            a = aviso_do_site(page)
+            if not a:
+                return None
+            dono = dono_do_aviso(a, nome, [x["nome"] for x in res["itens"]])
+            if dono != nome:
+                for x in res["itens"]:
+                    if x["nome"] == dono and x.get("status") != "ok":
+                        x.update({"status": status_do_aviso(a), "erro": a[:200], "atrasado": True})
+                        log(f"   aviso atrasado de {dono}: {x['status']}")
+                        salvar()
+                return None
+            return a
         try:
+            aviso_de(None)  # um aviso atrasado do produto anterior não pode cair neste
             page.fill(f"#{L}txtBusca", it["nome"])
             page.click(f"#{L}btnBuscar")
             esperar(page, 700)
@@ -310,6 +390,7 @@ def modo_carrinho(page):
                 if alvo:
                     break
                 page.wait_for_timeout(700)
+            aviso_de(None)  # a busca recarrega a página: o aviso atrasado pode aparecer agora
             if not alvo:
                 r["status"] = "nao_encontrado"
             elif not alvo["preco"] or alvo["preco"] <= 0.011:
@@ -328,8 +409,12 @@ def modo_carrinho(page):
                     esperar(page, 900)
                     depois = carrinho_txt(page)
                     aceitou = False
+                    aviso = None
                     for _ in range(12):  # o topo ("N Itens - R$ …") pode atualizar depois
                         if depois != antes_t:
+                            break
+                        aviso = aviso_de(it["nome"])
+                        if aviso:
                             break
                         # "Venda Conjunta" (ex.: a mug só é vendida com o infusor dela): decisão do dono é aceitar
                         # em "Colocar Todos no Carrinho". Uma vez por produto; o que veio junto fica no resultado.
@@ -346,7 +431,21 @@ def modo_carrinho(page):
                                 pass
                         page.wait_for_timeout(700)
                         depois = carrinho_txt(page)
-                    r["status"] = "ok" if depois != antes_t else "sem_confirmacao"
+                    # o carrinho não mudou e nada apareceu: o aviso do site às vezes chega bem depois — espera mais um pouco só por ele
+                    for _ in range(16):
+                        if depois != antes_t or aviso:
+                            break
+                        page.wait_for_timeout(500)
+                        depois = carrinho_txt(page)
+                        if depois == antes_t:
+                            aviso = aviso_de(it["nome"])
+                    if depois != antes_t:
+                        r["status"] = "ok"
+                    elif aviso:
+                        r["status"] = status_do_aviso(aviso)
+                        r["erro"] = aviso[:200]
+                    else:
+                        r["status"] = "sem_confirmacao"
         except Exception as e:  # noqa: BLE001
             r["status"] = "erro"
             r["erro"] = str(e).splitlines()[0][:200]
