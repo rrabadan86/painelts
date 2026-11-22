@@ -39,6 +39,22 @@ test('CONV-08: Conversas — lista ligada aos clientes, abre a conversa (🤖 do
   await page.getByRole('button', { name: '‹ Voltar' }).click();
   await expect(page.locator('.cv-ultima')).toContainText('Contato sem cadastro');
   await expect.poll(async () => Math.abs((await page.evaluate(() => window.scrollY)) - antes), { message: 'volta perto de onde estava (não para o começo)' }).toBeLessThanOrEqual(100);
+  // a lista também rola dentro do próprio quadro (barra interna): com muitas conversas, volta no mesmo ponto dela
+  await page.addStyleTag({ content: '.table-wrap { max-height: 160px !important; }' }); // quadro baixo: a lista rola dentro dele
+  await page.evaluate(() => { document.querySelector('.table-wrap').scrollTop = 120; });
+  const dentro = await page.evaluate(() => document.querySelector('.table-wrap').scrollTop);
+  expect(dentro).toBeGreaterThan(50);
+  const alvo = await page.evaluate(() => { const t = document.querySelector('.table-wrap'); const r = t.getBoundingClientRect(); const el = document.elementFromPoint(r.left + 40, r.top + r.height / 2); return el && el.closest('tr, .tcard') ? el.closest('tr, .tcard').textContent.slice(0, 40) : null; });
+  expect(alvo).toBeTruthy();
+  await page.evaluate(() => { const t = document.querySelector('.table-wrap'); const r = t.getBoundingClientRect(); document.elementFromPoint(r.left + 40, r.top + r.height / 2).click(); });
+  await expect(page.locator('.cv-conversa')).toBeVisible();
+  await page.getByRole('button', { name: '‹ Voltar' }).click();
+  await expect.poll(() => page.evaluate(() => document.querySelector('.table-wrap').scrollTop), { message: 'a barra interna da lista volta onde estava' }).toBeGreaterThan(dentro - 30);
+  // a atualização automática (a cada 30 s, ou ao voltar para a página) também não leva a lista para o topo
+  const agora = await page.evaluate(() => document.querySelector('.table-wrap').scrollTop);
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  await page.waitForTimeout(1200);
+  expect(await page.evaluate(() => document.querySelector('.table-wrap').scrollTop)).toBeGreaterThan(agora - 30);
   expect(erros).toEqual([]);
 });
 
