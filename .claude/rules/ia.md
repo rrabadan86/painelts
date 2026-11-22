@@ -17,7 +17,7 @@ paths:
 - `src/iaconversas.js`: histórico por pessoa e por loja (sem a lista de clientes).
 - **Análise do dia** (Início): **uma por loja por dia**, a mesma para admin e franqueado. `POST /api/ia/diagnostico` guarda em
   `dados/<loja>/ia/diag-AAAA-MM-DD-loja.json` com `IA.umaVez` (quem abre depois lê a guardada; duas pessoas juntas não pagam duas vezes).
-  Vão só números e avisos de **vendas** (nada de custo, estoque, franquia). Tela: faixa no topo do Início + aba "Análise do dia" no ✨
+  Vão só números e avisos de **vendas** (nada de custo, estoque, franquia). Tela: uma linha discreta logo abaixo do cartão-herói do Início ("✨ Análise do dia: … ler ›", redesenho de 22/11/2026) + aba "Análise do dia" no ✨
   (`TS.iaAnaliseDia()` em `inicio.js`), pontinho no ✨ até ler (`TS.iaAnaliseLida`, por aparelho).
 - Modelos novos da Anthropic **recusam forçar ferramenta** (`tool_choice` `tool`/`any` dá 400): use `IA.comFerramenta` (vai com `auto` e pede de novo se vier só texto).
 - `public/js/ia.js`: as consultas **rodam no navegador** sobre os dados que o perfil já vê (`executar(nome, inp, pode, resp)`).
