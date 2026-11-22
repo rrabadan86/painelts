@@ -53,9 +53,9 @@ before(async () => {
   });
   await new Promise((ok) => zap.listen(0, '127.0.0.1', ok));
   portaZap = zap.address().port;
-  srv = spawn(process.execPath, ['server.js'], { cwd: path.join(__dirname, '../..'), stdio: 'ignore',
+  srv = spawn(process.execPath, ['server.js'], { cwd: path.join(__dirname, '../..'), stdio: ['ignore', 'ignore', 'pipe'],
     env: { ...process.env, PORT: String(PORTA), DATA_DIR: tmp, CONFIG_FILE, SESSION_SECRET: 'teste-zap', NODE_ENV: 'test', IA_FALSO: '1', ZAP_URL: `http://127.0.0.1:${portaZap}`, ZAP_TOKEN: 'token-zap-teste', COLETOR_URL: '', COLETOR_TOKEN: '', GITHUB_TOKEN: '' } });
-  for (let k = 0; k < 300; k++) { try { const r = await fetch(BASE + '/login'); if (r.status < 500) break; } catch { /* subindo */ } await new Promise((ok) => setTimeout(ok, 100)); }
+  await require('./_subir')(srv, BASE); // até 90 s, e mostra o erro do servidor se ele cair
   for (const nome of ['chefe', 'dono1', 'gercli', 'gersem', 'vend1']) {
     const r = await fetch(BASE + '/login', { method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Forwarded-For': `203.0.113.${ipSeq++}` }, body: `usuario=${nome}&senha=${encodeURIComponent(SENHA)}` });
     const c = (r.headers.get('set-cookie') || '').split(';')[0];
