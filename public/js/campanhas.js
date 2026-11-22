@@ -434,6 +434,12 @@
     const limite = h('input', { class: 'f-input cp-num', type: 'number', min: 0, max: 500, value: base && base.limiteDia != null ? base.limiteDia : 20 });
     // grupo de comparação: campanha nova (ou duplicada) começa marcada; a que já existia mostra como está
     const comp = h('input', { type: 'checkbox', checked: (editando ? base.comparar === true : !base || base.comparar !== false) || null });
+    // quem envia (pedido do dono): escolhido já ao criar; o robô só liga depois da janela com os números (TS.zapOpcao)
+    const podeRobo = !!(TS.zapOpcao && TS.eu && TS.eu.perfil !== 'vendedor');
+    const roboAntes = !!(editando && base.robo);
+    const quemEnvia = h('select', { class: 'f-input cp-sel', 'aria-label': 'Quem envia' },
+      h('option', { value: 'manual', selected: !roboAntes || null }, 'Eu envio pelo painel (um toque por mensagem)'),
+      h('option', { value: 'robo', selected: roboAntes || null }, '🤖 O robô do WhatsApp envia sozinho'));
     const CR = TS.campRetorno;
     // variações da mensagem (até 4 além da principal): cada cliente recebe uma, em rodízio; o retorno é medido por variação
     let alvoMsg = msg;
@@ -536,6 +542,8 @@
             const r2 = await api('PUT', `/api/campanhas/${base.id}/rodadas/${base.rodadas[0].id}`, { loja: state.loja, lista: sel_.map(({ c }) => ({ cpf: c.cpf, nome: c.nome })) });
             Object.assign(base, r2.campanha);
           }
+          if (podeRobo && roboAntes && quemEnvia.value === 'manual') { const r3 = await api('PUT', `/api/campanhas/${base.id}`, { loja: state.loja, robo: false }); Object.assign(base, r3.campanha); }
+          if (podeRobo && !base.robo && quemEnvia.value === 'robo') ligarAoAbrir = base.id;
           abrirCampanha(corpo, lista, base);
         } catch (e) { erro.textContent = e.message; salvar.disabled = false; }
         return;
@@ -544,6 +552,7 @@
         const r = await api('POST', '/api/campanhas', { loja: state.loja, nome: nome.value.trim(), mensagem: msg.value.trim(), variacoes: textosVar(), limiteDia: +limite.value || 0, janela: +janela.value || 30, recorrente: rec.value, comparar: comp.checked, inicio: dIni.value || null, fim: dFim.value || null, filtros: f, lista: sel_.map(({ c }) => ({ cpf: c.cpf, nome: c.nome })) });
         lista.unshift(r.campanha);
         if (base && base.copia) { api('DELETE', `/api/campanhas/copias/${base.copia}?${qs()}`).catch(() => null); lista.copias = (lista.copias || []).filter((x) => x.id !== base.copia); }
+        if (podeRobo && quemEnvia.value === 'robo') ligarAoAbrir = r.campanha.id;
         abrirCampanha(corpo, lista, r.campanha);
       } catch (e) { erro.textContent = e.message; salvar.disabled = false; }
     });
@@ -645,6 +654,7 @@
               h('div', { class: 'cp-msg-topo' }, modSel), camposMsg(), h('small', { class: 'muted' }, 'Variação 1 (principal)'), msg, exemplo,
               varBox, h('div', { class: 'cp-var-acoes' }, btVar, h('small', { class: 'muted' }, ' Até 5 versões da mesma mensagem. Cada cliente recebe uma, em rodízio, e o painel mostra qual trouxe mais clientes de volta.')),
               h('div', { class: 'cp-passo' }, h('span', { class: 'cp-n' }, '3'), h('div', null, h('b', null, 'Envio e retorno'))),
+              podeRobo ? linha('Quem envia', quemEnvia, TS.dica('Eu envio: a fila da campanha abre o WhatsApp com a mensagem pronta, um toque por cliente.\n\nO robô envia: depois de salvar, aparece a janela com quantos vão receber, o limite por dia e quando termina; o robô só liga quando você confirmar. Ele manda pelo número da loja, no ritmo, horário e dias das configurações do robô. Mesmo com o robô, dá para enviar à mão.')) : null,
               linha('Enviar no máximo', limite, 'mensagens por dia nesta campanha', TS.dica('Ao chegar no limite, a fila para e continua no dia seguinte. 0 = sem limite. Poucas mensagens por dia, para quem tem motivo de receber, mantêm o número da loja saudável.')),
               linha('Medir o retorno em', janela, 'dias', TS.dica('Conta como "voltou" quem comprar (cupom com CPF) depois da mensagem: do dia seguinte ao envio até N dias depois. Compra do mesmo dia não conta, porque o painel não sabe se foi antes ou depois da mensagem.')),
               h('label', { class: 'cp-campo cp-check' }, comp, h('span', null, `Guardar ${CR.PCT}% da lista sem mensagem para comparar`, TS.dica(`Para saber se a campanha funciona de verdade: parte de quem recebe a mensagem voltaria de qualquer jeito.\n\nCom esta opção, ${CR.PCT}% da lista (sorteio feito pelo painel) fica sem mensagem. Depois o painel mostra lado a lado quem recebeu × quem não recebeu, no mesmo prazo: a diferença é o efeito da campanha.\n\nVale para listas com ${CR.MIN_LISTA} clientes ou mais (em lista menor o grupo ficaria pequeno demais). Quem está no grupo de comparação não recebe nem pelo robô nem pela fila manual; numa campanha que se repete, o mesmo cliente fica sempre do mesmo lado.`))),
@@ -659,6 +669,7 @@
   }
 
   // ---------- campanha: fila de envio, lista e retorno ----------
+  let ligarAoAbrir = null; // campanha salva com "O robô envia": ao abrir, já pergunta (a janela com os números) se liga o robô
   async function abrirCampanha(corpo, lista, camp, rodadaId, jaRecarregou) {
     // ao abrir: busca de novo quem já recebeu mensagem (de outra campanha, ou de outro computador)
     if (!jaRecarregou) { await A().recarregarContatos(); if (!corpo.isConnected) return; }
@@ -820,6 +831,9 @@
       s.env || s.comp ? h('div', { class: 'mt' }, cartaoEfeito(s, camp)) : null,
       textos.length > 1 ? h('div', { class: 'mt' }, cartaoVariacoes(r, camp, textos)) : null,
       h('div', { class: 'mt' }, TS.cardWithTools('Clientes da campanha', 'Enviadas ficam em verde · clique num cliente para ver a ficha', h('div', { class: 'cp-acoes', style: { margin: 0 } }, tab.searchBox, csvBt), tab)));
+
+    // salva com "O robô envia": já abre a janela de ligar (com os números); o robô só liga se a pessoa confirmar
+    if (ligarAoAbrir === camp.id && opcaoRobo) { ligarAoAbrir = null; const bt = opcaoRobo.querySelector('.zap-ligar'); if (bt) setTimeout(() => bt.click(), 0); }
   }
 
 })();
