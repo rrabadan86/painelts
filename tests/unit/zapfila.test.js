@@ -232,6 +232,29 @@ test('telefone inválido: marca e segue; esperando estoque: fica na lista sem en
   assert.strictEqual(d.motivo, 'esperando_estoque');
 });
 
+test('ZAP-9DIG: o mesmo celular com e sem o 9º dígito é um número só (parar, já recebeu e vínculo do "parar")', () => {
+  // 62981718205 = 6281718205 (pedido do dono); fixo e números já com o 9 ficam como estão
+  assert.strictEqual(ZF.foneChave('62981718205'), '5562981718205');
+  assert.strictEqual(ZF.foneChave('6281718205'), '5562981718205');
+  assert.strictEqual(ZF.foneChave('556281718205'), '5562981718205');
+  assert.strictEqual(ZF.foneChave('+55 (62) 8171-8205'), '5562981718205');
+  assert.strictEqual(ZF.foneChave('556232221111'), '556232221111'); // fixo (começa com 3): sem o 9
+  const sem9 = (n) => n.slice(0, 4) + n.slice(5); // 5562981718205 → 556281718205
+  const CEL = '5562981718205';
+  const comCel = (o) => { const c = cena(o); c.preparo.a.itens[CPF[0]].para = CEL; return c; };
+  // respondeu "parar" de uma conta antiga, sem o 9: o cliente com o 9 no cadastro não recebe
+  let d = ZF.decidir(comCel({ naoquer: { [sem9(CEL)]: { em: '2026-03-03T12:00:00.000Z', cpfs: [] } } }));
+  assert.strictEqual(d.marcar[0].cpf, CPF[0]);
+  assert.strictEqual(d.marcar[0].st, 'o');
+  // o robô mandou para o número sem o 9 para outro cliente: o mesmo celular, com o 9, não recebe de novo dentro do intervalo
+  d = ZF.decidir(comCel({ enviados: { [sem9(CEL)]: { em: new Date(QUARTA_10H - 2 * DIA).toISOString(), cpf: '99999999999' } } }));
+  assert.strictEqual(d.marcar[0].motivo, 'mesmo celular de outro cliente que já recebeu');
+  // registros guardados das duas formas viram um só, com os clientes dos dois
+  const j = ZF.porChave({ [CEL]: { em: '2026-03-01T00:00:00Z', cpfs: ['1'] }, [sem9(CEL)]: { em: '2026-03-02T00:00:00Z', cpfs: ['2'] } });
+  assert.deepStrictEqual(Object.keys(j), [CEL]);
+  assert.deepStrictEqual(j[CEL].cpfs.sort(), ['1', '2']);
+});
+
 test('número que respondeu "parar" e celular repetido em outro cliente: não recebem', () => {
   let d = ZF.decidir(cena({ naoquer: { [NUM[0]]: '2026-03-03T12:00:00.000Z' } }));
   assert.deepStrictEqual(d.marcar, [{ campanha: 'a', rodada: 'ra', cpf: CPF[0], st: 'o', motivo: 'respondeu parar pelo WhatsApp', optout: true, para: NUM[0] }]);
