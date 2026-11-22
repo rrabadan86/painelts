@@ -145,6 +145,76 @@ function marcarRobo(id, idMsg, camp, agora = Date.now()) {
   robo[String(idMsg).slice(0, 200)] = { camp: String(camp || '').slice(0, 60), em: new Date(agora).toISOString() };
   gravar(path.join(pasta(id), 'robo.json'), robo);
 }
+// ---------- mídia (foto, áudio, vídeo, documento): decisão do dono, "baixar no computador e não armazenar na VPS" ----------
+const TIPOS_MIDIA = ['imagem', 'video', 'audio', 'documento', 'figurinha'];
+// só estes abrem na própria página; o resto (PDF, planilha…) só como download
+const INLINE = /^(image\/(jpeg|png|webp|gif)|audio\/(ogg|mpeg|mp4|aac|wav)|video\/mp4)(;.*)?$/i;
+const EXT = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif', 'audio/ogg': 'ogg', 'audio/mpeg': 'mp3', 'audio/mp4': 'm4a', 'audio/aac': 'aac', 'audio/wav': 'wav', 'video/mp4': 'mp4', 'application/pdf': 'pdf' };
+const NOME_TIPO = { imagem: 'foto', figurinha: 'figurinha', audio: 'audio', video: 'video', documento: 'documento' };
+/**
+ * Confere que a mensagem é desta conversa guardada e é mídia, e busca no serviço do WhatsApp (src/zap.js → midia).
+ * → { ok, dados, mimetype, nome, tipo, em } ou { ok: false, codigo, erro }. Nada é gravado.
+ */
+async function midiaDe(id, chave, idMsg, zap) {
+  const msgs = mensagens(id, chave);
+  if (!msgs) return { ok: false, codigo: 400, erro: 'Conversa inválida.' };
+  const m = msgs.find((x) => x.id === idMsg);
+  if (!m) return { ok: false, codigo: 404, erro: 'Mensagem não encontrada nesta conversa.' };
+  if (!TIPOS_MIDIA.includes(m.tipo)) return { ok: false, codigo: 400, erro: 'Esta mensagem não tem foto, áudio, vídeo nem documento.' };
+  const r = await zap.midia(id, idMsg);
+  return r && r.ok ? { ...r, tipo: m.tipo, em: m.em } : r || { ok: false, codigo: 502, erro: 'O WhatsApp não respondeu agora.' };
+}
+/** nome do arquivo para salvar no computador: foto-22-11-2031.jpg (documento: o nome original, limpo) */
+function nomeArquivo(r) {
+  const tipo = String(r.mimetype || '').split(';')[0].trim().toLowerCase();
+  if (r.tipo === 'documento' && r.nome) { const n = String(r.nome).replace(/[^\w.\- ]+/g, '_').replace(/^\.+/, '').slice(0, 80); if (n) return n; }
+  const d = r.em ? new Date(r.em) : new Date();
+  const parte = (o) => new Intl.DateTimeFormat('en-GB', { timeZone: 'America/Sao_Paulo', ...o }).format(d);
+  const quando = `${parte({ day: '2-digit' })}-${parte({ month: '2-digit' })}-${parte({ hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).replace(':', '')}`;
+  return `${NOME_TIPO[r.tipo] || 'arquivo'}-${quando}.${EXT[tipo] || 'bin'}`.replace(/\s/g, '');
+}
+/** repassa o arquivo ao navegador: sem cache, sem adivinhar tipo; só imagem/áudio/vídeo seguros abrem na página */
+function responderMidia(res, r) {
+  const tipo = String(r.mimetype || 'application/octet-stream').slice(0, 100);
+  const inline = INLINE.test(tipo);
+  const nome = nomeArquivo(r);
+  res.set({
+    'Content-Type': inline ? tipo : 'application/octet-stream',
+    'Content-Length': String(r.dados.length),
+    'Cache-Control': 'no-store, private',
+    'X-Content-Type-Options': 'nosniff',
+    'Content-Disposition': `${inline ? 'inline' : 'attachment'}; filename="${nome.replace(/"/g, '')}"; filename*=UTF-8''${encodeURIComponent(nome)}`,
+    'X-Midia-Nome': encodeURIComponent(nome),
+  });
+  res.status(200).end(r.dados);
+}
+/** apresentação: uma imagem desenhada (sem foto de ninguém) — um PNG 240×160 com faixas nas cores do painel */
+function demoImagem() {
+  const zlib = require('zlib');
+  const L = 240, A = 160, linhas = [];
+  for (let y = 0; y < A; y++) {
+    const l = Buffer.alloc(1 + L * 3);
+    for (let x = 0; x < L; x++) {
+      const xadrez = ((x >> 4) + (y >> 4)) % 2;
+      const [r, g, b] = y < 40 ? [44, 82, 52] : y > 120 ? [201, 162, 39] : xadrez ? [230, 238, 227] : [244, 241, 234];
+      l[1 + x * 3] = r; l[2 + x * 3] = g; l[3 + x * 3] = b;
+    }
+    linhas.push(l);
+  }
+  const crcT = []; for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; crcT[n] = c >>> 0; }
+  const crc = (b) => { let c = 0xffffffff; for (const x of b) c = crcT[(c ^ x) & 255] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
+  const bloco = (t, d) => { const len = Buffer.alloc(4); len.writeUInt32BE(d.length); const td = Buffer.concat([Buffer.from(t), d]); const c = Buffer.alloc(4); c.writeUInt32BE(crc(td)); return Buffer.concat([len, td, c]); };
+  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(L, 0); ihdr.writeUInt32BE(A, 4); ihdr[8] = 8; ihdr[9] = 2;
+  return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), bloco('IHDR', ihdr), bloco('IDAT', zlib.deflateSync(Buffer.concat(linhas))), bloco('IEND', Buffer.alloc(0))]);
+}
+/** apresentação: meio segundo de silêncio (WAV) */
+function demoSilencio() {
+  const taxa = 8000, n = taxa / 2, b = Buffer.alloc(44 + n);
+  b.write('RIFF', 0); b.writeUInt32LE(36 + n, 4); b.write('WAVE', 8); b.write('fmt ', 12); b.writeUInt32LE(16, 16); b.writeUInt16LE(1, 20); b.writeUInt16LE(1, 22);
+  b.writeUInt32LE(taxa, 24); b.writeUInt32LE(taxa, 28); b.writeUInt16LE(1, 32); b.writeUInt16LE(8, 34); b.write('data', 36); b.writeUInt32LE(n, 40); b.fill(128, 44);
+  return b;
+}
+
 /** o WhatsApp da loja foi desconectado: as conversas guardadas saem junto (decisão do dono) */
 function apagar(id) { fs.rmSync(pasta(id), { recursive: true, force: true }); }
 
@@ -175,4 +245,4 @@ function iniciar() {
   return t;
 }
 
-module.exports = { MESES, semRespostaDe, aplicar, limpar, buscar, lista, mensagens, marcarLida, marcarRobo, apagar, lerEstado, iniciar, RE_CHAVE };
+module.exports = { TIPOS_MIDIA, midiaDe, responderMidia, nomeArquivo, demoImagem, demoSilencio, MESES, semRespostaDe, aplicar, limpar, buscar, lista, mensagens, marcarLida, marcarRobo, apagar, lerEstado, iniciar, RE_CHAVE };

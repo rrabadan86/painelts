@@ -29,6 +29,7 @@ A primeira construção baixa o Chromium (demora alguns minutos e ocupa perto de
 ## Dia a dia
 
 - **Atualizações do painel** reconstroem este serviço junto; as lojas voltam sozinhas com a sessão salva.
+- **Versão nova deste serviço** (ex.: `/midia`, fotos e áudios das Conversas, 22/11/2026): se as Conversas disserem que o serviço é de uma versão antiga, reconstrua na VPS com `docker compose --profile zap up -d --build zap` (as lojas voltam sozinhas com a sessão salva).
 - **Ver o que está acontecendo:** `docker compose --profile zap logs -f zap`.
 - **Loja "caiu":** o WhatsApp encerrou a conexão (aparelho removido no celular, número aberto em outro WhatsApp Web, muito tempo com o celular sem internet). Conecte de novo pelo painel.
 - **Trocar a senha interna:** mude `ZAP_TOKEN` no `.env` e rode `docker compose --profile zap up -d zap teashop-painel`.
@@ -47,6 +48,7 @@ A primeira construção baixa o Chromium (demora alguns minutos e ocupa perto de
 | `GET /optouts/<loja>?desde=<ISO>` | `{ itens: [{ de, em }] }` |
 | `GET /conversas/<loja>?desde=<n>` | `{ ultimo, itens: [{ seq, id, chat, deMim, em, tipo, texto, nome? }], mais }` — mensagens das conversas individuais depois do número `desde`, de 500 em 500 (Clientes → Conversas do painel). `chat` = telefone ou `lid:<n>`; `tipo`: texto, imagem, video, audio, documento, figurinha, local, contato (mídia só a marca) |
 | `POST /historico/<loja>` `{ dias }` | `{ ok: true }` — importa as conversas dos últimos `dias` (1 a 90); a situação vem em `status().historico` |
+| `GET /midia/<loja>?id=<id da mensagem>` | o arquivo (foto, áudio, vídeo, documento) baixado na hora do WhatsApp, com o `Content-Type` dele — **nada é gravado em disco** (decisão do dono). 404 = o WhatsApp não tem mais; 413 = mais de 16 MB; 409 = desconectado; 502 = o WhatsApp não respondeu |
 
 Detalhes que o painel pode contar:
 

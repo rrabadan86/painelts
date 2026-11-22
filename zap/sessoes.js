@@ -15,6 +15,7 @@
  *                       recebida (Clientes → Conversas do painel; decisão do dono: o texto fica guardado, nunca no log)
  *   métodos  iniciar() · pedirCodigo(numero) · temWhatsapp(numero) → destino|null
  *            historico(dias) → [conversa…] (as mensagens das conversas individuais dos últimos dias)
+ *            midia(id, limite) → { dados: Buffer, mimetype, nome } | { grande: true } | null (baixada na hora; nada em disco)
  *            digitando(destino) · enviar(destino, texto) → idMsg · vivo() → bool
  *            sair() (sai do WhatsApp) · fechar() (fecha o navegador)
  */
@@ -27,6 +28,8 @@ const GUARDA_OPTOUT_MS = 180 * DIA_MS;
 const MAX_TEXTO = 4096;
 // Conversas (Clientes → Conversas): o painel busca de tempos em tempos e guarda do lado dele; aqui fica só um intervalo curto
 const CONV_GUARDA_MS = 7 * DIA_MS, CONV_MAX = 20000, CONV_LOTE = 500;
+const MIDIA_MAX = 16 * 1024 * 1024;               // mídia maior que isso não passa (o painel mostra "arquivo grande demais")
+const RE_ID_MSG = /^[A-Za-z0-9_@.:-]{5,200}$/;
 const CONV_TIPOS = ['texto', 'imagem', 'video', 'audio', 'documento', 'figurinha', 'local', 'contato'];
 const RE_CHAT = /^(\d{10,15}|lid:\d{5,25})$/;
 
@@ -395,6 +398,25 @@ function criarSessoes(opcoes = {}) {
     const novos = s.conv.itens.filter((x) => x.seq > d);
     return { ultimo: s.conv.seq, itens: novos.slice(0, CONV_LOTE), mais: novos.length > CONV_LOTE };
   }
+  /**
+   * Mídia de uma mensagem, baixada na hora do WhatsApp e devolvida ao painel sem gravar nada aqui (decisão do dono).
+   * → { ok: true, dados, mimetype, nome } · { ok: false, codigo, erro } (404 não está mais disponível, 413 grande demais,
+   * 409 desconectado, 502 o WhatsApp não respondeu). O nome do arquivo nunca vai para o log.
+   */
+  async function midia(loja, id) {
+    validarLoja(loja);
+    if (typeof id !== 'string' || !RE_ID_MSG.test(id)) throw new ErroPedido('Mensagem inválida.');
+    const s = obter(loja);
+    if (s.estado !== 'conectado' || !s.cli) return { ok: false, codigo: 409, erro: 'O WhatsApp desta loja não está conectado.' };
+    if (typeof s.cli.midia !== 'function') return { ok: false, codigo: 501, erro: 'Este serviço do WhatsApp não busca mídia.' };
+    let r;
+    try { r = await comLimite(s.cli.midia(id, MIDIA_MAX), limiteEnvioMs); }
+    catch (e) { log(`loja=${loja} mídia: o WhatsApp não respondeu (${erroCurto(e)})`); return { ok: false, codigo: 502, erro: 'O WhatsApp não respondeu agora. Tente de novo.' }; }
+    if (!r) return { ok: false, codigo: 404, erro: 'Esta mídia não está mais disponível no WhatsApp.' };
+    if (r.grande || (r.dados && r.dados.length > MIDIA_MAX)) return { ok: false, codigo: 413, erro: 'Arquivo grande demais para abrir pelo painel (mais de 16 MB).' };
+    if (!Buffer.isBuffer(r.dados)) return { ok: false, codigo: 404, erro: 'Esta mídia não está mais disponível no WhatsApp.' };
+    return { ok: true, dados: r.dados, mimetype: String(r.mimetype || 'application/octet-stream').slice(0, 100), nome: r.nome ? String(r.nome).slice(0, 120) : null };
+  }
   /** importa as conversas dos últimos dias (botão "Reimportar histórico"); roda sozinho e a situação sai no status */
   function historico(loja, dados) {
     validarLoja(loja);
@@ -456,7 +478,7 @@ function criarSessoes(opcoes = {}) {
     await Promise.all([...lojas.values()].map((s) => largarCliente(s, false)));
   }
 
-  return { status, conectar, desconectar, enviar, optouts, conversas, historico, retomar, vigiar, fechar };
+  return { status, conectar, desconectar, enviar, optouts, conversas, historico, midia, retomar, vigiar, fechar };
 }
 
-module.exports = { criarSessoes, ehSaida, normalizar, fim4, erroCurto, soDigitos, RE_LOJA, ErroPedido };
+module.exports = { criarSessoes, ehSaida, normalizar, fim4, erroCurto, soDigitos, RE_LOJA, ErroPedido, MIDIA_MAX };
