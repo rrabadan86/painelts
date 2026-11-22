@@ -39,6 +39,7 @@ Lista que abre um detalhe: a tabela some e o detalhe aparece no lugar, com "‹ 
 
 ## Listas: sempre `TS.table`, nunca pilha de cartões soltos
 - Mais de ~5 itens que se repetem = tabela (`TS.table`): ela já tem busca, ordenação, páginas (100 no computador, 40 no celular), imprimir/expandir e vira cartão de 2 colunas no celular. Pilha de `div` por item fica ilegível com muitos itens (foi o caso da primeira versão das ⭐ Sugestões).
+- **Exceção: lista mestre-detalhe de conversas** (Clientes → Conversas, decisão do dono de 22/11/2026): no computador, lista à esquerda e conversa à direita, como o WhatsApp Web. A lista é própria (`ul` de botões, um por conversa: abre com Enter/Espaço, a aberta com `aria-current`), com o que a tabela daria: busca, abas com contagem, ordem pela última mensagem e "Mostrar mais". Cada coluna rola sozinha e vai até o pé da janela. Não use essa exceção para outras listas.
 - Colunas: a 1ª é o nome (com `sticky: true, wrap: true`), em **negrito**, com a etiqueta (`badge`) e uma linha `small.muted` de detalhe embaixo; datas `dd/mm`; dinheiro alinhado à direita (`fmt.brl`); texto longo com `wrap: true`.
 - Toda coluna que precisa de explicação ganha `title` (vira ⓘ tocável no computador e no celular). Andamento/estado com o motivo embaixo em `small.muted`.
 - Ações da linha: botão pequeno no fim (`btn`, `btn ghost-danger` para tirar/excluir); destrutiva pede `confirm`.
