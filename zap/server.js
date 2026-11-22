@@ -41,7 +41,7 @@ function lerCorpo(req) {
   });
 }
 
-const ROTAS = { status: 'GET', optouts: 'GET', conversas: 'GET', conectar: 'POST', desconectar: 'POST', enviar: 'POST', historico: 'POST' };
+const ROTAS = { status: 'GET', optouts: 'GET', conversas: 'GET', midia: 'GET', conectar: 'POST', desconectar: 'POST', enviar: 'POST', historico: 'POST' };
 
 /**
  * @param {object} opcoes  token (ZAP_TOKEN) · fabrica (cliente do WhatsApp por loja) · workDir · e o que criarSessoes aceita
@@ -75,6 +75,14 @@ function criarServidor(opcoes = {}) {
       if (acao === 'status') return responder(200, sessoes.status(loja));
       if (acao === 'optouts') return responder(200, sessoes.optouts(loja, url.searchParams.get('desde')));
       if (acao === 'conversas') return responder(200, sessoes.conversas(loja, url.searchParams.get('desde')));
+      if (acao === 'midia') {
+        // o arquivo vai direto da memória para o painel; nada é gravado aqui
+        const r = await sessoes.midia(loja, url.searchParams.get('id') || '');
+        if (!r.ok) return responder(r.codigo || 502, { erro: r.erro });
+        if (res.headersSent) return undefined;
+        res.writeHead(200, { 'Content-Type': r.mimetype, 'Content-Length': r.dados.length, 'Cache-Control': 'no-store', 'X-Zap-Nome': r.nome ? encodeURIComponent(r.nome) : '' });
+        return res.end(r.dados);
+      }
       sessoes.status(loja);                        // confere o id da loja antes de ler o corpo
       const corpo = await lerCorpo(req);
       if (acao === 'conectar') return responder(200, await sessoes.conectar(loja, corpo));

@@ -513,6 +513,8 @@
   const linkWpp = (c, txt) => (TS.demo ? '#demo' : TS.msgWpp.linkComTexto(c.wpp, txt));
 
   const digits = (s) => String(s || '').replace(/\D/g, '');
+  /** aniversário para mostrar: dd/mm/aaaa quando o cadastro tem o ano de verdade (mesma conferência da idade); senão dd/mm. Mensagens usam c.aniv (dd/mm) */
+  const anivTxt = (c) => (c.nascimento && c.idade != null ? `${c.aniv}/${c.nascimento.slice(0, 4)}` : c.aniv);
   function idade(iso) {
     if (!iso) return null;
     const n = new Date(), y = +iso.slice(0, 4), m = +iso.slice(5, 7), d = +iso.slice(8, 10);
@@ -1003,7 +1005,7 @@
         h('div', { class: 'cli-meta' },
           h('span', null, fmtCPF(c.cpf)), c.empresa ? h('span', { class: 'cli-emp' }, 'empresa') : null,
           c.idade != null ? h('span', null, `${c.idade} anos`) : null,
-          c.aniv ? h('span', null, '🎂 ' + c.aniv) : null,
+          c.aniv ? h('span', null, '🎂 ' + anivTxt(c)) : null,
           c.cidade ? h('span', null, c.cidade) : null,
           c.fx && c.fx.saldo ? h('span', { class: 'cli-pts', title: c.fx.prox != null ? `Saldo no FIXE · ${fmt.int(c.fx.proxPts)} pts vencem em ${fmt.date(TS.dayToIso(c.fx.prox))}` : 'Saldo no FIXE' }, `★ ${fmt.int(c.fx.saldo)} pts`) : null,
           chipRfm(c),
@@ -1041,7 +1043,7 @@
       const f = blocoFidelidade(c);
       const item = (rot, val) => (val ? h('div', { class: 'fi' }, h('span', null, rot), h('b', null, val)) : null);
       const tel = fmtTel(c.celular);
-      const contato = [tel ? h('div', { class: 'fi' }, h('span', null, 'Celular', celDica(c)), h('b', null, tel), celNota(c)) : celNota(c), item('E-mail', c.email), item('Cidade', c.cidade), item('Aniversário', c.aniv ? `${c.aniv}${c.idade != null ? ` · ${c.idade} anos` : ''}` : null)].filter(Boolean);
+      const contato = [tel ? h('div', { class: 'fi' }, h('span', null, 'Celular', celDica(c)), h('b', null, tel), celNota(c)) : celNota(c), item('E-mail', c.email), item('Cidade', c.cidade), item('Aniversário', c.aniv ? `${anivTxt(c)}${c.idade != null ? ` · ${c.idade} anos` : ''}` : null)].filter(Boolean);
       out.push(h('div', { class: 'cli-ficha' }, contato.length ? h('div', { class: 'fi-bloco' }, h('div', { class: 'fi-tit' }, 'Contato (cadastro do FIXE)'), ...contato) : null,
         f || h('div', { class: 'fi-bloco fi-largo' }, h('div', { class: 'fi-nota' }, 'Sem dados no FIXE.'))),
         h('p', { class: 'muted', style: { margin: '0 0 8px', fontSize: '12px' } }, 'Nenhuma compra com este CPF na nota foi encontrada nas vendas.'));
@@ -1427,7 +1429,7 @@
         tel ? h('div', { class: 'fi' }, h('span', null, 'Celular', celDica(c)), h('b', null, tel, c.wpp ? linkConversa(c, ' WhatsApp') : null), celNota(c)) : celNota(c),
         item('E-mail', c.email || null),
         item('Cidade', c.cidade || null),
-        item('Aniversário', c.aniv ? `${c.aniv}${c.idade != null ? ` · ${c.idade} anos` : ''}` : null)),
+        item('Aniversário', c.aniv ? `${anivTxt(c)}${c.idade != null ? ` · ${c.idade} anos` : ''}` : null)),
       bloco('Histórico',
         item('Cliente desde', d(c.primeira)),
         item('Compras', `${fmt.int(c.visitas)}${r.visitas !== c.visitas ? ` (${fmt.int(r.visitas)} no período)` : ''}`),

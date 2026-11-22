@@ -65,7 +65,9 @@ test('⭐ Sugestões: a miniatura aparece na lista da equipe', async ({ page }) 
 test('o painel só aceita imagem de fora vinda do site da Tea Shop (cabeçalho de segurança)', async ({ request }) => {
   const r = await request.get('/apresentacao');
   const csp = r.headers()['content-security-policy'];
-  expect(csp).toContain("img-src 'self' data: https://cdn.shopify.com https://www.teashop.com.br;");
+  // blob: é só o que o próprio painel cria na memória (foto e áudio das Conversas, CONV-14); de fora, só o site da Tea Shop
+  expect(csp).toContain("img-src 'self' data: blob: https://cdn.shopify.com https://www.teashop.com.br;");
+  expect(csp).toContain("media-src 'self' blob:;");
   expect(csp).toContain("default-src 'self'");
   expect(csp).toContain("script-src 'self'");
   expect(csp).toContain("connect-src 'self'");

@@ -203,6 +203,20 @@ function fabricaReal(loja, { pasta }) {
 
   ev.pedirCodigo = (numero) => client.requestPairingCode(numero);
 
+  /**
+   * Mídia de uma mensagem (foto, áudio, vídeo, documento), baixada na hora do WhatsApp: nada é gravado em disco
+   * (decisão do dono: "baixar no computador e não armazenar na VPS"). → { dados: Buffer, mimetype, nome } ou null
+   * quando o WhatsApp não tem mais a mídia. `limite` em bytes: acima dele devolve { grande: true } sem baixar de novo.
+   */
+  ev.midia = async (id, limite) => {
+    const msg = await comRepeticao(() => client.getMessageById(id));
+    if (!msg || !msg.hasMedia) return null;
+    const m = await msg.downloadMedia();
+    if (!m || !m.data) return null;
+    if (limite && Math.floor(m.data.length * 3 / 4) > limite) return { grande: true };
+    return { dados: Buffer.from(m.data, 'base64'), mimetype: String(m.mimetype || 'application/octet-stream'), nome: m.filename ? String(m.filename) : null };
+  };
+
   /** Devolve o destino certo no WhatsApp, ou null quando o número não tem WhatsApp. */
   ev.temWhatsapp = async (numero) => {
     let n = soDigitos(numero);

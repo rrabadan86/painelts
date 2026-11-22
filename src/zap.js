@@ -47,4 +47,30 @@ const conversas = (id, desde) => chamar(`/conversas/${loja(id)}?desde=${encodeUR
 /** importa as conversas dos últimos `dias` (roda no serviço; a situação vem em status().historico) */
 const historico = (id, dias) => chamar(`/historico/${loja(id)}`, { method: 'POST', body: { dias }, espera: 20000 });
 
-module.exports = { ativo, saude, status, conectar, desconectar, enviar, optouts, conversas, historico };
+/**
+ * Mídia de uma mensagem (Clientes → Conversas), baixada na hora do WhatsApp (decisão do dono: nada guardado na VPS).
+ * → { ok: true, dados: Buffer, mimetype, nome } · { ok: false, codigo, erro }. Nada vai para disco nem para log.
+ */
+async function midia(id, idMsg) {
+  if (!ativo()) return { ok: false, codigo: 503, erro: 'O robô do WhatsApp não está instalado neste servidor.' };
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 130000);
+  try {
+    const res = await fetch(`${base()}/midia/${loja(id)}?id=${encodeURIComponent(String(idMsg || ''))}`, { signal: ctrl.signal, headers: { 'X-Zap-Token': token() } });
+    if (res.status === 401) return { ok: false, codigo: 502, erro: 'ZAP_TOKEN diferente entre o painel e o robô do WhatsApp.' };
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      // serviço antigo (sem /midia): precisa ser reconstruído
+      if (res.status === 404 && !j.erro) return { ok: false, codigo: 501, erro: 'O serviço do WhatsApp é de uma versão antiga: reconstrua com docker compose --profile zap up -d --build zap.' };
+      if (res.status === 404 && j.erro === 'Não existe.') return { ok: false, codigo: 501, erro: 'O serviço do WhatsApp é de uma versão antiga: reconstrua com docker compose --profile zap up -d --build zap.' };
+      return { ok: false, codigo: res.status, erro: String(j.erro || 'O WhatsApp não respondeu agora.').slice(0, 200) };
+    }
+    let nome = null;
+    try { nome = res.headers.get('x-zap-nome') ? decodeURIComponent(res.headers.get('x-zap-nome')) : null; } catch { nome = null; }
+    return { ok: true, dados: Buffer.from(await res.arrayBuffer()), mimetype: res.headers.get('content-type') || 'application/octet-stream', nome };
+  } catch (e) {
+    return { ok: false, codigo: 502, erro: e.name === 'AbortError' ? 'O WhatsApp não respondeu a tempo.' : 'Robô do WhatsApp indisponível agora.' };
+  } finally { clearTimeout(t); }
+}
+
+module.exports = { ativo, saude, status, conectar, desconectar, enviar, optouts, conversas, historico, midia };

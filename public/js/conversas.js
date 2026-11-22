@@ -50,6 +50,54 @@
     return d.length >= 10 ? `(${d.slice(0, 2)}) ${d.slice(2, -4)}‑${d.slice(-4)}` : chave; // hífen que não quebra a linha
   };
   const TIPO = { imagem: '📷 Foto', video: '🎬 Vídeo', audio: '🎤 Áudio', documento: '📄 Documento', figurinha: '🙂 Figurinha', local: '📍 Localização', contato: '👤 Contato' };
+  // ---------- mídia (decisão do dono: "baixar no computador e não armazenar na VPS") ----------
+  // O servidor busca no WhatsApp na hora (GET conversas/midia) e não guarda nada; aqui fica só na memória da aba
+  // (URL.createObjectURL), e sai ao trocar de conversa.
+  const MIDIA = { imagem: ['Ver foto', 'foto'], figurinha: ['Ver figurinha', 'figurinha'], audio: ['Ouvir áudio', 'áudio'], video: ['Ver vídeo', 'vídeo'], documento: ['Baixar documento', 'documento'] };
+  const midiaMem = { chave: null, itens: new Map() }; // id da mensagem → { url, tipo, nome }
+  function soltarMidias(chave) {
+    if (midiaMem.chave === chave) return;
+    for (const x of midiaMem.itens.values()) URL.revokeObjectURL(x.url);
+    midiaMem.itens.clear(); midiaMem.chave = chave;
+  }
+  async function buscarMidia(loja, chave, id) {
+    let r;
+    try { r = await fetch(TS.api(`conversas/midia?loja=${encodeURIComponent(loja)}&chave=${encodeURIComponent(chave)}&id=${encodeURIComponent(id)}`), { credentials: 'same-origin' }); }
+    catch (e) { if (TS.erroDeRede(e)) throw new Error('Sem conexão com o painel agora. Tente de novo.'); throw e; }
+    if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.erro || 'Não consegui buscar no WhatsApp agora.'); }
+    let nome = 'arquivo';
+    try { nome = decodeURIComponent(r.headers.get('X-Midia-Nome') || '') || nome; } catch { /* fica "arquivo" */ }
+    const blob = await r.blob();
+    return { url: URL.createObjectURL(blob), tipo: blob.type || r.headers.get('Content-Type') || '', nome };
+  }
+  /** a área da mídia dentro da bolha: o botão e, depois de buscar, a foto/áudio/vídeo e "Baixar" */
+  function caixaMidia(loja, chave, m) {
+    const [rot, nomeTipo] = MIDIA[m.tipo];
+    const caixa = h('div', { class: 'cv-midia' });
+    const pintar = (x) => {
+      const baixar = h('a', { class: 'btn cv-midia-baixar', href: x.url, download: x.nome }, '⬇ Baixar');
+      const ver = /^image\//.test(x.tipo) ? h('a', { href: x.url, target: '_blank', rel: 'noopener', class: 'cv-midia-img', title: 'Abrir grande' }, h('img', { src: x.url, alt: `${nomeTipo} enviada na conversa` }))
+        : /^audio\//.test(x.tipo) ? h('audio', { controls: true, src: x.url, preload: 'metadata' })
+          : /^video\//.test(x.tipo) ? h('video', { controls: true, src: x.url, preload: 'metadata', class: 'cv-midia-video' })
+            : h('small', { class: 'muted' }, 'Este arquivo não abre aqui: use "Baixar".');
+      caixa.replaceChildren(ver, baixar);
+    };
+    const ja = midiaMem.chave === chave && midiaMem.itens.get(m.id);
+    if (ja) { pintar(ja); return caixa; }
+    const bt = h('button', { type: 'button', class: 'btn cv-midia-bt', title: 'Busca no WhatsApp da loja agora. Não fica guardado no painel: depois de ver, use "Baixar" para salvar no seu computador.' }, rot);
+    const erro = h('small', { class: 'neg cv-midia-erro', role: 'alert' });
+    bt.addEventListener('click', async () => {
+      bt.disabled = true; bt.textContent = 'Buscando no WhatsApp…'; erro.textContent = '';
+      try {
+        const x = await buscarMidia(loja, chave, m.id);
+        soltarMidias(chave);
+        midiaMem.itens.set(m.id, x);
+        pintar(x);
+      } catch (e) { erro.textContent = e.message; bt.disabled = false; bt.textContent = rot; }
+    });
+    caixa.append(bt, erro);
+    return caixa;
+  }
   const resumoMsg = (m) => [m.deMim ? 'Loja: ' : '', m.tipo !== 'texto' ? TIPO[m.tipo] + (m.texto ? ' · ' : '') : '', m.texto || ''].join('');
   const quando = (iso) => { const d = new Date(iso), hoje = TS.hojeSP(); const dia = d.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }); const hr = d.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }); return dia === hoje ? hr : `${fmt.date(dia).slice(0, 5)} ${hr}`; };
   const LARGO = '(min-width: 861px)'; // computador: lista e conversa lado a lado; celular: uma de cada vez
@@ -259,6 +307,7 @@
 
     async function abrir(chave, topo) {
       st.aberta = chave;
+      soltarMidias(chave); // outra conversa: as mídias da anterior saem da memória
       let msgs;
       try { msgs = (await api('GET', `conversas/mensagens?loja=${encodeURIComponent(loja)}&chave=${encodeURIComponent(chave)}`)).mensagens; } catch (e) { TS.avisarErro(e); if (st.aberta === chave) st.aberta = null; return; }
       if (!corpo.isConnected || st.aberta !== chave) return;
@@ -288,6 +337,7 @@
         bolhas.push(h('div', { class: 'cv-msg ' + (m.deMim ? 'eu' : 'ele') + (m.robo ? ' robo' : '') },
           h('small', { class: 'cv-meta' }, m.deMim ? (m.robo ? `🤖 robô · ${m.robo}` : 'Loja') : (cliente ? cliente.nome.split(' ')[0] : m.nome || 'Cliente'), ' · ', new Date(m.em).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' })),
           m.tipo !== 'texto' ? h('div', { class: 'cv-tipo' }, TIPO[m.tipo] || m.tipo) : null,
+          MIDIA[m.tipo] ? caixaMidia(loja, chave, m) : null,
           m.texto ? h('div', { class: 'cv-txt' }, m.texto) : null));
       }
       const lista = h('div', { class: 'cv-msgs', 'data-chave': chave, 'data-n': String(msgs.length) }, ...(bolhas.length ? bolhas : [TS.empty('Sem mensagens guardadas nesta conversa.')]));
@@ -304,7 +354,8 @@
             botaoVinculo(chave, cliente),
           ].filter(Boolean))),
         ficha, h('div', { class: 'cv-msgs-w' }, lista, btNovas),
-        h('p', { class: 'muted cv-rodape' }, '🔒 Só leitura por enquanto: para responder, use o WhatsApp da loja (a resposta aparece aqui em seguida).'));
+        h('p', { class: 'muted cv-rodape' }, '🔒 Só leitura por enquanto: para responder, use o WhatsApp da loja (a resposta aparece aqui em seguida).',
+          msgs.some((m) => MIDIA[m.tipo]) ? h('span', null, ' Fotos e áudios vêm do WhatsApp na hora e não ficam guardados no painel.', TS.dica('Ao tocar em "Ver foto" ou "Ouvir áudio", o painel pede ao WhatsApp da loja naquele momento e mostra só para você. Nada fica guardado no servidor (decisão do dono). Para guardar, use "Baixar": o arquivo vai para o seu computador ou celular. Foto muito antiga pode não estar mais disponível no WhatsApp.')) : null));
       if (largo()) {
         // computador: a lista continua ao lado; só marca a conversa aberta
         if (!split.isConnected) montar();

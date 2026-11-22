@@ -38,6 +38,8 @@ function fabricaDeMentira() {
           return 'msg' + c.enviadas.length;
         } finally { c.emEnvio--; }
       },
+      midias: new Map(), erroMidia: null,
+      async midia(id, limite) { if (c.erroMidia) throw c.erroMidia; const m = c.midias.get(id); if (!m) return null; return limite && m.dados.length > limite ? { grande: true } : m; },
       async vivo() { return c.vivoResp; },
       async sair() { c.saiu++; },
       async fechar() { c.fechou++; },
@@ -532,4 +534,58 @@ test('CONV-02: histórico — só com o WhatsApp conectado; importa os últimos 
     assert.deepStrictEqual((await chamar('GET', '/conversas/loja1')).json.itens.map((x) => x.id), ['h1']);
     assert.match(logs.join('\n'), /histórico de 30 dias importado \(1 mensagens\)/);
   });
+});
+
+test('CONV-14: mídia sob demanda — devolve o arquivo da memória (nada em disco), 404 quando o WhatsApp não tem mais, 413 grande demais, 409 desconectado', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'zap-midia-'));
+  try {
+    await comServidor(async ({ clientes, sessoes, logs }) => {
+      const { MIDIA_MAX } = require('../sessoes');
+      // desconectado
+      let r = await sessoes.midia('loja1', 'false_5562999990001@c.us_ABC123');
+      assert.deepStrictEqual([r.ok, r.codigo], [false, 409]);
+      await sessoes.conectar('loja1', {});
+      const c = clientes.loja1;
+      c.emit('pronto', { numero: '5562911112222' });
+      const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]);
+      c.midias.set('false_5562999990001@c.us_ABC123', { dados: png, mimetype: 'image/png', nome: 'SEGREDO-nome.png' });
+      c.midias.set('false_5562999990001@c.us_GRANDE', { dados: Buffer.alloc(MIDIA_MAX + 1), mimetype: 'video/mp4', nome: null });
+      r = await sessoes.midia('loja1', 'false_5562999990001@c.us_ABC123');
+      assert.strictEqual(r.ok, true);
+      assert.ok(r.dados.equals(png));
+      assert.strictEqual(r.mimetype, 'image/png');
+      assert.deepStrictEqual([(await sessoes.midia('loja1', 'false_5562999990001@c.us_SUMIU')).codigo], [404]);
+      assert.deepStrictEqual([(await sessoes.midia('loja1', 'false_5562999990001@c.us_GRANDE')).codigo], [413]);
+      await assert.rejects(() => sessoes.midia('loja1', '../etc/passwd'), /Mensagem inválida/);
+      c.erroMidia = new Error('Evaluation failed');
+      assert.strictEqual((await sessoes.midia('loja1', 'false_5562999990001@c.us_ABC123')).codigo, 502);
+      c.erroMidia = null;
+      // nada gravado na pasta do serviço; o nome do arquivo nunca no log
+      const arquivos = fs.existsSync(dir) ? fs.readdirSync(dir, { recursive: true }).map(String) : [];
+      assert.ok(!arquivos.some((x) => /png|mp4|midia/i.test(x)), 'nenhum arquivo de mídia em disco: ' + arquivos.join(','));
+      assert.ok(!logs.join('\n').includes('SEGREDO'), 'o nome do arquivo não vai para o log');
+    }, { workDir: dir });
+    // pela API (binário, com o token)
+    await comServidor(async ({ clientes, sessoes }) => {
+      await sessoes.conectar('loja1', {});
+      const c = clientes.loja1;
+      c.emit('pronto', { numero: '5562911112222' });
+      c.midias.set('false_5562999990001@c.us_ABC123', { dados: Buffer.from('OGG!'), mimetype: 'audio/ogg; codecs=opus', nome: null });
+      const { criarServidor: cs } = require('../server');
+      const { servidor } = cs({ token: TOKEN, sessoes, log: () => {} });
+      await new Promise((ok) => servidor.listen(0, '127.0.0.1', ok));
+      try {
+        const url = 'http://127.0.0.1:' + servidor.address().port + '/midia/loja1?id=';
+        let r = await fetch(url + encodeURIComponent('false_5562999990001@c.us_ABC123'), { headers: { 'X-Zap-Token': TOKEN } });
+        assert.strictEqual(r.status, 200);
+        assert.strictEqual(r.headers.get('content-type'), 'audio/ogg; codecs=opus');
+        assert.strictEqual(r.headers.get('cache-control'), 'no-store');
+        assert.strictEqual(Buffer.from(await r.arrayBuffer()).toString(), 'OGG!');
+        r = await fetch(url + 'false_x@c.us_SUMIU', { headers: { 'X-Zap-Token': TOKEN } });
+        assert.strictEqual(r.status, 404);
+        r = await fetch(url + 'false_x@c.us_SUMIU');
+        assert.strictEqual(r.status, 401, 'sem o token não entra');
+      } finally { await new Promise((ok) => servidor.close(ok)); }
+    });
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });

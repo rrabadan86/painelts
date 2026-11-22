@@ -275,7 +275,7 @@ app.use(compression());
 app.use((req, res, next) => {
   res.set({
     'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY', 'Referrer-Policy': 'same-origin',
-    'Content-Security-Policy': `default-src 'self'; img-src 'self' data: ${HOSTS_FOTO.map((x) => 'https://' + x).join(' ')}; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'`,
+    'Content-Security-Policy': `default-src 'self'; img-src 'self' data: blob: ${HOSTS_FOTO.map((x) => 'https://' + x).join(' ')}; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'`,
     'Permissions-Policy': 'camera=(self), microphone=(), geolocation=(), payment=()',
     'Cross-Origin-Opener-Policy': 'same-origin',
     // HTTPS sempre (só quando o painel roda atrás do HTTPS, COOKIE_SECURE=true)
@@ -863,13 +863,14 @@ const DEMO_CONV = [
 const DEMO_SEMCAD = '5500911112222';
 function demoConversa(chave, ag) {
   const min = 60e3, em = (ms) => new Date(ms).toISOString();
-  if (chave === DEMO_SEMCAD) return [{ id: 'd-s1', deMim: false, em: em(ag - 30 * 3600e3), tipo: 'texto', texto: 'Oi, vi o anúncio de vocês. Têm chá para dormir?', nome: 'Contato sem cadastro' }];
+  if (chave === DEMO_SEMCAD) return [{ id: 'd-s0', deMim: false, em: em(ag - 30 * 3600e3 - 2 * min), tipo: 'audio', texto: '', nome: 'Contato sem cadastro' }, { id: 'd-s1', deMim: false, em: em(ag - 30 * 3600e3), tipo: 'texto', texto: 'Oi, vi o anúncio de vocês. Têm chá para dormir?', nome: 'Contato sem cadastro' }];
   const k = [...chave].reduce((x, c, i) => x + c.charCodeAt(0) * (i + 3) * 31, 0) % DEMO_CONV.length;
   const t = DEMO_CONV[k], fim = ag - ((k * 95) + 12) * min;
   const msgs = [
     { id: 'd1', deMim: false, em: em(fim - 3 * 864e5), tipo: 'texto', texto: 'Oi! Passei aí semana passada e gostei muito do atendimento.' },
     { id: 'd2', deMim: true, em: em(fim - 3 * 864e5 + 25 * min), tipo: 'texto', texto: 'Que bom! Volte sempre 😊' },
   ];
+  msgs.push({ id: 'd1f', deMim: false, em: em(fim - 3 * 864e5 + 2 * min), tipo: 'imagem', texto: '' }); // a foto (fictícia) que o cliente mandou
   if (t.robo) msgs.push({ id: 'd3', deMim: true, em: em(fim - (t.cli ? 40 : 0) * min), tipo: 'texto', texto: t.robo, robo: 'Campanha Resumo diário' });
   if (t.cli) msgs.push({ id: 'd4', deMim: false, em: em(fim - (t.loja ? 18 : 0) * min), tipo: 'texto', texto: t.cli });
   if (t.loja) msgs.push({ id: 'd5', deMim: true, em: em(fim), tipo: 'texto', texto: t.loja });
@@ -891,6 +892,15 @@ app.get('/api/demo/conversas/mensagens', (req, res) => {
   res.json({ mensagens: demoConversa(chave, Date.now()) });
 });
 app.post('/api/demo/conversas/lida', (req, res) => res.json({ ok: true }));
+// mídia da conversa na apresentação: uma imagem desenhada aqui (sem foto real) e meio segundo de silêncio
+app.get('/api/demo/conversas/midia', (req, res) => {
+  const chave = String(req.query.chave || ''), idm = String(req.query.id || '');
+  if (!/^\d{12,13}$/.test(chave)) return res.status(400).json({ erro: 'Conversa inválida.' });
+  const m = demoConversa(chave, Date.now()).find((x) => x.id === idm);
+  if (!m || !CONV.TIPOS_MIDIA.includes(m.tipo)) return res.status(404).json({ erro: 'Mensagem não encontrada nesta conversa.' });
+  const r = m.tipo === 'audio' ? { ok: true, dados: CONV.demoSilencio(), mimetype: 'audio/wav', nome: null } : { ok: true, dados: CONV.demoImagem(), mimetype: 'image/png', nome: null };
+  CONV.responderMidia(res, { ...r, tipo: m.tipo, em: m.em });
+});
 // vínculo da conversa com o cliente: na apresentação só responde (nada é gravado; a tela troca o número na memória)
 app.post('/api/demo/clientes/celular', express.json({ limit: '2kb' }), (req, res) => {
   const l = require('./src/celulares').local((req.body || {}).cel);
@@ -1110,6 +1120,14 @@ app.get('/api/conversas/mensagens', (req, res) => {
   const m = CONV.mensagens(id, String(req.query.chave || ''));
   if (!m) return res.status(400).json({ erro: 'Conversa inválida.' });
   res.json({ mensagens: m });
+});
+// mídia da conversa (foto, áudio, vídeo, documento), decisão do dono: baixada do WhatsApp na hora e repassada ao navegador,
+// sem gravar nada na VPS (nem em dados/, nem cache); nada em log nem auditoria (nem o nome do arquivo)
+app.get('/api/conversas/midia', async (req, res) => {
+  const id = lojaConv(req, res); if (!id) return;
+  const r = await CONV.midiaDe(id, String(req.query.chave || ''), String(req.query.id || ''), require('./src/zap'));
+  if (!r.ok) return res.status(r.codigo || 502).json({ erro: r.erro });
+  CONV.responderMidia(res, r);
 });
 app.use('/api/conversas', (req, res, next) => (req.method === 'GET' || req.get('X-Painel') === '1' ? next() : res.status(403).json({ erro: 'Pedido inválido.' })));
 app.post('/api/conversas/lida', express.json({ limit: '2kb' }), (req, res) => {

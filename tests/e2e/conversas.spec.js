@@ -214,3 +214,35 @@ test('CONV-13: vincular a conversa a um cliente (trocou de número) — a conver
   expect(await page.evaluate((cpf) => TS.cli.porCPF.get(cpf).celular, alvo.cpf)).toBe(alvo.antes);
   expect(erros).toEqual([]);
 });
+
+test('CONV-14: foto e áudio da conversa vêm do WhatsApp só quando a pessoa toca ("Ver foto", "Ouvir áudio"), com "Baixar"; nada guardado no painel', async ({ page }) => {
+  const erros = [];
+  page.on('pageerror', (e) => erros.push(e.message));
+  const pedidos = [];
+  page.on('request', (r) => { if (r.url().includes('/conversas/midia')) pedidos.push(r.url()); });
+  const lista = await abrirTela(page);
+  const nomes = await page.evaluate(() => TS.cli.lista.filter((c) => TS.foneConversa(c).length >= 12).slice(0, 6).map((c) => c.nome));
+  await lista.locator('.cv-item', { hasText: nomes[0] }).first().click();
+  const conv = page.locator('.cv-conversa');
+  const bt = conv.getByRole('button', { name: 'Ver foto', exact: true });
+  await expect(bt).toBeVisible();
+  expect(pedidos, 'nada é buscado antes de tocar').toEqual([]);
+  await expect(conv).toContainText('não ficam guardados no painel');
+  await bt.click();
+  const img = conv.locator('.cv-midia img');
+  await expect(img).toBeVisible();
+  await expect.poll(() => img.evaluate((el) => el.complete && el.naturalWidth)).toBeGreaterThan(0);
+  expect(await img.getAttribute('src')).toMatch(/^blob:/);
+  const baixar = conv.locator('.cv-midia a.cv-midia-baixar');
+  await expect(baixar).toHaveAttribute('download', /^foto-\d\d-\d\d-\d{4}\.png$/);
+  expect(pedidos.length).toBe(1);
+  // áudio do contato sem cadastro
+  if (!(await page.locator('.cv-split').count())) await page.getByRole('button', { name: '‹ Voltar' }).click();
+  await lista.locator('.cv-item', { hasText: 'Contato sem cadastro' }).click();
+  await conv.getByRole('button', { name: 'Ouvir áudio', exact: true }).click();
+  await expect(conv.locator('.cv-midia audio')).toHaveCount(1);
+  await expect(conv.locator('.cv-midia a.cv-midia-baixar')).toHaveAttribute('download', /^audio-.*\.wav$/);
+  const [sw, cw] = await page.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth]);
+  expect(sw - cw).toBeLessThanOrEqual(2);
+  expect(erros).toEqual([]);
+});
