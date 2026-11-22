@@ -3242,3 +3242,6 @@ button.vl-pac-marca { background: none; text-decoration: underline; cursor: poin
 .cv-tipo { font-size: 13px; color: var(--muted); }
 .cv-rodape { margin: 0; }
 .cv-nomel { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }
+/* a última conversa aberta fica marcada ao voltar para a lista */
+tr.cv-ultima td { background: var(--gold-l) !important; }
+.cv-ultima:not(tr) { outline: 2px solid var(--gold); outline-offset: -2px; }
