@@ -331,3 +331,17 @@ test('CFOP das NF-e (passo 5 da configuração guiada): franqueado e admin grava
   assert.strictEqual((await ler('vend1', 'l1')).status, 403, 'vendedora não lê');
   assert.strictEqual((await ler('dono1', 'l2')).status, 404, 'franqueado não lê a loja dos outros');
 });
+
+test('CONV-07: Conversas do WhatsApp — só admin e franqueado da loja (gerente e vendedora nunca); marcar lida exige X-Painel', async () => {
+  for (const u of ['ger1', 'vend1']) {
+    assert.strictEqual((await pedir(u, '/api/conversas?loja=l1')).status, 403, u + ': lista');
+    assert.strictEqual((await pedir(u, '/api/conversas/mensagens?loja=l1&chave=5562999990001')).status, 403, u + ': mensagens');
+    assert.strictEqual((await pedir(u, '/api/conversas/lida', { method: 'POST', body: JSON.stringify({ loja: 'l1', chave: '5562999990001' }) })).status, 403, u + ': lida');
+  }
+  assert.strictEqual((await pedir('dono1', '/api/conversas?loja=l2')).status, 400, 'franqueado não vê a loja dos outros');
+  const r = await pedir('dono1', '/api/conversas?loja=l1');
+  assert.strictEqual(r.status, 200);
+  assert.deepStrictEqual((await r.json()).conversas, []);
+  assert.strictEqual((await pedir('chefe', '/api/conversas/mensagens?loja=l2&chave=..%2F..%2Fx')).status, 400, 'chave inválida');
+  assert.strictEqual((await pedir('dono1', '/api/conversas/lida', { method: 'POST', headers: { 'X-Painel': '' }, body: JSON.stringify({ loja: 'l1', chave: '5562999990001' }) })).status, 403, 'sem X-Painel');
+});

@@ -96,6 +96,7 @@ async function passo(lojaId, agora = Date.now(), { zap = require('./zap'), rnd =
   const proximoEm = new Date(ZF.sortear(cfg, agora, rnd)).toISOString();
   if (r && r.ok) {
     CAMP.marcar(lojaId, msg.campanha, msg.rodada, msg.cliente.cpf, 'e', POR, null, msg.v);
+    try { require('./conversas').marcarRobo(lojaId, r.idMsg, msg.nome, agora); } catch { /* só a marca 🤖 na conversa */ }
     const quando = new Date(agora).toISOString();
     ZF.mudarContato(lojaId, msg.cliente.cpf, (c) => Object.assign(c, { em: quando, por: POR, motivo: M.motivoCampanha(msg.nome) }));
     const env = ZF.lerJson(lojaId, 'enviados');

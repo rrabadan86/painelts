@@ -285,7 +285,7 @@ const pub = path.join(__dirname, 'public');
 // ---------- pacote único de JS/CSS da tela (pré-comprimido em Brotli + Gzip, cache imutável por hash) ----------
 const APP_SCRIPTS = [
   'core.js', 'contas.js', 'metadia.js', 'components.js', 'dicas.js', 'rules.js', 'pages.js', 'fidelidade.js',
-  'msgwpp.js', 'recompra.js', 'clientes.js', 'campretorno.js', 'campanhas.js', 'zap.js', 'espera.js', 'extras.js', 'contabilidade.js',
+  'msgwpp.js', 'recompra.js', 'clientes.js', 'campretorno.js', 'campanhas.js', 'conversas.js', 'zap.js', 'espera.js', 'extras.js', 'contabilidade.js',
   'ruptura.js', 'visaodono.js', 'classeprod.js', 'grupoprod.js', 'fotoprod.js', 'custodata.js', 'estoque.js', 'devolucao.js', 'precos.js', 'inventario.js', 'sugestoes.js', 'validade.js', 'nfsaida.js', 'creditos.js', 'orcamento.js', 'checklist.js',
   'site.js', 'conferencia.js', 'conferencia-tela.js', 'inicio.js', 'pedido.js', 'ia.js', 'dre.js', 'apagar.js', 'comprasvendas.js', 'efeitopreco.js', 'equipe.js', 'mapa.js', 'feriados.js', 'fidretorno.js',
   'guia.js', 'notificacoes.js', 'config.js', 'script.js', 'fechamento.js', 'sistema.js', 'main.js',
@@ -829,6 +829,26 @@ app.get('/api/demo/alertas', (req, res) => {
   const p = DEMO.partes().find((x) => x.id === String(req.query.loja || ''));
   res.json({ alertas: p ? IND.alertas(p) : [] });
 });
+// apresentação: conversas de mentira para os celulares (fictícios) que a tela manda; nada é lido nem gravado
+app.get('/api/demo/conversas', (req, res) => {
+  const fones = String(req.query.fones || '').split(',').map((x) => x.replace(/\D/g, '')).filter((x) => /^\d{12,13}$/.test(x)).slice(0, 8);
+  const ag = Date.now(), min = 60e3;
+  const TXT = [['Oi! Vocês ainda têm o chá de hibisco com morango?', 'Temos sim! Quer que eu separe 100 g para você? 😊'], ['Bom dia, que horas vocês abrem no domingo?', 'Bom dia! Domingo abrimos das 14h às 20h. 🍵'], ['Recebi a mensagem dos pontos, obrigada! Passo aí sábado.', ''], ['Qual o preço da caneca de vidro?', 'A caneca de vidro sai por R$ 89,90. Tem nas cores transparente e fumê.'], ['', 'Oi! Aqui é a equipe da Tea Shop 😊 Seu chá favorito chegou fresquinho.'], ['Vocês entregam?', 'Entregamos pelo app de entregas da loja e também separamos para retirar.']];
+  const conversas = fones.map((f, k) => ({ chave: f, nome: '', n: 3, naoLidas: k < 2 ? 1 : 0, lidaEm: null, ult: { em: new Date(ag - (k * 95 + 12) * min).toISOString(), texto: TXT[k % TXT.length][1] || TXT[k % TXT.length][0], deMim: !!TXT[k % TXT.length][1], tipo: 'texto' } }));
+  conversas.push({ chave: '5500911112222', nome: 'Contato sem cadastro', n: 1, naoLidas: 1, lidaEm: null, ult: { em: new Date(ag - 30 * 3600e3).toISOString(), texto: 'Oi, vi o anúncio de vocês. Têm chá para dormir?', deMim: false, tipo: 'texto' } });
+  res.json({ conversas, buscadoEm: new Date(ag - min).toISOString(), servico: true, conectado: true, conexao: 'conectado', historico: null, meses: 12, demo: true });
+});
+app.get('/api/demo/conversas/mensagens', (req, res) => {
+  const ag = Date.now(), min = 60e3, k = Math.abs([...String(req.query.chave || '')].reduce((a, c) => a + c.charCodeAt(0), 0)) % 3;
+  const base = [
+    { id: 'd1', deMim: true, em: new Date(ag - 2 * 864e5).toISOString(), tipo: 'texto', texto: 'Oi! Aqui é a equipe da Tea Shop 😊 Você tem pontos no programa de fidelidade, e parte deles vence este mês. Que tal usar numa visita? 🍵', robo: 'Campanha Resumo diário' },
+    { id: 'd2', deMim: false, em: new Date(ag - 2 * 864e5 + 40 * min).toISOString(), tipo: 'texto', texto: ['Que bom, não sabia! Passo aí no sábado.', 'Obrigada pelo aviso!', 'Vou sim. Vocês têm o chá de hibisco?'][k] },
+    { id: 'd3', deMim: false, em: new Date(ag - 30 * min).toISOString(), tipo: k === 1 ? 'imagem' : 'texto', texto: k === 1 ? '' : 'Ainda têm a caneca de vidro?' },
+    { id: 'd4', deMim: true, em: new Date(ag - 12 * min).toISOString(), tipo: 'texto', texto: 'Temos sim! Separo uma para você?' },
+  ];
+  res.json({ mensagens: base });
+});
+app.post('/api/demo/conversas/lida', (req, res) => res.json({ ok: true }));
 app.all('/api/demo/*', (req, res) => res.status(404).json({ erro: 'Isto não está disponível na apresentação.' }));
 
 // ---------- marca da loja (pública: usada na tela de login com ?loja=) ----------
@@ -976,6 +996,46 @@ app.post('/api/contatos', express.json({ limit: '4kb' }), (req, res) => {
   res.json({ ok: true, contato: todos[cpf] || null });
 });
 
+// ---------- Clientes → Conversas (decisão do dono): conversas do WhatsApp da loja; só admin e franqueado da loja ----------
+const CONV = require('./src/conversas');
+const lojaConv = (req, res) => {
+  if (!['admin', 'franqueado'].includes(req.perfil)) { res.status(403).json({ erro: 'Sem permissão.' }); return null; }
+  const id = String((req.body && req.body.loja) || req.query.loja || '');
+  if (!req.lojas.some((l) => l.id === id)) { res.status(400).json({ erro: 'Escolha uma loja.' }); return null; }
+  return id;
+};
+app.get('/api/conversas', async (req, res) => {
+  const id = lojaConv(req, res); if (!id) return;
+  const ZAPc = require('./src/zap'), ZFc = require('./src/zapfila');
+  let historico = null, conexao = null;
+  if (ZAPc.ativo() && ZFc.temEstado(id) && ZFc.lerEstado(id).sessao) {
+    try { const st = await ZAPc.status(id); conexao = st.estado; historico = st.historico || null; } catch { conexao = 'sem_resposta'; }
+  }
+  res.json({ conversas: CONV.lista(id), buscadoEm: CONV.lerEstado(id).em || null, servico: ZAPc.ativo(), conectado: conexao === 'conectado', conexao, historico, meses: CONV.MESES });
+});
+app.get('/api/conversas/mensagens', (req, res) => {
+  const id = lojaConv(req, res); if (!id) return;
+  const m = CONV.mensagens(id, String(req.query.chave || ''));
+  if (!m) return res.status(400).json({ erro: 'Conversa inválida.' });
+  res.json({ mensagens: m });
+});
+app.use('/api/conversas', (req, res, next) => (req.method === 'GET' || req.get('X-Painel') === '1' ? next() : res.status(403).json({ erro: 'Pedido inválido.' })));
+app.post('/api/conversas/lida', express.json({ limit: '2kb' }), (req, res) => {
+  const id = lojaConv(req, res); if (!id) return;
+  res.json({ ok: CONV.marcarLida(id, String((req.body || {}).chave || '')) });
+});
+app.post('/api/conversas/historico', express.json({ limit: '2kb' }), async (req, res) => {
+  const id = lojaConv(req, res); if (!id) return;
+  const ZAPc = require('./src/zap');
+  if (!ZAPc.ativo()) return res.status(400).json({ erro: 'O robô do WhatsApp não está instalado neste servidor.' });
+  const dias = Math.round(Number((req.body || {}).dias) || 30);
+  try {
+    const r = await ZAPc.historico(id, dias);
+    if (!r.ok) return res.status(400).json({ erro: r.erro || 'O WhatsApp desta loja não está conectado.' });
+    res.json({ ok: true });
+  } catch (e) { res.status(502).json({ erro: 'Não consegui falar com o robô do WhatsApp: ' + C.msgErro(e) }); }
+});
+
 // ---------- campanhas de WhatsApp (Clientes → Campanhas): admin, franqueado e gerente com a tela Clientes ----------
 const CAMP = require('./src/campanhas');
 const lojaCamp = (req) => { const id = String((req.body && req.body.loja) || req.query.loja || ''); return req.lojas.some((l) => l.id === id) ? id : null; };
@@ -1072,6 +1132,7 @@ require('./src/zap-api').registrar(app, { podeClientes });
 require('./src/push-api').registrar(app); // notificações no aparelho: cada pessoa só mexe nos próprios aparelhos
 const PUSH = require('./src/push');
 require('./src/zaplaco').iniciar();
+require('./src/conversas').iniciar(); // Clientes → Conversas: busca no serviço a cada 30 s (só loja com o WhatsApp conectado)
 // o robô não depende de alguém abrir a tela Campanhas: o servidor refaz a lista conferida e cria a lista nova das
 // recorrentes (src/zapauto.js roda a conta da própria tela com o mesmo pacote de dados de /api/dados de quem vê tudo)
 require('./src/zapauto').iniciar({

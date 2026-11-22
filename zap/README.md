@@ -3,7 +3,7 @@
 Serviço interno do painel: conecta o WhatsApp **já existente** de cada loja (WhatsApp Web, por QR ou código) e envia o que o painel mandar. Ele é "burro" de propósito: **quem decide para quem, quando e quantas mensagens é o painel** (ritmo, janela, teto do dia, pausa por falhas). Aqui só mora: conectar, enviar uma mensagem por vez, dizer a situação e avisar quem respondeu "parar".
 
 - Sem porta publicada: só o painel fala com ele, em `http://zap:8010`, com o cabeçalho `X-Zap-Token` (`ZAP_TOKEN` do `.env`).
-- Uma sessão por loja em `zap-work/<loja>/` (fora do Git). Lá ficam o login do WhatsApp (`session/`), os ids já enviados (`enviados.json`, sem texto nem número) e os pedidos de saída (`optouts.json`, número e data, sem o texto).
+- Uma sessão por loja em `zap-work/<loja>/` (fora do Git). Lá ficam o login do WhatsApp (`session/`), os ids já enviados (`enviados.json`, sem texto nem número), os pedidos de saída (`optouts.json`, número e data, sem o texto) e as **conversas dos últimos 7 dias** (`conversas.json`, com o texto — decisão do dono, para Clientes → Conversas; o painel busca e guarda do lado dele; desconectar apaga).
 - O log mostra só os 4 últimos dígitos dos números e nunca o texto das mensagens.
 - Ao subir, reconecta só as lojas que já estavam conectadas. Nunca abre sessão nova sozinho.
 
@@ -45,6 +45,8 @@ A primeira construção baixa o Chromium (demora alguns minutos e ocupa perto de
 | `POST /desconectar/<loja>` | `{ ok: true }` — sai do WhatsApp e apaga a sessão |
 | `POST /enviar/<loja>` `{ id, para, texto }` | `{ ok: true, idMsg }` ou `{ ok: false, motivo: 'sem_whatsapp' \| 'desconectado' \| 'falha', erro }` |
 | `GET /optouts/<loja>?desde=<ISO>` | `{ itens: [{ de, em }] }` |
+| `GET /conversas/<loja>?desde=<n>` | `{ ultimo, itens: [{ seq, id, chat, deMim, em, tipo, texto, nome? }], mais }` — mensagens das conversas individuais depois do número `desde`, de 500 em 500 (Clientes → Conversas do painel). `chat` = telefone ou `lid:<n>`; `tipo`: texto, imagem, video, audio, documento, figurinha, local, contato (mídia só a marca) |
+| `POST /historico/<loja>` `{ dias }` | `{ ok: true }` — importa as conversas dos últimos `dias` (1 a 90); a situação vem em `status().historico` |
 
 Detalhes que o painel pode contar:
 

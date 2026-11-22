@@ -11,7 +11,10 @@
  *   eventos  'qr' (dataURL png) · 'codigo' (8 caracteres) · 'pronto' ({ numero })
  *            'caiu' ({ tipo: 'logout'|'qr_expirou'|'queda', detalhe })
  *            'mensagem' ({ de, texto, grupo, minha })
+ *            'conversa' ({ id, chat, deMim, em, tipo, texto, nome }) — toda mensagem de conversa individual, enviada ou
+ *                       recebida (Clientes → Conversas do painel; decisão do dono: o texto fica guardado, nunca no log)
  *   métodos  iniciar() · pedirCodigo(numero) · temWhatsapp(numero) → destino|null
+ *            historico(dias) → [conversa…] (as mensagens das conversas individuais dos últimos dias)
  *            digitando(destino) · enviar(destino, texto) → idMsg · vivo() → bool
  *            sair() (sai do WhatsApp) · fechar() (fecha o navegador)
  */
@@ -22,6 +25,10 @@ const RE_LOJA = /^[a-z0-9_-]{1,40}$/;
 const DIA_MS = 24 * 60 * 60 * 1000;
 const GUARDA_OPTOUT_MS = 180 * DIA_MS;
 const MAX_TEXTO = 4096;
+// Conversas (Clientes → Conversas): o painel busca de tempos em tempos e guarda do lado dele; aqui fica só um intervalo curto
+const CONV_GUARDA_MS = 7 * DIA_MS, CONV_MAX = 20000, CONV_LOTE = 500;
+const CONV_TIPOS = ['texto', 'imagem', 'video', 'audio', 'documento', 'figurinha', 'local', 'contato'];
+const RE_CHAT = /^(\d{10,15}|lid:\d{5,25})$/;
 
 // Palavras de saída (decisão do dono), já sem acento e em minúsculas.
 const SAIDAS = ['parar', 'sair', 'nao quero', 'remover', 'descadastrar'];
@@ -113,8 +120,11 @@ function criarSessoes(opcoes = {}) {
       fila: Promise.resolve(), emVoo: new Map(),
       enviados: new Map(Object.entries(lerJson(loja, 'enviados.json', {}))),
       optouts: lerJson(loja, 'optouts.json', []),
+      conv: lerJson(loja, 'conversas.json', { seq: 0, itens: [] }), convIds: null, convGravar: null, hist: null,
     };
     if (!Array.isArray(s.optouts)) s.optouts = [];
+    if (!s.conv || !Array.isArray(s.conv.itens) || !Number.isInteger(s.conv.seq)) s.conv = { seq: 0, itens: [] };
+    s.convIds = new Set(s.conv.itens.map((x) => x.id));
     lojas.set(loja, s);
     return s;
   }
@@ -127,7 +137,7 @@ function criarSessoes(opcoes = {}) {
     validarLoja(loja);
     const s = lojas.get(loja);
     if (!s) return { estado: 'desligado', qr: null, codigo: null, numeroFim: null, desde: null, erro: null };
-    return { estado: s.estado, qr: s.qr, codigo: s.codigo, numeroFim: s.numeroFim, desde: s.desde, erro: s.erro };
+    return { estado: s.estado, qr: s.qr, codigo: s.codigo, numeroFim: s.numeroFim, desde: s.desde, erro: s.erro, ...(s.hist ? { historico: s.hist } : {}) };
   }
 
   async function largarCliente(s, sair) {
@@ -208,6 +218,7 @@ function criarSessoes(opcoes = {}) {
       }
     });
     cli.on('mensagem', (m) => { if (vale()) recebida(s, m); });
+    cli.on('conversa', (m) => { if (vale()) guardarConversa(s, m); });
     cli.on('error', (e) => log(`loja=${s.loja} erro do cliente: ${erroCurto(e)}`));
 
     Promise.resolve().then(() => cli.iniciar()).catch((e) => {
@@ -254,6 +265,9 @@ function criarSessoes(opcoes = {}) {
     await largarCliente(s, true);
     marcar(loja, false); s.jaConectou = false; s.tentativas = 0;
     apagarSessao(loja);
+    // as conversas guardadas aqui saem junto (o painel apaga as dele ao desconectar); o número da sequência continua
+    s.conv = { seq: s.conv.seq, itens: [] }; s.convIds = new Set(); s.hist = null;
+    gravarJson(loja, 'conversas.json', s.conv);
     parar(s, 'desligado', null);
     log(`loja=${loja} desconectado e sessão apagada`);
     return { ok: true };
@@ -353,6 +367,59 @@ function criarSessoes(opcoes = {}) {
     return { itens };
   }
 
+  // ---------- conversas (Clientes → Conversas do painel) ----------
+  /** guarda uma mensagem de conversa individual (sem repetir o id); o texto nunca vai para o log */
+  function guardarConversa(s, m) {
+    if (!m || typeof m.id !== 'string' || !m.id || m.id.length > 200 || s.convIds.has(m.id)) return false;
+    const chat = String(m.chat || '');
+    const em = Date.parse(m.em);
+    if (!RE_CHAT.test(chat) || !Number.isFinite(em) || !CONV_TIPOS.includes(m.tipo)) return false;
+    const item = { seq: ++s.conv.seq, id: m.id, chat, deMim: m.deMim === true, em: new Date(em).toISOString(), tipo: m.tipo,
+      texto: typeof m.texto === 'string' ? m.texto.slice(0, MAX_TEXTO) : '', ...(m.nome && !m.deMim ? { nome: String(m.nome).slice(0, 80) } : {}) };
+    s.conv.itens.push(item); s.convIds.add(item.id);
+    // guarda só uns dias e um tanto (o painel já buscou): o mais antigo sai primeiro
+    const corte = agora() - CONV_GUARDA_MS;
+    if (s.conv.itens.length > CONV_MAX || Date.parse(s.conv.itens[0].em) < corte) {
+      s.conv.itens = s.conv.itens.filter((x) => Date.parse(x.em) >= corte || x.seq > s.conv.seq - 1000).slice(-CONV_MAX);
+      s.convIds = new Set(s.conv.itens.map((x) => x.id));
+    }
+    if (!s.convGravar) s.convGravar = agendar(() => { s.convGravar = null; gravarJson(s.loja, 'conversas.json', s.conv); }, 1000);
+    return true;
+  }
+  /** as mensagens depois do número `desde` (o painel guarda o último que recebeu); de 500 em 500 */
+  function conversas(loja, desde) {
+    validarLoja(loja);
+    const d = desde == null || desde === '' ? 0 : Number(desde);
+    if (!Number.isInteger(d) || d < 0) throw new ErroPedido('"desde" inválido.');
+    const s = obter(loja);
+    const novos = s.conv.itens.filter((x) => x.seq > d);
+    return { ultimo: s.conv.seq, itens: novos.slice(0, CONV_LOTE), mais: novos.length > CONV_LOTE };
+  }
+  /** importa as conversas dos últimos dias (botão "Reimportar histórico"); roda sozinho e a situação sai no status */
+  function historico(loja, dados) {
+    validarLoja(loja);
+    const dias = Math.round(Number((dados && dados.dias) || 30));
+    if (!(dias >= 1 && dias <= 90)) throw new ErroPedido('Dias do histórico: de 1 a 90.');
+    const s = obter(loja);
+    if (s.estado !== 'conectado' || !s.cli || typeof s.cli.historico !== 'function') return { ok: false, erro: 'O WhatsApp desta loja não está conectado.' };
+    if (s.hist && s.hist.estado === 'rodando') return { ok: true, jaRodando: true };
+    const cli = s.cli, g = s.geracao;
+    s.hist = { estado: 'rodando', em: new Date(agora()).toISOString(), dias };
+    comLimite(cli.historico(dias), 15 * 60000).then((lista) => {
+      if (s.geracao !== g) return;
+      let n = 0;
+      for (const m of Array.isArray(lista) ? lista : []) if (guardarConversa(s, m)) n++;
+      s.hist = { estado: 'ok', em: new Date(agora()).toISOString(), dias, mensagens: n };
+      log(`loja=${loja} histórico de ${dias} dias importado (${n} mensagens)`);
+    }).catch((e) => {
+      if (s.geracao !== g) return;
+      s.hist = { estado: 'erro', em: new Date(agora()).toISOString(), dias, erro: erroCurto(e) };
+      log(`loja=${loja} histórico falhou: ${erroCurto(e)}`);
+    });
+    log(`loja=${loja} importando o histórico de ${dias} dias`);
+    return { ok: true };
+  }
+
   // ---------- ao subir, de tempos em tempos e ao derrubar ----------
   /** Reconecta só as lojas que já estavam conectadas (têm a marca). Nunca abre sessão nova sozinho. */
   function retomar() {
@@ -389,7 +456,7 @@ function criarSessoes(opcoes = {}) {
     await Promise.all([...lojas.values()].map((s) => largarCliente(s, false)));
   }
 
-  return { status, conectar, desconectar, enviar, optouts, retomar, vigiar, fechar };
+  return { status, conectar, desconectar, enviar, optouts, conversas, historico, retomar, vigiar, fechar };
 }
 
 module.exports = { criarSessoes, ehSaida, normalizar, fim4, erroCurto, soDigitos, RE_LOJA, ErroPedido };

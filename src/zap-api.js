@@ -76,6 +76,7 @@ function registrar(app, { podeClientes }) {
     if (!ZAP.ativo()) return semServico(res);
     try { await ZAP.desconectar(req.zapLoja); } catch (e) { return res.status(502).json({ erro: `Não consegui falar com o robô do WhatsApp: ${e.message}.` }); }
     ZF.mudarEstado(req.zapLoja, (s) => { s.sessao = false; s.ligado = false; s.conexao = null; });
+    require('./conversas').apagar(req.zapLoja); // as conversas guardadas saem junto (decisão do dono)
     C.auditar(req.user, 'robô do WhatsApp: desconectou o número', req.zapLoja, { loja: req.zapLoja });
     responder(req, res);
   });

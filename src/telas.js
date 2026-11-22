@@ -28,6 +28,7 @@ const GRUPOS = [
   ['Clientes', [
     { id: 'clientes', nome: 'Clientes (Hoje, Lista de clientes, Indicadores, Campanhas)', paginas: ['hoje', 'clilista', 'clientes', 'campanhas'], ...ADM, gerente: E, padrao: false, vendedor: N,
       dica: 'Mostra CPF, telefone e histórico de compras. A vendedora nunca recebe dados de clientes.' },
+    { id: 'conversas', nome: 'Conversas do WhatsApp', ...ADM, gerente: N, vendedor: N, fixa: 'As conversas do WhatsApp da loja: só admin e franqueado, por segurança (decisão do dono).' },
     { id: 'espera', nome: 'Lista de espera', ...ADM, gerente: E, padrao: true, vendedor: S, fixa: 'A vendedora sempre usa a Lista de espera (vê nome, CPF e celular do cliente para anotar e avisar — decisão do dono).' },
   ]],
   ['Equipe', [

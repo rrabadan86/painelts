@@ -42,4 +42,9 @@ const enviar = (id, msg) => chamar(`/enviar/${loja(id)}`, { method: 'POST', body
 /** quem respondeu "parar", "sair"… desde a data (só o número e a hora; o texto não vem) */
 const optouts = (id, desde) => chamar(`/optouts/${loja(id)}?desde=${encodeURIComponent(desde)}`);
 
-module.exports = { ativo, saude, status, conectar, desconectar, enviar, optouts };
+/** Clientes → Conversas: as mensagens das conversas individuais depois do número `desde` → { ultimo, itens, mais } */
+const conversas = (id, desde) => chamar(`/conversas/${loja(id)}?desde=${encodeURIComponent(desde || 0)}`, { espera: 20000 });
+/** importa as conversas dos últimos `dias` (roda no serviço; a situação vem em status().historico) */
+const historico = (id, dias) => chamar(`/historico/${loja(id)}`, { method: 'POST', body: { dias }, espera: 20000 });
+
+module.exports = { ativo, saude, status, conectar, desconectar, enviar, optouts, conversas, historico };
