@@ -26,6 +26,31 @@ const ORIGEM_RESPOSTA = 'respondeu parar pelo WhatsApp'; // fica no contato e na
 const PREPARO_DIAS = 3; // os valores dos campos ({pontos}, {dias}…) envelhecem: depois disso a lista precisa ser conferida de novo
 const HORA = /^([01]\d|2[0-3]):[0-5]\d$/;
 const NUMERO = /^55\d{10,11}$/;
+/**
+ * Chave única do celular (pedido do dono): o mesmo número com e sem o 9º dígito é o mesmo cliente.
+ * Ex.: 62981718205 = 6281718205 → '5562981718205'. Contas antigas do WhatsApp respondem sem o 9; o FIXE pode ter qualquer um.
+ * Só celular (o número local de 8 dígitos começando com 6, 7, 8 ou 9) ganha o 9; fixo fica como está.
+ */
+function foneChave(n) {
+  let d = String(n || '').replace(/\D/g, '');
+  if (d.length === 10 || d.length === 11) d = '55' + d;
+  if (d.length === 12 && d.startsWith('55') && /[6-9]/.test(d[4])) d = d.slice(0, 4) + '9' + d.slice(4);
+  return d;
+}
+/** o mesmo objeto, com as chaves de celular na forma única (junta o que estava guardado com e sem o 9) */
+function porChave(obj) {
+  const out = {};
+  for (const [k, v] of Object.entries(obj || {})) {
+    const c = foneChave(k);
+    if (!out[c]) { out[c] = v; continue; }
+    // dois registros do mesmo número: fica o mais recente, e os clientes dos dois
+    const a = out[c], b = v, ea = String((a && a.em) || a || ''), eb = String((b && b.em) || b || '');
+    const novo = eb > ea ? b : a;
+    const cpfs = [...new Set([...((a && a.cpfs) || []), ...((b && b.cpfs) || [])])];
+    out[c] = novo && typeof novo === 'object' ? { ...novo, ...(cpfs.length || (novo.cpfs) ? { cpfs } : {}) } : novo;
+  }
+  return out;
+}
 const CPF_OK = /^\d{11}(\d{3})?$/;
 const hm = (t) => +t.slice(0, 2) * 60 + +t.slice(3, 5);
 const limpo = (v, max) => String(v ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, max);
@@ -159,7 +184,7 @@ function decidir({ cfg, estado, campanhas, contatos, preparo, naoquer, enviados,
   if (!todasRobo.length) return fim('sem_campanha');
   const robos = todasRobo.filter((c) => !M.foraDoPeriodo(c, r.dia)); // só as campanhas dentro do período (início e término)
   if (!robos.length) return fim('fora_periodo');
-  contatos = contatos || {}; preparo = preparo || {}; naoquer = naoquer || {}; enviados = enviados || {};
+  contatos = contatos || {}; preparo = preparo || {}; naoquer = porChave(naoquer); enviados = porChave(enviados);
   let conferir = false, limite = false, estoque = false;
   for (const c of robos) {
     const rod = c.rodadas[0];
@@ -177,10 +202,10 @@ function decidir({ cfg, estado, campanhas, contatos, preparo, naoquer, enviados,
       if (!prepOk) { conferir = true; break; }
       const p = prep.itens[it.cpf];
       if (!p) { conferir = true; continue; } // entrou na lista depois da última conferência: espera a próxima
-      if (p.para && naoquer[p.para]) { sai(it, 'o', ORIGEM_RESPOSTA, { optout: true, para: p.para }); continue; }
+      if (p.para && naoquer[foneChave(p.para)]) { sai(it, 'o', ORIGEM_RESPOSTA, { optout: true, para: p.para }); continue; }
       if (p.espera) { estoque = true; continue; } // a mensagem ofereceria produto sem estoque: continua na lista
       if (!NUMERO.test(p.para || '')) { sai(it, 'x', 'sem celular válido'); continue; }
-      const ja = enviados[p.para];
+      const ja = enviados[foneChave(p.para)];
       if (ja && ja.cpf !== it.cpf && agora - Date.parse(ja.em) < intervalo * 864e5) { sai(it, 'x', 'mesmo celular de outro cliente que já recebeu'); continue; }
       const textos = M.textosDe(c, it); // Resumo diário: o texto do motivo do cliente
       const k = M.variacaoDaVez(rod.lista, textos.length);
@@ -204,17 +229,18 @@ function proxima(lojaId, agora = Date.now()) {
 
 /** o número que respondeu "parar" era deste cliente (descoberto quando ele chegou na fila) */
 function ligarNumeroAoCliente(id, para, cpf) {
-  const n = lerJson(id, 'naoquer');
-  if (!n[para]) return;
-  const e = typeof n[para] === 'object' ? n[para] : { em: String(n[para]), cpfs: [] };
+  const n = porChave(lerJson(id, 'naoquer')), k = foneChave(para);
+  if (!n[k]) return;
+  const e = typeof n[k] === 'object' ? n[k] : { em: String(n[k]), cpfs: [] };
+  if (!Array.isArray(e.cpfs)) e.cpfs = [];
   if (!e.cpfs.includes(cpf)) e.cpfs.push(cpf);
-  n[para] = e;
+  n[k] = e;
   gravarJson(id, 'naoquer', n);
 }
 /** a loja desfez na ficha do cliente ("Voltou a aceitar"): o número dele sai da lista de quem respondeu "parar" */
 function voltouAAceitar(id, cpf) {
-  const n = lerJson(id, 'naoquer');
-  const dele = new Set(Object.values(lerPreparo(id)).map((p) => p && p.itens && p.itens[cpf] && p.itens[cpf].para).filter(Boolean));
+  const n = porChave(lerJson(id, 'naoquer'));
+  const dele = new Set(Object.values(lerPreparo(id)).map((p) => p && p.itens && p.itens[cpf] && p.itens[cpf].para).filter(Boolean).map(foneChave));
   let mudou = false;
   for (const [num, e] of Object.entries(n)) if (dele.has(num) || (e && Array.isArray(e.cpfs) && e.cpfs.includes(cpf))) { delete n[num]; mudou = true; }
   if (mudou) gravarJson(id, 'naoquer', n);
@@ -252,6 +278,7 @@ function envioManualBloqueado({ lojaId, cpf, contato, campanha, agora = Date.now
 const sortear = (cfg, agora, rnd = Math.random) => agora + (cfg.min + Math.floor(rnd() * (cfg.max - cfg.min + 1))) * 1000;
 
 module.exports = {
+  foneChave, porChave,
   envioManualBloqueado, PADRAO, PREPARO_DIAS, ORIGEM_RESPOSTA, ligarNumeroAoCliente, voltouAAceitar, MOTIVOS, NUMERO, fim4, cfgDe, validarCfg, relogio, enviadosHoje, campanhasDoRobo, decidir, proxima, sortear,
   lerEstado, temEstado, mudarEstado, lerContatos, mudarContato, lerPreparo, gravarPreparo, limparPreparo, lerJson, gravarJson,
 };

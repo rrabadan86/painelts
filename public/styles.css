@@ -3302,11 +3302,50 @@ button.vl-pac-marca { background: none; text-decoration: underline; cursor: poin
 /* Clientes → Conversas (conversas.js) */
 .cv-sit { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap; margin: 4px 0 12px; }
 .cv-sit small { flex: 1 1 240px; min-width: 0; }
-.cv-quem { display: grid; gap: 2px; min-width: 0; }
-.cv-quem .badge { justify-self: start; }
-.cv-ult { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
-.cv-conversa { display: grid; gap: 10px; }
-.cv-topo .cv-nome { font-size: 17px; }
+/* a lista: itens que são botões (abrem pelo teclado), a mais recente em cima; lista de conversas mestre-detalhe é a
+   exceção ao TS.table (visual.md) */
+.cv-col-lista { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.cv-col-tit { display: flex; align-items: center; gap: 6px; }
+.cv-busca { width: 100%; }
+.cv-abas .seg { flex-wrap: wrap; }
+.cv-lista { list-style: none; margin: 0 -4px; padding: 0; min-width: 0; }
+.cv-lista > li + li { border-top: 1px solid var(--line); }
+.cv-item { display: flex; align-items: flex-start; gap: 10px; width: 100%; min-height: 56px; padding: 10px 8px; border: 0; border-radius: 10px; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.cv-item:hover { background: var(--cream-2); }
+.cv-item:focus-visible { outline: 2px solid var(--green); outline-offset: -2px; }
+.cv-item.cv-ultima { background: var(--gold-l); box-shadow: inset 3px 0 0 var(--gold); }
+.cv-item-c { display: grid; gap: 2px; min-width: 0; flex: 1; }
+.cv-item-l1 { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.cv-item-nome { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cv-item-hora { flex: none; color: var(--muted); }
+.cv-item-ult { display: block; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cv-item-et { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 2px; }
+.cv-vazio { padding: 16px 8px; }
+.cv-mais-l { padding: 10px 8px; text-align: center; }
+/* círculo com as iniciais: 5 cores fixas (a mesma para o mesmo celular) */
+.cv-av { flex: none; display: inline-grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; font-weight: 700; font-size: 14px; letter-spacing: .02em; }
+.cv-av-0 { background: var(--green); color: #fff; }
+.cv-av-1 { background: var(--gold); color: var(--dark); }
+.cv-av-2 { background: var(--sage-l); color: var(--dark); }
+.cv-av-3 { background: var(--green-2); color: #fff; }
+.cv-av-4 { background: var(--bege); color: var(--dark); }
+.cv-conversa { display: grid; gap: 10px; min-width: 0; }
+.cv-topo { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.cv-topo-c { display: grid; min-width: 0; flex: 1; }
+.cv-topo .cv-nome { font-size: 17px; overflow-wrap: anywhere; }
+.cv-escolha { display: grid; place-items: center; align-content: center; gap: 6px; text-align: center; height: 100%; min-height: 240px; color: var(--muted); }
+.cv-escolha b { color: var(--ink); font-size: 16px; }
+.cv-escolha-ico { font-size: 34px; }
+/* computador: lista e conversa lado a lado, até o pé da janela; cada coluna rola sozinha (--cv-alto vem de conversas.js) */
+@media (min-width: 861px) {
+  .cv-split { display: grid; grid-template-columns: minmax(300px, 380px) minmax(0, 1fr); gap: 16px; height: var(--cv-alto, 70vh); min-height: 440px; }
+  .cv-split > .card { margin: 0; height: 100%; min-height: 0; }
+  .cv-col-lista .cv-lista { flex: 1; min-height: 0; overflow-y: auto; }
+  .cv-col-lista .cv-rodape-lista { margin-top: 0; }
+  .cv-split .cv-conversa { display: flex; flex-direction: column; }
+  .cv-split .cv-msgs-w { flex: 1; min-height: 0; display: flex; }
+  .cv-split .cv-msgs { flex: 1; max-height: none; }
+}
 .cv-ficha { display: flex; align-items: center; gap: 6px 8px; flex-wrap: wrap; }
 .cv-msgs { display: flex; flex-direction: column; gap: 8px; max-height: 60vh; overflow-y: auto; padding: 8px; background: var(--cream-2); border: 1px solid var(--line); border-radius: 10px; }
 .cv-dia { text-align: center; }
@@ -3325,7 +3364,3 @@ button.vl-pac-marca { background: none; text-decoration: underline; cursor: poin
 .cv-novas { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); box-shadow: var(--shadow); }
 .cv-rodape-lista { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
 .cv-rodape-lista small { flex: 1 1 220px; min-width: 0; }
-.cv-nomel { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }
-/* a última conversa aberta fica marcada ao voltar para a lista */
-tr.cv-ultima td { background: var(--gold-l) !important; }
-.cv-ultima:not(tr) { outline: 2px solid var(--gold); outline-offset: -2px; }

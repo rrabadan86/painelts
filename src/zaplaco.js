@@ -24,15 +24,16 @@ async function lerOptouts(lojaId, agora, zap) {
   const r = await zap.optouts(lojaId, desde);
   const itens = (r && Array.isArray(r.itens) ? r.itens : []).filter((x) => x && ZF.NUMERO.test(String(x.de || '')));
   if (itens.length) {
-    const naoquer = ZF.lerJson(lojaId, 'naoquer');
-    const novos = itens.filter((x) => !naoquer[x.de]);
+    const naoquer = ZF.porChave(ZF.lerJson(lojaId, 'naoquer'));
+    // o mesmo celular com e sem o 9º dígito é um número só (ZF.foneChave)
+    const novos = [...new Map(itens.map((x) => [ZF.foneChave(x.de), { ...x, de: ZF.foneChave(x.de) }])).values()].filter((x) => !naoquer[x.de]);
     if (novos.length) {
       // de quem é o número: pelo que o robô já enviou e pelas listas conferidas
-      const enviados = ZF.lerJson(lojaId, 'enviados'), preparo = ZF.lerPreparo(lojaId);
+      const enviados = ZF.porChave(ZF.lerJson(lojaId, 'enviados')), preparo = ZF.lerPreparo(lojaId);
       for (const x of novos) {
         const cpfs = new Set();
         if (enviados[x.de] && enviados[x.de].cpf) cpfs.add(enviados[x.de].cpf);
-        for (const p of Object.values(preparo)) for (const [cpf, it] of Object.entries((p && p.itens) || {})) if (it.para === x.de) cpfs.add(cpf);
+        for (const p of Object.values(preparo)) for (const [cpf, it] of Object.entries((p && p.itens) || {})) if (ZF.foneChave(it.para) === x.de) cpfs.add(cpf);
         naoquer[x.de] = { em: String(x.em || new Date(agora).toISOString()).slice(0, 30), cpfs: [...cpfs] };
         for (const cpf of cpfs) {
           naoQuer(lojaId, cpf, agora);
@@ -99,9 +100,9 @@ async function passo(lojaId, agora = Date.now(), { zap = require('./zap'), rnd =
     try { require('./conversas').marcarRobo(lojaId, r.idMsg, msg.nome, agora); } catch { /* só a marca 🤖 na conversa */ }
     const quando = new Date(agora).toISOString();
     ZF.mudarContato(lojaId, msg.cliente.cpf, (c) => Object.assign(c, { em: quando, por: POR, motivo: M.motivoCampanha(msg.nome) }));
-    const env = ZF.lerJson(lojaId, 'enviados');
+    const env = ZF.porChave(ZF.lerJson(lojaId, 'enviados'));
     for (const k of Object.keys(env)) if (agora - Date.parse(env[k].em) > 120 * 864e5) delete env[k];
-    env[msg.para] = { em: quando, cpf: msg.cliente.cpf };
+    env[ZF.foneChave(msg.para)] = { em: quando, cpf: msg.cliente.cpf };
     ZF.gravarJson(lojaId, 'enviados', env);
     ZF.mudarEstado(lojaId, (s) => { s.enviadosDia = (s.dia === dia ? s.enviadosDia || 0 : 0) + 1; s.dia = dia; s.falhas = 0; s.proximoEm = proximoEm; s.ultimo = { em: quando, ok: true }; });
     console.log(`[zap] ${lojaId}: mensagem enviada para ···${ZF.fim4(msg.para)} (campanha ${msg.campanha})`);
