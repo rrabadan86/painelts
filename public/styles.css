@@ -3749,4 +3749,17 @@ details.inv-p2-como ol { margin-top: 8px; }
   .t.tree.vp2-tree tr { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-auto-flow: row; }
   .t.tree.vp2-tree td.tree-v { grid-row: auto; overflow: visible; white-space: normal; padding-bottom: 6px !important; }
   .t.tree.vp2-tree td.tree-v .tree-ant { display: block; }
+  /* 5 números em 3 colunas: o espaço que sobra ao lado do IPA fica da cor da linha (não um buraco branco) */
+  .t.tree.vp2-tree tr.lv0 { background: #F1EDE3; }
+  .t.tree.vp2-tree tr.lv1 { background: #fff; }
+  .t.tree.vp2-tree tr.lv2, .t.tree.vp2-tree tr.lv3 { background: var(--cream-2); }
+  .t.tree.vp2-tree tfoot tr { background: var(--sage-l); }
+  /* no celular a lista é de cartões: sem rolagem interna e o Total no fim, sem ficar preso no pé (os números se sobrepunham) */
+  .table-wrap:has(> .t.tree.vp2-tree) { max-height: none !important; }
+  .t.tree.vp2-tree tfoot td { position: static; }
+}
+@media (max-width: 860px) {
+  /* celular: os botões da lista (Abrir anos, Expandir tudo, busca…) numa linha própria embaixo do título;
+     Imprimir e Expandir ficam juntos no canto, nunca um deles sozinho numa linha */
+  .card-head > .table-tools { flex-basis: 100%; order: 5; }
 }
