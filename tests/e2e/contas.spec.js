@@ -164,3 +164,99 @@ test('CUP-01: Cupons usa a conta oficial — cupons e itens iguais aos do Resumo
   expect(tf).toContain(new Intl.NumberFormat('pt-BR').format(of.cupons) + ' cupons');
   expect(tf).toContain(new Intl.NumberFormat('pt-BR').format(of.itens));
 });
+
+// ---------- NUM-01…03: um número por fato entre telas (mesmo período, mesma conta oficial: TS.metricas / TS.contas) ----------
+/** número da coluna do herói pelo rótulo */
+const heroiNum = (page, rot) => page.locator('main .heroi-col', { hasText: rot }).first().locator('.heroi-num').first();
+/** número de apoio dentro do herói (TKM, PMA, IPA… em linhas) */
+const apoioNum = (page, rot) => page.locator('main .vp2-apoio li', { hasText: rot }).first().locator('.linhas-num-v');
+/** primeira linha de cada célula do total (tfoot) da tabela dentro do cartão pelo título */
+const totalDe = async (page, sel) => (await page.locator(sel).first().locator('tfoot td').allInnerTexts()).map((t) => t.split('\n')[0].trim());
+const perto = (a, b, tol, rot) => expect(Math.abs(a - b), `${rot}: tela ${a} × conta ${b}`).toBeLessThanOrEqual(tol);
+const oficial = (page) => page.evaluate(() => { const m = TS.metricas(TS.filtrar()); return { vt: m.vt, cupons: m.cupons, itens: m.qtd, tkm: m.vt / m.cupons, pma: m.vt / m.qtd, ipa: m.qtd / m.cupons }; });
+
+for (const preset of ['28d', 'mes']) {
+  test(`NUM-01 (${preset}): faturamento, atendimentos, itens, TKM, PMA e IPA iguais no Resumo, Cupons, Comparativos e Promoção`, async ({ page }, info) => {
+    test.skip(info.project.name !== 'computador', 'conta igual nos dois tamanhos; os totais das tabelas são lidos no computador');
+    await abrir(page);
+    await page.evaluate((p) => TS.aplicarPreset(p), preset);
+    const of = await oficial(page);
+    expect(of.cupons).toBeGreaterThan(0);
+    // Resumo: herói, linhas de apoio e o total da tabela por vendedor
+    await ir(page, 'resumo');
+    await expect(heroiNum(page, 'Faturamento')).toBeVisible({ timeout: 20000 });
+    perto(num(await heroiNum(page, 'Faturamento').textContent()), of.vt, 1, 'Resumo · faturamento');
+    perto(num(await heroiNum(page, 'Atendimentos').textContent()), of.cupons, 0, 'Resumo · atendimentos');
+    perto(num(await apoioNum(page, 'TKM').textContent()), of.tkm, 0.01, 'Resumo · TKM');
+    perto(num(await apoioNum(page, 'PMA').textContent()), of.pma, 0.01, 'Resumo · PMA');
+    perto(num(await apoioNum(page, 'IPA').textContent()), of.ipa, 0.006, 'Resumo · IPA');
+    const tv = await totalDe(page, 'main .card:has(.card-title:text("Desempenho por vendedor")) table');
+    perto(num(tv[1]), of.vt, 0.05, 'Resumo · total por vendedor'); perto(num(tv[2]), of.cupons, 0, 'Resumo · cupons por vendedor');
+    perto(num(tv[3]), of.tkm, 0.01, 'Resumo · TKM por vendedor'); perto(num(tv[4]), of.pma, 0.01, 'Resumo · PMA por vendedor'); perto(num(tv[5]), of.ipa, 0.006, 'Resumo · IPA por vendedor');
+    // Cupons
+    await ir(page, 'cupons');
+    const hc = page.locator('main .heroi-col').first();
+    await expect(hc).toBeVisible();
+    perto(num(await hc.locator('.heroi-num').first().textContent()), of.cupons, 0, 'Cupons · cupons');
+    await expect(hc).toContainText(new Intl.NumberFormat('pt-BR').format(of.itens) + ' ite');
+    // Comparativos: herói e o Total da Evolução mensal
+    await ir(page, 'comparativos');
+    await expect(heroiNum(page, 'Faturamento')).toBeVisible({ timeout: 20000 });
+    perto(num(await heroiNum(page, 'Faturamento').textContent()), of.vt, 1, 'Comparativos · faturamento');
+    perto(num(await heroiNum(page, 'Cupons').textContent()), of.cupons, 0, 'Comparativos · cupons');
+    perto(num(await apoioNum(page, 'TKM').textContent()), of.tkm, 0.01, 'Comparativos · TKM');
+    perto(num(await apoioNum(page, 'PMA').textContent()), of.pma, 0.01, 'Comparativos · PMA');
+    perto(num(await apoioNum(page, 'IPA').textContent()), of.ipa, 0.006, 'Comparativos · IPA');
+    const te = await totalDe(page, '#cp-evol table');
+    perto(num(te[1]), of.vt, 0.05, 'Evolução · total'); perto(num(te[2]), of.cupons, 0, 'Evolução · cupons');
+    perto(num(te[3]), of.tkm, 0.01, 'Evolução · TKM'); perto(num(te[4]), of.pma, 0.01, 'Evolução · PMA'); perto(num(te[5]), of.ipa, 0.006, 'Evolução · IPA');
+    // Promoção (o "período" é o mesmo do filtro)
+    await ir(page, 'promocao');
+    await expect(heroiNum(page, 'Faturamento')).toBeVisible({ timeout: 20000 });
+    perto(num(await heroiNum(page, 'Faturamento').textContent()), of.vt, 1, 'Promoção · faturamento');
+    perto(num(await heroiNum(page, 'Atendimentos').textContent()), of.cupons, 0, 'Promoção · atendimentos');
+    perto(num(await heroiNum(page, 'TKM').textContent()), of.tkm, 0.01, 'Promoção · TKM');
+    perto(num(await apoioNum(page, 'PMA').textContent()), of.pma, 0.01, 'Promoção · PMA');
+    perto(num(await apoioNum(page, 'IPA').textContent()), of.ipa, 0.006, 'Promoção · IPA');
+  });
+}
+
+test('NUM-02: Vendas por produto (Resumo) fecha com o topo — itens, chá vendido (kg) e faturamento', async ({ page }, info) => {
+  test.skip(info.project.name !== 'computador', 'total da tabela lido no computador');
+  await abrir(page);
+  await page.evaluate(() => TS.aplicarPreset('28d'));
+  const of = await oficial(page);
+  await ir(page, 'resumo');
+  await expect(heroiNum(page, 'Faturamento')).toBeVisible({ timeout: 20000 });
+  const kgHeroi = num(await apoioNum(page, 'Chá vendido').textContent());
+  const tp = await totalDe(page, 'main .card:has(.card-title:text("Vendas por produto")) table');
+  perto(num(tp[1]), of.itens, 0, 'Vendas por produto · itens (sem R$ 0,01 e sem consumível sem controle)');
+  perto(num(tp[2]), kgHeroi, 0.001, 'Vendas por produto · kg × Chá vendido do herói');
+  perto(num(tp[3]), of.vt, 0.05, 'Vendas por produto · faturamento');
+});
+
+test('NUM-03: Comissionamento — vendas da meta iguais à conta oficial; TKM da equipe explica que é sem o Espaço Gourmet', async ({ page }, info) => {
+  test.skip(info.project.name !== 'computador', 'tabela lida no computador');
+  await abrir(page);
+  const r = await page.evaluate(() => {
+    const db = TS.db, ym = TS.dayToIso(db.maxDay).slice(0, 7);
+    const idx = TS.filtrar({ de: TS.isoToDay(ym + '-01'), ate: db.maxDay, mesLivre: true });
+    const semEG = idx.filter((i) => db.D.cat[db.cat[i]] !== TS.contas.EG);
+    return { vendasMeta: TS.rules.vendasMeta(idx), eg: TS.indicadores(semEG) };
+  });
+  await page.evaluate(() => TS.aplicarPreset('mes'));
+  await ir(page, 'comissionamento');
+  await expect(heroiNum(page, 'Vendas da meta')).toBeVisible({ timeout: 20000 });
+  perto(num(await heroiNum(page, 'Vendas da meta').textContent()), r.vendasMeta, 1, 'Comissionamento · vendas da meta');
+  // Início: o "R$ x de R$ y" do herói usa as mesmas vendas da meta
+  const tabCom = 'main table:has(th:has-text("TKM · PMA · IPA"))';
+  await expect(page.locator(tabCom).first()).toBeVisible();
+  const t = await totalDe(page, tabCom);
+  const linhaInd = t.find((x) => /^R\$/.test(x) && Math.abs(num(x) - r.eg.tkm) < 0.01);
+  expect(linhaInd, `TKM da equipe (sem EG) ${r.eg.tkm} no total: ${t.join(' | ')}`).toBeTruthy();
+  const th = page.locator(tabCom + ' thead th', { hasText: 'TKM' }).first();
+  await expect(th.locator('.dica-i')).toHaveAttribute('aria-label', /Espaço Gourmet/);
+  await ir(page, 'inicio');
+  const sub = await page.locator('main .ini-heroi .heroi-pri').innerText();
+  expect(sub.replace(/\s+/g, ' ')).toContain(new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 0 }).format(Math.round(r.vendasMeta)));
+});

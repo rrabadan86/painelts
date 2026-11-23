@@ -4,7 +4,7 @@ description: O ciclo depois do push — abrir o PR, acompanhar os testes do GitH
 ---
 # Conferir o PR até o dono poder instalar
 
-1. **Abrir o PR** para o `main` (título = o que muda para quem usa; corpo com O que muda / Testes / Instruções e as linhas de atribuição da sessão).
+1. **Abrir o PR** para o `main` (título = o que muda para quem usa; corpo com O que muda / Testes / Instruções e as linhas de atribuição da sessão). Antes, `npm run testar-alteracao` já rodou (regras afetadas e os testes delas) e a matriz `docs/rastreabilidade.md` tem as linhas das regras mexidas; diga no corpo as regras afetadas que seguem sem teste.
    Assine a atividade do PR (`subscribe_pr_activity`) e agende **um** lembrete para ~10 min com o **SHA completo** do commit no texto
    (`git rev-parse HEAD`). Lembrete com SHA diferente do atual = vencido: responda em uma linha ("já atendido") e não faça nada.
 2. **Esperar sem ficar perguntando:** os avisos do GitHub acordam a sessão. Não use `sleep`. Ao acordar, leia `get_check_runs` do PR.

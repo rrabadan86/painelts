@@ -20,8 +20,12 @@ __pycache__/
 
 # testes automáticos
 tests/.dados/
+tests/.dados-perfis/
+tests/.dados-datas/
 test-results/
 playwright-report/
+playwright-report-perfis/
+playwright-report-datas/
 config/ia.json
 config/ia-mestra.key
 # notificações no aparelho: chave privada VAPID e aparelhos de cada pessoa

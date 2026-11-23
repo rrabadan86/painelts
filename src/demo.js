@@ -69,9 +69,18 @@ const DAY = 86400000;
 const iso = (d) => new Date(d * DAY).toISOString().slice(0, 10);
 const r2 = (v) => (v == null ? null : Math.round(v * 100) / 100);
 
+/**
+ * "Agora" da apresentação: o relógio do servidor. Só nos testes de datas difíceis (NODE_ENV=test), PAINEL_HOJE_TESTE
+ * ("2026-12-01T10" = 1º/12 às 10h de Brasília) fixa o dia e a hora em que os dados fictícios terminam; fora dos testes é ignorado.
+ */
+function agora() {
+  const t = process.env.NODE_ENV === 'test' ? process.env.PAINEL_HOJE_TESTE : '';
+  if (t) { const ms = Date.parse(/T\d\d$/.test(t) ? `${t}:00:00-03:00` : t); if (Number.isFinite(ms)) return new Date(ms); }
+  return new Date();
+}
 /** data e hora "agora" em São Paulo */
 function agoraSP() {
-  const p = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', hour12: false }).formatToParts(new Date()).map((x) => [x.type, x.value]));
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', hour12: false }).formatToParts(agora()).map((x) => [x.type, x.value]));
   return { data: `${p.year}-${p.month}-${p.day}`, hora: +p.hour % 24 };
 }
 
@@ -198,7 +207,7 @@ function fidelidadeDemo(L, parte) {
       if (pts > 0) { eventos.push({ ...base, min: Math.min(1439, base.min + 1), tipo: 'pontos', pontos: pts, produtos: c.prods }); saldo += pts; }
     }
   }
-  const em = new Date().toISOString();
+  const em = agora().toISOString();
   return FI.paraPainel({ em, eventos, cadastros }, { id: L.id, nome: L.nome }, [L.loja], { em, membros }, null);
 }
 
@@ -225,7 +234,7 @@ function pacoteDemo(id) {
     const operacaoDemo = (i) => { const o = OPERACAO[LOJAS[i].id]; return o.equipe.pessoas ? o : { ...o, equipe: { ...o.equipe, nomes: cache.partes[i].fixos } }; };
     // férias de exemplo: uma vendedora de cada loja tirou 10 dias no mês passado
     const feriasDemo = (i) => {
-      const hoje = new Date(); const ant = new Date(Date.UTC(hoje.getUTCFullYear(), hoje.getUTCMonth() - 1, 1)).toISOString().slice(0, 7);
+      const hoje = agora(); const ant = new Date(Date.UTC(hoje.getUTCFullYear(), hoje.getUTCMonth() - 1, 1)).toISOString().slice(0, 7);
       const nomes = [...new Set(cache.partes[i].vendas.filter((v) => v.data.startsWith(ant)).map((v) => v.vendedor))].filter(Boolean).sort();
       return nomes.length > 1 ? [{ vendedor: nomes[0], de: `${ant}-05`, ate: `${ant}-14` }] : [];
     };
@@ -344,8 +353,8 @@ function estoqueDemo(id) {
 /** tela de Configurações da apresentação: lojas fictícias, sem nenhum dado real (nada é salvo) */
 function estadoDemo() {
   pacoteDemo('todas');
-  const agora = new Date();
-  const ha = (h) => new Date(agora.getTime() - h * 3600e3).toISOString();
+  const agoraD = agora();
+  const ha = (h) => new Date(agoraD.getTime() - h * 3600e3).toISOString();
   const lojas = LOJAS.map((L, i) => {
     const vendas = cache.partes[i].vendas;
     const porMes = {};
@@ -374,7 +383,7 @@ function estadoDemo() {
     };
   });
   const usuarios = [
-    { nome: 'apresentacao', perfil: 'admin', lojas: ['*'], ativo: true, criadoEm: '2024-01-01T12:00:00.000Z', ultimoAcesso: agora.toISOString() },
+    { nome: 'apresentacao', perfil: 'admin', lojas: ['*'], ativo: true, criadoEm: '2024-01-01T12:00:00.000Z', ultimoAcesso: agoraD.toISOString() },
     { nome: 'franqueado.exemplo', perfil: 'franqueado', lojas: LOJAS.map((L) => L.id), ativo: true, criadoEm: '2024-01-01T12:00:00.000Z', ultimoAcesso: ha(30) },
     { nome: 'gerente.centro', perfil: 'gerente', lojas: ['demo-centro'], telas: ['resumo', 'comparativos', 'clientes', 'mapa', 'pedido'], ativo: true, criadoEm: '2024-03-01T12:00:00.000Z', ultimoAcesso: ha(4) },
     { nome: 'vendedora.parque', perfil: 'vendedor', lojas: ['demo-parque'], vendedor: (lojas[1].vendedores[0] || {}).nome || '', ativo: true, criadoEm: '2024-05-01T12:00:00.000Z', ultimoAcesso: ha(50) },
@@ -390,4 +399,4 @@ function estadoDemo() {
 const lojasDemo = () => LOJAS.map(({ id, nome }) => ({ id, nome }));
 const disponivel = () => fs.existsSync(PERFIL);
 
-module.exports = { pacoteDemo, lojasDemo, disponivel, partes, estoqueDemo, estadoDemo, LOJAS, OPERACAO };
+module.exports = { agora, pacoteDemo, lojasDemo, disponivel, partes, estoqueDemo, estadoDemo, LOJAS, OPERACAO };

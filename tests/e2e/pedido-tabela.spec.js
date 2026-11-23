@@ -53,7 +53,8 @@ test('Pedido: colunas novas (margem bruta do pacote, classe em ícone) e filtro 
   await selGrupo.selectOption(gAlvo);
   expect(+(await page.locator('.ped-fx-n').innerText()).replace(/\D/g, '')).toBeGreaterThan(0);
   if (info.project.name === 'computador') {
-    const cel = (await page.locator('.ped-t tbody tr').first().locator('td').nth(1).innerText()).split('\n')[0].trim();
+    // o grupo fica embaixo do nome (sem a coluna Grupo: a tabela não rola para o lado a 1100 px)
+    const cel = (await page.locator('.ped-t tbody tr').first().locator('.ped-grp').evaluate((el) => el.firstChild.textContent)).trim();
     expect(linhas.tipos, cel).toContain(cel);
   }
   await page.locator('.ped-fx-limpa').click();

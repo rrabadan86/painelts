@@ -9,7 +9,8 @@ description: Sobe uma mudança do painel para o GitHub — atualiza com o main, 
    git fetch origin main && git merge --ff-only FETCH_HEAD
    ```
    Se o fast-forward falhar, pare e conte ao dono o que divergiu (não force).
-2. **Bateria completa, uma vez:**
+2. **Testes da alteração pela matriz, primeiro:** `npm run testar-alteracao` (acha na `docs/rastreabilidade.md` as regras dos arquivos mexidos, roda os testes delas e avisa as sem teste). Mudou regra, tela, rota ou teste: atualize a linha da matriz no mesmo PR e rode `npm run matriz` (o resumo em números é contado; o guardião `matriz.test.js` falha se ficar velho).
+2b. **Bateria completa, uma vez:**
    ```bash
    npm test
    npx playwright test          # se o Chromium não for achado: CHROME_PATH=<chromium> npx playwright test
