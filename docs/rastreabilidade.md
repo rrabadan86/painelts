@@ -380,6 +380,7 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 | CXP-02…06 | A pagar, detalhes: vencimento da nota estimado (entrada + prazo, só compra concluída); entrada prevista (dinheiro e Pix no dia, cartão N dias depois sem a taxa; parte em cartão pelos fechamentos de caixa); saldo por semana com aviso; conta paga sai das somas (servidor grava por loja e recusa valor inválido); configuração dos prazos | `src/apagar.js`; `public/js/apagar.js` | `apagar.test` CXP-02…06 | ✅ |
 | CTD-02…05 | Exportação para o contador: vendas por dia pelo faturamento oficial, notas do mês (entrada pela data de entrada; cancelada fora do total), mês sem nada e só mês fechado, planilha .xlsx com as cinco abas | `src/contador.js` | `contador.test` CTD-02…05 | ✅ |
 | LUCRO-01 | Uma definição de lucro em três degraus no Resultado e na Rentabilidade (decisão do dono, 23/11/2026): lucro bruto = venda − custo dos produtos; lucro sem fixos = lucro bruto − Simples, maquininha, royalties, comissão e custos em %; resultado = lucro sem fixos − perdas − custos fixos | `dre.js` `calcular`/`projetar`/`LINHAS`; `estoque.js` Rentabilidade | `contas.spec` | ✅ |
+| DESP-CAB-01 | Custos da loja e despesas de um mês só (Configurações → loja → Estoque e margem e a janela "Custos da loja"): o cabeçalho fica preso no topo ao rolar a lista (pedido do dono, 23/11/2026) — no computador os nomes das colunas logo abaixo da barra do topo (a tabela cabe na coluna, sem rolar de lado, também a 1100 px); no celular cada custo vira um cartão com o nome de cada campo e a faixa da categoria (nome, total, "+ Custo") fica presa | `estoque.js` `formCfg` (`pintarOutros`, `pintarPontuais`); `styles.css` (`.est-cat-w`) | `campos-msg.spec` DESP-CAB-01 | ✅ |
 
 ## 12. Vendas e métricas (VEN)
 
@@ -463,6 +464,7 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 | CAMP-FORA-01…04 | Clientes → Campanhas (pedido do dono, 23/11/2026): tirar à mão um cliente que atende aos critérios (coluna "Tirar" com ✕ em cada linha de "Quem entra", que tem 3 colunas para o botão ficar à vista sem rolar de lado — o dono não achou o botão quando eram 5; "Tirados à mão (N)" com "Voltar para a campanha"); fica em `filtros.fora` (só CPFs válidos, até 1.000) e vale na tela, no envio manual e no robô (a mesma conta: `selecionar`/`listaResumo`); na campanha já criada sai dos pendentes ao salvar, quem recebeu fica no histórico; auditoria só com as quantidades | `campanhas.js` (`selecionar`, `listaResumo`, `tirar`/`voltar`/`listaFora`, `demoApi`); `src/campanhas.js` (`filtrosOk`, `alterar`); `server.js` (PUT `/api/campanhas/:id`) | `zapauto.test` CAMP-FORA-01; `campanha-fora.test` CAMP-FORA-02, CAMP-FORA-03; `campanha-fora.spec` CAMP-FORA-04 | ✅ |
 | NAOQUER-01…02 | "Não quer mensagens" marcado na ficha (inclusive aberta por "Ver cliente" na conversa): o cliente sai NA HORA dos pendentes de todas as listas de campanha (st 'o', quem já recebeu fica no histórico, grupo de comparação não muda); uma janela diz de quais campanhas saiu; a conversa ganha "🚫 não quer mensagens" no topo e "🚫 não quer" na lista. Antes dava "Cannot set properties of null" (a lista de contatos ainda não tinha vindo) e o aviso abria atrás da ficha | `src/campanhas.js` `tirarNaoQuer`; `server.js` (POST `/api/contatos`); `clientes.js` (`marcar`, `naoQuer`); `conversas.js` (`naoQuerDe`, evento `ts-contato`); `components.js`/`styles.css` (`.ts-aviso-bg` por cima da ficha) | `naoquer.test` NAOQUER-01; `naoquer.spec` NAOQUER-02 | ✅ |
 | ZAP-NUMERO-01 | Envio pela equipe trava pelo NÚMERO, como o robô: se outro cliente com o mesmo celular (mãe e filha, casal) recebeu dentro do intervalo da loja — pelo robô ou pela equipe —, o WhatsApp não abre e o painel explica (com e sem o 9º dígito). Todo envio da equipe entra no mesmo registro de números do robô (`enviados`) | `src/zapfila.js` `envioManualBloqueado` (`para`), `registrarEnvioNumero`; `server.js` (`/api/contatos`, `/api/contatos/conferir`); `clientes.js` (manda `para`) | `zapfila.test` ZAP-NUMERO-01 | ✅ |
+| CAMPOS-MSG-01 | Lista única dos {campos} da mensagem (pedido do dono, 23/11/2026: "saber todas as labels existentes"): todo campo que a montagem aceita (`TS.msgWpp.CAMPOS` + {produto}) está em `TS.CAMPOS_MSG` com o que vira, quando usar, exemplo e em que mensagem vale ({produto} só em campanha com produto; {chaoferta} só em campanha e Resumo diário); os chips (inserem no cursor) têm a explicação e o valor para o cliente do "Como fica para…" no `title`, e "Ver todos os campos" abre a tabela (Campo · O que vira · Para <cliente> · Quando usar) sem rolar de lado; a mesma peça em Criar campanha, Campanha Resumo diário e Configurações → loja → Mensagens | `clientes.js` `TS.CAMPOS_MSG`, `TS.camposMsg`; `campanhas.js` (`criar`, `editarResumo`); `config.js` `blocoWpp` | `campos-msg.spec` CAMPOS-MSG-01 | ✅ |
 
 ## 14. Orçamento (ORC)
 
@@ -688,13 +690,13 @@ Contado pelas linhas da matriz (`node scripts/matriz.js --resumo`; o guardião c
 | Equipe, metas e comissão (EQP) | 13 | 4 | 3 | 6 |
 | Estoque, inventário, lotes e pedido (EST) | 80 | 49 | 14 | 17 |
 | Preços, custos e notas de entrada (PRC) | 40 | 13 | 8 | 19 |
-| Resultado e rentabilidade (RES) | 13 | 5 | 3 | 5 |
+| Resultado e rentabilidade (RES) | 14 | 6 | 3 | 5 |
 | Vendas e métricas (VEN) | 27 | 12 | 8 | 7 |
-| Clientes, fidelidade, WhatsApp e lista de espera (CLI) | 46 | 34 | 8 | 4 |
+| Clientes, fidelidade, WhatsApp e lista de espera (CLI) | 47 | 35 | 8 | 4 |
 | Orçamento (ORC) | 7 | 5 | 1 | 1 |
 | Checklist, fechamento e avisos (OPE) | 13 | 6 | 3 | 4 |
 | Estrutura do painel e atualização (APP) | 42 | 24 | 12 | 6 |
-| **Total** | **441** | **210 (48%)** | **121 (27%)** | **110 (25%)** |
+| **Total** | **443** | **212 (48%)** | **121 (27%)** | **110 (25%)** |
 <!-- resumo:fim -->
 
 ## Próximas etapas

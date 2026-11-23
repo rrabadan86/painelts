@@ -3815,3 +3815,63 @@ details.inv-p2-como ol { margin-top: 8px; }
   .cfg-t tbody > tr:not(.cfg-edit-row) > td { background: transparent !important; }
   .cfg-t tbody > tr.cfg-edit-row, .cfg-t tbody > tr.cfg-edit-row > td { display: block; }
 }
+/* Custos da loja e despesas de um mês só (Configurações → loja → Estoque e margem e a janela "Custos da loja"):
+   cabeçalho das colunas preso no topo ao rolar (pedido do dono, 23/11/2026; DESP-CAB-01).
+   Computador: a tabela cabe na coluna (larguras em %, campos que encolhem), o bloco não rola e o cabeçalho fica logo abaixo
+   da barra do topo (--topo). Celular: cada custo vira um cartão com o nome de cada campo em cima (sem rolar para o lado) e
+   a faixa da categoria (nome, total e "+ Custo") fica presa logo abaixo da barra do topo enquanto a lista dela passa. */
+.est-cat-t thead th { z-index: 3; }
+@media (min-width: 761px) {
+  .table-wrap.est-cat-w { overflow: visible; }
+  .est-cat-w > .est-cat-t { table-layout: fixed; }
+  /* a barra do topo em 2 linhas fica uns px mais baixa que o --topo: a sombra de cima cobre a fresta (nada aparece por cima do cabeçalho) */
+  .est-cat-w > .est-cat-t thead th { top: var(--topo, 64px); white-space: normal; box-shadow: 0 1px 0 var(--line), 0 -6px 0 var(--cream-2, #F3EFE6); }
+  .est-cat-w > .est-cat-t thead th:first-child { border-top-left-radius: 8px; }
+  .est-cat-w > .est-cat-t thead th:last-child { border-top-right-radius: 8px; }
+  .est-cat-w > .est-cat-t .f-input, .est-cat-w > .est-cat-t td:nth-child(1) .f-input, .est-cat-w > .est-cat-t td:nth-child(3) .f-input,
+  .est-cat-w > .est-cat-t input[type=month], .est-cat-w > .est-cat-t .est-dia { width: 100%; min-width: 0; box-sizing: border-box; }
+  .est-cat-fixos th:nth-child(1) { width: 25%; } .est-cat-fixos th:nth-child(2) { width: 14%; } .est-cat-fixos th:nth-child(3) { width: 12%; }
+  .est-cat-fixos th:nth-child(4) { width: 12%; } .est-cat-fixos th:nth-child(5) { width: 16%; } .est-cat-fixos th:nth-child(6) { width: 15%; }
+  .est-cat-fixos th:nth-child(7) { width: 6%; }
+  .est-cat-pont th:nth-child(1) { width: 22%; } .est-cat-pont th:nth-child(2) { width: 19%; } .est-cat-pont th:nth-child(3) { width: 12%; }
+  .est-cat-pont th:nth-child(4) { width: 13%; } .est-cat-pont th:nth-child(5) { width: 15%; } .est-cat-pont th:nth-child(6) { width: 13%; }
+  .est-cat-pont th:nth-child(7) { width: 6%; }
+  .est-cat-w > .est-cat-t tr.est-cat-cab td .est-cat-l .est-cat-nome { width: min(200px, 100%); }
+  /* na janela "Custos da loja" quem rola é a própria janela: o cabeçalho prende no alto dela */
+  .cfg-popup .est-cat-w > .est-cat-t thead th { top: -18px; } /* -18px = o padding da janela */
+}
+@media (max-width: 760px) {
+  .table-wrap.est-cat-w { overflow: visible; max-height: none; }
+  .est-cat-w > .est-cat-t, .est-cat-w > .est-cat-t > tbody, .est-cat-w > .est-cat-t > tfoot { display: block; width: 100%; }
+  .est-cat-w > .est-cat-t > thead { display: none; }
+  .est-cat-w > .est-cat-t > tbody > tr, .est-cat-w > .est-cat-t > tfoot > tr { display: block; }
+  .est-cat-w > .est-cat-t > tbody > tr > td, .est-cat-w > .est-cat-t > tfoot > tr > td { display: block; border-bottom: 0; white-space: normal; }
+  .est-cat-w > .est-cat-t > tbody > tr.est-cat-item { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 6px 10px; padding: 10px; border-bottom: 1px solid var(--line); }
+  .est-cat-w > .est-cat-t > tbody > tr.est-cat-item > td { padding: 0; min-width: 0; background: transparent; text-align: left; }
+  .est-cat-w > .est-cat-t > tbody > tr.est-cat-item > td[data-l]::before { content: attr(data-l); display: block; font-size: 12px; color: var(--muted); margin-bottom: 2px; }
+  .est-cat-w > .est-cat-t > tbody > tr.est-cat-item > td:first-child { grid-column: 1 / -1; }
+  .est-cat-w > .est-cat-t > tbody > tr.est-cat-item > td.est-cat-rem { justify-self: end; align-self: end; }
+  .est-cat-w .est-cat-rem .est-outro-rem { min-width: 40px; min-height: 40px; }
+  .est-cat-w > .est-cat-t .f-input, .est-cat-w > .est-cat-t td:nth-child(1) .f-input, .est-cat-w > .est-cat-t td:nth-child(3) .f-input,
+  .est-cat-w > .est-cat-t input[type=month], .est-cat-w > .est-cat-t .est-dia { width: 100%; min-width: 0; box-sizing: border-box; height: 40px; }
+  .est-cat-w > .est-cat-t tr.est-cat-cab td .est-cat-l { gap: 6px 8px; }
+  .est-cat-w > .est-cat-t tr.est-cat-cab td .est-cat-l .est-cat-nome { width: auto; flex: 1 1 110px; min-width: 0; padding-left: 4px; }
+  .est-cat-w > .est-cat-t tr.est-cat-cab td .est-cat-tot { white-space: nowrap; }
+  .est-cat-w > .est-cat-t tr.est-cat-cab td .est-cat-add { flex: none; }
+  /* a faixa da categoria fica presa embaixo da barra do topo (a sombra de cima cobre a fresta da barra de 2 linhas) */
+  .est-cat-w > .est-cat-fixos > tbody > tr.est-cat-cab { position: sticky; top: var(--topo, 104px); z-index: 3; background: #EEF4EE; box-shadow: 0 1px 0 var(--line), 0 -8px 0 #EEF4EE; }
+  .est-cat-w > .est-cat-t > tfoot > tr > td { position: static; }
+  .cfg-popup .est-cat-w > .est-cat-fixos > tbody > tr.est-cat-cab { top: -18px; }
+}
+/* Campos da mensagem (lista única TS.CAMPOS_MSG, TS.camposMsg em clientes.js; CAMPOS-MSG-01): chips + "Ver todos os campos" */
+.cp-campos-box { display: grid; gap: 2px; min-width: 0; }
+.cp-campos-box .cp-campos { margin: 4px 0 2px; }
+.cp-campos-todos > .cp-campos-tab { color: var(--ink); margin-top: 6px; min-width: 0; }
+.cp-campos-t .cp-campo-k { font-family: ui-monospace, monospace; font-size: 12px; color: var(--dark); white-space: nowrap; }
+.cp-campos-t td.wrap { white-space: normal; overflow-wrap: anywhere; min-width: 0; }
+@media (min-width: 761px) {
+  .cp-campos-t { table-layout: fixed; }
+  .cp-campos-t th { white-space: normal; }
+  .cp-campos-t th:nth-child(1) { width: 19%; } .cp-campos-t th:nth-child(2) { width: 33%; }
+  .cp-campos-t th:nth-child(3) { width: 20%; } .cp-campos-t th:nth-child(4) { width: 28%; }
+}
