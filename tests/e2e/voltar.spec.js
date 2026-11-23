@@ -71,7 +71,7 @@ test('Créditos: botões da linha não abrem a nota; "ligar" lista também as de
   await page.locator('.cf-ligar').getByRole('button', { name: 'Cancelar' }).click();
   // menu ⋯ abre sem abrir a NF-e
   await page.locator('.cf-tab .cf-mais').first().click();
-  await expect(page.locator('.cf-menu-lista:visible')).toContainText('Compensada no boleto');
+  await expect(page.locator('.cf-menu-lista:visible')).toContainText('Compensada em nota fiscal de entrada');
   await expect(page.locator('.camada-cheia, .prc-drawer-camada')).toHaveCount(0);
 });
 

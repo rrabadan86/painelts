@@ -636,7 +636,10 @@ function contaDemo() {
   const d = (n) => new Date(Date.now() - n * 864e5).toISOString().slice(0, 10);
   const forn = 'TSB FRANQUIAS E COMERCIO LTDA ME';
   const ent = (id, nf, dias, desconto) => ({ id, nf, chave: String(nf).padStart(44, '3'), emissao: d(dias), entrada: d(dias), fornecedor: forn, total: 2500, desconto, itens: [] });
-  const compras = [ent('e1', 19001, 70, 0), ent('e2', 19050, 55, 0), ent('e3', 19120, 22, 350), ent('e4', 19180, 8, 120)];
+  const compras = [ent('e1', 19001, 70, 0), ent('e2', 19050, 55, 0), ent('e3', 19120, 22, 350), ent('e4', 19180, 8, 120),
+    // notas sem desconto (para escolher em "Compensada em nota fiscal de entrada"): mais da franquia e de outros fornecedores
+    ent('e5', 19210, 4, 0), ent('e6', 19095, 35, 0), ent('e7', 18950, 90, 0),
+    { ...ent('e8', 4471, 15, 0), fornecedor: 'EMBALAGENS EXEMPLO LTDA', total: 380 }, { ...ent('e9', 902, 40, 0), fornecedor: 'DOCES FICTÍCIOS ME', total: 640 }];
   const dev = (n, dias, valor, ref) => ({ chave: String(n).padStart(44, '4'), numero: n, serie: 1, emissao: d(dias), finalidade: 'Devolução', situacao: 'autorizada', valor, refs: [ref], dest: { nome: forn } });
   const saidas = [dev(512, 60, 200, compras[0].chave), dev(518, 48, 150, compras[1].chave), dev(531, 41, 60.9, compras[1].chave), dev(540, 12, 87.4, compras[2].chave)];
   const ym = (k) => { const x = new Date(); x.setUTCDate(1); x.setUTCMonth(x.getUTCMonth() - k); return x.toISOString().slice(0, 7); };
@@ -661,7 +664,19 @@ app.post('/api/demo/conta-franquia/email/previa', express.json({ limit: '10kb' }
   const r = require('./src/cobranca').montar(req.body.tipo === 'fidelidade' ? 'fidelidade' : 'devolucoes', { conta, fid: conta.fidelidade, ids: req.body.ids, meses: req.body.meses, nomeLoja: 'Tea Shop Centro' });
   res.json({ ...r, para: ['franquia@exemplo.com'], ultima: null, anexos: req.body.tipo === 'fidelidade' ? ['planilha com a relação dos resgates (.xlsx)'] : ['XML de cada nota de devolução'] });
 });
-app.post('/api/demo/conta-franquia/acao', (req, res) => res.status(400).json({ erro: 'Na apresentação nada é salvo.' }));
+// apresentação: "compensada" só confere e responde (a tela troca na memória); nada é salvo
+app.post('/api/demo/conta-franquia/acao', express.json({ limit: '5kb' }), (req, res) => {
+  const b = req.body || {};
+  if (b.tipo !== 'compensar' && b.tipo !== 'cancelar') return res.status(400).json({ erro: 'Na apresentação nada é salvo.' });
+  const CFd = require('./src/contafranquia'), conta = contaDemo();
+  if (!conta.creditos.some((c) => c.id === b.credito)) return res.status(400).json({ erro: 'Crédito inválido.' });
+  const obs = String(b.obs || '').replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, 200);
+  if (b.tipo === 'cancelar') return res.json({ ok: true, simulado: true, compensado: { como: 'cancelado', nota: null, nf: null, mes: null, obs } });
+  const r = CFd.compensacao(b, { compras: conta.entradas });
+  if (r.erro) return res.status(400).json({ erro: r.erro });
+  const n = r.reg.nota ? conta.entradas.find((x) => x.id === r.reg.nota) : null;
+  res.json({ ok: true, simulado: true, compensado: { como: r.reg.como, nota: n ? { id: n.id, nf: n.nf, emissao: n.emissao } : null, nf: r.reg.nf || null, mes: r.reg.mes || null, obs } });
+});
 app.post('/api/demo/conta-franquia/royalties', (req, res) => res.status(400).json({ erro: 'Na apresentação nada é salvo.' }));
 app.get('/api/demo/reajuste/para', (req, res) => res.json({ para: ['compras@franquia-exemplo.com.br'], loja: 'Tea Shop Centro' }));
 app.post('/api/demo/reajuste/enviar', express.json({ limit: '2mb' }), (req, res) => {
@@ -1993,9 +2008,19 @@ app.get('/api/conta-franquia', (req, res) => {
 app.post('/api/conta-franquia/acao', express.json({ limit: '5kb' }), (req, res) => {
   if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
   const loja = lojaCF(req, res, true); if (!loja) return;
-  const r = CF.acao(loja.id, req.body || {}, req.user);
+  let r;
+  try {
+    const b = req.body || {};
+    const ctx = {};
+    if (b.tipo === 'compensar') {
+      // compensada em nota de entrada: a nota precisa ser desta loja; as devoluções que o painel já ligou sozinho a ela continuam lá
+      ctx.compras = (ES.notas(loja.id) || { notas: [] }).notas;
+      if (b.como === 'nota') { const antes = contaDaLoja(loja); ctx.jaNaNota = (nid) => { const n = antes.notas.find((x) => x.id === nid); return n && n.situacao === 'compensou' ? n.creditos : []; }; }
+    }
+    r = CF.acao(loja.id, b, req.user, ctx);
+  } catch (e) { console.error('[conta-franquia] ação:', e); return res.status(500).json({ erro: 'Não deu para salvar: ' + C.msgErro(e) }); }
   if (r.erro) return res.status(400).json({ erro: r.erro });
-  C.auditar(req.user, 'conta com a franquia: ' + String(req.body.tipo), loja.id, { loja: loja.id, nota: req.body.nota || null, creditos: req.body.creditos || (req.body.credito ? [req.body.credito] : []) });
+  C.auditar(req.user, 'conta com a franquia: ' + String(req.body.tipo), loja.id, { loja: loja.id, nota: req.body.nota || null, creditos: req.body.creditos || (req.body.credito ? [req.body.credito] : []), ...(req.body.tipo === 'compensar' ? { como: String(req.body.como || ''), nf: req.body.nf ? String(req.body.nf).slice(0, 20) : undefined, mes: req.body.mes ? String(req.body.mes).slice(0, 7) : undefined } : {}) });
   res.json(contaDaLoja(loja));
 });
 // checklist de abertura e fechamento: qualquer pessoa da loja marca (com nome e hora); a lista muda em Configurações
