@@ -36,8 +36,9 @@ test('LOTE-ENV-01: Validade tem abas por tipo; Envasados mostra lote e validade 
   await page.locator('.vl-filtros input:not([type=checkbox])').first().fill('Matcha Cerimonial');
   const linhas = page.locator('.vl-lista-card tbody tr', { hasText: 'Matcha Cerimonial 30G Pacote' });
   await expect(linhas.first()).toBeVisible();
+  // a busca redesenha a lista: espera o texto das linhas (lido cedo demais vinha vazio no celular)
+  await expect.poll(async () => (await linhas.allInnerTexts()).join('\n')).toMatch(/\b[36] un\b/); // 9 pacotes: 6 da nota mais nova e 3 da mais antiga
   const txt = (await linhas.allInnerTexts()).join('\n');
-  expect(txt).toMatch(/\b[36] un\b/); // 9 pacotes: 6 da nota mais nova e 3 da mais antiga
   expect(txt).not.toMatch(/kg|na lata|aberto/);
   await expect(page.locator('.vl-lista-card .vl-ajustar')).toHaveCount(0); // "⚖ ajustar" é só do granel
   // Alimentação também tem lotes

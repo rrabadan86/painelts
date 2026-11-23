@@ -2308,6 +2308,8 @@ body.com-camada .ped-barra { display: none; }
 .vl-check { font-size: 13px; color: var(--muted); white-space: nowrap; cursor: pointer; }
 .vl-segs { margin: 4px 0 10px; overflow-x: auto; }
 .vl-dias, .vl-sub { display: block; font-size: 12px; color: var(--muted); margin-top: 2px; }
+/* a linha pequena embaixo do valor quebra (a tabela da Validade não pode rolar para o lado a 1100 px, mesmo com o "📣 Campanha") */
+.vl-tabela .vl-sub, .vl-tabela .vl-dias { white-space: normal; }
 .vl-lote { width: 120px; text-transform: uppercase; padding: 5px 8px; }
 .vl-lote.vl-vazio { border-color: var(--gold); background: #FFFCF2; }
 .vl-val { width: 150px; padding: 4px 8px; }
