@@ -22,7 +22,8 @@ const CAMP = require('./campanhas');
 const M = require('../public/js/msgwpp');
 
 // horario: 'loja' (padrão, decisão do dono) = envia no horário de funcionamento da loja, dia a dia; 'proprio' = das/as/dias abaixo
-const PADRAO = { horario: 'loja', min: 900, max: 1200, das: '09:00', as: '18:30', dias: [1, 2, 3, 4, 5, 6], teto: 30, falhas: 3 };
+// esperaConversa (decisão do dono, 23/11/2026): dias sem mensagem do robô para quem está conversando com a loja (0 desliga)
+const PADRAO = { horario: 'loja', min: 900, max: 1200, das: '09:00', as: '18:30', dias: [1, 2, 3, 4, 5, 6], teto: 30, falhas: 3, esperaConversa: 3 };
 const ORIGEM_RESPOSTA = 'respondeu parar pelo WhatsApp'; // fica no contato e na fila: a loja vê de onde veio e pode desfazer
 const PREPARO_DIAS = 3; // os valores dos campos ({pontos}, {dias}…) envelhecem: depois disso a lista precisa ser conferida de novo
 const HORA = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -78,7 +79,10 @@ function validarCfg(b) {
   if (!(Number.isInteger(falhas) && falhas >= 1 && falhas <= 10)) return { erro: 'Parar sozinho: de 1 a 10 falhas seguidas.' };
   const horario = b.horario == null ? 'loja' : b.horario;
   if (horario !== 'loja' && horario !== 'proprio') return { erro: 'Horário de envio: escolha "igual ao funcionamento da loja" ou "horário próprio".' };
-  return { ok: { horario, min, max, das, as, dias, teto, falhas } };
+  // configuração antiga sem o campo: o padrão (3 dias)
+  const esperaConversa = b.esperaConversa == null || b.esperaConversa === '' ? PADRAO.esperaConversa : int(b.esperaConversa);
+  if (!(Number.isInteger(esperaConversa) && esperaConversa >= 0 && esperaConversa <= 30)) return { erro: 'Em conversa com a loja: de 0 a 30 dias (0 desliga).' };
+  return { ok: { horario, min, max, das, as, dias, teto, falhas, esperaConversa } };
 }
 
 // ---------- arquivos ----------
@@ -209,7 +213,23 @@ const MOTIVOS = {
   esperando_estoque: 'Só faltam clientes esperando estoque do produto oferecido (no chá a granel, pelo menos 100 g).',
   sem_pendentes: 'Todas as mensagens das campanhas do robô já foram enviadas.',
   fora_periodo: 'As campanhas do robô estão fora do período (data de início ou de término).',
+  em_conversa: 'Só faltam clientes que estão conversando com a loja: a mensagem do robô espera a conversa parar.',
 };
+/**
+ * Trava "em conversa" (decisão do dono, 23/11/2026: "a cliente começou a conversar e no mesmo dia o robô mandou a campanha"):
+ * o robô não manda para um número que teve mensagem na conversa (do cliente ou da loja escrita por gente; as do robô não contam)
+ * nos últimos `cfg.esperaConversa` dias. O cliente continua pendente: volta sozinho quando a conversa ficar parada esse tempo.
+ * conversas = { <foneChave>: ISO da última mensagem que não é do robô } (src/conversas.js → ultimaConversa).
+ * → ISO de quando pode sair (a conversa está segurando) ou null.
+ */
+function adiadoAte(cfg, conversas, para, agora) {
+  const dias = cfg && cfg.esperaConversa != null ? cfg.esperaConversa : PADRAO.esperaConversa;
+  if (!(dias > 0) || !para || !conversas) return null;
+  const ult = conversas[foneChave(para)];
+  const t = ult ? Date.parse(ult) : NaN;
+  if (!Number.isFinite(t) || agora - t >= dias * 864e5) return null;
+  return new Date(t + dias * 864e5).toISOString();
+}
 const ordem = (a, b) => String(a.criadaEm || '').localeCompare(String(b.criadaEm || '')) || String(a.id).localeCompare(String(b.id));
 /** campanhas que o robô envia: ligadas para o robô e não pausadas, da mais antiga para a mais nova (ordem estável) */
 const campanhasDoRobo = (campanhas) => (campanhas || []).filter((c) => c.robo === true && c.ativa !== false && c.rodadas && c.rodadas[0]).sort(ordem);
@@ -220,7 +240,7 @@ const enviadosCampanhaHoje = (c, dia) => c.rodadas.reduce((n, r) => n + r.lista.
  * → { marcar: [{ campanha, rodada, cpf, st, motivo, optout? }], msg?: { id, campanha, nome, rodada, cliente, para, texto, v }, motivo? }
  * `marcar` são os clientes que saem da fila sem receber (pediu para não receber, recebeu há pouco, sem celular válido).
  */
-function decidir({ cfg, estado, campanhas, contatos, preparo, naoquer, enviados, intervalo, agora, janela, horarioLoja }) {
+function decidir({ cfg, estado, campanhas, contatos, preparo, naoquer, enviados, intervalo, agora, janela, horarioLoja, conversas }) {
   const marcar = [];
   const fim = (motivo) => ({ marcar, motivo });
   if (!estado.ligado) return fim('desligado');
@@ -237,7 +257,7 @@ function decidir({ cfg, estado, campanhas, contatos, preparo, naoquer, enviados,
   const robos = todasRobo.filter((c) => !M.foraDoPeriodo(c, r.dia)); // só as campanhas dentro do período (início e término)
   if (!robos.length) return fim('fora_periodo');
   contatos = contatos || {}; preparo = preparo || {}; naoquer = porChave(naoquer); enviados = porChave(enviados);
-  let conferir = false, limite = false, estoque = false;
+  let conferir = false, limite = false, estoque = false, emConversa = false;
   for (const c of robos) {
     const rod = c.rodadas[0];
     if (!rod.lista.some((x) => x.st === 'p')) continue;
@@ -259,6 +279,7 @@ function decidir({ cfg, estado, campanhas, contatos, preparo, naoquer, enviados,
       if (!NUMERO.test(p.para || '')) { sai(it, 'x', 'sem celular válido'); continue; }
       const ja = enviados[foneChave(p.para)];
       if (ja && ja.cpf !== it.cpf && agora - Date.parse(ja.em) < intervalo * 864e5) { sai(it, 'x', 'mesmo celular de outro cliente que já recebeu'); continue; }
+      if (adiadoAte(cfg, conversas, p.para, agora)) { emConversa = true; continue; } // conversando com a loja: fica pendente, o robô passa ao próximo
       const textos = M.textosDe(c, it); // Resumo diário: o texto do motivo do cliente
       const k = M.variacaoDaVez(rod.lista, textos.length);
       const texto = M.montar(textos[k], { ...p.v, saudacao: M.saudacao(r.hora) }, M.extras(c)).trim();
@@ -266,8 +287,32 @@ function decidir({ cfg, estado, campanhas, contatos, preparo, naoquer, enviados,
       return { marcar, msg: { id: `${c.id}-${rod.id}-${it.cpf}`, campanha: c.id, nome: c.nome, rodada: rod.id, cliente: { cpf: it.cpf, nome: it.nome || '' }, para: p.para, texto, v: textos.length > 1 ? k : null } };
     }
   }
-  return fim(conferir ? 'conferir_lista' : limite ? 'limite_campanha' : estoque ? 'esperando_estoque' : 'sem_pendentes');
+  return fim(conferir ? 'conferir_lista' : limite ? 'limite_campanha' : estoque ? 'esperando_estoque' : emConversa ? 'em_conversa' : 'sem_pendentes');
 }
+
+/**
+ * Quem a trava "em conversa" está segurando agora (para a faixa do robô e o chip da conversa): pendentes das campanhas do robô
+ * dentro do período, com a lista conferida, cujo número conversou com a loja há menos de `esperaConversa` dias.
+ * → [{ campanha, nome, cpf, para, aPartir }] (conta pura)
+ */
+function adiadosConversa({ cfg, campanhas, preparo, conversas, agora }) {
+  const out = [];
+  if (!(cfg && cfg.esperaConversa > 0)) return out;
+  const dia = relogio(agora).dia;
+  for (const c of campanhasDoRobo(campanhas).filter((x) => !M.foraDoPeriodo(x, dia))) {
+    const rod = c.rodadas[0], prep = (preparo || {})[c.id];
+    if (!prep || prep.rodada !== rod.id || !prep.itens) continue;
+    for (const it of rod.lista) {
+      if (it.st !== 'p') continue;
+      const p = prep.itens[it.cpf];
+      const ate = p && p.para && adiadoAte(cfg, conversas, p.para, agora);
+      if (ate) out.push({ campanha: c.id, nome: c.nome, cpf: it.cpf, para: p.para, aPartir: ate });
+    }
+  }
+  return out;
+}
+/** as últimas mensagens das conversas da loja (cliente ou loja, menos o robô), por número — vazio se der erro */
+function conversasDe(lojaId, agora = Date.now()) { try { return require('./conversas').ultimaConversa(lojaId, agora); } catch { return {}; } }
 
 /** lê os dados da loja e decide: a próxima mensagem, ou o motivo de não haver */
 function proxima(lojaId, agora = Date.now()) {
@@ -278,7 +323,24 @@ function proxima(lojaId, agora = Date.now()) {
     janela: janelaDoDia(loja, cfg, r.dia, r.sem), horarioLoja: cfg.horario !== 'proprio' && temFuncionamento(loja),
     cfg, estado: lerEstado(lojaId), campanhas: CAMP.ler(lojaId), contatos: lerContatos(lojaId), preparo: lerPreparo(lojaId),
     naoquer: lerJson(lojaId, 'naoquer'), enviados: lerJson(lojaId, 'enviados'), intervalo: loja.wppIntervalo || 21, agora,
+    conversas: cfg.esperaConversa > 0 ? conversasDe(lojaId, agora) : {},
   });
+}
+
+/** os adiados por conversa da loja (lê os arquivos) — só com o robô ligado e não pausado */
+function adiadosDaLoja(lojaId, agora = Date.now()) {
+  const loja = C.get().lojas.find((l) => l.id === lojaId);
+  if (!loja || !temEstado(lojaId)) return [];
+  const e = lerEstado(lojaId), cfg = cfgDe(loja);
+  if (!e.ligado || e.pausa || !(cfg.esperaConversa > 0)) return [];
+  return adiadosConversa({ cfg, campanhas: CAMP.ler(lojaId), preparo: lerPreparo(lojaId), conversas: conversasDe(lojaId, agora), agora });
+}
+/** a conversa aberta (Clientes → Conversas) tem mensagem do robô adiada por causa dela? → { campanha, aPartir } ou null */
+function adiadaDaConversa(lojaId, chave, agora = Date.now()) {
+  if (!/^\d{10,15}$/.test(String(chave || ''))) return null;
+  const k = foneChave(chave);
+  const x = adiadosDaLoja(lojaId, agora).filter((a) => foneChave(a.para) === k).sort((a, b) => a.aPartir.localeCompare(b.aPartir))[0];
+  return x ? { campanha: x.nome, aPartir: x.aPartir } : null;
 }
 
 /** o número que respondeu "parar" era deste cliente (descoberto quando ele chegou na fila) */
@@ -351,7 +413,7 @@ function registrarEnvioNumero(lojaId, para, cpf, por, agora = Date.now()) {
 const sortear = (cfg, agora, rnd = Math.random) => agora + (cfg.min + Math.floor(rnd() * (cfg.max - cfg.min + 1))) * 1000;
 
 module.exports = {
-  foneChave, porChave, janelaDoDia, agenda, temFuncionamento, MARGEM_FECHA_MIN, MARGEM_ABRE_MIN, SEM_WPP_PAUSA,
+  foneChave, porChave, adiadoAte, adiadosConversa, adiadosDaLoja, adiadaDaConversa, conversasDe, janelaDoDia, agenda, temFuncionamento, MARGEM_FECHA_MIN, MARGEM_ABRE_MIN, SEM_WPP_PAUSA,
   envioManualBloqueado, registrarEnvioNumero, PADRAO, PREPARO_DIAS, ORIGEM_RESPOSTA, ligarNumeroAoCliente, voltouAAceitar, MOTIVOS, NUMERO, fim4, cfgDe, validarCfg, relogio, enviadosHoje, campanhasDoRobo, decidir, proxima, sortear,
   lerEstado, temEstado, mudarEstado, lerContatos, mudarContato, lerPreparo, gravarPreparo, limparPreparo, lerJson, gravarJson,
 };

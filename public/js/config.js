@@ -640,10 +640,10 @@
     if (!TS.guia || !TS.guia.formCfop) return null;
     const trava = TS.demo ? null : !(l.coletor && l.coletor.configurado) ? 'Para buscar a lista, o robô precisa do acesso ao AppNext: salve primeiro o cartão "Acesso ao AppNext" acima (ou digite o CFOP).' : !est.coletorAtivo ? 'O robô não está ligado nesta VPS: digite o CFOP.' : null;
     const f = TS.guia.formCfop(l.id, l.nfeCfop, l.cfopsAppNext, trava);
-    return h('section', { class: 'cfg-bloco cfg-form cfg-nfe-cfop' }, h('h3', null, 'Notas fiscais: CFOP'),
+    return h('section', { class: 'cfg-bloco cfg-form cfg-nfe-cfop' }, h('h3', null, 'Notas fiscais: regras fiscais'),
       h('p', { class: 'muted' }, 'Qual CFOP o robô usa ao emitir no AppNext a NF-e de venda e a de devolução ao fornecedor.'),
       f.el,
-      h('div', { class: 'cfg-acoes' }, acao('Salvar CFOP', async () => { const v = await f.salvar(); l.nfeCfop = v; return 'CFOP salvo. Vale para as próximas notas.'; }, 'btn primary')));
+      h('div', { class: 'cfg-acoes' }, acao('Salvar regra fiscal', async () => { const v = await f.salvar(); l.nfeCfop = v; return 'Regra fiscal salva. Vale para as próximas notas.'; }, 'btn primary')));
   }
 
   function blocoAppNext(l) {

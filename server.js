@@ -291,7 +291,7 @@ const APP_SCRIPTS = [
   'core.js', 'errostela.js', 'contas.js', 'metadia.js', 'components.js', 'dicas.js', 'rules.js', 'pages.js', 'fidelidade.js',
   'msgwpp.js', 'recompra.js', 'clientes.js', 'campretorno.js', 'campanhas.js', 'conversas.js', 'zap.js', 'espera.js', 'extras.js', 'contabilidade.js',
   'ruptura.js', 'visaodono.js', 'classeprod.js', 'grupoprod.js', 'fotoprod.js', 'custodata.js', 'estoque.js', 'devolucao.js', 'precos.js', 'inventario.js', 'sugestoes.js', 'validade.js', 'nfsaida.js', 'creditos.js', 'orcamento.js', 'checklist.js',
-  'site.js', 'conferencia.js', 'conferencia-tela.js', 'inicio.js', 'pedido.js', 'ia.js', 'dre.js', 'apagar.js', 'comprasvendas.js', 'efeitopreco.js', 'equipe.js', 'mapa.js', 'feriados.js', 'fidretorno.js',
+  'sitedia.js', 'site.js', 'conferencia.js', 'conferencia-tela.js', 'inicio.js', 'pedido.js', 'ia.js', 'dre.js', 'apagar.js', 'comprasvendas.js', 'efeitopreco.js', 'equipe.js', 'mapa.js', 'feriados.js', 'fidretorno.js',
   'guia.js', 'notificacoes.js', 'config.js', 'script.js', 'fechamento.js', 'sistema.js', 'main.js',
 ];
 let bundleMem = null, bundleCheckEm = 0;
@@ -811,7 +811,10 @@ app.get('/api/demo/pedido/acesso', (req, res) => res.json({ temLogin: false, usu
 app.get('/api/demo/admin/guia', (req, res) => { try { res.json({ lojas: DEMO.estadoDemo().lojas.map((l, i) => ({ id: l.id, nome: l.nome, passos: { appnext: true, pedido: true, fixe: i !== 0, email: true, nfe: false }, visto: true, abrir: false })) }); } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); } });
 // CFOP das notas na apresentação: automático, com a lista que o robô leria do AppNext
 const CFOPS_DEMO = [['5102', 'Venda de mercadoria adquirida de terceiros'], ['5405', 'Venda de mercadoria com ST (substituído)'], ['5202', 'Devolução de compra para comercialização'], ['5411', 'Devolução de compra com ST'], ['6202', 'Devolução de compra para comercialização (fora do estado)']].map(([codigo, descricao]) => ({ codigo, descricao }));
-app.get('/api/demo/admin/estado', (req, res) => { try { const e = DEMO.estadoDemo(); res.json({ ...e, lojas: (e.lojas || []).map((l) => ({ nfeCfop: { venda: '', devolucao: '' }, cfopsAppNext: { em: new Date().toISOString(), lista: CFOPS_DEMO }, ...l })) }); } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); } });
+// regras fiscais de exemplo (como no AppNext do dono: com ST e sem ST na venda; devolução normal e com ST)
+const REGRAS_DEMO = { venda: [{ id: 'r1', descricao: 'VENDA SEM ST', cfop: '5102', produtos: 2553, motivo: '1', motivoNome: 'Venda' }, { id: 'r2', descricao: 'VENDA COM ST', cfop: '5405', produtos: 312, motivo: '1', motivoNome: 'Venda' }],
+  devolucao: [{ id: 'r3', descricao: 'DEVOLUÇÃO AO FORNECEDOR', cfop: '5202', produtos: 2217, motivo: '19', motivoNome: 'Devolução ao Fornecedor' }, { id: 'r4', descricao: 'DEVOLUÇÃO COM ST', cfop: '5411', produtos: 140, motivo: '19', motivoNome: 'Devolução ao Fornecedor' }] };
+app.get('/api/demo/admin/estado', (req, res) => { try { const e = DEMO.estadoDemo(); res.json({ ...e, lojas: (e.lojas || []).map((l) => ({ nfeCfop: { venda: '', devolucao: '' }, cfopsAppNext: { em: new Date().toISOString(), lista: CFOPS_DEMO, regras: REGRAS_DEMO }, ...l })) }); } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); } });
 app.get('/api/demo/admin/notif', (req, res) => res.json({ ativo: true, horario: '08:00', ultimoEnvio: null, alertas: true, fechamento: { ativo: true, horario: '23:30', ultimoEnvio: null }, avisos: { email: 'admin@exemplo.com' },
   telegram: { configurado: false, destinos: [] }, email: { host: 'smtp.exemplo.com', port: 587, secure: false, user: 'painel@exemplo.com', from: 'Painel <painel@exemplo.com>', temSenha: true, configurado: true,
     destinos: [{ email: 'franqueado@exemplo.com', nome: 'Franqueado(a)', lojas: ['*'] }] } }));
@@ -904,10 +907,11 @@ const DEMO_CONV = [
   { cli: 'Vocês entregam?', loja: 'Entregamos pelo app de entregas da loja e também separamos para retirar.' },
 ];
 const DEMO_SEMCAD = '5500911112222';
+const demoIndice = (chave) => [...chave].reduce((x, c, i) => x + c.charCodeAt(0) * (i + 3) * 31, 0) % DEMO_CONV.length;
 function demoConversa(chave, ag) {
   const min = 60e3, em = (ms) => new Date(ms).toISOString();
   if (chave === DEMO_SEMCAD) return [{ id: 'd-s0', deMim: false, em: em(ag - 30 * 3600e3 - 2 * min), tipo: 'audio', texto: '', nome: 'Contato sem cadastro' }, { id: 'd-s1', deMim: false, em: em(ag - 30 * 3600e3), tipo: 'texto', texto: 'Oi, vi o anúncio de vocês. Têm chá para dormir?', nome: 'Contato sem cadastro' }];
-  const k = [...chave].reduce((x, c, i) => x + c.charCodeAt(0) * (i + 3) * 31, 0) % DEMO_CONV.length;
+  const k = demoIndice(chave);
   const t = DEMO_CONV[k], fim = ag - ((k * 95) + 12) * min;
   const msgs = [
     { id: 'd1', deMim: false, em: em(fim - 3 * 864e5), tipo: 'texto', texto: 'Oi! Passei aí semana passada e gostei muito do atendimento.' },
@@ -932,7 +936,11 @@ app.get('/api/demo/conversas', (req, res) => {
 app.get('/api/demo/conversas/mensagens', (req, res) => {
   const chave = String(req.query.chave || '');
   if (!/^\d{12,13}$/.test(chave)) return res.status(400).json({ erro: 'Conversa inválida.' });
-  res.json({ mensagens: demoConversa(chave, Date.now()) });
+  const ag = Date.now(), msgs = demoConversa(chave, ag);
+  // exemplo da trava "em conversa" do robô: nas conversas de exemplo em que o cliente perguntou e a loja respondeu (a 1ª e a 2ª de DEMO_CONV)
+  const k = demoIndice(chave), ult = [...msgs].reverse().find((x) => !x.robo);
+  const adiada = chave !== DEMO_SEMCAD && (k === 0 || k === 1) && ult ? { campanha: 'Pontos vencendo', aPartir: new Date(Date.parse(ult.em) + 3 * 864e5).toISOString() } : null;
+  res.json({ mensagens: msgs, adiada });
 });
 app.post('/api/demo/conversas/lida', (req, res) => res.json({ ok: true }));
 app.post('/api/demo/conversas/responder', express.json({ limit: '8kb' }), (req, res) => {
@@ -1175,9 +1183,13 @@ app.get('/api/conversas', async (req, res) => {
 });
 app.get('/api/conversas/mensagens', (req, res) => {
   const id = lojaConv(req, res); if (!id) return;
-  const m = CONV.mensagens(id, String(req.query.chave || ''));
+  const chave = String(req.query.chave || '');
+  const m = CONV.mensagens(id, chave);
   if (!m) return res.status(400).json({ erro: 'Conversa inválida.' });
-  res.json({ mensagens: m });
+  // trava "em conversa" do robô (decisão do dono, 23/11/2026): a mensagem de campanha pendente para este número espera a conversa parar
+  let adiada = null;
+  try { adiada = require('./src/zapfila').adiadaDaConversa(id, chave); } catch { /* só o aviso na conversa */ }
+  res.json({ mensagens: m, adiada });
 });
 // mídia da conversa (foto, áudio, vídeo, documento), decisão do dono: baixada do WhatsApp na hora e repassada ao navegador,
 // sem gravar nada na VPS (nem em dados/, nem cache); nada em log nem auditoria (nem o nome do arquivo)
@@ -2440,7 +2452,7 @@ app.get('/api/site', (req, res) => {
   let hist = SITE.lerHist();
   // ainda sem histórico (consultas de antes desta versão): começa pela consulta atual
   if (!hist) hist = SITE.semear(d);
-  res.json({ ...(d || { itens: [] }), historico: hist || {}, tabela: tabela ? tabela.itens.filter((t) => t.preco > 0.011).map((t) => ({ cod: t.cod, desc: t.desc, preco: t.preco })) : null, rodando: SITE.rodando(), podeConsultar: podeContabilidade(req) });
+  res.json({ ...(d || { itens: [] }), historico: hist || {}, ...SITE.consultasTela(d), tabela: tabela ? tabela.itens.filter((t) => t.preco > 0.011).map((t) => ({ cod: t.cod, desc: t.desc, preco: t.preco })) : null, rodando: SITE.rodando(), podeConsultar: podeContabilidade(req) });
 });
 // fotos dos produtos (públicas no site): para a miniatura nas listas (Pedido, ⭐ Sugestões). Qualquer pessoa logada; sem preço nem custo
 app.get('/api/site/fotos', (req, res) => {

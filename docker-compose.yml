@@ -64,6 +64,8 @@ services:
       TZ: America/Sao_Paulo
       HOME: /work
       ZAP_TOKEN: ${ZAP_TOKEN:-}
+      ZAP_ECONOMIA: ${ZAP_ECONOMIA:-1}            # 0 = Chromium sem as opções que economizam memória (zap/sessoes.js)
+      ZAP_CHROMIUM_ARGS: ${ZAP_CHROMIUM_ARGS:-}   # opções extras do Chromium, separadas por espaço
     volumes:
       - ./zap-work:/work              # sessão do WhatsApp de cada loja (fora do Git)
     shm_size: "1gb"                   # o Chromium precisa de memória compartilhada

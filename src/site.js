@@ -22,10 +22,31 @@ const arq = () => path.join(pasta(), 'precos.json');
 // histórico: só os pontos em que algo mudou em cada variante — { id: [[data ISO, preço, preço "de" ou null, disponível 1/0], …] }
 // preço null = o produto saiu do site naquela consulta
 const arqHist = () => path.join(pasta(), 'historico.json');
+// as consultas que deram certo (data ISO de cada uma), desde 23/11/2026: separam "nenhuma mudança neste dia" de "sem
+// consulta neste dia" no filtro "Mudou em" da tela Site (o histórico só guarda os pontos em que algo mudou)
+const arqConsultas = () => path.join(pasta(), 'consultas.json');
+const MAX_CONSULTAS = 1500; // ~4 anos de uma consulta por dia
 let rodando = null;
 
 function ler() {
   try { return JSON.parse(fs.readFileSync(arq(), 'utf8')); } catch { return null; }
+}
+function lerConsultas() {
+  try { const l = JSON.parse(fs.readFileSync(arqConsultas(), 'utf8')); return Array.isArray(l) ? l.filter((x) => typeof x === 'string') : []; } catch { return []; }
+}
+/** acrescenta uma consulta à lista (sem repetir; guarda as últimas MAX_CONSULTAS) */
+function somarConsulta(lista, em) {
+  const l = (lista || []).filter((x) => x !== em);
+  l.push(em);
+  l.sort((a, b) => Date.parse(a) - Date.parse(b));
+  return l.slice(-MAX_CONSULTAS);
+}
+/** as consultas para a tela: as guardadas + a atual e a anterior de precos.json (das versões de antes da lista) */
+function consultasTela(d) {
+  const guardadas = lerConsultas();
+  let l = guardadas;
+  for (const em of [d && d.anterior && d.anterior.em, d && d.em]) if (em && !l.includes(em)) l = somarConsulta(l, em);
+  return { consultas: l, consultasDesde: guardadas[0] || null };
 }
 function lerHist() {
   try { return JSON.parse(fs.readFileSync(arqHist(), 'utf8')); } catch { return null; }
@@ -118,6 +139,7 @@ async function atualizar(origem, quem) {
       if (!hist) hist = semear(antes);
       registrar(hist, out.em, itens);
       C.gravarAtomico(arqHist(), JSON.stringify(hist), 0o640);
+      C.gravarAtomico(arqConsultas(), JSON.stringify(somarConsulta(lerConsultas(), out.em)), 0o640);
       C.gravarAtomico(arq(), JSON.stringify(out), 0o640);
       console.log(`[site] ${itens.length} variantes lidas (${origem})`);
       return { ok: true, n: itens.length, em: out.em };
@@ -154,4 +176,4 @@ function agendar() {
   setInterval(tick, 60e3).unref();
 }
 
-module.exports = { ler, lerHist, atualizar, agendar, rodando: () => !!rodando, semear, fotos, fotoOk, itensDe, HOSTS_FOTO };
+module.exports = { ler, lerHist, lerConsultas, somarConsulta, consultasTela, atualizar, agendar, rodando: () => !!rodando, semear, fotos, fotoOk, itensDe, HOSTS_FOTO };

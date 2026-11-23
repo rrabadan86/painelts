@@ -373,8 +373,8 @@
     async function abrir(chave, topo) {
       st.aberta = chave;
       soltarMidias(chave); // outra conversa: as mídias da anterior saem da memória
-      let msgs;
-      try { msgs = (await api('GET', `conversas/mensagens?loja=${encodeURIComponent(loja)}&chave=${encodeURIComponent(chave)}`)).mensagens; } catch (e) { TS.avisarErro(e); if (st.aberta === chave) st.aberta = null; return; }
+      let msgs, adiada = null;
+      try { const r = await api('GET', `conversas/mensagens?loja=${encodeURIComponent(loja)}&chave=${encodeURIComponent(chave)}`); msgs = r.mensagens; adiada = r.adiada || null; } catch (e) { TS.avisarErro(e); if (st.aberta === chave) st.aberta = null; return; }
       if (!corpo.isConnected || st.aberta !== chave) return;
       // atualização de 30 em 30 s com a conversa aberta: sem mensagem nova, não mexe em nada (a leitura continua onde estava);
       // com mensagem nova e a pessoa lendo mais acima, mantém a posição e mostra "↓ N novas"
@@ -387,14 +387,18 @@
       const cadDe = cliente && TS.nomeMsgDe(cliente) ? cliente.nome || '' : ''; // o cadastro (fidelidade) é de outra pessoa
       // ficha resumida do cliente (os mesmos dados da lista de clientes)
       const fx = cliente && cliente.fx;
+      // trava "em conversa" do robô (decisão do dono, 23/11/2026): a mensagem de campanha deste número espera a conversa parar
+      const chipAdiada = adiada && adiada.aPartir ? h('span', { class: 'badge cinza cv-adiada', title: 'O robô do WhatsApp não manda mensagem de campanha para quem está conversando com a loja (cliente ou loja escreveram há pouco). O cliente continua na fila: a mensagem sai sozinha quando a conversa ficar parada pelos dias escolhidos no cartão do robô ("Em conversa com a loja"). Se a conversa continuar, a data anda junto.' },
+        `🤖 mensagem do robô adiada (${adiada.campanha || 'campanha'}) · sai a partir de ${fmt.date(new Date(adiada.aPartir).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' })).slice(0, 5)} se a conversa parar`) : null;
       const ficha = cliente ? h('div', { class: 'cv-ficha' }, ...[
         cliente.chaFavorito ? h('span', { class: 'chip' }, '🍵 ', cliente.chaFavorito) : null,
         cliente.ultima != null ? h('span', { class: 'chip' }, 'última compra ', fmt.date(TS.dayToIso(cliente.ultima))) : null,
         fx ? h('span', { class: 'chip' }, `★ ${fmt.int(fx.saldo || 0)} pts`) : null,
         cliente.vendedoraPref ? h('span', { class: 'chip' }, 'atende: ', cliente.vendedoraPref) : null,
+        chipAdiada,
         naoQuerDe(cliente) ? h('span', { class: 'badge erro cv-naoquer', title: 'Pediu para não receber mensagens: o painel e o robô não enviam para este cliente e ele saiu das listas de campanha. Para desfazer: "Ver cliente" → "Voltou a aceitar".' }, '🚫 não quer mensagens') : null,
         cliente.celVinc && TS.cliApi.mesmoTel(cliente.celular, chave) ? h('small', { class: 'muted cv-vinc-nota' }, `Número ligado a este cliente pelo painel${cliente.celVinc.em ? ' em ' + fmt.date(cliente.celVinc.em.slice(0, 10)) : ''}: é o que vale no Hoje, nas campanhas e no robô.`) : null,
-      ].filter(Boolean)) : h('div', { class: 'cv-ficha' }, h('span', { class: 'badge cinza' }, 'sem cadastro'), h('small', { class: 'muted' }, ' Este celular não bate com nenhum cliente do painel.'));
+      ].filter(Boolean)) : h('div', { class: 'cv-ficha' }, ...[h('span', { class: 'badge cinza' }, 'sem cadastro'), h('small', { class: 'muted' }, ' Este celular não bate com nenhum cliente do painel.'), chipAdiada].filter(Boolean));
       // mensagens, com o dia em separador
       let dia = '';
       const bolhas = [];

@@ -40,7 +40,7 @@ async function situacao(lojaId, ehGestor) {
   return {
     servico, pode: { configurar: ehGestor, pausar: true }, ligado: !!e.ligado, pausa: e.pausa || null, conexao, cfg,
     hoje: { n: ZF.enviadosHoje(e, agora), teto: cfg.teto }, proximoEm: e.proximoEm && Date.parse(e.proximoEm) > agora ? e.proximoEm : null,
-    motivo: cod ? motivoTxt(cod) : null, falhas: e.falhas || 0, fila: { campanhas: robos.length, pendentes }, validadeLista: ZF.PREPARO_DIAS,
+    motivo: cod ? motivoTxt(cod) : null, falhas: e.falhas || 0, fila: { campanhas: robos.length, pendentes, emConversa: ZF.adiadosDaLoja(lojaId, agora).length }, validadeLista: ZF.PREPARO_DIAS,
     // horário de envio dia a dia (igual ao funcionamento da loja, ou o próprio): a tela mostra e estima por ele
     agenda: ZF.agenda(loja, cfg, agora), horarioLoja: horarioDaLoja(loja),
   };
@@ -135,7 +135,7 @@ function situacaoDemo(o = {}) {
     ok: true, demo: true, servico: true, pode: { configurar: true, pausar: true }, ligado: true, pausa: null,
     conexao: { estado: 'conectado', numeroFim: '8888', desde: new Date(agora - 5 * 864e5).toISOString(), erro: null, qr: null, codigo: null },
     cfg: cfgD, hoje: { n: 12, teto: ZF.PADRAO.teto }, proximoEm: new Date(agora + 9 * 60e3).toISOString(),
-    motivo: motivoTxt('ritmo'), falhas: 0, fila: { campanhas: 1, pendentes: 18 }, validadeLista: ZF.PREPARO_DIAS,
+    motivo: motivoTxt('ritmo'), falhas: 0, fila: { campanhas: 1, pendentes: 18, emConversa: 2 }, validadeLista: ZF.PREPARO_DIAS,
     agenda: ZF.agenda(lojaDemo, cfgD, agora), horarioLoja: horarioDaLoja(lojaDemo),
   };
   return { ...base, ...o };

@@ -97,6 +97,10 @@ LER_CADASTROS = "async () => {" + JS_BASE + """
     pagamentos: (sl.formasPagamento || []).map((x) => ({ codigo: String(x.codigo), descricao: x.descricao })),
     // CFOPs de saída da loja (para a escolha do CFOP de venda e de devolução nas Configurações do painel)
     cfops: (sl.cfops || []).map((x) => ({ codigo: String(x.codigo ?? ''), descricao: x.descricao || x.nome || '' })).filter((x) => /^[56][0-9]{3}$/.test(x.codigo)),
+    // regras fiscais (sequências) da loja: a tela do painel mostra a regra pelo nome (pedido do dono, 23/11/2026). Só leitura
+    regras: (((acha('onSubmitProduct') || {}).selectList || {}).sequenciasFiscal || sl.sequenciasFiscais || []).filter((q) => q && q.id).map((q) => ({
+      id: String(q.id), descricao: String(q.descricao || q.nome || ''), motivo: q.motivoMovimentacao ? String(q.motivoMovimentacao.codigo ?? '') : '',
+      motivoNome: q.motivoMovimentacao ? String(q.motivoMovimentacao.descricao || q.motivoMovimentacao.nome || '') : '', cfop: q.cfop ? String(q.cfop.codigo ?? '') : '', produtos: (q.produtosLoja || []).length })),
   };
 }"""
 
@@ -126,6 +130,7 @@ PREENCHER = "async (p) => {" + JS_BASE + """
   if (!S.enderecoId) erro(forn.enderecosParceiro.length ? 'o parceiro tem mais de um endereço e nenhum é o padrão' : 'o parceiro não tem endereço cadastrado');
   await espera(500);
   // produtos: pela janela do AppNext (ela calcula os impostos de cada item)
+  const regraDe = new Map();
   for (const it of p.itens) {
     const prod = (acha('onSubmitProduct').selectList.produtos || []).find((x) => x.id === it.produtoId) || erro(`produto ${it.codigo} não encontrado no AppNext`);
     acha('abrirNovoItem').abrirNovoItem(); await espera(1200);
@@ -138,8 +143,9 @@ PREENCHER = "async (p) => {" + JS_BASE + """
     if (!f.item.sequenciaFiscalId) {
       // a janela não escolheu sozinha: a regra de Venda que inclui o produto (a mesma que o AppNext procura)
       const cands = (f.selectList.sequenciasFiscal || []).filter((q) => q.motivoMovimentacao && q.motivoMovimentacao.id === motivo.id && (q.produtosLoja || []).some((e) => e.id === prod.id));
-      // com CFOP escolhido, a regra dele primeiro
-      const seq = cands.find((q) => q.cfop && String(q.cfop.codigo) === String(cfopCod)) || cands[0];
+      // a regra de cada produto é a vinculada a ele no AppNext (com ST ou sem ST): o robô nunca escolhe entre duas (decisão do dono, 23/11/2026)
+      if (cands.length > 1) erro(`o produto ${prod.codigo} (${prod.nome}) está em mais de uma regra fiscal de Venda no AppNext (${cands.map((q) => q.descricao || q.nome || (q.cfop && q.cfop.codigo)).join(', ')}) e o AppNext não escolheu sozinho: deixe o produto em uma regra só ou faça esta nota à mão`);
+      const seq = cands[0];
       if (seq) { f.$set(f.item, 'sequenciaFiscalId', seq.id); for (let k = 0; k < 20 && !(f.item.imposto && f.item.imposto.cfopId); k++) await espera(250); }
     }
     await espera(800);
@@ -147,6 +153,8 @@ PREENCHER = "async (p) => {" + JS_BASE + """
     if (it.preco != null) { f.$set(f.item, 'valorUnitario', it.preco); await espera(500); }
     f.$set(f.item, 'vendedorId', vend.id); await espera(500);
     if (!f.item.sequenciaFiscalId) erro(`o produto ${prod.codigo} (${prod.nome}) não tem regra fiscal de Venda no AppNext: cadastre a sequência fiscal dele ou faça esta nota à mão`);
+    // guarda qual regra fiscal (e CFOP) o produto usou: a revisão do teste mostra por item (com ST × sem ST)
+    { const sq = (f.selectList.sequenciasFiscal || []).find((q) => q.id === f.item.sequenciaFiscalId) || {}; regraDe.set(prod.id, { regra: String(sq.descricao || sq.nome || ''), cfop: sq.cfop ? String(sq.cfop.codigo ?? '') : '' }); }
     if (!(f.item.imposto && f.item.imposto.cfopId)) erro(`o AppNext não preencheu os impostos do produto ${prod.codigo}`);
     f.nextStep(); await espera(1200); f.nextStep(); await espera(1200);
     if (f.wizardStep !== 3) erro(`a janela do produto ${prod.codigo} não chegou ao resumo (passo ${f.wizardStep})`);
@@ -166,6 +174,7 @@ PREENCHER = "async (p) => {" + JS_BASE + """
   return {
     invalida, parceiro: parc.nome, doc: String(parc.cnpjCpf || ''), consumidorFinal: S.consumidorFinal, vendedor: vend.nome, pagamento: pag.descricao,
     total: Number(S.valorTotalLiquido), itens: S.itens.map((i) => { const pr = (acha('onSubmitProduct').selectList.produtos || []).find((x) => x.id === i.produtoId) || {}; return { produtoId: i.produtoId, codigo: String(pr.codigo ?? ''), nome: pr.nome || '', qtd: Number(i.quantidade), preco: Number(i.valorUnitario), total: Number(i.valorTotalBruto ?? i.valorTotal ?? 0),
+      regra: (regraDe.get(i.produtoId) || {}).regra || '', cfopItem: (regraDe.get(i.produtoId) || {}).cfop || '',
       // estoque que o AppNext informa do produto (só leitura): campos com "estoque"/"saldo" no nome que sejam número
       estoque: Object.keys(pr).filter((k) => /estoq|saldo/i.test(k) && !/min|max|ideal|control|unid|local|id$/i.test(k) && typeof pr[k] !== 'boolean' && pr[k] !== null && pr[k] !== '' && Number.isFinite(Number(pr[k]))).map((k) => [k, Number(pr[k])]) }; }),
   };
@@ -378,7 +387,8 @@ DEVOLVER = "async (p) => {" + JS_BASE.replace("acha('salvarRascunho')", "acha('m
     for (const k of ['cfopId', 'icmsId', 'icmsOrigemId', 'pisId', 'cofinsId', 'ipiId', 'modalidadeDeterminacaoBcIcmsId']) if (!ehGuid(imp[k])) idsFaltando.push(`itens[${n}].imposto.${k}`);
   });
   const t = tela.$refs.tabs; const invalida = ['validarDadosNota', 'validarDadosFornecedor', 'validarProdutos', 'validarTransportadora', 'validarValoresAdicionais'].filter((k) => t[k] && t[k]());
-  return { modLog, datas: datas.length ? datas.map((k) => `${k}=${String(S[k]).slice(0, 10)}`) : ['campo não encontrado: ' + Object.keys(S).filter((k) => /^data/i.test(k)).join(', ')], trocados, idsFaltando, invalida, cfop: cfopEscolhido.codigo, chaveRef: String(S.chaveAcesso || ''), total: Number(S.valorTotalLiquido), produtos: Number(S.valorTotalProduto), itens: S.itens.map((i) => ({ codigo: String(i.codigo), nome: i.nome || '', qtd: Number(i.quantidade), preco: Number(i.valorUnitario), total: Number(i.valorTotalLiquido) })) };
+  return { modLog, datas: datas.length ? datas.map((k) => `${k}=${String(S[k]).slice(0, 10)}`) : ['campo não encontrado: ' + Object.keys(S).filter((k) => /^data/i.test(k)).join(', ')], trocados, idsFaltando, invalida, cfop: cfopEscolhido.codigo, regra: (seqsCfop[0] && String(seqsCfop[0].descricao || seqsCfop[0].nome || '')) || '',
+    regras: seqsMotivo.map((q) => ({ id: String(q.id), descricao: String(q.descricao || q.nome || ''), cfop: String(q.cfop.codigo ?? ''), produtos: (q.produtosLoja || []).length })), chaveRef: String(S.chaveAcesso || ''), total: Number(S.valorTotalLiquido), produtos: Number(S.valorTotalProduto), itens: S.itens.map((i) => ({ codigo: String(i.codigo), nome: i.nome || '', qtd: Number(i.quantidade), preco: Number(i.valorUnitario), total: Number(i.valorTotalLiquido) })) };
 }"""
 
 

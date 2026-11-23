@@ -214,7 +214,8 @@
       const [stTxt, stCls] = ESTADO_NFE[r.estado] || ESTADO_NFE.erro;
       const tab = TS.table({
         cols: [
-          { key: 'nome', label: 'Produto', align: 'l', wrap: true, render: (i) => h('span', null, h('b', null, i.nome || ''), h('small', { class: 'est-tam' }, `cód. ${i.codigo}`)) },
+          { key: 'nome', label: 'Produto', align: 'l', wrap: true, title: 'Embaixo do código, a regra fiscal que o AppNext usou neste produto (a vinculada a ele lá: com ST ou sem ST) e o CFOP dela — aparece depois do teste.',
+            render: (i) => { const rg = r.regras && r.regras[i.produtoId]; return h('span', null, h('b', null, i.nome || ''), h('small', { class: 'est-tam' }, `cód. ${i.codigo}`), rg ? h('small', { class: 'est-tam nfe-regra' }, `regra fiscal: ${rg.regra}${rg.cfop ? ' · CFOP ' + rg.cfop : ''}`) : null); } },
           { key: 'qtd', label: 'Qtd', fmt: (v) => fmt.n2(v).replace(/,00$/, '') },
           { key: 'preco', label: 'Preço', fmt: fmt.brl },
           { key: 'tot', label: 'Total', render: (i) => fmt.brl(Math.round(i.qtd * i.preco * 100) / 100), sortVal: (i) => i.qtd * i.preco },

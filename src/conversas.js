@@ -153,6 +153,36 @@ function marcarLida(id, chave, agora = Date.now()) {
   gravar(path.join(pasta(id), 'indice.json'), ind);
   return true;
 }
+/**
+ * Trava "em conversa" do robô (decisão do dono, 23/11/2026): { <número na chave única ZF.foneChave>: ISO da última mensagem
+ * que NÃO é do robô } — do cliente ou da loja escrita por gente (celular da loja ou resposta pelo painel). Só conversas com
+ * número (as "lid:" ficam de fora) e com mensagem nos últimos `dias` (o máximo aceito na configuração é 30).
+ * O laço do robô chama a cada ~30 s: guarda a conta e só refaz quando o índice ou o robo.json mudam (data e tamanho).
+ */
+const cacheConv = new Map();
+const marca = (arq) => { try { const s = fs.statSync(arq); return `${s.mtimeMs}:${s.size}`; } catch { return '-'; } };
+function ultimaConversa(id, agora = Date.now(), dias = 30) {
+  const chaveCache = `${marca(path.join(pasta(id), 'indice.json'))}|${marca(path.join(pasta(id), 'robo.json'))}|${dias}|${C.diaSP(agora)}`;
+  const c = cacheConv.get(id);
+  if (c && c.k === chaveCache) return c.v;
+  const { foneChave } = require('./zapfila');
+  const corte = new Date(agora - dias * 864e5).toISOString();
+  const ind = lerIndice(id), robo = lerRobo(id), out = {};
+  for (const e of Object.values(ind)) {
+    // só abre o arquivo da conversa que teve mensagem (de quem for) dentro do prazo
+    if (!e || !e.ult || !/^\d{10,15}$/.test(String(e.chave || '')) || !(e.ult.em >= corte)) continue;
+    const msgs = ler(arqChat(id, e.chave), []);
+    for (let i = msgs.length - 1; i >= 0 && msgs[i].em >= corte; i--) {
+      if (robo[msgs[i].id]) continue; // mensagem do robô não conta
+      const k = foneChave(e.chave);
+      if (!out[k] || out[k] < msgs[i].em) out[k] = msgs[i].em;
+      break;
+    }
+  }
+  cacheConv.set(id, { k: chaveCache, v: out });
+  return out;
+}
+
 /** o robô mandou esta mensagem (src/zaplaco.js): na conversa ela aparece com 🤖 e o nome da campanha */
 function marcarRobo(id, idMsg, camp, agora = Date.now()) {
   if (!idMsg) return;
@@ -260,4 +290,4 @@ function iniciar() {
   return t;
 }
 
-module.exports = { marcarResposta, numeroDaConversa, TIPOS_MIDIA, midiaDe, responderMidia, nomeArquivo, demoImagem, demoSilencio, MESES, semRespostaDe, aplicar, limpar, buscar, lista, mensagens, marcarLida, marcarRobo, apagar, lerEstado, iniciar, RE_CHAVE };
+module.exports = { ultimaConversa, marcarResposta, numeroDaConversa, TIPOS_MIDIA, midiaDe, responderMidia, nomeArquivo, demoImagem, demoSilencio, MESES, semRespostaDe, aplicar, limpar, buscar, lista, mensagens, marcarLida, marcarRobo, apagar, lerEstado, iniciar, RE_CHAVE };

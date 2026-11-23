@@ -40,6 +40,7 @@ function fabricaDeMentira() {
       },
       midias: new Map(), erroMidia: null,
       async midia(id, limite) { if (c.erroMidia) throw c.erroMidia; const m = c.midias.get(id); if (!m) return null; return limite && m.dados.length > limite ? { grande: true } : m; },
+      aliviou: 0, async aliviar() { c.aliviou++; },
       async vivo() { return c.vivoResp; },
       async sair() { c.saiu++; },
       async fechar() { c.fechou++; },
@@ -257,6 +258,30 @@ test('conferência periódica: cliente que não responde é religado', async () 
   await m.sessoes.vigiar();
   assert.strictEqual(m.sessoes.status('loja1').estado, 'iniciando');
   assert.strictEqual(c.fechou, 1);
+});
+
+test('ZAP-MEM-02: a conferência periódica alivia a memória só de quem respondeu', async () => {
+  const m = montar();
+  const c = await conectado(m);
+  await m.sessoes.vigiar();
+  assert.strictEqual(c.aliviou, 1);
+  c.aliviar = async () => { throw new Error('Protocol error'); };
+  await m.sessoes.vigiar();
+  assert.strictEqual(m.sessoes.status('loja1').estado, 'conectado', 'falha ao aliviar não religa');
+  c.vivoResp = false; c.aliviar = async () => { c.aliviou++; };
+  await m.sessoes.vigiar();
+  assert.strictEqual(c.aliviou, 1, 'quem não respondeu não é aliviado (é religado)');
+});
+
+test('ZAP-MEM-01: Chromium econômico por padrão; ZAP_ECONOMIA=0 volta ao antigo; ZAP_CHROMIUM_ARGS acrescenta', () => {
+  const { argsChromium } = require('../sessoes');
+  const padrao = argsChromium({});
+  assert.ok(padrao.includes('--no-sandbox') && padrao.includes('--blink-settings=imagesEnabled=false'));
+  assert.ok(padrao.some((a) => a.startsWith('--disable-features=')));
+  const antigo = argsChromium({ ZAP_ECONOMIA: '0' });
+  assert.deepStrictEqual(antigo, ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']);
+  const extra = argsChromium({ ZAP_ECONOMIA: '0', ZAP_CHROMIUM_ARGS: '--foo=1  rm -rf --bar ;x' });
+  assert.deepStrictEqual(extra.slice(4), ['--foo=1', '--bar'], 'só opções no formato --nome[=valor]');
 });
 
 // ---------- envio ----------
