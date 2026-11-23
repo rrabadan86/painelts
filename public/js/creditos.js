@@ -9,6 +9,7 @@
   const ST = {
     aberto: ['Em aberto', 'cf-aberto'], atrasado: ['Atrasado', 'cf-atrasado'], compensado: ['Compensado', 'cf-ok'], manual: ['Compensado (confirmado)', 'cf-ok'], confirmar: ['A confirmar', 'cf-aberto'],
   };
+  // boleto: só em registros antigos (até 23/11/2026 havia "Compensada no boleto", texto livre)
   const COMO = { nota: 'na nota', boleto: 'no boleto', royalties: 'nos royalties', outro: 'de outro jeito', cancelado: 'cancelado' };
   const NST = { compensou: ['Compensou (valor exato)', 'cf-ok'], manual: ['Confirmada', 'cf-ok'], conferir: ['Confirme: mais de uma combinação', 'cf-aberto'], sugestao: ['Sugestão: confirme', 'cf-aberto'], sem_par: ['Desconto sem devolução que feche', 'cf-atrasado'], sem_credito: ['Desconto sem devolução em aberto', 'cf-aberto'], ignorada: ['Não é de devolução', 'cf-cinza'] };
 
@@ -53,6 +54,107 @@
     for (const [t, fn, dica] of itens) lista.append(h('button', { type: 'button', title: dica || '', onclick: (e) => { e.stopPropagation(); fechar(); fn(); } }, t));
     const box = h('span', { class: 'cf-menu', onclick: (e) => e.stopPropagation() }, btn, lista);
     return box;
+  }
+
+  /** "nov/2026" — o mês de referência dos royalties como a pessoa escolhe na lista */
+  const mesCurto = (ym) => (/^\d{4}-\d{2}$/.test(ym || '') ? `${TS.MESES[+ym.slice(5, 7) - 1]}/${ym.slice(0, 4)}` : '—');
+  /** os 12 meses da lista (o atual e os 11 anteriores); o servidor manda a mesma lista em d.mesesRoyalties */
+  const ultimos12 = () => { const a = TS.hojeSP().slice(0, 7); return Array.from({ length: 12 }, (_, k) => somaMes(a, -k)); };
+  /** onde/como a devolução foi compensada, em texto curto (FRQ-COMP-05: registros antigos, de texto livre, continuam aparecendo) */
+  const ondeTxt = (comp) => {
+    if (!comp) return '';
+    const obs = comp.obs && comp.obs !== 'confirmado' && comp.obs !== 'automático' ? ' · ' + comp.obs : '';
+    if (comp.nota) return `na NF ${comp.nota.nf} de ${dataTxt(comp.nota.emissao)}${comp.auto ? '' : obs}`;
+    if (comp.como === 'nota' && comp.nf) return `na NF ${comp.nf} (nota que não está no painel)${obs}`;
+    if (comp.como === 'royalties' && comp.mes) return `nos royalties de ${mesCurto(comp.mes)}${obs}`;
+    return `${COMO[comp.como] || ''}${comp.obs ? ' · ' + comp.obs : ''}`;
+  };
+  const ehFranquia = (forn, fornCred) => !!forn && (fornCred.has(forn) || /TSB|FRANQUIA/i.test(forn));
+  const campoJ = (rot, el, dica) => h('label', { class: 'cfr-campo' }, h('span', null, rot), el, dica ? h('small', { class: 'muted' }, dica) : null);
+
+  /**
+   * janela "Compensada em nota fiscal de entrada" (FRQ-COMP-01): procura a nota (nº, fornecedor ou data), as mais recentes primeiro,
+   * as da franquia numa aba própria; sem a nota no painel, digita o número da NF. → salvar({ nota } | { nf }, obs, campo)
+   */
+  function escolherNota(c, d, salvar) {
+    const fornCred = new Set(d.creditos.map((x) => x.fornecedor).filter(Boolean));
+    const notaDe = new Map((d.notas || []).map((n) => [n.id, n]));
+    const devNum = new Map(d.creditos.map((x) => [x.id, x.numero]));
+    const linhas = (d.entradas || []).map((n) => ({ ...n, franquia: ehFranquia(n.fornecedor, fornCred),
+      busca: [n.nf, n.fornecedor, dataTxt(n.emissao), n.emissao, dataTxt(n.entrada)].join(' ') }));
+    const nFranq = linhas.filter((n) => n.franquia).length;
+    let aba = nFranq ? 'franquia' : 'todas', escolhida = null;
+    const fundo = h('div', { class: 'cp-modal-bg' });
+    const fechar = () => fundo.remove();
+    fundo.addEventListener('click', (e) => { if (e.target === fundo) fechar(); });
+    fundo.addEventListener('keydown', (e) => { if (e.key === 'Escape') fechar(); });
+    const nf = h('input', { class: 'f-input', maxlength: 20, inputmode: 'numeric', placeholder: 'Ex.: 19234', 'aria-label': 'Número da NF de entrada' });
+    const obs = h('input', { class: 'f-input', maxlength: 200, placeholder: 'Opcional', 'aria-label': 'Observação (opcional)' });
+    const ok = h('button', { type: 'button', class: 'btn primary' }, 'Marcar compensada');
+    const escolhaTxt = h('div', { class: 'cfn-escolha', role: 'status' });
+    const botoes = new Map(); // id da nota → botão da linha (refeito a cada página da tabela)
+    const pintarEscolha = () => {
+      for (const [id, b] of botoes) { const on = !!escolhida && escolhida.id === id; b.textContent = on ? '✓ Escolhida' : 'Escolher'; b.classList.toggle('cf-b-ok', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); }
+      escolhaTxt.replaceChildren(escolhida ? h('span', null, 'Nota escolhida: ', h('b', null, `NF ${escolhida.nf}`), ` · ${escolhida.fornecedor || '—'} · ${dataTxt(escolhida.emissao)}`)
+        : nf.value.trim() ? h('span', null, 'Vai ficar ligada à ', h('b', null, `NF ${nf.value.trim()}`), ' (digitada)') : h('span', { class: 'muted' }, 'Escolha a nota na lista ou digite o número dela.'));
+      ok.disabled = !escolhida && !nf.value.trim();
+    };
+    const escolher = (n) => { escolhida = escolhida && escolhida.id === n.id ? null : n; if (escolhida) nf.value = ''; pintarEscolha(); };
+    nf.addEventListener('input', () => { if (nf.value.trim()) escolhida = null; pintarEscolha(); });
+    const lugarTab = h('div', { class: 'cfn-tab' });
+    const pintarTab = () => {
+      botoes.clear();
+      const rows = aba === 'franquia' ? linhas.filter((n) => n.franquia) : linhas;
+      const tab = TS.table({
+        cols: [
+          { key: 'nf', label: 'Nota de entrada', align: 'l', wrap: true, title: 'Número da nota de compra e o fornecedor. São as notas que o painel já leu do AppNext (Estoque → Notas fiscais).',
+            render: (n) => { const ja = (notaDe.get(n.id) || {}).creditos || []; return h('span', null, h('b', null, `NF ${n.nf}`), n.franquia ? h('span', { class: 'badge ok cfn-frq' }, 'franquia') : null,
+              h('small', { class: 'est-tam' }, n.fornecedor || '—'), ja.length ? h('small', { class: 'est-tam' }, `já com ${ja.map((id) => `NF-e ${devNum.get(id) ?? '—'}`).join(' + ')}`) : null); },
+            sortVal: (n) => +n.nf || 0 },
+          { key: 'emissao', label: 'Emissão', align: 'l', title: 'Data de emissão da nota; embaixo, a data de entrada na loja.', render: (n) => h('span', null, dataTxt(n.emissao), n.entrada && n.entrada !== n.emissao ? h('small', { class: 'est-tam' }, `entrada ${dataTxt(n.entrada)}`) : null), sortVal: (n) => n.emissao || '' },
+          { key: 'total', label: 'Valor', title: 'Valor total da nota; embaixo, o desconto que veio nela (quando veio).', render: (n) => h('span', null, n.total != null ? fmt.brl(n.total) : '—', n.desconto > 0.005 ? h('small', { class: 'est-tam' }, `desconto ${fmt.brl(n.desconto)}`) : null), sortVal: (n) => n.total || 0 },
+          { key: 'acao', label: '', align: 'r', render: (n) => { const b = h('button', { type: 'button', class: 'cf-b cfn-esc', onclick: (e) => { e.stopPropagation(); escolher(n); } }, 'Escolher'); botoes.set(n.id, b); return b; } },
+        ],
+        rows, sortKey: 'emissao', sortDir: 'desc', pageSize: 8, search: 'Buscar nº da NF, fornecedor ou data…', searchKeys: ['busca'], cls: 'est-t cfn-t', cartao: true, onRowClick: escolher,
+        empty: linhas.length ? 'Nenhuma nota com essa busca. Se ela não está no painel, digite o número abaixo.' : 'O painel ainda não tem notas de entrada desta loja. Digite o número da NF abaixo.',
+      });
+      lugarTab.replaceChildren(tab);
+      pintarEscolha();
+    };
+    const seg = nFranq && nFranq < linhas.length ? TS.seg([[`Da franquia (${nFranq})`, 'franquia', 'Notas da franquia (o mesmo fornecedor das devoluções): é nelas que a devolução costuma ser descontada.'], [`Todas (${linhas.length})`, 'todas', 'Todas as notas de entrada que o painel tem, de qualquer fornecedor.']], aba, (v) => { aba = v; pintarTab(); }) : null;
+    ok.addEventListener('click', async () => {
+      if (ok.disabled) return;
+      ok.disabled = true;
+      const feito = await salvar(escolhida ? { nota: escolhida.id } : { nf: nf.value.trim() }, obs.value, escolhida ? null : nf);
+      if (feito) fechar(); else pintarEscolha();
+    });
+    fundo.append(h('div', { class: 'card cp-copiar cf-ligar cfn', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Compensada em nota fiscal de entrada' }, ...[
+      h('div', { class: 'cfl-cab' }, h('div', null, h('h3', null, `Em qual nota de entrada a NF-e ${c.numero ?? '—'} foi descontada?`),
+        h('small', { class: 'muted' }, `Devolução de ${dataTxt(c.emissao)} · ${fmt.brl(c.valor)}. As notas mais recentes vêm primeiro.`)),
+        h('button', { type: 'button', class: 'cf-b', 'aria-label': 'Fechar', onclick: fechar }, '✕')),
+      seg, lugarTab,
+      h('details', { class: 'cfn-digitar', open: !linhas.length || null }, h('summary', null, 'A nota não está na lista? Digite o número da NF'),
+        campoJ('Número da NF de entrada', nf, 'Use só quando a nota não aparece aqui (o painel ainda não a leu).')),
+      campoJ('Observação', obs),
+      escolhaTxt,
+      h('div', { class: 'cp-acoes' }, h('span', { style: { flex: 1 } }), h('button', { type: 'button', class: 'btn', onclick: fechar }, 'Cancelar'), ok)].filter(Boolean)));
+    pintarTab();
+    document.body.append(fundo);
+  }
+
+  /** janela "Compensada nos royalties" (FRQ-COMP-02): o mês de referência numa lista dos últimos 12 meses, contando o atual */
+  async function escolherMes(c, d, salvar) {
+    const meses = d.mesesRoyalties && d.mesesRoyalties.length ? d.mesesRoyalties : ultimos12();
+    const sel = h('select', { class: 'f-input cfn-mes', 'aria-label': 'Mês de referência dos royalties' }, ...meses.map((m, k) => h('option', { value: m, selected: k === 0 || null }, mesCurto(m) + (k === 0 ? ' (este mês)' : ''))));
+    const obs = h('input', { class: 'f-input', maxlength: 200, placeholder: 'Opcional', 'aria-label': 'Observação (opcional)' });
+    for (;;) {
+      const sim = await TS.janelaConfirmar(`NF-e ${c.numero ?? '—'}: compensada nos royalties`, [
+        h('p', { class: 'muted' }, `Devolução de ${fmt.brl(c.valor)} descontada no boleto de royalties. Em qual mês?`),
+        campoJ('Mês de referência do royalty', sel, 'Este mês e os 11 anteriores.'),
+        campoJ('Observação', obs)], 'Marcar compensada');
+      if (!sim) return;
+      if (await salvar({ mes: sel.value }, obs.value, sel)) return;
+    }
   }
 
   const mesTxt = (ym) => (ym ? `${TS.MESES_LONGOS[+ym.slice(5, 7) - 1].toLowerCase()}/${ym.slice(0, 4)}` : '—');
@@ -227,10 +329,42 @@
       tab || h('p', { class: 'muted' }, 'Nenhum resgate de prêmio no FIXE desta loja ainda. Os resgates vêm da importação dos Logs do FIXE.'));
   }
 
+  /** apresentação: a resposta só confere; a devolução vira "compensada (confirmado)" na memória da aba e os números são refeitos */
+  function aplicarNaMemoria(d, cid, comp) {
+    const c = d.creditos.find((x) => x.id === cid);
+    if (!c) return;
+    // como o servidor faria: a devolução sai da sugestão em que estava (nota sem nenhuma vira "sem devolução que feche")
+    for (const n of d.notas || []) {
+      if (!(n.creditos || []).includes(cid)) continue;
+      n.creditos = n.creditos.filter((id) => id !== cid);
+      if (!n.creditos.length && n.situacao !== 'ignorada') Object.assign(n, { situacao: 'sem_par', sobra: n.desconto });
+    }
+    c.situacao = 'manual';
+    c.compensado = { ...comp, auto: false, por: 'apresentacao', em: new Date().toISOString() };
+    if (comp.nota) { const n = (d.notas || []).find((x) => x.id === comp.nota.id); if (n) { n.creditos.push(cid); n.situacao = 'manual'; } }
+    const cs = d.creditos, soma = (f) => Math.round(cs.filter(f).reduce((s0, x) => s0 + x.valor, 0) * 100) / 100;
+    Object.assign(d.resumo, { aberto: soma((x) => x.situacao === 'aberto'), atrasado: soma((x) => x.situacao === 'atrasado'), compensado: soma((x) => x.situacao === 'compensado' || x.situacao === 'manual'), confirmar: soma((x) => x.situacao === 'confirmar'),
+      nAtrasado: cs.filter((x) => x.situacao === 'atrasado').length, nAberto: cs.filter((x) => x.situacao === 'aberto').length, nConfirmar: cs.filter((x) => x.situacao === 'confirmar').length });
+  }
+
   function pintar(corpo, loja, d) {
     const r = d.resumo;
     const acao = async (b, msg) => {
-      try { const nd = await api('POST', 'conta-franquia/acao', { loja, ...b }); if (msg) toast(msg); pintar(corpo, loja, nd); } catch (e) { toast(e.message, true); }
+      try {
+        const nd = await api('POST', 'conta-franquia/acao', { loja, ...b });
+        if (nd.simulado) aplicarNaMemoria(d, b.credito, nd.compensado); // apresentação: só na memória
+        if (msg) toast(msg); pintar(corpo, loja, nd.simulado ? d : nd);
+      } catch (e) { toast(e.message, true); }
+    };
+    /** marcar como compensada pelas janelas novas: erro abre "Não foi salvo" (TS.naoSalvo); na apresentação, troca só na memória */
+    const compensar = (c, como) => async (dados, obsTxt, campo) => {
+      try {
+        const nd = await api('POST', 'conta-franquia/acao', { loja, tipo: 'compensar', credito: c.id, como, obs: obsTxt || '', ...dados });
+        if (nd.simulado) aplicarNaMemoria(d, c.id, nd.compensado);
+        toast(nd.simulado ? 'Marcada como compensada (apresentação: nada foi salvo).' : 'Devolução marcada como compensada.');
+        pintar(corpo, loja, nd.simulado ? d : nd);
+        return true;
+      } catch (e) { await TS.naoSalvo(e, campo); return false; }
     };
     const acaoRoy = async (b, msg) => {
       try { const nd = await api('POST', 'conta-franquia/royalties', { loja, ...b }); if (msg) toast(msg); pintar(corpo, loja, nd); return true; } catch (e) { toast(e.message, true); return false; }
@@ -325,8 +459,8 @@
       if (c.situacao === 'manual') return menuMais([['↺ Desfazer (volta ao automático)', () => acao({ tipo: 'desfazer', credito: c.id }, 'Voltou para o automático.')]]);
       const marcar = (tipo, como, pergunta, chips) => async () => { const obs = await TS.perguntar(pergunta, { chips, rotulo: 'Observação (opcional)', texto: `Devolução NF-e ${c.numero ?? '—'}`, ok: 'Marcar' }); if (obs === null) return; acao(tipo === 'cancelar' ? { tipo, credito: c.id, obs } : { tipo, credito: c.id, como, obs }, 'Devolução atualizada.'); };
       return menuMais([
-        ['Compensada no boleto', marcar('compensar', 'boleto', 'Compensada no boleto: quer anotar a data ou o nº do boleto?')],
-        ['Compensada nos royalties', marcar('compensar', 'royalties', 'Compensada nos royalties: quer anotar o mês?')],
+        ['Compensada em nota fiscal de entrada', () => escolherNota(c, d, compensar(c, 'nota')), 'Escolha a nota de compra em que a franquia descontou esta devolução'],
+        ['Compensada nos royalties', () => escolherMes(c, d, compensar(c, 'royalties')), 'Escolha o mês de referência do royalty em que veio o desconto'],
         ['Compensada de outro jeito', marcar('compensar', 'outro', 'Como foi compensada?', ['Crédito em outro pedido', 'Produto enviado no lugar', 'Depósito / Pix'])],
         ['Cancelada / não vai ser paga', marcar('cancelar', null, 'Por que não vai ser paga?', ['A franquia recusou', 'Fora do prazo', 'Lançada em duplicidade', 'Valor pequeno'])]]);
     };
@@ -339,7 +473,7 @@
           const [t, cls] = ST[c.situacao] || [c.situacao, ''];
           const comp = c.compensado;
           return h('span', null, h('span', { class: 'cf-st ' + cls }, comp && comp.como === 'cancelado' ? 'Cancelada' : t), ' ',
-            h('small', { class: 'muted' }, comp ? (comp.nota ? [`na NF ${comp.nota.nf} de ${dataTxt(comp.nota.emissao)}`] : `${COMO[comp.como] || ''}${comp.obs ? ' · ' + comp.obs : ''}`) : `há ${c.dias} dia(s) sem desconto`));
+            h('small', { class: 'muted' }, comp ? ondeTxt(comp) : `há ${c.dias} dia(s) sem desconto`));
         }, sortVal: (c) => ({ atrasado: 0, aberto: 1, confirmar: 2, manual: 3, compensado: 4 })[c.situacao] ?? 9 },
         { key: 'acao', label: '', align: 'r', render: maisCredito },
       ],
