@@ -524,7 +524,10 @@
     let searchBox = null;
     if (search) {
       searchBox = h('input', { class: 'f-input', type: 'search', placeholder: search, value: searchInit || '' });
-      searchBox.addEventListener('input', TS.debounce(() => { q = TS.norm(searchBox.value); page = 0; if (TS._buscas && TS._buscas.tela === location.hash) TS._buscas.v[chaveBusca] = searchBox.value; if (onSearch) onSearch(searchBox.value); paint(); }, 120));
+      // o texto buscado é guardado na hora (só o redesenho espera): quem apaga a busca e troca logo de aba não
+      // leva a busca antiga para a tabela nova ("Nada encontrado" na Validade → Alimentação)
+      searchBox.addEventListener('input', () => { if (TS._buscas && TS._buscas.tela === location.hash) TS._buscas.v[chaveBusca] = searchBox.value; if (onSearch) onSearch(searchBox.value); });
+      searchBox.addEventListener('input', TS.debounce(() => { q = TS.norm(searchBox.value); page = 0; paint(); }, 120));
     }
     function sorted() {
       let r = rows;

@@ -75,9 +75,15 @@ test.describe('robô do WhatsApp', () => {
     await expect(faixa).toBeVisible();
     await expect(faixa).toContainText('Robô do WhatsApp');
     await expect(faixa.locator('.badge', { hasText: 'Ligado' })).toBeVisible();
-    await expect(faixa).toContainText('Hoje: 12 de 30');
+    // 2ª passada (23/11/2026): a faixa virou o herói da tela — robô · enviadas hoje · não enviadas (que leva à aba)
+    await expect(faixa.locator('.heroi-col', { hasText: 'Enviadas hoje' }).locator('.heroi-num')).toContainText('12 de 30');
     // dentro do horário: "próxima mensagem por volta de HH:MM"; quando a próxima cairia depois do horário (ou num dia sem envio), diz quando volta
-    await expect(faixa).toContainText(/próxima mensagem por volta de \d\d:\d\d|hoje não sai mais nenhuma .* volta .* às \d\d:\d\d/);
+    await expect(faixa).toContainText(/próxima mensagem por volta de \d\d:\d\d|hoje não sai mais nenhuma .* volta .* às \d\d:\d\d/i);
+    const ne = faixa.locator('.heroi-col', { hasText: 'Não enviadas' });
+    await expect(ne.locator('.heroi-num')).toHaveText(/^\d+$/);
+    await ne.getByRole('button', { name: 'Ver quem e por quê ›' }).click();
+    await expect(page.locator('.cp-visao [aria-pressed="true"], .cp-visao .on').first()).toContainText('Não enviadas');
+    await page.locator('.cp-visao').getByText('Campanhas', { exact: true }).click();
     await semVazar(page, faixa);
     // uma campanha de exemplo (fica só na memória do navegador)
     await page.getByRole('button', { name: 'Criar campanha' }).click();

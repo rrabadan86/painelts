@@ -110,18 +110,19 @@
       empty: lista.length ? 'Nenhum orçamento com esse filtro.' : 'Nenhum orçamento ainda. Comece com "Novo orçamento".',
     });
     corpo.replaceChildren(
-      h('div', { class: 'orc-topo' }, h('button', { type: 'button', class: 'btn primary', onclick: () => abrir('novo') }, '+ Novo orçamento')),
-      // herói (redesenho de 22/11): em aberto decide (a quem responder), aprovados e a taxa de conversão
-      h('div', { class: 'mt' }, TS.heroi([
-        { rot: 'Em aberto', num: fmt.int(conta0('rascunho') + conta0('enviado')), linhas: [`${fmt.int(conta0('enviado'))} enviado(s) esperando resposta`, `${fmt.int(conta0('rascunho'))} rascunho(s)`],
+      // herói (redesenho de 22/11): em aberto decide (a quem responder), aprovados e a taxa de conversão;
+      // 2ª passada (23/11/2026): a ação principal "+ Novo orçamento" fica ao lado do número que decide, não solta acima
+      TS.heroi([
+        { rot: 'Em aberto', num: fmt.int(conta0('rascunho') + conta0('enviado')), linhas: [`${fmt.int(conta0('enviado'))} enviado(s) esperando resposta`, `${fmt.int(conta0('rascunho'))} rascunho(s)`,
+          { el: h('button', { type: 'button', class: 'btn primary vp2-acao', onclick: () => abrir('novo') }, '+ Novo orçamento') }],
           dica: 'Orçamentos em rascunho ou enviados ao cliente e ainda sem resposta.' },
         { rot: 'Aprovados', num: fmt.int(aprov.length), linhas: [fmt.brl(valorAprov)], dica: 'Orçamentos que o cliente aprovou e o valor somado deles.' },
         { rot: 'Taxa de conversão', num: dec.length ? fmt.pct(aprov.length / dec.length, 0) : '—', linhas: ['aprovados ÷ (aprovados + perdidos)', `${fmt.int(conta0('perdido'))} perdido(s) · veja o motivo de cada um`],
           dica: 'Aprovados ÷ (aprovados + perdidos). Os em aberto ficam fora até terem resposta.' },
-      ])),
-      h('div', { class: 'card mt' }, h('div', { class: 'card-title' }, 'Orçamentos'),
+      ]),
+      h('div', { class: 'mt' }, TS.card('Orçamentos', 'Clique no orçamento para abrir, editar, imprimir ou mandar pelo WhatsApp.',
         h('div', { class: 'est-tools' }, tab.searchBox, TS.seg([['Todos', 'todos'], [`Rascunho (${conta0('rascunho')})`, 'rascunho'], [`Enviados (${conta0('enviado')})`, 'enviado'], [`Aprovados (${conta0('aprovado')})`, 'aprovado'], [`Perdidos (${conta0('perdido')})`, 'perdido']], fil, (v) => { state.orcFil = v; telaLista(corpo, loja, cat, lista); })),
-        tab));
+        tab)));
   }
 
   // ---------- editor ----------

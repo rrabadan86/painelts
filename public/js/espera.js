@@ -104,17 +104,21 @@
     const enc = d.pedidos.filter((p) => p.avisado && Date.parse(p.avisado.em) >= desde && (p.st === 'comprou' || p.st === 'naocomprou'));
     const compraram = enc.filter((p) => p.st === 'comprou').length;
     // redesenho (decisão do dono, 22/11/2026): o "como está" num cartão-herói — quem avisar agora primeiro
+    // 2ª passada (23/11/2026): sem título repetido (a página já diz "Lista de espera"); a ação principal ("+ Anotar pedido") no pé do
+    // herói e o número de quem avisar leva à aba "Chegaram · avisar"
+    const irAvisar = () => { state.espAba = 'avisar'; state.espVend = ''; repintar(); };
     const kpis = TS.heroi([
       { rot: 'Chegaram · avisar', num: fmt.int(conta.avisar), estado: conta.avisar ? 'bom' : null, dica: 'Pedidos cujo produto chegou na nota de entrada: o cliente está esperando o aviso.',
-        linhas: [conta.avisar ? `${conta.avisar === 1 ? 'cliente para avisar' : 'clientes para avisar'} agora` : 'ninguém para avisar'] },
+        linhas: [conta.avisar ? h('button', { type: 'button', class: 'link-btn esh-ir', onclick: irAvisar }, `${conta.avisar === 1 ? 'cliente para avisar' : 'clientes para avisar'} agora ›`) : 'ninguém para avisar'] },
       { rot: 'Esperando', num: fmt.int(conta.esperando), dica: `Esperando: o produto ainda não chegou. Avisados: o cliente já foi avisado e tem até ${d.dias} dias para comprar.`,
         linhas: ['produto ainda não chegou', `${fmt.int(conta.avisados)} ${conta.avisados === 1 ? 'avisado' : 'avisados'} aguardando compra (até ${d.dias} dias)`] },
       { rot: 'Voltaram para comprar', num: enc.length ? fmt.pct(compraram / enc.length, 0) : '—', dica: 'Dos avisados nos últimos 90 dias que já encerraram, quantos voltaram e compraram o produto.',
         linhas: [enc.length ? `${fmt.int(compraram)} de ${fmt.int(enc.length)} avisados (90 dias)` : 'aparece depois dos primeiros avisos'] },
-    ], { titulo: 'Lista de espera agora' });
+    ], { extra: h('div', { class: 'esh-pe' }) });
     kpis.classList.add('esp-kpis');
     const novo = h('div');
-    const btnNovo = h('button', { type: 'button', class: 'btn primary esp-novo-btn', onclick: () => { btnNovo.hidden = true; novo.replaceChildren(formNovo(loja, d, (p) => { d.pedidos.unshift(p); state.espAba = 'esperando'; repintar(); }, () => { btnNovo.hidden = false; novo.replaceChildren(); })); } }, '+ Anotar pedido');
+    const btnNovo = h('button', { type: 'button', class: 'btn primary esp-novo-btn', onclick: () => { btnNovo.hidden = true; novo.replaceChildren(formNovo(loja, d, (p) => { d.pedidos.unshift(p); state.espAba = 'esperando'; repintar(); }, () => { btnNovo.hidden = false; novo.replaceChildren(); })); novo.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } }, '+ Anotar pedido');
+    kpis.querySelector('.esh-pe').append(btnNovo);
     const abas = TS.seg(Object.entries(ABAS).map(([k, [t]]) => [`${t} (${fmt.int(conta[k])})`, k]), aba, (v) => { state.espAba = v; repintar(); });
     const segModo = TS.seg(MODOS, modo, (v) => { state.espModo = v; repintar(); });
     const baseAba = d.pedidos.filter((p) => ABAS[aba][1].includes(p.st));
@@ -218,13 +222,15 @@
     inBusca.addEventListener('input', () => { state.espBusca = inBusca.value; desenharLista(); });
     desenharLista();
 
-    corpo.replaceChildren(kpis,
-      h('div', { class: 'esp-topo mt' }, btnNovo, d.podeModelo ? modeloMsg(loja, d, repintar) : null), novo,
+    corpo.replaceChildren(...[kpis,
+      novo,
       h('div', { class: 'card mt' },
         h('div', { class: 'esp-cab-painel' }, h('div', { class: 'esp-abas' }, abas), baseAba.length ? h('div', { class: 'esp-modo' }, segModo) : null),
         baseAba.length ? h('div', { class: 'esp-barra' }, pilulas, inBusca) : null,
         listaBox,
-        aba === 'encerrados' ? porQuem(d) : null));
+        aba === 'encerrados' ? porQuem(d) : null),
+      // a mensagem padrão é ajuste de vez em quando: recolhida, depois da lista
+      d.podeModelo ? h('div', { class: 'esh-modelo mt' }, modeloMsg(loja, d, repintar)) : null].filter(Boolean));
   }
 
   /** um pedido: cliente, produtos, situação, vendedora e o que fazer */

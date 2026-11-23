@@ -33,8 +33,8 @@ test('Estoque: tabela única — filtros, busca em todos os produtos, quadros qu
   await expect(card.locator('tbody')).toContainText(fora);
   await card.locator('.est-busca').fill('');
 
-  // o quadro "Estoque parado" filtra a tabela
-  await page.locator('.kpi', { hasText: 'Estoque parado' }).click();
+  // a linha "Parado" do cartão-herói filtra a tabela
+  await page.locator('.est-p2-heroi .linhas-num-a', { hasText: 'Parado' }).click();
   await expect(card.locator('.est-tools .seg button.on')).toContainText('Parados');
   await expect(card.locator('tbody .badge').first()).toHaveText('Parado');
 

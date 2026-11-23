@@ -19,6 +19,9 @@ const contraste = (a, b) => {
 test('VIS-01: a barra do topo continua fixa depois de rolar bastante', async ({ page }) => {
   await abrir(page, '#estoque');
   await expect(page.locator('#est-tabela')).toBeVisible({ timeout: 30000 });
+  // 2ª passada: "Próximas semanas" vem recolhido; aberto, a página fica comprida o bastante para rolar
+  const verGraf = page.locator('.est-p2-saz-btn');
+  if (await verGraf.count()) await verGraf.click();
   await page.evaluate(() => window.scrollTo(0, 2500));
   await page.waitForTimeout(200);
   expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(1000);
@@ -53,7 +56,7 @@ test('VIS-03: janela dos lotes do chá — foco entra, Esc fecha e o foco volta 
 test('VIS-04: Estoque — quadro clicável com Espaço; no celular, cartão enxuto e "no pedido ›" fora do nome', async ({ page }, info) => {
   await abrir(page, '#estoque');
   await expect(page.locator('#est-tabela')).toBeVisible({ timeout: 30000 });
-  const quadro = page.locator('.est-kpi-click[role="button"]').first();
+  const quadro = page.locator('.est-p2-heroi .est-p2-ir').first(); // 2ª passada: os números do herói levam à aba (eram quadros clicáveis)
   if (await quadro.count()) {
     await page.locator('#est-tabela .seg button[data-val="todos"]').click();
     await quadro.focus();

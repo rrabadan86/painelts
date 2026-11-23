@@ -510,14 +510,15 @@
       colRef = { rot: 'Referência pelo CMV', num: R.pct != null ? fmt.brl0(prevVendas * R.pct) : '—', linhas: [`${fmt.pct(R.pct)} de ${fmt.brl0(prevVendas)} previstos até o fim`],
         dica: `Vendas previstas: ritmo dos últimos ${R.N} dias × ${fmt.int(ateRef)} dias até começar + ${R.ev.nome} do ano passado × ${fmt.n2(R.cresc)}. Se o pedido sugerido passar muito disso, há estoque sobrando ou produtos de giro alto; confira as quantidades.` };
     }
-    const heroi = TS.heroi([colPedido, colMeio, colRef], { titulo: modo === 'repor' ? 'Seu pedido desta semana' : `Pedido para ${R.ev.nome}` });
+    // 2ª passada (23/11/2026): a composição (obrigatório + carrinho = total) fica dentro do herói, no rodapé, em vez de um cartão à parte
+    const heroi = TS.heroi([colPedido, colMeio, colRef], { titulo: modo === 'repor' ? 'Seu pedido desta semana' : `Pedido para ${R.ev.nome}`,
+      extra: R.obTotal ? h('div', { class: 'ped-p2-compo', 'aria-label': 'Composição do pedido' }, h('div', { class: 'heroi-rot' }, h('span', null, 'Composição do pedido')), R.novoCompo()) : null });
     heroi.classList.add('ped-heroi', 'mt');
     const hBarra = heroi.querySelector('.heroi-barra-ok');
     // ordem da tela (decisão do dono): ajustes → Proporção do pedido → quadros → Pedido obrigatório → ⭐ Sugestões → Produtos → Revisão com a IA
     const marcaProp = h('span', { hidden: true }); corpo.append(marcaProp); // a Proporção é montada mais abaixo e entra aqui
     corpo.append(heroi);
     if (TS.comprasVendas) corpo.append((cvQuadro = TS.comprasVendas.quadroPedido(M, e, total(), { janela: R.ent + R.N, eventos: p.cfg.eventos || [], evento: modo === 'evento' ? ev : null })));
-    if (R.obTotal) corpo.append(h('div', { class: 'card mt ped-compo-card' }, h('div', { class: 'card-title' }, 'Composição do pedido'), R.novoCompo()));
     // janela da classe oficial (3, 6 ou 12 meses): o mesmo controle na tabela de Produtos e nas ⭐ Sugestões da equipe
     const ctlClasseMeses = () => (TS.eu && TS.eu.pode && TS.eu.pode.configurar && modo === 'repor'
         ? h('span', { class: 'ped-cl-meses', title: 'Classe oficial: a mediana do que cada produto vendeu por mês nestes meses fechados × a margem. Vale também na Rentabilidade' },
@@ -1082,9 +1083,12 @@
     const avisoObr = obrN ? h('div', { class: 'ped-obr-aviso' }, h('b', null, `🔒 Pedido obrigatório: ${fmt.int(obrN)} produtos · ${fmt.brl0(R.obTotal)}`),
       ' — a franquia manda de qualquer forma. Eles ', h('b', null, 'não vão para o carrinho'), ' (pedir de novo duplicaria). Ficam em "Pedido obrigatório" e no "Carrinho completo". ',
       filtro !== 'obrig' ? h('button', { type: 'button', class: 'link-btn', onclick: () => { state.pedFiltro = 'obrig'; pintar(corpo, loja, M, e, p); } }, 'Ver o obrigatório') : null) : null;
+    // 2ª passada (23/11/2026): Salvar carrinho e CSV no canto do cabeçalho, junto de Imprimir e Expandir; busca, abas e Limpar
+    // descem para a linha de cima da tabela
     corpo.append(h('div', { class: 'mt' }, TS.cardWithTools('Produtos', sub,
-      h('div', { class: 'est-tools ped-tools' }, !MOBILE && tab.searchBox && (tab.searchBox.classList.add('est-busca'), tab.searchBox),
-        TS.seg(Object.entries(FILTROS).map(([k, [t, , dica]]) => [`${t} (${cont(k)})`, k, dica]), filtro, (v) => { state.pedFiltro = v; pintar(corpo, loja, M, e, p); }), menuLimpar, btnSalvar, btnCsv),
+      h('div', { class: 'est-p2-acoes-dir ped-p2-acoes' }, btnSalvar, btnCsv),
+      h('div', { class: 'est-tools ped-tools ped-p2-tools' }, !MOBILE && tab.searchBox && (tab.searchBox.classList.add('est-busca'), tab.searchBox),
+        TS.seg(Object.entries(FILTROS).map(([k, [t, , dica]]) => [`${t} (${cont(k)})`, k, dica]), filtro, (v) => { state.pedFiltro = v; pintar(corpo, loja, M, e, p); }), menuLimpar),
       avisoRasc && avisoRasc.classList.contains('ped-rasc-ok') ? avisoRasc : null, avisoObr, avisoVer, MOBILE ? h('details', { class: 'ped-fx-mob', open: (fx.g || fx.gp || fx.d || fx.sb || fx.s || fx.c || fx.m) ? true : null }, h('summary', null, `Filtros${[fx.g, fx.gp, fx.d, fx.sb, fx.s, fx.c, fx.m].filter(Boolean).length ? ` (${[fx.g, fx.gp, fx.d, fx.sb, fx.s, fx.c, fx.m].filter(Boolean).length})` : ''} · ${fmt.int(linhas.length)} produtos`), filtrosExtra) : filtrosExtra, MOBILE ? listaMobile() : tab)));
     if (editados.size) corpo.append(h('p', { class: 'muted' }, `${editados.size} quantidade(s) alterada(s) à mão. `, h('a', { href: '#', onclick: (x) => { x.preventDefault(); editados.clear(); pintar(corpo, loja, M, e, p); } }, 'Voltar à sugestão')));
 

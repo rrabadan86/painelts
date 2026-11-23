@@ -146,7 +146,14 @@
       const novas = await rodadasRecorrentes(lista);
       if (!corpo.isConnected) return;
       // faixa do robô do WhatsApp (fica acima da lista e da campanha aberta)
-      if (TS.zapFaixa) { faixaRobo = TS.zapFaixa(state.loja, () => lista.some((c) => c.robo)); corpo.before(faixaRobo); }
+      // 2ª passada: o herói do robô também mostra as "Não enviadas" (o mesmo número da aba) e leva até elas
+      if (TS.zapFaixa) {
+        faixaRobo = TS.zapFaixa(state.loja, () => lista.some((c) => c.robo), () => ({
+          n: lista.reduce((n, c) => n + naoEnviadasDe(c).length, 0),
+          abrir: () => { state.cpNE = { mot: '', camp: '' }; state.cpVisao = 'naoenv'; pintarLista(corpo, lista, []); corpo.scrollIntoView({ behavior: 'smooth', block: 'start' }); },
+        }));
+        corpo.before(faixaRobo);
+      }
       pintarLista(corpo, lista, novas);
       prepararRobo(lista.filter((c) => c.robo && c.ativa !== false)).catch(() => null);
       // vinda de Estoque → Validade: a campanha já montada para quem comprou o chá perto de vencer
@@ -395,6 +402,7 @@
       onRowClick: (x) => abrirCampanha(corpo, lista, x.c),
     }) : null;
     const totNE = lista.reduce((n, c) => n + naoEnviadasDe(c).length, 0);
+    if (faixaRobo && faixaRobo.repintar && faixaRobo.isConnected) faixaRobo.repintar(); // "Não enviadas" do herói acompanha a aba
     const visaoSeg = TS.seg([['Campanhas', 'campanhas', 'A lista de campanhas da loja.'], [`Não enviadas (${fmt.int(totNE)})`, 'naoenv', 'Quem ficou sem a mensagem (puladas e "não quer") em todas as campanhas, com o motivo, para consultar e voltar para a fila.']], state.cpVisao === 'naoenv' ? 'naoenv' : 'campanhas', (v) => { state.cpVisao = v; pintarLista(corpo, lista, []); });
     visaoSeg.classList.add('cp-visao');
     const neBox = h('div', { class: 'cp-ne' });

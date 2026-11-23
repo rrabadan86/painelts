@@ -10,16 +10,21 @@ const token = (page, nome) => page.evaluate((n) => { const x = document.createEl
 
 test('Quadros: sem barra lateral (estado só na cor do texto e na marca kpi-bom/kpi-ruim); cartão sem sombra', async ({ page }) => {
   await abrir(page);
-  await ir(page, 'estoque');
-  const repor = page.locator('.kpi', { hasText: 'Para repor' });
-  await expect(repor).toBeVisible({ timeout: 20000 });
+  // 2ª passada (23/11/2026): o Estoque abre com o cartão-herói; os quadros de apoio que sobraram no grupo são os de
+  // compras × teto do Pedido (abrem em "ver a conta"). O quadro "ruim" é montado com o próprio TS.kpi na tela.
+  await ir(page, 'pedido');
+  const cv = page.locator('.cv-pedido');
+  await expect(cv).toBeVisible({ timeout: 30000 });
+  if (!(await cv.evaluate((el) => el.open))) await cv.locator('summary').click();
   const [bad, good] = [await token(page, '--bad'), await token(page, '--good')];
+  await page.evaluate(() => { const k = TS.kpi('Quadro de teste', '10', TS.h('span', { class: 'down' }, '3 urgentes')); k.id = 'kpi-teste'; document.querySelector('.cv-pedido .g-kpi').append(k); });
+  const repor = page.locator('#kpi-teste');
   // decisão do dono, 22/11/2026 (visual limpo do protótipo do Início): nenhum quadro tem barra lateral; o estado fica na
-  // marca kpi-bom/kpi-ruim e na cor do texto da comparação. "Para repor" com urgentes = ruim; "Estoque a custo" = neutro.
+  // marca kpi-bom/kpi-ruim e na cor do texto da comparação. Comparação em vermelho = ruim; "Teto de compras" = neutro.
   await expect(repor).toHaveClass(/kpi-ruim/);
   expect(await barra(repor)).toBe('none');
   expect(await repor.locator('.kpi-foot .down, .kpi-foot .neg').first().evaluate((el) => getComputedStyle(el).color)).toBe(bad);
-  const neutro = page.locator('.kpi', { hasText: 'Estoque a custo' });
+  const neutro = page.locator('.cv-pedido .kpi', { hasText: 'Teto de compras' });
   await expect(neutro).not.toHaveClass(/kpi-(bom|ruim)/);
   expect(await barra(neutro)).toBe('none');
   // o estado segue o primeiro sinal do rodapé (ou do valor): confere em todos os quadros da tela
@@ -59,11 +64,17 @@ test('Vendas → Resumo: variações curtas com a frase completa no title e nenh
   expect(linhas.some(([t, dica]) => /· \d+ dias$/.test(t) && /^vs\. \d+ dias anteriores$/.test(dica))).toBe(true);
   // "· ano" = os mesmos dias da semana, 364 dias antes (a frase completa diz isso)
   expect(linhas.some(([t, dica]) => /· ano$/.test(t) && /^vs\. ano anterior: o mesmo período 364 dias antes/.test(dica))).toBe(true);
-  if (info.project.name === 'computador') {
-    // 5 quadros de apoio: divididos em linhas parecidas, a última nunca com um só
-    const porLinha = await page.locator('.g-kpi').first().evaluate((g) => { const m = new Map(); for (const k of g.children) { const y = Math.round(k.getBoundingClientRect().top); m.set(y, (m.get(y) || 0) + 1); } return [...m.values()]; });
-    if (porLinha.length > 1) expect(porLinha[porLinha.length - 1]).toBeGreaterThan(1);
-  }
+  // 2ª passada (23/11/2026): os 5 indicadores de apoio (TKM, PMA, IPA, chá, EG) são linhas dentro do herói, sem quadros soltos;
+  // cada um com o número e a variação curta embaixo do rótulo (a frase completa no title)
+  const apoio = page.locator('.heroi .vp2-apoio .linhas-num li');
+  await expect(apoio).toHaveCount(5);
+  await expect(page.locator('main .g-kpi')).toHaveCount(0);
+  const tkm = apoio.filter({ hasText: 'Ticket médio (TKM)' });
+  await expect(tkm.locator('.linhas-num-v')).toContainText('R$');
+  expect(await tkm.locator('.kpi-vars > span').evaluateAll((xs) => xs.some((x) => /· ano$/.test(x.textContent) && /^vs\. ano anterior/.test(x.title)))).toBe(true);
+  // tabela por vendedor sem rolar para o lado: os tipos de chá ficam embaixo do total, na mesma célula
+  await expect(page.locator('#rs-vend')).toContainText('Chá (kg) por tipo');
+  if (info.project.name === 'computador') expect(await page.locator('#rs-vend .table-wrap').first().evaluate((w) => w.scrollWidth - w.clientWidth)).toBeLessThanOrEqual(1);
   await semRolagemLateral(page);
 });
 

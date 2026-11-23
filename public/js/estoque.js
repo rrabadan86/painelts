@@ -978,7 +978,6 @@
     }
     // venda perdida por falta (zerado que vendia) e excesso (vende, mas sobra): contas em ruptura.js
     const RUP = TS.ruptura.marcar({ linhas: todos, M, H, espera });
-    const RUPQ = TS.ruptura.quadros(RUP, { H });
     const diasTxt = (d) => (d == null ? '—' : `${fmt.int(d)} ${Math.round(d) === 1 ? 'dia' : 'dias'}`);
     const porque = (r) => ({
       acabou: `Estoque zerado e a previsão é vender ${qtdTxt(r.prev, r.it)} por dia.`,
@@ -1014,7 +1013,6 @@
     const urgentes = repor.filter((r) => r.sit === 'acabou' || r.sit === 'falta').length;
 
     // ---------- KPIs ----------
-    const kpiFiltro = (el, k) => { el.classList.add('est-kpi-click'); el.setAttribute('role', 'button'); el.tabIndex = 0; const ir = () => TS.estFiltrar && TS.estFiltrar(k); el.addEventListener('click', ir); el.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); ir(); } }); return el; };
     // Rentabilidade (revisão de 22/11): o "como está" num cartão-herói — lucro bruto, sem fixos e com fixos, cada um com a margem;
     // "ver a conta" abre a mesma janela de antes. A cobertura do custo fica numa linha do primeiro número.
     const verConta = (rot) => h('button', { type: 'button', class: 'link-btn est-heroi-conta', onclick: (e) => abrirLiq(e, { produto: 'todos os produtos com custo', vt: fatCusto, custo: custoTot, lucro, ...dedTot, outros: outrosTot, ded: dedSoma, lucroLiq: lucroLiqTot }) }, rot);
@@ -1028,12 +1026,32 @@
         dica: `Lucro bruto − comissão ${fmt.brl0(dedTot.com)} − royalties ${fmt.brl0(dedTot.roy)} − Simples ${fmt.brl0(dedTot.imp)} (${fmt.pct(pSimples)}) − maquininha ${fmt.brl0(dedTot.maq)} (${fmt.pct(pCartao)})${OUTROS.length ? ` − outros custos ${fmt.brl0(dedTot.out)}` : ''}.${!pSimples && !pCartao ? ' Configure o % do Simples e da maquininha em Configurações → Lojas → Estoque e margem.' : ''}`,
         linhas: [margemTxt(fatCusto ? lucroLiqTot / fatCusto : null), verConta('ver a conta ›')] },
     ], { titulo: 'Lucro do período' })));
-    put(E, h('div', { class: 'grid g-kpi' },
-      kpiFiltro(TS.kpi('Estoque a custo', fmt.brl0(valorEstoque), `${fmt.int(estoque.itens.filter((i) => i.qtd > 0).length)} produtos com saldo`, 'Toque para ver na tabela os produtos com saldo'), 'saldo'),
-      kpiFiltro(TS.kpi('Para repor', fmt.int(repor.length), h('span', { class: urgentes ? 'down' : '' }, `${fmt.int(urgentes)} ${urgentes === 1 ? 'urgente' : 'urgentes'} · pedido ${fmt.brl0(repor.reduce((s, r) => s + r.custoPedido, 0))}`), 'Urgente = acabou ou acaba antes de o pedido chegar. Toque para ver na tabela'), 'repor'),
-      kpiFiltro(RUPQ.falta, 'falta'),
-      kpiFiltro(TS.kpi('Estoque parado', fmt.brl0(valorParado), `${fmt.int(parados.length)} produtos sem venda há ${cfg.paradoDias}+ dias`, 'Toque para ver na tabela os produtos parados'), 'parados'),
-      kpiFiltro(RUPQ.sobra, 'sobrando')));
+    // 2ª passada (23/11/2026, proposta do Figma aprovada pelo dono): no lugar dos 5 quadros, o cartão-herói com os 3 números
+    // que decidem — perdendo por falta · para repor (com "Montar o pedido") · estoque a custo, com parado e sobrando em linhas.
+    // Cada número leva à aba da tabela (TS.estFiltrar), como os quadros faziam; nenhum número saiu da tela.
+    const irT = (k) => (e) => { if (e) e.preventDefault(); if (TS.estFiltrar) TS.estFiltrar(k); };
+    const verT = (rot, k) => h('button', { type: 'button', class: 'link-btn est-heroi-conta est-p2-ir', 'data-aba': k, onclick: irT(k) }, rot);
+    const fT = RUP.falta, sT = RUP.sobra, dR = TS.ruptura.dicas(RUP, { H });
+    const comSaldo = estoque.itens.filter((i) => i.qtd > 0).length;
+    const pedidoSug = repor.reduce((s, r) => s + r.custoPedido, 0);
+    const podePedH = (TS.telasEstoque || []).includes('pedido');
+    const temCustoE = valorEstoque > 0;
+    put(E, h('div', { class: 'est-heroi est-p2-heroi' }, TS.heroi([
+      { rot: 'Perdendo por falta', num: fT.comConta ? fmt.brl0(fT.perdaDia) : '—', sub: fT.comConta ? 'por dia' : null, estado: fT.n ? 'ruim' : null, dica: dR.falta,
+        linhas: [fT.n ? verT(`${fmt.int(fT.n)} ${fT.n === 1 ? 'produto zerado que vende' : 'produtos zerados que vendem'} ›`, 'falta') : 'nenhum produto zerado que vendia',
+          fT.n && (fT.esperando || fT.comConta) ? h('span', { class: 'muted' }, [fT.esperando ? `⏳ ${fmt.int(fT.esperando)} com cliente esperando` : null, fT.comConta ? `${fmt.brl0(fT.acumulado)} perdidos até agora` : null].filter(Boolean).join(' · ')) : null] },
+      { rot: 'Para repor', num: fmt.int(repor.length), sub: repor.length === 1 ? 'produto' : 'produtos',
+        dica: `Produtos que vendem e cujo saldo não cobre a entrega (${ent} dias) + o período do pedido (${cob} dias): a lista do que pedir agora. Urgente = acabou ou acaba antes de o pedido chegar. Pedido sugerido = quantidade a pedir × custo do AppNext.`,
+        linhas: [repor.length ? { el: `${fmt.int(urgentes)} ${urgentes === 1 ? 'urgente' : 'urgentes'} · pedido sugerido ${fmt.brl0(pedidoSug)}`, cls: urgentes ? 'neg' : null } : 'nada para repor agora 👏',
+          repor.length ? h('div', { class: 'est-p2-acoes' }, podePedH ? h('a', { class: 'btn primary', href: '#pedido' }, 'Montar o pedido ›') : null, verT('ver na tabela ›', 'repor')) : null] },
+      { rot: temCustoE ? 'Estoque a custo' : 'Com saldo', num: temCustoE ? fmt.brl0(valorEstoque) : fmt.int(comSaldo),
+        dica: `Saldo de cada produto × custo unitário do AppNext. Parado = com saldo e sem venda há ${cfg.paradoDias}+ dias (dinheiro parado). ${dR.sobra.replace(/ Toque para ver.*$/, '')} Toque numa linha para ver os produtos na tabela.`,
+        linhas: [verT(`${fmt.int(comSaldo)} ${comSaldo === 1 ? 'produto com saldo' : 'produtos com saldo'} ›`, 'saldo'),
+          TS.linhasNum([
+            { rot: `Parado · ${fmt.int(parados.length)} ${parados.length === 1 ? 'produto sem venda' : 'produtos sem venda'} há ${cfg.paradoDias}+ dias`, num: fmt.brl0(valorParado), estado: parados.length ? 'atencao' : null, onclick: irT('parados') },
+            { rot: `Sobrando · ${fmt.int(sT.n)} ${sT.n === 1 ? 'produto que vende devagar' : 'produtos que vendem devagar'}`, num: sT.n ? fmt.brl0(sT.valor) : '—', estado: sT.n ? 'atencao' : null, onclick: irT('sobrando') },
+          ])] },
+    ])));
 
     if (EQ) { corpo.append(cartaoEquilibrio()); return; }
 
@@ -1322,8 +1340,26 @@
       const quedas = repo.filter((r) => compravel(r) && r.origem === 'item' && r.vel > 0 && r.fator <= 0.75).sort((a, b) => a.fator - b.fator).slice(0, 6);
       const tok = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim(); // cores dos tokens (nunca hex solto no JS)
       const item = (r) => h('li', null, h('b', null, r.produto), ` · ${r.fator > 1 ? '+' : '−'}${fmt.int(Math.abs(r.fator - 1) * 100)}% por dia · prever ${qtdTxt(r.prev * H, r.it)} em ${H} dias`);
-      return TS.card('Próximas semanas', `Movimento da loja nas próximas 8 semanas pelo que aconteceu na mesma época do ano passado, corrigido pelo crescimento atual da loja (${cresc >= 1 ? '+' : ''}${fmt.pct(cresc - 1, 0)} nas últimas 8 semanas em relação ao ano passado).`,
-        h('div', { class: 'est-saz-res' }, varEpoca == null ? null : h('span', null, 'No ano passado, as 8 semanas seguintes venderam ', h('b', { class: varEpoca >= 0 ? 'pos' : 'neg' }, `${varEpoca >= 0 ? '+' : ''}${fmt.pct(varEpoca, 0)}`), ' em relação às 8 anteriores.')),
+      // 2ª passada: consulta, não decisão do dia — fica recolhida numa linha com o resumo (a alta da época e os 3 primeiros do
+      // "compre antes"); "Ver o gráfico" abre. Compartilhar/Imprimir com ele fechado abrem antes (o gráfico precisa estar à vista).
+      const corpoSaz = h('div', { class: 'est-p2-saz-corpo', hidden: !state.estSazAberto });
+      const btnSaz = h('button', { type: 'button', class: 'btn est-p2-saz-btn', 'aria-expanded': String(!!state.estSazAberto) }, state.estSazAberto ? 'Fechar o gráfico ▴' : 'Ver o gráfico ▾');
+      const abrirSaz = (abrir) => { state.estSazAberto = abrir; corpoSaz.hidden = !abrir; btnSaz.setAttribute('aria-expanded', String(abrir)); btnSaz.textContent = abrir ? 'Fechar o gráfico ▴' : 'Ver o gráfico ▾'; };
+      btnSaz.addEventListener('click', () => abrirSaz(corpoSaz.hidden));
+      const resumo = [varEpoca == null ? null : h('span', null, 'Pelo ano passado, as próximas 8 semanas vendem ', h('b', { class: varEpoca >= 0 ? 'pos' : 'neg' }, `${varEpoca >= 0 ? '+' : ''}${fmt.pct(varEpoca, 0)}`), '.'),
+        picos.length ? h('span', null, ' Compre antes: ', picos.slice(0, 3).map((r) => `${r.produto} (+${fmt.int((r.fator - 1) * 100)}%)`).join(', '), picos.length > 3 ? '…' : '', '.') : null].filter(Boolean);
+      const cardSaz = TS.card('Próximas semanas', `Movimento da loja nas próximas 8 semanas pelo que aconteceu na mesma época do ano passado, corrigido pelo crescimento atual da loja (${cresc >= 1 ? '+' : ''}${fmt.pct(cresc - 1, 0)} nas últimas 8 semanas em relação ao ano passado).`,
+        h('div', { class: 'est-p2-saz-linha' }, h('p', { class: 'est-saz-res' }, ...(resumo.length ? resumo : ['Sem alta nem queda forte nessa época no ano passado.'])), btnSaz),
+        corpoSaz);
+      cardSaz.classList.add('est-p2-saz');
+      cardSaz.addEventListener('click', (e) => {
+        const b = e.target.closest('.shr-btn, .prt-btn');
+        if (!b || !corpoSaz.hidden) return;
+        e.preventDefault(); e.stopPropagation();
+        abrirSaz(true);
+        setTimeout(() => b.click(), 400);
+      }, true);
+      corpoSaz.append(
         TS.chart({
           type: 'bar',
           data: { labels, datasets: [
@@ -1336,6 +1372,7 @@
         h('div', { class: 'est-saz-g' },
           h('div', null, h('div', { class: 'f-label' }, 'Vão vender mais nas próximas semanas: compre antes'), picos.length ? h('ul', { class: 'est-saz-l' }, picos.map(item)) : h('p', { class: 'muted' }, 'Nenhum produto com alta forte nessa época no ano passado.')),
           h('div', null, h('div', { class: 'f-label' }, 'Vão vender menos: segure a compra'), quedas.length ? h('ul', { class: 'est-saz-l' }, quedas.map(item)) : h('p', { class: 'muted' }, 'Nenhum produto com queda forte nessa época no ano passado.'))));
+      return cardSaz;
     }
     // ---------- tabela única: todos os produtos da planilha do AppNext ----------
     const SIT_T = { ...SIT, liquidar: ['Fora de linha · liquidar', 'warn', 5], parado: ['Parado', 'warn', 5], novo: ['Novo · ainda não vendeu', 'novo', 6], ok: ['OK', 'ok', 7], foralinha: ['Fora de linha', 'cinza', 8], semsaldo: ['Sem saldo', 'cinza', 8] };
@@ -1474,16 +1511,19 @@
           'Os produtos estão marcados na tabela.'));
         montarT();
       }).catch(() => null);
-    const csv = h('button', { type: 'button', class: 'btn', onclick: () => baixarPedido(repor) }, '⬇ Baixar pedido (CSV)');
+    // 2ª passada: "Baixar pedido" no canto do cabeçalho, junto de Imprimir e Expandir (que o TS.botoesExpandir põe depois dele);
+    // busca e abas descem para a linha de cima da tabela
+    const csv = h('button', { type: 'button', class: 'est-p2-csv', title: 'Baixa a lista do que repor (O que repor) em planilha CSV, para conferir ou mandar para quem faz o pedido', onclick: () => baixarPedido(repor) }, '⬇', h('span', null, 'Baixar pedido (CSV)'));
     const minRes = h('small', { class: 'muted est-minres' }, 'Mínimo do AppNext comparado com o sugerido: ',
       h('b', { class: 'est-sug est-sug-baixo' }, `${fmt.int(repo.filter((r) => r.minSit === 'baixo').length)} baixos`), ' · ',
       h('b', { class: 'est-sug est-sug-alto' }, `${fmt.int(repo.filter((r) => r.minSit === 'alto').length)} altos`), ' · ',
       h('b', { class: 'est-sug est-sug-sem' }, `${fmt.int(repo.filter((r) => r.minSit === 'sem').length)} sem mínimo`));
     // subtítulo como texto: o cartão corta sozinho na primeira frase e guarda o resto em "Como ler ▸"
-    const cardT = TS.cardWithTools('Estoque',
-      `Todos os ${fmt.int(todos.length)} produtos da planilha do AppNext. Reposição pelo ritmo dos últimos 30 dias ajustado pela época do ano (coluna Previsão/dia) · entrega em ${ent} dias · pedido para ${cob} dias de venda. Chás a granel em kg (inclui o consumo de saco kraft e etiquetas). Parado = com saldo e sem venda há ${cfg.paradoDias}+ dias. Perdendo venda = zerado que vendia (estimativa pela venda dos ${TS.ruptura.JANELA} dias antes de zerar). Sobrando = vende, mas o saldo dura mais de ${TS.ruptura.FATOR_EXCESSO * H} dias.`,
-      h('div', { class: 'est-tools' }, busca, segT, csv),
-      h('div', null, minRes, infoBusca, avisoNotas, tabBoxT));
+    const cardT = TS.cardWithTools('Produtos',
+      `Todos os ${fmt.int(todos.length)} produtos da planilha do AppNext; clique no nome do chá para ver os lotes. Reposição pelo ritmo dos últimos 30 dias ajustado pela época do ano (coluna Previsão/dia) · entrega em ${ent} dias · pedido para ${cob} dias de venda. Chás a granel em kg (inclui o consumo de saco kraft e etiquetas). Parado = com saldo e sem venda há ${cfg.paradoDias}+ dias. Perdendo venda = zerado que vendia (estimativa pela venda dos ${TS.ruptura.JANELA} dias antes de zerar). Sobrando = vende, mas o saldo dura mais de ${TS.ruptura.FATOR_EXCESSO * H} dias.`,
+      csv,
+      h('div', { class: 'est-tools est-p2-tools' }, busca, segT),
+      h('div', null, infoBusca, avisoNotas, tabBoxT, minRes));
     cardT.id = 'est-tabela';
     put(E, h('div', { class: 'mt' }, cardT));
     put(E, h('div', { class: 'mt' }, cartaoSazonal()));

@@ -288,16 +288,30 @@
 
   /** Pedido: "já comprado no mês × teto", com o valor do pedido da tela somado. el.atualizar(valor) refaz quando o pedido muda */
   function quadroPedido(M, e, pedido, o = {}) {
-    const el = h('div', { class: 'cv-pedido mt' });
+    // 2ª passada (23/11/2026): o herói "Seu pedido desta semana" é o número que decide; compras × teto vira uma linha com o
+    // resumo ("ainda cabe R$ X") que abre os 5 quadros da conta. Passou do teto: abre sozinho e o aviso fica à vista.
+    const el = h('details', { class: 'cv-pedido cv-p2 mt' });
+    let mexeu = false; // a pessoa abriu/fechou: o ＋/− do pedido não muda isso
+    el.addEventListener('toggle', () => { if (el._pintando) return; mexeu = true; });
     el.atualizar = (valor) => {
-      if (!e || !e.compras) { el.replaceChildren(semNotas()); return; }
+      if (!e || !e.compras) { el.replaceChildren(h('summary', { class: 'cv-p2-sum' }, 'Compras × teto'), semNotas()); return; }
       const J = montarJanela(M, e, valor, o);
+      const acima = J && J.estado === 'acima';
+      const res = !J || J.cabe == null ? h('span', { class: 'muted' }, J && J.compras == null ? 'faltam as notas de compra' : 'falta a previsão de vendas')
+        : acima ? h('b', { class: 'neg' }, `passou do teto em ${fmt.brl0(-J.cabe)}`)
+          : h('span', null, 'ainda cabe ', h('b', { class: J.estado === 'perto' ? 'warn-t' : 'pos' }, fmt.brl0(J.cabe)), ` · usado ${fmt.pct(J.soma / J.teto, 0)} do teto`);
+      el._pintando = true;
       el.replaceChildren(...[
-        h('div', { class: 'section-label' }, `Compras × teto${J ? ` · para vender de ${dm(J.de)} a ${dm(J.ate)}` : ''} `, h('a', { href: '#dre', class: 'cv-link' }, 'ver mês a mês no Resultado')),
-        J && J.estado === 'acima' ? h('div', { class: 'notice warn' }, `Com este pedido, as compras passam o teto em ${fmt.brl0(-J.cabe)} (${fmt.pct(J.pctSoma)} das vendas previstas para os próximos ${J.janela} dias; o teto é ${fmt.n1(J.tetoPct)}%). Veja se dá para tirar o que tem estoque sobrando.`) : null,
-        J && J.semEpoca && J.previsao != null ? h('div', { class: 'notice' }, `A previsão usa só o ritmo de agora: ${J.semEpoca}. Antes de uma data forte, o teto pode ficar baixo.`) : null,
-        h('div', { class: 'grid g-kpi' }, quadrosJanela(J, true)),
-      ].filter(Boolean));
+        h('summary', { class: 'cv-p2-sum' }, h('span', { class: 'cv-p2-tit' }, 'Compras × teto'), h('span', { class: 'cv-p2-res' }, res, J ? h('span', { class: 'muted' }, ` · para vender de ${dm(J.de)} a ${dm(J.ate)}`) : null), h('span', { class: 'cv-p2-ver' }, 'ver a conta')),
+        h('div', { class: 'cv-p2-corpo' }, ...[
+          acima ? h('div', { class: 'notice warn' }, `Com este pedido, as compras passam o teto em ${fmt.brl0(-J.cabe)} (${fmt.pct(J.pctSoma)} das vendas previstas para os próximos ${J.janela} dias; o teto é ${fmt.n1(J.tetoPct)}%). Veja se dá para tirar o que tem estoque sobrando.`) : null,
+          J && J.semEpoca && J.previsao != null ? h('div', { class: 'notice' }, `A previsão usa só o ritmo de agora: ${J.semEpoca}. Antes de uma data forte, o teto pode ficar baixo.`) : null,
+          h('div', { class: 'grid g-kpi' }, quadrosJanela(J, true)),
+          h('p', { class: 'muted cv-p2-link' }, h('a', { href: '#dre', class: 'cv-link' }, 'ver mês a mês no Resultado')),
+        ].filter(Boolean)),
+      ]);
+      if (!mexeu) el.open = acima;
+      setTimeout(() => { el._pintando = false; }, 0);
     };
     el.atualizar(pedido);
     return el;
@@ -366,8 +380,8 @@
     });
     el.replaceChildren(
       h('div', { class: 'section-label' }, 'Compras × vendas'),
-      h('div', { class: 'grid g-kpi' }, ...quadrosJanela(J, false), kAcima),
-      h('div', { class: 'grid g-kpi mt' }, kPer),
+      // 2ª passada (23/11/2026): "Compras ÷ vendas" entra na mesma grade (antes ficava sozinho numa linha)
+      h('div', { class: 'grid g-kpi' }, ...quadrosJanela(J, false), kAcima, kPer),
       h('div', { class: 'mt' }, TS.cardWithTools('Compras × vendas mês a mês',
         `Estou comprando mais do que vendo? Compras = notas de compra que entraram no AppNext; teto = ${fmt.n1(R.tetoPct)}% das vendas. * mês em andamento: o % é o de até agora (compras ÷ vendas até hoje) e o teto da folga usa a previsão do mês.${R.inicioCompras ? ` Notas de compra desde ${R.desde ? fmt.date(R.desde) : TS.ymLabel(R.inicioCompras)}.` : ''}`,
         TS.seg(Object.entries(FIL).map(([k, [t]]) => [`${t} (${cont(k)})`, k]), FIL[fil] ? fil : 'todos', ir),

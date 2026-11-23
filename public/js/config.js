@@ -117,24 +117,27 @@
   // ======================= LOJAS =======================
   function abaLojas(box) {
     const lojaAberta = est.lojas.length > 1 && est.lojas.some((l) => abertos.has('loja:' + l.id));
+    // 2ª passada: "+ Nova loja" fica no cabeçalho do cartão das lojas (como "+ Novo usuário"); sem loja nenhuma, fica solto em cima
+    let btNova = null;
     if (est.perfil === 'admin' && !lojaAberta) {
       const aberto = abertos.has('nova');
-      box.append(h('div', { class: 'cfg-barra' },
-        h('button', { type: 'button', class: 'btn primary', onclick: () => { aberto ? abertos.delete('nova') : abertos.add('nova'); pintar(); } }, aberto ? 'Fechar' : '+ Nova loja')));
+      btNova = h('button', { type: 'button', class: 'btn primary', onclick: () => { aberto ? abertos.delete('nova') : abertos.add('nova'); pintar(); } }, aberto ? 'Fechar' : '+ Nova loja');
+      if (!est.lojas.length) box.append(h('div', { class: 'cfg-barra' }, btNova));
       if (aberto) box.append(formNovaLoja());
     }
     if (!est.lojas.length) { box.append(h('div', { class: 'card' }, TS.empty('Nenhuma loja cadastrada ainda.'))); return; }
     // uma loja aberta por vez: o detalhe dela no lugar da lista (com "‹ Lojas" para voltar); com uma loja só, vai direto
     const aberta = est.lojas.length === 1 ? est.lojas[0] : est.lojas.find((l) => abertos.has('loja:' + l.id));
     if (aberta) {
+      if (btNova) box.prepend(h('div', { class: 'cfg-barra' }, btNova)); // loja única aberta direto: o botão fica em cima, como antes
       if (est.lojas.length > 1) box.append(h('div', { class: 'cfg-voltar' }, h('button', { type: 'button', class: 'btn', onclick: () => { for (const k of [...abertos]) if (k.startsWith('loja:')) abertos.delete(k); pintar(); } }, '‹ Lojas')));
       box.append(cartaoLoja(aberta));
       return;
     }
-    box.append(tabelaLojas());
+    box.append(tabelaLojas(btNova));
   }
   /** todas as lojas numa tabela (padrão do painel): situação dos dados de cada uma; tocar abre a loja */
-  function tabelaLojas() {
+  function tabelaLojas(btNova) {
     const abrir = (l) => { for (const k of [...abertos]) if (k.startsWith('loja:')) abertos.delete(k); abertos.add('loja:' + l.id); pintar(); window.scrollTo(0, 0); };
     const ORD_SIT = { erro: 0, espera: 1, rodando: 2, ok: 3 };
     const linhas = est.lojas.map((l) => ({ ...l, _info: infoItens(l, l.base.importacoes[0]), _sit: situacao(l) }));
@@ -152,7 +155,8 @@
     const tab = TS.table({ cols, rows: linhas, sortKey: 'sit', sortDir: 'asc', search: 'Buscar loja…', searchKeys: ['nome', 'id', 'appnext'], cls: 'cfg-lojas-t', onRowClick: abrir,
       empty: 'Nenhuma loja com esse nome.' });
     const nErro = linhas.filter((r) => r._sit[0] === 'erro').length;
-    return TS.card('Lojas', `${fmt.int(linhas.length)} lojas${nErro ? ` · ${fmt.int(nErro)} com problema na atualização` : ' · todas em dia'}. Toque numa loja para ver os dados, metas, equipe, integrações e mensagens dela.`, tab);
+    const sub = `${fmt.int(linhas.length)} lojas${nErro ? ` · ${fmt.int(nErro)} com problema na atualização` : ' · todas em dia'}. Toque numa loja para ver os dados, metas, equipe, integrações e mensagens dela.`;
+    return btNova ? TS.cardWithTools('Lojas', sub, btNova, tab) : TS.card('Lojas', sub, tab);
   }
 
   function formNovaLoja() {
