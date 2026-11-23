@@ -178,3 +178,17 @@ test('devolução: emitir só depois de um teste com total (até 2 horas)', () =
   const c = DEV.conferirNfe('le', DEV.ler('le', d.id));
   assert.deepEqual([c.nfe.estado, c.nfe.emitida.numero], ['ok', 75]);
 });
+
+test('DEV-VAL-01: validade curta entra na devolução que já existe — sem foto, com o motivo, na planilha e no e-mail', async () => {
+  const n = { ...nota, id: 'n-val' };
+  const d = DEV.criar('lval', n, { itens: [{ cod: '406', qtdValidade: 4, obsValidade: 'validade curta (vence 10/09/2026)' }] }, 'g').ok;
+  assert.deepEqual(d.itens.map((i) => [i.tipo, i.qtd, i.fotos, i.obs]), [['validade', 4, 0, 'validade curta (vence 10/09/2026)']]);
+  assert.match(DEV.criar('lval', n, { itens: [{ cod: '406', qtdValidade: 7 }] }, 'g').erro, /já devolvidos/, 'a soma com as outras devoluções da nota não passa');
+  assert.equal(DEV.criar('lval', n, { itens: [{ cod: '406', tipo: 'validade', qtd: 1 }] }, 'g').ok.itens[0].obs, 'validade curta');
+  assert.match(DEV.textoEmail(d, 'Loja X'), /validade curta:\n• 406 · Top Tea · 4 UN — validade curta \(vence 10\/09\/2026\)/);
+  const buf = await DEV.planilha('lval', d, 'Loja X');
+  const ExcelJS = require('exceljs'); const wb = new ExcelJS.Workbook(); await wb.xlsx.load(buf);
+  const txt = []; wb.worksheets[0].eachRow((r) => txt.push(r.values.filter(Boolean).join(' | ')));
+  assert.ok(txt.some((t) => /Itens que chegaram com validade curta/.test(t)));
+  assert.ok(txt.some((t) => /406 \| 4 \| Top Tea \| validade curta \(vence 10\/09\/2026\)/.test(t)));
+});

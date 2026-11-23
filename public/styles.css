@@ -3581,3 +3581,27 @@ button.vl-pac-marca { background: none; text-decoration: underline; cursor: poin
   .ini-resumo .etq-prazo { grid-column: 1 / -1; }
   .ini-lado .md-card { padding: 18px; }
 }
+
+/* Validade: abas por tipo, outras validades da mesma linha da nota e o aviso de validade curta (→ devolução) */
+.vl-abas { margin-bottom: 12px; }
+.vl-nota-extra { display: flex; flex-direction: column; gap: 6px; grid-column: 1 / -1; min-width: 0; }
+.vl-nota-extra:empty { display: none; }
+.vl-parte { display: flex; flex-wrap: wrap; align-items: end; gap: 6px; }
+.vl-parte .vl-parte-qtd { width: 72px; }
+.vl-parte-x { min-height: 32px; padding: 0 6px; }
+.vl-mais-val { align-self: flex-start; font-size: 13px; }
+.vl-primeira { display: block; }
+.vl-curta { margin: 0; padding: 8px 10px; font-size: 13px; line-height: 1.4; }
+.vl-curta .vl-dev-btn { margin-top: 4px; }
+.dev-obs-val { margin-top: 4px; }
+/* pílula de situação clicável (Início: amarela/vermelha levam aos avisos de dados) */
+button.pilula-sit-btn { font: inherit; font-size: 13px; cursor: pointer; min-height: 36px; }
+button.pilula-sit-btn:hover { border-color: currentColor; }
+button.pilula-sit-btn:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+@media (max-width: 760px) { button.pilula-sit-btn { min-height: 44px; } }
+.ini-grupo.ini-destaque { outline: 2px solid var(--gold); outline-offset: 4px; border-radius: 10px; transition: outline-color .3s; }
+/* nota de entrada: as outras validades e o aviso ficam dentro da coluna "Lote · validade" (sem empurrar a tabela para o lado) */
+.vl-nota-cel { min-width: 170px; max-width: 280px; white-space: normal; }
+.vl-nota-cel .vl-nota-campos { min-width: 0; }
+.vl-nota-cel .vl-curta, .vl-nota-cel .vl-parte, .vl-nota-cel .vl-primeira { white-space: normal; overflow-wrap: anywhere; }
+.vl-nota-cel .vl-parte .vl-parte-val { width: 150px; }

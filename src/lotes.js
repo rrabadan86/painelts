@@ -1,6 +1,9 @@
 'use strict';
 /**
- * Validade e lotes do chá a granel (só o chá em kg tem validade; envasado e acessório não).
+ * Validade e lotes do chá a granel, dos chás envasados e da alimentação (tipo do produto: src/tipoprod.js).
+ *  - envasado e alimentação: só lote e validade (por nota de entrada, PEPS, validade padrão de 12 meses da chegada até a equipe
+ *    digitar a impressa), na unidade do produto (envasado sempre em unidade). Sem abertura, sem "na lata", sem histórico.
+ *    Ficam em `outros` (os `lotes` continuam só os do chá a granel: campanhas, Promoção, Pedido e inventário por lote não mudam).
  *  - cada entrada de chá a granel (nota de compra concluída no AppNext) é um lote;
  *  - validade padrão = 12 meses da data de entrada; a equipe digita o nº do lote (vem "0") e pode corrigir a validade;
  *  - saldo de cada lote: o estoque atual do AppNext distribuído de trás para frente (a entrada mais nova fica com o
@@ -17,6 +20,7 @@ const fs = require('fs');
 const path = require('path');
 const C = require('./config');
 const ES = require('./estoque');
+const TP = require('./tipoprod');
 
 const MESES_VALIDADE = 12;
 // o chá chega em pacotes fechados de 1 kg e vai para a lata da loja quando o pacote é aberto: depois de aberto, 6 meses para consumir
@@ -31,8 +35,9 @@ const FAIXAS = [
 ];
 const RISCO_DIAS = 60; // valor em risco: o que vence em menos de 60 dias (inclui vencido)
 const DIA = /^\d{4}-\d{2}-\d{2}$/;
-// envasado cadastrado em kg por engano: pelo nome (lata, minitin, sachê, caixa, kit ou com o tamanho "20G")
-const ENVASADO = /\b(LATA|MINITIN|MINI TIN|SACH[EÊ]S?|CAIXA|KIT)(?![A-Z0-9])|\b\d+\s*G\b/i;
+// envasado cadastrado em kg: pelo nome (lata, minitin, sachê, caixa, kit ou com o tamanho "20G") — a definição é a de src/tipoprod.js
+const ENVASADO = TP.ENVASADO_NOME;
+const ehGranel = (it) => TP.de(it) === 'granel';
 
 const arq = (id) => path.join(C.pastaLoja(id), 'validade', 'lotes.json');
 function ler(id) {
@@ -54,6 +59,54 @@ function faixa(d) {
   return FAIXAS.find((f) => d < f.ate).id;
 }
 
+/**
+ * Validade curta na chegada → devolução à franquia (decisão do dono): a validade do pacote digitada na entrada menor que a
+ * chegada + o prazo mínimo do tipo. Chá a granel olha a validade do PACOTE (não a data final de consumo depois de aberto).
+ */
+const VALIDADE_MIN = { granel: { meses: 6 }, envasado: { dias: 30 }, alimento: { dias: 30 } };
+const VALIDADE_MIN_DIAS = VALIDADE_MIN.envasado.dias;
+/** data mínima aceitável para a validade de um lote que chegou em `entrada` → { data, texto } (null sem tipo/entrada) */
+function limiteValidade(tipo, entrada) {
+  const m = VALIDADE_MIN[tipo];
+  if (!m || !DIA.test(entrada || '')) return null;
+  if (m.meses) return { data: somarMeses(entrada, m.meses), texto: `menos de ${m.meses} meses da chegada` };
+  return { data: new Date(ms(entrada) + m.dias * 864e5).toISOString().slice(0, 10), texto: `menos de ${m.dias} dias da chegada` };
+}
+/** a validade é curta para o tipo? (vence antes de chegada + prazo mínimo) */
+function validadeCurta(tipo, entrada, validade) {
+  const lim = limiteValidade(tipo, entrada);
+  return !!(lim && DIA.test(validade || '') && validade < lim.data);
+}
+
+/**
+ * Validades diferentes na mesma linha da nota (só envasado e alimentação): edits.partes[chave] = { itens: [{ qtd, validade }] }
+ * são as partes A MAIS; a 1ª parte é o resto (quantidade da nota − as outras) com a validade do lote. Cada parte vira um lote
+ * ("<chave>~<n>"); dentro da nota sai primeiro a validade mais curta. Sem partes, a linha é um lote só (como sempre).
+ */
+const partesDe = (edits, chave) => (((edits && edits.partes) || {})[chave] || {}).itens || [];
+function expandirPartes(entradas, edits) {
+  const ed = (edits && edits.lotes) || {};
+  const out = [];
+  for (const e of entradas) {
+    const extras = partesDe(edits, e.chave);
+    if (!extras.length) { out.push(e); continue; }
+    const padrao = somarMeses(e.entrada, MESES_VALIDADE), principal = DIA.test((ed[e.chave] || {}).validade || '') ? ed[e.chave].validade : padrao;
+    let usado = 0;
+    const ps = [];
+    for (const [k, x] of extras.entries()) {
+      const q = Math.max(0, Math.min(Number(x.qtd) || 0, r3(e.qtdEntrada - usado)));
+      usado = r3(usado + q);
+      ps.push({ parte: k + 2, qtd: q, validade: x.validade });
+    }
+    ps.unshift({ parte: 1, qtd: r3(e.qtdEntrada - usado), validade: principal });
+    // a mais nova recebe o estoque primeiro (PEPS de trás para frente): a validade mais longa fica, a mais curta sai antes
+    for (const x of ps.filter((y) => y.qtd > 0).sort((a, b) => (a.validade < b.validade ? 1 : a.validade > b.validade ? -1 : a.parte - b.parte))) {
+      out.push({ ...e, chave: `${e.chave}~${x.parte}`, chaveNota: e.chave, parte: x.parte, qtdEntrada: x.qtd, validadeParte: x.validade });
+    }
+  }
+  return out;
+}
+
 /** preço de venda por kg do chá a granel: o pacote (100 g de preferência) da tabela de preços → R$/kg */
 const TAM_G = /(\d{2,4})\s*(g|gr|grs|gramas)\b/i;
 const cachePrecos = new WeakMap(); // tabela → (itens do estoque → preços)
@@ -72,7 +125,7 @@ function precosKg(tabela, estoque) {
     const g = +m[1];
     for (const c of ESP.codsEstoque({ cod: t.cod, desc: t.desc }, estoque)) {
       const it = porCod.get(c);
-      if (!it || it.un !== 'Kg') continue;
+      if (!it || !ehGranel(it)) continue;
       const atual = out.get(c);
       // 100 g primeiro; senão o menor pacote (preço por kg mais alto, o da prateleira)
       if (!atual || (g === 100 && atual.g !== 100) || (atual.g !== 100 && g < atual.g)) out.set(c, { g, preco: t.preco });
@@ -80,6 +133,12 @@ function precosKg(tabela, estoque) {
   }
   const r = new Map();
   for (const [c, x] of out) r.set(c, Math.round((x.preco / x.g) * 1000 * 100) / 100);
+  // envasado e alimentação em unidade: o preço do próprio código na tabela (preço da unidade)
+  const tabCod = new Map(((tabela && tabela.itens) || []).filter((t) => t.preco > 0).map((t) => [String(t.cod), t.preco]));
+  for (const it of estoque.itens) {
+    const c = String(it.cod), tp = TP.de(it);
+    if (!r.has(c) && tp && tp !== 'granel' && !TP.ehKg(it.un) && tabCod.has(c)) r.set(c, tabCod.get(c));
+  }
   porTab.set(estoque.itens, r);
   return r;
 }
@@ -228,19 +287,20 @@ function comAbertura(lotes, entradasPorCod, dEst, reg, hoje) {
  * → { em, lotes: [{ chave, cod, desc, nf, entrada, qtdEntrada, saldo, lote, validade, padrao, dias, faixa, custoKg, precoKg, ajuste }] }
  */
 function calcular({ estoque, compras, tabela, edits, ajustes, hoje = hojeSP() }) {
-  if (!estoque || !Array.isArray(estoque.itens)) return { em: null, lotes: [] };
+  if (!estoque || !Array.isArray(estoque.itens)) return { em: null, lotes: [], outros: [] };
   const dEst = String(estoque.em || '').slice(0, 10);
   const ed = (edits && edits.lotes) || {};
   const ajs = ajustes || (edits && edits.ajustes) || {};
   const precos = precosKg(tabela, estoque);
   const ent = (compras && compras.itens) || {};
-  const lotes = [], entradasPorCod = new Map();
+  const lotes = [], outros = [], entradasPorCod = new Map();
   for (const it of estoque.itens) {
-    if (it.un !== 'Kg' || ENVASADO.test(it.desc || '')) continue; // só o chá a granel tem validade (lata, minitin, sachê… não)
+    const tp = TP.de(it);
+    if (!tp) continue; // acessório, insumo, embalagem: sem lote
     const cod = String(it.cod);
     const S = Math.max(0, r3(Number(it.qtd) || 0));
     if (!(S > 0)) continue;
-    const todas = entradasDoCod(cod, ent), inicial = `inicial|${cod}`;
+    const todas = tp === 'granel' ? entradasDoCod(cod, ent) : expandirPartes(entradasDoCod(cod, ent), edits), inicial = `inicial|${cod}`;
     entradasPorCod.set(cod, todas);
     const anc = escolherAjuste(ajs[cod], estoque.em);
     // sem ajuste: só as entradas que já estavam no estoque exportado (as de depois ainda não contam no saldo)
@@ -250,12 +310,19 @@ function calcular({ estoque, compras, tabela, edits, ajustes, hoje = hojeSP() })
     for (const [chave, saldo] of dist) {
       const e = info.get(chave);
       const base = e ? { nf: e.nf, entrada: e.entrada, qtdEntrada: e.qtdEntrada, saldo } : { nf: '', entrada: null, qtdEntrada: null, saldo };
-      lotes.push({ ...montar(chave, it, base, ed[chave], hoje, precos), ajuste: aj });
+      if (e && e.parte) { // parte de uma linha da nota: o nº do lote é o da linha; a validade é a da parte
+        const x = montar(chave, it, base, { ...(ed[e.chaveNota] || {}), validade: e.validadeParte }, hoje, precos);
+        outros.push({ ...x, chaveNota: e.chaveNota, parte: e.parte, padrao: e.parte === 1 && !DIA.test((ed[e.chaveNota] || {}).validade || ''), ajuste: aj, tipoProd: tp, un: TP.unidade(it.un) });
+        continue;
+      }
+      (tp === 'granel' ? lotes : outros).push({ ...montar(chave, it, base, ed[chave], hoje, precos), ajuste: aj, tipoProd: tp, un: TP.unidade(it.un) });
     }
   }
+  // só o chá a granel abre (vai para a lata, 6 meses): envasado e alimentação ficam com a validade do lote
   comAbertura(lotes, entradasPorCod, dEst, (edits && edits.aberturas) || {}, hoje);
-  lotes.sort((a, b) => (a.dias ?? -1e9) - (b.dias ?? -1e9) || a.desc.localeCompare(b.desc, 'pt-BR'));
-  return { em: estoque.em || null, lotes };
+  const ordem = (a, b) => (a.dias ?? -1e9) - (b.dias ?? -1e9) || a.desc.localeCompare(b.desc, 'pt-BR');
+  lotes.sort(ordem); outros.sort(ordem);
+  return { em: estoque.em || null, lotes, outros };
 }
 function montar(chave, it, base, e, hoje, precos) {
   const padrao = base.entrada ? somarMeses(base.entrada, MESES_VALIDADE) : null;
@@ -269,32 +336,51 @@ function montar(chave, it, base, e, hoje, precos) {
   };
 }
 
-/** totais por faixa (kg, nº de lotes, valor a custo e a venda) e o valor em risco (< 60 dias, inclui vencidos) */
+/**
+ * totais por faixa (kg, nº de lotes, valor a custo e a venda) e o valor em risco (< 60 dias, inclui vencidos).
+ * Quantidade: `kg` soma os lotes em kg e `un` os lotes em unidade (envasado e alimentação: unidade × custo e preço da unidade).
+ */
 function resumo(lotes) {
   const porFaixa = {};
-  for (const f of [...FAIXAS.map((x) => x.id), 'sem']) porFaixa[f] = { lotes: 0, kg: 0, custo: 0, venda: 0 };
-  const risco = { lotes: 0, kg: 0, custo: 0, venda: 0, semCusto: 0, semPreco: 0 };
+  for (const f of [...FAIXAS.map((x) => x.id), 'sem']) porFaixa[f] = { lotes: 0, kg: 0, un: 0, custo: 0, venda: 0 };
+  const risco = { lotes: 0, kg: 0, un: 0, custo: 0, venda: 0, semCusto: 0, semPreco: 0 };
   const r2 = (v) => Math.round(v * 100) / 100;
   for (const l of lotes) {
     const p = porFaixa[l.faixa];
     // prazo puxado pela abertura: só o que está na lata corre esse risco (os pacotes fechados do mesmo lote seguem a validade deles)
-    const kg = l.kgVence ?? l.saldo;
-    p.lotes++; p.kg += kg; p.custo += kg * (l.custoKg || 0); p.venda += kg * (l.precoKg || 0);
+    const kg = l.kgVence ?? l.saldo, q = l.un === 'un' ? 'un' : 'kg';
+    p.lotes++; p[q] += kg; p.custo += kg * (l.custoKg || 0); p.venda += kg * (l.precoKg || 0);
     if (l.dias != null && l.dias < RISCO_DIAS) {
-      risco.lotes++; risco.kg += kg; risco.custo += kg * (l.custoKg || 0); risco.venda += kg * (l.precoKg || 0);
+      risco.lotes++; risco[q] += kg; risco.custo += kg * (l.custoKg || 0); risco.venda += kg * (l.precoKg || 0);
       if (!l.custoKg) risco.semCusto++;
       if (!l.precoKg) risco.semPreco++;
     }
   }
-  for (const p of [...Object.values(porFaixa), risco]) { p.kg = Math.round(p.kg * 1000) / 1000; p.custo = r2(p.custo); p.venda = r2(p.venda); }
+  for (const p of [...Object.values(porFaixa), risco]) { p.kg = Math.round(p.kg * 1000) / 1000; p.un = Math.round(p.un * 1000) / 1000; p.custo = r2(p.custo); p.venda = r2(p.venda); }
   return { porFaixa, risco, semLote: lotes.filter((l) => l.lote === '0').length };
+}
+
+/**
+ * O que a tela Validade recebe: o resumo do chá a granel e, à parte, os lotes e o resumo dos envasados e da alimentação
+ * (cada aba com a sua conta). Sem custos (vendedora, gerente sem tela de custo): o valor a custo sai nulo.
+ */
+function paraTela(ctx, custos) {
+  const outros = (ctx && ctx.outros) || [];
+  const resumoOutros = {};
+  for (const t of ['envasado', 'alimento']) resumoOutros[t] = resumo(outros.filter((l) => l.tipoProd === t));
+  const r = resumo((ctx && ctx.lotes) || []);
+  if (!custos) for (const x of [r, ...Object.values(resumoOutros)]) for (const p of [...Object.values(x.porFaixa), x.risco]) { p.custo = null; delete p.semCusto; }
+  return { resumo: r, outros, resumoOutros };
 }
 
 /** a equipe informa o nº do lote e/ou corrige a validade (validade vazia = volta para 12 meses da entrada) */
 function editar(id, b, por, lotesAtuais, compras) {
-  const chave = String(b.chave || '');
+  // parte de uma linha da nota ("<chave>~<n>"): o nº do lote é o da linha; a validade da 1ª parte é a do lote, a das outras muda
+  // em "+ outra validade" (repartir)
+  const [chave, parte] = String(b.chave || '').split('~');
+  if (parte && parte !== '1' && b.validade !== undefined) return { erro: 'A validade desta parte muda na nota de entrada, em "+ outra validade".' };
   // o lote em aberto ou, vindo da nota de entrada, qualquer entrada conhecida (mesmo antes do estoque ser atualizado)
-  let l = lotesAtuais.find((x) => x.chave === chave);
+  let l = lotesAtuais.find((x) => x.chave === chave || x.chaveNota === chave);
   if (!l && compras) { const cod = chave.split('|')[1] || ''; l = entradasDoCod(cod, compras.itens || {}).find((e) => e.chave === chave); }
   if (!l) return { erro: 'Lote não encontrado (o estoque pode ter mudado): atualize a tela.' };
   const d = ler(id);
@@ -318,10 +404,48 @@ function editar(id, b, por, lotesAtuais, compras) {
   if (!novo.lote && !novo.validade) delete d.lotes[chave];
   else d.lotes[chave] = { ...(novo.lote ? { lote: novo.lote } : {}), ...(novo.validade ? { validade: novo.validade } : {}), por: String(por || ''), em: new Date().toISOString() };
   // limpa edições de lotes que já acabaram há mais de 2 anos (o arquivo não cresce sem fim)
-  const corte = somarMeses(hojeSP(), -24), vivos = new Set([...lotesAtuais.map((x) => x.chave), chave]);
+  const corte = somarMeses(hojeSP(), -24), vivos = new Set([...lotesAtuais.map((x) => x.chaveNota || x.chave), chave]);
   for (const [k, x] of Object.entries(d.lotes)) if (!vivos.has(k) && String(x.em || '').slice(0, 10) < corte) delete d.lotes[k];
   gravar(id, d);
   return { ok: d.lotes[chave] || null, antes: atual };
+}
+
+/**
+ * "+ outra validade": a mesma linha da nota com validades diferentes (só envasado e alimentação).
+ * b = { chave (a da linha da nota), partes: [{ qtd, validade }] } — as partes A MAIS; a 1ª fica com o resto e a validade do lote.
+ * A soma das partes a mais tem de ser menor que a quantidade da nota. partes vazio = desfaz (volta para uma data só).
+ * ctx = { estoque, compras }
+ */
+function repartir(id, b, por, ctx) {
+  const chave = String((b && b.chave) || '').split('~')[0];
+  const cod = chave.split('|')[1] || '';
+  const e = entradasDoCod(cod, (ctx && ctx.compras && ctx.compras.itens) || {}).find((x) => x.chave === chave);
+  if (!e) return { erro: 'Linha da nota não encontrada: atualize a tela.' };
+  const it = ((ctx && ctx.estoque && ctx.estoque.itens) || []).find((x) => String(x.cod) === cod);
+  const tp = it ? TP.de(it) : null;
+  if (tp !== 'envasado' && tp !== 'alimento') return { erro: 'Só chás envasados e alimentação podem ter mais de uma validade na mesma linha da nota.' };
+  const lista = Array.isArray(b.partes) ? b.partes : [];
+  if (lista.length > 10) return { erro: 'Até 10 validades diferentes na mesma linha.' };
+  const inteiro = !TP.ehKg(it.un);
+  const itens = [];
+  for (const x of lista) {
+    const q = r3(Number(String(x && x.qtd != null ? x.qtd : '').replace(',', '.')));
+    if (!(q > 0) || (inteiro && !Number.isInteger(q))) return { erro: inteiro ? 'Quantidade de cada validade: número inteiro maior que zero.' : 'Quantidade de cada validade: maior que zero.' };
+    const v = String((x && x.validade) || '').trim();
+    if (!DIA.test(v) || Number.isNaN(ms(v))) return { erro: 'Validade: data inválida.' };
+    const max = somarMeses(e.entrada, 60);
+    if (v < e.entrada || v > max) return { erro: `Validade: entre ${e.entrada.split('-').reverse().join('/')} e ${max.split('-').reverse().join('/')}.` };
+    itens.push({ qtd: q, validade: v });
+  }
+  const soma = r3(itens.reduce((a, x) => a + x.qtd, 0));
+  if (itens.length && !(soma < e.qtdEntrada)) return { erro: `As outras validades somam ${String(soma).replace('.', ',')}, mas a nota tem ${String(e.qtdEntrada).replace('.', ',')}: a soma tem de ser menor (o que faltar fica na primeira data).` };
+  const d = ler(id);
+  d.partes = d.partes || {};
+  const antes = (d.partes[chave] && d.partes[chave].itens) || [];
+  if (!itens.length) delete d.partes[chave];
+  else d.partes[chave] = { itens, por: String(por || ''), em: new Date().toISOString() };
+  gravar(id, d);
+  return { ok: { chave, partes: itens, primeira: r3(e.qtdEntrada - soma) }, antes };
 }
 
 /**
@@ -434,7 +558,7 @@ function entradasRecentes({ estoque, compras, edits, hoje = hojeSP() }) {
   const out = {};
   const ed = (edits && edits.lotes) || {}, corte = somarMeses(hoje, -14);
   for (const it of (estoque && estoque.itens) || []) {
-    if (it.un !== 'Kg' || ENVASADO.test(it.desc || '')) continue;
+    if (!ehGranel(it)) continue; // contagem por lote no inventário: só o chá a granel
     const cod = String(it.cod);
     const l = entradasDoCod(cod, (compras && compras.itens) || {}).filter((e) => e.entrada >= corte).slice(0, 8)
       .map((e) => ({ chave: e.chave, nf: e.nf, entrada: e.entrada, lote: (ed[e.chave] && ed[e.chave].lote) || '0', validade: (ed[e.chave] && ed[e.chave].validade) || somarMeses(e.entrada, MESES_VALIDADE) }));
@@ -444,8 +568,8 @@ function entradasRecentes({ estoque, compras, edits, hoje = hojeSP() }) {
 }
 
 /**
- * Lotes de uma nota de entrada (Estoque → Notas fiscais e Validade → notas recentes): os chás a granel da nota,
- * com o nº do lote e a validade, mesmo antes do estoque do AppNext ser atualizado. nota = ES.notas().notas[k]
+ * Lotes de uma nota de entrada (Estoque → Notas fiscais e Validade → notas recentes): os chás a granel, os envasados e a
+ * alimentação da nota, com o nº do lote e a validade, mesmo antes do estoque do AppNext ser atualizado. nota = ES.notas().notas[k]
  */
 function daNota({ nota, estoque, compras, edits }) {
   const porCod = new Map(((estoque && estoque.itens) || []).map((i) => [String(i.cod), i]));
@@ -454,21 +578,26 @@ function daNota({ nota, estoque, compras, edits }) {
   const usados = new Set(), out = [];
   for (const it of nota.itens || []) {
     const cod = String(it.cod || ''), est = porCod.get(cod);
-    const granel = est ? est.un === 'Kg' : /^kg$/i.test(String(it.un || ''));
-    if (!granel || ENVASADO.test((est && est.desc) || it.nome || '')) continue;
+    const tp = est ? TP.de(est) : TP.tipo({ un: it.un, desc: it.nome, grupo: it.grupo });
+    if (!tp) continue;
     const e = entradasDoCod(cod, (compras && compras.itens) || {}).find((x) => x.nf === String(nota.nf) && x.entrada === dia && !usados.has(x.chave));
     if (!e) continue; // nota que não é compra concluída (o painel não conta como lote)
     usados.add(e.chave);
     const x = ed[e.chave] || {}, padrao = somarMeses(e.entrada, MESES_VALIDADE);
-    out.push({ chave: e.chave, cod, desc: (est && est.desc) || it.nome || cod, qtd: e.qtdEntrada, lote: x.lote || '0', validade: DIA.test(x.validade || '') ? x.validade : padrao, padrao: !DIA.test(x.validade || ''), validadePadrao: padrao, entrada: e.entrada });
+    const un = est ? TP.unidade(est.un) : tp === 'envasado' ? 'un' : TP.unidade(it.un);
+    const lim = limiteValidade(tp, e.entrada), partes = tp === 'granel' ? [] : partesDe(edits, e.chave).map((p) => ({ qtd: p.qtd, validade: p.validade }));
+    out.push({ chave: e.chave, cod, desc: (est && est.desc) || it.nome || cod, qtd: e.qtdEntrada, un, tipoProd: tp, lote: x.lote || '0', validade: DIA.test(x.validade || '') ? x.validade : padrao, padrao: !DIA.test(x.validade || ''), validadePadrao: padrao, entrada: e.entrada,
+      partes, primeira: r3(e.qtdEntrada - partes.reduce((a, p) => a + p.qtd, 0)), podeRepartir: tp === 'envasado' || tp === 'alimento',
+      // validade curta → devolução: a data mínima e o texto do prazo (a tela compara cada data com ela)
+      minValidade: lim ? lim.data : null, prazoCurto: lim ? lim.texto : '' });
   }
   return out;
 }
-/** notas recentes (60 dias) com chá a granel ainda sem nº de lote: { id da nota: quantos faltam } */
+/** notas recentes (60 dias) com chá a granel, envasado ou alimentação ainda sem nº de lote: { id da nota: quantos faltam } */
 function pendentesNotas({ notas, estoque, compras, edits, abertos, hoje = hojeSP() }) {
   const out = {}, corte = somarMeses(hoje, -2), dEst = String((estoque && estoque.em) || '').slice(0, 10);
   // lote que já acabou (o estoque exportado já tem a nota e o lote não tem saldo) não fica pendente
-  const acabou = (x) => abertos && DIA.test(dEst) && x.entrada <= dEst && !abertos.has(x.chave);
+  const acabou = (x) => abertos && DIA.test(dEst) && x.entrada <= dEst && !abertos.has(x.chave); // abertos: a chave da linha da nota (chaveNota nas partes)
   for (const n of notas || []) {
     if (String(n.entrada || n.emissao || '').slice(0, 10) < corte) continue;
     const f = daNota({ nota: n, estoque, compras, edits }).filter((x) => x.lote === '0' && !acabou(x)).length;
@@ -481,7 +610,7 @@ function pendentesNotas({ notas, estoque, compras, edits, abertos, hoje = hojeSP
 function granelEstoque({ estoque, compras }) {
   const dEst = String((estoque && estoque.em) || '').slice(0, 10);
   const ent = (compras && compras.itens) || {};
-  return ((estoque && estoque.itens) || []).filter((i) => i.un === 'Kg' && !ENVASADO.test(i.desc || ''))
+  return ((estoque && estoque.itens) || []).filter(ehGranel)
     .map((i) => [i.desc || '', Math.round((Number(i.qtd) || 0) * 1000) / 1000, (ent[String(i.cod)] || []).some(([dia]) => DIA.test(dEst) && dia > dEst) ? 1 : 0]);
 }
 
@@ -492,7 +621,7 @@ const MINIMO_GRANEL_KG = 0.1;
 function disponivel({ estoque, compras }) {
   const dEst = String((estoque && estoque.em) || '').slice(0, 10);
   const ent = (compras && compras.itens) || {};
-  const minimo = (i) => (String(i.un || '').toLowerCase() === 'kg' && !ENVASADO.test(i.desc || '') ? MINIMO_GRANEL_KG - 0.0005 : 0.0005);
+  const minimo = (i) => (ehGranel(i) ? MINIMO_GRANEL_KG - 0.0005 : 0.0005);
   const itens = ((estoque && estoque.itens) || []).map((i) => [i.desc || '', i.un || '', (Number(i.qtd) || 0) > minimo(i) || (ent[String(i.cod)] || []).some(([dia]) => DIA.test(dEst) && dia > dEst) ? 1 : 0]);
   return { em: (estoque && estoque.em) || null, itens };
 }
@@ -591,20 +720,23 @@ function daLoja(id, hoje) {
 
 /** bloco do resumo diário (Telegram/e-mail): só quantidades e valor a preço de venda (o custo não sai do painel) */
 function linhasResumo(id) {
-  const { lotes } = daLoja(id);
+  const { lotes: granel, outros } = daLoja(id);
+  const lotes = [...granel, ...(outros || [])];
   if (!lotes.length) return [];
   const r = resumo(lotes), pf = r.porFaixa;
   if (!pf.vencido.lotes && !pf.critica.lotes && !pf.acao.lotes) return [];
-  const kg = (v) => v.toLocaleString('pt-BR', { maximumFractionDigits: 2 }) + ' kg';
+  // quantidade: o chá a granel em kg, envasado e alimentação em unidade ("2,5 kg + 9 un")
+  const n = (v, d) => v.toLocaleString('pt-BR', { maximumFractionDigits: d });
+  const qtd = (p) => [p.kg > 0 || !p.un ? n(p.kg, 2) + ' kg' : '', p.un > 0 ? n(p.un, 0) + ' un' : ''].filter(Boolean).join(' + ');
   const brl = (v) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
-  const top = lotes.filter((l) => l.dias != null && l.dias < 30).slice(0, 5)
-    .map((l) => `• ${l.desc}: ${kg(l.saldo)} · ${l.dias < 0 ? `venceu há ${-l.dias} d` : `vence em ${l.dias} d`}`);
-  return ['', '🍃 Validade do chá a granel:',
-    ...(pf.vencido.lotes ? [`⚫ Vencidos: ${pf.vencido.lotes} lote(s), ${kg(pf.vencido.kg)} — retirar da venda`] : []),
-    ...(pf.critica.lotes ? [`🔴 Menos de 30 dias: ${pf.critica.lotes} lote(s), ${kg(pf.critica.kg)}`] : []),
-    ...(pf.acao.lotes ? [`🟠 30 a 60 dias: ${pf.acao.lotes} lote(s), ${kg(pf.acao.kg)}`] : []),
+  const top = lotes.filter((l) => l.dias != null && l.dias < 30).sort((a, b) => a.dias - b.dias).slice(0, 5)
+    .map((l) => `• ${l.desc}: ${l.un === 'un' ? n(l.saldo, 0) + ' un' : n(l.saldo, 2) + ' kg'} · ${l.dias < 0 ? `venceu há ${-l.dias} d` : `vence em ${l.dias} d`}`);
+  return ['', '🍃 Validade (chá a granel, envasados e alimentação):',
+    ...(pf.vencido.lotes ? [`⚫ Vencidos: ${pf.vencido.lotes} lote(s), ${qtd(pf.vencido)} — retirar da venda`] : []),
+    ...(pf.critica.lotes ? [`🔴 Menos de 30 dias: ${pf.critica.lotes} lote(s), ${qtd(pf.critica)}`] : []),
+    ...(pf.acao.lotes ? [`🟠 30 a 60 dias: ${pf.acao.lotes} lote(s), ${qtd(pf.acao)}`] : []),
     ...(r.risco.venda > 0 ? [`Valor em risco (preço de venda): ${brl(r.risco.venda)}`] : []),
     ...top];
 }
 
-module.exports = { historicoAberturas, PACOTE_KG, MESES_ABERTO, pacotesDoLote, ritmoCompra, estimarAbertura, comAbertura, observarAberturas, editarAbertura, escolherAjuste, MESES_VALIDADE, FAIXAS, RISCO_DIAS, ler, calcular, resumo, editar, editarSaldo, daLoja, daNota, granelEstoque, disponivel, MINIMO_GRANEL_KG, pendentesNotas, entradasDoCod, entradasRecentes, linhasResumo, somarMeses, precosKg, faixa, hojeSP };
+module.exports = { VALIDADE_MIN, VALIDADE_MIN_DIAS, limiteValidade, validadeCurta, expandirPartes, repartir, paraTela, historicoAberturas, PACOTE_KG, MESES_ABERTO, pacotesDoLote, ritmoCompra, estimarAbertura, comAbertura, observarAberturas, editarAbertura, escolherAjuste, MESES_VALIDADE, FAIXAS, RISCO_DIAS, ler, calcular, resumo, editar, editarSaldo, daLoja, daNota, granelEstoque, disponivel, MINIMO_GRANEL_KG, pendentesNotas, entradasDoCod, entradasRecentes, linhasResumo, somarMeses, precosKg, faixa, hojeSP };

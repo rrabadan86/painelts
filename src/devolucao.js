@@ -1,6 +1,7 @@
 'use strict';
 /**
- * Devolução ao fornecedor a partir de uma nota de ENTRADA (itens danificados e itens que não chegaram).
+ * Devolução ao fornecedor a partir de uma nota de ENTRADA (itens danificados, itens que não chegaram e itens com validade
+ * curta na chegada — o aviso da nota de entrada preenche este mesmo formulário; regra do prazo em src/lotes.js, VALIDADE_MIN).
  *   dados/<loja>/devolucoes/destinatarios.json    e-mails que recebem a devolução (editável na tela)
  *   dados/<loja>/devolucoes/<id>/devolucao.json  o registro (quem, quando, nota, itens, situação do e-mail e da NF-e)
  *   dados/<loja>/devolucoes/<id>/foto-<n>-<k>.jpg  até 3 fotos de cada item danificado
@@ -51,7 +52,8 @@ function foto(dataUrl) {
 }
 
 /**
- * nota = a nota de entrada (ES.notas); b = { itens: [{ cod, tipo: 'danificado'|'faltou', qtd, obs, fotos: [dataUrl] }], obs }
+ * nota = a nota de entrada (ES.notas); b = { itens: [{ cod, tipo: 'danificado'|'faltou'|'validade', qtd, obs, fotos: [dataUrl] }], obs }
+ * ou por item { cod, qtdDanificado, qtdFaltou, qtdValidade, obs, obsFaltou, obsValidade, fotos } (as três partes no mesmo produto)
  */
 /** a devolução ocupa quantidade da nota? (tudo, menos NF-e com erro ou cancelada) */
 function contaComoDevolvido(d) {
@@ -78,11 +80,13 @@ function criar(id, nota, b, por) {
     const i = porCod.get(cod);
     if (!i) return { erro: `O item ${x.cod} não está nesta nota.` };
     const q = (v) => Math.round((Number(v) || 0) * 1000) / 1000;
-    const dan = x.qtdDanificado != null || x.qtdFaltou != null ? q(x.qtdDanificado) : x.tipo === 'faltou' ? 0 : q(x.qtd);
-    const fal = x.qtdDanificado != null || x.qtdFaltou != null ? q(x.qtdFaltou) : x.tipo === 'faltou' ? q(x.qtd) : 0;
-    if (dan < 0 || fal < 0 || !(dan + fal > 0)) return { erro: `Informe a quantidade de ${i.nome}.` };
+    const partes = x.qtdDanificado != null || x.qtdFaltou != null || x.qtdValidade != null;
+    const dan = partes ? q(x.qtdDanificado) : x.tipo === 'faltou' || x.tipo === 'validade' ? 0 : q(x.qtd);
+    const fal = partes ? q(x.qtdFaltou) : x.tipo === 'faltou' ? q(x.qtd) : 0;
+    const val = partes ? q(x.qtdValidade) : x.tipo === 'validade' ? q(x.qtd) : 0; // validade curta na chegada: sem foto
+    if (dan < 0 || fal < 0 || val < 0 || !(dan + fal + val > 0)) return { erro: `Informe a quantidade de ${i.nome}.` };
     const prev = jaDevolvido.get(cod) || 0;
-    const acum = Math.round(((somaPorCod.get(cod) || 0) + dan + fal) * 1000) / 1000;
+    const acum = Math.round(((somaPorCod.get(cod) || 0) + dan + fal + val) * 1000) / 1000;
     if (acum + prev > (i.qtd || 0) + 1e-9) {
       return { erro: prev > 0 ? `${i.nome}: ${acum} + ${prev} já devolvidos em outra devolução desta nota passa da quantidade da nota (${i.qtd}).` : `${i.nome}: ${acum} passa da quantidade da nota (${i.qtd}).` };
     }
@@ -95,6 +99,7 @@ function criar(id, nota, b, por) {
       fotos.push(fs_);
     }
     if (fal > 0) { itens.push({ cod: String(i.cod), nome: i.nome, un: i.un || '', tipo: 'faltou', qtd: fal, vu: i.vu ?? null, obs: txt(x.obsFaltou, 200), fotos: 0 }); fotos.push([]); }
+    if (val > 0) { itens.push({ cod: String(i.cod), nome: i.nome, un: i.un || '', tipo: 'validade', qtd: val, vu: i.vu ?? null, obs: txt(x.obsValidade, 200) || 'validade curta', fotos: 0 }); fotos.push([]); }
   }
   if (!itens.length) return { erro: 'Escolha pelo menos um item.' };
   const did = crypto.randomBytes(6).toString('hex');
@@ -160,11 +165,12 @@ async function planilha(id, d, nomeLoja) {
     r++;
   };
   const dan = d.itens.map((it, n) => ({ it, n })).filter((x) => x.it.tipo === 'danificado');
-  const fal = d.itens.filter((it) => it.tipo === 'faltou');
+  const fal = d.itens.filter((it) => it.tipo === 'faltou'), val = d.itens.filter((it) => it.tipo === 'validade');
   secao('Incidência — itens quebrados / danificados', ['Data', 'NF', 'Código', 'Qtd', 'Produto', 'Problema']);
   if (dan.length) dan.forEach((x, k) => linha(x.it, k)); else { ws.mergeCells(`A${r}:F${r}`); ws.getCell(`A${r}`).value = 'Nenhum'; r++; }
   secao('Itens que estavam na nota, porém não chegaram no pedido', ['Data', 'NF', 'Código', 'Qtd', 'Produto', 'Observação']);
   if (fal.length) fal.forEach((it, k) => linha(it, k)); else { ws.mergeCells(`A${r}:F${r}`); ws.getCell(`A${r}`).value = 'Nenhum'; r++; }
+  if (val.length) { secao('Itens que chegaram com validade curta', ['Data', 'NF', 'Código', 'Qtd', 'Produto', 'Validade']); val.forEach((it, k) => linha(it, k)); }
   // fotos: um bloco por item danificado
   if (dan.some((x) => x.it.fotos)) {
     r += 1;
@@ -189,12 +195,13 @@ async function planilha(id, d, nomeLoja) {
 /** texto do e-mail */
 function textoEmail(d, nomeLoja) {
   const dataBR = (iso) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : '');
-  const dan = d.itens.filter((i) => i.tipo === 'danificado'), fal = d.itens.filter((i) => i.tipo === 'faltou');
+  const dan = d.itens.filter((i) => i.tipo === 'danificado'), fal = d.itens.filter((i) => i.tipo === 'faltou'), val = d.itens.filter((i) => i.tipo === 'validade');
   const l = (i) => `• ${i.cod} · ${i.nome} · ${i.qtd} ${i.un || 'un'}${i.obs ? ' — ' + i.obs : ''}`;
   const nf = d.nfe && d.nfe.numero ? `NF-e de devolução nº ${d.nfe.numero} (em anexo, PDF e XML)` : null;
   return [`Olá,`, '', `A ${nomeLoja} registrou uma devolução referente à NF ${d.nota.nf}${d.nota.serie ? '/' + d.nota.serie : ''} (${d.nota.fornecedor || 'fornecedor'}, emissão ${dataBR(d.nota.emissao)}).`, ...(nf ? ['', nf + '.'] : []), '',
     ...(dan.length ? ['Itens quebrados / danificados:', ...dan.map(l), ''] : []),
     ...(fal.length ? ['Itens que estavam na nota, porém não chegaram:', ...fal.map(l), ''] : []),
+    ...(val.length ? ['Itens que chegaram com validade curta:', ...val.map(l), ''] : []),
     ...(d.obs ? [`Observação: ${d.obs}`, ''] : []),
     `Em anexo: ${d.nfe && d.nfe.numero ? 'a NF-e de devolução (PDF e XML), ' : ''}a planilha da devolução e as fotos dos itens danificados.`, '', `${nomeLoja}`].join('\n');
 }

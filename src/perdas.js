@@ -1,8 +1,8 @@
 'use strict';
 /**
  * Perdas do mês para o Resultado (linha "− Perdas"): o que a loja pagou e não vai vender.
- *  1. Chá a granel VENCIDO que ainda está no estoque: saldo do lote × custo do kg, no mês em que a validade venceu
- *     (lotes de src/lotes.js — os mesmos da tela Validade).
+ *  1. Lote VENCIDO que ainda está no estoque (chá a granel, envasado e alimentação): saldo do lote × custo (do kg no granel,
+ *     da unidade no envasado e na alimentação), no mês em que a validade venceu (lotes de src/lotes.js — os da tela Validade).
  *  2. Faltas do INVENTÁRIO: contagens aplicadas no AppNext (st "importado", não desfeitas) no mês, pelo ajuste a custo
  *     (contado − sistema) × custo. As contagens do mês são somadas (sobra de uma compensa falta de outra — produto
  *     trocado na prateleira não é perda); só o saldo NEGATIVO do mês vira perda. Mês com sobra líquida = perda zero.
@@ -12,12 +12,12 @@
  */
 const r2 = (v) => Math.round(v * 100) / 100;
 const diaSP = (iso) => new Date(iso).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
-const novo = () => ({ vencidos: 0, nVencidos: 0, kgVencidos: 0, semCusto: 0, inventario: 0, ajusteInv: 0, faltasInv: 0, sobrasInv: 0, nContagens: 0, total: 0 });
+const novo = () => ({ vencidos: 0, nVencidos: 0, kgVencidos: 0, unVencidos: 0, semCusto: 0, inventario: 0, ajusteInv: 0, faltasInv: 0, sobrasInv: 0, nContagens: 0, total: 0 });
 
 /**
- *   lotes      [{ validade: 'AAAA-MM-DD', dias (negativo = vencido), saldo (kg), custoKg }]
+ *   lotes      [{ validade: 'AAAA-MM-DD', dias (negativo = vencido), saldo (kg ou un), un ('kg' | 'un'), custoKg (custo da unidade do lote) }]
  *   contagens  [{ st, importadoEm, revertidoEm, ajuste (R$ a custo; negativo = faltou) }]
- * → { 'AAAA-MM': { vencidos, nVencidos, kgVencidos, semCusto, inventario, ajusteInv, faltasInv, sobrasInv, nContagens, total } }
+ * → { 'AAAA-MM': { vencidos, nVencidos, kgVencidos, unVencidos, semCusto, inventario, ajusteInv, faltasInv, sobrasInv, nContagens, total } }
  *   (só os meses com algum lote vencido ou contagem aplicada)
  */
 function porMes({ lotes, contagens }) {
@@ -28,7 +28,7 @@ function porMes({ lotes, contagens }) {
     const venceu = l && (l.venceEm || l.validade), kg = l && (l.kgVence ?? l.saldo);
     if (!l || l.dias == null || !(l.dias < 0) || !venceu || !(kg > 0)) continue;
     const m = mes(String(venceu).slice(0, 7));
-    m.nVencidos++; m.kgVencidos += kg;
+    m.nVencidos++; if (l.un === 'un') m.unVencidos += kg; else m.kgVencidos += kg;
     if (l.custoKg > 0) m.vencidos += kg * l.custoKg; else m.semCusto++;
   }
   for (const c of contagens || []) {

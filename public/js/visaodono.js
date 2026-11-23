@@ -232,9 +232,19 @@
     const valor = (p) => (v.custos && p.custo != null ? ` · ${fmt.brl0(p.custo)} a custo` : '');
     const ven = v.pf.vencido, cri = v.pf.critica;
     if (ven.lotes) lista.push({ nivel: 'erro', topo: 'vencidos', titulo: `Validade: ${fmt.int(ven.lotes)} ${ven.lotes === 1 ? 'lote de chá vencido' : 'lotes de chá vencidos'} (${kg(ven.kg)}${valor(ven)})`,
-      texto: `Retire da venda e lance a perda no AppNext. ${nomes('vencido')}${ven.lotes > 3 ? ` e mais ${ven.lotes - 3}` : ''}.`, link: '#validade', ir: 'ver os vencidos ›', antes: () => { state.valFaixa = 'vencido'; } });
+      texto: `Retire da venda e lance a perda no AppNext. ${nomes('vencido')}${ven.lotes > 3 ? ` e mais ${ven.lotes - 3}` : ''}.`, link: '#validade', ir: 'ver os vencidos ›', antes: () => { state.valTipo = 'granel'; state.valFaixa = 'vencido'; } });
     if (cri.lotes) lista.push({ nivel: 'warn', id: 'val-30', topo: 'criticos', titulo: `Validade: ${fmt.int(cri.lotes)} ${cri.lotes === 1 ? 'lote de chá vence' : 'lotes de chá vencem'} em até 30 dias (${kg(cri.kg)}${valor(cri)})`,
-      texto: `Ofereça primeiro ou faça uma promoção antes de perder. ${nomes('critica')}${cri.lotes > 3 ? ` e mais ${cri.lotes - 3}` : ''}.`, link: '#validade', ir: 'ver os lotes ›', antes: () => { state.valFaixa = 'critica'; } });
+      texto: `Ofereça primeiro ou faça uma promoção antes de perder. ${nomes('critica')}${cri.lotes > 3 ? ` e mais ${cri.lotes - 3}` : ''}.`, link: '#validade', ir: 'ver os lotes ›', antes: () => { state.valTipo = 'granel'; state.valFaixa = 'critica'; } });
+    // chás envasados e alimentação (só lote e validade, em unidade): um aviso por tipo com vencidos e o que vence em 30 dias
+    for (const [t, nome] of [['envasado', 'chás envasados'], ['alimento', 'alimentação']]) {
+      const ro = (v.d.resumoOutros || {})[t];
+      if (!ro) continue;
+      const nv = ro.porFaixa.vencido.lotes, nc = ro.porFaixa.critica.lotes;
+      if (!nv && !nc) continue;
+      const ls = (v.d.outros || []).filter((l) => l.tipoProd === t && l.dias != null && l.dias < 30).slice(0, 3).map((l) => `${l.desc} (${l.dias < 0 ? `venceu há ${fmt.int(-l.dias)} d` : `${fmt.int(l.dias)} d`})`).join(', ');
+      lista.push({ nivel: nv ? 'erro' : 'warn', id: 'val-' + t, titulo: `Validade de ${nome}: ${nv ? `${fmt.int(nv)} ${nv === 1 ? 'lote vencido' : 'lotes vencidos'}` : ''}${nv && nc ? ' e ' : ''}${nc ? `${fmt.int(nc)} ${nc === 1 ? 'vence' : 'vencem'} em até 30 dias` : ''}`,
+        texto: `${nv ? 'Retire os vencidos da venda e lance a perda no AppNext. ' : ''}${ls}.`, link: '#validade', ir: 'ver os lotes ›', antes: () => { state.valTipo = t; state.valFaixa = nv ? 'vencido' : 'critica'; } });
+    }
   };
 
   // ---------- Início: o herói ("como estou indo"), as ações e o estoque em números (decisão do dono, 22/11/2026) ----------
@@ -297,8 +307,8 @@
   API.acaoTela = function (a, ctx) {
     const pl = (n, um, mais) => `${fmt.int(n)} ${n === 1 ? um : mais}`;
     if (a.tipo === 'zerados') return { titulo: `Pedir ${pl(a.n, 'produto zerado que vende', 'produtos zerados que vendem')}`, texto: a.porDia > 0 ? `Perdendo cerca de ${fmt.brl0(a.porDia)} por dia em venda.` : 'Estão sem saldo e vendiam: cada dia sem eles é venda perdida.', link: ctx.temPedido ? '#pedido' : '#estoque', ir: ctx.temPedido ? 'Ver no pedido' : 'Ver quais', antes: () => { state.estSit = 'falta'; state.pedFiltro = 'pedido'; } };
-    if (a.tipo === 'vencidos') return { titulo: `Retirar da venda ${pl(a.n, 'lote de chá vencido', 'lotes de chá vencidos')}`, texto: `${a.valor > 0 ? `${fmt.brl0(a.valor)} a custo · ` : ''}tire da prateleira e lance a perda no AppNext.`, link: '#validade', ir: 'Ver os vencidos', antes: () => { state.valFaixa = 'vencido'; } };
-    if (a.tipo === 'criticos') return { titulo: `Liquidar ${pl(a.n, 'lote que vence', 'lotes que vencem')} em até 30 dias`, texto: `${a.valor > 0 ? `${fmt.brl0(a.valor)} ${a.custo ? 'a custo' : 'a preço de venda'} · ` : ''}ofereça primeiro ou faça uma promoção.`, link: '#validade', ir: 'Ver os lotes', antes: () => { state.valFaixa = 'critica'; } };
+    if (a.tipo === 'vencidos') return { titulo: `Retirar da venda ${pl(a.n, 'lote de chá vencido', 'lotes de chá vencidos')}`, texto: `${a.valor > 0 ? `${fmt.brl0(a.valor)} a custo · ` : ''}tire da prateleira e lance a perda no AppNext.`, link: '#validade', ir: 'Ver os vencidos', antes: () => { state.valTipo = 'granel'; state.valFaixa = 'vencido'; } };
+    if (a.tipo === 'criticos') return { titulo: `Liquidar ${pl(a.n, 'lote que vence', 'lotes que vencem')} em até 30 dias`, texto: `${a.valor > 0 ? `${fmt.brl0(a.valor)} ${a.custo ? 'a custo' : 'a preço de venda'} · ` : ''}ofereça primeiro ou faça uma promoção.`, link: '#validade', ir: 'Ver os lotes', antes: () => { state.valTipo = 'granel'; state.valFaixa = 'critica'; } };
     if (a.tipo === 'franquia') return { titulo: `Cobrar ${fmt.brl0(a.valor)} da franquia`, texto: `${pl(a.n, 'devolução sem desconto', 'devoluções sem desconto')} há mais de ${ctx.prazoFranquia || 30} dias.`, link: '#creditos', ir: 'Ver os créditos', antes: () => { state.cfFil = 'atrasado'; } };
     if (a.tipo === 'parado') return { titulo: `Girar ${fmt.brl0(a.valor)} de estoque parado`, texto: `${pl(a.n, 'produto tem', 'produtos têm')} saldo e não vende${a.n === 1 ? '' : 'm'}: promoção, vitrine ou devolução.`, link: '#estoque', ir: 'Ver os parados', antes: () => { state.estSit = 'parados'; } };
     return { titulo: `Vender ${fmt.brl0(a.porDia)} por dia para bater a meta`, texto: `Faltam ${fmt.brl0(a.valor)} em vendas da meta e ${pl(a.n, 'dia', 'dias')} de loja aberta.`, link: null, rolar: '.md-card', ir: 'Ver a meta de hoje', antes: null };

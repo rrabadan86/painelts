@@ -37,7 +37,17 @@
     // estoque em números. Um número por fato: as contas são as de sempre (visaodono.js, contas.js, projecaoMes).
     const lojaNome = state.loja && state.loja !== 'todas' ? ((TS.lojas || []).find((l) => l.id === state.loja) || {}).nome || '' : 'Todas as lojas';
     const dataTxt = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'long', day: 'numeric', month: 'long' }).format(new Date());
-    const pilula = h('div', { class: 'ini-pilula' }, pilulaVendas([]));
+    // a pílula amarela/vermelha é um botão: abre a lista completa e leva ao grupo "Dados e configuração" (o que explica o problema)
+    const irDados = () => {
+      if (!state.iniTodos) { state.iniTodos = true; if (typeof pintar === 'function') pintar(); }
+      const g = document.querySelector('.ini-todos .ini-grupo[data-area="dados"]') || document.querySelector('.ini-avisos-card');
+      if (!g) return;
+      g.setAttribute('tabindex', '-1');
+      g.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      g.focus({ preventScroll: true });
+      g.classList.add('ini-destaque'); setTimeout(() => g.classList.remove('ini-destaque'), 2000);
+    };
+    const pilula = h('div', { class: 'ini-pilula' }, pilulaVendas([], irDados));
     root.append(h('div', { class: 'ini-cab' }, h('div', null,
       h('h1', { class: 'page-title' }, `${hora < 12 ? 'Bom dia' : hora < 18 ? 'Boa tarde' : 'Boa noite'}${nome ? ', ' + nome : ''}`),
       h('div', { class: 'page-sub' }, `${dataTxt.charAt(0).toUpperCase() + dataTxt.slice(1)}${lojaNome ? ' · ' + lojaNome : ''}`)), pilula));
@@ -135,7 +145,7 @@
         ...(linhas.length ? linhas : [h('p', { class: 'muted' }, nomesFalha.length ? 'Nenhum aviso nas partes que deu para conferir.' : nAd ? 'Nada novo pedindo atenção. 👏' : 'Nada pedindo atenção por enquanto. 👏')]),
         nAd ? h('div', { class: 'muted ini-adiados' }, `${fmt.int(nAd)} ${nAd === 1 ? 'aviso adiado' : 'avisos adiados'} (${nAd === 1 ? 'volta' : 'voltam'} em até 7 dias). `, h('button', { type: 'button', class: 'link-btn', onclick: () => { adiados.limpar(); pintar(); } }, 'Mostrar agora')) : null,
       ].filter(Boolean));
-      pilula.replaceChildren(...[pilulaVendas(mostra)].filter(Boolean));
+      pilula.replaceChildren(...[pilulaVendas(mostra, irDados)].filter(Boolean));
     };
     // com "Todas as lojas" os avisos que são de cada loja não aparecem: uma linha diz por quê
     if ((!state.loja || state.loja === 'todas') && ['estoque', 'pedido', 'inventario', 'notas'].some((t) => (TS.telasEstoque || []).includes(t))) {
@@ -176,13 +186,14 @@
       vai ? h('button', { type: 'button', class: 'ini-resumo-ir', onclick: ir }, String(a.ir || 'abrir ›').replace(/^./, (c) => c.toUpperCase())) : h('span'));
   }
 
-  /** pílula de situação das vendas: verde (em dia), amarela (vendas atrasadas), vermelha (atualização com problema) */
-  function pilulaVendas(avisos) {
+  /** pílula de situação das vendas: verde (em dia), amarela (vendas atrasadas), vermelha (atualização com problema).
+   *  A amarela e a vermelha são botões (irDados): abrem a lista completa e levam ao grupo "Dados e configuração". */
+  function pilulaVendas(avisos, irDados) {
     const db = TS.db;
     if (!db || !db.n) return null;
     const atraso = TS.todayDay() - db.maxDay;
-    if (avisos.some((a) => a.area === 'dados' && a.nivel === 'erro')) return TS.pilulaSit('err', 'Atualização com problema · veja os avisos');
-    if (atraso >= 2) return TS.pilulaSit('warn', `Vendas só até ${fmt.date(TS.dayToIso(db.maxDay)).slice(0, 5)}`);
+    if (avisos.some((a) => a.area === 'dados' && a.nivel === 'erro')) return TS.pilulaSit('err', 'Atualização com problema · veja os avisos', irDados, 'Abre os avisos de "Dados e configuração", que dizem o que falhou e o que fazer');
+    if (atraso >= 2) return TS.pilulaSit('warn', `Vendas só até ${fmt.date(TS.dayToIso(db.maxDay)).slice(0, 5)}`, irDados, 'Abre os avisos de "Dados e configuração": por que as vendas estão atrasadas e o que fazer');
     const em = TS.atualizadoEm instanceof Date && !isNaN(TS.atualizadoEm) ? TS.atualizadoEm : null;
     const hm = em ? new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }).format(em) : null;
     return TS.pilulaSit('ok', atraso <= 0 ? `Vendas atualizadas hoje${hm ? ' às ' + hm : ''}` : `Vendas até ontem${hm ? ' · atualizado às ' + hm : ''}`);

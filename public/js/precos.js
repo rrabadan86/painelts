@@ -568,7 +568,7 @@
         { key: 'nfTxt', label: 'NF / série', align: 'l', render: (r) => h('a', { href: '#', class: 'prc-nome', onclick: (e) => { e.preventDefault(); e.stopPropagation(); abrirNota(D, r, j, aoMudar); } }, r.nfTxt), sortVal: (r) => +r.nf || 0 },
         { key: 'fornecedor', label: 'Fornecedor', align: 'l', wrap: true, render: (r) => { const dv = devAtivaDeNota(j, r); return h('span', null, r.fornecedor || '—', h('small', { class: 'est-tam' }, r.motivo ? h('span', { class: 'prc-st ' + (r.compra ? 'prc-st-v' : 'prc-st-n') }, r.motivo) : null,
           dv ? h('span', { class: 'prc-st nf-dev', title: dv.dica }, `↩ devolução${dv.total > 1 ? ` (${dv.total})` : ''}`) : null,
-          j.lotesPend && j.lotesPend[r.id] ? h('span', { class: 'prc-st vl-pend', title: `${j.lotesPend[r.id]} chá(s) a granel sem o nº do lote: abra a nota e preencha` }, `🍃 lote pendente (${j.lotesPend[r.id]})`) : null)); } },
+          j.lotesPend && j.lotesPend[r.id] ? h('span', { class: 'prc-st vl-pend', title: `${j.lotesPend[r.id]} produto(s) (chá a granel, envasado ou alimentação) sem o nº do lote: abra a nota e preencha` }, `🍃 lote pendente (${j.lotesPend[r.id]})`) : null)); } },
         { key: 'nItens', label: 'Itens', fmt: fmt.int },
         ...(temDescLido ? [{ key: 'desconto', label: 'Desconto', title: 'Desconto da nota (a franquia dá o desconto das devoluções diluído nos produtos)', render: (r) => (r.desconto == null ? h('span', { class: 'muted' }, '—') : r.desconto > 0.005 ? h('b', { class: 'nf-desc' }, fmt.brl(r.desconto)) : h('span', { class: 'muted' }, 'R$ 0,00')), sortVal: (r) => r.desconto ?? -1 }] : []),
         { key: 'total', label: 'Total da nota', fmt: (v) => (v == null ? '—' : fmt.brl(v)) },
@@ -735,16 +735,17 @@
       return { ...i, total: Math.round(i.custo * i.qtd * 100) / 100, antes: a ? a.v : null, origemAntes: a ? a.origem : '', varC: a && a.v ? i.custo / a.v - 1 : null };
     });
     const unTxt = (u) => String(u || 'un').toLowerCase();
-    // chá a granel: lote e validade na própria linha do produto (salvam sozinhos)
-    const temGranel = !!TS.validade && n.itens.some((i) => unTxt(i.un) === 'kg');
-    let lotesNota = null;
+    // chá a granel, envasados e alimentação: lote e validade na própria linha do produto (salvam sozinhos). O servidor diz
+    // quais itens têm lote (src/tipoprod.js); a coluna aparece já com o chá em kg e quando chegam os outros
+    let temGranel = !!TS.validade && n.itens.some((i) => unTxt(i.un) === 'kg');
+    let lotesNota = null, lotesVieram = false;
     const faltaLote = h('span', { class: 'vl-falta' });
     const contarLotes = () => { if (!lotesNota) return; const f = lotesNota.itens.filter((x) => x.lote === '0').length; faltaLote.textContent = f ? `🍃 ${f} sem lote` : '🍃 lotes preenchidos ✓'; faltaLote.className = f ? 'vl-falta' : 'vl-falta ok'; };
     const aoSalvarLote = () => { contarLotes(); TS.validade.pendentes(D.loja).then((p) => { j.lotesPend = p; const c = document.querySelector('.prc-notas > .mt'); if (c) c.replaceChildren(listaNotas(D, j, aoMudar)); }); };
     const celLote = (r) => {
       const box = h('div', { class: 'vl-nota-cel', 'data-cod': r.cod });
       if (lotesNota) { const c = lotesNota.campos(r.cod); if (c) box.append(c); else box.append(h('span', { class: 'muted' }, '—')); }
-      else if (unTxt(r.un) === 'kg') box.append(h('span', { class: 'muted' }, '…'));
+      else if (unTxt(r.un) === 'kg' || !lotesVieram) box.append(h('span', { class: 'muted' }, '…'));
       else box.append(h('span', { class: 'muted' }, '—'));
       return box;
     };
@@ -865,7 +866,7 @@
         { key: 'total', label: 'Total', fmt: fmt.brl },
         ...(n.itens.some((i) => i.desc > 0.005) ? [{ key: 'desc', label: 'Desconto', title: 'Desconto deste item na nota', fmt: (v) => (v ? fmt.brl(v) : '—') }] : []),
         { key: 'varC', label: 'Custo antes', title: 'Custo do mesmo produto antes desta nota (entrada anterior ou importação de estoque) e a variação', render: (r) => (r.antes == null ? h('span', { class: 'muted' }, 'primeira entrada') : h('div', { class: 'prc-v', title: r.origemAntes }, h('span', null, fmt.brl(r.antes)), r.varC != null && Math.abs(r.varC) >= 0.0005 ? h('span', { class: 'prc-badge ' + (r.varC > 0 ? 'prc-ruim' : 'prc-bom') }, pctTxt(r.varC)) : h('span', { class: 'muted' }, 'igual'))), sortVal: (r) => r.varC ?? -99 },
-        ...(temGranel ? [{ key: 'lote', label: 'Lote · validade', align: 'l', title: 'Chá a granel: digite o nº do lote do pacote. A validade vem com 12 meses da entrada; corrija se o pacote disser outra data. Salva sozinho.', render: celLote, sortVal: (r) => (lotesNota && lotesNota.porCod.has(String(r.cod)) ? (lotesNota.porCod.get(String(r.cod)).some((x) => x.lote === '0') ? 0 : 1) : 2) }] : []),
+        ...(temGranel ? [{ key: 'lote', label: 'Lote · validade', align: 'l', title: 'Chá a granel, envasados e alimentação: digite o nº do lote e a validade do pacote (a nota não traz a validade). Vem com 12 meses da entrada; corrija pela data do pacote. Envasados e alimentação com duas datas na mesma linha: "+ outra validade". Validade curta na chegada mostra "Incluir na devolução". Salva sozinho.', render: celLote, sortVal: (r) => (lotesNota && lotesNota.porCod.has(String(r.cod)) ? (lotesNota.porCod.get(String(r.cod)).some((x) => x.lote === '0') ? 0 : 1) : 2) }] : []),
       ],
       rows: soImpacto ? linhas.filter((r) => impPorItem.has(String(r.cod))) : linhas, sortKey: 'total', maxHeight: '60vh', search: 'Buscar produto…', searchKeys: ['nome', 'cod'], cls: 'est-t',
       total: { nome: `${fmt.int(linhas.length)} itens`, total: linhas.reduce((a, r) => a + r.total, 0), ...(n.itens.some((i) => i.desc > 0.005) ? { desc: linhas.reduce((a, r) => a + (r.desc || 0), 0) } : {}) },
@@ -905,13 +906,14 @@
         n.desconto > 0.005 ? h('div', null, h('small', null, 'Desconto'), h('b', { class: 'nf-desc' }, fmt.brl(n.desconto))) : null),
       h('div', { class: 'prc-nota-info muted' }, [n.motivo && `Tipo: ${n.motivo}`, n.status && `Situação: ${n.status}`, n.cfop && `CFOP ${n.cfop}`, `${fmt.int(linhas.length)} itens`, subiu || desceu ? `custo subiu em ${fmt.int(subiu)} e caiu em ${fmt.int(desceu)}` : ''].filter(Boolean).join(' · ')),
       blocoSaidasVinculadas(D.loja, vinculadas),
-      TS.devolucao && !TS.demo ? TS.devolucao.barra(n, () => card, aoMudar) : null,
+      TS.devolucao ? TS.devolucao.barra(n, () => card, aoMudar) : null, // na apresentação o formulário abre, mas nada é registrado
       blocoImpacto,
-      h('div', { class: 'f-label mt' }, 'Produtos da nota', temGranel ? h('span', null, ' ', faltaLote) : null, h('button', { type: 'button', class: 'exp-btn prt-btn prc-nf-prt', title: 'Imprimir a nota', onclick: () => TS.imprimir(card) }, '🖨', h('span', null, 'Imprimir'))),
+      h('div', { class: 'f-label mt' }, 'Produtos da nota', TS.validade ? h('span', null, ' ', faltaLote) : null, h('button', { type: 'button', class: 'exp-btn prt-btn prc-nf-prt', title: 'Imprimir a nota', onclick: () => TS.imprimir(card) }, '🖨', h('span', null, 'Imprimir'))),
       tabBox);
-    if (temGranel) TS.validade.lotesDaNota(D.loja, n, aoSalvarLote).then((ln) => {
-      lotesNota = ln;
+    if (TS.validade) TS.validade.lotesDaNota(D.loja, n, aoSalvarLote).then((ln) => {
+      lotesNota = ln; lotesVieram = true;
       contarLotes();
+      if (ln && !temGranel) { temGranel = true; montarTab(); return; } // nota só com envasado/alimentação: a coluna entra agora
       // troca o "…" pelos campos nas linhas que já estão na tela
       for (const box of card.querySelectorAll('.vl-nota-cel')) { const c = ln && ln.campos(box.dataset.cod); box.replaceChildren(c || h('span', { class: 'muted' }, '—')); }
     });

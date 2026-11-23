@@ -92,7 +92,7 @@ const histCache = new Map(), comprasCache = new Map(), notasCache = new Map();
 function historico(id) {
   let h = lerComCache(histCache, id, arqHist(id), limparHist);
   if (h) return { ...h };
-  const a = atual(id); // começa pelo estoque que já está no painel
+  const a = atualCru(id); // começa pelo estoque que já está no painel
   if (a && a.itens) { registrarCustos(id, a.itens, a.em); h = lerComCache(histCache, id, arqHist(id), (j) => j); if (h) return { ...h }; }
   return {};
 }
@@ -151,7 +151,8 @@ function montarNotas(j) {
 }
 
 const atualCache = new Map(); // id -> { mtimeMs, size, val }
-function atual(id) {
+/** a planilha do AppNext como foi gravada (sem a unidade corrigida): só para importar de novo e para o histórico de custos */
+function atualCru(id) {
   const f = arqAtual(id);
   let st;
   try { st = fs.statSync(f); } catch { atualCache.delete(id); return null; }
@@ -162,6 +163,28 @@ function atual(id) {
   if (j && (!j.em || Number.isNaN(Date.parse(j.em)))) j.em = j.importadoEm || null; // data do título que não deu para ler
   atualCache.set(id, { mtimeMs: st.mtimeMs, size: st.size, val: j });
   return { ...j };
+}
+/**
+ * O estoque como o painel usa (o ponto único da unidade, src/tipoprod.js): cada item com `tipoProd` (granel, envasado,
+ * alimento) e o chá envasado cadastrado em "Kg" no AppNext passa a "Un" (a quantidade já é o número de pacotes).
+ * O grupo do produto vem da nota de entrada (grupo do AppNext) e, sem nota, do cadastro de preços. Fica guardado enquanto o
+ * estoque, as notas e a tabela não mudam (a mesma lista de itens: os caches de quem usa continuam valendo).
+ */
+const normCache = new Map(); // id -> { cru, notas, tab, val }
+function atual(id) {
+  const cru = atualCru(id);
+  if (!cru) return cru;
+  const base = atualCache.get(id), ns = lerComCache(notasCache, id, arqCompras(id), montarNotas);
+  let tab = null;
+  try { tab = require('./tabela').resumo(id); } catch { /* sem tabela */ }
+  const hit = normCache.get(id);
+  if (hit && base && hit.cru === base.val && hit.notas === ns && hit.tab === tab) return { ...hit.val };
+  const grupos = new Map();
+  for (const t of (tab && tab.itens) || []) if (t.grupo) grupos.set(String(t.cod), t.grupo);
+  for (const n of (ns && ns.notas) || []) for (const i of n.itens || []) if (i.grupo) grupos.set(String(i.cod), i.grupo); // a nota vale mais
+  const val = require('./tipoprod').normalizar(cru, (c) => grupos.get(c) || '');
+  if (base) normCache.set(id, { cru: base.val, notas: ns, tab, val });
+  return { ...val };
 }
 
 /** grava a planilha nova; o que sumiu fica com quantidade 0 (o relatório esconde itens zerados) */
@@ -180,7 +203,7 @@ function travaParcial(antes, novo) {
 async function importar(id, buf, origem = 'painel', opts = {}) {
   const { linhasDeBuffer } = require('./sources');
   const novo = ler(await linhasDeBuffer(buf));
-  const antes = atual(id);
+  const antes = atualCru(id); // como veio do AppNext (o "Un" do envasado é só do painel)
   const trava = opts.forcar ? null : travaParcial(antes, novo);
   if (trava) { const e = new Error(trava); e.parcial = true; throw e; }
   const vistos = new Set(novo.itens.map((i) => i.cod));
@@ -366,4 +389,4 @@ function alterarClasse(atual, b, quem) {
   return { ok: c };
 }
 
-module.exports = { travaParcial, ler, atual, historico, compras, notas, importar, pendentes, processar, cfg, validarCfg, quantidade, PADRAO, classeCfg, alterarClasse };
+module.exports = { travaParcial, ler, atual, atualCru, historico, compras, notas, importar, pendentes, processar, cfg, validarCfg, quantidade, PADRAO, classeCfg, alterarClasse };

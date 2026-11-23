@@ -161,3 +161,97 @@ test('lotes: chá a granel só conta como disponível para as mensagens com pelo
   assert.deepEqual(r.itens.map((x) => x[2]), [0, 1, 1, 1], '99 g não; 100 g sim; com nota nova depois do estoque, sim; outro produto, com 1 já tem');
   assert.strictEqual(L.MINIMO_GRANEL_KG, 0.1);
 });
+
+// ---------- chás envasados e alimentação: só lote e validade, em unidade (LOTE-ENV-01, UN-ENV-01) ----------
+const TP = require('../../src/tipoprod');
+const estEnv = TP.normalizar({ em: '2026-11-18T10:00:00Z', itens: [
+  { cod: '700', desc: 'Matcha 30G Pacote', un: 'Kg', qtd: 9, custo: 38.5 }, // o AppNext diz "9,000 kg": são 9 pacotes
+  { cod: '701', desc: 'Geleia Wild Peach 200G', un: 'Un', qtd: 20, custo: 15 },
+  { cod: '702', desc: 'CAMOMILA', un: 'Kg', qtd: 1.5, custo: 90 },
+  { cod: '703', desc: 'Caneca', un: 'Un', qtd: 5, custo: 30 },
+] }, (c) => ({ 700: 'CHÁS ENVASADOS', 701: 'ALIMENTAÇÃO', 703: 'ACESSÓRIOS' })[c] || '');
+const compEnv = { itens: {
+  700: [['2026-09-01', 37, 501, 6, 'TSB'], ['2026-10-20', 38.5, 502, 6, 'TSB']],
+  701: [['2026-08-10', 15, 601, 30, 'TSB']],
+  702: [['2026-10-01', 90, 701, 2, 'TSB']],
+} };
+
+test('UN-ENV-01: envasado em "Kg" no AppNext vira unidade (9,000 kg = 9 un); granel continua kg; o tipo vem do grupo e, sem grupo, do nome', () => {
+  const m = Object.fromEntries(estEnv.itens.map((i) => [i.cod, [i.un, i.qtd, i.tipoProd, i.unAppNext]]));
+  assert.deepEqual(m['700'], ['Un', 9, 'envasado', 'Kg']);
+  assert.deepEqual(m['701'], ['Un', 20, 'alimento', undefined]);
+  assert.deepEqual(m['702'], ['Kg', 1.5, 'granel', undefined]);
+  assert.deepEqual(m['703'], ['Un', 5, null, undefined]);
+  assert.equal(TP.tipo({ un: 'Kg', desc: 'African Sunset 20G Minitin' }), 'envasado', 'sem grupo: pelo nome (tamanho em gramas, minitin)');
+  assert.equal(TP.tipo({ un: 'Un', desc: 'Tea Moments Pack', grupo: 'TEA MOMENTS' }), 'envasado');
+  assert.equal(TP.tipo({ un: 'Un', desc: 'Set Detox', grupo: 'FOREST FRIENDLY TEAS' }), 'envasado');
+  // a trava de 100 g é só do granel: 1 pacote de envasado já "tem"
+  const disp = L.disponivel({ estoque: TP.normalizar({ em: estEnv.em, itens: [{ cod: '9', desc: 'Matcha 30G Pacote', un: 'Kg', qtd: 0.05 }] }, () => 'CHÁS ENVASADOS'), compras: { itens: {} } });
+  assert.deepEqual(disp.itens, [['Matcha 30G Pacote', 'Un', 1]]);
+});
+
+test('LOTE-ENV-01: envasado e alimentação têm lote por nota, PEPS em unidade, validade padrão de 12 meses e digitada; sem abertura', () => {
+  const r = L.calcular({ estoque: estEnv, compras: compEnv, tabela: { itens: [{ cod: '700', desc: 'Matcha 30G Pacote', preco: 89.9 }] }, edits: { lotes: { '501|700|2026-09-01': { lote: 'M1', validade: '2027-02-10' } } }, hoje: '2026-11-18' });
+  assert.deepEqual(r.lotes.map((l) => l.cod), ['702'], 'os lotes de sempre continuam só os do chá a granel');
+  const mt = r.outros.filter((l) => l.cod === '700').sort((a, b) => (a.entrada < b.entrada ? -1 : 1));
+  // 9 pacotes: 6 da nota mais nova e 3 da mais antiga (o mais antigo saiu primeiro)
+  assert.deepEqual(mt.map((l) => [l.nf, l.saldo, l.un, l.tipoProd]), [['501', 3, 'un', 'envasado'], ['502', 6, 'un', 'envasado']]);
+  assert.deepEqual([mt[0].lote, mt[0].validade, mt[0].padrao], ['M1', '2027-02-10', false], 'validade digitada');
+  assert.deepEqual([mt[1].lote, mt[1].validade, mt[1].padrao], ['0', '2027-10-20', true], 'padrão: 12 meses da chegada');
+  for (const l of r.outros) assert.ok(!('abertos' in l) && !l.abertoEm && !l.motivo, 'sem abertura, sem "na lata"');
+  assert.equal(mt[1].precoKg, 89.9, 'preço da unidade (o próprio código na tabela)');
+  const ge = r.outros.find((l) => l.cod === '701');
+  assert.deepEqual([ge.saldo, ge.tipoProd, ge.un, ge.validade], [20, 'alimento', 'un', '2027-08-10']);
+  assert.ok(!r.outros.some((l) => l.cod === '703'), 'acessório não tem lote');
+  // resumo em unidade (não soma com kg) e perdas: unidade × custo
+  const rs = L.resumo(r.outros);
+  assert.deepEqual([rs.porFaixa.ok.un, rs.porFaixa.atencao.un, rs.porFaixa.ok.kg], [26, 3, 0]); // o lote M1 vence em 84 dias
+  const venc = L.calcular({ estoque: estEnv, compras: compEnv, tabela: null, edits: { lotes: { '601|701|2026-08-10': { validade: '2026-11-01' } } }, hoje: '2026-11-18' }).outros.find((l) => l.cod === '701');
+  const pm = require('../../src/perdas').porMes({ lotes: [venc], contagens: [] })['2026-11'];
+  assert.deepEqual([pm.unVencidos, pm.kgVencidos, pm.vencidos], [20, 0, 300]);
+});
+
+test('LOTE-ENV-02: validades diferentes na mesma linha da nota — repartir, a soma não passa, PEPS pela validade mais curta, desfazer', () => {
+  const id = 'lenv';
+  const ctx = () => L.calcular({ estoque: estEnv, compras: compEnv, tabela: null, edits: L.ler(id), hoje: '2026-11-18' });
+  const k = '601|701|2026-08-10'; // 30 geleias na nota, 20 no estoque
+  assert.match(L.repartir(id, { chave: k, partes: [{ qtd: 30, validade: '2027-04-20' }] }, 'ana', { estoque: estEnv, compras: compEnv }).erro, /menor/);
+  assert.match(L.repartir(id, { chave: k, partes: [{ qtd: 1.5, validade: '2027-04-20' }] }, 'ana', { estoque: estEnv, compras: compEnv }).erro, /inteiro/);
+  assert.match(L.repartir(id, { chave: '702|702|2026-10-01'.replace('702|702', '701|702'), partes: [{ qtd: 1, validade: '2027-04-20' }] }, 'ana', { estoque: estEnv, compras: compEnv }).erro, /envasados e alimentação|não encontrada/);
+  assert.match(L.repartir(id, { chave: '701|702|2026-10-01', partes: [{ qtd: 1, validade: '2027-04-20' }] }, 'ana', { estoque: estEnv, compras: compEnv }).erro, /Só chás envasados e alimentação/, 'granel não reparte');
+  // 18 vencem 10/03 e 12 vencem 20/04: a 1ª parte fica com o resto (18) e a validade do lote
+  L.editar(id, { chave: k, validade: '2027-03-10' }, 'ana', ctx().outros, compEnv);
+  const r = L.repartir(id, { chave: k, partes: [{ qtd: 12, validade: '2027-04-20' }] }, 'ana', { estoque: estEnv, compras: compEnv });
+  assert.deepEqual(r.ok.primeira, 18);
+  const ps = ctx().outros.filter((l) => l.cod === '701').sort((a, b) => a.parte - b.parte);
+  // 20 no estoque: saíram 10 — todos da validade mais curta (10/03): sobram 8 dela e as 12 de 20/04
+  assert.deepEqual(ps.map((l) => [l.parte, l.validade, l.qtdEntrada, l.saldo, l.chaveNota]), [[1, '2027-03-10', 18, 8, k], [2, '2027-04-20', 12, 12, k]]);
+  const nota = { nf: '601', entrada: '2026-08-10', itens: [{ cod: '701', nome: 'Geleia', un: 'Un', qtd: 30 }] };
+  const dn = L.daNota({ nota, estoque: estEnv, compras: compEnv, edits: L.ler(id) })[0];
+  assert.deepEqual([dn.primeira, dn.partes, dn.podeRepartir], [18, [{ qtd: 12, validade: '2027-04-20' }], true]);
+  // a validade de uma parte a mais não muda pelo lote (só em "+ outra validade"); o nº do lote é o da linha
+  assert.match(L.editar(id, { chave: k + '~2', validade: '2027-05-01' }, 'ana', ctx().outros, compEnv).erro, /outra validade/);
+  L.editar(id, { chave: k + '~2', lote: 'G7' }, 'ana', ctx().outros, compEnv);
+  assert.ok(ctx().outros.filter((l) => l.cod === '701').every((l) => l.lote === 'G7'));
+  // desfazer: volta para uma data só
+  L.repartir(id, { chave: k, partes: [] }, 'ana', { estoque: estEnv, compras: compEnv });
+  const um = ctx().outros.filter((l) => l.cod === '701');
+  assert.deepEqual(um.map((l) => [l.chave, l.validade, l.saldo, l.parte]), [[k, '2027-03-10', 20, undefined]]);
+});
+
+test('DEV-VAL-01: validade curta na chegada — granel 6 meses, envasado e alimentação 30 dias (uma regra por tipo)', () => {
+  assert.deepEqual(L.VALIDADE_MIN, { granel: { meses: 6 }, envasado: { dias: 30 }, alimento: { dias: 30 } });
+  assert.equal(L.VALIDADE_MIN_DIAS, 30);
+  assert.deepEqual(L.limiteValidade('granel', '2026-11-10'), { data: '2027-05-10', texto: 'menos de 6 meses da chegada' });
+  assert.deepEqual(L.limiteValidade('envasado', '2026-11-10'), { data: '2026-12-10', texto: 'menos de 30 dias da chegada' });
+  assert.equal(L.limiteValidade(null, '2026-11-10'), null);
+  assert.equal(L.validadeCurta('alimento', '2026-11-10', '2026-12-09'), true);
+  assert.equal(L.validadeCurta('alimento', '2026-11-10', '2026-12-10'), false);
+  assert.equal(L.validadeCurta('envasado', '2026-11-10', '2026-12-01'), true);
+  assert.equal(L.validadeCurta('granel', '2026-11-10', '2027-05-09'), true);
+  assert.equal(L.validadeCurta('granel', '2026-11-10', '2027-05-10'), false);
+  // na nota: o limite vem pronto para a tela comparar (granel: a validade do PACOTE)
+  const nota = { nf: '701', entrada: '2026-10-01', itens: [{ cod: '702', nome: 'CAMOMILA', un: 'Kg', qtd: 2 }] };
+  const it = L.daNota({ nota, estoque: estEnv, compras: compEnv, edits: { lotes: {} } })[0];
+  assert.deepEqual([it.tipoProd, it.minValidade, it.prazoCurto, it.podeRepartir], ['granel', '2027-04-01', 'menos de 6 meses da chegada', false]);
+});

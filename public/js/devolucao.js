@@ -1,5 +1,7 @@
-/* Devolução ao fornecedor a partir de uma nota de entrada: escolhe os itens (danificado ou não chegou), quantidades,
-   até 3 fotos de cada danificado; o painel monta a planilha e manda por e-mail para os destinatários da loja. */
+/* Devolução ao fornecedor a partir de uma nota de entrada: escolhe os itens (danificado, não chegou ou validade curta),
+   quantidades, até 3 fotos de cada danificado; o painel monta a planilha e manda por e-mail para os destinatários da loja.
+   TS.devolucao.incluir(nota, { cod, qtd, obs }): o aviso de validade curta da nota (validade.js) abre este mesmo formulário
+   já com o item, a quantidade e o motivo "validade curta (vence dd/mm/aaaa)" — só preenche; enviar e emitir seguem iguais. */
 'use strict';
 (function () {
   const { h, fmt, state } = TS;
@@ -41,12 +43,15 @@
     });
   }
 
+  const barras = new Map(); // id da nota → { n, box, aoMudar, form } (a barra que está na tela)
   function barra(n, card, aoMudar) {
     const loja = state.loja;
     const box = h('div', { class: 'dev-barra' });
+    const reg = { n, box, aoMudar, form: null };
+    barras.set(String(n.id), reg);
     const bt = h('button', { type: 'button', class: 'btn' }, '↩ Devolver itens ao fornecedor');
-    bt.addEventListener('click', () => formulario(n, box, loja, aoMudar));
-    box.append(bt, h('small', { class: 'muted' }, ' Itens quebrados ou que não chegaram: planilha com fotos por e-mail.'));
+    bt.addEventListener('click', async () => { reg.form = await formulario(n, box, loja, aoMudar); });
+    box.append(bt, h('small', { class: 'muted' }, ' Itens quebrados, que não chegaram ou com validade curta: planilha com fotos por e-mail.'));
     // devoluções já feitas desta nota
     api('GET', `devolucoes?loja=${encodeURIComponent(loja)}`).then((j) => {
       const desta = j.devolucoes.filter((d) => String(d.nota.nf) === String(n.nf) && String(d.nota.id) === String(n.id));
@@ -110,10 +115,11 @@
   async function formulario(n, box, loja, aoMudar) {
     let dest = [];
     try { dest = (await api('GET', `devolucoes?loja=${encodeURIComponent(loja)}`)).destinatarios; } catch { /* segue */ }
-    const sel = new Map(); // cod → { tipo, qtd, obs, fotos: [dataUrl] }
+    const sel = new Map(); // cod → { dan, fal, val, obs, obsVal, fotos: [dataUrl] }
+    const marcar = new Map(); // cod → função que marca o item com a validade curta (TS.devolucao.incluir)
     const lista = h('div', { class: 'dev-itens' });
     const resumo = h('div', { class: 'muted' });
-    const pintarResumo = () => { const v = [...sel.values()]; const d = v.filter((x) => x.dan > 0).length, f = v.filter((x) => x.fal > 0).length; resumo.textContent = sel.size ? `${sel.size} ${sel.size === 1 ? 'produto escolhido' : 'produtos escolhidos'} · ${d} com danificados · ${f} com faltas` : 'Marque os itens a devolver.'; };
+    const pintarResumo = () => { const v = [...sel.values()]; const d = v.filter((x) => x.dan > 0).length, f = v.filter((x) => x.fal > 0).length, c = v.filter((x) => x.val > 0).length; resumo.textContent = sel.size ? `${sel.size} ${sel.size === 1 ? 'produto escolhido' : 'produtos escolhidos'} · ${d} com danificados · ${f} com faltas${c ? ` · ${c} com validade curta` : ''}` : 'Marque os itens a devolver.'; };
     const busca = h('input', { class: 'f-input', placeholder: 'Filtrar produto da nota…' });
     const linhas = n.itens.map((i) => {
       const cb = h('input', { type: 'checkbox' });
@@ -125,7 +131,11 @@
         if (!x) { det.hidden = true; det.replaceChildren(); return; }
         det.hidden = false;
         // o mesmo produto pode ter parte danificada e parte que não chegou (ex.: pediu 6: 2 quebrados e 4 faltaram)
-        const num = (k) => { const el = h('input', { class: 'f-input dev-num', type: 'number', min: 0, max: i.qtd, step: 'any', value: x[k] || '', placeholder: '0' }); el.addEventListener('input', () => { x[k] = Number(el.value) || 0; danBox.hidden = !(x.dan > 0); pintarResumo(); }); return el; };
+        const num = (k) => { const el = h('input', { class: 'f-input dev-num dev-' + k, type: 'number', min: 0, max: i.qtd, step: 'any', value: x[k] || '', placeholder: '0' }); el.addEventListener('input', () => { x[k] = Number(el.value) || 0; danBox.hidden = !(x.dan > 0); valBox.hidden = !(x.val > 0); pintarResumo(); }); return el; };
+        // validade curta (vem do aviso da nota): o motivo vai na planilha e no e-mail, sem foto
+        const obsVal = h('input', { class: 'f-input dev-obs-val', placeholder: 'Motivo (ex.: validade curta, vence 10/03/2027)', value: x.obsVal, maxlength: 200, 'aria-label': `Motivo da validade curta de ${i.nome}` });
+        obsVal.addEventListener('input', () => { x.obsVal = obsVal.value; });
+        const valBox = h('div', { class: 'dev-det', style: { margin: 0 }, hidden: !(x.val > 0) }, obsVal);
         const obs = h('input', { class: 'f-input', placeholder: 'O que aconteceu com os danificados? (ex.: caixa amassada, vencido)', value: x.obs, maxlength: 200 });
         obs.addEventListener('input', () => { x.obs = obs.value; });
         const arq = h('input', { type: 'file', accept: 'image/*', multiple: true, hidden: true });
@@ -138,9 +148,22 @@
         const fotos = h('div', { class: 'dev-fotos' }, ...x.fotos.map((f, k) => h('div', { class: 'dev-foto' }, h('img', { src: f, alt: `Foto ${k + 1}` }),
           h('button', { type: 'button', class: 'dev-foto-x', title: 'Tirar a foto', onclick: () => { x.fotos.splice(k, 1); pintarDet(); } }, '✕'))));
         const danBox = h('div', { class: 'dev-det', style: { margin: 0 }, hidden: !(x.dan > 0) }, obs, h('div', { class: 'dev-linha' }, btFoto, arq, h('small', { class: 'muted' }, 'fotos dos danificados: até 3 · pelo menos 1')), fotos);
-        det.replaceChildren(h('div', { class: 'dev-linha' }, h('label', null, 'Danificados ', num('dan')), h('label', null, 'Não chegaram ', num('fal')), h('small', { class: 'muted' }, `de ${fmt.n2(i.qtd).replace(/,00$/, '')} na nota`)), danBox);
+        det.replaceChildren(h('div', { class: 'dev-linha' }, h('label', null, 'Danificados ', num('dan')), h('label', null, 'Não chegaram ', num('fal')),
+          h('label', { title: 'Chegou com validade menor que o prazo mínimo (chá a granel: 6 meses; envasados e alimentação: 30 dias da chegada).' }, 'Validade curta ', num('val')),
+          h('small', { class: 'muted' }, `de ${fmt.n2(i.qtd).replace(/,00$/, '')} na nota`)), danBox, valBox);
       };
-      cb.addEventListener('change', () => { if (cb.checked) sel.set(i.cod, { dan: 0, fal: 0, obs: '', fotos: [] }); else sel.delete(i.cod); pintarDet(); pintarResumo(); });
+      cb.addEventListener('change', () => { if (cb.checked) sel.set(i.cod, { dan: 0, fal: 0, val: 0, obs: '', obsVal: '', fotos: [] }); else sel.delete(i.cod); pintarDet(); pintarResumo(); });
+      // validade curta de uma parte da linha: soma a quantidade e junta o motivo (cada parte uma vez)
+      marcar.set(String(i.cod), (pre) => {
+        if (!sel.has(i.cod)) { cb.checked = true; sel.set(i.cod, { dan: 0, fal: 0, val: 0, obs: '', obsVal: '', fotos: [], partes: new Set() }); }
+        const x = sel.get(i.cod);
+        x.partes = x.partes || new Set();
+        const k = `${pre.qtd}|${pre.obs}`;
+        if (!x.partes.has(k)) { x.partes.add(k); x.val = Math.min(i.qtd, (x.val || 0) + (Number(pre.qtd) || 0)); x.obsVal = [x.obsVal, pre.obs].filter(Boolean).join('; ').slice(0, 200); }
+        pintarDet(); pintarResumo();
+        el.scrollIntoView({ block: 'nearest' });
+        return true;
+      });
       return el;
     });
     busca.addEventListener('input', () => { const q = busca.value.toLowerCase().trim(); linhas.forEach((el) => { el.hidden = !!q && !el.dataset.busca.includes(q); }); });
@@ -155,25 +178,40 @@
       if (!sel.size) { msg.textContent = 'Marque pelo menos um item.'; return; }
       for (const [cod, x] of sel) {
         const it = n.itens.find((i) => i.cod === cod);
-        if (!(x.dan + x.fal > 0)) { msg.textContent = `Informe quantos de ${it.nome} vieram danificados e/ou não chegaram.`; return; }
-        if (x.dan + x.fal > it.qtd) { msg.textContent = `${it.nome}: ${x.dan + x.fal} passa da quantidade da nota (${it.qtd}).`; return; }
+        if (!(x.dan + x.fal + x.val > 0)) { msg.textContent = `Informe quantos de ${it.nome} vieram danificados, não chegaram ou com validade curta.`; return; }
+        if (x.dan + x.fal + x.val > it.qtd) { msg.textContent = `${it.nome}: ${x.dan + x.fal + x.val} passa da quantidade da nota (${it.qtd}).`; return; }
         if (x.dan > 0 && !x.fotos.length) { msg.textContent = `Anexe pelo menos 1 foto dos danificados de ${it.nome}.`; return; }
       }
       if (!dest.length && !confirm('Não há destinatários salvos: a devolução fica registrada, mas o e-mail não vai. Continuar?')) return;
       if (dest.length && !confirm(`Enviar a devolução de ${sel.size} ${sel.size === 1 ? 'item' : 'itens'} da NF ${n.nf} por e-mail para:\n${dest.join('\n')}`)) return;
       enviar.disabled = true; msg.className = 'muted'; msg.textContent = 'Montando a planilha e enviando…';
       try {
-        const r = await api('POST', 'devolucoes', { loja, notaId: n.id, nf: n.nf, obs: obsGeral.value, itens: [...sel].map(([cod, x]) => ({ cod, qtdDanificado: x.dan, qtdFaltou: x.fal, obs: x.obs, fotos: x.dan > 0 ? x.fotos : [] })) });
+        const r = await api('POST', 'devolucoes', { loja, notaId: n.id, nf: n.nf, obs: obsGeral.value, itens: [...sel].map(([cod, x]) => ({ cod, qtdDanificado: x.dan, qtdFaltou: x.fal, qtdValidade: x.val, obs: x.obs, obsValidade: x.obsVal, fotos: x.dan > 0 ? x.fotos : [] })) });
         box.replaceChildren(h('div', { class: 'notice' }, h('b', null, 'Devolução registrada.')), h('div', { class: 'dev-feitas' }, itemFeito(r.devolucao, loja, aoMudar)));
         if (aoMudar) aoMudar();
       } catch (e) { msg.className = 'neg'; msg.textContent = e.message; enviar.disabled = false; }
     });
     box.replaceChildren(h('div', { class: 'card dev-form' },
       h('div', { class: 'card-title' }, `Devolver itens da NF ${n.nf}`),
-      h('div', { class: 'card-sub' }, 'Marque os itens e diga quantos vieram danificados e quantos não chegaram (pode ser os dois no mesmo item). Danificados precisam de foto (até 3).'),
+      h('div', { class: 'card-sub' }, 'Marque os itens e diga quantos vieram danificados, quantos não chegaram e quantos chegaram com validade curta (pode ser mais de um no mesmo item). Danificados precisam de foto (até 3).'),
       busca, lista, resumo, obsGeral,
       h('div', { class: 'dev-dest' }, h('small', null, h('b', null, 'O e-mail vai para: '), dest.length ? dest.join(', ') : h('span', { class: 'neg' }, 'ninguém ainda'), ' · ', h('a', { href: '#config' }, 'editar em Configurações → Integrações'))),
       h('div', { class: 'cfg-acoes' }, enviar, h('button', { type: 'button', class: 'btn', onclick: () => box.replaceWith(barra(n, null, aoMudar)) }, 'Cancelar'), msg)));
+    return { incluir: (pre) => { const f = marcar.get(String(pre.cod)); return f ? f(pre) : false; }, box };
   }
-  TS.devolucao = { barra };
+  /**
+   * Aviso de validade curta → "Incluir na devolução": abre (ou completa) o formulário da devolução desta nota com o item,
+   * a quantidade da parte e o motivo. Só preenche o rascunho; quem envia e emite a NF-e segue o fluxo de sempre.
+   * → true quando achou o formulário da nota na tela.
+   */
+  async function incluir(n, pre) {
+    const reg = barras.get(String(n.id));
+    if (!reg || !reg.box.isConnected) return false;
+    if (!reg.form || !reg.form.box.isConnected || !reg.box.querySelector('.dev-form')) reg.form = await formulario(reg.n, reg.box, state.loja, reg.aoMudar);
+    const ok = reg.form.incluir(pre);
+    const f = reg.box.querySelector('.dev-form');
+    if (f) { f.scrollIntoView({ block: 'start', behavior: 'smooth' }); const v = f.querySelector('.dev-val'); if (v) v.focus({ preventScroll: true }); }
+    return ok;
+  }
+  TS.devolucao = { barra, incluir };
 })();

@@ -1,5 +1,6 @@
-/* Estoque → Validade: lotes do chá a granel (só o chá em kg tem validade).
-   Cada entrada de chá é um lote, com validade de 12 meses da entrada. A equipe digita o nº do lote (vem "0")
+/* Estoque → Validade: lotes do chá a granel, dos chás envasados e da alimentação (abas; o tipo vem do servidor, src/tipoprod.js).
+   Envasado e alimentação: só lote e validade, em unidade (sem abertura nem "na lata"); ficam em d.outros / d.resumoOutros.
+   Cada entrada é um lote, com validade de 12 meses da entrada. A equipe digita o nº do lote (vem "0")
    e corrige a validade se o pacote disser outra coisa. O saldo de cada lote vem do estoque atual do AppNext,
    distribuído da entrada mais nova para a mais antiga (o mais antigo foi vendido primeiro).
    Também alimenta: Vendas → Promoção ("vender primeiro"), Estoque → Pedido (aviso) e Clientes → Campanhas. */
@@ -10,6 +11,17 @@
   const NOME = { vencido: '⚫ Vencido', critica: '🔴 Menos de 30 dias', acao: '🟠 30 a 60 dias', atencao: '🟡 60 a 90 dias', ok: '🟢 Mais de 90 dias', sem: '⚪ Sem data' };
   const CURTO = { vencido: 'Vencido', critica: '< 30 dias', acao: '30–60 dias', atencao: '60–90 dias', ok: '> 90 dias', sem: 'Sem data' };
   const kgTxt = (v) => (v == null ? '—' : v < 1 ? `${fmt.int(Math.round(v * 1000))} g` : `${fmt.kg(v)} kg`);
+  /** quantidade do lote na unidade dele: chá a granel em kg/g, envasado e alimentação em unidade */
+  const qtdTxt = (v, un) => (un === 'un' ? (v == null ? '—' : `${fmt.int(v)} un`) : kgTxt(v));
+  /** total de uma faixa do resumo ({ kg, un }): "2,5 kg", "9 un" ou "2,5 kg + 9 un" */
+  const qtdP = (p, un) => [p.kg > 0 ? kgTxt(p.kg) : '', p.un > 0 ? `${fmt.int(p.un)} un` : ''].filter(Boolean).join(' + ') || (un === 'un' ? '0 un' : '0 kg');
+  // abas da tela (o mesmo tipo do servidor): o chá a granel tem abertura; envasado e alimentação, só lote e validade
+  const TIPOS = [
+    ['granel', '🍃 Chá a granel', 'Chá vendido a granel (em kg). Cada pacote de 1 kg que vai para a lata vale 6 meses a partir da abertura.'],
+    ['envasado', '📦 Envasados', 'Chás envasados (pacote fechado, lata, minitin, sachê): vendidos sempre fechados, contados em unidade. Só lote e validade, sem abertura.'],
+    ['alimento', '🥫 Alimentação', 'Produtos do grupo Alimentação (geleia, bubble tea, mel, kombucha…). Só lote e validade, sem abertura.'],
+  ];
+  const NOME_TIPO = Object.fromEntries(TIPOS.map(([v, r]) => [v, r]));
   const diasTxt = (d) => (d == null ? 'sem data' : d < 0 ? `venceu há ${-d} d` : d === 0 ? 'vence hoje' : `${d} d`);
   const toast = (msg, erro) => { const t = h('div', { class: 'toast' + (erro ? ' err' : '') }, msg); document.body.append(t); setTimeout(() => t.remove(), erro ? 6000 : 3000); };
 
@@ -98,40 +110,104 @@
     const primeiro = fundo.querySelector('input'); if (primeiro) primeiro.focus();
   }
 
-  /** chás a granel de uma nota de entrada com o nº do lote e a validade (vale antes do estoque ser atualizado) */
-  /** campos de lote e validade de um chá a granel da nota (salvam sozinhos ao sair do campo) */
-  function camposItem(loja, it, aoSalvar) {
-    {
-      const lote = h('input', { class: 'f-input vl-lote' + (it.lote === '0' ? ' vl-vazio' : ''), value: it.lote === '0' ? '' : it.lote, placeholder: 'nº do lote', maxlength: 30, autocomplete: 'off', autocapitalize: 'characters', 'aria-label': `Lote de ${it.desc}` });
-      const val = h('input', { class: 'f-input vl-val', type: 'date', value: it.validade || '', min: it.entrada, 'aria-label': `Validade de ${it.desc}` });
-      const enviar = (corpoReq, el) => {
-        if (TS.demo) { el.classList.add('vl-salvo'); setTimeout(() => el.classList.remove('vl-salvo'), 1200); return; }
-        el.classList.add('vl-salvando');
-        req('PUT', 'validade/lote', { loja, chave: it.chave, ...corpoReq }).then((j) => {
-          cache.delete(loja);
-          const e = j.editado || {};
-          it.lote = e.lote || '0'; it.validade = e.validade || it.validadePadrao;
-          el.classList.remove('vl-salvando'); el.classList.add('vl-salvo'); setTimeout(() => el.classList.remove('vl-salvo'), 1200);
-          if ('validade' in corpoReq) val.value = it.validade;
-          if (aoSalvar) aoSalvar(it);
-        }).catch((e) => { el.classList.remove('vl-salvando'); toast(e.message, true); });
+  /**
+   * Campos de lote e validade de um item da nota (chá a granel, envasado ou alimentação; salvam sozinhos ao sair do campo).
+   * Envasado e alimentação: "+ outra validade" reparte a linha em partes { qtd, validade } (a 1ª fica com o resto).
+   * Validade curta (menor que a chegada + o prazo do tipo, que vem do servidor em it.minValidade): aviso com
+   * "Incluir na devolução", que preenche a devolução desta nota (TS.devolucao.incluir). nota = a nota aberta (para a devolução).
+   * → { lote, val, extra } (extra: as outras validades e os avisos, embaixo dos campos)
+   */
+  function camposItem(loja, it, aoSalvar, nota) {
+    const lote = h('input', { class: 'f-input vl-lote' + (it.lote === '0' ? ' vl-vazio' : ''), value: it.lote === '0' ? '' : it.lote, placeholder: 'nº do lote', maxlength: 30, autocomplete: 'off', autocapitalize: 'characters', 'aria-label': `Lote de ${it.desc}` });
+    const val = h('input', { class: 'f-input vl-val', type: 'date', value: it.validade || '', min: it.entrada, 'aria-label': `Validade de ${it.desc}` });
+    const extra = h('div', { class: 'vl-nota-extra' });
+    const piscar = (el, cls) => { el.classList.add(cls); setTimeout(() => el.classList.remove(cls), 1200); };
+    const enviar = (corpoReq, el) => {
+      if (TS.demo) { if ('validade' in corpoReq) it.validade = corpoReq.validade || it.validadePadrao; if ('lote' in corpoReq) it.lote = corpoReq.lote || '0'; piscar(el, 'vl-salvo'); pintarExtra(); return; }
+      el.classList.add('vl-salvando');
+      req('PUT', 'validade/lote', { loja, chave: it.chave, ...corpoReq }).then((j) => {
+        cache.delete(loja);
+        const e = j.editado || {};
+        it.lote = e.lote || '0'; it.validade = e.validade || it.validadePadrao;
+        el.classList.remove('vl-salvando'); piscar(el, 'vl-salvo');
+        if ('validade' in corpoReq) val.value = it.validade;
+        pintarExtra();
+        if (aoSalvar) aoSalvar(it);
+      }).catch((e) => { el.classList.remove('vl-salvando'); toast(e.message, true); });
+    };
+    lote.addEventListener('change', () => { lote.value = lote.value.trim().toUpperCase(); lote.classList.toggle('vl-vazio', !lote.value); enviar({ lote: lote.value }, lote); });
+    lote.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); lote.blur(); } });
+    TS.aoConfirmar(val, () => { if (val.value !== (it.validade || '')) enviar({ validade: val.value }, val); }); // só ao sair do campo: digitar o dia já disparava "change" e a tela redesenhava
+
+    // ---- outras validades da mesma linha (envasado e alimentação) ----
+    it.partes = it.partes || [];
+    const somaOutras = () => it.partes.reduce((a, p) => a + (Number(p.qtd) || 0), 0);
+    const salvarPartes = (el) => {
+      const partes = it.partes.filter((p) => Number(p.qtd) > 0 && p.validade);
+      if (TS.demo) { if (el) piscar(el, 'vl-salvo'); pintarExtra(); return; }
+      if (el) el.classList.add('vl-salvando');
+      req('PUT', 'validade/partes', { loja, chave: it.chave, partes }).then(() => {
+        cache.delete(loja);
+        if (el) { el.classList.remove('vl-salvando'); piscar(el, 'vl-salvo'); }
+        pintarExtra();
+        if (aoSalvar) aoSalvar(it);
+      }).catch((e) => { if (el) el.classList.remove('vl-salvando'); toast(e.message, true); });
+    };
+    const uni = (q) => qtdTxt(q, it.un);
+    /** aviso de validade curta de uma parte (qtd, validade) */
+    const aviso = (qtd, validade) => {
+      if (!it.minValidade || !validade || !(validade < it.minValidade) || !(qtd > 0)) return null;
+      const obs = `validade curta (vence ${fmt.date(validade)})`;
+      const bt = h('button', { type: 'button', class: 'btn vl-dev-btn', title: 'Abre a devolução desta nota (no alto da nota) já com este item, a quantidade e o motivo. Só preenche: quem envia e emite a NF-e segue o fluxo de sempre.' }, 'Incluir na devolução');
+      bt.addEventListener('click', async () => {
+        const ok = TS.devolucao && nota ? await TS.devolucao.incluir(nota, { cod: it.cod, qtd, obs }) : false;
+        if (!ok) toast('Abra esta nota em Estoque → Notas fiscais para incluir na devolução.', true);
+      });
+      return h('div', { class: 'notice warn vl-curta', role: 'status' },
+        h('b', null, `Validade curta (vence em ${fmt.date(validade).slice(0, 5)}, ${it.prazoCurto})`), `: inclua na incidência/devolução à franquia (${uni(qtd)}). `, bt);
+    };
+    function pintarExtra() {
+      const outras = somaOutras(), primeira = Math.max(0, Math.round((it.qtd - outras) * 1000) / 1000);
+      const linhaParte = (p, k) => {
+        const q = h('input', { class: 'f-input vl-parte-qtd', type: 'number', min: 1, step: it.un === 'un' ? 1 : 'any', value: p.qtd || '', 'aria-label': `Quantidade da ${k + 2}ª validade de ${it.desc}` });
+        const d = h('input', { class: 'f-input vl-val vl-parte-val', type: 'date', value: p.validade || '', min: it.entrada, 'aria-label': `${k + 2}ª validade de ${it.desc}` });
+        TS.aoConfirmar(q, () => {
+          const v = Number(String(q.value).replace(',', '.')) || 0;
+          if (v === Number(p.qtd)) return;
+          if (somaOutras() - (Number(p.qtd) || 0) + v >= it.qtd) { toast(`A soma das outras validades tem de ser menor que ${uni(it.qtd)} (o que faltar fica na primeira data).`, true); q.value = p.qtd || ''; return; }
+          p.qtd = v; if (p.validade) salvarPartes(q); else pintarExtra();
+        });
+        TS.aoConfirmar(d, () => { if (d.value && d.value !== p.validade) { p.validade = d.value; if (Number(p.qtd) > 0) salvarPartes(d); else pintarExtra(); } });
+        const tirar = h('button', { type: 'button', class: 'link-btn vl-parte-x', title: 'Tira esta validade: a quantidade volta para a primeira data.', 'aria-label': `Tirar a ${k + 2}ª validade` }, '✕');
+        tirar.addEventListener('click', () => { it.partes.splice(k, 1); salvarPartes(null); });
+        return h('div', { class: 'vl-parte' }, h('label', { class: 'vl-campo' }, h('small', null, 'Qtd'), q), h('label', { class: 'vl-campo' }, h('small', null, `${k + 2}ª validade`), d), tirar, aviso(Number(p.qtd) || 0, p.validade));
       };
-      lote.addEventListener('change', () => { lote.value = lote.value.trim().toUpperCase(); lote.classList.toggle('vl-vazio', !lote.value); enviar({ lote: lote.value }, lote); });
-      lote.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); lote.blur(); } });
-      TS.aoConfirmar(val, () => { if (val.value !== (it.validade || '')) enviar({ validade: val.value }, val); }); // só ao sair do campo: digitar o dia já disparava "change" e a tela redesenhava
-      return { lote, val };
+      const mais = it.podeRepartir ? h('button', { type: 'button', class: 'link-btn vl-mais-val', title: 'A mesma linha da nota veio com datas diferentes (ex.: 18 vencem em março e 12 em abril): separe a quantidade de cada data. Cada parte vira um lote e sai primeiro a que vence antes.' }, '+ outra validade') : null;
+      if (mais) mais.addEventListener('click', () => {
+        if (primeira <= (it.un === 'un' ? 1 : 0.001)) { toast('Não sobrou quantidade na primeira data para separar.', true); return; }
+        it.partes.push({ qtd: '', validade: '' }); pintarExtra();
+        const ult = extra.querySelector('.vl-parte:last-of-type .vl-parte-qtd'); if (ult) ult.focus();
+      });
+      extra.replaceChildren(...[
+        it.partes.length ? h('small', { class: 'muted vl-sub vl-primeira' }, `1ª validade (acima): ${uni(primeira)} de ${uni(it.qtd)}`) : null,
+        ...it.partes.map(linhaParte),
+        aviso(it.partes.length ? primeira : it.qtd, it.validade),
+        mais,
+      ].filter(Boolean));
     }
+    pintarExtra();
+    return { lote, val, extra };
   }
-  function linhasNota(loja, nt, aoSalvar) {
+  function linhasNota(loja, nt, aoSalvar, nota) {
     return h('div', { class: 'vl-nota-itens' }, ...nt.itens.map((it) => {
-      const { lote, val } = camposItem(loja, it, aoSalvar);
+      const { lote, val, extra } = camposItem(loja, it, aoSalvar, nota);
       return h('div', { class: 'vl-nota-item' },
-        h('div', { class: 'vl-nota-cha' }, h('b', null, it.desc), h('small', { class: 'muted vl-sub' }, `cód. ${it.cod} · ${kgTxt(it.qtd)}`)),
+        h('div', { class: 'vl-nota-cha' }, h('b', null, it.desc), h('small', { class: 'muted vl-sub' }, `cód. ${it.cod} · ${qtdTxt(it.qtd, it.un)}`)),
         h('label', { class: 'vl-campo' }, h('small', null, 'Lote'), lote),
-        h('label', { class: 'vl-campo' }, h('small', null, 'Validade'), val));
+        h('label', { class: 'vl-campo' }, h('small', null, 'Validade'), val), extra);
     }));
   }
-  /** chás a granel da nota com lote e validade, para pôr dentro da tabela de produtos: Promise<{ itens, porCod, campos(cod) }> */
+  /** itens da nota com lote e validade, para pôr dentro da tabela de produtos: Promise<{ itens, porCod, campos(cod) }> */
   function lotesDaNota(loja, n, aoSalvar) {
     if (!loja || loja === 'todas') return Promise.resolve(null);
     return req('GET', `validade/notas?loja=${encodeURIComponent(loja)}&nota=${encodeURIComponent(n.id)}`).then((j) => {
@@ -139,21 +215,21 @@
       if (!nt || !nt.itens.length) return null;
       const porCod = new Map();
       for (const it of nt.itens) (porCod.get(String(it.cod)) || porCod.set(String(it.cod), []).get(String(it.cod))).push(it);
-      // os campos de cada chá: criados uma vez (a tabela redesenha ao ordenar/buscar e reaproveita os mesmos)
+      // os campos de cada item: criados uma vez (a tabela redesenha ao ordenar/buscar e reaproveita os mesmos)
       const prontos = new Map();
       const campos = (cod) => {
         const its = porCod.get(String(cod));
         if (!its) return null;
         if (!prontos.has(String(cod))) prontos.set(String(cod), h('div', { class: 'vl-nota-campos' }, ...its.map((it) => {
-          const { lote, val } = camposItem(loja, it, aoSalvar);
-          return h('div', { class: 'vl-nota-par' }, h('label', { class: 'vl-campo' }, h('small', null, 'Lote'), lote), h('label', { class: 'vl-campo' }, h('small', null, 'Validade'), val));
+          const { lote, val, extra } = camposItem(loja, it, aoSalvar, n);
+          return h('div', { class: 'vl-nota-par' }, h('label', { class: 'vl-campo' }, h('small', null, 'Lote'), lote), h('label', { class: 'vl-campo' }, h('small', null, 'Validade'), val), extra);
         })));
         return prontos.get(String(cod));
       };
       return { itens: nt.itens, porCod, campos };
     }).catch(() => null);
   }
-  /** Estoque → Notas fiscais → nota de entrada: bloco "Lotes do chá a granel" (some se a nota não tem chá a granel) */
+  /** Estoque → Notas fiscais → nota de entrada: bloco "Lotes e validade" (some se a nota não tem chá a granel, envasado nem alimentação) */
   function blocoNota(loja, n, aoSalvar) {
     const box = h('div');
     if (!loja || loja === 'todas') return box;
@@ -164,9 +240,9 @@
       const contar = () => { const f = nt.itens.filter((x) => x.lote === '0').length; falta.textContent = f ? ` · ${f} sem lote` : ' · tudo preenchido ✓'; falta.className = f ? 'vl-falta' : 'vl-falta ok'; };
       contar();
       box.replaceChildren(h('div', { class: 'vl-nota' },
-        h('div', { class: 'vl-nota-tit' }, h('b', null, '🍃 Lotes do chá a granel'), falta),
-        h('small', { class: 'muted' }, 'Digite o nº do lote que está no pacote. A validade já vem com 12 meses da entrada; corrija se o pacote disser outra data.'),
-        linhasNota(loja, nt, () => { contar(); if (aoSalvar) aoSalvar(); })));
+        h('div', { class: 'vl-nota-tit' }, h('b', null, '🍃 Lotes e validade'), TS.dica('Chá a granel, chás envasados e alimentação da nota. A validade não vem na nota: quem dá a entrada digita a impressa no pacote.'), falta),
+        h('small', { class: 'muted' }, 'Digite o nº do lote e a validade impressos no pacote. A validade já vem com 12 meses da entrada; corrija pela data do pacote.'),
+        linhasNota(loja, nt, () => { contar(); if (aoSalvar) aoSalvar(); }, n)));
     }).catch(() => null); // sem permissão: o bloco não aparece
     return box;
   }
@@ -317,55 +393,69 @@
   TS.pages.validade = function (root) {
     if (TS.subEstoque) root.append(TS.subEstoque('validade'));
     root.append(h('div', { class: 'page-head' }, h('div', null, h('h1', { class: 'page-title' }, 'Validade e lotes'),
-      h('div', { class: 'page-sub' }, 'Chá a granel: cada entrada é um lote, com validade de 12 meses. Digite o nº do lote que está no pacote quando a mercadoria chegar.'))));
+      h('div', { class: 'page-sub' }, 'Chá a granel, chás envasados e alimentação: cada entrada é um lote, com validade de 12 meses até alguém digitar a do pacote. Digite o nº do lote e a validade quando a mercadoria chegar.'))));
     if (!state.loja || state.loja === 'todas') { root.append(h('div', { class: 'notice' }, 'A validade é de cada loja: escolha uma loja no seletor do topo.')); return; }
     const corpo = h('div', null, h('div', { class: 'card' }, h('div', { class: 'loading' }, h('div', null, h('div', { class: 'spinner' }), h('p', null, 'Carregando os lotes…')))));
     root.append(corpo);
     const loja = state.loja;
     if (state.valFaixa) { F.faixa = state.valFaixa; state.valFaixa = null; } // veio de um aviso do Início já filtrado
+    if (state.valTipo) { F.tipo = state.valTipo; state.valTipo = null; }
     dados(loja, true).then((d) => { if (corpo.isConnected) pintar(corpo, loja, d); })
       .catch((e) => corpo.replaceChildren(h('div', { class: 'notice err' }, TS.demo ? 'A validade dos lotes não está na apresentação.' : e.message)));
   };
 
-  const F = { faixa: 'risco', familia: '', q: '', semLote: false }; // filtros sobrevivem enquanto a tela está aberta
+  const F = { tipo: 'granel', faixa: 'risco', familia: '', q: '', semLote: false }; // filtros sobrevivem enquanto a tela está aberta
+  /** lotes e resumo de uma aba: o chá a granel em d.lotes/d.resumo; envasado e alimentação em d.outros/d.resumoOutros */
+  const doTipo = (d, t) => (t === 'granel' ? { lotes: d.lotes, r: d.resumo } : { lotes: (d.outros || []).filter((l) => l.tipoProd === t), r: (d.resumoOutros || {})[t] || null });
   function pintar(corpo, loja, d) {
-    const r = d.resumo, pf = r.porFaixa;
+    if (!d.resumoOutros && F.tipo !== 'granel') F.tipo = 'granel';
+    const G = F.tipo === 'granel', { lotes: lotesT, r: rT } = doTipo(d, F.tipo);
+    const r = rT || { porFaixa: Object.fromEntries(['vencido', 'critica', 'acao', 'atencao', 'ok', 'sem'].map((k) => [k, { lotes: 0, kg: 0, un: 0, custo: 0, venda: 0 }])), risco: { lotes: 0, kg: 0, un: 0, custo: 0, venda: 0 }, semLote: 0 };
+    const pf = r.porFaixa, uT = G ? 'kg' : 'un';
     const repintar = () => dados(loja, true).then((nd) => { if (corpo.isConnected) pintar(corpo, loja, nd); }).catch(() => null);
     const ids = ['vencido', 'critica', 'acao', 'atencao', 'ok', ...(pf.sem.lotes ? ['sem'] : [])];
-    const totKg = ids.reduce((a, id) => a + pf[id].kg, 0) || 1;
-    const emRisco = d.lotes.filter((l) => l.dias != null && l.dias < 90).length;
+    const tam = (p) => (p.kg || 0) + (p.un || 0); // a barra de cada aba tem uma unidade só (kg no granel, unidade nos outros)
+    const totQ = ids.reduce((a, id) => a + tam(pf[id]), 0) || 1;
+    const emRisco = lotesT.filter((l) => l.dias != null && l.dias < 90).length;
     const filtroFaixa = (id) => { F.faixa = id; pintar(corpo, loja, d); };
+    const nomeT = NOME_TIPO[F.tipo].replace(/^\S+\s/, '');
+
+    // ---- abas por tipo (com o nº de lotes de cada uma) ----
+    const nLotes = (t) => doTipo(d, t).lotes.length;
+    const abas = TS.seg(TIPOS.map(([v, rot, dica]) => [`${rot} (${fmt.int(nLotes(v))})`, v, dica]), F.tipo, (v) => { F.tipo = v; F.faixa = 'risco'; F.familia = ''; F.semLote = false; pintar(corpo, loja, d); });
+    abas.classList.add('vl-abas');
+    abas.setAttribute('aria-label', 'Tipo de produto');
 
     // ---- resumo: valor em risco + barra das faixas (as faixas são o filtro da lista) ----
-    const barra = h('div', { class: 'vl-barra', role: 'img', 'aria-label': 'Estoque de chá a granel por faixa de validade' },
-      ...ids.filter((id) => pf[id].kg > 0).map((id) => h('i', { class: COR[id], style: { width: (pf[id].kg / totKg * 100).toFixed(2) + '%' }, title: `${NOME[id]}: ${kgTxt(pf[id].kg)}` })));
-    const chip = (id, rot, n, kg) => h('button', { type: 'button', class: 'vl-chip ' + (COR[id] || '') + (F.faixa === id ? ' on' : ''), 'aria-pressed': String(F.faixa === id), onclick: () => filtroFaixa(id) },
-      h('span', null, rot), h('b', null, fmt.int(n)), kg != null ? h('small', null, kgTxt(kg)) : null);
+    const barra = h('div', { class: 'vl-barra', role: 'img', 'aria-label': `${nomeT} por faixa de validade` },
+      ...ids.filter((id) => tam(pf[id]) > 0).map((id) => h('i', { class: COR[id], style: { width: (tam(pf[id]) / totQ * 100).toFixed(2) + '%' }, title: `${NOME[id]}: ${qtdP(pf[id], uT)}` })));
+    const chip = (id, rot, n, p) => h('button', { type: 'button', class: 'vl-chip ' + (COR[id] || '') + (F.faixa === id ? ' on' : ''), 'aria-pressed': String(F.faixa === id), onclick: () => filtroFaixa(id) },
+      h('span', null, rot), h('b', null, fmt.int(n)), p ? h('small', null, qtdP(p, uT)) : null);
     // revisão de 22/11: o "como está" num cartão-herói — o valor em risco e os lotes por faixa (as faixas filtram a lista)
     const resumo = TS.heroi([
       { rot: `Valor em risco · vence em menos de ${d.riscoDias} dias`, num: fmt.brl0(r.risco.venda), estado: r.risco.venda > 0 ? 'ruim' : null,
-        dica: 'A preço de venda (pacote de 100 g): o que deixa de entrar se o chá vencer. Inclui os vencidos.' + (d.custos ? ' A custo: o que a loja perde.' : ''),
-        linhas: [h('span', { class: 'vl-risco' }, `${kgTxt(r.risco.kg)} em ${fmt.int(r.risco.lotes)} lote${r.risco.lotes === 1 ? '' : 's'}${d.custos && r.risco.custo != null ? ` · a custo ${fmt.brl0(r.risco.custo)}` : ''}`)] },
-      { rot: 'Lotes por validade', num: fmt.int(emRisco), sub: 'vencem em até 90 dias', dica: 'A barra mostra o chá a granel (em kg) por faixa de validade. Toque numa faixa para ver só esses lotes na lista.',
+        dica: (G ? 'A preço de venda (pacote de 100 g): o que deixa de entrar se o chá vencer.' : 'A preço de venda da unidade (tabela de preços): o que deixa de entrar se vencer.') + ' Inclui os vencidos.' + (d.custos ? ' A custo: o que a loja perde.' : ''),
+        linhas: [h('span', { class: 'vl-risco' }, `${qtdP(r.risco, uT)} em ${fmt.int(r.risco.lotes)} lote${r.risco.lotes === 1 ? '' : 's'}${d.custos && r.risco.custo != null ? ` · a custo ${fmt.brl0(r.risco.custo)}` : ''}`)] },
+      { rot: 'Lotes por validade', num: fmt.int(emRisco), sub: 'vencem em até 90 dias', dica: `A barra mostra ${G ? 'o chá a granel (em kg)' : `${nomeT.toLowerCase()} (em unidades)`} por faixa de validade. Toque numa faixa para ver só esses lotes na lista.`,
         linhas: [h('div', { class: 'vl-faixas' }, barra,
           h('div', { class: 'vl-chips' },
             chip('risco', 'Vence em até 90 dias', emRisco),
-            ...ids.map((id) => chip(id, CURTO[id] === 'Vencido' ? '⚫ Vencido' : ICONE[id] + ' ' + CURTO[id], pf[id].lotes, pf[id].kg)),
-            chip('todos', 'Todos', d.lotes.length)))] },
-    ], { titulo: 'Validade do chá a granel' });
+            ...ids.map((id) => chip(id, CURTO[id] === 'Vencido' ? '⚫ Vencido' : ICONE[id] + ' ' + CURTO[id], pf[id].lotes, pf[id])),
+            chip('todos', 'Todos', lotesT.length)))] },
+    ], { titulo: `Validade · ${nomeT}` });
     resumo.classList.add('vl-resumo');
-    const alerta = pf.vencido.lotes ? h('div', { class: 'notice vl-alerta' }, TS.etqPrazo('agora'), ' ', h('b', null, `${fmt.int(pf.vencido.lotes)} lote${pf.vencido.lotes === 1 ? '' : 's'} vencido${pf.vencido.lotes === 1 ? '' : 's'} (${kgTxt(pf.vencido.kg)}): `),
+    const alerta = pf.vencido.lotes ? h('div', { class: 'notice vl-alerta' }, TS.etqPrazo('agora'), ' ', h('b', null, `${fmt.int(pf.vencido.lotes)} lote${pf.vencido.lotes === 1 ? '' : 's'} vencido${pf.vencido.lotes === 1 ? '' : 's'} (${qtdP(pf.vencido, uT)}): `),
       'retire da venda e lance a perda no AppNext. ', F.faixa !== 'vencido' ? h('button', { type: 'button', class: 'link-btn', onclick: () => filtroFaixa('vencido') }, 'ver quais') : null) : null;
 
     // ---- filtros da lista ----
-    const fams = [...new Set(d.lotes.map((l) => l.familia).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+    const fams = G ? [...new Set(lotesT.map((l) => l.familia).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR')) : [];
     const selFam = fams.length ? h('select', { class: 'f-input', 'aria-label': 'Tipo de chá' }, h('option', { value: '' }, 'Todos os tipos de chá'), ...fams.map((f) => h('option', { value: f, selected: F.familia === f || null }, f))) : null;
     if (selFam) selFam.addEventListener('change', () => { F.familia = selFam.value; desenharTabela(); });
     const semLote = h('label', { class: 'vl-check' }, h('input', { type: 'checkbox', checked: F.semLote || null, onchange: (e) => { F.semLote = e.target.checked; desenharTabela(); } }), ` só sem nº de lote (${fmt.int(r.semLote)})`);
     const ferr = h('div', { class: 'vl-filtros' });
     const tabela = h('div');
     function linhas() {
-      return d.lotes.filter((l) => (F.faixa === 'todos' ? true : F.faixa === 'risco' ? l.dias != null && l.dias < 90 : l.faixa === F.faixa)
+      return lotesT.filter((l) => (F.faixa === 'todos' ? true : F.faixa === 'risco' ? l.dias != null && l.dias < 90 : l.faixa === F.faixa)
         && (!F.familia || l.familia === F.familia) && (!F.semLote || l.lote === '0'));
     }
     function salvar(l, corpoReq, el) {
@@ -402,28 +492,29 @@
     function desenharTabela() {
       const rows = linhas();
       const cols = [
-        { key: 'dias', label: 'Vence', align: 'l', title: `Pacote fechado: a validade do pacote. Depois que vai para a lata: o "consumir até" (${d.mesesAberto || 6} meses da abertura, se ninguém trocar), que passa a valer no lugar da data da chegada. Lote com chá aberto mostra a validade do que está aberto.`,
+        { key: 'dias', label: 'Vence', align: 'l', title: G ? `Pacote fechado: a validade do pacote. Depois que vai para a lata: o "consumir até" (${d.mesesAberto || 6} meses da abertura, se ninguém trocar), que passa a valer no lugar da data da chegada. Lote com chá aberto mostra a validade do que está aberto.` : 'A validade do lote: 12 meses da chegada até alguém digitar a data impressa no pacote. Sem abertura: vendido sempre fechado.',
           render: (l) => h('div', null, badge(l.faixa), h('small', { class: 'vl-dias' }, diasTxt(l.dias)),
             l.motivo === 'aberto' ? h('small', { class: 'vl-sub vl-motivo', title: `O chá foi para a lata em ${fmt.date(l.abertoEm)}: depois de aberto vale o "consumir até" (${fmt.date(l.validadeAberto)}), no lugar da validade da chegada (${fmt.date(l.validadePacote)}).` }, '🫙 depois de aberto') : null) },
-        { key: 'desc', label: 'Chá', align: 'l', wrap: true, title: 'Clique no nome do chá para ver os lotes dele: nota de entrada, chegada, se está aberto ou fechado, abertura e vencimento, e para informar que abriu um pacote.',
-          render: (l) => h('div', null, l.entrada || l.pacoteN > 0
+        { key: 'desc', label: G ? 'Chá' : 'Produto', align: 'l', wrap: true, title: G ? 'Clique no nome do chá para ver os lotes dele: nota de entrada, chegada, se está aberto ou fechado, abertura e vencimento, e para informar que abriu um pacote.' : 'O produto, o grupo dele no AppNext e de que nota de entrada veio o lote.',
+          render: (l) => h('div', null, G && (l.entrada || l.pacoteN > 0)
             ? h('button', { type: 'button', class: 'vl-nome', title: 'Ver os lotes deste chá: nota, chegada, aberto ou fechado, abertura e vencimento.', onclick: () => janelaPacotes(loja, l.cod, l.desc, repintar) }, l.desc)
             : h('b', null, l.desc),
-          h('small', { class: 'muted vl-sub' }, [l.tipo || (TS.grupoProd ? TS.grupoProd.texto(l.cod, l.desc, true) : '') || l.familia, l.entrada ? `entrada ${fmt.date(l.entrada)} · NF ${l.nf}` : 'saldo sem nota'].filter(Boolean).join(' · ')),
-          pacotes(l)) },
-        { key: 'saldo', label: 'Saldo', render: (l) => h('div', { class: 'vl-saldo' },
-          h('span', { title: l.qtdEntrada ? `chegaram ${kgTxt(l.qtdEntrada)}` : null }, kgTxt(l.saldo)),
-          l.ajuste ? h('small', { class: 'vl-sub vl-aj', title: `${l.ajuste.tipo === 'inventario' ? 'Contado por lote no inventário' : 'Ajustado na tela'}${l.ajuste.por ? ' por ' + l.ajuste.por : ''} em ${new Date(l.ajuste.em).toLocaleDateString('pt-BR')}; as vendas depois disso saem do lote mais antigo` }, l.ajuste.tipo === 'inventario' ? 'contado no inventário' : 'ajustado') : null,
-          h('button', { type: 'button', class: 'link-btn vl-ajustar', title: 'Divide o estoque deste chá entre os lotes (ex.: abriram o pacote novo antes do antigo). Não é inventário: não muda nada no AppNext e a soma tem de ser o estoque que já está lá. Se o total estiver errado, corrija pelo Inventário.', onclick: () => ajustarCha(l, d, loja, repintar) }, '⚖ ajustar')) },
-        { key: 'lote', label: 'Lote', align: 'l', render: (l) => {
+          h('small', { class: 'muted vl-sub' }, [l.tipo || (TS.grupoProd ? TS.grupoProd.texto(l.cod, l.desc, G) : '') || l.familia, l.entrada ? `entrada ${fmt.date(l.entrada)} · NF ${l.nf}` : 'saldo sem nota'].filter(Boolean).join(' · ')),
+          G ? pacotes(l) : null) },
+        { key: 'saldo', label: 'Saldo', title: G ? 'Quanto deste lote ainda está no estoque (kg), pelo estoque do AppNext: o mais antigo sai primeiro.' : 'Quantas unidades deste lote ainda estão no estoque, pelo estoque do AppNext: a validade mais curta sai primeiro. Se o total estiver errado, corrija pelo Inventário.',
+          render: (l) => h('div', { class: 'vl-saldo' },
+            h('span', { title: l.qtdEntrada ? `chegaram ${qtdTxt(l.qtdEntrada, l.un)}` : null }, qtdTxt(l.saldo, l.un)),
+            l.ajuste ? h('small', { class: 'vl-sub vl-aj', title: `${l.ajuste.tipo === 'inventario' ? 'Contado por lote no inventário' : 'Ajustado na tela'}${l.ajuste.por ? ' por ' + l.ajuste.por : ''} em ${new Date(l.ajuste.em).toLocaleDateString('pt-BR')}; as vendas depois disso saem do lote mais antigo` }, l.ajuste.tipo === 'inventario' ? 'contado no inventário' : 'ajustado') : null,
+            G ? h('button', { type: 'button', class: 'link-btn vl-ajustar', title: 'Divide o estoque deste chá entre os lotes (ex.: abriram o pacote novo antes do antigo). Não é inventário: não muda nada no AppNext e a soma tem de ser o estoque que já está lá. Se o total estiver errado, corrija pelo Inventário.', onclick: () => ajustarCha(l, d, loja, repintar) }, '⚖ ajustar') : null) },
+        { key: 'lote', label: 'Lote', align: 'l', title: 'O nº do lote impresso no pacote (vem "0" até alguém digitar). Salva ao sair do campo.', render: (l) => {
           const i = h('input', { class: 'f-input vl-lote' + (l.lote === '0' ? ' vl-vazio' : ''), value: l.lote === '0' ? '' : l.lote, placeholder: 'nº do lote', maxlength: 30, 'aria-label': `Lote de ${l.desc}`, autocomplete: 'off', autocapitalize: 'characters' });
           i.addEventListener('change', () => { i.value = i.value.trim().toUpperCase(); i.classList.toggle('vl-vazio', !i.value); salvar(l, { lote: i.value }, i); });
           i.addEventListener('keydown', (e) => { if (e.key === 'Enter') i.blur(); });
           return i;
         } },
-        { key: 'validade', label: 'Validade', align: 'l', title: 'A data que está valendo, já preenchida e editável. Pacote fechado: a validade do pacote (12 meses da chegada até alguém digitar a impressa). Chá aberto (🫙): a data final de consumo, que vem com 6 meses depois da abertura.', render: (l) => {
+        { key: 'validade', label: 'Validade', align: 'l', title: G ? 'A data que está valendo, já preenchida e editável. Pacote fechado: a validade do pacote (12 meses da chegada até alguém digitar a impressa). Chá aberto (🫙): a data final de consumo, que vem com 6 meses depois da abertura.' : 'A validade impressa no pacote. A nota não traz a validade: vem preenchida com 12 meses da chegada até alguém digitar a do pacote.', render: (l) => {
           // chá aberto: o campo é a data final de consumo (a que vale); a validade do pacote continua editável na janela do chá
-          if (l.motivo === 'aberto' && l.validadeAberto) {
+          if (G && l.motivo === 'aberto' && l.validadeAberto) {
             const ia = h('input', { class: 'f-input vl-val vl-val-aberto', type: 'date', value: l.validadeAberto, min: l.abertoEm || null, 'aria-label': `Data final de consumo de ${l.desc}` });
             const mandar = (ate) => {
               if (TS.demo) { toast(TS.DEMO_AVISO); ia.value = l.validadeAberto; return; }
@@ -435,41 +526,46 @@
             return h('div', { class: 'vl-val-box' }, ia, voltaA,
               h('small', { class: 'muted vl-sub', title: `Depois de aberto vale a data final de consumo. A validade do pacote (${l.validadePacote ? fmt.date(l.validadePacote) : 'sem data'}) fica na janela do chá: clique no nome.` }, `🫙 data final de consumo${l.validadeAbertoEditada ? ' · corrigida' : ''}`));
           }
+          if (l.parte) return h('div', { class: 'vl-val-box' }, h('span', null, fmt.date(l.validade)), h('small', { class: 'muted vl-sub', title: 'Parte de uma linha da nota com outra validade. Para mudar, use "+ outra validade" na nota de entrada (Estoque → Notas fiscais).' }, `parte ${l.parte} da nota`));
           const i = h('input', { class: 'f-input vl-val', type: 'date', value: l.validade || '', min: l.entrada || null, 'aria-label': `Validade de ${l.desc}` });
           TS.aoConfirmar(i, () => { if (i.value !== (l.validade || '')) salvar(l, { validade: i.value }, i); }); // só ao sair do campo (o Chrome dispara "change" a cada parte da data)
           const volta = !l.padrao && l.validadePadrao && l.validade !== l.validadePadrao ? h('button', { type: 'button', class: 'link-btn', title: `Voltar para 12 meses da entrada (${fmt.date(l.validadePadrao)})`, onclick: () => salvar(l, { validade: '' }, i) }, 'voltar a 12 meses') : null;
           return h('div', { class: 'vl-val-box' }, i, volta, !l.padrao && l.editadoPor ? h('small', { class: 'muted vl-sub' }, `corrigida por ${l.editadoPor}`) : null);
         } },
-        { key: 'venda', label: d.custos ? 'Valor (venda · custo)' : 'Valor (venda)', render: (l) => h('div', { class: 'vl-valor' }, h('span', null, l.precoKg ? fmt.brl0(l.saldo * l.precoKg) : '—'),
-          d.custos && l.custoKg ? h('small', { class: 'muted vl-sub' }, 'custo ' + fmt.brl0(l.saldo * l.custoKg)) : null) },
-        ...(podeCampanha() ? [{ key: 'acao', label: '', align: 'l', render: (l) => (l.dias != null && l.dias < 60 && l.dias >= 0
+        { key: 'venda', label: d.custos ? 'Valor (venda · custo)' : 'Valor (venda)', title: G ? 'Saldo do lote × preço do kg (pelo pacote de 100 g da tabela de preços)' + (d.custos ? '; embaixo, a custo.' : '.') : 'Saldo do lote × preço da unidade na tabela de preços' + (d.custos ? '; embaixo, a custo.' : '.'),
+          render: (l) => h('div', { class: 'vl-valor' }, h('span', null, l.precoKg ? fmt.brl0(l.saldo * l.precoKg) : '—'),
+            d.custos && l.custoKg ? h('small', { class: 'muted vl-sub' }, 'custo ' + fmt.brl0(l.saldo * l.custoKg)) : null) },
+        ...(G && podeCampanha() ? [{ key: 'acao', label: '', align: 'l', render: (l) => (l.dias != null && l.dias < 60 && l.dias >= 0
           ? h('button', { type: 'button', class: 'btn vl-camp', title: `Campanha no WhatsApp para quem já comprou ${l.desc}`, onclick: () => campanhaDoCha(l) }, '📣 Campanha') : null) }] : []),
       ];
       const rowsT = rows.map((l) => ({ ...l, venda: l.saldo * (l.precoKg || 0), dias: l.dias == null ? 99999 : l.dias, _l: l }));
       const tab = rows.length ? TS.table({
         cols: cols.map((c) => ({ ...c, render: c.render ? (row) => c.render(row._l) : undefined })), rows: rowsT, sortKey: 'dias', sortDir: 'asc',
-        search: 'Buscar chá, lote ou NF', searchKeys: ['desc', 'cod', 'lote', 'nf'], pageSize: 50, cls: 'vl-tabela',
+        search: G ? 'Buscar chá, lote ou NF' : 'Buscar produto, lote ou NF', searchKeys: ['desc', 'cod', 'lote', 'nf'], pageSize: 50, cls: 'vl-tabela',
       }) : null;
       ferr.replaceChildren(...[tab && tab.searchBox ? (tab.searchBox.classList.add('vl-busca'), tab.searchBox) : null, selFam, semLote].filter(Boolean));
-      tabela.replaceChildren(tab || TS.empty(F.faixa === 'risco' ? 'Nenhum lote vence nos próximos 90 dias. 🎉' : 'Nenhum lote com esses filtros.'));
+      tabela.replaceChildren(tab || TS.empty(!lotesT.length ? `Nenhum lote de ${nomeT.toLowerCase()} com saldo no estoque.` : F.faixa === 'risco' ? 'Nenhum lote vence nos próximos 90 dias. 🎉' : 'Nenhum lote com esses filtros.'));
     }
 
     const quando = d.em ? new Date(d.em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
     const titulo = F.faixa === 'risco' ? 'Lotes que vencem em até 90 dias' : F.faixa === 'todos' ? 'Todos os lotes' : `Lotes: ${NOME[F.faixa]}`;
-    corpo.replaceChildren(
-      alerta, resumo,
+    corpo.replaceChildren(...[
+      abas, alerta, resumo,
       h('div', { class: 'card vl-lista-card' },
         h('div', { class: 'card-head' }, h('div', null, h('div', { class: 'card-title' }, titulo),
-          h('div', { class: 'card-sub' }, `Saldo pelo estoque do AppNext de ${quando} · o mais antigo sai primeiro · só chá a granel tem validade`))),
+          h('div', { class: 'card-sub' }, `Saldo pelo estoque do AppNext de ${quando} · ${G ? 'o mais antigo sai primeiro · em kg' : 'a validade mais curta sai primeiro · em unidades, sem abertura'}`))),
         ferr, tabela),
       h('details', { class: 'card vl-ajuda' }, h('summary', null, 'Como funciona'), h('ul', null,
-        h('li', null, 'Cada entrada de chá a granel é um lote. Digite o nº do lote que está no pacote na nota de entrada (Estoque → Notas fiscais) ou aqui. A validade já vem com 12 meses da entrada; se o pacote disser outra data, corrija.'),
-        h('li', null, 'O saldo de cada lote sai do estoque do AppNext: o que sobrou fica nas entradas mais novas, porque o mais antigo é vendido primeiro. Por isso, venda sempre o lote mais antigo.'),
-        h('li', null, 'Abriram o pacote novo antes do antigo? Em "⚖ ajustar", pese quanto tem de cada lote. O ajustar não é inventário: não muda o AppNext, só divide o estoque entre os lotes. Se o total estiver errado, use o Inventário (o chá a granel pode ser contado por lote).'),
-        h('li', null, `Depois de aberto: o chá chega em pacotes de ${d.pacoteKg || 1} kg e, quando o pacote vai para a lata, tem ${d.mesesAberto || 6} meses para ser consumido. O painel vê pelo estoque qual pacote está aberto (🫙) e estima o dia em que foi aberto; depois de aberto, é o "consumir até" que vale para o chá da lata, no lugar da validade da chegada. Os pacotes fechados (📦) mostram a ordem para abrir: sempre o mais antigo. Todas as datas vêm preenchidas e podem ser trocadas em "corrigir" ou em "pacotes deste chá" (também no Estoque, em 🫙 pacotes).`),
+        h('li', null, 'Cada entrada (nota de compra) de chá a granel, chá envasado ou alimentação é um lote. A validade não vem na nota: quem dá a entrada digita o nº do lote e a validade impressos no pacote (Estoque → Notas fiscais) ou aqui. Ela já vem com 12 meses da entrada; corrija pela data do pacote.'),
+        h('li', null, 'Envasados e alimentação: se a mesma linha da nota veio com duas validades (ex.: 18 vencem em março e 12 em abril), use "+ outra validade" na nota de entrada; cada parte vira um lote e sai primeiro a que vence antes.'),
+        h('li', null, 'Validade curta na chegada (chá a granel: menos de 6 meses; envasados e alimentação: menos de 30 dias) aparece na nota de entrada com "Incluir na devolução", que leva o item para a devolução à franquia.'),
+        h('li', null, 'O saldo de cada lote sai do estoque do AppNext: o que sobrou fica nas entradas mais novas, porque o mais antigo é vendido primeiro. Por isso, venda sempre o lote mais antigo. Chás envasados contam em unidade (pacotes), mesmo quando o AppNext mostra "kg".'),
+        h('li', null, 'Chá a granel: abriram o pacote novo antes do antigo? Em "⚖ ajustar", pese quanto tem de cada lote. O ajustar não é inventário: não muda o AppNext, só divide o estoque entre os lotes. Se o total estiver errado, use o Inventário (o chá a granel pode ser contado por lote).'),
+        h('li', null, `Depois de aberto (só o chá a granel): chega em pacotes de ${d.pacoteKg || 1} kg e, quando o pacote vai para a lata, tem ${d.mesesAberto || 6} meses para ser consumido. O painel vê pelo estoque qual pacote está aberto (🫙) e estima o dia em que foi aberto; depois de aberto, é o "consumir até" que vale para o chá da lata, no lugar da validade da chegada. Os pacotes fechados (📦) mostram a ordem para abrir: sempre o mais antigo. Envasados e alimentação são vendidos fechados: vale só a validade do lote.`),
         h('li', null, 'Saída ou entrada lançada no AppNext (perda, ajuste, inventário) muda o total: saída sai do lote mais antigo, como uma venda; entrada sem nota vira "saldo sem nota".'),
-        h('li', null, '⚫ Vencido: tire da venda e lance a perda no AppNext. 🔴 e 🟠: degustação, oferta e campanha. 🟡: deixe na frente da prateleira.'),
-        h('li', null, 'Os lotes em risco aparecem também em Vendas → Promoção, no Pedido (para não comprar mais do mesmo chá) e no resumo diário.'))));
+        h('li', null, '⚫ Vencido: tire da venda e lance a perda no AppNext (entra nas perdas do Resultado). 🔴 e 🟠: degustação, oferta e campanha. 🟡: deixe na frente da prateleira.'),
+        h('li', null, 'Os lotes de chá a granel em risco aparecem também em Vendas → Promoção, no Pedido (para não comprar mais do mesmo chá) e no resumo diário (que também lista envasados e alimentação).'))),
+    ].filter(Boolean));
     desenharTabela();
   }
 

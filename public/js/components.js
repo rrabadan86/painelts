@@ -408,7 +408,13 @@
   }));
 
   /** pílula de situação (ex.: "Vendas atualizadas hoje às 14:32"): 'ok' | 'warn' | 'err' */
-  TS.pilulaSit = (nivel, texto) => h('p', { class: 'pilula-sit ' + (['ok', 'warn', 'err'].includes(nivel) ? nivel : 'ok') }, h('span', { class: 'pilula-sit-b', 'aria-hidden': 'true' }), texto);
+  // com `ir` (função) vira botão: a pílula amarela/vermelha leva ao que explica o problema (ex.: os avisos de dados do Início)
+  TS.pilulaSit = (nivel, texto, ir, dica) => {
+    const cls = 'pilula-sit ' + (['ok', 'warn', 'err'].includes(nivel) ? nivel : 'ok');
+    const bola = h('span', { class: 'pilula-sit-b', 'aria-hidden': 'true' });
+    if (typeof ir !== 'function') return h('p', { class: cls }, bola, texto);
+    return h('button', { type: 'button', class: cls + ' pilula-sit-btn', title: dica || null, onclick: (e) => { e.preventDefault(); ir(); } }, bola, texto, h('span', { class: 'pilula-sit-ir', 'aria-hidden': 'true' }, ' ›'));
+  };
 
   /** tela em duas colunas no computador (principal 1.7fr / lateral 1fr); no celular empilha, a lateral depois */
   TS.duasColunas = (principal, lateral) => h('div', { class: 'tela-2col' },

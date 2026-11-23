@@ -60,6 +60,8 @@ function resumir(c) {
 // grupos de venda que não são tipo de chá (lata, acessório, Tea Room…): não viram "tipo"
 const NAO_CHA = /ACESS|ENVASAD|ALIMENT|TEA ROOM|TEA MOMENT|CONSUM|MATERIA|SACH|FIDELIDADE|KIT|PRESENTE|EMBALA|LATA/i;
 const catCache = new Map();
+// envasado cadastrado em "Kg" no AppNext: o painel conta em unidade (src/tipoprod.js), mas a planilha devolve a unidade do AppNext
+const ua = (i) => (i && i.unAppNext ? { unAppNext: i.unAppNext } : {});
 function catalogo(estoque, tabela, vendas) {
   const estItens = (estoque && estoque.itens) || [];
   const tabItens = (tabela && tabela.itens) || [];
@@ -83,7 +85,7 @@ function catalogo(estoque, tabela, vendas) {
   }
   const out = estItens.map((i) => {
     const t = tab.get(String(i.cod)) || {};
-    return { cod: String(i.cod), desc: i.desc, un: i.un || t.un || '', grupo: t.grupo || '', sub: t.sub || '', barras: t.barras || '', tipo: tipo.get(String(i.cod)) || '', qtd: i.qtd ?? 0, custo: i.custo ?? null };
+    return { cod: String(i.cod), desc: i.desc, un: i.un || t.un || '', ...ua(i), grupo: t.grupo || '', sub: t.sub || '', barras: t.barras || '', tipo: tipo.get(String(i.cod)) || '', qtd: i.qtd ?? 0, custo: i.custo ?? null };
   });
   if (chave) {
     if (catCache.size >= 24) catCache.delete(catCache.keys().next().value);
@@ -132,7 +134,7 @@ function criar(id, b, por, cat, perfil) {
   const c = {
     id: crypto.randomBytes(6).toString('hex'), nome: txt(b.nome, 80) || `Contagem de ${new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`,
     criadoEm: new Date().toISOString(), por, cega: perfil === 'vendedor' ? true : !!b.cega, st: 'contando', semContarZero: true /* item não contado = 0 */, zerar: { ativo: perfil !== 'vendedor' && !!b.zerarResto, semGrupos: null, escopo: escopoDe(b) },
-    itens: itens.map((i) => ({ cod: i.cod, desc: i.desc, un: i.un, grupo: i.grupo, sub: i.sub, tipo: i.tipo, barras: i.barras, sis: i.qtd, custo: i.custo, cont: null, por: null, em: null })),
+    itens: itens.map((i) => ({ cod: i.cod, desc: i.desc, un: i.un, ...ua(i), grupo: i.grupo, sub: i.sub, tipo: i.tipo, barras: i.barras, sis: i.qtd, custo: i.custo, cont: null, por: null, em: null })),
   };
   gravar(id, c);
   return { ok: c };
@@ -175,7 +177,7 @@ function adicionar(id, cid, cods, cat) {
   if (!c) return { erro: 'Contagem não encontrada.' };
   if (c.st !== 'contando') return { erro: 'Só dá para incluir itens enquanto a contagem está aberta.' };
   const tem = new Set(c.itens.map((i) => i.cod));
-  for (const i of escolher(cat, { cods })) if (!tem.has(i.cod)) c.itens.push({ cod: i.cod, desc: i.desc, un: i.un, grupo: i.grupo, sub: i.sub, tipo: i.tipo, barras: i.barras, sis: i.qtd, custo: i.custo, cont: null, por: null, em: null });
+  for (const i of escolher(cat, { cods })) if (!tem.has(i.cod)) c.itens.push({ cod: i.cod, desc: i.desc, un: i.un, ...ua(i), grupo: i.grupo, sub: i.sub, tipo: i.tipo, barras: i.barras, sis: i.qtd, custo: i.custo, cont: null, por: null, em: null });
   gravar(id, c);
   return { ok: c };
 }
@@ -220,7 +222,7 @@ function resto(c, estoque, cat) {
   const g = new Map((cat || []).map((i) => [i.cod, i]));
   const esc = c.zerar && c.zerar.escopo;
   return ((estoque && estoque.itens) || []).filter((i) => !na.has(String(i.cod)) && Math.abs(i.qtd || 0) > 0.0005)
-    .map((i) => { const x = g.get(String(i.cod)) || {}; return { cod: String(i.cod), desc: i.desc, un: i.un, grupo: x.grupo || '', sub: x.sub || '', tipo: x.tipo || '', qtd: i.qtd, custo: i.custo ?? null }; })
+    .map((i) => { const x = g.get(String(i.cod)) || {}; return { cod: String(i.cod), desc: i.desc, un: i.un, ...ua(i), grupo: x.grupo || '', sub: x.sub || '', tipo: x.tipo || '', qtd: i.qtd, custo: i.custo ?? null }; })
     .filter((i) => noEscopo(esc, i)); // só o recorte da contagem (ex.: chá a granel), nunca a loja inteira sem querer
 }
 const zerarOpcao = (c) => c.zerar || { ativo: false, semGrupos: null };
@@ -245,11 +247,11 @@ function linhasPlanilha(c, estoque, cat) {
     const antes = a ? a.qtd ?? 0 : i.sis ?? 0;
     // item da contagem que ninguém contou: vai como 0 (contagens novas); se o sistema já tem 0, não precisa ir
     if (i.cont == null && !(c.semContarZero && Math.abs(antes) > 0.0005)) continue;
-    out.push({ cod: i.cod, desc: i.desc, un: i.un, grupo: i.grupo || '', sub: i.sub || '', antes, nova: i.cont ?? 0, custo: a && a.custo != null ? a.custo : i.custo ?? 0, zerado: false, naoContado: i.cont == null });
+    out.push({ cod: i.cod, desc: i.desc, un: i.un, ...ua(i), grupo: i.grupo || '', sub: i.sub || '', antes, nova: i.cont ?? 0, custo: a && a.custo != null ? a.custo : i.custo ?? 0, zerado: false, naoContado: i.cont == null });
   }
   if (zerarOpcao(c).ativo) {
     const r = resto(c, estoque, cat), fora = gruposFora(c, r);
-    for (const i of r) if (!fora.has(i.grupo)) out.push({ cod: i.cod, desc: i.desc, un: i.un, grupo: i.grupo, sub: i.sub, antes: i.qtd, nova: 0, custo: i.custo ?? 0, zerado: true });
+    for (const i of r) if (!fora.has(i.grupo)) out.push({ cod: i.cod, desc: i.desc, un: i.un, ...ua(i), grupo: i.grupo, sub: i.sub, antes: i.qtd, nova: 0, custo: i.custo ?? 0, zerado: true });
   }
   return out;
 }
@@ -270,7 +272,7 @@ async function planilha(linhas) {
   let r = 7;
   for (const l of linhas) {
     const row = ws.getRow(r++);
-    row.values = [l.cod, l.desc, l.un, l.grupo || '', l.sub || null, l.antes ?? 0, l.nova, l.custo ?? 0];
+    row.values = [l.cod, l.desc, l.unAppNext || l.un, l.grupo || '', l.sub || null, l.antes ?? 0, l.nova, l.custo ?? 0];
     row.getCell(1).numFmt = '@';
     row.getCell(6).numFmt = '#,##0.000';
     row.getCell(7).numFmt = '#,##0.000';
@@ -285,7 +287,7 @@ function marcarGerado(id, cid, por, linhas) {
   if (!c) return null;
   if (c.st === 'contando' || c.st === 'revisao') c.st = 'gerado';
   c.geradoEm = new Date().toISOString(); c.geradoPor = por;
-  c.planilha = { em: c.geradoEm, por, itens: linhas.map((l) => ({ cod: l.cod, desc: l.desc, un: l.un, grupo: l.grupo, sub: l.sub, antes: l.antes, nova: l.nova, custo: l.custo, zerado: !!l.zerado, ...(l.naoContado ? { naoContado: true } : {}) })) }; 
+  c.planilha = { em: c.geradoEm, por, itens: linhas.map((l) => ({ cod: l.cod, desc: l.desc, un: l.un, ...ua(l), grupo: l.grupo, sub: l.sub, antes: l.antes, nova: l.nova, custo: l.custo, zerado: !!l.zerado, ...(l.naoContado ? { naoContado: true } : {}) })) }; 
   gravar(id, c);
   return c;
 }
@@ -346,7 +348,7 @@ async function prepararEnvio(id, cid, tipo, linhas, por) {
   const c = ler(id, cid);
   if (!c) return { erro: 'Contagem não encontrada.' };
   if (tipo === 'importar') {
-    c.planilha = { em: new Date().toISOString(), por, itens: linhas.map((l) => ({ cod: l.cod, desc: l.desc, un: l.un, grupo: l.grupo, sub: l.sub, antes: l.antes, nova: l.nova, custo: l.custo, zerado: !!l.zerado, ...(l.naoContado ? { naoContado: true } : {}) })) }; 
+    c.planilha = { em: new Date().toISOString(), por, itens: linhas.map((l) => ({ cod: l.cod, desc: l.desc, un: l.un, ...ua(l), grupo: l.grupo, sub: l.sub, antes: l.antes, nova: l.nova, custo: l.custo, zerado: !!l.zerado, ...(l.naoContado ? { naoContado: true } : {}) })) }; 
     c.geradoEm = c.planilha.em; c.geradoPor = por;
     if (c.st === 'contando' || c.st === 'revisao') c.st = 'gerado';
   } else c.desfazer = { geradoEm: new Date().toISOString(), por };
