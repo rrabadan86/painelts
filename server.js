@@ -291,7 +291,7 @@ const APP_SCRIPTS = [
   'core.js', 'errostela.js', 'contas.js', 'metadia.js', 'components.js', 'dicas.js', 'rules.js', 'pages.js', 'fidelidade.js',
   'msgwpp.js', 'recompra.js', 'clientes.js', 'campretorno.js', 'campanhas.js', 'conversas.js', 'zap.js', 'espera.js', 'extras.js', 'contabilidade.js',
   'ruptura.js', 'visaodono.js', 'classeprod.js', 'grupoprod.js', 'fotoprod.js', 'custodata.js', 'estoque.js', 'devolucao.js', 'precos.js', 'inventario.js', 'sugestoes.js', 'validade.js', 'nfsaida.js', 'creditos.js', 'orcamento.js', 'checklist.js',
-  'site.js', 'conferencia.js', 'conferencia-tela.js', 'inicio.js', 'pedido.js', 'ia.js', 'dre.js', 'apagar.js', 'comprasvendas.js', 'efeitopreco.js', 'equipe.js', 'mapa.js', 'feriados.js', 'fidretorno.js',
+  'sitedia.js', 'site.js', 'conferencia.js', 'conferencia-tela.js', 'inicio.js', 'pedido.js', 'ia.js', 'dre.js', 'apagar.js', 'comprasvendas.js', 'efeitopreco.js', 'equipe.js', 'mapa.js', 'feriados.js', 'fidretorno.js',
   'guia.js', 'notificacoes.js', 'config.js', 'script.js', 'fechamento.js', 'sistema.js', 'main.js',
 ];
 let bundleMem = null, bundleCheckEm = 0;
@@ -2440,7 +2440,7 @@ app.get('/api/site', (req, res) => {
   let hist = SITE.lerHist();
   // ainda sem histórico (consultas de antes desta versão): começa pela consulta atual
   if (!hist) hist = SITE.semear(d);
-  res.json({ ...(d || { itens: [] }), historico: hist || {}, tabela: tabela ? tabela.itens.filter((t) => t.preco > 0.011).map((t) => ({ cod: t.cod, desc: t.desc, preco: t.preco })) : null, rodando: SITE.rodando(), podeConsultar: podeContabilidade(req) });
+  res.json({ ...(d || { itens: [] }), historico: hist || {}, ...SITE.consultasTela(d), tabela: tabela ? tabela.itens.filter((t) => t.preco > 0.011).map((t) => ({ cod: t.cod, desc: t.desc, preco: t.preco })) : null, rodando: SITE.rodando(), podeConsultar: podeContabilidade(req) });
 });
 // fotos dos produtos (públicas no site): para a miniatura nas listas (Pedido, ⭐ Sugestões). Qualquer pessoa logada; sem preço nem custo
 app.get('/api/site/fotos', (req, res) => {

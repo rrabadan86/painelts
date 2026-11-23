@@ -367,6 +367,8 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 | PRC-46 | Filtros da lista de notas | `precos.js` | `regras.spec` (2) | 🟡 |
 | PRC-47 | Desconto da nota | `precos.js` | — | ❌ |
 | PRC-50 | "Nosso preço" na comparação com o site | `site.js` | `telas.spec` (abre) | ❌ |
+| SITE-DATA-01…04 | Produtos → Site, filtro "Mudou em" (pedido do dono, 23/11/2026): as mudanças de um dia saem do histórico do site pela data da consulta em que o painel as viu (horário de Brasília; preço cheio, preço com promoção, entrou/saiu de promoção, esgotou/voltou, saiu/voltou ao site; o primeiro ponto não conta); o servidor guarda a lista das consultas (`dados/site/consultas.json`, desde 23/11/2026) para separar "nenhuma mudança" de "sem consulta do site neste dia"; antes da lista, dia sem mudança registrada = "sem consulta registrada" | `public/js/sitedia.js` (`mudancasDoDia`, `diasDeConsulta`, `situacaoDia`); `src/site.js` (`somarConsulta`, `consultasTela`); `server.js` `GET /api/site` | `sitedia.test` SITE-DATA-01…04 | ✅ |
+| SITE-DATA-05…06 | Tela: "Qualquer dia" · "Hoje" · "Ontem" e campo de data (`TS.aoConfirmar`) ao lado da busca; com um dia, a tabela e a contagem das abas mostram só os produtos que mudaram nele (as abas valem junto) e a coluna vira "Mudança em dd/mm/aa" (de → para, hora da consulta); dia sem consulta diz isso; o filtro fica durante a visita (`state.siteDia`); sem rolagem para o lado (1100 px com letra larga e 390 px); apresentação com mudanças hoje, ontem e dias atrás e sem consulta há 6 e 7 dias | `public/js/site.js` (`campoDia`, `vazioDia`, `demoHistorico`); `styles.css` (`.site-busca`, `.site-dia`) | `site-data.spec` SITE-DATA-05…06 | ✅ |
 | PRC-EF-02…07 | Efeito do reajuste, bordas: preço subiu e a venda caiu demais = ruim; desconta o movimento da loja; cedo demais mostra prévia (< 30 dias) ou nada (< 7); sem base não inventa; reajuste vem do cadastro (o caixa só antes do histórico); amostra mínima de 30 unidades | `public/js/efeitopreco.js` `avaliar`, `reajustesDe` | `efeitopreco.test` PRC-EF-02…07 | ✅ |
 | CLS-01…04 | Classe do produto com critério absoluto pela margem mínima/alvo da loja (não só pela mediana): Estrela só com margem boa de verdade; Peso morto só com giro baixo e margem abaixo do alvo; bordas (sem margem sem fixos usa a bruta) | `public/js/classeprod.js` | `classeprod.test` CLS-01…04 | ✅ |
 | COMP-03…05 | Compras × vendas, bordas: sem dado não inventa número; janela de 12 meses e teto configurável (1–90%, padrão 32%); apresentação com compras fictícias dos meses anteriores | `public/js/comprasvendas.js`; `src/demo-compras.js` | `comprasvendas.test` COMP-03…05 | ✅ |
@@ -706,14 +708,14 @@ Contado pelas linhas da matriz (`node scripts/matriz.js --resumo`; o guardião c
 | Escala, horários, feriados e férias (ESC) | 31 | 7 | 10 | 14 |
 | Equipe, metas e comissão (EQP) | 13 | 4 | 3 | 6 |
 | Estoque, inventário, lotes e pedido (EST) | 81 | 50 | 14 | 17 |
-| Preços, custos e notas de entrada (PRC) | 40 | 13 | 8 | 19 |
+| Preços, custos e notas de entrada (PRC) | 42 | 15 | 8 | 19 |
 | Resultado e rentabilidade (RES) | 21 | 13 | 3 | 5 |
 | Vendas e métricas (VEN) | 27 | 12 | 8 | 7 |
 | Clientes, fidelidade, WhatsApp e lista de espera (CLI) | 48 | 36 | 8 | 4 |
 | Orçamento (ORC) | 7 | 5 | 1 | 1 |
 | Checklist, fechamento e avisos (OPE) | 13 | 6 | 3 | 4 |
 | Estrutura do painel e atualização (APP) | 42 | 24 | 12 | 6 |
-| **Total** | **459** | **228 (50%)** | **121 (26%)** | **110 (24%)** |
+| **Total** | **461** | **230 (50%)** | **121 (26%)** | **110 (24%)** |
 <!-- resumo:fim -->
 
 ## Próximas etapas
