@@ -3397,6 +3397,25 @@ setInterval(() => {
 // resumo diário (Telegram / e-mail) no horário configurado
 NOTIF.agendar(async (id) => { const l = C.get().lojas.find((x) => x.id === id); return l ? dadosParaIndicadores(l) : null; });
 
+/**
+ * "Todas as lojas" pronto antes de alguém pedir (pedido do dono: demorava ao escolher). Junta as lojas, monta e comprime o
+ * pacote do admin (o mesmo pedido que a tela faz: histórico parcial de 24 meses) e guarda no packCache. Quando nada mudou,
+ * pacote() só compara a chave e sai na hora. Roda na subida e a cada 5 min; nunca em teste nem na apresentação.
+ */
+function desdeParcialSrv() {
+  const h0 = C.diaSP(Date.now());
+  return new Date(Date.UTC(+h0.slice(0, 4), +h0.slice(5, 7) - 1 - 24, 1)).toISOString().slice(0, 10);
+}
+let aquecendoTodas = false;
+async function aquecerTodas() {
+  if (aquecendoTodas) return;
+  const lojas = (C.get().lojas || []);
+  if (lojas.length < 2) return;
+  aquecendoTodas = true;
+  try { await pacote(lojas, false, 'completo', desdeParcialSrv()); } catch (e) { console.error('[dados] não aqueci "todas as lojas":', C.msgErro(e)); } finally { aquecendoTodas = false; }
+}
+if (process.env.NODE_ENV !== 'test') { setTimeout(aquecerTodas, 20e3).unref(); setInterval(aquecerTodas, 5 * 60e3).unref(); }
+
 const srv = app.listen(PORT, () => {
   console.log(`Tea Shop painel em http://localhost:${PORT}`);
   SITE.agendar(); // preços do e-commerce: todo dia às 10h
