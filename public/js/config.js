@@ -105,12 +105,13 @@
     if (est.erro) { root.append(h('div', { class: 'notice err' }, est.erro)); fim(); return; }
     const abas = [['Lojas', 'lojas'], ['Usuários', 'usuarios']];
     if (est.perfil === 'admin' || est.perfil === 'franqueado') abas.push(['Atualização automática', 'coletor'], ['Resumo diário', 'resumo']); // o franqueado vê a parte das lojas dele
+    if (est.perfil === 'admin' || est.perfil === 'franqueado') abas.push(['Erros nas telas', 'erros', 'Erros de JavaScript que aconteceram nas telas de quem usa o painel (sem dado pessoal). O franqueado vê só os das lojas dele.']);
     abas.push(['Histórico de alterações', 'historico']);
     state.cfgAba = abas.some(([, v]) => v === state.cfgAba) ? state.cfgAba : 'lojas';
     root.append(h('div', { class: 'cfg-abas' }, TS.seg(abas, state.cfgAba, (v) => { state.cfgAba = v; pintar(); })));
     const corpo = h('div', { class: 'cfg-corpo' });
     root.append(corpo);
-    ({ lojas: abaLojas, usuarios: abaUsuarios, coletor: abaColetor, resumo: abaResumo, historico: abaHistorico })[state.cfgAba](corpo);
+    ({ lojas: abaLojas, usuarios: abaUsuarios, coletor: abaColetor, resumo: abaResumo, erros: abaErros, historico: abaHistorico })[state.cfgAba](corpo);
     fim();
   }
 
@@ -1635,6 +1636,38 @@
   }
 
   // ======================= HISTÓRICO =======================
+  // ======================= ERROS NAS TELAS =======================
+  /** erros de JavaScript da loja (src/errostela.js): um por linha, com quantas vezes, em que telas, perfis, lojas e navegadores */
+  let errosTela = null;
+  function abaErros(box) {
+    const carregar = async () => {
+      try { const r = await fetch(TS.api('erros-tela?dias=7'), { credentials: 'same-origin' }); const j = await r.json(); if (!r.ok) throw new Error(j.erro || 'Falha ao carregar.'); errosTela = j; }
+      catch (e) { errosTela = { erro: TS.erroDeRede && TS.erroDeRede(e) ? 'Sem conexão com o painel agora.' : e.message }; }
+      if (state.page === 'config' && state.cfgAba === 'erros') pintar();
+    };
+    if (!errosTela) { box.append(h('div', { class: 'card' }, h('p', { class: 'muted' }, 'Carregando os erros das telas…'))); carregar(); return; }
+    const j = errosTela; errosTela = null; // da próxima vez que abrir a aba, busca de novo
+    if (j.erro) { box.append(h('div', { class: 'notice err' }, j.erro)); return; }
+    const nomeLoja = new Map((TS.lojas || []).map((l) => [l.id, l.nome]));
+    const quando = (iso) => new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    const novo = (g) => g.primeira >= new Date(Date.now() - 2 * 864e5).toISOString();
+    const rows = (j.itens || []).map((g) => ({ ...g, _telas: g.telas.join(', '), _onde: [g.perfis.join(', '), g.lojas.map((id) => nomeLoja.get(id) || id).join(', ')].filter(Boolean).join(' · ') }));
+    const tab = TS.table({
+      cols: [
+        { key: 'msg', label: 'Erro', align: 'l', wrap: true, sticky: true, title: 'A mensagem do erro, sem dado pessoal (números longos, e-mails e textos digitados são trocados). Embaixo, o arquivo e a linha do código.',
+          render: (g) => h('div', null, h('b', null, g.msg), novo(g) ? h('span', { class: 'badge warn cfg-erro-novo' }, 'novo') : null, h('small', { class: 'muted cfg-erro-sub' }, [g.arq ? `${g.arq}${g.ln ? ':' + g.ln : ''}` : '', g.tipo === 'promessa' ? 'em segundo plano' : ''].filter(Boolean).join(' · '))) },
+        { key: '_telas', label: 'Telas', align: 'l', wrap: true, title: 'Em que telas aconteceu.' },
+        { key: 'vezes', label: 'Vezes', fmt: (v) => fmt.int(v), title: 'Quantas vezes aconteceu nos últimos 7 dias (a mesma pessoa conta no máximo uma vez a cada 10 minutos).' },
+        { key: '_onde', label: 'Quem e onde', align: 'l', wrap: true, title: 'Perfis e lojas de quem estava usando (nunca o nome da pessoa).', render: (g) => h('div', null, g._onde || '—', h('small', { class: 'muted cfg-erro-sub' }, g.navs.join(', '))) },
+        { key: 'ultima', label: 'Última vez', align: 'l', title: 'Quando aconteceu pela última vez; embaixo, a primeira.', render: (g) => h('div', null, quando(g.ultima), h('small', { class: 'muted cfg-erro-sub' }, 'desde ' + quando(g.primeira))) },
+      ],
+      rows, sortKey: 'ultima', sortDir: 'desc', search: 'Buscar erro ou tela…', searchKeys: ['msg', '_telas', 'arq'], cls: 'cfg-erros-t',
+      empty: 'Nenhum erro nas telas nos últimos 7 dias. 👏',
+    });
+    const n = rows.length, nNovos = rows.filter(novo).length;
+    box.append(TS.card('Erros nas telas (últimos 7 dias)', `${n ? `${fmt.int(n)} erro(s) diferentes${nNovos ? `, ${fmt.int(nNovos)} novo(s) nos últimos 2 dias` : ''}.` : 'Tudo certo.'} O painel avisa sozinho quando uma tela dá erro no celular ou no computador de alguém da equipe, sem dado pessoal. Mande para o suporte do painel os que se repetem.`, tab));
+  }
+
   function abaHistorico(box) {
     const fmtDet = (d) => {
       if (!d) return '';

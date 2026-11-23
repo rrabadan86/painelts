@@ -20,8 +20,17 @@ __pycache__/
 
 # testes automáticos
 tests/.dados/
+tests/.dados-perfis/
+tests/.dados-datas/
 test-results/
 playwright-report/
+playwright-report-perfis/
+playwright-report-datas/
+# prints de referência: só os do GitHub (tests/visual/__prints__) entram no Git
+tests/.dados-prints/
+tests/visual/__prints-local__/
+test-results-prints/
+prints-report/
 config/ia.json
 config/ia-mestra.key
 # notificações no aparelho: chave privada VAPID e aparelhos de cada pessoa

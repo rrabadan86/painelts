@@ -9,7 +9,8 @@ description: Sobe uma mudança do painel para o GitHub — atualiza com o main, 
    git fetch origin main && git merge --ff-only FETCH_HEAD
    ```
    Se o fast-forward falhar, pare e conte ao dono o que divergiu (não force).
-2. **Bateria completa, uma vez:**
+2. **Testes da alteração pela matriz, primeiro:** `npm run testar-alteracao` (acha na `docs/rastreabilidade.md` as regras dos arquivos mexidos, roda os testes delas e avisa as sem teste). Mudou regra, tela, rota ou teste: atualize a linha da matriz no mesmo PR e rode `npm run matriz` (o resumo em números é contado; o guardião `matriz.test.js` falha se ficar velho).
+2b. **Bateria completa, uma vez:**
    ```bash
    npm test
    npx playwright test          # se o Chromium não for achado: CHROME_PATH=<chromium> npx playwright test
@@ -37,3 +38,5 @@ description: Sobe uma mudança do painel para o GitHub — atualiza com o main, 
    Não há ferramenta para criar o "Release" em si: entregue ao dono o link `https://github.com/rrabadan86/painelts/releases/new?tag=<tag>` e o texto das notas para colar.
    Para voltar a uma versão: "Atualizações do painel" ou `git checkout <tag>` num ramo novo — nunca reescreva o `main`.
 10. Conte ao dono: o que mudou, resultado dos testes e que a instalação na VPS é por "Atualizações do painel" (só versões que passam nos testes do GitHub), depois Ctrl+F5.
+
+**Conjuntos de tela além da apresentação** (rodam no GitHub em todo PR e de madrugada): `npx playwright test -c playwright.perfis.config.js` (perfis), `-c playwright.datas.config.js` (datas difíceis) e `PRINTS_LOCAL=1 npx playwright test -c playwright.visual.config.js` (prints, conferência local). Mudou layout de propósito: as referências dos prints são geradas pelo workflow "Prints de referência" (skill `conferir-pr`, passo 1b).

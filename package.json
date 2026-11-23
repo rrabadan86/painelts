@@ -8,7 +8,9 @@
     "dev": "node --watch server.js",
     "test": "node --test tests/unit/*.test.js",
     "test:e2e": "playwright test",
-    "test:tudo": "npm test && playwright test"
+    "test:tudo": "npm test && playwright test",
+    "testar-alteracao": "node scripts/testar-alteracao.js",
+    "matriz": "node scripts/matriz.js --resumo"
   },
   "license": "UNLICENSED",
   "dependencies": {

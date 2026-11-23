@@ -5,6 +5,7 @@
  * (.claude/rules), skill ou o CLAUDE.md talvez precise de atualização — e devolve um LEMBRETE ao Claude.
  * Não bloqueia nada: o Claude decide se a mudança pede atualizar as instruções (regra nova, rota, permissão, fluxo).
  * Commit que já mexe na instrução da área, ou que só mexe em .md / .claude, não gera lembrete.
+ * Também lembra a matriz de rastreabilidade (docs/rastreabilidade.md) quando o commit mexe num arquivo citado nela.
  */
 const { execFileSync } = require('child_process');
 
@@ -44,6 +45,17 @@ process.stdin.on('end', () => {
   if (novos.length && !temDoc('CLAUDE.md')) lembretes.push(`- arquivo novo (${novos.join(', ')}): o CLAUDE.md descreve a organização do projeto e a skill nova-tela o checklist — confira se precisam citar isto.`);
   const diffServer = arqs.includes('server.js') ? git(['show', '--format=', '-U0', 'HEAD', '--', 'server.js'], raiz) : '';
   const rotas = (diffServer.match(/^\+.*\bapp\.(get|post|put|delete)\('(\/api\/[^']+)'/gm) || []).map((l) => l.match(/'(\/api\/[^']+)'/)[1]);
+  // matriz de rastreabilidade (decisão do dono, 23/11/2026): mexeu num arquivo citado na matriz e não mexeu nela → lembra as regras
+  if (!temDoc('docs/rastreabilidade.md')) {
+    try {
+      const M = require(require('path').join(raiz, 'scripts', 'matriz.js'));
+      const regras = M.regrasDosArquivos(arqs, M.ler(require('path').join(raiz, 'docs', 'rastreabilidade.md')));
+      if (regras.length) {
+        const cods = [...new Set(regras.map((r) => r.celula))];
+        lembretes.push(`- matriz de rastreabilidade: o commit mexeu em arquivos de ${cods.length} regra(s) (${cods.slice(0, 8).join(', ')}${cods.length > 8 ? '…' : ''}) e não mexeu em docs/rastreabilidade.md — se a regra, o teste ou a cobertura mudou, atualize a linha (e \`node scripts/matriz.js --resumo\`); confira com \`npm run testar-alteracao\`.`);
+      }
+    } catch { /* matriz ilegível: o guardião (tests/unit/matriz.test.js) avisa */ }
+  }
   if (rotas.length && !temDoc('CLAUDE.md')) lembretes.push(`- rota(s) nova(s) no server.js (${rotas.slice(0, 4).join(', ')}): se trazem regra de permissão nova (perfil, quem pode), registre no CLAUDE.md (Perfis) ou na regra da área.`);
   if (!lembretes.length) return;
   process.stdout.write(JSON.stringify({

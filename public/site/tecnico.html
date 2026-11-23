@@ -141,7 +141,7 @@
           <div class="cartao"><h3><code>segredos</code></h3><p>Bloqueia qualquer registro ou envio que contenha senha, chave ou dado de loja.</p></div>
           <div class="cartao"><h3><code>testar-favorito</code></h3><p>Bloqueia a mudança no carrinho ou no robô de pedidos se os testes deles falharem.</p></div>
           <div class="cartao"><h3><code>conferir-pr</code></h3><p>Depois de todo envio, cobra seguir o roteiro até a versão estar pronta para instalar.</p></div>
-          <div class="cartao"><h3><code>lembrar-docs</code></h3><p>Avisa quando uma área do código mudou e a regra escrita dela não foi atualizada.</p></div>
+          <div class="cartao"><h3><code>lembrar-docs</code></h3><p>Avisa quando uma área do código mudou e a regra escrita dela não foi atualizada, e quando o commit mexe em arquivo de uma regra da matriz de rastreabilidade sem atualizar a linha dela.</p></div>
           <div class="cartao"><h3><code>limpar-testes</code></h3><p>Apaga os arquivos temporários que os testes de tela deixam.</p></div>
         </div>
       </div>
@@ -154,7 +154,15 @@
         <div class="grade">
           <div class="cartao"><h3>Testes de unidade</h3><p>Mais de 350, sobre as contas e as regras: comissão, meta, estoque, validade, pedido, notas, permissões de cada rota, travas do WhatsApp.</p></div>
           <div class="cartao"><h3>Testes de tela</h3><p>Mais de 300, num navegador de verdade, sempre na apresentação e sempre em dois tamanhos: computador e celular.</p></div>
-          <div class="cartao"><h3>Matriz de rastreabilidade</h3><p>Um documento liga cada regra do painel (mais de 400 linhas) ao código que a implementa e ao teste que a cobre. Regra nova entra com a linha dela.</p></div>
+          <div class="cartao"><h3>Matriz de rastreabilidade</h3><p>Um documento liga cada regra do painel (mais de 400 linhas) ao código que a implementa e ao teste que a cobre. Regra nova entra com a linha dela, e o resumo em números é contado sozinho pelas linhas.</p></div>
+          <div class="cartao"><h3>Guardião da matriz</h3><p>Um teste falha a versão quando a matriz fica velha: regra repetida, teste citado que não existe, teste com código de regra sem linha na matriz ou resumo que não bate.</p></div>
+          <div class="cartao"><h3>Telas por perfil</h3><p>O painel de verdade, com dados fictícios, é aberto como franqueado, gerente com e sem custo e vendedora: cada um só vê as telas e os números que a regra permite.</p></div>
+          <div class="cartao"><h3>Datas difíceis</h3><p>As telas principais são abertas com o relógio parado no 1º e no último dia do mês, num domingo com a loja fechada e no 1º de janeiro.</p></div>
+          <div class="cartao"><h3>Um número por fato</h3><p>Faturamento, atendimentos, itens, ticket médio e vendas da meta são conferidos entre as telas: o mesmo período dá o mesmo número em todas.</p></div>
+          <div class="cartao"><h3>Comparação de prints</h3><p>As telas principais, no computador e no celular, são comparadas com a versão anterior a cada mudança: layout que muda sem querer não passa.</p></div>
+          <div class="cartao"><h3>Rodada da madrugada</h3><p>Toda madrugada a bateria inteira roda de novo, para pegar o que depende da data antes de a loja abrir.</p></div>
+          <div class="cartao"><h3>Erros nas lojas</h3><p>Se uma tela der erro no aparelho de alguém, o painel avisa o administrador sozinho, sem nenhum dado pessoal.</p></div>
+          <div class="cartao"><h3><code>testar-alteracao</code></h3><p>Olha os arquivos mexidos, acha na matriz as regras que dependem deles, roda primeiro os testes dessas regras e avisa as que estão sem teste.</p></div>
         </div>
 
         <h2 style="margin-top:44px">O caminho de cada versão</h2>

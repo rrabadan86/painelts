@@ -3763,3 +3763,15 @@ details.inv-p2-como ol { margin-top: 8px; }
      Imprimir e Expandir ficam juntos no canto, nunca um deles sozinho numa linha */
   .card-head > .table-tools { flex-basis: 100%; order: 5; }
 }
+/* Pedido → Produtos (computador): 6 colunas sem rolar para o lado a 1100 px (achado pelo teste de datas difíceis, DATA-01):
+   grupo embaixo do nome, estoque e "dura" embaixo da situação, "precisa" embaixo do Pedir e a margem embaixo do preço */
+.ped-t th { white-space: normal; }
+.ped-t td small.est-tam { white-space: normal; }
+.ped-t small.ped-grp { display: block; }
+.ped-t small.ped-grp .ped-sub { display: inline; margin-left: 6px; }
+.ped-t small.ped-est, .ped-t small.ped-precisa { display: block; margin-top: 3px; }
+.ped-t.est-t td.wrap:not(.sticky-col) { min-width: 140px; }
+
+/* Configurações → Erros nas telas */
+.cfg-erros-t .cfg-erro-sub { display: block; margin-top: 2px; }
+.cfg-erros-t .cfg-erro-novo { margin-left: 6px; }

@@ -407,19 +407,22 @@
     if (!base.length) { root.append(TS.card(null, null, TS.empty())); return; }
 
     const ind = TS.indicadores(base);
-    const kgTotal = base.reduce((s, i) => s + (I.chaTotal.has(db.grupo[i]) ? db.cha[i] || 0 : 0), 0);
+    // Chá vendido (kg): a mesma conta de contas.js (resumo do servidor) — só grupos de chá e só linha que é venda
+    // (item a R$ 0,01, brinde ou resgate de pontos, não conta; antes o herói somava e ficava 0,05 kg acima da conta oficial)
+    const kgCha = (i) => (TS.contaFat(i) && I.chaTotal.has(db.grupo[i]) ? db.cha[i] || 0 : 0);
+    const kgTotal = base.reduce((s, i) => s + kgCha(i), 0);
     const pa = periodoAnterior();
     let prev = null;
     if (pa) {
       const pidx = TS.filtrar({ de: pa.de, ate: pa.ate });
-      if (pidx.length) prev = { ...TS.indicadores(pidx), kg: pidx.reduce((s, i) => s + (I.chaTotal.has(db.grupo[i]) ? db.cha[i] || 0 : 0), 0) };
+      if (pidx.length) prev = { ...TS.indicadores(pidx), kg: pidx.reduce((s, i) => s + kgCha(i), 0) };
     }
     // segunda linha: mesmo período do ano anterior (quando a primeira já não é ela)
     const pi = TS.periodosIguais(state.f.de, state.f.ate);
     let prevAno = null;
     if (pi && !/ano anterior/.test(pa?.txt || '')) {
       const ia = TS.filtrar({ de: pi.ano.de, ate: pi.ano.ate });
-      if (ia.length) prevAno = { ...TS.indicadores(ia), kg: ia.reduce((s, i) => s + (I.chaTotal.has(db.grupo[i]) ? db.cha[i] || 0 : 0), 0) };
+      if (ia.length) prevAno = { ...TS.indicadores(ia), kg: ia.reduce((s, i) => s + kgCha(i), 0) };
     }
     const d = (a, b, k) => TS.linhasVar(prev && b ? [a, b, pa.txt.replace('mesmo período do ', '')] : null, prevAno && k ? [a, prevAno[k], 'vs. ano anterior'] : null);
     // redesenho: o "como está" num cartão-herói (faturamento, atendimentos e a projeção do mês) e os indicadores de venda
@@ -455,7 +458,7 @@
       I.tipos.forEach(([n]) => (r['kg_' + n] = 0));
       for (const i of idx) {
         const c = db.cha[i] || 0;
-        if (!c) continue;
+        if (!c || !TS.contaFat(i)) continue;
         if (I.chaTotal.has(db.grupo[i])) r.kg += c;
         for (const [n, set] of I.tipos) if (set.has(db.grupo[i])) r['kg_' + n] += c;
       }
@@ -505,11 +508,14 @@
       options: { plugins: { legend: { display: true }, tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${fmt.brl(c.raw)}` } } }, scales: { y: TS.axisBRL, x: TS.axisCat } },
     });
 
-    const prodIdx = base.filter((i) => !I.taxas.has(db.desc[i]));
+    // um número por fato (contas.js): sem taxa e sem item a R$ 0,01 (brinde/resgate), como o faturamento; Qtd como os itens do
+    // PMA/IPA (consumível sem controle de estoque não conta); Kg só dos grupos de chá, como o "Chá vendido" do herói.
+    // Antes o total dava 516 itens e 7,610 kg contra 513 e 7,360 do herói (NUM-02, contas.spec).
+    const prodIdx = base.filter((i) => TS.contaFat(i));
     const porProd = TS.agrupar(prodIdx, (i) => db.prod[i]);
     const rowsP = [...porProd].map(([p, idx]) => {
       let q = 0, kg = 0, v = 0;
-      for (const i of idx) { q += db.qtd[i] || 0; kg += db.cha[i] || 0; v += db.vt[i] || 0; }
+      for (const i of idx) { q += TS.qtdItem(i); kg += I.chaTotal.has(db.grupo[i]) ? db.cha[i] || 0 : 0; v += db.vt[i] || 0; }
       return { produto: db.D.produto[p], grp: (db.D.grupo && db.D.grupo[db.grupo[idx[0]]]) || '', qtd: q, kg, vt: v };
     });
     const tabProd = TS.table({
@@ -525,7 +531,7 @@
     root.append(h('div', { class: 'grid g-3-2 mt' },
       TS.cardWithTools('Faturamento por dia da semana', modoSem === 'media' ? 'Média por dia com venda no período (ex.: total das sextas ÷ número de sextas), por loja' : 'Soma do período, por loja',
         TS.seg([['Total', 'total'], ['Média por dia', 'media']], modoSem, (v) => { state.semModo = v; TS.render(); }), chSemana),
-      TS.cardWithTools('Vendas por produto', 'Sem taxa de serviço/entrega', tabProd.searchBox, tabProd)));
+      TS.cardWithTools('Vendas por produto', 'Sem taxa de serviço/entrega nem itens a R$ 0,01 (brinde e resgate de pontos): os mesmos totais do topo', tabProd.searchBox, tabProd)));
 
     // ---- volume por produto
     const topBar = (rows, fmtVal, color, labelFmt) => { const el = TS.chart({
@@ -542,7 +548,7 @@
       for (const i of idx) { const v = valFn(i); if (!v) continue; m.set(db.prod[i], (m.get(db.prod[i]) || 0) + v); }
       return [...m].map(([p, v]) => ({ nome: db.D.produto[p], v })).sort((a, b) => b.v - a.v);
     };
-    const kgRows = somaPor(base.filter((i) => I.catChaKg.has(db.cat[i])), (i) => db.cha[i] || 0);
+    const kgRows = somaPor(base.filter((i) => TS.contaFat(i) && I.catChaKg.has(db.cat[i])), (i) => db.cha[i] || 0);
     const kgTot = kgRows.reduce((s, r) => s + r.v, 0);
     const acRows = somaPor(base.filter((i) => I.grupoAcessQtd.has(db.grupo[i])), (i) => db.qtd[i] || 0);
     const acTot = acRows.reduce((s, r) => s + r.v, 0);
@@ -557,9 +563,9 @@
     // nenhum tipo marcado = todos os tipos; clicar no tipo já marcado desmarca
     const tipoAtual = I.tipos.some(([n]) => n === state.tipoCha) ? state.tipoCha : null;
     const alternar = (v) => { state.tipoCha = state.tipoCha === v ? null : v; TS.render(); };
-    const resumoTipos = I.tipos.map(([n, set]) => [n, base.reduce((s, i) => s + (set.has(db.grupo[i]) ? db.cha[i] || 0 : 0), 0)]);
+    const resumoTipos = I.tipos.map(([n, set]) => [n, base.reduce((s, i) => s + (set.has(db.grupo[i]) && TS.contaFat(i) ? db.cha[i] || 0 : 0), 0)]);
     const set = tipoAtual ? I.tipos.find(([n]) => n === tipoAtual)[1] : new Set(I.tipos.flatMap(([, st]) => [...st]));
-    const rowsT = somaPor(base.filter((i) => set.has(db.grupo[i])), (i) => db.cha[i] || 0);
+    const rowsT = somaPor(base.filter((i) => set.has(db.grupo[i]) && TS.contaFat(i)), (i) => db.cha[i] || 0);
     const totT = rowsT.reduce((s, r) => s + r.v, 0);
     const totTipos = resumoTipos.reduce((s, [, v]) => s + v, 0);
     const tiposChart = TS.chart({
@@ -927,7 +933,7 @@
         colCat('arom', 'Aromatizado', 'metaArom', 'cArom'),
         colCat('puro', 'Puro', 'metaPuro', 'cPuro'),
         colCat('acess', 'Acessórios', 'metaAcess', 'cAcess'),
-        { key: 'tkm', label: 'TKM · PMA · IPA', title: `Indicadores da premiação: TKM = vendas ÷ atendimentos; PMA = vendas ÷ itens; IPA = itens ÷ atendimentos.${pr.ativa ? ` Mínimos: TKM ${fmt.brl(pr.tkm)}, PMA ${fmt.brl(pr.pma)}, IPA ${fmt.n2(pr.ipa)}; em azul, o que já está no mínimo` : ''}`,
+        { key: 'tkm', label: 'TKM · PMA · IPA', title: `Indicadores da premiação: TKM = vendas ÷ atendimentos; PMA = vendas ÷ itens; IPA = itens ÷ atendimentos. Contam só as vendas da equipe sem o Espaço Gourmet (ele tem tabela própria abaixo): por isso são diferentes do TKM, PMA e IPA do Resumo, que contam a loja inteira.${pr.ativa ? ` Mínimos: TKM ${fmt.brl(pr.tkm)}, PMA ${fmt.brl(pr.pma)}, IPA ${fmt.n2(pr.ipa)}; em azul, o que já está no mínimo` : ''}`,
           fmt: (v, r) => {
             if (!r || r.pma == null) return '';
             const ok = (x, m) => (pr.ativa && x >= m ? 'hit' : null);

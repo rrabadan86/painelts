@@ -174,13 +174,15 @@
           return;
         }
         const pct = m.vendiHoje != null && m.minhaParte ? Math.min(100, (m.vendiHoje / m.minhaParte) * 100) : 0;
-        card.replaceChildren(
+        // sem a barra (vendas de hoje ainda não chegaram): .filter(Boolean), senão o replaceChildren escreve "null" na tela
+        // (achado pelo teste de tela da vendedora no painel de verdade, PERFIL-TELA-02)
+        card.replaceChildren(...[
           h('div', { class: 'md-topo' },
             h('div', null, h('div', { class: 'card-title' }, 'Sua meta de hoje', dica),
               h('div', { class: 'card-sub' }, `Faltam ${m.restam} ${m.restam === 1 ? 'dia' : 'dias'} de loja aberta no mês, contando hoje.`)),
             h('div', { class: 'md-num' }, h('b', null, fmt.brl0(m.minhaParte)),
               m.temHoje ? h('small', null, `você vendeu hoje: ${fmt.brl0(m.vendiHoje)}${m.vendiHoje >= m.minhaParte ? ' ✓' : ''}`) : h('small', null, 'as vendas de hoje chegam na próxima atualização'))),
-          m.temHoje ? h('div', { class: 'md-barra' }, h('i', { style: { width: pct + '%' } })) : null);
+          m.temHoje ? h('div', { class: 'md-barra' }, h('i', { style: { width: pct + '%' } })) : null].filter(Boolean));
       })
       .catch(() => card.remove());
     return card;

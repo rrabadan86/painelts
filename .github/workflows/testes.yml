@@ -1,18 +1,25 @@
-# Testes automáticos a cada envio: contas (unitários) e todas as telas da apresentação no computador e no celular.
-# Resultado aparece como ✓ / ✗ no commit. Se falhar, o relatório com as telas fica em "Artifacts" da execução.
+# Testes automáticos a cada envio: contas (unitários), todas as telas da apresentação no computador e no celular, as telas
+# por perfil no painel de verdade e as datas difíceis. Resultado aparece como ✓ / ✗ no commit. Se falhar, o relatório
+# com as telas fica em "Artifacts" da execução.
+# Rodada noturna (schedule): a bateria completa no main toda madrugada, mesmo sem mudança — falha que depende do dia
+# (virada de mês, domingo, data de validade que muda de faixa) aparece de manhã, não na loja. Ela NÃO grava resultado
+# no ramo "testes" (o job "registrar" só roda em push no main), então não libera nem bloqueia versão para a VPS.
 name: Testes
 on:
   push:
     branches-ignore: [testes]
   pull_request:
   workflow_dispatch:
+  schedule:
+    - cron: '17 6 * * *' # 03:17 em Brasília
 concurrency:
-  group: testes-${{ github.ref }}
+  # a rodada noturna tem grupo próprio: nunca cancela os testes de um push no main (o "registrar" gravaria "cancelled")
+  group: testes-${{ github.ref }}-${{ github.event_name == 'schedule' && 'noturna' || 'envio' }}
   cancel-in-progress: true
 jobs:
   testes:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -31,12 +38,27 @@ jobs:
         run: npx playwright test
         env:
           CI: '1'
+      # painel de verdade (não a apresentação): entra como franqueado, gerente e vendedora (tests/perfis)
+      - name: Telas por perfil
+        if: success() || failure()
+        run: npx playwright test -c playwright.perfis.config.js
+        env:
+          CI: '1'
+      # 1º do mês, último dia, domingo com a loja fechada e 1º de janeiro (tests/datas)
+      - name: Telas em datas difíceis
+        if: success() || failure()
+        run: npx playwright test -c playwright.datas.config.js
+        env:
+          CI: '1'
       - name: Relatório das telas
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: relatorio-telas
-          path: playwright-report/
+          path: |
+            playwright-report/
+            playwright-report-perfis/
+            playwright-report-datas/
           retention-days: 7
 
   # resultado de cada versão do main no ramo "testes" (arquivo resultados.txt): o atualizador da VPS lê

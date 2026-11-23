@@ -19,7 +19,8 @@ process.stdin.on('end', () => {
     if (ti.run_in_background) return;
     if (!/playwright\s+test|test:e2e|test:tudo/.test(cmd)) return;
     const raiz = process.env.CLAUDE_PROJECT_DIR || j.cwd || process.cwd();
-    for (const p of ['test-results', 'playwright-report', path.join('tests', '.dados')]) {
+    // também as pastas dos testes por perfil, de datas difíceis e dos prints (playwright.perfis/datas/visual.config.js)
+    for (const p of ['test-results', 'playwright-report', 'playwright-report-perfis', 'playwright-report-datas', path.join('tests', '.dados'), path.join('tests', '.dados-perfis'), path.join('tests', '.dados-datas'), 'test-results-prints', 'prints-report', path.join('tests', '.dados-prints')]) {
       fs.rmSync(path.join(raiz, p), { recursive: true, force: true });
     }
   } catch { /* nunca atrapalha o trabalho */ }

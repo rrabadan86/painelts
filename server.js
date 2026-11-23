@@ -288,7 +288,7 @@ const pub = path.join(__dirname, 'public');
 
 // ---------- pacote único de JS/CSS da tela (pré-comprimido em Brotli + Gzip, cache imutável por hash) ----------
 const APP_SCRIPTS = [
-  'core.js', 'contas.js', 'metadia.js', 'components.js', 'dicas.js', 'rules.js', 'pages.js', 'fidelidade.js',
+  'core.js', 'errostela.js', 'contas.js', 'metadia.js', 'components.js', 'dicas.js', 'rules.js', 'pages.js', 'fidelidade.js',
   'msgwpp.js', 'recompra.js', 'clientes.js', 'campretorno.js', 'campanhas.js', 'conversas.js', 'zap.js', 'espera.js', 'extras.js', 'contabilidade.js',
   'ruptura.js', 'visaodono.js', 'classeprod.js', 'grupoprod.js', 'fotoprod.js', 'custodata.js', 'estoque.js', 'devolucao.js', 'precos.js', 'inventario.js', 'sugestoes.js', 'validade.js', 'nfsaida.js', 'creditos.js', 'orcamento.js', 'checklist.js',
   'site.js', 'conferencia.js', 'conferencia-tela.js', 'inicio.js', 'pedido.js', 'ia.js', 'dre.js', 'apagar.js', 'comprasvendas.js', 'efeitopreco.js', 'equipe.js', 'mapa.js', 'feriados.js', 'fidretorno.js',
@@ -311,14 +311,21 @@ function obterBundle() {
   if (bundleMem && bundleMem.mtimes === mtimes) return bundleMem;
   const cssBuf = fs.readFileSync(path.join(pub, 'styles.css'));
   const jsPartes = ['"use strict";'];
-  for (const f of APP_SCRIPTS) jsPartes.push(`/* === ${f} === */\n;` + fs.readFileSync(path.join(pub, 'js', f), 'utf8') + '\n;');
+  const mapa = []; // em que linha do pacote começa cada arquivo (erros de tela: linha do pacote → arquivo:linha)
+  let linha = 2;
+  for (const f of APP_SCRIPTS) {
+    const txt = fs.readFileSync(path.join(pub, 'js', f), 'utf8');
+    mapa.push([f, linha + 1]);
+    jsPartes.push(`/* === ${f} === */\n;` + txt + '\n;');
+    linha += 2 + txt.split('\n').length; // cabeçalho, o arquivo e o ';' do fim
+  }
   const jsBuf = Buffer.from(jsPartes.join('\n'), 'utf8');
   const htmlCru = fs.readFileSync(path.join(pub, 'index.html'), 'utf8');
   const v = crypto.createHash('sha256').update(cssBuf).update(jsBuf).update(htmlCru).digest('hex').slice(0, 12);
   const html = htmlCru
     .replace(/\/styles\.css(\?v=[^"']*)?/g, `/styles.css?v=${v}`)
     .replace(/\/app\.js(\?v=[^"']*)?/g, `/app.js?v=${v}`);
-  bundleMem = { mtimes, v, html: comprimirAsset(Buffer.from(html, 'utf8')), css: comprimirAsset(cssBuf), js: comprimirAsset(jsBuf) };
+  bundleMem = { mtimes, v, mapa, html: comprimirAsset(Buffer.from(html, 'utf8')), css: comprimirAsset(cssBuf), js: comprimirAsset(jsBuf) };
   return bundleMem;
 }
 function responderAsset(req, res, asset, contentType, imutavel, etag) {
@@ -794,6 +801,7 @@ app.get('/api/demo/contatos', (req, res) => res.json({ contatos: {} }));
 // apresentação: a conferência do link responde "pode" (nada é aberto nem gravado; o desfazer é só no navegador)
 app.post('/api/demo/contatos/conferir', (req, res) => res.json({ ok: true }));
 require('./src/push-api').demo(app); // notificações na apresentação: aparelho fictício, nada é ativado nem enviado
+require('./src/errostela').demo(app); // erros de tela na apresentação: aceita sem gravar e mostra um exemplo
 require('./src/zap-api').demo(app); // robô do WhatsApp na apresentação: tudo simulado, nada é conectado nem enviado
 app.get('/api/demo/xmls/resumo', (req, res) => res.json({ meses: [] }));
 const demoComp = new Map(); // corpo da apresentação já comprimido (br/gz), por loja: refeito quando o corpo muda (a cada hora)
@@ -1273,6 +1281,7 @@ app.delete('/api/campanhas/:id', (req, res) => {
 // ---------- robô do WhatsApp das campanhas: rotas /api/zap/* e o laço de envio (a cada ~30 s; sem ZAP_URL/ZAP_TOKEN nada roda) ----------
 require('./src/zap-api').registrar(app, { podeClientes });
 require('./src/push-api').registrar(app); // notificações no aparelho: cada pessoa só mexe nos próprios aparelhos
+require('./src/errostela').registrar(app, { mapear: (ln) => { const m = obterBundle().mapa; let a = null; for (const x of m) { if (x[1] <= ln) a = x; else break; } return a ? { arq: a[0], ln: ln - a[1] + 1 } : null; } }); // erros de JavaScript das telas da loja (sem dado pessoal); admin e franqueado das lojas dele veem
 const PUSH = require('./src/push');
 require('./src/zaplaco').iniciar();
 require('./src/conversas').iniciar(); // Clientes → Conversas: busca no serviço a cada 30 s (só loja com o WhatsApp conectado)
