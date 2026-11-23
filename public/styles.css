@@ -3481,6 +3481,9 @@ button.vl-pac-marca { background: none; text-decoration: underline; cursor: poin
 .cv-item-nome { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cv-item-hora { flex: none; color: var(--muted); }
 .cv-item-ult { display: block; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* nome nas mensagens: o cadastro da fidelidade é de outra pessoa (ex.: a esposa) — uma linha pequena embaixo do nome */
+.cv-item-cad, .cv-cad { display: block; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cel-de { font-weight: 600; color: var(--dark); }
 .cv-item-et { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 2px; }
 .cv-vazio { padding: 16px 8px; }
 .cv-mais-l { padding: 10px 8px; text-align: center; }

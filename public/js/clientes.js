@@ -1052,7 +1052,7 @@
       const f = blocoFidelidade(c);
       const item = (rot, val) => (val ? h('div', { class: 'fi' }, h('span', null, rot), h('b', null, val)) : null);
       const tel = fmtTel(c.celular);
-      const contato = [tel ? h('div', { class: 'fi' }, h('span', null, 'Celular', celDica(c)), h('b', null, tel), celNota(c)) : celNota(c), item('E-mail', c.email), item('Cidade', c.cidade), item('Aniversário', c.aniv ? `${anivTxt(c)}${c.idade != null ? ` · ${c.idade} anos` : ''}` : null)].filter(Boolean);
+      const contato = [tel ? h('div', { class: 'fi' }, h('span', null, 'Celular', celDica(c)), h('b', null, tel), TS.nomeMsgDe(c) ? h('span', { class: 'cel-de' }, ` · WhatsApp do ${TS.nomeMsgDe(c)}`) : null, celNota(c)) : celNota(c), item('E-mail', c.email), item('Cidade', c.cidade), item('Aniversário', c.aniv ? `${anivTxt(c)}${c.idade != null ? ` · ${c.idade} anos` : ''}` : null)].filter(Boolean);
       out.push(h('div', { class: 'cli-ficha' }, contato.length ? h('div', { class: 'fi-bloco' }, h('div', { class: 'fi-tit' }, 'Contato (cadastro do FIXE)'), ...contato) : null,
         f || h('div', { class: 'fi-bloco fi-largo' }, h('div', { class: 'fi-nota' }, 'Sem dados no FIXE.'))),
         h('p', { class: 'muted', style: { margin: '0 0 8px', fontSize: '12px' } }, 'Nenhuma compra com este CPF na nota foi encontrada nas vendas.'));
@@ -1435,7 +1435,7 @@
       : `Na última compra de chá (${d(c.ultimaCha)}) levou ${c.gramasUltima} g. Pelo histórico, consome ~${fmt.n1(c.gDia)} g por dia: dura ~${c.intervaloCha} dias.`;
     return h('div', { class: 'cli-ficha' }, ...[
       bloco('Contato',
-        tel ? h('div', { class: 'fi' }, h('span', null, 'Celular', celDica(c)), h('b', null, tel, c.wpp ? linkConversa(c, ' WhatsApp') : null), celNota(c)) : celNota(c),
+        tel ? h('div', { class: 'fi' }, h('span', null, 'Celular', celDica(c)), h('b', null, tel, c.wpp ? linkConversa(c, ' WhatsApp') : null), TS.nomeMsgDe(c) ? h('span', { class: 'cel-de' }, `WhatsApp do ${TS.nomeMsgDe(c)}`) : null, celNota(c)) : celNota(c),
         item('E-mail', c.email || null),
         item('Cidade', c.cidade || null),
         item('Aniversário', c.aniv ? `${anivTxt(c)}${c.idade != null ? ` · ${c.idade} anos` : ''}` : null)),

@@ -456,6 +456,7 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 | WPP-APRES-01 | {apresentacao} editável em Configurações → loja → Mensagens (decisão do dono, 23/11/2026): dois modelos (com e sem vendedora), só {vendedora} e {loja}, até 120 caracteres; padrão sem artigo ("Aqui é Gabrielly, da …"); o mesmo texto na tela e no robô | `msgwpp.js` `apresentacao`/`apresentacaoValida`, `clientes.js` `valoresWpp`, `admin-api.js` `wpp-modelos`, `config.js` `blocoWpp` | `seguranca.test`, `zapauto.test`, `zap.spec` | ✅ |
 | CEL-NOME-01 | Nome nas mensagens do número vinculado (cadastro de uma pessoa, WhatsApp de outra): só com vínculo, só admin e franqueado da loja, só letras até 40, vai no pacote (`celVinc.nome`) e some ao desfazer | `celulares.js` `nomear`/`nomeValido`/`aplicar`, `server.js` `/api/clientes/celular/nome` | `celulares.test` | ✅ |
 | CEL-NOME-02 | Com nome nas mensagens, {nome}/{nomecompleto} saem com ele e o aniversário fica fora do Hoje e das campanhas | `clientes.js` `TS.nomeMsgDe`/`valoresWpp`/etiqueta `aniv`, `campanhas.js` filtro de aniversário | `zap.spec` | ✅ |
+| CEL-NOME-03 | Com nome nas mensagens, a conversa mostra esse nome no topo, na lista e nas mensagens dele, com "cadastro: <nome da fidelidade>" embaixo (a busca acha pelos dois); Ver cliente abre o cadastro da fidelidade com "WhatsApp do <nome>" | `conversas.js` `nomeConv`/`pintarItens`/topo, `clientes.js` ficha | `conversas.spec` | ✅ |
 
 ## 14. Orçamento (ORC)
 
@@ -672,11 +673,11 @@ Contado pelas linhas da matriz (`node scripts/matriz.js --resumo`; o guardião c
 | Preços, custos e notas de entrada (PRC) | 40 | 13 | 8 | 19 |
 | Resultado e rentabilidade (RES) | 13 | 5 | 3 | 5 |
 | Vendas e métricas (VEN) | 27 | 12 | 8 | 7 |
-| Clientes, fidelidade, WhatsApp e lista de espera (CLI) | 41 | 29 | 8 | 4 |
+| Clientes, fidelidade, WhatsApp e lista de espera (CLI) | 42 | 30 | 8 | 4 |
 | Orçamento (ORC) | 7 | 5 | 1 | 1 |
 | Checklist, fechamento e avisos (OPE) | 13 | 6 | 3 | 4 |
 | Estrutura do painel e atualização (APP) | 38 | 20 | 12 | 6 |
-| **Total** | **430** | **199 (46%)** | **121 (28%)** | **110 (26%)** |
+| **Total** | **431** | **200 (46%)** | **121 (28%)** | **110 (26%)** |
 <!-- resumo:fim -->
 
 ## Próximas etapas
