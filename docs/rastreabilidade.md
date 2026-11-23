@@ -616,6 +616,7 @@ Todos os da lista A foram conferidos no código, um por um.
 
 ### G. Tabelas que rolam de lado (LARG-01, 23/11/2026)
 - **G-01 · Em aberto (lista `ROLA_CONHECIDO` em `telas.spec`):** precisam de redesenho (juntar informações na célula ou virar cartão). Computador a 1100 px: Resultado → "Mês a mês" (13 colunas, +260 px). Celular: Resultado → "Resultado do mês" e "Mês a mês"; Comparativos → "Sua loja × rede"; Promoção → "Lucro da promoção"; Clientes → Indicadores → "Grupos de clientes (RFM)" e "Retenção por safra"; Escala → grade do mês.
+- **No GitHub a letra é mais larga:** a primeira rodada lá pegou também Clientes → "Vendedoras e clientes" a 1100 px (cabeçalho agora quebra a linha) e cartões que cortavam 3 a 9 px de texto (Resultado, Pedido no celular). Bloco que só corta (`overflow: hidden`) tem folga de 16 px; bloco que a pessoa rola, nenhuma.
 - **Corrigido junto:** Conferência → "Sobras e faltas de caixa" e Resultado → "Compras × vendas mês a mês" (cabeçalho que quebra a linha, cabem a 1100 px); Configurações → Usuários no celular (cada usuário um cartão, "Editar" ao lado do nome); nota de entrada (a coluna "Lote · validade" com "Incluir na devolução" ficava cortada).
 
 ### E. Revisão dos dias 18 e 19/11 (5 revisores por área; corrigido com teste no mesmo PR)

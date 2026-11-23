@@ -1409,7 +1409,7 @@
           { key: 'pctSemFixe', label: '% sem FIXE', fmt: (v) => (v == null ? '—' : fmt.pct(v, 0)) },
         ] : []),
       ],
-      rows, sortKey: 'pct',
+      rows, sortKey: 'pct', cls: 'est-t-larga', // cabeçalho que quebra a linha: cabe a 1100 px (LARG-01)
       total: { nome: 'Total', cupons: nTot, cpf: nCpf, pct: nTot ? nCpf / nTot : null, novos: rows.reduce((t, r) => t + r.novos, 0), rc: rcTot, voltaram: rcTot.voltaram, pctVolta: rcTot.pouco ? -1 : rcTot.pct,
         ...(comFixe ? (() => { const cf = rows.reduce((t, r) => t + r.cliFixe, 0), sf = rows.reduce((t, r) => t + r.semFixe, 0); return { semFixe: sf, pctSemFixe: cf ? sf / cf : null }; })() : {}) },
     });

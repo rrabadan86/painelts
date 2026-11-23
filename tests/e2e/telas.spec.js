@@ -30,7 +30,9 @@ function quemRolaDeLado() {
     if (!e.getClientRects().length || e.closest('canvas, svg, .chart-box, .seg, .submenu')) continue;
     const cs = getComputedStyle(e);
     if (!['auto', 'scroll', 'hidden'].includes(cs.overflowX) || cs.textOverflow === 'ellipsis' || e.clientWidth < 40) continue;
-    if (e.scrollWidth <= e.clientWidth + 2) continue;
+    // bloco que a pessoa rola (auto/scroll): qualquer sobra. Bloco que só corta (hidden, ex.: o cartão): sobra de até 16 px é
+    // a letra mais larga do servidor de testes do GitHub cortando a borda de um texto, não algo escondido para rolar
+    if (e.scrollWidth <= e.clientWidth + (cs.overflowX === 'hidden' ? 16 : 2)) continue;
     const tb = e.querySelector('table');
     const chave = tb ? [...tb.classList].find((c) => c !== 't' && c !== 't-mob') || 't' : [...e.classList][0] || e.tagName.toLowerCase();
     out.push({ chave, px: e.scrollWidth - e.clientWidth });
