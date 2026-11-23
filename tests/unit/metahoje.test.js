@@ -63,7 +63,7 @@ test('META-VEND-01: sem as vendas de hoje, não diz quanto ela vendeu; sem meta 
 // ---------- a rota ----------
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'mhj-'));
 const CONFIG_FILE = path.join(tmp, 'lojas.json');
-const PORTA = 4900 + Math.floor(Math.random() * 300);
+const PORTA = require('./_porta')(4900, 300);
 const BASE = `http://127.0.0.1:${PORTA}`;
 const SENHA = 'senha-teste-123';
 let srv;

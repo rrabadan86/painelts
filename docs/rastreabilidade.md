@@ -541,6 +541,10 @@ Todos os da lista A foram conferidos no código, um por um.
 - **Achado corrigido:** o chá envasado cadastrado em "Kg" no AppNext (ex.: "Matcha 30G Pacote", 9,000 kg = 9 pacotes) aparecia como 9 kg no Estoque, no Pedido e no Inventário, e o custo da venda casava o pacote como granel (30 g × custo do "kg"). Agora o estoque normaliza a unidade num ponto só (UN-ENV-01).
 - **Achado corrigido:** a pílula "Atualização com problema · veja os avisos" do Início não fazia nada ao toque; virou botão que abre a lista completa e leva ao grupo "Dados e configuração" (a amarela "Vendas só até" também) — `inicio.js` `irDados`, `TS.pilulaSit(…, ir)`; `lotes-envasados.spec` "Início".
 - **A confirmar com o dono:** o grupo do AppNext dos envasados nas lojas reais (o painel aceita CHÁS ENVASADOS, TEA MOMENTS e FOREST FRIENDLY TEAS; minitin, lata, sachê e "30G" no nome em item em kg também contam como envasado).
+- **Achado corrigido (testes, 23/11/2026):** "o servidor de teste não subiu em 90 s" no GitHub não era lentidão: a porta sorteada às vezes era uma que o `fetch` do Node recusa ("bad port": 4045 na segurança, 6000 nas notificações; 3659 e 4190 também estavam em faixas). O sorteio agora pula essas portas (`tests/unit/_porta.js`) e a faixa das notificações não cruza mais a das conversas. Teste: `portas-teste.test.js` (PORTA-01, PORTA-02).
+- **Achado corrigido:** Validade a 1100 px rolava de lado quando algum lote ganhava o "📣 Campanha" (texto pequeno sem quebrar); e `TS.table` guardava a busca só depois de 0,12 s, então apagar a busca e trocar logo de aba levava a busca antiga para a outra aba ("Nada encontrado").
+- **Achado corrigido:** Vendas → Cupons mostrava 503 "itens" (linhas) no topo e 530 no total da lista (soma crua, com taxas e R$ 0,01); agora cupons, itens e valor saem de `TS.metricas` (CUP-01).
+- **Em aberto:** `reajuste.spec` (celular) falhou 2 vezes na bateria completa local (o assunto digitado voltou ao texto padrão); sozinho e sob carga passou 26 vezes. Causa não encontrada.
 
 ### E. Revisão dos dias 18 e 19/11 (5 revisores por área; corrigido com teste no mesmo PR)
 | Código | Achado | Onde | Situação |
