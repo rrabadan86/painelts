@@ -51,3 +51,20 @@ test('GRP-05: grupo do cadastro vira o grupo do filtro das Vendas pela relação
   assert.strictEqual(idx.vendasDe(''), '');
   assert.strictEqual(G.montar(null).vendasDe('ACESSÓRIOS'), '');
 });
+
+test('GRP-06: o grupo do chá a granel vem só dos pacotes DE CHÁ — sachê, caixa de sachês e Tea Moments com o mesmo código não contam (29114 em Torres)', () => {
+  // Torres: vende mais sachê do African Sunset do que pacote; o grupo certo do 29114 é ROOIBOS AROMATIZADO
+  const linhas = [
+    ['291141', 'African Sunset 50G', 'African Sunset', 'ROOIBOS AROMATIZADO', 'CHÁ AROMATIZADO', 0.05],
+    ['29114.I', 'African Sunset - Sachê Piramidal', 'African Sunset Sachê', 'SACHÊS PIRAMIDAIS', 'SACHÊS', 0],
+    ['29114.I', 'African Sunset - Sachê Piramidal', 'African Sunset Sachê', 'SACHÊS PIRAMIDAIS', 'SACHÊS', 0],
+    ['29114.I', 'African Sunset - Sachê Piramidal', 'African Sunset Sachê', 'SACHÊS PIRAMIDAIS', 'SACHÊS', 0],
+    ['29114.CX', 'African Sunset - Caixa Sachês', 'African Sunset Caixa', 'SACHÊS PIRAMIDAIS', 'SACHÊS', 0],
+    ['29114.40G', 'Tea Moments - African Sunset - Lata 40G', 'Tea Moments African Sunset', 'TEA MOMENTS', 'TEA MOMENTS', 0],
+  ];
+  const db = base(linhas.map((l) => l.slice(0, 5)));
+  db.cha = linhas.map((l) => l[5]);
+  assert.strictEqual(G.montar(db).de('29114', 'African Sunset', true).grupo, 'ROOIBOS AROMATIZADO');
+  // o sachê continua com o grupo dele pelo próprio código
+  assert.strictEqual(G.montar(db).de('29114.I', 'African Sunset - Sachê Piramidal', false).grupo, 'SACHÊS PIRAMIDAIS');
+});

@@ -24,21 +24,45 @@ test('RES-TAXA-01: Faturamento total = Loja + EG + taxa de serviço; a taxa sai 
   await expect(t.locator('tr.dre-taxa td').first()).toContainText('Taxa de serviço (10%)');
 });
 
-test('RES-ROY-01: no mês com desconto da franquia, royalties = calculado − descontos, com a origem de cada um no ⓘ', async ({ page }) => {
+test('RES-ROY-01: no mês com desconto da franquia, royalties = calculado − descontos, com a origem de cada um no ⓘ; royalties + marketing = as duas linhas de baixo', async ({ page }) => {
   await abrir(page);
   // a apresentação tem desconto no mês anterior ao atual
   const ym = await page.evaluate(() => { const d = new Date(); d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() - 1); return d.toISOString().slice(0, 7); });
   await page.locator('.dre-topo select').selectOption(ym);
   const t = page.locator('.dre-t').first();
-  const roy = t.locator('tr', { hasText: 'Royalties + marketing' }).first();
-  const calc = t.locator('tr', { hasText: 'calculado nas vendas' }).first();
-  const desc = t.locator('tr', { hasText: 'descontos da franquia' }).first();
-  await expect(desc).toBeVisible();
-  const vRoy = num(await roy.locator('td').nth(1).textContent()), vCalc = num(await calc.locator('td').nth(1).textContent()), vDesc = num(await desc.locator('td').nth(1).textContent());
-  expect(Math.abs(vRoy - (vCalc + vDesc))).toBeLessThan(1); // o desconto aparece negativo
-  expect(vDesc).toBeCloseTo(-280.7, 0);
+  const total = t.locator('tr', { hasText: 'Royalties + marketing' }).first();
+  const roy = t.locator('tr.dre-calc', { hasText: 'royalties' }).first();
+  const mkt = t.locator('tr.dre-calc', { hasText: 'marketing' }).first();
+  await expect(roy).toHaveAttribute('title', /descontos da franquia R\$\s280,70/); // a tabela já está no mês escolhido
+  const vTot = num(await total.locator('td').nth(1).textContent()), vRoy = num(await roy.locator('td').nth(1).textContent()), vMkt = num(await mkt.locator('td').nth(1).textContent());
+  expect(Math.abs(vTot - (vRoy + vMkt))).toBeLessThan(1);
   const dica = await roy.getAttribute('title');
+  expect(dica).toMatch(/descontos da franquia R\$\s280,70/);
   expect(dica).toMatch(/devolução NF 1234/);
   expect(dica).toMatch(/prêmios de fidelidade/);
-  expect(dica).toMatch(/Pago:/);
+  expect(await total.getAttribute('title')).toMatch(/Pago:/);
+});
+
+test('DRE-CALC-01: lançar o valor real do Simples num mês troca o calculado, marca ✎ e "Voltar ao calculado" desfaz', async ({ page }) => {
+  await abrir(page);
+  const t = page.locator('.dre-t').first();
+  const cel = t.locator('td.dre-edit[data-calc="simples"]').first();
+  await expect(cel).not.toContainText('✎');
+  const antes = num(await cel.textContent());
+  await cel.click();
+  const jan = page.locator('.dre-fixo-jan');
+  await expect(jan).toContainText('Simples Nacional');
+  await expect(jan).toContainText('Calculado');
+  await jan.locator('.dre-fixo-campo').fill('1.234,56');
+  await jan.getByRole('button', { name: 'Salvar', exact: true }).click();
+  await expect(jan).toHaveCount(0);
+  const depois = page.locator('.dre-t').first().locator('td.dre-edit[data-calc="simples"]').first();
+  await expect(depois).toContainText('✎');
+  expect(num(await depois.textContent())).toBeCloseTo(1234.56, 1);
+  await expect(page.locator('.dre-dica-edit').first()).toContainText('clique no valor');
+  await depois.click();
+  await page.locator('.dre-fixo-jan').getByRole('button', { name: 'Voltar ao calculado', exact: true }).click();
+  const volta = page.locator('.dre-t').first().locator('td.dre-edit[data-calc="simples"]').first();
+  await expect(volta).not.toContainText('✎');
+  expect(num(await volta.textContent())).toBeCloseTo(antes, 0);
 });

@@ -164,6 +164,9 @@
     };
     const aoVoltarHist = () => {
       if (!corpo.isConnected) { window.removeEventListener('popstate', aoVoltarHist); return; }
+      // fechar uma janela por cima (aviso, ficha do cliente) também volta uma entrada do histórico (main.js): isso não é
+      // a pessoa apertando "voltar" — a conversa continua aberta (no celular, o aviso da ficha fechava a conversa; NAOQUER-02)
+      if (history.state && history.state.camada) return;
       if (st.aberta && !largo() && !comEntrada()) voltar();
     };
     window.addEventListener('popstate', aoVoltarHist);

@@ -229,6 +229,9 @@
       return {
         com: cat ? vt * (comDoMes(db.ym[i])[cat] || 0) : 0,
         roy: ehEG ? vt * (ry.eg + ry.egMkt) : cat ? vt * (ry.loja + ry.mkt) : 0,
+        // as duas partes dos royalties, para o Resultado lançar cada uma pelo valor real do boleto (DRE-CALC-01)
+        royS: ehEG ? vt * ry.eg : cat ? vt * ry.loja : 0,
+        mkt: ehEG ? vt * ry.egMkt : cat ? vt * ry.mkt : 0,
         imp: vt * pSimples,
         maq: vt * pCartao,
         out: outros.reduce((a, b) => a + b, 0),

@@ -3918,3 +3918,7 @@ details.inv-p2-como ol { margin-top: 8px; }
   .dre-t td:first-child, .dre-t th:first-child { white-space: normal; min-width: 110px; max-width: 140px; }
   .dre-t tr.dre-filho td:first-child { padding-left: 24px; }
 }
+/* Resultado: royalties e marketing como linhas abaixo de "Royalties + marketing", com o valor real do mês editável (DRE-CALC-01) */
+.dre-t tr.dre-calc td { font-size: 13px; color: #3D4A42; }
+.dre-t tr.dre-calc td:first-child { padding-left: 36px; }
+.dre-dica-edit { margin: 0 0 8px; font-size: 13px; }
