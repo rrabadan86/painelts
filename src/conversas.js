@@ -123,11 +123,26 @@ function lista(id) {
   return Object.values(ind).filter((e) => e.ult).map((e) => (e.ult.id && robo[e.ult.id] ? { ...e, ult: { ...e.ult, robo: robo[e.ult.id].camp || 'campanha' } } : e))
     .sort((a, b) => b.ult.em.localeCompare(a.ult.em));
 }
-/** as mensagens de uma conversa, com a marca do robô (nome da campanha) nas que ele mandou */
+/** as mensagens de uma conversa, com a marca do robô (nome da campanha) nas que ele mandou e de quem respondeu pelo painel */
 function mensagens(id, chave) {
   if (!RE_CHAVE.test(String(chave || ''))) return null;
-  const robo = lerRobo(id);
-  return ler(arqChat(id, chave), []).map((m) => (robo[m.id] ? { ...m, robo: robo[m.id].camp || 'campanha' } : m));
+  const robo = lerRobo(id), resp = lerRespostas(id);
+  return ler(arqChat(id, chave), []).map((m) => (robo[m.id] ? { ...m, robo: robo[m.id].camp || 'campanha' } : resp[m.id] ? { ...m, por: resp[m.id].por } : m));
+}
+const lerRespostas = (id) => ler(path.join(pasta(id), 'respostas.json'), {});
+/** resposta enviada pelo painel (Conversas, fase 2): na conversa aparece "Loja · <quem respondeu>". Só o id da mensagem e quem; nunca o texto */
+function marcarResposta(id, idMsg, por, agora = Date.now()) {
+  if (!idMsg) return;
+  const r = lerRespostas(id);
+  const corte = agora - 400 * 864e5; // um pouco mais que os 12 meses das conversas
+  for (const [k, v] of Object.entries(r)) if (!v || Date.parse(v.em) < corte) delete r[k];
+  r[String(idMsg).slice(0, 200)] = { por: String(por || '').slice(0, 60), em: new Date(agora).toISOString() };
+  gravar(path.join(pasta(id), 'respostas.json'), r);
+}
+/** a conversa existe e é de um número (não "lid:"): → o número para responder, ou null */
+function numeroDaConversa(id, chave) {
+  if (!/^\d{10,15}$/.test(String(chave || ''))) return null;
+  return lerIndice(id)[chave] ? String(chave) : null;
 }
 /** alguém abriu a conversa: zera as não lidas */
 function marcarLida(id, chave, agora = Date.now()) {
@@ -245,4 +260,4 @@ function iniciar() {
   return t;
 }
 
-module.exports = { TIPOS_MIDIA, midiaDe, responderMidia, nomeArquivo, demoImagem, demoSilencio, MESES, semRespostaDe, aplicar, limpar, buscar, lista, mensagens, marcarLida, marcarRobo, apagar, lerEstado, iniciar, RE_CHAVE };
+module.exports = { marcarResposta, numeroDaConversa, TIPOS_MIDIA, midiaDe, responderMidia, nomeArquivo, demoImagem, demoSilencio, MESES, semRespostaDe, aplicar, limpar, buscar, lista, mensagens, marcarLida, marcarRobo, apagar, lerEstado, iniciar, RE_CHAVE };

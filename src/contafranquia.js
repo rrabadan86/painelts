@@ -11,6 +11,8 @@
  * À mão:    ligar uma nota a créditos, marcar crédito como compensado de outro jeito (boleto) ou cancelado,
  *           e marcar um desconto como "não é de devolução" (promoção etc.).
  *   dados/<loja>/conta-franquia.json  { manual: { credito: {nota|como, obs, por, em} }, ignorar: { notaId: {por, em, obs} } }
+ *   compensada à mão (FRQ-COMP): em nota de entrada → {nota: id} (igual ao "ligar"; sem a nota no painel, {como:'nota', nf: texto});
+ *   nos royalties → {como:'royalties', mes:'AAAA-MM'}; de outro jeito → {como:'outro'}. Registros antigos (boleto, texto livre) continuam valendo.
  */
 const fs = require('fs');
 const path = require('path');
@@ -108,7 +110,7 @@ function conta(id, { saidas, compras, devsPainel, hoje = C.diaSP() }) {
   for (const [cid0, x] of Object.entries(m.manual)) {
     const cid = porId.has(cid0) ? cid0 : doApelido.get(cid0);
     if (!cid || usado.has(cid)) continue;
-    usado.set(cid, x.nota ? { nota: x.nota, como: 'nota', manual: true, por: x.por, em: x.em, obs: x.obs || '' } : { como: x.como || 'outro', manual: true, por: x.por, em: x.em, obs: x.obs || '' });
+    usado.set(cid, x.nota ? { nota: x.nota, como: 'nota', manual: true, por: x.por, em: x.em, obs: x.obs || '' } : { como: x.como || 'outro', manual: true, por: x.por, em: x.em, obs: x.obs || '', nf: x.nf || null, mes: x.mes || null });
   }
   // 2) notas de entrada com desconto, da mais antiga para a mais nova
   const comDesc = (compras || []).map((n) => ({ n, desc: descontoDaNota(n), quando: dia(n.emissao || n.entrada) }))
@@ -141,14 +143,14 @@ function conta(id, { saidas, compras, devsPainel, hoje = C.diaSP() }) {
     const u = usado.get(c.id);
     if (u) {
       const nt = u.nota ? notaPorId.get(u.nota) || (compras || []).find((x) => x.id === u.nota) : null;
-      return { ...c, situacao: u.manual ? 'manual' : u.confirmar ? 'confirmar' : 'compensado', compensado: { como: u.como, nota: nt ? { id: nt.id, nf: nt.nf, emissao: dia(nt.emissao) } : null, obs: u.obs || '', por: u.por || null, em: u.em || null, auto: !!u.auto, ambigua: !!(nt && nt.ambigua) } };
+      return { ...c, situacao: u.manual ? 'manual' : u.confirmar ? 'confirmar' : 'compensado', compensado: { como: u.como, nota: nt ? { id: nt.id, nf: nt.nf, emissao: dia(nt.emissao) } : null, nf: u.nf || null, mes: u.mes || null, obs: u.obs || '', por: u.por || null, em: u.em || null, auto: !!u.auto, ambigua: !!(nt && nt.ambigua) } };
     }
     const d = dias(c.emissao, hoje);
     return { ...c, situacao: d > PRAZO_DIAS ? 'atrasado' : 'aberto', dias: d };
   });
   const soma = (f) => r2(lista.filter(f).reduce((s, c) => s + c.valor, 0));
   return {
-    creditos: lista.reverse(), notas: notas.reverse(), prazo: PRAZO_DIAS,
+    creditos: lista.reverse(), notas: notas.reverse(), prazo: PRAZO_DIAS, entradas: entradas(compras), mesesRoyalties: mesesRoyalties(hoje),
     descontoLido: (compras || []).some((n) => descontoDaNota(n) != null),
     resumo: {
       aberto: soma((c) => c.situacao === 'aberto'), atrasado: soma((c) => c.situacao === 'atrasado'),
@@ -160,8 +162,67 @@ function conta(id, { saidas, compras, devsPainel, hoje = C.diaSP() }) {
   };
 }
 
-/** ações à mão: ligar (nota + créditos), compensar (como: boleto/outro), cancelar, desfazer (crédito), ignorar/considerar (nota) */
-function acao(id, b, por) {
+/**
+ * notas de entrada para a pessoa escolher em qual a devolução foi descontada ("Compensada em nota fiscal de entrada"):
+ * as mais recentes primeiro, só o cabeçalho (sem itens nem custo de produto)
+ */
+const MAX_ENTRADAS = 500;
+function entradas(compras) {
+  return (compras || []).filter((n) => n && n.id && n.nf != null)
+    .map((n) => ({ id: String(n.id), nf: n.nf, emissao: dia(n.emissao || n.entrada), entrada: dia(n.entrada || n.emissao), fornecedor: n.fornecedor || '', total: n.total != null ? r2(n.total) : null, desconto: descontoDaNota(n) }))
+    .sort((a, b) => (b.emissao || '').localeCompare(a.emissao || '') || String(b.nf).localeCompare(String(a.nf)))
+    .slice(0, MAX_ENTRADAS);
+}
+
+/** os 12 meses que a pessoa pode escolher em "Compensada nos royalties": o atual e os 11 anteriores (AAAA-MM, o mais novo primeiro) */
+const MESES_ROYALTIES = 12;
+function mesesRoyalties(hoje = C.diaSP()) {
+  const atual = dia(hoje).slice(0, 7);
+  return YM.test(atual) ? Array.from({ length: MESES_ROYALTIES }, (_, k) => somaMes(atual, -k)) : [];
+}
+
+/** número da NF só com os dígitos, sem zeros à esquerda (para achar "000019120" = 19120) */
+const nfChave = (v) => String(v ?? '').replace(/\D/g, '').replace(/^0+(?=\d)/, '');
+
+/**
+ * Como a devolução foi compensada (FRQ-FRQ-COMP-01…04): confere o que chega da tela e devolve o registro a gravar.
+ *  nota:      { nota: id } de uma nota de entrada da loja (o mesmo vínculo de "ligar" e do automático) ou,
+ *             se a nota não está no painel, { nf } digitado (até 20 caracteres, com algum número) — se esse número
+ *             for de uma nota da loja, liga à nota.
+ *  royalties: { mes: 'AAAA-MM' } entre o mês atual e os 11 anteriores.
+ *  outro:     só a observação.
+ * → { reg } ou { erro }
+ */
+function compensacao(b, { compras = [], hoje = C.diaSP() } = {}) {
+  const como = String(b.como || '');
+  if (como === 'nota') {
+    if (b.nota != null && b.nota !== '') {
+      const n = (compras || []).find((x) => x && String(x.id) === String(b.nota));
+      if (!n) return { erro: 'Essa nota de entrada não está no painel desta loja. Escolha outra ou digite o número da NF.' };
+      return { reg: { como: 'nota', nota: String(n.id) } };
+    }
+    const nf = String(b.nf ?? '').replace(/[\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!nf) return { erro: 'Escolha a nota fiscal de entrada ou digite o número da NF.' };
+    if (nf.length > 20 || !/^[0-9A-Za-z.\/ -]+$/.test(nf) || !/\d/.test(nf)) return { erro: 'Número da NF inválido: use só o número (até 20 caracteres).' };
+    const ch = nfChave(nf);
+    const iguais = (compras || []).filter((x) => x && x.id && nfChave(x.nf) === ch);
+    if (iguais.length === 1) return { reg: { como: 'nota', nota: String(iguais[0].id) } };
+    return { reg: { como: 'nota', nf } };
+  }
+  if (como === 'royalties') {
+    const mes = String(b.mes || '');
+    if (!YM.test(mes) || !mesesRoyalties(hoje).includes(mes)) return { erro: 'Escolha o mês de referência dos royalties (um dos últimos 12 meses).' };
+    return { reg: { como: 'royalties', mes } };
+  }
+  if (como === 'outro') return { reg: { como: 'outro' } };
+  return { erro: 'Escolha como a devolução foi compensada.' };
+}
+
+/**
+ * ações à mão: ligar (nota + créditos), compensar (como: nota/royalties/outro — ver `compensacao`), cancelar, desfazer (crédito),
+ * ignorar/considerar (nota). ctx: { compras, hoje, jaNaNota(id) → créditos que o painel já tinha compensado sozinho naquela nota }
+ */
+function acao(id, b, por, ctx = {}) {
   const m = ler(id);
   const em = new Date().toISOString();
   const obs = String(b.obs || '').replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, 200);
@@ -171,9 +232,16 @@ function acao(id, b, por) {
     for (const [c, x] of Object.entries(m.manual)) if (x.nota === b.nota) delete m.manual[c]; // a nova escolha substitui a anterior
     for (const c of b.creditos) m.manual[c] = { nota: String(b.nota).slice(0, 60), obs, por, em };
     delete m.ignorar[b.nota]; delete m.recusar[b.nota];
-  } else if (b.tipo === 'compensar' || b.tipo === 'cancelar') {
+  } else if (b.tipo === 'compensar') {
     if (!cid(b.credito)) return { erro: 'Crédito inválido.' };
-    m.manual[b.credito] = { como: b.tipo === 'cancelar' ? 'cancelado' : (['boleto', 'royalties', 'outro'].includes(b.como) ? b.como : 'outro'), obs, por, em };
+    const r = compensacao(b, ctx);
+    if (r.erro) return r;
+    // ligar a uma nota que já tinha devoluções compensadas sozinhas (valor exato): elas continuam nessa nota
+    if (r.reg.nota && ctx.jaNaNota) for (const c of ctx.jaNaNota(r.reg.nota) || []) if (c !== b.credito && !m.manual[c] && cid(c)) m.manual[c] = { nota: r.reg.nota, obs: 'automático', por, em };
+    m.manual[b.credito] = { ...r.reg, obs, por, em };
+  } else if (b.tipo === 'cancelar') {
+    if (!cid(b.credito)) return { erro: 'Crédito inválido.' };
+    m.manual[b.credito] = { como: 'cancelado', obs, por, em };
   } else if (b.tipo === 'desfazer') {
     if (!cid(b.credito)) return { erro: 'Crédito inválido.' };
     delete m.manual[b.credito];
@@ -283,4 +351,19 @@ function royalties(id, b, por) {
   return { ok: true };
 }
 
-module.exports = { premios, contaPremios, royalties, PCT_PREMIO, conta, acao, creditos, combinar, parcial, descontoDaNota, PRAZO_DIAS };
+/** descontos que a franquia deu nos royalties, por mês de referência (Resultado, RES-ROY-01): devoluções compensadas nos
+ *  royalties com o mês escolhido e prêmios de fidelidade lançados como desconto nos royalties. Compensação antiga, de texto
+ *  livre e sem mês, fica em semMes (não entra na conta: o mês não é confiável). */
+function descontosRoyalties(id, creditos) {
+  const porMes = {}, semMes = [];
+  const add = (ym, x) => (porMes[ym] = porMes[ym] || []).push(x);
+  for (const c of creditos || []) {
+    const cp = c.compensado;
+    if (!cp || cp.como !== 'royalties') continue;
+    const x = { origem: 'devolucao', valor: r2(c.valor), texto: `devolução NF ${c.numero}` };
+    if (cp.mes && YM.test(cp.mes)) add(cp.mes, x); else semMes.push({ ...x, obs: cp.obs || '' });
+  }
+  for (const r of ler(id).royalties) if (YM.test(String(r.ref || ''))) add(r.ref, { origem: 'fidelidade', valor: r2(r.valor), texto: `prêmios de fidelidade de ${r.premios}` });
+  return { porMes, semMes };
+}
+module.exports = { descontosRoyalties, premios, contaPremios, royalties, PCT_PREMIO, conta, acao, compensacao, entradas, mesesRoyalties, MESES_ROYALTIES, creditos, combinar, parcial, descontoDaNota, PRAZO_DIAS };

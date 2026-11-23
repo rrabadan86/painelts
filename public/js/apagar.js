@@ -32,9 +32,10 @@
    *   notas          notas de entrada [{ id, nf, fornecedor, entrada, emissao, total, motivo, status }]; prazoNotas em dias
    *   competencias   [{ origem, nome, ym, valor, estimado, dia, detalhe }] — o que é do mês ym e vence no dia `dia` do mês SEGUINTE
    *   pagos          { id: { em, por } } contas já marcadas como pagas
+   *   valorDoMes     (fixo, ym) → R$ do custo fixo naquele mês (o lançado no Resultado ou o padrão; sem ele, o padrão)
    * → [{ id, origem, nome, vence, valor, estimado, semDia, detalhe, atrasado, pago, pagoEm, pagoPor }]
    */
-  function vencimentos({ hoje, dias = 30, atras = 15, fixos = [], pontuaisDoMes = null, notas = [], prazoNotas = 30, competencias = [], pagos = {} }) {
+  function vencimentos({ hoje, dias = 30, atras = 15, fixos = [], pontuaisDoMes = null, notas = [], prazoNotas = 30, competencias = [], pagos = {}, valorDoMes = null }) {
     const de = maisDias(hoje, -atras), ate = maisDias(hoje, dias - 1);
     const out = [], vistos = new Set();
     const por = (it) => {
@@ -46,7 +47,7 @@
       out.push({ ...it, id, valor: r2(it.valor), atrasado: it.vence < hoje, pago: !!pg, pagoEm: pg ? pg.em || null : null, pagoPor: pg ? pg.por || null : null });
     };
     for (let ym = de.slice(0, 7); ym <= ate.slice(0, 7); ym = ymMais(ym, 1)) {
-      for (const x of fixos) por({ id: `fixo|${slug(x.nome)}|${ym}`, origem: 'fixo', nome: x.nome, cat: x.cat || null, vence: dataNoMes(ym, x.dia), valor: +x.valor, estimado: false, semDia: !(x.dia >= 1) });
+      for (const x of fixos) por({ id: `fixo|${slug(x.nome)}|${ym}`, origem: 'fixo', nome: x.nome, cat: x.cat || null, vence: dataNoMes(ym, x.dia), valor: valorDoMes ? +valorDoMes(x, ym) : +x.valor, estimado: false, semDia: !(x.dia >= 1) });
       for (const x of (pontuaisDoMes ? pontuaisDoMes(ym) : [])) por({ id: `pontual|${slug(x.nome)}|${ym}`, origem: 'pontual', nome: x.nome, cat: x.cat || null, vence: dataNoMes(ym, x.dia), valor: +x.valor, estimado: false, semDia: !(x.dia >= 1) });
     }
     const prazo = limite(Math.round(+prazoNotas) || 0, 0, 180);
@@ -177,7 +178,7 @@
       if (roy > 0) comp.push({ origem: 'royalties', nome: `Royalties + marketing de ${TS.ymLabel(ym)}`, ym, valor: roy, estimado: est, dia: cfg.royaltiesDia || 10, detalhe: det });
       if (imp > 0) comp.push({ origem: 'simples', nome: `Simples Nacional de ${TS.ymLabel(ym)}`, ym, valor: imp, estimado: est, dia: 20, detalhe: det });
     }
-    const itens = vencimentos({ hoje, dias, fixos, pontuaisDoMes: M.ded.pontuaisDoMes, notas: D.notas || [], prazoNotas: cfg.prazoNotasDias, competencias: comp, pagos: D.extra.pagos });
+    const itens = vencimentos({ hoje, dias, fixos, pontuaisDoMes: M.ded.pontuaisDoMes, notas: D.notas || [], prazoNotas: cfg.prazoNotasDias, competencias: comp, pagos: D.extra.pagos, valorDoMes: M.ded.fixoDoMes ? (x, ym) => M.ded.fixoDoMes(x, ym).valor : null });
     const cartao = D.extra.cartao;
     const parte = cartao && cartao.pct != null ? cartao.pct : 1;
     const ent = prevDia ? entradas({ hoje, dias, vendaDia, parteCartao: parte, diasCartao: cfg.cartaoDias, taxaMaq: M.ded.pCartao }) : null;
@@ -317,7 +318,7 @@
         const nomeCat = new Map((cats || []).map((c) => [c.id, c.nome]));
         const corpo = { loja: state.loja, ym: m.ym,
           resumo: linhas.map(([rot, f, tipo]) => { const v = f(m); return { rot: tipo === 'grupo' ? rot.replace(/^− /, '− Custos fixos · ') : rot, valor: v == null ? null : Math.round(v * 100) / 100, pct: v == null || !m.fat ? null : Math.round((v / m.fat) * 10000) / 10000, tipo }; }),
-          despesas: m.fixosMes.map((x) => ({ nome: x.nome, cat: nomeCat.get(x.cat) || 'Outros', tipo: x.pontual ? 'pontual' : 'fixa', valor: x.valor })) };
+          despesas: m.fixosMes.map((x) => ({ nome: x.nome, cat: nomeCat.get(x.cat) || 'Outros', tipo: x.pontual ? 'pontual' : x.lancado ? 'real' : 'fixa', valor: x.valor })) };
         const r = await fetch(TS.api('resultado/exportar'), { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-Painel': '1' }, body: JSON.stringify(corpo) });
         if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.erro || 'Não deu para montar a planilha.'); }
         const blob = await r.blob();

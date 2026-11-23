@@ -25,12 +25,12 @@ test('CONV-08: Conversas — lista ligada aos clientes, abre a conversa (🤖 do
   await expect(lista).toContainText(nomes[0]);
   // a mais recente em cima
   await expect(lista.locator('.cv-item')).toHaveCount(7);
-  // abre a conversa: ficha do cliente, marca do robô e só leitura
+  // abre a conversa: ficha do cliente, marca do robô e a caixa de resposta
   await lista.locator('.cv-item', { hasText: nomes[0] }).first().click();
   const conv = page.locator('.cv-conversa');
   await expect(conv.locator('.cv-nome')).toHaveText(nomes[0]);
   await expect(conv.getByRole('button', { name: 'Ver cliente' })).toBeVisible();
-  await expect(conv).toContainText('Só leitura por enquanto');
+  await expect(conv.locator('.cv-resp textarea')).toBeVisible(); // responder pela conversa (fase 2)
   // a prévia da lista é a última mensagem da conversa (a apresentação monta as duas da mesma conta)
   const ultMsg = (await conv.locator('.cv-msg .cv-txt').last().textContent()).trim();
   expect(ultMsg.length).toBeGreaterThan(5);
@@ -292,4 +292,21 @@ test('CEL-NOME-03: com "Nome nas mensagens", a conversa mostra Paulo no topo, na
   // Ver cliente: o cadastro da fidelidade, com o WhatsApp do Paulo
   await conv.getByRole('button', { name: 'Ver cliente' }).click();
   await expect(page.locator('.cel-de').first()).toContainText('WhatsApp do Paulo');
+});
+
+test('CONV-RESP-05: responder pela conversa — escreve, envia e a resposta aparece na conversa (na apresentação, sem enviar nada)', async ({ page }) => {
+  const erros = [];
+  page.on('pageerror', (e) => erros.push(e.message));
+  const lista = await abrirTela(page);
+  const nome = await page.evaluate(() => TS.cli.lista.filter((c) => TS.foneConversa(c).length >= 12)[0].nome);
+  await lista.locator('.cv-item', { hasText: nome }).first().click();
+  const conv = page.locator('.cv-conversa');
+  const caixa = conv.locator('.cv-resp textarea');
+  await caixa.fill('Temos sim! Separo um pacote para você?');
+  await conv.locator('.cv-resp').getByRole('button', { name: 'Enviar' }).click();
+  const bolha = conv.locator('.cv-msg.eu', { hasText: 'Temos sim! Separo um pacote para você?' });
+  await expect(bolha).toBeVisible();
+  await expect(bolha).toContainText('apresentação, nada foi enviado');
+  await expect(conv.locator('.cv-resp textarea')).toHaveValue('');
+  expect(erros).toEqual([]);
 });

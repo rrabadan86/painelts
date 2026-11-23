@@ -549,7 +549,7 @@ app.get('/api/demo/estoque', (req, res) => {
     const foraDeLinha = { desde: dia(200), dias: 90, indisp: Object.fromEntries(comSaldo.slice(2, 6).map((i, k) => [String(i.cod), dia(k < 3 ? 120 + k * 10 : 20)])) };
     // lista de espera fictícia: clientes aguardando dois produtos zerados que venderam há pouco (têm nota de compra recente)
     const espera = Object.fromEntries((e.estoque.itens || []).filter((i) => !(i.qtd > 0) && i.custo > 0 && e.compras.itens[i.cod]).slice(0, 2).map((i, k) => [String(i.cod), k + 1]));
-    res.json({ estoque: e.estoque, cfg: ESd.cfg({ estoqueCfg: e.estoqueCfg }), classe: ESd.classeCfg({}), historico: e.historico,
+    res.json({ estoque: e.estoque, cfg: { ...ESd.cfg({ estoqueCfg: e.estoqueCfg }), fixosMes: {} }, classe: ESd.classeCfg({}), historico: e.historico,
       compras: require('./src/demo-compras').comprasDoAno(e.compras, e.estoque, e.historico, (DEMO.partes().find((x) => x.id === req.query.loja) || {}).vendas), tabela, foraDeLinha, espera });
   } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
 });
@@ -636,7 +636,10 @@ function contaDemo() {
   const d = (n) => new Date(Date.now() - n * 864e5).toISOString().slice(0, 10);
   const forn = 'TSB FRANQUIAS E COMERCIO LTDA ME';
   const ent = (id, nf, dias, desconto) => ({ id, nf, chave: String(nf).padStart(44, '3'), emissao: d(dias), entrada: d(dias), fornecedor: forn, total: 2500, desconto, itens: [] });
-  const compras = [ent('e1', 19001, 70, 0), ent('e2', 19050, 55, 0), ent('e3', 19120, 22, 350), ent('e4', 19180, 8, 120)];
+  const compras = [ent('e1', 19001, 70, 0), ent('e2', 19050, 55, 0), ent('e3', 19120, 22, 350), ent('e4', 19180, 8, 120),
+    // notas sem desconto (para escolher em "Compensada em nota fiscal de entrada"): mais da franquia e de outros fornecedores
+    ent('e5', 19210, 4, 0), ent('e6', 19095, 35, 0), ent('e7', 18950, 90, 0),
+    { ...ent('e8', 4471, 15, 0), fornecedor: 'EMBALAGENS EXEMPLO LTDA', total: 380 }, { ...ent('e9', 902, 40, 0), fornecedor: 'DOCES FICTÍCIOS ME', total: 640 }];
   const dev = (n, dias, valor, ref) => ({ chave: String(n).padStart(44, '4'), numero: n, serie: 1, emissao: d(dias), finalidade: 'Devolução', situacao: 'autorizada', valor, refs: [ref], dest: { nome: forn } });
   const saidas = [dev(512, 60, 200, compras[0].chave), dev(518, 48, 150, compras[1].chave), dev(531, 41, 60.9, compras[1].chave), dev(540, 12, 87.4, compras[2].chave)];
   const ym = (k) => { const x = new Date(); x.setUTCDate(1); x.setUTCMonth(x.getUTCMonth() - k); return x.toISOString().slice(0, 7); };
@@ -661,7 +664,19 @@ app.post('/api/demo/conta-franquia/email/previa', express.json({ limit: '10kb' }
   const r = require('./src/cobranca').montar(req.body.tipo === 'fidelidade' ? 'fidelidade' : 'devolucoes', { conta, fid: conta.fidelidade, ids: req.body.ids, meses: req.body.meses, nomeLoja: 'Tea Shop Centro' });
   res.json({ ...r, para: ['franquia@exemplo.com'], ultima: null, anexos: req.body.tipo === 'fidelidade' ? ['planilha com a relação dos resgates (.xlsx)'] : ['XML de cada nota de devolução'] });
 });
-app.post('/api/demo/conta-franquia/acao', (req, res) => res.status(400).json({ erro: 'Na apresentação nada é salvo.' }));
+// apresentação: "compensada" só confere e responde (a tela troca na memória); nada é salvo
+app.post('/api/demo/conta-franquia/acao', express.json({ limit: '5kb' }), (req, res) => {
+  const b = req.body || {};
+  if (b.tipo !== 'compensar' && b.tipo !== 'cancelar') return res.status(400).json({ erro: 'Na apresentação nada é salvo.' });
+  const CFd = require('./src/contafranquia'), conta = contaDemo();
+  if (!conta.creditos.some((c) => c.id === b.credito)) return res.status(400).json({ erro: 'Crédito inválido.' });
+  const obs = String(b.obs || '').replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, 200);
+  if (b.tipo === 'cancelar') return res.json({ ok: true, simulado: true, compensado: { como: 'cancelado', nota: null, nf: null, mes: null, obs } });
+  const r = CFd.compensacao(b, { compras: conta.entradas });
+  if (r.erro) return res.status(400).json({ erro: r.erro });
+  const n = r.reg.nota ? conta.entradas.find((x) => x.id === r.reg.nota) : null;
+  res.json({ ok: true, simulado: true, compensado: { como: r.reg.como, nota: n ? { id: n.id, nf: n.nf, emissao: n.emissao } : null, nf: r.reg.nf || null, mes: r.reg.mes || null, obs } });
+});
 app.post('/api/demo/conta-franquia/royalties', (req, res) => res.status(400).json({ erro: 'Na apresentação nada é salvo.' }));
 app.get('/api/demo/reajuste/para', (req, res) => res.json({ para: ['compras@franquia-exemplo.com.br'], loja: 'Tea Shop Centro' }));
 app.post('/api/demo/reajuste/enviar', express.json({ limit: '2mb' }), (req, res) => {
@@ -716,6 +731,21 @@ const APGd = require('./src/apagar'), CTDd = require('./src/contador');
 app.get('/api/demo/apagar', (req, res) => { if (!lojaDemo(req)) return res.status(400).json({ erro: 'Escolha uma loja.' }); res.json({ pagos: {}, cartao: { pct: 0.73, dias: 60 }, demo: true }); });
 app.post('/api/demo/apagar/pago', express.json({ limit: '4kb' }), (req, res) => {
   if (!APGd.ID_OK.test(String((req.body || {}).id || ''))) return res.status(400).json({ erro: 'Conta inválida.' });
+  res.json({ ok: true, simulado: true });
+});
+// valor real de um custo fixo no mês na apresentação: só confere e responde; a tela troca na memória (nada é gravado)
+// apresentação: um mês com desconto da franquia nos royalties (devolução e prêmios de fidelidade), para a linha aparecer
+app.get('/api/demo/resultado/descontos-royalties', (req, res) => {
+  if (!DEMO.lojasDemo().some((l) => l.id === String(req.query.loja || ''))) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  const d = new Date(); d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() - 1);
+  const ym = d.toISOString().slice(0, 7);
+  res.json({ porMes: { [ym]: [{ origem: 'devolucao', valor: 184.5, texto: 'devolução NF 1234' }, { origem: 'fidelidade', valor: 96.2, texto: 'prêmios de fidelidade do mês anterior' }] }, semMes: [] });
+});
+app.post('/api/demo/resultado/fixo-mes', express.json({ limit: '4kb' }), (req, res) => {
+  const b = req.body || {};
+  if (!DEMO.lojasDemo().some((l) => l.id === String(b.loja || ''))) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  const v = require('./src/fixosmes').validar(b, ESd.cfg({ estoqueCfg: DEMO.estoqueDemo(b.loja).estoqueCfg }).outros, IND.hojeSP().iso);
+  if (v.erro) return res.status(400).json({ erro: v.erro });
   res.json({ ok: true, simulado: true });
 });
 app.post('/api/demo/resultado/exportar', express.json({ limit: '200kb' }), async (req, res) => {
@@ -905,6 +935,12 @@ app.get('/api/demo/conversas/mensagens', (req, res) => {
   res.json({ mensagens: demoConversa(chave, Date.now()) });
 });
 app.post('/api/demo/conversas/lida', (req, res) => res.json({ ok: true }));
+app.post('/api/demo/conversas/responder', express.json({ limit: '8kb' }), (req, res) => {
+  const texto = String((req.body && req.body.texto) || '').trim();
+  if (!texto) return res.status(400).json({ erro: 'Escreva a mensagem.' });
+  if (texto.length > 2000) return res.status(400).json({ erro: 'Mensagem grande demais (até 2.000 caracteres).' });
+  res.json({ ok: true, em: new Date().toISOString(), simulado: true }); // na apresentação nada sai: a tela mostra a mensagem só na memória
+});
 // mídia da conversa na apresentação: uma imagem desenhada aqui (sem foto real) e meio segundo de silêncio
 app.get('/api/demo/conversas/midia', (req, res) => {
   const chave = String(req.query.chave || ''), idm = String(req.query.id || '');
@@ -1152,6 +1188,33 @@ app.get('/api/conversas/midia', async (req, res) => {
   CONV.responderMidia(res, r);
 });
 app.use('/api/conversas', (req, res, next) => (req.method === 'GET' || req.get('X-Painel') === '1' ? next() : res.status(403).json({ erro: 'Pedido inválido.' })));
+// responder pela conversa (fase 2, aprovada pelo dono em 23/11/2026): só admin e franqueado da loja (lojaConv), com X-Painel.
+// Sai pelo número da loja, pelo mesmo serviço do robô. Responder a quem escreveu não é campanha: não passa pelo intervalo da loja,
+// mas quem "não quer mensagens" (ficha ou "parar") pede confirmação. O texto nunca vai para log nem auditoria (só os 4 últimos dígitos)
+app.post('/api/conversas/responder', express.json({ limit: '8kb' }), async (req, res) => {
+  const id = lojaConv(req, res); if (!id) return;
+  const b = req.body || {};
+  const texto = String(b.texto || '').replace(/\r\n/g, '\n').trim();
+  if (!texto) return res.status(400).json({ erro: 'Escreva a mensagem.' });
+  if (texto.length > 2000) return res.status(400).json({ erro: 'Mensagem grande demais (até 2.000 caracteres).' });
+  const para = CONV.numeroDaConversa(id, String(b.chave || ''));
+  if (!para) return res.status(400).json({ erro: 'Esta conversa não tem um número de telefone para responder (o WhatsApp não informou o número).' });
+  const ZF = require('./src/zapfila'), ZAPc = require('./src/zap');
+  if (!ZAPc.ativo()) return res.status(503).json({ erro: 'O robô do WhatsApp não está instalado neste servidor: responda pelo WhatsApp da loja.' });
+  const cpf = CPF_OK.test(String(b.cpf || '')) ? String(b.cpf) : null;
+  const nq = ZF.porChave(ZF.lerJson(id, 'naoquer'));
+  const naoQuer = (cpf && (lerContatos(id)[cpf] || {}).optout) || !!nq[ZF.foneChave(para)];
+  if (naoQuer && b.confirmado !== true) return res.status(409).json({ erro: 'Este cliente pediu para não receber mensagens. Responder mesmo assim? (Por exemplo, se ele mesmo escreveu pedindo algo.)', confirmar: true });
+  let r;
+  try { r = await ZAPc.enviar(id, { id: 'resp-' + crypto.randomBytes(8).toString('hex'), para, texto }); } catch (e) { r = { ok: false, erro: C.msgErro(e) }; }
+  if (!r || !r.ok) {
+    console.error(`[conversas] ${id}: resposta para ···${ZF.fim4(para)} não saiu: ${(r && (r.motivo || r.erro)) || 'falha'}`);
+    return res.status(502).json({ erro: r && r.motivo === 'desconectado' ? 'O WhatsApp da loja não está conectado agora: a mensagem não saiu.' : r && r.motivo === 'sem_whatsapp' ? 'Este número não tem WhatsApp.' : 'A mensagem não saiu. Tente de novo em instantes.' });
+  }
+  CONV.marcarResposta(id, r.idMsg, req.user);
+  C.auditar(req.user, 'respondeu uma conversa do WhatsApp', id, { loja: id, fim: ZF.fim4(para), naoQuer: naoQuer || undefined });
+  res.json({ ok: true, em: new Date().toISOString() });
+});
 app.post('/api/conversas/lida', express.json({ limit: '2kb' }), (req, res) => {
   const id = lojaConv(req, res); if (!id) return;
   res.json({ ok: CONV.marcarLida(id, String((req.body || {}).chave || '')) });
@@ -1484,7 +1547,7 @@ const podeContabilidade = (req) => req.perfil === 'admin' || req.perfil === 'fra
 /** gerente com a tela liberada em Configurações → Usuários (Estoque e margem, Pedido, Resultado) */
 const podeTela = (req, ...telas) => podeContabilidade(req) || (req.perfil === 'gerente' && (C.telasDo(C.usuario(req.user)) || []).some((t) => telas.includes(t)));
 const ES = require('./src/estoque');
-const TAB = require('./src/tabela');
+const TAB = require('./src/tabela'), FXM = require('./src/fixosmes');
 app.get('/api/estoque', (req, res) => {
   if (!podeTela(req, 'rentab', 'estoque', 'precos', 'notas', 'pedido', 'dre')) return res.status(403).json({ erro: 'Sem permissão.' });
   const loja = req.lojas.find((l) => l.id === String(req.query.loja || ''));
@@ -1496,7 +1559,8 @@ app.get('/api/estoque', (req, res) => {
   // lista de espera: só a contagem por produto (sem nome de cliente), para o Estoque mostrar quem está zerado com cliente aguardando
   let espera = {};
   try { espera = Object.fromEntries(Object.entries(ESP.resumoPorCod(loja.id)).map(([c, x]) => [c, x.pedidos])); } catch (e) { console.error('[espera no estoque]', e.message); }
-  res.json({ estoque: est, cfg: ES.cfg(lc), classe: ES.classeCfg(lc), tabela: TAB.resumo(loja.id), historico: ES.historico(loja.id), compras: ES.compras(loja.id), foraDeLinha, espera });
+  // fixosMes: o valor real de cada custo fixo por mês, lançado no Resultado (src/fixosmes.js; a conta é TS.contas.fixoDoMes)
+  res.json({ estoque: est, cfg: { ...ES.cfg(lc), fixosMes: FXM.ler(loja.id).despesas }, classe: ES.classeCfg(lc), tabela: TAB.resumo(loja.id), historico: ES.historico(loja.id), compras: ES.compras(loja.id), foraDeLinha, espera });
 });
 // notas de entrada (compras) do AppNext, inteiras: lista e detalhe na tela Preços
 // NF-e emitidas pela loja (saída): lista, nota completa, XML original e DANFE para imprimir
@@ -1997,9 +2061,19 @@ app.get('/api/conta-franquia', (req, res) => {
 app.post('/api/conta-franquia/acao', express.json({ limit: '5kb' }), (req, res) => {
   if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
   const loja = lojaCF(req, res, true); if (!loja) return;
-  const r = CF.acao(loja.id, req.body || {}, req.user);
+  let r;
+  try {
+    const b = req.body || {};
+    const ctx = {};
+    if (b.tipo === 'compensar') {
+      // compensada em nota de entrada: a nota precisa ser desta loja; as devoluções que o painel já ligou sozinho a ela continuam lá
+      ctx.compras = (ES.notas(loja.id) || { notas: [] }).notas;
+      if (b.como === 'nota') { const antes = contaDaLoja(loja); ctx.jaNaNota = (nid) => { const n = antes.notas.find((x) => x.id === nid); return n && n.situacao === 'compensou' ? n.creditos : []; }; }
+    }
+    r = CF.acao(loja.id, b, req.user, ctx);
+  } catch (e) { console.error('[conta-franquia] ação:', e); return res.status(500).json({ erro: 'Não deu para salvar: ' + C.msgErro(e) }); }
   if (r.erro) return res.status(400).json({ erro: r.erro });
-  C.auditar(req.user, 'conta com a franquia: ' + String(req.body.tipo), loja.id, { loja: loja.id, nota: req.body.nota || null, creditos: req.body.creditos || (req.body.credito ? [req.body.credito] : []) });
+  C.auditar(req.user, 'conta com a franquia: ' + String(req.body.tipo), loja.id, { loja: loja.id, nota: req.body.nota || null, creditos: req.body.creditos || (req.body.credito ? [req.body.credito] : []), ...(req.body.tipo === 'compensar' ? { como: String(req.body.como || ''), nf: req.body.nf ? String(req.body.nf).slice(0, 20) : undefined, mes: req.body.mes ? String(req.body.mes).slice(0, 7) : undefined } : {}) });
   res.json(contaDaLoja(loja));
 });
 // checklist de abertura e fechamento: qualquer pessoa da loja marca (com nome e hora); a lista muda em Configurações
@@ -2314,6 +2388,29 @@ app.post('/api/apagar/pago', express.json({ limit: '4kb' }), (req, res) => {
     if (r.erro) return res.status(400).json({ erro: r.erro });
     C.auditar(req.user, b.pago ? 'marcou conta como paga (A pagar)' : 'desfez conta paga (A pagar)', loja.id, { loja: loja.id, conta: String(b.nome || b.id).slice(0, 80), vence: b.pago ? b.vence : undefined, valor: b.pago ? Math.round(Number(b.valor) * 100) / 100 : undefined });
     res.json({ ok: true, pagos: r.ok.pagos });
+  } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
+});
+// valor real de um custo fixo num mês (Resultado → clicar no valor do custo): grava ou volta ao padrão de Configurações
+// descontos da franquia nos royalties por mês de referência (Resultado: royalties calculados − descontos = pagos; RES-ROY-01). GET só lê
+app.get('/api/resultado/descontos-royalties', (req, res) => {
+  const loja = lojaDre(req, res, String(req.query.loja || '')); if (!loja) return;
+  try {
+    const compras = (ES.notas(loja.id) || { notas: [] }).notas;
+    const conta = CF.conta(loja.id, { saidas: NFS.lista(loja.id).notas, compras, devsPainel: DEV.lista(loja.id) });
+    res.json(CF.descontosRoyalties(loja.id, conta.creditos));
+  } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
+});
+app.post('/api/resultado/fixo-mes', express.json({ limit: '4kb' }), (req, res) => {
+  if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
+  const b = req.body || {};
+  const loja = lojaDre(req, res, b.loja); if (!loja) return;
+  try {
+    const lc = C.get().lojas.find((l) => l.id === loja.id);
+    const r = FXM.lancar(loja.id, b, ES.cfg(lc).outros, req.user, C.diaSP());
+    if (r.erro) return res.status(400).json({ erro: r.erro });
+    C.auditar(req.user, r.valor == null ? 'voltou um custo fixo ao padrão no mês (Resultado)' : 'lançou o valor real de um custo fixo no mês (Resultado)', loja.id,
+      { loja: loja.id, custo: String(b.nome).slice(0, 40), ym: String(b.ym), valor: r.valor == null ? undefined : r.valor });
+    res.json({ ok: true, fixosMes: r.ok.despesas });
   } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
 });
 // planilha do mês fechado: POST porque fica na auditoria e leva as linhas do Resultado que a tela calculou

@@ -1,13 +1,13 @@
 /* Clientes → Conversas (decisão do dono): as conversas do WhatsApp da loja, lidas pelo robô do WhatsApp e guardadas no
- * servidor (src/conversas.js, 12 meses). Só admin e franqueado (o servidor confere). Fase 1: só leitura — responder é pelo
- * WhatsApp da loja. Cada conversa é ligada ao cliente pelo celular do cadastro (com e sem o 9º dígito).
+ * servidor (src/conversas.js, 12 meses). Só admin e franqueado (o servidor confere). Fase 2 (23/11/2026): responder pela
+ * conversa, só texto, pelo número da loja (POST /api/conversas/responder). Cada conversa é ligada ao cliente pelo celular do cadastro (com e sem o 9º dígito).
  * Computador (> 860 px): lista à esquerda e conversa à direita, cada coluna rolando sozinha (como o WhatsApp Web).
  * Celular: a lista e, ao tocar, a conversa no lugar dela com "‹ Voltar" (o voltar do celular fecha a conversa). */
 (function () {
   'use strict';
   const { h, fmt, state } = TS;
   // rolagem/rolagemLista/ultima: onde a lista estava ao abrir uma conversa (celular); busca e aba ficam entre as visitas
-  const st = { aba: 'todas', aberta: null, busca: '', mostrar: 100, rolagem: null, rolagemLista: 0, ultima: null };
+  const st = { aba: 'todas', aberta: null, busca: '', mostrar: 100, rolagem: null, rolagemLista: 0, ultima: null, enviadas: {}, rascunho: {} };
 
   /** pedido ao servidor. Falha de rede (celular pausou a página, internet caiu) espera a página voltar e tenta de novo uma
    *  vez; se continuar, o erro sai em português e marcado com `rede` (a tela mantém o que já mostrava) */
@@ -126,7 +126,7 @@
   TS.pages.conversas = function (root) {
     if (TS.subClientes) root.append(TS.subClientes('conversas'));
     root.append(h('div', { class: 'page-head' }, h('div', null, h('h1', { class: 'page-title' }, 'Conversas'),
-      h('div', { class: 'page-sub' }, 'As conversas do WhatsApp da loja, ligadas aos clientes. Para responder, use o WhatsApp da loja.'))));
+      h('div', { class: 'page-sub' }, 'As conversas do WhatsApp da loja, ligadas aos clientes. Responda aqui mesmo: a mensagem sai pelo número da loja.'))));
     if (!state.loja || state.loja === 'todas') { root.append(h('div', { class: 'notice' }, 'As conversas são de cada loja: escolha uma loja no seletor do topo.')); return; }
     const corpo = h('div', { class: 'cv-corpo' }, h('div', { class: 'loading' }, h('div', null, h('div', { class: 'spinner' }), h('p', null, 'Carregando as conversas…'))));
     root.append(corpo);
@@ -334,6 +334,39 @@
         h('small', { class: 'muted' }, sr ? `${fmt.int(sr)} ${sr === 1 ? 'conversa espera' : 'conversas esperam'} resposta da loja (aba "Sem resposta").` : 'Nenhuma conversa esperando resposta da loja.')));
     }
 
+    /** responder pela conversa (fase 2, aprovada pelo dono em 23/11/2026): texto só; sai pelo número da loja */
+    function caixaResposta(chave, cliente) {
+      if (!/^\d{10,15}$/.test(chave)) return h('p', { class: 'muted cv-resp-nao' }, 'O WhatsApp não informou o número desta conversa: responda pelo WhatsApp da loja.');
+      if (!TS.demo && !dados.conectado) return h('p', { class: 'muted cv-resp-nao' }, 'O WhatsApp da loja não está conectado: para responder, conecte em Clientes → Campanhas → "Conectar e configurar" ou use o WhatsApp da loja.');
+      const txt = h('textarea', { class: 'f-input cv-resp-txt', rows: 2, maxlength: 2000, placeholder: 'Escreva a resposta…', 'aria-label': 'Resposta para o cliente' });
+      txt.value = st.rascunho[chave] || '';
+      const bt = h('button', { type: 'button', class: 'btn primary cv-resp-bt' }, 'Enviar');
+      const enviar = async (confirmado) => {
+        const texto = txt.value.trim();
+        if (!texto) { txt.focus(); return; }
+        bt.disabled = true;
+        try {
+          await api('POST', 'conversas/responder', { loja, chave, texto, cpf: cliente ? cliente.cpf : undefined, confirmado: confirmado === true || undefined });
+        } catch (e) {
+          bt.disabled = false;
+          if (/não receber mensagens/.test(e.message) && confirmado !== true) {
+            if (await TS.janelaConfirmar('🚫 Este cliente pediu para não receber mensagens', [h('p', null, 'Responder mesmo assim? Use só se ele mesmo escreveu pedindo algo.')], 'Responder mesmo assim', 'Não enviar')) enviar(true);
+            return;
+          }
+          TS.naoSalvo ? TS.naoSalvo(e, txt) : TS.avisarErro(e); return;
+        }
+        st.rascunho[chave] = '';
+        (st.enviadas[chave] = st.enviadas[chave] || []).push({ deMim: true, pendente: true, tipo: 'texto', texto, em: new Date().toISOString(), por: TS.eu && TS.eu.nome });
+        abrir(chave, true);
+        // o WhatsApp devolve a mensagem em alguns segundos: busca de novo para trocar "enviando…" pela de verdade
+        if (!TS.demo) { setTimeout(() => { if (st.aberta === chave) abrir(chave); }, 4000); setTimeout(() => { if (st.aberta === chave) abrir(chave); }, 15000); }
+      };
+      bt.addEventListener('click', () => enviar());
+      txt.addEventListener('input', () => { st.rascunho[chave] = txt.value; });
+      txt.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); enviar(); } });
+      return h('div', { class: 'cv-resp' }, txt, bt);
+    }
+
     async function abrir(chave, topo) {
       st.aberta = chave;
       soltarMidias(chave); // outra conversa: as mídias da anterior saem da memória
@@ -362,11 +395,14 @@
       // mensagens, com o dia em separador
       let dia = '';
       const bolhas = [];
-      for (const m of msgs) {
+      // respostas enviadas agora pelo painel que o WhatsApp ainda não devolveu (na apresentação, ficam só na memória)
+      const pend = (st.enviadas[chave] || []).filter((p) => !msgs.some((m) => m.deMim && m.texto === p.texto && Date.parse(m.em) >= Date.parse(p.em) - 120e3));
+      st.enviadas[chave] = pend;
+      for (const m of [...msgs, ...pend]) {
         const d = new Date(m.em).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
         if (d !== dia) { dia = d; bolhas.push(h('div', { class: 'cv-dia' }, h('span', null, d === TS.hojeSP() ? 'Hoje' : fmt.date(d)))); }
         bolhas.push(h('div', { class: 'cv-msg ' + (m.deMim ? 'eu' : 'ele') + (m.robo ? ' robo' : '') },
-          h('small', { class: 'cv-meta' }, m.deMim ? (m.robo ? `🤖 robô · ${m.robo}` : 'Loja') : (cliente ? nomeConv(cliente).split(' ')[0] : m.nome || 'Cliente'), ' · ', new Date(m.em).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' })),
+          h('small', { class: 'cv-meta' }, m.deMim ? (m.robo ? `🤖 robô · ${m.robo}` : m.pendente ? `Loja · ${m.por || 'você'} · ${TS.demo ? 'apresentação, nada foi enviado' : 'enviando…'}` : m.por ? `Loja · ${m.por}` : 'Loja') : (cliente ? nomeConv(cliente).split(' ')[0] : m.nome || 'Cliente'), ' · ', new Date(m.em).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' })),
           m.tipo !== 'texto' ? h('div', { class: 'cv-tipo' }, TIPO[m.tipo] || m.tipo) : null,
           MIDIA[m.tipo] ? caixaMidia(loja, chave, m) : null,
           m.texto ? h('div', { class: 'cv-txt' }, m.texto) : null));
@@ -386,7 +422,8 @@
             botaoNome(chave, cliente),
           ].filter(Boolean))),
         ficha, h('div', { class: 'cv-msgs-w' }, lista, btNovas),
-        h('p', { class: 'muted cv-rodape' }, '🔒 Só leitura por enquanto: para responder, use o WhatsApp da loja (a resposta aparece aqui em seguida).',
+        caixaResposta(chave, cliente),
+        h('p', { class: 'muted cv-rodape' }, '🔒 Só o franqueado e o admin respondem por aqui. A mensagem sai pelo WhatsApp da loja; o texto não fica em log nem auditoria.',
           msgs.some((m) => MIDIA[m.tipo]) ? h('span', null, ' Fotos e áudios vêm do WhatsApp na hora e não ficam guardados no painel.', TS.dica('Ao tocar em "Ver foto" ou "Ouvir áudio", o painel pede ao WhatsApp da loja naquele momento e mostra só para você. Nada fica guardado no servidor (decisão do dono). Para guardar, use "Baixar": o arquivo vai para o seu computador ou celular. Foto muito antiga pode não estar mais disponível no WhatsApp.')) : null));
       if (largo()) {
         // computador: a lista continua ao lado; só marca a conversa aberta

@@ -186,7 +186,26 @@
     return { fixos: f, pontuais: p, total, equilibrio: margem > 0 ? total / margem : null };
   }
 
-  const API = { EG, GRUPOS_META, CHA_TOTAL, TAXAS, PISO_DIAS_META, MIN_ATEND_PREMIACAO, ehTaxa, ehCentavo, contaFat, classeMeta, semItem, resumo, projecaoMes, metasIndividuais, divisoresMeta, pontoEquilibrio, diaDe, isoDe, diasNoMes };
+  /**
+   * Custo fixo de um mês (pedido do dono, 23/11/2026: "a despesa fixa acaba variando; manter o histórico com exatidão").
+   * O valor de Configurações é o PADRÃO (estimativa): vale para todo mês sem valor lançado — inclusive os meses passados,
+   * que acompanham o padrão quando ele muda. O valor REAL lançado no Resultado para um mês fica fixo naquele mês.
+   *   despesa  { nome, valor } (custo em R$ por mês de Configurações)
+   *   lancados { '<nome>': { 'AAAA-MM': { valor, por, em } } } (dados/<loja>/fixos-mes.json, src/fixosmes.js)
+   * → { valor, padrao, lancado: { valor, por, em } | null }  (DRE-MES-01)
+   */
+  function fixoDoMes(despesa, ym, lancados) {
+    const padrao = +(despesa && despesa.valor) || 0;
+    const l = lancados && despesa && lancados[despesa.nome] && lancados[despesa.nome][ym];
+    return l && Number.isFinite(+l.valor) && +l.valor >= 0 ? { valor: +l.valor, padrao, lancado: l } : { valor: padrao, padrao, lancado: null };
+  }
+  /** histórico de um custo fixo nos meses dados: [{ ym, valor, lancado }] e a média (DRE-MES-02) */
+  function historicoFixo(despesa, meses, lancados) {
+    const itens = (meses || []).map((ym) => { const f = fixoDoMes(despesa, ym, lancados); return { ym, valor: f.valor, lancado: f.lancado }; });
+    return { itens, media: itens.length ? itens.reduce((a, x) => a + x.valor, 0) / itens.length : null, nLancados: itens.filter((x) => x.lancado).length };
+  }
+
+  const API = { EG, GRUPOS_META, CHA_TOTAL, TAXAS, PISO_DIAS_META, MIN_ATEND_PREMIACAO, ehTaxa, ehCentavo, contaFat, classeMeta, semItem, resumo, projecaoMes, metasIndividuais, divisoresMeta, pontoEquilibrio, fixoDoMes, historicoFixo, diaDe, isoDe, diasNoMes };
   if (typeof module !== 'undefined' && module.exports) { module.exports = API; return; }
   TS.contas = API;
 })();
