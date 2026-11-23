@@ -462,6 +462,26 @@ test('ao subir reconecta só as lojas que já estavam conectadas; desconectar ap
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
+test('ao subir, reabre uma loja por vez (a segunda espera a vez): duas juntas deixavam a primeira lenta demais', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'zap-teste-'));
+  try {
+    const m = montar({ workDir: dir });
+    await conectado(m, 'goiania'); await conectado(m, 'torres');
+    await m.sessoes.fechar();
+    const n = montar({ workDir: dir, espacoRetomar: 45000 });
+    const voltaram = n.sessoes.retomar();
+    assert.strictEqual(voltaram.length, 2);
+    const [primeira, segunda] = voltaram;
+    assert.ok(n.clientes[primeira], 'a primeira abre na hora');
+    assert.strictEqual(n.clientes[segunda], undefined, 'a segunda ainda não abriu');
+    assert.strictEqual(n.sessoes.status(segunda).estado, 'iniciando');
+    const vez = n.agendados.find((a) => a.ms === 45000);
+    assert.ok(vez, 'a vez da segunda foi agendada para 45 s');
+    vez.fn();
+    assert.ok(n.clientes[segunda], 'na vez dela, abre');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
 test('sessão salva que o WhatsApp não aceita mais (pediu QR e ninguém leu) fica como "caiu" e não insiste ao subir', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'zap-teste-'));
   try {
