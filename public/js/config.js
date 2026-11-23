@@ -43,7 +43,8 @@
     const b = h('button', { type: 'button', class: cls }, rotulo);
     b.addEventListener('click', async () => {
       b.disabled = true; const txt = b.textContent; b.textContent = '…';
-      try { const msg = await fn(); if (msg) toast(TS.demo ? TS.DEMO_AVISO : msg); await carregar(); } catch (e) { toast(e.message, true); } finally { b.disabled = false; b.textContent = txt; }
+      // erro ao SALVAR abre a janela "Não foi salvo" (pedido do dono, 23/11/2026); outras ações (testar, atualizar…) seguem discretas
+      try { const msg = await fn(); if (msg) toast(TS.demo ? TS.DEMO_AVISO : msg); await carregar(); } catch (e) { if (/salvar|gravar/i.test(rotulo) && TS.naoSalvo) TS.naoSalvo(e); else toast(e.message, true); } finally { b.disabled = false; b.textContent = txt; }
     });
     return b;
   }
@@ -1031,17 +1032,21 @@
     const apCom = inp({ value: ap.com || '', placeholder: AP.com, maxlength: 120, 'aria-label': 'Apresentação com vendedora' });
     const apSem = inp({ value: ap.sem || '', placeholder: AP.sem, maxlength: 120, 'aria-label': 'Apresentação sem vendedora' });
     const lojaNome = l.nome || 'Tea Shop';
+    // "Sempre assinar como a equipe" (pedido do dono, 23/11/2026): mesmo com a vendedora favorita, vai o texto sem vendedora
+    const apEquipe = h('input', { type: 'checkbox', checked: ap.equipe ? true : null, 'aria-label': 'Sempre assinar como a equipe' });
     const prevCom = h('small', { class: 'muted cfg-apres-prev' }), prevSem = h('small', { class: 'muted cfg-apres-prev' });
     const prever = () => {
-      const m = { com: apCom.value, sem: apSem.value };
+      const m = { com: apCom.value, sem: apSem.value, equipe: apEquipe.checked };
+      apCom.disabled = apEquipe.checked; // com a equipe sempre, o modelo com vendedora não é usado
       const ok = (x) => TS.msgWpp.apresentacaoValida(x) != null;
-      prevCom.textContent = ok(apCom.value) ? 'Exemplo: ' + TS.msgWpp.apresentacao(m, 'Gabrielly', lojaNome) : 'Use só {vendedora} e {loja}, até 120 caracteres.';
+      prevCom.textContent = apEquipe.checked ? 'Exemplo (cliente com vendedora favorita): ' + TS.msgWpp.apresentacao(m, 'Gabrielly', lojaNome) + ' — sempre a equipe' : ok(apCom.value) ? 'Exemplo: ' + TS.msgWpp.apresentacao(m, 'Gabrielly', lojaNome) : 'Use só {vendedora} e {loja}, até 120 caracteres.';
       prevSem.textContent = ok(apSem.value) ? 'Exemplo: ' + TS.msgWpp.apresentacao(m, '', lojaNome) : 'Use só {vendedora} e {loja}, até 120 caracteres.';
       prevCom.classList.toggle('neg', !ok(apCom.value)); prevSem.classList.toggle('neg', !ok(apSem.value));
     };
-    apCom.addEventListener('input', prever); apSem.addEventListener('input', prever); prever();
+    apCom.addEventListener('input', prever); apSem.addEventListener('input', prever); apEquipe.addEventListener('change', prever); prever();
     const blocoApres = h('div', { class: 'cfg-apres' },
       h('h4', null, 'Apresentação nas mensagens ', TS.dica('O texto que entra no lugar de {apresentacao} nas campanhas, na Campanha Resumo diário do robô e no Hoje: quem está falando com o cliente. A vendedora é a que mais atende aquele cliente (primeiro nome). Vazio = o texto padrão.')),
+      h('label', { class: 'cfg-check-l cfg-apres-equipe' }, apEquipe, ' Sempre assinar como a equipe (não usar a vendedora que mais atende o cliente)', TS.dica('Ligado: todas as mensagens usam o texto "Sem vendedora", mesmo para quem tem uma vendedora favorita. Desligado: cada cliente recebe a mensagem em nome da vendedora que mais o atende.')),
       campo('Com a vendedora', apCom, 'Campos: {vendedora} e {loja}. Padrão: "' + AP.com + '" (sem "a" ou "o", serve para vendedora e vendedor).'), prevCom,
       campo('Sem vendedora', apSem, 'Quando o cliente não tem uma vendedora que mais o atende. Campo: {loja}.'), prevSem);
     const intervalo = inp({ type: 'number', min: 7, max: 90, value: l.wppIntervalo || 21, style: { width: '90px' } });
@@ -1053,7 +1058,7 @@
       h('div', { class: 'cfg-acoes' },
         h('button', { type: 'button', class: 'btn', onclick: () => { if (lista.length >= 12) return; lista.push({ nome: 'Nova mensagem', texto: 'Oi, {nome}! ' }); pintarW(); } }, '+ Mensagem'),
         h('button', { type: 'button', class: 'btn', onclick: () => { lista.splice(0, lista.length, ...(TS.WPP_PADRAO || []).map((m) => ({ ...m }))); pintarW(); } }, 'Voltar ao padrão'),
-        acao('Salvar mensagens', async () => { const apresentacao = { com: apCom.value.trim(), sem: apSem.value.trim() }; await api('PUT', `/lojas/${l.id}/wpp-modelos`, { modelos: lista, intervalo: +intervalo.value, apresentacao }); l.wppIntervalo = +intervalo.value; l.wppApresentacao = apresentacao.com || apresentacao.sem ? apresentacao : null; return 'Mensagens, apresentação e intervalo salvos.'; }, 'btn primary')));
+        acao('Salvar mensagens', async () => { const apresentacao = { com: apCom.value.trim(), sem: apSem.value.trim(), ...(apEquipe.checked ? { equipe: true } : {}) }; await api('PUT', `/lojas/${l.id}/wpp-modelos`, { modelos: lista, intervalo: +intervalo.value, apresentacao }); l.wppIntervalo = +intervalo.value; l.wppApresentacao = apresentacao.com || apresentacao.sem || apresentacao.equipe ? apresentacao : null; return 'Mensagens, apresentação e intervalo salvos.'; }, 'btn primary')));
     return sec0;
   }
 
@@ -1118,6 +1123,42 @@
         l.logo ? acao('Remover logo', async () => { await api('DELETE', `/lojas/${l.id}/logo`); return 'Logo removido.'; }, 'btn ghost-danger') : null));
   }
 
+  // ---- seletor de vendedores (pedido do dono, 23/11/2026: escolher entre os vendedores, nunca texto livre)
+  /** vendedores ativos da loja: venderam nos últimos 90 dias (os nomes vêm das vendas do AppNext) */
+  const DIAS_ATIVO = 90;
+  function vendedoresAtivos(l) {
+    const corte = Date.now() - DIAS_ATIVO * 864e5;
+    return (l.vendedores || []).filter((v) => v && v.nome && (!v.ultima || Date.parse(v.ultima) >= corte)).map((v) => v.nome.trim());
+  }
+  const bonitoV = (n) => String(n || '').trim().toLowerCase().split(/\s+/).map((p) => (/^(da|de|do|das|dos|e)$/.test(p) ? p : p.charAt(0).toUpperCase() + p.slice(1))).join(' ');
+  /**
+   * escolha de vários vendedores: os escolhidos viram etiquetas com ✕ e "+ Adicionar" lista só os ativos ainda fora.
+   * Grava como antes (nomes em minúsculas, como as regras comparam). Nome já salvo que não está mais ativo continua
+   * marcado, com a etiqueta "inativo", para não sumir sem querer.
+   */
+  function seletorVendedores(l, titulo, salvos, dica) {
+    const sel = [...new Set((salvos || []).map((x) => String(x).trim().toLowerCase()).filter(Boolean))];
+    const ativos = vendedoresAtivos(l);
+    const ativosLow = new Set(ativos.map((n) => n.toLowerCase()));
+    const box = h('fieldset', { class: 'cfg-vend-sel' });
+    const pintar = () => {
+      const add = h('select', { class: 'f-input cfg-vend-add', 'aria-label': `Adicionar a "${titulo}"` },
+        h('option', { value: '' }, ativos.length ? '+ Adicionar vendedor' : 'Sem vendedores com venda nos últimos 90 dias'),
+        ...ativos.filter((n) => !sel.includes(n.toLowerCase())).sort((a, b) => a.localeCompare(b)).map((n) => h('option', { value: n.toLowerCase() }, bonitoV(n))));
+      add.disabled = !ativos.length;
+      add.addEventListener('change', () => { if (add.value) { sel.push(add.value); sujo = true; pintar(); } });
+      box.replaceChildren(h('legend', null, titulo, dica ? TS.dica(dica) : null),
+        h('div', { class: 'chips cfg-vend-chips' }, ...(sel.length ? sel.map((n) => h('span', { class: 'chip on cfg-vend-chip' }, bonitoV(n),
+          ativosLow.has(n) ? null : h('small', { class: 'cfg-vend-inativo', title: `Sem venda nos últimos ${DIAS_ATIVO} dias ou fora da lista de vendedores. Continua valendo até você tirar.` }, ' inativo'),
+          h('button', { type: 'button', class: 'cfg-vend-x', 'aria-label': `Tirar ${bonitoV(n)}`, title: 'Tirar', onclick: () => { sel.splice(sel.indexOf(n), 1); sujo = true; pintar(); } }, '✕')))
+          : [h('small', { class: 'muted' }, 'Ninguém.')])),
+        add);
+    };
+    pintar();
+    box.valor = () => [...sel];
+    return box;
+  }
+
   // ---- regras de comissão
   function blocoRegras(l) {
     const R = TS.rules;
@@ -1149,12 +1190,12 @@
       const pisoMeta = inp({ type: 'number', min: 1, max: 31, step: 1, value: rg.pisoDiasMeta ?? TS.contas.PISO_DIAS_META, 'data-regra': 'pisoDiasMeta' });
       const bn = { acima120: pctIn(rg.bonus.acima120), bate: pctIn(rg.bonus.bate), abaixo: pctIn(rg.bonus.abaixo) };
       const rtAtivo = h('input', { type: 'checkbox', checked: rg.rateio.ativo || null });
-      const rtExc = inp({ value: (rg.rateio.exclui || []).join(', '), placeholder: 'nomes separados por vírgula' });
+      const rtExc = seletorVendedores(l, 'Não entram no rateio', rg.rateio.exclui, 'Vendedores que ficam fora da divisão igual do total de comissões: recebem a comissão deles mesmos.');
       const gjModo = h('select', { class: 'f-input' }, h('option', { value: 'proporcional', selected: rg.gorjeta.modo === 'proporcional' || null }, 'Proporcional ao faturamento no Espaço Gourmet'), h('option', { value: 'igual', selected: rg.gorjeta.modo === 'igual' || null }, 'Igual entre os vendedores ativos'));
       const gjPct = pctIn(rg.gorjeta.percentual);
       const ry = { loja: pctIn(rg.royalties.loja), mkt: pctIn(rg.royalties.mkt), eg: pctIn(rg.royalties.eg), egMkt: pctIn(rg.royalties.egMkt) };
-      const semMeta = inp({ value: (rg.semMeta || []).join(', '), placeholder: 'nomes separados por vírgula' });
-      const semCom = inp({ value: (rg.semComissao || []).join(', '), placeholder: 'nomes separados por vírgula' });
+      const semMeta = seletorVendedores(l, 'Vendedores sem meta individual', rg.semMeta, 'Não dividem a meta da loja (ex.: corporativo, gerente) e recebem a comissão mínima (a taxa "abaixo da meta") sobre o que venderam.');
+      const semCom = seletorVendedores(l, 'Não recebem comissão', rg.semComissao, 'Ficam sem comissão e sem premiação (a gorjeta continua). Ex.: corporativo, sócio.');
       sec.append(h('h3', null, 'Regras de comissão'),
         h('p', { class: 'muted' }, l.regras ? 'Regras próprias desta loja.' : `Usando o modelo "${R.MODELOS[modeloAuto].nome}" (padrão para esta loja). Ajuste e salve para ter regras próprias.`),
         h('div', { class: 'cfg-grid' }, campo('Modelo de partida', modelo, 'Trocar o modelo preenche os campos com os valores dele.'), campo('Tipo de comissão', modo)),
@@ -1169,17 +1210,16 @@
         h('div', { class: 'cfg-grid c3' }, campo('Loja abaixo da meta %', bn.abaixo), campo('Loja bateu a meta %', bn.bate), campo('Loja ≥ 120% %', bn.acima120)),
         h('div', { class: 'f-label', style: { marginTop: '14px' } }, 'Rateio'),
         h('label', { class: 'cfg-check-l' }, rtAtivo, ' Dividir o total de comissões igualmente entre os vendedores'),
-        campo('Não entram no rateio', rtExc),
+        rtExc,
         h('div', { class: 'f-label', style: { marginTop: '14px' } }, 'Gorjeta (taxa de serviço)'),
         h('div', { class: 'cfg-grid' }, campo('Como divide', gjModo), campo('% da taxa repassada aos vendedores', gjPct)),
         h('div', { class: 'f-label', style: { marginTop: '14px' } }, 'Royalties'),
         h('div', { class: 'cfg-grid c3' }, campo('Loja %', ry.loja), campo('Marketing %', ry.mkt), campo('Espaço Gourmet %', ry.eg), campo('EG marketing %', ry.egMkt)),
         campo('Divide a meta quem tem pelo menos (dias com venda no mês)', pisoMeta, 'Padrão 4. A meta da loja é dividida só entre quem vendeu em pelo menos esse número de dias no mês; quem cobriu um ou dois dias não diminui a meta dos outros (e continua recebendo a comissão pela faixa, comparada com a mesma meta individual dos demais). No mês em andamento o piso acompanha os dias corridos: até o dia 7 todos com venda dividem. Use 1 para voltar à regra antiga (qualquer venda divide).'),
-        campo('Vendedores sem meta individual', semMeta, 'Não dividem a meta da loja (ex.: corporativo, gerente) e recebem a comissão mínima (a taxa "abaixo da meta") sobre o que venderam.'),
-        campo('Não recebem comissão', semCom, 'Ficam sem comissão e sem premiação (a gorjeta continua). Ex.: corporativo, sócio.'),
+        semMeta,
+        semCom,
         h('div', { class: 'cfg-acoes' },
           acao('Salvar regras', async () => {
-            const lista = (i) => i.value.split(',').map((x) => x.trim().toLowerCase()).filter(Boolean);
             const regras = {
               modelo: modelo.value,
               divisaoMeta: { arom: lePct(dv.arom), puro: lePct(dv.puro), acess: lePct(dv.acess) },
@@ -1187,11 +1227,11 @@
               premiacao: { ativa: prAtiva.checked, valor: +prV.value, tkm: +prT.value, ipa: +prI.value, pma: +prP.value, minimo: +prMin.value, minAtend: Math.max(0, Math.round(+prAt.value || 0)) },
               pisoDiasMeta: Math.min(31, Math.max(1, Math.round(+pisoMeta.value || TS.contas.PISO_DIAS_META))),
               bonus: { abaixo: lePct(bn.abaixo), bate: lePct(bn.bate), acima120: lePct(bn.acima120) },
-              rateio: { ativo: rtAtivo.checked, exclui: lista(rtExc) },
+              rateio: { ativo: rtAtivo.checked, exclui: rtExc.valor() },
               gorjeta: { modo: gjModo.value, percentual: lePct(gjPct) },
               royalties: { loja: lePct(ry.loja), mkt: lePct(ry.mkt), eg: lePct(ry.eg), egMkt: lePct(ry.egMkt) },
-              semMeta: lista(semMeta),
-              semComissao: lista(semCom),
+              semMeta: semMeta.valor(),
+              semComissao: semCom.valor(),
             };
             await api('PUT', `/lojas/${l.id}/regras`, { regras });
             TS.recarregar && TS.recarregar(true);

@@ -309,7 +309,7 @@
       try {
         const r = await api('POST', 'orcamentos', { loja, ...o });
         Object.assign(o, r.ok); state.orcAberto = r.ok.id; sujo = false; toast(`Orçamento #${r.ok.numero} salvo.`); return r.ok;
-      } catch (e) { toast(e.message, true); return null; }
+      } catch (e) { TS.naoSalvo(e); return null; } // erro ao salvar: janela em destaque (pedido do dono, 23/11/2026)
     };
     const mudarSit = async (sit) => {
       let motivo = '';

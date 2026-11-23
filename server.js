@@ -1231,7 +1231,7 @@ app.post('/api/campanhas', express.json({ limit: '600kb' }), (req, res) => {
   if (r.ok) C.auditar(req.user, 'criou campanha', id, { loja: id, nome: r.ok.nome, clientes: r.ok.rodadas[0].lista.length, semMensagemParaComparar: r.ok.rodadas[0].lista.filter((x) => x.st === 'c').length });
   respCamp(res, r);
 });
-app.put('/api/campanhas/:id', express.json({ limit: '20kb' }), (req, res) => {
+app.put('/api/campanhas/:id', express.json({ limit: '40kb' }), (req, res) => {
   const id = lojaCamp(req);
   if (!id) return res.status(400).json({ erro: 'Escolha uma loja.' });
   const b = req.body || {};
@@ -1241,6 +1241,9 @@ app.put('/api/campanhas/:id', express.json({ limit: '20kb' }), (req, res) => {
   if (r.ok) {
     // mensagem ou critérios mudaram: a lista conferida para o robô deixa de valer (a tela confere de novo ao abrir a campanha)
     if (['mensagem', 'variacoes', 'filtros', 'porMotivo'].some((k) => k in b)) ZF.limparPreparo(id, req.params.id);
+    // clientes tirados à mão: auditoria só com quantos (nunca o CPF)
+    const nFora = (x) => ((x && x.filtros && x.filtros.fora) || []).length;
+    if (antes && nFora(antes) !== nFora(r.ok)) C.auditar(req.user, 'campanha: mudou os clientes tirados à mão', id, { loja: id, nome: r.ok.nome, tirados: nFora(r.ok), saiuDosPendentes: r.tirados || 0 });
     if (antes && !!antes.robo !== !!r.ok.robo) C.auditar(req.user, r.ok.robo ? 'campanha: ligou o envio pelo robô' : 'campanha: tirou do robô', id, { loja: id, nome: r.ok.nome });
     if (antes && !!antes.comparar !== !!r.ok.comparar) C.auditar(req.user, r.ok.comparar ? 'campanha: ligou o grupo de comparação (10% sem mensagem)' : 'campanha: desligou o grupo de comparação', id, { loja: id, nome: r.ok.nome });
   }
