@@ -116,6 +116,9 @@ if [ ! -L "$SIS/atualizar.pedido" ] && [ -f "$SIS/atualizar.pedido" ]; then
     if docker compose up -d --build >>"$LOG" 2>&1; then
       status ok "Atualizado para a versão $(G rev-parse --short HEAD)"
       docker image prune -f >>"$LOG" 2>&1
+      # cache de montagem com mais de 7 dias (pedido do dono, 23/11/2026: chegou a 6,3 GB). O da última semana fica:
+      # a próxima atualização continua rápida. Não mexe no painel nem nos dados.
+      docker builder prune -f --filter until=168h >>"$LOG" 2>&1
     else
       echo "$(agora) docker compose falhou; voltando git para $ANTES" >>"$LOG"
       G reset --hard "$ANTES" >>"$LOG" 2>&1 || true
