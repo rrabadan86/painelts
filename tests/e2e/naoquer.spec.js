@@ -3,7 +3,7 @@
 // mostra a marca "🚫 não quer mensagens" no topo e na lista.
 const { test, expect } = require('./_base');
 
-test('NAOQUER-02: conversa → Ver cliente → "Não quer mensagens": sem erro, janela explica e a conversa ganha a marca', async ({ page }) => {
+test('NAOQUER-02: conversa → Ver cliente → "Não quer mensagens": sem erro, janela explica, a conversa continua aberta e ganha a marca', async ({ page }, info) => {
   const erros = [];
   page.on('pageerror', (e) => erros.push(e.message));
   page.on('dialog', (d) => d.accept());
@@ -25,6 +25,13 @@ test('NAOQUER-02: conversa → Ver cliente → "Não quer mensagens": sem erro, 
   await janela.getByRole('button').first().click();
   // a marca na conversa (por baixo da ficha, que continua aberta) e na lista
   await expect(page.locator('.cv-conversa .cv-naoquer')).toBeAttached();
+  // no celular a conversa fica no lugar da lista: fechar o aviso NÃO fecha a conversa (antes fechava); fecha a ficha e volta
+  if (info.project.name === 'celular') {
+    await page.goBack(); // o "voltar" do celular fecha a ficha, não a conversa
+    await expect(page.locator('.camada-cheia')).toHaveCount(0);
+    await expect(page.locator('.cv-conversa .cv-naoquer')).toBeVisible();
+    await page.getByRole('button', { name: '‹ Voltar' }).click();
+  }
   await expect(lista.locator('.cv-item', { hasText: nome }).first()).toContainText('não quer');
   expect(erros).toEqual([]);
 });
