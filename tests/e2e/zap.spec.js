@@ -1,6 +1,6 @@
 // Robô do WhatsApp das campanhas na apresentação: o cartão em Configurações → loja → Mensagens e a faixa em Campanhas
 // aparecem, respondem aos botões com respostas simuladas e NADA sai para as rotas de verdade (nada é conectado nem enviado).
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_base');
 
 test.describe('robô do WhatsApp', () => {
   let erros, pedidos;

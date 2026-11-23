@@ -1,4 +1,4 @@
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_base');
 
 // Consulta pública de CNPJ/CEP (BrasilAPI). Na apresentação a resposta é fictícia: nada sai para a internet.
 test('Orçamento: CNPJ novo busca a empresa na Receita e preenche o que está vazio', async ({ page }) => {

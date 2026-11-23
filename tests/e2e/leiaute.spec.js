@@ -1,6 +1,6 @@
 // Leiaute de base: quadros de número com estado, cartões sem sombra, texto de apoio numa frase,
 // avisos do Início em lista agrupada, ajustes do Pedido em linha e topo do Resultado.
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_base');
 
 const abrir = async (page) => { await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS.db && TS.state.loja && TS.state.loja !== 'todas'); };
 const ir = (page, tela) => page.evaluate((t) => { location.hash = '#' + t; }, tela);

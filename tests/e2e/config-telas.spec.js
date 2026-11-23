@@ -1,4 +1,4 @@
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_base');
 
 // Configurações → Usuários: todas as telas agrupadas como no menu, padrão de cada perfil e regras fixas travadas
 test('Usuários: telas agrupadas como no menu, regras fixas travadas e padrão do gerente', async ({ page }) => {

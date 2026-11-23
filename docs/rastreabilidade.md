@@ -535,6 +535,9 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 | GRAF-02 | Gráfico com a densidade de pixels errada (só o canto desenhado) se refaz ao voltar do segundo plano, ao girar e quando a densidade muda | `components.js` `TS.ajustarGraficos` | `graficos.spec` | ✅ |
 | PORTA-01…02 | Testes que sobem o servidor sorteiam a porta numa faixa só deles, pulando as portas que o `fetch` recusa (4045, 6000…: "o servidor de teste não subiu em 90 s") | `tests/unit/_porta.js` | `portas-teste.test` PORTA-01…02 | ✅ |
 | MATRIZ-01…06 | A matriz sempre em dia (decisão do dono, 23/11/2026): códigos únicos; teste citado existe; código de regra no nome de um teste está na matriz; ✅ sempre com teste; resumo em números contado pelas linhas; `npm run testar-alteracao` roda primeiro os testes das regras dos arquivos mexidos e avisa as sem teste; o hook lembra de atualizar a matriz | `scripts/matriz.js`; `scripts/testar-alteracao.js`; `.claude/hooks/lembrar-docs.js` | `matriz.test` MATRIZ-01…06 | ✅ |
+| LARG-01 | Nada rola para o lado dentro da tela (tabela, grade, cartão) no computador, a 1366 e a 1100 px, e no celular; só as faixas de abas e o submenu rolam de propósito. As que já rolavam em 23/11/2026 ficam numa lista (`ROLA_CONHECIDO`) que falha também quando uma delas deixa de rolar (achado G-01) | `telas.spec` `quemRolaDeLado`; `styles.css` (cabeçalho que quebra a linha em `.conf-t`, `.cv-t`, `.rfm-t`) | `telas.spec` LARG-01 | ✅ (com as exceções do achado G-01) |
+| CLIQUE-VISTA-01 | Todo clique dos testes de tela (apresentação, perfis e datas) é num elemento à vista: se a página ou um bloco precisou rolar para o lado para mostrar o botão, o teste falha. O Playwright rola sozinho e escondia o problema: o "✕ Tirar" da campanha, o "Editar" de Usuários no celular e o "Incluir na devolução" da nota | `tests/e2e/_base.js` (todos os specs importam dele); `config.js` (Usuários em cartão no celular); `precos.js` (nota com `est-t-larga`) | `config-telas.spec`, `lotes-envasados.spec`, `campanha-fora.spec` (e todos os testes de tela) | ✅ |
+| CLIQUE-VISTA-02 | Todo spec de tela (e2e, perfis, datas) importa `test`/`expect` de `tests/e2e/_base.js`, senão passaria sem a conferência do clique (fora `aplicativo.spec`, que abre o navegador com perfil próprio) | `tests/e2e/_base.js` | `base-testes.test` CLIQUE-VISTA-02 | ✅ |
 
 ---
 
@@ -611,6 +614,10 @@ Todos os da lista A foram conferidos no código, um por um.
 - **Decidido e corrigido (23/11/2026, LUCRO-01):** antes, "Lucro bruto" do mês tinha dois números — Rentabilidade R$ 10.659 (60,2%) e Resultado R$ 7.339 (41,4%), este perto do "Lucro sem fixos" da Rentabilidade; é diferença de definição/nome (mexer muda o Resultado e a exportação ao contador).
 - **Em aberto:** `reajuste.spec` (celular) falhou 2 vezes na bateria completa local (o assunto digitado voltou ao texto padrão); sozinho e sob carga passou 26 vezes. Causa não encontrada.
 
+### G. Tabelas que rolam de lado (LARG-01, 23/11/2026)
+- **G-01 · Em aberto (lista `ROLA_CONHECIDO` em `telas.spec`):** precisam de redesenho (juntar informações na célula ou virar cartão). Computador a 1100 px: Resultado → "Mês a mês" (13 colunas, +260 px). Celular: Resultado → "Resultado do mês" e "Mês a mês"; Comparativos → "Sua loja × rede"; Promoção → "Lucro da promoção"; Clientes → Indicadores → "Grupos de clientes (RFM)" e "Retenção por safra"; Escala → grade do mês.
+- **Corrigido junto:** Conferência → "Sobras e faltas de caixa" e Resultado → "Compras × vendas mês a mês" (cabeçalho que quebra a linha, cabem a 1100 px); Configurações → Usuários no celular (cada usuário um cartão, "Editar" ao lado do nome); nota de entrada (a coluna "Lote · validade" com "Incluir na devolução" ficava cortada).
+
 ### E. Revisão dos dias 18 e 19/11 (5 revisores por área; corrigido com teste no mesmo PR)
 | Código | Achado | Onde | Situação |
 |---|---|---|---|
@@ -683,8 +690,8 @@ Contado pelas linhas da matriz (`node scripts/matriz.js --resumo`; o guardião c
 | Clientes, fidelidade, WhatsApp e lista de espera (CLI) | 44 | 32 | 8 | 4 |
 | Orçamento (ORC) | 7 | 5 | 1 | 1 |
 | Checklist, fechamento e avisos (OPE) | 13 | 6 | 3 | 4 |
-| Estrutura do painel e atualização (APP) | 39 | 21 | 12 | 6 |
-| **Total** | **436** | **205 (47%)** | **121 (28%)** | **110 (25%)** |
+| Estrutura do painel e atualização (APP) | 42 | 24 | 12 | 6 |
+| **Total** | **439** | **208 (47%)** | **121 (28%)** | **110 (25%)** |
 <!-- resumo:fim -->
 
 ## Próximas etapas

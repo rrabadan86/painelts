@@ -1,6 +1,6 @@
 // Visão do dono: "Sua semana" e aviso de validade no Início, lojas lado a lado com "Todas as lojas",
 // linha de perdas no Resultado e meta de hoje dividida pelas horas da escala.
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_base');
 
 const abrir = async (page) => { await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS.db && TS.state.loja && TS.state.loja !== 'todas' && TS.visaoDono); };
 const ir = (page, tela) => page.evaluate((t) => { location.hash = '#' + t; }, tela);

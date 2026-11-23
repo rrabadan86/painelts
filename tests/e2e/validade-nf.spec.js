@@ -1,5 +1,5 @@
 // VAL-NF-01: na Validade, o "NF nº" do lote abre a janela da nota de entrada por cima da tela (a mesma de Estoque → Notas fiscais)
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_base');
 
 test('VAL-NF-01: Validade → clicar no "NF …" do lote abre a nota de entrada sem sair da tela', async ({ page }) => {
   const erros = [];

@@ -1,4 +1,4 @@
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_base');
 
 const abrir = async (page, tela, antes) => {
   await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS.db);

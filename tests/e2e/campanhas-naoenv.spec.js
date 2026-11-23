@@ -1,6 +1,6 @@
 // Clientes → Campanhas, aba "Não enviadas" (pedido do dono, 22/11/2026): quem ficou sem a mensagem em todas as campanhas,
 // com o motivo, e "Voltar para a fila". Na apresentação há uma campanha de exemplo do robô com alguns pulados (nada é gravado).
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_base');
 
 test('CAMP-NAOENV: lista de campanhas em tabela, aba "Não enviadas" com motivos e "Voltar para a fila"', async ({ page }) => {
   const erros = [];

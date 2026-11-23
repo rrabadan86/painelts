@@ -1,4 +1,4 @@
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_base');
 test('voltar do celular fecha a janela por cima e fica na mesma tela', async ({ page }, info) => {
   test.skip(info.project.name !== 'computador');
   await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS.db);

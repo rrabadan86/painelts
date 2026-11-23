@@ -1,6 +1,6 @@
 // Indicadores que não prometem mais do que medem: grupo de comparação das campanhas, classe com as margens da loja,
 // custo na data da venda, recompra com prazo inteiro e "até agora" no mês em andamento.
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_base');
 
 const abrir = async (page, tela) => {
   await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS.db);

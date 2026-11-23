@@ -3210,6 +3210,8 @@ body.pg-semfiltros .sidebar, body.pg-semfiltros #btnFiltros { display: none; }
 .conf-abas { margin-bottom: 4px; flex-wrap: wrap; }
 .conf-sub { display: block; font-weight: 400; line-height: 1.35; white-space: normal; }
 .conf-t td.wrap { max-width: 420px; }
+/* cabeçalho que quebra a linha: Conferência (Sobras e faltas) e Compras × vendas cabem a 1100 px sem rolar de lado */
+.conf-t th, .cv-t th, .rfm-t th { white-space: normal; vertical-align: bottom; }
 .conf-t .badge + .conf-sub { margin-top: 3px; }
 .conf-rec { margin-left: 6px; }
 .conf-nota { margin: 10px 2px 0; font-size: 13px; }
@@ -3799,3 +3801,15 @@ details.inv-p2-como ol { margin-top: 8px; }
 .cp-fora ul { list-style: none; margin: 6px 0 0; padding: 0; }
 .cp-fora li { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line); min-width: 0; }
 .cp-fora li span { min-width: 0; overflow-wrap: anywhere; }
+
+/* Configurações → Usuários no celular: cada usuário é um cartão, com "Editar" ao lado do nome (antes ficava 441 px à direita, CLIQUE-VISTA-01) */
+@media (max-width: 760px) {
+  .cfg-t thead { display: none; }
+  .cfg-t, .cfg-t tbody { display: block; }
+  .cfg-t tbody > tr:not(.cfg-edit-row) { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+  .cfg-t tbody > tr:not(.cfg-edit-row) > td { display: block; padding: 0; border: 0; white-space: normal; min-width: 0; grid-column: 1; }
+  .cfg-t tbody > tr:not(.cfg-edit-row) > td.cfg-t-acao { grid-column: 2; grid-row: 1 / span 2; align-self: start; }
+  .cfg-t td[data-rot]::before { content: attr(data-rot) ': '; color: var(--muted); }
+  .cfg-t tbody > tr:not(.cfg-edit-row) > td { background: transparent !important; }
+  .cfg-t tbody > tr.cfg-edit-row, .cfg-t tbody > tr.cfg-edit-row > td { display: block; }
+}

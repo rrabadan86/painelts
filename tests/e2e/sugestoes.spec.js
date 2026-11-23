@@ -1,4 +1,4 @@
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_base');
 
 // ⭐ Sugestões da equipe: marcar na tela própria, revisar no Pedido ("Não pedir" com motivo, registrar) e a resposta voltar
 test('Sugestões: marcar produto, justificar quando tem na loja e revisar no Pedido', async ({ page }) => {

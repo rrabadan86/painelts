@@ -1,7 +1,7 @@
 // Clientes → Conversas na apresentação: lista ligada aos clientes, abas com contagem, conversa com a marca do robô e
 // só leitura. Computador: lista à esquerda e conversa à direita; celular: a conversa no lugar da lista com "‹ Voltar".
 // Nada é lido do WhatsApp nem gravado (rotas /api/demo/conversas).
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_base');
 
 async function abrirTela(page) {
   await page.goto('/apresentacao');

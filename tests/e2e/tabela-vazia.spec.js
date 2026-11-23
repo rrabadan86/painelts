@@ -1,4 +1,4 @@
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_base');
 
 // Lista vazia: a frase ocupa a largura da tabela em qualquer tela (no celular saía uma letra por linha na tabela de
 // devoluções dos Créditos, porque a regra "última coluna estreita" também pegava a célula da frase)

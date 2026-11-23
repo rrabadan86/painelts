@@ -1,7 +1,7 @@
 // Peças do redesenho (decisão do dono, 22/11/2026: o visual limpo do protótipo do Início vale para o painel todo).
 // Monta as peças compartilhadas (components.js) numa página da apresentação e confere: sem rolagem para o lado,
 // etiquetas com contraste ≥ 4,5:1, botões com 44 px no celular, teclado e kpi sem barra lateral.
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_base');
 
 const montar = (page) => page.evaluate(() => {
   const ir = (x) => { location.hash = x; };

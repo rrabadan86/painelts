@@ -1,4 +1,4 @@
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_base');
 
 // Vendas → Conferência (apresentação): caixa × painel, cancelados e saúde dos dados, no computador e no celular
 async function abrir(page) {

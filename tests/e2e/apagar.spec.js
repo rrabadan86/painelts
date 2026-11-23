@@ -1,4 +1,4 @@
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_base');
 const path = require('path');
 
 // Resultado → A pagar (calendário de vencimentos com previsão de entrada) e "Exportar para o contador" (planilha do mês fechado).

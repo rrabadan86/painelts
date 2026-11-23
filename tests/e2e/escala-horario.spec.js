@@ -1,4 +1,4 @@
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_base');
 
 // A escala respeita o horário de funcionamento mesmo quando não é "redondo" (ex.: abre 09:40):
 // alguém começa na hora exata da abertura, ninguém começa antes nem sai depois do fechamento

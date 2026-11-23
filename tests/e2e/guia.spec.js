@@ -1,4 +1,4 @@
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_base');
 
 // Configuração guiada da loja (apresentação): os 4 acessos em passos, atalho nas Configurações e lembrete no Início. Nada é gravado.
 async function abrir(page, hash) {

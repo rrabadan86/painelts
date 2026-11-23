@@ -1,7 +1,7 @@
 // Redesenho de 22/11/2026 (linguagem do protótipo do Início, decisão do dono) nas telas de Produtos e Estoque:
 // RD-EST-01 cartão-herói em Rentabilidade, Preços, Site e Validade, com os números levando à aba deles
 // RD-EST-02 sem rolagem para o lado nas tabelas do Estoque, Rentabilidade, Validade e Site (1100 px e letra mais larga)
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_base');
 
 async function abrir(page, hash) {
   await page.goto('/apresentacao');

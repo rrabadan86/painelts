@@ -1,4 +1,4 @@
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_base');
 
 test('IA: Pergunte ao painel abre, consulta as vendas e responde (simulada na apresentação)', async ({ page }, info) => {
   await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS.db);

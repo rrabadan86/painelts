@@ -1,6 +1,6 @@
 // Pedido do dono (23/11/2026): os filtros não se perdiam só por trocar de loja ou de tela. Trocar de loja mantém o período
 // e os filtros que existem na loja nova (grupo, categoria, produto); trocar de tela também.
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_base');
 
 test('FILTROS-LOJA: trocar de loja e de tela mantém o período e o grupo escolhidos', async ({ page }) => {
   await page.goto('/apresentacao');

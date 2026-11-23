@@ -2,7 +2,7 @@
 // O servidor da apresentação gera os dados fictícios até o "hoje" do projeto (PAINEL_HOJE_TESTE, playwright.datas.config.js)
 // e o relógio do navegador fica parado no mesmo instante: nada de erro de JavaScript, "NaN/undefined/null/Infinity", rolagem
 // para o lado ou projeção/meta absurda. Falha que só aparece num dia do calendário cai aqui (e na rodada noturna), não na loja.
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('../e2e/_base');
 
 const TELAS = [
   ['inicio', 'Início'], ['resumo', 'Resumo'], ['comissionamento', 'Comissionamento'], ['estoque', 'Estoque'],

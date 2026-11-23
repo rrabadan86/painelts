@@ -1,4 +1,4 @@
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_base');
 
 // Configurações → Lojas: nenhuma seção pode escrever "null"/"undefined" na tela (ex.: linha opcional vazia em replaceChildren)
 test('Configurações: lojas em tabela; cada loja abre e todas as seções aparecem sem "null" ou "undefined"', async ({ page }) => {

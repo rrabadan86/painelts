@@ -1,4 +1,4 @@
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_base');
 
 // Rendimento da equipe (venda por hora trabalhada + ficha de cada pessoa) e retorno do programa de fidelidade, na apresentação
 const TEXTO_RUIM = /(^|[\s>(\d])(null|undefined|NaN|\[object Object\])(?=$|[\s<).,])/m;
