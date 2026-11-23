@@ -12,6 +12,9 @@ const path = require('path');
 const C = require('./config');
 
 const YM = /^20\d\d-(0[1-9]|1[0-2])$/;
+/** linhas CALCULADAS do Resultado que também aceitam o valor real do mês (pedido do dono, 23/11/2026: "eu não consigo editar
+ *  Simples Nacional? Royalties? MKT? Deveria poder"): o valor lançado substitui o calculado pelo % naquele mês (DRE-CALC-01) */
+const CALC = { '@simples': 'Simples Nacional', '@maquininha': 'Maquininha', '@royalties': 'Royalties', '@marketing': 'Marketing' };
 const MAX_VALOR = 10000000;
 const arq = (id) => path.join(C.pastaLoja(id), 'fixos-mes.json');
 
@@ -34,7 +37,7 @@ function validar(b, fixos, hoje) {
   const ym = String((b && b.ym) || '');
   if (!YM.test(ym)) return { erro: 'Mês inválido.' };
   if (ym > ymMais(String(hoje || '').slice(0, 7), 12)) return { erro: 'Só dá para lançar até 12 meses à frente.' };
-  if (!nome || !(fixos || []).some((x) => x && x.tipo === 'mes' && x.nome === nome)) return { erro: 'Esse custo fixo não existe mais em Configurações. Atualize a página.' };
+  if (!nome || (!CALC[nome] && !(fixos || []).some((x) => x && x.tipo === 'mes' && x.nome === nome))) return { erro: 'Esse custo fixo não existe mais em Configurações. Atualize a página.' };
   if (b.padrao) return { ok: { nome, ym, valor: null } };
   const bruto = b.valor;
   const valor = typeof bruto === 'number' ? bruto : Number(String(bruto ?? '').trim());
@@ -61,4 +64,4 @@ function lancar(id, b, fixos, por, hoje = C.diaSP()) {
   return { ok: d, valor };
 }
 
-module.exports = { ler, validar, lancar, YM };
+module.exports = { ler, validar, lancar, YM, CALC };

@@ -4,7 +4,7 @@
 (function () {
   const { h, fmt, state } = TS;
 
-  const novo = () => ({ fat: 0, fatCusto: 0, custo: 0, imp: 0, maq: 0, roy: 0, com: 0, varPct: 0, gorjeta: 0, gorjImp: 0, gorjRoy: 0, royEg: 0, desc: 0, dias: new Set(), eg: 0 });
+  const novo = () => ({ fat: 0, fatCusto: 0, custo: 0, imp: 0, maq: 0, roy: 0, com: 0, varPct: 0, gorjeta: 0, gorjImp: 0, gorjRoy: 0, royEg: 0, royS: 0, mkt: 0, desc: 0, dias: new Set(), eg: 0 });
   /** soma uma linha de venda nas contas do Resultado (a mesma regra para o mês e para um intervalo de dias) */
   function somarLinha(m, i, M) {
     const db = TS.db, I = TS.rules.ids, D = M.ded;
@@ -22,7 +22,7 @@
     m.desc += TS.descontos([i]);
     const dd = D.deducoes(i);
     if (ehEg) m.royEg += dd.roy;
-    m.imp += dd.imp; m.maq += dd.maq; m.roy += dd.roy; m.com += dd.com;
+    m.imp += dd.imp; m.maq += dd.maq; m.roy += dd.roy; m.com += dd.com; m.royS += dd.royS || 0; m.mkt += dd.mkt || 0;
     m.varPct += dd.outros.reduce((a, v, k) => a + (D.OUTROS[k].tipo === 'pct' ? v : 0), 0);
     const c = M.custo(i);
     if (c != null) { m.fatCusto += vt; m.custo += c; }
@@ -77,7 +77,15 @@
       m.gorjRoy = m.gorjeta * (m.eg ? m.royEg / m.eg : m.fat ? m.roy / m.fat : 0);
       const royItens = (opts.descRoy && opts.descRoy[ym]) || [];
       m.royCalc = m.roy; m.royDesc = royItens.reduce((a, x) => a + (+x.valor || 0), 0); m.royItens = royItens;
-      m.roy = m.royCalc - m.royDesc;
+      // valor REAL do mês lançado no Resultado para as linhas calculadas (DAS, extrato, boleto): substitui o calculado (DRE-CALC-01)
+      m.lanc = lancCalc(D, ym);
+      m.impCalc = m.imp; m.maqCalc = m.maq;
+      if (m.lanc.simples) m.imp = m.lanc.simples.valor;
+      if (m.lanc.maquininha) m.maq = m.lanc.maquininha.valor;
+      // royalties: o boleto lançado já vem com os descontos da franquia; sem ele, calculado − descontos do mês
+      m.royPago = m.lanc.royalties ? m.lanc.royalties.valor : m.royS - m.royDesc;
+      m.mktPago = m.lanc.marketing ? m.lanc.marketing.valor : m.mkt;
+      m.roy = m.royPago + m.mktPago;
       const impostos = m.imp + m.maq + m.roy;
       const recLiq = m.fat - impostos;
       // perdas do mês (chá vencido ainda no estoque + faltas do inventário, a custo): entram depois do custo dos produtos
@@ -103,8 +111,12 @@
     const k = PM && m.fat > 0 ? PM.proj / m.fat : m.diasMes / m.decorridos;
     const x = (v) => (v == null ? null : v * k);
     const comP = D && D.comProjetada ? D.comProjetada(m.ym, k) : null;
-    const p = { ...m, parcial: false, projecao: true, fat: m.fat * k, fatCusto: m.fatCusto * k, custo: m.custo * k, imp: m.imp * k, maq: m.maq * k, roy: (m.royCalc ?? m.roy) * k - (m.royDesc || 0), royCalc: (m.royCalc ?? m.roy) * k, com: comP != null ? comP : m.com * k, varPct: m.varPct * k, projMes: PM, fator: k,
+    const p = { ...m, parcial: false, projecao: true, fat: m.fat * k, fatCusto: m.fatCusto * k, custo: m.custo * k, imp: m.lanc && m.lanc.simples ? m.imp : m.imp * k, maq: m.lanc && m.lanc.maquininha ? m.maq : m.maq * k, impCalc: (m.impCalc ?? m.imp) * k, maqCalc: (m.maqCalc ?? m.maq) * k, royCalc: (m.royCalc ?? m.roy) * k, royS: (m.royS || 0) * k, mkt: (m.mkt || 0) * k, com: comP != null ? comP : m.com * k, varPct: m.varPct * k, projMes: PM, fator: k,
       gorjeta: m.gorjeta * k, gorjImp: m.gorjImp * k, gorjRoy: m.gorjRoy * k, desc: m.desc * k, eg: m.eg * k, cmv: x(m.cmv) };
+    // o lançado vale como está (não cresce com as vendas); o calculado acompanha a projeção
+    p.royPago = m.lanc && m.lanc.royalties ? m.royPago : p.royS - (m.royDesc || 0);
+    p.mktPago = m.lanc && m.lanc.marketing ? m.mktPago : p.mkt;
+    p.roy = p.royPago + p.mktPago;
     p.impostos = p.imp + p.maq + p.roy;
     p.recLiq = p.fat - p.impostos;
     p.lucroBruto = p.cmv == null ? null : p.fat - p.cmv;
@@ -122,17 +134,32 @@
       + `Se a taxa entrasse na base: faturamento ${b(m.fat + m.gorjeta)} · Simples ${b(m.imp + m.gorjImp)} (+${b(m.gorjImp)}) · royalties calculados ${b((m.royCalc ?? m.roy) + m.gorjRoy)} (+${b(m.gorjRoy)}).\n\n`
       + 'Compare os royalties com o boleto da franquia. Sobre o imposto, confirme com o contador como a loja registra a taxa.';
   }
+  /** linhas calculadas que aceitam o valor real do mês (DRE-CALC-01): chave → rótulo e o calculado do mês */
+  const CALC = { simples: ['Simples Nacional', (m) => m.impCalc], maquininha: ['Maquininha', (m) => m.maqCalc], royalties: ['Royalties', (m) => (m.royS || 0) - (m.royDesc || 0)], marketing: ['Marketing', (m) => m.mkt] };
+  function lancCalc(D, ym) {
+    const out = {};
+    for (const k of Object.keys(CALC)) { const l = D && D.LANC && D.LANC['@' + k] && D.LANC['@' + k][ym]; out[k] = l && Number.isFinite(+l.valor) && +l.valor >= 0 ? { valor: +l.valor, por: l.por, em: l.em } : null; }
+    return out;
+  }
+  /** ⓘ da linha calculada: a regra, o calculado e o lançado (com a diferença, para conferir com o DAS, o extrato e o boleto) */
+  function dicaCalc(m, k, base) {
+    const l = m.lanc && m.lanc[k], calc = CALC[k][1](m);
+    let t = base + '.';
+    if (k === 'royalties' && m.royDesc) t += `\n\nCalculado ${fmt.brl(m.royS)} − descontos da franquia ${fmt.brl(m.royDesc)}:\n` + m.royItens.map((x) => `  · ${x.texto}: ${fmt.brl(x.valor)}`).join('\n');
+    if (l) t += `\n\n✎ Valor real lançado: ${fmt.brl(l.valor)}${l.por ? ` por ${l.por}` : ''}. Calculado pelo %: ${fmt.brl(calc)} (diferença ${fmt.brl(l.valor - calc)}).`;
+    return t + '\n\nClique no valor de um mês para lançar o valor real (DAS, extrato da maquininha, boleto da franquia).';
+  }
   /** ⓘ dos royalties: calculado − descontos da franquia = pago, com a origem de cada desconto */
   function dicaRoy(m) {
     const base = 'Pelas regras da loja: loja + marketing; Espaço Gourmet: EG + marketing EG, sobre o faturamento sem a taxa de serviço.';
-    if (!m.royDesc) return base + ' Neste mês não há desconto da franquia lançado nos royalties (tela Créditos com a franquia).';
+    if (!m.royDesc && !(m.lanc && (m.lanc.royalties || m.lanc.marketing))) return base + ' Royalties e marketing estão separados nas duas linhas de baixo: clique no valor de um mês para lançar o valor real do boleto.';
     const b = fmt.brl;
-    return `${base}\n\nCalculado sobre as vendas: ${b(m.royCalc)}\nDescontos da franquia neste mês: −${b(m.royDesc)}\n`
-      + m.royItens.map((x) => `  · ${x.texto}: ${b(x.valor)}`).join('\n') + `\nPago: ${b(m.roy)}`;
+    return `${base}\n\nCalculado sobre as vendas: ${b(m.royCalc)}${m.royDesc ? `\nDescontos da franquia neste mês: −${b(m.royDesc)}\n` + m.royItens.map((x) => `  · ${x.texto}: ${b(x.valor)}`).join('\n') : ''}`
+      + `${m.lanc && m.lanc.royalties ? `\nRoyalties: valor real lançado ${b(m.royPago)}` : ''}${m.lanc && m.lanc.marketing ? `\nMarketing: valor real lançado ${b(m.mktPago)}` : ''}\nPago: ${b(m.roy)}`;
   }
   // linhas da DRE: [rótulo, chave/função, tipo] tipo: 'sub' (subtotal), 'tot' (resultado), 'menos', 'info'
   /** grupos: [{ id, nome, itens:[índice em fixosMes] }] — cada categoria vira uma linha com o subtotal, que abre os custos */
-  const LINHAS = (grupos, abertos, temDescRoy) => [
+  const LINHAS = (grupos, abertos) => [
     // receita separada em Loja e Espaço Gourmet, com a taxa de serviço (os 10%) identificada (pedido do dono, 23/11/2026; RES-TAXA-01)
     ['Faturamento total', (m) => m.fat + m.gorjeta, 'bruto', (m) => dicaTotal(m)],
     ['Loja', (m) => m.fat - m.eg, 'parte', 'Vendas da loja, sem o Espaço Gourmet (com os descontos, sem entrega e sem itens a R$ 0,01)'],
@@ -142,13 +169,11 @@
     ['= Faturamento', (m) => m.fat, 'base', 'Faturamento da loja: tudo o que foi vendido, com Espaço Gourmet e vendas sem vendedor, já com os descontos; sem taxa de serviço e entrega e sem itens a R$ 0,01 (resgates e brindes). É o mesmo número do Resumo e do Início'],
     ['− Custo dos produtos', (m) => m.cmv, 'menos', 'Custo dos produtos vendidos (chá pelo kg + saco e etiquetas). Mês passado: o custo que cada produto tinha na data da venda (notas de compra e histórico de custos do painel; antes do primeiro custo conhecido vale o mais antigo, estimado). Mês em andamento: o custo de hoje do AppNext. Vendas sem custo no estoque entram pelo mesmo % das outras (estimado)'],
     ['= Lucro bruto', (m) => m.lucroBruto, 'sub', 'Faturamento − custo dos produtos vendidos. A mesma conta da Rentabilidade (aqui as vendas sem custo cadastrado entram pelo mesmo % de custo das outras).'],
-    ['− Simples Nacional', (m) => m.imp, 'menos', '% do Simples (Configurações → Lojas → Estoque e margem) sobre as vendas'],
-    ['− Maquininha', (m) => m.maq, 'menos', 'Taxa média da maquininha sobre as vendas'],
+    ['− Simples Nacional', (m) => m.imp, 'menos', (m) => dicaCalc(m, 'simples', '% do Simples (Configurações → Lojas → Estoque e margem) sobre as vendas'), null, null, 'simples'],
+    ['− Maquininha', (m) => m.maq, 'menos', (m) => dicaCalc(m, 'maquininha', 'Taxa média da maquininha sobre as vendas'), null, null, 'maquininha'],
     ['− Royalties + marketing', (m) => m.roy, 'menos', (m) => dicaRoy(m)],
-    ...(temDescRoy ? [
-      ['calculado nas vendas', (m) => m.royCalc, 'filho', 'Royalties + marketing pelas regras da loja (loja + marketing; Espaço Gourmet: EG + marketing EG), sobre o faturamento sem a taxa de serviço'],
-      ['descontos da franquia', (m) => (m.royDesc ? -m.royDesc : null), 'filho', 'Devoluções compensadas nos royalties e prêmios de fidelidade lançados como desconto nos royalties, pelo mês de referência escolhido em Créditos com a franquia. Passe o mouse em "Royalties + marketing" para ver cada um'],
-    ] : []),
+    ['royalties', (m) => m.royPago, 'calc', (m) => dicaCalc(m, 'royalties', 'Royalties pelas regras da loja (loja; Espaço Gourmet: EG) sobre o faturamento sem a taxa de serviço, menos os descontos da franquia do mês (devoluções compensadas nos royalties e prêmios de fidelidade)'), null, null, 'royalties'],
+    ['marketing', (m) => m.mktPago, 'calc', (m) => dicaCalc(m, 'marketing', 'Fundo de marketing pelas regras da loja (loja; Espaço Gourmet: marketing EG) sobre o faturamento sem a taxa de serviço'), null, null, 'marketing'],
     ['− Comissões e premiações', (m) => m.com, 'menos', 'O que a loja pagou no mês (comissões, premiação e bônus), como no Comissionamento. Na projeção do mês em andamento: a comissão que cada pessoa receberia com a venda projetada dela contra a meta (na faixa em que fecharia), não a comissão de agora multiplicada'],
     ['− Outros custos em %', (m) => m.varPct, 'menos', 'Custos da loja cadastrados como % das vendas'],
     ['= Lucro sem fixos', (m) => m.contrib, 'sub', 'Lucro bruto − Simples, maquininha, royalties, comissões e custos em %: o que as vendas deixam para pagar as perdas e os custos fixos. É o "Lucro sem fixos" da Rentabilidade (antes chamado de margem de contribuição).'],
@@ -236,7 +261,7 @@
       return { id: c.id, nome: c.nome, nomes: [...vistos.values()].sort((a, b) => a.pontual - b.pontual) };
     }).filter((g) => g.nomes.length);
     const abertos = state.dreAbertos || (state.dreAbertos = new Set());
-    const linhas = LINHAS(grupos, abertos, meses.some((x) => x.royDesc));
+    const linhas = LINHAS(grupos, abertos);
     const sel = state.dreMes && meses.some((m) => m.ym === state.dreMes) ? state.dreMes : meses[meses.length - 1].ym;
     const m = meses.find((x) => x.ym === sel);
     const ymAnt = `${+sel.slice(0, 4) - 1}${sel.slice(4)}`;
@@ -263,7 +288,7 @@
     // cartões do topo
     const varA = (k) => (aDias && aDias[k] ? h('span', null, TS.deltaSpan(m[k] / aDias[k] - 1), ` vs. ${m.parcial ? `${rotAnt} (dias 1 a ${diaAte})` : rotAnt}`) : null);
     corpo.append(h('div', { class: 'dre-topo' }, h('label', null, 'Mês ', opMes), h('span', { class: 'muted' }, 'Todos os dias do mês, sem os filtros do topo. Custos fixos e % com os valores cadastrados hoje.'),
-      TS.aPagar ? TS.aPagar.botaoExportar(m, LINHAS(grupos, new Set(), m.royDesc > 0).filter((l) => !['bruto', 'parte', 'taxa', 'repasse'].includes(l[2])).map((l) => (l[2] === 'base' ? ['Faturamento', ...l.slice(1)] : l)), cats) : null),
+      TS.aPagar ? TS.aPagar.botaoExportar(m, LINHAS(grupos, new Set()).filter((l) => !['bruto', 'parte', 'taxa', 'repasse', 'calc'].includes(l[2])).map((l) => (l[2] === 'base' ? ['Faturamento', ...l.slice(1)] : l)), cats) : null),
       ...avisos.map((t) => h('div', { class: 'notice' }, t)),
       // herói (redesenho de 22/11): o resultado em primeiro, a projeção (mês em andamento) e o faturamento com as margens
       TS.heroi([
@@ -293,10 +318,20 @@
     const body = h('tbody');
     const alternar = (id) => { if (abertos.has(id)) abertos.delete(id); else abertos.add(id); TS.render(); };
     const abrir = (nome, ym) => janelaFixo(M, meses, nome, ym);
-    for (const [rot, f, tipo, dica, gid, fx] of linhas) {
+    const abrirCalc = (k, ym) => janelaCalc(M, meses, k, ym);
+    for (const [rot, f, tipo, dica, gid, fx, cc] of linhas) {
       const v = f(m), vp = P ? f(P) : null, va = a ? f(a) : null, vb = f(base);
+      if (cc) { // linha calculada que aceita o valor real do mês (Simples, maquininha, royalties, marketing)
+        const d2 = vb != null && va ? vb / va - 1 : null;
+        body.append(h('tr', { class: 'dre-' + tipo, title: typeof dica === 'function' ? dica(m) : dica },
+          h('td', { class: 'l' }, rot), celCalc(m, cc, v == null ? '—' : fmt.brl(v), null, abrirCalc), h('td', { class: 'muted' }, pc(v, m.fat)),
+          P ? celCalc(P, cc, vp == null ? '—' : fmt.brl(vp), 'dre-proj', abrirCalc, m.ym) : null, P ? h('td', { class: 'muted dre-proj' }, pc(vp, P.fat)) : null,
+          a ? celCalc(a, cc, va == null ? '—' : fmt.brl(va), null, abrirCalc) : h('td', null, '—'), h('td', { class: 'muted' }, a ? pc(va, a.fat) : '—'),
+          h('td', { class: d2 == null || Math.abs(d2) < 0.0005 ? 'muted' : d2 < 0 ? 'pos' : 'neg' }, d2 == null ? '—' : fmt.delta(d2))));
+        continue;
+      }
       const d = vb != null && va ? vb / va - 1 : null;
-      const bom = tipo === 'menos' || tipo === 'grupo' || tipo === 'filho' ? d < 0 : d > 0;
+      const bom = tipo === 'menos' || tipo === 'grupo' || tipo === 'filho' || tipo === 'calc' ? d < 0 : d > 0;
       const rotL = tipo === 'tot' && P ? '= Resultado' : rot;
       body.append(h('tr', { class: 'dre-' + tipo, title: typeof dica === 'function' ? dica(m) : dica, onclick: gid ? () => alternar(gid) : null },
         h('td', { class: 'l' }, gid ? h('span', { class: 'dre-seta' }, abertos.has(gid) ? '▾ ' : '▸ ') : null, fx ? nomeFixo(rotL, () => abrir(fx, sel)) : rotL),
@@ -313,7 +348,7 @@
       h('a', { href: '#config', onclick: (e) => { e.preventDefault(); TS.editarCustos(state.loja, 'cfg-pontuais'); } }, '+ Despesa de um mês só (ex.: IPTU, 13º)'));
     const memo = h('div', { class: 'dre-memo muted' },
       `Fora do resultado (informativo): taxa de serviço recebida ${fmt.brl(m.gorjeta)} (repassada à equipe) · descontos dados ${fmt.brl(m.desc)} · Espaço Gourmet ${fmt.brl(m.eg)} (${pc(m.eg, m.fat)} do faturamento). Passe o mouse em cada linha para ver de onde vem o valor.`);
-    corpo.append(h('div', { class: 'mt' }, TS.card(`Resultado de ${TS.ymLabel(sel)}`, a ? (P ? `Até hoje e projeção no ritmo atual; a variação compara a projeção com ${rotAnt} inteiro` : `Comparado com ${rotAnt}`) : 'Sem o mesmo mês do ano anterior para comparar', h('div', { class: 'table-wrap free' }, tb), memo, linkCustos)));
+    corpo.append(h('div', { class: 'mt' }, TS.card(`Resultado de ${TS.ymLabel(sel)}`, a ? (P ? `Até hoje e projeção no ritmo atual; a variação compara a projeção com ${rotAnt} inteiro` : `Comparado com ${rotAnt}`) : 'Sem o mesmo mês do ano anterior para comparar', DICA_EDITAR(), h('div', { class: 'table-wrap free' }, tb), memo, linkCustos)));
 
     // gráfico: resultado mês a mês
     const comoMes = (x) => x.proj || x; // mês em andamento entra pela projeção, para comparar com os meses fechados
@@ -333,11 +368,11 @@
     const t2 = h('table', { class: 't dre-t' });
     t2.append(h('thead', null, h('tr', null, h('th', { class: 'l sticky-col' }, ''), ult12.map((x) => h('th', { class: x.projecao ? 'dre-proj' : null }, TS.ymLabel(x.ym) + (x.projecao ? '*' : ''))))));
     const b2 = h('tbody');
-    for (const [rot, f, tipo, dica, gid, fx] of linhas) b2.append(h('tr', { class: 'dre-' + tipo, title: typeof dica === 'function' ? dica(m) : dica, onclick: gid ? () => alternar(gid) : null }, h('td', { class: 'l sticky-col' }, gid ? h('span', { class: 'dre-seta' }, abertos.has(gid) ? '▾ ' : '▸ ') : null, fx ? nomeFixo(rot, () => abrir(fx, sel)) : rot),
-      ult12.map((x) => { const v = f(x); return fx ? celFixo(x, fx, v == null ? '—' : fmt.brl0(v), x.projecao ? 'dre-proj' : null, abrir) : h('td', { class: tipo === 'tot' && v < 0 ? 'neg' : null }, v == null ? '—' : fmt.brl0(v)); })));
+    for (const [rot, f, tipo, dica, gid, fx, cc] of linhas) b2.append(h('tr', { class: 'dre-' + tipo, title: typeof dica === 'function' ? dica(m) : dica, onclick: gid ? () => alternar(gid) : null }, h('td', { class: 'l sticky-col' }, gid ? h('span', { class: 'dre-seta' }, abertos.has(gid) ? '▾ ' : '▸ ') : null, fx ? nomeFixo(rot, () => abrir(fx, sel)) : rot),
+      ult12.map((x) => { const v = f(x); return cc ? celCalc(x, cc, v == null ? '—' : fmt.brl0(v), x.projecao ? 'dre-proj' : null, abrirCalc) : fx ? celFixo(x, fx, v == null ? '—' : fmt.brl0(v), x.projecao ? 'dre-proj' : null, abrir) : h('td', { class: tipo === 'tot' && v < 0 ? 'neg' : null }, v == null ? '—' : fmt.brl0(v)); })));
     b2.append(h('tr', { class: 'dre-info' }, h('td', { class: 'l sticky-col' }, 'Resultado em % do faturamento'), ult12.map((x) => h('td', { class: x.resultado < 0 ? 'neg' : null }, pc(x.resultado, x.fat)))));
     t2.append(b2);
-    corpo.append(h('div', { class: 'mt' }, TS.card('Mês a mês', '* mês em andamento: projeção no ritmo atual, com os custos fixos inteiros', h('div', { class: 'table-wrap' }, t2))));
+    corpo.append(h('div', { class: 'mt' }, TS.card('Mês a mês', '* mês em andamento: projeção no ritmo atual, com os custos fixos inteiros', DICA_EDITAR(), h('div', { class: 'table-wrap' }, t2))));
     // compras × vendas do mês: estou comprando mais do que vendo? (comprasvendas.js)
     if (TS.comprasVendas) corpo.append(TS.comprasVendas.cartaoResultado(M));
   }
@@ -361,6 +396,63 @@
     const td = h('td', { class: ['dre-edit', l ? 'dre-lanc' : null, cls].filter(Boolean).join(' '), title: dica, role: 'button', tabindex: '0', 'data-fixo': nome, 'data-ym': x.ym, onclick: (e) => { e.stopPropagation(); ir(); } },
       l ? h('span', { class: 'dre-lanc-ico', 'aria-label': 'valor lançado' }, '✎ ') : null, texto);
     return TS.teclado(td, ir);
+  }
+  /** onde se lança o valor real do mês (pedido do dono: "onde edito o mês?") — uma linha discreta embaixo do título */
+  const DICA_EDITAR = () => h('p', { class: 'muted dre-dica-edit' }, '✎ Para lançar o valor real de um mês, clique no valor: Simples, maquininha, royalties, marketing ou um custo fixo (abra a categoria ▸ para ver os custos).');
+  /** célula de uma linha calculada (Simples, maquininha, royalties, marketing) num mês: ✎ quando lançado; clicar abre a janela.
+   *  ymReal: na coluna da projeção, o mês é o do próprio mês em andamento */
+  function celCalc(x, k, texto, cls, abrir, ymReal) {
+    const ym = ymReal || x.ym, l = x.lanc && x.lanc[k];
+    const calc = CALC[k][1](x);
+    const dica = l ? `Valor real de ${TS.ymLabel(ym)}${l.por ? `, lançado por ${l.por}` : ''}${l.em ? ` em ${quando(l.em)}` : ''}. Calculado pelo %: ${fmt.brl(calc)}. Clique para mudar ou voltar ao calculado.`
+      : `Calculado pelo % das regras da loja. Clique para lançar o valor real de ${TS.ymLabel(ym)} (DAS, extrato, boleto).`;
+    const ir = () => abrir(k, ym);
+    const td = h('td', { class: ['dre-edit', l ? 'dre-lanc' : null, cls].filter(Boolean).join(' '), title: dica, role: 'button', tabindex: '0', 'data-calc': k, 'data-ym': ym, onclick: (e) => { e.stopPropagation(); ir(); } },
+      l ? h('span', { class: 'dre-lanc-ico', 'aria-label': 'valor lançado' }, '✎ ') : null, texto);
+    return TS.teclado(td, ir);
+  }
+  /** janela de uma linha calculada: o valor real do mês, "Voltar ao calculado" e o histórico (lançado × calculado) */
+  function janelaCalc(M, meses, k, ym) {
+    const [nome, calcDe] = CALC[k];
+    const mm = meses.find((x) => x.ym === ym);
+    const l = mm && mm.lanc && mm.lanc[k];
+    const calc = mm ? calcDe(mm) : null;
+    const fundo = h('div', { class: 'cp-modal-bg' });
+    const sair = () => fundo.remove();
+    const campo = h('input', { class: 'f-input dre-fixo-campo', type: 'text', inputmode: 'decimal', autocomplete: 'off', value: l ? String(l.valor).replace('.', ',') : '', placeholder: calc == null ? '' : fmt.brl(calc), 'aria-label': `Valor real de ${nome} em ${TS.ymLabel(ym)} (R$)` });
+    const botoes = [];
+    const fazer = async (valor) => {
+      botoes.forEach((b) => { b.disabled = true; });
+      try { await salvarFixo(M, '@' + k, ym, valor); sair(); TS.render(); }
+      catch (e) { botoes.forEach((b) => { b.disabled = false; }); TS.naoSalvo(e, valor == null ? null : campo); }
+    };
+    const salvar = () => {
+      const v = lerValor(campo.value);
+      if (!(v >= 0) || v > 10000000) { TS.naoSalvo('Digite o valor do mês em reais (zero ou mais), por exemplo 4.978,90.', campo); return; }
+      fazer(Math.round(v * 100) / 100);
+    };
+    campo.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); salvar(); } });
+    const bSalvar = h('button', { type: 'button', class: 'btn primary', onclick: salvar }, 'Salvar');
+    const bVoltar = l ? h('button', { type: 'button', class: 'btn ghost-danger', onclick: () => fazer(null) }, 'Voltar ao calculado') : null;
+    const bCancelar = h('button', { type: 'button', class: 'btn', onclick: sair }, 'Cancelar');
+    botoes.push(bSalvar, bCancelar); if (bVoltar) botoes.push(bVoltar);
+    const hist = meses.slice(-12).map((x) => ({ ym: x.ym, parcial: x.parcial, calc: calcDe(x), l: x.lanc && x.lanc[k] }));
+    const tab = h('table', { class: 't dre-hist' },
+      h('thead', null, h('tr', null, h('th', { class: 'l' }, 'Mês'), h('th', { title: 'Pelo % das regras da loja' }, 'Calculado'), h('th', { title: 'O valor real lançado (DAS, extrato, boleto)' }, 'Lançado'), h('th', { title: 'Lançado − calculado' }, 'Diferença'))),
+      h('tbody', null, hist.map((it) => h('tr', { class: it.ym === ym ? 'dre-hist-sel' : null },
+        h('td', { class: 'l' }, TS.ymLabel(it.ym), it.parcial ? h('small', { class: 'muted' }, ' (até hoje)') : null), h('td', null, it.calc == null ? '—' : fmt.brl(it.calc)), h('td', null, it.l ? fmt.brl(it.l.valor) : h('span', { class: 'muted' }, '—')),
+        h('td', { class: it.l && it.calc != null && Math.abs(it.l.valor - it.calc) >= 0.01 ? (it.l.valor > it.calc ? 'neg' : 'pos') : 'muted' }, it.l && it.calc != null ? fmt.brl(it.l.valor - it.calc) : '—')))));
+    fundo.addEventListener('click', (e) => { if (e.target === fundo) sair(); });
+    fundo.addEventListener('keydown', (e) => { if (e.key === 'Escape') sair(); });
+    fundo.append(h('div', { class: 'card cp-copiar ts-perg dre-fixo-jan', role: 'dialog', 'aria-modal': 'true', 'aria-label': `${nome} · ${TS.ymLabel(ym)}` },
+      h('h3', null, `${nome} · ${TS.ymLabel(ym)} `, TS.dica('O Resultado calcula esta linha pelo % das regras da loja. Lance o valor REAL do mês (o DAS do Simples, o extrato da maquininha, o boleto de royalties e marketing): ele substitui o calculado só naquele mês, fica marcado com ✎ e entra no Resultado e na planilha do contador. Nos royalties, o boleto lançado já vem com os descontos da franquia. "Voltar ao calculado" apaga o valor lançado.')),
+      h('div', { class: 'muted' }, l ? `Valor real lançado: ${fmt.brl(l.valor)}${l.por ? `, por ${l.por}` : ''}${l.em ? ` em ${quando(l.em)}` : ''}. Calculado pelo %: ${calc == null ? '—' : fmt.brl(calc)}.` : `Sem valor lançado: o mês usa o calculado pelo % (${calc == null ? '—' : fmt.brl(calc)}).`),
+      h('label', { class: 'ts-perg-campo' }, h('span', { class: 'f-label' }, `Valor real de ${TS.ymLabel(ym)} (R$)`), campo),
+      h('div', { class: 'ts-perg-acoes' }, bVoltar, bCancelar, bSalvar),
+      h('div', { class: 'dre-hist-tit' }, h('b', null, 'Histórico: calculado × lançado')),
+      h('div', { class: 'table-wrap free' }, tab)));
+    document.body.append(fundo);
+    campo.focus();
   }
   /** grava (ou volta ao padrão, valor null) e troca na memória; na apresentação nada é gravado */
   async function salvarFixo(M, nome, ym, valor) {
