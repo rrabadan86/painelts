@@ -558,7 +558,11 @@
     const temPend = Object.keys(j.lotesPend || {}).length > 0;
     const temDescLido = todas.some((n) => n.desconto != null);
     const subiuCusto = (n) => n.itens.some((i) => { const a = custoAntes(D, i.cod, n.dia, n.nf); return a && a.v > 0 && i.custo > a.v * 1.005; });
-    const FIL = { per: ['No período', noPer], todas: ['Todas', () => true], ...(todas.some((n) => n.desconto > 0.005) ? { desc: ['Com desconto', (n) => n.desconto > 0.005] } : {}), subiu: ['Custo subiu', subiuCusto], ...(temAlgumaDev ? { dev: ['Com devolução', (n) => !!devAtivaDeNota(j, n)] } : {}), ...(temPend ? { lote: ['Lote pendente', (n) => !!j.lotesPend[n.id]] } : {}) };
+    const FIL = { per: ['No período', noPer, 'Notas com entrada dentro do período escolhido nos filtros'], todas: ['Todas', () => true, 'Todas as notas de entrada lidas do AppNext'],
+      ...(todas.some((n) => n.desconto > 0.005) ? { desc: ['Com desconto', (n) => n.desconto > 0.005, 'Notas com desconto (a franquia desconta as devoluções diluindo nos produtos)'] } : {}),
+      subiu: ['Custo subiu', subiuCusto, 'Notas com pelo menos um produto mais caro que na compra anterior'],
+      ...(temAlgumaDev ? { dev: ['Com devolução', (n) => !!devAtivaDeNota(j, n), 'Notas com devolução à franquia (itens quebrados, faltando ou com validade curta)'] } : {}),
+      ...(temPend ? { lote: ['Lote pendente', (n) => !!j.lotesPend[n.id], 'Notas com chá a granel, envasado ou alimentação sem o nº do lote: abra a nota e preencha'] } : {}) };
     const fil = FIL[state.prcNotasFil] ? state.prcNotasFil : 'per';
     const rows = todas.filter(FIL[fil][1]);
     const tab = TS.table({
@@ -580,8 +584,10 @@
     });
     const sincEl = botaoSincronizar(D, j);
     return TS.cardWithTools('Notas fiscais de entrada', `Notas de entrada concluídas no AppNext (Estoque → Entrada de Produtos), lidas pelo coletor${j.atualizado ? ' · atualizado em ' + new Date(j.atualizado).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : ''}. Clique na nota para ver os produtos, quantidades, valores e o que mudou no custo.`,
-      h('div', { class: 'est-tools' }, tab.searchBox && (tab.searchBox.classList.add('est-busca'), tab.searchBox), sincEl,
-        TS.seg(Object.entries(FIL).map(([k, [t, fn]]) => [`${t} (${fmt.int(todas.filter(fn).length)})`, k]), fil, (v) => { state.prcNotasFil = v; const c = document.querySelector('.prc-notas > .mt'); if (c) c.replaceChildren(listaNotas(D, j, aoMudar)); })),
+      // 2ª passada (23/11/2026): no cabeçalho só a ação (Sincronizar), junto de Imprimir e Expandir; busca e abas em cima da tabela
+      sincEl ? h('div', { class: 'est-p2-acoes-dir ped-p2-acoes' }, sincEl) : null,
+      h('div', { class: 'est-tools est-p2-tools' }, tab.searchBox && (tab.searchBox.classList.add('est-busca'), tab.searchBox),
+        TS.seg(Object.entries(FIL).map(([k, [t, fn, dica]]) => [`${t} (${fmt.int(todas.filter(fn).length)})`, k, dica]), fil, (v) => { state.prcNotasFil = v; const c = document.querySelector('.prc-notas > .mt'); if (c) c.replaceChildren(listaNotas(D, j, aoMudar)); })),
       sincEl && sincEl._log, tab);
   }
   /** "Sincronizar agora" (admin ou franqueado da loja): o coletor busca o estoque e as notas de compra do AppNext; acompanha até terminar */

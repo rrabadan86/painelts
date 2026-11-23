@@ -263,6 +263,15 @@
     return v.length ? h('span', { class: 'kpi-vars' }, ...v.map(([a, b, txt]) => { const c = varCurta(txt); return h('span', { title: txt === 'vs. ano anterior' ? TS.DICA_ANO : c !== txt ? txt : null }, TS.deltaSpan(a / b - 1), ' ' + c); })) : null;
   };
 
+  /**
+   * 2ª passada (23/11/2026): números de apoio dentro do herói, como linhas "rótulo …… número" (`TS.linhasNum`), com a
+   * variação curta embaixo do rótulo. item = { rot, num, vars?, dica?, onclick?, estado? }. Grade de 3 no computador, 1 no celular.
+   */
+  const apoioHeroi = (itens) => h('div', { class: 'vp2-apoio' }, TS.linhasNum((itens || []).filter(Boolean).map((x) => ({
+    rot: h('span', { class: 'vp2-rot' }, h('span', { class: 'vp2-rot-t' }, x.rot, TS.dica(x.dica)), x.vars ? h('small', { class: 'vp2-var' }, x.vars) : null),
+    num: x.num, estado: x.estado, onclick: x.onclick,
+  }))));
+
   /** o período da tela fica dentro de UM mês? → 'AAAA-MM' (senão null). Meta, comissão e projeção são do mês. */
   TS.periodoUmMes = function () {
     const f = state.f, db = TS.db;
@@ -300,7 +309,7 @@
     // várias lojas: Mês → Ano → Loja → Vendedor
     const multiLoja = new Set(base.map((i) => db.loja[i])).size > 1;
     const cols = [['vt', 'Faturamento', fmt.brl], ['cupons', 'Cupons', fmt.int], ['tkm', 'TKM', fmt.brl], ['pma', 'PMA', fmt.brl], ['ipa', 'IPA', fmt.n2]];
-    const tbl = h('table', { class: 't tree' + (multiLoja ? ' multi' : '') });
+    const tbl = h('table', { class: 't tree vp2-tree' + (multiLoja ? ' multi' : '') });
     const wrap = h('div', { class: 'table-wrap' }, tbl);
     wrap.style.maxHeight = '420px';
 
@@ -310,35 +319,25 @@
       const btn = temFilhos ? h('button', { type: 'button', class: 'tree-btn', 'aria-expanded': String(open), 'aria-label': (open ? 'Recolher ' : 'Expandir ') + rotulo,
         onclick: () => { open ? fechar(chave) : aberto.add(chave); paint(); } }, open ? '−' : '+') : h('span', { class: 'tree-sp' });
       const tds = [h('td', { class: `l sticky-col tree-l n${nivel}` }, h('span', { class: 'tree-cell' }, btn, h('span', null, rotulo)))];
-      for (const [k, lab, fm] of cols) {
-        tds.push(h('td', { class: 'tree-v', 'data-l': lab }, fm(a[k])));
-        if (nivel === 0) continue;
-        const d = p && p[k] ? a[k] / p[k] - 1 : null;
-        // variação e, embaixo, o valor do ano anterior (no mesmo recorte de dias)
-        tds.push(h('td', { class: 'tree-var ' + (d == null ? 'muted' : d > 0 ? 'pos' : d < 0 ? 'neg' : 'muted'), title: p && p[k] != null ? `Ano anterior: ${fm(p[k])}` : null },
-          d == null ? '—' : fmt.delta(d), p && p[k] != null ? h('small', { class: 'tree-ant' }, fm(p[k])) : null));
-      }
-      if (nivel === 0) {
-        // mês: o resumo do ano mais recente contra o anterior (mesmos dias se o mês está incompleto)
-        const out = [tds[0]];
-        tds.slice(1).forEach((td, j) => out.push(td, celVar(cols[j], cmp)));
-        return h('tr', { class: `lv${nivel}` }, out);
-      }
+      // 2ª passada (23/11/2026): valor e, embaixo, a variação contra o ano anterior na MESMA célula (5 colunas em vez de 10:
+      // a tabela não rola para o lado). No mês, a variação é a do ano mais recente contra o anterior (cmp); nas linhas de
+      // ano/loja/vendedor, contra o mesmo mês do ano anterior (p).
+      for (const col of cols) tds.push(celula(col, a, nivel === 0 ? cmp : (p ? { a, p, dica: 'Ano anterior' } : null)));
       return h('tr', { class: `lv${nivel}` }, tds);
     }
-    function celVar([k, , fm], cmp) {
-      if (!cmp || !cmp.p) return h('td', { class: 'muted' }, '');
-      const a = cmp.a[k], pv = cmp.p[k];
-      const d = pv ? a / pv - 1 : null;
-      return h('td', { class: 'tree-var ' + (d == null ? 'muted' : d > 0 ? 'pos' : d < 0 ? 'neg' : 'muted'), title: `${cmp.dica}: ${fm(a)} contra ${fm(pv)}` },
-        d == null ? '—' : fmt.delta(d), pv != null ? h('small', { class: 'tree-ant' }, fm(pv)) : null);
+    /** valor + linha pequena "+5,1% · R$ 22.955" (variação e o valor de comparação) com a frase completa no title */
+    function celula([k, lab, fm], a, cmp) {
+      const pv = cmp && cmp.p ? cmp.p[k] : null, av = cmp ? cmp.a[k] : null;
+      const d = pv ? av / pv - 1 : null;
+      return h('td', { class: 'tree-v', 'data-l': lab, title: pv != null ? `${cmp.dica}: ${fm(av)} contra ${fm(pv)}` : null }, fm(a[k]),
+        pv != null ? h('small', { class: 'tree-var' }, h('span', { class: d == null ? 'muted' : d > 0 ? 'pos' : d < 0 ? 'neg' : 'muted' }, d == null ? '—' : fmt.delta(d)), h('span', { class: 'tree-ant' }, ' · ' + fm(pv))) : null);
     }
     const fechar = (chave) => { for (const k of [...aberto]) if (k === chave || k.startsWith(chave + '|')) aberto.delete(k); };
 
     function paint() {
       tbl.textContent = '';
       const trh = h('tr', null, h('th', { class: 'l sticky-col' }, multiLoja ? 'Mês / Ano / Loja / Vendedor' : 'Mês / Ano / Vendedor'));
-      for (const [, lab] of cols) trh.append(h('th', null, lab), h('th', { title: 'Variação contra o mesmo mês do ano anterior. Mês incompleto (o atual, ou um período que corta o mês) compara só os mesmos dias' }, 'vs. ano ant.'));
+      for (const [, lab] of cols) trh.append(h('th', { title: `${lab} e, embaixo, a variação contra o mesmo mês do ano anterior e o valor dele. Mês incompleto (o atual, ou um período que corta o mês) compara só os mesmos dias` }, lab));
       tbl.append(h('thead', null, trh));
       const tb = h('tbody');
       for (const m of meses) {
@@ -366,7 +365,7 @@
           }
         }
       }
-      if (!meses.length) tb.append(h('tr', null, h('td', { colspan: 11, class: 'l muted' }, 'Sem dados.')));
+      if (!meses.length) tb.append(h('tr', null, h('td', { colspan: 6, class: 'l muted' }, 'Sem dados.')));
       tbl.append(tb);
       const t = ind(base), tf = h('tr', null, h('td', { class: 'l sticky-col' }, 'Total'));
       // total contra o mesmo período do ano anterior (só quando o período não inclui o próprio ano anterior)
@@ -377,7 +376,7 @@
         const idxAnt = [...yms].flatMap((ym) => prevIdx(ym) || []);
         if (idxAnt.length) cmpT = { a: t, p: ind(idxAnt), dica: 'Período escolhido contra o mesmo período do ano anterior' };
       }
-      for (const col of cols) tf.append(h('td', { class: 'tree-v', 'data-l': col[1] }, col[2](t[col[0]])), celVar(col, cmpT));
+      for (const col of cols) tf.append(celula(col, t, cmpT));
       tbl.append(h('tfoot', null, tf));
     }
     paint();
@@ -427,19 +426,22 @@
     // numa grade de apoio logo abaixo — os mesmos números de antes, cada um uma vez
     const proj = TS.periodoUmMes() && TS.dayToIso(state.f.de).slice(8) === '01'
       ? TS.heroiProjecao(ind.vt, null, TS.dayToIso(state.f.de).slice(0, 7), 'Projeção do faturamento', { base: 'loja', ate: state.f.ate }) : null;
+    // 2ª passada (23/11/2026): os indicadores de apoio viram linhas dentro do herói (sem quadros soltos); cada linha leva
+    // à parte da tela que detalha o número (TKM, PMA e IPA → por vendedor; chá → por tipo de chá)
+    const irPara = (id) => () => { const el = document.getElementById(id); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
     root.append(TS.heroi([
       { rot: 'Faturamento', num: fmt.brl0(ind.vt), linhas: [d(ind.vt, prev?.vt, 'vt')], dica: 'Faturamento da loja no período: com o Espaço Gourmet e as vendas sem vendedor, sem taxas e sem itens a R$ 0,01 (a mesma conta do Início e do Resultado).' },
       { rot: 'Atendimentos (cupons)', num: fmt.int(ind.cupons), linhas: [d(ind.cupons, prev?.cupons, 'cupons')], dica: 'Cupons únicos no período: cada venda conta uma vez, mesmo com vários itens.' },
       // projeção: só quando o período começa no dia 1 e fica dentro de UM mês (o mês em andamento); período
       // personalizado que termina antes de hoje projeta a partir do fim do período, não do dia de hoje
       proj,
-    ], { titulo: 'Como estão as vendas' }));
-    root.append(h('div', { class: 'grid g-kpi mt' },
-      TS.kpi('Ticket médio (TKM)', fmt.brl(ind.tkm), d(ind.tkm, prev?.tkm, 'tkm'), 'Faturamento ÷ cupons'),
-      TS.kpi('Preço médio (PMA)', fmt.brl(ind.pma), d(ind.pma, prev?.pma, 'pma'), 'Faturamento ÷ itens'),
-      TS.kpi('Itens por atendimento (IPA)', fmt.n2(ind.ipa), d(ind.ipa, prev?.ipa, 'ipa'), 'Itens ÷ cupons'),
-      TS.kpi('Chá vendido', fmt.kg(kgTotal) + ' kg', d(kgTotal, prev?.kg, 'kg')),
-      TS.kpi('Espaço Gourmet', fmt.pct(R().pctEG(base)), 'do faturamento')));
+    ], { titulo: 'Como estão as vendas', extra: apoioHeroi([
+      { rot: 'Ticket médio (TKM)', num: fmt.brl(ind.tkm), vars: d(ind.tkm, prev?.tkm, 'tkm'), dica: TS.dicaDe?.('Ticket médio (TKM)') || 'Faturamento ÷ cupons', onclick: irPara('rs-vend') },
+      { rot: 'Preço médio (PMA)', num: fmt.brl(ind.pma), vars: d(ind.pma, prev?.pma, 'pma'), dica: TS.dicaDe?.('Preço médio (PMA)') || 'Faturamento ÷ itens', onclick: irPara('rs-vend') },
+      { rot: 'Itens por atendimento (IPA)', num: fmt.n2(ind.ipa), vars: d(ind.ipa, prev?.ipa, 'ipa'), dica: TS.dicaDe?.('Itens por atendimento (IPA)') || 'Itens ÷ cupons', onclick: irPara('rs-vend') },
+      { rot: 'Chá vendido', num: fmt.kg(kgTotal) + ' kg', vars: d(kgTotal, prev?.kg, 'kg'), dica: TS.dicaDe?.('Chá vendido'), onclick: irPara('rs-tipos') },
+      { rot: 'Espaço Gourmet', num: fmt.pct(R().pctEG(base)), vars: h('span', { class: 'muted' }, 'do faturamento'), dica: TS.dicaDe?.('Espaço Gourmet') },
+    ]) }));
 
     const al = TS.cartaoAlertas && TS.cartaoAlertas();
     if (al) root.append(al);
@@ -462,20 +464,28 @@
     const rowsV = [...porVend].map(([v, idx]) => linhaVend(idx, db.D.vendedor[v]));
     const totV = linhaVend(base, 'Total');
     const kgFmt = (v) => (v ? fmt.kg(v) : '—');
+    // 2ª passada (23/11/2026): sem rolagem para o lado — os kg de cada tipo de chá ficam embaixo do total de chá, na mesma
+    // célula (só os tipos que a pessoa vendeu, do maior para o menor), e a parte do faturamento embaixo do valor
+    const fatCel = (v) => h('span', { class: 'vp2-cel' }, fmt.brl(v), totV.vt ? h('small', { class: 'muted' }, fmt.pct(v / totV.vt) + ' do total') : null);
+    const chaCel = (v, r) => {
+      const tipos = tipoCols.map((n) => [n, r['kg_' + n] || 0]).filter(([, k]) => k > 0).sort((a, b) => b[1] - a[1]);
+      return h('span', { class: 'vp2-cel vp2-cha' }, kgFmt(v), tipos.length ? h('small', { class: 'muted' }, tipos.map(([n, k]) => `${n} ${fmt.kg(k)}`).join(' · ')) : null);
+    };
     const tabVend = TS.table({
       cols: [
-        { key: 'vendedor', label: 'Vendedor', align: 'l', sticky: true },
-        { key: 'vt', label: 'Faturamento', fmt: fmt.brl },
-        { key: 'cupons', label: 'Cupons', fmt: fmt.int },
-        { key: 'tkm', label: 'TKM', fmt: fmt.brl, title: 'Ticket médio' },
-        { key: 'pma', label: 'PMA', fmt: fmt.brl, title: 'Preço médio por item' },
-        { key: 'ipa', label: 'IPA', fmt: fmt.n2, title: 'Itens por atendimento' },
-        { key: 'kg', label: 'Chá (kg)', fmt: kgFmt },
-        ...tipoCols.map((n) => ({ key: 'kg_' + n, label: n, fmt: kgFmt, title: `Chá ${n} em kg` })),
+        { key: 'vendedor', label: 'Vendedor', align: 'l', sticky: true, wrap: true },
+        { key: 'vt', label: 'Faturamento', fmt: fatCel, title: 'Faturamento da pessoa no período e, embaixo, a parte dela no total da loja.' },
+        { key: 'cupons', label: 'Cupons', fmt: fmt.int, title: 'Atendimentos: cupons únicos da pessoa no período.' },
+        { key: 'tkm', label: 'TKM', fmt: fmt.brl, title: 'Ticket médio: faturamento ÷ cupons' },
+        { key: 'pma', label: 'PMA', fmt: fmt.brl, title: 'Preço médio por item: faturamento ÷ itens' },
+        { key: 'ipa', label: 'IPA', fmt: fmt.n2, title: 'Itens por atendimento: itens ÷ cupons' },
+        { key: 'kg', label: 'Chá (kg) por tipo', align: 'l', wrap: true, fmt: chaCel, title: `Chá vendido em kg e, embaixo, quanto foi de cada tipo (${tipoCols.join(', ')}), do maior para o menor. Tipo sem venda não aparece.` },
       ],
       rows: rowsV, total: totV, sortKey: 'vt',
     });
-    root.append(TS.section('Visão geral'), TS.card('Desempenho por vendedor', 'Clique no título de uma coluna para ordenar', tabVend));
+    const cardVend = TS.card('Desempenho por vendedor', 'Clique no título de uma coluna para ordenar', tabVend);
+    cardVend.id = 'rs-vend';
+    root.append(TS.section('Visão geral'), cardVend);
 
     // ---- dia da semana + produtos
     // total do período ou média por dia (total ÷ quantos daquele dia da semana tiveram venda no período)
@@ -562,7 +572,9 @@
         onClick: (_e, els) => { if (els.length) alternar(resumoTipos[els[0].index][0]); },
       },
     }, 'short');
-    root.append(TS.section('Vendas por tipo de chá'),
+    const secTipos = TS.section('Vendas por tipo de chá');
+    secTipos.id = 'rs-tipos';
+    root.append(secTipos,
       h('div', { class: 'grid g-2-1' },
         TS.cardWithTools(tipoAtual ? `Chá ${tipoAtual}` : 'Chás de todos os tipos', `${rowsT.length ? `${rowsT.length} produtos · ${fmt.kg(totT)} kg · ` : ''}${tipoAtual ? 'clique de novo no tipo para ver todos' : 'clique num tipo para filtrar'}`,
           TS.seg(I.tipos.map(([n]) => [n, n]), tipoAtual, alternar),
@@ -597,11 +609,11 @@
       { rot: 'Faturamento', num: fmt.brl0(indAll.vt), linhas: [vars('vt')], dica: 'Faturamento do período, comparado com os mesmos dias da semana do ano anterior (364 dias antes) e com as mesmas datas do mês anterior.' },
       { rot: 'Cupons', num: fmt.int(indAll.cupons), linhas: [vars('cupons')], dica: 'Atendimentos (cupons únicos) no período, com as mesmas comparações do faturamento.' },
       { rot: 'Espaço Gourmet', num: fmt.pct(pctEG), linhas: ['do faturamento', `Loja (sem EG): ${fmt.pct(pctEG == null ? null : 1 - pctEG)}`], dica: 'Quanto do faturamento veio do Espaço Gourmet e quanto da loja (chás, acessórios e o resto).' },
-    ], { titulo: 'Período escolhido' }));
-    root.append(h('div', { class: 'grid g-kpi mt' },
-      TS.kpi('TKM', fmt.brl(indAll.tkm), vars('tkm'), 'Ticket médio: faturamento ÷ cupons'),
-      TS.kpi('PMA', fmt.brl(indAll.pma), vars('pma'), 'Preço médio por item: faturamento ÷ itens'),
-      TS.kpi('IPA', fmt.n2(indAll.ipa), vars('ipa'), 'Itens por atendimento: itens ÷ cupons')));
+    ], { titulo: 'Período escolhido', extra: apoioHeroi([ // 2ª passada: TKM, PMA e IPA como linhas do herói (levam à evolução mensal)
+      { rot: 'TKM', num: fmt.brl(indAll.tkm), vars: vars('tkm'), dica: 'Ticket médio: faturamento ÷ cupons', onclick: () => document.getElementById('cp-evol')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) },
+      { rot: 'PMA', num: fmt.brl(indAll.pma), vars: vars('pma'), dica: 'Preço médio por item: faturamento ÷ itens', onclick: () => document.getElementById('cp-evol')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) },
+      { rot: 'IPA', num: fmt.n2(indAll.ipa), vars: vars('ipa'), dica: 'Itens por atendimento: itens ÷ cupons', onclick: () => document.getElementById('cp-evol')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) },
+    ]) }));
 
     // ---- evolução mensal em árvore: Mês → Ano → Vendedor (variação contra o mesmo mês do ano anterior)
     // média da franquia (anônima, todas as lojas): só para quem não é vendedora, com uma loja escolhida
@@ -647,7 +659,7 @@
         scales: { x: { stacked: true, max: 1, ticks: { callback: (v) => fmt.pct(v, 0) }, grid: { color: '#EEE9DF' } }, y: { stacked: true, grid: { display: false } } },
       },
     });
-    root.append(h('div', { class: 'mt' },
+    root.append(h('div', { class: 'mt', id: 'cp-evol' },
       TS.cardWithTools('Evolução mensal', `Clique em + no mês para ver os anos e no ano para ver ${new Set(base.map((i) => db.loja[i])).size > 1 ? 'as lojas e, na loja, os vendedores' : 'os vendedores'} · variação contra o mesmo mês do ano anterior (mês incompleto: mesmos dias)`,
         tabM.tools, tabM)));
     root.append(h('div', { class: 'mt' }, TS.card('Mix de vendas por vendedor', `% do faturamento de chás e acessórios · no fim: média da loja${temFr && fr.mix ? ' e da franquia' : ''}`, mixChart)));
@@ -866,12 +878,14 @@
           h('span', { class: 'com-meta-loja' }, `Meta da loja ${fmt.brl0(meta)} · `, h('span', { 'data-meta-div': String(res.qtdVend) }, `Meta dividida entre ${res.qtdVend} ${res.qtdVend === 1 ? 'pessoa' : 'pessoas'}${res.foraDaMeta.length ? ` · ${res.foraDaMeta.length} fora` : ''}`), TS.dica(dicaPiso))],
         dica: 'Vendas que contam para a meta e a comissão: chá aromatizado, chá puro e acessórios, sem Espaço Gourmet. É a base do "% da meta" em todas as telas (Início, Meta de hoje, resumo diário). O faturamento da loja (Resumo, Resultado) é maior: inclui o Espaço Gourmet e os outros grupos.' },
       projCom,
-      { rot: 'Total a pagar', num: fmt.brl(res.total.aPagar), linhas: [rg.rateio && rg.rateio.ativo ? 'rateio igual entre a equipe' : 'comissões + bônus'], dica: 'Soma do que a loja paga à equipe neste mês pelas regras de comissão (a tabela abaixo mostra cada pessoa).' },
+      // 2ª passada: premiações e "na meta individual" saíram da grade de quadros e viraram linhas do total a pagar
+      { rot: 'Total a pagar', num: fmt.brl(res.total.aPagar), dica: 'Soma do que a loja paga à equipe neste mês pelas regras de comissão (a tabela abaixo mostra cada pessoa).',
+        linhas: [rg.rateio && rg.rateio.ativo ? 'rateio igual entre a equipe' : 'comissões + bônus',
+          pr.ativa ? h('span', { class: 'eq-h-linha', 'data-eq': 'premiacoes' }, `Premiações ${fmt.brl0(res.total.premiacao)} · TKM ≥ ${fmt.n2(pr.tkm)}, IPA ≥ ${fmt.n2(pr.ipa)}, PMA ≥ ${fmt.n2(pr.pma)}`,
+            TS.dica(`${fmt.brl0(pr.valor)} por indicador quando ${pr.minimo} ou mais estão no mínimo. TKM = vendas ÷ atendimentos; PMA = vendas ÷ itens; IPA = itens ÷ atendimentos (vendas da meta de cada pessoa; o cupom atendido por duas pessoas conta para as duas).${minAt ? ` Só concorre quem tem pelo menos ${fmt.int(minAt)} atendimentos no mês: com poucos cupons o indicador é sorte, não desempenho.` : ''}`)) : null,
+          h('span', { class: 'eq-h-linha', 'data-eq': 'na-meta' }, `Na meta individual: ${naMeta} de ${comMeta} ${comMeta === 1 ? 'vendedor' : 'vendedores'}`,
+            TS.dica('Quantas pessoas com meta individual já venderam a meta delas no mês.'))].filter(Boolean) },
     ], { titulo: 'Meta e comissão do mês' }));
-    root.append(h('div', { class: 'grid g-kpi mt' },
-      pr.ativa ? TS.kpi('Premiações', fmt.brl0(res.total.premiacao), `TKM ≥ ${fmt.n2(pr.tkm)}, IPA ≥ ${fmt.n2(pr.ipa)}, PMA ≥ ${fmt.n2(pr.pma)}`,
-        `${fmt.brl0(pr.valor)} por indicador quando ${pr.minimo} ou mais estão no mínimo. TKM = vendas ÷ atendimentos; PMA = vendas ÷ itens; IPA = itens ÷ atendimentos (vendas da meta de cada pessoa; o cupom atendido por duas pessoas conta para as duas).${minAt ? ` Só concorre quem tem pelo menos ${fmt.int(minAt)} atendimentos no mês: com poucos cupons o indicador é sorte, não desempenho.` : ''}`) : null,
-      TS.kpi('Na meta individual', `${naMeta} de ${comMeta}`, 'vendedores', 'Quantas pessoas com meta individual já venderam a meta delas no mês.')));
     if (res.foraDaMeta.length) root.append(h('p', { class: 'muted com-fora', 'data-fora-meta': String(res.foraDaMeta.length) },
       `Meta dividida entre ${res.qtdVend} ${res.qtdVend === 1 ? 'pessoa' : 'pessoas'}. Fora da divisão (menos de ${P.aplicado} ${P.aplicado === 1 ? 'dia' : 'dias'} com venda${P.fechado ? '' : ' até agora'}): ${res.foraDaMeta.map((x) => `${x.vendedor} (${x.dias} ${x.dias === 1 ? 'dia' : 'dias'})`).join(', ')}.`, TS.dica(dicaPiso)));
     const eg = R().espacoGourmet({ base, baseSemVend });
@@ -892,33 +906,40 @@
         onclick: () => TS.imprimirFechamento(argsPdf) }, '⎙ Fechamento em PDF'),
       h('a', { class: 'btn', href: '#minha' }, 'Ver como o vendedor vê')));
 
+    // 2ª passada (sem rolagem para o lado): eram 18 colunas; cada categoria virou uma coluna com o vendido em cima
+    // e, embaixo, a meta e a comissão dela; os indicadores da premiação numa coluna só. A impressão sai com as mesmas colunas.
     const hitCls = (vk, mk) => (r) => (r[mk] > 0 ? (r[vk] >= r[mk] ? 'hit' : 'miss') : '');
+    const sob = (...linhas) => linhas.filter(Boolean).map((t) => h('small', { class: 'eq-sob' }, t));
+    // r é a linha ou, na linha Total, o total (TS.table chama fmt(valor, total))
+    const colCat = (k, rot, mk, ck) => ({ key: k, label: rot, cls: hitCls(k, mk),
+      title: `Em cima, o que a pessoa vendeu de ${rot.toLowerCase()} no mês. Embaixo, a meta dessa categoria e a comissão que ela gera. Azul = meta batida; vermelho = abaixo da meta`,
+      fmt: (v, r) => h('span', null, fmt.brl(v), ...sob(r && r[mk] != null ? `meta ${fmt.brl0(r[mk])}` : null, r && r[ck] != null ? `com. ${fmt.brl(r[ck])}` : null)) });
     const tab = TS.table({
       cols: [
         { key: 'vendedor', label: 'Vendedor', align: 'l', sticky: true },
-        { key: 'aPagar', label: 'A pagar', fmt: fmt.brl, cls: () => 'hit' },
+        { key: 'aPagar', label: 'A pagar', cls: () => 'hit',
+          title: 'Comissão das três categorias + bônus sobre outros vendedores. Embaixo, o bônus quando a regra da loja tem (o % sobre as vendas da meta dos demais; a faixa usa as vendas da meta da loja contra a meta da loja)',
+          fmt: (v, r) => h('span', null, fmt.brl(v), ...sob(r && r.bonus ? `bônus ${fmt.brl(r.bonus)}` : null)) },
         { key: 'premiacao', label: 'Premiação', title: `${fmt.brl0(pr.valor)} por indicador (TKM, IPA, PMA) no mínimo${minAt ? `; só concorre quem tem pelo menos ${fmt.int(minAt)} atendimentos no mês` : ''}`,
           fmt: (v, r) => (r && r.poucosAtend ? h('small', { class: 'muted' }, `poucos atendimentos (${fmt.int(r.atend)} de ${fmt.int(minAt)})`) : v ? fmt.brl0(v) : '—') },
-        { key: 'metaInd', label: 'Meta ind.', fmt: fmt.brl0, title: 'Meta da loja ÷ pessoas que dividem a meta (quem tem o mínimo de dias com venda no mês; férias descontadas). Quem está fora da divisão é comparado com a mesma meta dos demais' },
-        { key: 'total', label: 'Vendas da meta', fmt: fmt.brl, title: 'Chá aromatizado + chá puro + acessórios, sem Espaço Gourmet' },
-        { key: 'metaArom', label: 'Meta arom.', fmt: fmt.brl0 },
-        { key: 'arom', label: 'Aromatizado', fmt: fmt.brl, cls: hitCls('arom', 'metaArom') },
-        { key: 'cArom', label: 'Com. arom.', fmt: fmt.brl },
-        { key: 'metaPuro', label: 'Meta puro', fmt: fmt.brl0 },
-        { key: 'puro', label: 'Puro', fmt: fmt.brl, cls: hitCls('puro', 'metaPuro') },
-        { key: 'cPuro', label: 'Com. puro', fmt: fmt.brl },
-        { key: 'metaAcess', label: 'Meta acess.', fmt: fmt.brl0 },
-        { key: 'acess', label: 'Acessórios', fmt: fmt.brl, cls: hitCls('acess', 'metaAcess') },
-        { key: 'cAcess', label: 'Com. acess.', fmt: fmt.brl },
-        { key: 'tkm', label: 'TKM', fmt: fmt.brl, cls: (r) => (pr.ativa && r.tkm >= pr.tkm ? 'hit' : '') },
-        { key: 'pma', label: 'PMA', fmt: fmt.brl, cls: (r) => (pr.ativa && r.pma >= pr.pma ? 'hit' : '') },
-        { key: 'ipa', label: 'IPA', fmt: fmt.n2, cls: (r) => (pr.ativa && r.ipa >= pr.ipa ? 'hit' : '') },
-        { key: 'bonus', label: 'Bônus', fmt: (v) => (v == null ? '—' : fmt.brl(v)), title: 'Bônus sobre outros vendedores: % sobre as vendas da meta dos demais. A faixa do % usa as vendas da meta da loja contra a meta da loja (a mesma base do "% da meta")' },
+        { key: 'total', label: 'Vendas da meta', title: 'Em cima, chá aromatizado + chá puro + acessórios, sem Espaço Gourmet. Embaixo, a meta individual: meta da loja ÷ pessoas que dividem a meta (quem tem o mínimo de dias com venda no mês; férias descontadas). Quem está fora da divisão é comparado com a mesma meta dos demais',
+          cls: hitCls('total', 'metaInd'), fmt: (v, r) => h('span', null, fmt.brl(v), ...sob(r && r.metaInd != null ? `meta ${fmt.brl0(r.metaInd)}` : null)) },
+        colCat('arom', 'Aromatizado', 'metaArom', 'cArom'),
+        colCat('puro', 'Puro', 'metaPuro', 'cPuro'),
+        colCat('acess', 'Acessórios', 'metaAcess', 'cAcess'),
+        { key: 'tkm', label: 'TKM · PMA · IPA', title: `Indicadores da premiação: TKM = vendas ÷ atendimentos; PMA = vendas ÷ itens; IPA = itens ÷ atendimentos.${pr.ativa ? ` Mínimos: TKM ${fmt.brl(pr.tkm)}, PMA ${fmt.brl(pr.pma)}, IPA ${fmt.n2(pr.ipa)}; em azul, o que já está no mínimo` : ''}`,
+          fmt: (v, r) => {
+            if (!r || r.pma == null) return '';
+            const ok = (x, m) => (pr.ativa && x >= m ? 'hit' : null);
+            return h('span', { class: 'eq-ind' }, h('span', { class: ok(r.tkm, pr.tkm) }, fmt.brl(r.tkm)), h('small', { class: 'eq-sob' }, 'PMA ', h('span', { class: ok(r.pma, pr.pma) }, fmt.brl(r.pma)), ' · IPA ', h('span', { class: ok(r.ipa, pr.ipa) }, fmt.n2(r.ipa))));
+          } },
       ],
-      rows: res.rows, total: res.total, sortKey: 'aPagar', imprimir: ['vendedor', 'aPagar', 'premiacao', 'metaInd', 'total', 'arom', 'puro', 'acess', 'tkm', 'pma', 'ipa', 'bonus'],
+      rows: res.rows, total: res.total, sortKey: 'aPagar', cls: 'eq-com-t',
     });
-    root.append(TS.section('Comissão por vendedor'), TS.card(h('span', null, 'Comissão por vendedor', parcial ? h('span', { class: 'badge warn com-parcial', title: 'Mês em andamento: os valores usam as vendas até agora contra a meta do mês inteiro. Quem ainda está "abaixo da meta" pode mudar de faixa (e de % de comissão) até o fim do mês.' }, 'parcial: a faixa pode mudar até o fim do mês') : null),
-      h('span', null, 'Sem Espaço Gourmet. ', h('b', { class: 'hit', style: { color: '#1F5FBF' } }, 'Azul'), ' = meta batida, ', h('b', { style: { color: '#B5452B' } }, 'vermelho'), ' = abaixo da meta. A linha Total soma os vendedores.'), tab));
+    const cardCom = TS.card(h('span', null, 'Comissão por vendedor', parcial ? h('span', { class: 'badge warn com-parcial', title: 'Mês em andamento: os valores usam as vendas até agora contra a meta do mês inteiro. Quem ainda está "abaixo da meta" pode mudar de faixa (e de % de comissão) até o fim do mês.' }, 'parcial: a faixa pode mudar até o fim do mês') : null),
+      h('span', null, 'Sem Espaço Gourmet. ', h('b', { class: 'hit eq-azul' }, 'Azul'), ' = meta batida, ', h('b', { class: 'neg' }, 'vermelho'), ' = abaixo da meta. A linha Total soma os vendedores.'), tab);
+    cardCom.classList.add('mt');
+    root.append(cardCom);
 
     // feriados do mês (horas trabalhadas por pessoa → PDF do fechamento)
     if (cfgLoja && mensal && res.lojasNoPeriodo === 1) {
@@ -936,23 +957,23 @@
         { key: 'pmaEG', label: 'PMA', fmt: fmt.brl },
         { key: 'ipaEG', label: 'IPA', fmt: fmt.n2 },
       ],
-      rows: eg.rows, total: eg.total, sortKey: 'fatEG', maxHeight: '320px',
+      rows: eg.rows, total: eg.total, sortKey: 'fatEG', maxHeight: '320px', cls: 'eq-eg-t',
     });
     const roy = R().royalties(base);
     const tabRoy = TS.table({
       cols: [
         { key: 'loja', label: 'Loja', align: 'l' },
         { key: 'total', label: 'Vendas loja', fmt: fmt.brl },
-        { key: 'royLoja', label: 'Roy. loja', fmt: fmt.brl, title: 'Percentual definido nas regras da loja' },
-        { key: 'royMkt', label: 'Roy. MKT', fmt: fmt.brl },
-        { key: 'fatEG', label: 'Fat. EG', fmt: fmt.brl },
-        { key: 'royEG', label: 'Roy. EG', fmt: fmt.brl },
-        { key: 'royEGMkt', label: 'Roy. EG MKT', fmt: fmt.brl },
+        // 2ª passada: o marketing vai embaixo do royalty (cabia só rolando para o lado no cartão de meia largura)
+        { key: 'royLoja', label: 'Royalties', title: 'Em cima, o royalty da loja (percentual definido nas regras da loja). Embaixo, o fundo de marketing',
+          fmt: (v, r) => h('span', null, fmt.brl(v), h('small', { class: 'eq-sob' }, `MKT\u00a0${fmt.brl(r && r.royMkt)}`)) },
+        { key: 'fatEG', label: 'Espaço Gourmet', title: 'Em cima, o faturamento do Espaço Gourmet. Embaixo, o royalty e o marketing dele',
+          fmt: (v, r) => h('span', null, fmt.brl(v), h('small', { class: 'eq-sob' }, `roy.\u00a0${fmt.brl(r && r.royEG)} · MKT\u00a0${fmt.brl(r && r.royEGMkt)}`)) },
         { key: 'royTotal', label: 'Total', fmt: fmt.brl },
       ],
-      rows: roy, sortKey: 'total', maxHeight: 'free',
+      rows: roy, sortKey: 'total', maxHeight: 'free', cls: 'eq-roy-t',
     });
-    root.append(h('div', { class: 'grid g-2 mt' },
+    root.append(h('div', { class: 'grid g-2 mt eq-eg-roy' },
       TS.card('Espaço Gourmet: gorjetas', 'Taxa de serviço dividida conforme a regra de cada loja', tabEG),
       TS.card('Royalties', 'Vendas da loja = chás + acessórios', tabRoy)));
 
@@ -1156,7 +1177,6 @@
     const a = TS.indicadores(atual), p = TS.indicadores(ant);
     const desc = (idx) => TS.descontos(idx);
     const rel = (x, y) => (y ? x / y - 1 : null);
-    const card = (lab, va, vp, fm) => TS.kpi(lab, fm(va), h('span', null, TS.deltaSpan(rel(va, vp)), ` · antes ${fm(vp)}`));
     // totais (faturamento, atendimentos) com períodos de tamanhos diferentes: a variação é pela média por dia
     const diasAtual = Math.max(1, Math.min(f.ate ?? db.maxDay, db.maxDay) - f.de + 1);
     const colDia = (lab, va, vp, fm) => ({ rot: lab, num: fm(va), linhas: [h('span', null, TS.deltaSpan(rel(va / diasAtual, vp / N)), ` por dia · antes ${fm(vp)} em ${N} dias`)],
@@ -1167,9 +1187,12 @@
       colDia('Atendimentos', a.cupons, p.cupons, fmt.int),
       { rot: 'TKM', num: fmt.brl(a.tkm), linhas: [h('span', null, TS.deltaSpan(rel(a.tkm, p.tkm)), ` · antes ${fmt.brl(p.tkm)}`)], dica: 'Ticket médio: faturamento ÷ cupons, no período e nos dias anteriores.' },
     ], { titulo: 'Período × dias anteriores',
-      extra: h('p', { class: 'promo-comp muted' }, `Comparado com ${fmt.date(TS.dayToIso(f.de - N))} a ${fmt.date(TS.dayToIso(f.de - 1))} (os ${N} dias antes de ${fmt.date(TS.dayToIso(f.de))}).`) }));
-    root.append(h('div', { class: 'grid g-kpi mt' },
-      card('PMA', a.pma, p.pma, fmt.brl), card('IPA', a.ipa, p.ipa, fmt.n2)));
+      extra: [ // 2ª passada: PMA e IPA como linhas do herói (levam à tabela por vendedor)
+        apoioHeroi([
+          { rot: 'PMA', num: fmt.brl(a.pma), vars: h('span', null, TS.deltaSpan(rel(a.pma, p.pma)), ` · antes ${fmt.brl(p.pma)}`), dica: 'Preço médio por item: faturamento ÷ itens', onclick: () => document.getElementById('pr-vend')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) },
+          { rot: 'IPA', num: fmt.n2(a.ipa), vars: h('span', null, TS.deltaSpan(rel(a.ipa, p.ipa)), ` · antes ${fmt.n2(p.ipa)}`), dica: 'Itens por atendimento: itens ÷ cupons', onclick: () => document.getElementById('pr-vend')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) },
+        ]),
+        h('p', { class: 'promo-comp muted' }, `Comparado com ${fmt.date(TS.dayToIso(f.de - N))} a ${fmt.date(TS.dayToIso(f.de - 1))} (os ${N} dias antes de ${fmt.date(TS.dayToIso(f.de))}).`)] }));
     if (sugestoes) root.append(sugestoes);
 
     // lucro antes × durante × depois (custo do estoque; só admin e franqueado com uma loja escolhida)
@@ -1189,22 +1212,26 @@
         ipa: x.ipa, ipaP: y.ipa, dIpa: rel(x.ipa, y.ipa), desc: desc(vendA.get(v) || []), descP: desc(vendP.get(v) || []), vt: x.vt, vtP: y.vt, dVt: rel(x.vt / diasAtual, y.vt / N),
       };
     });
-    const dcol = (k) => ({ key: k, label: 'Var.', fmt: (v) => (v == null ? '—' : fmt.delta(v)), cls: (r) => (r[k] > 0 ? 'pos' : r[k] < 0 ? 'neg' : 'muted') });
-    const ant_ = { cls: () => 'muted' };
+    // 2ª passada (23/11/2026): uma coluna por indicador, sem rolar para o lado — o valor de agora e, embaixo, a variação e o "antes"
+    const comAntes = (fm, kAntes, kVar, porDia) => (v, r) => h('span', { class: 'vp2-cel' }, fm(v),
+      h('small', { class: 'muted' }, kVar && r[kVar] != null ? h('span', { class: r[kVar] > 0 ? 'pos' : r[kVar] < 0 ? 'neg' : '' }, fmt.delta(r[kVar]) + (porDia ? '/dia' : '')) : null,
+        kVar && r[kVar] != null ? ' · ' : null, `antes ${fm(r[kAntes])}`));
     const tab = TS.table({
       cols: [
-        { key: 'vendedor', label: 'Vendedor', align: 'l', sticky: true },
-        { key: 'vt', label: 'Faturamento', fmt: fmt.brl }, { key: 'vtP', label: 'Antes', fmt: fmt.brl, ...ant_ }, dcol('dVt'),
-        { key: 'cup', label: 'Cupons', fmt: fmt.int }, { key: 'cupP', label: 'Antes', fmt: fmt.int, ...ant_ },
-        { key: 'tkm', label: 'TKM', fmt: fmt.brl }, { key: 'tkmP', label: 'Antes', fmt: fmt.brl, ...ant_ }, dcol('dTkm'),
-        { key: 'pma', label: 'PMA', fmt: fmt.brl }, { key: 'pmaP', label: 'Antes', fmt: fmt.brl, ...ant_ }, dcol('dPma'),
-        { key: 'ipa', label: 'IPA', fmt: fmt.n2 }, { key: 'ipaP', label: 'Antes', fmt: fmt.n2, ...ant_ }, dcol('dIpa'),
-        { key: 'desc', label: 'Descontos', fmt: fmt.brl }, { key: 'descP', label: 'Antes', fmt: fmt.brl, ...ant_ },
+        { key: 'vendedor', label: 'Vendedor', align: 'l', sticky: true, wrap: true },
+        { key: 'vt', label: 'Faturamento', fmt: comAntes(fmt.brl, 'vtP', 'dVt', true), title: `Faturamento no período e, embaixo, a variação da média por dia contra os ${N} dias anteriores e o faturamento "antes".` },
+        { key: 'cup', label: 'Cupons', fmt: comAntes(fmt.int, 'cupP'), title: `Cupons no período e, embaixo, os dos ${N} dias anteriores.` },
+        { key: 'tkm', label: 'TKM', fmt: comAntes(fmt.brl, 'tkmP', 'dTkm'), title: 'Ticket médio (faturamento ÷ cupons) e, embaixo, a variação e o de antes.' },
+        { key: 'pma', label: 'PMA', fmt: comAntes(fmt.brl, 'pmaP', 'dPma'), title: 'Preço médio por item (faturamento ÷ itens) e, embaixo, a variação e o de antes.' },
+        { key: 'ipa', label: 'IPA', fmt: comAntes(fmt.n2, 'ipaP', 'dIpa'), title: 'Itens por atendimento (itens ÷ cupons) e, embaixo, a variação e o de antes.' },
+        { key: 'desc', label: 'Descontos', fmt: comAntes(fmt.brl, 'descP'), title: `Descontos dados no período e, embaixo, nos ${N} dias anteriores.` },
       ],
       rows, sortKey: 'vt',
       total: { vendedor: 'Total', cup: a.cupons, cupP: p.cupons, tkm: a.tkm, tkmP: p.tkm, dTkm: rel(a.tkm, p.tkm), pma: a.pma, pmaP: p.pma, dPma: rel(a.pma, p.pma), ipa: a.ipa, ipaP: p.ipa, dIpa: rel(a.ipa, p.ipa), desc: desc(atual), descP: desc(ant), vt: a.vt, vtP: p.vt, dVt: rel(a.vt / diasAtual, p.vt / N) },
     });
-    root.append(TS.section('Por vendedor'), TS.card('Período atual × anterior', `"Antes" = os ${N} dias imediatamente anteriores ao período · a variação do faturamento é pela média por dia (${diasAtual} dia(s) agora × ${N} antes)`, tab));
+    const cardVend = TS.card('Período atual × anterior', `"Antes" = os ${N} dias imediatamente anteriores ao período · a variação do faturamento é pela média por dia (${diasAtual} dia(s) agora × ${N} antes)`, tab);
+    cardVend.id = 'pr-vend';
+    root.append(TS.section('Por vendedor'), cardVend);
 
     const rowsS = rows.filter((r) => r.tkm != null || r.tkmP != null).sort((x, y) => (y.vt || 0) - (x.vt || 0));
     if (rowsS.length > 1) rowsS.push({ vendedor: 'Média da loja', tkm: a.tkm, tkmP: p.tkm, media: true });

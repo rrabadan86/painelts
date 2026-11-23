@@ -123,7 +123,8 @@
       novaBox,
       h('div', { class: 'card mt' }, h('div', { class: 'card-title' }, 'Em andamento'), abertas.length ? h('div', { class: 'inv-lista' }, ...abertas.map(linha)) : TS.empty('Nenhuma contagem aberta. Comece com "Nova contagem".')),
       antigas.length ? historico(antigas, vend) : null,
-      vend ? null : h('div', { class: 'card mt inv-como' }, h('div', { class: 'card-title' }, 'Como funciona'),
+      // 2ª passada (23/11/2026): explicação recolhida em "Como funciona ▸" (como na Validade), a lista e a ação ficam em cima
+      vend ? null : h('details', { class: 'card mt inv-como inv-p2-como' }, h('summary', null, 'Como funciona'),
         h('ol', null,
           h('li', null, 'Abra uma contagem: alguns produtos, um grupo, um tipo de chá ou todos os chás a granel. Itens fora dela não mudam no AppNext.'),
           h('li', null, 'Contem pelo celular (várias pessoas ao mesmo tempo). Chá a granel em gramas; o resto em unidades. Salva sozinho.'),

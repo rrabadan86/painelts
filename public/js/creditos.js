@@ -215,10 +215,10 @@
       ],
       rows: fid.meses, sortKey: 'mes', pageSize: 12, cls: 'est-t', onRowClick: (m) => verMes(m, acaoRoy, fid, loja),
     }) : null;
-    return h('div', { class: 'card mt' },
-      h('div', { class: 'cfr-topo' }, h('div', null, h('div', { class: 'card-title' }, 'Prêmios de fidelidade · desconto nos royalties'),
+    return h('div', { class: 'card mt cfr-p2' },
+      h('div', { class: 'card-head cfr-topo' }, h('div', null, h('div', { class: 'card-title' }, 'Prêmios de fidelidade · desconto nos royalties'),
         h('div', { class: 'card-sub' }, `A franquia devolve ${fmt.int(fid.pct * 100)}% do custo dos prêmios resgatados no FIXE, como desconto no boleto de royalties (normalmente no royalty do mês seguinte). Lance o desconto que veio, com o mês de referência do royalty, e o painel confere.`)),
-        fid.meses.length ? h('div', { class: 'cfr-btns' }, podeCobrar() ? h('button', { type: 'button', class: 'btn', onclick: () => cobrar('fidelidade', d, loja) }, '✉ Cobrar a franquia') : null, h('button', { type: 'button', class: 'btn primary', onclick: () => lancarRoyalty(fid, acaoRoy) }, '+ Lançar desconto nos royalties')) : null),
+        fid.meses.length ? h('div', { class: 'cfr-btns est-p2-acoes-dir' }, podeCobrar() ? h('button', { type: 'button', class: 'btn', onclick: () => cobrar('fidelidade', d, loja) }, '✉ Cobrar a franquia') : null, h('button', { type: 'button', class: 'btn primary', onclick: () => lancarRoyalty(fid, acaoRoy) }, '+ Lançar desconto nos royalties')) : null),
       fid.meses.length ? h('div', { class: 'cfr-res' },
         h('div', { class: r.nAtrasado ? 'ruim' : '' }, h('small', null, 'Atrasado'), h('b', null, fmt.brl(r.atrasado)), h('small', null, r.nAtrasado ? `${r.nAtrasado} mês(es) sem desconto` : 'nada atrasado')),
         h('div', { class: r.nFaltou ? 'ruim' : '' }, h('small', null, 'Veio a menos'), h('b', null, fmt.brl(r.faltou)), h('small', null, r.nFaltou ? `${r.nFaltou} mês(es) com diferença` : 'nenhuma diferença')),
@@ -381,9 +381,11 @@
       ], { titulo: 'Devoluções à franquia' }),
       d.descontoLido ? null : h('div', { class: 'notice mt' }, h('b', null, 'Ainda sem o desconto das notas de compra. '), 'O robô passa a ler o desconto na próxima sincronização das notas de entrada. Até lá, as devoluções ficam em aberto.'),
       cardPend,
-      h('div', { class: 'card mt' }, h('div', { class: 'cfr-topo' }, h('div', { class: 'card-title' }, 'Devoluções'), podeCobrar() && d.creditos.some((c) => c.situacao === 'atrasado' || c.situacao === 'aberto' || c.situacao === 'confirmar') ? h('button', { type: 'button', class: 'btn', onclick: () => cobrar('devolucoes', d, loja) }, '✉ Cobrar a franquia') : null),
-        h('div', { class: 'card-sub' }, `Cada NF-e de devolução autorizada${variosForn ? '' : ` para ${d.creditos[0] ? d.creditos[0].fornecedor : 'a franquia'}`}. Sem desconto em ${d.prazo} dias = atrasada. Clique para abrir a NF-e.`),
-        h('div', { class: 'est-tools' }, tab.searchBox, seg), tab),
+      // 2ª passada (23/11/2026): título e frase à esquerda; Cobrar, Imprimir e Expandir juntos no canto do cabeçalho
+      h('div', { class: 'card mt' }, h('div', { class: 'card-head cfr-topo' },
+        h('div', null, h('div', { class: 'card-title' }, 'Devoluções'), h('div', { class: 'card-sub' }, `Cada NF-e de devolução autorizada${variosForn ? '' : ` para ${d.creditos[0] ? d.creditos[0].fornecedor : 'a franquia'}`}. Sem desconto em ${d.prazo} dias = atrasada. Clique para abrir a NF-e.`)),
+        podeCobrar() && d.creditos.some((c) => c.situacao === 'atrasado' || c.situacao === 'aberto' || c.situacao === 'confirmar') ? h('div', { class: 'cfr-btns est-p2-acoes-dir' }, h('button', { type: 'button', class: 'btn', onclick: () => cobrar('devolucoes', d, loja) }, '✉ Cobrar a franquia')) : null),
+        h('div', { class: 'est-tools est-p2-tools' }, tab.searchBox, seg), tab),
       cardPremios,
       cardFeitas].filter(Boolean));
   }

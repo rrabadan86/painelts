@@ -105,15 +105,23 @@
   const LIMITES = `O painel não guarda o saldo de cada dia: considera que o produto zerou no dia da última venda. É uma estimativa pelo preço de venda (não é lucro) e não desconta o cliente que levou outro produto no lugar.`;
 
   /** quadros "Perdendo por falta" e "Dinheiro sobrando" (o Estoque torna clicáveis) */
+  /** explicações (ⓘ) de "Perdendo por falta" e "Dinheiro sobrando": as mesmas no quadro e no cartão-herói do Estoque */
+  API.dicas = function (T, { H }) {
+    const f = T.falta;
+    return {
+      falta: `Quanto a loja deixa de vender por dia em produto zerado: média de venda por dia nos ${JANELA} dias antes de zerar, em R$. ${LIMITES} O "até agora" soma no máximo ${MAX_ACUM} dias de cada produto. Só entra quem vendeu nos últimos ${MAX_DIAS} dias; fora de linha, taxas e resgates ficam de fora.${f.n && !f.comConta ? ' Os produtos zerados têm pouco histórico para estimar.' : ''} Toque para ver na tabela e priorizar o pedido.`,
+      sobra: `Produto que vende, mas tem saldo para mais de ${fmt.int(FATOR_EXCESSO * H)} dias (${FATOR_EXCESSO}× a entrega + o período do pedido, ${fmt.int(H)} dias). O valor é o que passa do necessário para ${fmt.int(H)} dias, a custo. Diferente de "parado", que não vende. Toque para ver na tabela: segure a compra desses produtos.`,
+    };
+  };
   API.quadros = function (T, { H }) {
-    const f = T.falta, s = T.sobra;
+    const f = T.falta, s = T.sobra, d = API.dicas(T, { H });
     return {
       falta: TS.kpi('Perdendo por falta', f.comConta ? `${fmt.brl0(f.perdaDia)}/dia` : '—',
         h('span', { class: f.n ? 'down' : '' }, f.n ? `${fmt.int(f.n)} ${f.n === 1 ? 'produto zerado' : 'produtos zerados'}${f.comConta ? ` · ${fmt.brl0(f.acumulado)} até agora` : ''}${f.esperando ? ` · ⏳ ${fmt.int(f.esperando)} com cliente esperando` : ''}` : 'nenhum produto zerado que vendia'),
-        `Quanto a loja deixa de vender por dia em produto zerado: média de venda por dia nos ${JANELA} dias antes de zerar, em R$. ${LIMITES} O "até agora" soma no máximo ${MAX_ACUM} dias de cada produto. Só entra quem vendeu nos últimos ${MAX_DIAS} dias; fora de linha, taxas e resgates ficam de fora.${f.n && !f.comConta ? ' Os produtos zerados têm pouco histórico para estimar.' : ''} Toque para ver na tabela e priorizar o pedido.`),
+        d.falta),
       sobra: TS.kpi('Dinheiro sobrando', s.n ? fmt.brl0(s.valor) : '—',
         s.n ? `${fmt.int(s.n)} ${s.n === 1 ? 'produto que vende devagar' : 'produtos que vendem devagar'}` : 'nenhum produto com saldo demais',
-        `Produto que vende, mas tem saldo para mais de ${fmt.int(FATOR_EXCESSO * H)} dias (${FATOR_EXCESSO}× a entrega + o período do pedido, ${fmt.int(H)} dias). O valor é o que passa do necessário para ${fmt.int(H)} dias, a custo. Diferente de "parado", que não vende. Toque para ver na tabela: segure a compra desses produtos.`),
+        d.sobra),
     };
   };
 

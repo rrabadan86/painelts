@@ -72,7 +72,7 @@
     const irPara = (k) => () => { fil = state.confFil = k; TS.segMarcar(seg, k); pintarTabela(); };
     const clicavel = (el, k) => { el.classList.add('est-kpi-click'); el.setAttribute('role', 'button'); el.tabIndex = 0; el.addEventListener('click', irPara(k)); el.addEventListener('keydown', (e) => { if (e.key === 'Enter') irPara(k)(); }); return el; };
     const S = d.sobras;
-    area.append(h('div', { class: 'grid g-kpi' },
+    area.append(h('div', { class: 'grid g-kpi vp2-conf-kpi' },
       clicavel(TS.kpi('Dias que batem', fmt.int(R.bate + R.explicado), R.explicado ? `${fmt.int(R.explicado)} com explicação` : `de ${fmt.int(R.total)} dias`,
         `Dias em que o faturamento do painel e o total do caixa ficam a até ${fmt.brl(T)} um do outro.\n\n"Com explicação": a diferença é exatamente o que fica de fora de um dos lados (taxa de serviço, itens a R$ 0,01, venda fora do caixa) ou o caixa foi fechado depois da meia-noite. Toque para ver na tabela.`, R.total && !R.naobate ? 'bom' : null), 'bate'),
       clicavel(TS.kpi('Não batem', fmt.int(R.naobate), R.naobate ? h('span', { class: 'down' }, `${fmt.brl(R.somaNaoBate)} somando as diferenças`) : 'nenhum dia 👏',
@@ -175,7 +175,7 @@
       area.append(h('div', { class: 'notice' }, 'O painel ainda não tem os XMLs das notas desta loja, então não sabe quais cupons foram cancelados. Eles vêm pelo robô (Configurações → loja → Coletor → Histórico → "Só XML").'));
     }
     if (exc && c.excluidos.cupons) area.append(h('div', { class: 'notice ok' }, `Esta loja tira os cupons cancelados das vendas: ${fmt.brl(c.excluidos.valor)} em ${fmt.int(c.excluidos.cupons)} ${c.excluidos.cupons === 1 ? 'cupom' : 'cupons'} já estão fora do faturamento e da comissão dos últimos 60 dias.`));
-    area.append(h('div', { class: 'grid g-kpi' },
+    area.append(h('div', { class: 'grid g-kpi vp2-conf-kpi' },
       TS.kpi('Notas canceladas', fmt.brl(c.total.valor), `${fmt.int(c.total.cupons)} ${c.total.cupons === 1 ? 'nota' : 'notas'} em 60 dias`,
         'Cupons (NFC-e) e notas de venda (NF-e) cancelados no AppNext nos últimos 60 dias, pelo XML que o robô guarda. Valor = total da nota cancelada. Devolução, transferência e nota de entrada não entram.'),
       TS.kpi('Ainda contam nas vendas', fmt.brl(I.valor), I.cupons ? h('span', { class: 'down' }, `${fmt.int(I.cupons)} ${I.cupons === 1 ? 'cupom' : 'cupons'} · ${fmt.brl(I.valorMeta)} na comissão`) : 'nenhum 👏',
@@ -238,7 +238,7 @@
     const fts = d.fontes || [];
     const ruins = fts.filter((f) => f.sinal === 'vermelho');
     if (ruins.length) area.append(h('div', { class: 'notice warn' }, TS.etqPrazo('agora'), ' ', `${ruins.length === 1 ? 'Fonte parada' : 'Fontes paradas'} há mais de 3 dias: ${ruins.map((f) => f.nome).join(', ')}. Os números que dependem ${ruins.length === 1 ? 'dela' : 'delas'} estão velhos.`));
-    const quadros = h('div', { class: 'grid g-kpi' }, h('div', { class: 'loading' }, h('div', { class: 'spinner' }), 'Casando as vendas com o estoque…'));
+    const quadros = h('div', { class: 'grid g-kpi vp2-conf-kpi' }, h('div', { class: 'loading' }, h('div', { class: 'spinner' }), 'Casando as vendas com o estoque…'));
     const lista = h('div');
     area.append(quadros,
       TS.card('Fontes dos dados', 'Quando cada dado chegou ao painel pela última vez.', TS.table({ rows: fts, cls: 'conf-t',

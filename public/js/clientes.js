@@ -820,19 +820,22 @@
         ...Object.entries(MOTIVOS_HOJE).filter(([m]) => conta(m)).map(([m, x]) => chip(`${x.nome} (${fmt.int(conta(m))})`, m, x.dica)));
       const selV = vends.length ? h('select', { class: 'f-input hj-vend', 'aria-label': 'Vendedora' }, h('option', { value: '' }, 'Todas as vendedoras'), ...vends.map((v) => h('option', { value: v, selected: hojeF.vend === v || null }, v))) : null;
       if (selV) selV.addEventListener('change', () => { hojeF.vend = selV.value; pintar(val); });
+      // 2ª passada (23/11/2026): uma ação principal por bloco — só o primeiro da lista (o mais importante) tem o WhatsApp cheio
+      let primeiro = true;
       const linha = (x) => {
         const c = x.c, m0 = MOTIVOS_HOJE[x.ms[0]];
+        const pri = primeiro && !x.comp && !x.robo; if (pri) primeiro = false;
         const mods = modelosDe(lojaIdDe(c));
         const txt = m0.texto ? TS.cliApi.texto(m0.texto, c, { chaoferta: x.oferta || c.chaFavorito || 'chá' }) : textoWpp(mods.find((m) => m.nome === m0.modelo) || mods[0], c);
         // a mensagem: duas linhas com reticências; tocar mostra inteira (o celular não mostra o title)
         const msg = h('button', { type: 'button', class: 'hj-msg', title: 'Ver a mensagem inteira', 'aria-expanded': 'false' }, txt);
         msg.addEventListener('click', () => { const ab = msg.classList.toggle('aberta'); msg.setAttribute('aria-expanded', String(ab)); });
-        const el = h('div', { class: 'hj-item' },
+        const el = h('div', { class: 'hj-item' + (pri ? ' hj-pri' : '') },
           h('div', { class: 'hj-quem' }, h('button', { type: 'button', class: 'hj-nome', onclick: () => abrirClientes([c.cpf]), title: 'Abrir a ficha' }, c.nome || fmtCPF(c.cpf)),
             h('div', { class: 'hj-motivos' }, ...x.ms.map((m) => h('span', { class: 'hj-mot hj-' + m, title: MOTIVOS_HOJE[m].dica }, MOTIVOS_HOJE[m].nome))),
             h('small', { class: 'muted' }, [c.vendedoraPref && `atende: ${c.vendedoraPref}`, c.chaFavorito && `gosta de ${c.chaFavorito}`, x.oferta && `oferecer: ${x.oferta}`, c.ausencia != null && `${fmt.int(c.ausencia)} d sem vir`].filter(Boolean).join(' · '))),
           msg,
-          h('div', { class: 'hj-acoes' }, x.comp ? h('span', { class: 'hj-robo', title: 'Sorteado hoje para o grupo de comparação da Campanha Resumo diário: fica sem mensagem para medir se a campanha traz clientes de volta. Mandar mensagem estragaria a medida.' }, '🤖 sem mensagem hoje (comparação)') : x.robo ? h('span', { class: 'hj-robo', title: 'Este cliente está na lista de hoje da Campanha Resumo diário: o robô do WhatsApp manda a mensagem sozinho. A equipe não envia (seria mensagem em dobro).' }, '🤖 o robô envia hoje') : h('button', { type: 'button', class: 'btn primary hj-wpp', onclick: async (e) => {
+          h('div', { class: 'hj-acoes' }, x.comp ? h('span', { class: 'hj-robo', title: 'Sorteado hoje para o grupo de comparação da Campanha Resumo diário: fica sem mensagem para medir se a campanha traz clientes de volta. Mandar mensagem estragaria a medida.' }, '🤖 sem mensagem hoje (comparação)') : x.robo ? h('span', { class: 'hj-robo', title: 'Este cliente está na lista de hoje da Campanha Resumo diário: o robô do WhatsApp manda a mensagem sozinho. A equipe não envia (seria mensagem em dobro).' }, '🤖 o robô envia hoje') : h('button', { type: 'button', class: 'btn hj-wpp' + (pri ? ' primary' : ''), onclick: async (e) => {
             const bt = e.currentTarget;
             bt.disabled = true;
             try {
@@ -858,7 +861,7 @@
           sel.length ? h('div', { class: 'hj-lista' }, ...sel.slice(0, LIM).map(linha)) : TS.empty('Ninguém para contatar com esses filtros. 🎉'),
           sel.length > LIM ? h('p', { class: 'muted' }, `Mostrando os ${LIM} mais importantes de ${fmt.int(sel.length)}. Depois de contatar, a lista anda.`) : null,
           foraSemEstoque ? h('p', { class: 'muted hj-fora' }, `🚫 ${fmt.int(foraSemEstoque)} cliente${foraSemEstoque === 1 ? '' : 's'} fora da lista: a mensagem citaria um chá sem estoque (no chá a granel, menos de 100 g). Voltam quando chegar a nota de entrada do chá.`) : null,
-          h('small', { class: 'muted hj-rodape' }, 'Ordem: quem é mais importante primeiro (clientes bons sumindo, aniversário, hora de repor…). Ao abrir o WhatsApp, o cliente fica marcado como contatado e sai da lista (se a mensagem não foi enviada, dá para desfazer por alguns segundos). Mande poucas por vez para o WhatsApp não restringir o número.')));
+          h('details', { class: 'est-como hj-rodape' }, h('summary', null, 'Como funciona ▸'), h('p', { class: 'muted' }, 'Ordem: quem é mais importante primeiro (clientes bons sumindo, aniversário, hora de repor…). Ao abrir o WhatsApp, o cliente fica marcado como contatado e sai da lista (se a mensagem não foi enviada, dá para desfazer por alguns segundos). Mande poucas por vez para o WhatsApp não restringir o número.'))));
     };
     // espera o estoque (chá a granel) para não mostrar quem receberia mensagem de chá que a loja não tem
     if (!TS.validade) pintar(null);

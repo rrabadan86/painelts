@@ -185,10 +185,10 @@ test('Lojas lado a lado: projeção e zerados de cada loja batem com os da próp
   // na loja: projeção do mês (a conta única) e o quadro "Perdendo por falta" do Estoque
   const naLoja = await page.evaluate(() => { const ym = TS.dayToIso(TS.db.maxDay).slice(0, 7); const P = TS.projecaoMes(ym, { base: 'loja' }); return P ? Math.round(P.proj) : null; });
   await ir(page, 'estoque');
-  const q = page.locator('main .kpi', { hasText: 'Perdendo por falta' });
+  const q = page.locator('main .est-p2-heroi .heroi-col', { hasText: 'Perdendo por falta' });
   await expect(q).toBeVisible({ timeout: 30000 });
   const zer = /(\d+) produtos? zerados?/.exec(await q.innerText());
-  const par = /([\d.]+) produtos sem venda/.exec(await page.locator('main .kpi', { hasText: 'Estoque parado' }).innerText());
+  const par = /([\d.]+) produtos sem venda/.exec(await page.locator('main .est-p2-heroi .linhas-num-a', { hasText: 'Parado' }).innerText());
   // com todas as lojas: a linha dessa loja
   await page.locator('#lojaSel').selectOption('todas');
   await page.waitForFunction(() => TS.state.loja === 'todas' && TS.db && TS.db.n && TS.db.metas.length > 1);

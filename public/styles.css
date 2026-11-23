@@ -3605,3 +3605,146 @@ button.pilula-sit-btn:focus-visible { outline: 2px solid var(--green); outline-o
 .vl-nota-cel .vl-nota-campos { min-width: 0; }
 .vl-nota-cel .vl-curta, .vl-nota-cel .vl-parte, .vl-nota-cel .vl-primeira { white-space: normal; overflow-wrap: anywhere; }
 .vl-nota-cel .vl-parte .vl-parte-val { width: 150px; }
+
+/* 2ª passada — Estoque (23/11/2026, proposta do Figma): herói do Estoque, ações juntas no canto do cabeçalho, consulta recolhida */
+.est-p2-heroi .heroi-col .linhas-num { margin-top: 4px; }
+.est-p2-heroi .heroi-col .linhas-num-r { font-size: 14px; }
+.est-p2-heroi .heroi-col .linhas-num-v { font-size: 17px; }
+.est-p2-heroi .est-p2-ir { text-align: left; }
+.est-p2-acoes { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; margin-top: 10px; }
+.est-p2-acoes .btn.primary { text-decoration: none; }
+.card-head .est-p2-csv { margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--line); background: var(--card, #fff); color: var(--green); border-radius: 8px; padding: 5px 10px; font: 600 12px/1 inherit; cursor: pointer; }
+.card-head .est-p2-csv:hover { background: var(--cream-2); }
+.card-head .est-p2-csv span { font-size: 12px; }
+.card-head .est-p2-csv + .exp-btn, .card-head .est-p2-acoes-dir + .exp-btn { margin-left: 0; }
+.est-p2-tools { margin: 0 0 10px; justify-content: flex-start; }
+#est-tabela .est-minres { margin: 10px 0 0; }
+.est-p2-saz-linha { display: flex; align-items: center; justify-content: space-between; gap: 10px 16px; flex-wrap: wrap; }
+.est-p2-saz-linha .est-saz-res { margin: 0; flex: 1 1 320px; min-width: 0; font-size: 14px; }
+.est-p2-saz-btn { flex: none; }
+.est-p2-saz-corpo { margin-top: 12px; }
+@media (max-width: 640px) {
+  .est-p2-acoes .btn.primary { flex: 1 1 100%; justify-content: center; text-align: center; }
+  .est-p2-saz-btn { width: 100%; }
+}
+@media (min-width: 861px) { .est-p2-heroi .heroi-cols { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.25fr); grid-auto-flow: row; } }
+@media (max-width: 860px) { .est-p2-heroi .heroi-cols > .heroi-col { grid-column: 1 / -1; } .est-p2-heroi .heroi-cols > .heroi-col + .heroi-col:not(.heroi-pri) { padding-top: 12px; border-top: 1px solid var(--line); } .est-p2-heroi .heroi-pri { border-bottom: 0; padding-bottom: 0; } }
+/* Pedido: composição no rodapé do herói; compras × teto numa linha que abre a conta */
+.ped-p2-compo { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
+.ped-p2-compo .ped-compo { margin-top: 4px; }
+.cv-p2 { border: 1px solid var(--line); border-radius: 14px; background: #fff; padding: 14px 22px; }
+.cv-p2-sum { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; cursor: pointer; list-style: none; min-height: 28px; }
+.cv-p2-sum::-webkit-details-marker { display: none; }
+.cv-p2-tit { font-weight: 700; color: var(--dark); font-size: 15px; }
+.cv-p2-res { font-size: 15px; min-width: 0; }
+.cv-p2-ver { margin-left: auto; color: var(--green); font-weight: 600; font-size: 14px; }
+.cv-p2-ver::after { content: ' ▸'; }
+.cv-p2[open] .cv-p2-ver::after { content: ' ▾'; }
+.cv-p2-sum:hover .cv-p2-ver { text-decoration: underline; }
+.cv-p2-corpo { margin-top: 12px; }
+.cv-p2-link { margin: 10px 0 0; font-size: 13px; }
+@media (max-width: 640px) { .cv-p2 { padding: 14px 18px; } .cv-p2-ver { margin-left: 0; } }
+.card-head .ped-p2-acoes { margin-left: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.ped-p2-tools { margin: 0 0 10px; justify-content: flex-start; }
+/* Créditos com a franquia: o topo do cartão é o cabeçalho (ações + Imprimir/Expandir juntos); resumo dos prêmios em linha, sem caixas */
+.card-head.cfr-topo { align-items: flex-start; }
+.card-head.cfr-topo .cfr-btns { margin-left: auto; }
+.cfr-p2 .cfr-res > div { background: none; border-radius: 0; border-left: 1px solid var(--line); padding: 2px 16px; }
+.cfr-p2 .cfr-res > div:first-child { border-left: 0; padding-left: 0; }
+.cfr-p2 .cfr-res > div.ruim { background: none; color: inherit; }
+.cfr-p2 .cfr-res > div.ruim b { color: var(--bad); }
+@media (max-width: 640px) { .cfr-p2 .cfr-res > div { border-left: 0; padding: 2px 0; } }
+/* Inventário: "Como funciona" recolhido */
+details.inv-p2-como summary { cursor: pointer; font-weight: 600; }
+details.inv-p2-como ol { margin-top: 8px; }
+/* 2ª passada — Clientes (23/11/2026): menos caixas e uma ação principal por bloco */
+/* Hoje: os clientes são linhas com divisória dentro do cartão (não caixa dentro de caixa); o 1º, o mais importante, tem o WhatsApp cheio */
+.hj-card .hj-lista { gap: 0; border-top: 1px solid var(--line); }
+.hj-card .hj-item { border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: none; padding: 14px 2px; }
+.hj-card .hj-item.hj-pri { background: var(--cream-2); padding-inline: 10px; border-radius: 10px; border-bottom-color: transparent; margin-bottom: 1px; }
+.hj-card details.hj-rodape { margin-top: 12px; }
+.hj-card details.hj-rodape p { margin: 6px 0 0; font-size: 13px; }
+/* Campanhas: a situação do robô é o herói da tela (robô · enviadas hoje · não enviadas), botões no pé */
+.zap-faixa.zh-box { display: block; padding: 0; gap: 0; font-size: inherit; margin-bottom: 16px; }
+.zap-faixa.zh-box[hidden] { display: none; }
+.zap-faixa.zh-box .zap-alerta { margin: 0 0 12px; }
+.zap-faixa.zh-box.zap-erro .zh-heroi { border-color: var(--bad); }
+.zh-heroi .heroi-pri .heroi-num .badge { font-size: 20px; line-height: 1.2; padding: 4px 12px; border-radius: 8px; vertical-align: middle; }
+.zh-heroi .heroi-linha .badge { font-size: 12px; }
+.zh-heroi .zap-faixa-hora { display: block; line-height: 1.35; }
+.zh-pe { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 12px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
+.zh-pe .zap-faixa-b { display: flex; flex-wrap: wrap; gap: 8px; }
+.zh-pe small.neg:empty { display: none; }
+.zh-ver, .esh-ir { font-weight: 600; color: var(--green); min-height: 24px; padding: 2px 0; text-align: left; }
+/* Indicadores → Fidelidade: os números são linhas com divisória (sem caixa e sem barra lateral; o estado fica na cor do número) */
+.fx-card .fx-stats, .card .fx-stats { gap: 0 28px; }
+.fx-stats .fx-stat { background: none; border-radius: 0; border-left: 0; border-top: 1px solid var(--line); padding: 10px 2px 12px; }
+.fx-stats .fx-stat.ok, .fx-stats .fx-stat.alerta { border-left: 0; }
+.fx-stats .fx-stat > b { font-size: 22px; }
+.fx-stats .fx-stat-click:hover, .fx-stats .fx-stat-click:focus-visible { box-shadow: none; background: var(--cream-2); }
+/* Lista de espera: "+ Anotar pedido" no pé do herói; a mensagem padrão recolhida depois da lista */
+.esp-kpis .esh-pe { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
+.esh-modelo .esp-modelo { max-width: none; }
+@media (max-width: 860px) {
+  .hj-card .hj-item { padding: 12px 0; }
+  .hj-card .hj-item.hj-pri { padding-inline: 10px; }
+  .zh-pe { justify-content: stretch; }
+  .zh-pe .zap-faixa-b, .zh-pe .zap-faixa-b .btn { flex: 1 1 auto; }
+  .zh-heroi .heroi-pri .heroi-num .badge { font-size: 18px; }
+  .esp-kpis .esh-pe .btn { flex: 1 1 100%; }
+}
+/* 2ª passada — Equipe (23/11/2026): Comissionamento sem rolagem para o lado, Minha comissão e Configurações → Lojas */
+:root { --eq-hit: #1F5FBF; } /* o mesmo azul de "meta batida" das tabelas (.t .hit) */
+.eq-azul { color: var(--eq-hit); }
+.eq-sob { display: block; font-size: max(12px, .833em); font-weight: 400; color: var(--muted); line-height: 1.35; white-space: nowrap; }
+.eq-sob .hit { font-weight: 600; }
+.eq-ind > span:first-child { font-weight: 600; }
+.eq-ind > span.hit:first-child, .eq-ind .hit { color: var(--eq-hit); }
+.eq-h-linha { display: block; }
+.eq-com-t th, .eq-com-t td { vertical-align: top; }
+.minha-sel { flex-wrap: nowrap; }
+.minha-sel .f-input { width: auto; }
+@media (max-width: 860px) {
+  .minha-sel { flex-wrap: wrap; width: 100%; }
+  .minha-sel .f-input { flex: 1 1 160px; min-width: 0; }
+  .eq-sob { white-space: normal; }
+}
+/* Royalties no cartão de meia largura: cabeçalho e detalhe quebram a linha em vez de empurrar a tabela para o lado */
+.eq-roy-t th, .eq-roy-t td, .eq-roy-t .eq-sob { white-space: normal; }
+.eq-roy-t th, .eq-roy-t td { vertical-align: top; }
+/* folga para letra mais larga (fonte do usuário): cabeçalhos e detalhes quebram a linha; o número principal não */
+.eq-com-t th, .eq-eg-t th { white-space: normal; }
+.eq-com-t td { white-space: normal; }
+.eq-com-t td > span > :not(small), .eq-com-t td > span:not(.eq-ind) { white-space: nowrap; }
+.eq-com-t .eq-sob { white-space: normal; }
+@media (max-width: 1280px) { .eq-eg-roy { grid-template-columns: 1fr; } } /* gorjetas e royalties um embaixo do outro quando não cabem lado a lado */
+/* 2ª passada — Vendas (23/11/2026): números de apoio como linhas dentro do herói, células com detalhe embaixo, ação no herói */
+.vp2-apoio { margin-top: 18px; padding-top: 6px; border-top: 1px solid var(--line); }
+.vp2-apoio .linhas-num { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); column-gap: 32px; }
+.vp2-apoio .linhas-num li, .vp2-apoio .linhas-num li:first-child { border-top: 0; border-bottom: 1px solid var(--line); }
+.vp2-apoio .linhas-num-a { align-items: center; }
+.vp2-apoio .linhas-num-r { flex-direction: column; align-items: flex-start; gap: 2px; }
+.vp2-rot { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.vp2-rot-t { display: inline-flex; align-items: center; gap: 6px; }
+.vp2-var { font-size: max(12px, .8em); color: var(--muted); }
+.vp2-var .kpi-vars { display: inline-flex; flex-wrap: wrap; gap: 0 10px; }
+.vp2-apoio + .promo-comp { margin-top: 12px; border-top: 0; padding-top: 0; }
+.vp2-cel { display: inline-flex; flex-direction: column; align-items: flex-end; gap: 1px; }
+.vp2-cel small { white-space: normal; }
+.vp2-cha { align-items: flex-start; max-width: 300px; }
+.vp2-acao { margin-top: 10px; }
+.vp2-conf-kpi { margin-bottom: 16px; }
+@media (max-width: 1100px) { .vp2-apoio .linhas-num { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 860px) {
+  .vp2-apoio .linhas-num { grid-template-columns: 1fr; }
+  .vp2-cel { align-items: flex-start; }
+  .vp2-acao { width: 100%; }
+}
+.vp2-tree td.tree-v { white-space: nowrap; }
+.vp2-tree td.tree-v .tree-var { display: block; font-weight: 400; font-size: max(12px, .8em); color: var(--muted); }
+@media (max-width: 860px) {
+  /* Comparativos → Evolução mensal no celular: 3 números por linha (valor, variação e o do ano anterior embaixo), sem cortar */
+  .t.tree.vp2-tree tr { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-auto-flow: row; }
+  .t.tree.vp2-tree td.tree-v { grid-row: auto; overflow: visible; white-space: normal; padding-bottom: 6px !important; }
+  .t.tree.vp2-tree td.tree-v .tree-ant { display: block; }
+}

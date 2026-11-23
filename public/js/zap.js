@@ -45,7 +45,11 @@
   }
   /** "Hoje: 12 de 30 · próxima mensagem por volta de 10:42" e, quando está parado, o motivo */
   function linhaHoje(s) {
-    const partes = [`Hoje: ${fmt.int(s.hoje.n)} de ${fmt.int(s.hoje.teto)} ${s.hoje.teto === 1 ? 'mensagem' : 'mensagens'}`];
+    return [`Hoje: ${fmt.int(s.hoje.n)} de ${fmt.int(s.hoje.teto)} ${s.hoje.teto === 1 ? 'mensagem' : 'mensagens'}`, proximaTxt(s)].filter(Boolean).join(' · ');
+  }
+  /** quando sai a próxima (ou quando o robô volta), sem o "Hoje: N de M" */
+  function proximaTxt(s) {
+    const partes = [];
     const andando = s.ligado && !s.pausa && s.conexao.estado === 'conectado';
     if (andando && s.proximoEm && (!s.motivo || s.motivo.cod === 'ritmo')) {
       // a próxima "por volta de" pode cair depois do fim do horário (ou num dia sem envio): aí diz quando volta de verdade
@@ -196,7 +200,9 @@
     document.addEventListener('keydown', esc, true);
   }
   TS.zapAbrirJanela = abrirJanela;
-  TS.zapFaixa = function (lojaId, temCampanhaRobo) {
+  // 2ª passada (23/11/2026): a situação do robô é o "como está" de Campanhas, num cartão-herói — robô (ligado/pausado, conexão,
+  // horário), hoje (enviadas de quantas, quando sai a próxima ou quando volta) e, com `naoEnviadas` (() => { n, abrir }), quantos ficaram sem
+  TS.zapFaixa = function (lojaId, temCampanhaRobo, naoEnviadas) {
     const box = h('div', { class: 'zap-faixa', hidden: true });
     let s = null, timer = null;
     const carregar = async () => {
@@ -217,23 +223,40 @@
       btLigar.addEventListener('click', async () => { btLigar.disabled = true; try { s = await api('POST', 'ligar', { loja: lojaId }); pintar(); } catch (e) { erro.textContent = e.message; btLigar.disabled = false; } });
       const mot = !s.servico ? 'O robô do WhatsApp ainda não está instalado neste servidor: as campanhas marcadas para o robô não são enviadas sozinhas (o envio manual continua).' : motivoParado(s);
       const andando = s.ligado && !s.pausa;
-      box.className = 'zap-faixa card' + (s.pausa && s.pausa.auto ? ' zap-erro' : '');
+      box.className = 'zap-faixa zh-box' + (s.pausa && s.pausa.auto ? ' zap-erro' : '');
+      const sit = s.servico ? sitRobo(s) : sitConexao(s);
+      const prox = s.servico ? proximaTxt(s) : '';
+      const ne = typeof naoEnviadas === 'function' ? naoEnviadas() : null;
+      const botoes = h('div', { class: 'zap-faixa-b' },
+        s.servico && andando ? btPausar : null,
+        s.servico && !andando && s.pode.configurar && s.conexao.estado === 'conectado' ? btLigar : null,
+        s.pode.configurar ? h('button', { type: 'button', class: 'btn', title: 'Conectar o WhatsApp da loja (QR ou código) e ajustar ritmo, horário e máximo por dia', onclick: () => abrirJanela(lojaId) }, s.conexao.estado === 'conectado' ? 'Configurar ›' : 'Conectar e configurar ›') : null);
+      const heroi = TS.heroi([
+        { rot: '🤖 Robô do WhatsApp', num: etiqueta(sit), estado: sit[0] === 'erro' ? 'ruim' : null,
+          dica: `Envia sozinho, pelo WhatsApp da loja, as campanhas com o robô ligado: uma mensagem por vez, no ritmo, horário e máximo por dia definidos ${s.pode.configurar ? 'no botão Configurar' : 'por quem cuida do robô (administrador, franqueado ou gerente)'}. Quem pediu para não receber ou recebeu mensagem há pouco tempo fica de fora. ` + RISCO,
+          linhas: [s.servico ? etiqueta(sitConexao(s)) : null,
+            s.servico && s.cfg ? h('small', { class: 'muted zap-faixa-hora' }, `Envia ${horarioTxt(s)}${s.cfg.horario !== 'proprio' && s.horarioLoja ? ' (horário da loja: de 30 min antes de abrir até 30 min antes de fechar)' : ''}`) : null,
+            mot && !(s.pausa && s.pausa.semWpp) ? { el: mot, cls: s.pausa && s.pausa.auto ? 'neg' : '' } : null] },
+        s.servico ? { rot: 'Enviadas hoje', num: `${fmt.int(s.hoje.n)} de ${fmt.int(s.hoje.teto)}`, sub: s.hoje.teto === 1 ? 'mensagem' : 'mensagens',
+          dica: 'Mensagens que o robô já mandou hoje, de todas as campanhas, e o máximo por dia do número da loja. Chegou no máximo, continua no próximo dia de envio.',
+          barra: s.hoje.teto ? { pct: (s.hoje.n / s.hoje.teto) * 100, rotulo: `${fmt.int(s.hoje.n)} de ${fmt.int(s.hoje.teto)} mensagens hoje` } : null,
+          linhas: [prox ? h('span', { class: 'zap-prox' }, prox[0].toUpperCase() + prox.slice(1)) : null,
+            s.fila ? `${fmt.int(s.fila.pendentes)} ${s.fila.pendentes === 1 ? 'pendente' : 'pendentes'} em ${fmt.int(s.fila.campanhas)} ${s.fila.campanhas === 1 ? 'campanha' : 'campanhas'} do robô` : null] } : null,
+        ne ? { rot: 'Não enviadas', num: fmt.int(ne.n), estado: ne.n ? 'ruim' : null,
+          dica: 'Clientes da lista atual das campanhas que saíram da fila sem receber (sem WhatsApp, já recebeu, sem celular…), quem não quer e quem espera estoque. Toque em "ver quem e por quê" para conferir e voltar para a fila.',
+          linhas: [ne.n ? h('button', { type: 'button', class: 'link-btn zh-ver', onclick: ne.abrir }, 'Ver quem e por quê ›') : 'Ninguém ficou sem a mensagem.'] } : null,
+      ], { extra: h('div', { class: 'zh-pe' }, botoes, erro) });
+      heroi.classList.add('zh-heroi');
       box.replaceChildren(...[
-        h('div', { class: 'zap-faixa-t' }, h('b', null, '🤖 Robô do WhatsApp'),
-          TS.dica(`Envia sozinho, pelo WhatsApp da loja, as campanhas com o robô ligado: uma mensagem por vez, no ritmo, horário e máximo por dia definidos ${s.pode.configurar ? 'no botão de configurar, aqui ao lado' : 'por quem cuida do robô (administrador, franqueado ou gerente)'}. Quem pediu para não receber ou recebeu mensagem há pouco tempo fica de fora. ` + RISCO),
-          s.servico ? etiqueta(sitRobo(s)) : null, etiqueta(sitConexao(s))),
         // trava "sem WhatsApp seguidos" (decisão do dono): o alerta fica bem à vista, com o caminho para conferir os pulados
         s.pausa && s.pausa.semWpp ? h('div', { class: 'notice err zap-alerta', role: 'alert' }, h('b', null, '⚠ Robô pausado: '), s.pausa.motivo, '. ',
-          h('a', { href: '#campanhas', onclick: (e) => { e.preventDefault(); const c = document.querySelector('.cp-card'); if (c) c.scrollIntoView({ behavior: 'smooth', block: 'start' }); } }, 'Ver os pulados ›'),
-          h('small', { class: 'muted' }, ' Abra a campanha: eles estão como "Pulada · sem WhatsApp" e voltam para a fila pelo botão da linha.')) : null,
-        h('div', { class: 'zap-faixa-m' }, s.servico ? h('span', null, linhaHoje(s)) : null, s.servico && s.cfg ? h('small', { class: 'muted zap-faixa-hora' }, `Envia ${horarioTxt(s)}${s.cfg.horario !== 'proprio' && s.horarioLoja ? ' (horário da loja: de 30 min antes de abrir até 30 min antes de fechar)' : ''}`) : null, mot && !(s.pausa && s.pausa.semWpp) ? h('small', { class: s.pausa && s.pausa.auto ? 'neg' : 'muted' }, mot) : null, erro),
-        h('div', { class: 'zap-faixa-b' },
-          s.servico && andando ? btPausar : null,
-          s.servico && !andando && s.pode.configurar && s.conexao.estado === 'conectado' ? btLigar : null,
-          s.pode.configurar ? h('button', { type: 'button', class: 'btn', title: 'Conectar o WhatsApp da loja (QR ou código) e ajustar ritmo, horário e máximo por dia', onclick: () => abrirJanela(lojaId) }, s.conexao.estado === 'conectado' ? 'Configurar ›' : 'Conectar e configurar ›') : null),
+          h('a', { href: '#campanhas', onclick: (e) => { e.preventDefault(); if (ne && ne.abrir) { ne.abrir(); return; } const c = document.querySelector('.cp-card'); if (c) c.scrollIntoView({ behavior: 'smooth', block: 'start' }); } }, 'Ver os pulados ›'),
+          h('small', { class: 'muted' }, ne ? ' Na aba "Não enviadas" eles estão como "Sem WhatsApp" e voltam para a fila pelo botão da linha.' : ' Abra a campanha: eles estão como "Pulada · sem WhatsApp" e voltam para a fila pelo botão da linha.')) : null,
+        heroi,
       ].filter(Boolean));
     }
     box.atualizar = carregar;
+    box.repintar = () => { if (s) pintar(); };
     carregar();
     return box;
   };

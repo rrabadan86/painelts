@@ -144,9 +144,9 @@
   function pintar(corpo, loja, d, vis) {
     const repintar = () => pintar(corpo, loja, d, vis);
     const ABAS = {
-      abertas: ['Esperando o pedido', (s) => s.st === 'aberta' && !s.aguardando],
-      entrega: ['Aguardando entrega', (s) => s.st === 'aberta' && !!s.aguardando],
-      encerradas: ['Encerradas', (s) => s.st !== 'aberta'],
+      abertas: ['Esperando o pedido', (s) => s.st === 'aberta' && !s.aguardando, 'Marcadas com a estrela e ainda fora de um pedido: quem faz o pedido decide'],
+      entrega: ['Aguardando entrega', (s) => s.st === 'aberta' && !!s.aguardando, 'Entraram num pedido: a estrela sai quando a nota da franquia chega com o produto'],
+      encerradas: ['Encerradas', (s) => s.st !== 'aberta', 'Já resolvidas: o produto chegou, a pessoa tirou a estrela ou ficou de fora'],
     };
     const av = vis.avisoNovos;
     const aba = ABAS[state.sugAba] ? state.sugAba : 'abertas';
@@ -155,10 +155,11 @@
       av.length ? h('div', { class: 'notice ok sug-novos' }, `🔔 ${av.length === 1 ? 'Sua sugestão recebeu resposta' : `${av.length} sugestões suas receberam resposta`}: `,
         av.slice(0, 3).map((x) => `${x.desc} (${x.res})`).join(' · ') + (av.length > 3 ? ` e mais ${av.length - 3}` : '') + '. Em destaque na lista.') : null,
       cartaoNova(loja, d, (x) => { d.itens.unshift(x); vis.recem = x.id; state.sugAba = 'abertas'; repintar(); }),
+      // 2ª passada (23/11/2026): título e frase no cabeçalho do cartão (Imprimir e Expandir entram à direita dele, não por cima)
       h('div', { class: 'card mt' },
-        h('div', { class: 'card-title' }, d.todos ? 'Sugestões da equipe' : 'Minhas sugestões'),
-        d.todos ? h('p', { class: 'muted' }, 'A decisão é tomada em ', h('a', { href: '#pedido' }, 'Estoque → Pedido'), ', no quadro "⭐ Sugestões da equipe". O pedido sugerido não muda sozinho por causa da estrela.') : null,
-        TS.seg(Object.entries(ABAS).map(([k, [t, f]]) => [`${t} (${d.itens.filter(f).length})`, k]), aba, (v) => { state.sugAba = v; repintar(); }),
+        h('div', { class: 'card-head' }, h('div', null, h('div', { class: 'card-title' }, d.todos ? 'Sugestões da equipe' : 'Minhas sugestões'),
+          d.todos ? h('div', { class: 'card-sub' }, 'A decisão é tomada em ', h('a', { href: '#pedido' }, 'Estoque → Pedido'), ', no quadro "⭐ Sugestões da equipe". O pedido sugerido não muda sozinho por causa da estrela.') : null)),
+        TS.seg(Object.entries(ABAS).map(([k, [t, f, dica]]) => [`${t} (${d.itens.filter(f).length})`, k, dica]), aba, (v) => { state.sugAba = v; repintar(); }),
         tabela(loja, d, lista, aba, repintar, vis)),
     ].filter(Boolean));
   }
