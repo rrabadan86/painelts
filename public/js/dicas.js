@@ -110,7 +110,7 @@ TS.DICAS = {
   'Carrinho no Sistema de Pedidos': 'Monta o carrinho no site da franqueadora pelo seu navegador, item a item. O pedido nunca é finalizado pelo painel.',
   // ---------- Resultado ----------
   'Resultado do mês': 'Faturamento − custo dos produtos − deduções − custos fixos do mês.',
-  'Resultado mês a mês': 'Resultado de cada mês (verde lucro, vermelho prejuízo) e a margem de contribuição.',
+  'Resultado mês a mês': 'Resultado de cada mês (verde lucro, vermelho prejuízo) e o lucro sem fixos.',
   'Mês a mês': 'Resultado de cada mês. Mês em andamento: projeção do mês (vendas pela média de cada dia da semana; comissão recalculada com a venda projetada), com os custos fixos inteiros.',
   'Resultado de': 'Demonstrativo do mês: faturamento, custos, deduções e resultado. Clique nos grupos para ver os itens.',
   'Mês': 'Situação do mês: em andamento ou fechado (aí a comissão é definitiva).',

@@ -377,6 +377,7 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 | RES-10 | Ponto de equilíbrio inclui as despesas só deste mês (as mesmas do Resultado) | `contas.js` `pontoEquilibrio`; `estoque.js`; `dre.js` | `contas.test` EQ-01 | ✅ |
 | CXP-02…06 | A pagar, detalhes: vencimento da nota estimado (entrada + prazo, só compra concluída); entrada prevista (dinheiro e Pix no dia, cartão N dias depois sem a taxa; parte em cartão pelos fechamentos de caixa); saldo por semana com aviso; conta paga sai das somas (servidor grava por loja e recusa valor inválido); configuração dos prazos | `src/apagar.js`; `public/js/apagar.js` | `apagar.test` CXP-02…06 | ✅ |
 | CTD-02…05 | Exportação para o contador: vendas por dia pelo faturamento oficial, notas do mês (entrada pela data de entrada; cancelada fora do total), mês sem nada e só mês fechado, planilha .xlsx com as cinco abas | `src/contador.js` | `contador.test` CTD-02…05 | ✅ |
+| LUCRO-01 | Uma definição de lucro em três degraus no Resultado e na Rentabilidade (decisão do dono, 23/11/2026): lucro bruto = venda − custo dos produtos; lucro sem fixos = lucro bruto − Simples, maquininha, royalties, comissão e custos em %; resultado = lucro sem fixos − perdas − custos fixos | `dre.js` `calcular`/`projetar`/`LINHAS`; `estoque.js` Rentabilidade | `contas.spec` | ✅ |
 
 ## 12. Vendas e métricas (VEN)
 
@@ -594,7 +595,7 @@ Todos os da lista A foram conferidos no código, um por um.
 - **Achados corrigidos pelos testes novos (23/11/2026):** Pedido → Produtos rolava para o lado (625 px a 1100) — agora 6 colunas; "null" na "Sua meta de hoje" da vendedora quando as vendas de hoje não chegaram; Vendas por produto somava 516 itens / 7,610 kg (com R$ 0,01, consumível sem controle e kg de acessório) contra 513 / 7,31 da conta oficial; Chá vendido do Resumo somava o chá de brinde a R$ 0,01.
 - **Achado (prints, 23/11/2026):** a Validade às vezes volta a mostrar "Carregando os lotes…" depois de pronta (a tela se redesenha sozinha, uma piscada que a pessoa também vê). Em aberto; o teste de prints espera a tela ficar pronta de novo.
 - **Decidido pelo dono (23/11/2026):** na Minha comissão a vendedora pode ver a meta da loja e a divisão entre as pessoas (só não vê as colegas); o cartão "Sua meta de hoje" segue só com a parte dela.
-- **A decidir com o dono:** "Lucro bruto" do mês tem dois números — Rentabilidade R$ 10.659 (60,2%) e Resultado R$ 7.339 (41,4%), este perto do "Lucro sem fixos" da Rentabilidade; é diferença de definição/nome (mexer muda o Resultado e a exportação ao contador).
+- **Decidido e corrigido (23/11/2026, LUCRO-01):** antes, "Lucro bruto" do mês tinha dois números — Rentabilidade R$ 10.659 (60,2%) e Resultado R$ 7.339 (41,4%), este perto do "Lucro sem fixos" da Rentabilidade; é diferença de definição/nome (mexer muda o Resultado e a exportação ao contador).
 - **Em aberto:** `reajuste.spec` (celular) falhou 2 vezes na bateria completa local (o assunto digitado voltou ao texto padrão); sozinho e sob carga passou 26 vezes. Causa não encontrada.
 
 ### E. Revisão dos dias 18 e 19/11 (5 revisores por área; corrigido com teste no mesmo PR)
@@ -664,13 +665,13 @@ Contado pelas linhas da matriz (`node scripts/matriz.js --resumo`; o guardião c
 | Equipe, metas e comissão (EQP) | 12 | 3 | 3 | 6 |
 | Estoque, inventário, lotes e pedido (EST) | 79 | 48 | 14 | 17 |
 | Preços, custos e notas de entrada (PRC) | 40 | 13 | 8 | 19 |
-| Resultado e rentabilidade (RES) | 12 | 4 | 3 | 5 |
+| Resultado e rentabilidade (RES) | 13 | 5 | 3 | 5 |
 | Vendas e métricas (VEN) | 27 | 12 | 8 | 7 |
 | Clientes, fidelidade, WhatsApp e lista de espera (CLI) | 37 | 25 | 8 | 4 |
 | Orçamento (ORC) | 7 | 5 | 1 | 1 |
 | Checklist, fechamento e avisos (OPE) | 13 | 6 | 3 | 4 |
 | Estrutura do painel e atualização (APP) | 38 | 20 | 12 | 6 |
-| **Total** | **425** | **194 (46%)** | **121 (28%)** | **110 (26%)** |
+| **Total** | **426** | **195 (46%)** | **121 (28%)** | **110 (26%)** |
 <!-- resumo:fim -->
 
 ## Próximas etapas

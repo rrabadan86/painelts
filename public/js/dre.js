@@ -68,9 +68,12 @@
       // perdas do mês (chá vencido ainda no estoque + faltas do inventário, a custo): entram depois do custo dos produtos
       const perdasDet = opts.perdas ? opts.perdas[ym] || { total: 0, vencidos: 0, inventario: 0, nVencidos: 0, nContagens: 0 } : null;
       const perdas = perdasDet ? perdasDet.total : null;
-      const lucroBruto = cmv == null ? null : recLiq - cmv - (perdas || 0);
-      const contrib = lucroBruto == null ? null : lucroBruto - m.com - m.varPct;
-      const resultado = contrib == null ? null : contrib - fixoTot;
+      // três degraus, a mesma definição da Rentabilidade (decisão do dono, 23/11/2026):
+      // lucro bruto = venda − custo dos produtos; lucro sem fixos = lucro bruto − Simples, maquininha, royalties,
+      // comissão e custos em %; resultado = lucro sem fixos − perdas − custos fixos
+      const lucroBruto = cmv == null ? null : m.fat - cmv;
+      const contrib = lucroBruto == null ? null : lucroBruto - impostos - m.com - m.varPct;
+      const resultado = contrib == null ? null : contrib - (perdas || 0) - fixoTot;
       const r = { ym, parcial, frac, ultimo, diasMes, decorridos, ...m, dias: m.dias.size, cmv, cmvPct, perdas, perdasDet, cobre: m.fat ? m.fatCusto / m.fat : 0, fixosMes, fixoTot, impostos, recLiq, lucroBruto, contrib, resultado };
       if (parcial) r.proj = projetar(r, D);
       out.push(r);
@@ -89,9 +92,9 @@
       gorjeta: m.gorjeta * k, desc: m.desc * k, eg: m.eg * k, cmv: x(m.cmv) };
     p.impostos = p.imp + p.maq + p.roy;
     p.recLiq = p.fat - p.impostos;
-    p.lucroBruto = p.cmv == null ? null : p.recLiq - p.cmv - (p.perdas || 0); // as perdas não crescem com as vendas: ficam as de agora
-    p.contrib = p.lucroBruto == null ? null : p.lucroBruto - p.com - p.varPct;
-    p.resultado = p.contrib == null ? null : p.contrib - p.fixoTot;
+    p.lucroBruto = p.cmv == null ? null : p.fat - p.cmv;
+    p.contrib = p.lucroBruto == null ? null : p.lucroBruto - p.impostos - p.com - p.varPct;
+    p.resultado = p.contrib == null ? null : p.contrib - (p.perdas || 0) - p.fixoTot; // as perdas não crescem com as vendas: ficam as de agora
     return p;
   }
 
@@ -99,22 +102,21 @@
   /** grupos: [{ id, nome, itens:[índice em fixosMes] }] — cada categoria vira uma linha com o subtotal, que abre os custos */
   const LINHAS = (grupos, abertos) => [
     ['Faturamento', (m) => m.fat, 'base', 'Faturamento da loja: tudo o que foi vendido, com Espaço Gourmet e vendas sem vendedor, já com os descontos; sem taxa de serviço e entrega e sem itens a R$ 0,01 (resgates e brindes). É o mesmo número do Resumo e do Início'],
+    ['− Custo dos produtos', (m) => m.cmv, 'menos', 'Custo dos produtos vendidos (chá pelo kg + saco e etiquetas). Mês passado: o custo que cada produto tinha na data da venda (notas de compra e histórico de custos do painel; antes do primeiro custo conhecido vale o mais antigo, estimado). Mês em andamento: o custo de hoje do AppNext. Vendas sem custo no estoque entram pelo mesmo % das outras (estimado)'],
+    ['= Lucro bruto', (m) => m.lucroBruto, 'sub', 'Faturamento − custo dos produtos vendidos. A mesma conta da Rentabilidade (aqui as vendas sem custo cadastrado entram pelo mesmo % de custo das outras).'],
     ['− Simples Nacional', (m) => m.imp, 'menos', '% do Simples (Configurações → Lojas → Estoque e margem) sobre as vendas'],
     ['− Maquininha', (m) => m.maq, 'menos', 'Taxa média da maquininha sobre as vendas'],
     ['− Royalties + marketing', (m) => m.roy, 'menos', 'Pelas regras da loja: loja + marketing; Espaço Gourmet: EG + marketing EG'],
-    ['= Receita líquida', (m) => m.recLiq, 'sub', 'Faturamento − impostos e taxas sobre a venda'],
-    ['− Custo dos produtos', (m) => m.cmv, 'menos', 'Custo dos produtos vendidos (chá pelo kg + saco e etiquetas). Mês passado: o custo que cada produto tinha na data da venda (notas de compra e histórico de custos do painel; antes do primeiro custo conhecido vale o mais antigo, estimado). Mês em andamento: o custo de hoje do AppNext. Vendas sem custo no estoque entram pelo mesmo % das outras (estimado)'],
-    ['− Perdas (vencidos e inventário)', (m) => m.perdas, 'menos', 'O que a loja pagou e não vai vender, a custo: (1) lote VENCIDO que ainda está no estoque (chá a granel, envasados e alimentação), no mês em que a validade venceu (saldo do lote × custo do kg ou da unidade, os lotes da tela Validade); (2) faltas do INVENTÁRIO: contagens aplicadas no AppNext no mês, pelo saldo dos ajustes (contado − sistema) × custo — sobra compensa falta, e só o saldo negativo do mês entra. Na projeção ficam as perdas de agora (não crescem com as vendas). "—" = o painel não conseguiu ler as perdas'],
-    ['= Lucro bruto', (m) => m.lucroBruto, 'sub', 'Receita líquida − custo dos produtos − perdas'],
     ['− Comissões e premiações', (m) => m.com, 'menos', 'O que a loja pagou no mês (comissões, premiação e bônus), como no Comissionamento. Na projeção do mês em andamento: a comissão que cada pessoa receberia com a venda projetada dela contra a meta (na faixa em que fecharia), não a comissão de agora multiplicada'],
     ['− Outros custos em %', (m) => m.varPct, 'menos', 'Custos da loja cadastrados como % das vendas'],
-    ['= Margem de contribuição', (m) => m.contrib, 'sub', 'O que sobra para pagar os custos fixos'],
+    ['= Lucro sem fixos', (m) => m.contrib, 'sub', 'Lucro bruto − Simples, maquininha, royalties, comissões e custos em %: o que as vendas deixam para pagar as perdas e os custos fixos. É o "Lucro sem fixos" da Rentabilidade (antes chamado de margem de contribuição).'],
+    ['− Perdas (vencidos e inventário)', (m) => m.perdas, 'menos', 'O que a loja pagou e não vai vender, a custo: (1) lote VENCIDO que ainda está no estoque (chá a granel, envasados e alimentação), no mês em que a validade venceu (saldo do lote × custo do kg ou da unidade, os lotes da tela Validade); (2) faltas do INVENTÁRIO: contagens aplicadas no AppNext no mês, pelo saldo dos ajustes (contado − sistema) × custo — sobra compensa falta, e só o saldo negativo do mês entra. Na projeção ficam as perdas de agora (não crescem com as vendas). "—" = o painel não conseguiu ler as perdas'],
     ...grupos.flatMap((g) => [
       [`− ${g.nome}`, (m) => m.fixosMes.filter((x) => x.cat === g.id).reduce((a, x) => a + x.valor, 0), 'grupo', `${g.nomes.length} ${g.nomes.length === 1 ? 'custo' : 'custos'}: ${g.nomes.map((n) => n.nome + (n.pontual ? ' (pontual)' : '')).join(', ')}. Clique para ${abertos.has(g.id) ? 'fechar' : 'abrir'}.`, g.id],
       ...(abertos.has(g.id) ? g.nomes.map((n) => [n.pontual ? `${n.nome} · pontual` : n.nome, (m) => { const l = m.fixosMes.filter((x) => x.cat === g.id && x.nome === n.nome && !!x.pontual === n.pontual); return l.length ? l.reduce((a, x) => a + x.valor, 0) : null; }, 'filho',
         n.pontual ? 'Despesa de um mês só: entra cheia no mês dela' : 'Custo fixo cadastrado: entra pelo valor cheio do mês, também no mês em andamento']) : []),
     ]),
-    ['= Resultado do mês', (m) => m.resultado, 'tot', 'Margem de contribuição − custos fixos'],
+    ['= Resultado do mês', (m) => m.resultado, 'tot', 'Lucro sem fixos − perdas − custos fixos'],
   ];
 
   TS.dreCalcular = calcular; // o caixa a pagar usa os mesmos royalties e impostos do Resultado
@@ -213,13 +215,13 @@
         { rot: m.parcial ? 'Resultado até hoje' : 'Resultado do mês', num: m.resultado == null ? '—' : fmt.brl0(m.resultado), estado: m.resultado == null ? null : m.resultado >= 0 ? 'bom' : 'ruim',
           linhas: [m.parcial ? (m.resultado == null ? '' : m.resultado >= 0 ? 'custos fixos do mês já cobertos' : `falta cobrir ${fmt.brl0(-m.resultado)} dos custos fixos`) : `${pc(m.resultado, m.fat)} do faturamento`,
             m.perdas > 0 ? `inclui ${fmt.brl0(m.perdas)} de perdas` : null],
-          dica: m.parcial ? 'Margem de contribuição até hoje − custos fixos do mês inteiro. As perdas do mês (chá vencido e faltas do inventário) já foram descontadas no lucro bruto.' : 'Margem de contribuição − custos fixos. As perdas do mês (chá vencido e faltas do inventário) já foram descontadas no lucro bruto.' },
+          dica: m.parcial ? 'Lucro sem fixos até hoje − perdas do mês (chá vencido e faltas do inventário) − custos fixos do mês inteiro.' : 'Lucro sem fixos − perdas do mês (chá vencido e faltas do inventário) − custos fixos.' },
         P ? { rot: 'Projeção do mês', num: P.resultado == null ? '—' : fmt.brl0(P.resultado), estado: P.resultado == null ? null : P.resultado >= 0 ? 'bom' : 'ruim',
           linhas: [h('span', { class: 'dre-h-proj' }, `vendendo ${fmt.brl0(P.fat)} no mês (ritmo atual)`)],
           dica: `Resultado se as vendas seguirem o ritmo de agora até o fim do mês. Impostos, custo dos produtos e custos em % acompanham as vendas; a comissão é recalculada com a venda projetada de cada pessoa contra a meta; os custos fixos ficam iguais.${P.projMes ? '\n\nFaturamento projetado:\n' + TS.comoProjecao(P.projMes) : ''}` } : null,
         { rot: 'Faturamento', num: m.fat == null ? '—' : fmt.brl0(m.fat), linhas: [varA('fat'),
-          h('span', { class: 'dre-h-lb' }, `Lucro bruto ${m.lucroBruto == null ? '—' : fmt.brl0(m.lucroBruto)} · margem ${pc(m.lucroBruto, m.fat)}${m.perdas > 0 ? ` · já sem ${fmt.brl0(m.perdas)} de perdas` : ''}`, TS.dica('Receita líquida − custo dos produtos − perdas (chá vencido ainda no estoque e faltas do inventário, a custo).')),
-          h('span', { class: 'dre-h-mc' }, `Margem de contribuição ${m.contrib == null ? '—' : fmt.brl0(m.contrib)} · ${pc(m.contrib, m.fat)} do faturamento`)],
+          h('span', { class: 'dre-h-lb' }, `Lucro bruto ${m.lucroBruto == null ? '—' : fmt.brl0(m.lucroBruto)} · margem ${pc(m.lucroBruto, m.fat)}`, TS.dica('Faturamento − custo dos produtos vendidos: a mesma conta da Rentabilidade. Impostos, maquininha, royalties, comissão e perdas vêm depois, nas linhas de baixo.')),
+          h('span', { class: 'dre-h-mc' }, `Lucro sem fixos ${m.contrib == null ? '—' : fmt.brl0(m.contrib)} · ${pc(m.contrib, m.fat)} do faturamento`, TS.dica('Lucro bruto − Simples, maquininha, royalties, comissões e custos em %: o que as vendas deixam para pagar as perdas e os custos fixos.'))],
           dica: 'Faturamento do mês (todos os dias do mês, sem os filtros do topo), comparado com o mesmo período do ano anterior.' },
       ], { titulo: m.parcial ? `${TS.ymLabel(sel)} até agora` : `Fechamento de ${TS.ymLabel(sel)}` }),
       linhaPerdas(m, sel),
@@ -260,12 +262,12 @@
     // gráfico: resultado mês a mês
     const comoMes = (x) => x.proj || x; // mês em andamento entra pela projeção, para comparar com os meses fechados
     const ult = meses.slice(-13).map(comoMes);
-    corpo.append(h('div', { class: 'mt' }, TS.card('Resultado mês a mês', 'Barras = resultado do mês (verde lucro, vermelho prejuízo) · linha = margem de contribuição · * mês em andamento pela projeção (cor clara)', TS.chart({
+    corpo.append(h('div', { class: 'mt' }, TS.card('Resultado mês a mês', 'Barras = resultado do mês (verde lucro, vermelho prejuízo) · linha = lucro sem fixos · * mês em andamento pela projeção (cor clara)', TS.chart({
       type: 'bar',
       data: { labels: ult.map((x) => TS.ymLabel(x.ym) + (x.projecao ? '*' : '')),
         datasets: [
           { type: 'bar', label: 'Resultado', data: ult.map((x) => x.resultado), backgroundColor: ult.map((x) => (x.resultado >= 0 ? (x.projecao ? '#8FB39A' : '#2C5234') : x.projecao ? '#E3A595' : '#B5452B')), borderRadius: 4, order: 2 },
-          { type: 'line', label: 'Margem de contribuição', data: ult.map((x) => x.contrib), borderColor: '#C9A227', backgroundColor: '#C9A227', tension: 0.3, pointRadius: 3, order: 1 },
+          { type: 'line', label: 'Lucro sem fixos', data: ult.map((x) => x.contrib), borderColor: '#C9A227', backgroundColor: '#C9A227', tension: 0.3, pointRadius: 3, order: 1 },
         ] },
       options: { plugins: { tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${fmt.brl0(c.raw)}` } } }, scales: { y: TS.axisNum(fmt.brl0), x: TS.axisCat } },
     }))));
