@@ -1022,25 +1022,24 @@
     const temCli = clientes.size > 0;
     const modoCup = state.cupModo || 'dia';
     const segCup = TS.seg([['Por dia e cupom', 'dia'], ['Lista de itens', 'lista']], modoCup, (v) => { state.cupModo = v; TS.render(); });
-    const cupSet = new Set(), cpfSet = new Set();
-    for (const i of base) {
-      const ch = TS.chaveCupom(i);
-      cupSet.add(ch);
-      if (temCli && clientes.has(ch)) cpfSet.add(ch);
-    }
-    const nCup = cupSet.size, nCpf = cpfSet.size;
+    // cupons e itens pela definição oficial (TS.metricas, a mesma do Resumo, do TKM, do PMA e do IPA): linha de taxa
+    // e item a R$ 0,01 não são venda; consumível sem controle de estoque entra no valor, mas não como item
+    const M = TS.metricas(base);
+    const cpfSet = new Set();
+    if (temCli) for (const i of base) { const ch = TS.chaveCupom(i); if (TS.contaFat(i) && clientes.has(ch)) cpfSet.add(ch); }
+    const nCup = M.cupons, nCpf = cpfSet.size, nItens = M.qtd;
     const subCli = temCli ? ` · ${fmt.int(nCpf)} de ${fmt.int(nCup)} cupons com cliente identificado (clique no CPF/CNPJ para abrir a ficha)` : '';
     // redesenho: o tamanho do período em números, antes da lista
     // (sem um "valor dos cupons": a soma crua dos itens inclui taxas e itens de R$ 0,01 e daria um número diferente do
     // faturamento do Resumo — um número por fato; o valor de cada dia e cupom está na lista)
     root.append(h('div', { class: 'cup-topo' }, TS.heroi([
-      { rot: 'Cupons no período', num: fmt.int(nCup), linhas: [`${fmt.int(base.length)} ${base.length === 1 ? 'item vendido' : 'itens vendidos'}`], dica: 'Cada venda (cupom) do período escolhido nos filtros; um cupom pode ter vários itens.' },
+      { rot: 'Cupons no período', num: fmt.int(nCup), linhas: [`${fmt.int(nItens)} ${nItens === 1 ? 'item vendido' : 'itens vendidos'}`], dica: 'Cada venda (cupom) do período escolhido nos filtros, a mesma conta dos Atendimentos do Resumo. Itens = quantidade vendida, a mesma base do PMA e do IPA. Não contam: linhas de taxa (serviço, entrega) e itens a R$ 0,01 (resgate de pontos, brinde); consumível sem controle de estoque (ex.: saco de amostra) entra no valor, mas não como item. Essas linhas aparecem na lista marcadas "não conta".' },
       temCli ? { rot: 'Com cliente identificado', num: fmt.pct(nCup ? nCpf / nCup : null, 0), linhas: [`${fmt.int(nCpf)} de ${fmt.int(nCup)} cupons com CPF/CNPJ`], dica: 'Cupons em que a venda teve o CPF ou CNPJ do cliente (vêm dos XMLs das notas). Clique no CPF/CNPJ na lista para abrir a ficha do cliente.' } : null,
     ], { titulo: 'Vendas do período' })));
     if (modoCup === 'lista') {
       const det = base.map((i) => {
         const cl = cliDe(i);
-        return { cupom: db.cupom[i], data: db.iso[i], produto: db.D.descricao[db.desc[i]], qtd: db.qtd[i], grupo: db.D.grupoC[db.grupoC[i]], cat: db.D.cat[db.cat[i]], vendedor: db.D.vendedor[db.vend[i]], vt: db.vt[i], cl, doc: cl ? cl.cpf + ' ' + docTxt(cl.cpf) + ' ' + cl.nome : '' };
+        return { cupom: db.cupom[i], data: db.iso[i], produto: db.D.descricao[db.desc[i]] + naoConta(i), qtd: db.qtd[i], grupo: db.D.grupoC[db.grupoC[i]], cat: db.D.cat[db.cat[i]], vendedor: db.D.vendedor[db.vend[i]], vt: db.vt[i], cl, doc: cl ? cl.cpf + ' ' + docTxt(cl.cpf) + ' ' + cl.nome : '' };
       });
       const tabDet = TS.table({
         cols: [
@@ -1055,7 +1054,7 @@
           { key: 'vt', label: 'Valor', fmt: fmt.brl },
         ].filter(Boolean),
         rows: det, sortKey: 'data', pageSize: 50, maxHeight: 'free', search: 'Buscar produto, vendedor, CPF…', searchKeys: ['produto', 'vendedor', 'grupo', 'cat', 'doc'],
-        total: { cupom: `${fmt.int(nCup)} cupons`, vt: det.reduce((s, r) => s + (r.vt || 0), 0), qtd: det.reduce((s, r) => s + (r.qtd || 0), 0) },
+        total: { cupom: `${fmt.int(nCup)} cupons`, vt: M.vt, qtd: nItens }, // os mesmos números de cima (sem as linhas que não contam)
       });
       root.append(TS.cardWithTools('Cupons do período', 'Todos os itens vendidos' + subCli, h('div', { class: 'table-tools' }, tabDet.searchBox, segCup), tabDet));
     } else {
@@ -1066,6 +1065,14 @@
   };
 
   /** Dia → Cupom fiscal → itens */
+  /** linha que não entra na conta oficial (contas.js): mostrada na lista, marcada, fora dos totais */
+  function naoContaTxt(i) {
+    if (!TS.contaFat(i)) return TS.contas.ehCentavo(TS.db.vu[i]) ? 'item a R$ 0,01 (resgate de pontos ou brinde): não é venda' : 'linha de taxa (serviço ou entrega): não é venda';
+    if (!TS.qtdItem(i) && TS.db.qtd[i]) return 'consumível sem controle de estoque: entra no valor, mas não conta como item';
+    return '';
+  }
+  const naoConta = (i) => (naoContaTxt(i) ? ' · não conta' : '');
+  const naoContaEl = (i) => { const t = naoContaTxt(i); return t ? h('small', { class: 'muted', title: t }, ' · não conta') : null; };
   function arvoreCupons(idx, cliDe) {
     const db = TS.db;
     const aberto = (state.cupAberto ||= new Set());
@@ -1080,12 +1087,15 @@
       const k = TS.chaveCupom(i);
       let c = dia.cupons.get(k);
       if (!c) dia.cupons.set(k, (c = { k, num: db.cupom[i], loja: db.D.loja[db.loja[i]], min: db.min[i] ?? null, itens: [], vt: 0, qtd: 0, vend: new Set() }));
-      c.itens.push(i); c.vt += db.vt[i] || 0; c.qtd += db.qtd[i] || 0;
+      const conta = TS.contaFat(i), vi = conta ? db.vt[i] || 0 : 0, qi = conta ? TS.qtdItem(i) : 0;
+      c.itens.push(i); c.vt += vi; c.qtd += qi; if (conta) c.conta = true;
       if (c.min == null && db.min[i] != null) c.min = db.min[i];
       const v = db.D.vendedor[db.vend[i]];
       if (v && !/^SEM VENDEDOR$/i.test(v)) c.vend.add(v);
-      dia.vt += db.vt[i] || 0; dia.qtd += db.qtd[i] || 0;
+      dia.vt += vi; dia.qtd += qi;
     }
+    // cupom só com linhas que não contam (só taxa ou só brinde a R$ 0,01) não é atendimento: fica na lista, fora da contagem
+    for (const dia of dias.values()) dia.nCup = [...dia.cupons.values()].filter((c) => c.conta).length;
     const ordem = [...dias.values()].sort((a, b) => (a.d < b.d ? 1 : -1));
     const varias = new Set(idx.map((i) => db.loja[i])).size > 1;
     const tbl = h('table', { class: 't tree cupons-t' });
@@ -1112,13 +1122,14 @@
       for (const dia of lista) {
         const cups = [...dia.cupons.values()].filter((c) => !q || c.itens.some(casa)).sort((a, b) => (a.min ?? 9999) - (b.min ?? 9999) || a.num - b.num);
         const vt = q ? cups.reduce((s, c) => s + c.vt, 0) : dia.vt, qtd = q ? cups.reduce((s, c) => s + c.qtd, 0) : dia.qtd;
-        totC += cups.length; totI += qtd; totV += vt;
+        const nC = q ? cups.filter((c) => c.conta).length : dia.nCup;
+        totC += nC; totI += qtd; totV += vt;
         if (mostrados >= limite) continue;
         mostrados++;
         const kD = 'd' + dia.d;
         const wd = new Date(dia.d + 'T12:00:00Z').toLocaleDateString('pt-BR', { weekday: 'short', timeZone: 'UTC' }).replace('.', '');
         tb.append(h('tr', { class: 'lv0' }, h('td', { class: 'l sticky-col tree-l' }, h('span', { class: 'tree-cell' }, btn(kD, dia.d), h('span', null, `${fmt.date(dia.d)} · ${wd}`))),
-          h('td'), cliDe ? h('td') : null, h('td'), h('td'), h('td', null, fmt.int(cups.length)), h('td', null, fmt.int(qtd)), h('td', null, fmt.brl(vt))));
+          h('td'), cliDe ? h('td') : null, h('td'), h('td'), h('td', null, fmt.int(nC)), h('td', null, fmt.int(qtd)), h('td', null, fmt.brl(vt))));
         if (!aberto.has(kD) && !q) continue;
         for (const c of cups) {
           const kC = `${kD}|${c.k}`;
@@ -1128,7 +1139,7 @@
             h('td', { class: 'l' }, hhmm(c.min)), cliDe ? h('td', { class: 'l' }, docCupom(cliDe(c.itens[0]))) : null, h('td', { class: 'l' }, [...c.vend].join(', ') || '—'), h('td'), h('td'), h('td', null, fmt.int(c.qtd)), h('td', null, fmt.brl(c.vt))));
           if (!aberto.has(kC)) continue;
           for (const i of c.itens) {
-            tb.append(h('tr', { class: 'lv2' + (casa(i) ? '' : ' fora') }, h('td', { class: 'l sticky-col tree-l n2 wrap' }, h('span', { class: 'tree-cell' }, h('span', { class: 'tree-sp' }), h('span', null, db.D.descricao[db.desc[i]]))),
+            tb.append(h('tr', { class: 'lv2' + (casa(i) ? '' : ' fora') }, h('td', { class: 'l sticky-col tree-l n2 wrap' }, h('span', { class: 'tree-cell' }, h('span', { class: 'tree-sp' }), h('span', null, db.D.descricao[db.desc[i]], naoContaEl(i)))),
               h('td'), cliDe ? h('td') : null, h('td', { class: 'l' }, db.D.vendedor[db.vend[i]]), h('td', { class: 'l' }, db.D.grupoC[db.grupoC[i]]), h('td'), h('td', null, fmt.int(db.qtd[i])), h('td', null, fmt.brl(db.vt[i]))));
           }
         }

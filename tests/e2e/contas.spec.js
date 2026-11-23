@@ -141,3 +141,26 @@ test('Regras da loja: piso de dias da meta e mínimo de atendimentos da premiaç
   await expect(card.locator('.cfg-loja-corpo')).toContainText('Divide a meta quem tem pelo menos');
   await expect(card.locator('.cfg-loja-corpo')).toContainText('Mínimo de atendimentos no mês');
 });
+
+test('CUP-01: Cupons usa a conta oficial — cupons e itens iguais aos do Resumo e ao total da lista', async ({ page }) => {
+  await abrir(page);
+  // a conta oficial do período (a mesma do Resumo, do TKM, do PMA e do IPA)
+  const of = await page.evaluate(() => { const m = TS.metricas(TS.filtrar()); return { cupons: m.cupons, itens: m.qtd, vt: m.vt }; });
+  expect(of.cupons).toBeGreaterThan(0);
+  await ir(page, 'cupons');
+  const heroi = page.locator('main .heroi-col').first();
+  await expect(heroi).toContainText(new Intl.NumberFormat('pt-BR').format(of.cupons));
+  await expect(heroi).toContainText(new Intl.NumberFormat('pt-BR').format(of.itens) + ' ite');
+  // total da árvore (por dia e cupom) = os mesmos cupons e itens
+  const tot = page.locator('.cupons-t tfoot td');
+  const txt = await tot.allInnerTexts();
+  const nums = txt.slice(-3).map(num);
+  expect(nums[0]).toBe(of.cupons);
+  expect(nums[1]).toBe(of.itens);
+  expect(Math.abs(nums[2] - of.vt)).toBeLessThan(0.05);
+  // lista de itens: o total também
+  await page.locator('main .seg button', { hasText: 'Lista de itens' }).click();
+  const tf = await page.locator('main table tfoot').first().innerText();
+  expect(tf).toContain(new Intl.NumberFormat('pt-BR').format(of.cupons) + ' cupons');
+  expect(tf).toContain(new Intl.NumberFormat('pt-BR').format(of.itens));
+});
