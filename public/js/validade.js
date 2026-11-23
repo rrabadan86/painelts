@@ -489,6 +489,10 @@
       if (l.entrada && !(l.pacoteN > 0)) out.push(h('button', { type: 'button', class: 'link-btn vl-ver-pac', title: 'Abre os pacotes deste chá, do mais antigo para o mais novo, para informar que um pacote foi aberto ou corrigir a data.', onclick: () => janelaPacotes(loja, l.cod, l.desc, repintar) }, 'pacotes deste chá'));
       return out.length ? h('div', { class: 'vl-pacotes' }, out) : null;
     }
+    /** "NF 3270" abre a janela da nota de entrada por cima da Validade (pedido do dono), para quem tem a tela Notas fiscais */
+    const podeNotas = () => !TS.demo ? (TS.GRUPOS || []).some(([, ps]) => ps.includes('notas')) : true;
+    const linkNF = (l) => (!podeNotas() || !TS.abrirNotaEntrada ? `NF ${l.nf}` : h('button', { type: 'button', class: 'link-btn vl-nf', title: 'Abre a nota de entrada: produtos, quantidades, custo e devolução.',
+      onclick: async (e) => { const b = e.currentTarget; b.disabled = true; try { if (!(await TS.abrirNotaEntrada(loja, l.nf, l.entrada))) TS.avisar('Esta nota não está entre as notas de entrada lidas do AppNext.'); } catch (err) { TS.avisarErro(err); } finally { b.disabled = false; } } }, `NF ${l.nf}`));
     function desenharTabela() {
       const rows = linhas();
       const cols = [
@@ -499,7 +503,7 @@
           render: (l) => h('div', null, G && (l.entrada || l.pacoteN > 0)
             ? h('button', { type: 'button', class: 'vl-nome', title: 'Ver os lotes deste chá: nota, chegada, aberto ou fechado, abertura e vencimento.', onclick: () => janelaPacotes(loja, l.cod, l.desc, repintar) }, l.desc)
             : h('b', null, l.desc),
-          h('small', { class: 'muted vl-sub' }, [l.tipo || (TS.grupoProd ? TS.grupoProd.texto(l.cod, l.desc, G) : '') || l.familia, l.entrada ? `entrada ${fmt.date(l.entrada)} · NF ${l.nf}` : 'saldo sem nota'].filter(Boolean).join(' · ')),
+          h('small', { class: 'muted vl-sub' }, [l.tipo || (TS.grupoProd ? TS.grupoProd.texto(l.cod, l.desc, G) : '') || l.familia, l.entrada ? `entrada ${fmt.date(l.entrada)} · ` : 'saldo sem nota'].filter(Boolean).join(' · '), l.entrada ? linkNF(l) : null),
           G ? pacotes(l) : null) },
         { key: 'saldo', label: 'Saldo', title: G ? 'Quanto deste lote ainda está no estoque (kg), pelo estoque do AppNext: o mais antigo sai primeiro.' : 'Quantas unidades deste lote ainda estão no estoque, pelo estoque do AppNext: a validade mais curta sai primeiro. Se o total estiver errado, corrija pelo Inventário.',
           render: (l) => h('div', { class: 'vl-saldo' },

@@ -315,6 +315,7 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 | LOTE-ENV-02 | Validades diferentes na mesma linha da nota (só envasado e alimentação): "+ outra validade" reparte a quantidade em partes {qtd, validade}; a soma das partes a mais é menor que a quantidade da nota (o resto fica na 1ª, com a validade do lote); cada parte vira um lote e, dentro da nota, sai primeiro a validade mais curta; tirar as partes volta para uma data só | `lotes.js` (`repartir`, `expandirPartes`, `partes` em `validade/lotes.json`); `PUT /api/validade/partes` (auditado); `validade.js` `camposItem` | `lotes.test` "LOTE-ENV-02"; `lotes-envasados.spec` "LOTE-ENV-02" | ✅ (gravação real só no teste de unidade) |
 | EST-ABERTO-05 | Janela dos lotes do chá (a mesma ao clicar no nome do chá no Estoque e na Validade): em cima o chá aberto (nota, chegada, abertura, vencimento depois de aberto e quantidade, com as datas editáveis); embaixo os lotes fechados, do mais antigo para o mais novo (nota, chegada, validade do pacote, quantidade) com "Abrir lote", que marca a abertura hoje e o vencimento 6 meses depois; vale mesmo com outro pacote da mesma nota ainda na lata (dois abertos, cada um com a sua data) | `lotes.js` (`comAbertura` → `abertos`, `editarAbertura` com `abrir` e `n`); `validade.js` `janelaPacotes`; `estoque.js` (`est-nome-cha`) | `abertura.test` "abri um pacote hoje", "Abrir lote com outro pacote"; `abertura.spec` (2) | ✅ na apresentação; gravação real só no teste de unidade |
 | RD-PED-01 | Pedido → Produtos sem rolar para o lado a 1100 px (6 colunas, detalhe embaixo) | `pedido.js` colunas, CSS `.ped-t` | `tests/datas/datas.spec.js` (DATA-01 Pedido), `pedido-tabela.spec` | ✅ |
+| VAL-NF-01 | Na Validade, o "NF nº" do lote abre a janela da nota de entrada por cima da tela (a mesma de Notas fiscais), só para quem tem a tela Notas fiscais | `validade.js` `linkNF`, `precos.js` `TS.abrirNotaEntrada` | `validade-nf.spec` | ✅ |
 
 ## 10. Preços, custos e notas de entrada (PRC)
 
@@ -669,7 +670,7 @@ Contado pelas linhas da matriz (`node scripts/matriz.js --resumo`; o guardião c
 | Coletor e robôs (COL) | 7 | 1 | 2 | 4 |
 | Escala, horários, feriados e férias (ESC) | 31 | 7 | 10 | 14 |
 | Equipe, metas e comissão (EQP) | 12 | 3 | 3 | 6 |
-| Estoque, inventário, lotes e pedido (EST) | 79 | 48 | 14 | 17 |
+| Estoque, inventário, lotes e pedido (EST) | 80 | 49 | 14 | 17 |
 | Preços, custos e notas de entrada (PRC) | 40 | 13 | 8 | 19 |
 | Resultado e rentabilidade (RES) | 13 | 5 | 3 | 5 |
 | Vendas e métricas (VEN) | 27 | 12 | 8 | 7 |
@@ -677,7 +678,7 @@ Contado pelas linhas da matriz (`node scripts/matriz.js --resumo`; o guardião c
 | Orçamento (ORC) | 7 | 5 | 1 | 1 |
 | Checklist, fechamento e avisos (OPE) | 13 | 6 | 3 | 4 |
 | Estrutura do painel e atualização (APP) | 38 | 20 | 12 | 6 |
-| **Total** | **431** | **200 (46%)** | **121 (28%)** | **110 (26%)** |
+| **Total** | **432** | **201 (47%)** | **121 (28%)** | **110 (25%)** |
 <!-- resumo:fim -->
 
 ## Próximas etapas

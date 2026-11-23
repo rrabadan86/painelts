@@ -543,6 +543,29 @@
     }).catch((e) => { cacheNotas.delete(loja); box.replaceChildren(h('div', { class: 'notice err' }, e.message)); });
     return box;
   }
+  /**
+   * abre a janela de uma nota de entrada por cima da tela em que a pessoa está (ex.: Estoque → Validade, "NF 3270"):
+   * a mesma janela da tela Notas fiscais, com os mesmos dados (estoque, notas, devoluções, NF-e de saída e lotes).
+   * Só para quem tem a tela Notas fiscais (o servidor também nega as notas a quem não tem). → Promise<boolean>
+   */
+  TS.abrirNotaEntrada = async function (loja, nf, entrada) {
+    const e = await TS.estoqueBuscar(loja);
+    const D = { loja, hist: e.historico || {}, comprasItens: (e.compras && e.compras.itens) || {}, tabela: (e.tabela && e.tabela.itens) || [] };
+    const p = cacheNotas.get(loja) || fetch(TS.api(`estoque/notas?loja=${encodeURIComponent(loja)}`), { credentials: 'same-origin' }).then(async (r) => { const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.erro || 'Falha ao ler as notas.'); return j; });
+    cacheNotas.set(loja, p);
+    const buscarDevs = () => (TS.demo ? Promise.resolve([]) : fetch(TS.api(`devolucoes?loja=${encodeURIComponent(loja)}`), { credentials: 'same-origin' }).then((r) => (r.ok ? r.json() : { devolucoes: [] })).then((x) => x.devolucoes || []).catch(() => []));
+    const indexar = (j, devs) => { j.devs = new Map(); for (const d of devs) { const k = `${d.nota.id}|${d.nota.nf}`; (j.devs.get(k) || j.devs.set(k, []).get(k)).push(d); } };
+    const devs = await buscarDevs();
+    const saidas = await fetch(TS.api(`nfsaida?loja=${encodeURIComponent(loja)}`), { credentials: 'same-origin' }).then((r) => (r.ok ? r.json() : { notas: [] })).then((x) => x.notas || []).catch(() => []);
+    const j = await p.catch((err) => { cacheNotas.delete(loja); throw err; });
+    j.saidas = saidas; j.lotesPend = (TS.validade ? await TS.validade.pendentes(loja) : {}) || {};
+    indexar(j, devs);
+    const cand = (j.notas || []).filter((x) => String(x.nf) === String(nf));
+    const n = cand.find((x) => !entrada || x.entrada === entrada) || cand[0];
+    if (!n) return false;
+    abrirNota(D, { ...n, dia: TS.isoToDay(n.entrada || n.emissao), nfTxt: `${n.nf ?? '—'}${n.serie ? ' / ' + n.serie : ''}` }, j, () => buscarDevs().then((d) => indexar(j, d)));
+    return true;
+  };
   function listaNotas(D, j, aoMudar) {
     const f = state.f;
     const todas = (j.notas || []).map((n) => {
