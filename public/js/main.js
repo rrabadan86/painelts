@@ -616,6 +616,29 @@
   }
   iniciar();
 
+  // "Todas as lojas" já guardado neste aparelho (pedido do dono: demorava ao escolher): uns segundos depois de abrir uma loja,
+  // com a página à vista e sem economia de dados, busca o pacote de todas as lojas em segundo plano e guarda (as mesmas regras dos
+  // Guardados). Ao escolher "Todas as lojas", a tela abre na hora com ele e o servidor só confere (304).
+  async function adiantarTodas() {
+    try {
+      if (TS.demo || state.loja === 'todas' || !(TS.lojas && TS.lojas.length > 1) || (TS.eu && TS.eu.perfil === 'vendedor')) return;
+      if (document.hidden || (navigator.connection && navigator.connection.saveData)) return;
+      const qs = new URLSearchParams({ loja: 'todas' });
+      qs.set('desde', desdeParcial());
+      const chave = qs.toString();
+      const g = await Guardados.ler('todas', chave);
+      const res = await fetch(TS.api('dados?' + qs), { credentials: 'same-origin', headers: g && g.etag ? { 'If-None-Match': g.etag } : {} });
+      if (!res.ok) return; // 304: o que está guardado já é o atual
+      const dono = res.headers.get('X-Painel-Usuario');
+      if (dono != null && TS.eu && dono !== (TS.eu.usuario || '')) return;
+      if (res.headers.get('X-Dados-Aviso')) return;
+      const texto = await res.text();
+      Guardados.salvar('todas', chave, texto, res.headers.get('ETag'), res.headers.get('X-Dados-Em') || null);
+    } catch { /* só um adiantamento: sem rede, fica para a próxima */ }
+  }
+  setTimeout(() => { (window.requestIdleCallback || ((f) => setTimeout(f, 0)))(() => adiantarTodas()); }, 20e3);
+  setInterval(() => adiantarTodas(), 15 * 60e3);
+
   // painel atualizado com a aba aberta: avisa e oferece recarregar (senão a tela continua com a versão antiga)
   const minhaVersao = (() => { const sc = [...document.scripts].find((x) => /\?v=/.test(x.src)); return sc ? new URL(sc.src).searchParams.get('v') : null; })();
   let avisado = false;

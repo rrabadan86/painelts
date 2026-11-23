@@ -75,6 +75,8 @@ function criarSessoes(opcoes = {}) {
   const digitandoMs = opcoes.digitandoMs || [3000, 7000];    // "digitando…" antes de cada envio
   const limiteEnvioMs = opcoes.limiteEnvioMs || 120000;      // envio que não responde vira falha
   const reconexoes = opcoes.reconexoes || [5000, 30000, 120000, 600000];
+  // ao subir, uma loja por vez: duas abrindo o WhatsApp Web juntas deixavam a primeira lenta (passava de 30 s e falhava)
+  const espacoRetomar = opcoes.espacoRetomar != null ? opcoes.espacoRetomar : (parseInt(process.env.ZAP_ESPACO_RETOMAR_MS || '', 10) || 45000);
   const log = opcoes.log || ((m) => console.log('[zap] ' + m));
 
   const lojas = new Map();
@@ -453,9 +455,14 @@ function criarSessoes(opcoes = {}) {
       if (!RE_LOJA.test(loja) || !temMarca(loja)) continue;
       const s = obter(loja);
       if (s.cli) continue;
-      iniciar(s);
+      const k = voltaram.length;
       voltaram.push(loja);
-      log(`loja=${loja} reconectando com a sessão salva`);
+      if (k === 0 || !espacoRetomar) { iniciar(s); log(`loja=${loja} reconectando com a sessão salva`); continue; }
+      // as outras esperam a vez (a tela mostra "iniciando"); se alguém conectar ou desconectar antes, a vez é ignorada
+      s.estado = 'iniciando'; s.erro = null;
+      const g = s.geracao;
+      log(`loja=${loja} reconecta em ${Math.round(k * espacoRetomar / 1000)} s (uma loja por vez)`);
+      agendar(() => { if (s.geracao === g && !s.cli && s.estado === 'iniciando') { iniciar(s); log(`loja=${loja} reconectando com a sessão salva`); } }, k * espacoRetomar);
     }
     return voltaram;
   }

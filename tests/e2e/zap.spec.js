@@ -33,14 +33,14 @@ test.describe('robô do WhatsApp', () => {
     await expect(card.locator('input[type=time]').nth(0)).toHaveValue('09:00'); await expect(card.locator('input[type=time]').nth(1)).toHaveValue('18:30');
     await expect(nums.nth(2)).toHaveValue('30'); await expect(nums.nth(3)).toHaveValue('3');
     await expect(card.locator('.zap-dias input:checked')).toHaveCount(6);
-    // ZAP-HORA-LOJA: horário de envio igual ao funcionamento da loja (padrão), dia a dia, até 30 min antes de fechar
+    // ZAP-HORA-LOJA: horário de envio igual ao funcionamento da loja (padrão), dia a dia, de 30 min antes de abrir até 30 min antes de fechar
     await expect(card.getByRole('radio', { name: 'Igual ao funcionamento da loja' })).toBeChecked();
     const tab = card.locator('.zap-tab-hora');
     await expect(tab).toBeVisible();
-    await expect(tab.locator('tr', { hasText: 'seg' })).toContainText('09:00 às 18:30');
-    await expect(tab.locator('tr', { hasText: 'sáb' })).toContainText('09:00 às 16:30');
+    await expect(tab.locator('tr', { hasText: 'seg' })).toContainText('08:30 às 18:30');
+    await expect(tab.locator('tr', { hasText: 'sáb' })).toContainText('08:30 às 16:30');
     await expect(tab.locator('tr', { hasText: 'dom' })).toContainText('fechada');
-    await expect(card).toContainText('Envia até 30 min antes de fechar');
+    await expect(card).toContainText('Envia de 30 min antes de abrir até 30 min antes de fechar');
     await expect(card.locator('.zap-hora-proprio')).toBeHidden();
     // horário próprio: aparecem das/às e os dias
     await card.getByRole('radio', { name: 'Horário próprio' }).check();
@@ -98,7 +98,7 @@ test.describe('robô do WhatsApp', () => {
     await expect(conf).toContainText(/Vai enviar para: [\d.]+ clientes/);
     await expect(conf).toContainText('ficam sem mensagem, para comparar');
     await expect(conf).toContainText(/Por dia: até 20 desta campanha · 30 no número da loja/);
-    await expect(conf).toContainText(/Quando: seg a sex 09:00–18:30, sáb 09:00–16:30, dom fechado \(horário de Brasília, o mesmo do funcionamento da loja\)/);
+    await expect(conf).toContainText(/Quando: seg a sex 08:30–18:30, sáb 08:30–16:30, dom fechado \(horário de Brasília, o mesmo do funcionamento da loja\)/);
     await expect(conf).toContainText(/Termina: por volta de \d\d\/\d\d\/\d{4} \([\d.]+ dias de envio/);
     await expect(conf).toContainText('A primeira sai');
     await expect(conf).toContainText('Exemplo da mensagem');
