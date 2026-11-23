@@ -3,7 +3,7 @@
  * filtro das Vendas (CHÁ AROMATIZADO). Um produto pode aparecer em mais de um grupo (o chá a granel sai em vários
  * pacotes e em minitin): vale o que mais aparece nas vendas.
  * Como acha: pelo código vendido; no chá a granel (item em kg do estoque), pelos pacotes dele (código da matéria-prima +
- * dígito do tamanho, ou "cod.50g"); por último, pelo nome. Sem venda nenhuma devolve null (a tela mostra o grupo do
+ * dígito do tamanho, ou "cod.50g", só as vendas que contam como chá: sachê, caixa e Tea Moments não); por último, pelo nome. Sem venda nenhuma devolve null (a tela mostra o grupo do
  * cadastro de preços, se tiver). Conta pura (tests/unit/grupoprod.test.js); não toca na página. */
 (function () {
   'use strict';
@@ -35,8 +35,12 @@
         const cod = D.cod && db.cod ? String(D.cod[db.cod[i]] ?? '') : '';
         if (cod) {
           soma(porCod, cod, g, gc, n);
-          if (cod.includes('.')) soma(porBase, cod.split('.')[0], g, gc, n);
-          else if (/^\d{6,}$/.test(cod)) soma(porBase, cod.slice(0, -1), g, gc, n);
+          // pacote DE CHÁ do granel: código + dígito do tamanho (270101) ou "cod.50g", vendido como chá (kg de chá na venda).
+          // Sachê (29114.I), caixa de sachês (29114.CX) e lata Tea Moments (29114.40G) começam com o mesmo código mas não são
+          // pacote do chá: em Torres, que vende mais sachê, o 29114 aparecia como SACHÊS PIRAMIDAIS (visto pelo dono, 23/11/2026; GRP-06)
+          const ehCha = !db.cha || db.cha[i] > 0;
+          if (ehCha && /\.\d+\s*g$/i.test(cod)) soma(porBase, cod.split('.')[0], g, gc, n);
+          else if (ehCha && /^\d{6,}$/.test(cod)) soma(porBase, cod.slice(0, -1), g, gc, n);
         }
         const nd = D.descricao && db.desc ? ESQ(D.descricao[db.desc[i]]) : '', np = D.produto && db.prod ? ESQ(D.produto[db.prod[i]]) : '';
         soma(porNome, nd, g, gc, n);
