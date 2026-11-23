@@ -137,16 +137,12 @@
     if (d.demo) corpo.append(h('div', { class: 'notice' }, 'Na apresentação os preços do site são fictícios, montados a partir das vendas.'));
     if (!itensSite.length) { if (!d.erro) corpo.append(TS.empty(d.podeConsultar ? 'Ainda não há preços do site: clique em "Consultar agora" ou espere a consulta das 10h.' : 'Ainda não há preços do site: a consulta automática é às 10h.')); return; }
 
-    if (d.demo && !d.historico) {
-      // apresentação: algumas mudanças fictícias nas últimas semanas
-      d.historico = {};
-      const t = Date.parse(d.em), dia = 86400e3, iso = (ms) => new Date(ms).toISOString();
-      itensSite.forEach((x, k) => {
-        const cheio = x.de ?? x.preco;
-        if (k % 3 === 0) d.historico[x.id] = [[iso(t - 40 * dia), Math.round(cheio * 0.94 * 10) / 10, null, 1], [iso(t - 12 * dia), cheio, null, 1], ...(x.de ? [[iso(t - 3 * dia), x.preco, x.de, 1]] : [])];
-        else d.historico[x.id] = [[iso(t - 40 * dia), x.preco, x.de ?? null, x.disponivel ? 1 : 0]];
-      });
-    }
+    if (d.demo && !d.historico) demoHistorico(d, itensSite);
+    // filtro "Mudou em" (só durante a visita): '' = qualquer dia; senão AAAA-MM-DD (horário de Brasília)
+    const SD = TS.siteDia, hoje = TS.hojeSP(), ontem = SD.diaAntes(hoje);
+    const dia = /^\d{4}-\d{2}-\d{2}$/.test(state.siteDia || '') ? state.siteDia : '';
+    const diasCons = SD.diasDeConsulta(d.consultas, d.historico);
+    const sitDia = SD.situacaoDia(dia, diasCons, d.consultasDesde, hoje);
     const ant = (d.anterior && d.anterior.precos) || {};
     const linhas = casar(itensSite, nos).map((x) => {
       const cheio = x.de ?? x.preco;
@@ -159,8 +155,9 @@
       const pts = (d.historico && d.historico[x.id]) || [[d.em, x.preco, x.de ?? null, x.disponivel ? 1 : 0]];
       let ultMud = null;
       for (let k = pts.length - 1; k >= 1; k--) { const ms = mudancas(pts[k - 1], pts[k]).filter((m) => !/estoque|Esgotou/.test(m.t)); if (ms.length) { ultMud = { em: pts[k][0], txt: ms.map((m) => m.t).join(' · ') }; break; } }
+      const doDia = dia ? SD.mudancasDoDia(pts, dia) : [];
       return {
-        ...x, cheio, nosso, promo, dif, mudou, pts, ultMud, desde: pts[0][0],
+        ...x, cheio, nosso, promo, dif, mudou, pts, ultMud, desde: pts[0][0], doDia,
         desconto: promo ? 1 - x.preco / x.de : null,
         difV: nosso != null ? cheio - nosso : null, difP: nosso ? cheio / nosso - 1 : null,
         sit: !x.nos ? 'sem' : promo && dif ? 'promodif' : promo ? 'promo' : dif ? 'dif' : 'igual',
@@ -171,6 +168,9 @@
     const fp = state.f.produto ? TS.norm(state.f.produto) : '';
     if (fp) for (let k = linhas.length - 1; k >= 0; k--) if (!TS.norm(linhas[k].nomeTxt + ' ' + linhas[k].nossoTxt).includes(fp)) linhas.splice(k, 1);
     const conta = (f) => linhas.filter(f).length;
+    // com um dia escolhido, as abas contam só os produtos que mudaram naquele dia (o herói continua mostrando o site agora)
+    const linhasDia = dia ? linhas.filter((r) => r.doDia.length) : linhas;
+    const contaAba = (f) => linhasDia.filter(f).length;
     const FILTROS = {
       todos: ['Todos', () => true],
       promo: ['Em promoção no site', (r) => r.promo],
@@ -193,7 +193,7 @@
     ], { titulo: 'Site × loja' })));
 
     const SIT = { sem: ['Sem correspondência', 'muted'], promodif: ['Promoção + preço diferente', 'erro'], promo: ['Em promoção', 'warn'], dif: ['Preço diferente', 'erro'], igual: ['Igual', 'ok'] };
-    const seg = TS.seg(Object.entries(FILTROS).map(([k, [t, f]]) => [`${t} (${fmt.int(conta(f))})`, k]), filtro, (v) => { state.siteFiltro = v; pintar(corpo, d); });
+    const seg = TS.seg(Object.entries(FILTROS).map(([k, [t, f]]) => [`${t} (${fmt.int(contaAba(f))})`, k]), filtro, (v) => { state.siteFiltro = v; pintar(corpo, d); });
     const tab = TS.table({
       cols: [
         { key: 'nomeTxt', label: 'Produto no site', align: 'l', sticky: true, wrap: true, render: (r) => h('span', null,
@@ -207,17 +207,70 @@
           h('small', { class: 'est-tam' + (r.dif ? ' site-dif' : '') }, r.promo ? h('span', null, 'de ', h('s', { class: 'site-de' }, fmt.brl(r.de)), h('span', { class: 'site-promo' }, ` · −${fmt.int(r.desconto * 100)}%`)) : 'preço cheio')), sortVal: (r) => r.preco },
         { key: 'sit', label: 'Situação', align: 'l', title: 'Embaixo, a diferença: preço cheio do site − nosso preço', render: (r) => { const [t, c] = SIT[r.sit]; return h('span', null, h('span', { class: 'badge ' + c }, t),
           r.difV == null || !r.dif ? null : h('small', { class: 'est-tam ' + (r.difV > 0 ? 'pos' : 'neg') }, `${r.difV > 0 ? '+' : '−'}${fmt.brl(Math.abs(r.difV))} (${r.difV > 0 ? '+' : '−'}${fmt.n1(Math.abs(r.difP) * 100)}%)`)); }, sortVal: (r) => ({ promodif: 5, dif: 4, promo: 3, igual: 2, sem: 1 })[r.sit] },
-        { key: 'ultMud', label: 'Última mudança no site', align: 'l', wrap: true, title: 'A última vez que o site mudou o preço ou a promoção deste produto (o painel guarda o preço a cada consulta). Toque em Histórico para ver tudo', render: (r) => h('span', null, r.ultMud ? h('span', { class: r.mudou ? 'warn-t' : null, title: r.ultMud.txt }, h('b', null, dataTxt(r.ultMud.em)), h('small', { class: 'est-tam' }, r.ultMud.txt)) : h('span', { class: 'muted' }, `sem mudança desde ${dataTxt(r.desde)}`),
+        dia ? { key: 'doDia', label: `Mudança em ${dataCurta(dia)}`, align: 'l', wrap: true, title: `O que o site mudou neste produto em ${dataCurta(dia)}: preço cheio, preço com promoção, entrou ou saiu de promoção, esgotou ou voltou, saiu ou voltou ao site (de → para). A data é a da consulta em que o painel viu a mudança (o site é consultado uma vez por dia). Toque em Histórico para ver tudo`,
+          render: (r) => h('span', null, h('span', { class: 'site-dia-mud' }, ...r.doDia.flatMap((m) => mudancas(m.a, m.b).map((x) => h('small', { class: 'est-tam' }, x.t)))),
+            h('small', { class: 'est-tam muted' }, `consulta das ${horaTxt(r.doDia[r.doDia.length - 1].em)}`),
+            h('button', { type: 'button', class: 'btn prc-ver site-hist', onclick: () => abrirHistorico(r, r.pts) }, 'Histórico')), sortVal: (r) => (r.doDia.length ? Date.parse(r.doDia[r.doDia.length - 1].em) : 0) }
+          : { key: 'ultMud', label: 'Última mudança no site', align: 'l', wrap: true, title: 'A última vez que o site mudou o preço ou a promoção deste produto (o painel guarda o preço a cada consulta). Toque em Histórico para ver tudo', render: (r) => h('span', null, r.ultMud ? h('span', { class: r.mudou ? 'warn-t' : null, title: r.ultMud.txt }, h('b', null, dataTxt(r.ultMud.em)), h('small', { class: 'est-tam' }, r.ultMud.txt)) : h('span', { class: 'muted' }, `sem mudança desde ${dataTxt(r.desde)}`),
           h('button', { type: 'button', class: 'btn prc-ver site-hist', onclick: () => abrirHistorico(r, r.pts) }, 'Histórico')), sortVal: (r) => (r.ultMud ? Date.parse(r.ultMud.em) : 0) },
       ],
-      rows: linhas.filter(FILTROS[filtro][1]), sortKey: 'sit', maxHeight: '640px', search: 'Buscar produto…', searchKeys: ['nomeTxt', 'nossoTxt', 'sku'], produto: ['nomeTxt', 'nossoTxt'],
-      imprimir: ['nomeTxt', 'nossoTxt', 'nosso', 'preco', 'sit', 'ultMud'], cls: 'site-t',
-      empty: 'Nenhum produto nesta aba.',
+      rows: linhasDia.filter(FILTROS[filtro][1]), sortKey: dia ? 'doDia' : 'sit', maxHeight: '640px', search: 'Buscar produto…', searchKeys: ['nomeTxt', 'nossoTxt', 'sku'], produto: ['nomeTxt', 'nossoTxt'],
+      imprimir: ['nomeTxt', 'nossoTxt', 'nosso', 'preco', 'sit', 'ultMud', 'doDia'], cls: 'site-t',
+      empty: vazioDia(dia, sitDia, diasCons, linhasDia.length, d.consultasDesde),
     });
+    // filtro "Mudou em" ao lado da busca da tabela
+    const filtroDia = campoDia(dia, hoje, ontem, (v) => { state.siteDia = v; pintar(corpo, d); });
+    if (tab.searchBox) { const linha = h('div', { class: 'site-busca' }); tab.searchBox.replaceWith(linha); linha.append(tab.searchBox, filtroDia); } else tab.prepend(filtroDia);
     corpo.append(h('div', { class: 'mt' }, TS.card('Produtos do site', `Preço cheio do site comparado com o nosso preço ${lojaTxt}: o preço de tabela do cadastro do AppNext quando o painel tem, senão o preço mais vendido nas últimas 4 semanas. Em promoção = o site mostra preço "de" e "por". Clique no nome para abrir o produto no site.`, seg, tab)));
   }
   // ---------- histórico de um produto do site ----------
   const dataTxt = (iso) => new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', timeZone: 'America/Sao_Paulo' });
+  const dataCurta = (dia) => `${dia.slice(8, 10)}/${dia.slice(5, 7)}/${dia.slice(2, 4)}`;
+  const horaTxt = (iso) => new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
+  const DICA_DIA = 'Mostra só os produtos que mudaram no site naquele dia (preço cheio, preço com promoção, entrou ou saiu de promoção, esgotou ou voltou) e o que mudou. A data é a da consulta em que o painel viu a mudança (o site é consultado uma vez por dia). As abas continuam valendo junto.';
+  /** filtro "Mudou em": atalhos Qualquer dia · Hoje · Ontem e um campo de data (aplica ao sair do campo, não a cada dígito) */
+  function campoDia(dia, hoje, ontem, escolher) {
+    const seg = TS.seg([
+      ['Qualquer dia', '', 'Todos os produtos, com a última mudança de cada um'],
+      ['Hoje', hoje, `Produtos que mudaram no site hoje (${dataCurta(hoje)})`],
+      ['Ontem', ontem, `Produtos que mudaram no site ontem (${dataCurta(ontem)})`],
+    ], dia === hoje || dia === ontem ? dia : (dia ? null : ''), (v) => escolher(v));
+    const data = h('input', { type: 'date', class: 'f-input site-dia-data', value: dia || '', max: hoje, 'aria-label': 'Mudou em (data)', title: 'Escolha um dia' });
+    TS.aoConfirmar(data, () => { const v = /^\d{4}-\d{2}-\d{2}$/.test(data.value) ? data.value : ''; if (v !== dia) escolher(v); });
+    return h('div', { class: 'site-dia', role: 'group', 'aria-label': 'Mudou em' },
+      h('span', { class: 'site-dia-rot' }, 'Mudou em', TS.dica(DICA_DIA)), seg, data);
+  }
+  /** frase da tabela vazia: com um dia escolhido, diz se houve consulta naquele dia */
+  function vazioDia(dia, sit, dias, nDia, desde) {
+    if (!dia) return 'Nenhum produto nesta aba.';
+    const dt = dataCurta(dia);
+    if (sit === 'sem-consulta') return `Sem consulta do site neste dia (${dt}): o painel não leu o site nesse dia, então não há como saber se algo mudou.`;
+    if (sit === 'sem-registro') return `Sem consulta do site registrada neste dia (${dt}): antes de ${desde ? dataTxt(desde) : 'hoje'} o painel só guardava os dias em que algo mudou.`;
+    const c = dias.get(dia);
+    if (!nDia) return `Nenhuma mudança no site em ${dt}${c ? ` (consulta das ${horaTxt(c.ultima)})` : ''}.`;
+    return `Nenhum produto desta aba mudou em ${dt}.`;
+  }
+  /** apresentação: histórico e consultas fictícios, com mudanças hoje, ontem e em dias para trás; sem consulta há 6 e 7 dias */
+  function demoHistorico(d, itensSite) {
+    const t = Date.parse(d.em), dia = 86400e3, iso = (ms) => new Date(ms).toISOString(), r1 = (v) => Math.round(v * 10) / 10;
+    d.historico = {};
+    d.consultas = [];
+    for (let k = 45; k >= 0; k--) if (k !== 6 && k !== 7) d.consultas.push(iso(t - k * dia));
+    d.consultasDesde = d.consultas[0];
+    itensSite.forEach((x, k) => {
+      const cheio = x.de ?? x.preco, disp = x.disponivel ? 1 : 0, ini = iso(t - 45 * dia), agora = [x.preco, x.de ?? null, disp];
+      const r = k % 6;
+      let pts;
+      if (r === 0) pts = [[ini, r1(cheio * 0.94), null, 1], [iso(t - 12 * dia), cheio, null, 1], ...(x.de ? [[iso(t - 3 * dia), x.preco, x.de, 1]] : [])];
+      else if (r === 1) pts = [[ini, r1(cheio * 0.95), null, disp], [iso(t), ...agora]]; // hoje
+      else if (r === 2) pts = disp ? [[ini, ...agora.slice(0, 2), 1], [iso(t - 4 * dia), ...agora.slice(0, 2), 0], [iso(t - dia), ...agora]] : [[ini, ...agora.slice(0, 2), 1], [iso(t - dia), ...agora]]; // esgotou / voltou
+      else if (r === 3 && k % 12 === 3) pts = [[ini, r1(cheio * 1.05), null, disp], [iso(t - dia), ...agora]]; // ontem
+      else pts = [[ini, ...agora]];
+      // o último ponto é sempre o site agora (o resto fica como estava em r === 0, com o estoque de agora)
+      if (r === 0 && pts[pts.length - 1][3] !== disp) pts.push([iso(t), ...agora]);
+      d.historico[x.id] = pts;
+    });
+  }
   const diaDe = (iso) => TS.isoToDay(new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(iso)));
   /** mudanças entre dois pontos do histórico, em palavras */
   function mudancas(a, b) {
