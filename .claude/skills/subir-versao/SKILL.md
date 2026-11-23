@@ -38,3 +38,5 @@ description: Sobe uma mudança do painel para o GitHub — atualiza com o main, 
    Não há ferramenta para criar o "Release" em si: entregue ao dono o link `https://github.com/rrabadan86/painelts/releases/new?tag=<tag>` e o texto das notas para colar.
    Para voltar a uma versão: "Atualizações do painel" ou `git checkout <tag>` num ramo novo — nunca reescreva o `main`.
 10. Conte ao dono: o que mudou, resultado dos testes e que a instalação na VPS é por "Atualizações do painel" (só versões que passam nos testes do GitHub), depois Ctrl+F5.
+
+**Conjuntos de tela além da apresentação** (rodam no GitHub em todo PR e de madrugada): `npx playwright test -c playwright.perfis.config.js` (perfis), `-c playwright.datas.config.js` (datas difíceis) e `PRINTS_LOCAL=1 npx playwright test -c playwright.visual.config.js` (prints, conferência local). Mudou layout de propósito: as referências dos prints são geradas pelo workflow "Prints de referência" (skill `conferir-pr`, passo 1b).
