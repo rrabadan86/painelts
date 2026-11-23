@@ -168,6 +168,7 @@
       fonte('a validade', () => (VD ? VD.avisosValidade(de('estoque')) : null)),
       fonte('o site', () => avisosSite(de('outros'))),
       fonte('as atualizações', () => avisosAtualizacoes(de('dados'))),
+      fonte('os erros das telas', () => avisosErrosTela(de('outros'))),
       fonte('o inventário', () => avisosInventario(de('inventario'), analise)),
       fonte('os créditos com a franquia', () => avisosCreditos(de('franquia'))),
       fonte('os custos das notas', () => avisosCusto(de('estoque'))),
@@ -610,6 +611,20 @@
   }
 
   // ---------- atualizações ----------
+  /** erro novo de JavaScript nas telas da loja (apareceu pela 1ª vez nos últimos 2 dias): só para o admin, que é quem leva ao suporte */
+  async function avisosErrosTela(lista) {
+    if (!(TS.eu && TS.eu.perfil === 'admin')) return;
+    const r = await fetch(TS.api('erros-tela?dias=2'), { credentials: 'same-origin' });
+    if (!r.ok) throw new Error('erros de tela');
+    const j = await r.json();
+    const novos = (j.itens || []).filter((g) => g.primeira >= new Date(Date.now() - 2 * 864e5).toISOString());
+    if (!novos.length) return;
+    const telas = [...new Set(novos.flatMap((g) => g.telas))].slice(0, 4).join(', ');
+    lista.push({ nivel: 'warn', id: 'erros-tela-' + novos.map((g) => g.ass).sort().join('').slice(0, 24),
+      titulo: `${fmt.int(novos.length)} ${novos.length === 1 ? 'erro novo' : 'erros novos'} nas telas nos últimos 2 dias`,
+      texto: `Uma tela deu erro no aparelho de alguém da equipe${telas ? ` (${telas})` : ''}. Veja qual e mande para o suporte do painel se repetir.`,
+      acao: () => { state.cfgAba = 'erros'; location.hash = '#config'; }, ir: 'ver os erros ›' });
+  }
   async function avisosAtualizacoes(lista) {
     if (!(TS.eu && TS.eu.pode && TS.eu.pode.configurar) || TS.demo) return;
     const r = await fetch('/api/admin/estado', { credentials: 'same-origin' });

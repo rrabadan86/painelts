@@ -512,6 +512,14 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 | DATA-01 | Telas principais sem erro, "NaN/null", rolagem lateral (1100 e 390 px) ou percentual absurdo no 1º do mês, último dia, domingo fechado e 1º de janeiro | `src/demo.js` `agora()` (`PAINEL_HOJE_TESTE` só com NODE_ENV=test) | `tests/datas/datas.spec.js` | ✅ |
 | DATA-02 | Projeção e meta válidas no começo e no fim do mês; o "hoje" da tela é o do relógio | `extras.js` `TS.projecaoMes`, `core.js` | `tests/datas/datas.spec.js` | ✅ |
 | NOTURNA-01 | Bateria completa (apresentação, perfis e datas) todo dia às 03:17 no main; não libera nem bloqueia versão (o registrar só roda em push) | `.github/workflows/testes.yml` | — (o próprio agendamento) | 🟡 |
+| PRINTS-01 | As telas principais (Início, Resumo, Comparativos, Cupons, Estoque, Validade, Pedido, Notas, Hoje, Campanhas, Comissionamento, Resultado, Configurações) não mudam de layout sem querer, no computador e no celular (relógio fixo 20/11/2026 15:30; referências geradas no GitHub) | `playwright.visual.config.js`, `tests/visual/relogio-fixo.js`, `.github/workflows/prints.yml` | `tests/visual/telas.spec.js` | ✅ |
+| ERRTELA-01 | Mensagem de erro de tela sem dado pessoal (e-mail, CPF, telefone, número longo, texto digitado, parâmetros do endereço) | `src/errostela.js` `sanear`; `public/js/errostela.js` `limpar` | `errostela.test` | ✅ |
+| ERRTELA-02 | Só campos conhecidos; loja só se a pessoa tem; só erro do painel; linha do pacote vira arquivo:linha | `src/errostela.js` `registro`/`arquivo`; `server.js` `obterBundle` | `errostela.test` | ✅ |
+| ERRTELA-03 | No máximo 10 avisos por pessoa por minuto; o mesmo erro da mesma pessoa só a cada 10 minutos | `src/errostela.js` `podeGravar` | `errostela.test` | ✅ |
+| ERRTELA-04 | Arquivo com 30 dias e no máximo 2 MB; resumo agrupa os repetidos; "novo" = 1ª vez nos últimos 2 dias | `src/errostela.js` `gravar`/`resumo`/`novos` | `errostela.test` | ✅ |
+| ERRTELA-05 | Todo perfil envia (com `X-Painel`); admin vê tudo, franqueado só as lojas dele, gerente e vendedora 403; arquivo sem usuário | `src/errostela.js` `registrar` | `errostela.test` (servidor real) | ✅ |
+| ERRTELA-06 | Na apresentação o aviso é aceito sem gravar | `src/errostela.js` `demo` | `errostela.test` | ✅ |
+| ERRTELA-07 | Erro na tela vira 1 aviso saneado; aba Erros nas telas; aviso de erro novo no Início do admin | `public/js/errostela.js`, `config.js` `abaErros`, `inicio.js` `avisosErrosTela` | `erros-tela.spec` | ✅ |
 | PORTA-01…02 | Testes que sobem o servidor sorteiam a porta numa faixa só deles, pulando as portas que o `fetch` recusa (4045, 6000…: "o servidor de teste não subiu em 90 s") | `tests/unit/_porta.js` | `portas-teste.test` PORTA-01…02 | ✅ |
 | MATRIZ-01…06 | A matriz sempre em dia (decisão do dono, 23/11/2026): códigos únicos; teste citado existe; código de regra no nome de um teste está na matriz; ✅ sempre com teste; resumo em números contado pelas linhas; `npm run testar-alteracao` roda primeiro os testes das regras dos arquivos mexidos e avisa as sem teste; o hook lembra de atualizar a matriz | `scripts/matriz.js`; `scripts/testar-alteracao.js`; `.claude/hooks/lembrar-docs.js` | `matriz.test` MATRIZ-01…06 | ✅ |
 
@@ -582,6 +590,7 @@ Todos os da lista A foram conferidos no código, um por um.
 - **Achado corrigido:** Validade a 1100 px rolava de lado quando algum lote ganhava o "📣 Campanha" (texto pequeno sem quebrar); e `TS.table` guardava a busca só depois de 0,12 s, então apagar a busca e trocar logo de aba levava a busca antiga para a outra aba ("Nada encontrado").
 - **Achado corrigido:** Vendas → Cupons mostrava 503 "itens" (linhas) no topo e 530 no total da lista (soma crua, com taxas e R$ 0,01); agora cupons, itens e valor saem de `TS.metricas` (CUP-01).
 - **Achados corrigidos pelos testes novos (23/11/2026):** Pedido → Produtos rolava para o lado (625 px a 1100) — agora 6 colunas; "null" na "Sua meta de hoje" da vendedora quando as vendas de hoje não chegaram; Vendas por produto somava 516 itens / 7,610 kg (com R$ 0,01, consumível sem controle e kg de acessório) contra 513 / 7,31 da conta oficial; Chá vendido do Resumo somava o chá de brinde a R$ 0,01.
+- **Achado (prints, 23/11/2026):** a Validade às vezes volta a mostrar "Carregando os lotes…" depois de pronta (a tela se redesenha sozinha, uma piscada que a pessoa também vê). Em aberto; o teste de prints espera a tela ficar pronta de novo.
 - **A decidir com o dono:** "Lucro bruto" do mês tem dois números — Rentabilidade R$ 10.659 (60,2%) e Resultado R$ 7.339 (41,4%), este perto do "Lucro sem fixos" da Rentabilidade; é diferença de definição/nome (mexer muda o Resultado e a exportação ao contador). Na Minha comissão a vendedora vê "Meta da loja ÷ pessoas" na coluna "Você vendeu" (a regra só proíbe no cartão "Meta de hoje").
 - **Em aberto:** `reajuste.spec` (celular) falhou 2 vezes na bateria completa local (o assunto digitado voltou ao texto padrão); sozinho e sob carga passou 26 vezes. Causa não encontrada.
 
@@ -657,8 +666,8 @@ Contado pelas linhas da matriz (`node scripts/matriz.js --resumo`; o guardião c
 | Clientes, fidelidade, WhatsApp e lista de espera (CLI) | 37 | 25 | 8 | 4 |
 | Orçamento (ORC) | 7 | 5 | 1 | 1 |
 | Checklist, fechamento e avisos (OPE) | 13 | 6 | 3 | 4 |
-| Estrutura do painel e atualização (APP) | 28 | 10 | 12 | 6 |
-| **Total** | **415** | **184 (44%)** | **121 (29%)** | **110 (27%)** |
+| Estrutura do painel e atualização (APP) | 36 | 18 | 12 | 6 |
+| **Total** | **423** | **192 (45%)** | **121 (29%)** | **110 (26%)** |
 <!-- resumo:fim -->
 
 ## Próximas etapas

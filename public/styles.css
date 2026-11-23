@@ -3771,3 +3771,7 @@ details.inv-p2-como ol { margin-top: 8px; }
 .ped-t small.ped-grp .ped-sub { display: inline; margin-left: 6px; }
 .ped-t small.ped-est, .ped-t small.ped-precisa { display: block; margin-top: 3px; }
 .ped-t.est-t td.wrap:not(.sticky-col) { min-width: 140px; }
+
+/* Configurações → Erros nas telas */
+.cfg-erros-t .cfg-erro-sub { display: block; margin-top: 2px; }
+.cfg-erros-t .cfg-erro-novo { margin-left: 6px; }

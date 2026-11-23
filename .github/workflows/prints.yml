@@ -1,0 +1,72 @@
+# Prints de referência (regressão visual): compara as telas principais da apresentação, no computador e no celular,
+# com as imagens guardadas em tests/visual/__prints__. Uma mudança de layout que ninguém pediu aparece como ✗,
+# com a imagem da diferença em "Artifacts" da execução.
+#
+# Mudança de layout DE PROPÓSITO: Actions → "Prints de referência" → Run workflow, escolha o ramo do PR e marque
+# "atualizar". As imagens são geradas aqui (o mesmo Ubuntu de sempre: a fonte de outra máquina desenha diferente),
+# sobem num commit no ramo e os testes rodam de novo nesse commit.
+name: Prints de referência
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      atualizar:
+        description: 'Atualizar as imagens de referência neste ramo (mudança de layout de propósito)'
+        type: boolean
+        default: false
+concurrency:
+  group: prints-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  prints:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Navegador
+        run: npx playwright install --with-deps chromium
+      - name: Conferir os prints
+        if: ${{ !inputs.atualizar }}
+        env:
+          CI: '1'
+        run: |
+          if ls tests/visual/__prints__/*/*.png >/dev/null 2>&1; then
+            npx playwright test -c playwright.visual.config.js
+          else
+            # ainda não há referências neste ramo: gera para conferir (no Artifacts) e não acusa erro
+            echo "::warning::Sem imagens de referência ainda. Rode este workflow com 'atualizar' marcado para criá-las."
+            npx playwright test -c playwright.visual.config.js --update-snapshots=missing
+          fi
+      - name: Atualizar as referências
+        if: ${{ inputs.atualizar }}
+        env:
+          CI: '1'
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          npx playwright test -c playwright.visual.config.js --update-snapshots=changed
+          git add tests/visual/__prints__
+          if git diff --cached --quiet; then echo "As imagens já estavam iguais."; exit 0; fi
+          git -c user.name='prints automáticos' -c user.email='prints@painel.local' commit -qm "Prints de referência atualizados (${GITHUB_REF_NAME})"
+          git push -q origin "HEAD:${GITHUB_REF_NAME}"
+          # o commit feito por aqui não dispara os testes sozinho: pede as duas baterias no commit novo
+          gh workflow run testes.yml --ref "${GITHUB_REF_NAME}"
+          gh workflow run prints.yml --ref "${GITHUB_REF_NAME}"
+      - name: Diferenças e imagens geradas
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: prints
+          path: |
+            prints-report/
+            test-results-prints/
+            tests/visual/__prints__/
+          retention-days: 7
+          if-no-files-found: ignore
