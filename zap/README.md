@@ -24,7 +24,7 @@ docker compose --profile zap logs --tail 20 zap      # "ouvindo na porta 8010"
 
 Depois é pelo painel: Configurações → loja → WhatsApp → **Conectar** (lê o QR no celular da loja em *Aparelhos conectados → Conectar um aparelho*, ou usa o código de 8 caracteres).
 
-A primeira construção baixa o Chromium (demora alguns minutos e ocupa perto de 1 GB). Cada loja conectada mantém um navegador aberto (uns 300–500 MB de memória).
+A primeira construção baixa o Chromium (demora alguns minutos e ocupa perto de 1 GB). Cada loja conectada mantém um navegador aberto. Sem economia ficava em ~650 MB; desde 23/11/2026 o Chromium abre sem imagens e sem os serviços de fundo, e a conferência de 15 em 15 min devolve ao sistema a memória juntada (meta: ~350–400 MB por loja). Para medir: `docker stats teashop-zap` e dividir pelas lojas conectadas. Se algo estranhar no WhatsApp Web, `ZAP_ECONOMIA=0` no `.env` e `docker compose --profile zap up -d zap` volta ao jeito antigo.
 
 ## Dia a dia
 

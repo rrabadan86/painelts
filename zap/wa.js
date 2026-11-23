@@ -15,7 +15,7 @@
 const fs = require('fs');
 const path = require('path');
 const { EventEmitter } = require('events');
-const { ehSaida, soDigitos, erroCurto } = require('./sessoes');
+const { ehSaida, soDigitos, erroCurto, argsChromium, economiaDesligada } = require('./sessoes');
 
 // O Chrome sem tela se anuncia como "HeadlessChrome" e o WhatsApp Web responde "atualize o navegador".
 const USER_AGENT = process.env.ZAP_USER_AGENT
@@ -25,6 +25,7 @@ const CHROMIUM = process.env.CHROMIUM_PATH || undefined;
 const QR_TENTATIVAS = parseInt(process.env.ZAP_QR_TENTATIVAS || '15', 10);
 
 const espera = (ms) => new Promise((r) => setTimeout(r, ms));
+
 
 // Erros passageiros do navegador quando o WhatsApp Web recarrega a página: vale esperar e repetir.
 function ehPassageiro(e) {
@@ -164,7 +165,7 @@ function fabricaReal(loja, { pasta }) {
       puppeteer: {
         headless: true,
         executablePath: CHROMIUM,
-        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
+        args: argsChromium(),
       },
     });
     client.on('qr', (qr) => {
@@ -246,6 +247,20 @@ function fabricaReal(loja, { pasta }) {
   };
 
   ev.vivo = async () => (await client.getState()) === 'CONNECTED';
+
+  /**
+   * Devolve ao sistema a memória que o WhatsApp Web foi juntando (chamado pela conferência de 15 em 15 min):
+   * o mesmo aviso de "pouca memória" que o Chrome recebe do sistema — ele solta cache — e uma coleta de lixo.
+   * Não mexe na sessão nem nas conversas; se falhar, nada acontece.
+   */
+  ev.aliviar = async () => {
+    if (!client || !client.pupPage || economiaDesligada()) return;
+    const cdp = await client.pupPage.target().createCDPSession();
+    try {
+      await cdp.send('Memory.simulatePressureNotification', { level: 'critical' });
+      await cdp.send('HeapProfiler.collectGarbage');
+    } finally { try { await cdp.detach(); } catch (_) { /* já solta */ } }
+  };
 
   ev.sair = async () => { if (client) await client.logout(); };
 

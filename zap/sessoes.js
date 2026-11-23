@@ -55,6 +55,31 @@ const soDigitos = (v) => String(v == null ? '' : v).replace(/\D/g, '');
 const numeroValido = (n) => /^\d{10,15}$/.test(n);
 /** Para o log: só os 4 últimos dígitos. */
 const fim4 = (n) => { const d = soDigitos(n); return d ? '***' + d.slice(-4) : '***'; };
+/**
+ * Opções do Chromium (pedido do dono, 23/11/2026: cada loja conectada gastava ~650 MB e a VPS tem de aguentar
+ * dezenas de lojas). O robô só manda campanha e acompanha conversa: não precisa ver foto, figurinha nem avatar
+ * (a mídia que a pessoa pede em Conversas é baixada pelo próprio WhatsApp, sem passar por <img>), nem dos
+ * serviços de fundo do Chrome. ZAP_ECONOMIA=0 volta ao jeito antigo; ZAP_CHROMIUM_ARGS acrescenta opções
+ * (separadas por espaço) sem precisar mudar o código.
+ */
+const ARGS_BASE = ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'];
+const ARGS_ECONOMIA = [
+  '--blink-settings=imagesEnabled=false',          // não carrega imagens (avatar, figurinha, miniatura)
+  '--mute-audio',
+  '--no-first-run', '--no-default-browser-check',
+  '--disable-extensions', '--disable-default-apps', '--disable-sync', '--disable-translate',
+  '--disable-background-networking', '--disable-component-update', '--disable-domain-reliability', '--disable-breakpad',
+  '--disable-features=Translate,OptimizationHints,MediaRouter,site-per-process',
+  '--renderer-process-limit=2',                    // um site só: não precisa de um processo por quadro
+  '--disk-cache-size=8388608', '--media-cache-size=8388608',
+  '--js-flags=--optimize-for-size',
+];
+const economiaDesligada = (env = process.env) => String(env.ZAP_ECONOMIA || '1').trim() === '0';
+function argsChromium(env = process.env) {
+  const extra = String(env.ZAP_CHROMIUM_ARGS || '').split(/\s+/).filter((a) => /^--[a-z0-9-]+(=\S*)?$/i.test(a));
+  return [...ARGS_BASE, ...(economiaDesligada(env) ? [] : ARGS_ECONOMIA), ...extra];
+}
+
 /** Mensagem de erro curta, sem número completo (a biblioteca às vezes cita o destino). */
 function erroCurto(e) {
   const m = String((e && e.message) || e || 'erro').replace(/\s+/g, ' ');
@@ -477,7 +502,10 @@ function criarSessoes(opcoes = {}) {
       if (!ok && s.cli === cli && s.estado === 'conectado') {
         log(`loja=${s.loja} não respondeu à conferência: religando`);
         reconectar(s, 'O WhatsApp parou de responder.');
+        continue;
       }
+      // ZAP-MEM-02: devolve ao sistema a memória juntada (soltar cache + coleta de lixo); falha não religa nada
+      if (ok && typeof cli.aliviar === 'function') { try { await comLimite(cli.aliviar(), 20000); } catch (_) { /* segue */ } }
     }
   }
 
@@ -488,4 +516,4 @@ function criarSessoes(opcoes = {}) {
   return { status, conectar, desconectar, enviar, optouts, conversas, historico, midia, retomar, vigiar, fechar };
 }
 
-module.exports = { criarSessoes, ehSaida, normalizar, fim4, erroCurto, soDigitos, RE_LOJA, ErroPedido, MIDIA_MAX };
+module.exports = { argsChromium, economiaDesligada, ARGS_ECONOMIA, criarSessoes, ehSaida, normalizar, fim4, erroCurto, soDigitos, RE_LOJA, ErroPedido, MIDIA_MAX };
