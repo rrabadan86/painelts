@@ -147,15 +147,18 @@ function relogio(agora) {
  * Janela de envio de um dia (decisão do dono: "igual ao funcionamento da loja, cada dia da semana um horário").
  * → { das, as, origem: 'loja'|'feriado'|'proprio' } ou null (não envia nesse dia). iso = 'AAAA-MM-DD' (Brasília); sem = 0 (dom)…6 (sáb).
  * horario 'loja' com o funcionamento cadastrado: horário especial da data (feriado: fechado → null) primeiro, depois o do dia da
- * semana (fechado → null), da abertura até 30 minutos antes de fechar (MARGEM_FECHA_MIN). Sem funcionamento cadastrado (ou horario 'proprio'): das/as/dias.
+ * semana (fechado → null), de 30 minutos antes de abrir (MARGEM_ABRE_MIN) até 30 minutos antes de fechar (MARGEM_FECHA_MIN). Sem funcionamento cadastrado (ou horario 'proprio'): das/as/dias.
  */
 const DIAS_OP = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab'];
 const SEM_WPP_PAUSA = 5; // decisão do dono: 5 clientes seguidos "sem WhatsApp" pausam o robô (a conferência do número pode ter falhado)
 const MARGEM_FECHA_MIN = 30; // decisão do dono: pelo horário da loja, o robô para 30 minutos antes de fechar
-const menosMargem = (abre, fecha) => {
-  const fim = hm(fecha) - MARGEM_FECHA_MIN;
-  if (fim <= hm(abre)) return null; // não sobra tempo de envio nesse dia
-  return `${String(Math.floor(fim / 60)).padStart(2, '0')}:${String(fim % 60).padStart(2, '0')}`;
+const MARGEM_ABRE_MIN = 30; // decisão do dono (23/11/2026): e começa 30 minutos antes de abrir
+const hhmm = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+/** janela de envio pelo horário da loja: de 30 min antes de abrir até 30 min antes de fechar → { das, as } ou null */
+const janelaLoja = (abre, fecha) => {
+  const ini = Math.max(0, hm(abre) - MARGEM_ABRE_MIN), fim = hm(fecha) - MARGEM_FECHA_MIN;
+  if (fim <= hm(abre)) return null; // não sobra tempo de envio nesse dia (conta pelo horário aberto, não pela margem da manhã)
+  return { das: hhmm(ini), as: hhmm(fim) };
 };
 function temFuncionamento(loja) {
   const f = loja && loja.operacao && loja.operacao.funcionamento;
@@ -167,12 +170,12 @@ function janelaDoDia(loja, cfg, iso, sem) {
     const esp = loja.feriadosHorario && loja.feriadosHorario[iso];
     if (esp && typeof esp === 'object') {
       if (esp.fechado) return null;
-      if (HORA.test(esp.abre || '') && HORA.test(esp.fecha || '') && esp.abre < esp.fecha) { const as = menosMargem(esp.abre, esp.fecha); return as ? { das: esp.abre, as, origem: 'feriado' } : null; }
+      if (HORA.test(esp.abre || '') && HORA.test(esp.fecha || '') && esp.abre < esp.fecha) { const j = janelaLoja(esp.abre, esp.fecha); return j ? { ...j, origem: 'feriado' } : null; }
     }
     const f = loja.operacao.funcionamento[DIAS_OP[sem]];
     if (f.fechado || !(f.abre < f.fecha)) return null;
-    const as = menosMargem(f.abre, f.fecha);
-    return as ? { das: f.abre, as, origem: 'loja' } : null;
+    const j = janelaLoja(f.abre, f.fecha);
+    return j ? { ...j, origem: 'loja' } : null;
   }
   return cfg.dias.includes(sem) ? { das: cfg.das, as: cfg.as, origem: 'proprio' } : null;
 }
@@ -329,7 +332,7 @@ function envioManualBloqueado({ lojaId, cpf, contato, campanha, agora = Date.now
 const sortear = (cfg, agora, rnd = Math.random) => agora + (cfg.min + Math.floor(rnd() * (cfg.max - cfg.min + 1))) * 1000;
 
 module.exports = {
-  foneChave, porChave, janelaDoDia, agenda, temFuncionamento, MARGEM_FECHA_MIN, SEM_WPP_PAUSA,
+  foneChave, porChave, janelaDoDia, agenda, temFuncionamento, MARGEM_FECHA_MIN, MARGEM_ABRE_MIN, SEM_WPP_PAUSA,
   envioManualBloqueado, PADRAO, PREPARO_DIAS, ORIGEM_RESPOSTA, ligarNumeroAoCliente, voltouAAceitar, MOTIVOS, NUMERO, fim4, cfgDe, validarCfg, relogio, enviadosHoje, campanhasDoRobo, decidir, proxima, sortear,
   lerEstado, temEstado, mudarEstado, lerContatos, mudarContato, lerPreparo, gravarPreparo, limparPreparo, lerJson, gravarJson,
 };
