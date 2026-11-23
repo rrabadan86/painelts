@@ -200,17 +200,23 @@
       baseMensal.set(aplica, r);
       return r;
     };
+    // custo fixo de cada mês: o valor real lançado no Resultado ou, sem lançamento, o padrão de Configurações (contas.js, DRE-MES-01)
+    const LANC = (cfg.fixosMes && typeof cfg.fixosMes === 'object') ? cfg.fixosMes : {};
+    const fixoDoMes = (x, ym) => TS.contas.fixoDoMes(x, ym, LANC);
+    // R$ por mês usado no rateio (Rentabilidade): a média dos meses da base (o lançado de cada mês ou o padrão)
+    const fixoBase = (x) => { const m = mediaFat(x.aplica); return m.meses.length ? m.meses.reduce((a, ym) => a + fixoDoMes(x, ym).valor, 0) / m.meses.length : x.valor; };
+    const temLancado = (x) => mediaFat(x.aplica).meses.some((ym) => fixoDoMes(x, ym).lancado);
     const taxaOutro = (x) => {
       if (x.tipo === 'pct') return x.valor / 100;
       const m = mediaFat(x.aplica);
-      return m.media > 0 ? x.valor / m.media : 0;
+      return m.media > 0 ? fixoBase(x) / m.media : 0;
     };
     const ONDE_FAT = { tudo: 'loja + Espaço Gourmet', loja: 'só loja', eg: 'só Espaço Gourmet' };
     const dicaOutro = (x) => {
       if (x.tipo === 'pct') return `${x.nome}: ${fmt.pct(x.valor / 100)} sobre o valor de cada venda${x.aplica !== 'tudo' ? ` (${ONDE_FAT[x.aplica]})` : ''}.`;
       const m = mediaFat(x.aplica);
       if (!m.media) return `${x.nome}: ainda não há mês fechado com vendas para calcular o %.`;
-      return `${x.nome}: R$ ${fmt.int(x.valor)} por mês ÷ média do faturamento (${ONDE_FAT[x.aplica]}, sem taxas) dos últimos ${m.meses.length === 1 ? 'mês fechado' : m.meses.length + ' meses fechados'} (${m.meses.map(TS.ymLabel).join(', ')}: ${fmt.brl0(m.media)} por mês) = ${fmt.pct(x.valor / m.media)} de cada venda. `
+      return `${x.nome}: R$ ${fmt.int(fixoBase(x))} por mês${temLancado(x) ? ' (média do valor de cada mês: o lançado no Resultado ou o padrão)' : ''} ÷ média do faturamento (${ONDE_FAT[x.aplica]}, sem taxas) dos últimos ${m.meses.length === 1 ? 'mês fechado' : m.meses.length + ' meses fechados'} (${m.meses.map(TS.ymLabel).join(', ')}: ${fmt.brl0(m.media)} por mês) = ${fmt.pct(x.valor / m.media)} de cada venda. `
         + 'Esse % é volátil: muda quando um mês fecha e entra na média, e sobe quando a loja vende menos. Num mês que vender abaixo da média, o aluguel de verdade pesa mais do que o mostrado; acima da média, pesa menos.';
     };
     /** deduções da linha de venda: { com, roy, imp, maq } em R$ */
@@ -253,10 +259,12 @@
       const fix = OUTROS.filter((x) => x.tipo === 'mes' && x.aplica !== 'eg').reduce((s, x) => s + taxaOutro(x), 0);
       return { roy: (ry.loja || 0) + (ry.mkt || 0), imp: pSimples, maq: pCartao, com, outrosPct: pct, outrosFix: fix, mesCom: ant };
     };
-    return { deducoes, OUTROS, taxaOutro, dicaOutro, mediaFat, ONDE_FAT, pSimples, pCartao, CATS, catDe, PONTUAIS, pontuaisDoMes, taxasVenda, comDoMes, comProjetada };
+    return { deducoes, OUTROS, LANC, fixoDoMes, fixoBase, temLancado, taxaOutro, dicaOutro, mediaFat, ONDE_FAT, pSimples, pCartao, CATS, catDe, PONTUAIS, pontuaisDoMes, taxasVenda, comDoMes, comProjetada };
   }
 
   TS.estoqueBuscar = buscar;
+  /** valor real dos custos fixos por mês, depois de lançar no Resultado: troca na memória (config nova = contas refeitas) */
+  TS.estoqueFixosMes = (loja, fixosMes) => { const c = cache.get(loja); if (c) c.cfg = { ...c.cfg, fixosMes: fixosMes || {} }; };
   TS.motorEstoque = motor; // Início com todas as lojas (visaodono.js): o mesmo motor, com o estoque de cada loja
 
   /** Classe oficial de cada produto (Estrela, Volume, Joia, Peso morto), fixa e separada do filtro de período.
@@ -543,7 +551,7 @@
     const contribTot = fatCusto - custoTot - dedVarTot;
     const pctDe = (v, r) => (r.vt ? fmt.pct(v / r.vt) : '');
     const ONDE = { tudo: '', loja: ' (só loja)', eg: ' (só EG)' };
-    const rotOutro = (x) => `${x.nome}${x.tipo === 'mes' ? ` (R$ ${fmt.int(x.valor)}/mês) ⓘ` : ''}${ONDE[x.aplica] || ''}`;
+    const rotOutro = (x) => `${x.nome}${x.tipo === 'mes' ? ` (R$ ${fmt.int(M.ded.fixoBase(x))}/mês) ⓘ` : ''}${ONDE[x.aplica] || ''}`;
     const NOTA_DED = `Comissão: o que a loja pagou no mês (comissões, premiação e bônus) ÷ vendas do tipo do produto; Espaço Gourmet não tem comissão. Royalties pelas regras da loja. Simples ${fmt.pct(pSimples)} e maquininha ${fmt.pct(pCartao)} sobre o valor vendido.${OUTROS.some((x) => x.tipo === 'mes') ? ' Custos em R$ por mês viram % pela média do faturamento dos últimos 3 meses fechados (passe o mouse no nome para ver a conta).' : ''} Ajuste em Configurações → Lojas → Estoque e margem.`;
     /** conta do lucro em cartões no mesmo visual dos pacotes: resultado, deduções variáveis e custos fixos.
      *  modo 'liq' = os três; 'ded' = só as deduções */
@@ -584,7 +592,7 @@
           const ks = fixosK.filter((k) => catDe(OUTROS[k]) === c.id);
           if (!ks.length) continue;
           linhasFix.push(linha(c.nome, somaK(ks), 'est-det-sub', `Soma dos custos de ${c.nome}`));
-          for (const k of ks) { const x = OUTROS[k], mm = mediaFat(x.aplica); linhasFix.push(linha('  ' + x.nome, r.outros[k], 'est-det-filho', mm.media ? `R$ ${fmt.int(x.valor)} por mês ÷ ${fmt.brl0(mm.media)} (média) = ${fmt.pct(x.valor / mm.media)} de cada venda` : 'Sem mês fechado para calcular')); }
+          for (const k of ks) { const x = OUTROS[k], mm = mediaFat(x.aplica); linhasFix.push(linha('  ' + x.nome, r.outros[k], 'est-det-filho', mm.media ? `R$ ${fmt.int(M.ded.fixoBase(x))} por mês${M.ded.temLancado(x) ? ' (média dos valores de cada mês)' : ''} ÷ ${fmt.brl0(mm.media)} (média) = ${fmt.pct(M.ded.fixoBase(x) / mm.media)} de cada venda` : 'Sem mês fechado para calcular')); }
         }
         cards.push(cupom('Custos fixos da loja', 'rateio', [
           ...linhasFix,
@@ -676,8 +684,9 @@
 
     // ---------- ponto de equilíbrio do mês (sem os filtros: mês corrente inteiro da loja) ----------
     function cartaoEquilibrio() {
-      const fixos = OUTROS.filter((x) => x.tipo === 'mes');
       const ymAgora = TS.dayToIso(TS.todayDay()).slice(0, 7);
+      // o valor deste mês de cada custo fixo (o lançado no Resultado ou o padrão): o mesmo que o Resultado soma
+      const fixos = OUTROS.filter((x) => x.tipo === 'mes').map((x) => ({ ...x, valor: M.ded.fixoDoMes(x, ymAgora).valor }));
       // despesas de um mês só (IPTU, 13º…): as mesmas que o Resultado soma neste mês também precisam ser pagas
       const pontuais = pontuaisDoMes(ymAgora);
       const PE = TS.contas.pontoEquilibrio({ fixos, pontuais, margem: null });

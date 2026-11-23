@@ -59,8 +59,9 @@
       // custo dos produtos: o das vendas com custo + as sem custo pelo mesmo % (estimado)
       const cmvPct = m.fatCusto ? m.custo / m.fatCusto : null;
       const cmv = cmvPct == null ? null : m.custo + (m.fat - m.fatCusto) * cmvPct;
-      // custos fixos do mês (valor cheio, também no mês em andamento) + despesas de um mês só (cheias no mês delas)
-      const fixosMes = [...fixos.map((x) => ({ nome: x.nome, cat: D.catDe ? D.catDe(x) : 'outros', valor: x.valor })),
+      // custos fixos do mês (valor cheio, também no mês em andamento: o valor real lançado no mês ou o padrão de Configurações,
+      // TS.contas.fixoDoMes, DRE-MES-01) + despesas de um mês só (cheias no mês delas)
+      const fixosMes = [...fixos.map((x) => { const f = D.fixoDoMes ? D.fixoDoMes(x, ym) : { valor: x.valor, padrao: x.valor, lancado: null }; return { nome: x.nome, cat: D.catDe ? D.catDe(x) : 'outros', valor: f.valor, padrao: f.padrao, lancado: f.lancado }; }),
         ...(D.pontuaisDoMes ? D.pontuaisDoMes(ym) : []).map((x) => ({ nome: x.nome, cat: D.catDe(x), valor: x.valor, pontual: true }))];
       const fixoTot = fixosMes.reduce((a, x) => a + x.valor, 0);
       const impostos = m.imp + m.maq + m.roy;
@@ -114,7 +115,7 @@
     ...grupos.flatMap((g) => [
       [`− ${g.nome}`, (m) => m.fixosMes.filter((x) => x.cat === g.id).reduce((a, x) => a + x.valor, 0), 'grupo', `${g.nomes.length} ${g.nomes.length === 1 ? 'custo' : 'custos'}: ${g.nomes.map((n) => n.nome + (n.pontual ? ' (pontual)' : '')).join(', ')}. Clique para ${abertos.has(g.id) ? 'fechar' : 'abrir'}.`, g.id],
       ...(abertos.has(g.id) ? g.nomes.map((n) => [n.pontual ? `${n.nome} · pontual` : n.nome, (m) => { const l = m.fixosMes.filter((x) => x.cat === g.id && x.nome === n.nome && !!x.pontual === n.pontual); return l.length ? l.reduce((a, x) => a + x.valor, 0) : null; }, 'filho',
-        n.pontual ? 'Despesa de um mês só: entra cheia no mês dela' : 'Custo fixo cadastrado: entra pelo valor cheio do mês, também no mês em andamento']) : []),
+        n.pontual ? 'Despesa de um mês só: entra cheia no mês dela' : 'Custo fixo: entra pelo valor cheio do mês, também no mês em andamento. Clique no valor de um mês para lançar o valor real daquele mês (✎); clique no nome para ver o histórico mês a mês', null, n.pontual ? null : n.nome]) : []),
     ]),
     ['= Resultado do mês', (m) => m.resultado, 'tot', 'Lucro sem fixos − perdas − custos fixos'],
   ];
@@ -237,16 +238,17 @@
       h('th', { class: 'dre-var', title: P ? `Projeção do mês de ${TS.ymLabel(sel)} contra ${rotAnt} INTEIRO (o mês fechado do ano anterior, não só os mesmos dias)` : `${TS.ymLabel(sel)} contra ${rotAnt}, os dois meses inteiros` }, P ? `Projeção × ${rotAnt} inteiro` : 'Variação'))));
     const body = h('tbody');
     const alternar = (id) => { if (abertos.has(id)) abertos.delete(id); else abertos.add(id); TS.render(); };
-    for (const [rot, f, tipo, dica, gid] of linhas) {
+    const abrir = (nome, ym) => janelaFixo(M, meses, nome, ym);
+    for (const [rot, f, tipo, dica, gid, fx] of linhas) {
       const v = f(m), vp = P ? f(P) : null, va = a ? f(a) : null, vb = f(base);
       const d = vb != null && va ? vb / va - 1 : null;
       const bom = tipo === 'menos' || tipo === 'grupo' || tipo === 'filho' ? d < 0 : d > 0;
       const rotL = tipo === 'tot' && P ? '= Resultado' : rot;
       body.append(h('tr', { class: 'dre-' + tipo, title: dica, onclick: gid ? () => alternar(gid) : null },
-        h('td', { class: 'l' }, gid ? h('span', { class: 'dre-seta' }, abertos.has(gid) ? '▾ ' : '▸ ') : null, rotL),
-        h('td', { class: tipo === 'tot' && v < 0 ? 'neg' : null }, v == null ? '—' : fmt.brl(v)), h('td', { class: 'muted' }, pc(v, m.fat)),
-        P ? h('td', { class: 'dre-proj' + (tipo === 'tot' && vp < 0 ? ' neg' : '') }, vp == null ? '—' : fmt.brl(vp)) : null, P ? h('td', { class: 'muted dre-proj' }, pc(vp, P.fat)) : null,
-        h('td', null, va == null ? '—' : fmt.brl(va)), h('td', { class: 'muted' }, a ? pc(va, a.fat) : '—'),
+        h('td', { class: 'l' }, gid ? h('span', { class: 'dre-seta' }, abertos.has(gid) ? '▾ ' : '▸ ') : null, fx ? nomeFixo(rotL, () => abrir(fx, sel)) : rotL),
+        fx ? celFixo(m, fx, v == null ? '—' : fmt.brl(v), null, abrir) : h('td', { class: tipo === 'tot' && v < 0 ? 'neg' : null }, v == null ? '—' : fmt.brl(v)), h('td', { class: 'muted' }, pc(v, m.fat)),
+        P ? (fx ? celFixo(P, fx, vp == null ? '—' : fmt.brl(vp), 'dre-proj', abrir) : h('td', { class: 'dre-proj' + (tipo === 'tot' && vp < 0 ? ' neg' : '') }, vp == null ? '—' : fmt.brl(vp))) : null, P ? h('td', { class: 'muted dre-proj' }, pc(vp, P.fat)) : null,
+        fx && a ? celFixo(a, fx, va == null ? '—' : fmt.brl(va), null, abrir) : h('td', null, va == null ? '—' : fmt.brl(va)), h('td', { class: 'muted' }, a ? pc(va, a.fat) : '—'),
         h('td', { class: d == null || Math.abs(d) < 0.0005 ? 'muted' : bom ? 'pos' : 'neg' }, d == null ? '—' : fmt.delta(d))));
     }
     if (P && m.resultado != null && m.resultado < 0) body.append(h('tr', { class: 'dre-info' }, h('td', { class: 'l' }, 'Falta cobrir dos custos fixos'), h('td', { class: 'neg' }, fmt.brl(-m.resultado)), h('td', { class: 'muted' }, ''),
@@ -277,11 +279,100 @@
     const t2 = h('table', { class: 't dre-t' });
     t2.append(h('thead', null, h('tr', null, h('th', { class: 'l sticky-col' }, ''), ult12.map((x) => h('th', { class: x.projecao ? 'dre-proj' : null }, TS.ymLabel(x.ym) + (x.projecao ? '*' : ''))))));
     const b2 = h('tbody');
-    for (const [rot, f, tipo, dica, gid] of linhas) b2.append(h('tr', { class: 'dre-' + tipo, title: dica, onclick: gid ? () => alternar(gid) : null }, h('td', { class: 'l sticky-col' }, gid ? h('span', { class: 'dre-seta' }, abertos.has(gid) ? '▾ ' : '▸ ') : null, rot), ult12.map((x) => { const v = f(x); return h('td', { class: tipo === 'tot' && v < 0 ? 'neg' : null }, v == null ? '—' : fmt.brl0(v)); })));
+    for (const [rot, f, tipo, dica, gid, fx] of linhas) b2.append(h('tr', { class: 'dre-' + tipo, title: dica, onclick: gid ? () => alternar(gid) : null }, h('td', { class: 'l sticky-col' }, gid ? h('span', { class: 'dre-seta' }, abertos.has(gid) ? '▾ ' : '▸ ') : null, fx ? nomeFixo(rot, () => abrir(fx, sel)) : rot),
+      ult12.map((x) => { const v = f(x); return fx ? celFixo(x, fx, v == null ? '—' : fmt.brl0(v), x.projecao ? 'dre-proj' : null, abrir) : h('td', { class: tipo === 'tot' && v < 0 ? 'neg' : null }, v == null ? '—' : fmt.brl0(v)); })));
     b2.append(h('tr', { class: 'dre-info' }, h('td', { class: 'l sticky-col' }, 'Resultado em % do faturamento'), ult12.map((x) => h('td', { class: x.resultado < 0 ? 'neg' : null }, pc(x.resultado, x.fat)))));
     t2.append(b2);
     corpo.append(h('div', { class: 'mt' }, TS.card('Mês a mês', '* mês em andamento: projeção no ritmo atual, com os custos fixos inteiros', h('div', { class: 'table-wrap' }, t2))));
     // compras × vendas do mês: estou comprando mais do que vendo? (comprasvendas.js)
     if (TS.comprasVendas) corpo.append(TS.comprasVendas.cartaoResultado(M));
+  }
+
+  // ---------- valor real de cada custo fixo por mês (pedido do dono, 23/11/2026; DRE-MES) ----------
+  const quando = (iso) => { try { return new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }); } catch { return ''; } };
+  const COMO_FIXO = 'O valor de Configurações é o PADRÃO (a estimativa de todo mês). Clique no valor de um mês para lançar o valor REAL daquele mês (a conta de luz que chegou, por exemplo): ele fica guardado só naquele mês, marcado com ✎, e entra no Resultado, na Rentabilidade, no A pagar, no ponto de equilíbrio e na planilha do contador.\n\nMudar o padrão em Configurações muda todos os meses SEM valor lançado — inclusive os que já passaram; os meses com valor lançado ficam como estão. "Voltar ao padrão" apaga o valor lançado daquele mês.\n\nO histórico usa o nome do custo: se renomear o custo em Configurações, os valores lançados com o nome antigo deixam de aparecer.';
+  /** nome do custo fixo na tabela: abre a janela do mês escolhido, com o histórico */
+  function nomeFixo(rot, fn) {
+    const b = h('span', { class: 'dre-fixo-nome', role: 'button', tabindex: '0', title: 'Ver o histórico deste custo mês a mês', onclick: (e) => { e.stopPropagation(); fn(); } }, rot);
+    return TS.teclado(b, fn);
+  }
+  /** célula do valor de um custo fixo num mês: ✎ quando o mês tem valor lançado; clicar abre a janela para lançar */
+  function celFixo(x, nome, texto, cls, abrir) {
+    const f = x && x.fixosMes.find((y) => !y.pontual && y.nome === nome);
+    if (!f) return h('td', { class: cls }, texto);
+    const l = f.lancado;
+    const dica = l ? `Valor real de ${TS.ymLabel(x.ym)}${l.por ? `, lançado por ${l.por}` : ''}${l.em ? ` em ${quando(l.em)}` : ''}. Padrão de Configurações: ${fmt.brl(f.padrao)}. Clique para mudar ou voltar ao padrão.`
+      : `Padrão de Configurações (${fmt.brl(f.padrao)}). Clique para lançar o valor real de ${TS.ymLabel(x.ym)}.`;
+    const ir = () => abrir(nome, x.ym);
+    const td = h('td', { class: ['dre-edit', l ? 'dre-lanc' : null, cls].filter(Boolean).join(' '), title: dica, role: 'button', tabindex: '0', 'data-fixo': nome, 'data-ym': x.ym, onclick: (e) => { e.stopPropagation(); ir(); } },
+      l ? h('span', { class: 'dre-lanc-ico', 'aria-label': 'valor lançado' }, '✎ ') : null, texto);
+    return TS.teclado(td, ir);
+  }
+  /** grava (ou volta ao padrão, valor null) e troca na memória; na apresentação nada é gravado */
+  async function salvarFixo(M, nome, ym, valor) {
+    const corpo = valor == null ? { loja: state.loja, nome, ym, padrao: true } : { loja: state.loja, nome, ym, valor };
+    const r = await fetch(TS.api('resultado/fixo-mes'), { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-Painel': '1' }, body: JSON.stringify(corpo) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.erro || 'Não consegui gravar.');
+    let novo = j.fixosMes;
+    if (!novo) { // apresentação: só nesta página
+      novo = JSON.parse(JSON.stringify(M.ded.LANC || {}));
+      if (valor == null) { if (novo[nome]) delete novo[nome][ym]; }
+      else (novo[nome] || (novo[nome] = {}))[ym] = { valor, por: (TS.eu && TS.eu.nome) || '', em: new Date().toISOString() };
+    }
+    if (TS.estoqueFixosMes) TS.estoqueFixosMes(state.loja, novo);
+  }
+  /** "1.234,56", "380", "R$ 412,5" → número; vazio ou inválido → NaN */
+  const lerValor = (t) => {
+    let s = String(t || '').replace(/R\$|\s/g, '');
+    if (!s) return NaN;
+    if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.');
+    return /^\d+(\.\d+)?$/.test(s) ? +s : NaN;
+  };
+  /** janela de um custo fixo: o valor real do mês (campo + Salvar, sem gravar a cada dígito), voltar ao padrão e o histórico */
+  function janelaFixo(M, meses, nome, ym) {
+    const x = (M.ded.OUTROS || []).find((o) => o.tipo === 'mes' && o.nome === nome);
+    if (!x) return;
+    const atual = TS.contas.fixoDoMes(x, ym, M.ded.LANC);
+    const yms = [...new Set([...meses.slice(-12).map((mm) => mm.ym), ym])].sort();
+    const hist = TS.contas.historicoFixo(x, yms, M.ded.LANC);
+    const fundo = h('div', { class: 'cp-modal-bg' });
+    const sair = () => fundo.remove();
+    const campo = h('input', { class: 'f-input dre-fixo-campo', type: 'text', inputmode: 'decimal', autocomplete: 'off', value: atual.lancado ? String(atual.valor).replace('.', ',') : '', placeholder: fmt.brl(atual.padrao), 'aria-label': `Valor real de ${TS.ymLabel(ym)} (R$)` });
+    const botoes = [];
+    const ocupado = (sim) => botoes.forEach((b) => { b.disabled = sim; });
+    const fazer = async (valor) => {
+      ocupado(true);
+      try { await salvarFixo(M, nome, ym, valor); sair(); TS.render(); }
+      catch (e) { ocupado(false); TS.naoSalvo(e, valor == null ? null : campo); }
+    };
+    const salvar = () => {
+      const v = lerValor(campo.value);
+      if (!(v >= 0) || v > 10000000) { TS.naoSalvo('Digite o valor do mês em reais (zero ou mais), por exemplo 412,50.', campo); return; }
+      fazer(Math.round(v * 100) / 100);
+    };
+    campo.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); salvar(); } });
+    const bSalvar = h('button', { type: 'button', class: 'btn primary', onclick: salvar }, 'Salvar');
+    const bPadrao = atual.lancado ? h('button', { type: 'button', class: 'btn ghost-danger', onclick: () => fazer(null) }, 'Voltar ao padrão') : null;
+    const bCancelar = h('button', { type: 'button', class: 'btn', onclick: sair }, 'Cancelar');
+    botoes.push(bSalvar, bCancelar); if (bPadrao) botoes.push(bPadrao);
+    const l = atual.lancado;
+    const tab = h('table', { class: 't dre-hist' },
+      h('thead', null, h('tr', null, h('th', { class: 'l' }, 'Mês'), h('th', null, 'Valor'), h('th', { class: 'l', title: '✎ lançado = o valor real lançado no Resultado; padrão = o valor de Configurações (muda junto quando o padrão muda)' }, 'Origem'))),
+      h('tbody', null, hist.itens.map((it) => h('tr', { class: it.ym === ym ? 'dre-hist-sel' : null, title: it.lancado ? `Lançado${it.lancado.por ? ` por ${it.lancado.por}` : ''}${it.lancado.em ? ` em ${quando(it.lancado.em)}` : ''}` : null },
+        h('td', { class: 'l' }, TS.ymLabel(it.ym)), h('td', null, fmt.brl(it.valor)), h('td', { class: 'l' }, it.lancado ? h('span', { class: 'badge ok' }, '✎ lançado') : h('span', { class: 'muted' }, 'padrão'))))),
+      h('tfoot', null, h('tr', null, h('td', { class: 'l' }, h('b', null, 'Média')), h('td', null, h('b', null, fmt.brl(hist.media))), h('td', { class: 'l muted' }, `${hist.nLancados} de ${hist.itens.length} lançados`))));
+    const resumo = `${nome}: ${hist.itens.map((it) => `${TS.ymLabel(it.ym)} ${fmt.brl0(it.valor)}${it.lancado ? ' ✎' : ''}`).join(' · ')} · média ${fmt.brl0(hist.media)}`;
+    fundo.addEventListener('click', (e) => { if (e.target === fundo) sair(); });
+    fundo.addEventListener('keydown', (e) => { if (e.key === 'Escape') sair(); });
+    fundo.append(h('div', { class: 'card cp-copiar ts-perg dre-fixo-jan', role: 'dialog', 'aria-modal': 'true', 'aria-label': `${nome} · ${TS.ymLabel(ym)}` },
+      h('h3', null, `${nome} · ${TS.ymLabel(ym)} `, TS.dica(COMO_FIXO)),
+      h('div', { class: 'muted' }, l ? `Valor real lançado: ${fmt.brl(l.valor)}${l.por ? `, por ${l.por}` : ''}${l.em ? ` em ${quando(l.em)}` : ''}. Padrão de Configurações: ${fmt.brl(atual.padrao)}.` : `Sem valor lançado: o mês usa o padrão de Configurações (${fmt.brl(atual.padrao)}).`),
+      h('label', { class: 'ts-perg-campo' }, h('span', { class: 'f-label' }, `Valor real de ${TS.ymLabel(ym)} (R$)`), campo),
+      h('div', { class: 'ts-perg-acoes' }, bPadrao, bCancelar, bSalvar),
+      h('div', { class: 'dre-hist-tit' }, h('b', null, 'Histórico '), TS.dica(resumo)),
+      h('div', { class: 'table-wrap free' }, tab)));
+    document.body.append(fundo);
+    campo.focus();
   }
 })();
