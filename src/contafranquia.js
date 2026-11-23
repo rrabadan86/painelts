@@ -351,4 +351,19 @@ function royalties(id, b, por) {
   return { ok: true };
 }
 
-module.exports = { premios, contaPremios, royalties, PCT_PREMIO, conta, acao, compensacao, entradas, mesesRoyalties, MESES_ROYALTIES, creditos, combinar, parcial, descontoDaNota, PRAZO_DIAS };
+/** descontos que a franquia deu nos royalties, por mês de referência (Resultado, RES-ROY-01): devoluções compensadas nos
+ *  royalties com o mês escolhido e prêmios de fidelidade lançados como desconto nos royalties. Compensação antiga, de texto
+ *  livre e sem mês, fica em semMes (não entra na conta: o mês não é confiável). */
+function descontosRoyalties(id, creditos) {
+  const porMes = {}, semMes = [];
+  const add = (ym, x) => (porMes[ym] = porMes[ym] || []).push(x);
+  for (const c of creditos || []) {
+    const cp = c.compensado;
+    if (!cp || cp.como !== 'royalties') continue;
+    const x = { origem: 'devolucao', valor: r2(c.valor), texto: `devolução NF ${c.numero}` };
+    if (cp.mes && YM.test(cp.mes)) add(cp.mes, x); else semMes.push({ ...x, obs: cp.obs || '' });
+  }
+  for (const r of ler(id).royalties) if (YM.test(String(r.ref || ''))) add(r.ref, { origem: 'fidelidade', valor: r2(r.valor), texto: `prêmios de fidelidade de ${r.premios}` });
+  return { porMes, semMes };
+}
+module.exports = { descontosRoyalties, premios, contaPremios, royalties, PCT_PREMIO, conta, acao, compensacao, entradas, mesesRoyalties, MESES_ROYALTIES, creditos, combinar, parcial, descontoDaNota, PRAZO_DIAS };

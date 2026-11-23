@@ -3898,3 +3898,11 @@ details.inv-p2-como ol { margin-top: 8px; }
   .cp-campos-t th:nth-child(1) { width: 19%; } .cp-campos-t th:nth-child(2) { width: 33%; }
   .cp-campos-t th:nth-child(3) { width: 20%; } .cp-campos-t th:nth-child(4) { width: 28%; }
 }
+
+/* Resultado: receita separada (Loja · Espaço Gourmet · taxa de serviço identificada) — RES-TAXA-01 */
+.dre-t tr.dre-bruto td { font-weight: 700; }
+.dre-t tr.dre-parte td:first-child { padding-left: 18px; color: #3D4A42; }
+.dre-t tr.dre-taxa td { background: var(--gold-l) !important; color: var(--gold-t); font-weight: 600; }
+.dre-t tr.dre-taxa td:first-child { padding-left: 18px; }
+.dre-t tr.dre-repasse td:first-child { padding-left: 18px; color: #3D4A42; }
+.dre-t tr[title] td:first-child { cursor: help; }

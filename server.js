@@ -734,6 +734,13 @@ app.post('/api/demo/apagar/pago', express.json({ limit: '4kb' }), (req, res) => 
   res.json({ ok: true, simulado: true });
 });
 // valor real de um custo fixo no mês na apresentação: só confere e responde; a tela troca na memória (nada é gravado)
+// apresentação: um mês com desconto da franquia nos royalties (devolução e prêmios de fidelidade), para a linha aparecer
+app.get('/api/demo/resultado/descontos-royalties', (req, res) => {
+  if (!DEMO.lojasDemo().some((l) => l.id === String(req.query.loja || ''))) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  const d = new Date(); d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() - 1);
+  const ym = d.toISOString().slice(0, 7);
+  res.json({ porMes: { [ym]: [{ origem: 'devolucao', valor: 184.5, texto: 'devolução NF 1234' }, { origem: 'fidelidade', valor: 96.2, texto: 'prêmios de fidelidade do mês anterior' }] }, semMes: [] });
+});
 app.post('/api/demo/resultado/fixo-mes', express.json({ limit: '4kb' }), (req, res) => {
   const b = req.body || {};
   if (!DEMO.lojasDemo().some((l) => l.id === String(b.loja || ''))) return res.status(400).json({ erro: 'Escolha uma loja.' });
@@ -2351,6 +2358,15 @@ app.post('/api/apagar/pago', express.json({ limit: '4kb' }), (req, res) => {
   } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
 });
 // valor real de um custo fixo num mês (Resultado → clicar no valor do custo): grava ou volta ao padrão de Configurações
+// descontos da franquia nos royalties por mês de referência (Resultado: royalties calculados − descontos = pagos; RES-ROY-01). GET só lê
+app.get('/api/resultado/descontos-royalties', (req, res) => {
+  const loja = lojaDre(req, res, String(req.query.loja || '')); if (!loja) return;
+  try {
+    const compras = (ES.notas(loja.id) || { notas: [] }).notas;
+    const conta = CF.conta(loja.id, { saidas: NFS.lista(loja.id).notas, compras, devsPainel: DEV.lista(loja.id) });
+    res.json(CF.descontosRoyalties(loja.id, conta.creditos));
+  } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
+});
 app.post('/api/resultado/fixo-mes', express.json({ limit: '4kb' }), (req, res) => {
   if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
   const b = req.body || {};

@@ -223,3 +223,19 @@ test('FRQ-COMP-06: marcar em nota que já tinha devolução compensada sozinha (
   assert.deepEqual(x.creditos.map((c) => [c.numero, c.situacao, c.compensado && c.compensado.nota.id]).sort(), [[611, 'manual', 'c3'], [612, 'manual', 'c3']]);
   assert.equal(x.notas.find((y) => y.id === 'c3').creditos.length, 2);
 });
+
+test('RES-ROY-01: descontos da franquia nos royalties por mês de referência (devolução com mês + prêmios de fidelidade); texto antigo sem mês fica de fora', () => {
+  CF.royalties('rr', { ref: '2026-10', premios: '2026-09', valor: '96.20' }, 'dono');
+  const creditos = [
+    { id: 'a', numero: 1234, valor: 184.5, compensado: { como: 'royalties', mes: '2026-10' } },
+    { id: 'b', numero: 1300, valor: 50, compensado: { como: 'royalties', mes: null, obs: 'royalties de outubro' } }, // antigo, sem mês
+    { id: 'c', numero: 1301, valor: 70, compensado: { como: 'nota', nota: { id: 'x', nf: 9 } } }, // em nota de entrada: não mexe nos royalties
+    { id: 'd', numero: 1302, valor: 30, compensado: null },
+  ];
+  const r = CF.descontosRoyalties('rr', creditos);
+  assert.deepStrictEqual(Object.keys(r.porMes), ['2026-10']);
+  assert.deepStrictEqual(r.porMes['2026-10'].map((x) => [x.origem, x.valor]), [['devolucao', 184.5], ['fidelidade', 96.2]]);
+  assert.match(r.porMes['2026-10'][0].texto, /devolução NF 1234/);
+  assert.match(r.porMes['2026-10'][1].texto, /prêmios de fidelidade de 2026-09/);
+  assert.deepStrictEqual(r.semMes.map((x) => x.valor), [50]);
+});

@@ -392,6 +392,8 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 | DRE-MES-02 | Histórico do custo fixo mês a mês (lançado ou padrão) com a média, na janela do custo (nome na tabela) | `contas.js` `historicoFixo`; `dre.js` `janelaFixo` | `dre-mes.test` DRE-MES-02; `dre-mes.spec` DRE-MES-09 | ✅ |
 | DRE-MES-03…08 | Rota `POST /api/resultado/fixo-mes`: grava por loja em `dados/<loja>/fixos-mes.json` com quem e quando, auditada; só quem tem a tela Resultado (vendedora e gerente sem a tela: 403) e só da loja permitida; exige `X-Painel`; confere valor (≥ 0), mês (AAAA-MM, até 12 à frente) e custo existente; "voltar ao padrão" apaga só aquele mês; mudar o padrão em Configurações não muda o mês lançado; apresentação só confere e responde (nada gravado) | `src/fixosmes.js`; `server.js` (`lojaDre`, `/api/demo/resultado/fixo-mes`) | `dre-mes.test` DRE-MES-03…08 | ✅ |
 | DRE-MES-09 | Tela: clicar no valor do custo fixo num mês abre o campo (Salvar, sem gravar a cada dígito; erro em `TS.naoSalvo`), o mês fica com ✎ e o total muda; "Voltar ao padrão" desfaz | `dre.js` `celFixo`/`janelaFixo`/`salvarFixo`; `estoque.js` `TS.estoqueFixosMes` | `dre-mes.spec` DRE-MES-09 (computador e celular) | ✅ |
+| RES-TAXA-01 | Resultado (pedido do dono, 23/11/2026): "Faturamento total" = Loja + Espaço Gourmet + Taxa de serviço (10%), a taxa destacada (fora da base); "− Repassada à equipe" e "= Faturamento" (o mesmo de sempre, base do Simples e dos royalties). O ⓘ do Faturamento total mostra a conta com a taxa fora (hoje) e dentro da base (Simples e royalties a mais) para comparar com o boleto e levar ao contador. A exportação para o contador continua igual | `dre.js` `LINHAS` (bruto/parte/taxa/repasse), `dicaTotal`, `somarLinha` (`gorjImp`, `royEg`) | `dre-receita.spec` RES-TAXA-01 | ✅ |
+| RES-ROY-01 | Royalties do Resultado = calculado sobre as vendas − descontos da franquia daquele mês de referência (devoluções compensadas nos royalties com o mês escolhido + prêmios de fidelidade lançados como desconto nos royalties); linhas "calculado nas vendas" e "descontos da franquia" e o ⓘ com a origem de cada desconto. Compensação antiga sem mês não entra. Devolução compensada em nota de entrada não mexe nos royalties | `src/contafranquia.js` `descontosRoyalties`; `server.js` (GET `/api/resultado/descontos-royalties`, quem tem a tela Resultado; demo com um mês de exemplo); `dre.js` (`buscarDescRoy`, `royCalc`/`royDesc`, `dicaRoy`) | `contafranquia.test` RES-ROY-01; `dre-receita.spec` RES-ROY-01 | ✅ |
 
 ## 12. Vendas e métricas (VEN)
 
@@ -701,13 +703,13 @@ Contado pelas linhas da matriz (`node scripts/matriz.js --resumo`; o guardião c
 | Equipe, metas e comissão (EQP) | 13 | 4 | 3 | 6 |
 | Estoque, inventário, lotes e pedido (EST) | 80 | 49 | 14 | 17 |
 | Preços, custos e notas de entrada (PRC) | 40 | 13 | 8 | 19 |
-| Resultado e rentabilidade (RES) | 18 | 10 | 3 | 5 |
+| Resultado e rentabilidade (RES) | 20 | 12 | 3 | 5 |
 | Vendas e métricas (VEN) | 27 | 12 | 8 | 7 |
 | Clientes, fidelidade, WhatsApp e lista de espera (CLI) | 47 | 35 | 8 | 4 |
 | Orçamento (ORC) | 7 | 5 | 1 | 1 |
 | Checklist, fechamento e avisos (OPE) | 13 | 6 | 3 | 4 |
 | Estrutura do painel e atualização (APP) | 42 | 24 | 12 | 6 |
-| **Total** | **454** | **223 (49%)** | **121 (27%)** | **110 (24%)** |
+| **Total** | **456** | **225 (49%)** | **121 (27%)** | **110 (24%)** |
 <!-- resumo:fim -->
 
 ## Próximas etapas
