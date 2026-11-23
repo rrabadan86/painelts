@@ -461,6 +461,8 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 | CEL-NOME-02 | Com nome nas mensagens, {nome}/{nomecompleto} saem com ele e o aniversário fica fora do Hoje e das campanhas | `clientes.js` `TS.nomeMsgDe`/`valoresWpp`/etiqueta `aniv`, `campanhas.js` filtro de aniversário | `zap.spec` | ✅ |
 | CEL-NOME-03 | Com nome nas mensagens, a conversa mostra esse nome no topo, na lista e nas mensagens dele, com "cadastro: <nome da fidelidade>" embaixo (a busca acha pelos dois); Ver cliente abre o cadastro da fidelidade com "WhatsApp do <nome>" | `conversas.js` `nomeConv`/`pintarItens`/topo, `clientes.js` ficha | `conversas.spec` | ✅ |
 | CAMP-FORA-01…04 | Clientes → Campanhas (pedido do dono, 23/11/2026): tirar à mão um cliente que atende aos critérios (coluna "Tirar" com ✕ em cada linha de "Quem entra", que tem 3 colunas para o botão ficar à vista sem rolar de lado — o dono não achou o botão quando eram 5; "Tirados à mão (N)" com "Voltar para a campanha"); fica em `filtros.fora` (só CPFs válidos, até 1.000) e vale na tela, no envio manual e no robô (a mesma conta: `selecionar`/`listaResumo`); na campanha já criada sai dos pendentes ao salvar, quem recebeu fica no histórico; auditoria só com as quantidades | `campanhas.js` (`selecionar`, `listaResumo`, `tirar`/`voltar`/`listaFora`, `demoApi`); `src/campanhas.js` (`filtrosOk`, `alterar`); `server.js` (PUT `/api/campanhas/:id`) | `zapauto.test` CAMP-FORA-01; `campanha-fora.test` CAMP-FORA-02, CAMP-FORA-03; `campanha-fora.spec` CAMP-FORA-04 | ✅ |
+| NAOQUER-01…02 | "Não quer mensagens" marcado na ficha (inclusive aberta por "Ver cliente" na conversa): o cliente sai NA HORA dos pendentes de todas as listas de campanha (st 'o', quem já recebeu fica no histórico, grupo de comparação não muda); uma janela diz de quais campanhas saiu; a conversa ganha "🚫 não quer mensagens" no topo e "🚫 não quer" na lista. Antes dava "Cannot set properties of null" (a lista de contatos ainda não tinha vindo) e o aviso abria atrás da ficha | `src/campanhas.js` `tirarNaoQuer`; `server.js` (POST `/api/contatos`); `clientes.js` (`marcar`, `naoQuer`); `conversas.js` (`naoQuerDe`, evento `ts-contato`); `components.js`/`styles.css` (`.ts-aviso-bg` por cima da ficha) | `naoquer.test` NAOQUER-01; `naoquer.spec` NAOQUER-02 | ✅ |
+| ZAP-NUMERO-01 | Envio pela equipe trava pelo NÚMERO, como o robô: se outro cliente com o mesmo celular (mãe e filha, casal) recebeu dentro do intervalo da loja — pelo robô ou pela equipe —, o WhatsApp não abre e o painel explica (com e sem o 9º dígito). Todo envio da equipe entra no mesmo registro de números do robô (`enviados`) | `src/zapfila.js` `envioManualBloqueado` (`para`), `registrarEnvioNumero`; `server.js` (`/api/contatos`, `/api/contatos/conferir`); `clientes.js` (manda `para`) | `zapfila.test` ZAP-NUMERO-01 | ✅ |
 
 ## 14. Orçamento (ORC)
 
@@ -688,11 +690,11 @@ Contado pelas linhas da matriz (`node scripts/matriz.js --resumo`; o guardião c
 | Preços, custos e notas de entrada (PRC) | 40 | 13 | 8 | 19 |
 | Resultado e rentabilidade (RES) | 13 | 5 | 3 | 5 |
 | Vendas e métricas (VEN) | 27 | 12 | 8 | 7 |
-| Clientes, fidelidade, WhatsApp e lista de espera (CLI) | 44 | 32 | 8 | 4 |
+| Clientes, fidelidade, WhatsApp e lista de espera (CLI) | 46 | 34 | 8 | 4 |
 | Orçamento (ORC) | 7 | 5 | 1 | 1 |
 | Checklist, fechamento e avisos (OPE) | 13 | 6 | 3 | 4 |
 | Estrutura do painel e atualização (APP) | 42 | 24 | 12 | 6 |
-| **Total** | **439** | **208 (47%)** | **121 (28%)** | **110 (25%)** |
+| **Total** | **441** | **210 (48%)** | **121 (27%)** | **110 (25%)** |
 <!-- resumo:fim -->
 
 ## Próximas etapas

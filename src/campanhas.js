@@ -120,6 +120,23 @@ function alterar(id, cid, b) {
   gravar(id, todas);
   return { ok: c, tirados };
 }
+/** cliente marcado como "não quer mensagens" (pedido do dono, 23/11/2026): sai na hora dos pendentes de todas as listas
+ *  (st 'o', com quem marcou), em vez de esperar o robô ou a fila manual chegarem nele. Quem já recebeu fica no histórico.
+ *  → nomes das campanhas de onde saiu */
+function tirarNaoQuer(id, cpf, por) {
+  const todas = ler(id), nomes = [];
+  const em = new Date().toISOString();
+  for (const c of todas) {
+    let saiu = false;
+    for (const r of c.rodadas || []) for (const it of r.lista || []) {
+      if (it.cpf !== cpf || it.st !== 'p') continue;
+      Object.assign(it, { st: 'o', em, por, motivo: 'não quer mensagens (marcado na ficha)' }); delete it.v; saiu = true;
+    }
+    if (saiu) nomes.push(c.nome || 'Campanha');
+  }
+  if (nomes.length) gravar(id, todas);
+  return nomes;
+}
 /** campanha recorrente: a última lista ainda vale? (diária = mesmo dia; semanal = menos de 7 dias; mensal = mesmo mês, em Brasília) */
 function rodadaEmDia(c, agora = Date.now()) {
   const ult = c && c.recorrente && c.rodadas && c.rodadas[0] ? Date.parse(c.rodadas[0].em) : NaN;
@@ -210,4 +227,4 @@ function descartarCopia(id, cpid) {
   return { ok: true };
 }
 
-module.exports = { dadosOk, rodadaEmDia, lerCopias, copiar, descartarCopia, ler, criar, alterar, novaRodada, refazerLista, marcar, apagar };
+module.exports = { tirarNaoQuer, dadosOk, rodadaEmDia, lerCopias, copiar, descartarCopia, ler, criar, alterar, novaRodada, refazerLista, marcar, apagar };

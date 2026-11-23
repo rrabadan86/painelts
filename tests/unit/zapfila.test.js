@@ -637,3 +637,31 @@ test('RESUMO-03: regra forte do envio manual — já recebeu, não quer ou está
   ZF.mudarEstado('l1', (s) => { s.ligado = false; s.pausa = null; });
   CAMP.apagar('l1', c.id);
 });
+
+test('ZAP-NUMERO-01: envio manual trava pelo NÚMERO — outro cliente com o mesmo celular recebeu dentro do intervalo (robô ou equipe)', () => {
+  const agora = QUARTA_10H, MAE = '11111111111', FILHA = '22222222222', CEL = '5562992038820';
+  ZF.mudarEstado('l1', (s) => { s.ligado = false; s.pausa = null; });
+  ZF.gravarJson('l1', 'enviados', {});
+  // ninguém recebeu nesse número: pode
+  assert.strictEqual(ZF.envioManualBloqueado({ lojaId: 'l1', cpf: FILHA, contato: {}, para: CEL, agora }), null);
+  // o robô mandou para a mãe ontem nesse número: a filha (outro CPF, mesmo celular) não recebe pela equipe
+  ZF.gravarJson('l1', 'enviados', { [ZF.foneChave(CEL)]: { em: new Date(agora - DIA).toISOString(), cpf: MAE } });
+  const b = ZF.envioManualBloqueado({ lojaId: 'l1', cpf: FILHA, contato: {}, para: CEL, agora });
+  assert.match(b, /este celular é o mesmo de outro cliente, que já recebeu mensagem nele em/);
+  assert.match(b, /pelo robô do WhatsApp/);
+  assert.match(b, /uma mensagem a cada 21 dias por número/);
+  // o mesmo número sem o 9º dígito também trava
+  assert.match(ZF.envioManualBloqueado({ lojaId: 'l1', cpf: FILHA, contato: {}, para: '556292038820', agora }), /mesmo de outro cliente/);
+  // a própria mãe cai na trava do CPF (contato.em), não nesta; sem número na conta, esta não se aplica
+  assert.strictEqual(ZF.envioManualBloqueado({ lojaId: 'l1', cpf: MAE, contato: {}, para: CEL, agora }), null);
+  assert.strictEqual(ZF.envioManualBloqueado({ lojaId: 'l1', cpf: FILHA, contato: {}, agora }), null);
+  // passou o intervalo: pode
+  ZF.gravarJson('l1', 'enviados', { [ZF.foneChave(CEL)]: { em: new Date(agora - 22 * DIA).toISOString(), cpf: MAE } });
+  assert.strictEqual(ZF.envioManualBloqueado({ lojaId: 'l1', cpf: FILHA, contato: {}, para: CEL, agora }), null);
+  // envio pela equipe registra o número (o robô e a equipe passam a ver um ao outro)
+  ZF.gravarJson('l1', 'enviados', {});
+  ZF.registrarEnvioNumero('l1', CEL, MAE, 'lyandra', agora);
+  const b2 = ZF.envioManualBloqueado({ lojaId: 'l1', cpf: FILHA, contato: {}, para: CEL, agora: agora + 3600e3 });
+  assert.match(b2, /por lyandra/);
+  ZF.gravarJson('l1', 'enviados', {});
+});
