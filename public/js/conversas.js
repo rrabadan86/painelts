@@ -82,6 +82,8 @@
     return { url: URL.createObjectURL(blob), tipo: blob.type || r.headers.get('Content-Type') || '', nome };
   }
   /** a área da mídia dentro da bolha: o botão e, depois de buscar, a foto/áudio/vídeo e "Baixar" */
+  /** nome de quem fala neste WhatsApp: o "Nome nas mensagens" do vínculo (o marido) ou o do cadastro */
+  const nomeConv = (cl) => (TS.nomeMsgDe && TS.nomeMsgDe(cl)) || cl.nome || '';
   const ARTIGO = { imagem: 'a foto', figurinha: 'a figurinha', audio: 'o áudio', video: 'o vídeo', documento: 'o documento' };
   function caixaMidia(loja, chave, m) {
     const [rot, nomeTipo] = MIDIA[m.tipo];
@@ -251,8 +253,8 @@
       const cli = mapaClientes();
       linhas = dados.conversas.map((c) => {
         const cliente = cli.get(c.chave) || null;
-        const nome = cliente ? cliente.nome : c.nome || '';
-        return { ...c, cliente, nomeTxt: nome || foneTxt(c.chave), ultTxt: resumoMsg(c.ult) };
+        const nome = cliente ? nomeConv(cliente) : c.nome || '';
+        return { ...c, cliente, nomeTxt: nome || foneTxt(c.chave), cadTxt: cliente && TS.nomeMsgDe(cliente) ? cliente.nome || '' : '', ultTxt: resumoMsg(c.ult) };
       }).sort((a, b) => b.ult.em.localeCompare(a.ult.em));
       const conta = { todas: linhas.length, semresp: linhas.filter((x) => x.semResposta).length, clientes: linhas.filter((x) => x.cliente).length, sem: linhas.filter((x) => !x.cliente).length };
       if (st.aba === 'naolidas') st.aba = 'semresp';
@@ -264,7 +266,7 @@
       ], st.aba, (v) => { st.aba = v; st.mostrar = POR_VEZ; elLista.scrollTop = 0; pintarItens(); }));
       const q = TS.norm(st.busca).trim(), qd = soDig(st.busca);
       const sel = linhas.filter((x) => (st.aba === 'semresp' ? x.semResposta : st.aba === 'clientes' ? x.cliente : st.aba === 'sem' ? !x.cliente : true))
-        .filter((x) => !q || TS.norm(`${x.nomeTxt} ${x.ult.texto || ''}`).includes(q) || (qd.length >= 3 && x.chave.includes(qd)));
+        .filter((x) => !q || TS.norm(`${x.nomeTxt} ${x.cadTxt} ${x.ult.texto || ''}`).includes(q) || (qd.length >= 3 && x.chave.includes(qd)));
       const manter = elLista.scrollTop;
       const itens = sel.slice(0, st.mostrar).map(item);
       if (!sel.length) itens.push(h('li', { class: 'cv-vazio muted' }, !dados.conversas.length ? 'Ainda não há conversas guardadas. Elas aparecem conforme chegam; para trazer as antigas, use "Reimportar histórico".' : q ? 'Nenhuma conversa com essa busca.' : 'Nenhuma conversa nesta aba.'));
@@ -279,6 +281,7 @@
         h('span', { class: 'cv-av ' + corAv(x.chave), 'aria-hidden': 'true' }, x.cliente || x.nome ? iniciais(x.nomeTxt) : '#'),
         h('span', { class: 'cv-item-c' },
           h('span', { class: 'cv-item-l1' }, h('b', { class: 'cv-item-nome' }, x.nomeTxt), h('small', { class: 'cv-item-hora' }, quando(x.ult.em))),
+          x.cadTxt ? h('small', { class: 'muted cv-item-cad' }, `cadastro: ${x.cadTxt}`) : null,
           h('small', { class: 'cv-item-ult' }, x.ult.robo ? '🤖 ' : '', x.ultTxt),
           x.semResposta || !x.cliente ? h('span', { class: 'cv-item-et' }, ...[
             x.semResposta ? h('span', { class: 'badge warn', title: 'Mensagens do cliente depois da última resposta da loja: a conversa espera resposta.' }, `${fmt.int(x.semResposta)} sem resposta`) : null,
@@ -330,7 +333,8 @@
       if (antes && antes.n === msgs.length) return;
       const c = (dados.conversas || []).find((x) => x.chave === chave) || { chave };
       const cliente = mapaClientes().get(chave) || null;
-      const nome = cliente ? cliente.nome : c.nome || foneTxt(chave);
+      const nome = cliente ? nomeConv(cliente) : c.nome || foneTxt(chave);
+      const cadDe = cliente && TS.nomeMsgDe(cliente) ? cliente.nome || '' : ''; // o cadastro (fidelidade) é de outra pessoa
       // ficha resumida do cliente (os mesmos dados da lista de clientes)
       const fx = cliente && cliente.fx;
       const ficha = cliente ? h('div', { class: 'cv-ficha' }, ...[
@@ -347,7 +351,7 @@
         const d = new Date(m.em).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
         if (d !== dia) { dia = d; bolhas.push(h('div', { class: 'cv-dia' }, h('span', null, d === TS.hojeSP() ? 'Hoje' : fmt.date(d)))); }
         bolhas.push(h('div', { class: 'cv-msg ' + (m.deMim ? 'eu' : 'ele') + (m.robo ? ' robo' : '') },
-          h('small', { class: 'cv-meta' }, m.deMim ? (m.robo ? `🤖 robô · ${m.robo}` : 'Loja') : (cliente ? cliente.nome.split(' ')[0] : m.nome || 'Cliente'), ' · ', new Date(m.em).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' })),
+          h('small', { class: 'cv-meta' }, m.deMim ? (m.robo ? `🤖 robô · ${m.robo}` : 'Loja') : (cliente ? nomeConv(cliente).split(' ')[0] : m.nome || 'Cliente'), ' · ', new Date(m.em).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' })),
           m.tipo !== 'texto' ? h('div', { class: 'cv-tipo' }, TIPO[m.tipo] || m.tipo) : null,
           MIDIA[m.tipo] ? caixaMidia(loja, chave, m) : null,
           m.texto ? h('div', { class: 'cv-txt' }, m.texto) : null));
@@ -360,7 +364,7 @@
       colConv.replaceChildren(
         h('div', { class: 'cv-topo' },
           h('span', { class: 'cv-av ' + corAv(chave), 'aria-hidden': 'true' }, cliente || c.nome ? iniciais(nome) : '#'),
-          h('div', { class: 'cv-topo-c' }, h('b', { class: 'cv-nome' }, nome), h('small', { class: 'muted cv-fone' }, foneTxt(chave))),
+          h('div', { class: 'cv-topo-c' }, h('b', { class: 'cv-nome' }, nome), cadDe ? h('small', { class: 'muted cv-cad', title: 'O cadastro da fidelidade (CPF, pontos e compras) é desta pessoa; quem usa este WhatsApp é quem está no nome acima.' }, `cadastro: ${cadDe}`) : null, h('small', { class: 'muted cv-fone' }, foneTxt(chave))),
           h('div', { class: 'cv-topo-acoes' }, ...[
             cliente ? h('button', { type: 'button', class: 'btn', onclick: () => TS.cliApi.abrirClientes([cliente.cpf]) }, 'Ver cliente') : null,
             botaoVinculo(chave, cliente),

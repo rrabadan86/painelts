@@ -269,3 +269,27 @@ test('CONV-15: a ligação cai ao buscar o áudio (internet ou firewall que bloq
   expect(n).toBe(2);
   await expect(conv.getByRole('button', { name: 'Ouvir áudio', exact: true })).toBeEnabled();
 });
+
+test('CEL-NOME-03: com "Nome nas mensagens", a conversa mostra Paulo no topo, na lista e nas mensagens dele, com "cadastro: <nome da fidelidade>" embaixo; Ver cliente abre o cadastro da fidelidade com "WhatsApp do Paulo"', async ({ page }) => {
+  const lista = await abrirTela(page);
+  const alvo = await page.evaluate(() => {
+    const c = TS.cli.lista.find((x) => TS.foneConversa(x).length >= 12);
+    const fone = TS.foneConversa(c);
+    TS.cliApi.aplicarCelular(c.cpf, { cel: fone, em: new Date().toISOString(), por: 'teste', antigo: '' });
+    TS.cliApi.nomearCelular(c.cpf, 'Paulo');
+    return { nome: c.nome, cpf: c.cpf };
+  });
+  // a lista se refaz ao trocar de aba
+  await page.locator('.cv-col-lista .seg button').nth(1).click();
+  await page.locator('.cv-col-lista .seg button').first().click();
+  const it = lista.locator('.cv-item', { hasText: 'cadastro: ' + alvo.nome }).first();
+  await expect(it.locator('.cv-item-nome')).toHaveText('Paulo');
+  await it.click();
+  const conv = page.locator('.cv-conversa');
+  await expect(conv.locator('.cv-nome')).toHaveText('Paulo');
+  await expect(conv.locator('.cv-cad')).toHaveText('cadastro: ' + alvo.nome);
+  await expect(conv.getByRole('button', { name: 'Mensagens para: Paulo' })).toBeVisible();
+  // Ver cliente: o cadastro da fidelidade, com o WhatsApp do Paulo
+  await conv.getByRole('button', { name: 'Ver cliente' }).click();
+  await expect(page.locator('.cel-de').first()).toContainText('WhatsApp do Paulo');
+});
