@@ -246,3 +246,26 @@ test('CONV-14: foto e áudio da conversa vêm do WhatsApp só quando a pessoa to
   expect(sw - cw).toBeLessThanOrEqual(2);
   expect(erros).toEqual([]);
 });
+
+test('CONV-15: a ligação cai ao buscar o áudio (internet ou firewall que bloqueia áudio) → tenta de novo sozinho; caindo de novo, a mensagem explica', async ({ page }) => {
+  let n = 0, quebrar = 1;
+  await page.route('**/conversas/midia**', (rota) => { n++; return n <= quebrar ? rota.abort('connectionreset') : rota.continue(); });
+  const lista = await abrirTela(page);
+  await lista.locator('.cv-item', { hasText: 'Contato sem cadastro' }).click();
+  const conv = page.locator('.cv-conversa');
+  // 1) cai uma vez: a segunda tentativa traz o áudio, sem erro na tela
+  await conv.getByRole('button', { name: 'Ouvir áudio', exact: true }).click();
+  await expect(conv.locator('.cv-midia audio')).toHaveCount(1, { timeout: 10000 });
+  expect(n).toBe(2);
+  await expect(conv.locator('.cv-midia-erro')).toHaveCount(0);
+  // 2) cai sempre: depois de 2 tentativas, a mensagem diz o que pode ser e o botão volta
+  await page.reload();
+  n = 0; quebrar = 99;
+  const lista2 = await abrirTela(page);
+  await lista2.locator('.cv-item', { hasText: 'Contato sem cadastro' }).click();
+  await conv.getByRole('button', { name: 'Ouvir áudio', exact: true }).click();
+  await expect(conv.locator('.cv-midia-erro')).toContainText('A conexão caiu ao buscar o áudio', { timeout: 10000 });
+  await expect(conv.locator('.cv-midia-erro')).toContainText('firewall');
+  expect(n).toBe(2);
+  await expect(conv.getByRole('button', { name: 'Ouvir áudio', exact: true })).toBeEnabled();
+});
