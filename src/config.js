@@ -68,7 +68,7 @@ function normalizar(cfg) {
     feriadosHorario: l.feriadosHorario && typeof l.feriadosHorario === 'object' ? l.feriadosHorario : {},
     escalaAjustes: l.escalaAjustes && typeof l.escalaAjustes === 'object' ? l.escalaAjustes : {},
     wppModelos: Array.isArray(l.wppModelos) ? l.wppModelos : null,
-    wppApresentacao: l.wppApresentacao && typeof l.wppApresentacao === 'object' ? { com: String(l.wppApresentacao.com || '').slice(0, 120), sem: String(l.wppApresentacao.sem || '').slice(0, 120) } : null, // {apresentacao} das mensagens
+    wppApresentacao: l.wppApresentacao && typeof l.wppApresentacao === 'object' ? { com: String(l.wppApresentacao.com || '').slice(0, 120), sem: String(l.wppApresentacao.sem || '').slice(0, 120), ...(l.wppApresentacao.equipe === true ? { equipe: true } : {}) } : null, // {apresentacao} das mensagens
     wppIntervalo: Number.isInteger(l.wppIntervalo) ? l.wppIntervalo : null, // dias mínimos entre duas mensagens para o mesmo cliente
     zap: l.zap && typeof l.zap === 'object' ? l.zap : null, // robô do WhatsApp das campanhas: ritmo, horário, dias, teto e falhas (src/zapfila.js)
     estoqueCfg: l.estoqueCfg && typeof l.estoqueCfg === 'object' ? l.estoqueCfg : null,

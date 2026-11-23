@@ -3778,3 +3778,11 @@ details.inv-p2-como ol { margin-top: 8px; }
 /* Configurações → Erros nas telas */
 .cfg-erros-t .cfg-erro-sub { display: block; margin-top: 2px; }
 .cfg-erros-t .cfg-erro-novo { margin-left: 6px; }
+/* Configurações → Metas e Comissão: escolher vendedores (etiquetas com ✕ + "+ Adicionar vendedor") */
+.cfg-vend-sel { border: 0; padding: 0; margin: 14px 0 0; min-width: 0; }
+.cfg-vend-sel legend { font-weight: 600; color: var(--dark); padding: 0; margin-bottom: 6px; }
+.cfg-vend-chips { margin-bottom: 8px; }
+.cfg-vend-chip { display: inline-flex; align-items: center; gap: 6px; cursor: default; }
+.cfg-vend-inativo { font-weight: 400; opacity: .9; }
+.cfg-vend-x { border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; padding: 0 2px; min-width: 24px; min-height: 24px; }
+.cfg-vend-add { max-width: 320px; }

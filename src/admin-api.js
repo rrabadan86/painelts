@@ -293,6 +293,9 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     }
     const erro = validarRegras(g);
     if (erro) return res.status(400).json({ erro });
+    // os três campos de vendedores: só vendedores da loja (ou nomes já salvos / do modelo), nunca texto livre
+    const fora = require('./vendregras').invalidos(g, vendedoresDe(req.loja.id), req.loja.regras);
+    if (fora.length) return res.status(400).json({ erro: `Não é vendedor desta loja: ${fora.slice(0, 5).join(', ')}. Escolha na lista de vendedores.` });
     const antes = req.loja.regras || {};
     C.alterar((cfg) => { cfg.lojas.find((x) => x.id === req.loja.id).regras = g; });
     // pisos que mudam quem divide a meta e quem concorre à premiação: ficam na auditoria com o valor de antes
@@ -597,7 +600,8 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
       const MW = require('../public/js/msgwpp.js');
       const com = MW.apresentacaoValida(req.body.apresentacao.com), sem = MW.apresentacaoValida(req.body.apresentacao.sem);
       if (com == null || sem == null) return res.status(400).json({ erro: 'Apresentação: até 120 caracteres e só os campos {vendedora} e {loja}.' });
-      apres = com || sem ? { com, sem } : null;
+      const equipe = req.body.apresentacao.equipe === true; // "Sempre assinar como a equipe" (só true ou ausente)
+      apres = com || sem || equipe ? { com, sem, ...(equipe ? { equipe: true } : {}) } : null;
     }
     C.alterar((cfg) => { const l = cfg.lojas.find((x) => x.id === req.loja.id); l.wppModelos = limpos; if (iv != null) l.wppIntervalo = iv; if (apres !== undefined) l.wppApresentacao = apres; });
     aud(req, 'alterou modelos de WhatsApp', req.loja.id, { loja: req.loja.id, modelos: limpos.length, intervalo: iv, apresentacao: apres !== undefined });

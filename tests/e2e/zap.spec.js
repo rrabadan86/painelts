@@ -33,6 +33,26 @@ test.describe('robô do WhatsApp', () => {
     expect(erros).toEqual([]);
   });
 
+  test('WPP-APRES-02: "Sempre assinar como a equipe" troca o exemplo da cliente com vendedora favorita para a equipe', async ({ page }) => {
+    await page.evaluate(() => { location.hash = '#config'; });
+    await page.locator('table.cfg-lojas-t .cfg-abrir').first().click();
+    await page.locator('.cfg-loja .cfg-sub a', { hasText: 'Mensagens' }).evaluate((a) => a.click());
+    const bloco = page.locator('.cfg-apres');
+    const eq = bloco.getByLabel('Sempre assinar como a equipe'), com = bloco.getByLabel('Apresentação com vendedora'), prev = bloco.locator('.cfg-apres-prev').first();
+    await expect(eq).not.toBeChecked();
+    await expect(prev).toContainText('Exemplo: Aqui é Gabrielly, da');
+    await eq.check();
+    await expect(prev).toContainText('Aqui é a equipe da');
+    await expect(prev).toContainText('sempre a equipe');
+    await expect(prev).not.toContainText('Gabrielly');
+    await expect(com).toBeDisabled();
+    await eq.uncheck();
+    await expect(prev).toContainText('Exemplo: Aqui é Gabrielly, da');
+    await expect(com).toBeEnabled();
+    await semVazar(page, bloco);
+    expect(erros).toEqual([]);
+  });
+
   test('Configurações → loja → Mensagens: cartão com conexão, ligar/pausar, ritmo, horário, dias, máximo e falhas', async ({ page }) => {
     await page.evaluate(() => { location.hash = '#config'; });
     await page.locator('table.cfg-lojas-t .cfg-abrir').first().click();

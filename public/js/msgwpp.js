@@ -21,6 +21,8 @@
   /** texto da apresentação: com a vendedora que mais atende o cliente ou, sem ela, o da equipe */
   function apresentacao(modelos, vendedora, loja) {
     const m = modelos || {};
+    // "Sempre assinar como a equipe" (pedido do dono, 23/11/2026): usa o modelo sem vendedora mesmo com a favorita
+    if (m.equipe) vendedora = '';
     const mod = vendedora ? (String(m.com || '').trim() || APRES_PADRAO.com) : (String(m.sem || '').trim() || APRES_PADRAO.sem);
     return mod.replace(/\{vendedora\}/g, vendedora || '').replace(/\{loja\}/g, loja || 'Tea Shop').replace(/\{[a-z]+\}/g, '').replace(/ {2,}/g, ' ').trim();
   }

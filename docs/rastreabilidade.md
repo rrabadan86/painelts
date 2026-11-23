@@ -231,6 +231,7 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 | EQP-10 | Vendedora não recebe escala, equipe nem horas das colegas | `filtrarPorPerfil` | — | ❌ |
 | EQP-11 | Comissão projetada: a venda projetada de cada pessoa cai na faixa certa (não comissão parcial × fator); premiação e bônus pelas vendas da meta | `contas.js`; `rules.js` | `contas.test` COM-PROJ-01, BON-01 | ✅ |
 | EQP-12 | Regras da loja (piso de dias da meta 1–31, mínimo de atendimentos 0–2000) validadas no servidor | `contas.js` (`PISO_DIAS_META`, `MIN_ATEND_PREMIACAO`); `admin-api.js` | `contas.test` CFG-01 | ✅ |
+| VEND-REGRAS-01 | "Não entram no rateio", "Sem meta individual" e "Não recebem comissão" escolhem entre os vendedores ativos da loja (venda nos últimos 90 dias); nome antigo fica marcado "inativo"; o servidor recusa nome que não é vendedor da loja (aceita os já salvos, os dos modelos e "sem vendedor") | `src/vendregras.js`, `admin-api.js` PUT regras, `config.js` `seletorVendedores` | `vendregras.test`, `vend-regras.spec` | ✅ |
 
 ## 9. Estoque, inventário, lotes e pedido (EST)
 
@@ -455,6 +456,7 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 | CAMP-CMP-01…03 | Grupo de comparação (~10%, lista com 50+, só pendentes, sorteio estável por CPF + campanha): criado só no servidor, nunca enviado nem pendente; a recorrente antiga passa a guardar na próxima lista | `campretorno.js`; `src/campanhas.js` | `campretorno.test` CAMP-CMP-01…03 | ✅ |
 | REC-01…02 | Recompra em 90 dias: só entra quem já teve o prazo inteiro; bordas (90 dias exatos entra; compra no mesmo dia não é volta; sem elegíveis não vira 0%) | `public/js/recompra.js` | `recompra.test` REC-01…02 | ✅ |
 | WPP-APRES-01 | {apresentacao} editável em Configurações → loja → Mensagens (decisão do dono, 23/11/2026): dois modelos (com e sem vendedora), só {vendedora} e {loja}, até 120 caracteres; padrão sem artigo ("Aqui é Gabrielly, da …"); o mesmo texto na tela e no robô | `msgwpp.js` `apresentacao`/`apresentacaoValida`, `clientes.js` `valoresWpp`, `admin-api.js` `wpp-modelos`, `config.js` `blocoWpp` | `seguranca.test`, `zapauto.test`, `zap.spec` | ✅ |
+| WPP-APRES-02 | "Sempre assinar como a equipe": {apresentacao} usa o modelo sem vendedora mesmo com vendedora favorita; grava só `equipe: true` | `msgwpp.js` `apresentacao`, `config.js` `blocoWpp`, `admin-api.js` wpp-modelos, `src/config.js` | `seguranca.test`, `zap.spec` | ✅ |
 | CEL-NOME-01 | Nome nas mensagens do número vinculado (cadastro de uma pessoa, WhatsApp de outra): só com vínculo, só admin e franqueado da loja, só letras até 40, vai no pacote (`celVinc.nome`) e some ao desfazer | `celulares.js` `nomear`/`nomeValido`/`aplicar`, `server.js` `/api/clientes/celular/nome` | `celulares.test` | ✅ |
 | CEL-NOME-02 | Com nome nas mensagens, {nome}/{nomecompleto} saem com ele e o aniversário fica fora do Hoje e das campanhas | `clientes.js` `TS.nomeMsgDe`/`valoresWpp`/etiqueta `aniv`, `campanhas.js` filtro de aniversário | `zap.spec` | ✅ |
 | CEL-NOME-03 | Com nome nas mensagens, a conversa mostra esse nome no topo, na lista e nas mensagens dele, com "cadastro: <nome da fidelidade>" embaixo (a busca acha pelos dois); Ver cliente abre o cadastro da fidelidade com "WhatsApp do <nome>" | `conversas.js` `nomeConv`/`pintarItens`/topo, `clientes.js` ficha | `conversas.spec` | ✅ |
@@ -669,16 +671,16 @@ Contado pelas linhas da matriz (`node scripts/matriz.js --resumo`; o guardião c
 | Dinheiro com a franquia (FRQ) | 12 | 6 | 6 | 0 |
 | Coletor e robôs (COL) | 7 | 1 | 2 | 4 |
 | Escala, horários, feriados e férias (ESC) | 31 | 7 | 10 | 14 |
-| Equipe, metas e comissão (EQP) | 12 | 3 | 3 | 6 |
+| Equipe, metas e comissão (EQP) | 13 | 4 | 3 | 6 |
 | Estoque, inventário, lotes e pedido (EST) | 80 | 49 | 14 | 17 |
 | Preços, custos e notas de entrada (PRC) | 40 | 13 | 8 | 19 |
 | Resultado e rentabilidade (RES) | 13 | 5 | 3 | 5 |
 | Vendas e métricas (VEN) | 27 | 12 | 8 | 7 |
-| Clientes, fidelidade, WhatsApp e lista de espera (CLI) | 42 | 30 | 8 | 4 |
+| Clientes, fidelidade, WhatsApp e lista de espera (CLI) | 43 | 31 | 8 | 4 |
 | Orçamento (ORC) | 7 | 5 | 1 | 1 |
 | Checklist, fechamento e avisos (OPE) | 13 | 6 | 3 | 4 |
 | Estrutura do painel e atualização (APP) | 38 | 20 | 12 | 6 |
-| **Total** | **432** | **201 (47%)** | **121 (28%)** | **110 (25%)** |
+| **Total** | **434** | **203 (47%)** | **121 (28%)** | **110 (25%)** |
 <!-- resumo:fim -->
 
 ## Próximas etapas

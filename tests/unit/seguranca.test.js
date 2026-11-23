@@ -285,3 +285,17 @@ test('WPP-APRES-01: {apresentacao} editável em Mensagens — só {vendedora} e 
   assert.strictEqual((await put('dono', { com: '', sem: '' })).status, 200);
   assert.strictEqual(JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')).lojas[0].wppApresentacao, null, 'vazio volta ao padrão');
 });
+
+test('WPP-APRES-02: "Sempre assinar como a equipe" — usa o modelo sem vendedora mesmo com a favorita; grava só equipe: true', async () => {
+  const MW = require('../../public/js/msgwpp.js');
+  assert.strictEqual(MW.apresentacao({ equipe: true }, 'Gabrielly', 'Tea Shop Centro'), 'Aqui é a equipe da Tea Shop Centro');
+  assert.strictEqual(MW.apresentacao({ equipe: true, sem: 'Equipe {loja} aqui' }, 'Gabrielly', 'Centro'), 'Equipe Centro aqui');
+  assert.strictEqual(MW.apresentacao({ equipe: false }, 'Gabrielly', 'Centro'), 'Aqui é Gabrielly, da Centro');
+  const modelos = [{ nome: 'Oi', texto: 'Oi, {nome}!' }];
+  const put = (apresentacao) => pedir('dono', '/api/admin/lojas/l1/wpp-modelos', { method: 'PUT', body: JSON.stringify({ modelos, apresentacao }) });
+  const salvo = () => JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')).lojas[0].wppApresentacao;
+  assert.strictEqual((await put({ com: '', sem: '', equipe: true })).status, 200);
+  assert.deepStrictEqual(salvo(), { com: '', sem: '', equipe: true });
+  assert.strictEqual((await put({ com: '', sem: '', equipe: 'sim' })).status, 200);
+  assert.strictEqual(salvo(), null, 'só true liga; o resto volta ao padrão');
+});
