@@ -13,7 +13,7 @@ const { spawn } = require('child_process');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'midia-'));
 const CONFIG_FILE = path.join(tmp, 'lojas.json');
-const PORTA = 6010 + Math.floor(Math.random() * 80); // faixa só deste arquivo
+const PORTA = require('./_porta')(6010, 80); // faixa só deste arquivo
 const BASE = `http://127.0.0.1:${PORTA}`;
 const SENHA = 'senha-teste-123';
 const TOKEN = 'token-zap-teste';

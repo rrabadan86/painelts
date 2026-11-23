@@ -8,7 +8,7 @@ const { spawn } = require('child_process');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'seg-'));
 const CONFIG_FILE = path.join(tmp, 'lojas.json');
-const PORTA = 3900 + Math.floor(Math.random() * 200); // faixa só deste arquivo
+const PORTA = require('./_porta')(3900, 200); // faixa só deste arquivo
 const BASE = `http://127.0.0.1:${PORTA}`;
 const SENHA = 'senha-teste-123';
 const ENV = { PORT: String(PORTA), DATA_DIR: tmp, CONFIG_FILE, SESSION_SECRET: 'teste-seguranca', NODE_ENV: 'test', IA_FALSO: '1', ESPERA_BUSCAS_DIA: '6', LOGIN_ESPERA_MAX_MS: '150' };

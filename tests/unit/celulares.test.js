@@ -12,7 +12,7 @@ const { spawn } = require('child_process');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cel-'));
 const CONFIG_FILE = path.join(tmp, 'lojas.json');
-const PORTA = 5900 + Math.floor(Math.random() * 90); // faixa só deste arquivo
+const PORTA = require('./_porta')(5900, 90); // faixa só deste arquivo
 const BASE = `http://127.0.0.1:${PORTA}`;
 const SENHA = 'senha-teste-123';
 const CPF_A = '11122233344', CPF_B = '55566677788', CPF_C = '99988877766';
