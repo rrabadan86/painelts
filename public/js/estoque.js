@@ -1601,7 +1601,8 @@
         const aplica = h('select', { class: 'f-input', onchange: (e) => { x.aplica = e.target.value; } }, [['tudo', 'Todas as vendas'], ['loja', 'Só loja'], ['eg', 'Só Espaço Gourmet']].map(([v, t]) => h('option', { value: v, selected: x.aplica === v || null }, t)));
         const cat = h('select', { class: 'f-input', title: 'Mudar de categoria', onchange: (e) => { x.cat = e.target.value; pintarOutros(); sujo(); } }, cats.map((c) => h('option', { value: c.id, selected: x.cat === c.id || null }, c.nome)));
         const rem = h('button', { type: 'button', class: 'est-outro-rem', title: 'Remover este custo', onclick: () => { itens.splice(itens.indexOf(x), 1); pintarOutros(); sujo(); } }, '✕');
-        return h('tr', null, h('td', null, nome), h('td', null, tipo), h('td', null, valor), h('td', null, dia), h('td', null, aplica), h('td', null, cat), h('td', null, rem));
+        // data-l: no celular cada custo vira um cartão e cada campo leva o nome da coluna em cima (DESP-CAB-01)
+        return h('tr', { class: 'est-cat-item' }, h('td', { 'data-l': 'Custo' }, nome), h('td', { 'data-l': 'Tipo' }, tipo), h('td', { 'data-l': 'Valor' }, valor), h('td', { 'data-l': 'Vence no dia' }, dia), h('td', { 'data-l': 'Onde se aplica' }, aplica), h('td', { 'data-l': 'Categoria' }, cat), h('td', { class: 'est-cat-rem' }, rem));
       };
       const corpoT = h('tbody');
       for (const c of cats) {
@@ -1619,7 +1620,7 @@
       totais.set('*', geral);
       const novaCat = h('button', { type: 'button', class: 'btn', onclick: () => { const nome = prompt('Nome da nova categoria (ex.: Marketing):'); if (!nome || !nome.trim()) return; let id = nome.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 20) || 'cat'; while (cats.some((c) => c.id === id)) id += '1'; cats.splice(cats.length - 1, 0, { id, nome: nome.trim().slice(0, 30) }); pintarOutros(); sujo(); } }, '+ Nova categoria');
       outrosBox.replaceChildren(
-        h('div', { class: 'table-wrap free' }, h('table', { class: 't est-cat-t' },
+        h('div', { class: 'table-wrap free est-cat-w' }, h('table', { class: 't est-cat-t est-cat-fixos' },
           h('thead', null, h('tr', null, ['Custo', 'Tipo', 'Valor', 'Vence no dia', 'Onde se aplica', 'Categoria', ''].map((t) => h('th', { class: 'l' }, t)))), corpoT,
           h('tfoot', null, h('tr', null, h('td', { colspan: 7 }, h('b', null, 'Total: '), geral))))),
         h('div', { class: 'cfg-acoes' }, novaCat));
@@ -1639,11 +1640,11 @@
         const cat = h('select', { class: 'f-input', onchange: (e) => { x.cat = e.target.value; } }, cats.map((c) => h('option', { value: c.id, selected: x.cat === c.id || null }, c.nome)));
         const anual = h('label', { class: 'est-pont-anual', title: 'Lança também no mesmo mês dos anos seguintes' }, h('input', { type: 'checkbox', checked: x.anual || null, onchange: (e) => { x.anual = e.target.checked; } }), ' todo ano');
         const rem = h('button', { type: 'button', class: 'est-outro-rem', title: 'Remover', onclick: () => { pont.splice(pont.indexOf(x), 1); pintarPontuais(); sujo(); } }, '✕');
-        tb.append(h('tr', null, h('td', null, nome), h('td', null, mes), h('td', null, diaVenc(x)), h('td', null, valor), h('td', null, cat), h('td', null, anual), h('td', null, rem)));
+        tb.append(h('tr', { class: 'est-cat-item' }, h('td', { 'data-l': 'Despesa' }, nome), h('td', { 'data-l': 'Mês' }, mes), h('td', { 'data-l': 'Vence no dia' }, diaVenc(x)), h('td', { 'data-l': 'Valor (R$)' }, valor), h('td', { 'data-l': 'Categoria' }, cat), h('td', { 'data-l': 'Repete' }, anual), h('td', { class: 'est-cat-rem' }, rem)));
       }
       if (!pont.length) tb.append(h('tr', null, h('td', { colspan: 7, class: 'muted', style: { padding: '8px 10px' } }, 'Nenhuma despesa pontual.')));
       const add = h('button', { type: 'button', class: 'btn', onclick: () => { const d = new Date(); pont.push({ nome: '', ym: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`, valor: '', cat: 'outros', anual: false }); pintarPontuais(); sujo(); } }, '+ Despesa pontual');
-      pontBox.replaceChildren(h('div', { class: 'table-wrap free' }, h('table', { class: 't est-cat-t' },
+      pontBox.replaceChildren(h('div', { class: 'table-wrap free est-cat-w' }, h('table', { class: 't est-cat-t est-cat-pont' },
         h('thead', null, h('tr', null, ['Despesa', 'Mês', 'Vence no dia', 'Valor (R$)', 'Categoria', 'Repete', ''].map((t) => h('th', { class: 'l' }, t)))), tb)),
         h('div', { class: 'cfg-acoes' }, add));
     }

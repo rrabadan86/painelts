@@ -488,16 +488,32 @@
   const modelosDe = (lojaId) => { const m = (TS.db.metas || []).find((x) => x.id === lojaId); return (m && m.wpp && m.wpp.length ? m.wpp : TS.WPP_PADRAO); };
   const nomeBonito = (n) => String(n || '').trim().toLowerCase().split(/\s+/).map((p, k) => (k && /^(da|de|do|das|dos|e)$/.test(p) ? p : p.charAt(0).toUpperCase() + p.slice(1))).join(' ');
   const saudacao = () => TS.msgWpp.saudacao(new Date().getHours());
-  /** campos da mensagem (campanhas e WhatsApp): chave, o que é, e o que vai quando o cliente não tem o dado */
+  /**
+   * A lista única dos {campos} que a mensagem aceita (pedido do dono, 23/11/2026: "saber todas as labels existentes").
+   * Cada um: k = o campo; o = o que vira; quando = em que situação usar; ex = exemplo fixo (sem cliente de exemplo);
+   * falta(c) = o cliente não tem o dado (vai o texto de reserva); so = só nessas mensagens ('campanha', 'resumo', 'modelo').
+   * Os chips de Campanhas, da Campanha Resumo diário e de Configurações → loja → Mensagens saem daqui (`TS.camposMsg`).
+   * Campo novo em `TS.msgWpp.CAMPOS` (msgwpp.js) entra aqui também (o teste CAMPOS-MSG-01 confere).
+   */
   TS.CAMPOS_MSG = [
-    ['nome', 'primeiro nome'], ['nomecompleto', 'nome completo'], ['saudacao', 'Bom dia / Boa tarde / Boa noite (na hora do envio)'],
-    ['vendedora', 'vendedora que mais atendeu o cliente (só quem vendeu nos últimos 60 dias; sem ela: "equipe da <loja>")', (c) => !c.vendedoraPref],
-    ['apresentacao', 'quem fala com o cliente: "Aqui é <vendedora>, da <loja>" (sem vendedora: "Aqui é a equipe da <loja>"); os dois textos mudam em Configurações → loja → Mensagens'],
-    ['cha', 'chá favorito', (c) => !c.chaFavorito], ['ultimocha', 'último chá que comprou', (c) => !c.chaUltimo],
-    ['pacote', 'tamanho de pacote que costuma levar (ex.: 100g)', (c) => !c.pacote],
-    ['pontos', 'saldo de pontos'], ['vencepts', 'pontos que vencem na próxima data'], ['vence', 'data em que os próximos pontos vencem', (c) => !(c.fx && c.fx.prox != null)],
-    ['ultimacompra', 'data da última compra'], ['dias', 'dias desde a última compra'], ['visitas', 'quantas vezes comprou'],
-    ['aniversario', 'dia e mês do aniversário', (c) => !c.aniv], ['loja', 'nome da loja'],
+    { k: 'nome', o: 'Primeiro nome do cliente (no número vinculado a outra pessoa do cadastro, o nome combinado na conversa). Sem nome: "tudo bem".', ex: 'Maria', quando: 'Em qualquer mensagem, no começo: "Oi, {nome}!".' },
+    { k: 'nomecompleto', o: 'Nome completo do cliente, com as iniciais em maiúscula.', ex: 'Maria da Silva', quando: 'Quando a mensagem pede o nome inteiro; no dia a dia o {nome} soa mais próximo.' },
+    { k: 'saudacao', o: 'Bom dia, Boa tarde ou Boa noite, pela hora em que a mensagem sai.', ex: 'Boa tarde', quando: 'Em qualquer mensagem: "{saudacao}, {nome}!".' },
+    { k: 'apresentacao', o: 'Quem fala com o cliente: "Aqui é <vendedora>, da <loja>" (sem vendedora: "Aqui é a equipe da <loja>"). Os dois textos mudam em Configurações → loja → Mensagens.', ex: 'Aqui é Gabrielly, da Tea Shop Centro', quando: 'Logo depois do "Oi, {nome}!". Já resolve o cliente sem vendedora: prefira a {vendedora}.' },
+    { k: 'vendedora', o: 'Primeiro nome da vendedora que mais atendeu o cliente (só quem vendeu nos últimos 60 dias). Sem ela: "equipe da <loja>".', ex: 'Gabrielly', quando: 'Para assinar a mensagem. Cuidado com o artigo: "Aqui é a {vendedora}" fica estranho para vendedor e sem vendedora.', falta: (c) => !c.vendedoraPref },
+    { k: 'cha', o: 'Chá favorito do cliente (o que ele mais compra). Sem: "chá".', ex: 'Earl Grey', quando: 'Para lembrar de repor: "Seu {cha} já deve estar acabando".', falta: (c) => !c.chaFavorito },
+    { k: 'ultimocha', o: 'Último chá que o cliente comprou (sem: o favorito; sem os dois: "chá").', ex: 'Chá Verde com Morango', quando: 'Para perguntar o que achou da última compra.', falta: (c) => !c.chaUltimo },
+    { k: 'chaoferta', o: 'Chá oferecido. Na Campanha Resumo diário (motivo validade), o chá com lote vencendo; nas outras campanhas, o chá favorito. Sem: "chá".', ex: 'Earl Grey', quando: 'Feito para a Campanha Resumo diário. Numa campanha comum vira o chá favorito, igual a {cha}.', so: ['campanha', 'resumo'] },
+    { k: 'pacote', o: 'Tamanho de pacote que o cliente costuma levar. Sem: fica vazio.', ex: '100g', quando: 'Junto do chá: "um pacote de {pacote} do {cha}".', falta: (c) => !c.pacote },
+    { k: 'produto', o: 'Os produtos escolhidos nos critérios da campanha (ex.: "African Sunset 250G e African Sunset 100G").', ex: 'African Sunset 100G', quando: 'Só quando a campanha tem produto nos critérios (bloco "Produtos"); sem produto escolhido, fica vazio.', so: ['campanha'] },
+    { k: 'pontos', o: 'Saldo de pontos no programa de fidelidade.', ex: '1.250', quando: 'Campanhas de pontos: "Você tem {pontos} pontos".' },
+    { k: 'vencepts', o: 'Quantos pontos vencem na próxima data.', ex: '300', quando: 'Com a data: "{vencepts} pontos vencem em {vence}".' },
+    { k: 'vence', o: 'Data em que os próximos pontos vencem. Sem pontos para vencer: "—".', ex: '15/12/2026', quando: 'Campanhas de pontos vencendo.', falta: (c) => !(c.fx && c.fx.prox != null) },
+    { k: 'ultimacompra', o: 'Data da última compra.', ex: '02/10/2026', quando: 'Para clientes que sumiram: "sua última visita foi em {ultimacompra}".' },
+    { k: 'dias', o: 'Dias desde a última compra.', ex: '52', quando: 'Para clientes que sumiram: "faz {dias} dias que você não passa aqui".' },
+    { k: 'visitas', o: 'Quantas vezes o cliente comprou.', ex: '8', quando: 'Para agradecer clientes fiéis.' },
+    { k: 'aniversario', o: 'Dia e mês do aniversário (dd/mm). Sem: "—".', ex: '28/11', quando: 'Campanhas de aniversariantes.', falta: (c) => !c.aniv },
+    { k: 'loja', o: 'Nome da loja.', ex: 'Tea Shop Centro', quando: 'Em qualquer mensagem: "passe na {loja}".' },
   ];
   const primeiroNome = (n) => { const p = String(n || '').trim().split(/\s+/)[0] || ''; return p ? p[0].toUpperCase() + p.slice(1).toLowerCase() : ''; };
   /** valores dos {campos} da mensagem para este cliente (o robô do WhatsApp recebe estes mesmos valores) */
@@ -517,6 +533,64 @@
   }
   const textoWpp = (modelo, c) => TS.msgWpp.montar(modelo.texto, valoresWpp(c));
   const linkWpp = (c, txt) => (TS.demo ? '#demo' : TS.msgWpp.linkComTexto(c.wpp, txt));
+
+  /**
+   * Os campos da mensagem na tela: chips que inserem o campo onde está o cursor (cada um com a explicação no title e o
+   * valor para o cliente de exemplo) + "Ver todos os campos ▸" com a lista em tabela. Uma peça só para Campanhas
+   * (onde: 'campanha'), Campanha Resumo diário ('resumo') e Configurações → loja → Mensagens ('modelo').
+   * alvo(): a caixa de texto que recebe o campo; depois(): chamado depois de inserir.
+   * O elemento devolvido tem .exemplo(cliente, extras) para trocar o cliente de exemplo (ex.: "Como fica para …").
+   */
+  TS.camposMsg = function ({ onde = 'campanha', alvo, depois } = {}) {
+    const lista = TS.CAMPOS_MSG.filter((x) => !x.so || x.so.includes(onde));
+    let cli = null, ext = {};
+    const quem = () => (cli ? (TS.nomeMsgDe(cli) ? primeiroNome(TS.nomeMsgDe(cli)) : primeiroNome(cli.nome)) || 'o cliente de exemplo' : '');
+    const valor = (x) => {
+      if (!cli) return x.ex;
+      const t = TS.msgWpp.montar('{' + x.k + '}', valoresWpp(cli), ext);
+      return t === '{' + x.k + '}' ? x.ex : String(t).trim() ? t : '(fica vazio)';
+    };
+    const dica = (x) => [`{${x.k}}: ${x.o}`, `Quando usar: ${x.quando}`, cli ? `Para ${quem()}: ${valor(x)}` : `Exemplo: ${x.ex}`].join('\n\n');
+    const inserir = (k) => {
+      const m = alvo && alvo();
+      if (!m) return;
+      const ini = m.selectionStart ?? m.value.length, fim = m.selectionEnd ?? ini, t = '{' + k + '}';
+      m.value = m.value.slice(0, ini) + t + m.value.slice(fim);
+      m.focus(); m.selectionStart = m.selectionEnd = ini + t.length;
+      m.dispatchEvent(new Event('input', { bubbles: true }));
+      if (depois) depois();
+    };
+    const chips = h('div', { class: 'cp-campos', role: 'group', 'aria-label': 'Campos da mensagem' });
+    const tab = h('div', { class: 'cp-campos-tab' });
+    const sum = h('summary', null, `Ver todos os campos (${lista.length}) ▸`);
+    const det = h('details', { class: 'est-como cp-campos-todos' }, sum, tab);
+    det.addEventListener('toggle', () => { sum.textContent = `${det.open ? 'Fechar a lista dos campos' : 'Ver todos os campos'} (${lista.length}) ${det.open ? '▾' : '▸'}`; });
+    // ao trocar o cliente de exemplo só o title muda (o chip não é refeito embaixo do dedo)
+    const pintarChips = () => (chips.children.length ? lista.forEach((x, i) => { chips.children[i].title = dica(x); }) : chips.replaceChildren(...lista.map((x) => {
+      const b = h('button', { type: 'button', class: 'chip cp-tag', 'data-campo': x.k, title: dica(x), 'aria-label': `Inserir {${x.k}}: ${x.o}` }, '{' + x.k + '}');
+      b.addEventListener('mousedown', (e) => e.preventDefault()); // não tira o cursor da mensagem
+      b.addEventListener('click', () => inserir(x.k));
+      return b;
+    })));
+    const pintarTab = () => {
+      if (!det.open) return;
+      tab.replaceChildren(TS.table({
+        cols: [
+          { key: 'k', label: 'Campo', align: 'l', title: 'O que escrever na mensagem (com as chaves). Toque no chip lá em cima para pôr onde está o cursor.', render: (r) => h('code', { class: 'cp-campo-k' }, '{' + r.k + '}') },
+          { key: 'o', label: 'O que vira', align: 'l', wrap: true, title: 'O que entra no lugar do campo quando a mensagem sai para cada cliente.' },
+          { key: 'v', label: cli ? `Para ${quem()}` : 'Exemplo', align: 'l', wrap: true, title: cli ? `Como o campo sai para ${quem()}, o mesmo cliente do "Como fica para…".` : 'Um exemplo de como o campo sai.' },
+          { key: 'quando', label: 'Quando usar', align: 'l', wrap: true, title: 'Em que mensagem o campo faz sentido e onde ele não funciona.' },
+        ],
+        rows: lista.map((x) => ({ k: x.k, o: x.o, v: valor(x), quando: x.quando })),
+        cartao: true, cls: 'cp-campos-t', maxHeight: 'free',
+      }));
+    };
+    det.addEventListener('toggle', pintarTab);
+    pintarChips();
+    const caixa = h('div', { class: 'cp-campos-box' }, chips, det);
+    caixa.exemplo = (c, extras) => { cli = c || null; ext = extras || {}; pintarChips(); pintarTab(); };
+    return caixa;
+  };
 
   const digits = (s) => String(s || '').replace(/\D/g, '');
   /** aniversário para mostrar: dd/mm/aaaa quando o cadastro tem o ano de verdade (mesma conferência da idade); senão dd/mm. Mensagens usam c.aniv (dd/mm) */

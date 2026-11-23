@@ -1017,12 +1017,14 @@
     const lista = (l.wppModelos && l.wppModelos.length ? l.wppModelos : TS.WPP_PADRAO || []).map((m) => ({ ...m }));
     const sec0 = h('section', { class: 'cfg-bloco cfg-form' }, h('h3', null, 'Mensagens de WhatsApp'));
     const corpo = h('div', { class: 'cfg-wpp' });
+    let alvoW = null; // a última mensagem tocada recebe o campo (chips da lista única TS.CAMPOS_MSG)
     const pintarW = () => {
       corpo.replaceChildren(...lista.map((m, k) => {
         const nome = inp({ value: m.nome, maxlength: 40 });
         const txt = h('textarea', { class: 'f-input', rows: 3, maxlength: 700 }, m.texto);
         nome.addEventListener('input', () => { m.nome = nome.value; });
         txt.addEventListener('input', () => { m.texto = txt.value; });
+        txt.addEventListener('focus', () => { alvoW = txt; });
         return h('div', { class: 'cfg-wpp-item' }, h('div', { class: 'cfg-inline' }, nome, h('button', { type: 'button', class: 'btn ghost-danger', onclick: () => { lista.splice(k, 1); pintarW(); } }, 'Remover')), txt);
       }));
     };
@@ -1052,7 +1054,8 @@
     const intervalo = inp({ type: 'number', min: 7, max: 90, value: l.wppIntervalo || 21, style: { width: '90px' } });
     sec0.append(h('div', { class: 'cfg-inline cfg-wpp-int' }, h('b', null, 'Uma mensagem a cada'), intervalo, h('span', null, 'dias por cliente'),
         TS.dica('Trava contra mensagem insistente: quem recebeu mensagem da loja (Hoje, ficha do cliente ou campanha) não recebe outra antes desse prazo. Vale para todas as telas; numa campanha dá para pedir um prazo maior.')),
-      h('p', { class: 'muted' }, 'Textos que aparecem prontos ao abrir o WhatsApp de um cliente na tela Clientes. Use {nome} (primeiro nome), {loja} e {cha} (chá favorito do cliente).'),
+      h('p', { class: 'muted' }, 'Textos que aparecem prontos ao abrir o WhatsApp de um cliente na tela Clientes. Toque num campo para pôr na mensagem onde está o cursor.'),
+      ...[TS.camposMsg ? TS.camposMsg({ onde: 'modelo', alvo: () => (alvoW && alvoW.isConnected ? alvoW : corpo.querySelector('textarea')) }) : null].filter(Boolean),
       corpo,
       blocoApres,
       h('div', { class: 'cfg-acoes' },

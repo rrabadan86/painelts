@@ -482,6 +482,11 @@
     const marcados = new Set((camp && camp.filtros.resumo) || TS.msgWpp.RESUMO_PADRAO);
     const textos = {};
     for (const m of TS.msgWpp.MOTIVOS_RESUMO) textos[m] = h('textarea', { class: 'f-input cp-msg', rows: 3, 'aria-label': 'Mensagem: ' + NOME_MOTIVO[m] }, (camp && camp.porMotivo && camp.porMotivo[m]) || TEXTO_RESUMO[m]);
+    // campos da mensagem (lista única): entram na última mensagem tocada; exemplo com o primeiro cliente da lista de hoje
+    let alvoR = null;
+    for (const m of TS.msgWpp.MOTIVOS_RESUMO) textos[m].addEventListener('focus', () => { alvoR = textos[m]; });
+    const caixaCampos = TS.camposMsg({ onde: 'resumo', alvo: () => (alvoR && alvoR.isConnected ? alvoR : Object.values(textos).find((t) => t.isConnected)) });
+    if (todos[0]) { const c1 = clienteDe(todos[0].cpf); caixaCampos.exemplo(c1, { chaoferta: todos[0].o || c1.chaFavorito || 'chá' }); }
     const limite = h('input', { class: 'f-input', type: 'number', min: 0, max: 500, value: camp && camp.limiteDia != null ? camp.limiteDia : 20, style: { maxWidth: '110px' } });
     const resumoTxt = h('small', { class: 'muted' });
     const linhas = h('div', { class: 'cp-resumo-motivos' });
@@ -526,9 +531,12 @@
       TS.card('🤖 ' + TS.msgWpp.NOME_RESUMO, 'Todo dia, a lista de Clientes → Hoje vira esta campanha: uma mensagem por cliente, pelo motivo mais importante dele, com o nome da vendedora que mais o atende. Valem as mesmas travas de sempre: uma mensagem a cada tantos dias por cliente, quem não quer, e chá sem estoque (no chá a granel, menos de 100 g) não é oferecido.',
         h('div', { class: 'cp-resumo' },
           h('p', { class: 'muted' }, 'Motivos que o robô envia (ordem de importância: o cliente que está em mais de um recebe só a do primeiro). Os não marcados continuam na tela Hoje para a equipe.'),
-          linhas, resumoTxt,
+          linhas,
+          h('small', { class: 'muted' }, 'Campos das mensagens: toque num campo para pôr na mensagem onde está o cursor.'),
+          caixaCampos,
+          resumoTxt,
           h('label', { class: 'cp-campo' }, h('span', null, 'Máximo de mensagens por dia nesta campanha', TS.dica('Comece baixo (15 a 20) e suba aos poucos: mais mensagens automáticas aumentam o risco de o WhatsApp restringir o número da loja. O robô também respeita o máximo por dia do número.')), limite),
-          h('small', { class: 'muted' }, 'Campos: {nome}, {apresentacao} ("Aqui é Gabrielly, da …", texto em Configurações → Mensagens), {cha}, {chaoferta}, {pontos}, {vence}, {loja}. Depois de criar, use "🤖 Ligar o robô para esta campanha"; dá para desligar quando quiser.'),
+          h('small', { class: 'muted' }, 'Depois de criar, use "🤖 Ligar o robô para esta campanha"; dá para desligar quando quiser.'),
           h('div', { class: 'cfg-acoes' }, salvar))));
   }
 
@@ -616,9 +624,12 @@
         quaseTodos() ? h('div', { class: 'notice warn cp-quase' }, `⚠ ${fmt.pct(sel_.length / baseCel, 0)} dos clientes com celular: quase a base inteira. Confira os critérios (pontos, segmento, última compra…) antes de salvar.`) : null].filter(Boolean));
       const c0 = sel_[0] && sel_[0].c;
       // quem não tem o dado de um campo usado (ex.: sem chá favorito) recebe o texto de reserva: avisa quantos
-      const faltam = (TS.CAMPOS_MSG || []).filter(([k, , falta]) => falta && msg.value.includes('{' + k + '}'))
-        .map(([k, , falta]) => [k, sel_.filter(({ c }) => falta(c)).length]).filter(([, n]) => n);
-      exemplo.replaceChildren(h('small', { class: 'muted' }, c0 ? `Como fica para ${c0.nome || 'o primeiro cliente'}:` : 'Exemplo:'), h('div', null, c0 ? A().texto(msg.value, c0, extras({ filtros: f })) : msg.value),
+      const faltam = (TS.CAMPOS_MSG || []).filter((x) => x.falta && msg.value.includes('{' + x.k + '}'))
+        .map((x) => [x.k, sel_.filter(({ c }) => x.falta(c)).length]).filter(([, n]) => n);
+      // {chaoferta} numa campanha comum = o chá favorito (o mesmo da fila manual e do robô)
+      const ext0 = c0 ? { ...extras({ filtros: f }), chaoferta: c0.chaFavorito || 'chá' } : {};
+      caixaCampos.exemplo(c0 || null, ext0);
+      exemplo.replaceChildren(h('small', { class: 'muted' }, c0 ? `Como fica para ${c0.nome || 'o primeiro cliente'}:` : 'Exemplo:'), h('div', null, c0 ? A().texto(msg.value, c0, ext0) : msg.value),
         ...(faltam.length ? [h('small', { class: 'cp-faltam' }, 'Sem o dado: ', faltam.map(([k, n]) => `{${k}} em ${fmt.int(n)} ${n === 1 ? 'cliente' : 'clientes'}`).join(' · '), ' — confira como fica para eles ou ajuste a frase.')] : []),
         ...(() => { // trava de estoque: quantos receberiam oferta de produto sem estoque (ficam esperando a nota de entrada)
           if (!dispForm) return [];
@@ -639,20 +650,9 @@
     }, 250);
     msg.addEventListener('input', atualizar);
     comp.addEventListener('change', () => atualizar());
-    function camposMsg() {
-      const lista = [...(TS.CAMPOS_MSG || []), ['produto', 'produtos escolhidos nos critérios']];
-      return h('div', { class: 'cp-campos' }, ...lista.map(([k, dica]) => {
-        const b = h('button', { type: 'button', class: 'chip cp-tag', title: dica }, '{' + k + '}');
-        b.addEventListener('mousedown', (e) => e.preventDefault()); // não tira o cursor da mensagem
-        b.addEventListener('click', () => {
-          const m = alvoMsg && alvoMsg.isConnected ? alvoMsg : msg;
-          const ini = m.selectionStart ?? m.value.length, fim = m.selectionEnd ?? ini, t = '{' + k + '}';
-          m.value = m.value.slice(0, ini) + t + m.value.slice(fim);
-          m.focus(); m.selectionStart = m.selectionEnd = ini + t.length; atualizar();
-        });
-        return b;
-      }));
-    }
+    // campos da mensagem: a lista única (TS.CAMPOS_MSG), com o valor para o mesmo cliente do "Como fica para …"
+    const caixaCampos = TS.camposMsg({ onde: 'campanha', alvo: () => (alvoMsg && alvoMsg.isConnected ? alvoMsg : msg) });
+    const camposMsg = () => caixaCampos;
     const salvar = h('button', { type: 'button', class: 'btn primary' }, editando ? 'Salvar alterações' : 'Salvar campanha');
     const erro = h('span', { class: 'muted' });
     const filtrosAntes = JSON.stringify(editando ? { ...PADRAO, ...base.filtros } : null);
@@ -790,7 +790,7 @@
               h('div', { class: 'cp-passo' }, h('span', { class: 'cp-n' }, '1'), h('div', null, h('b', null, 'Quem entra'), h('small', { class: 'muted' }, 'Só clientes com celular que não pediram para não receber mensagens. Os critérios se somam (precisa atender a todos).'))),
               ...blocos,
               linha('Não incluir quem foi contatado há menos de', num_('semContato', '0'), 'dias', TS.dica(`Evita mandar duas mensagens seguidas para a mesma pessoa. Nunca menos que o intervalo da loja (uma mensagem a cada ${A().intervalo ? A().intervalo() : 21} dias, em Configurações → Lojas → Mensagens de WhatsApp).`)),
-              h('div', { class: 'cp-passo' }, h('span', { class: 'cp-n' }, '2'), h('div', null, h('b', null, 'Mensagem'), h('small', { class: 'muted' }, 'Clique num campo para colocar na mensagem onde está o cursor.'))),
+              h('div', { class: 'cp-passo' }, h('span', { class: 'cp-n' }, '2'), h('div', null, h('b', null, 'Mensagem'), h('small', { class: 'muted' }, 'Clique num campo para colocar na mensagem onde está o cursor. O que cada um vira está em "Ver todos os campos".'))),
               h('div', { class: 'cp-msg-topo' }, modSel), camposMsg(), h('small', { class: 'muted' }, 'Variação 1 (principal)'), msg, exemplo,
               varBox, h('div', { class: 'cp-var-acoes' }, btVar, h('small', { class: 'muted' }, ' Até 5 versões da mesma mensagem. Cada cliente recebe uma, em rodízio, e o painel mostra qual trouxe mais clientes de volta.')),
               h('div', { class: 'cp-passo' }, h('span', { class: 'cp-n' }, '3'), h('div', null, h('b', null, 'Envio e retorno'))),
