@@ -839,17 +839,42 @@
       const fundo = h('div', { class: 'cp-modal-bg' });
       let feito = false;
       const sair = () => { if (feito) return; feito = true; fundo.remove(); resolver(); };
-      const ok = h('button', { type: 'button', class: 'btn primary', onclick: sair }, 'Entendi');
+      const ok = h('button', { type: 'button', class: 'btn primary', onclick: sair }, o.botao || 'Entendi');
       fundo.addEventListener('click', (e) => { if (e.target === fundo) sair(); });
       fundo.addEventListener('keydown', (e) => { if (e.key === 'Escape') sair(); });
-      fundo.append(h('div', { class: 'card cp-copiar ts-perg', role: 'alertdialog', 'aria-modal': 'true', 'aria-label': o.titulo || 'Aviso' },
-        o.titulo ? h('h3', null, o.titulo) : null,
+      fundo.append(h('div', { class: 'card cp-copiar ts-perg' + (o.erro ? ' ts-perg-erro' : ''), role: 'alertdialog', 'aria-modal': 'true', 'aria-label': o.titulo || 'Aviso' },
+        o.titulo ? h('h3', null, o.erro ? '⚠️ ' : '', o.titulo) : null,
         h('div', { class: 'ts-perg-msg' }, String(msg == null ? '' : msg)),
         h('div', { class: 'ts-perg-acoes' }, ok)));
       new MutationObserver((_, ob) => { if (!fundo.isConnected) { ob.disconnect(); if (!feito) { feito = true; resolver(); } } }).observe(document.body, { childList: true });
       document.body.append(fundo);
       ok.focus();
     });
+  };
+  /**
+   * Não foi salvo (pedido do dono, 23/11/2026): o erro ao salvar abre uma janela em destaque, não um aviso discreto que
+   * some (ele criou uma campanha sem nome, o aviso passou despercebido e achou que tinha salvado). "Corrigir" fecha e leva
+   * ao campo com problema: borda de erro, a frase embaixo dele e o foco; some quando a pessoa mexe no campo.
+   * Só para ação que a pessoa fez (clicou em Salvar); atualização em segundo plano não usa isto.
+   */
+  TS.naoSalvo = async (e, campo) => {
+    const msg = typeof e === 'string' ? e : TS.erroDeRede && TS.erroDeRede(e) ? 'Sem conexão com o painel agora. Tente de novo em instantes.' : (e && e.message) || 'Não deu certo. Tente de novo.';
+    await TS.avisar(msg, { titulo: 'Não foi salvo', botao: campo ? 'Corrigir' : 'Entendi', erro: true });
+    if (!campo || !campo.isConnected) return;
+    TS.marcarCampoErro(campo, msg);
+  };
+  /** marca o campo com problema (borda, frase embaixo, aria-invalid) e põe o foco nele; sai ao mexer no campo */
+  TS.marcarCampoErro = (campo, msg) => {
+    const ant = campo.parentNode && campo.parentNode.querySelector(':scope > .campo-erro-msg');
+    if (ant) ant.remove();
+    const nota = h('small', { class: 'campo-erro-msg', role: 'alert' }, msg);
+    campo.classList.add('campo-erro');
+    campo.setAttribute('aria-invalid', 'true');
+    campo.insertAdjacentElement('afterend', nota);
+    const tirar = () => { campo.classList.remove('campo-erro'); campo.removeAttribute('aria-invalid'); nota.remove(); campo.removeEventListener('input', tirar); campo.removeEventListener('change', tirar); };
+    campo.addEventListener('input', tirar); campo.addEventListener('change', tirar);
+    if (campo.scrollIntoView) campo.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    campo.focus({ preventScroll: true });
   };
   /** erro de uma ação em português: sem conexão vira frase nossa, nunca o texto do navegador */
   TS.avisarErro = (e) => TS.avisar(TS.erroDeRede && TS.erroDeRede(e) ? 'Sem conexão com o painel agora. Tente de novo em instantes.' : (e && e.message) || 'Não deu certo. Tente de novo.', { titulo: 'Não deu certo' });

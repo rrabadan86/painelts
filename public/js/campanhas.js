@@ -46,7 +46,7 @@
     if (met === 'GET') { semearDemo(); return { campanhas: demo.lista.slice() }; }
     const sep = (cid, l, ligado, tamanho) => TS.campRetorno.separar(l.map((x) => ({ ...x, st: 'p' })), cid, { ligado, em: agora, tamanho });
     if (met === 'POST' && !m[1]) { const cid = id(), comparar = b.comparar !== false; const n = { id: cid, nome: b.nome, mensagem: b.mensagem, porMotivo: b.porMotivo, limiteDia: b.limiteDia, janela: b.janela, recorrente: b.recorrente, comparar, ativa: true, filtros: b.filtros, criadaEm: agora, por: 'você', rodadas: [{ id: id(), em: agora, lista: sep(cid, b.lista, comparar) }] }; demo.lista.unshift(n); return { campanha: n }; }
-    if (met === 'PUT' && !m[2]) { const { loja, ...resto } = b; Object.assign(c, resto); return { campanha: c }; }
+    if (met === 'PUT' && !m[2]) { const { loja, ...resto } = b; Object.assign(c, resto); const fora = new Set((c.filtros && c.filtros.fora) || []); if (fora.size) for (const r of c.rodadas || []) r.lista = r.lista.filter((x) => !(x.st === 'p' && fora.has(x.cpf))); return { campanha: c }; }
     if (met === 'PUT' && m[2] === 'rodadas') { const r = c.rodadas[0]; const feitos = r.lista.filter((x) => x.st !== 'p'); const ja = new Set(feitos.map((x) => x.cpf)); const novos = b.lista.filter((x) => !ja.has(x.cpf)); r.lista = [...feitos, ...sep(c.id, novos, c.comparar === true, feitos.length + novos.length)]; return { campanha: c }; }
     if (m[2] === 'rodadas') { c.rodadas.unshift({ id: id(), em: agora, lista: sep(c.id, b.lista, c.comparar === true) }); return { campanha: c }; }
     if (m[2] === 'marcar') { const it = c.rodadas.find((r) => r.id === b.rodada).lista.find((x) => x.cpf === b.cpf); it.st = b.st; if (b.st === 'p') { delete it.em; delete it.por; } else { it.em = agora; it.por = 'você'; } return { item: { ...it } }; } // cópia: quem chama limpa o item antes de aplicar a resposta
@@ -81,6 +81,7 @@
     const grupoId = f.grupo ? db.D.grupoC.indexOf(f.grupo) : -1;
     if (f.grupo && grupoId < 0) return []; // grupo que não existe mais nas vendas: ninguém (antes o filtro era ignorado e entrava todo mundo)
     const desde = num(f.compraDias) != null ? hoje - num(f.compraDias) : -Infinity;
+    const fora = new Set(Array.isArray(f.fora) ? f.fora : []); // tirados à mão da campanha (pedido do dono): nunca entram
     let prodOk = null;
     if (lp.length) {
       const exatos = new Set(lp.filter((x) => !x.contem).map((x) => TS.norm(x.t))), partes = lp.filter((x) => x.contem).map((x) => TS.norm(x.t));
@@ -91,7 +92,7 @@
     const mesAniv = f.aniv === 'atual' ? mesHoje : f.aniv === 'proximo' ? (mesHoje % 12) + 1 : num(f.aniv);
     const out = [];
     for (const c of A().universo()) {
-      if (!c.wpp) continue;
+      if (!c.wpp || fora.has(c.cpf)) continue;
       const ct = A().contatoDe(c);
       if (ct && ct.optout) continue;
       const semC = Math.max(num(f.semContato) || 0, A().intervalo ? A().intervalo() : 21); // nunca menos que o intervalo da loja
@@ -195,7 +196,9 @@
     const quer = new Set((filtros && filtros.resumo) || []);
     const ordem = TS.msgWpp.MOTIVOS_RESUMO.filter((m) => quer.has(m));
     const out = [];
+    const fora = new Set((filtros && filtros.fora) || []);
     for (const x of A().hojeItens(val, disp).itens) {
+      if (fora.has(x.c.cpf)) continue; // tirado à mão da campanha
       const m = ordem.find((k) => x.ms.includes(k));
       if (m) out.push({ cpf: x.c.cpf, nome: x.c.nome, m, ...(m === 'validade' && x.oferta ? { o: x.oferta } : {}) });
     }
@@ -594,6 +597,18 @@
     // decisão do dono: campanha que pega quase a base inteira (mais de 30% dos clientes com celular) avisa e pede confirmação ao salvar
     const baseCel = TS.cli.lista.filter((c) => c.wpp).length;
     const quaseTodos = () => baseCel >= 20 && sel_.length > baseCel * BASE_INTEIRA;
+    // tirados à mão (pedido do dono, 23/11/2026): o cliente atende aos critérios, mas não deve receber esta campanha
+    if (!Array.isArray(f.fora)) f.fora = [];
+    const tirar = (cpf) => { if (!f.fora.includes(cpf)) f.fora = [...f.fora, cpf]; atualizar(); };
+    const voltar = (cpf) => { f.fora = f.fora.filter((x) => x !== cpf); atualizar(); };
+    function listaFora() {
+      if (!f.fora.length) return null;
+      const nomeDe = (cpf) => { const c = A().universo().find((x) => x.cpf === cpf); return (c && c.nome) || 'Cliente sem nome'; };
+      return h('div', { class: 'cp-fora' },
+        h('b', null, `Tirados à mão (${fmt.int(f.fora.length)})`, TS.dica('Não recebem esta campanha, mesmo atendendo aos critérios. Ao salvar, saem também da lista de quem falta receber (quem já recebeu continua no histórico).')),
+        h('ul', null, ...f.fora.map((cpf) => h('li', null, h('span', null, nomeDe(cpf), h('small', { class: 'muted' }, ` · CPF ${A().fmtCPF(cpf)}`)),
+          h('button', { type: 'button', class: 'btn cp-voltar', onclick: () => voltar(cpf) }, 'Voltar para a campanha')))));
+    }
     let atualizar = TS.debounce(() => {
       sel_ = selecionar(f);
       contagem.replaceChildren(...[h('b', null, fmt.int(sel_.length)), ` ${sel_.length === 1 ? 'cliente' : 'clientes'} com celular entram na campanha`,
@@ -614,10 +629,11 @@
           return n ? [h('small', { class: 'cp-faltam cp-sem-estoque' }, `🚫 ${fmt.int(n)} ${n === 1 ? 'cliente receberia' : 'clientes receberiam'} oferta de produto sem estoque (no chá a granel, menos de 100 g)${semP.length ? ` (${semP.slice(0, 3).join(', ')})` : ''}: eles ficam esperando a nota de entrada e não entram na fila de envio.`)] : [];
         })());
       por(previa, sel_.length ? TS.table({
-        cols: [{ key: 'nome', label: 'Cliente', align: 'l', render: (r) => h('span', null, r.nome, h('small', { class: 'muted cp-cel' }, `${r.cel} · CPF ${A().fmtCPF(r.cpf)}`)) }, { key: 'saldo', label: 'Pontos', fmt: fmt.int }, { key: 'vence', label: 'Vencem', align: 'l' }, { key: 'ultima', label: 'Última compra', align: 'l', render: (r) => d(r.ult) }],
+        cols: [{ key: 'nome', label: 'Cliente', align: 'l', render: (r) => h('span', null, r.nome, h('small', { class: 'muted cp-cel' }, `${r.cel} · CPF ${A().fmtCPF(r.cpf)}`)) }, { key: 'saldo', label: 'Pontos', fmt: fmt.int }, { key: 'vence', label: 'Vencem', align: 'l' }, { key: 'ultima', label: 'Última compra', align: 'l', render: (r) => d(r.ult) },
+          { key: 'acao', label: '', align: 'l', title: 'Tira este cliente da campanha mesmo atendendo aos critérios (ele não recebe esta mensagem). Volta pela lista "Tirados à mão", embaixo.', render: (r) => h('button', { type: 'button', class: 'btn ghost-danger cp-tirar', 'aria-label': `Tirar ${r.nome} da campanha`, onclick: (e) => { e.stopPropagation(); tirar(r.cpf); } }, '✕ Tirar') }],
         rows: sel_.slice(0, 300).map(({ c, saldo }) => ({ cpf: c.cpf, nome: c.nome || '—', cel: A().fmtTel(c.celular), saldo, vence: c.fx && c.fx.prox != null ? `${fmt.int(c.fx.proxPts)} em ${d(c.fx.prox)}` : '—', ult: c.ultima, ultima: c.ultima ?? -1 })),
         sortKey: 'saldo', cartao: true, onRowClick: (r) => A().abrirClientes([r.cpf]),
-      }) : TS.empty('Nenhum cliente com celular atende a esses critérios.'), sel_.length > 300 ? h('small', { class: 'muted' }, `Mostrando 300 de ${fmt.int(sel_.length)}. A campanha guarda todos.`) : null);
+      }) : TS.empty('Nenhum cliente com celular atende a esses critérios.'), sel_.length > 300 ? h('small', { class: 'muted' }, `Mostrando 300 de ${fmt.int(sel_.length)}. A campanha guarda todos.`) : null, listaFora());
     }, 250);
     msg.addEventListener('input', atualizar);
     comp.addEventListener('change', () => atualizar());
@@ -642,8 +658,10 @@
     const refazerBox = editando ? h('label', { class: 'cp-campo cp-check' }, refazer, h('span', null, 'Se mudar os critérios, refazer a lista atual (quem já recebeu continua marcado)')) : null;
     salvar.addEventListener('click', async () => {
       erro.textContent = '';
-      if (!nome.value.trim()) { erro.textContent = 'Dê um nome à campanha.'; nome.focus(); return; }
-      if (!sel_.length && !editando) { erro.textContent = 'Nenhum cliente na lista.'; return; }
+      // erro ao salvar: janela em destaque (pedido do dono: o aviso discreto passava despercebido e parecia salvo)
+      if (!nome.value.trim()) { TS.naoSalvo('Dê um nome à campanha.', nome); return; }
+      if (!msg.value.trim()) { TS.naoSalvo('Escreva a mensagem.', msg); return; }
+      if (!sel_.length && !editando) { TS.naoSalvo('Nenhum cliente na lista: ajuste os critérios.'); return; }
       if (quaseTodos() && TS.janelaConfirmar && !(await TS.janelaConfirmar('Esta campanha pega quase todos os clientes', [
         h('p', null, `${fmt.int(sel_.length)} de ${fmt.int(baseCel)} clientes com celular (${fmt.pct(sel_.length / baseCel, 0)}) entram na lista.`),
         h('p', { class: 'muted' }, 'Campanha para quase todo mundo costuma ser mensagem que não serve para a maioria. Para mirar melhor, escolha um critério (pontos vencendo, segmento, tempo sem comprar, tipo de chá…).'),
@@ -660,7 +678,7 @@
           if (podeRobo && roboAntes && quemEnvia.value === 'manual') { const r3 = await api('PUT', `/api/campanhas/${base.id}`, { loja: state.loja, robo: false }); Object.assign(base, r3.campanha); }
           if (podeRobo && !base.robo && quemEnvia.value === 'robo') ligarAoAbrir = base.id;
           abrirCampanha(corpo, lista, base);
-        } catch (e) { erro.textContent = e.message; salvar.disabled = false; }
+        } catch (e) { salvar.disabled = false; TS.naoSalvo(e, campoDoErro(e)); }
         return;
       }
       try {
@@ -669,8 +687,13 @@
         if (base && base.copia) { api('DELETE', `/api/campanhas/copias/${base.copia}?${qs()}`).catch(() => null); lista.copias = (lista.copias || []).filter((x) => x.id !== base.copia); }
         if (podeRobo && quemEnvia.value === 'robo') ligarAoAbrir = r.campanha.id;
         abrirCampanha(corpo, lista, r.campanha);
-      } catch (e) { erro.textContent = e.message; salvar.disabled = false; }
+      } catch (e) { salvar.disabled = false; TS.naoSalvo(e, campoDoErro(e)); }
     });
+    /** o campo de que o erro do servidor fala (para "Corrigir" levar até ele) */
+    function campoDoErro(e) {
+      const t = String((e && e.message) || '');
+      return /nome/i.test(t) ? nome : /mensagem/i.test(t) ? msg : /limite/i.test(t) ? limite : /retorno|prazo/i.test(t) ? janela : /término|início|data/i.test(t) ? dIni : null;
+    }
     // ---- formulário: cada critério numa frase ("Saldo entre __ e __ pontos"), em blocos que abrem e fecham
     const num_ = (k, ph, larg) => { const x = inp(k, ph); x.classList.add('cp-num'); if (larg) x.style.width = larg; return x; };
     const linha = (...partes) => h('div', { class: 'cp-linha' }, ...partes.map((p) => (typeof p === 'string' ? h('span', null, p) : p)));

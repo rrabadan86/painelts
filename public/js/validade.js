@@ -492,7 +492,7 @@
     /** "NF 3270" abre a janela da nota de entrada por cima da Validade (pedido do dono), para quem tem a tela Notas fiscais */
     const podeNotas = () => !TS.demo ? (TS.GRUPOS || []).some(([, ps]) => ps.includes('notas')) : true;
     const linkNF = (l) => (!podeNotas() || !TS.abrirNotaEntrada ? `NF ${l.nf}` : h('button', { type: 'button', class: 'link-btn vl-nf', title: 'Abre a nota de entrada: produtos, quantidades, custo e devolução.',
-      onclick: async (e) => { const b = e.currentTarget; b.disabled = true; try { if (!(await TS.abrirNotaEntrada(loja, l.nf, l.entrada))) TS.avisar('Esta nota não está entre as notas de entrada lidas do AppNext.'); } catch (err) { TS.avisarErro(err); } finally { b.disabled = false; } } }, `NF ${l.nf}`));
+      onclick: async (e) => { const b = e.currentTarget; b.disabled = true; try { if (!(await TS.abrirNotaEntrada(loja, l.nf, l.entrada, l.cod))) TS.avisar('Esta nota não está entre as notas de entrada lidas do AppNext.'); } catch (err) { TS.avisarErro(err); } finally { b.disabled = false; } } }, `NF ${l.nf}`));
     function desenharTabela() {
       const rows = linhas();
       const cols = [

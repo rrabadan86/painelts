@@ -43,7 +43,8 @@
     const b = h('button', { type: 'button', class: cls }, rotulo);
     b.addEventListener('click', async () => {
       b.disabled = true; const txt = b.textContent; b.textContent = '…';
-      try { const msg = await fn(); if (msg) toast(TS.demo ? TS.DEMO_AVISO : msg); await carregar(); } catch (e) { toast(e.message, true); } finally { b.disabled = false; b.textContent = txt; }
+      // erro ao SALVAR abre a janela "Não foi salvo" (pedido do dono, 23/11/2026); outras ações (testar, atualizar…) seguem discretas
+      try { const msg = await fn(); if (msg) toast(TS.demo ? TS.DEMO_AVISO : msg); await carregar(); } catch (e) { if (/salvar|gravar/i.test(rotulo) && TS.naoSalvo) TS.naoSalvo(e); else toast(e.message, true); } finally { b.disabled = false; b.textContent = txt; }
     });
     return b;
   }

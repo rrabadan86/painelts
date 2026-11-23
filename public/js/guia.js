@@ -175,7 +175,7 @@
           if (TS.demo) toast(TS.DEMO_AVISO); else { await salvar(); mudou = true; }
           L.passos[ORDEM[i]] = true; pulados.delete(ORDEM[i]);
           seguir();
-        } catch (e) { toast(e.message, true); b.disabled = false; }
+        } catch (e) { b.disabled = false; TS.naoSalvo(e); }
       });
       return h('div', { class: 'guia-pe' },
         h('button', { type: 'button', class: 'link-btn guia-pular', title: 'Deixa este passo para depois e vai para o próximo. Nada deste passo é gravado.', onclick: () => { if (!L.passos[ORDEM[i]]) pulados.add(ORDEM[i]); seguir(); } }, L.passos[ORDEM[i]] ? 'Continuar sem mudar' : 'Pular este passo'),

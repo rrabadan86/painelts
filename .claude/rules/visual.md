@@ -95,6 +95,8 @@ Peças prontas (`components.js` + `styles.css`); use estas antes de inventar out
 - Regra fixa aparece **travada** (`disabled`) com 🔒 e o motivo — não escondida.
 - Campo que redesenha a tela: `TS.aoConfirmar`.
 
+- **Erro ao salvar (decisão do dono, 23/11/2026):** validação ou recusa do servidor ao clicar em Salvar abre a janela `TS.naoSalvo(erro, campo)` ("⚠️ Não foi salvo", frase do erro, botão "Corrigir" que marca o campo com `aria-invalid` e a frase embaixo); nunca só um texto discreto ou toast, que parecia salvo. Nas Configurações, o `acao()` faz isso sozinho para botões "Salvar…". Erro de rotina/segundo plano e o aviso da apresentação continuam discretos.
+
 ## Celular (390 px)
 - Nada passa da borda: `min-width: 0` em filhos de flex/grid com texto longo, `overflow-wrap: anywhere` em nomes. Formulário dentro de linha de tabela usa `position: sticky; left: 0` e a largura da tela.
 - Toque: botões com área de pelo menos ~32 px; o ✨ flutuante não cobre ação: ele some enquanto a pessoa rola para baixo (volta ao rolar para cima, no topo e no fim) e o fim da página tem folga do tamanho dele (`.ia-fab-some`, `ia.js`). Links de ação no meio do texto ganham 5 px em cima e embaixo no celular (toque ≥ 24 px sem mudar as linhas).

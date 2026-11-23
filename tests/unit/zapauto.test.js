@@ -309,3 +309,16 @@ test('RESUMO-04: Campanha Resumo diário no servidor — a lista de Clientes →
   assert.deepStrictEqual(await t.lista({ resumo: [] }), []);
   assert.deepStrictEqual(await t.lista({ ausMin: 10 }), t.listaDe({ ausMin: 10 }));
 });
+
+test('CAMP-FORA-01: cliente tirado à mão (filtros.fora) não entra na lista da tela nem na do robô; o Resumo diário também respeita', async () => {
+  const t = ZA.tela({ loja: { id: 'l1', nome: 'Loja Um' }, corpo: corpoDe('l1'), contatos: CONTATOS, disponivel: () => ESTOQUE, agora: QUARTA_10H });
+  assert.deepStrictEqual(t.listaDe({ ausMin: 10 }).map((x) => x.cpf), [ANA, BIA]);
+  assert.deepStrictEqual(t.listaDe({ ausMin: 10, fora: [BIA] }).map((x) => x.cpf), [ANA], 'Bia atende aos critérios, mas foi tirada');
+  assert.deepStrictEqual(t.listaDe({ ausMin: 10, fora: [] }).map((x) => x.cpf), [ANA, BIA], 'lista vazia não tira ninguém');
+  const M = require('../../public/js/msgwpp');
+  const todos = (await t.lista({ resumo: M.MOTIVOS_RESUMO })).map((x) => x.cpf);
+  assert.ok(todos.length > 0, 'o Resumo diário tem alguém');
+  const sem = (await t.lista({ resumo: M.MOTIVOS_RESUMO, fora: [todos[0]] })).map((x) => x.cpf);
+  assert.ok(!sem.includes(todos[0]), 'tirado à mão sai do Resumo diário');
+  assert.strictEqual(sem.length, todos.length - 1);
+});

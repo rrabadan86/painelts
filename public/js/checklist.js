@@ -49,7 +49,7 @@
       const feitos = its.filter((x) => m[x.id]).length;
       const barra = h('div', { class: 'md-barra' }, h('i', { style: { width: (its.length ? (feitos / its.length) * 100 : 0) + '%' } }));
       const obs = h('textarea', { class: 'f-input ck-obs', rows: 2, placeholder: 'Observação (opcional): algo que aconteceu, o que faltou…', disabled: !podeMarcar || null }, (d.marcados.obs || {})[tipo] || '');
-      obs.addEventListener('change', async () => { try { const r = await api('POST', 'checklist/marcar', { loja, dia: d.dia, tipo, obs: obs.value }); d.marcados = r.marcados; toast('Observação salva.'); } catch (e) { toast(e.message, true); } });
+      obs.addEventListener('change', async () => { try { const r = await api('POST', 'checklist/marcar', { loja, dia: d.dia, tipo, obs: obs.value }); d.marcados = r.marcados; toast('Observação salva.'); } catch (e) { TS.naoSalvo(e, obs); } });
       return h('div', { class: 'card ck-parte' + (feitos === its.length ? ' ok' : '') },
         h('div', { class: 'ck-topo' }, h('h2', { class: 'card-title' }, NOMES[tipo]), feitos === its.length ? TS.etqPrazo('ok', '✓ completo') : h('b', { class: 'ck-cont' }, `${feitos} de ${its.length}`)),
         barra,
@@ -102,7 +102,7 @@
       h('div', { class: 'ck-ed-grade' }, h('div', null, h('div', { class: 'cfe-sec' }, 'Abertura'), lista('abertura')), h('div', null, h('div', { class: 'cfe-sec' }, 'Fechamento'), lista('fechamento'))),
       h('div', { class: 'cp-acoes' }, h('span', { style: { flex: 1 } }), h('button', { type: 'button', class: 'btn', onclick: fechar }, 'Cancelar'),
         h('button', { type: 'button', class: 'btn primary', onclick: async () => {
-          try { const r = await api('PUT', 'checklist/itens', { loja, abertura: its.abertura.filter((x) => x.texto.trim()), fechamento: its.fechamento.filter((x) => x.texto.trim()) }); d.itens = r.ok; fechar(); pintar(corpo, loja, d); toast('Checklist atualizado.'); } catch (e) { toast(e.message, true); }
+          try { const r = await api('PUT', 'checklist/itens', { loja, abertura: its.abertura.filter((x) => x.texto.trim()), fechamento: its.fechamento.filter((x) => x.texto.trim()) }); d.itens = r.ok; fechar(); pintar(corpo, loja, d); toast('Checklist atualizado.'); } catch (e) { TS.naoSalvo(e); }
         } }, 'Salvar'))));
     document.body.append(fundo);
   }

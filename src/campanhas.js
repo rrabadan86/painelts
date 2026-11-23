@@ -38,6 +38,8 @@ function filtrosOk(f) {
   if (!f || typeof f !== 'object') return out;
   for (const [k, v] of Object.entries(f).slice(0, 40)) {
     if (!/^[a-zA-Z]{1,20}$/.test(k)) continue;
+    // fora: clientes tirados à mão da campanha (pedido do dono, 23/11/2026) — só CPFs, até 1.000
+    if (k === 'fora') { if (Array.isArray(v)) out.fora = [...new Set(v.map(String).filter((x) => CPF_OK.test(x)))].slice(0, 1000); continue; }
     if (typeof v === 'number' && Number.isFinite(v)) out[k] = v;
     else if (typeof v === 'string') out[k] = texto(v, 80);
     else if (typeof v === 'boolean') out[k] = v;
@@ -111,8 +113,12 @@ function alterar(id, cid, b) {
   const d = dadosOk(b, c);
   if (d.erro) return d;
   Object.assign(c, d.ok);
+  // cliente tirado à mão: sai dos pendentes de todas as listas (quem já recebeu continua no histórico)
+  const fora = new Set((c.filtros && c.filtros.fora) || []);
+  let tirados = 0;
+  if (fora.size) for (const r of c.rodadas || []) { const n = r.lista.length; r.lista = r.lista.filter((x) => !(x.st === 'p' && fora.has(x.cpf))); tirados += n - r.lista.length; }
   gravar(id, todas);
-  return { ok: c };
+  return { ok: c, tirados };
 }
 /** campanha recorrente: a última lista ainda vale? (diária = mesmo dia; semanal = menos de 7 dias; mensal = mesmo mês, em Brasília) */
 function rodadaEmDia(c, agora = Date.now()) {

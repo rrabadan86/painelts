@@ -988,7 +988,7 @@
     const btnSalvar = h('button', { type: 'button', class: 'btn ped-salvar', title: 'Guarda as quantidades do pedido como estão agora, para você (ou outra pessoa com a tela Pedido) terminar depois. Fica salvo por 5 dias. Não envia nada ao site.' }, '💾 Salvar carrinho');
     btnSalvar.addEventListener('click', async () => {
       const itens = carrinhoAgora();
-      if (!Object.values(itens).some((q) => q > 0)) { toast('O pedido está vazio: não há o que salvar.', true); return; }
+      if (!Object.values(itens).some((q) => q > 0)) { TS.naoSalvo('O pedido está vazio: não há o que salvar.'); return; }
       if (TS.demo) { toast(TS.DEMO_AVISO); return; }
       btnSalvar.disabled = true;
       try {
@@ -998,7 +998,7 @@
         p.rascunho = j.rascunho; rascVisto[loja] = j.rascunho.em; // é o carrinho desta tela: não pergunta se quer continuar
         toast(`Carrinho salvo. Fica guardado até ${dataHora(j.rascunho.expira)}.`);
         repintar();
-      } catch (err) { toast(err.message, true); btnSalvar.disabled = false; }
+      } catch (err) { btnSalvar.disabled = false; TS.naoSalvo(err); }
     });
     const rasc = p.rascunho;
     const aplicarRasc = () => {

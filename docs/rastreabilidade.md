@@ -460,6 +460,7 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 | CEL-NOME-01 | Nome nas mensagens do número vinculado (cadastro de uma pessoa, WhatsApp de outra): só com vínculo, só admin e franqueado da loja, só letras até 40, vai no pacote (`celVinc.nome`) e some ao desfazer | `celulares.js` `nomear`/`nomeValido`/`aplicar`, `server.js` `/api/clientes/celular/nome` | `celulares.test` | ✅ |
 | CEL-NOME-02 | Com nome nas mensagens, {nome}/{nomecompleto} saem com ele e o aniversário fica fora do Hoje e das campanhas | `clientes.js` `TS.nomeMsgDe`/`valoresWpp`/etiqueta `aniv`, `campanhas.js` filtro de aniversário | `zap.spec` | ✅ |
 | CEL-NOME-03 | Com nome nas mensagens, a conversa mostra esse nome no topo, na lista e nas mensagens dele, com "cadastro: <nome da fidelidade>" embaixo (a busca acha pelos dois); Ver cliente abre o cadastro da fidelidade com "WhatsApp do <nome>" | `conversas.js` `nomeConv`/`pintarItens`/topo, `clientes.js` ficha | `conversas.spec` | ✅ |
+| CAMP-FORA-01…04 | Clientes → Campanhas (pedido do dono, 23/11/2026): tirar à mão um cliente que atende aos critérios ("✕ Tirar" por linha em "Quem entra"; "Tirados à mão (N)" com "Voltar para a campanha"); fica em `filtros.fora` (só CPFs válidos, até 1.000) e vale na tela, no envio manual e no robô (a mesma conta: `selecionar`/`listaResumo`); na campanha já criada sai dos pendentes ao salvar, quem recebeu fica no histórico; auditoria só com as quantidades | `campanhas.js` (`selecionar`, `listaResumo`, `tirar`/`voltar`/`listaFora`, `demoApi`); `src/campanhas.js` (`filtrosOk`, `alterar`); `server.js` (PUT `/api/campanhas/:id`) | `zapauto.test` CAMP-FORA-01; `campanha-fora.test` CAMP-FORA-02, CAMP-FORA-03; `campanha-fora.spec` CAMP-FORA-04 | ✅ |
 
 ## 14. Orçamento (ORC)
 
@@ -518,6 +519,7 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 | APP-21 | Tela "Notificações e aplicativo": instalar (convite do navegador + instrução para Android, iPhone e computador), ativar/desativar por aparelho, tipos por aparelho, teste e lista com remover; mensagens para sem suporte, bloqueado e iPhone sem instalar; apresentação não ativa nada | `public/js/notificacoes.js`; `/api/demo/push` | `aplicativo.spec` "tela" | 🟡 — os estados "sem suporte", "bloqueado" e "iPhone" não têm teste automático |
 | PASSADA-2 | 2ª passada do layout (23/11/2026, proposta do Figma aprovada pelo dono): só os 2–3 números que decidem no herói com a ação principal ao lado; números de apoio como linhas clicáveis; ferramentas da lista no canto do cabeçalho (no celular, os botões da lista numa linha própria e Imprimir/Expandir juntos); consulta secundária recolhida; tabelas sem rolar para o lado (Estoque, Pedido, Notas, Créditos, Campanhas, Hoje, Resumo, Comparativos, Promoção, Comissionamento) | `estoque.js`, `pedido.js`, `comprasvendas.js`, `precos.js`, `creditos.js`, `campanhas.js`, `clientes.js`, `espera.js`, `zap.js`, `pages.js`, `config.js`; `styles.css` (blocos "2ª passada") | `leiaute.spec`; `estoque.spec`; `ruptura.spec`; `visaodono.spec`; `zap.spec`; `contas.spec`; `revisao-visual.spec`; `redesenho-estoque.spec` RD-EST-02 | 🟡 — Evolução mensal no celular e o lugar dos botões só conferidos em print |
 | TAB-BUSCA-01 | `TS.table` guarda o texto buscado na hora (só o redesenho espera): apagar a busca e trocar logo de aba não leva a busca antiga para a tabela nova | `components.js` `TS.table` (`_buscas`) | `lotes-envasados.spec` LOTE-ENV-01 (Alimentação depois de limpar a busca) | 🟡 — só pela Validade |
+| AVISO-SALVAR-01 | Erro ao salvar abre a janela "⚠️ Não foi salvo" (pedido do dono, 23/11/2026) com a frase do erro e "Corrigir", que marca o campo (`aria-invalid`, borda e frase embaixo) e dá foco; erro de segundo plano e aviso da apresentação continuam discretos. Já usam: Campanhas, Orçamento, Salvar carrinho do Pedido, Configuração guiada, Checklist e os botões "Salvar…" das Configurações | `components.js` (`TS.naoSalvo`, `TS.marcarCampoErro`, `TS.avisar`); `campanhas.js` (`campoDoErro`); `config.js` (`acao`) | `campanha-fora.spec` AVISO-SALVAR-01 | ✅ |
 | DATA-01 | Telas principais sem erro, "NaN/null", rolagem lateral (1100 e 390 px) ou percentual absurdo no 1º do mês, último dia, domingo fechado e 1º de janeiro | `src/demo.js` `agora()` (`PAINEL_HOJE_TESTE` só com NODE_ENV=test) | `tests/datas/datas.spec.js` | ✅ |
 | DATA-02 | Projeção e meta válidas no começo e no fim do mês; o "hoje" da tela é o do relógio | `extras.js` `TS.projecaoMes`, `core.js` | `tests/datas/datas.spec.js` | ✅ |
 | NOTURNA-01 | Bateria completa (apresentação, perfis e datas) todo dia às 03:17 no main; não libera nem bloqueia versão (o registrar só roda em push) | `.github/workflows/testes.yml` | — (o próprio agendamento) | 🟡 |
@@ -602,6 +604,7 @@ Todos os da lista A foram conferidos no código, um por um.
 - **Achado corrigido:** Vendas → Cupons mostrava 503 "itens" (linhas) no topo e 530 no total da lista (soma crua, com taxas e R$ 0,01); agora cupons, itens e valor saem de `TS.metricas` (CUP-01).
 - **Achados corrigidos pelos testes novos (23/11/2026):** Pedido → Produtos rolava para o lado (625 px a 1100) — agora 6 colunas; "null" na "Sua meta de hoje" da vendedora quando as vendas de hoje não chegaram; Vendas por produto somava 516 itens / 7,610 kg (com R$ 0,01, consumível sem controle e kg de acessório) contra 513 / 7,31 da conta oficial; Chá vendido do Resumo somava o chá de brinde a R$ 0,01.
 - **Achado (prints, 23/11/2026):** a Validade às vezes volta a mostrar "Carregando os lotes…" depois de pronta (a tela se redesenha sozinha, uma piscada que a pessoa também vê). Em aberto; o teste de prints espera a tela ficar pronta de novo.
+- **Corrigido (23/11/2026):** no celular, a tela Criar campanha passava da largura em cerca de 60 px (já era assim antes): as grades `.cp-form` e `.cp-dir` não tinham coluna definida e cresciam até o conteúdo. Agora as duas usam `minmax(0, 1fr)`. O teste de tela mede só a rolagem da página e não pegou (o card corta o excesso).
 - **Em aberto (23/11/2026):** `visaodono.spec` "Lojas lado a lado: projeção e zerados" falhou 1 vez na bateria completa local (zerados 164 × 165 entre as lojas lado a lado e a tela da loja); passou nas 3 repetições. Causa não encontrada.
 - **Decidido pelo dono (23/11/2026):** na Minha comissão a vendedora pode ver a meta da loja e a divisão entre as pessoas (só não vê as colegas); o cartão "Sua meta de hoje" segue só com a parte dela.
 - **Decidido e corrigido (23/11/2026, LUCRO-01):** antes, "Lucro bruto" do mês tinha dois números — Rentabilidade R$ 10.659 (60,2%) e Resultado R$ 7.339 (41,4%), este perto do "Lucro sem fixos" da Rentabilidade; é diferença de definição/nome (mexer muda o Resultado e a exportação ao contador).
@@ -676,11 +679,11 @@ Contado pelas linhas da matriz (`node scripts/matriz.js --resumo`; o guardião c
 | Preços, custos e notas de entrada (PRC) | 40 | 13 | 8 | 19 |
 | Resultado e rentabilidade (RES) | 13 | 5 | 3 | 5 |
 | Vendas e métricas (VEN) | 27 | 12 | 8 | 7 |
-| Clientes, fidelidade, WhatsApp e lista de espera (CLI) | 43 | 31 | 8 | 4 |
+| Clientes, fidelidade, WhatsApp e lista de espera (CLI) | 44 | 32 | 8 | 4 |
 | Orçamento (ORC) | 7 | 5 | 1 | 1 |
 | Checklist, fechamento e avisos (OPE) | 13 | 6 | 3 | 4 |
-| Estrutura do painel e atualização (APP) | 38 | 20 | 12 | 6 |
-| **Total** | **434** | **203 (47%)** | **121 (28%)** | **110 (25%)** |
+| Estrutura do painel e atualização (APP) | 39 | 21 | 12 | 6 |
+| **Total** | **436** | **205 (47%)** | **121 (28%)** | **110 (25%)** |
 <!-- resumo:fim -->
 
 ## Próximas etapas
