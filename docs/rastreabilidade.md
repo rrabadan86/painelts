@@ -166,6 +166,13 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 | FRQ-10 | Prêmios de fidelidade: 50% do custo, conferidos com o royalty | `contafranquia.js` | `contafranquia.test`; `voltar.spec` (2) | ✅ |
 | FRQ-11 | Conta com a franquia na apresentação: nada salvo nem enviado | `/api/demo/conta-franquia` | `voltar.spec` | ✅ |
 | FRQ-12 | Salvar a cobrança automática grava os destinatários (loja no corpo ou no endereço) | `lojaCF` | `config-sem-null.spec` (só a tela) | 🟡 |
+| FRQ-COMP-01 | Devolução "Compensada em nota fiscal de entrada" (no lugar de "no boleto"): a pessoa procura a nota de entrada (nº, fornecedor ou data; as mais recentes primeiro; aba "Da franquia") e escolhe; grava `{nota: id}` como o "ligar"/automático, e a tela mostra "na NF x" e as contas (compensado × aberto) batem. Sem a nota no painel: o nº da NF digitado (se for de uma nota da loja, liga a ela) | `contafranquia.js` `compensacao`, `entradas`, `acao`; `creditos.js` `escolherNota` | `contafranquia.test` "FRQ-COMP-01" (2); `compensacao.spec` "FRQ-COMP-01" (2) | ✅ |
+| FRQ-COMP-02 | "Compensada nos royalties": o mês de referência escolhido numa lista dos últimos 12 meses (o atual e os 11 anteriores, "nov/2026"); grava `mes` AAAA-MM; "nos royalties de nov/2026" na situação | `contafranquia.js` `mesesRoyalties`, `compensacao`; `creditos.js` `escolherMes` | `contafranquia.test` "FRQ-COMP-02"; `compensacao.spec` "FRQ-COMP-02" | ✅ |
+| FRQ-COMP-03 | O servidor confere o que chega: nota que não é da loja, NF longa/sem número/com outros caracteres, mês fora dos 12 e jeito desconhecido (inclusive o antigo "boleto") são recusados sem gravar; erro na tela abre "Não foi salvo" | `contafranquia.js` `compensacao`; `creditos.js` (`TS.naoSalvo`) | `contafranquia.test` "FRQ-COMP-03"; `compensacao.spec` "FRQ-COMP-01: a nota não está no painel" | ✅ |
+| FRQ-COMP-04 | Rota de compensar: X-Painel, a mesma permissão de antes (tela Notas fiscais e loja da pessoa; vendedora e gerente sem Notas fiscais não), auditada com o jeito, sem afrouxar | `server.js` `/api/conta-franquia/acao` (`lojaCF`) | `compensacao-rotas.test` "FRQ-COMP-04" (2) | ✅ |
+| FRQ-COMP-05 | Registros antigos ("no boleto" e royalties em texto livre) continuam como compensados, com o texto | `contafranquia.js` `conta`; `creditos.js` `ondeTxt` | `contafranquia.test` "FRQ-COMP-05" | ✅ |
+| FRQ-COMP-06 | Marcar numa nota que já tinha devolução compensada sozinha (valor exato) mantém a outra ligada a ela | `server.js` (`jaNaNota`); `contafranquia.js` `acao` | `contafranquia.test` "FRQ-COMP-06" | ✅ |
+| FRQ-COMP-07 | Apresentação: a rota de compensar só confere e responde; a tela troca na memória (nada salvo) | `/api/demo/conta-franquia/acao`; `creditos.js` `aplicarNaMemoria` | `compensacao.spec` (3) | ✅ |
 
 ## 6. Coletor e robôs (COL)
 
@@ -688,7 +695,7 @@ Contado pelas linhas da matriz (`node scripts/matriz.js --resumo`; o guardião c
 | Segurança, segredos, auditoria e apresentação (SEG) | 19 | 1 | 9 | 9 |
 | IA (IA) | 16 | 7 | 6 | 3 |
 | NF-e, devolução e notas de entrada (NFE) | 41 | 26 | 11 | 4 |
-| Dinheiro com a franquia (FRQ) | 12 | 6 | 6 | 0 |
+| Dinheiro com a franquia (FRQ) | 19 | 13 | 6 | 0 |
 | Coletor e robôs (COL) | 7 | 1 | 2 | 4 |
 | Escala, horários, feriados e férias (ESC) | 31 | 7 | 10 | 14 |
 | Equipe, metas e comissão (EQP) | 13 | 4 | 3 | 6 |
@@ -700,7 +707,7 @@ Contado pelas linhas da matriz (`node scripts/matriz.js --resumo`; o guardião c
 | Orçamento (ORC) | 7 | 5 | 1 | 1 |
 | Checklist, fechamento e avisos (OPE) | 13 | 6 | 3 | 4 |
 | Estrutura do painel e atualização (APP) | 42 | 24 | 12 | 6 |
-| **Total** | **447** | **216 (48%)** | **121 (27%)** | **110 (25%)** |
+| **Total** | **454** | **223 (49%)** | **121 (27%)** | **110 (24%)** |
 <!-- resumo:fim -->
 
 ## Próximas etapas

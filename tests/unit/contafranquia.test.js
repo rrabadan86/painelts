@@ -51,12 +51,12 @@ test('conta: desconto da nota compensa as devoluções; o que sobra fica em aber
   assert.equal(xr.creditos.find((c) => c.numero === 531).situacao, 'atrasado');
   assert.equal(xr.notas.find((n) => n.nf === 19180).situacao, 'sem_par');
   assert.ok(CF.acao('lj', { tipo: 'considerar', nota: 'e4' }, 'ger').ok);
-  // à mão: a 531 foi paga no boleto; o desconto da 19180 não é de devolução
-  assert.ok(CF.acao('lj', { tipo: 'compensar', credito: por[531].id, como: 'boleto', obs: 'boleto 12/11' }, 'ger').ok);
+  // à mão: a 531 foi paga de outro jeito; o desconto da 19180 não é de devolução
+  assert.ok(CF.acao('lj', { tipo: 'compensar', credito: por[531].id, como: 'outro', obs: 'pix 12/11' }, 'ger').ok);
   assert.ok(CF.acao('lj', { tipo: 'ignorar', nota: 'e4', obs: 'promoção' }, 'ger').ok);
   const y = CF.conta('lj', { saidas, compras, devsPainel: [], hoje: '2026-11-18T12:00:00Z' });
   const p2 = Object.fromEntries(y.creditos.map((c) => [c.numero, c]));
-  assert.equal(p2[531].situacao, 'manual'); assert.equal(p2[531].compensado.como, 'boleto');
+  assert.equal(p2[531].situacao, 'manual'); assert.equal(p2[531].compensado.como, 'outro');
   assert.equal(y.notas.find((n) => n.nf === 19180).situacao, 'ignorada');
   assert.equal(y.resumo.conferir, 0);
   // ligar à mão a 540 numa nota
@@ -116,8 +116,8 @@ test('revisão: devolução cancelada sai da conta; o que foi marcado à mão an
   // XML cancelado com o número da devolução do painel: não volta como crédito
   const canc = { ...dev(901, '2026-09-01', 100, 'x'), situacao: 'cancelada' };
   assert.deepEqual(CF.creditos([canc], [], [devPainel('p1', 901)]), []);
-  // marcado "compensado no boleto" antes do XML (id dev-p2); o XML chega e troca o id: segue compensado
-  assert.ok(!CF.acao('lj', { tipo: 'compensar', credito: 'dev-p2', como: 'boleto' }, 'dono').erro);
+  // marcado "compensado de outro jeito" antes do XML (id dev-p2); o XML chega e troca o id: segue compensado
+  assert.ok(!CF.acao('lj', { tipo: 'compensar', credito: 'dev-p2', como: 'outro' }, 'dono').erro);
   const xml = dev(902, '2026-09-01', 100, 'x');
   const r = CF.conta('lj', { saidas: [xml], compras: [], devsPainel: [devPainel('p2', 902)], hoje: '2026-11-19' });
   const cr = r.creditos.find((x) => x.numero === 902);
@@ -129,4 +129,97 @@ test('revisão: desconto nos royalties aceita "123.45" (teclado do celular) e "1
   CF.royalties('lr', { ref: '2026-10', valor: '1.234,56' }, 'dono');
   const j = JSON.parse(fs.readFileSync(path.join(tmp, 'lr', 'conta-franquia.json'), 'utf8'));
   assert.deepEqual(j.royalties.map((x) => x.valor), [123.45, 1234.56]);
+});
+
+// ---------- compensada à mão: em nota fiscal de entrada, nos royalties (mês da lista de 12) ou de outro jeito ----------
+const HOJE_C = '2026-11-23';
+const comprasC = () => [ent('c1', 19001, '2026-09-01', 0), ent('c2', 19050, '2026-09-20', 0), ent('c3', 19300, '2026-11-10', 0), { ...ent('c4', 4471, '2026-11-12', 0), fornecedor: 'EMBALAGENS LTDA' }];
+const saidasC = (cs) => [dev(611, '2026-09-25', 80, cs[0].chave), dev(612, '2026-10-02', 45.5, cs[1].chave)];
+const idsC = (loja, compras, saidas) => Object.fromEntries(CF.conta(loja, { saidas, compras, devsPainel: [], hoje: HOJE_C }).creditos.map((c) => [c.numero, c.id]));
+
+test('FRQ-COMP-01: compensada em nota de entrada grava a ligação com a nota (como o vínculo automático) e as contas batem', () => {
+  const compras = comprasC(), saidas = saidasC(compras);
+  const antes = CF.conta('lc1', { saidas, compras, devsPainel: [], hoje: HOJE_C });
+  const c611 = antes.creditos.find((c) => c.numero === 611);
+  assert.equal(c611.situacao, 'atrasado');
+  // a lista de notas para escolher vem na conta: as mais recentes primeiro, só o cabeçalho (sem itens)
+  assert.deepEqual(antes.entradas.map((n) => n.id), ['c4', 'c3', 'c2', 'c1']);
+  assert.deepEqual(Object.keys(antes.entradas[0]).sort(), ['desconto', 'emissao', 'entrada', 'fornecedor', 'id', 'nf', 'total']);
+  assert.equal(antes.mesesRoyalties.length, 12);
+  assert.ok(CF.acao('lc1', { tipo: 'compensar', credito: c611.id, como: 'nota', nota: 'c3', obs: 'conferido' }, 'dono', { compras, hoje: HOJE_C }).ok);
+  const j = JSON.parse(fs.readFileSync(path.join(tmp, 'lc1', 'conta-franquia.json'), 'utf8'));
+  assert.equal(j.manual[c611.id].nota, 'c3', 'grava o id da nota, igual ao "ligar"');
+  const x = CF.conta('lc1', { saidas, compras, devsPainel: [], hoje: HOJE_C });
+  const c = x.creditos.find((y) => y.numero === 611);
+  assert.equal(c.situacao, 'manual');
+  assert.deepEqual([c.compensado.como, c.compensado.nota.id, c.compensado.nota.nf], ['nota', 'c3', 19300]);
+  assert.equal(x.resumo.compensado, 80);
+  assert.equal(x.resumo.atrasado, 45.5);
+  assert.equal(x.resumo.compensado + x.resumo.atrasado + x.resumo.aberto + x.resumo.confirmar, 125.5, 'compensado × aberto somam o total');
+});
+
+test('FRQ-COMP-01: nota fora do painel — o número digitado fica guardado; se for de uma nota da loja, liga à nota', () => {
+  const compras = comprasC(), saidas = saidasC(compras), ids = idsC('lc2', compras, saidas);
+  assert.ok(CF.acao('lc2', { tipo: 'compensar', credito: ids[611], como: 'nota', nf: ' 20.555 ' }, 'dono', { compras, hoje: HOJE_C }).ok);
+  assert.ok(CF.acao('lc2', { tipo: 'compensar', credito: ids[612], como: 'nota', nf: '000019300' }, 'dono', { compras, hoje: HOJE_C }).ok);
+  const x = CF.conta('lc2', { saidas, compras, devsPainel: [], hoje: HOJE_C });
+  const por = Object.fromEntries(x.creditos.map((c) => [c.numero, c]));
+  assert.deepEqual([por[611].situacao, por[611].compensado.como, por[611].compensado.nf, por[611].compensado.nota], ['manual', 'nota', '20.555', null]);
+  assert.equal(por[612].compensado.nota.id, 'c3', '"000019300" é a NF 19300 da loja');
+  assert.equal(x.resumo.compensado, 125.5);
+});
+
+test('FRQ-COMP-02: compensada nos royalties grava o mês AAAA-MM, só entre o mês atual e os 11 anteriores', () => {
+  assert.deepEqual(CF.mesesRoyalties('2026-11-23'), ['2026-11', '2026-10', '2026-09', '2026-08', '2026-07', '2026-06', '2026-05', '2026-04', '2026-03', '2026-02', '2026-01', '2025-12']);
+  assert.equal(CF.mesesRoyalties('2026-01-05')[11], '2025-02');
+  const compras = comprasC(), saidas = saidasC(compras), ids = idsC('lc3', compras, saidas), ctx = { compras, hoje: HOJE_C };
+  for (const mes of ['2025-11', '2026-12', '2026-13', '2026-1', '', 'novembro']) assert.match(CF.acao('lc3', { tipo: 'compensar', credito: ids[611], como: 'royalties', mes }, 'dono', ctx).erro || '', /últimos 12 meses/, mes);
+  assert.ok(CF.acao('lc3', { tipo: 'compensar', credito: ids[611], como: 'royalties', mes: '2025-12' }, 'dono', ctx).ok);
+  assert.ok(CF.acao('lc3', { tipo: 'compensar', credito: ids[612], como: 'royalties', mes: '2026-11' }, 'dono', ctx).ok);
+  const x = CF.conta('lc3', { saidas, compras, devsPainel: [], hoje: HOJE_C });
+  const por = Object.fromEntries(x.creditos.map((c) => [c.numero, c]));
+  assert.deepEqual([por[611].situacao, por[611].compensado.como, por[611].compensado.mes], ['manual', 'royalties', '2025-12']);
+  assert.equal(por[612].compensado.mes, '2026-11');
+  assert.equal(x.resumo.compensado, 125.5);
+});
+
+test('FRQ-COMP-03: o servidor recusa o que não confere (nota que não é da loja, NF longa ou sem número, jeito desconhecido) e não grava', () => {
+  const compras = comprasC(), ctx = { compras, hoje: HOJE_C };
+  const e = (b) => CF.acao('lc4', { tipo: 'compensar', credito: 'dev-abc', ...b }, 'dono', ctx).erro || '';
+  assert.match(e({ como: 'nota', nota: 'outra-loja' }), /não está no painel/);
+  assert.match(e({ como: 'nota' }), /Escolha a nota/);
+  assert.match(e({ como: 'nota', nf: '1'.repeat(21) }), /inválido/);
+  assert.match(e({ como: 'nota', nf: 'sem número' }), /inválido/);
+  assert.match(e({ como: 'nota', nf: '<b>12</b>' }), /inválido/);
+  assert.match(e({ como: 'boleto' }), /como a devolução foi compensada/, '"no boleto" saiu (agora é "em nota fiscal de entrada")');
+  assert.match(CF.acao('lc4', { tipo: 'compensar', credito: '../x', como: 'outro' }, 'dono', ctx).erro, /inválido/);
+  assert.ok(!fs.existsSync(path.join(tmp, 'lc4', 'conta-franquia.json')), 'nada gravado');
+  // de outro jeito continua como estava
+  assert.ok(CF.acao('lc4', { tipo: 'compensar', credito: 'dev-abc', como: 'outro', obs: 'Depósito / Pix' }, 'dono', ctx).ok);
+});
+
+test('FRQ-COMP-05: registros antigos (boleto e royalties em texto livre) continuam aparecendo como compensados, com o texto', () => {
+  const compras = comprasC(), saidas = saidasC(compras), ids = idsC('lc5', compras, saidas);
+  fs.mkdirSync(path.join(tmp, 'lc5'), { recursive: true });
+  fs.writeFileSync(path.join(tmp, 'lc5', 'conta-franquia.json'), JSON.stringify({ manual: {
+    [ids[611]]: { como: 'boleto', obs: 'boleto 12/11', por: 'dono', em: '2026-11-12T10:00:00Z' },
+    [ids[612]]: { como: 'royalties', obs: 'outubro', por: 'dono', em: '2026-11-12T10:00:00Z' } } }));
+  const x = CF.conta('lc5', { saidas, compras, devsPainel: [], hoje: HOJE_C });
+  const por = Object.fromEntries(x.creditos.map((c) => [c.numero, c]));
+  assert.deepEqual([por[611].situacao, por[611].compensado.como, por[611].compensado.obs, por[611].compensado.mes], ['manual', 'boleto', 'boleto 12/11', null]);
+  assert.deepEqual([por[612].compensado.como, por[612].compensado.obs, por[612].compensado.mes], ['royalties', 'outubro', null]);
+  assert.equal(x.resumo.compensado, 125.5);
+});
+
+test('FRQ-COMP-06: marcar em nota que já tinha devolução compensada sozinha (valor exato) mantém a outra nela', () => {
+  const compras = comprasC(); compras[2].desconto = 80; // a 19300 trouxe o desconto exato da 611
+  const saidas = saidasC(compras);
+  const antes = CF.conta('lc6', { saidas, compras, devsPainel: [], hoje: HOJE_C });
+  assert.equal(antes.notas.find((y) => y.id === 'c3').situacao, 'compensou');
+  const c612 = antes.creditos.find((c) => c.numero === 612);
+  const jaNaNota = (id) => { const k = antes.notas.find((y) => y.id === id); return k && k.situacao === 'compensou' ? k.creditos : []; };
+  assert.ok(CF.acao('lc6', { tipo: 'compensar', credito: c612.id, como: 'nota', nota: 'c3' }, 'dono', { compras, hoje: HOJE_C, jaNaNota }).ok);
+  const x = CF.conta('lc6', { saidas, compras, devsPainel: [], hoje: HOJE_C });
+  assert.deepEqual(x.creditos.map((c) => [c.numero, c.situacao, c.compensado && c.compensado.nota.id]).sort(), [[611, 'manual', 'c3'], [612, 'manual', 'c3']]);
+  assert.equal(x.notas.find((y) => y.id === 'c3').creditos.length, 2);
 });

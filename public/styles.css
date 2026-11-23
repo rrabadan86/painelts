@@ -2623,6 +2623,16 @@ details.vl-ajuda summary { cursor: pointer; font-weight: 600; }
 .cfe-prev { border: 1px solid var(--line, #e3ddcf); border-radius: 10px; padding: 6px 10px; overflow-x: auto; background: #fff; }
 .cfe-info { font-size: 12.5px; display: flex; flex-direction: column; gap: 2px; }
 .cfr-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+/* Créditos: "Compensada em nota fiscal de entrada" (COMP-01) — janela com a busca e a tabela das notas, sem rolar para o lado */
+.cfn { width: min(720px, 96vw); max-height: 92vh; overflow-x: hidden; overflow-y: auto; }
+.cfn > * { min-width: 0; }
+.cfn .table-wrap { max-height: none; overflow-x: hidden; }
+.cfn-t td, .cfn-t th { white-space: normal; overflow-wrap: anywhere; }
+.cfn-t td small.est-tam { display: block; }
+.cfn-frq { margin-left: 6px; }
+.cfn-escolha { font-size: 13.5px; padding: 8px 0 0; border-top: 1px solid var(--line); }
+.cfn-digitar summary { cursor: pointer; font-weight: 600; color: var(--green); padding: 4px 0; }
+.cfn-digitar[open] summary { margin-bottom: 6px; }
 .cf-menu-lista { position: fixed; right: auto; top: 0; left: 0; z-index: 1000; min-width: 0; }
 /* Orçamento */
 .orc-topo { display: flex; justify-content: flex-end; }
