@@ -396,6 +396,7 @@
   /** busca de novo quem foi contatado (outra pessoa pode ter enviado de outro computador) */
   async function recarregarContatos() {
     const lojaAlvo = state.loja || '';
+    if (!TS.cli) return;
     if (TS.demo) { TS.cli.contatos = TS.cli.contatos || {}; TS.cli.contatosLoja = lojaAlvo; return; }
     try {
       const j = await (await fetch('/api/contatos?loja=' + encodeURIComponent(lojaAlvo), { credentials: 'same-origin' })).json();
@@ -404,7 +405,10 @@
   }
   async function marcar(c, acao, motivo, envio) {
     const loja = lojaIdDe(c);
-    let novo, desfazerAte = null;
+    let novo, desfazerAte = null, campanhas = null;
+    // aberta fora de Clientes (ex.: "Ver cliente" na conversa), a ficha pode chegar antes da lista de contatos da loja:
+    // sem isto, gravar dava "Cannot set properties of null" depois de o servidor já ter salvo (visto pelo dono em 23/11/2026)
+    if (!TS.cli.contatos) TS.cli.contatos = {};
     if (TS.demo) {
       const a = { ...(TS.cli.contatos[c.cpf] || {}) };
       if (acao === 'contatado') Object.assign(a, { em: new Date().toISOString(), por: 'você', motivo });
@@ -415,14 +419,16 @@
       novo = a;
       if (envio) desfazerAte = new Date(Date.now() + 120e3).toISOString();
     } else {
-      const r = await fetch('/api/contatos', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-Painel': '1' }, body: JSON.stringify({ loja, cpf: c.cpf, acao, motivo, ...(envio ? { envio: true, campanha: envio.campanha || '' } : {}) }) });
+      const r = await fetch('/api/contatos', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-Painel': '1' }, body: JSON.stringify({ loja, cpf: c.cpf, acao, motivo, ...(envio ? { envio: true, para: c.wpp || '', campanha: envio.campanha || '' } : {}) }) });
       const j = await r.json();
       if (!r.ok) { const e = new Error(j.erro || 'Falha ao salvar.'); e.bloqueado = !!j.bloqueado; throw e; }
       novo = j.contato ? { ...j.contato, loja } : null;
       desfazerAte = j.desfazerAte || null;
+      campanhas = j.campanhas || null;
     }
     if (novo && Object.keys(novo).length) TS.cli.contatos[c.cpf] = novo; else delete TS.cli.contatos[c.cpf];
-    return { desfazerAte };
+    if (acao === 'optout' || acao === 'aceita') window.dispatchEvent(new CustomEvent('ts-contato', { detail: { cpf: c.cpf, acao } }));
+    return { desfazerAte, campanhas };
   }
   /** "Desfazer" (Hoje): a mensagem não foi enviada — volta a marca de antes (o servidor só aceita de quem enviou, até 2 minutos depois) */
   async function desfazerEnvio(c) {
@@ -450,7 +456,7 @@
     if (TS.demo) { TS.avisar('Na apresentação o WhatsApp não abre (número fictício). No painel de verdade, o servidor confere antes se este cliente pode receber mensagem (intervalo da loja, não quer mensagens, fila do robô).'); return false; }
     const w = window.open('about:blank', '_blank');
     try {
-      const r = await fetch('/api/contatos/conferir', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-Painel': '1' }, body: JSON.stringify({ loja: lojaIdDe(c), cpf: c.cpf, espera: o.espera === true }) });
+      const r = await fetch('/api/contatos/conferir', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-Painel': '1' }, body: JSON.stringify({ loja: lojaIdDe(c), cpf: c.cpf, para: c.wpp || '', espera: o.espera === true }) });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) { if (w) w.close(); if (j.bloqueado) { TS.avisar(j.erro, { titulo: 'WhatsApp não aberto' }); await recarregarContatos(); } else TS.avisarErro(new Error(j.erro || 'Não deu certo.')); return false; }
     } catch (e) { if (w) w.close(); TS.avisarErro(e); return false; }
@@ -1898,9 +1904,21 @@
         ct.em ? h('button', { type: 'button', class: 'btn', onclick: () => agir('limpar') }, 'Desfazer contato') : null,
         // Conversas do WhatsApp: só admin e franqueado (decisão do dono)
         c.wpp && (TS.demo || (TS.eu && ['admin', 'franqueado'].includes(TS.eu.perfil))) && TS.pages.conversas ? h('button', { type: 'button', class: 'btn', title: 'Abre a conversa do WhatsApp da loja com este cliente (Clientes → Conversas).', onclick: () => { TS.abrirConversa = TS.foneConversa ? TS.foneConversa(c) : ''; document.querySelectorAll('.camada-cheia').forEach((x) => x.remove()); document.body.classList.remove('com-camada'); location.hash = '#conversas'; } }, '💬 Ver conversa') : null,
-        h('button', { type: 'button', class: 'btn ghost-danger', title: 'LGPD: a pessoa sai das listas de contato e da exportação para WhatsApp', onclick: () => { if (confirm('Marcar que este cliente NÃO quer receber mensagens?')) agir('optout'); } }, 'Não quer mensagens')));
+        h('button', { type: 'button', class: 'btn ghost-danger', title: 'LGPD: a pessoa sai das listas de contato e da exportação para WhatsApp', onclick: () => { if (confirm('Marcar que este cliente NÃO quer receber mensagens?')) naoQuer(); } }, 'Não quer mensagens')));
     };
     const agir = async (acao, motivo) => { try { await marcar(c, acao, motivo); pintar(); } catch (e) { TS.avisarErro(e); } };
+    // "não quer mensagens": diz na hora de quais campanhas o cliente saiu (pedido do dono, NAOQUER-02)
+    const naoQuer = async () => {
+      let r;
+      try { r = await marcar(c, 'optout'); } catch (e) { TS.avisarErro(e); return; }
+      pintar();
+      const nome = (TS.nomeMsgDe && TS.nomeMsgDe(c)) || c.nome || 'Este cliente';
+      const camps = r.campanhas;
+      const onde = TS.demo ? 'Na apresentação nada é gravado; no painel de verdade ele sai também das listas de campanha em que estava esperando.'
+        : !camps || !camps.length ? 'Não estava esperando mensagem em nenhuma lista de campanha.'
+          : `Saiu ${camps.length === 1 ? 'da lista da campanha' : `das listas de ${camps.length} campanhas`}: ${camps.join(', ')}.`;
+      TS.avisar(`🚫 ${nome} não vai mais receber mensagens do painel nem do robô. ${onde} Para desfazer: "Voltou a aceitar", aqui na ficha.`);
+    };
     pintar();
     return box;
   }

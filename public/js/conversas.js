@@ -121,6 +121,8 @@
   /** cor do círculo: uma de 5 classes fixas (cv-av-0…4 em styles.css), sempre a mesma para o mesmo celular */
   const corAv = (chave) => 'cv-av-' + ([...String(chave)].reduce((x, c) => x + c.charCodeAt(0), 0) % 5);
 
+  /** cliente pediu para não receber mensagens (ficha, fila ou "parar" ao robô) — a marca da lista de contatos da loja */
+  const naoQuerDe = (cliente) => { const ct = cliente && TS.cliApi && TS.cliApi.contatoDe(cliente); return !!(ct && ct.optout); };
   TS.pages.conversas = function (root) {
     if (TS.subClientes) root.append(TS.subClientes('conversas'));
     root.append(h('div', { class: 'page-head' }, h('div', null, h('h1', { class: 'page-title' }, 'Conversas'),
@@ -176,6 +178,17 @@
     // computador: as duas colunas ocupam a altura que sobra da janela
     const aoRedimensionar = () => { if (!corpo.isConnected) { window.removeEventListener('resize', aoRedimensionar); return; } ajustarAltura(); };
     window.addEventListener('resize', aoRedimensionar, { passive: true });
+
+    // "não quer mensagens" marcado (ou desfeito) na ficha aberta por "Ver cliente": a marca aparece na hora na lista e no topo
+    const aoMudarContato = () => {
+      if (!corpo.isConnected) { window.removeEventListener('ts-contato', aoMudarContato); return; }
+      if (!dados) return;
+      pintarItens();
+      if (st.aberta) abrir(st.aberta, true);
+    };
+    window.addEventListener('ts-contato', aoMudarContato);
+    // a marca "não quer mensagens" vem da lista de contatos da loja: busca uma vez ao abrir a tela (fora de Clientes ela não vem)
+    if (TS.cliApi && TS.cliApi.recarregarContatos) TS.cliApi.recarregarContatos().then(aoMudarContato).catch(() => {});
 
     const carregar = async () => {
       clearTimeout(timer);
@@ -283,8 +296,9 @@
           h('span', { class: 'cv-item-l1' }, h('b', { class: 'cv-item-nome' }, x.nomeTxt), h('small', { class: 'cv-item-hora' }, quando(x.ult.em))),
           x.cadTxt ? h('small', { class: 'muted cv-item-cad' }, `cadastro: ${x.cadTxt}`) : null,
           h('small', { class: 'cv-item-ult' }, x.ult.robo ? '🤖 ' : '', x.ultTxt),
-          x.semResposta || !x.cliente ? h('span', { class: 'cv-item-et' }, ...[
+          x.semResposta || !x.cliente || naoQuerDe(x.cliente) ? h('span', { class: 'cv-item-et' }, ...[
             x.semResposta ? h('span', { class: 'badge warn', title: 'Mensagens do cliente depois da última resposta da loja: a conversa espera resposta.' }, `${fmt.int(x.semResposta)} sem resposta`) : null,
+            naoQuerDe(x.cliente) ? h('span', { class: 'badge erro', title: 'Pediu para não receber mensagens: o painel e o robô não enviam.' }, '🚫 não quer') : null,
             x.cliente ? null : h('span', { class: 'badge cinza' }, 'sem cadastro'),
           ].filter(Boolean)) : null)));
     }
@@ -342,6 +356,7 @@
         cliente.ultima != null ? h('span', { class: 'chip' }, 'última compra ', fmt.date(TS.dayToIso(cliente.ultima))) : null,
         fx ? h('span', { class: 'chip' }, `★ ${fmt.int(fx.saldo || 0)} pts`) : null,
         cliente.vendedoraPref ? h('span', { class: 'chip' }, 'atende: ', cliente.vendedoraPref) : null,
+        naoQuerDe(cliente) ? h('span', { class: 'badge erro cv-naoquer', title: 'Pediu para não receber mensagens: o painel e o robô não enviam para este cliente e ele saiu das listas de campanha. Para desfazer: "Ver cliente" → "Voltou a aceitar".' }, '🚫 não quer mensagens') : null,
         cliente.celVinc && TS.cliApi.mesmoTel(cliente.celular, chave) ? h('small', { class: 'muted cv-vinc-nota' }, `Número ligado a este cliente pelo painel${cliente.celVinc.em ? ' em ' + fmt.date(cliente.celVinc.em.slice(0, 10)) : ''}: é o que vale no Hoje, nas campanhas e no robô.`) : null,
       ].filter(Boolean)) : h('div', { class: 'cv-ficha' }, h('span', { class: 'badge cinza' }, 'sem cadastro'), h('small', { class: 'muted' }, ' Este celular não bate com nenhum cliente do painel.'));
       // mensagens, com o dia em separador

@@ -1060,7 +1060,7 @@ app.post('/api/contatos/conferir', express.json({ limit: '2kb' }), (req, res) =>
   const { loja, cpf } = req.body || {};
   if (!req.lojas.some((l) => l.id === loja)) return res.status(400).json({ erro: 'Loja inválida.' });
   if (!CPF_OK.test(String(cpf || ''))) return res.status(400).json({ erro: 'CPF inválido.' });
-  const b = require('./src/zapfila').envioManualBloqueado({ lojaId: loja, cpf, contato: lerContatos(loja)[cpf], campanha: '', agora: Date.now(), soOptout: req.body.espera === true });
+  const b = require('./src/zapfila').envioManualBloqueado({ lojaId: loja, cpf, contato: lerContatos(loja)[cpf], campanha: '', agora: Date.now(), soOptout: req.body.espera === true, para: String(req.body.para || '') });
   if (b) return res.status(409).json({ erro: b.replace(/^Mensagem não enviada: /, 'O WhatsApp não foi aberto: '), bloqueado: true });
   res.json({ ok: true });
 });
@@ -1096,8 +1096,9 @@ app.post('/api/contatos', express.json({ limit: '4kb' }), (req, res) => {
   // regra forte (decisão do dono): mensagem pelo painel (Hoje, ficha, Campanhas) é conferida AQUI, antes de o WhatsApp abrir —
   // nunca para quem não quer, para quem já recebeu dentro do intervalo da loja nem para quem o robô vai mandar hoje
   if (acao === 'contatado' && req.body.envio === true) {
-    const b = require('./src/zapfila').envioManualBloqueado({ lojaId: loja, cpf, contato: c, campanha: String(req.body.campanha || ''), agora: Date.now() });
+    const b = require('./src/zapfila').envioManualBloqueado({ lojaId: loja, cpf, contato: c, campanha: String(req.body.campanha || ''), agora: Date.now(), para: String(req.body.para || '') });
     if (b) return res.status(409).json({ erro: b, bloqueado: true });
+    require('./src/zapfila').registrarEnvioNumero(loja, String(req.body.para || ''), cpf, req.user);
   }
   if (acao === 'contatado') {
     // envio pelo painel: guarda a marca anterior para o "Desfazer" (2 minutos, só quem enviou)
@@ -1112,8 +1113,11 @@ app.post('/api/contatos', express.json({ limit: '4kb' }), (req, res) => {
   if (Object.keys(c).length) todos[cpf] = c; else delete todos[cpf];
   C.gravarAtomico(arqContatos(loja), JSON.stringify(todos), 0o640);
   if (acao === 'optout' || acao === 'aceita') C.auditar(req.user, acao === 'optout' ? 'cliente não quer contato' : 'cliente voltou a aceitar contato', loja, { loja, cpf: cpf.slice(0, 3) + '…' + cpf.slice(-2) });
+  // não quer mensagens: sai na hora dos pendentes das campanhas e a tela diz de quais (pedido do dono, 23/11/2026; NAOQUER-01)
+  let campanhas;
+  if (acao === 'optout') { try { campanhas = require('./src/campanhas').tirarNaoQuer(loja, cpf, req.user); } catch (e) { console.error('[contatos] tirar das campanhas:', e.message); campanhas = []; } }
   const { desfazer: _d, ...sai } = todos[cpf] || {};
-  res.json({ ok: true, contato: todos[cpf] ? sai : null, desfazerAte: _d ? new Date(Date.now() + DESFAZER_MS).toISOString() : null });
+  res.json({ ok: true, contato: todos[cpf] ? sai : null, desfazerAte: _d ? new Date(Date.now() + DESFAZER_MS).toISOString() : null, ...(campanhas ? { campanhas } : {}) });
 });
 
 // ---------- Clientes → Conversas (decisão do dono): conversas do WhatsApp da loja; só admin e franqueado da loja ----------

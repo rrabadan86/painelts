@@ -307,7 +307,7 @@ function voltouAAceitar(id, cpf) {
  *   tela, campanha ou do robô) · está na fila de hoje de uma campanha do robô ligado (o robô é quem manda; `campanha` = a própria
  *   campanha da fila manual não conta).
  */
-function envioManualBloqueado({ lojaId, cpf, contato, campanha, agora = Date.now(), soOptout = false }) {
+function envioManualBloqueado({ lojaId, cpf, contato, campanha, agora = Date.now(), soOptout = false, para = '' }) {
   const loja = C.get().lojas.find((l) => l.id === lojaId);
   const intervalo = (loja && loja.wppIntervalo) || 21;
   const ct = contato || {};
@@ -321,6 +321,16 @@ function envioManualBloqueado({ lojaId, cpf, contato, campanha, agora = Date.now
     const deQuem = ct.por === 'robô' ? 'pelo robô do WhatsApp' : ct.por ? `por ${ct.por}` : '';
     return `Mensagem não enviada: este cliente já recebeu mensagem em ${quando}${deQuem ? ' ' + deQuem : ''}${ct.motivo ? ` (${String(ct.motivo).replace(/^Campanha: /, 'campanha ')})` : ''}. Regra da loja: uma mensagem a cada ${intervalo} dias por cliente — a próxima pode sair a partir de ${ate}.`;
   }
+  // o MESMO CELULAR de outro cliente (mãe e filha, casal: CPFs diferentes, um WhatsApp só) já recebeu dentro do intervalo —
+  // a trava é pelo número, como no robô (visto pelo dono em 23/11/2026: Giovana recebeu do robô e a Pallomma, no mesmo número, pela equipe no dia seguinte)
+  if (NUMERO.test(String(para || ''))) {
+    const ja = porChave(lerJson(lojaId, 'enviados'))[foneChave(para)];
+    if (ja && ja.cpf !== cpf && agora - Date.parse(ja.em) < intervalo * 864e5) {
+      const quando = new Date(ja.em).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+      const ate = new Date(Date.parse(ja.em) + intervalo * 864e5).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+      return `Mensagem não enviada: este celular é o mesmo de outro cliente, que já recebeu mensagem nele em ${quando}${ja.por === 'robô' || !ja.por ? ' pelo robô do WhatsApp' : ' por ' + ja.por}. Regra da loja: uma mensagem a cada ${intervalo} dias por número — a próxima pode sair a partir de ${ate}.`;
+    }
+  }
   if (temEstado(lojaId) && lerEstado(lojaId).ligado && !lerEstado(lojaId).pausa) {
     const c = campanhasDoRobo(CAMP.ler(lojaId)).find((x) => x.id !== campanha && x.rodadas[0].lista.some((it) => it.cpf === cpf && it.st === 'p'));
     if (c) return `Mensagem não enviada: este cliente está na fila do robô do WhatsApp (${c.nome}). O robô envia sozinho; mandar pela equipe também seria mensagem em dobro.`;
@@ -328,11 +338,20 @@ function envioManualBloqueado({ lojaId, cpf, contato, campanha, agora = Date.now
   return null;
 }
 
+/** envio pela equipe aceito: o número entra no mesmo registro do robô ("enviados"), para a trava valer por número dos dois lados */
+function registrarEnvioNumero(lojaId, para, cpf, por, agora = Date.now()) {
+  if (!NUMERO.test(String(para || ''))) return;
+  const env = porChave(lerJson(lojaId, 'enviados'));
+  for (const k of Object.keys(env)) if (agora - Date.parse(env[k].em) > 120 * 864e5) delete env[k];
+  env[foneChave(para)] = { em: new Date(agora).toISOString(), cpf, por };
+  gravarJson(lojaId, 'enviados', env);
+}
+
 /** próximo horário dentro do ritmo "de X a Y segundos" (sorteio; o gerador é injetado nos testes) */
 const sortear = (cfg, agora, rnd = Math.random) => agora + (cfg.min + Math.floor(rnd() * (cfg.max - cfg.min + 1))) * 1000;
 
 module.exports = {
   foneChave, porChave, janelaDoDia, agenda, temFuncionamento, MARGEM_FECHA_MIN, MARGEM_ABRE_MIN, SEM_WPP_PAUSA,
-  envioManualBloqueado, PADRAO, PREPARO_DIAS, ORIGEM_RESPOSTA, ligarNumeroAoCliente, voltouAAceitar, MOTIVOS, NUMERO, fim4, cfgDe, validarCfg, relogio, enviadosHoje, campanhasDoRobo, decidir, proxima, sortear,
+  envioManualBloqueado, registrarEnvioNumero, PADRAO, PREPARO_DIAS, ORIGEM_RESPOSTA, ligarNumeroAoCliente, voltouAAceitar, MOTIVOS, NUMERO, fim4, cfgDe, validarCfg, relogio, enviadosHoje, campanhasDoRobo, decidir, proxima, sortear,
   lerEstado, temEstado, mudarEstado, lerContatos, mudarContato, lerPreparo, gravarPreparo, limparPreparo, lerJson, gravarJson,
 };

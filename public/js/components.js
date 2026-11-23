@@ -799,7 +799,7 @@
    */
   TS.perguntar = function (titulo, o = {}) {
     return new Promise((resolver) => {
-      const fundo = h('div', { class: 'cp-modal-bg' });
+      const fundo = h('div', { class: 'cp-modal-bg ts-aviso-bg' });
       let feito = false;
       const sair = (v) => { if (feito) return; feito = true; fundo.remove(); resolver(v); };
       const campo = h('input', { class: 'f-input', type: 'text', maxlength: o.max || 200, value: o.valor || '', placeholder: o.dica || '', 'aria-label': o.rotulo || titulo });
@@ -836,7 +836,7 @@
   /** TS.avisar('Este cliente está sem celular válido.') — aviso simples com "Entendi"; devolve Promise que fecha junto */
   TS.avisar = function (msg, o = {}) {
     return new Promise((resolver) => {
-      const fundo = h('div', { class: 'cp-modal-bg' });
+      const fundo = h('div', { class: 'cp-modal-bg ts-aviso-bg' });
       let feito = false;
       const sair = () => { if (feito) return; feito = true; fundo.remove(); resolver(); };
       const ok = h('button', { type: 'button', class: 'btn primary', onclick: sair }, o.botao || 'Entendi');
