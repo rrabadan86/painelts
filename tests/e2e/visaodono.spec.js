@@ -210,16 +210,16 @@ test('Lojas lado a lado: projeção e zerados de cada loja batem com os da próp
   if (par) expect((await cel('Estoque parado'))).toContain(`${par[1]} produto`);
 });
 
-test('Resultado: linha "− Perdas" depois do custo dos produtos, reduz o resultado e a tela diz quanto', async ({ page }, info) => {
+test('Resultado: linha "− Perdas" depois do lucro sem fixos (três degraus, LUCRO-01), reduz o resultado e a tela diz quanto', async ({ page }, info) => {
   await abrir(page);
   const perdas = await page.evaluate(async () => (await (await fetch(TS.api('perdas?loja=' + TS.state.loja))).json()).meses);
   await ir(page, 'dre');
   const t = page.locator('main .dre-t').first();
   await expect(t).toBeVisible({ timeout: 30000 });
   const rotulos = await t.locator('tbody tr td.l').allInnerTexts();
-  const iC = rotulos.findIndex((x) => x.includes('Custo dos produtos')), iP = rotulos.findIndex((x) => x.includes('Perdas')), iL = rotulos.findIndex((x) => x.includes('Lucro bruto'));
-  expect(iP).toBe(iC + 1);
-  expect(iL).toBe(iP + 1);
+  const iS = rotulos.findIndex((x) => x.includes('Lucro sem fixos')), iP = rotulos.findIndex((x) => x.includes('Perdas'));
+  expect(iS).toBeGreaterThan(0);
+  expect(iP).toBe(iS + 1); // as perdas não são custo do que foi vendido: vêm depois do lucro sem fixos, antes dos custos fixos
   // a conta: com as perdas o resultado é menor exatamente no valor delas
   const r = await page.evaluate(async (pd) => {
     const M = await TS.custosLoja();
@@ -230,8 +230,8 @@ test('Resultado: linha "− Perdas" depois do custo dos produtos, reduz o result
   }, perdas);
   expect(r, 'a apresentação tem perdas em algum mês').not.toBeNull();
   expect(r.sem - r.com).toBeCloseTo(r.total, 2);
-  expect(r.bruto).toBeCloseTo(r.total, 2);
-  expect(r.contrib).toBeCloseTo(r.total, 2);
+  expect(r.bruto).toBeCloseTo(0, 2); // o lucro bruto e o lucro sem fixos não levam as perdas
+  expect(r.contrib).toBeCloseTo(0, 2);
   expect(r.projIgual).toBe(true); // na projeção as perdas não crescem com as vendas
   // o mês com perdas: a linha discreta diz quanto e como seria sem elas
   await page.locator('.dre-topo select').selectOption(r.ym);

@@ -112,7 +112,8 @@ test('Resultado: "Exportar para o contador" baixa a planilha do mês fechado com
   expect(res.getCell('A5').value).toBe('Faturamento');
   expect(res.getCell('B5').value).toBeGreaterThan(0);
   const linhas = []; res.eachRow((r) => linhas.push(String(r.getCell(1).value)));
-  expect(linhas).toEqual(expect.arrayContaining(['= Receita líquida', '= Resultado do mês']));
+  expect(linhas).toEqual(expect.arrayContaining(['= Lucro bruto', '= Lucro sem fixos', '= Resultado do mês'])); // três degraus (LUCRO-01)
+  expect(linhas).not.toContain('= Receita líquida');
   expect(wb.getWorksheet('Vendas por dia').getCell('D4').value).toBe('Cartão de crédito');
   expect(wb.getWorksheet('Vendas por dia').rowCount).toBeGreaterThan(20);
   expect(String(wb.getWorksheet('Despesas').getCell('A5').value)).not.toBe('Nada neste mês.');
