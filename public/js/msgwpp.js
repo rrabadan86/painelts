@@ -15,6 +15,24 @@
     return t;
   }
 
+  /** {apresentacao}: modelos editáveis em Configurações → loja → Mensagens (decisão do dono, 23/11/2026). Padrão sem o artigo
+   *  ("Aqui é Gabrielly"/"Aqui é Felipe"): o antigo "Aqui é a …" saía errado para vendedor. Só aceita {vendedora} e {loja}. */
+  const APRES_PADRAO = { com: 'Aqui é {vendedora}, da {loja}', sem: 'Aqui é a equipe da {loja}' };
+  /** texto da apresentação: com a vendedora que mais atende o cliente ou, sem ela, o da equipe */
+  function apresentacao(modelos, vendedora, loja) {
+    const m = modelos || {};
+    const mod = vendedora ? (String(m.com || '').trim() || APRES_PADRAO.com) : (String(m.sem || '').trim() || APRES_PADRAO.sem);
+    return mod.replace(/\{vendedora\}/g, vendedora || '').replace(/\{loja\}/g, loja || 'Tea Shop').replace(/\{[a-z]+\}/g, '').replace(/ {2,}/g, ' ').trim();
+  }
+  /** modelo válido para gravar: até 120 caracteres, uma linha, só {vendedora} e {loja}; vazio = o padrão */
+  function apresentacaoValida(t) {
+    const s = String(t == null ? '' : t).replace(/[\r\n\t]+/g, ' ').trim();
+    if (!s) return '';
+    if (s.length > 120) return null;
+    const outros = (s.match(/\{([a-z]+)\}/g) || []).filter((x) => x !== '{vendedora}' && x !== '{loja}');
+    return outros.length ? null : s;
+  }
+
   /** número para o robô a partir do link do envio manual ("https://wa.me/5562999998888" → "5562999998888") */
   const paraDoLink = (wpp) => { const m = /^https:\/\/wa\.me\/(55\d{10,11})$/.exec(String(wpp || '')); return m ? m[1] : null; };
   /** o mesmo link que a tela monta a partir do celular do cadastro (aceita com o 55 na frente) */
@@ -85,7 +103,7 @@
 
   /** período da campanha: 'antes' (ainda não começou), 'depois' (já terminou) ou null (dentro, ou sem datas). dia = 'AAAA-MM-DD' de Brasília */
   const foraDoPeriodo = (c, dia) => (c && c.inicio && dia < c.inicio ? 'antes' : c && c.fim && dia > c.fim ? 'depois' : null);
-  const API = { MOTIVOS_RESUMO, RESUMO_PADRAO, NOME_RESUMO, ehResumo, textosDe, foraDoPeriodo, CAMPOS, saudacao, montar, paraDoLink, linkDoCelular, linkComTexto, listaProdutos, nomesProdutos, extras, textos, variacaoDaVez, motivoCampanha, prazoCampanha, bloqueio, textoBloqueio };
+  const API = { APRES_PADRAO, apresentacao, apresentacaoValida, MOTIVOS_RESUMO, RESUMO_PADRAO, NOME_RESUMO, ehResumo, textosDe, foraDoPeriodo, CAMPOS, saudacao, montar, paraDoLink, linkDoCelular, linkComTexto, listaProdutos, nomesProdutos, extras, textos, variacaoDaVez, motivoCampanha, prazoCampanha, bloqueio, textoBloqueio };
   if (typeof module !== 'undefined' && module.exports) { module.exports = API; return; }
   TS.msgWpp = API;
 })();

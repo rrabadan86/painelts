@@ -452,6 +452,7 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 | CAMP-RET-01…04 | Retorno da campanha: só conta compra depois do envio; prazo fechado só depois do último dia; efeito = quem recebeu − quem não recebeu na mesma janela | `public/js/campretorno.js` | `campretorno.test` CAMP-RET-01…04 | ✅ |
 | CAMP-CMP-01…03 | Grupo de comparação (~10%, lista com 50+, só pendentes, sorteio estável por CPF + campanha): criado só no servidor, nunca enviado nem pendente; a recorrente antiga passa a guardar na próxima lista | `campretorno.js`; `src/campanhas.js` | `campretorno.test` CAMP-CMP-01…03 | ✅ |
 | REC-01…02 | Recompra em 90 dias: só entra quem já teve o prazo inteiro; bordas (90 dias exatos entra; compra no mesmo dia não é volta; sem elegíveis não vira 0%) | `public/js/recompra.js` | `recompra.test` REC-01…02 | ✅ |
+| WPP-APRES-01 | {apresentacao} editável em Configurações → loja → Mensagens (decisão do dono, 23/11/2026): dois modelos (com e sem vendedora), só {vendedora} e {loja}, até 120 caracteres; padrão sem artigo ("Aqui é Gabrielly, da …"); o mesmo texto na tela e no robô | `msgwpp.js` `apresentacao`/`apresentacaoValida`, `clientes.js` `valoresWpp`, `admin-api.js` `wpp-modelos`, `config.js` `blocoWpp` | `seguranca.test`, `zapauto.test`, `zap.spec` | ✅ |
 
 ## 14. Orçamento (ORC)
 
@@ -667,11 +668,11 @@ Contado pelas linhas da matriz (`node scripts/matriz.js --resumo`; o guardião c
 | Preços, custos e notas de entrada (PRC) | 40 | 13 | 8 | 19 |
 | Resultado e rentabilidade (RES) | 13 | 5 | 3 | 5 |
 | Vendas e métricas (VEN) | 27 | 12 | 8 | 7 |
-| Clientes, fidelidade, WhatsApp e lista de espera (CLI) | 37 | 25 | 8 | 4 |
+| Clientes, fidelidade, WhatsApp e lista de espera (CLI) | 38 | 26 | 8 | 4 |
 | Orçamento (ORC) | 7 | 5 | 1 | 1 |
 | Checklist, fechamento e avisos (OPE) | 13 | 6 | 3 | 4 |
 | Estrutura do painel e atualização (APP) | 38 | 20 | 12 | 6 |
-| **Total** | **426** | **195 (46%)** | **121 (28%)** | **110 (26%)** |
+| **Total** | **427** | **196 (46%)** | **121 (28%)** | **110 (26%)** |
 <!-- resumo:fim -->
 
 ## Próximas etapas

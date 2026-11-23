@@ -128,7 +128,7 @@ test('valores dos campos e número de cada pendente: os que a tela calcula', asy
   const { saudacao, ...v } = ana.v;
   assert.ok(['Bom dia', 'Boa tarde', 'Boa noite'].includes(saudacao), 'a saudação é refeita na hora do envio');
   assert.deepStrictEqual(v, { nome: 'Ana', nomecompleto: 'Ana Souza', loja: 'Loja Um', cha: 'EARL GREY', ultimocha: 'SENCHA', pacote: '100g', vendedora: 'Maria',
-    pontos: '0', vence: '—', vencepts: '0', ultimacompra: '10/01/2026', dias: '53', aniversario: '15/03', visitas: '2', apresentacao: 'Aqui é a Maria, da Loja Um', chaoferta: 'EARL GREY' });
+    pontos: '0', vence: '—', vencepts: '0', ultimacompra: '10/01/2026', dias: '53', aniversario: '15/03', visitas: '2', apresentacao: 'Aqui é Maria, da Loja Um', chaoferta: 'EARL GREY' });
   assert.deepStrictEqual({ cha: bia.v.cha, pacote: bia.v.pacote, vendedora: bia.v.vendedora, dias: bia.v.dias, visitas: bia.v.visitas, aniversario: bia.v.aniversario },
     { cha: 'chá', pacote: '', vendedora: 'Joana', dias: '12', visitas: '1', aniversario: '—' });
   assert.strictEqual(ana.espera, undefined);

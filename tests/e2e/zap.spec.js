@@ -17,6 +17,22 @@ test.describe('robô do WhatsApp', () => {
     expect(await alvo.innerText()).not.toMatch(/(^|\s)(null|undefined|NaN)(\s|$)/m);
   };
 
+  test('WPP-APRES-01: Configurações → loja → Mensagens: a apresentação ({apresentacao}) é editável, com exemplo ao lado', async ({ page }) => {
+    await page.evaluate(() => { location.hash = '#config'; });
+    await page.locator('table.cfg-lojas-t .cfg-abrir').first().click();
+    await page.locator('.cfg-loja .cfg-sub a', { hasText: 'Mensagens' }).evaluate((a) => a.click());
+    const bloco = page.locator('.cfg-apres');
+    await expect(bloco).toContainText('Apresentação nas mensagens');
+    const com = bloco.getByLabel('Apresentação com vendedora'), prev = bloco.locator('.cfg-apres-prev').first();
+    await expect(prev).toContainText('Exemplo: Aqui é Gabrielly, da'); // padrão sem o artigo
+    await com.fill('Oi! Sou {vendedora}, da {loja}');
+    await expect(prev).toContainText('Exemplo: Oi! Sou Gabrielly, da');
+    await com.fill('Sou {vendedora} {cpf}');
+    await expect(prev).toContainText('Use só {vendedora} e {loja}');
+    await semVazar(page, bloco);
+    expect(erros).toEqual([]);
+  });
+
   test('Configurações → loja → Mensagens: cartão com conexão, ligar/pausar, ritmo, horário, dias, máximo e falhas', async ({ page }) => {
     await page.evaluate(() => { location.hash = '#config'; });
     await page.locator('table.cfg-lojas-t .cfg-abrir').first().click();

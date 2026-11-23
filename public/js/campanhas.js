@@ -525,7 +525,7 @@
           h('p', { class: 'muted' }, 'Motivos que o robô envia (ordem de importância: o cliente que está em mais de um recebe só a do primeiro). Os não marcados continuam na tela Hoje para a equipe.'),
           linhas, resumoTxt,
           h('label', { class: 'cp-campo' }, h('span', null, 'Máximo de mensagens por dia nesta campanha', TS.dica('Comece baixo (15 a 20) e suba aos poucos: mais mensagens automáticas aumentam o risco de o WhatsApp restringir o número da loja. O robô também respeita o máximo por dia do número.')), limite),
-          h('small', { class: 'muted' }, 'Campos: {nome}, {apresentacao} ("Aqui é a Gabrielly, da …"), {cha}, {chaoferta}, {pontos}, {vence}, {loja}. Depois de criar, use "🤖 Ligar o robô para esta campanha"; dá para desligar quando quiser.'),
+          h('small', { class: 'muted' }, 'Campos: {nome}, {apresentacao} ("Aqui é Gabrielly, da …", texto em Configurações → Mensagens), {cha}, {chaoferta}, {pontos}, {vence}, {loja}. Depois de criar, use "🤖 Ligar o robô para esta campanha"; dá para desligar quando quiser.'),
           h('div', { class: 'cfg-acoes' }, salvar))));
   }
 

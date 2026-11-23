@@ -1026,15 +1026,34 @@
       }));
     };
     pintarW();
+    // {apresentacao} (decisão do dono, 23/11/2026): quem fala com o cliente nas campanhas, no robô e no Hoje
+    const AP = TS.msgWpp.APRES_PADRAO, ap = l.wppApresentacao || {};
+    const apCom = inp({ value: ap.com || '', placeholder: AP.com, maxlength: 120, 'aria-label': 'Apresentação com vendedora' });
+    const apSem = inp({ value: ap.sem || '', placeholder: AP.sem, maxlength: 120, 'aria-label': 'Apresentação sem vendedora' });
+    const lojaNome = l.nome || 'Tea Shop';
+    const prevCom = h('small', { class: 'muted cfg-apres-prev' }), prevSem = h('small', { class: 'muted cfg-apres-prev' });
+    const prever = () => {
+      const m = { com: apCom.value, sem: apSem.value };
+      const ok = (x) => TS.msgWpp.apresentacaoValida(x) != null;
+      prevCom.textContent = ok(apCom.value) ? 'Exemplo: ' + TS.msgWpp.apresentacao(m, 'Gabrielly', lojaNome) : 'Use só {vendedora} e {loja}, até 120 caracteres.';
+      prevSem.textContent = ok(apSem.value) ? 'Exemplo: ' + TS.msgWpp.apresentacao(m, '', lojaNome) : 'Use só {vendedora} e {loja}, até 120 caracteres.';
+      prevCom.classList.toggle('neg', !ok(apCom.value)); prevSem.classList.toggle('neg', !ok(apSem.value));
+    };
+    apCom.addEventListener('input', prever); apSem.addEventListener('input', prever); prever();
+    const blocoApres = h('div', { class: 'cfg-apres' },
+      h('h4', null, 'Apresentação nas mensagens ', TS.dica('O texto que entra no lugar de {apresentacao} nas campanhas, na Campanha Resumo diário do robô e no Hoje: quem está falando com o cliente. A vendedora é a que mais atende aquele cliente (primeiro nome). Vazio = o texto padrão.')),
+      campo('Com a vendedora', apCom, 'Campos: {vendedora} e {loja}. Padrão: "' + AP.com + '" (sem "a" ou "o", serve para vendedora e vendedor).'), prevCom,
+      campo('Sem vendedora', apSem, 'Quando o cliente não tem uma vendedora que mais o atende. Campo: {loja}.'), prevSem);
     const intervalo = inp({ type: 'number', min: 7, max: 90, value: l.wppIntervalo || 21, style: { width: '90px' } });
     sec0.append(h('div', { class: 'cfg-inline cfg-wpp-int' }, h('b', null, 'Uma mensagem a cada'), intervalo, h('span', null, 'dias por cliente'),
         TS.dica('Trava contra mensagem insistente: quem recebeu mensagem da loja (Hoje, ficha do cliente ou campanha) não recebe outra antes desse prazo. Vale para todas as telas; numa campanha dá para pedir um prazo maior.')),
       h('p', { class: 'muted' }, 'Textos que aparecem prontos ao abrir o WhatsApp de um cliente na tela Clientes. Use {nome} (primeiro nome), {loja} e {cha} (chá favorito do cliente).'),
       corpo,
+      blocoApres,
       h('div', { class: 'cfg-acoes' },
         h('button', { type: 'button', class: 'btn', onclick: () => { if (lista.length >= 12) return; lista.push({ nome: 'Nova mensagem', texto: 'Oi, {nome}! ' }); pintarW(); } }, '+ Mensagem'),
         h('button', { type: 'button', class: 'btn', onclick: () => { lista.splice(0, lista.length, ...(TS.WPP_PADRAO || []).map((m) => ({ ...m }))); pintarW(); } }, 'Voltar ao padrão'),
-        acao('Salvar mensagens', async () => { await api('PUT', `/lojas/${l.id}/wpp-modelos`, { modelos: lista, intervalo: +intervalo.value }); l.wppIntervalo = +intervalo.value; return 'Mensagens e intervalo salvos.'; }, 'btn primary')));
+        acao('Salvar mensagens', async () => { const apresentacao = { com: apCom.value.trim(), sem: apSem.value.trim() }; await api('PUT', `/lojas/${l.id}/wpp-modelos`, { modelos: lista, intervalo: +intervalo.value, apresentacao }); l.wppIntervalo = +intervalo.value; l.wppApresentacao = apresentacao.com || apresentacao.sem ? apresentacao : null; return 'Mensagens, apresentação e intervalo salvos.'; }, 'btn primary')));
     return sec0;
   }
 
