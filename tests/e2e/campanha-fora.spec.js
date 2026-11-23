@@ -12,13 +12,16 @@ async function abrirCriar(page) {
 }
 const total = (page) => async () => +(await page.locator('.cp-contagem b').innerText()).replace(/\D/g, '');
 
-test('CAMP-FORA-04: "✕ Tirar" tira o cliente da lista da campanha, ele aparece em "Tirados à mão" e volta pelo botão', async ({ page }, info) => {
+test('CAMP-FORA-04: "✕" (Tirar) aparece sem rolar de lado e tira o cliente da lista da campanha, ele aparece em "Tirados à mão" e volta pelo botão', async ({ page }, info) => {
   const erros = [];
   page.on('pageerror', (e) => erros.push(e.message));
   await abrirCriar(page);
   await expect.poll(total(page)).toBeGreaterThan(1);
   const antes = await total(page)();
   const botao = page.locator('.cp-tirar').first();
+  // o botão fica à vista, dentro da lista (antes ficava escondido à direita, numa tabela que rolava de lado)
+  const dentro = await botao.evaluate((b) => { const w = b.closest('.table-wrap') || b.closest('.card'); const r = b.getBoundingClientRect(), c = w.getBoundingClientRect(); return r.width > 0 && r.right <= c.right + 1 && w.scrollWidth <= w.clientWidth + 1; });
+  expect(dentro, 'o "✕" de tirar aparece sem rolar a lista para o lado').toBe(true);
   const rotulo = await botao.getAttribute('aria-label');
   const nomeCli = rotulo.replace(/^Tirar /, '').replace(/ da campanha$/, '');
   await botao.click();
