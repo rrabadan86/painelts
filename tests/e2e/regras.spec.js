@@ -1,5 +1,5 @@
 // Contas que já deram problema: saldo de pontos (sincronização + Logs), cupom ↔ nota fiscal, DANFE
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_base');
 
 test.describe('regras', () => {
   test.beforeEach(async ({ page }, info) => {

@@ -1,4 +1,4 @@
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_base');
 
 // Preços: cada coluna tem ⓘ que explica o campo — no cabeçalho (computador) e no rótulo do cartão (celular)
 test('Preços: ⓘ explica a coluna "Preço de venda" no computador e no celular', async ({ page }, info) => {

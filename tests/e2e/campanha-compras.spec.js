@@ -1,4 +1,4 @@
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_base');
 
 // Campanhas → "O que comprou": mínimo de compras do produto escolhido (apresentação, computador e celular)
 test('Campanha: "pelo menos N compras" do produto escolhido diminui a lista e aparece no resumo do critério', async ({ page }, info) => {

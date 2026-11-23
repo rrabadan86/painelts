@@ -1,4 +1,4 @@
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_base');
 
 // Estoque: produto indisponível no Sistema de Pedidos há 90+ dias vira "Fora de linha · liquidar" (não "parado" nem "repor")
 test('Estoque: fora de linha há 3 meses aparece para liquidar, com o motivo', async ({ page }) => {

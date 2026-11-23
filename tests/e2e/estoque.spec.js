@@ -1,4 +1,4 @@
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_base');
 
 // Estoque: tabela única com todos os produtos da planilha do AppNext, busca em todos e aviso de nota lançada depois da planilha
 test('Estoque: tabela única — filtros, busca em todos os produtos, quadros que filtram e nota ainda fora do saldo', async ({ page }) => {

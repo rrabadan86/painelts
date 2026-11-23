@@ -1,4 +1,4 @@
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_base');
 
 // Faixas que rolam para o lado no celular (abas e submenu) são refeitas a cada clique: a opção escolhida continua à vista
 // (antes a faixa voltava para o começo e a última opção sumia).

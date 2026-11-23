@@ -1,6 +1,6 @@
 // Site público do painel (/site e /site/tecnico): abre sem login, sem rolagem para o lado, com as imagens carregadas,
 // e o botão leva à apresentação.
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_base');
 
 test('SITE-04: site público — as duas páginas abrem inteiras e "Testar agora" leva à apresentação', async ({ page }) => {
   const erros = [];

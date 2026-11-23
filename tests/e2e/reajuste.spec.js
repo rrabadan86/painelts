@@ -1,4 +1,4 @@
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_base');
 
 // Nota de entrada com custo maior → "Enviar para a franquia": marca os produtos, edita para/assunto/mensagem e envia
 // (na apresentação nada é enviado: a resposta é simulada)

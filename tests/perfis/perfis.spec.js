@@ -3,7 +3,7 @@
 // (src/telas.js), que a vendedora não vê custo, margem nem dados de clientes (exceto a Lista de espera), que Minha comissão
 // é só dela, que o gerente sem tela de custo não vê custo e que o franqueado só tem a loja dele no seletor.
 // Os testes de servidor (tests/unit/permissoes-telas.test.js, seguranca.test.js) conferem as mesmas regras nas rotas.
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('../e2e/_base');
 const fs = require('fs');
 const path = require('path');
 const T = require('../../src/telas');

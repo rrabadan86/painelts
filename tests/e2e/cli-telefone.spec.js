@@ -1,6 +1,6 @@
 // Clientes → filtro "Telefone" (pedido do dono): acha o cliente pelo celular inteiro ou por parte dele,
 // com ou sem o 55, com ou sem o 9 da frente do celular.
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_base');
 
 test('CLI-TEL: filtro por telefone (inteiro ou parte) na Lista de clientes', async ({ page }) => {
   await page.goto('/apresentacao');

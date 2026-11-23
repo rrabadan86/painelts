@@ -1,6 +1,6 @@
 // GRAF-01: gráfico sempre do tamanho do cartão. Print do dono (23/11/2026): às vezes o gráfico ficava pequeno no canto e o
 // resto do cartão em branco — ele nascia quando o cartão ainda não tinha largura (painel voltando do segundo plano).
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_base');
 
 const abrir = async (page) => { await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS.db && TS.state.loja && TS.state.loja !== 'todas'); };
 const larguras = (page) => page.evaluate(() => [...document.querySelectorAll('main .chart-box canvas')].filter((c) => c.offsetParent).map((c) => ({ c: c.clientWidth, b: c.parentNode.clientWidth })));

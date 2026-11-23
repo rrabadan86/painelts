@@ -1,4 +1,4 @@
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_base');
 
 const guardadas = (page) => page.evaluate(() => new Promise((ok) => {
   const r = indexedDB.open('teashop-painel', 1);

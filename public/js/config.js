@@ -1281,14 +1281,14 @@
         h('td', { class: 'l' }, h('span', { class: 'badge p-' + u.perfil }, PERFIL_NOME[u.perfil]),
           u.perfil === 'gerente' ? h('div', { class: 'muted cfg-telas-resumo' }, u.telas ? `${u.telas.length} tela(s)${u.telas.includes('clientes') ? ' · vê clientes' : ''}` : 'telas padrão') : null,
           u.perfil === 'vendedor' ? h('div', { class: 'muted cfg-telas-resumo' }, u.vendedor ? `nas vendas: ${u.vendedor}` : h('span', { class: 'neg' }, 'sem o nome nas vendas')) : null),
-        h('td', { class: 'l wrap' }, u.lojas.includes('*') ? 'Todas' : u.lojas.map((id) => nomeLoja.get(id) || id).join(', ')),
-        h('td', { class: 'l' }, u.ultimoAcesso ? dt(u.ultimoAcesso) : h('span', { class: 'muted' }, 'nunca')),
+        h('td', { class: 'l wrap', 'data-rot': 'Lojas' }, u.lojas.includes('*') ? 'Todas' : u.lojas.map((id) => nomeLoja.get(id) || id).join(', ')),
+        h('td', { class: 'l', 'data-rot': 'Último acesso' }, u.ultimoAcesso ? dt(u.ultimoAcesso) : h('span', { class: 'muted' }, 'nunca')),
         h('td', { class: 'l' }, !u.ativo ? h('span', { class: 'neg' }, 'Desativado')
           : u.expirado ? h('span', { class: 'neg' }, `Acesso terminou em ${dataBr(u.acessoAte)}`)
             : u.acessoAte ? h('span', null, 'Ativo', h('div', { class: diasAte(u.acessoAte) <= 7 ? 'neg cfg-prazo' : 'muted cfg-prazo' }, `até ${dataBr(u.acessoAte)}${diasAte(u.acessoAte) <= 7 ? ` (${diasAte(u.acessoAte)} dia(s))` : ''}`)) : 'Ativo',
           u.trocarSenha ? h('div', { class: 'cfg-prazo cfg-senha-pend', title: 'No próximo login a pessoa cria a própria senha' }, '🔑 aguardando troca da senha')
             : u.senhaTrocadaEm ? h('div', { class: 'muted cfg-prazo' }, `senha trocada em ${dt(u.senhaTrocadaEm)}`) : null),
-        h('td', null, h('button', { type: 'button', class: 'btn', onclick: () => { state.cfgEdit = state.cfgEdit === u.nome ? null : u.nome; abertos.delete('novoUser'); pintar(); } }, state.cfgEdit === u.nome ? 'Fechar' : 'Editar')));
+        h('td', { class: 'cfg-t-acao' }, h('button', { type: 'button', class: 'btn', onclick: () => { state.cfgEdit = state.cfgEdit === u.nome ? null : u.nome; abertos.delete('novoUser'); pintar(); } }, state.cfgEdit === u.nome ? 'Fechar' : 'Editar')));
       return state.cfgEdit === u.nome ? [tr, h('tr', { class: 'cfg-edit-row' }, h('td', { colspan: 6 }, formUsuario(u)))] : [tr];
     }).flat();
     const tabela = h('div', { class: 'table-wrap free' }, h('table', { class: 't cfg-t' },

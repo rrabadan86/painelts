@@ -1,5 +1,5 @@
 // Dados da apresentação: saem já comprimidos (brotli ou gzip) e iguais ao original; sem compressão para quem não aceita
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_base');
 
 test('dados da apresentação: brotli, gzip e sem compressão trazem o mesmo conteúdo', async ({ request }) => {
   const pedir = async (aceita) => {

@@ -1,6 +1,6 @@
 // Campanha Resumo diário na apresentação: a tela Hoje leva até ela, o formulário mostra os motivos (padrão: validade, pontos
 // vencendo e hora de repor) com o texto de cada um, e a campanha criada tem um cliente por linha com o motivo dele.
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_base');
 
 test.describe('Campanha Resumo diário', () => {
   let erros;

@@ -1,6 +1,7 @@
 // Abre todas as telas da apresentação e procura problemas que já apareceram antes:
 // erro de JavaScript, "null"/"undefined"/"NaN" na tela, aviso de erro, página mais larga que a tela (celular)
-const { test, expect } = require('@playwright/test');
+// e (LARG-01) tabela, grade ou cartão que rola para o lado dentro da tela
+const { test, expect } = require('./_base');
 
 const TELAS = ['inicio', 'resumo', 'comparativos', 'promocao', 'cupons', 'conferencia', 'hoje', 'clilista', 'clientes', 'campanhas', 'espera', 'comissionamento', 'mapa',
   'rentab', 'precos', 'site', 'estoque', 'validade', 'pedido', 'notas', 'nfsaida', 'creditos', 'orcamento', 'checklist', 'inventario', 'dre', 'config'];
@@ -15,6 +16,28 @@ async function irPara(page, tela) {
   // a tela terminou de desenhar: sem "carregando" e com o título
   await page.waitForFunction(() => !document.querySelector('main .loading .spinner') && document.querySelector('main h1, main .page-title, main .card'), null, { timeout: 30000 });
   await page.waitForTimeout(400);
+}
+// LARG-01: nada rola para o lado dentro da tela (tabela, grade, cartão), no computador e no celular.
+// Só as faixas de abas e o submenu rolam de propósito. As exceções abaixo já existiam em 23/11/2026 e estão
+// nos Achados da matriz para corrigir; se uma delas deixar de rolar, o teste pede para tirá-la daqui.
+const ROLA_CONHECIDO = {
+  computador: { dre: ['dre-t'] }, // a 1100 px (a regra vale de 1100 a 1400 px)
+  celular: { dre: ['dre-t'], comparativos: ['rede-t'], promocao: ['est-t'], clientes: ['rfm-t', 'safra-t'], mapa: ['sem-t'] },
+};
+function quemRolaDeLado() {
+  const out = [];
+  for (const e of document.querySelectorAll('main *')) {
+    if (!e.getClientRects().length || e.closest('canvas, svg, .chart-box, .seg, .submenu')) continue;
+    const cs = getComputedStyle(e);
+    if (!['auto', 'scroll', 'hidden'].includes(cs.overflowX) || cs.textOverflow === 'ellipsis' || e.clientWidth < 40) continue;
+    // bloco que a pessoa rola (auto/scroll): qualquer sobra. Bloco que só corta (hidden, ex.: o cartão): sobra de até 16 px é
+    // a letra mais larga do servidor de testes do GitHub cortando a borda de um texto, não algo escondido para rolar
+    if (e.scrollWidth <= e.clientWidth + (cs.overflowX === 'hidden' ? 16 : 2)) continue;
+    const tb = e.querySelector('table');
+    const chave = tb ? [...tb.classList].find((c) => c !== 't' && c !== 't-mob') || 't' : [...e.classList][0] || e.tagName.toLowerCase();
+    out.push({ chave, px: e.scrollWidth - e.clientWidth });
+  }
+  return out;
 }
 const TEXTO_RUIM = /(^|[\s>(\d])(null|undefined|NaN|\[object Object\])(?=$|[\s<).,])/m;
 
@@ -31,6 +54,16 @@ for (const tela of TELAS) {
     // avisos vermelhos de falha (os vermelhos de negócio, como "a promoção não se pagou", são normais)
     const avisosErro = (await page.locator('main .notice.err').allInnerTexts()).filter((t) => /falha|erro|failed|não foi possível|sem permissão/i.test(t));
     expect(avisosErro, 'aviso de falha na tela').toEqual([]);
+    const rolam = await page.evaluate(quemRolaDeLado);
+    if (info.project.name === 'computador') { // a regra vale de 1100 a 1400 px: mede também na menor
+      await page.setViewportSize({ width: 1100, height: 900 }); await page.waitForTimeout(400);
+      for (const r of await page.evaluate(quemRolaDeLado)) if (!rolam.some((x) => x.chave === r.chave)) rolam.push(r);
+    }
+    const conhecidos = (ROLA_CONHECIDO[info.project.name] || {})[tela] || [];
+    const novos = rolam.filter((r) => !conhecidos.includes(r.chave)).map((r) => `${r.chave} (+${r.px}px)`);
+    expect(novos, 'LARG-01: algo rola para o lado dentro da tela (junte informações na mesma célula ou vire cartão)').toEqual([]);
+    const corrigidos = conhecidos.filter((c) => !rolam.some((r) => r.chave === c));
+    expect(corrigidos, 'LARG-01: não rola mais de lado — tire de ROLA_CONHECIDO e do Achado da matriz').toEqual([]);
     if (info.project.name === 'celular') {
       const sobra = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
       expect(sobra, 'página mais larga que a tela do celular').toBeLessThanOrEqual(1);

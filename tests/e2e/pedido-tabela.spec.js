@@ -1,4 +1,4 @@
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_base');
 
 // Estoque → Pedido, tabela de Produtos (apresentação): a página não volta ao mudar uma quantidade, a linha que muda de aba não some
 // na hora, filtro por subgrupo, margem bruta do pacote, classe como ícone no nome e sem a coluna "Lucro sem fixos/dia".

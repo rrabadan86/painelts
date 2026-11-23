@@ -1,6 +1,6 @@
 // ERRTELA-07: erro de JavaScript numa tela vira aviso para o servidor (sem dado pessoal), aparece em
 // Configurações → Erros nas telas e no Início do admin (apresentação: rota de mentira, nada gravado).
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_base');
 
 const abrir = async (page) => { await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS.db && TS.state && TS.state.loja && TS.state.loja !== 'todas'); };
 

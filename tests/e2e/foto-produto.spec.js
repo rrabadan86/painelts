@@ -1,4 +1,4 @@
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_base');
 
 // Foto do produto (TS.foto): miniatura antes do nome dos acessórios no Pedido e nas ⭐ Sugestões; tocar abre a foto grande.
 // Na apresentação as fotos são desenhos fictícios (/api/demo/site/fotos); chá a granel não tem foto.

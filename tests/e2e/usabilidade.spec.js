@@ -1,6 +1,6 @@
 // Usabilidade: janelas no lugar do prompt()/alert(), "lembrar depois" no Início, abas da Rentabilidade,
 // brindes a R$ 0,01 fora da margem por produto, taxas fora do "compre antes" e telas sem a lateral de filtros.
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_base');
 
 const abrir = async (page) => {
   await page.goto('/apresentacao');

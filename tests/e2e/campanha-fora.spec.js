@@ -1,4 +1,4 @@
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_base');
 
 // Campanhas (pedidos do dono de 23/11/2026, apresentação, computador e celular):
 // CAMP-FORA-04 tirar um cliente à mão da lista e trazer de volta; AVISO-SALVAR-01 erro ao salvar abre a janela "Não foi salvo"

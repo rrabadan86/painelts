@@ -1,4 +1,4 @@
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_base');
 
 // Estoque → Validade: segunda validade do chá a granel (6 meses depois que o pacote vai para a lata), na apresentação
 test('Validade: mostra o que está na lata com a data de abertura e os pacotes fechados na ordem de abrir; a data pode ser corrigida', async ({ page }, info) => {

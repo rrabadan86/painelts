@@ -1,6 +1,6 @@
 // Contas oficiais: o mesmo faturamento em todas as telas, vendas da meta, projeção única, comissão só dentro de um mês,
 // quem divide a meta, premiação com mínimo de atendimentos e comparações justas (28 dias, ano anterior = 364 dias).
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_base');
 
 const abrir = async (page) => { await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS.db && TS.state.loja && TS.state.loja !== 'todas' && TS.contas); };
 const ir = (page, tela) => page.evaluate((t) => { location.hash = '#' + t; }, tela);

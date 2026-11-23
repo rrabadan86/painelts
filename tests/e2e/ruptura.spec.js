@@ -1,4 +1,4 @@
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_base');
 
 // Estoque: quadros "Perdendo por falta" e "Dinheiro sobrando" filtram a tabela; abas com contagem e colunas com a conta
 test('Estoque: perdendo venda por falta e dinheiro sobrando — quadros, abas e colunas', async ({ page }) => {

@@ -1,7 +1,7 @@
 // Revisão visual de 22/11/2026 (impeccable, aprovada pelo dono): regras globais de CSS e teclado.
 // VIS-01 barra do topo fixa · VIS-02 texto de exemplo legível · VIS-03 janela dos lotes com Esc e foco
 // VIS-04 Estoque no celular enxuto e "no pedido ›" fora do nome · VIS-05 ⭐ Sugestões sem filtros · VIS-06 ✨ some ao rolar
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_base');
 
 async function abrir(page, hash) {
   await page.goto('/apresentacao');

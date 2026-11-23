@@ -1,4 +1,4 @@
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_base');
 
 // Chás envasados e alimentação (decisão do dono, 23/11/2026): envasado em unidade (o AppNext manda "9,000 kg" = 9 pacotes),
 // lote e validade também para envasados e alimentação (sem abertura), validades diferentes na mesma linha da nota e o aviso de

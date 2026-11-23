@@ -1,6 +1,6 @@
 // Configurações → loja → Metas e Comissão: "Não entram no rateio", "Vendedores sem meta individual" e "Não recebem comissão"
 // escolhem entre os vendedores ativos da loja (pedido do dono, 23/11/2026), nunca texto livre. Na apresentação, sem gravar.
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_base');
 
 test('VEND-REGRAS-01: as três listas de vendedores são escolha entre os vendedores ativos, com ⓘ e "inativo" para nome antigo', async ({ page }) => {
   const erros = [];

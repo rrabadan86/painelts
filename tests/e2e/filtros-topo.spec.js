@@ -1,6 +1,6 @@
 // Filtros em faixa no topo (computador): período na faixa, o resto em "Mais filtros", com etiqueta e contador do que está valendo.
 // No celular os filtros continuam na gaveta aberta pelo botão de filtros.
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_base');
 
 const abrir = async (page) => {
   await page.goto('/apresentacao');

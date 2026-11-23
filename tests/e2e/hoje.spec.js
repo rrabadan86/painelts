@@ -1,7 +1,7 @@
 // Clientes → Hoje depois da revisão de 22/11 (decisões do dono): a lista vem no topo (a Meta de hoje foi para o Início),
 // a contagem fica no cabeçalho, tocar em WhatsApp mostra "Desfazer" por alguns segundos e o link que abre a conversa vazia
 // passa pela regra forte (na apresentação só avisa: nada abre nem é gravado).
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_base');
 
 test.describe('Clientes → Hoje', () => {
   let erros;

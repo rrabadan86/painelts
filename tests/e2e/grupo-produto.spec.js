@@ -1,4 +1,4 @@
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_base');
 
 // Grupo do produto no AppNext (definição única: public/js/grupoprod.js) embaixo do nome nas telas que listam produtos.
 async function abrir(page, hash) {
