@@ -921,6 +921,11 @@ app.post('/api/demo/clientes/celular', express.json({ limit: '2kb' }), (req, res
   res.json({ ok: true, vinculo: { cel: '55' + l, em: new Date().toISOString(), por: 'Visitante', antigo: '' }, tirouDe: 0 });
 });
 app.post('/api/demo/clientes/celular/desfazer', (req, res) => res.json({ ok: true }));
+app.post('/api/demo/clientes/celular/nome', express.json({ limit: '2kb' }), (req, res) => {
+  const n = require('./src/celulares').nomeValido((req.body || {}).nome);
+  if (n == null) return res.status(400).json({ erro: 'Nome inválido: só letras, até 40.' });
+  res.json({ ok: true, nome: n });
+});
 // Meta de hoje da vendedora (Minha comissão): resposta fictícia, nada gravado (a apresentação roda como admin)
 app.get('/api/demo/meta-hoje', (req, res) => res.json({ minhaParte: 412, vendiHoje: 268.5, temHoje: true, modo: 'igual', restam: 8, semParte: null }));
 app.all('/api/demo/*', (req, res) => res.status(404).json({ erro: 'Isto não está disponível na apresentação.' }));
@@ -1177,6 +1182,17 @@ app.post('/api/clientes/celular', express.json({ limit: '2kb' }), async (req, re
   if (r.erro) return res.status(400).json({ erro: r.erro });
   C.auditar(req.user, 'trocou o celular do cliente pela conversa do WhatsApp', id, { loja: id, cpf: celAudit(cpf), fim: r.ok.cel.slice(-4), ...(r.tirouDe.length ? { tirouDe: r.tirouDe.map(celAudit) } : {}) });
   res.json({ ok: true, vinculo: { cel: r.ok.cel, em: r.ok.em, por: r.ok.por, antigo: r.ok.antigo }, tirouDe: r.tirouDe.length });
+});
+// nome de quem usa o número (o cadastro é da esposa, o WhatsApp é do marido): {nome} das mensagens e sem aniversário
+app.post('/api/clientes/celular/nome', express.json({ limit: '2kb' }), (req, res) => {
+  if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
+  const id = lojaConv(req, res); if (!id) return;
+  const b = req.body || {};
+  const cpf = String(b.cpf || '').replace(/\D/g, '');
+  const r = require('./src/celulares').nomear(id, cpf, b.nome);
+  if (r.erro) return res.status(400).json({ erro: r.erro });
+  C.auditar(req.user, r.ok ? 'definiu o nome nas mensagens do número trocado pelo painel' : 'tirou o nome nas mensagens do número trocado pelo painel', id, { loja: id, cpf: celAudit(cpf) });
+  res.json({ ok: true, nome: r.ok });
 });
 app.post('/api/clientes/celular/desfazer', express.json({ limit: '2kb' }), (req, res) => {
   if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });

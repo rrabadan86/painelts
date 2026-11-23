@@ -453,6 +453,8 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 | CAMP-CMP-01…03 | Grupo de comparação (~10%, lista com 50+, só pendentes, sorteio estável por CPF + campanha): criado só no servidor, nunca enviado nem pendente; a recorrente antiga passa a guardar na próxima lista | `campretorno.js`; `src/campanhas.js` | `campretorno.test` CAMP-CMP-01…03 | ✅ |
 | REC-01…02 | Recompra em 90 dias: só entra quem já teve o prazo inteiro; bordas (90 dias exatos entra; compra no mesmo dia não é volta; sem elegíveis não vira 0%) | `public/js/recompra.js` | `recompra.test` REC-01…02 | ✅ |
 | WPP-APRES-01 | {apresentacao} editável em Configurações → loja → Mensagens (decisão do dono, 23/11/2026): dois modelos (com e sem vendedora), só {vendedora} e {loja}, até 120 caracteres; padrão sem artigo ("Aqui é Gabrielly, da …"); o mesmo texto na tela e no robô | `msgwpp.js` `apresentacao`/`apresentacaoValida`, `clientes.js` `valoresWpp`, `admin-api.js` `wpp-modelos`, `config.js` `blocoWpp` | `seguranca.test`, `zapauto.test`, `zap.spec` | ✅ |
+| CEL-NOME-01 | Nome nas mensagens do número vinculado (cadastro de uma pessoa, WhatsApp de outra): só com vínculo, só admin e franqueado da loja, só letras até 40, vai no pacote (`celVinc.nome`) e some ao desfazer | `celulares.js` `nomear`/`nomeValido`/`aplicar`, `server.js` `/api/clientes/celular/nome` | `celulares.test` | ✅ |
+| CEL-NOME-02 | Com nome nas mensagens, {nome}/{nomecompleto} saem com ele e o aniversário fica fora do Hoje e das campanhas | `clientes.js` `TS.nomeMsgDe`/`valoresWpp`/etiqueta `aniv`, `campanhas.js` filtro de aniversário | `zap.spec` | ✅ |
 
 ## 14. Orçamento (ORC)
 
@@ -595,6 +597,7 @@ Todos os da lista A foram conferidos no código, um por um.
 - **Achado corrigido:** Vendas → Cupons mostrava 503 "itens" (linhas) no topo e 530 no total da lista (soma crua, com taxas e R$ 0,01); agora cupons, itens e valor saem de `TS.metricas` (CUP-01).
 - **Achados corrigidos pelos testes novos (23/11/2026):** Pedido → Produtos rolava para o lado (625 px a 1100) — agora 6 colunas; "null" na "Sua meta de hoje" da vendedora quando as vendas de hoje não chegaram; Vendas por produto somava 516 itens / 7,610 kg (com R$ 0,01, consumível sem controle e kg de acessório) contra 513 / 7,31 da conta oficial; Chá vendido do Resumo somava o chá de brinde a R$ 0,01.
 - **Achado (prints, 23/11/2026):** a Validade às vezes volta a mostrar "Carregando os lotes…" depois de pronta (a tela se redesenha sozinha, uma piscada que a pessoa também vê). Em aberto; o teste de prints espera a tela ficar pronta de novo.
+- **Em aberto (23/11/2026):** `visaodono.spec` "Lojas lado a lado: projeção e zerados" falhou 1 vez na bateria completa local (zerados 164 × 165 entre as lojas lado a lado e a tela da loja); passou nas 3 repetições. Causa não encontrada.
 - **Decidido pelo dono (23/11/2026):** na Minha comissão a vendedora pode ver a meta da loja e a divisão entre as pessoas (só não vê as colegas); o cartão "Sua meta de hoje" segue só com a parte dela.
 - **Decidido e corrigido (23/11/2026, LUCRO-01):** antes, "Lucro bruto" do mês tinha dois números — Rentabilidade R$ 10.659 (60,2%) e Resultado R$ 7.339 (41,4%), este perto do "Lucro sem fixos" da Rentabilidade; é diferença de definição/nome (mexer muda o Resultado e a exportação ao contador).
 - **Em aberto:** `reajuste.spec` (celular) falhou 2 vezes na bateria completa local (o assunto digitado voltou ao texto padrão); sozinho e sob carga passou 26 vezes. Causa não encontrada.
@@ -668,11 +671,11 @@ Contado pelas linhas da matriz (`node scripts/matriz.js --resumo`; o guardião c
 | Preços, custos e notas de entrada (PRC) | 40 | 13 | 8 | 19 |
 | Resultado e rentabilidade (RES) | 13 | 5 | 3 | 5 |
 | Vendas e métricas (VEN) | 27 | 12 | 8 | 7 |
-| Clientes, fidelidade, WhatsApp e lista de espera (CLI) | 38 | 26 | 8 | 4 |
+| Clientes, fidelidade, WhatsApp e lista de espera (CLI) | 40 | 28 | 8 | 4 |
 | Orçamento (ORC) | 7 | 5 | 1 | 1 |
 | Checklist, fechamento e avisos (OPE) | 13 | 6 | 3 | 4 |
 | Estrutura do painel e atualização (APP) | 38 | 20 | 12 | 6 |
-| **Total** | **427** | **196 (46%)** | **121 (28%)** | **110 (26%)** |
+| **Total** | **429** | **198 (46%)** | **121 (28%)** | **110 (26%)** |
 <!-- resumo:fim -->
 
 ## Próximas etapas
