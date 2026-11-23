@@ -209,7 +209,9 @@
   mqGaveta.addEventListener('change', () => { maisAberto = false; document.body.classList.remove('filters-open'); if (TS.db) TS.render(); });
 
   // ---------- estado na URL/localStorage (filtros lembrados) ----------
-  const keyFiltros = () => 'teashop.filtros.v2.' + (TS.demo ? 'demo.' : '') + (state.loja || 'padrao');
+  // um só para todas as lojas (pedido do dono, 23/11/2026: os filtros acompanham a pessoa ao trocar de loja); a chave antiga era por loja
+  const keyFiltros = () => 'teashop.filtros.v3.' + (TS.demo ? 'demo' : 'painel');
+  const keyAntiga = () => 'teashop.filtros.v2.' + (TS.demo ? 'demo.' : '') + (state.loja || 'padrao');
   function salvarEstado() {
     try {
       const f = state.f;
@@ -223,7 +225,7 @@
   }
   function lerEstado() {
     try {
-      const s = JSON.parse(localStorage.getItem(keyFiltros()) || 'null');
+      const s = JSON.parse(localStorage.getItem(keyFiltros()) || localStorage.getItem(keyAntiga()) || 'null');
       if (!s) return false;
       const f = state.f, D = TS.db.D;
       const back = (arr, field, set) => (arr || []).forEach((t) => { const i = D[field].indexOf(t); if (i >= 0) set.add(i); });
@@ -363,13 +365,19 @@
   /** desenha os dados recebidos (do servidor ou guardados no aparelho) */
   function aplicar(body, { pagAlvo, em, aviso }) {
     const primeira = !TS.db || TS.lojaCarregada !== state.loja;
-    if (primeira && TS.db) { TS.resetFiltros(); TS.limparCaches && TS.limparCaches(); }
+    const trocouLoja = primeira && !!TS.db;
     // os filtros guardam o número de cada texto no dicionário; numa recarga (atualização automática, "carregar todo o
-    // histórico", produto reclassificado) a ordem do dicionário pode mudar: guarda os textos e remonta depois
-    const textos = !primeira && TS.db ? TS.filtrosEmTexto() : null;
+    // histórico", produto reclassificado) ou na troca de loja a ordem do dicionário muda: guarda os textos e remonta depois.
+    // Trocar de loja mantém os filtros (pedido do dono): o que não existe na loja nova (ex.: uma vendedora de outra loja) sai sozinho
+    const textos = TS.db ? TS.filtrosEmTexto() : null;
+    const outros = trocouLoja ? { produto: state.f.produto, tamanhos: [...state.f.tamanhos] } : null;
+    if (trocouLoja) { TS.resetFiltros(); TS.limparCaches && TS.limparCaches(); }
     TS.lojaCarregada = state.loja;
     TS.db = TS.decode(body);
     if (textos) TS.filtrosDeTexto(textos);
+    if (outros) { state.f.produto = outros.produto || ''; for (const t of outros.tamanhos) state.f.tamanhos.add(t); }
+    // período relativo ("28 dias", "mês atual"…) conta a partir do último dia com venda da loja nova
+    if (trocouLoja && state.f.preset && !['custom', 'anomes'].includes(state.f.preset)) TS.aplicarPreset(state.f.preset);
     TS.aplicarMarca && TS.aplicarMarca();
     TS.rules.prepare();
     TS.cli = null;
@@ -385,7 +393,7 @@
     upd.title = `Dados processados em ${quando.toLocaleString('pt-BR')}. Vendas até ${fmt.date(TS.dayToIso(TS.db.maxDay))}.${podeHist ? '\n\nClique para ver o histórico das atualizações.' : ''}`;
     upd.classList.toggle('clicavel', !!podeHist);
     if (podeHist && !upd.dataset.ligado) { upd.dataset.ligado = '1'; upd.setAttribute('role', 'button'); upd.tabIndex = 0; upd.addEventListener('click', () => TS.abrirHistAtualizacoes()); upd.addEventListener('keydown', (e) => { if (e.key === 'Enter') TS.abrirHistAtualizacoes(); }); }
-    if (primeira) { if (!lerEstado()) TS.aplicarPreset('30d'); rota(); } else if (state.page !== 'config') TS.render();
+    if (primeira) { if (!trocouLoja && !lerEstado()) TS.aplicarPreset('30d'); rota(); } else if (state.page !== 'config') TS.render();
   }
 
   async function carregar(forcar, repetindo) {
