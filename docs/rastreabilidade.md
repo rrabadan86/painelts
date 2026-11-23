@@ -380,6 +380,10 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 | CXP-02…06 | A pagar, detalhes: vencimento da nota estimado (entrada + prazo, só compra concluída); entrada prevista (dinheiro e Pix no dia, cartão N dias depois sem a taxa; parte em cartão pelos fechamentos de caixa); saldo por semana com aviso; conta paga sai das somas (servidor grava por loja e recusa valor inválido); configuração dos prazos | `src/apagar.js`; `public/js/apagar.js` | `apagar.test` CXP-02…06 | ✅ |
 | CTD-02…05 | Exportação para o contador: vendas por dia pelo faturamento oficial, notas do mês (entrada pela data de entrada; cancelada fora do total), mês sem nada e só mês fechado, planilha .xlsx com as cinco abas | `src/contador.js` | `contador.test` CTD-02…05 | ✅ |
 | LUCRO-01 | Uma definição de lucro em três degraus no Resultado e na Rentabilidade (decisão do dono, 23/11/2026): lucro bruto = venda − custo dos produtos; lucro sem fixos = lucro bruto − Simples, maquininha, royalties, comissão e custos em %; resultado = lucro sem fixos − perdas − custos fixos | `dre.js` `calcular`/`projetar`/`LINHAS`; `estoque.js` Rentabilidade | `contas.spec` | ✅ |
+| DRE-MES-01 | Custo fixo de cada mês, uma definição só (pedido do dono, 23/11/2026): o valor real lançado no Resultado vale só naquele mês; sem lançamento, o padrão de Configurações (meses passados sem lançamento acompanham o padrão quando ele muda; o lançado fica). Entra no Resultado, na projeção, na Rentabilidade (rateio pela média dos meses da base), no A pagar, no ponto de equilíbrio e na planilha do contador | `contas.js` `fixoDoMes`; `estoque.js` `criarDeducoes` (`fixoDoMes`, `fixoBase`); `dre.js` `calcular`; `apagar.js` `vencimentos(valorDoMes)`; `src/contador.js` | `dre-mes.test` DRE-MES-01 | ✅ |
+| DRE-MES-02 | Histórico do custo fixo mês a mês (lançado ou padrão) com a média, na janela do custo (nome na tabela) | `contas.js` `historicoFixo`; `dre.js` `janelaFixo` | `dre-mes.test` DRE-MES-02; `dre-mes.spec` DRE-MES-09 | ✅ |
+| DRE-MES-03…08 | Rota `POST /api/resultado/fixo-mes`: grava por loja em `dados/<loja>/fixos-mes.json` com quem e quando, auditada; só quem tem a tela Resultado (vendedora e gerente sem a tela: 403) e só da loja permitida; exige `X-Painel`; confere valor (≥ 0), mês (AAAA-MM, até 12 à frente) e custo existente; "voltar ao padrão" apaga só aquele mês; mudar o padrão em Configurações não muda o mês lançado; apresentação só confere e responde (nada gravado) | `src/fixosmes.js`; `server.js` (`lojaDre`, `/api/demo/resultado/fixo-mes`) | `dre-mes.test` DRE-MES-03…08 | ✅ |
+| DRE-MES-09 | Tela: clicar no valor do custo fixo num mês abre o campo (Salvar, sem gravar a cada dígito; erro em `TS.naoSalvo`), o mês fica com ✎ e o total muda; "Voltar ao padrão" desfaz | `dre.js` `celFixo`/`janelaFixo`/`salvarFixo`; `estoque.js` `TS.estoqueFixosMes` | `dre-mes.spec` DRE-MES-09 (computador e celular) | ✅ |
 
 ## 12. Vendas e métricas (VEN)
 
@@ -686,13 +690,13 @@ Contado pelas linhas da matriz (`node scripts/matriz.js --resumo`; o guardião c
 | Equipe, metas e comissão (EQP) | 13 | 4 | 3 | 6 |
 | Estoque, inventário, lotes e pedido (EST) | 80 | 49 | 14 | 17 |
 | Preços, custos e notas de entrada (PRC) | 40 | 13 | 8 | 19 |
-| Resultado e rentabilidade (RES) | 13 | 5 | 3 | 5 |
+| Resultado e rentabilidade (RES) | 17 | 9 | 3 | 5 |
 | Vendas e métricas (VEN) | 27 | 12 | 8 | 7 |
 | Clientes, fidelidade, WhatsApp e lista de espera (CLI) | 44 | 32 | 8 | 4 |
 | Orçamento (ORC) | 7 | 5 | 1 | 1 |
 | Checklist, fechamento e avisos (OPE) | 13 | 6 | 3 | 4 |
 | Estrutura do painel e atualização (APP) | 42 | 24 | 12 | 6 |
-| **Total** | **439** | **208 (47%)** | **121 (28%)** | **110 (25%)** |
+| **Total** | **443** | **212 (48%)** | **121 (27%)** | **110 (25%)** |
 <!-- resumo:fim -->
 
 ## Próximas etapas

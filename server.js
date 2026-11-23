@@ -549,7 +549,7 @@ app.get('/api/demo/estoque', (req, res) => {
     const foraDeLinha = { desde: dia(200), dias: 90, indisp: Object.fromEntries(comSaldo.slice(2, 6).map((i, k) => [String(i.cod), dia(k < 3 ? 120 + k * 10 : 20)])) };
     // lista de espera fictícia: clientes aguardando dois produtos zerados que venderam há pouco (têm nota de compra recente)
     const espera = Object.fromEntries((e.estoque.itens || []).filter((i) => !(i.qtd > 0) && i.custo > 0 && e.compras.itens[i.cod]).slice(0, 2).map((i, k) => [String(i.cod), k + 1]));
-    res.json({ estoque: e.estoque, cfg: ESd.cfg({ estoqueCfg: e.estoqueCfg }), classe: ESd.classeCfg({}), historico: e.historico,
+    res.json({ estoque: e.estoque, cfg: { ...ESd.cfg({ estoqueCfg: e.estoqueCfg }), fixosMes: {} }, classe: ESd.classeCfg({}), historico: e.historico,
       compras: require('./src/demo-compras').comprasDoAno(e.compras, e.estoque, e.historico, (DEMO.partes().find((x) => x.id === req.query.loja) || {}).vendas), tabela, foraDeLinha, espera });
   } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
 });
@@ -716,6 +716,14 @@ const APGd = require('./src/apagar'), CTDd = require('./src/contador');
 app.get('/api/demo/apagar', (req, res) => { if (!lojaDemo(req)) return res.status(400).json({ erro: 'Escolha uma loja.' }); res.json({ pagos: {}, cartao: { pct: 0.73, dias: 60 }, demo: true }); });
 app.post('/api/demo/apagar/pago', express.json({ limit: '4kb' }), (req, res) => {
   if (!APGd.ID_OK.test(String((req.body || {}).id || ''))) return res.status(400).json({ erro: 'Conta inválida.' });
+  res.json({ ok: true, simulado: true });
+});
+// valor real de um custo fixo no mês na apresentação: só confere e responde; a tela troca na memória (nada é gravado)
+app.post('/api/demo/resultado/fixo-mes', express.json({ limit: '4kb' }), (req, res) => {
+  const b = req.body || {};
+  if (!DEMO.lojasDemo().some((l) => l.id === String(b.loja || ''))) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  const v = require('./src/fixosmes').validar(b, ESd.cfg({ estoqueCfg: DEMO.estoqueDemo(b.loja).estoqueCfg }).outros, IND.hojeSP().iso);
+  if (v.erro) return res.status(400).json({ erro: v.erro });
   res.json({ ok: true, simulado: true });
 });
 app.post('/api/demo/resultado/exportar', express.json({ limit: '200kb' }), async (req, res) => {
@@ -1480,7 +1488,7 @@ const podeContabilidade = (req) => req.perfil === 'admin' || req.perfil === 'fra
 /** gerente com a tela liberada em Configurações → Usuários (Estoque e margem, Pedido, Resultado) */
 const podeTela = (req, ...telas) => podeContabilidade(req) || (req.perfil === 'gerente' && (C.telasDo(C.usuario(req.user)) || []).some((t) => telas.includes(t)));
 const ES = require('./src/estoque');
-const TAB = require('./src/tabela');
+const TAB = require('./src/tabela'), FXM = require('./src/fixosmes');
 app.get('/api/estoque', (req, res) => {
   if (!podeTela(req, 'rentab', 'estoque', 'precos', 'notas', 'pedido', 'dre')) return res.status(403).json({ erro: 'Sem permissão.' });
   const loja = req.lojas.find((l) => l.id === String(req.query.loja || ''));
@@ -1492,7 +1500,8 @@ app.get('/api/estoque', (req, res) => {
   // lista de espera: só a contagem por produto (sem nome de cliente), para o Estoque mostrar quem está zerado com cliente aguardando
   let espera = {};
   try { espera = Object.fromEntries(Object.entries(ESP.resumoPorCod(loja.id)).map(([c, x]) => [c, x.pedidos])); } catch (e) { console.error('[espera no estoque]', e.message); }
-  res.json({ estoque: est, cfg: ES.cfg(lc), classe: ES.classeCfg(lc), tabela: TAB.resumo(loja.id), historico: ES.historico(loja.id), compras: ES.compras(loja.id), foraDeLinha, espera });
+  // fixosMes: o valor real de cada custo fixo por mês, lançado no Resultado (src/fixosmes.js; a conta é TS.contas.fixoDoMes)
+  res.json({ estoque: est, cfg: { ...ES.cfg(lc), fixosMes: FXM.ler(loja.id).despesas }, classe: ES.classeCfg(lc), tabela: TAB.resumo(loja.id), historico: ES.historico(loja.id), compras: ES.compras(loja.id), foraDeLinha, espera });
 });
 // notas de entrada (compras) do AppNext, inteiras: lista e detalhe na tela Preços
 // NF-e emitidas pela loja (saída): lista, nota completa, XML original e DANFE para imprimir
@@ -2310,6 +2319,20 @@ app.post('/api/apagar/pago', express.json({ limit: '4kb' }), (req, res) => {
     if (r.erro) return res.status(400).json({ erro: r.erro });
     C.auditar(req.user, b.pago ? 'marcou conta como paga (A pagar)' : 'desfez conta paga (A pagar)', loja.id, { loja: loja.id, conta: String(b.nome || b.id).slice(0, 80), vence: b.pago ? b.vence : undefined, valor: b.pago ? Math.round(Number(b.valor) * 100) / 100 : undefined });
     res.json({ ok: true, pagos: r.ok.pagos });
+  } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
+});
+// valor real de um custo fixo num mês (Resultado → clicar no valor do custo): grava ou volta ao padrão de Configurações
+app.post('/api/resultado/fixo-mes', express.json({ limit: '4kb' }), (req, res) => {
+  if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
+  const b = req.body || {};
+  const loja = lojaDre(req, res, b.loja); if (!loja) return;
+  try {
+    const lc = C.get().lojas.find((l) => l.id === loja.id);
+    const r = FXM.lancar(loja.id, b, ES.cfg(lc).outros, req.user, C.diaSP());
+    if (r.erro) return res.status(400).json({ erro: r.erro });
+    C.auditar(req.user, r.valor == null ? 'voltou um custo fixo ao padrão no mês (Resultado)' : 'lançou o valor real de um custo fixo no mês (Resultado)', loja.id,
+      { loja: loja.id, custo: String(b.nome).slice(0, 40), ym: String(b.ym), valor: r.valor == null ? undefined : r.valor });
+    res.json({ ok: true, fixosMes: r.ok.despesas });
   } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
 });
 // planilha do mês fechado: POST porque fica na auditoria e leva as linhas do Resultado que a tela calculou
