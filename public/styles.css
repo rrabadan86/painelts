@@ -3912,3 +3912,9 @@ details.inv-p2-como ol { margin-top: 8px; }
 .cv-resp-txt { flex: 1; min-width: 0; resize: vertical; min-height: 44px; max-height: 200px; }
 .cv-resp-bt { flex: none; }
 .cv-resp-nao { margin-top: 10px; }
+/* celular: a coluna dos nomes do Resultado quebra a linha, para a 1ª coluna de valores caber sem rolar (com a letra mais larga
+   do servidor de testes ela ficava 8 px escondida e o "lançar o valor do mês" era clicado fora da vista — CLIQUE-VISTA-01) */
+@media (max-width: 760px) {
+  .dre-t td:first-child, .dre-t th:first-child { white-space: normal; min-width: 110px; max-width: 140px; }
+  .dre-t tr.dre-filho td:first-child { padding-left: 24px; }
+}
