@@ -265,3 +265,23 @@ test('código do carrinho: renova enquanto está em uso, mas só até 3 h depois
   assert.match(PED.progresso(codigo, passo).erro, /vencido/);
   assert.strictEqual(PED.lerCodigo(codigo), null);
 });
+
+test('WPP-APRES-01: {apresentacao} editável em Mensagens — só {vendedora} e {loja}, até 120 caracteres; gerente não grava; vazio volta ao padrão', async () => {
+  const MW = require('../../public/js/msgwpp.js');
+  // a conta: com vendedora, sem vendedora e o padrão sem o artigo (serve para vendedor)
+  assert.strictEqual(MW.apresentacao(null, 'Felipe', 'Tea Shop Centro'), 'Aqui é Felipe, da Tea Shop Centro');
+  assert.strictEqual(MW.apresentacao(null, '', 'Tea Shop Centro'), 'Aqui é a equipe da Tea Shop Centro');
+  assert.strictEqual(MW.apresentacao({ com: 'Oi! Sou a {vendedora} da {loja}', sem: '' }, 'Ana', 'Centro'), 'Oi! Sou a Ana da Centro');
+  assert.strictEqual(MW.apresentacaoValida('Aqui é {vendedora} da {loja} {cha}'), null, 'campo que não é da apresentação');
+  assert.strictEqual(MW.apresentacaoValida('x'.repeat(121)), null);
+  assert.strictEqual(MW.apresentacaoValida('  '), '');
+  // a rota: a mesma das mensagens, só para quem edita a loja
+  const modelos = [{ nome: 'Oi', texto: 'Oi, {nome}!' }];
+  const put = (quem, apresentacao) => pedir(quem, '/api/admin/lojas/l1/wpp-modelos', { method: 'PUT', body: JSON.stringify({ modelos, apresentacao }) });
+  assert.strictEqual((await put('dono', { com: 'Aqui é {vendedora} {cpf}', sem: '' })).status, 400);
+  assert.strictEqual((await put('ger_notas', { com: 'Aqui é {vendedora}', sem: '' })).status, 403);
+  assert.strictEqual((await put('dono', { com: 'Oi! Sou {vendedora}, da {loja}', sem: '' })).status, 200);
+  assert.deepStrictEqual(JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')).lojas[0].wppApresentacao, { com: 'Oi! Sou {vendedora}, da {loja}', sem: '' });
+  assert.strictEqual((await put('dono', { com: '', sem: '' })).status, 200);
+  assert.strictEqual(JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')).lojas[0].wppApresentacao, null, 'vazio volta ao padrão');
+});

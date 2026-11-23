@@ -480,6 +480,8 @@
     { nome: 'Novidades', texto: 'Oi, {nome}! Temos novidades na {loja} e lembrei de você. Posso te mandar as opções?' },
     { nome: 'Pontos vencendo', texto: 'Oi, {nome}! Você tem {pontos} pontos no programa de fidelidade da {loja}, e parte deles vence em {vence}. Que tal usar numa visita? 🍵' },
   ];
+  /** modelos do {apresentacao} da loja (Configurações → Mensagens), os mesmos no robô do servidor */
+  const apresDe = (lojaId) => { const m = ((TS.db && TS.db.metas) || []).find((x) => x.id === lojaId); return (m && m.wppApres) || null; };
   const modelosDe = (lojaId) => { const m = (TS.db.metas || []).find((x) => x.id === lojaId); return (m && m.wpp && m.wpp.length ? m.wpp : TS.WPP_PADRAO); };
   const nomeBonito = (n) => String(n || '').trim().toLowerCase().split(/\s+/).map((p, k) => (k && /^(da|de|do|das|dos|e)$/.test(p) ? p : p.charAt(0).toUpperCase() + p.slice(1))).join(' ');
   const saudacao = () => TS.msgWpp.saudacao(new Date().getHours());
@@ -487,7 +489,7 @@
   TS.CAMPOS_MSG = [
     ['nome', 'primeiro nome'], ['nomecompleto', 'nome completo'], ['saudacao', 'Bom dia / Boa tarde / Boa noite (na hora do envio)'],
     ['vendedora', 'vendedora que mais atendeu o cliente (só quem vendeu nos últimos 60 dias; sem ela: "equipe da <loja>")', (c) => !c.vendedoraPref],
-    ['apresentacao', '"Aqui é a <vendedora>, da <loja>" (sem vendedora: "Aqui é a equipe da <loja>")'],
+    ['apresentacao', 'quem fala com o cliente: "Aqui é <vendedora>, da <loja>" (sem vendedora: "Aqui é a equipe da <loja>"); os dois textos mudam em Configurações → loja → Mensagens'],
     ['cha', 'chá favorito', (c) => !c.chaFavorito], ['ultimocha', 'último chá que comprou', (c) => !c.chaUltimo],
     ['pacote', 'tamanho de pacote que costuma levar (ex.: 100g)', (c) => !c.pacote],
     ['pontos', 'saldo de pontos'], ['vencepts', 'pontos que vencem na próxima data'], ['vence', 'data em que os próximos pontos vencem', (c) => !(c.fx && c.fx.prox != null)],
@@ -506,7 +508,7 @@
       pontos: fmt.int(fx.saldo || 0), vence: fx.prox != null ? fmt.date(TS.dayToIso(fx.prox)) : '—', vencepts: fmt.int(fx.proxPts || 0),
       ultimacompra: c.ultima != null ? fmt.date(TS.dayToIso(c.ultima)) : '—', dias: c.ausencia != null ? fmt.int(c.ausencia) : '—',
       aniversario: c.aniv || '—', visitas: fmt.int(c.visitas || 0), saudacao: saudacao(),
-      apresentacao: primeiroNome(c.vendedoraPref) ? `Aqui é a ${primeiroNome(c.vendedoraPref)}, da ${loja}` : `Aqui é a equipe da ${loja}`, // Resumo diário: a vendedora que mais atende o cliente
+      apresentacao: TS.msgWpp.apresentacao(apresDe(lid), primeiroNome(c.vendedoraPref), loja), // modelo de Configurações → Mensagens; a vendedora que mais atende o cliente
     };
   }
   const textoWpp = (modelo, c) => TS.msgWpp.montar(modelo.texto, valoresWpp(c));
