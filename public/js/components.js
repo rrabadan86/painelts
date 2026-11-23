@@ -701,9 +701,17 @@
     const box = h('div', { class: 'chart-box ' + cls });
     const canvas = h('canvas', { role: 'img', 'aria-label': config.ariaLabel || 'Gráfico' });
     box.append(canvas);
-    requestAnimationFrame(() => {
+    const criar = () => {
       for (const ch of charts) { if (!ch.canvas || !ch.canvas.isConnected) { ch.destroy(); charts.delete(ch); } }
       if (!box.isConnected) return;
+      // cartão ainda sem largura (painel voltando do segundo plano, tela montando): o Chart.js nasceria com o tamanho
+      // mínimo e não se ajustava depois ("gráfico pequeno no canto e o resto em branco", print do dono de 23/11/2026).
+      // Espera o cartão ter largura de verdade para desenhar.
+      if (box.clientWidth < 60 && window.ResizeObserver && !box._esperaLarg) {
+        box._esperaLarg = new ResizeObserver(() => { if (box.clientWidth >= 60) { box._esperaLarg.disconnect(); box._esperaLarg = null; criar(); } });
+        box._esperaLarg.observe(box);
+        return;
+      }
       if (window.Chart && Chart.getChart) { const ant = Chart.getChart(canvas); if (ant) { ant.destroy(); charts.delete(ant); } }
       // legenda desmarcada continua desmarcada quando o gráfico é redesenhado (troca de indicador, filtro, período)
       const chave = config.legendaChave || chaveLegenda(box);
@@ -726,9 +734,36 @@
       }
       const c = new Chart(canvas, config);
       charts.add(c);
-    });
+    };
+    requestAnimationFrame(criar);
     return box;
   };
+  /** reajusta os gráficos ao tamanho do cartão (o painel voltou do segundo plano, girou o celular, a janela mudou) */
+  // Print do dono (23/11/2026): às vezes o desenho ocupava só o canto do quadro (cerca de 1/2,4 da largura no celular) e o
+  // resto ficava em branco — o jeito de um gráfico desenhado com a densidade de pixels errada (o celular muda a densidade
+  // ao pôr o painel em segundo plano, ao girar ou ao mudar o zoom). Ao voltar, ao girar e quando a densidade muda, cada
+  // gráfico refaz o tamanho e a densidade e se desenha de novo.
+  TS.ajustarGraficos = () => {
+    for (const ch of charts) {
+      if (!ch.canvas || !ch.canvas.isConnected) { ch.destroy(); charts.delete(ch); continue; }
+      if (!ch.canvas.offsetParent) continue; // escondido: ajusta quando aparecer
+      const dpr = window.devicePixelRatio || 1;
+      if (ch.currentDevicePixelRatio !== dpr || Math.abs(ch.width - ch.canvas.parentNode.clientWidth) > 2) { ch.resize(); ch.update('none'); }
+    }
+  };
+  if (typeof document !== 'undefined' && document.addEventListener && window.matchMedia) {
+    const aoMudar = () => requestAnimationFrame(TS.ajustarGraficos);
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') aoMudar(); });
+    window.addEventListener('pageshow', aoMudar);
+    window.addEventListener('orientationchange', () => setTimeout(TS.ajustarGraficos, 300));
+    // densidade de pixels mudou (zoom, tela externa, segundo plano no Android): a consulta é refeita a cada mudança
+    const vigiarDensidade = () => {
+      const mq = window.matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
+      const f = () => { mq.removeEventListener ? mq.removeEventListener('change', f) : mq.removeListener(f); aoMudar(); vigiarDensidade(); };
+      mq.addEventListener ? mq.addEventListener('change', f) : mq.addListener(f);
+    };
+    vigiarDensidade();
+  }
 
   /** linha tracejada de média (para pôr junto das séries de vendedores/lojas) */
   TS.dsMedia = (label, data, extra = {}) => ({ type: 'line', label, data, borderColor: '#6B6B6B', backgroundColor: '#6B6B6B', borderDash: [6, 4], borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, pointStyle: 'line', fill: false, tension: .3, spanGaps: true, order: -1, ...extra });

@@ -520,6 +520,8 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 | ERRTELA-05 | Todo perfil envia (com `X-Painel`); admin vê tudo, franqueado só as lojas dele, gerente e vendedora 403; arquivo sem usuário | `src/errostela.js` `registrar` | `errostela.test` (servidor real) | ✅ |
 | ERRTELA-06 | Na apresentação o aviso é aceito sem gravar | `src/errostela.js` `demo` | `errostela.test` | ✅ |
 | ERRTELA-07 | Erro na tela vira 1 aviso saneado; aba Erros nas telas; aviso de erro novo no Início do admin | `public/js/errostela.js`, `config.js` `abaErros`, `inicio.js` `avisosErrosTela` | `erros-tela.spec` | ✅ |
+| GRAF-01 | Gráfico sempre do tamanho do cartão; criado num cartão ainda sem largura, espera a largura para desenhar | `components.js` `TS.chart` | `graficos.spec` | ✅ |
+| GRAF-02 | Gráfico com a densidade de pixels errada (só o canto desenhado) se refaz ao voltar do segundo plano, ao girar e quando a densidade muda | `components.js` `TS.ajustarGraficos` | `graficos.spec` | ✅ |
 | PORTA-01…02 | Testes que sobem o servidor sorteiam a porta numa faixa só deles, pulando as portas que o `fetch` recusa (4045, 6000…: "o servidor de teste não subiu em 90 s") | `tests/unit/_porta.js` | `portas-teste.test` PORTA-01…02 | ✅ |
 | MATRIZ-01…06 | A matriz sempre em dia (decisão do dono, 23/11/2026): códigos únicos; teste citado existe; código de regra no nome de um teste está na matriz; ✅ sempre com teste; resumo em números contado pelas linhas; `npm run testar-alteracao` roda primeiro os testes das regras dos arquivos mexidos e avisa as sem teste; o hook lembra de atualizar a matriz | `scripts/matriz.js`; `scripts/testar-alteracao.js`; `.claude/hooks/lembrar-docs.js` | `matriz.test` MATRIZ-01…06 | ✅ |
 
@@ -667,8 +669,8 @@ Contado pelas linhas da matriz (`node scripts/matriz.js --resumo`; o guardião c
 | Clientes, fidelidade, WhatsApp e lista de espera (CLI) | 37 | 25 | 8 | 4 |
 | Orçamento (ORC) | 7 | 5 | 1 | 1 |
 | Checklist, fechamento e avisos (OPE) | 13 | 6 | 3 | 4 |
-| Estrutura do painel e atualização (APP) | 36 | 18 | 12 | 6 |
-| **Total** | **423** | **192 (45%)** | **121 (29%)** | **110 (26%)** |
+| Estrutura do painel e atualização (APP) | 38 | 20 | 12 | 6 |
+| **Total** | **425** | **194 (46%)** | **121 (28%)** | **110 (26%)** |
 <!-- resumo:fim -->
 
 ## Próximas etapas
