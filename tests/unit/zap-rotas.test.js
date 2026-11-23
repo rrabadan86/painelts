@@ -34,11 +34,17 @@ before(async () => {
   C = require('../../src/config');
   const senha = await C.hashSenhaAsync(SENHA);
   fs.writeFileSync(CONFIG_FILE, JSON.stringify({
-    lojas: [{ id: 'l1', nome: 'Loja Um' }, { id: 'l2', nome: 'Loja Dois' }],
+    lojas: [{ id: 'l1', nome: 'Loja Um' }, { id: 'l2', nome: 'Loja Dois' }, { id: 'l3', nome: 'Loja Três', zap: { teto: 20 } }],
     usuarios: {
       chefe: { senha, perfil: 'admin', lojas: ['*'], ativo: true },
-      dono1: { senha, perfil: 'franqueado', lojas: ['l1'], ativo: true },
-      gercli: { senha, perfil: 'gerente', lojas: ['l1'], ativo: true, telas: ['clientes'], telasV: 8 },
+      dono1: { senha, perfil: 'franqueado', lojas: ['l1'], ativo: true, robo: true },
+      gercli: { senha, perfil: 'gerente', lojas: ['l1'], ativo: true, telas: ['clientes'], telasV: 8, robo: true },
+      // ZAP-PERM: sem a liberação do admin para o robô; dono2 também sem as Conversas
+      dono2: { senha, perfil: 'franqueado', lojas: ['l1'], ativo: true, robo: false, conversas: false },
+      gerno: { senha, perfil: 'gerente', lojas: ['l1'], ativo: true, telas: ['clientes'], telasV: 8, robo: false },
+      // de antes da regra (sem o campo): quem tinha loja com o robô continua; quem não tinha fica desligado
+      velho: { senha, perfil: 'franqueado', lojas: ['l3'], ativo: true },
+      velho2: { senha, perfil: 'gerente', lojas: ['l1'], ativo: true, telas: ['clientes'], telasV: 8 },
       gersem: { senha, perfil: 'gerente', lojas: ['l1'], ativo: true, telas: ['estoque'], telasV: 8 },
       vend1: { senha, perfil: 'vendedor', lojas: ['l1'], ativo: true, vendedor: 'ANA' },
     },
@@ -56,7 +62,7 @@ before(async () => {
   srv = spawn(process.execPath, ['server.js'], { cwd: path.join(__dirname, '../..'), stdio: ['ignore', 'ignore', 'pipe'],
     env: { ...process.env, PORT: String(PORTA), DATA_DIR: tmp, CONFIG_FILE, SESSION_SECRET: 'teste-zap', NODE_ENV: 'test', IA_FALSO: '1', ZAP_URL: `http://127.0.0.1:${portaZap}`, ZAP_TOKEN: 'token-zap-teste', COLETOR_URL: '', COLETOR_TOKEN: '', GITHUB_TOKEN: '' } });
   await require('./_subir')(srv, BASE); // até 90 s, e mostra o erro do servidor se ele cair
-  for (const nome of ['chefe', 'dono1', 'gercli', 'gersem', 'vend1']) {
+  for (const nome of ['chefe', 'dono1', 'gercli', 'gersem', 'vend1', 'dono2', 'gerno', 'velho']) {
     const r = await fetch(BASE + '/login', { method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Forwarded-For': `203.0.113.${ipSeq++}` }, body: `usuario=${nome}&senha=${encodeURIComponent(SENHA)}` });
     const c = (r.headers.get('set-cookie') || '').split(';')[0];
     assert.ok(c.startsWith('ts_sess='), `login de ${nome}`);
@@ -86,6 +92,61 @@ test('situação: admin, franqueado da loja e gerente com Clientes veem; vendedo
   assert.strictEqual(s.ligado, false, 'começa desligado');
   assert.deepStrictEqual(s.pode, { configurar: true, pausar: true });
   assert.deepStrictEqual((await (await pedir('gercli', '/api/zap/situacao?loja=l1')).json()).pode, { configurar: true, pausar: true }, 'gerente com Clientes também configura');
+});
+
+test('ZAP-PERM-01: robô do WhatsApp só com a liberação do admin — sem ela, franqueado e gerente veem a situação sem QR e não conectam, configuram nem ligam campanha', async () => {
+  robo.estado = 'qr';
+  try {
+    for (const nome of ['dono2', 'gerno']) {
+      const r = await pedir(nome, '/api/zap/situacao?loja=l1');
+      assert.strictEqual(r.status, 200, nome);
+      const s = await r.json();
+      assert.strictEqual(s.conexao.qr, undefined, `${nome}: sem o QR`);
+      assert.deepStrictEqual(s.pode, { configurar: false, pausar: true });
+    }
+  } finally { robo.estado = 'conectado'; }
+  chamadas.length = 0;
+  for (const nome of ['dono2', 'gerno']) {
+    for (const rota of ['conectar', 'desconectar', 'ligar']) assert.strictEqual((await post(nome, `/api/zap/${rota}`, { loja: 'l1' })).status, 403, `${nome} ${rota}`);
+    assert.strictEqual((await put(nome, '/api/zap/config', { loja: 'l1', ...CFG })).status, 403, `${nome} configura`);
+    const c = await post(nome, '/api/campanhas', { loja: 'l1', nome: 'Teste perm', mensagem: 'Oi {nome}', filtros: {}, lista: [{ cpf: '11144477735', nome: 'Ana', wpp: '62999998888' }], robo: true });
+    assert.strictEqual(c.status, 403, `${nome} liga campanha no robô`);
+  }
+  assert.deepStrictEqual(chamadas, [], 'nada chegou ao robô');
+  const eu = async (n) => (await (await pedir(n, '/api/eu')).json()).pode;
+  assert.strictEqual((await eu('dono2')).robo, false);
+  assert.strictEqual((await eu('dono1')).robo, true);
+  assert.strictEqual((await eu('chefe')).robo, true, 'admin sempre');
+  // de antes da regra: gravado uma vez na subida pelo que a loja já usava
+  const cru = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')).usuarios;
+  assert.strictEqual(cru.velho.robo, true, 'franqueado de loja que já tinha o robô continua liberado');
+  assert.strictEqual(cru.velho2.robo, false, 'gerente de loja sem o robô fica desligado');
+  assert.strictEqual(cru.vend1.robo, undefined, 'vendedora não ganha o campo');
+  assert.strictEqual((await eu('velho')).robo, true);
+});
+
+test('ZAP-PERM-02: Conversas do WhatsApp vêm liberadas para o franqueado e o admin pode tirar; só o admin muda robô e Conversas', async () => {
+  assert.strictEqual((await pedir('dono1', '/api/conversas?loja=l1')).status, 200, 'franqueado com Conversas');
+  assert.strictEqual((await pedir('dono2', '/api/conversas?loja=l1')).status, 403, 'franqueado sem Conversas');
+  assert.strictEqual((await post('dono2', '/api/conversas/responder', { loja: 'l1', chat: '5562999998888', texto: 'oi' })).status, 403);
+  assert.strictEqual((await (await pedir('dono2', '/api/eu')).json()).pode.conversas, false);
+  // o franqueado não consegue se liberar nem liberar a gerente dele
+  assert.strictEqual((await put('dono1', '/api/admin/usuarios/gerno', { robo: true })).status, 200);
+  assert.strictEqual(JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')).usuarios.gerno.robo, false, 'franqueado não libera o robô');
+  // o admin libera e tira
+  assert.strictEqual((await put('chefe', '/api/admin/usuarios/dono2', { robo: true, conversas: true })).status, 200);
+  let u = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')).usuarios.dono2;
+  assert.strictEqual(u.robo, true); assert.strictEqual(u.conversas, undefined, 'liberada = sem a marca');
+  assert.strictEqual((await pedir('dono2', '/api/conversas?loja=l1')).status, 200);
+  assert.strictEqual((await post('dono2', '/api/zap/conectar', { loja: 'l1' })).status, 200, 'liberado conecta');
+  assert.strictEqual((await put('chefe', '/api/admin/usuarios/dono2', { robo: false, conversas: false })).status, 200);
+  u = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')).usuarios.dono2;
+  assert.strictEqual(u.robo, false); assert.strictEqual(u.conversas, false);
+  assert.ok(auditoria().some((a) => a.acao === 'alterou usuário' && a.alvo === 'dono2' && a.detalhe.roboWhatsapp === 'tirado' && a.detalhe.conversas === 'tiradas'));
+  // a lista de Usuários mostra o que vale
+  const est = await (await pedir('chefe', '/api/admin/estado')).json();
+  const lin = (n) => est.usuarios.find((x) => x.nome === n);
+  assert.deepStrictEqual([lin('dono1').robo, lin('dono1').conversas, lin('dono2').robo, lin('dono2').conversas, lin('chefe').robo], [true, true, false, false, true]);
 });
 
 test('QR e código de pareamento só chegam a quem conecta (admin, franqueado e gerente com Clientes); nunca à vendedora nem ao gerente sem Clientes', async () => {

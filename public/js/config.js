@@ -1283,6 +1283,7 @@
         h('td', { class: 'l' }, h('b', null, u.nome), u.nome === est.usuario ? h('span', { class: 'muted' }, ' (você)') : null),
         h('td', { class: 'l' }, h('span', { class: 'badge p-' + u.perfil }, PERFIL_NOME[u.perfil]),
           u.perfil === 'gerente' ? h('div', { class: 'muted cfg-telas-resumo' }, u.telas ? `${u.telas.length} tela(s)${u.telas.includes('clientes') ? ' · vê clientes' : ''}` : 'telas padrão') : null,
+          ['franqueado', 'gerente'].includes(u.perfil) && (u.robo || (u.perfil === 'franqueado' && u.conversas === false)) ? h('div', { class: 'muted cfg-telas-resumo' }, [u.robo ? '🤖 robô do WhatsApp' : '', u.perfil === 'franqueado' && u.conversas === false ? 'sem Conversas' : ''].filter(Boolean).join(' · ')) : null,
           u.perfil === 'vendedor' ? h('div', { class: 'muted cfg-telas-resumo' }, u.vendedor ? `nas vendas: ${u.vendedor}` : h('span', { class: 'neg' }, 'sem o nome nas vendas')) : null),
         h('td', { class: 'l wrap', 'data-rot': 'Lojas' }, u.lojas.includes('*') ? 'Todas' : u.lojas.map((id) => nomeLoja.get(id) || id).join(', ')),
         h('td', { class: 'l', 'data-rot': 'Último acesso' }, u.ultimoAcesso ? dt(u.ultimoAcesso) : h('span', { class: 'muted' }, 'nunca')),
@@ -1373,6 +1374,28 @@
         ger ? h('div', { class: 'cfg-acoes' }, h('button', { type: 'button', class: 'btn', onclick: () => { telasSel.clear(); padraoGer.forEach((x) => telasSel.add(x)); pintarTelas(); } }, 'Voltar ao padrão do gerente')) : null);
     }
     // div (não label): os itens já são <label> com a própria caixa
+    // WhatsApp (decisão do dono, 23/11/2026; ZAP-PERM-01/02): o robô vem desligado e só o admin libera;
+    // as Conversas vêm liberadas para o franqueado e só o admin tira. O servidor confere (quem não é admin não muda).
+    const souAdmin = est.perfil === 'admin';
+    const cbRobo = h('input', { type: 'checkbox', 'data-perm': 'robo', checked: (u && u.robo) || null, disabled: !souAdmin || null });
+    const cbConv = h('input', { type: 'checkbox', 'data-perm': 'conversas', checked: (!u || u.conversas !== false) || null, disabled: !souAdmin || null });
+    const wppBox = h('div', { class: 'cfg-telas' });
+    function pintarWpp() {
+      const p = perfil.value;
+      const temRobo = p === 'franqueado' || p === 'gerente', temConv = p === 'franqueado';
+      campoWpp.hidden = !temRobo;
+      if (!temRobo) { wppBox.replaceChildren(); return; }
+      const trava = souAdmin ? null : h('span', { class: 'cfg-tela-lock', 'aria-label': 'só o administrador muda' }, ' 🔒');
+      wppBox.replaceChildren(h('fieldset', { class: 'cfg-telas-g' }, h('legend', null, 'WhatsApp da loja'),
+        h('label', { class: 'cfg-tela' + (souAdmin ? '' : ' trava') }, cbRobo, ' ', h('span', null, 'Robô do WhatsApp'), trava,
+          h('small', { class: 'muted cfg-tela-pq' }, p === 'gerente'
+            ? 'Conectar (ler o QR), ligar, configurar e marcar campanha para o robô. Vale junto com a tela Clientes. Vem desligado; só o administrador libera.'
+            : 'Conectar (ler o QR), ligar, configurar e marcar campanha para o robô. Vem desligado; só o administrador libera. Sem ele, a pessoa só vê a situação do robô e pode pausar.')),
+        temConv ? h('label', { class: 'cfg-tela' + (souAdmin ? '' : ' trava') }, cbConv, ' ', h('span', null, 'Conversas do WhatsApp'), trava,
+          h('small', { class: 'muted cfg-tela-pq' }, 'Ler e responder as conversas do WhatsApp da loja (Clientes → Conversas). Vem liberada; só o administrador tira.')) : null));
+    }
+    const campoWpp = h('div', { class: 'cfg-campo cfg-campo-wpp' }, h('span', null, 'WhatsApp'), wppBox,
+      h('small', null, souAdmin ? 'Só o administrador muda estas opções.' : 'Só o administrador muda estas opções (🔒).'));
     const campoTelas = ((rot, el, dica) => h('div', { class: 'cfg-campo' }, h('span', null, rot), el, h('small', null, dica)))('Telas', telasBox, 'Custo e margem (Rentabilidade, Preços, Estoque, Pedido, Notas fiscais, Resultado) e Clientes (CPF e telefone): libere só para quem precisa. O servidor confere a marcação: tela desmarcada também não entrega os dados.');
     const campoVend = campo('Quem é no sistema (nome do vendedor)', vendSel, 'Liga o usuário às vendas dele.');
     function pintarLojas() {
@@ -1381,6 +1404,7 @@
       campoLojas.hidden = p === 'admin';
       campoVend.hidden = p !== 'vendedor';
       pintarTelas();
+      pintarWpp();
       for (const l of est.todasLojas) {
         const cb = h('input', { type: p === 'vendedor' ? 'radio' : 'checkbox', name: 'lojas-' + (u ? u.nome : 'novo'), value: l.id, checked: marcadas.has(l.id) || null });
         cb.addEventListener('change', () => { if (p === 'vendedor') marcadas.clear(); cb.checked ? marcadas.add(l.id) : marcadas.delete(l.id); pintarVend(); });
@@ -1409,10 +1433,11 @@
           h('label', { class: 'cfg-check' }, ativo, h('span', null, 'Usuário ativo (pode entrar)')),
           h('label', { class: 'cfg-check', title: 'No próximo login a pessoa precisa criar a própria senha antes de usar o painel.' }, trocar, h('span', null, 'Trocar a senha no próximo login')),
           !novo && u.senhaTrocadaEm ? h('small', null, `Trocou a senha em ${dt(u.senhaTrocadaEm)}.`) : null)),
-      campoPrazo, campoLojas, campoVend, campoTelas,
+      campoPrazo, campoLojas, campoVend, campoTelas, campoWpp,
       h('div', { class: 'cfg-acoes' },
         acao(novo ? 'Criar usuário' : 'Salvar', async () => {
           const corpo = { perfil: perfil.value, lojas: [...marcadas], vendedor: vendSel.value, ativo: ativo.checked, trocarSenha: trocar.disabled ? undefined : trocar.checked, senha: senha.value || undefined, acessoMeses: meses.value.trim() === '' || proprio ? undefined : Math.round(+meses.value), telas: perfil.value === 'gerente' ? CAT.flatMap((g) => g.telas.filter((t) => t.gerente === 'escolha' && telasSel.has(t.id)).map((t) => t.id)) : undefined };
+          if (souAdmin) { corpo.robo = cbRobo.checked; corpo.conversas = cbConv.checked; }
           if (novo) { await api('POST', '/usuarios', { nome: nome.value.trim().toLowerCase(), ...corpo }); abertos.delete('novoUser'); }
           else { await api('PUT', `/usuarios/${encodeURIComponent(u.nome)}`, corpo); state.cfgEdit = null; }
           return novo ? `Usuário criado.${corpo.senha ? ' Envie a senha para a pessoa.' : ''}` : 'Usuário atualizado.';

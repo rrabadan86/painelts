@@ -165,7 +165,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
       if (nome === '*') return false;
       if (req.perfil === 'admin') return true;
       return ['gerente', 'vendedor'].includes(u.perfil) && u.lojas.length && u.lojas.every((l) => minhas.has(l));
-    }).map(([nome, u]) => ({ nome, perfil: u.perfil, lojas: u.lojas, vendedor: u.vendedor, telas: u.telas, ativo: u.ativo, acessoAte: u.acessoAte || null, expirado: C.expirado(u), trocarSenha: !!u.trocarSenha, senhaTrocadaEm: u.senhaTrocadaEm || null, criadoEm: u.criadoEm, ultimoAcesso: acessos[nome] || null }))
+    }).map(([nome, u]) => ({ nome, perfil: u.perfil, lojas: u.lojas, vendedor: u.vendedor, telas: u.telas, robo: C.podeRoboU(u, cfg), conversas: C.podeConversasU(u), ativo: u.ativo, acessoAte: u.acessoAte || null, expirado: C.expirado(u), trocarSenha: !!u.trocarSenha, senhaTrocadaEm: u.senhaTrocadaEm || null, criadoEm: u.criadoEm, ultimoAcesso: acessos[nome] || null }))
       .sort((a, b) => a.nome.localeCompare(b.nome));
   }
 
@@ -868,7 +868,16 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     telasV: 8, // telas escolhidas uma a uma no menu novo (Produtos: Rentabilidade, Preços, Site; Estoque: Estoque, Pedido, Notas fiscais)
     ativo: b.ativo !== false,
     acessoAte: /^\d{4}-\d{2}-\d{2}$/.test(String(b.acessoAte || '')) ? String(b.acessoAte) : null,
+    // robô do WhatsApp (franqueado e gerente) e Conversas (franqueado): quem decide é o admin (ZAP-PERM-01/02); ver `wppSoAdmin`
+    robo: ['franqueado', 'gerente'].includes(b.perfil) ? b.robo === true : undefined,
+    conversas: b.perfil === 'franqueado' && b.conversas === false ? false : undefined,
   });
+  /** robô e Conversas só o admin muda: para os outros, fica como estava (usuário novo: robô desligado, Conversas liberada) */
+  function wppSoAdmin(req, d, alvo) {
+    if (req.perfil === 'admin') return;
+    d.robo = ['franqueado', 'gerente'].includes(d.perfil) ? (alvo && alvo.perfil === d.perfil ? C.podeRoboU(alvo) : false) : undefined;
+    d.conversas = d.perfil === 'franqueado' && alvo && alvo.conversas === false ? false : undefined;
+  }
   /** acessoMeses: n ≥ 1 = acesso até hoje + n meses; 0 = sem prazo; ausente = mantém */
   function prazo(b, atual) {
     if (b.acessoMeses == null || b.acessoMeses === '') return { ok: atual || null };
@@ -885,6 +894,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     if (senha.length < 8) return res.status(400).json({ erro: 'A senha precisa de pelo menos 8 caracteres.' });
     if (senha.length > 200) return res.status(400).json({ erro: 'A senha deve ter no máximo 200 caracteres.' });
     const d = limparDados(req.body);
+    wppSoAdmin(req, d, null);
     const erro = validarUsuario(req, d, null);
     if (erro) return res.status(400).json({ erro });
     const pz = prazo(req.body, null);
@@ -897,7 +907,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
         cfg.usuarios[nome] = { senha: hash, ...d, trocarSenha: req.body.trocarSenha !== false, criadoEm: new Date().toISOString() };
       });
     } catch (e) { return res.status(400).json({ erro: C.msgErro(e) }); }
-    aud(req, 'criou usuário', nome, { perfil: d.perfil, lojas: d.lojas, acessoAte: d.acessoAte || 'sem prazo', trocarSenha: req.body.trocarSenha !== false, loja: lojaUnicaAud(d.lojas) });
+    aud(req, 'criou usuário', nome, { perfil: d.perfil, lojas: d.lojas, roboWhatsapp: d.robo ? 'liberado' : undefined, conversas: d.conversas === false ? 'tiradas' : undefined, acessoAte: d.acessoAte || 'sem prazo', trocarSenha: req.body.trocarSenha !== false, loja: lojaUnicaAud(d.lojas) });
     res.json({ ok: true });
   });
 
@@ -906,7 +916,8 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     const alvo = C.get().usuarios[nome];
     if (!alvo || nome === '*') return res.status(404).json({ erro: 'Usuário não encontrado.' });
     if (!usuariosVisiveis(req).some((u) => u.nome === nome)) return res.status(403).json({ erro: 'Sem permissão para alterar este usuário.' });
-    const d = limparDados({ ...alvo, ...req.body });
+    const d = limparDados({ ...alvo, robo: C.podeRoboU(alvo), ...req.body });
+    wppSoAdmin(req, d, alvo);
     if (req.body.acessoMeses != null && req.body.acessoMeses !== '') {
       const pz = prazo(req.body, alvo.acessoAte);
       if (pz.erro) return res.status(400).json({ erro: pz.erro });
@@ -929,7 +940,9 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
       if (hash) { u.senha = hash; u.sessao = (u.sessao || 0) + 1; }
       if (typeof req.body.trocarSenha === 'boolean' && nome !== req.user) u.trocarSenha = req.body.trocarSenha;
     });
-    aud(req, 'alterou usuário', nome, { perfil: d.perfil, lojas: d.lojas, telas: d.telas, ativo: d.ativo, acessoAte: d.acessoAte !== (alvo.acessoAte || null) ? d.acessoAte || 'sem prazo' : undefined, senha: senha ? 'redefinida' : undefined, trocarSenha: typeof req.body.trocarSenha === 'boolean' && req.body.trocarSenha !== !!alvo.trocarSenha ? req.body.trocarSenha : undefined, loja: lojaUnicaAud(d.lojas) });
+    aud(req, 'alterou usuário', nome, { perfil: d.perfil, lojas: d.lojas, telas: d.telas, ativo: d.ativo,
+      roboWhatsapp: !!d.robo !== C.podeRoboU(alvo) ? (d.robo ? 'liberado' : 'tirado') : undefined,
+      conversas: (d.conversas !== false) !== (alvo.conversas !== false) && d.perfil === 'franqueado' ? (d.conversas === false ? 'tiradas' : 'liberadas') : undefined, acessoAte: d.acessoAte !== (alvo.acessoAte || null) ? d.acessoAte || 'sem prazo' : undefined, senha: senha ? 'redefinida' : undefined, trocarSenha: typeof req.body.trocarSenha === 'boolean' && req.body.trocarSenha !== !!alvo.trocarSenha ? req.body.trocarSenha : undefined, loja: lojaUnicaAud(d.lojas) });
     pacoteLimpar();
     res.json({ ok: true });
   });

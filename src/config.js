@@ -104,6 +104,11 @@ function normalizar(cfg) {
       // aumenta quando a senha muda ou o admin encerra as sessões: os cookies antigos deixam de valer
       sessao: Number.isInteger(v.sessao) && v.sessao >= 0 ? v.sessao : 0,
       // lojas em que a pessoa já viu a configuração guiada (a janela abre sozinha só uma vez por loja)
+      // robô do WhatsApp (decisão do dono, 23/11/2026; ZAP-PERM-01): só o admin libera, pessoa a pessoa (franqueado e gerente);
+      // ausente = usuário de antes da regra (vale quem tinha loja com o robô: `roboLegado`, gravado uma vez na subida)
+      robo: typeof v.robo === 'boolean' ? v.robo : undefined,
+      // Conversas do WhatsApp: vem liberada para o franqueado; só o admin tira (false)
+      conversas: v.conversas === false ? false : undefined,
       guiaVisto: Array.isArray(v.guiaVisto) && v.guiaVisto.length ? v.guiaVisto.filter((x) => typeof x === 'string').slice(-200) : undefined,
     };
   }
@@ -328,6 +333,36 @@ function msgErro(e, onde) {
   return String((e && e.message) || e || 'Erro.');
 }
 
+/** a loja já usava o robô do WhatsApp antes da permissão por pessoa (configurou ou conectou) */
+function lojaComRobo(lojaId, cfg) {
+  const l = (cfg.lojas || []).find((x) => x.id === lojaId);
+  if (l && l.zap && typeof l.zap === 'object') return true;
+  try { return fs.existsSync(path.join(DATA_DIR, lojaId, 'zap', 'estado.json')); } catch { return false; }
+}
+/** usuário de antes da regra: franqueado, ou gerente com a tela Clientes, numa loja que já usava o robô */
+function roboLegado(u, cfg) {
+  if (!u || !['franqueado', 'gerente'].includes(u.perfil)) return false;
+  if (u.perfil === 'gerente' && !(telasDo(u) || []).includes('clientes')) return false;
+  return (u.lojas || []).some((id) => id !== '*' && lojaComRobo(id, cfg));
+}
+/** ZAP-PERM-01: pode conectar, ligar e configurar o robô do WhatsApp? admin sempre; franqueado e gerente só liberados pelo admin */
+function podeRoboU(u, cfg = get()) {
+  if (!u) return false;
+  if (u.perfil === 'admin') return true;
+  if (!['franqueado', 'gerente'].includes(u.perfil)) return false;
+  return typeof u.robo === 'boolean' ? u.robo : roboLegado(u, cfg);
+}
+/** ZAP-PERM-02: pode ver e responder as Conversas do WhatsApp? admin sempre; franqueado até o admin tirar; os outros nunca */
+function podeConversasU(u) {
+  if (!u) return false;
+  if (u.perfil === 'admin') return true;
+  return u.perfil === 'franqueado' && u.conversas !== false;
+}
+/** a pessoa do pedido (sem usuário cadastrado, o painel roda como admin) */
+const doPedido = (req) => { const u = get().usuarios[req.user]; return u || (req.perfil === 'admin' ? { perfil: 'admin' } : null); };
+const podeRobo = (req) => podeRoboU(doPedido(req));
+const podeConversas = (req) => podeConversasU(doPedido(req));
+
 /** meta da loja num mês (AAAA-MM): meta do mês, senão a padrão */
 function metaDoMes(loja, ym) {
   return (loja.metas && loja.metas[ym] != null ? loja.metas[ym] : loja.meta) ?? null;
@@ -335,5 +370,5 @@ function metaDoMes(loja, ym) {
 
 module.exports = {
   get, hashSenha, hashSenhaAsync, confereSenha, confereSenhaAsync, chaveSessao, lojasDoUsuario, pastaLoja, usuario, alterar, gravarAtomico, auditar, lerAuditoria,
-  registrarAcesso, flushAcessos, lerAcessos, msgErro, erroDeSistema, MSG_ERRO_INTERNO, expirado, hojeBR, diaSP, somaMeses, metaDoMes, PERFIS, TELAS, TELAS_GERENTE_PADRAO, telasDo, ARQUIVOS, CONFIG_FILE, CONFIG_DIR, COLETOR_DIR, DATA_DIR,
+  registrarAcesso, flushAcessos, lerAcessos, msgErro, erroDeSistema, MSG_ERRO_INTERNO, expirado, hojeBR, diaSP, somaMeses, metaDoMes, PERFIS, TELAS, TELAS_GERENTE_PADRAO, telasDo, podeRobo, podeRoboU, podeConversas, podeConversasU, roboLegado, ARQUIVOS, CONFIG_FILE, CONFIG_DIR, COLETOR_DIR, DATA_DIR,
 };
