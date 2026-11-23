@@ -42,6 +42,7 @@ for (const tela of TELAS) {
   test(`PRINTS-01: ${tela}`, async ({ page }) => {
     const erros = [];
     page.on('pageerror', (e) => erros.push(e.message));
+    const largura0 = page.viewportSize().width;
     await page.goto('/apresentacao');
     await page.waitForFunction(() => window.TS && TS.db && TS.state && TS.state.loja && TS.state.loja !== 'todas', null, { timeout: 60000 });
     await page.evaluate((h) => { location.hash = '#' + h; }, tela);
@@ -62,9 +63,14 @@ for (const tela of TELAS) {
     // "Carregando…" um instante), espera ficar pronta de novo e tira outra vez; diferença de verdade continua falhando.
     await expect(async () => {
       await pronta(page);
-      const larg = page.viewportSize().width, alto = await page.evaluate(() => document.documentElement.scrollHeight);
-      const clip = { x: 0, y: 0, width: larg, height: Math.min(alto, larg > 600 ? 3000 : 4500) };
-      await expect(page).toHaveScreenshot(`${tela}.png`, { fullPage: true, clip, mask: [page.locator('#updated')], timeout: 10000 });
+      // sem fullPage: o print de página inteira do Chromium muda a largura da janela por um instante, cruza o limite de
+      // 860 px (computador × celular) e o painel redesenha a tela no meio do print ("Lendo as notas…" na referência).
+      // Em vez disso a janela cresce só na altura (não dispara redesenho) e o print é da janela.
+      const larg = largura0, alto = await page.evaluate(() => document.documentElement.scrollHeight);
+      const altura = Math.min(alto, larg > 600 ? 3000 : 4500);
+      if (page.viewportSize().height !== altura) { await page.setViewportSize({ width: larg, height: altura }); await pronta(page); }
+      expect(await page.evaluate(() => !!document.querySelector('main .loading, main .spinner')), 'tela ainda carregando no print').toBe(false);
+      await expect(page).toHaveScreenshot(`${tela}.png`, { mask: [page.locator('#updated')], timeout: 10000 });
     }).toPass({ timeout: 60000, intervals: [1000, 2000, 3000] });
     expect(erros, 'erro de JavaScript na tela').toEqual([]);
   });
