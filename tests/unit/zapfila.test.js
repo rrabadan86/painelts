@@ -267,7 +267,7 @@ test('número que respondeu "parar" e celular repetido em outro cliente: não re
 test('configuração: valida ritmo, horário, dias, teto e falhas', () => {
   const ok = (o) => ZF.validarCfg({ ...ZF.PADRAO, ...o });
   assert.deepStrictEqual(ok({}).ok, ZF.PADRAO);
-  assert.deepStrictEqual(ZF.PADRAO, { horario: 'loja', min: 900, max: 1200, das: '09:00', as: '18:30', dias: [1, 2, 3, 4, 5, 6], teto: 30, falhas: 3 });
+  assert.deepStrictEqual(ZF.PADRAO, { horario: 'loja', min: 900, max: 1200, das: '09:00', as: '18:30', dias: [1, 2, 3, 4, 5, 6], teto: 30, falhas: 3, esperaConversa: 3 });
   for (const ruim of [{ min: 59 }, { max: 7201 }, { min: 1300, max: 1200 }, { min: 'abc' }, { min: 90.5 }, { das: '9:00' }, { as: '24:00' }, { das: '18:30', as: '09:00' }, { das: '10:00', as: '10:00' },
     { dias: [] }, { dias: [7] }, { dias: 'seg' }, { horario: 'sempre' }, { teto: 0 }, { teto: 201 }, { falhas: 0 }, { falhas: 11 }]) assert.ok(ok(ruim).erro, JSON.stringify(ruim));
   assert.deepStrictEqual(ok({ min: 60, max: 7200, dias: [6, 0, 0], teto: 200, falhas: 10 }).ok, { ...ZF.PADRAO, min: 60, max: 7200, dias: [0, 6], teto: 200, falhas: 10 });
@@ -664,4 +664,116 @@ test('ZAP-NUMERO-01: envio manual trava pelo NÚMERO — outro cliente com o mes
   const b2 = ZF.envioManualBloqueado({ lojaId: 'l1', cpf: FILHA, contato: {}, para: CEL, agora: agora + 3600e3 });
   assert.match(b2, /por lyandra/);
   ZF.gravarJson('l1', 'enviados', {});
+});
+
+// ---------- trava "em conversa" (decisão do dono, 23/11/2026) ----------
+// "A cliente começou a conversar e no mesmo dia o robô mandou a campanha: não deveria enviar hoje, mas pode lembrá-la depois."
+const CONV = require('../../src/conversas');
+const HORA = 3600e3;
+
+test('ZAP-CONVERSA-01: conversa recente do cliente segura o envio, ele continua pendente e o robô manda para o próximo', () => {
+  const conversas = { [NUM[0]]: new Date(QUARTA_10H - 2 * HORA).toISOString() };
+  const d = ZF.decidir(cena({ conversas }));
+  assert.strictEqual(d.msg.cliente.cpf, CPF[1], 'pula o primeiro (conversando) e manda para o segundo');
+  assert.deepStrictEqual(d.marcar, [], 'quem está conversando não sai da fila (nada marcado)');
+  // todos conversando: não envia, não marca ninguém e diz por quê
+  const todos = Object.fromEntries(NUM.slice(0, 3).map((n) => [n, new Date(QUARTA_10H - HORA).toISOString()]));
+  const t = ZF.decidir(cena({ conversas: todos }));
+  assert.strictEqual(t.msg, undefined);
+  assert.deepStrictEqual(t.marcar, []);
+  assert.strictEqual(t.motivo, 'em_conversa');
+  assert.ok(ZF.MOTIVOS.em_conversa);
+  // quem está conversando conta nos adiados (faixa do robô), com a data em que pode sair
+  const ad = ZF.adiadosConversa({ cfg: ZF.PADRAO, campanhas: cena().campanhas, preparo: cena().preparo, conversas, agora: QUARTA_10H });
+  assert.deepStrictEqual(ad.map((x) => [x.cpf, x.nome, x.aPartir]), [[CPF[0], 'Pontos a', new Date(QUARTA_10H - 2 * HORA + 3 * DIA).toISOString()]]);
+});
+
+test('ZAP-CONVERSA-02: depois de N dias de conversa parada o cliente volta a receber; esperaConversa 0 desliga', () => {
+  const conv = (ms) => ({ [NUM[0]]: new Date(QUARTA_10H - ms).toISOString() });
+  assert.strictEqual(ZF.decidir(cena({ conversas: conv(3 * DIA - MIN) })).msg.cliente.cpf, CPF[1], 'ainda dentro dos 3 dias');
+  assert.strictEqual(ZF.decidir(cena({ conversas: conv(3 * DIA) })).msg.cliente.cpf, CPF[0], 'parada há 3 dias: volta');
+  const cfg5 = { ...ZF.PADRAO, esperaConversa: 5 };
+  assert.strictEqual(ZF.decidir(cena({ cfg: cfg5, conversas: conv(4 * DIA) })).msg.cliente.cpf, CPF[1], 'N vem da configuração da loja');
+  const cfg0 = { ...ZF.PADRAO, esperaConversa: 0 };
+  assert.strictEqual(ZF.decidir(cena({ cfg: cfg0, conversas: conv(MIN) })).msg.cliente.cpf, CPF[0], '0 desliga a trava');
+  assert.deepStrictEqual(ZF.adiadosConversa({ cfg: cfg0, campanhas: cena().campanhas, preparo: cena().preparo, conversas: conv(MIN), agora: QUARTA_10H }), []);
+  // sem conversas: envia como antes
+  assert.strictEqual(ZF.decidir(cena()).msg.cliente.cpf, CPF[0]);
+  // fora do período da campanha não conta como adiado
+  const c = camp('a', { fim: '2026-03-01' });
+  assert.deepStrictEqual(ZF.adiadosConversa({ cfg: ZF.PADRAO, campanhas: [c], preparo: { a: prep(c) }, conversas: conv(MIN), agora: QUARTA_10H }), []);
+});
+
+test('ZAP-CONVERSA-03: o número da conversa com ou sem o 9º dígito é o mesmo cliente', () => {
+  const com9 = '5562981718205', sem9 = '556281718205'; // o exemplo do dono: 62981718205 = 6281718205
+  assert.strictEqual(ZF.foneChave(sem9), com9);
+  const c = camp('a'), ha1h = new Date(QUARTA_10H - HORA).toISOString();
+  // lista conferida com o 9 e a conversa (chave do WhatsApp) sem o 9
+  const p9 = prep(c, QUARTA_10H, { [CPF[0]]: { para: com9 } });
+  assert.strictEqual(ZF.decidir(cena({ preparo: { a: p9 }, conversas: { [ZF.foneChave(sem9)]: ha1h } })).msg.cliente.cpf, CPF[1]);
+  // lista conferida sem o 9 e a conversa com o 9: também segura
+  const p8 = prep(c, QUARTA_10H, { [CPF[0]]: { para: sem9 } });
+  assert.strictEqual(ZF.decidir(cena({ preparo: { a: p8 }, conversas: { [com9]: ha1h } })).msg.cliente.cpf, CPF[1]);
+});
+
+test('ZAP-CONVERSA-04: validarCfg aceita de 0 a 30 dias; configuração antiga sem o campo fica com 3', () => {
+  const ok = (o) => ZF.validarCfg({ ...ZF.PADRAO, ...o });
+  assert.strictEqual(ok({ esperaConversa: 0 }).ok.esperaConversa, 0);
+  assert.strictEqual(ok({ esperaConversa: '30' }).ok.esperaConversa, 30);
+  for (const ruim of [-1, 31, 2.5, 'abc']) assert.ok(ok({ esperaConversa: ruim }).erro, String(ruim));
+  const { esperaConversa, ...antiga } = ZF.PADRAO;
+  assert.strictEqual(esperaConversa, 3);
+  assert.strictEqual(ZF.validarCfg(antiga).ok.esperaConversa, 3);
+  assert.strictEqual(ZF.cfgDe({ zap: { teto: 10 } }).esperaConversa, 3);
+});
+
+test('ZAP-CONVERSA-05: a conta das conversas — mensagem do robô não conta; cliente e loja (gente) contam; "lid:" fica de fora', () => {
+  const ag = QUARTA_10H;
+  const em = (ms) => new Date(ag - ms).toISOString();
+  CONV.aplicar('l1', [
+    { chat: NUM[0], id: 'a1', em: em(10 * DIA), tipo: 'texto', deMim: false, texto: 'oi' },
+    { chat: NUM[0], id: 'a2', em: em(HORA), tipo: 'texto', deMim: true, texto: 'campanha' }, // do robô
+    { chat: '556281718205', id: 'b1', em: em(2 * HORA), tipo: 'texto', deMim: true, texto: 'resposta da loja' }, // sem o 9
+    { chat: 'lid:123456789', id: 'c1', em: em(HORA), tipo: 'texto', deMim: false, texto: 'x' },
+    { chat: NUM[2], id: 'd1', em: em(40 * DIA), tipo: 'texto', deMim: false, texto: 'antiga' },
+  ], ag);
+  CONV.marcarRobo('l1', 'a2', 'Pontos', ag);
+  const u = CONV.ultimaConversa('l1', ag);
+  assert.strictEqual(u[NUM[0]], em(10 * DIA), 'a do robô (1 h atrás) não conta: vale a do cliente de 10 dias');
+  assert.strictEqual(u['5562981718205'], em(2 * HORA), 'resposta da loja escrita por gente conta, na chave com o 9');
+  assert.ok(!Object.keys(u).some((k) => k.startsWith('lid')), 'conversa sem número fica de fora');
+  assert.strictEqual(u[NUM[2]], undefined, 'mais de 30 dias: nem lê');
+  // cache pela data do índice: mensagem nova muda a conta
+  CONV.aplicar('l1', [{ chat: NUM[0], id: 'a3', em: em(MIN), tipo: 'texto', deMim: false, texto: 'oi de novo' }], ag);
+  assert.strictEqual(CONV.ultimaConversa('l1', ag)[NUM[0]], em(MIN));
+});
+
+test('ZAP-CONVERSA-06: laço — quem conversou hoje fica pendente, o robô manda ao próximo, a situação conta e a conversa mostra a adiada', async () => {
+  CONV.aplicar('l1', [{ chat: NUM[0], id: 'k1', em: new Date(QUARTA_10H - HORA).toISOString(), tipo: 'texto', deMim: false, texto: 'oi, tem chá?' }], QUARTA_10H);
+  const zap = roboDeMentira();
+  const r = await ZL.passo('l1', QUARTA_10H, { zap, rnd: () => 0 });
+  assert.strictEqual(r.enviou, true);
+  assert.strictEqual(zap.enviados[0].cliente.cpf, CPF[1], 'o primeiro está conversando: vai o segundo');
+  assert.strictEqual(itemDe(CPF[0]).st, 'p', 'continua pendente');
+  assert.strictEqual(ZF.adiadosDaLoja('l1', QUARTA_10H).length, 1);
+  assert.deepStrictEqual(ZF.adiadaDaConversa('l1', NUM[0], QUARTA_10H), { campanha: 'Pontos', aPartir: new Date(QUARTA_10H - HORA + 3 * DIA).toISOString() });
+  assert.strictEqual(ZF.adiadaDaConversa('l1', 'lid:123456789', QUARTA_10H), null);
+  assert.strictEqual(ZF.adiadaDaConversa('l1', NUM[2], QUARTA_10H), null, 'quem não conversa não tem adiada');
+  // pausado: a conversa não mostra adiada (o robô não está mandando)
+  ZF.mudarEstado('l1', (s) => { s.pausa = { auto: false }; });
+  assert.strictEqual(ZF.adiadaDaConversa('l1', NUM[0], QUARTA_10H), null);
+  ZF.mudarEstado('l1', (s) => { s.pausa = null; });
+  // 3 dias depois, com a conversa parada: o primeiro recebe
+  const depois = QUARTA_10H + 3 * DIA; // sábado 10h (a lista é conferida de novo todo dia pelo servidor)
+  ZF.gravarPreparo('l1', criada.id, [CPF[0], CPF[2]].map((cpf) => ({ cpf, para: NUM[CPF.indexOf(cpf)], v: valores('Cliente') })), 'dono', depois - HORA);
+  const r2 = await ZL.passo('l1', depois, { zap, rnd: () => 0 });
+  assert.strictEqual(r2.enviou, true);
+  assert.strictEqual(zap.enviados[1].cliente.cpf, CPF[0]);
+  assert.ok(!JSON.stringify(C.lerAuditoria(200)).includes('tem chá'), 'texto da conversa nunca na auditoria');
+});
+
+test('ZAP-CONVERSA-07: a conversa não conta como "já recebeu" no intervalo da loja (envio manual) nem grava contato', () => {
+  CONV.aplicar('l1', [{ chat: NUM[3], id: 'z1', em: new Date().toISOString(), tipo: 'texto', deMim: true, texto: 'oi' }]);
+  assert.strictEqual(ZF.envioManualBloqueado({ lojaId: 'l1', cpf: CPF[3], contato: ZF.lerContatos('l1')[CPF[3]], para: NUM[3] }), null);
+  assert.strictEqual(ZF.lerContatos('l1')[CPF[3]], undefined);
 });

@@ -904,10 +904,11 @@ const DEMO_CONV = [
   { cli: 'Vocês entregam?', loja: 'Entregamos pelo app de entregas da loja e também separamos para retirar.' },
 ];
 const DEMO_SEMCAD = '5500911112222';
+const demoIndice = (chave) => [...chave].reduce((x, c, i) => x + c.charCodeAt(0) * (i + 3) * 31, 0) % DEMO_CONV.length;
 function demoConversa(chave, ag) {
   const min = 60e3, em = (ms) => new Date(ms).toISOString();
   if (chave === DEMO_SEMCAD) return [{ id: 'd-s0', deMim: false, em: em(ag - 30 * 3600e3 - 2 * min), tipo: 'audio', texto: '', nome: 'Contato sem cadastro' }, { id: 'd-s1', deMim: false, em: em(ag - 30 * 3600e3), tipo: 'texto', texto: 'Oi, vi o anúncio de vocês. Têm chá para dormir?', nome: 'Contato sem cadastro' }];
-  const k = [...chave].reduce((x, c, i) => x + c.charCodeAt(0) * (i + 3) * 31, 0) % DEMO_CONV.length;
+  const k = demoIndice(chave);
   const t = DEMO_CONV[k], fim = ag - ((k * 95) + 12) * min;
   const msgs = [
     { id: 'd1', deMim: false, em: em(fim - 3 * 864e5), tipo: 'texto', texto: 'Oi! Passei aí semana passada e gostei muito do atendimento.' },
@@ -932,7 +933,11 @@ app.get('/api/demo/conversas', (req, res) => {
 app.get('/api/demo/conversas/mensagens', (req, res) => {
   const chave = String(req.query.chave || '');
   if (!/^\d{12,13}$/.test(chave)) return res.status(400).json({ erro: 'Conversa inválida.' });
-  res.json({ mensagens: demoConversa(chave, Date.now()) });
+  const ag = Date.now(), msgs = demoConversa(chave, ag);
+  // exemplo da trava "em conversa" do robô: nas conversas de exemplo em que o cliente perguntou e a loja respondeu (a 1ª e a 2ª de DEMO_CONV)
+  const k = demoIndice(chave), ult = [...msgs].reverse().find((x) => !x.robo);
+  const adiada = chave !== DEMO_SEMCAD && (k === 0 || k === 1) && ult ? { campanha: 'Pontos vencendo', aPartir: new Date(Date.parse(ult.em) + 3 * 864e5).toISOString() } : null;
+  res.json({ mensagens: msgs, adiada });
 });
 app.post('/api/demo/conversas/lida', (req, res) => res.json({ ok: true }));
 app.post('/api/demo/conversas/responder', express.json({ limit: '8kb' }), (req, res) => {
@@ -1175,9 +1180,13 @@ app.get('/api/conversas', async (req, res) => {
 });
 app.get('/api/conversas/mensagens', (req, res) => {
   const id = lojaConv(req, res); if (!id) return;
-  const m = CONV.mensagens(id, String(req.query.chave || ''));
+  const chave = String(req.query.chave || '');
+  const m = CONV.mensagens(id, chave);
   if (!m) return res.status(400).json({ erro: 'Conversa inválida.' });
-  res.json({ mensagens: m });
+  // trava "em conversa" do robô (decisão do dono, 23/11/2026): a mensagem de campanha pendente para este número espera a conversa parar
+  let adiada = null;
+  try { adiada = require('./src/zapfila').adiadaDaConversa(id, chave); } catch { /* só o aviso na conversa */ }
+  res.json({ mensagens: m, adiada });
 });
 // mídia da conversa (foto, áudio, vídeo, documento), decisão do dono: baixada do WhatsApp na hora e repassada ao navegador,
 // sem gravar nada na VPS (nem em dados/, nem cache); nada em log nem auditoria (nem o nome do arquivo)
