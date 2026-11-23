@@ -95,6 +95,9 @@ function conferir(id) {
     else if (x.ok) { r.estado = 'ok'; r.totalAppNext = x.nota && x.nota.total; }
     else if (x.concluida) { r.estado = 'concluida'; r.erro = x.erro || 'concluída sem transmitir'; }
     else { r.estado = 'erro'; r.erro = x.erro || 'falhou'; }
+    // regra fiscal (e CFOP) que o AppNext usou em cada produto: a revisão mostra (com ST × sem ST, decisão do dono 23/11/2026)
+    const its = (x.nota && Array.isArray(x.nota.itens)) ? x.nota.itens : [];
+    if (its.some((i) => i && i.regra)) r.regras = Object.fromEntries(its.filter((i) => i && i.produtoId && i.regra).map((i) => [String(i.produtoId).slice(0, 60), { regra: String(i.regra).slice(0, 80), cfop: String(i.cfopItem || '').replace(/\D/g, '').slice(0, 4) }]));
     r.fim = x.em;
     mudou.push(r);
   }

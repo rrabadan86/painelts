@@ -227,9 +227,12 @@ function conferirNfe(id, d) {
   if (!d.nfe || d.nfe.estado !== 'na_fila') return d;
   const r = lerJ(path.join(envioNfe(id), d.id + '.resultado.json'), null);
   if (!r || !r.em || Date.parse(r.em) < Date.parse(d.nfe.em)) return d;
+  if (r.nota && Array.isArray(r.nota.regras) && r.nota.regras.length) {
+    try { require('./nfecfop').guardarRegrasDev(id, r.nota.regras, r.em); } catch (e) { console.error('[devolução] regras:', C.msgErro(e)); }
+  }
   return atualizar(id, d.id, (x) => {
     // emitida = concluída e autorizada pela SEFAZ (o e-mail sai quando o XML chegar); concluida = concluída mas não transmitida
-    x.nfe = { ...x.nfe, fim: r.em, estado: r.ok ? (r.simulado ? 'teste' : 'ok') : r.concluida ? 'concluida' : 'erro', erro: r.ok ? undefined : r.erro || 'falhou', cfop: r.nota && r.nota.cfop, total: r.nota && r.nota.total, chaveRef: (r.nota && r.nota.chaveRef) || x.nfe.chaveRef, saidaId: (r.nota && r.nota.saidaId) || x.nfe.saidaId,
+    x.nfe = { ...x.nfe, fim: r.em, estado: r.ok ? (r.simulado ? 'teste' : 'ok') : r.concluida ? 'concluida' : 'erro', erro: r.ok ? undefined : r.erro || 'falhou', cfop: r.nota && r.nota.cfop, regra: r.nota && r.nota.regra ? String(r.nota.regra).slice(0, 80) : undefined, total: r.nota && r.nota.total, chaveRef: (r.nota && r.nota.chaveRef) || x.nfe.chaveRef, saidaId: (r.nota && r.nota.saidaId) || x.nfe.saidaId,
       emitida: r.emitida && r.nfe ? { numero: r.nfe.numero, serie: r.nfe.serie, chave: r.nfe.chave, protocolo: r.nfe.protocolo } : x.nfe.emitida };
   });
 }

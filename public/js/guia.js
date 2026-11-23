@@ -58,28 +58,45 @@
    * com `irPasso1` para o link. → { el, salvar } (salvar grava pela rota da loja e devolve o que ficou)
    */
   G.formCfop = (lojaId, atual, cfops, trava, irPasso1) => {
-    let lista = (cfops && cfops.lista) || [], em = cfops && cfops.em;
+    let lista = (cfops && cfops.lista) || [], em = cfops && cfops.em, regras = (cfops && cfops.regras) || { venda: [], devolucao: [] };
+    // devolução: escolhe a REGRA FISCAL pelo nome (pedido do dono, 23/11/2026); a nota de devolução tem um CFOP só, o da regra
     const cx = (tipo, padrao, dica) => {
       const v = (atual && atual[tipo]) || '';
+      const rgs = (regras.devolucao || []).filter((q) => q.cfop);
+      if (rgs.length) {
+        const vistos = new Set();
+        const ops = rgs.filter((q) => { const k = q.cfop + '|' + q.descricao; if (vistos.has(k)) return false; vistos.add(k); return true; })
+          .map((q) => h('option', { value: q.cfop, selected: q.cfop === v || null }, `${q.descricao || 'Regra sem nome'} · CFOP ${q.cfop}${q.produtos ? ` · ${fmtN(q.produtos)} produtos` : ''}`));
+        return h('select', { class: 'f-input', 'aria-label': 'Regra fiscal da devolução ao fornecedor', title: dica },
+          h('option', { value: '' }, padrao), ...(v && !rgs.some((q) => q.cfop === v) ? [h('option', { value: v, selected: true }, `CFOP ${v} · não está na última lista do AppNext`)] : []), ...ops);
+      }
       if (!lista.length) return h('input', { class: 'f-input', inputmode: 'numeric', maxlength: 4, placeholder: padrao, value: v, 'aria-label': `CFOP de ${tipo === 'venda' ? 'venda' : 'devolução'}`, title: dica });
       const op = (c) => h('option', { value: c.codigo, selected: c.codigo === v || null }, `${c.codigo}${c.descricao ? ' · ' + c.descricao : ''}`);
       return h('select', { class: 'f-input', 'aria-label': `CFOP de ${tipo === 'venda' ? 'venda' : 'devolução'}`, title: dica },
         h('option', { value: '' }, padrao), ...(v && !lista.some((c) => c.codigo === v) ? [op({ codigo: v, descricao: 'não está na última lista do AppNext' })] : []), ...lista.map(op));
     };
-    const DV = 'O CFOP da NF-e de venda. Automático = 5102, como o robô sempre usou. O robô usa a regra fiscal (sequência) do AppNext com esse CFOP, que já traz os impostos.';
-    const DD = 'O CFOP da NF-e de devolução ao fornecedor. Automático = o da regra fiscal (sequência) de devolução da loja; se a loja tiver mais de um, o robô escolhe pelo estado do fornecedor ou pede para fazer à mão.';
+    const fmtN = (n) => Number(n || 0).toLocaleString('pt-BR');
+    /** venda: automática e transparente — cada produto usa a regra vinculada a ele no AppNext (com ST ou sem ST) */
+    const blocoVenda = () => {
+      const rv = (regras.venda || []).filter((q) => q.descricao);
+      return h('div', { class: 'nfe-regras-venda' },
+        h('b', null, 'Automática: cada produto usa a regra fiscal vinculada a ele no AppNext'),
+        h('small', { class: 'muted' }, rv.length ? `Regras de venda da loja: ${rv.map((q) => `${q.descricao}${q.cfop ? ' (CFOP ' + q.cfop + ')' : ''}${q.produtos ? ' · ' + fmtN(q.produtos) + ' produtos' : ''}`).join(' · ')}.` : 'Produto com ST e produto sem ST na mesma nota: cada um sai com a regra dele. O teste mostra a regra de cada produto.'));
+    };
+    const DV = 'Na venda o robô não escolhe regra: abre cada produto no AppNext e usa a regra fiscal vinculada a ele lá (com ST ou sem ST), que traz o CFOP e os impostos. Se um produto estiver em mais de uma regra de venda e o AppNext não escolher sozinho, o robô para e avisa qual é (nunca chuta). O teste da nota mostra a regra de cada produto.';
+    const DD = 'A regra fiscal da NF-e de devolução ao fornecedor, pelo nome que está no AppNext (Cadastros → Regras fiscais). A nota de devolução tem um CFOP só, o da regra; o AppNext usa a regra dele em cada produto. Automático = a regra de devolução da loja; se houver mais de uma, o robô escolhe pelo estado do fornecedor ou pede para fazer à mão.';
     let venda, devol;
     const grade = h('div', { class: 'guia-g2' }), info = h('small', { class: 'muted' }), vivo = h('small', { class: 'nfe-cfop-vivo', hidden: true });
     const btBuscar = h('button', { type: 'button', class: 'btn', title: 'Pede ao robô para ler agora, no AppNext, os CFOPs e as regras fiscais da loja (só lê, não altera nada). Leva 1 a 2 minutos.' }, '↻ Buscar no AppNext');
     const pintar = () => {
       // guarda o que a pessoa já escolheu antes de refazer as caixas
       if (venda) atual = { venda: venda.value.trim(), devolucao: devol.value.trim() };
-      venda = cx('venda', 'Automático (5102, como hoje)', DV);
-      devol = cx('devolucao', 'Automático (regra da loja)', DD);
-      grade.replaceChildren(campo('CFOP da venda', venda, DV), campo('CFOP da devolução ao fornecedor', devol, DD));
+      venda = { value: '' }; // venda sempre automática (a regra de cada produto, no AppNext)
+      devol = cx('devolucao', 'Automático (regra de devolução da loja)', DD);
+      grade.replaceChildren(campo('Regra fiscal da venda', blocoVenda(), DV), campo('Regra fiscal da devolução ao fornecedor', devol, DD));
       const quando = em ? new Date(em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : null;
       btBuscar.textContent = lista.length ? '↻ Atualizar do AppNext' : '↻ Buscar no AppNext';
-      info.textContent = lista.length ? `Lista lida do AppNext${quando ? ' em ' + quando : ''}. Cadastrou regra fiscal nova lá? Atualize.` : 'O painel ainda não leu os CFOPs do AppNext: busque aqui ou digite o número (ex.: 5102).';
+      info.textContent = lista.length || (regras.devolucao || []).length ? `Lista lida do AppNext${quando ? ' em ' + quando : ''}. Cadastrou regra fiscal nova lá? Atualize.` : 'O painel ainda não leu as regras fiscais do AppNext: busque aqui ou digite o número (ex.: 5102).';
     };
     const espera = (ms) => new Promise((r) => setTimeout(r, ms));
     if (trava) { btBuscar.disabled = true; btBuscar.title = trava; }
@@ -102,9 +119,9 @@
         }
         if (erro) throw new Error('Não consegui ler o AppNext: ' + erro);
         const r = await chamar('GET', `/api/admin/lojas/${encodeURIComponent(lojaId)}/nfe-cfop`);
-        lista = (r.cfopsAppNext && r.cfopsAppNext.lista) || []; em = r.cfopsAppNext && r.cfopsAppNext.em;
+        lista = (r.cfopsAppNext && r.cfopsAppNext.lista) || []; em = r.cfopsAppNext && r.cfopsAppNext.em; regras = (r.cfopsAppNext && r.cfopsAppNext.regras) || regras;
         pintar();
-        vivo.className = 'nfe-cfop-vivo pos'; vivo.textContent = lista.length ? `✅ ${lista.length} CFOP(s) lidos do AppNext. Escolha e salve.` : '⚠️ O AppNext não devolveu nenhum CFOP de saída para esta loja.';
+        vivo.className = 'nfe-cfop-vivo pos'; vivo.textContent = lista.length || (regras.venda || []).length ? `✅ Lido do AppNext: ${(regras.venda || []).length} regra(s) de venda e ${(regras.devolucao || []).length} de devolução. Confira e salve.` : '⚠️ O AppNext não devolveu nenhum CFOP de saída para esta loja.';
       } catch (e) { vivo.className = 'nfe-cfop-vivo neg'; vivo.textContent = e.message; }
       btBuscar.disabled = false;
     });
@@ -112,7 +129,7 @@
     const el = h('div', { class: 'nfe-cfop' }, grade,
       h('div', { class: 'nfe-cfop-at' }, info, btBuscar), vivo,
       trava ? h('div', { class: 'notice warn' }, trava + ' ', irPasso1 ? h('button', { type: 'button', class: 'link-btn', onclick: irPasso1 }, 'Ir para o passo 1') : null) : null,
-      h('div', { class: 'guia-nota' }, '🔒 O robô usa só o CFOP escolhido, com a regra fiscal (sequência) do AppNext desse CFOP — é ela que traz os impostos. Se a nota tiver um produto sem regra fiscal com esse CFOP, ele para e avisa qual é: nunca emite com outro.'));
+      h('div', { class: 'guia-nota' }, '🔒 Venda: cada produto sai com a regra fiscal vinculada a ele no AppNext (com ST ou sem ST). Devolução: só a regra escolhida. Produto sem regra, ou com mais de uma regra de venda sem o AppNext escolher: o robô para e avisa qual é — nunca emite com outra.'));
     const salvar = async () => {
       const corpo = { venda: venda.value.trim(), devolucao: devol.value.trim() };
       if (TS.demo) { toast(TS.DEMO_AVISO); return corpo; }
@@ -282,12 +299,12 @@
       // buscar no AppNext usa o login do passo 1 (já gravado ao clicar em "Salvar e continuar" lá)
       const trava = TS.demo ? null : !L.passos.appnext ? 'Para buscar a lista, o robô precisa do acesso ao AppNext: salve primeiro o passo 1 (ou digite o CFOP).' : !est.coletorAtivo ? 'O robô não está ligado nesta VPS: digite o CFOP.' : null;
       const f = G.formCfop(L.id, L.nfeCfop, L.cfops, trava, !L.passos.appnext ? () => { i = 0; pintar(); } : null);
-      return [corpo('CFOP das notas fiscais', 'Qual CFOP o robô usa quando emite a NF-e de venda e a de devolução ao fornecedor no AppNext. Passo opcional: no automático fica como sempre foi.', f.el),
+      return [corpo('Regras fiscais das notas', 'Na venda, cada produto sai com a regra fiscal vinculada a ele no AppNext (com ST ou sem ST). Aqui você confere as regras e escolhe a da devolução ao fornecedor. Passo opcional: no automático fica como sempre foi.', f.el),
         pe(async () => { L.nfeCfop = await f.salvar(); })];
     };
     const telaFim = () => {
       const prontos = OBRIG.filter((k) => L.passos[k]).length;
-      const FEITO = { nfe: 'CFOP das notas salvo.', appnext: 'Acesso salvo. A primeira busca de vendas e estoque roda na próxima atualização automática.', pedido: 'Acesso salvo. O catálogo é lido na atualização da noite.', fixe: 'Acesso salvo. O cadastro de clientes chega depois da próxima atualização.', email: 'Gmail da loja salvo.' };
+      const FEITO = { nfe: 'Regras fiscais das notas salvas.', appnext: 'Acesso salvo. A primeira busca de vendas e estoque roda na próxima atualização automática.', pedido: 'Acesso salvo. O catálogo é lido na atualização da noite.', fixe: 'Acesso salvo. O cadastro de clientes chega depois da próxima atualização.', email: 'Gmail da loja salvo.' };
       const buscar = L.passos.appnext && est.coletorAtivo ? h('button', { type: 'button', class: 'btn', title: 'Pede ao robô para buscar agora as vendas e o estoque no AppNext, sem esperar a atualização automática. Leva alguns minutos.' }, 'Buscar agora') : null;
       if (buscar) buscar.addEventListener('click', async () => {
         buscar.disabled = true;
