@@ -163,3 +163,28 @@ test('CLI-CEL: o "parar" que chega pelo número novo acha o cliente (mesmo antes
   assert.ok(!(ZF.lerContatos('l1')[CPF_B] || {}).optout, 'quem tinha o número no FIXE não');
   CEL.desfazer('l1', CPF_A);
 });
+
+test('CEL-NOME-01: nome nas mensagens (cadastro da esposa, WhatsApp do marido) — só com número vinculado, só admin e franqueado da loja, vai no pacote e some ao desfazer', async () => {
+  // a conta pura
+  const CEL = require('../../src/celulares');
+  assert.strictEqual(CEL.nomeValido(' Paulo  Henrique '), 'Paulo Henrique');
+  assert.strictEqual(CEL.nomeValido('Paulo 123'), null);
+  assert.strictEqual(CEL.nomeValido('x'.repeat(41)), null);
+  assert.strictEqual(CEL.nomeValido(''), '');
+  // sem vínculo não dá
+  assert.strictEqual((await post('dono1', '/api/clientes/celular/nome', { loja: 'l1', cpf: CPF_C, nome: 'Paulo' })).status, 400);
+  assert.strictEqual((await post('dono1', '/api/clientes/celular', { loja: 'l1', cpf: CPF_A, cel: NOVO })).status, 200);
+  for (const [nome, st] of [['gercli', 403], ['vend1', 403], ['dono2', 400]]) assert.strictEqual((await post(nome, '/api/clientes/celular/nome', { loja: 'l1', cpf: CPF_A, nome: 'Paulo' })).status, st, nome); // outra loja: 400, como o vínculo
+  assert.strictEqual((await post('dono1', '/api/clientes/celular/nome', { loja: 'l1', cpf: CPF_A, nome: 'Paulo1' })).status, 400, 'nome inválido');
+  const r = await post('dono1', '/api/clientes/celular/nome', { loja: 'l1', cpf: CPF_A, nome: 'Paulo' });
+  assert.strictEqual(r.status, 200);
+  assert.strictEqual((await r.json()).nome, 'Paulo');
+  // vai no pacote (tela e robô): o cadastro continua com o nome do FIXE
+  const a = (await clientesDe('dono1')).lista.find((c) => c.cpf === CPF_A);
+  assert.strictEqual(a.celVinc.nome, 'Paulo');
+  assert.notStrictEqual(a.nome, 'Paulo');
+  // vincular de novo o mesmo número guarda o nome; desfazer tira tudo
+  assert.strictEqual(CEL.ler('l1')[CPF_A].nome, 'Paulo');
+  assert.strictEqual((await post('dono1', '/api/clientes/celular/desfazer', { loja: 'l1', cpf: CPF_A })).status, 200);
+  assert.strictEqual(CEL.ler('l1')[CPF_A], undefined);
+});

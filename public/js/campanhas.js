@@ -104,7 +104,7 @@
       if (num(f.ausMax) != null && !(c.ausencia != null && c.ausencia <= num(f.ausMax))) continue;
       if (num(f.visMin) != null && (c.visitas || 0) < num(f.visMin)) continue;
       if (num(f.visMax) != null && (c.visitas || 0) > num(f.visMax)) continue;
-      if (mesAniv && !(c.nascimento && +c.nascimento.slice(5, 7) === mesAniv)) continue;
+      if (mesAniv && !(c.nascimento && +c.nascimento.slice(5, 7) === mesAniv && !TS.nomeMsgDe(c))) continue; // o WhatsApp é de outra pessoa: o aniversário não é dela
       if (f.segs && f.segs.length && !f.segs.some((t) => c.tags && c.tags.has(t))) continue;
       if (f.rfm && f.rfm.length && !(c.rfm && f.rfm.includes(c.rfm.g))) continue;
       if (f.tipos && f.tipos.length && !f.tipos.some((t) => familiasDe(c).has(t))) continue;

@@ -352,6 +352,7 @@
           h('div', { class: 'cv-topo-acoes' }, ...[
             cliente ? h('button', { type: 'button', class: 'btn', onclick: () => TS.cliApi.abrirClientes([cliente.cpf]) }, 'Ver cliente') : null,
             botaoVinculo(chave, cliente),
+            botaoNome(chave, cliente),
           ].filter(Boolean))),
         ficha, h('div', { class: 'cv-msgs-w' }, lista, btNovas),
         h('p', { class: 'muted cv-rodape' }, '🔒 Só leitura por enquanto: para responder, use o WhatsApp da loja (a resposta aparece aqui em seguida).',
@@ -428,6 +429,22 @@
       try {
         const r = await api('POST', 'clientes/celular', { loja, cpf: c.cpf, cel: chave });
         TS.cliApi.aplicarCelular(c.cpf, r.vinculo);
+        refazerConversa(chave);
+      } catch (e) { TS.avisarErro(e); }
+    }
+    /** nome nas mensagens (decisão do dono, 23/11/2026): o cadastro é de uma pessoa (a esposa) e o WhatsApp de outra (o marido) */
+    function botaoNome(chave, cliente) {
+      if (!cliente || !cliente.celVinc || !TS.cliApi.mesmoTel(cliente.celular, chave) || !TS.cliApi.nomearCelular) return null;
+      const nm = cliente.celVinc.nome || '';
+      return h('button', { type: 'button', class: 'btn cv-nome-msg', title: 'O WhatsApp é de outra pessoa (ex.: o cadastro está no nome da esposa e quem usa o número é o marido)? Escreva como chamar quem usa este número: {nome} das mensagens sai com ele, e o aniversário (que é da pessoa do cadastro) não entra no Hoje, nas campanhas nem no robô. O cadastro do FIXE não muda.',
+        onclick: () => nomearVinculo(chave, cliente) }, nm ? `Mensagens para: ${nm}` : 'Nome nas mensagens');
+    }
+    async function nomearVinculo(chave, c) {
+      const v = await TS.perguntar('Como chamar quem usa este WhatsApp?', { valor: (c.celVinc && c.celVinc.nome) || '', max: 40, rotulo: 'Nome nas mensagens', dica: 'Ex.: Paulo (deixe vazio para usar o nome do cadastro)' });
+      if (v == null) return;
+      try {
+        const r = await api('POST', 'clientes/celular/nome', { loja, cpf: c.cpf, nome: v });
+        TS.cliApi.nomearCelular(c.cpf, r.nome || '');
         refazerConversa(chave);
       } catch (e) { TS.avisarErro(e); }
     }

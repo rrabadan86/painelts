@@ -7,6 +7,8 @@
    * em `celular`; aqui só vêm junto o do FIXE (`celFixe`) e quem/quando trocou (`celVinc`), para a ficha mostrar.
    * `celTirado`: o número do FIXE deste cliente foi ligado a outro cliente pelo painel (fica sem celular).
    */
+  /** nome de quem usa o WhatsApp quando é outra pessoa do cadastro (vínculo da conversa; src/celulares.js `nomear`). '' = o do cadastro */
+  TS.nomeMsgDe = (c) => (c && c.celVinc && c.celVinc.nome) || '';
   const celInfo = (info) => (info && (info.celVinc || info.celTirado) ? { celFixe: info.celFixe || '', celVinc: info.celVinc || null, celTirado: !!info.celTirado } : {});
 
   /**
@@ -207,7 +209,8 @@
       if (c.visitas === 1 && c.ausencia >= 30) t.add('uma');
       if (c.visitas >= 3 && c.intervalo && c.ausencia > Math.max(2 * c.intervalo, 60)) t.add('sumido');
       if (c.proxCha != null && hoje >= c.proxCha - 3 && hoje <= c.proxCha + 45) t.add('repor');
-      if (c.nascimento && proximos7.has(c.nascimento.slice(5, 10))) t.add('aniv');
+      // aniversário é da pessoa do cadastro: com outro nome nas mensagens (WhatsApp de outra pessoa), não entra (decisão do dono)
+      if (c.nascimento && proximos7.has(c.nascimento.slice(5, 10)) && !TS.nomeMsgDe(c)) t.add('aniv');
       c.fx = fx ? fx.porCpf.get(c.cpf) || null : null;
       if (c.fx && c.fx.em30 > 0) t.add('vence');
       if (c.cupons.some((k) => k.semFixe)) t.add('semfixe');
@@ -502,8 +505,9 @@
     const lid = lojaIdDe(c);
     const loja = ((TS.lojas || []).find((l) => l.id === lid) || {}).nome || 'Tea Shop';
     const fx = c.fx || {};
+    const nm = TS.nomeMsgDe(c); // número trocado pelo painel com o nome de quem usa o WhatsApp (o marido, com o cadastro da esposa)
     return {
-      nome: primeiroNome(c.nome) || 'tudo bem', nomecompleto: nomeBonito(c.nome) || 'tudo bem', loja, cha: c.chaFavorito || 'chá',
+      nome: (nm ? primeiroNome(nm) : primeiroNome(c.nome)) || 'tudo bem', nomecompleto: (nm ? nomeBonito(nm) : nomeBonito(c.nome)) || 'tudo bem', loja, cha: c.chaFavorito || 'chá',
       ultimocha: c.chaUltimo || c.chaFavorito || 'chá', pacote: c.pacote ? `${c.pacote}g` : '', vendedora: primeiroNome(c.vendedoraPref) || `equipe da ${loja}`, // "Aqui é a {vendedora}" → "Aqui é a equipe da Tea Shop…"
       pontos: fmt.int(fx.saldo || 0), vence: fx.prox != null ? fmt.date(TS.dayToIso(fx.prox)) : '—', vencepts: fmt.int(fx.proxPts || 0),
       ultimacompra: c.ultima != null ? fmt.date(TS.dayToIso(c.ultima)) : '—', dias: c.ausencia != null ? fmt.int(c.ausencia) : '—',
@@ -1764,7 +1768,7 @@
   }
   // usado pela tela Campanhas
   TS.cliApi = {
-    aplicarCelular: (cpf, vinc) => aplicarCelular(cpf, vinc), mesmoTel: (a, b) => mesmoTel(a, b),
+    aplicarCelular: (cpf, vinc) => aplicarCelular(cpf, vinc), nomearCelular: (cpf, nome) => nomearCelular(cpf, nome), mesmoTel: (a, b) => mesmoTel(a, b),
     telConfere: (cel, q) => telConfere(cel, telBusca(q)),
     abrirClientes: (cpfs) => abrirClientes(cpfs), contatoDe: (c) => contatoDe(c), intervalo: () => intervaloDe(state.loja), recarregarContatos: () => recarregarContatos(), marcar: (c, acao, motivo) => marcar(c, acao, motivo),
     carregarContatos: () => carregarContatos(), modelos: () => modelosDe(state.loja), fmtTel: (x) => fmtTel(x), fmtCPF: (x) => fmtCPF(x), csv: (a, b, c) => csv(a, b, c),
@@ -1815,6 +1819,7 @@
     if (fixe && mesmoTel(fixe, c.celular)) txt = 'igual ao do FIXE';
     else if (fixe && antigo && !mesmoTel(fixe, antigo)) return h('small', { class: 'warn-t cel-nota' }, `Trocado pelo painel${quando ? ' em ' + quando : ''}. O FIXE tem outro número agora: ${fmtTel(fixe)} — desfaça o vínculo na conversa para usar o do FIXE.`);
     else txt = `trocado pelo painel${quando ? ' em ' + quando : ''}${c.celVinc.por ? ' por ' + c.celVinc.por : ''}${fixe ? ` · no FIXE: ${fmtTel(fixe)}` : ''}`;
+    if (c.celVinc.nome) txt += ` · as mensagens chamam por ${c.celVinc.nome} (sem aniversário)`;
     return h('small', { class: 'muted cel-nota' }, txt);
   }
   /**
@@ -1835,6 +1840,14 @@
       for (const x of alvos(cpf)) { if (!x.celVinc) x.celFixe = x.celular || ''; x.celular = vinc.cel; x.celVinc = { em: vinc.em, por: vinc.por, antigo: vinc.antigo || x.celFixe || '' }; x.celTirado = false; x.wpp = wppDe(vinc.cel); }
     } else {
       for (const x of alvos(cpf)) { if (x.celVinc) { x.celular = x.celFixe || ''; delete x.celVinc; x.wpp = wppDe(x.celular); } }
+    }
+  }
+  /** muda o nome nas mensagens na memória da tela (o próximo /api/dados já vem com ele); com nome, sai o aniversário */
+  function nomearCelular(cpf, nome) {
+    const cad = TS.cli && TS.cli.cad;
+    for (const x of [cad && cad.get(cpf), TS.cli && TS.cli.porCPF && TS.cli.porCPF.get(cpf)].filter(Boolean)) {
+      if (!x.celVinc) continue;
+      if (nome) { x.celVinc.nome = nome; if (x.tags) x.tags.delete('aniv'); } else delete x.celVinc.nome;
     }
   }
   function acoesCliente(c) {

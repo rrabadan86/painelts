@@ -228,3 +228,29 @@ test('Campanhas: "Configurar" abre o cartão do robô numa janela (é por aqui q
   await page.keyboard.press('Escape');
   await expect(j).toHaveCount(0);
 });
+
+test('CEL-NOME-02: com nome nas mensagens (WhatsApp de outra pessoa), {nome} sai com ele e o aniversário fica de fora do Hoje e das campanhas', async ({ page }) => {
+  await page.goto('/apresentacao');
+  await page.waitForFunction(() => window.TS && TS.db && TS.state.loja && TS.state.loja !== 'todas');
+  await page.evaluate(() => { location.hash = '#hoje'; });
+  await page.waitForFunction(() => TS.cli && TS.cli.porCPF && TS.cli.porCPF.size > 0, null, { timeout: 30000 });
+  const r = await page.evaluate(() => {
+    // um cliente que faz aniversário nos próximos 7 dias (o mesmo critério do Hoje)
+    const c = [...TS.cli.porCPF.values()].find((x) => x.tags && x.tags.has('aniv') && x.wpp);
+    if (!c) return null;
+    const antes = TS.cliApi.valores(c).nome;
+    const estava = TS.campanhasCalc.listaDe({ aniv: c.nascimento.slice(5, 7) }).some((x) => (x.c || x).cpf === c.cpf);
+    TS.cliApi.aplicarCelular(c.cpf, { cel: '5562981112222', em: new Date().toISOString(), por: 'teste', antigo: '' });
+    TS.cliApi.nomearCelular(c.cpf, 'Paulo');
+    const v = TS.cliApi.valores(c);
+    const lista = TS.campanhasCalc.listaDe({ aniv: c.nascimento.slice(5, 7) });
+    return { antes, estava, nome: v.nome, nomecompleto: v.nomecompleto, aniv: c.tags.has('aniv'), naCampanha: lista.some((x) => (x.c || x).cpf === c.cpf) };
+  });
+  expect(r, 'a apresentação tem aniversariante com WhatsApp').not.toBeNull();
+  expect(r.estava, 'antes do nome, estava na campanha de aniversariantes').toBe(true);
+  expect(r.nome).toBe('Paulo');
+  expect(r.nomecompleto).toBe('Paulo');
+  expect(r.antes).not.toBe('Paulo');
+  expect(r.aniv, 'sai do motivo aniversário do Hoje').toBe(false);
+  expect(r.naCampanha, 'fica de fora da campanha de aniversariantes').toBe(false);
+});
