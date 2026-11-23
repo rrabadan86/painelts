@@ -935,6 +935,12 @@ app.get('/api/demo/conversas/mensagens', (req, res) => {
   res.json({ mensagens: demoConversa(chave, Date.now()) });
 });
 app.post('/api/demo/conversas/lida', (req, res) => res.json({ ok: true }));
+app.post('/api/demo/conversas/responder', express.json({ limit: '8kb' }), (req, res) => {
+  const texto = String((req.body && req.body.texto) || '').trim();
+  if (!texto) return res.status(400).json({ erro: 'Escreva a mensagem.' });
+  if (texto.length > 2000) return res.status(400).json({ erro: 'Mensagem grande demais (até 2.000 caracteres).' });
+  res.json({ ok: true, em: new Date().toISOString(), simulado: true }); // na apresentação nada sai: a tela mostra a mensagem só na memória
+});
 // mídia da conversa na apresentação: uma imagem desenhada aqui (sem foto real) e meio segundo de silêncio
 app.get('/api/demo/conversas/midia', (req, res) => {
   const chave = String(req.query.chave || ''), idm = String(req.query.id || '');
@@ -1182,6 +1188,33 @@ app.get('/api/conversas/midia', async (req, res) => {
   CONV.responderMidia(res, r);
 });
 app.use('/api/conversas', (req, res, next) => (req.method === 'GET' || req.get('X-Painel') === '1' ? next() : res.status(403).json({ erro: 'Pedido inválido.' })));
+// responder pela conversa (fase 2, aprovada pelo dono em 23/11/2026): só admin e franqueado da loja (lojaConv), com X-Painel.
+// Sai pelo número da loja, pelo mesmo serviço do robô. Responder a quem escreveu não é campanha: não passa pelo intervalo da loja,
+// mas quem "não quer mensagens" (ficha ou "parar") pede confirmação. O texto nunca vai para log nem auditoria (só os 4 últimos dígitos)
+app.post('/api/conversas/responder', express.json({ limit: '8kb' }), async (req, res) => {
+  const id = lojaConv(req, res); if (!id) return;
+  const b = req.body || {};
+  const texto = String(b.texto || '').replace(/\r\n/g, '\n').trim();
+  if (!texto) return res.status(400).json({ erro: 'Escreva a mensagem.' });
+  if (texto.length > 2000) return res.status(400).json({ erro: 'Mensagem grande demais (até 2.000 caracteres).' });
+  const para = CONV.numeroDaConversa(id, String(b.chave || ''));
+  if (!para) return res.status(400).json({ erro: 'Esta conversa não tem um número de telefone para responder (o WhatsApp não informou o número).' });
+  const ZF = require('./src/zapfila'), ZAPc = require('./src/zap');
+  if (!ZAPc.ativo()) return res.status(503).json({ erro: 'O robô do WhatsApp não está instalado neste servidor: responda pelo WhatsApp da loja.' });
+  const cpf = CPF_OK.test(String(b.cpf || '')) ? String(b.cpf) : null;
+  const nq = ZF.porChave(ZF.lerJson(id, 'naoquer'));
+  const naoQuer = (cpf && (lerContatos(id)[cpf] || {}).optout) || !!nq[ZF.foneChave(para)];
+  if (naoQuer && b.confirmado !== true) return res.status(409).json({ erro: 'Este cliente pediu para não receber mensagens. Responder mesmo assim? (Por exemplo, se ele mesmo escreveu pedindo algo.)', confirmar: true });
+  let r;
+  try { r = await ZAPc.enviar(id, { id: 'resp-' + crypto.randomBytes(8).toString('hex'), para, texto }); } catch (e) { r = { ok: false, erro: C.msgErro(e) }; }
+  if (!r || !r.ok) {
+    console.error(`[conversas] ${id}: resposta para ···${ZF.fim4(para)} não saiu: ${(r && (r.motivo || r.erro)) || 'falha'}`);
+    return res.status(502).json({ erro: r && r.motivo === 'desconectado' ? 'O WhatsApp da loja não está conectado agora: a mensagem não saiu.' : r && r.motivo === 'sem_whatsapp' ? 'Este número não tem WhatsApp.' : 'A mensagem não saiu. Tente de novo em instantes.' });
+  }
+  CONV.marcarResposta(id, r.idMsg, req.user);
+  C.auditar(req.user, 'respondeu uma conversa do WhatsApp', id, { loja: id, fim: ZF.fim4(para), naoQuer: naoQuer || undefined });
+  res.json({ ok: true, em: new Date().toISOString() });
+});
 app.post('/api/conversas/lida', express.json({ limit: '2kb' }), (req, res) => {
   const id = lojaConv(req, res); if (!id) return;
   res.json({ ok: CONV.marcarLida(id, String((req.body || {}).chave || '')) });

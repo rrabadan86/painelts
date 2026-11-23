@@ -3906,3 +3906,9 @@ details.inv-p2-como ol { margin-top: 8px; }
 .dre-t tr.dre-taxa td:first-child { padding-left: 18px; }
 .dre-t tr.dre-repasse td:first-child { padding-left: 18px; color: #3D4A42; }
 .dre-t tr[title] td:first-child { cursor: help; }
+
+/* Conversas: responder pela conversa (fase 2) — caixa de texto + Enviar embaixo das mensagens */
+.cv-resp { display: flex; gap: 8px; align-items: flex-end; margin-top: 10px; }
+.cv-resp-txt { flex: 1; min-width: 0; resize: vertical; min-height: 44px; max-height: 200px; }
+.cv-resp-bt { flex: none; }
+.cv-resp-nao { margin-top: 10px; }

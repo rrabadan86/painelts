@@ -267,7 +267,7 @@
    */
   TS.janelaConfirmar = function (titulo, conteudo, ok = 'Confirmar', cancelar = 'Cancelar') {
     return new Promise((resolver) => {
-      const fundo = h('div', { class: 'cp-modal-bg' });
+      const fundo = h('div', { class: 'cp-modal-bg ts-aviso-bg' });
       let feito = false;
       const sair = (v) => { if (feito) return; feito = true; fundo.remove(); resolver(v); };
       const btOk = h('button', { type: 'button', class: 'btn primary', onclick: () => sair(true) }, ok);
