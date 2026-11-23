@@ -21,7 +21,8 @@ paths:
 # NF-e (venda, devolução ao fornecedor e notas emitidas)
 
 - `src/nfe.js`: NF-e de venda como pedido para o robô (`dados/<loja>/nfe/envio/<id>.json` → `<id>.resultado.json`) e histórico em `rascunhos.json`.
-- `src/devolucao.js`: devolução ao fornecedor a partir da nota de entrada (itens danificados/faltando, fotos, planilha, e-mail, NF-e).
+- `src/devolucao.js`: devolução ao fornecedor a partir da nota de entrada (itens danificados/faltando/**validade curta**, fotos, planilha, e-mail, NF-e).
+- **Motivo "validade curta" (decisão do dono, 23/11/2026):** item que chegou com validade menor que a chegada + o prazo do tipo (`VALIDADE_MIN` em `src/lotes.js`: chá a granel 6 meses, pela validade do PACOTE; envasados e alimentação 30 dias) entra na devolução como tipo `validade` (`qtdValidade`, `obsValidade`, sem foto; seção própria na planilha e no e-mail). O aviso da linha da nota ("Incluir na devolução") **só preenche** o formulário de devolução que já existe desta nota (`TS.devolucao.incluir`) — nunca cria fluxo paralelo; enviar, gravar e emitir a NF-e seguem a revisão de sempre. A NF-e soma as quantidades por código, qualquer que seja o motivo.
 - `src/nfsaida.js`: lista as NF-e (modelo 55) a partir dos XMLs que o coletor guarda; NFC-e (65) ficam em Vendas → Cupons.
 - `src/brasilapi.js` (rotas `/api/brasil/cnpj|cep`): dados públicos de CNPJ/CEP para preencher parceiro e cliente do orçamento; só preenche campo vazio; vendedora não usa; na apresentação a resposta é fictícia.
 - `coletor/nextsoft_nfe.py`: `ACAO=cadastros` só lê; `ACAO=rascunho` preenche e salva rascunho, e com `emitir` conclui e homologa.

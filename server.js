@@ -570,23 +570,25 @@ function lotesDemo(lojaId) {
     const k = [...cod].reduce((a, c) => a + c.charCodeAt(0), 0) % 14; // 0 a 13 meses para trás
     comp.itens[cod] = l.map(([d, ...r]) => [LOTd.somarMeses(d, -k), ...r]);
   }
-  const { em, lotes } = LOTd.calcular({ estoque: e.estoque, compras: comp, tabela: null, edits: { lotes: {} } });
+  const { em, lotes, outros } = LOTd.calcular({ estoque: e.estoque, compras: comp, tabela: null, edits: { lotes: {} } });
   for (const l of lotes) if (l.precoKg == null && l.custoKg) l.precoKg = Math.round(l.custoKg * 2.6);
-  return { LOTd, e, comp, em, lotes };
+  for (const l of outros) if (l.precoKg == null && l.custoKg) l.precoKg = Math.round(l.custoKg * 2.2 * 10) / 10; // a unidade, como a tabela fictícia
+  return { LOTd, e, comp, em, lotes, outros };
 }
 app.get('/api/demo/validade', (req, res) => {
   if (!lojaDemo(req)) return res.status(400).json({ erro: 'Escolha uma loja.' });
-  const { LOTd, e, comp, em, lotes } = lotesDemo(req.query.loja);
+  const { LOTd, e, comp, em, lotes, outros } = lotesDemo(req.query.loja);
+  const { resumo, resumoOutros } = LOTd.paraTela({ lotes, outros }, true);
   res.json({ em, hoje: LOTd.hojeSP(), meses: LOTd.MESES_VALIDADE, mesesAberto: LOTd.MESES_ABERTO, pacoteKg: LOTd.PACOTE_KG, riscoDias: LOTd.RISCO_DIAS, custos: true, faixas: LOTd.FAIXAS.map((f) => ({ id: f.id, nome: f.nome, ate: Number.isFinite(f.ate) ? f.ate : null })),
     // histórico fictício: os dois primeiros chás abertos já tiveram um pacote anterior que acabou
     historico: lotes.filter((l) => l.pacoteN > 0 && l.entrada).slice(0, 2).map((l, k) => { const ab = LOTd.somarMeses(l.entrada, -4 - k), fim = LOTd.somarMeses(l.entrada, -1); return { cod: l.cod, nf: String(9000 + k), entrada: LOTd.somarMeses(l.entrada, -5 - k), lote: '', n: 1, abertoEm: ab, estimado: k === 0, por: k === 0 ? '' : 'gerente', validade: LOTd.somarMeses(ab, LOTd.MESES_ABERTO), acabouEm: fim }; }),
-    resumo: LOTd.resumo(lotes), lotes: lotes.map((l) => ({ ...l, tipo: '', familia: '' })), granel: LOTd.granelEstoque({ estoque: e.estoque, compras: e.compras }), entradas: LOTd.entradasRecentes({ estoque: e.estoque, compras: comp, edits: { lotes: {} } }) });
+    resumo, resumoOutros, lotes: lotes.map((l) => ({ ...l, tipo: '', familia: '' })), outros, granel: LOTd.granelEstoque({ estoque: e.estoque, compras: e.compras }), entradas: LOTd.entradasRecentes({ estoque: e.estoque, compras: comp, edits: { lotes: {} } }) });
 });
 // perdas do mês para o Resultado (apresentação): chá vencido dos lotes fictícios + faltas de inventário inventadas
 app.get('/api/demo/perdas', (req, res) => {
   if (!lojaDemo(req)) return res.status(400).json({ erro: 'Escolha uma loja.' });
-  const PERd = require('./src/perdas'), { LOTd, lotes } = lotesDemo(req.query.loja);
-  res.json({ hoje: LOTd.hojeSP(), meses: PERd.porMes({ lotes, contagens: PERd.contagensDemo(req.query.loja, LOTd.hojeSP()) }) });
+  const PERd = require('./src/perdas'), { LOTd, lotes, outros } = lotesDemo(req.query.loja);
+  res.json({ hoje: LOTd.hojeSP(), meses: PERd.porMes({ lotes: [...lotes, ...outros], contagens: PERd.contagensDemo(req.query.loja, LOTd.hojeSP()) }) });
 });
 // NF-e de saída fictícias (vendas com nota, transferência, devolução), montadas com os produtos da apresentação
 const NFSd = require('./src/nfsaida');
@@ -682,6 +684,9 @@ app.get('/api/demo/validade/notas', (req, res) => {
   res.json({ pendentes: LOTd.pendentesNotas({ notas, ...ctxN }), notas: notas.filter((n) => !so || String(n.id) === so).sort((a, b) => b.entrada.localeCompare(a.entrada))
     .map((n) => ({ id: n.id, nf: n.nf, entrada: n.entrada, fornecedor: n.fornecedor, itens: LOTd.daNota({ nota: n, ...ctxN }) })).filter((n) => n.itens.length).slice(0, 15) });
 });
+// devolução na apresentação: o formulário abre com os itens da nota, mas nada é registrado nem enviado
+app.get('/api/demo/devolucoes', (req, res) => { if (!lojaDemo(req)) return res.status(400).json({ erro: 'Escolha uma loja.' }); res.json({ devolucoes: [], destinatarios: ['compras@franquia-exemplo.com.br'], assunto: '' }); });
+app.post('/api/demo/devolucoes', (req, res) => res.status(400).json({ erro: 'Na apresentação nenhuma devolução é registrada nem enviada.' }));
 // notas fictícias: as entradas da apresentação agrupadas pelo número da nota
 function notasEntradaDemo(lojaId) {
     const e = DEMO.estoqueDemo(lojaId);
@@ -2630,12 +2635,12 @@ app.get('/api/validade', async (req, res) => {
   // tipo de chá (Rooibos, Chá verde…) para o filtro: vem das vendas dos pacotes
   let tipos = new Map();
   try { tipos = new Map((await catInv(loja)).map((i) => [i.cod, i.tipo])); } catch { /* sem o tipo */ }
-  const r = LOT.resumo(lotes);
   const custos = podeCustos(req);
-  if (!custos) { for (const p of [...Object.values(r.porFaixa), r.risco]) { p.custo = null; delete p.semCusto; } }
+  const { resumo: r, outros, resumoOutros } = LOT.paraTela(ctx, custos);
   res.json({
     em, hoje: LOT.hojeSP(), meses: LOT.MESES_VALIDADE, mesesAberto: LOT.MESES_ABERTO, pacoteKg: LOT.PACOTE_KG, riscoDias: LOT.RISCO_DIAS, custos, faixas: LOT.FAIXAS.map((f) => ({ id: f.id, nome: f.nome, ate: Number.isFinite(f.ate) ? f.ate : null })),
     resumo: r, lotes: lotes.map((l) => semCusto(req, { ...l, tipo: tipos.get(l.cod) || '', familia: INV.familia(tipos.get(l.cod) || '') })),
+    outros: outros.map((l) => semCusto(req, l)), resumoOutros, // chás envasados e alimentação: só lote e validade, em unidade
     historico: LOT.historicoAberturas(loja.id), // pacotes de chá que já acabaram: quando abriram, até quando valiam e quando acabaram
     entradas: LOT.entradasRecentes(ctx), // para contar por lote no inventário
     granel: LOT.granelEstoque(ctx), // chá a granel com/sem estoque (Clientes → Hoje não oferece chá que a loja não tem)
@@ -2648,7 +2653,8 @@ app.get('/api/perdas', (req, res) => {
   const loja = req.lojas.find((l) => l.id === String(req.query.loja || ''));
   if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
   try {
-    res.json({ hoje: LOT.hojeSP(), meses: require('./src/perdas').porMes({ lotes: LOT.daLoja(loja.id).lotes, contagens: INV.lista(loja.id) }) });
+    const ctx = LOT.daLoja(loja.id);
+    res.json({ hoje: LOT.hojeSP(), meses: require('./src/perdas').porMes({ lotes: [...ctx.lotes, ...ctx.outros], contagens: INV.lista(loja.id) }) });
   } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
 });
 // "deste lote ainda tem X" (ou voltar para a regra automática neste chá)
@@ -2673,13 +2679,25 @@ app.get('/api/estoque/disponivel', (req, res) => {
 app.put('/api/validade/lote', express.json({ limit: '4kb' }), (req, res) => {
   if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
   const loja = lojaVal(req, res); if (!loja) return;
-  const { lotes, compras } = LOT.daLoja(loja.id);
-  const r = LOT.editar(loja.id, req.body || {}, req.user, lotes, compras);
+  const { lotes, outros, compras } = LOT.daLoja(loja.id);
+  const r = LOT.editar(loja.id, req.body || {}, req.user, [...lotes, ...outros], compras);
   if (r.erro) return res.status(400).json({ erro: r.erro });
   const [nf, cod, entrada] = String(req.body.chave).split('|');
   C.auditar(req.user, 'alterou lote/validade', loja.id, { loja: loja.id, cod, nf, entrada, antes: r.antes, depois: r.ok });
-  const novo = LOT.daLoja(loja.id).lotes.find((x) => x.chave === String(req.body.chave));
+  const depois = LOT.daLoja(loja.id), novo = [...depois.lotes, ...depois.outros].find((x) => x.chave === String(req.body.chave));
   res.json({ ok: true, lote: novo ? semCusto(req, novo) : null, editado: r.ok });
+});
+// "+ outra validade": a mesma linha da nota com validades diferentes (envasado e alimentação); partes vazio desfaz
+app.put('/api/validade/partes', express.json({ limit: '8kb' }), (req, res) => {
+  if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
+  const loja = lojaVal(req, res); if (!loja) return;
+  try {
+    const r = LOT.repartir(loja.id, req.body || {}, req.user, LOT.daLoja(loja.id));
+    if (r.erro) return res.status(400).json({ erro: r.erro });
+    const [nf, cod, entrada] = r.ok.chave.split('|');
+    C.auditar(req.user, r.ok.partes.length ? 'repartiu a validade de uma linha da nota' : 'desfez a repartição da validade', loja.id, { loja: loja.id, cod, nf, entrada, antes: r.antes, depois: r.ok.partes });
+    res.json({ ok: true, ...r.ok });
+  } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
 });
 // a equipe corrige a data em que o pacote aberto foi para a lata (vazio = volta para a estimativa do painel)
 app.put('/api/validade/abertura', express.json({ limit: '4kb' }), (req, res) => {
@@ -2700,8 +2718,8 @@ app.get('/api/validade/notas', (req, res) => {
   const ctx = LOT.daLoja(loja.id), ns = ES.notas(loja.id);
   const notas = (ns && ns.notas) || [];
   const ctxN = { estoque: ctx.estoque, compras: ctx.compras, edits: ctx.edits };
-  const pendentes = LOT.pendentesNotas({ notas, ...ctxN, abertos: new Set(ctx.lotes.map((l) => l.chave)) });
-  // uma nota (o detalhe aberto) ou as recentes que têm chá a granel (até 15)
+  const pendentes = LOT.pendentesNotas({ notas, ...ctxN, abertos: new Set([...ctx.lotes, ...ctx.outros].map((l) => l.chaveNota || l.chave)) });
+  // uma nota (o detalhe aberto) ou as recentes que têm chá a granel, envasado ou alimentação (até 15)
   const so = String(req.query.nota || '');
   const recentes = (so ? notas.filter((n) => String(n.id) === so) : notas.slice().sort((a, b) => String(b.entrada || b.emissao || '').localeCompare(String(a.entrada || a.emissao || ''))))
     .map((n) => ({ id: n.id, nf: n.nf, entrada: String(n.entrada || n.emissao || '').slice(0, 10), fornecedor: n.fornecedor || '', itens: LOT.daNota({ nota: n, ...ctxN }) }))

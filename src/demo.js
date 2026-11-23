@@ -258,9 +258,11 @@ function estoqueDemo(id) {
   const ini90 = new Date(Date.parse(hojeIso + 'T00:00:00Z') - 90 * DAY).toISOString().slice(0, 10);
   // por item do estoque: chá a granel (kg, pelo nome do produto) ou unidade (pela descrição)
   const mapa = new Map();
+  const TP = require('./tipoprod');
   for (const v of vendas) {
     if (v.vu != null && v.vu < 0.05) continue;
-    const kg = !!v.soNumeros;
+    // em kg só o chá a granel (pelos pacotes vendidos); minitin, envasado e alimentação com "100g" no nome são unidade
+    const kg = !!v.soNumeros && TP.tipo({ un: 'Kg', desc: v.produto, grupo: v.grupo }) === 'granel';
     const nome = kg ? v.produto : v.descricao;
     const k = (kg ? 'kg|' : 'un|') + nome;
     let m = mapa.get(k);
@@ -268,7 +270,7 @@ function estoqueDemo(id) {
     if (m.precos.length < 60) m.precos.push(kg ? (v.vu / v.soNumeros) * 1000 : v.vu);
     if (v.data >= ini90) m.q90 += kg ? (v.qtd * v.soNumeros) / 1000 : v.qtd;
   }
-  const itens = [], hist = {}, comp = {};
+  const itens = [], hist = {}, comp = {}, grupos = new Map();
   let cod = 20000 + i * 3000;
   const dia = (n) => new Date(Date.parse(hojeIso + 'T00:00:00Z') - n * DAY).toISOString().slice(0, 10);
   const notas = [];
@@ -280,6 +282,7 @@ function estoqueDemo(id) {
     const porDia = m.q90 / 90;
     const qtd = r() < 0.05 ? 0 : m.kg ? Math.round(porDia * (8 + r() * 70) * 1000) / 1000 : Math.max(0, Math.round(porDia * (6 + r() * 80)));
     const c = String(cod++);
+    grupos.set(c, m.grupo || '');
     itens.push({ cod: c, tipo: m.kg ? 'MP' : 'PN', desc: m.nome, un: m.kg ? 'Kg' : 'Un', min: null, custo, qtd });
     // custo de antes: um ou dois reajustes no último ano (para Preços e para o histórico)
     const antes = r2(custo / (1.04 + r() * 0.12)), d1 = 120 + Math.floor(r() * 220);
@@ -291,6 +294,15 @@ function estoqueDemo(id) {
       comp[c] = [[dia(10 + Math.floor(r() * 50)), custo, nf, m.kg ? Math.max(0.5, Math.round(porDia * 30 * 2) / 2) : Math.max(1, Math.round(porDia * 30)), FORNECEDORES[hashTxt(m.grupo) % FORNECEDORES.length]]];
       notas.push(nf);
     }
+  }
+  // chá envasado cadastrado em "Kg" como no AppNext (9,000 kg = 9 pacotes): o painel mostra 9 un (src/tipoprod.js)
+  {
+    const c = String(cod++), nf1 = 1000 + (hashTxt(c) % 9000);
+    grupos.set(c, 'CHÁS ENVASADOS');
+    itens.push({ cod: c, tipo: 'PN', desc: 'Matcha Cerimonial 30G Pacote', un: 'Kg', min: null, custo: 38.5, qtd: 9 });
+    hist[c] = [[dia(400), 35.9], [dia(120), 38.5]];
+    comp[c] = [[dia(20), 38.5, nf1, 6, FORNECEDORES[0]], [dia(75), 37.9, nf1 + 7, 6, FORNECEDORES[0]]];
+    notas.push(nf1, nf1 + 7);
   }
   // embalagens do chá a granel (os códigos que a configuração usa)
   for (const [c, desc, custo, qtd] of [['80149', 'Saco kraft pequeno', 0.62, 900], ['80150', 'Saco kraft médio', 0.85, 300], ['80151', 'Saco kraft grande', 1.1, 120], ['80152', 'Saco kraft 1 kg', 1.6, 60], ['81010', 'Etiqueta Sato', 0.09, 5000]]) {
@@ -309,7 +321,7 @@ function estoqueDemo(id) {
   }
   const em = new Date(Date.parse(hojeIso + 'T00:00:00Z') + 9 * 3600e3).toISOString();
   const out = {
-    estoque: { em, importadoEm: em, origem: 'fictício', itens },
+    estoque: TP.normalizar({ em, importadoEm: em, origem: 'fictício', itens }, (c) => grupos.get(c) || ''),
     historico: hist,
     compras: { atualizado: em, notas: notas.length, itens: comp },
     catalogo,

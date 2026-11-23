@@ -17,6 +17,7 @@ test('Pedido: miniatura da foto ao lado do nome; tocar abre a foto grande, troca
   const linha = page.locator(celular ? '.ped-card' : '.ped-t tbody tr').filter({ has: page.locator('.foto-mini') }).first();
   await expect(linha).toBeVisible({ timeout: 40000 });
   const mini = linha.locator('.foto-mini');
+  await mini.scrollIntoViewIfNeeded(); // a miniatura carrega preguiçosa (loading="lazy"): só quando aparece na tela
   // tamanho proporcional: maior no celular, menor na tabela do computador
   const caixa = await mini.boundingBox();
   expect(Math.round(caixa.width)).toBe(celular ? 52 : 40);
