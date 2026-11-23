@@ -561,7 +561,7 @@
     // grupo de comparação: campanha nova (ou duplicada) começa marcada; a que já existia mostra como está
     const comp = h('input', { type: 'checkbox', checked: (editando ? base.comparar === true : !base || base.comparar !== false) || null });
     // quem envia (pedido do dono): escolhido já ao criar; o robô só liga depois da janela com os números (TS.zapOpcao)
-    const podeRobo = !!(TS.zapOpcao && TS.eu && TS.eu.perfil !== 'vendedor');
+    const podeRobo = !!(TS.zapOpcao && TS.eu && TS.eu.perfil !== 'vendedor' && !(TS.eu.pode && TS.eu.pode.robo === false)); // ZAP-PERM-01
     const roboAntes = !!(editando && base.robo);
     const quemEnvia = h('select', { class: 'f-input cp-sel', 'aria-label': 'Quem envia' },
       h('option', { value: 'manual', selected: !roboAntes || null }, 'Eu envio pelo painel (um toque por mensagem)'),

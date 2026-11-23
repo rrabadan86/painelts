@@ -557,8 +557,8 @@
     PAGES = PAGES.filter((p) => p !== 'espera');
     if (PAGES.includes('clientes')) PAGES.splice(PAGES.indexOf('clientes'), 1, 'hoje', 'clilista', 'clientes', 'campanhas', ...(veEspera ? ['espera'] : []));
     else if (veEspera) PAGES.push('espera');
-    // Conversas do WhatsApp: só admin e franqueado (decisão do dono; o servidor também confere)
-    if (['admin', 'franqueado'].includes(eu.perfil) && PAGES.includes('campanhas')) PAGES.splice(PAGES.indexOf('campanhas') + 1, 0, 'conversas');
+    // Conversas do WhatsApp: só admin e franqueado, e o admin pode tirar do franqueado (ZAP-PERM-02; o servidor também confere)
+    if (['admin', 'franqueado'].includes(eu.perfil) && eu.pode?.conversas !== false && PAGES.includes('campanhas')) PAGES.splice(PAGES.indexOf('campanhas') + 1, 0, 'conversas');
     // Estoque e Margem: admin e franqueado veem tudo; gerente só as telas liberadas em Configurações → Usuários
     // Produtos (Rentabilidade, Preços, Site), Estoque (Estoque, Pedido, Notas fiscais) e Resultado
     const EST = ['rentab', 'precos', 'site', 'estoque', 'validade', 'pedido', 'notas', 'inventario', 'dre'];

@@ -2,7 +2,8 @@
 /**
  * Rotas do robô do WhatsApp das campanhas (/api/zap/*) e a versão da apresentação (/api/demo/zap/*).
  * Quem pode (conferido aqui, no servidor):
- *   admin, franqueado da loja e gerente com a tela Clientes → tudo (conectar, desconectar, ligar, pausar, configurar)
+ *   admin, e franqueado da loja e gerente com a tela Clientes LIBERADOS pelo admin ("Robô do WhatsApp" em Usuários) → tudo
+ *     (conectar, desconectar, ligar, pausar, configurar); sem a liberação, só veem a situação e pausam
  *     — decisão do dono: é a gerente quem está na loja com o celular para ler o QR;
  *   vendedora e gerente sem Clientes → nada (barrados antes, por podeClientes).
  * A loja vem sempre de req.lojas (franqueado nunca alcança a loja dos outros). Tudo o que muda vai para a auditoria.
@@ -13,7 +14,9 @@ const CAMP = require('./campanhas');
 const ZAP = require('./zap');
 const ZF = require('./zapfila');
 
-const gestor = (req) => ['admin', 'franqueado', 'gerente'].includes(req.perfil); // o gerente só chega aqui com a tela Clientes (podeClientes)
+// ZAP-PERM-01 (decisão do dono, 23/11/2026): conectar, ligar e configurar o robô só com a liberação do admin
+// (Configurações → Usuários → "Robô do WhatsApp"); o gerente, além disso, só chega aqui com a tela Clientes (podeClientes)
+const gestor = (req) => ['admin', 'franqueado', 'gerente'].includes(req.perfil) && C.podeRobo(req);
 const lojaDe = (req) => { const id = String((req.body && req.body.loja) || req.query.loja || ''); return (req.lojas || []).some((l) => l.id === id) ? id : null; };
 const motivoTxt = (cod) => ({ cod, texto: ZF.MOTIVOS[cod] || '' });
 
@@ -64,7 +67,7 @@ function registrar(app, { podeClientes }) {
     if (req.method !== 'GET' && req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
     next();
   });
-  const soGestor = (req, res, next) => (gestor(req) ? next() : res.status(403).json({ erro: 'Sem permissão para mexer no robô do WhatsApp.' }));
+  const soGestor = (req, res, next) => (gestor(req) ? next() : res.status(403).json({ erro: 'Sem permissão para mexer no robô do WhatsApp: peça ao administrador para liberar "Robô do WhatsApp" no seu usuário.' }));
   const comLoja = (req, res, next) => { const id = lojaDe(req); if (!id) return res.status(400).json({ erro: 'Escolha uma loja.' }); req.zapLoja = id; next(); };
   const responder = async (req, res) => { try { res.json({ ok: true, ...(await situacao(req.zapLoja, gestor(req))) }); } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); } };
   const semServico = (res) => res.status(400).json({ erro: ZF.MOTIVOS.sem_servico });

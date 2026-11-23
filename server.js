@@ -1167,7 +1167,7 @@ app.post('/api/contatos', express.json({ limit: '4kb' }), (req, res) => {
 // ---------- Clientes → Conversas (decisão do dono): conversas do WhatsApp da loja; só admin e franqueado da loja ----------
 const CONV = require('./src/conversas');
 const lojaConv = (req, res) => {
-  if (!['admin', 'franqueado'].includes(req.perfil)) { res.status(403).json({ erro: 'Sem permissão.' }); return null; }
+  if (!C.podeConversas(req)) { res.status(403).json({ erro: 'Sem permissão.' }); return null; } // admin, e franqueado até o admin tirar (ZAP-PERM-02)
   const id = String((req.body && req.body.loja) || req.query.loja || '');
   if (!req.lojas.some((l) => l.id === id)) { res.status(400).json({ erro: 'Escolha uma loja.' }); return null; }
   return id;
@@ -1300,7 +1300,7 @@ app.use('/api/campanhas', (req, res, next) => {
 });
 // "Enviar pelo robô": só admin e franqueado ligam; numa campanha do robô o gerente só pausa a repetição ou tira do robô
 const ZF = require('./src/zapfila');
-const gestorCamp = (req) => ['admin', 'franqueado', 'gerente'].includes(req.perfil); // gerente com a tela Clientes também cuida do robô (decisão do dono); a vendedora nem chega a estas rotas
+const gestorCamp = (req) => ['admin', 'franqueado', 'gerente'].includes(req.perfil) && C.podeRobo(req); // só quem o admin liberou para o robô (ZAP-PERM-01); a vendedora nem chega a estas rotas
 const SO_GESTOR_ROBO = 'Sem permissão para ligar ou alterar uma campanha enviada pelo robô do WhatsApp.';
 app.post('/api/campanhas', express.json({ limit: '600kb' }), (req, res) => {
   const id = lojaCamp(req);
@@ -1401,7 +1401,7 @@ app.get('/api/eu', (req, res) => {
   const u = C.get().usuarios[req.user];
   res.json({
     usuario: req.user === '*' ? '' : req.user, nome: u?.nome || req.user, perfil: req.perfil, vendedor: req.vendedor || '',
-    pode: { configurar: req.perfil === 'admin' || req.perfil === 'franqueado', admin: req.perfil === 'admin', clientes: podeClientes(req), custos: podeTela(req, 'rentab', 'estoque', 'precos', 'notas', 'pedido', 'dre') },
+    pode: { configurar: req.perfil === 'admin' || req.perfil === 'franqueado', admin: req.perfil === 'admin', clientes: podeClientes(req), robo: C.podeRobo(req), conversas: C.podeConversas(req), custos: podeTela(req, 'rentab', 'estoque', 'precos', 'notas', 'pedido', 'dre') },
     telas: C.telasDo(u),
     lojas: req.lojas.map((l) => ({ id: l.id, nome: l.nome, marca: { nome: (l.marca && l.marca.nome) || l.nome, logo: !!arquivoLogo(l.id) } })),
   });
@@ -3584,6 +3584,21 @@ const srv = app.listen(PORT, () => {
     C.alterar((cfg) => { for (const l of cfg.lojas) if (l.drive && Object.keys(l.drive).length) { tinham.push(l.id); l.drive = {}; } });
     if (tinham.length) { C.auditar('sistema', 'desativou o Google Drive', 'lojas', { lojas: tinham }); console.log(`[config] Google Drive desativado em: ${tinham.join(', ')}`); }
   } catch (e) { console.error('[config] não consegui limpar o Google Drive:', e.message); }
+  // Robô do WhatsApp por pessoa (decisão do dono, 23/11/2026; ZAP-PERM-01): quem já usava (franqueado, ou gerente com Clientes,
+  // de loja que já tinha o robô) continua liberado; os outros ficam desligados. Grava uma vez: depois só o admin muda.
+  try {
+    const lib = [];
+    const atual = C.get();
+    C.alterar((cfg) => {
+      for (const [nome, u] of Object.entries(cfg.usuarios || {})) {
+        if (typeof u.robo === 'boolean' || !['franqueado', 'gerente'].includes(u.perfil)) continue;
+        const un = atual.usuarios[nome.toLowerCase()];
+        u.robo = !!(un && C.roboLegado(un, atual));
+        if (u.robo) lib.push(nome);
+      }
+    });
+    if (lib.length) { C.auditar('sistema', 'manteve o robô do WhatsApp liberado (quem já usava)', 'usuarios', { usuarios: lib }); console.log(`[config] robô do WhatsApp: continuam liberados ${lib.join(', ')}`); }
+  } catch (e) { console.error('[config] não consegui marcar o robô do WhatsApp por pessoa:', e.message); }
   // Preços e Site viraram telas próprias: o gerente que já via o Estoque e margem continua vendo as duas (uma vez)
   try {
     const mig = [];

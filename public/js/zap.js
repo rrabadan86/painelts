@@ -17,8 +17,8 @@
   }
   const qs = (loja) => 'loja=' + encodeURIComponent(loja);
   const hhmm = (iso) => new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' }); // horário de Brasília, como o robô
-  // quem cuida do robô: admin, franqueado e gerente com a tela Clientes (a vendedora não vê Campanhas)
-  const gestor = () => !!(TS.eu && TS.eu.perfil !== 'vendedor');
+  // quem cuida do robô: admin, e franqueado e gerente com Clientes liberados pelo admin (ZAP-PERM-01; o servidor confere)
+  const gestor = () => !!(TS.eu && TS.eu.perfil !== 'vendedor' && !(TS.eu.pode && TS.eu.pode.robo === false));
 
   /** etiqueta da conexão com o WhatsApp: [classe, texto] */
   function sitConexao(s) {
@@ -368,7 +368,7 @@
   /**
    * Robô de uma campanha (decisão do dono, revisão de 22/11): ligar mostra antes o que vai acontecer — quantos recebem, quantos
    * ficam para comparar, limites, dias e horário, término estimado, primeira mensagem e um exemplo. Desligar é um toque.
-   * Quem liga: administrador, franqueado da loja e gerente com a tela Clientes (o servidor confere).
+   * Quem liga: administrador, e franqueado e gerente com Clientes liberados pelo admin para o robô (o servidor confere).
    * info: { pendentes(), comparacao(), exemplo() } da tela Campanhas.
    */
   TS.zapOpcao = function (camp, aoMudar, info = {}) {
