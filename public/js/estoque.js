@@ -707,7 +707,7 @@
       const diaEq = (() => { let acc = 0; for (let d = ini; d <= ultimoDia; d++) { acc += porDia.get(d) || 0; if (acc >= equilibrio) return d; } return null; })();
       const resultado = proj * contrib - F;
       const txtPont = Fp ? ` · inclui ${fmt.brl0(Fp)} de despesas só deste mês` : '';
-      const conta = `Custos fixos ${fmt.brl0(F)} (${[...fixos, ...pontuais].map((x) => x.nome).join(', ')}${Fp ? `; ${fmt.brl0(Fp)} são despesas só deste mês: ${pontuais.map((x) => x.nome).join(', ')}` : ''}) ÷ margem de contribuição ${fmt.pct(contrib)} = ${fmt.brl0(equilibrio)}. Margem de contribuição = o que sobra de cada venda depois do custo do produto, comissão, royalties, Simples, maquininha e dos custos em % (vendas com custo deste mês).`;
+      const conta = `Custos fixos ${fmt.brl0(F)} (${[...fixos, ...pontuais].map((x) => x.nome).join(', ')}${Fp ? `; ${fmt.brl0(Fp)} são despesas só deste mês: ${pontuais.map((x) => x.nome).join(', ')}` : ''}) ÷ margem sem fixos ${fmt.pct(contrib)} = ${fmt.brl0(equilibrio)}. Margem sem fixos = o que sobra de cada venda depois do custo do produto, comissão, royalties, Simples, maquininha e dos custos em % (vendas com custo deste mês).`;
       return TS.card(titulo, 'Quanto a loja precisa vender no mês para pagar os custos fixos (o mês inteiro, sem os filtros)',
         (() => {
           // uma frase diz o que falta (ou que já passou do equilíbrio); os números de apoio e a conta ficam no ⓘ e no title da barra
@@ -1305,7 +1305,7 @@
             { key: 'precoKit', label: 'Preço do kit', fmt: fmt.brl, title: `Preço somado com ${DESC_KIT}% de desconto` },
             { key: 'margemKit', label: 'Margem bruta', fmt: (v) => fmt.pct(v), cls: (r) => (r.margemKit != null && r.margemKit < 0.3 ? 'miss' : ''), title: 'Margem bruta do kit já com o desconto: (preço do kit − custo) ÷ preço do kit. Custo do AppNext; chá a granel com saco e etiquetas' },
             { key: 'margemKitCon', label: 'Margem sem fixos', fmt: (v) => fmt.pct(v), cls: (r) => (r.margemKitCon != null && r.margemKitCon < margemMin ? 'miss' : ''), title: 'Margem bruta − deduções variáveis (comissão, royalties, Simples, maquininha e custos em %), já com o desconto do kit' },
-            { key: 'margemKitLiq', label: 'Margem com fixos', fmt: (v) => fmt.pct(v), title: 'Margem de contribuição − custos fixos rateados (informativa)' },
+            { key: 'margemKitLiq', label: 'Margem com fixos', fmt: (v) => fmt.pct(v), title: 'Margem sem fixos − custos fixos rateados (informativa)' },
           ],
           rows: top, sortKey: 'lift', maxHeight: '520px', cls: 'est-t est-t-larga', search: 'Buscar produto…', searchKeys: ['kit'], produto: 'kit',
         }) : h('p', { class: 'muted' }, `Ainda não há pares que saiam juntos em pelo menos ${minJuntos} cupons. Escolha um período maior (por exemplo, 12 meses).`),
