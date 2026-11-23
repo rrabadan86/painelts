@@ -60,10 +60,21 @@
     for (const x of midiaMem.itens.values()) URL.revokeObjectURL(x.url);
     midiaMem.itens.clear(); midiaMem.chave = chave;
   }
-  async function buscarMidia(loja, chave, id) {
+  /** espera (só para a nova tentativa) */
+  const pausa = (ms) => new Promise((ok) => setTimeout(ok, ms));
+  async function buscarMidia(loja, chave, id, nomeTipo) {
+    const url = TS.api(`conversas/midia?loja=${encodeURIComponent(loja)}&chave=${encodeURIComponent(chave)}&id=${encodeURIComponent(id)}`);
     let r;
-    try { r = await fetch(TS.api(`conversas/midia?loja=${encodeURIComponent(loja)}&chave=${encodeURIComponent(chave)}&id=${encodeURIComponent(id)}`), { credentials: 'same-origin' }); }
-    catch (e) { if (TS.erroDeRede(e)) throw new Error('Sem conexão com o painel agora. Tente de novo.'); throw e; }
+    // a ligação caiu (internet oscilando ou rede que bloqueia áudio/vídeo, como firewall de empresa): tenta de novo
+    // sozinho uma vez, 1,5 s depois, antes de mostrar o erro (pedido do dono, 23/11/2026)
+    for (let tentativa = 1; ; tentativa++) {
+      try { r = await fetch(url, { credentials: 'same-origin' }); break; }
+      catch (e) {
+        if (!TS.erroDeRede(e)) throw e;
+        if (tentativa >= 2) throw new Error(`A conexão caiu ao buscar ${nomeTipo || 'o arquivo'}. Pode ser a internet ou a rede deste local bloqueando áudio e vídeo (firewall). Toque de novo ou tente em outra rede.`);
+        await pausa(1500);
+      }
+    }
     if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.erro || 'Não consegui buscar no WhatsApp agora.'); }
     let nome = 'arquivo';
     try { nome = decodeURIComponent(r.headers.get('X-Midia-Nome') || '') || nome; } catch { /* fica "arquivo" */ }
@@ -71,6 +82,7 @@
     return { url: URL.createObjectURL(blob), tipo: blob.type || r.headers.get('Content-Type') || '', nome };
   }
   /** a área da mídia dentro da bolha: o botão e, depois de buscar, a foto/áudio/vídeo e "Baixar" */
+  const ARTIGO = { imagem: 'a foto', figurinha: 'a figurinha', audio: 'o áudio', video: 'o vídeo', documento: 'o documento' };
   function caixaMidia(loja, chave, m) {
     const [rot, nomeTipo] = MIDIA[m.tipo];
     const caixa = h('div', { class: 'cv-midia' });
@@ -89,7 +101,7 @@
     bt.addEventListener('click', async () => {
       bt.disabled = true; bt.textContent = 'Buscando no WhatsApp…'; erro.textContent = '';
       try {
-        const x = await buscarMidia(loja, chave, m.id);
+        const x = await buscarMidia(loja, chave, m.id, ARTIGO[m.tipo]);
         soltarMidias(chave);
         midiaMem.itens.set(m.id, x);
         pintar(x);
