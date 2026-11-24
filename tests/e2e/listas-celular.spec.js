@@ -132,3 +132,38 @@ test('CLI-MOB-01: Lista de clientes no celular — busca, folha de Segmento/Grup
   await semRolarDeLado(page);
   expect(erros).toEqual([]);
 });
+
+// LMOB-03 (lote 1 do pente-fino do celular, 24/11/2026): listas de pessoas e itens no padrão de linhas
+test('LMOB-03: Comissionamento, Promoção, Rendimento, Vendedoras e clientes e Cupons em linhas no celular', async ({ page }, info) => {
+  const erros = []; page.on('pageerror', (e) => erros.push(e.message));
+  await abrir(page);
+  const cel = info.project.name === 'celular';
+  const confere = async (sel, oQue) => {
+    const card = page.locator(sel).first();
+    await expect(card, oQue).toBeVisible();
+    if (cel) {
+      await expect(card.locator('.lmob-it').first(), oQue).toBeVisible();
+      await expect(card.locator('table.t-mob'), oQue).toHaveCount(0);
+    } else await expect(card.locator('.lmob'), oQue).toHaveCount(0);
+    await semRolarDeLado(page);
+  };
+  await page.evaluate(() => { location.hash = '#comissionamento'; });
+  await page.getByRole('button', { name: /Ver o mês atual/ }).first().click();
+  await confere('.card:has-text("Comissão por vendedor")', 'Comissão por vendedor');
+  if (cel) await expect(page.locator('.card:has-text("Comissão por vendedor") .lmob-total')).toContainText('Total a pagar');
+  await page.evaluate(() => { location.hash = '#promocao'; });
+  await confere('#pr-vend', 'Promoção por vendedor');
+  await page.evaluate(() => { location.hash = '#mapa'; });
+  await page.locator('button, [role=tab]', { hasText: 'Rendimento' }).first().click();
+  await confere('.card:has-text("Rendimento da equipe")', 'Rendimento da equipe');
+  if (cel) { // tocar na pessoa abre a evolução dela
+    await page.locator('.card:has-text("Rendimento da equipe") .lmob-it').first().click();
+    await expect.poll(() => page.evaluate(() => TS.state.eqPessoa)).toBeTruthy();
+  }
+  await page.evaluate(() => { TS.state.eqPessoa = null; location.hash = '#clientes'; });
+  await confere('.card:has-text("Vendedoras e clientes")', 'Vendedoras e clientes');
+  await page.evaluate(() => { location.hash = '#cupons'; });
+  await page.locator('button, [role=tab]', { hasText: 'Lista de itens' }).first().click();
+  await confere('.card:has-text("Cupons do período")', 'Cupons → Lista de itens');
+  expect(erros).toEqual([]);
+});

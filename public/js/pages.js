@@ -1045,6 +1045,23 @@
           } },
       ],
       rows: res.rows, total: res.total, sortKey: 'aPagar', cls: 'eq-com-t',
+      // celular (LMOB-03): uma linha por pessoa — o que recebe à direita; vendas da meta × meta individual com a barra;
+      // as três categorias (azul = meta batida) e a premiação/indicadores embaixo; o total da loja no fim
+      linhaMob: (r) => {
+        const hit = (v, m) => (m > 0 ? (v >= m ? 'hit' : 'neg') : null);
+        const parte = r.metaInd > 0 ? Math.min(1, (r.total || 0) / r.metaInd) : 0;
+        const cat = (rot, k, mk) => h('span', null, `${rot} `, h('b', { class: hit(r[k], r[mk]) }, fmt.brl0(r[k] || 0)));
+        return h('div', null,
+          h('div', { class: 'lmob-l1' }, h('span', { class: 'lmob-nome' }, TS.msgWpp.nomeProprio(r.vendedor) || r.vendedor),
+            h('span', { class: 'lmob-val hit' }, fmt.brl(r.aPagar || 0))),
+          h('div', { class: 'lmob-l2' }, h('span', null, 'Vendas da meta ', h('b', { class: hit(r.total, r.metaInd) }, fmt.brl0(r.total || 0)), r.metaInd != null ? ` de ${fmt.brl0(r.metaInd)}` : ''),
+            r.bonus ? h('span', null, `bônus ${fmt.brl(r.bonus)}`) : null),
+          r.metaInd > 0 ? h('div', { class: 'lmob-barra' }, h('i', { style: { width: Math.round(parte * 100) + '%' } })) : null,
+          h('div', { class: 'lmob-l2' }, cat('Arom.', 'arom', 'metaArom'), cat('Puro', 'puro', 'metaPuro'), cat('Acess.', 'acess', 'metaAcess')),
+          h('div', { class: 'lmob-l2' }, r.poucosAtend ? h('span', null, `poucos atendimentos (${fmt.int(r.atend)} de ${fmt.int(minAt)})`) : r.premiacao ? h('span', null, `Premiação ${fmt.brl0(r.premiacao)}`) : null,
+            r.pma != null ? h('span', null, `TKM ${fmt.brl(r.tkm)} · PMA ${fmt.brl(r.pma)} · IPA ${fmt.n2(r.ipa)}`) : null));
+      },
+      totalMob: (t) => (t ? h('div', { class: 'lmob-total lmob-l1' }, h('span', null, 'Total a pagar'), h('span', { class: 'lmob-val' }, fmt.brl(t.aPagar || 0))) : null),
     });
     const cardCom = TS.card(h('span', null, 'Comissão por vendedor', parcial ? h('span', { class: 'badge warn com-parcial', title: 'Mês em andamento: os valores usam as vendas até agora contra a meta do mês inteiro. Quem ainda está "abaixo da meta" pode mudar de faixa (e de % de comissão) até o fim do mês.' }, 'parcial: a faixa pode mudar até o fim do mês') : null),
       h('span', null, 'Sem Espaço Gourmet. ', h('b', { class: 'hit eq-azul' }, 'Azul'), ' = meta batida, ', h('b', { class: 'neg' }, 'vermelho'), ' = abaixo da meta. A linha Total soma os vendedores.'), tab);
@@ -1165,6 +1182,12 @@
         ].filter(Boolean),
         rows: det, sortKey: 'data', pageSize: 50, maxHeight: 'free', search: 'Buscar produto, vendedor, CPF…', searchKeys: ['produto', 'vendedor', 'grupo', 'cat', 'doc'],
         total: { cupom: `${fmt.int(nCup)} cupons`, vt: M.vt, qtd: nItens }, // os mesmos números de cima (sem as linhas que não contam)
+        // celular (LMOB-03): produto e valor em cima; quantidade, grupo, cupom, data, vendedora e cliente embaixo
+        linhaMob: (r) => h('div', null,
+          h('div', { class: 'lmob-l1' }, h('span', { class: 'lmob-nome' }, r.produto), h('span', { class: 'lmob-val' }, fmt.brl(r.vt || 0))),
+          h('div', { class: 'lmob-l2' }, h('span', null, `${fmt.int(r.qtd)} × ${r.grupo || r.cat || ''}`), h('span', null, `cupom ${r.cupom} · ${fmt.date(r.data)}`), h('span', null, TS.msgWpp.nomeProprio(r.vendedor) || r.vendedor),
+            temCli && r.cl ? docCupom(r.cl) : null)),
+        totalMob: (t) => h('div', { class: 'lmob-total lmob-l1' }, h('span', null, `${t.cupom} · ${fmt.int(t.qtd)} itens`), h('span', { class: 'lmob-val' }, fmt.brl(t.vt || 0))),
       });
       root.append(TS.cardWithTools('Cupons do período', 'Todos os itens vendidos' + subCli, h('div', { class: 'table-tools' }, tabDet.searchBox, segCup), tabDet));
     } else {
@@ -1353,6 +1376,15 @@
         { key: 'desc', label: 'Descontos', fmt: comAntes(fmt.brl, 'descP'), title: `Descontos dados no período e, embaixo, nos ${N} dias anteriores.` },
       ],
       rows, sortKey: 'vt',
+      // celular (LMOB-03): faturamento e a variação por dia em cima; cupons e indicadores com a variação embaixo
+      linhaMob: (r) => {
+        const d = (x) => (x == null ? null : h('span', { class: x > 0 ? 'pos' : x < 0 ? 'neg' : '' }, ' ' + fmt.delta(x)));
+        return h('div', null,
+          h('div', { class: 'lmob-l1' }, h('span', { class: 'lmob-nome' }, TS.msgWpp.nomeProprio(r.vendedor) || r.vendedor), h('span', { class: 'lmob-val' }, fmt.brl(r.vt || 0), r.dVt != null ? h('small', null, d(r.dVt), '/dia') : null)),
+          h('div', { class: 'lmob-l2' }, h('span', null, `antes ${fmt.brl(r.vtP || 0)}`), h('span', null, `${fmt.int(r.cup || 0)} cupons (antes ${fmt.int(r.cupP || 0)})`)),
+          h('div', { class: 'lmob-l2' }, h('span', null, `TKM ${r.tkm != null ? fmt.brl(r.tkm) : '—'}`, d(r.dTkm)), h('span', null, `PMA ${r.pma != null ? fmt.brl(r.pma) : '—'}`, d(r.dPma)), h('span', null, `IPA ${r.ipa != null ? fmt.n2(r.ipa) : '—'}`, d(r.dIpa))));
+      },
+      totalMob: (t) => h('div', { class: 'lmob-total lmob-l1' }, h('span', null, 'Total'), h('span', { class: 'lmob-val' }, fmt.brl(t.vt || 0))),
       total: { vendedor: 'Total', cup: a.cupons, cupP: p.cupons, tkm: a.tkm, tkmP: p.tkm, dTkm: rel(a.tkm, p.tkm), pma: a.pma, pmaP: p.pma, dPma: rel(a.pma, p.pma), ipa: a.ipa, ipaP: p.ipa, dIpa: rel(a.ipa, p.ipa), desc: desc(atual), descP: desc(ant), vt: a.vt, vtP: p.vt, dVt: rel(a.vt / diasAtual, p.vt / N) },
     });
     const cardVend = TS.card('Período atual × anterior', `"Antes" = os ${N} dias imediatamente anteriores ao período · a variação do faturamento é pela média por dia (${diasAtual} dia(s) agora × ${N} antes)`, tab);
