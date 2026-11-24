@@ -40,7 +40,10 @@ async function lerOptouts(lojaId, agora, zap) {
         naoquer[x.de] = { em: String(x.em || new Date(agora).toISOString()).slice(0, 30), cpfs: [...cpfs] };
         for (const cpf of cpfs) {
           naoQuer(lojaId, cpf, agora);
-          C.auditar(POR, 'cliente não quer contato', lojaId, { loja: lojaId, cpf: mascara(cpf), origem: ZF.ORIGEM_RESPOSTA });
+          // NAOQUER-03 (pedido do dono, 23/11/2026): sai na hora dos pendentes de todas as listas, como quando a equipe marca na ficha
+          let saiu = [];
+          try { saiu = CAMP.tirarNaoQuer(lojaId, cpf, POR, 'não quer mensagens (' + ZF.ORIGEM_RESPOSTA + ')'); } catch (e) { console.error('[zap] tirar das campanhas:', C.msgErro(e)); }
+          C.auditar(POR, 'cliente não quer contato', lojaId, { loja: lojaId, cpf: mascara(cpf), origem: ZF.ORIGEM_RESPOSTA, campanhas: saiu.length || undefined });
         }
         if (!cpfs.size) C.auditar(POR, 'número pediu para não receber mensagens', lojaId, { loja: lojaId, fim: ZF.fim4(x.de) });
       }
@@ -160,4 +163,4 @@ function iniciar() {
   return t;
 }
 
-module.exports = { passo, rodada, iniciar };
+module.exports = { passo, rodada, iniciar, lerOptouts };

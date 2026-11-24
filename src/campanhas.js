@@ -122,15 +122,16 @@ function alterar(id, cid, b) {
 }
 /** cliente marcado como "não quer mensagens" (pedido do dono, 23/11/2026): sai na hora dos pendentes de todas as listas
  *  (st 'o', com quem marcou), em vez de esperar o robô ou a fila manual chegarem nele. Quem já recebeu fica no histórico.
+ *  Vale também para quem respondeu "parar/sair" no WhatsApp (`lerOptouts` em zaplaco.js, NAOQUER-03).
  *  → nomes das campanhas de onde saiu */
-function tirarNaoQuer(id, cpf, por) {
+function tirarNaoQuer(id, cpf, por, motivo = 'não quer mensagens (marcado na ficha)') {
   const todas = ler(id), nomes = [];
   const em = new Date().toISOString();
   for (const c of todas) {
     let saiu = false;
     for (const r of c.rodadas || []) for (const it of r.lista || []) {
       if (it.cpf !== cpf || it.st !== 'p') continue;
-      Object.assign(it, { st: 'o', em, por, motivo: 'não quer mensagens (marcado na ficha)' }); delete it.v; saiu = true;
+      Object.assign(it, { st: 'o', em, por, motivo }); delete it.v; saiu = true;
     }
     if (saiu) nomes.push(c.nome || 'Campanha');
   }
