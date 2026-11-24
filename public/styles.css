@@ -1193,7 +1193,7 @@ body.com-camada { overflow: hidden; }
 .cfg-bloco .est-emb label small { grid-column: 2; font-size: 12px; line-height: 1.3; }
 .cfg-bloco .f-label { margin-top: 12px; }
 .est-outros { display: grid; gap: 6px; margin-top: 6px; }
-.est-outro { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 8px; border: 1px solid var(--line, #E2DCCF); border-radius: 10px; background: #fff; }
+.est-outro { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 8px; border: 1px solid var(--line, #E2DCCF); border-radius: 10px; background: var(--cream-2); }
 .est-outro-rem { grid-column: 1 / -1; justify-self: end; background: none; border: 0; padding: 2px 4px; font: inherit; font-size: 12px; color: #8E321C; cursor: pointer; }
 .est-outro-rem:hover { text-decoration: underline; }
 .est-pop tr.com-dica td:first-child { cursor: help; }
@@ -2001,7 +2001,7 @@ body.com-camada .ped-barra { display: none; }
 .cp-passo b { display: block; font-size: 14px; color: var(--ink, #1f2a22); }
 .cp-passo small { display: block; font-size: 12px; }
 .cp-n { flex: none; width: 24px; height: 24px; border-radius: 50%; background: var(--green, #2C5234); color: #fff; font-size: 12px; font-weight: 700; display: grid; place-items: center; }
-.cp-bloco { border: 1px solid var(--line, #e6e1d6); border-radius: 10px; background: #fff; }
+.cp-bloco { border: 1px solid var(--line, #e6e1d6); border-radius: 10px; background: var(--cream-2); }
 .cp-bloco > summary { cursor: pointer; padding: 10px 12px; display: flex; gap: 10px; align-items: baseline; list-style: none; }
 .cp-bloco > summary::-webkit-details-marker { display: none; }
 .cp-bloco > summary::before { content: '▸'; color: var(--muted); transition: transform .15s; }
@@ -3964,3 +3964,8 @@ body.em-homolog .topbar { box-shadow: inset 0 -4px 0 var(--gold); }
 .nov-item p { margin: 4px 0 0; font-size: 14px; line-height: 1.45; }
 .nov-acoes { display: flex; justify-content: flex-end; margin-top: 14px; }
 @media (max-width: 860px) { .nov-caixa { padding: 18px; } .nov-acoes .btn { width: 100%; } }
+/* Homologação: estado da liberação no cartão (pedida → liberada), HOMOLOG-03 */
+.sis-lib { display: flex; flex-direction: column; gap: 2px; margin: 10px 0 4px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--cream-2); }
+.sis-lib small { color: var(--muted); }
+.sis-lib-ok { background: var(--good-l); border-color: var(--good-l); }
+.sis-lib-ok b { color: var(--good-t); }

@@ -974,7 +974,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     const v = lerTxt('versao.txt');
     const st = lerTxt('status.txt');
     const testes = {};
-    const out = { testes: false, alvo: null, instalado: false, verificado: null, atual: null, novidades: [], recentes: [], status: null, pedido: fs.existsSync(path.join(SIS, 'atualizar.pedido')) };
+    const out = { testes: false, alvo: null, instalado: false, verificado: null, atual: null, novidades: [], recentes: [], status: null, pedido: fs.existsSync(path.join(SIS, 'atualizar.pedido')), liberando: fs.existsSync(path.join(SIS, 'liberar.pedido')) };
     if (v) {
       out.instalado = true;
       for (const linha of v.split('\n')) {
