@@ -77,6 +77,30 @@ Cada loja tem os **seus arquivos** (o export é por operação). Dois arquivos:
 - O preço de um prêmio mudou com o tempo (o mesmo produto resgatado por 10 e depois por 12 pontos): confirma "preço novo só para o futuro".
 - **A importação de 02/07/2025** (tudo à meia-noite, "Compra feita em …/2023") trouxe o histórico antigo, mas **os pontos entraram no saldo sem linha "Adicionado"**, ou seja, sem data: cerca de 300 clientes têm saldo maior que a soma dos movimentos (~3,2 mil pontos sem origem) e quase 300 têm saldo sem nenhum movimento. Com 12 meses, teriam vencido em 02/07/2026 e a FIXE não tirou. Decisão: **vencem 6 meses depois da nossa implantação** (seção 1).
 
+## 4b. O painel continua exatamente como é hoje (decisão do dono, 24/11/2026)
+
+O CRM próprio **substitui só a FIXE**. Todas as telas e regras do painel continuam iguais; o que muda é **de onde vêm os dados de fidelidade e de cadastro**. Por isso o CRM entra como uma **nova fonte** que entrega os mesmos formatos que a FIXE entrega hoje, e nenhuma tela é reescrita para ele.
+
+Partes do painel que hoje dependem da FIXE e passarão a ler o CRM:
+
+| Parte do painel | O que usa da FIXE hoje | Com o CRM |
+|---|---|---|
+| Clientes (Hoje, lista, ficha, Indicadores, retorno do programa) | eventos (`fidelidade.js`), saldo oficial, membros | o mesmo formato, vindo do CRM |
+| Campanhas e robô do WhatsApp (`{pontos}`, pontos vencendo, Resumo diário) | saldo e vencimento por lote | idem (`zapauto` lê o mesmo pacote) |
+| Cadastro do cliente (nome, celular, aniversário, e-mail, cidade) | exportação de contatos da FIXE (`cadastro.js`) | o cadastro do CRM vira a fonte |
+| Vínculo de celular e nome nas mensagens (`celulares.js`) | sobrepõe o celular da FIXE | sobrepõe o do CRM (regra igual) |
+| Conta com a franquia (prêmios de fidelidade nos royalties) | resgates ligados ao cupom | resgates já vêm com a venda |
+| Lista de espera, Equipe (% CPF), Conferência (saúde dos dados), avisos de fonte parada | cadastro e logs | idem |
+| Coletor (robô do FIXE, logs por e-mail, passo FIXE do guia) | leitura da FIXE | desligado por loja depois da troca |
+
+Cuidados para nada quebrar:
+1. **Uma chave por loja: `fonte` = FIXE ou CRM.** Durante a migração convivem lojas nas duas; lojas sem programa continuam funcionando sem nenhum.
+2. **O CRM entrega no formato que o painel já lê** (eventos, saldo oficial, membros, cadastro). Um teste de contrato compara o mesmo cliente vindo da FIXE e do CRM e exige as mesmas telas (Hoje, campanhas, ficha).
+3. **Ligação com o cupom fica melhor:** o AppNext manda a venda ao CRM com a identificação dela, então o cupom vem direto (a heurística de hora + produtos continua só para o histórico da FIXE).
+4. **Cadastro:** o CRM vira a fonte da verdade (o app "Meus pontos" e o bônus de cadastro completo atualizam lá). A regra de hoje "o painel não muda a FIXE" vira "o painel não muda o cadastro fora das telas próprias do CRM".
+5. **Regras do painel continuam valendo:** perfis (vendedora sem dado de cliente, exceto Lista de espera), regra forte do envio manual, travas do robô, LGPD.
+6. **Na apresentação** (`/apresentacao`), o CRM também precisa de dados fictícios e rotas `/api/demo/...`.
+
 ## 5. O que teremos de construir (quando chegar a documentação)
 
 1. **Serviço da fidelidade** (contêiner próprio, mesmo repositório): a API no padrão do AppNext (cadastro, saldo + prêmios, resgate, venda, cancelamento), resposta em menos de 1 s, sem contar a mesma venda nem baixar o mesmo resgate duas vezes (chave única por venda/resgate).
