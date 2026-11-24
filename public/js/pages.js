@@ -896,11 +896,13 @@
     const pEsp = mensal && meta ? TS.projecao(vendido, meta, ymMeta, { base: 'meta', ate: state.f.ate }) : null;
     const esperado = pEsp && pEsp.n ? (pEsp.d / pEsp.n) * 100 : null;
     const projCom = mensal ? TS.heroiProjecao(vendido, meta || null, ymMeta, 'Projeção do mês', { base: 'meta', ate: state.f.ate }) : null;
+    // o nome segue o filtro (pedido do dono, 24/11/2026: "com Hoje, seria a meta do dia"): Hoje → meta de hoje; Ontem; semana
+    const NOME_PER = { hoje: ['hoje', 'Meta de hoje'], ontem: ['ontem', 'Meta de ontem'], semana: ['na semana', 'Meta da semana'] }[state.f.preset] || ['no período', 'Meta do período'];
     const colPer = per ? {
-      rot: 'Vendas da meta no período', num: fmt.brl0(per.vendido), estado: per.meta ? (per.vendido >= per.meta ? 'bom' : null) : null,
-      barra: per.meta ? { pct: (per.vendido / per.meta) * 100, rotulo: `${fmt.pct(per.vendido / per.meta, 0)} da meta do período` } : null,
-      linhas: [per.meta ? h('span', { class: per.vendido >= per.meta ? 'up' : 'down' }, `${fmt.pct(per.vendido / per.meta)} da meta do período`) : null,
-        h('span', { class: 'com-meta-per', 'data-meta-per': String(Math.round(per.meta)) }, `Meta do período ${fmt.brl0(per.meta)} · meta do mês ${fmt.brl0(meta)}`)].filter(Boolean),
+      rot: `Vendas da meta ${NOME_PER[0]}`, num: fmt.brl0(per.vendido), estado: per.meta ? (per.vendido >= per.meta ? 'bom' : null) : null,
+      barra: per.meta ? { pct: (per.vendido / per.meta) * 100, rotulo: `${fmt.pct(per.vendido / per.meta, 0)} da ${NOME_PER[1].toLowerCase()}` } : null,
+      linhas: [per.meta ? h('span', { class: per.vendido >= per.meta ? 'up' : 'down' }, `${fmt.pct(per.vendido / per.meta)} da ${NOME_PER[1].toLowerCase()}`) : null,
+        h('span', { class: 'com-meta-per', 'data-meta-per': String(Math.round(per.meta)) }, `${NOME_PER[1]} ${fmt.brl0(per.meta)} · meta do mês ${fmt.brl0(meta)}`)].filter(Boolean),
       dica: `Vendas da meta (chá aromatizado, chá puro e acessórios, sem Espaço Gourmet) só do período escolhido, contra a meta do período.\n\nMeta do período = (meta do mês ${fmt.brl0(meta)} − vendas da meta antes do período ${fmt.brl0(per.antes)}) × ${per.diasPer} ${per.diasPer === 1 ? 'dia' : 'dias'} de loja aberta do período ÷ ${per.restam} ${per.restam === 1 ? 'dia' : 'dias'} de loja aberta do começo do período até o fim do mês. Para "Hoje" é a mesma Meta de hoje do Início.\n\nA comissão e o total a pagar continuam sendo do mês (do dia 1 até o fim do período, contra a meta do mês).`,
     } : null;
     root.append(TS.heroi([
@@ -918,8 +920,8 @@
             TS.dica(`${fmt.brl0(pr.valor)} por indicador quando ${pr.minimo} ou mais estão no mínimo. TKM = vendas ÷ atendimentos; PMA = vendas ÷ itens; IPA = itens ÷ atendimentos (vendas da meta de cada pessoa; o cupom atendido por duas pessoas conta para as duas).${minAt ? ` Só concorre quem tem pelo menos ${fmt.int(minAt)} atendimentos no mês: com poucos cupons o indicador é sorte, não desempenho.` : ''}`)) : null,
           h('span', { class: 'eq-h-linha', 'data-eq': 'na-meta' }, `Na meta individual: ${naMeta} de ${comMeta} ${comMeta === 1 ? 'vendedor' : 'vendedores'}`,
             TS.dica('Quantas pessoas com meta individual já venderam a meta delas no mês.'))].filter(Boolean) },
-    ].filter(Boolean), { titulo: per ? 'Meta do período e comissão do mês' : 'Meta e comissão do mês' }));
-    if (per) root.append(h('p', { class: 'muted com-per-nota', 'data-aviso': 'periodo-parcial' }, `Período menor que o mês: o topo mostra as vendas e a meta do período. A comissão, o total a pagar e a tabela abaixo são do mês (de ${fmt.date(TS.dayToIso(iniMes))} até ${fmt.date(TS.dayToIso(Math.min(state.f.ate ?? db.maxDay, db.maxDay)))}), contra a meta do mês de ${fmt.brl0(meta)}.`));
+    ].filter(Boolean), { titulo: per ? `${NOME_PER[1]} e comissão do mês` : 'Meta e comissão do mês' }));
+    if (per) root.append(h('p', { class: 'muted com-per-nota', 'data-aviso': 'periodo-parcial' }, `Período menor que o mês: o topo mostra as vendas e a ${NOME_PER[1].toLowerCase()}. A comissão, o total a pagar e a tabela abaixo são do mês (de ${fmt.date(TS.dayToIso(iniMes))} até ${fmt.date(TS.dayToIso(Math.min(state.f.ate ?? db.maxDay, db.maxDay)))}), contra a meta do mês de ${fmt.brl0(meta)}.`));
     if (res.foraDaMeta.length) root.append(h('p', { class: 'muted com-fora', 'data-fora-meta': String(res.foraDaMeta.length) },
       `Meta dividida entre ${res.qtdVend} ${res.qtdVend === 1 ? 'pessoa' : 'pessoas'}. Fora da divisão (menos de ${P.aplicado} ${P.aplicado === 1 ? 'dia' : 'dias'} com venda${P.fechado ? '' : ' até agora'}): ${res.foraDaMeta.map((x) => `${x.vendedor} (${x.dias} ${x.dias === 1 ? 'dia' : 'dias'})`).join(', ')}.`, TS.dica(dicaPiso)));
     const eg = R().espacoGourmet({ base, baseSemVend });
