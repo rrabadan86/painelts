@@ -105,7 +105,8 @@
     const pintarTab = () => {
       botoes.clear();
       const rows = aba === 'franquia' ? linhas.filter((n) => n.franquia) : linhas;
-      const tab = TS.table({
+      const tab = TS.table({ linhaMob: { nome: 'nf', val: 'total', l2: ['emissao'], l3: ['acao'] }, // celular em linhas (LMOB-04)
+        
         cols: [
           { key: 'nf', label: 'Nota de entrada', align: 'l', wrap: true, title: 'Número da nota de compra e o fornecedor. São as notas que o painel já leu do AppNext (Estoque → Notas fiscais).',
             render: (n) => { const ja = (notaDe.get(n.id) || {}).creditos || []; return h('span', null, h('b', null, `NF ${n.nf}`), n.franquia ? h('span', { class: 'badge ok cfn-frq' }, 'franquia') : null,
@@ -305,7 +306,8 @@
     if (!fid) return null;
     if (fid.erro) return h('div', { class: 'notice err mt' }, fid.erro);
     const r = fid.resumo;
-    const tab = fid.meses.length ? TS.table({
+    const tab = fid.meses.length ? TS.table({ linhaMob: { nome: 'mes', val: 'diferenca', l2: ['custo', 'devido', 'recebido', 'situacao'], l3: ['acao'] }, // celular em linhas (LMOB-04)
+        
       cols: [
         { key: 'mes', label: 'Prêmios de', align: 'l', render: (m) => h('span', null, h('a', { href: '#', class: 'prc-nome', onclick: (e) => { e.preventDefault(); e.stopPropagation(); verMes(m, acaoRoy, fid, loja); } }, h('b', null, mesTxt(m.mes))), h('small', { class: 'est-tam' }, `${fmt.int(m.resgates.length)} resgates`)), sortVal: (m) => m.mes },
         { key: 'custo', label: 'Custo dos prêmios', render: (m) => h('span', null, fmt.brl(m.custo), m.semCusto ? h('small', { class: 'cf-sobra', title: 'Prêmios sem custo no painel' }, ` +${m.semCusto}?`) : null), sortVal: (m) => m.custo },
@@ -464,7 +466,8 @@
         ['Compensada de outro jeito', marcar('compensar', 'outro', 'Como foi compensada?', ['Crédito em outro pedido', 'Produto enviado no lugar', 'Depósito / Pix'])],
         ['Cancelada / não vai ser paga', marcar('cancelar', null, 'Por que não vai ser paga?', ['A franquia recusou', 'Fora do prazo', 'Lançada em duplicidade', 'Valor pequeno'])]]);
     };
-    const tab = TS.table({
+    const tab = TS.table({ linhaMob: { nome: 'numero', val: 'valor', l2: ['situacao'], l3: ['acao'] }, // celular em linhas (LMOB-04)
+        
       cols: [
         { key: 'numero', label: 'Devolução', align: 'l', render: (c) => h('span', null, linkNF(h('b', null, `NF-e ${c.numero ?? '—'}`), () => abrirDev(c), 'Abrir a devolução'),
           h('small', { class: 'est-tam' }, `${dataTxt(c.emissao)}${c.notaOrigem ? ` · da NF ${c.notaOrigem.nf}` : ''}${variosForn && c.fornecedor ? ' · ' + c.fornecedor : ''}${c.xml ? '' : ' · XML ainda não chegou'}`)), sortVal: (c) => c.emissao },

@@ -159,7 +159,7 @@
       h('div', { class: 'card mt' },
         h('div', { class: 'card-head' }, h('div', null, h('div', { class: 'card-title' }, d.todos ? 'Sugestões da equipe' : 'Minhas sugestões'),
           d.todos ? h('div', { class: 'card-sub' }, 'A decisão é tomada em ', h('a', { href: '#pedido' }, 'Estoque → Pedido'), ', no quadro "⭐ Sugestões da equipe". O pedido sugerido não muda sozinho por causa da estrela.') : null)),
-        TS.seg(Object.entries(ABAS).map(([k, [t, f, dica]]) => [`${t} (${d.itens.filter(f).length})`, k, dica]), aba, (v) => { state.sugAba = v; repintar(); }),
+        TS.segFolha(Object.entries(ABAS).map(([k, [t, f, dica]]) => [`${t} (${d.itens.filter(f).length})`, k, dica]), aba, (v) => { state.sugAba = v; repintar(); }),
         tabela(loja, d, lista, aba, repintar, vis)),
     ].filter(Boolean));
   }
@@ -205,7 +205,8 @@
       { key: 'acoes', label: '', align: 'l', render: tirar, sortVal: () => 0 },
     ].filter(Boolean);
     for (const s of lista) if (s.grp == null) s.grp = TS.grupoProd.texto(s.cod, s.desc, s.agora && s.agora.un ? /^kg$/i.test(s.agora.un) : undefined);
-    return TS.table({
+    return TS.table({ linhaMob: { nome: 'desc', l2: ['agora', 'nome', 'em'], l3: ['motivo', 'andamento', 'acoes'] }, // celular em linhas (LMOB-04)
+        
       cols, rows: lista, sortKey: 'em', sortDir: 'desc', maxHeight: '620px', search: d.todos ? 'Buscar produto, pessoa ou recado…' : 'Buscar produto ou recado…', searchKeys: ['desc', 'cod', 'nome', 'recado', 'justificativa', 'grp'], produto: 'desc', cls: 'est-t sug-t',
       rowClass: (s) => (novo(s) || s.id === vis.recem ? 'sug-novo' : null),
       empty: { abertas: 'Nenhuma sugestão esperando o pedido.', entrega: 'Nada aguardando entrega.', encerradas: 'Nenhuma sugestão encerrada ainda.' }[aba],

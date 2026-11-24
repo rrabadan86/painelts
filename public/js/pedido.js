@@ -705,7 +705,8 @@
         { key: 'motivo', label: 'Obs.', align: 'l', wrap: true, render: (r) => obs(r) },
       ];
     const col = (k) => cols.find((c) => c.key === k);
-    const tab = TS.table({
+    const tab = TS.table({ linhaMob: { nome: 'produto', val: 'total', l2: ['sit', 'preco', 'motivo'], l3: ['pedir'] }, // celular em linhas (LMOB-04)
+        
       cols,
       rowClass: (r) => (r.obrig ? 'ped-row-obr' : null),
       rows: linhas, total: (() => {
@@ -853,7 +854,8 @@
         { key: 'acao', label: 'Pedido', align: 'l', wrap: true, title: '"+ Adicionar ao pedido" põe o produto na tabela do pedido (dá para mudar a quantidade lá). "Não pedir" guarda o motivo para a equipe. 🛒 mostra quanto já está no pedido.',
           render: acao, sortVal: (x) => (x.r ? x.r.pedir : 0) },
       ];
-      const tabela = () => TS.table({
+      const tabela = () => TS.table({ linhaMob: { nome: 'desc', val: 'acao', l2: ['qtd', 'precisa', 'classe', 'site'] }, // celular em linhas (LMOB-04)
+        
         cols, rows: lista, maxHeight: '340px', cls: 'est-t sug-ped-t', rowClass: (x) => (x.noPed ? 'sug-ped-on' : null),
         search: lista.length > 8 ? 'Buscar produto, pessoa ou recado…' : null, searchKeys: ['desc', 'cod', 'quem', 'recados'],
         empty: { pedir: 'Nada para decidir agora. 👏', nopedido: 'Nenhuma sugestão no pedido ainda.', semsite: 'Nenhuma sugestão sem estoque no site.', nao: 'Nenhuma marcada como "Não pedir".', todas: 'Nenhuma sugestão aberta.' }[ver.aba],
@@ -1090,7 +1092,7 @@
     corpo.append(h('div', { class: 'mt' }, TS.cardWithTools('Produtos', sub,
       h('div', { class: 'est-p2-acoes-dir ped-p2-acoes' }, btnSalvar, btnCsv),
       h('div', { class: 'est-tools ped-tools ped-p2-tools' }, !MOBILE && tab.searchBox && (tab.searchBox.classList.add('est-busca'), tab.searchBox),
-        TS.seg(Object.entries(FILTROS).map(([k, [t, , dica]]) => [`${t} (${cont(k)})`, k, dica]), filtro, (v) => { state.pedFiltro = v; pintar(corpo, loja, M, e, p); }), menuLimpar),
+        TS.segFolha(Object.entries(FILTROS).map(([k, [t, , dica]]) => [`${t} (${cont(k)})`, k, dica]), filtro, (v) => { state.pedFiltro = v; pintar(corpo, loja, M, e, p); }), menuLimpar),
       avisoRasc && avisoRasc.classList.contains('ped-rasc-ok') ? avisoRasc : null, avisoObr, avisoVer, MOBILE ? h('details', { class: 'ped-fx-mob', open: (fx.g || fx.gp || fx.d || fx.sb || fx.s || fx.c || fx.m) ? true : null }, h('summary', null, `Filtros${[fx.g, fx.gp, fx.d, fx.sb, fx.s, fx.c, fx.m].filter(Boolean).length ? ` (${[fx.g, fx.gp, fx.d, fx.sb, fx.s, fx.c, fx.m].filter(Boolean).length})` : ''} · ${fmt.int(linhas.length)} produtos`), filtrosExtra) : filtrosExtra, MOBILE ? listaMobile() : tab)));
     if (editados.size) corpo.append(h('p', { class: 'muted' }, `${editados.size} quantidade(s) alterada(s) à mão. `, h('a', { href: '#', onclick: (x) => { x.preventDefault(); editados.clear(); pintar(corpo, loja, M, e, p); } }, 'Voltar à sugestão')));
 

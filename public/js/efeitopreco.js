@@ -199,7 +199,7 @@
     return TS.cardWithTools('Efeito dos reajustes de venda',
       'Depois que o preço mudou, vendeu menos? O lucro subiu? Cada linha é um reajuste dos últimos 12 meses (não segue o período dos filtros): 30 dias antes × 30 dias depois, por dia, e o mesmo descontando o movimento da loja. Com menos de 30 dias depois é só uma prévia ("cedo demais"); com menos de 30 unidades vendidas nos dois períodos é "poucos dados" (sem veredito).',
       h('div', { class: 'est-tools' }, tab.searchBox && (tab.searchBox.classList.add('est-busca'), tab.searchBox), segTela),
-      h('div', { class: 'efp-fil' }, TS.seg(Object.entries(FIL).filter(([k]) => k === 'todos' || k === fil || cont(k)).map(([k, [t]]) => [`${t} (${cont(k)})`, k]), fil, (v) => { state.efeitoFil = v; repintar(); })),
+      h('div', { class: 'efp-fil' }, TS.segFolha(Object.entries(FIL).filter(([k]) => k === 'todos' || k === fil || cont(k)).map(([k, [t]]) => [`${t} (${cont(k)})`, k]), fil, (v) => { state.efeitoFil = v; repintar(); })),
       tab);
   }
 

@@ -277,7 +277,7 @@
   function tabela(linhas, FIL, filtro, corpo, D) {
     const cont = (k) => linhas.filter(FIL[k][1]).length;
     // abas da tela: os filtros dos produtos + "Reajustes (N)" (efeito de cada reajuste de venda, em efeitopreco.js)
-    const abas = () => TS.seg([...Object.entries(FIL).map(([k, [t]]) => [`${t} (${cont(k)})`, k]), ...(D.efeito ? [[`Reajustes (${D.efeito.lista.length})`, 'efeito']] : [])], filtro, (v) => { state.precoFil = v; pintar(corpo, D); });
+    const abas = () => TS.segFolha([...Object.entries(FIL).map(([k, [t]]) => [`${t} (${cont(k)})`, k]), ...(D.efeito ? [[`Reajustes (${D.efeito.lista.length})`, 'efeito']] : [])], filtro, (v) => { state.precoFil = v; pintar(corpo, D); });
     if (filtro === 'efeito') return TS.efeitoPreco.cartao(D.efeito, abas(), (nome) => { const r = linhas.find((x) => x.nome === nome); if (r) abrirProduto(r); }, () => pintar(corpo, D));
     const rows = linhas.filter(FIL[filtro][1]);
     const temCad = !!(D.tabela && D.tabela.size); // com a planilha de preços: o preço de venda é o do cadastro; o do caixa aparece quando difere
@@ -303,7 +303,8 @@
     const cMotivo = { key: 'tabPor', label: 'Motivo provável', align: 'l', wrap: true, title: 'Por que o caixa difere do sistema, olhando as vendas das últimas 4 semanas: "última venda dd/mm" = não vende mais e o preço é antigo; "promoção?" = parte das vendas no preço do sistema e parte em outro; "PDV ≠ cadastro" ou "desde dd/mm" = todas as vendas fora do preço do sistema (um dos dois está desatualizado).',
       render: (r) => (r.tabPor ? h('span', null, h('b', null, r.tabPor.curto), h('small', { class: 'muted efp-det' }, r.tabPor.longo)) : '—'), sortVal: (r) => (r.tabPor ? r.tabPor.tipo : '') };
     const ehCad = filtro === 'cad';
-    const tab = TS.table({
+    const tab = TS.table({ linhaMob: { nome: 'nome', val: 'difMargem', l2: ['cVar', 'vVar'], l3: ['vAt', 'cx', 'tabPor'] }, // celular em linhas (LMOB-04)
+        
       cols: ehCad ? [cNome, cSistema, cCaixa, cMotivo] : [cNome, cCusto, cPreco, cMargem],
       rows, sortKey: ehCad ? 'cx' : filtro === 'margem' ? 'difMargem' : 'cVar', sortDir: filtro === 'margem' ? 'asc' : 'desc', maxHeight: '640px', search: 'Buscar produto…', searchKeys: ['nome', 'cat', 'grp'], produto: 'nome', cls: 'est-t prc-t', cartao: true,
       empty: 'Nenhum produto neste filtro no período.',
@@ -592,7 +593,8 @@
       ...(temPend ? { lote: ['Lote pendente', (n) => !!j.lotesPend[n.id], 'Notas com chá a granel, envasado ou alimentação sem o nº do lote: abra a nota e preencha'] } : {}) };
     const fil = FIL[state.prcNotasFil] ? state.prcNotasFil : 'per';
     const rows = todas.filter(FIL[fil][1]);
-    const tab = TS.table({
+    const tab = TS.table({ linhaMob: { nome: 'nfTxt', val: 'total', l2: ['dia', 'fornecedor', 'nItens', 'desconto'] }, // celular em linhas (LMOB-04)
+        
       cols: [
         // compacta: entrada + emissão numa coluna, tipo junto do fornecedor; a linha inteira abre a nota
         { key: 'dia', label: 'Entrada', align: 'l', render: (r) => h('span', null, r.entrada ? quando(r.entrada) : '—', h('small', { class: 'est-tam' }, r.emissao ? 'emissão ' + quando(r.emissao) : '')), sortVal: (r) => r.dia ?? 0 },
@@ -614,7 +616,7 @@
       // 2ª passada (23/11/2026): no cabeçalho só a ação (Sincronizar), junto de Imprimir e Expandir; busca e abas em cima da tabela
       sincEl ? h('div', { class: 'est-p2-acoes-dir ped-p2-acoes' }, sincEl) : null,
       h('div', { class: 'est-tools est-p2-tools' }, tab.searchBox && (tab.searchBox.classList.add('est-busca'), tab.searchBox),
-        TS.seg(Object.entries(FIL).map(([k, [t, fn, dica]]) => [`${t} (${fmt.int(todas.filter(fn).length)})`, k, dica]), fil, (v) => { state.prcNotasFil = v; const c = document.querySelector('.prc-notas > .mt'); if (c) c.replaceChildren(listaNotas(D, j, aoMudar)); })),
+        TS.segFolha(Object.entries(FIL).map(([k, [t, fn, dica]]) => [`${t} (${fmt.int(todas.filter(fn).length)})`, k, dica]), fil, (v) => { state.prcNotasFil = v; const c = document.querySelector('.prc-notas > .mt'); if (c) c.replaceChildren(listaNotas(D, j, aoMudar)); })),
       sincEl && sincEl._log, tab);
   }
   /** "Sincronizar agora" (admin ou franqueado da loja): o coletor busca o estoque e as notas de compra do AppNext; acompanha até terminar */
@@ -887,7 +889,8 @@
     // histórico de compras do item: todas as notas de compra que o painel tem (Estoque → Entrada de Produtos do AppNext)
     const abrirHistorico = (r) => TS.histCompras(r, D.comprasItens, n.nf);
     const tabBox = h('div');
-    const montarTab = () => tabBox.replaceChildren(TS.table({
+    const montarTab = () => tabBox.replaceChildren(TS.table({ linhaMob: { nome: 'nome', val: 'total', l2: ['qtd', 'vu', 'custo', 'desc'], l3: ['varC', 'lote'] }, // celular em linhas (LMOB-04)
+        
       rowClass: (r) => (impPorItem.has(String(r.cod)) ? 'nf-marg' : ''),
       cols: [
         { key: 'nome', label: 'Produto', align: 'l', sticky: true, wrap: true, render: (r) => h('span', null,

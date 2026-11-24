@@ -543,7 +543,8 @@
           ? h('button', { type: 'button', class: 'btn vl-camp', title: `Campanha no WhatsApp para quem já comprou ${l.desc}`, onclick: () => campanhaDoCha(l) }, '📣 Campanha') : null) }] : []),
       ];
       const rowsT = rows.map((l) => ({ ...l, venda: l.saldo * (l.precoKg || 0), dias: l.dias == null ? 99999 : l.dias, _l: l }));
-      const tab = rows.length ? TS.table({
+      const tab = rows.length ? TS.table({ linhaMob: { nome: 'desc', val: 'saldo', l2: ['dias', 'validade', 'lote'], l3: ['venda', 'acao'] }, // celular em linhas (LMOB-04)
+        
         cols: cols.map((c) => ({ ...c, render: c.render ? (row) => c.render(row._l) : undefined })), rows: rowsT, sortKey: 'dias', sortDir: 'asc',
         search: G ? 'Buscar chá, lote ou NF' : 'Buscar produto, lote ou NF', searchKeys: ['desc', 'cod', 'lote', 'nf'], pageSize: 50, cls: 'vl-tabela',
       }) : null;

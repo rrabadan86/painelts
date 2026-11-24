@@ -84,7 +84,8 @@
 
     function pintarTabela() {
       const rows = d.lista.filter((x) => fil === 'todos' || (fil === 'bate' ? x.estado === 'bate' || x.estado === 'explicado' : x.estado === fil));
-      tabela.replaceChildren(TS.table({
+      tabela.replaceChildren(TS.table({ linhaMob: { nome: 'dia', val: 'dif', l2: ['fat', 'caixa', 'estado', 'gaveta'] }, // celular em linhas (LMOB-04)
+        
         cls: 'conf-t', sortKey: 'dia', sortDir: 'desc', maxHeight: '640px', rows,
         empty: { naobate: 'Nenhum dia fora da tolerância. 👏', semfechamento: 'Todos os dias com venda têm o caixa lido.', bate: 'Nenhum dia conferido ainda.', todos: 'Sem vendas nem caixa nos últimos 60 dias.' }[fil],
         cols: [
@@ -206,7 +207,7 @@
         const dias = new Map(c.porDia.map((x) => [x.dia, { ...x, pdv: 0, neg: 0 }]));
         for (const [k, v] of pdv) { if (!dias.has(k)) dias.set(k, { dia: k, cupons: 0, valor: 0, aindaConta: 0, pdv: 0, neg: 0 }); dias.get(k).pdv = v; }
         for (const [k, v] of neg) { if (!dias.has(k)) dias.set(k, { dia: k, cupons: 0, valor: 0, aindaConta: 0, pdv: 0, neg: 0 }); dias.get(k).neg = v; }
-        tb.replaceChildren(TS.table({ rows: [...dias.values()], cls: 'conf-t', sortKey: 'dia', sortDir: 'desc', maxHeight: '620px', empty: 'Nada cancelado nos últimos 60 dias. 👏',
+        tb.replaceChildren(TS.table({ linhaMob: { nome: 'dia', val: 'valor', l2: ['aindaConta', 'pdv', 'neg'] }, rows: [...dias.values()], cls: 'conf-t', sortKey: 'dia', sortDir: 'desc', maxHeight: '620px', empty: 'Nada cancelado nos últimos 60 dias. 👏',
           cols: [
             { key: 'dia', label: 'Dia', align: 'l', sticky: true, title: 'Dia da nota cancelada ou do fechamento do caixa.', render: (x) => h('div', null, h('b', null, dm(x.dia)), h('small', { class: 'muted conf-sub' }, semana(x.dia))) },
             { key: 'valor', label: 'Notas canceladas', title: 'Total das notas canceladas do dia (XML) e quantas foram.', render: (x) => (x.cupons ? h('div', null, fmt.brl(x.valor), h('small', { class: 'muted conf-sub' }, `${fmt.int(x.cupons)} ${x.cupons === 1 ? 'nota' : 'notas'}`)) : h('span', { class: 'muted' }, '—')) },
@@ -215,7 +216,7 @@
             { key: 'neg', label: 'Linhas negativas', title: 'Estornos lançados como venda negativa na planilha de vendas.', render: (x) => (x.neg ? fmt.brl(x.neg) : h('span', { class: 'muted' }, '—')) },
           ] }));
       } else {
-        tb.replaceChildren(TS.table({ rows: c.porVendedor, cls: 'conf-t', sortKey: 'aindaConta', empty: 'Nada cancelado nos últimos 60 dias. 👏',
+        tb.replaceChildren(TS.table({ linhaMob: { nome: 'vendedor', val: 'valor', l2: ['cupons', 'aindaConta', 'valorMeta'] }, rows: c.porVendedor, cls: 'conf-t', sortKey: 'aindaConta', empty: 'Nada cancelado nos últimos 60 dias. 👏',
           cols: [
             { key: 'vendedor', label: 'Vendedor', align: 'l', sticky: true, title: 'Vendedor da planilha de vendas nos cupons cancelados. "(fora da planilha de vendas)" = cupons que o AppNext já não traz: o XML não diz quem vendeu.', render: (x) => h('b', null, x.vendedor) },
             { key: 'cupons', label: 'Cupons', fmt: fmt.int, title: 'Cupons cancelados em que a pessoa aparece.' },
@@ -241,7 +242,7 @@
     const quadros = h('div', { class: 'grid g-kpi vp2-conf-kpi' }, h('div', { class: 'loading' }, h('div', { class: 'spinner' }), 'Casando as vendas com o estoque…'));
     const lista = h('div');
     area.append(quadros,
-      TS.card('Fontes dos dados', 'Quando cada dado chegou ao painel pela última vez.', TS.table({ rows: fts, cls: 'conf-t',
+      TS.card('Fontes dos dados', 'Quando cada dado chegou ao painel pela última vez.', TS.table({ linhaMob: { nome: 'nome', val: 'sinal', l2: ['horas'], l3: ['fazer'] }, rows: fts, cls: 'conf-t',
         cols: [
           { key: 'nome', label: 'Fonte', align: 'l', sticky: true, wrap: true, title: 'De onde o painel tira cada dado.', render: (f) => h('div', null, h('b', null, f.nome), h('small', { class: 'muted conf-sub' }, f.oque)) },
           { key: 'horas', label: 'Última atualização', align: 'l', title: 'Há quanto tempo o dado chegou ao painel. Embaixo, até onde ele vai.', sortVal: (f) => (f.horas == null ? 1e9 : f.horas),

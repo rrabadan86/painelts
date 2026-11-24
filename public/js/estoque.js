@@ -383,7 +383,8 @@
       corpo.replaceChildren(...[veredito,
         h('div', { class: 'promo-cols' }, col('Antes', A), col('Durante', D, true), col('Depois', P)),
         P && A.lucroDia ? h('p', { class: 'muted', style: { fontSize: '12.5px' } }, P.lucroDia >= A.lucroDia * 1.03 ? `Depois da promoção o lucro por dia seguiu ${fmt.pct(P.lucroDia / A.lucroDia - 1, 0)} acima de antes: a campanha deixou efeito.` : P.lucroDia <= A.lucroDia * 0.97 ? `Depois da promoção o lucro por dia ficou ${fmt.pct(1 - P.lucroDia / A.lucroDia, 0)} abaixo de antes: parte da venda foi só antecipada.` : 'Depois da promoção o lucro por dia voltou ao nível de antes.') : null,
-        linhas.length ? h('div', { class: 'mt' }, h('div', { class: 'f-label' }, 'Produtos que mais mudaram o lucro bruto por dia'), TS.table({
+        linhas.length ? h('div', { class: 'mt' }, h('div', { class: 'f-label' }, 'Produtos que mais mudaram o lucro bruto por dia'), TS.table({ linhaMob: { nome: 'produto', val: 'dif', l2: ['antes', 'durante'] }, // celular em linhas (LMOB-04)
+        
           cols: [{ key: 'produto', label: 'Produto', align: 'l', wrap: true }, { key: 'antes', label: 'Antes /dia', fmt: fmt.brl }, { key: 'durante', label: 'Durante /dia', fmt: fmt.brl },
             { key: 'dif', label: 'Diferença', fmt: (v) => (v > 0 ? '+' : '') + fmt.brl(v), cls: (r) => (r.dif > 0 ? 'pos' : 'neg') }],
           rows: linhas, sortKey: 'dif', maxHeight: '360px', cls: 'est-t',
@@ -801,8 +802,9 @@
       const rows = doGrupo.filter(F[f][1]);
       const datas = TS.demo ? 'na apresentação o cadastro é fictício' : [tabela.simples ? `Produtos de ${new Date(tabela.simples.em).toLocaleDateString('pt-BR')}` : 'falta a listagem de Produtos', tabela.compostos ? `Compostos de ${new Date(tabela.compostos.em).toLocaleDateString('pt-BR')}` : 'falta a de Produtos Compostos (chás a granel)'].join(' · ');
       return TS.card('Margem de tabela', `Todos os produtos do cadastro do AppNext, vendidos ou não: preço de tabela (sem desconto) × custo atual. Margem sem fixos estimada com as deduções variáveis médias do período (${fmt.pct(dPct[true], 1)} nos chás a granel, ${fmt.pct(dPct[false], 1)} no resto). "Praticada" = a margem bruta do que vendeu no período; a diferença é o desconto. ${fmt.int(linhas.filter((r) => r.custo != null).length)} de ${fmt.int(linhas.length)} produtos com custo · ${datas}.`,
-        h('div', { class: 'est-tab-fx' }, TS.seg(Object.entries(F).map(([k, [t]]) => [`${t} (${fmt.int(conta(k))})`, k]), f, (v) => { state.estTabF = v; TS.render(); }), selG),
-        TS.table({
+        h('div', { class: 'est-tab-fx' }, TS.segFolha(Object.entries(F).map(([k, [t]]) => [`${t} (${fmt.int(conta(k))})`, k]), f, (v) => { state.estTabF = v; TS.render(); }), selG),
+        TS.table({ linhaMob: { nome: 'nome', val: 'mSf', l2: ['margem', 'preco', 'custo'], l3: ['vendido', 'mReal', 'desconto'] }, // celular em linhas (LMOB-04)
+        
           cols: [
             { key: 'nome', label: 'Produto', align: 'l', sticky: true, wrap: true, title: 'Clique no produto para ver o histórico de compras: cada nota, a quantidade e como o custo variou (no chá a granel, as compras do chá em kg).',
               render: (r) => h('span', null, TS.histCompras ? h('button', { type: 'button', class: 'nf-hist-btn', title: 'Ver o histórico de compras deste produto', onclick: (e) => { e.stopPropagation(); abrirCompras(r); } }, r.nome) : r.nome, h('small', { class: 'est-tam' }, `cód. ${r.cod}${r.grupoTxt ? ' · ' + r.grupoTxt : ''}`)) },
@@ -834,7 +836,8 @@
         return { ...p, motivo, pv: un ? p.vt / un : null, pc: un ? p.custo / un : null };
       }).sort((a, b) => a.contrib - b.contrib);
       if (!baixos.length) return TS.card(`Margem sem fixos abaixo de ${fmt.pct(margemMin, 0)}`, null, h('p', { class: 'muted' }, `Nenhum produto abaixo da margem mínima no período. 👏 (Mude o mínimo em Configurações → Lojas → Estoque e margem.)`));
-      return TS.card(`Margem sem fixos abaixo de ${fmt.pct(margemMin, 0)}`, `${fmt.int(baixos.length)} produto(s) no período. Margem sem fixos = o que o produto deixa depois do custo e das deduções variáveis, antes do aluguel e outros fixos. Abaixo do mínimo ele ajuda pouco a pagar os fixos; negativa, ele custa dinheiro à loja. Motivo = o que mais pesa no preço desse produto comparado com a média da loja.`, TS.table({
+      return TS.card(`Margem sem fixos abaixo de ${fmt.pct(margemMin, 0)}`, `${fmt.int(baixos.length)} produto(s) no período. Margem sem fixos = o que o produto deixa depois do custo e das deduções variáveis, antes do aluguel e outros fixos. Abaixo do mínimo ele ajuda pouco a pagar os fixos; negativa, ele custa dinheiro à loja. Motivo = o que mais pesa no preço desse produto comparado com a média da loja.`, TS.table({ linhaMob: { nome: 'produto', val: 'margemContrib', l2: ['pv', 'pc', 'vt', 'margem'], l3: ['motivo'] }, // celular em linhas (LMOB-04)
+        
         cols: [
           TS.grupoProd.coluna({ key: 'produto', label: 'Produto', align: 'l', sticky: true, wrap: true, render: (r) => (r.granel ? h('span', null, r.produto, h('small', { class: 'est-tam' }, r.tamanhos)) : r.produto) }, grpDe),
           { key: 'pv', label: 'Preço de venda', title: 'Preço médio vendido no período (chá a granel: por kg; o resto: por unidade)', render: (r) => h('span', null, fmt.brl(r.pv), h('small', { class: 'est-tam' }, r.granel ? 'por kg' : 'por un.')), sortVal: (r) => r.pv },
@@ -871,7 +874,8 @@
       }).sort((a, b) => (b.ganho ?? -1) - (a.ganho ?? -1));
       if (!linhas.length) return null;
       const usados = TAMS.filter((g) => linhas.some((r) => r['g' + g] != null));
-      return TS.card('Qual pacote oferecer', 'Lucro sem custos fixos (lucro bruto − deduções variáveis) a cada 100 g de chá vendido, em cada tamanho de pacote. Ajuda a equipe a saber quando vale oferecer o pacote maior (ex.: um de 100g em vez de dois de 50g).', TS.table({
+      return TS.card('Qual pacote oferecer', 'Lucro sem custos fixos (lucro bruto − deduções variáveis) a cada 100 g de chá vendido, em cada tamanho de pacote. Ajuda a equipe a saber quando vale oferecer o pacote maior (ex.: um de 100g em vez de dois de 50g).', TS.table({ linhaMob: { nome: 'produto', val: 'melhor', l2: ['dica'] }, // celular em linhas (LMOB-04)
+        
         cols: [
           { key: 'produto', label: 'Chá', align: 'l', sticky: true, wrap: true },
           ...usados.map((g) => ({ key: 'g' + g, label: rotG(g), title: `Lucro sem fixos por 100 g de chá vendido em pacotes de ${rotG(g)}`, fmt: (v) => (v == null ? '—' : fmt.brl(v)), cls: (r) => (r.melhor === rotG(g) ? 'hit' : '') })),
@@ -1229,13 +1233,14 @@
     COLS[0] = TS.grupoProd.coluna(COLS[0], grpDe);
     const porKey = new Map(COLS.map((c) => [c.key, c]));
     prods.forEach(grpDe); // a busca também acha pelo grupo
-    const tabLucro = TS.table({
+    const tabLucro = TS.table({ linhaMob: { nome: 'produto', val: 'lucro', l2: ['margem', 'vt', 'abc', 'classe', 'tend'], l3: ['oficial', 'margemContrib', 'lucroLiq', 'classeRes', 'lucroRes'] }, // celular em linhas (LMOB-04)
+        
       cols: VIS[vis][1].map((k) => porKey.get(k)).filter(Boolean),
       rows: sel ? prods.filter((p) => p.classe === sel) : prods, sortKey: 'lucro', maxHeight: '520px', search: 'Buscar produto ou grupo…', searchKeys: ['produto', 'grp'], produto: 'produto', imprimir: ['produto', 'abc', 'oficial', 'classeRes', 'giro', 'vt', 'lucro', 'lucroRes', 'margem', 'margemTab', 'contrib', 'margemContrib'], cls: 'est-t est-t-lucro est-vis-' + vis,
       total: { produto: 'Total', vt: fatCusto, custo: custoTot, lucro, lucroRes: fmt.brl(lucro), margem: fatCusto ? lucro / fatCusto : null, contrib: contribTot, margemContrib: fatCusto ? contribTot / fatCusto : null, ded: dedSoma, lucroLiq: lucroLiqTot, margemLiq: fatCusto ? lucroLiqTot / fatCusto : null },
     });
     const segVis = h('div', { class: 'est-vis' }, h('span', { class: 'f-label' }, 'Colunas:'),
-      TS.seg(Object.entries(VIS).map(([k, [t]]) => [t, k]), vis, (v) => { state.estColVis = v; TS.render(); }),
+      TS.segFolha(Object.entries(VIS).map(([k, [t]]) => [t, k]), vis, (v) => { state.estColVis = v; TS.render(); }, 'Colunas'),
       h('small', { class: 'muted' }, VIS[vis][2]));
     if (abaR === 'produtos') corpo.append(h('div', { class: 'mt' }, sel ? h('div', { class: 'est-filtro' }, `Mostrando só ${CLASSE[sel][0]}. `, h('button', { type: 'button', class: 'link-btn', onclick: () => { state.estClasse = null; TS.render(); } }, 'Ver todos')) : null, TS.card('Produtos por lucro', 'Curva ABC: A = produtos que fazem 80% do lucro (nunca podem faltar). Chá a granel aparece uma vez só, somando todas as gramaturas. A classe (Estrela, Volume…) compara chá com chá e acessório com acessório: a oficial é fixa e é a que o Pedido usa; a "no período" usa o filtro; a tendência mostra se o produto está saindo acima ou abaixo do normal.', h('div', { class: 'est-lucro-ctl' }, ctlMeses, segVis), tabLucro)));
 
@@ -1243,7 +1248,8 @@
     if (abaR === 'pacotes') corpo.append(h('div', { class: 'mt' }, cartaoPacotes() || TS.card('Qual pacote oferecer', null, h('p', { class: 'muted' }, 'Nenhum chá a granel vendeu em dois tamanhos ou mais no período. Escolha um período maior.'))));
 
     const vends = [...porVend.values()].filter((v) => v.vt > 0).map((v) => ({ ...v, lucro: v.vt - v.custo, margem: (v.vt - v.custo) / v.vt, lucroLiq: v.vt - v.custo - v.ded, margemLiq: (v.vt - v.custo - v.ded) / v.vt, contrib: v.vt - v.custo - v.dedVar, margemContrib: (v.vt - v.custo - v.dedVar) / v.vt, cobre: v.fat ? v.vt / v.fat : null }));
-    if (abaR === 'vendedoras') corpo.append(h('div', { class: 'mt' }, TS.card('Lucro por vendedora', 'Quem vende mais nem sempre é quem deixa mais lucro.', TS.table({
+    if (abaR === 'vendedoras') corpo.append(h('div', { class: 'mt' }, TS.card('Lucro por vendedora', 'Quem vende mais nem sempre é quem deixa mais lucro.', TS.table({ linhaMob: { nome: 'vendedor', val: 'lucro', l2: ['fat', 'margem', 'margemContrib', 'lucroLiq', 'cobre'] }, // celular em linhas (LMOB-04)
+        
       cols: [
         { key: 'vendedor', label: 'Vendedora', align: 'l', sticky: true },
         { key: 'fat', label: 'Faturamento', title: 'Tudo que a vendedora vendeu no período (sem taxa de serviço)', fmt: fmt.brl },
@@ -1307,7 +1313,8 @@
       descIn.addEventListener('change', () => { state.estKitDesc = Math.max(0, Math.min(50, Math.round(+descIn.value) || 0)); TS.render(); });
       return TS.cardWithTools('Kits sugeridos', `Pares de produtos que saem juntos no mesmo cupom mais do que o acaso explicaria (${fmt.int(nCup)} cupons no período). Chá a granel conta como o chá, qualquer tamanho; o preço dele é o do pacote médio vendido.`,
         h('label', { class: 'est-kit-desc' }, 'Desconto do kit ', descIn, ' %'),
-        top.length ? TS.table({
+        top.length ? TS.table({ linhaMob: { nome: 'kit', val: 'margemKitCon', l2: ['juntos', 'lift', 'precoKit', 'soma'] }, // celular em linhas (LMOB-04)
+        
           cols: [
             { key: 'kit', label: 'Kit', align: 'l', wrap: true, sticky: true },
             { key: 'juntos', label: 'Juntos', fmt: fmt.int, title: 'Em quantos cupons os dois saíram juntos no período' },
@@ -1428,7 +1435,7 @@
               ? h('button', { type: 'button', class: 'vl-nome est-nome-cha', title: 'Ver os lotes deste chá: aberto, fechado, abertura e vencimento.', onclick: (e) => { e.stopPropagation(); TS.validade.janelaPacotes(state.loja, r.cod, r.produto); } }, r.produto)
               : r.produto, podePed ? h('a', { href: '#pedido', class: 'est-ir', title: 'Abrir o Pedido já buscando este produto', onclick: (e) => { e.preventDefault(); TS.irParaPedido(r.produto); } }, 'no pedido ›') : null) },
           { key: 'tipo', label: 'Tipo', align: 'l', title: 'Chá a granel (em kg, vendido em pacotes de vários tamanhos), produto pronto ou insumo/embalagem (saco kraft, etiqueta…)' },
-          { key: 'est', label: 'Situação', align: 'l', title: 'Passe o mouse (ou toque) na etiqueta para ver o motivo', render: (r) => h('span', { class: 'badge ' + SIT_T[r.est][1], title: porqueT(r) }, SIT_T[r.est][0]), sortVal: (r) => -SIT_T[r.est][2] },
+          { key: 'est', label: 'Situação', labelMob: '', align: 'l', title: 'Passe o mouse (ou toque) na etiqueta para ver o motivo', render: (r) => h('span', { class: 'badge ' + SIT_T[r.est][1], title: porqueT(r) }, SIT_T[r.est][0]), sortVal: (r) => -SIT_T[r.est][2] },
           { key: 'qtd', label: 'Estoque', title: 'Saldo da última planilha de estoque do AppNext (data no topo). Nota de entrada lançada depois aparece embaixo do saldo', render: celEstoque },
           { key: 'min', label: 'Mínimo', title: 'Estoque mínimo cadastrado no AppNext (— = sem mínimo)', render: (r) => (r.min ? qtdTxt(r.min, r.it) : '—') },
           { key: 'sug', label: 'Mín. sugerido', title: `Mínimo calculado pela venda: venda por dia × ${ent} dias de entrega + ${seg}% de segurança. Azul = o mínimo do AppNext está bom; vermelho = muito baixo (vai faltar); amarelo = muito alto (dinheiro parado). Use para corrigir o cadastro no AppNext`,
@@ -1494,14 +1501,19 @@
         const pega = new Set(mob);
         cols = cols.filter((c) => pega.has(c.key) || pega.has(c));
       }
+      // celular (LMOB-04): o número que decide a aba à direita (pedir, perdendo/dia, valor parado, sobra) e o resto embaixo
+      const mobAba = (q ? COLS_MOB.todos : COLS_MOB[filtroT]) || COLS_MOB.todos;
+      const VAL_MOB = { repor: 'pedir', todos: 'pedir', falta: 'perdaDia', parados: 'valor', liquidar: 'valor', saldo: 'valor', sobrando: RC.sobraValor && RC.sobraValor.key };
+      const valMob = (q ? 'pedir' : VAL_MOB[filtroT]) || 'est';
       tabBoxT.replaceChildren(TS.table({
+        linhaMob: { nome: 'produto', val: valMob, valRot: (cols.find((c) => c.key === valMob) || {}).labelMob || (typeof (cols.find((c) => c.key === valMob) || {}).label === 'string' ? cols.find((c) => c.key === valMob).label : ''), l2: mobAba.filter((k) => k && k !== 'produto' && k !== valMob) },
         cols, rows, sortKey: q ? 'produto' : ORD[filtroT], sortDir: q || filtroT === 'todos' ? 'asc' : 'desc', maxHeight: '600px', produto: 'produto', cls: 'est-t',
         imprimir: !q && COLS_ABA[filtroT] && !ABA_PC[filtroT] ? null : ['produto', 'est', 'qtd', 'prev', 'dias', 'pedir', 'custoPedido', 'valor'],
         rowClass: (r) => (entradas.has(String(r.cod)) ? 'est-tem-entrada' : ''),
         empty: q ? 'Nenhum produto com esse nome ou código na planilha de estoque do AppNext.' : { repor: 'Nada para repor agora. 👏', falta: 'Nenhum produto zerado que vendia. 👏', sobrando: 'Nenhum produto com saldo demais. 👏', parados: 'Nada parado. 👏', saldo: 'Nenhum produto com saldo.', todos: 'Nenhum produto.' }[filtroT],
       }));
     }
-    const segT = TS.seg(Object.entries(FILTROS).map(([k, [t, , dica]]) => [`${t} (${fmt.int(conta(k))})`, k, dica]), filtroT, (v) => { filtroT = v; state.estSit = v; if (busca.value) { busca.value = ''; state.estBusca = ''; } montarT(); });
+    const segT = TS.segFolha(Object.entries(FILTROS).map(([k, [t, , dica]]) => [`${t} (${fmt.int(conta(k))})`, k, dica]), filtroT, (v) => { filtroT = v; state.estSit = v; if (busca.value) { busca.value = ''; state.estBusca = ''; } montarT(); }, 'Mostrar');
     let tBusca = null;
     busca.addEventListener('input', () => { clearTimeout(tBusca); tBusca = setTimeout(() => { state.estBusca = busca.value; montarT(); }, 200); });
     montarT();

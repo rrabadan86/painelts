@@ -357,7 +357,8 @@
       options: { plugins: { legend: { display: true, position: 'bottom' }, tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${c.raw == null ? '—' : fmt.brl0(c.raw)}` } } }, scales: { y: TS.axisNum(fmt.brl0), x: TS.axisCat } },
     }) : null;
 
-    const tab = TS.table({
+    const tab = TS.table({ linhaMob: { nome: 'ym', val: 'pct', l2: ['vendas', 'compras', 'folga'], l3: ['cmv', 'saldo'] }, // celular em linhas (LMOB-04)
+        
       cols: [
         { key: 'ym', label: 'Mês', align: 'l', sticky: true, wrap: true, render: (x) => h('span', null, h('b', null, TS.ymLabel(x.ym)), ' ',
           x.acima === true ? h('span', { class: 'badge ' + (x.parcial ? 'warn' : 'erro') }, x.parcial ? 'até agora acima do teto' : 'acima do teto') : x.acima === false ? h('span', { class: 'badge ok' }, x.parcial ? 'até agora dentro do teto' : 'dentro do teto') : h('span', { class: 'badge cinza' }, x.compras == null ? 'sem notas' : 'sem vendas'),

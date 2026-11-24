@@ -119,7 +119,7 @@
     const novo = h('div');
     const btnNovo = h('button', { type: 'button', class: 'btn primary esp-novo-btn', onclick: () => { btnNovo.hidden = true; novo.replaceChildren(formNovo(loja, d, (p) => { d.pedidos.unshift(p); state.espAba = 'esperando'; repintar(); }, () => { btnNovo.hidden = false; novo.replaceChildren(); })); novo.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } }, '+ Anotar pedido');
     kpis.querySelector('.esh-pe').append(btnNovo);
-    const abas = TS.seg(Object.entries(ABAS).map(([k, [t]]) => [`${t} (${fmt.int(conta[k])})`, k]), aba, (v) => { state.espAba = v; repintar(); });
+    const abas = TS.segFolha(Object.entries(ABAS).map(([k, [t]]) => [`${t} (${fmt.int(conta[k])})`, k]), aba, (v) => { state.espAba = v; repintar(); });
     const segModo = TS.seg(MODOS, modo, (v) => { state.espModo = v; repintar(); });
     const baseAba = d.pedidos.filter((p) => ABAS[aba][1].includes(p.st));
 
