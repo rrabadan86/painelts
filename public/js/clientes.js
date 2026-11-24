@@ -223,8 +223,31 @@
     // quem tem pontos no FIXE mas nenhum cupom com CPF: entra nas campanhas pelo cadastro (nome e celular)
     const lojaAt = state.loja || '';
     const contatosAnt = TS.cli && TS.cli.contatosLoja === lojaAt ? TS.cli.contatos : null;
-    TS.cli = { cad, lista, fixe, porCPF, fxPorCpf: fx ? fx.porCpf : null, semVendaTotal, semVendaLista, soSemVenda, cuponsXml: db.xml.length, cuponsCPF, contatos: contatosAnt, contatosLoja: contatosAnt ? lojaAt : null, cidades: [...new Set(db.clientes.map((c) => c.cidade).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR')) };
+    TS.cli = { cad, lista, fixe, porCPF, fxPorCpf: fx ? fx.porCpf : null, semVendaTotal, semVendaLista, soSemVenda, cuponsXml: db.xml.length, cuponsCPF, contatos: contatosAnt, contatosLoja: contatosAnt ? lojaAt : null, ...cidadesDe(db.clientes) };
   };
+  /**
+   * Cidade do cadastro como filtro (pedido do dono, 24/11/2026): "TORRES", "Torres" e "torres " são a mesma cidade (chave sem
+   * acento e sem caixa, `TS.norm`); o nome mostrado é o mais usado, com as iniciais em maiúscula. Quem não tem cidade no
+   * cadastro fica na opção "Sem cidade no cadastro" (chave SEM_CIDADE), para não sumir da conta. Teste: CID-01.
+   */
+  const SEM_CIDADE = '__sem';
+  const cidadeChave = (cidade) => (String(cidade || '').trim() ? TS.norm(String(cidade).trim()) : SEM_CIDADE);
+  TS.cidadeChave = cidadeChave;
+  TS.SEM_CIDADE = SEM_CIDADE;
+  function cidadesDe(clientes) {
+    const cont = new Map(); // chave → { formas: Map(forma → n), n }
+    let sem = 0;
+    for (const c of clientes) {
+      const k = cidadeChave(c.cidade);
+      if (k === SEM_CIDADE) { sem++; continue; }
+      const x = cont.get(k) || cont.set(k, { formas: new Map(), n: 0 }).get(k);
+      x.n++; const f = String(c.cidade).trim(); x.formas.set(f, (x.formas.get(f) || 0) + 1);
+    }
+    const nomes = new Map([...cont].map(([k, x]) => [k, TS.msgWpp.nomeProprio([...x.formas].sort((a, b) => b[1] - a[1])[0][0])]));
+    const cidades = [...nomes].sort((a, b) => a[1].localeCompare(b[1], 'pt-BR'));
+    return { cidades, cidadeNome: nomes, cidadeQtd: new Map([...cont].map(([k, x]) => [k, x.n])), semCidade: sem };
+  }
+  TS.cidadesDe = cidadesDe;
   // ---------- RFM (recência, frequência e valor): o comportamento de cada cliente em grupos ----------
   const GRUPOS_RFM = [
     ['campeao', '🏆 Campeões', 'Compram muito, sempre, e vieram há pouco.', 'Lançamentos e atenção VIP; peça indicação.'],
@@ -492,7 +515,7 @@
   /** modelos do {apresentacao} da loja (Configurações → Mensagens), os mesmos no robô do servidor */
   const apresDe = (lojaId) => { const m = ((TS.db && TS.db.metas) || []).find((x) => x.id === lojaId); return (m && m.wppApres) || null; };
   const modelosDe = (lojaId) => { const m = (TS.db.metas || []).find((x) => x.id === lojaId); return (m && m.wpp && m.wpp.length ? m.wpp : TS.WPP_PADRAO); };
-  const nomeBonito = (n) => String(n || '').trim().toLowerCase().split(/\s+/).map((p, k) => (k && /^(da|de|do|das|dos|e)$/.test(p) ? p : p.charAt(0).toUpperCase() + p.slice(1))).join(' ');
+  const nomeBonito = (n) => TS.msgWpp.nomeProprio(n); // uma função só, a mesma do robô (msgwpp.js, NOME-MSG-01)
   const saudacao = () => TS.msgWpp.saudacao(new Date().getHours());
   /**
    * A lista única dos {campos} que a mensagem aceita (pedido do dono, 23/11/2026: "saber todas as labels existentes").
@@ -521,7 +544,7 @@
     { k: 'aniversario', o: 'Dia e mês do aniversário (dd/mm). Sem: "—".', ex: '28/11', quando: 'Campanhas de aniversariantes.', falta: (c) => !c.aniv },
     { k: 'loja', o: 'Nome da loja.', ex: 'Tea Shop Centro', quando: 'Em qualquer mensagem: "passe na {loja}".' },
   ];
-  const primeiroNome = (n) => { const p = String(n || '').trim().split(/\s+/)[0] || ''; return p ? p[0].toUpperCase() + p.slice(1).toLowerCase() : ''; };
+  const primeiroNome = (n) => TS.msgWpp.primeiroNome(n);
   /** valores dos {campos} da mensagem para este cliente (o robô do WhatsApp recebe estes mesmos valores) */
   function valoresWpp(c) {
     const lid = lojaIdDe(c);
@@ -648,7 +671,12 @@
       h('div', { class: 'chips' }, h('button', { type: 'button', class: 'chip' + (s.aniv === hojeMes ? ' on' : ''), onclick: () => { s.aniv = s.aniv === hojeMes ? '' : hojeMes; rerender(); } }, 'Aniversariantes do mês'))));
     if (db.opts.lojas.length > 1) box.append(TS.multiSelect({ label: 'Loja', options: db.opts.lojas, selected: s.lojas, onChange: rerender, placeholder: 'Todas as lojas' }));
     box.append(TS.multiSelect({ label: 'Grupo comprado', options: db.opts.grupos, selected: s.grupos, onChange: rerender }));
-    if (TS.cli && TS.cli.cidades.length) box.append(TS.multiSelect({ label: 'Cidade (cadastro)', options: TS.cli.cidades.map((c) => [c, c]), selected: s.cidade, onChange: rerender, placeholder: 'Todas' }));
+    if (TS.cli && (TS.cli.cidades.length || TS.cli.semCidade)) box.append(TS.multiSelect({ label: 'Cidade (cadastro)', options: [...TS.cli.cidades.map(([k, nome]) => [k, `${nome} (${fmt.int(TS.cli.cidadeQtd.get(k) || 0)})`]), ...(TS.cli.semCidade ? [[SEM_CIDADE, `Sem cidade no cadastro (${fmt.int(TS.cli.semCidade)})`]] : [])], selected: s.cidade, onChange: rerender, placeholder: 'Todas' }));
+    // "Compra mais em" (pedido do dono, 24/11/2026): a loja onde o cliente mais comprou nos últimos 12 meses — não depende do cadastro
+    if (state.loja && state.loja !== 'todas') {
+      const rede = [...new Set(((TS.cli && TS.cli.fixe && TS.cli.fixe.movs) || []).filter((m) => !m.propria && m.loja).map((m) => m.loja))].sort();
+      box.append(TS.multiSelect({ label: 'Compra mais em', options: [['__nossa', 'Esta loja'], ['__so', 'Só nesta loja (não compra em outra)'], ...rede.map((l) => [l, l])], selected: s.compraEm, onChange: rerender, placeholder: 'Qualquer loja' }));
+    }
     return box;
   };
 
@@ -698,7 +726,8 @@
         } else if (!c.tags.has(s.seg)) continue;
       }
       if (s.rfm && (!c.rfm || c.rfm.g !== s.rfm)) continue;
-      if (s.cidade.size && !s.cidade.has(c.cidade)) continue;
+      if (s.cidade.size && !s.cidade.has(cidadeChave(c.cidade))) continue;
+      if (s.compraEm && s.compraEm.size && state.loja !== 'todas' && !compraEmOk(c, s.compraEm)) continue;
       let cupons = c.cupons;
       if (noPer) cupons = cupons.filter((k) => noPer(k.day));
       if (s.lojas.size) cupons = cupons.filter((k) => s.lojas.has(k.lojaId));
@@ -1579,6 +1608,15 @@
     return { lojas: todas.sort((a, b) => b.compras - a.compras || b.gasto - a.gasto), pref };
   }
   TS.lojasDoCliente = lojasDoCliente;
+  /** o cliente atende ao filtro "Compra mais em"? (__nossa = esta loja; __so = só esta loja; o resto = nome da outra loja) */
+  function compraEmOk(c, sel) {
+    const { lojas, pref } = lojasDoCliente(c);
+    if (!pref) return false;
+    if (sel.has('__so') && pref.nossa && lojas.filter((l) => l.compras).length === 1) return true;
+    if (sel.has('__nossa') && pref.nossa) return true;
+    return !pref.nossa && sel.has(pref.nome);
+  }
+  TS.compraEmOk = compraEmOk;
   function blocoLojas(c) {
     const { lojas, pref } = lojasDoCliente(c);
     if (lojas.length < 2) return null;

@@ -322,7 +322,7 @@
       const c = conta(o, cat.taxas);
       const tel = String(o.cliente.telefone || '').replace(/\D/g, '');
       const linhas = o.itens.map((i) => `• ${fmt.n2(i.qtd).replace(/,00$/, '')} × ${i.nome} — ${fmt.brl(i.qtd * i.preco * (1 - (i.desc || 0) / 100) * (1 - (o.descGeral || 0) / 100))}`);
-      const txt = `Olá${o.cliente.contato ? ', ' + o.cliente.contato.split(' ')[0] : ''}! Segue o orçamento${o.numero ? ' nº ' + o.numero : ''} da ${nomeLoja(loja)}:\n\n${linhas.join('\n')}${o.frete ? `\n• Frete — ${fmt.brl(o.frete)}` : ''}\n\n*Total: ${fmt.brl(c.total)}*\nPagamento: ${PAG[o.pagamento]} · Validade: ${o.validadeDias} dias${o.entrega ? `\nEntrega: ${o.entrega}` : ''}\n\nQualquer dúvida, estamos à disposição! 🍵`;
+      const txt = `Olá${o.cliente.contato ? ', ' + TS.msgWpp.primeiroNome(o.cliente.contato) : ''}! Segue o orçamento${o.numero ? ' nº ' + o.numero : ''} da ${nomeLoja(loja)}:\n\n${linhas.join('\n')}${o.frete ? `\n• Frete — ${fmt.brl(o.frete)}` : ''}\n\n*Total: ${fmt.brl(c.total)}*\nPagamento: ${PAG[o.pagamento]} · Validade: ${o.validadeDias} dias${o.entrega ? `\nEntrega: ${o.entrega}` : ''}\n\nQualquer dúvida, estamos à disposição! 🍵`;
       window.open(TS.msgWpp.linkComTexto(tel.length >= 10 ? '55' + tel.replace(/^55(?=\d{10,11}$)/, '') : '', txt), '_blank', 'noopener');
     };
     const emitirNfe = () => {

@@ -59,7 +59,7 @@
   // ---------- critérios ----------
   const SEGS = [['vip', 'VIP'], ['fiel', 'Fiéis'], ['sumido', 'Sumidos'], ['repor', 'Hora de repor'], ['vence', 'Pontos vencendo'], ['novo', 'Novos do mês'], ['uma', 'Uma compra só']];
   const BASE_INTEIRA = 0.3; // acima disto da base com celular, a campanha avisa (decisão do dono)
-  const PADRAO = { ptsMin: '', ptsMax: '', venceDias: '', produto: '', produtos: [], grupo: '', compraDias: '', compraVezes: '', ausMin: '', ausMax: '', visMin: '', visMax: '', aniv: '', segs: [], rfm: [], tipos: [], vendedora: '', lojaPref: '', semContato: 30 };
+  const PADRAO = { ptsMin: '', ptsMax: '', venceDias: '', produto: '', produtos: [], grupo: '', compraDias: '', compraVezes: '', ausMin: '', ausMax: '', visMin: '', visMax: '', compraDe: '', compraAte: '', aniv: '', segs: [], rfm: [], tipos: [], vendedora: '', lojaPref: '', cidade: '', semContato: 30 };
   // tipo de chá pela família do grupo de venda: "CHÁ PRETO AROMATIZADO" e "CHÁ PRETO PURO" → "Chá preto"
   const NAO_TIPO = /ACESS|ENVASAD|ALIMENT|TEA ROOM|TEA MOMENT|CONSUM|MATERIA|SACH|FIDELIDADE|KIT|PRESENTE|EMBALA|LATA|MINITIN|ESPA[ÇC]O GOURMET|COSM/i;
   /** nomes dos motivos do Resumo diário (os mesmos da tela Clientes → Hoje) */
@@ -88,6 +88,8 @@
       prodOk = new Uint8Array(db.D.descricao.length);
       db.D.descricao.forEach((t, i) => { const n = TS.norm(t); if (exatos.has(n) || partes.some((q) => n.includes(q))) prodOk[i] = 1; });
     }
+    const isoOk = (v) => /^\d{4}-\d{2}-\d{2}$/.test(String(v || ''));
+    const perDe = isoOk(f.compraDe) ? TS.isoToDay(f.compraDe) : null, perAte = isoOk(f.compraAte) ? TS.isoToDay(f.compraAte) : null;
     const mesHoje = +TS.hojeSP().slice(5, 7); // mês de Brasília (a mesma conta roda no servidor, que pode estar em outro fuso)
     const mesAniv = f.aniv === 'atual' ? mesHoje : f.aniv === 'proximo' ? (mesHoje % 12) + 1 : num(f.aniv);
     const out = [];
@@ -105,6 +107,8 @@
       if (num(f.ausMax) != null && !(c.ausencia != null && c.ausencia <= num(f.ausMax))) continue;
       if (num(f.visMin) != null && (c.visitas || 0) < num(f.visMin)) continue;
       if (num(f.visMax) != null && (c.visitas || 0) > num(f.visMax)) continue;
+      // comprou no período (pedido do dono, 24/11/2026): pelo menos uma compra com CPF entre as duas datas (inclusive)
+      if (perDe != null || perAte != null) { if (!(c.cupons || []).some((k) => k.day != null && (perDe == null || k.day >= perDe) && (perAte == null || k.day <= perAte))) continue; }
       if (mesAniv && !(c.nascimento && +c.nascimento.slice(5, 7) === mesAniv && !TS.nomeMsgDe(c))) continue; // o WhatsApp é de outra pessoa: o aniversário não é dela
       if (f.segs && f.segs.length && !f.segs.some((t) => c.tags && c.tags.has(t))) continue;
       if (f.rfm && f.rfm.length && !(c.rfm && f.rfm.includes(c.rfm.g))) continue;
@@ -113,8 +117,10 @@
       if (f.lojaPref) {
         const pr = TS.lojasDoCliente(c).pref;
         if (!pr) continue;
-        if (f.lojaPref === 'nossa' ? !pr.nossa : f.lojaPref === 'outra' ? pr.nossa : pr.nome !== f.lojaPref) continue;
+        if (f.lojaPref === 'so' ? !(pr.nossa && TS.lojasDoCliente(c).lojas.filter((l) => l.compras).length === 1) : f.lojaPref === 'nossa' ? !pr.nossa : f.lojaPref === 'outra' ? pr.nossa : pr.nome !== f.lojaPref) continue;
       }
+      // cidade do cadastro (pedido do dono, 24/11/2026): mesma chave da Lista de clientes (sem acento e sem caixa); '__sem' = sem cidade
+      if (f.cidade && TS.cidadeChave(c.cidade) !== f.cidade) continue;
       let qProd = null;
       if (prodOk || grupoId >= 0) {
         qProd = 0;
@@ -697,6 +703,8 @@
       return /nome/i.test(t) ? nome : /mensagem/i.test(t) ? msg : /limite/i.test(t) ? limite : /retorno|prazo/i.test(t) ? janela : /término|início|data/i.test(t) ? dIni : null;
     }
     // ---- formulário: cada critério numa frase ("Saldo entre __ e __ pontos"), em blocos que abrem e fecham
+    // data que não redesenha a cada dígito (o Chrome dispara 'change' por parte da data): só ao sair do campo
+    const dataF = (k) => { const i = h('input', { class: 'f-input cp-data', type: 'date', value: f[k] || '' }); TS.aoConfirmar(i, () => { f[k] = i.value; atualizar(); }); return i; };
     const num_ = (k, ph, larg) => { const x = inp(k, ph); x.classList.add('cp-num'); if (larg) x.style.width = larg; return x; };
     const linha = (...partes) => h('div', { class: 'cp-linha' }, ...partes.map((p) => (typeof p === 'string' ? h('span', null, p) : p)));
     const ativo = (...ks) => ks.some((k) => (Array.isArray(f[k]) ? f[k].length : f[k] !== '' && f[k] != null && f[k] !== PADRAO[k]));
@@ -739,6 +747,7 @@
       if (e.key === 'Escape') sugest.hidden = true;
     });
     pintarChips();
+    const cidOpc = TS.cidadesDe(A().universo()); // cidades do cadastro dos clientes desta loja (com contagem) e quantos não têm
     const lojaNome = (() => { const o = document.querySelector('#lojaSel option:checked'); const n = o && o.textContent.trim(); return n ? `Esta loja (${n})` : 'Esta loja'; })();
     const blocos = [
       bloco('Pontos no FIXE', ['ptsMin', 'ptsMax', 'venceDias'],
@@ -750,13 +759,15 @@
         linha('ou algo do grupo', sel('grupo', [['', 'qualquer grupo'], ...grupos.map((g) => [g, g])])),
         linha('pelo menos', num_('compraVezes', '1'), 'compras', TS.dica('Quantas vezes, no mínimo, o cliente comprou o produto (ou algo do grupo) escolhido acima. Conta cada compra (cupom) uma vez: dois pacotes no mesmo cupom são uma compra. Com mais de um produto escolhido, somam as compras de qualquer um deles. Se preencher "nos últimos X dias", contam só as compras desse período. Vazio = basta uma compra. Só vale com produto ou grupo escolhido.')),
         linha('nos últimos', num_('compraDias', 'todos'), 'dias', TS.dica('Vazio = em qualquer época.'))),
-      bloco('Frequência', ['ausMin', 'ausMax', 'visMin', 'visMax'],
+      bloco('Frequência', ['ausMin', 'ausMax', 'visMin', 'visMax', 'compraDe', 'compraAte'],
         linha('Está sem comprar há', num_('ausMin', 'ex.: 60'), 'a', num_('ausMax', 'máx.'), 'dias', TS.dica('Dias desde a última compra com CPF.')),
-        linha('Já fez de', num_('visMin', 'mín.'), 'a', num_('visMax', 'máx.'), 'compras', TS.dica('Cupons com CPF em todo o histórico.'))),
-      bloco('Perfil', ['aniv', 'vendedora', 'lojaPref'],
+        linha('Já fez de', num_('visMin', 'mín.'), 'a', num_('visMax', 'máx.'), 'compras', TS.dica('Cupons com CPF em todo o histórico.')),
+        linha('Comprou entre', dataF('compraDe'), 'e', dataF('compraAte'), TS.dica('Entra quem fez pelo menos uma compra com CPF entre as duas datas (inclusive). Preencha só uma para "desde" ou "até". Ex.: quem comprou na Black Friday do ano passado. Numa campanha recorrente as datas não andam sozinhas.'))),
+      bloco('Perfil', ['aniv', 'vendedora', 'lojaPref', 'cidade'],
         linha('Faz aniversário em', sel('aniv', [['', 'qualquer mês'], ['atual', 'mês atual'], ['proximo', 'próximo mês'], ...MESES]), TS.dica('"Mês atual" e "Próximo mês" acompanham a data nas campanhas recorrentes.')),
         linha('Mais atendido por', sel('vendedora', [['', 'qualquer vendedora'], ...vendedoras.map((v) => [v, v])])),
-        linha('Compra mais em', sel('lojaPref', [['', 'qualquer loja'], ['nossa', lojaNome], ['outra', 'outra loja da rede'], ...lojasRede.map((l) => [l, l])]), TS.dica('Loja onde o cliente mais comprou nos últimos 12 meses (esta loja pelas vendas; as outras pelas compras lançadas no FIXE).'))),
+        linha('Compra mais em', sel('lojaPref', [['', 'qualquer loja'], ['nossa', lojaNome], ['so', `Só ${lojaNome.replace(/^Esta loja/, 'nesta loja')} (não compra em outra)`], ['outra', 'outra loja da rede'], ...lojasRede.map((l) => [l, l])]), TS.dica('Loja onde o cliente mais comprou nos últimos 12 meses (esta loja pelas vendas; as outras pelas compras lançadas no FIXE). "Só nesta loja": não tem compra em outra loja da rede nesse período.')),
+        linha('Mora em', sel('cidade', [['', 'qualquer cidade'], ...cidOpc.cidades.map(([k, nome]) => [k, `${nome} (${fmt.int(cidOpc.cidadeQtd.get(k) || 0)})`]), ...(cidOpc.semCidade ? [[TS.SEM_CIDADE, `sem cidade no cadastro (${fmt.int(cidOpc.semCidade)})`]] : [])]), TS.dica('Cidade do cadastro do cliente no FIXE (maiúsculas e acentos não importam: "TORRES" e "Torres" são a mesma). Quem não tem cidade cadastrada fica em "sem cidade no cadastro". Para pegar quem compra numa loja, use "Compra mais em", que vem das vendas e não depende do cadastro.'))),
       bloco('Segmentos', ['segs'], h('small', { class: 'muted' }, 'Entra quem estiver em qualquer um dos marcados. "Hora de repor" + um tipo de chá = a régua de recompra daquele tipo.'), segBox),
       rfmBox ? bloco('Grupo do cliente (RFM)', ['rfm'], h('small', { class: 'muted' }, 'Pelo comportamento: recência, frequência e valor nos últimos 12 meses. Entra quem estiver em qualquer um dos marcados.'), rfmBox) : null,
       fams.length ? bloco('Tipo de chá que compra', ['tipos'], h('small', { class: 'muted' }, 'Clientes que já compraram chá deste tipo (qualquer um dos marcados).'), tiposBox) : null,
@@ -769,8 +780,9 @@
         produtos: () => (f.produtos.length ? `${f.produtos.length} produto${f.produtos.length > 1 ? 's' : ''}` : ''),
         grupo: () => f.grupo || '', compraDias: () => (f.compraDias !== '' ? `últimos ${f.compraDias} dias` : ''), compraVezes: () => (f.compraVezes !== '' && +f.compraVezes > 1 ? `${f.compraVezes}+ vezes` : ''),
         ausMin: () => (f.ausMin !== '' || f.ausMax !== '' ? `sem comprar ${f.ausMin || 0}${f.ausMax !== '' ? '–' + f.ausMax : '+'} dias` : ''),
+        compraDe: () => (f.compraDe || f.compraAte ? `comprou ${f.compraDe ? 'de ' + fmt.date(f.compraDe) : ''}${f.compraAte ? ' até ' + fmt.date(f.compraAte) : ''}`.replace('comprou  até', 'comprou até') : ''),
         visMin: () => (f.visMin !== '' || f.visMax !== '' ? `${f.visMin || 0}${f.visMax !== '' ? '–' + f.visMax : '+'} compras` : ''),
-        aniv: () => (f.aniv ? 'aniversário' : ''), vendedora: () => f.vendedora || '', lojaPref: () => (f.lojaPref ? 'loja preferida' : ''),
+        aniv: () => (f.aniv ? 'aniversário' : ''), vendedora: () => f.vendedora || '', lojaPref: () => (f.lojaPref ? 'loja preferida' : ''), cidade: () => (f.cidade ? (f.cidade === TS.SEM_CIDADE ? 'sem cidade' : (cidOpc.cidadeNome.get(f.cidade) || f.cidade)) : ''),
         segs: () => f.segs.map((k) => (SEGS.find(([x]) => x === k) || [, k])[1]).join(', '),
         rfm: () => (TS.RFM ? f.rfm.map((k) => (TS.RFM.por[k] || { nome: k }).nome).join(', ') : ''),
         tipos: () => f.tipos.join(', '),

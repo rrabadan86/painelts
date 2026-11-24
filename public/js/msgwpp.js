@@ -103,9 +103,24 @@
   const dataBR = (iso) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
   const textoBloqueio = (b) => (b.tipo === 'optout' ? 'não quer mensagens' : `já recebeu em ${dataBR(b.em.slice(0, 10))}${b.motivo ? ' (' + b.motivo.replace(/^Campanha: /, 'campanha ') + ')' : ''}`);
 
+  /**
+   * Nome como se escreve (pedido do dono, 24/11/2026: o cadastro do FIXE vem "rodrigo rabadan" ou "RODRIGO RABADAN"):
+   * a 1ª letra de cada nome e sobrenome em maiúscula, também depois de hífen e apóstrofo ("ana-paula d'ávila" →
+   * "Ana-Paula D'Ávila"); "da, de, do, das, dos, e" minúsculos no meio; tira sujeira do começo (".rodrigo", "1rodrigo").
+   * Uma função só para a tela (envio manual, Lista de espera, Orçamento) e o robô. Teste: NOME-MSG-01.
+   */
+  const PARTICULAS = /^(da|de|do|das|dos|e|di|du|del)$/;
+  function nomeProprio(n) {
+    const limpo = String(n || '').replace(/^[^\p{L}]+/u, '').replace(/\s+/g, ' ').trim().toLowerCase();
+    if (!limpo) return '';
+    return limpo.split(' ').map((p, k) => (k && PARTICULAS.test(p) ? p : p.replace(/(^|[-'’])(\p{L})/gu, (m, sep, l) => sep + l.toUpperCase()))).join(' ');
+  }
+  /** o primeiro nome, no mesmo padrão ("RODRIGO RABADAN" → "Rodrigo"; "ana-paula" → "Ana-Paula") */
+  const primeiroNome = (n) => nomeProprio(n).split(' ')[0] || '';
+
   /** período da campanha: 'antes' (ainda não começou), 'depois' (já terminou) ou null (dentro, ou sem datas). dia = 'AAAA-MM-DD' de Brasília */
   const foraDoPeriodo = (c, dia) => (c && c.inicio && dia < c.inicio ? 'antes' : c && c.fim && dia > c.fim ? 'depois' : null);
-  const API = { APRES_PADRAO, apresentacao, apresentacaoValida, MOTIVOS_RESUMO, RESUMO_PADRAO, NOME_RESUMO, ehResumo, textosDe, foraDoPeriodo, CAMPOS, saudacao, montar, paraDoLink, linkDoCelular, linkComTexto, listaProdutos, nomesProdutos, extras, textos, variacaoDaVez, motivoCampanha, prazoCampanha, bloqueio, textoBloqueio };
+  const API = { nomeProprio, primeiroNome, APRES_PADRAO, apresentacao, apresentacaoValida, MOTIVOS_RESUMO, RESUMO_PADRAO, NOME_RESUMO, ehResumo, textosDe, foraDoPeriodo, CAMPOS, saudacao, montar, paraDoLink, linkDoCelular, linkComTexto, listaProdutos, nomesProdutos, extras, textos, variacaoDaVez, motivoCampanha, prazoCampanha, bloqueio, textoBloqueio };
   if (typeof module !== 'undefined' && module.exports) { module.exports = API; return; }
   TS.msgWpp = API;
 })();

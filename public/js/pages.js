@@ -161,7 +161,7 @@
   TS.resetFiltros = function () {
     const f = state.f;
     f.lojas.clear(); f.vendedores.clear(); f.grupos.clear(); f.cats.clear(); f.tamanhos.clear(); f.produto = '';
-    state.cli.cidade.clear(); state.cli.grupos.clear(); state.cli.lojas.clear();
+    state.cli.cidade.clear(); state.cli.compraEm.clear(); state.cli.grupos.clear(); state.cli.lojas.clear();
     state.com.vendBonus = ''; state.com.meta = null; state.com.cupom = '';
     nfsCache = null;
   };
@@ -183,7 +183,7 @@
     state.promo.dias = 30;
     Object.assign(state.cli, { nome: '', cpf: '', tel: '', cupom: '', produto: '', aniv: '', visMin: '', visMax: '', ausMin: '', ausMax: '', seg: '' });
     Object.assign(state.cli.per, { preset: 'tudo', de: null, ate: null, ano: null, mes: null });
-    state.cli.cidade.clear(); state.cli.grupos.clear(); state.cli.lojas.clear();
+    state.cli.cidade.clear(); state.cli.compraEm.clear(); state.cli.grupos.clear(); state.cli.lojas.clear();
     TS._buscas = null; // buscas digitadas nas tabelas também
   };
 

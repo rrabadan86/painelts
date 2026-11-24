@@ -22,6 +22,7 @@ const NOVIDADES = [
   { id: '2026-11-24-liberar-versao', data: '2026-11-24', titulo: 'Versões conferidas antes de chegar às lojas', texto: 'Cada atualização entra primeiro no painel de homologação; o administrador confere e libera para a produção pelo botão em Atualizações do painel.', para: ['admin'] },
   { id: '2026-11-24-novidades', data: '2026-11-24', titulo: 'Novidades do painel', texto: 'Depois de cada atualização aparece esta janela com o que mudou para você. Para ver de novo: menu do seu nome → "O que mudou no painel".', para: 'todos' },
   { id: '2026-11-24-robo-rodizio', data: '2026-11-24', titulo: 'Robô do WhatsApp em rodízio entre as campanhas', texto: 'Com mais de uma campanha no robô, ele envia 5 mensagens de cada uma e passa para a próxima, em ciclo: todas andam juntas, sem esperar a outra terminar. O número muda em Campanhas → Configurar → "Rodízio entre campanhas".', para: ['admin', 'franqueado', 'gerente'], tela: 'clientes' },
+  { id: '2026-11-24-nome-cidade-periodo', data: '2026-11-24', titulo: 'Campanhas: cidade, período de compra e nomes certos', texto: 'Nas campanhas: quem mora numa cidade (ou está sem cidade no cadastro), quem comprou entre duas datas e quem só compra nesta loja. Na Lista de clientes, o filtro "Compra mais em". E o nome nas mensagens sai sempre com a primeira letra maiúscula.', para: ['admin', 'franqueado', 'gerente'], tela: 'clientes' },
 ];
 /** pessoa sem registro (de antes desta janela): só o que entrou nos últimos dias, para não abrir com a lista inteira */
 const DIAS_SEM_REGISTRO = 14;
