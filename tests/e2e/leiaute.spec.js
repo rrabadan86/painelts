@@ -180,7 +180,7 @@ test('Resultado: quadros do mês primeiro; ponto de equilíbrio numa frase com a
   await expect(quadros).toContainText('Faturamento');
   expect((await quadros.boundingBox()).y).toBeLessThan((await eq.boundingBox()).y);
   // uma frase (falta ou já passou) + a barra; os quatro números e a conta ficam no ⓘ / title
-  await expect(eq.locator('.est-eq-frase')).toContainText(/Faltam R\$\s.* para pagar os custos fixos .* equilíbrio em R\$|Custos fixos do mês .* pagos/);
+  await expect(eq.locator('.est-eq-frase')).toContainText(/Faltam R\$\s.* para pagar os custos fixos .* equilíbrio em R\$|Custos fixos do mês.* pagos/);
   await expect(eq.locator('.est-eq-nums')).toHaveCount(0);
   await expect(eq.locator('.est-eq-barra')).toHaveAttribute('title', /Equilíbrio R\$\s.* vendido até .* no ritmo atual R\$/);
   await expect(eq.locator('.est-eq-frase .dica-i')).toHaveAttribute('aria-label', /Custos fixos R\$\s.* ÷ margem sem fixos/);

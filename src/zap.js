@@ -7,7 +7,7 @@
 const base = () => (process.env.ZAP_URL || '').replace(/\/$/, '');
 const token = () => process.env.ZAP_TOKEN || '';
 
-const ativo = () => Boolean(base() && token());
+const ativo = () => Boolean(base() && token()) && !require('./config').homolog(); // homologação: nunca conecta nem envia WhatsApp (HOMOLOG-01)
 const loja = (id) => encodeURIComponent(String(id || '').toLowerCase().replace(/[^a-z0-9_-]/g, ''));
 
 async function chamar(caminho, { method = 'GET', body, espera = 8000 } = {}) {

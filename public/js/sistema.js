@@ -62,6 +62,22 @@
     if (atualizando()) corpo.append(h('div', { class: 'script-status' }, h('span', { class: 'ic rodando' }, '…'), h('span', null, info.pedido ? 'Pedido enviado, começando em até 1 minuto…' : 'Atualizando…', h('small', null, 'Leva de 1 a 3 minutos. O painel fica fora do ar alguns segundos e recarrega sozinho.'))));
     else if (st && st.estado === 'erro') corpo.append(h('div', { class: 'script-status' }, h('span', { class: 'ic falhou' }, '!'), h('span', null, st.msg, h('small', null, quando(st.em)))));
     else if (!info.novidades.length) corpo.append(h('div', { class: 'script-status' }, h('span', { class: 'ic ok' }, '✓'), h('span', null, 'O painel está na versão mais recente.')));
+    // HOMOLOG-02: de onde vêm as novidades (homologação instala sozinha; produção, só versões liberadas)
+    if (info.ambiente === 'homologacao') {
+      const loja = (TS.lojas && TS.lojas[0] && TS.lojas[0].id) || 'goiania';
+      const bt = h('button', { type: 'button', class: 'btn' }, `Copiar de novo a loja "${loja}" da produção`);
+      const msg = h('small', { class: 'muted' });
+      bt.addEventListener('click', async () => {
+        bt.disabled = true;
+        try { const r = await fetch(TS.api('admin/homolog/copiar'), { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-Painel': '1' }, body: JSON.stringify({ loja }) }); const j = await r.json().catch(() => ({})); msg.textContent = r.ok ? 'Pedido feito: em até 1 minuto a cópia começa. Recarregue a página depois.' : j.erro || 'Não deu certo.'; } catch { msg.textContent = 'Sem conexão. Tente de novo.'; }
+        bt.disabled = false;
+      });
+      corpo.append(h('div', { class: 'notice warn' }, 'Homologação: cada versão testada entra aqui sozinha, em até 5 minutos. Confira e, quando estiver tudo certo, peça a liberação da versão para a produção. Os dados são uma cópia: nada daqui volta para a produção.', h('div', { class: 'cfg-acoes' }, bt, msg)));
+    }
+    else if (info.trilho === 'versoes') {
+      const v = (info.versoes || [])[0];
+      corpo.append(h('div', { class: 'muted sis-nota' }, 'A produção instala só versões liberadas (conferidas na homologação).', v ? ` Mais nova: ${v.nome.slice(7, 17).split('-').reverse().join('/')}${v.notas ? ' — ' + v.notas : ''}.` : ''));
+    }
     if (info.parado) corpo.append(h('div', { class: 'notice err' }, 'O atualizador da VPS não verifica há mais de 20 minutos. Confira o cron na VPS (crontab -l).'));
     // para instalar
     if (info.novidades.length) {

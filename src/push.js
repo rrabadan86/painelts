@@ -127,6 +127,7 @@ async function testar(nome, id, opt = {}) {
  */
 async function avisar(e, opt = {}) {
   try {
+    if (require('./config').homolog()) return { enviados: 0, falhas: 0, removidos: 0, pessoas: [], homolog: true }; // HOMOLOG-01
     if (!e || !porId(e.tipo)) return { enviados: 0, falhas: 0, removidos: 0, pessoas: [] };
     const s = ler(), agora = Date.now();
     if (e.chave) {
