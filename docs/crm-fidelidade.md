@@ -12,13 +12,13 @@ começa quando chegar a documentação da integração de fidelidade da NextSoft
 | Integração com o caixa | A do AppNext é **padrão** ("já teve outros CRMs antes"): a NextSoft só troca o endereço/chave na loja. |
 | Onde roda | **Uma VPS só no começo**: painel, robô do WhatsApp e o serviço da fidelidade, cada um no seu contêiner. Backup diário fora da máquina e aviso no celular se a fidelidade cair, desde o primeiro dia. Pode ir para uma VPS própria depois, sem mudar o código. |
 | Tela | **No painel de hoje** (mesmo login e visual). O que fica separado é só o serviço que o caixa chama (API + banco de pontos), no mesmo repositório, como o `zap/`. |
-| Perfil novo "Franquia" | Vê **só o CRM** da rede toda: clientes do fidelidade, saldos, regras, prêmios, resgates, ajustes e relatórios de pontos. **Nunca** vendas, faturamento, custos, estoque, pedidos, comissão, Resultado nem Conversas. Trava no servidor. |
+| Perfil novo "Franquia" | Vê **só o CRM** da rede toda: clientes do fidelidade, saldos, regras, prêmios, resgates, a validação dos pedidos de correção das lojas e relatórios de pontos. **Nunca** vendas, faturamento, custos, estoque, pedidos, comissão, Resultado nem Conversas. Trava no servidor. |
 | Saldo | **Da rede, não por loja** (confirmado em 24/11/2026): um saldo por cliente, válido em todas as lojas. Na migração, o mesmo cliente vem nos arquivos de várias lojas e conta uma vez só (cliente e movimento). |
 | Histórico | **Só o que vem da FIXE. Passado é passado**: não recalculamos pontos antigos; vale o saldo da FIXE na data da troca. |
 | Pontos importados sem validade | Ganham **vencimento = data da nossa implantação + 6 meses** e são os primeiros a sair no resgate (opção "C"). Precisa da aprovação da franquia (é regra do programa). |
 | Valor do ponto | Configurável **com vigência** ("a partir de dd/mm, R$ 70 = 1 ponto"). Cada venda ganha pela regra do dia dela; pontos já ganhos não mudam. |
 | Boas-vindas com bônus de cadastro completo | 1 ponto no cadastro (como hoje) **mais 1 ou 2 pontos de bônus** (a definir) quando o cadastro estiver completo — 2 ou 3 pontos além dos da compra. Objetivo: incentivar cadastro de qualidade. Quais campos contam como "completo" fica para a franquia definir. |
-| Ajuste de saldo | **Sem ajuste manual** por loja nem pela tela: toda correção é pedida ao **suporte**, que valida o caso e só lança depois da **aprovação da franquia**, registrando motivo, quem pediu, quem aprovou e quando. |
+| Ajuste de saldo | **Sem ajuste manual.** "Pedir ao suporte" = pedir à franquia, por uma **tela**: a loja abre um **pedido de correção** no painel (cliente, pontos a mais ou a menos, motivo, venda/cupom quando houver); ele aparece na **tela de validação da franquia** (no acesso dela ao painel); a franquia aprova ou recusa (com motivo). Só a aprovação lança o movimento no saldo, registrando quem pediu, quem aprovou/recusou e quando. A loja acompanha a situação (esperando, aprovado, recusado com o motivo). |
 | Prêmios | Tela no painel: produto do AppNext, quantos pontos custa, ativo, desde quando (e, se quiser, até quando e em quais lojas). Mudar o preço vale para os resgates seguintes. O AppNext recebe a lista pela integração (não cadastra nada lá). |
 | Preço | Implantação **R$ 12.000** (sugestão: 3 parcelas — início, piloto rodando, migração completa) com escopo fechado; mensalidade sugerida **R$ 220–250 por loja** (a FIXE cobra R$ 285); contrato mínimo de 12 meses; reajuste anual (IPCA). |
 
@@ -80,9 +80,9 @@ Cada loja tem os **seus arquivos** (o export é por operação). Dois arquivos:
 ## 5. O que teremos de construir (quando chegar a documentação)
 
 1. **Serviço da fidelidade** (contêiner próprio, mesmo repositório): a API no padrão do AppNext (cadastro, saldo + prêmios, resgate, venda, cancelamento), resposta em menos de 1 s, sem contar a mesma venda nem baixar o mesmo resgate duas vezes (chave única por venda/resgate).
-2. **Banco de pontos** (banco de dados de verdade, não arquivos): cada movimento com data, origem e quem fez; liberação em 24 h; vencimento por lote (FIFO); estorno; bônus de cadastro completo; correção só pelo suporte com a aprovação da franquia registrada (nunca ajuste livre na tela).
+2. **Banco de pontos** (banco de dados de verdade, não arquivos): cada movimento com data, origem e quem fez; liberação em 24 h; vencimento por lote (FIFO); estorno; bônus de cadastro completo; correção só por pedido aprovado (nunca ajuste livre na tela).
 3. **Conferência diária** com as vendas que o painel já lê do AppNext (venda que não chegou, cancelamento).
-4. **Telas no painel**: regras (valor do ponto com vigência), prêmios, saldos, ajustes, relatórios por loja; perfil Franquia.
+4. **Telas no painel**: regras (valor do ponto com vigência), prêmios, saldos, relatórios por loja; **pedido de correção** (loja: abrir e acompanhar) e **validação** (franquia: aprovar ou recusar, com motivo; só a aprovação mexe no saldo); perfil Franquia.
 5. **App "Meus pontos"** do cliente: CPF + código pelo WhatsApp; saldo, prêmios, vencimentos, regulamento (o painel já é instalável).
 6. **Migração** loja por loja a partir dos arquivos da FIXE: saldo de partida = o da FIXE na data da troca; lotes pelos "Adicionado" dos últimos 12 meses; o que sobrar sem data vira lote com vencimento em implantação + 6 meses.
 7. **Troca sem risco**: conferência em paralelo (3–4 semanas), piloto em 1–2 lojas do dono, depois loja por loja.
