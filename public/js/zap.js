@@ -324,8 +324,8 @@
     };
     const medio = (cfg.min + cfg.max) / 2;
     // rodízio (ZAP-RODIZIO): o número da loja é dividido entre as campanhas ligadas no robô
-    const n = Math.max(1, dividir || 1);
-    const porDiaDe = (j) => Math.max(1, Math.min(limite > 0 ? limite : Infinity, Math.floor(cfg.teto / n), Math.floor((Math.floor(((j.fim - j.ini) * 60) / medio) + 1) / n)));
+    const nDiv = Math.max(1, dividir || 1);
+    const porDiaDe = (j) => Math.max(1, Math.min(limite > 0 ? limite : Infinity, Math.floor(cfg.teto / nDiv), Math.floor((Math.floor(((j.fim - j.ini) * 60) / medio) + 1) / nDiv)));
     const agoraSP = sp(agora), jHoje = janela(agora);
     const agoraNoHorario = !!(jHoje && agoraSP.min >= jHoje.ini && agoraSP.min < jHoje.fim);
     // dias de envio a partir de hoje (hoje só conta se ainda dá tempo)
