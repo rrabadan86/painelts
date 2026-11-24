@@ -37,3 +37,5 @@ paths:
 - Análise do dia só com os dados **atuais** do servidor (espera sair do cache do aparelho, `TS.dadosGuardados`); resultado `null` não fica guardado (chave cadastrada depois vale na hora). Conversa do ✨: acima de 60 mensagens pede nova conversa; a 10ª rodada fecha com uma resposta (a conversa nunca termina em `tool_result`).
 - A análise do dia guarda quem gerou (`por`) e a tela mostra "Feita às HH:MM por X".
 - **Ligar/desligar a IA por loja** (Configurações → loja → Inteligência artificial; admin e franqueado): desligar guarda a chave (`desligada: true` em `config/ia.json`) e bloqueia todo uso (`IA.chaveAtiva`; `mensagens` devolve 409 "IA desligada"); `/api/ia/estado` responde `ativa: false, desligada: true`. Chave nova entra ligada. Auditado.
+
+- **Homologação** (`PAINEL_AMBIENTE=homologacao`, HOMOLOG-01, `docs/homologacao.md`): ali nada sai do painel — o servidor recusa por `C.travaHomolog` (e `ativo()` do coletor e do robô dá falso). Saída nova desta parte passa pela mesma trava e ganha linha em `tests/unit/homolog.test.js`.
