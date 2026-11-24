@@ -349,7 +349,7 @@
       for (const it of naoEnviadasDe(c)) linhas.push({ c, r, it, mot: motivoNE(it) });
       if (disp) { const falta = faltaEstoqueDe(c, disp); for (const it of r.lista) if (it.st === 'p') { const f = falta(it); if (f) linhas.push({ c, r, it, mot: 'estoque', falta: f }); } }
     }
-    const rows = linhas.map((x) => { const cl = clienteDe(x.it.cpf); return { ...x, cpf: x.it.cpf, nome: x.it.nome || cl.nome || '—', cel: A().fmtTel(cl.celular) || '—', camp: x.c.nome, motivo: x.mot === 'estoque' ? `esperando estoque (${x.falta})` : x.it.st === 'o' ? 'não quer mensagens' : x.it.motivo || 'pulada', em: x.it.em ? isoDia(x.it.em) : null, por: x.it.por || '' }; });
+    const rows = linhas.map((x) => { const cl = clienteDe(x.it.cpf); return { ...x, cpf: x.it.cpf, nome: TS.msgWpp.nomeProprio(x.it.nome || cl.nome) || '—', cel: A().fmtTel(cl.celular) || '—', camp: x.c.nome, motivo: x.mot === 'estoque' ? `esperando estoque (${x.falta})` : x.it.st === 'o' ? 'não quer mensagens' : x.it.motivo || 'pulada', em: x.it.em ? isoDia(x.it.em) : null, por: x.it.por || '' }; });
     const f = state.cpNE || (state.cpNE = { mot: '', camp: '' });
     const camps = [...new Set(rows.map((x) => x.camp))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
     if (f.camp && !camps.includes(f.camp)) f.camp = '';
@@ -368,8 +368,7 @@
     const abas = TS.seg([[`Todas (${fmt.int(rows.filter(daCamp).length)})`, '', 'Todas as não enviadas da lista atual de cada campanha.'], ...MOT_NE.map(([k, nome, dica]) => [`${nome} (${fmt.int(conta(k))})`, k, dica])], f.mot, (v) => { f.mot = v; repintar(); });
     const selCamp = h('select', { class: 'f-input cp-ne-camp', 'aria-label': 'Campanha' }, h('option', { value: '' }, 'Todas as campanhas'), ...camps.map((n) => h('option', { value: n, selected: f.camp === n || null }, n)));
     selCamp.addEventListener('change', () => { f.camp = selCamp.value; repintar(); });
-    const tab = TS.table({
-      cols: [
+    const colsNE = [
         { key: 'nome', label: 'Cliente', align: 'l', wrap: true, sticky: true, render: (x) => h('span', null, h('b', null, x.nome), h('small', { class: 'muted cp-cel' }, x.cel)) },
         { key: 'camp', label: 'Campanha', align: 'l', wrap: true },
         { key: 'motivo', label: 'Motivo', align: 'l', wrap: true, title: 'O motivo gravado quando o cliente saiu da fila (pelo robô 🤖 ou por quem enviava à mão).', render: (x) => { const nome = (MOT_NE.find((m) => m[0] === x.mot) || [])[1]; const repete = TS.norm(x.motivo).startsWith(TS.norm(nome || '')) || (x.mot === 'naoquer' && /não quer/i.test(x.motivo)); return h('span', null, TS.etqPrazo(x.mot === 'naoquer' ? 'agora' : x.mot === 'semwpp' || x.mot === 'semcel' ? 'semana' : 'saber', nome), repete ? null : h('small', { class: 'muted cp-cel' }, x.motivo)); } },
@@ -378,7 +377,17 @@
           x.mot !== 'estoque' ? h('button', { type: 'button', class: 'btn', onclick: (e) => { e.stopPropagation(); voltar(x, e.currentTarget); } }, 'Voltar para a fila') : null,
           h('button', { type: 'button', class: 'btn', onclick: (e) => { e.stopPropagation(); A().abrirClientes([x.cpf]); } }, 'Ver cliente'),
           x.mot === 'semwpp' ? TS.dica('Para corrigir: troque o celular no FIXE ou, se o cliente escreveu de outro número, abra a conversa em Clientes → Conversas e use "Vincular a um cliente". Depois toque em "Voltar para a fila".') : null), sortVal: () => 0 },
-      ],
+    ];
+    const tab = TS.table({
+      cols: colsNE,
+      // celular (LMOB-01): uma linha por cliente — nome e o motivo à direita; campanha, quando e o celular embaixo; as ações
+      // como links pequenos (cabem 3 ou 4 clientes onde cabia 1)
+      linhaMob: (x) => h('div', null,
+        h('div', { class: 'lmob-l1' }, h('span', { class: 'lmob-nome' }, x.nome), colsNE[2].render(x)),
+        h('div', { class: 'lmob-l2' }, h('span', null, `${x.camp}${x.em != null ? ' · ' + (x.por === 'robô' ? '🤖 ' : '') + fmt.date(TS.dayToIso(x.em)).slice(0, 5) : ''}`), h('span', null, x.cel)),
+        h('div', { class: 'lmob-acoes' },
+          x.mot !== 'estoque' ? h('button', { type: 'button', class: 'link-btn', onclick: (e) => { e.stopPropagation(); voltar(x, e.currentTarget); } }, 'Voltar para a fila') : null,
+          h('button', { type: 'button', class: 'link-btn', onclick: (e) => { e.stopPropagation(); A().abrirClientes([x.cpf]); } }, 'Ver cliente ›'))),
       rows: rows.filter((x) => (!f.mot || x.mot === f.mot) && daCamp(x)), sortKey: 'em', sortDir: 'desc', cartao: true, searchKeys: ['nome', 'cel', 'camp', 'motivo'],
       empty: 'Nenhuma mensagem deixou de sair por esse motivo. 👏',
     });

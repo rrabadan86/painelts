@@ -29,7 +29,7 @@ test('CAMP-NAOENV: lista de campanhas em tabela, aba "Não enviadas" com motivos
   await card.getByRole('button', { name: 'Voltar para a fila', exact: true }).first().click();
   await expect(page.locator('.card', { hasText: 'Quem ficou sem a mensagem e por quê' }).getByRole('button', { name: /^Sem WhatsApp \(1\)$/ })).toBeVisible();
   await expect(page.getByRole('button', { name: /^Não enviadas \(5\)$/ })).toBeVisible();
-  const pend = await page.evaluate(() => TS.state.cpNE && document.querySelectorAll('.cp-ne-acoes').length);
+  const pend = await page.evaluate(() => TS.state.cpNE && document.querySelectorAll('.cp-ne-acoes, .lmob-acoes').length); // no celular as ações ficam na linha (LMOB-01)
   expect(pend).toBeGreaterThan(0);
   // sem rolagem para o lado
   const [sw, cw] = await page.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth]);

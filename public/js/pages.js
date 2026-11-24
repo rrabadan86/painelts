@@ -308,6 +308,64 @@
     const rotAno = (y, ym) => { const d = diasDoMes(ym); return d.parcial ? `${y} (dias ${d.lo} a ${d.hi})` : String(y); };
     // várias lojas: Mês → Ano → Loja → Vendedor
     const multiLoja = new Set(base.map((i) => db.loja[i])).size > 1;
+    if (TS.ehCelular()) return arvoreMensalMob();
+    /**
+     * Celular (padrão de listas aprovado pelo dono em 24/11/2026, LMOB-02): uma linha por mês com o faturamento, a variação e o
+     * "antes"; tocar abre cupons, TKM, PMA e IPA numa grade e as vendedoras (ou as lojas) em linhas. Sem o nível do ano quando o
+     * mês tem um ano só; quem não vendeu vira uma linha "N sem vendas". No computador a árvore continua igual.
+     */
+    function arvoreMensalMob() {
+      const lista = h('div', { class: 'lmob evm' });
+      const wrapM = h('div', { class: 'table-wrap lmob-w evm-w' }, lista);
+      const varEl = (a, p, k) => { const pv = p ? p[k] : null; if (!pv) return null; const d = a[k] / pv - 1; return h('span', { class: d > 0 ? 'up' : d < 0 ? 'down' : 'muted' }, (d > 0 ? '▲ ' : d < 0 ? '▼ ' : '') + fmt.pct(Math.abs(d))); };
+      const anosTodos = new Set(base.map((i) => db.year[i]));
+      const ordem = [...meses].sort((x, z) => { const ux = Math.max(...porMes.get(x).map((i) => db.year[i])), uz = Math.max(...porMes.get(z).map((i) => db.year[i])); return uz - ux || z - x; });
+      function paintM() {
+        lista.textContent = '';
+        for (const m of ordem) {
+          const idxM = porMes.get(m), kM = 'm' + m;
+          const anos = TS.agrupar(idxM, (i) => db.year[i]);
+          const yMax = Math.max(...anos.keys()), ym = `${yMax}-${String(m).padStart(2, '0')}`, d = diasDoMes(ym);
+          const a = ind(anos.get(yMax)), p = prevDe(ym), open = aberto.has(kM);
+          const rot = `${TS.MESES_LONGOS[m - 1]}${anosTodos.size > 1 ? ' ' + yMax : ''}${d.parcial ? ` · ${d.lo === d.hi ? 'dia ' + d.lo : `dias ${d.lo} a ${d.hi}`}` : ''}`;
+          const cab = h('div', { class: 'lmob-it evm-mes' + (open ? ' aberta' : ''), role: 'button', tabindex: '0', 'aria-expanded': String(open) },
+            h('div', { class: 'lmob-l1' }, h('span', { class: 'lmob-nome' }, rot, h('span', { class: 'evm-chev' }, open ? ' ▾' : ' ▸')), h('span', { class: 'lmob-val' }, fmt.brl0(a.vt))),
+            h('div', { class: 'lmob-l2' }, varEl(a, p, 'vt'), p ? h('span', null, `antes ${fmt.brl0(p.vt)}`) : h('span', null, 'sem o ano anterior para comparar')));
+          const alternar = () => { open ? fechar(kM) : aberto.add(kM); paintM(); };
+          cab.addEventListener('click', alternar);
+          TS.teclado ? TS.teclado(cab, alternar) : null;
+          if (open) {
+            const ind4 = [['cupons', 'Cupons', fmt.int], ['tkm', 'TKM', fmt.brl], ['pma', 'PMA', fmt.brl], ['ipa', 'IPA', fmt.n2]];
+            cab.append(h('div', { class: 'evm-mini' }, ...ind4.map(([k, lab, fm]) => h('div', null, h('small', null, lab), h('b', null, fm(a[k])), varEl(a, p, k)))));
+            const grupo = multiLoja ? (i) => db.loja[i] : (i) => db.vend[i];
+            const nomeDe = multiLoja ? (g) => db.D.loja[g] : (g) => TS.msgWpp.nomeProprio(db.D.vendedor[g]) || db.D.vendedor[g];
+            const filhos = [...TS.agrupar(anos.get(yMax), grupo)].map(([g, gi]) => ({ g, a: ind(gi) })).sort((x, z) => z.a.vt - x.a.vt);
+            const comVenda = filhos.filter((x) => x.a.vt > 0 || x.a.cupons > 0), semVenda = filhos.length - comVenda.length;
+            for (const x of comVenda) {
+              const px = prevDe(ym, (i) => grupo(i) === x.g);
+              cab.append(h('div', { class: 'evm-sub' }, h('span', null, `${nomeDe(x.g)} · ${fmt.int(x.a.cupons)} ${x.a.cupons === 1 ? 'cupom' : 'cupons'}`), h('span', null, fmt.brl0(x.a.vt), ' ', varEl(x.a, px, 'vt'))));
+            }
+            if (semVenda) cab.append(h('div', { class: 'evm-sub muted' }, `${semVenda} sem vendas`));
+            for (const y of [...anos.keys()].filter((y) => y !== yMax).sort((x, z) => z - x)) cab.append(h('div', { class: 'evm-sub' }, h('span', null, String(y)), h('span', null, fmt.brl0(ind(anos.get(y)).vt))));
+          }
+          lista.append(cab);
+        }
+        if (!meses.length) lista.append(h('div', { class: 'muted lmob-vazio' }, 'Sem dados.'));
+        else {
+          const t = ind(base), yms = new Set(base.map((i) => db.ym[i]));
+          const antYms = [...yms].map((x) => `${+x.slice(0, 4) - 1}${x.slice(4)}`);
+          const idxAnt = antYms.some((x) => yms.has(x)) ? [] : [...yms].flatMap((x) => prevIdx(x) || []);
+          const pt = idxAnt.length ? ind(idxAnt) : null;
+          lista.append(h('div', { class: 'lmob-it lmob-total' }, h('div', { class: 'lmob-l1' }, h('span', { class: 'lmob-nome' }, 'Total do período'), h('span', { class: 'lmob-val' }, fmt.brl0(t.vt))),
+            h('div', { class: 'lmob-l2' }, varEl(t, pt, 'vt'), pt ? h('span', null, `antes ${fmt.brl0(pt.vt)}`) : null, h('span', null, `${fmt.int(t.cupons)} cupons · TKM ${fmt.brl(t.tkm)}`))));
+        }
+      }
+      paintM();
+      wrapM.tools = h('div', { class: 'table-tools' },
+        h('button', { type: 'button', class: 'btn', onclick: () => { for (const m of meses) aberto.add('m' + m); paintM(); } }, 'Abrir todos'),
+        h('button', { type: 'button', class: 'btn', onclick: () => { aberto.clear(); paintM(); } }, 'Recolher'));
+      return wrapM;
+    }
     const cols = [['vt', 'Faturamento', fmt.brl], ['cupons', 'Cupons', fmt.int], ['tkm', 'TKM', fmt.brl], ['pma', 'PMA', fmt.brl], ['ipa', 'IPA', fmt.n2]];
     const tbl = h('table', { class: 't tree vp2-tree' + (multiLoja ? ' multi' : '') });
     const wrap = h('div', { class: 'table-wrap' }, tbl);
@@ -485,6 +543,22 @@
         { key: 'kg', label: 'Chá (kg) por tipo', align: 'l', wrap: true, fmt: chaCel, title: `Chá vendido em kg e, embaixo, quanto foi de cada tipo (${tipoCols.join(', ')}), do maior para o menor. Tipo sem venda não aparece.` },
       ],
       rows: rowsV, total: totV, sortKey: 'vt',
+      // celular (LMOB-01): uma linha por pessoa — faturamento e a parte dela (barra); os indicadores e o chá embaixo; quem
+      // não vendeu no período vira uma linha só no fim ("1 sem vendas no período")
+      linhaMob: (r) => {
+        if (!(r.vt > 0) && !(r.cupons > 0)) return null;
+        const parte = totV.vt ? r.vt / totV.vt : 0;
+        const tipos = tipoCols.map((n) => [n, r['kg_' + n] || 0]).filter(([, k]) => k > 0).sort((x, y) => y[1] - x[1]);
+        return h('div', null,
+          h('div', { class: 'lmob-l1' }, h('span', { class: 'lmob-nome' }, TS.msgWpp.nomeProprio(r.vendedor) || r.vendedor), h('span', { class: 'lmob-val' }, fmt.brl(r.vt), ' ', h('small', null, fmt.pct(parte, 0)))),
+          h('div', { class: 'lmob-barra' }, h('i', { style: { width: Math.round(parte * 100) + '%' } })),
+          h('div', { class: 'lmob-l2' }, h('span', null, `${fmt.int(r.cupons)} ${r.cupons === 1 ? 'cupom' : 'cupons'}`), h('span', null, `TKM ${fmt.brl(r.tkm)}`), h('span', null, `PMA ${fmt.brl(r.pma)}`), h('span', null, `IPA ${fmt.n2(r.ipa)}`)),
+          r.kg ? h('div', { class: 'lmob-l2' }, h('span', null, `🍵 ${fmt.kg(r.kg)}${tipos.length ? ' · ' + tipos.map(([n, k]) => `${n} ${fmt.kg(k)}`).join(' · ') : ''}`)) : null);
+      },
+      totalMob: () => {
+        const zeros = rowsV.filter((r) => !(r.vt > 0) && !(r.cupons > 0));
+        return zeros.length ? h('div', { class: 'lmob-zero' }, `${zeros.length} sem vendas no período (${zeros.map((r) => TS.msgWpp.nomeProprio(r.vendedor) || r.vendedor).join(', ')})`) : null;
+      },
     });
     const cardVend = TS.card('Desempenho por vendedor', 'Clique no título de uma coluna para ordenar', tabVend);
     cardVend.id = 'rs-vend';
