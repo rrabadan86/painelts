@@ -1,0 +1,25 @@
+# HOMOLOGAÇÃO (decisão do dono, 24/11/2026; HOMOLOG-01/02): um painel de teste separado, na mesma VPS, em outra pasta
+# (/opt/teashop-homolog), com a cópia de uma loja. Só o painel: sem coletor e sem robô do WhatsApp.
+# PAINEL_AMBIENTE=homologacao faz o servidor recusar toda saída (AppNext, FIXE, WhatsApp, e-mail, Telegram,
+# notificação no aparelho, IA, GitHub) e mostra a faixa amarela "HOMOLOGAÇÃO" na tela.
+# Sobe com: docker compose -p teashop-homolog -f docker-compose.homolog.yml up -d --build   (o atualizador faz isso sozinho)
+services:
+  teashop-homolog:
+    build: .
+    container_name: teashop-homolog
+    init: true
+    restart: unless-stopped
+    env_file: .env                     # o .env DESTA pasta (SESSION_SECRET próprio, PAINEL_AMBIENTE=homologacao)
+    environment:
+      TZ: America/Sao_Paulo
+      PAINEL_AMBIENTE: homologacao     # trava de saída no servidor, mesmo que o .env diga outra coisa
+      COLETOR_URL: ""
+      ZAP_URL: ""
+    volumes:
+      - ./config:/app/config           # lojas.json da homologação (só a loja copiada e os usuários dela)
+      - ./dados:/data                  # cópia dos dados da loja (scripts/homolog-copiar.sh)
+    ports:
+      - "127.0.0.1:3001:3000"          # o Caddy publica em homolog.<domínio>
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }

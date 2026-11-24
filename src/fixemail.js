@@ -158,6 +158,7 @@ function remetenteAutenticado(p) {
  * smtp = { host, user, pass } da loja
  */
 async function verificar(id, smtp, importar) {
+  require('./config').travaHomolog('leitura do e-mail da FIXE');
   const { pedido } = situacao(id);
   if (!pedido) return null;
   const esperados = Array.isArray(pedido.tipos) && pedido.tipos.length ? pedido.tipos : ['leads'];

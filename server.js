@@ -577,10 +577,21 @@ function lotesDemo(lojaId) {
     const k = [...cod].reduce((a, c) => a + c.charCodeAt(0), 0) % 14; // 0 a 13 meses para trás
     comp.itens[cod] = l.map(([d, ...r]) => [LOTd.somarMeses(d, -k), ...r]);
   }
-  const { em, lotes, outros } = LOTd.calcular({ estoque: e.estoque, compras: comp, tabela: null, edits: { lotes: {} } });
+  // sempre um chá com pacotes fechados (a janela dos lotes mostra "Abrir lote"): uma chegada de 2 kg três dias antes do estoque,
+  // intocada. Sem isso, dependia da hora em que a apresentação era gerada (de madrugada, a loja ficava sem pacote fechado).
+  const grs = e.estoque.itens.filter((i) => i.tipoProd === 'granel' && comp.itens[i.cod]).sort((a, b) => (a.cod < b.cod ? -1 : 1));
+  const gr = grs.find((i) => !(i.qtd > 0.0005)) || grs[0]; // de preferência um chá zerado: não mexe no que já está na lata
+  let estoque = e.estoque;
+  if (gr && e.estoque.em) {
+    const dia = new Date(Date.parse(e.estoque.em.slice(0, 10) + 'T12:00:00Z') - 3 * 864e5).toISOString().slice(0, 10);
+    const ult = comp.itens[gr.cod][comp.itens[gr.cod].length - 1];
+    comp.itens[gr.cod] = [...comp.itens[gr.cod], [dia, ult[1], 9100, 2, ult[4]]];
+    estoque = { ...e.estoque, itens: e.estoque.itens.map((i) => (i === gr ? { ...i, qtd: Math.round((i.qtd + 2) * 1000) / 1000 } : i)) };
+  }
+  const { em, lotes, outros } = LOTd.calcular({ estoque, compras: comp, tabela: null, edits: { lotes: {} } });
   for (const l of lotes) if (l.precoKg == null && l.custoKg) l.precoKg = Math.round(l.custoKg * 2.6);
   for (const l of outros) if (l.precoKg == null && l.custoKg) l.precoKg = Math.round(l.custoKg * 2.2 * 10) / 10; // a unidade, como a tabela fictícia
-  return { LOTd, e, comp, em, lotes, outros };
+  return { LOTd, e: { ...e, estoque }, comp, em, lotes, outros };
 }
 app.get('/api/demo/validade', (req, res) => {
   if (!lojaDemo(req)) return res.status(400).json({ erro: 'Escolha uma loja.' });
@@ -907,7 +918,12 @@ const DEMO_CONV = [
   { cli: 'Vocês entregam?', loja: 'Entregamos pelo app de entregas da loja e também separamos para retirar.' },
 ];
 const DEMO_SEMCAD = '5500911112222';
-const demoIndice = (chave) => [...chave].reduce((x, c, i) => x + c.charCodeAt(0) * (i + 3) * 31, 0) % DEMO_CONV.length;
+// qual exemplo cada celular recebe: pelo próprio número. Os celulares que a tela manda mudam com o dia (clientes recentes), então,
+// se nenhum caiu no exemplo que termina com o robô, o último da lista passa a ser ele (sem isso a apresentação ficava, em
+// alguns dias, sem conversa com 🤖 — teste CONV-08 falhava de madrugada). Guardado na memória, para a conversa aberta bater com a lista.
+const DEMO_K_ROBO = DEMO_CONV.findIndex((t) => t.robo && !t.cli && !t.loja);
+const demoForcado = new Map();
+const demoIndice = (chave) => (demoForcado.has(chave) ? demoForcado.get(chave) : [...chave].reduce((x, c, i) => x + c.charCodeAt(0) * (i + 3) * 31, 0) % DEMO_CONV.length);
 function demoConversa(chave, ag) {
   const min = 60e3, em = (ms) => new Date(ms).toISOString();
   if (chave === DEMO_SEMCAD) return [{ id: 'd-s0', deMim: false, em: em(ag - 30 * 3600e3 - 2 * min), tipo: 'audio', texto: '', nome: 'Contato sem cadastro' }, { id: 'd-s1', deMim: false, em: em(ag - 30 * 3600e3), tipo: 'texto', texto: 'Oi, vi o anúncio de vocês. Têm chá para dormir?', nome: 'Contato sem cadastro' }];
@@ -925,6 +941,7 @@ function demoConversa(chave, ag) {
 }
 app.get('/api/demo/conversas', (req, res) => {
   const fones = String(req.query.fones || '').split(',').map((x) => x.replace(/\D/g, '')).filter((x) => /^\d{12,13}$/.test(x)).slice(0, 8);
+  if (fones.length && !fones.some((f) => demoIndice(f) === DEMO_K_ROBO)) { if (demoForcado.size > 200) demoForcado.clear(); demoForcado.set(fones[fones.length - 1], DEMO_K_ROBO); }
   const ag = Date.now();
   const conversas = [...fones, DEMO_SEMCAD].map((chave) => {
     const msgs = demoConversa(chave, ag), u = msgs[msgs.length - 1];
@@ -1401,6 +1418,7 @@ app.get('/api/eu', (req, res) => {
   const u = C.get().usuarios[req.user];
   res.json({
     usuario: req.user === '*' ? '' : req.user, nome: u?.nome || req.user, perfil: req.perfil, vendedor: req.vendedor || '',
+    ambiente: C.homolog() ? 'homologacao' : 'producao', // HOMOLOG-01: a tela mostra a faixa amarela
     pode: { configurar: req.perfil === 'admin' || req.perfil === 'franqueado', admin: req.perfil === 'admin', clientes: podeClientes(req), robo: C.podeRobo(req), conversas: C.podeConversas(req), custos: podeTela(req, 'rentab', 'estoque', 'precos', 'notas', 'pedido', 'dre') },
     telas: C.telasDo(u),
     lojas: req.lojas.map((l) => ({ id: l.id, nome: l.nome, marca: { nome: (l.marca && l.marca.nome) || l.nome, logo: !!arquivoLogo(l.id) } })),
@@ -3549,12 +3567,12 @@ setTimeout(limparEnviosAntigos, 10 * 60e3).unref();
 setInterval(limparEnviosAntigos, 24 * 3600e3).unref();
 
 // avisos de falha para o administrador (coleta, FIXE, loja sem vendas de ontem): a cada 5 minutos
-setInterval(() => {
+if (!C.homolog()) setInterval(() => { // homologação: sem avisos por Telegram/e-mail (HOMOLOG-01)
   require('./src/avisos').verificar({ COL, FX, B, NOTIF: require('./src/notificacoes') }).catch((e) => console.error('[avisos]', e.message));
 }, 5 * 60e3).unref();
 
 // resumo diário (Telegram / e-mail) no horário configurado
-NOTIF.agendar(async (id) => { const l = C.get().lojas.find((x) => x.id === id); return l ? dadosParaIndicadores(l) : null; });
+if (!C.homolog()) NOTIF.agendar(async (id) => { const l = C.get().lojas.find((x) => x.id === id); return l ? dadosParaIndicadores(l) : null; });
 
 /**
  * "Todas as lojas" pronto antes de alguém pedir (pedido do dono: demorava ao escolher). Junta as lojas, monta e comprime o
@@ -3577,7 +3595,7 @@ if (process.env.NODE_ENV !== 'test') { setTimeout(aquecerTodas, 20e3).unref(); s
 
 const srv = app.listen(PORT, () => {
   console.log(`Tea Shop painel em http://localhost:${PORT}`);
-  SITE.agendar(); // preços do e-commerce: todo dia às 10h
+  if (!C.homolog()) SITE.agendar(); // preços do e-commerce: todo dia às 10h (a homologação não consulta: HOMOLOG-01)
   // Google Drive desativado: tira os IDs antigos do lojas.json (uma vez; fica cópia em config/backups)
   try {
     const tinham = [];

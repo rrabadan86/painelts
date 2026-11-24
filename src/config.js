@@ -363,6 +363,17 @@ const doPedido = (req) => { const u = get().usuarios[req.user]; return u || (req
 const podeRobo = (req) => podeRoboU(doPedido(req));
 const podeConversas = (req) => podeConversasU(doPedido(req));
 
+/**
+ * Homologação (decisão do dono, 24/11/2026; HOMOLOG-01): um painel separado na mesma VPS, com a cópia de uma loja,
+ * para conferir a versão nova antes da produção. Ali NADA sai do painel: sem coletor (AppNext/FIXE), sem robô do
+ * WhatsApp, sem e-mail, Telegram, notificação no aparelho, IA, GitHub nem leitura do Gmail. Lido a cada chamada.
+ */
+const homolog = () => String(process.env.PAINEL_AMBIENTE || '').trim().toLowerCase() === 'homologacao';
+/** trava de saída: na homologação, recusa com uma mensagem clara (o servidor confere, não só a tela) */
+function travaHomolog(oque) {
+  if (homolog()) throw Object.assign(new Error(`Na homologação nada sai do painel (${oque}). Confira isso na produção.`), { homolog: true });
+}
+
 /** meta da loja num mês (AAAA-MM): meta do mês, senão a padrão */
 function metaDoMes(loja, ym) {
   return (loja.metas && loja.metas[ym] != null ? loja.metas[ym] : loja.meta) ?? null;
@@ -370,5 +381,5 @@ function metaDoMes(loja, ym) {
 
 module.exports = {
   get, hashSenha, hashSenhaAsync, confereSenha, confereSenhaAsync, chaveSessao, lojasDoUsuario, pastaLoja, usuario, alterar, gravarAtomico, auditar, lerAuditoria,
-  registrarAcesso, flushAcessos, lerAcessos, msgErro, erroDeSistema, MSG_ERRO_INTERNO, expirado, hojeBR, diaSP, somaMeses, metaDoMes, PERFIS, TELAS, TELAS_GERENTE_PADRAO, telasDo, podeRobo, podeRoboU, podeConversas, podeConversasU, roboLegado, ARQUIVOS, CONFIG_FILE, CONFIG_DIR, COLETOR_DIR, DATA_DIR,
+  registrarAcesso, flushAcessos, lerAcessos, msgErro, erroDeSistema, MSG_ERRO_INTERNO, expirado, hojeBR, diaSP, somaMeses, metaDoMes, PERFIS, TELAS, TELAS_GERENTE_PADRAO, telasDo, homolog, travaHomolog, podeRobo, podeRoboU, podeConversas, podeConversasU, roboLegado, ARQUIVOS, CONFIG_FILE, CONFIG_DIR, COLETOR_DIR, DATA_DIR,
 };

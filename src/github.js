@@ -8,6 +8,7 @@ const API = (process.env.GITHUB_API || 'https://api.github.com').replace(/\/$/, 
 const ATIVOS = new Set(['queued', 'in_progress', 'requested', 'waiting', 'pending']);
 
 async function gh(path, { method = 'GET', body } = {}) {
+  require('./config').travaHomolog('GitHub');
   const token = process.env.GITHUB_TOKEN;
   if (!token) throw Object.assign(new Error('GITHUB_TOKEN não configurado no .env'), { codigo: 'sem_token' });
   const ctrl = new AbortController();

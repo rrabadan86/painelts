@@ -6,7 +6,7 @@
 const URL_BASE = (process.env.COLETOR_URL || '').replace(/\/$/, '');
 const TOKEN = process.env.COLETOR_TOKEN || '';
 
-const ativo = () => Boolean(URL_BASE && TOKEN);
+const ativo = () => Boolean(URL_BASE && TOKEN) && !require('./config').homolog(); // homologação: nunca entra no AppNext/FIXE (HOMOLOG-01)
 
 async function chamar(path, { method = 'GET', por, body, espera = 10000 } = {}) {
   const ctrl = new AbortController();

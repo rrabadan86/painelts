@@ -58,6 +58,7 @@ function publico() {
 
 // ---------- Telegram ----------
 async function tg(token, metodo, corpo) {
+  require('./config').travaHomolog('Telegram');
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), 15000);
   try {
@@ -92,6 +93,7 @@ async function enviarTelegram(chatId, texto) {
 
 // ---------- e-mail ----------
 async function enviarEmail(para, assunto, texto, htmlPronto, smtp, anexos) {
+  require('./config').travaHomolog('e-mail');
   const c = smtp || ler().email;
   if (!c.host || !c.from) throw new Error('Configure o servidor de e-mail.');
   const nodemailer = require('nodemailer');

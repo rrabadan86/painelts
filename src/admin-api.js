@@ -986,6 +986,10 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
         else if (c[0] === 'testes') out.testes = true;
         else if (c[0] === 'teste') testes[c[1]] = { res: c[2], url: /^https:\/\/github\.com\//.test(c[3] || '') ? c[3] : null };
         else if (c[0] === 'alvo') out.alvo = c[1];
+        // HOMOLOG-02: produção por versões liberadas (tags versao-AAAA-MM-DD) ou homologação
+        else if (c[0] === 'ambiente') out.ambiente = c[1] === 'homologacao' ? 'homologacao' : 'producao';
+        else if (c[0] === 'trilho') out.trilho = c[1] === 'versoes' ? 'versoes' : 'main';
+        else if (c[0] === 'versao' && /^versao-\d{4}-\d{2}-\d{2}(-\d+)?$/.test(c[1] || '')) (out.versoes = out.versoes || []).push({ nome: c[1], sha: c[2], notas: (c.slice(3).join(' ') || '').slice(0, 300) });
       }
       // resultado dos testes automáticos de cada novidade: ok | falhou | testando (ainda sem resultado)
       if (out.testes) for (const n of out.novidades) {
@@ -1022,6 +1026,16 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     if (b.estado === 'rodando' || b.pedido) return res.status(409).json({ erro: 'Já tem um backup em andamento.' });
     try { fs.writeFileSync(path.join(SIS, 'backup.pedido'), `${req.user} ${new Date().toISOString()}\n`); } catch (e) { return res.status(500).json({ erro: 'Não consegui pedir: ' + C.msgErro(e) }); }
     aud(req, 'pediu backup no Google Drive', 'sistema', {});
+    res.json({ ok: true });
+  });
+  // HOMOLOG-01: na homologação, o admin pede para copiar de novo uma loja da produção (o atualizador da VPS copia)
+  r.post('/homolog/copiar', soAdmin, json, (req, res) => {
+    if (!C.homolog()) return res.status(404).json({ erro: 'Só existe no painel de homologação.' });
+    const loja = String((req.body || {}).loja || '').toLowerCase();
+    if (!/^[a-z0-9_-]{1,40}$/.test(loja)) return res.status(400).json({ erro: 'Loja inválida.' });
+    if (fs.existsSync(path.join(SIS, 'copiar.pedido'))) return res.status(409).json({ erro: 'Já tem uma cópia pedida: em até 1 minuto ela começa.' });
+    try { fs.mkdirSync(SIS, { recursive: true }); fs.writeFileSync(path.join(SIS, 'copiar.pedido'), `${loja}\n`); } catch (e) { return res.status(500).json({ erro: 'Não consegui pedir: ' + C.msgErro(e) }); }
+    aud(req, 'pediu a cópia da loja para a homologação', 'sistema', { loja });
     res.json({ ok: true });
   });
   r.post('/sistema/:acao', soAdmin, (req, res) => {

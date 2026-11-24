@@ -33,9 +33,9 @@ Hooks (`.claude/settings.json`): bloqueiam commit/push de segredos, limpam os re
 
 ## Antes de cada commit
 - Comece sempre com `git fetch origin main && git merge --ff-only FETCH_HEAD` (o dono também sobe mudanças).
-- Faça commit e push de cada mudança (skill `subir-versao`). A instalação na VPS é pelo painel ("Atualizações do painel"): só versões que passam nos testes do GitHub entram. Depois é Ctrl+F5.
+- Faça commit e push de cada mudança (skill `subir-versao`). **Homologação e versões agrupadas (decisão do dono, 24/11/2026; `docs/homologacao.md`):** o merge no `main` vai primeiro para o painel de **homologação** (outra pasta na VPS, cópia da loja do Flamboyant, instala sozinho; ali nada sai do painel — `PAINEL_AMBIENTE=homologacao`, `C.travaHomolog`). A **produção** só recebe **versões liberadas**: quando o dono conferir e disser "pode liberar", o Claude cria a tag anotada `versao-AAAA-MM-DD` (com as notas) no commit conferido; aí o dono instala em "Atualizações do painel" e dá Ctrl+F5. Correção urgente: homologação na hora e versão no mesmo dia. Toda saída nova (e-mail, mensagem, robô, serviço de fora) passa por `C.travaHomolog` e ganha linha no teste `homolog.test.js`.
 - **Instruções sempre em dia:** se a mudança cria regra, permissão, fluxo, tela ou convenção nova, atualize no mesmo PR o CLAUDE.md, a regra da área (`.claude/rules/`) ou a skill. O hook `lembrar-docs.js` avisa depois de cada commit quando a área mexida não teve a instrução atualizada.
-- **Versões de segurança:** tag `DDMMAAAA-Claude` no `main` (passo 9 da skill `subir-versao`); o dono transforma em Release no GitHub.
+- **Versões de segurança:** tag `DDMMAAAA-Claude` no `main` (passo 9 da skill `subir-versao`); o dono transforma em Release no GitHub. Não confundir com as versões liberadas `versao-AAAA-MM-DD`, que são as que a produção instala.
 - **Autorizado pelo dono (vale para todas as sessões):** o Claude pode abrir o PR e fazer o merge no `main` sozinho, sem perguntar, depois que os testes do GitHub do PR passarem (✓). Testes falharam: corrija antes; nunca faça merge com ✗ nem pule testes.
 
 ## Regras que não mudam
@@ -95,6 +95,7 @@ Hooks (`.claude/settings.json`): bloqueiam commit/push de segredos, limpam os re
 - Teste em navegador: `tests/e2e/aplicativo.spec.js` usa o Chromium completo com perfil normal (no "sem tela" enxuto e em janela anônima as notificações vêm bloqueadas).
 
 ## Pendências combinadas (o dono pediu para depois)
+- **CRM e fidelidade próprios no lugar da FIXE** (pedido da franquia, decisões do dono de 24/11/2026): tudo em `docs/crm-fidelidade.md` — como o programa funciona hoje, como o painel liga a FIXE aos cupons, o formato das exportações, as decisões (uma VPS, telas no painel, perfil Franquia só com o CRM, valor do ponto e prêmios com vigência, pontos importados sem validade vencem 6 meses depois da implantação, passado é passado, R$ 15.500 de implantação) e o que falta saber. **Não começar o código antes da documentação da integração de fidelidade da NextSoft.**
 - Infusor obrigatório das mugs: **feito no carrinho** — quando o site abre a janela "Venda Conjunta", o favorito (`carrinho-site.js`) e o robô (`nextsoft_pedido.py`) clicam em "Colocar Todos no Carrinho" (decisão do dono) e o par mug → infusor fica guardado em `pedido/conjuntos.json`. **Falta:** o Pedido somar o infusor no valor e na proporção antes de montar o carrinho (usar `PED.conjuntos`). Mug Uki e a linha de pinturas não têm infusor. Decisão: não agrupar estampas nos indicadores.
 - Conferência do boleto de royalties (ler o PDF e conferir os descontos de devoluções e da fidelidade).
 - Reserva de estoque para encomenda (ligada ao Orçamento).

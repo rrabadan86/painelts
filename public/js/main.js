@@ -589,6 +589,12 @@
       if (r.status === 401 && !TS.demo) { irParaLogin(); return; }
       const eu = await r.json();
       TS.eu = eu;
+      // HOMOLOG-01: painel de teste da VPS — faixa amarela fixa e o título da aba marcado (nada sai daqui)
+      if (eu.ambiente === 'homologacao' && !document.querySelector('.faixa-homolog')) {
+        document.body.classList.add('em-homolog');
+        document.body.append(h('div', { class: 'faixa-homolog', role: 'status' }, 'HOMOLOGAÇÃO · dados de cópia · nada é enviado (sem AppNext, FIXE, WhatsApp, e-mail nem IA)'));
+        if (!/^\[HOMOLOG\]/.test(document.title)) document.title = '[HOMOLOG] ' + document.title;
+      }
       Guardados.limpar(); // outra pessoa entrou neste aparelho: o que era dela sai daqui
       TS.lojas = eu.lojas || [];
       configurarAbas(eu);

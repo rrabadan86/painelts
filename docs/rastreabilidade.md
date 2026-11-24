@@ -531,6 +531,8 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 | APP-05 | `TS.aoConfirmar`: aplica ao sair do campo | `main.js` | `esc` "digitar a hora inteira" | 🟡 |
 | APP-06 | Aviso "O painel foi atualizado" | `main.js` | — | ❌ |
 | APP-07 | Atualizações: só instalam versões que passaram nos testes do GitHub | `atualizador.sh`; `admin-api.js` `sistema` | — | ❌ |
+| HOMOLOG-01 | Painel de homologação (decisão do dono, 24/11/2026): com `PAINEL_AMBIENTE=homologacao` nada sai do painel — coletor e robô do WhatsApp desligados mesmo configurados; e-mail, Telegram, notificação no aparelho, IA, GitHub e leitura do e-mail da FIXE recusados no servidor com a explicação; sem avisos, resumo diário nem consulta do site agendados; a tela recebe o ambiente e mostra a faixa amarela; o admin pede a cópia da loja (o atualizador da VPS copia, sem conversas, fila de envio, senhas nem chaves) | `src/config.js` (`homolog`, `travaHomolog`); `coletor.js`/`zap.js` (`ativo`); `notificacoes.js`, `webpush.js`, `push.js`, `ia.js`, `github.js`, `fixemail.js`; `server.js` (`/api/eu` ambiente, agendas); `admin-api.js` (`/homolog/copiar`); `main.js`/`styles.css` (faixa); `docker-compose.homolog.yml`; `scripts/homolog-copiar.sh` | `homolog.test` HOMOLOG-01 | 🟡 (a cópia da loja e o Caddy só se conferem na VPS) |
+| HOMOLOG-02 | Versões agrupadas (decisão do dono, 24/11/2026): a produção, a partir da primeira tag `versao-AAAA-MM-DD`, instala só a versão liberada mais nova que passou nos testes (nunca o `main` à frente dela) e diz qual é na tela; sem versão liberada, segue o `main` testado como antes; a homologação instala sozinha o `main` testado, com o compose dela e sem backup | `scripts/atualizador.sh` (`porversoes`, `alvo`, `liberadas`, `nomeversao`, `HOMOLOG`, `COMPOSE`); `admin-api.js` (`sistema`: ambiente, trilho, versões); `sistema.js` | `atualizador.test` HOMOLOG-02 (repositórios e docker de mentira) | ✅ |
 | APP-08 | Tabela pagina sozinha (100 por página; 40 cartões no celular) | `components.js` | — | ❌ — celular só pagina acima de 60 |
 | APP-09 | ⓘ tocável nas colunas (computador e celular) | `components.js` | `dicas.spec` | 🟡 (só Preços) |
 | APP-10 | Celular: tabela vira cartão, nada passa da borda | `components.js` | `telas.spec` (26 telas); `voltar.spec` | 🟡 (cartões próprios não conferidos) |
@@ -720,8 +722,8 @@ Contado pelas linhas da matriz (`node scripts/matriz.js --resumo`; o guardião c
 | Clientes, fidelidade, WhatsApp e lista de espera (CLI) | 53 | 40 | 9 | 4 |
 | Orçamento (ORC) | 7 | 5 | 1 | 1 |
 | Checklist, fechamento e avisos (OPE) | 13 | 6 | 3 | 4 |
-| Estrutura do painel e atualização (APP) | 42 | 24 | 12 | 6 |
-| **Total** | **467** | **234 (50%)** | **123 (26%)** | **110 (24%)** |
+| Estrutura do painel e atualização (APP) | 44 | 25 | 13 | 6 |
+| **Total** | **469** | **235 (50%)** | **124 (26%)** | **110 (23%)** |
 <!-- resumo:fim -->
 
 ## Próximas etapas

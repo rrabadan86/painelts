@@ -116,6 +116,7 @@ function definirContato(url) {
  * `opt.fetch` é injetado nos testes; a espera é limitada (padrão 8 s).
  */
 async function enviar(ap, dados, opt = {}) {
+  require('./config').travaHomolog('notificação no aparelho');
   try {
     if (!enderecoOk(ap.endpoint) || !chavesOk(ap.keys)) return { ok: false, status: 0, erro: 'endereço ou chave inválida', sumiu: true };
     const corpo = cifrar(typeof dados === 'string' ? dados : JSON.stringify(dados), ap.keys.p256dh, ap.keys.auth);

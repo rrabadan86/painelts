@@ -145,6 +145,7 @@ function registrarUso(id, u) {
 
 /** confere a chave na Anthropic (lista de modelos: não gasta nada) */
 async function testar(chave) {
+  require('./config').travaHomolog('IA');
   if (process.env.IA_FALSO === '1') return formatoOk(chave) ? { ok: true } : { erro: 'Chave inválida.' };
   try {
     const r = await fetch(`${API}/models?limit=1`, { headers: { 'x-api-key': String(chave).trim(), 'anthropic-version': '2023-06-01' }, signal: AbortSignal.timeout(15000) });
@@ -157,6 +158,7 @@ class ErroIA extends Error { constructor(msg, status = 400) { super(msg); this.s
 
 /** chama a API de mensagens com a chave da loja (confere teto antes; registra o uso depois) */
 async function mensagens(lojaId, corpo) {
+  require('./config').travaHomolog('IA');
   const d = ler();
   const onde = `Configurações → Lojas → ${(C.get().lojas.find((l) => l.id === lojaId) || {}).nome || lojaId} → Inteligência artificial`;
   const k = chaveDaLoja(lojaId, d);
@@ -194,6 +196,7 @@ async function mensagens(lojaId, corpo) {
  * pede a ferramenta e, se a IA responder só com texto, pede de novo uma vez. Devolve o input da ferramenta (ou null).
  */
 async function comFerramenta(lojaId, { max_tokens, system, ferramenta, conteudo }) {
+  require('./config').travaHomolog('IA');
   const nome = ferramenta.name;
   const messages = [{ role: 'user', content: conteudo }];
   const achar = (j) => (j.content || []).find((x) => x.type === 'tool_use' && x.name === nome);

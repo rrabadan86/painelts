@@ -20,8 +20,8 @@ description: O ciclo depois do push — abrir o PR, acompanhar os testes do GitH
    git fetch origin main && git merge --ff-only FETCH_HEAD && git push -u origin <ramo>
    ```
    Cancele a assinatura do PR e agende um lembrete (~10 min) para o run **"Testes" do main** desse merge.
-5. **Testes do main ✓:** avise o dono em poucas linhas — pode instalar (**Atualizações do painel → instalar**, recarregar a página), o que muda
-   para ele e o que conferir no uso real (o que só foi testado na apresentação). ✗ no main: mesmo caminho do passo 3, num PR novo.
+5. **Testes do main ✓:** a versão vai sozinha para a **homologação** (até 5 min; `docs/homologacao.md`). Avise o dono em poucas linhas o que conferir lá (o roteiro do PR) — **não** diga para instalar na produção: a produção só recebe **versões liberadas**. Quando o dono disser "pode liberar": tag anotada `versao-AAAA-MM-DD` (com `-2`… no mesmo dia) no SHA que ele conferiu, com as notas de tudo o que entrou desde a última versão (`git log versao-anterior..SHA --format='- %s'`), `git push origin <tag>`; aí sim: "Atualizações do painel → instalar → Ctrl+F5". Correção urgente: o mesmo caminho, no mesmo dia. Diga sempre o que muda para ele e o que conferir no uso real (o que só foi testado na apresentação).
+   **Até a homologação estar instalada na VPS e sair a primeira `versao-*`**, vale o caminho antigo: pode instalar direto (**Atualizações do painel → instalar**, Ctrl+F5). ✗ no main: mesmo caminho do passo 3, num PR novo.
 6. **Avisos repetidos** (assinatura criada, PR fechado, lembrete antigo): uma linha dizendo o estado atual, sem repetir o relatório.
 
 **Automático:** o hook `conferir-pr` (`.claude/hooks/`) entrega este roteiro ao Claude logo depois de todo `git push` de ramo (tag de versão não conta).

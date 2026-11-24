@@ -3932,3 +3932,11 @@ details.inv-p2-como ol { margin-top: 8px; }
 .dre-t tr.dre-calc td { font-size: 13px; color: #3D4A42; }
 .dre-t tr.dre-calc td:first-child { padding-left: 36px; }
 .dre-dica-edit { margin: 0 0 8px; font-size: 13px; }
+
+/* HOMOLOG-01: faixa do painel de homologação (fixa embaixo, por cima de tudo, sem mexer na barra do topo) */
+.faixa-homolog { position: fixed; left: 0; right: 0; bottom: 0; z-index: 1200; background: var(--gold); color: var(--dark); font-weight: 700; font-size: 13px; text-align: center; padding: 6px 12px; letter-spacing: .3px; }
+body.em-homolog { padding-bottom: 34px; }
+body.em-homolog .topbar { box-shadow: inset 0 -4px 0 var(--gold); }
+
+/* Site: a etiqueta da situação quebra a linha ("Promoção + preço diferente" saía do cartão no celular — LARG-01) */
+.badge.site-sit { white-space: normal; max-width: 100%; }
