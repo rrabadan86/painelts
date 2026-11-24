@@ -64,7 +64,7 @@ test('HOMOLOG-02: com versão liberada, a produção instala só ela (o main à 
   rodar(dir);
   const v = fs.readFileSync(path.join(dir, 'dados', '_sistema', 'versao.txt'), 'utf8');
   assert.match(v, /^trilho\tversoes$/m);
-  assert.match(v, /^versao\tversao-2026-11-25\t\w+\tVersão de 25\/11: robô e conversas$/m);
+  assert.match(v, /^versao\t\w{7}\tversao-2026-11-25\t\tVersão de 25\/11: robô e conversas$/m);
   assert.ok(!fs.existsSync(path.join(dir, 'dados', '_sistema', 'atualizar.pedido')), 'a produção nunca instala sozinha');
   pedir(dir); rodar(dir);
   assert.strictEqual(instalado(dir), sha.c2, 'parou na versão liberada, não no c3');
@@ -72,6 +72,35 @@ test('HOMOLOG-02: com versão liberada, a produção instala só ela (o main à 
   // sem versão nova: pedir de novo não muda nada
   pedir(dir); rodar(dir);
   assert.strictEqual(instalado(dir), sha.c2);
+});
+
+test('HOMOLOG-03: liberar pela homologação — só a versão instalada lá e testada; a produção instala essa e só ela', () => {
+  const prod = instalacao('prod-lib');
+  rodar(prod); // cria a pasta de controle da produção
+  const hom = instalacao('homolog-lib', 'PAINEL_AMBIENTE=homologacao\n');
+  const env = { PROD_DIR: prod };
+  const rodarH = () => execFileSync('bash', [path.join(hom, 'scripts', 'atualizador.sh')], { env: { ...process.env, ...env, ATUALIZADOR_PATH_TESTE: fakeBin, DOCKER_LOG: path.join(hom, 'docker.log') }, encoding: 'utf8' });
+  rodarH(); rodarH(); // a homologação instala sozinha o main testado (c3)
+  assert.strictEqual(instalado(hom), sha.c3);
+  const pedirLib = (quem, s) => fs.writeFileSync(path.join(hom, 'dados', '_sistema', 'liberar.pedido'), `${quem} ${s}\n`);
+  // versão que não é a da homologação: recusada, nada anotado
+  pedirLib('chefe', sha.c2.slice(0, 7)); rodarH();
+  assert.match(fs.readFileSync(path.join(hom, 'dados', '_sistema', 'status.txt'), 'utf8'), /^erro\t.*não é a que está na homologação/);
+  assert.ok(!fs.existsSync(path.join(prod, '.atualizador', 'liberadas.txt')));
+  // a que está lá: anotada na produção, que é avisada para verificar já
+  pedirLib('chefe', sha.c3.slice(0, 7)); rodarH();
+  const lib = fs.readFileSync(path.join(prod, '.atualizador', 'liberadas.txt'), 'utf8').trim().split('\t');
+  assert.strictEqual(lib[0], sha.c3); assert.strictEqual(lib[2], 'chefe'); assert.strictEqual(lib[3], 'c3');
+  assert.ok(fs.existsSync(path.join(prod, 'dados', '_sistema', 'verificar.pedido')), 'a produção verifica no próximo minuto');
+  pedirLib('chefe', sha.c3.slice(0, 7)); rodarH();
+  assert.strictEqual(fs.readFileSync(path.join(prod, '.atualizador', 'liberadas.txt'), 'utf8').trim().split('\n').length, 1, 'liberar de novo não repete');
+  // a produção mostra e instala a liberada (a mais nova: c3, à frente da tag de c2)
+  rodar(prod);
+  const v = fs.readFileSync(path.join(prod, 'dados', '_sistema', 'versao.txt'), 'utf8');
+  assert.match(v, new RegExp(`^versao\\t${sha.c3.slice(0, 7)}\\t\\d{4}-\\d{2}-\\d{2}T[^\\t]+\\tchefe\\tc3$`, 'm'));
+  pedir(prod); rodar(prod);
+  assert.strictEqual(instalado(prod), sha.c3);
+  assert.match(fs.readFileSync(path.join(prod, 'dados', '_sistema', 'status.txt'), 'utf8'), /liberada em \d{2}\/\d{2} por chefe/);
 });
 
 test('HOMOLOG-02: a homologação instala sozinha a versão testada mais nova, com o compose dela e sem backup', () => {

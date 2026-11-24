@@ -626,7 +626,7 @@
       acao: () => { state.cfgAba = 'erros'; location.hash = '#config'; }, ir: 'ver os erros ›' });
   }
   async function avisosAtualizacoes(lista) {
-    if (!(TS.eu && TS.eu.pode && TS.eu.pode.configurar) || TS.demo) return;
+    if (!(TS.eu && TS.eu.pode && TS.eu.pode.configurar) || TS.demo || TS.eu.ambiente === 'homologacao') return; // a homologação não coleta (HOMOLOG-01)
     const r = await fetch('/api/admin/estado', { credentials: 'same-origin' });
     if (!r.ok) return;
     const e = await r.json();

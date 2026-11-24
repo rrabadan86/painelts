@@ -10,16 +10,21 @@ por semana). Regras HOMOLOG-01 e HOMOLOG-02 na matriz (`docs/rastreabilidade.md`
 PR (testes do GitHub ✓) ─▶ main ─▶ HOMOLOGAÇÃO instala sozinha (até 5 min)
                                         │ o dono confere com o roteiro do PR
                                         ▼
-                         dono: "pode liberar" ─▶ Claude cria a versão (tag versao-AAAA-MM-DD + notas)
+            Atualizações do painel (homologação) → "Liberar esta versão para a produção"
                                         ▼
-                         PRODUÇÃO: Configurações → Atualizações do painel → instalar → Ctrl+F5
+            PRODUÇÃO: Atualizações do painel → instalar → Ctrl+F5 (aparece em até 1 min)
 ```
 
-- **Correção urgente** (algo quebrado nas lojas): exceção — passa pela homologação na hora e é liberada no mesmo dia.
-- **Voltar atrás:** a produção só avança; para voltar a uma versão anterior, `git checkout versao-…` num ramo novo na VPS
-  (nunca reescrever o `main`) — peça ao Claude o passo a passo.
+- **Liberar (HOMOLOG-03):** só administrador, só a versão instalada na homologação e só se passou nos testes do GitHub.
+  O painel deixa o pedido; o atualizador da homologação confere e anota em `/opt/teashop-painel/.atualizador/liberadas.txt`
+  (a pasta de controle da produção, na mesma VPS) e pede à produção que verifique na hora. Auditado. A produção nunca instala
+  algo mais novo que a última versão liberada.
+- **Correção urgente** (algo quebrado nas lojas): o mesmo caminho, no mesmo dia.
+- **Voltar atrás:** a produção só avança; para voltar, peça ao Claude o passo a passo (nunca reescrever o `main`).
 - **Robôs** (AppNext, FIXE, Sistema de Pedidos, WhatsApp): a homologação não fala com eles. O que mexe neles traz no PR
   um roteiro de conferência na produção, numa loja primeiro.
+- Na homologação, os avisos "Falta configurar…" e "atualização falhou" do Início não aparecem (a cópia não tem as senhas
+  nem coleta, de propósito).
 
 ## O que é a homologação
 
@@ -81,6 +86,8 @@ Nada da homologação volta para a produção.
 Memória: só o painel (~350 MB). O KVM 2 comporta.
 
 ## Versões liberadas (produção)
+
+O caminho normal é o botão da homologação (acima). As tags do GitHub continuam aceitas como alternativa:
 
 - Uma versão é uma **tag anotada** no `main`: `versao-AAAA-MM-DD` (mais de uma no mesmo dia: `-2`, `-3`), com as notas
   na mensagem (o que entrou, uma linha por mudança). Quem cria é o Claude, quando o dono diz "pode liberar":

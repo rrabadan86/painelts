@@ -28,6 +28,7 @@
   /** ao entrar no painel: abre sozinha só quando o servidor manda (franqueado, primeira vez na loja, com acesso faltando) */
   G.conferir = async () => {
     if (!(TS.eu && TS.eu.pode && TS.eu.pode.configurar)) return;
+    if (TS.eu.ambiente === 'homologacao') return; // a homologação não abre a configuração guiada sozinha
     await G.carregar();
     const l = !TS.demo && situ.lojas.find((x) => x.abrir);
     if (l) G.abrir(l.id);
@@ -35,6 +36,7 @@
   /** lembrete do Início: uma linha por loja com passo faltando (não dá para adiar: some quando concluir) */
   G.avisos = async (lista) => {
     if (!(TS.eu && TS.eu.pode && TS.eu.pode.configurar)) return;
+    if (TS.eu.ambiente === 'homologacao') return; // a cópia não tem as senhas, de propósito (HOMOLOG-01)
     if (!situ) await G.carregar();
     for (const l of situ.lojas) {
       if (state.loja && state.loja !== 'todas' && l.id !== state.loja) continue;
