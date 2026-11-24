@@ -80,7 +80,7 @@ test('CONV-12: computador — lista e conversa lado a lado; trocar de conversa n
   const lista = await abrirTela(page);
   // sem conversa aberta: a direita diz o que fazer (nenhuma abre sozinha)
   await expect(page.locator('.cv-conversa')).toContainText('Escolha uma conversa à esquerda');
-  await expect(page.locator('.cv-conversa')).toContainText('esperam resposta');
+  await expect(page.locator('.cv-conversa')).toContainText(/esperam? resposta/); // "1 conversa espera" ou "N conversas esperam"
   // as duas colunas vão até o pé da janela e cabem nela (cada uma rola sozinha; a página não precisa rolar para ler)
   await expect.poll(() => page.evaluate(() => window.innerHeight - document.querySelector('.cv-split').getBoundingClientRect().bottom), { message: 'as colunas terminam no pé da janela' }).toBeGreaterThanOrEqual(0);
   expect(await page.evaluate(() => window.innerHeight - document.querySelector('.cv-split').getBoundingClientRect().bottom)).toBeLessThanOrEqual(40);

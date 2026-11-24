@@ -579,7 +579,8 @@ function lotesDemo(lojaId) {
   }
   // sempre um chá com pacotes fechados (a janela dos lotes mostra "Abrir lote"): uma chegada de 2 kg três dias antes do estoque,
   // intocada. Sem isso, dependia da hora em que a apresentação era gerada (de madrugada, a loja ficava sem pacote fechado).
-  const gr = e.estoque.itens.filter((i) => i.tipoProd === 'granel' && comp.itens[i.cod]).sort((a, b) => (a.cod < b.cod ? -1 : 1))[0];
+  const grs = e.estoque.itens.filter((i) => i.tipoProd === 'granel' && comp.itens[i.cod]).sort((a, b) => (a.cod < b.cod ? -1 : 1));
+  const gr = grs.find((i) => !(i.qtd > 0.0005)) || grs[0]; // de preferência um chá zerado: não mexe no que já está na lata
   let estoque = e.estoque;
   if (gr && e.estoque.em) {
     const dia = new Date(Date.parse(e.estoque.em.slice(0, 10) + 'T12:00:00Z') - 3 * 864e5).toISOString().slice(0, 10);
