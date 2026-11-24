@@ -989,7 +989,8 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
         // HOMOLOG-02: produção por versões liberadas (tags versao-AAAA-MM-DD) ou homologação
         else if (c[0] === 'ambiente') out.ambiente = c[1] === 'homologacao' ? 'homologacao' : 'producao';
         else if (c[0] === 'trilho') out.trilho = c[1] === 'versoes' ? 'versoes' : 'main';
-        else if (c[0] === 'versao' && /^versao-\d{4}-\d{2}-\d{2}(-\d+)?$/.test(c[1] || '')) (out.versoes = out.versoes || []).push({ nome: c[1], sha: c[2], notas: (c.slice(3).join(' ') || '').slice(0, 300) });
+        // versões liberadas (HOMOLOG-03): sha curto, quando (data ISO, liberada pelo painel) ou o nome da tag, quem, assunto
+        else if (c[0] === 'versao' && /^[0-9a-f]{7}$/.test(c[1] || '')) (out.versoes = out.versoes || []).push({ sha: c[1], quando: /^versao-/.test(c[2] || '') ? null : (c[2] || null), tag: /^versao-/.test(c[2] || '') ? c[2] : null, por: (c[3] || '').slice(0, 60) || null, notas: (c.slice(4).join(' ') || '').slice(0, 300) });
       }
       // resultado dos testes automáticos de cada novidade: ok | falhou | testando (ainda sem resultado)
       if (out.testes) for (const n of out.novidades) {
@@ -1036,6 +1037,20 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     if (fs.existsSync(path.join(SIS, 'copiar.pedido'))) return res.status(409).json({ erro: 'Já tem uma cópia pedida: em até 1 minuto ela começa.' });
     try { fs.mkdirSync(SIS, { recursive: true }); fs.writeFileSync(path.join(SIS, 'copiar.pedido'), `${loja}\n`); } catch (e) { return res.status(500).json({ erro: 'Não consegui pedir: ' + C.msgErro(e) }); }
     aud(req, 'pediu a cópia da loja para a homologação', 'sistema', { loja });
+    res.json({ ok: true });
+  });
+  // HOMOLOG-03: na homologação, o admin libera para a produção a versão que está instalada aqui (o atualizador da VPS confere
+  // se é mesmo a instalada e se passou nos testes, e anota na produção). Auditado.
+  r.post('/homolog/liberar', soAdmin, json, (req, res) => {
+    if (!C.homolog()) return res.status(404).json({ erro: 'Só existe no painel de homologação.' });
+    const s = sistema();
+    const sha = String((req.body || {}).sha || '').toLowerCase();
+    if (!s.instalado || !s.atual || !s.atual.sha) return res.status(400).json({ erro: 'O atualizador da homologação ainda não informou a versão instalada.' });
+    if (!/^[0-9a-f]{7,40}$/.test(sha) || !s.atual.sha.startsWith(sha.slice(0, 7))) return res.status(409).json({ erro: 'A versão mudou enquanto a tela estava aberta. Recarregue e confira de novo.' });
+    if ((s.versoes || []).some((v) => v.sha === s.atual.sha)) return res.status(409).json({ erro: 'Esta versão já foi liberada para a produção.' });
+    if (fs.existsSync(path.join(SIS, 'liberar.pedido'))) return res.status(409).json({ erro: 'Já tem uma liberação pedida: em até 1 minuto ela é feita.' });
+    try { fs.writeFileSync(path.join(SIS, 'liberar.pedido'), `${String(req.user).replace(/[^a-z0-9._@-]/gi, '')} ${s.atual.sha}\n`); } catch (e) { return res.status(500).json({ erro: 'Não consegui pedir: ' + C.msgErro(e) }); }
+    aud(req, 'liberou a versão da homologação para a produção', 'sistema', { versao: s.atual.sha, msg: (s.atual.msg || '').slice(0, 120) });
     res.json({ ok: true });
   });
   r.post('/sistema/:acao', soAdmin, (req, res) => {

@@ -37,8 +37,18 @@ agora() { date -Iseconds; }
 HOMOLOG=0
 grep -qiE '^[[:space:]]*PAINEL_AMBIENTE=["'"'"']?homologacao' "$DIR/.env" 2>/dev/null && HOMOLOG=1
 if [ "$HOMOLOG" = 1 ]; then COMPOSE=(docker compose -p teashop-homolog -f docker-compose.homolog.yml); else COMPOSE=(docker compose); fi
-# versões liberadas: tags "versao-AAAA-MM-DD" (ou "-2", "-3" no mesmo dia), a mais nova primeiro
-liberadas() { G tag -l 'versao-*' --sort=-creatordate 2>/dev/null | grep -E '^versao-[0-9]{4}-[0-9]{2}-[0-9]{2}(-[0-9]+)?$'; }
+PRODD="${PROD_DIR:-/opt/teashop-painel}"
+# versões liberadas (HOMOLOG-03, decisão do dono 24/11/2026): o admin libera pelo painel da homologação e o atualizador dela
+# anota aqui, na pasta de controle da PRODUÇÃO (mesma VPS): sha<TAB>quando<TAB>quem<TAB>assunto, uma por linha, a mais nova no fim.
+# As tags "versao-AAAA-MM-DD" do GitHub continuam valendo (depois das liberadas pelo painel).
+if [ "$HOMOLOG" = 1 ]; then LIBF="$PRODD/.atualizador/liberadas.txt"; else LIBF="$CTL/liberadas.txt"; fi
+liberadas() { # sha<TAB>rótulo<TAB>quem<TAB>assunto, a mais nova primeiro
+  if [ -f "$LIBF" ]; then tac "$LIBF" | awk -F'\t' 'length($1) == 40 && $1 ~ /^[0-9a-f]+$/ { print $1 "\t" $2 "\t" $3 "\t" $4 }'; fi
+  local t
+  for t in $(G tag -l 'versao-*' --sort=-creatordate 2>/dev/null | grep -E '^versao-[0-9]{4}-[0-9]{2}-[0-9]{2}(-[0-9]+)?$'); do
+    printf '%s\t%s\t\t%s\n' "$(G rev-list -n1 "$t" 2>/dev/null)" "$t" "$(G tag -l "$t" --format='%(contents:subject)' | tr '\t' ' ')"
+  done
+}
 porversoes() { [ "$HOMOLOG" = 0 ] && [ -n "$(liberadas | head -1)" ]; }
 
 # grava em dados/_sistema sem nunca seguir symlinks criados pelo container
@@ -63,9 +73,8 @@ resultado() { # sha completo -> success | failure | cancelled | (vazio = ainda t
 alvo() { # produção com versões: a versão liberada mais nova, à frente da instalada e testada; senão a mais nova do main que passou nos testes
   local sha t
   if porversoes; then
-    for t in $(liberadas); do
-      sha="$(G rev-list -n1 "$t" 2>/dev/null)"
-      [ -n "$sha" ] || continue
+    for sha in $(liberadas | cut -f1); do
+      G cat-file -e "$sha^{commit}" 2>/dev/null || continue   # ainda não chegou pelo fetch
       [ "$sha" = "$(G rev-parse HEAD)" ] && return          # a mais nova já está instalada
       G merge-base --is-ancestor HEAD "$sha" 2>/dev/null || continue
       { ! temtestes || [ "$(resultado "$sha")" = success ]; } && { echo "$sha"; return; }
@@ -76,8 +85,8 @@ alvo() { # produção com versões: a versão liberada mais nova, à frente da i
     [ "$(resultado "$sha")" = success ] && { echo "$sha"; return; }
   done
 }
-nomeversao() { # sha -> nome da versão liberada (vazio se não for uma)
-  local t; for t in $(liberadas); do [ "$(G rev-list -n1 "$t" 2>/dev/null)" = "$1" ] && { echo "$t"; return; }; done
+nomeversao() { # sha -> "liberada em <quando> por <quem>" ou o nome da tag (vazio se não for uma versão liberada)
+  liberadas | awk -F'\t' -v s="$1" '$1 == s { if ($2 ~ /^versao-/) print $2; else print "liberada em " substr($2, 9, 2) "/" substr($2, 6, 2) " por " $3; exit }'
 }
 
 versao() { # grava a versão instalada e as novidades disponíveis
@@ -88,9 +97,11 @@ versao() { # grava a versão instalada e as novidades disponíveis
     if porversoes; then
       printf 'trilho\tversoes\n'
       a="$(alvo)"; [ -n "$a" ] && G log "HEAD..$a" --format='novo%x09%h%x09%cI%x09%s' 2>/dev/null
-      for t in $(liberadas | head -6); do printf 'versao\t%s\t%s\t%s\n' "$t" "$(G rev-parse --short "$t^{commit}" 2>/dev/null)" "$(G tag -l "$t" --format='%(contents:subject)' | tr '\t' ' ')"; done
+      liberadas | head -6 | awk -F'\t' '{ printf "versao\t%s\t%s\t%s\t%s\n", substr($1, 1, 7), $2, $3, $4 }'
     else
       G log HEAD..origin/main --format='novo%x09%h%x09%cI%x09%s' 2>/dev/null
+      # homologação: o que já foi liberado para a produção (a tela marca a versão instalada aqui)
+      [ "$HOMOLOG" = 1 ] && liberadas | head -6 | awk -F'\t' '{ printf "versao\t%s\t%s\t%s\t%s\n", substr($1, 1, 7), $2, $3, $4 }'
     fi
     G log -12 HEAD --format='recente%x09%h%x09%cI%x09%s' 2>/dev/null
     if temtestes; then
@@ -129,13 +140,37 @@ fi
 if [ "$HOMOLOG" = 1 ] && [ ! -L "$SIS/copiar.pedido" ] && [ -f "$SIS/copiar.pedido" ]; then
   LJ="$(head -c 40 "$SIS/copiar.pedido" | tr -cd 'a-z0-9_-')"
   rm -f "$SIS/copiar.pedido"
-  PRODD="${PROD_DIR:-/opt/teashop-painel}"
   echo "===== $(agora) cópia da loja ${LJ:-?} da produção =====" >>"$LOG"
   if [ -n "$LJ" ] && HOMOLOG_DIR="$DIR" PROD_DIR="$PRODD" bash "$PRODD/scripts/homolog-copiar.sh" "$LJ" >>"$LOG" 2>&1; then
     status ok "Loja $LJ copiada da produção em $(date '+%d/%m %H:%M')"
   else
     status erro "A cópia da loja ${LJ:-?} falhou. Veja o log da atualização."
   fi
+  publicar atualizacao.log < "$LOG"
+fi
+
+# 0c) homologação: o admin liberou a versão que está aqui para a produção (HOMOLOG-03). Só a versão instalada aqui,
+#     só se passou nos testes do GitHub; anota na pasta de controle da produção e pede a ela que verifique já.
+if [ "$HOMOLOG" = 1 ] && [ ! -L "$SIS/liberar.pedido" ] && [ -f "$SIS/liberar.pedido" ]; then
+  PED_LIB="$(head -c 200 "$SIS/liberar.pedido" | tr -cd '[:alnum:] ._@-')"
+  rm -f "$SIS/liberar.pedido"
+  POR_LIB="${PED_LIB%% *}"; SHA_LIB="${PED_LIB##* }"
+  HEADF="$(G rev-parse HEAD)"
+  echo "===== $(agora) liberação pedida por ${POR_LIB:-?} (${SHA_LIB:-?}) =====" >>"$LOG"
+  if [ -z "$SHA_LIB" ] || [ "${#SHA_LIB}" -lt 7 ] || [ "${HEADF#"$SHA_LIB"}" = "$HEADF" ]; then
+    status erro "A versão pedida não é a que está na homologação agora. Recarregue a página e confira de novo."
+  elif temtestes && [ "$(resultado "$HEADF")" != success ]; then
+    status erro "Esta versão ainda não passou nos testes automáticos: espere o resultado para liberar."
+  elif [ ! -d "$PRODD/.atualizador" ]; then
+    status erro "Não achei a produção em $PRODD (o atualizador dela precisa estar instalado)."
+  else
+    if [ "$(tail -n1 "$LIBF" 2>/dev/null | cut -f1)" != "$HEADF" ]; then
+      printf '%s\t%s\t%s\t%s\n' "$HEADF" "$(agora)" "${POR_LIB:-?}" "$(G log -1 --format=%s HEAD | tr '\t' ' ')" >> "$LIBF"
+    fi
+    [ -d "$PRODD/dados/_sistema" ] && [ ! -L "$PRODD/dados/_sistema" ] && : > "$PRODD/dados/_sistema/verificar.pedido" 2>/dev/null
+    status ok "Versão $(G rev-parse --short HEAD) liberada para a produção. Lá ela aparece em Atualizações do painel em até 1 minuto."
+  fi
+  versao
   publicar atualizacao.log < "$LOG"
 fi
 
@@ -161,7 +196,7 @@ if [ ! -L "$SIS/atualizar.pedido" ] && [ -f "$SIS/atualizar.pedido" ]; then
   if G merge --ff-only "$DESTINO" >>"$LOG" 2>&1; then
     if "${COMPOSE[@]}" up -d --build >>"$LOG" 2>&1; then
       NV="$(nomeversao "$(G rev-parse HEAD)")"
-      status ok "Atualizado para a versão ${NV:-$(G rev-parse --short HEAD)}"
+      status ok "Atualizado para a versão $(G rev-parse --short HEAD)${NV:+ ($NV)}"
       docker image prune -f >>"$LOG" 2>&1
       # cache de montagem com mais de 7 dias (pedido do dono, 23/11/2026: chegou a 6,3 GB). O da última semana fica:
       # a próxima atualização continua rápida. Não mexe no painel nem nos dados.

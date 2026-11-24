@@ -79,6 +79,15 @@ test('HOMOLOG-01: o servidor de homologação avisa a tela (faixa amarela) e nã
   assert.strictEqual(cp.status, 200);
   assert.strictEqual(fs.readFileSync(path.join(tmp, '_sistema', 'copiar.pedido'), 'utf8'), 'goiania\n');
   assert.strictEqual((await fetch(BASE + '/api/admin/homolog/copiar', { method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'application/json', 'X-Painel': '1' }, body: JSON.stringify({ loja: '../x' }) })).status, 400);
+  // HOMOLOG-03: liberar para a produção só a versão instalada aqui (o atualizador confere os testes e anota na produção)
+  fs.writeFileSync(path.join(tmp, '_sistema', 'versao.txt'), `verificado\t${new Date().toISOString()}\natual\tabc1234\t2026-11-24T10:00:00-03:00\tCupons no celular\nambiente\thomologacao\n`);
+  const lib = (corpo) => fetch(BASE + '/api/admin/homolog/liberar', { method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'application/json', 'X-Painel': '1' }, body: JSON.stringify(corpo) });
+  assert.strictEqual((await lib({ sha: 'def5678' })).status, 409, 'outra versão: recusada');
+  assert.ok(!fs.existsSync(path.join(tmp, '_sistema', 'liberar.pedido')));
+  assert.strictEqual((await lib({ sha: 'abc1234' })).status, 200);
+  assert.strictEqual(fs.readFileSync(path.join(tmp, '_sistema', 'liberar.pedido'), 'utf8'), 'chefe abc1234\n');
+  assert.strictEqual((await lib({ sha: 'abc1234' })).status, 409, 'pedido já feito');
+  assert.ok(fs.readFileSync(path.join(tmp, 'auditoria.jsonl'), 'utf8').includes('liberou a versão da homologação para a produção'));
   const main = fs.readFileSync(path.join(__dirname, '../../public/js/main.js'), 'utf8');
   assert.match(main, /faixa-homolog/, 'a tela tem a faixa da homologação');
 });
