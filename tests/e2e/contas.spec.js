@@ -160,7 +160,7 @@ test('CUP-01: Cupons usa a conta oficial — cupons e itens iguais aos do Resumo
   expect(Math.abs(nums[2] - of.vt)).toBeLessThan(0.05);
   // lista de itens: o total também
   await page.locator('main .seg button', { hasText: 'Lista de itens' }).click();
-  const tf = await page.locator('main table tfoot').first().innerText();
+  const tf = await page.locator('main table tfoot, main .lmob-total').first().innerText(); // no celular, o total da lista em linhas (LMOB-03)
   expect(tf).toContain(new Intl.NumberFormat('pt-BR').format(of.cupons) + ' cupons');
   expect(tf).toContain(new Intl.NumberFormat('pt-BR').format(of.itens));
 });

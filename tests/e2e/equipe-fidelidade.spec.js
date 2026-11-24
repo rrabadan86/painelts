@@ -14,6 +14,9 @@ async function semSobra(page, info) {
 
 test('Rendimento da equipe: venda por hora, por horário e a ficha com a evolução mês a mês', async ({ page }, info) => {
   const erros = [];
+  // no celular as listas são linhas (LMOB-03): .eq-t-lmob .lmob-it no lugar das linhas da tabela
+  const cel = info.project.name === 'celular';
+  const LIN = '.eq-t tbody tr, .eq-t-lmob .lmob-it', TAB = '.eq-t, .eq-t-lmob';
   page.on('pageerror', (e) => erros.push(e.message));
   await abrir(page, 'mapa');
   await page.getByRole('tab', { name: 'Rendimento da equipe' }).click();
@@ -22,7 +25,7 @@ test('Rendimento da equipe: venda por hora, por horário e a ficha com a evoluç
   // a escala da apresentação tem as vendedoras fixas da loja: o quadro traz um valor em R$ por hora
   await expect(aba.locator('.kpi').first().locator('.kpi-value')).toContainText('R$');
   await expect(aba.getByRole('button', { name: /Ficha da equipe \(\d+\)/ })).toBeVisible();
-  const linhas = aba.locator('.eq-t tbody tr');
+  const linhas = aba.locator(LIN);
   await expect(linhas.first()).toBeVisible();
   // quem está na escala tem R$ por hora; quem não está fica em "—" com a etiqueta (nunca um número inventado)
   const ficha = await page.evaluate(() => {
@@ -30,26 +33,26 @@ test('Rendimento da equipe: venda por hora, por horário e a ficha com a evoluç
     return { vis: st.eqVis || 'ficha', pessoas: TS.pessoasEquipe(st.mapaOp.op.equipe).map((p) => p.nome), calc: Object.keys(X).length };
   });
   expect(ficha.pessoas.length).toBeGreaterThan(0);
-  await expect(aba.locator('.eq-t')).toContainText('fora da escala');
-  await expect(aba.locator('.eq-t')).toContainText('Lucro gerado'); // a apresentação entra como administrador (vê custo)
+  await expect(aba.locator(TAB).first()).toContainText('fora da escala');
+  await expect(aba.locator(TAB).first()).toContainText(cel ? 'lucro R$' : 'Lucro gerado'); // a apresentação entra como administrador (vê custo)
   expect(await aba.innerText()).not.toMatch(TEXTO_RUIM);
   await semSobra(page, info);
 
   // por horário: clicar no quadro troca a visão
   await aba.locator('.kpi', { hasText: 'Horário que mais rende' }).click();
-  await expect(aba.locator('.eq-t')).toContainText('R$ por hora de pessoa');
-  await expect(aba.locator('.eq-t tbody tr').first()).toContainText(/\d{2}h–\d{2}h/);
+  await expect(aba.locator(TAB).first()).toContainText(cel ? '/hora' : 'R$ por hora de pessoa');
+  await expect(aba.locator(LIN).first()).toContainText(/\d{2}h–\d{2}h/);
   await aba.getByRole('button', { name: 'Por dia da semana (7)' }).click();
-  await expect(aba.locator('.eq-t tbody tr')).toHaveCount(7);
+  await expect(aba.locator(LIN)).toHaveCount(7);
   expect(await aba.innerText()).not.toMatch(TEXTO_RUIM);
   await semSobra(page, info);
 
   // ficha → detalhe de uma pessoa da escala, com "‹ Voltar"
   await aba.getByRole('button', { name: /Ficha da equipe/ }).click();
-  await aba.locator('.eq-t tbody tr', { hasText: ficha.pessoas[0] }).first().click();
+  await aba.locator(LIN, { hasText: ficha.pessoas[0] }).first().click();
   await expect(aba.getByRole('button', { name: '‹ Voltar para a equipe' })).toBeVisible();
   await expect(aba.locator('.card', { hasText: 'mês a mês' })).toBeVisible();
-  await expect(aba.locator('.eq-t tbody tr').first()).toContainText('em andamento');
+  await expect(aba.locator(LIN).first()).toContainText('em andamento');
   expect(await aba.innerText()).not.toMatch(TEXTO_RUIM);
   await semSobra(page, info);
   await aba.getByRole('button', { name: '‹ Voltar para a equipe' }).click();
