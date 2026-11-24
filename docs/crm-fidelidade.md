@@ -1,8 +1,19 @@
-# CRM e fidelidade próprios (substituir a FIXE) — o que sabemos e o que foi decidido
+# Fidelidade própria (substituir a FIXE) — o que sabemos e o que foi decidido
 
 Documento interno do projeto. Registra a conversa com o dono de 23 e 24/11/2026: a franquia viu o painel e perguntou se
-podemos substituir a FIXE como CRM e programa de pontos da rede. **Ainda não há código desta parte**: o trabalho
+podemos substituir a FIXE como "CRM" e programa de pontos da rede. **Ainda não há código desta parte**: o trabalho
 começa quando chegar a documentação da integração de fidelidade da NextSoft. Nada aqui tem dado de cliente.
+
+## 0. Nomes (decisão do dono, 24/11/2026 — para não haver confusão)
+
+| Nome | O que é |
+|---|---|
+| **Painel** | O Painel Tea Shop inteiro (este projeto): Início, Vendas, Clientes, Equipe, Produtos, Estoque, Resultado. |
+| **Clientes** | A área do painel que **já existe** (Hoje, Lista de clientes, ficha, Indicadores, Campanhas, robô do WhatsApp, Conversas, Lista de espera). **Não muda**: só passa a ler pontos e cadastro da Fidelidade no lugar da FIXE. |
+| **Fidelidade** | O que vamos construir para **substituir a FIXE**: o cadastro do cliente do programa (fonte oficial), os pontos, prêmios e resgate no caixa, o app "Meus pontos" e as telas da franquia. Duas peças: o **serviço da Fidelidade** (o que o caixa do AppNext chama + banco de pontos) e as **telas da Fidelidade** no painel. |
+
+"CRM próprio" é como a franquia chamou a Fidelidade; nos documentos e no código, use **Fidelidade**. A proposta para a
+franquia continua com o título "Painel e Fidelidade".
 
 ## 1. Decisões do dono (24/11/2026)
 
@@ -11,8 +22,8 @@ começa quando chegar a documentação da integração de fidelidade da NextSoft
 | Começar a construir | **Só depois da documentação da integração de fidelidade do AppNext** (NextSoft). Até lá, nada de código. |
 | Integração com o caixa | A do AppNext é **padrão** ("já teve outros CRMs antes"): a NextSoft só troca o endereço/chave na loja. |
 | Onde roda | **Uma VPS só no começo**: painel, robô do WhatsApp e o serviço da fidelidade, cada um no seu contêiner. Backup diário fora da máquina e aviso no celular se a fidelidade cair, desde o primeiro dia. Pode ir para uma VPS própria depois, sem mudar o código. |
-| Tela | **No painel de hoje** (mesmo login e visual). O que fica separado é só o serviço que o caixa chama (API + banco de pontos), no mesmo repositório, como o `zap/`. |
-| Perfil novo "Franquia" | Vê **só o CRM** da rede toda: clientes do fidelidade, saldos, regras, prêmios, resgates, a validação dos pedidos de correção das lojas e relatórios de pontos. **Nunca** vendas, faturamento, custos, estoque, pedidos, comissão, Resultado nem Conversas. Trava no servidor. |
+| Tela | **No painel de hoje** (mesmo login e visual). O que fica separado é só o serviço que o caixa chama (API + banco de pontos), no mesmo repositório, como o `zap/`. Uma versão leva painel e serviço juntos (seção 5b). |
+| Perfil novo "Franquia" | Vê **só a Fidelidade** da rede toda: clientes do fidelidade, saldos, regras, prêmios, resgates, a validação dos pedidos de correção das lojas e relatórios de pontos. **Nunca** vendas, faturamento, custos, estoque, pedidos, comissão, Resultado nem Conversas. Trava no servidor. |
 | Saldo | **Da rede, não por loja** (confirmado em 24/11/2026): um saldo por cliente, válido em todas as lojas. Na migração, o mesmo cliente vem nos arquivos de várias lojas e conta uma vez só (cliente e movimento). |
 | Histórico | **Só o que vem da FIXE. Passado é passado**: não recalculamos pontos antigos; vale o saldo da FIXE na data da troca. |
 | Pontos importados sem validade | Ganham **vencimento = data da nossa implantação + 6 meses** e são os primeiros a sair no resgate (opção "C"). Precisa da aprovação da franquia (é regra do programa). |
@@ -20,7 +31,7 @@ começa quando chegar a documentação da integração de fidelidade da NextSoft
 | Boas-vindas com bônus de cadastro completo | 1 ponto no cadastro (como hoje) **mais 1 ou 2 pontos de bônus** (a definir) quando o cadastro estiver completo — 2 ou 3 pontos além dos da compra. Objetivo: incentivar cadastro de qualidade. Quais campos contam como "completo" fica para a franquia definir. |
 | Ajuste de saldo | **Sem ajuste manual.** "Pedir ao suporte" = pedir à franquia, por uma **tela**: a loja abre um **pedido de correção** no painel (cliente, pontos a mais ou a menos, motivo, venda/cupom quando houver); ele aparece na **tela de validação da franquia** (no acesso dela ao painel); a franquia aprova ou recusa (com motivo). Só a aprovação lança o movimento no saldo, registrando quem pediu, quem aprovou/recusou e quando. A loja acompanha a situação (esperando, aprovado, recusado com o motivo). |
 | Prêmios | Tela no painel: produto do AppNext, quantos pontos custa, ativo, desde quando (e, se quiser, até quando e em quais lojas). Mudar o preço vale para os resgates seguintes. O AppNext recebe a lista pela integração (não cadastra nada lá). |
-| Preço | Implantação **R$ 15.500** (3 parcelas: R$ 5.500 no início, R$ 5.000 com o piloto rodando, R$ 5.000 na migração completa) com escopo fechado; mensalidade sugerida **R$ 220–250 por loja** (a FIXE cobra R$ 285); contrato mínimo de 12 meses; reajuste anual (IPCA). |
+| Preço | Implantação da Fidelidade **R$ 15.500** (3 parcelas: R$ 5.500 no início, R$ 5.000 com o piloto rodando, R$ 5.000 na migração completa) com escopo fechado. **Mensalidade R$ 265 por loja ativa, Painel + Fidelidade completo, sem opção avulsa** (decisão do dono, 24/11/2026; a FIXE cobra R$ 285 só pelos pontos). **Sem custo de entrada por loja** (configuração, importação do histórico e treinamento). Quem paga (franquia, loja ou dividido): **a definir**. Contrato mínimo de 12 meses; reajuste anual (IPCA). Fora: cobrança da NextSoft (se houver), uso da IA (opcional, pago ao provedor), número/aparelho de WhatsApp da loja. Detalhes na seção 8. |
 
 ## 2. Como o programa funciona hoje (FIXE + AppNext)
 
@@ -32,7 +43,7 @@ começa quando chegar a documentação da integração de fidelidade da NextSoft
 - O cliente consulta o saldo num **app da FIXE** — teremos de oferecer o nosso ("Meus pontos").
 - Os prêmios entram na conta com a franquia: a franquia paga 50% do custo, descontado nos royalties (FRQ-10, `contafranquia.js`).
 
-Os três momentos em que o caixa conversa com o CRM (e que teremos de atender pela integração padrão):
+Os três momentos em que o caixa conversa com a Fidelidade (e que teremos de atender pela integração padrão):
 
 | Momento no caixa | O que o AppNext pede/manda | Prazo |
 |---|---|---|
@@ -79,27 +90,27 @@ Cada loja tem os **seus arquivos** (o export é por operação). Dois arquivos:
 
 ## 4b. O painel continua exatamente como é hoje (decisão do dono, 24/11/2026)
 
-O CRM próprio **substitui só a FIXE**. Todas as telas e regras do painel continuam iguais; o que muda é **de onde vêm os dados de fidelidade e de cadastro**. Por isso o CRM entra como uma **nova fonte** que entrega os mesmos formatos que a FIXE entrega hoje, e nenhuma tela é reescrita para ele.
+A Fidelidade **substitui só a FIXE**. Todas as telas e regras do painel continuam iguais; o que muda é **de onde vêm os dados de fidelidade e de cadastro**. Por isso a Fidelidade entra como uma **nova fonte** que entrega os mesmos formatos que a FIXE entrega hoje, e nenhuma tela é reescrita para ele.
 
-Partes do painel que hoje dependem da FIXE e passarão a ler o CRM:
+Partes do painel que hoje dependem da FIXE e passarão a ler a Fidelidade:
 
-| Parte do painel | O que usa da FIXE hoje | Com o CRM |
+| Parte do painel | O que usa da FIXE hoje | Com a Fidelidade |
 |---|---|---|
-| Clientes (Hoje, lista, ficha, Indicadores, retorno do programa) | eventos (`fidelidade.js`), saldo oficial, membros | o mesmo formato, vindo do CRM |
+| Clientes (Hoje, lista, ficha, Indicadores, retorno do programa) | eventos (`fidelidade.js`), saldo oficial, membros | o mesmo formato, vindo da Fidelidade |
 | Campanhas e robô do WhatsApp (`{pontos}`, pontos vencendo, Resumo diário) | saldo e vencimento por lote | idem (`zapauto` lê o mesmo pacote) |
-| Cadastro do cliente (nome, celular, aniversário, e-mail, cidade) | exportação de contatos da FIXE (`cadastro.js`) | o cadastro do CRM vira a fonte |
-| Vínculo de celular e nome nas mensagens (`celulares.js`) | sobrepõe o celular da FIXE | sobrepõe o do CRM (regra igual) |
+| Cadastro do cliente (nome, celular, aniversário, e-mail, cidade) | exportação de contatos da FIXE (`cadastro.js`) | o cadastro da Fidelidade vira a fonte |
+| Vínculo de celular e nome nas mensagens (`celulares.js`) | sobrepõe o celular da FIXE | sobrepõe o da Fidelidade (regra igual) |
 | Conta com a franquia (prêmios de fidelidade nos royalties) | resgates ligados ao cupom | resgates já vêm com a venda |
 | Lista de espera, Equipe (% CPF), Conferência (saúde dos dados), avisos de fonte parada | cadastro e logs | idem |
 | Coletor (robô do FIXE, logs por e-mail, passo FIXE do guia) | leitura da FIXE | desligado por loja depois da troca |
 
 Cuidados para nada quebrar:
-1. **Uma chave por loja: `fonte` = FIXE ou CRM.** Durante a migração convivem lojas nas duas; lojas sem programa continuam funcionando sem nenhum.
-2. **O CRM entrega no formato que o painel já lê** (eventos, saldo oficial, membros, cadastro). Um teste de contrato compara o mesmo cliente vindo da FIXE e do CRM e exige as mesmas telas (Hoje, campanhas, ficha).
-3. **Ligação com o cupom fica melhor:** o AppNext manda a venda ao CRM com a identificação dela, então o cupom vem direto (a heurística de hora + produtos continua só para o histórico da FIXE).
-4. **Cadastro:** o CRM vira a fonte da verdade (o app "Meus pontos" e o bônus de cadastro completo atualizam lá). A regra de hoje "o painel não muda a FIXE" vira "o painel não muda o cadastro fora das telas próprias do CRM".
+1. **Uma chave por loja: `fonte` = FIXE ou Fidelidade.** Durante a migração convivem lojas nas duas; lojas sem programa continuam funcionando sem nenhum.
+2. **A Fidelidade entrega no formato que o painel já lê** (eventos, saldo oficial, membros, cadastro). Um teste de contrato compara o mesmo cliente vindo da FIXE e da Fidelidade e exige as mesmas telas (Hoje, campanhas, ficha).
+3. **Ligação com o cupom fica melhor:** o AppNext manda a venda à Fidelidade com a identificação dela, então o cupom vem direto (a heurística de hora + produtos continua só para o histórico da FIXE).
+4. **Cadastro:** a Fidelidade vira a fonte da verdade (o app "Meus pontos" e o bônus de cadastro completo atualizam lá). A regra de hoje "o painel não muda a FIXE" vira "o painel não muda o cadastro fora das telas próprias da Fidelidade".
 5. **Regras do painel continuam valendo:** perfis (vendedora sem dado de cliente, exceto Lista de espera), regra forte do envio manual, travas do robô, LGPD.
-6. **Na apresentação** (`/apresentacao`), o CRM também precisa de dados fictícios e rotas `/api/demo/...`.
+6. **Na apresentação** (`/apresentacao`), a Fidelidade também precisa de dados fictícios e rotas `/api/demo/...`.
 
 ## 5. O que teremos de construir (quando chegar a documentação)
 
@@ -111,13 +122,33 @@ Cuidados para nada quebrar:
 6. **Migração** loja por loja a partir dos arquivos da FIXE: saldo de partida = o da FIXE na data da troca; lotes pelos "Adicionado" dos últimos 12 meses; o que sobrar sem data vira lote com vencimento em implantação + 6 meses.
 7. **Troca sem risco**: conferência em paralelo (3–4 semanas), piloto em 1–2 lojas do dono, depois loja por loja.
 
+## 5b. Homologação e versões da Fidelidade (sugestão aceita para a proposta, 24/11/2026)
+
+O painel já tem homologação (`docs/homologacao.md`): o `main` testado entra num painel de teste e a produção só recebe
+versões liberadas pelo dono. A Fidelidade segue o mesmo caminho, com cuidados a mais porque **o caixa das lojas a chama
+na hora da venda**:
+
+1. **Mesmo código, mesma versão, mesmo botão "Liberar":** telas da Fidelidade e serviço da Fidelidade são liberados
+   juntos — nunca tela nova com serviço velho ou o contrário. Uma atualização da Fidelidade **aparece na homologação do
+   painel**, porque é o mesmo projeto.
+2. **Fidelidade de homologação** ao lado do painel de homologação: banco de pontos de teste (cópia dos saldos), o painel
+   de homologação lendo dela e, se a NextSoft tiver, um caixa de teste do AppNext chamando ela. Sem ambiente de teste da
+   NextSoft, o contrato da API é testado com um "caixa de mentira" nos testes automáticos (como o favorito do carrinho).
+3. **Produção: troca do serviço só com as lojas fechadas** (à noite). O serviço novo sobe, confere se responde
+   (consulta de saúde) e, se não responder, volta sozinho para a versão anterior. As telas podem ser instaladas a
+   qualquer hora, como hoje.
+4. **Piloto primeiro:** mudança grande da Fidelidade vai para as lojas do piloto antes da rede.
+5. **Banco de pontos:** migração de banco sempre para a frente e compatível com a versão anterior (para a volta
+   automática funcionar); cópia antes de cada troca.
+
 ## 6. O que falta saber (levar à franquia)
 
-- Documentação da integração de fidelidade do AppNext (chamadas, autenticação, o que o caixa faz se o CRM não responder, se a troca é por loja, se a NextSoft cobra).
+- Documentação da integração de fidelidade do AppNext (chamadas, autenticação, o que o caixa faz se a Fidelidade não responder, se a troca é por loja, **se a NextSoft tem um ambiente de teste do caixa**, se a NextSoft cobra).
 - A importação sem validade aconteceu em todas as lojas?
 - Cadastro completo: quais campos contam (e-mail, celular, aniversário, cidade…) e se o bônus é de 1 ou 2 pontos.
 - Regulamento completo: valor do ponto, prêmios e pontos de cada um, mínimo para resgate, regras de estorno, boas-vindas.
 - Quais lojas assinam a FIXE e quando vence o contrato.
+- Quem paga a mensalidade e a implantação (franquia, cada loja ou dividido).
 - Aprovação da regra dos pontos importados (vencimento em implantação + 6 meses) e de como avisar os clientes.
 
 ## 7. Cuidados que não mudam
@@ -125,3 +156,27 @@ Cuidados para nada quebrar:
 - Os arquivos exportados da FIXE têm nome, CPF, e-mail e telefone: **nunca vão para o Git**, nem para log, auditoria ou conversa com terceiros. Na importação, ficam em `dados/` como o resto.
 - LGPD: a franquia é a controladora; nós somos operadores (contrato, política de privacidade, plano para vazamento, devolução dos dados na saída).
 - O saldo é dívida da rede com o cliente: toda mudança de saldo é auditada e reversível por movimento contrário, nunca apagada.
+
+## 8. Mensalidade e o que ela inclui (proposta de 24/11/2026)
+
+| Item | Valor | Quando |
+|---|---|---|
+| Mensalidade por loja ativa — Painel + Fidelidade, completo (sem opção avulsa) | R$ 265/mês | a partir da entrada de cada loja |
+| Entrada de cada loja no painel | sem custo | — |
+| Implantação da Fidelidade | R$ 15.500 (5.500 + 5.000 + 5.000) | início · piloto · migração concluída |
+
+- **Inclui:** todas as telas do painel para todos os usuários da loja; a Fidelidade completa (integração com o caixa,
+  pontos, prêmios, app "Meus pontos", acesso da franquia); robôs de leitura, do carrinho, das notas fiscais e do WhatsApp;
+  servidor, cópia diária, avisos de falha, atualizações conferidas em homologação e suporte no horário das lojas; ajustes
+  de regras e prêmios.
+- **A entrada sem custo cobre:** configuração dos acessos, importação do histórico (vendas, notas, clientes), usuários
+  e treinamento.
+- **Fora:** cobrança da NextSoft (se houver); uso da IA (opcional, chave e custo de quem liga); número e aparelho de
+  WhatsApp da loja.
+- Exemplo para a rede: 27 lojas × R$ 265 = R$ 7.155/mês.
+- **Atenção ao custo de servidor** (para o dono): a mensalidade inclui o servidor. Cada loja com o robô do WhatsApp usa
+  ~550 MB de memória; painel + coletor ~3 GB. Com a rede inteira, o robô do WhatsApp precisa de servidor próprio ou do
+  navegador compartilhado (ideia registrada para quando ~15 lojas usarem o WhatsApp).
+- **A decidir com a franquia:** quem paga (franquia, loja ou dividido).
+- Proposta em PDF: "Proposta Painel e Fidelidade" (Drive do dono), com as funções do painel detalhadas e prints da
+  apresentação.
