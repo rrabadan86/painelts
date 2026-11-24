@@ -21,14 +21,14 @@ test('COM-PER-01: "Hoje" no Comissionamento usa a meta de hoje (a mesma do Iníc
   const aPagarMes = (await page.locator('.heroi-col', { hasText: 'Total a pagar' }).locator('.heroi-num').innerText()).trim();
   // "Hoje": a meta do período é a Meta de hoje do Início; a comissão (total a pagar) não muda — é do mês
   await page.evaluate(() => { TS.aplicarPreset('hoje'); TS.render(); });
-  const col = page.locator('.heroi-col', { hasText: 'Vendas da meta no período' });
+  const col = page.locator('.heroi-col', { hasText: 'Vendas da meta hoje' });
   await expect(col).toBeVisible();
-  await expect(col.locator('.com-meta-per')).toContainText(`Meta do período ${metaInicio}`);
+  await expect(col.locator('.com-meta-per')).toContainText(`Meta de hoje ${metaInicio}`); // o nome segue o filtro
   await expect(page.locator('[data-aviso="periodo-parcial"]')).toContainText('A comissão, o total a pagar e a tabela abaixo são do mês');
   await expect(page.locator('.heroi-col', { hasText: 'Total a pagar' }).locator('.heroi-num')).toHaveText(aPagarMes);
   // "Semana atual" também é período parcial (a menos que a semana comece no dia 1)
   const inicioMes = await page.evaluate(() => { TS.aplicarPreset('semana'); TS.render(); return TS.dayToIso(TS.state.f.de).slice(8) === '01'; });
-  if (!inicioMes) await expect(page.locator('.heroi-col', { hasText: 'Vendas da meta no período' })).toBeVisible();
+  if (!inicioMes) await expect(page.locator('.heroi-col', { hasText: 'Vendas da meta na semana' })).toContainText('Meta da semana');
   expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth), 'rolagem para o lado').toBeLessThanOrEqual(1);
   expect(erros).toEqual([]);
 });
