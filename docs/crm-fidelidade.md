@@ -20,7 +20,7 @@ começa quando chegar a documentação da integração de fidelidade da NextSoft
 | Boas-vindas com bônus de cadastro completo | 1 ponto no cadastro (como hoje) **mais 1 ou 2 pontos de bônus** (a definir) quando o cadastro estiver completo — 2 ou 3 pontos além dos da compra. Objetivo: incentivar cadastro de qualidade. Quais campos contam como "completo" fica para a franquia definir. |
 | Ajuste de saldo | **Sem ajuste manual.** "Pedir ao suporte" = pedir à franquia, por uma **tela**: a loja abre um **pedido de correção** no painel (cliente, pontos a mais ou a menos, motivo, venda/cupom quando houver); ele aparece na **tela de validação da franquia** (no acesso dela ao painel); a franquia aprova ou recusa (com motivo). Só a aprovação lança o movimento no saldo, registrando quem pediu, quem aprovou/recusou e quando. A loja acompanha a situação (esperando, aprovado, recusado com o motivo). |
 | Prêmios | Tela no painel: produto do AppNext, quantos pontos custa, ativo, desde quando (e, se quiser, até quando e em quais lojas). Mudar o preço vale para os resgates seguintes. O AppNext recebe a lista pela integração (não cadastra nada lá). |
-| Preço | Implantação **R$ 12.000** (sugestão: 3 parcelas — início, piloto rodando, migração completa) com escopo fechado; mensalidade sugerida **R$ 220–250 por loja** (a FIXE cobra R$ 285); contrato mínimo de 12 meses; reajuste anual (IPCA). |
+| Preço | Implantação **R$ 15.500** (3 parcelas: R$ 5.500 no início, R$ 5.000 com o piloto rodando, R$ 5.000 na migração completa) com escopo fechado; mensalidade sugerida **R$ 220–250 por loja** (a FIXE cobra R$ 285); contrato mínimo de 12 meses; reajuste anual (IPCA). |
 
 ## 2. Como o programa funciona hoje (FIXE + AppNext)
 
