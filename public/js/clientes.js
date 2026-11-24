@@ -1609,6 +1609,12 @@
         ] : []),
       ],
       rows, sortKey: 'pct', cls: 'est-t-larga', // cabeçalho que quebra a linha: cabe a 1100 px (LARG-01)
+      // celular (LMOB-03): % com CPF em cima; cupons, novos, voltaram e sem FIXE embaixo
+      linhaMob: (r) => h('div', null,
+        h('div', { class: 'lmob-l1' }, h('span', { class: 'lmob-nome' }, TS.msgWpp.nomeProprio(r.nome) || r.nome), h('span', { class: 'lmob-val' }, fmt.pct(r.pct, 0), h('small', null, ' com CPF'))),
+        h('div', { class: 'lmob-l2' }, h('span', null, `${fmt.int(r.cpf)} de ${fmt.int(r.cupons)} cupons`), h('span', null, `${fmt.int(r.novos)} ${r.novos === 1 ? 'novo' : 'novos'}`),
+          h('span', null, 'voltaram ', r.rc ? `${fmt.int(r.rc.voltaram)} de ${fmt.int(r.rc.elegiveis)} · ` : '', celVolta(r.rc)),
+          comFixe && r.semFixe ? h('span', null, `sem FIXE ${fmt.int(r.semFixe)} (${fmt.pct(r.pctSemFixe, 0)})`) : null)),
       total: { nome: 'Total', cupons: nTot, cpf: nCpf, pct: nTot ? nCpf / nTot : null, novos: rows.reduce((t, r) => t + r.novos, 0), rc: rcTot, voltaram: rcTot.voltaram, pctVolta: rcTot.pouco ? -1 : rcTot.pct,
         ...(comFixe ? (() => { const cf = rows.reduce((t, r) => t + r.cliFixe, 0), sf = rows.reduce((t, r) => t + r.semFixe, 0); return { semFixe: sf, pctSemFixe: cf ? sf / cf : null }; })() : {}) },
     });

@@ -294,6 +294,14 @@
           ...(M ? [{ key: 'lucro', label: 'Lucro gerado', fmt: fmt.brl, title: 'Vendido − custo dos produtos (custo médio do estoque), só nos itens que têm custo cadastrado. É lucro bruto: não desconta imposto, comissão nem custo fixo. Só aparece para quem vê custo.' }] : []),
         ],
         rows: linhas, sortKey: 'vendas', cls: 'eq-t', onRowClick: (r) => { state.eqPessoa = r.nome; TS.render(); },
+        // celular (LMOB-03): vendas e R$ por hora em cima; meta, horas e indicadores embaixo; tocar abre a evolução
+        linhaMob: (r) => h('div', null,
+          h('div', { class: 'lmob-l1' }, h('span', { class: 'lmob-nome' }, TS.msgWpp.nomeProprio(r.nome) || r.nome, r.naEscala ? null : h('span', { class: 'badge cinza', style: { marginLeft: '6px' } }, 'fora da escala')),
+            h('span', { class: 'lmob-val' }, fmt.brl(r.vendas || 0))),
+          h('div', { class: 'lmob-l2' }, r.pctMeta != null ? h('span', { class: r.pctMeta >= 1 ? 'pos' : 'neg' }, `${fmt.pct(r.pctMeta, 0)} da meta`) : null,
+            r.rph != null ? h('span', null, `${fmt.brl(r.rph)}/hora`) : null, r.cph != null ? h('span', null, `${fmt.n1(r.cph)} atend./hora`) : null, r.horas != null ? h('span', null, hTxt(r.horas)) : null),
+          h('div', { class: 'lmob-l2' }, h('span', null, `TKM ${fmt.brl(r.ticket)}`), h('span', null, `IPA ${fmt.n2(r.ipa)}`), r.pctCpf != null ? h('span', null, `CPF ${fmt.pct(r.pctCpf, 0)}`) : null,
+            r.descPct != null ? h('span', null, `desc. ${fmt.pct(r.descPct, 1)}`) : null, r.espera != null ? h('span', null, `espera ${fmt.pct(r.espera, 0)}`) : null, M && r.lucro != null ? h('span', null, `lucro ${fmt.brl0(r.lucro)}`) : null)),
         empty: 'Nenhuma venda com vendedor no período.',
         imprimir: ['nome', 'vendas', 'pctMeta', 'ticket', 'ipa', 'rph', 'cph', 'horas'],
       });
@@ -311,6 +319,9 @@
           { key: 'ticket', label: 'Ticket médio', fmt: fmt.brl },
         ],
         rows, sortKey: 'ord', sortDir: 'asc', cls: 'eq-t',
+        linhaMob: (r) => h('div', null,
+          h('div', { class: 'lmob-l1' }, h('span', { class: 'lmob-nome' }, r.rot), h('span', { class: 'lmob-val' }, r.rph != null ? `${fmt.brl(r.rph)}/hora` : '—')),
+          h('div', { class: 'lmob-l2' }, r.cph != null ? h('span', null, `${fmt.n1(r.cph)} atend./hora`) : null, h('span', null, `${hTxt(r.horas)} de pessoa`), h('span', null, `vendas ${fmt.brl0(r.vt || 0)}`), h('span', null, `${fmt.int(r.cupons || 0)} atend.`), r.ticket != null ? h('span', null, `TKM ${fmt.brl(r.ticket)}`) : null)),
         empty: faixa ? 'Sem escala ou sem hora registrada nas vendas deste período.' : 'Sem escala no período.',
       });
     }
