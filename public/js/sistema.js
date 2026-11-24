@@ -73,17 +73,32 @@
       const atual = info.atual || {};
       const jaLib = (info.versoes || []).find((v) => v.sha === atual.sha);
       const temNovidade = info.novidades.length > 0;
-      const btLib = h('button', { type: 'button', class: 'btn primary', disabled: (!atual.sha || jaLib || temNovidade || atualizando()) || null }, `Liberar esta versão para a produção (${atual.sha || '—'})`);
-      const msgLib = h('small', { class: 'muted' }, jaLib ? `Já liberada em ${dataV(jaLib)}${jaLib.por ? ' por ' + jaLib.por : ''}.` : temNovidade ? 'Espere a versão mais nova entrar aqui (até 5 minutos) e confira antes de liberar.' : 'Libere só depois de conferir. A produção mostra esta versão para instalar em até 1 minuto.');
-      btLib.addEventListener('click', async () => {
+      // depois de liberar (pedido do dono, 24/11/2026: "clico e some, nada acontece"): o estado fica claro no próprio cartão —
+      // pedida (o atualizador anota em até 1 minuto) → liberada (a produção já mostra para instalar), sem botão apagado sem explicação
+      const liberando = !!info.liberando && !jaLib;
+      const btLib = (jaLib || liberando) ? null : h('button', { type: 'button', class: 'btn primary', disabled: (!atual.sha || temNovidade || atualizando()) || null }, `Liberar esta versão para a produção (${atual.sha || '—'})`);
+      const estadoLib = jaLib ? h('div', { class: 'sis-lib sis-lib-ok' }, h('b', null, `✅ Versão ${atual.sha} liberada para a produção`), h('small', null, `em ${dataV(jaLib)}${jaLib.por ? ' por ' + jaLib.por : ''}. Na produção: Atualizações do painel → Instalar → Ctrl+F5. A próxima versão que entrar aqui poderá ser liberada.`))
+        : liberando ? h('div', { class: 'sis-lib' }, h('b', null, `⏳ Liberação da versão ${atual.sha} pedida`), h('small', null, 'Em até 1 minuto ela é anotada e aparece na produção para instalar. Esta janela se atualiza sozinha.'))
+          : null;
+      const msgLib = h('small', { class: 'muted' }, jaLib || liberando ? '' : temNovidade ? 'Espere a versão mais nova entrar aqui (até 5 minutos) e confira antes de liberar.' : 'Libere só depois de conferir. A produção mostra esta versão para instalar em até 1 minuto.');
+      if (btLib) btLib.addEventListener('click', async () => {
         const ok = await TS.janelaConfirmar(`Liberar a versão ${atual.sha} para a produção?`, [h('p', null, `"${(atual.msg || '').slice(0, 160)}"`), h('p', { class: 'muted' }, 'Libere só o que você conferiu aqui. Depois, a produção mostra esta versão em Atualizações do painel para instalar.')], 'Liberar para a produção');
-        if (ok) pedir('admin/homolog/liberar', { sha: atual.sha }, btLib, msgLib, 'Liberação pedida: em até 1 minuto ela aparece na produção. Lá é só instalar e dar Ctrl+F5.');
+        if (!ok) return;
+        btLib.disabled = true;
+        try {
+          const r = await fetch(TS.api('admin/homolog/liberar'), { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-Painel': '1' }, body: JSON.stringify({ sha: atual.sha }) });
+          const j = await r.json().catch(() => ({}));
+          if (!r.ok) { btLib.disabled = false; TS.avisarErro ? TS.avisarErro(j.erro || 'Não deu certo.') : (msgLib.textContent = j.erro || 'Não deu certo.'); return; }
+          info.liberando = true; pintar(); // o cartão passa a "liberação pedida" na hora
+          TS.avisar(`Versão ${atual.sha} liberada. Em até 1 minuto ela aparece na produção, em Atualizações do painel: lá é só clicar em Instalar e depois dar Ctrl+F5.`, { titulo: '✅ Liberação pedida' });
+          setTimeout(consultar, 65e3);
+        } catch { btLib.disabled = false; msgLib.textContent = 'Sem conexão. Tente de novo.'; }
       });
       const btCop = h('button', { type: 'button', class: 'btn' }, `Copiar de novo a loja "${loja}" da produção`);
       const msgCop = h('small', { class: 'muted' });
       btCop.addEventListener('click', () => pedir('admin/homolog/copiar', { loja }, btCop, msgCop, 'Pedido feito: em até 1 minuto a cópia começa. Recarregue a página depois.'));
       corpo.append(h('div', { class: 'notice warn sis-homolog' }, 'Homologação: cada versão testada entra aqui sozinha, em até 5 minutos. Confira e libere para a produção. Os dados são uma cópia: nada daqui volta para a produção.',
-        h('div', { class: 'cfg-acoes' }, btLib, msgLib), h('div', { class: 'cfg-acoes' }, btCop, msgCop)));
+        estadoLib, btLib ? h('div', { class: 'cfg-acoes' }, btLib, msgLib) : null, h('div', { class: 'cfg-acoes' }, btCop, msgCop)));
     } else if (info.trilho === 'versoes') {
       const v = (info.versoes || [])[0];
       corpo.append(h('div', { class: 'muted sis-nota' }, 'A produção instala só versões liberadas na homologação.', v ? ` Última liberada: ${v.sha}, ${dataV(v)}${v.por ? ' por ' + v.por : ''}${v.notas ? ' — ' + v.notas : ''}.` : ''));

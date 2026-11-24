@@ -86,6 +86,12 @@ test('HOMOLOG-01: o servidor de homologação avisa a tela (faixa amarela) e nã
   assert.ok(!fs.existsSync(path.join(tmp, '_sistema', 'liberar.pedido')));
   assert.strictEqual((await lib({ sha: 'abc1234' })).status, 200);
   assert.strictEqual(fs.readFileSync(path.join(tmp, '_sistema', 'liberar.pedido'), 'utf8'), 'chefe abc1234\n');
+  // a tela mostra "liberação pedida" enquanto o atualizador não anota (pedido do dono: "clico e nada acontece")
+  const sis = await (await fetch(BASE + '/api/admin/sistema', { headers: { Cookie: cookie } })).json();
+  assert.strictEqual(sis.liberando, true);
+  const sisJs = fs.readFileSync(path.join(__dirname, '../../public/js/sistema.js'), 'utf8');
+  assert.match(sisJs, /Liberação da versão \$\{atual\.sha\} pedida/, 'o cartão mostra a liberação pedida');
+  assert.match(sisJs, /liberada para a produção/, 'e depois a versão liberada, com o que fazer na produção');
   assert.strictEqual((await lib({ sha: 'abc1234' })).status, 409, 'pedido já feito');
   assert.ok(fs.readFileSync(path.join(tmp, 'auditoria.jsonl'), 'utf8').includes('liberou a versão da homologação para a produção'));
   const main = fs.readFileSync(path.join(__dirname, '../../public/js/main.js'), 'utf8');

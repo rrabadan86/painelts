@@ -36,6 +36,10 @@ async function situacao(lojaId, ehGestor) {
   }
   const robos = ZF.campanhasDoRobo(CAMP.ler(lojaId));
   const pendentes = robos.reduce((n, c) => n + c.rodadas[0].lista.filter((x) => x.st === 'p').length, 0);
+  // rodízio entre campanhas (ZAP-RODIZIO): de quem é a vez agora, para a faixa do robô
+  const vez = ZF.vezDoRodizio(robos, cfg.bloco);
+  const daVez = robos.find((c) => c.id === vez.vez);
+  const rodizio = { bloco: cfg.bloco, campanhas: robos.length, vez: daVez ? String(daVez.nome || '').slice(0, 80) : null, seguidas: vez.seguidas };
   let cod = null;
   if (!servico) cod = 'sem_servico';
   else if (e.ligado && !e.pausa && conexao.estado !== 'conectado') cod = 'desconectado';
@@ -43,7 +47,7 @@ async function situacao(lojaId, ehGestor) {
   return {
     servico, pode: { configurar: ehGestor, pausar: true }, ligado: !!e.ligado, pausa: e.pausa || null, conexao, cfg,
     hoje: { n: ZF.enviadosHoje(e, agora), teto: cfg.teto }, proximoEm: e.proximoEm && Date.parse(e.proximoEm) > agora ? e.proximoEm : null,
-    motivo: cod ? motivoTxt(cod) : null, falhas: e.falhas || 0, fila: { campanhas: robos.length, pendentes, emConversa: ZF.adiadosDaLoja(lojaId, agora).length }, validadeLista: ZF.PREPARO_DIAS,
+    motivo: cod ? motivoTxt(cod) : null, falhas: e.falhas || 0, fila: { campanhas: robos.length, pendentes, emConversa: ZF.adiadosDaLoja(lojaId, agora).length }, validadeLista: ZF.PREPARO_DIAS, rodizio,
     // horário de envio dia a dia (igual ao funcionamento da loja, ou o próprio): a tela mostra e estima por ele
     agenda: ZF.agenda(loja, cfg, agora), horarioLoja: horarioDaLoja(loja),
   };
@@ -138,7 +142,8 @@ function situacaoDemo(o = {}) {
     ok: true, demo: true, servico: true, pode: { configurar: true, pausar: true }, ligado: true, pausa: null,
     conexao: { estado: 'conectado', numeroFim: '8888', desde: new Date(agora - 5 * 864e5).toISOString(), erro: null, qr: null, codigo: null },
     cfg: cfgD, hoje: { n: 12, teto: ZF.PADRAO.teto }, proximoEm: new Date(agora + 9 * 60e3).toISOString(),
-    motivo: motivoTxt('ritmo'), falhas: 0, fila: { campanhas: 1, pendentes: 18, emConversa: 2 }, validadeLista: ZF.PREPARO_DIAS,
+    motivo: motivoTxt('ritmo'), falhas: 0, fila: { campanhas: 2, pendentes: 18, emConversa: 2 }, validadeLista: ZF.PREPARO_DIAS,
+    rodizio: { bloco: cfgD.bloco || ZF.PADRAO.bloco, campanhas: 2, vez: 'Exemplo: Sentimos sua falta', seguidas: 2 },
     agenda: ZF.agenda(lojaDemo, cfgD, agora), horarioLoja: horarioDaLoja(lojaDemo),
   };
   return { ...base, ...o };

@@ -27,7 +27,7 @@ const post = (nome, url, corpo) => pedir(nome, url, { method: 'POST', body: JSON
 const put = (nome, url, corpo) => pedir(nome, url, { method: 'PUT', body: JSON.stringify(corpo || {}) });
 const estado = (loja) => { try { return JSON.parse(fs.readFileSync(path.join(tmp, loja, 'zap', 'estado.json'), 'utf8')); } catch { return null; } };
 const auditoria = () => fs.readFileSync(path.join(tmp, 'auditoria.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
-const CFG = { horario: 'proprio', min: 600, max: 900, das: '10:00', as: '17:00', dias: [1, 2, 3], teto: 12, falhas: 2, esperaConversa: 5 };
+const CFG = { horario: 'proprio', min: 600, max: 900, das: '10:00', as: '17:00', dias: [1, 2, 3], teto: 12, falhas: 2, esperaConversa: 5, bloco: 3 };
 
 before(async () => {
   process.env.DATA_DIR = tmp; process.env.CONFIG_FILE = CONFIG_FILE;
@@ -84,7 +84,7 @@ test('situação: admin, franqueado da loja e gerente com Clientes veem; vendedo
   assert.strictEqual(s.servico, true);
   assert.strictEqual(s.conexao.numeroFim, '8888', 'só os 4 últimos dígitos do número');
   assert.ok(!JSON.stringify(s).includes('5562999998888'));
-  assert.deepStrictEqual(s.cfg, { horario: 'loja', min: 900, max: 1200, das: '09:00', as: '18:30', dias: [1, 2, 3, 4, 5, 6], teto: 30, falhas: 3, esperaConversa: 3 }, 'padrões do dono');
+  assert.deepStrictEqual(s.cfg, { horario: 'loja', min: 900, max: 1200, das: '09:00', as: '18:30', dias: [1, 2, 3, 4, 5, 6], teto: 30, falhas: 3, esperaConversa: 3, bloco: 5 }, 'padrões do dono');
   // ZAP-HORA-LOJA: a situação traz a agenda dos próximos 21 dias (loja sem horário cadastrado: cai no horário próprio)
   assert.strictEqual(s.agenda.length, 21);
   assert.ok(s.agenda.every((a) => a === null || (/^\d{4}-\d\d-\d\d$/.test(a.dia) && a.das === '09:00' && a.as === '18:30')));
@@ -220,7 +220,7 @@ test('configuração: admin, franqueado da loja e gerente com Clientes; valores 
   assert.strictEqual((await put('gercli', '/api/zap/config', { loja: 'l2', ...CFG })).status, 400, 'gerente na loja dos outros');
   for (const nome of ['gersem', 'vend1']) assert.strictEqual((await put(nome, '/api/zap/config', { loja: 'l1', ...CFG })).status, 403, nome);
   assert.strictEqual((await put('dono1', '/api/zap/config', { loja: 'l2', ...CFG })).status, 400, 'franqueado na loja dos outros');
-  for (const ruim of [{ horario: 'sempre' }, { min: 59 }, { min: 1000, max: 900 }, { max: 7201 }, { das: '18:00', as: '09:00' }, { das: '25:00' }, { dias: [] }, { dias: [9] }, { teto: 0 }, { teto: 201 }, { falhas: 0 }, { falhas: 11 }, { esperaConversa: 31 }, { esperaConversa: -1 }])
+  for (const ruim of [{ horario: 'sempre' }, { min: 59 }, { min: 1000, max: 900 }, { max: 7201 }, { das: '18:00', as: '09:00' }, { das: '25:00' }, { dias: [] }, { dias: [9] }, { teto: 0 }, { teto: 201 }, { falhas: 0 }, { falhas: 11 }, { esperaConversa: 31 }, { esperaConversa: -1 }, { bloco: 0 }, { bloco: 51 }])
     assert.strictEqual((await put('dono1', '/api/zap/config', { loja: 'l1', ...CFG, ...ruim })).status, 400, JSON.stringify(ruim));
   assert.strictEqual(JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')).lojas[0].zap, undefined, 'nada gravado até aqui');
   const r = await put('dono1', '/api/zap/config', { loja: 'l1', ...CFG });

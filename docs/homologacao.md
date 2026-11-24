@@ -19,6 +19,8 @@ PR (testes do GitHub ✓) ─▶ main ─▶ HOMOLOGAÇÃO instala sozinha (até
   O painel deixa o pedido; o atualizador da homologação confere e anota em `/opt/teashop-painel/.atualizador/liberadas.txt`
   (a pasta de controle da produção, na mesma VPS) e pede à produção que verifique na hora. Auditado. A produção nunca instala
   algo mais novo que a última versão liberada.
+  No cartão da homologação, depois de confirmar: aviso "✅ Liberação pedida" e o estado "⏳ Liberação pedida" até o
+  atualizador anotar (até 1 minuto); depois "✅ Versão … liberada para a produção", com quando, quem e o que fazer lá.
 - **Correção urgente** (algo quebrado nas lojas): o mesmo caminho, no mesmo dia.
 - **Voltar atrás:** a produção só avança; para voltar, peça ao Claude o passo a passo (nunca reescrever o `main`).
 - **Robôs** (AppNext, FIXE, Sistema de Pedidos, WhatsApp): a homologação não fala com eles. O que mexe neles traz no PR
