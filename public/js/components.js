@@ -495,7 +495,7 @@
   /** tela de celular (até 760 px): algumas telas mudam o jeito de mostrar; o computador não muda */
   TS.ehCelular = () => window.matchMedia('(max-width: 760px)').matches;
 
-  TS.table = function ({ cols, rows, total, sortKey, sortDir = 'desc', maxHeight, pageSize, search, searchKeys, searchInit, onSearch, onRowClick, rowClass, empty, cls, imprimir, produto, cartao, estado }) {
+  TS.table = function ({ cols, rows, total, sortKey, sortDir = 'desc', maxHeight, pageSize, search, searchKeys, searchInit, onSearch, onRowClick, rowClass, empty, cls, imprimir, produto, cartao, estado, linhaMob, totalMob }) {
     // produto: colunas com o nome do produto — o filtro "Produto contém" da lateral também vale nesta tabela
     const fProd = produto && TS.state.f.produto ? TS.norm(TS.state.f.produto) : '';
     if (fProd) { const ks = [].concat(produto); rows = rows.filter((row) => ks.some((k) => TS.norm(row[k]).includes(fProd))); }
@@ -518,7 +518,12 @@
     const rotulo = (c) => (typeof c.label === 'string' ? c.label : '');
     const wrap = h('div', { class: MOB ? 'tab-mob-w' : null });
     const tbl = h('table', { class: 't' + (cls ? ' ' + cls : '') + (MOB ? ' t-mob' : '') });
-    const tw = h('div', { class: 'table-wrap' + (maxHeight === 'free' ? ' free' : '') }, tbl);
+    // linhaMob (padrão de listas no celular, aprovado pelo dono em 24/11/2026; LMOB-01): no celular, cada linha vira uma linha
+    // com divisória (nome + o número que decide em cima, o resto pequeno embaixo) desenhada por quem chama, no lugar do cartão
+    // de "rótulo: valor". A busca, a ordem ("Ordenar por") e as páginas continuam as mesmas. No computador nada muda.
+    const LMOB = TS.ehCelular() && typeof linhaMob === 'function';
+    const lista = LMOB ? h('div', { class: 'lmob' + (cls ? ' ' + cls + '-lmob' : '') }) : null;
+    const tw = h('div', { class: 'table-wrap' + (maxHeight === 'free' ? ' free' : '') + (LMOB ? ' lmob-w' : '') }, LMOB ? lista : tbl);
     if (maxHeight && maxHeight !== 'free') tw.style.maxHeight = maxHeight;
     const pager = h('div', { class: 'pager' });
     let searchBox = null;
@@ -544,7 +549,37 @@
         return sd === 'asc' ? c : -c;
       });
     }
+    function paintLista() {
+      lista.textContent = '';
+      const all = sorted();
+      if (pageSize && page > 0 && page * pageSize >= all.length) page = Math.max(0, Math.ceil(all.length / pageSize) - 1);
+      if (estado) Object.assign(estado, { page, sk, sd });
+      const start = pageSize ? page * pageSize : 0;
+      const slice = pageSize ? all.slice(start, start + pageSize) : all;
+      for (const row of slice) {
+        const el = linhaMob(row);
+        if (!el) continue;
+        el.classList.add('lmob-it');
+        if (rowClass && rowClass(row)) el.classList.add(...String(rowClass(row)).split(/\s+/).filter(Boolean));
+        if (onRowClick) {
+          el.tabIndex = 0; el.setAttribute('role', 'button'); el.style.cursor = 'pointer';
+          el.addEventListener('click', (e) => { if (!e.target.closest('button, a, input, select')) onRowClick(row); });
+          el.addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target === el) { e.preventDefault(); onRowClick(row); } });
+        }
+        lista.append(el);
+      }
+      if (!slice.length) lista.append(h('div', { class: 'muted t-vazio lmob-vazio' }, empty || 'Nada encontrado.'));
+      if (total && totalMob) { const t = totalMob(total); if (t) { t.classList.add('lmob-total'); lista.append(t); } }
+      pager.textContent = '';
+      if (pageSize && all.length > pageSize) {
+        const pages = Math.ceil(all.length / pageSize);
+        pager.append(`${NF(start + 1)}–${NF(Math.min(start + pageSize, all.length))} de ${NF(all.length)}`,
+          h('button', { class: 'btn', type: 'button', disabled: page === 0 || null, onclick: () => { page--; paint(); } }, '‹ Anterior'),
+          h('button', { class: 'btn', type: 'button', disabled: page >= pages - 1 || null, onclick: () => { page++; paint(); } }, 'Próxima ›'));
+      }
+    }
     function paint() {
+      if (LMOB) { paintLista(); return; }
       tbl.textContent = '';
       const thead = h('thead'), trh = h('tr');
       cols.forEach((c) => {
