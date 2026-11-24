@@ -455,7 +455,8 @@ test('laço: cliente que respondeu "parar" entra em "não quer mensagens" e não
   // a loja desfaz ("Voltou a aceitar"): o número sai da lista do robô
   ZF.voltouAAceitar('l1', CPF[0]);
   assert.strictEqual(ZF.lerJson('l1', 'naoquer')[NUM[0]], undefined);
-  assert.strictEqual(itemDe(CPF[0]).st, 'x');
+  assert.strictEqual(itemDe(CPF[0]).st, 'o', 'saiu na hora dos pendentes como "não quer" (NAOQUER-03), com a origem');
+  assert.match(itemDe(CPF[0]).motivo, /respondeu parar pelo WhatsApp/);
   assert.ok(!zap.enviados.some((m) => m.para === NUM[0]));
   assert.ok(auditoria().includes('cliente não quer contato'));
   // pausado também lê as respostas (quem responde depois não fica sem ser atendido)
