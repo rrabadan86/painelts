@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Página técnica · Painel Tea Shop</title>
-  <meta name="description" content="Como o Painel Tea Shop é construído: arquitetura, regras fixas do projeto, roteiros (skills), travas automáticas, testes e o caminho de cada versão até a loja.">
+  <meta name="description" content="Como o Painel Tea Shop é construído: arquitetura, regras fixas do projeto, roteiros (skills), travas automáticas, testes, homologação e o caminho de cada versão até a loja.">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <meta name="theme-color" content="#1F3D2B">
   <link rel="stylesheet" href="/site/site.css">
@@ -38,7 +38,7 @@
     <section id="arquitetura">
       <div class="larg">
         <h2>Arquitetura</h2>
-        <p class="sub">Quatro peças, todas na instalação do próprio franqueado (Docker). Nenhum dado da loja passa por servidor de terceiros.</p>
+        <p class="sub">Quatro peças, todas numa VPS própria, com Docker. Nenhum dado da loja passa por servidor de terceiros.</p>
         <div class="rola">
           <table class="tab">
             <thead><tr><th>Peça</th><th>Tecnologia</th><th>O que faz</th></tr></thead>
@@ -152,9 +152,9 @@
         <h2>Testes e rastreabilidade</h2>
         <p class="sub">Nenhuma versão é instalada sem passar por todos.</p>
         <div class="grade">
-          <div class="cartao"><h3>Testes de unidade</h3><p>Mais de 350, sobre as contas e as regras: comissão, meta, estoque, validade, pedido, notas, permissões de cada rota, travas do WhatsApp.</p></div>
-          <div class="cartao"><h3>Testes de tela</h3><p>Mais de 300, num navegador de verdade, sempre na apresentação e sempre em dois tamanhos: computador e celular.</p></div>
-          <div class="cartao"><h3>Matriz de rastreabilidade</h3><p>Um documento liga cada regra do painel (mais de 400 linhas) ao código que a implementa e ao teste que a cobre. Regra nova entra com a linha dela, e o resumo em números é contado sozinho pelas linhas.</p></div>
+          <div class="cartao"><h3>Testes de unidade</h3><p>Quase 500, sobre as contas e as regras: comissão, meta, estoque, validade, pedido, notas, permissões de cada rota, travas do WhatsApp.</p></div>
+          <div class="cartao"><h3>Testes de tela</h3><p>Mais de 450, num navegador de verdade, sempre na apresentação e sempre em dois tamanhos: computador e celular.</p></div>
+          <div class="cartao"><h3>Matriz de rastreabilidade</h3><p>Um documento liga cada regra do painel (mais de 470 regras) ao código que a implementa e ao teste que a cobre. Regra nova entra com a linha dela, e o resumo em números é contado sozinho pelas linhas.</p></div>
           <div class="cartao"><h3>Guardião da matriz</h3><p>Um teste falha a versão quando a matriz fica velha: regra repetida, teste citado que não existe, teste com código de regra sem linha na matriz ou resumo que não bate.</p></div>
           <div class="cartao"><h3>Telas por perfil</h3><p>O painel de verdade, com dados fictícios, é aberto como franqueado, gerente com e sem custo e vendedora: cada um só vê as telas e os números que a regra permite.</p></div>
           <div class="cartao"><h3>Datas difíceis</h3><p>As telas principais são abertas com o relógio parado no 1º e no último dia do mês, num domingo com a loja fechada e no 1º de janeiro.</p></div>
@@ -169,8 +169,9 @@
         <ol class="passos">
           <li><h3>Mudança num ramo</h3><p>Com os testes rodados antes do envio e as regras escritas atualizadas junto.</p></li>
           <li><h3>Testes no GitHub</h3><p>A bateria inteira roda de novo, numa máquina limpa. Com qualquer falha, a mudança não entra.</p></li>
-          <li><h3>Versão aprovada</h3><p>Só depois de passar a versão é marcada como aprovada.</p></li>
-          <li><h3>Instalar pelo painel</h3><p>A tela "Atualizações do painel" só oferece versões aprovadas. Se a instalação falhar, volta sozinha para a anterior.</p></li>
+          <li><h3>Homologação</h3><p>A versão aprovada nos testes entra sozinha num painel de teste, separado das lojas, com a cópia de uma loja. Ali nada sai do painel: sem AppNext, FIXE, WhatsApp, e-mail nem IA. O dono confere com o roteiro da mudança.</p></li>
+          <li><h3>Liberada pelo dono</h3><p>Conferida, o dono clica em "Liberar esta versão para a produção". Só versão testada e instalada na homologação pode ser liberada; as mudanças da semana chegam juntas.</p></li>
+          <li><h3>Instalar pelo painel</h3><p>A tela "Atualizações do painel" das lojas só oferece versões liberadas. Se a instalação falhar, volta sozinha para a anterior. Depois, cada pessoa vê uma vez o que mudou para ela.</p></li>
         </ol>
       </div>
     </section>
