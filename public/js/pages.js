@@ -1119,6 +1119,9 @@
       return h('button', { type: 'button', class: 'tree-btn', 'aria-expanded': String(open), 'aria-label': (open ? 'Recolher ' : 'Expandir ') + rot,
         onclick: () => { if (open) { for (const k of [...aberto]) if (k === chave || k.startsWith(chave + '|')) aberto.delete(k); } else aberto.add(chave); paint(); } }, open ? '−' : '+');
     };
+    // celular (CUP-MOB-01, pedido do dono 24/11/2026): só a 1ª coluna aparece; cada linha leva embaixo do nome o que
+    // estava nas outras colunas (hora, vendedora, CPF, itens) e o valor à direita, sem cortar o nome do item
+    const mob = (esq, dir) => h('span', { class: 'cup-mob' }, h('span', { class: 'cup-mob-l' }, ...esq.filter(Boolean).flatMap((x, k) => (k ? [' · ', x] : [x]))), dir != null ? h('b', { class: 'cup-mob-v' }, dir) : null);
     function paint() {
       tbl.textContent = '';
       tbl.append(h('thead', null, h('tr', null, h('th', { class: 'l sticky-col' }, 'Dia / Cupom / Produto'), h('th', { class: 'l' }, 'Hora'), cliDe ? h('th', { class: 'l' }, 'CPF/CNPJ') : null, h('th', { class: 'l' }, 'Vendedor'), h('th', { class: 'l' }, 'Grupo'), h('th', null, 'Cupons'), h('th', null, 'Itens'), h('th', null, 'Valor'))));
@@ -1134,24 +1137,26 @@
         mostrados++;
         const kD = 'd' + dia.d;
         const wd = new Date(dia.d + 'T12:00:00Z').toLocaleDateString('pt-BR', { weekday: 'short', timeZone: 'UTC' }).replace('.', '');
-        tb.append(h('tr', { class: 'lv0' }, h('td', { class: 'l sticky-col tree-l' }, h('span', { class: 'tree-cell' }, btn(kD, dia.d), h('span', null, `${fmt.date(dia.d)} · ${wd}`))),
+        tb.append(h('tr', { class: 'lv0' }, h('td', { class: 'l sticky-col tree-l' }, h('span', { class: 'tree-cell' }, btn(kD, dia.d), h('span', null, `${fmt.date(dia.d)} · ${wd}`, mob([`${fmt.int(nC)} cupons`, `${fmt.int(qtd)} itens`], fmt.brl(vt))))),
           h('td'), cliDe ? h('td') : null, h('td'), h('td'), h('td', null, fmt.int(nC)), h('td', null, fmt.int(qtd)), h('td', null, fmt.brl(vt))));
         if (!aberto.has(kD) && !q) continue;
         for (const c of cups) {
           const kC = `${kD}|${c.k}`;
           const nf = nfe.get(c.num + '|' + dia.d);
-          tb.append(h('tr', { class: 'lv1' }, h('td', { class: 'l sticky-col tree-l n1' }, h('span', { class: 'tree-cell' }, btn(kC, 'cupom ' + c.num), nf ? h('span', null, 'Nota fiscal ', h('button', { type: 'button', class: 'cpf-link', title: `NF-e ${nf.numero}${nf.natOp ? ' · ' + nf.natOp : ''}${nf.dest && nf.dest.nome ? ' · ' + nf.dest.nome : ''}. Clique para ver a nota, o XML e o DANFE.`, onclick: (e) => { e.stopPropagation(); if (TS.abrirNFe) TS.abrirNFe(nf.chave); } }, String(c.num)), varias ? h('small', { class: 'muted' }, ` · ${c.loja}`) : null)
-              : h('span', null, `Cupom ${c.num}`, varias ? h('small', { class: 'muted' }, ` · ${c.loja}`) : null))),
+          tb.append(h('tr', { class: 'lv1' }, h('td', { class: 'l sticky-col tree-l n1' }, h('span', { class: 'tree-cell' }, btn(kC, 'cupom ' + c.num), h('span', null, nf ? h('span', null, 'Nota fiscal ', h('button', { type: 'button', class: 'cpf-link', title: `NF-e ${nf.numero}${nf.natOp ? ' · ' + nf.natOp : ''}${nf.dest && nf.dest.nome ? ' · ' + nf.dest.nome : ''}. Clique para ver a nota, o XML e o DANFE.`, onclick: (e) => { e.stopPropagation(); if (TS.abrirNFe) TS.abrirNFe(nf.chave); } }, String(c.num)), varias ? h('small', { class: 'muted' }, ` · ${c.loja}`) : null)
+              : h('span', null, `Cupom ${c.num}`, varias ? h('small', { class: 'muted' }, ` · ${c.loja}`) : null),
+              mob([hhmm(c.min), [...c.vend].join(', ') || null, cliDe && cliDe(c.itens[0]) ? docCupom(cliDe(c.itens[0])) : null, `${fmt.int(c.qtd)} ${c.qtd === 1 ? 'item' : 'itens'}`], fmt.brl(c.vt))))),
             h('td', { class: 'l' }, hhmm(c.min)), cliDe ? h('td', { class: 'l' }, docCupom(cliDe(c.itens[0]))) : null, h('td', { class: 'l' }, [...c.vend].join(', ') || '—'), h('td'), h('td'), h('td', null, fmt.int(c.qtd)), h('td', null, fmt.brl(c.vt))));
           if (!aberto.has(kC)) continue;
           for (const i of c.itens) {
-            tb.append(h('tr', { class: 'lv2' + (casa(i) ? '' : ' fora') }, h('td', { class: 'l sticky-col tree-l n2 wrap' }, h('span', { class: 'tree-cell' }, h('span', { class: 'tree-sp' }), h('span', null, db.D.descricao[db.desc[i]], naoContaEl(i)))),
+            tb.append(h('tr', { class: 'lv2' + (casa(i) ? '' : ' fora') }, h('td', { class: 'l sticky-col tree-l n2 wrap' }, h('span', { class: 'tree-cell' }, h('span', { class: 'tree-sp' }), h('span', null, db.D.descricao[db.desc[i]], naoContaEl(i),
+                mob([db.D.vendedor[db.vend[i]], db.D.grupoC[db.grupoC[i]]], `${fmt.int(db.qtd[i])} × ${fmt.brl(db.vt[i])}`)))),
               h('td'), cliDe ? h('td') : null, h('td', { class: 'l' }, db.D.vendedor[db.vend[i]]), h('td', { class: 'l' }, db.D.grupoC[db.grupoC[i]]), h('td'), h('td', null, fmt.int(db.qtd[i])), h('td', null, fmt.brl(db.vt[i]))));
           }
         }
       }
       if (!lista.length) tb.append(h('tr', null, h('td', { colspan: cliDe ? 8 : 7, class: 'l muted' }, 'Nada encontrado.')));
-      tbl.append(tb, h('tfoot', null, h('tr', null, h('td', { class: 'l sticky-col' }, `Total · ${fmt.int(lista.length)} dias`), h('td'), cliDe ? h('td') : null, h('td'), h('td'), h('td', null, fmt.int(totC)), h('td', null, fmt.int(totI)), h('td', null, fmt.brl(totV)))));
+      tbl.append(tb, h('tfoot', null, h('tr', null, h('td', { class: 'l sticky-col' }, `Total · ${fmt.int(lista.length)} dias`, mob([`${fmt.int(totC)} cupons`, `${fmt.int(totI)} itens`], fmt.brl(totV))), h('td'), cliDe ? h('td') : null, h('td'), h('td'), h('td', null, fmt.int(totC)), h('td', null, fmt.int(totI)), h('td', null, fmt.brl(totV)))));
       mais.textContent = '';
       if (lista.length > limite) mais.append(`Mostrando ${limite} de ${lista.length} dias `, h('button', { type: 'button', class: 'btn', onclick: () => { limite += 31; paint(); } }, 'Mostrar mais dias'));
     }

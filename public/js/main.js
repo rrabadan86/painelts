@@ -602,6 +602,7 @@
       TS.iaInit && TS.iaInit(eu);
       TS.notif && TS.notif.iniciar(); // service worker das notificações + item "Notificações e aplicativo" do menu
       TS.guia && TS.guia.conferir(); // primeiro acesso do franqueado: abre a configuração guiada da loja (uma vez)
+      TS.novidades && TS.novidades.iniciar(); // "O que mudou no painel": uma vez por novidade, só as da pessoa (NOV-01)
       const salvo = localStorage.getItem(TS.demo ? 'teashop.demo.loja' : 'teashop.loja');
       const ids = TS.lojas.map((l) => l.id);
       if (TS.lojas.length > 1) ids.push('todas');
