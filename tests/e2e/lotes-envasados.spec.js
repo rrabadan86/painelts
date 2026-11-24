@@ -56,14 +56,19 @@ test('LOTE-ENV-02 e DEV-VAL-01: na nota de entrada, "+ outra validade" reparte a
   // a nota fictícia do Matcha Cerimonial 30G Pacote (envasado)
   const nf = await page.evaluate(async () => {
     const j = await (await fetch(`/api/demo/validade?loja=${encodeURIComponent(TS.state.loja)}`)).json();
-    const l = j.outros.filter((x) => x.desc === 'Matcha Cerimonial 30G Pacote' && x.nf).sort((a, b) => b.qtdEntrada - a.qtdEntrada)[0];
-    return l && l.nf;
+    // a nota fictícia que tem o Matcha (os números de nota se repetem entre produtos na apresentação: confere o item)
+    for (const l of j.outros.filter((x) => x.desc === 'Matcha Cerimonial 30G Pacote' && x.nf).sort((a, b) => b.qtdEntrada - a.qtdEntrada)) {
+      const n = await (await fetch(`/api/demo/validade/notas?loja=${encodeURIComponent(TS.state.loja)}&nota=${l.nf}`)).json();
+      if (n.notas.some((x) => x.itens.some((i) => i.desc === 'Matcha Cerimonial 30G Pacote'))) return l.nf;
+    }
+    return null;
   });
   expect(nf).toBeTruthy();
   await page.evaluate((x) => { TS.state.abrirNF = x; location.hash = '#notas'; }, nf);
   const gaveta = page.locator('.prc-drawer');
   await expect(gaveta).toBeVisible({ timeout: 30000 });
-  const cel = gaveta.locator('.vl-nota-cel').filter({ has: page.locator('input.vl-lote') }).first();
+  // a célula do próprio Matcha (a nota pode ter outros itens, como um chá a granel, que têm outra regra de validade curta)
+  const cel = gaveta.locator('tr').filter({ hasText: 'Matcha Cerimonial 30G Pacote' }).locator('.vl-nota-cel').filter({ has: page.locator('input.vl-lote') }).first();
   await expect(cel).toBeVisible();
   // validade curta: vence 10 dias depois da chegada (envasado: menos de 30 dias)
   const entrada = await page.evaluate(async (x) => { const j = await (await fetch(`/api/demo/validade/notas?loja=${encodeURIComponent(TS.state.loja)}&nota=${x}`)).json(); return j.notas[0].itens[0].entrada; }, nf);

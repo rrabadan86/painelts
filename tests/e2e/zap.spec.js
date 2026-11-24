@@ -67,7 +67,7 @@ test.describe('robô do WhatsApp', () => {
     const nums = card.locator('.zap-campos input[type=number]');
     await expect(nums.nth(0)).toHaveValue('900'); await expect(nums.nth(1)).toHaveValue('1200');
     await expect(card.locator('input[type=time]').nth(0)).toHaveValue('09:00'); await expect(card.locator('input[type=time]').nth(1)).toHaveValue('18:30');
-    await expect(nums.nth(2)).toHaveValue('30'); await expect(nums.nth(3)).toHaveValue('3');
+    await expect(nums.nth(2)).toHaveValue('30'); await expect(nums.nth(3)).toHaveValue('5'); await expect(nums.nth(4)).toHaveValue('3'); // máximo, rodízio (ZAP-RODIZIO), em conversa
     await expect(card.locator('.zap-dias input:checked')).toHaveCount(6);
     // ZAP-HORA-LOJA: horário de envio igual ao funcionamento da loja (padrão), dia a dia, de 30 min antes de abrir até 30 min antes de fechar
     await expect(card.getByRole('radio', { name: 'Igual ao funcionamento da loja' })).toBeChecked();
