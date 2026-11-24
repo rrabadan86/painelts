@@ -13,6 +13,7 @@ começa quando chegar a documentação da integração de fidelidade da NextSoft
 | Onde roda | **Uma VPS só no começo**: painel, robô do WhatsApp e o serviço da fidelidade, cada um no seu contêiner. Backup diário fora da máquina e aviso no celular se a fidelidade cair, desde o primeiro dia. Pode ir para uma VPS própria depois, sem mudar o código. |
 | Tela | **No painel de hoje** (mesmo login e visual). O que fica separado é só o serviço que o caixa chama (API + banco de pontos), no mesmo repositório, como o `zap/`. |
 | Perfil novo "Franquia" | Vê **só o CRM** da rede toda: clientes do fidelidade, saldos, regras, prêmios, resgates, ajustes e relatórios de pontos. **Nunca** vendas, faturamento, custos, estoque, pedidos, comissão, Resultado nem Conversas. Trava no servidor. |
+| Saldo | **Da rede, não por loja** (confirmado em 24/11/2026): um saldo por cliente, válido em todas as lojas. Na migração, o mesmo cliente vem nos arquivos de várias lojas e conta uma vez só (cliente e movimento). |
 | Histórico | **Só o que vem da FIXE. Passado é passado**: não recalculamos pontos antigos; vale o saldo da FIXE na data da troca. |
 | Pontos importados sem validade | Ganham **vencimento = data da nossa implantação + 6 meses** e são os primeiros a sair no resgate (opção "C"). Precisa da aprovação da franquia (é regra do programa). |
 | Valor do ponto | Configurável **com vigência** ("a partir de dd/mm, R$ 70 = 1 ponto"). Cada venda ganha pela regra do dia dela; pontos já ganhos não mudam. |
@@ -42,7 +43,7 @@ Os três momentos em que o caixa conversa com o CRM (e que teremos de atender pe
 ## 3. O que o painel já faz com a FIXE (hoje: só observar)
 
 - **Logs da FIXE** (exportação "Logs", uma linha por movimento): importados por e-mail ou envio manual (`src/fidelidade.js` → `importar`, `ler`, `evento`; guardados em `dados/<loja>/fixe/eventos.json.gz`; a exportação é sempre o histórico inteiro e substitui a anterior).
-- **Saldo oficial**: o robô do FIXE lê o saldo direto na FIXE (sincronização) e a "Base de leads" pode trazer a coluna de saldo; vale o mais recente (`membros()` em `public/js/fidelidade.js`). O painel trata o saldo da FIXE como **da rede** (o mesmo em todas as bases) — **a confirmar com a franquia**.
+- **Saldo oficial**: o robô do FIXE lê o saldo direto na FIXE (sincronização) e a "Base de leads" pode trazer a coluna de saldo; vale o mais recente (`membros()` em `public/js/fidelidade.js`). O saldo da FIXE é **da rede** (confirmado pelo dono em 24/11/2026): o mesmo em todas as bases, como o painel já trata.
 - **Saldo pelos Logs** (para comparar e para os vencimentos): lotes de pontos em FIFO, cada lote vence `validadeMeses` depois; resgate, expiração e saída tiram dos lotes mais antigos (`saldos()`); "Operação cancelada via PDV" anula o lançamento de pontos ou resgate mais recente do mesmo dia (até 60 min antes, preferindo o que tem os mesmos produtos).
 - **Ciclo de resgate** (quem juntou o mínimo e resgatou ou não em `prazoResgate` dias): `resgates()`.
 - Clientes, Hoje, Campanhas, robô do WhatsApp, Conversas e o "retorno do programa" (`fidretorno.js`) já usam esses dados.
@@ -89,7 +90,6 @@ Cada loja tem os **seus arquivos** (o export é por operação). Dois arquivos:
 ## 6. O que falta saber (levar à franquia)
 
 - Documentação da integração de fidelidade do AppNext (chamadas, autenticação, o que o caixa faz se o CRM não responder, se a troca é por loja, se a NextSoft cobra).
-- O saldo é **por loja ou da rede**? (O painel hoje supõe da rede.) Se for da rede, o mesmo cliente vem nos arquivos de várias lojas e conta uma vez só.
 - A importação sem validade aconteceu em todas as lojas?
 - Cadastro completo: quais campos contam (e-mail, celular, aniversário, cidade…) e se o bônus é de 1 ou 2 pontos.
 - Regulamento completo: valor do ponto, prêmios e pontos de cada um, mínimo para resgate, regras de estorno, boas-vindas.
