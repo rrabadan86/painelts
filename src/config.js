@@ -107,6 +107,8 @@ function normalizar(cfg) {
       // robô do WhatsApp (decisão do dono, 23/11/2026; ZAP-PERM-01): só o admin libera, pessoa a pessoa (franqueado e gerente);
       // ausente = usuário de antes da regra (vale quem tinha loja com o robô: `roboLegado`, gravado uma vez na subida)
       robo: typeof v.robo === 'boolean' ? v.robo : undefined,
+      // "O que mudou no painel": id da última novidade que a pessoa já viu (src/novidades.js, NOV-02)
+      novidadesVisto: typeof v.novidadesVisto === 'string' ? v.novidadesVisto.slice(0, 80) : undefined,
       // Conversas do WhatsApp: vem liberada para o franqueado; só o admin tira (false)
       conversas: v.conversas === false ? false : undefined,
       guiaVisto: Array.isArray(v.guiaVisto) && v.guiaVisto.length ? v.guiaVisto.filter((x) => typeof x === 'string').slice(-200) : undefined,

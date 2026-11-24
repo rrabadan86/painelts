@@ -904,7 +904,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     try {
       C.alterar((cfg) => {
         if (cfg.usuarios[nome]) throw new Error(`O usuário "${nome}" já existe.`);
-        cfg.usuarios[nome] = { senha: hash, ...d, trocarSenha: req.body.trocarSenha !== false, criadoEm: new Date().toISOString() };
+        cfg.usuarios[nome] = { senha: hash, ...d, trocarSenha: req.body.trocarSenha !== false, criadoEm: new Date().toISOString(), novidadesVisto: require('./novidades').ultimoId() || undefined }; // quem chega agora não vê as novidades antigas (NOV-02)
       });
     } catch (e) { return res.status(400).json({ erro: C.msgErro(e) }); }
     aud(req, 'criou usuário', nome, { perfil: d.perfil, lojas: d.lojas, roboWhatsapp: d.robo ? 'liberado' : undefined, conversas: d.conversas === false ? 'tiradas' : undefined, acessoAte: d.acessoAte || 'sem prazo', trocarSenha: req.body.trocarSenha !== false, loja: lojaUnicaAud(d.lojas) });

@@ -292,7 +292,7 @@ const APP_SCRIPTS = [
   'msgwpp.js', 'recompra.js', 'clientes.js', 'campretorno.js', 'campanhas.js', 'conversas.js', 'zap.js', 'espera.js', 'extras.js', 'contabilidade.js',
   'ruptura.js', 'visaodono.js', 'classeprod.js', 'grupoprod.js', 'fotoprod.js', 'custodata.js', 'estoque.js', 'devolucao.js', 'precos.js', 'inventario.js', 'sugestoes.js', 'validade.js', 'nfsaida.js', 'creditos.js', 'orcamento.js', 'checklist.js',
   'sitedia.js', 'site.js', 'conferencia.js', 'conferencia-tela.js', 'inicio.js', 'pedido.js', 'ia.js', 'dre.js', 'apagar.js', 'comprasvendas.js', 'efeitopreco.js', 'equipe.js', 'mapa.js', 'feriados.js', 'fidretorno.js',
-  'guia.js', 'notificacoes.js', 'config.js', 'script.js', 'fechamento.js', 'sistema.js', 'main.js',
+  'guia.js', 'notificacoes.js', 'novidades.js', 'config.js', 'script.js', 'fechamento.js', 'sistema.js', 'main.js',
 ];
 let bundleMem = null, bundleCheckEm = 0;
 function comprimirAsset(buf) {
@@ -491,6 +491,13 @@ app.use('/api/demo', (req, res, next) => {
   next();
 });
 // a apresentação entra como administrador (tudo visível, nada é salvo: o navegador barra qualquer alteração)
+app.get('/api/demo/novidades', (req, res) => {
+  // apresentação: a janela não abre sozinha (nada é guardado); pelo menu, mostra as novidades de quem vê tudo
+  const NOV = require('./src/novidades');
+  const itens = req.query.todas === '1' ? NOV.paraPessoa({ perfil: 'admin' }, { todas: true }) : [];
+  res.json({ itens: itens.map(({ id, data, titulo, texto }) => ({ id, data, titulo, texto })), ultimo: NOV.ultimoId() });
+});
+app.post('/api/demo/novidades/visto', (req, res) => res.json({ ok: true }));
 app.get('/api/demo/eu', (req, res) => res.json({ usuario: 'apresentacao', nome: 'Visitante', demo: true, perfil: 'admin', vendedor: '',
   pode: { configurar: true, admin: true, clientes: true, custos: true }, telas: null, lojas: DEMO.lojasDemo().map((l) => ({ ...l, marca: { nome: l.nome, logo: false } })) }));
 // ---------- IA na apresentação: respostas simuladas (nada vai para a Anthropic, nada é salvo) ----------
@@ -1414,6 +1421,28 @@ app.get('/api/versao', (req, res) => {
   res.set('Cache-Control', 'no-store');
   res.json({ v: obterBundle().v });
 });
+// "O que mudou no painel" (NOV-01…03): as novidades que valem para a pessoa e que ela ainda não viu; "visto" guarda até onde
+app.get('/api/novidades', (req, res) => {
+  const NOV = require('./src/novidades');
+  const u = C.get().usuarios[req.user] || (req.perfil === 'admin' ? { perfil: 'admin' } : null);
+  const itens = NOV.paraPessoa(u, { podeTela: (t) => podeTela(req, t), todas: req.query.todas === '1' });
+  res.json({ itens: itens.map(({ id, data, titulo, texto }) => ({ id, data, titulo, texto })), ultimo: NOV.ultimoId() });
+});
+app.post('/api/novidades/visto', express.json({ limit: '2kb' }), (req, res) => {
+  if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
+  const NOV = require('./src/novidades');
+  const id = String((req.body || {}).ate || '');
+  const i = NOV.NOVIDADES.findIndex((n) => n.id === id);
+  if (i < 0) return res.status(400).json({ erro: 'Novidade desconhecida.' });
+  if (!C.get().usuarios[req.user]) return res.json({ ok: true }); // sem usuário cadastrado: nada a guardar
+  C.alterar((cfg) => {
+    const u = cfg.usuarios[req.user]; if (!u) return;
+    const atual = NOV.NOVIDADES.findIndex((n) => n.id === u.novidadesVisto);
+    if (i > atual) u.novidadesVisto = id; // só anda para a frente
+  });
+  res.json({ ok: true });
+});
+
 app.get('/api/eu', (req, res) => {
   const u = C.get().usuarios[req.user];
   res.json({
