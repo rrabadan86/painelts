@@ -264,12 +264,69 @@ test('número que respondeu "parar" e celular repetido em outro cliente: não re
   assert.strictEqual(d.msg.cliente.cpf, CPF[1]);
 });
 
+// ---------- rodízio entre campanhas (decisão do dono, 24/11/2026) ----------
+/** três campanhas do robô com `n` pendentes cada (cpfs próprios), conferidas */
+function rodizioCena(n = 12, o = {}) {
+  const cs = ['a', 'b', 'c'].map((id, k) => {
+    const lista = Array.from({ length: n }, (_, i) => ({ cpf: String(10000000000 + k * 1000 + i), nome: `C${id}${i}`, st: 'p' }));
+    return camp(id, { criadaEm: `2026-03-0${k + 1}T12:00:00.000Z`, limiteDia: 0, rodadas: [{ id: 'r' + id, em: '2026-03-01T12:00:00.000Z', lista }] });
+  });
+  const preparo = Object.fromEntries(cs.map((c, k) => [c.id, { em: new Date(QUARTA_10H - 3600e3).toISOString(), por: 'dono', rodada: c.rodadas[0].id,
+    itens: Object.fromEntries(c.rodadas[0].lista.map((it, i) => [it.cpf, { para: '55629' + String(10000000 + k * 1000 + i), v: valores(it.nome) }])) }]));
+  return cena({ campanhas: cs, preparo, cfg: { ...ZF.PADRAO, teto: 200, ...(o.cfg || {}) } });
+}
+/** envia `vezes` mensagens como o laço do robô faz (marca enviado por 'robô') e devolve a sequência de campanhas */
+function enviar(s, vezes) {
+  const seq = [];
+  for (let i = 0; i < vezes; i++) {
+    s.agora += 20 * MIN;
+    const d = ZF.decidir(s);
+    if (!d.msg) { seq.push(d.motivo); continue; }
+    const it = s.campanhas.find((c) => c.id === d.msg.campanha).rodadas[0].lista.find((x) => x.cpf === d.msg.cliente.cpf);
+    Object.assign(it, { st: 'e', em: new Date(s.agora).toISOString(), por: 'robô' });
+    seq.push(d.msg.campanha);
+  }
+  return seq.join('');
+}
+
+test('ZAP-RODIZIO-01: com várias campanhas no robô, 5 seguidas de cada uma e passa a vez, em ciclo (da mais antiga para a mais nova)', () => {
+  const s = rodizioCena();
+  assert.strictEqual(enviar(s, 20), 'aaaaabbbbbcccccaaaaa');
+  // sem estado guardado: a vez continua de onde parou (servidor reiniciado relê as listas)
+  assert.deepStrictEqual(ZF.vezDoRodizio(ZF.campanhasDoRobo(s.campanhas), 5), { vez: 'b', seguidas: 0 });
+});
+
+test('ZAP-RODIZIO-02: campanha sem ninguém para enviar agora passa a vez; acabada sai do ciclo', () => {
+  const s = rodizioCena(8);
+  // "b" só com gente esperando estoque: passa a vez sem travar o ciclo
+  for (const k of Object.keys(s.preparo.b.itens)) s.preparo.b.itens[k].espera = true;
+  assert.strictEqual(enviar(s, 13), 'aaaaacccccaaa');
+  // "a" acaba (8 na lista): o ciclo segue só com "c" até ela acabar; depois sobra só quem espera estoque
+  assert.strictEqual(enviar(s, 4), 'cccesperando_estoque');
+});
+
+test('ZAP-RODIZIO-03: o limite por dia de cada campanha continua valendo dentro do rodízio', () => {
+  const s = rodizioCena();
+  s.campanhas[0].limiteDia = 3;
+  assert.strictEqual(enviar(s, 13), 'aaabbbbbcccccbbbbb'.slice(0, 13));
+});
+
+test('ZAP-RODIZIO-04: bloco 1 alterna mensagem a mensagem; configuração antiga sem o campo fica com 5', () => {
+  const s = rodizioCena(4, { cfg: { bloco: 1 } });
+  assert.strictEqual(enviar(s, 9), 'abcabcabc');
+  assert.strictEqual(ZF.validarCfg({ min: 900, max: 1200, das: '09:00', as: '18:30', dias: [1], teto: 30, falhas: 3 }).ok.bloco, 5);
+  // envio manual (por outra pessoa) não conta na vez do robô
+  const m = rodizioCena(4);
+  Object.assign(m.campanhas[1].rodadas[0].lista[0], { st: 'e', em: new Date(QUARTA_10H).toISOString(), por: 'gerente' });
+  assert.strictEqual(enviar(m, 2), 'aa');
+});
+
 test('configuração: valida ritmo, horário, dias, teto e falhas', () => {
   const ok = (o) => ZF.validarCfg({ ...ZF.PADRAO, ...o });
   assert.deepStrictEqual(ok({}).ok, ZF.PADRAO);
-  assert.deepStrictEqual(ZF.PADRAO, { horario: 'loja', min: 900, max: 1200, das: '09:00', as: '18:30', dias: [1, 2, 3, 4, 5, 6], teto: 30, falhas: 3, esperaConversa: 3 });
+  assert.deepStrictEqual(ZF.PADRAO, { horario: 'loja', min: 900, max: 1200, das: '09:00', as: '18:30', dias: [1, 2, 3, 4, 5, 6], teto: 30, falhas: 3, esperaConversa: 3, bloco: 5 });
   for (const ruim of [{ min: 59 }, { max: 7201 }, { min: 1300, max: 1200 }, { min: 'abc' }, { min: 90.5 }, { das: '9:00' }, { as: '24:00' }, { das: '18:30', as: '09:00' }, { das: '10:00', as: '10:00' },
-    { dias: [] }, { dias: [7] }, { dias: 'seg' }, { horario: 'sempre' }, { teto: 0 }, { teto: 201 }, { falhas: 0 }, { falhas: 11 }]) assert.ok(ok(ruim).erro, JSON.stringify(ruim));
+    { dias: [] }, { dias: [7] }, { dias: 'seg' }, { horario: 'sempre' }, { teto: 0 }, { teto: 201 }, { falhas: 0 }, { falhas: 11 }, { bloco: 0 }, { bloco: 51 }, { bloco: 'x' }]) assert.ok(ok(ruim).erro, JSON.stringify(ruim));
   assert.deepStrictEqual(ok({ min: 60, max: 7200, dias: [6, 0, 0], teto: 200, falhas: 10 }).ok, { ...ZF.PADRAO, min: 60, max: 7200, dias: [0, 6], teto: 200, falhas: 10 });
   assert.deepStrictEqual(ok({ min: '300', max: '300', teto: '1' }).ok, { ...ZF.PADRAO, min: 300, max: 300, teto: 1 });
   assert.strictEqual(ok({ horario: 'proprio' }).ok.horario, 'proprio');

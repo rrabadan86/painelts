@@ -23,7 +23,8 @@ const M = require('../public/js/msgwpp');
 
 // horario: 'loja' (padrão, decisão do dono) = envia no horário de funcionamento da loja, dia a dia; 'proprio' = das/as/dias abaixo
 // esperaConversa (decisão do dono, 23/11/2026): dias sem mensagem do robô para quem está conversando com a loja (0 desliga)
-const PADRAO = { horario: 'loja', min: 900, max: 1200, das: '09:00', as: '18:30', dias: [1, 2, 3, 4, 5, 6], teto: 30, falhas: 3, esperaConversa: 3 };
+// bloco (decisão do dono, 24/11/2026; ZAP-RODIZIO): quantas mensagens seguidas de cada campanha antes de passar a vez à próxima
+const PADRAO = { horario: 'loja', min: 900, max: 1200, das: '09:00', as: '18:30', dias: [1, 2, 3, 4, 5, 6], teto: 30, falhas: 3, esperaConversa: 3, bloco: 5 };
 const ORIGEM_RESPOSTA = 'respondeu parar pelo WhatsApp'; // fica no contato e na fila: a loja vê de onde veio e pode desfazer
 const PREPARO_DIAS = 3; // os valores dos campos ({pontos}, {dias}…) envelhecem: depois disso a lista precisa ser conferida de novo
 const HORA = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -82,7 +83,9 @@ function validarCfg(b) {
   // configuração antiga sem o campo: o padrão (3 dias)
   const esperaConversa = b.esperaConversa == null || b.esperaConversa === '' ? PADRAO.esperaConversa : int(b.esperaConversa);
   if (!(Number.isInteger(esperaConversa) && esperaConversa >= 0 && esperaConversa <= 30)) return { erro: 'Em conversa com a loja: de 0 a 30 dias (0 desliga).' };
-  return { ok: { horario, min, max, das, as, dias, teto, falhas, esperaConversa } };
+  const bloco = b.bloco == null || b.bloco === '' ? PADRAO.bloco : int(b.bloco);
+  if (!(Number.isInteger(bloco) && bloco >= 1 && bloco <= 50)) return { erro: 'Rodízio entre campanhas: de 1 a 50 mensagens seguidas de cada campanha.' };
+  return { ok: { horario, min, max, das, as, dias, teto, falhas, esperaConversa, bloco } };
 }
 
 // ---------- arquivos ----------
@@ -233,6 +236,31 @@ function adiadoAte(cfg, conversas, para, agora) {
 const ordem = (a, b) => String(a.criadaEm || '').localeCompare(String(b.criadaEm || '')) || String(a.id).localeCompare(String(b.id));
 /** campanhas que o robô envia: ligadas para o robô e não pausadas, da mais antiga para a mais nova (ordem estável) */
 const campanhasDoRobo = (campanhas) => (campanhas || []).filter((c) => c.robo === true && c.ativa !== false && c.rodadas && c.rodadas[0]).sort(ordem);
+/**
+ * Rodízio entre as campanhas do robô (decisão do dono, 24/11/2026; ZAP-RODIZIO): `bloco` mensagens seguidas de uma campanha,
+ * depois a vez passa à próxima (na ordem de `campanhasDoRobo`), em ciclo. Sem estado guardado: a vez sai dos últimos envios
+ * do próprio robô (st 'e', por 'robô') nas listas das campanhas. Campanha sem ninguém para enviar agora só perde a vez
+ * (`decidir` segue para a próxima da ordem). → { vez: id da campanha da vez | null, seguidas: envios seguidos dela }
+ */
+function vezDoRodizio(robos, bloco) {
+  const envios = [];
+  for (const c of robos) for (const r of c.rodadas) for (const x of r.lista) if (x.st === 'e' && x.por === 'robô' && x.em) envios.push([x.em, c.id]);
+  if (!envios.length || !robos.length) return { vez: robos.length ? robos[0].id : null, seguidas: 0 };
+  envios.sort((a, b) => (a[0] < b[0] ? 1 : a[0] > b[0] ? -1 : 0));
+  const ultima = envios[0][1];
+  let seguidas = 0;
+  while (seguidas < envios.length && envios[seguidas][1] === ultima) seguidas++;
+  const i = robos.findIndex((c) => c.id === ultima);
+  if (i < 0) return { vez: robos[0].id, seguidas: 0 };
+  if (seguidas < bloco) return { vez: ultima, seguidas };
+  return { vez: robos[(i + 1) % robos.length].id, seguidas: 0 };
+}
+/** as campanhas na ordem em que o robô tenta agora: a da vez primeiro, depois as seguintes em ciclo */
+function ordemDoRodizio(robos, bloco) {
+  const { vez } = vezDoRodizio(robos, bloco);
+  const i = Math.max(0, robos.findIndex((c) => c.id === vez));
+  return [...robos.slice(i), ...robos.slice(0, i)];
+}
 /** envios de hoje da campanha (todas as listas, manuais e do robô): é o mesmo limite da fila manual */
 const enviadosCampanhaHoje = (c, dia) => c.rodadas.reduce((n, r) => n + r.lista.filter((x) => x.st === 'e' && x.em && C.diaSP(x.em) === dia).length, 0);
 
@@ -258,7 +286,7 @@ function decidir({ cfg, estado, campanhas, contatos, preparo, naoquer, enviados,
   if (!robos.length) return fim('fora_periodo');
   contatos = contatos || {}; preparo = preparo || {}; naoquer = porChave(naoquer); enviados = porChave(enviados);
   let conferir = false, limite = false, estoque = false, emConversa = false;
-  for (const c of robos) {
+  for (const c of ordemDoRodizio(robos, cfg.bloco || PADRAO.bloco)) {
     const rod = c.rodadas[0];
     if (!rod.lista.some((x) => x.st === 'p')) continue;
     const limiteDia = c.limiteDia != null ? c.limiteDia : 20;
@@ -414,6 +442,6 @@ const sortear = (cfg, agora, rnd = Math.random) => agora + (cfg.min + Math.floor
 
 module.exports = {
   foneChave, porChave, adiadoAte, adiadosConversa, adiadosDaLoja, adiadaDaConversa, conversasDe, janelaDoDia, agenda, temFuncionamento, MARGEM_FECHA_MIN, MARGEM_ABRE_MIN, SEM_WPP_PAUSA,
-  envioManualBloqueado, registrarEnvioNumero, PADRAO, PREPARO_DIAS, ORIGEM_RESPOSTA, ligarNumeroAoCliente, voltouAAceitar, MOTIVOS, NUMERO, fim4, cfgDe, validarCfg, relogio, enviadosHoje, campanhasDoRobo, decidir, proxima, sortear,
+  envioManualBloqueado, registrarEnvioNumero, PADRAO, PREPARO_DIAS, ORIGEM_RESPOSTA, ligarNumeroAoCliente, voltouAAceitar, MOTIVOS, NUMERO, fim4, cfgDe, validarCfg, relogio, enviadosHoje, campanhasDoRobo, vezDoRodizio, ordemDoRodizio, decidir, proxima, sortear,
   lerEstado, temEstado, mudarEstado, lerContatos, mudarContato, lerPreparo, gravarPreparo, limparPreparo, lerJson, gravarJson,
 };

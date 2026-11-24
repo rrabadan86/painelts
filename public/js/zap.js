@@ -138,6 +138,8 @@
       const teto = num(g.teto, 1, 200, '72px'), falhas = num(g.falhas, 1, 10, '64px');
       const espera = num(g.esperaConversa != null ? g.esperaConversa : 3, 0, 30, '64px');
       espera.classList.add('zap-espera');
+      const bloco = num(g.bloco != null ? g.bloco : 5, 1, 50, '64px');
+      bloco.classList.add('zap-bloco');
       const dias = new Set(g.dias);
       const cxDias = h('fieldset', { class: 'zap-dias' }, h('legend', null, 'Dias de envio ', TS.dica('O robô só envia nos dias marcados. Padrão: de segunda a sábado.')),
         ...DIAS.map(([d, t]) => { const cb = sujar(h('input', { type: 'checkbox', checked: dias.has(d) || null })); cb.addEventListener('change', () => { cb.checked ? dias.add(d) : dias.delete(d); }); return h('label', { class: 'zap-dia' }, cb, h('span', null, t)); }));
@@ -167,13 +169,14 @@
       };
       TS.aoConfirmar(min, conferirRitmo); conferirRitmo();
       const btSalvar = h('button', { type: 'button', class: 'btn primary' }, 'Salvar');
-      btSalvar.addEventListener('click', fazer(btSalvar, () => api('PUT', 'config', { loja: lojaId, horario: rProprio.checked ? 'proprio' : 'loja', min: min.value, max: max.value, das: das.value, as: as.value, dias: [...dias], teto: teto.value, falhas: falhas.value, esperaConversa: espera.value }), 'Configuração do robô salva.'));
+      btSalvar.addEventListener('click', fazer(btSalvar, () => api('PUT', 'config', { loja: lojaId, horario: rProprio.checked ? 'proprio' : 'loja', min: min.value, max: max.value, das: das.value, as: as.value, dias: [...dias], teto: teto.value, falhas: falhas.value, esperaConversa: espera.value, bloco: bloco.value }), 'Configuração do robô salva.'));
       const trava = !s.pode.configurar;
       const campos = h('div', { class: 'zap-campos' },
         h('div', { class: 'zap-linha' }, h('b', null, 'Ritmo'), TS.dica('Tempo entre uma mensagem e a próxima. O robô sorteia um valor diferente a cada envio, entre os dois números, para não parecer máquina. Padrão: de 900 a 1200 segundos (15 a 20 minutos). Mínimo aceito: 60.'), h('span', null, 'de'), min, h('span', null, 'a'), max, h('span', null, 'segundos entre as mensagens')),
         avisoRitmo,
         escolhaHora, blocoLoja, blocoProprio,
         h('div', { class: 'zap-linha' }, h('b', null, 'Máximo por dia'), TS.dica('Quantas mensagens o robô manda por dia pelo número da loja, somando todas as campanhas. Chegou no máximo, continua no próximo dia de envio. Cada campanha ainda tem o próprio limite por dia. Padrão: 30.'), teto, h('span', null, 'mensagens por dia (todas as campanhas)')),
+        h('div', { class: 'zap-linha' }, h('b', null, 'Rodízio entre campanhas'), TS.dica('Com mais de uma campanha ligada no robô, ele envia este número de mensagens seguidas de uma campanha e passa para a próxima, em ciclo: todas andam um pouco por vez, sem esperar a outra terminar. A ordem do ciclo é da campanha mais antiga para a mais nova. Campanha sem ninguém para enviar agora (lista acabou, limite do dia, esperando estoque ou em conversa) passa a vez. 1 = alterna mensagem a mensagem. Padrão: 5.'), bloco, h('span', null, 'mensagens seguidas de cada campanha')),
         h('div', { class: 'zap-linha' }, h('b', null, 'Em conversa com a loja'), TS.dica('Quando o cliente está conversando com a loja no WhatsApp (ele escreveu ou alguém da loja respondeu), o robô não manda mensagem de campanha para ele: ela fica adiada até a conversa ficar parada esse número de dias. O cliente continua na fila e o robô passa para o próximo. As mensagens do próprio robô não contam. A conversa também não conta como "já recebeu mensagem" no intervalo das campanhas. 0 desliga. Padrão: 3.'), h('span', null, 'esperar'), espera, h('span', null, 'dias sem conversa para mandar mensagem do robô')),
         h('div', { class: 'zap-linha' }, h('b', null, 'Parar sozinho'), TS.dica('Se o envio falhar esse número de vezes seguidas, o robô pausa, avisa aqui e no Início e só volta quando alguém ligar de novo. Protege o número quando algo está errado. Padrão: 3.'), h('span', null, 'depois de'), falhas, h('span', null, 'falhas seguidas')));
       blocoProprio.append(h('div', { class: 'zap-linha' }, h('b', null, 'Horário'), TS.dica('O robô só envia dentro deste horário (de Brasília). Fora dele, espera o próximo dia de envio.'), h('span', null, 'das'), das, h('span', null, 'às'), as), cxDias);
@@ -246,6 +249,8 @@
           linhas: [prox ? h('span', { class: 'zap-prox' }, prox[0].toUpperCase() + prox.slice(1)) : null,
             s.fila ? `${fmt.int(s.fila.pendentes)} ${s.fila.pendentes === 1 ? 'pendente' : 'pendentes'} em ${fmt.int(s.fila.campanhas)} ${s.fila.campanhas === 1 ? 'campanha' : 'campanhas'} do robô` : null,
             // trava "em conversa" (decisão do dono, 23/11/2026): quem está conversando com a loja fica para depois, sem sair da fila
+            s.rodizio && s.rodizio.campanhas > 1 ? h('small', { class: 'muted zap-rodizio' }, `Rodízio: ${fmt.int(s.rodizio.bloco)} de cada campanha${s.rodizio.vez ? ` · agora: ${s.rodizio.vez}` : ''} `,
+              TS.dica(`O robô envia ${s.rodizio.bloco === 1 ? 'uma mensagem' : fmt.int(s.rodizio.bloco) + ' mensagens seguidas'} de uma campanha e passa para a próxima, em ciclo, da mais antiga para a mais nova. Campanha sem ninguém para enviar agora passa a vez. Muda em Configurar → "Rodízio entre campanhas".`)) : null,
             s.fila && s.fila.emConversa ? h('small', { class: 'muted zap-emconversa' }, `${fmt.int(s.fila.emConversa)} ${s.fila.emConversa === 1 ? 'adiado porque está conversando' : 'adiados porque estão conversando'} com a loja `,
               TS.dica(`O robô não manda mensagem de campanha para quem teve mensagem na conversa do WhatsApp (do cliente ou da loja) nos últimos ${s.cfg && s.cfg.esperaConversa != null ? s.cfg.esperaConversa : 3} dias. Eles continuam na fila e recebem quando a conversa ficar parada esse tempo; o robô segue para os próximos. Muda em Configurar → "Em conversa com a loja".`)) : null] } : null,
         ne ? { rot: 'Não enviadas', num: fmt.int(ne.n), estado: ne.n ? 'ruim' : null,
@@ -293,7 +298,7 @@
    * por dia = o menor entre o limite da campanha, o máximo do número e o que cabe no horário no ritmo médio.
    * Conta só os dias de envio (cfg.dias), no horário de Brasília. → { porDia, dias, fim (Date), primeira (Date|null), agoraNoHorario }
    */
-  function estimar({ pend, limite, cfg, agora = Date.now(), agenda = null }) {
+  function estimar({ pend, limite, cfg, agora = Date.now(), agenda = null, dividir = 1 }) {
     const sp = (t) => {
       const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Sao_Paulo', weekday: 'short', hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(new Date(t)).map((x) => [x.type, x.value]));
       return { dow: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(p.weekday), min: (+p.hour % 24) * 60 + +p.minute, iso: new Date(t).toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }) };
@@ -318,7 +323,9 @@
       return cfg.dias.includes(d.dow) ? { ini: hm(cfg.das), fim: hm(cfg.as) } : null;
     };
     const medio = (cfg.min + cfg.max) / 2;
-    const porDiaDe = (j) => Math.max(1, Math.min(limite > 0 ? limite : Infinity, cfg.teto, Math.floor(((j.fim - j.ini) * 60) / medio) + 1));
+    // rodízio (ZAP-RODIZIO): o número da loja é dividido entre as campanhas ligadas no robô
+    const n = Math.max(1, dividir || 1);
+    const porDiaDe = (j) => Math.max(1, Math.min(limite > 0 ? limite : Infinity, Math.floor(cfg.teto / n), Math.floor((Math.floor(((j.fim - j.ini) * 60) / medio) + 1) / n)));
     const agoraSP = sp(agora), jHoje = janela(agora);
     const agoraNoHorario = !!(jHoje && agoraSP.min >= jHoje.ini && agoraSP.min < jHoje.fim);
     // dias de envio a partir de hoje (hoje só conta se ainda dá tempo)
@@ -384,7 +391,8 @@
       const pend = info.pendentes ? info.pendentes() : 0, comp = info.comparacao ? info.comparacao() : 0;
       const limite = camp.limiteDia != null ? camp.limiteDia : 20;
       const cfg = s && s.cfg;
-      const est = cfg ? estimar({ pend, limite, cfg, agenda: s.agenda }) : null;
+      const outras = s && s.rodizio ? s.rodizio.campanhas : 0; // campanhas já ligadas no robô: dividem o número com esta
+      const est = cfg ? estimar({ pend, limite, cfg, agenda: s.agenda, dividir: outras + 1 }) : null;
       const ex = info.exemplo ? info.exemplo() : null;
       const andando = s && s.ligado && !s.pausa && s.conexao && s.conexao.estado === 'conectado';
       const primeira = !est || !pend ? null
@@ -396,7 +404,7 @@
           linha('Vai enviar para', `${fmt.int(pend)} ${pend === 1 ? 'cliente' : 'clientes'}${comp ? ` (${fmt.int(comp)} ${comp === 1 ? 'fica' : 'ficam'} sem mensagem, para comparar)` : ''}`),
           linha('Por dia', `até ${limite > 0 ? fmt.int(limite) : 'sem limite'} desta campanha${cfg ? ` · ${fmt.int(cfg.teto)} no número da loja (somando todas as campanhas)` : ''}`),
           cfg ? linha('Quando', `${horarioTxt(s)} (horário de Brasília${cfg.horario !== 'proprio' && s.horarioLoja ? ', o mesmo do funcionamento da loja' : ''}), uma mensagem a cada ${Math.round(cfg.min / 60)} a ${Math.round(cfg.max / 60)} minutos`) : null,
-          est && pend ? linha('Termina', `por volta de ${dataTxt(est.fim)} (${fmt.int(est.dias)} ${est.dias === 1 ? 'dia' : 'dias'} de envio, cerca de ${fmt.int(est.porDia)} por dia${s.fila && s.fila.campanhas ? '; com outras campanhas no robô, demora mais' : ''})`) : null,
+          est && pend ? linha('Termina', `por volta de ${dataTxt(est.fim)} (${fmt.int(est.dias)} ${est.dias === 1 ? 'dia' : 'dias'} de envio, cerca de ${fmt.int(est.porDia)} por dia${outras ? `; o número da loja fica dividido em rodízio com ${outras === 1 ? 'a outra campanha' : `as outras ${fmt.int(outras)} campanhas`} do robô` : ''})`) : null,
           primeira ? linha('A primeira sai', primeira) : null,
         ].filter(Boolean)),
         ex ? h('div', null, h('small', { class: 'muted' }, 'Exemplo da mensagem:'), h('div', { class: 'cli-msg' }, ex)) : null,

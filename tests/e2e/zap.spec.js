@@ -274,3 +274,18 @@ test('CEL-NOME-02: com nome nas mensagens (WhatsApp de outra pessoa), {nome} sai
   expect(r.aniv, 'sai do motivo aniversário do Hoje').toBe(false);
   expect(r.naCampanha, 'fica de fora da campanha de aniversariantes').toBe(false);
 });
+
+test('ZAP-RODIZIO-05: a faixa do robô mostra o rodízio entre campanhas e o cartão tem o campo "Rodízio entre campanhas" (salva com o valor)', async ({ page }) => {
+  await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS.db && TS.state.loja && TS.state.loja !== 'todas');
+  await page.evaluate(() => { location.hash = '#campanhas'; });
+  await expect(page.locator('.zap-rodizio')).toContainText('Rodízio: 5 de cada campanha · agora: Exemplo: Sentimos sua falta');
+  await page.getByRole('button', { name: /Configurar ›|Conectar e configurar ›/ }).first().evaluate((b) => b.click());
+  const j = page.locator('.zap-janela');
+  const campo = j.locator('input.zap-bloco');
+  await expect(campo).toHaveValue('5');
+  await campo.fill('2');
+  const [resp] = await Promise.all([page.waitForResponse((r) => r.url().includes('/zap/config') && r.request().method() === 'PUT'), j.getByRole('button', { name: 'Salvar' }).evaluate((b) => b.click())]);
+  expect(resp.request().postDataJSON().bloco).toBe('2');
+  expect((await resp.json()).rodizio.bloco, 'a apresentação devolve o valor validado (sem gravar)').toBe(2);
+  await expect(j).toContainText('Rodízio entre campanhas');
+});
