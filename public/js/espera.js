@@ -18,7 +18,7 @@
   const grupoIt = (it) => (TS.grupoProd ? TS.grupoProd.texto(it.cod, it.desc) : '');
   const gruposItens = (p) => [...new Set(p.itens.map(grupoIt).filter(Boolean))].join(' · ');
   const nomesItens = (p) => { const n = p.itens.map((i) => (i.qtd > 1 ? `${i.qtd}× ` : '') + i.desc); return n.length <= 1 ? n[0] || '' : n.slice(0, -1).join(', ') + ' e ' + n[n.length - 1]; };
-  const primeiro = (nome) => { const p = String(nome || '').trim().split(/\s+/)[0] || ''; return p ? p[0].toUpperCase() + p.slice(1).toLowerCase() : ''; };
+  const primeiro = (nome) => TS.msgWpp.primeiroNome(nome); // a mesma função das campanhas e do robô (NOME-MSG-01)
   const bonito = (s) => {
     const t = String(s || '').trim();
     if (!t) return '';

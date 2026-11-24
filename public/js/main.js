@@ -151,7 +151,10 @@
       add('Aniversário', 'Aniversário', s.aniv ? TS.MESES_LONGOS[+s.aniv - 1] : '', () => { s.aniv = ''; });
       add('Loja', 'Loja', nomesSet(s.lojas, 'loja'), () => s.lojas.clear());
       add('Grupo comprado', 'Grupo comprado', nomesSet(s.grupos, 'grupoC'), () => s.grupos.clear());
-      add('Cidade (cadastro)', 'Cidade', nomesSet(s.cidade, null), () => s.cidade.clear());
+      const cidTxt = [...s.cidade].map((k) => (k === TS.SEM_CIDADE ? 'sem cidade' : (TS.cli && TS.cli.cidadeNome && TS.cli.cidadeNome.get(k)) || k));
+      add('Cidade (cadastro)', 'Cidade', cidTxt.length > 2 ? `${cidTxt.length} selecionadas` : cidTxt.join(', '), () => s.cidade.clear());
+      const compTxt = [...(s.compraEm || [])].map((k) => (k === '__nossa' ? 'esta loja' : k === '__so' ? 'só nesta loja' : k));
+      add('Compra mais em', 'Compra mais em', compTxt.length > 2 ? `${compTxt.length} selecionadas` : compTxt.join(', '), () => s.compraEm.clear());
       return L;
     }
     add('Ano e mês', 'Ano e mês', f.preset === 'anomes' ? anoMesTxt(f) : '', () => TS.aplicarAnoMes(null, null, f));
