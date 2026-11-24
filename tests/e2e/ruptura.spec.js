@@ -1,4 +1,4 @@
-const { test, expect } = require('./_base');
+const { test, expect, opcaoAtiva } = require('./_base');
 
 // Estoque: quadros "Perdendo por falta" e "Dinheiro sobrando" filtram a tabela; abas com contagem e colunas com a conta
 test('Estoque: perdendo venda por falta e dinheiro sobrando — quadros, abas e colunas', async ({ page }) => {
@@ -11,9 +11,9 @@ test('Estoque: perdendo venda por falta e dinheiro sobrando — quadros, abas e 
   const kFalta = page.locator('.est-p2-heroi .heroi-col', { hasText: 'Perdendo por falta' });
   await expect(kFalta.locator('.heroi-num')).toContainText(/R\$.*por dia/);
   await kFalta.locator('.est-p2-ir[data-aba="falta"]').click();
-  const abaFalta = card.getByRole('button', { name: /Perdendo venda \(\d+\)/ });
-  await expect(abaFalta).toHaveClass(/on/);
-  const nFalta = +(await abaFalta.textContent()).match(/\((\d+)\)/)[1];
+  // a aba escolhida (abas no computador; o botão da folha no celular, FOLHA-01)
+  await expect.poll(() => opcaoAtiva(page, card.locator('.est-tools'))).toMatch(/Perdendo venda \(\d+\)/);
+  const nFalta = +(await opcaoAtiva(page, card.locator('.est-tools'))).match(/\((\d+)\)/)[1];
   expect(nFalta).toBeGreaterThan(0);
   await expect(kFalta).toContainText(String(nFalta));
   await expect(card).toContainText('Perdendo R$/dia');
@@ -31,9 +31,8 @@ test('Estoque: perdendo venda por falta e dinheiro sobrando — quadros, abas e 
   // linha "Sobrando" do herói (dinheiro sobrando) → aba "Sobrando (N)" com unidades e R$ a custo
   const kSobra = page.locator('.est-p2-heroi .linhas-num-a', { hasText: 'Sobrando' });
   await kSobra.click();
-  const abaSobra = card.getByRole('button', { name: /Sobrando \(\d+\)/ });
-  await expect(abaSobra).toHaveClass(/on/);
-  const nSobra = +(await abaSobra.textContent()).match(/\((\d+)\)/)[1];
+  await expect.poll(() => opcaoAtiva(page, card.locator('.est-tools'))).toMatch(/Sobrando \(\d+\)/);
+  const nSobra = +(await opcaoAtiva(page, card.locator('.est-tools'))).match(/\((\d+)\)/)[1];
   if (nSobra) {
     await expect(kSobra.locator('.linhas-num-v')).toContainText('R$');
     await expect(card).toContainText('Sobrando R$ (custo)');

@@ -1,4 +1,4 @@
-const { test, expect } = require('./_base');
+const { test, expect, escolherOpcao } = require('./_base');
 
 // Estoque → Validade: segunda validade do chá a granel (6 meses depois que o pacote vai para a lata), na apresentação
 test('Validade: mostra o que está na lata com a data de abertura e os pacotes fechados na ordem de abrir; a data pode ser corrigida', async ({ page }, info) => {
@@ -134,8 +134,8 @@ test('Estoque: clicar no nome do chá a granel abre os lotes dele (aberto em cim
   await page.evaluate(() => { location.hash = '#estoque'; });
   await expect(page.locator('.page-title')).toContainText('Estoque');
   // a tabela é paginada (no celular, 40 por vez): mostra todos os produtos e procura o chá pelo nome
-  await page.locator('.seg button', { hasText: /^Todos/ }).first().click();
-  await page.locator('.est-t').first().waitFor();
+  await escolherOpcao(page, '#est-tabela .est-tools', /^Todos/);
+  await page.locator('#est-tabela .est-t, #est-tabela .lmob-it').first().waitFor();
   await page.getByPlaceholder(/Buscar/).first().fill(alvo.desc);
   // no Estoque, clicar no nome do chá a granel abre a mesma janela
   const nomeCha = page.locator('.est-nome-cha', { hasText: alvo.desc }).first();

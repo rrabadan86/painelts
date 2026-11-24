@@ -159,7 +159,7 @@
       h('div', { class: 'card mt' },
         h('div', { class: 'card-head' }, h('div', null, h('div', { class: 'card-title' }, d.todos ? 'Sugestões da equipe' : 'Minhas sugestões'),
           d.todos ? h('div', { class: 'card-sub' }, 'A decisão é tomada em ', h('a', { href: '#pedido' }, 'Estoque → Pedido'), ', no quadro "⭐ Sugestões da equipe". O pedido sugerido não muda sozinho por causa da estrela.') : null)),
-        TS.segFolha(Object.entries(ABAS).map(([k, [t, f, dica]]) => [`${t} (${d.itens.filter(f).length})`, k, dica]), aba, (v) => { state.sugAba = v; repintar(); }),
+        TS.seg(Object.entries(ABAS).map(([k, [t, f, dica]]) => [`${t} (${d.itens.filter(f).length})`, k, dica]), aba, (v) => { state.sugAba = v; repintar(); }),
         tabela(loja, d, lista, aba, repintar, vis)),
     ].filter(Boolean));
   }

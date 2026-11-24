@@ -8,6 +8,9 @@ async function abrir(page) {
   await expect(page.locator('.page-title')).toHaveText('Conferência');
   await expect(page.locator('.conf-abas')).toBeVisible({ timeout: 20000 });
 }
+// tabela no computador; linhas no celular (LMOB-04)
+const CT = (page) => page.locator('.conf-t, .conf-t-lmob').first();
+const LIN = 'tbody tr, .lmob-it';
 const semRolagem = async (page) => expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth), 'rolagem para o lado').toBeLessThanOrEqual(1);
 const print = async (page, info, nome) => { if (process.env.PRINTS) await page.screenshot({ path: `${process.env.PRINTS}/conferencia-${nome}-${info.project.name}.png`, fullPage: true }); };
 
@@ -27,14 +30,14 @@ test('Conferência: quadros clicáveis filtram a tabela do dia a dia e o motivo 
   // começa na aba "Não batem" (é o que pede ação) e o aviso do topo aponta o dia
   const seg = page.locator('.card', { hasText: 'Dia a dia' }).locator('.seg');
   await expect(seg.locator('button.on')).toContainText('Não batem');
-  await expect(page.locator('.conf-t').first().locator('tbody tr')).toHaveCount(d.resumo.naobate);
-  await expect(page.locator('.conf-t').first().locator('tbody tr').first()).toContainText('Não bate');
-  await expect(page.locator('.conf-t').first().locator('tbody tr').first()).toContainText(/O caixa recebeu|As vendas do painel/);
+  await expect(CT(page).locator(LIN)).toHaveCount(d.resumo.naobate);
+  await expect(CT(page).locator(LIN).first()).toContainText('Não bate');
+  await expect(CT(page).locator(LIN).first()).toContainText(/O caixa recebeu|As vendas do painel/);
   // clicar no quadro muda a aba marcada e a tabela (o seletor reflete a tela)
   await quadro('Dias que batem').click();
   await expect(seg.locator('button.on')).toContainText('Batem');
-  await expect(page.locator('.conf-t').first().locator('tbody')).toContainText('Bate com explicação');
-  await expect(page.locator('.conf-t').first().locator('tbody')).toContainText('depois da meia-noite');
+  await expect(CT(page)).toContainText('Bate com explicação');
+  await expect(CT(page)).toContainText('depois da meia-noite');
   await quadro('Sem fechamento').click();
   await expect(seg.locator('button.on')).toContainText('Sem fechamento');
   // formas de pagamento e sobras/faltas por operador e por dia da semana
@@ -42,7 +45,7 @@ test('Conferência: quadros clicáveis filtram a tabela do dia a dia e o motivo 
   const sf = page.locator('.card', { hasText: 'Sobras e faltas de caixa' });
   await expect(sf).toContainText('Operador');
   await sf.locator('.seg button', { hasText: 'Por dia da semana' }).click();
-  await expect(sf.locator('tbody')).toContainText(/Segunda|Terça|Quarta|Quinta|Sexta|Sábado|Domingo/);
+  await expect(sf.locator('tbody, .lmob').first()).toContainText(/Segunda|Terça|Quarta|Quinta|Sexta|Sábado|Domingo/);
   // ajustes: tolerância e o que fazer com cupom cancelado (na apresentação nada é salvo)
   const aj = page.locator('.conf-ajustes');
   await expect(aj.locator('.conf-tol')).toHaveValue('1');
@@ -69,15 +72,15 @@ test('Conferência: cancelados mostram o impacto nas vendas e a saúde dos dados
   await page.locator('.conf-abas button', { hasText: 'Cancelados' }).click();
   await expect(page.locator('.notice.warn')).toContainText('ainda contam nas vendas');
   await expect(page.locator('.kpi', { hasText: 'Ainda contam nas vendas' })).toHaveClass(/kpi-ruim/);
-  const t = page.locator('.conf-t').first();
-  await expect(t.locator('tbody tr')).toHaveCount(3);
-  await expect(t.locator('tbody tr.conf-conta')).toHaveCount(2);
-  await expect(t.locator('tbody')).toContainText('Fora das vendas');
+  const t = CT(page);
+  await expect(t.locator(LIN)).toHaveCount(3);
+  await expect(t.locator('tbody tr.conf-conta, .lmob-it.conf-conta')).toHaveCount(2);
+  await expect(t).toContainText('Fora das vendas');
   await print(page, info, 'cancelados');
   await page.locator('.seg button', { hasText: 'Por vendedor' }).click();
-  await expect(page.locator('.conf-t').first().locator('tbody')).toContainText('(fora da planilha de vendas)');
+  await expect(CT(page)).toContainText('(fora da planilha de vendas)');
   await page.locator('.seg button', { hasText: 'Por dia' }).click();
-  await expect(page.locator('.conf-t').first().locator('thead')).toContainText('Cancelado no caixa');
+  await expect(CT(page)).toContainText('Cancelado no caixa');
   await semRolagem(page);
 
   // saúde dos dados
@@ -85,7 +88,7 @@ test('Conferência: cancelados mostram o impacto nas vendas e a saúde dos dados
   await expect(page.locator('.kpi', { hasText: 'Casado pelo código' })).toBeVisible({ timeout: 20000 });
   for (const q of ['Casado pelo nome', 'Sem produto no estoque', 'Vendas sem custo']) await expect(page.locator('.kpi', { hasText: q }).locator('.kpi-value')).toHaveText(/%$/);
   const fontes = page.locator('.card', { hasText: 'Fontes dos dados' });
-  await expect(fontes.locator('tbody tr')).toHaveCount(7);
+  await expect(fontes.locator(LIN)).toHaveCount(7);
   await expect(fontes).toContainText('Em dia');
   await expect(fontes).toContainText('Atrasada');
   await expect(fontes).toContainText('Parada');

@@ -616,14 +616,16 @@
     /** abre (ou fecha) embaixo da linha da tabela um conteúdo; uma linha aberta por produto */
     const expandirLinha = (e, chave, conteudo) => {
       e.stopPropagation();
-      const tr = e.currentTarget.closest('tr');
+      // linha da tabela (computador) ou linha da lista do celular (LMOB-04): o detalhe abre logo embaixo dela
+      const tr = e.currentTarget.closest('tr, .lmob-it');
+      const mob = tr.classList.contains('lmob-it');
       const prox = tr.nextElementSibling;
       const aberta = prox && prox.classList.contains('est-det') ? prox : null;
       if (aberta) { aberta.remove(); tr.classList.remove('est-aberto'); if (aberta.dataset.chave === chave) return; }
       const wrap = tr.closest('.table-wrap');
-      const caixa = h('div', { class: 'est-det-box', style: { width: Math.max(260, (wrap ? wrap.clientWidth : 600) - 24) + 'px' } }, conteudo());
+      const caixa = h('div', { class: 'est-det-box', style: mob ? null : { width: Math.max(260, (wrap ? wrap.clientWidth : 600) - 24) + 'px' } }, conteudo());
       tr.classList.add('est-aberto');
-      const det = h('tr', { class: 'est-det' }, h('td', { colspan: tr.children.length }, caixa));
+      const det = mob ? h('div', { class: 'est-det est-det-mob' }, caixa) : h('tr', { class: 'est-det' }, h('td', { colspan: tr.children.length }, caixa));
       det.dataset.chave = chave;
       tr.after(det);
     };
@@ -1240,7 +1242,7 @@
       total: { produto: 'Total', vt: fatCusto, custo: custoTot, lucro, lucroRes: fmt.brl(lucro), margem: fatCusto ? lucro / fatCusto : null, contrib: contribTot, margemContrib: fatCusto ? contribTot / fatCusto : null, ded: dedSoma, lucroLiq: lucroLiqTot, margemLiq: fatCusto ? lucroLiqTot / fatCusto : null },
     });
     const segVis = h('div', { class: 'est-vis' }, h('span', { class: 'f-label' }, 'Colunas:'),
-      TS.segFolha(Object.entries(VIS).map(([k, [t]]) => [t, k]), vis, (v) => { state.estColVis = v; TS.render(); }, 'Colunas'),
+      TS.seg(Object.entries(VIS).map(([k, [t]]) => [t, k]), vis, (v) => { state.estColVis = v; TS.render(); }),
       h('small', { class: 'muted' }, VIS[vis][2]));
     if (abaR === 'produtos') corpo.append(h('div', { class: 'mt' }, sel ? h('div', { class: 'est-filtro' }, `Mostrando só ${CLASSE[sel][0]}. `, h('button', { type: 'button', class: 'link-btn', onclick: () => { state.estClasse = null; TS.render(); } }, 'Ver todos')) : null, TS.card('Produtos por lucro', 'Curva ABC: A = produtos que fazem 80% do lucro (nunca podem faltar). Chá a granel aparece uma vez só, somando todas as gramaturas. A classe (Estrela, Volume…) compara chá com chá e acessório com acessório: a oficial é fixa e é a que o Pedido usa; a "no período" usa o filtro; a tendência mostra se o produto está saindo acima ou abaixo do normal.', h('div', { class: 'est-lucro-ctl' }, ctlMeses, segVis), tabLucro)));
 

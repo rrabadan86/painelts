@@ -16,7 +16,7 @@ test('UN-ENV-01: Estoque mostra o chá envasado em unidade ("9 un"), não em kg'
   const card = page.locator('#est-tabela');
   await expect(card).toBeVisible({ timeout: 30000 });
   await card.locator('.est-busca').fill('Matcha Cerimonial 30G Pacote');
-  const linha = card.locator('tbody tr', { hasText: 'Matcha Cerimonial 30G Pacote' }).first();
+  const linha = card.locator('tbody tr, .lmob-it', { hasText: 'Matcha Cerimonial 30G Pacote' }).first();
   await expect(linha).toBeVisible();
   await expect(linha).toContainText(/9 un/);
   await expect(linha).not.toContainText(/9,000 kg|9 kg/);
@@ -34,7 +34,7 @@ test('LOTE-ENV-01: Validade tem abas por tipo; Envasados mostra lote e validade 
   await expect(page.locator('.vl-resumo')).toContainText('Envasados');
   await page.locator('.vl-chip', { hasText: 'Todos' }).click();
   await page.locator('.vl-filtros input:not([type=checkbox])').first().fill('Matcha Cerimonial');
-  const linhas = page.locator('.vl-lista-card tbody tr', { hasText: 'Matcha Cerimonial 30G Pacote' });
+  const linhas = page.locator('.vl-lista-card tbody tr, .vl-lista-card .lmob-it', { hasText: 'Matcha Cerimonial 30G Pacote' });
   await expect(linhas.first()).toBeVisible();
   // a busca redesenha a lista: espera o texto das linhas (lido cedo demais vinha vazio no celular)
   await expect.poll(async () => (await linhas.allInnerTexts()).join('\n')).toMatch(/\b[36] un\b/); // 9 pacotes: 6 da nota mais nova e 3 da mais antiga
@@ -45,7 +45,7 @@ test('LOTE-ENV-01: Validade tem abas por tipo; Envasados mostra lote e validade 
   await page.locator('.vl-filtros input:not([type=checkbox])').first().fill('');
   await abas.nth(2).click();
   await page.locator('.vl-chip', { hasText: 'Todos' }).click();
-  await expect(page.locator('.vl-lista-card tbody tr').first()).toContainText(/\d+ un/);
+  await expect(page.locator('.vl-lista-card tbody tr, .vl-lista-card .lmob-it').first()).toContainText(/\d+ un/);
   await semRolagemLado(page);
   expect(erros).toEqual([]);
 });

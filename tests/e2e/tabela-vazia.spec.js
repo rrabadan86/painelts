@@ -11,10 +11,10 @@ for (const [hash, busca] of TELAS) {
     const campo = page.locator(`input[placeholder^="${busca}"]`).first();
     await expect(campo).toBeVisible({ timeout: 40000 });
     await campo.fill('zzzz-nada-assim-zzzz');
-    const vazio = page.locator('td.t-vazio').first();
+    const vazio = page.locator('td.t-vazio, .lmob .t-vazio').first(); // no celular a lista em linhas (LMOB) mostra a frase na própria lista
     await expect(vazio).toBeVisible({ timeout: 20000 });
     await vazio.scrollIntoViewIfNeeded();
-    const larguraTabela = await vazio.evaluate((td) => td.closest('table').getBoundingClientRect().width);
+    const larguraTabela = await vazio.evaluate((td) => td.closest('table, .lmob').getBoundingClientRect().width);
     const caixa = await vazio.boundingBox();
     expect(caixa.width, 'a frase usa a largura da tabela').toBeGreaterThan(larguraTabela * 0.8);
     expect(caixa.height, 'sem uma letra por linha').toBeLessThan(120);

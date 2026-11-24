@@ -29,7 +29,7 @@ test('Resultado → A pagar: quadros, saldo por semana, lista com abas e marcar 
   // saldo por semana: uma linha por semana, com entrada, saída e acumulado
   const semanas = page.locator('.ap-semanas');
   await expect(semanas).toContainText('Saldo acumulado');
-  expect(await semanas.locator('tbody tr').count()).toBeGreaterThanOrEqual(4);
+  expect(await semanas.locator('tbody tr, .lmob-it').count()).toBeGreaterThanOrEqual(4);
 
   // a conta bate com as funções puras: o quadro mostra a soma do que está "a pagar"
   const conta = await page.evaluate(async () => {
@@ -68,7 +68,7 @@ test('Resultado → A pagar: quadros, saldo por semana, lista com abas e marcar 
   // 60 dias: os quadros e as semanas acompanham
   await page.getByRole('button', { name: 'Próximos 60 dias' }).click();
   await expect(page.locator('.ap-heroi .heroi-col', { hasText: 'A pagar · próximos 60 dias' })).toBeVisible();
-  expect(await page.locator('.ap-semanas').locator('tbody tr').count()).toBeGreaterThanOrEqual(8);
+  expect(await page.locator('.ap-semanas').locator('tbody tr, .lmob-it').count()).toBeGreaterThanOrEqual(8);
 
   // o atalho abre os custos da loja com o dia de vencimento de cada custo e os prazos do caixa a pagar
   await page.getByRole('link', { name: 'Ajustar dias de vencimento, prazo das notas e do cartão' }).click();

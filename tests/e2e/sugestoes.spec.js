@@ -7,7 +7,7 @@ test('Sugestões: marcar produto, justificar quando tem na loja e revisar no Ped
   await page.evaluate(() => { location.hash = '#sugestoes'; });
   await expect(page.locator('.page-title')).toContainText('Sugestões para o pedido');
   // a apresentação já traz sugestões da equipe
-  await expect(page.locator('.sug-t tbody tr').first()).toBeVisible();
+  await expect(page.locator('.sug-t tbody tr, .sug-t-lmob .lmob-it').first()).toBeVisible();
   // um produto que ainda tem na loja (pede justificativa)
   const prod = await page.evaluate(async () => {
     const loja = TS.state.loja;
@@ -30,10 +30,10 @@ test('Sugestões: marcar produto, justificar quando tem na loja e revisar no Ped
   await expect(linha.locator('.sug-just')).toHaveAttribute('aria-invalid', 'true');
   await linha.locator('.sug-just').fill('Cliente leva sempre 3 de presente');
   await linha.getByRole('button', { name: '⭐ Confirmar sugestão' }).click();
-  await expect(page.locator('.sug-t tbody tr', { hasText: prod.desc })).toContainText('Aguardando o próximo pedido');
+  await expect(page.locator('.sug-t tbody tr, .sug-t-lmob .lmob-it', { hasText: prod.desc })).toContainText('Aguardando o próximo pedido');
   // a confirmação fica na tela (antes sumia no mesmo instante) e a linha nova fica em destaque, mesmo trocando de aba
   await expect(page.locator('.sug-ok')).toContainText('marcado para o próximo pedido');
-  await expect(page.locator('.sug-t tbody tr.sug-novo', { hasText: prod.desc })).toHaveCount(1);
+  await expect(page.locator('.sug-t tbody tr.sug-novo, .sug-t-lmob .lmob-it.sug-novo', { hasText: prod.desc })).toHaveCount(1);
   await page.locator('.seg button', { hasText: 'Encerradas' }).click();
   await page.locator('.seg button', { hasText: 'Esperando o pedido' }).click();
   await expect(page.locator('.sug-ok')).toContainText('marcado para o próximo pedido');
@@ -56,8 +56,8 @@ test('Sugestões: marcar produto, justificar quando tem na loja e revisar no Ped
 
   // a resposta volta para a tela de sugestões e o produto continua marcado para o próximo pedido
   await page.evaluate(() => { location.hash = '#sugestoes'; });
-  await expect(page.locator('.sug-t tbody tr', { hasText: prod.desc })).toContainText('Não entrou');
-  await expect(page.locator('.sug-t tbody tr', { hasText: prod.desc })).toContainText('continua marcada para o próximo');
+  await expect(page.locator('.sug-t tbody tr, .sug-t-lmob .lmob-it', { hasText: prod.desc })).toContainText('Não entrou');
+  await expect(page.locator('.sug-t tbody tr, .sug-t-lmob .lmob-it', { hasText: prod.desc })).toContainText('continua marcada para o próximo');
 });
 
 // Pedido: o quadro é uma tabela com abas; cada linha tem "+ Adicionar ao pedido"; 🛒 no quadro e ⭐ na tabela do pedido
@@ -144,8 +144,8 @@ test('Sugestões: aviso de resposta com produto e resultado, na aba certa, que n
   await page.evaluate(() => { TS.state.sugAba = 'abertas'; location.hash = '#sugestoes'; });
   const aviso = page.locator('.sug-novos');
   await expect(aviso).toContainText(desc);
-  const aba = page.locator('.sug-t').locator('xpath=ancestor::div[contains(@class,"card")][1]').locator('.seg button.on');
-  await expect(page.locator('.sug-t tbody tr.sug-novo', { hasText: desc })).toHaveCount(1);
+  const aba = page.locator('.sug-t, .sug-t-lmob').first().locator('xpath=ancestor::div[contains(@class,"card")][1]').locator('.seg button.on');
+  await expect(page.locator('.sug-t tbody tr.sug-novo, .sug-t-lmob .lmob-it.sug-novo', { hasText: desc })).toHaveCount(1);
   // trocar de aba e voltar: o aviso e o destaque continuam
   await page.locator('.seg button', { hasText: 'Aguardando entrega' }).click();
   await expect(aviso).toContainText(desc);

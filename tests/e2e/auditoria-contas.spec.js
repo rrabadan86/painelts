@@ -128,7 +128,7 @@ test('Resultado: o mês em andamento mostra "até agora" e o % usa as vendas at�
   if (r && r.esperado != null) {
     expect(Math.abs(r.pct - r.esperado)).toBeLessThan(1e-9);
     expect(r.acima).toBe(r.pct > r.teto + 1e-9);
-    await expect(c.locator('.cv-t')).toContainText(/até agora (dentro|acima) do teto/);
+    await expect(c.locator('.cv-t, .cv-t-lmob').first()).toContainText(/até agora (dentro|acima) do teto/);
   }
   await semLixo(c);
 });

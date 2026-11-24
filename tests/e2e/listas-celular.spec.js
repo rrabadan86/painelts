@@ -169,11 +169,11 @@ test('LMOB-03: Comissionamento, Promoção, Rendimento, Vendedoras e clientes e 
 });
 
 // LMOB-04 (lote 2 do pente-fino do celular, 24/11/2026): listas de produtos, notas e dinheiro em linhas e filtro em folha
-test('LMOB-04: Estoque, Preços, Site, Validade, Pedido, Notas e Rentabilidade em linhas; filtro do Estoque em folha', async ({ page }, info) => {
+test('LMOB-04: Estoque, Preços, Site, Validade, Notas e Rentabilidade em linhas; filtro do Estoque em folha', async ({ page }, info) => {
   const erros = []; page.on('pageerror', (e) => erros.push(e.message));
   await abrir(page);
   const cel = info.project.name === 'celular';
-  for (const tela of ['estoque', 'precos', 'site', 'validade', 'pedido', 'notas', 'rentab']) {
+  for (const tela of ['estoque', 'precos', 'site', 'validade', 'notas', 'rentab']) { // o Pedido tem os cartões próprios com − / ＋ (.ped-card)
     await page.evaluate((t) => { location.hash = '#' + t; }, tela);
     await page.waitForFunction(() => !document.querySelector('main .loading .spinner') && document.querySelector('main .card'), null, { timeout: 30000 });
     if (cel) await expect(page.locator('main .lmob-it').first(), tela).toBeVisible({ timeout: 20000 });

@@ -889,7 +889,7 @@
     // histórico de compras do item: todas as notas de compra que o painel tem (Estoque → Entrada de Produtos do AppNext)
     const abrirHistorico = (r) => TS.histCompras(r, D.comprasItens, n.nf);
     const tabBox = h('div');
-    const montarTab = () => tabBox.replaceChildren(TS.table({ linhaMob: { nome: 'nome', val: 'total', l2: ['qtd', 'vu', 'custo', 'desc'], l3: ['varC', 'lote'] }, // celular em linhas (LMOB-04)
+    const montarTab = () => tabBox.replaceChildren(TS.table({ // itens da nota: campos de lote e validade (+ outra validade) ficam na tabela de sempre no celular
         
       rowClass: (r) => (impPorItem.has(String(r.cod)) ? 'nf-marg' : ''),
       cols: [

@@ -558,14 +558,16 @@
     const rot = (c) => (c.labelMob != null ? c.labelMob : typeof c.label === 'string' ? c.label : '');
     const vazio = (x) => x == null || x === '' || x === '—' || (x instanceof Node && !x.textContent.trim());
     const cel = (c, row) => (c.render ? c.render(row) : c.fmt ? c.fmt(row[c.key], row) : (row[c.key] ?? ''));
-    const pedacos = (ks, row) => ks.map(col).filter(Boolean).map((c) => { const x = cel(c, row); return vazio(x) ? null : h('span', { class: 'lmob-c' }, rot(c) ? h('small', null, rot(c) + ' ') : null, x); }).filter(Boolean);
-    return (row) => {
+    // ⓘ (explicação da coluna) só na primeira linha da página: cada informação continua explicada sem repetir o ⓘ em todas as linhas
+    const dicaDe = (c, k) => (k === 0 && c.title ? TS.dica(c.title) : null);
+    const pedacos = (ks, row, k) => ks.map(col).filter(Boolean).map((c) => { const x = cel(c, row); return vazio(x) ? null : h('span', { class: 'lmob-c' }, rot(c) ? h('small', { class: 'lmob-rot' }, rot(c), dicaDe(c, k), ' ') : null, x); }).filter(Boolean);
+    return (row, k) => {
       const cN = col(nome), cV = val && col(val);
       const v = cV ? cel(cV, row) : null;
-      const p2 = pedacos(l2, row), p3 = pedacos(l3, row);
+      const p2 = pedacos(l2, row, k), p3 = pedacos(l3, row, k);
       return h('div', null,
         h('div', { class: 'lmob-l1' }, h('span', { class: 'lmob-nome' }, cN ? cel(cN, row) : ''),
-          cV && !vazio(v) ? h('span', { class: 'lmob-val' }, valRot ? h('small', null, valRot + ' ') : null, v) : null),
+          cV && !vazio(v) ? h('span', { class: 'lmob-val' }, valRot ? h('small', { class: 'lmob-rot' }, valRot, dicaDe(cV, k), ' ') : null, v) : null),
         p2.length ? h('div', { class: 'lmob-l2' }, p2) : null,
         p3.length ? h('div', { class: 'lmob-l2' }, p3) : null);
     };
@@ -635,8 +637,8 @@
       if (estado) Object.assign(estado, { page, sk, sd });
       const start = pageSize ? page * pageSize : 0;
       const slice = pageSize ? all.slice(start, start + pageSize) : all;
-      for (const row of slice) {
-        const el = linhaMob(row);
+      for (const [k, row] of slice.entries()) {
+        const el = linhaMob(row, k);
         if (!el) continue;
         el.classList.add('lmob-it');
         if (rowClass && rowClass(row)) el.classList.add(...String(rowClass(row)).split(/\s+/).filter(Boolean));

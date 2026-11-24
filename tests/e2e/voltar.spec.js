@@ -316,7 +316,7 @@ test('Rentabilidade no celular: "ver por pacote" mostra a conta como tabela comp
   const bt = page.locator('.est-prod-btn').first();
   await expect(bt).toBeVisible();
   await bt.click();
-  const det = page.locator('tr.est-det').first();
+  const det = page.locator('.est-det').first(); // no celular a lista é em linhas (LMOB-04): o detalhe abre embaixo da linha
   await expect(det.locator('.cupom-items tr').first()).toBeVisible();
   const r = await det.evaluate((d) => ({
     display: getComputedStyle(d.querySelector('.cupom-items tr')).display,

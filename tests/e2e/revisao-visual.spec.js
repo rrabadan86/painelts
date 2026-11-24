@@ -1,7 +1,7 @@
 // Revisão visual de 22/11/2026 (impeccable, aprovada pelo dono): regras globais de CSS e teclado.
 // VIS-01 barra do topo fixa · VIS-02 texto de exemplo legível · VIS-03 janela dos lotes com Esc e foco
 // VIS-04 Estoque no celular enxuto e "no pedido ›" fora do nome · VIS-05 ⭐ Sugestões sem filtros · VIS-06 ✨ some ao rolar
-const { test, expect } = require('./_base');
+const { test, expect, escolherOpcao, opcaoAtiva } = require('./_base');
 
 async function abrir(page, hash) {
   await page.goto('/apresentacao');
@@ -40,7 +40,7 @@ test('VIS-02: texto de exemplo dos campos com contraste de pelo menos 4,5:1', as
 test('VIS-03: janela dos lotes do chá — foco entra, Esc fecha e o foco volta ao nome', async ({ page }) => {
   await abrir(page, '#estoque');
   await expect(page.locator('#est-tabela')).toBeVisible({ timeout: 30000 });
-  await page.locator('#est-tabela .seg button[data-val="todos"]').click();
+  await escolherOpcao(page, '#est-tabela .est-tools', /^Todos/);
   const nome = page.locator('.est-nome-cha').first();
   await expect(nome).toBeVisible({ timeout: 30000 });
   await nome.focus();
@@ -58,16 +58,17 @@ test('VIS-04: Estoque — quadro clicável com Espaço; no celular, cartão enxu
   await expect(page.locator('#est-tabela')).toBeVisible({ timeout: 30000 });
   const quadro = page.locator('.est-p2-heroi .est-p2-ir').first(); // 2ª passada: os números do herói levam à aba (eram quadros clicáveis)
   if (await quadro.count()) {
-    await page.locator('#est-tabela .seg button[data-val="todos"]').click();
+    await escolherOpcao(page, '#est-tabela .est-tools', /^Todos/);
     await quadro.focus();
     await page.keyboard.press(' ');
     // Espaço aciona o quadro (troca a aba da tabela), não só rola a página
-    await expect(page.locator('#est-tabela .seg button[data-val="todos"]')).not.toHaveClass(/\bon\b/);
+    await expect.poll(() => opcaoAtiva(page, '#est-tabela .est-tools')).not.toMatch(/^Todos/);
   }
   if (info.project.name !== 'celular') return;
-  await page.locator('#est-tabela .seg button[data-val="repor"]').click();
-  const rotulos = await page.locator('#est-tabela tbody tr').first().locator('td[data-l]').evaluateAll((tds) => tds.map((t) => t.dataset.l).filter(Boolean));
-  expect(rotulos.length, `rótulos no cartão: ${rotulos.join(', ')}`).toBeLessThanOrEqual(5);
+  await escolherOpcao(page, '#est-tabela .est-tools', /^O que repor/);
+  // linha enxuta (LMOB-04): o número da aba à direita e no máximo 5 informações embaixo
+  const rotulos = await page.locator('#est-tabela .lmob-it').first().locator('.lmob-c').count();
+  expect(rotulos, 'informações na linha').toBeLessThanOrEqual(5);
   const ir = page.locator('#est-tabela .est-ir').first();
   if (await ir.count()) expect(await ir.evaluate((el) => getComputedStyle(el).display)).toBe('block');
 });

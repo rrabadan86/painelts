@@ -176,7 +176,7 @@
       cedo: ['Cedo demais', (r) => r.estado === 'cedo'], pouco: ['Poucos dados', (r) => r.estado === 'pouco'], sem: ['Sem comparação', (r) => r.estado === 'sem'], todos: ['Todos', () => true],
     };
     const fil = FIL[state.efeitoFil] ? state.efeitoFil : E.lista.some(FIL.aval[1]) ? 'aval' : 'todos'; // começa pelos que já dá para julgar
-    const tab = TS.table({
+    const tab = TS.table({ linhaMob: { nome: 'nome', val: 'adjL', l2: ['dia', 'varL', 'varQ'] }, // celular em linhas (LMOB-04)
       cols: [
         { key: 'nome', label: 'Produto', align: 'l', sticky: true, wrap: true, title: 'Clique no nome para abrir o histórico do produto, com a conta completa de cada reajuste (inclusive a receita por dia). A etiqueta é o resultado do reajuste — Bom, Ruim, Igual, Cedo demais, Poucos dados (vendeu menos de 30 unidades nos dois períodos: os números aparecem, mas não dá para culpar o preço) ou Sem comparação — e embaixo vem o motivo.', render: (r) => h('span', null,
           h('a', { href: '#', class: 'prc-nome', onclick: (e) => { e.preventDefault(); abrirProduto(r.nome); } }, h('b', null, r.nome)), ' ', etiqueta(r),
