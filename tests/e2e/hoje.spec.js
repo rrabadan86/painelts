@@ -67,7 +67,7 @@ test.describe('Clientes → Hoje', () => {
     let abriu = false;
     page.on('popup', () => { abriu = true; });
     await page.evaluate(() => { location.hash = '#clilista'; });
-    const link = page.locator('.cli-list a.wpp').first();
+    const link = page.locator('.cli-list a.wpp, .clm-lista a.wpp').first(); // no celular a lista é em linhas (CLI-MOB-01)
     await expect(link).toBeVisible();
     expect(await link.getAttribute('href')).toBe('#');
     const alt = await link.evaluate((el) => el.getBoundingClientRect().height);

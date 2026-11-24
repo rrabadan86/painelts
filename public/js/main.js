@@ -145,6 +145,7 @@
     const add = (rotulo, nome, texto, limpar) => { if (texto) L.push({ rotulo, nome, texto: String(texto), limpar }); };
     if (state.page === 'clientes' || state.page === 'clilista') {
       add('Ano e mês', 'Ano e mês', s.per.preset === 'anomes' ? anoMesTxt(s.per) : '', () => TS.aplicarAnoMes(null, null, s.per, 'tudo'));
+      add('Busca', 'Busca', s.busca, () => { s.busca = ''; });
       for (const [rot, k] of [['Nome', 'nome'], ['CPF', 'cpf'], ['Telefone', 'tel'], ['Cupom', 'cupom'], ['Produto comprado', 'produto']]) add(rot, rot, s[k], () => { s[k] = ''; });
       add('Visitas (cupons)', 'Visitas', faixaTxt(s.visMin, s.visMax), () => { s.visMin = ''; s.visMax = ''; });
       add('Dias sem comprar', 'Dias sem comprar', faixaTxt(s.ausMin, s.ausMax), () => { s.ausMin = ''; s.ausMax = ''; });

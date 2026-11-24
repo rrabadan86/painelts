@@ -700,8 +700,23 @@
     const com9 = (x) => (x.length === 10 ? x.slice(0, 2) + '9' + x.slice(2) : null);
     return [sem9(q), com9(q)].some((v) => v && d.includes(v)) || [sem9(d), com9(d)].some((v) => v && v.includes(q));
   }
-  function filtrar() {
+  /** o cliente está no segmento? ("Contatar hoje" tira quem recebeu dentro do intervalo da loja ou não quer mensagens) */
+  function segOk(c, seg) {
+    if (seg !== 'hoje') return c.tags.has(seg);
+    if (!(c.tags.has('aniv') || c.tags.has('sumido') || c.tags.has('repor') || c.tags.has('vence'))) return false;
+    const ct = contatoDe(c);
+    return !(ct && (ct.optout || (ct.em && Date.now() - Date.parse(ct.em) < intervaloDe(lojaIdDe(c)) * 864e5)));
+  }
+  /** busca única do celular (CLI-MOB-01): com letras procura no nome; só números, no CPF ou no celular */
+  function buscaOk(c, q) {
+    if (/[a-zà-ú]/i.test(q)) return TS.norm(c.nome || '').includes(TS.norm(q));
+    const d = q.replace(/\D/g, '');
+    return !d || c.cpf.includes(d) || telConfere(c.celular, telBusca(d));
+  }
+  /** ign: { seg, rfm } ignora esse filtro (para contar quantos clientes cada opção da folha mostraria) */
+  function filtrar(ign = {}) {
     const s = state.cli, db = TS.db;
+    const busca = (s.busca || '').trim();
     const nome = TS.norm(s.nome), cpf = s.cpf.replace(/\D/g, ''), tel = telBusca(s.tel || ''), cupom = s.cupom.replace(/\D/g, ''), prod = TS.norm(s.produto);
     const num = (v) => (v === '' || v == null ? null : +v);
     const vMin = num(s.visMin), vMax = num(s.visMax), aMin = num(s.ausMin), aMax = num(s.ausMax);
@@ -718,14 +733,9 @@
       if (aMin != null && c.ausencia < aMin) continue;
       if (aMax != null && c.ausencia > aMax) continue;
       if (s.aniv && (!c.nascimento || c.nascimento.slice(5, 7) !== s.aniv)) continue;
-      if (s.seg) {
-        const ct = contatoDe(c);
-        if (s.seg === 'hoje') {
-          if (!(c.tags.has('aniv') || c.tags.has('sumido') || c.tags.has('repor') || c.tags.has('vence'))) continue;
-          if (ct && (ct.optout || (ct.em && Date.now() - Date.parse(ct.em) < intervaloDe(lojaIdDe(c)) * 864e5))) continue;
-        } else if (!c.tags.has(s.seg)) continue;
-      }
-      if (s.rfm && (!c.rfm || c.rfm.g !== s.rfm)) continue;
+      if (busca && !buscaOk(c, busca)) continue;
+      if (s.seg && !ign.seg && !segOk(c, s.seg)) continue;
+      if (s.rfm && !ign.rfm && (!c.rfm || c.rfm.g !== s.rfm)) continue;
       if (s.cidade.size && !s.cidade.has(cidadeChave(c.cidade))) continue;
       if (s.compraEm && s.compraEm.size && state.loja !== 'todas' && !compraEmOk(c, s.compraEm)) continue;
       let cupons = c.cupons;
@@ -1072,6 +1082,7 @@
     const listaCard = TS.cardWithTools(ehLista ? `${fmt.int(lista.length)} ${lista.length === 1 ? 'cliente' : 'clientes'}` : 'Lista de clientes', 'Clique num cliente para ver a ficha, os cupons e os itens', h('div', { class: 'table-tools' }, ordSel, csv, csvWpp),
       segBar, lista.length ? listBox : TS.empty('Nenhum cliente com esses filtros.'), mais);
 
+    if (ehLista && TS.ehCelular()) { root.append(listaCelular(lista)); return; }
     if (ehLista) { root.append(listaCard); return; }
     // ---- gráficos do perfil dos clientes
     const lado = h('div', { class: 'grid g-2 mt', style: { alignItems: 'start' } });
@@ -1112,6 +1123,85 @@
     root.append(lado);
   }
 
+  // ---------- Lista de clientes no celular (CLI-MOB-01; mockup aprovado pelo dono em 24/11/2026) ----------
+  // Busca única, Segmento e Grupo em botões que abrem a folha de opções (com quantos clientes cada uma mostra),
+  // ordem e downloads numa linha, e cada cliente em três linhas curtas. No computador a lista continua como era.
+  const ORDENS = [['Mais recentes', 'recente'], ['Maior valor', 'valor'], ['Mais visitas', 'visitas'], ['Mais tempo sem vir', 'ausencia'], ['Nome', 'nome']];
+  function listaCelular(lista) {
+    const s = state.cli, box = h('div', { class: 'clm' });
+    const segsVisiveis = () => Object.keys(NOMES_SEG).filter((k) => !['vence', 'semfixe', 'forafixe'].includes(k) || TS.cli.fixe);
+    const contar = (base, ok) => base.reduce((n, r) => n + (ok(r.c) ? 1 : 0), 0);
+    const abrirSeg = () => {
+      const base = filtrar({ seg: true });
+      TS.folha({ titulo: 'Segmento', sub: 'Escolha um para filtrar a lista', valor: s.seg,
+        opcoes: [{ v: '', nome: 'Todos', n: base.length }, ...segsVisiveis().map((k) => ({ v: k, nome: NOMES_SEG[k], dica: DICA_SEG[k], n: contar(base, (c) => segOk(c, k)) }))],
+        onEscolher: (v) => { s.seg = v; TS.render(); } });
+    };
+    const abrirRfm = () => {
+      const base = filtrar({ rfm: true });
+      TS.folha({ titulo: 'Grupo (RFM)', sub: 'Nota de 1 a 5 em Recência, Frequência e Valor (últimos 12 meses)', valor: s.rfm,
+        opcoes: [{ v: '', nome: 'Todos', n: base.length }, ...TS.RFM.GRUPOS.map((g) => ({ v: g.id, nome: g.nome, dica: g.dica, n: contar(base, (c) => c.rfm && c.rfm.g === g.id) }))],
+        onEscolher: (v) => { s.rfm = v; TS.render(); } });
+    };
+    // a busca redesenha só a lista: o teclado do celular não fecha a cada letra
+    const busca = h('input', { class: 'f-input clm-busca', type: 'search', placeholder: 'Buscar nome, CPF ou celular', value: s.busca || '', 'aria-label': 'Buscar cliente por nome, CPF ou celular', enterkeyhint: 'search' });
+    const corpo = h('div');
+    busca.addEventListener('input', TS.debounce(() => { s.busca = busca.value.trim(); pintar(filtrar()); }, 400));
+    const dica = s.seg && s.rfm ? `${NOMES_SEG[s.seg]} + ${RFM[s.rfm].nome}` : s.seg ? DICA_SEG[s.seg] : s.rfm ? `${RFM[s.rfm].dica} O que fazer: ${RFM[s.rfm].acao}` : '';
+    box.append(busca,
+      h('div', { class: 'clm-filtros' },
+        TS.botaoFolha({ rotulo: 'Segmento', valor: s.seg ? NOMES_SEG[s.seg] : 'Todos', ativo: !!s.seg, onclick: abrirSeg, cls: 'clm-seg' }),
+        TS.botaoFolha({ rotulo: 'Grupo (RFM)', valor: s.rfm ? RFM[s.rfm].nome : 'Todos', ativo: !!s.rfm, onclick: abrirRfm, cls: 'clm-rfm' })),
+      ...(dica ? [h('div', { class: 'clm-dica' }, h('span', null, dica), h('a', { href: '#', class: 'link-btn', role: 'button', onclick: (e) => { e.preventDefault(); s.seg = ''; s.rfm = ''; TS.render(); } }, '✕ limpar'))] : []),
+      corpo);
+    function pintar(itens) {
+      const ord = h('select', { class: 'clm-ord', 'aria-label': 'Ordem da lista' }, ORDENS.map(([nome, v]) => h('option', { value: v, selected: s.ordem === v || null }, nome)));
+      ord.addEventListener('change', () => { s.ordem = ord.value; TS.render(); });
+      const baixar = TS.menuBaixar([
+        { nome: 'Baixar lista (CSV)', dica: `Todos os dados dos ${fmt.int(itens.length)} clientes`, fazer: () => baixarCSV(itens) },
+        { nome: 'Lista para WhatsApp (CSV)', dica: 'Só nome e celular de quem tem WhatsApp e não pediu para não receber mensagens', fazer: () => baixarCSVWpp(itens) },
+      ], 'Baixar a lista');
+      const lst = h('div', { class: 'clm-lista lmob' });
+      const mais = h('button', { class: 'btn clm-mais', type: 'button' });
+      let n = 0;
+      const mostrar = () => {
+        const fim = Math.min(itens.length, n + 40);
+        for (let k = n; k < fim; k++) lst.append(linhaCliente(itens[k]));
+        n = fim;
+        mais.textContent = `Mostrar mais (${fmt.int(itens.length - n)})`;
+        mais.hidden = n >= itens.length;
+      };
+      mais.addEventListener('click', mostrar);
+      corpo.replaceChildren(
+        h('div', { class: 'clm-barra' }, h('span', { class: 'clm-n' }, `${fmt.int(itens.length)} ${itens.length === 1 ? 'cliente' : 'clientes'}`), h('span', { class: 'clm-dir' }, h('label', { class: 'clm-ord-r' }, 'Ordem:', ord), baixar)),
+        itens.length ? lst : TS.empty('Nenhum cliente com esses filtros.'), mais);
+      if (itens.length) mostrar(); else mais.hidden = true;
+    }
+    pintar(lista);
+    return box;
+  }
+  /** um cliente em três linhas: nome e total; visitas, quando veio e cidade; grupo, segmentos e WhatsApp */
+  function linhaCliente(r) {
+    const c = r.c;
+    const nome = c.nome ? TS.msgWpp.nomeProprio(c.nome) : 'Cliente sem cadastro';
+    const quando = c.ausencia == null ? null : c.ausencia === 0 ? 'hoje' : c.ausencia === 1 ? 'ontem' : `há ${fmt.int(c.ausencia)} dias`;
+    const ct = contatoDe(c);
+    const it = h('div', { class: 'lmob-it clm-it', role: 'button', tabindex: 0, 'aria-label': `Abrir a ficha de ${nome}` },
+      h('div', { class: 'lmob-l1' }, h('span', { class: 'lmob-nome', title: nome }, nome), h('span', { class: 'lmob-val' }, fmt.brl0(r.vt))),
+      h('div', { class: 'lmob-l2' },
+        h('span', null, [`${fmt.int(r.visitas)} ${r.visitas === 1 ? 'visita' : 'visitas'}`, quando, c.aniv ? '🎂 ' + c.aniv : null].filter(Boolean).join(' · ')),
+        c.cidade ? h('span', { title: c.cidade }, c.cidade) : h('span', { class: 'clm-semcid' }, 'sem cidade')),
+      h('div', { class: 'clm-l3' }, h('div', { class: 'clm-tags' },
+        chipRfm(c),
+        ...[...(c.tags || [])].map((t) => h('span', { class: 'cli-tag t-' + t, title: DICA_SEG[t] }, NOMES_SEG[t])),
+        c.fx && c.fx.saldo ? h('span', { class: 'cli-pts' }, `★ ${fmt.int(c.fx.saldo)} pts`) : null,
+        ct && ct.optout ? h('span', { class: 'cli-tag t-optout' }, 'não quer mensagens') : ct && ct.em ? h('span', { class: 'cli-tag t-contato' }, 'contatado ' + fmt.date(ct.em.slice(0, 10))) : null),
+      c.wpp ? linkConversa(c, '● WhatsApp') : h('span', { class: 'clm-sem-wpp' }, 'sem WhatsApp')));
+    const abrir = (e) => { if (e.target.closest('a, button')) return; abrirClientes([c.cpf]); };
+    it.addEventListener('click', abrir);
+    it.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); abrirClientes([c.cpf]); } });
+    return it;
+  }
   function clienteCard(r) {
     const db = TS.db, c = r.c;
     const nome = c.nome || 'Cliente sem cadastro';

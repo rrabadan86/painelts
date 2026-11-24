@@ -61,3 +61,74 @@ test('LMOB-01: Campanhas → Não enviadas em linhas no celular, com o motivo à
   await semRolarDeLado(page);
   expect(erros).toEqual([]);
 });
+
+// CLI-MOB-01 / FOLHA-01 (mockup aprovado pelo dono em 24/11/2026): Lista de clientes no celular com busca única,
+// Segmento e Grupo em botões que abrem a folha de opções (com a contagem), downloads no menu ⤓ e cada cliente em linhas.
+test('CLI-MOB-01: Lista de clientes no celular — busca, folha de Segmento/Grupo, menu ⤓ e linhas', async ({ page }, info) => {
+  const erros = []; page.on('pageerror', (e) => erros.push(e.message));
+  await abrir(page);
+  await page.waitForFunction(() => TS.cli && TS.cli.lista && TS.cli.lista.length);
+  await page.evaluate(() => { location.hash = '#clilista'; });
+  if (info.project.name !== 'celular') {
+    await expect(page.locator('.cli-segs')).toBeVisible(); // no computador continua a faixa de segmentos e a lista de sempre
+    await expect(page.locator('.clm')).toHaveCount(0);
+    expect(erros).toEqual([]);
+    return;
+  }
+  await expect(page.locator('.clm-lista .clm-it').first()).toBeVisible();
+  await expect(page.locator('.cli-segs')).toHaveCount(0);
+  const total = await page.evaluate(() => TS.cli.lista.length);
+  const nTxt = async () => +(await page.locator('.clm-n').innerText()).replace(/\D/g, '');
+  const antes = await nTxt();
+  // nome com só a 1ª letra maiúscula, valor na 1ª linha e o WhatsApp do tamanho de um dedo
+  const l = page.locator('.clm-it').first();
+  await expect(l.locator('.lmob-val')).toContainText('R$');
+  await expect(l.locator('.lmob-nome')).not.toHaveText(/^[A-ZÀ-Ú ]{6,}$/);
+  await expect(l.locator('.lmob-l2')).toContainText(/visitas?/);
+  // folha do Segmento: "Todos" com a contagem da lista; escolher aplica, fecha e mostra a explicação
+  await page.locator('.clm-seg').click();
+  const folha = page.locator('.folha');
+  await expect(folha).toBeVisible();
+  await expect(folha.locator('.folha-op.on')).toContainText('Todos');
+  expect(+(await folha.locator('.folha-op').first().locator('.folha-n').innerText()).replace(/\D/g, '')).toBe(antes);
+  const vip = folha.locator('.folha-op', { hasText: 'VIP' });
+  const nVip = +(await vip.locator('.folha-n').innerText()).replace(/\D/g, '');
+  await vip.click();
+  await expect(folha).toHaveCount(0);
+  await expect(page.locator('.clm-seg')).toContainText('VIP');
+  await expect(page.locator('.clm-dica')).toContainText('10%');
+  expect(await nTxt()).toBe(nVip);
+  // o "voltar" do celular fecha a folha sem sair da tela
+  await page.waitForFunction(() => !(history.state && history.state.camada)); // a entrada da folha anterior já saiu do histórico
+  await page.locator('.clm-rfm').click();
+  await expect(folha).toBeVisible();
+  await page.waitForFunction(() => history.state && history.state.camada);
+  await page.goBack();
+  await expect(folha).toHaveCount(0);
+  await expect(page).toHaveURL(/#clilista/);
+  // limpar volta para todos
+  await page.locator('.clm-dica .link-btn').click();
+  await expect(page.locator('.clm-seg')).toContainText('Todos');
+  expect(await nTxt()).toBe(antes);
+  // menu ⤓ com os dois downloads
+  await page.locator('.mbx-bt').click();
+  await expect(page.locator('.mbx-it')).toHaveCount(2);
+  await expect(page.locator('.mbx-menu')).toContainText('Lista para WhatsApp (CSV)');
+  await page.locator('.mbx-bt').click();
+  await expect(page.locator('.mbx-menu')).toBeHidden();
+  // busca única: letras procuram no nome, números no CPF/celular; o campo não perde o foco
+  const nome = await page.evaluate(() => TS.cli.lista.find((c) => c.nome && c.cupons.length).nome.split(' ')[0]);
+  await page.locator('.clm-busca').fill(nome);
+  await expect.poll(nTxt).toBeLessThan(total);
+  expect(await page.evaluate(() => document.activeElement.classList.contains('clm-busca'))).toBe(true);
+  const cpf = await page.evaluate(() => TS.cli.lista.find((c) => c.cupons.length).cpf);
+  await page.locator('.clm-busca').fill(cpf);
+  await expect.poll(nTxt).toBe(1);
+  await page.locator('.clm-busca').fill('');
+  await expect.poll(nTxt).toBe(antes);
+  // tocar na linha abre a ficha
+  await page.locator('.clm-it').first().click();
+  await expect(page.locator('.cp-modal-bg, .camada-cheia').first()).toBeVisible();
+  await semRolarDeLado(page);
+  expect(erros).toEqual([]);
+});

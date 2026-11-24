@@ -495,6 +495,48 @@
   /** tela de celular (até 760 px): algumas telas mudam o jeito de mostrar; o computador não muda */
   TS.ehCelular = () => window.matchMedia('(max-width: 760px)').matches;
 
+  // ---------- Celular: filtro num botão que abre uma folha de opções; downloads num menu ⤓ ----------
+  // Padrão aprovado pelo dono em 24/11/2026 (Lista de clientes, FOLHA-01): no lugar de uma faixa de etiquetas,
+  // um botão com o nome do filtro e o que está escolhido; tocar abre a folha que sobe de baixo, com a quantidade
+  // e a explicação de cada opção. Tocar numa opção já aplica e fecha. O "voltar" do celular fecha a folha (main.js).
+  /** opcoes: [{ v, nome, dica?, n? }] — n é quantos itens a opção mostra (opcional) */
+  TS.folha = function ({ titulo, sub, opcoes, valor, onEscolher }) {
+    const fundo = h('div', { class: 'cp-modal-bg folha-bg' });
+    const fechar = () => fundo.remove();
+    fundo.addEventListener('click', (e) => { if (e.target === fundo) fechar(); });
+    fundo.addEventListener('keydown', (e) => { if (e.key === 'Escape') fechar(); });
+    const ops = h('div', { class: 'folha-ops', role: 'radiogroup', 'aria-label': titulo }, opcoes.map((o) => h('button', {
+      type: 'button', role: 'radio', 'aria-checked': String(o.v === valor), class: 'folha-op' + (o.v === valor ? ' on' : ''), 'data-v': o.v,
+      onclick: () => { fechar(); onEscolher(o.v); },
+    }, h('span', { class: 'folha-r', 'aria-hidden': 'true' }), h('span', { class: 'folha-t' }, h('b', null, o.nome), o.dica ? h('small', null, o.dica) : null),
+    o.n != null ? h('span', { class: 'folha-n' }, fmt.int(o.n)) : null)));
+    fundo.append(h('div', { class: 'folha', role: 'dialog', 'aria-modal': 'true', 'aria-label': titulo },
+      h('div', { class: 'folha-puxa', 'aria-hidden': 'true' }),
+      h('div', { class: 'folha-cab' }, h('h3', null, titulo), h('button', { type: 'button', class: 'folha-x', 'aria-label': 'Fechar', onclick: fechar }, '✕')),
+      sub ? h('div', { class: 'folha-sub' }, sub) : null, ops));
+    document.body.append(fundo);
+    const foco = ops.querySelector('.on') || ops.firstChild;
+    if (foco) foco.focus({ preventScroll: true });
+    return fundo;
+  };
+  /** botão do filtro: rótulo pequeno em cima, o que está escolhido embaixo (borda dourada quando filtra) */
+  TS.botaoFolha = ({ rotulo, valor, ativo, onclick, cls }) => h('button', { type: 'button', class: 'fbot' + (ativo ? ' on' : '') + (cls ? ' ' + cls : ''), onclick },
+    h('span', { class: 'fbot-r' }, rotulo), h('b', null, valor), h('span', { class: 'fbot-v', 'aria-hidden': 'true' }, '▾'));
+  /** ícone ⤓ com o menu de downloads; itens: [{ nome, dica?, fazer }] */
+  TS.menuBaixar = function (itens, titulo = 'Baixar') {
+    const caixa = h('div', { class: 'mbx' });
+    const menu = h('div', { class: 'mbx-menu', role: 'menu', hidden: true });
+    const fora = (e) => { if (!caixa.contains(e.target)) fechar(); };
+    const fechar = () => { menu.hidden = true; bt.setAttribute('aria-expanded', 'false'); document.removeEventListener('click', fora, true); };
+    const bt = h('button', { type: 'button', class: 'mbx-bt', title: titulo, 'aria-label': titulo, 'aria-haspopup': 'menu', 'aria-expanded': 'false', onclick: () => {
+      if (!menu.hidden) { fechar(); return; }
+      menu.hidden = false; bt.setAttribute('aria-expanded', 'true'); document.addEventListener('click', fora, true);
+    } }, '⤓');
+    for (const it of itens) menu.append(h('button', { type: 'button', role: 'menuitem', class: 'mbx-it', onclick: () => { fechar(); it.fazer(); } }, it.nome, it.dica ? h('small', null, it.dica) : null));
+    caixa.append(bt, menu);
+    return caixa;
+  };
+
   TS.table = function ({ cols, rows, total, sortKey, sortDir = 'desc', maxHeight, pageSize, search, searchKeys, searchInit, onSearch, onRowClick, rowClass, empty, cls, imprimir, produto, cartao, estado, linhaMob, totalMob }) {
     // produto: colunas com o nome do produto — o filtro "Produto contém" da lateral também vale nesta tabela
     const fProd = produto && TS.state.f.produto ? TS.norm(TS.state.f.produto) : '';
