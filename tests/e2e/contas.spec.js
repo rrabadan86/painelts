@@ -68,6 +68,11 @@ test('Projeção: uma conta só no Início, no Resumo, no Resultado e no equilí
   const res = page.locator('main .heroi-col', { hasText: 'Projeção do faturamento' }).locator('.heroi-num');
   await expect(res).toBeVisible({ timeout: 20000 });
   expect(Math.abs(num(await res.textContent()) - p.proj)).toBeLessThanOrEqual(1);
+  // PROJ-CMP-01: a projeção comparada com o mês anterior inteiro e com o mesmo mês do ano passado inteiro
+  const cmp = await page.evaluate(() => { const ym = TS.dayToIso(TS.db.maxDay).slice(0, 7); const P = TS.projecaoMes(ym, { base: 'loja' }); const ant = TS.fatMesInteiro(`${ym.slice(0, 4)}-${String(+ym.slice(5, 7) - 1 || 12).padStart(2, '0')}`.replace(/^(\d{4})-12$/, (x, y) => (+ym.slice(5, 7) === 1 ? `${+y - 1}-12` : x)), { base: 'loja' }); return { pct: ant ? Math.round((P.proj / ant - 1) * 100) : null }; });
+  const linhaCmp = page.locator('main .heroi-col', { hasText: 'Projeção do faturamento' }).locator('.proj-cmp');
+  await expect(linhaCmp).toContainText(/vs \w{3}\/\d{2}/);
+  if (cmp.pct != null) await expect(linhaCmp).toContainText(`${cmp.pct >= 0 ? '+' : ''}${cmp.pct}%`);
   // Resultado: "vendendo R$ X no mês" é a mesma projeção; e a barra do equilíbrio também
   await ir(page, 'dre');
   const dre = page.locator('main .heroi .heroi-col', { hasText: 'Projeção do mês' }).locator('.dre-h-proj');

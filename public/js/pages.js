@@ -486,7 +486,7 @@
     // redesenho: o "como está" num cartão-herói (faturamento, atendimentos e a projeção do mês) e os indicadores de venda
     // numa grade de apoio logo abaixo — os mesmos números de antes, cada um uma vez
     const proj = TS.periodoUmMes() && TS.dayToIso(state.f.de).slice(8) === '01'
-      ? TS.heroiProjecao(ind.vt, null, TS.dayToIso(state.f.de).slice(0, 7), 'Projeção do faturamento', { base: 'loja', ate: state.f.ate }) : null;
+      ? TS.heroiProjecao(ind.vt, null, TS.dayToIso(state.f.de).slice(0, 7), 'Projeção do faturamento', { base: 'loja', ate: state.f.ate, comparar: true }) : null;
     // 2ª passada (23/11/2026): os indicadores de apoio viram linhas dentro do herói (sem quadros soltos); cada linha leva
     // à parte da tela que detalha o número (TKM, PMA e IPA → por vendedor; chá → por tipo de chá)
     const irPara = (id) => () => { const el = document.getElementById(id); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
