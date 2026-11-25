@@ -768,6 +768,12 @@ app.get('/api/demo/resultado/descontos-royalties', (req, res) => {
 app.post('/api/demo/resultado/fixo-mes', express.json({ limit: '4kb' }), (req, res) => {
   const b = req.body || {};
   if (!DEMO.lojasDemo().some((l) => l.id === String(b.loja || ''))) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  // o % novo (PCT-ESC-01) só confere o número; o resto, como o lançamento do mês
+  if (b.pct != null && (b.escopo === 'diante' || b.escopo === 'todos')) {
+    const p = Number(b.pct);
+    if (!/^20\d\d-(0[1-9]|1[0-2])$/.test(String(b.ym || '')) || !Number.isFinite(p) || p < 0 || p > 100) return res.status(400).json({ erro: 'O novo % precisa ficar entre 0 e 100.' });
+    return res.json({ ok: true, simulado: true });
+  }
   const v = require('./src/fixosmes').validar(b, ESd.cfg({ estoqueCfg: DEMO.estoqueDemo(b.loja).estoqueCfg }).outros, IND.hojeSP().iso);
   if (v.erro) return res.status(400).json({ erro: v.erro });
   res.json({ ok: true, simulado: true });
@@ -1638,7 +1644,10 @@ app.get('/api/estoque', (req, res) => {
   let espera = {};
   try { espera = Object.fromEntries(Object.entries(ESP.resumoPorCod(loja.id)).map(([c, x]) => [c, x.pedidos])); } catch (e) { console.error('[espera no estoque]', e.message); }
   // fixosMes: o valor real de cada custo fixo por mês, lançado no Resultado (src/fixosmes.js; a conta é TS.contas.fixoDoMes)
-  res.json({ estoque: est, cfg: { ...ES.cfg(lc), fixosMes: FXM.ler(loja.id).despesas }, classe: ES.classeCfg(lc), tabela: TAB.resumo(loja.id), historico: ES.historico(loja.id), compras: ES.compras(loja.id), foraDeLinha, espera });
+  // CMV pelo estoque: estoque inicial e final (fotos da virada), compras e devoluções de cada mês (src/cmvestoque.js, CMV-EST-01)
+  let cmvEstoque = {};
+  try { cmvEstoque = require('./src/cmvestoque').resumo(loja.id, { notas: (ES.notas(loja.id) || { notas: [] }).notas, saidas: NFS.lista(loja.id).notas }); } catch (e) { console.error('[cmv estoque]', e.message); }
+  res.json({ estoque: est, cfg: { ...ES.cfg(lc), fixosMes: FXM.ler(loja.id).despesas, cmvEstoque }, classe: ES.classeCfg(lc), tabela: TAB.resumo(loja.id), historico: ES.historico(loja.id), compras: ES.compras(loja.id), foraDeLinha, espera });
 });
 // notas de entrada (compras) do AppNext, inteiras: lista e detalhe na tela Preços
 // NF-e emitidas pela loja (saída): lista, nota completa, XML original e DANFE para imprimir
@@ -2485,12 +2494,20 @@ app.post('/api/resultado/fixo-mes', express.json({ limit: '4kb' }), (req, res) =
   try {
     const lc = C.get().lojas.find((l) => l.id === loja.id);
     // escopo (FIXO-ESC-01): 'mes' só o mês; 'diante' daquele mês em diante; 'todos' todos os meses (os dois últimos mudam o padrão)
-    const r = FXM.aplicar(loja.id, b, ES.cfg(lc).outros, req.user, C.diaSP());
+    const cl = ES.cfg(lc);
+    const r = FXM.aplicar(loja.id, b, cl.outros, req.user, C.diaSP(), cl);
     if (r.erro) return res.status(400).json({ erro: r.erro });
-    if (r.padrao != null) C.alterar((cfg) => { const ec = cfg.lojas.find((l) => l.id === loja.id).estoqueCfg; const o = ec && (ec.outros || []).find((x) => x.tipo === 'mes' && x.nome === b.nome); if (o) o.valor = r.padrao; });
-    const acao = r.valor == null ? 'voltou um custo fixo ao padrão no mês (Resultado)' : r.padrao != null ? `mudou o valor de um custo fixo (${b.escopo === 'todos' ? 'todos os meses' : 'deste mês em diante'}, Resultado)` : 'lançou o valor real de um custo fixo no mês (Resultado)';
-    C.auditar(req.user, acao, loja.id, { loja: loja.id, custo: String(b.nome).slice(0, 40), ym: String(b.ym), valor: r.valor == null ? undefined : r.valor });
-    res.json({ ok: true, fixosMes: r.ok.despesas, padrao: r.padrao ?? undefined });
+    // "daqui para frente" / "todos os meses": o novo padrão vai para Configurações (FIXO-ESC-01, PCT-ESC-01)
+    if (r.padrao != null) C.alterar((cfg) => {
+      const l = cfg.lojas.find((x) => x.id === loja.id);
+      const ec = l.estoqueCfg || (l.estoqueCfg = {});
+      if (r.alvo === 'simplesPct' || r.alvo === 'cartaoPct') ec[r.alvo] = r.padrao;
+      else { const o = (ec.outros || []).find((x) => x.nome === b.nome); if (o) o.valor = r.padrao; }
+    });
+    const onde = b.escopo === 'todos' ? 'todos os meses' : 'deste mês em diante';
+    const acao = r.pct != null ? `mudou o % de uma linha do Resultado (${onde})` : r.valor == null ? 'voltou um custo fixo ao padrão no mês (Resultado)' : r.padrao != null ? `mudou o valor de um custo fixo (${onde}, Resultado)` : 'lançou o valor real de um custo fixo no mês (Resultado)';
+    C.auditar(req.user, acao, loja.id, { loja: loja.id, custo: String(b.nome).slice(0, 40), ym: String(b.ym), valor: r.valor == null ? undefined : r.valor, pct: r.pct });
+    res.json({ ok: true, fixosMes: r.ok.despesas, padrao: r.padrao ?? undefined, alvo: r.alvo || undefined });
   } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
 });
 // planilha do mês fechado: POST porque fica na auditoria e leva as linhas do Resultado que a tela calculou

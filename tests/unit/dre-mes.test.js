@@ -218,3 +218,21 @@ test('DRE-FIN-01: resultado financeiro aceita negativo (juros, tarifas) e positi
   assert.strictEqual(r.status, 200);
   assert.strictEqual((await lancados())['@financeiro']['2026-10'].valor, -85.4);
 });
+
+test('PCT-ESC-01: Simples "daqui para frente" muda o % de Configurações e guarda o antigo; royalties guardam o fator; comissões só no mês', async () => {
+  let r = await lancar('dono', { loja: 'l1', nome: '@simples', ym: '2026-06', escopo: 'diante', pct: 7.5 });
+  assert.strictEqual(r.status, 200, await r.clone().text());
+  let est = await (await fetch(BASE + '/api/estoque?loja=l1', { headers: { Cookie: cookies.dono } })).json();
+  assert.strictEqual(est.cfg.simplesPct, 7.5, 'o % de Configurações mudou');
+  const L = est.cfg.fixosMes;
+  assert.strictEqual(CT.pctDoMes('@simples', '2026-05', est.cfg.simplesPct, L), 0, 'maio guarda o % que valia (0 no cadastro do teste)');
+  assert.strictEqual(CT.pctDoMes('@simples', '2026-06', est.cfg.simplesPct, L), 7.5);
+  r = await lancar('dono', { loja: 'l1', nome: '@royalties', ym: '2026-06', escopo: 'todos', pct: 1.1 });
+  assert.strictEqual(r.status, 200);
+  est = await (await fetch(BASE + '/api/estoque?loja=l1', { headers: { Cookie: cookies.dono } })).json();
+  assert.strictEqual(CT.pctDoMes('@royalties', '2026-01', 1, est.cfg.fixosMes), 1.1, 'royalties: o fator vale em todos os meses');
+  assert.strictEqual((await lancar('dono', { loja: 'l1', nome: '@comissao', ym: '2026-06', escopo: 'diante', pct: 2 })).status, 400, 'comissões: só o valor real do mês');
+  assert.strictEqual((await lancar('dono', { loja: 'l1', nome: '@simples', ym: '2026-06', escopo: 'diante', pct: 80 })).status, 400, '% fora do limite');
+  assert.strictEqual((await lancar('vend', { loja: 'l1', nome: '@simples', ym: '2026-06', escopo: 'diante', pct: 5 })).status, 403);
+  assert.strictEqual((await lancar('dono', { loja: 'l1', nome: '@comissao', ym: '2026-06', valor: 812.3 })).status, 200, 'comissões: valor real do mês');
+});

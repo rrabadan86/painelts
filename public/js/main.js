@@ -78,15 +78,25 @@
     TS.historicoCompleto = true; buscandoCompleto = true;
     carregar(false).finally(() => { buscandoCompleto = false; });
   };
+  // redesenhar a MESMA tela (abrir ▸/fechar ▾ uma linha, mudar um filtro) não pode mandar a página para o topo (pedido do dono,
+  // 25/11/2026; RENDER-ROLA-01): segura a altura enquanto a tela recalcula (o Resultado mostra "Calculando…" um instante) e volta à rolagem
+  let ultimaTela = null, soltaAltura = null;
   TS.render = function () {
     if (precisaCompleto()) TS.carregarTudo();
     const ae = document.activeElement;
     const g = ehCampo(ae) ? capturar(ae) : null;
+    const mesma = ultimaTela === state.page, y = window.scrollY;
+    if (mesma) { clearTimeout(soltaAltura); content.style.minHeight = content.offsetHeight + 'px'; }
     renderTela();
+    ultimaTela = state.page;
     // submenu do grupo (Vendas, Clientes, Equipe, Estoque e Margem): as telas que já desenham o seu não ganham outro
     if (state.page !== 'config' && !content.querySelector('.submenu')) { const sm = TS.subGrupo && TS.subGrupo(state.page); if (sm) content.prepend(sm); }
     TS.botoesExpandir && TS.botoesExpandir(content);
     if (g) restaurar(g);
+    if (mesma) {
+      window.scrollTo(0, y);
+      soltaAltura = setTimeout(() => { content.style.minHeight = ''; }, 2000);
+    } else content.style.minHeight = '';
   };
   function renderTela() {
     document.querySelectorAll('#tabs a').forEach((a) => a.classList.toggle('active', a.dataset.page === state.page || (a.dataset.grupo || '').split(',').includes(state.page === 'nfsaida' || state.page === 'creditos' ? 'notas' : state.page)));

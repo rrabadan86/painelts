@@ -242,6 +242,18 @@
     return melhor ? { ate: melhor.ate, valor: +melhor.valor } : null;
   }
   const EPOCAS = '@ate';
+  /**
+   * % (ou fator) de uma linha calculada num mês (PCT-ESC-01, pedido do dono de 25/11/2026: "deve ser possível em todos"):
+   * o que valia na época ('@ate', depois de um "daqui para frente") ou o atual — o de Configurações (`padrao`) ou, nos royalties e
+   * marketing (fator sobre os % das regras), o guardado em '@padrao'. chave: '@simples', '@maquininha', '@royalties', '@marketing'
+   * ou o nome do custo em %.
+   */
+  function pctDoMes(chave, ym, padrao, lancados) {
+    const meses = lancados && lancados[chave];
+    const ep = padraoDaEpoca(meses, ym);
+    if (ep) return ep.valor;
+    return meses && Number.isFinite(+meses['@padrao']) ? +meses['@padrao'] : padrao;
+  }
   const YM_RE = /^\d{4}-\d{2}$/;
   const ymMenos1 = (ym) => { const d = new Date(Date.UTC(+ym.slice(0, 4), +ym.slice(5, 7) - 2, 1)); return d.toISOString().slice(0, 7); };
   /**
@@ -284,7 +296,7 @@
     return { itens, media: itens.length ? itens.reduce((a, x) => a + x.valor, 0) / itens.length : null, nLancados: itens.filter((x) => x.lancado).length };
   }
 
-  const API = { EG, GRUPOS_META, CHA_TOTAL, GRUPO_ENVASADO, parteLoja, PARTES_LOJA, CAT_VAR_PADRAO, CAT_EXTRAS, CAT_FRANQUIA, catsEscolha, catVarDe, TAXAS, PISO_DIAS_META, MIN_ATEND_PREMIACAO, ehTaxa, ehCentavo, contaFat, classeMeta, semItem, resumo, projecaoMes, metasIndividuais, divisoresMeta, pontoEquilibrio, fixoDoMes, historicoFixo, aplicarFixo, padraoDaEpoca, diaDe, isoDe, diasNoMes };
+  const API = { EG, GRUPOS_META, CHA_TOTAL, GRUPO_ENVASADO, parteLoja, PARTES_LOJA, CAT_VAR_PADRAO, CAT_EXTRAS, CAT_FRANQUIA, catsEscolha, catVarDe, TAXAS, PISO_DIAS_META, MIN_ATEND_PREMIACAO, ehTaxa, ehCentavo, contaFat, classeMeta, semItem, resumo, projecaoMes, metasIndividuais, divisoresMeta, pontoEquilibrio, fixoDoMes, historicoFixo, aplicarFixo, padraoDaEpoca, pctDoMes, diaDe, isoDe, diasNoMes };
   if (typeof module !== 'undefined' && module.exports) { module.exports = API; return; }
   TS.contas = API;
 })();

@@ -203,3 +203,67 @@ test('DRE-FIN-01: lançar o resultado financeiro do mês muda o resultado líqui
   expect(r.res).toBeCloseTo(antes - 85.4, 2);
   await expect(page.locator('.dre-t').first().locator('tr.dre-tot')).toContainText('Resultado líquido');
 });
+
+// CMV-EST-01: mês com as duas fotos do estoque usa a conta do contador; a diferença para o custo das vendas = perdas e acertos
+test('CMV-EST-01: CMV pelo estoque no mês fechado com as fotos; o mês em andamento fica pelo custo das vendas', async ({ page }) => {
+  await abrir(page);
+  const r = await page.evaluate(async () => {
+    const M = await TS.custosLoja();
+    const ms = TS.dreCalcular(M);
+    const f = ms.filter((m) => m.est), atual = ms[ms.length - 1];
+    return { n: f.length, ok: f.every((m) => Math.abs(m.cmvTot - (m.est.ini.valor + m.est.compras - m.est.devolucoes - m.est.fim.valor + m.difal)) < 0.01 && Math.abs(m.acertos - (m.cmvEst - m.cmv)) < 0.01), atualSemEst: !atual.est, ym: f.length ? f[f.length - 1].ym : null };
+  });
+  expect(r.n).toBeGreaterThan(0);
+  expect(r.ok).toBe(true);
+  expect(r.atualSemEst).toBe(true);
+  await page.locator('.dre-topo select').selectOption(r.ym);
+  const t = page.locator('.dre-t').first();
+  await expect(t).toContainText('Pela conta do estoque: estoque inicial');
+  await expect(t).toContainText('(−) Estoque final');
+  await expect(t.locator('tr', { hasText: 'Perdas e acertos de estoque' }).first()).toHaveAttribute('title', /Pela conta do estoque/);
+});
+
+// RENDER-ROLA-01 (pedido do dono, 25/11/2026): abrir ou fechar uma linha não manda a página para o topo
+test('RENDER-ROLA-01: abrir/fechar uma categoria no Mês a mês mantém a rolagem da página', async ({ page }) => {
+  await abrir(page);
+  const mm = page.locator('.card', { has: page.locator('.card-title, h2, h3', { hasText: /^Mês a mês/ }) }).last();
+  const grupo = mm.locator('tr.dre-grupo', { hasText: 'Imóvel' }).locator('td').first();
+  await grupo.scrollIntoViewIfNeeded();
+  const antes = await page.evaluate(() => window.scrollY);
+  expect(antes).toBeGreaterThan(300);
+  await grupo.click();
+  await expect(mm.locator('tr.dre-filho').first()).toBeVisible();
+  await page.waitForTimeout(300);
+  const depois = await page.evaluate(() => window.scrollY);
+  expect(Math.abs(depois - antes)).toBeLessThan(40);
+});
+
+// PCT-ESC-01 (pedido do dono, 25/11/2026: "deve ser possível em todos; fixo e variáveis"): nas linhas pelo %, o valor digitado
+// vale só no mês (valor real) ou vira o % novo daqui para frente / em todos os meses
+test('PCT-ESC-01: Simples — mudar o % daqui para frente recalcula do mês em diante e guarda o % antigo antes', async ({ page }) => {
+  const erros = [];
+  page.on('pageerror', (e) => erros.push(e.message));
+  await abrir(page);
+  const yms = await page.evaluate(async () => { const M = await TS.custosLoja(); return TS.dreCalcular(M).filter((m) => !m.parcial).map((m) => m.ym); });
+  const [antes, alvo] = [yms[yms.length - 3], yms[yms.length - 2]];
+  const imp = () => page.evaluate(async (ys) => { const M = await TS.custosLoja(); const ms = TS.dreCalcular(M); return ys.map((y) => { const m = ms.find((x) => x.ym === y); return { imp: m.imp, fat: m.fat }; }); }, [antes, alvo]);
+  const [a0, b0] = await imp();
+  await page.locator('.dre-topo select').selectOption(alvo);
+  await page.locator('.dre-t').first().locator('td.dre-edit[data-calc="simples"]').first().click();
+  const jan = page.locator('.dre-fixo-jan');
+  await jan.locator('.dre-fixo-campo').fill(String(Math.round(b0.imp * 1.5 * 100) / 100).replace('.', ','));
+  await jan.getByRole('button', { name: 'Salvar', exact: true }).click(); // sem escolher: não grava
+  await expect(page.locator('.ts-perg-erro')).toContainText('Escolha onde o novo valor vale');
+  await page.locator('.ts-perg-erro').getByRole('button', { name: 'Corrigir', exact: true }).click();
+  await jan.locator('.dre-esc-op', { hasText: 'em diante' }).click();
+  await expect(jan.locator('.dre-esc-previa')).toContainText('Novo %');
+  await jan.getByRole('button', { name: 'Salvar', exact: true }).click();
+  await expect(jan).toHaveCount(0);
+  const [a1, b1] = await imp();
+  expect(a1.imp).toBeCloseTo(a0.imp, 1); // o mês antes continua com o % que valia
+  expect(b1.imp).toBeCloseTo(b0.imp * 1.5, 0); // do mês em diante, o % novo
+  // comissões: só o valor real do mês (sem a pergunta)
+  await page.locator('.dre-t').first().locator('td.dre-edit[data-calc="comissao"]').first().click();
+  await expect(page.locator('.dre-fixo-jan .dre-esc')).toHaveCount(0);
+  expect(erros).toEqual([]);
+});

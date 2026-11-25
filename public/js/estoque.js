@@ -220,20 +220,25 @@
         + 'Esse % é volátil: muda quando um mês fecha e entra na média, e sobe quando a loja vende menos. Num mês que vender abaixo da média, o aluguel de verdade pesa mais do que o mostrado; acima da média, pesa menos.';
     };
     /** deduções da linha de venda: { com, roy, imp, maq } em R$ */
+    // % de cada mês (PCT-ESC-01): o que valia na época depois de um "daqui para frente", ou o de Configurações / das regras
+    const pctMemo = new Map();
+    const pctMes = (k, ym, pad) => { const c = k + '|' + ym; if (!pctMemo.has(c)) pctMemo.set(c, TS.contas.pctDoMes(k, ym, pad, LANC)); return pctMemo.get(c); };
     function deducoes(i) {
-      const vt = db.vt[i] || 0, g = db.grupoC[i];
+      const vt = db.vt[i] || 0, g = db.grupoC[i], ym = db.ym[i];
+      const fR = pctMes('@royalties', ym, 1), fM = pctMes('@marketing', ym, 1);
       const ehEG = I.eg.has(db.cat[i]);
       const cat = ehEG ? null : I.arom.has(g) ? 'arom' : I.puro.has(g) ? 'puro' : I.acess.has(g) ? 'acess' : null;
-      const ry = rgLoja.royalties;
-      const outros = OUTROS.map((x) => (x.aplica === 'tudo' || (x.aplica === 'eg') === ehEG ? vt * taxaOutro(x) : 0));
+      const ry0 = rgLoja.royalties;
+      const ry = { loja: ry0.loja * fR, eg: ry0.eg * fR, mkt: ry0.mkt * fM, egMkt: ry0.egMkt * fM };
+      const outros = OUTROS.map((x) => (x.aplica === 'tudo' || (x.aplica === 'eg') === ehEG ? vt * (x.tipo === 'pct' ? pctMes(x.nome, ym, x.valor) / 100 : taxaOutro(x)) : 0));
       return {
         com: cat ? vt * (comDoMes(db.ym[i])[cat] || 0) : 0,
         roy: ehEG ? vt * (ry.eg + ry.egMkt) : cat ? vt * (ry.loja + ry.mkt) : 0,
         // as duas partes dos royalties, para o Resultado lançar cada uma pelo valor real do boleto (DRE-CALC-01)
         royS: ehEG ? vt * ry.eg : cat ? vt * ry.loja : 0,
         mkt: ehEG ? vt * ry.egMkt : cat ? vt * ry.mkt : 0,
-        imp: vt * pSimples,
-        maq: vt * pCartao,
+        imp: vt * pctMes('@simples', ym, cfg.simplesPct || 0) / 100,
+        maq: vt * pctMes('@maquininha', ym, cfg.cartaoPct || 0) / 100,
         out: outros.reduce((a, b) => a + b, 0),
         outros,
         // variáveis = acompanham a venda (comissão, royalties, Simples, maquininha, custos em %);
@@ -247,7 +252,8 @@
     // categorias dos custos (Funcionários, Imóvel, Sistemas…), na ordem cadastrada; "outros" recebe o que não tem
     const CATS = (cfg.categorias && cfg.categorias.length ? cfg.categorias : [{ id: 'outros', nome: 'Outros' }]);
     const catDe = (x) => (CATS.some((c) => c.id === x.cat) ? x.cat : 'outros');
-    const CATVAR = TS.contas.catVarDe(cfg.catVar, CATS); // categoria de Simples, maquininha e comissões no Resultado (DESP-CAT-01)
+    const CATVAR = TS.contas.catVarDe(cfg.catVar, CATS);
+    const CMVEST = (cfg.cmvEstoque && typeof cfg.cmvEstoque === 'object') ? cfg.cmvEstoque : {}; // CMV pelo estoque por mês (CMV-EST-01) // categoria de Simples, maquininha e comissões no Resultado (DESP-CAT-01)
     // despesas de um mês só: as que caem no mês ym (as "todo ano" repetem no mesmo mês dos anos seguintes)
     const PONTUAIS = (cfg.pontuais || []).filter((x) => x.valor > 0 && x.ym);
     const pontuaisDoMes = (ym) => PONTUAIS.filter((x) => x.ym === ym || (x.anual && x.ym.slice(5) === ym.slice(5) && ym > x.ym));
@@ -261,9 +267,9 @@
       const ry = rgLoja.royalties;
       const pct = OUTROS.filter((x) => x.tipo === 'pct' && x.aplica !== 'eg').reduce((s, x) => s + taxaOutro(x), 0);
       const fix = OUTROS.filter((x) => x.tipo === 'mes' && x.aplica !== 'eg').reduce((s, x) => s + taxaOutro(x), 0);
-      return { roy: (ry.loja || 0) + (ry.mkt || 0), imp: pSimples, maq: pCartao, com, outrosPct: pct, outrosFix: fix, mesCom: ant };
+      return { roy: (ry.loja || 0) * pctMes('@royalties', ymHoje, 1) + (ry.mkt || 0) * pctMes('@marketing', ymHoje, 1), imp: pSimples, maq: pCartao, com, outrosPct: pct, outrosFix: fix, mesCom: ant };
     };
-    return { deducoes, OUTROS, LANC, fixoDoMes, fixoBase, temLancado, taxaOutro, dicaOutro, mediaFat, ONDE_FAT, pSimples, pCartao, CATS, CATVAR, catDe, PONTUAIS, pontuaisDoMes, taxasVenda, comDoMes, comProjetada };
+    return { deducoes, OUTROS, LANC, fixoDoMes, fixoBase, temLancado, taxaOutro, dicaOutro, mediaFat, ONDE_FAT, pSimples, pCartao, CATS, CATVAR, CMVEST, catDe, PONTUAIS, pontuaisDoMes, taxasVenda, comDoMes, comProjetada };
   }
 
   TS.estoqueBuscar = buscar;
@@ -272,7 +278,8 @@
     const c = cache.get(loja); if (!c) return;
     c.cfg = { ...c.cfg, fixosMes: fixosMes || {} };
     // "deste mês em diante" e "todos os meses" mudam o padrão de Configurações (FIXO-ESC-01)
-    if (mudaPadrao) c.cfg.outros = (c.cfg.outros || []).map((x) => (x.tipo === 'mes' && x.nome === mudaPadrao.nome ? { ...x, valor: mudaPadrao.valor } : x));
+    if (mudaPadrao && mudaPadrao.campo) c.cfg = { ...c.cfg, [mudaPadrao.campo]: mudaPadrao.valor }; // Simples / maquininha (PCT-ESC-01)
+    else if (mudaPadrao) c.cfg.outros = (c.cfg.outros || []).map((x) => (x.nome === mudaPadrao.nome ? { ...x, valor: mudaPadrao.valor } : x));
   };
   TS.motorEstoque = motor; // Início com todas as lojas (visaodono.js): o mesmo motor, com o estoque de cada loja
 
@@ -683,7 +690,7 @@
           tb,
           total ? null : h('div', { class: 'est-sim' },
             h('label', null, 'Simular preço R$ ', sim),
-            alvoPreco ? h('button', { type: 'button', class: 'est-sim-alvo', title: `Preço em que a margem de contribuição chega a ${fmt.pct(margemAlvo, 0)} (a meta da loja em Configurações)`, onclick: () => { sim.value = alvoPreco.toFixed(2); sim.dispatchEvent(new Event('input')); } }, `Para ${fmt.pct(margemAlvo, 0)} sem fixos: ${fmt.brl(alvoPreco)}`) : null),
+            alvoPreco ? h('button', { type: 'button', class: 'est-sim-alvo', title: `Preço em que a margem de contribuição chega a ${fmt.pct(margemAlvo, 0)} (a meta da loja em Configurações)`, onclick: () => { sim.value = alvoPreco.toFixed(2); sim.dispatchEvent(new Event('input')); } }, `Para ${fmt.pct(margemAlvo, 0)} de contribuição: ${fmt.brl(alvoPreco)}`) : null),
           rod);
         pintarCard(precoAtual);
         return cardEl;
@@ -1748,13 +1755,13 @@
       ];
     }
     return [
-      h('div', { class: 'f-label' }, 'Margem líquida (sobre o valor vendido)'),
+      h('div', { class: 'f-label' }, 'Simples, maquininha e margem de contribuição (sobre o valor vendido)'),
       h('div', { class: 'est-cfg-g' },
         h('label', null, h('span', null, 'Simples Nacional'), h('div', null, simp, ' %')),
         h('label', null, h('span', null, 'Taxa da maquininha'), h('div', null, maq, ' %')),
         h('label', null, h('span', null, 'Margem de contribuição mínima'), h('div', null, mMin, ' %')),
         h('label', null, h('span', null, 'Meta de margem de contribuição'), h('div', null, mAlvo, ' %'))),
-      h('small', { class: 'muted' }, 'Margem de contribuição = venda − Simples − custo − despesas variáveis, antes do aluguel e outros custos fixos. Abaixo da mínima o produto aparece em vermelho e no alerta. A meta é usada no simulador de preço ("Para X% sem fixos").'),
+      h('small', { class: 'muted' }, 'Margem de contribuição = venda − Simples − custo − despesas variáveis, antes do aluguel e outros custos fixos. Abaixo da mínima o produto aparece em vermelho e no alerta. A meta é usada no simulador de preço ("Para X% de contribuição").'),
       h('small', { class: 'muted' }, 'Comissão e royalties vêm das regras da loja (Comissionamento). Use a taxa média da maquininha (débito, crédito e Pix juntos).'),
       h('div', { class: 'f-label', style: { marginTop: '14px' } }, 'Em que categoria cada despesa aparece no Resultado ', TS.dica('No Resultado, as despesas variáveis (maquininha, royalties e marketing, comissões e os custos em %) aparecem agrupadas pela categoria, antes da margem de contribuição; as fixas, pelas mesmas categorias, depois dela. O Simples é dedução da receita. Passe o mouse na categoria para ver o total do mês somando as duas.')),
       catVarBox,

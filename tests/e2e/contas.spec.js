@@ -268,14 +268,17 @@ test('DRE-ESTR-01: Resultado como na contabilidade — receita líquida = fatura
     const M = await TS.custosLoja();
     const meses = TS.dreCalcular(M, {});
     const m = meses[meses.length - 2] || meses[meses.length - 1]; // último mês fechado
-    return { ym: m.ym, fat: m.fat, cmv: m.cmv, lb: m.lucroBruto, imp: m.imp, maq: m.maq, roy: m.roy, com: m.com, varPct: m.varPct, contrib: m.contrib, perdas: m.perdas || 0, fixo: m.fixoTot, fin: m.fin, res: m.resultado, cobre: m.cobre, custo: m.custo, fatCusto: m.fatCusto };
+    return { ym: m.ym, fat: m.fat, cmv: m.cmv, lb: m.lucroBruto, imp: m.imp, maq: m.maq, roy: m.roy, com: m.com, varPct: m.varPct, contrib: m.contrib, perdas: m.perdas || 0, fixo: m.fixoTot, fin: m.fin, res: m.resultado, cmvTot: m.cmvTot, acertos: m.acertos, difal: m.difal, est: m.est, cmvEst: m.cmvEst, cobre: m.cobre, custo: m.custo, fatCusto: m.fatCusto };
   });
   const perto = (a, b, msg) => expect(Math.abs(a - b), msg).toBeLessThan(0.05);
-  perto(r.lb, r.fat - r.imp - r.cmv - r.perdas, 'lucro bruto = receita líquida − CMV (custo dos produtos + perdas)');
+  perto(r.lb, r.fat - r.imp - r.cmvTot, 'lucro bruto = receita líquida − CMV');
+  perto(r.cmvTot, r.cmv + r.acertos + r.difal, 'CMV = custo das vendas + perdas e acertos + DIFAL');
+  if (r.est) perto(r.cmvEst, r.est.ini.valor + r.est.compras - r.est.devolucoes - r.est.fim.valor, 'CMV pelo estoque (CMV-EST-01)');
+  else perto(r.acertos, r.perdas, 'sem foto do estoque: as perdas conhecidas');
   perto(r.contrib, r.lb - r.maq - r.roy - r.com - r.varPct, 'margem de contribuição');
   perto(r.res, r.contrib - r.fixo + (r.fin || 0), 'resultado');
   // a parte com custo cadastrado é a mesma conta da Rentabilidade (venda − custo, só das vendas com custo)
-  perto(r.fatCusto - r.custo, (r.lb + r.imp + r.perdas) * (r.fatCusto / r.fat) + 0, 'mesma margem nas vendas com custo');
+  perto(r.fatCusto - r.custo, (r.lb + r.imp + r.acertos + r.difal) * (r.fatCusto / r.fat) + 0, 'mesma margem nas vendas com custo');
   // a tela do Resultado mostra os três degraus com estes nomes, na ordem
   await ir(page, 'dre');
   const t = page.locator('main');
