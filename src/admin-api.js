@@ -786,9 +786,15 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
   r.post('/lojas/:id/fechamento-email/enviar', lojaPermitida, json, async (req, res) => {
     try {
       const soPara = req.body && req.body.para ? String(req.body.para) : undefined;
-      const r2 = await NOTIF.enviarFechamentoLoja(obterIndicadores, req.loja.id, { soPara });
-      if (!r2.length) return res.status(400).json({ erro: soPara ? 'Destinatário não encontrado.' : 'Nenhum destinatário para esta loja (ou sem vendas para montar o fechamento).' });
-      aud(req, soPara ? 'testou fechamento' : 'enviou fechamento do dia agora', req.loja.id, { loja: req.loja.id, envios: r2.length, falhas: r2.filter((y) => !y.ok).map((y) => `${y.para}: ${y.erro}`) });
+      // FECH-REENV-01 (pedido do dono, 25/11/2026): reenviar o fechamento de um dia que já passou (Vendas → Conferência →
+      // Dia a dia), o mesmo e-mail do envio automático; só os últimos 60 dias e nunca um dia que ainda não chegou
+      const dia = req.body && req.body.dia != null ? String(req.body.dia) : undefined;
+      if (dia !== undefined) {
+        if (!NOTIF.diaReenvioOk(dia, require('./indicadores').hojeSP().iso)) return res.status(400).json({ erro: 'Escolha um dia dos últimos 60 dias.' });
+      }
+      const r2 = await NOTIF.enviarFechamentoLoja(obterIndicadores, req.loja.id, { soPara, dia });
+      if (!r2.length) return res.status(400).json({ erro: soPara ? 'Destinatário não encontrado.' : `Nenhum destinatário para esta loja (ou sem vendas para montar o fechamento${dia ? ' deste dia' : ''}).` });
+      aud(req, soPara ? 'testou fechamento' : dia ? `reenviou o fechamento de ${dia.slice(8, 10)}/${dia.slice(5, 7)}/${dia.slice(0, 4)}` : 'enviou fechamento do dia agora', req.loja.id, { loja: req.loja.id, ...(dia ? { dia } : {}), envios: r2.length, falhas: r2.filter((y) => !y.ok).map((y) => `${y.para}: ${y.erro}`) });
       res.json({ ok: true, envios: r2 });
     } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
   });

@@ -697,6 +697,12 @@ app.post('/api/demo/conta-franquia/acao', express.json({ limit: '5kb' }), (req, 
 });
 app.post('/api/demo/conta-franquia/royalties', (req, res) => res.status(400).json({ erro: 'Na apresentação nada é salvo.' }));
 app.get('/api/demo/reajuste/para', (req, res) => res.json({ para: ['compras@franquia-exemplo.com.br'], loja: 'Tea Shop Centro' }));
+// FECH-REENV-01: reenviar o fechamento de um dia (Conferência → Dia a dia): na apresentação nada é enviado
+app.post('/api/demo/fechamento/reenviar', express.json({ limit: '2kb' }), (req, res) => {
+  const dia = String((req.body && req.body.dia) || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dia)) return res.status(400).json({ erro: 'Escolha um dia dos últimos 60 dias.' });
+  res.json({ ok: true, demo: true, envios: [{ canal: 'email', para: 'franqueado@exemplo.com', ok: true }, { canal: 'email', para: 'gerente@exemplo.com', ok: true }] });
+});
 app.post('/api/demo/reajuste/enviar', express.json({ limit: '2mb' }), (req, res) => {
   const it = COB.conferirItensReajuste((req.body || {}).itens);
   if (it.erro) return res.status(400).json({ erro: it.erro });
