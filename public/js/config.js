@@ -484,7 +484,7 @@
       else acoes.append(acao('Atualizar agora', async () => { await api('POST', `/lojas/${l.id}/rodar`); return 'Atualização na fila. Leva alguns minutos.'; }, 'btn primary'));
       { const bs = botaoSaldos(l); if (bs) acoes.append(bs); }
       b.append(acoes);
-      if (!ocupado) b.append(formHistorico(l));
+      if (!ocupado) b.append(formHistorico(l), formExtrato(l));
     }
     if (ex && ex.log && ex.log.length && !ocupado) b.append(detalhes('log:' + l.id, { class: 'cfg-log' }, h('summary', null, 'Log técnico da última coleta'), logBonito(ex.log)));
     {
@@ -583,6 +583,31 @@
     return h('div', null, motivo ? h('div', { class: 'log-motivo' }, h('b', null, 'Motivo: '), motivo) : null, pre);
   }
 
+  /** Extrato de estoque do AppNext (EXTRATO-01): o robô só lê a tela e guarda um diagnóstico sem dado pessoal + os movimentos
+   *  desde a data; o diagnóstico aparece aqui para o dono copiar (é o que ajusta a reconstrução do estoque de cada mês) */
+  function formExtrato(l) {
+    const desde = inp({ type: 'date', value: '2025-06-01', min: '2024-01-01' });
+    const caixa = h('textarea', { class: 'f-input cfg-extrato-diag', readonly: true, rows: 8, 'aria-label': 'Diagnóstico do extrato' });
+    const situ = h('p', { class: 'muted' }, 'Ainda não lido.');
+    const det = h('details', { class: 'cfg-hist' }, h('summary', null, 'Extrato de estoque (reconstruir o estoque dos meses passados)'),
+      h('p', { class: 'muted' }, 'O robô abre Estoque → Extrato de estoque no AppNext, só olhando (não salva nada), e guarda os movimentos desde a data. Serve para o CMV pelo estoque dos meses antes de o painel guardar a foto da virada do mês.'),
+      h('div', { class: 'cfg-grid c3' }, campo('Desde', desde)),
+      h('div', { class: 'cfg-acoes' }, acao('Ler o extrato', async () => {
+        await api('POST', `/lojas/${l.id}/extrato`, { desde: desde.value });
+        return 'Leitura do extrato na fila do coletor. Leva alguns minutos; depois abra este quadro de novo para ver o diagnóstico.';
+      }, 'btn primary')),
+      situ,
+      h('label', { class: 'f-label' }, 'Diagnóstico (copie e mande para o Claude ajustar a leitura; não tem dado pessoal)'), caixa);
+    det.addEventListener('toggle', async () => {
+      if (!det.open) return;
+      try {
+        const j = await api('GET', `/lojas/${l.id}/extrato`);
+        situ.textContent = !j.diag ? 'Ainda não lido.' : j.diag.erro ? `A última leitura falhou: ${j.diag.erro}` : `Última leitura: ${new Date(j.diag.em).toLocaleString('pt-BR')} · ${j.movimentos != null ? `${fmt.int(j.movimentos)} movimentos guardados` : 'a tela não trouxe uma lista com período (veja o diagnóstico)'}.`;
+        caixa.value = j.diag ? JSON.stringify(j.diag, null, 1) : '';
+      } catch (e) { situ.textContent = e.message; }
+    });
+    return det;
+  }
   function formHistorico(l) {
     const hoje = new Date();
     const ymHoje = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}`;

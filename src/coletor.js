@@ -51,6 +51,10 @@ async function rodar(lojaId, por, itens) {
 async function historico(lojaId, partes, por, tipo = 'ambos', extras = []) {
   return chamar(`/historico/${encodeURIComponent(lojaId)}`, { method: 'POST', por, body: { partes, tipo, extras } });
 }
+/** Extrato de estoque do AppNext, só leitura (EXTRATO-01) */
+async function extrato(lojaId, por, desde) {
+  return chamar(`/extrato/${encodeURIComponent(lojaId)}`, { method: 'POST', por, body: { desde } });
+}
 async function fixe(lojaId, por) {
   return chamar(`/fixe/${encodeURIComponent(lojaId)}`, { method: 'POST', por });
 }
@@ -81,4 +85,4 @@ async function saude() {
   try { const r = await chamar('/saude'); return r.json; } catch (e) { return { ok: false, erro: e.message }; }
 }
 
-module.exports = { pdf, nfe, inventario, pedido, fixe, fixeSaldos, ativo, status, rodar, historico, cancelar, saude };
+module.exports = { pdf, nfe, inventario, pedido, fixe, fixeSaldos, extrato, ativo, status, rodar, historico, cancelar, saude };
