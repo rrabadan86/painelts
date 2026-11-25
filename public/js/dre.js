@@ -103,6 +103,17 @@
       m.impCalc = m.imp; m.maqCalc = m.maq;
       if (m.lanc.simples) m.imp = m.lanc.simples.valor;
       if (m.lanc.maquininha) m.maq = m.lanc.maquininha.valor;
+      // comissões e custos em %: o valor real lançado no mês substitui o calculado (PCT-ESC-01)
+      m.comCalc = m.com;
+      if (m.lanc.comissao) m.com = m.lanc.comissao.valor;
+      m.pctCalc = {};
+      D.OUTROS.forEach((x, k) => {
+        if (x.tipo !== 'pct') return;
+        m.pctCalc[x.nome] = m.pctPor[k] || 0;
+        const l = D.LANC && D.LANC[x.nome] && D.LANC[x.nome][ym];
+        if (!l || !Number.isFinite(+l.valor) || +l.valor < 0) return;
+        m.varPct += +l.valor - (m.pctPor[k] || 0); m.pctPor[k] = +l.valor; m.lanc['pct:' + x.nome] = { valor: +l.valor, por: l.por, em: l.em };
+      });
       // royalties: o boleto lançado já vem com os descontos da franquia; sem ele, calculado − descontos do mês
       m.royPago = m.lanc.royalties ? m.lanc.royalties.valor : m.royS - m.royDesc;
       m.mktPago = m.lanc.marketing ? m.lanc.marketing.valor : m.mkt;
@@ -163,8 +174,8 @@
     const k = PM && m.fat > 0 ? PM.proj / m.fat : m.diasMes / m.decorridos;
     const x = (v) => (v == null ? null : v * k);
     const comP = D && D.comProjetada ? D.comProjetada(m.ym, k) : null;
-    const p = { ...m, parcial: false, projecao: true, fat: m.fat * k, fatCusto: m.fatCusto * k, custo: m.custo * k, imp: m.lanc && m.lanc.simples ? m.imp : m.imp * k, maq: m.lanc && m.lanc.maquininha ? m.maq : m.maq * k, impCalc: (m.impCalc ?? m.imp) * k, maqCalc: (m.maqCalc ?? m.maq) * k, royCalc: (m.royCalc ?? m.roy) * k, royS: (m.royS || 0) * k, mkt: (m.mkt || 0) * k, com: comP != null ? comP : m.com * k, varPct: m.varPct * k, projMes: PM, fator: k,
-      gorjeta: m.gorjeta * k, gorjImp: m.gorjImp * k, gorjRoy: m.gorjRoy * k, desc: m.desc * k, egDesc: (m.egDesc || 0) * k, eg: m.eg * k, cmv: x(m.cmv), partes: Object.fromEntries(Object.entries(m.partes || {}).map(([q, v]) => [q, v * k])), pctPor: (m.pctPor || []).map((v) => (v == null ? v : v * k)) };
+    const p = { ...m, parcial: false, projecao: true, fat: m.fat * k, fatCusto: m.fatCusto * k, custo: m.custo * k, imp: m.lanc && m.lanc.simples ? m.imp : m.imp * k, maq: m.lanc && m.lanc.maquininha ? m.maq : m.maq * k, impCalc: (m.impCalc ?? m.imp) * k, maqCalc: (m.maqCalc ?? m.maq) * k, royCalc: (m.royCalc ?? m.roy) * k, royS: (m.royS || 0) * k, mkt: (m.mkt || 0) * k, com: m.lanc && m.lanc.comissao ? m.com : comP != null ? comP : m.com * k, comCalc: comP != null ? comP : (m.comCalc ?? m.com) * k, varPct: m.varPct * k, projMes: PM, fator: k,
+      gorjeta: m.gorjeta * k, gorjImp: m.gorjImp * k, gorjRoy: m.gorjRoy * k, desc: m.desc * k, egDesc: (m.egDesc || 0) * k, eg: m.eg * k, cmv: x(m.cmv), partes: Object.fromEntries(Object.entries(m.partes || {}).map(([q, v]) => [q, v * k])), pctPor: (m.pctPor || []).map((v) => (v == null ? v : v * k)), pctCalc: Object.fromEntries(Object.entries(m.pctCalc || {}).map(([q, v]) => [q, v * k])) };
     // o lançado vale como está (não cresce com as vendas); o calculado acompanha a projeção
     p.royPago = m.lanc && m.lanc.royalties ? m.royPago : p.royS - (m.royDesc || 0);
     p.mktPago = m.lanc && m.lanc.marketing ? m.mktPago : p.mkt;
@@ -184,7 +195,11 @@
       + 'Compare os royalties com o boleto da franquia. Sobre o imposto, confirme com o contador como a loja registra a taxa.';
   }
   /** linhas calculadas que aceitam o valor real do mês (DRE-CALC-01): chave → rótulo e o calculado do mês */
-  const CALC = { simples: ['Simples Nacional', (m) => m.impCalc], maquininha: ['Maquininha', (m) => m.maqCalc], royalties: ['Royalties', (m) => (m.royS || 0) - (m.royDesc || 0)], marketing: ['Marketing', (m) => m.mkt], financeiro: ['Resultado financeiro', () => 0], difal: ['DIFAL não recuperável', () => 0] };
+  const CALC = { simples: ['Simples Nacional', (m) => m.impCalc], maquininha: ['Maquininha', (m) => m.maqCalc], royalties: ['Royalties', (m) => (m.royS || 0) - (m.royDesc || 0)], marketing: ['Marketing', (m) => m.mkt], financeiro: ['Resultado financeiro', () => 0], difal: ['DIFAL não recuperável', () => 0], comissao: ['Comissões e premiações', (m) => m.comCalc] };
+  /** a linha calculada k: [rótulo, calculado do mês]; custo em % = 'pct:<nome>' (PCT-ESC-01) */
+  const calcInfo = (k) => CALC[k] || (String(k).startsWith('pct:') ? [k.slice(4), (m) => (m.pctCalc && m.pctCalc[k.slice(4)]) || 0] : null);
+  /** linhas cujo % muda "daqui para frente" / "em todos os meses": a chave guardada e o % atual do mês (PCT-ESC-01) */
+  const PCT_DE = { simples: '@simples', maquininha: '@maquininha', royalties: '@royalties', marketing: '@marketing' };
   function lancCalc(D, ym) {
     const out = {};
     for (const k of Object.keys(CALC)) { const l = D && D.LANC && D.LANC['@' + k] && D.LANC['@' + k][ym]; out[k] = l && Number.isFinite(+l.valor) && (+l.valor >= 0 || k === 'financeiro') ? { valor: +l.valor, por: l.por, em: l.em } : null; }
@@ -192,7 +207,7 @@
   }
   /** ⓘ da linha calculada: a regra, o calculado e o lançado (com a diferença, para conferir com o DAS, o extrato e o boleto) */
   function dicaCalc(m, k, base) {
-    const l = m.lanc && m.lanc[k], calc = CALC[k][1](m);
+    const l = m.lanc && m.lanc[k], calc = calcInfo(k)[1](m);
     let t = base + '.';
     if (k === 'royalties' && m.royDesc) t += `\n\nCalculado ${fmt.brl(m.royS)} − descontos da franquia ${fmt.brl(m.royDesc)}:\n` + m.royItens.map((x) => `  · ${x.texto}: ${fmt.brl(x.valor)}`).join('\n');
     if (l) t += `\n\n✎ Valor real lançado: ${fmt.brl(l.valor)}${l.por ? ` por ${l.por}` : ''}. Calculado pelo %: ${fmt.brl(calc)} (diferença ${fmt.brl(l.valor - calc)}).`;
@@ -224,8 +239,8 @@
       { nome: 'Maquininha', cat: CV.cartao, f: (m) => m.maq, cc: 'maquininha', dica: (m) => dicaCalc(m, 'maquininha', 'Taxa média da maquininha sobre as vendas') },
       { nome: 'Royalties', cat: 'franquia', f: (m) => m.royPago, cc: 'royalties', dica: (m) => dicaCalc(m, 'royalties', 'Royalties pelas regras da loja (loja; Espaço Gourmet: EG) sobre o faturamento sem a taxa de serviço, menos os descontos da franquia do mês (devoluções compensadas nos royalties e prêmios de fidelidade)') },
       { nome: 'Marketing', cat: 'franquia', f: (m) => m.mktPago, cc: 'marketing', dica: (m) => dicaCalc(m, 'marketing', 'Fundo de marketing pelas regras da loja (loja; Espaço Gourmet: marketing EG) sobre o faturamento sem a taxa de serviço') },
-      { nome: 'Comissões e premiações', cat: CV.comissao, f: (m) => m.com, dica: 'O que a loja pagou no mês (comissões, premiação e bônus), como no Comissionamento. Na projeção do mês em andamento: a comissão que cada pessoa receberia com a venda projetada dela contra a meta (na faixa em que fecharia), não a comissão de agora multiplicada' },
-      ...D.OUTROS.map((x, k) => (x.tipo !== 'pct' ? null : { nome: x.nome, cat: D.catDe ? D.catDe(x) : 'outros', f: (m) => (m.pctPor && m.pctPor[k]) || 0, dica: `Custo cadastrado como ${fmt.n1(+x.valor || 0)}% das vendas (${D.ONDE_FAT ? D.ONDE_FAT[x.aplica] || 'loja + Espaço Gourmet' : ''})` })),
+      { nome: 'Comissões e premiações', cat: CV.comissao, f: (m) => m.com, dica: 'O que a loja pagou no mês (comissões, premiação e bônus), como no Comissionamento. Na projeção do mês em andamento: a comissão que cada pessoa receberia com a venda projetada dela contra a meta (na faixa em que fecharia), não a comissão de agora multiplicada', cc: 'comissao' },
+      ...D.OUTROS.map((x, k) => (x.tipo !== 'pct' ? null : { nome: x.nome, cc: 'pct:' + x.nome, cat: D.catDe ? D.catDe(x) : 'outros', f: (m) => (m.pctPor && m.pctPor[k]) || 0, dica: `Custo cadastrado como ${fmt.n1(+x.valor || 0)}% das vendas (${D.ONDE_FAT ? D.ONDE_FAT[x.aplica] || 'loja + Espaço Gourmet' : ''})` })),
     ].filter(Boolean);
     const ordem = ['impostos', 'taxas', 'franquia', ...cats.map((c) => c.id)];
     const ids = [...new Set([...ordem, ...itens.map((x) => x.cat)])].filter((id) => itens.some((x) => x.cat === id));
@@ -542,7 +557,7 @@
    *  ymReal: na coluna da projeção, o mês é o do próprio mês em andamento */
   function celCalc(x, k, texto, cls, abrir, ymReal) {
     const ym = ymReal || x.ym, l = x.lanc && x.lanc[k];
-    const calc = CALC[k][1](x);
+    const calc = calcInfo(k)[1](x);
     const dica = l ? `Valor real de ${TS.ymLabel(ym)}${l.por ? `, lançado por ${l.por}` : ''}${l.em ? ` em ${quando(l.em)}` : ''}. Calculado pelo %: ${fmt.brl(calc)}. Clique para mudar ou voltar ao calculado.`
       : `Calculado pelo % das regras da loja. Clique para lançar o valor real de ${TS.ymLabel(ym)} (DAS, extrato, boleto).`;
     const ir = () => abrir(k, ym);
@@ -551,8 +566,29 @@
     return TS.teclado(td, ir);
   }
   /** janela de uma linha calculada: o valor real do mês, "Voltar ao calculado" e o histórico (lançado × calculado) */
+  /** % atual da linha no mês e a conta do novo % a partir de um valor (PCT-ESC-01); null nas linhas que não são pelo % */
+  function pctDaLinha(M, k, ym, mm) {
+    const D = M.ded, LANC = D.LANC || {};
+    const custo = String(k).startsWith('pct:') ? D.OUTROS.find((x) => x.nome === k.slice(4) && x.tipo === 'pct') : null;
+    if (!PCT_DE[k] && !custo) return null;
+    const fator = k === 'royalties' || k === 'marketing';
+    const chave = custo ? custo.nome : PCT_DE[k];
+    const padrao = custo ? +custo.valor || 0 : k === 'simples' ? (D.pSimples || 0) * 100 : k === 'maquininha' ? (D.pCartao || 0) * 100 : 1;
+    const atual = TS.contas.pctDoMes(chave, ym, padrao, LANC);
+    // o calculado do mês no % atual (nos royalties, antes dos descontos da franquia, que continuam saindo)
+    const bruto = !mm ? 0 : k === 'simples' ? mm.impCalc : k === 'maquininha' ? mm.maqCalc : k === 'royalties' ? mm.royS : k === 'marketing' ? mm.mkt : (mm.pctCalc && mm.pctCalc[custo.nome]) || 0;
+    const extra = k === 'royalties' && mm ? mm.royDesc || 0 : 0;
+    const fmtP = (p) => `${String(Math.round(p * 100) / 100).replace('.', ',')}%`;
+    return {
+      chave, padrao, fator,
+      base: fator ? 'os % das regras da loja mudam na mesma proporção' : `o valor ÷ ${k === 'simples' || k === 'maquininha' ? 'as vendas do mês' : 'a base do custo no mês'}`,
+      ondeMuda: fator ? ' (as regras do Comissionamento não mudam: o Resultado aplica o ajuste)' : ' de Configurações',
+      novo: (v) => (Number.isFinite(v) && v >= 0 && bruto > 0 ? Math.round(atual * ((v + extra) / bruto) * 10000) / 10000 : null),
+      texto: (n) => (fator ? `Os % de ${k} das regras passam a valer × ${String(Math.round(n * 1000) / 1000).replace('.', ',')} (hoje × ${String(Math.round(atual * 1000) / 1000).replace('.', ',')}).` : `Novo %: ${fmtP(n)} (hoje ${fmtP(atual)}).`),
+    };
+  }
   function janelaCalc(M, meses, k, ym) {
-    const [nome, calcDe] = CALC[k];
+    const [nome, calcDe] = calcInfo(k);
     const mm = meses.find((x) => x.ym === ym);
     const l = mm && mm.lanc && mm.lanc[k];
     const calc = mm ? calcDe(mm) : null;
@@ -560,15 +596,39 @@
     const sair = () => fundo.remove();
     const campo = h('input', { class: 'f-input dre-fixo-campo', type: 'text', inputmode: 'decimal', autocomplete: 'off', value: l ? String(l.valor).replace('.', ',') : '', placeholder: calc == null ? '' : fmt.brl(calc), 'aria-label': `Valor real de ${nome} em ${TS.ymLabel(ym)} (R$)` });
     const botoes = [];
-    const fazer = async (valor) => {
+    const chave = String(k).startsWith('pct:') ? k.slice(4) : '@' + k; // como o servidor guarda (custo em % pelo nome)
+    const fazer = async (valor, escopo = 'mes', pct) => {
       botoes.forEach((b) => { b.disabled = true; });
-      try { await salvarFixo(M, '@' + k, ym, valor); sair(); TS.render(); }
+      try { await salvarFixo(M, chave, ym, valor, escopo, pct); sair(); TS.render(); }
       catch (e) { botoes.forEach((b) => { b.disabled = false; }); TS.naoSalvo(e, valor == null ? null : campo); }
     };
+    // linhas pelo %: "só este mês" (valor real) ou o % novo "daqui para frente" / "em todos os meses" (PCT-ESC-01)
+    const PCT = pctDaLinha(M, k, ym, mm);
+    let escopo = null;
+    const ESC = PCT ? [
+      ['mes', `Só ${TS.ymLabel(ym)}`, 'O valor real deste mês (DAS, extrato, boleto). Os outros meses continuam pelo %.'],
+      ['diante', `Mudar o % de ${TS.ymLabel(ym)} em diante`, `O painel calcula o % a partir do valor digitado e passa a usar ele de ${TS.ymLabel(ym)} em diante. Os meses antes continuam com o % que valia.`],
+      ['todos', 'Mudar o % em todos os meses', 'O novo % vale em todos os meses, inclusive os passados (o % cadastrado estava errado).'],
+    ] : [];
+    const previaPct = h('div', { class: 'dre-esc-previa muted', 'aria-live': 'polite' });
+    const radios = ESC.map(([v, rot, dica]) => h('label', { class: 'dre-esc-op' }, h('input', { type: 'radio', name: 'dre-calc-esc', value: v, onchange: () => { escopo = v; previa(); } }), h('span', null, h('b', null, rot), h('small', { class: 'muted' }, dica))));
+    function previa() {
+      const v = lerValor(campo.value);
+      if (!PCT || !escopo || escopo === 'mes') { previaPct.textContent = ''; return; }
+      const n = PCT.novo(v);
+      previaPct.textContent = n == null ? 'Digite o valor do mês para o painel calcular o novo %.' : PCT.texto(n);
+    }
+    campo.addEventListener('input', previa);
     const salvar = () => {
       const v = lerValor(campo.value);
       const fin = k === 'financeiro'; // juros e tarifas negativos, rendimentos positivos (DRE-FIN-01)
       if (!Number.isFinite(v) || (!fin && v < 0) || Math.abs(v) > 10000000) { TS.naoSalvo(fin ? 'Digite o resultado financeiro do mês em reais: negativo para juros e tarifas (ex.: -85,40), positivo para rendimentos.' : 'Digite o valor do mês em reais (zero ou mais), por exemplo 4.978,90.', campo); return; }
+      if (PCT && !escopo) { TS.naoSalvo('Escolha onde o novo valor vale: só este mês ou o % daqui para frente / em todos os meses.', radios[0].querySelector('input')); return; }
+      if (PCT && escopo !== 'mes') {
+        const n = PCT.novo(v);
+        if (n == null) { TS.naoSalvo('Este mês não tem vendas para calcular o %: escolha outro mês ou mude o % em Configurações.', campo); return; }
+        fazer(null, escopo, n); return;
+      }
       fazer(Math.round(v * 100) / 100);
     };
     campo.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); salvar(); } });
@@ -587,7 +647,8 @@
     fundo.append(h('div', { class: 'card cp-copiar ts-perg dre-fixo-jan', role: 'dialog', 'aria-modal': 'true', 'aria-label': `${nome} · ${TS.ymLabel(ym)}` },
       h('h3', null, `${nome} · ${TS.ymLabel(ym)} `, TS.dica(k === 'financeiro' ? 'O painel não lê o extrato do banco: lance o resultado financeiro do mês — juros e tarifas do banco e antecipação de cartão em negativo (ex.: -85,40), rendimentos em positivo. Entra entre o resultado operacional e o resultado líquido.' : 'O Resultado calcula esta linha pelo % das regras da loja. Lance o valor REAL do mês (o DAS do Simples, o extrato da maquininha, o boleto de royalties e marketing): ele substitui o calculado só naquele mês, fica marcado com ✎ e entra no Resultado e na planilha do contador. Nos royalties, o boleto lançado já vem com os descontos da franquia. "Voltar ao calculado" apaga o valor lançado.')),
       h('div', { class: 'muted' }, l ? `Valor real lançado: ${fmt.brl(l.valor)}${l.por ? `, por ${l.por}` : ''}${l.em ? ` em ${quando(l.em)}` : ''}. Calculado pelo %: ${calc == null ? '—' : fmt.brl(calc)}.` : `Sem valor lançado: o mês usa o calculado pelo % (${calc == null ? '—' : fmt.brl(calc)}).`),
-      h('label', { class: 'ts-perg-campo' }, h('span', { class: 'f-label' }, `Valor real de ${TS.ymLabel(ym)} (R$)`), campo),
+      h('label', { class: 'ts-perg-campo' }, h('span', { class: 'f-label' }, `Valor de ${TS.ymLabel(ym)} (R$)`), campo),
+      PCT ? h('fieldset', { class: 'dre-esc' }, h('legend', { class: 'f-label' }, 'Onde este valor vale? ', TS.dica(`Só este mês: o valor real (fica marcado ✎). Daqui para frente / todos os meses: o painel calcula o novo % a partir do valor digitado (${PCT.base}) e troca o %${PCT.ondeMuda}; com "daqui para frente", os meses antes guardam o % que valia.`)), ...radios, previaPct) : null,
       h('div', { class: 'ts-perg-acoes' }, bVoltar, bCancelar, bSalvar),
       h('div', { class: 'dre-hist-tit' }, h('b', null, 'Histórico: calculado × lançado')),
       h('div', { class: 'table-wrap free' }, tab)));
@@ -596,23 +657,29 @@
   }
   /** grava (ou volta ao padrão, valor null) e troca na memória; na apresentação nada é gravado.
    *  escopo (FIXO-ESC-01): 'mes' só o mês · 'diante' daquele mês em diante · 'todos' todos os meses */
-  async function salvarFixo(M, nome, ym, valor, escopo = 'mes') {
-    const corpo = valor == null ? { loja: state.loja, nome, ym, padrao: true } : { loja: state.loja, nome, ym, valor, escopo };
+  async function salvarFixo(M, nome, ym, valor, escopo = 'mes', pct) {
+    const corpo = pct != null ? { loja: state.loja, nome, ym, escopo, pct } : valor == null ? { loja: state.loja, nome, ym, padrao: true } : { loja: state.loja, nome, ym, valor, escopo };
     const r = await fetch(TS.api('resultado/fixo-mes'), { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-Painel': '1' }, body: JSON.stringify(corpo) });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.erro || 'Não consegui gravar.');
-    let novo = j.fixosMes, padrao = j.padrao;
+    let novo = j.fixosMes, padrao = j.padrao, alvo = j.alvo;
     if (!novo) { // apresentação: só nesta página, com a mesma conta do servidor
-      const x = (M.ded.OUTROS || []).find((o) => o.tipo === 'mes' && o.nome === nome);
-      if (valor == null) { novo = JSON.parse(JSON.stringify(M.ded.LANC || {})); if (novo[nome]) delete novo[nome][ym]; }
+      const D = M.ded, x = (D.OUTROS || []).find((o) => o.nome === nome && (o.tipo === 'mes' || o.tipo === 'pct'));
+      if (pct != null) { // o % novo (PCT-ESC-01)
+        const fator = nome === '@royalties' || nome === '@marketing';
+        const pad = nome === '@simples' ? (D.pSimples || 0) * 100 : nome === '@maquininha' ? (D.pCartao || 0) * 100 : fator ? ((D.LANC || {})[nome] || {})['@padrao'] ?? 1 : +(x && x.valor) || 0;
+        const a = TS.contas.aplicarFixo({ nome, valor: pad }, D.LANC || {}, ym, pct, escopo);
+        novo = a.lancados;
+        if (fator) { (novo[nome] || (novo[nome] = {}))['@padrao'] = a.padrao; padrao = null; } else { padrao = a.padrao; alvo = nome === '@simples' ? 'simplesPct' : nome === '@maquininha' ? 'cartaoPct' : 'custo'; }
+      } else if (valor == null) { novo = JSON.parse(JSON.stringify(D.LANC || {})); if (novo[nome]) delete novo[nome][ym]; }
       else {
-        const a = TS.contas.aplicarFixo(x || { nome, valor: 0 }, M.ded.LANC || {}, ym, valor, escopo);
+        const a = TS.contas.aplicarFixo(x || { nome, valor: 0 }, D.LANC || {}, ym, valor, escopo);
         novo = a.lancados;
         if (escopo === 'mes') novo[nome][ym] = { valor, por: (TS.eu && TS.eu.nome) || '', em: new Date().toISOString() };
-        else padrao = a.padrao;
+        else { padrao = a.padrao; alvo = 'custo'; }
       }
     }
-    if (TS.estoqueFixosMes) TS.estoqueFixosMes(state.loja, novo, padrao != null ? { nome, valor: padrao } : null);
+    if (TS.estoqueFixosMes) TS.estoqueFixosMes(state.loja, novo, padrao != null ? (alvo === 'simplesPct' || alvo === 'cartaoPct' ? { campo: alvo, valor: padrao } : { nome, valor: padrao }) : null);
   }
   /** "1.234,56", "380", "R$ 412,5" → número; vazio ou inválido → NaN */
   const lerValor = (t) => {

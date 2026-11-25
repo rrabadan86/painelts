@@ -56,6 +56,7 @@ test('DRE-CALC-01: lançar o valor real do Simples num mês troca o calculado, m
   await expect(jan).toContainText('Simples Nacional');
   await expect(jan).toContainText('Calculado');
   await jan.locator('.dre-fixo-campo').fill('1.234,56');
+  await jan.locator('.dre-esc-op').first().click(); // só este mês (PCT-ESC-01)
   await jan.getByRole('button', { name: 'Salvar', exact: true }).click();
   await expect(jan).toHaveCount(0);
   const depois = page.locator('.dre-t').first().locator('td.dre-edit[data-calc="simples"]').first();

@@ -220,20 +220,25 @@
         + 'Esse % é volátil: muda quando um mês fecha e entra na média, e sobe quando a loja vende menos. Num mês que vender abaixo da média, o aluguel de verdade pesa mais do que o mostrado; acima da média, pesa menos.';
     };
     /** deduções da linha de venda: { com, roy, imp, maq } em R$ */
+    // % de cada mês (PCT-ESC-01): o que valia na época depois de um "daqui para frente", ou o de Configurações / das regras
+    const pctMemo = new Map();
+    const pctMes = (k, ym, pad) => { const c = k + '|' + ym; if (!pctMemo.has(c)) pctMemo.set(c, TS.contas.pctDoMes(k, ym, pad, LANC)); return pctMemo.get(c); };
     function deducoes(i) {
-      const vt = db.vt[i] || 0, g = db.grupoC[i];
+      const vt = db.vt[i] || 0, g = db.grupoC[i], ym = db.ym[i];
+      const fR = pctMes('@royalties', ym, 1), fM = pctMes('@marketing', ym, 1);
       const ehEG = I.eg.has(db.cat[i]);
       const cat = ehEG ? null : I.arom.has(g) ? 'arom' : I.puro.has(g) ? 'puro' : I.acess.has(g) ? 'acess' : null;
-      const ry = rgLoja.royalties;
-      const outros = OUTROS.map((x) => (x.aplica === 'tudo' || (x.aplica === 'eg') === ehEG ? vt * taxaOutro(x) : 0));
+      const ry0 = rgLoja.royalties;
+      const ry = { loja: ry0.loja * fR, eg: ry0.eg * fR, mkt: ry0.mkt * fM, egMkt: ry0.egMkt * fM };
+      const outros = OUTROS.map((x) => (x.aplica === 'tudo' || (x.aplica === 'eg') === ehEG ? vt * (x.tipo === 'pct' ? pctMes(x.nome, ym, x.valor) / 100 : taxaOutro(x)) : 0));
       return {
         com: cat ? vt * (comDoMes(db.ym[i])[cat] || 0) : 0,
         roy: ehEG ? vt * (ry.eg + ry.egMkt) : cat ? vt * (ry.loja + ry.mkt) : 0,
         // as duas partes dos royalties, para o Resultado lançar cada uma pelo valor real do boleto (DRE-CALC-01)
         royS: ehEG ? vt * ry.eg : cat ? vt * ry.loja : 0,
         mkt: ehEG ? vt * ry.egMkt : cat ? vt * ry.mkt : 0,
-        imp: vt * pSimples,
-        maq: vt * pCartao,
+        imp: vt * pctMes('@simples', ym, cfg.simplesPct || 0) / 100,
+        maq: vt * pctMes('@maquininha', ym, cfg.cartaoPct || 0) / 100,
         out: outros.reduce((a, b) => a + b, 0),
         outros,
         // variáveis = acompanham a venda (comissão, royalties, Simples, maquininha, custos em %);
@@ -262,7 +267,7 @@
       const ry = rgLoja.royalties;
       const pct = OUTROS.filter((x) => x.tipo === 'pct' && x.aplica !== 'eg').reduce((s, x) => s + taxaOutro(x), 0);
       const fix = OUTROS.filter((x) => x.tipo === 'mes' && x.aplica !== 'eg').reduce((s, x) => s + taxaOutro(x), 0);
-      return { roy: (ry.loja || 0) + (ry.mkt || 0), imp: pSimples, maq: pCartao, com, outrosPct: pct, outrosFix: fix, mesCom: ant };
+      return { roy: (ry.loja || 0) * pctMes('@royalties', ymHoje, 1) + (ry.mkt || 0) * pctMes('@marketing', ymHoje, 1), imp: pSimples, maq: pCartao, com, outrosPct: pct, outrosFix: fix, mesCom: ant };
     };
     return { deducoes, OUTROS, LANC, fixoDoMes, fixoBase, temLancado, taxaOutro, dicaOutro, mediaFat, ONDE_FAT, pSimples, pCartao, CATS, CATVAR, CMVEST, catDe, PONTUAIS, pontuaisDoMes, taxasVenda, comDoMes, comProjetada };
   }
@@ -273,7 +278,8 @@
     const c = cache.get(loja); if (!c) return;
     c.cfg = { ...c.cfg, fixosMes: fixosMes || {} };
     // "deste mês em diante" e "todos os meses" mudam o padrão de Configurações (FIXO-ESC-01)
-    if (mudaPadrao) c.cfg.outros = (c.cfg.outros || []).map((x) => (x.tipo === 'mes' && x.nome === mudaPadrao.nome ? { ...x, valor: mudaPadrao.valor } : x));
+    if (mudaPadrao && mudaPadrao.campo) c.cfg = { ...c.cfg, [mudaPadrao.campo]: mudaPadrao.valor }; // Simples / maquininha (PCT-ESC-01)
+    else if (mudaPadrao) c.cfg.outros = (c.cfg.outros || []).map((x) => (x.nome === mudaPadrao.nome ? { ...x, valor: mudaPadrao.valor } : x));
   };
   TS.motorEstoque = motor; // Início com todas as lojas (visaodono.js): o mesmo motor, com o estoque de cada loja
 
