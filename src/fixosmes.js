@@ -15,7 +15,7 @@ const CT = require('../public/js/contas');
 const YM = /^20\d\d-(0[1-9]|1[0-2])$/;
 /** linhas CALCULADAS do Resultado que também aceitam o valor real do mês (pedido do dono, 23/11/2026: "eu não consigo editar
  *  Simples Nacional? Royalties? MKT? Deveria poder"): o valor lançado substitui o calculado pelo % naquele mês (DRE-CALC-01) */
-const CALC = { '@simples': 'Simples Nacional', '@maquininha': 'Maquininha', '@royalties': 'Royalties', '@marketing': 'Marketing', '@financeiro': 'Resultado financeiro' };
+const CALC = { '@simples': 'Simples Nacional', '@maquininha': 'Maquininha', '@royalties': 'Royalties', '@marketing': 'Marketing', '@financeiro': 'Resultado financeiro', '@difal': 'DIFAL não recuperável' };
 // resultado financeiro (DRE-FIN-01): o único que aceita valor negativo (juros e tarifas pagos); positivo = rendimentos
 const COM_SINAL = new Set(['@financeiro']);
 const MAX_VALOR = 10000000;

@@ -217,7 +217,7 @@ test('Resultado: perdas de estoque dentro do CMV (DRE-ESTR-01), reduzem o lucro 
   const t = page.locator('main .dre-t').first();
   await expect(t).toBeVisible({ timeout: 30000 });
   const rotulos = await t.locator('tbody tr td.l').allInnerTexts();
-  const iS = rotulos.findIndex((x) => x.includes('Custo dos produtos vendidos')), iP = rotulos.findIndex((x) => x.includes('Perdas de estoque'));
+  const iS = rotulos.findIndex((x) => x.includes('Custo dos produtos vendidos')), iP = rotulos.findIndex((x) => x.includes('Perdas e acertos de estoque'));
   expect(iS).toBeGreaterThan(0);
   expect(iP).toBe(iS + 1); // as perdas de estoque fazem parte do CMV, logo depois do custo dos produtos vendidos
   // a conta: com as perdas o resultado é menor exatamente no valor delas

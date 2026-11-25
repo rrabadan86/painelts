@@ -1638,7 +1638,10 @@ app.get('/api/estoque', (req, res) => {
   let espera = {};
   try { espera = Object.fromEntries(Object.entries(ESP.resumoPorCod(loja.id)).map(([c, x]) => [c, x.pedidos])); } catch (e) { console.error('[espera no estoque]', e.message); }
   // fixosMes: o valor real de cada custo fixo por mês, lançado no Resultado (src/fixosmes.js; a conta é TS.contas.fixoDoMes)
-  res.json({ estoque: est, cfg: { ...ES.cfg(lc), fixosMes: FXM.ler(loja.id).despesas }, classe: ES.classeCfg(lc), tabela: TAB.resumo(loja.id), historico: ES.historico(loja.id), compras: ES.compras(loja.id), foraDeLinha, espera });
+  // CMV pelo estoque: estoque inicial e final (fotos da virada), compras e devoluções de cada mês (src/cmvestoque.js, CMV-EST-01)
+  let cmvEstoque = {};
+  try { cmvEstoque = require('./src/cmvestoque').resumo(loja.id, { notas: (ES.notas(loja.id) || { notas: [] }).notas, saidas: NFS.lista(loja.id).notas }); } catch (e) { console.error('[cmv estoque]', e.message); }
+  res.json({ estoque: est, cfg: { ...ES.cfg(lc), fixosMes: FXM.ler(loja.id).despesas, cmvEstoque }, classe: ES.classeCfg(lc), tabela: TAB.resumo(loja.id), historico: ES.historico(loja.id), compras: ES.compras(loja.id), foraDeLinha, espera });
 });
 // notas de entrada (compras) do AppNext, inteiras: lista e detalhe na tela Preços
 // NF-e emitidas pela loja (saída): lista, nota completa, XML original e DANFE para imprimir

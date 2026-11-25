@@ -247,7 +247,8 @@
     // categorias dos custos (Funcionários, Imóvel, Sistemas…), na ordem cadastrada; "outros" recebe o que não tem
     const CATS = (cfg.categorias && cfg.categorias.length ? cfg.categorias : [{ id: 'outros', nome: 'Outros' }]);
     const catDe = (x) => (CATS.some((c) => c.id === x.cat) ? x.cat : 'outros');
-    const CATVAR = TS.contas.catVarDe(cfg.catVar, CATS); // categoria de Simples, maquininha e comissões no Resultado (DESP-CAT-01)
+    const CATVAR = TS.contas.catVarDe(cfg.catVar, CATS);
+    const CMVEST = (cfg.cmvEstoque && typeof cfg.cmvEstoque === 'object') ? cfg.cmvEstoque : {}; // CMV pelo estoque por mês (CMV-EST-01) // categoria de Simples, maquininha e comissões no Resultado (DESP-CAT-01)
     // despesas de um mês só: as que caem no mês ym (as "todo ano" repetem no mesmo mês dos anos seguintes)
     const PONTUAIS = (cfg.pontuais || []).filter((x) => x.valor > 0 && x.ym);
     const pontuaisDoMes = (ym) => PONTUAIS.filter((x) => x.ym === ym || (x.anual && x.ym.slice(5) === ym.slice(5) && ym > x.ym));
@@ -263,7 +264,7 @@
       const fix = OUTROS.filter((x) => x.tipo === 'mes' && x.aplica !== 'eg').reduce((s, x) => s + taxaOutro(x), 0);
       return { roy: (ry.loja || 0) + (ry.mkt || 0), imp: pSimples, maq: pCartao, com, outrosPct: pct, outrosFix: fix, mesCom: ant };
     };
-    return { deducoes, OUTROS, LANC, fixoDoMes, fixoBase, temLancado, taxaOutro, dicaOutro, mediaFat, ONDE_FAT, pSimples, pCartao, CATS, CATVAR, catDe, PONTUAIS, pontuaisDoMes, taxasVenda, comDoMes, comProjetada };
+    return { deducoes, OUTROS, LANC, fixoDoMes, fixoBase, temLancado, taxaOutro, dicaOutro, mediaFat, ONDE_FAT, pSimples, pCartao, CATS, CATVAR, CMVEST, catDe, PONTUAIS, pontuaisDoMes, taxasVenda, comDoMes, comProjetada };
   }
 
   TS.estoqueBuscar = buscar;

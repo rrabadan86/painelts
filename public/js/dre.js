@@ -111,7 +111,8 @@
       // perdas do mês (chá vencido ainda no estoque + faltas do inventário, a custo): entram depois do custo dos produtos
       const perdasDet = opts.perdas ? opts.perdas[ym] || { total: 0, vencidos: 0, inventario: 0, nVencidos: 0, nContagens: 0 } : null;
       const perdas = perdasDet ? perdasDet.total : null;
-      const r = degraus({ ym, parcial, frac, ultimo, diasMes, decorridos, ...m, dias: m.dias.size, cmv, cmvPct, perdas, perdasDet, cobre: m.fat ? m.fatCusto / m.fat : 0, fixosMes, fixoTot, impostos });
+      const est = parcial ? null : estoqueDoMes(D, ym, cmv, perdas);
+      const r = degraus({ est, ym, parcial, frac, ultimo, diasMes, decorridos, ...m, dias: m.dias.size, cmv, cmvPct, perdas, perdasDet, cobre: m.fat ? m.fatCusto / m.fat : 0, fixosMes, fixoTot, impostos });
       if (parcial) r.proj = projetar(r, D);
       out.push(r);
     }
@@ -120,6 +121,17 @@
   /** mês em andamento projetado: o faturamento vem da projeção única (TS.projecaoMes: vendas até ontem + cada dia que falta
    *  pela média do dia da semana); o que depende das vendas cresce na mesma proporção; os custos fixos ficam iguais (já são
    *  cheios). A comissão NÃO é a parcial multiplicada: é recalculada com a venda projetada de cada pessoa contra a meta. */
+  /** estoque inicial e final, compras e devoluções do mês (CMV-EST-01): do servidor; na apresentação, um exemplo nos 2 últimos meses fechados */
+  function estoqueDoMes(D, ym, cmv, perdas) {
+    const e = D && D.CMVEST && D.CMVEST[ym];
+    if (e) return e;
+    if (!TS.demo || cmv == null) return null;
+    const hoje = TS.dayToIso(TS.todayDay()).slice(0, 7);
+    const ant = (n) => { const d = new Date(Date.UTC(+hoje.slice(0, 4), +hoje.slice(5, 7) - 1 - n, 1)); return d.toISOString().slice(0, 7); };
+    if (ym !== ant(1) && ym !== ant(2)) return null;
+    const ini = 52000 + (ym === ant(1) ? 900 : 0), compras = Math.round(cmv * 1.04), sumiu = (perdas || 0) + 160;
+    return { ini: { dia: `${ym}-01`, valor: ini, aprox: false }, fim: { dia: `${ym === ant(1) ? ant(0) : ant(1)}-01`, valor: Math.round((ini + compras - cmv - sumiu) * 100) / 100, aprox: false }, compras, devolucoes: 0, demo: true };
+  }
   /**
    * Os degraus da DRE como na contabilidade (decisão do dono, 25/11/2026; DRE-ESTR-01), iguais no Resultado e na Rentabilidade:
    *   receita bruta (preço cheio) − deduções (descontos dados + Simples) = receita líquida
@@ -132,7 +144,12 @@
     r.recBruta = r.fat + (r.desc || 0);
     r.deducoes = (r.desc || 0) + r.imp;
     r.recLiq = r.fat - r.imp;
-    r.cmvTot = r.cmv == null ? null : r.cmv + (r.perdas || 0);
+    r.difal = r.lanc && r.lanc.difal ? r.lanc.difal.valor : 0;
+    // CMV pelo estoque quando o mês tem as duas fotos (CMV-EST-01): estoque inicial + compras − devoluções − estoque final;
+    // sem elas, o custo das vendas + as perdas conhecidas. A diferença para o custo das vendas = perdas e acertos.
+    r.cmvEst = r.est ? r.est.ini.valor + r.est.compras - r.est.devolucoes - r.est.fim.valor : null;
+    r.acertos = r.cmvEst != null && r.cmv != null ? r.cmvEst - r.cmv : r.perdas || 0;
+    r.cmvTot = r.cmv == null ? null : r.cmv + r.acertos + r.difal;
     r.lucroBruto = r.cmvTot == null ? null : r.recLiq - r.cmvTot;
     r.varTot = r.maq + r.roy + r.com + r.varPct;
     r.contrib = r.lucroBruto == null ? null : r.lucroBruto - r.varTot;
@@ -167,7 +184,7 @@
       + 'Compare os royalties com o boleto da franquia. Sobre o imposto, confirme com o contador como a loja registra a taxa.';
   }
   /** linhas calculadas que aceitam o valor real do mês (DRE-CALC-01): chave → rótulo e o calculado do mês */
-  const CALC = { simples: ['Simples Nacional', (m) => m.impCalc], maquininha: ['Maquininha', (m) => m.maqCalc], royalties: ['Royalties', (m) => (m.royS || 0) - (m.royDesc || 0)], marketing: ['Marketing', (m) => m.mkt], financeiro: ['Resultado financeiro', () => 0] };
+  const CALC = { simples: ['Simples Nacional', (m) => m.impCalc], maquininha: ['Maquininha', (m) => m.maqCalc], royalties: ['Royalties', (m) => (m.royS || 0) - (m.royDesc || 0)], marketing: ['Marketing', (m) => m.mkt], financeiro: ['Resultado financeiro', () => 0], difal: ['DIFAL não recuperável', () => 0] };
   function lancCalc(D, ym) {
     const out = {};
     for (const k of Object.keys(CALC)) { const l = D && D.LANC && D.LANC['@' + k] && D.LANC['@' + k][ym]; out[k] = l && Number.isFinite(+l.valor) && (+l.valor >= 0 || k === 'financeiro') ? { valor: +l.valor, por: l.por, em: l.em } : null; }
@@ -221,7 +238,7 @@
   }
   // linhas da DRE: [rótulo, chave/função, tipo] tipo: 'sub' (subtotal), 'tot' (resultado), 'menos', 'info'
   /** grupos: [{ id, nome, itens:[índice em fixosMes] }] — cada categoria vira uma linha com o subtotal, que abre os custos */
-  const LINHAS = (grupos, abertos, vgrupos = []) => [
+  const LINHAS = (grupos, abertos, vgrupos = [], temEst = false) => [
     // a DRE como na contabilidade (decisão do dono, 25/11/2026; DRE-ESTR-01): receita bruta → deduções → receita líquida → CMV →
     // lucro bruto → despesas variáveis → margem de contribuição → despesas fixas → resultado operacional → financeiro → resultado
     ['Receita bruta', (m) => m.recBruta, 'bruto', (m) => dicaTotal(m)],
@@ -236,9 +253,18 @@
     ['Descontos concedidos', (m) => m.desc, 'filho', 'Descontos dados no caixa (a diferença entre o preço cheio e o que o cliente pagou)'],
     ['Simples Nacional', (m) => m.imp, 'calc', (m) => dicaCalc(m, 'simples', '% do Simples (Configurações → Lojas → Estoque e margem) sobre as vendas. No Simples, o IRPJ e a CSLL já estão no DAS'), null, null, 'simples'],
     ['= Receita líquida', (m) => m.recLiq, 'base', 'Receita bruta − descontos − Simples. Sem a taxa de serviço e a entrega e sem itens a R$ 0,01 (resgates e brindes): o faturamento do Resumo menos o Simples'],
-    ['− CMV (custo das mercadorias vendidas)', (m) => m.cmvTot, 'menos', 'Custo dos produtos vendidos + perdas de estoque (o que a loja pagou e não vai vender)'],
+    ['− CMV (custo das mercadorias vendidas)', (m) => m.cmvTot, 'menos', (m) => (m.cmvEst != null ? 'Pela conta do estoque: estoque inicial + compras − devoluções à franquia − estoque final (+ DIFAL). As linhas de baixo mostram a conta e a diferença para o custo do que saiu vendido.' : 'Custo dos produtos vendidos + perdas conhecidas (+ DIFAL). Sem a foto do estoque deste mês (o painel guarda a foto na virada de cada mês).')],
     ['Custo dos produtos vendidos', (m) => m.cmv, 'filho', 'Custo dos produtos vendidos (chá pelo kg + saco e etiquetas). Mês passado: o custo que cada produto tinha na data da venda (notas de compra e histórico de custos do painel; antes do primeiro custo conhecido vale o mais antigo, estimado). Mês em andamento: o custo de hoje do AppNext. Vendas sem custo no estoque entram pelo mesmo % das outras (estimado)'],
-    ['Perdas de estoque (vencidos e inventário)', (m) => m.perdas, 'filho', 'O que a loja pagou e não vai vender, a custo: (1) lote VENCIDO que ainda está no estoque (chá a granel, envasados e alimentação), no mês em que a validade venceu (saldo do lote × custo do kg ou da unidade, os lotes da tela Validade); (2) faltas do INVENTÁRIO: contagens aplicadas no AppNext no mês, pelo saldo dos ajustes (contado − sistema) × custo — sobra compensa falta, e só o saldo negativo do mês entra. Na projeção ficam as perdas de agora (não crescem com as vendas). "—" = o painel não conseguiu ler as perdas'],
+    ['Perdas e acertos de estoque', (m) => m.acertos, 'filho', (m) => (m.cmvEst != null
+      ? `Pela conta do estoque: (estoque inicial + compras − devoluções − estoque final) − custo das vendas = ${fmt.brl(m.acertos)}. Inclui as perdas que o painel conhece (${fmt.brl(m.perdas || 0)}: vencidos e faltas do inventário) e o que sumiu sem explicação (${fmt.brl(m.acertos - (m.perdas || 0))}: erro de lançamento, nota com entrada errada, custo errado no AppNext, furto). Se crescer, é sinal para olhar.`
+      : `Sem a foto do estoque deste mês: só as perdas que o painel conhece. ` + 'O que a loja pagou e não vai vender, a custo: (1) lote VENCIDO que ainda está no estoque (chá a granel, envasados e alimentação), no mês em que a validade venceu (saldo do lote × custo do kg ou da unidade, os lotes da tela Validade); (2) faltas do INVENTÁRIO: contagens aplicadas no AppNext no mês, pelo saldo dos ajustes (contado − sistema) × custo — sobra compensa falta, e só o saldo negativo do mês entra. Na projeção ficam as perdas de agora (não crescem com as vendas). "—" = o painel não conseguiu ler as perdas')],
+    ['DIFAL não recuperável', (m) => m.difal, 'calc', 'DIFAL das compras de outro estado (pago em guia, não vem na nota): clique no valor de um mês para lançar', null, null, 'difal'],
+    ...(temEst ? [
+      ['Pela conta do estoque: estoque inicial', (m) => (m.est ? m.est.ini.valor : null), 'estq', (m) => (m.est ? `Estoque a custo em ${fmt.date(m.est.ini.dia)}${m.est.ini.aprox ? ' (a foto mais próxima da virada do mês)' : ''}` : 'Sem a foto do estoque deste mês')],
+      ['(+) Compras do mês', (m) => (m.est ? m.est.compras : null), 'estq', 'Notas de compra concluídas no AppNext com entrada no mês, a custo'],
+      ['(−) Devoluções à franquia', (m) => (m.est ? m.est.devolucoes : null), 'estq', 'NF-e de devolução emitidas no mês (valor da nota)'],
+      ['(−) Estoque final', (m) => (m.est ? m.est.fim.valor : null), 'estq', (m) => (m.est ? `Estoque a custo em ${fmt.date(m.est.fim.dia)}${m.est.fim.aprox ? ' (a foto mais próxima da virada do mês)' : ''}` : 'Sem a foto do estoque deste mês')],
+    ] : []),
     ['= Lucro bruto', (m) => m.lucroBruto, 'sub', 'Receita líquida − CMV. A mesma conta da Rentabilidade (aqui as vendas sem custo cadastrado entram pelo mesmo % de custo das outras)'],
     // despesas variáveis, agrupadas pela categoria (aprovado pelo dono, 25/11/2026; DESP-CAT-01)
     ['Despesas variáveis', () => null, 'secao', 'Sobem e descem com as vendas (vendeu mais, paga mais): maquininha, royalties e marketing, comissões e os custos em % das vendas. Cada uma aparece na categoria escolhida em Configurações → Lojas → Estoque e margem.'],
@@ -338,7 +364,8 @@
     const vgrupos = gruposVar(M, cats);
     // as categorias das despesas que acompanham as vendas começam abertas (as de baixo, fechadas)
     if (!state.dreVIni) { state.dreVIni = true; for (const g of vgrupos) abertos.add('v:' + g.id); }
-    const linhas = LINHAS(grupos, abertos, vgrupos);
+    const temEst = meses.some((x) => x.est);
+    const linhas = LINHAS(grupos, abertos, vgrupos, temEst);
     const sel = state.dreMes && meses.some((m) => m.ym === state.dreMes) ? state.dreMes : meses[meses.length - 1].ym;
     const m = meses.find((x) => x.ym === sel);
     const ymAnt = `${+sel.slice(0, 4) - 1}${sel.slice(4)}`;
@@ -365,7 +392,7 @@
     // cartões do topo
     const varA = (k) => (aDias && aDias[k] ? h('span', null, TS.deltaSpan(m[k] / aDias[k] - 1), ` vs. ${m.parcial ? `${rotAnt} (dias 1 a ${diaAte})` : rotAnt}`) : null);
     corpo.append(h('div', { class: 'dre-topo' }, h('label', null, 'Mês ', opMes), h('span', { class: 'muted' }, 'Todos os dias do mês, sem os filtros do topo. Custos fixos e % com os valores cadastrados hoje.'),
-      TS.aPagar ? TS.aPagar.botaoExportar(m, LINHAS(grupos, new Set(), vgrupos).filter((l) => !['parte', 'lojaparte', 'taxa', 'repasse', 'secao'].includes(l[2])), cats, vgrupos) : null),
+      TS.aPagar ? TS.aPagar.botaoExportar(m, LINHAS(grupos, new Set(), vgrupos, temEst).filter((l) => !['parte', 'lojaparte', 'taxa', 'repasse', 'secao'].includes(l[2])), cats, vgrupos) : null),
       ...avisos.map((t) => h('div', { class: 'notice' }, t)),
       // herói (redesenho de 22/11): o resultado em primeiro, a projeção (mês em andamento) e o faturamento com as margens
       TS.heroi([
@@ -410,17 +437,18 @@
     const abrirCalc = (k, ym) => janelaCalc(M, meses, k, ym);
     const nColMes = tb.querySelector('thead tr') ? tb.querySelector('thead tr').children.length : 3;
     for (const [rot, f, tipo, dica, gid, fx, cc] of linhas) {
+      const pcL = (a, b) => (tipo === 'estq' ? '' : pc(a, b)); // estoque inicial/final: % da receita não faz sentido
       if (tipo === 'secao') { body.append(h('tr', { class: 'dre-secao', title: dica }, h('td', { class: 'l', colspan: nColMes }, rot))); continue; }
       const v = f(m), vp = P ? f(P) : null, va = a ? f(a) : null, vb = f(base);
       if (cc) { // linha calculada que aceita o valor real do mês (Simples, maquininha, royalties, marketing)
         const d2 = vb != null && va ? vb / va - 1 : null;
         if (MOB) { body.append(linhaMob(h('tr', { class: 'dre-' + tipo, title: typeof dica === 'function' ? dica(m) : dica }), h('td', { class: 'l' }, rot),
-          celCalc(m, cc, v == null ? '—' : fmt.brl(v), null, abrirCalc), pc(v, m.recLiq), P ? celCalc(P, cc, vp == null ? '—' : fmt.brl(vp), 'dre-proj', abrirCalc, m.ym) : null, P ? pc(vp, P.recLiq) : '',
+          celCalc(m, cc, v == null ? '—' : fmt.brl(v), null, abrirCalc), pcL(v, m.recLiq), P ? celCalc(P, cc, vp == null ? '—' : fmt.brl(vp), 'dre-proj', abrirCalc, m.ym) : null, P ? pcL(vp, P.recLiq) : '',
           a ? celCalc(a, cc, va == null ? '—' : fmt.brl(va), null, abrirCalc) : h('td', null, '—'), d2, d2 == null || Math.abs(d2) < 0.0005 ? 'muted' : d2 < 0 ? 'pos' : 'neg')); continue; }
         body.append(h('tr', { class: 'dre-' + tipo, title: typeof dica === 'function' ? dica(m) : dica },
-          h('td', { class: 'l' }, rot), celCalc(m, cc, v == null ? '—' : fmt.brl(v), null, abrirCalc), h('td', { class: 'muted' }, pc(v, m.recLiq)),
-          P ? celCalc(P, cc, vp == null ? '—' : fmt.brl(vp), 'dre-proj', abrirCalc, m.ym) : null, P ? h('td', { class: 'muted dre-proj' }, pc(vp, P.recLiq)) : null,
-          a ? celCalc(a, cc, va == null ? '—' : fmt.brl(va), null, abrirCalc) : h('td', null, '—'), h('td', { class: 'muted' }, a ? pc(va, a.recLiq) : '—'),
+          h('td', { class: 'l' }, rot), celCalc(m, cc, v == null ? '—' : fmt.brl(v), null, abrirCalc), h('td', { class: 'muted' }, pcL(v, m.recLiq)),
+          P ? celCalc(P, cc, vp == null ? '—' : fmt.brl(vp), 'dre-proj', abrirCalc, m.ym) : null, P ? h('td', { class: 'muted dre-proj' }, pcL(vp, P.recLiq)) : null,
+          a ? celCalc(a, cc, va == null ? '—' : fmt.brl(va), null, abrirCalc) : h('td', null, '—'), h('td', { class: 'muted' }, a ? pcL(va, a.recLiq) : '—'),
           h('td', { class: d2 == null || Math.abs(d2) < 0.0005 ? 'muted' : d2 < 0 ? 'pos' : 'neg' }, d2 == null ? '—' : fmt.delta(d2))));
         continue;
       }
@@ -430,16 +458,16 @@
       if (MOB) {
         body.append(linhaMob(h('tr', { class: 'dre-' + tipo, title: typeof dica === 'function' ? dica(m) : dica, onclick: gid ? () => alternar(gid) : null }),
           h('td', { class: 'l' }, gid ? h('span', { class: 'dre-seta' }, abertos.has(gid) ? '▾ ' : '▸ ') : null, fx ? nomeFixo(rotL, () => abrir(fx, sel)) : rotL),
-          fx ? celFixo(m, fx, v == null ? '—' : fmt.brl(v), null, abrir) : h('td', { class: tipo === 'tot' && v < 0 ? 'neg' : null }, v == null ? '—' : fmt.brl(v)), pc(v, m.recLiq),
-          P ? (fx ? celFixo(P, fx, vp == null ? '—' : fmt.brl(vp), 'dre-proj', abrir) : h('td', { class: 'dre-proj' + (tipo === 'tot' && vp < 0 ? ' neg' : '') }, vp == null ? '—' : fmt.brl(vp))) : null, P ? pc(vp, P.recLiq) : '',
+          fx ? celFixo(m, fx, v == null ? '—' : fmt.brl(v), null, abrir) : h('td', { class: tipo === 'tot' && v < 0 ? 'neg' : null }, v == null ? '—' : fmt.brl(v)), pcL(v, m.recLiq),
+          P ? (fx ? celFixo(P, fx, vp == null ? '—' : fmt.brl(vp), 'dre-proj', abrir) : h('td', { class: 'dre-proj' + (tipo === 'tot' && vp < 0 ? ' neg' : '') }, vp == null ? '—' : fmt.brl(vp))) : null, P ? pcL(vp, P.recLiq) : '',
           fx && a ? celFixo(a, fx, va == null ? '—' : fmt.brl(va), null, abrir) : h('td', null, va == null ? '—' : fmt.brl(va)), d, d == null || Math.abs(d) < 0.0005 ? 'muted' : bom ? 'pos' : 'neg'));
         continue;
       }
       body.append(h('tr', { class: 'dre-' + tipo, title: typeof dica === 'function' ? dica(m) : dica, onclick: gid ? () => alternar(gid) : null },
         h('td', { class: 'l' }, gid ? h('span', { class: 'dre-seta' }, abertos.has(gid) ? '▾ ' : '▸ ') : null, fx ? nomeFixo(rotL, () => abrir(fx, sel)) : rotL),
-        fx ? celFixo(m, fx, v == null ? '—' : fmt.brl(v), null, abrir) : h('td', { class: tipo === 'tot' && v < 0 ? 'neg' : null }, v == null ? '—' : fmt.brl(v)), h('td', { class: 'muted' }, pc(v, m.recLiq)),
-        P ? (fx ? celFixo(P, fx, vp == null ? '—' : fmt.brl(vp), 'dre-proj', abrir) : h('td', { class: 'dre-proj' + (tipo === 'tot' && vp < 0 ? ' neg' : '') }, vp == null ? '—' : fmt.brl(vp))) : null, P ? h('td', { class: 'muted dre-proj' }, pc(vp, P.recLiq)) : null,
-        fx && a ? celFixo(a, fx, va == null ? '—' : fmt.brl(va), null, abrir) : h('td', null, va == null ? '—' : fmt.brl(va)), h('td', { class: 'muted' }, a ? pc(va, a.recLiq) : '—'),
+        fx ? celFixo(m, fx, v == null ? '—' : fmt.brl(v), null, abrir) : h('td', { class: tipo === 'tot' && v < 0 ? 'neg' : null }, v == null ? '—' : fmt.brl(v)), h('td', { class: 'muted' }, pcL(v, m.recLiq)),
+        P ? (fx ? celFixo(P, fx, vp == null ? '—' : fmt.brl(vp), 'dre-proj', abrir) : h('td', { class: 'dre-proj' + (tipo === 'tot' && vp < 0 ? ' neg' : '') }, vp == null ? '—' : fmt.brl(vp))) : null, P ? h('td', { class: 'muted dre-proj' }, pcL(vp, P.recLiq)) : null,
+        fx && a ? celFixo(a, fx, va == null ? '—' : fmt.brl(va), null, abrir) : h('td', null, va == null ? '—' : fmt.brl(va)), h('td', { class: 'muted' }, a ? pcL(va, a.recLiq) : '—'),
         h('td', { class: d == null || Math.abs(d) < 0.0005 ? 'muted' : bom ? 'pos' : 'neg' }, d == null ? '—' : fmt.delta(d))));
     }
     if (P && m.resultado != null && m.resultado < 0) body.append(MOB ? h('tr', { class: 'dre-info' }, h('td', { class: 'l' }, 'Falta cobrir dos custos fixos'), h('td', { class: 'neg' }, fmt.brl(-m.resultado)),

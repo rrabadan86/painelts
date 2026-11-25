@@ -203,3 +203,22 @@ test('DRE-FIN-01: lançar o resultado financeiro do mês muda o resultado líqui
   expect(r.res).toBeCloseTo(antes - 85.4, 2);
   await expect(page.locator('.dre-t').first().locator('tr.dre-tot')).toContainText('Resultado líquido');
 });
+
+// CMV-EST-01: mês com as duas fotos do estoque usa a conta do contador; a diferença para o custo das vendas = perdas e acertos
+test('CMV-EST-01: CMV pelo estoque no mês fechado com as fotos; o mês em andamento fica pelo custo das vendas', async ({ page }) => {
+  await abrir(page);
+  const r = await page.evaluate(async () => {
+    const M = await TS.custosLoja();
+    const ms = TS.dreCalcular(M);
+    const f = ms.filter((m) => m.est), atual = ms[ms.length - 1];
+    return { n: f.length, ok: f.every((m) => Math.abs(m.cmvTot - (m.est.ini.valor + m.est.compras - m.est.devolucoes - m.est.fim.valor + m.difal)) < 0.01 && Math.abs(m.acertos - (m.cmvEst - m.cmv)) < 0.01), atualSemEst: !atual.est, ym: f.length ? f[f.length - 1].ym : null };
+  });
+  expect(r.n).toBeGreaterThan(0);
+  expect(r.ok).toBe(true);
+  expect(r.atualSemEst).toBe(true);
+  await page.locator('.dre-topo select').selectOption(r.ym);
+  const t = page.locator('.dre-t').first();
+  await expect(t).toContainText('Pela conta do estoque: estoque inicial');
+  await expect(t).toContainText('(−) Estoque final');
+  await expect(t.locator('tr', { hasText: 'Perdas e acertos de estoque' }).first()).toHaveAttribute('title', /Pela conta do estoque/);
+});

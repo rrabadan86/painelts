@@ -216,6 +216,8 @@ async function importar(id, buf, origem = 'painel', opts = {}) {
   // primeira vez: o estoque que já existia vira o ponto de partida do histórico
   if (antes && !fs.existsSync(arqHist(id))) registrarCustos(id, antes.itens, antes.em);
   registrarCustos(id, novo.itens, dados.em);
+  // foto do estoque a custo perto da virada do mês: base do CMV pelo estoque (src/cmvestoque.js, CMV-EST-01)
+  try { require('./cmvestoque').registrarFoto(id, dados); } catch (e) { console.error('[estoque] foto do mês:', e.message); }
   return { itens: novo.itens.length, zerados: zerados.length, semCusto: novo.itens.filter((i) => !i.custo).length, em: dados.em };
 }
 
