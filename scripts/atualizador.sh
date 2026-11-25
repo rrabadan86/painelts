@@ -216,7 +216,7 @@ if [ ! -L "$SIS/atualizar.pedido" ] && [ -f "$SIS/atualizar.pedido" ]; then
 fi
 
 # 2) verificação: a cada 5 min ou quando o painel pede
-if { [ ! -L "$SIS/verificar.pedido" ] && [ -f "$SIS/verificar.pedido" ]; } || [ $(( $(date +%M) % 5 )) -eq 0 ] || [ ! -f "$SIS/versao.txt" ]; then
+if { [ ! -L "$SIS/verificar.pedido" ] && [ -f "$SIS/verificar.pedido" ]; } || [ $(( 10#$(date +%M) % 5 )) -eq 0 ] || [ ! -f "$SIS/versao.txt" ]; then
   rm -f "$SIS/verificar.pedido"
   buscar
   versao

@@ -114,3 +114,12 @@ test('HOMOLOG-02: a homologação instala sozinha a versão testada mais nova, c
   assert.match(fs.readFileSync(path.join(dir, 'dados', '_sistema', 'versao.txt'), 'utf8'), /^ambiente\thomologacao$/m);
   assert.ok(!fs.existsSync(path.join(dir, 'BACKUP_RODOU')), 'a homologação não faz backup');
 });
+
+// ATUAL-OCTAL-01 (achado de 25/11/2026: o teste do main falhou às 17h09): no bash, "08" e "09" do relógio viram número octal
+// inválido dentro de $(( )); toda conta com hora, minuto ou dia do `date` usa 10# (base 10)
+test('ATUAL-OCTAL-01: contas com hora/minuto do relógio no atualizador sempre em base 10', () => {
+  const fsx = require('fs'), px = require('path');
+  const sh = fsx.readFileSync(px.join(__dirname, '../../scripts/atualizador.sh'), 'utf8');
+  const ruins = [...sh.matchAll(/\$\(\([^)]*\$\(date \+%[HMSdmy]\)/g)].map((m) => m[0]).filter((t) => !/10#\$\(date/.test(t));
+  assert.deepStrictEqual(ruins, []);
+});
