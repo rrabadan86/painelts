@@ -7,7 +7,8 @@ const abrirCreditos = async (page) => {
   await page.evaluate(() => { location.hash = '#creditos'; });
   await page.locator('.seg button', { hasText: 'Todas' }).first().click();
 };
-const linhaDev = (page, num) => page.locator('.cf-tab tr', { hasText: `NF-e ${num}` }).first();
+// tabela no computador; linhas no celular (LMOB-04)
+const linhaDev = (page, num) => page.locator('.cf-tab tr, .cf-tab-lmob .lmob-it', { hasText: `NF-e ${num}` }).first();
 const menuDa = async (page, num, opcao) => {
   await linhaDev(page, num).locator('.cf-mais').click();
   await page.locator('.cf-menu-lista:visible button', { hasText: opcao }).click();
@@ -27,15 +28,15 @@ test('FRQ-COMP-01: compensada em nota fiscal de entrada — procura a nota, esco
   await expect(jan).toContainText('Em qual nota de entrada a NF-e 540 foi descontada?');
   // abre nas notas da franquia, as mais recentes primeiro
   await expect(jan.locator('.seg button.on, .seg button[aria-pressed="true"]').first()).toContainText('Da franquia');
-  await expect(jan.locator('tbody tr').first()).toContainText('NF 19210');
+  await expect(jan.locator('tbody tr, .lmob-it').first()).toContainText('NF 19210');
   await expect(jan).not.toContainText('EMBALAGENS EXEMPLO');
   expect(await semRolarDeLado(page, '.cfn')).toEqual([]);
   // busca pelo número
   await jan.locator('.tab-busca').fill('19180');
-  await expect(jan.locator('tbody tr')).toHaveCount(1);
+  await expect(jan.locator('tbody tr, .lmob-it')).toHaveCount(1);
   const ok = jan.getByRole('button', { name: 'Marcar compensada' });
   await expect(ok).toBeDisabled();
-  await jan.locator('tbody tr').first().getByRole('button', { name: 'Escolher' }).click();
+  await jan.locator('tbody tr, .lmob-it').first().getByRole('button', { name: 'Escolher' }).click();
   await expect(jan.locator('.cfn-escolha')).toContainText('NF 19180');
   await ok.click();
   await expect(jan).toHaveCount(0);

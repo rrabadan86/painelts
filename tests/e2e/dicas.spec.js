@@ -1,13 +1,14 @@
-const { test, expect } = require('./_base');
+const { test, expect, nomesOpcoes, escolherOpcao, opcaoAtiva } = require('./_base');
 
 // Preços: cada coluna tem ⓘ que explica o campo — no cabeçalho (computador) e no rótulo do cartão (celular)
 test('Preços: ⓘ explica a coluna "Preço de venda" no computador e no celular', async ({ page }, info) => {
   await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS.db);
   await page.evaluate(() => { location.hash = '#precos'; });
-  const tab = page.locator('table.prc-t');
-  await expect(tab).toBeVisible();
   const celular = info.project.name === 'celular';
-  const alvo = celular ? tab.locator('tbody td.com-dica .mob-rot', { hasText: 'Preço de venda' }).first() : tab.locator('thead th', { hasText: 'Preço de venda' });
+  // celular (LMOB-04): lista em linhas; o ⓘ de cada coluna fica no rótulo da primeira linha
+  const tab = page.locator(celular ? '.prc-t-lmob' : 'table.prc-t');
+  await expect(tab).toBeVisible();
+  const alvo = celular ? tab.locator('.lmob-it').first().locator('.lmob-rot', { hasText: 'Preço de venda' }) : tab.locator('thead th', { hasText: 'Preço de venda' });
   await expect(alvo).toBeVisible();
   // a tabela de Preços pode se redesenhar quando chegam os dados do cadastro: se o toque cair no meio, toca de novo
   await expect(async () => {
@@ -18,11 +19,8 @@ test('Preços: ⓘ explica a coluna "Preço de venda" no computador e no celular
   if (!celular) await expect(tab.locator('thead th.sorted')).not.toContainText('Preço de venda');
   // toda coluna tem ⓘ
   if (!celular) expect(await tab.locator('thead th .dica-i').count()).toBe(await tab.locator('thead th').count());
-  // o rótulo do cartão continua um só (sem o rótulo do CSS repetido)
-  if (celular) {
-    const antes = await tab.locator('tbody td.com-dica').first().evaluate((td) => getComputedStyle(td, '::before').content);
-    expect(antes).toBe('none');
-  }
+  // no celular o ⓘ não se repete nas outras linhas
+  if (celular) expect(await tab.locator('.lmob-it').nth(1).locator('.dica-i').count()).toBe(0);
   const larga = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(larga).toBeLessThanOrEqual(1);
 });
@@ -100,25 +98,45 @@ test('Preços: preço de venda numa coluna; sistema e caixa lado a lado na aba "
 });
 
 // Princípio do dono: tabela sem rolagem para o lado no computador (1280 e 1100 px), em todas as abas; no celular, cartões dentro da borda
-test('Preços: nenhuma aba rola para o lado (1280 e 1100 px) e o celular fica em cartões', async ({ page }, info) => {
+test('Preços: nenhuma aba rola para o lado (1280 e 1100 px) e o celular fica em linhas', async ({ page }, info) => {
   const celular = info.project.name === 'celular';
   await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS.db);
   await page.evaluate(() => { location.hash = '#precos'; });
-  await expect(page.locator('table.prc-t')).toBeVisible();
-  const medir = () => page.evaluate(() => {
-    const w = document.querySelector('table.prc-t').closest('.table-wrap');
+  // celular (LMOB-04): a lista é em linhas (.lmob), não tabela; nada passa da borda da lista
+  const SEL = celular ? 'main .lmob' : 'table.prc-t';
+  await expect(page.locator(SEL).first()).toBeVisible();
+  const medir = () => page.evaluate((sel) => {
+    const w = document.querySelector(sel).closest('.table-wrap');
     const borda = w.getBoundingClientRect().right + 1;
     return { sobra: w.scrollWidth - w.clientWidth, pagina: document.documentElement.scrollWidth - window.innerWidth,
-      fora: [...w.querySelectorAll('tbody td, tbody td *')].filter((e) => e.getBoundingClientRect().right > borda).length, mob: w.querySelector('table').classList.contains('t-mob') };
-  });
+      fora: [...w.querySelectorAll('tbody td, tbody td *, .lmob-it, .lmob-it *')].filter((e) => e.getBoundingClientRect().right > borda).length, mob: !!w.querySelector('.lmob') };
+  }, SEL);
   const conferir = async (onde) => {
-    await expect(page.locator('table.prc-t tbody tr').first()).toBeVisible();
+    await expect(page.locator(celular ? 'main .lmob-it, main .lmob .t-vazio' : 'table.prc-t tbody tr').first()).toBeVisible();
     const m = await medir();
     expect(m.sobra, `rolagem lateral na tabela · ${onde}`).toBeLessThanOrEqual(1);
     expect(m.pagina, `página mais larga que a tela · ${onde}`).toBeLessThanOrEqual(1);
-    if (celular) { expect(m.mob, `cartões no celular · ${onde}`).toBe(true); expect(m.fora, `conteúdo fora do cartão · ${onde}`).toBe(0); }
+    if (celular) { expect(m.mob, `linhas no celular · ${onde}`).toBe(true); expect(m.fora, `conteúdo fora da lista · ${onde}`).toBe(0); }
   };
-  for (const largura of celular ? [390] : [1280, 1100]) {
+  if (celular) { // as abas (7+) ficam num botão com a folha de opções (FOLHA-01)
+    const nomes = await nomesOpcoes(page, '.est-tools');
+    expect(nomes.length).toBeGreaterThanOrEqual(6);
+    for (const nome of nomes) {
+      const so = nome.replace(/ \([\d.]+\)$/, '');
+      await escolherOpcao(page, '.est-tools', so);
+      expect((await opcaoAtiva(page, '.est-tools')).replace(/\./g, '')).toBe(nome.replace(/\./g, ''));
+      await conferir(`390px · ${nome}`);
+      if (await page.locator('.efp-fil').count()) {
+        for (const sub of await nomesOpcoes(page, '.efp-fil')) {
+          await escolherOpcao(page, '.efp-fil', sub.replace(/ \([\d.]+\)$/, ''));
+          expect((await opcaoAtiva(page, '.efp-fil')).replace(/\./g, '')).toBe(sub.replace(/\./g, ''));
+          await conferir(`390px · ${nome} · ${sub}`);
+        }
+      }
+    }
+    return;
+  }
+  for (const largura of [1280, 1100]) {
     if (!celular) await page.setViewportSize({ width: largura, height: 900 });
     const abas = page.locator('.est-tools .seg button');
     const n = await abas.count();

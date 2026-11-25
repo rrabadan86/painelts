@@ -2,6 +2,7 @@
 // RD-EST-01 cartão-herói em Rentabilidade, Preços, Site e Validade, com os números levando à aba deles
 // RD-EST-02 sem rolagem para o lado nas tabelas do Estoque, Rentabilidade, Validade e Site (1100 px e letra mais larga)
 const { test, expect } = require('./_base');
+const { opcaoAtiva } = require('./_base');
 
 async function abrir(page, hash) {
   await page.goto('/apresentacao');
@@ -29,14 +30,14 @@ test('RD-EST-01: Rentabilidade, Preços, Site e Validade abrem com o cartão-her
   await expect(hp).toContainText('Perderam margem');
   await expect(page.locator('main .g-kpi')).toHaveCount(0);
   await hp.getByRole('button', { name: 'ver os reajustes de custo ›' }).click();
-  await expect(page.locator('.seg button.on').first()).toHaveText(/Custo alterado \(\d+\)/);
+  await expect.poll(() => opcaoAtiva(page)).toMatch(/Custo alterado \(\d+\)/); // no celular, o botão da folha (FOLHA-01)
 
   await abrir(page, '#site');
   const hs = page.locator('main .heroi').first();
   await expect(hs).toContainText('Preço diferente');
   await expect(page.locator('main .g-kpi')).toHaveCount(0);
   const dif = hs.getByRole('button', { name: 'ver os diferentes ›' });
-  if (await dif.count()) { await dif.click(); await expect(page.locator('.seg button.on').first()).toHaveText(/Preço diferente \(\d+\)/); }
+  if (await dif.count()) { await dif.click(); await expect.poll(() => opcaoAtiva(page)).toMatch(/Preço diferente \(\d+\)/); }
 
   await abrir(page, '#validade');
   const hv = page.locator('main .heroi.vl-resumo');

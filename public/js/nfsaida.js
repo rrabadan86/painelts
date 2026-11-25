@@ -497,7 +497,8 @@
     const fil = FIL[state.nfsFil] ? state.nfsFil : 'per';
     const rows = todas.filter(FIL[fil][1]);
     const ativas = rows.filter((r) => r.situacao !== 'cancelada');
-    const tab = TS.table({
+    const tab = TS.table({ linhaMob: { nome: 'nfTxt', val: 'valor', l2: ['destNome', 'natOp', 'situacao'], l3: ['acoes'] }, // celular em linhas (LMOB-04)
+        
       cols: [
         // compacta: cada coluna junta duas informações para caber sem rolagem horizontal
         { key: 'nfTxt', label: 'NF / emissão', align: 'l', render: (r) => h('span', null, h('a', { href: '#', class: 'prc-nome', onclick: (e) => { e.preventDefault(); e.stopPropagation(); abrir(loja, r.chave); } }, r.nfTxt), h('small', { class: 'est-tam' }, quando(r.emissao))), sortVal: (r) => r.emissao || '' },
@@ -563,7 +564,8 @@
       const liq = r.qtd ? ((r.vProd || 0) - (r.vDesc || 0)) / r.qtd : null;
       return { ...r, custo: cu, margem: cu != null && liq ? (liq - cu) / liq : null };
     });
-    const tab = TS.table({
+    const tab = TS.table({ linhaMob: { nome: 'desc', val: 'vProd', l2: ['qtd', 'vUn', 'vDesc', 'custo', 'margem'] }, // celular em linhas (LMOB-04)
+        
       cols: [
         { key: 'desc', label: 'Produto', align: 'l', sticky: true, wrap: true, render: (r) => h('span', null, r.desc, h('small', { class: 'est-tam' }, `cód. ${r.cod || '—'}${r.ncm ? ' · NCM ' + r.ncm : ''}${r.cfop ? ' · CFOP ' + r.cfop : ''}`)) },
         { key: 'qtd', label: 'Qtd', render: (r) => `${fmt.n2(r.qtd).replace(/,00$/, '')} ${String(r.un || '').toLowerCase()}`, sortVal: (r) => r.qtd },

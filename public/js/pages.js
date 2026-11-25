@@ -788,7 +788,7 @@
     if (dsV.length) dsV.push(TS.dsMedia('Média da loja', mediaLoja));
     if (temFr && dsV.length) dsV.push(dsFr(meses.map((k) => (fr.met[String(k)] || {})[met] ?? null)));
     root.append(TS.section('Indicadores por vendedor'), TS.cardWithTools(`${B.nome} por vendedor`, `${/^p\d+$/.test(met) ? 'Pacotes de chá vendidos (unidades). ' : ''}Tracejado = média da loja${contagem ? ' (por vendedor)' : ''}.${temFr ? ` Pontilhado = média da franquia${contagem ? ' (por vendedor)' : ''}.` : ''}`,
-      TS.seg(METRICAS, met, (v) => { state.compMetrica = v; TS.render(); }),
+      TS.segFolha(METRICAS, met, (v) => { state.compMetrica = v; TS.render(); }, 'Indicador'),
       TS.chart({
         type: 'line', data: { labels: meses.map(B.rotulo), datasets: dsV },
         options: { interaction: { mode: 'index', intersect: false }, plugins: { tooltip: { itemSort: (a, b) => (b.raw ?? 0) - (a.raw ?? 0), callbacks: { label: (c) => `${c.dataset.label}: ${fmtMet(c.raw)}` } } }, scales: { y: TS.axisNum(fmtMet), x: TS.axisCat } },

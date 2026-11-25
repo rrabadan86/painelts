@@ -205,7 +205,8 @@
       { key: 'acoes', label: '', align: 'l', render: tirar, sortVal: () => 0 },
     ].filter(Boolean);
     for (const s of lista) if (s.grp == null) s.grp = TS.grupoProd.texto(s.cod, s.desc, s.agora && s.agora.un ? /^kg$/i.test(s.agora.un) : undefined);
-    return TS.table({
+    return TS.table({ linhaMob: { nome: 'desc', l2: ['agora', 'nome', 'em'], l3: ['motivo', 'andamento', 'acoes'] }, // celular em linhas (LMOB-04)
+        
       cols, rows: lista, sortKey: 'em', sortDir: 'desc', maxHeight: '620px', search: d.todos ? 'Buscar produto, pessoa ou recado…' : 'Buscar produto ou recado…', searchKeys: ['desc', 'cod', 'nome', 'recado', 'justificativa', 'grp'], produto: 'desc', cls: 'est-t sug-t',
       rowClass: (s) => (novo(s) || s.id === vis.recem ? 'sug-novo' : null),
       empty: { abertas: 'Nenhuma sugestão esperando o pedido.', entrega: 'Nada aguardando entrega.', encerradas: 'Nenhuma sugestão encerrada ainda.' }[aba],

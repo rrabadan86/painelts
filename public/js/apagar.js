@@ -242,7 +242,8 @@
     heroi.classList.add('ap-heroi');
 
     // ----- saldo por semana -----
-    const tSem = TS.table({
+    const tSem = TS.table({ linhaMob: { nome: 'de', val: 'acumulado', valRot: 'acumulado', l2: ['entra', 'sai', 'saldo'] }, // celular em linhas (LMOB-04)
+        
       cols: [
         { key: 'de', label: 'Semana', align: 'l', sticky: true, wrap: true, title: 'Semanas de segunda a domingo. A primeira começa hoje e a última acaba no fim do período escolhido.',
           render: (s) => h('span', null, h('b', null, s.de === s.ate ? dm(s.de) : `${dm(s.de)} a ${dm(s.ate)}`), s.falta > 0 ? h('span', null, ' ', h('span', { class: 'badge erro' }, `faltam ${fmt.brl0(s.falta)}`)) : null) },
@@ -272,7 +273,8 @@
       return b;
     };
     const pintarLista = () => {
-      lista.replaceChildren(TS.table({
+      lista.replaceChildren(TS.table({ linhaMob: { nome: 'nome', val: 'valor', l2: ['vence', 'pago'] }, // celular em linhas (LMOB-04)
+        
         cols: [
           { key: 'nome', label: 'Conta', align: 'l', sticky: true, wrap: true, title: 'O que vence e de onde o painel tirou: custo fixo e despesa do mês (cadastro da loja), nota de compra (AppNext), royalties e Simples (as mesmas contas do Resultado).',
             render: (x) => h('span', null, h('b', null, x.nome), ' ', h('span', { class: 'badge cinza', title: ORIGEM[x.origem] ? ORIGEM[x.origem][1] : null }, ORIGEM[x.origem] ? ORIGEM[x.origem][0] : x.origem),

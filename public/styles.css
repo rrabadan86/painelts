@@ -4049,3 +4049,15 @@ body.em-homolog .topbar { box-shadow: inset 0 -4px 0 var(--gold); }
 .clm-sem-wpp { color: var(--muted); font-weight: 400; }
 .clm-semcid { color: var(--muted); opacity: .8; }
 .clm-mais { display: block; margin: 12px auto 0; }
+.lmob-c small { color: var(--muted); }
+.lmob-c > small:first-child { font-size: inherit; }
+.lmob-nome .est-tam, .lmob-nome small { display: block; font-weight: 400; }
+.lmob-c .est-tam { display: inline; margin-left: 4px; }
+.seg-folha { width: 100%; }
+/* LMOB-04: na linha montada pelas colunas, o conteúdo da célula fica numa linha só (o que era bloco empilhado vira texto seguido) */
+.lmob-c div, .lmob-c p, .lmob-c small, .lmob-c .est-tam { display: inline; }
+.lmob-c * + * { margin-left: 4px; }
+.lmob-c input[type="date"], .lmob-c input[type="number"] { max-width: 150px; padding: 4px 6px; font-size: 13px; }
+.lmob-c .btn { padding: 4px 10px; font-size: 12.5px; min-height: 0; }
+.est-det-mob { padding: 4px 0 10px; }
+.est-det-mob .est-det-box { max-width: 100%; overflow-x: hidden; }

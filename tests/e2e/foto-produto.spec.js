@@ -54,12 +54,12 @@ test('⭐ Sugestões: a miniatura aparece na lista da equipe', async ({ page }) 
   const erros = [];
   page.on('pageerror', (e) => erros.push(e.message));
   await abrir(page, '#sugestoes');
-  await expect(page.locator('.sug-t').first()).toBeVisible({ timeout: 40000 });
+  await expect(page.locator('.sug-t, .sug-t-lmob').first()).toBeVisible({ timeout: 40000 });
   // sugestões abertas (aba que abre primeiro) de produto com foto: cada uma mostra a miniatura
   const n = await page.evaluate(async () => { await TS.foto.carregar(); const d = await TS.sug.carregar(TS.state.loja); return d.itens.filter((s) => s.st === 'aberta' && !s.aguardando && TS.foto.de(s.cod, s.desc)).length; });
   test.skip(!n, 'nenhuma sugestão aberta de produto com foto na apresentação');
-  await expect(page.locator('.sug-t .foto-mini').first()).toBeAttached();
-  expect(await page.locator('.sug-t .foto-mini').count()).toBeGreaterThan(0);
+  await expect(page.locator('.sug-t .foto-mini, .sug-t-lmob .foto-mini').first()).toBeAttached();
+  expect(await page.locator('.sug-t .foto-mini, .sug-t-lmob .foto-mini').count()).toBeGreaterThan(0);
   expect(erros).toEqual([]);
 });
 

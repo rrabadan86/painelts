@@ -193,8 +193,9 @@
     ], { titulo: 'Site × loja' })));
 
     const SIT = { sem: ['Sem correspondência', 'muted'], promodif: ['Promoção + preço diferente', 'erro'], promo: ['Em promoção', 'warn'], dif: ['Preço diferente', 'erro'], igual: ['Igual', 'ok'] };
-    const seg = TS.seg(Object.entries(FILTROS).map(([k, [t, f]]) => [`${t} (${fmt.int(contaAba(f))})`, k]), filtro, (v) => { state.siteFiltro = v; pintar(corpo, d); });
-    const tab = TS.table({
+    const seg = TS.segFolha(Object.entries(FILTROS).map(([k, [t, f]]) => [`${t} (${fmt.int(contaAba(f))})`, k]), filtro, (v) => { state.siteFiltro = v; pintar(corpo, d); });
+    const tab = TS.table({ linhaMob: { nome: 'nomeTxt', val: 'preco', valRot: 'Site', l2: ['nosso', 'sit', 'doDia', 'ultMud'], l3: ['nossoTxt'] }, // celular em linhas (LMOB-04)
+        
       cols: [
         { key: 'nomeTxt', label: 'Produto no site', align: 'l', sticky: true, wrap: true, render: (r) => h('span', null,
           h('a', { href: r.url, target: '_blank', rel: 'noopener', class: 'site-link', title: 'Abrir no site (nova aba)', onclick: (e) => { if (r.url === '#') e.preventDefault(); } }, r.produto, ' ↗'),

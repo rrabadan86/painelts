@@ -168,6 +168,22 @@ test('Textos longos recolhidos em "Como funciona ▸": cabeçalho do Estoque e q
 
 test('Estoque: o seletor acompanha a aba clicada e cada opção tem explicação', async ({ page }) => {
   await abrir(page); await ir(page, 'estoque');
+  const folha = page.locator('#est-tabela .seg-folha');
+  if (await folha.count()) { // celular (FOLHA-01): o botão mostra a opção escolhida; na folha, cada opção tem a explicação embaixo
+    await expect(folha.locator('b')).toContainText('O que repor');
+    await folha.click();
+    const ops = page.locator('.folha .folha-op');
+    await expect(ops).toHaveCount(7);
+    for (const o of await ops.all()) expect((await o.locator('.folha-t small').innerText()).trim()).not.toBe('');
+    await expect(page.locator('.folha .folha-op.on')).toHaveCount(1);
+    await ops.filter({ hasText: 'Parados' }).click();
+    await expect(folha.locator('b')).toContainText('Parados');
+    await folha.click();
+    await expect(page.locator('.folha .folha-op.on')).toContainText('Parados');
+    await page.locator('.folha .folha-op', { hasText: 'Perdendo venda' }).click();
+    await expect(folha.locator('b')).toContainText('Perdendo venda');
+    return;
+  }
   const seg = page.locator('.seg', { hasText: 'O que repor' }).first();
   await expect(seg.locator('button.on')).toContainText('O que repor');
   for (const b of await seg.locator('button').all()) expect((await b.getAttribute('title')) || '').not.toBe('');

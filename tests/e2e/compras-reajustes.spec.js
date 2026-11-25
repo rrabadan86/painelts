@@ -1,4 +1,5 @@
 const { test, expect } = require('./_base');
+const { escolherOpcao, nomesOpcoes, opcaoAtiva } = require('./_base');
 
 const abrir = async (page, tela, antes) => {
   await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS.db);
@@ -51,23 +52,23 @@ test('Preços: efeito dos reajustes de venda', async ({ page }) => {
   const k = page.locator('.heroi .linhas-num-a', { hasText: 'Reajustes de venda avaliados' });
   await expect(k).toBeVisible();
   await k.click();
-  await expect(page.locator('.seg button.on').first()).toHaveText(/Reajustes \(\d+\)/);
+  await expect.poll(() => opcaoAtiva(page)).toMatch(/Reajustes \(\d+\)/); // abas: no celular, o botão da folha (FOLHA-01)
   await expect(page.locator('.card-title', { hasText: 'Efeito dos reajustes de venda' })).toBeVisible();
-  await expect(page.locator('.efp-fil .seg button.on')).toHaveText(/(Avaliados|Todos) \(\d+\)/);
-  const nome = page.locator('.efp-t a.prc-nome').first();
+  await expect.poll(() => opcaoAtiva(page, '.efp-fil')).toMatch(/(Avaliados|Todos) \(\d+\)/);
+  const EFP = '.efp-t, .efp-t-lmob'; // tabela no computador, linhas no celular (LMOB-04)
+  const nome = page.locator('.efp-t a.prc-nome, .efp-t-lmob a.prc-nome').first();
   await expect(nome).toBeVisible();
-  await semLixo(page.locator('.efp-t'));
+  await semLixo(page.locator(EFP).first());
   // os avaliados têm etiqueta Bom, Ruim ou Igual, nunca "cedo demais" (sem nenhum avaliado, a aba começa em "Todos")
-  if (/Avaliados/.test(await page.locator('.efp-fil .seg button.on').innerText())) await expect(page.locator('.efp-t .badge.warn')).toHaveCount(0);
+  if (/Avaliados/.test(await opcaoAtiva(page, '.efp-fil'))) await expect(page.locator(EFP).first().locator('.badge.warn')).toHaveCount(0);
   // amostra mínima: quem vendeu menos de 30 unidades fica em "Poucos dados", sem veredito (nunca Bom/Ruim)
-  const poucos = page.locator('.efp-fil .seg button', { hasText: 'Poucos dados' });
-  if (await poucos.count()) {
-    await poucos.click();
-    await expect(page.locator('.efp-t .badge.cinza').first()).toHaveText('Poucos dados');
-    await expect(page.locator('.efp-t .badge.ok, .efp-t .badge.erro')).toHaveCount(0);
-    await expect(page.locator('.efp-t')).toContainText('pouco para dizer se foi o preço');
+  if ((await nomesOpcoes(page, '.efp-fil')).some((t) => t.startsWith('Poucos dados'))) {
+    await escolherOpcao(page, '.efp-fil', 'Poucos dados');
+    await expect(page.locator(EFP).first().locator('.badge.cinza').first()).toHaveText('Poucos dados');
+    await expect(page.locator(EFP).first().locator('.badge.ok, .badge.erro')).toHaveCount(0);
+    await expect(page.locator(EFP).first()).toContainText('pouco para dizer se foi o preço');
   }
-  await nome.evaluate((a) => a.click());
+  await page.locator('.efp-t a.prc-nome, .efp-t-lmob a.prc-nome').first().evaluate((a) => a.click());
   const det = page.locator('.prc-drawer .efp-detalhe');
   await expect(det).toBeVisible();
   await expect(det).toContainText('Efeito dos reajustes de venda');
@@ -75,7 +76,7 @@ test('Preços: efeito dos reajustes de venda', async ({ page }) => {
   await semLixo(det);
   await page.keyboard.press('Escape');
   // voltar para a lista de produtos continua funcionando
-  await page.locator('.seg button', { hasText: 'Todos os itens' }).first().click();
+  await escolherOpcao(page, null, 'Todos os itens');
   await expect(page.locator('.card-title', { hasText: 'Produtos' })).toBeVisible();
   await semRolagem(page);
 });

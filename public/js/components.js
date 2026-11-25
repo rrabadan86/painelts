@@ -482,8 +482,22 @@
     }
     return TS.ativoVisivel(el);
   };
+  /** seletor com muitas opções (FOLHA-01): no computador é o TS.seg de sempre; no celular, um botão com o rótulo e a opção
+   *  escolhida que abre a folha (o "(N)" do fim do rótulo vira a contagem e a dica, a explicação da opção) */
+  TS.segFolha = function (items, current, onPick, rotulo = 'Mostrar') {
+    if (!TS.ehCelular()) return TS.seg(items, current, onPick);
+    const partes = (lab) => { const m = String(lab).match(/^(.*?)\s*\(([\d.]+)\)$/); return m ? [m[1], +m[2].replace(/\./g, '')] : [lab, null]; };
+    let atual = current;
+    const nomeDe = (v) => { const it = items.find(([, x]) => x === v); return it ? String(it[0]) : ''; };
+    const el = TS.botaoFolha({ rotulo, valor: nomeDe(atual), ativo: false, cls: 'seg-folha', onclick: () => TS.folha({ titulo: rotulo, valor: atual,
+      opcoes: items.map(([lab, v, dica]) => { const [nome, n] = partes(lab); return { v, nome, n, dica }; }),
+      onEscolher: (v) => { el._marcar(v); onPick(v); } }) });
+    el._marcar = (v) => { atual = v; el.querySelector('b').textContent = nomeDe(v); };
+    return el;
+  };
   /** marca uma opção do seletor (pelo botão ou pelo valor): use quando outra coisa (um quadro clicável) muda a aba */
   TS.segMarcar = function (el, alvo) {
+    if (el && el._marcar) { el._marcar(typeof alvo === 'object' ? alvo.dataset.val : alvo); return; }
     for (const b of el.querySelectorAll(':scope > button')) { const on = typeof alvo === 'object' ? b === alvo : b.dataset.val === String(alvo); b.classList.toggle('on', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); }
   };
 
@@ -537,6 +551,28 @@
     return caixa;
   };
 
+  /** linha do celular a partir das colunas da tabela (LMOB-04): nome e o número que decide em cima; as outras colunas pequenas
+   *  embaixo, cada uma com o rótulo curto (labelMob ou o rótulo da coluna); célula vazia ou "—" some */
+  TS.linhaCols = function (cols, { nome, val, valRot, l2 = [], l3 = [] }) {
+    const col = (k) => cols.find((c) => c.key === k);
+    const rot = (c) => (c.labelMob != null ? c.labelMob : typeof c.label === 'string' ? c.label : '');
+    const vazio = (x) => x == null || x === '' || x === '—' || (x instanceof Node && !x.textContent.trim());
+    const cel = (c, row) => (c.render ? c.render(row) : c.fmt ? c.fmt(row[c.key], row) : (row[c.key] ?? ''));
+    // ⓘ (explicação da coluna) só na primeira linha da página: cada informação continua explicada sem repetir o ⓘ em todas as linhas
+    const dicaDe = (c, k) => (k === 0 && c.title ? TS.dica(c.title) : null);
+    const pedacos = (ks, row, k) => ks.map(col).filter(Boolean).map((c) => { const x = cel(c, row); return vazio(x) ? null : h('span', { class: 'lmob-c' }, rot(c) ? h('small', { class: 'lmob-rot' }, rot(c), dicaDe(c, k), ' ') : null, x); }).filter(Boolean);
+    return (row, k) => {
+      const cN = col(nome), cV = val && col(val);
+      const v = cV ? cel(cV, row) : null;
+      const p2 = pedacos(l2, row, k), p3 = pedacos(l3, row, k);
+      return h('div', null,
+        h('div', { class: 'lmob-l1' }, h('span', { class: 'lmob-nome' }, cN ? cel(cN, row) : ''),
+          cV && !vazio(v) ? h('span', { class: 'lmob-val' }, valRot ? h('small', { class: 'lmob-rot' }, valRot, dicaDe(cV, k), ' ') : null, v) : null),
+        p2.length ? h('div', { class: 'lmob-l2' }, p2) : null,
+        p3.length ? h('div', { class: 'lmob-l2' }, p3) : null);
+    };
+  };
+
   TS.table = function ({ cols, rows, total, sortKey, sortDir = 'desc', maxHeight, pageSize, search, searchKeys, searchInit, onSearch, onRowClick, rowClass, empty, cls, imprimir, produto, cartao, estado, linhaMob, totalMob }) {
     // produto: colunas com o nome do produto — o filtro "Produto contém" da lateral também vale nesta tabela
     const fProd = produto && TS.state.f.produto ? TS.norm(TS.state.f.produto) : '';
@@ -563,6 +599,9 @@
     // linhaMob (padrão de listas no celular, aprovado pelo dono em 24/11/2026; LMOB-01): no celular, cada linha vira uma linha
     // com divisória (nome + o número que decide em cima, o resto pequeno embaixo) desenhada por quem chama, no lugar do cartão
     // de "rótulo: valor". A busca, a ordem ("Ordenar por") e as páginas continuam as mesmas. No computador nada muda.
+    // linhaMob também pode ser { nome, val, l2: [chaves], l3: [chaves] } (LMOB-04): a linha é montada com as próprias colunas
+    // (o mesmo render/fmt do computador, então o nome continua clicável e com o grupo embaixo)
+    if (linhaMob && typeof linhaMob === 'object') linhaMob = TS.linhaCols(cols, linhaMob);
     const LMOB = TS.ehCelular() && typeof linhaMob === 'function';
     const lista = LMOB ? h('div', { class: 'lmob' + (cls ? ' ' + cls + '-lmob' : '') }) : null;
     const tw = h('div', { class: 'table-wrap' + (maxHeight === 'free' ? ' free' : '') + (LMOB ? ' lmob-w' : '') }, LMOB ? lista : tbl);
@@ -598,8 +637,8 @@
       if (estado) Object.assign(estado, { page, sk, sd });
       const start = pageSize ? page * pageSize : 0;
       const slice = pageSize ? all.slice(start, start + pageSize) : all;
-      for (const row of slice) {
-        const el = linhaMob(row);
+      for (const [k, row] of slice.entries()) {
+        const el = linhaMob(row, k);
         if (!el) continue;
         el.classList.add('lmob-it');
         if (rowClass && rowClass(row)) el.classList.add(...String(rowClass(row)).split(/\s+/).filter(Boolean));

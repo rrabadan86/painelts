@@ -167,3 +167,33 @@ test('LMOB-03: Comissionamento, Promoção, Rendimento, Vendedoras e clientes e 
   await confere('.card:has-text("Cupons do período")', 'Cupons → Lista de itens');
   expect(erros).toEqual([]);
 });
+
+// LMOB-04 (lote 2 do pente-fino do celular, 24/11/2026): listas de produtos, notas e dinheiro em linhas e filtro em folha
+test('LMOB-04: Estoque, Preços, Site, Validade, Notas e Rentabilidade em linhas; filtro do Estoque em folha', async ({ page }, info) => {
+  const erros = []; page.on('pageerror', (e) => erros.push(e.message));
+  await abrir(page);
+  const cel = info.project.name === 'celular';
+  for (const tela of ['estoque', 'precos', 'site', 'validade', 'notas', 'rentab']) { // o Pedido tem os cartões próprios com − / ＋ (.ped-card)
+    await page.evaluate((t) => { location.hash = '#' + t; }, tela);
+    await page.waitForFunction(() => !document.querySelector('main .loading .spinner') && document.querySelector('main .card'), null, { timeout: 30000 });
+    if (cel) await expect(page.locator('main .lmob-it').first(), tela).toBeVisible({ timeout: 20000 });
+    else await expect(page.locator('main table.t').first(), tela).toBeVisible({ timeout: 20000 });
+    await semRolarDeLado(page);
+  }
+  // Estoque: o filtro de 7 opções é um botão que abre a folha (celular) ou a faixa de abas (computador)
+  await page.evaluate(() => { location.hash = '#estoque'; });
+  const tab = page.locator('#est-tabela');
+  await expect(tab).toBeVisible();
+  if (cel) {
+    await tab.locator('.seg-folha').click();
+    const folha = page.locator('.folha');
+    await expect(folha.locator('.folha-op')).toHaveCount(7);
+    await folha.locator('.folha-op', { hasText: 'Parados' }).click();
+    await expect(folha).toHaveCount(0);
+    await expect(tab.locator('.seg-folha')).toContainText('Parados');
+    await expect(tab.locator('.lmob-it').first().locator('.lmob-val')).toContainText('R$');
+  } else {
+    await expect(tab.locator('.seg button')).toHaveCount(7);
+  }
+  expect(erros).toEqual([]);
+});

@@ -176,7 +176,7 @@
       cedo: ['Cedo demais', (r) => r.estado === 'cedo'], pouco: ['Poucos dados', (r) => r.estado === 'pouco'], sem: ['Sem comparação', (r) => r.estado === 'sem'], todos: ['Todos', () => true],
     };
     const fil = FIL[state.efeitoFil] ? state.efeitoFil : E.lista.some(FIL.aval[1]) ? 'aval' : 'todos'; // começa pelos que já dá para julgar
-    const tab = TS.table({
+    const tab = TS.table({ linhaMob: { nome: 'nome', val: 'adjL', l2: ['dia', 'varL', 'varQ'] }, // celular em linhas (LMOB-04)
       cols: [
         { key: 'nome', label: 'Produto', align: 'l', sticky: true, wrap: true, title: 'Clique no nome para abrir o histórico do produto, com a conta completa de cada reajuste (inclusive a receita por dia). A etiqueta é o resultado do reajuste — Bom, Ruim, Igual, Cedo demais, Poucos dados (vendeu menos de 30 unidades nos dois períodos: os números aparecem, mas não dá para culpar o preço) ou Sem comparação — e embaixo vem o motivo.', render: (r) => h('span', null,
           h('a', { href: '#', class: 'prc-nome', onclick: (e) => { e.preventDefault(); abrirProduto(r.nome); } }, h('b', null, r.nome)), ' ', etiqueta(r),
@@ -199,7 +199,7 @@
     return TS.cardWithTools('Efeito dos reajustes de venda',
       'Depois que o preço mudou, vendeu menos? O lucro subiu? Cada linha é um reajuste dos últimos 12 meses (não segue o período dos filtros): 30 dias antes × 30 dias depois, por dia, e o mesmo descontando o movimento da loja. Com menos de 30 dias depois é só uma prévia ("cedo demais"); com menos de 30 unidades vendidas nos dois períodos é "poucos dados" (sem veredito).',
       h('div', { class: 'est-tools' }, tab.searchBox && (tab.searchBox.classList.add('est-busca'), tab.searchBox), segTela),
-      h('div', { class: 'efp-fil' }, TS.seg(Object.entries(FIL).filter(([k]) => k === 'todos' || k === fil || cont(k)).map(([k, [t]]) => [`${t} (${cont(k)})`, k]), fil, (v) => { state.efeitoFil = v; repintar(); })),
+      h('div', { class: 'efp-fil' }, TS.segFolha(Object.entries(FIL).filter(([k]) => k === 'todos' || k === fil || cont(k)).map(([k, [t]]) => [`${t} (${cont(k)})`, k]), fil, (v) => { state.efeitoFil = v; repintar(); })),
       tab);
   }
 
