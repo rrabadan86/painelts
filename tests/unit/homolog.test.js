@@ -97,3 +97,10 @@ test('HOMOLOG-01: o servidor de homologação avisa a tela (faixa amarela) e nã
   const main = fs.readFileSync(path.join(__dirname, '../../public/js/main.js'), 'utf8');
   assert.match(main, /faixa-homolog/, 'a tela tem a faixa da homologação');
 });
+
+test('HOMOLOG-01: a leitura do Extrato de estoque (EXTRATO-01) também depende do coletor ligado — na homologação não sai', () => {
+  const src = require('fs').readFileSync(require('path').join(__dirname, '../../src/admin-api.js'), 'utf8');
+  const i = src.indexOf("r.post('/lojas/:id/extrato'");
+  assert.ok(i > 0, 'rota do extrato existe');
+  assert.match(src.slice(i, i + 400), /if \(!COL\.ativo\(\)\) return res\.status\(400\)/);
+});

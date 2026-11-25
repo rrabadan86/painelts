@@ -52,6 +52,9 @@ SCRIPT_CAIXA = Path(os.getenv("COLETOR_SCRIPT_CAIXA", Path(__file__).with_name("
 # preço de tabela do cadastro (Produtos e Produtos Compostos): junto do estoque, no máximo uma vez a cada 20 horas
 SCRIPT_PRODUTOS = Path(os.getenv("COLETOR_SCRIPT_PRODUTOS", Path(__file__).with_name("nextsoft_produtos.py")))
 SCRIPT_FIXE = Path(os.getenv("COLETOR_SCRIPT_FIXE", Path(__file__).with_name("fixe_export.py")))
+# Extrato de estoque do AppNext (só leitura): diagnóstico da tela + movimentos desde uma data, para reconstruir o estoque do
+# começo de cada mês (CMV pelo estoque, EXTRATO-01). Roda sozinho, pedido pelo painel.
+SCRIPT_EXTRATO = Path(os.getenv("COLETOR_SCRIPT_EXTRATO", Path(__file__).with_name("nextsoft_extrato.py")))
 # saldo oficial de pontos de cada cliente (só pelo botão "Sincronizar saldos com o FIXE")
 SCRIPT_NFE = Path(os.getenv("COLETOR_SCRIPT_NFE", Path(__file__).with_name("nextsoft_nfe.py")))
 SCRIPT_INVENTARIO = Path(os.getenv("COLETOR_SCRIPT_INVENTARIO", Path(__file__).with_name("nextsoft_inventario.py")))
@@ -232,7 +235,7 @@ def ao_vivo(loja):
             etapa = m.group(1)
         if not uteis or uteis[-1] != t:
             uteis.append(t)
-    nomes = {"nextsoft_export_to_drive.py": "vendas", "nextsoft_xml.py": "XML das notas", "nextsoft_estoque.py": "estoque", "nextsoft_compras.py": "notas de compra", "nextsoft_caixa.py": "fechamento de caixa", "nextsoft_produtos.py": "preço de tabela (produtos)"}
+    nomes = {"nextsoft_extrato.py": "extrato de estoque", "nextsoft_export_to_drive.py": "vendas", "nextsoft_xml.py": "XML das notas", "nextsoft_estoque.py": "estoque", "nextsoft_compras.py": "notas de compra", "nextsoft_caixa.py": "fechamento de caixa", "nextsoft_produtos.py": "preço de tabela (produtos)"}
     return {"linhas": uteis[-12:], "etapa": etapa, "parte": nomes.get(script, script),
             "atividade": datetime.fromtimestamp(st.st_mtime, TZ).isoformat()}
 
@@ -803,7 +806,7 @@ def rodar(job):
         job["inicio"] = datetime.now(TZ).isoformat()
         e["atual"] = job
     tipo = job.get("tipo") or ("ambos" if XML_ROTINA else "vendas")
-    if tipo not in TIPOS and tipo not in ("fixe", "saldos"):
+    if tipo not in TIPOS and tipo not in ("fixe", "saldos", "extrato"):
         tipo = "vendas"
     itens = job.get("itens")
     if itens:  # escolha do "Rodar agora": cada parte só se marcada
@@ -842,7 +845,7 @@ def rodar(job):
         except Exception as e:  # noqa: BLE001
             return str(e)
 
-    quer_estoque = ("estoque" in quer) if quer is not None else (tipo not in ("fixe", "saldos") and job["gatilho"] != "historico" and ESTOQUE_ROTINA)
+    quer_estoque = ("estoque" in quer) if quer is not None else (tipo not in ("fixe", "saldos", "extrato") and job["gatilho"] != "historico" and ESTOQUE_ROTINA)
     if "estoque" in (job.get("extras") or []):
         quer_estoque = True
     tab = DATA_DIR / loja / "cadastro" / "tabela.json"
@@ -855,6 +858,8 @@ def rodar(job):
     saida_produtos = str(DATA_DIR / loja / "cadastro" / "entrada")
 
     etapas_appnext = []
+    if tipo == "extrato" and SCRIPT_EXTRATO.exists():
+        etapas_appnext.append("extrato")
     if tipo in ("ambos", "vendas"):
         etapas_appnext.append("vendas")
     if tipo in ("ambos", "xml") and SCRIPT_XML.exists():
@@ -963,6 +968,11 @@ def rodar(job):
                     if "produtos" in etapas_appnext:
                         estoque["produtos"] = _st("produtos")[0]
             else:
+                if "extrato" in etapas_appnext:
+                    ce = executar(SCRIPT_EXTRATO, {"SAIDA_EXTRATO": str(DATA_DIR / loja / "estoque" / "extrato.json"),
+                                                   "SAIDA_EXTRATO_DIAG": str(DATA_DIR / loja / "estoque" / "extrato-diag.json"),
+                                                   "EXTRATO_DESDE": job.get("de") or "2025-06-01", "SAIDA_ARQUIVO": str(pasta / "_nao_usado.xlsx")})
+                    ok, codigo, principal = ce == 0, ce, "extrato"
                 if "vendas" in etapas_appnext:
                     codigo = executar(script, {})
                     ok = codigo == 0
@@ -1313,6 +1323,22 @@ class API(BaseHTTPRequestHandler):
                 return self._json(400, {"erro": "O coletor desta VPS ainda não tem o robô de saldos (atualize o coletor)."})
             if not enfileirar_saldos(loja, por):
                 return self._json(409, {"erro": "A sincronização de saldos desta loja já está na fila ou rodando."})
+            return self._json(200, {"ok": True})
+        if self.path.startswith("/extrato/"):
+            loja = self._loja("/extrato/")
+            if not loja or loja not in lojas_configuradas():
+                return self._json(404, {"erro": "Loja sem acesso configurado."})
+            if not SCRIPT_EXTRATO.exists():
+                return self._json(400, {"erro": "O coletor desta VPS ainda não tem o robô do extrato (atualize o coletor)."})
+            try:
+                n = int(self.headers.get("Content-Length", "0") or 0)
+                desde = (json.loads(self.rfile.read(min(n, 10000)) or b"{}").get("desde") or "2025-06-01")
+            except Exception:  # noqa: BLE001
+                return self._json(400, {"erro": "pedido inválido"})
+            if not DATA_OK.match(desde):
+                return self._json(400, {"erro": "data inválida"})
+            if not enfileirar(loja, "manual", por, de=desde, tipo="extrato"):
+                return self._json(409, {"erro": "Esta loja já tem uma coleta na fila ou rodando."})
             return self._json(200, {"ok": True})
         if self.path.startswith("/fixe/"):
             loja = self._loja("/fixe/")

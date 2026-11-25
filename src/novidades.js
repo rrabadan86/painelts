@@ -46,6 +46,7 @@ const NOVIDADES = [
   { id: '2026-11-25-tela-nao-sobe', data: '2026-11-25', titulo: 'A tela não volta mais para o topo', texto: 'Abrir ou fechar uma linha (▸/▾), como as categorias do Resultado, não faz mais a página subir: ela fica onde você estava.', para: 'todos' },
   { id: '2026-11-25-pct-onde-vale', data: '2026-11-25', titulo: 'Simples, maquininha e royalties: o % daqui para frente', texto: 'No Resultado, ao lançar o valor do Simples, da maquininha, dos royalties, do marketing ou de uma despesa em %, o painel pergunta se vale só no mês ou se o % muda daqui para frente ou em todos os meses. Comissões também aceitam o valor real do mês.', para: ['admin', 'franqueado', 'gerente'], tela: 'dre' },
   { id: '2026-11-25-projecao-compara', data: '2026-11-25', titulo: 'Projeção comparada', texto: 'Na Projeção do faturamento do Resumo, o painel mostra quanto ela fica acima ou abaixo do mês anterior inteiro e do mesmo mês do ano passado.', para: ['admin', 'franqueado', 'gerente'], tela: 'resumo' },
+  { id: '2026-11-25-extrato-estoque', data: '2026-11-25', titulo: 'Extrato de estoque do AppNext', texto: 'Em Configurações → loja → Dados e atualização, o quadro Extrato de estoque pede ao robô para ler o extrato do AppNext (só olhando) desde jun/2025. É o primeiro passo para o painel reconstruir o estoque dos meses passados.', para: ['admin', 'franqueado'], tela: 'config' },
 ];
 /** pessoa sem registro (de antes desta janela): só o que entrou nos últimos dias, para não abrir com a lista inteira */
 const DIAS_SEM_REGISTRO = 14;

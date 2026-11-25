@@ -483,6 +483,26 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     } catch (e) { res.status(502).json({ erro: C.msgErro(e) }); }
   });
 
+  // Extrato de estoque do AppNext (EXTRATO-01): o robô só lê; admin e o franqueado da loja pedem e veem o diagnóstico (sem dado pessoal)
+  r.post('/lojas/:id/extrato', soGestor, lojaPermitida, json, async (req, res) => {
+    if (!COL.ativo()) return res.status(400).json({ erro: 'O coletor não está ligado nesta VPS.' });
+    if (!lerEnv(req.loja.id)) return res.status(400).json({ erro: 'Cadastre primeiro o acesso ao AppNext desta loja.' });
+    const desde = String((req.body && req.body.desde) || '2025-06-01');
+    if (!/^20\d\d-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(desde) || desde > C.hojeBR()) return res.status(400).json({ erro: 'Data inválida.' });
+    try {
+      const x = await COL.extrato(req.loja.id, req.user, desde);
+      if (x.status !== 200) return res.status(x.status).json({ erro: x.json.erro || 'Falha no coletor.' });
+      aud(req, 'pediu a leitura do extrato de estoque', req.loja.id, { loja: req.loja.id, desde });
+      res.json({ ok: true });
+    } catch (e) { res.status(502).json({ erro: C.msgErro(e) }); }
+  });
+  r.get('/lojas/:id/extrato', soGestor, lojaPermitida, (req, res) => {
+    const pasta = path.join(C.pastaLoja(req.loja.id), 'estoque');
+    let diag = null, movimentos = null;
+    try { diag = JSON.parse(fs.readFileSync(path.join(pasta, 'extrato-diag.json'), 'utf8')); } catch { /* ainda não lido */ }
+    try { movimentos = (JSON.parse(fs.readFileSync(path.join(pasta, 'extrato.json'), 'utf8')).itens || []).length; } catch { /* sem lista */ }
+    res.json({ diag, movimentos });
+  });
   r.post('/lojas/:id/cancelar', soGestor, lojaPermitida, async (req, res) => {
     try {
       const x = await COL.cancelar(req.loja.id, req.user);
