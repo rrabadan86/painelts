@@ -45,6 +45,7 @@ const NOVIDADES = [
   { id: '2026-11-25-cmv-estoque', data: '2026-11-25', titulo: 'CMV pelo estoque', texto: 'O painel passa a guardar o estoque na virada de cada mês. Nos meses fechados com essa foto, o CMV do Resultado sai pela conta do contador (estoque inicial + compras − devoluções − estoque final), com a linha Perdas e acertos mostrando o que sumiu além do vendido.', para: ['admin', 'franqueado', 'gerente'], tela: 'dre' },
   { id: '2026-11-25-tela-nao-sobe', data: '2026-11-25', titulo: 'A tela não volta mais para o topo', texto: 'Abrir ou fechar uma linha (▸/▾), como as categorias do Resultado, não faz mais a página subir: ela fica onde você estava.', para: 'todos' },
   { id: '2026-11-25-pct-onde-vale', data: '2026-11-25', titulo: 'Simples, maquininha e royalties: o % daqui para frente', texto: 'No Resultado, ao lançar o valor do Simples, da maquininha, dos royalties, do marketing ou de uma despesa em %, o painel pergunta se vale só no mês ou se o % muda daqui para frente ou em todos os meses. Comissões também aceitam o valor real do mês.', para: ['admin', 'franqueado', 'gerente'], tela: 'dre' },
+  { id: '2026-11-25-projecao-compara', data: '2026-11-25', titulo: 'Projeção comparada', texto: 'Na Projeção do faturamento do Resumo, o painel mostra quanto ela fica acima ou abaixo do mês anterior inteiro e do mesmo mês do ano passado.', para: ['admin', 'franqueado', 'gerente'], tela: 'resumo' },
 ];
 /** pessoa sem registro (de antes desta janela): só o que entrou nos últimos dias, para não abrir com a lista inteira */
 const DIAS_SEM_REGISTRO = 14;

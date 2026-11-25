@@ -120,6 +120,25 @@
    * A mesma projeção do TS.kpiProjecao, como coluna do cartão-herói (TS.heroi): o número projetado, a linha da meta
    * (ou dos dias) e a conta aberta no ⓘ. → coluna ou null (sem projeção).
    */
+  /** faturamento (ou vendas da meta) de um mês INTEIRO, com a mesma escolha de lojas da projeção e sem os outros filtros (PROJ-CMP-01) */
+  TS.fatMesInteiro = function (ym, opts = {}) {
+    const db = TS.db;
+    if (!db || !db.n) return null;
+    const ini = dia(ym + '-01'), fim = ini + diasNoMes(ym) - 1;
+    if (ini < db.minDay || fim > db.maxDay) return null; // mês sem todos os dias na base
+    const base = opts.base === 'meta' ? 'meta' : 'loja';
+    const chave = `${ym}|${base}|${opts.todas ? '*' : [...state.f.lojas].sort().join(',')}|${state.loja || ''}`;
+    const cache = db._fatMes || (db._fatMes = new Map());
+    if (cache.has(chave)) return cache.get(chave);
+    const I = R().ids;
+    let t = 0;
+    for (const i of TS.filtrar({ de: ini, ate: fim, ignorar: ['vendedores', 'grupos', 'cats', 'produto', ...(opts.todas ? ['lojas'] : [])], mesLivre: true })) {
+      if (base === 'loja') t += TS.contaFat(i) ? db.vt[i] || 0 : 0;
+      else { const g = db.grupoC[i]; t += !I.eg.has(db.cat[i]) && (I.arom.has(g) || I.puro.has(g) || I.acess.has(g)) ? db.vt[i] || 0 : 0; }
+    }
+    cache.set(chave, t);
+    return t;
+  };
   TS.heroiProjecao = function (valor, meta, ym, rotulo = 'Projeção do mês', opts = {}) {
     const p = TS.projecao(valor, meta, ym, opts);
     if (!p || p.proj == null) return null;
@@ -128,7 +147,18 @@
         p.falta > 0 && p.restantes ? ` · faltam ${fmt.brl0(p.porDia)}/dia nos ${p.restantes} dias de loja aberta` : p.falta === 0 ? ' · meta já batida' : '')
       : `${p.d} de ${p.n} dias completos · faltam ${p.restantes} de loja aberta`;
     const filtro = p.parte != null && p.parte < 0.999 ? `\n\nA tela está com filtro (vendedor, grupo ou produto): o valor mostrado é ${fmt.pct(p.parte, 0)} do total e a projeção segue essa mesma proporção.` : '';
-    return { rot: rotulo, num: fmt.brl0(p.proj), linhas: [linha], dica: TS.comoProjecao(p.P) + filtro, estado: meta ? (p.pctProj >= 1 ? 'bom' : 'ruim') : null };
+    // comparação da projeção com o mês anterior inteiro e com o mesmo mês do ano passado inteiro (pedido do dono, 25/11/2026; PROJ-CMP-01).
+    // A projeção do total da loja (sem os filtros de vendedor/grupo/produto) contra o total daqueles meses: o % vale também com filtro.
+    let cmp = null, dicaCmp = '';
+    if (opts.comparar && p.P && p.P.proj > 0) {
+      const mais = (n) => { const d = new Date(Date.UTC(+ym.slice(0, 4), +ym.slice(5, 7) - 1 + n, 1)); return d.toISOString().slice(0, 7); };
+      const ref = [[mais(-1), 'mês anterior'], [mais(-12), 'ano passado']].map(([y, nome]) => ({ y, nome, t: TS.fatMesInteiro(y, opts) })).filter((r) => r.t > 0);
+      if (ref.length) {
+        cmp = h('span', { class: 'proj-cmp' }, ...ref.flatMap((r, i) => { const v = p.P.proj / r.t - 1; return [i ? ' · ' : '', h('span', { class: v >= 0 ? 'up' : 'down' }, `${v >= 0 ? '+' : ''}${fmt.pct(v, 0)}`), ` vs ${TS.ymLabel(r.y)}`]; }));
+        dicaCmp = '\n\nComparação: a projeção do mês contra ' + ref.map((r) => `${TS.ymLabel(r.y)} inteiro (${r.nome}: ${fmt.brl0(r.t)})`).join(' e ') + '.';
+      }
+    }
+    return { rot: rotulo, num: fmt.brl0(p.proj), linhas: [linha, cmp].filter(Boolean), dica: TS.comoProjecao(p.P) + filtro + dicaCmp, estado: meta ? (p.pctProj >= 1 ? 'bom' : 'ruim') : null };
   };
 
   // ======================= AVISO DE DADOS ATRASADOS =======================
