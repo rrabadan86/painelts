@@ -95,7 +95,7 @@ test('FIXO-ESC-01: novo valor de um custo fixo — só o mês, deste mês em dia
   await mesAMes().locator('tr.dre-grupo', { hasText: 'Sistemas' }).locator('td').first().click();
   const yms = await mesAMes().locator('td.dre-edit[data-fixo="Sistemas"]').evaluateAll((tds) => [...new Set(tds.map((t) => t.dataset.ym))].sort());
   expect(yms.length).toBeGreaterThanOrEqual(3);
-  const [antes, meio, depois] = [yms[0], yms[1], yms[yms.length - 1]];
+  const [antes, meio, depois] = [yms[0], yms[1], yms[2]]; // as primeiras colunas: as últimas podem pedir rolagem no servidor de testes (CLIQUE-VISTA-01)
   const sis = (ym) => conta(page, ym).then((c) => c.sistemas);
   const mudar = async (ym, valor, opcao) => {
     await mesAMes().locator(`td.dre-edit[data-fixo="Sistemas"][data-ym="${ym}"]`).first().click();
