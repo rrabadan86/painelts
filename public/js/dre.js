@@ -141,7 +141,7 @@
     const ant = (n) => { const d = new Date(Date.UTC(+hoje.slice(0, 4), +hoje.slice(5, 7) - 1 - n, 1)); return d.toISOString().slice(0, 7); };
     if (ym !== ant(1) && ym !== ant(2)) return null;
     const ini = 52000 + (ym === ant(1) ? 900 : 0), compras = Math.round(cmv * 1.04), sumiu = (perdas || 0) + 160;
-    return { ini: { dia: `${ym}-01`, valor: ini, aprox: false }, fim: { dia: `${ym === ant(1) ? ant(0) : ant(1)}-01`, valor: Math.round((ini + compras - cmv - sumiu) * 100) / 100, aprox: false }, compras, devolucoes: 0, demo: true };
+    return { ini: { dia: `${ym}-01`, valor: ini, aprox: false }, fim: { dia: `${ym === ant(1) ? ant(0) : ant(1)}-01`, valor: Math.round((ini + compras - cmv - sumiu) * 100) / 100, aprox: false }, compras, comprasFranquia: compras - 380, comprasOutros: 380, fornecedores: [{ nome: 'Embalagens Exemplo', valor: 380 }], devolucoes: 0, demo: true };
   }
   /**
    * Os degraus da DRE como na contabilidade (decisão do dono, 25/11/2026; DRE-ESTR-01), iguais no Resultado e na Rentabilidade:
@@ -156,9 +156,11 @@
     r.deducoes = (r.desc || 0) + r.imp;
     r.recLiq = r.fat - r.imp;
     r.difal = r.lanc && r.lanc.difal ? r.lanc.difal.valor : 0;
-    // CMV pelo estoque quando o mês tem as duas fotos (CMV-EST-01): estoque inicial + compras − devoluções − estoque final;
+    // CMV pelo estoque quando o mês tem as duas fotos (CMV-EST-01): estoque inicial + compras − estoque final;
     // sem elas, o custo das vendas + as perdas conhecidas. A diferença para o custo das vendas = perdas e acertos.
-    r.cmvEst = r.est ? r.est.ini.valor + r.est.compras - r.est.devolucoes - r.est.fim.valor : null;
+    // As devoluções à franquia NÃO são descontadas (CMV-DEV-01, decisão do dono de 25/11/2026): o crédito delas já volta
+    // uma vez nos royalties ou no desconto da nota de compra; descontar aqui contava a mesma devolução duas vezes.
+    r.cmvEst = r.est ? r.est.ini.valor + r.est.compras - r.est.fim.valor : null;
     r.acertos = r.cmvEst != null && r.cmv != null ? r.cmvEst - r.cmv : r.perdas || 0;
     r.cmvTot = r.cmv == null ? null : r.cmv + r.acertos + r.difal;
     r.lucroBruto = r.cmvTot == null ? null : r.recLiq - r.cmvTot;
@@ -268,17 +270,20 @@
     ['Descontos concedidos', (m) => m.desc, 'filho', 'Descontos dados no caixa (a diferença entre o preço cheio e o que o cliente pagou)'],
     ['Simples Nacional', (m) => m.imp, 'calc', (m) => dicaCalc(m, 'simples', '% do Simples (Configurações → Lojas → Estoque e margem) sobre as vendas. No Simples, o IRPJ e a CSLL já estão no DAS'), null, null, 'simples'],
     ['= Receita líquida', (m) => m.recLiq, 'base', 'Receita bruta − descontos − Simples. Sem a taxa de serviço e a entrega e sem itens a R$ 0,01 (resgates e brindes): o faturamento do Resumo menos o Simples'],
-    ['− CMV (custo das mercadorias vendidas)', (m) => m.cmvTot, 'menos', (m) => (m.cmvEst != null ? 'Pela conta do estoque: estoque inicial + compras − devoluções à franquia − estoque final (+ DIFAL). As linhas de baixo mostram a conta e a diferença para o custo do que saiu vendido.' : 'Custo dos produtos vendidos + perdas conhecidas (+ DIFAL). Sem a foto do estoque deste mês (o painel guarda a foto na virada de cada mês).')],
+    ['− CMV (custo das mercadorias vendidas)', (m) => m.cmvTot, 'menos', (m) => (m.cmvEst != null ? 'Pela conta do estoque: estoque inicial + compras − estoque final (+ DIFAL). As linhas de baixo mostram a conta e a diferença para o custo do que saiu vendido.' : 'Custo dos produtos vendidos + perdas conhecidas (+ DIFAL). Sem a foto do estoque deste mês (o painel guarda a foto na virada de cada mês).')],
     ['Custo dos produtos vendidos', (m) => m.cmv, 'filho', 'Custo dos produtos vendidos (chá pelo kg + saco e etiquetas). Mês passado: o custo que cada produto tinha na data da venda (notas de compra e histórico de custos do painel; antes do primeiro custo conhecido vale o mais antigo, estimado). Mês em andamento: o custo de hoje do AppNext. Vendas sem custo no estoque entram pelo mesmo % das outras (estimado)'],
     ['Perdas e acertos de estoque', (m) => m.acertos, 'filho', (m) => (m.cmvEst != null
-      ? `Pela conta do estoque: (estoque inicial + compras − devoluções − estoque final) − custo das vendas = ${fmt.brl(m.acertos)}. Inclui as perdas que o painel conhece (${fmt.brl(m.perdas || 0)}: vencidos e faltas do inventário) e o que sumiu sem explicação (${fmt.brl(m.acertos - (m.perdas || 0))}: erro de lançamento, nota com entrada errada, custo errado no AppNext, furto). Se crescer, é sinal para olhar.`
+      ? `Pela conta do estoque: (estoque inicial + compras − estoque final) − custo das vendas = ${fmt.brl(m.acertos)}. Inclui as perdas que o painel conhece (${fmt.brl(m.perdas || 0)}: vencidos e faltas do inventário)${m.est && m.est.devolucoes ? `, as devoluções à franquia emitidas pelo painel (${fmt.brl(m.est.devolucoes)}: a mercadoria saiu do estoque; o crédito volta uma vez só, nos royalties ou no desconto da nota de compra)` : ''} e o que sumiu sem explicação (${fmt.brl(m.acertos - (m.perdas || 0) - ((m.est && m.est.devolucoes) || 0))}: erro de lançamento, nota com entrada errada, custo errado no AppNext, furto). Se crescer, é sinal para olhar.`
       : `Sem a foto do estoque deste mês: só as perdas que o painel conhece. ` + 'O que a loja pagou e não vai vender, a custo: (1) lote VENCIDO que ainda está no estoque (chá a granel, envasados e alimentação), no mês em que a validade venceu (saldo do lote × custo do kg ou da unidade, os lotes da tela Validade); (2) faltas do INVENTÁRIO: contagens aplicadas no AppNext no mês, pelo saldo dos ajustes (contado − sistema) × custo — sobra compensa falta, e só o saldo negativo do mês entra. Na projeção ficam as perdas de agora (não crescem com as vendas). "—" = o painel não conseguiu ler as perdas')],
     ['DIFAL não recuperável', (m) => m.difal, 'calc', 'DIFAL das compras de outro estado (pago em guia, não vem na nota): clique no valor de um mês para lançar', null, null, 'difal'],
     ...(temEst ? [
-      ['Pela conta do estoque: estoque inicial', (m) => (m.est ? m.est.ini.valor : null), 'estq', (m) => (m.est ? `Estoque a custo em ${fmt.date(m.est.ini.dia)}${m.est.ini.aprox ? ' (a foto mais próxima da virada do mês)' : ''}` : 'Sem a foto do estoque deste mês')],
-      ['(+) Compras do mês', (m) => (m.est ? m.est.compras : null), 'estq', 'Notas de compra concluídas no AppNext com entrada no mês, a custo'],
-      ['(−) Devoluções à franquia', (m) => (m.est ? m.est.devolucoes : null), 'estq', 'NF-e de devolução emitidas no mês (valor da nota)'],
-      ['(−) Estoque final', (m) => (m.est ? m.est.fim.valor : null), 'estq', (m) => (m.est ? `Estoque a custo em ${fmt.date(m.est.fim.dia)}${m.est.fim.aprox ? ' (a foto mais próxima da virada do mês)' : ''}` : 'Sem a foto do estoque deste mês')],
+      ['Pela conta do estoque: estoque inicial', (m) => (m.est ? m.est.ini.valor : null), 'estq', (m) => (m.est ? `Estoque a custo em ${fmt.date(m.est.ini.dia)}${m.est.ini.aprox ? ' (a foto mais próxima da virada do mês)' : ''}${m.est.ini.rec ? ' · reconstruído pelo Extrato de estoque do AppNext (movimentos desde então, custo de cada data)' : ''}` : 'Sem a foto do estoque deste mês')],
+      ['(+) Compras do mês', (m) => (m.est ? m.est.compras : null), 'estq', 'Notas de compra concluídas no AppNext com entrada no mês, a custo, de todos os fornecedores'],
+      ['Da franquia (TSB)', (m) => (m.est && m.est.comprasFranquia != null ? m.est.comprasFranquia : null), 'estqf', 'Notas de compra da TSB Franquias com entrada no mês, a custo'],
+      ['Outros fornecedores', (m) => (m.est && m.est.comprasOutros != null ? m.est.comprasOutros : null), 'estqf', (m) => (m.est && m.est.fornecedores && m.est.fornecedores.length
+        ? 'Notas de compra de outros fornecedores com entrada no mês, a custo: ' + m.est.fornecedores.map((x) => `${x.nome} (${fmt.brl(x.valor)})`).join(', ')
+        : 'Notas de compra de outros fornecedores (fora a TSB Franquias) com entrada no mês, a custo. Neste mês: nenhuma.')],
+      ['(−) Estoque final', (m) => (m.est ? m.est.fim.valor : null), 'estq', (m) => (m.est ? `Estoque a custo em ${fmt.date(m.est.fim.dia)}${m.est.fim.aprox ? ' (a foto mais próxima da virada do mês)' : ''}${m.est.fim.rec ? ' · reconstruído pelo Extrato de estoque do AppNext (movimentos desde então, custo de cada data)' : ''}` : 'Sem a foto do estoque deste mês')],
     ] : []),
     ['= Lucro bruto', (m) => m.lucroBruto, 'sub', 'Receita líquida − CMV. A mesma conta da Rentabilidade (aqui as vendas sem custo cadastrado entram pelo mesmo % de custo das outras)'],
     // despesas variáveis, agrupadas pela categoria (aprovado pelo dono, 25/11/2026; DESP-CAT-01)
@@ -452,7 +457,7 @@
     const abrirCalc = (k, ym) => janelaCalc(M, meses, k, ym);
     const nColMes = tb.querySelector('thead tr') ? tb.querySelector('thead tr').children.length : 3;
     for (const [rot, f, tipo, dica, gid, fx, cc] of linhas) {
-      const pcL = (a, b) => (tipo === 'estq' ? '' : pc(a, b)); // estoque inicial/final: % da receita não faz sentido
+      const pcL = (a, b) => (tipo === 'estq' || tipo === 'estqf' ? '' : pc(a, b)); // estoque inicial/final: % da receita não faz sentido
       if (tipo === 'secao') { body.append(h('tr', { class: 'dre-secao', title: dica }, h('td', { class: 'l', colspan: nColMes }, rot))); continue; }
       const v = f(m), vp = P ? f(P) : null, va = a ? f(a) : null, vb = f(base);
       if (cc) { // linha calculada que aceita o valor real do mês (Simples, maquininha, royalties, marketing)

@@ -1646,7 +1646,7 @@ app.get('/api/estoque', (req, res) => {
   // fixosMes: o valor real de cada custo fixo por mês, lançado no Resultado (src/fixosmes.js; a conta é TS.contas.fixoDoMes)
   // CMV pelo estoque: estoque inicial e final (fotos da virada), compras e devoluções de cada mês (src/cmvestoque.js, CMV-EST-01)
   let cmvEstoque = {};
-  try { cmvEstoque = require('./src/cmvestoque').resumo(loja.id, { notas: (ES.notas(loja.id) || { notas: [] }).notas, saidas: NFS.lista(loja.id).notas }); } catch (e) { console.error('[cmv estoque]', e.message); }
+  try { cmvEstoque = require('./src/cmvestoque').resumo(loja.id, (() => { const ns = ES.notas(loja.id) || { notas: [] }; return { notas: ns.notas, notasDesde: ns.desde || null, saidas: NFS.lista(loja.id).notas }; })()); } catch (e) { console.error('[cmv estoque]', e.message); }
   res.json({ estoque: est, cfg: { ...ES.cfg(lc), fixosMes: FXM.ler(loja.id).despesas, cmvEstoque }, classe: ES.classeCfg(lc), tabela: TAB.resumo(loja.id), historico: ES.historico(loja.id), compras: ES.compras(loja.id), foraDeLinha, espera });
 });
 // notas de entrada (compras) do AppNext, inteiras: lista e detalhe na tela Preços
@@ -2967,6 +2967,8 @@ async function avaliarEspera(loja) {
     try { raw = (await dadosLoja(loja)).raw; } catch { /* sem vendas: confere só a chegada */ }
     const fx = FIx.eventos(loja.id);
     try { require('./src/sugestoes').avaliarNotas(loja.id, ES.notas(loja.id)); } catch (e) { console.error('[sugestões] notas:', e.message); }
+    // CMV pelo estoque: fotos do dia 1 de cada mês reconstruídas pelo Extrato de estoque, uma vez por leitura do extrato (CMV-REC-01)
+    try { require('./src/cmvestoque').aplicarExtrato(loja.id); } catch (e) { console.error('[cmv estoque] extrato:', C.msgErro(e)); }
     // chá a granel: guarda a data dos pacotes que o painel vê abertos pela primeira vez e avisa os que entraram nos últimos 30 dias do prazo
     try {
       for (const p of LOT.observarAberturas(loja.id)) PUSH.avisarDepois({ tipo: 'validade', loja: loja.id, chave: `aberto:${loja.id}:${p.chave}#${p.n}`.slice(0, 400), titulo: `Chá aberto perto do prazo · ${loja.nome}`,

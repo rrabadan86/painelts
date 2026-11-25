@@ -506,7 +506,9 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
       movimentos = (x.itens || []).length;
       leitura = { desde: x.desde, ate: x.ate || null, completo: x.completo !== false, blocos: (x.blocos || []).length, incompletos: (x.blocos || []).filter((b) => b.total != null && b.lidos !== b.total).length };
     } catch { /* sem lista */ }
-    res.json({ diag, movimentos, leitura });
+    let rec = null;
+    rec = require('./cmvestoque').lerReconstrucao(req.loja.id); // só lê: quem reconstrói é a rotina de 15 min (avaliarEspera)
+    res.json({ diag, movimentos, leitura, reconstrucao: movimentos == null ? null : rec ? { meses: rec.meses.length, de: rec.meses[0] || null, ate: rec.meses[rec.meses.length - 1] || null, motivo: rec.motivo } : { meses: 0, motivo: 'em até 15 minutos depois da leitura' } });
   });
   r.post('/lojas/:id/cancelar', soGestor, lojaPermitida, async (req, res) => {
     try {
