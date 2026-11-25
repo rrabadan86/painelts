@@ -142,3 +142,57 @@ test('DRE-MES-08: apresentação só confere e responde, sem gravar nada', async
   assert.strictEqual(j.fixosMes, undefined, 'nada gravado: a tela troca na memória');
   assert.ok(!fs.existsSync(path.join(tmp, 'demo-centro', 'fixos-mes.json')));
 });
+
+// ---------- FIXO-ESC-01: onde o novo valor vale (pedido do dono, 25/11/2026) ----------
+test('FIXO-ESC-01: aplicarFixo — só o mês, deste mês em diante (os meses antes ficam com o padrão da época) e todos os meses', () => {
+  const D = { nome: 'Sist', valor: 285 };
+  const L = { Sist: { '2026-03': { valor: 290 }, '2025-10': { valor: 280 } } };
+  const meses = ['2025-10', '2025-12', '2026-01', '2026-03', '2026-06'];
+  // só o mês
+  let r = CT.aplicarFixo(D, L, '2026-01', 300, 'mes', meses);
+  assert.deepStrictEqual(r.mudam, ['2026-01']);
+  assert.strictEqual(r.padrao, 285);
+  assert.strictEqual(L.Sist['2026-01'], undefined, 'não altera o objeto recebido');
+  // deste mês em diante
+  r = CT.aplicarFixo(D, L, '2026-01', 300, 'diante', meses);
+  assert.strictEqual(r.padrao, 300);
+  assert.deepStrictEqual(r.mudam, ['2026-01', '2026-03', '2026-06']);
+  const D2 = { ...D, valor: r.padrao };
+  assert.strictEqual(CT.fixoDoMes(D2, '2025-12', r.lancados).valor, 285, 'mês antes: o padrão que valia');
+  assert.strictEqual(CT.fixoDoMes(D2, '2025-10', r.lancados).valor, 280, 'lançado antes do mês continua');
+  assert.strictEqual(CT.fixoDoMes(D2, '2026-03', r.lancados).valor, 300, 'lançado do mês em diante dá lugar ao novo');
+  // e de novo, mais para trás: o padrão de antes continua guardado
+  const r2 = CT.aplicarFixo(D2, r.lancados, '2025-12', 310, 'diante', meses);
+  const D3 = { ...D, valor: r2.padrao };
+  assert.deepStrictEqual(meses.map((m) => CT.fixoDoMes(D3, m, r2.lancados).valor), [280, 310, 310, 310, 310]);
+  // todos os meses
+  r = CT.aplicarFixo(D3, r2.lancados, '2026-06', 250, 'todos', meses);
+  assert.strictEqual(r.padrao, 250);
+  assert.deepStrictEqual(r.lancados, {});
+  assert.throws(() => CT.aplicarFixo(D, L, '2026-01', 1, 'outro'));
+});
+
+test('FIXO-ESC-01: rota — "deste mês em diante" e "todos os meses" mudam o padrão da loja, guardam o antigo e vão para a auditoria', async () => {
+  let r = await lancar('ger_dre', { loja: 'l1', nome: 'Aluguel', ym: '2026-06', valor: 5500, escopo: 'diante' });
+  assert.strictEqual(r.status, 200, await r.clone().text());
+  const j = await r.json();
+  assert.strictEqual(j.padrao, 5500);
+  const est = await (await fetch(BASE + '/api/estoque?loja=l1', { headers: { Cookie: cookies.dono } })).json();
+  const alu = est.cfg.outros.find((x) => x.nome === 'Aluguel');
+  assert.strictEqual(alu.valor, 5500, 'o padrão de Configurações mudou');
+  assert.strictEqual(CT.fixoDoMes(alu, '2026-05', est.cfg.fixosMes).valor, 5000, 'maio continua com o padrão antigo');
+  assert.strictEqual(CT.fixoDoMes(alu, '2026-06', est.cfg.fixosMes).valor, 5500);
+  assert.ok(est.cfg.fixosMes.Aluguel['@ate'][0].por, 'quem mudou fica guardado');
+  r = await lancar('dono', { loja: 'l1', nome: 'Aluguel', ym: '2026-06', valor: 5200, escopo: 'todos' });
+  assert.strictEqual(r.status, 200);
+  const est2 = await (await fetch(BASE + '/api/estoque?loja=l1', { headers: { Cookie: cookies.dono } })).json();
+  assert.strictEqual(est2.cfg.outros.find((x) => x.nome === 'Aluguel').valor, 5200);
+  assert.strictEqual(est2.cfg.fixosMes.Aluguel, undefined);
+  // recusas: escopo inválido, linha calculada só no mês, vendedora sem permissão
+  assert.strictEqual((await lancar('dono', { loja: 'l1', nome: 'Aluguel', ym: '2026-06', valor: 1, escopo: 'xyz' })).status, 400);
+  assert.strictEqual((await lancar('dono', { loja: 'l1', nome: '@simples', ym: '2026-06', valor: 1, escopo: 'todos' })).status, 400);
+  assert.strictEqual((await lancar('vend', { loja: 'l1', nome: 'Aluguel', ym: '2026-06', valor: 1, escopo: 'todos' })).status, 403);
+  const aud = fs.readFileSync(path.join(tmp, 'auditoria.jsonl'), 'utf8');
+  assert.match(aud, /mudou o valor de um custo fixo \(deste mês em diante/);
+  assert.match(aud, /mudou o valor de um custo fixo \(todos os meses/);
+});

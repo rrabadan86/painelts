@@ -10,6 +10,7 @@
 const fs = require('fs');
 const path = require('path');
 const C = require('./config');
+const CT = require('../public/js/contas');
 
 const YM = /^20\d\d-(0[1-9]|1[0-2])$/;
 /** linhas CALCULADAS do Resultado que também aceitam o valor real do mês (pedido do dono, 23/11/2026: "eu não consigo editar
@@ -64,4 +65,32 @@ function lancar(id, b, fixos, por, hoje = C.diaSP()) {
   return { ok: d, valor };
 }
 
-module.exports = { ler, validar, lancar, YM, CALC };
+/**
+ * Novo valor de um custo fixo com a escolha de onde vale (FIXO-ESC-01, pedido do dono de 25/11/2026):
+ * b.escopo 'mes' = só aquele mês (o lançar de sempre); 'diante' = daquele mês em diante; 'todos' = todos os meses.
+ * 'diante' e 'todos' mudam o padrão de Configurações: devolve { padrao } para o servidor gravar na loja.
+ * A conta é uma só (TS.contas.aplicarFixo, public/js/contas.js). → { ok: { despesas }, valor, padrao? } | { erro }
+ */
+function aplicar(id, b, fixos, por, hoje = C.diaSP()) {
+  const escopo = (b && b.escopo) || 'mes';
+  if (escopo === 'mes' || b.padrao) return lancar(id, b, fixos, por, hoje);
+  if (escopo !== 'diante' && escopo !== 'todos') return { erro: 'Escolha onde o novo valor vale.' };
+  const v = validar(b, fixos, hoje);
+  if (v.erro) return v;
+  const { nome, ym, valor } = v.ok;
+  if (CALC[nome]) return { erro: 'Esta linha é calculada: o valor real vale só para o mês.' };
+  const despesa = fixos.find((x) => x && x.tipo === 'mes' && x.nome === nome);
+  const d = ler(id);
+  const r = CT.aplicarFixo(despesa, d.despesas, ym, valor, escopo);
+  const quem = { por: String(por || '').slice(0, 60), em: new Date().toISOString() };
+  const meses = r.lancados[nome];
+  if (meses && Array.isArray(meses['@ate'])) {
+    if (meses['@ate'].length > 120) return { erro: 'Há mudanças de padrão demais neste custo.' };
+    meses['@ate'] = meses['@ate'].map((e) => ({ ...quem, ...e }));
+  }
+  fs.mkdirSync(C.pastaLoja(id), { recursive: true });
+  C.gravarAtomico(arq(id), JSON.stringify({ despesas: r.lancados }), 0o640);
+  return { ok: { despesas: r.lancados }, valor, padrao: r.padrao };
+}
+
+module.exports = { ler, validar, lancar, aplicar, YM, CALC };

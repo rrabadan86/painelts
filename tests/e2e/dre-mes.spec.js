@@ -42,6 +42,12 @@ test('DRE-MES-09: lançar o valor real de um custo fixo num mês marca ✎, muda
   await expect(page.locator('.ts-perg-erro')).toContainText('Não foi salvo');
   await page.locator('.ts-perg-erro').getByRole('button', { name: 'Corrigir', exact: true }).click();
   await jan.locator('.dre-fixo-campo').fill('777,50');
+  // FIXO-ESC-01: nada vem marcado — sem escolher onde vale, não grava
+  await jan.getByRole('button', { name: 'Salvar', exact: true }).click();
+  await expect(page.locator('.ts-perg-erro')).toContainText('Escolha onde o novo valor vale');
+  await page.locator('.ts-perg-erro').getByRole('button', { name: 'Corrigir', exact: true }).click();
+  await jan.locator('.dre-esc-op').first().click();
+  await expect(jan.locator('tr.dre-hist-sel')).toHaveClass(/dre-hist-muda/);
   await jan.getByRole('button', { name: 'Salvar', exact: true }).click();
   await expect(jan).toHaveCount(0);
 
@@ -76,5 +82,67 @@ test('DRE-MES-09: lançar o valor real de um custo fixo num mês marca ✎, muda
   const volta = await conta(page, ym);
   expect(volta.sistemas).toBe(650);
   expect(volta.fixoTot).toBe(antes.fixoTot);
+  expect(erros).toEqual([]);
+});
+
+// FIXO-ESC-01 (pedido do dono, 25/11/2026): ao mudar um custo fixo, a pessoa escolhe onde o valor vale —
+// só o mês, daquele mês em diante (os meses antes não mudam) ou todos os meses
+test('FIXO-ESC-01: novo valor de um custo fixo — só o mês, deste mês em diante ou todos os meses', async ({ page }) => {
+  const erros = [];
+  page.on('pageerror', (e) => erros.push(e.message));
+  await abrir(page);
+  const mesAMes = () => page.locator('.card', { has: page.locator('.card-title, h2, h3', { hasText: /^Mês a mês/ }) }).last();
+  await mesAMes().locator('tr.dre-grupo', { hasText: 'Sistemas' }).locator('td').first().click();
+  const yms = await mesAMes().locator('td.dre-edit[data-fixo="Sistemas"]').evaluateAll((tds) => [...new Set(tds.map((t) => t.dataset.ym))].sort());
+  expect(yms.length).toBeGreaterThanOrEqual(3);
+  const [antes, meio, depois] = [yms[0], yms[1], yms[yms.length - 1]];
+  const sis = (ym) => conta(page, ym).then((c) => c.sistemas);
+  const mudar = async (ym, valor, opcao) => {
+    await mesAMes().locator(`td.dre-edit[data-fixo="Sistemas"][data-ym="${ym}"]`).first().click();
+    const jan = page.locator('.dre-fixo-jan');
+    await jan.locator('.dre-fixo-campo').fill(valor);
+    await jan.locator('.dre-esc-op', { hasText: opcao }).click();
+    await expect(jan.locator('.dre-esc-previa')).toContainText(/Mudam|Nenhum/);
+    await jan.getByRole('button', { name: 'Salvar', exact: true }).click();
+    await expect(jan).toHaveCount(0);
+  };
+  // deste mês em diante: o mês e os seguintes mudam; o anterior continua com o padrão que valia
+  await mudar(meio, '700', /em diante/);
+  expect(await sis(antes)).toBe(650);
+  expect(await sis(meio)).toBe(700);
+  expect(await sis(depois)).toBe(700);
+  expect(await page.evaluate(async () => (await TS.custosLoja()).ded.OUTROS.find((x) => x.nome === 'Sistemas').valor)).toBe(700);
+  // a janela do mês anterior mostra "padrão da época"
+  await mesAMes().locator(`td.dre-edit[data-fixo="Sistemas"][data-ym="${antes}"]`).first().click();
+  await expect(page.locator('.dre-fixo-jan .dre-hist')).toContainText('padrão da época');
+  await page.locator('.dre-fixo-jan').getByRole('button', { name: 'Cancelar', exact: true }).click();
+  // todos os meses: inclusive o anterior
+  await mudar(depois, '720', 'Todos os meses');
+  for (const ym of [antes, meio, depois]) expect(await sis(ym)).toBe(720);
+  expect(erros).toEqual([]);
+});
+
+// RES-PARTES-01 (pedido do dono, 25/11/2026): a receita da Loja abre em Chás a granel, Envasados, Acessórios e Outros
+test('RES-PARTES-01: a linha Loja abre em chás a granel, envasados, acessórios e outros, que somam a loja', async ({ page }) => {
+  const erros = [];
+  page.on('pageerror', (e) => erros.push(e.message));
+  await abrir(page);
+  const t = page.locator('.dre-t').first();
+  await expect(t.locator('tr.dre-lojaparte')).toHaveCount(0);
+  await t.locator('tr.dre-parte', { hasText: 'Loja' }).first().click();
+  const partes = page.locator('.dre-t').first().locator('tr.dre-lojaparte');
+  await expect(partes).toHaveCount(4);
+  await expect(partes.nth(0)).toContainText('Chás a granel');
+  await expect(partes.nth(3)).toContainText('Outros');
+  // a conta: as quatro partes somam a loja (faturamento − Espaço Gourmet) em todos os meses, e chá a granel tem venda
+  const r = await page.evaluate(async () => {
+    const M = await TS.custosLoja();
+    return TS.dreCalcular(M).map((m) => ({ loja: m.fat - m.eg, soma: Object.values(m.partes).reduce((a, v) => a + v, 0), granel: m.partes.granel }));
+  });
+  for (const m of r) expect(Math.abs(m.loja - m.soma)).toBeLessThan(0.01);
+  expect(r.some((m) => m.granel > 0)).toBe(true);
+  // no Mês a mês também abre (o mesmo estado)
+  const mm = page.locator('.card', { has: page.locator('.card-title, h2, h3', { hasText: /^Mês a mês/ }) }).last();
+  await expect(mm.locator('tr.dre-lojaparte')).toHaveCount(4);
   expect(erros).toEqual([]);
 });

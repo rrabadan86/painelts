@@ -267,7 +267,12 @@
 
   TS.estoqueBuscar = buscar;
   /** valor real dos custos fixos por mês, depois de lançar no Resultado: troca na memória (config nova = contas refeitas) */
-  TS.estoqueFixosMes = (loja, fixosMes) => { const c = cache.get(loja); if (c) c.cfg = { ...c.cfg, fixosMes: fixosMes || {} }; };
+  TS.estoqueFixosMes = (loja, fixosMes, mudaPadrao) => {
+    const c = cache.get(loja); if (!c) return;
+    c.cfg = { ...c.cfg, fixosMes: fixosMes || {} };
+    // "deste mês em diante" e "todos os meses" mudam o padrão de Configurações (FIXO-ESC-01)
+    if (mudaPadrao) c.cfg.outros = (c.cfg.outros || []).map((x) => (x.tipo === 'mes' && x.nome === mudaPadrao.nome ? { ...x, valor: mudaPadrao.valor } : x));
+  };
   TS.motorEstoque = motor; // Início com todas as lojas (visaodono.js): o mesmo motor, com o estoque de cada loja
 
   /** Classe oficial de cada produto (Estrela, Volume, Joia, Peso morto), fixa e separada do filtro de período.
