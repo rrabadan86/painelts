@@ -4,7 +4,21 @@
 (function () {
   const { h, fmt, state } = TS;
 
-  const novo = () => ({ fat: 0, fatCusto: 0, custo: 0, imp: 0, maq: 0, roy: 0, com: 0, varPct: 0, gorjeta: 0, gorjImp: 0, gorjRoy: 0, royEg: 0, royS: 0, mkt: 0, desc: 0, dias: new Set(), eg: 0 });
+  const novo = () => ({ fat: 0, fatCusto: 0, custo: 0, imp: 0, maq: 0, roy: 0, com: 0, varPct: 0, gorjeta: 0, gorjImp: 0, gorjRoy: 0, royEg: 0, royS: 0, mkt: 0, desc: 0, dias: new Set(), eg: 0, partes: { granel: 0, envasado: 0, acess: 0, outros: 0 }, outrosGr: new Map(), pctPor: [] });
+  // parte da loja de cada grupo da base (guardada por grupo; refeita quando os dados mudam)
+  let partesCache = { db: null, porGrupo: [] };
+  function parteDoGrupo(db, gi) {
+    if (partesCache.db !== db) partesCache = { db, porGrupo: [] };
+    if (gi == null) return 'outros';
+    let k = partesCache.porGrupo[gi];
+    if (k === undefined) k = partesCache.porGrupo[gi] = TS.contas.parteLoja(db.D && db.D.grupo ? db.D.grupo[gi] : '');
+    return k;
+  }
+  /** dica da linha Outros: os grupos que caíram nela no mês */
+  const dicaOutros = (m) => {
+    const l = [...(m.outrosGr || new Map())].sort((a, b) => b[1] - a[1]);
+    return 'Vendas da loja que não são chá a granel, envasado nem acessório (pelo grupo do AppNext com que o produto saiu na venda).' + (l.length ? '\n\nNeste mês:\n' + l.map(([g, v]) => `· ${g}: ${fmt.brl(v)}`).join('\n') : '');
+  };
   /** soma uma linha de venda nas contas do Resultado (a mesma regra para o mês e para um intervalo de dias) */
   function somarLinha(m, i, M) {
     const db = TS.db, I = TS.rules.ids, D = M.ded;
@@ -19,11 +33,17 @@
     m.fat += vt; m.dias.add(db.day[i]);
     const ehEg = I.eg.has(db.cat[i]);
     if (ehEg) m.eg += vt;
+    else { // a receita da loja aberta em partes pelo grupo da venda (RES-PARTES-01, TS.contas.parteLoja)
+      const gi = db.grupo ? db.grupo[i] : null, k = parteDoGrupo(db, gi);
+      m.partes[k] += vt;
+      if (k === 'outros') { const g = (db.D && db.D.grupo && db.D.grupo[gi]) || 'sem grupo'; m.outrosGr.set(g, (m.outrosGr.get(g) || 0) + vt); }
+    }
     m.desc += TS.descontos([i]);
     const dd = D.deducoes(i);
     if (ehEg) m.royEg += dd.roy;
     m.imp += dd.imp; m.maq += dd.maq; m.roy += dd.roy; m.com += dd.com; m.royS += dd.royS || 0; m.mkt += dd.mkt || 0;
     m.varPct += dd.outros.reduce((a, v, k) => a + (D.OUTROS[k].tipo === 'pct' ? v : 0), 0);
+    dd.outros.forEach((v, k) => { if (D.OUTROS[k].tipo === 'pct') m.pctPor[k] = (m.pctPor[k] || 0) + v; }); // cada custo em %, na categoria dele (DESP-CAT-01)
     const c = M.custo(i);
     if (c != null) { m.fatCusto += vt; m.custo += c; }
   }
@@ -112,7 +132,7 @@
     const x = (v) => (v == null ? null : v * k);
     const comP = D && D.comProjetada ? D.comProjetada(m.ym, k) : null;
     const p = { ...m, parcial: false, projecao: true, fat: m.fat * k, fatCusto: m.fatCusto * k, custo: m.custo * k, imp: m.lanc && m.lanc.simples ? m.imp : m.imp * k, maq: m.lanc && m.lanc.maquininha ? m.maq : m.maq * k, impCalc: (m.impCalc ?? m.imp) * k, maqCalc: (m.maqCalc ?? m.maq) * k, royCalc: (m.royCalc ?? m.roy) * k, royS: (m.royS || 0) * k, mkt: (m.mkt || 0) * k, com: comP != null ? comP : m.com * k, varPct: m.varPct * k, projMes: PM, fator: k,
-      gorjeta: m.gorjeta * k, gorjImp: m.gorjImp * k, gorjRoy: m.gorjRoy * k, desc: m.desc * k, eg: m.eg * k, cmv: x(m.cmv) };
+      gorjeta: m.gorjeta * k, gorjImp: m.gorjImp * k, gorjRoy: m.gorjRoy * k, desc: m.desc * k, eg: m.eg * k, cmv: x(m.cmv), partes: Object.fromEntries(Object.entries(m.partes || {}).map(([q, v]) => [q, v * k])), pctPor: (m.pctPor || []).map((v) => (v == null ? v : v * k)) };
     // o lançado vale como está (não cresce com as vendas); o calculado acompanha a projeção
     p.royPago = m.lanc && m.lanc.royalties ? m.royPago : p.royS - (m.royDesc || 0);
     p.mktPago = m.lanc && m.lanc.marketing ? m.mktPago : p.mkt;
@@ -157,29 +177,63 @@
     return `${base}\n\nCalculado sobre as vendas: ${b(m.royCalc)}${m.royDesc ? `\nDescontos da franquia neste mês: −${b(m.royDesc)}\n` + m.royItens.map((x) => `  · ${x.texto}: ${b(x.valor)}`).join('\n') : ''}`
       + `${m.lanc && m.lanc.royalties ? `\nRoyalties: valor real lançado ${b(m.royPago)}` : ''}${m.lanc && m.lanc.marketing ? `\nMarketing: valor real lançado ${b(m.mktPago)}` : ''}\nPago: ${b(m.roy)}`;
   }
+  /** ⓘ das categorias: o total do mês somando as despesas que acompanham as vendas e as fixas da mesma categoria (DESP-CAT-01) */
+  function totalCat(vgrupos, id, m) {
+    const vg = vgrupos.find((g) => g.id === id);
+    const fixo = (m.fixosMes || []).filter((x) => x.cat === id).reduce((a, x) => a + x.valor, 0);
+    if (!vg || !fixo) return '';
+    const v = vg.soma(m) || 0;
+    return `\n\nTotal de ${vg.nome} no mês: ${fmt.brl(v + fixo)} (${fmt.brl(v)} que acompanham as vendas + ${fmt.brl(fixo)} fixas).`;
+  }
+  /** grupos das despesas que acompanham as vendas: [{ id, nome, itens: [{ nome, f, dica, cc }], soma, dica }] */
+  function gruposVar(M, cats) {
+    const D = M.ded, CT = TS.contas;
+    const CV = D.CATVAR || CT.catVarDe(null, cats);
+    const todas = [...CT.catsEscolha(cats), CT.CAT_FRANQUIA];
+    const nomeDe = (id) => (todas.find((c) => c.id === id) || { nome: 'Outros' }).nome;
+    const itens = [
+      { nome: 'Simples Nacional', cat: CV.simples, f: (m) => m.imp, cc: 'simples', dica: (m) => dicaCalc(m, 'simples', '% do Simples (Configurações → Lojas → Estoque e margem) sobre as vendas') },
+      { nome: 'Maquininha', cat: CV.cartao, f: (m) => m.maq, cc: 'maquininha', dica: (m) => dicaCalc(m, 'maquininha', 'Taxa média da maquininha sobre as vendas') },
+      { nome: 'Royalties', cat: 'franquia', f: (m) => m.royPago, cc: 'royalties', dica: (m) => dicaCalc(m, 'royalties', 'Royalties pelas regras da loja (loja; Espaço Gourmet: EG) sobre o faturamento sem a taxa de serviço, menos os descontos da franquia do mês (devoluções compensadas nos royalties e prêmios de fidelidade)') },
+      { nome: 'Marketing', cat: 'franquia', f: (m) => m.mktPago, cc: 'marketing', dica: (m) => dicaCalc(m, 'marketing', 'Fundo de marketing pelas regras da loja (loja; Espaço Gourmet: marketing EG) sobre o faturamento sem a taxa de serviço') },
+      { nome: 'Comissões e premiações', cat: CV.comissao, f: (m) => m.com, dica: 'O que a loja pagou no mês (comissões, premiação e bônus), como no Comissionamento. Na projeção do mês em andamento: a comissão que cada pessoa receberia com a venda projetada dela contra a meta (na faixa em que fecharia), não a comissão de agora multiplicada' },
+      ...D.OUTROS.map((x, k) => (x.tipo !== 'pct' ? null : { nome: x.nome, cat: D.catDe ? D.catDe(x) : 'outros', f: (m) => (m.pctPor && m.pctPor[k]) || 0, dica: `Custo cadastrado como ${fmt.n1(+x.valor || 0)}% das vendas (${D.ONDE_FAT ? D.ONDE_FAT[x.aplica] || 'loja + Espaço Gourmet' : ''})` })),
+    ].filter(Boolean);
+    const ordem = ['impostos', 'taxas', 'franquia', ...cats.map((c) => c.id)];
+    const ids = [...new Set([...ordem, ...itens.map((x) => x.cat)])].filter((id) => itens.some((x) => x.cat === id));
+    return ids.map((id) => {
+      const l = itens.filter((x) => x.cat === id);
+      const g = { id, nome: nomeDe(id), itens: l, soma: (m) => l.reduce((a, x) => a + (x.f(m) || 0), 0) };
+      g.dica = (m) => (id === 'franquia' ? dicaRoy(m) : `${l.map((x) => x.nome).join(', ')}: despesas que acompanham as vendas.`) + totalCat([g], id, m);
+      return g;
+    });
+  }
   // linhas da DRE: [rótulo, chave/função, tipo] tipo: 'sub' (subtotal), 'tot' (resultado), 'menos', 'info'
   /** grupos: [{ id, nome, itens:[índice em fixosMes] }] — cada categoria vira uma linha com o subtotal, que abre os custos */
-  const LINHAS = (grupos, abertos) => [
+  const LINHAS = (grupos, abertos, vgrupos = []) => [
     // receita separada em Loja e Espaço Gourmet, com a taxa de serviço (os 10%) identificada (pedido do dono, 23/11/2026; RES-TAXA-01)
     ['Faturamento total', (m) => m.fat + m.gorjeta, 'bruto', (m) => dicaTotal(m)],
-    ['Loja', (m) => m.fat - m.eg, 'parte', 'Vendas da loja, sem o Espaço Gourmet (com os descontos, sem entrega e sem itens a R$ 0,01)'],
+    ['Loja', (m) => m.fat - m.eg, 'parte', 'Vendas da loja, sem o Espaço Gourmet (com os descontos, sem entrega e sem itens a R$ 0,01). Clique para abrir em chás a granel, envasados, acessórios e outros.', 'loja'],
+    // a loja aberta pelo grupo da venda (pedido do dono, 25/11/2026; RES-PARTES-01)
+    ...(abertos.has('loja') ? TS.contas.PARTES_LOJA.map(([k, nome]) => [nome, (m) => (m.partes ? m.partes[k] : null), 'lojaparte', k === 'outros' ? dicaOutros
+      : k === 'granel' ? 'Chás a granel: as vendas dos grupos de chá do AppNext (os mesmos do "Chá vendido"), como saíram no caixa' : k === 'envasado' ? 'Chás envasados (pacote fechado, lata, minitin, sachê, Tea Moments): o grupo de envasados do AppNext' : 'Acessórios: o grupo ACESSÓRIOS do AppNext']) : []),
     ['Espaço Gourmet', (m) => m.eg, 'parte', 'Consumo do Espaço Gourmet, sem a taxa de serviço'],
     ['Taxa de serviço (10%)', (m) => m.gorjeta, 'taxa', 'Taxa de serviço (os 10% do Espaço Gourmet) que o cliente pagou. Fica identificada aqui (em destaque), mas FORA da base: não entra no faturamento da loja: é repassada à equipe. Passe o mouse em "Faturamento total" para ver quanto seriam o Simples e os royalties se ela entrasse na base'],
     ['− Repassada à equipe', (m) => m.gorjeta, 'repasse', 'A taxa de serviço sai do faturamento: vai para a equipe. Por isso o Simples e os royalties do painel são calculados sem ela (confirme com o contador como a loja registra)'],
     ['= Faturamento', (m) => m.fat, 'base', 'Faturamento da loja: tudo o que foi vendido, com Espaço Gourmet e vendas sem vendedor, já com os descontos; sem taxa de serviço e entrega e sem itens a R$ 0,01 (resgates e brindes). É o mesmo número do Resumo e do Início'],
     ['− Custo dos produtos', (m) => m.cmv, 'menos', 'Custo dos produtos vendidos (chá pelo kg + saco e etiquetas). Mês passado: o custo que cada produto tinha na data da venda (notas de compra e histórico de custos do painel; antes do primeiro custo conhecido vale o mais antigo, estimado). Mês em andamento: o custo de hoje do AppNext. Vendas sem custo no estoque entram pelo mesmo % das outras (estimado)'],
     ['= Lucro bruto', (m) => m.lucroBruto, 'sub', 'Faturamento − custo dos produtos vendidos. A mesma conta da Rentabilidade (aqui as vendas sem custo cadastrado entram pelo mesmo % de custo das outras).'],
-    ['− Simples Nacional', (m) => m.imp, 'menos', (m) => dicaCalc(m, 'simples', '% do Simples (Configurações → Lojas → Estoque e margem) sobre as vendas'), null, null, 'simples'],
-    ['− Maquininha', (m) => m.maq, 'menos', (m) => dicaCalc(m, 'maquininha', 'Taxa média da maquininha sobre as vendas'), null, null, 'maquininha'],
-    ['− Royalties + marketing', (m) => m.roy, 'menos', (m) => dicaRoy(m)],
-    ['royalties', (m) => m.royPago, 'calc', (m) => dicaCalc(m, 'royalties', 'Royalties pelas regras da loja (loja; Espaço Gourmet: EG) sobre o faturamento sem a taxa de serviço, menos os descontos da franquia do mês (devoluções compensadas nos royalties e prêmios de fidelidade)'), null, null, 'royalties'],
-    ['marketing', (m) => m.mktPago, 'calc', (m) => dicaCalc(m, 'marketing', 'Fundo de marketing pelas regras da loja (loja; Espaço Gourmet: marketing EG) sobre o faturamento sem a taxa de serviço'), null, null, 'marketing'],
-    ['− Comissões e premiações', (m) => m.com, 'menos', 'O que a loja pagou no mês (comissões, premiação e bônus), como no Comissionamento. Na projeção do mês em andamento: a comissão que cada pessoa receberia com a venda projetada dela contra a meta (na faixa em que fecharia), não a comissão de agora multiplicada'],
-    ['− Outros custos em %', (m) => m.varPct, 'menos', 'Custos da loja cadastrados como % das vendas'],
+    // despesas que acompanham as vendas, agrupadas pela categoria (aprovado pelo dono, 25/11/2026; DESP-CAT-01)
+    ['Despesas que acompanham as vendas', () => null, 'secao', 'Sobem e descem com as vendas (vendeu mais, paga mais): Simples, maquininha, royalties e marketing, comissões e os custos em % das vendas. Cada uma aparece na categoria escolhida em Configurações → Lojas → Estoque e margem.'],
+    ...vgrupos.flatMap((g) => (g.itens.length === 1
+      ? [[`−\u00a0${g.nome}: ${g.itens[0].nome}`, g.itens[0].f, 'menos', g.itens[0].dica, null, null, g.itens[0].cc]]
+      : [[`−\u00a0${g.nome}${g.id === 'franquia' ? ' (royalties + marketing)' : ''}`, g.soma, 'vgrupo', g.dica, 'v:' + g.id],
+        ...(abertos.has('v:' + g.id) ? g.itens.map((x) => [x.nome, x.f, x.cc ? 'calc' : 'filho', x.dica, null, null, x.cc]) : [])])),
     ['= Lucro sem fixos', (m) => m.contrib, 'sub', 'Lucro bruto − Simples, maquininha, royalties, comissões e custos em %: o que as vendas deixam para pagar as perdas e os custos fixos. É o "Lucro sem fixos" da Rentabilidade (antes chamado de margem de contribuição).'],
     ['− Perdas (vencidos e inventário)', (m) => m.perdas, 'menos', 'O que a loja pagou e não vai vender, a custo: (1) lote VENCIDO que ainda está no estoque (chá a granel, envasados e alimentação), no mês em que a validade venceu (saldo do lote × custo do kg ou da unidade, os lotes da tela Validade); (2) faltas do INVENTÁRIO: contagens aplicadas no AppNext no mês, pelo saldo dos ajustes (contado − sistema) × custo — sobra compensa falta, e só o saldo negativo do mês entra. Na projeção ficam as perdas de agora (não crescem com as vendas). "—" = o painel não conseguiu ler as perdas'],
+    ['Despesas fixas do mês', () => null, 'secao', 'O mesmo valor todo mês, venda muito ou pouco: salários, aluguel fixo, sistemas… (o valor de Configurações ou o valor real lançado no mês).'],
     ...grupos.flatMap((g) => [
-      [`− ${g.nome}`, (m) => m.fixosMes.filter((x) => x.cat === g.id).reduce((a, x) => a + x.valor, 0), 'grupo', `${g.nomes.length} ${g.nomes.length === 1 ? 'custo' : 'custos'}: ${g.nomes.map((n) => n.nome + (n.pontual ? ' (pontual)' : '')).join(', ')}. Clique para ${abertos.has(g.id) ? 'fechar' : 'abrir'}.`, g.id],
+      [`− ${g.nome}`, (m) => m.fixosMes.filter((x) => x.cat === g.id).reduce((a, x) => a + x.valor, 0), 'grupo', (m) => `${g.nomes.length} ${g.nomes.length === 1 ? 'custo' : 'custos'}: ${g.nomes.map((n) => n.nome + (n.pontual ? ' (pontual)' : '')).join(', ')}. Clique para ${abertos.has(g.id) ? 'fechar' : 'abrir'}.${totalCat(vgrupos, g.id, m)}`, g.id],
       ...(abertos.has(g.id) ? g.nomes.map((n) => [n.pontual ? `${n.nome} · pontual` : n.nome, (m) => { const l = m.fixosMes.filter((x) => x.cat === g.id && x.nome === n.nome && !!x.pontual === n.pontual); return l.length ? l.reduce((a, x) => a + x.valor, 0) : null; }, 'filho',
         n.pontual ? 'Despesa de um mês só: entra cheia no mês dela' : 'Custo fixo: entra pelo valor cheio do mês, também no mês em andamento. Clique no valor de um mês para lançar o valor real daquele mês (✎); clique no nome para ver o histórico mês a mês', null, n.pontual ? null : n.nome]) : []),
     ]),
@@ -261,7 +315,10 @@
       return { id: c.id, nome: c.nome, nomes: [...vistos.values()].sort((a, b) => a.pontual - b.pontual) };
     }).filter((g) => g.nomes.length);
     const abertos = state.dreAbertos || (state.dreAbertos = new Set());
-    const linhas = LINHAS(grupos, abertos);
+    const vgrupos = gruposVar(M, cats);
+    // as categorias das despesas que acompanham as vendas começam abertas (as de baixo, fechadas)
+    if (!state.dreVIni) { state.dreVIni = true; for (const g of vgrupos) abertos.add('v:' + g.id); }
+    const linhas = LINHAS(grupos, abertos, vgrupos);
     const sel = state.dreMes && meses.some((m) => m.ym === state.dreMes) ? state.dreMes : meses[meses.length - 1].ym;
     const m = meses.find((x) => x.ym === sel);
     const ymAnt = `${+sel.slice(0, 4) - 1}${sel.slice(4)}`;
@@ -288,7 +345,7 @@
     // cartões do topo
     const varA = (k) => (aDias && aDias[k] ? h('span', null, TS.deltaSpan(m[k] / aDias[k] - 1), ` vs. ${m.parcial ? `${rotAnt} (dias 1 a ${diaAte})` : rotAnt}`) : null);
     corpo.append(h('div', { class: 'dre-topo' }, h('label', null, 'Mês ', opMes), h('span', { class: 'muted' }, 'Todos os dias do mês, sem os filtros do topo. Custos fixos e % com os valores cadastrados hoje.'),
-      TS.aPagar ? TS.aPagar.botaoExportar(m, LINHAS(grupos, new Set()).filter((l) => !['bruto', 'parte', 'taxa', 'repasse', 'calc'].includes(l[2])).map((l) => (l[2] === 'base' ? ['Faturamento', ...l.slice(1)] : l)), cats) : null),
+      TS.aPagar ? TS.aPagar.botaoExportar(m, LINHAS(grupos, new Set(), vgrupos).filter((l) => !['bruto', 'parte', 'lojaparte', 'taxa', 'repasse', 'calc', 'secao'].includes(l[2])).map((l) => (l[2] === 'base' ? ['Faturamento', ...l.slice(1)] : l)), cats, vgrupos) : null),
       ...avisos.map((t) => h('div', { class: 'notice' }, t)),
       // herói (redesenho de 22/11): o resultado em primeiro, a projeção (mês em andamento) e o faturamento com as margens
       TS.heroi([
@@ -331,7 +388,9 @@
     const alternar = (id) => { if (abertos.has(id)) abertos.delete(id); else abertos.add(id); TS.render(); };
     const abrir = (nome, ym) => janelaFixo(M, meses, nome, ym);
     const abrirCalc = (k, ym) => janelaCalc(M, meses, k, ym);
+    const nColMes = tb.querySelector('thead tr') ? tb.querySelector('thead tr').children.length : 3;
     for (const [rot, f, tipo, dica, gid, fx, cc] of linhas) {
+      if (tipo === 'secao') { body.append(h('tr', { class: 'dre-secao', title: dica }, h('td', { class: 'l', colspan: nColMes }, rot))); continue; }
       const v = f(m), vp = P ? f(P) : null, va = a ? f(a) : null, vb = f(base);
       if (cc) { // linha calculada que aceita o valor real do mês (Simples, maquininha, royalties, marketing)
         const d2 = vb != null && va ? vb / va - 1 : null;
@@ -346,7 +405,7 @@
         continue;
       }
       const d = vb != null && va ? vb / va - 1 : null;
-      const bom = tipo === 'menos' || tipo === 'grupo' || tipo === 'filho' || tipo === 'calc' ? d < 0 : d > 0;
+      const bom = tipo === 'menos' || tipo === 'grupo' || tipo === 'vgrupo' || tipo === 'filho' || tipo === 'calc' ? d < 0 : d > 0;
       const rotL = tipo === 'tot' && P ? '= Resultado' : rot;
       if (MOB) {
         body.append(linhaMob(h('tr', { class: 'dre-' + tipo, title: typeof dica === 'function' ? dica(m) : dica, onclick: gid ? () => alternar(gid) : null }),
@@ -400,7 +459,7 @@
     const t2 = h('table', { class: 't dre-t' + (MOB ? ' dre-mob' : '') });
     t2.append(h('thead', null, h('tr', null, h('th', { class: 'l sticky-col' }, ''), ult12.map((x) => h('th', { class: x.projecao ? 'dre-proj' : null }, TS.ymLabel(x.ym) + (x.projecao ? '*' : ''))))));
     const b2 = h('tbody');
-    for (const [rot, f, tipo, dica, gid, fx, cc] of linhas) b2.append(h('tr', { class: 'dre-' + tipo, title: typeof dica === 'function' ? dica(m) : dica, onclick: gid ? () => alternar(gid) : null }, h('td', { class: 'l sticky-col' }, gid ? h('span', { class: 'dre-seta' }, abertos.has(gid) ? '▾ ' : '▸ ') : null, fx ? nomeFixo(rot, () => abrir(fx, sel)) : rot),
+    for (const [rot, f, tipo, dica, gid, fx, cc] of linhas) if (tipo === 'secao') b2.append(h('tr', { class: 'dre-secao', title: dica }, h('td', { class: 'l sticky-col' }, rot), ult12.map(() => h('td')))); else b2.append(h('tr', { class: 'dre-' + tipo, title: typeof dica === 'function' ? dica(m) : dica, onclick: gid ? () => alternar(gid) : null }, h('td', { class: 'l sticky-col' }, gid ? h('span', { class: 'dre-seta' }, abertos.has(gid) ? '▾ ' : '▸ ') : null, fx ? nomeFixo(rot, () => abrir(fx, sel)) : rot),
       ult12.map((x) => { const v = f(x); return cc ? celCalc(x, cc, v == null ? '—' : fmt.brl0(v), x.projecao ? 'dre-proj' : null, abrirCalc) : fx ? celFixo(x, fx, v == null ? '—' : fmt.brl0(v), x.projecao ? 'dre-proj' : null, abrir) : h('td', { class: tipo === 'tot' && v < 0 ? 'neg' : null }, v == null ? '—' : fmt.brl0(v)); })));
     b2.append(h('tr', { class: 'dre-info' }, h('td', { class: 'l sticky-col' }, 'Resultado em % do faturamento'), ult12.map((x) => h('td', { class: x.resultado < 0 ? 'neg' : null }, pc(x.resultado, x.fat)))));
     t2.append(b2);
@@ -411,7 +470,7 @@
 
   // ---------- valor real de cada custo fixo por mês (pedido do dono, 23/11/2026; DRE-MES) ----------
   const quando = (iso) => { try { return new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }); } catch { return ''; } };
-  const COMO_FIXO = 'O valor de Configurações é o PADRÃO (a estimativa de todo mês). Clique no valor de um mês para lançar o valor REAL daquele mês (a conta de luz que chegou, por exemplo): ele fica guardado só naquele mês, marcado com ✎, e entra no Resultado, na Rentabilidade, no A pagar, no ponto de equilíbrio e na planilha do contador.\n\nMudar o padrão em Configurações muda todos os meses SEM valor lançado — inclusive os que já passaram; os meses com valor lançado ficam como estão. "Voltar ao padrão" apaga o valor lançado daquele mês.\n\nO histórico usa o nome do custo: se renomear o custo em Configurações, os valores lançados com o nome antigo deixam de aparecer.';
+  const COMO_FIXO = 'O valor de Configurações é o PADRÃO (a estimativa de todo mês). Clique no valor de um mês, digite o novo valor e escolha onde ele vale: só naquele mês (o valor REAL, a conta de luz que chegou — fica marcado com ✎), daquele mês em diante (a mensalidade aumentou: os meses antes continuam como estavam) ou em todos os meses (o padrão estava errado). O valor entra no Resultado, na Rentabilidade, no A pagar, no ponto de equilíbrio e na planilha do contador.\n\nMudar o padrão direto em Configurações muda todos os meses SEM valor lançado e sem padrão antigo guardado — inclusive os que já passaram; os meses com valor lançado ficam como estão. "Voltar ao padrão" apaga o valor lançado daquele mês.\n\nO histórico usa o nome do custo: se renomear o custo em Configurações, os valores lançados com o nome antigo deixam de aparecer.';
   /** nome do custo fixo na tabela: abre a janela do mês escolhido, com o histórico */
   function nomeFixo(rot, fn) {
     const b = h('span', { class: 'dre-fixo-nome', role: 'button', tabindex: '0', title: 'Ver o histórico deste custo mês a mês', onclick: (e) => { e.stopPropagation(); fn(); } }, rot);
@@ -486,19 +545,25 @@
     document.body.append(fundo);
     campo.focus();
   }
-  /** grava (ou volta ao padrão, valor null) e troca na memória; na apresentação nada é gravado */
-  async function salvarFixo(M, nome, ym, valor) {
-    const corpo = valor == null ? { loja: state.loja, nome, ym, padrao: true } : { loja: state.loja, nome, ym, valor };
+  /** grava (ou volta ao padrão, valor null) e troca na memória; na apresentação nada é gravado.
+   *  escopo (FIXO-ESC-01): 'mes' só o mês · 'diante' daquele mês em diante · 'todos' todos os meses */
+  async function salvarFixo(M, nome, ym, valor, escopo = 'mes') {
+    const corpo = valor == null ? { loja: state.loja, nome, ym, padrao: true } : { loja: state.loja, nome, ym, valor, escopo };
     const r = await fetch(TS.api('resultado/fixo-mes'), { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-Painel': '1' }, body: JSON.stringify(corpo) });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.erro || 'Não consegui gravar.');
-    let novo = j.fixosMes;
-    if (!novo) { // apresentação: só nesta página
-      novo = JSON.parse(JSON.stringify(M.ded.LANC || {}));
-      if (valor == null) { if (novo[nome]) delete novo[nome][ym]; }
-      else (novo[nome] || (novo[nome] = {}))[ym] = { valor, por: (TS.eu && TS.eu.nome) || '', em: new Date().toISOString() };
+    let novo = j.fixosMes, padrao = j.padrao;
+    if (!novo) { // apresentação: só nesta página, com a mesma conta do servidor
+      const x = (M.ded.OUTROS || []).find((o) => o.tipo === 'mes' && o.nome === nome);
+      if (valor == null) { novo = JSON.parse(JSON.stringify(M.ded.LANC || {})); if (novo[nome]) delete novo[nome][ym]; }
+      else {
+        const a = TS.contas.aplicarFixo(x || { nome, valor: 0 }, M.ded.LANC || {}, ym, valor, escopo);
+        novo = a.lancados;
+        if (escopo === 'mes') novo[nome][ym] = { valor, por: (TS.eu && TS.eu.nome) || '', em: new Date().toISOString() };
+        else padrao = a.padrao;
+      }
     }
-    if (TS.estoqueFixosMes) TS.estoqueFixosMes(state.loja, novo);
+    if (TS.estoqueFixosMes) TS.estoqueFixosMes(state.loja, novo, padrao != null ? { nome, valor: padrao } : null);
   }
   /** "1.234,56", "380", "R$ 412,5" → número; vazio ou inválido → NaN */
   const lerValor = (t) => {
@@ -516,18 +581,44 @@
     const hist = TS.contas.historicoFixo(x, yms, M.ded.LANC);
     const fundo = h('div', { class: 'cp-modal-bg' });
     const sair = () => fundo.remove();
-    const campo = h('input', { class: 'f-input dre-fixo-campo', type: 'text', inputmode: 'decimal', autocomplete: 'off', value: atual.lancado ? String(atual.valor).replace('.', ',') : '', placeholder: fmt.brl(atual.padrao), 'aria-label': `Valor real de ${TS.ymLabel(ym)} (R$)` });
+    const campo = h('input', { class: 'f-input dre-fixo-campo', type: 'text', inputmode: 'decimal', autocomplete: 'off', value: atual.lancado ? String(atual.valor).replace('.', ',') : '', placeholder: fmt.brl(atual.padrao), 'aria-label': `Novo valor de ${nome} (R$)` });
     const botoes = [];
     const ocupado = (sim) => botoes.forEach((b) => { b.disabled = sim; });
-    const fazer = async (valor) => {
+    const fazer = async (valor, escopo) => {
       ocupado(true);
-      try { await salvarFixo(M, nome, ym, valor); sair(); TS.render(); }
+      try { await salvarFixo(M, nome, ym, valor, escopo); sair(); TS.render(); }
       catch (e) { ocupado(false); TS.naoSalvo(e, valor == null ? null : campo); }
     };
+    // onde o novo valor vale (pedido do dono, 25/11/2026; FIXO-ESC-01): a pessoa escolhe sempre, nada vem marcado
+    const mesTxt = TS.ymLabel(ym);
+    const ESC = [
+      ['mes', `Só ${mesTxt}`, 'O valor real deste mês (a conta que chegou). Os outros meses não mudam.'],
+      ['diante', `De ${mesTxt} em diante`, `O padrão passa a ser este valor a partir de ${mesTxt} (ex.: a mensalidade aumentou). Os meses antes continuam como estão.`],
+      ['todos', 'Todos os meses', 'O padrão passa a ser este valor em todos os meses, inclusive os passados (ex.: o valor cadastrado estava errado).'],
+    ];
+    let escopo = null;
+    const radios = ESC.map(([v, rot, dica]) => {
+      const r = h('input', { type: 'radio', name: 'dre-fixo-esc', value: v, onchange: () => { escopo = v; previa(); } });
+      return h('label', { class: 'dre-esc-op' }, r, h('span', null, h('b', null, rot), h('small', { class: 'muted' }, dica)));
+    });
+    const previaEl = h('div', { class: 'dre-esc-previa muted', 'aria-live': 'polite' });
+    const linhasHist = new Map();
+    function previa() {
+      const v = lerValor(campo.value);
+      for (const [m, tr] of linhasHist) { tr.classList.remove('dre-hist-muda'); tr.querySelector('.dre-hist-novo').textContent = ''; }
+      if (!escopo || !(v >= 0)) { previaEl.textContent = escopo ? 'Digite o valor para ver os meses que mudam.' : ''; return; }
+      const a = TS.contas.aplicarFixo(x, M.ded.LANC || {}, ym, Math.round(v * 100) / 100, escopo, [...linhasHist.keys()]);
+      for (const m of a.mudam) { const tr = linhasHist.get(m); tr.classList.add('dre-hist-muda'); tr.querySelector('.dre-hist-novo').textContent = `→ ${fmt.brl(v)}`; }
+      const lanc = escopo === 'mes' ? 0 : hist.itens.filter((it) => it.lancado && (escopo === 'todos' || it.ym >= ym)).length;
+      previaEl.textContent = (a.mudam.length ? `Mudam ${a.mudam.length} ${a.mudam.length === 1 ? 'mês' : 'meses'} do histórico abaixo${escopo === 'mes' ? '' : ' (e os próximos)'}.` : 'Nenhum mês do histórico muda.')
+        + (lanc ? ` ${lanc === 1 ? 'O mês com valor lançado (✎) também passa' : `Os ${lanc} meses com valor lançado (✎) também passam`} a este valor.` : '');
+    }
+    campo.addEventListener('input', previa);
     const salvar = () => {
       const v = lerValor(campo.value);
       if (!(v >= 0) || v > 10000000) { TS.naoSalvo('Digite o valor do mês em reais (zero ou mais), por exemplo 412,50.', campo); return; }
-      fazer(Math.round(v * 100) / 100);
+      if (!escopo) { TS.naoSalvo('Escolha onde o novo valor vale: só este mês, deste mês em diante ou todos os meses.', radios[0].querySelector('input')); return; }
+      fazer(Math.round(v * 100) / 100, escopo);
     };
     campo.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); salvar(); } });
     const bSalvar = h('button', { type: 'button', class: 'btn primary', onclick: salvar }, 'Salvar');
@@ -537,8 +628,8 @@
     const l = atual.lancado;
     const tab = h('table', { class: 't dre-hist' },
       h('thead', null, h('tr', null, h('th', { class: 'l' }, 'Mês'), h('th', null, 'Valor'), h('th', { class: 'l', title: '✎ lançado = o valor real lançado no Resultado; padrão = o valor de Configurações (muda junto quando o padrão muda)' }, 'Origem'))),
-      h('tbody', null, hist.itens.map((it) => h('tr', { class: it.ym === ym ? 'dre-hist-sel' : null, title: it.lancado ? `Lançado${it.lancado.por ? ` por ${it.lancado.por}` : ''}${it.lancado.em ? ` em ${quando(it.lancado.em)}` : ''}` : null },
-        h('td', { class: 'l' }, TS.ymLabel(it.ym)), h('td', null, fmt.brl(it.valor)), h('td', { class: 'l' }, it.lancado ? h('span', { class: 'badge ok' }, '✎ lançado') : h('span', { class: 'muted' }, 'padrão'))))),
+      h('tbody', null, hist.itens.map((it) => { const ep = TS.contas.fixoDoMes(x, it.ym, M.ded.LANC).epoca; const tr = h('tr', { class: it.ym === ym ? 'dre-hist-sel' : null, title: it.lancado ? `Lançado${it.lancado.por ? ` por ${it.lancado.por}` : ''}${it.lancado.em ? ` em ${quando(it.lancado.em)}` : ''}` : ep ? `O padrão que valia até ${TS.ymLabel(ep.ate)} (depois mudou)` : null },
+        h('td', { class: 'l' }, TS.ymLabel(it.ym)), h('td', null, fmt.brl(it.valor), h('small', { class: 'dre-hist-novo' })), h('td', { class: 'l' }, it.lancado ? h('span', { class: 'badge ok' }, '✎ lançado') : h('span', { class: 'muted' }, ep ? 'padrão da época' : 'padrão'))); linhasHist.set(it.ym, tr); return tr; })),
       h('tfoot', null, h('tr', null, h('td', { class: 'l' }, h('b', null, 'Média')), h('td', null, h('b', null, fmt.brl(hist.media))), h('td', { class: 'l muted' }, `${hist.nLancados} de ${hist.itens.length} lançados`))));
     const resumo = `${nome}: ${hist.itens.map((it) => `${TS.ymLabel(it.ym)} ${fmt.brl0(it.valor)}${it.lancado ? ' ✎' : ''}`).join(' · ')} · média ${fmt.brl0(hist.media)}`;
     fundo.addEventListener('click', (e) => { if (e.target === fundo) sair(); });
@@ -546,7 +637,8 @@
     fundo.append(h('div', { class: 'card cp-copiar ts-perg dre-fixo-jan', role: 'dialog', 'aria-modal': 'true', 'aria-label': `${nome} · ${TS.ymLabel(ym)}` },
       h('h3', null, `${nome} · ${TS.ymLabel(ym)} `, TS.dica(COMO_FIXO)),
       h('div', { class: 'muted' }, l ? `Valor real lançado: ${fmt.brl(l.valor)}${l.por ? `, por ${l.por}` : ''}${l.em ? ` em ${quando(l.em)}` : ''}. Padrão de Configurações: ${fmt.brl(atual.padrao)}.` : `Sem valor lançado: o mês usa o padrão de Configurações (${fmt.brl(atual.padrao)}).`),
-      h('label', { class: 'ts-perg-campo' }, h('span', { class: 'f-label' }, `Valor real de ${TS.ymLabel(ym)} (R$)`), campo),
+      h('label', { class: 'ts-perg-campo' }, h('span', { class: 'f-label' }, `Novo valor (R$)`), campo),
+      h('fieldset', { class: 'dre-esc' }, h('legend', { class: 'f-label' }, 'Onde este valor vale? ', TS.dica('Só o mês: o valor real daquele mês (fica marcado ✎). Deste mês em diante: muda o padrão de Configurações a partir do mês e guarda o padrão antigo nos meses de antes. Todos os meses: muda o padrão em todos os meses, inclusive os passados. Os meses que vão mudar ficam marcados no histórico.')), ...radios, previaEl),
       h('div', { class: 'ts-perg-acoes' }, bPadrao, bCancelar, bSalvar),
       h('div', { class: 'dre-hist-tit' }, h('b', null, 'Histórico '), TS.dica(resumo)),
       h('div', { class: 'table-wrap free' }, tab)));

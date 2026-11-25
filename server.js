@@ -2484,11 +2484,13 @@ app.post('/api/resultado/fixo-mes', express.json({ limit: '4kb' }), (req, res) =
   const loja = lojaDre(req, res, b.loja); if (!loja) return;
   try {
     const lc = C.get().lojas.find((l) => l.id === loja.id);
-    const r = FXM.lancar(loja.id, b, ES.cfg(lc).outros, req.user, C.diaSP());
+    // escopo (FIXO-ESC-01): 'mes' só o mês; 'diante' daquele mês em diante; 'todos' todos os meses (os dois últimos mudam o padrão)
+    const r = FXM.aplicar(loja.id, b, ES.cfg(lc).outros, req.user, C.diaSP());
     if (r.erro) return res.status(400).json({ erro: r.erro });
-    C.auditar(req.user, r.valor == null ? 'voltou um custo fixo ao padrão no mês (Resultado)' : 'lançou o valor real de um custo fixo no mês (Resultado)', loja.id,
-      { loja: loja.id, custo: String(b.nome).slice(0, 40), ym: String(b.ym), valor: r.valor == null ? undefined : r.valor });
-    res.json({ ok: true, fixosMes: r.ok.despesas });
+    if (r.padrao != null) C.alterar((cfg) => { const ec = cfg.lojas.find((l) => l.id === loja.id).estoqueCfg; const o = ec && (ec.outros || []).find((x) => x.tipo === 'mes' && x.nome === b.nome); if (o) o.valor = r.padrao; });
+    const acao = r.valor == null ? 'voltou um custo fixo ao padrão no mês (Resultado)' : r.padrao != null ? `mudou o valor de um custo fixo (${b.escopo === 'todos' ? 'todos os meses' : 'deste mês em diante'}, Resultado)` : 'lançou o valor real de um custo fixo no mês (Resultado)';
+    C.auditar(req.user, acao, loja.id, { loja: loja.id, custo: String(b.nome).slice(0, 40), ym: String(b.ym), valor: r.valor == null ? undefined : r.valor });
+    res.json({ ok: true, fixosMes: r.ok.despesas, padrao: r.padrao ?? undefined });
   } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
 });
 // planilha do mês fechado: POST porque fica na auditoria e leva as linhas do Resultado que a tela calculou

@@ -10,6 +10,7 @@
 const fs = require('fs');
 const path = require('path');
 const C = require('./config');
+const CT = require('../public/js/contas'); // categorias das despesas que acompanham as vendas (DESP-CAT-01)
 
 const pasta = (id) => path.join(C.pastaLoja(id), 'estoque');
 const arqAtual = (id) => path.join(pasta(id), 'atual.json');
@@ -279,6 +280,8 @@ function cfg(loja) {
     // outros custos da loja: % das vendas ou R$ por mês (dividido pelas vendas do mês), em tudo, só loja ou só EG
     outros: (Array.isArray(c.outros) ? c.outros : []).map((x) => ({ ...x, cat: x.cat || 'outros' })),
     categorias: Array.isArray(c.categorias) && c.categorias.length ? c.categorias : CATEGORIAS,
+    // categoria de Simples, maquininha e comissões no Resultado (DESP-CAT-01; a conta é TS.contas.catVarDe)
+    catVar: CT.catVarDe(c.catVar, Array.isArray(c.categorias) && c.categorias.length ? c.categorias : CATEGORIAS),
     // despesas de um mês só (ex.: IPVA/IPTU em janeiro); anual = repete no mesmo mês todo ano
     pontuais: Array.isArray(c.pontuais) ? c.pontuais : [],
     margemMin: Number.isFinite(c.margemMin) ? c.margemMin : PADRAO.margemMin,
@@ -325,6 +328,7 @@ function validarCfg(b) {
   }
   if (!out.categorias.some((x) => x.id === 'outros')) out.categorias.push({ id: 'outros', nome: 'Outros' });
   const idsCat = new Set(out.categorias.map((x) => x.id));
+  out.catVar = CT.catVarDe(b.catVar, out.categorias);
   const outros = Array.isArray(b.outros) ? b.outros : [];
   if (outros.length > 40) return { erro: 'No máximo 40 custos.' };
   out.outros = [];

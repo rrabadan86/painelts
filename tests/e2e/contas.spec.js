@@ -281,7 +281,7 @@ test('LUCRO-01: Resultado em três degraus — lucro bruto = venda − custo; lu
   const t = page.locator('main');
   await expect(t).toContainText('= Lucro bruto', { timeout: 30000 });
   const txt = await t.innerText();
-  const ordem = ['− Custo dos produtos', '= Lucro bruto', '− Simples Nacional', '= Lucro sem fixos', '− Perdas', '= Resultado do mês'].map((x) => txt.indexOf(x));
+  const ordem = ['− Custo dos produtos', '= Lucro bruto', 'Simples Nacional', '= Lucro sem fixos', '− Perdas', '= Resultado do mês'].map((x) => txt.indexOf(x));
   expect(ordem.every((v) => v >= 0), 'todas as linhas aparecem').toBe(true);
   expect([...ordem].sort((a, b) => a - b), 'na ordem dos três degraus').toEqual(ordem);
   expect(txt).not.toContain('Margem de contribuição');

@@ -12,7 +12,7 @@
  */
 const ENVASADO_NOME = /\b(LATA|MINITIN|MINI TIN|SACH[EÊ]S?|CAIXA|KIT)(?![A-Z0-9])|\b\d+\s*G\b/i;
 // grupos do AppNext dos chás envasados (TEA MOMENTS e FOREST FRIENDLY TEAS entram como CHÁS ENVASADOS nas vendas) e da alimentação
-const GRUPO_ENVASADO = /ENVASAD|TEA\s*MOMENTS?|FOREST\s*FRIENDLY/i;
+const { GRUPO_ENVASADO } = require('../public/js/contas'); // definição única (também a parte "Envasados" do Resultado)
 const GRUPO_ALIMENTO = /ALIMENTA/i;
 const ehKg = (un) => /^kg$/i.test(String(un || '').trim());
 

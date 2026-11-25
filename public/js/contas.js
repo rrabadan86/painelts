@@ -22,6 +22,37 @@
   const CHA_TOTAL = ['CHÁS PARA MINITINS', 'ROOIBOS PURO', 'ROOIBOS AROMATIZADO', 'CHÁ BRANCO PURO', 'CHÁ BRANCO AROMATIZADO', 'INFUSÕES', 'CHÁ OOLONG PURO', 'CHÁ OOLONG AROMATIZADO',
     'CHÁ PRETO PURO', 'CHÁ PRETO AROMATIZADO', 'CHÁ VERDE PURO', 'CHÁ VERDE AROMATIZADO', 'CHÁ VERMELHO PURO', 'CHÁ VERMELHO AROMATIZADO', 'CHÁ AMARELO PURO', 'CHÁ AMARELO'];
   const CHA_SET = new Set(CHA_TOTAL);
+  // grupos do AppNext dos chás envasados (TEA MOMENTS e FOREST FRIENDLY TEAS entram como CHÁS ENVASADOS nas vendas): definição
+  // única, usada também por src/tipoprod.js (validade e unidade)
+  const GRUPO_ENVASADO = /ENVASAD|TEA\s*MOMENTS?|FOREST\s*FRIENDLY/i;
+  /** parte da receita da LOJA no Resultado (pedido do dono, 25/11/2026; RES-PARTES-01), pelo grupo com que o produto sai na venda:
+   *  'granel' (os grupos de chá do "Chá vendido", CHA_TOTAL) · 'envasado' · 'acess' (ACESSÓRIOS) · 'outros' (o resto) */
+  function parteLoja(grupo) {
+    const g = String(grupo || '').trim();
+    if (GRUPO_ENVASADO.test(g)) return 'envasado';
+    if (CHA_SET.has(g)) return 'granel';
+    if (/^ACESS[OÓ]RIOS?$/i.test(g)) return 'acess';
+    return 'outros';
+  }
+  const PARTES_LOJA = [['granel', 'Chás a granel'], ['envasado', 'Envasados'], ['acess', 'Acessórios'], ['outros', 'Outros']];
+  /** categoria das despesas que acompanham as vendas no Resultado (aprovado pelo dono, 25/11/2026; DESP-CAT-01): Simples, maquininha e
+   *  comissões escolhem uma das categorias da loja ou Impostos / Taxas e tarifas; royalties e marketing ficam sempre em Franquia;
+   *  os custos em % usam a categoria deles. As mesmas categorias agrupam os custos fixos, no bloco de baixo. */
+  const CAT_VAR_PADRAO = { simples: 'impostos', cartao: 'taxas', comissao: 'func' };
+  const CAT_EXTRAS = [{ id: 'impostos', nome: 'Impostos' }, { id: 'taxas', nome: 'Taxas e tarifas' }];
+  const CAT_FRANQUIA = { id: 'franquia', nome: 'Franquia' };
+  /** categorias que Simples, maquininha e comissões podem escolher: as da loja + Impostos e Taxas (quando a loja não tem igual) */
+  const catsEscolha = (cats) => [...(cats || []), ...CAT_EXTRAS.filter((e) => !(cats || []).some((c) => c.id === e.id))];
+  /** catVar da loja completo: o salvo ou o padrão; categoria que deixou de existir volta ao padrão (comissão sem "func": Outros) */
+  function catVarDe(catVar, cats) {
+    const ok = new Set(catsEscolha(cats).map((c) => c.id));
+    const out = {};
+    for (const [k, pad] of Object.entries(CAT_VAR_PADRAO)) {
+      const v = catVar && catVar[k];
+      out[k] = v && ok.has(v) ? v : ok.has(pad) ? pad : k === 'comissao' ? 'outros' : pad;
+    }
+    return out;
+  }
   const TAXAS = ['Taxa de Serviço', 'Taxa Delivery'];
   const nrm = (s) => String(s == null ? '' : s).trim().toLowerCase();
   const TAXAS_N = new Set(TAXAS.map(nrm));
@@ -195,9 +226,57 @@
    * → { valor, padrao, lancado: { valor, por, em } | null }  (DRE-MES-01)
    */
   function fixoDoMes(despesa, ym, lancados) {
-    const padrao = +(despesa && despesa.valor) || 0;
-    const l = lancados && despesa && lancados[despesa.nome] && lancados[despesa.nome][ym];
-    return l && Number.isFinite(+l.valor) && +l.valor >= 0 ? { valor: +l.valor, padrao, lancado: l } : { valor: padrao, padrao, lancado: null };
+    const meses = lancados && despesa && lancados[despesa.nome];
+    // padrão daquele mês: o de Configurações ou, se o padrão mudou "daquele mês em diante", o que valia na época (FIXO-ESC-01)
+    const ep = padraoDaEpoca(meses, ym);
+    const padrao = ep ? ep.valor : +(despesa && despesa.valor) || 0;
+    const l = meses && meses[ym];
+    const e = ep ? { epoca: ep } : {};
+    return l && Number.isFinite(+l.valor) && +l.valor >= 0 ? { valor: +l.valor, padrao, lancado: l, ...e } : { valor: padrao, padrao, lancado: null, ...e };
+  }
+  /** padrões antigos de um custo: [{ ate: 'AAAA-MM', valor }] — o valor que valia até aquele mês (o primeiro com ate ≥ ym) */
+  function padraoDaEpoca(meses, ym) {
+    const lista = meses && Array.isArray(meses[EPOCAS]) ? meses[EPOCAS] : [];
+    let melhor = null;
+    for (const e of lista) if (e && e.ate >= ym && Number.isFinite(+e.valor) && +e.valor >= 0 && (!melhor || e.ate < melhor.ate)) melhor = e;
+    return melhor ? { ate: melhor.ate, valor: +melhor.valor } : null;
+  }
+  const EPOCAS = '@ate';
+  const YM_RE = /^\d{4}-\d{2}$/;
+  const ymMenos1 = (ym) => { const d = new Date(Date.UTC(+ym.slice(0, 4), +ym.slice(5, 7) - 2, 1)); return d.toISOString().slice(0, 7); };
+  /**
+   * Novo valor de um custo fixo, perguntando onde vale (pedido do dono, 25/11/2026; FIXO-ESC-01):
+   *   'mes'    só aquele mês (o valor real lançado; os outros meses não mudam)
+   *   'diante' daquele mês em diante: o padrão passa a ser o novo valor; os meses antes ficam com o padrão que valia
+   *            (guardado em '@ate') e os valores lançados daquele mês em diante dão lugar ao novo
+   *   'todos'  todos os meses: o padrão passa a ser o novo valor, sem padrões antigos nem valores lançados
+   * despesa { nome, valor } (valor = padrão de Configurações hoje); lancados = fixosMes da loja (não é alterado).
+   * → { lancados (cópia nova), padrao (novo valor de Configurações), mudam: ['AAAA-MM'...] entre os meses dados }
+   */
+  function aplicarFixo(despesa, lancados, ym, valor, escopo, mesesVer) {
+    const nome = despesa.nome;
+    const novo = JSON.parse(JSON.stringify(lancados || {}));
+    const antes = (m) => fixoDoMes(despesa, m, lancados).valor;
+    let padrao = +despesa.valor || 0;
+    const meses = novo[nome] || {};
+    if (escopo === 'mes') meses[ym] = { valor };
+    else if (escopo === 'diante') {
+      const ateAntes = ymMenos1(ym);
+      const valeAntes = (padraoDaEpoca(meses, ateAntes) || { valor: padrao }).valor;
+      const epocas = (Array.isArray(meses[EPOCAS]) ? meses[EPOCAS] : []).filter((e) => e && e.ate < ym);
+      if (valeAntes !== valor && !epocas.some((e) => e.ate === ateAntes)) epocas.push({ ate: ateAntes, valor: valeAntes });
+      epocas.sort((a, b) => (a.ate < b.ate ? -1 : 1));
+      for (const k of Object.keys(meses)) if (YM_RE.test(k) && k >= ym) delete meses[k];
+      if (epocas.length) meses[EPOCAS] = epocas; else delete meses[EPOCAS];
+      padrao = valor;
+    } else if (escopo === 'todos') {
+      for (const k of Object.keys(meses)) delete meses[k];
+      padrao = valor;
+    } else throw new Error('Escolha onde o novo valor vale.');
+    if (Object.keys(meses).length) novo[nome] = meses; else delete novo[nome];
+    const depois = { ...despesa, valor: padrao };
+    const mudam = (mesesVer || []).filter((m) => Math.abs(fixoDoMes(depois, m, novo).valor - antes(m)) > 0.004);
+    return { lancados: novo, padrao, mudam };
   }
   /** histórico de um custo fixo nos meses dados: [{ ym, valor, lancado }] e a média (DRE-MES-02) */
   function historicoFixo(despesa, meses, lancados) {
@@ -205,7 +284,7 @@
     return { itens, media: itens.length ? itens.reduce((a, x) => a + x.valor, 0) / itens.length : null, nLancados: itens.filter((x) => x.lancado).length };
   }
 
-  const API = { EG, GRUPOS_META, CHA_TOTAL, TAXAS, PISO_DIAS_META, MIN_ATEND_PREMIACAO, ehTaxa, ehCentavo, contaFat, classeMeta, semItem, resumo, projecaoMes, metasIndividuais, divisoresMeta, pontoEquilibrio, fixoDoMes, historicoFixo, diaDe, isoDe, diasNoMes };
+  const API = { EG, GRUPOS_META, CHA_TOTAL, GRUPO_ENVASADO, parteLoja, PARTES_LOJA, CAT_VAR_PADRAO, CAT_EXTRAS, CAT_FRANQUIA, catsEscolha, catVarDe, TAXAS, PISO_DIAS_META, MIN_ATEND_PREMIACAO, ehTaxa, ehCentavo, contaFat, classeMeta, semItem, resumo, projecaoMes, metasIndividuais, divisoresMeta, pontoEquilibrio, fixoDoMes, historicoFixo, aplicarFixo, padraoDaEpoca, diaDe, isoDe, diasNoMes };
   if (typeof module !== 'undefined' && module.exports) { module.exports = API; return; }
   TS.contas = API;
 })();
