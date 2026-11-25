@@ -319,7 +319,7 @@
       try {
         const nomeCat = new Map((cats || []).map((c) => [c.id, c.nome]));
         const corpo = { loja: state.loja, ym: m.ym,
-          resumo: linhas.map(([rot, f, tipo]) => { const v = f(m); return { rot: tipo === 'grupo' ? rot.replace(/^− /, '− Custos fixos · ') : rot, valor: v == null ? null : Math.round(v * 100) / 100, pct: v == null || !m.fat ? null : Math.round((v / m.fat) * 10000) / 10000, tipo }; }),
+          resumo: linhas.map(([rot, f, tipo]) => { const v = f(m); return { rot: tipo === 'grupo' ? rot.replace(/^− /, '− Despesas fixas · ') : rot, valor: v == null ? null : Math.round(v * 100) / 100, pct: v == null || !m.fat ? null : Math.round((v / m.fat) * 10000) / 10000, tipo }; }),
           // as que acompanham as vendas, com a categoria escolhida (DESP-CAT-01), e os custos fixos
           despesas: [...(vgrupos || []).flatMap((g) => g.itens.map((x) => ({ nome: x.nome, cat: g.nome, tipo: 'vendas', valor: Math.round((x.f(m) || 0) * 100) / 100 }))).filter((x) => x.valor),
             ...m.fixosMes.map((x) => ({ nome: x.nome, cat: nomeCat.get(x.cat) || 'Outros', tipo: x.pontual ? 'pontual' : x.lancado ? 'real' : 'fixa', valor: x.valor }))] };

@@ -262,28 +262,26 @@ test('NUM-03: Comissionamento — vendas da meta iguais à conta oficial; TKM da
   expect(sub.replace(/\s+/g, ' ')).toContain(new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 0 }).format(Math.round(r.vendasMeta)));
 });
 
-test('LUCRO-01: Resultado em três degraus — lucro bruto = venda − custo; lucro sem fixos = bruto − Simples, maquininha, royalties, comissão e %; resultado = sem fixos − perdas − fixos; o lucro bruto bate com a Rentabilidade', async ({ page }) => {
+test('DRE-ESTR-01: Resultado como na contabilidade — receita líquida = faturamento − Simples; lucro bruto = receita líquida − CMV (custo + perdas); margem de contribuição = bruto − variáveis; resultado = margem − fixos ± financeiro; o lucro bruto bate com a Rentabilidade', async ({ page }) => {
   await abrir(page);
   const r = await page.evaluate(async () => {
     const M = await TS.custosLoja();
     const meses = TS.dreCalcular(M, {});
     const m = meses[meses.length - 2] || meses[meses.length - 1]; // último mês fechado
-    return { ym: m.ym, fat: m.fat, cmv: m.cmv, lb: m.lucroBruto, imp: m.imp, maq: m.maq, roy: m.roy, com: m.com, varPct: m.varPct, contrib: m.contrib, perdas: m.perdas || 0, fixo: m.fixoTot, res: m.resultado, cobre: m.cobre, custo: m.custo, fatCusto: m.fatCusto };
+    return { ym: m.ym, fat: m.fat, cmv: m.cmv, lb: m.lucroBruto, imp: m.imp, maq: m.maq, roy: m.roy, com: m.com, varPct: m.varPct, contrib: m.contrib, perdas: m.perdas || 0, fixo: m.fixoTot, fin: m.fin, res: m.resultado, cobre: m.cobre, custo: m.custo, fatCusto: m.fatCusto };
   });
   const perto = (a, b, msg) => expect(Math.abs(a - b), msg).toBeLessThan(0.05);
-  perto(r.lb, r.fat - r.cmv, 'lucro bruto = faturamento − custo dos produtos');
-  perto(r.contrib, r.lb - r.imp - r.maq - r.roy - r.com - r.varPct, 'lucro sem fixos');
-  perto(r.res, r.contrib - r.perdas - r.fixo, 'resultado');
+  perto(r.lb, r.fat - r.imp - r.cmv - r.perdas, 'lucro bruto = receita líquida − CMV (custo dos produtos + perdas)');
+  perto(r.contrib, r.lb - r.maq - r.roy - r.com - r.varPct, 'margem de contribuição');
+  perto(r.res, r.contrib - r.fixo + (r.fin || 0), 'resultado');
   // a parte com custo cadastrado é a mesma conta da Rentabilidade (venda − custo, só das vendas com custo)
-  perto(r.fatCusto - r.custo, r.lb * (r.fatCusto / r.fat) + 0, 'mesma margem bruta nas vendas com custo');
+  perto(r.fatCusto - r.custo, (r.lb + r.imp + r.perdas) * (r.fatCusto / r.fat) + 0, 'mesma margem nas vendas com custo');
   // a tela do Resultado mostra os três degraus com estes nomes, na ordem
   await ir(page, 'dre');
   const t = page.locator('main');
   await expect(t).toContainText('= Lucro bruto', { timeout: 30000 });
   const txt = await t.innerText();
-  const ordem = ['− Custo dos produtos', '= Lucro bruto', 'Simples Nacional', '= Lucro sem fixos', '− Perdas', '= Resultado do mês'].map((x) => txt.indexOf(x));
+  const ordem = ['Receita bruta', 'Simples Nacional', '= Receita líquida', 'CMV', '= Lucro bruto', '= Margem de contribuição', '= Resultado operacional', 'Resultado financeiro', '= Resultado líquido'].map((x) => txt.indexOf(x));
   expect(ordem.every((v) => v >= 0), 'todas as linhas aparecem').toBe(true);
   expect([...ordem].sort((a, b) => a - b), 'na ordem dos três degraus').toEqual(ordem);
-  expect(txt).not.toContain('Margem de contribuição');
-  expect(txt).not.toContain('Receita líquida');
 });

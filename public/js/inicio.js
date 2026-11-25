@@ -262,7 +262,7 @@
     if (r.val) out.push({ rot: r.val.vencidos ? 'Lotes vencidos ou vencendo em 30 dias' : 'Lotes vencendo em 30 dias', num: fmt.int(r.val.criticos + r.val.vencidos), estado: r.val.vencidos ? 'ruim' : r.val.criticos ? 'atencao' : null, href: '#validade', onclick: () => { state.valFaixa = r.val.vencidos ? 'vencido' : 'critica'; },
       dica: `Lotes de chá a granel que vencem em até 30 dias (${fmt.int(r.val.criticos)}) e os já vencidos (${fmt.int(r.val.vencidos)}). Os lotes são os de Estoque → Validade.` });
     if (r.C && r.C.contrib != null && r.C.fat > 0) out.push({ rot: 'Margem da semana', num: fmt.pct(r.C.contrib / r.C.fat, 0), estado: r.C.contrib < 0 ? 'ruim' : null, href: '#dre',
-      dica: `Lucro sem fixos ${dh.periodo}: ${fmt.brl0(r.C.contrib)} de ${fmt.brl0(r.C.fat)} de faturamento — faturamento − Simples, maquininha e royalties − custo dos produtos − comissões − custos em %. As mesmas linhas do Resultado do mês, só nesses dias.` });
+      dica: `Margem de contribuição ${dh.periodo}: ${fmt.brl0(r.C.contrib)} de ${fmt.brl0(r.C.fat)} de faturamento — faturamento − Simples, maquininha e royalties − custo dos produtos − comissões − custos em %. As mesmas linhas do Resultado do mês, só nesses dias.` });
     return out;
   }
 
