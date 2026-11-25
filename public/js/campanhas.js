@@ -37,6 +37,14 @@
       else if (k === 8 + MOT.length) Object.assign(it, { st: 'o', em: ontem, por: 'robô' });
       return it;
     });
+    // uma campanha antiga, com o prazo já fechado e grupo de comparação (o cartão "Retorno das campanhas" tem o que mostrar)
+    const antes = new Date(Date.now() - 45 * 864e5).toISOString();
+    const velhos = TS.cli.lista.filter((c) => c.wpp && c.cupons && c.cupons.length > 1).slice(0, 80);
+    if (velhos.length >= TS.campRetorno.MIN_LISTA) {
+      const l2 = TS.campRetorno.separar(velhos.map((c) => ({ cpf: c.cpf, nome: c.nome, st: 'p' })), 'demo-antiga', { ligado: true, em: antes })
+        .map((x) => (x.st === 'p' ? { ...x, st: 'e', em: antes, por: 'você' } : x));
+      demo.lista.push({ id: 'demo-antiga', nome: 'Exemplo: Novidades de outono', mensagem: '{saudacao}, {nome}! Chegaram os chás de outono na {loja} 🍂', variacoes: [], limiteDia: 0, janela: 30, recorrente: '', comparar: true, ativa: true, robo: false, filtros: {}, criadaEm: antes, por: 'você', rodadas: [{ id: 'demo-r0', em: antes, por: 'você', lista: l2 }] });
+    }
     demo.lista.push({ id: 'demo-exemplo', nome: 'Exemplo: Sentimos sua falta', mensagem: '{saudacao}, {nome}! Faz um tempinho que você não passa na {loja}. Chegaram novidades que têm a sua cara 😊', variacoes: [], limiteDia: 20, janela: 30, recorrente: '', comparar: false, ativa: true, robo: false, filtros: { ausMin: 60 }, criadaEm: ontem, por: 'robô', rodadas: [{ id: 'demo-r1', em: ontem, por: 'robô', lista }] });
   }
   function demoApi(met, url, b) {
@@ -150,6 +158,7 @@
     api('GET', '/api/campanhas?' + qs()).then(async (j) => {
       const lista = j.campanhas || [];
       lista.copias = j.copias || [];
+      cacheCamp.set(state.loja, { em: Date.now(), lista });
       const novas = await rodadasRecorrentes(lista);
       if (!corpo.isConnected) return;
       // faixa do robô do WhatsApp (fica acima da lista e da campanha aberta)
@@ -272,6 +281,43 @@
   const cuponsDe = (cpf) => { const c = TS.cli.porCPF && TS.cli.porCPF.get(cpf); return c ? c.cupons : []; };
   const retorno = (item, janela) => TS.campRetorno.retornoItem(item, cuponsDe(item.cpf), janela, dia());
   const pctVoltou = (g) => (g.taxa == null ? '—' : fmt.pct(g.taxa, 0));
+
+  /** cartão-herói "Retorno das campanhas" (CAMP-TOT-01): todas as campanhas da loja juntas, envios no período dos filtros,
+   *  cada cliente e cada compra contados uma vez. Usado em Campanhas e em Indicadores (mesma conta: TS.campRetorno.geral). */
+  function heroiRetorno(lista, o = {}) {
+    const noPer = A().noPeriodo ? A().noPeriodo() : null;
+    const g = TS.campRetorno.geral(lista, cuponsDe, dia(), noPer);
+    const r = g.rec, perTxt = noPer ? 'com envio no período dos filtros' : 'todas as campanhas';
+    const ir = o.irCampanhas ? h('a', { href: '#campanhas', class: 'link-btn', onclick: (e) => { e.preventDefault(); location.hash = '#campanhas'; } }, 'Ver campanhas ›') : null;
+    if (!r.n) return TS.heroi([{ rot: 'Faturamento do retorno', num: '—', linhas: [`nenhuma mensagem de campanha enviada ${noPer ? 'no período dos filtros' : 'ainda'}`, ir] }], { titulo: 'Retorno das campanhas' });
+    const efeito = g.efeito == null ? (r.fechados ? 'sem grupo de comparação' : null)
+      : { el: `${g.efeito >= 0 ? '+' : '−'}${fmt.n1(Math.abs(g.efeito) * 100)} pontos sobre quem não recebeu${g.poucos ? ' (poucos dados)' : ''}`, cls: g.poucos ? '' : g.efeito >= 0 ? 'pos' : 'neg' };
+    const unica = 'Cada cliente e cada compra contam uma vez: quem recebeu duas campanhas no mesmo prazo e voltou entra uma vez aqui (na lista de campanhas, a compra aparece em cada uma).';
+    const heroi = TS.heroi([
+      { rot: 'Faturamento do retorno', num: fmt.brl0(r.vt),
+        dica: `Soma das compras (cupom com CPF ou ligado pelo FIXE) de quem recebeu a mensagem e voltou do dia seguinte ao envio até o fim do prazo da campanha, inclusive de quem ainda está no prazo.\n\n${unica}\n\nNão é tudo "da campanha": parte compraria de qualquer jeito (veja a taxa de retorno × quem não recebeu).`,
+        linhas: [`${fmt.int(g.campanhas)} ${g.campanhas === 1 ? 'campanha' : 'campanhas'} · ${perTxt}`, r.volt ? `ticket ${fmt.brl0(r.vt / r.volt)} por cliente que voltou` : null, ir] },
+      { rot: 'Voltaram', num: fmt.int(r.volt),
+        dica: `Clientes que receberam pelo menos uma mensagem e compraram dentro do prazo.\n\n${unica}`,
+        linhas: [`de ${fmt.int(r.n)} ${r.n === 1 ? 'cliente que recebeu' : 'clientes que receberam'}`] },
+      { rot: 'Taxa de retorno', num: r.taxa == null ? '—' : fmt.pct(r.taxa, 1), estado: g.efeito != null && !g.poucos ? (g.efeito >= 0 ? 'bom' : 'ruim') : null,
+        dica: `Voltaram ÷ receberam, só com quem já teve o prazo inteiro (o prazo de retorno de cada campanha). Quem ainda está no prazo fica de fora: ainda pode voltar.\n\nComparação: os ${TS.campRetorno.PCT}% das listas que ficam sem mensagem (listas com ${TS.campRetorno.MIN_LISTA} clientes ou mais). A diferença é o efeito das mensagens; com menos de ${TS.campRetorno.MIN_GRUPO} clientes de um lado ainda é sorte.`,
+        linhas: [r.fechados ? `${fmt.int(r.voltFech)} de ${fmt.int(r.fechados)} com o prazo fechado` : `${fmt.int(r.n)} ainda no prazo`, efeito] },
+    ], { titulo: 'Retorno das campanhas' });
+    heroi.classList.add('cp-ret');
+    return heroi;
+  }
+  TS.heroiRetornoCamp = heroiRetorno;
+  /** campanhas da loja para outras telas (Indicadores): guardadas 60 s por loja */
+  const cacheCamp = new Map();
+  TS.campanhasDaLoja = async () => {
+    const k = state.loja, c = cacheCamp.get(k);
+    if (c && Date.now() - c.em < 60e3) return c.lista;
+    const j = await api('GET', '/api/campanhas?' + qs());
+    cacheCamp.set(k, { em: Date.now(), lista: j.campanhas || [] });
+    return j.campanhas || [];
+  };
+  TS.campanhasDaLojaCache = () => { const c = cacheCamp.get(state.loja); return c ? c.lista : null; };
   /** retorno por variação da mensagem: enviadas, voltaram e faturamento de cada uma */
   function cartaoVariacoes(r, camp, textos) {
     const linhas = textos.map((t, k) => {
@@ -434,6 +480,7 @@
     por(corpo,
       novas.length ? h('div', { class: 'notice' }, `Nova lista criada para: ${novas.join(', ')} (campanha recorrente).`) : null,
       copias.length ? h('div', { class: 'cp-recebidas' }, h('div', { class: 'cp-recebidas-tit' }, h('b', null, `Recebidas de outras lojas (${copias.length})`), h('small', { class: 'muted' }, ' · a mensagem e os critérios vêm prontos; a lista é montada com os clientes desta loja')), ...copias) : null,
+      lista.length ? heroiRetorno(lista) : null,
       h('div', { class: 'cp-acoes' }, h('button', { type: 'button', class: 'btn primary', onclick: () => criar(corpo, lista) }, '+ Criar campanha'),
         !resumoDe(lista) ? h('button', { type: 'button', class: 'btn', title: 'A lista da tela Clientes → Hoje, todo dia, enviada pelo robô do WhatsApp (uma mensagem por cliente).', onclick: () => editarResumo(corpo, lista, null) }, '🤖 ' + TS.msgWpp.NOME_RESUMO) : null),
       lista.length ? visaoSeg : null,

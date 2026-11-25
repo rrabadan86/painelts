@@ -77,23 +77,29 @@ test('Fidelidade: retorno do programa (programa × fora, resgatou × não, antes
   await abrir(page, 'clientes');
   const bloco = page.locator('.fidret-bloco');
   await expect(bloco).toBeVisible({ timeout: 30000 });
-  await expect(bloco.locator('.kpi')).toHaveCount(4);
-  await expect(bloco.locator('.kpi').first()).toContainText('Cliente do programa gasta');
+  // CLI-IND-01: os números que decidem estão no herói "Fidelidade" do topo; o bloco do detalhe não os repete
+  const heroi = page.locator('.heroi[aria-label="Fidelidade"]');
+  await expect(heroi.locator('.heroi-col')).toHaveCount(3);
+  await expect(heroi.locator('.heroi-col').first()).toContainText('Cliente do programa gasta');
+  await expect(heroi).toContainText('Quem resgatou voltou');
+  await expect(bloco.locator('.kpi')).toHaveCount(0);
   const card = bloco.locator('.fidret');
   await expect(card.locator('tbody tr')).toHaveCount(2);
   await expect(card).toContainText('No programa de fidelidade');
   // nenhum CPF listado: só grupos
   expect(await bloco.innerText()).not.toMatch(/\d{3}\.\d{3}\.\d{3}-\d{2}|\b\d{11}\b/);
-  await bloco.locator('.kpi', { hasText: 'Quem resgatou voltou' }).click();
+  expect(await heroi.innerText()).not.toMatch(/\d{3}\.\d{3}\.\d{3}-\d{2}|\b\d{11}\b/);
+  await page.locator('.fidret').getByRole('button', { name: /Resgatou × não resgatou/ }).click();
   await expect(page.locator('.fidret')).toContainText('Compraram na janela');
   await expect(page.locator('.fidret tbody tr').first()).toContainText('Resgatou');
   await page.locator('.fidret').getByRole('button', { name: /Antes × depois do 1º resgate/ }).click();
   await expect(page.locator('.fidret tbody tr').first()).toContainText('90 dias antes do 1º resgate');
   // o custo dos prêmios termina de calcular (ou explica por que não tem número)
-  await expect(page.locator('.fidret-bloco .kpi', { hasText: 'Prêmios × venda a mais' }).locator('.kpi-foot')).not.toContainText('calculando');
+  await expect(page.locator('.heroi[aria-label="Fidelidade"] .heroi-col', { hasText: 'Prêmios × venda a mais' })).not.toContainText('calculando');
   await page.locator('.fidret summary').click();
   await expect(page.locator('.fidret .rs-conta')).toContainText('É correlação, não prova.');
   expect(await page.locator('.fidret-bloco').innerText()).not.toMatch(TEXTO_RUIM);
+  expect(await page.locator('.heroi[aria-label="Fidelidade"]').innerText()).not.toMatch(TEXTO_RUIM);
   await semSobra(page, info);
   expect(erros).toEqual([]);
 });

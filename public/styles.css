@@ -1481,11 +1481,6 @@ tr.est-det > td { padding: 0 !important; background: #FBF9F4 !important; }
 @media (max-width: 600px) { .prc-comp th:nth-child(4), .prc-comp td:nth-child(4) { display: none; } .prc-comp td, .prc-comp th { padding: 6px 5px; } .prc-comp td.l { min-width: 110px; } }
 
 /* Clientes: resgate de pontos */
-.rs-topo { display: flex; align-items: center; gap: 16px; margin-bottom: 10px; }
-.rs-num { display: flex; flex-direction: column; align-items: center; min-width: 96px; padding: 10px 12px; border-radius: 12px; background: #EEF3EC; }
-.rs-num b { font-size: 30px; color: var(--green); line-height: 1.1; }
-.rs-num span { font-size: 12px; color: var(--muted); }
-.rs-topo p { margin: 0; }
 .rs-aviso { margin: 4px 0 8px; font-size: 12.5px; }
 .fx-stat small + small { margin-top: 2px; }
 
@@ -4165,3 +4160,16 @@ body.em-homolog .topbar { box-shadow: inset 0 -4px 0 var(--gold); }
   .card .table-wrap .cfg-t tbody tr { padding-left: 12px; padding-right: 12px; }
 }
 .conf-reenv { padding: 4px 10px; font-size: 12.5px; min-height: 0; white-space: nowrap; }
+
+/* Clientes → Indicadores (CLI-IND-01, 25/11/2026): links da coluna dos sumindo, herói das campanhas e a conferência recolhida */
+.cli-saude-links { display: flex; flex-wrap: wrap; gap: 4px 16px; }
+.cli-saude-link { font-weight: 600; }
+.cli-camp-box > .heroi, .cp-ret { margin-bottom: 14px; }
+.heroi + .heroi { margin-top: 14px; }
+.cli-camp-loja { margin: 0 0 14px; }
+.cli-conf { padding: 14px 18px; }
+.cli-conf > summary { cursor: pointer; list-style: revert; line-height: 1.5; }
+.cli-conf[open] > summary { margin-bottom: 12px; }
+.cli-conf[open] .cli-conf-abrir { display: none; }
+.cli-conf > .card { box-shadow: none; border: 0; padding: 0; margin: 12px 0 0; }
+.cli-perfil-kpi { grid-template-columns: repeat(2, minmax(0, 1fr)); }
