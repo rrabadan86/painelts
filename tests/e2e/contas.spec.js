@@ -126,7 +126,7 @@ test('Período "28 dias" e "vs. ano anterior" pelos mesmos dias da semana', asyn
   const fat = page.locator('main .heroi-col', { hasText: 'Faturamento' }).first();
   await expect(fat.locator('.kpi-vars')).toBeVisible({ timeout: 20000 });
   const linhas = await fat.locator('.kpi-vars > span').evaluateAll((xs) => xs.map((x) => [x.textContent, x.title]));
-  expect(linhas.some(([t, d]) => /· 28 dias$/.test(t) && d === 'vs. 28 dias anteriores')).toBe(true);
+  expect(linhas.some(([t, d]) => /· 28 dias$/.test(t) && /^vs\. 28 dias anteriores · comparado com \d{2}\/\d{2}\/\d{4} a \d{2}\/\d{2}\/\d{4}$/.test(d))).toBe(true);
 });
 
 test('Regras da loja: piso de dias da meta e mínimo de atendimentos da premiação aparecem com explicação', async ({ page }, info) => {
@@ -292,4 +292,47 @@ test('DRE-ESTR-01: Resultado como na contabilidade — receita líquida = fatura
   const ordem = ['Receita bruta', 'Simples Nacional', '= Receita líquida', 'CMV', '= Lucro bruto', '= Margem de contribuição', '= Resultado operacional', 'Resultado financeiro', '= Resultado líquido'].map((x) => txt.indexOf(x));
   expect(ordem.every((v) => v >= 0), 'todas as linhas aparecem').toBe(true);
   expect([...ordem].sort((a, b) => a - b), 'na ordem dos três degraus').toEqual(ordem);
+});
+
+// FAT-DESC-01 e CMP-MES-01 (pedido do dono, 25/11/2026): o Faturamento do Resumo mostra a conta preço cheio − descontos;
+// com um mês inteiro no filtro, todos os quadros comparam com o mês anterior inteiro e o mesmo mês do ano anterior inteiro
+test('FAT-DESC-01, CMP-MES-01: Resumo do mês inteiro — conta dos descontos e comparação com os meses inteiros (com as datas)', async ({ page }) => {
+  await abrir(page);
+  const ref = await page.evaluate(() => {
+    TS.aplicarPreset('mesAnt');
+    const f = TS.state.f, pi = TS.periodosIguais(f.de, f.ate);
+    const idx = TS.filtrar().filter((i) => TS.contaFat(i));
+    const vt = idx.reduce((a, i) => a + (TS.db.vt[i] || 0), 0), desc = TS.descontos(idx);
+    const soma = (de, ate) => TS.filtrar({ de, ate }).filter((i) => TS.contaFat(i)).reduce((a, i) => a + (TS.db.vt[i] || 0), 0);
+    const ano = soma(pi.ano.de, pi.ano.ate);
+    return { ym: pi.mesInteiro, de: TS.dayToIso(f.de), ano: { de: TS.dayToIso(pi.ano.de), ate: TS.dayToIso(pi.ano.ate), txt: pi.ano.txt }, mes: { de: TS.dayToIso(pi.mes.de), ate: TS.dayToIso(pi.mes.ate), txt: pi.mes.txt },
+      vt: Math.round(vt), cheio: Math.round(vt + desc), desc: Math.round(desc), varAno: ano ? Math.round((vt / ano - 1) * 1000) / 10 : null };
+  });
+  // o mês inteiro do filtro → mês anterior inteiro e o mesmo mês do ano anterior inteiro
+  expect(ref.ym).toBe(ref.de.slice(0, 7));
+  expect(ref.ano.de).toBe(`${+ref.de.slice(0, 4) - 1}${ref.de.slice(4, 7)}-01`);
+  expect(ref.mes.ate < ref.de && ref.mes.de.slice(8)).toBe('01');
+  expect(ref.ano.txt).toMatch(/^vs\. [a-z]{3}\/\d{2}$/);
+  await ir(page, 'resumo');
+  const fat = page.locator('main .heroi-col', { hasText: 'Faturamento' }).first();
+  await expect(fat.locator('.heroi-num')).toBeVisible({ timeout: 20000 });
+  const conta = fat.locator('.fat-conta');
+  await expect(conta).toBeVisible();
+  const vals = await conta.locator('.fat-conta-l b').allTextContents();
+  expect(Math.abs(num(vals[0]) - ref.cheio)).toBeLessThanOrEqual(1);
+  expect(Math.abs(num(vals[1]) - ref.desc)).toBeLessThanOrEqual(1);
+  expect(Math.abs(num(vals[2]) - ref.vt)).toBeLessThanOrEqual(1);
+  expect(Math.abs(num(await fat.locator('.heroi-num').textContent()) - ref.vt)).toBeLessThanOrEqual(1);
+  // os rótulos e as datas da comparação; o % do ano é o do mês inteiro (a base do Resultado)
+  const linhas = await fat.locator('.kpi-vars > span').evaluateAll((xs) => xs.map((x) => [x.textContent, x.title]));
+  const lAno = linhas.find(([t]) => t.endsWith(ref.ano.txt));
+  expect(lAno).toBeTruthy();
+  expect(lAno[1]).toContain(`${ref.ano.de.slice(8)}/${ref.ano.de.slice(5, 7)}/${ref.ano.de.slice(0, 4)}`);
+  expect(Math.abs(parseFloat(lAno[0].replace(',', '.')) - ref.varAno)).toBeLessThanOrEqual(0.1);
+  expect(linhas.some(([t, d]) => t.endsWith(ref.mes.txt) && /comparado com/.test(d))).toBe(true);
+  // todos os quadros usam a mesma régua: Faturamento, Atendimentos, TKM, PMA, IPA e Chá vendido
+  const her = await page.locator('main .heroi').first().innerText();
+  expect(her.split(ref.ano.txt).length - 1).toBe(6);
+  expect(her.split(ref.mes.txt).length - 1).toBe(6);
+  await semRolagemLateral(page);
 });

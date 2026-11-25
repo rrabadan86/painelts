@@ -243,14 +243,51 @@
 
   /** os mesmos dias da semana um ano antes (364 dias) e as mesmas datas no mês anterior (até o último dia com vendas): Resumo e Comparativos */
   TS.DICA_ANO = 'vs. ano anterior: o mesmo período 364 dias antes (52 semanas), para comparar os mesmos dias da semana — segunda com segunda, sábado com sábado';
+  /** mês inteiro no filtro (do dia 1 ao último dia, já todo nas vendas)? → 'AAAA-MM' ou null */
+  const ymTxt = (ym) => `${TS.MESES_CURTOS ? TS.MESES_CURTOS[+ym.slice(5) - 1] : ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'][+ym.slice(5) - 1]}/${ym.slice(2, 4)}`;
+  const ultimoDia = (day) => { const d = new Date(day * 864e5); return Math.floor(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0) / 864e5); };
+  TS.mesInteiroDoFiltro = function (de, ate) {
+    if (de == null || ate == null || TS.dayToIso(de).slice(8) !== '01') return null;
+    const ult = ultimoDia(de);
+    return ate === ult && TS.db.maxDay >= ult ? TS.dayToIso(de).slice(0, 7) : null;
+  };
+  /**
+   * Com quem o período é comparado (Resumo e Comparativos; CMP-MES-01, pedido do dono de 25/11/2026):
+   * - mês inteiro no filtro: o mês anterior inteiro e o mesmo mês do ano anterior inteiro ("vs. set/26", "vs. out/25") —
+   *   a mesma base do Resultado;
+   * - outros períodos: os mesmos dias da semana 364 dias antes e as mesmas datas no mês anterior (até o último dia com vendas).
+   * Cada um leva `txt` (o rótulo) e `dica` (as datas exatas da comparação).
+   */
   TS.periodosIguais = function (de, ate) {
     const db = TS.db;
     if (de == null) return null;
     const fim = Math.max(de, Math.min(ate ?? db.maxDay, db.maxDay));
+    const dt = (d) => fmt.date(TS.dayToIso(d));
+    const com = (x, txt) => ({ ...x, txt, dica: `comparado com ${dt(x.de)} a ${dt(x.ate)}` });
+    const ym = TS.mesInteiroDoFiltro(de, ate);
+    if (ym) {
+      const d0 = new Date(de * 864e5), y = d0.getUTCFullYear(), m = d0.getUTCMonth();
+      const ini = (yy, mm) => Math.floor(Date.UTC(yy, mm, 1) / 864e5);
+      const mes = { de: ini(y, m - 1), ate: de - 1 }, ano = { de: ini(y - 1, m), ate: ultimoDia(ini(y - 1, m)) };
+      return { mesInteiro: ym, ano: com(ano, `vs. ${ymTxt(TS.dayToIso(ano.de).slice(0, 7))}`), mes: com(mes, `vs. ${ymTxt(TS.dayToIso(mes.de).slice(0, 7))}`) };
+    }
     // ano anterior = 364 dias antes (52 semanas): segunda compara com segunda, sábado com sábado
     const anoAntes = (d) => d - 364;
     const mesAntes = (day) => { const d = new Date(day * 86400000), y = d.getUTCFullYear(), m = d.getUTCMonth() - 1; const ult = new Date(Date.UTC(y, m + 1, 0)).getUTCDate(); return Math.floor(Date.UTC(y, m, Math.min(d.getUTCDate(), ult)) / 86400000); };
-    return { ano: { de: anoAntes(de), ate: anoAntes(fim) }, mes: { de: mesAntes(de), ate: mesAntes(fim) } };
+    return { mesInteiro: null, ano: com({ de: anoAntes(de), ate: anoAntes(fim) }, 'vs. ano anterior'), mes: com({ de: mesAntes(de), ate: mesAntes(fim) }, 'vs. mês anterior') };
+  };
+  /** a conta do faturamento embaixo do número (FAT-DESC-01, pedido do dono de 25/11/2026): preço cheio − descontos = faturamento.
+   *  idx = as linhas do período; a mesma conta do Resultado (receita bruta − descontos concedidos). */
+  TS.contaDescontos = function (idx) {
+    const db = TS.db, linhas = idx.filter((i) => TS.contaFat(i));
+    const vt = linhas.reduce((a, i) => a + (db.vt[i] || 0), 0), desc = TS.descontos(linhas) || 0;
+    if (!(desc > 0.004)) return null;
+    const cupons = new Set(linhas.filter((i) => (db.du[i] || 0) > 0).map((i) => db.loja[i] + '|' + db.day[i] + '|' + db.cupom[i])).size;
+    const l = (rot, v, cls) => h('div', { class: 'fat-conta-l' + (cls ? ' ' + cls : '') }, h('span', null, rot), h('b', null, v));
+    return h('div', { class: 'fat-conta', title: 'Preço cheio dos produtos vendidos − descontos dados no caixa = faturamento (o que os clientes pagaram). No Resultado, o preço cheio é a "Receita bruta" e os descontos ficam em "Deduções da receita".' },
+      l('Vendas pelo preço cheio', fmt.brl0(vt + desc)),
+      l(`− Descontos dados (${fmt.int(cupons)} ${cupons === 1 ? 'cupom' : 'cupons'} · ${fmt.pct(desc / (vt + desc), 1)})`, '− ' + fmt.brl0(desc), 'fat-conta-desc'),
+      l('= Faturamento', fmt.brl0(vt), 'fat-conta-tot'));
   };
   /** linhas de variação de um cartão: [[valor atual, valor anterior, 'vs. …'], …] (sem dado anterior a linha some).
    *  No quadro o texto sai curto ("· 30 dias", "· ano"); a frase completa fica no title. */
@@ -260,7 +297,7 @@
   };
   TS.linhasVar = (...ls) => {
     const v = ls.filter((l) => l && l[1] != null && l[1] !== 0 && l[0] != null);
-    return v.length ? h('span', { class: 'kpi-vars' }, ...v.map(([a, b, txt]) => { const c = varCurta(txt); return h('span', { title: txt === 'vs. ano anterior' ? TS.DICA_ANO : c !== txt ? txt : null }, TS.deltaSpan(a / b - 1), ' ' + c); })) : null;
+    return v.length ? h('span', { class: 'kpi-vars' }, ...v.map(([a, b, txt, dica]) => { const c = varCurta(txt); const t = txt === 'vs. ano anterior' ? TS.DICA_ANO : c !== txt ? txt : null; return h('span', { title: [t, dica].filter(Boolean).join(' · ') || null }, TS.deltaSpan(a / b - 1), ' ' + c); })) : null;
   };
 
   /**
@@ -469,20 +506,22 @@
     // (item a R$ 0,01, brinde ou resgate de pontos, não conta; antes o herói somava e ficava 0,05 kg acima da conta oficial)
     const kgCha = (i) => (TS.contaFat(i) && I.chaTotal.has(db.grupo[i]) ? db.cha[i] || 0 : 0);
     const kgTotal = base.reduce((s, i) => s + kgCha(i), 0);
-    const pa = periodoAnterior();
+    const pi = TS.periodosIguais(state.f.de, state.f.ate);
+    // mês inteiro: compara com o mês anterior inteiro e o mesmo mês do ano anterior inteiro (CMP-MES-01)
+    const pa = pi && pi.mesInteiro ? pi.mes : periodoAnterior();
+    if (pa && !pa.dica) pa.dica = `comparado com ${fmt.date(TS.dayToIso(pa.de))} a ${fmt.date(TS.dayToIso(pa.ate))}`;
     let prev = null;
     if (pa) {
       const pidx = TS.filtrar({ de: pa.de, ate: pa.ate });
       if (pidx.length) prev = { ...TS.indicadores(pidx), kg: pidx.reduce((s, i) => s + kgCha(i), 0) };
     }
     // segunda linha: mesmo período do ano anterior (quando a primeira já não é ela)
-    const pi = TS.periodosIguais(state.f.de, state.f.ate);
     let prevAno = null;
     if (pi && !/ano anterior/.test(pa?.txt || '')) {
       const ia = TS.filtrar({ de: pi.ano.de, ate: pi.ano.ate });
       if (ia.length) prevAno = { ...TS.indicadores(ia), kg: ia.reduce((s, i) => s + kgCha(i), 0) };
     }
-    const d = (a, b, k) => TS.linhasVar(prev && b ? [a, b, pa.txt.replace('mesmo período do ', '')] : null, prevAno && k ? [a, prevAno[k], 'vs. ano anterior'] : null);
+    const d = (a, b, k) => TS.linhasVar(prev && b ? [a, b, pa.txt.replace('mesmo período do ', ''), pa.dica] : null, prevAno && k ? [a, prevAno[k], pi.ano.txt, pi.ano.dica] : null);
     // redesenho: o "como está" num cartão-herói (faturamento, atendimentos e a projeção do mês) e os indicadores de venda
     // numa grade de apoio logo abaixo — os mesmos números de antes, cada um uma vez
     const proj = TS.periodoUmMes() && TS.dayToIso(state.f.de).slice(8) === '01'
@@ -491,7 +530,7 @@
     // à parte da tela que detalha o número (TKM, PMA e IPA → por vendedor; chá → por tipo de chá)
     const irPara = (id) => () => { const el = document.getElementById(id); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
     root.append(TS.heroi([
-      { rot: 'Faturamento', num: fmt.brl0(ind.vt), linhas: [d(ind.vt, prev?.vt, 'vt')], dica: 'Faturamento da loja no período: com o Espaço Gourmet e as vendas sem vendedor, sem taxas e sem itens a R$ 0,01 (a mesma conta do Início e do Resultado).' },
+      { rot: 'Faturamento', num: fmt.brl0(ind.vt), linhas: [TS.contaDescontos(base), d(ind.vt, prev?.vt, 'vt')], dica: 'Faturamento da loja no período: o que os clientes pagaram (preço cheio − descontos), com o Espaço Gourmet e as vendas sem vendedor, sem taxas e sem itens a R$ 0,01 (a mesma conta do Início e do Resultado). Com um mês inteiro no filtro, compara com o mês anterior inteiro e o mesmo mês do ano anterior inteiro (a base do Resultado); nos outros períodos, com os mesmos dias da semana do ano anterior. Passe o dedo ou o mouse na comparação para ver as datas.' },
       { rot: 'Atendimentos (cupons)', num: fmt.int(ind.cupons), linhas: [d(ind.cupons, prev?.cupons, 'cupons')], dica: 'Cupons únicos no período: cada venda conta uma vez, mesmo com vários itens.' },
       // projeção: só quando o período começa no dia 1 e fica dentro de UM mês (o mês em andamento); período
       // personalizado que termina antes de hoje projeta a partir do fim do período, não do dia de hoje
@@ -675,18 +714,19 @@
     // "vs. ano anterior" dos quadros = os mesmos dias da semana, 364 dias antes (a mesma conta do Resumo);
     // a tabela "Evolução mensal" continua comparando mês com o mesmo mês do calendário
     // sem data de início ("Tudo" ou só o mês) não existe "mesmo período do ano anterior": não compara
-    const prevIdx = f.de == null ? [] : TS.filtrar({ usarTamanho: true, de: de - 364, ate: Math.min(ate, db.maxDay) - 364 });
+    // mês inteiro no filtro: o mesmo mês do ano anterior inteiro e o mês anterior inteiro (CMP-MES-01, TS.periodosIguais)
+    const pi = f.de != null ? TS.periodosIguais(de, f.ate) : null;
+    const prevIdx = pi ? TS.filtrar({ usarTamanho: true, de: pi.ano.de, ate: pi.ano.ate }) : [];
     const pctEG = R().pctEG(base);
     const indAll = TS.indicadores(base);
     const indPrev = prevIdx.length ? TS.indicadores(prevIdx) : null;
     // mês anterior: as mesmas datas um mês antes (a mesma conta do Resumo com "Mês atual")
-    const pi = f.de != null ? TS.periodosIguais(de, ate) : null;
     const mesIdx = pi ? TS.filtrar({ usarTamanho: true, de: pi.mes.de, ate: pi.mes.ate }) : [];
     const indMes = mesIdx.length ? TS.indicadores(mesIdx) : null;
-    const vars = (k) => TS.linhasVar(indPrev ? [indAll[k], indPrev[k], 'vs. ano anterior'] : null, indMes ? [indAll[k], indMes[k], 'vs. mês anterior'] : null) || 'sem dados para comparar';
+    const vars = (k) => TS.linhasVar(indPrev ? [indAll[k], indPrev[k], pi.ano.txt, pi.ano.dica] : null, indMes ? [indAll[k], indMes[k], pi.mes.txt, pi.mes.dica] : null) || 'sem dados para comparar';
     // redesenho: herói com faturamento, atendimentos e a divisão Espaço Gourmet × loja; os indicadores de venda abaixo
     root.append(TS.heroi([
-      { rot: 'Faturamento', num: fmt.brl0(indAll.vt), linhas: [vars('vt')], dica: 'Faturamento do período, comparado com os mesmos dias da semana do ano anterior (364 dias antes) e com as mesmas datas do mês anterior.' },
+      { rot: 'Faturamento', num: fmt.brl0(indAll.vt), linhas: [vars('vt')], dica: 'Faturamento do período. Com um mês inteiro no filtro, comparado com o mesmo mês do ano anterior inteiro e com o mês anterior inteiro (a base do Resultado); nos outros períodos, com os mesmos dias da semana do ano anterior (364 dias antes) e com as mesmas datas do mês anterior. Passe o dedo ou o mouse na comparação para ver as datas.' },
       { rot: 'Cupons', num: fmt.int(indAll.cupons), linhas: [vars('cupons')], dica: 'Atendimentos (cupons únicos) no período, com as mesmas comparações do faturamento.' },
       { rot: 'Espaço Gourmet', num: fmt.pct(pctEG), linhas: ['do faturamento', `Loja (sem EG): ${fmt.pct(pctEG == null ? null : 1 - pctEG)}`], dica: 'Quanto do faturamento veio do Espaço Gourmet e quanto da loja (chás, acessórios e o resto).' },
     ], { titulo: 'Período escolhido', extra: apoioHeroi([ // 2ª passada: TKM, PMA e IPA como linhas do herói (levam à evolução mensal)

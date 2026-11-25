@@ -61,7 +61,7 @@ test('Vendas → Resumo: variações curtas com a frase completa no title e nenh
   const fat = page.locator('.heroi-col', { hasText: 'Faturamento' }).first();
   await expect(fat.locator('.kpi-vars')).toBeVisible({ timeout: 20000 });
   const linhas = await fat.locator('.kpi-vars > span').evaluateAll((xs) => xs.map((x) => [x.textContent, x.title]));
-  expect(linhas.some(([t, dica]) => /· \d+ dias$/.test(t) && /^vs\. \d+ dias anteriores$/.test(dica))).toBe(true);
+  expect(linhas.some(([t, dica]) => /· \d+ dias$/.test(t) && /^vs\. \d+ dias anteriores · comparado com /.test(dica))).toBe(true); // CMP-MES-01: com as datas
   // "· ano" = os mesmos dias da semana, 364 dias antes (a frase completa diz isso)
   expect(linhas.some(([t, dica]) => /· ano$/.test(t) && /^vs\. ano anterior: o mesmo período 364 dias antes/.test(dica))).toBe(true);
   // 2ª passada (23/11/2026): os 5 indicadores de apoio (TKM, PMA, IPA, chá, EG) são linhas dentro do herói, sem quadros soltos;
