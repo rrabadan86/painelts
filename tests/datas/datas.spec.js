@@ -64,7 +64,9 @@ test('DATA-02: meta e projeção do mês com valores possíveis (sem divisão po
   for (const [k, v] of Object.entries({ proj: r.proj, real: r.real, projMeta: r.projMeta, meta: r.meta })) if (v != null) expect(Number.isFinite(v), `${k} = ${v}`).toBe(true);
   if (r.proj != null && r.real != null) {
     expect(r.proj).toBeGreaterThanOrEqual(r.real - 1); // a projeção nunca fica abaixo do que já vendeu
-    expect(r.proj).toBeLessThan(Math.max(r.real, 1) * 40); // nem 40× o realizado (dia 1 dividindo por quase zero)
+    // nem 40× o realizado (dia 1 dividindo por quase zero). No dia 1 ainda não há dia completo (realizado 0): a projeção vem
+    // do histórico e fica perto da meta — o limite passa a ser 40× o maior entre o realizado e a meta
+    expect(r.proj).toBeLessThan(Math.max(r.real, r.meta || 0, 1) * 40);
   }
   await page.evaluate(() => { location.hash = '#inicio'; });
   const her = page.locator('main .ini-heroi .heroi-pri');

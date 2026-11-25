@@ -129,8 +129,10 @@ function gerarLoja(L, ini, fim, horaHoje) {
     const saz = Math.pow(P.sazonalidade[m], L.sazonal);
     const tend = Math.pow(L.cresc, (d - fim) / 365) * (d - abre < 60 ? 0.6 + 0.4 * (d - abre) / 60 : 1);
     let lam = P.cuponsPorDia * L.escala * saz * P.semana[dt.getUTCDay()] * tend * Math.exp(0.18 * gauss(r));
-    if (d === fim) lam *= Math.max(0, Math.min(1, (horaHoje - 9) / 13));
-    const n = poisson(r, lam);
+    if (d === fim) lam *= Math.max(0.15, Math.min(1, (horaHoje - 9) / 13));
+    // hoje sempre tem algumas vendas, em qualquer hora (a apresentação não depende da hora do dia: de madrugada "Hoje"
+    // ficava "Sem dados" e os testes de "Hoje" — COM-PER-01 — falhavam na rodada noturna)
+    const n = d === fim ? Math.max(2, poisson(r, lam)) : poisson(r, lam);
     const ativos = equipe.filter((v) => v.de <= d && d < v.ate);
     const pesoTot = ativos.reduce((s, v) => s + v.peso, 0);
     for (let k = 0; k < n; k++) {

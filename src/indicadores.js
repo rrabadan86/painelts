@@ -145,9 +145,14 @@ const MIN_LOJAS_REDE = 4; // com menos lojas, a média revelaria demais sobre ca
  * Devolve média, mediana e "melhores 25%" de cada indicador, e a posição da loja pedida.
  * Nunca devolve valores de outra loja isoladamente.
  */
-function rede(partes, ym, lojaId, minimo = MIN_LOJAS_REDE) {
-  const de = ym + '-01', ate = `${ym}-${String(diasNoMes(ym)).padStart(2, '0')}`;
-  const ymAnt = `${+ym.slice(0, 4) - 1}${ym.slice(4)}`;
+/** REDE-02 (pedido do dono, 25/11/2026: "não leva em conta os filtros"): per = { de, ate } (AAAA-MM-DD) compara o período
+ *  do filtro; sem per, o mês ym inteiro. O crescimento é contra os mesmos dias do ano anterior; o ritmo da meta só existe
+ *  quando o período fica dentro de um mês (a meta é mensal). */
+function rede(partes, ym, lojaId, minimo = MIN_LOJAS_REDE, per = null) {
+  if (per && per.de && per.ate) ym = per.ate.slice(0, 7);
+  const de = per && per.de ? per.de : ym + '-01', ate = per && per.ate ? per.ate : `${ym}-${String(diasNoMes(ym)).padStart(2, '0')}`;
+  const umMes = de.slice(0, 7) === ate.slice(0, 7);
+  const anoAnt = (iso) => `${+iso.slice(0, 4) - 1}${iso.slice(4)}`;
   const linhas = [];
   let fimDados = null;
   for (const p of partes) {
@@ -161,10 +166,9 @@ function rede(partes, ym, lojaId, minimo = MIN_LOJAS_REDE) {
   const corte = linhas.length && fimDados < ate ? fimDados : ate;
   const vals = linhas.map(({ p, mes }) => {
     const m = metricas(mes.filter((v) => v.data <= corte));
-    const antDe = ymAnt + '-01', antAte = ymAnt + corte.slice(7);
-    const ant = metricas(entre(p.vendas, antDe, antAte));
+    const ant = metricas(entre(p.vendas, anoAnt(de), anoAnt(corte)));
     m.cresc = ant.vt ? m.vt / ant.vt - 1 : null;
-    const meta = metaMes(p.loja, ym, p.metaPlanilha, p.vendas);
+    const meta = umMes ? metaMes(p.loja, ym, p.metaPlanilha, p.vendas) : null;
     // ritmo da meta: mês fechado = vendas da meta ÷ meta; mês em andamento = projeção das vendas da meta ÷ meta
     // (a mesma projeção das telas, com todas as lojas cortadas no mesmo dia)
     const pj = corte < ate ? projecaoMes({ loja: p.loja, vendas: p.vendas, ym, ate: corte, base: 'meta' }) : null;
@@ -172,7 +176,7 @@ function rede(partes, ym, lojaId, minimo = MIN_LOJAS_REDE) {
     m.ret90 = retencao90(p.vendas, p.xml, corte);
     return { id: p.id, m };
   });
-  const out = { ym, ate: corte, parcial: corte < ate, lojas: vals.length, minimo, indicadores: [] };
+  const out = { ym, de, ate: corte, periodo: !!per, parcial: corte < ate, lojas: vals.length, minimo, indicadores: [] };
   if (vals.length < minimo) return out;
   const minha = vals.find((v) => v.id === lojaId);
   for (const [k, nome, formato] of METRICAS_REDE) {

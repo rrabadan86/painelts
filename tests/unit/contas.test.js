@@ -348,3 +348,22 @@ test('META-04 férias lançadas: quem volta de férias divide a meta mesmo abaix
   const m = CT.metasIndividuais(31000, '2026-10', ['ANA', 'BIA'], [{ vendedor: 'BIA', de: '2026-10-01', ate: '2026-10-27' }]).metas;
   assert.equal(Math.round(m.get('BIA')), 2000); assert.equal(Math.round(m.get('ANA')), 29000);
 });
+
+test('REDE-02 comparação com a rede segue o período do filtro (as lojas nos mesmos dias); sem um mês só, sem ritmo da meta', () => {
+  const partes = [1, 2, 3, 4].map((n) => {
+    const vendas = [];
+    for (let d = Date.UTC(2025, 8, 1); d <= Date.UTC(2026, 10, 19); d += 864e5) { const iso = new Date(d).toISOString().slice(0, 10), v = padraoSemana(iso); if (v) vendas.push(venda(iso, 1, 'ANA', v * n)); }
+    return { id: 'l' + n, loja: { meta: 33000 * n, operacao: { funcionamento: { dom: { fechado: true } } } }, vendas };
+  });
+  const mes = I.rede(partes, '2026-11', 'l2', 4);
+  const semana = I.rede(partes, '2026-11', 'l2', 4, { de: '2026-11-09', ate: '2026-11-15' });
+  const fat = (r) => r.indicadores.find((k) => k.k === 'vt').minha;
+  assert.ok(fat(semana) < fat(mes), 'a semana fatura menos que o mês');
+  const esperado = partes[1].vendas.filter((v) => v.data >= '2026-11-09' && v.data <= '2026-11-15').reduce((s, v) => s + v.vt, 0);
+  perto(fat(semana), esperado, 'faturamento só dos dias do filtro');
+  assert.equal(semana.de, '2026-11-09');
+  assert.ok(semana.indicadores.some((k) => k.k === 'pctMeta'), 'dentro de um mês: tem ritmo da meta');
+  const dois = I.rede(partes, '2026-11', 'l2', 4, { de: '2026-10-01', ate: '2026-11-15' });
+  assert.ok(!dois.indicadores.some((k) => k.k === 'pctMeta'), 'dois meses: sem ritmo da meta (a meta é mensal)');
+  assert.ok(dois.indicadores.find((k) => k.k === 'cresc'), 'crescimento contra os mesmos dias do ano anterior');
+});

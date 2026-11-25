@@ -64,8 +64,11 @@ test('Pedido no celular: apertar ＋ várias vezes mantém o cartão no mesmo lu
   await page.locator('.ped-tools .seg button', { hasText: /^Site de pedidos completo/ }).click();
   const cartoes = page.locator('.ped-cards .ped-card');
   await expect(cartoes.first()).toBeVisible({ timeout: 40000 });
-  // um cartão ainda sem quantidade, lá no meio da lista (depois dos que já estão no pedido)
-  const k = await cartoes.evaluateAll((els) => els.findIndex((el, i) => i >= 8 && el.querySelector('.ped-step[aria-label="Mais"]') && !el.classList.contains('on') && !el.classList.contains('obr')));
+  // um cartão ainda sem quantidade, lá no meio da lista (depois dos que já estão no pedido). Quando o carrinho da
+  // apresentação passa de 40 itens (depende do dia), os primeiros cartões estão todos no pedido: "Mostrar mais" até achar
+  const achar = () => cartoes.evaluateAll((els) => els.findIndex((el, i) => i >= 8 && el.querySelector('.ped-step[aria-label="Mais"]') && !el.classList.contains('on') && !el.classList.contains('obr')));
+  let k = await achar();
+  for (let v = 0; k < 0 && v < 3 && await page.locator('.ped-cards-mais').count(); v++) { await page.locator('.ped-cards-mais').click(); k = await achar(); }
   expect(k).toBeGreaterThan(0);
   const cod = (await cartoes.nth(k).locator('.est-tam').first().innerText()).match(/cód\. \S+/)[0];
   const vizinhos = async () => (await cartoes.evaluateAll((els, i) => els.slice(i - 1, i + 2).map((el) => (el.querySelector('.est-tam') || el).textContent.match(/cód\. \S+/)[0]), k));

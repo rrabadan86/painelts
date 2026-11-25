@@ -886,7 +886,9 @@ app.get('/api/demo/dados', async (req, res) => {
 
 // dados fictícios também para o comparativo com a rede e os alertas da apresentação
 app.get('/api/demo/rede', (req, res) => {
-  try { res.json(IND.rede(DEMO.partes(), String(req.query.ym || ''), String(req.query.loja || ''), 3)); } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
+  const per = perRede(req.query);
+  if (per === false) return res.status(400).json({ erro: 'Período inválido.' });
+  try { res.json(IND.rede(DEMO.partes(), String(req.query.ym || ''), String(req.query.loja || ''), 3, per)); } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
 });
 app.get('/api/demo/fechamento', (req, res) => {
   const p = DEMO.partes().find((x) => x.id === String(req.query.loja || ''));
@@ -1497,18 +1499,29 @@ async function dadosParaIndicadores(loja) {
   return { id: loja.id, loja, vendas: e.raw.vendas, metaPlanilha: e.raw.metaPlanilha, xml: e.raw.xml, sig: e.sig };
 }
 const redeCache = new Map();
+/** período do filtro para a comparação com a rede (REDE-02): de/ate AAAA-MM-DD, até 400 dias; sem os dois = o mês (null);
+ *  inválido = false */
+function perRede(q) {
+  const de = String(q.de || ''), ate = String(q.ate || '');
+  if (!de && !ate) return null;
+  const ok = (x) => /^\d{4}-\d{2}-\d{2}$/.test(x) && !isNaN(Date.parse(x + 'T00:00:00Z'));
+  if (!ok(de) || !ok(ate) || ate < de || (Date.parse(ate) - Date.parse(de)) / 864e5 > 400) return false;
+  return { de, ate };
+}
 app.get('/api/rede', async (req, res) => {
   if (req.perfil === 'vendedor') return res.status(403).json({ erro: 'Sem permissão.' });
   const ym = String(req.query.ym || '');
   const loja = req.lojas.find((l) => l.id === String(req.query.loja || ''));
   if (!/^\d{4}-\d{2}$/.test(ym) || !loja) return res.status(400).json({ erro: 'Escolha uma loja e um mês.' });
+  const per = perRede(req.query);
+  if (per === false) return res.status(400).json({ erro: 'Período inválido.' });
   try {
     const todas = C.get().lojas;
     const partes = [];
     for (const l of todas) { try { partes.push(await dadosParaIndicadores(l)); } catch { /* loja sem dados */ } }
-    const chave = ym + '|' + loja.id + '|' + partes.map((p) => p.id + ':' + p.sig + ':' + JSON.stringify(p.loja.metas || {}) + (p.loja.meta ?? '')).join(',');
+    const chave = ym + '|' + (per ? per.de + '~' + per.ate : '') + '|' + loja.id + '|' + partes.map((p) => p.id + ':' + p.sig + ':' + JSON.stringify(p.loja.metas || {}) + (p.loja.meta ?? '')).join(',');
     let r = lruGet(redeCache, chave);
-    if (!r) { r = IND.rede(partes, ym, loja.id); lruSet(redeCache, chave, r, 40); }
+    if (!r) { r = IND.rede(partes, ym, loja.id, undefined, per); lruSet(redeCache, chave, r, 40); }
     res.set('Cache-Control', 'no-store');
     res.json(r);
   } catch (e) { res.status(500).json({ erro: C.msgErro(e) }); }
