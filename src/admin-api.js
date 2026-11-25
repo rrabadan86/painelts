@@ -884,13 +884,22 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     d.robo = ['franqueado', 'gerente'].includes(d.perfil) ? (alvo && alvo.perfil === d.perfil ? C.podeRoboU(alvo) : false) : undefined;
     d.conversas = d.perfil === 'franqueado' && alvo && alvo.conversas === false ? false : undefined;
   }
-  /** acessoMeses: n ≥ 1 = acesso até hoje + n meses; 0 = sem prazo; ausente = mantém */
+  /** ACESSO-DIAS-01 (decisão do dono, 25/11/2026: "trocar meses por dias", ex.: 14 dias de teste): acessoDias n ≥ 1 =
+   *  acesso até hoje + n dias (último dia); 0 = sem prazo; ausente = mantém. acessoMeses continua aceito (telas antigas). */
   function prazo(b, atual) {
+    if (b.acessoDias != null && b.acessoDias !== '') {
+      const n = Number(b.acessoDias);
+      if (!Number.isInteger(n) || n < 0 || n > 3650) return { erro: 'Prazo de acesso inválido: informe de 1 a 3650 dias (0 = sem prazo).' };
+      return { ok: n === 0 ? null : C.somaDias(C.hojeBR(), n) };
+    }
     if (b.acessoMeses == null || b.acessoMeses === '') return { ok: atual || null };
     const n = Number(b.acessoMeses);
     if (!Number.isInteger(n) || n < 0 || n > 120) return { erro: 'Prazo de acesso inválido: informe de 1 a 120 meses (0 = sem prazo).' };
     return { ok: n === 0 ? null : C.somaMeses(C.hojeBR(), n) };
   }
+  /** ACESSO-ADMIN-01 (decisão do dono, 25/11/2026): só o administrador define ou muda o prazo de acesso de um usuário */
+  const mexePrazo = (b) => ['acessoDias', 'acessoMeses', 'acessoAte'].some((k) => b && b[k] != null && b[k] !== '');
+  const ERRO_PRAZO = 'Só o administrador define o prazo de acesso.';
   const lojaUnicaAud = (lojas) => (Array.isArray(lojas) && lojas.length === 1 && lojas[0] !== '*' ? lojas[0] : undefined);
 
   r.post('/usuarios', json, async (req, res) => {
@@ -903,9 +912,10 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     wppSoAdmin(req, d, null);
     const erro = validarUsuario(req, d, null);
     if (erro) return res.status(400).json({ erro });
+    if (req.perfil !== 'admin' && mexePrazo(req.body)) return res.status(403).json({ erro: ERRO_PRAZO });
     const pz = prazo(req.body, null);
     if (pz.erro) return res.status(400).json({ erro: pz.erro });
-    d.acessoAte = pz.ok;
+    d.acessoAte = req.perfil === 'admin' ? pz.ok : null;
     const hash = await C.hashSenhaAsync(senha);
     try {
       C.alterar((cfg) => {
@@ -924,7 +934,13 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     if (!usuariosVisiveis(req).some((u) => u.nome === nome)) return res.status(403).json({ erro: 'Sem permissão para alterar este usuário.' });
     const d = limparDados({ ...alvo, robo: C.podeRoboU(alvo), ...req.body });
     wppSoAdmin(req, d, alvo);
-    if (req.body.acessoMeses != null && req.body.acessoMeses !== '') {
+    if (req.perfil !== 'admin') {
+      // só o admin mexe no prazo; quem mais edita o usuário mantém o prazo que ele tem (ACESSO-ADMIN-01)
+      const b = req.body || {};
+      const mudaAte = b.acessoAte !== undefined && (/^\d{4}-\d{2}-\d{2}$/.test(String(b.acessoAte || '')) ? String(b.acessoAte) : null) !== (alvo.acessoAte || null);
+      if (mudaAte || ['acessoDias', 'acessoMeses'].some((k) => b[k] != null && b[k] !== '')) return res.status(403).json({ erro: ERRO_PRAZO });
+      d.acessoAte = alvo.acessoAte || null;
+    } else if ((req.body.acessoMeses != null && req.body.acessoMeses !== '') || (req.body.acessoDias != null && req.body.acessoDias !== '')) {
       const pz = prazo(req.body, alvo.acessoAte);
       if (pz.erro) return res.status(400).json({ erro: pz.erro });
       d.acessoAte = pz.ok;
