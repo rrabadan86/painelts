@@ -6,17 +6,20 @@
 #   1) DIAGNÓSTICO (SAIDA_EXTRATO_DIAG): os endereços que a tela chama (só o caminho e os NOMES dos parâmetros), os campos
 #      da resposta e 2 linhas de exemplo, o texto da tela e os rótulos dos filtros — sem dado pessoal (campos de usuário,
 #      operador, e-mail, CPF/CNPJ, cliente e telefone são retirados). É isso que o dono manda para ajustar a leitura.
-#   2) MOVIMENTOS (SAIDA_EXTRATO): se a tela chamar uma lista com período (dataInicial/dataFinal ou parecido), repete o
-#      mesmo pedido de EXTRATO_DESDE até hoje, página por página, e guarda os itens (sem os campos pessoais).
+#   2) MOVIMENTOS (SAIDA_EXTRATO): a tela chama /api/v1/estoque/extrato-estoque com dataInicial/dataFinal (no máximo 31
+#      dias por pedido, diagnóstico de 25/11/2026), paginado (pagina, tamanhoPagina, totalLinhas). O robô repete o mesmo pedido
+#      em blocos de 28 dias de EXTRATO_DESDE até hoje, página por página, confere o total de cada bloco com o totalLinhas e
+#      guarda os movimentos resumidos (sem parceiro nem campos pessoais). A situação do produto vai em "todos" quando o
+#      AppNext aceita (a tela abre em "Ativos": produto desativado também mexeu no estoque do passado).
 # Nada é clicado além de abrir a tela: nunca Salvar, Concluir nem Homologar.
 import json
 import os
 import re
 import sys
 import traceback
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
-from urllib.parse import parse_qsl, urlsplit
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 os.environ.setdefault("SAIDA_ARQUIVO", str(Path.cwd() / "_nao_usado.xlsx"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -27,9 +30,55 @@ from playwright.sync_api import sync_playwright  # noqa: E402
 
 log, step = nx.log, nx.step
 HASH = "#/estoque/extrato-estoque"
-PESSOAL = re.compile(r"usuario|usuário|operador|login|e-?mail|cpf|cnpj|cliente|telefone|celular|senha|token|responsavel|responsável", re.I)
+PESSOAL = re.compile(r"usuario|usuário|operador|login|e-?mail|cpf|cnpj|cliente|telefone|celular|senha|token|responsavel|responsável|parceiro", re.I)
+# parâmetros do pedido que não são dado pessoal nem id: o valor aparece no diagnóstico
+PARAM_OK = re.compile(r"^(situacao|ordenarPor|ordenarDirecao|pagina|tamanhoPagina|tipoMovimento)$")
+BLOCO_DIAS = 28  # o AppNext recusa período maior que 31 dias
 DATA_PARAM = re.compile(r"data|date|inicio|início|fim|de$|ate$|periodo", re.I)
 MAX_ITENS = 300_000
+TAM_PAGINA = 200
+
+
+def blocos(desde: str, ate: str, dias: int = BLOCO_DIAS):
+    """[(ini, fim)] em AAAA-MM-DD, de desde até ate, cada um com no máximo `dias` dias"""
+    d0, d1 = date.fromisoformat(desde), date.fromisoformat(ate)
+    out = []
+    while d0 <= d1:
+        fim = min(d1, d0 + timedelta(days=dias - 1))
+        out.append((d0.isoformat(), fim.isoformat()))
+        d0 = fim + timedelta(days=1)
+    return out
+
+
+def resumir(x):
+    """um movimento do extrato, só com o que a reconstrução usa (sem parceiro nem ids de pessoa)"""
+    return {"d": x.get("dataHora"), "t": x.get("tipoMovimento"), "o": x.get("origem"), "n": x.get("numeroDocumento"),
+            "c": x.get("codigoProduto"), "p": x.get("nomeProduto"), "q": x.get("quantidade"), "dt": x.get("documentoOrigemTipo")}
+
+
+def com_params(url, **troca):
+    p = urlsplit(url)
+    q = dict(parse_qsl(p.query, keep_blank_values=True))
+    for k, v in troca.items():
+        if v is None:
+            q.pop(k, None)
+        else:
+            q[k] = v
+    return urlunsplit((p.scheme, p.netloc, p.path, urlencode(q), p.fragment))
+
+
+def ler_bloco(page, url, cab):
+    """todas as páginas de um bloco → (itens, totalLinhas)"""
+    itens, total = [], None
+    for pag in range(1, 500):
+        j = ncomp.pedir_json(page, com_params(url, pagina=str(pag), tamanhoPagina=str(TAM_PAGINA)), cab)
+        lote = lista_de(j) or []
+        if isinstance(j, dict) and isinstance(j.get("totalLinhas"), int):
+            total = j["totalLinhas"]
+        itens.extend(lote)
+        if not lote or len(lote) < TAM_PAGINA or (total is not None and len(itens) >= total):
+            break
+    return itens, total
 
 
 def limpar(v, prof=0):
@@ -123,7 +172,7 @@ def main():
             for r in respostas:
                 p = urlsplit(r.url)
                 q = parse_qsl(p.query, keep_blank_values=True)
-                info = {"caminho": p.path, "parametros": {k: (v if DATA_PARAM.search(k) else "…") for k, v in q}, "status": r.status}
+                info = {"caminho": p.path, "parametros": {k: (v if DATA_PARAM.search(k) or PARAM_OK.match(k) else "…") for k, v in q}, "status": r.status}
                 try:
                     j = r.json()
                     lst = lista_de(j)
@@ -140,18 +189,42 @@ def main():
             log(f"{len(diag['pedidos'])} pedidos da tela registrados no diagnóstico")
 
             if modelo is not None:
-                step(f"3) Movimentos de {desde} até hoje (o mesmo pedido da tela, com o período trocado)")
                 cab = {k: v for k, v in modelo.request.headers.items() if k.lower() not in ("content-length", "host", "cookie", "accept-encoding")}
-                url = modelo.url
-                try:
-                    url = ncx.trocar_periodo(url, desde, date.today().isoformat())
-                except Exception as e:  # noqa: BLE001
-                    log(f"Não deu para trocar o período automaticamente: {str(e)[:160]}")
-                itens = ncomp.pedir_lista_paginada(page, url, cab)
-                itens = [limpar(x) for x in itens[:MAX_ITENS]]
-                gravar(saida, {"em": datetime.now(nx._TZ_LOG).isoformat(), "desde": desde, "caminho": urlsplit(url).path, "itens": itens})
-                diag["lista"] = {"caminho": urlsplit(url).path, "itens": len(itens)}
-                log(f"Extrato: {len(itens)} movimentos guardados → {Path(saida).name}")
+                hoje = date.today().isoformat()
+                partes = blocos(desde, hoje)
+                step(f"3) Movimentos de {desde} até hoje: {len(partes)} blocos de até {BLOCO_DIAS} dias (o mesmo pedido da tela)")
+                # situação do produto: "todos" quando o AppNext aceita (fica a opção que traz mais linhas no 1º bloco)
+                ini0, fim0 = partes[0]
+                base0 = ncx.trocar_periodo(modelo.url, ini0, fim0)
+                escolha, melhor = None, -1
+                for rot, val in (("como a tela", "__igual__"), ("sem situação", None), ("Todos", "Todos"), ("todos", "todos"), ("0", "0")):
+                    try:
+                        u = base0 if val == "__igual__" else com_params(base0, situacao=val)
+                        j = ncomp.pedir_json(page, com_params(u, pagina="1", tamanhoPagina="1"), cab)
+                        n = j.get("totalLinhas") if isinstance(j, dict) else None
+                    except Exception as e:  # noqa: BLE001
+                        n = None
+                        log(f"situação {rot}: recusada ({str(e)[:80]})")
+                    if isinstance(n, int) and n > melhor:
+                        escolha, melhor = (rot, val), n
+                diag["situacao"] = {"usada": escolha[0] if escolha else "como a tela", "linhas_1o_bloco": melhor}
+                val = escolha[1] if escolha else "__igual__"
+                itens, conf = [], []
+                for ini, fim in partes:
+                    u = ncx.trocar_periodo(modelo.url, ini, fim)
+                    if val != "__igual__":
+                        u = com_params(u, situacao=val)
+                    lote, total = ler_bloco(page, u, cab)
+                    itens.extend(resumir(x) for x in lote)
+                    conf.append({"de": ini, "ate": fim, "lidos": len(lote), "total": total})
+                    log(f"  {ini} a {fim}: {len(lote)} movimentos" + (f" de {total}" if total is not None and total != len(lote) else ""))
+                    if len(itens) > MAX_ITENS:
+                        raise RuntimeError(f"Mais de {MAX_ITENS} movimentos: parei para não encher a VPS.")
+                faltando = [c for c in conf if c["total"] is not None and c["lidos"] != c["total"]]
+                gravar(saida, {"em": datetime.now(nx._TZ_LOG).isoformat(), "desde": desde, "ate": hoje, "caminho": urlsplit(modelo.url).path,
+                               "situacao": diag["situacao"]["usada"], "blocos": conf, "completo": not faltando, "itens": itens})
+                diag["lista"] = {"caminho": urlsplit(modelo.url).path, "itens": len(itens), "blocos": len(conf), "incompletos": faltando[:10]}
+                log(f"Extrato: {len(itens)} movimentos em {len(conf)} blocos guardados → {Path(saida).name}" + (f" · {len(faltando)} blocos incompletos" if faltando else ""))
             else:
                 log("A tela não chamou uma lista com período: o diagnóstico mostra o que ela pede (talvez escolher um produto).")
             gravar(saida_diag, diag)

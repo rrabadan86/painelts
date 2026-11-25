@@ -500,8 +500,13 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     const pasta = path.join(C.pastaLoja(req.loja.id), 'estoque');
     let diag = null, movimentos = null;
     try { diag = JSON.parse(fs.readFileSync(path.join(pasta, 'extrato-diag.json'), 'utf8')); } catch { /* ainda não lido */ }
-    try { movimentos = (JSON.parse(fs.readFileSync(path.join(pasta, 'extrato.json'), 'utf8')).itens || []).length; } catch { /* sem lista */ }
-    res.json({ diag, movimentos });
+    let leitura = null;
+    try {
+      const x = JSON.parse(fs.readFileSync(path.join(pasta, 'extrato.json'), 'utf8'));
+      movimentos = (x.itens || []).length;
+      leitura = { desde: x.desde, ate: x.ate || null, completo: x.completo !== false, blocos: (x.blocos || []).length, incompletos: (x.blocos || []).filter((b) => b.total != null && b.lidos !== b.total).length };
+    } catch { /* sem lista */ }
+    res.json({ diag, movimentos, leitura });
   });
   r.post('/lojas/:id/cancelar', soGestor, lojaPermitida, async (req, res) => {
     try {

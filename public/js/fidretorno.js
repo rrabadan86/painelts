@@ -95,7 +95,7 @@
   const { h, fmt, state } = TS;
   const vezes = (v) => (v == null || !isFinite(v) ? '—' : `${fmt.n1(v)}×`);
 
-  /** cartão "Retorno do programa" da seção Fidelidade (Clientes → Indicadores). fx = TS.cli.fixe */
+  /** cartão "Retorno do programa" (Clientes → Indicadores) → { bloco (o cartão com as tabelas), cols (colunas do herói Fidelidade), programa (linha) }. fx = TS.cli.fixe */
   TS.cartaoRetornoFid = function (fx) {
     if (!fx || !fx.movs || !fx.movs.length || !TS.cli || !TS.cli.porCPF) return null;
     if (!(TS.eu && TS.eu.pode && TS.eu.pode.clientes)) return null;
@@ -131,25 +131,23 @@
 
     const vis = ['programa', 'resgate', 'antesdepois'].includes(state.fidRetVis) ? state.fidRetVis : 'programa';
     const ir = (v) => { state.fidRetVis = v; TS.render(); };
-    const kpi = (el, v) => {
-      el.classList.add('est-kpi-click'); el.setAttribute('role', 'button'); el.tabIndex = 0;
-      el.addEventListener('click', (e) => { if (!(e.target.closest && e.target.closest('.dica-i'))) ir(v); });
-      el.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); ir(v); } });
-      return el;
-    };
     const pouco = (n) => `menos de ${MIN_GRUPO} clientes (${fmt.int(n)}): pouco para comparar`;
     const razaoProg = P.dentro.pouco || P.fora.pouco || !(P.fora.gastoPorCliente > 0) ? null : P.dentro.gastoPorCliente / P.fora.gastoPorCliente;
     const custoVal = h('span', null, '…'), custoPe = h('span', null, 'calculando o custo dos prêmios');
     const linhaCusto = h('li', null, h('b', null, 'Prêmios × venda a mais: '), 'calculando…');
-    const quadros = h('div', { class: 'grid g-kpi' },
-      kpi(TS.kpi('Cliente do programa gasta', vezes(razaoProg), razaoProg == null ? pouco(Math.min(P.dentro.clientes, P.fora.clientes)) : `${fmt.brl0(P.dentro.gastoPorCliente)} × ${fmt.brl0(P.fora.gastoPorCliente)} por cliente em 12 meses`,
-        'Gasto médio em 12 meses de quem está no programa ÷ o de quem deu o CPF mas não está no programa. Maior que 1 = o cliente do programa gasta mais. Não prova que é o programa: cliente frequente entra mais no programa.'), 'programa'),
-      kpi(TS.kpi(`Quem resgatou voltou em ${JAN} dias`, RS.sim.pouco ? '—' : fmt.pct(RS.sim.voltaram, 0), RS.sim.pouco ? pouco(RS.sim.clientes) : RS.nao.pouco ? 'sem grupo de comparação suficiente' : `contra ${fmt.pct(RS.nao.voltaram, 0)} de quem não resgatou`,
-        `Dos clientes que resgataram, quantos compraram de novo nos ${JAN} dias depois do resgate; comparado com quem chegou a ${min} pontos e não resgatou (nos ${JAN} dias depois de chegar ao mínimo).`), 'resgate'),
-      kpi(TS.kpi('Gasto depois do 1º resgate', AD.variacao == null ? '—' : fmt.delta(AD.variacao), AD.antes.pouco ? pouco(AD.clientes) : `${fmt.brl0(AD.antes.gastoPorCliente)} → ${fmt.brl0(AD.depois.gastoPorCliente)} por cliente (${fmt.int(AD.clientes)} clientes)`,
-        `O mesmo cliente: gasto nos ${JAN} dias antes × nos ${JAN} dias depois do primeiro resgate. Negativo é comum: antes do resgate o cliente estava juntando pontos (comprando mais que o normal).`), 'antesdepois'),
-      kpi(TS.kpi('Prêmios × venda a mais', custoVal, custoPe,
-        'Custo dos prêmios dos primeiros resgates analisados × a venda a mais (ou a menos) desses clientes nos 90 dias seguintes. Estimativa: é correlação, não prova. O custo só aparece para quem vê custo.'), 'antesdepois'));
+    // os números que decidem vão para o herói "Fidelidade" do topo dos Indicadores (decisão do dono, 25/11/2026: sem repetir aqui)
+    const linhaProg = razaoProg == null ? null : h('span', { title: 'Gasto médio em 12 meses de quem está no programa ÷ o de quem deu o CPF mas não está no programa. Não prova que é o programa: cliente frequente entra mais no programa.' },
+      `Cliente do programa gasta ${vezes(razaoProg)} (${fmt.brl0(P.dentro.gastoPorCliente)} × ${fmt.brl0(P.fora.gastoPorCliente)} em 12 meses)`);
+    const cols = [
+      { rot: `Quem resgatou voltou`, num: RS.sim.pouco ? '—' : fmt.pct(RS.sim.voltaram, 0),
+        dica: `Dos clientes que resgataram, quantos compraram de novo nos ${JAN} dias depois do resgate; comparado com quem chegou a ${min} pontos e não resgatou (nos ${JAN} dias depois de chegar ao mínimo). Todo o histórico da loja.`,
+        linhas: [RS.sim.pouco ? pouco(RS.sim.clientes) : RS.nao.pouco ? 'sem grupo de comparação suficiente' : `em ${JAN} dias · contra ${fmt.pct(RS.nao.voltaram, 0)} de quem não resgatou`,
+          AD.variacao == null ? null : h('span', { title: `O mesmo cliente: gasto nos ${JAN} dias antes × nos ${JAN} dias depois do primeiro resgate. Negativo é comum: antes do resgate o cliente estava juntando pontos (comprando mais que o normal).` },
+            `Gasto depois do 1º resgate ${fmt.delta(AD.variacao)} (${fmt.brl0(AD.antes.gastoPorCliente)} → ${fmt.brl0(AD.depois.gastoPorCliente)} por cliente)`)] },
+      { rot: 'Prêmios × venda a mais', num: custoVal,
+        dica: 'Custo dos prêmios dos primeiros resgates analisados × a venda a mais (ou a menos) desses clientes nos 90 dias seguintes. Estimativa: é correlação, não prova. O custo só aparece para quem vê custo.',
+        linhas: [custoPe] },
+    ];
 
     const G = { programa: [['No programa de fidelidade', P.dentro, 'ok'], ['Fora do programa (deu o CPF na nota)', P.fora, 'cinza']],
       resgate: [['Resgatou', RS.sim, 'ok'], [`Não resgatou em ${prazo} dias`, RS.nao, 'cinza']],
@@ -206,7 +204,7 @@
         + `${sem ? ` (${fmt.int(sem)} prêmios sem custo ficaram fora)` : ''}. Conta só o primeiro resgate de cada cliente e é venda, não lucro.`);
     };
     if (TS.custosLoja) TS.custosLoja().then(comCusto).catch(() => semCusto('não deu para ler o custo dos prêmios')); else semCusto('o custo dos prêmios aparece para quem vê custo');
-    return h('div', { class: 'fidret-bloco' }, quadros, h('div', { class: 'mt' }, card));
+    return { bloco: h('div', { class: 'fidret-bloco' }, card), cols, programa: linhaProg };
   };
   TS.fidRetorno = CALC;
 })();

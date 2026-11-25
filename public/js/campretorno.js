@@ -31,6 +31,12 @@
   /** dia de Brasília (dias desde 1970, como TS.isoToDay) de um instante ISO */
   const diaDe = (iso) => Math.floor((Date.parse(iso) - FUSO) / DIA);
 
+  /** as compras de um cliente que contam como retorno de um envio (mesma regra de retornoItem) */
+  function cuponsDoEnvio(item, cupons, janela) {
+    const t = Date.parse(item.em), e = diaDe(item.em);
+    return (cupons || []).filter((k) => k.day <= e + janela && (k.em && Number.isFinite(Date.parse(k.em)) ? Date.parse(k.em) > t : k.day > e));
+  }
+
   /** retorno de UM cliente da lista. cupons: [{ day, vt, em? }] do cliente; hoje: dia de hoje (Brasília).
    *  → null (não foi enviado nem é do grupo de comparação) | { voltou, vt, primeira, fechado, aberto, envio } */
   function retornoItem(item, cupons, janela, hoje) {
@@ -84,7 +90,51 @@
     return s;
   }
 
-  const API = { PCT, MIN_LISTA, MIN_GRUPO, noGrupo, separar, diaDe, retornoItem, resumo, efeito };
+  /** retorno de TODAS as campanhas juntas (CAMP-TOT-01, pedido do dono de 25/11/2026): cada cliente e cada compra contam uma vez,
+   *  mesmo quando o cliente recebeu mais de uma campanha no mesmo prazo (cada campanha, olhada sozinha, conta a compra; a soma não).
+   *  campanhas: [{ janela, rodadas: [{ lista }] }] · cuponsDe(cpf) → [{ day, vt, em? }] (objetos estáveis: a mesma compra é o mesmo objeto)
+   *  hoje: dia de Brasília · noPer(dia) opcional: só os envios (e as listas do grupo de comparação) com o dia no período.
+   *  → { campanhas, rec: { n, fechados, volt, voltFech, vt, taxa }, ctl: { … }, efeito (pontos, fração) | null, poucos } */
+  function geral(campanhas, cuponsDe, hoje, noPer) {
+    const porCpf = { e: new Map(), c: new Map() }, comEnvio = new Set();
+    for (const camp of campanhas || []) {
+      const jan = +camp.janela || 30;
+      for (const r of camp.rodadas || []) for (const it of r.lista || []) {
+        if ((it.st !== 'e' && it.st !== 'c') || !it.em || !Number.isFinite(Date.parse(it.em))) continue;
+        const e = diaDe(it.em);
+        if (noPer && !noPer(e)) continue;
+        const m = porCpf[it.st];
+        if (!m.has(it.cpf)) m.set(it.cpf, []);
+        m.get(it.cpf).push({ it, jan, e });
+        if (it.st === 'e') comEnvio.add(camp);
+      }
+    }
+    const somar = (m, pular) => {
+      const g = { n: 0, fechados: 0, volt: 0, voltFech: 0, vt: 0, taxa: null };
+      for (const [cpf, envios] of m) {
+        if (pular && pular.has(cpf)) continue;
+        const cupons = cuponsDe(cpf);
+        const contados = new Set();
+        let fechado = false, voltFech = false;
+        for (const x of envios) {
+          const ks = cuponsDoEnvio(x.it, cupons, x.jan);
+          for (const k of ks) contados.add(k);
+          if (hoje > x.e + x.jan) { fechado = true; if (ks.length) voltFech = true; }
+        }
+        g.n++;
+        if (contados.size) { g.volt++; for (const k of contados) g.vt += k.vt || 0; }
+        if (fechado) { g.fechados++; if (voltFech) g.voltFech++; }
+      }
+      g.taxa = g.fechados ? g.voltFech / g.fechados : null;
+      return g;
+    };
+    const rec = somar(porCpf.e);
+    const ctl = somar(porCpf.c, porCpf.e); // quem recebeu alguma campanha não serve de comparação
+    const efeito = rec.taxa != null && ctl.taxa != null ? rec.taxa - ctl.taxa : null;
+    return { campanhas: comEnvio.size, rec, ctl, efeito, poucos: efeito != null && (ctl.fechados < MIN_GRUPO || rec.fechados < MIN_GRUPO) };
+  }
+
+  const API = { PCT, MIN_LISTA, MIN_GRUPO, noGrupo, separar, diaDe, retornoItem, cuponsDoEnvio, resumo, efeito, geral };
   if (typeof module !== 'undefined' && module.exports) { module.exports = API; return; }
   TS.campRetorno = API;
 })();

@@ -40,3 +40,20 @@ test('COLETOR-IMG-01: todo robô que o coletor chama entra na imagem do coletor 
   const faltam = [...new Set([...usados, ...importados])].filter((f) => fs.existsSync(path.join(__dirname, '../../coletor', f)) && !copiados.has(f));
   assert.deepStrictEqual(faltam, [], 'arquivos do coletor fora do COPY do Dockerfile');
 });
+
+// EXTRATO-02 (diagnóstico da loja real, 25/11/2026: "O período máximo permitido é de 31 dias"): o robô lê em blocos de até
+// 28 dias, todas as páginas, confere com o totalLinhas e guarda só o resumo do movimento (sem parceiro)
+test('EXTRATO-02: blocos de até 28 dias, conferidos pelo totalLinhas, sem o parceiro', () => {
+  const py = fs.readFileSync(path.join(__dirname, '../../coletor/nextsoft_extrato.py'), 'utf8');
+  assert.match(py, /BLOCO_DIAS = (\d+)/); assert.ok(+py.match(/BLOCO_DIAS = (\d+)/)[1] <= 31);
+  assert.match(py, /def blocos\(desde: str, ate: str, dias: int = BLOCO_DIAS\)/);
+  assert.match(py, /timedelta\(days=dias - 1\)/, 'cada bloco tem no máximo `dias` dias contando o primeiro e o último');
+  assert.match(py, /j\.get\("totalLinhas"\)/);
+  assert.match(py, /"completo": not faltando/);
+  assert.match(py, /PESSOAL = re\.compile\(r".*\|parceiro"/);
+  const resumir = py.slice(py.indexOf('def resumir'), py.indexOf('def com_params'));
+  assert.doesNotMatch(resumir.split("\n").filter((l) => !l.includes('"""')).join("\n"), /parceiro/);
+  // o coletor dá mais tempo ao extrato que às coletas comuns
+  const col = fs.readFileSync(path.join(__dirname, '../../coletor/coletor.py'), 'utf8');
+  assert.match(col, /"MAX_RUNTIME_SECONDS": "2300"\}, 2400\)/);
+});

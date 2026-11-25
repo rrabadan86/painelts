@@ -602,7 +602,7 @@
       if (!det.open) return;
       try {
         const j = await api('GET', `/lojas/${l.id}/extrato`);
-        situ.textContent = !j.diag ? 'Ainda não lido.' : j.diag.erro ? `A última leitura falhou: ${j.diag.erro}` : `Última leitura: ${new Date(j.diag.em).toLocaleString('pt-BR')} · ${j.movimentos != null ? `${fmt.int(j.movimentos)} movimentos guardados` : 'a tela não trouxe uma lista com período (veja o diagnóstico)'}.`;
+        situ.textContent = !j.diag ? 'Ainda não lido.' : j.diag.erro ? `A última leitura falhou: ${j.diag.erro}` : `Última leitura: ${new Date(j.diag.em).toLocaleString('pt-BR')} · ${j.movimentos != null ? `${fmt.int(j.movimentos)} movimentos guardados${j.leitura && j.leitura.ate ? ` (${fmt.date(j.leitura.desde)} a ${fmt.date(j.leitura.ate)}, ${j.leitura.incompletos ? `${j.leitura.incompletos} de ${j.leitura.blocos} blocos incompletos: leia de novo` : 'completo'})` : ''}` : 'a tela não trouxe uma lista com período (veja o diagnóstico)'}.`;
         caixa.value = j.diag ? JSON.stringify(j.diag, null, 1) : '';
       } catch (e) { situ.textContent = e.message; }
     });

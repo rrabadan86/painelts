@@ -160,3 +160,29 @@ test('CAMP-CMP-03 campanha que se repete, criada antes do grupo de comparação:
   fs.rmSync(tmp, { recursive: true, force: true });
   void dir;
 });
+
+test('CAMP-TOT-01 retorno de todas as campanhas: a mesma compra e o mesmo cliente contam uma vez só', () => {
+  const k1 = { day: E + 2, vt: 100 }, k2 = { day: E + 20, vt: 50 }, k3 = { day: E + 5, vt: 70 };
+  const cup = { 1: [k1, k2], 2: [k3], 3: [], 4: [{ day: E + 3, vt: 40 }] };
+  const cuponsDe = (cpf) => cup[cpf] || [];
+  const A = { janela: 30, rodadas: [{ lista: [item({ cpf: '1' }), item({ cpf: '2' }), item({ cpf: '3' }), { cpf: '9', st: 'p' }] }] };
+  // a cliente 1 recebeu também a campanha B, 1 dia depois: as compras de R$ 100 e R$ 50 são retorno das duas, mas no total entram uma vez
+  const B = { janela: 30, rodadas: [{ lista: [item({ cpf: '1', em: '2026-03-11T18:00:00.000Z' }), item({ cpf: '4', st: 'c' }), item({ cpf: '2', st: 'c' })] }] };
+  const g = R.geral([A, B], cuponsDe, E + 40);
+  assert.strictEqual(g.campanhas, 2);
+  assert.strictEqual(g.rec.n, 3); // 1, 2, 3 (a 1 conta uma vez)
+  assert.strictEqual(g.rec.volt, 2);
+  assert.strictEqual(g.rec.vt, 220); // 100 + 50 + 70, sem repetir os 150 da campanha B
+  assert.strictEqual(g.rec.fechados, 3); perto(g.rec.taxa, 2 / 3);
+  // cada campanha sozinha conta a compra (é retorno dela): 100 + 50
+  assert.strictEqual(R.resumo(B.rodadas[0].lista, cuponsDe, 30, E + 40).rec.vt, 150);
+  // comparação: quem recebeu alguma campanha (a 2) não entra; fica a 4, que voltou
+  assert.strictEqual(g.ctl.n, 1); assert.strictEqual(g.ctl.voltFech, 1);
+  perto(g.efeito, 2 / 3 - 1); assert.strictEqual(g.poucos, true);
+  // prazo aberto: entra no faturamento, não no %
+  const h = R.geral([A], cuponsDe, E + 10);
+  assert.strictEqual(h.rec.fechados, 0); assert.strictEqual(h.rec.taxa, null); assert.strictEqual(h.rec.vt, 220);
+  // período: só envios com o dia no período
+  assert.strictEqual(R.geral([A, B], cuponsDe, E + 40, (d) => d > E).rec.n, 1);
+  assert.strictEqual(R.geral([], cuponsDe, E).campanhas, 0);
+});

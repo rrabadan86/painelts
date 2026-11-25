@@ -297,8 +297,8 @@
     return out;
   }
   /**
-   * Indicadores: "Saúde da base" no topo — quem está sumindo (movimento dos grupos RFM nos últimos 30 dias) e o caminho
-   * para agir (a lista já filtrada e a tela Hoje). Mesmas contas do cartão dos grupos (cartaoRfm).
+   * Indicadores: coluna "Clientes bons sumindo" do herói — quem está sumindo (movimento dos grupos RFM nos últimos 30 dias),
+   * com os links para a lista já filtrada. Mesmas contas do cartão dos grupos (cartaoRfm).
    */
   function cartaoSaude() {
     const todos = TS.cli.lista.filter((c) => c.rfm);
@@ -309,18 +309,16 @@
     const antes = (g) => TS.cli.lista.filter((c) => c.rfmAntes && c.rfmAntes.g === g).length;
     const risco = n('risco') + n('naoperder'), perdidos = n('perdido'), dPerd = perdidos - antes('perdido');
     const ir = (g) => { state.cli.rfm = g; state.cli.seg = ''; location.hash = '#clilista'; };
-    const pode = TS.pages && TS.pages.hoje;
     // redesenho (decisão do dono, 22/11/2026): o "como está" vira a 1ª coluna do herói e o "o que fazer" vira ações numeradas
     const col = { rot: 'Clientes bons sumindo', num: fmt.int(risco), estado: risco ? 'ruim' : null,
       dica: 'Clientes dos grupos "Não pode perder" e "Em risco": compravam bem e estão sumindo. Todos os clientes da loja, comparados com 30 dias atrás (não seguem o período nem os filtros).',
       linhas: [h('span', null, 'Não pode perder e Em risco'), pioraram ? h('span', { class: 'muted' }, `${fmt.int(pioraram)} ${pioraram === 1 ? 'era Campeão ou Leal' : 'eram Campeões ou Leais'} há 30 dias`) : null,
         h('span', null, `${fmt.int(perdidos)} ${perdidos === 1 ? 'perdido' : 'perdidos'}`, dPerd ? h('span', { class: dPerd > 0 ? 'neg' : 'pos' }, ` · ${dPerd > 0 ? '+' : '−'}${fmt.int(Math.abs(dPerd))} em 30 dias`) : null)] };
-    const acoes = [
-      pode ? { titulo: 'Mandar mensagem para quem está sumindo', texto: 'Sumindo, aniversariantes e hora de repor: a lista do dia já está pronta.', acao: { rotulo: 'Contatar → Hoje ›', href: '#hoje' } } : null,
-      risco ? { titulo: `Ver os ${fmt.int(risco)} ${risco === 1 ? 'cliente bom que está sumindo' : 'clientes bons que estão sumindo'}`, texto: 'Na Lista de clientes, já filtrada pelo grupo.', acao: { rotulo: 'Ver na Lista ›', onclick: () => ir(n('naoperder') ? 'naoperder' : 'risco') } } : null,
-      perdidos ? { titulo: `Ver os ${fmt.int(perdidos)} ${perdidos === 1 ? 'cliente perdido' : 'clientes perdidos'}`, texto: 'Não compram há muito tempo: uma oferta forte ou deixar de lado.', acao: { rotulo: 'Ver na Lista ›', onclick: () => ir('perdido') } } : null,
-    ].filter(Boolean);
-    return { col, acoes: acoes.length ? TS.cardSec('O que fazer agora', { sub: 'clientes da loja toda, comparados com 30 dias atrás' }, TS.acoesNum(acoes)) : null };
+    // "O que fazer agora" saiu (decisão do dono, 25/11/2026: o Hoje já é a lista do que fazer); os atalhos viram links na coluna
+    const link = (t, g) => h('a', { href: '#clilista', class: 'link-btn cli-saude-link', onclick: (e) => { e.preventDefault(); ir(g); } }, t);
+    const links = [risco ? link(`Ver os ${fmt.int(risco)} na lista ›`, n('naoperder') ? 'naoperder' : 'risco') : null, perdidos ? link(`Ver os ${fmt.int(perdidos)} ${perdidos === 1 ? 'perdido' : 'perdidos'} ›`, 'perdido') : null].filter(Boolean);
+    if (links.length) col.linhas.push(h('span', { class: 'cli-saude-links' }, ...links));
+    return { col };
   }
   /** Indicadores: quantos clientes em cada grupo (RFM), quanto gastaram e quem mudou de grupo nos últimos 30 dias */
   function cartaoRfm() {
@@ -1054,28 +1052,16 @@
     if (!ehLista) { s.seg = ''; s.rfm = ''; }
     const lista = filtrar();
     s.seg = segSalvo; s.rfm = rfmSalvo;
-    if (!ehLista && TS.cli.semVendaTotal) {
+    // aviso dos cupons com CPF que não acharam a venda: no topo só quando é grave (mais de 20%); senão vai para a Conferência dos dados
+    const avisoSemVenda = !ehLista && TS.cli.semVendaTotal ? (() => {
       const pct = TS.cli.semVendaTotal / TS.cli.cuponsXml;
-      root.append(h('div', { class: 'notice cli-semvenda' + (pct > 0.2 ? ' err' : ''), role: 'button', tabindex: '0', title: 'Clique para ver a lista', onclick: abrirSemVenda, onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); abrirSemVenda(); } } },
+      return h('div', { class: 'notice cli-semvenda' + (pct > 0.2 ? ' err' : ''), role: 'button', tabindex: '0', title: 'Clique para ver a lista', onclick: abrirSemVenda, onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); abrirSemVenda(); } } },
         h('b', null, `${fmt.int(TS.cli.semVendaTotal)} cupons com CPF (${fmt.pct(pct, 0)}) não foram encontrados nas vendas`),
         ` e ficaram de fora das contas${TS.cli.soSemVenda ? ` (${fmt.int(TS.cli.soSemVenda)} CPFs só têm cupons assim)` : ''}. Normalmente são vendas fora do período importado ou números de cupom que não batem com o relatório de vendas. `,
-        h('span', { class: 'link-btn' }, 'Ver a lista ›')));
-    }
-
-    if (!ehLista) {
-      // o veredito primeiro (decisão do dono, revisão de 22/11): quem está sumindo e o caminho para agir
-      const saude = cartaoSaude();
-      // cada seção diz a quais filtros responde (antes o filtro mudava um quadro e não os outros, sem aviso)
-      const alcance = (t) => h('p', { class: 'muted cli-alcance' }, t);
-      const base = baseDeClientes(lista);
-      root.append(TS.heroi([saude && saude.col, ...base.cols], { titulo: 'Saúde da base' }),
-        alcance('Clientes sumindo: a loja toda, comparada com 30 dias atrás. Vendas com CPF e recompra: período e loja dos filtros (a recompra e os clientes novos seguem também os filtros de cliente — nome, CPF, cupom…).'));
-      if (saude && saude.acoes) root.append(h('div', { class: 'mt' }, saude.acoes));
-      root.append(...base.resto);
-      root.append(TS.section('Comportamento dos clientes'), alcance('Todos os clientes da loja, pelos últimos 12 meses: não seguem o período nem os filtros de cliente.'), h('div', { class: 'grid g-2 rfm-grid' }, cartaoRfm(), cartaoSafras()));
-      if (TS.cli.fixe) { root.append(TS.section('Fidelidade')); const cr = cartaoResgate(TS.cli.fixe); if (cr) root.append(cr); const rf = TS.cartaoRetornoFid && TS.cartaoRetornoFid(TS.cli.fixe); if (rf) root.append(rf); root.append(cartaoFixe(TS.cli.fixe)); }
-      root.append(TS.section('Perfil dos clientes'), alcance('Seguem todos os filtros (período, loja e os filtros de cliente).'));
-    }
+        h('span', { class: 'link-btn' }, 'Ver a lista ›'));
+    })() : null;
+    const semVendaGrave = avisoSemVenda && TS.cli.semVendaTotal / TS.cli.cuponsXml > 0.2;
+    if (semVendaGrave) root.append(avisoSemVenda);
 
     const ordem = s.ordem;
     const ORD = { recente: (a, b) => (b.c.ultima ?? -1) - (a.c.ultima ?? -1), valor: (a, b) => b.vt - a.vt, visitas: (a, b) => b.visitas - a.visitas, ausencia: (a, b) => (b.c.ausencia ?? -1) - (a.c.ausencia ?? -1), nome: (a, b) => (a.c.nome || 'zzz').localeCompare(b.c.nome || 'zzz', 'pt-BR') };
@@ -1086,12 +1072,35 @@
     const visMed = lista.length ? lista.reduce((t, r) => t + r.visitas, 0) / lista.length : null;
     const mesAtual = String(new Date().getMonth() + 1).padStart(2, '0');
     const anivMes = lista.filter((r) => r.c.nascimento && r.c.nascimento.slice(5, 7) === mesAtual).length;
-    if (!ehLista) root.append(h('div', { class: 'grid g-kpi' },
-      TS.kpi('Clientes', fmt.int(lista.length), `de ${fmt.int(TS.cli.lista.length)} com compra identificada`),
-      TS.kpi('Faturamento desses clientes', fmt.brl0(tot)),
-      TS.kpi('Visitas por cliente', fmt.n1(visMed), 'média'),
-      TS.kpi('Com WhatsApp', fmt.int(comWpp), lista.length ? fmt.pct(comWpp / lista.length, 0) + ' do filtro' : null),
-      TS.kpi('Aniversariantes do mês', fmt.int(anivMes), TS.MESES[+mesAtual - 1])));
+    // cada seção diz a quais filtros responde (antes o filtro mudava um quadro e não os outros, sem aviso)
+    const alcance = (t) => h('p', { class: 'muted cli-alcance' }, t);
+    let detalheFid = null;
+
+    if (!ehLista) {
+      // ordem da tela (decisão do dono, 25/11/2026; CLI-IND-01): o que decide no topo, o detalhe e a conferência dos dados no fim
+      const saude = cartaoSaude();
+      const base = baseDeClientes(lista);
+      const colClientes = { rot: 'Clientes identificados', num: fmt.int(lista.length),
+        dica: 'Clientes com compra identificada (CPF na nota ou ligada pelo FIXE) no período, na loja e nos filtros de cliente. Faturamento deles: a soma dessas compras. Visitas: compras por cliente, em média.',
+        linhas: [lista.length !== TS.cli.lista.length ? `de ${fmt.int(TS.cli.lista.length)} com compra identificada` : null,
+          h('span', null, 'Faturamento deles ', h('b', null, fmt.brl0(tot))), `${fmt.n1(visMed)} visitas por cliente`] };
+      root.append(TS.heroi([colClientes, saude && saude.col, ...base.cols], { titulo: 'Saúde da base' }),
+        alcance('Clientes identificados, vendas com CPF e recompra: período e loja dos filtros (clientes identificados, a recompra e os clientes novos seguem também os filtros de cliente — nome, CPF, cupom…). Clientes sumindo: a loja toda, comparada com 30 dias atrás.'));
+
+      // retorno das ações: campanhas (todas juntas, sem repetir compra) e fidelidade
+      const fid = TS.cli.fixe ? heroiFidelidade(TS.cli.fixe) : null;
+      detalheFid = fid && fid.detalhe;
+      root.append(TS.section('Retorno das ações'),
+        alcance(`O que a loja faz dá resultado? Campanhas: envios no período dos filtros, cada cliente e cada compra contados uma vez.${fid ? ' Fidelidade: resgate no período dos filtros; quem resgatou voltou e prêmios × venda a mais olham todo o histórico.' : ''}`),
+        caixaRetornoCamp(), fid && fid.heroi);
+
+      root.append(TS.section('Comportamento dos clientes'), alcance('Todos os clientes da loja, pelos últimos 12 meses: não seguem o período nem os filtros de cliente.'), h('div', { class: 'grid g-2 rfm-grid' }, cartaoRfm(), cartaoSafras()));
+      root.append(...base.resto);
+      root.append(TS.section('Perfil dos clientes'), alcance('Seguem todos os filtros (período, loja e os filtros de cliente).'));
+      root.append(h('div', { class: 'grid g-kpi cli-perfil-kpi' },
+        TS.kpi('Com WhatsApp', fmt.int(comWpp), lista.length ? fmt.pct(comWpp / lista.length, 0) + ' do filtro' : null),
+        TS.kpi('Aniversariantes do mês', fmt.int(anivMes), TS.MESES[+mesAtual - 1])));
+    }
 
     // ---- lista
     const listBox = h('div', { class: 'cli-list' });
@@ -1160,6 +1169,9 @@
     const junto = cartaoLevamJunto();
     if (junto) lado.prepend(junto);
     root.append(lado);
+    if (detalheFid) root.append(TS.section('Programa de fidelidade em detalhe'), alcance('As contas por trás dos números de Fidelidade do topo, com as listas de clientes.'), ...detalheFid);
+    const confFixe = TS.cli.fixe ? cartaoFixe(TS.cli.fixe) : null;
+    if (confFixe || (avisoSemVenda && !semVendaGrave)) root.append(TS.section('Conferência dos dados'), alcance('Para conferir e corrigir os dados, não para decidir. Toque para abrir.'), conferenciaDados(TS.cli.fixe, confFixe, semVendaGrave ? null : avisoSemVenda));
   }
 
   // ---------- Lista de clientes no celular (CLI-MOB-01; mockup aprovado pelo dono em 24/11/2026) ----------
@@ -1657,7 +1669,7 @@
       total: { nome: 'Total', cupons: nTot, cpf: nCpf, pct: nTot ? nCpf / nTot : null, novos: rows.reduce((t, r) => t + r.novos, 0), rc: rcTot, voltaram: rcTot.voltaram, pctVolta: rcTot.pouco ? -1 : rcTot.pct,
         ...(comFixe ? (() => { const cf = rows.reduce((t, r) => t + r.cliFixe, 0), sf = rows.reduce((t, r) => t + r.semFixe, 0); return { semFixe: sf, pctSemFixe: cf ? sf / cf : null }; })() : {}) },
     });
-    return { cols, resto: [TS.section('Base de clientes'), h('p', { class: 'muted cli-alcance' }, 'Período e loja dos filtros (o gráfico e a tabela das vendedoras).'),
+    return { cols, resto: [TS.section('Equipe e base'), h('p', { class: 'muted cli-alcance' }, 'Período e loja dos filtros (o gráfico e a tabela das vendedoras).'),
       h('div', { class: 'grid mt', style: { alignItems: 'start' } }, grafico,
         TS.card('Vendedoras e clientes', '% de vendas com CPF (pedir o CPF faz a base crescer) · clientes novos = primeira compra atendida por ela · voltaram = compraram de novo em até 90 dias (só quem já teve o prazo inteiro)' + (comFixe ? ' · sem FIXE = compras de clientes do FIXE sem lançamento no dia (o cliente pode não ter informado)' : ''), tab))] };
   }
@@ -1931,10 +1943,6 @@
     }
     const card = TS.card('Resgate de pontos', `Clientes que chegaram a ${fmt.int(min)} pontos (o mínimo para resgatar) no período · resgatou = fez um resgate em até ${fmt.int(prazo)} dias${fx.logsAte != null ? ` · logs do FIXE até ${fmt.date(TS.dayToIso(fx.logsAte))}` : ''}`,
       cs.length ? h('div', null,
-        h('div', { class: 'rs-topo' },
-          h('div', { class: 'rs-num' }, h('b', null, taxa == null ? '—' : fmt.pct(taxa, 0)), h('span', null, 'resgatam')),
-          h('p', null, fechados ? `${fmt.int(sim.length)} de ${fmt.int(fechados)} clientes que chegaram a ${fmt.int(min)} pontos resgataram em até ${fmt.int(prazo)} dias.` : `Ninguém completou ainda os ${fmt.int(prazo)} dias de prazo.`,
-            ab.length ? h('span', { class: 'muted' }, ` ${fmt.int(ab.length)} ${ab.length === 1 ? 'cliente ainda está' : 'clientes ainda estão'} no prazo e não entram na conta.`) : null)),
         premios.length && curto ? h('div', { class: 'notice rs-aviso' }, `Período curto (${fmt.int(diasPer)} dias): os resgates de agora vêm de pontos ganhos meses antes, então o retorno do programa oscila. Para um número confiável use 12 meses.`) : null,
         h('div', { class: 'rs-grupos' },
         grupo('Clientes',
@@ -1952,7 +1960,49 @@
         conta)
         : TS.empty(`Nenhum cliente chegou a ${min} pontos no período.`));
     card.classList.add('fx-card');
-    return card;
+    return { card, taxa, fechados, min, prazo };
+  }
+
+  /** Indicadores → "Retorno das campanhas" (CAMP-TOT-01): o mesmo cartão da tela Campanhas, com as campanhas da loja */
+  function caixaRetornoCamp() {
+    if (!TS.heroiRetornoCamp || !TS.campanhasDaLoja) return null;
+    if (!state.loja || state.loja === 'todas') return h('p', { class: 'muted cli-camp-loja' }, 'Retorno das campanhas: escolha uma loja no seletor do topo (as campanhas são de cada loja).');
+    const ir = { irCampanhas: true };
+    const pronta = TS.campanhasDaLojaCache && TS.campanhasDaLojaCache();
+    if (pronta) return TS.heroiRetornoCamp(pronta, ir);
+    const box = h('div', { class: 'cli-camp-box' }, TS.heroi([{ rot: 'Faturamento do retorno', num: '…', linhas: ['buscando as campanhas da loja'] }], { titulo: 'Retorno das campanhas' }));
+    TS.campanhasDaLoja().then((l) => { if (box.isConnected) box.replaceChildren(TS.heroiRetornoCamp(l, ir)); })
+      .catch(() => { if (box.isConnected) box.replaceChildren(h('p', { class: 'muted' }, 'Não deu para ler as campanhas agora.')); });
+    return box;
+  }
+
+  /** Indicadores → Fidelidade: os números que decidem num herói (taxa de resgate, quem resgatou voltou, prêmios × venda a mais);
+   *  o detalhe (cartões com as listas e as contas) vai para o fim da tela, sem repetir esses números (decisão do dono, 25/11/2026) */
+  function heroiFidelidade(fx) {
+    const cr = cartaoResgate(fx);
+    const rf = TS.cartaoRetornoFid ? TS.cartaoRetornoFid(fx) : null;
+    if (!cr && !rf) return null;
+    const cols = [];
+    if (cr) cols.push({ rot: 'Resgataram', num: cr.taxa == null ? '—' : fmt.pct(cr.taxa, 0),
+      dica: `Dos clientes que chegaram a ${fmt.int(cr.min)} pontos (o mínimo para resgatar) no período, quantos fizeram um resgate em até ${fmt.int(cr.prazo)} dias. Quem ainda está no prazo fica de fora. As listas estão em "Programa de fidelidade em detalhe".`,
+      linhas: [cr.fechados ? `de quem chegou a ${fmt.int(cr.min)} pontos, em até ${fmt.int(cr.prazo)} dias` : `ninguém completou os ${fmt.int(cr.prazo)} dias ainda`, rf && rf.programa] });
+    if (rf) cols.push(...rf.cols);
+    return { heroi: TS.heroi(cols, { titulo: 'Fidelidade' }), detalhe: [cr && cr.card, rf && rf.bloco].filter(Boolean) };
+  }
+
+  /** Conferência dos dados (fim dos Indicadores): ligação do FIXE com os cupons e cupons com CPF sem venda, recolhidos numa linha */
+  function conferenciaDados(fx, cartao, aviso) {
+    const partes = [];
+    if (fx) {
+      const fora = fx.temLeads ? TS.cli.lista.filter((c) => c.tags.has('forafixe')).length : null;
+      if (fx.temLogs) partes.push(`${fmt.int((fx.semFixe || []).length)} vendas sem FIXE`);
+      if (fora != null) partes.push(`${fmt.int(fora)} fora do FIXE`);
+      partes.push(`${fmt.int(fx.divergencias.length)} com CPF diferente`);
+    }
+    if (aviso) partes.push(`${fmt.int(TS.cli.semVendaTotal)} cupons com CPF sem a venda`);
+    const det = h('details', { class: 'card cli-conf' }, h('summary', null, h('b', null, fx ? 'Ligação do FIXE com os cupons' : 'Cupons com CPF'), h('span', { class: 'muted' }, ' · ' + partes.join(' · ')), h('span', { class: 'link-btn cli-conf-abrir' }, ' abrir ›')),
+      aviso, cartao);
+    return det;
   }
 
   function cartaoFixe(fx) {
@@ -2028,6 +2078,8 @@
     texto: (txt, c, extra = {}) => TS.msgWpp.montar(txt, valoresWpp(c), extra), valores: (c) => valoresWpp(c),
     linkWpp: (c, txt) => linkWpp(c, txt), enviarWpp: (c, txt, motivo, campanha) => enviarWpp(c, txt, motivo, campanha),
     hojeItens: (val, disp) => hojeItens(val, disp), MOTIVOS_HOJE,
+    /** o filtro de período das telas de clientes (dia → está no período?) ou null sem período */
+    noPeriodo: () => noPeriodoCli(),
     /** todos os clientes que podem entrar numa campanha: os da lista + quem só aparece no FIXE (com cadastro) */
     universo() {
       const out = [...TS.cli.lista];

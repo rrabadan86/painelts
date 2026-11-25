@@ -100,16 +100,32 @@ test.describe('Clientes → Hoje', () => {
     expect(erros).toEqual([]);
   });
 
-  test('Indicadores: "Saúde da base" no topo com o caminho para agir e o alcance dos filtros em cada seção', async ({ page }) => {
+  test('CLI-IND-01 Indicadores: o que decide no topo, "O que fazer agora" fora e a conferência dos dados recolhida no fim', async ({ page }) => {
     await page.evaluate(() => { location.hash = '#clientes'; });
-    // redesenho: o "como está" num cartão-herói (clientes bons sumindo · vendas com CPF · recompra) e o "o que fazer" em ações numeradas
+    // herói com 4 colunas: clientes identificados na frente; os atalhos para a lista ficam na coluna dos sumindo
     const saude = page.locator('.heroi', { hasText: 'Saúde da base' });
     await expect(saude).toBeVisible();
-    await expect(saude.locator('.heroi-col')).toHaveCount(3);
+    await expect(saude.locator('.heroi-col')).toHaveCount(4);
+    await expect(saude.locator('.heroi-col').first()).toContainText('Clientes identificados');
+    await expect(saude.locator('.heroi-col').first()).toContainText('Faturamento deles');
     await expect(saude).toContainText('Clientes bons sumindo');
     await expect(saude).toContainText('Vendas com CPF');
     await expect(saude).toContainText('Recompra em 90 dias');
-    await expect(page.locator('.acoes-num').getByRole('link', { name: 'Contatar → Hoje ›' })).toBeVisible();
+    await expect(saude.locator('.cli-saude-link').first()).toContainText('na lista');
+    await expect(page.locator('.acoes-num')).toHaveCount(0);
+    await expect(page.locator('main')).not.toContainText('O que fazer agora');
+    // a ordem das seções
+    const secoes = await page.locator('main .section-label').allInnerTexts();
+    expect(secoes.map((t) => t.trim().toUpperCase())).toEqual(['RETORNO DAS AÇÕES', 'COMPORTAMENTO DOS CLIENTES', 'EQUIPE E BASE', 'PERFIL DOS CLIENTES', 'PROGRAMA DE FIDELIDADE EM DETALHE', 'CONFERÊNCIA DOS DADOS']);
+    await expect(page.locator('.heroi[aria-label="Retorno das campanhas"]')).toBeVisible();
+    // clientes, faturamento e visitas subiram para o herói: não repetem no Perfil
+    await expect(page.locator('.cli-perfil-kpi .kpi')).toHaveCount(2);
+    // conferência: recolhida, com o resumo na linha; abre e mostra a ligação do FIXE
+    const conf = page.locator('details.cli-conf');
+    await expect(conf).not.toHaveAttribute('open', '');
+    await expect(conf.locator('summary')).toContainText('vendas sem FIXE');
+    await conf.locator('summary').click();
+    await expect(conf).toContainText('Ligação das compras do FIXE aos cupons');
     await expect(page.locator('.cli-alcance').first()).toContainText('Clientes sumindo: a loja toda');
     await expect(page.locator('.cli-alcance', { hasText: 'Período e loja dos filtros (o gráfico' })).toBeVisible();
     await expect(page.locator('.cli-alcance', { hasText: 'não seguem o período nem os filtros de cliente' })).toBeVisible();
