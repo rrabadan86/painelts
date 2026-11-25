@@ -20,6 +20,7 @@ paths:
 - Pergunte antes de abrir o AppNext no Chrome. Ele guarda a sessão por aba: cada aba nova pede login ao dono.
 
 ## Ao mexer
+- **Robô novo entra no `COPY` do `coletor/Dockerfile`** (a lista é arquivo por arquivo; sem isso a VPS não tem o script — COLETOR-IMG-01, `extrato.test`).
 - Saídas do robô em JSON (`SAIDA_RESULTADO`/`SAIDA_SESSAO`): o painel lê esses arquivos; mantenha os campos que ele já usa.
 - Logs não podem ter senha, token, CPF completo nem e-mail pessoal do dono.
 - Dados temporários de teste: apague depois.
