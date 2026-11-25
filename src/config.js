@@ -200,6 +200,12 @@ const hojeBR = () => diaSP();
 /** o prazo de acesso do usuário já passou? (o último dia ainda vale) */
 const expirado = (u) => !!(u && u.acessoAte && hojeBR() > u.acessoAte);
 /** hoje + n meses (o dia é ajustado no fim do mês: 31/01 + 1 = 28/02) */
+/** ACESSO-DIAS-01: data AAAA-MM-DD + n dias (prazo de acesso em dias, decisão do dono de 25/11/2026) */
+function somaDias(iso, n) {
+  const d = new Date(String(iso).slice(0, 10) + 'T12:00:00Z');
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
 function somaMeses(iso, n) {
   const [a, m, d] = iso.split('-').map(Number);
   const alvo = new Date(Date.UTC(a, m - 1 + n, 1));
@@ -383,5 +389,5 @@ function metaDoMes(loja, ym) {
 
 module.exports = {
   get, hashSenha, hashSenhaAsync, confereSenha, confereSenhaAsync, chaveSessao, lojasDoUsuario, pastaLoja, usuario, alterar, gravarAtomico, auditar, lerAuditoria,
-  registrarAcesso, flushAcessos, lerAcessos, msgErro, erroDeSistema, MSG_ERRO_INTERNO, expirado, hojeBR, diaSP, somaMeses, metaDoMes, PERFIS, TELAS, TELAS_GERENTE_PADRAO, telasDo, homolog, travaHomolog, podeRobo, podeRoboU, podeConversas, podeConversasU, roboLegado, ARQUIVOS, CONFIG_FILE, CONFIG_DIR, COLETOR_DIR, DATA_DIR,
+  registrarAcesso, flushAcessos, lerAcessos, msgErro, erroDeSistema, MSG_ERRO_INTERNO, expirado, hojeBR, diaSP, somaMeses, somaDias, metaDoMes, PERFIS, TELAS, TELAS_GERENTE_PADRAO, telasDo, homolog, travaHomolog, podeRobo, podeRoboU, podeConversas, podeConversasU, roboLegado, ARQUIVOS, CONFIG_FILE, CONFIG_DIR, COLETOR_DIR, DATA_DIR,
 };

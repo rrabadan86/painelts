@@ -126,3 +126,19 @@ test('PERFIL-TELA-05: franqueado — só a loja dele no seletor e as telas da re
   expect(await page.evaluate(() => TS.state.loja)).toBe('l1');
   expect(erros).toEqual([]);
 });
+
+// ACESSO-ADMIN-01 (decisão do dono, 25/11/2026): só o admin define o prazo de acesso
+test('ACESSO-ADMIN-01: franqueado vê o prazo de acesso travado em Configurações → Usuários', async ({ page }) => {
+  const erros = await entrar(page, 'dono');
+  // a configuração guiada e o "O que mudou" abrem sozinhos no primeiro acesso: fecha antes de seguir
+  await expect.poll(() => page.evaluate(() => {
+    document.querySelectorAll('.cp-modal-bg, .ts-aviso-bg').forEach((x) => x.remove());
+    if (location.hash !== '#config') location.hash = '#config';
+    return !!document.querySelector('.cfg-abas');
+  }), { timeout: 20000 }).toBe(true);
+  await page.locator('.cfg-abas').getByText('Usuários', { exact: true }).click();
+  await page.locator('.cfg-corpo').getByRole('button', { name: 'Editar' }).filter({ visible: true }).first().click();
+  await expect(page.getByText(/Só o administrador define o prazo de acesso/)).toBeVisible();
+  await expect(page.locator('.cfg-meses .chip')).toHaveCount(0);
+  expect(erros).toEqual([]);
+});

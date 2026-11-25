@@ -345,3 +345,19 @@ test('CONV-07: Conversas do WhatsApp — só admin e franqueado da loja (gerente
   assert.strictEqual((await pedir('chefe', '/api/conversas/mensagens?loja=l2&chave=..%2F..%2Fx')).status, 400, 'chave inválida');
   assert.strictEqual((await pedir('dono1', '/api/conversas/lida', { method: 'POST', headers: { 'X-Painel': '' }, body: JSON.stringify({ loja: 'l1', chave: '5562999990001' }) })).status, 403, 'sem X-Painel');
 });
+
+test('ACESSO-ADMIN-01: só o admin define o prazo de acesso (dias); franqueado recebe 403 e o prazo não muda', async () => {
+  let r = await pedir('dono1', '/api/admin/usuarios', { method: 'POST', body: JSON.stringify({ nome: 'teste_prazo', senha: 'Senha-Forte-123', perfil: 'vendedor', lojas: ['l1'], vendedor: 'BIA', acessoDias: 14 }) });
+  assert.equal(r.status, 403);
+  r = await pedir('chefe', '/api/admin/usuarios', { method: 'POST', body: JSON.stringify({ nome: 'teste_prazo', senha: 'Senha-Forte-123', perfil: 'vendedor', lojas: ['l1'], vendedor: 'BIA', acessoDias: 14 }) });
+  assert.ok(r.ok, await r.text());
+  r = await pedir('dono1', '/api/admin/usuarios/teste_prazo', { method: 'PUT', body: JSON.stringify({ acessoDias: 90 }) });
+  assert.equal(r.status, 403);
+  r = await pedir('dono1', '/api/admin/usuarios/teste_prazo', { method: 'PUT', body: JSON.stringify({ acessoAte: null }) });
+  assert.equal(r.status, 403);
+  const u = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')).usuarios.teste_prazo;
+  assert.ok(u && u.acessoAte, 'o prazo dado pelo admin continua');
+  r = await pedir('dono1', '/api/admin/usuarios/teste_prazo', { method: 'PUT', body: JSON.stringify({ acessoAte: u.acessoAte, vendedor: 'BIA' }) });
+  assert.ok(r.ok, 'franqueado edita o resto sem mexer no prazo');
+  await pedir('chefe', '/api/admin/usuarios/teste_prazo', { method: 'DELETE' });
+});

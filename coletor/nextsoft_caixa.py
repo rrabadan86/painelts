@@ -180,7 +180,7 @@ def coletar_caixa_na_pagina(page, saida: str, dias: int = None):
         os.chmod(tmp, 0o640)
         tmp.replace(destino)
         log(f"Caixa: {len(todos)} fechamentos guardados ({novos} novos{', ' + str(falhas) + ' com erro' if falhas else ''}) → {destino.name}")
-        if falhas and novas == 0:
+        if falhas and novos == 0:  # antes "novas" (nome errado): com uma falha o robô parava com NameError
             raise RuntimeError(f"Falha ao baixar {falhas} fechamento(s) de caixa.")
     finally:
         try:

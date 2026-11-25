@@ -1306,13 +1306,7 @@
   const dataBr = (iso) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : '');
   const hojeBR = () => (TS.hojeSP ? TS.hojeSP() : new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10));
   const diasAte = (iso) => Math.round((Date.parse(iso + 'T12:00:00Z') - Date.parse(hojeBR() + 'T12:00:00Z')) / 864e5);
-  function somaMeses(iso, n) {
-    const [a, m, d] = iso.split('-').map(Number);
-    const alvo = new Date(Date.UTC(a, m - 1 + n, 1));
-    const ult = new Date(Date.UTC(alvo.getUTCFullYear(), alvo.getUTCMonth() + 1, 0)).getUTCDate();
-    alvo.setUTCDate(Math.min(d, ult));
-    return alvo.toISOString().slice(0, 10);
-  }
+  const somaDias = (iso, n) => { const d = new Date(String(iso).slice(0, 10) + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
 
   function senhaAleatoria() {
     const c = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789';
@@ -1331,22 +1325,24 @@
     const senha = inp({ type: 'text', autocomplete: 'new-password', placeholder: novo ? 'mínimo 8 caracteres' : 'em branco = mantém a atual' });
     const ativo = h('input', { type: 'checkbox', checked: !u || u.ativo || null, disabled: (u && u.nome === est.usuario) || null });
     const campoLojas = campo('Lojas', lojasBox);
-    // prazo de acesso, em meses a partir de hoje
+    // prazo de acesso, em DIAS a partir de hoje (ACESSO-DIAS-01, decisão do dono de 25/11/2026: ex.: 14 dias de teste)
     const proprio = u && u.nome === est.usuario;
-    const meses = inp({ type: 'number', min: 0, max: 120, step: 1, placeholder: novo ? 'sem prazo' : 'mantém', style: { maxWidth: '110px' }, disabled: proprio || null });
-    const atalhos = h('div', { class: 'chips cfg-meses' }, [1, 2, 3, 4, 5].map((n) => h('button', { type: 'button', class: 'chip', onclick: () => { meses.value = n; dicaPrazo(); } }, `${n} ${n === 1 ? 'mês' : 'meses'}`)),
+    const soAdminPrazo = est.perfil !== 'admin'; // ACESSO-ADMIN-01: só o administrador define o prazo (o servidor também nega)
+    const meses = inp({ type: 'number', min: 0, max: 3650, step: 1, placeholder: novo ? 'sem prazo' : 'mantém', style: { maxWidth: '110px' }, disabled: proprio || soAdminPrazo || null, 'aria-label': 'Acesso por (dias)' });
+    const atalhos = h('div', { class: 'chips cfg-meses' }, [7, 14, 30, 60, 90].map((n) => h('button', { type: 'button', class: 'chip', onclick: () => { meses.value = n; dicaPrazo(); } }, `${n} dias`)),
       !novo && u.acessoAte ? h('button', { type: 'button', class: 'chip', onclick: () => { meses.value = 0; dicaPrazo(); } }, 'Sem prazo') : null);
     const prazoTxt = h('small', null);
     const dicaPrazo = () => {
       const v = meses.value.trim();
       const atual = u && u.acessoAte ? `Hoje: ${u.expirado ? 'terminou em' : 'até'} ${dataBr(u.acessoAte)}.` : 'Hoje: sem prazo.';
-      if (proprio) prazoTxt.textContent = 'Você não pode colocar prazo no próprio acesso.';
+      if (soAdminPrazo) prazoTxt.textContent = `🔒 Só o administrador define o prazo de acesso. ${u && u.acessoAte ? `Hoje: ${u.expirado ? 'terminou em' : 'até'} ${dataBr(u.acessoAte)}.` : 'Hoje: sem prazo.'}`;
+      else if (proprio) prazoTxt.textContent = 'Você não pode colocar prazo no próprio acesso.';
       else if (v === '') prazoTxt.textContent = novo ? 'Em branco = sem prazo.' : `${atual} Em branco = mantém.`;
       else if (+v === 0) prazoTxt.textContent = 'Sem prazo: acesso até ser desativado.';
-      else prazoTxt.textContent = `Acesso até ${dataBr(somaMeses(hojeBR(), Math.round(+v)))} (último dia).`;
+      else prazoTxt.textContent = `Acesso até ${dataBr(somaDias(hojeBR(), Math.round(+v)))} (último dia).`;
     };
     meses.addEventListener('input', dicaPrazo); dicaPrazo();
-    const campoPrazo = h('label', { class: 'cfg-campo', style: { marginBottom: '12px' } }, h('span', null, 'Acesso por (meses)'), h('div', { class: 'cfg-inline' }, meses, atalhos), prazoTxt);
+    const campoPrazo = h('label', { class: 'cfg-campo', style: { marginBottom: '12px' } }, h('span', null, 'Acesso por (dias)'), h('div', { class: 'cfg-inline' }, meses, soAdminPrazo ? null : atalhos), prazoTxt);
     // telas: a lista única do servidor (src/telas.js), agrupada como no menu; regras fixas vêm travadas
     const CAT = est.telas || [];
     const padraoGer = CAT.flatMap((g) => g.telas.filter((t) => t.gerente === 'escolha' && t.padrao).map((t) => t.id));
@@ -1436,7 +1432,7 @@
       campoPrazo, campoLojas, campoVend, campoTelas, campoWpp,
       h('div', { class: 'cfg-acoes' },
         acao(novo ? 'Criar usuário' : 'Salvar', async () => {
-          const corpo = { perfil: perfil.value, lojas: [...marcadas], vendedor: vendSel.value, ativo: ativo.checked, trocarSenha: trocar.disabled ? undefined : trocar.checked, senha: senha.value || undefined, acessoMeses: meses.value.trim() === '' || proprio ? undefined : Math.round(+meses.value), telas: perfil.value === 'gerente' ? CAT.flatMap((g) => g.telas.filter((t) => t.gerente === 'escolha' && telasSel.has(t.id)).map((t) => t.id)) : undefined };
+          const corpo = { perfil: perfil.value, lojas: [...marcadas], vendedor: vendSel.value, ativo: ativo.checked, trocarSenha: trocar.disabled ? undefined : trocar.checked, senha: senha.value || undefined, acessoDias: meses.value.trim() === '' || proprio || soAdminPrazo ? undefined : Math.round(+meses.value), telas: perfil.value === 'gerente' ? CAT.flatMap((g) => g.telas.filter((t) => t.gerente === 'escolha' && telasSel.has(t.id)).map((t) => t.id)) : undefined };
           if (souAdmin) { corpo.robo = cbRobo.checked; corpo.conversas = cbConv.checked; }
           if (novo) { await api('POST', '/usuarios', { nome: nome.value.trim().toLowerCase(), ...corpo }); abertos.delete('novoUser'); }
           else { await api('PUT', `/usuarios/${encodeURIComponent(u.nome)}`, corpo); state.cfgEdit = null; }

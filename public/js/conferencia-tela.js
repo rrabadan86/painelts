@@ -103,9 +103,12 @@
       tabela.replaceChildren(TS.table({ linhaMob: { nome: 'dia', val: 'dif', l2: ['fat', 'caixa', 'estado', 'gaveta'], l3: ['reenviar'] }, // celular em linhas (LMOB-04)
         
         cls: 'conf-t', sortKey: 'dia', sortDir: 'desc', maxHeight: '640px', rows,
+        // FECH-DIA-01 (pedido do dono, 25/11/2026): tocar no dia abre o fechamento daquele dia — formas de pagamento, abertura,
+        // fechamento, sangria, suprimento e tudo o que vai no e-mail (a mesma janela de Configurações → "Ver mensagem")
+        onRowClick: (x) => { state.fechDia = x.dia; TS.abrirFechamento([{ id: loja, nome: (TS.lojas || []).find((l) => l.id === loja)?.nome || loja }], loja); },
         empty: { naobate: 'Nenhum dia fora da tolerância. 👏', semfechamento: 'Todos os dias com venda têm o caixa lido.', bate: 'Nenhum dia conferido ainda.', todos: 'Sem vendas nem caixa nos últimos 60 dias.' }[fil],
         cols: [
-          { key: 'dia', label: 'Dia', align: 'l', sticky: true, title: 'Dia da venda. Para o caixa vale o dia em que ele foi fechado no AppNext.',
+          { key: 'dia', label: 'Dia', align: 'l', sticky: true, title: 'Dia da venda. Para o caixa vale o dia em que ele foi fechado no AppNext. Toque no dia para ver o fechamento completo (formas de pagamento, abertura, fechamento, sangria, suprimento), o mesmo do e-mail.',
             render: (x) => h('div', null, h('b', null, dm(x.dia)), h('small', { class: 'muted conf-sub' }, semana(x.dia))) },
           { key: 'fat', label: 'Painel', title: 'Faturamento do painel no dia: tudo o que foi vendido, com Espaço Gourmet e vendas sem vendedor, sem taxas de serviço e entrega e sem itens a R$ 0,01. É o mesmo número do Resumo e do Resultado.',
             render: (x) => h('div', null, fmt.brl(x.fat), x.cupons ? h('small', { class: 'muted conf-sub' }, `${fmt.int(x.cupons)} ${x.cupons === 1 ? 'cupom' : 'cupons'}`) : null) },
