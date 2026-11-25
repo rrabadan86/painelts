@@ -4061,3 +4061,4 @@ body.em-homolog .topbar { box-shadow: inset 0 -4px 0 var(--gold); }
 .lmob-c .btn { padding: 4px 10px; font-size: 12.5px; min-height: 0; }
 .est-det-mob { padding: 4px 0 10px; }
 .est-det-mob .est-det-box { max-width: 100%; overflow-x: hidden; }
+.cpf-link .cli-tag { margin-left: 6px; display: inline-block; text-decoration: none; font-size: 11px; vertical-align: 1px; }

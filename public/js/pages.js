@@ -1114,7 +1114,7 @@
     for (const c of TS.cli.porCPF.values()) for (const k of c.cupons || []) {
       if (!k.itens || !k.itens.length) continue;
       const ch = TS.chaveCupom(k.itens[0]);
-      if (!m.has(ch) || (m.get(ch).fixe && k.origem !== 'fixe')) m.set(ch, { cpf: c.cpf, nome: c.nome || '', fixe: k.origem === 'fixe' });
+      if (!m.has(ch) || (m.get(ch).fixe && k.origem !== 'fixe')) m.set(ch, { cpf: c.cpf, nome: c.nome || '', fixe: k.origem === 'fixe', fixeOk: !!k.fixeOk, semFixe: !!k.semFixe, cpfFixe: k.cpfFixe || null, pts: k.fxMov && k.fxMov.cpf === c.cpf && !k.fxMov.anulado && k.fxMov.tipo === 'pontos' ? k.fxMov.pontos : null });
     }
     return m;
   }
@@ -1123,7 +1123,18 @@
   function docCupom(cl) {
     if (!cl) return '';
     return h('button', { type: 'button', class: 'cpf-link', title: (cl.nome ? cl.nome + ' · ' : '') + (cl.fixe ? 'sem CPF na nota; o CPF veio dos pontos lançados no FIXE' : 'CPF/CNPJ na nota') + ' · clique para abrir a ficha',
-      onclick: (e) => { e.stopPropagation(); if (TS.cliApi) TS.cliApi.abrirClientes([cl.cpf]); } }, docTxt(cl.cpf), cl.fixe ? h('small', { class: 'muted' }, ' FIXE') : null);
+      onclick: (e) => { e.stopPropagation(); if (TS.cliApi) TS.cliApi.abrirClientes([cl.cpf]); } }, docTxt(cl.cpf), marcaFixe(cl));
+  }
+  /** CUP-FIXE-01: as mesmas marcas da ficha do cliente (uma palavra, um sentido): FIXE ✓ = pontos lançados para o CPF da nota;
+   *  CPF pelo FIXE = a nota saiu sem CPF e a compra foi ligada pelos pontos; CPF diferente no FIXE; Sem FIXE = cliente do
+   *  programa que comprou sem lançamento no dia */
+  function marcaFixe(cl) {
+    const t = (cls, txt, dica) => h('span', { class: 'cli-tag ' + cls, title: dica }, txt);
+    if (cl.fixe) return t('t-fixe', 'CPF pelo FIXE', 'A nota saiu sem CPF; a compra foi ligada a este cliente pelos pontos lançados no FIXE.');
+    if (cl.cpfFixe) return t('t-semfixe', 'CPF diferente no FIXE', 'Os pontos desta compra foram para outro CPF no FIXE.');
+    if (cl.fixeOk || cl.pts) return t('t-fixe-ok', 'FIXE ✓', `Pontos lançados no FIXE para o CPF da nota${cl.pts ? ` (+${cl.pts} pts)` : ''}.`);
+    if (cl.semFixe) return t('t-semfixe', 'Sem FIXE', 'Cliente do FIXE com o CPF na nota, mas sem lançamento no FIXE neste dia (não informou ou não foi lançado).');
+    return null;
   }
   // NF-e emitidas (Estoque → Notas fiscais → Saída): o cupom com o mesmo número e data é uma nota "grande"
   let nfsCache = null;
