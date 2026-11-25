@@ -82,9 +82,25 @@
       TS.kpi('Sobra e falta de caixa', sinal(S.saldo), `${fmt.int(S.faltas.n)} ${S.faltas.n === 1 ? 'falta' : 'faltas'} · ${fmt.int(S.sobras.n)} ${S.sobras.n === 1 ? 'sobra' : 'sobras'} em ${fmt.int(S.dias)} dias`,
         `Dinheiro contado na gaveta − o que deveria ter (abertura + vendas em dinheiro + suprimentos − sangrias), somado nos dias em que passou de ${fmt.brl(T)}.\n\nFaltas: ${fmt.brl(S.faltas.valor)} · sobras: ${fmt.brl(S.sobras.valor)}. Negativo = faltou dinheiro. Veja por operador mais abaixo.`, S.saldo < -T ? 'ruim' : null)));
 
+    // FECH-REENV-01 (pedido do dono, 25/11/2026): "✉ Reenviar" o fechamento de um dia — admin e franqueado (o servidor confere)
+    const podeReenviar = TS.demo || (TS.podeContabilidade && TS.podeContabilidade());
+    async function reenviar(dia, bt) {
+      const data = `${dm(dia)}/${dia.slice(0, 4)}`;
+      if (!(await TS.janelaConfirmar(`Reenviar o fechamento de ${data}?`, [h('p', null, 'O mesmo e-mail do envio automático vai de novo para os destinatários cadastrados da loja (e o Telegram, se tiver).')], 'Reenviar', 'Cancelar'))) return;
+      bt.disabled = true;
+      try {
+        const url = TS.demo ? TS.api('fechamento/reenviar') : `/api/admin/lojas/${encodeURIComponent(loja)}/fechamento-email/enviar`;
+        const r = await fetch(url, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-Painel': '1' }, body: JSON.stringify({ dia }) });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.erro || 'Não foi possível reenviar.');
+        const ok = (j.envios || []).filter((x) => x.ok), falhas = (j.envios || []).filter((x) => !x.ok);
+        if (falhas.length) TS.avisar(`Fechamento de ${data}: ${ok.length} enviado(s); não foi para ${falhas.map((x) => `${x.para} (${x.erro})`).join('; ')}.`);
+        else TS.avisar(`Fechamento de ${data} reenviado para ${ok.length} ${ok.length === 1 ? 'destinatário' : 'destinatários'}.${j.demo ? ' (Apresentação: nada foi enviado.)' : ''}`);
+      } catch (e) { TS.avisarErro ? TS.avisarErro(e) : TS.avisar(e.message); } finally { bt.disabled = false; }
+    }
     function pintarTabela() {
       const rows = d.lista.filter((x) => fil === 'todos' || (fil === 'bate' ? x.estado === 'bate' || x.estado === 'explicado' : x.estado === fil));
-      tabela.replaceChildren(TS.table({ linhaMob: { nome: 'dia', val: 'dif', l2: ['fat', 'caixa', 'estado', 'gaveta'] }, // celular em linhas (LMOB-04)
+      tabela.replaceChildren(TS.table({ linhaMob: { nome: 'dia', val: 'dif', l2: ['fat', 'caixa', 'estado', 'gaveta'], l3: ['reenviar'] }, // celular em linhas (LMOB-04)
         
         cls: 'conf-t', sortKey: 'dia', sortDir: 'desc', maxHeight: '640px', rows,
         empty: { naobate: 'Nenhum dia fora da tolerância. 👏', semfechamento: 'Todos os dias com venda têm o caixa lido.', bate: 'Nenhum dia conferido ainda.', todos: 'Sem vendas nem caixa nos últimos 60 dias.' }[fil],
@@ -101,6 +117,8 @@
           { key: 'estado', label: 'Situação', align: 'l', wrap: true, title: `Bate: diferença de até ${fmt.brl(T)}. Bate com explicação: o painel achou exatamente de onde vem a diferença. Não bate: precisa conferir. Embaixo, o motivo provável.`,
             sortVal: (x) => ({ naobate: 0, semfechamento: 1, explicado: 2, bate: 3 })[x.estado],
             render: (x) => h('div', null, h('span', { class: 'badge ' + EST[x.estado][1] }, EST[x.estado][0]), x.estado !== 'bate' ? h('small', { class: 'muted conf-sub' }, x.motivo) : null) },
+          ...(podeReenviar ? [{ key: 'reenviar', label: '', title: 'Reenvia o fechamento deste dia por e-mail (e Telegram) para os destinatários cadastrados da loja: o mesmo do envio automático. Só administrador e franqueado.',
+            sortVal: () => 0, render: (x) => h('button', { type: 'button', class: 'btn conf-reenv', title: `Reenviar o fechamento de ${dm(x.dia)}`, 'aria-label': `Reenviar o fechamento de ${dm(x.dia)}`, onclick: (e) => { e.stopPropagation(); reenviar(x.dia, e.currentTarget); } }, '✉ Reenviar') }] : []),
           { key: 'gaveta', label: 'Gaveta', title: 'Sobra (+) ou falta (−) de dinheiro no fechamento: dinheiro contado − o que deveria ter. Embaixo, quem fechou o caixa.',
             render: (x) => (x.gaveta == null ? h('span', { class: 'muted' }, '—') : h('div', { class: x.gaveta < -T ? 'neg' : x.gaveta > T ? 'warn-t' : '' }, Math.abs(x.gaveta) <= T ? 'certa' : sinal(x.gaveta), x.operador ? h('small', { class: 'muted conf-sub' }, x.operador) : null)) },
         ],

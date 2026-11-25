@@ -21,3 +21,15 @@ test('SMTP-02: erros conhecidos viram explicação; nada de caminho de arquivo d
   assert.match(N.msgSmtp(new Error('connect ETIMEDOUT 1.2.3.4:587')), /smtp\.gmail\.com/);
   assert.doesNotMatch(N.msgSmtp(new Error('falha (x/y/z.c:10: coisa)')), /\.c:10/);
 });
+
+test('FECH-REENV-01: só reenvia o fechamento de um dia válido dos últimos 60 dias, nunca do futuro', () => {
+  const hoje = '2026-11-25';
+  assert.ok(N.diaReenvioOk('2026-11-25', hoje));
+  assert.ok(N.diaReenvioOk('2026-11-24', hoje));
+  assert.ok(N.diaReenvioOk('2026-09-26', hoje)); // 60 dias
+  assert.ok(!N.diaReenvioOk('2026-09-25', hoje)); // 61
+  assert.ok(!N.diaReenvioOk('2026-11-26', hoje), 'amanhã não');
+  assert.ok(!N.diaReenvioOk('2026-02-30', hoje), 'data que não existe');
+  assert.ok(!N.diaReenvioOk('25/11/2026', hoje));
+  assert.ok(!N.diaReenvioOk('', hoje));
+});

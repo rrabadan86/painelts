@@ -195,6 +195,12 @@ async function montarFechamento(lojasIds, obter, dia, { semCaixa } = {}) {
  * da loja + os gerais (franqueador) que acompanham a loja; Telegram geral também, se houver.
  * soPara: só este e-mail/chatId (teste).
  */
+/** FECH-REENV-01: dia que pode ter o fechamento reenviado — AAAA-MM-DD válido, até hoje e dos últimos 60 dias */
+function diaReenvioOk(dia, hoje) {
+  const d = String(dia || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || isNaN(Date.parse(d + 'T12:00:00Z')) || new Date(d + 'T12:00:00Z').toISOString().slice(0, 10) !== d) return false;
+  return d <= hoje && (Date.parse(hoje + 'T12:00:00Z') - Date.parse(d + 'T12:00:00Z')) / 864e5 <= 60;
+}
 async function enviarFechamentoLoja(obter, lojaId, { dia, soPara } = {}) {
   const c = ler();
   const x = cfgLoja(c, lojaId);
@@ -329,4 +335,4 @@ async function avisarLoja(id, texto) {
   return n;
 }
 
-module.exports = { transporteSmtp, msgSmtp, avisarLoja, quandoFechamento, assuntoFechamento, assuntoValido, ASSUNTO_PADRAO, enviarEmail, ler, gravar, publico, publicoLoja, cfgLoja, conversasTelegram, enviarTodos, montarTexto, agendar, montarFechamento, enviarFechamento, enviarFechamentoLoja };
+module.exports = { diaReenvioOk, transporteSmtp, msgSmtp, avisarLoja, quandoFechamento, assuntoFechamento, assuntoValido, ASSUNTO_PADRAO, enviarEmail, ler, gravar, publico, publicoLoja, cfgLoja, conversasTelegram, enviarTodos, montarTexto, agendar, montarFechamento, enviarFechamento, enviarFechamentoLoja };
