@@ -213,9 +213,10 @@
         dica: `Vendas da meta do mês (${fmt.brl0(dh.mes.meta)}: chá aromatizado, chá puro e acessórios, sem Espaço Gourmet — a base do Comissionamento) ÷ meta da loja (${fmt.brl0(dh.meta)}).\n\nA marca na barra: dias de loja aberta já completos (${fmt.int(dh.passados)}) ÷ dias de loja aberta do mês (${fmt.int(dh.abertos)}) = ${dh.esperado != null ? pct(dh.esperado) : '—'}. Se a barra passa da marca, a loja está adiantada.` });
       if (dh.mes.meta >= dh.meta) cols.push({ rot: 'Para bater a meta', num: 'Meta batida', linhas: [{ el: `${fmt.brl0(dh.mes.meta - dh.meta)} acima da meta`, cls: 'pos' }] });
       else cols.push({ rot: 'Para bater a meta', num: dh.porDia > 0 ? fmt.brl0(dh.porDia) : fmt.brl0(dh.falta), sub: dh.porDia > 0 ? 'por dia' : null,
-        linhas: [dh.restam > 0 ? `nos ${fmt.int(dh.restam)} ${dh.restam === 1 ? 'dia' : 'dias'} de loja aberta que faltam` : 'faltam para a meta',
+        linhas: [dh.restam > 0 ? `nos ${fmt.int(dh.restam)} ${dh.restam === 1 ? 'dia' : 'dias'} de loja aberta que faltam, com hoje` : 'faltam para a meta',
+          dh.porDia > 0 ? (dh.hojeMeta >= dh.porDia ? { el: `hoje: ${fmt.brl0(dh.hojeMeta)} — meta de hoje batida`, cls: 'pos' } : `hoje: ${fmt.brl0(dh.hojeMeta)} de ${fmt.brl0(dh.porDia)} (faltam ${fmt.brl0(dh.porDia - dh.hojeMeta)})`) : null,
           dh.Pm ? { el: `No ritmo de agora, fecha em ${pct(dh.Pm.proj / dh.meta)} (${fmt.brl0(dh.Pm.proj)})`, cls: dh.Pm.proj >= dh.meta ? 'pos' : 'neg' } : null],
-        dica: `Faltam ${fmt.brl0(dh.falta)} em vendas da meta ÷ ${fmt.int(dh.restam)} dias de loja aberta que faltam (com hoje) = ${fmt.brl0(dh.porDia)} por dia. É a mesma conta do cartão "Meta de hoje".${dh.Pm ? '\n\nNo ritmo de agora (projeção das vendas da meta):\n' + TS.comoProjecao(dh.Pm) : ''}` });
+        dica: `(Meta do mês ${fmt.brl0(dh.meta)} − vendas da meta até ontem ${fmt.brl0(dh.mes.meta - dh.hojeMeta)}) ÷ ${fmt.int(dh.restam)} dias de loja aberta que faltam (com hoje) = ${fmt.brl0(dh.porDia)} por dia. É a mesma conta do cartão "Meta de hoje": o alvo do dia não muda a cada venda. Hoje já foram ${fmt.brl0(dh.hojeMeta)}; no total faltam ${fmt.brl0(dh.falta)} para a meta do mês.${dh.Pm ? '\n\nNo ritmo de agora (projeção das vendas da meta):\n' + TS.comoProjecao(dh.Pm) : ''}` });
     } else {
       cols.push({ rot: `Vendas de ${nomeMes}`, num: fmt.brl0(dh.mes.vt), sub: `${fmt.int(dh.mes.cupons)} atendimentos`,
         linhas: [dh.P ? `Projeção do mês: ${fmt.brl0(dh.P.proj)}` : null, 'Sem meta cadastrada (Configurações → Lojas).'],

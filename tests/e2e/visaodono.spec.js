@@ -279,3 +279,22 @@ test('Início: a meta de hoje (saiu de Clientes → Hoje) é dividida pelas hora
   if (iguais.length > 1) expect(Math.max(...iguais) - Math.min(...iguais)).toBeLessThanOrEqual(1);
   await semLixo(page.locator('.md-card'));
 });
+
+// META-DIA-01 (decisão do dono, 25/11/2026, opção A): "Para bater a meta" por dia é a mesma conta da Meta de hoje
+// (falta até ontem ÷ dias de loja aberta com hoje) — antes descontava as vendas de hoje e ainda contava hoje como dia que falta
+test('META-DIA-01: no Início, "Para bater a meta" por dia = o número do cartão Meta de hoje', async ({ page }) => {
+  await abrir(page);
+  await ir(page, 'inicio');
+  const her = page.locator('main .heroi').first();
+  await expect(her).toBeVisible();
+  const dh = await page.evaluate(() => { const d = TS.visaoDono.dadosHeroi(); return d && { meta: d.meta, mes: d.mes.meta, hoje: d.hojeMeta, restam: d.restam, porDia: d.porDia }; });
+  test.skip(!dh || !dh.meta || dh.mes >= dh.meta || !dh.restam, 'na apresentação de hoje a meta já foi batida ou não há meta');
+  // a conta: (meta − vendas da meta até ontem) ÷ dias com hoje
+  expect(Math.abs(dh.porDia - (dh.meta - (dh.mes - dh.hoje)) / dh.restam)).toBeLessThan(0.01);
+  const col = her.locator('.heroi-col', { hasText: /Para bater a meta/i });
+  const md = page.locator('.md-card .md-num b').first();
+  await expect(md).toBeVisible();
+  expect(num(await col.locator('.heroi-num').first().innerText())).toBe(num(await md.innerText()));
+  await expect(col).toContainText('com hoje');
+  if (dh.hoje > 0) await expect(col).toContainText('hoje:');
+});
