@@ -883,7 +883,9 @@
       document.body.append(cam);
       document.addEventListener('keydown', escP, true);
       fetch(TS.api(`reajuste/para?loja=${encodeURIComponent(D.loja)}`), { credentials: 'same-origin' }).then((r) => (r.ok ? r.json() : null)).then((j) => { if (j && j.para && !iPara.value) iPara.value = j.para.join(', '); }).catch(() => {});
-      setTimeout(() => iPara.focus(), 50);
+      // o cursor vai para o "Para" só se a pessoa ainda não tocou em outro campo da janela (num aparelho lento o atraso
+      // roubava o foco no meio da digitação do Assunto e o texto ia para o campo errado)
+      setTimeout(() => { if (!pop.contains(document.activeElement)) iPara.focus(); }, 50);
     };
     TS.abrirEnvioFranquiaTeste = abrirEnvioFranquia; // testes
     // histórico de compras do item: todas as notas de compra que o painel tem (Estoque → Entrada de Produtos do AppNext)
