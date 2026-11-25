@@ -196,3 +196,15 @@ test('FIXO-ESC-01: rota — "deste mês em diante" e "todos os meses" mudam o pa
   assert.match(aud, /mudou o valor de um custo fixo \(deste mês em diante/);
   assert.match(aud, /mudou o valor de um custo fixo \(todos os meses/);
 });
+
+test('DESP-CAT-01: categoria de Simples, maquininha e comissões — padrão, escolha guardada e categoria que sumiu', () => {
+  const ES = require('../../src/estoque');
+  const cats = [{ id: 'func', nome: 'Funcionários' }, { id: 'outros', nome: 'Outros' }];
+  assert.deepStrictEqual(CT.catVarDe(null, cats), { simples: 'impostos', cartao: 'taxas', comissao: 'func' });
+  assert.deepStrictEqual(CT.catVarDe({ simples: 'func', cartao: 'naoexiste' }, cats), { simples: 'func', cartao: 'taxas', comissao: 'func' });
+  assert.strictEqual(CT.catVarDe(null, [{ id: 'outros', nome: 'Outros' }]).comissao, 'outros', 'sem Funcionários, comissão vai para Outros');
+  assert.deepStrictEqual(CT.catsEscolha(cats).map((c) => c.id), ['func', 'outros', 'impostos', 'taxas']);
+  const base = { simplesPct: 6, cartaoPct: 2, entregaDias: 10, coberturaDias: 30, paradoDias: 60, segurancaPct: 50 };
+  assert.deepStrictEqual(ES.validarCfg({ ...base, categorias: cats, catVar: { simples: 'func', comissao: 'x' } }).ok.catVar, { simples: 'func', cartao: 'taxas', comissao: 'func' });
+  assert.deepStrictEqual(ES.cfg({ estoqueCfg: {} }).catVar, { simples: 'impostos', cartao: 'taxas', comissao: 'func' });
+});

@@ -104,3 +104,9 @@ test('CTD-05 a planilha .xlsx abre com as cinco abas, cabeçalhos e totais', asy
   await wb3.xlsx.load(vazio);
   assert.equal(wb3.getWorksheet('Despesas').getCell('A5').value, 'Nada neste mês.');
 });
+
+test('DESP-CAT-01: despesas que acompanham as vendas entram na aba Despesas com a categoria escolhida', () => {
+  const abas = CTD.montar(entrada({ despesas: [{ nome: 'Simples Nacional', cat: 'Impostos', tipo: 'vendas', valor: 22.8 }, { nome: 'Aluguel', cat: 'Imóvel', tipo: 'fixa', valor: 8000 }] }));
+  const desp = abas.find((a) => a.nome === 'Despesas');
+  assert.deepEqual(desp.linhas.slice(0, 2), [['Simples Nacional', 'Impostos', 'Acompanha as vendas', 22.8], ['Aluguel', 'Imóvel', 'Todo mês', 8000]]);
+});

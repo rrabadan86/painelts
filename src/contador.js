@@ -23,7 +23,7 @@ const mesFechado = (ym, hoje) => /^20\d\d-(0[1-9]|1[0-2])$/.test(String(ym || ''
 /** confere o que veio da tela (linhas do Resultado e despesas): só texto curto e número */
 function limpar(b) {
   const resumo = (Array.isArray(b && b.resumo) ? b.resumo : []).slice(0, 80).map((x) => ({ rot: txt(x && x.rot, 80), valor: r2(x && x.valor), pct: x && x.pct != null && Number.isFinite(+x.pct) ? Math.round(+x.pct * 10000) / 10000 : null, tipo: txt(x && x.tipo, 10) })).filter((x) => x.rot);
-  const despesas = (Array.isArray(b && b.despesas) ? b.despesas : []).slice(0, 120).map((x) => ({ nome: txt(x && x.nome, 60), cat: txt(x && x.cat, 40), tipo: x && x.tipo === 'pontual' ? 'pontual' : x && x.tipo === 'real' ? 'real' : 'fixa', valor: r2(x && x.valor) })).filter((x) => x.nome && x.valor != null);
+  const despesas = (Array.isArray(b && b.despesas) ? b.despesas : []).slice(0, 120).map((x) => ({ nome: txt(x && x.nome, 60), cat: txt(x && x.cat, 40), tipo: x && ['pontual', 'real', 'vendas'].includes(x.tipo) ? x.tipo : 'fixa', valor: r2(x && x.valor) })).filter((x) => x.nome && x.valor != null);
   return { resumo, despesas };
 }
 
@@ -91,10 +91,10 @@ function montar(e) {
     linhas: lSai, dinheiro: [8], total: lSai.length ? ['Total (sem as canceladas)', '', '', '', '', '', '', '', somaCol(validas, 8), ''] : null,
     obs: 'NF-e (modelo 55) emitidas pela loja no mês, pelos XML guardados no painel. Os cupons do caixa (NFC-e) não estão aqui: vão no arquivo de XML do faturamento.' });
 
-  const lDesp = despesas.map((x) => [x.nome, x.cat, x.tipo === 'pontual' ? 'Só deste mês' : x.tipo === 'real' ? 'Todo mês · valor real do mês' : 'Todo mês', x.valor]);
+  const lDesp = despesas.map((x) => [x.nome, x.cat, x.tipo === 'pontual' ? 'Só deste mês' : x.tipo === 'real' ? 'Todo mês · valor real do mês' : x.tipo === 'vendas' ? 'Acompanha as vendas' : 'Todo mês', x.valor]);
   abas.push({ nome: 'Despesas', titulo: `Despesas · ${cabecalho}`, cab: ['Despesa', 'Categoria', 'Tipo', 'Valor (R$)'], linhas: lDesp, dinheiro: [3],
     total: lDesp.length ? ['Total', '', '', somaCol(lDesp, 3)] : null,
-    obs: 'Custos fixos (valor cheio do mês: o valor real lançado no Resultado ou, sem lançamento, o padrão de Configurações) e despesas só deste mês cadastrados no painel pela loja. Não são lançamentos conferidos com boleto ou extrato.' });
+    obs: 'Despesas que acompanham as vendas (Simples, maquininha, royalties e marketing, comissões e custos em %, calculados pelo painel ou o valor real lançado), custos fixos (valor cheio do mês: o valor real lançado no Resultado ou, sem lançamento, o padrão de Configurações) e despesas só deste mês cadastrados no painel pela loja. Não são lançamentos conferidos com boleto ou extrato.' });
   return abas;
 }
 

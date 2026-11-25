@@ -146,3 +146,41 @@ test('RES-PARTES-01: a linha Loja abre em chás a granel, envasados, acessórios
   await expect(mm.locator('tr.dre-lojaparte')).toHaveCount(4);
   expect(erros).toEqual([]);
 });
+
+// DESP-CAT-01 (aprovado pelo dono, 25/11/2026): despesas que acompanham as vendas agrupadas pela categoria, antes do
+// "Lucro sem fixos"; as fixas pelas mesmas categorias depois dele; o ⓘ da categoria soma as duas
+test('DESP-CAT-01: Resultado em dois blocos de despesas por categoria; Simples, maquininha e comissões escolhem a categoria', async ({ page }) => {
+  const erros = [];
+  page.on('pageerror', (e) => erros.push(e.message));
+  await abrir(page);
+  const t = page.locator('.dre-t').first();
+  const secoes = t.locator('tr.dre-secao');
+  await expect(secoes).toHaveCount(2);
+  await expect(secoes.nth(0)).toContainText('Despesas que acompanham as vendas');
+  await expect(secoes.nth(1)).toContainText('Despesas fixas do mês');
+  await expect(t).toContainText('Impostos: Simples Nacional');
+  await expect(t).toContainText('Taxas e tarifas: Maquininha');
+  await expect(t).toContainText('Funcionários: Comissões e premiações');
+  await expect(t.locator('tr.dre-vgrupo', { hasText: 'Franquia' })).toBeVisible();
+  // ordem: lucro bruto → bloco variável → lucro sem fixos → perdas → bloco fixo → resultado
+  const txt = await t.innerText();
+  const ordem = ['= Lucro bruto', 'DESPESAS QUE ACOMPANHAM', 'Simples Nacional', '= Lucro sem fixos', 'Perdas', 'DESPESAS FIXAS', 'Resultado'].map((x) => txt.toUpperCase().indexOf(x.toUpperCase()));
+  expect(ordem.every((v) => v >= 0)).toBe(true);
+  expect([...ordem].sort((a, b) => a - b)).toEqual(ordem);
+  // Simples em Funcionários: a categoria junta Simples + comissões e o ⓘ soma as fixas da mesma categoria
+  await page.evaluate(async () => { const M = await TS.custosLoja(); M.ded.CATVAR = { ...M.ded.CATVAR, simples: 'func' }; TS.render(); });
+  const fun = page.locator('.dre-t').first().locator('tr.dre-vgrupo', { hasText: 'Funcionários' });
+  await expect(fun).toBeVisible();
+  expect(await fun.getAttribute('title')).toMatch(/Total de Funcionários no mês: R\$/);
+  const conta = await page.evaluate(async () => { const M = await TS.custosLoja(); const m = TS.dreCalcular(M).pop(); return { soma: m.imp + m.com, contrib: m.contrib, lb: m.lucroBruto, imp: m.imp, maq: m.maq, roy: m.roy, com: m.com, varPct: m.varPct, pct: (m.pctPor || []).reduce((a, v) => a + (v || 0), 0) }; });
+  expect(Math.abs(conta.pct - conta.varPct)).toBeLessThan(0.01); // os custos em % somam o total de antes
+  expect(Math.abs(conta.contrib - (conta.lb - conta.imp - conta.maq - conta.roy - conta.com - conta.varPct))).toBeLessThan(0.01); // o lucro não muda
+  // Configurações → Estoque e margem: os seletores de categoria
+  await page.evaluate(() => TS.abrirCfg(TS.state.loja, 'estoque'));
+  const sel = page.locator('select[data-catvar="simples"]').first();
+  await expect(sel).toBeVisible({ timeout: 20000 });
+  const ops = await sel.locator('option').allTextContents();
+  expect(ops).toEqual(expect.arrayContaining(['Impostos', 'Taxas e tarifas', 'Funcionários', 'Outros']));
+  await expect(page.locator('select[data-catvar="comissao"]').first()).toHaveValue('func');
+  expect(erros).toEqual([]);
+});

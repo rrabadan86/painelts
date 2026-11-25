@@ -35,6 +35,24 @@
     return 'outros';
   }
   const PARTES_LOJA = [['granel', 'Chás a granel'], ['envasado', 'Envasados'], ['acess', 'Acessórios'], ['outros', 'Outros']];
+  /** categoria das despesas que acompanham as vendas no Resultado (aprovado pelo dono, 25/11/2026; DESP-CAT-01): Simples, maquininha e
+   *  comissões escolhem uma das categorias da loja ou Impostos / Taxas e tarifas; royalties e marketing ficam sempre em Franquia;
+   *  os custos em % usam a categoria deles. As mesmas categorias agrupam os custos fixos, no bloco de baixo. */
+  const CAT_VAR_PADRAO = { simples: 'impostos', cartao: 'taxas', comissao: 'func' };
+  const CAT_EXTRAS = [{ id: 'impostos', nome: 'Impostos' }, { id: 'taxas', nome: 'Taxas e tarifas' }];
+  const CAT_FRANQUIA = { id: 'franquia', nome: 'Franquia' };
+  /** categorias que Simples, maquininha e comissões podem escolher: as da loja + Impostos e Taxas (quando a loja não tem igual) */
+  const catsEscolha = (cats) => [...(cats || []), ...CAT_EXTRAS.filter((e) => !(cats || []).some((c) => c.id === e.id))];
+  /** catVar da loja completo: o salvo ou o padrão; categoria que deixou de existir volta ao padrão (comissão sem "func": Outros) */
+  function catVarDe(catVar, cats) {
+    const ok = new Set(catsEscolha(cats).map((c) => c.id));
+    const out = {};
+    for (const [k, pad] of Object.entries(CAT_VAR_PADRAO)) {
+      const v = catVar && catVar[k];
+      out[k] = v && ok.has(v) ? v : ok.has(pad) ? pad : k === 'comissao' ? 'outros' : pad;
+    }
+    return out;
+  }
   const TAXAS = ['Taxa de Serviço', 'Taxa Delivery'];
   const nrm = (s) => String(s == null ? '' : s).trim().toLowerCase();
   const TAXAS_N = new Set(TAXAS.map(nrm));
@@ -266,7 +284,7 @@
     return { itens, media: itens.length ? itens.reduce((a, x) => a + x.valor, 0) / itens.length : null, nLancados: itens.filter((x) => x.lancado).length };
   }
 
-  const API = { EG, GRUPOS_META, CHA_TOTAL, GRUPO_ENVASADO, parteLoja, PARTES_LOJA, TAXAS, PISO_DIAS_META, MIN_ATEND_PREMIACAO, ehTaxa, ehCentavo, contaFat, classeMeta, semItem, resumo, projecaoMes, metasIndividuais, divisoresMeta, pontoEquilibrio, fixoDoMes, historicoFixo, aplicarFixo, padraoDaEpoca, diaDe, isoDe, diasNoMes };
+  const API = { EG, GRUPOS_META, CHA_TOTAL, GRUPO_ENVASADO, parteLoja, PARTES_LOJA, CAT_VAR_PADRAO, CAT_EXTRAS, CAT_FRANQUIA, catsEscolha, catVarDe, TAXAS, PISO_DIAS_META, MIN_ATEND_PREMIACAO, ehTaxa, ehCentavo, contaFat, classeMeta, semItem, resumo, projecaoMes, metasIndividuais, divisoresMeta, pontoEquilibrio, fixoDoMes, historicoFixo, aplicarFixo, padraoDaEpoca, diaDe, isoDe, diasNoMes };
   if (typeof module !== 'undefined' && module.exports) { module.exports = API; return; }
   TS.contas = API;
 })();

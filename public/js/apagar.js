@@ -309,7 +309,7 @@
   }
 
   /** Resultado: botão "Exportar para o contador" do mês fechado (planilha .xlsx montada no servidor) */
-  function botaoExportar(m, linhas, cats) {
+  function botaoExportar(m, linhas, cats, vgrupos) {
     const fechado = !m.parcial;
     const b = h('button', { type: 'button', class: 'btn ap-exportar', disabled: fechado ? null : true,
       title: fechado ? `Baixa uma planilha de ${TS.ymLabel(m.ym)} com as abas: Resumo do mês, Vendas por dia, Notas de entrada, Notas de saída (NF-e) e Despesas.` : 'Só para mês fechado: escolha um mês que já terminou.' }, 'Exportar para o contador');
@@ -320,7 +320,9 @@
         const nomeCat = new Map((cats || []).map((c) => [c.id, c.nome]));
         const corpo = { loja: state.loja, ym: m.ym,
           resumo: linhas.map(([rot, f, tipo]) => { const v = f(m); return { rot: tipo === 'grupo' ? rot.replace(/^− /, '− Custos fixos · ') : rot, valor: v == null ? null : Math.round(v * 100) / 100, pct: v == null || !m.fat ? null : Math.round((v / m.fat) * 10000) / 10000, tipo }; }),
-          despesas: m.fixosMes.map((x) => ({ nome: x.nome, cat: nomeCat.get(x.cat) || 'Outros', tipo: x.pontual ? 'pontual' : x.lancado ? 'real' : 'fixa', valor: x.valor })) };
+          // as que acompanham as vendas, com a categoria escolhida (DESP-CAT-01), e os custos fixos
+          despesas: [...(vgrupos || []).flatMap((g) => g.itens.map((x) => ({ nome: x.nome, cat: g.nome, tipo: 'vendas', valor: Math.round((x.f(m) || 0) * 100) / 100 }))).filter((x) => x.valor),
+            ...m.fixosMes.map((x) => ({ nome: x.nome, cat: nomeCat.get(x.cat) || 'Outros', tipo: x.pontual ? 'pontual' : x.lancado ? 'real' : 'fixa', valor: x.valor }))] };
         const r = await fetch(TS.api('resultado/exportar'), { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-Painel': '1' }, body: JSON.stringify(corpo) });
         if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.erro || 'Não deu para montar a planilha.'); }
         const blob = await r.blob();

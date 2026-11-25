@@ -247,6 +247,7 @@
     // categorias dos custos (Funcionários, Imóvel, Sistemas…), na ordem cadastrada; "outros" recebe o que não tem
     const CATS = (cfg.categorias && cfg.categorias.length ? cfg.categorias : [{ id: 'outros', nome: 'Outros' }]);
     const catDe = (x) => (CATS.some((c) => c.id === x.cat) ? x.cat : 'outros');
+    const CATVAR = TS.contas.catVarDe(cfg.catVar, CATS); // categoria de Simples, maquininha e comissões no Resultado (DESP-CAT-01)
     // despesas de um mês só: as que caem no mês ym (as "todo ano" repetem no mesmo mês dos anos seguintes)
     const PONTUAIS = (cfg.pontuais || []).filter((x) => x.valor > 0 && x.ym);
     const pontuaisDoMes = (ym) => PONTUAIS.filter((x) => x.ym === ym || (x.anual && x.ym.slice(5) === ym.slice(5) && ym > x.ym));
@@ -262,7 +263,7 @@
       const fix = OUTROS.filter((x) => x.tipo === 'mes' && x.aplica !== 'eg').reduce((s, x) => s + taxaOutro(x), 0);
       return { roy: (ry.loja || 0) + (ry.mkt || 0), imp: pSimples, maq: pCartao, com, outrosPct: pct, outrosFix: fix, mesCom: ant };
     };
-    return { deducoes, OUTROS, LANC, fixoDoMes, fixoBase, temLancado, taxaOutro, dicaOutro, mediaFat, ONDE_FAT, pSimples, pCartao, CATS, catDe, PONTUAIS, pontuaisDoMes, taxasVenda, comDoMes, comProjetada };
+    return { deducoes, OUTROS, LANC, fixoDoMes, fixoBase, temLancado, taxaOutro, dicaOutro, mediaFat, ONDE_FAT, pSimples, pCartao, CATS, CATVAR, catDe, PONTUAIS, pontuaisDoMes, taxasVenda, comDoMes, comProjetada };
   }
 
   TS.estoqueBuscar = buscar;
@@ -1605,6 +1606,17 @@
     // ---------- outros custos, agrupados por categoria (Funcionários, Imóvel, Sistemas, Outros…) ----------
     const cats = (cfg.categorias || []).map((c) => ({ ...c }));
     if (!cats.some((c) => c.id === 'outros')) cats.push({ id: 'outros', nome: 'Outros' });
+    // ---------- categoria no Resultado de Simples, maquininha e comissões (DESP-CAT-01, aprovado pelo dono em 25/11/2026) ----------
+    const catVar = { ...TS.contas.catVarDe(cfg.catVar, cats) };
+    const ROT_VAR = [['simples', 'Simples Nacional'], ['cartao', 'Maquininha'], ['comissao', 'Comissões e premiações']];
+    const catVarBox = h('div', { class: 'est-catvar' });
+    function pintarCatVar() {
+      const ops = TS.contas.catsEscolha(cats);
+      for (const k of Object.keys(catVar)) if (!ops.some((c) => c.id === catVar[k])) catVar[k] = TS.contas.catVarDe(null, cats)[k];
+      catVarBox.replaceChildren(...ROT_VAR.map(([k, rot]) => h('label', null, h('span', null, rot),
+        h('select', { class: 'f-input', 'data-catvar': k, onchange: (e) => { catVar[k] = e.target.value; sujo(); } }, ops.map((c) => h('option', { value: c.id, selected: catVar[k] === c.id || null }, c.nome))))),
+        h('label', null, h('span', null, 'Royalties e marketing'), h('select', { class: 'f-input', disabled: true, title: 'Royalties e marketing ficam sempre em Franquia' }, h('option', null, '🔒 Franquia'))));
+    }
     const itens = (cfg.outros || []).map((x) => ({ ...x, cat: cats.some((c) => c.id === x.cat) ? x.cat : 'outros' }));
     const outrosBox = h('div', { class: 'est-outros' });
     const totais = new Map();
@@ -1657,6 +1669,7 @@
         h('div', { class: 'cfg-acoes' }, novaCat));
       atualizarTotais();
       pintarPontuais();
+      pintarCatVar();
     }
     // ---------- despesas de um mês só (ex.: IPTU em janeiro, 13º em dezembro) ----------
     const pont = (cfg.pontuais || []).map((x) => ({ ...x }));
@@ -1697,7 +1710,7 @@
       try {
         const embalagens = Object.fromEntries(embs.map(([g, i]) => [g, i.value.split(',').map((s) => s.trim()).filter(Boolean).map((s) => { const [cod, q] = s.split(/[×x*]/i); return { cod: (cod || '').trim(), qtd: +(q || 1) }; })]));
         const r = await fetch(`/api/estoque/cfg?loja=${encodeURIComponent(lojaId)}`, { method: 'PUT', credentials: 'same-origin', headers: { 'X-Painel': '1', 'Content-Type': 'application/json' },
-          body: JSON.stringify({ entregaDias: +ent.value, coberturaDias: +cob.value, paradoDias: +par.value, segurancaPct: +seg.value, simplesPct: simp.value, cartaoPct: maq.value, margemMin: mMin.value, margemAlvo: mAlvo.value, comprasTetoPct: teto.value, prazoNotasDias: prazoNf.value, cartaoDias: cartDias.value, royaltiesDia: royDia.value, outros: itens.map((x) => ({ nome: x.nome, tipo: x.tipo, valor: x.valor, aplica: x.aplica, cat: x.cat, dia: x.dia })), categorias: cats.map((c) => ({ id: c.id, nome: c.nome })), pontuais: pont.map((x) => ({ nome: x.nome, ym: x.ym, valor: x.valor, cat: x.cat, anual: !!x.anual, dia: x.dia })), embalagens }) });
+          body: JSON.stringify({ entregaDias: +ent.value, coberturaDias: +cob.value, paradoDias: +par.value, segurancaPct: +seg.value, simplesPct: simp.value, cartaoPct: maq.value, margemMin: mMin.value, margemAlvo: mAlvo.value, comprasTetoPct: teto.value, prazoNotasDias: prazoNf.value, cartaoDias: cartDias.value, royaltiesDia: royDia.value, outros: itens.map((x) => ({ nome: x.nome, tipo: x.tipo, valor: x.valor, aplica: x.aplica, cat: x.cat, dia: x.dia })), categorias: cats.map((c) => ({ id: c.id, nome: c.nome })), catVar, pontuais: pont.map((x) => ({ nome: x.nome, ym: x.ym, valor: x.valor, cat: x.cat, anual: !!x.anual, dia: x.dia })), embalagens }) });
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j.erro || 'Falha ao salvar.');
         cache.delete(lojaId);
@@ -1723,6 +1736,8 @@
         h('div', { class: 'f-label', id: `cfg-custos-${lojaId}` }, 'Custos da loja por categoria'),
         h('small', { class: 'muted' }, 'R$ por mês (aluguel, salários, energia…) ou % das vendas (aluguel percentual do shopping, app de delivery). O valor por mês vira um % pela média do faturamento dos últimos 3 meses fechados.'),
         outrosBox,
+        h('div', { class: 'f-label', style: { marginTop: '14px' } }, 'Em que categoria Simples, maquininha e comissões aparecem no Resultado'),
+        catVarBox,
         h('div', { class: 'f-label', style: { marginTop: '14px' }, id: `cfg-pontuais-${lojaId}` }, 'Despesas de um mês só'),
         h('small', { class: 'muted' }, 'IPTU e IPVA no começo do ano, 13º salário, uma manutenção… Entram cheias no Resultado do mês escolhido, dentro da categoria. "Todo ano" repete no mesmo mês dos anos seguintes.'),
         pontBox,
@@ -1739,6 +1754,8 @@
         h('label', null, h('span', null, 'Meta de margem (sem fixos)'), h('div', null, mAlvo, ' %'))),
       h('small', { class: 'muted' }, 'Margem sem fixos = lucro bruto − deduções variáveis, antes do aluguel e outros custos fixos. Abaixo da mínima o produto aparece em vermelho e no alerta. A meta é usada no simulador de preço ("Para X% sem fixos").'),
       h('small', { class: 'muted' }, 'Comissão e royalties vêm das regras da loja (Comissionamento). Use a taxa média da maquininha (débito, crédito e Pix juntos).'),
+      h('div', { class: 'f-label', style: { marginTop: '14px' } }, 'Em que categoria cada despesa aparece no Resultado ', TS.dica('No Resultado, as despesas que acompanham as vendas (Simples, maquininha, royalties e marketing, comissões e os custos em %) aparecem agrupadas pela categoria, antes do "Lucro sem fixos"; as fixas, pelas mesmas categorias, depois dele. Passe o mouse na categoria para ver o total do mês somando as duas.')),
+      catVarBox,
       h('div', { class: 'f-label', style: { marginTop: '14px' }, id: `cfg-custos-${lojaId}` }, 'Outros custos da loja'),
       h('small', { class: 'muted' }, '% das vendas (ex.: aluguel percentual do shopping, app de delivery) ou R$ por mês (ex.: aluguel fixo, energia, salários). O valor em R$ por mês vira um %: valor ÷ média do faturamento dos últimos 3 meses fechados (ex.: R$ 16.000 ÷ média de R$ 200.000 = 8% de cada venda). Esse % é volátil: muda quando um mês fecha e entra na média.'),
       outrosBox,
