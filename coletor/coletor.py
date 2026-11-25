@@ -971,7 +971,8 @@ def rodar(job):
                 if "extrato" in etapas_appnext:
                     ce = executar(SCRIPT_EXTRATO, {"SAIDA_EXTRATO": str(DATA_DIR / loja / "estoque" / "extrato.json"),
                                                    "SAIDA_EXTRATO_DIAG": str(DATA_DIR / loja / "estoque" / "extrato-diag.json"),
-                                                   "EXTRATO_DESDE": job.get("de") or "2025-06-01", "SAIDA_ARQUIVO": str(pasta / "_nao_usado.xlsx")})
+                                                   "EXTRATO_DESDE": job.get("de") or "2025-06-01", "SAIDA_ARQUIVO": str(pasta / "_nao_usado.xlsx"),
+                                                   "MAX_RUNTIME_SECONDS": "2300"}, 2400)  # ~20 blocos de 28 dias, página por página
                     ok, codigo, principal = ce == 0, ce, "extrato"
                 if "vendas" in etapas_appnext:
                     codigo = executar(script, {})
