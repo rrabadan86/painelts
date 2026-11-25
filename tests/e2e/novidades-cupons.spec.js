@@ -11,7 +11,11 @@ test('NOV-03: menu do nome → "O que mudou no painel" abre as novidades e "Ente
   const j = page.locator('.nov-caixa');
   await expect(j.locator('h2')).toContainText('O que mudou no painel');
   expect(await j.locator('.nov-item').count()).toBeGreaterThan(2);
-  await expect(j).toContainText('Cupons mais fáceis de ler no celular');
+  // a mais recente para o administrador (a apresentação entra como admin) aparece; antes era um título fixo, que saía
+  // da janela quando chegavam mais de 12 novidades depois dele
+  const { NOVIDADES } = require('../../src/novidades');
+  const ultima = NOVIDADES.filter((n) => !n.para || n.para.includes('admin')).pop();
+  await expect(j).toContainText(ultima.titulo);
   await j.getByRole('button', { name: 'Entendi' }).click();
   await expect(page.locator('.nov-caixa')).toHaveCount(0);
   expect(erros).toEqual([]);

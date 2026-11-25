@@ -1,5 +1,8 @@
 const { test, expect } = require('./_base');
 
+// no celular a escala do mês é por dia (ESC-MOB-01): a pessoa que trabalha é uma linha .escm-p; na tabela, td.trab
+const CEL_TRAB = 'td.trab.clicavel, .escm-p.clicavel:not(:has(.escm-h.folga))';
+
 // A escala respeita o horário de funcionamento mesmo quando não é "redondo" (ex.: abre 09:40):
 // alguém começa na hora exata da abertura, ninguém começa antes nem sai depois do fechamento
 test('Escala: abertura às 09:40 tem gente desde 09:40 (antes começava 10:00) e ninguém passa do horário', async ({ page }) => {
@@ -79,7 +82,7 @@ test('Escala: intervalo da jornada acima de 8h e o da jornada de até 8h são co
 test('Escala → ajuste manual: atalhos Abre/Meio/Fecha, passo de 10 min e resumo da jornada com avisos', async ({ page }) => {
   await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS.db);
   await page.evaluate(() => { location.hash = '#mapa'; });
-  const cel = page.locator('td.trab.clicavel').first();
+  const cel = page.locator(CEL_TRAB).first();
   await expect(cel).toBeVisible();
   await cel.evaluate((td) => td.click());
   const ed = page.locator('.aj-editor');
@@ -141,10 +144,29 @@ test('Horário e equipe: digitar a hora inteira no campo não perde o foco', asy
 });
 
 // Escala do mês: horas líquidas em cada dia e, no feriado, o horário usado e de onde veio
-test('Escala do mês: horas líquidas por dia e horário do feriado no cabeçalho', async ({ page }) => {
+test('Escala do mês: horas líquidas por dia e horário do feriado no cabeçalho', async ({ page }, info) => {
   await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS.db);
   await page.selectOption('#lojaSel', 'demo-parque');
   await page.evaluate(() => { TS.state.escMesYm = '2026-11'; TS.state.mapaAba = 'escala'; location.hash = '#mapa'; });
+  if (info.project.name === 'celular') {
+    // ESC-MOB-01: o dia escolhido mostra cada pessoa com o horário, o intervalo e as horas líquidas (= total − intervalo)
+    const p = page.locator('.escm-p:not(:has(.escm-h.folga)):not(:has(.escm-h.ferias))').first();
+    await expect(p).toBeVisible();
+    const ok = await p.evaluate((el) => {
+      const m = (t) => +t.slice(0, 2) * 60 + +t.slice(3, 5);
+      const [a, b] = el.querySelector('.escm-h').textContent.match(/\d\d:\d\d/g).map(m);
+      const l2 = [...el.querySelectorAll('.lmob-l2 span')].map((x) => x.textContent).join(' · ');
+      const it = l2.match(/intervalo (\d\d:\d\d)–(\d\d:\d\d)/);
+      const t = l2.match(/(\d+)h(\d\d)? líquidas/);
+      return (b - a) - (it ? m(it[2]) - m(it[1]) : 0) === +t[1] * 60 + +(t[2] || 0);
+    });
+    expect(ok).toBe(true);
+    // feriado de novembro (Finados): o dia marcado e, ao escolher, o horário da loja no título
+    await page.evaluate(() => { TS.state.escDia = '2026-11-02'; TS.render(); });
+    await expect(page.locator('.escm-dia.on.fer')).toBeVisible();
+    await expect(page.locator('.escm-fer')).toHaveText(/\d\d:\d\d–\d\d:\d\d|fechada/);
+    return;
+  }
   const cel = page.locator('td.trab').first();
   await expect(cel.locator('.liq-dia')).toHaveText(/^\dh(\d\d)? líquidas$/);
   // líquidas = total − intervalo
@@ -210,15 +232,17 @@ test('Escala: semana começando na segunda mantém os dias certos por semana e a
   }
 });
 
-test('Escala do mês: com a semana começando na segunda, as semanas vão de segunda a domingo', async ({ page }) => {
+test('Escala do mês: com a semana começando na segunda, as semanas vão de segunda a domingo', async ({ page }, info) => {
   await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS.db);
   await page.selectOption('#lojaSel', 'demo-parque');
   await page.evaluate(() => { TS.state.escMesYm = '2026-11'; TS.state.mapaAba = 'escala'; location.hash = '#mapa'; });
-  await expect(page.locator('table.sem-t th span').first()).toHaveText('Dom');
+  // no celular a semana são os 7 botões de dia (ESC-MOB-01); no computador, o cabeçalho de cada tabela
+  const DIAS = info.project.name === 'celular' ? '.escm-dias .escm-dia > span' : 'table.sem-t thead th span';
+  await expect(page.locator(DIAS).first()).toHaveText('Dom');
   // espera a troca de loja terminar (senão a simulação volta ao que está salvo quando os dados chegam)
   await page.waitForFunction(() => TS.lojaCarregada === 'demo-parque' && TS.state.mapaOp && !document.querySelector('#updated.carregando'));
   await page.evaluate(() => { TS.state.mapaOp.op.equipe.inicioSemana = 'seg'; TS.render(); });
-  const cab = page.locator('table.sem-t').first().locator('thead th span');
+  const cab = page.locator(DIAS);
   await expect(cab.first()).toHaveText('Seg');
   await expect(cab.nth(6)).toHaveText('Dom');
 });
@@ -286,10 +310,17 @@ test('Escala: replicar mês leva só os ajustes que repetem; o pontual fica no d
 });
 
 // Ajuste manual: escolher "Neste e nos próximos <dia>" aplica no dia e nos próximos do mesmo dia da semana; pontual só no dia
-test('Escala → ajuste manual: "Vale para" pontual ou repetindo nos próximos', async ({ page }) => {
+test('Escala → ajuste manual: "Vale para" pontual ou repetindo nos próximos', async ({ page }, info) => {
   await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS.db);
   await page.evaluate(() => { location.hash = '#mapa'; });
-  const cel = page.locator('td.trab.clicavel').first();
+  // celular (ESC-MOB-01): o dia aberto é hoje; para o "repetindo nos próximos" ter dias depois, começa na 1ª semana do mês
+  if (info.project.name === 'celular') {
+    const ant = page.locator('.escm-seta[aria-label="Semana anterior"]');
+    await expect(ant).toBeVisible();
+    while (await ant.isEnabled()) await ant.click();
+    await page.locator('.escm-dia:not([disabled])', { hasText: /pess\./ }).first().click(); // o 1º dia com a loja aberta
+  }
+  const cel = page.locator(CEL_TRAB).first();
   await expect(cel).toBeVisible();
   await cel.evaluate((td) => td.click());
   const ed = page.locator('.aj-editor');

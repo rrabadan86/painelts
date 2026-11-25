@@ -1303,7 +1303,7 @@ tr.est-det > td { padding: 0 !important; background: #FBF9F4 !important; }
 .ped-ev > .f-input { max-width: 220px; }
 .ped-ev-c { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
 /* submenu (menu Estoque: Estoque e margem · Pedido) */
-.submenu { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin: -4px 0 16px; overflow-x: auto; }
+.submenu { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin: -4px 0 16px; overflow-x: auto; overflow-y: hidden; } /* a aba ativa desce 1 px sobre a borda: sem o hidden, o Windows mostrava uma barra de rolagem de cima para baixo (print do dono, 25/11/2026) */
 .submenu a { padding: 8px 14px; font-size: 14px; font-weight: 600; color: var(--muted); text-decoration: none; border-bottom: 3px solid transparent; margin-bottom: -1px; white-space: nowrap; }
 .submenu a:hover { color: var(--green); }
 .submenu a.on { color: var(--green); border-bottom-color: var(--gold, #C9A227); }
@@ -4062,3 +4062,39 @@ body.em-homolog .topbar { box-shadow: inset 0 -4px 0 var(--gold); }
 .est-det-mob { padding: 4px 0 10px; }
 .est-det-mob .est-det-box { max-width: 100%; overflow-x: hidden; }
 .cpf-link .cli-tag { margin-left: 6px; display: inline-block; text-decoration: none; font-size: 11px; vertical-align: 1px; }
+/* Clientes → Hoje no celular (HOJE-MOB-01, mockup aprovado pelo dono em 25/11/2026) */
+.hj-ferr-mob { margin: 0 0 8px; }
+.hj-item.hj-mob { display: block; }
+.hj-l1 { display: flex; justify-content: space-between; align-items: center; gap: 10px; min-width: 0; }
+.hj-mob .hj-nome { font-size: 15px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-height: 32px; }
+.hj-mob .hj-chev { color: var(--muted); font-size: 12px; }
+.hj-mob.hj-aberto .hj-chev { display: inline-block; transform: rotate(180deg); }
+.hj-mob .hj-acoes { flex: none; }
+.hj-mob .hj-wpp { min-height: 32px; padding: 4px 14px; border-radius: 99px; font-size: 13px; }
+.hj-mob .hj-motivos { margin-top: 4px; }
+.hj-mob .hj-det { display: block; margin-top: 4px; overflow-wrap: anywhere; }
+.hj-mob .hj-abre { margin-top: 8px; }
+.hj-mob .hj-abre .hj-msg { cursor: default; background: #fff; border: 1px solid var(--line); border-block-width: 1px; padding: 8px 10px; }
+.hj-mob .hj-ficha { display: inline-block; margin-top: 6px; font-weight: 600; color: var(--green); text-decoration: none; padding: 5px 0; }
+/* Escala do mês no celular (ESC-MOB-01, mockup aprovado pelo dono em 25/11/2026) */
+.escm-sem { display: flex; align-items: center; justify-content: space-between; margin: 12px 0 8px; }
+.escm-sem b { font-size: 14px; color: var(--dark); }
+.escm-seta { border: 0; background: none; font-size: 22px; color: var(--green); padding: 2px 12px; min-height: 36px; cursor: pointer; }
+.escm-seta:disabled { color: var(--line); cursor: default; }
+.escm-dias { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.escm-dia { text-align: center; background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 5px 0; font: inherit; color: var(--muted); cursor: pointer; min-width: 0; }
+.escm-dia span, .escm-dia small { display: block; font-size: 11px; }
+.escm-dia b { display: block; font-size: 15px; color: var(--ink); }
+.escm-dia.on { background: var(--green); border-color: var(--green); color: #e4ede6; }
+.escm-dia.on b { color: #fff; }
+.escm-dia.fer:not(.on) b, .escm-dia.falta:not(.on) small { color: var(--bad); }
+.escm-dia:disabled { opacity: .35; cursor: default; }
+.escm-tit { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin: 14px 2px 4px; font-size: 13px; }
+.escm-tit b { font-size: 15px; color: var(--dark); }
+.escm-lista, .escm-res { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 0 12px; }
+.escm-p.clicavel { cursor: pointer; }
+.escm-p.sel { background: var(--cream-2); margin: 0 -12px; padding-inline: 14px; }
+.escm-h { font-weight: 700; font-size: 14.5px; white-space: nowrap; }
+.escm-h.folga { color: var(--muted); }
+.escm-h.ferias { color: var(--bad); }
+.escm-ed { margin-top: 10px; cursor: default; }
