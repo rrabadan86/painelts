@@ -684,7 +684,7 @@
           tb,
           total ? null : h('div', { class: 'est-sim' },
             h('label', null, 'Simular preço R$ ', sim),
-            alvoPreco ? h('button', { type: 'button', class: 'est-sim-alvo', title: `Preço em que a margem de contribuição chega a ${fmt.pct(margemAlvo, 0)} (a meta da loja em Configurações)`, onclick: () => { sim.value = alvoPreco.toFixed(2); sim.dispatchEvent(new Event('input')); } }, `Para ${fmt.pct(margemAlvo, 0)} sem fixos: ${fmt.brl(alvoPreco)}`) : null),
+            alvoPreco ? h('button', { type: 'button', class: 'est-sim-alvo', title: `Preço em que a margem de contribuição chega a ${fmt.pct(margemAlvo, 0)} (a meta da loja em Configurações)`, onclick: () => { sim.value = alvoPreco.toFixed(2); sim.dispatchEvent(new Event('input')); } }, `Para ${fmt.pct(margemAlvo, 0)} de contribuição: ${fmt.brl(alvoPreco)}`) : null),
           rod);
         pintarCard(precoAtual);
         return cardEl;
@@ -1749,13 +1749,13 @@
       ];
     }
     return [
-      h('div', { class: 'f-label' }, 'Margem líquida (sobre o valor vendido)'),
+      h('div', { class: 'f-label' }, 'Simples, maquininha e margem de contribuição (sobre o valor vendido)'),
       h('div', { class: 'est-cfg-g' },
         h('label', null, h('span', null, 'Simples Nacional'), h('div', null, simp, ' %')),
         h('label', null, h('span', null, 'Taxa da maquininha'), h('div', null, maq, ' %')),
         h('label', null, h('span', null, 'Margem de contribuição mínima'), h('div', null, mMin, ' %')),
         h('label', null, h('span', null, 'Meta de margem de contribuição'), h('div', null, mAlvo, ' %'))),
-      h('small', { class: 'muted' }, 'Margem de contribuição = venda − Simples − custo − despesas variáveis, antes do aluguel e outros custos fixos. Abaixo da mínima o produto aparece em vermelho e no alerta. A meta é usada no simulador de preço ("Para X% sem fixos").'),
+      h('small', { class: 'muted' }, 'Margem de contribuição = venda − Simples − custo − despesas variáveis, antes do aluguel e outros custos fixos. Abaixo da mínima o produto aparece em vermelho e no alerta. A meta é usada no simulador de preço ("Para X% de contribuição").'),
       h('small', { class: 'muted' }, 'Comissão e royalties vêm das regras da loja (Comissionamento). Use a taxa média da maquininha (débito, crédito e Pix juntos).'),
       h('div', { class: 'f-label', style: { marginTop: '14px' } }, 'Em que categoria cada despesa aparece no Resultado ', TS.dica('No Resultado, as despesas variáveis (maquininha, royalties e marketing, comissões e os custos em %) aparecem agrupadas pela categoria, antes da margem de contribuição; as fixas, pelas mesmas categorias, depois dela. O Simples é dedução da receita. Passe o mouse na categoria para ver o total do mês somando as duas.')),
       catVarBox,

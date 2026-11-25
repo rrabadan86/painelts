@@ -222,3 +222,18 @@ test('CMV-EST-01: CMV pelo estoque no mês fechado com as fotos; o mês em andam
   await expect(t).toContainText('(−) Estoque final');
   await expect(t.locator('tr', { hasText: 'Perdas e acertos de estoque' }).first()).toHaveAttribute('title', /Pela conta do estoque/);
 });
+
+// RENDER-ROLA-01 (pedido do dono, 25/11/2026): abrir ou fechar uma linha não manda a página para o topo
+test('RENDER-ROLA-01: abrir/fechar uma categoria no Mês a mês mantém a rolagem da página', async ({ page }) => {
+  await abrir(page);
+  const mm = page.locator('.card', { has: page.locator('.card-title, h2, h3', { hasText: /^Mês a mês/ }) }).last();
+  const grupo = mm.locator('tr.dre-grupo', { hasText: 'Imóvel' }).locator('td').first();
+  await grupo.scrollIntoViewIfNeeded();
+  const antes = await page.evaluate(() => window.scrollY);
+  expect(antes).toBeGreaterThan(300);
+  await grupo.click();
+  await expect(mm.locator('tr.dre-filho').first()).toBeVisible();
+  await page.waitForTimeout(300);
+  const depois = await page.evaluate(() => window.scrollY);
+  expect(Math.abs(depois - antes)).toBeLessThan(40);
+});
