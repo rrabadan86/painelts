@@ -45,7 +45,8 @@ test('Faturamento do mês: o mesmo número no Resumo, no Início e no Resultado'
   expect(Math.abs(num(await fatDre.textContent()) - oficial)).toBeLessThanOrEqual(1);
   // a coluna da variação diz com o que compara (o mês inteiro do ano anterior)
   const cab = page.locator('.dre-t thead th.dre-var').first();
-  await expect(cab).toHaveText(/^(Projeção × \w{3}\/\d{2} inteiro|Variação)$/);
+  if (await page.evaluate(() => TS.ehCelular())) await expect(cab).toHaveAttribute('title', /inteiro|INTEIRO/); // celular (LMOB-05): a variação vai embaixo do valor; o cabeçalho diz com o que compara
+  else await expect(cab).toHaveText(/^(Projeção × \w{3}\/\d{2} inteiro|Variação)$/);
   await semRolagemLateral(page);
 });
 

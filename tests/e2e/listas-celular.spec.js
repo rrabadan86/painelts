@@ -197,3 +197,34 @@ test('LMOB-04: Estoque, Preços, Site, Validade, Notas e Rentabilidade em linhas
   }
   expect(erros).toEqual([]);
 });
+
+// LMOB-05 (lote 3 do pente-fino do celular, 25/11/2026): tabelas que rolavam de lado (Sua loja × rede, Resultado do mês,
+// Mês a mês, RFM e safras) e as barras de produto com o nome cortado
+test('LMOB-05: Resultado, Sua loja × rede, RFM, safras e barras de produto cabem no celular', async ({ page }, info) => {
+  const erros = []; page.on('pageerror', (e) => erros.push(e.message));
+  await abrir(page);
+  const cel = info.project.name === 'celular';
+  const naoRola = (sel) => page.evaluate((s) => [...document.querySelectorAll(s)].map((t) => { const w = t.closest('.table-wrap') || t; return w.scrollWidth - w.clientWidth; }), sel);
+  await page.evaluate(() => { location.hash = '#dre'; });
+  if (cel) {
+    await expect(page.locator('.dre-t.dre-mob').first()).toBeVisible();
+    for (const d of await naoRola('.dre-t.dre-mob')) expect(d).toBeLessThanOrEqual(1);
+    await expect(page.locator('.dre-t.dre-mob').nth(1).locator('thead th')).toHaveCount(4); // rótulo + 3 meses
+    const nav = page.locator('.dre-nav');
+    const antes = await nav.locator('b').innerText();
+    await nav.getByRole('button', { name: 'Meses anteriores' }).click();
+    await expect(page.locator('.dre-nav b')).not.toHaveText(antes);
+  } else await expect(page.locator('.dre-mob')).toHaveCount(0);
+  await page.evaluate(() => { location.hash = '#resumo'; });
+  if (cel) { await expect(page.locator('.barras-mob .lmob-it').first()).toBeVisible(); for (const d of await naoRola('.t-compacta')) expect(d).toBeLessThanOrEqual(1); }
+  else await expect(page.locator('.barras-mob')).toHaveCount(0);
+  await page.evaluate(() => { location.hash = '#clientes'; });
+  await expect(page.locator('.card', { hasText: 'Grupos de clientes (RFM)' })).toBeVisible();
+  if (cel) {
+    await expect(page.locator('.rfm-lmob .lmob-it').first()).toBeVisible();
+    await expect(page.locator('.safra-t thead th')).toHaveCount(5); // 1ª compra, novos, 30 d, 90 d, 1 ano
+    for (const d of await naoRola('.safra-t')) expect(d).toBeLessThanOrEqual(1);
+  }
+  await semRolarDeLado(page);
+  expect(erros).toEqual([]);
+});

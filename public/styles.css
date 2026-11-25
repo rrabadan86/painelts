@@ -4101,3 +4101,21 @@ body.em-homolog .topbar { box-shadow: inset 0 -4px 0 var(--gold); }
 /* Campanhas → prévia da lista: o ✕ (tirar da campanha) no fim da célula dos pontos, sem 3ª coluna (CAMP-TIRAR-01) */
 .cp-pts-l { display: flex; justify-content: flex-end; align-items: flex-start; gap: 10px; }
 .cp-pts-l .cp-tirar { flex: none; min-height: 28px; padding: 2px 9px; }
+/* Celular, lote 3 (LMOB-05): Resultado em 3 colunas (valor com o % embaixo) e Mês a mês 3 meses por vez */
+.dre-t.dre-mob td small.dre-sub { display: block; font-size: 12px; font-weight: 400; }
+.dre-t.dre-mob td.l { white-space: normal; min-width: 0; }
+.dre-t.dre-mob { font-size: 13px; }
+.dre-t.dre-mob td, .dre-t.dre-mob th { padding-left: 6px; padding-right: 6px; }
+.dre-t.dre-mob { table-layout: fixed; width: 100%; min-width: 0; }
+.dre-t.dre-mob tr > :first-child { width: 30%; }
+.dre-t.dre-mob .sticky-col { min-width: 0; }
+.dre-t.dre-mob td:not(.l) { white-space: normal; letter-spacing: -.2px; } /* com a letra mais larga, "R$" quebra para cima em vez de rolar de lado */
+.dre-t.dre-mob td, .dre-t.dre-mob th { padding-left: 4px; padding-right: 4px; font-size: 12.5px; }
+.dre-nav { display: flex; align-items: center; justify-content: space-between; margin: 4px 0 8px; }
+.dre-nav b { font-size: 14px; color: var(--dark); }
+.dre-t.dre-mob th { white-space: normal; }
+/* barras do celular no lugar do gráfico deitado (TS.barrasMob, LMOB-05) */
+.barras-mob .lmob-it { padding: 9px 2px; }
+.barras-mob .lmob-nome { font-weight: 500; font-size: 14px; }
+.barras-mob .lmob-val { font-weight: 600; font-size: 13.5px; }
+.barras-gold .lmob-barra i { background: var(--gold); }
