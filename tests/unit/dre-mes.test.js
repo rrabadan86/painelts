@@ -208,3 +208,13 @@ test('DESP-CAT-01: categoria de Simples, maquininha e comissões — padrão, es
   assert.deepStrictEqual(ES.validarCfg({ ...base, categorias: cats, catVar: { simples: 'func', comissao: 'x' } }).ok.catVar, { simples: 'func', cartao: 'taxas', comissao: 'func' });
   assert.deepStrictEqual(ES.cfg({ estoqueCfg: {} }).catVar, { simples: 'impostos', cartao: 'taxas', comissao: 'func' });
 });
+
+test('DRE-FIN-01: resultado financeiro aceita negativo (juros, tarifas) e positivo (rendimentos); as outras linhas não', async () => {
+  const F = require('../../src/fixosmes');
+  assert.deepStrictEqual(F.validar({ nome: '@financeiro', ym: '2026-10', valor: -85.4 }, [], '2026-11-25').ok, { nome: '@financeiro', ym: '2026-10', valor: -85.4 });
+  assert.ok(F.validar({ nome: '@financeiro', ym: '2026-10', valor: 120 }, [], '2026-11-25').ok);
+  assert.ok(F.validar({ nome: '@simples', ym: '2026-10', valor: -1 }, [], '2026-11-25').erro);
+  const r = await lancar('dono', { loja: 'l1', nome: '@financeiro', ym: '2026-10', valor: -85.4 });
+  assert.strictEqual(r.status, 200);
+  assert.strictEqual((await lancados())['@financeiro']['2026-10'].valor, -85.4);
+});

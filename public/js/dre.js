@@ -4,7 +4,7 @@
 (function () {
   const { h, fmt, state } = TS;
 
-  const novo = () => ({ fat: 0, fatCusto: 0, custo: 0, imp: 0, maq: 0, roy: 0, com: 0, varPct: 0, gorjeta: 0, gorjImp: 0, gorjRoy: 0, royEg: 0, royS: 0, mkt: 0, desc: 0, dias: new Set(), eg: 0, partes: { granel: 0, envasado: 0, acess: 0, outros: 0 }, outrosGr: new Map(), pctPor: [] });
+  const novo = () => ({ fat: 0, fatCusto: 0, custo: 0, imp: 0, maq: 0, roy: 0, com: 0, varPct: 0, gorjeta: 0, gorjImp: 0, gorjRoy: 0, royEg: 0, royS: 0, mkt: 0, desc: 0, egDesc: 0, dias: new Set(), eg: 0, partes: { granel: 0, envasado: 0, acess: 0, outros: 0 }, outrosGr: new Map(), pctPor: [] });
   // parte da loja de cada grupo da base (guardada por grupo; refeita quando os dados mudam)
   let partesCache = { db: null, porGrupo: [] };
   function parteDoGrupo(db, gi) {
@@ -32,13 +32,14 @@
     const vt = db.vt[i] || 0;
     m.fat += vt; m.dias.add(db.day[i]);
     const ehEg = I.eg.has(db.cat[i]);
-    if (ehEg) m.eg += vt;
-    else { // a receita da loja aberta em partes pelo grupo da venda (RES-PARTES-01, TS.contas.parteLoja)
+    const dsc = TS.descontos([i]) || 0;
+    m.desc += dsc;
+    if (ehEg) { m.eg += vt; m.egDesc += dsc; }
+    else { // a receita da loja aberta em partes pelo grupo da venda (RES-PARTES-01, TS.contas.parteLoja), pelo preço cheio (receita bruta)
       const gi = db.grupo ? db.grupo[i] : null, k = parteDoGrupo(db, gi);
-      m.partes[k] += vt;
-      if (k === 'outros') { const g = (db.D && db.D.grupo && db.D.grupo[gi]) || 'sem grupo'; m.outrosGr.set(g, (m.outrosGr.get(g) || 0) + vt); }
+      m.partes[k] += vt + dsc;
+      if (k === 'outros') { const g = (db.D && db.D.grupo && db.D.grupo[gi]) || 'sem grupo'; m.outrosGr.set(g, (m.outrosGr.get(g) || 0) + vt + dsc); }
     }
-    m.desc += TS.descontos([i]);
     const dd = D.deducoes(i);
     if (ehEg) m.royEg += dd.roy;
     m.imp += dd.imp; m.maq += dd.maq; m.roy += dd.roy; m.com += dd.com; m.royS += dd.royS || 0; m.mkt += dd.mkt || 0;
@@ -107,17 +108,10 @@
       m.mktPago = m.lanc.marketing ? m.lanc.marketing.valor : m.mkt;
       m.roy = m.royPago + m.mktPago;
       const impostos = m.imp + m.maq + m.roy;
-      const recLiq = m.fat - impostos;
       // perdas do mês (chá vencido ainda no estoque + faltas do inventário, a custo): entram depois do custo dos produtos
       const perdasDet = opts.perdas ? opts.perdas[ym] || { total: 0, vencidos: 0, inventario: 0, nVencidos: 0, nContagens: 0 } : null;
       const perdas = perdasDet ? perdasDet.total : null;
-      // três degraus, a mesma definição da Rentabilidade (decisão do dono, 23/11/2026):
-      // lucro bruto = venda − custo dos produtos; lucro sem fixos = lucro bruto − Simples, maquininha, royalties,
-      // comissão e custos em %; resultado = lucro sem fixos − perdas − custos fixos
-      const lucroBruto = cmv == null ? null : m.fat - cmv;
-      const contrib = lucroBruto == null ? null : lucroBruto - impostos - m.com - m.varPct;
-      const resultado = contrib == null ? null : contrib - (perdas || 0) - fixoTot;
-      const r = { ym, parcial, frac, ultimo, diasMes, decorridos, ...m, dias: m.dias.size, cmv, cmvPct, perdas, perdasDet, cobre: m.fat ? m.fatCusto / m.fat : 0, fixosMes, fixoTot, impostos, recLiq, lucroBruto, contrib, resultado };
+      const r = degraus({ ym, parcial, frac, ultimo, diasMes, decorridos, ...m, dias: m.dias.size, cmv, cmvPct, perdas, perdasDet, cobre: m.fat ? m.fatCusto / m.fat : 0, fixosMes, fixoTot, impostos });
       if (parcial) r.proj = projetar(r, D);
       out.push(r);
     }
@@ -126,39 +120,57 @@
   /** mês em andamento projetado: o faturamento vem da projeção única (TS.projecaoMes: vendas até ontem + cada dia que falta
    *  pela média do dia da semana); o que depende das vendas cresce na mesma proporção; os custos fixos ficam iguais (já são
    *  cheios). A comissão NÃO é a parcial multiplicada: é recalculada com a venda projetada de cada pessoa contra a meta. */
+  /**
+   * Os degraus da DRE como na contabilidade (decisão do dono, 25/11/2026; DRE-ESTR-01), iguais no Resultado e na Rentabilidade:
+   *   receita bruta (preço cheio) − deduções (descontos dados + Simples) = receita líquida
+   *   − CMV (custo dos produtos vendidos + perdas de estoque) = lucro bruto
+   *   − despesas variáveis (maquininha, royalties e marketing, comissões, custos em %) = margem de contribuição (`contrib`)
+   *   − despesas fixas = resultado operacional (`resOper`)
+   *   ± resultado financeiro (lançado no mês) = resultado antes dos tributos sobre o lucro (no Simples não há outro) = `resultado`
+   */
+  function degraus(r) {
+    r.recBruta = r.fat + (r.desc || 0);
+    r.deducoes = (r.desc || 0) + r.imp;
+    r.recLiq = r.fat - r.imp;
+    r.cmvTot = r.cmv == null ? null : r.cmv + (r.perdas || 0);
+    r.lucroBruto = r.cmvTot == null ? null : r.recLiq - r.cmvTot;
+    r.varTot = r.maq + r.roy + r.com + r.varPct;
+    r.contrib = r.lucroBruto == null ? null : r.lucroBruto - r.varTot;
+    r.resOper = r.contrib == null ? null : r.contrib - r.fixoTot;
+    r.fin = r.lanc && r.lanc.financeiro ? r.lanc.financeiro.valor : 0;
+    r.resultado = r.resOper == null ? null : r.resOper + r.fin;
+    return r;
+  }
   function projetar(m, D) {
     const PM = TS.projecaoMes ? TS.projecaoMes(m.ym, { base: 'loja', todas: true }) : null;
     const k = PM && m.fat > 0 ? PM.proj / m.fat : m.diasMes / m.decorridos;
     const x = (v) => (v == null ? null : v * k);
     const comP = D && D.comProjetada ? D.comProjetada(m.ym, k) : null;
     const p = { ...m, parcial: false, projecao: true, fat: m.fat * k, fatCusto: m.fatCusto * k, custo: m.custo * k, imp: m.lanc && m.lanc.simples ? m.imp : m.imp * k, maq: m.lanc && m.lanc.maquininha ? m.maq : m.maq * k, impCalc: (m.impCalc ?? m.imp) * k, maqCalc: (m.maqCalc ?? m.maq) * k, royCalc: (m.royCalc ?? m.roy) * k, royS: (m.royS || 0) * k, mkt: (m.mkt || 0) * k, com: comP != null ? comP : m.com * k, varPct: m.varPct * k, projMes: PM, fator: k,
-      gorjeta: m.gorjeta * k, gorjImp: m.gorjImp * k, gorjRoy: m.gorjRoy * k, desc: m.desc * k, eg: m.eg * k, cmv: x(m.cmv), partes: Object.fromEntries(Object.entries(m.partes || {}).map(([q, v]) => [q, v * k])), pctPor: (m.pctPor || []).map((v) => (v == null ? v : v * k)) };
+      gorjeta: m.gorjeta * k, gorjImp: m.gorjImp * k, gorjRoy: m.gorjRoy * k, desc: m.desc * k, egDesc: (m.egDesc || 0) * k, eg: m.eg * k, cmv: x(m.cmv), partes: Object.fromEntries(Object.entries(m.partes || {}).map(([q, v]) => [q, v * k])), pctPor: (m.pctPor || []).map((v) => (v == null ? v : v * k)) };
     // o lançado vale como está (não cresce com as vendas); o calculado acompanha a projeção
     p.royPago = m.lanc && m.lanc.royalties ? m.royPago : p.royS - (m.royDesc || 0);
     p.mktPago = m.lanc && m.lanc.marketing ? m.mktPago : p.mkt;
     p.roy = p.royPago + p.mktPago;
     p.impostos = p.imp + p.maq + p.roy;
-    p.recLiq = p.fat - p.impostos;
-    p.lucroBruto = p.cmv == null ? null : p.fat - p.cmv;
-    p.contrib = p.lucroBruto == null ? null : p.lucroBruto - p.impostos - p.com - p.varPct;
-    p.resultado = p.contrib == null ? null : p.contrib - (p.perdas || 0) - p.fixoTot; // as perdas não crescem com as vendas: ficam as de agora
-    return p;
+    return degraus(p); // as perdas e o resultado financeiro lançado não crescem com as vendas: ficam os de agora
   }
 
   /** ⓘ do Faturamento total: a conta com e sem a taxa de serviço (pedido do dono: investigar royalties e imposto) */
   function dicaTotal(m) {
-    if (!m.gorjeta) return 'Tudo o que o cliente pagou no mês. Neste mês não houve taxa de serviço.';
+    const base = `Receita bruta: loja + Espaço Gourmet pelo preço cheio, antes dos descontos (${fmt.brl(m.desc || 0)} de descontos no mês). Sem entrega e sem itens a R$ 0,01.`;
+    if (!m.gorjeta) return base + ' Neste mês não houve taxa de serviço.';
     const b = fmt.brl;
-    return `Tudo o que o cliente pagou no mês: loja + Espaço Gourmet + taxa de serviço (${b(m.gorjeta)}).\n\n`
+    return `${base}\n\nA taxa de serviço (${b(m.gorjeta)}) fica fora da receita: é repassada à equipe.\n\n`
       + `Hoje a taxa fica FORA da base (repassada à equipe): faturamento ${b(m.fat)} · Simples ${b(m.imp)} · royalties calculados ${b(m.royCalc ?? m.roy)}.\n\n`
       + `Se a taxa entrasse na base: faturamento ${b(m.fat + m.gorjeta)} · Simples ${b(m.imp + m.gorjImp)} (+${b(m.gorjImp)}) · royalties calculados ${b((m.royCalc ?? m.roy) + m.gorjRoy)} (+${b(m.gorjRoy)}).\n\n`
       + 'Compare os royalties com o boleto da franquia. Sobre o imposto, confirme com o contador como a loja registra a taxa.';
   }
   /** linhas calculadas que aceitam o valor real do mês (DRE-CALC-01): chave → rótulo e o calculado do mês */
-  const CALC = { simples: ['Simples Nacional', (m) => m.impCalc], maquininha: ['Maquininha', (m) => m.maqCalc], royalties: ['Royalties', (m) => (m.royS || 0) - (m.royDesc || 0)], marketing: ['Marketing', (m) => m.mkt] };
+  const CALC = { simples: ['Simples Nacional', (m) => m.impCalc], maquininha: ['Maquininha', (m) => m.maqCalc], royalties: ['Royalties', (m) => (m.royS || 0) - (m.royDesc || 0)], marketing: ['Marketing', (m) => m.mkt], financeiro: ['Resultado financeiro', () => 0] };
   function lancCalc(D, ym) {
     const out = {};
-    for (const k of Object.keys(CALC)) { const l = D && D.LANC && D.LANC['@' + k] && D.LANC['@' + k][ym]; out[k] = l && Number.isFinite(+l.valor) && +l.valor >= 0 ? { valor: +l.valor, por: l.por, em: l.em } : null; }
+    for (const k of Object.keys(CALC)) { const l = D && D.LANC && D.LANC['@' + k] && D.LANC['@' + k][ym]; out[k] = l && Number.isFinite(+l.valor) && (+l.valor >= 0 || k === 'financeiro') ? { valor: +l.valor, por: l.por, em: l.em } : null; }
     return out;
   }
   /** ⓘ da linha calculada: a regra, o calculado e o lançado (com a diferença, para conferir com o DAS, o extrato e o boleto) */
@@ -192,7 +204,6 @@
     const todas = [...CT.catsEscolha(cats), CT.CAT_FRANQUIA];
     const nomeDe = (id) => (todas.find((c) => c.id === id) || { nome: 'Outros' }).nome;
     const itens = [
-      { nome: 'Simples Nacional', cat: CV.simples, f: (m) => m.imp, cc: 'simples', dica: (m) => dicaCalc(m, 'simples', '% do Simples (Configurações → Lojas → Estoque e margem) sobre as vendas') },
       { nome: 'Maquininha', cat: CV.cartao, f: (m) => m.maq, cc: 'maquininha', dica: (m) => dicaCalc(m, 'maquininha', 'Taxa média da maquininha sobre as vendas') },
       { nome: 'Royalties', cat: 'franquia', f: (m) => m.royPago, cc: 'royalties', dica: (m) => dicaCalc(m, 'royalties', 'Royalties pelas regras da loja (loja; Espaço Gourmet: EG) sobre o faturamento sem a taxa de serviço, menos os descontos da franquia do mês (devoluções compensadas nos royalties e prêmios de fidelidade)') },
       { nome: 'Marketing', cat: 'franquia', f: (m) => m.mktPago, cc: 'marketing', dica: (m) => dicaCalc(m, 'marketing', 'Fundo de marketing pelas regras da loja (loja; Espaço Gourmet: marketing EG) sobre o faturamento sem a taxa de serviço') },
@@ -211,40 +222,49 @@
   // linhas da DRE: [rótulo, chave/função, tipo] tipo: 'sub' (subtotal), 'tot' (resultado), 'menos', 'info'
   /** grupos: [{ id, nome, itens:[índice em fixosMes] }] — cada categoria vira uma linha com o subtotal, que abre os custos */
   const LINHAS = (grupos, abertos, vgrupos = []) => [
-    // receita separada em Loja e Espaço Gourmet, com a taxa de serviço (os 10%) identificada (pedido do dono, 23/11/2026; RES-TAXA-01)
-    ['Faturamento total', (m) => m.fat + m.gorjeta, 'bruto', (m) => dicaTotal(m)],
-    ['Loja', (m) => m.fat - m.eg, 'parte', 'Vendas da loja, sem o Espaço Gourmet (com os descontos, sem entrega e sem itens a R$ 0,01). Clique para abrir em chás a granel, envasados, acessórios e outros.', 'loja'],
+    // a DRE como na contabilidade (decisão do dono, 25/11/2026; DRE-ESTR-01): receita bruta → deduções → receita líquida → CMV →
+    // lucro bruto → despesas variáveis → margem de contribuição → despesas fixas → resultado operacional → financeiro → resultado
+    ['Receita bruta', (m) => m.recBruta, 'bruto', (m) => dicaTotal(m)],
+    ['Loja', (m) => m.recBruta - m.eg - (m.egDesc || 0), 'parte', 'Vendas da loja pelo preço cheio, sem o Espaço Gourmet (sem entrega e sem itens a R$ 0,01). Clique para abrir em chás a granel, envasados, acessórios e outros.', 'loja'],
     // a loja aberta pelo grupo da venda (pedido do dono, 25/11/2026; RES-PARTES-01)
     ...(abertos.has('loja') ? TS.contas.PARTES_LOJA.map(([k, nome]) => [nome, (m) => (m.partes ? m.partes[k] : null), 'lojaparte', k === 'outros' ? dicaOutros
       : k === 'granel' ? 'Chás a granel: as vendas dos grupos de chá do AppNext (os mesmos do "Chá vendido"), como saíram no caixa' : k === 'envasado' ? 'Chás envasados (pacote fechado, lata, minitin, sachê, Tea Moments): o grupo de envasados do AppNext' : 'Acessórios: o grupo ACESSÓRIOS do AppNext']) : []),
-    ['Espaço Gourmet', (m) => m.eg, 'parte', 'Consumo do Espaço Gourmet, sem a taxa de serviço'],
+    ['Espaço Gourmet', (m) => m.eg + (m.egDesc || 0), 'parte', 'Consumo do Espaço Gourmet pelo preço cheio, sem a taxa de serviço'],
     ['Taxa de serviço (10%)', (m) => m.gorjeta, 'taxa', 'Taxa de serviço (os 10% do Espaço Gourmet) que o cliente pagou. Fica identificada aqui (em destaque), mas FORA da base: não entra no faturamento da loja: é repassada à equipe. Passe o mouse em "Faturamento total" para ver quanto seriam o Simples e os royalties se ela entrasse na base'],
     ['− Repassada à equipe', (m) => m.gorjeta, 'repasse', 'A taxa de serviço sai do faturamento: vai para a equipe. Por isso o Simples e os royalties do painel são calculados sem ela (confirme com o contador como a loja registra)'],
-    ['= Faturamento', (m) => m.fat, 'base', 'Faturamento da loja: tudo o que foi vendido, com Espaço Gourmet e vendas sem vendedor, já com os descontos; sem taxa de serviço e entrega e sem itens a R$ 0,01 (resgates e brindes). É o mesmo número do Resumo e do Início'],
-    ['− Custo dos produtos', (m) => m.cmv, 'menos', 'Custo dos produtos vendidos (chá pelo kg + saco e etiquetas). Mês passado: o custo que cada produto tinha na data da venda (notas de compra e histórico de custos do painel; antes do primeiro custo conhecido vale o mais antigo, estimado). Mês em andamento: o custo de hoje do AppNext. Vendas sem custo no estoque entram pelo mesmo % das outras (estimado)'],
-    ['= Lucro bruto', (m) => m.lucroBruto, 'sub', 'Faturamento − custo dos produtos vendidos. A mesma conta da Rentabilidade (aqui as vendas sem custo cadastrado entram pelo mesmo % de custo das outras).'],
-    // despesas que acompanham as vendas, agrupadas pela categoria (aprovado pelo dono, 25/11/2026; DESP-CAT-01)
-    ['Despesas que acompanham as vendas', () => null, 'secao', 'Sobem e descem com as vendas (vendeu mais, paga mais): Simples, maquininha, royalties e marketing, comissões e os custos em % das vendas. Cada uma aparece na categoria escolhida em Configurações → Lojas → Estoque e margem.'],
+    ['− Deduções da receita', (m) => m.deducoes, 'menos', 'Descontos dados no caixa + Simples Nacional: o que sai da receita antes de qualquer custo'],
+    ['Descontos concedidos', (m) => m.desc, 'filho', 'Descontos dados no caixa (a diferença entre o preço cheio e o que o cliente pagou)'],
+    ['Simples Nacional', (m) => m.imp, 'calc', (m) => dicaCalc(m, 'simples', '% do Simples (Configurações → Lojas → Estoque e margem) sobre as vendas. No Simples, o IRPJ e a CSLL já estão no DAS'), null, null, 'simples'],
+    ['= Receita líquida', (m) => m.recLiq, 'base', 'Receita bruta − descontos − Simples. Sem a taxa de serviço e a entrega e sem itens a R$ 0,01 (resgates e brindes): o faturamento do Resumo menos o Simples'],
+    ['− CMV (custo das mercadorias vendidas)', (m) => m.cmvTot, 'menos', 'Custo dos produtos vendidos + perdas de estoque (o que a loja pagou e não vai vender)'],
+    ['Custo dos produtos vendidos', (m) => m.cmv, 'filho', 'Custo dos produtos vendidos (chá pelo kg + saco e etiquetas). Mês passado: o custo que cada produto tinha na data da venda (notas de compra e histórico de custos do painel; antes do primeiro custo conhecido vale o mais antigo, estimado). Mês em andamento: o custo de hoje do AppNext. Vendas sem custo no estoque entram pelo mesmo % das outras (estimado)'],
+    ['Perdas de estoque (vencidos e inventário)', (m) => m.perdas, 'filho', 'O que a loja pagou e não vai vender, a custo: (1) lote VENCIDO que ainda está no estoque (chá a granel, envasados e alimentação), no mês em que a validade venceu (saldo do lote × custo do kg ou da unidade, os lotes da tela Validade); (2) faltas do INVENTÁRIO: contagens aplicadas no AppNext no mês, pelo saldo dos ajustes (contado − sistema) × custo — sobra compensa falta, e só o saldo negativo do mês entra. Na projeção ficam as perdas de agora (não crescem com as vendas). "—" = o painel não conseguiu ler as perdas'],
+    ['= Lucro bruto', (m) => m.lucroBruto, 'sub', 'Receita líquida − CMV. A mesma conta da Rentabilidade (aqui as vendas sem custo cadastrado entram pelo mesmo % de custo das outras)'],
+    // despesas variáveis, agrupadas pela categoria (aprovado pelo dono, 25/11/2026; DESP-CAT-01)
+    ['Despesas variáveis', () => null, 'secao', 'Sobem e descem com as vendas (vendeu mais, paga mais): maquininha, royalties e marketing, comissões e os custos em % das vendas. Cada uma aparece na categoria escolhida em Configurações → Lojas → Estoque e margem.'],
     ...vgrupos.flatMap((g) => (g.itens.length === 1
       ? [[`−\u00a0${g.nome}: ${g.itens[0].nome}`, g.itens[0].f, 'menos', g.itens[0].dica, null, null, g.itens[0].cc]]
       : [[`−\u00a0${g.nome}${g.id === 'franquia' ? ' (royalties + marketing)' : ''}`, g.soma, 'vgrupo', g.dica, 'v:' + g.id],
         ...(abertos.has('v:' + g.id) ? g.itens.map((x) => [x.nome, x.f, x.cc ? 'calc' : 'filho', x.dica, null, null, x.cc]) : [])])),
-    ['= Lucro sem fixos', (m) => m.contrib, 'sub', 'Lucro bruto − Simples, maquininha, royalties, comissões e custos em %: o que as vendas deixam para pagar as perdas e os custos fixos. É o "Lucro sem fixos" da Rentabilidade (antes chamado de margem de contribuição).'],
-    ['− Perdas (vencidos e inventário)', (m) => m.perdas, 'menos', 'O que a loja pagou e não vai vender, a custo: (1) lote VENCIDO que ainda está no estoque (chá a granel, envasados e alimentação), no mês em que a validade venceu (saldo do lote × custo do kg ou da unidade, os lotes da tela Validade); (2) faltas do INVENTÁRIO: contagens aplicadas no AppNext no mês, pelo saldo dos ajustes (contado − sistema) × custo — sobra compensa falta, e só o saldo negativo do mês entra. Na projeção ficam as perdas de agora (não crescem com as vendas). "—" = o painel não conseguiu ler as perdas'],
-    ['Despesas fixas do mês', () => null, 'secao', 'O mesmo valor todo mês, venda muito ou pouco: salários, aluguel fixo, sistemas… (o valor de Configurações ou o valor real lançado no mês).'],
+    ['= Margem de contribuição', (m) => m.contrib, 'sub', 'Lucro bruto − despesas variáveis: o que as vendas deixam para pagar as despesas fixas. É a "Margem de contribuição" da Rentabilidade'],
+    ['Despesas fixas', () => null, 'secao', 'O mesmo valor todo mês, venda muito ou pouco: salários, aluguel fixo, sistemas… (o valor de Configurações ou o valor real lançado no mês).'],
     ...grupos.flatMap((g) => [
       [`− ${g.nome}`, (m) => m.fixosMes.filter((x) => x.cat === g.id).reduce((a, x) => a + x.valor, 0), 'grupo', (m) => `${g.nomes.length} ${g.nomes.length === 1 ? 'custo' : 'custos'}: ${g.nomes.map((n) => n.nome + (n.pontual ? ' (pontual)' : '')).join(', ')}. Clique para ${abertos.has(g.id) ? 'fechar' : 'abrir'}.${totalCat(vgrupos, g.id, m)}`, g.id],
       ...(abertos.has(g.id) ? g.nomes.map((n) => [n.pontual ? `${n.nome} · pontual` : n.nome, (m) => { const l = m.fixosMes.filter((x) => x.cat === g.id && x.nome === n.nome && !!x.pontual === n.pontual); return l.length ? l.reduce((a, x) => a + x.valor, 0) : null; }, 'filho',
         n.pontual ? 'Despesa de um mês só: entra cheia no mês dela' : 'Custo fixo: entra pelo valor cheio do mês, também no mês em andamento. Clique no valor de um mês para lançar o valor real daquele mês (✎); clique no nome para ver o histórico mês a mês', null, n.pontual ? null : n.nome]) : []),
     ]),
-    ['= Resultado do mês', (m) => m.resultado, 'tot', 'Lucro sem fixos − perdas − custos fixos'],
+    ['= Resultado operacional', (m) => m.resOper, 'sub', 'Margem de contribuição − despesas fixas'],
+    ['± Resultado financeiro', (m) => m.fin, 'fin', 'Juros e tarifas do banco, antecipação de cartão (negativos) e rendimentos (positivos). O painel não lê o banco: clique no valor de um mês para lançar', null, null, 'financeiro'],
+    ['= Resultado antes dos tributos sobre o lucro', (m) => m.resultado, 'sub', 'Resultado operacional ± resultado financeiro'],
+    ['− Tributos sobre o lucro', () => null, 'filho', 'No Simples Nacional o IRPJ e a CSLL já estão no DAS (linha Simples Nacional): não há tributo à parte sobre o lucro'],
+    ['= Resultado líquido', (m) => m.resultado, 'tot', 'O que sobrou no mês, depois de tudo'],
   ];
 
   TS.dreCalcular = calcular; // o caixa a pagar usa os mesmos royalties e impostos do Resultado
   TS.pages.dre = function (root) {
     if (TS.subEstoque) root.append(TS.subEstoque('dre'));
     root.append(h('div', { class: 'page-head' }, h('div', null, h('h1', { class: 'page-title' }, 'Resultado do mês'),
-      h('div', { class: 'page-sub' }, 'Do faturamento ao lucro: impostos, custo dos produtos, comissões e custos fixos, mês a mês'))));
+      h('div', { class: 'page-sub' }, 'A DRE da loja mês a mês: da receita bruta ao resultado líquido'))));
     if (!state.loja || state.loja === 'todas') { root.append(h('div', { class: 'notice' }, 'O resultado é de cada loja: escolha uma loja no seletor do topo.')); return; }
     const corpo = h('div', null, h('div', { class: 'loading' }, h('div', null, h('div', { class: 'spinner' }), h('p', null, 'Calculando…'))));
     // abas da tela: o resultado (lucro) e o caixa a pagar (o que vence, com a previsão do que entra — apagar.js)
@@ -345,21 +365,21 @@
     // cartões do topo
     const varA = (k) => (aDias && aDias[k] ? h('span', null, TS.deltaSpan(m[k] / aDias[k] - 1), ` vs. ${m.parcial ? `${rotAnt} (dias 1 a ${diaAte})` : rotAnt}`) : null);
     corpo.append(h('div', { class: 'dre-topo' }, h('label', null, 'Mês ', opMes), h('span', { class: 'muted' }, 'Todos os dias do mês, sem os filtros do topo. Custos fixos e % com os valores cadastrados hoje.'),
-      TS.aPagar ? TS.aPagar.botaoExportar(m, LINHAS(grupos, new Set(), vgrupos).filter((l) => !['bruto', 'parte', 'lojaparte', 'taxa', 'repasse', 'calc', 'secao'].includes(l[2])).map((l) => (l[2] === 'base' ? ['Faturamento', ...l.slice(1)] : l)), cats, vgrupos) : null),
+      TS.aPagar ? TS.aPagar.botaoExportar(m, LINHAS(grupos, new Set(), vgrupos).filter((l) => !['parte', 'lojaparte', 'taxa', 'repasse', 'secao'].includes(l[2])), cats, vgrupos) : null),
       ...avisos.map((t) => h('div', { class: 'notice' }, t)),
       // herói (redesenho de 22/11): o resultado em primeiro, a projeção (mês em andamento) e o faturamento com as margens
       TS.heroi([
         { rot: m.parcial ? 'Resultado até hoje' : 'Resultado do mês', num: m.resultado == null ? '—' : fmt.brl0(m.resultado), estado: m.resultado == null ? null : m.resultado >= 0 ? 'bom' : 'ruim',
-          linhas: [m.parcial ? (m.resultado == null ? '' : m.resultado >= 0 ? 'custos fixos do mês já cobertos' : `falta cobrir ${fmt.brl0(-m.resultado)} dos custos fixos`) : `${pc(m.resultado, m.fat)} do faturamento`,
+          linhas: [m.parcial ? (m.resultado == null ? '' : m.resultado >= 0 ? 'custos fixos do mês já cobertos' : `falta cobrir ${fmt.brl0(-m.resultado)} dos custos fixos`) : `${pc(m.resultado, m.recLiq)} da receita líquida`,
             m.perdas > 0 ? `inclui ${fmt.brl0(m.perdas)} de perdas` : null],
-          dica: m.parcial ? 'Lucro sem fixos até hoje − perdas do mês (chá vencido e faltas do inventário) − custos fixos do mês inteiro.' : 'Lucro sem fixos − perdas do mês (chá vencido e faltas do inventário) − custos fixos.' },
+          dica: m.parcial ? 'Resultado líquido até hoje: margem de contribuição até hoje − despesas fixas do mês inteiro ± resultado financeiro lançado.' : 'Resultado líquido: margem de contribuição − despesas fixas ± resultado financeiro (as perdas já estão no CMV).' },
         P ? { rot: 'Projeção do mês', num: P.resultado == null ? '—' : fmt.brl0(P.resultado), estado: P.resultado == null ? null : P.resultado >= 0 ? 'bom' : 'ruim',
           linhas: [h('span', { class: 'dre-h-proj' }, `vendendo ${fmt.brl0(P.fat)} no mês (ritmo atual)`)],
           dica: `Resultado se as vendas seguirem o ritmo de agora até o fim do mês. Impostos, custo dos produtos e custos em % acompanham as vendas; a comissão é recalculada com a venda projetada de cada pessoa contra a meta; os custos fixos ficam iguais.${P.projMes ? '\n\nFaturamento projetado:\n' + TS.comoProjecao(P.projMes) : ''}` } : null,
         { rot: 'Faturamento', num: m.fat == null ? '—' : fmt.brl0(m.fat), linhas: [varA('fat'),
-          h('span', { class: 'dre-h-lb' }, `Lucro bruto ${m.lucroBruto == null ? '—' : fmt.brl0(m.lucroBruto)} · margem ${pc(m.lucroBruto, m.fat)}`, TS.dica('Faturamento − custo dos produtos vendidos: a mesma conta da Rentabilidade. Impostos, maquininha, royalties, comissão e perdas vêm depois, nas linhas de baixo.')),
-          h('span', { class: 'dre-h-mc' }, `Lucro sem fixos ${m.contrib == null ? '—' : fmt.brl0(m.contrib)} · ${pc(m.contrib, m.fat)} do faturamento`, TS.dica('Lucro bruto − Simples, maquininha, royalties, comissões e custos em %: o que as vendas deixam para pagar as perdas e os custos fixos.'))],
-          dica: 'Faturamento do mês (todos os dias do mês, sem os filtros do topo), comparado com o mesmo período do ano anterior.' },
+          h('span', { class: 'dre-h-lb' }, `Lucro bruto ${m.lucroBruto == null ? '—' : fmt.brl0(m.lucroBruto)} · ${pc(m.lucroBruto, m.recLiq)} da receita líquida`, TS.dica('Receita líquida − CMV (custo dos produtos vendidos + perdas de estoque): a mesma conta da Rentabilidade.')),
+          h('span', { class: 'dre-h-mc' }, `Margem de contribuição ${m.contrib == null ? '—' : fmt.brl0(m.contrib)} · ${pc(m.contrib, m.recLiq)}`, TS.dica('Lucro bruto − despesas variáveis (maquininha, royalties e marketing, comissões e custos em %): o que as vendas deixam para pagar as despesas fixas.'))],
+          dica: 'Faturamento do mês (receita bruta − descontos; o mesmo número do Resumo), todos os dias do mês, sem os filtros do topo, comparado com o mesmo período do ano anterior. Lucro bruto e margem de contribuição em % da receita líquida (faturamento − Simples).' },
       ], { titulo: m.parcial ? `${TS.ymLabel(sel)} até agora` : `Fechamento de ${TS.ymLabel(sel)}` }),
       linhaPerdas(m, sel),
       andamento ? h('p', { class: 'dre-andamento muted' }, `Mês em andamento: ${m.decorridos} de ${m.diasMes} dias. "Até hoje" usa as vendas até agora e os custos fixos inteiros.`, TS.dica(andamento)) : null,
@@ -395,31 +415,31 @@
       if (cc) { // linha calculada que aceita o valor real do mês (Simples, maquininha, royalties, marketing)
         const d2 = vb != null && va ? vb / va - 1 : null;
         if (MOB) { body.append(linhaMob(h('tr', { class: 'dre-' + tipo, title: typeof dica === 'function' ? dica(m) : dica }), h('td', { class: 'l' }, rot),
-          celCalc(m, cc, v == null ? '—' : fmt.brl(v), null, abrirCalc), pc(v, m.fat), P ? celCalc(P, cc, vp == null ? '—' : fmt.brl(vp), 'dre-proj', abrirCalc, m.ym) : null, P ? pc(vp, P.fat) : '',
+          celCalc(m, cc, v == null ? '—' : fmt.brl(v), null, abrirCalc), pc(v, m.recLiq), P ? celCalc(P, cc, vp == null ? '—' : fmt.brl(vp), 'dre-proj', abrirCalc, m.ym) : null, P ? pc(vp, P.recLiq) : '',
           a ? celCalc(a, cc, va == null ? '—' : fmt.brl(va), null, abrirCalc) : h('td', null, '—'), d2, d2 == null || Math.abs(d2) < 0.0005 ? 'muted' : d2 < 0 ? 'pos' : 'neg')); continue; }
         body.append(h('tr', { class: 'dre-' + tipo, title: typeof dica === 'function' ? dica(m) : dica },
-          h('td', { class: 'l' }, rot), celCalc(m, cc, v == null ? '—' : fmt.brl(v), null, abrirCalc), h('td', { class: 'muted' }, pc(v, m.fat)),
-          P ? celCalc(P, cc, vp == null ? '—' : fmt.brl(vp), 'dre-proj', abrirCalc, m.ym) : null, P ? h('td', { class: 'muted dre-proj' }, pc(vp, P.fat)) : null,
-          a ? celCalc(a, cc, va == null ? '—' : fmt.brl(va), null, abrirCalc) : h('td', null, '—'), h('td', { class: 'muted' }, a ? pc(va, a.fat) : '—'),
+          h('td', { class: 'l' }, rot), celCalc(m, cc, v == null ? '—' : fmt.brl(v), null, abrirCalc), h('td', { class: 'muted' }, pc(v, m.recLiq)),
+          P ? celCalc(P, cc, vp == null ? '—' : fmt.brl(vp), 'dre-proj', abrirCalc, m.ym) : null, P ? h('td', { class: 'muted dre-proj' }, pc(vp, P.recLiq)) : null,
+          a ? celCalc(a, cc, va == null ? '—' : fmt.brl(va), null, abrirCalc) : h('td', null, '—'), h('td', { class: 'muted' }, a ? pc(va, a.recLiq) : '—'),
           h('td', { class: d2 == null || Math.abs(d2) < 0.0005 ? 'muted' : d2 < 0 ? 'pos' : 'neg' }, d2 == null ? '—' : fmt.delta(d2))));
         continue;
       }
       const d = vb != null && va ? vb / va - 1 : null;
       const bom = tipo === 'menos' || tipo === 'grupo' || tipo === 'vgrupo' || tipo === 'filho' || tipo === 'calc' ? d < 0 : d > 0;
-      const rotL = tipo === 'tot' && P ? '= Resultado' : rot;
+      const rotL = rot;
       if (MOB) {
         body.append(linhaMob(h('tr', { class: 'dre-' + tipo, title: typeof dica === 'function' ? dica(m) : dica, onclick: gid ? () => alternar(gid) : null }),
           h('td', { class: 'l' }, gid ? h('span', { class: 'dre-seta' }, abertos.has(gid) ? '▾ ' : '▸ ') : null, fx ? nomeFixo(rotL, () => abrir(fx, sel)) : rotL),
-          fx ? celFixo(m, fx, v == null ? '—' : fmt.brl(v), null, abrir) : h('td', { class: tipo === 'tot' && v < 0 ? 'neg' : null }, v == null ? '—' : fmt.brl(v)), pc(v, m.fat),
-          P ? (fx ? celFixo(P, fx, vp == null ? '—' : fmt.brl(vp), 'dre-proj', abrir) : h('td', { class: 'dre-proj' + (tipo === 'tot' && vp < 0 ? ' neg' : '') }, vp == null ? '—' : fmt.brl(vp))) : null, P ? pc(vp, P.fat) : '',
+          fx ? celFixo(m, fx, v == null ? '—' : fmt.brl(v), null, abrir) : h('td', { class: tipo === 'tot' && v < 0 ? 'neg' : null }, v == null ? '—' : fmt.brl(v)), pc(v, m.recLiq),
+          P ? (fx ? celFixo(P, fx, vp == null ? '—' : fmt.brl(vp), 'dre-proj', abrir) : h('td', { class: 'dre-proj' + (tipo === 'tot' && vp < 0 ? ' neg' : '') }, vp == null ? '—' : fmt.brl(vp))) : null, P ? pc(vp, P.recLiq) : '',
           fx && a ? celFixo(a, fx, va == null ? '—' : fmt.brl(va), null, abrir) : h('td', null, va == null ? '—' : fmt.brl(va)), d, d == null || Math.abs(d) < 0.0005 ? 'muted' : bom ? 'pos' : 'neg'));
         continue;
       }
       body.append(h('tr', { class: 'dre-' + tipo, title: typeof dica === 'function' ? dica(m) : dica, onclick: gid ? () => alternar(gid) : null },
         h('td', { class: 'l' }, gid ? h('span', { class: 'dre-seta' }, abertos.has(gid) ? '▾ ' : '▸ ') : null, fx ? nomeFixo(rotL, () => abrir(fx, sel)) : rotL),
-        fx ? celFixo(m, fx, v == null ? '—' : fmt.brl(v), null, abrir) : h('td', { class: tipo === 'tot' && v < 0 ? 'neg' : null }, v == null ? '—' : fmt.brl(v)), h('td', { class: 'muted' }, pc(v, m.fat)),
-        P ? (fx ? celFixo(P, fx, vp == null ? '—' : fmt.brl(vp), 'dre-proj', abrir) : h('td', { class: 'dre-proj' + (tipo === 'tot' && vp < 0 ? ' neg' : '') }, vp == null ? '—' : fmt.brl(vp))) : null, P ? h('td', { class: 'muted dre-proj' }, pc(vp, P.fat)) : null,
-        fx && a ? celFixo(a, fx, va == null ? '—' : fmt.brl(va), null, abrir) : h('td', null, va == null ? '—' : fmt.brl(va)), h('td', { class: 'muted' }, a ? pc(va, a.fat) : '—'),
+        fx ? celFixo(m, fx, v == null ? '—' : fmt.brl(v), null, abrir) : h('td', { class: tipo === 'tot' && v < 0 ? 'neg' : null }, v == null ? '—' : fmt.brl(v)), h('td', { class: 'muted' }, pc(v, m.recLiq)),
+        P ? (fx ? celFixo(P, fx, vp == null ? '—' : fmt.brl(vp), 'dre-proj', abrir) : h('td', { class: 'dre-proj' + (tipo === 'tot' && vp < 0 ? ' neg' : '') }, vp == null ? '—' : fmt.brl(vp))) : null, P ? h('td', { class: 'muted dre-proj' }, pc(vp, P.recLiq)) : null,
+        fx && a ? celFixo(a, fx, va == null ? '—' : fmt.brl(va), null, abrir) : h('td', null, va == null ? '—' : fmt.brl(va)), h('td', { class: 'muted' }, a ? pc(va, a.recLiq) : '—'),
         h('td', { class: d == null || Math.abs(d) < 0.0005 ? 'muted' : bom ? 'pos' : 'neg' }, d == null ? '—' : fmt.delta(d))));
     }
     if (P && m.resultado != null && m.resultado < 0) body.append(MOB ? h('tr', { class: 'dre-info' }, h('td', { class: 'l' }, 'Falta cobrir dos custos fixos'), h('td', { class: 'neg' }, fmt.brl(-m.resultado)),
@@ -437,12 +457,12 @@
     // gráfico: resultado mês a mês
     const comoMes = (x) => x.proj || x; // mês em andamento entra pela projeção, para comparar com os meses fechados
     const ult = meses.slice(-13).map(comoMes);
-    corpo.append(h('div', { class: 'mt' }, TS.card('Resultado mês a mês', 'Barras = resultado do mês (verde lucro, vermelho prejuízo) · linha = lucro sem fixos · * mês em andamento pela projeção (cor clara)', TS.chart({
+    corpo.append(h('div', { class: 'mt' }, TS.card('Resultado mês a mês', 'Barras = resultado do mês (verde lucro, vermelho prejuízo) · linha = margem de contribuição · * mês em andamento pela projeção (cor clara)', TS.chart({
       type: 'bar',
       data: { labels: ult.map((x) => TS.ymLabel(x.ym) + (x.projecao ? '*' : '')),
         datasets: [
           { type: 'bar', label: 'Resultado', data: ult.map((x) => x.resultado), backgroundColor: ult.map((x) => (x.resultado >= 0 ? (x.projecao ? '#8FB39A' : '#2C5234') : x.projecao ? '#E3A595' : '#B5452B')), borderRadius: 4, order: 2 },
-          { type: 'line', label: 'Lucro sem fixos', data: ult.map((x) => x.contrib), borderColor: '#C9A227', backgroundColor: '#C9A227', tension: 0.3, pointRadius: 3, order: 1 },
+          { type: 'line', label: 'Margem de contribuição', data: ult.map((x) => x.contrib), borderColor: '#C9A227', backgroundColor: '#C9A227', tension: 0.3, pointRadius: 3, order: 1 },
         ] },
       options: { plugins: { tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${fmt.brl0(c.raw)}` } } }, scales: { y: TS.axisNum(fmt.brl0), x: TS.axisCat } },
     }))));
@@ -461,7 +481,7 @@
     const b2 = h('tbody');
     for (const [rot, f, tipo, dica, gid, fx, cc] of linhas) if (tipo === 'secao') b2.append(h('tr', { class: 'dre-secao', title: dica }, h('td', { class: 'l sticky-col' }, rot), ult12.map(() => h('td')))); else b2.append(h('tr', { class: 'dre-' + tipo, title: typeof dica === 'function' ? dica(m) : dica, onclick: gid ? () => alternar(gid) : null }, h('td', { class: 'l sticky-col' }, gid ? h('span', { class: 'dre-seta' }, abertos.has(gid) ? '▾ ' : '▸ ') : null, fx ? nomeFixo(rot, () => abrir(fx, sel)) : rot),
       ult12.map((x) => { const v = f(x); return cc ? celCalc(x, cc, v == null ? '—' : fmt.brl0(v), x.projecao ? 'dre-proj' : null, abrirCalc) : fx ? celFixo(x, fx, v == null ? '—' : fmt.brl0(v), x.projecao ? 'dre-proj' : null, abrir) : h('td', { class: tipo === 'tot' && v < 0 ? 'neg' : null }, v == null ? '—' : fmt.brl0(v)); })));
-    b2.append(h('tr', { class: 'dre-info' }, h('td', { class: 'l sticky-col' }, 'Resultado em % do faturamento'), ult12.map((x) => h('td', { class: x.resultado < 0 ? 'neg' : null }, pc(x.resultado, x.fat)))));
+    b2.append(h('tr', { class: 'dre-info' }, h('td', { class: 'l sticky-col' }, 'Resultado em % da receita líquida'), ult12.map((x) => h('td', { class: x.resultado < 0 ? 'neg' : null }, pc(x.resultado, x.recLiq)))));
     t2.append(b2);
     corpo.append(h('div', { class: 'mt' }, TS.card('Mês a mês', '* mês em andamento: projeção no ritmo atual, com os custos fixos inteiros', DICA_EDITAR(), navMes, h('div', { class: 'table-wrap' }, t2))));
     // compras × vendas do mês: estou comprando mais do que vendo? (comprasvendas.js)
@@ -519,7 +539,8 @@
     };
     const salvar = () => {
       const v = lerValor(campo.value);
-      if (!(v >= 0) || v > 10000000) { TS.naoSalvo('Digite o valor do mês em reais (zero ou mais), por exemplo 4.978,90.', campo); return; }
+      const fin = k === 'financeiro'; // juros e tarifas negativos, rendimentos positivos (DRE-FIN-01)
+      if (!Number.isFinite(v) || (!fin && v < 0) || Math.abs(v) > 10000000) { TS.naoSalvo(fin ? 'Digite o resultado financeiro do mês em reais: negativo para juros e tarifas (ex.: -85,40), positivo para rendimentos.' : 'Digite o valor do mês em reais (zero ou mais), por exemplo 4.978,90.', campo); return; }
       fazer(Math.round(v * 100) / 100);
     };
     campo.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); salvar(); } });
@@ -536,7 +557,7 @@
     fundo.addEventListener('click', (e) => { if (e.target === fundo) sair(); });
     fundo.addEventListener('keydown', (e) => { if (e.key === 'Escape') sair(); });
     fundo.append(h('div', { class: 'card cp-copiar ts-perg dre-fixo-jan', role: 'dialog', 'aria-modal': 'true', 'aria-label': `${nome} · ${TS.ymLabel(ym)}` },
-      h('h3', null, `${nome} · ${TS.ymLabel(ym)} `, TS.dica('O Resultado calcula esta linha pelo % das regras da loja. Lance o valor REAL do mês (o DAS do Simples, o extrato da maquininha, o boleto de royalties e marketing): ele substitui o calculado só naquele mês, fica marcado com ✎ e entra no Resultado e na planilha do contador. Nos royalties, o boleto lançado já vem com os descontos da franquia. "Voltar ao calculado" apaga o valor lançado.')),
+      h('h3', null, `${nome} · ${TS.ymLabel(ym)} `, TS.dica(k === 'financeiro' ? 'O painel não lê o extrato do banco: lance o resultado financeiro do mês — juros e tarifas do banco e antecipação de cartão em negativo (ex.: -85,40), rendimentos em positivo. Entra entre o resultado operacional e o resultado líquido.' : 'O Resultado calcula esta linha pelo % das regras da loja. Lance o valor REAL do mês (o DAS do Simples, o extrato da maquininha, o boleto de royalties e marketing): ele substitui o calculado só naquele mês, fica marcado com ✎ e entra no Resultado e na planilha do contador. Nos royalties, o boleto lançado já vem com os descontos da franquia. "Voltar ao calculado" apaga o valor lançado.')),
       h('div', { class: 'muted' }, l ? `Valor real lançado: ${fmt.brl(l.valor)}${l.por ? `, por ${l.por}` : ''}${l.em ? ` em ${quando(l.em)}` : ''}. Calculado pelo %: ${calc == null ? '—' : fmt.brl(calc)}.` : `Sem valor lançado: o mês usa o calculado pelo % (${calc == null ? '—' : fmt.brl(calc)}).`),
       h('label', { class: 'ts-perg-campo' }, h('span', { class: 'f-label' }, `Valor real de ${TS.ymLabel(ym)} (R$)`), campo),
       h('div', { class: 'ts-perg-acoes' }, bVoltar, bCancelar, bSalvar),
@@ -570,7 +591,7 @@
     let s = String(t || '').replace(/R\$|\s/g, '');
     if (!s) return NaN;
     if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.');
-    return /^\d+(\.\d+)?$/.test(s) ? +s : NaN;
+    return /^-?\d+(\.\d+)?$/.test(s) ? +s : NaN; // negativo só vale no resultado financeiro (quem chama confere)
   };
   /** janela de um custo fixo: o valor real do mês (campo + Salvar, sem gravar a cada dígito), voltar ao padrão e o histórico */
   function janelaFixo(M, meses, nome, ym) {

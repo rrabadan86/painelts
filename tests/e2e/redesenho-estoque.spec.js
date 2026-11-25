@@ -17,7 +17,7 @@ test('RD-EST-01: Rentabilidade, Preços, Site e Validade abrem com o cartão-her
   await abrir(page, '#rentab');
   const hr = page.locator('main .heroi').first();
   await expect(hr).toContainText('Lucro bruto');
-  await expect(hr).toContainText('Lucro sem fixos');
+  await expect(hr).toContainText('Margem de contribuição');
   await expect(hr).toContainText('Lucro com fixos');
   await expect(hr).toContainText(/vendas com custo: \d+%/);
   // "ver a conta" abre a mesma janela da conta de antes

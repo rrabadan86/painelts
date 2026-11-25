@@ -277,7 +277,7 @@
         o.comissao ? L(`Comissão (${pct(t.com)})`, '− ' + fmt.brl(c.ded.com), '', `Comissão média paga em ${t.mesCom ? TS.ymLabel(t.mesCom) : 'o último mês'}`) : null,
         t.outrosPct ? L(`Outros custos em % (${pct(t.outrosPct)})`, '− ' + fmt.brl(c.ded.outros)) : null,
         t.outrosFix ? L('Lucro de contribuição', fmt.brl(c.liquido + c.ded.fixos), 'orc-dest', 'Antes dos custos fixos: o quanto este pedido ajuda a pagar aluguel, salários etc. Um pedido extra não aumenta os custos fixos.') : null,
-        t.outrosFix ? L('Margem sem fixos', pct(c.total ? (c.liquido + c.ded.fixos) / c.total : null), 'orc-dest') : null,
+        t.outrosFix ? L('Margem de contribuição', pct(c.total ? (c.liquido + c.ded.fixos) / c.total : null), 'orc-dest') : null,
         t.outrosFix ? L(`Custos fixos rateados (${pct(t.outrosFix)})`, '− ' + fmt.brl(c.ded.fixos), '', 'Aluguel, salários e outros custos mensais da loja, rateados pelo faturamento médio') : null,
         L('Lucro líquido', fmt.brl(c.liquido), 'orc-dest orc-liq ' + (c.liquido < 0 ? 'neg' : '')), L('Margem líquida', pct(c.mLiq), 'orc-dest ' + (c.mLiq < 0 ? 'neg' : '')),
         c.semCusto ? h('div', { class: 'notice' }, `${c.semCusto} produto(s) sem custo no painel: a margem fica maior do que a real.`) : null,

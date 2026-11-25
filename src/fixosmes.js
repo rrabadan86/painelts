@@ -15,7 +15,9 @@ const CT = require('../public/js/contas');
 const YM = /^20\d\d-(0[1-9]|1[0-2])$/;
 /** linhas CALCULADAS do Resultado que também aceitam o valor real do mês (pedido do dono, 23/11/2026: "eu não consigo editar
  *  Simples Nacional? Royalties? MKT? Deveria poder"): o valor lançado substitui o calculado pelo % naquele mês (DRE-CALC-01) */
-const CALC = { '@simples': 'Simples Nacional', '@maquininha': 'Maquininha', '@royalties': 'Royalties', '@marketing': 'Marketing' };
+const CALC = { '@simples': 'Simples Nacional', '@maquininha': 'Maquininha', '@royalties': 'Royalties', '@marketing': 'Marketing', '@financeiro': 'Resultado financeiro' };
+// resultado financeiro (DRE-FIN-01): o único que aceita valor negativo (juros e tarifas pagos); positivo = rendimentos
+const COM_SINAL = new Set(['@financeiro']);
 const MAX_VALOR = 10000000;
 const arq = (id) => path.join(C.pastaLoja(id), 'fixos-mes.json');
 
@@ -42,7 +44,7 @@ function validar(b, fixos, hoje) {
   if (b.padrao) return { ok: { nome, ym, valor: null } };
   const bruto = b.valor;
   const valor = typeof bruto === 'number' ? bruto : Number(String(bruto ?? '').trim());
-  if (bruto === '' || bruto == null || !Number.isFinite(valor) || valor < 0 || valor > MAX_VALOR) return { erro: 'Digite o valor do mês em reais (zero ou mais).' };
+  if (bruto === '' || bruto == null || !Number.isFinite(valor) || valor < (COM_SINAL.has(nome) ? -MAX_VALOR : 0) || valor > MAX_VALOR) return { erro: COM_SINAL.has(nome) ? 'Digite o valor do mês em reais: negativo para juros e tarifas, positivo para rendimentos.' : 'Digite o valor do mês em reais (zero ou mais).' };
   return { ok: { nome, ym, valor: Math.round(valor * 100) / 100 } };
 }
 

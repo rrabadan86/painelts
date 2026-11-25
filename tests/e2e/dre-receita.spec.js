@@ -12,13 +12,13 @@ const num = (t) => Number(String(t).replace(/[^\d,-]/g, '').replace(/\./g, '').r
 // só o valor da célula: no celular (LMOB-05) o % e a variação ficam embaixo dele, em .dre-sub
 const valor = (loc) => loc.evaluate((td) => { const c = td.cloneNode(true); c.querySelectorAll('.dre-sub').forEach((x) => x.remove()); return c.textContent; });
 
-test('RES-TAXA-01: Faturamento total = Loja + EG + taxa de serviço; a taxa sai antes do faturamento da loja e o ⓘ mostra a conta com ela na base', async ({ page }) => {
+test('RES-TAXA-01: Receita bruta = Loja + Espaço Gourmet; a taxa de serviço fica identificada e fora da receita; o ⓘ mostra a conta com ela na base', async ({ page }) => {
   await abrir(page);
   const t = page.locator('.dre-t').first();
   const val = async (cls, i = 0) => num(await valor(t.locator(`tr.dre-${cls}`).nth(i).locator('td').nth(1)));
-  const total = await val('bruto'), loja = await val('parte', 0), eg = await val('parte', 1), taxa = await val('taxa'), base = await val('base');
-  expect(Math.abs(total - (loja + eg + taxa))).toBeLessThan(1);
-  expect(Math.abs(base - (loja + eg))).toBeLessThan(1);
+  const total = await val('bruto'), loja = await val('parte', 0), eg = await val('parte', 1), taxa = await val('taxa'), liq = await val('base');
+  expect(Math.abs(total - (loja + eg))).toBeLessThan(1);
+  expect(liq).toBeLessThan(total); // receita líquida = bruta − descontos − Simples
   expect(await val('repasse')).toBeCloseTo(taxa, 0);
   const dica = await t.locator('tr.dre-bruto').getAttribute('title');
   expect(dica).toMatch(/taxa de serviço/);

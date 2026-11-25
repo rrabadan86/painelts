@@ -372,8 +372,8 @@
       const delta = A.lucroDia ? D.lucroDia / A.lucroDia - 1 : null;
       const col = (t, x, destaque) => h('div', { class: 'promo-col' + (destaque ? ' on' : '') }, h('div', { class: 'promo-col-t' }, t, h('small', null, `${x ? fmt.int(x.dias) : 0} dias`)),
         x ? [h('div', { class: 'promo-lucro' }, fmt.brl0(x.lucroDia), h('small', null, ' de lucro bruto por dia')),
-          h('div', null, `Lucro sem fixos ${fmt.brl0(x.contribDia)}/dia · com fixos ${fmt.brl0(x.liqDia)}/dia`),
-          h('div', null, `Faturamento ${fmt.brl0(x.vtDia)}/dia`), h('div', null, `Margem bruta ${fmt.pct(x.margem)} · sem fixos ${fmt.pct(x.margemContrib)} · com fixos ${fmt.pct(x.margemLiq)}`), h('div', null, `Descontos ${fmt.brl0(x.desc)} no período`)]
+          h('div', null, `Margem de contribuição ${fmt.brl0(x.contribDia)}/dia · com fixos ${fmt.brl0(x.liqDia)}/dia`),
+          h('div', null, `Faturamento ${fmt.brl0(x.vtDia)}/dia`), h('div', null, `Margem bruta ${fmt.pct(x.margem)} · contribuição ${fmt.pct(x.margemContrib)} · com fixos ${fmt.pct(x.margemLiq)}`), h('div', null, `Descontos ${fmt.brl0(x.desc)} no período`)]
           : h('div', { class: 'muted' }, 'Ainda não há dias depois da promoção.'));
       const veredito = delta == null ? null : delta > 0.03
         ? h('div', { class: 'notice ok-n' }, h('b', null, 'A promoção se pagou: '), `o lucro por dia subiu ${fmt.pct(delta, 0)} em relação aos ${fmt.int(diasAntes)} dias antes, mesmo com ${fmt.brl0(D.desc)} em descontos.`)
@@ -540,20 +540,20 @@
       }
       const vn = db.D.vendedor[db.vend[i]] || '—';
       const v = porVend.get(vn) || { vendedor: vn, vt: 0, custo: 0, fat: 0, ded: 0, dedVar: 0 };
-      v.vt += vt; v.custo += c; v.ded += dd.var + dd.fix; v.dedVar += dd.var; porVend.set(vn, v);
+      v.vt += vt; v.custo += c; v.imp = (v.imp || 0) + dd.imp; v.ded += dd.var + dd.fix; v.dedVar += dd.var; porVend.set(vn, v);
     }
     for (const i of base) { if (M.taxa(i)) continue; const v = porVend.get(db.D.vendedor[db.vend[i]] || '—'); if (v) v.fat += db.vt[i] || 0; }
     put(R && nResg > 0, h('div', { class: 'muted est-origem' }, `${fmt.int(nResg)} ${nResg === 1 ? 'item saiu' : 'itens saíram'} a R$ 0,01 (prêmios de fidelidade e brindes): ${nResg === 1 ? 'fica' : 'ficam'} fora da margem de cada produto e ${nResg === 1 ? 'entra' : 'entram'} só no total da loja (custo de ${fmt.brl(custoResg)}).`));
     // custo da data da venda: avisa (linha discreta) quanto do custo do período veio da data e quanto é estimado
     put(R && custoNaDataTot > 0, h('div', { class: 'muted est-origem est-custo-data' }, `Custo da data da venda: ${fmt.pct(custoNaDataTot / custoTot, 0)} do custo do período${custoEstTot > 0 ? ` · ${fmt.pct(custoEstTot / custoTot, 0)} estimado` : ''} `,
       TS.dica(`Venda de mês passado usa o custo que o produto tinha no dia da venda (notas de compra do AppNext + o custo que o painel guarda a cada planilha de estoque), não o custo de hoje: se o custo subiu depois, a margem daquele mês não piora sozinha.\n\nVenda do mês em andamento usa o custo de hoje do estoque.\n\nNeste período: ${fmt.brl0(custoNaDataTot)} de ${fmt.brl0(custoTot)} do custo vieram da data da venda${custoEstTot > 0 ? `; ${fmt.brl0(custoEstTot)} (${fmt.pct(custoEstTot / custoTot, 0)}) são ESTIMADOS: a venda é anterior ao primeiro custo que o painel conhece do produto${Number.isFinite(M.custoInicio) ? ` (o histórico de custos começa em ${fmt.date(TS.dayToIso(M.custoInicio))})` : ''}, então vale o custo mais antigo conhecido` : ' e nada precisou ser estimado'}.`)));
-    const lucro = fatCusto - custoTot;
+    const lucro = fatCusto - dedTot.imp - custoTot; // lucro bruto = venda − Simples − custo (DRE-ESTR-01)
     const tamTxt = (m) => [...m].sort((a, b) => a[0] - b[0]).map(([g, q]) => `${fmt.int(q)}× ${g >= 1000 ? g / 1000 + ' kg' : g + 'g'}`).join(' · ');
     const prods = [...porProd.values()].filter((p) => p.vt > 0).map((p) => {
       const ded = p.com + p.roy + p.imp + p.maq + p.out, liq = p.vt - p.custo - ded;
       const dedVar = p.com + p.roy + p.imp + p.maq + p.outros.reduce((a, v, k) => a + (OUTROS[k].tipo === 'pct' ? v : 0), 0);
       const contrib = p.vt - p.custo - dedVar;
-      return { ...p, lucro: p.vt - p.custo, margem: (p.vt - p.custo) / p.vt, ded, dedVar, contrib, margemContrib: contrib / p.vt, lucroLiq: liq, margemLiq: liq / p.vt, giro: p.granel ? p.kg : p.qtd, tamanhos: p.granel ? tamTxt(p.tam) : '' };
+      return { ...p, lucro: p.vt - p.imp - p.custo, margem: (p.vt - p.imp - p.custo) / p.vt, ded, dedVar, contrib, margemContrib: contrib / p.vt, lucroLiq: liq, margemLiq: liq / p.vt, giro: p.granel ? p.kg : p.qtd, tamanhos: p.granel ? tamTxt(p.tam) : '' };
     });
     const dedSoma = dedTot.com + dedTot.roy + dedTot.imp + dedTot.maq + dedTot.out;
     const lucroLiqTot = fatCusto - custoTot - dedSoma;
@@ -578,10 +578,11 @@
         const un = r.granel ? r.kg : r.qtd;
         cards.push(cupom('Do faturamento ao lucro', 'no período', [
           linha('Faturamento', r.vt),
+          linha('− Simples Nacional', r.imp, null, `${fmt.pct(pSimples)} de cada venda (dedução da receita)`),
           linha('− Custo dos produtos', r.custo, null, r.granel ? 'Chá pelo kg da matéria-prima + saco kraft e etiquetas de cada pacote' : 'Custo do AppNext × quantidade'),
-          linha('= Lucro bruto', r.lucro, 'est-det-sub'),
-          linha('− Deduções variáveis', varTot),
-          linha('= Lucro sem fixos (contribuição)', r.lucro - varTot, 'est-det-sub est-det-con', 'O que o produto deixa para pagar os custos fixos'),
+          linha('= Lucro bruto', r.lucro, 'est-det-sub', 'Faturamento − Simples − custo'),
+          linha('− Despesas variáveis', varTot - r.imp),
+          linha('= Margem de contribuição', r.lucro - (varTot - r.imp), 'est-det-sub est-det-con', 'O que o produto deixa para pagar os custos fixos'),
           fixosK.length ? linha('− Custos fixos (rateio)', fixTot) : null,
           linha('= Lucro com fixos (líquido)', r.lucroLiq, 'est-det-tot' + (r.lucroLiq < 0 ? ' neg' : '')),
         ].filter(Boolean), un ? `${r.granel ? `${fmt.kg(un)} kg vendidos` : `${fmt.int(un)} un. vendidas`}: preço ${fmt.brl(r.vt / un)} e custo ${fmt.brl(r.custo / un)} por ${r.granel ? 'kg' : 'unidade'}` : null, 'est-det-total'));
@@ -655,18 +656,19 @@
         const tb = h('table', { class: 'cupom-items' });
         const pintarCard = (preco) => {
           const vt = total ? t.vt : preco * un;
-          const dv = vt * txVar, df = vt * txFix, lb = vt - t.custo, cb = lb - dv, ll = cb - df;
+          const di = vt * pSimples, dv = vt * txVar - di, df = vt * txFix, lb = vt - di - t.custo, cb = lb - dv, ll = cb - df; // Simples sai antes do lucro bruto (DRE-ESTR-01)
           const lin = (rot, val, pct, cls) => h('tr', { class: cls || null }, h('td', null, rot), h('td', { class: 'r' }, fmt.brl(val * f)), h('td', { class: 'r est-det-pct' }, pct));
           tb.replaceChildren(...[
             lin(total ? 'Faturamento' : 'Preço médio', vt, '100%'),
+            lin('− Simples Nacional', di, pc(di, vt)),
             lin('− Custo', t.custo, pc(t.custo, vt)),
             lin('= Lucro bruto', lb, pc(lb, vt), 'est-det-sub'),
-            lin('− Deduções variáveis', dv, pc(dv, vt)),
-            lin('= Lucro sem fixos', cb, pc(cb, vt), 'est-det-sub est-det-con' + (cb < 0 ? ' neg' : '')),
+            lin('− Despesas variáveis', dv, pc(dv, vt)),
+            lin('= Margem de contribuição', cb, pc(cb, vt), 'est-det-sub est-det-con' + (cb < 0 ? ' neg' : '')),
             df ? lin('− Custos fixos (rateio)', df, pc(df, vt)) : null,
             lin('= Lucro com fixos', ll, pc(ll, vt), 'est-det-tot' + (ll < 0 ? ' neg' : '')),
           ].filter(Boolean));
-          if (rod) rod.textContent = `No período${simulado ? ' (com o preço simulado)' : ''}: lucro sem fixos ${fmt.brl(cb)} · com fixos ${fmt.brl(ll)}`;
+          if (rod) rod.textContent = `No período${simulado ? ' (com o preço simulado)' : ''}: margem de contribuição ${fmt.brl(cb)} · com fixos ${fmt.brl(ll)}`;
         };
         const precoAtual = t.vt / un, custoUn = t.custo / un;
         let simulado = false, rod = null;
@@ -676,12 +678,12 @@
         if (!total) rod = h('div', { class: 'cupom-rodape' });
         const cardEl = h('div', { class: 'cupom' + (total ? ' est-det-total' : '') + (melhorG === t.g ? ' est-melhor' : '') },
           h('div', { class: 'cupom-head' }, h('span', null, h('b', null, total ? 'Todos os tamanhos' : rotG(t.g)), ` · ${fmt.int(t.qtd)} ${t.qtd === 1 ? 'pacote' : 'pacotes'}`,
-            melhorG === t.g ? h('span', { class: 'cli-tag t-fixe-ok', title: 'Deixa mais lucro (sem fixos) por grama de chá' }, 'mais rentável') : null),
+            melhorG === t.g ? h('span', { class: 'cli-tag t-fixe-ok', title: 'Deixa mais margem de contribuição por grama de chá' }, 'mais rentável') : null),
             h('span', null, total ? 'no período' : 'por pacote')),
           tb,
           total ? null : h('div', { class: 'est-sim' },
             h('label', null, 'Simular preço R$ ', sim),
-            alvoPreco ? h('button', { type: 'button', class: 'est-sim-alvo', title: `Preço em que a margem sem custos fixos chega a ${fmt.pct(margemAlvo, 0)} (a meta da loja em Configurações)`, onclick: () => { sim.value = alvoPreco.toFixed(2); sim.dispatchEvent(new Event('input')); } }, `Para ${fmt.pct(margemAlvo, 0)} sem fixos: ${fmt.brl(alvoPreco)}`) : null),
+            alvoPreco ? h('button', { type: 'button', class: 'est-sim-alvo', title: `Preço em que a margem de contribuição chega a ${fmt.pct(margemAlvo, 0)} (a meta da loja em Configurações)`, onclick: () => { sim.value = alvoPreco.toFixed(2); sim.dispatchEvent(new Event('input')); } }, `Para ${fmt.pct(margemAlvo, 0)} sem fixos: ${fmt.brl(alvoPreco)}`) : null),
           rod);
         pintarCard(precoAtual);
         return cardEl;
@@ -728,12 +730,12 @@
       const diaEq = (() => { let acc = 0; for (let d = ini; d <= ultimoDia; d++) { acc += porDia.get(d) || 0; if (acc >= equilibrio) return d; } return null; })();
       const resultado = proj * contrib - F;
       const txtPont = Fp ? ` · inclui ${fmt.brl0(Fp)} de despesas só deste mês` : '';
-      const conta = `Custos fixos ${fmt.brl0(F)} (${[...fixos, ...pontuais].map((x) => x.nome).join(', ')}${Fp ? `; ${fmt.brl0(Fp)} são despesas só deste mês: ${pontuais.map((x) => x.nome).join(', ')}` : ''}) ÷ margem sem fixos ${fmt.pct(contrib)} = ${fmt.brl0(equilibrio)}. Margem sem fixos = o que sobra de cada venda depois do custo do produto, comissão, royalties, Simples, maquininha e dos custos em % (vendas com custo deste mês).`;
+      const conta = `Custos fixos ${fmt.brl0(F)} (${[...fixos, ...pontuais].map((x) => x.nome).join(', ')}${Fp ? `; ${fmt.brl0(Fp)} são despesas só deste mês: ${pontuais.map((x) => x.nome).join(', ')}` : ''}) ÷ margem de contribuição ${fmt.pct(contrib)} = ${fmt.brl0(equilibrio)}. Margem de contribuição = o que sobra de cada venda depois do custo do produto, comissão, royalties, Simples, maquininha e dos custos em % (vendas com custo deste mês).`;
       return TS.card(titulo, 'Quanto a loja precisa vender no mês para pagar os custos fixos (o mês inteiro, sem os filtros)',
         (() => {
           // uma frase diz o que falta (ou que já passou do equilíbrio); os números de apoio e a conta ficam no ⓘ e no title da barra
           const restam = diasMes - dias;
-          const nums = `Equilíbrio ${fmt.brl0(equilibrio)} (margem sem fixos ${fmt.pct(contrib)}) · vendido até ${fmt.date(TS.dayToIso(ultimoDia))} ${fmt.brl0(vendas)} (${fmt.pct(vendas / equilibrio, 0)} do equilíbrio) · no ritmo atual ${fmt.brl0(proj)} (${resultado >= 0 ? 'sobra' : 'falta'} ${fmt.brl0(Math.abs(resultado))} de resultado no mês)`;
+          const nums = `Equilíbrio ${fmt.brl0(equilibrio)} (margem de contribuição ${fmt.pct(contrib)}) · vendido até ${fmt.date(TS.dayToIso(ultimoDia))} ${fmt.brl0(vendas)} (${fmt.pct(vendas / equilibrio, 0)} do equilíbrio) · no ritmo atual ${fmt.brl0(proj)} (${resultado >= 0 ? 'sobra' : 'falta'} ${fmt.brl0(Math.abs(resultado))} de resultado no mês)`;
           const frase = falta > 0
             ? h('p', { class: 'est-eq-frase' }, 'Faltam ', h('b', { class: 'neg' }, fmt.brl0(falta)), ' para pagar os custos fixos',
               restam > 0 ? ` · ${fmt.brl0(falta / restam)} por dia ${restam === 1 ? 'no dia que falta' : `nos ${restam} dias que faltam`}` : '', ` · equilíbrio em ${fmt.brl0(equilibrio)}`, txtPont, TS.dica(`${nums}.\n\n${conta}${PM ? '\n\nRitmo atual (projeção do mês):\n' + TS.comoProjecao(PM) : ''}`))
@@ -809,7 +811,7 @@
         h('option', { value: '' }, 'Grupo: todos'), ...grupos.map((g) => h('option', { value: g, selected: g === gSel || null }, g)));
       const rows = doGrupo.filter(F[f][1]);
       const datas = TS.demo ? 'na apresentação o cadastro é fictício' : [tabela.simples ? `Produtos de ${new Date(tabela.simples.em).toLocaleDateString('pt-BR')}` : 'falta a listagem de Produtos', tabela.compostos ? `Compostos de ${new Date(tabela.compostos.em).toLocaleDateString('pt-BR')}` : 'falta a de Produtos Compostos (chás a granel)'].join(' · ');
-      return TS.card('Margem de tabela', `Todos os produtos do cadastro do AppNext, vendidos ou não: preço de tabela (sem desconto) × custo atual. Margem sem fixos estimada com as deduções variáveis médias do período (${fmt.pct(dPct[true], 1)} nos chás a granel, ${fmt.pct(dPct[false], 1)} no resto). "Praticada" = a margem bruta do que vendeu no período; a diferença é o desconto. ${fmt.int(linhas.filter((r) => r.custo != null).length)} de ${fmt.int(linhas.length)} produtos com custo · ${datas}.`,
+      return TS.card('Margem de tabela', `Todos os produtos do cadastro do AppNext, vendidos ou não: preço de tabela (sem desconto) × custo atual. Margem de contribuição estimada com as deduções variáveis médias do período (${fmt.pct(dPct[true], 1)} nos chás a granel, ${fmt.pct(dPct[false], 1)} no resto). "Praticada" = a margem bruta do que vendeu no período; a diferença é o desconto. ${fmt.int(linhas.filter((r) => r.custo != null).length)} de ${fmt.int(linhas.length)} produtos com custo · ${datas}.`,
         h('div', { class: 'est-tab-fx' }, TS.segFolha(Object.entries(F).map(([k, [t]]) => [`${t} (${fmt.int(conta(k))})`, k]), f, (v) => { state.estTabF = v; TS.render(); }), selG),
         TS.table({ linhaMob: { nome: 'nome', val: 'mSf', l2: ['margem', 'preco', 'custo'], l3: ['vendido', 'mReal', 'desconto'] }, // celular em linhas (LMOB-04)
         
@@ -819,7 +821,7 @@
             { key: 'preco', label: 'Preço de tabela', fmt: fmt.brl },
             { key: 'custo', label: 'Custo', title: 'Custo atual do AppNext (chá a granel: gramas × custo do kg + saco kraft e etiquetas)', fmt: (v) => (v == null ? '—' : fmt.brl(v)) },
             { key: 'margem', label: 'Margem bruta', fmt: (v) => (v == null ? '—' : fmt.pct(v)), cls: (r) => (r.margem != null && r.margem < 0.3 ? 'miss' : '') },
-            { key: 'mSf', label: 'Margem sem fixos', title: `Margem bruta − deduções variáveis médias do período. Em vermelho abaixo da mínima da loja (${fmt.pct(margemMin, 0)})`, fmt: (v) => (v == null ? '—' : fmt.pct(v)), cls: (r) => (r.abaixo ? 'miss' : '') },
+            { key: 'mSf', label: '% con\u00ADtrib.', title: `Margem bruta − deduções variáveis médias do período. Em vermelho abaixo da mínima da loja (${fmt.pct(margemMin, 0)})`, fmt: (v) => (v == null ? '—' : fmt.pct(v)), cls: (r) => (r.abaixo ? 'miss' : '') },
             { key: 'vendido', label: 'Vendido no período', fmt: (v) => (v ? fmt.int(v) : '—') },
             { key: 'mReal', label: 'Praticada', title: 'Margem bruta do que vendeu no período (com os descontos)', fmt: (v) => (v == null ? '—' : fmt.pct(v)) },
             { key: 'desconto', label: 'Desconto', title: 'Margem de tabela − praticada, em pontos: o quanto os descontos tiraram da margem', render: (r) => (r.desconto == null ? '—' : Math.abs(r.desconto) < 0.005 ? h('span', { class: 'muted' }, '0') : h('span', { class: r.desconto > 0.02 ? 'neg' : 'muted' }, `${r.desconto > 0 ? '−' : '+'}${fmt.n1(Math.abs(r.desconto) * 100)} pts`)), sortVal: (r) => r.desconto },
@@ -843,8 +845,8 @@
         const un = p.granel ? p.kg : p.qtd;
         return { ...p, motivo, pv: un ? p.vt / un : null, pc: un ? p.custo / un : null };
       }).sort((a, b) => a.contrib - b.contrib);
-      if (!baixos.length) return TS.card(`Margem sem fixos abaixo de ${fmt.pct(margemMin, 0)}`, null, h('p', { class: 'muted' }, `Nenhum produto abaixo da margem mínima no período. 👏 (Mude o mínimo em Configurações → Lojas → Estoque e margem.)`));
-      return TS.card(`Margem sem fixos abaixo de ${fmt.pct(margemMin, 0)}`, `${fmt.int(baixos.length)} produto(s) no período. Margem sem fixos = o que o produto deixa depois do custo e das deduções variáveis, antes do aluguel e outros fixos. Abaixo do mínimo ele ajuda pouco a pagar os fixos; negativa, ele custa dinheiro à loja. Motivo = o que mais pesa no preço desse produto comparado com a média da loja.`, TS.table({ linhaMob: { nome: 'produto', val: 'margemContrib', l2: ['pv', 'pc', 'vt', 'margem'], l3: ['motivo'] }, // celular em linhas (LMOB-04)
+      if (!baixos.length) return TS.card(`Margem de contribuição abaixo de ${fmt.pct(margemMin, 0)}`, null, h('p', { class: 'muted' }, `Nenhum produto abaixo da margem mínima no período. 👏 (Mude o mínimo em Configurações → Lojas → Estoque e margem.)`));
+      return TS.card(`Margem de contribuição abaixo de ${fmt.pct(margemMin, 0)}`, `${fmt.int(baixos.length)} produto(s) no período. Margem de contribuição = o que o produto deixa depois do custo e das deduções variáveis, antes do aluguel e outros fixos. Abaixo do mínimo ele ajuda pouco a pagar os fixos; negativa, ele custa dinheiro à loja. Motivo = o que mais pesa no preço desse produto comparado com a média da loja.`, TS.table({ linhaMob: { nome: 'produto', val: 'margemContrib', l2: ['pv', 'pc', 'vt', 'margem'], l3: ['motivo'] }, // celular em linhas (LMOB-04)
         
         cols: [
           TS.grupoProd.coluna({ key: 'produto', label: 'Produto', align: 'l', sticky: true, wrap: true, render: (r) => (r.granel ? h('span', null, r.produto, h('small', { class: 'est-tam' }, r.tamanhos)) : r.produto) }, grpDe),
@@ -852,8 +854,8 @@
           { key: 'pc', label: 'Preço de custo', title: 'Custo médio no período (chá a granel: por kg, com saco e etiquetas; o resto: por unidade)', render: (r) => h('span', null, fmt.brl(r.pc), h('small', { class: 'est-tam' }, r.granel ? 'por kg' : 'por un.')), sortVal: (r) => r.pc },
           { key: 'vt', label: 'Faturamento', fmt: fmt.brl },
           { key: 'margem', label: 'Margem bruta', fmt: (v) => fmt.pct(v) },
-          { key: 'contrib', label: 'Lucro sem fixos', fmt: fmt.brl, cls: (r) => (r.contrib < 0 ? 'miss' : '') },
-          { key: 'margemContrib', label: 'Margem sem fixos', title: 'Clique para ver toda a conta', fmt: (v) => fmt.pct(v), render: (r) => h('button', { type: 'button', class: 'est-conta neg', title: 'Clique para ver toda a conta', onclick: (e) => abrirLiq(e, r) }, fmt.pct(r.margemContrib)), sortVal: (r) => r.margemContrib },
+          { key: 'contrib', label: 'Contri\u00ADbuição', fmt: fmt.brl, cls: (r) => (r.contrib < 0 ? 'miss' : '') },
+          { key: 'margemContrib', label: '% con\u00ADtrib.', title: 'Clique para ver toda a conta', fmt: (v) => fmt.pct(v), render: (r) => h('button', { type: 'button', class: 'est-conta neg', title: 'Clique para ver toda a conta', onclick: (e) => abrirLiq(e, r) }, fmt.pct(r.margemContrib)), sortVal: (r) => r.margemContrib },
           { key: 'margemLiq', label: 'Margem com fixos', title: 'Com os custos fixos rateados (informativa)', fmt: (v) => fmt.pct(v) },
           { key: 'motivo', label: 'Principal motivo', align: 'l', wrap: true },
         ],
@@ -877,17 +879,17 @@
         }
         r.melhor = melhor ? rotG(melhor.g) : '';
         r.ganho = melhor && pior && pior.v > 0 ? melhor.v / pior.v - 1 : null;
-        r.dica = melhor && pior && melhor.g !== pior.g ? `Cada 100 g vendidos em ${rotG(melhor.g)} deixam ${fmt.brl(melhor.v - pior.v)} a mais de lucro (sem fixos) do que em ${rotG(pior.g)}.` : '';
+        r.dica = melhor && pior && melhor.g !== pior.g ? `Cada 100 g vendidos em ${rotG(melhor.g)} deixam ${fmt.brl(melhor.v - pior.v)} a mais de margem de contribuição do que em ${rotG(pior.g)}.` : '';
         return r;
       }).sort((a, b) => (b.ganho ?? -1) - (a.ganho ?? -1));
       if (!linhas.length) return null;
       const usados = TAMS.filter((g) => linhas.some((r) => r['g' + g] != null));
-      return TS.card('Qual pacote oferecer', 'Lucro sem custos fixos (lucro bruto − deduções variáveis) a cada 100 g de chá vendido, em cada tamanho de pacote. Ajuda a equipe a saber quando vale oferecer o pacote maior (ex.: um de 100g em vez de dois de 50g).', TS.table({ linhaMob: { nome: 'produto', val: 'melhor', l2: ['dica'] }, // celular em linhas (LMOB-04)
+      return TS.card('Qual pacote oferecer', 'Margem de contribuição (lucro bruto − despesas variáveis) a cada 100 g de chá vendido, em cada tamanho de pacote. Ajuda a equipe a saber quando vale oferecer o pacote maior (ex.: um de 100g em vez de dois de 50g).', TS.table({ linhaMob: { nome: 'produto', val: 'melhor', l2: ['dica'] }, // celular em linhas (LMOB-04)
         
         cols: [
           { key: 'produto', label: 'Chá', align: 'l', sticky: true, wrap: true },
-          ...usados.map((g) => ({ key: 'g' + g, label: rotG(g), title: `Lucro sem fixos por 100 g de chá vendido em pacotes de ${rotG(g)}`, fmt: (v) => (v == null ? '—' : fmt.brl(v)), cls: (r) => (r.melhor === rotG(g) ? 'hit' : '') })),
-          { key: 'melhor', label: 'Mais rentável', align: 'l', title: 'Tamanho que deixa mais lucro (sem fixos) por grama' },
+          ...usados.map((g) => ({ key: 'g' + g, label: rotG(g), title: `Margem de contribuição por 100 g de chá vendido em pacotes de ${rotG(g)}`, fmt: (v) => (v == null ? '—' : fmt.brl(v)), cls: (r) => (r.melhor === rotG(g) ? 'hit' : '') })),
+          { key: 'melhor', label: 'Mais rentável', align: 'l', title: 'Tamanho que deixa mais margem de contribuição por grama' },
           { key: 'dica', label: 'Diferença', align: 'l', wrap: true },
         ],
         rows: linhas, sortKey: null, maxHeight: '420px', search: 'Buscar chá…', searchKeys: ['produto'], produto: 'produto', cls: 'est-t',
@@ -1042,9 +1044,9 @@
     const verConta = (rot) => h('button', { type: 'button', class: 'link-btn est-heroi-conta', onclick: (e) => abrirLiq(e, { produto: 'todos os produtos com custo', vt: fatCusto, custo: custoTot, lucro, ...dedTot, outros: outrosTot, ded: dedSoma, lucroLiq: lucroLiqTot }) }, rot);
     const margemTxt = (v) => h('span', { class: v != null && v < 0 ? 'neg' : null }, `margem de ${fmt.pct(fatCusto ? v : null)}`);
     put(R, h('div', { class: 'est-heroi' }, TS.heroi([
-      { rot: 'Lucro bruto', num: fmt.brl0(lucro), dica: 'Faturamento − custo dos produtos (com embalagem nos chás a granel), só das vendas que têm custo',
+      { rot: 'Lucro bruto', num: fmt.brl0(lucro), dica: 'Faturamento − Simples − custo dos produtos (com embalagem nos chás a granel), só das vendas que têm custo. A mesma conta do Resultado',
         linhas: [margemTxt(fatCusto ? lucro / fatCusto : null), h('span', { class: 'muted', title: 'Parte do faturamento (sem taxas) cujo custo o painel encontrou' }, `vendas com custo: ${fmt.pct(fat ? fatCusto / fat : null, 0)} (${fmt.brl0(fatCusto)} de ${fmt.brl0(fat)})`)] },
-      { rot: 'Lucro sem fixos', num: fmt.brl0(contribTot), estado: contribTot < 0 ? 'ruim' : null, dica: 'Lucro bruto − deduções variáveis (comissão, royalties, Simples, maquininha e custos em %). É o que as vendas deixam para pagar os custos fixos.',
+      { rot: 'Margem de contribuição', num: fmt.brl0(contribTot), estado: contribTot < 0 ? 'ruim' : null, dica: 'Lucro bruto − despesas variáveis (comissão, royalties, maquininha e custos em %). É o que as vendas deixam para pagar os custos fixos.',
         linhas: [margemTxt(fatCusto ? contribTot / fatCusto : null), verConta('ver a conta ›')] },
       { rot: 'Lucro com fixos', num: fmt.brl0(lucroLiqTot), estado: lucroLiqTot < 0 ? 'ruim' : null,
         dica: `Lucro bruto − comissão ${fmt.brl0(dedTot.com)} − royalties ${fmt.brl0(dedTot.roy)} − Simples ${fmt.brl0(dedTot.imp)} (${fmt.pct(pSimples)}) − maquininha ${fmt.brl0(dedTot.maq)} (${fmt.pct(pCartao)})${OUTROS.length ? ` − outros custos ${fmt.brl0(dedTot.out)}` : ''}.${!pSimples && !pCartao ? ' Configure o % do Simples e da maquininha em Configurações → Lojas → Estoque e margem.' : ''}`,
@@ -1119,7 +1121,7 @@
     }
     const podeTravar = !!(TS.eu && TS.eu.pode && TS.eu.pode.configurar) && state.loja && state.loja !== 'todas';
     // a regra da classe em palavras (vai nos ⓘ): mediana + margens mínima e alvo da loja
-    const COMO_CLASSE = `Como é a conta: "vende muito" = vende pelo menos a mediana (metade dos produtos do mesmo tipo vende menos). "Margem boa" = margem bruta na mediana ou acima E margem sem fixos de pelo menos ${fmt.pct(margemMin, 0)} (a margem mínima da loja). Vende muito: Estrela com margem boa, Volume sem ela. Vende pouco: Joia com margem boa ou com margem sem fixos de ${fmt.pct(margemAlvo, 0)} ou mais (a margem alvo da loja); Peso morto só quando vende pouco E a margem sem fixos fica abaixo de ${fmt.pct(margemAlvo, 0)}. As duas margens mudam em Configurações → Lojas → Estoque e margem.`;
+    const COMO_CLASSE = `Como é a conta: "vende muito" = vende pelo menos a mediana (metade dos produtos do mesmo tipo vende menos). "Margem boa" = margem bruta na mediana ou acima E margem de contribuição fixos de pelo menos ${fmt.pct(margemMin, 0)} (a margem mínima da loja). Vende muito: Estrela com margem boa, Volume sem ela. Vende pouco: Joia com margem boa ou com margem de contribuição de ${fmt.pct(margemAlvo, 0)} ou mais (a margem alvo da loja); Peso morto só quando vende pouco E a margem de contribuição fica abaixo de ${fmt.pct(margemAlvo, 0)}. As duas margens mudam em Configurações → Lojas → Estoque e margem.`;
     const ORD_CL = { estrela: 4, volume: 3, joia: 2, peso: 1 };
     const tagCl = (k, extra) => h('span', { class: 'est-tag', style: { '--cor': CLASSE[k][1] } }, (extra || '') + CLASSE[k][0]);
     async function travar(p, valor, sel) {
@@ -1133,7 +1135,7 @@
       const tag = tagCl(p.oficial, p.of.fixa ? '🔒 ' : '');
       const dica = p.of.fixa
         ? `Travada à mão por ${p.of.fixa.por || '—'}${p.of.fixa.em ? ' em ' + new Date(p.of.fixa.em).toLocaleDateString('pt-BR') : ''}. Pela conta seria ${p.of.auto ? CLASSE[p.of.auto][0] : '—'}.`
-        : `Pela conta: vende ${p.granel ? fmt.kg(p.of.giro) + ' kg' : fmt.n2(p.of.giro).replace(/,00$/, '') + ' un.'} por mês (mediana de ${CO.meses} meses; metade dos ${p.granel ? 'chás' : 'produtos'} vende mais de ${p.granel ? fmt.kg(p.of.medGiro) + ' kg' : fmt.n2(p.of.medGiro).replace(/,00$/, '') + ' un.'}) e margem bruta de ${fmt.pct(p.of.margem)} (mediana ${fmt.pct(p.of.medMargem)})${p.of.margemSf != null ? `; margem sem fixos de ${fmt.pct(p.of.margemSf)} (mínima da loja ${fmt.pct(CO.min, 0)}, alvo ${fmt.pct(CO.alvo, 0)})` : ''}.${p.of.porque === 'min' ? ' A margem passa da mediana, mas fica abaixo da mínima da loja: não conta como margem boa.' : p.of.porque === 'alvo' ? ' Vende pouco e a margem fica abaixo da mediana, mas chega na margem alvo da loja: é Joia, não Peso morto.' : ''}`;
+        : `Pela conta: vende ${p.granel ? fmt.kg(p.of.giro) + ' kg' : fmt.n2(p.of.giro).replace(/,00$/, '') + ' un.'} por mês (mediana de ${CO.meses} meses; metade dos ${p.granel ? 'chás' : 'produtos'} vende mais de ${p.granel ? fmt.kg(p.of.medGiro) + ' kg' : fmt.n2(p.of.medGiro).replace(/,00$/, '') + ' un.'}) e margem bruta de ${fmt.pct(p.of.margem)} (mediana ${fmt.pct(p.of.medMargem)})${p.of.margemSf != null ? `; margem de contribuição de ${fmt.pct(p.of.margemSf)} (mínima da loja ${fmt.pct(CO.min, 0)}, alvo ${fmt.pct(CO.alvo, 0)})` : ''}.${p.of.porque === 'min' ? ' A margem passa da mediana, mas fica abaixo da mínima da loja: não conta como margem boa.' : p.of.porque === 'alvo' ? ' Vende pouco e a margem fica abaixo da mediana, mas chega na margem alvo da loja: é Joia, não Peso morto.' : ''}`;
       if (!podeTravar) return h('span', { title: dica }, tag);
       const sel = h('select', { class: 'est-cl-sel', title: 'Travar a classe à mão (vale no Pedido também). "Automática" volta para a conta.' },
         h('option', { value: '' }, `Automática${p.of.auto ? ' (' + CLASSE[p.of.auto][0] + ')' : ''}`),
@@ -1171,7 +1173,7 @@
       estrela: `Vende muito e tem margem boa (acima da metade dos produtos e da mínima da loja, ${fmt.pct(margemMin, 0)}). Não pode faltar.`,
       volume: 'Vende muito, mas a margem é menor. Vale rever preço ou custo.',
       joia: 'Margem boa, mas vende pouco. Merece vitrine, degustação e indicação.',
-      peso: `Vende pouco e a margem sem fixos fica abaixo do alvo da loja (${fmt.pct(margemAlvo, 0)}). Candidato a promoção ou a sair do mix.`,
+      peso: `Vende pouco e a margem de contribuição fica abaixo do alvo da loja (${fmt.pct(margemAlvo, 0)}). Candidato a promoção ou a sair do mix.`,
     };
     const sel = CLASSE[state.estClasse] ? state.estClasse : null;
     const mq = MED[grSel];
@@ -1217,11 +1219,11 @@
         { key: 'giro', label: 'Vendido', title: 'Quanto saiu no período. Chá a granel em kg, somando todos os tamanhos; os outros em unidades', render: (r) => (r.granel ? `${fmt.kg(r.giro)} kg` : `${fmt.int(r.giro)} un.`), sortVal: (r) => r.giro },
         { key: 'vt', label: 'Faturamento', title: 'Valor vendido no período (sem taxa de serviço)', fmt: fmt.brl },
         { key: 'custo', label: 'Custo', title: 'Custo do produto × quantidade vendida. Venda de mês passado: o custo que o produto tinha na data da venda (notas de compra e histórico de custos do painel); mês em andamento: o custo de hoje do AppNext. No chá a granel: kg × custo do kg + saco kraft e etiquetas de cada pacote', fmt: fmt.brl },
-        { key: 'lucro', label: 'Lucro bruto', title: 'Faturamento − custo', fmt: fmt.brl, cls: (r) => (r.lucro < 0 ? 'miss' : '') },
+        { key: 'lucro', label: 'Lucro bruto', title: 'Faturamento − Simples − custo', fmt: fmt.brl, cls: (r) => (r.lucro < 0 ? 'miss' : '') },
         { key: 'margem', label: 'Margem bruta', title: 'Lucro bruto ÷ faturamento. Em vermelho quando fica abaixo de 30%', fmt: (v) => fmt.pct(v), cls: (r) => (r.margem < 0.3 ? 'miss' : '') },
         { key: 'margemTab', label: 'Margem de tabela', title: 'Margem bruta pelo preço de tabela do cadastro do AppNext (sem desconto) com o custo atual. A diferença para a margem bruta praticada é o efeito dos descontos. Chá a granel: média dos pacotes pela quantidade vendida de cada tamanho', render: (r) => (r.margemTab == null ? h('span', { class: 'muted' }, '—') : h('span', { title: r.margemTab - r.margem > 0.005 ? `${fmt.n1((r.margemTab - r.margem) * 100)} pontos a mais que a praticada: é o que o desconto levou` : '' }, fmt.pct(r.margemTab))), sortVal: (r) => r.margemTab },
-        { key: 'contrib', label: 'Lucro sem fixos', fmt: fmt.brl, title: 'Lucro bruto − deduções variáveis: o que o produto deixa para pagar os custos fixos. É a métrica para decidir preço, desconto e mix. Clique para ver a conta', render: (r) => (r.contrib == null ? '' : h('button', { type: 'button', class: 'est-conta' + (r.contrib < 0 ? ' neg' : ''), title: 'Clique para ver a conta', onclick: (e) => abrirLiq(e, r) }, fmt.brl(r.contrib))), sortVal: (r) => r.contrib },
-        { key: 'margemContrib', label: 'Margem sem fixos', title: `Contribuição ÷ faturamento. Em vermelho abaixo da mínima da loja (${fmt.pct(margemMin, 0)})`, fmt: (v) => (v == null ? '' : fmt.pct(v)), cls: (r) => (r.margemContrib != null && r.margemContrib < margemMin ? 'miss' : '') },
+        { key: 'contrib', label: 'Contri\u00ADbuição', fmt: fmt.brl, title: 'Lucro bruto − despesas variáveis: o que o produto deixa para pagar os custos fixos. É a métrica para decidir preço, desconto e mix. Clique para ver a conta', render: (r) => (r.contrib == null ? '' : h('button', { type: 'button', class: 'est-conta' + (r.contrib < 0 ? ' neg' : ''), title: 'Clique para ver a conta', onclick: (e) => abrirLiq(e, r) }, fmt.brl(r.contrib))), sortVal: (r) => r.contrib },
+        { key: 'margemContrib', label: '% con\u00ADtrib.', title: `Contribuição ÷ faturamento. Em vermelho abaixo da mínima da loja (${fmt.pct(margemMin, 0)})`, fmt: (v) => (v == null ? '' : fmt.pct(v)), cls: (r) => (r.margemContrib != null && r.margemContrib < margemMin ? 'miss' : '') },
         { key: 'ded', label: 'Deduções', fmt: fmt.brl, title: 'Comissão paga + royalties + Simples Nacional + maquininha. Clique no valor para ver cada um', render: (r) => (r.ded == null ? '' : h('button', { type: 'button', class: 'est-conta', title: 'Clique para ver o detalhamento', onclick: (e) => abrirDed(e, r) }, fmt.brl(r.ded))), sortVal: (r) => r.ded },
         { key: 'lucroLiq', label: 'Lucro com fixos', fmt: fmt.brl, title: 'Lucro bruto − deduções. Clique no valor para ver a conta', render: (r) => (r.lucroLiq == null ? '' : h('button', { type: 'button', class: 'est-conta' + (r.lucroLiq < 0 ? ' neg' : ''), title: 'Clique para ver a conta', onclick: (e) => abrirLiq(e, r) }, fmt.brl(r.lucroLiq))), sortVal: (r) => r.lucroLiq },
         { key: 'margemLiq', label: 'Margem com fixos', title: 'Lucro líquido ÷ faturamento (com os custos fixos rateados). Informativa: um produto com líquida negativa e contribuição positiva continua ajudando a pagar os custos fixos', fmt: (v) => (v == null ? '' : fmt.pct(v)), cls: (r) => (r.margemLiq != null && r.margemLiq < 0 ? 'est-liq-neg' : '') },
@@ -1230,7 +1232,7 @@
       // Resumo: classe oficial com a do período e a tendência embaixo (uma coluna em vez de três)
       { key: 'classeRes', label: 'Classe', align: 'l', title: `Em cima, a classe oficial (mediana de ${CO.meses} meses, a que o Pedido usa${podeTravar ? '; escolha para travar à mão 🔒' : ''}). Embaixo, a classe só no período do filtro e a tendência (o que saiu por mês no período × o normal). ${COMO_CLASSE}`,
         render: (r) => h('div', { class: 'est-cl-res' }, celOficial(r), h('small', { class: 'est-tam' }, 'no período: ', r.classe ? CLASSE[r.classe][0] : '—', r.tend != null ? h('span', null, ' · ', celTend(r)) : null)), sortVal: (r) => ORD_CL[r.oficial] || 0 },
-      { key: 'lucroRes', label: 'Lucro bruto', title: 'Faturamento − custo. Embaixo, o custo (o da data da venda nos meses passados; o de hoje no mês em andamento)', render: (r) => h('span', { class: r.lucro < 0 ? 'neg' : null }, fmt.brl(r.lucro), h('small', { class: 'est-tam' }, 'custo ' + fmt.brl(r.custo))), sortVal: (r) => r.lucro },
+      { key: 'lucroRes', label: 'Lucro bruto', title: 'Faturamento − Simples − custo. Embaixo, o custo (o da data da venda nos meses passados; o de hoje no mês em andamento)', render: (r) => h('span', { class: r.lucro < 0 ? 'neg' : null }, fmt.brl(r.lucro), h('small', { class: 'est-tam' }, 'custo ' + fmt.brl(r.custo))), sortVal: (r) => r.lucro },
     ];
     const VIS = {
       resumo: ['Resumo', ['produto', 'abc', 'classeRes', 'giro', 'vt', 'lucroRes', 'margem', 'margemContrib'], 'Classe, venda, lucro e margens (as outras colunas em "Lucro e margens")'],
@@ -1255,16 +1257,16 @@
     if (abaR === 'tabela') corpo.append(h('div', { class: 'mt' }, cartaoTabela()));
     if (abaR === 'pacotes') corpo.append(h('div', { class: 'mt' }, cartaoPacotes() || TS.card('Qual pacote oferecer', null, h('p', { class: 'muted' }, 'Nenhum chá a granel vendeu em dois tamanhos ou mais no período. Escolha um período maior.'))));
 
-    const vends = [...porVend.values()].filter((v) => v.vt > 0).map((v) => ({ ...v, lucro: v.vt - v.custo, margem: (v.vt - v.custo) / v.vt, lucroLiq: v.vt - v.custo - v.ded, margemLiq: (v.vt - v.custo - v.ded) / v.vt, contrib: v.vt - v.custo - v.dedVar, margemContrib: (v.vt - v.custo - v.dedVar) / v.vt, cobre: v.fat ? v.vt / v.fat : null }));
+    const vends = [...porVend.values()].filter((v) => v.vt > 0).map((v) => ({ ...v, lucro: v.vt - (v.imp || 0) - v.custo, margem: (v.vt - (v.imp || 0) - v.custo) / v.vt, lucroLiq: v.vt - v.custo - v.ded, margemLiq: (v.vt - v.custo - v.ded) / v.vt, contrib: v.vt - v.custo - v.dedVar, margemContrib: (v.vt - v.custo - v.dedVar) / v.vt, cobre: v.fat ? v.vt / v.fat : null }));
     if (abaR === 'vendedoras') corpo.append(h('div', { class: 'mt' }, TS.card('Lucro por vendedora', 'Quem vende mais nem sempre é quem deixa mais lucro.', TS.table({ linhaMob: { nome: 'vendedor', val: 'lucro', l2: ['fat', 'margem', 'margemContrib', 'lucroLiq', 'cobre'] }, // celular em linhas (LMOB-04)
         
       cols: [
         { key: 'vendedor', label: 'Vendedora', align: 'l', sticky: true },
         { key: 'fat', label: 'Faturamento', title: 'Tudo que a vendedora vendeu no período (sem taxa de serviço)', fmt: fmt.brl },
-        { key: 'lucro', label: 'Lucro bruto', title: 'Faturamento − custo, só das vendas que têm custo', fmt: fmt.brl },
+        { key: 'lucro', label: 'Lucro bruto', title: 'Faturamento − Simples − custo, só das vendas que têm custo', fmt: fmt.brl },
         { key: 'margem', label: 'Margem bruta', title: 'Lucro bruto ÷ faturamento das vendas com custo', fmt: (v) => fmt.pct(v) },
-        { key: 'contrib', label: 'Lucro sem fixos', title: 'Lucro bruto − deduções variáveis (comissão, royalties, Simples, maquininha e custos em %)', fmt: fmt.brl },
-        { key: 'margemContrib', label: 'Margem sem fixos', title: 'Contribuição ÷ faturamento das vendas com custo', fmt: (v) => fmt.pct(v) },
+        { key: 'contrib', label: 'Contri\u00ADbuição', title: 'Lucro bruto − despesas variáveis (comissão, royalties, maquininha e custos em %)', fmt: fmt.brl },
+        { key: 'margemContrib', label: '% con\u00ADtrib.', title: 'Contribuição ÷ faturamento das vendas com custo', fmt: (v) => fmt.pct(v) },
         { key: 'lucroLiq', label: 'Lucro com fixos', title: 'Contribuição − custos fixos rateados', fmt: fmt.brl },
         { key: 'margemLiq', label: 'Margem com fixos', title: 'Lucro líquido ÷ faturamento das vendas com custo', fmt: (v) => fmt.pct(v) },
         { key: 'cobre', label: 'Com custo', fmt: (v) => fmt.pct(v, 0), title: 'Parte das vendas da vendedora cujo custo foi encontrado' },
@@ -1331,8 +1333,8 @@
             { key: 'soma', label: 'Preço somado', fmt: fmt.brl, title: 'Preço médio do primeiro + do segundo, como vendidos hoje' },
             { key: 'precoKit', label: 'Preço do kit', fmt: fmt.brl, title: `Preço somado com ${DESC_KIT}% de desconto` },
             { key: 'margemKit', label: 'Margem bruta', fmt: (v) => fmt.pct(v), cls: (r) => (r.margemKit != null && r.margemKit < 0.3 ? 'miss' : ''), title: 'Margem bruta do kit já com o desconto: (preço do kit − custo) ÷ preço do kit. Custo do AppNext; chá a granel com saco e etiquetas' },
-            { key: 'margemKitCon', label: 'Margem sem fixos', fmt: (v) => fmt.pct(v), cls: (r) => (r.margemKitCon != null && r.margemKitCon < margemMin ? 'miss' : ''), title: 'Margem bruta − deduções variáveis (comissão, royalties, Simples, maquininha e custos em %), já com o desconto do kit' },
-            { key: 'margemKitLiq', label: 'Margem com fixos', fmt: (v) => fmt.pct(v), title: 'Margem sem fixos − custos fixos rateados (informativa)' },
+            { key: 'margemKitCon', label: '% con\u00ADtrib.', fmt: (v) => fmt.pct(v), cls: (r) => (r.margemKitCon != null && r.margemKitCon < margemMin ? 'miss' : ''), title: 'Margem bruta − deduções variáveis (comissão, royalties, Simples, maquininha e custos em %), já com o desconto do kit' },
+            { key: 'margemKitLiq', label: 'Margem com fixos', fmt: (v) => fmt.pct(v), title: 'Margem de contribuição − custos fixos rateados (informativa)' },
           ],
           rows: top, sortKey: 'lift', maxHeight: '520px', cls: 'est-t est-t-larga', search: 'Buscar produto…', searchKeys: ['kit'], produto: 'kit',
         }) : h('p', { class: 'muted' }, `Ainda não há pares que saiam juntos em pelo menos ${minJuntos} cupons. Escolha um período maior (por exemplo, 12 meses).`),
@@ -1608,7 +1610,7 @@
     if (!cats.some((c) => c.id === 'outros')) cats.push({ id: 'outros', nome: 'Outros' });
     // ---------- categoria no Resultado de Simples, maquininha e comissões (DESP-CAT-01, aprovado pelo dono em 25/11/2026) ----------
     const catVar = { ...TS.contas.catVarDe(cfg.catVar, cats) };
-    const ROT_VAR = [['simples', 'Simples Nacional'], ['cartao', 'Maquininha'], ['comissao', 'Comissões e premiações']];
+    const ROT_VAR = [['cartao', 'Maquininha'], ['comissao', 'Comissões e premiações']]; // o Simples é dedução da receita (DRE-ESTR-01), sem categoria
     const catVarBox = h('div', { class: 'est-catvar' });
     function pintarCatVar() {
       const ops = TS.contas.catsEscolha(cats);
@@ -1736,7 +1738,7 @@
         h('div', { class: 'f-label', id: `cfg-custos-${lojaId}` }, 'Custos da loja por categoria'),
         h('small', { class: 'muted' }, 'R$ por mês (aluguel, salários, energia…) ou % das vendas (aluguel percentual do shopping, app de delivery). O valor por mês vira um % pela média do faturamento dos últimos 3 meses fechados.'),
         outrosBox,
-        h('div', { class: 'f-label', style: { marginTop: '14px' } }, 'Em que categoria Simples, maquininha e comissões aparecem no Resultado'),
+        h('div', { class: 'f-label', style: { marginTop: '14px' } }, 'Em que categoria a maquininha e as comissões aparecem no Resultado'),
         catVarBox,
         h('div', { class: 'f-label', style: { marginTop: '14px' }, id: `cfg-pontuais-${lojaId}` }, 'Despesas de um mês só'),
         h('small', { class: 'muted' }, 'IPTU e IPVA no começo do ano, 13º salário, uma manutenção… Entram cheias no Resultado do mês escolhido, dentro da categoria. "Todo ano" repete no mesmo mês dos anos seguintes.'),
@@ -1750,11 +1752,11 @@
       h('div', { class: 'est-cfg-g' },
         h('label', null, h('span', null, 'Simples Nacional'), h('div', null, simp, ' %')),
         h('label', null, h('span', null, 'Taxa da maquininha'), h('div', null, maq, ' %')),
-        h('label', null, h('span', null, 'Margem mínima (sem fixos)'), h('div', null, mMin, ' %')),
-        h('label', null, h('span', null, 'Meta de margem (sem fixos)'), h('div', null, mAlvo, ' %'))),
-      h('small', { class: 'muted' }, 'Margem sem fixos = lucro bruto − deduções variáveis, antes do aluguel e outros custos fixos. Abaixo da mínima o produto aparece em vermelho e no alerta. A meta é usada no simulador de preço ("Para X% sem fixos").'),
+        h('label', null, h('span', null, 'Margem de contribuição mínima'), h('div', null, mMin, ' %')),
+        h('label', null, h('span', null, 'Meta de margem de contribuição'), h('div', null, mAlvo, ' %'))),
+      h('small', { class: 'muted' }, 'Margem de contribuição = venda − Simples − custo − despesas variáveis, antes do aluguel e outros custos fixos. Abaixo da mínima o produto aparece em vermelho e no alerta. A meta é usada no simulador de preço ("Para X% sem fixos").'),
       h('small', { class: 'muted' }, 'Comissão e royalties vêm das regras da loja (Comissionamento). Use a taxa média da maquininha (débito, crédito e Pix juntos).'),
-      h('div', { class: 'f-label', style: { marginTop: '14px' } }, 'Em que categoria cada despesa aparece no Resultado ', TS.dica('No Resultado, as despesas que acompanham as vendas (Simples, maquininha, royalties e marketing, comissões e os custos em %) aparecem agrupadas pela categoria, antes do "Lucro sem fixos"; as fixas, pelas mesmas categorias, depois dele. Passe o mouse na categoria para ver o total do mês somando as duas.')),
+      h('div', { class: 'f-label', style: { marginTop: '14px' } }, 'Em que categoria cada despesa aparece no Resultado ', TS.dica('No Resultado, as despesas variáveis (maquininha, royalties e marketing, comissões e os custos em %) aparecem agrupadas pela categoria, antes da margem de contribuição; as fixas, pelas mesmas categorias, depois dela. O Simples é dedução da receita. Passe o mouse na categoria para ver o total do mês somando as duas.')),
       catVarBox,
       h('div', { class: 'f-label', style: { marginTop: '14px' }, id: `cfg-custos-${lojaId}` }, 'Outros custos da loja'),
       h('small', { class: 'muted' }, '% das vendas (ex.: aluguel percentual do shopping, app de delivery) ou R$ por mês (ex.: aluguel fixo, energia, salários). O valor em R$ por mês vira um %: valor ÷ média do faturamento dos últimos 3 meses fechados (ex.: R$ 16.000 ÷ média de R$ 200.000 = 8% de cada venda). Esse % é volátil: muda quando um mês fecha e entra na média.'),

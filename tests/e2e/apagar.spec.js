@@ -109,11 +109,11 @@ test('Resultado: "Exportar para o contador" baixa a planilha do mês fechado com
   await wb.xlsx.readFile(arq);
   expect(wb.worksheets.map((w) => w.name)).toEqual(['Resumo do mês', 'Vendas por dia', 'Notas de entrada', 'Notas de saída (NF-e)', 'Despesas']);
   const res = wb.getWorksheet('Resumo do mês');
-  expect(res.getCell('A5').value).toBe('Faturamento');
+  expect(res.getCell('A5').value).toBe('Receita bruta');
   expect(res.getCell('B5').value).toBeGreaterThan(0);
   const linhas = []; res.eachRow((r) => linhas.push(String(r.getCell(1).value)));
-  expect(linhas).toEqual(expect.arrayContaining(['= Lucro bruto', '= Lucro sem fixos', '= Resultado do mês'])); // três degraus (LUCRO-01)
-  expect(linhas).not.toContain('= Receita líquida');
+  expect(linhas).toEqual(expect.arrayContaining(['= Receita líquida', '= Lucro bruto', '= Margem de contribuição', '= Resultado operacional', '= Resultado líquido'])); // DRE-ESTR-01
+  expect(linhas).toEqual(expect.arrayContaining(['− Despesas fixas · Funcionários'])); // as fixas pela categoria (DESP-CAT-01)
   expect(wb.getWorksheet('Vendas por dia').getCell('D4').value).toBe('Cartão de crédito');
   expect(wb.getWorksheet('Vendas por dia').rowCount).toBeGreaterThan(20);
   expect(String(wb.getWorksheet('Despesas').getCell('A5').value)).not.toBe('Nada neste mês.');
