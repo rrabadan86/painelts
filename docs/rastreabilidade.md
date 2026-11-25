@@ -122,6 +122,7 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 | FRAN-02 | Resumo diário: franqueado vê e gerencia só destinatários das lojas dele, sem token/SMTP nem destinos alheios; o que é da rede segue só do admin | `admin-api.js` (`destinoMeu`, `/notif*`); `notificacoes.js` `enviarFechamento({ lojas })`; `config.js` `abaResumoFranqueado` | `franqueado-loja.test` | ✅ (menos o envio real) |
 | SMTP-01 | A "Conexão segura direta" segue a porta: 465 sempre direta (SSL), 587 sempre STARTTLS (a caixa marcada com 587 fazia o Gmail da loja falhar com "wrong version number" antes da senha — caso real em 25/11/2026); na tela a caixa acompanha a porta | `src/notificacoes.js` (`transporteSmtp`); `public/js/config.js` (`ligarPortaSegura`) | `smtp-porta.test` SMTP-01 | ✅ |
 | SMTP-02 | Erro do envio de e-mail em português com o que fazer (porta × conexão segura, senha de app recusada, servidor fora do ar), sem o caminho de arquivo do OpenSSL | `src/notificacoes.js` (`msgSmtp`) | `smtp-porta.test` SMTP-02 | ✅ |
+| CUP-FIXE-01 | Vendas → Cupons: ao lado do CPF, a mesma marca da ficha do cliente (uma palavra, um sentido — pedido do dono, 25/11/2026): "FIXE ✓" = pontos lançados para o CPF da nota; "CPF pelo FIXE" = nota sem CPF ligada pelos pontos; "CPF diferente no FIXE"; "Sem FIXE" = cliente do programa sem lançamento no dia. Antes o "FIXE" da lista queria dizer só "CPF pelo FIXE" e parecia que faltava o FIXE de quem pontuou | `public/js/pages.js` (`clientesDosCupons`, `marcaFixe`) | `cupons-fixe.spec` CUP-FIXE-01 | ✅ |
 | FRAN-03 | Configuração guiada (AppNext, Sistema de Pedidos, FIXE e Gmail da loja): abre sozinha uma vez por loja, só para o franqueado e só se faltar acesso; só admin e franqueado, só na loja dele; a resposta traz só sim/não, nunca usuário nem senha | `src/guia.js` (`situacao`, `abreSozinha`); `admin-api.js` (`/guia`, `/lojas/:id/guia/visto`); `public/js/guia.js` | `guia.test`; `franqueado-loja.test` "configuração guiada"; `guia.spec` | ✅ |
 | FRAN-04 | Configuração guiada: cada passo grava pela mesma rota das Configurações; o e-mail do FIXE tem de ser o Gmail da loja (aviso nos passos 3 e 4, com a opção de acertar o FIXE junto); atalho nas Configurações e lembrete no Início enquanto faltar passo; na apresentação nada é gravado | `public/js/guia.js`; `config.js` (`cfg-guia-btn`, `TS.guia.bloco`); `inicio.js`; `/api/demo/admin/guia` | `guia.spec` (2) | ✅ na apresentação; gravação real conferida à mão em servidor de teste |
 | ZAP-01 | Robô do WhatsApp: travas no servidor (ligado/pausado, dias, horário, máximo por dia, ritmo aleatório, limite da campanha, só `robo: true`) | `src/zapfila.js` `decidir` | `zapfila.test` | ✅ |
@@ -727,7 +728,7 @@ Contado pelas linhas da matriz (`node scripts/matriz.js --resumo`; o guardião c
 | Perfis e permissões (PERF) | 34 | 10 | 17 | 7 |
 | Segurança, segredos, auditoria e apresentação (SEG) | 19 | 1 | 9 | 9 |
 | IA (IA) | 16 | 7 | 6 | 3 |
-| NF-e, devolução e notas de entrada (NFE) | 43 | 28 | 11 | 4 |
+| NF-e, devolução e notas de entrada (NFE) | 44 | 29 | 11 | 4 |
 | Dinheiro com a franquia (FRQ) | 19 | 13 | 6 | 0 |
 | Coletor e robôs (COL) | 7 | 1 | 2 | 4 |
 | Escala, horários, feriados e férias (ESC) | 31 | 7 | 10 | 14 |
@@ -740,7 +741,7 @@ Contado pelas linhas da matriz (`node scripts/matriz.js --resumo`; o guardião c
 | Orçamento (ORC) | 7 | 5 | 1 | 1 |
 | Checklist, fechamento e avisos (OPE) | 13 | 6 | 3 | 4 |
 | Estrutura do painel e atualização (APP) | 46 | 27 | 13 | 6 |
-| **Total** | **486** | **252 (52%)** | **124 (26%)** | **110 (23%)** |
+| **Total** | **487** | **253 (52%)** | **124 (25%)** | **110 (23%)** |
 <!-- resumo:fim -->
 
 ## Próximas etapas
