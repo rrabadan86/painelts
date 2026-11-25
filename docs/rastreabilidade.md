@@ -127,6 +127,7 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 | HOJE-MOB-01 | Clientes → Hoje no celular (mockup aprovado pelo dono em 25/11/2026): Motivo e Vendedora em botões com a folha (cada opção com explicação e quantos clientes mostra); cada cliente: nome + WhatsApp numa linha, etiquetas, "quem atende · gosta de · dias sem vir"; a mensagem sai da lista e aparece inteira ao tocar no nome, com "Ver ficha ›"; o WhatsApp passa pelas mesmas travas e o "Desfazer" continua. No computador não muda | `public/js/clientes.js` (`filtrosMob`, `linha` do Hoje); `styles.css` (`.hj-mob`) | `hoje.spec` HOJE-01 (celular) | ✅ |
 | ESC-MOB-01 | Equipe → Movimento e escala → Escala do mês no celular (mockup aprovado pelo dono em 25/11/2026): a semana em 7 botões de dia (pessoas na loja, fechado, feriado e falta de gente marcados; ‹ › troca de semana), o dia escolhido com cada pessoa numa linha (horário · intervalo · horas líquidas, ou folga/férias; tocar abre o ajuste embaixo da própria linha) e o feriado com o horário da loja no título; resumo do mês uma linha por pessoa. Não rola mais de lado (saiu do G-01). PDF e computador continuam com a tabela | `public/js/mapa.js` (`tabelaMob` em `cartaoMes`); `styles.css` (`.escm*`) | `escala-horario.spec` (celular); `telas.spec` LARG-01 | ✅ |
 | SUBMENU-01 | O submenu do grupo (Resumo · Comparativos · …) não mostra barra de rolagem de cima para baixo: a aba ativa desce 1 px sobre a borda e o Windows desenhava a barra (print do dono, 25/11/2026) | `public/styles.css` (`.submenu { overflow-y: hidden }`) | `telas.spec` (sem rolagem lateral) | ✅ (visual) |
+| CAMP-TIRAR-01 | Criar/editar campanha → prévia da lista: 2 colunas (Cliente · Pontos) e o ✕ de tirar o cliente no fim da célula dos pontos, na mesma linha — a 3ª coluna "Tirar" escapava à direita e a lista rolava de lado na coluna estreita (print do dono, 25/11/2026) | `public/js/campanhas.js` (prévia); `styles.css` (`.cp-pts-l`) | `campanha-fora.spec` CAMP-FORA-04 (1366, 1100 e 900 px e celular) | ✅ |
 | FRAN-03 | Configuração guiada (AppNext, Sistema de Pedidos, FIXE e Gmail da loja): abre sozinha uma vez por loja, só para o franqueado e só se faltar acesso; só admin e franqueado, só na loja dele; a resposta traz só sim/não, nunca usuário nem senha | `src/guia.js` (`situacao`, `abreSozinha`); `admin-api.js` (`/guia`, `/lojas/:id/guia/visto`); `public/js/guia.js` | `guia.test`; `franqueado-loja.test` "configuração guiada"; `guia.spec` | ✅ |
 | FRAN-04 | Configuração guiada: cada passo grava pela mesma rota das Configurações; o e-mail do FIXE tem de ser o Gmail da loja (aviso nos passos 3 e 4, com a opção de acertar o FIXE junto); atalho nas Configurações e lembrete no Início enquanto faltar passo; na apresentação nada é gravado | `public/js/guia.js`; `config.js` (`cfg-guia-btn`, `TS.guia.bloco`); `inicio.js`; `/api/demo/admin/guia` | `guia.spec` (2) | ✅ na apresentação; gravação real conferida à mão em servidor de teste |
 | ZAP-01 | Robô do WhatsApp: travas no servidor (ligado/pausado, dias, horário, máximo por dia, ritmo aleatório, limite da campanha, só `robo: true`) | `src/zapfila.js` `decidir` | `zapfila.test` | ✅ |
@@ -732,7 +733,7 @@ Contado pelas linhas da matriz (`node scripts/matriz.js --resumo`; o guardião c
 | Perfis e permissões (PERF) | 34 | 10 | 17 | 7 |
 | Segurança, segredos, auditoria e apresentação (SEG) | 19 | 1 | 9 | 9 |
 | IA (IA) | 16 | 7 | 6 | 3 |
-| NF-e, devolução e notas de entrada (NFE) | 48 | 33 | 11 | 4 |
+| NF-e, devolução e notas de entrada (NFE) | 49 | 34 | 11 | 4 |
 | Dinheiro com a franquia (FRQ) | 19 | 13 | 6 | 0 |
 | Coletor e robôs (COL) | 7 | 1 | 2 | 4 |
 | Escala, horários, feriados e férias (ESC) | 31 | 7 | 10 | 14 |
@@ -745,7 +746,7 @@ Contado pelas linhas da matriz (`node scripts/matriz.js --resumo`; o guardião c
 | Orçamento (ORC) | 7 | 5 | 1 | 1 |
 | Checklist, fechamento e avisos (OPE) | 13 | 6 | 3 | 4 |
 | Estrutura do painel e atualização (APP) | 46 | 27 | 13 | 6 |
-| **Total** | **491** | **257 (52%)** | **124 (25%)** | **110 (22%)** |
+| **Total** | **492** | **258 (52%)** | **124 (25%)** | **110 (22%)** |
 <!-- resumo:fim -->
 
 ## Próximas etapas

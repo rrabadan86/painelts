@@ -655,10 +655,13 @@
           return n ? [h('small', { class: 'cp-faltam cp-sem-estoque' }, `🚫 ${fmt.int(n)} ${n === 1 ? 'cliente receberia' : 'clientes receberiam'} oferta de produto sem estoque (no chá a granel, menos de 100 g)${semP.length ? ` (${semP.slice(0, 3).join(', ')})` : ''}: eles ficam esperando a nota de entrada e não entram na fila de envio.`)] : [];
         })());
       por(previa, sel_.length ? TS.table({
-        // 3 colunas para caber na coluna da direita sem rolar de lado (pedido do dono: o "Tirar" ficava escondido à direita)
-        cols: [{ key: 'nome', label: 'Cliente', align: 'l', wrap: true, title: 'Nome, celular e CPF do cliente e a data da última compra.', render: (r) => h('span', null, r.nome, h('small', { class: 'muted cp-cel' }, `${r.cel} · CPF ${A().fmtCPF(r.cpf)}`), h('small', { class: 'muted cp-cel' }, `última compra ${d(r.ult)}`)) },
-          { key: 'saldo', label: 'Pontos', title: 'Saldo de pontos no FIXE e, embaixo, quantos vencem primeiro e quando.', render: (r) => h('span', null, fmt.int(r.saldo), r.vence !== '—' ? h('small', { class: 'muted cp-cel' }, `vencem ${r.vence}`) : null) },
-          { key: 'acao', label: 'Tirar', title: 'Tira este cliente da campanha mesmo atendendo aos critérios (ele não recebe esta mensagem). Volta pela lista "Tirados à mão", embaixo.', render: (r) => h('button', { type: 'button', class: 'btn ghost-danger cp-tirar', title: `Tirar ${r.nome} da campanha`, 'aria-label': `Tirar ${r.nome} da campanha`, onclick: (e) => { e.stopPropagation(); tirar(r.cpf); } }, '✕') }],
+        // 2 colunas para caber na coluna da direita sem rolar de lado (pedido do dono, 25/11/2026: o "Tirar" ainda escapava à
+        // direita): o ✕ fica na mesma linha, no fim da célula dos pontos (CAMP-TIRAR-01)
+        cols: [{ key: 'nome', label: 'Cliente', align: 'l', wrap: true, title: 'Nome, celular e CPF do cliente e a data da última compra.',
+          render: (r) => h('span', null, r.nome, h('small', { class: 'muted cp-cel' }, `${r.cel} · CPF ${A().fmtCPF(r.cpf)}`), h('small', { class: 'muted cp-cel' }, `última compra ${d(r.ult)}`)) },
+          { key: 'saldo', label: 'Pontos', title: 'Saldo de pontos no FIXE e, embaixo, quantos vencem primeiro e quando. O ✕ tira o cliente da campanha mesmo atendendo aos critérios (ele não recebe esta mensagem); volta pela lista "Tirados à mão", embaixo.',
+            render: (r) => h('div', { class: 'cp-pts-l' }, h('span', null, fmt.int(r.saldo), r.vence !== '—' ? h('small', { class: 'muted cp-cel' }, `vencem ${r.vence}`) : null),
+              h('button', { type: 'button', class: 'btn ghost-danger cp-tirar', title: `Tirar ${r.nome} da campanha`, 'aria-label': `Tirar ${r.nome} da campanha`, onclick: (e) => { e.stopPropagation(); tirar(r.cpf); } }, '✕')) }],
         rows: sel_.slice(0, 300).map(({ c, saldo }) => ({ cpf: c.cpf, nome: c.nome || '—', cel: A().fmtTel(c.celular), saldo, vence: c.fx && c.fx.prox != null ? `${fmt.int(c.fx.proxPts)} em ${d(c.fx.prox)}` : '—', ult: c.ultima, ultima: c.ultima ?? -1 })),
         sortKey: 'saldo', cartao: true, onRowClick: (r) => A().abrirClientes([r.cpf]),
       }) : TS.empty('Nenhum cliente com celular atende a esses critérios.'), sel_.length > 300 ? h('small', { class: 'muted' }, `Mostrando 300 de ${fmt.int(sel_.length)}. A campanha guarda todos.`) : null, listaFora());
