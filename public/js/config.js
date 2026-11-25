@@ -946,7 +946,7 @@
       !e.configurado && f.servidorGeral ? h('p', { class: 'muted' }, 'Enquanto o Gmail da loja não for cadastrado, o envio usa o e-mail geral do painel.') : null,
       passoGmail('gmail:' + l.id, { host, port, sec, from, user }),
       h('div', { class: 'cfg-grid' }, campo('Servidor (SMTP)', host), campo('Porta', port), campo('Usuário (Gmail)', user), campo('Senha de app', pass), campo('Remetente', from)),
-      h('label', { class: 'cfg-check-l' }, sec, ' Conexão segura direta (porta 465)'),
+      h('label', { class: 'cfg-check-l' }, ligarPortaSegura(port, sec), ' Conexão segura direta (porta 465)'),
       h('div', { class: 'cfg-acoes' }, acao('Salvar', async () => {
         if (!host.value.trim() && /@gmail\.com$/i.test(user.value.trim())) host.value = 'smtp.gmail.com';
         if (user.value.trim() && !from.value.trim()) from.value = `${l.nome} <${user.value.trim()}>`;
@@ -1625,7 +1625,7 @@
     const em = h('div', { class: 'card cfg-form' }, h('div', { class: 'card-title' }, 'E-mail geral (resumo diário e franqueador)'), h('p', { class: 'muted' }, 'Servidor usado no resumo diário. Cada loja pode ter o próprio Gmail para o fechamento do dia (em Lojas); a loja que ainda não tiver usa este.'),
       passoGmail('gmail', { host, port, sec, from, user }),
       h('div', { class: 'cfg-grid' }, campo('Servidor (SMTP)', host), campo('Porta', port), campo('Usuário', user), campo('Senha', pass), campo('Remetente', from)),
-      h('label', { class: 'cfg-check-l' }, sec, ' Conexão segura direta (porta 465)'),
+      h('label', { class: 'cfg-check-l' }, ligarPortaSegura(port, sec), ' Conexão segura direta (porta 465)'),
       h('div', { class: 'cfg-acoes' }, acao('Salvar servidor', async () => {
         // Gmail sem servidor preenchido: completa sozinho (o cinza no campo é só um exemplo)
         if (!host.value.trim() && /@gmail\.com$/i.test(user.value.trim())) { host.value = 'smtp.gmail.com'; if (!port.value) port.value = 587; }
@@ -1691,6 +1691,12 @@
       h('p', { class: 'muted' }, n.telegram.configurado ? '🔒 O robô do Telegram é da rede: para incluir uma pessoa nova, peça ao administrador. Quem já recebe só as suas lojas aparece abaixo.' : '🔒 O robô do Telegram é da rede e ainda não foi configurado pelo administrador.'));
     if (n.telegram.destinos.length) tg.append(tabelaDestinos('telegram', n.telegram.destinos, 'chatId', lojasTxt, recarregar));
     box.append(tg);
+  }
+  /** SMTP-01: a caixa "Conexão segura direta" acompanha a porta (465 marcada, 587 desmarcada); o servidor também decide pela porta */
+  function ligarPortaSegura(port, sec) {
+    const sync = () => { const p = +port.value; if (p === 465) sec.checked = true; else if (p === 587) sec.checked = false; };
+    port.addEventListener('input', sync); sync();
+    return sec;
   }
   /** passo a passo do Gmail (usado no e-mail geral e no de cada loja) */
   function passoGmail(chave, { host, port, sec, from, user }) {

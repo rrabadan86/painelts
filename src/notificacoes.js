@@ -92,15 +92,32 @@ async function enviarTelegram(chatId, texto) {
 }
 
 // ---------- e-mail ----------
+/** SMTP-01: a "conexão segura direta" segue a porta — 465 é sempre direta (SSL), 587 é sempre STARTTLS. A caixa marcada
+ *  com a porta 587 (ou desmarcada com a 465) fazia o envio falhar com "wrong version number" antes mesmo da senha. */
+function transporteSmtp(c) {
+  const port = +c.port || 587;
+  const secure = port === 465 ? true : port === 587 ? false : !!c.secure;
+  return { host: c.host, port, secure, auth: c.user ? { user: c.user, pass: c.pass } : undefined, connectionTimeout: 15000 };
+}
+/** SMTP-02: erro do servidor de e-mail em português, dizendo o que fazer (sem caminho de arquivo nem dado da conta) */
+function msgSmtp(e) {
+  const m = String((e && e.message) || e || '');
+  if (/wrong version number|ssl3_get_record|tls_validate_record_header|EPROTO/i.test(m)) return 'A porta não combina com a "Conexão segura direta": no Gmail use a porta 587 (sem marcar) ou a 465 (marcada) e clique em Salvar.';
+  if (/Username and Password not accepted|535|Invalid login|BadCredentials/i.test(m)) return 'O Gmail recusou o usuário ou a senha: use a senha de app de 16 letras (passo 5 do passo a passo), não a senha normal da conta, e confira se a verificação em duas etapas está ativa.';
+  if (/ETIMEDOUT|ECONNREFUSED|ENOTFOUND|Greeting never received|timeout/i.test(m)) return 'Não deu para falar com o servidor de e-mail: confira o Servidor (smtp.gmail.com) e a porta (587).';
+  return m.replace(/\([^)]*\.c:\d+:[^)]*\)/g, '').replace(/\s+/g, ' ').trim().slice(0, 300);
+}
 async function enviarEmail(para, assunto, texto, htmlPronto, smtp, anexos) {
   require('./config').travaHomolog('e-mail');
   const c = smtp || ler().email;
   if (!c.host || !c.from) throw new Error('Configure o servidor de e-mail.');
   const nodemailer = require('nodemailer');
-  const t = nodemailer.createTransport({ host: c.host, port: +c.port || 587, secure: !!c.secure, auth: c.user ? { user: c.user, pass: c.pass } : undefined, connectionTimeout: 15000 });
+  const t = nodemailer.createTransport(transporteSmtp(c));
   const esc = (s) => String(s).replace(/[&<>]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch]));
   const html = `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5;color:#1d2b22">${texto.split('\n').map((l) => (l.startsWith('━') ? '<hr style="border:0;border-top:2px solid #2C5234">' : l ? `<div>${esc(l)}</div>` : '<br>')).join('')}</div>`;
-  await t.sendMail({ from: c.from, to: para, subject: assunto, text: texto, html: htmlPronto || html, ...(anexos ? { attachments: anexos } : {}) });
+  try {
+    await t.sendMail({ from: c.from, to: para, subject: assunto, text: texto, html: htmlPronto || html, ...(anexos ? { attachments: anexos } : {}) });
+  } catch (e) { throw new Error(msgSmtp(e)); }
 }
 
 // ---------- montagem ----------
@@ -312,4 +329,4 @@ async function avisarLoja(id, texto) {
   return n;
 }
 
-module.exports = { avisarLoja, quandoFechamento, assuntoFechamento, assuntoValido, ASSUNTO_PADRAO, enviarEmail, ler, gravar, publico, publicoLoja, cfgLoja, conversasTelegram, enviarTodos, montarTexto, agendar, montarFechamento, enviarFechamento, enviarFechamentoLoja };
+module.exports = { transporteSmtp, msgSmtp, avisarLoja, quandoFechamento, assuntoFechamento, assuntoValido, ASSUNTO_PADRAO, enviarEmail, ler, gravar, publico, publicoLoja, cfgLoja, conversasTelegram, enviarTodos, montarTexto, agendar, montarFechamento, enviarFechamento, enviarFechamentoLoja };
