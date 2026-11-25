@@ -83,19 +83,24 @@ function fotoFim(fotos, ym) {
 }
 
 /**
- * Os meses com a conta pelo estoque: { 'AAAA-MM': { ini, fim, compras, devolucoes } } (só meses com as duas fotos).
+ * Os meses com a conta pelo estoque: { 'AAAA-MM': { ini, fim, compras, comprasFranquia, comprasOutros, fornecedores: [{ nome, valor }], devolucoes } }
+ * (só meses com as duas fotos). As devoluções NÃO entram na conta (CMV-DEV-01): só aparecem na explicação das perdas e acertos.
  * notas: as notas de entrada do coletor (compras.json: { entrada, motivo, status, itens: [{ qtd, custo }] });
  * saidas: as NF-e de saída do painel (nfsaida: { data, finalidade, valor, situacao, dest }) — devoluções à franquia.
  * notasDesde: desde quando o coletor guarda as notas de compra (mês que começa antes fica fora).
  */
 function resumo(id, { notas = [], saidas = [], notasDesde = null } = {}) {
   const fotos = ler(id);
-  const compras = {}, devol = {};
+  const compras = {}, devol = {}, franq = {}, outros = {};
   for (const n of notas) {
     if (!/compra/i.test(n.motivo || '') || !/^conclu/i.test(n.status || '')) continue;
     const ym = String(n.entrada || n.emissao || '').slice(0, 7);
     if (!/^\d{4}-\d{2}$/.test(ym)) continue;
-    compras[ym] = (compras[ym] || 0) + (n.itens || []).reduce((a, i) => a + ((+i.qtd > 0 && +i.custo > 0) ? +i.qtd * +i.custo : 0), 0);
+    const v = (n.itens || []).reduce((a, i) => a + ((+i.qtd > 0 && +i.custo > 0) ? +i.qtd * +i.custo : 0), 0);
+    compras[ym] = (compras[ym] || 0) + v;
+    // compras da franquia (TSB) × outros fornecedores (pedido do dono, 25/11/2026; CMV-FORN-01)
+    if (ehFranquia(n.fornecedor)) franq[ym] = (franq[ym] || 0) + v;
+    else { const m = outros[ym] || (outros[ym] = new Map()); const nome = String(n.fornecedor || 'sem fornecedor').trim(); m.set(nome, (m.get(nome) || 0) + v); }
   }
   for (const s of saidas) {
     if (s.situacao === 'cancelada' || !/devolu/i.test(s.finalidade || '')) continue;
@@ -108,11 +113,15 @@ function resumo(id, { notas = [], saidas = [], notasDesde = null } = {}) {
     const fim = fotoFim(fotos, ym), ini = fotoFim(fotos, ymMais(ym, -1));
     if (!fim || !ini) continue;
     if (notasDesde && `${ym}-01` < String(notasDesde).slice(0, 10)) continue; // as notas de compra guardadas não cobrem o mês inteiro: sem as compras a conta sairia errada
-    out[ym] = { ini, fim, compras: Math.round((compras[ym] || 0) * 100) / 100, devolucoes: Math.round((devol[ym] || 0) * 100) / 100 };
+    const r2 = (v) => Math.round((v || 0) * 100) / 100;
+    const outs = [...((outros[ym] && outros[ym].entries()) || [])].map(([nome, valor]) => ({ nome, valor: r2(valor) })).sort((a, b) => b.valor - a.valor);
+    out[ym] = { ini, fim, compras: r2(compras[ym]), comprasFranquia: r2(franq[ym]), comprasOutros: r2(outs.reduce((a, x) => a + x.valor, 0)), fornecedores: outs.slice(0, 20), devolucoes: r2(devol[ym]) };
   }
   return out;
 }
 
+/** nota da franquia: fornecedor TSB Franquias (a mesma regra de Créditos com a franquia) */
+const ehFranquia = (forn) => /TSB|FRANQUIA/i.test(String(forn || ''));
 const codN = (c) => String(c == null ? '' : c).trim().replace(/^0+(?=\d)/, '');
 const inicioDoDia = (dia) => Date.parse(`${dia}T00:00:00-03:00`);
 
@@ -199,4 +208,4 @@ function aplicarExtrato(id, deps = {}) {
 /** o resumo da última reconstrução (só leitura) */
 function lerReconstrucao(id) { try { return JSON.parse(fs.readFileSync(arqRec(id), 'utf8')); } catch { return null; } }
 
-module.exports = { ler, valorDe, semControle, registrarFoto, fotoFim, resumo, pertoDaVirada, reconstruir, aplicarExtrato, lerReconstrucao };
+module.exports = { ehFranquia, ler, valorDe, semControle, registrarFoto, fotoFim, resumo, pertoDaVirada, reconstruir, aplicarExtrato, lerReconstrucao };

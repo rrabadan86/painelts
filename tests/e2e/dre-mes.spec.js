@@ -205,13 +205,13 @@ test('DRE-FIN-01: lançar o resultado financeiro do mês muda o resultado líqui
 });
 
 // CMV-EST-01: mês com as duas fotos do estoque usa a conta do contador; a diferença para o custo das vendas = perdas e acertos
-test('CMV-EST-01: CMV pelo estoque no mês fechado com as fotos; o mês em andamento fica pelo custo das vendas', async ({ page }) => {
+test('CMV-EST-01, CMV-DEV-01, CMV-FORN-01: CMV pelo estoque no mês fechado com as fotos; o mês em andamento fica pelo custo das vendas', async ({ page }) => {
   await abrir(page);
   const r = await page.evaluate(async () => {
     const M = await TS.custosLoja();
     const ms = TS.dreCalcular(M);
     const f = ms.filter((m) => m.est), atual = ms[ms.length - 1];
-    return { n: f.length, ok: f.every((m) => Math.abs(m.cmvTot - (m.est.ini.valor + m.est.compras - m.est.devolucoes - m.est.fim.valor + m.difal)) < 0.01 && Math.abs(m.acertos - (m.cmvEst - m.cmv)) < 0.01), atualSemEst: !atual.est, ym: f.length ? f[f.length - 1].ym : null };
+    return { n: f.length, ok: f.every((m) => Math.abs(m.cmvTot - (m.est.ini.valor + m.est.compras - m.est.fim.valor + m.difal)) < 0.01 && Math.abs(m.acertos - (m.cmvEst - m.cmv)) < 0.01), atualSemEst: !atual.est, ym: f.length ? f[f.length - 1].ym : null };
   });
   expect(r.n).toBeGreaterThan(0);
   expect(r.ok).toBe(true);
@@ -220,6 +220,10 @@ test('CMV-EST-01: CMV pelo estoque no mês fechado com as fotos; o mês em andam
   const t = page.locator('.dre-t').first();
   await expect(t).toContainText('Pela conta do estoque: estoque inicial');
   await expect(t).toContainText('(−) Estoque final');
+  // CMV-DEV-01: a devolução não é descontada de novo (o crédito volta nos royalties ou na nota); CMV-FORN-01: compras por fornecedor
+  await expect(t).not.toContainText('(−) Devoluções à franquia');
+  await expect(t.locator('tr.dre-estqf', { hasText: 'Da franquia (TSB)' })).toHaveCount(1);
+  await expect(t.locator('tr.dre-estqf', { hasText: 'Outros fornecedores' })).toHaveAttribute('title', /Embalagens Exemplo/);
   await expect(t.locator('tr', { hasText: 'Perdas e acertos de estoque' }).first()).toHaveAttribute('title', /Pela conta do estoque/);
 });
 

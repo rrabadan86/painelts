@@ -34,7 +34,7 @@ test('CMV-EST-01: estoque final = foto do dia 1 do mês seguinte; sem ela, a mai
   ];
   const saidas = [{ data: '2026-11-20', finalidade: 'Devolução', valor: 80, situacao: 'autorizada' }, { data: '2026-11-21', finalidade: 'Devolução', valor: 999, situacao: 'cancelada' }];
   const r = CE.resumo('l1', { notas, saidas });
-  assert.deepStrictEqual(r['2026-11'], { ini: { dia: '2026-11-01', valor: 1000, aprox: false }, fim: { dia: '2026-11-30', valor: 1200, aprox: true }, compras: 350, devolucoes: 80 });
+  assert.deepStrictEqual(r['2026-11'], { ini: { dia: '2026-11-01', valor: 1000, aprox: false }, fim: { dia: '2026-11-30', valor: 1200, aprox: true }, compras: 350, comprasFranquia: 0, comprasOutros: 350, fornecedores: [{ nome: 'sem fornecedor', valor: 350 }], devolucoes: 80 });
   assert.strictEqual(r['2026-10'], undefined, 'outubro sem a foto do começo: fica de fora');
 });
 
@@ -97,4 +97,23 @@ test('CMV-REC-01: produto "sem controle de estoque" (saldo negativo sem fim) fic
   assert.strictEqual(CE.valorDe([{ cod: '81010', qtd: 3, custo: 1 }, { cod: '1', qtd: 1, custo: 5 }], ign).valor, 5);
   // o grupo vem do estoque do painel
   assert.deepStrictEqual([...CE.semControle('x', { atual: () => ({ itens: [{ cod: '081010', grupo: 'CONSUMÍVEIS - SEM CONTROLE DE ESTOQUE' }, { cod: '1', grupo: 'CHÁ VERDE' }] }) })], ['81010']);
+});
+
+// CMV-FORN-01 (pedido do dono, 25/11/2026): compras da franquia (TSB) e de outros fornecedores separadas no Resultado
+test('CMV-FORN-01: compras do mês separadas em TSB e outros fornecedores (com o nome e o valor de cada um)', () => {
+  CE.registrarFoto('lf', { em: '2026-10-01T09:00:00Z', itens: itens(100) });
+  CE.registrarFoto('lf', { em: '2026-11-01T09:00:00Z', itens: itens(100) });
+  const notas = [
+    { entrada: '2026-10-03', motivo: 'Compra', status: 'Concluída', fornecedor: 'TSB FRANQUIAS LTDA', itens: [{ qtd: 10, custo: 50 }] },
+    { entrada: '2026-10-08', motivo: 'Compra', status: 'Concluída', fornecedor: 'Embalagens Goiás', itens: [{ qtd: 2, custo: 40 }] },
+    { entrada: '2026-10-09', motivo: 'Compra', status: 'Concluída', fornecedor: 'Padaria Boa', itens: [{ qtd: 1, custo: 120 }] },
+    { entrada: '2026-10-20', motivo: 'Compra', status: 'Concluída', fornecedor: 'Embalagens Goiás', itens: [{ qtd: 1, custo: 20 }] },
+  ];
+  const m = CE.resumo('lf', { notas })['2026-10'];
+  assert.strictEqual(m.compras, 720);
+  assert.strictEqual(m.comprasFranquia, 500);
+  assert.strictEqual(m.comprasOutros, 220);
+  assert.deepStrictEqual(m.fornecedores, [{ nome: 'Padaria Boa', valor: 120 }, { nome: 'Embalagens Goiás', valor: 100 }]);
+  assert.strictEqual(CE.ehFranquia('TSB FRANQUIAS'), true);
+  assert.strictEqual(CE.ehFranquia('Padaria Boa'), false);
 });
