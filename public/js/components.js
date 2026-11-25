@@ -553,6 +553,16 @@
 
   /** linha do celular a partir das colunas da tabela (LMOB-04): nome e o número que decide em cima; as outras colunas pequenas
    *  embaixo, cada uma com o rótulo curto (labelMob ou o rótulo da coluna); célula vazia ou "—" some */
+  /** barras horizontais no celular (LMOB-05): no gráfico de barras deitado o nome do produto saía cortado à esquerda e o valor
+   *  ficava por cima da barra; aqui cada item é uma linha — nome inteiro, valor à direita e a barra embaixo (proporcional ao maior).
+   *  itens: [{ nome, v, rot }] (rot = o texto do valor); cor: 'gold' para a barra dourada */
+  TS.barrasMob = function (itens, cor) {
+    const max = Math.max(...itens.map((x) => x.v || 0), 0) || 1;
+    return h('div', { class: 'lmob barras-mob' + (cor === 'gold' ? ' barras-gold' : '') }, itens.map((x) => h('div', { class: 'lmob-it' },
+      h('div', { class: 'lmob-l1' }, h('span', { class: 'lmob-nome' }, x.nome), h('span', { class: 'lmob-val' }, x.rot)),
+      h('div', { class: 'lmob-barra' }, h('i', { style: { width: Math.max(2, Math.round(((x.v || 0) / max) * 100)) + '%' } })))));
+  };
+
   TS.linhaCols = function (cols, { nome, val, valRot, l2 = [], l3 = [] }) {
     const col = (k) => cols.find((c) => c.key === k);
     const rot = (c) => (c.labelMob != null ? c.labelMob : typeof c.label === 'string' ? c.label : '');
@@ -605,7 +615,8 @@
     const LMOB = TS.ehCelular() && typeof linhaMob === 'function';
     const lista = LMOB ? h('div', { class: 'lmob' + (cls ? ' ' + cls + '-lmob' : '') }) : null;
     const tw = h('div', { class: 'table-wrap' + (maxHeight === 'free' ? ' free' : '') + (LMOB ? ' lmob-w' : '') }, LMOB ? lista : tbl);
-    if (maxHeight && maxHeight !== 'free') tw.style.maxHeight = maxHeight;
+    // celular (LMOB-05): sem rolagem dentro da tabela — a página já rola, e a rolagem interna escondia a última linha atrás do Total
+    if (maxHeight && maxHeight !== 'free' && !TS.ehCelular()) tw.style.maxHeight = maxHeight;
     const pager = h('div', { class: 'pager' });
     let searchBox = null;
     if (search) {

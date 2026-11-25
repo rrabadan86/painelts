@@ -344,8 +344,17 @@
     const mov = new Map();
     for (const c of TS.cli.lista) if (c.rfm && c.rfmAntes && BONS.has(c.rfmAntes.g) && RUINS.has(c.rfm.g)) { const k = c.rfmAntes.g + '>' + c.rfm.g; mov.set(k, (mov.get(k) || 0) + 1); }
     const movs = [...mov].sort((a, b) => b[1] - a[1]).slice(0, 3);
+    // celular (LMOB-05): um grupo por linha — clientes à direita; a mudança em 30 dias e o gasto embaixo; tocar abre a lista
+    const RUIM_G = ['risco', 'naoperder', 'hibernando', 'perdido', 'atencao'];
+    const mob = () => h('div', { class: 'lmob rfm-lmob' }, TS.RFM.GRUPOS.map((g) => {
+      const x = por.get(g.id), d = x.n - x.antes;
+      const clsD = d > 0 ? (RUIM_G.includes(g.id) ? 'neg' : 'pos') : d < 0 ? (RUIM_G.includes(g.id) ? 'pos' : 'neg') : 'muted';
+      return h('div', { class: 'lmob-it rfm-linha', role: 'button', tabindex: 0, title: `${g.dica} O que fazer: ${g.acao}`, onclick: () => ir(g.id), onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); ir(g.id); } } },
+        h('div', { class: 'lmob-l1' }, h('span', { class: 'cli-tag rfm-' + g.id }, g.nome), h('span', { class: 'lmob-val' }, fmt.int(x.n), h('small', null, ` ${fmt.pct(x.n / todos.length, 0)}`))),
+        h('div', { class: 'lmob-l2' }, h('span', null, '30 dias ', h('b', { class: clsD }, d === 0 ? '=' : (d > 0 ? '+' : '') + fmt.int(d))), h('span', null, `gasto 12 meses ${fmt.brl0(x.gasto)} (${fmt.pct(x.gasto / totG, 0)})`)));
+    }));
     return TS.card('Grupos de clientes (RFM)', 'Recência, frequência e valor (12 meses) comparados entre os clientes da loja · coluna "30 dias": quanto o grupo mudou no último mês · clique para ver a lista',
-      h('div', { class: 'table-wrap free' }, h('table', { class: 't rfm-t' },
+      TS.ehCelular() ? mob() : h('div', { class: 'table-wrap free' }, h('table', { class: 't rfm-t' },
         h('thead', null, h('tr', null, h('th', { class: 'l' }, 'Grupo'), h('th', null, 'Clientes'), h('th', null, '30 dias'), h('th', null, 'Gasto 12 meses'))),
         h('tbody', null, linhas))),
       movs.length ? h('div', { class: 'rfm-mov' }, h('b', null, 'Atenção: '), movs.map(([k, n]) => { const [a, b] = k.split('>'); return `${fmt.int(n)} ${n === 1 ? 'cliente passou' : 'clientes passaram'} de ${TS.RFM.por[a].nome} para ${TS.RFM.por[b].nome}`; }).join(' · '), '.') : null);
@@ -365,12 +374,14 @@
     const yms = [...meses.keys()].sort().reverse().slice(0, 12);
     if (!yms.length) return TS.card('Retenção por safra', null, TS.empty('Sem clientes novos nos últimos 12 meses.'));
     const cor = (p) => `rgba(44, 82, 52, ${(0.08 + Math.min(1, p / 0.6) * 0.62).toFixed(2)})`;
+    // celular (LMOB-05): só 30 dias, 90 dias e 1 ano (as 7 colunas rolavam de lado); o computador mostra as 5 janelas
+    const KS = TS.ehCelular() ? [0, 2, 4] : JAN.map((_, k) => k);
     const linhas = yms.map((ym) => { const x = meses.get(ym); return h('tr', null, h('td', { class: 'l' }, TS.ymLabel(ym)), h('td', null, fmt.int(x.n)),
-      ...JAN.map((d, k) => { if (!x.el[k] || x.el[k] < x.n * 0.5) return h('td', { class: 'muted safra-vazio', title: 'Ainda não deu tempo' }, '·'); const p = x.v[k] / x.el[k];
+      ...KS.map((k) => { const d = JAN[k]; if (!x.el[k] || x.el[k] < x.n * 0.5) return h('td', { class: 'muted safra-vazio', title: 'Ainda não deu tempo' }, '·'); const p = x.v[k] / x.el[k];
         return h('td', { class: 'safra-cel', style: { background: cor(p), color: p > 0.35 ? '#fff' : null }, title: `${fmt.int(x.v[k])} de ${fmt.int(x.el[k])} voltaram em até ${d} dias` }, fmt.pct(p, 0)); })); });
     return TS.card('Retenção por safra', 'Clientes pelo mês da 1ª compra: quantos % voltaram a comprar em até 30, 60, 90, 180 e 365 dias · mostra se a loja está segurando os clientes novos',
       h('div', { class: 'table-wrap free' }, h('table', { class: 't safra-t' },
-        h('thead', null, h('tr', null, h('th', { class: 'l' }, '1ª compra'), h('th', null, 'Novos'), ...JAN.map((d) => h('th', null, d < 365 ? `${d} d` : '1 ano')))),
+        h('thead', null, h('tr', null, h('th', { class: 'l' }, '1ª compra'), h('th', null, 'Novos'), ...KS.map((k) => h('th', null, JAN[k] < 365 ? `${JAN[k]} d` : '1 ano')))),
         h('tbody', null, linhas))));
   }
   const chipRfm = (c) => (c.rfm ? h('span', { class: 'cli-tag rfm-' + c.rfm.g, title: `${RFM[c.rfm.g].dica} Notas R${c.rfm.r} F${c.rfm.f} V${c.rfm.m} (1 a 5). O que fazer: ${RFM[c.rfm.g].acao}` }, RFM[c.rfm.g].nome) : null);
@@ -1127,6 +1138,7 @@
     }) : TS.empty()));
     const top = (arr, key, fm, titulo, sub) => {
       const rows = arr.filter((r) => r[key] != null).sort((a, b) => b[key] - a[key]).slice(0, 5);
+      if (TS.ehCelular()) return TS.card(titulo, sub, rows.length ? TS.barrasMob(rows.map((r) => ({ nome: r.c.nome ? TS.msgWpp.nomeProprio(r.c.nome) : r.c.cpf, v: r[key], rot: fm(r[key]) }))) : TS.empty());
       return TS.card(titulo, sub, rows.length ? TS.chart({
         type: 'bar',
         data: { labels: rows.map((r) => { const n = r.c.nome || r.c.cpf; return n.length > 16 ? n.slice(0, 15) + '…' : n; }), datasets: [{ data: rows.map((r) => r[key]), backgroundColor: '#2C5234', borderRadius: 4, maxBarThickness: 18 }] },

@@ -309,7 +309,19 @@
       h('div', { class: 'dre-eq-aqui' }));
 
     // DRE do mês × mesmo mês do ano anterior
-    const tb = h('table', { class: 't dre-t' });
+    // celular (LMOB-05, lote 3): 3 colunas — o valor com o % embaixo e, ao lado, a projeção (mês em andamento) ou o ano
+    // anterior com a variação embaixo; as 8 colunas do computador rolavam de lado
+    const MOB = TS.ehCelular();
+    const sub = (td, txt, cls) => { if (td && txt != null && txt !== '') td.append(h('small', { class: 'dre-sub ' + (cls || 'muted') }, txt)); return td; };
+    const linhaMob = (tr, celRot, cV, pV, cP, pP, cA, d, clsD) => {
+      // com projeção, a variação contra o ano anterior inteiro vai embaixo dela (nenhum número sai da tela)
+      if (P && cP) { sub(cP, pP); if (d != null) cP.append(h('small', { class: 'dre-sub ' + clsD }, `${fmt.delta(d)} × ${rotAnt}`)); }
+      tr.append(celRot, sub(cV, pV), P ? cP : sub(cA, d == null ? '' : fmt.delta(d), clsD)); return tr;
+    };
+    const tb = h('table', { class: 't dre-t' + (MOB ? ' dre-mob' : '') });
+    if (MOB) tb.append(h('thead', null, h('tr', null, h('th', { class: 'l' }, ''), h('th', null, P ? `Até hoje (dia ${diaAte})` : TS.ymLabel(sel)),
+      h('th', { class: 'dre-var', title: P ? `Projeção do mês e, embaixo, o % e a variação contra ${rotAnt} INTEIRO (o mês fechado do ano anterior)` : `${a ? rotAnt : 'Ano anterior'} e, embaixo, a variação de ${TS.ymLabel(sel)} contra ele (os dois meses inteiros)` }, P ? 'Projeção do mês' : (a ? rotAnt : 'Ano anterior')))));
+    else
     tb.append(h('thead', null, h('tr', null, h('th', { class: 'l' }, ''),
       h('th', null, P ? `Até hoje (dia ${diaAte})` : TS.ymLabel(sel)), h('th', null, '%'),
       P ? h('th', { class: 'dre-proj' }, 'Projeção do mês') : null, P ? h('th', { class: 'dre-proj' }, '%') : null,
@@ -323,6 +335,9 @@
       const v = f(m), vp = P ? f(P) : null, va = a ? f(a) : null, vb = f(base);
       if (cc) { // linha calculada que aceita o valor real do mês (Simples, maquininha, royalties, marketing)
         const d2 = vb != null && va ? vb / va - 1 : null;
+        if (MOB) { body.append(linhaMob(h('tr', { class: 'dre-' + tipo, title: typeof dica === 'function' ? dica(m) : dica }), h('td', { class: 'l' }, rot),
+          celCalc(m, cc, v == null ? '—' : fmt.brl(v), null, abrirCalc), pc(v, m.fat), P ? celCalc(P, cc, vp == null ? '—' : fmt.brl(vp), 'dre-proj', abrirCalc, m.ym) : null, P ? pc(vp, P.fat) : '',
+          a ? celCalc(a, cc, va == null ? '—' : fmt.brl(va), null, abrirCalc) : h('td', null, '—'), d2, d2 == null || Math.abs(d2) < 0.0005 ? 'muted' : d2 < 0 ? 'pos' : 'neg')); continue; }
         body.append(h('tr', { class: 'dre-' + tipo, title: typeof dica === 'function' ? dica(m) : dica },
           h('td', { class: 'l' }, rot), celCalc(m, cc, v == null ? '—' : fmt.brl(v), null, abrirCalc), h('td', { class: 'muted' }, pc(v, m.fat)),
           P ? celCalc(P, cc, vp == null ? '—' : fmt.brl(vp), 'dre-proj', abrirCalc, m.ym) : null, P ? h('td', { class: 'muted dre-proj' }, pc(vp, P.fat)) : null,
@@ -333,6 +348,14 @@
       const d = vb != null && va ? vb / va - 1 : null;
       const bom = tipo === 'menos' || tipo === 'grupo' || tipo === 'filho' || tipo === 'calc' ? d < 0 : d > 0;
       const rotL = tipo === 'tot' && P ? '= Resultado' : rot;
+      if (MOB) {
+        body.append(linhaMob(h('tr', { class: 'dre-' + tipo, title: typeof dica === 'function' ? dica(m) : dica, onclick: gid ? () => alternar(gid) : null }),
+          h('td', { class: 'l' }, gid ? h('span', { class: 'dre-seta' }, abertos.has(gid) ? '▾ ' : '▸ ') : null, fx ? nomeFixo(rotL, () => abrir(fx, sel)) : rotL),
+          fx ? celFixo(m, fx, v == null ? '—' : fmt.brl(v), null, abrir) : h('td', { class: tipo === 'tot' && v < 0 ? 'neg' : null }, v == null ? '—' : fmt.brl(v)), pc(v, m.fat),
+          P ? (fx ? celFixo(P, fx, vp == null ? '—' : fmt.brl(vp), 'dre-proj', abrir) : h('td', { class: 'dre-proj' + (tipo === 'tot' && vp < 0 ? ' neg' : '') }, vp == null ? '—' : fmt.brl(vp))) : null, P ? pc(vp, P.fat) : '',
+          fx && a ? celFixo(a, fx, va == null ? '—' : fmt.brl(va), null, abrir) : h('td', null, va == null ? '—' : fmt.brl(va)), d, d == null || Math.abs(d) < 0.0005 ? 'muted' : bom ? 'pos' : 'neg'));
+        continue;
+      }
       body.append(h('tr', { class: 'dre-' + tipo, title: typeof dica === 'function' ? dica(m) : dica, onclick: gid ? () => alternar(gid) : null },
         h('td', { class: 'l' }, gid ? h('span', { class: 'dre-seta' }, abertos.has(gid) ? '▾ ' : '▸ ') : null, fx ? nomeFixo(rotL, () => abrir(fx, sel)) : rotL),
         fx ? celFixo(m, fx, v == null ? '—' : fmt.brl(v), null, abrir) : h('td', { class: tipo === 'tot' && v < 0 ? 'neg' : null }, v == null ? '—' : fmt.brl(v)), h('td', { class: 'muted' }, pc(v, m.fat)),
@@ -340,8 +363,10 @@
         fx && a ? celFixo(a, fx, va == null ? '—' : fmt.brl(va), null, abrir) : h('td', null, va == null ? '—' : fmt.brl(va)), h('td', { class: 'muted' }, a ? pc(va, a.fat) : '—'),
         h('td', { class: d == null || Math.abs(d) < 0.0005 ? 'muted' : bom ? 'pos' : 'neg' }, d == null ? '—' : fmt.delta(d))));
     }
-    if (P && m.resultado != null && m.resultado < 0) body.append(h('tr', { class: 'dre-info' }, h('td', { class: 'l' }, 'Falta cobrir dos custos fixos'), h('td', { class: 'neg' }, fmt.brl(-m.resultado)), h('td', { class: 'muted' }, ''),
-      h('td', { class: 'dre-proj muted', colspan: 2 }, P.resultado >= 0 ? 'no ritmo atual, fecha no azul' : 'no ritmo atual, fecha no vermelho'), h('td', { colspan: 3 }, '')));
+    if (P && m.resultado != null && m.resultado < 0) body.append(MOB ? h('tr', { class: 'dre-info' }, h('td', { class: 'l' }, 'Falta cobrir dos custos fixos'), h('td', { class: 'neg' }, fmt.brl(-m.resultado)),
+      h('td', { class: 'dre-proj muted' }, P.resultado >= 0 ? 'no ritmo atual, fecha no azul' : 'no ritmo atual, fecha no vermelho'))
+      : h('tr', { class: 'dre-info' }, h('td', { class: 'l' }, 'Falta cobrir dos custos fixos'), h('td', { class: 'neg' }, fmt.brl(-m.resultado)), h('td', { class: 'muted' }, ''),
+        h('td', { class: 'dre-proj muted', colspan: 2 }, P.resultado >= 0 ? 'no ritmo atual, fecha no azul' : 'no ritmo atual, fecha no vermelho'), h('td', { colspan: 3 }, '')));
     tb.append(body);
     const linkCustos = !(TS.eu && TS.eu.pode && TS.eu.pode.configurar) ? null : h('div', { class: 'dre-links' },
       h('a', { href: '#config', onclick: (e) => { e.preventDefault(); TS.editarCustos(state.loja); } }, '+ Adicionar ou editar custos da loja'),
@@ -364,15 +389,22 @@
     }))));
 
     // tabela mês a mês (12 meses)
-    const ult12 = meses.slice(-12).map(comoMes);
-    const t2 = h('table', { class: 't dre-t' });
+    const ult12all = meses.slice(-12).map(comoMes);
+    // celular (LMOB-05): 3 meses por vez, com ‹ › (12 colunas rolavam de lado)
+    const off = MOB ? Math.min(Math.max(0, state.dreMesOff || 0), Math.max(0, ult12all.length - 3)) : 0;
+    const ult12 = MOB ? ult12all.slice(Math.max(0, ult12all.length - 3 - off), ult12all.length - off) : ult12all;
+    const navMes = !MOB ? null : h('div', { class: 'dre-nav' },
+      h('button', { type: 'button', class: 'escm-seta', 'aria-label': 'Meses anteriores', disabled: off >= ult12all.length - 3 || null, onclick: () => { state.dreMesOff = off + 3; TS.render(); } }, '‹'),
+      h('b', null, ult12.length ? `${TS.ymLabel(ult12[0].ym)} a ${TS.ymLabel(ult12[ult12.length - 1].ym)}` : ''),
+      h('button', { type: 'button', class: 'escm-seta', 'aria-label': 'Meses seguintes', disabled: off <= 0 || null, onclick: () => { state.dreMesOff = Math.max(0, off - 3); TS.render(); } }, '›'));
+    const t2 = h('table', { class: 't dre-t' + (MOB ? ' dre-mob' : '') });
     t2.append(h('thead', null, h('tr', null, h('th', { class: 'l sticky-col' }, ''), ult12.map((x) => h('th', { class: x.projecao ? 'dre-proj' : null }, TS.ymLabel(x.ym) + (x.projecao ? '*' : ''))))));
     const b2 = h('tbody');
     for (const [rot, f, tipo, dica, gid, fx, cc] of linhas) b2.append(h('tr', { class: 'dre-' + tipo, title: typeof dica === 'function' ? dica(m) : dica, onclick: gid ? () => alternar(gid) : null }, h('td', { class: 'l sticky-col' }, gid ? h('span', { class: 'dre-seta' }, abertos.has(gid) ? '▾ ' : '▸ ') : null, fx ? nomeFixo(rot, () => abrir(fx, sel)) : rot),
       ult12.map((x) => { const v = f(x); return cc ? celCalc(x, cc, v == null ? '—' : fmt.brl0(v), x.projecao ? 'dre-proj' : null, abrirCalc) : fx ? celFixo(x, fx, v == null ? '—' : fmt.brl0(v), x.projecao ? 'dre-proj' : null, abrir) : h('td', { class: tipo === 'tot' && v < 0 ? 'neg' : null }, v == null ? '—' : fmt.brl0(v)); })));
     b2.append(h('tr', { class: 'dre-info' }, h('td', { class: 'l sticky-col' }, 'Resultado em % do faturamento'), ult12.map((x) => h('td', { class: x.resultado < 0 ? 'neg' : null }, pc(x.resultado, x.fat)))));
     t2.append(b2);
-    corpo.append(h('div', { class: 'mt' }, TS.card('Mês a mês', '* mês em andamento: projeção no ritmo atual, com os custos fixos inteiros', DICA_EDITAR(), h('div', { class: 'table-wrap' }, t2))));
+    corpo.append(h('div', { class: 'mt' }, TS.card('Mês a mês', '* mês em andamento: projeção no ritmo atual, com os custos fixos inteiros', DICA_EDITAR(), navMes, h('div', { class: 'table-wrap' }, t2))));
     // compras × vendas do mês: estou comprando mais do que vendo? (comprasvendas.js)
     if (TS.comprasVendas) corpo.append(TS.comprasVendas.cartaoResultado(M));
   }

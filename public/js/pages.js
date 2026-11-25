@@ -608,7 +608,7 @@
       TS.cardWithTools('Vendas por produto', 'Sem taxa de serviço/entrega nem itens a R$ 0,01 (brinde e resgate de pontos): os mesmos totais do topo', tabProd.searchBox, tabProd)));
 
     // ---- volume por produto
-    const topBar = (rows, fmtVal, color, labelFmt) => { const el = TS.chart({
+    const topBar = (rows, fmtVal, color, labelFmt) => { if (TS.ehCelular()) return TS.barrasMob(rows.map((r) => ({ nome: r.nome, v: r.v, rot: labelFmt(r.v) })), color === '#C9A227' ? 'gold' : null); const el = TS.chart({
       type: 'bar',
       data: { labels: rows.map((r) => r.nome), datasets: [{ data: rows.map((r) => r.v), backgroundColor: color, borderRadius: 4, maxBarThickness: 18 }] },
       options: {

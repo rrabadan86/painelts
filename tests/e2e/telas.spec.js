@@ -22,7 +22,7 @@ async function irPara(page, tela) {
 // nos Achados da matriz para corrigir; se uma delas deixar de rolar, o teste pede para tirá-la daqui.
 const ROLA_CONHECIDO = {
   computador: { dre: ['dre-t'] }, // a 1100 px (a regra vale de 1100 a 1400 px)
-  celular: { dre: ['dre-t'], comparativos: ['rede-t'], clientes: ['rfm-t', 'safra-t'] },
+  celular: {},
 };
 function quemRolaDeLado() {
   const out = [];

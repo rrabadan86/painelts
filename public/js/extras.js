@@ -406,9 +406,18 @@
         return h('tr', null, h('td', { class: 'l' }, x.nome), h('td', { class: 'b ' + (x.minha == null ? 'muted' : neutro.has(x.k) ? '' : acima ? 'pos' : 'neg') }, x.minha == null ? '—' : f(x.minha)),
           h('td', null, f(x.media)), h('td', null, f(x.top25)), h('td', { class: 'l', title: x.posicao == null ? '' : `Sua loja está acima de ${x.posicao}% das lojas da rede` }, barra, x.posicao == null ? '' : h('small', null, ` acima de ${x.posicao}%`)));
       });
+      // celular (LMOB-05, lote 3): um indicador por linha — sua loja à direita; média, melhores 25% e a posição embaixo
+      const linhasMob = () => h('div', { class: 'lmob rede-lmob' }, r.indicadores.map((x) => {
+        const f = FMT[x.formato] || fmt.n2;
+        const acima = x.minha != null && x.minha >= x.media;
+        return h('div', { class: 'lmob-it' },
+          h('div', { class: 'lmob-l1' }, h('span', { class: 'lmob-nome' }, x.nome), h('span', { class: 'lmob-val ' + (x.minha == null ? 'muted' : neutro.has(x.k) ? '' : acima ? 'pos' : 'neg') }, x.minha == null ? '—' : f(x.minha))),
+          h('div', { class: 'lmob-l2' }, h('span', null, `média ${f(x.media)}`), h('span', null, `melhores 25% ${f(x.top25)}`), x.posicao == null ? null : h('span', null, `acima de ${x.posicao}% das lojas`)),
+          x.posicao == null ? null : h('div', { class: 'lmob-barra' }, h('i', { style: { width: Math.max(4, x.posicao) + '%' } })));
+      }));
       corpo.replaceChildren(
         r.parcial ? h('div', { class: 'muted', style: { marginBottom: '8px', fontSize: '12px' } }, `Mês em andamento: todas as lojas comparadas até ${fmt.date(r.ate)}. ${r.lojas} lojas na comparação.`) : h('div', { class: 'muted', style: { marginBottom: '8px', fontSize: '12px' } }, `${r.lojas} lojas na comparação.`),
-        h('div', { class: 'table-wrap free' }, h('table', { class: 't rede-t' }, h('thead', null, h('tr', null, h('th', { class: 'l' }, 'Indicador'), h('th', null, 'Sua loja'), h('th', null, 'Média da rede'), h('th', null, 'Melhores 25%'), h('th', { class: 'l' }, 'Posição'))), h('tbody', null, linhas))));
+        TS.ehCelular() ? linhasMob() : h('div', { class: 'table-wrap free' }, h('table', { class: 't rede-t' }, h('thead', null, h('tr', null, h('th', { class: 'l' }, 'Indicador'), h('th', null, 'Sua loja'), h('th', null, 'Média da rede'), h('th', null, 'Melhores 25%'), h('th', { class: 'l' }, 'Posição'))), h('tbody', null, linhas))));
     }).catch((e) => corpo.replaceChildren(h('div', { class: 'notice err' }, e.message)));
     return card;
   };
