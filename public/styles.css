@@ -4119,3 +4119,24 @@ body.em-homolog .topbar { box-shadow: inset 0 -4px 0 var(--gold); }
 .barras-mob .lmob-nome { font-weight: 500; font-size: 14px; }
 .barras-mob .lmob-val { font-weight: 600; font-size: 13.5px; }
 .barras-gold .lmob-barra i { background: var(--gold); }
+/* Abas internas no celular (LMOB-06, 25/11/2026): grade de 2 colunas — nenhuma aba sozinha na 2ª linha nem escondida à
+   direita (Movimento e escala e Conversas: 4 abas em 2 × 2; Conferência: 3 numa linha) */
+@media (max-width: 760px) {
+  .mapa-abas { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 6px; }
+  .mapa-abas .mapa-aba-btn { text-align: center; }
+  .seg.conf-abas, .cv-abas .seg { display: grid; grid-template-columns: 1fr 1fr; border-radius: 14px; width: 100%; }
+  .seg.conf-abas { grid-template-columns: repeat(3, 1fr); } /* 3 abas: uma linha só */
+  .seg.conf-abas button, .cv-abas .seg button { border-radius: 10px; text-align: center; white-space: normal; line-height: 1.25; }
+}
+/* Celular (LMOB-06): Imprimir/Expandir/Compartilhar na mesma linha do título, no canto (antes desciam para uma linha só deles) */
+@media (max-width: 760px) {
+  .card-head { align-items: flex-start; }
+  .card-head > div:first-child:not(:only-child) { flex: 1 1 0; min-width: 0; }
+  .card-head > .exp-btn { padding: 5px 8px; }
+}
+@media (max-width: 760px) {
+  /* cabeçalho com botão de ação ("+ Novo usuário"): o título e a frase ocupam a linha toda e os botões descem juntos */
+  .card-head:has(> .btn:not(.exp-btn)) > div:first-child { flex-basis: 100%; }
+  /* Configurações → Usuários no celular: o texto não fica colado na borda da lista (pedido do dono, 25/11/2026) */
+  .card .table-wrap .cfg-t tbody tr { padding-left: 12px; padding-right: 12px; }
+}

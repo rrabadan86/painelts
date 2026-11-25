@@ -391,11 +391,17 @@
   TS.cartaoRede = function () {
     const loja = lojaUnicaSel();
     const ym = TS.metaPeriodo().ym;
+    // REDE-02 (pedido do dono, 25/11/2026): segue o período do filtro (as outras lojas cortadas nos mesmos dias); vendedor,
+    // grupo e produto não entram: a comparação é de loja inteira com loja inteira
+    const db = TS.db, f = state.f;
+    const deD = f.de != null ? Math.max(f.de, db.minDay) : db.minDay, ateD = f.ate != null ? Math.min(f.ate, db.maxDay) : db.maxDay;
+    const de = TS.dayToIso(deD), ate = TS.dayToIso(ateD);
+    const perTxt = de.slice(0, 7) === ate.slice(0, 7) && de.slice(8) === '01' ? `${TS.MESES_LONGOS[+ate.slice(5, 7) - 1]} de ${ate.slice(0, 4)}${+ate.slice(8) < TS.contas.diasNoMes(ate.slice(0, 7)) ? ` até ${fmt.date(ate)}` : ''}` : `${fmt.date(de)} a ${fmt.date(ate)}`;
     const corpo = h('div', { class: 'rede-corpo' }, h('div', { class: 'muted' }, 'Carregando…'));
-    const card = TS.card('Sua loja × rede', `${TS.MESES_LONGOS[+ym.slice(5, 7) - 1]} de ${ym.slice(0, 4)} · comparação anônima: nenhuma outra loja é identificada`, corpo);
+    const card = TS.card('Sua loja × rede', `${perTxt} (o período do filtro) · comparação anônima: nenhuma outra loja é identificada`, corpo);
     card.classList.add('rede-card');
     if (!loja) { corpo.replaceChildren(h('div', { class: 'muted' }, 'Escolha uma loja no seletor do topo para comparar com a rede.')); return card; }
-    fetch(TS.api(`rede?ym=${ym}&loja=${encodeURIComponent(loja)}`), { credentials: 'same-origin' }).then((r) => r.json()).then((r) => {
+    fetch(TS.api(`rede?ym=${ate.slice(0, 7)}&de=${de}&ate=${ate}&loja=${encodeURIComponent(loja)}`), { credentials: 'same-origin' }).then((r) => r.json()).then((r) => {
       if (r.erro) throw new Error(r.erro);
       if (r.lojas < r.minimo) { corpo.replaceChildren(h('div', { class: 'muted' }, `A comparação aparece quando pelo menos ${r.minimo} lojas têm vendas no mês (hoje: ${r.lojas}). Assim nenhuma loja pode ser identificada.`)); return; }
       const neutro = new Set(['pctEG', 'pctPuro', 'pctAcess']); // mix: nem melhor nem pior
@@ -416,7 +422,7 @@
           x.posicao == null ? null : h('div', { class: 'lmob-barra' }, h('i', { style: { width: Math.max(4, x.posicao) + '%' } })));
       }));
       corpo.replaceChildren(
-        r.parcial ? h('div', { class: 'muted', style: { marginBottom: '8px', fontSize: '12px' } }, `Mês em andamento: todas as lojas comparadas até ${fmt.date(r.ate)}. ${r.lojas} lojas na comparação.`) : h('div', { class: 'muted', style: { marginBottom: '8px', fontSize: '12px' } }, `${r.lojas} lojas na comparação.`),
+        r.parcial ? h('div', { class: 'muted', style: { marginBottom: '8px', fontSize: '12px' } }, `Todas as lojas comparadas de ${fmt.date(r.de || de)} até ${fmt.date(r.ate)} (o último dia com vendas de todas). ${r.lojas} lojas na comparação.${de.slice(0, 7) !== ate.slice(0, 7) ? ' Ritmo da meta só aparece com o período dentro de um mês.' : ''}`) : h('div', { class: 'muted', style: { marginBottom: '8px', fontSize: '12px' } }, `${r.lojas} lojas na comparação.${de.slice(0, 7) !== ate.slice(0, 7) ? ' Ritmo da meta só aparece com o período dentro de um mês.' : ''}`),
         TS.ehCelular() ? linhasMob() : h('div', { class: 'table-wrap free' }, h('table', { class: 't rede-t' }, h('thead', null, h('tr', null, h('th', { class: 'l' }, 'Indicador'), h('th', null, 'Sua loja'), h('th', null, 'Média da rede'), h('th', null, 'Melhores 25%'), h('th', { class: 'l' }, 'Posição'))), h('tbody', null, linhas))));
     }).catch((e) => corpo.replaceChildren(h('div', { class: 'notice err' }, e.message)));
     return card;

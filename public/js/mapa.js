@@ -560,7 +560,7 @@
     const temLoja = state.loja && state.loja !== 'todas';
     const aba = ABAS.some(([k]) => k === state.mapaAba) ? state.mapaAba : temLoja ? 'escala' : 'movimento';
     const cx = { escala: h('div', { class: 'mapa-aba' }), movimento: h('div', { class: 'mapa-aba' }), equipe: h('div', { class: 'mapa-aba' }), rendimento: h('div', { class: 'mapa-aba' }) };
-    root.append(h('div', { class: 'mapa-abas', role: 'tablist' }, ...ABAS.map(([k, t]) => h('button', { type: 'button', role: 'tab', 'aria-selected': String(k === aba), class: 'mapa-aba-btn' + (k === aba ? ' on' : ''), onclick: () => { state.mapaAba = k; TS.render(); } }, t))), cx[aba]);
+    root.append(TS.ativoVisivel(h('div', { class: 'mapa-abas', role: 'tablist' }, ...ABAS.map(([k, t]) => h('button', { type: 'button', role: 'tab', 'aria-selected': String(k === aba), class: 'mapa-aba-btn' + (k === aba ? ' on' : ''), onclick: () => { state.mapaAba = k; TS.render(); } }, t)))), cx[aba]); // celular: uma linha que rola, com a aba marcada à vista (LMOB-06)
     const M = cx.movimento, Q = cx.equipe, ES = cx.escala;
     const cfgMapa = state.loja && state.loja !== 'todas' ? (db.metas || []).find((m) => m.id === state.loja) : null;
     const anoI = +TS.dayToIso(db.minDay).slice(0, 4), anoF = +TS.dayToIso(db.maxDay).slice(0, 4);
