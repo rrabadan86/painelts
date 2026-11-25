@@ -98,7 +98,10 @@
     const proj = parte == null ? null : P.proj * parte;
     const restantes = P.restantes; // dias de loja aberta que faltam (com hoje)
     const falta = meta != null ? Math.max(0, meta - valor) : null;
-    return { proj, d: P.feitos, n: P.n, restantes, falta, porDia: falta != null && restantes ? falta / restantes : null, pctProj: meta && proj != null ? proj / meta : null, P, parte };
+    // META-DIA-01: os dias que faltam contam hoje, então o "por dia" parte do que faltava até ONTEM (a mesma conta da Meta de hoje)
+    const hojeParte = (P.hoje || 0) * (parte == null ? 1 : parte);
+    const faltaOntem = meta != null ? Math.max(0, meta - (valor - hojeParte)) : null;
+    return { proj, d: P.feitos, n: P.n, restantes, falta, porDia: falta != null && falta > 0 && restantes ? faltaOntem / restantes : null, pctProj: meta && proj != null ? proj / meta : null, P, parte };
   };
 
   /** cartão de projeção (usado no Resumo, Comissionamento e Minha comissão) */

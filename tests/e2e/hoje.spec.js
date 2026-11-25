@@ -17,7 +17,7 @@ test.describe('Clientes → Hoje', () => {
     expect(await alvo.innerText()).not.toMatch(/(^|\s)(null|undefined|NaN)(\s|$)/m);
   };
 
-  test('HOJE-01: lista no topo, contagem no cabeçalho, sem a Meta de hoje; nome com toque de 24 px; mensagem com reticências', async ({ page }) => {
+  test('HOJE-01: lista no topo, contagem no cabeçalho, sem a Meta de hoje; nome com toque de 24 px; mensagem com reticências', async ({ page }, info) => {
     await page.evaluate(() => { location.hash = '#hoje'; });
     const card = page.locator('.hj-card');
     await expect(card.locator('.hj-item').first()).toBeVisible();
@@ -29,13 +29,35 @@ test.describe('Clientes → Hoje', () => {
     expect(topo).toBeLessThan(960);
     const alt = await card.locator('.hj-nome').first().evaluate((el) => el.getBoundingClientRect().height);
     expect(alt).toBeGreaterThanOrEqual(24);
-    // chips com dica e estado anunciado
-    await expect(card.locator('.hj-chips .chip').first()).toHaveAttribute('aria-pressed', 'true');
-    await expect(card.locator('.hj-chips .chip').nth(1)).toHaveAttribute('title', /.+/);
-    // a mensagem abre inteira ao tocar
-    const msg = card.locator('.hj-msg').first();
-    await msg.click();
-    await expect(msg).toHaveAttribute('aria-expanded', 'true');
+    if (info.project.name === 'celular') {
+      // HOJE-MOB-01: Motivo e Vendedora em botões com a folha (cada opção com explicação e contagem); a mensagem fica
+      // fora da lista e aparece inteira ao tocar no nome, com "Ver ficha ›"
+      await expect(card.locator('.hj-chips')).toHaveCount(0);
+      await card.locator('.hj-bt-mot').click();
+      const folha = page.locator('.folha');
+      await expect(folha.locator('.folha-op.on')).toContainText('Todos');
+      await expect(folha.locator('.folha-op').nth(1).locator('small')).not.toBeEmpty();
+      const op = folha.locator('.folha-op').nth(1);
+      const nOp = +(await op.locator('.folha-n').innerText()).replace(/\D/g, '');
+      await op.click();
+      await expect(folha).toHaveCount(0);
+      await expect(card.locator('.hj-bt-mot')).toHaveClass(/on/);
+      await expect(card.locator('.hj-item')).toHaveCount(Math.min(nOp, 30));
+      const it = card.locator('.hj-item').first();
+      await expect(it.locator('.hj-abre')).toBeHidden();
+      await it.locator('.hj-nome').click();
+      await expect(it.locator('.hj-nome')).toHaveAttribute('aria-expanded', 'true');
+      await expect(it.locator('.hj-abre .hj-msg')).toBeVisible();
+      await expect(it.locator('.hj-ficha')).toBeVisible();
+    } else {
+      // chips com dica e estado anunciado
+      await expect(card.locator('.hj-chips .chip').first()).toHaveAttribute('aria-pressed', 'true');
+      await expect(card.locator('.hj-chips .chip').nth(1)).toHaveAttribute('title', /.+/);
+      // a mensagem abre inteira ao tocar
+      const msg = card.locator('.hj-msg').first();
+      await msg.click();
+      await expect(msg).toHaveAttribute('aria-expanded', 'true');
+    }
     await semVazar(page, card);
     expect(erros).toEqual([]);
   });

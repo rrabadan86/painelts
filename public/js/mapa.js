@@ -938,6 +938,53 @@
           h('td', null, String(row.filter((c) => c.tipo === 'ferias').length)), h('td', { class: 'tot' }, hTxt(row.reduce((s, c) => s + bruto(c), 0))), h('td', { class: 'tot liq' }, hTxt(row.reduce((s, c) => s + liquido(c), 0))));
       })));
     const tabela = (paraPdf) => h('div', { class: 'semanas' }, semanasMes.map((datas, n) => blocoSemana(datas, n + 1, paraPdf)), resumoMes(paraPdf));
+    // celular (ESC-MOB-01, mockup aprovado pelo dono em 25/11/2026): no lugar das semanas que rolavam de lado, a semana em
+    // 7 botões (‹ › troca de semana), o dia escolhido com cada pessoa numa linha (tocar ajusta, como na tabela) e o resumo
+    // do mês uma linha por pessoa. O PDF e o computador continuam com a tabela.
+    const tabelaMob = (ed) => {
+      const hojeIso = TS.dayToIso ? TS.dayToIso(TS.todayDay()) : '';
+      let dia = state.escDia && E.dias.includes(state.escDia) ? state.escDia : AJ.sel && E.dias.includes(AJ.sel.iso) ? AJ.sel.iso : E.dias.includes(hojeIso) ? hojeIso : E.dias[0];
+      const ns = Math.max(0, semanasMes.findIndex((ds) => ds.includes(dia)));
+      const datas = semanasMes[ns] || [];
+      const ir = (d) => { state.escDia = d; AJ.sel = null; TS.render(); };
+      const k0 = E.dias.indexOf(dia);
+      const naLoja = (d) => { const k = E.dias.indexOf(d); return k < 0 ? null : E.cel.every((row) => row[k].tipo === 'fechado') ? -1 : E.cel.filter((row) => row[k].tipo === 'trab').length; };
+      const dentro = datas.filter((d) => E.dias.includes(d));
+      const nav = h('div', { class: 'escm-sem' },
+        h('button', { type: 'button', class: 'escm-seta', 'aria-label': 'Semana anterior', disabled: ns === 0 || null, onclick: () => { const ds = semanasMes[ns - 1]; ir(ds.filter((d) => E.dias.includes(d)).pop()); } }, '‹'),
+        h('b', null, `Semana ${ns + 1} · ${dentro[0].slice(8)} a ${dentro[dentro.length - 1].slice(8)}/${dentro[dentro.length - 1].slice(5, 7)}`),
+        h('button', { type: 'button', class: 'escm-seta', 'aria-label': 'Próxima semana', disabled: ns === semanasMes.length - 1 || null, onclick: () => { const ds = semanasMes[ns + 1]; ir(ds.find((d) => E.dias.includes(d))); } }, '›'));
+      const dias = h('div', { class: 'escm-dias', role: 'group', 'aria-label': 'Dia' }, datas.map((d) => {
+        const n = naLoja(d), fer = E.feriados.get(d), min = minimoDia(d);
+        return h('button', { type: 'button', class: 'escm-dia' + (d === dia ? ' on' : '') + (fer ? ' fer' : '') + (n != null && n >= 0 && min && n < min ? ' falta' : ''), disabled: n == null || null, 'aria-pressed': String(d === dia), title: fer ? fer.nome : '', onclick: () => ir(d) },
+          h('span', null, DSN[dowDe(d)]), h('b', null, d.slice(8)), h('small', null, n == null ? '' : n < 0 ? 'fechado' : `${n} pess.`));
+      }));
+      const n0 = naLoja(dia), fer0 = E.feriados.get(dia), min0 = minimoDia(dia);
+      const NOMES = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+      const hfx0 = fer0 && TS.horarioFeriado ? TS.horarioFeriado({ ...(cfg || {}), operacao: op }, dia) : null;
+      const tit = h('div', { class: 'escm-tit' }, h('b', null, `${NOMES[dowDe(dia)]}, ${dia.slice(8)}/${dia.slice(5, 7)}`, fer0 ? h('small', { class: 'escm-fer' }, ` · ${fer0.nome}${hfx0 ? ` · loja ${hfx0.fechado ? 'fechada' : `${hfx0.abre}–${hfx0.fecha}`}` : ''}`) : null),
+        h('span', { class: n0 >= 0 && min0 && n0 < min0 ? 'neg' : 'muted' }, n0 < 0 ? 'loja fechada' : `${n0} ${n0 === 1 ? 'pessoa' : 'pessoas'} na loja${min0 && n0 < min0 ? ` · mínimo ${min0}` : ''}`));
+      const linhas = E.pessoas.map((p, i) => {
+        const c = E.cel[i][k0];
+        const abre = c.tipo === 'ferias' || c.tipo === 'fechado' ? null : () => { state.escDia = dia; AJ.sel = AJ.sel && AJ.sel.iso === dia && AJ.sel.i === i ? null : { iso: dia, i }; TS.render(); };
+        const marca = c.aj ? ' •' : '';
+        const dir = c.tipo === 'trab' ? h('span', { class: 'escm-h' }, `${hhmm(c.ini)}–${hhmm(c.fim)}${marca}`)
+          : h('span', { class: 'escm-h ' + c.tipo }, (c.tipo === 'ferias' ? 'Férias' : c.tipo === 'fechado' ? 'Fechado' : 'Folga') + marca);
+        const sub = c.tipo === 'trab' ? [c.pausa ? `intervalo ${hhmm(c.pausa[0])}–${hhmm(c.pausa[1])}` : 'sem intervalo', `${hLiq(liquido(c))} líquidas`] : [/rodízio|após/.test(c.motivo || '') ? 'folga do rodízio' : /^(folga|férias|fechado)$/i.test(String(c.motivo || '').trim()) ? '' : c.motivo || ''];
+        const selec = AJ.sel && AJ.sel.iso === dia && AJ.sel.i === i;
+        return h('div', { class: 'lmob-it escm-p' + (selec ? ' sel' : '') + (abre ? ' clicavel' : ''), role: abre ? 'button' : null, tabindex: abre ? 0 : null, onclick: abre, onkeydown: abre ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); abre(); } } : null },
+          h('div', { class: 'lmob-l1' }, h('span', { class: 'lmob-nome' }, TS.msgWpp ? TS.msgWpp.nomeProprio(p.nome) : p.nome), dir),
+          sub.filter(Boolean).length ? h('div', { class: 'lmob-l2' }, sub.filter(Boolean).map((t) => h('span', null, t))) : null,
+          selec && ed ? h('div', { class: 'escm-ed', onclick: (e) => e.stopPropagation() }, ed) : null);
+      });
+      const resumo = h('div', { class: 'lmob escm-res' }, E.pessoas.map((p, i) => {
+        const row = E.cel[i];
+        const fer = row.filter((c) => c.tipo === 'ferias').length;
+        return h('div', { class: 'lmob-it' }, h('div', { class: 'lmob-l1' }, h('span', { class: 'lmob-nome' }, TS.msgWpp ? TS.msgWpp.nomeProprio(p.nome) : p.nome), h('span', { class: 'lmob-val' }, hTxt(row.reduce((s, c) => s + liquido(c), 0)), h('small', null, ' líquidas'))),
+          h('div', { class: 'lmob-l2' }, h('span', null, `${row.filter((c) => c.tipo === 'trab').length} dias`), h('span', null, `${row.filter((c) => c.tipo === 'folga').length} folgas`), fer ? h('span', null, `${fer} férias`) : null, h('span', null, `${hTxt(row.reduce((s, c) => s + bruto(c), 0))} com intervalo`)));
+      }));
+      return h('div', { class: 'escm' }, nav, dias, tit, h('div', { class: 'lmob escm-lista' }, linhas), h('div', { class: 'escm-tit' }, h('b', null, 'Resumo do mês')), resumo);
+    };
     // na tela: só as cores numa linha e o resto em "Como ler ▸"; no PDF/impressão a legenda sai inteira
     const legenda = (paraPdf) => (!paraPdf ? h('div', { class: 'mes-leg' }, h('span', { class: 'l-trab' }, 'trabalho'), h('span', { class: 'l-folga' }, 'folga'), h('span', { class: 'l-rod' }, 'folga do rodízio'), h('span', { class: 'l-ferias' }, 'férias'), h('span', { class: 'l-fer' }, 'feriado'),
       h('details', { class: 'est-como' }, h('summary', null, 'Como ler ▸'),
@@ -1104,8 +1151,8 @@
     return TS.cardWithTools('Escala do mês', `Dia a dia, com feriados e férias. ${L > 1 ? `Rodízio de ${L} semanas contado a partir ${semanaSeg(op.equipe) ? 'da segunda' : 'do domingo'} ${TS.fmt.date(inicioDe(op.equipe, op.equipe.inicioRodizio || INICIO_PADRAO))}.` : 'A semana-modelo se repete todas as semanas.'}`,
       h('div', { class: 'table-tools mes-tools' }, h('div', { class: 'mes-tools-esq' }, sel, btnTrazer, btnReplicar), h('button', { type: 'button', class: 'btn primary', onclick: imprimir }, '⎙ Exportar PDF')),
       alertas.length ? h('div', { class: 'notice' }, h('b', null, 'Atenção: '), alertas.slice(0, 6).join(' · '), alertas.length > 6 ? ` e mais ${alertas.length - 6}` : '') : null,
-      barraAj, editor,
-      legenda(), tabela(false));
+      barraAj, TS.ehCelular() ? null : editor,
+      legenda(), TS.ehCelular() ? tabelaMob(editor) : tabela(false));
   }
 
   /** escala em rodízio de domingo: ciclo de semanas (domingo a sábado) */

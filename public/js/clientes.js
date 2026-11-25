@@ -945,6 +945,20 @@
         ...Object.entries(MOTIVOS_HOJE).filter(([m]) => conta(m)).map(([m, x]) => chip(`${x.nome} (${fmt.int(conta(m))})`, m, x.dica)));
       const selV = vends.length ? h('select', { class: 'f-input hj-vend', 'aria-label': 'Vendedora' }, h('option', { value: '' }, 'Todas as vendedoras'), ...vends.map((v) => h('option', { value: v, selected: hojeF.vend === v || null }, v))) : null;
       if (selV) selV.addEventListener('change', () => { hojeF.vend = selV.value; pintar(val); });
+      // celular (HOJE-MOB-01): Motivo e Vendedora em dois botões com a folha de opções (com quantos clientes cada uma mostra)
+      const filtrosMob = () => {
+        const comV = (v) => itens.filter((x) => (!hojeF.motivo || x.ms.includes(hojeF.motivo)) && (!v || x.c.vendedoraPref === v)).length;
+        const comM = (m) => itens.filter((x) => (!m || x.ms.includes(m)) && (!hojeF.vend || x.c.vendedoraPref === hojeF.vend)).length;
+        return h('div', { class: 'clm-filtros hj-ferr-mob' },
+          TS.botaoFolha({ rotulo: 'Motivo', valor: hojeF.motivo ? `${MOTIVOS_HOJE[hojeF.motivo].nome} (${fmt.int(comM(hojeF.motivo))})` : `Todos (${fmt.int(comM(''))})`, ativo: !!hojeF.motivo, cls: 'hj-bt-mot',
+            onclick: () => TS.folha({ titulo: 'Motivo', sub: 'Um cliente pode ter mais de um motivo', valor: hojeF.motivo,
+              opcoes: [{ v: '', nome: 'Todos', n: comM(''), dica: 'Todos os clientes para contatar hoje.' }, ...Object.entries(MOTIVOS_HOJE).filter(([m]) => conta(m)).map(([m, x]) => ({ v: m, nome: x.nome, n: comM(m), dica: x.dica }))],
+              onEscolher: (v) => { hojeF.motivo = v; pintar(val); } }) }),
+          vends.length ? TS.botaoFolha({ rotulo: 'Vendedora', valor: hojeF.vend ? TS.msgWpp.nomeProprio(hojeF.vend) : 'Todas', ativo: !!hojeF.vend, cls: 'hj-bt-vend',
+            onclick: () => TS.folha({ titulo: 'Vendedora', sub: 'A vendedora que mais atende o cliente', valor: hojeF.vend,
+              opcoes: [{ v: '', nome: 'Todas', n: comV('') }, ...vends.map((v) => ({ v, nome: TS.msgWpp.nomeProprio(v), n: comV(v) }))],
+              onEscolher: (v) => { hojeF.vend = v; pintar(val); } }) }) : null);
+      };
       // 2ª passada (23/11/2026): uma ação principal por bloco — só o primeiro da lista (o mais importante) tem o WhatsApp cheio
       let primeiro = true;
       const linha = (x) => {
@@ -969,6 +983,19 @@
               mostrarDesfazer(c, val);
             } catch (er) { bt.disabled = false; if (er.bloqueado) { TS.avisar(er.message); await recarregarContatos(); pintar(val); } else TS.avisarErro(er); }
           } }, 'WhatsApp')));
+        // celular (HOJE-MOB-01, mockup aprovado pelo dono em 25/11/2026): nome + WhatsApp numa linha, etiquetas numa linha,
+        // quem atende · do que gosta · dias sem vir; a mensagem sai da lista e aparece (inteira) ao tocar no nome, com "Ver ficha ›"
+        if (TS.ehCelular()) {
+          const acoes = el.querySelector('.hj-acoes'), mot = el.querySelector('.hj-motivos');
+          const nm = c.nome ? TS.msgWpp.nomeProprio(c.nome) : fmtCPF(c.cpf);
+          const abre = h('div', { class: 'hj-abre', hidden: true }, h('div', { class: 'hj-msg aberta' }, txt),
+            h('button', { type: 'button', class: 'link-btn hj-ficha', onclick: () => abrirClientes([c.cpf]) }, 'Ver ficha ›'));
+          const bNome = h('button', { type: 'button', class: 'hj-nome', 'aria-expanded': 'false', title: 'Ver a mensagem que vai sair' }, nm, h('span', { class: 'hj-chev', 'aria-hidden': 'true' }, ' ⌄'));
+          bNome.addEventListener('click', () => { const ab = abre.hidden; abre.hidden = !ab; bNome.setAttribute('aria-expanded', String(ab)); el.classList.toggle('hj-aberto', ab); });
+          const det = [c.vendedoraPref && TS.msgWpp.primeiroNome(c.vendedoraPref), c.chaFavorito && `gosta de ${c.chaFavorito}`, x.oferta && `oferecer: ${x.oferta}`, c.ausencia != null && `${fmt.int(c.ausencia)} d sem vir`].filter(Boolean).join(' · ');
+          el.classList.add('hj-mob');
+          el.replaceChildren(...[h('div', { class: 'hj-l1' }, bNome, acoes), mot, det ? h('small', { class: 'muted hj-det' }, det) : null, abre].filter(Boolean));
+        }
         return el;
       };
       const LIM = 30;
@@ -982,7 +1009,7 @@
               emRisco ? ' · ' : null,
               emRisco ? h('button', { type: 'button', class: 'link-btn hj-risco', title: 'Mostrar só os clientes bons que estão sumindo (Não pode perder; sem nenhum, Em risco)', onclick: () => { hojeF.motivo = conta('naoperder') ? 'naoperder' : 'risco'; pintar(val); } }, `${fmt.int(emRisco)} em risco`) : null)),
           faixaResumo,
-          h('div', { class: 'hj-ferr' }, chips, selV),
+          TS.ehCelular() ? filtrosMob() : h('div', { class: 'hj-ferr' }, chips, selV),
           sel.length ? h('div', { class: 'hj-lista' }, ...sel.slice(0, LIM).map(linha)) : TS.empty('Ninguém para contatar com esses filtros. 🎉'),
           sel.length > LIM ? h('p', { class: 'muted' }, `Mostrando os ${LIM} mais importantes de ${fmt.int(sel.length)}. Depois de contatar, a lista anda.`) : null,
           foraSemEstoque ? h('p', { class: 'muted hj-fora' }, `🚫 ${fmt.int(foraSemEstoque)} cliente${foraSemEstoque === 1 ? '' : 's'} fora da lista: a mensagem citaria um chá sem estoque (no chá a granel, menos de 100 g). Voltam quando chegar a nota de entrada do chá.`) : null,

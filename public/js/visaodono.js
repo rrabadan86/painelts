@@ -275,10 +275,14 @@
       if (d >= Math.max(hojeD, ini)) restam++; // com hoje, como no cartão "Meta de hoje"
     }
     const falta = meta ? Math.max(0, meta - mes.meta) : 0;
+    // META-DIA-01 (decisão do dono, 25/11/2026, opção A): o "por dia" é a Meta de hoje — o que faltava até ONTEM ÷ dias de loja
+    // aberta com hoje. Antes descontava as vendas de hoje e ainda contava hoje como dia que falta (dava menos que a Meta de hoje).
+    const hojeMeta = db.maxDay >= hojeD && hojeD >= ini ? soma(hojeD, hojeD, null).meta : 0;
+    const faltaOntem = meta ? Math.max(0, meta - (mes.meta - hojeMeta)) : 0;
     const S = semana(hojeD, db.maxDay, db.minDay);
     const cur = S ? soma(S.de, S.ate, null) : null, ant = S && S.antDe >= db.minDay ? soma(S.antDe, S.antAte, null) : null;
     const periodo = !S ? '' : S.n === 1 ? `${DS[0]} (${brD(S.de)})` : `de segunda a ${DS[S.n - 1]} (${brD(S.de)} a ${brD(S.ate)})`;
-    return { ym, mes, meta, P, Pm, abertos, passados, esperado: abertos ? passados / abertos : null, restam, falta, porDia: falta > 0 && restam > 0 ? falta / restam : 0,
+    return { ym, mes, meta, P, Pm, abertos, passados, esperado: abertos ? passados / abertos : null, restam, falta, hojeMeta, porDia: falta > 0 && restam > 0 ? faltaOntem / restam : 0,
       S, periodo, cur, ant, dv: ant && ant.vt > 0 && cur ? cur.vt / ant.vt - 1 : null };
   };
   /**

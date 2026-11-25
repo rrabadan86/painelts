@@ -22,6 +22,16 @@ test('CAMP-FORA-04: "✕" (Tirar) aparece sem rolar de lado e tira o cliente da 
   // o botão fica à vista, dentro da lista (antes ficava escondido à direita, numa tabela que rolava de lado)
   const dentro = await botao.evaluate((b) => { const w = b.closest('.table-wrap') || b.closest('.card'); const r = b.getBoundingClientRect(), c = w.getBoundingClientRect(); return r.width > 0 && r.right <= c.right + 1 && w.scrollWidth <= w.clientWidth + 1; });
   expect(dentro, 'o "✕" de tirar aparece sem rolar a lista para o lado').toBe(true);
+  // CAMP-TIRAR-01 (print do dono, 25/11/2026): na janela de 1100 px a coluna da direita fica estreita e a 3ª coluna ("Tirar")
+  // escapava; agora o ✕ fica na linha do cliente e a lista tem 2 colunas, sem rolar de lado
+  if (info.project.name === 'computador') {
+    for (const w of [1100, 900]) {
+      await page.setViewportSize({ width: w, height: 900 }); await page.waitForTimeout(300);
+      const ok = await page.locator('.cp-tirar').first().evaluate((b) => { const tw = b.closest('.table-wrap'); const r = b.getBoundingClientRect(), c = tw.getBoundingClientRect(); return r.right <= c.right + 1 && tw.scrollWidth <= tw.clientWidth + 1; });
+      expect(ok, `a ${w} px o ✕ cabe na lista, sem rolar de lado`).toBe(true);
+    }
+    await page.setViewportSize({ width: 1366, height: 900 });
+  }
   const rotulo = await botao.getAttribute('aria-label');
   const nomeCli = rotulo.replace(/^Tirar /, '').replace(/ da campanha$/, '');
   await botao.click();
