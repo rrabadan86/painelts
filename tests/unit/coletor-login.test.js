@@ -50,7 +50,17 @@ p2 = Pagina(None); erro = None
 try: N.preencher_login(p2)
 except RuntimeError as e: erro = str(e)
 p3 = Pagina(None); p3.url = 'https://app.exemplo/#/loja/1'; N.preencher_login(p3)
-print(json.dumps({'p1': p1.feitos, 'p2': p2.feitos, 'erro': erro, 'p3': p3.feitos, 'diag': any('diagnóstico' in l for l in logs)}))`;
+class Nav:
+    def __init__(self, falha): self.alvos = []; self.falha = falha
+    def wait_for_timeout(self, ms): pass
+    def goto(self, alvo, **k):
+        self.alvos.append(alvo)
+        if self.falha(alvo): raise Exception('net::ERR_CERT_COMMON_NAME_INVALID')
+n1 = Nav(lambda a: False); N.goto_login_with_retries(n1, 'https://www.appnext.com.br/#/login')
+n2 = Nav(lambda a: True); erro2 = None
+try: N.goto_login_with_retries(n2, 'https://www.appnext.com.br/#/login', tries=1)
+except RuntimeError as e: erro2 = str(e)
+print(json.dumps({'p1': p1.feitos, 'p2': p2.feitos, 'erro': erro, 'p3': p3.feitos, 'diag': any('diagnóstico' in l for l in logs), 'n1': n1.alvos, 'erro2': erro2}))`;
   const r = spawnSync('python3', ['-c', prog], { encoding: 'utf8' });
   assert.equal(r.status, 0, r.stderr);
   const o = JSON.parse(r.stdout.trim().split('\n').pop());
@@ -59,6 +69,8 @@ print(json.dumps({'p1': p1.feitos, 'p2': p2.feitos, 'erro': erro, 'p3': p3.feito
   assert.match(o.erro, /não mostrou o campo "Rede"/);
   assert.ok(o.diag, 'diagnóstico no log');
   assert.deepEqual(o.p3, [], 'já logado: não mexe');
+  assert.deepEqual(o.n1, ['https://www.appnext.com.br/#/login'], 'tenta primeiro o endereço com www (o sem www está com o certificado errado)');
+  assert.match(o.erro2, /Não consegui abrir o AppNext a partir do servidor/);
 });
 
 test('NF-FILA-01: o laço da fila do coletor não morre e avisa quando a fila parou; a tela não mostra mais "N na frente"', () => {
@@ -68,4 +80,5 @@ test('NF-FILA-01: o laço da fila do coletor não morre e avisa quando a fila pa
   const tela = fs.readFileSync(path.join(raiz, 'public/js/precos.js'), 'utf8');
   assert.ok(!/na frente/.test(tela));
   assert.match(tela, /roboParado/);
+  assert.match(tela, /sem resposta do coletor agora; tentando de novo/, 'erro numa consulta não congela a tela em "na fila"');
 });

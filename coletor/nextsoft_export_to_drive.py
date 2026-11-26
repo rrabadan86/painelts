@@ -949,9 +949,15 @@ def preencher_login(page):
 
 
 def goto_login_with_retries(page, url, tries=3):
-    alt_urls = {url, url.replace("https://www.", "https://")}
+    # ordem fixa: o endereço com www primeiro (o sem www está com o certificado errado desde 26/11/2026) e espera a página
+    # de erro da tentativa anterior assentar — senão a próxima navegação é "interrupted by another navigation to chrome-error"
+    alt_urls = list(dict.fromkeys([url, url.replace("https://", "https://www.") if "://www." not in url else url, url.replace("https://www.", "https://")]))
     for i in range(1, tries + 1):
         for target in alt_urls:
+            try:
+                page.wait_for_timeout(1500)
+            except Exception:  # noqa: BLE001
+                pass
             try:
                 log(f"[goto] tentativa {i}/{tries} -> {target}")
                 page.goto(target, wait_until="load", timeout=60_000)
@@ -959,7 +965,11 @@ def goto_login_with_retries(page, url, tries=3):
             except Exception as e:
                 log(f"[goto] falhou em {target}: {e}")
         page.wait_for_timeout(i * 3000)
-    page.goto(url, wait_until="load", timeout=60_000)
+    try:
+        page.goto(url, wait_until="load", timeout=60_000)
+    except Exception as e:  # noqa: BLE001
+        raise RuntimeError(f"Não consegui abrir o AppNext a partir do servidor ({str(e).splitlines()[0][:160]}). "
+                           "Confira se o site abre no navegador e se o servidor acessa www.appnext.com.br.") from None
 
 
 def coletar_vendas_na_pagina(page, saida_arquivo=None):

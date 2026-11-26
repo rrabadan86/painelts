@@ -656,7 +656,9 @@
       clearTimeout(sinc[loja]);
       const passo = async () => {
         if (!btn.isConnected && !document.querySelector('.nf-sinc')) { delete sinc[loja]; return; }
-        let s; try { s = await (await fetch(TS.api(url), { credentials: 'same-origin' })).json(); } catch { s = {}; }
+        let s; try { const r = await fetch(TS.api(url), { credentials: 'same-origin' }); s = r.ok ? await r.json() : null; } catch { s = null; }
+        // sem resposta (o coletor reiniciando, a internet caindo): continua acompanhando — antes a tela congelava em "na fila" (NF-FILA-01)
+        if (!s) { const v = document.querySelector('.nf-sinc-st') || st; v.textContent = '⏳ sem resposta do coletor agora; tentando de novo…'; sinc[loja] = setTimeout(passo, 8000); return; }
         const vivo = document.querySelector('.nf-sinc-st') || st;
         pintarLog(s);
         if (s.estado === 'na_fila' || s.estado === 'rodando') {
