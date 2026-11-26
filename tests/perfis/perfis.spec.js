@@ -142,3 +142,24 @@ test('ACESSO-ADMIN-01: franqueado vê o prazo de acesso travado em Configuraçõ
   await expect(page.locator('.cfg-meses .chip')).toHaveCount(0);
   expect(erros).toEqual([]);
 });
+
+// AJUDA-03 (pedido do dono, 25/11/2026): a Ajuda da vendedora só tem as fichas das telas dela, sem custo, margem nem lucro
+test('AJUDA-03: vendedora — a Ajuda só com as telas dela e sem custo', async ({ page }) => {
+  const erros = await entrar(page, 'vend');
+  const ps = await menu(page);
+  await page.locator('#btnUsuario').click();
+  await page.locator('#btnAjuda').click();
+  const aj = page.locator('.aj-camada');
+  await expect(aj.locator('.aj-grupos .aj-row')).toHaveCount(ps.length);
+  const fichas = await page.evaluate(() => TS.ajuda.fichas().map((f) => f.pag));
+  expect(fichas.filter((p) => !ps.includes(p)), 'ficha de tela que ela não tem').toEqual([]);
+  for (const p of fichas) {
+    await page.evaluate((x) => TS.ajuda.abrir(x), p);
+    const t = await aj.innerText();
+    expect(t, `ficha ${p}: custo/margem para a vendedora`).not.toMatch(CUSTO);
+    expect(t, `ficha ${p}: texto quebrado`).not.toMatch(QUEBRADO);
+  }
+  await page.evaluate(() => TS.ajuda.abrir());
+  expect(await aj.innerText(), 'perguntas da vendedora').not.toMatch(CUSTO);
+  expect(erros).toEqual([]);
+});

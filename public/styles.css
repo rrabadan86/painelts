@@ -4184,3 +4184,43 @@ body.em-homolog .topbar { box-shadow: inset 0 -4px 0 var(--gold); }
 .fat-conta-l b { font-variant-numeric: tabular-nums; white-space: nowrap; font-weight: 600; }
 .fat-conta-desc { color: var(--bad-t); }
 .fat-conta-tot { border-top: 1px solid var(--bege); margin-top: 3px; padding-top: 4px; font-weight: 600; }
+
+/* Ajuda (AJUDA-01…03, pedido do dono de 25/11/2026): camada com a lista das telas e a ficha de cada uma — linhas com divisória,
+   sem caixa dentro de caixa; o ⓘ "?" ao lado do título de cada tela abre a ficha dela */
+.camada-cheia.aj-camada { align-items: stretch; padding: 2vh 2vw; }
+.aj-painel { position: relative; flex: 1; max-width: 1160px; margin: 0 auto; background: var(--cream); border: 1px solid var(--line); border-radius: var(--radius-card); overflow: hidden auto; padding: 18px 28px 32px; box-shadow: 0 16px 40px rgba(0, 0, 0, .25); outline: none; }
+.aj-fechar { position: sticky; top: 0; float: right; margin: -4px -10px 0 8px; z-index: 2; background: #fff; border: 1px solid var(--line); color: var(--ink); font-size: 18px; }
+.aj-busca { position: relative; max-width: 640px; margin: 4px 0 18px; }
+.aj-busca-in { width: 100%; height: 48px; border: 1px solid var(--line); border-radius: 12px; background: #fff; padding: 0 16px 0 42px; font: inherit; font-size: 15px; color: var(--ink); }
+.aj-lupa { position: absolute; left: 14px; top: 50%; transform: translateY(-52%); font-size: 20px; color: var(--muted); pointer-events: none; }
+.aj-res .card { margin-bottom: 14px; }
+.aj-faq { border-top: 1px solid var(--line); }
+.aj-faq:first-of-type { border-top: 0; }
+.aj-faq summary { list-style: none; display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 13px 0; cursor: pointer; font-weight: 600; }
+.aj-faq summary::-webkit-details-marker { display: none; }
+.aj-faq[open] .aj-chev { transform: rotate(90deg); }
+.aj-faq p { margin: 0 0 14px; max-width: 760px; color: var(--ink); }
+.aj-chev { color: var(--muted); font-size: 20px; line-height: 1; transition: transform .15s; flex: none; }
+.aj-grupos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 40px; }
+.aj-grupo { margin-bottom: 10px; min-width: 0; }
+.aj-g { font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); padding: 12px 0 4px; }
+.aj-row { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 0; border: 0; border-top: 1px solid var(--line); background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; min-height: 44px; }
+.aj-lista1 .aj-row:first-child { border-top: 0; }
+.aj-row-t { display: flex; flex-direction: column; min-width: 0; }
+.aj-row-t span { color: var(--muted); font-size: 14px; overflow-wrap: anywhere; }
+.aj-row:hover b, .aj-row:focus-visible b { color: var(--green); }
+.aj-voltar { display: inline-block; margin: 2px 0 8px; padding: 4px 0; border: 0; background: none; font: inherit; font-weight: 600; color: var(--green); cursor: pointer; }
+.aj-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 18px; color: var(--muted); font-size: 14px; margin: -6px 0 16px; }
+.aj-num { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 16px; padding: 11px 0; border-top: 1px solid var(--line); }
+.aj-num:first-of-type { border-top: 0; }
+.aj-num span { color: var(--ink); }
+.aj-tit { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; margin-left: 10px; vertical-align: middle; border: 1.5px solid var(--muted); border-radius: 50%; background: none; color: var(--muted); font: 700 13px/1 inherit; cursor: pointer; position: relative; }
+.aj-tit::before { content: '?'; }
+.aj-tit::after { content: ''; position: absolute; inset: -8px; }
+.aj-tit:hover, .aj-tit:focus-visible { border-color: var(--green); color: var(--green); }
+@media (max-width: 760px) {
+  .camada-cheia.aj-camada { padding: 0; }
+  .aj-painel { border-radius: 0; border: 0; padding: 14px 16px 28px; }
+  .aj-grupos { grid-template-columns: 1fr; }
+  .aj-num { grid-template-columns: 1fr; gap: 2px; }
+}
