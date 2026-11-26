@@ -36,6 +36,7 @@ before(async () => {
       chefe: { senha, perfil: 'admin', lojas: ['*'], ativo: true },
       dono1: { senha, perfil: 'franqueado', lojas: ['l1'], ativo: true },
       ger1: { senha, perfil: 'gerente', lojas: ['l1'], ativo: true, telas: ['pedido', 'notas', 'estoque'], telasV: 8 },
+      ger2: { senha, perfil: 'gerente', lojas: ['l1'], ativo: true, telas: ['pedido', 'estoque'], telasV: 8 },
       vend1: { senha, perfil: 'vendedor', lojas: ['l1'], ativo: true, vendedor: 'ANA' },
     },
   }));
@@ -60,7 +61,7 @@ before(async () => {
   srv = spawn(process.execPath, ['server.js'], { cwd: path.join(__dirname, '../..'), stdio: ['ignore', 'ignore', 'pipe'],
     env: { ...process.env, PORT: String(PORTA), DATA_DIR: tmp, CONFIG_FILE, SESSION_SECRET: 'teste-franqueado', NODE_ENV: 'test', IA_FALSO: '1', COLETOR_URL: `http://127.0.0.1:${PORTA_COL}`, COLETOR_TOKEN: 'token-de-teste', GITHUB_TOKEN: '' } });
   await require('./_subir')(srv, BASE); // até 90 s, e mostra o erro do servidor se ele cair
-  for (const nome of ['chefe', 'dono1', 'ger1', 'vend1']) {
+  for (const nome of ['chefe', 'dono1', 'ger1', 'ger2', 'vend1']) {
     const r = await fetch(BASE + '/login', { method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Forwarded-For': `203.0.113.${ipSeq++}` }, body: `usuario=${nome}&senha=${encodeURIComponent(SENHA)}` });
     const c = (r.headers.get('set-cookie') || '').split(';')[0];
     assert.ok(c.startsWith('ts_sess='), `login de ${nome}`);
@@ -102,18 +103,23 @@ test('coletor: sem o cabeçalho X-Painel o franqueado não dispara nada', async 
 });
 
 // ---------- botões fora das Configurações ----------
-test('Sincronizar agora (notas de entrada): franqueado só na loja dele', async () => {
+test('NF-SINC-GER-01: Sincronizar agora (notas de entrada): franqueado só na loja dele; gerente só com a tela Notas fiscais e só na loja dela', async () => {
   chamadas.length = 0;
   const corpo = (loja) => ({ method: 'POST', body: JSON.stringify({ loja }) });
-  assert.strictEqual(await status('ger1', '/api/estoque/notas/sincronizar', corpo('l1')), 403);
+  assert.strictEqual(await status('ger2', '/api/estoque/notas/sincronizar', corpo('l1')), 403, 'gerente sem a tela Notas fiscais');
   assert.strictEqual(await status('vend1', '/api/estoque/notas/sincronizar', corpo('l1')), 403);
   assert.strictEqual(await status('dono1', '/api/estoque/notas/sincronizar', corpo('l2')), 400);
-  assert.strictEqual(await status('ger1', '/api/estoque/notas/sincronizar?loja=l1'), 403);
+  assert.strictEqual(await status('ger1', '/api/estoque/notas/sincronizar', corpo('l2')), 400, 'gerente: loja de outro');
+  assert.strictEqual(await status('ger2', '/api/estoque/notas/sincronizar?loja=l1'), 403);
   assert.strictEqual(await status('dono1', '/api/estoque/notas/sincronizar?loja=l2'), 400);
   assert.deepStrictEqual(chamadas, []);
   assert.strictEqual(await status('dono1', '/api/estoque/notas/sincronizar?loja=l1'), 200);
   assert.strictEqual(await status('dono1', '/api/estoque/notas/sincronizar', corpo('l1')), 200);
-  assert.deepStrictEqual(chamadas, ['POST /rodar/l1']);
+  assert.strictEqual(await status('ger1', '/api/estoque/notas/sincronizar?loja=l1'), 200, 'gerente com Notas fiscais acompanha');
+  assert.strictEqual(await status('ger1', '/api/estoque/notas/sincronizar', corpo('l1')), 200, 'gerente com Notas fiscais sincroniza');
+  assert.deepStrictEqual(chamadas, ['POST /rodar/l1', 'POST /rodar/l1']);
+  // só o botão das notas: as outras ações do coletor continuam só do admin e do franqueado
+  assert.strictEqual(await status('ger1', '/api/admin/lojas/l1/rodar', { method: 'POST' }), 403);
 });
 test('Buscar dados (topo) e Atualizar estoque (Pedido): franqueado só na loja dele', async () => {
   chamadas.length = 0;

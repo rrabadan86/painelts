@@ -622,7 +622,8 @@
   /** "Sincronizar agora" (admin ou franqueado da loja): o coletor busca o estoque e as notas de compra do AppNext; acompanha até terminar */
   const sinc = {}; // loja -> timer
   function botaoSincronizar(D, j) {
-    if (TS.demo || !TS.eu || !['admin', 'franqueado'].includes(TS.eu.perfil)) return null;
+    // admin, franqueado e a gerente com a tela Notas fiscais (NF-SINC-GER-01; o servidor confere o mesmo)
+    if (TS.demo || !TS.eu || !(['admin', 'franqueado'].includes(TS.eu.perfil) || (TS.eu.perfil === 'gerente' && (TS.eu.telas || []).includes('notas')))) return null;
     const loja = D.loja;
     const st = h('small', { class: 'muted nf-sinc-st' });
     // log do robô, como nas outras telas: ao vivo enquanto roda; depois, o final da última execução
