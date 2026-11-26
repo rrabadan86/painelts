@@ -346,8 +346,8 @@
   /** ⓘ ao lado do título da tela: abre a ficha dela por cima (chamado pelo main.js depois de cada desenho) */
   A.marcarTitulo = function (content, pag) {
     const t = content && content.querySelector('.page-title');
-    if (!t || t.querySelector('.aj-tit') || !A.ficha(pag)) return;
-    t.append(h('button', { type: 'button', class: 'aj-tit', 'data-pag': pag, title: 'Ajuda desta tela: os números e as perguntas', 'aria-label': 'Ajuda desta tela', onclick: (e) => { e.preventDefault(); A.abrir(pag); } })); // o "?" vem do CSS: o texto do título não muda
+    if (!t || t.querySelector('.aj-q') || !A.ficha(pag)) return;
+    t.append(h('button', { type: 'button', class: 'aj-q', 'data-pag': pag, title: 'Ajuda desta tela: os números e as perguntas', 'aria-label': 'Ajuda desta tela', onclick: (e) => { e.preventDefault(); A.abrir(pag); } })); // o "?" vem do CSS: o texto do título não muda
   };
 
   /** tela que se redesenha sozinha (ex.: Indicadores quando os clientes chegam) também ganha o ?: observa o conteúdo */

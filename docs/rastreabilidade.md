@@ -599,6 +599,7 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 | AJUDA-01 | Ajuda do painel (pedido do dono, 25/11/2026): menu do nome → "❓ Ajuda" abre uma camada com as perguntas frequentes, a busca (sem acento, nas perguntas, nos números e nas respostas) e uma ficha por página do menu (para que serve, quem vê, os números com a conta, as perguntas, "Abrir a tela ›"); toda página de `src/telas.js`/`TS.pages` tem ficha, uma só, no grupo certo do menu | `public/js/ajuda.js` (`FICHAS`, `FAQ`, `TS.ajuda.abrir`); `public/index.html` (`#btnAjuda`); `public/js/main.js` | `ajuda.test` AJUDA-01; `ajuda.spec` AJUDA-01 | ✅ |
 | AJUDA-02 | "?" ao lado do título de cada tela abre a ficha dela por cima, sem sair do lugar; "‹ Voltar para a tela" fecha (camada: o "voltar" do celular também fecha); tela que se redesenha sozinha ganha o "?" de novo (observa o conteúdo) | `public/js/ajuda.js` (`marcarTitulo`, `observar`); `public/js/main.js` (`TS.render`) | `ajuda.spec` AJUDA-02 (todas as telas no computador) | ✅ |
 | AJUDA-03 | Cada pessoa vê só as fichas das telas do menu dela (`TS.paginas()`); linha marcada `C` (custo, margem, lucro, CMV) só para quem vê custo; as fichas e perguntas que a vendedora pode ver não falam de custo | `public/js/ajuda.js` (`fichas`, `faq`, `veCusto`) | `ajuda.test` AJUDA-03; `tests/perfis/perfis.spec.js` AJUDA-03 (vendedora) | ✅ |
+| AJUDA-04 | O "?" da Ajuda usa uma classe só dele (`aj-q`): com a mesma classe do título do editor do dia da escala (`aj-tit`), o título ficava espremido num círculo com "?" (visto pelo dono em 26/11/2026) | `ajuda.js` (`marcarTitulo`); `styles.css` | `banco-horas.spec` "BANCO-03 (tela)" | ✅ |
 | APP-08 | Tabela pagina sozinha (100 por página; 40 cartões no celular) | `components.js` | — | ❌ — celular só pagina acima de 60 |
 | APP-09 | ⓘ tocável nas colunas (computador e celular) | `components.js` | `dicas.spec` | 🟡 (só Preços) |
 | APP-10 | Celular: tabela vira cartão, nada passa da borda | `components.js` | `telas.spec` (26 telas); `voltar.spec` | 🟡 (cartões próprios não conferidos) |
@@ -788,8 +789,8 @@ Contado pelas linhas da matriz (`node scripts/matriz.js --resumo`; o guardião c
 | Clientes, fidelidade, WhatsApp e lista de espera (CLI) | 76 | 63 | 9 | 4 |
 | Orçamento (ORC) | 7 | 5 | 1 | 1 |
 | Checklist, fechamento e avisos (OPE) | 13 | 6 | 3 | 4 |
-| Estrutura do painel e atualização (APP) | 49 | 30 | 13 | 6 |
-| **Total** | **535** | **298 (56%)** | **127 (24%)** | **110 (21%)** |
+| Estrutura do painel e atualização (APP) | 50 | 31 | 13 | 6 |
+| **Total** | **536** | **299 (56%)** | **127 (24%)** | **110 (21%)** |
 <!-- resumo:fim -->
 
 ## Próximas etapas
