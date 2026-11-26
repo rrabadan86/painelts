@@ -86,3 +86,16 @@ test('CONV-06: desconectar apaga tudo da loja', () => {
   assert.deepStrictEqual(CONV.lista('l1'), []);
   assert.strictEqual(fs.existsSync(path.join(tmp, 'l1', 'conversas')), false);
 });
+
+test('CONV-SEMRESP-02: agradecimento, confirmação curta, emoji, figurinha e "parar" não pedem resposta; pergunta e assunto pedem', () => {
+  const c = (texto, tipo = 'texto') => ({ deMim: false, tipo, texto });
+  for (const t of ['Obrigada!', 'ta bem', 'Ta bom', 'Thanks', 'Obrigado', 'ok, valeu', 'Muito obrigada 🙏', '👍', '❤️❤️', 'kkkk', 'Sair', 'Igualmente, obrigada!', 'Combinado'])
+    assert.ok(CONV.naoPedeResposta(c(t)), `"${t}" não pede resposta`);
+  assert.ok(CONV.naoPedeResposta(c('', 'figurinha')), 'figurinha');
+  for (const t of ['Obrigada, tem o chá de hibisco?', 'ok?', 'sim', 'Bom dia', 'Quero reservar 100g', 'Boa tarde! Tudo bem? Informamos que, nesta terça-feira, o shopping abre mais tarde'])
+    assert.ok(!CONV.naoPedeResposta(c(t)), `"${t}" pede resposta`);
+  assert.ok(!CONV.naoPedeResposta(c('', 'audio')), 'áudio pede resposta');
+  assert.strictEqual(CONV.semRespostaDe([{ deMim: true }, c('Obrigada!')]), 0, 'terminou com agradecimento: sem a marca');
+  assert.strictEqual(CONV.semRespostaDe([{ deMim: true }, c('Tem chá verde?'), c('obrigada')]), 1, 'a pergunta continua contando');
+  assert.strictEqual(CONV.semRespostaDe([{ deMim: true }, c('Sair')]), 0, '"parar" já vira não quer mensagens');
+});

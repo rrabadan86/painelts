@@ -5,7 +5,8 @@
  *
  *   dados/<loja>/conversas/estado.json   { desde (último número que o serviço entregou), em, limpoEm }
  *   dados/<loja>/conversas/indice.json   { <chave>: { chave, nome, ult: { id, em, texto, deMim, tipo }, n, semResposta, naoLidas, lidaEm } }
- *     semResposta (decisão do dono): mensagens do cliente depois da última resposta da loja — é a marca "N sem resposta" da lista
+ *     semResposta (decisão do dono): mensagens do cliente depois da última resposta da loja — é a marca "N sem resposta" da lista;
+ *     agradecimento, confirmação curta, emoji, figurinha e "parar" não contam (`naoPedeResposta`, CONV-SEMRESP-02); srv = versão da conta
  *     (não depende de alguém abrir a conversa no painel; a loja respondeu pelo celular, some).
  *   dados/<loja>/conversas/c/<chave>.json [ { id, deMim, em, tipo, texto, nome? } ] (em ordem de data)
  *   dados/<loja>/conversas/robo.json     { <id da mensagem>: { camp, em } } — o que o robô mandou (marca 🤖 na conversa)
@@ -30,12 +31,35 @@ const lerEstado = (id) => ler(path.join(pasta(id), 'estado.json'), { desde: 0 })
 const lerIndice = (id) => ler(path.join(pasta(id), 'indice.json'), {});
 const lerRobo = (id) => ler(path.join(pasta(id), 'robo.json'), {});
 
-/** quantas mensagens do cliente chegaram depois da última da loja (a conversa está esperando resposta) */
+/**
+ * Mensagem que não pede resposta (decisão do dono, 26/11/2026; CONV-SEMRESP-02): agradecimento ou confirmação curta
+ * ("Obrigada!", "ta bem", "ok, valeu", "Thanks"), só emoji/risada, figurinha e pedido para parar (o "parar" já vira
+ * "não quer mensagens" sozinho). Só a mensagem inteira feita dessas palavras, até 60 letras: "obrigada, tem o chá X?" pede.
+ * "sim", "bom dia" e perguntas continuam pedindo resposta.
+ */
+const CORTESIA = new Set(('obrigado obrigada obrigados obrigadas obrigadao obg obgd obgda brigado brigada brigadao muito muita mt mto mtt '
+  + 'valeu vlw ok okay okk oks blz beleza ta tah to bem bom certo certinho combinado perfeito otimo otima show top entendi entendido '
+  + 'igualmente amem de nada disponha voce vc vcs tambem tbm tb pra para e a o ai tudo thanks thank you thx tks ty '
+  + 'tchau abraco abracos bjs beijos parar sair nao quero remover descadastrar').split(' '));
+const RISO = /^(k{2,}|rs+|ha(ha)+|he(he)+|hu(hu)+|ksks\w*)$/;
+function naoPedeResposta(m) {
+  if (!m || m.deMim) return false;
+  if (m.tipo === 'figurinha') return true;
+  if (m.tipo && m.tipo !== 'texto') return false;
+  const bruto = String(m.texto || '');
+  if (bruto.length > 60 || bruto.includes('?')) return false;
+  const n = bruto.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  if (!n) return !!bruto.trim(); // só emoji ou pontuação
+  return n.split(' ').every((w) => CORTESIA.has(w) || RISO.test(w));
+}
+/** quantas mensagens do cliente chegaram depois da última da loja e pedem resposta (a conversa está esperando a loja) */
 function semRespostaDe(msgs) {
   let n = 0;
-  for (let i = (msgs || []).length - 1; i >= 0 && !msgs[i].deMim; i--) n++;
+  for (let i = (msgs || []).length - 1; i >= 0 && !msgs[i].deMim; i--) if (!naoPedeResposta(msgs[i])) n++;
   return n;
 }
+// versão da conta: o índice guardado com outra versão é refeito na primeira leitura da lista
+const SEMRESP_V = 2;
 
 /** grava as mensagens que chegaram do serviço (sem repetir o id). → quantas entraram */
 function aplicar(id, itens, agora = Date.now()) {
@@ -64,6 +88,7 @@ function aplicar(id, itens, agora = Date.now()) {
     e.n = todas.length;
     e.ult = { id: ult.id, em: ult.em, texto: ult.texto.slice(0, 140), deMim: ult.deMim, tipo: ult.tipo };
     e.semResposta = semRespostaDe(todas);
+    e.srv = SEMRESP_V;
     if (nome) e.nome = nome.nome;
     // não lidas: as recebidas depois da última vez que alguém abriu a conversa
     e.naoLidas = todas.filter((x) => !x.deMim && (!e.lidaEm || x.em > e.lidaEm)).length;
@@ -115,9 +140,9 @@ async function buscar(id, zap, agora = Date.now()) {
 /** a lista de conversas (mais recentes primeiro), com a marca do robô quando a última mensagem foi dele */
 function lista(id) {
   const ind = lerIndice(id);
-  // índice gravado antes da marca "sem resposta": calcula uma vez pelas mensagens e guarda
+  // índice gravado antes da marca "sem resposta" ou com a conta antiga: calcula uma vez pelas mensagens e guarda
   let mudou = false;
-  for (const e of Object.values(ind)) if (e.ult && e.semResposta == null) { e.semResposta = semRespostaDe(ler(arqChat(id, e.chave), [])); mudou = true; }
+  for (const e of Object.values(ind)) if (e.ult && (e.semResposta == null || e.srv !== SEMRESP_V)) { e.semResposta = semRespostaDe(ler(arqChat(id, e.chave), [])); e.srv = SEMRESP_V; mudou = true; }
   if (mudou) gravar(path.join(pasta(id), 'indice.json'), ind);
   const robo = lerRobo(id);
   return Object.values(ind).filter((e) => e.ult).map((e) => (e.ult.id && robo[e.ult.id] ? { ...e, ult: { ...e.ult, robo: robo[e.ult.id].camp || 'campanha' } } : e))
@@ -290,4 +315,4 @@ function iniciar() {
   return t;
 }
 
-module.exports = { ultimaConversa, marcarResposta, numeroDaConversa, TIPOS_MIDIA, midiaDe, responderMidia, nomeArquivo, demoImagem, demoSilencio, MESES, semRespostaDe, aplicar, limpar, buscar, lista, mensagens, marcarLida, marcarRobo, apagar, lerEstado, iniciar, RE_CHAVE };
+module.exports = { naoPedeResposta, ultimaConversa, marcarResposta, numeroDaConversa, TIPOS_MIDIA, midiaDe, responderMidia, nomeArquivo, demoImagem, demoSilencio, MESES, semRespostaDe, aplicar, limpar, buscar, lista, mensagens, marcarLida, marcarRobo, apagar, lerEstado, iniciar, RE_CHAVE };
