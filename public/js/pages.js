@@ -319,6 +319,71 @@
   };
 
   /** tabela em árvore Mês (todos os anos) → Ano → Vendedor */
+  // ---------- % da meta na Evolução mensal (META-EVO-01, opção B aprovada pelo dono em 26/11/2026) ----------
+  /** situação: 'ok' bateu · 'nao' não bateu (mês fechado) · 'and' mês em andamento */
+  const sitMeta = (mt) => (mt.pct >= 1 ? 'ok' : mt.fechado ? 'nao' : 'and');
+  /** etiqueta "🎯 80,9% da meta" que abre a janela; ano = mostra o ano no title (linha do mês com vários anos) */
+  function seloMeta(mt, ano) {
+    if (!mt) return null;
+    const s = sitMeta(mt);
+    const txt = `🎯 ${fmt.pct(mt.pct)} ${mt.fechado ? 'da meta' : 'até hoje'}`;
+    return h('button', { type: 'button', class: `meta-selo ${s}`, 'data-meta': mt.ym,
+      title: `${TS.ymLabel(mt.ym)}: vendas da meta ${fmt.brl0(mt.vendas)} de ${fmt.brl0(mt.meta)}${ano ? ` (o % é de ${ano})` : ''}. Clique para ver o detalhe.`,
+      onclick: (e) => { e.stopPropagation(); janelaMeta(mt); } }, txt);
+  }
+  function seloVend(mt, v) {
+    const x = mt && mt.vend.get(v);
+    if (!x) return null;
+    const s = x.pct >= 1 ? 'ok' : mt.fechado ? 'nao' : 'and';
+    const nome = TS.msgWpp.nomeProprio(TS.db.D.vendedor[v]) || TS.db.D.vendedor[v];
+    return h('button', { type: 'button', class: `meta-selo ${s}`, 'data-meta-vend': String(v), title: `Meta individual de ${nome} em ${TS.ymLabel(mt.ym)}: ${fmt.brl0(x.vendas)} de ${fmt.brl0(x.meta)}. Clique para ver o detalhe.`,
+      onclick: (e) => { e.stopPropagation(); janelaMeta(mt, { nome, ...x }); } }, `🎯 ${fmt.pct(x.pct)} da meta`);
+  }
+  /** janela com a conta da meta do mês (ou da meta individual, com `vend`) */
+  function janelaMeta(mt, vend) {
+    const alvo = vend || mt, s = vend ? (vend.pct >= 1 ? 'ok' : mt.fechado ? 'nao' : 'and') : sitMeta(mt);
+    const linhas = [];
+    const L = (rot, val, cls) => linhas.push(h('div', { class: 'meta-j-l' }, h('span', { class: 'muted' }, rot), h('b', { class: cls || null }, val)));
+    const dif = alvo.vendas - alvo.meta;
+    if (vend) {
+      L('Meta individual', fmt.brl(alvo.meta));
+      L(mt.fechado ? 'Vendas da meta' : 'Vendas da meta até hoje', fmt.brl(alvo.vendas));
+      L(dif >= 0 ? 'Sobrou' : mt.fechado ? 'Faltaram' : 'Faltam', fmt.brl(Math.abs(dif)), dif >= 0 ? 'pos' : mt.fechado ? 'neg' : null);
+    } else {
+      L(mt.lojas.length > 1 ? `Meta das ${mt.lojas.length} lojas` : 'Meta da loja', fmt.brl(mt.meta));
+      L(mt.fechado ? 'Vendas da meta' : 'Vendas da meta até hoje', fmt.brl(mt.vendas));
+      L(dif >= 0 ? 'Sobrou' : mt.fechado ? 'Faltaram' : 'Faltam', fmt.brl(Math.abs(dif)), dif >= 0 ? 'pos' : mt.fechado ? 'neg' : null);
+      if (!mt.fechado) {
+        if (mt.esperado != null) L('Deveria estar em', `${fmt.pct(mt.esperado, 0)} (dias completos)`);
+        if (mt.pctProj != null) L('No ritmo de agora, fecha em', fmt.pct(mt.pctProj, 0), mt.pctProj >= 1 ? 'pos' : 'neg');
+        if (mt.porDia > 0 && mt.restantes) L('Para bater', `${fmt.brl0(mt.porDia)} por dia nos ${mt.restantes} dias de loja aberta`);
+      }
+      L('Faturamento (com Espaço Gourmet)', fmt.brl(mt.fat));
+      const ymAnt = `${+mt.ym.slice(0, 4) - 1}${mt.ym.slice(4)}`, ant = TS.metaMes(ymAnt);
+      if (ant) L(TS.ymLabel(ymAnt), `${fmt.pct(ant.pct)} de ${fmt.brl0(ant.meta)}`, ant.pct >= 1 ? 'pos' : 'neg');
+      if (mt.comMeta) L('Vendedores na meta individual', `${mt.naMeta} de ${mt.comMeta}`);
+      if (mt.lojas.length > 1) for (const l of mt.lojas) L(l.nome, `${fmt.pct(l.pct)} de ${fmt.brl0(l.meta)}`, l.pct >= 1 ? 'pos' : mt.fechado ? 'neg' : null);
+    }
+    const barra = h('div', { class: 'meta-j-barra' }, h('i', { class: s, style: { width: Math.min(100, alvo.pct * 100) + '%' } }),
+      !mt.fechado && !vend && mt.esperado != null ? h('u', { style: { left: Math.min(100, mt.esperado * 100) + '%' }, title: 'Onde a loja deveria estar hoje' }) : null);
+    const fundo = h('div', { class: 'cp-modal-bg ts-aviso-bg' });
+    const sair = () => fundo.remove();
+    const ok = h('button', { type: 'button', class: 'btn', onclick: sair }, 'Fechar');
+    fundo.addEventListener('click', (e) => { if (e.target === fundo) sair(); });
+    fundo.addEventListener('keydown', (e) => { if (e.key === 'Escape') sair(); });
+    fundo.append(h('div', { class: 'card cp-copiar ts-perg meta-j', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Meta do mês' },
+      h('h3', null, vend ? `${vend.nome} · ${TS.ymLabel(mt.ym)}` : `Meta de ${TS.ymLabel(mt.ym)}`),
+      h('small', { class: 'muted' }, mt.fechado ? 'Mês fechado' : 'Mês em andamento'),
+      h('div', { class: `meta-j-pct ${s}` }, fmt.pct(alvo.pct), h('small', { class: 'muted' }, vend ? ' da meta individual' : ' da meta')),
+      barra,
+      h('div', { class: 'meta-j-linhas' }, linhas),
+      h('small', { class: 'muted' }, 'Vendas da meta = chá aromatizado, chá puro e acessórios, sem o Espaço Gourmet (a mesma conta do Início e do Comissionamento). Mês inteiro, com as lojas do filtro e sem os filtros de vendedor, grupo e produto.'),
+      h('div', { class: 'ts-perg-acoes' }, ok)));
+    document.body.append(fundo);
+    ok.focus();
+  }
+  TS._metaEvo = { seloMeta, janelaMeta };
+
   function arvoreMensal(base, porMesAll, periodo) {
     const db = TS.db;
     const aberto = (state.compAberto ||= new Set());
@@ -367,7 +432,7 @@
           const rot = `${TS.MESES_LONGOS[m - 1]}${anosTodos.size > 1 ? ' ' + yMax : ''}${d.parcial ? ` · ${d.lo === d.hi ? 'dia ' + d.lo : `dias ${d.lo} a ${d.hi}`}` : ''}`;
           const cab = h('div', { class: 'lmob-it evm-mes' + (open ? ' aberta' : ''), role: 'button', tabindex: '0', 'aria-expanded': String(open) },
             h('div', { class: 'lmob-l1' }, h('span', { class: 'lmob-nome' }, rot, h('span', { class: 'evm-chev' }, open ? ' ▾' : ' ▸')), h('span', { class: 'lmob-val' }, fmt.brl0(a.vt))),
-            h('div', { class: 'lmob-l2' }, varEl(a, p, 'vt'), p ? h('span', null, `antes ${fmt.brl0(p.vt)}`) : h('span', null, 'sem o ano anterior para comparar')));
+            h('div', { class: 'lmob-l2' }, varEl(a, p, 'vt'), p ? h('span', null, `antes ${fmt.brl0(p.vt)}`) : h('span', null, 'sem o ano anterior para comparar'), seloMeta(TS.metaMes(ym))));
           const alternar = () => { open ? fechar(kM) : aberto.add(kM); paintM(); };
           cab.addEventListener('click', alternar);
           TS.teclado ? TS.teclado(cab, alternar) : null;
@@ -380,7 +445,8 @@
             const comVenda = filhos.filter((x) => x.a.vt > 0 || x.a.cupons > 0), semVenda = filhos.length - comVenda.length;
             for (const x of comVenda) {
               const px = prevDe(ym, (i) => grupo(i) === x.g);
-              cab.append(h('div', { class: 'evm-sub' }, h('span', null, `${nomeDe(x.g)} · ${fmt.int(x.a.cupons)} ${x.a.cupons === 1 ? 'cupom' : 'cupons'}`), h('span', null, fmt.brl0(x.a.vt), ' ', varEl(x.a, px, 'vt'))));
+              const mtX = TS.metaMes(ym, multiLoja ? { loja: x.g } : undefined);
+              cab.append(h('div', { class: 'evm-sub' }, h('span', null, `${nomeDe(x.g)} · ${fmt.int(x.a.cupons)} ${x.a.cupons === 1 ? 'cupom' : 'cupons'}`, multiLoja ? seloMeta(mtX) : seloVend(mtX, x.g)), h('span', null, fmt.brl0(x.a.vt), ' ', varEl(x.a, px, 'vt'))));
             }
             if (semVenda) cab.append(h('div', { class: 'evm-sub muted' }, `${semVenda} sem vendas`));
             for (const y of [...anos.keys()].filter((y) => y !== yMax).sort((x, z) => z - x)) cab.append(h('div', { class: 'evm-sub' }, h('span', null, String(y)), h('span', null, fmt.brl0(ind(anos.get(y)).vt))));
@@ -409,7 +475,7 @@
     wrap.style.maxHeight = '420px';
 
     /** cmp (só no mês e no total): { a, p, dica } — variação do ano mais recente contra o anterior */
-    function linha(nivel, chave, rotulo, a, p, temFilhos, cmp) {
+    function linha(nivel, chave, rotulo, a, p, temFilhos, cmp, selo) {
       const open = aberto.has(chave);
       const btn = temFilhos ? h('button', { type: 'button', class: 'tree-btn', 'aria-expanded': String(open), 'aria-label': (open ? 'Recolher ' : 'Expandir ') + rotulo,
         onclick: () => { open ? fechar(chave) : aberto.add(chave); paint(); } }, open ? '−' : '+') : h('span', { class: 'tree-sp' });
@@ -418,6 +484,7 @@
       // a tabela não rola para o lado). No mês, a variação é a do ano mais recente contra o anterior (cmp); nas linhas de
       // ano/loja/vendedor, contra o mesmo mês do ano anterior (p).
       for (const col of cols) tds.push(celula(col, a, nivel === 0 ? cmp : (p ? { a, p, dica: 'Ano anterior' } : null)));
+      if (selo) tds[1].append(selo); // % da meta embaixo do faturamento (META-EVO-01)
       return h('tr', { class: `lv${nivel}` }, tds);
     }
     /** valor + linha pequena "+5,1% · R$ 22.955" (variação e o valor de comparação) com a frase completa no title */
@@ -441,22 +508,24 @@
         const yMax = Math.max(...anos.keys()), ymMax = `${yMax}-${String(m).padStart(2, '0')}`;
         const pM = prevDe(ymMax);
         const cmpM = pM ? { a: ind(anos.get(yMax)), p: pM, dica: `${rotAno(yMax, ymMax)} contra ${yMax - 1}${diasDoMes(ymMax).parcial ? ' (mesmos dias)' : ''}` } : null;
-        tb.append(linha(0, kM, `${TS.MESES_LONGOS[m - 1]}`, ind(idxM), null, true, cmpM));
+        tb.append(linha(0, kM, `${TS.MESES_LONGOS[m - 1]}`, ind(idxM), null, true, cmpM, seloMeta(TS.metaMes(ymMax), anos.size > 1 ? yMax : null)));
         if (!aberto.has(kM)) continue;
         for (const y of [...anos.keys()].sort((x, z) => z - x)) {
           const idxY = anos.get(y), ym = `${y}-${String(m).padStart(2, '0')}`, kY = `${kM}|${y}`;
-          tb.append(linha(1, kY, rotAno(y, ym), ind(idxY), prevDe(ym), true));
+          const mtY = TS.metaMes(ym);
+          tb.append(linha(1, kY, rotAno(y, ym), ind(idxY), prevDe(ym), true, null, seloMeta(mtY)));
           if (!aberto.has(kY)) continue;
-          const vendedores = (idx, nivel, chavePai, filtroPai) => {
+          const vendedores = (idx, nivel, chavePai, filtroPai, mt) => {
             const vends = [...TS.agrupar(idx, (i) => db.vend[i])].map(([v, vi]) => ({ v, a: ind(vi) })).sort((x, z) => z.a.vt - x.a.vt);
-            for (const { v, a } of vends) tb.append(linha(nivel, `${chavePai}|${v}`, db.D.vendedor[v], a, prevDe(ym, (i) => db.vend[i] === v && (!filtroPai || filtroPai(i))), false));
+            for (const { v, a } of vends) tb.append(linha(nivel, `${chavePai}|${v}`, db.D.vendedor[v], a, prevDe(ym, (i) => db.vend[i] === v && (!filtroPai || filtroPai(i))), false, null, seloVend(mt, v)));
           };
-          if (!multiLoja) { vendedores(idxY, 2, kY, null); continue; }
+          if (!multiLoja) { vendedores(idxY, 2, kY, null, mtY); continue; }
           const lojas = [...TS.agrupar(idxY, (i) => db.loja[i])].map(([l, li]) => ({ l, li, a: ind(li) })).sort((x, z) => z.a.vt - x.a.vt);
           for (const { l, li, a } of lojas) {
             const kL = `${kY}|L${l}`;
-            tb.append(linha(2, kL, db.D.loja[l], a, prevDe(ym, (i) => db.loja[i] === l), true));
-            if (aberto.has(kL)) vendedores(li, 3, kL, (i) => db.loja[i] === l);
+            const mtL = TS.metaMes(ym, { loja: l });
+            tb.append(linha(2, kL, db.D.loja[l], a, prevDe(ym, (i) => db.loja[i] === l), true, null, seloMeta(mtL)));
+            if (aberto.has(kL)) vendedores(li, 3, kL, (i) => db.loja[i] === l, mtL);
           }
         }
       }

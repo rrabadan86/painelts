@@ -43,8 +43,10 @@
       ['Espaço Gourmet', 'A divisão entre o Espaço Gourmet e a loja.'],
       ['TKM, PMA e IPA', 'As mesmas contas do Resumo.'],
       ['Evolução mensal', 'Cada mês com a variação contra o mesmo mês do ano anterior. Toque no mês para ver os indicadores e as vendedoras.'],
+      ['% da meta', 'Embaixo do faturamento de cada mês: vendas da meta (chá aromatizado, chá puro e acessórios, sem Espaço Gourmet) ÷ meta do mês, a mesma conta do Início. Verde bateu, vermelho não bateu, amarelo mês em andamento. No vendedor, contra a meta individual da comissão. Toque no % para ver a conta.'],
     ], [
       ['Por que a evolução mensal compara mês com mês e os quadros não?', 'Os quadros seguem o período dos filtros; a tabela é sempre por mês do calendário.'],
+      ['Por que o % da meta não bate com faturamento ÷ meta?', 'A meta é contra as vendas da meta, que deixam de fora o Espaço Gourmet e as taxas. A janela do % mostra as duas linhas.'],
     ]],
     ['promocao', 'Vendas', 'Promoção', 'Compara o período escolhido com os dias imediatamente anteriores.', 'Admin, franqueado e gerente com a tela', [
       ['Faturamento, atendimentos e TKM', 'Do período contra o mesmo número de dias logo antes. O rodapé diz de quando a quando.'],

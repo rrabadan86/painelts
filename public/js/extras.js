@@ -139,6 +139,54 @@
     cache.set(chave, t);
     return t;
   };
+  /**
+   * Meta de um mês INTEIRO para a Evolução mensal (META-EVO-01, pedido do dono de 26/11/2026): a meta da loja (TS.metaCalc,
+   * a mesma do Início e do Comissionamento) contra as vendas da meta do mês (R.comissionamento: aromatizado + puro + acessórios,
+   * sem Espaço Gourmet), com as lojas do filtro e sem os outros filtros. Cada loja com a meta e as regras dela; a meta
+   * individual de cada vendedor vem da mesma conta da comissão.
+   * → null (mês sem meta) | { ym, meta, vendas, fat, pct, fechado, esperado, pctProj, porDia, restantes, lojas: [{ nome, meta, vendas, pct }],
+   *   vend: Map(vendedorId → { meta, vendas, pct }), naMeta, comMeta }
+   */
+  TS.metaMes = function (ym, opts = {}) {
+    const db = TS.db;
+    if (!db || !db.n || !/^\d{4}-\d{2}$/.test(ym || '')) return null;
+    const ini = dia(ym + '-01'), fim = ini + diasNoMes(ym) - 1;
+    if (ini > db.maxDay) return null;
+    const lojasF = opts.loja != null ? new Set([opts.loja]) : state.f.lojas.size ? state.f.lojas : null;
+    const chave = `${ym}|${lojasF ? [...lojasF].sort().join(',') : '*'}|${state.loja || ''}|${db.maxDay}`;
+    const cache = db._metaMes || (db._metaMes = new Map());
+    if (cache.has(chave)) return cache.get(chave);
+    const idxMes = TS.filtrar({ de: ini, ate: Math.min(fim, db.maxDay), ignorar: ['vendedores', 'grupos', 'cats', 'produto', 'lojas'], mesLivre: true })
+      .filter((i) => !lojasF || lojasF.has(db.loja[i]));
+    // grupos = configurações de loja (uma loja pode vender com mais de um nome); sem configuração, a meta única do painel
+    const cfgs = (db.metas || []).length ? db.metas : [{ nome: '', nomesVenda: null }];
+    let meta = 0, vendas = 0, fat = 0, temMeta = false;
+    const lojas = [], vend = new Map();
+    for (const c of cfgs) {
+      const nomes = c.nomesVenda ? new Set(c.nomesVenda) : null;
+      const idx = nomes ? idxMes.filter((i) => nomes.has(db.D.loja[db.loja[i]])) : idxMes;
+      if (!idx.length) continue;
+      const m = nomes ? TS.metaCalc(ym, nomes).valor : db.meta;
+      if (!(m > 0)) continue;
+      const res = R().comissionamento({ base: idx, baseSemVend: idx, metaLoja: m, vendBonus: '', ym });
+      const v = res.total.total || 0;
+      temMeta = true; meta += m; vendas += v;
+      fat += idx.reduce((s, i) => s + (TS.contaFat(i) ? db.vt[i] || 0 : 0), 0);
+      lojas.push({ nome: c.nome || (nomes ? [...nomes][0] : ''), meta: m, vendas: v, pct: v / m });
+      for (const r of res.rows) if (r.metaInd > 0 && !r.semMeta) vend.set(r.vendedorId, { meta: r.metaInd, vendas: r.total || 0, pct: (r.total || 0) / r.metaInd });
+    }
+    if (!temMeta) { cache.set(chave, null); return null; }
+    const fechado = Math.max(db.maxDay, TS.todayDay() - 1) >= fim;
+    let esperado = null, pctProj = null, porDia = null, restantes = null;
+    if (!fechado) {
+      const p = TS.projecao(vendas, meta, ym, { base: 'meta' });
+      if (p) { esperado = p.n ? p.d / p.n : null; pctProj = p.pctProj; porDia = p.porDia; restantes = p.restantes; }
+    }
+    const vs = [...vend.values()];
+    const out = { ym, meta, vendas, fat, pct: vendas / meta, fechado, esperado, pctProj, porDia, restantes, lojas, vend, naMeta: vs.filter((x) => x.pct >= 1).length, comMeta: vs.length };
+    cache.set(chave, out);
+    return out;
+  };
   TS.heroiProjecao = function (valor, meta, ym, rotulo = 'Projeção do mês', opts = {}) {
     const p = TS.projecao(valor, meta, ym, opts);
     if (!p || p.proj == null) return null;
