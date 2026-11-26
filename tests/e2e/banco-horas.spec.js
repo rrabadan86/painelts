@@ -74,3 +74,19 @@ test('BANCO-03 (tela): escala — "Folga pelo banco de horas" marca o dia e entr
   });
   expect(saldo).toBe(true);
 });
+
+test('ESC-DEVE-01: resumo do mês da escala mostra quanto deveria trabalhar (carga ÷ 7 × dias), a diferença e o saldo do banco', async ({ page }, info) => {
+  await abrir(page, '#mapa');
+  await page.getByRole('tab', { name: 'Escala do mês' }).click();
+  const esperado = await page.evaluate(() => TS.db.metas[0].operacao.equipe.cargaSemanal);
+  expect(esperado).toBeGreaterThan(0);
+  if (info.project.name === 'celular') {
+    await expect(page.locator('.escm-res').first()).toContainText(/líquidas de \d+h/);
+    await expect(page.locator('.escm-res').first()).toContainText('banco');
+  } else {
+    const res = page.locator('.sem-t.resumo').first();
+    await expect(res.locator('thead')).toContainText('Deveria trabalhar');
+    await expect(res.locator('thead')).toContainText('Saldo do banco');
+    await expect(res.locator('.esc-dif').first()).toHaveText(/^ ?[+−]?\d+h/);
+  }
+});

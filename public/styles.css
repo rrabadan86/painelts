@@ -4314,3 +4314,5 @@ body.em-homolog .topbar { box-shadow: inset 0 -4px 0 var(--gold); }
 .sem-t td.bh-folga { background: var(--good-l); color: var(--good-t); font-weight: 600; }
 .sem-t .bh-fer { display: block; color: var(--gold-t); font-weight: 600; }
 .bh-res { margin-top: 14px; }
+.sem-t.resumo .esc-dif { display: block; font-weight: 500; font-size: 12px; }
+.escm-res .lmob-l2 .neg { color: var(--bad-t); }

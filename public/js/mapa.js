@@ -915,17 +915,6 @@
     const BHx = TS.bancoHoras;
     const bhAtivo = (iso) => !!(BHx && cfg && iso.slice(0, 7) >= BHx.regras(cfg).desde);
     const bhAcerto = (iso, i) => BHx.acertoDe(cfg, iso, E.pessoas[i].nome);
-    const saldoBanco = (paraPdf) => {
-      if (!BHx || !cfg || ym < BHx.regras(cfg).desde) return null;
-      const R = BHx.daLoja(cfg);
-      return h('table', { class: 'sem-t resumo bh-res' + (paraPdf ? ' pdf' : '') },
-        h('thead', null, h('tr', null, h('th', { class: 'l' }, `Banco de horas em ${fmt.date(TS.hojeSP())}`), h('th', null, 'Saldo'), h('th', null, 'Atenção'))),
-        h('tbody', null, E.pessoas.map((p) => {
-          const x = R.pessoas.get(p.nome.trim().toUpperCase());
-          const at = x && x.creditoAtrasado.length ? 'passou do prazo: folga ou pagar' : x && x.creditoVencendo.length ? `crédito chega ao prazo em ${fmt.date(x.creditoVencendo[0].prazo)}` : x && x.debitoVencendo.length ? `devidas vencem em ${fmt.date(x.debitoVencendo[0].vence)}` : '—';
-          return h('tr', null, h('th', { class: 'l' }, p.nome), h('td', { class: x && x.saldo < 0 ? 'neg' : x && x.saldo > 0 ? 'pos' : '' }, BHx.sinal(x ? x.saldo : 0)), h('td', null, at));
-        })));
-    };
     const celula = (i, iso, paraPdf) => {
       const k = E.dias.indexOf(iso);
       if (k < 0) return h('td', { class: 'fora' });
@@ -971,14 +960,26 @@
           return h('td', { class: !fechado && min && nP < min ? 'neg' : '' }, fechado ? '—' : `${nP} pessoa${nP === 1 ? '' : 's'}`);
         }), h('td'), h('td'))));
     };
+    // horas que a pessoa deveria trabalhar no mês (pedido do dono, 26/11/2026; ESC-DEVE-01): carga semanal ÷ 7 × dias do mês,
+    // sem os dias de férias e os feriados com a loja fechada (descanso pago); a diferença para as líquidas vai embaixo
+    const sinalH = (m) => (m > 0 ? '+' : m < 0 ? '−' : '') + hTxt(Math.abs(m));
+    const deveria = (i) => {
+      const nDias = E.dias.filter((d, k) => E.cel[i][k].tipo !== 'ferias' && !(E.cel[i][k].tipo === 'fechado' && E.feriados.has(d))).length;
+      return Math.round((op.equipe.cargaSemanal * 60 * nDias) / 7 / 10) * 10;
+    };
+    const liqDe = (i) => E.cel[i].reduce((s, c) => s + liquido(c), 0);
+    const bancoR = BHx && cfg ? BHx.daLoja(cfg) : null;
+    const saldoDe = (p) => { const x = bancoR && bancoR.pessoas.get(p.nome.trim().toUpperCase()); return x ? x.saldo : 0; };
     const resumoMes = (paraPdf) => h('table', { class: 'sem-t resumo' + (paraPdf ? ' pdf' : '') },
-      h('thead', null, h('tr', null, h('th', { class: 'l' }, 'Resumo do mês'), h('th', null, 'Dias trabalhados'), h('th', null, 'Folgas'), h('th', null, 'Férias'), h('th', { class: 'tot' }, 'Horas totais'), h('th', { class: 'tot' }, 'Horas líquidas'))),
+      h('thead', null, h('tr', null, h('th', { class: 'l' }, 'Resumo do mês'), h('th', null, 'Dias trabalhados'), h('th', null, 'Folgas'), h('th', null, 'Férias'), h('th', { class: 'tot', title: `Carga semanal (${op.equipe.cargaSemanal}h) ÷ 7 × dias do mês, sem férias e feriados com a loja fechada.` }, 'Deveria trabalhar'), h('th', { class: 'tot' }, 'Horas totais'), h('th', { class: 'tot', title: 'Horas trabalhadas sem o intervalo; embaixo, a diferença para o que deveria trabalhar.' }, 'Horas líquidas'), bancoR ? h('th', { class: 'tot', title: 'Saldo de hoje no banco de horas (aba Banco de horas): + a loja deve à pessoa; − a pessoa deve horas.' }, 'Saldo do banco') : null)),
       h('tbody', null, E.pessoas.map((p, i) => {
         const row = E.cel[i];
         return h('tr', null, h('th', { class: 'l' }, p.nome), h('td', null, String(row.filter((c) => c.tipo === 'trab').length)), h('td', null, String(row.filter((c) => c.tipo === 'folga').length)),
-          h('td', null, String(row.filter((c) => c.tipo === 'ferias').length)), h('td', { class: 'tot' }, hTxt(row.reduce((s, c) => s + bruto(c), 0))), h('td', { class: 'tot liq' }, hTxt(row.reduce((s, c) => s + liquido(c), 0))));
+          h('td', null, String(row.filter((c) => c.tipo === 'ferias').length)), h('td', { class: 'tot' }, hTxt(deveria(i))), h('td', { class: 'tot' }, hTxt(row.reduce((s, c) => s + bruto(c), 0))),
+          h('td', { class: 'tot liq' }, hTxt(liqDe(i)), h('small', { class: 'esc-dif ' + (liqDe(i) - deveria(i) < -5 ? 'neg' : liqDe(i) - deveria(i) > 5 ? 'pos' : 'muted') }, ` ${sinalH(liqDe(i) - deveria(i))}`)),
+          bancoR ? h('td', { class: 'tot bh-saldo ' + (saldoDe(p) > 0 ? 'pos' : saldoDe(p) < 0 ? 'neg' : '') }, sinalH(saldoDe(p)) || '0h00') : null);
       })));
-    const tabela = (paraPdf) => h('div', { class: 'semanas' }, semanasMes.map((datas, n) => blocoSemana(datas, n + 1, paraPdf)), resumoMes(paraPdf), paraPdf ? saldoBanco(true) : null);
+    const tabela = (paraPdf) => h('div', { class: 'semanas' }, semanasMes.map((datas, n) => blocoSemana(datas, n + 1, paraPdf)), resumoMes(paraPdf)); // o saldo do banco está na coluna do resumo (ESC-DEVE-01)
     // celular (ESC-MOB-01, mockup aprovado pelo dono em 25/11/2026): no lugar das semanas que rolavam de lado, a semana em
     // 7 botões (‹ › troca de semana), o dia escolhido com cada pessoa numa linha (tocar ajusta, como na tabela) e o resumo
     // do mês uma linha por pessoa. O PDF e o computador continuam com a tabela.
@@ -1021,8 +1022,8 @@
       const resumo = h('div', { class: 'lmob escm-res' }, E.pessoas.map((p, i) => {
         const row = E.cel[i];
         const fer = row.filter((c) => c.tipo === 'ferias').length;
-        return h('div', { class: 'lmob-it' }, h('div', { class: 'lmob-l1' }, h('span', { class: 'lmob-nome' }, TS.msgWpp ? TS.msgWpp.nomeProprio(p.nome) : p.nome), h('span', { class: 'lmob-val' }, hTxt(row.reduce((s, c) => s + liquido(c), 0)), h('small', null, ' líquidas'))),
-          h('div', { class: 'lmob-l2' }, h('span', null, `${row.filter((c) => c.tipo === 'trab').length} dias`), h('span', null, `${row.filter((c) => c.tipo === 'folga').length} folgas`), fer ? h('span', null, `${fer} férias`) : null, h('span', null, `${hTxt(row.reduce((s, c) => s + bruto(c), 0))} com intervalo`)));
+        return h('div', { class: 'lmob-it' }, h('div', { class: 'lmob-l1' }, h('span', { class: 'lmob-nome' }, TS.msgWpp ? TS.msgWpp.nomeProprio(p.nome) : p.nome), h('span', { class: 'lmob-val' }, hTxt(row.reduce((s, c) => s + liquido(c), 0)), h('small', null, ` líquidas de ${hTxt(deveria(i))}`))),
+          h('div', { class: 'lmob-l2' }, h('span', null, `${row.filter((c) => c.tipo === 'trab').length} dias`), h('span', null, `${row.filter((c) => c.tipo === 'folga').length} folgas`), fer ? h('span', null, `${fer} férias`) : null, h('span', { class: liqDe(i) - deveria(i) < -5 ? 'neg' : '' }, `diferença ${sinalH(liqDe(i) - deveria(i)) || '0h00'}`), bancoR ? h('span', null, `banco ${sinalH(saldoDe(p)) || '0h00'}`) : null, h('span', null, `${hTxt(row.reduce((s, c) => s + bruto(c), 0))} com intervalo`)));
       }));
       return h('div', { class: 'escm' }, nav, dias, tit, h('div', { class: 'lmob escm-lista' }, linhas), h('div', { class: 'escm-tit' }, h('b', null, 'Resumo do mês')), resumo);
     };
