@@ -581,17 +581,20 @@
       return { ...n, desconto, dia, nfTxt: `${n.nf ?? '—'}${n.serie ? ' / ' + n.serie : ''}`, nItens: n.itens.length, compra: /compra/i.test(n.motivo || ''), busca: n.itens.map((i) => i.nome + ' ' + i.cod).join(' ') };
     });
     if (!todas.length) return TS.card('Notas fiscais de entrada', null, h('p', { class: 'muted' }, 'Nenhuma nota de entrada no painel ainda. O coletor lê as notas concluídas de Estoque → Entrada de Produtos do AppNext junto com o estoque.'));
-    const noPer = (n) => (f.de == null || n.dia >= f.de) && (f.ate == null || n.dia <= f.ate);
+    // o período dos filtros termina no último dia com venda importada (ex.: ontem); nota que chegou depois disso (hoje)
+    // continua "no período" — pedido do dono, 26/11/2026 (NF-PER-01)
+    const ateNotas = f.ate != null && TS.db && f.ate >= TS.db.maxDay ? Math.max(f.ate, TS.todayDay()) : f.ate;
+    const noPer = (n) => (f.de == null || n.dia >= f.de) && (ateNotas == null || n.dia <= ateNotas);
     const temAlgumaDev = todas.some((n) => !!devAtivaDeNota(j, n));
     const temPend = Object.keys(j.lotesPend || {}).length > 0;
     const temDescLido = todas.some((n) => n.desconto != null);
     const subiuCusto = (n) => n.itens.some((i) => { const a = custoAntes(D, i.cod, n.dia, n.nf); return a && a.v > 0 && i.custo > a.v * 1.005; });
-    const FIL = { per: ['No período', noPer, 'Notas com entrada dentro do período escolhido nos filtros'], todas: ['Todas', () => true, 'Todas as notas de entrada lidas do AppNext'],
+    const FIL = { per: ['No período', noPer, 'Notas com entrada dentro do período escolhido nos filtros (quando o período termina no último dia com venda, entram também as notas que chegaram depois, até hoje)'], todas: ['Todas', () => true, 'Todas as notas de entrada lidas do AppNext'],
       ...(todas.some((n) => n.desconto > 0.005) ? { desc: ['Com desconto', (n) => n.desconto > 0.005, 'Notas com desconto (a franquia desconta as devoluções diluindo nos produtos)'] } : {}),
       subiu: ['Custo subiu', subiuCusto, 'Notas com pelo menos um produto mais caro que na compra anterior'],
       ...(temAlgumaDev ? { dev: ['Com devolução', (n) => !!devAtivaDeNota(j, n), 'Notas com devolução à franquia (itens quebrados, faltando ou com validade curta)'] } : {}),
       ...(temPend ? { lote: ['Lote pendente', (n) => !!j.lotesPend[n.id], 'Notas com chá a granel, envasado ou alimentação sem o nº do lote: abra a nota e preencha'] } : {}) };
-    const fil = FIL[state.prcNotasFil] ? state.prcNotasFil : 'per';
+    const fil = FIL[state.prcNotasFil] ? state.prcNotasFil : 'todas'; // abre em "Todas" (pedido do dono, 26/11/2026; NF-PER-01)
     const rows = todas.filter(FIL[fil][1]);
     const tab = TS.table({ linhaMob: { nome: 'nfTxt', val: 'total', l2: ['dia', 'fornecedor', 'nItens', 'desconto'] }, // celular em linhas (LMOB-04)
         

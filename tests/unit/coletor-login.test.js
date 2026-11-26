@@ -85,3 +85,9 @@ test('NF-FILA-01: o laço da fila do coletor não morre e avisa quando a fila pa
   assert.match(tela, /roboParado/);
   assert.match(tela, /sem resposta do coletor agora; tentando de novo/, 'erro numa consulta não congela a tela em "na fila"');
 });
+
+test('NF-PER-01: "No período" das notas vai até hoje quando o filtro termina no último dia com venda', () => {
+  const tela = fs.readFileSync(path.join(raiz, 'public/js/precos.js'), 'utf8');
+  assert.match(tela, /const ateNotas = f\.ate != null && TS\.db && f\.ate >= TS\.db\.maxDay \? Math\.max\(f\.ate, TS\.todayDay\(\)\) : f\.ate;/);
+  assert.match(tela, /state\.prcNotasFil\] \? state\.prcNotasFil : 'todas'/);
+});

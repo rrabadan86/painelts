@@ -63,6 +63,7 @@ const NOVIDADES = [
   { id: '2026-11-26-validade-todos', data: '2026-11-26', titulo: 'Validade abre com todos os lotes', texto: 'Em Estoque → Validade, a lista abre com "Todos" marcado. Para ver só o que vence logo, toque em "Vence em até 90 dias" ou numa das faixas.', para: 'todos', tela: 'validade' },
   { id: '2026-11-26-sincronizar-notas', data: '2026-11-26', titulo: 'Sincronizar notas: fila e login mais claros', texto: 'Em Estoque → Notas fiscais, "Sincronizar agora" diz o que o robô está fazendo enquanto espera (não aparece mais "1 na frente" sem ninguém na frente) e avisa se a fila parou. Quando o login do AppNext não abre, o robô tenta de novo e o log explica o que apareceu na tela.', para: ['admin', 'franqueado'], tela: 'notas' },
   { id: '2026-11-26-sincronizar-gerente', data: '2026-11-26', titulo: 'Gerente pode sincronizar as notas', texto: 'Em Estoque → Notas fiscais, a gerente que tem a tela Notas fiscais também vê o botão "Sincronizar agora", que busca no AppNext o estoque e as notas de entrada da loja.', para: ['gerente'], tela: 'notas' },
+  { id: '2026-11-26-notas-todas', data: '2026-11-26', titulo: 'Notas fiscais abrem com todas as notas', texto: 'Em Estoque → Notas fiscais, a lista de notas de entrada abre em "Todas". Em "No período", a nota que chegou hoje também aparece, mesmo com as vendas atualizadas só até ontem.', para: ['admin', 'franqueado', 'gerente'], tela: 'notas' },
 ];
 /** pessoa sem registro (de antes desta janela): só o que entrou nos últimos dias, para não abrir com a lista inteira */
 const DIAS_SEM_REGISTRO = 14;
