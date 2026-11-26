@@ -690,49 +690,110 @@
   }
 
   // ---- metas
+  /**
+   * Metas (META-CFG-01, decisão do dono de 26/11/2026): uma tabela por ano, do primeiro mês com venda até 2 meses à frente
+   * (no mínimo até dezembro do ano atual). Cada mês: a meta (digitar só para mudar aquele mês; em cinza, a que vale), de onde
+   * ela vem, as vendas da meta e o % atingido — a mesma conta da Evolução mensal (TS.metaMes; sem os dados da loja na
+   * memória, as vendas da meta que o servidor manda). Meta automática e meta padrão numa linha só, em cima.
+   */
   function blocoMetas(l) {
-    const padrao = inp({ type: 'number', min: 0, step: 500, value: l.meta ?? '' });
+    const padrao = inp({ type: 'number', min: 0, step: 500, value: l.meta ?? '', style: { maxWidth: '150px' } });
     const auto = l.metaAuto || { ativo: false, pct: 10 };
     const autoOn = h('input', { type: 'checkbox', checked: auto.ativo || null });
-    const pct = inp({ type: 'number', step: 0.5, min: -90, max: 500, value: auto.pct ?? 10, style: { maxWidth: '110px' } });
-    const tot = l.totaisSemEG || {};
+    const pct = inp({ type: 'number', step: 0.5, min: -90, max: 500, value: auto.pct ?? 10, style: { maxWidth: '96px' } });
+    const db = TS.db;
+    const lojaIdx = db && db.D ? (l.nomesVenda || []).map((n) => db.D.loja.indexOf(n)).filter((x) => x >= 0) : [];
+    // base da meta automática: o servidor manda; na apresentação (sem o servidor), a mesma conta das telas
+    const tot = l.totaisSemEG || (() => { if (!db || !TS.totaisSemEG) return {}; const m = TS.totaisSemEG(), t = {}; for (const n of l.nomesVenda || []) for (const [ym, v] of Object.entries(m.get(n) || {})) t[ym] = (t[ym] || 0) + v; return t; })();
     const ymAnt = (ym) => `${+ym.slice(0, 4) - 1}${ym.slice(4)}`;
     const valorAuto = (ym) => { const b = tot[ymAnt(ym)]; return autoOn.checked && b > 0 ? Math.round(b * (1 + (+pct.value || 0) / 100)) : null; };
+    /** vendas da meta do mês: a conta da Evolução mensal quando os dados da loja estão na memória; senão a do servidor */
+    const vendasDe = (ym) => {
+      if (lojaIdx.length === 1 && TS.metaMes) { const m = TS.metaMes(ym, { loja: lojaIdx[0] }); if (m) return m; }
+      const v = (l.vendasMetaMes || {})[ym];
+      return v != null ? { vendas: v } : null;
+    };
     const hoje = new Date();
     const ymHoje = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}`;
-    const meses = [];
-    for (let k = -12; k <= 2; k++) { const d = new Date(hoje.getFullYear(), hoje.getMonth() + k, 1); meses.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`); }
+    const mais = (ym, n) => { const d = new Date(Date.UTC(+ym.slice(0, 4), +ym.slice(5, 7) - 1 + n, 1)); return d.toISOString().slice(0, 7); };
+    const comVenda = [...Object.keys(l.vendasMetaMes || {}), ...Object.keys(tot)].filter((ym) => ym >= '2000-01').sort();
+    let ini = [comVenda[0], ...Object.keys(l.metas || {})].filter(Boolean).sort()[0] || mais(ymHoje, -12);
+    if (lojaIdx.length && db && db.minDay != null) { const m0 = TS.dayToIso(db.minDay).slice(0, 7); if (m0 < ini) ini = m0; }
+    let fim = mais(ymHoje, 2); if (fim < `${hoje.getFullYear()}-12`) fim = `${hoje.getFullYear()}-12`;
+    const meses = []; for (let ym = ini; ym <= fim && meses.length < 240; ym = mais(ym, 1)) meses.push(ym);
     Object.keys(l.metas || {}).forEach((ym) => { if (!meses.includes(ym)) meses.push(ym); });
     meses.sort();
-    const campos = new Map(), dicas = new Map();
-    const grade = h('div', { class: 'cfg-metas' }, meses.map((ym) => {
-      const i = inp({ type: 'number', min: 0, step: 500, value: l.metas[ym] ?? '' });
-      const dica = h('small', { class: 'cfg-meta-dica' });
-      campos.set(ym, i); dicas.set(ym, dica);
-      return h('label', { class: 'cfg-meta' + (ym === ymHoje ? ' atual' : '') }, h('span', null, TS.ymLabel(ym)), i, dica);
-    }));
-    const atualizarDicas = () => {
-      for (const [ym, i] of campos) {
-        const v = valorAuto(ym);
-        i.placeholder = v != null ? fmt.int(v) : padrao.value ? fmt.int(+padrao.value) : '—';
-        const d = dicas.get(ym);
-        d.textContent = i.value ? 'digitada' : v != null ? `auto (${ymAnt(ym).slice(5)}/${ymAnt(ym).slice(2, 4)}: ${fmt.compact(tot[ymAnt(ym)])})` : 'padrão';
-        d.className = 'cfg-meta-dica ' + (i.value ? 'dig' : v != null ? 'auto' : '');
-      }
-    };
-    [autoOn, pct, padrao].forEach((x) => x.addEventListener('input', atualizarDicas));
-    autoOn.addEventListener('change', atualizarDicas);
-    campos.forEach((i) => i.addEventListener('input', atualizarDicas));
-    atualizarDicas();
+    const anos = [...new Set(meses.map((ym) => ym.slice(0, 4)))];
+    let anoSel = anos.includes(ymHoje.slice(0, 4)) ? ymHoje.slice(0, 4) : anos[anos.length - 1];
+    // um campo por mês, criado uma vez (trocar de ano não perde o que foi digitado)
+    const campos = new Map();
+    for (const ym of meses) {
+      const i = inp({ type: 'number', min: 0, step: 500, value: l.metas[ym] ?? '', 'aria-label': `Meta de ${TS.ymLabel(ym)}`, 'data-ym': ym });
+      TS.aoConfirmar(i, () => pintar()); // redesenha ao sair do campo: não perde o foco a cada dígito
+      campos.set(ym, i);
+    }
+    const valorDe = (ym) => { const i = campos.get(ym); return i.value !== '' ? +i.value : valorAuto(ym) ?? (padrao.value !== '' ? +padrao.value : null); };
+    const origemDe = (ym) => (campos.get(ym).value !== '' ? 'dig' : valorAuto(ym) != null ? 'auto' : padrao.value !== '' ? 'padrao' : null);
+    const cls = (p, fechado) => (p >= 1 ? 'ok' : fechado ? 'nao' : 'and');
+    const abas = h('div', { class: 'cfg-metas-anos' });
+    const tbody = h('tbody'), tfoot = h('tfoot');
+    const tabela = h('div', { class: 'table-wrap free' }, h('table', { class: 't cfg-metas-t' },
+      h('thead', null, h('tr', null,
+        h('th', { class: 'l' }, 'Mês'),
+        h('th', { title: 'Digite só para mudar aquele mês: a meta digitada vale mais que a automática. Em cinza, a meta que vale.' }, 'Meta'),
+        h('th', { class: 'l', title: 'Digitada: o valor deste mês. Automática: vendas do mesmo mês do ano anterior (sem Espaço Gourmet) + o %. Padrão: a meta padrão.' }, 'De onde vem'),
+        h('th', { title: 'Chá aromatizado, chá puro e acessórios, sem o Espaço Gourmet: a mesma conta do Início e do Comissionamento.' }, 'Vendas da meta'),
+        h('th', { title: 'Vendas da meta ÷ meta. Verde bateu, vermelho não bateu, amarelo mês em andamento (a marca é onde a loja deveria estar hoje).' }, 'Atingido'))),
+      tbody, tfoot));
+    function pintar() {
+      abas.replaceChildren(...anos.map((a) => h('button', { type: 'button', class: 'cfg-metas-ano' + (a === anoSel ? ' on' : ''), 'aria-pressed': String(a === anoSel), onclick: () => { anoSel = a; pintar(); } }, a)));
+      const doAno = meses.filter((ym) => ym.startsWith(anoSel));
+      let sMeta = 0, sMetaVend = 0, sVend = 0, ultimo = null;
+      tbody.replaceChildren(...doAno.map((ym) => {
+        const i = campos.get(ym), v = valorDe(ym), o = origemDe(ym);
+        const au = valorAuto(ym);
+        i.placeholder = v != null ? fmt.int(v) : '—';
+        const vm = ym <= ymHoje ? vendasDe(ym) : null;
+        const fechado = ym < ymHoje;
+        if (v != null) sMeta += v;
+        let ating = h('span', { class: 'muted' }, '—');
+        if (vm && v > 0) {
+          sVend += vm.vendas; sMetaVend += v; ultimo = ym;
+          const p = vm.vendas / v, c = cls(p, fechado);
+          const esp = !fechado && vm.esperado != null ? vm.esperado : null;
+          const proj = !fechado && vm.pctProj != null && vm.meta > 0 ? vm.pctProj * vm.meta / v : null;
+          ating = h('div', { class: 'cfg-metas-at' }, h('b', { class: c }, fmt.pct(p)),
+            h('div', { class: 'cfg-metas-barra' }, h('i', { class: c, style: { width: Math.min(100, p * 100) + '%' } }), esp != null ? h('u', { style: { left: Math.min(100, esp * 100) + '%' }, title: `Deveria estar em ${fmt.pct(esp, 0)} hoje` }) : null),
+            proj != null ? h('small', { class: 'muted' }, `no ritmo: ${fmt.pct(proj, 0)}`) : null);
+        }
+        const origem = o === 'dig'
+          ? h('span', null, h('span', { class: 'cfg-metas-et dig' }, 'digitada'), ' ', h('button', { type: 'button', class: 'link-btn', onclick: () => { i.value = ''; pintar(); } }, au != null ? 'usar a automática' : 'usar a padrão'))
+          : o === 'auto' ? h('span', { class: 'cfg-metas-et auto', title: `${TS.ymLabel(ymAnt(ym))}: ${fmt.brl0(tot[ymAnt(ym)])} + ${fmt.n2(+pct.value || 0).replace(/,00$/, '')}%` }, `automática · ${TS.ymLabel(ymAnt(ym))} ${fmt.compact(tot[ymAnt(ym)])}`)
+            : o === 'padrao' ? h('span', { class: 'cfg-metas-et' }, 'padrão') : h('span', { class: 'muted' }, 'sem meta');
+        return h('tr', { class: ym === ymHoje ? 'atual' : null, 'data-ym': ym },
+          h('td', { class: 'l', 'data-l': 'Mês' }, h('b', null, TS.ymLabel(ym)), ym === ymHoje ? h('small', { class: 'muted' }, ' em andamento') : null),
+          h('td', { 'data-l': 'Meta' }, i),
+          h('td', { class: 'l', 'data-l': 'De onde vem' }, origem),
+          h('td', { 'data-l': 'Vendas da meta' }, vm ? fmt.brl0(vm.vendas) : h('span', { class: 'muted' }, '—')),
+          h('td', { 'data-l': 'Atingido' }, ating));
+      }));
+      const pAno = sMetaVend > 0 ? sVend / sMetaVend : null;
+      tfoot.replaceChildren(h('tr', null, h('td', { class: 'l', 'data-l': '' }, h('b', null, `Total ${anoSel}`)), h('td', { 'data-l': 'Meta do ano' }, fmt.brl0(sMeta)), h('td', { 'data-l': '' }),
+        h('td', { 'data-l': 'Vendas da meta' }, fmt.brl0(sVend)),
+        h('td', { 'data-l': 'Atingido', title: 'Vendas da meta ÷ meta, só dos meses que já têm venda' }, pAno != null ? h('span', null, h('b', { class: cls(pAno, ultimo < ymHoje) }, fmt.pct(pAno)), ultimo ? h('small', { class: 'muted' }, ` até ${TS.ymLabel(ultimo)}`) : null) : '—')));
+    }
+    [pct, padrao].forEach((x) => TS.aoConfirmar(x, () => pintar()));
+    autoOn.addEventListener('change', () => pintar());
+    pintar();
     return h('section', { class: 'cfg-bloco cfg-form' }, h('h3', null, 'Metas'),
-      h('div', { class: 'cfg-auto' },
+      h('p', { class: 'muted' }, 'A meta de cada mês, de onde ela vem e quanto a loja já atingiu. Para mudar um mês, digite na linha dele.'),
+      h('div', { class: 'cfg-metas-topo' },
         h('label', { class: 'cfg-check-l' }, autoOn, h('b', null, ' Meta automática pelo ano anterior')),
-        h('div', { class: 'cfg-inline' }, h('span', null, 'Vendas do mesmo mês do ano anterior (sem Espaço Gourmet) +'), pct, h('span', null, '%')),
-        h('small', { class: 'muted' }, 'Ex.: vendeu R$ 100.000 em nov/25 e o percentual é 10% → meta de nov/26 = R$ 110.000. Os meses sem venda no ano anterior usam a meta padrão.')),
-      campo('Meta padrão (R$)', padrao, 'Usada quando o mês não tem meta digitada nem venda no ano anterior.'),
-      h('div', { class: 'f-label', style: { marginTop: '10px' } }, 'Meta de cada mês'),
-      h('p', { class: 'muted', style: { margin: '2px 0 8px' } }, 'Digite só para mudar um mês específico: a meta digitada vale mais que a automática. Em cinza, o valor que será usado.'),
-      grade,
+        h('span', { class: 'cfg-inline' }, h('span', { class: 'muted' }, 'vendas do mesmo mês do ano anterior (sem Espaço Gourmet) +'), pct, h('span', null, '%'),
+          TS.dica('Ex.: vendeu R$ 100.000 em nov/25 e o percentual é 10% → meta de nov/26 = R$ 110.000. Os meses sem venda no ano anterior usam a meta padrão.')),
+        h('label', { class: 'cfg-inline' }, h('span', null, 'Meta padrão (R$)'), padrao, TS.dica('Usada quando o mês não tem meta digitada nem venda no ano anterior.'))),
+      abas,
+      tabela,
       h('div', { class: 'cfg-acoes' }, acao('Salvar metas', async () => {
         const metas = {};
         for (const [ym, i] of campos) { const v = i.value.trim(); if (v !== String(l.metas[ym] ?? '')) metas[ym] = v === '' ? null : +v; }

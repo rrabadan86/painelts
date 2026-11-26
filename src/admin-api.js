@@ -135,7 +135,7 @@ function validarRegras(g) {
 }
 
 const AG = require('./agenda');
-function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSemEG, MAX_UPLOAD_MB, NOTIF, obterIndicadores, arquivoLogo, LOGO_EXT }) {
+function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSemEG, vendasMetaMes, MAX_UPLOAD_MB, NOTIF, obterIndicadores, arquivoLogo, LOGO_EXT }) {
   const r = express.Router();
   const json = express.json({ limit: '200kb' });
 
@@ -184,7 +184,7 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
       });
       return {
         logo: !!arquivoLogo(l.id), operacao: l.operacao, ferias: l.ferias,
-        metaAuto: l.metaAuto, totaisSemEG: totaisSemEG(l.id),
+        metaAuto: l.metaAuto, totaisSemEG: totaisSemEG(l.id), vendasMetaMes: vendasMetaMes ? vendasMetaMes(l.id) : {},
         // CFOP das NF-e (escolhido e os que o robô leu do AppNext)
         nfeCfop: require('./nfecfop').daLoja(l.id), cfopsAppNext: require('./nfecfop').listaAppNext(l.id),
         id: l.id, nome: l.nome, appnext: l.appnext, meta: l.meta, metas: l.metas, criadaEm: l.criadaEm, regras: l.regras, marca: l.marca, wppModelos: l.wppModelos, wppApresentacao: l.wppApresentacao || null, wppIntervalo: l.wppIntervalo ?? null,
