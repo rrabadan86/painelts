@@ -141,7 +141,9 @@
     const ant = (n) => { const d = new Date(Date.UTC(+hoje.slice(0, 4), +hoje.slice(5, 7) - 1 - n, 1)); return d.toISOString().slice(0, 7); };
     if (ym !== ant(1) && ym !== ant(2)) return null;
     const ini = 52000 + (ym === ant(1) ? 900 : 0), compras = Math.round(cmv * 1.04), sumiu = (perdas || 0) + 160;
-    return { ini: { dia: `${ym}-01`, valor: ini, aprox: false }, fim: { dia: `${ym === ant(1) ? ant(0) : ant(1)}-01`, valor: Math.round((ini + compras - cmv - sumiu) * 100) / 100, aprox: false }, compras, comprasFranquia: compras - 380, comprasOutros: 380, fornecedores: [{ nome: 'Embalagens Exemplo', valor: 380 }], devolucoes: 0, demo: true };
+    return { ini: { dia: `${ym}-01`, valor: ini, aprox: false }, fim: { dia: `${ym === ant(1) ? ant(0) : ant(1)}-01`, valor: Math.round((ini + compras - cmv - sumiu) * 100) / 100, aprox: false }, compras, comprasFranquia: compras - 380, comprasOutros: 380, fornecedores: [{ nome: 'Embalagens Exemplo', valor: 380 }], devolucoes: 0, demo: true,
+      notas: [{ nf: '1001', entrada: `${ym}-05`, forn: 'TSB FRANQUIAS (exemplo)', valor: compras - 380 }, { nf: '2001', entrada: `${ym}-12`, forn: 'Embalagens Exemplo', valor: 380 }],
+      fora: [{ nf: '1002', entrada: `${ym}-28`, forn: 'TSB FRANQUIAS (exemplo)', valor: 1250, porque: 'não concluída no AppNext (Pendente)' }] };
   }
   /**
    * Os degraus da DRE como na contabilidade (decisão do dono, 25/11/2026; DRE-ESTR-01), iguais no Resultado e na Rentabilidade:
@@ -186,6 +188,19 @@
     return degraus(p); // as perdas e o resultado financeiro lançado não crescem com as vendas: ficam os de agora
   }
 
+  /** ⓘ das compras do mês (DRE-COMPRAS-01, pedido do dono de 26/11/2026): a regra e cada nota que entrou e que ficou fora, com o porquê */
+  function dicaCompras(m) {
+    const base = 'Notas de compra CONCLUÍDAS no AppNext com ENTRADA no mês (não a emissão), a custo dos itens, de todos os fornecedores.';
+    if (!m.est) return base + ' Só aparece com o mês fechado: a conta pelo estoque precisa da foto do estoque do fim do mês.';
+    const nota = (x) => `NF ${x.nf} · entrada ${fmt.date(x.entrada)} · ${x.forn || 'sem fornecedor'} · ${fmt.brl(x.valor)}`;
+    const ent = m.est.notas || [], fora = m.est.fora || [];
+    let t = base;
+    if (ent.length) t += `\n\nEntraram ${ent.length} ${ent.length === 1 ? 'nota' : 'notas'}:\n` + ent.map(nota).join('\n');
+    else if (m.est.notas) t += '\n\nNenhuma nota de compra concluída com entrada neste mês.';
+    if (fora.length) t += `\n\nFicaram fora ${fora.length}:\n` + fora.map((x) => `${nota(x)} · ${x.porque}`).join('\n');
+    t += '\n\nNota emitida no fim de um mês e com entrada no seguinte conta no mês da entrada.';
+    return t;
+  }
   /** ⓘ do Faturamento total: a conta com e sem a taxa de serviço (pedido do dono: investigar royalties e imposto) */
   function dicaTotal(m) {
     const base = `Receita bruta: loja + Espaço Gourmet pelo preço cheio, antes dos descontos (${fmt.brl(m.desc || 0)} de descontos no mês). Sem entrega e sem itens a R$ 0,01.`;
@@ -278,7 +293,7 @@
     ['DIFAL não recuperável', (m) => m.difal, 'calc', 'DIFAL das compras de outro estado (pago em guia, não vem na nota): clique no valor de um mês para lançar', null, null, 'difal'],
     ...(temEst ? [
       ['Pela conta do estoque: estoque inicial', (m) => (m.est ? m.est.ini.valor : null), 'estq', (m) => (m.est ? `Estoque a custo em ${fmt.date(m.est.ini.dia)}${m.est.ini.aprox ? ' (a foto mais próxima da virada do mês)' : ''}${m.est.ini.rec ? ' · reconstruído pelo Extrato de estoque do AppNext (movimentos desde então, custo de cada data)' : ''}` : 'Sem a foto do estoque deste mês')],
-      ['(+) Compras do mês', (m) => (m.est ? m.est.compras : null), 'estq', 'Notas de compra concluídas no AppNext com entrada no mês, a custo, de todos os fornecedores'],
+      ['(+) Compras do mês', (m) => (m.est ? m.est.compras : null), 'estq', (m) => dicaCompras(m)],
       ['Da franquia (TSB)', (m) => (m.est && m.est.comprasFranquia != null ? m.est.comprasFranquia : null), 'estqf', 'Notas de compra da TSB Franquias com entrada no mês, a custo'],
       ['Outros fornecedores', (m) => (m.est && m.est.comprasOutros != null ? m.est.comprasOutros : null), 'estqf', (m) => (m.est && m.est.fornecedores && m.est.fornecedores.length
         ? 'Notas de compra de outros fornecedores com entrada no mês, a custo: ' + m.est.fornecedores.map((x) => `${x.nome} (${fmt.brl(x.valor)})`).join(', ')
@@ -456,17 +471,19 @@
     const abrir = (nome, ym) => janelaFixo(M, meses, nome, ym);
     const abrirCalc = (k, ym) => janelaCalc(M, meses, k, ym);
     const nColMes = tb.querySelector('thead tr') ? tb.querySelector('thead tr').children.length : 3;
+    /** ⓘ ao lado do nome de cada linha (pedido do dono, 26/11/2026; DRE-DICA-01): no celular não há "passar o mouse" */
+    const ic = (dica) => TS.dica(typeof dica === 'function' ? dica(m) : dica);
     for (const [rot, f, tipo, dica, gid, fx, cc] of linhas) {
       const pcL = (a, b) => (tipo === 'estq' || tipo === 'estqf' ? '' : pc(a, b)); // estoque inicial/final: % da receita não faz sentido
-      if (tipo === 'secao') { body.append(h('tr', { class: 'dre-secao', title: dica }, h('td', { class: 'l', colspan: nColMes }, rot))); continue; }
+      if (tipo === 'secao') { body.append(h('tr', { class: 'dre-secao', title: dica }, h('td', { class: 'l', colspan: nColMes }, rot, ic(dica)))); continue; }
       const v = f(m), vp = P ? f(P) : null, va = a ? f(a) : null, vb = f(base);
       if (cc) { // linha calculada que aceita o valor real do mês (Simples, maquininha, royalties, marketing)
         const d2 = vb != null && va ? vb / va - 1 : null;
-        if (MOB) { body.append(linhaMob(h('tr', { class: 'dre-' + tipo, title: typeof dica === 'function' ? dica(m) : dica }), h('td', { class: 'l' }, rot),
+        if (MOB) { body.append(linhaMob(h('tr', { class: 'dre-' + tipo, title: typeof dica === 'function' ? dica(m) : dica }), h('td', { class: 'l' }, rot, ic(dica)),
           celCalc(m, cc, v == null ? '—' : fmt.brl(v), null, abrirCalc), pcL(v, m.recLiq), P ? celCalc(P, cc, vp == null ? '—' : fmt.brl(vp), 'dre-proj', abrirCalc, m.ym) : null, P ? pcL(vp, P.recLiq) : '',
           a ? celCalc(a, cc, va == null ? '—' : fmt.brl(va), null, abrirCalc) : h('td', null, '—'), d2, d2 == null || Math.abs(d2) < 0.0005 ? 'muted' : d2 < 0 ? 'pos' : 'neg')); continue; }
         body.append(h('tr', { class: 'dre-' + tipo, title: typeof dica === 'function' ? dica(m) : dica },
-          h('td', { class: 'l' }, rot), celCalc(m, cc, v == null ? '—' : fmt.brl(v), null, abrirCalc), h('td', { class: 'muted' }, pcL(v, m.recLiq)),
+          h('td', { class: 'l' }, rot, ic(dica)), celCalc(m, cc, v == null ? '—' : fmt.brl(v), null, abrirCalc), h('td', { class: 'muted' }, pcL(v, m.recLiq)),
           P ? celCalc(P, cc, vp == null ? '—' : fmt.brl(vp), 'dre-proj', abrirCalc, m.ym) : null, P ? h('td', { class: 'muted dre-proj' }, pcL(vp, P.recLiq)) : null,
           a ? celCalc(a, cc, va == null ? '—' : fmt.brl(va), null, abrirCalc) : h('td', null, '—'), h('td', { class: 'muted' }, a ? pcL(va, a.recLiq) : '—'),
           h('td', { class: d2 == null || Math.abs(d2) < 0.0005 ? 'muted' : d2 < 0 ? 'pos' : 'neg' }, d2 == null ? '—' : fmt.delta(d2))));
@@ -477,14 +494,14 @@
       const rotL = rot;
       if (MOB) {
         body.append(linhaMob(h('tr', { class: 'dre-' + tipo, title: typeof dica === 'function' ? dica(m) : dica, onclick: gid ? () => alternar(gid) : null }),
-          h('td', { class: 'l' }, gid ? h('span', { class: 'dre-seta' }, abertos.has(gid) ? '▾ ' : '▸ ') : null, fx ? nomeFixo(rotL, () => abrir(fx, sel)) : rotL),
+          h('td', { class: 'l' }, gid ? h('span', { class: 'dre-seta' }, abertos.has(gid) ? '▾ ' : '▸ ') : null, fx ? nomeFixo(rotL, () => abrir(fx, sel)) : rotL, ic(dica)),
           fx ? celFixo(m, fx, v == null ? '—' : fmt.brl(v), null, abrir) : h('td', { class: tipo === 'tot' && v < 0 ? 'neg' : null }, v == null ? '—' : fmt.brl(v)), pcL(v, m.recLiq),
           P ? (fx ? celFixo(P, fx, vp == null ? '—' : fmt.brl(vp), 'dre-proj', abrir) : h('td', { class: 'dre-proj' + (tipo === 'tot' && vp < 0 ? ' neg' : '') }, vp == null ? '—' : fmt.brl(vp))) : null, P ? pcL(vp, P.recLiq) : '',
           fx && a ? celFixo(a, fx, va == null ? '—' : fmt.brl(va), null, abrir) : h('td', null, va == null ? '—' : fmt.brl(va)), d, d == null || Math.abs(d) < 0.0005 ? 'muted' : bom ? 'pos' : 'neg'));
         continue;
       }
       body.append(h('tr', { class: 'dre-' + tipo, title: typeof dica === 'function' ? dica(m) : dica, onclick: gid ? () => alternar(gid) : null },
-        h('td', { class: 'l' }, gid ? h('span', { class: 'dre-seta' }, abertos.has(gid) ? '▾ ' : '▸ ') : null, fx ? nomeFixo(rotL, () => abrir(fx, sel)) : rotL),
+        h('td', { class: 'l' }, gid ? h('span', { class: 'dre-seta' }, abertos.has(gid) ? '▾ ' : '▸ ') : null, fx ? nomeFixo(rotL, () => abrir(fx, sel)) : rotL, ic(dica)),
         fx ? celFixo(m, fx, v == null ? '—' : fmt.brl(v), null, abrir) : h('td', { class: tipo === 'tot' && v < 0 ? 'neg' : null }, v == null ? '—' : fmt.brl(v)), h('td', { class: 'muted' }, pcL(v, m.recLiq)),
         P ? (fx ? celFixo(P, fx, vp == null ? '—' : fmt.brl(vp), 'dre-proj', abrir) : h('td', { class: 'dre-proj' + (tipo === 'tot' && vp < 0 ? ' neg' : '') }, vp == null ? '—' : fmt.brl(vp))) : null, P ? h('td', { class: 'muted dre-proj' }, pcL(vp, P.recLiq)) : null,
         fx && a ? celFixo(a, fx, va == null ? '—' : fmt.brl(va), null, abrir) : h('td', null, va == null ? '—' : fmt.brl(va)), h('td', { class: 'muted' }, a ? pcL(va, a.recLiq) : '—'),
@@ -527,7 +544,7 @@
     const t2 = h('table', { class: 't dre-t' + (MOB ? ' dre-mob' : '') });
     t2.append(h('thead', null, h('tr', null, h('th', { class: 'l sticky-col' }, ''), ult12.map((x) => h('th', { class: x.projecao ? 'dre-proj' : null }, TS.ymLabel(x.ym) + (x.projecao ? '*' : ''))))));
     const b2 = h('tbody');
-    for (const [rot, f, tipo, dica, gid, fx, cc] of linhas) if (tipo === 'secao') b2.append(h('tr', { class: 'dre-secao', title: dica }, h('td', { class: 'l sticky-col' }, rot), ult12.map(() => h('td')))); else b2.append(h('tr', { class: 'dre-' + tipo, title: typeof dica === 'function' ? dica(m) : dica, onclick: gid ? () => alternar(gid) : null }, h('td', { class: 'l sticky-col' }, gid ? h('span', { class: 'dre-seta' }, abertos.has(gid) ? '▾ ' : '▸ ') : null, fx ? nomeFixo(rot, () => abrir(fx, sel)) : rot),
+    for (const [rot, f, tipo, dica, gid, fx, cc] of linhas) if (tipo === 'secao') b2.append(h('tr', { class: 'dre-secao', title: dica }, h('td', { class: 'l sticky-col' }, rot, ic(dica)), ult12.map(() => h('td')))); else b2.append(h('tr', { class: 'dre-' + tipo, title: typeof dica === 'function' ? dica(m) : dica, onclick: gid ? () => alternar(gid) : null }, h('td', { class: 'l sticky-col' }, gid ? h('span', { class: 'dre-seta' }, abertos.has(gid) ? '▾ ' : '▸ ') : null, fx ? nomeFixo(rot, () => abrir(fx, sel)) : rot, ic(dica)),
       ult12.map((x) => { const v = f(x); return cc ? celCalc(x, cc, v == null ? '—' : fmt.brl0(v), x.projecao ? 'dre-proj' : null, abrirCalc) : fx ? celFixo(x, fx, v == null ? '—' : fmt.brl0(v), x.projecao ? 'dre-proj' : null, abrir) : h('td', { class: tipo === 'tot' && v < 0 ? 'neg' : null }, v == null ? '—' : fmt.brl0(v)); })));
     b2.append(h('tr', { class: 'dre-info' }, h('td', { class: 'l sticky-col' }, 'Resultado em % da receita líquida'), ult12.map((x) => h('td', { class: x.resultado < 0 ? 'neg' : null }, pc(x.resultado, x.recLiq)))));
     t2.append(b2);

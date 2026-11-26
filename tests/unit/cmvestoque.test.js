@@ -34,7 +34,7 @@ test('CMV-EST-01: estoque final = foto do dia 1 do mês seguinte; sem ela, a mai
   ];
   const saidas = [{ data: '2026-11-20', finalidade: 'Devolução', valor: 80, situacao: 'autorizada' }, { data: '2026-11-21', finalidade: 'Devolução', valor: 999, situacao: 'cancelada' }];
   const r = CE.resumo('l1', { notas, saidas });
-  assert.deepStrictEqual(r['2026-11'], { ini: { dia: '2026-11-01', valor: 1000, aprox: false }, fim: { dia: '2026-11-30', valor: 1200, aprox: true }, compras: 350, comprasFranquia: 0, comprasOutros: 350, fornecedores: [{ nome: 'sem fornecedor', valor: 350 }], devolucoes: 80 });
+  { const { notas: _n, fora: _f, ...sem } = r['2026-11']; assert.deepStrictEqual(sem, { ini: { dia: '2026-11-01', valor: 1000, aprox: false }, fim: { dia: '2026-11-30', valor: 1200, aprox: true }, compras: 350, comprasFranquia: 0, comprasOutros: 350, fornecedores: [{ nome: 'sem fornecedor', valor: 350 }], devolucoes: 80 }); }
   assert.strictEqual(r['2026-10'], undefined, 'outubro sem a foto do começo: fica de fora');
 });
 
@@ -116,4 +116,21 @@ test('CMV-FORN-01: compras do mês separadas em TSB e outros fornecedores (com o
   assert.deepStrictEqual(m.fornecedores, [{ nome: 'Padaria Boa', valor: 120 }, { nome: 'Embalagens Goiás', valor: 100 }]);
   assert.strictEqual(CE.ehFranquia('TSB FRANQUIAS'), true);
   assert.strictEqual(CE.ehFranquia('Padaria Boa'), false);
+});
+
+// DRE-COMPRAS-01 (pedido do dono, 26/11/2026): o ⓘ das compras lista as notas que entraram e as que ficaram fora, com o porquê
+test('DRE-COMPRAS-01: notas do mês que entraram e que ficaram fora da conta das compras', () => {
+  CE.registrarFoto('lc', { em: '2026-10-01T09:00:00Z', itens: itens(100) });
+  CE.registrarFoto('lc', { em: '2026-11-01T09:00:00Z', itens: itens(100) });
+  const notas = [
+    { nf: '10', entrada: '2026-10-03', motivo: 'Compra para comercialização.', status: 'Concluída', fornecedor: 'TSB', total: 500, itens: [{ qtd: 10, custo: 50 }] },
+    { nf: '11', entrada: '2026-10-20', motivo: 'Compra para comercialização.', status: 'Pendente', fornecedor: 'TSB', itens: [{ qtd: 4, custo: 50 }] },
+    { nf: '12', entrada: '2026-10-21', motivo: 'Troca', status: 'Concluída', fornecedor: 'TSB', itens: [{ qtd: 1, custo: 50 }] },
+    { nf: '13', entrada: '2026-11-02', emissao: '2026-10-30', motivo: 'Compra', status: 'Concluída', fornecedor: 'TSB', itens: [{ qtd: 1, custo: 70 }] },
+  ];
+  const m = CE.resumo('lc', { notas })['2026-10'];
+  assert.strictEqual(m.compras, 500);
+  assert.deepStrictEqual(m.notas.map((x) => x.nf), ['10']);
+  assert.strictEqual(m.notas[0].valor, 500);
+  assert.deepStrictEqual(m.fora.map((x) => [x.nf, /não concluída/.test(x.porque) ? 'conc' : /não é compra/.test(x.porque) ? 'motivo' : '?']), [['11', 'conc'], ['12', 'motivo']]);
 });
