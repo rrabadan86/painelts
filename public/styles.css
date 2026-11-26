@@ -4282,3 +4282,7 @@ body.em-homolog .topbar { box-shadow: inset 0 -4px 0 var(--gold); }
   .mapa-t th.l { width: 30px; padding-right: 2px; }
   .mapa-t td.tot, .mapa-t th.tot { min-width: 0; width: 34px; padding-left: 2px; }
 }
+
+/* LMOB-07: rótulo comprido com número comprido — o número desce em vez de espremer o rótulo */
+.linhas-num-a { flex-wrap: wrap; row-gap: 2px; }
+.linhas-num-r { flex: 1 1 150px; }

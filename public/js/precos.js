@@ -249,7 +249,7 @@
       { rot: 'Venda alterada', num: fmt.int(comV.length), dica: 'Preço de tabela praticado nas vendas (sem desconto): conta quando o preço novo se mantém.',
         linhas: [comV.length ? h('span', null, 'variação média ', h('b', null, pctTxt(mV))) : 'nenhum no período', comV.length ? irP('venda', 'ver os reajustes de venda ›') : null] },
     ], { titulo: 'Reajustes no período', extra: h('div', { class: 'prc-heroi-extra' },
-      E ? TS.linhasNum([{ rot: 'Reajustes de venda avaliados (últimos 12 meses)', num: E.lista.length ? `${fmt.int(julgados)} · ${fmt.int(E.bons)} ${E.bons === 1 ? 'bom' : 'bons'} · ${fmt.int(E.ruins)} ${E.ruins === 1 ? 'ruim' : 'ruins'}` : 'nenhum',
+      E ? TS.linhasNum([{ rot: 'Reajustes de venda avaliados', num: E.lista.length ? `${fmt.int(julgados)} · ${fmt.int(E.bons)} ${E.bons === 1 ? 'bom' : 'bons'} · ${fmt.int(E.ruins)} ${E.ruins === 1 ? 'ruim' : 'ruins'}` : 'nenhum',
         estado: E.ruins ? 'ruim' : null, onclick: () => { state.precoFil = 'efeito'; pintar(corpo, D); },
         dica: 'Depois que o preço mudou, vendeu menos? O lucro subiu? Cada reajuste de venda dos últimos 12 meses comparado nos 30 dias antes e depois, descontando o movimento da loja. Não segue o período dos filtros. Toque para ver a lista.' }]) : null,
       h('p', { class: 'muted prc-heroi-hist' }, `Histórico de custo desde ${inicioCusto ? quando(inicioCusto) : '—'} · ${D.temCompras ? 'notas de compra do AppNext + importações de estoque' : 'o painel guarda o custo a cada importação de estoque'}`,

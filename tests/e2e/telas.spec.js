@@ -93,10 +93,10 @@ for (const tela of TELAS) {
           const pal = txt.split(/\s+/).filter(Boolean).length;
           if (pal < 3) continue;
           const r = el.getBoundingClientRect();
-          if (r.width >= 150) continue;
+          if (r.width >= 120) continue; // a fonte do GitHub é mais larga: abaixo de 120 px é coluna espremida de verdade
           const rg = document.createRange(); const tops = new Set();
           for (const n of el.childNodes) if (n.nodeType === 3 && n.textContent.trim()) { rg.selectNodeContents(n); for (const q of rg.getClientRects()) if (q.width > 1) tops.add(Math.round(q.top / 4)); }
-          if (tops.size >= 3 && tops.size >= pal / 2) out.push(`${txt.slice(0, 50)} (${Math.round(r.width)}px, ${tops.size} linhas)`);
+          if (tops.size >= 3 && tops.size >= pal * 0.6) out.push(`${txt.slice(0, 50)} (${Math.round(r.width)}px, ${tops.size} linhas)`);
           if (out.length >= 5) break;
         }
         return out;
