@@ -348,6 +348,7 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 | EST-ABERTO-05 | Janela dos lotes do chá (a mesma ao clicar no nome do chá no Estoque e na Validade): em cima o chá aberto (nota, chegada, abertura, vencimento depois de aberto e quantidade, com as datas editáveis); embaixo os lotes fechados, do mais antigo para o mais novo (nota, chegada, validade do pacote, quantidade) com "Abrir lote", que marca a abertura hoje e o vencimento 6 meses depois; vale mesmo com outro pacote da mesma nota ainda na lata (dois abertos, cada um com a sua data) | `lotes.js` (`comAbertura` → `abertos`, `editarAbertura` com `abrir` e `n`); `validade.js` `janelaPacotes`; `estoque.js` (`est-nome-cha`) | `abertura.test` "abri um pacote hoje", "Abrir lote com outro pacote"; `abertura.spec` (2) | ✅ na apresentação; gravação real só no teste de unidade |
 | RD-PED-01 | Pedido → Produtos sem rolar para o lado a 1100 px (6 colunas, detalhe embaixo) | `pedido.js` colunas, CSS `.ped-t` | `tests/datas/datas.spec.js` (DATA-01 Pedido), `pedido-tabela.spec` | ✅ |
 | VAL-NF-01 | Na Validade, o "NF nº" do lote abre a janela da nota de entrada por cima da tela (a mesma de Notas fiscais), só para quem tem a tela Notas fiscais | `validade.js` `linkNF`, `precos.js` `TS.abrirNotaEntrada` | `validade-nf.spec` | ✅ |
+| VAL-TODOS-01 | Estoque → Validade abre com "Todos" os lotes marcado (pedido do dono, 26/11/2026; antes, "Vence em até 90 dias"); trocar de tipo também volta para "Todos"; aviso do Início continua abrindo já filtrado (`state.valFaixa`) | `validade.js` (`F.faixa`) | `validade-nf.spec` "VAL-TODOS-01" | ✅ |
 
 ## 10. Preços, custos e notas de entrada (PRC)
 
@@ -785,7 +786,7 @@ Contado pelas linhas da matriz (`node scripts/matriz.js --resumo`; o guardião c
 | Coletor e robôs (COL) | 7 | 1 | 2 | 4 |
 | Escala, horários, feriados e férias (ESC) | 45 | 20 | 12 | 13 |
 | Equipe, metas e comissão (EQP) | 13 | 4 | 3 | 6 |
-| Estoque, inventário, lotes e pedido (EST) | 82 | 50 | 15 | 17 |
+| Estoque, inventário, lotes e pedido (EST) | 83 | 51 | 15 | 17 |
 | Preços, custos e notas de entrada (PRC) | 42 | 15 | 8 | 19 |
 | Resultado e rentabilidade (RES) | 39 | 30 | 4 | 5 |
 | Vendas e métricas (VEN) | 28 | 13 | 8 | 7 |
@@ -793,7 +794,7 @@ Contado pelas linhas da matriz (`node scripts/matriz.js --resumo`; o guardião c
 | Orçamento (ORC) | 7 | 5 | 1 | 1 |
 | Checklist, fechamento e avisos (OPE) | 13 | 6 | 3 | 4 |
 | Estrutura do painel e atualização (APP) | 50 | 31 | 13 | 6 |
-| **Total** | **539** | **303 (56%)** | **127 (24%)** | **109 (20%)** |
+| **Total** | **540** | **304 (56%)** | **127 (24%)** | **109 (20%)** |
 <!-- resumo:fim -->
 
 ## Próximas etapas

@@ -404,7 +404,7 @@
       .catch((e) => corpo.replaceChildren(h('div', { class: 'notice err' }, TS.demo ? 'A validade dos lotes não está na apresentação.' : e.message)));
   };
 
-  const F = { tipo: 'granel', faixa: 'risco', familia: '', q: '', semLote: false }; // filtros sobrevivem enquanto a tela está aberta
+  const F = { tipo: 'granel', faixa: 'todos', familia: '', q: '', semLote: false }; // filtros sobrevivem enquanto a tela está aberta
   /** lotes e resumo de uma aba: o chá a granel em d.lotes/d.resumo; envasado e alimentação em d.outros/d.resumoOutros */
   const doTipo = (d, t) => (t === 'granel' ? { lotes: d.lotes, r: d.resumo } : { lotes: (d.outros || []).filter((l) => l.tipoProd === t), r: (d.resumoOutros || {})[t] || null });
   function pintar(corpo, loja, d) {
@@ -422,7 +422,7 @@
 
     // ---- abas por tipo (com o nº de lotes de cada uma) ----
     const nLotes = (t) => doTipo(d, t).lotes.length;
-    const abas = TS.seg(TIPOS.map(([v, rot, dica]) => [`${rot} (${fmt.int(nLotes(v))})`, v, dica]), F.tipo, (v) => { F.tipo = v; F.faixa = 'risco'; F.familia = ''; F.semLote = false; pintar(corpo, loja, d); });
+    const abas = TS.seg(TIPOS.map(([v, rot, dica]) => [`${rot} (${fmt.int(nLotes(v))})`, v, dica]), F.tipo, (v) => { F.tipo = v; F.faixa = 'todos'; F.familia = ''; F.semLote = false; pintar(corpo, loja, d); });
     abas.classList.add('vl-abas');
     abas.setAttribute('aria-label', 'Tipo de produto');
 

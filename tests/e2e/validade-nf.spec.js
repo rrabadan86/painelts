@@ -20,3 +20,12 @@ test('VAL-NF-01: Validade → clicar no "NF …" do lote abre a nota de entrada 
   await expect(page.locator('main .vl-nf').first()).toBeVisible();
   expect(erros).toEqual([]);
 });
+
+// VAL-TODOS-01 (pedido do dono, 26/11/2026): a Validade abre com "Todos" os lotes marcado (antes: "Vence em até 90 dias")
+test('VAL-TODOS-01: Validade abre com "Todos" marcado e a lista de todos os lotes', async ({ page }) => {
+  await page.goto('/apresentacao');
+  await page.waitForFunction(() => window.TS && TS.db && TS.state.loja && TS.state.loja !== 'todas');
+  await page.evaluate(() => { location.hash = '#validade'; });
+  await expect(page.locator('main')).toContainText('Todos os lotes', { timeout: 30000 });
+  await expect(page.locator('main').getByText('Lotes que vencem em até 90 dias')).toHaveCount(0);
+});
