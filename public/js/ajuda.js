@@ -126,7 +126,7 @@
       ['Projeção do mês', 'Onde as vendas da meta fecham no ritmo de agora.'],
       ['Total a pagar', 'Comissões + premiações + quem bateu a meta individual.'],
       ['Comissão por vendedora', 'Cada categoria com o vendido, a meta e a comissão.'],
-      ['Feriados do mês', 'Horas de cada pessoa em cada feriado. "Acerto": banco de horas (entra em dobro no saldo: 6h = +12h) ou pagar no fechamento; tocar no selo da pessoa troca só para ela.'],
+      ['Feriados do mês', 'Horas de cada pessoa em cada feriado. "Acerto": banco de horas (entra em dobro no saldo: 6h = +12h) ou pagar no fechamento (também em dobro: 6h = 12h a pagar); tocar no selo da pessoa troca só para ela.'],
     ], [
       ['E se eu escolher só uma semana?', 'A comissão continua pela meta do mês; a tela mostra a meta daquele período.'],
       ['O feriado vai para o banco ou é pago?', 'O padrão está em Movimento e escala → Equipe e regras. No cartão de feriados dá para mudar o dia todo ou só uma pessoa. O e-mail e o PDF do fechamento mostram o que foi para o banco e o que é para pagar.'],

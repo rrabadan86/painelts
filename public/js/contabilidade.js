@@ -38,7 +38,7 @@
         rateio ? null : linha('Premiação', brl(pre)),
         linha('Gorjeta', brl(gor)),
         temFeriado ? linha('Feriados trabalhados', feriadosDe(r.vendedor)) : null,
-        comBanco && temFeriado ? linha('Feriados a pagar', minPagar(r.vendedor) ? TS.horasTxt(minPagar(r.vendedor)) : 'nenhum') : null,
+        comBanco && temFeriado ? linha('Feriados a pagar (em dobro)', minPagar(r.vendedor) ? TS.horasTxt(minPagar(r.vendedor)) : 'nenhum') : null,
         comBanco ? (() => { const b = bancoMes(r.vendedor); const f = b ? b.fim : 0; return linha('Banco de horas', `${sinalH(f)}${f < 0 ? ' (devendo)' : ''}${b && b.inicio !== f ? ` · era ${sinalH(b.inicio)}` : ''}`); })() : null,
         linha('Total a receber', brl(totalDe(r)), { forte: true }),
       ]);
@@ -66,7 +66,7 @@ ${secao('Total da loja', [
     linha('Comissões', brl(tot.com)),
     rateio ? null : linha('Premiações', brl(tot.pre)),
     linha('Gorjetas', brl(tot.gor)),
-    comBanco && temFeriado ? (() => { const q = linhas.filter((r) => minPagar(r.vendedor)); return linha('Horas de feriado a pagar', q.length ? juntar(q.map((r) => `${TS.horasTxt(minPagar(r.vendedor))} (${r.vendedor})`)) : 'nenhuma'); })() : null,
+    comBanco && temFeriado ? (() => { const q = linhas.filter((r) => minPagar(r.vendedor)); return linha('Horas de feriado a pagar (em dobro)', q.length ? juntar(q.map((r) => `${TS.horasTxt(minPagar(r.vendedor))} (${r.vendedor})`)) : 'nenhuma'); })() : null,
     linha('Total a pagar', brl(tot.total), { forte: true }),
   ])}
 <tr><td style="padding:20px 18px 22px;font-size:11px;line-height:1.5;color:${CINZA}">

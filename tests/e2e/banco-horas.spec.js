@@ -26,7 +26,7 @@ test('BANCO-08: aba Banco de horas — lançamento entra no saldo e no extrato; 
   await expect(regras).toContainText('12 meses');
 });
 
-test('BANCO-09: cartão de feriados com o acerto — banco em dobro, tocar no selo troca só para a pessoa', async ({ page }) => {
+test('BANCO-09: cartão de feriados com o acerto — banco e pago em dobro, tocar no selo troca só para a pessoa', async ({ page }) => {
   await abrir(page, '#comissionamento');
   await page.evaluate(() => { const d = TS.isoToDay(TS.hojeSP().slice(0, 8) + '01'); TS.state.f.de = d; TS.state.f.ate = TS.db.maxDay; TS.render(); });
   const card = page.locator('.feriados-card');
@@ -37,7 +37,7 @@ test('BANCO-09: cartão de feriados com o acerto — banco em dobro, tocar no se
   const selo = card.locator('.bh-selo').first();
   await expect(selo).toHaveText(/banco \+12h00/);
   await selo.click();
-  await expect(card.locator('.bh-selo').first()).toHaveText(/pagar 6h00/);
+  await expect(card.locator('.bh-selo').first()).toHaveText(/pagar 12h00/); // pago também vale o dobro (decisão do dono)
 });
 
 test('BANCO-10: e-mail do fechamento mostra o destino do feriado, o que pagar e o saldo do banco', async ({ page }) => {
@@ -45,13 +45,14 @@ test('BANCO-10: e-mail do fechamento mostra o destino do feriado, o que pagar e 
   const html = await page.evaluate(() => TS.emailContabilidade({ loja: 'Loja', ym: '2026-12', mensagem: '', dados: {
     rg: {}, gorj: new Map(), linhas: [{ vendedor: 'ANA', aPagar: 100, premiacao: 0 }, { vendedor: 'BIA', aPagar: 50, premiacao: 0 }], totalDe: (r) => r.aPagar,
     ferDe: (v) => (v === 'ANA' ? [{ data: '2026-12-08', min: 360, acerto: 'banco' }] : [{ data: '2026-12-08', min: 360, acerto: 'pagar' }]), temFeriado: true, comBanco: true,
-    minPagar: (v) => (v === 'ANA' ? 0 : 360), bancoMes: (v) => (v === 'ANA' ? { inicio: -1200, entrou: 720, saiu: 0, venceu: 0, fim: -480 } : { inicio: 0, entrou: 0, saiu: 0, venceu: 0, fim: 0 }) } }));
+    minPagar: (v) => (v === 'ANA' ? 0 : 720), bancoMes: (v) => (v === 'ANA' ? { inicio: -1200, entrou: 720, saiu: 0, venceu: 0, fim: -480 } : { inicio: 0, entrou: 0, saiu: 0, venceu: 0, fim: 0 }) } }));
   expect(html).toContain('08/12 (6h00) → banco');
   expect(html).toContain('08/12 (6h00) → pagar');
   expect(html).toContain('−8h00 (devendo)');
   expect(html).toContain('era −20h00');
   expect(html).toContain('Horas de feriado a pagar');
-  expect(html).toContain('6h00 (BIA)');
+  expect(html).toContain('12h00 (BIA)');
+  expect(html).toContain('Feriados a pagar (em dobro)');
 });
 
 test('BANCO-03 (tela): escala — "Folga pelo banco de horas" marca o dia e entra no banco (desconta a jornada)', async ({ page }) => {

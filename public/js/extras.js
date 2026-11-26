@@ -362,7 +362,8 @@
     }
     // banco de horas (BANCO-06): feriado "banco" entra em dobro no saldo; "pagar" segue para o fechamento como antes
     const comBanco = !!(feriados && feriados.comBanco);
-    const minPagar = (vend) => ferDe(vend).filter((x) => x.acerto !== 'banco').reduce((s, x) => s + x.min, 0);
+    // feriado pago também vale o dobro (decisão do dono, 26/11/2026): minPagar já é a hora a pagar (2 × a trabalhada)
+    const minPagar = (vend) => ferDe(vend).filter((x) => x.acerto !== 'banco').reduce((s, x) => s + 2 * x.min, 0);
     const bancoMes = (vend) => (comBanco && feriados.bancoMes ? feriados.bancoMes(vend) : null);
     const sinalH = (m) => (TS.bancoHoras ? TS.bancoHoras.sinal(m) : TS.horasTxt(m));
     const ferDe = (vend) => fer.get(String(vend).trim().toUpperCase()) || [];
@@ -375,7 +376,7 @@
     pg.push(h('section', { class: 'imp-pag' }, cab('Resumo'),
       h('table', { class: 'imp-t' }, h('thead', null, h('tr', null, ['Vendedor', 'Vendido', 'Meta ind.', 'Comissão', 'Premiação', 'Gorjeta', 'Total', ...(temFeriado ? ['Horas em feriados'] : []), ...(comBanco ? ['Banco de horas'] : [])].map((t, i) => h('th', { class: i ? 'r' : '' }, t)))),
         h('tbody', null, linhas.map((r) => h('tr', null, h('td', null, r.vendedor), h('td', { class: 'r' }, fmt.brl(r.total)), h('td', { class: 'r' }, fmt.brl0(r.metaInd)), h('td', { class: 'r' }, fmt.brl(r.aPagar)),
-          h('td', { class: 'r' }, fmt.brl(rg.rateio && rg.rateio.ativo ? 0 : r.premiacao)), h('td', { class: 'r' }, fmt.brl(gorj.get(r.vendedor) || 0)), h('td', { class: 'r b' }, fmt.brl(totalDe(r))), temFeriado ? h('td', { class: 'r' }, TS.horasTxt(minTot(r.vendedor)), comBanco && minPagar(r.vendedor) !== minTot(r.vendedor) ? h('small', { class: 'imp-sub-cel' }, ` (pagar ${TS.horasTxt(minPagar(r.vendedor))})`) : null) : null,
+          h('td', { class: 'r' }, fmt.brl(rg.rateio && rg.rateio.ativo ? 0 : r.premiacao)), h('td', { class: 'r' }, fmt.brl(gorj.get(r.vendedor) || 0)), h('td', { class: 'r b' }, fmt.brl(totalDe(r))), temFeriado ? h('td', { class: 'r' }, TS.horasTxt(minTot(r.vendedor)), comBanco && minPagar(r.vendedor) ? h('small', { class: 'imp-sub-cel' }, ` (pagar ${TS.horasTxt(minPagar(r.vendedor))})`) : null) : null,
           comBanco ? h('td', { class: 'r' }, (() => { const b = bancoMes(r.vendedor); return b ? sinalH(b.fim) : '0h00'; })()) : null))),
         h('tfoot', null, h('tr', null, h('td', null, 'Total'), h('td', { class: 'r' }, fmt.brl(res.total.total)), h('td', { class: 'r' }, fmt.brl0(meta)), h('td', { class: 'r' }, fmt.brl(res.total.aPagar)),
           h('td', { class: 'r' }, fmt.brl(rg.rateio && rg.rateio.ativo ? 0 : res.total.premiacao)), h('td', { class: 'r' }, fmt.brl(linhas.reduce((s, r) => s + (gorj.get(r.vendedor) || 0), 0))), h('td', { class: 'r b' }, fmt.brl(linhas.reduce((s, r) => s + totalDe(r), 0))), temFeriado ? h('td', { class: 'r' }, TS.horasTxt(linhas.reduce((s, r) => s + minTot(r.vendedor), 0))) : null, comBanco ? h('td') : null))),
@@ -395,19 +396,19 @@
           h('tr', null, h('td', null, 'Gorjeta (taxa de serviço)'), h('td', { class: 'r' }, fmt.brl(gorj.get(r.vendedor) || 0))),
           h('tr', { class: 'tot' }, h('td', null, 'Total a receber'), h('td', { class: 'r' }, fmt.brl(totalDe(r)))))),
         temFeriado ? h('div', { class: 'imp-fer' }, h('div', { class: 'imp-sub' }, 'Feriados trabalhados'),
-          ferDe(r.vendedor).length ? h('table', { class: 'imp-t' }, h('thead', null, h('tr', null, h('th', null, 'Data'), h('th', null, 'Feriado'), h('th', { class: 'r' }, 'Horas'), comBanco ? h('th', null, 'Acerto') : null, comBanco ? h('th', { class: 'r' }, 'No banco') : null)),
+          ferDe(r.vendedor).length ? h('table', { class: 'imp-t' }, h('thead', null, h('tr', null, h('th', null, 'Data'), h('th', null, 'Feriado'), h('th', { class: 'r' }, 'Horas'), comBanco ? h('th', null, 'Acerto') : null, comBanco ? h('th', { class: 'r' }, 'Vale (×2)') : null)),
             h('tbody', null, ferDe(r.vendedor).map((x) => h('tr', null, h('td', null, `${fmt.date(x.data)} (${DSEM[new Date(x.data + 'T12:00:00Z').getUTCDay()]})`), h('td', null, x.nome), h('td', { class: 'r' }, TS.horasTxt(x.min)),
-              comBanco ? h('td', null, x.acerto === 'banco' ? 'Banco (×2)' : 'Pagar') : null, comBanco ? h('td', { class: 'r' }, x.acerto === 'banco' ? '+' + TS.horasTxt(2 * x.min) : '—') : null))),
+              comBanco ? h('td', null, x.acerto === 'banco' ? 'Banco (×2)' : 'Pagar') : null, comBanco ? h('td', { class: 'r' }, x.acerto === 'banco' ? `+${TS.horasTxt(2 * x.min)} no banco` : `${TS.horasTxt(2 * x.min)} a pagar`) : null))),
             h('tfoot', null, h('tr', null, h('td', { colspan: 2 }, 'Total em feriados'), h('td', { class: 'r' }, TS.horasTxt(minTot(r.vendedor))),
               comBanco ? h('td', null, `a pagar: ${TS.horasTxt(minPagar(r.vendedor)) === '—' ? '0h00' : TS.horasTxt(minPagar(r.vendedor))}`) : null,
-              comBanco ? h('td', { class: 'r' }, (() => { const b = ferDe(r.vendedor).filter((x) => x.acerto === 'banco').reduce((s2, x) => s2 + 2 * x.min, 0); return b ? '+' + TS.horasTxt(b) : '—'; })()) : null)))
+              comBanco ? h('td', { class: 'r' }, (() => { const b = ferDe(r.vendedor).filter((x) => x.acerto === 'banco').reduce((s2, x) => s2 + 2 * x.min, 0); return b ? `+${TS.horasTxt(b)} no banco` : '—'; })()) : null)))
             : h('p', { class: 'imp-obs' }, 'Não trabalhou em feriados neste período.')) : null,
         comBanco ? (() => {
           const b = bancoMes(r.vendedor) || { inicio: 0, entrou: 0, saiu: 0, venceu: 0, fim: 0 };
           return h('div', { class: 'imp-fer imp-banco' }, h('div', { class: 'imp-sub' }, 'Banco de horas no mês'),
             h('table', { class: 'imp-t' }, h('thead', null, h('tr', null, ['Saldo no início', 'Entrou', 'Saiu', 'Venceu', 'Saldo no fim'].map((t) => h('th', { class: 'r' }, t)))),
               h('tbody', null, h('tr', null, [b.inicio, b.entrou, b.saiu, b.venceu, b.fim].map((v, i) => h('td', { class: 'r' + (i === 4 ? ' b' : '') }, sinalH(v)))))),
-            h('p', { class: 'imp-obs' }, 'Positivo = a loja deve folga ou pagamento à pessoa; negativo = a pessoa deve horas. Feriado no banco entra em dobro; folga pelo banco desconta a jornada; hora devida vence no prazo e some.'));
+            h('p', { class: 'imp-obs' }, 'Positivo = a loja deve folga ou pagamento à pessoa; negativo = a pessoa deve horas. Feriado vale o dobro, no banco ou pago; folga pelo banco desconta a jornada; hora devida vence no prazo e some.'));
         })() : null,
         h('div', { class: 'imp-ass' }, h('div', null, h('span'), r.vendedor), h('div', null, h('span'), 'Responsável pela loja')),
         h('p', { class: 'imp-obs' }, `Emitido em ${emitido}.`)));

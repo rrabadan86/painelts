@@ -205,7 +205,7 @@
         acoes.append(salvar);
       }
       card.append(h('div', { class: 'card-head' }, h('div', null, h('div', { class: 'card-title' }, `Feriados de ${TS.MESES_LONGOS[+ym.slice(5, 7) - 1].toLowerCase()}/${ym.slice(0, 4)}`),
-        h('div', { class: 'card-sub' }, comBanco ? 'Horas trabalhadas por cada pessoa em cada feriado. Vão para o banco de horas (o dobro) ou para pagar no fechamento.' : 'Horas trabalhadas por cada pessoa em cada feriado. Vão para o PDF do fechamento.')), acoes));
+        h('div', { class: 'card-sub' }, comBanco ? 'Horas trabalhadas por cada pessoa em cada feriado. Valem o dobro: vão para o banco de horas ou para pagar no fechamento.' : 'Horas trabalhadas por cada pessoa em cada feriado. Vão para o PDF do fechamento.')), acoes));
       // formulário de feriado local
       const ultDia = new Date(Date.UTC(+ym.slice(0, 4), +ym.slice(5, 7), 0)).getUTCDate();
       const fData = h('input', { class: 'f-input', type: 'date', min: ym + '-01', max: `${ym}-${String(ultDia).padStart(2, '0')}` });
@@ -251,7 +251,7 @@
         // selo do acerto da pessoa: tocar troca só para ela (banco ⇄ pagar)
         const ac = m > 0 && comBanco ? acertoDe(f.data, nome) : null;
         const selo = ac ? h('button', { type: 'button', class: 'bh-selo ' + ac + ((acerto[f.data] && acerto[f.data].p && nome in acerto[f.data].p) ? ' proprio' : ''), disabled: !editavel || null,
-          title: ac === 'banco' ? `Vai para o banco de horas em dobro (+${horasTxt(2 * m)}). Toque para pagar só para esta pessoa.` : `Vai para pagar no fechamento (${horasTxt(m)}). Toque para mandar para o banco só para esta pessoa.`,
+          title: ac === 'banco' ? `Vai para o banco de horas em dobro (+${horasTxt(2 * m)}). Toque para pagar só para esta pessoa.` : `Vai para pagar no fechamento, também em dobro (${horasTxt(m)} trabalhadas = ${horasTxt(2 * m)} a pagar). Toque para mandar para o banco só para esta pessoa.`,
           onclick: () => {
             const x = (acerto[f.data] ||= {});
             const doDia = x.d || regrasBH.padrao;
@@ -260,13 +260,13 @@
             if (novo === doDia) delete x.p[nome]; else x.p[nome] = novo;
             if (!Object.keys(x.p).length) delete x.p;
             sujoF = true; pintar();
-          } }, ac === 'banco' ? `banco +${horasTxt(2 * m)}` : `pagar ${horasTxt(m)}`, (acerto[f.data] && acerto[f.data].p && nome in acerto[f.data].p) ? ' ✎' : '') : null;
+          } }, ac === 'banco' ? `banco +${horasTxt(2 * m)}` : `pagar ${horasTxt(2 * m)}`, (acerto[f.data] && acerto[f.data].p && nome in acerto[f.data].p) ? ' ✎' : '') : null;
         return h('td', null, inp, dica, selo);
       }), h('td', { class: 'b' }, horasTxt(tot(nome))))));
       card.append(h('div', { class: 'table-wrap free' }, h('table', { class: 't feriados-t' },
         h('thead', null, h('tr', null, h('th', { class: 'l' }, 'Pessoa'), lista.map((f) => h('th', { title: f.nome }, `${f.data.slice(8)}/${f.data.slice(5, 7)}`)), h('th', null, 'Total')),
           h('tr', { class: 'linha-horario' }, h('td', { class: 'l' }, 'Loja abre'), lista.map((f) => h('td', null, celulaHorario(f.data))), h('td')),
-          comBanco ? h('tr', { class: 'linha-acerto' }, h('td', { class: 'l' }, 'Acerto', TS.dica(`Banco de horas: as horas do feriado entram em dobro no saldo da pessoa (6h = +12h). Pagar: seguem para o fechamento, como antes. O padrão (${regrasBH.padrao === 'banco' ? 'banco' : 'pagar'}) está em Movimento e escala → Equipe e regras; tocar no selo da pessoa troca só para ela.`)),
+          comBanco ? h('tr', { class: 'linha-acerto' }, h('td', { class: 'l' }, 'Acerto', TS.dica(`Banco de horas: as horas do feriado entram em dobro no saldo da pessoa (6h = +12h). Pagar: seguem para o fechamento, também em dobro (6h = 12h a pagar). O padrão (${regrasBH.padrao === 'banco' ? 'banco' : 'pagar'}) está em Movimento e escala → Equipe e regras; tocar no selo da pessoa troca só para ela.`)),
             lista.map((f) => {
               const sel = h('select', { class: 'f-input bh-acerto', 'aria-label': `Acerto do feriado ${f.data}`, disabled: !editavel || null },
                 h('option', { value: 'banco', selected: ((acerto[f.data] && acerto[f.data].d) || regrasBH.padrao) === 'banco' || null }, 'Banco de horas (×2)'),
@@ -277,7 +277,7 @@
         tb, h('tfoot', null, h('tr', null, h('td', { class: 'l' }, 'Total'), lista.map((f) => {
           if (!comBanco) return h('td', null, horasTxt(totDia(f.data)));
           let b = 0, pg = 0; for (const [nm, mm] of Object.entries(hv[f.data] || {})) if (acertoDe(f.data, nm) === 'banco') b += mm; else pg += mm;
-          return h('td', null, horasTxt(totDia(f.data)), b || pg ? h('small', { class: 'muted bh-tot' }, [b ? `banco +${horasTxt(2 * b)}` : '', pg ? `pagar ${horasTxt(pg)}` : ''].filter(Boolean).join(' · ')) : null);
+          return h('td', null, horasTxt(totDia(f.data)), b || pg ? h('small', { class: 'muted bh-tot' }, [b ? `banco +${horasTxt(2 * b)}` : '', pg ? `pagar ${horasTxt(2 * pg)}` : ''].filter(Boolean).join(' · ')) : null);
         }), h('td', null, horasTxt(lista.reduce((s, f) => s + totDia(f.data), 0))))))));
       card.append(h('div', { class: 'feriado-rodape' }, h('span', { class: 'muted' },
         `Quem vendeu no feriado entra sozinho com as horas do horário da loja naquele dia (até a jornada de ${horasTxt(jornada)}; acima de 6h desconta o intervalo) — mudou o horário, as horas acompanham. Para corrigir, digite em cima (07:20, 7h20 ou 7,5); apagar = não trabalhou. "↺ automático" desfaz a correção.${editavel ? ' Clique em Salvar para guardar as correções.' : ''}`)));
