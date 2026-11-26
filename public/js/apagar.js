@@ -234,9 +234,9 @@
       { rot: `Saldo previsto em ${dm(maisDias(R.hoje, dias - 1))}`, num: saldoFim == null ? '—' : fmt.brl0(saldoFim), estado: saldoFim == null ? null : saldoFim < 0 ? 'ruim' : 'bom',
         linhas: [saldoFim == null ? 'falta a previsão de entrada' : state.apSaldo ? `partindo de ${fmt.brl0(state.apSaldo)} em conta` : 'sem contar o que já há em conta'],
         dica: `Entrada prevista − contas a pagar no período${state.apSaldo ? ` + saldo informado (${fmt.brl0(state.apSaldo)})` : ''}.\n\n${R.entTotal != null ? `${fmt.brl0(R.entTotal)} − ${fmt.brl0(T.aPagar)}${state.apSaldo ? ` + ${fmt.brl0(state.apSaldo)}` : ''} = ${fmt.brl0(saldoFim)}.\n\n` : ''}Não é o lucro: lucro é o Resultado do mês. Aqui é só o dinheiro que entra e sai nas datas. Contas vencidas sem baixa ficam fora desta soma.` },
-      { rot: `A pagar · próximos ${dias} dias`, num: fmt.brl0(T.aPagar),
+      { rot: `A pagar em ${dias} dias`, num: fmt.brl0(T.aPagar),
         linhas: [h('span', { class: 'ap-h-pagar' }, `${fmt.int(T.nAPagar)} ${T.nAPagar === 1 ? 'conta' : 'contas'}${T.estimado ? ` · ${fmt.brl0(T.estimado)} com data ou valor estimado` : ''}`), kVenc], dica: dicaPagar },
-      { rot: `Entrada prevista · ${dias} dias`, num: R.entTotal == null ? '—' : fmt.brl0(R.entTotal),
+      { rot: `Entrada em ${dias} dias`, num: R.entTotal == null ? '—' : fmt.brl0(R.entTotal),
         linhas: [R.entTotal == null ? 'sem vendas no mês para prever' : `${fmt.brl0(R.entCartao)} em cartão`], dica: comoEntra },
     ], { titulo: 'Caixa dos próximos dias' });
     heroi.classList.add('ap-heroi');

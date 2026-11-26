@@ -266,8 +266,8 @@
   function quadrosJanela(J, comPedido) {
     if (!J) return [];
     const W = J.janela;
-    const kPrev = TS.kpi(`Vendas previstas · próximos ${W} dias`, J.previsao == null ? '—' : fmt.brl0(J.previsao),
-      J.previsao == null ? 'faltam vendas para prever' : `${dm(J.de)} a ${dm(J.ate)} · ${J.semEpoca ? 'só o ritmo de agora' : `época do ano ${fx(J.fator)}`}${J.eventos.length ? ' · ' + J.eventos.map((x) => x.nome).join(', ') : ''}`,
+    const kPrev = TS.kpi('Vendas previstas', J.previsao == null ? '—' : fmt.brl0(J.previsao),
+      J.previsao == null ? 'faltam vendas para prever' : `próximos ${W} dias (${dm(J.de)} a ${dm(J.ate)}) · ${J.semEpoca ? 'só o ritmo de agora' : `época do ano ${fx(J.fator)}`}${J.eventos.length ? ' · ' + J.eventos.map((x) => x.nome).join(', ') : ''}`,
       comoPrevisao(J));
     const kTeto = TS.kpi('Teto de compras', J.teto == null ? '—' : fmt.brl0(J.teto),
       J.teto == null ? 'sem previsão de vendas' : `${fmt.n1(J.tetoPct)}% das vendas previstas`,

@@ -61,6 +61,12 @@
   const intervaloBloco = (e, trabMin) => Math.round(intervaloMin(e, trabMin) / B) * B;
   /** abaixo do mínimo da CLT? (acima de 6h: 1h; de 4h a 6h: 15 min) */
   const abaixoClt = (jorn, int) => (jorn > 360 ? int < 60 : jorn > 240 ? int < 15 : false);
+  /** dias de trabalho por semana de cada escala (ESC-4X3-01: 4x3 = 4 dias, 3 folgas) — a conta única da jornada (carga ÷ dias) */
+  const DIAS_ESCALA = { '6x1': 6, '5x2': 5, '4x3': 4 };
+  const diasDaEscala = (esc) => DIAS_ESCALA[esc] || 5;
+  TS.diasDaEscala = diasDaEscala;
+  /** jornada diária acima do que a CLT permite: 8h normais + 2h extras = 10h (art. 59) */
+  const JORNADA_MAX = 600;
   TS._intervalo = { intervaloMin, abaixoClt, pausaDoTurno: (...a) => pausaDoTurno(...a) };
   /**
    * Replicar/Trazer mês: só vão os ajustes marcados para repetir ("neste e nos próximos <dia da semana>") — em todos os
@@ -171,8 +177,8 @@
   function montarEscala(need, op, nFunc) {
     const e = op.equipe;
     equipeAtual(e);
-    const diasTrab = e.escala === '6x1' ? 6 : 5;
-    const jornada = (e.cargaSemanal * 60) / diasTrab; // jornada diária exata (ex.: 44h na 5x2 = 8h48)
+    const diasTrab = diasDaEscala(e.escala);
+    const jornada = (e.cargaSemanal * 60) / diasTrab; // jornada diária exata (ex.: 44h na 5x2 = 8h48; 40h na 4x3 = 10h)
     const trabMin = Math.round(jornada / B) * B; // na escala, arredondada para blocos de 10 min
     const intervalo = intervaloBloco(e, trabMin);
     const abertura = DIAS.map((d) => faixaDia(op.funcionamento[d]));
@@ -332,14 +338,14 @@
    * Rodízio de domingo (semana de domingo a sábado):
    *  - no domingo trabalham pelo menos o mínimo do dia (e o que o movimento pedir); as folgas de domingo giram igualmente;
    *  - quem folga no domingo folga também na segunda;
-   *  - quem trabalha no domingo folga no seu dia fixo (na 5x2, também no 2º dia fixo).
+   *  - quem trabalha no domingo folga no seu dia fixo (na 5x2, também no 2º dia fixo; na 4x3, mais um dia automático).
    * Devolve um ciclo de semanas que se repete.
    */
   function montarRodizio(need, op, pessoas) {
     const e = op.equipe, N = pessoas.length;
     equipeAtual(e);
-    const seis = e.escala === '6x1';
-    const diasBase = seis ? 6 : 5;
+    const diasBase = diasDaEscala(e.escala);
+    const nFolgas = 7 - diasBase; // folgas por semana: 6x1 = 1, 5x2 = 2, 4x3 = 3
     const jornada = (e.cargaSemanal * 60) / diasBase;
     const trabMin = Math.round(jornada / B) * B;
     const intervalo = intervaloBloco(e, trabMin);
@@ -371,8 +377,9 @@
     };
     const fixos = pessoas.map((p) => {
       const f1 = p.folga !== 'auto' ? DIAS.indexOf(p.folga) : escolher([]);
-      const f2 = seis ? null : p.folga2 !== 'auto' ? DIAS.indexOf(p.folga2) : escolher([f1]);
-      return [f1, f2];
+      const f2 = nFolgas < 2 ? null : p.folga2 !== 'auto' ? DIAS.indexOf(p.folga2) : escolher([f1]);
+      const f3 = nFolgas < 3 ? null : escolher([f1, f2]); // 4x3: a 3ª folga é sempre automática
+      return [f1, f2, f3];
     });
     const semanas = [];
     const seg = semanaSeg(e);
@@ -397,9 +404,9 @@
           if (segDoAnterior.has(i)) { offs[i].add(SEG); cont[SEG]++; motivos[i][SEG] = 'Folga (após domingo)'; }
         } else if (folgaDom.has(i)) { offs[i].add(DOM); offs[i].add(SEG); cont[DOM]++; cont[SEG]++; motivos[i][DOM] = 'Folga (rodízio)'; motivos[i][SEG] = 'Folga (após domingo)'; }
       });
-      // folgas que ainda faltam na semana (5x2: 2; 6x1: 1), descontando as que o domingo já deu
+      // folgas que ainda faltam na semana (6x1: 1; 5x2: 2; 4x3: 3), descontando as que o domingo já deu
       // dia em que a loja fecha conta como folga para todos (5x2 com segunda fechada: 5 dias, não 4)
-      const precisa = (i) => Math.max(0, (seis ? 1 : 2) - new Set([...offs[i], ...fechadosSem]).size);
+      const precisa = (i) => Math.max(0, nFolgas - new Set([...offs[i], ...fechadosSem]).size);
       const manuais = (i) => [pessoas[i].folga, pessoas[i].folga2].filter((f) => f && f !== 'auto').length;
       const ordemP = pessoas.map((_, i) => i).sort((x, y) => manuais(y) - manuais(x) || ((x - w + N * 9) % N) - ((y - w + N * 9) % N));
       for (const i of ordemP) {
@@ -483,7 +490,7 @@
       h('td', null, h('label', { class: 'cfg-check-l' }, fFech, ' fechado'), h('label', { class: 'cfg-check-l' }, fMesmo, ' igual ao dia da semana'))));
     const e = op.equipe;
     const num = (k, attrs) => { const x = h('input', { class: 'f-input', type: 'number', value: e[k], ...attrs }); TS.aoConfirmar(x, () => { e[k] = x.value === '' && attrs.placeholder ? null : +x.value; aoMudar && aoMudar(); }); return x; }; // com placeholder, vazio = sem valor (usa o padrão)
-    const esc = h('select', { class: 'f-input' }, h('option', { value: '5x2', selected: e.escala === '5x2' || null }, '5x2 (5 dias, 2 folgas)'), h('option', { value: '6x1', selected: e.escala === '6x1' || null }, '6x1 (6 dias, 1 folga)'));
+    const esc = h('select', { class: 'f-input' }, h('option', { value: '5x2', selected: e.escala === '5x2' || null }, '5x2 (5 dias, 2 folgas)'), h('option', { value: '6x1', selected: e.escala === '6x1' || null }, '6x1 (6 dias, 1 folga)'), h('option', { value: '4x3', selected: e.escala === '4x3' || null }, '4x3 (4 dias, 3 folgas)'));
     esc.addEventListener('change', () => { e.escala = esc.value; aoMudar && aoMudar(); });
     const modelo = h('select', { class: 'f-input' },
       h('option', { value: 'livre', selected: e.modelo !== 'rodizio' || null }, 'Livre: o painel escolhe as folgas'),
@@ -515,10 +522,10 @@
       f2.addEventListener('change', () => { p.folga2 = f2.value; salvarPessoas(); aoMudar && aoMudar(); });
       const tu = h('select', { class: 'f-input' }, [['tanto', 'Tanto faz'], ['manha', 'Manhã'], ['noite', 'Noite']].map(([v, t]) => h('option', { value: v, selected: p.turno === v || null }, t)));
       tu.addEventListener('change', () => { p.turno = tu.value; salvarPessoas(); aoMudar && aoMudar(); });
-      return h('tr', null, h('td', null, nome), h('td', null, tu), h('td', { class: 'so-rodizio' }, f1), h('td', { class: 'so-rodizio so-5x2' }, f2));
+      return h('tr', null, h('td', { 'data-l': 'Nome' }, nome), h('td', { 'data-l': 'Prefere trabalhar' }, tu), h('td', { class: 'so-rodizio', 'data-l': 'Folga fixa' }, f1), h('td', { class: 'so-rodizio so-5x2', 'data-l': '2ª folga' }, f2));
     });
-    const tabP = h('table', { class: 'op-pessoas' + (e.modelo === 'rodizio' ? ' rodizio' : '') + (e.escala === '5x2' ? ' e5x2' : '') },
-      h('thead', null, h('tr', null, h('th', null, 'Nome'), h('th', { title: 'Manhã = abre a loja · Noite = fecha a loja. A escala respeita ao máximo, sem deixar a loja descoberta.' }, 'Prefere trabalhar'), h('th', { class: 'so-rodizio' }, 'Folga fixa (quando trabalha no domingo)'), h('th', { class: 'so-rodizio so-5x2' }, '2ª folga (5x2)'))), h('tbody', null, linhasP));
+    const tabP = h('table', { class: 'op-pessoas' + (e.modelo === 'rodizio' ? ' rodizio' : '') + (diasDaEscala(e.escala) <= 5 ? ' e5x2' : '') },
+      h('thead', null, h('tr', null, h('th', null, 'Nome'), h('th', { title: 'Manhã = abre a loja · Noite = fecha a loja. A escala respeita ao máximo, sem deixar a loja descoberta.' }, 'Prefere trabalhar'), h('th', { class: 'so-rodizio' }, 'Folga fixa (quando trabalha no domingo)'), h('th', { class: 'so-rodizio so-5x2', title: 'Na 5x2 e na 4x3. Na 4x3 a 3ª folga é escolhida pelo painel (o dia de menor movimento).' }, '2ª folga (5x2 e 4x3)'))), h('tbody', null, linhasP));
     const campo = (rot, el, dica) => h('label', { class: 'cfg-campo' }, h('span', null, rot), el, dica ? h('small', null, dica) : null);
     box.append(
       h('div', { class: 'f-label' }, 'Horário de funcionamento'),
@@ -526,15 +533,19 @@
       h('div', { class: 'f-label', style: { marginTop: '14px' } }, 'Jornada'),
       h('div', { class: 'cfg-grid c3' },
         campo('Funcionários', num('funcionarios', { min: 1, max: 40, step: 1 })),
-        campo('Carga horária semanal (h)', num('cargaSemanal', { min: 4, max: 60, step: 1 }), (() => { const c = +e.cargaSemanal || 44, f = (m) => `${Math.floor(m / 60)}h${String(Math.round(m % 60)).padStart(2, '0')}`; return `${c}h = ${f((c * 60) / 5)} por dia na 5x2 · ${f((c * 60) / 6)} na 6x1`; })()),
+        campo('Carga horária semanal (h)', num('cargaSemanal', { min: 4, max: 60, step: 1 }), (() => { const c = +e.cargaSemanal || 44, f = (m) => `${Math.floor(m / 60)}h${String(Math.round(m % 60)).padStart(2, '0')}`; return `${c}h = ${f((c * 60) / 5)} por dia na 5x2 · ${f((c * 60) / 6)} na 6x1 · ${f((c * 60) / 4)} na 4x3`; })()),
         campo('Escala', esc),
         campo('Intervalo — jornada acima de 8h (min)', num('intervalo', { min: 0, max: 180, step: 5 }), 'CLT: no mínimo 1h (até 2h).'),
-        campo('Intervalo — jornada de até 8h (min)', num('intervaloAte8', { min: 0, max: 180, step: 5, value: e.intervaloAte8 ?? '', placeholder: 'como antes' }), 'De 4h a 8h. Vazio = como antes (o intervalo de cima acima de 6h; 30 min até 6h). CLT: acima de 6h, 1h; de 4h a 6h, 15 min.'),
+        campo('Intervalo — jornada de até 8h (min)', num('intervaloAte8', { min: 0, max: 180, step: 5, value: e.intervaloAte8 ?? '', placeholder: 'padrão' }), 'De 4h a 8h. Vazio = padrão: de 6h a 8h, o intervalo de cima; de 4h a 6h, 30 min. A CLT pede no mínimo 1h acima de 6h e 15 min de 4h a 6h; menos que 1h acima de 6h só com acordo ou convenção coletiva.'),
         campo('Atendimentos por pessoa por hora', num('capacidade', { min: 1, max: 100, step: 1 }), 'Acima disso, precisa de mais uma pessoa.')),
       (() => {
-        const dias = e.escala === '6x1' ? 6 : 5, jorn = (e.cargaSemanal * 60) / dias, iv = intervaloMin(e, jorn);
-        const txt = `Jornada desta loja: ${Math.floor(jorn / 60)}h${String(Math.round(jorn % 60)).padStart(2, '0')} por dia → intervalo de ${iv} min${iv % B ? ' (na escala automática, arredondado para ' + intervaloBloco(e, jorn) + ' min)' : ''}.`;
-        return h('p', { class: 'op-int-info ' + (abaixoClt(jorn, iv) ? 'neg' : 'muted') }, txt, abaixoClt(jorn, iv) ? ' Abaixo do mínimo da CLT para essa jornada: confira com a convenção coletiva.' : '');
+        const dias = diasDaEscala(e.escala), jorn = (e.cargaSemanal * 60) / dias, iv = intervaloMin(e, jorn);
+        const hhm = (m) => `${Math.floor(m / 60)}h${String(Math.round(m % 60)).padStart(2, '0')}`;
+        const txt = `Jornada desta loja: ${e.cargaSemanal}h ÷ ${dias} dias = ${hhm(jorn)} por dia → intervalo de ${iv} min${iv % B ? ' (na escala automática, arredondado para ' + intervaloBloco(e, jorn) + ' min)' : ''}; na loja, ${hhm(jorn + iv)} por dia com o intervalo.`;
+        const ruim = abaixoClt(jorn, iv) || jorn > JORNADA_MAX;
+        return h('p', { class: 'op-int-info ' + (ruim ? 'neg' : 'muted') }, txt,
+          abaixoClt(jorn, iv) ? ' Abaixo do mínimo da CLT para essa jornada: confira com a convenção coletiva.' : '',
+          jorn > JORNADA_MAX ? ` Passa de 10h por dia, o máximo da CLT (8h + 2h extras): na ${e.escala}, a carga semanal vai até ${Math.floor((JORNADA_MAX * dias) / 60)}h.` : jorn > 480 ? ' Acima de 8h por dia: precisa de acordo de compensação de horas (CLT, art. 59).' : '');
       })(),
       h('div', { class: 'f-label', style: { marginTop: '14px' } }, 'Regras da escala'),
       h('div', { class: 'cfg-grid' }, campo('Modelo', modelo, e.modelo === 'rodizio' ? `Semana de ${semanaSeg(e) ? 'segunda a domingo' : 'domingo a sábado'}. As folgas de domingo giram igualmente entre a equipe${semanaSeg(e) ? '; a folga da segunda cai na semana seguinte e entra na conta dela' : ''}.` : null),
@@ -591,8 +602,9 @@
     let hMin = 23, hMax = 0;
     for (let wd = 0; wd < 7; wd++) for (let hr = 0; hr < 24; hr++) if (g.tot[wd][hr] > 0) { hMin = Math.min(hMin, hr); hMax = Math.max(hMax, hr); }
     if (op) DIAS.forEach((d) => { const f = op.funcionamento[d]; if (!f.fechado) { hMin = Math.min(hMin, Math.floor(hm(f.abre) / 60)); hMax = Math.max(hMax, Math.ceil(hm(f.fecha) / 60) - 1); } });
-    const horas = []; for (let hr = hMin; hr <= hMax; hr++) horas.push(hr);
     const aberto = (wd, hr) => { if (!op) return true; const f = op.funcionamento[DIAS[wd]]; return !f.fechado && hr * 60 + 60 > hm(f.abre) && hr * 60 < hm(f.fecha); };
+    // só as horas em que a loja abre em algum dia: venda sem hora (cai em 0h) não puxa o mapa para a madrugada
+    const horas = []; for (let hr = hMin; hr <= hMax; hr++) if (!op || [0, 1, 2, 3, 4, 5, 6].some((wd) => aberto(wd, hr))) horas.push(hr);
 
     // ---- mapa
     const fv = met === 'vt' ? fmt.brl0 : (v) => (v >= 10 ? fmt.int(v) : fmt.n1(v));
@@ -660,7 +672,7 @@
         h('ol', null,
           h('li', null, `Para cada dia da semana e hora aberta, pega o movimento de pico (o número de atendimentos que 80% dos dias não passam) e divide por ${op.equipe.capacidade} atendimentos por pessoa por hora. Nunca fica abaixo do mínimo de pessoas do dia. Isso dá as "pessoas necessárias por hora".`),
           h('li', null, `Horas necessárias = soma dessas pessoas em todas as horas da semana. Horas da equipe = funcionários × ${op.equipe.cargaSemanal} h.`),
-          h('li', null, `O painel monta a escala de verdade com 1, 2, 3… pessoas, usando as regras configuradas (${op.equipe.escala}, jornada, intervalo de ${intervaloMin(op.equipe, (op.equipe.cargaSemanal * 60) / (op.equipe.escala === '6x1' ? 6 : 5))} min, ${op.equipe.modelo === 'rodizio' ? 'rodízio de domingo, ' : ''}no máximo ${op.equipe.maxFolgaDia || 1} de folga por dia).`),
+          h('li', null, `O painel monta a escala de verdade com 1, 2, 3… pessoas, usando as regras configuradas (${op.equipe.escala}, jornada, intervalo de ${intervaloMin(op.equipe, (op.equipe.cargaSemanal * 60) / diasDaEscala(op.equipe.escala))} min, ${op.equipe.modelo === 'rodizio' ? 'rodízio de domingo, ' : ''}no máximo ${op.equipe.maxFolgaDia || 1} de folga por dia).`),
           h('li', null, h('b', null, 'Equipe mínima'), ': o menor número de pessoas em que nenhum horário fica com a loja sozinha (zero pessoas).'),
           h('li', null, h('b', null, 'Equipe ideal'), ': o menor número em que, além disso, todos os picos e o mínimo de cada dia ficam cobertos.')),
         h('p', { class: 'muted' }, 'A equipe pode ser maior que horas ÷ carga porque folgas, jornada máxima e intervalo não deixam encaixar as horas perfeitamente.')));
@@ -690,11 +702,13 @@
       return;
     }
     // escala
-    const linhasEsc = esc.pessoas.map((turnos, i) => h('tr', null, h('th', { class: 'l' }, nomesEq(i)), turnos.map((t) => h('td', { class: t ? 'trab' : 'folga' },
+    const linhasEsc = esc.pessoas.map((turnos, i) => h('tr', null, h('th', { class: 'l' }, nomesEq(i)), turnos.map((t, wd) => h('td', { class: t ? 'trab' : 'folga', 'data-l': DIAS_NOME[wd] },
       t ? [h('b', null, `${hhmm(t.ini)}–${hhmm(t.fim)}`), t.pausa ? h('small', null, `intervalo ${hhmm(t.pausa[0])}–${hhmm(t.pausa[1])}`) : null] : 'Folga'))));
+    // cobertura: só as horas em que a loja abre em algum dia (antes começava em 0h e cortava o resto no celular)
+    const horasCob = horas.filter((hr) => [0, 1, 2, 3, 4, 5, 6].some((wd) => need[wd][hr] > 0));
     const cobertura = h('table', { class: 'mapa-t cob' },
-      h('thead', null, h('tr', null, h('th'), horas.map((hr) => h('th', null, `${hr}h`)))),
-      h('tbody', null, DIAS_CURTO.map((dn, wd) => h('tr', null, h('th', { class: 'l' }, dn), horas.map((hr) => {
+      h('thead', null, h('tr', null, h('th'), horasCob.map((hr) => h('th', null, `${hr}h`)))),
+      h('tbody', null, DIAS_CURTO.map((dn, wd) => h('tr', null, h('th', { class: 'l' }, dn), horasCob.map((hr) => {
         const n = need[wd][hr];
         if (!n) return h('td', { class: 'fechado' });
         const c = cobHora(esc.cob[wd], faixaDia(op.funcionamento[DIAS[wd]]), hr); // a hora (blocos dentro do horário da loja)
@@ -764,7 +778,7 @@
     // ajustes manuais: travam a escolha e recalculam os turnos das outras pessoas naquele dia
     if (ajustes && need) {
       const e = op.equipe;
-      const diasBase = e.escala === '6x1' ? 6 : 5;
+      const diasBase = diasDaEscala(e.escala);
       const trabMin = Math.round(((e.cargaSemanal * 60) / diasBase) / B) * B;
       const intervalo = intervaloBloco(e, trabMin);
       dias.forEach((iso, k) => {
@@ -1025,7 +1039,7 @@
       const hfSel = E.feriados.has(iso) && TS.horarioFeriado ? TS.horarioFeriado({ ...(cfg || {}), operacao: op }, iso) : null;
       const fSel = hfSel && !hfSel.fechado ? hfSel : op.funcionamento[DIAS[wdDe(iso)]];
       const abreM = fSel && !fSel.fechado ? hm(fSel.abre) : null, fechaM = fSel && !fSel.fechado ? hm(fSel.fecha) : null;
-      const eq = op.equipe, trabPad = Math.round(((eq.cargaSemanal * 60) / (eq.escala === '6x1' ? 6 : 5)) / B) * B;
+      const eq = op.equipe, trabPad = Math.round(((eq.cargaSemanal * 60) / diasDaEscala(eq.escala)) / B) * B;
       const totalPad = trabPad + intervaloMin(eq, trabPad);
       for (const x of [ini, fim]) { x.step = 600; if (abreM != null) { x.min = hhmm(abreM); x.max = hhmm(fechaM); } } // relógio de 10 em 10 min
       const resumo = h('small', { class: 'aj-resumo muted' });

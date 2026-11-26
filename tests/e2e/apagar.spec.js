@@ -18,10 +18,10 @@ test('Resultado → A pagar: quadros, saldo por semana, lista com abas e marcar 
 
   // quadros e a frase "não é contabilidade"
   // redesenho de 22/11: cartão-herói (saldo previsto decide; a pagar com a linha dos vencidos; entrada prevista)
-  const kPagar = page.locator('.ap-heroi .heroi-col', { hasText: 'A pagar · próximos 30 dias' });
+  const kPagar = page.locator('.ap-heroi .heroi-col', { hasText: 'A pagar em 30 dias' });
   await expect(kPagar.locator('.heroi-num')).toContainText('R$');
   await expect(kPagar.locator('.ap-h-pagar')).toContainText(/\d+ contas?/);
-  await expect(page.locator('.ap-heroi .heroi-col', { hasText: 'Entrada prevista · 30 dias' }).locator('.heroi-num')).toContainText('R$');
+  await expect(page.locator('.ap-heroi .heroi-col', { hasText: 'Entrada em 30 dias' }).locator('.heroi-num')).toContainText('R$');
   await expect(page.locator('.ap-heroi .heroi-col', { hasText: 'Saldo previsto em' }).locator('.heroi-num')).toContainText('R$');
   await expect(page.locator('.ap-h-venc')).toContainText('Vencidos sem baixa');
   await expect(page.locator('#content')).toContainText('Não é contabilidade');
@@ -67,7 +67,7 @@ test('Resultado → A pagar: quadros, saldo por semana, lista com abas e marcar 
 
   // 60 dias: os quadros e as semanas acompanham
   await page.getByRole('button', { name: 'Próximos 60 dias' }).click();
-  await expect(page.locator('.ap-heroi .heroi-col', { hasText: 'A pagar · próximos 60 dias' })).toBeVisible();
+  await expect(page.locator('.ap-heroi .heroi-col', { hasText: 'A pagar em 60 dias' })).toBeVisible();
   expect(await page.locator('.ap-semanas').locator('tbody tr, .lmob-it').count()).toBeGreaterThanOrEqual(8);
 
   // o atalho abre os custos da loja com o dia de vencimento de cada custo e os prazos do caixa a pagar

@@ -83,6 +83,25 @@ for (const tela of TELAS) {
         return out;
       });
       expect(vazam, 'algo sai do cartão no celular').toEqual([]);
+      // LMOB-07: título ou rótulo espremido numa coluna estreita (uma palavra por linha), como o
+      // "Movimento médio por hora" ao lado das abas. Corrija com quebra para a linha de baixo, nunca com fonte menor.
+      const espremidos = await page.evaluate(() => {
+        const out = [];
+        for (const el of document.querySelectorAll('#content *')) {
+          if (!el.getClientRects().length || el.closest('table, svg, canvas, .lmob-it, .heroi-barra, details:not([open]), .aj-camada')) continue;
+          const txt = [...el.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent).join(' ').trim();
+          const pal = txt.split(/\s+/).filter(Boolean).length;
+          if (pal < 3) continue;
+          const r = el.getBoundingClientRect();
+          if (r.width >= 150) continue;
+          const rg = document.createRange(); const tops = new Set();
+          for (const n of el.childNodes) if (n.nodeType === 3 && n.textContent.trim()) { rg.selectNodeContents(n); for (const q of rg.getClientRects()) if (q.width > 1) tops.add(Math.round(q.top / 4)); }
+          if (tops.size >= 3 && tops.size >= pal / 2) out.push(`${txt.slice(0, 50)} (${Math.round(r.width)}px, ${tops.size} linhas)`);
+          if (out.length >= 5) break;
+        }
+        return out;
+      });
+      expect(espremidos, 'LMOB-07: texto espremido no celular (uma palavra por linha)').toEqual([]);
     }
     expect(erros, 'erros no navegador').toEqual([]);
   });
