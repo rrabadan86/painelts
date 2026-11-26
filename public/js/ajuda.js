@@ -198,6 +198,7 @@
     ], []],
     ['notas', 'Estoque', 'Notas de entrada', 'Notas de entrada do AppNext: produtos, quantidades, valores e o que mudou no custo.', 'Admin, franqueado e gerente com a tela', [
       ['Lote e validade', 'Digitados na chegada; validade curta mostra "Incluir na devolução".'],
+      ['Sincronizar agora', 'Busca no AppNext o estoque e as notas de entrada da loja (leva alguns minutos). Admin, franqueado e a gerente com esta tela.'],
       ['Custo subiu', 'Produtos mais caros que na compra anterior.', C],
       ['Devolução', 'Itens quebrados, faltando ou com validade curta, direto da nota.'],
     ], []],

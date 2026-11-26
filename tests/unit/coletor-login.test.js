@@ -39,7 +39,7 @@ class Pagina:
     def __init__(self, aparece_apos):
         self.url = 'https://app.exemplo/#/login'; self.n = 0; self.aparece = aparece_apos; self.feitos = []
     def wait_for_selector(self, sel, state=None, timeout=None):
-        self.n += 1
+        self.n += 1; self.esperas = getattr(self, 'esperas', []) + [timeout]
         if self.aparece is None or self.n < self.aparece: raise TimeoutError('timeout')
     def reload(self, **k): self.feitos.append('reload')
     def evaluate(self, js): return {'titulo': 'AppNext', 'campos': ['Usuário', 'Senha'], 'botoes': ['Entrar']}
@@ -54,13 +54,13 @@ class Nav:
     def __init__(self, falha): self.alvos = []; self.falha = falha
     def wait_for_timeout(self, ms): pass
     def goto(self, alvo, **k):
-        self.alvos.append(alvo)
+        self.alvos.append(alvo); self.wait = k.get('wait_until')
         if self.falha(alvo): raise Exception('net::ERR_CERT_COMMON_NAME_INVALID')
 n1 = Nav(lambda a: False); N.goto_login_with_retries(n1, 'https://www.appnext.com.br/#/login')
 n2 = Nav(lambda a: True); erro2 = None
 try: N.goto_login_with_retries(n2, 'https://www.appnext.com.br/#/login', tries=1)
 except RuntimeError as e: erro2 = str(e)
-print(json.dumps({'p1': p1.feitos, 'p2': p2.feitos, 'erro': erro, 'p3': p3.feitos, 'diag': any('diagnóstico' in l for l in logs), 'n1': n1.alvos, 'erro2': erro2}))`;
+print(json.dumps({'p1': p1.feitos, 'p2': p2.feitos, 'erro': erro, 'p3': p3.feitos, 'diag': any('diagnóstico' in l for l in logs), 'n1': n1.alvos, 'erro2': erro2, 'esperas': p1.esperas, 'wait': n1.wait}))`;
   const r = spawnSync('python3', ['-c', prog], { encoding: 'utf8' });
   assert.equal(r.status, 0, r.stderr);
   const o = JSON.parse(r.stdout.trim().split('\n').pop());
@@ -71,6 +71,9 @@ print(json.dumps({'p1': p1.feitos, 'p2': p2.feitos, 'erro': erro, 'p3': p3.feito
   assert.deepEqual(o.p3, [], 'já logado: não mexe');
   assert.deepEqual(o.n1, ['https://www.appnext.com.br/#/login'], 'tenta primeiro o endereço com www (o sem www está com o certificado errado)');
   assert.match(o.erro2, /Não consegui abrir o AppNext a partir do servidor/);
+  // o site do AppNext baixa ~9 MB antes do login (26/11/2026: ~2 min): espera 5 min antes de recarregar, e a página abre sem esperar o arquivo
+  assert.deepEqual(o.esperas, [300000, 180000]);
+  assert.equal(o.wait, 'domcontentloaded');
 });
 
 test('NF-FILA-01: o laço da fila do coletor não morre e avisa quando a fila parou; a tela não mostra mais "N na frente"', () => {
@@ -81,4 +84,10 @@ test('NF-FILA-01: o laço da fila do coletor não morre e avisa quando a fila pa
   assert.ok(!/na frente/.test(tela));
   assert.match(tela, /roboParado/);
   assert.match(tela, /sem resposta do coletor agora; tentando de novo/, 'erro numa consulta não congela a tela em "na fila"');
+});
+
+test('NF-PER-01: "No período" das notas vai até hoje quando o filtro termina no último dia com venda', () => {
+  const tela = fs.readFileSync(path.join(raiz, 'public/js/precos.js'), 'utf8');
+  assert.match(tela, /const ateNotas = f\.ate != null && TS\.db && f\.ate >= TS\.db\.maxDay \? Math\.max\(f\.ate, TS\.todayDay\(\)\) : f\.ate;/);
+  assert.match(tela, /state\.prcNotasFil\] \? state\.prcNotasFil : 'todas'/);
 });

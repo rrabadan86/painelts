@@ -9,7 +9,7 @@ paths:
 - Python + Playwright, um script por tarefa (`nextsoft_*.py` = AppNext, `fixe_*.py` = FIXE). `coletor.py` é o serviço que roda na VPS
   e enfileira as lojas; `nextsoft_sessao.py` faz um login só e roda os módulos em sequência (mantenha o marcador `### nextsoft_<modulo>.py ###`).
 - O painel fala com o coletor por `src/coletor.js` (API interna do docker compose, cabeçalho `X-Coletor-Token`).
-- Quem dispara o coletor ("Sincronizar agora", "Atualizar agora", importar histórico, FIXE, robô do Sistema de Pedidos): o admin em qualquer loja e o **franqueado só nas lojas dele**. Confira no servidor a permissão e a loja (`soGestor` + `lojaPermitida` em `src/admin-api.js`; `req.lojas` em `server.js`). Gerente e vendedora nunca. Horários e janela da rede continuam só do admin.
+- Quem dispara o coletor ("Sincronizar agora", "Atualizar agora", importar histórico, FIXE, robô do Sistema de Pedidos): o admin em qualquer loja e o **franqueado só nas lojas dele**. Confira no servidor a permissão e a loja (`soGestor` + `lojaPermitida` em `src/admin-api.js`; `req.lojas` em `server.js`). Gerente e vendedora nunca — **exceção (decisão do dono, 26/11/2026; NF-SINC-GER-01):** o "Sincronizar agora" das Notas fiscais (`/api/estoque/notas/sincronizar`, `podeSincNotas`) também para a gerente com a tela Notas fiscais, só na loja dela. Horários e janela da rede continuam só do admin.
 - Credenciais ficam em `config/coletor/<loja>.env` (nunca no Git; o modelo é `exemplo.env.modelo`). O Claude nunca digita nem pede senha:
   quem faz login no AppNext e no FIXE é o dono.
 
@@ -37,5 +37,5 @@ paths:
 
 - **Homologação** (`PAINEL_AMBIENTE=homologacao`, HOMOLOG-01, `docs/homologacao.md`): ali nada sai do painel — o servidor recusa por `C.travaHomolog` (e `ativo()` do coletor e do robô dá falso). Saída nova desta parte passa pela mesma trava e ganha linha em `tests/unit/homolog.test.js`.
 
-- **Login do AppNext** (LOGIN-APPNEXT-01): todo robô entra por `nx.preencher_login(page)` (espera o formulário, recarrega uma vez, diagnostica sem valores e para com mensagem clara); nunca preencha `SEL["rede"]` direto (o `coletor-login.test` confere).
+- **Login do AppNext** (LOGIN-APPNEXT-01): todo robô entra por `nx.preencher_login(page)` (espera o formulário até 5 min — o site do AppNext baixa ~9 MB antes do login —, recarrega uma vez, diagnostica sem valores e para com mensagem clara); nunca preencha `SEL["rede"]` direto (o `coletor-login.test` confere).
 - **Fila do coletor** (NF-FILA-01): o laço `trabalhador` nunca pode morrer (proteção em volta de cada volta, `finally` limpa `trabalho`); `robo_agora` devolve `parado` quando a fila não anda; a tela nunca mostra "N na frente" a partir de `pendentes(loja)` (conta o próprio pedido).

@@ -2402,8 +2402,11 @@ app.post('/api/ia/pedido', express.json({ limit: '200kb' }), async (req, res) =>
 });
 
 // "Sincronizar agora" nas notas de entrada: o coletor busca só o estoque + notas de compra do AppNext (admin ou franqueado da loja)
+// "Sincronizar agora" das notas de entrada (decisão do dono, 26/11/2026; NF-SINC-GER-01): admin, franqueado e a gerente com a
+// tela Notas fiscais. Só este botão: as outras ações do coletor continuam só do admin e do franqueado.
+const podeSincNotas = (req) => req.perfil === 'admin' || req.perfil === 'franqueado' || (req.perfil === 'gerente' && (C.telasDo(C.usuario(req.user)) || []).includes('notas'));
 app.get('/api/estoque/notas/sincronizar', async (req, res) => {
-  if (req.perfil !== 'admin' && req.perfil !== 'franqueado') return res.status(403).json({ erro: 'Só o admin ou o franqueado da loja sincroniza.' }); // req.lojas: só as lojas dele
+  if (!podeSincNotas(req)) return res.status(403).json({ erro: 'Só o admin, o franqueado da loja ou a gerente com a tela Notas fiscais sincroniza.' }); // req.lojas: só as lojas dele
   const loja = req.lojas.find((l) => l.id === String(req.query.loja || ''));
   if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
   if (!COL.ativo()) return res.json({ estado: 'sem_coletor' });
@@ -2420,7 +2423,7 @@ app.get('/api/estoque/notas/sincronizar', async (req, res) => {
 });
 app.post('/api/estoque/notas/sincronizar', express.json({ limit: '1kb' }), async (req, res) => {
   if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
-  if (req.perfil !== 'admin' && req.perfil !== 'franqueado') return res.status(403).json({ erro: 'Só o admin ou o franqueado da loja sincroniza.' }); // req.lojas: só as lojas dele
+  if (!podeSincNotas(req)) return res.status(403).json({ erro: 'Só o admin, o franqueado da loja ou a gerente com a tela Notas fiscais sincroniza.' }); // req.lojas: só as lojas dele
   const loja = req.lojas.find((l) => l.id === String((req.body && req.body.loja) || ''));
   if (!loja) return res.status(400).json({ erro: 'Escolha uma loja.' });
   if (!COL.ativo()) return res.status(400).json({ erro: 'O coletor não está ligado nesta VPS.' });

@@ -917,17 +917,20 @@ def preencher_login(page):
     ainda não aparece, grava no log um diagnóstico sem nenhum valor digitado (endereço, título, campos e botões)."""
     if "/#/login" not in page.url:
         return
+    # o site do AppNext baixa um arquivo de ~9 MB antes de mostrar o login; em 26/11/2026 chegava a ~75 KB/s (2 min).
+    # Espera bastante (APPNEXT_ESPERA_LOGIN, padrão 300 s) antes de recarregar: recarregar recomeça o download.
+    espera = max(60, int(os.getenv("APPNEXT_ESPERA_LOGIN") or "300")) * 1000
     for tentativa in (1, 2):
         try:
-            page.wait_for_selector(SEL["rede"], state="visible", timeout=60_000)
+            page.wait_for_selector(SEL["rede"], state="visible", timeout=espera if tentativa == 1 else 180_000)
             break
         except Exception:  # noqa: BLE001
             if "/#/login" not in page.url:
                 return  # a sessão voltou sozinha (já está logado)
             if tentativa == 1:
-                log("[login] o formulário de login não apareceu em 60 s; recarregando a página uma vez")
+                log(f"[login] o formulário de login não apareceu em {espera // 1000} s; recarregando a página uma vez")
                 try:
-                    page.reload(wait_until="load", timeout=60_000)
+                    page.reload(wait_until="domcontentloaded", timeout=120_000)
                 except Exception as e:  # noqa: BLE001
                     log(f"[login] falhou ao recarregar: {e}")
                 continue
@@ -960,13 +963,14 @@ def goto_login_with_retries(page, url, tries=3):
                 pass
             try:
                 log(f"[goto] tentativa {i}/{tries} -> {target}")
-                page.goto(target, wait_until="load", timeout=60_000)
+                # "domcontentloaded": não espera o arquivo grande do site terminar; quem espera o login é preencher_login
+                page.goto(target, wait_until="domcontentloaded", timeout=60_000)
                 return
             except Exception as e:
                 log(f"[goto] falhou em {target}: {e}")
         page.wait_for_timeout(i * 3000)
     try:
-        page.goto(url, wait_until="load", timeout=60_000)
+        page.goto(url, wait_until="domcontentloaded", timeout=60_000)
     except Exception as e:  # noqa: BLE001
         raise RuntimeError(f"Não consegui abrir o AppNext a partir do servidor ({str(e).splitlines()[0][:160]}). "
                            "Confira se o site abre no navegador e se o servidor acessa www.appnext.com.br.") from None

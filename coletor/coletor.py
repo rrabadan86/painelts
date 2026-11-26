@@ -796,7 +796,7 @@ def rodar(job):
     env["SAIDA_ARQUIVO"] = str(DATA_DIR / loja / "entrada" / f"{carimbo}_{de}_{ate}_{job['gatilho']}.xlsx")
     env["DRIVE_FOLDER_ID"] = ""  # na VPS não envia para o Drive
     env["PAINEL_URL"] = ""
-    env.setdefault("MAX_RUNTIME_SECONDS", "600")
+    env.setdefault("MAX_RUNTIME_SECONDS", "900")  # o login do AppNext pode levar minutos (site lento, LOGIN-APPNEXT-01)
     env["PYTHONUNBUFFERED"] = "1"
     script = CONFIG_DIR / f"{loja}.py"  # script próprio da loja, se existir
     script = script if script.exists() else SCRIPT
