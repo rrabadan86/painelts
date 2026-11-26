@@ -22,7 +22,10 @@ test('NAOQUER-02: conversa → Ver cliente → "Não quer mensagens": sem erro, 
   const janela = page.locator('.ts-perg, [role="dialog"]').filter({ hasText: 'não vai mais receber mensagens' });
   await expect(janela).toBeVisible();
   await expect(page.getByText(/Cannot set properties/)).toHaveCount(0);
+  // fechar o aviso faz o painel tirar a entrada dele do histórico (history.back em seguida): espera isso antes do "voltar"
+  await page.evaluate(() => { window.__pop = new Promise((ok) => { addEventListener('popstate', ok, { once: true }); setTimeout(ok, 3000); }); });
   await janela.getByRole('button').first().click();
+  await page.evaluate(() => window.__pop);
   // a marca na conversa (por baixo da ficha, que continua aberta) e na lista
   await expect(page.locator('.cv-conversa .cv-naoquer')).toBeAttached();
   // no celular a conversa fica no lugar da lista: fechar o aviso NÃO fecha a conversa (antes fechava); fecha a ficha e volta

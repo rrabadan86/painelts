@@ -146,6 +146,7 @@
       ['Intervalo', 'Acima de 6h por dia: 1h; de 4h a 6h: 15 min (CLT). A pessoa fica na loja a jornada + o intervalo.'],
       ['Banco de horas', 'Saldo de cada pessoa: + feriados no banco (×2) e lançamentos a crédito; − folgas pelo banco (a jornada) e horas devidas. Positivo = a loja deve; negativo = a pessoa deve.'],
     ], [
+      ['Por que a folga fixa mudou de dia?', 'O máximo de pessoas de folga no mesmo dia e o mínimo de pessoas na loja valem mais que a folga fixa. Se o dia já está cheio, a folga vai para outro dia da semana, e a escala mostra o motivo ao passar o dedo na folga.'],
       ['Como funciona o banco de horas?', 'Aba Banco de horas: feriado no banco entra em dobro; "Folga pelo banco" na escala desconta a jornada do dia; lançamentos com motivo valem para o resto. Compensa do mais antigo. A hora que a pessoa deve vence em 6 meses (ou 12, nas regras) e some; o crédito dela não vence: o painel avisa para dar a folga ou pagar.'],
       ['Posso usar a escala 4x3?', 'Pode: 4 dias de trabalho e 3 folgas. A jornada passa de 8h por dia e precisa de acordo de compensação; o painel avisa se passar de 10h, o máximo da CLT.'],
     ]],

@@ -207,7 +207,7 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 | ESC-07 | Jornada = carga semanal ÷ dias, em blocos de 10 min | `mapa.js` | `esc` (470 e 590 min) | ✅ |
 | ESC-08 | Pessoas por hora = pico ÷ atendimentos por pessoa; nunca abaixo do mínimo do dia | `necessidade`, `grade` | — | ❌ |
 | ESC-09 | Feriados fora do mapa de calor | `datasFeriado` | — | ❌ |
-| ESC-10 | No máximo N de folga no mesmo dia | `mapa.js` maxFolgaDia | — | ❌ |
+| ESC-10 | No máximo N de folga no mesmo dia e o mínimo de pessoas na loja valem mais que a folga fixa: dia cheio → a folga fixa vai para outro dia (motivo "a fixa de segunda já tinha o máximo de folgas"); antes, 3 pessoas com folga fixa na segunda deixavam a loja vazia (print do dono, 26/11/2026) | `mapa.js` `montarRodizio` (`capFolga`) | `esc` "ESC-10: …" | ✅ |
 | ESC-11 | Folgas de domingo giram igualmente | `montarRodizio` `domDe` | `esc` (indireto) | 🟡 — corte do ciclo com 9+ pessoas, ver B-05 |
 | ESC-12 | Folga no domingo puxa a segunda (mesma semana, ou a seguinte com semana Seg–Dom) | `montarRodizio` | `esc` "semana começando na segunda…" | 🟡 (Dom–Sáb sem teste) |
 | ESC-13 | Folga fixa; domingo não pode ser folga fixa; automático nos dias de menor movimento | `montarRodizio`; `validarOperacao` | — | ❌ |
@@ -780,7 +780,7 @@ Contado pelas linhas da matriz (`node scripts/matriz.js --resumo`; o guardião c
 | NF-e, devolução e notas de entrada (NFE) | 49 | 34 | 11 | 4 |
 | Dinheiro com a franquia (FRQ) | 19 | 13 | 6 | 0 |
 | Coletor e robôs (COL) | 7 | 1 | 2 | 4 |
-| Escala, horários, feriados e férias (ESC) | 42 | 16 | 12 | 14 |
+| Escala, horários, feriados e férias (ESC) | 42 | 17 | 12 | 13 |
 | Equipe, metas e comissão (EQP) | 13 | 4 | 3 | 6 |
 | Estoque, inventário, lotes e pedido (EST) | 82 | 50 | 15 | 17 |
 | Preços, custos e notas de entrada (PRC) | 42 | 15 | 8 | 19 |
@@ -790,7 +790,7 @@ Contado pelas linhas da matriz (`node scripts/matriz.js --resumo`; o guardião c
 | Orçamento (ORC) | 7 | 5 | 1 | 1 |
 | Checklist, fechamento e avisos (OPE) | 13 | 6 | 3 | 4 |
 | Estrutura do painel e atualização (APP) | 50 | 31 | 13 | 6 |
-| **Total** | **536** | **299 (56%)** | **127 (24%)** | **110 (21%)** |
+| **Total** | **536** | **300 (56%)** | **127 (24%)** | **109 (20%)** |
 <!-- resumo:fim -->
 
 ## Próximas etapas

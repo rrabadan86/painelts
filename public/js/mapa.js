@@ -409,24 +409,28 @@
       const precisa = (i) => Math.max(0, nFolgas - new Set([...offs[i], ...fechadosSem]).size);
       const manuais = (i) => [pessoas[i].folga, pessoas[i].folga2].filter((f) => f && f !== 'auto').length;
       const ordemP = pessoas.map((_, i) => i).sort((x, y) => manuais(y) - manuais(x) || ((x - w + N * 9) % N) - ((y - w + N * 9) % N));
+      // limite de folgas no dia (ESC-10, pedido do dono 26/11/2026): o máximo de folgas E o mínimo de pessoas na loja
+      // (o mínimo já está em need). A folga fixa respeita os dois: dia cheio → a folga vai para outro dia.
+      const capFolga = (wd) => Math.max(0, Math.min(maxF, N - Math.max(1, ...need[wd])));
       for (const i of ordemP) {
         const cfgDias = [pessoas[i].folga, pessoas[i].folga2];
         const nPrecisa = precisa(i); // contado antes: cada folga marcada aumenta offs[i]
         for (let j = 0; j < nPrecisa; j++) {
           let d = cfgDias[j] && cfgDias[j] !== 'auto' ? DIAS.indexOf(cfgDias[j]) : -1;
-          const manual = d >= 0 && !offs[i].has(d);
+          const cheia = d >= 0 && !offs[i].has(d) && cont[d] >= capFolga(d);
+          const manual = d >= 0 && !offs[i].has(d) && !cheia;
           if (!manual) {
             let best = null;
             for (let wd = 0; wd <= 5; wd++) {
               if (offs[i].has(wd) || !abertura[wd]) continue;
-              const custo = (cont[wd] >= maxF ? 1e6 : 0) + (wd === fixos[i][j] ? 0 : 100) + somaDia[wd] + cont[wd] * 20;
+              const custo = (cont[wd] >= capFolga(wd) ? 1e6 : 0) + (wd === fixos[i][j] && !cheia ? 0 : 100) + somaDia[wd] + cont[wd] * 20;
               if (!best || custo < best[0]) best = [custo, wd];
             }
             if (!best) continue;
             d = best[1];
           }
           offs[i].add(d); cont[d]++; folgasSem[i].push(d);
-          motivos[i][d] = manual ? 'Folga fixa' : 'Folga';
+          motivos[i][d] = manual ? 'Folga fixa' : cheia ? `Folga (a fixa de ${DIAS_NOME[DIAS.indexOf(cfgDias[j])].toLowerCase()} já tinha o máximo de folgas)` : 'Folga';
         }
       }
       const excesso = [0, 1, 2, 3, 4, 5, 6].filter((wd) => abertura[wd] && cont[wd] > maxF);
@@ -551,7 +555,7 @@
       h('div', { class: 'cfg-grid' }, campo('Modelo', modelo, e.modelo === 'rodizio' ? `Semana de ${semanaSeg(e) ? 'segunda a domingo' : 'domingo a sábado'}. As folgas de domingo giram igualmente entre a equipe${semanaSeg(e) ? '; a folga da segunda cai na semana seguinte e entra na conta dela' : ''}.` : null),
         campo('A semana começa no', iniSem, 'Vale para a escala do mês, os totais por semana e o rodízio.'),
         e.modelo === 'rodizio' ? campo(`A "Semana 1" do rodízio começa ${semanaSeg(e) ? 'na semana de' : 'no domingo'}`, inicio, semanaSeg(e) ? 'Escolha uma data da semana (segunda a domingo) em que a Pessoa 1 folgou no domingo. A escala do mês segue a partir dela.' : 'Use um domingo em que a Pessoa 1 folgou. A escala do mês segue a partir dele.') : null),
-      h('div', { class: 'cfg-grid', style: { marginTop: '10px' } }, campo('Máximo de pessoas de folga no mesmo dia', num('maxFolgaDia', { min: 1, max: 10, step: 1 }), 'Vale para todos os dias, inclusive domingo. Padrão: 1.')),
+      h('div', { class: 'cfg-grid', style: { marginTop: '10px' } }, campo('Máximo de pessoas de folga no mesmo dia', num('maxFolgaDia', { min: 1, max: 10, step: 1 }), 'Vale para todos os dias, inclusive domingo, e vale mais que a folga fixa (dia cheio: a folga vai para outro dia). Padrão: 1.')),
       h('div', { class: 'f-label', style: { marginTop: '10px' } }, 'Mínimo de pessoas na loja, por dia'),
       minimos,
       h('small', { class: 'muted' }, 'Ex.: domingo 2 = nunca fica uma pessoa sozinha no domingo.'),
