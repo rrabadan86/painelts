@@ -37,5 +37,5 @@ paths:
 
 - **Homologação** (`PAINEL_AMBIENTE=homologacao`, HOMOLOG-01, `docs/homologacao.md`): ali nada sai do painel — o servidor recusa por `C.travaHomolog` (e `ativo()` do coletor e do robô dá falso). Saída nova desta parte passa pela mesma trava e ganha linha em `tests/unit/homolog.test.js`.
 
-- **Login do AppNext** (LOGIN-APPNEXT-01): todo robô entra por `nx.preencher_login(page)` (espera o formulário, recarrega uma vez, diagnostica sem valores e para com mensagem clara); nunca preencha `SEL["rede"]` direto (o `coletor-login.test` confere).
+- **Login do AppNext** (LOGIN-APPNEXT-01): todo robô entra por `nx.preencher_login(page)` (espera o formulário até 5 min — o site do AppNext baixa ~9 MB antes do login —, recarrega uma vez, diagnostica sem valores e para com mensagem clara); nunca preencha `SEL["rede"]` direto (o `coletor-login.test` confere).
 - **Fila do coletor** (NF-FILA-01): o laço `trabalhador` nunca pode morrer (proteção em volta de cada volta, `finally` limpa `trabalho`); `robo_agora` devolve `parado` quando a fila não anda; a tela nunca mostra "N na frente" a partir de `pendentes(loja)` (conta o próprio pedido).
