@@ -4316,3 +4316,25 @@ body.em-homolog .topbar { box-shadow: inset 0 -4px 0 var(--gold); }
 .bh-res { margin-top: 14px; }
 .sem-t.resumo .esc-dif { display: block; font-weight: 500; font-size: 12px; }
 .escm-res .lmob-l2 .neg { color: var(--bad-t); }
+
+/* % da meta na Evolução mensal (META-EVO-01) */
+.meta-selo { display: inline-flex; align-items: center; gap: 4px; margin-top: 3px; padding: 1px 8px; border: 0; border-radius: 999px; font: inherit; font-size: 12px; font-weight: 600; line-height: 1.6; cursor: pointer; white-space: nowrap; }
+td .meta-selo { display: flex; margin-left: auto; width: max-content; }
+.meta-selo.ok { background: var(--good-l); color: var(--good-t); }
+.meta-selo.nao { background: var(--bad-l); color: var(--bad-t); }
+.meta-selo.and { background: var(--gold-l); color: var(--gold-t); }
+.meta-selo:focus-visible { outline: 2px solid var(--green); outline-offset: 1px; }
+.evm-sub .meta-selo { margin: 0 0 0 6px; }
+.meta-j { max-width: 460px; display: grid; gap: 10px; }
+.meta-j h3 { margin: 0; }
+.meta-j-pct { font-size: 32px; font-weight: 700; line-height: 1.1; }
+.meta-j-pct.ok { color: var(--good-t); } .meta-j-pct.nao { color: var(--bad-t); } .meta-j-pct.and { color: var(--gold-t); }
+.meta-j-pct small { font-size: 14px; font-weight: 400; }
+.meta-j-barra { position: relative; height: 8px; border-radius: 4px; background: var(--line); }
+.meta-j-barra i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; }
+.meta-j-barra i.ok { background: var(--good); } .meta-j-barra i.nao { background: var(--bad); } .meta-j-barra i.and { background: var(--gold); }
+.meta-j-barra u { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--dark); }
+.meta-j-linhas { display: grid; }
+.meta-j-l { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-top: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+.meta-j-l:first-child { border-top: 0; }
+.meta-j-l b { text-align: right; }
