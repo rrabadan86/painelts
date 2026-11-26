@@ -92,6 +92,7 @@
     // submenu do grupo (Vendas, Clientes, Equipe, Estoque e Margem): as telas que já desenham o seu não ganham outro
     if (state.page !== 'config' && !content.querySelector('.submenu')) { const sm = TS.subGrupo && TS.subGrupo(state.page); if (sm) content.prepend(sm); }
     TS.botoesExpandir && TS.botoesExpandir(content);
+    TS.ajuda && TS.ajuda.marcarTitulo && TS.ajuda.marcarTitulo(content, state.page); // ⓘ da Ajuda ao lado do título (AJUDA-02)
     if (g) restaurar(g);
     if (mesma) {
       window.scrollTo(0, y);
@@ -616,6 +617,7 @@
       TS.iaInit && TS.iaInit(eu);
       TS.notif && TS.notif.iniciar(); // service worker das notificações + item "Notificações e aplicativo" do menu
       TS.guia && TS.guia.conferir(); // primeiro acesso do franqueado: abre a configuração guiada da loja (uma vez)
+      TS.ajuda && TS.ajuda.iniciar && TS.ajuda.iniciar(); // menu do nome → ❓ Ajuda (AJUDA-01)
       TS.novidades && TS.novidades.iniciar(); // "O que mudou no painel": uma vez por novidade, só as da pessoa (NOV-01)
       const salvo = localStorage.getItem(TS.demo ? 'teashop.demo.loja' : 'teashop.loja');
       const ids = TS.lojas.map((l) => l.id);
