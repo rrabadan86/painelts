@@ -49,7 +49,7 @@ test('AJUDA-02: o ? ao lado do título de toda tela abre a ficha dela e "Voltar 
   const lista = info.project.name === 'computador' ? pags : ['inicio', 'resumo', 'clientes', 'pedido', 'dre'];
   for (const p of lista) {
     await page.evaluate((x) => { location.hash = '#' + x; }, p);
-    const bt = page.locator(`#content .page-title .aj-tit[data-pag="${p}"]`).first();
+    const bt = page.locator(`#content .page-title .aj-q[data-pag="${p}"]`).first();
     await expect(bt, `tela ${p} sem o ? da ajuda`).toBeVisible({ timeout: 20000 });
     const nome = await page.evaluate((x) => TS.ajuda.ficha(x).nome, p);
     await bt.click();

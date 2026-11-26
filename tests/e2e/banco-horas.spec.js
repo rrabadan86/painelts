@@ -61,6 +61,8 @@ test('BANCO-03 (tela): escala — "Folga pelo banco de horas" marca o dia e entr
   const cel = page.locator('td.trab.clicavel, .escm-p.clicavel:not(:has(.escm-h.folga))').first();
   await cel.click();
   const ed = page.locator('.aj-editor');
+  // AJUDA-04: o título do editor do dia não pega o estilo do "?" da Ajuda (eram a mesma classe e ficava espremido num círculo)
+  expect((await ed.locator('.aj-tit').boundingBox()).width).toBeGreaterThan(150);
   await ed.locator('select').first().selectOption('banco');
   await expect(ed.locator('.aj-vale')).toBeHidden();
   await ed.getByRole('button', { name: 'Aplicar' }).click();
