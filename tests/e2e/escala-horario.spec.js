@@ -411,10 +411,10 @@ test('ESC-7DIAS-01: rodízio nunca deixa alguém mais de 6 dias seguidos trabalh
   const r = await page.evaluate(() => {
     const H = (abre, fecha) => ({ abre, fecha, fechado: false });
     const casos = [];
-    for (const escala of ['6x1', '5x2', '4x3']) for (const inicioSemana of ['dom', 'seg']) for (const N of [3, 4, 5]) {
+    for (const modelo of ['rodizio', 'rodizio-dom']) for (const escala of ['6x1', '5x2', '4x3']) for (const inicioSemana of ['dom', 'seg']) for (const N of [3, 4, 5]) {
       const op = {
         funcionamento: { seg: H('10:00', '22:00'), ter: H('10:00', '22:00'), qua: H('10:00', '22:00'), qui: H('10:00', '22:00'), sex: H('10:00', '22:00'), sab: H('10:00', '22:00'), dom: H('14:00', '20:00') },
-        equipe: { funcionarios: N, cargaSemanal: escala === '4x3' ? 40 : 42, escala, intervalo: 60, capacidade: 4, modelo: 'rodizio', maxFolgaDia: 1, inicioSemana },
+        equipe: { funcionarios: N, cargaSemanal: escala === '4x3' ? 40 : 42, escala, intervalo: 60, capacidade: 4, modelo, maxFolgaDia: 1, inicioSemana },
       };
       const need = Array.from({ length: 7 }, (_, wd) => Array(24).fill(wd === 5 ? Math.min(3, N) : wd === 6 ? 2 : 1));
       const DS = ['seg', 'ter', 'qua', 'qui', 'sex', 'sab'];
@@ -427,11 +427,37 @@ test('ESC-7DIAS-01: rodízio nunca deixa alguém mais de 6 dias seguidos trabalh
         for (let volta = 0; volta < 2; volta++) for (const sem of out.semanas) for (const wd of ordem) {
           if (sem.turnosP[i][wd]) { seguidos++; max = Math.max(max, seguidos); } else seguidos = 0;
         }
-        if (max > 6) casos.push(`${escala} ${inicioSemana} N=${N} P${i}: ${max} dias seguidos`);
+        if (max > 6) casos.push(`${modelo} ${escala} ${inicioSemana} N=${N} P${i}: ${max} dias seguidos`);
       }
       void DS;
     }
     return casos;
   });
   expect(r).toEqual([]); // e, sem caso que passe, o aviso de "passa de 6 dias seguidos" (out.seguidos) fica vazio
+});
+
+// ESC-ROD-DOM-01 (pedido do dono, 26/11/2026): rodízio só do domingo — o domingo gira, a segunda não vem junto.
+test('ESC-ROD-DOM-01: rodízio só do domingo não amarra a segunda; dias por semana, máximo de folgas e 6 dias seguidos respeitados', async ({ page }) => {
+  await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS._escala);
+  const r = await page.evaluate(() => {
+    const H = (abre, fecha) => ({ abre, fecha, fechado: false });
+    const op = {
+      funcionamento: { seg: H('09:50', '22:00'), ter: H('09:50', '22:00'), qua: H('09:50', '22:00'), qui: H('09:50', '22:00'), sex: H('09:50', '22:00'), sab: H('09:50', '22:00'), dom: H('13:50', '20:00') },
+      equipe: { funcionarios: 3, cargaSemanal: 42, escala: '5x2', intervalo: 60, capacidade: 4, modelo: 'rodizio-dom', maxFolgaDia: 1 },
+    };
+    const need = Array.from({ length: 7 }, (_, wd) => Array(24).fill(wd === 5 ? 3 : wd === 6 ? 2 : 1));
+    const pessoas = ['LYANDRA', 'GABRIELLY', 'RENATA'].map((nome, i) => ({ nome, folga: 'seg', folga2: ['qua', 'ter', 'qui'][i], turno: 'tanto' }));
+    const out = TS._escala.montarRodizio(need, op, pessoas);
+    const ruins = [];
+    let puxou = 0;
+    out.semanas.forEach((sem, w) => {
+      for (let wd = 0; wd < 7; wd++) { const f = sem.turnosP.filter((p) => !p[wd]).length; if (f > 1) ruins.push(`semana ${w + 1}, dia ${wd}: ${f} de folga`); }
+      sem.turnosP.forEach((p, i) => { if (p.filter(Boolean).length !== 5) ruins.push(`semana ${w + 1}, ${pessoas[i].nome}: ${p.filter(Boolean).length} dias`); if (!p[6] && sem.motivos[i][0] === 'Folga (após domingo)') puxou++; });
+    });
+    return { ruins, puxou, seguidos: out.seguidos, domFolga: out.semanas.map((s) => s.turnosP.filter((p) => !p[6]).length) };
+  });
+  expect(r.ruins).toEqual([]);
+  expect(r.puxou).toBe(0); // nenhuma "Folga (após domingo)"
+  expect(r.seguidos).toEqual([]);
+  expect(r.domFolga.every((n) => n === 1)).toBe(true); // o domingo continua girando: 1 de folga por domingo
 });

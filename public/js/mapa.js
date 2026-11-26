@@ -62,6 +62,11 @@
   /** abaixo do mínimo da CLT? (acima de 6h: 1h; de 4h a 6h: 15 min) */
   const abaixoClt = (jorn, int) => (jorn > 360 ? int < 60 : jorn > 240 ? int < 15 : false);
   /** dias de trabalho por semana de cada escala (ESC-4X3-01: 4x3 = 4 dias, 3 folgas) — a conta única da jornada (carga ÷ dias) */
+  // modelos de escala: livre (uma semana que se repete), rodízio de domingo com a segunda junto (rodizio) e rodízio só do
+  // domingo, sem amarrar a segunda (rodizio-dom, pedido do dono 26/11/2026; ESC-ROD-DOM-01)
+  const ehRodizio = (e) => !!e && (e.modelo === 'rodizio' || e.modelo === 'rodizio-dom');
+  const puxaSegunda = (e) => !!e && e.modelo === 'rodizio';
+  TS.ehRodizio = ehRodizio;
   const DIAS_ESCALA = { '6x1': 6, '5x2': 5, '4x3': 4 };
   const diasDaEscala = (esc) => DIAS_ESCALA[esc] || 5;
   TS.diasDaEscala = diasDaEscala;
@@ -257,7 +262,7 @@
   /** menor equipe que cobre todos os horários (e a que cobre também os picos) */
   function equipeIdeal(need, op) {
     let soAberto = null, tudo = null;
-    const rod = op.equipe.modelo === 'rodizio';
+    const rod = ehRodizio(op.equipe);
     for (let n = 1; n <= 15; n++) {
       const r = rod ? resumoRodizio(montarRodizio(need, op, Array.from({ length: n }, (_, i) => ({ nome: `P${i + 1}`, folga: 'auto', folga2: 'auto' })))) : montarEscala(need, op, n);
       if (soAberto == null && r.descoberto === 0) soAberto = n;
@@ -409,7 +414,8 @@
       const folgasSem = pessoas.map(() => []);
       pessoas.forEach((_, i) => {
         if (!domAberto) { offs[i].add(DOM); motivos[i][DOM] = 'Fechado'; return; }
-        if (seg) {
+        if (!puxaSegunda(e)) { if (folgaDom.has(i)) { offs[i].add(DOM); cont[DOM]++; motivos[i][DOM] = 'Folga (rodízio)'; } } // só o domingo
+        else if (seg) {
           if (folgaDom.has(i)) { offs[i].add(DOM); cont[DOM]++; motivos[i][DOM] = 'Folga (rodízio)'; }
           if (segDoAnterior.has(i)) { offs[i].add(SEG); cont[SEG]++; motivos[i][SEG] = 'Folga (após domingo)'; }
         } else if (folgaDom.has(i)) { offs[i].add(DOM); offs[i].add(SEG); cont[DOM]++; cont[SEG]++; motivos[i][DOM] = 'Folga (rodízio)'; motivos[i][SEG] = 'Folga (após domingo)'; }
@@ -428,7 +434,8 @@
       const limCedo = (i) => MAX_SEGUIDOS - cauda[i];
       const descansaAte = (i, lim) => ORD_SEM.some((wd, p) => p <= lim && (offs[i].has(wd) || !abertura[wd]));
       for (const i of ordemP) {
-        const cfgDias = [pessoas[i].folga, pessoas[i].folga2];
+        // a folga fixa é "quando trabalha no domingo": quem folga no domingo do rodízio usa só a 2ª folga (ou a automática)
+        const cfgDias = offs[i].has(DOM) && folgaDom.has(i) ? [pessoas[i].folga2] : [pessoas[i].folga, pessoas[i].folga2];
         // contado antes: cada folga marcada aumenta offs[i]. Sem descanso a tempo (o rodízio deu a folga no fim da semana),
         // ganha uma folga a mais cedo: a lei dos 6 dias vale mais que o número de folgas da escala
         const precisa0 = precisa(i);
@@ -534,8 +541,9 @@
     const esc = h('select', { class: 'f-input' }, h('option', { value: '5x2', selected: e.escala === '5x2' || null }, '5x2 (5 dias, 2 folgas)'), h('option', { value: '6x1', selected: e.escala === '6x1' || null }, '6x1 (6 dias, 1 folga)'), h('option', { value: '4x3', selected: e.escala === '4x3' || null }, '4x3 (4 dias, 3 folgas)'));
     esc.addEventListener('change', () => { e.escala = esc.value; aoMudar && aoMudar(); });
     const modelo = h('select', { class: 'f-input' },
-      h('option', { value: 'livre', selected: e.modelo !== 'rodizio' || null }, 'Livre: o painel escolhe as folgas'),
-      h('option', { value: 'rodizio', selected: e.modelo === 'rodizio' || null }, 'Rodízio de domingo (folga no domingo puxa a segunda)'));
+      h('option', { value: 'livre', selected: !ehRodizio(e) || null }, 'Livre: o painel escolhe as folgas'),
+      h('option', { value: 'rodizio', selected: e.modelo === 'rodizio' || null }, 'Rodízio de domingo (folga no domingo puxa a segunda)'),
+      h('option', { value: 'rodizio-dom', selected: e.modelo === 'rodizio-dom' || null }, 'Rodízio de domingo (só o domingo, sem a segunda)'));
     modelo.addEventListener('change', () => { e.modelo = modelo.value; aoMudar && aoMudar(); });
     const inicio = h('input', { class: 'f-input', type: 'date', value: e.inicioRodizio || '2026-01-04' });
     const iniSem = h('select', { class: 'f-input' }, h('option', { value: 'dom', selected: e.inicioSemana !== 'seg' || null }, 'Domingo (domingo a sábado)'), h('option', { value: 'seg', selected: e.inicioSemana === 'seg' || null }, 'Segunda (segunda a domingo)'));
@@ -565,7 +573,7 @@
       tu.addEventListener('change', () => { p.turno = tu.value; salvarPessoas(); aoMudar && aoMudar(); });
       return h('tr', null, h('td', { 'data-l': 'Nome' }, nome), h('td', { 'data-l': 'Prefere trabalhar' }, tu), h('td', { class: 'so-rodizio', 'data-l': 'Folga fixa' }, f1), h('td', { class: 'so-rodizio so-5x2', 'data-l': '2ª folga' }, f2));
     });
-    const tabP = h('table', { class: 'op-pessoas' + (e.modelo === 'rodizio' ? ' rodizio' : '') + (diasDaEscala(e.escala) <= 5 ? ' e5x2' : '') },
+    const tabP = h('table', { class: 'op-pessoas' + (ehRodizio(e) ? ' rodizio' : '') + (diasDaEscala(e.escala) <= 5 ? ' e5x2' : '') },
       h('thead', null, h('tr', null, h('th', null, 'Nome'), h('th', { title: 'Manhã = abre a loja · Noite = fecha a loja. A escala respeita ao máximo, sem deixar a loja descoberta.' }, 'Prefere trabalhar'), h('th', { class: 'so-rodizio' }, 'Folga fixa (quando trabalha no domingo)'), h('th', { class: 'so-rodizio so-5x2', title: 'Na 5x2 e na 4x3. Na 4x3 a 3ª folga é escolhida pelo painel (o dia de menor movimento).' }, '2ª folga (5x2 e 4x3)'))), h('tbody', null, linhasP));
     const campo = (rot, el, dica) => h('label', { class: 'cfg-campo' }, h('span', null, rot), el, dica ? h('small', null, dica) : null);
     box.append(
@@ -589,9 +597,9 @@
           jorn > JORNADA_MAX ? ` Passa de 10h por dia, o máximo da CLT (8h + 2h extras): na ${e.escala}, a carga semanal vai até ${Math.floor((JORNADA_MAX * dias) / 60)}h.` : jorn > 480 ? ' Acima de 8h por dia: precisa de acordo de compensação de horas (CLT, art. 59).' : '');
       })(),
       h('div', { class: 'f-label', style: { marginTop: '14px' } }, 'Regras da escala'),
-      h('div', { class: 'cfg-grid' }, campo('Modelo', modelo, e.modelo === 'rodizio' ? `Semana de ${semanaSeg(e) ? 'segunda a domingo' : 'domingo a sábado'}. As folgas de domingo giram igualmente entre a equipe${semanaSeg(e) ? '; a folga da segunda cai na semana seguinte e entra na conta dela' : ''}.` : null),
+      h('div', { class: 'cfg-grid' }, campo('Modelo', modelo, ehRodizio(e) ? `Semana de ${semanaSeg(e) ? 'segunda a domingo' : 'domingo a sábado'}. As folgas de domingo giram igualmente entre a equipe${!puxaSegunda(e) ? '; a segunda não vem junto: a outra folga da semana é escolhida como as demais (folga fixa, máximo por dia, mínimo na loja e 6 dias seguidos)' : semanaSeg(e) ? '; a folga da segunda cai na semana seguinte e entra na conta dela' : ''}.` : null),
         campo('A semana começa no', iniSem, 'Vale para a escala do mês, os totais por semana e o rodízio.'),
-        e.modelo === 'rodizio' ? campo(`A "Semana 1" do rodízio começa ${semanaSeg(e) ? 'na semana de' : 'no domingo'}`, inicio, semanaSeg(e) ? 'Escolha uma data da semana (segunda a domingo) em que a Pessoa 1 folgou no domingo. A escala do mês segue a partir dela.' : 'Use um domingo em que a Pessoa 1 folgou. A escala do mês segue a partir dele.') : null),
+        ehRodizio(e) ? campo(`A "Semana 1" do rodízio começa ${semanaSeg(e) ? 'na semana de' : 'no domingo'}`, inicio, semanaSeg(e) ? 'Escolha uma data da semana (segunda a domingo) em que a Pessoa 1 folgou no domingo. A escala do mês segue a partir dela.' : 'Use um domingo em que a Pessoa 1 folgou. A escala do mês segue a partir dele.') : null),
       h('div', { class: 'cfg-grid', style: { marginTop: '10px' } }, campo('Máximo de pessoas de folga no mesmo dia', num('maxFolgaDia', { min: 1, max: 10, step: 1 }), 'Vale para todos os dias, inclusive domingo, e vale mais que a folga fixa (dia cheio: a folga vai para outro dia). Padrão: 1.')),
       h('div', { class: 'f-label', style: { marginTop: '10px' } }, 'Mínimo de pessoas na loja, por dia'),
       minimos,
@@ -680,7 +688,7 @@
     }
     const need = necessidade(g.p80, op);
     const ideal = equipeIdeal(need, op);
-    const rodizio = op.equipe.modelo === 'rodizio';
+    const rodizio = ehRodizio(op.equipe);
     const esc = rodizio ? null : montarEscala(need, op, op.equipe.funcionarios);
     const nomesEq = (i) => pessoasDe(op.equipe)[i].nome;
 
@@ -720,7 +728,7 @@
         h('ol', null,
           h('li', null, `Para cada dia da semana e hora aberta, pega o movimento de pico (o número de atendimentos que 80% dos dias não passam) e divide por ${op.equipe.capacidade} atendimentos por pessoa por hora. Nunca fica abaixo do mínimo de pessoas do dia. Isso dá as "pessoas necessárias por hora".`),
           h('li', null, `Horas necessárias = soma dessas pessoas em todas as horas da semana. Horas da equipe = funcionários × ${op.equipe.cargaSemanal} h.`),
-          h('li', null, `O painel monta a escala de verdade com 1, 2, 3… pessoas, usando as regras configuradas (${op.equipe.escala}, jornada, intervalo de ${intervaloMin(op.equipe, (op.equipe.cargaSemanal * 60) / diasDaEscala(op.equipe.escala))} min, ${op.equipe.modelo === 'rodizio' ? 'rodízio de domingo, ' : ''}no máximo ${op.equipe.maxFolgaDia || 1} de folga por dia).`),
+          h('li', null, `O painel monta a escala de verdade com 1, 2, 3… pessoas, usando as regras configuradas (${op.equipe.escala}, jornada, intervalo de ${intervaloMin(op.equipe, (op.equipe.cargaSemanal * 60) / diasDaEscala(op.equipe.escala))} min, ${ehRodizio(op.equipe) ? (puxaSegunda(op.equipe) ? 'rodízio de domingo com a segunda, ' : 'rodízio só do domingo, ') : ''}no máximo ${op.equipe.maxFolgaDia || 1} de folga por dia).`),
           h('li', null, h('b', null, 'Equipe mínima'), ': o menor número de pessoas em que nenhum horário fica com a loja sozinha (zero pessoas).'),
           h('li', null, h('b', null, 'Equipe ideal'), ': o menor número em que, além disso, todos os picos e o mínimo de cada dia ficam cobertos.')),
         h('p', { class: 'muted' }, 'A equipe pode ser maior que horas ÷ carga porque folgas, jornada máxima e intervalo não deixam encaixar as horas perfeitamente.')));
@@ -904,7 +912,7 @@
       const need = necessidade(grade(lista, de, ate, state.mapaMetrica || 'cupons', ehFeriado).p80, op);
       const pessoas = pessoasDe(e);
       let semanas, L = 1;
-      if (e.modelo === 'rodizio') { const rr = montarRodizio(need, op, pessoas); semanas = rr.semanas; L = rr.L; }
+      if (ehRodizio(e)) { const rr = montarRodizio(need, op, pessoas); semanas = rr.semanas; L = rr.L; }
       else semanas = [{ turnosP: montarEscala(need, op, e.funcionarios).pessoas, motivos: null }];
       return { pessoas: pessoas.map((p) => p.nome), turnos: turnosDoPeriodo({ op, cfg, semanas, L, need, deIso, ateIso }) };
     } catch (err) { console.error('[escala]', err); return null; }
@@ -1284,7 +1292,7 @@
       : tot.abaixo > 0 ? h('div', { class: 'notice' }, `A loja nunca fica sozinha, mas faltam pessoas nos picos ou no mínimo do dia em ${fmt.n1(tot.abaixo / r.L)} h por semana, em média. Veja os alertas de cada semana.${ideal.tudo ? ` Com ${ideal.tudo} pessoas fica tudo coberto.` : ''}`)
         : h('div', { class: 'notice ok' }, 'Essa equipe cumpre o rodízio, os mínimos de cada dia e os picos.');
     return TS.cardWithTools(`Semana-modelo do rodízio de domingo (${op.equipe.escala})`,
-      `Semana de ${semanaSeg(op.equipe) ? 'segunda a domingo' : 'domingo a sábado'}. ${r.kDom ? `${r.kDom} pessoa(s) trabalham em cada domingo; ${r.folgamDom} folga(m) — e folga(m) também na segunda${semanaSeg(op.equipe) ? ' seguinte' : ''}.` : 'Loja fechada no domingo.'} O ciclo se repete a cada ${r.L} semana(s). Jornada de ${Math.floor(r.jornada / 60)}h${String(Math.round(r.jornada % 60)).padStart(2, '0')} por dia${r.intervalo ? ` + ${r.intervalo} min de intervalo` : ''}. Confira a CLT e a convenção coletiva.`,
+      `Semana de ${semanaSeg(op.equipe) ? 'segunda a domingo' : 'domingo a sábado'}. ${r.kDom ? `${r.kDom} pessoa(s) trabalham em cada domingo; ${r.folgamDom} folga(m)${puxaSegunda(op.equipe) ? ` — e folga(m) também na segunda${semanaSeg(op.equipe) ? ' seguinte' : ''}` : ' (a segunda não vem junto)'}.` : 'Loja fechada no domingo.'} O ciclo se repete a cada ${r.L} semana(s). Jornada de ${Math.floor(r.jornada / 60)}h${String(Math.round(r.jornada % 60)).padStart(2, '0')} por dia${r.intervalo ? ` + ${r.intervalo} min de intervalo` : ''}. Confira a CLT e a convenção coletiva.`,
       seg, aviso,
       excessos.length ? h('div', { class: 'notice err' }, `Não deu para manter no máximo ${r.maxF} pessoa(s) de folga por dia em: ${excessos.map(([k, x]) => `semana ${k + 1} (${x.map((wd) => DIAS_NOME[wd]).join(', ')})`).join('; ')}. A regra de no máximo 6 dias seguidos de trabalho vale mais (quem folgou no rodízio trabalha de terça a sábado e precisa folgar logo no começo da semana seguinte). Para ter só ${r.maxF} de folga por dia: ${semanaSeg(op.equipe) ? '' : 'experimente "A semana começa na segunda" (a folga do domingo e a da segunda ficam em semanas diferentes e as folgas cabem), '}mais uma pessoa na equipe, um mínimo menor no sábado ou no domingo, ou mais folgas permitidas por dia.`) : null,
       r.seguidos && r.seguidos.length ? h('div', { class: 'notice err', 'data-aviso': 'seguidos' }, `Com essas regras alguém ainda passa de 6 dias seguidos de trabalho: ${r.seguidos.join('; ')}. Aumente o máximo de folgas por dia, diminua o mínimo de algum dia ou ajuste a escala à mão.`) : null,

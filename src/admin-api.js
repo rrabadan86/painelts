@@ -85,7 +85,7 @@ function validarOperacao(o) {
   if (e.intervaloAte8 != null && !int(e.intervaloAte8, 0, 180)) return 'Intervalo da jornada de até 8h inválido (0 a 180 min).';
   if (!(typeof e.capacidade === 'number' && e.capacidade > 0 && e.capacidade <= 100)) return 'Atendimentos por pessoa por hora inválido.';
   if (e.nomes != null && (!Array.isArray(e.nomes) || e.nomes.length > 40 || e.nomes.some((n) => typeof n !== 'string' || n.length > 40))) return 'Nomes inválidos.';
-  if (e.modelo != null && !['livre', 'rodizio'].includes(e.modelo)) return 'Modelo de escala inválido.';
+  if (e.modelo != null && !['livre', 'rodizio', 'rodizio-dom'].includes(e.modelo)) return 'Modelo de escala inválido.';
   if (e.inicioRodizio != null && !/^\d{4}-\d{2}-\d{2}$/.test(e.inicioRodizio)) return 'Data de início do rodízio inválida.';
   if (e.inicioSemana != null && !['dom', 'seg'].includes(e.inicioSemana)) return 'Dia de início da semana inválido.';
   if (e.minimoDia != null) {
