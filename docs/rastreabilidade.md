@@ -229,6 +229,7 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 | ESC-29 | Feriados nacionais (Páscoa móvel) e locais | `feriados.js` | — | ❌ |
 | ESC-30 | Horas de feriado trabalhadas (para o fechamento) | `feriados.js` `horasAuto` | — | ❌ |
 | ESC-31 | Campo de hora aplica ao sair, sem perder o foco (`TS.aoConfirmar`) | `main.js` | `esc` "digitar a hora inteira…" | 🟡 (computador) |
+| ESC-4X3-01 | Escala 4x3 (pedido do dono, 26/11/2026): 6x1, 5x2 e 4x3 pelo mapa único `TS.diasDaEscala` (6, 5, 4 dias); jornada = carga ÷ dias em todas; no rodízio a 4x3 tem 3 folgas (domingo/segunda do rodízio, folga fixa e a 3ª automática no dia de menor movimento); Equipe e regras mostra a conta "44h ÷ 4 dias = 11h por dia", avisa em vermelho acima de 10h por dia (CLT, 8h + 2h extras) e lembra do acordo de compensação acima de 8h; o servidor aceita 4x3; Feriados usam a mesma jornada | `public/js/mapa.js` (`diasDaEscala`, `montarEscala`, `montarRodizio`, editor da equipe); `feriados.js` `jornadaDe`; `src/admin-api.js` | `escala-horario.spec` "ESC-4X3-01…" | ✅ |
 
 ## 8. Equipe, metas e comissão (EQP)
 
@@ -526,6 +527,7 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 | LMOB-05 | Pente-fino do celular, lote 3 (25/11/2026): Resultado do mês em 3 colunas (valor com o % embaixo; projeção ou ano anterior com a variação embaixo), Mês a mês 3 meses por vez com ‹ ›, Sua loja × rede e Grupos (RFM) em linhas, Retenção por safra com 30 d, 90 d e 1 ano, barras de produto (Resumo, Clientes → Top 5) como linhas com o nome inteiro (`TS.barrasMob`) e tabela sem rolagem interna no celular (`maxHeight` só no computador). Saíram do G-01 | `public/js/dre.js` (`MOB`, `linhaMob`, `navMes`); `extras.js` (`cartaoRede`); `clientes.js` (`cartaoRfm`, `cartaoSafras`, top 5); `components.js` (`TS.barrasMob`, `maxHeight`); `pages.js` (`topBar`) | `listas-celular.spec` LMOB-05; `telas.spec` LARG-01 | ✅ |
 | REDE-02 | Comparativos → "Sua loja × rede" segue o período do filtro (pedido do dono, 25/11/2026: "não leva em conta os filtros"): `/api/rede?de&ate` compara todas as lojas nos mesmos dias (cortadas no último dia com vendas de todas), crescimento contra os mesmos dias do ano anterior; o "Ritmo da meta" só com o período dentro de um mês (a meta é mensal). Vendedor, grupo e produto não entram (loja inteira × loja inteira) | `src/indicadores.js` (`rede(…, per)`); `server.js` (`perRede`, `/api/rede`, `/api/demo/rede`); `public/js/extras.js` (`TS.cartaoRede`) | `contas.test` REDE-02; `rede-periodo.spec` REDE-02 | ✅ |
 | LMOB-06 | Ajustes leves do celular (pedido do dono, 25/11/2026): abas internas de Movimento e escala, Conferência e Conversas numa linha que rola (a marcada à vista, `TS.ativoVisivel`), em vez de quebrar com uma aba sozinha embaixo; Imprimir/Expandir/Compartilhar na linha do título do quadro (com botão de ação, como "+ Novo usuário", o título ocupa a linha e os botões descem juntos); Configurações → Usuários com o texto afastado da borda | `public/styles.css` (LMOB-06); `public/js/mapa.js` (`mapa-abas` com `TS.ativoVisivel`) | `telas.spec` LARG-01 (abas rolam de propósito: `.seg`, `.submenu`, `.mapa-abas`) | ✅ (visual) |
+| LMOB-07 | Nada de texto espremido no celular (pedido do dono, 26/11/2026, depois do "Movimento médio por hora" uma palavra por linha): no `card-head` o título ocupa a linha e abas/ferramentas descem (`order`), nome do produto do Pedido com largura mínima, Equipe e regras (horários, mínimos, equipe, semana-modelo) em cartões, mapas de calor sem horas fechadas e rótulos longos encurtados (A pagar em N dias, Vendas previstas); o teste passa em todas as telas do celular e falha com texto de 3 ou mais palavras numa coluna de menos de 120 px quase uma palavra por linha | `public/styles.css` (bloco LMOB-07); `mapa.js`; `apagar.js`; `comprasvendas.js` | `telas.spec` (celular) "LMOB-07" | ✅ |
 | FECH-REENV-01 | Reenviar o fechamento de um dia (pedido do dono, 25/11/2026): Vendas → Conferência → Caixa × painel → Dia a dia tem "✉ Reenviar" em cada dia (admin e franqueado; o servidor confere a loja), com confirmação; manda o mesmo fechamento do envio automático daquele dia para os destinatários cadastrados (e-mail e Telegram), só dos últimos 60 dias e nunca do futuro; auditado ("reenviou o fechamento de dd/mm/aaaa"); na homologação a trava de e-mail vale; na apresentação nada sai | `src/admin-api.js` (`/lojas/:id/fechamento-email/enviar` com `dia`); `src/notificacoes.js` (`diaReenvioOk`, `enviarFechamentoLoja({ dia })`); `public/js/conferencia-tela.js` (`reenviar`); `server.js` (`/api/demo/fechamento/reenviar`) | `smtp-porta.test` FECH-REENV-01; `fechamento-reenviar.spec` | ✅ |
 | FECH-DIA-01 | Conferência → Caixa × painel → Dia a dia: tocar no dia abre o fechamento daquele dia (formas de pagamento, abertura, fechamento, sangria, suprimento, conferência do caixa e tudo o que vai no e-mail) — a mesma janela de "Ver mensagem" (`TS.abrirFechamento` com `state.fechDia`), pedido do dono de 25/11/2026 | `public/js/conferencia-tela.js` (`onRowClick`); `public/js/fechamento.js` | `fechamento-reenviar.spec` FECH-DIA-01 | ✅ |
 | ACESSO-DIAS-01 | Prazo de acesso do usuário em dias (decisão do dono, 25/11/2026: "14 dias de teste"): Configurações → Usuários → "Acesso por (dias)" com atalhos 7/14/30/60/90; `acessoDias` = hoje + n dias (último dia), 0 = sem prazo, até 3650; `acessoMeses` continua aceito | `src/admin-api.js` (`prazo`); `src/config.js` (`somaDias`); `public/js/config.js` | `acesso-dias.test`; `fechamento-reenviar.spec` ACESSO-DIAS-01 | ✅ |
@@ -766,17 +768,17 @@ Contado pelas linhas da matriz (`node scripts/matriz.js --resumo`; o guardião c
 | NF-e, devolução e notas de entrada (NFE) | 49 | 34 | 11 | 4 |
 | Dinheiro com a franquia (FRQ) | 19 | 13 | 6 | 0 |
 | Coletor e robôs (COL) | 7 | 1 | 2 | 4 |
-| Escala, horários, feriados e férias (ESC) | 31 | 7 | 10 | 14 |
+| Escala, horários, feriados e férias (ESC) | 32 | 8 | 10 | 14 |
 | Equipe, metas e comissão (EQP) | 13 | 4 | 3 | 6 |
 | Estoque, inventário, lotes e pedido (EST) | 82 | 50 | 15 | 17 |
 | Preços, custos e notas de entrada (PRC) | 42 | 15 | 8 | 19 |
 | Resultado e rentabilidade (RES) | 39 | 30 | 4 | 5 |
 | Vendas e métricas (VEN) | 28 | 13 | 8 | 7 |
-| Clientes, fidelidade, WhatsApp e lista de espera (CLI) | 74 | 61 | 9 | 4 |
+| Clientes, fidelidade, WhatsApp e lista de espera (CLI) | 75 | 62 | 9 | 4 |
 | Orçamento (ORC) | 7 | 5 | 1 | 1 |
 | Checklist, fechamento e avisos (OPE) | 13 | 6 | 3 | 4 |
 | Estrutura do painel e atualização (APP) | 49 | 30 | 13 | 6 |
-| **Total** | **522** | **287 (55%)** | **125 (24%)** | **110 (21%)** |
+| **Total** | **524** | **289 (55%)** | **125 (24%)** | **110 (21%)** |
 <!-- resumo:fim -->
 
 ## Próximas etapas

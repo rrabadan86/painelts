@@ -80,7 +80,7 @@ function validarOperacao(o) {
   const int = (x, a, b) => Number.isInteger(x) && x >= a && x <= b;
   if (!int(e.funcionarios, 1, 40)) return 'Quantidade de funcionários inválida (1 a 40).';
   if (!int(e.cargaSemanal, 4, 60)) return 'Carga horária semanal inválida.';
-  if (!['5x2', '6x1'].includes(e.escala)) return 'Escala inválida.';
+  if (!['5x2', '6x1', '4x3'].includes(e.escala)) return 'Escala inválida.';
   if (!int(e.intervalo, 0, 180)) return 'Intervalo inválido.';
   if (e.intervaloAte8 != null && !int(e.intervaloAte8, 0, 180)) return 'Intervalo da jornada de até 8h inválido (0 a 180 min).';
   if (!(typeof e.capacidade === 'number' && e.capacidade > 0 && e.capacidade <= 100)) return 'Atendimentos por pessoa por hora inválido.';

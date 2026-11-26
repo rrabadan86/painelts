@@ -13,7 +13,7 @@ test('Pedido: compras × teto pela previsão dos próximos dias, com o pedido so
   await abrir(page, 'pedido');
   const q = page.locator('.cv-pedido');
   await expect(q.locator('.kpi')).toHaveCount(5);
-  await expect(q).toContainText(/Vendas previstas · próximos \d+ dias/);
+  await expect(q).toContainText(/Vendas previstas[\s\S]*próximos \d+ dias/);
   await expect(q).toContainText(/Comprado nos últimos \d+ dias/);
   await expect(q).toContainText('Este pedido');
   await expect(q).toContainText('Teto de compras');

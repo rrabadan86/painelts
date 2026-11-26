@@ -92,8 +92,8 @@
     }
     return out;
   }
-  const equipeDe = (cfg) => (cfg && cfg.operacao && cfg.operacao.equipe) || { cargaSemanal: 44, escala: '6x1' };
-  const jornadaDe = (eq) => Math.round((eq.cargaSemanal * 60) / (eq.escala === '5x2' ? 5 : 6));
+  const equipeDe = (cfg) => (cfg && cfg.operacao && cfg.operacao.equipe) || { cargaSemanal: 44, escala: '5x2' }; // o mesmo padrão da tela Equipe e regras
+  const jornadaDe = (eq) => Math.round((eq.cargaSemanal * 60) / (TS.diasDaEscala ? TS.diasDaEscala(eq.escala) : 5)); // 6x1, 5x2 ou 4x3 (ESC-4X3-01)
   /** horas automáticas de quem vendeu no feriado: horário da loja naquele dia (acima de 6h desconta o intervalo), até a jornada */
   function horasAuto(cfg, data) {
     const eq = equipeDe(cfg), jornada = jornadaDe(eq);

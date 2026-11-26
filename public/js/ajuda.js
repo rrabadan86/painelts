@@ -140,7 +140,11 @@
       ['Horas da equipe', 'Horas que a escala do mês cobre.'],
       ['Equipe', 'Quantas pessoas: o ideal e o mínimo.'],
       ['Movimento por hora', 'Cupons de cada hora de cada dia da semana.'],
-    ], []],
+      ['Jornada por dia', 'Carga da semana ÷ dias de trabalho da escala (6x1: 6, 5x2: 5, 4x3: 4). Ex.: 44h na 6x1 = 7h20 por dia.'],
+      ['Intervalo', 'Acima de 6h por dia: 1h; de 4h a 6h: 15 min (CLT). A pessoa fica na loja a jornada + o intervalo.'],
+    ], [
+      ['Posso usar a escala 4x3?', 'Pode: 4 dias de trabalho e 3 folgas. A jornada passa de 8h por dia e precisa de acordo de compensação; o painel avisa se passar de 10h, o máximo da CLT.'],
+    ]],
     ['checklist', 'Equipe', 'Checklist', 'Abertura e fechamento: marque cada item quando fizer.', 'Toda a equipe', [
       ['Itens', 'Cada item marcado guarda o nome e a hora.'],
       ['Últimos dias', 'Como foram os checklists dos dias anteriores; o resumo vai no e-mail de fechamento.'],

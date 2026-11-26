@@ -333,3 +333,42 @@ test('Escala → ajuste manual: "Vale para" pontual ou repetindo nos próximos',
   const n = await page.evaluate(() => Object.keys(TS.state.escAj.dados).length);
   expect(n).toBeGreaterThan(1);
 });
+
+// ESC-4X3-01 (pedido do dono, 26/11/2026): escala 4x3 — 4 dias de trabalho e 3 folgas por semana, no rodízio e no modo livre;
+// jornada = carga ÷ 4 (40h = 10h por dia) e o aviso quando passa de 10h por dia (máximo da CLT)
+test('ESC-4X3-01: escala 4x3 — 4 dias por semana, jornada carga ÷ 4 e o aviso acima de 10h', async ({ page }) => {
+  await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS._escala && TS.diasDaEscala && TS.editorOperacao);
+  const r = await page.evaluate(() => {
+    const H = (a, f) => ({ abre: a, fecha: f, fechado: false });
+    const func = { seg: H('10:00', '22:00'), ter: H('10:00', '22:00'), qua: H('10:00', '22:00'), qui: H('10:00', '22:00'), sex: H('10:00', '22:00'), sab: H('10:00', '22:00'), dom: H('12:00', '21:00') };
+    const need = Array.from({ length: 7 }, () => Array(24).fill(1));
+    const out = { dias: {}, livre: null, duracao: null };
+    for (const [n, ini] of [[4, 'dom'], [5, 'seg']]) {
+      const ps = Array.from({ length: n }, (_, i) => ({ nome: 'P' + i, folga: 'auto', folga2: 'auto', turno: 'tanto' }));
+      const eq = { funcionarios: n, cargaSemanal: 40, escala: '4x3', intervalo: 60, capacidade: 3, modelo: 'rodizio', inicioSemana: ini, maxFolgaDia: 3 };
+      const rr = TS._escala.montarRodizio(need, { funcionamento: func, equipe: eq }, ps);
+      out.dias[`${n}-${ini}`] = rr.semanas.map((s) => s.turnosP.map((p) => p.filter(Boolean).length));
+      const t = rr.semanas[0].turnosP.flat().filter(Boolean).find((x) => x.fim - x.ini > 300);
+      out.duracao = t ? t.fim - t.ini : null;
+    }
+    const ev = TS._escala.montarEscala(need, { funcionamento: func, equipe: { funcionarios: 4, cargaSemanal: 40, escala: '4x3', intervalo: 60, capacidade: 3, maxFolgaDia: 3 } }, 4);
+    out.livre = { diasTrab: ev.diasTrab, porPessoa: ev.pessoas.map((t) => t.filter(Boolean).length), jornada: ev.jornada };
+    out.esc = { '6x1': TS.diasDaEscala('6x1'), '5x2': TS.diasDaEscala('5x2'), '4x3': TS.diasDaEscala('4x3'), x: TS.diasDaEscala('??') };
+    return out;
+  });
+  expect(r.esc).toEqual({ '6x1': 6, '5x2': 5, '4x3': 4, x: 5 });
+  for (const [k, sems] of Object.entries(r.dias)) for (const sem of sems) for (const d of sem) expect(d, `${k}: dias de trabalho na semana`).toBe(4);
+  expect(r.duracao, '40h na 4x3: 10h de trabalho + 1h de intervalo').toBe(660);
+  expect(r.livre).toEqual({ diasTrab: 4, porPessoa: [4, 4, 4, 4], jornada: 600 });
+  // a tela: a opção 4x3, a conta da jornada e o aviso da CLT com 44h (11h por dia)
+  const box = await page.evaluate(() => {
+    const op = { funcionamento: {}, equipe: { funcionarios: 3, cargaSemanal: 44, escala: '4x3', intervalo: 60, capacidade: 4 } };
+    for (const d of ['seg', 'ter', 'qua', 'qui', 'sex', 'sab', 'dom']) op.funcionamento[d] = { abre: '10:00', fecha: '22:00', fechado: false };
+    const el = TS.editorOperacao(op, () => {});
+    return { opcoes: [...el.querySelectorAll('select option')].map((o) => o.textContent), info: el.querySelector('.op-int-info').textContent, ruim: el.querySelector('.op-int-info').classList.contains('neg') };
+  });
+  expect(box.opcoes).toContain('4x3 (4 dias, 3 folgas)');
+  expect(box.info).toContain('44h ÷ 4 dias = 11h00 por dia');
+  expect(box.info).toContain('máximo da CLT');
+  expect(box.ruim).toBe(true);
+});
