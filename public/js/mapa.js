@@ -567,13 +567,20 @@
     root.append(h('div', { class: 'page-head' }, h('div', null, h('h1', { class: 'page-title' }, 'Movimento e escala'), h('div', { class: 'page-sub' }, 'A escala do mês da equipe, o movimento da loja por hora e as regras que montam a escala.')),
       h('div', { class: 'active-filters' }, h('span', { class: 'af' }, TS.periodoTexto()))));
     // três abas: Escala do mês (o dia a dia) · Movimento (por que a escala é assim) · Equipe e regras (o que monta a escala)
-    const ABAS = [['escala', 'Escala do mês'], ['movimento', 'Movimento da loja'], ['equipe', 'Equipe e regras'], ...(TS.equipe && TS.eu && TS.eu.perfil !== 'vendedor' ? [['rendimento', 'Rendimento da equipe']] : [])];
+    const ABAS = [['escala', 'Escala do mês'], ['movimento', 'Movimento da loja'], ['equipe', 'Equipe e regras'], ...(TS.equipe && TS.eu && TS.eu.perfil !== 'vendedor' ? [['rendimento', 'Rendimento da equipe']] : []), ...(TS.bancoHoras && TS.eu && TS.eu.perfil !== 'vendedor' ? [['banco', 'Banco de horas']] : [])];
     const temLoja = state.loja && state.loja !== 'todas';
     const aba = ABAS.some(([k]) => k === state.mapaAba) ? state.mapaAba : temLoja ? 'escala' : 'movimento';
-    const cx = { escala: h('div', { class: 'mapa-aba' }), movimento: h('div', { class: 'mapa-aba' }), equipe: h('div', { class: 'mapa-aba' }), rendimento: h('div', { class: 'mapa-aba' }) };
+    const cx = { escala: h('div', { class: 'mapa-aba' }), movimento: h('div', { class: 'mapa-aba' }), equipe: h('div', { class: 'mapa-aba' }), rendimento: h('div', { class: 'mapa-aba' }), banco: h('div', { class: 'mapa-aba' }) };
     root.append(TS.ativoVisivel(h('div', { class: 'mapa-abas', role: 'tablist' }, ...ABAS.map(([k, t]) => h('button', { type: 'button', role: 'tab', 'aria-selected': String(k === aba), class: 'mapa-aba-btn' + (k === aba ? ' on' : ''), onclick: () => { state.mapaAba = k; TS.render(); } }, t)))), cx[aba]); // celular: uma linha que rola, com a aba marcada à vista (LMOB-06)
     const M = cx.movimento, Q = cx.equipe, ES = cx.escala;
     const cfgMapa = state.loja && state.loja !== 'todas' ? (db.metas || []).find((m) => m.id === state.loja) : null;
+    // banco de horas (BANCO-01…): não depende do horário das vendas — desenha e sai
+    if (aba === 'banco') {
+      if (!cfgMapa) { cx.banco.append(h('div', { class: 'notice mt' }, 'Escolha uma loja no seletor do topo para ver o banco de horas.')); return; }
+      const eqB = cfgMapa.operacao && cfgMapa.operacao.equipe;
+      TS.bancoHoras.tela(cx.banco, cfgMapa, eqB ? pessoasDe(eqB).map((p) => p.nome) : []);
+      return;
+    }
     const anoI = +TS.dayToIso(db.minDay).slice(0, 4), anoF = +TS.dayToIso(db.maxDay).slice(0, 4);
     const feriadosSet = TS.datasFeriado ? TS.datasFeriado(cfgMapa, anoI, anoF) : new Set();
     const ehFeriado = (day) => feriadosSet.has(TS.dayToIso(day));
@@ -690,6 +697,7 @@
       h('span', null, okEq ? '✓ cobre todos os horários e picos' : minEq ? `cobre a loja, mas a ideal é ${ideal.tudo || '15+'} pessoas para os picos` : `a loja fica sozinha em algum horário: mínimo ${ideal.soAberto || '15+'} pessoas`),
       h('button', { type: 'button', class: 'link-btn', onclick: () => { state.mapaAba = 'equipe'; TS.render(); } }, 'mudar equipe e regras ›')));
     Q.append(cartaoAjustes(opInfo));
+    if (TS.bancoHoras && TS.eu && TS.eu.perfil !== 'vendedor' && cfgMapa) Q.append(TS.bancoHoras.cartaoRegras(cfgMapa));
 
     const cfgLoja = (db.metas || []).find((m) => m.id === opInfo.id) || null;
     // venda por hora trabalhada e ficha da equipe (public/js/equipe.js): usa as horas desta mesma escala
@@ -796,7 +804,7 @@
         pessoas.forEach((p, i) => {
           const a = aj[p.nome.trim().toUpperCase()];
           if (!a) return;
-          if (a.tipo === 'folga') cel[i][k] = { tipo: 'folga', motivo: 'Folga (ajuste)', aj: true, feriado: fer && fer.nome };
+          if (a.tipo === 'folga') cel[i][k] = { tipo: 'folga', motivo: a.banco ? 'Folga (banco)' : 'Folga (ajuste)', aj: true, banco: !!a.banco, feriado: fer && fer.nome };
           else {
             const ini = hm(a.ini), fim = hm(a.fim);
             cel[i][k] = { tipo: 'trab', ini, fim, pausa: pausaDoTurno(ini, fim, e), aj: true, feriado: fer && fer.nome }; // horário digitado já inclui o intervalo
@@ -899,6 +907,21 @@
     }
     const DSN = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']; // por getUTCDay
     const dowDe = (d) => new Date(d + 'T12:00:00Z').getUTCDay();
+    // banco de horas (BANCO-08): no feriado trabalhado, B = vai para o banco, P = pago; no fim, o saldo de cada pessoa
+    const BHx = TS.bancoHoras;
+    const bhAtivo = (iso) => !!(BHx && cfg && iso.slice(0, 7) >= BHx.regras(cfg).desde);
+    const bhAcerto = (iso, i) => BHx.acertoDe(cfg, iso, E.pessoas[i].nome);
+    const saldoBanco = (paraPdf) => {
+      if (!BHx || !cfg || ym < BHx.regras(cfg).desde) return null;
+      const R = BHx.daLoja(cfg);
+      return h('table', { class: 'sem-t resumo bh-res' + (paraPdf ? ' pdf' : '') },
+        h('thead', null, h('tr', null, h('th', { class: 'l' }, `Banco de horas em ${fmt.date(TS.hojeSP())}`), h('th', null, 'Saldo'), h('th', null, 'Atenção'))),
+        h('tbody', null, E.pessoas.map((p) => {
+          const x = R.pessoas.get(p.nome.trim().toUpperCase());
+          const at = x && x.creditoAtrasado.length ? 'passou do prazo: folga ou pagar' : x && x.creditoVencendo.length ? `crédito chega ao prazo em ${fmt.date(x.creditoVencendo[0].prazo)}` : x && x.debitoVencendo.length ? `devidas vencem em ${fmt.date(x.debitoVencendo[0].vence)}` : '—';
+          return h('tr', null, h('th', { class: 'l' }, p.nome), h('td', { class: x && x.saldo < 0 ? 'neg' : x && x.saldo > 0 ? 'pos' : '' }, BHx.sinal(x ? x.saldo : 0)), h('td', null, at));
+        })));
+    };
     const celula = (i, iso, paraPdf) => {
       const k = E.dias.indexOf(iso);
       if (k < 0) return h('td', { class: 'fora' });
@@ -909,11 +932,11 @@
       const marca = c.aj ? (paraPdf ? '*' : ' •') : '';
       if (c.tipo === 'trab') {
         return h('td', { class: 'trab' + (c.feriado ? ' fer' : '') + extra, onclick: clique, title: `${c.feriado ? c.feriado + ' · ' : ''}${c.aj ? 'ajuste manual' : c.recalc ? 'recalculado por causa de um ajuste' : ''}` },
-          h('b', null, `${hhmm(c.ini)}–${hhmm(c.fim)}${marca}`), c.pausa ? h('small', null, `int. ${hhmm(c.pausa[0])}–${hhmm(c.pausa[1])}`) : null,
+          h('b', null, `${hhmm(c.ini)}–${hhmm(c.fim)}${marca}`), c.feriado && bhAtivo(iso) ? h('small', { class: 'bh-fer' }, bhAcerto(iso, i) === 'banco' ? 'feriado → banco (B)' : 'feriado → pagar (P)') : null, c.pausa ? h('small', null, `int. ${hhmm(c.pausa[0])}–${hhmm(c.pausa[1])}`) : null,
           h('small', { class: 'liq-dia' }, `${hLiq((c.fim - c.ini) - (c.pausa ? c.pausa[1] - c.pausa[0] : 0))} líquidas`)); // horas trabalhadas no dia, sem o intervalo
       }
-      const txt = c.tipo === 'ferias' ? 'Férias' : c.tipo === 'fechado' ? 'Fechado' : /rodízio|após/.test(c.motivo || '') ? 'Folga (rodízio)' : 'Folga';
-      return h('td', { class: c.tipo + (/rodízio|após/.test(c.motivo || '') ? ' rod' : '') + extra, onclick: clique, title: (c.motivo || '') + (c.feriado ? ` · ${c.feriado}` : '') }, txt + marca);
+      const txt = c.tipo === 'ferias' ? 'Férias' : c.tipo === 'fechado' ? 'Fechado' : c.banco ? 'Folga (banco)' : /rodízio|após/.test(c.motivo || '') ? 'Folga (rodízio)' : 'Folga';
+      return h('td', { class: c.tipo + (c.banco ? ' bh-folga' : '') + (/rodízio|após/.test(c.motivo || '') ? ' rod' : '') + extra, onclick: clique, title: (c.motivo || '') + (c.feriado ? ` · ${c.feriado}` : '') }, txt + marca);
     };
     const blocoSemana = (datas, n, paraPdf) => {
       const dentro = datas.filter((d) => E.dias.includes(d));
@@ -951,7 +974,7 @@
         return h('tr', null, h('th', { class: 'l' }, p.nome), h('td', null, String(row.filter((c) => c.tipo === 'trab').length)), h('td', null, String(row.filter((c) => c.tipo === 'folga').length)),
           h('td', null, String(row.filter((c) => c.tipo === 'ferias').length)), h('td', { class: 'tot' }, hTxt(row.reduce((s, c) => s + bruto(c), 0))), h('td', { class: 'tot liq' }, hTxt(row.reduce((s, c) => s + liquido(c), 0))));
       })));
-    const tabela = (paraPdf) => h('div', { class: 'semanas' }, semanasMes.map((datas, n) => blocoSemana(datas, n + 1, paraPdf)), resumoMes(paraPdf));
+    const tabela = (paraPdf) => h('div', { class: 'semanas' }, semanasMes.map((datas, n) => blocoSemana(datas, n + 1, paraPdf)), resumoMes(paraPdf), paraPdf ? saldoBanco(true) : null);
     // celular (ESC-MOB-01, mockup aprovado pelo dono em 25/11/2026): no lugar das semanas que rolavam de lado, a semana em
     // 7 botões (‹ › troca de semana), o dia escolhido com cada pessoa numa linha (tocar ajusta, como na tabela) e o resumo
     // do mês uma linha por pessoa. O PDF e o computador continuam com a tabela.
@@ -983,7 +1006,7 @@
         const abre = c.tipo === 'ferias' || c.tipo === 'fechado' ? null : () => { state.escDia = dia; AJ.sel = AJ.sel && AJ.sel.iso === dia && AJ.sel.i === i ? null : { iso: dia, i }; TS.render(); };
         const marca = c.aj ? ' •' : '';
         const dir = c.tipo === 'trab' ? h('span', { class: 'escm-h' }, `${hhmm(c.ini)}–${hhmm(c.fim)}${marca}`)
-          : h('span', { class: 'escm-h ' + c.tipo }, (c.tipo === 'ferias' ? 'Férias' : c.tipo === 'fechado' ? 'Fechado' : 'Folga') + marca);
+          : h('span', { class: 'escm-h ' + c.tipo }, (c.tipo === 'ferias' ? 'Férias' : c.tipo === 'fechado' ? 'Fechado' : c.banco ? 'Folga (banco)' : 'Folga') + marca);
         const sub = c.tipo === 'trab' ? [c.pausa ? `intervalo ${hhmm(c.pausa[0])}–${hhmm(c.pausa[1])}` : 'sem intervalo', `${hLiq(liquido(c))} líquidas`] : [/rodízio|após/.test(c.motivo || '') ? 'folga do rodízio' : /^(folga|férias|fechado)$/i.test(String(c.motivo || '').trim()) ? '' : c.motivo || ''];
         const selec = AJ.sel && AJ.sel.iso === dia && AJ.sel.i === i;
         return h('div', { class: 'lmob-it escm-p' + (selec ? ' sel' : '') + (abre ? ' clicavel' : ''), role: abre ? 'button' : null, tabindex: abre ? 0 : null, onclick: abre, onkeydown: abre ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); abre(); } } : null },
@@ -1030,7 +1053,8 @@
       const p = E.pessoas[i], N = p.nome.trim().toUpperCase();
       const atual = E.cel[i][k];
       const ajAtual = (AJ.dados[iso] || {})[N];
-      const modo = h('select', { class: 'f-input' }, h('option', { value: 'auto', selected: !ajAtual || null }, 'Automático (sem ajuste)'), h('option', { value: 'folga', selected: ajAtual?.tipo === 'folga' || null }, 'Folga'),
+      const modo = h('select', { class: 'f-input' }, h('option', { value: 'auto', selected: !ajAtual || null }, 'Automático (sem ajuste)'), h('option', { value: 'folga', selected: (ajAtual?.tipo === 'folga' && !ajAtual.banco) || null }, 'Folga'),
+        TS.bancoHoras ? h('option', { value: 'banco', selected: (ajAtual?.tipo === 'folga' && ajAtual.banco) || null }, 'Folga pelo banco de horas') : null,
         h('option', { value: 'trab', selected: ajAtual?.tipo === 'trab' || null }, 'Trabalha'), h('option', { value: 'troca' }, 'Trocar o dia com…'));
       const ini = h('input', { class: 'f-input', type: 'time', value: ajAtual?.ini || (atual.tipo === 'trab' ? hhmm(atual.ini) : '10:00') });
       const fim = h('input', { class: 'f-input', type: 'time', value: ajAtual?.fim || (atual.tipo === 'trab' ? hhmm(atual.fim) : '18:00') });
@@ -1075,7 +1099,7 @@
         h('option', { value: 'dia', selected: !ajAtual?.repete || null }, 'Só neste dia (pontual)'),
         h('option', { value: 'repete', selected: ajAtual?.repete || null }, `Neste e nos próximos ${DSP0[wdSel0]} (também nos próximos meses)`));
       const blocoVale = h('div', { class: 'aj-linha' }, h('span', null, 'Vale para'), vale);
-      const mostrarVale = () => { blocoVale.hidden = modo.value === 'auto'; };
+      const mostrarVale = () => { blocoVale.hidden = modo.value === 'auto' || modo.value === 'banco'; }; // folga pelo banco: só este dia
       modo.addEventListener('change', mostrarVale); mostrarVale();
       modo.addEventListener('change', mostrar); mostrar();
       const comoAjuste = (c) => (c.tipo === 'trab' ? { tipo: 'trab', ini: hhmm(c.ini), fim: hhmm(c.fim) } : { tipo: 'folga' });
@@ -1084,9 +1108,10 @@
         const novos = {}; // NOME → ajuste (ou null = tirar)
         if (modo.value === 'auto') novos[N] = null;
         else if (modo.value === 'folga') novos[N] = { tipo: 'folga' };
+        else if (modo.value === 'banco') novos[N] = { tipo: 'folga', banco: true }; // desconta a jornada no banco de horas (BANCO-03)
         else if (modo.value === 'trab') { if (!ini.value || !fim.value || ini.value >= fim.value) { erro.textContent = 'A entrada precisa ser antes da saída.'; return; } novos[N] = { tipo: 'trab', ini: ini.value, fim: fim.value }; }
         else { const j = +com.value; const outra = E.pessoas[j].nome.trim().toUpperCase(); novos[N] = comoAjuste(E.cel[j][k]); novos[outra] = comoAjuste(atual); }
-        const repete = modo.value !== 'auto' && vale.value === 'repete';
+        const repete = modo.value !== 'auto' && modo.value !== 'banco' && vale.value === 'repete';
         // repete: este dia e os próximos do mesmo dia da semana no mês (feriados e férias ficam de fora); pontual: só este dia
         const dias = repete ? [iso, ...E.dias.filter((x) => x > iso && new Date(x + 'T12:00:00Z').getUTCDay() === wdSel0 && !E.feriados.has(x))] : [iso];
         let n = 0;

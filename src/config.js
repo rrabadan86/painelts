@@ -67,6 +67,8 @@ function normalizar(cfg) {
     feriadosHoras: l.feriadosHoras && typeof l.feriadosHoras === 'object' ? l.feriadosHoras : {},
     feriadosHorario: l.feriadosHorario && typeof l.feriadosHorario === 'object' ? l.feriadosHorario : {},
     escalaAjustes: l.escalaAjustes && typeof l.escalaAjustes === 'object' ? l.escalaAjustes : {},
+    feriadosAcerto: l.feriadosAcerto && typeof l.feriadosAcerto === 'object' ? l.feriadosAcerto : {}, // banco de horas: acerto de cada feriado
+    bancoHoras: l.bancoHoras && typeof l.bancoHoras === 'object' ? l.bancoHoras : null, // { padrao, prazo, desde, lanc[] }
     wppModelos: Array.isArray(l.wppModelos) ? l.wppModelos : null,
     wppApresentacao: l.wppApresentacao && typeof l.wppApresentacao === 'object' ? { com: String(l.wppApresentacao.com || '').slice(0, 120), sem: String(l.wppApresentacao.sem || '').slice(0, 120), ...(l.wppApresentacao.equipe === true ? { equipe: true } : {}) } : null, // {apresentacao} das mensagens
     wppIntervalo: Number.isInteger(l.wppIntervalo) ? l.wppIntervalo : null, // dias mínimos entre duas mensagens para o mesmo cliente

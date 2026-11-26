@@ -230,6 +230,16 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 | ESC-30 | Horas de feriado trabalhadas (para o fechamento) | `feriados.js` `horasAuto` | — | ❌ |
 | ESC-31 | Campo de hora aplica ao sair, sem perder o foco (`TS.aoConfirmar`) | `main.js` | `esc` "digitar a hora inteira…" | 🟡 (computador) |
 | ESC-4X3-01 | Escala 4x3 (pedido do dono, 26/11/2026): 6x1, 5x2 e 4x3 pelo mapa único `TS.diasDaEscala` (6, 5, 4 dias); jornada = carga ÷ dias em todas; no rodízio a 4x3 tem 3 folgas (domingo/segunda do rodízio, folga fixa e a 3ª automática no dia de menor movimento); Equipe e regras mostra a conta "44h ÷ 4 dias = 11h por dia", avisa em vermelho acima de 10h por dia (CLT, 8h + 2h extras) e lembra do acordo de compensação acima de 8h; o servidor aceita 4x3; Feriados usam a mesma jornada | `public/js/mapa.js` (`diasDaEscala`, `montarEscala`, `montarRodizio`, editor da equipe); `feriados.js` `jornadaDe`; `src/admin-api.js` | `escala-horario.spec` "ESC-4X3-01…" | ✅ |
+| BANCO-01 | Banco de horas (decisão do dono, 26/11/2026): feriado com acerto "banco" entra em DOBRO no saldo (6h = +12h); "pagar" não mexe no saldo e segue para o fechamento, também em dobro (6h = 12h a pagar; decisão do dono, 26/11/2026); acerto da pessoa > do dia > padrão das regras; antes de "Começa em" (padrão nov/2026) é sempre pagar | `public/js/bancohoras.js` (`acertoDe`, `movimentos`) | `bancohoras.test` "BANCO-01…" | ✅ |
+| BANCO-02 | Exemplo do dono: devia 20h, trabalhou 6h no feriado → fica devendo 8h | `bancohoras.js` (`conta`) | `bancohoras.test` "BANCO-02…" | ✅ |
+| BANCO-03 | Folga pelo banco (ajuste da escala `banco: true`, só pontual) desconta a jornada do dia (carga ÷ dias da escala, em blocos de 10 min); folga futura só conta quando o dia chega | `bancohoras.js` (`jornadaMin`); `mapa.js` (editor do dia); `server.js` `/api/escala-ajustes` | `bancohoras.test` "BANCO-03…"; `banco-horas.spec` "BANCO-03 (tela)" | ✅ |
+| BANCO-04 | Prazo 6 ou 12 meses: a hora DEVIDA pela pessoa vence e some (linha "venceu" no extrato); o CRÉDITO da pessoa não vence — passado o prazo vira aviso "dê a folga ou pague" | `bancohoras.js` (`conta`: `creditoAtrasado`, `creditoVencendo`, `debitoVencendo`) | `bancohoras.test` "BANCO-04…" | ✅ |
+| BANCO-05 | Compensação do mais antigo para o mais novo (crédito paga primeiro a dívida mais velha) | `bancohoras.js` (`conta`, lotes) | `bancohoras.test` "BANCO-05…" | ✅ |
+| BANCO-06 | Resumo do mês por pessoa (saldo no início, entrou, saiu, venceu, saldo no fim) para o PDF e o e-mail do fechamento | `bancohoras.js` (`resumoMes`); `feriados.js` (`feriadosParaPdf`) | `bancohoras.test` "BANCO-06…" | ✅ |
+| BANCO-07 | Rotas: lançar/apagar lançamento e regras (`/api/banco-horas/*`) só admin, franqueado e gerente com Movimento e escala, com X-Painel, loja conferida e auditoria; motivo obrigatório, data até hoje, até 200h; acerto do feriado validado em `/api/feriados`; a vendedora não recebe o banco nem os acertos no `/api/dados` | `server.js` (`lojaBanco`, `filtrarPorPerfil`) | `permissoes-telas.test` "BANCO-07…" | ✅ |
+| BANCO-08 | Aba Movimento e escala → Banco de horas: herói (saldo da equipe · folga ou pagar · feriados no mês), saldo por pessoa (TS.table + linha no celular), extrato ao tocar, "+ Lançamento"; regras no cartão "Banco de horas" de Equipe e regras | `bancohoras.js` (`tela`, `cartaoRegras`); `mapa.js` | `banco-horas.spec` BANCO-08 | ✅ |
+| BANCO-09 | Cartão de feriados (Comissionamento): linha "Acerto" por feriado e selo por pessoa ("banco +12h00" / "pagar 12h00", os dois em dobro, tocar troca só para ela); total do dia separa banco e pagar; aviso no Início do crédito que passou do prazo ou chega ao prazo em 30 dias | `feriados.js`; `bancohoras.js` (`avisos`); `inicio.js` | `banco-horas.spec` BANCO-09 | 🟡 (aviso do Início sem teste) |
+| BANCO-10 | E-mail e PDF do fechamento: feriado "→ banco"/"→ pagar", "Feriados a pagar (em dobro)", "Banco de horas" (saldo e o de antes), "Horas de feriado a pagar" no total; PDF com colunas Acerto/Vale (×2) e o quadro do mês; PDF da escala com B/P no feriado, "Folga (banco)" e o saldo de cada pessoa | `contabilidade.js`; `extras.js` (`paginasFechamento`); `mapa.js` (`saldoBanco`) | `banco-horas.spec` BANCO-10 | 🟡 (PDF sem teste) |
 
 ## 8. Equipe, metas e comissão (EQP)
 
@@ -769,7 +779,7 @@ Contado pelas linhas da matriz (`node scripts/matriz.js --resumo`; o guardião c
 | NF-e, devolução e notas de entrada (NFE) | 49 | 34 | 11 | 4 |
 | Dinheiro com a franquia (FRQ) | 19 | 13 | 6 | 0 |
 | Coletor e robôs (COL) | 7 | 1 | 2 | 4 |
-| Escala, horários, feriados e férias (ESC) | 32 | 8 | 10 | 14 |
+| Escala, horários, feriados e férias (ESC) | 42 | 16 | 12 | 14 |
 | Equipe, metas e comissão (EQP) | 13 | 4 | 3 | 6 |
 | Estoque, inventário, lotes e pedido (EST) | 82 | 50 | 15 | 17 |
 | Preços, custos e notas de entrada (PRC) | 42 | 15 | 8 | 19 |
@@ -779,7 +789,7 @@ Contado pelas linhas da matriz (`node scripts/matriz.js --resumo`; o guardião c
 | Orçamento (ORC) | 7 | 5 | 1 | 1 |
 | Checklist, fechamento e avisos (OPE) | 13 | 6 | 3 | 4 |
 | Estrutura do painel e atualização (APP) | 49 | 30 | 13 | 6 |
-| **Total** | **525** | **290 (55%)** | **125 (24%)** | **110 (21%)** |
+| **Total** | **535** | **298 (56%)** | **127 (24%)** | **110 (21%)** |
 <!-- resumo:fim -->
 
 ## Próximas etapas

@@ -148,3 +148,34 @@ test('caixa a pagar e planilha do contador: só quem tem a tela Resultado; grava
   assert.match(r.headers.get('content-type'), /spreadsheetml/);
   assert.strictEqual(Buffer.from(await r.arrayBuffer()).subarray(0, 2).toString(), 'PK');
 });
+
+test('BANCO-07: banco de horas — lança e apaga quem ajusta a escala (gerente com Movimento e escala, franqueado); vendedora e gerente sem a tela não; a vendedora não recebe o banco', async () => {
+  const lanc = (nome, body) => status(nome, '/api/banco-horas/lanc?loja=l1', { method: 'POST', body: JSON.stringify(body) });
+  const ok = { nome: 'Ana', data: '2026-11-02', min: -120, motivo: 'saiu mais cedo' };
+  assert.strictEqual(await lanc('vend', ok), 403);
+  assert.strictEqual(await lanc('ger_com', ok), 403);
+  assert.strictEqual(await status('ger_sem', '/api/banco-horas/lanc?loja=l2', { method: 'POST', body: JSON.stringify(ok) }), 400, 'loja de outro franqueado');
+  assert.strictEqual(await lanc('ger_sem', { ...ok, motivo: '' }), 400, 'sem motivo');
+  assert.strictEqual(await lanc('ger_sem', { ...ok, data: '2099-01-01' }), 400, 'data no futuro');
+  assert.strictEqual(await lanc('ger_sem', { ...ok, min: 0 }), 400);
+  const r = await fetch(BASE + '/api/banco-horas/lanc?loja=l1', { method: 'POST', headers: { Cookie: cookies.ger_sem, 'X-Painel': '1', 'Content-Type': 'application/json' }, body: JSON.stringify(ok) });
+  assert.strictEqual(r.status, 200);
+  const { id } = await r.json();
+  assert.strictEqual(await status('dono', '/api/banco-horas/regras?loja=l1', { method: 'PUT', body: JSON.stringify({ padrao: 'banco', prazo: 12, desde: '2026-11' }) }), 200);
+  assert.strictEqual(await status('dono', '/api/banco-horas/regras?loja=l1', { method: 'PUT', body: JSON.stringify({ padrao: 'banco', prazo: 9, desde: '2026-11' }) }), 400, 'prazo só 6 ou 12');
+  const C = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
+  const b = C.lojas.find((l) => l.id === 'l1').bancoHoras;
+  assert.deepStrictEqual({ prazo: b.prazo, n: b.lanc.length, nome: b.lanc[0].nome, min: b.lanc[0].min }, { prazo: 12, n: 1, nome: 'ANA', min: -120 });
+  // feriado: o acerto vai junto das horas; a escala aceita a folga pelo banco
+  assert.strictEqual(await status('dono', '/api/feriados?loja=l1', { method: 'PUT', body: JSON.stringify({ ym: '2026-12', horas: {}, acerto: { '2026-12-08': { d: 'banco', p: { bia: 'pagar' } } } }) }), 200);
+  assert.strictEqual(await status('dono', '/api/feriados?loja=l1', { method: 'PUT', body: JSON.stringify({ ym: '2026-12', horas: {}, acerto: { '2026-12-08': { d: 'dobro' } } }) }), 400);
+  assert.strictEqual(await status('ger_sem', '/api/escala-ajustes?loja=l1&ym=2026-12', { method: 'PUT', body: JSON.stringify({ ajustes: { '2026-12-10': { ANA: { tipo: 'folga', banco: true, repete: true } } } }) }), 200);
+  const C2 = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')).lojas.find((l) => l.id === 'l1');
+  assert.deepStrictEqual(C2.feriadosAcerto['2026-12']['2026-12-08'], { d: 'banco', p: { BIA: 'pagar' } });
+  assert.deepStrictEqual(C2.escalaAjustes['2026-12']['2026-12-10'].ANA, { tipo: 'folga', banco: true }, 'folga pelo banco é só pontual');
+  // a vendedora não recebe o banco nem os acertos
+  const dv = await (await fetch(BASE + '/api/dados?loja=l1', { headers: { Cookie: cookies.vend } })).text();
+  assert.ok(!dv.includes('saiu mais cedo') && !dv.includes('"prazo":12'), 'banco de horas fora do pacote da vendedora');
+  assert.strictEqual(await status('ger_sem', '/api/banco-horas/lanc/apagar?loja=l1', { method: 'POST', body: JSON.stringify({ id }) }), 200);
+  assert.strictEqual(await status('ger_sem', '/api/banco-horas/lanc/apagar?loja=l1', { method: 'POST', body: JSON.stringify({ id }) }), 404);
+});
