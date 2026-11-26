@@ -207,7 +207,8 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 | ESC-07 | Jornada = carga semanal ÷ dias, em blocos de 10 min | `mapa.js` | `esc` (470 e 590 min) | ✅ |
 | ESC-08 | Pessoas por hora = pico ÷ atendimentos por pessoa; nunca abaixo do mínimo do dia | `necessidade`, `grade` | — | ❌ |
 | ESC-09 | Feriados fora do mapa de calor | `datasFeriado` | — | ❌ |
-| ESC-10 | No máximo N de folga no mesmo dia e o mínimo de pessoas na loja valem mais que a folga fixa: dia cheio → a folga fixa vai para outro dia (motivo "a fixa de segunda já tinha o máximo de folgas"); antes, 3 pessoas com folga fixa na segunda deixavam a loja vazia (print do dono, 26/11/2026) | `mapa.js` `montarRodizio` (`capFolga`) | `esc` "ESC-10: …" | ✅ |
+| ESC-10 | No máximo N de folga no mesmo dia e o mínimo de pessoas na loja valem mais que a folga fixa: dia cheio → a folga fixa vai para outro dia (motivo "a fixa de segunda já tinha o máximo de folgas"); antes, 3 pessoas com folga fixa na segunda deixavam a loja vazia (print do dono, 26/11/2026) ; cede só para a lei dos 6 dias seguidos (ESC-7DIAS-01) | `mapa.js` `montarRodizio` (`capFolga`) | `esc` "ESC-10: …" | ✅ |
+| ESC-7DIAS-01 | Ninguém trabalha mais de 6 dias seguidos (pedido do dono, 26/11/2026; DSR): cada semana do rodízio olha os dias seguidos no fim da semana anterior (`cauda`, duas passadas para a volta do ciclo) e põe a folga cedo o bastante (folga fixa tarde demais vai para antes, motivo "para não passar de 6 dias seguidos"); prioridade: mínimo de pessoas na loja > 6 dias seguidos > máximo de folgas por dia; na 6x1 o domingo/segunda do rodízio é folga a mais e a folga da semana continua; o aviso diz quando o máximo de folgas cedeu (e sugere a semana começando na segunda) e quando alguém ainda passaria de 6 dias (`seguidos`) | `mapa.js` `montarRodizio` (`cauda`, `limCedo`, `seguidos`), `cartaoRodizio` | `esc` "ESC-7DIAS-01: …" (5x2, 6x1, 4x3 × semana dom/seg × 3 a 5 pessoas) | ✅ |
 | ESC-11 | Folgas de domingo giram igualmente | `montarRodizio` `domDe` | `esc` (indireto) | 🟡 — corte do ciclo com 9+ pessoas, ver B-05 |
 | ESC-12 | Folga no domingo puxa a segunda (mesma semana, ou a seguinte com semana Seg–Dom) | `montarRodizio` | `esc` "semana começando na segunda…" | 🟡 (Dom–Sáb sem teste) |
 | ESC-13 | Folga fixa; domingo não pode ser folga fixa; automático nos dias de menor movimento | `montarRodizio`; `validarOperacao` | — | ❌ |
@@ -781,7 +782,7 @@ Contado pelas linhas da matriz (`node scripts/matriz.js --resumo`; o guardião c
 | NF-e, devolução e notas de entrada (NFE) | 49 | 34 | 11 | 4 |
 | Dinheiro com a franquia (FRQ) | 19 | 13 | 6 | 0 |
 | Coletor e robôs (COL) | 7 | 1 | 2 | 4 |
-| Escala, horários, feriados e férias (ESC) | 43 | 18 | 12 | 13 |
+| Escala, horários, feriados e férias (ESC) | 44 | 19 | 12 | 13 |
 | Equipe, metas e comissão (EQP) | 13 | 4 | 3 | 6 |
 | Estoque, inventário, lotes e pedido (EST) | 82 | 50 | 15 | 17 |
 | Preços, custos e notas de entrada (PRC) | 42 | 15 | 8 | 19 |
@@ -791,7 +792,7 @@ Contado pelas linhas da matriz (`node scripts/matriz.js --resumo`; o guardião c
 | Orçamento (ORC) | 7 | 5 | 1 | 1 |
 | Checklist, fechamento e avisos (OPE) | 13 | 6 | 3 | 4 |
 | Estrutura do painel e atualização (APP) | 50 | 31 | 13 | 6 |
-| **Total** | **537** | **301 (56%)** | **127 (24%)** | **109 (20%)** |
+| **Total** | **538** | **302 (56%)** | **127 (24%)** | **109 (20%)** |
 <!-- resumo:fim -->
 
 ## Próximas etapas

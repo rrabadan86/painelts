@@ -11,10 +11,11 @@ test('Escala: abertura às 09:40 tem gente desde 09:40 (antes começava 10:00) e
     const H = (abre, fecha) => ({ abre, fecha, fechado: false });
     const op = {
       funcionamento: { seg: H('09:40', '22:00'), ter: H('09:40', '22:00'), qua: H('09:40', '22:00'), qui: H('09:40', '22:00'), sex: H('09:40', '22:00'), sab: H('09:40', '21:50'), dom: H('12:00', '21:00') },
-      equipe: { funcionarios: 3, cargaSemanal: 44, escala: '6x1', intervalo: 60, capacidade: 3, modelo: 'rodizio' },
+      // 4 pessoas: com 3, a lei dos 6 dias seguidos (ESC-7DIAS-01) deixa 2 de folga na segunda e uma pessoa sozinha não cobre o dia todo
+      equipe: { funcionarios: 4, cargaSemanal: 44, escala: '6x1', intervalo: 60, capacidade: 3, modelo: 'rodizio' },
     };
     const need = Array.from({ length: 7 }, () => Array(24).fill(1));
-    const pessoas = ['A', 'B', 'C'].map((nome) => ({ nome, folga: 'auto', folga2: 'auto', turno: 'tanto' }));
+    const pessoas = ['A', 'B', 'C', 'D'].map((nome) => ({ nome, folga: 'auto', folga2: 'auto', turno: 'tanto' }));
     const out = TS._escala.montarRodizio(need, op, pessoas);
     const hm = (s) => +s.slice(0, 2) * 60 + +s.slice(3, 5);
     const DIAS = ['seg', 'ter', 'qua', 'qui', 'sex', 'sab', 'dom']; // como no painel: 0 = segunda
@@ -226,8 +227,10 @@ test('Escala: semana começando na segunda mantém os dias certos por semana e a
     return out;
   });
   for (const [k, v] of Object.entries(r)) {
-    const alvo = k.startsWith('5x2') ? 5 : 6;
-    for (const sem of v.dias) for (const d of sem) expect(d, `${k}: dias na semana Seg–Dom`).toBe(alvo);
+    // 6x1 com a semana de segunda a domingo: na semana em que folga no domingo do rodízio, a pessoa ganha uma folga a mais
+    // para não passar de 6 dias seguidos (ESC-7DIAS-01) — 5 ou 6 dias; 5x2: sempre 5
+    const ok = k.startsWith('5x2') ? [5] : [5, 6];
+    for (const sem of v.dias) for (const d of sem) expect(ok, `${k}: dias na semana Seg–Dom (${d})`).toContain(d);
     expect(v.par, `${k}: segunda seguinte ao domingo de folga`).toBe(true);
   }
 });
@@ -375,7 +378,7 @@ test('ESC-4X3-01: escala 4x3 — 4 dias por semana, jornada carga ÷ 4 e o aviso
 
 // ESC-10 (print do dono, 26/11/2026): 3 pessoas na 5x2, todas com folga fixa na segunda e "no máximo 1 de folga por dia":
 // a segunda ficava sem ninguém (quem folgou no domingo + as duas da folga fixa). O limite vale mais que a folga fixa.
-test('ESC-10: no máximo N de folga no mesmo dia, mesmo com a folga fixa no mesmo dia para todos; mínimo de pessoas respeitado', async ({ page }) => {
+test('ESC-10: no máximo N de folga no mesmo dia, mesmo com a folga fixa no mesmo dia para todos (cede só para a lei dos 6 dias); mínimo de pessoas respeitado', async ({ page }) => {
   await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS._escala);
   const r = await page.evaluate(() => {
     const H = (abre, fecha) => ({ abre, fecha, fechado: false });
@@ -389,7 +392,9 @@ test('ESC-10: no máximo N de folga no mesmo dia, mesmo com a folga fixa no mesm
     const ruins = [];
     out.semanas.forEach((sem, w) => { for (let wd = 0; wd < 7; wd++) {
       const folgas = sem.turnosP.filter((p) => !p[wd]).length;
-      if (folgas > 1 || 3 - folgas < 1) ruins.push(`semana ${w + 1}, dia ${wd}: ${folgas} de folga`);
+      // a loja nunca fica abaixo do mínimo (1 pessoa); a segunda pode ter 2 de folga, porque a lei dos 6 dias seguidos vale mais
+      // (quem fez o rodízio trabalha de terça a sábado e precisa folgar no domingo ou na segunda seguintes — ESC-7DIAS-01)
+      if (3 - folgas < 1 || folgas > (wd === 0 ? 2 : 1)) ruins.push(`semana ${w + 1}, dia ${wd}: ${folgas} de folga`);
     } });
     const folgasPorPessoa = out.semanas.map((sem) => sem.turnosP.map((p) => p.filter((t) => !t).length));
     return { ruins, folgasPorPessoa, motivos: out.semanas.flatMap((s) => s.motivos.flat()).filter((m) => /já tinha o máximo/.test(m)).length };
@@ -397,4 +402,36 @@ test('ESC-10: no máximo N de folga no mesmo dia, mesmo com a folga fixa no mesm
   expect(r.ruins).toEqual([]);
   for (const sem of r.folgasPorPessoa) expect(sem).toEqual([2, 2, 2]); // 5x2: 2 folgas para cada uma
   expect(r.motivos).toBeGreaterThan(0); // a folga que saiu da segunda diz o porquê
+});
+
+// ESC-7DIAS-01 (print do dono, 26/11/2026): ninguém trabalha mais de 6 dias seguidos, nem na virada da semana nem na volta
+// do ciclo do rodízio (a Renata ia de 01/12 a 09/12 sem folga).
+test('ESC-7DIAS-01: rodízio nunca deixa alguém mais de 6 dias seguidos trabalhando (virada de semana e volta do ciclo)', async ({ page }) => {
+  await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS._escala);
+  const r = await page.evaluate(() => {
+    const H = (abre, fecha) => ({ abre, fecha, fechado: false });
+    const casos = [];
+    for (const escala of ['6x1', '5x2', '4x3']) for (const inicioSemana of ['dom', 'seg']) for (const N of [3, 4, 5]) {
+      const op = {
+        funcionamento: { seg: H('10:00', '22:00'), ter: H('10:00', '22:00'), qua: H('10:00', '22:00'), qui: H('10:00', '22:00'), sex: H('10:00', '22:00'), sab: H('10:00', '22:00'), dom: H('14:00', '20:00') },
+        equipe: { funcionarios: N, cargaSemanal: escala === '4x3' ? 40 : 42, escala, intervalo: 60, capacidade: 4, modelo: 'rodizio', maxFolgaDia: 1, inicioSemana },
+      };
+      const need = Array.from({ length: 7 }, (_, wd) => Array(24).fill(wd === 5 ? Math.min(3, N) : wd === 6 ? 2 : 1));
+      const DS = ['seg', 'ter', 'qua', 'qui', 'sex', 'sab'];
+      const pessoas = Array.from({ length: N }, (_, i) => ({ nome: 'P' + i, folga: i === 0 ? 'qua' : 'auto', folga2: 'auto', turno: 'tanto' }));
+      const out = TS._escala.montarRodizio(need, op, pessoas);
+      const ordem = inicioSemana === 'seg' ? [0, 1, 2, 3, 4, 5, 6] : [6, 0, 1, 2, 3, 4, 5];
+      // dias de trabalho em sequência, duas voltas do ciclo (pega a virada da última semana para a primeira)
+      for (let i = 0; i < N; i++) {
+        let seguidos = 0, max = 0;
+        for (let volta = 0; volta < 2; volta++) for (const sem of out.semanas) for (const wd of ordem) {
+          if (sem.turnosP[i][wd]) { seguidos++; max = Math.max(max, seguidos); } else seguidos = 0;
+        }
+        if (max > 6) casos.push(`${escala} ${inicioSemana} N=${N} P${i}: ${max} dias seguidos`);
+      }
+      void DS;
+    }
+    return casos;
+  });
+  expect(r).toEqual([]); // e, sem caso que passe, o aviso de "passa de 6 dias seguidos" (out.seguidos) fica vazio
 });
