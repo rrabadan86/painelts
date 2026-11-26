@@ -385,6 +385,16 @@
     const seg = semanaSeg(e);
     // quem folga no domingo de cada semana do ciclo (gira igualmente)
     const domDe = (w) => { const f = new Set(); if (domAberto) for (let j = 0; j < folgamDom; j++) f.add((((w % L) + L) % L * folgamDom + j) % N); return f; };
+    // no máximo 6 dias de trabalho seguidos (ESC-7DIAS-01, pedido do dono 26/11/2026; DSR da CLT): cada semana olha quantos
+    // dias a pessoa já vem trabalhando no fim da semana anterior (`cauda`) e põe a primeira folga cedo o bastante. O ciclo
+    // do rodízio se repete, então a 1ª semana depende da última: duas passadas (a 2ª começa com a cauda da última semana).
+    const MAX_SEGUIDOS = 6;
+    const ORD_SEM = seg ? [0, 1, 2, 3, 4, 5, 6] : [DOM, 0, 1, 2, 3, 4, 5];
+    const posSem = (wd) => ORD_SEM.indexOf(wd);
+    let cauda0 = pessoas.map(() => 0);
+    for (let passada = 0; passada < 2; passada++) {
+    semanas.length = 0;
+    const cauda = cauda0.slice();
     for (let w = 0; w < L; w++) {
       const folgaDom = domAberto ? domDe(w) : new Set(pessoas.map((_, i) => i));
       // semana de segunda a domingo: a segunda desta semana é a folga de quem folgou no domingo da semana anterior
@@ -406,31 +416,43 @@
       });
       // folgas que ainda faltam na semana (6x1: 1; 5x2: 2; 4x3: 3), descontando as que o domingo já deu
       // dia em que a loja fecha conta como folga para todos (5x2 com segunda fechada: 5 dias, não 4)
-      const precisa = (i) => Math.max(0, nFolgas - new Set([...offs[i], ...fechadosSem]).size);
+      // 6x1 (ESC-7DIAS-01): com uma folga por semana e no máximo 6 dias seguidos, a folga teria de cair sempre no mesmo dia;
+      // por isso o domingo/segunda do rodízio é folga a mais e a folga da semana continua (senão alguém passaria de 6 dias)
+      const precisa = (i) => (nFolgas === 1 ? (fechadosSem.length ? 0 : 1) : Math.max(0, nFolgas - new Set([...offs[i], ...fechadosSem]).size));
       const manuais = (i) => [pessoas[i].folga, pessoas[i].folga2].filter((f) => f && f !== 'auto').length;
       const ordemP = pessoas.map((_, i) => i).sort((x, y) => manuais(y) - manuais(x) || ((x - w + N * 9) % N) - ((y - w + N * 9) % N));
       // limite de folgas no dia (ESC-10, pedido do dono 26/11/2026): o máximo de folgas E o mínimo de pessoas na loja
       // (o mínimo já está em need). A folga fixa respeita os dois: dia cheio → a folga vai para outro dia.
       const capFolga = (wd) => Math.max(0, Math.min(maxF, N - Math.max(1, ...need[wd])));
+      // posição (na ordem da semana) até a qual a pessoa precisa de um descanso para não passar de 6 dias seguidos
+      const limCedo = (i) => MAX_SEGUIDOS - cauda[i];
+      const descansaAte = (i, lim) => ORD_SEM.some((wd, p) => p <= lim && (offs[i].has(wd) || !abertura[wd]));
       for (const i of ordemP) {
         const cfgDias = [pessoas[i].folga, pessoas[i].folga2];
-        const nPrecisa = precisa(i); // contado antes: cada folga marcada aumenta offs[i]
+        // contado antes: cada folga marcada aumenta offs[i]. Sem descanso a tempo (o rodízio deu a folga no fim da semana),
+        // ganha uma folga a mais cedo: a lei dos 6 dias vale mais que o número de folgas da escala
+        const precisa0 = precisa(i);
+        const nPrecisa = Math.max(precisa0, descansaAte(i, limCedo(i)) ? 0 : 1);
         for (let j = 0; j < nPrecisa; j++) {
           let d = cfgDias[j] && cfgDias[j] !== 'auto' ? DIAS.indexOf(cfgDias[j]) : -1;
-          const cheia = d >= 0 && !offs[i].has(d) && cont[d] >= capFolga(d);
+          const cedo = !descansaAte(i, limCedo(i)); // ainda falta uma folga cedo nesta semana
+          const tarde = cedo && d >= 0 && posSem(d) > limCedo(i);
+          const cheia = d >= 0 && !offs[i].has(d) && (cont[d] >= capFolga(d) || tarde);
           const manual = d >= 0 && !offs[i].has(d) && !cheia;
           if (!manual) {
             let best = null;
-            for (let wd = 0; wd <= 5; wd++) {
-              if (offs[i].has(wd) || !abertura[wd]) continue;
-              const custo = (cont[wd] >= capFolga(wd) ? 1e6 : 0) + (wd === fixos[i][j] && !cheia ? 0 : 100) + somaDia[wd] + cont[wd] * 20;
+            for (let wd = 0; wd <= 6; wd++) {
+              if (offs[i].has(wd) || !abertura[wd] || (wd === DOM && !(cedo && posSem(DOM) <= limCedo(i)))) continue; // domingo só para não passar de 6 dias
+              const custo = (cont[wd] >= N - Math.max(1, ...need[wd]) ? 1e8 : 0) + (cedo ? (posSem(wd) > limCedo(i) ? 1e7 * (posSem(wd) - limCedo(i)) : (limCedo(i) - posSem(wd)) * 30) : 0) + (cont[wd] >= capFolga(wd) ? 1e6 : 0) + (wd === fixos[i][j] && !cheia ? 0 : 100) + somaDia[wd] + cont[wd] * 20
+                // a última folga da semana não muito cedo: dias seguidos no fim da semana apertam o começo da próxima (domingo e segunda do rodízio)
+                + (j === nPrecisa - 1 ? Math.max(0, 6 - posSem(wd) - 2) * 40 : 0);
               if (!best || custo < best[0]) best = [custo, wd];
             }
             if (!best) continue;
             d = best[1];
           }
           offs[i].add(d); cont[d]++; folgasSem[i].push(d);
-          motivos[i][d] = manual ? 'Folga fixa' : cheia ? `Folga (a fixa de ${DIAS_NOME[DIAS.indexOf(cfgDias[j])].toLowerCase()} já tinha o máximo de folgas)` : 'Folga';
+          motivos[i][d] = manual ? 'Folga fixa' : tarde && !(cont[DIAS.indexOf(cfgDias[j])] >= capFolga(DIAS.indexOf(cfgDias[j]))) ? 'Folga (para não passar de 6 dias seguidos)' : cheia ? `Folga (a fixa de ${DIAS_NOME[DIAS.indexOf(cfgDias[j])].toLowerCase()} já tinha o máximo de folgas)` : cedo && (j >= precisa0 || (d !== fixos[i][j] && fixos[i][j] != null && posSem(fixos[i][j]) > limCedo(i))) ? 'Folga (para não passar de 6 dias seguidos)' : 'Folga';
         }
       }
       const excesso = [0, 1, 2, 3, 4, 5, 6].filter((wd) => abertura[wd] && cont[wd] > maxF);
@@ -463,9 +485,24 @@
           if (!falta && ini != null) { problemas.push({ wd, ini: ini * B, fim: x * B, c: pior.c, n: pior.n }); ini = null; }
         }
       }
+      // dias seguidos de trabalho no fim desta semana (descanso = folga ou loja fechada), para a próxima
+      pessoas.forEach((_, i) => {
+        let n = 0;
+        for (let p = 6; p >= 0; p--) { const wd = ORD_SEM[p]; if (offs[i].has(wd) || !abertura[wd]) break; n++; }
+        cauda[i] = n === 7 ? cauda[i] + 7 : n;
+      });
       semanas.push({ turnosP, motivos, cob, descoberto, abaixo, problemas, folgaDom, folgasSem, excesso });
     }
-    return { semanas, L, kDom, folgamDom, trabMin, jornada, intervalo, diasBase, fixos, maxF };
+    if (passada === 0) cauda0 = cauda.slice();
+    }
+    // quem ainda passa de 6 dias seguidos (regras que não cabem juntas): conta duas voltas do ciclo
+    const seguidos = [];
+    pessoas.forEach((p, i) => {
+      let n = 0, max = 0;
+      for (let volta = 0; volta < 2; volta++) for (const sem of semanas) for (const wd of ORD_SEM) { if (sem.turnosP[i][wd]) { n++; max = Math.max(max, n); } else n = 0; }
+      if (max > MAX_SEGUIDOS) seguidos.push(`${p.nome} (${Math.min(max, 99)} dias)`);
+    });
+    return { semanas, L, kDom, folgamDom, trabMin, jornada, intervalo, diasBase, fixos, maxF, seguidos };
   }
   TS._escala = { montarRodizio: (...a) => montarRodizio(...a), montarEscala: (...a) => montarEscala(...a), ajustesQueRepetem, B, PH };
   const resumoRodizio = (r) => ({ descoberto: r.semanas.reduce((s, w) => s + w.descoberto, 0), abaixo: r.semanas.reduce((s, w) => s + w.abaixo, 0) });
@@ -1249,7 +1286,8 @@
     return TS.cardWithTools(`Semana-modelo do rodízio de domingo (${op.equipe.escala})`,
       `Semana de ${semanaSeg(op.equipe) ? 'segunda a domingo' : 'domingo a sábado'}. ${r.kDom ? `${r.kDom} pessoa(s) trabalham em cada domingo; ${r.folgamDom} folga(m) — e folga(m) também na segunda${semanaSeg(op.equipe) ? ' seguinte' : ''}.` : 'Loja fechada no domingo.'} O ciclo se repete a cada ${r.L} semana(s). Jornada de ${Math.floor(r.jornada / 60)}h${String(Math.round(r.jornada % 60)).padStart(2, '0')} por dia${r.intervalo ? ` + ${r.intervalo} min de intervalo` : ''}. Confira a CLT e a convenção coletiva.`,
       seg, aviso,
-      excessos.length ? h('div', { class: 'notice err' }, `Não deu para manter no máximo ${r.maxF} pessoa(s) de folga por dia em: ${excessos.map(([k, x]) => `semana ${k + 1} (${x.map((wd) => DIAS_NOME[wd]).join(', ')})`).join('; ')}. Revise as folgas fixas escolhidas à mão ou o limite em "Horário e equipe".`) : null,
+      excessos.length ? h('div', { class: 'notice err' }, `Não deu para manter no máximo ${r.maxF} pessoa(s) de folga por dia em: ${excessos.map(([k, x]) => `semana ${k + 1} (${x.map((wd) => DIAS_NOME[wd]).join(', ')})`).join('; ')}. A regra de no máximo 6 dias seguidos de trabalho vale mais (quem folgou no rodízio trabalha de terça a sábado e precisa folgar logo no começo da semana seguinte). Para ter só ${r.maxF} de folga por dia: ${semanaSeg(op.equipe) ? '' : 'experimente "A semana começa na segunda" (a folga do domingo e a da segunda ficam em semanas diferentes e as folgas cabem), '}mais uma pessoa na equipe, um mínimo menor no sábado ou no domingo, ou mais folgas permitidas por dia.`) : null,
+      r.seguidos && r.seguidos.length ? h('div', { class: 'notice err', 'data-aviso': 'seguidos' }, `Com essas regras alguém ainda passa de 6 dias seguidos de trabalho: ${r.seguidos.join('; ')}. Aumente o máximo de folgas por dia, diminua o mínimo de algum dia ou ajuste a escala à mão.`) : null,
       h('p', { class: 'muted rod-fixos' }, h('b', null, `Folgas nas semanas em que trabalha no domingo (no máximo ${r.maxF} de folga por dia): `), fixosTxt),
       tabelaSemana(w, sem),
       h('div', { class: 'f-label', style: { marginTop: '16px' } }, `Cobertura da semana ${sem + 1}`),
