@@ -3674,7 +3674,7 @@ button.pilula-sit-btn:focus-visible { outline: 2px solid var(--green); outline-o
 .est-p2-heroi .est-p2-ir { text-align: left; }
 .est-p2-acoes { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; margin-top: 10px; }
 .est-p2-acoes .btn.primary { text-decoration: none; }
-.card-head .est-p2-csv { margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--line); background: var(--card, #fff); color: var(--green); border-radius: 8px; padding: 5px 10px; font: 600 12px/1 inherit; cursor: pointer; }
+.card-head .est-p2-csv { margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--line); background: transparent; color: var(--green); border-radius: 8px; padding: 5px 10px; font: 600 12px/1 inherit; cursor: pointer; }
 .card-head .est-p2-csv:hover { background: var(--cream-2); }
 .card-head .est-p2-csv span { font-size: 12px; }
 .card-head .est-p2-csv + .exp-btn, .card-head .est-p2-acoes-dir + .exp-btn { margin-left: 0; }
@@ -4338,3 +4338,40 @@ td .meta-selo { display: flex; margin-left: auto; width: max-content; }
 .meta-j-l { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-top: 1px solid var(--line); font-variant-numeric: tabular-nums; }
 .meta-j-l:first-child { border-top: 0; }
 .meta-j-l b { text-align: right; }
+
+/* Configurações → Metas em tabela por ano (META-CFG-01) */
+.cfg-metas-topo { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; background: var(--cream); border-radius: 10px; padding: 12px 14px; margin: 8px 0 12px; }
+.cfg-metas-topo .cfg-inline { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.cfg-metas-sep { width: 1px; height: 24px; background: var(--line); }
+.cfg-metas-anos { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
+.cfg-metas-ano { border: 1px solid var(--line); background: var(--card, #fff); color: var(--dark); border-radius: 999px; padding: 5px 14px; font: inherit; font-size: 14px; cursor: pointer; }
+.cfg-metas-ano.on { background: var(--green); border-color: var(--green); color: #fff; font-weight: 600; }
+.cfg-metas-t td { vertical-align: middle; }
+.cfg-metas-t .f-input { width: 130px; height: 34px; text-align: right; margin-left: auto; display: block; }
+.cfg-metas-t .f-input::placeholder { color: var(--muted); font-style: italic; }
+.t.cfg-metas-t tbody tr.atual td { background: var(--gold-l); }
+.cfg-metas-t tfoot td { font-weight: 600; border-top: 2px solid var(--line); }
+.cfg-metas-et { display: inline-block; font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--line); color: var(--dark); }
+.cfg-metas-et.auto { background: var(--azul-l); color: var(--azul-t); }
+.cfg-metas-et.dig { background: var(--good-l); color: var(--good-t); font-weight: 600; }
+.cfg-metas-at { display: grid; justify-items: end; gap: 3px; }
+.cfg-metas-at b.ok, .cfg-metas-t tfoot b.ok { color: var(--good-t); } .cfg-metas-at b.nao, .cfg-metas-t tfoot b.nao { color: var(--bad-t); } .cfg-metas-at b.and, .cfg-metas-t tfoot b.and { color: var(--gold-t); }
+.cfg-metas-barra { position: relative; width: 96px; height: 6px; border-radius: 4px; background: var(--line); }
+.cfg-metas-barra i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; }
+.cfg-metas-barra i.ok { background: var(--good); } .cfg-metas-barra i.nao { background: var(--bad); } .cfg-metas-barra i.and { background: var(--gold); }
+.cfg-metas-barra u { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--dark); }
+@media (max-width: 860px) {
+  .cfg-metas-sep { display: none; }
+  .cfg-metas-t thead { display: none; }
+  .cfg-metas-t, .cfg-metas-t tbody, .cfg-metas-t tfoot { display: block; }
+  .cfg-metas-t tr { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; padding: 10px 2px; border-top: 1px solid var(--line); }
+  .cfg-metas-t td { display: flex; align-items: center; justify-content: space-between; gap: 8px; border: 0; padding: 0; min-width: 0; background: none; }
+  .cfg-metas-t td:nth-child(1) { grid-column: 1; } .cfg-metas-t td:nth-child(2) { grid-column: 2; }
+  .cfg-metas-t td:nth-child(3), .cfg-metas-t td:nth-child(4), .cfg-metas-t td:nth-child(5) { grid-column: 1 / -1; }
+  .cfg-metas-t td:nth-child(n+3)::before { content: attr(data-l); color: var(--muted); font-size: 12px; }
+  .cfg-metas-t tfoot td:empty { display: none; }
+  .t.cfg-metas-t tbody tr td, .t.cfg-metas-t tbody tr:nth-child(even) td { background: none; }
+  .cfg-metas-t tbody tr:nth-child(even) { background: var(--cream-2); }
+  .cfg-metas-t tbody tr.atual { background: var(--gold-l); }
+  .cfg-metas-t .f-input { width: 120px; }
+}

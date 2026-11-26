@@ -74,6 +74,19 @@ function totaisSemEG(vendas) {
   }
   return t;
 }
+/** vendas da meta por mês (aromatizado + puro + acessórios, sem Espaço Gourmet: CT.resumo) — Configurações → Metas (META-CFG-01) */
+const cacheVM = new WeakMap();
+function vendasMetaPorMes(vendas) {
+  let t = cacheVM.get(vendas);
+  if (!t) {
+    const por = new Map();
+    for (const v of vendas) { if (!v.data) continue; const ym = v.data.slice(0, 7); let a = por.get(ym); if (!a) por.set(ym, (a = [])); a.push(v); }
+    t = {};
+    for (const [ym, a] of por) t[ym] = Math.round(CT.resumo(a).vendasMeta * 100) / 100;
+    cacheVM.set(vendas, t);
+  }
+  return t;
+}
 const ymAnterior = (ym) => `${+ym.slice(0, 4) - 1}${ym.slice(4)}`;
 /**
  * meta da loja no mês: 1º) digitada para o mês; 2º) automática = mesmo mês do ano anterior
@@ -307,4 +320,4 @@ function resumoDiario({ loja, vendas, metaPlanilha }) {
   return { titulo: loja.nome, dia, linhas, alertas: alertas({ loja, vendas, metaPlanilha }) };
 }
 
-module.exports = { retencao90, metaMes, totaisSemEG, metricas, projecaoMes, lojaAberta, rede, alertas, resumoDiario, hojeSP, MIN_LOJAS_REDE };
+module.exports = { retencao90, metaMes, totaisSemEG, vendasMetaPorMes, metricas, projecaoMes, lojaAberta, rede, alertas, resumoDiario, hojeSP, MIN_LOJAS_REDE };

@@ -3572,6 +3572,7 @@ ADMIN.registrar(app, {
   pacoteLimpar: () => packCache.clear(),
   rawDe: (id) => cacheLoja.get(id)?.raw || null,
   totaisSemEG: (id) => { const raw = cacheLoja.get(id)?.raw; return raw ? IND.totaisSemEG(raw.vendas) : {}; },
+  vendasMetaMes: (id) => { const raw = cacheLoja.get(id)?.raw; return raw ? IND.vendasMetaPorMes(raw.vendas) : {}; },
   // nomes de vendedores que aparecem nas vendas (para ligar o usuário "vendedor" ao nome no sistema)
   vendedoresDe: (id) => {
     const raw = cacheLoja.get(id)?.raw;

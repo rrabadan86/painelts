@@ -239,6 +239,7 @@
       ['Configuração guiada', 'Os acessos que faltam para a loja, passo a passo.'],
       ['Usuários', 'Quem entra no painel e quais telas cada um vê.'],
       ['Dados e atualização', 'Quando os dados chegaram e o botão para atualizar agora.'],
+      ['Metas', 'Uma tabela por ano: a meta de cada mês, de onde vem (digitada, automática ou padrão), as vendas da meta e o % atingido, a mesma conta da Evolução mensal. Digite na linha do mês para mudar só aquele mês.'],
     ], []],
   ].map(([pag, grupo, nome, serve, quem, nums, perg]) => ({ pag, grupo, nome, serve, quem, nums, perg }));
 
