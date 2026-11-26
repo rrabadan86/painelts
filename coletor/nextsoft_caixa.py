@@ -33,11 +33,7 @@ GUARDA_DIAS = 400  # histórico guardado no arquivo
 
 
 def fazer_login(page):
-    if "/#/login" in page.url:
-        page.fill(nx.SEL["rede"], nx.REDE)
-        page.fill(nx.SEL["email"], nx.USER)
-        page.fill(nx.SEL["senha"], nx.PASS)
-        page.click(nx.SEL["entrar"])
+    nx.preencher_login(page)  # espera o formulário, recarrega uma vez e diagnostica se não aparecer
     page.wait_for_url("**/#/loja/**", timeout=120_000)
 
 

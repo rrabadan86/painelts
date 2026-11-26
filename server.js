@@ -2414,6 +2414,7 @@ app.get('/api/estoque/notas/sincronizar', async (req, res) => {
     // log: ao vivo enquanto roda; senão, o final da última execução. "robo": o que o robô está fazendo agora (outra loja não aparece pelo nome)
     res.json({ estado: x.estado || 'parado', itens: x.itens || null, gatilho: x.gatilho || null, por: x.por || null, criado: x.criado || null, inicio: x.inicio || null, fim: x.fim || null, fila: s.fila || 0,
       log: (x.estado === 'rodando' ? x.aoVivo : x.log) || [], robo: r.livre ? null : { gatilho: r.gatilho || null, inicio: r.inicio || null, outraLoja: !!r.outraLoja },
+      roboParado: !!r.parado, // a fila parou de andar (NF-FILA-01): a tela pede para reiniciar o coletor
       atualizado: (ES.notas(loja.id) || {}).atualizado || null });
   } catch (e) { res.status(502).json({ erro: C.msgErro(e) }); }
 });

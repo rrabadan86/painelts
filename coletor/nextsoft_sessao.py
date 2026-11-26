@@ -53,11 +53,7 @@ def gravar_resultado(etapas_res, erro_login=None):
 def login_unico(page):
     step("1) Login único da sessão AppNext")
     nx.goto_login_with_retries(page, nx.LOGIN_URL)
-    if "/#/login" in page.url:
-        page.fill(nx.SEL["rede"], nx.REDE)
-        page.fill(nx.SEL["email"], nx.USER)
-        page.fill(nx.SEL["senha"], nx.PASS)
-        page.click(nx.SEL["entrar"])
+    nx.preencher_login(page)  # espera o formulário, recarrega uma vez e diagnostica se não aparecer
     page.wait_for_url("**/#/loja/**", timeout=120_000)
     try:
         page.wait_for_load_state("networkidle", timeout=15_000)

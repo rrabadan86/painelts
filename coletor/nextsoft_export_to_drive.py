@@ -911,6 +911,43 @@ def garantir_loja(page, loja_nome=None):
 
 
 # -------- Navegação resiliente: goto com retries --------
+def preencher_login(page):
+    """Preenche e envia o login do AppNext (se a página for a de login).
+    O formulário às vezes demora (ou o site está instável): espera até 60 s, recarrega uma vez e, se o campo "Rede"
+    ainda não aparece, grava no log um diagnóstico sem nenhum valor digitado (endereço, título, campos e botões)."""
+    if "/#/login" not in page.url:
+        return
+    for tentativa in (1, 2):
+        try:
+            page.wait_for_selector(SEL["rede"], state="visible", timeout=60_000)
+            break
+        except Exception:  # noqa: BLE001
+            if "/#/login" not in page.url:
+                return  # a sessão voltou sozinha (já está logado)
+            if tentativa == 1:
+                log("[login] o formulário de login não apareceu em 60 s; recarregando a página uma vez")
+                try:
+                    page.reload(wait_until="load", timeout=60_000)
+                except Exception as e:  # noqa: BLE001
+                    log(f"[login] falhou ao recarregar: {e}")
+                continue
+            try:
+                diag = page.evaluate("""() => ({
+                    titulo: document.title,
+                    campos: [...document.querySelectorAll('input')].filter((i) => i.offsetParent).map((i) => (i.placeholder || i.name || i.type || '').slice(0, 40)),
+                    botoes: [...document.querySelectorAll('button')].filter((b) => b.offsetParent).map((b) => (b.innerText || '').trim().slice(0, 40)).filter(Boolean).slice(0, 10),
+                    texto: (document.body && document.body.innerText || '').trim().slice(0, 200),
+                })""")
+            except Exception as e:  # noqa: BLE001
+                diag = {"erro": str(e)[:200]}
+            log(f"[login] diagnóstico da tela de login: endereço {page.url.split('?')[0]} · {diag}")
+            raise RuntimeError("A tela de login do AppNext não mostrou o campo \"Rede\" (o site pode estar fora do ar, lento ou ter mudado o login).")
+    page.fill(SEL["rede"], REDE)
+    page.fill(SEL["email"], USER)
+    page.fill(SEL["senha"], PASS)
+    page.click(SEL["entrar"])
+
+
 def goto_login_with_retries(page, url, tries=3):
     alt_urls = {url, url.replace("https://www.", "https://")}
     for i in range(1, tries + 1):
@@ -1044,11 +1081,7 @@ def main():
             step("1) Login")
             goto_login_with_retries(page, LOGIN_URL)
 
-            if "/#/login" in page.url:
-                page.fill(SEL["rede"], REDE)
-                page.fill(SEL["email"], USER)
-                page.fill(SEL["senha"], PASS)
-                page.click(SEL["entrar"])
+            preencher_login(page)
 
             page.wait_for_url("**/#/loja/**", timeout=120_000)
             try:
