@@ -9,7 +9,8 @@
 
   /** corpo do e-mail (HTML compatível com Gmail: tabelas e estilos inline) */
   TS.emailContabilidade = function ({ loja, ym, mensagem, dados }) {
-    const { rg, gorj, linhas, totalDe, ferDe, temFeriado } = dados;
+    const { rg, gorj, linhas, totalDe, ferDe, temFeriado, comBanco, minPagar, bancoMes } = dados;
+    const sinalH = (m) => (TS.bancoHoras ? TS.bancoHoras.sinal(m) : TS.horasTxt(m));
     const rateio = rg.rateio && rg.rateio.ativo;
     const td = `padding:9px 0;border-bottom:1px solid ${LINHA};font-size:13px;`;
     const num = 'text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums;padding-left:14px;';
@@ -26,7 +27,7 @@
     const feriadosDe = (vend) => {
       const fs = ferDe(vend);
       if (!fs.length) return 'nenhum';
-      return juntar(fs.map((x) => `${x.data.slice(8, 10)}/${x.data.slice(5, 7)} (${TS.horasTxt(x.min)})`));
+      return juntar(fs.map((x) => `${x.data.slice(8, 10)}/${x.data.slice(5, 7)} (${TS.horasTxt(x.min)})${comBanco ? (x.acerto === 'banco' ? ' → banco' : ' → pagar') : ''}`));
     };
     const tot = { com: 0, pre: 0, gor: 0, total: 0 };
     const blocos = linhas.map((r) => {
@@ -37,6 +38,8 @@
         rateio ? null : linha('Premiação', brl(pre)),
         linha('Gorjeta', brl(gor)),
         temFeriado ? linha('Feriados trabalhados', feriadosDe(r.vendedor)) : null,
+        comBanco && temFeriado ? linha('Feriados a pagar', minPagar(r.vendedor) ? TS.horasTxt(minPagar(r.vendedor)) : 'nenhum') : null,
+        comBanco ? (() => { const b = bancoMes(r.vendedor); const f = b ? b.fim : 0; return linha('Banco de horas', `${sinalH(f)}${f < 0 ? ' (devendo)' : ''}${b && b.inicio !== f ? ` · era ${sinalH(b.inicio)}` : ''}`); })() : null,
         linha('Total a receber', brl(totalDe(r)), { forte: true }),
       ]);
     }).join('');
@@ -45,7 +48,7 @@
 <tr><td style="padding:22px 18px 4px">
   <div style="font-size:11px;font-weight:700;letter-spacing:1.4px;color:${OURO};text-transform:uppercase">Fechamento do mês</div>
   <div style="font-size:22px;font-weight:700;color:${ESCURO};margin-top:4px">${esc(loja)}</div>
-  <div style="font-size:14px;color:${CINZA};margin-top:2px">${esc(nomeMes(ym))} · comissões, premiações, gorjetas e feriados</div>
+  <div style="font-size:14px;color:${CINZA};margin-top:2px">${esc(nomeMes(ym))} · comissões, premiações, gorjetas, feriados${comBanco ? ' e banco de horas' : ''}</div>
   <div style="font-size:11px;color:${CINZA};margin-top:8px">Gerado pelo <b style="color:${VERDE}">Painel Tea Shop</b> com as vendas do AppNext · desenvolvido por <b style="color:${VERDE}">Rodrigo Rabadan</b></div>
 </td></tr>
 ${msg ? `<tr><td style="padding:14px 18px 0;font-size:14px;line-height:1.55;color:#3D4A42">${esc(msg).replace(/\n/g, '<br>')}</td></tr>` : ''}
@@ -63,10 +66,11 @@ ${secao('Total da loja', [
     linha('Comissões', brl(tot.com)),
     rateio ? null : linha('Premiações', brl(tot.pre)),
     linha('Gorjetas', brl(tot.gor)),
+    comBanco && temFeriado ? (() => { const q = linhas.filter((r) => minPagar(r.vendedor)); return linha('Horas de feriado a pagar', q.length ? juntar(q.map((r) => `${TS.horasTxt(minPagar(r.vendedor))} (${r.vendedor})`)) : 'nenhuma'); })() : null,
     linha('Total a pagar', brl(tot.total), { forte: true }),
   ])}
 <tr><td style="padding:20px 18px 22px;font-size:11px;line-height:1.5;color:${CINZA}">
-  O PDF anexado traz o detalhe de cada funcionária (vendas e metas por categoria, horas em feriados) e a linha para assinatura.${rateio ? ' Nesta loja a comissão é rateada igualmente entre a equipe.' : ''}
+  O PDF anexado traz o detalhe de cada funcionária (vendas e metas por categoria, horas em feriados${comBanco ? ', banco de horas do mês' : ''}) e a linha para assinatura.${rateio ? ' Nesta loja a comissão é rateada igualmente entre a equipe.' : ''}
 </td></tr>
 </table>`;
   };

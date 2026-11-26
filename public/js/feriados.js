@@ -122,7 +122,13 @@
     return { horas, auto };
   };
   TS.feriadosParaPdf = function (cfg, ym) {
-    return { lista: TS.feriadosDoMes(cfg, ym), horas: TS.horasFeriados(cfg, ym).horas };
+    const BH = TS.bancoHoras;
+    const comBanco = !!(BH && ym >= BH.regras(cfg).desde);
+    // banco de horas (BANCO-06): acerto de cada pessoa em cada feriado e o resumo do mês de cada pessoa
+    const banco = comBanco ? BH.daLoja(cfg) : null;
+    return { lista: TS.feriadosDoMes(cfg, ym), horas: TS.horasFeriados(cfg, ym).horas, comBanco,
+      acerto: (data, nome) => (comBanco ? BH.acertoDe(cfg, data, nome) : 'pagar'),
+      bancoMes: (nome) => (banco ? BH.resumoMes(banco.pessoas.get(String(nome).trim().toUpperCase()), ym) : null) };
   };
 
   /**
@@ -135,6 +141,13 @@
     const editavel = pode || TS.demo; // na apresentação dá para testar, sem salvar
     const locais = ((cfg && cfg.feriadosLocais) || []).map((f) => ({ ...f }));
     const horas = JSON.parse(JSON.stringify((cfg && cfg.feriadosHoras && cfg.feriadosHoras[ym]) || {})); // só o que foi editado (0 = não trabalhou)
+    // banco de horas (BANCO-01): acerto de cada feriado — o do dia (d) e o de cada pessoa (p); vazio = padrão das regras
+    const acerto = JSON.parse(JSON.stringify((cfg && cfg.feriadosAcerto && cfg.feriadosAcerto[ym]) || {}));
+    const BH = TS.bancoHoras;
+    const regrasBH = BH ? BH.regras(cfg) : null;
+    const comBanco = !!(BH && ym >= regrasBH.desde);
+    const cfgAcerto = () => ({ ...cfg, feriadosAcerto: { ...((cfg && cfg.feriadosAcerto) || {}), [ym]: acerto } });
+    const acertoDe = (data, nome) => (comBanco ? BH.acertoDe(cfgAcerto(), data, nome) : 'pagar');
     const horarios = Object.fromEntries(Object.entries((cfg && cfg.feriadosHorario) || {}).filter(([d]) => d.startsWith(ym)).map(([d, v]) => [d, { ...v }]));
     const cfgVivo = () => ({ ...cfg, feriadosHorario: { ...((cfg && cfg.feriadosHorario) || {}), ...horarios } });
     const nomes = [...new Set([...pessoas.map((n) => n.trim().toUpperCase()), ...Object.values(horas).flatMap((o) => Object.keys(o).filter((k) => o[k] > 0))])].sort((a, b) => a.localeCompare(b, 'pt-BR'));
@@ -180,10 +193,11 @@
         salvar.addEventListener('click', async () => {
           salvar.disabled = true;
           try {
-            const r = await fetch(`/api/feriados?loja=${encodeURIComponent(cfg.id)}`, { method: 'PUT', credentials: 'same-origin', headers: { 'X-Painel': '1', 'Content-Type': 'application/json' }, body: JSON.stringify({ ym, horas, locais, horarios }) });
+            const r = await fetch(`/api/feriados?loja=${encodeURIComponent(cfg.id)}`, { method: 'PUT', credentials: 'same-origin', headers: { 'X-Painel': '1', 'Content-Type': 'application/json' }, body: JSON.stringify({ ym, horas, locais, horarios, ...(comBanco ? { acerto } : {}) }) });
             const j = await r.json().catch(() => ({}));
             if (!r.ok) throw new Error(j.erro || 'Falha ao salvar.');
             cfg.feriadosHoras = { ...(cfg.feriadosHoras || {}), [ym]: horas }; cfg.feriadosLocais = locais;
+            if (comBanco) cfg.feriadosAcerto = { ...(cfg.feriadosAcerto || {}), [ym]: JSON.parse(JSON.stringify(acerto)) };
             cfg.feriadosHorario = { ...Object.fromEntries(Object.entries(cfg.feriadosHorario || {}).filter(([d]) => !d.startsWith(ym))), ...horarios };
             sujoF = false; salvar.textContent = 'Salvo ✓';
           } catch (e) { salvar.textContent = e.message; } finally { salvar.disabled = false; }
@@ -191,7 +205,7 @@
         acoes.append(salvar);
       }
       card.append(h('div', { class: 'card-head' }, h('div', null, h('div', { class: 'card-title' }, `Feriados de ${TS.MESES_LONGOS[+ym.slice(5, 7) - 1].toLowerCase()}/${ym.slice(0, 4)}`),
-        h('div', { class: 'card-sub' }, 'Horas trabalhadas por cada pessoa em cada feriado. Vão para o PDF do fechamento.')), acoes));
+        h('div', { class: 'card-sub' }, comBanco ? 'Horas trabalhadas por cada pessoa em cada feriado. Vão para o banco de horas (o dobro) ou para pagar no fechamento.' : 'Horas trabalhadas por cada pessoa em cada feriado. Vão para o PDF do fechamento.')), acoes));
       // formulário de feriado local
       const ultDia = new Date(Date.UTC(+ym.slice(0, 4), +ym.slice(5, 7), 0)).getUTCDate();
       const fData = h('input', { class: 'f-input', type: 'date', min: ym + '-01', max: `${ym}-${String(ultDia).padStart(2, '0')}` });
@@ -234,12 +248,37 @@
             : editado && vend ? h('div', { class: 'hora-dica' }, m ? 'editado ' : 'editado: não trabalhou ', voltar)
               : vend && !m ? h('div', { class: 'hora-dica falta' }, 'vendeu, sem horas')
                 : editado && m ? h('div', { class: 'hora-dica' }, 'editado') : null;
-        return h('td', null, inp, dica);
+        // selo do acerto da pessoa: tocar troca só para ela (banco ⇄ pagar)
+        const ac = m > 0 && comBanco ? acertoDe(f.data, nome) : null;
+        const selo = ac ? h('button', { type: 'button', class: 'bh-selo ' + ac + ((acerto[f.data] && acerto[f.data].p && nome in acerto[f.data].p) ? ' proprio' : ''), disabled: !editavel || null,
+          title: ac === 'banco' ? `Vai para o banco de horas em dobro (+${horasTxt(2 * m)}). Toque para pagar só para esta pessoa.` : `Vai para pagar no fechamento (${horasTxt(m)}). Toque para mandar para o banco só para esta pessoa.`,
+          onclick: () => {
+            const x = (acerto[f.data] ||= {});
+            const doDia = x.d || regrasBH.padrao;
+            const novo = ac === 'banco' ? 'pagar' : 'banco';
+            x.p = x.p || {};
+            if (novo === doDia) delete x.p[nome]; else x.p[nome] = novo;
+            if (!Object.keys(x.p).length) delete x.p;
+            sujoF = true; pintar();
+          } }, ac === 'banco' ? `banco +${horasTxt(2 * m)}` : `pagar ${horasTxt(m)}`, (acerto[f.data] && acerto[f.data].p && nome in acerto[f.data].p) ? ' ✎' : '') : null;
+        return h('td', null, inp, dica, selo);
       }), h('td', { class: 'b' }, horasTxt(tot(nome))))));
       card.append(h('div', { class: 'table-wrap free' }, h('table', { class: 't feriados-t' },
         h('thead', null, h('tr', null, h('th', { class: 'l' }, 'Pessoa'), lista.map((f) => h('th', { title: f.nome }, `${f.data.slice(8)}/${f.data.slice(5, 7)}`)), h('th', null, 'Total')),
-          h('tr', { class: 'linha-horario' }, h('td', { class: 'l' }, 'Loja abre'), lista.map((f) => h('td', null, celulaHorario(f.data))), h('td'))),
-        tb, h('tfoot', null, h('tr', null, h('td', { class: 'l' }, 'Total'), lista.map((f) => h('td', null, horasTxt(totDia(f.data)))), h('td', null, horasTxt(lista.reduce((s, f) => s + totDia(f.data), 0))))))));
+          h('tr', { class: 'linha-horario' }, h('td', { class: 'l' }, 'Loja abre'), lista.map((f) => h('td', null, celulaHorario(f.data))), h('td')),
+          comBanco ? h('tr', { class: 'linha-acerto' }, h('td', { class: 'l' }, 'Acerto', TS.dica(`Banco de horas: as horas do feriado entram em dobro no saldo da pessoa (6h = +12h). Pagar: seguem para o fechamento, como antes. O padrão (${regrasBH.padrao === 'banco' ? 'banco' : 'pagar'}) está em Movimento e escala → Equipe e regras; tocar no selo da pessoa troca só para ela.`)),
+            lista.map((f) => {
+              const sel = h('select', { class: 'f-input bh-acerto', 'aria-label': `Acerto do feriado ${f.data}`, disabled: !editavel || null },
+                h('option', { value: 'banco', selected: ((acerto[f.data] && acerto[f.data].d) || regrasBH.padrao) === 'banco' || null }, 'Banco de horas (×2)'),
+                h('option', { value: 'pagar', selected: ((acerto[f.data] && acerto[f.data].d) || regrasBH.padrao) === 'pagar' || null }, 'Pagar'));
+              sel.addEventListener('change', () => { (acerto[f.data] ||= {}).d = sel.value; sujoF = true; pintar(); });
+              return h('td', null, sel);
+            }), h('td')) : null),
+        tb, h('tfoot', null, h('tr', null, h('td', { class: 'l' }, 'Total'), lista.map((f) => {
+          if (!comBanco) return h('td', null, horasTxt(totDia(f.data)));
+          let b = 0, pg = 0; for (const [nm, mm] of Object.entries(hv[f.data] || {})) if (acertoDe(f.data, nm) === 'banco') b += mm; else pg += mm;
+          return h('td', null, horasTxt(totDia(f.data)), b || pg ? h('small', { class: 'muted bh-tot' }, [b ? `banco +${horasTxt(2 * b)}` : '', pg ? `pagar ${horasTxt(pg)}` : ''].filter(Boolean).join(' · ')) : null);
+        }), h('td', null, horasTxt(lista.reduce((s, f) => s + totDia(f.data), 0))))))));
       card.append(h('div', { class: 'feriado-rodape' }, h('span', { class: 'muted' },
         `Quem vendeu no feriado entra sozinho com as horas do horário da loja naquele dia (até a jornada de ${horasTxt(jornada)}; acima de 6h desconta o intervalo) — mudou o horário, as horas acompanham. Para corrigir, digite em cima (07:20, 7h20 ou 7,5); apagar = não trabalhou. "↺ automático" desfaz a correção.${editavel ? ' Clique em Salvar para guardar as correções.' : ''}`)));
     }

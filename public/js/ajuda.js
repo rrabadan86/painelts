@@ -126,8 +126,10 @@
       ['Projeção do mês', 'Onde as vendas da meta fecham no ritmo de agora.'],
       ['Total a pagar', 'Comissões + premiações + quem bateu a meta individual.'],
       ['Comissão por vendedora', 'Cada categoria com o vendido, a meta e a comissão.'],
+      ['Feriados do mês', 'Horas de cada pessoa em cada feriado. "Acerto": banco de horas (entra em dobro no saldo: 6h = +12h) ou pagar no fechamento; tocar no selo da pessoa troca só para ela.'],
     ], [
       ['E se eu escolher só uma semana?', 'A comissão continua pela meta do mês; a tela mostra a meta daquele período.'],
+      ['O feriado vai para o banco ou é pago?', 'O padrão está em Movimento e escala → Equipe e regras. No cartão de feriados dá para mudar o dia todo ou só uma pessoa. O e-mail e o PDF do fechamento mostram o que foi para o banco e o que é para pagar.'],
     ]],
     ['minha', 'Equipe', 'Minha comissão', 'A meta e a comissão de cada vendedora (a vendedora vê só a dela).', 'Toda a equipe', [
       ['Sua meta de hoje', 'A sua parte da meta de hoje.'],
@@ -142,7 +144,9 @@
       ['Movimento por hora', 'Cupons de cada hora de cada dia da semana.'],
       ['Jornada por dia', 'Carga da semana ÷ dias de trabalho da escala (6x1: 6, 5x2: 5, 4x3: 4). Ex.: 44h na 6x1 = 7h20 por dia.'],
       ['Intervalo', 'Acima de 6h por dia: 1h; de 4h a 6h: 15 min (CLT). A pessoa fica na loja a jornada + o intervalo.'],
+      ['Banco de horas', 'Saldo de cada pessoa: + feriados no banco (×2) e lançamentos a crédito; − folgas pelo banco (a jornada) e horas devidas. Positivo = a loja deve; negativo = a pessoa deve.'],
     ], [
+      ['Como funciona o banco de horas?', 'Aba Banco de horas: feriado no banco entra em dobro; "Folga pelo banco" na escala desconta a jornada do dia; lançamentos com motivo valem para o resto. Compensa do mais antigo. A hora que a pessoa deve vence em 6 meses (ou 12, nas regras) e some; o crédito dela não vence: o painel avisa para dar a folga ou pagar.'],
       ['Posso usar a escala 4x3?', 'Pode: 4 dias de trabalho e 3 folgas. A jornada passa de 8h por dia e precisa de acordo de compensação; o painel avisa se passar de 10h, o máximo da CLT.'],
     ]],
     ['checklist', 'Equipe', 'Checklist', 'Abertura e fechamento: marque cada item quando fizer.', 'Toda a equipe', [

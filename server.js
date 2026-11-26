@@ -206,6 +206,8 @@ function filtrarPorPerfil(data, perfilDados) {
         ...m,
         contabilidade: [],
         escalaAjustes: {},
+        feriadosAcerto: {},
+        bancoHoras: null, // banco de horas: só gestão (a vendedora não vê o das colegas)
         feriadosHoras: Object.fromEntries(Object.entries(m.feriadosHoras || {}).map(([ym, dias]) => [
           ym,
           Object.fromEntries(Object.entries(dias || {}).map(([dt, pp]) => [
@@ -232,7 +234,7 @@ async function pacote(lojas, force, perfilDados = 'completo', desde = null) {
   const metaCfgs = lojas.map((l, i) => {
     const atual = cfgLojas.find((x) => x.id === l.id) || l;
     const r = entradas[i].raw;
-    return { id: l.id, nome: atual.nome, nomesVenda: r.metaCfg?.nomesVenda || [], padrao: atual.meta ?? r.metaPlanilha ?? null, meses: atual.metas || {}, metaAuto: atual.metaAuto || null, regras: atual.regras || null, operacao: atual.operacao || null, ferias: atual.ferias || [], feriadosLocais: atual.feriadosLocais || [], feriadosHoras: atual.feriadosHoras || {}, feriadosHorario: atual.feriadosHorario || {}, escalaAjustes: atual.escalaAjustes || {}, wpp: atual.wppModelos || null, wppApres: atual.wppApresentacao || null, wppIntervalo: atual.wppIntervalo || 21, contabilidade: atual.contabilidade || [] };
+    return { id: l.id, nome: atual.nome, nomesVenda: r.metaCfg?.nomesVenda || [], padrao: atual.meta ?? r.metaPlanilha ?? null, meses: atual.metas || {}, metaAuto: atual.metaAuto || null, regras: atual.regras || null, operacao: atual.operacao || null, ferias: atual.ferias || [], feriadosLocais: atual.feriadosLocais || [], feriadosHoras: atual.feriadosHoras || {}, feriadosHorario: atual.feriadosHorario || {}, escalaAjustes: atual.escalaAjustes || {}, feriadosAcerto: atual.feriadosAcerto || {}, bancoHoras: atual.bancoHoras || null, wpp: atual.wppModelos || null, wppApres: atual.wppApresentacao || null, wppIntervalo: atual.wppIntervalo || 21, contabilidade: atual.contabilidade || [] };
   });
   // celular trocado pelo painel (vínculo da conversa do WhatsApp, src/celulares.js): entra na chave para o pacote mudar junto
   const CEL = require('./src/celulares');
@@ -291,7 +293,7 @@ const APP_SCRIPTS = [
   'core.js', 'errostela.js', 'contas.js', 'metadia.js', 'components.js', 'dicas.js', 'rules.js', 'pages.js', 'fidelidade.js',
   'msgwpp.js', 'recompra.js', 'clientes.js', 'campretorno.js', 'campanhas.js', 'conversas.js', 'zap.js', 'espera.js', 'extras.js', 'contabilidade.js',
   'ruptura.js', 'visaodono.js', 'classeprod.js', 'grupoprod.js', 'fotoprod.js', 'custodata.js', 'estoque.js', 'devolucao.js', 'precos.js', 'inventario.js', 'sugestoes.js', 'validade.js', 'nfsaida.js', 'creditos.js', 'orcamento.js', 'checklist.js',
-  'sitedia.js', 'site.js', 'conferencia.js', 'conferencia-tela.js', 'inicio.js', 'pedido.js', 'ia.js', 'dre.js', 'apagar.js', 'comprasvendas.js', 'efeitopreco.js', 'equipe.js', 'mapa.js', 'feriados.js', 'fidretorno.js',
+  'sitedia.js', 'site.js', 'conferencia.js', 'conferencia-tela.js', 'inicio.js', 'pedido.js', 'ia.js', 'dre.js', 'apagar.js', 'comprasvendas.js', 'efeitopreco.js', 'equipe.js', 'mapa.js', 'bancohoras.js', 'feriados.js', 'fidretorno.js',
   'guia.js', 'notificacoes.js', 'novidades.js', 'ajuda.js', 'config.js', 'script.js', 'fechamento.js', 'sistema.js', 'main.js',
 ];
 let bundleMem = null, bundleCheckEm = 0;
@@ -491,6 +493,10 @@ app.use('/api/demo', (req, res, next) => {
   next();
 });
 // a apresentação entra como administrador (tudo visível, nada é salvo: o navegador barra qualquer alteração)
+// banco de horas na apresentação: a tela troca na memória; as rotas só respondem (nada é gravado)
+app.put('/api/demo/banco-horas/regras', (req, res) => res.json({ ok: true, demo: true }));
+app.post('/api/demo/banco-horas/lanc', (req, res) => res.json({ ok: true, demo: true, id: 'demo' + Date.now().toString(36) }));
+app.post('/api/demo/banco-horas/lanc/apagar', (req, res) => res.json({ ok: true, demo: true }));
 app.get('/api/demo/novidades', (req, res) => {
   // apresentação: a janela não abre sozinha (nada é guardado); pelo menu, mostra as novidades de quem vê tudo
   const NOV = require('./src/novidades');
@@ -3430,8 +3436,25 @@ app.put('/api/feriados', express.json({ limit: '200kb' }), (req, res) => {
       horLimpos[data] = { abre: hr.abre, fecha: hr.fecha, fechado: false };
     }
   }
+  // banco de horas (BANCO-01): acerto de cada feriado do mês — { data: { d: 'banco'|'pagar', p: { NOME: 'banco'|'pagar' } } }
+  const ac = req.body && req.body.acerto;
+  let acLimpo = null;
+  if (ac && typeof ac === 'object') {
+    acLimpo = {};
+    const OK = ['banco', 'pagar'];
+    for (const [data, x] of Object.entries(ac)) {
+      if (!DATA.test(data) || !data.startsWith(ym) || !x || typeof x !== 'object') return res.status(400).json({ erro: `Acerto inválido em ${data}.` });
+      const o = {};
+      if (x.d != null) { if (!OK.includes(x.d)) return res.status(400).json({ erro: `Acerto inválido em ${data}.` }); o.d = x.d; }
+      if (x.p && typeof x.p === 'object') {
+        for (const [nome, v] of Object.entries(x.p)) { if (!OK.includes(v)) return res.status(400).json({ erro: `Acerto inválido de ${nome} em ${data}.` }); (o.p ||= {})[String(nome).trim().toUpperCase().slice(0, 60)] = v; }
+      }
+      if (Object.keys(o).length) acLimpo[data] = o;
+    }
+  }
   C.alterar((cfg) => {
     const l = cfg.lojas.find((x) => x.id === loja.id);
+    if (acLimpo) { l.feriadosAcerto = l.feriadosAcerto || {}; if (Object.keys(acLimpo).length) l.feriadosAcerto[ym] = acLimpo; else delete l.feriadosAcerto[ym]; }
     if (horarios && typeof horarios === 'object') {
       l.feriadosHorario = Object.fromEntries(Object.entries(l.feriadosHorario || {}).filter(([d]) => !d.startsWith(ym)));
       Object.assign(l.feriadosHorario, horLimpos);
@@ -3465,7 +3488,7 @@ app.put('/api/escala-ajustes', express.json({ limit: '200kb' }), (req, res) => {
       const n = String(nome).trim().toUpperCase().slice(0, 40);
       if (!a || !['folga', 'trab'].includes(a.tipo)) return res.status(400).json({ erro: `Ajuste inválido de ${nome} em ${data}.` });
       if (a.tipo === 'trab' && (!HM.test(a.ini || '') || !HM.test(a.fim || '') || a.ini >= a.fim)) return res.status(400).json({ erro: `Confira o horário de ${nome} em ${data} (entrada antes da saída).` });
-      (limpo[data] ||= {})[n] = { ...(a.tipo === 'trab' ? { tipo: 'trab', ini: a.ini, fim: a.fim } : { tipo: 'folga' }), ...(a.repete === true ? { repete: true } : {}) }; // repete: vai para os próximos meses ao replicar
+      (limpo[data] ||= {})[n] = { ...(a.tipo === 'trab' ? { tipo: 'trab', ini: a.ini, fim: a.fim } : { tipo: 'folga', ...(a.banco === true ? { banco: true } : {}) }), ...(a.repete === true && a.banco !== true ? { repete: true } : {}) }; // banco: folga pelo banco de horas (só pontual) // repete: vai para os próximos meses ao replicar
     }
   }
   C.alterar((cfg) => {
@@ -3474,6 +3497,66 @@ app.put('/api/escala-ajustes', express.json({ limit: '200kb' }), (req, res) => {
     if (Object.keys(limpo).length) l.escalaAjustes[ym] = limpo; else delete l.escalaAjustes[ym];
   });
   C.auditar(req.user, 'ajustou escala do mês', loja.id, { loja: loja.id, mes: ym, dias: Object.keys(limpo).length });
+  packCache.clear();
+  res.json({ ok: true });
+});
+
+// ---------- banco de horas dos feriados (BANCO-01…, decisão do dono 26/11/2026) ----------
+// quem ajusta a escala: admin, franqueado e gerente com Movimento e escala; a conta é public/js/bancohoras.js
+function lojaBanco(req, res) {
+  if (req.get('X-Painel') !== '1') { res.status(403).json({ erro: 'Pedido inválido.' }); return null; }
+  const telas = C.telasDo(C.usuario(req.user));
+  const pode = req.perfil === 'admin' || req.perfil === 'franqueado' || (req.perfil === 'gerente' && (telas || []).includes('mapa'));
+  if (!pode) { res.status(403).json({ erro: 'Sem permissão.' }); return null; }
+  const loja = req.lojas.find((l) => l.id === String(req.query.loja || ''));
+  if (!loja) { res.status(400).json({ erro: 'Escolha a loja.' }); return null; }
+  return loja;
+}
+app.put('/api/banco-horas/regras', express.json({ limit: '10kb' }), (req, res) => {
+  const loja = lojaBanco(req, res); if (!loja) return;
+  const b = req.body || {};
+  const padrao = b.padrao === 'pagar' ? 'pagar' : b.padrao === 'banco' ? 'banco' : null;
+  const prazo = [6, 12].includes(+b.prazo) ? +b.prazo : null;
+  const desde = /^\d{4}-(0[1-9]|1[0-2])$/.test(b.desde || '') ? b.desde : null;
+  if (!padrao || !prazo || !desde) return res.status(400).json({ erro: 'Confira o padrão do feriado, o prazo (6 ou 12 meses) e o mês de início.' });
+  C.alterar((cfg) => { const l = cfg.lojas.find((x) => x.id === loja.id); l.bancoHoras = { ...(l.bancoHoras || {}), padrao, prazo, desde }; });
+  C.auditar(req.user, 'alterou as regras do banco de horas', loja.id, { loja: loja.id, padrao, prazo, desde });
+  packCache.clear();
+  res.json({ ok: true });
+});
+app.post('/api/banco-horas/lanc', express.json({ limit: '10kb' }), (req, res) => {
+  const loja = lojaBanco(req, res); if (!loja) return;
+  const b = req.body || {};
+  const nome = String(b.nome || '').trim().toUpperCase().slice(0, 60);
+  const min = Number(b.min);
+  const motivo = String(b.motivo || '').replace(/[\r\n]/g, ' ').trim().slice(0, 120);
+  const hoje = C.diaSP(Date.now());
+  if (!nome || !/^\d{4}-\d{2}-\d{2}$/.test(b.data || '') || b.data > hoje) return res.status(400).json({ erro: 'Escolha a pessoa e uma data até hoje.' });
+  if (!Number.isInteger(min) || !min || Math.abs(min) > 200 * 60) return res.status(400).json({ erro: 'Horas inválidas (até 200h por lançamento).' });
+  if (!motivo) return res.status(400).json({ erro: 'Escreva o motivo do lançamento.' });
+  const id = crypto.randomBytes(6).toString('hex');
+  const por = (C.usuario(req.user) || {}).nome || req.user;
+  C.alterar((cfg) => {
+    const l = cfg.lojas.find((x) => x.id === loja.id);
+    l.bancoHoras = l.bancoHoras || {};
+    l.bancoHoras.lanc = [...(l.bancoHoras.lanc || []), { id, nome, data: b.data, min, motivo, por: String(por).slice(0, 40), em: new Date().toISOString() }].slice(-2000);
+  });
+  C.auditar(req.user, 'lançou no banco de horas', loja.id, { loja: loja.id, pessoa: nome, data: b.data, min });
+  packCache.clear();
+  res.json({ ok: true, id });
+});
+app.post('/api/banco-horas/lanc/apagar', express.json({ limit: '5kb' }), (req, res) => {
+  const loja = lojaBanco(req, res); if (!loja) return;
+  const id = String((req.body && req.body.id) || '');
+  let achou = null;
+  C.alterar((cfg) => {
+    const l = cfg.lojas.find((x) => x.id === loja.id);
+    const lista = (l.bancoHoras && l.bancoHoras.lanc) || [];
+    achou = lista.find((x) => x.id === id) || null;
+    if (achou) l.bancoHoras.lanc = lista.filter((x) => x.id !== id);
+  });
+  if (!achou) return res.status(404).json({ erro: 'Lançamento não encontrado.' });
+  C.auditar(req.user, 'apagou um lançamento do banco de horas', loja.id, { loja: loja.id, pessoa: achou.nome, data: achou.data, min: achou.min });
   packCache.clear();
   res.json({ ok: true });
 });

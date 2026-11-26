@@ -173,6 +173,7 @@
       fonte('os créditos com a franquia', () => avisosCreditos(de('franquia'))),
       fonte('os custos das notas', () => avisosCusto(de('estoque'))),
       fonte('os descontos', () => avisosPadrao(de('vendas'), analise)),
+      fonte('o banco de horas', () => (TS.bancoHoras ? TS.bancoHoras.avisos(de('outros')) : null)),
     ].map(([nomeF, fn]) => Promise.resolve().then(fn).catch((e) => { console.error(`[início] ${nomeF}:`, e); falhas.push(nomeF); }).then(() => { if (avisos.isConnected) pintar(); }));
     Promise.all(tarefas).then(() => { terminou = true; pend.remove(); if (avisos.isConnected) pintar(); });
   };
