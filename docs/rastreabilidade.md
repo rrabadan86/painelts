@@ -239,7 +239,8 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 | BANCO-07 | Rotas: lançar/apagar lançamento e regras (`/api/banco-horas/*`) só admin, franqueado e gerente com Movimento e escala, com X-Painel, loja conferida e auditoria; motivo obrigatório, data até hoje, até 200h; acerto do feriado validado em `/api/feriados`; a vendedora não recebe o banco nem os acertos no `/api/dados` | `server.js` (`lojaBanco`, `filtrarPorPerfil`) | `permissoes-telas.test` "BANCO-07…" | ✅ |
 | BANCO-08 | Aba Movimento e escala → Banco de horas: herói (saldo da equipe · folga ou pagar · feriados no mês), saldo por pessoa (TS.table + linha no celular), extrato ao tocar, "+ Lançamento"; regras no cartão "Banco de horas" de Equipe e regras | `bancohoras.js` (`tela`, `cartaoRegras`); `mapa.js` | `banco-horas.spec` BANCO-08 | ✅ |
 | BANCO-09 | Cartão de feriados (Comissionamento): linha "Acerto" por feriado e selo por pessoa ("banco +12h00" / "pagar 12h00", os dois em dobro, tocar troca só para ela); total do dia separa banco e pagar; aviso no Início do crédito que passou do prazo ou chega ao prazo em 30 dias | `feriados.js`; `bancohoras.js` (`avisos`); `inicio.js` | `banco-horas.spec` BANCO-09 | 🟡 (aviso do Início sem teste) |
-| BANCO-10 | E-mail e PDF do fechamento: feriado "→ banco"/"→ pagar", "Feriados a pagar (em dobro)", "Banco de horas" (saldo e o de antes), "Horas de feriado a pagar" no total; PDF com colunas Acerto/Vale (×2) e o quadro do mês; PDF da escala com B/P no feriado, "Folga (banco)" e o saldo de cada pessoa | `contabilidade.js`; `extras.js` (`paginasFechamento`); `mapa.js` (`saldoBanco`) | `banco-horas.spec` BANCO-10 | 🟡 (PDF sem teste) |
+| BANCO-10 | E-mail e PDF do fechamento: feriado "→ banco"/"→ pagar", "Feriados a pagar (em dobro)", "Banco de horas" (saldo e o de antes), "Horas de feriado a pagar" no total; PDF com colunas Acerto/Vale (×2) e o quadro do mês; PDF da escala com B/P no feriado, "Folga (banco)" e o saldo de cada pessoa (coluna do resumo, ESC-DEVE-01) | `contabilidade.js`; `extras.js` (`paginasFechamento`); `mapa.js` (`saldoBanco`) | `banco-horas.spec` BANCO-10 | 🟡 (PDF sem teste) |
+| ESC-DEVE-01 | Resumo do mês da escala (pedido do dono, 26/11/2026): coluna "Deveria trabalhar" = carga semanal ÷ 7 × dias do mês, sem férias e feriados com a loja fechada; embaixo das horas líquidas, a diferença; coluna "Saldo do banco" (saldo de hoje); no celular, "líquidas de Xh", diferença e banco; no PDF da escala o saldo fica só nessa coluna | `mapa.js` (`deveria`, `resumoMes`, `tabelaMob`) | `banco-horas.spec` "ESC-DEVE-01" | ✅ |
 
 ## 8. Equipe, metas e comissão (EQP)
 
@@ -780,7 +781,7 @@ Contado pelas linhas da matriz (`node scripts/matriz.js --resumo`; o guardião c
 | NF-e, devolução e notas de entrada (NFE) | 49 | 34 | 11 | 4 |
 | Dinheiro com a franquia (FRQ) | 19 | 13 | 6 | 0 |
 | Coletor e robôs (COL) | 7 | 1 | 2 | 4 |
-| Escala, horários, feriados e férias (ESC) | 42 | 17 | 12 | 13 |
+| Escala, horários, feriados e férias (ESC) | 43 | 18 | 12 | 13 |
 | Equipe, metas e comissão (EQP) | 13 | 4 | 3 | 6 |
 | Estoque, inventário, lotes e pedido (EST) | 82 | 50 | 15 | 17 |
 | Preços, custos e notas de entrada (PRC) | 42 | 15 | 8 | 19 |
@@ -790,7 +791,7 @@ Contado pelas linhas da matriz (`node scripts/matriz.js --resumo`; o guardião c
 | Orçamento (ORC) | 7 | 5 | 1 | 1 |
 | Checklist, fechamento e avisos (OPE) | 13 | 6 | 3 | 4 |
 | Estrutura do painel e atualização (APP) | 50 | 31 | 13 | 6 |
-| **Total** | **536** | **300 (56%)** | **127 (24%)** | **109 (20%)** |
+| **Total** | **537** | **301 (56%)** | **127 (24%)** | **109 (20%)** |
 <!-- resumo:fim -->
 
 ## Próximas etapas

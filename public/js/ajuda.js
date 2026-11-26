@@ -144,6 +144,7 @@
       ['Movimento por hora', 'Cupons de cada hora de cada dia da semana.'],
       ['Jornada por dia', 'Carga da semana ÷ dias de trabalho da escala (6x1: 6, 5x2: 5, 4x3: 4). Ex.: 44h na 6x1 = 7h20 por dia.'],
       ['Intervalo', 'Acima de 6h por dia: 1h; de 4h a 6h: 15 min (CLT). A pessoa fica na loja a jornada + o intervalo.'],
+      ['Deveria trabalhar', 'No resumo do mês da escala: carga semanal ÷ 7 × dias do mês, sem férias e feriados com a loja fechada. Embaixo das horas líquidas, quanto falta ou sobra; ao lado, o saldo do banco.'],
       ['Banco de horas', 'Saldo de cada pessoa: + feriados no banco (×2) e lançamentos a crédito; − folgas pelo banco (a jornada) e horas devidas. Positivo = a loja deve; negativo = a pessoa deve.'],
     ], [
       ['Por que a folga fixa mudou de dia?', 'O máximo de pessoas de folga no mesmo dia e o mínimo de pessoas na loja valem mais que a folga fixa. Se o dia já está cheio, a folga vai para outro dia da semana, e a escala mostra o motivo ao passar o dedo na folga.'],
