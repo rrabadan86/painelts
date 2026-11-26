@@ -23,6 +23,14 @@ import sys, types, json, os
 os.environ.update({'SAIDA_ARQUIVO': '/tmp/nao-usado.xlsx', 'APPNEXT_REDE': 'teste', 'APPNEXT_USER': 'teste', 'APPNEXT_PASS': 'teste'})  # valores de mentira: a página do teste não é o site
 pw = types.ModuleType('playwright'); api = types.ModuleType('playwright.sync_api'); api.sync_playwright = None; api.TimeoutError = TimeoutError
 sys.modules['playwright'] = pw; sys.modules['playwright.sync_api'] = api
+# módulos que o robô usa e o ambiente de testes pode não ter (o teste só usa preencher_login)
+def falso(nome, **attrs):
+    try: __import__(nome)
+    except ImportError:
+        m = types.ModuleType(nome); m.__dict__.update(attrs); sys.modules[nome] = m
+falso('dotenv', load_dotenv=lambda *a, **k: None)
+falso('openpyxl', Workbook=object)
+falso('openpyxl.styles', Font=object, Alignment=object)
 sys.path.insert(0, ${JSON.stringify(path.join(raiz, 'coletor'))})
 import nextsoft_export_to_drive as N
 logs = []
