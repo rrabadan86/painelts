@@ -91,12 +91,17 @@ function fotoFim(fotos, ym) {
  */
 function resumo(id, { notas = [], saidas = [], notasDesde = null } = {}) {
   const fotos = ler(id);
-  const compras = {}, devol = {}, franq = {}, outros = {};
+  const compras = {}, devol = {}, franq = {}, outros = {}, lista = {}, fora = {};
+  const r2n = (v) => Math.round((v || 0) * 100) / 100;
   for (const n of notas) {
-    if (!/compra/i.test(n.motivo || '') || !/^conclu/i.test(n.status || '')) continue;
     const ym = String(n.entrada || n.emissao || '').slice(0, 7);
     if (!/^\d{4}-\d{2}$/.test(ym)) continue;
     const v = (n.itens || []).reduce((a, i) => a + ((+i.qtd > 0 && +i.custo > 0) ? +i.qtd * +i.custo : 0), 0);
+    const ref = { nf: String(n.nf || ''), entrada: String(n.entrada || n.emissao || '').slice(0, 10), forn: String(n.fornecedor || '').trim(), valor: r2n(v), total: n.total != null ? r2n(+n.total) : null };
+    // notas do mês que ficaram fora da conta, com o porquê (DRE-COMPRAS-01: o dono confere nota a nota no ⓘ)
+    if (!/compra/i.test(n.motivo || '')) { (fora[ym] || (fora[ym] = [])).push({ ...ref, porque: `não é compra (${n.motivo || 'sem motivo'})` }); continue; }
+    if (!/^conclu/i.test(n.status || '')) { (fora[ym] || (fora[ym] = [])).push({ ...ref, porque: `não concluída no AppNext (${n.status || 'sem situação'})` }); continue; }
+    (lista[ym] || (lista[ym] = [])).push(ref);
     compras[ym] = (compras[ym] || 0) + v;
     // compras da franquia (TSB) × outros fornecedores (pedido do dono, 25/11/2026; CMV-FORN-01)
     if (ehFranquia(n.fornecedor)) franq[ym] = (franq[ym] || 0) + v;
@@ -115,7 +120,8 @@ function resumo(id, { notas = [], saidas = [], notasDesde = null } = {}) {
     if (notasDesde && `${ym}-01` < String(notasDesde).slice(0, 10)) continue; // as notas de compra guardadas não cobrem o mês inteiro: sem as compras a conta sairia errada
     const r2 = (v) => Math.round((v || 0) * 100) / 100;
     const outs = [...((outros[ym] && outros[ym].entries()) || [])].map(([nome, valor]) => ({ nome, valor: r2(valor) })).sort((a, b) => b.valor - a.valor);
-    out[ym] = { ini, fim, compras: r2(compras[ym]), comprasFranquia: r2(franq[ym]), comprasOutros: r2(outs.reduce((a, x) => a + x.valor, 0)), fornecedores: outs.slice(0, 20), devolucoes: r2(devol[ym]) };
+    out[ym] = { ini, fim, compras: r2(compras[ym]), comprasFranquia: r2(franq[ym]), comprasOutros: r2(outs.reduce((a, x) => a + x.valor, 0)), fornecedores: outs.slice(0, 20), devolucoes: r2(devol[ym]),
+      notas: (lista[ym] || []).sort((a, b) => (a.entrada < b.entrada ? -1 : 1)), fora: (fora[ym] || []).sort((a, b) => (a.entrada < b.entrada ? -1 : 1)) };
   }
   return out;
 }

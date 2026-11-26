@@ -227,12 +227,13 @@
       ['Receita líquida', 'Receita bruta − descontos − Simples. Os % das linhas são sobre ela.'],
       ['CMV', 'Com as fotos do estoque: estoque inicial + compras − estoque final. Sem elas: custo do que foi vendido + perdas conhecidas.', C],
       ['Perdas e acertos', 'A diferença entre o CMV pelo estoque e o custo do que foi vendido.', C],
-      ['Compras', 'Abertas em "Da franquia (TSB)" e "Outros fornecedores".', C],
+      ['Compras', 'Notas de compra concluídas no AppNext com entrada no mês (não a emissão), a custo, abertas em "Da franquia (TSB)" e "Outros fornecedores". O ⓘ lista cada nota que entrou e as que ficaram fora, com o porquê. Só aparece com o mês fechado.', C],
       ['Margem de contribuição', 'Lucro bruto − despesas variáveis.', C],
       ['Resultado líquido', 'Margem de contribuição − despesas fixas ± resultado financeiro.', C],
       ['✎ Valor real do mês', 'Toque no valor de uma despesa para lançar o valor real daquele mês.', C],
     ], [
       ['A receita bruta é maior que o faturamento do Resumo. Por quê?', 'A receita bruta é o preço cheio; tirando os descontos, chega ao faturamento do Resumo.'],
+      ['Por que as compras do mês em andamento aparecem com "—"?', 'A conta pelo estoque precisa da foto do estoque do fim do mês. Até a virada, o CMV é o custo do que foi vendido + as perdas conhecidas.', C],
       ['A devolução entra na conta?', 'Não é descontada no CMV: o crédito dela volta uma vez, nos royalties ou no desconto da nota.', C],
     ]],
     ['config', 'Configurações', 'Configurações', 'Lojas, usuários, mensagens, metas e os acessos da loja.', 'Só admin e franqueado', [
