@@ -300,7 +300,7 @@
           x.cadTxt ? h('small', { class: 'muted cv-item-cad' }, `cadastro: ${x.cadTxt}`) : null,
           h('small', { class: 'cv-item-ult' }, x.ult.robo ? '🤖 ' : '', x.ultTxt),
           x.semResposta || !x.cliente || naoQuerDe(x.cliente) ? h('span', { class: 'cv-item-et' }, ...[
-            x.semResposta ? h('span', { class: 'badge warn', title: 'Mensagens do cliente depois da última resposta da loja: a conversa espera resposta.' }, `${fmt.int(x.semResposta)} sem resposta`) : null,
+            x.semResposta ? h('span', { class: 'badge warn', title: 'Mensagens do cliente depois da última resposta da loja: a conversa espera resposta. Agradecimento, "ok", emoji, figurinha e pedido para parar não contam.' }, `${fmt.int(x.semResposta)} sem resposta`) : null,
             naoQuerDe(x.cliente) ? h('span', { class: 'badge erro', title: 'Pediu para não receber mensagens: o painel e o robô não enviam.' }, '🚫 não quer') : null,
             x.cliente ? null : h('span', { class: 'badge cinza' }, 'sem cadastro'),
           ].filter(Boolean)) : null)));

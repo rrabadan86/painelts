@@ -109,7 +109,7 @@
       ['Compra no mesmo dia do envio conta?', 'Não: o painel não sabe se foi antes ou depois da mensagem.'],
     ]],
     ['conversas', 'Clientes', 'Conversas', 'As conversas do WhatsApp da loja, ligadas aos clientes.', 'Só admin e franqueado', [
-      ['N sem resposta', 'Mensagens do cliente depois da última resposta da loja.'],
+      ['N sem resposta', 'Mensagens do cliente depois da última resposta da loja. Agradecimento, "ok", emoji, figurinha e pedido para parar não contam.'],
       ['Responder', 'Só texto, pelo número da loja.'],
       ['Fotos e áudios', 'Buscados no WhatsApp só ao tocar; não ficam guardados no painel.'],
       ['Este número é de…', 'Liga o número a um cliente que trocou de celular: passa a valer em todo o painel.'],
