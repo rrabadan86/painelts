@@ -562,8 +562,10 @@ def robo_agora(loja):
     with lock:
         t = dict(trabalho)
         n = len(fila) + len(fila_hist)
+    # fila parada: tem pedido esperando, ninguém rodando e o laço não dá volta há mais de 1 min
+    parado = bool(n) and not t and time.time() - batida_trab > 60
     if not t:
-        return {"livre": True, "fila": n}
+        return {"livre": True, "fila": n, "parado": parado}
     return {"livre": False, "fila": n, "inicio": t.get("inicio"), "gatilho": t.get("gatilho"), "outraLoja": t.get("loja") != loja}
 
 
@@ -1052,9 +1054,23 @@ def rodar(job):
 trabalho = {}  # o que o robô principal está fazendo agora
 
 
+batida_trab = time.time()  # última volta do trabalhador (a tela avisa se a fila parou de andar — NF-FILA-01)
+
+
 def trabalhador():
-    global trabalho
+    """laço da fila: nunca pode morrer (antes, um erro fora do try parava a fila e o pedido ficava "na fila" para sempre)"""
     while True:
+        try:
+            _volta_trabalhador()
+        except BaseException as e:  # noqa: BLE001
+            log(f"trabalhador: erro inesperado no laço da fila ({type(e).__name__}: {e}); seguindo")
+            time.sleep(2)
+
+
+def _volta_trabalhador():
+    global trabalho, batida_trab
+    while True:
+        batida_trab = time.time()
         job = None
         with lock:
             if fila:
@@ -1084,8 +1100,10 @@ def trabalhador():
                         inv_est[job["loja"]] = {**inv_est.get(job["loja"], {}), "estado": "parado"}
                     else:
                         _estado(job["loja"])["estado"] = "parado"
-            with lock:
-                trabalho = {}
+            finally:
+                with lock:
+                    trabalho = {}
+            continue
         else:
             time.sleep(2)
 

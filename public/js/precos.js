@@ -629,6 +629,14 @@
     const logPre = h('pre', { class: 'inv-log nf-sinc-log' });
     const logBox = h('details', { class: 'nf-sinc-logbox', hidden: true, open: state.nfSincLogAberto || null, ontoggle: (e) => { state.nfSincLogAberto = e.target.open; } },
       h('summary', null, h('span', { class: 'nf-sinc-logtit' }, 'Log do robô')), logPre);
+    // "na fila": o número que o coletor devolve conta o próprio pedido desta loja (mostrava "1" esperando sem ninguém à frente);
+    // o que segura a fila é o robô ocupado com outra tarefa — diz qual e desde quando (NF-FILA-01)
+    const filaTxt = (s) => {
+      if (s.roboParado) return '⚠ a fila do robô parou de andar (ninguém está rodando): reinicie o coletor na VPS (docker compose restart coletor) e clique de novo.';
+      const r = s.robo;
+      const desde = r && r.inicio ? ` desde ${new Date(r.inicio).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}` : '';
+      return r ? `⏳ na fila: o robô está ${r.outraLoja ? 'atualizando outra loja' : 'terminando outra tarefa desta loja'}${desde}; começa logo depois…` : '⏳ na fila: começa em instantes…';
+    };
     const pintarLog = (s) => {
       const box = document.querySelector('.nf-sinc-logbox') || logBox, pre = box.querySelector('pre') || logPre, tit = box.querySelector('.nf-sinc-logtit');
       const linhas = (s.log || []).filter((l) => String(l).trim());
@@ -637,7 +645,7 @@
       if (tit) tit.textContent = s.estado === 'rodando' ? `Log do robô (ao vivo, desde ${quando(s.inicio)})`
         : s.estado === 'na_fila' ? `Na fila desde ${quando(s.criado)}${fazendo}`
         : s.fim ? `Log da última atualização (${quando(s.fim)} · ${s.estado === 'ok' ? 'concluída' : 'falhou'}${s.itens ? ' · ' + s.itens.join(', ') : ''})` : 'Log do robô';
-      pre.textContent = linhas.length ? linhas.join('\n') : s.estado === 'na_fila' ? 'Aguardando a vez na fila…' : 'Sem log.';
+      pre.textContent = linhas.length ? linhas.join('\n') : s.estado === 'na_fila' ? filaTxt(s).replace('⏳ ', '').replace(/^na fila: /, 'Aguardando: ') : 'Sem log.';
       box.hidden = !(linhas.length || s.estado === 'na_fila' || s.estado === 'rodando');
       if (s.estado === 'rodando' && box.open) pre.scrollTop = pre.scrollHeight;
     };
@@ -648,11 +656,13 @@
       clearTimeout(sinc[loja]);
       const passo = async () => {
         if (!btn.isConnected && !document.querySelector('.nf-sinc')) { delete sinc[loja]; return; }
-        let s; try { s = await (await fetch(TS.api(url), { credentials: 'same-origin' })).json(); } catch { s = {}; }
+        let s; try { const r = await fetch(TS.api(url), { credentials: 'same-origin' }); s = r.ok ? await r.json() : null; } catch { s = null; }
+        // sem resposta (o coletor reiniciando, a internet caindo): continua acompanhando — antes a tela congelava em "na fila" (NF-FILA-01)
+        if (!s) { const v = document.querySelector('.nf-sinc-st') || st; v.textContent = '⏳ sem resposta do coletor agora; tentando de novo…'; sinc[loja] = setTimeout(passo, 8000); return; }
         const vivo = document.querySelector('.nf-sinc-st') || st;
         pintarLog(s);
         if (s.estado === 'na_fila' || s.estado === 'rodando') {
-          vivo.textContent = s.estado === 'na_fila' ? `⏳ na fila do robô${s.fila ? ` (${s.fila} na frente)` : ''}…` : '⏳ buscando no AppNext…';
+          vivo.textContent = s.estado === 'na_fila' ? filaTxt(s) : '⏳ buscando no AppNext…';
           const b = document.querySelector('.nf-sinc'); if (b) b.disabled = true;
           sinc[loja] = setTimeout(passo, 5000); return;
         }
