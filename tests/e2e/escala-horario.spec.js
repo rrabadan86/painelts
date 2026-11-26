@@ -372,3 +372,29 @@ test('ESC-4X3-01: escala 4x3 — 4 dias por semana, jornada carga ÷ 4 e o aviso
   expect(box.info).toContain('máximo da CLT');
   expect(box.ruim).toBe(true);
 });
+
+// ESC-10 (print do dono, 26/11/2026): 3 pessoas na 5x2, todas com folga fixa na segunda e "no máximo 1 de folga por dia":
+// a segunda ficava sem ninguém (quem folgou no domingo + as duas da folga fixa). O limite vale mais que a folga fixa.
+test('ESC-10: no máximo N de folga no mesmo dia, mesmo com a folga fixa no mesmo dia para todos; mínimo de pessoas respeitado', async ({ page }) => {
+  await page.goto('/apresentacao'); await page.waitForFunction(() => window.TS && TS._escala);
+  const r = await page.evaluate(() => {
+    const H = (abre, fecha) => ({ abre, fecha, fechado: false });
+    const op = {
+      funcionamento: { seg: H('10:00', '22:00'), ter: H('10:00', '22:00'), qua: H('10:00', '22:00'), qui: H('10:00', '22:00'), sex: H('10:00', '22:00'), sab: H('10:00', '22:00'), dom: H('14:00', '20:00') },
+      equipe: { funcionarios: 3, cargaSemanal: 42, escala: '5x2', intervalo: 60, capacidade: 4, modelo: 'rodizio', maxFolgaDia: 1 },
+    };
+    const need = Array.from({ length: 7 }, (_, wd) => Array(24).fill(wd === 5 ? 3 : wd === 6 ? 2 : 1)); // sáb 3, dom 2, outros 1
+    const pessoas = ['LYANDRA', 'GABRIELLY', 'RENATA'].map((nome, i) => ({ nome, folga: 'seg', folga2: ['qua', 'ter', 'qui'][i], turno: 'tanto' }));
+    const out = TS._escala.montarRodizio(need, op, pessoas);
+    const ruins = [];
+    out.semanas.forEach((sem, w) => { for (let wd = 0; wd < 7; wd++) {
+      const folgas = sem.turnosP.filter((p) => !p[wd]).length;
+      if (folgas > 1 || 3 - folgas < 1) ruins.push(`semana ${w + 1}, dia ${wd}: ${folgas} de folga`);
+    } });
+    const folgasPorPessoa = out.semanas.map((sem) => sem.turnosP.map((p) => p.filter((t) => !t).length));
+    return { ruins, folgasPorPessoa, motivos: out.semanas.flatMap((s) => s.motivos.flat()).filter((m) => /já tinha o máximo/.test(m)).length };
+  });
+  expect(r.ruins).toEqual([]);
+  for (const sem of r.folgasPorPessoa) expect(sem).toEqual([2, 2, 2]); // 5x2: 2 folgas para cada uma
+  expect(r.motivos).toBeGreaterThan(0); // a folga que saiu da segunda diz o porquê
+});
