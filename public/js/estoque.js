@@ -1662,7 +1662,16 @@
         const tot = h('span', { class: 'est-cat-tot' });
         totais.set(c.id, tot);
         const nomeCat = h('input', { class: 'f-input est-cat-nome', value: c.nome, maxlength: 30, title: 'Nome da categoria (clique para mudar)', oninput: (e) => { c.nome = e.target.value; } });
-        const add = h('button', { type: 'button', class: 'btn est-cat-add', onclick: () => { itens.push({ nome: '', tipo: 'mes', valor: '', aplica: 'tudo', cat: c.id }); pintarOutros(); sujo(); const ins = outrosBox.querySelectorAll(`tr[data-cat="${c.id}"] input`); } }, '+ Custo');
+        const add = h('button', { type: 'button', class: 'btn est-cat-add', onclick: () => {
+          // CUSTO-ADD-01 (dono, 26/11/2026: "clico em + Custo e nada acontece"): a linha nova entra logo embaixo do cabeçalho
+          // da categoria (antes ia para o fim e, no celular, ficava fora da tela), já com o cursor no nome
+          const novo = { nome: '', tipo: 'mes', valor: '', aplica: 'tudo', cat: c.id };
+          const i0 = itens.findIndex((x) => x.cat === c.id);
+          if (i0 >= 0) itens.splice(i0, 0, novo); else itens.push(novo);
+          pintarOutros(); sujo();
+          const tr = outrosBox.querySelector(`tr[data-cat="${c.id}"]`);
+          if (tr) { tr.classList.add('est-cat-novo'); const campo = tr.querySelector('input'); tr.scrollIntoView({ block: 'center' }); if (campo) campo.focus({ preventScroll: true }); }
+        } }, '+ Custo');
         const remCat = c.id !== 'outros' && !l.length ? h('button', { type: 'button', class: 'est-outro-rem', title: 'Apagar esta categoria (vazia)', onclick: () => { cats.splice(cats.indexOf(c), 1); pintarOutros(); sujo(); } }, '✕ categoria') : null;
         corpoT.append(h('tr', { class: 'est-cat-cab' }, h('td', { colspan: 7 }, h('div', { class: 'est-cat-l' }, nomeCat, tot, add, remCat))));
         if (!l.length) corpoT.append(h('tr', { class: 'est-cat-vazia' }, h('td', { colspan: 7, class: 'muted' }, 'Nenhum custo nesta categoria.')));

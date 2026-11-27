@@ -118,6 +118,7 @@ async function passo(lojaId, agora = Date.now(), { zap = require('./zap'), rnd =
   if (motivo === 'sem_whatsapp') {
     // número sem WhatsApp: sai da fila com o motivo e o robô segue (não conta como falha nem no teto)
     CAMP.marcar(lojaId, msg.campanha, msg.rodada, msg.cliente.cpf, 'x', POR, 'sem WhatsApp');
+    try { ZF.registrarSemWpp(lojaId, msg.para, msg.cliente.cpf, agora); } catch (e) { console.error('[zap] sem WhatsApp:', C.msgErro(e)); }
     // trava (decisão do dono): N clientes SEGUIDOS sem WhatsApp é sinal de que a conferência do número falhou —
     // o robô pausa sozinho em vez de marcar a lista inteira por engano
     let seguidos = 0, pausouSem = false;

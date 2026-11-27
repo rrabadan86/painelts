@@ -4375,3 +4375,6 @@ td .meta-selo { display: flex; margin-left: auto; width: max-content; }
   .cfg-metas-t tbody tr.atual { background: var(--gold-l); }
   .cfg-metas-t .f-input { width: 120px; }
 }
+
+/* custo recém-adicionado (CUSTO-ADD-01): destaque para a pessoa ver onde ele entrou */
+.t tbody tr.est-cat-novo td, .est-cat-w > .est-cat-t > tbody > tr.est-cat-novo { background: var(--gold-l); }

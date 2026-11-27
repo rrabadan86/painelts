@@ -114,3 +114,21 @@ test('DESP-CAB-01: custos da loja — o cabeçalho fica preso no topo ao rolar a
   expect(r.deLado, 'a lista não rola para o lado').toBeLessThanOrEqual(1);
   expect(r.pagina, 'a página não rola para o lado').toBeLessThanOrEqual(1);
 });
+
+// CUSTO-ADD-01 (dono, 26/11/2026: "clico em + Custo e nada acontece"): a linha nova aparece logo embaixo da categoria, à vista e com o cursor no nome
+test('CUSTO-ADD-01: "+ Custo" põe a linha nova à vista, embaixo da categoria, com o cursor no nome', async ({ page }) => {
+  await page.goto('/apresentacao');
+  await page.waitForFunction(() => window.TS && TS.db && TS.state.loja && TS.state.loja !== 'todas');
+  await page.evaluate(() => TS.editarCustos(TS.state.loja));
+  const cab = page.locator('.est-cat-fixos tr.est-cat-cab').first();
+  await expect(cab).toBeVisible();
+  const antes = await page.locator('.est-cat-fixos tr.est-cat-item').count();
+  await cab.locator('.est-cat-add').click();
+  await expect(page.locator('.est-cat-fixos tr.est-cat-item')).toHaveCount(antes + 1);
+  const novo = page.locator('.est-cat-fixos tr.est-cat-novo');
+  await expect(novo).toHaveCount(1);
+  await expect(novo.locator('input').first()).toBeFocused();
+  await expect(novo.locator('input').first()).toBeInViewport();
+  // é a primeira linha da categoria (logo depois do cabeçalho)
+  expect(await novo.evaluate((tr) => tr.previousElementSibling && tr.previousElementSibling.classList.contains('est-cat-cab'))).toBe(true);
+});

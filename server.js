@@ -1390,6 +1390,8 @@ app.post('/api/campanhas/:id/marcar', express.json({ limit: '4kb' }), (req, res)
   const b = req.body || {};
   const r = CAMP.marcar(id, req.params.id, String(b.rodada || ''), String(b.cpf || ''), String(b.st || ''), req.user, b.motivo ? String(b.motivo) : null, b.v == null ? null : Number(b.v));
   if (r.erro) return res.status(400).json({ erro: r.erro });
+  // voltou para a fila: a loja conferiu o número, o robô pode tentar de novo (ZAP-SEMWPP-MEM-01)
+  if (String(b.st) === 'p') { try { require('./src/zapfila').esquecerSemWpp(id, String(b.cpf || '')); } catch { /* sem robô */ } }
   res.json({ ok: true, item: r.ok });
 });
 // copiar para outras lojas (só as que a pessoa acessa): chega lá como "campanha recebida" para montar a lista

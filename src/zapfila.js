@@ -157,6 +157,8 @@ function relogio(agora) {
  * semana (fechado → null), de 30 minutos antes de abrir (MARGEM_ABRE_MIN) até 30 minutos antes de fechar (MARGEM_FECHA_MIN). Sem funcionamento cadastrado (ou horario 'proprio'): das/as/dias.
  */
 const DIAS_OP = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab'];
+/** número conferido "sem WhatsApp" fica fora das campanhas do robô por este tempo (pedido do dono, 27/11/2026; ZAP-SEMWPP-MEM-01) */
+const SEM_WPP_DIAS = 180;
 const SEM_WPP_PAUSA = 5; // decisão do dono: 5 clientes seguidos "sem WhatsApp" pausam o robô (a conferência do número pode ter falhado)
 const MARGEM_FECHA_MIN = 30; // decisão do dono: pelo horário da loja, o robô para 30 minutos antes de fechar
 const MARGEM_ABRE_MIN = 30; // decisão do dono (23/11/2026): e começa 30 minutos antes de abrir
@@ -268,7 +270,7 @@ const enviadosCampanhaHoje = (c, dia) => c.rodadas.reduce((n, r) => n + r.lista.
  * → { marcar: [{ campanha, rodada, cpf, st, motivo, optout? }], msg?: { id, campanha, nome, rodada, cliente, para, texto, v }, motivo? }
  * `marcar` são os clientes que saem da fila sem receber (pediu para não receber, recebeu há pouco, sem celular válido).
  */
-function decidir({ cfg, estado, campanhas, contatos, preparo, naoquer, enviados, intervalo, agora, janela, horarioLoja, conversas }) {
+function decidir({ cfg, estado, campanhas, contatos, preparo, naoquer, enviados, semwpp, intervalo, agora, janela, horarioLoja, conversas }) {
   const marcar = [];
   const fim = (motivo) => ({ marcar, motivo });
   if (!estado.ligado) return fim('desligado');
@@ -284,7 +286,7 @@ function decidir({ cfg, estado, campanhas, contatos, preparo, naoquer, enviados,
   if (!todasRobo.length) return fim('sem_campanha');
   const robos = todasRobo.filter((c) => !M.foraDoPeriodo(c, r.dia)); // só as campanhas dentro do período (início e término)
   if (!robos.length) return fim('fora_periodo');
-  contatos = contatos || {}; preparo = preparo || {}; naoquer = porChave(naoquer); enviados = porChave(enviados);
+  contatos = contatos || {}; preparo = preparo || {}; naoquer = porChave(naoquer); enviados = porChave(enviados); semwpp = porChave(semwpp);
   let conferir = false, limite = false, estoque = false, emConversa = false;
   for (const c of ordemDoRodizio(robos, cfg.bloco || PADRAO.bloco)) {
     const rod = c.rodadas[0];
@@ -305,6 +307,9 @@ function decidir({ cfg, estado, campanhas, contatos, preparo, naoquer, enviados,
       if (p.para && naoquer[foneChave(p.para)]) { sai(it, 'o', ORIGEM_RESPOSTA, { optout: true, para: p.para }); continue; }
       if (p.espera) { estoque = true; continue; } // a mensagem ofereceria produto sem estoque: continua na lista
       if (!NUMERO.test(p.para || '')) { sai(it, 'x', 'sem celular válido'); continue; }
+      // já conferido sem WhatsApp (em outra campanha ou rodada): sai sem tentar de novo e sem contar para a pausa
+      const sw = semwpp[foneChave(p.para)];
+      if (sw && agora - Date.parse(sw.em) < SEM_WPP_DIAS * 864e5) { sai(it, 'x', `sem WhatsApp (conferido em ${String(sw.em).slice(8, 10)}/${String(sw.em).slice(5, 7)})`); continue; }
       const ja = enviados[foneChave(p.para)];
       if (ja && ja.cpf !== it.cpf && agora - Date.parse(ja.em) < intervalo * 864e5) { sai(it, 'x', 'mesmo celular de outro cliente que já recebeu'); continue; }
       if (adiadoAte(cfg, conversas, p.para, agora)) { emConversa = true; continue; } // conversando com a loja: fica pendente, o robô passa ao próximo
@@ -342,6 +347,22 @@ function adiadosConversa({ cfg, campanhas, preparo, conversas, agora }) {
 /** as últimas mensagens das conversas da loja (cliente ou loja, menos o robô), por número — vazio se der erro */
 function conversasDe(lojaId, agora = Date.now()) { try { return require('./conversas').ultimaConversa(lojaId, agora); } catch { return {}; } }
 
+/** guarda o número conferido sem WhatsApp (só a chave do número, a data e o CPF) */
+function registrarSemWpp(lojaId, para, cpf, agora = Date.now()) {
+  const m = porChave(lerJson(lojaId, 'semwpp'));
+  for (const k of Object.keys(m)) if (agora - Date.parse(m[k].em) > SEM_WPP_DIAS * 864e5) delete m[k];
+  m[foneChave(para)] = { em: new Date(agora).toISOString(), cpf: String(cpf || '') };
+  gravarJson(lojaId, 'semwpp', m);
+}
+/** "Voltar para a fila" (a loja conferiu que o número tem WhatsApp): esquece a marca desse cliente → quantas tirou */
+function esquecerSemWpp(lojaId, cpf) {
+  const m = porChave(lerJson(lojaId, 'semwpp'));
+  let n = 0;
+  for (const k of Object.keys(m)) if (m[k].cpf && m[k].cpf === String(cpf)) { delete m[k]; n++; }
+  if (n) gravarJson(lojaId, 'semwpp', m);
+  return n;
+}
+
 /** lê os dados da loja e decide: a próxima mensagem, ou o motivo de não haver */
 function proxima(lojaId, agora = Date.now()) {
   const loja = C.get().lojas.find((l) => l.id === lojaId);
@@ -350,7 +371,7 @@ function proxima(lojaId, agora = Date.now()) {
   return decidir({
     janela: janelaDoDia(loja, cfg, r.dia, r.sem), horarioLoja: cfg.horario !== 'proprio' && temFuncionamento(loja),
     cfg, estado: lerEstado(lojaId), campanhas: CAMP.ler(lojaId), contatos: lerContatos(lojaId), preparo: lerPreparo(lojaId),
-    naoquer: lerJson(lojaId, 'naoquer'), enviados: lerJson(lojaId, 'enviados'), intervalo: loja.wppIntervalo || 21, agora,
+    naoquer: lerJson(lojaId, 'naoquer'), enviados: lerJson(lojaId, 'enviados'), semwpp: lerJson(lojaId, 'semwpp'), intervalo: loja.wppIntervalo || 21, agora,
     conversas: cfg.esperaConversa > 0 ? conversasDe(lojaId, agora) : {},
   });
 }
@@ -441,7 +462,7 @@ function registrarEnvioNumero(lojaId, para, cpf, por, agora = Date.now()) {
 const sortear = (cfg, agora, rnd = Math.random) => agora + (cfg.min + Math.floor(rnd() * (cfg.max - cfg.min + 1))) * 1000;
 
 module.exports = {
-  foneChave, porChave, adiadoAte, adiadosConversa, adiadosDaLoja, adiadaDaConversa, conversasDe, janelaDoDia, agenda, temFuncionamento, MARGEM_FECHA_MIN, MARGEM_ABRE_MIN, SEM_WPP_PAUSA,
+  foneChave, porChave, adiadoAte, adiadosConversa, adiadosDaLoja, adiadaDaConversa, conversasDe, janelaDoDia, agenda, temFuncionamento, MARGEM_FECHA_MIN, MARGEM_ABRE_MIN, SEM_WPP_PAUSA, SEM_WPP_DIAS, registrarSemWpp, esquecerSemWpp,
   envioManualBloqueado, registrarEnvioNumero, PADRAO, PREPARO_DIAS, ORIGEM_RESPOSTA, ligarNumeroAoCliente, voltouAAceitar, MOTIVOS, NUMERO, fim4, cfgDe, validarCfg, relogio, enviadosHoje, campanhasDoRobo, vezDoRodizio, ordemDoRodizio, decidir, proxima, sortear,
   lerEstado, temEstado, mudarEstado, lerContatos, mudarContato, lerPreparo, gravarPreparo, limparPreparo, lerJson, gravarJson,
 };
