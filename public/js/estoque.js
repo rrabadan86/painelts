@@ -964,12 +964,15 @@
       const qtd = Math.max(0, it.qtd || 0);
       if (it.custo && qtd > 0) valorEstoque += qtd * it.custo;
       const dias = prev > 0 ? qtd / prev : null;
-      let pedir = Math.max(0, prev * H - qtd, (it.min || 0) - qtd);
+      // produto com saldo que nunca vendeu fica só em Parados: o mínimo do AppNext não pede reposição (EST-04, decisão do dono 27/11/2026)
+      const nuncaVendeu = ultimaVenda.get(it.cod) == null && qtd > 0;
+      const minEf = nuncaVendeu ? 0 : it.min || 0;
+      let pedir = Math.max(0, prev * H - qtd, minEf - qtd);
       pedir = it.un === 'Kg' ? Math.ceil(pedir * 10) / 10 : Math.ceil(pedir);
       let sit = 'ok';
       if (prev > 0 && qtd <= 0) sit = 'acabou';
       else if (dias != null && dias < ent) sit = 'falta';
-      else if (it.min && qtd < it.min) sit = 'minimo';
+      else if (minEf && qtd < minEf) sit = 'minimo';
       else if (dias != null && dias < H) sit = 'pedir';
       const ult = ultimaVenda.get(it.cod);
       const vendeuAlgumaVez = ult != null;
@@ -982,7 +985,7 @@
       sug = sug <= 0 ? null : it.un === 'Kg' ? Math.ceil(sug * 10) / 10 : Math.ceil(sug);
       const minSit = sug == null ? null : !it.min ? 'sem' : it.min > sug * 2 ? 'alto' : it.min < sug * 0.7 ? 'baixo' : 'ok';
       const linha = { cod: it.cod, produto: it.desc, tipo: TIPO_ITEM(it), it, qtd, min: it.min, sug, minSit, vel, prev, fator: sz.f, origem: sz.origem, dias, pedir, custoPedido: pedir * (it.custo || 0), sit };
-      if (vel > 0 || (it.min && qtd < it.min)) repo.push(linha);
+      if (vel > 0 || (minEf && qtd < minEf)) repo.push(linha);
       const parado = parados.length && parados[parados.length - 1].cod === it.cod;
       todos.push({ ...linha, valor: it.custo && qtd > 0 ? qtd * it.custo : 0, ultima: vendeuAlgumaVez ? TS.dayToIso(ult) : null, semVenda: vendeuAlgumaVez ? fim - ult : null, parado: !!parado, nunca: !vendeuAlgumaVez, foraLinha: foraLinhaDe(it.cod) });
     }

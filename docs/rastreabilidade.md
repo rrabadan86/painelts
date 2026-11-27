@@ -269,14 +269,14 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 | EST-01 | Estoque em tabela única; busca em todos os produtos | `estoque.js` | `estoque.spec` | ✅ |
 | EST-02 | Quadros do topo filtram a tabela | `estoque.js` | `estoque-regras.test` EST-02 (conta); `estoque.spec` (clique) | ✅ |
 | EST-03 | Quanto repor: previsão × (entrega + cobertura) − estoque, com época do ano | `estoque.js` (~841-899) | `estoque-regras.test` EST-03 | ✅ |
-| EST-04 | Situação: acabou / falta antes da entrega / abaixo do mínimo / pedir / OK | `estoque.js` | `estoque-regras.test` EST-04 | ✅ |
+| EST-04 | Situação: acabou / falta antes da entrega / abaixo do mínimo / pedir / OK (produto com saldo que nunca vendeu fica só em Parados: o mínimo do AppNext não pede reposição — decisão do dono, 27/11/2026) | `estoque.js` | `estoque-regras.test` EST-04 | ✅ |
 | EST-05 | Estoque parado: com saldo e sem venda há N dias | `estoque.js` | `estoque-regras.test` EST-05; `estoque.spec` (etiqueta) | ✅ |
 | EST-06 | Mínimo sugerido × mínimo do AppNext | `estoque.js` | `estoque-regras.test` EST-06 | ✅ |
 | EST-07 | Nota lançada depois da planilha de estoque | `estoque.js` | `estoque.spec` | 🟡 — conta notas que não são de compra |
 | EST-08 | Valor do estoque a custo (só com saldo e custo) | `estoque.js` | `estoque-regras.test` EST-08 | ✅ |
 | EST-09 | Consumo de saco e etiqueta pelos pacotes vendidos | `estoque.js` `consumo` | `estoque-regras.test` EST-09 | ✅ |
 | EST-10 | Baixar pedido em CSV | `estoque.js` | `estoque-regras.test` EST-10 (situação por extenso no CSV desde 27/11/2026) | ✅ |
-| EST-11 | Limites da configuração de estoque | `src/estoque.js` `validarCfg` | `estoque-regras.test` EST-11 | ✅ |
+| EST-11 | Limites da configuração de estoque (prazo de entrega em branco = 10 dias, decisão do dono 27/11/2026) | `src/estoque.js` `validarCfg` | `estoque-regras.test` EST-11 | ✅ |
 | EST-20 | Lote e validade só no chá a granel; faixas de validade | `lotes.js` | `lotes.test` (2) | ✅ |
 | EST-21 | Saldo dos lotes pela ordem de entrada | `lotes.js` | `lotes.test` | ✅ |
 | EST-22 | Editar nº do lote e validade | `lotes.js` | `lotes.test` "edição do nº do lote…" | ✅ |
@@ -760,8 +760,8 @@ Todos os da lista A foram conferidos no código, um por um.
 | I-02 | ~~Data comemorativa que vira o ano (ex.: 20/12 a 10/01) pegava a janela do ano seguinte em janeiro~~ — **corrigido** | EST-54 | `public/js/pedido.js` (`proximo`) |
 | I-03 | ~~"+ incluir itens" deixava a contagem do inventário passar de 2.000 itens~~ — **corrigido** | EST-40 | `inventario.js` (`adicionar`) |
 | I-04 | ~~CSV do pedido com a situação em código interno (`falta`, `minimo`)~~ — **corrigido** (texto da tela) | EST-10 | `estoque.js` |
-| I-05 | Produto de revenda que nunca vendeu e está abaixo do mínimo do AppNext aparece ao mesmo tempo em "O que repor" e em "Parados": confirmar com o dono | EST-04, EST-05 | `estoque.js` |
-| I-06 | Configuração do estoque aceita a entrega vazia como 0 dias e não confere se a margem mínima é menor que a alvo | EST-11 | `src/estoque.js` (`validarCfg`) |
+| I-05 | ~~Produto de revenda que nunca vendeu e abaixo do mínimo aparecia em "O que repor" e em "Parados"~~ — **decidido pelo dono**: fica só em Parados (o mínimo do AppNext não pede reposição de quem nunca vendeu) | EST-04, EST-05 | `estoque.js` |
+| I-06 | ~~Entrega vazia virava 0 dias~~ — **decidido pelo dono**: em branco = 10 dias (o padrão). Fica em aberto: não confere se a margem mínima é menor que a alvo | EST-11 | `src/estoque.js` (`validarCfg`) |
 | I-07 | ~~Texto "vencem em lote já vencido" na conta do produto do Pedido~~ — **corrigido** ("estão em lote já vencido") | EST-59 | `public/js/pedido.js` |
 
 ### E. Revisão dos dias 18 e 19/11 (5 revisores por área; corrigido com teste no mesmo PR)

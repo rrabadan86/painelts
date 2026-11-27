@@ -162,8 +162,8 @@ test('EST-03: quanto repor = previsão × (entrega + cobertura) − estoque, arr
   perto(r['27010'].vel, 0.05, 'chá: 30 pacotes de 50 g em 30 dias = 0,05 kg/dia');
   perto(r['27010'].pedir, 0.6, '0,05 × 21 − 0,5 = 0,55 kg → 0,6 kg (décimo para cima)');
   perto(r['27010'].custoPedido, 0.6 * 200);
-  // sem venda, só o mínimo do AppNext: 5 − 3 = 2
-  assert.strictEqual(r['503'].pedir, 2);
+  // nunca vendeu e tem saldo: fica só em Parados, o mínimo do AppNext não pede reposição (EST-04, decisão do dono 27/11/2026)
+  assert.strictEqual(r['503'].pedir, 0);
   // estoque de sobra: nada a pedir (mesmo com mínimo 30 < 100)
   assert.strictEqual(r['505'].pedir, 0);
   // o mínimo pede mais que a venda: Prato com 12 em estoque e mínimo 30 → 18 (a venda pediria 21 − 12 = 9)
@@ -207,7 +207,7 @@ test('EST-04: situação do item — acabou / falta antes da entrega / abaixo do
   const { rows } = await telaEstoque(vendasBase());
   const r = porCod(rows);
   assert.deepStrictEqual(js(['502', '500', '503', '504', '27010', '901', '505', '900'].map((c) => [c, r[c].sit])), [
-    ['502', 'acabou'], ['500', 'falta'], ['503', 'minimo'], ['504', 'pedir'], ['27010', 'pedir'], ['901', 'pedir'], ['505', 'ok'], ['900', 'ok']]);
+    ['502', 'acabou'], ['500', 'falta'], ['503', 'ok'], ['504', 'pedir'], ['27010', 'pedir'], ['901', 'pedir'], ['505', 'ok'], ['900', 'ok']]);
   // falta vence o mínimo: infusor com saldo 5 e mínimo 6 continua "falta" (dura 5 dias < 7 de entrega)
   const est = { ...ESTOQUE, itens: ITENS.map((i) => (i.cod === '500' ? { ...i, min: 6 } : i)) };
   assert.strictEqual(porCod((await telaEstoque(vendasBase(), { estoque: est })).rows)['500'].sit, 'falta');
@@ -216,17 +216,17 @@ test('EST-04: situação do item — acabou / falta antes da entrega / abaixo do
   assert.strictEqual(porCod((await telaEstoque(vendasBase(), { estoque: est2 })).rows)['504'].sit, 'minimo');
   // na tabela: etiqueta da situação (est); quem não está para repor vira parado / novo / sem saldo / ok
   assert.deepStrictEqual(js(['502', '500', '503', '504', '505', '506', '508', '510', '511'].map((c) => [c, r[c].est])), [
-    ['502', 'acabou'], ['500', 'falta'], ['503', 'minimo'], ['504', 'pedir'], ['505', 'ok'], ['506', 'parado'], ['508', 'ok'], ['510', 'novo'], ['511', 'semsaldo']]);
+    ['502', 'acabou'], ['500', 'falta'], ['503', 'parado'], ['504', 'pedir'], ['505', 'ok'], ['506', 'parado'], ['508', 'ok'], ['510', 'novo'], ['511', 'semsaldo']]);
 });
 
 test('EST-04: "O que repor" = situação diferente de OK com algo a pedir; fora de linha (90+ dias indisponível) não se repõe', async () => {
   const { heroi, TS, card } = await telaEstoque(vendasBase(), { aba: 'repor' });
   const rep = tabelaDe(card).rows.map((x) => x.cod).sort();
-  assert.deepStrictEqual(js(rep), ['27010', '500', '502', '503', '504', '901']);
+  assert.deepStrictEqual(js(rep), ['27010', '500', '502', '504', '901']);
   const col = heroi.find((c) => c.rot === 'Para repor');
-  assert.strictEqual(col.num, TS.fmt.int(6));
+  assert.strictEqual(col.num, TS.fmt.int(5));
   // urgentes = acabou + falta (bule e infusor); pedido sugerido = soma de pedir × custo
-  const pedido = 0.6 * 200 + 12 * 0.1 + 16 * 20 + 11 * 45 + 2 * 15 + 6 * 10;
+  const pedido = 0.6 * 200 + 12 * 0.1 + 16 * 20 + 11 * 45 + 6 * 10; // a xícara (nunca vendeu) não entra
   assert.strictEqual(col.linhas[0].el, `2 urgentes · pedido sugerido ${TS.fmt.brl0(pedido)}`);
   // infusor fora de linha há 100 dias: sai do "repor" e vira "liquidar"
   const fl = { indisp: { 500: iso(FIM - 100) }, dias: 90 };
@@ -317,7 +317,6 @@ test('EST-10: "Baixar pedido (CSV)" — a lista do O que repor, com ; , vírgula
     '901;Etiqueta;UN;30;12;0,10;1,20;Pedir',
     '500;Infusor;UN;5;16;20,00;320,00;Falta antes da entrega',
     '502;Bule;UN;0;11;45,00;495,00;Acabou',
-    '503;Xícara;UN;3;2;15,00;30,00;Abaixo do mínimo',
     '504;"Caneca; azul";UN;15;6;10,00;60,00;Pedir',
   ]);
   assert.strictEqual(ctx.__anchor.attrs.download, `pedido-l1-${HOJE}.csv`);
@@ -342,8 +341,8 @@ test('EST-05: parado = com saldo e custo, sem venda há paradoDias ou mais (limi
   assert.strictEqual(r['502'].parado, false, 'sem saldo não é parado');
   const linhas = heroi.find((c) => c.rot === 'Estoque a custo').linhas[1].attrs.a[0];
   const p = linhas.find((x) => x.rot.startsWith('Parado'));
-  // a xícara (PN sem venda, abaixo do mínimo) conta como parada E fica em "O que repor" pelo mínimo (ver o relatório)
-  assert.strictEqual(r['503'].parado, true); assert.strictEqual(r['503'].est, 'minimo');
+  // a xícara (PN sem venda, abaixo do mínimo) fica só em Parados, não em "O que repor" (decisão do dono, 27/11/2026)
+  assert.strictEqual(r['503'].parado, true); assert.strictEqual(r['503'].est, 'parado');
   assert.strictEqual(p.rot, 'Parado · 3 produtos sem venda há 60+ dias');
   assert.strictEqual(p.num, TS.fmt.brl0(3 * 15 + 4 * 10 + 2 * 5));
   // paradoDias configurável: 30 → a jarra (59 dias) também
@@ -360,7 +359,7 @@ test('EST-02: os números do herói levam à aba da tabela (TS.estFiltrar) e a a
   const segs = achar(card, (n) => n.tag === 'segFolha');
   assert.strictEqual(segs.length, 1);
   const abas = Object.fromEntries(segs[0].attrs.a[0].map(([rot, k]) => [k, rot]));
-  assert.strictEqual(abas.repor, 'O que repor (6)'); assert.strictEqual(abas.parados, 'Parados (3)');
+  assert.strictEqual(abas.repor, 'O que repor (5)'); assert.strictEqual(abas.parados, 'Parados (3)');
   assert.strictEqual(abas.saldo, `Com saldo (${ITENS.filter((i) => i.qtd > 0).length})`); assert.strictEqual(abas.todos, `Todos (${ITENS.length})`);
   assert.strictEqual(segs[0].attrs.a[1], 'repor', 'abre na aba pedida');
   // "Parado" no herói → aba Parados
@@ -378,7 +377,7 @@ test('EST-02: os números do herói levam à aba da tabela (TS.estFiltrar) e a a
   const ver = achar(heroi.find((c) => c.rot === 'Para repor').linhas[1], (n) => n.attrs['data-aba'] === 'repor')[0];
   ver.attrs.onclick();
   assert.strictEqual(segs[0].marcado, 'repor');
-  assert.strictEqual(tabelaDe(card).rows.length, 6);
+  assert.strictEqual(tabelaDe(card).rows.length, 5);
 });
 
 // ======================= EST-11: limites da configuração (servidor) =======================
@@ -389,6 +388,9 @@ test('EST-11: validarCfg — entrega 0–120, pedido 1–365, parado 7–730, se
   const B = { entregaDias: 7, coberturaDias: 14, paradoDias: 60, segurancaPct: 50, simplesPct: 6, cartaoPct: 2 };
   const o = ok(B);
   assert.deepStrictEqual([o.entregaDias, o.coberturaDias, o.paradoDias, o.segurancaPct], [7, 14, 60, 50]);
+  // prazo de entrega em branco = o padrão de 10 dias, nunca 0 (decisão do dono, 27/11/2026)
+  for (const v of ['', '  ', null, undefined]) assert.strictEqual(ok({ ...B, entregaDias: v }).entregaDias, 10);
+  assert.strictEqual(ok({ ...B, entregaDias: 0 }).entregaDias, 0, '0 digitado continua valendo');
   // padrões quando o campo não vem
   assert.deepStrictEqual([o.margemMin, o.margemAlvo, o.comprasTetoPct, o.prazoNotasDias, o.cartaoDias, o.royaltiesDia], [15, 30, 32, 30, 1, 10]);
   assert.strictEqual(ok({ ...B, segurancaPct: undefined }).segurancaPct, ES.PADRAO.segurancaPct);
