@@ -475,6 +475,8 @@
     return box;
   };
 
+  // situação do item: o mesmo texto na tabela e no CSV do pedido (EST-04, EST-10)
+  const SIT = { acabou: ['Acabou', 'erro', 0], falta: ['Falta antes da entrega', 'erro', 1], minimo: ['Abaixo do mínimo', 'erro', 2], pedir: ['Pedir', 'warn', 3], ok: ['OK', 'ok', 4] };
   function pintar(corpo, { estoque, cfg, historico, classe: ccfg, tabela, foraDeLinha, espera, compras }, modo = 'estoque') {
     corpo.replaceChildren();
     // cada tela põe só a sua parte (a conta é a mesma)
@@ -1016,7 +1018,6 @@
       const peloMin = r.min && r.min - r.qtd > precisa - r.qtd ? ` · o mínimo do AppNext pede mais: ${qtdTxt(r.min, r.it)} − estoque = ${qtdTxt(r.min - r.qtd, r.it)}` : '';
       return `${pelaVenda}${peloMin}. Arredondado para ${qtdTxt(r.pedir, r.it)}.`;
     };
-    const SIT = { acabou: ['Acabou', 'erro', 0], falta: ['Falta antes da entrega', 'erro', 1], minimo: ['Abaixo do mínimo', 'erro', 2], pedir: ['Pedir', 'warn', 3], ok: ['OK', 'ok', 4] };
     const repor = repo.filter((r) => r.sit !== 'ok' && r.pedir > 0 && !foraLinhaDe(r.cod)); // fora de linha não se repõe
     const urgentes = repor.filter((r) => r.sit === 'acabou' || r.sit === 'falta').length;
 
@@ -1566,7 +1567,7 @@
     const esc = (v) => { const s = v == null ? '' : String(v); return /[;"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
     const num = (v, d) => v.toFixed(d).replace('.', ',');
     const linhas = [['Código', 'Produto', 'Unidade', 'Estoque', 'Pedir', 'Custo unitário', 'Custo do pedido', 'Situação'].join(';'),
-      ...lista.map((r) => [r.cod, r.produto, r.it.un, num(r.qtd, r.it.un === 'Kg' ? 3 : 0), num(r.pedir, r.it.un === 'Kg' ? 1 : 0), num(r.it.custo || 0, 2), num(r.custoPedido, 2), r.sit].map(esc).join(';'))];
+      ...lista.map((r) => [r.cod, r.produto, r.it.un, num(r.qtd, r.it.un === 'Kg' ? 3 : 0), num(r.pedir, r.it.un === 'Kg' ? 1 : 0), num(r.it.custo || 0, 2), num(r.custoPedido, 2), SIT[r.sit] ? SIT[r.sit][0] : r.sit].map(esc).join(';'))];
     const blob = new Blob(['﻿' + linhas.join('\r\n')], { type: 'text/csv;charset=utf-8' });
     const a = h('a', { href: URL.createObjectURL(blob), download: `pedido-${state.loja}-${TS.hojeSP ? TS.hojeSP() : new Date().toISOString().slice(0, 10)}.csv` });
     document.body.append(a); a.click(); a.remove();
