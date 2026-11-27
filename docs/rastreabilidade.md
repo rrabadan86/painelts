@@ -515,6 +515,7 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 | ZAP-9DIG | O mesmo celular com e sem o 9º dígito é um número só (pedido do dono): "parar" respondido de conta antiga sem o 9 trava o cliente com o 9 no cadastro; "já recebeu" e o dono do número também; registros guardados das duas formas são juntados | `zapfila.js` (`foneChave`, `porChave`, `decidir`, `ligarNumeroAoCliente`, `voltouAAceitar`); `zaplaco.js` (`lerOptouts`, `enviados`) | `zapfila.test` ZAP-9DIG | ✅ |
 | ZAP-HORA-LOJA | O robô envia no horário de funcionamento da loja, dia a dia (decisão do dono): da abertura de 30 min antes de abrir até 30 min antes de fechar; feriado fechado ou com horário especial; dia fechado não envia; loja sem horário cadastrado ou "horário próprio" usa das/às/dias; a tela mostra a tabela, a faixa e a janela de ligar pelo mesmo horário (agenda do servidor) | `zapfila.js` (`janelaDoDia`, `agenda`, `MARGEM_FECHA_MIN`, `validarCfg`, `decidir`, `proxima`); `zap-api.js` (`situacao`: `agenda`, `horarioLoja`); `zap.js` (`estimar`, `horarioTxt`, cartão) | `zapfila.test` ZAP-HORA-LOJA e configuração; `zap-rotas.test` (situação com agenda; horario validado); `zap.spec` (cartão e janela de ligar) | ✅ |
 | ZAP-SEMWPP | Trava "sem WhatsApp seguidos" (decisão do dono): 5 clientes seguidos que o robô marca como sem WhatsApp pausam o robô sozinho (a conferência do número pode ter falhado); um envio certo no meio zera; auditoria sem número completo, aviso no aparelho e no Início, alerta na faixa com o caminho para os pulados | `zaplaco.js` (`passo`, `semWppSeguidos`); `zapfila.js` (`SEM_WPP_PAUSA`); `zap-api.js` (religar zera); `zap.js` (`.zap-alerta` na faixa) | `zapfila.test` ZAP-SEMWPP (pausa e zera); `zap.spec` ZAP-SEMWPP (alerta na faixa) | ✅ |
+| ZAP-SEMWPP-MEM-01 | Número conferido "sem WhatsApp" (pedido do dono, 27/11/2026: a mesma cliente aparecia em duas campanhas no mesmo dia) fica guardado 180 dias (`dados/<loja>/zap/semwpp.json`: só a chave do número, a data e o CPF); o robô tira esse número das outras campanhas e rodadas sem tentar de novo e sem contar para a pausa dos 5 seguidos ("sem WhatsApp (conferido em dd/mm)"); "Voltar para a fila" esquece a marca daquele cliente | `src/zapfila.js` (`decidir`, `registrarSemWpp`, `esquecerSemWpp`, `SEM_WPP_DIAS`), `src/zaplaco.js`, `server.js` (`/api/campanhas/:id/marcar`) | `zapfila.test` ZAP-SEMWPP-MEM-01 | ✅ |
 | SITE-01…04 | Site público `/site` e `/site/tecnico`: abre sem login, sem JavaScript, sem dado da instalação nem e-mail pessoal; contato só do `SITE_CONTATO` (https ou mailto); o resto da pasta continua fechado; a página técnica cita toda skill, regra e trava do projeto; aviso de projeto independente | `server.js` (`sitePagina`, `siteContato`); `public/site/*` | `push-rotas.test` SITE-01; `site-publico.test` SITE-02…03; `site.spec` SITE-04 | ✅ |
 | CLI-07 | Fidelidade: Logs do FIXE lidos sem repetir | `fidelidade.js` | `fidelidade.test` (3) | ✅ |
 | CLI-08 | Saldo de pontos por lotes que vencem; cancelamento via PDV | `public/js/fidelidade.js` | `blind`; `regras.spec` | 🟡 |
@@ -798,11 +799,11 @@ Contado pelas linhas da matriz (`node scripts/matriz.js --resumo`; o guardião c
 | Preços, custos e notas de entrada (PRC) | 42 | 15 | 8 | 19 |
 | Resultado e rentabilidade (RES) | 47 | 37 | 5 | 5 |
 | Vendas e métricas (VEN) | 28 | 13 | 8 | 7 |
-| Clientes, fidelidade, WhatsApp e lista de espera (CLI) | 76 | 63 | 9 | 4 |
+| Clientes, fidelidade, WhatsApp e lista de espera (CLI) | 77 | 64 | 9 | 4 |
 | Orçamento (ORC) | 7 | 5 | 1 | 1 |
 | Checklist, fechamento e avisos (OPE) | 13 | 6 | 3 | 4 |
 | Estrutura do painel e atualização (APP) | 50 | 31 | 13 | 6 |
-| **Total** | **548** | **311 (57%)** | **128 (23%)** | **109 (20%)** |
+| **Total** | **549** | **312 (57%)** | **128 (23%)** | **109 (20%)** |
 <!-- resumo:fim -->
 
 ## Próximas etapas

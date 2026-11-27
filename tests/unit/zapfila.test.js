@@ -835,3 +835,24 @@ test('ZAP-CONVERSA-07: a conversa não conta como "já recebeu" no intervalo da 
   assert.strictEqual(ZF.envioManualBloqueado({ lojaId: 'l1', cpf: CPF[3], contato: ZF.lerContatos('l1')[CPF[3]], para: NUM[3] }), null);
   assert.strictEqual(ZF.lerContatos('l1')[CPF[3]], undefined);
 });
+
+// ZAP-SEMWPP-MEM-01 (pedido do dono, 27/11/2026): número conferido "sem WhatsApp" não é tentado de novo em outra campanha
+test('ZAP-SEMWPP-MEM-01: número já conferido sem WhatsApp sai das outras campanhas sem tentar e sem contar para a pausa', async () => {
+  const zap = roboDeMentira({ resposta: () => ({ ok: false, motivo: 'sem_whatsapp' }) });
+  await ZL.passo('l1', QUARTA_10H, { zap, rnd: () => 0 });
+  const sw = ZF.porChave(ZF.lerJson('l1', 'semwpp'));
+  assert.ok(sw[ZF.foneChave(NUM[0])] && sw[ZF.foneChave(NUM[0])].cpf === CPF[0], 'guardou o número');
+  // na decisão pura: outra campanha com o mesmo número → marca "sem WhatsApp (conferido em …)" e passa ao próximo
+  const s = cena({ semwpp: { [NUM[0]]: { em: new Date(QUARTA_10H - DIA).toISOString(), cpf: CPF[0] } } });
+  const d = ZF.decidir(s);
+  assert.strictEqual(d.marcar.length, 1);
+  assert.strictEqual(d.marcar[0].cpf, CPF[0]);
+  assert.match(d.marcar[0].motivo, /^sem WhatsApp \(conferido em 03\/03\)$/);
+  assert.strictEqual(d.msg.cliente.cpf, CPF[1], 'segue para o próximo');
+  // depois de 180 dias, tenta de novo
+  const velho = cena({ semwpp: { [NUM[0]]: { em: new Date(QUARTA_10H - (ZF.SEM_WPP_DIAS + 1) * DIA).toISOString(), cpf: CPF[0] } } });
+  assert.strictEqual(ZF.decidir(velho).msg.cliente.cpf, CPF[0]);
+  // "Voltar para a fila" esquece a marca daquele cliente
+  assert.strictEqual(ZF.esquecerSemWpp('l1', CPF[0]), 1);
+  assert.deepStrictEqual(ZF.porChave(ZF.lerJson('l1', 'semwpp')), {});
+});
