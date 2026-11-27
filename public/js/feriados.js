@@ -29,11 +29,18 @@
     ].sort((x, y) => (x.data < y.data ? -1 : 1));
   };
 
+  /** data do feriado local naquele ano: o anual repete o dia/mês; 29/02 vira 28/02 nos anos que não são bissextos (ESC-29) */
+  const dataLocal = (f, ano) => {
+    if (f.anual === false) return f.data;
+    const md = f.data.slice(4);
+    const bissexto = (ano % 4 === 0 && ano % 100 !== 0) || ano % 400 === 0;
+    return `${ano}${md === '-02-29' && !bissexto ? '-02-28' : md}`;
+  };
   /** feriados de um mês para a loja: nacionais + locais (anuais repetem todo ano) */
   TS.feriadosDoMes = function (cfg, ym) {
     const ano = +ym.slice(0, 4);
     const nac = TS.feriadosNacionais(ano).filter((f) => f.data.startsWith(ym));
-    const loc = ((cfg && cfg.feriadosLocais) || []).map((f) => ({ data: f.anual !== false ? `${ano}${f.data.slice(4)}` : f.data, nome: f.nome, tipo: 'local', orig: f }))
+    const loc = ((cfg && cfg.feriadosLocais) || []).map((f) => ({ data: dataLocal(f, ano), nome: f.nome, tipo: 'local', orig: f }))
       .filter((f) => f.data.startsWith(ym));
     const vistos = new Set();
     return [...nac, ...loc].filter((f) => (vistos.has(f.data) ? false : vistos.add(f.data))).sort((a, b) => (a.data < b.data ? -1 : 1));
@@ -59,7 +66,7 @@
     const s = new Set();
     for (let a = anoIni; a <= anoFim; a++) {
       TS.feriadosNacionais(a).forEach((f) => s.add(f.data));
-      ((cfg && cfg.feriadosLocais) || []).forEach((f) => s.add(f.anual !== false ? `${a}${f.data.slice(4)}` : f.data));
+      ((cfg && cfg.feriadosLocais) || []).forEach((f) => s.add(dataLocal(f, a)));
     }
     return s;
   };
@@ -92,9 +99,10 @@
     }
     return out;
   }
-  const equipeDe = (cfg) => (cfg && cfg.operacao && cfg.operacao.equipe) || { cargaSemanal: 44, escala: '5x2' }; // o mesmo padrão da tela Equipe e regras
+  // sem equipe cadastrada: o mesmo padrão da tela Equipe e regras (44 h, 5x2 e o intervalo de 60 min — ESC-30)
+  const equipeDe = (cfg) => (cfg && cfg.operacao && cfg.operacao.equipe) || (TS.operacaoPadrao && TS.operacaoPadrao().equipe) || { cargaSemanal: 44, escala: '5x2', intervalo: 60 };
   const jornadaDe = (eq) => Math.round((eq.cargaSemanal * 60) / (TS.diasDaEscala ? TS.diasDaEscala(eq.escala) : 5)); // 6x1, 5x2 ou 4x3 (ESC-4X3-01)
-  /** horas automáticas de quem vendeu no feriado: horário da loja naquele dia (acima de 6h desconta o intervalo), até a jornada */
+  /** horas automáticas de quem vendeu no feriado: horário da loja naquele dia menos o intervalo da escala (sem a escala carregada: acima de 6h desconta o intervalo), até a jornada */
   function horasAuto(cfg, data) {
     const eq = equipeDe(cfg), jornada = jornadaDe(eq);
     const ef = TS.horarioFeriado(cfg, data);
@@ -280,7 +288,7 @@
           return h('td', null, horasTxt(totDia(f.data)), b || pg ? h('small', { class: 'muted bh-tot' }, [b ? `banco +${horasTxt(2 * b)}` : '', pg ? `pagar ${horasTxt(2 * pg)}` : ''].filter(Boolean).join(' · ')) : null);
         }), h('td', null, horasTxt(lista.reduce((s, f) => s + totDia(f.data), 0))))))));
       card.append(h('div', { class: 'feriado-rodape' }, h('span', { class: 'muted' },
-        `Quem vendeu no feriado entra sozinho com as horas do horário da loja naquele dia (até a jornada de ${horasTxt(jornada)}; acima de 6h desconta o intervalo) — mudou o horário, as horas acompanham. Para corrigir, digite em cima (07:20, 7h20 ou 7,5); apagar = não trabalhou. "↺ automático" desfaz a correção.${editavel ? ' Clique em Salvar para guardar as correções.' : ''}`)));
+        `Quem vendeu no feriado entra sozinho com as horas do horário da loja naquele dia (até a jornada de ${horasTxt(jornada)}, descontando o intervalo da escala da loja) — mudou o horário, as horas acompanham. Para corrigir, digite em cima (07:20, 7h20 ou 7,5); apagar = não trabalhou. "↺ automático" desfaz a correção.${editavel ? ' Clique em Salvar para guardar as correções.' : ''}`)));
     }
     pintar();
     return card;
