@@ -179,6 +179,30 @@
   }
 
   // ---------- escala sugerida (gulosa, em blocos de 30 min) ----------
+  /** soma (+1) ou tira (−1) o turno `o` da cobertura do dia, sem contar o intervalo */
+  function marcar(cobDia, o, d) {
+    for (let x = o.s; x < o.s + o.len; x++) if (!(o.pausa != null && x >= o.pausa && x < o.pausa + o.intSlots)) cobDia[x] += d;
+  }
+  /** onde o intervalo pode ficar num turno que começa em `s` (perto do meio, longe das pontas) */
+  function pausasPossiveis(s, len, intSlots) {
+    if (!intSlots) return [null];
+    const out = [];
+    for (let x = s + Math.floor(len / 2) - 2 * K; x <= s + Math.floor(len / 2) + K; x++) {
+      if (x < s + 4 * K || x + intSlots > s + len - 4 * K) continue;
+      out.push(x);
+    }
+    return out.length ? out : [s + Math.floor((len - intSlots) / 2)];
+  }
+  /** o que falta no dia com o turno `c` somado: horário vazio pesa muito mais que horário abaixo da necessidade */
+  function custoDia(needDia, cobDia, c) {
+    let t = 0;
+    for (let x = 0; x < needDia.length; x++) {
+      if (!needDia[x]) continue;
+      const tem = cobDia[x] + (x >= c.s && x < c.s + c.len && !(c.pausa != null && x >= c.pausa && x < c.pausa + c.intSlots) ? 1 : 0);
+      if (tem === 0) t += 100; else if (tem < needDia[x]) t += needDia[x] - tem;
+    }
+    return t;
+  }
   function montarEscala(need, op, nFunc) {
     const e = op.equipe;
     equipeAtual(e);
@@ -234,13 +258,61 @@
       const off = new Set(porFolga.slice(0, nOff).map(([, wd]) => wd));
       off.forEach((wd) => { folgasDia[wd]++; });
       const trab = new Set(ordem.filter(([, wd]) => !off.has(wd)).map(([, wd]) => wd));
-      const turnos = opcoes.map((o, wd) => {
+      const escolhidas = opcoes.map((o, wd) => {
         if (!o || !trab.has(wd)) return null;
-        for (let x = o.s; x < o.s + o.len; x++) if (!(o.pausa != null && x >= o.pausa && x < o.pausa + o.intSlots)) cob[wd][x]++;
-        return paraTurno(o, abertura[wd]);
+        marcar(cob[wd], o, 1);
+        return o;
       });
-      pessoas.push(turnos);
+      pessoas.push(escolhidas);
     }
+    // acerto da gulosa (ESC-14): quem veio antes escolheu sem saber dos outros; no dia com horário vazio, move o turno
+    // e o intervalo de cada pessoa enquanto isso diminuir o que falta, sem piorar a preferência de turno dela
+    // (às vezes é preciso mexer em duas de uma vez: uma vai para o fechamento e a outra troca o intervalo de lugar)
+    for (let wd = 0; wd < 7; wd++) {
+      const ab = abertura[wd];
+      if (!ab) continue;
+      const nd = slotsNeed[wd], cd = cob[wd];
+      const vazio = () => nd.some((v, x) => v > 0 && cd[x] === 0);
+      for (let r = 0; r < 4 && vazio(); r++) {
+        let mudou = false;
+        for (let p = 0; p < nFunc && vazio(); p++) {
+          const o = pessoas[p][wd];
+          if (!o) continue;
+          const prefAgora = encaixe(prefs[p], o.s, o.len, ab);
+          marcar(cd, o, -1);
+          let melhor = null, mNota = custoDia(nd, cd, o);
+          for (let s = ab[0]; s + o.len <= ab[1]; s++) {
+            if (encaixe(prefs[p], s, o.len, ab) < prefAgora - 1e-9) continue; // não piora a preferência de turno
+            for (const pausa of pausasPossiveis(s, o.len, o.intSlots)) {
+              const c = { ...o, s, pausa };
+              const n = custoDia(nd, cd, c);
+              if (n < mNota) { melhor = { c }; mNota = n; }
+              // junto: o intervalo de outra pessoa do dia muda de lugar
+              for (let q = 0; q < nFunc; q++) {
+                const oq = pessoas[q][wd];
+                if (q === p || !oq || oq.pausa == null) continue;
+                for (const pq of pausasPossiveis(oq.s, oq.len, oq.intSlots)) {
+                  if (pq === oq.pausa) continue;
+                  const nq = { ...oq, pausa: pq };
+                  marcar(cd, oq, -1); marcar(cd, nq, 1);
+                  const n2 = custoDia(nd, cd, c);
+                  marcar(cd, nq, -1); marcar(cd, oq, 1);
+                  if (n2 < mNota) { melhor = { c, q, nq }; mNota = n2; }
+                }
+              }
+            }
+          }
+          if (melhor) {
+            mudou = true;
+            pessoas[p][wd] = melhor.c;
+            if (melhor.nq) { marcar(cd, pessoas[melhor.q][wd], -1); pessoas[melhor.q][wd] = melhor.nq; marcar(cd, melhor.nq, 1); }
+          }
+          marcar(cd, pessoas[p][wd], 1);
+        }
+        if (!mudou) break;
+      }
+    }
+    for (let p = 0; p < nFunc; p++) pessoas[p] = pessoas[p].map((o, wd) => (o ? paraTurno(o, abertura[wd]) : null));
     // troca turnos do mesmo dia entre pessoas quando respeita melhor as preferências
     for (let wd = 0; wd < 7; wd++) {
       const ab = abertura[wd];
@@ -1196,11 +1268,9 @@
         AJ.sujo = false; AJ.msg = ''; TS.render();
       } catch (e) { btn.textContent = e.message; btn.disabled = false; }
     };
-    // replicar os ajustes para outro mês mantendo a alternância: cada dia recebe os ajustes do dia EQUIVALENTE do mês de origem
-    // (mesmo dia da semana, mesma semana do rodízio e a mesma ocorrência no mês: 1ª terça dessa semana do rodízio → 1ª terça).
-    // Ajuste pontual vai só para um dia (decisão do dono). Feriados e férias ficam de fora.
-    const ancoraR = inicioDe(op.equipe, op.equipe.inicioRodizio || INICIO_PADRAO);
-    const semR = (iso) => (L > 1 ? (((Math.round((diaMs(inicioDe(op.equipe, iso)) - diaMs(ancoraR)) / (7 * 86400000)) % L) + L) % L) : 0);
+    // replicar os ajustes para outro mês: só os marcados para repetir ("neste e nos próximos…"), em todos os mesmos dias da
+    // semana do mês de destino (`ajustesQueRepetem`). Ajuste pontual fica só no dia dele (decisão do dono).
+    // Feriados do destino ficam de fora; férias e quem saiu da equipe são tirados aqui.
     const nomesEq = new Set(pessoasDe(op.equipe).map((q) => q.nome.trim().toUpperCase()));
     const deFerias = (nome, iso) => ((cfg && cfg.ferias) || []).some((f) => String(f.vendedor).trim().toUpperCase() === nome && f.de <= iso && f.ate >= iso);
     function replicar(srcYm, dstYm, src) {

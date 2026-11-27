@@ -203,33 +203,33 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 | ESC-03 | Intervalo pela jornada: >8h "intervalo"; 4-8h "intervaloAte8"; ≤4h sem | `intervaloMin` | `esc` "intervalo… à parte" | ✅ |
 | ESC-04 | Aviso quando o intervalo fica abaixo da CLT | `abaixoClt` | `esc` (mesmo teste) | ✅ |
 | ESC-05 | Dia curto: encurta o trabalho, não o intervalo; >4h sempre com intervalo | `intervaloNoTurno` | `esc` "dia curto…", "turno curto de domingo…" | ✅ |
-| ESC-06 | Turno digitado ou cortado por feriado: intervalo pela jornada real | `pausaDoTurno` | `esc` "turno curto de domingo…" | 🟡 |
+| ESC-06 | Turno digitado ou cortado por feriado: intervalo pela jornada real | `pausaDoTurno` | `esc` "turno curto de domingo…"; `escala-regras.test.js` (faixas 4h/6h/8h) | ✅ |
 | ESC-07 | Jornada = carga semanal ÷ dias, em blocos de 10 min | `mapa.js` | `esc` (470 e 590 min) | ✅ |
-| ESC-08 | Pessoas por hora = pico ÷ atendimentos por pessoa; nunca abaixo do mínimo do dia | `necessidade`, `grade` | — | ❌ |
-| ESC-09 | Feriados fora do mapa de calor | `datasFeriado` | — | ❌ |
+| ESC-08 | Pessoas por hora = pico (80% dos dias) ÷ atendimentos por pessoa, arredondado para cima com folga de 0,15 (`ceil(pico ÷ cap − 0,15)`); nunca abaixo do mínimo do dia | `necessidade`, `grade` | `escala-regras.test.js` | ✅ |
+| ESC-09 | Feriados fora do mapa de calor | `datasFeriado` | `escala-regras.test.js` | ✅ |
 | ESC-10 | No máximo N de folga no mesmo dia e o mínimo de pessoas na loja valem mais que a folga fixa: dia cheio → a folga fixa vai para outro dia (motivo "a fixa de segunda já tinha o máximo de folgas"); antes, 3 pessoas com folga fixa na segunda deixavam a loja vazia (print do dono, 26/11/2026) ; cede só para a lei dos 6 dias seguidos (ESC-7DIAS-01) | `mapa.js` `montarRodizio` (`capFolga`) | `esc` "ESC-10: …" | ✅ |
 | ESC-7DIAS-01 | Ninguém trabalha mais de 6 dias seguidos (pedido do dono, 26/11/2026; DSR): cada semana do rodízio olha os dias seguidos no fim da semana anterior (`cauda`, duas passadas para a volta do ciclo) e põe a folga cedo o bastante (folga fixa tarde demais vai para antes, motivo "para não passar de 6 dias seguidos"); prioridade: mínimo de pessoas na loja > 6 dias seguidos > máximo de folgas por dia; na 6x1 o domingo/segunda do rodízio é folga a mais e a folga da semana continua; o aviso diz quando o máximo de folgas cedeu (e sugere a semana começando na segunda) e quando alguém ainda passaria de 6 dias (`seguidos`) | `mapa.js` `montarRodizio` (`cauda`, `limCedo`, `seguidos`), `cartaoRodizio` | `esc` "ESC-7DIAS-01: …" (5x2, 6x1, 4x3 × semana dom/seg × 3 a 5 pessoas) | ✅ |
 | ESC-ROD-DOM-01 | Modelo "Rodízio de domingo (só o domingo, sem a segunda)" (pedido do dono, 26/11/2026): o domingo gira igualmente, a segunda não vem junto; a outra folga da semana segue as regras (2ª folga, máximo por dia, mínimo na loja, 6 dias seguidos); em todo rodízio, quem folga no domingo usa só a 2ª folga, porque a folga fixa é "quando trabalha no domingo"; o servidor aceita `rodizio-dom` | `mapa.js` (`ehRodizio`, `puxaSegunda`, `montarRodizio`); `src/admin-api.js` | `esc` "ESC-ROD-DOM-01: …" e ESC-7DIAS-01 com os dois modelos | ✅ |
 | ESC-11 | Folgas de domingo giram igualmente | `montarRodizio` `domDe` | `esc` (indireto) | 🟡 — corte do ciclo com 9+ pessoas, ver B-05 |
 | ESC-12 | Folga no domingo puxa a segunda (mesma semana, ou a seguinte com semana Seg–Dom) | `montarRodizio` | `esc` "semana começando na segunda…" | 🟡 (Dom–Sáb sem teste) |
-| ESC-13 | Folga fixa; domingo não pode ser folga fixa; automático nos dias de menor movimento | `montarRodizio`; `validarOperacao` | — | ❌ |
-| ESC-14 | Preferência manhã/noite respeitada sem descobrir a loja | `encaixe`, `trocarPorPreferencia` | — | ❌ |
-| ESC-15 | Dia fechado: ninguém trabalha; domingo fechado: sem rodízio | `mapa.js` | — | ❌ |
+| ESC-13 | Folga fixa; domingo não pode ser folga fixa; automático nos dias de menor movimento | `montarRodizio`; `validarOperacao` (interna de `src/`, conferida pela rota) | `escala-regras.test.js` (3 testes) | ✅ |
+| ESC-14 | Preferência manhã/noite respeitada sem descobrir a loja; a escala livre cobre o dia inteiro quando a equipe dá | `encaixe`, `trocarPorPreferencia`, acerto em `montarEscala` | `escala-regras.test.js` (3 testes) | ✅ — corrigido, ver J-01 |
+| ESC-15 | Dia fechado: ninguém trabalha; domingo fechado: sem rodízio | `mapa.js` | `escala-regras.test.js` (2 testes) | ✅ |
 | ESC-16 | Semana começa no domingo ou na segunda | `semanaSeg`, `inicioDe` | `esc` (2 testes) | ✅ |
-| ESC-17 | "Semana 1" do rodízio a partir da data escolhida | `escalaDoMes` | — | ❌ |
-| ESC-18 | Horário do feriado: data > padrão de feriados > dia da semana | `TS.horarioFeriado` | `esc` "horário do feriado no cabeçalho" (só formato) | 🟡 |
+| ESC-17 | "Semana 1" do rodízio a partir da data escolhida | `escalaDoMes` | `escala-regras.test.js` | ✅ |
+| ESC-18 | Horário do feriado: data > padrão de feriados > dia da semana | `TS.horarioFeriado` | `esc` "horário do feriado no cabeçalho"; `feriados-regras.test.js` | ✅ |
 | ESC-19 | Férias aparecem na escala e travam o dia | `escalaDoMes` | — | ❌ — ligação pelo nome, ver B-06 |
-| ESC-20 | Feriado: fechado = Fechado; com horário = turno cortado; <1h = folga | `escalaDoMes` | `esc` (só `pausaDoTurno` e cabeçalho) | 🟡 |
+| ESC-20 | Feriado: fechado = Fechado; com horário = turno cortado; <1h = folga | `escalaDoMes` | `escala-regras.test.js` | ✅ |
 | ESC-21 | Ajuste manual trava a escolha e refaz as colegas; salva com permissão e auditoria | `mapa.js`; `/api/escala-ajustes` | `esc` "atalhos Abre/Meio/Fecha" | 🟡 — passa por cima de férias, ver B-03 |
-| ESC-22 | Repetir ajustes nos mesmos dias da semana (sem feriados e férias) | `mapa.js` | — | ❌ |
-| ESC-23 | Replicar/trazer ajustes de mês seguindo o rodízio | `mapa.js` `replicar` | — | ❌ |
-| ESC-24 | Horas líquidas = total − intervalo (dia, semana, mês) | `mapa.js` | `esc` "horas líquidas por dia…" (1ª célula) | 🟡 |
-| ESC-25 | Exportar escala em PDF | `mapa.js` `imprimir` | — | ❌ |
+| ESC-22 | Repetir ajustes nos mesmos dias da semana (sem feriados; férias tiradas no editor e no replicar) | `ajustesQueRepetem`; `mapa.js` | `escala-regras.test.js` (2 testes) | ✅ |
+| ESC-23 | Replicar/trazer para o mês seguinte só os ajustes que repetem, nos mesmos dias da semana (o pontual fica no dia dele) | `mapa.js` `replicar`, `ajustesQueRepetem` | `escala-regras.test.js` (2 testes) | 🟡 — o botão na tela não tem teste |
+| ESC-24 | Horas líquidas = total − intervalo (dia, semana, mês) | `mapa.js` | `esc` "horas líquidas por dia…"; `escala-regras.test.js` | ✅ |
+| ESC-25 | Exportar escala em PDF (abre a janela de impressão do navegador, "Salvar como PDF") | `mapa.js` `imprimir` | `escala-pdf.spec.js` | ✅ |
 | ESC-26 | Cobertura por hora e horas descobertas | `mapa.js` | `esc` "horas descobertas contam o tempo certo" | ✅ (corrigido hoje) |
 | ESC-27 | Alerta do dia: menos gente que o mínimo | `mapa.js` | — | ❌ — alerta falso em feriado fechado com férias, ver B-04 |
-| ESC-28 | Simular horário e equipe; só quem pode salva, validado no servidor | `cartaoAjustes`; `validarOperacao` | `esc` "digitar a hora inteira…" | 🟡 |
-| ESC-29 | Feriados nacionais (Páscoa móvel) e locais | `feriados.js` | — | ❌ |
-| ESC-30 | Horas de feriado trabalhadas (para o fechamento) | `feriados.js` `horasAuto` | — | ❌ |
+| ESC-28 | Simular horário e equipe; só quem pode salva, validado no servidor | `cartaoAjustes`; `validarOperacao` | `esc` "digitar a hora inteira…"; `feriados-regras.test.js` (3 testes) | ✅ |
+| ESC-29 | Feriados nacionais (Páscoa móvel; Consciência Negra nacional em todos os anos) e locais; feriado local de 29/02 cai em 28/02 no ano comum | `feriados.js` | `feriados-regras.test.js` (6 testes) | ✅ — corrigido, ver J-02 |
+| ESC-30 | Horas de feriado trabalhadas (para o fechamento): turno − intervalo da escala da loja (padrão 60 min sem equipe salva) | `feriados.js` `horasAuto` | `feriados-regras.test.js` (5 testes) | ✅ — corrigido, ver J-03 |
 | ESC-31 | Campo de hora aplica ao sair, sem perder o foco (`TS.aoConfirmar`) | `main.js` | `esc` "digitar a hora inteira…" | 🟡 (computador) |
 | ESC-4X3-01 | Escala 4x3 (pedido do dono, 26/11/2026): 6x1, 5x2 e 4x3 pelo mapa único `TS.diasDaEscala` (6, 5, 4 dias); jornada = carga ÷ dias em todas; no rodízio a 4x3 tem 3 folgas (domingo/segunda do rodízio, folga fixa e a 3ª automática no dia de menor movimento); Equipe e regras mostra a conta "44h ÷ 4 dias = 11h por dia", avisa em vermelho acima de 10h por dia (CLT, 8h + 2h extras) e lembra do acordo de compensação acima de 8h; o servidor aceita 4x3; Feriados usam a mesma jornada | `public/js/mapa.js` (`diasDaEscala`, `montarEscala`, `montarRodizio`, editor da equipe); `feriados.js` `jornadaDe`; `src/admin-api.js` | `escala-horario.spec` "ESC-4X3-01…" | ✅ |
 | BANCO-01 | Banco de horas (decisão do dono, 26/11/2026): feriado com acerto "banco" entra em DOBRO no saldo (6h = +12h); "pagar" não mexe no saldo e segue para o fechamento, também em dobro (6h = 12h a pagar; decisão do dono, 26/11/2026); acerto da pessoa > do dia > padrão das regras; antes de "Começa em" (padrão nov/2026) é sempre pagar | `public/js/bancohoras.js` (`acertoDe`, `movimentos`) | `bancohoras.test` "BANCO-01…" | ✅ |
@@ -764,6 +764,14 @@ Todos os da lista A foram conferidos no código, um por um.
 | I-06 | ~~Entrega vazia virava 0 dias~~ — **decidido pelo dono**: em branco = 10 dias (o padrão). Fica em aberto: não confere se a margem mínima é menor que a alvo | EST-11 | `src/estoque.js` (`validarCfg`) |
 | I-07 | ~~Texto "vencem em lote já vencido" na conta do produto do Pedido~~ — **corrigido** ("estão em lote já vencido") | EST-59 | `public/js/pedido.js` |
 
+### J. Etapa 3 dos testes que faltavam (escala e feriados, 27/11/2026)
+| # | Achado | Regra | Onde |
+|---|---|---|---|
+| J-01 | ~~Escala livre deixava a loja sozinha no fechamento (10h–22h, 3 pessoas): a conta gulosa punha a 2ª pessoa cobrindo o intervalo da 1ª em vez de fechar; "Equipe mínima" e o aviso "loja sozinha" saíam maiores que o necessário~~ — **corrigido**: acerto depois da gulosa, só nos dias com horário vazio, move turno e intervalo (de uma pessoa, ou dela junto com o intervalo de outra) sem piorar a preferência | ESC-14 | `public/js/mapa.js` (`montarEscala`) |
+| J-02 | ~~Feriado local anual em 29/02 virava 01/03 nos anos comuns~~ — **corrigido** (cai em 28/02) | ESC-29 | `public/js/feriados.js` (`dataLocal`) |
+| J-03 | ~~Loja sem equipe salva contava as horas do feriado sem intervalo~~ — **corrigido** (usa a equipe padrão: 60 min) | ESC-30 | `public/js/feriados.js` (`equipeDe`) |
+| J-04 | Comentário do "Replicar" falava em seguir o rodízio; o código leva os ajustes que repetem para os mesmos dias da semana — comentário corrigido e variáveis sem uso tiradas | ESC-23 | `public/js/mapa.js` |
+
 ### E. Revisão dos dias 18 e 19/11 (5 revisores por área; corrigido com teste no mesmo PR)
 | Código | Achado | Onde | Situação |
 |---|---|---|---|
@@ -827,7 +835,7 @@ Contado pelas linhas da matriz (`node scripts/matriz.js --resumo`; o guardião c
 | NF-e, devolução e notas de entrada (NFE) | 49 | 34 | 12 | 3 |
 | Dinheiro com a franquia (FRQ) | 19 | 13 | 6 | 0 |
 | Coletor e robôs (COL) | 7 | 1 | 2 | 4 |
-| Escala, horários, feriados e férias (ESC) | 45 | 20 | 12 | 13 |
+| Escala, horários, feriados e férias (ESC) | 45 | 35 | 8 | 2 |
 | Equipe, metas e comissão (EQP) | 13 | 9 | 3 | 1 |
 | Estoque, inventário, lotes e pedido (EST) | 83 | 69 | 13 | 1 |
 | Preços, custos e notas de entrada (PRC) | 42 | 24 | 8 | 10 |
@@ -837,7 +845,7 @@ Contado pelas linhas da matriz (`node scripts/matriz.js --resumo`; o guardião c
 | Orçamento (ORC) | 7 | 6 | 1 | 0 |
 | Checklist, fechamento e avisos (OPE) | 13 | 6 | 3 | 4 |
 | Estrutura do painel e atualização (APP) | 50 | 32 | 13 | 5 |
-| **Total** | **559** | **368 (66%)** | **130 (23%)** | **61 (11%)** |
+| **Total** | **559** | **383 (69%)** | **126 (23%)** | **50 (9%)** |
 <!-- resumo:fim -->
 
 ## Próximas etapas
