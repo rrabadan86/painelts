@@ -415,6 +415,7 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 | CTD-02…05 | Exportação para o contador: vendas por dia pelo faturamento oficial, notas do mês (entrada pela data de entrada; cancelada fora do total), mês sem nada e só mês fechado, planilha .xlsx com as cinco abas | `src/contador.js` | `contador.test` CTD-02…05 | ✅ |
 | LUCRO-01 | Substituída pela DRE-ESTR-01 (decisão do dono, 25/11/2026): a regra de 23/11 (três degraus: lucro bruto = venda − custo; lucro sem fixos; resultado) passou a ser a estrutura da contabilidade, com os mesmos números finais | `dre.js` `degraus`; `estoque.js` Rentabilidade | `contas.spec` DRE-ESTR-01 | ✅ |
 | DESP-CAB-01 | Custos da loja e despesas de um mês só (Configurações → loja → Estoque e margem e a janela "Custos da loja"): o cabeçalho fica preso no topo ao rolar a lista (pedido do dono, 23/11/2026) — no computador os nomes das colunas logo abaixo da barra do topo (a tabela cabe na coluna, sem rolar de lado, também a 1100 px); no celular cada custo vira um cartão com o nome de cada campo e a faixa da categoria (nome, total, "+ Custo") fica presa | `estoque.js` `formCfg` (`pintarOutros`, `pintarPontuais`); `styles.css` (`.est-cat-w`) | `campos-msg.spec` DESP-CAB-01 | ✅ |
+| CUSTO-ADD-01 | Custos da loja (Configurações → Estoque e margem e a janela `TS.editarCustos`): "+ Custo" põe a linha nova logo embaixo do cabeçalho da categoria, em destaque, rola até ela e já com o cursor no nome (dono, 26/11/2026: "clico em + Custo e nada acontece" — no celular a linha entrava no fim da categoria, fora da tela) | `public/js/estoque.js` (`est-cat-add`, `est-cat-novo`) | `campos-msg.spec` CUSTO-ADD-01 | ✅ |
 | DRE-MES-01 | Custo fixo de cada mês, uma definição só (pedido do dono, 23/11/2026): o valor real lançado no Resultado vale só naquele mês; sem lançamento, o padrão de Configurações (meses passados sem lançamento acompanham o padrão quando ele muda; o lançado fica). Entra no Resultado, na projeção, na Rentabilidade (rateio pela média dos meses da base), no A pagar, no ponto de equilíbrio e na planilha do contador | `contas.js` `fixoDoMes`; `estoque.js` `criarDeducoes` (`fixoDoMes`, `fixoBase`); `dre.js` `calcular`; `apagar.js` `vencimentos(valorDoMes)`; `src/contador.js` | `dre-mes.test` DRE-MES-01 | ✅ |
 | DRE-MES-02 | Histórico do custo fixo mês a mês (lançado ou padrão) com a média, na janela do custo (nome na tabela) | `contas.js` `historicoFixo`; `dre.js` `janelaFixo` | `dre-mes.test` DRE-MES-02; `dre-mes.spec` DRE-MES-09 | ✅ |
 | DRE-MES-03…08 | Rota `POST /api/resultado/fixo-mes`: grava por loja em `dados/<loja>/fixos-mes.json` com quem e quando, auditada; só quem tem a tela Resultado (vendedora e gerente sem a tela: 403) e só da loja permitida; exige `X-Painel`; confere valor (≥ 0), mês (AAAA-MM, até 12 à frente) e custo existente; "voltar ao padrão" apaga só aquele mês; mudar o padrão em Configurações não muda o mês lançado; apresentação só confere e responde (nada gravado) | `src/fixosmes.js`; `server.js` (`lojaDre`, `/api/demo/resultado/fixo-mes`) | `dre-mes.test` DRE-MES-03…08 | ✅ |
@@ -797,13 +798,13 @@ Contado pelas linhas da matriz (`node scripts/matriz.js --resumo`; o guardião c
 | Equipe, metas e comissão (EQP) | 13 | 4 | 3 | 6 |
 | Estoque, inventário, lotes e pedido (EST) | 83 | 51 | 15 | 17 |
 | Preços, custos e notas de entrada (PRC) | 42 | 15 | 8 | 19 |
-| Resultado e rentabilidade (RES) | 47 | 37 | 5 | 5 |
+| Resultado e rentabilidade (RES) | 48 | 38 | 5 | 5 |
 | Vendas e métricas (VEN) | 28 | 13 | 8 | 7 |
 | Clientes, fidelidade, WhatsApp e lista de espera (CLI) | 77 | 64 | 9 | 4 |
 | Orçamento (ORC) | 7 | 5 | 1 | 1 |
 | Checklist, fechamento e avisos (OPE) | 13 | 6 | 3 | 4 |
 | Estrutura do painel e atualização (APP) | 50 | 31 | 13 | 6 |
-| **Total** | **549** | **312 (57%)** | **128 (23%)** | **109 (20%)** |
+| **Total** | **550** | **313 (57%)** | **128 (23%)** | **109 (20%)** |
 <!-- resumo:fim -->
 
 ## Próximas etapas
