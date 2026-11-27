@@ -195,8 +195,11 @@ test('EQP-04: "SEM VENDEDOR" — sempre sem meta (mesmo fora da lista da loja) e
   assert.equal(sv.divide, false);
   assert.equal(res.qtdVend, 2);
   perto(res.linha('ANA').metaInd, 10000);
-  // fora do rateio a linha "SEM VENDEDOR" sai pela taxa "abaixo" (comportamento atual; ver o relatório)
-  perto(sv.cArom, 3000 * 0.02);
+  // venda sem vendedor não gera comissão nem premiação, com ou sem rateio (decisão do dono, 27/11/2026)
+  assert.equal(sv.cArom, 0);
+  assert.equal(sv.aPagar, 0);
+  assert.equal(sv.premiacao, 0);
+  assert.equal(sv.semVendedor, true);
   assert.equal(tela(mes({ ANA: { arom: 1 } })).rules.semMetaDe({ semMeta: [] }).has('sem vendedor'), true);
 });
 

@@ -133,6 +133,7 @@
       ['Feriados do mês', 'Horas de cada pessoa em cada feriado. "Acerto": banco de horas (entra em dobro no saldo: 6h = +12h) ou pagar no fechamento (também em dobro: 6h = 12h a pagar); tocar no selo da pessoa troca só para ela.'],
     ], [
       ['E se eu escolher só uma semana?', 'A comissão continua pela meta do mês; a tela mostra a meta daquele período.'],
+      ['A venda sem vendedor gera comissão?', 'Não. A linha SEM VENDEDOR aparece só para conferir: não gera comissão nem premiação, com ou sem rateio.'],
       ['O feriado vai para o banco ou é pago?', 'O padrão está em Movimento e escala → Equipe e regras. No cartão de feriados dá para mudar o dia todo ou só uma pessoa. O e-mail e o PDF do fechamento mostram o que foi para o banco e o que é para pagar.'],
     ]],
     ['minha', 'Equipe', 'Minha comissão', 'A meta e a comissão de cada vendedora (a vendedora vê só a dela).', 'Toda a equipe', [

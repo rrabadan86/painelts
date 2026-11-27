@@ -251,7 +251,7 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 | EQP-01 | Meta do mês: digitada > automática (ano anterior + %) > padrão | `core.js` `metaCalc`; `indicadores.js` `metaMes` | — | ❌ — duas cópias que divergem, ver B-08 |
 | EQP-02 | Meta individual = meta da loja ÷ quem divide (piso de dias com venda, proporcional no mês em andamento; quem volta de férias divide; quem cobriu um dia não diminui a meta dos outros) | `contas.js` `divisoresMeta`, `metasIndividuais`; `rules.js` | `contas.test` META-01…04 | ✅ |
 | EQP-03 | Comissão por categoria e faixa (≥120%, ≥100%, abaixo); modo simples | `rules.js` | `comissao-regras.test` EQP-03 | ✅ |
-| EQP-04 | "Sem meta", "não recebem comissão", "sem vendedor" | `rules.js` | `comissao-regras.test` EQP-04 | ✅ |
+| EQP-04 | "Sem meta", "não recebem comissão", "sem vendedor" (venda sem vendedor não gera comissão nem premiação, com ou sem rateio, e a linha ganha um ⓘ — decisão do dono, 27/11/2026) | `rules.js` | `comissao-regras.test` EQP-04 | ✅ |
 | EQP-05 | Premiação por TKM, IPA e PMA | `rules.js`; `contas.js` (`MIN_ATEND_PREMIACAO`) | `contas.test` PREM-01 | 🟡 — só o mínimo de atendimentos |
 | EQP-06 | Bônus sobre outros vendedores | `rules.js` | `contas.test` BON-01 | 🟡 — só a faixa do bônus |
 | EQP-07 | Rateio igual do total de comissões | `rules.js` | `comissao-regras.test` EQP-07 | ✅ |
@@ -747,7 +747,7 @@ Todos os da lista A foram conferidos no código, um por um.
 | H-05 | ~~Projeção do Resultado multiplicava o valor real lançado de um custo em %~~ — **corrigido** (o lançado fica como está) | RES-02 | `dre.js` (`projetar`) |
 | H-06 | Lucro da promoção é venda − custo, sem tirar o Simples (Resultado e Rentabilidade tiram): confirmar com o dono | RES-08 | `estoque.js` |
 | H-07 | Prêmios a R$ 0,01 da fidelidade: o comentário diz que entram no total com o custo real, mas `M.taxa` os tira antes — o custo deles some da Rentabilidade: confirmar com o dono | PRC-13 | `estoque.js` |
-| H-08 | Com o rateio desligado, a linha SEM VENDEDOR recebe comissão pela taxa "abaixo" e ela entra no total de comissões do Resultado: decisão do dono pendente | EQP-04 | `rules.js` |
+| H-08 | ~~Com o rateio desligado, a linha SEM VENDEDOR recebia comissão pela taxa "abaixo" e ela entrava no total de comissões do Resultado~~ — **decidido pelo dono (27/11/2026): venda sem vendedor não gera comissão**; corrigido | EQP-04 | `rules.js` |
 | H-09 | O código PERF-17 estava em duas linhas: a de cache e índice das NF-e virou E-46 | — | esta matriz |
 
 ### E. Revisão dos dias 18 e 19/11 (5 revisores por área; corrigido com teste no mesmo PR)
