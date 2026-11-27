@@ -116,7 +116,7 @@ test.describe('Clientes → Hoje', () => {
     await expect(page.locator('main')).not.toContainText('O que fazer agora');
     // a ordem das seções
     const secoes = await page.locator('main .section-label').allInnerTexts();
-    expect(secoes.map((t) => t.trim().toUpperCase())).toEqual(['RETORNO DAS AÇÕES', 'COMPORTAMENTO DOS CLIENTES', 'EQUIPE E BASE', 'PERFIL DOS CLIENTES', 'PROGRAMA DE FIDELIDADE EM DETALHE', 'CONFERÊNCIA DOS DADOS']);
+    expect(secoes.map((t) => t.trim().toUpperCase())).toEqual(['RETORNO DAS AÇÕES', 'COMPORTAMENTO DOS CLIENTES', 'EQUIPE E BASE', 'PERFIL DOS CLIENTES', 'PROGRAMA DE FIDELIDADE EM DETALHE', 'QUALIDADE DO CADASTRO', 'CONFERÊNCIA DOS DADOS']); // Qualidade do cadastro: só admin e franqueado (QUAL-CAD-01)
     await expect(page.locator('.heroi[aria-label="Retorno das campanhas"]')).toBeVisible();
     // clientes, faturamento e visitas subiram para o herói: não repetem no Perfil
     await expect(page.locator('.cli-perfil-kpi .kpi')).toHaveCount(2);
