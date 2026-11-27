@@ -178,8 +178,11 @@
     const k = PM && m.fat > 0 ? PM.proj / m.fat : m.diasMes / m.decorridos;
     const x = (v) => (v == null ? null : v * k);
     const comP = D && D.comProjetada ? D.comProjetada(m.ym, k) : null;
-    const p = { ...m, parcial: false, projecao: true, fat: m.fat * k, fatCusto: m.fatCusto * k, custo: m.custo * k, imp: m.lanc && m.lanc.simples ? m.imp : m.imp * k, maq: m.lanc && m.lanc.maquininha ? m.maq : m.maq * k, impCalc: (m.impCalc ?? m.imp) * k, maqCalc: (m.maqCalc ?? m.maq) * k, royCalc: (m.royCalc ?? m.roy) * k, royS: (m.royS || 0) * k, mkt: (m.mkt || 0) * k, com: m.lanc && m.lanc.comissao ? m.com : comP != null ? comP : m.com * k, comCalc: comP != null ? comP : (m.comCalc ?? m.com) * k, varPct: m.varPct * k, projMes: PM, fator: k,
-      gorjeta: m.gorjeta * k, gorjImp: m.gorjImp * k, gorjRoy: m.gorjRoy * k, desc: m.desc * k, egDesc: (m.egDesc || 0) * k, eg: m.eg * k, cmv: x(m.cmv), partes: Object.fromEntries(Object.entries(m.partes || {}).map(([q, v]) => [q, v * k])), pctPor: (m.pctPor || []).map((v) => (v == null ? v : v * k)), pctCalc: Object.fromEntries(Object.entries(m.pctCalc || {}).map(([q, v]) => [q, v * k])) };
+    // custo em % com o valor real lançado no mês não cresce com a projeção (como o Simples e a maquininha lançados; RES-02)
+    const lancouPct = (i) => !!(m.lanc && D && D.OUTROS && D.OUTROS[i] && m.lanc['pct:' + D.OUTROS[i].nome]);
+    const lancPct = (m.pctPor || []).map((v, i) => (v != null && lancouPct(i) ? v : 0));
+    const p = { ...m, parcial: false, projecao: true, fat: m.fat * k, fatCusto: m.fatCusto * k, custo: m.custo * k, imp: m.lanc && m.lanc.simples ? m.imp : m.imp * k, maq: m.lanc && m.lanc.maquininha ? m.maq : m.maq * k, impCalc: (m.impCalc ?? m.imp) * k, maqCalc: (m.maqCalc ?? m.maq) * k, royCalc: (m.royCalc ?? m.roy) * k, royS: (m.royS || 0) * k, mkt: (m.mkt || 0) * k, com: m.lanc && m.lanc.comissao ? m.com : comP != null ? comP : m.com * k, comCalc: comP != null ? comP : (m.comCalc ?? m.com) * k, varPct: m.varPct * k - (k - 1) * lancPct.reduce((a, v) => a + v, 0), projMes: PM, fator: k,
+      gorjeta: m.gorjeta * k, gorjImp: m.gorjImp * k, gorjRoy: m.gorjRoy * k, desc: m.desc * k, egDesc: (m.egDesc || 0) * k, eg: m.eg * k, cmv: x(m.cmv), partes: Object.fromEntries(Object.entries(m.partes || {}).map(([q, v]) => [q, v * k])), pctPor: (m.pctPor || []).map((v, i) => (v == null ? v : lancouPct(i) ? v : v * k)), pctCalc: Object.fromEntries(Object.entries(m.pctCalc || {}).map(([q, v]) => [q, v * k])) };
     // o lançado vale como está (não cresce com as vendas); o calculado acompanha a projeção
     p.royPago = m.lanc && m.lanc.royalties ? m.royPago : p.royS - (m.royDesc || 0);
     p.mktPago = m.lanc && m.lanc.marketing ? m.mktPago : p.mkt;

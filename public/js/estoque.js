@@ -376,7 +376,8 @@
         return { dias, vt, desc, lucro, liq, contrib, margem: comCusto ? lucro / comCusto : null, margemLiq: comCusto ? liq / comCusto : null, margemContrib: comCusto ? contrib / comCusto : null, contribDia: dias ? contrib / dias : null, lucroDia: dias ? lucro / dias : null, liqDia: dias ? liq / dias : null, vtDia: dias ? vt / dias : null, prod };
       };
       const A = calc(antes, diasAntes), D = calc(durante, diasDurante), P = diasDepois > 0 ? calc(depois, diasDepois) : null;
-      const delta = A.lucroDia ? D.lucroDia / A.lucroDia - 1 : null;
+      // pela diferença sobre o tamanho do lucro de antes: com o lucro de antes negativo, a razão invertia o sinal (RES-08)
+      const delta = A.lucroDia ? (D.lucroDia - A.lucroDia) / Math.abs(A.lucroDia) : null;
       const col = (t, x, destaque) => h('div', { class: 'promo-col' + (destaque ? ' on' : '') }, h('div', { class: 'promo-col-t' }, t, h('small', null, `${x ? fmt.int(x.dias) : 0} dias`)),
         x ? [h('div', { class: 'promo-lucro' }, fmt.brl0(x.lucroDia), h('small', null, ' de lucro bruto por dia')),
           h('div', null, `Margem de contribuição ${fmt.brl0(x.contribDia)}/dia · com fixos ${fmt.brl0(x.liqDia)}/dia`),
