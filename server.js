@@ -291,7 +291,7 @@ const pub = path.join(__dirname, 'public');
 // ---------- pacote único de JS/CSS da tela (pré-comprimido em Brotli + Gzip, cache imutável por hash) ----------
 const APP_SCRIPTS = [
   'core.js', 'errostela.js', 'contas.js', 'metadia.js', 'components.js', 'dicas.js', 'rules.js', 'pages.js', 'fidelidade.js',
-  'msgwpp.js', 'recompra.js', 'clientes.js', 'campretorno.js', 'campanhas.js', 'conversas.js', 'zap.js', 'espera.js', 'extras.js', 'contabilidade.js',
+  'msgwpp.js', 'recompra.js', 'clientes.js', 'qualidadecad.js', 'campretorno.js', 'campanhas.js', 'conversas.js', 'zap.js', 'espera.js', 'extras.js', 'contabilidade.js',
   'ruptura.js', 'visaodono.js', 'classeprod.js', 'grupoprod.js', 'fotoprod.js', 'custodata.js', 'estoque.js', 'devolucao.js', 'precos.js', 'inventario.js', 'sugestoes.js', 'validade.js', 'nfsaida.js', 'creditos.js', 'orcamento.js', 'checklist.js',
   'sitedia.js', 'site.js', 'conferencia.js', 'conferencia-tela.js', 'inicio.js', 'pedido.js', 'ia.js', 'dre.js', 'apagar.js', 'comprasvendas.js', 'efeitopreco.js', 'equipe.js', 'mapa.js', 'bancohoras.js', 'feriados.js', 'fidretorno.js',
   'guia.js', 'notificacoes.js', 'novidades.js', 'ajuda.js', 'config.js', 'script.js', 'fechamento.js', 'sistema.js', 'main.js',
@@ -1015,6 +1015,7 @@ app.post('/api/demo/clientes/celular/nome', express.json({ limit: '2kb' }), (req
   res.json({ ok: true, nome: n });
 });
 // Meta de hoje da vendedora (Minha comissão): resposta fictícia, nada gravado (a apresentação roda como admin)
+app.get('/api/demo/clientes/semwpp', (req, res) => res.json({ cpfs: [], demo: true })); // a tela marca alguns clientes de exemplo (QUAL-CAD-04)
 app.get('/api/demo/meta-hoje', (req, res) => res.json({ minhaParte: 412, vendiHoje: 268.5, temHoje: true, modo: 'igual', restam: 8, semParte: null }));
 app.all('/api/demo/*', (req, res) => res.status(404).json({ erro: 'Isto não está disponível na apresentação.' }));
 
@@ -1216,6 +1217,16 @@ const lojaConv = (req, res) => {
   if (!req.lojas.some((l) => l.id === id)) { res.status(400).json({ erro: 'Escolha uma loja.' }); return null; }
   return id;
 };
+// Qualidade do cadastro (QUAL-CAD-04): os CPFs que o robô conferiu "sem WhatsApp" — só admin e franqueado da loja (decisão do dono)
+app.get('/api/clientes/semwpp', (req, res) => {
+  if (!['admin', 'franqueado'].includes(req.perfil)) return res.status(403).json({ erro: 'Sem permissão.' });
+  const id = String(req.query.loja || '');
+  if (!req.lojas.some((l) => l.id === id)) return res.status(400).json({ erro: 'Escolha uma loja.' });
+  const ZFq = require('./src/zapfila');
+  const m = ZFq.porChave(ZFq.lerJson(id, 'semwpp')), agora = Date.now();
+  const cpfs = [...new Set(Object.values(m).filter((x) => x && x.cpf && agora - Date.parse(x.em) < ZFq.SEM_WPP_DIAS * 864e5).map((x) => x.cpf))];
+  res.json({ cpfs });
+});
 app.get('/api/conversas', async (req, res) => {
   const id = lojaConv(req, res); if (!id) return;
   const ZAPc = require('./src/zap'), ZFc = require('./src/zapfila');

@@ -199,7 +199,7 @@
       ],
       rows: linhas, sortKey: 'rot', sortDir: 'asc', onRowClick: (r) => { state.bhSel = state.bhSel === r.nome ? null : r.nome; TS.render(); },
       empty: 'Ninguém no banco ainda. Ele começa zerado e recebe os feriados marcados como "banco".',
-      linhaMob: (r) => h('div', { class: 'lmob-it', onclick: () => { state.bhSel = state.bhSel === r.nome ? null : r.nome; TS.render(); } },
+      linhaMob: (r) => h('div', { class: 'lmob-it' }, // o toque é o onRowClick: com onclick aqui também, abria e fechava no mesmo toque
         h('div', { class: 'lmob-l1' }, h('b', null, r.rot), h('span', { class: 'bh-saldo ' + (r.saldo > 0 ? 'pos' : r.saldo < 0 ? 'neg' : '') }, sinal(r.saldo))),
         h('div', { class: 'lmob-l2' }, `entrou ${r.entrou ? sinal(r.entrou) : '—'} · saiu ${r.saiu ? sinal(r.saiu) : '—'}${r.p.creditoAtrasado.length ? ' · passou do prazo: folga ou pagar' : ''}`)),
     });

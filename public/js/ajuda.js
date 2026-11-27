@@ -96,8 +96,10 @@
       ['Recompra em 90 dias', 'Dos clientes do período, quantos compraram de novo em até 90 dias (só quem já teve o prazo inteiro).'],
       ['Retorno das campanhas', 'O mesmo número da tela Campanhas.'],
       ['Fidelidade', 'Quantos resgataram, quem resgatou voltou e prêmios × venda a mais.'],
+      ['Qualidade do cadastro', 'Só admin e franqueado. Todos os clientes do cadastro: completo = celular que recebe WhatsApp, nascimento de verdade, cidade, e-mail e nome completo. Cada problema abre a lista para corrigir no FIXE.'],
       ['Conferência dos dados', 'No fim, recolhida: a ligação das compras do programa de fidelidade com os cupons.'],
     ], [
+      ['Corrigi o cadastro e o cliente continua na lista. Por quê?', 'O painel lê o cadastro do FIXE: o cliente sai da lista depois da próxima importação do FIXE.'],
       ['Cada quadro segue os mesmos filtros?', 'Não: a linha embaixo de cada seção diz a quais filtros ela responde.'],
     ]],
     ['campanhas', 'Clientes', 'Campanhas', 'Monte uma lista de clientes, escreva a mensagem, envie e veja quem voltou a comprar.', 'Admin, franqueado e gerente com a tela Clientes', [
