@@ -1170,6 +1170,8 @@
     if (junto) lado.prepend(junto);
     root.append(lado);
     if (detalheFid) root.append(TS.section('Programa de fidelidade em detalhe'), alcance('As contas por trás dos números de Fidelidade do topo, com as listas de clientes.'), ...detalheFid);
+    // Qualidade do cadastro (QUAL-CAD-01): só admin e franqueado (decisão do dono, 27/11/2026)
+    if (TS.qualidadeCad && TS.eu && ['admin', 'franqueado'].includes(TS.eu.perfil)) root.append(...TS.qualidadeCad.secao());
     const confFixe = TS.cli.fixe ? cartaoFixe(TS.cli.fixe) : null;
     if (confFixe || (avisoSemVenda && !semVendaGrave)) root.append(TS.section('Conferência dos dados'), alcance('Para conferir e corrigir os dados, não para decidir. Toque para abrir.'), conferenciaDados(TS.cli.fixe, confFixe, semVendaGrave ? null : avisoSemVenda));
   }

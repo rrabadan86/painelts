@@ -4378,3 +4378,9 @@ td .meta-selo { display: flex; margin-left: auto; width: max-content; }
 
 /* custo recém-adicionado (CUSTO-ADD-01): destaque para a pessoa ver onde ele entrou */
 .t tbody tr.est-cat-novo td, .est-cat-w > .est-cat-t > tbody > tr.est-cat-novo { background: var(--gold-l); }
+
+/* Imprimir/Expandir no cabeçalho do cartão de seção (TS.cardSec): o mesmo botão do card-head (antes saía sem estilo) */
+.card-sec-dir .exp-btn { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--line); background: #fff; color: var(--green); border-radius: 8px; padding: 5px 10px; font: 600 12px/1 inherit; cursor: pointer; }
+.card-sec-dir .exp-btn:hover { background: var(--cream-2); }
+@media (max-width: 640px) { .card-sec-dir .exp-btn span { display: none; } }
+.qc-ferr { display: inline-flex; gap: 8px; flex-wrap: wrap; }

@@ -179,3 +179,11 @@ test('BANCO-07: banco de horas — lança e apaga quem ajusta a escala (gerente 
   assert.strictEqual(await status('ger_sem', '/api/banco-horas/lanc/apagar?loja=l1', { method: 'POST', body: JSON.stringify({ id }) }), 200);
   assert.strictEqual(await status('ger_sem', '/api/banco-horas/lanc/apagar?loja=l1', { method: 'POST', body: JSON.stringify({ id }) }), 404);
 });
+
+test('QUAL-CAD-04: a lista "sem WhatsApp" do robô (Qualidade do cadastro) é só do admin e do franqueado da loja', async () => {
+  assert.strictEqual(await status('vend', '/api/clientes/semwpp?loja=l1'), 403);
+  assert.strictEqual(await status('ger_com', '/api/clientes/semwpp?loja=l1'), 403);
+  assert.strictEqual(await status('ger_sem', '/api/clientes/semwpp?loja=l1'), 403);
+  assert.strictEqual(await status('dono', '/api/clientes/semwpp?loja=l1'), 200);
+  assert.strictEqual(await status('dono', '/api/clientes/semwpp?loja=nao-existe'), 400);
+});
