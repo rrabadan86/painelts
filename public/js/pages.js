@@ -1135,7 +1135,7 @@
       fmt: (v, r) => h('span', null, fmt.brl(v), ...sob(r && r[mk] != null ? `meta ${fmt.brl0(r[mk])}` : null, r && r[ck] != null ? `com. ${fmt.brl(r[ck])}` : null)) });
     const tab = TS.table({
       cols: [
-        { key: 'vendedor', label: 'Vendedor', align: 'l', sticky: true },
+        { key: 'vendedor', label: 'Vendedor', align: 'l', sticky: true, fmt: (v, r) => (r && r.semVendedor ? h('span', { 'data-sem-vend': '1' }, v, TS.dica('Venda sem vendedor não gera comissão nem premiação, com ou sem rateio (decisão do dono). O valor aparece só para conferir.')) : v) },
         { key: 'aPagar', label: 'A pagar', cls: () => 'hit',
           title: 'Comissão das três categorias + bônus sobre outros vendedores. Embaixo, o bônus quando a regra da loja tem (o % sobre as vendas da meta dos demais; a faixa usa as vendas da meta da loja contra a meta da loja)',
           fmt: (v, r) => h('span', null, fmt.brl(v), ...sob(r && r.bonus ? `bônus ${fmt.brl(r.bonus)}` : null)) },

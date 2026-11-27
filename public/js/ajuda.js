@@ -133,6 +133,7 @@
       ['Feriados do mês', 'Horas de cada pessoa em cada feriado. "Acerto": banco de horas (entra em dobro no saldo: 6h = +12h) ou pagar no fechamento (também em dobro: 6h = 12h a pagar); tocar no selo da pessoa troca só para ela.'],
     ], [
       ['E se eu escolher só uma semana?', 'A comissão continua pela meta do mês; a tela mostra a meta daquele período.'],
+      ['A venda sem vendedor gera comissão?', 'Não. A linha SEM VENDEDOR aparece só para conferir: não gera comissão nem premiação, com ou sem rateio.'],
       ['O feriado vai para o banco ou é pago?', 'O padrão está em Movimento e escala → Equipe e regras. No cartão de feriados dá para mudar o dia todo ou só uma pessoa. O e-mail e o PDF do fechamento mostram o que foi para o banco e o que é para pagar.'],
     ]],
     ['minha', 'Equipe', 'Minha comissão', 'A meta e a comissão de cada vendedora (a vendedora vê só a dela).', 'Toda a equipe', [
@@ -169,7 +170,7 @@
     ], []],
     ['precos', 'Produtos', 'Preços', 'Reajustes de custo e de venda de cada produto e o efeito.', 'Admin, franqueado e gerente com a tela', [
       ['Perderam margem', 'Produtos cujo custo subiu mais que o preço.', C],
-      ['Custo alterado e venda alterada', 'Produtos com reajuste no período dos filtros.', C],
+      ['Custo alterado e venda alterada', 'Produtos com reajuste no período dos filtros. Em Custo alterado, "Efeito no período" = cada venda × (custo do dia − custo de antes): quanto a loja pagou a mais (ou a menos) pelo que vendeu.', C],
       ['Caixa ≠ sistema', 'Produtos vendidos no caixa por um preço diferente do cadastro.'],
     ], []],
     ['site', 'Produtos', 'Site', 'Preços do e-commerce comparados com os da loja. Consulta todo dia às 10h.', 'Admin, franqueado e gerente com a tela', [
@@ -227,7 +228,7 @@
     ['dre', 'Resultado', 'Resultado (DRE)', 'A DRE da loja mês a mês: da receita bruta ao resultado líquido.', 'Admin, franqueado e gerente com a tela', [
       ['Receita bruta', 'Vendas pelo preço cheio (Loja e Espaço Gourmet). A taxa de serviço aparece à parte e fica fora.'],
       ['Receita líquida', 'Receita bruta − descontos − Simples. Os % das linhas são sobre ela.'],
-      ['CMV', 'Com as fotos do estoque: estoque inicial + compras − estoque final. Sem elas: custo do que foi vendido + perdas conhecidas.', C],
+      ['CMV', 'Com as fotos do estoque: estoque inicial + compras − estoque final. Sem elas: custo do que foi vendido + perdas conhecidas. O custo dos prêmios a R$ 0,01 entra aqui; a parte da franquia volta no desconto dos royalties.', C],
       ['Perdas e acertos', 'A diferença entre o CMV pelo estoque e o custo do que foi vendido.', C],
       ['Compras', 'Notas de compra concluídas no AppNext com entrada no mês (não a emissão), a custo, abertas em "Da franquia (TSB)" e "Outros fornecedores". O ⓘ lista cada nota que entrou e as que ficaram fora, com o porquê. Só aparece com o mês fechado.', C],
       ['Margem de contribuição', 'Lucro bruto − despesas variáveis.', C],

@@ -68,7 +68,7 @@ function emitir(id, ridTeste, por) {
   const l = lista(id);
   const t = l.find((x) => x.id === ridTeste);
   if (!t || t.estado !== 'teste') return { erro: 'Emita a partir de um teste que deu certo ("Testar sem salvar").' };
-  if (t.emitidaEm) return { erro: 'Esta nota já foi mandada para emitir.' };
+  if (t.emitidaEm) return { erro: 'Esta nota já foi mandada para emitir.', repetido: true }; // NFE-04: 409
   if (!(Date.now() - Date.parse(t.fim || t.em) < 2 * 3600e3)) return { erro: 'Este teste tem mais de 2 horas: teste de novo para conferir o total antes de emitir.' };
   const orig = lerJ(path.join(envio(id), ridTeste + '.json'), null);
   if (!orig) return { erro: 'Não achei o pedido do teste: teste de novo.' };

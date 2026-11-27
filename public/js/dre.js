@@ -4,7 +4,7 @@
 (function () {
   const { h, fmt, state } = TS;
 
-  const novo = () => ({ fat: 0, fatCusto: 0, custo: 0, imp: 0, maq: 0, roy: 0, com: 0, varPct: 0, gorjeta: 0, gorjImp: 0, gorjRoy: 0, royEg: 0, royS: 0, mkt: 0, desc: 0, egDesc: 0, dias: new Set(), eg: 0, partes: { granel: 0, envasado: 0, acess: 0, outros: 0 }, outrosGr: new Map(), pctPor: [] });
+  const novo = () => ({ fat: 0, fatCusto: 0, custo: 0, imp: 0, maq: 0, roy: 0, com: 0, varPct: 0, gorjeta: 0, gorjImp: 0, gorjRoy: 0, royEg: 0, royS: 0, mkt: 0, desc: 0, egDesc: 0, dias: new Set(), eg: 0, partes: { granel: 0, envasado: 0, acess: 0, outros: 0 }, outrosGr: new Map(), pctPor: [], premios: 0 });
   // parte da loja de cada grupo da base (guardada por grupo; refeita quando os dados mudam)
   let partesCache = { db: null, porGrupo: [] };
   function parteDoGrupo(db, gi) {
@@ -28,7 +28,12 @@
       const dg = D.deducoes(i); m.gorjImp += dg.imp;
       return;
     }
-    if (M.taxa(i)) return;
+    if (M.taxa(i)) {
+      // prêmio da fidelidade / brinde a R$ 0,01: não é venda, mas o custo é real (custo dividido com a franquia, que devolve
+      // a parte dela no desconto dos royalties ou do pedido): entra no CMV (PREMIO-CMV-01, decisão do dono 27/11/2026)
+      if (TS.contas.ehCentavo(db.vu[i]) && !I.taxaServico.has(db.desc[i])) { const c = M.custo(i); if (c > 0) m.premios += c; }
+      return;
+    }
     const vt = db.vt[i] || 0;
     m.fat += vt; m.dias.add(db.day[i]);
     const ehEg = I.eg.has(db.cat[i]);
@@ -55,7 +60,7 @@
   TS.dreContribDias = function (M, de, ate) {
     const db = TS.db, m = novo();
     for (let i = 0; i < db.n; i++) { const d = db.day[i]; if (d >= de && d <= ate) somarLinha(m, i, M); }
-    const cmv = m.fatCusto ? m.custo + (m.fat - m.fatCusto) * (m.custo / m.fatCusto) : null;
+    const cmv = m.fatCusto ? m.custo + (m.fat - m.fatCusto) * (m.custo / m.fatCusto) + (m.premios || 0) : null;
     return { fat: m.fat, contrib: cmv == null ? null : m.fat - m.imp - m.maq - m.roy - cmv - m.com - m.varPct, cobre: m.fat ? m.fatCusto / m.fat : 0 };
   };
 
@@ -86,7 +91,7 @@
       const frac = parcial ? decorridos / diasMes : 1;
       // custo dos produtos: o das vendas com custo + as sem custo pelo mesmo % (estimado)
       const cmvPct = m.fatCusto ? m.custo / m.fatCusto : null;
-      const cmv = cmvPct == null ? null : m.custo + (m.fat - m.fatCusto) * cmvPct;
+      const cmv = cmvPct == null ? null : m.custo + (m.fat - m.fatCusto) * cmvPct + (m.premios || 0); // + prêmios a R$ 0,01 (PREMIO-CMV-01)
       // custos fixos do mês (valor cheio, também no mês em andamento: o valor real lançado no mês ou o padrão de Configurações,
       // TS.contas.fixoDoMes, DRE-MES-01) + despesas de um mês só (cheias no mês delas)
       const fixosMes = [...fixos.map((x) => { const f = D.fixoDoMes ? D.fixoDoMes(x, ym) : { valor: x.valor, padrao: x.valor, lancado: null }; return { nome: x.nome, cat: D.catDe ? D.catDe(x) : 'outros', valor: f.valor, padrao: f.padrao, lancado: f.lancado }; }),
@@ -178,8 +183,11 @@
     const k = PM && m.fat > 0 ? PM.proj / m.fat : m.diasMes / m.decorridos;
     const x = (v) => (v == null ? null : v * k);
     const comP = D && D.comProjetada ? D.comProjetada(m.ym, k) : null;
-    const p = { ...m, parcial: false, projecao: true, fat: m.fat * k, fatCusto: m.fatCusto * k, custo: m.custo * k, imp: m.lanc && m.lanc.simples ? m.imp : m.imp * k, maq: m.lanc && m.lanc.maquininha ? m.maq : m.maq * k, impCalc: (m.impCalc ?? m.imp) * k, maqCalc: (m.maqCalc ?? m.maq) * k, royCalc: (m.royCalc ?? m.roy) * k, royS: (m.royS || 0) * k, mkt: (m.mkt || 0) * k, com: m.lanc && m.lanc.comissao ? m.com : comP != null ? comP : m.com * k, comCalc: comP != null ? comP : (m.comCalc ?? m.com) * k, varPct: m.varPct * k, projMes: PM, fator: k,
-      gorjeta: m.gorjeta * k, gorjImp: m.gorjImp * k, gorjRoy: m.gorjRoy * k, desc: m.desc * k, egDesc: (m.egDesc || 0) * k, eg: m.eg * k, cmv: x(m.cmv), partes: Object.fromEntries(Object.entries(m.partes || {}).map(([q, v]) => [q, v * k])), pctPor: (m.pctPor || []).map((v) => (v == null ? v : v * k)), pctCalc: Object.fromEntries(Object.entries(m.pctCalc || {}).map(([q, v]) => [q, v * k])) };
+    // custo em % com o valor real lançado no mês não cresce com a projeção (como o Simples e a maquininha lançados; RES-02)
+    const lancouPct = (i) => !!(m.lanc && D && D.OUTROS && D.OUTROS[i] && m.lanc['pct:' + D.OUTROS[i].nome]);
+    const lancPct = (m.pctPor || []).map((v, i) => (v != null && lancouPct(i) ? v : 0));
+    const p = { ...m, parcial: false, projecao: true, fat: m.fat * k, fatCusto: m.fatCusto * k, custo: m.custo * k, imp: m.lanc && m.lanc.simples ? m.imp : m.imp * k, maq: m.lanc && m.lanc.maquininha ? m.maq : m.maq * k, impCalc: (m.impCalc ?? m.imp) * k, maqCalc: (m.maqCalc ?? m.maq) * k, royCalc: (m.royCalc ?? m.roy) * k, royS: (m.royS || 0) * k, mkt: (m.mkt || 0) * k, com: m.lanc && m.lanc.comissao ? m.com : comP != null ? comP : m.com * k, comCalc: comP != null ? comP : (m.comCalc ?? m.com) * k, varPct: m.varPct * k - (k - 1) * lancPct.reduce((a, v) => a + v, 0), projMes: PM, fator: k,
+      gorjeta: m.gorjeta * k, gorjImp: m.gorjImp * k, gorjRoy: m.gorjRoy * k, desc: m.desc * k, egDesc: (m.egDesc || 0) * k, eg: m.eg * k, cmv: x(m.cmv), partes: Object.fromEntries(Object.entries(m.partes || {}).map(([q, v]) => [q, v * k])), pctPor: (m.pctPor || []).map((v, i) => (v == null ? v : lancouPct(i) ? v : v * k)), pctCalc: Object.fromEntries(Object.entries(m.pctCalc || {}).map(([q, v]) => [q, v * k])) };
     // o lançado vale como está (não cresce com as vendas); o calculado acompanha a projeção
     p.royPago = m.lanc && m.lanc.royalties ? m.royPago : p.royS - (m.royDesc || 0);
     p.mktPago = m.lanc && m.lanc.marketing ? m.mktPago : p.mkt;
@@ -286,7 +294,7 @@
     ['Simples Nacional', (m) => m.imp, 'calc', (m) => dicaCalc(m, 'simples', '% do Simples (Configurações → Lojas → Estoque e margem) sobre as vendas. No Simples, o IRPJ e a CSLL já estão no DAS'), null, null, 'simples'],
     ['= Receita líquida', (m) => m.recLiq, 'base', 'Receita bruta − descontos − Simples. Sem a taxa de serviço e a entrega e sem itens a R$ 0,01 (resgates e brindes): o faturamento do Resumo menos o Simples'],
     ['− CMV (custo das mercadorias vendidas)', (m) => m.cmvTot, 'menos', (m) => (m.cmvEst != null ? 'Pela conta do estoque: estoque inicial + compras − estoque final (+ DIFAL). As linhas de baixo mostram a conta e a diferença para o custo do que saiu vendido.' : 'Custo dos produtos vendidos + perdas conhecidas (+ DIFAL). Sem a foto do estoque deste mês (o painel guarda a foto na virada de cada mês).')],
-    ['Custo dos produtos vendidos', (m) => m.cmv, 'filho', 'Custo dos produtos vendidos (chá pelo kg + saco e etiquetas). Mês passado: o custo que cada produto tinha na data da venda (notas de compra e histórico de custos do painel; antes do primeiro custo conhecido vale o mais antigo, estimado). Mês em andamento: o custo de hoje do AppNext. Vendas sem custo no estoque entram pelo mesmo % das outras (estimado)'],
+    ['Custo dos produtos vendidos', (m) => m.cmv, 'filho', (m) => 'Custo dos produtos vendidos (chá pelo kg + saco e etiquetas). Mês passado: o custo que cada produto tinha na data da venda (notas de compra e histórico de custos do painel; antes do primeiro custo conhecido vale o mais antigo, estimado). Mês em andamento: o custo de hoje do AppNext. Vendas sem custo no estoque entram pelo mesmo % das outras (estimado)' + (m.premios ? ` Inclui ${fmt.brl(m.premios)} de prêmios da fidelidade e brindes que saíram a R$ 0,01 (custo dividido com a franquia: a parte dela volta no desconto dos royalties ou do pedido).` : '')],
     ['Perdas e acertos de estoque', (m) => m.acertos, 'filho', (m) => (m.cmvEst != null
       ? `Pela conta do estoque: (estoque inicial + compras − estoque final) − custo das vendas = ${fmt.brl(m.acertos)}. Inclui as perdas que o painel conhece (${fmt.brl(m.perdas || 0)}: vencidos e faltas do inventário)${m.est && m.est.devolucoes ? `, as devoluções à franquia emitidas pelo painel (${fmt.brl(m.est.devolucoes)}: a mercadoria saiu do estoque; o crédito volta uma vez só, nos royalties ou no desconto da nota de compra)` : ''} e o que sumiu sem explicação (${fmt.brl(m.acertos - (m.perdas || 0) - ((m.est && m.est.devolucoes) || 0))}: erro de lançamento, nota com entrada errada, custo errado no AppNext, furto). Se crescer, é sinal para olhar.`
       : `Sem a foto do estoque deste mês: só as perdas que o painel conhece. ` + 'O que a loja pagou e não vai vender, a custo: (1) lote VENCIDO que ainda está no estoque (chá a granel, envasados e alimentação), no mês em que a validade venceu (saldo do lote × custo do kg ou da unidade, os lotes da tela Validade); (2) faltas do INVENTÁRIO: contagens aplicadas no AppNext no mês, pelo saldo dos ajustes (contado − sistema) × custo — sobra compensa falta, e só o saldo negativo do mês entra. Na projeção ficam as perdas de agora (não crescem com as vendas). "—" = o painel não conseguiu ler as perdas')],

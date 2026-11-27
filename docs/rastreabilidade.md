@@ -25,7 +25,7 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 | Código | Regra | Onde está garantida | Teste | Cobertura |
 |---|---|---|---|---|
 | PERF-01 | Só entra quem está ativo, no prazo e com loja; o perfil vem do cadastro, nunca da tela | `server.js` middleware de login (~721-745), `config.js` `expirado`/`lojasDoUsuario` | `seguranca.test` (login, "Sair" que vale depois de reiniciar, sessões); todos os testes que sobem o servidor entram pelo login de verdade com o perfil do cadastro | 🟡 — falta o caso "inativo ou fora do prazo não entra" |
-| PERF-02 | Só existem 4 perfis (admin, franqueado, gerente, vendedor) | `config.js` (~24, 86), `admin-api.js` (~753) | — | ❌ |
+| PERF-02 | Só existem 4 perfis (admin, franqueado, gerente, vendedor) | `config.js` (~24, 86), `admin-api.js` (~753) | `seguranca-perfis.test` PERF-02 | ✅ |
 | PERF-03 | Cada pessoa só lê e grava nas lojas dela | `req.lojas.find(...)` em todas as rotas; `admin-api.js` `lojaPermitida` | `franqueado-loja.test` (coletor, notas, robô do pedido, resumo, guia, carrinho, CFOP, conversas); `conferencia-rotas.test`; `perdas-rota.test`; `metahoje.test`; `celulares.test`; `conversas-midia.test`; `zap-rotas.test`; `permissoes-telas.test` (A pagar) | 🟡 — muitas rotas com "nunca a loja dos outros", não todas |
 | PERF-04 | Vendedora nunca recebe custo nem margem do servidor | `/api/dados` sem custo (`sources.js`); `podeTela`/`podeCustos`; validade `semCusto`; inventário `paraUsuario` | `inventario.test`, `lotes.test`, `ia.test` (funções) | 🟡 |
 | PERF-05 | Gerente só vê custo com uma tela de custo liberada (Rentabilidade, Estoque, Preços, Notas, Pedido ou Resultado) | `server.js` `podeTela`/`podeCustos` | `permissoes-telas.test` "telas de custo: gerente sem a tela e vendedora não recebem"; `perdas-rota.test` | ✅ |
@@ -40,8 +40,8 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 | PERF-14 | NF-e (rascunho/emitir/parceiro): admin, franqueado e gerente com Notas fiscais | `lojaNfe` | `seguranca.test` "destinatários do e-mail das devoluções" | 🟡 — rascunho/emitir sem teste de rota |
 | PERF-15 | Conta com a franquia: admin, franqueado, gerente com Notas; envio automático só admin/franqueado | `lojaCF` | `contafranquia.test` (lógica); `permissoes-telas.test` "falar com a franquia por e-mail (cobrança): só admin e franqueado" | 🟡 — leitura da conta pelo gerente com Notas sem teste |
 | PERF-16 | Configurações: admin e franqueado; o franqueado configura tudo das lojas dele (AppNext, Sistema de Pedidos, regras de comissão, dados da loja); criar/remover loja, coletor, horários, resumo diário, sistema e backup: só admin | `admin-api.js` roteador + `soAdmin`/`soGestor` + `lojaPermitida`; `/api/pedido/acesso` | `permissoes-telas.test` "franqueado configura tudo da loja dele"; `franqueado-loja.test` "da rede continua só do admin", resumo diário, guia, CFOP | ✅ |
-| PERF-17 | Franqueado só administra gerentes e vendedores das próprias lojas; ninguém muda o próprio perfil/prazo | `admin-api.js` `usuariosVisiveis`, rotas de usuário | — | ❌ |
-| PERF-18 | Vendedor: uma loja e um nome de vendedor; gerente: pelo menos uma tela; admin: loja `*` | `admin-api.js` (~760-771) | — | ❌ |
+| PERF-17 | Franqueado só administra gerentes e vendedores das próprias lojas; ninguém muda o próprio perfil/prazo | `admin-api.js` `usuariosVisiveis`, rotas de usuário | `seguranca-perfis.test` PERF-17 | ✅ |
+| PERF-18 | Vendedor: uma loja e um nome de vendedor; gerente: pelo menos uma tela; admin: loja `*` | `admin-api.js` (~760-771) | `seguranca-perfis.test` PERF-18 | ✅ |
 | PERF-19 | Gerente só usa as telas marcadas em Configurações → Usuários; a lista única de telas (grupos do menu, regra de cada perfil, regras fixas travadas) fica em `src/telas.js` | `telas.js`; `config.js` `TELAS`/`TELAS_GERENTE_PADRAO`; `podeTela` nas rotas; menu em `main.js`; `config.js` (tela) | `telas.test` (tela nova fora da lista avisa; regras fixas); `permissoes-telas.test` (servidor de verdade por perfil); `config-telas.spec` | 🟡 — telas de vendas só escondidas, ver D-05 |
 | PERF-20 | Exportar para o contador e A pagar: quem tem a tela Resultado (decisão do dono); envios por e-mail à contabilidade: só admin e franqueado | `server.js` (~2311-2372) | `permissoes-telas.test` "caixa a pagar e planilha do contador" | 🟡 — envio por e-mail sem teste |
 | PERF-21 | Feriados trabalhados: gerente com Comissionamento; ajuste de escala: gerente com Mapa | `/api/feriados`, `/api/escala-ajustes` | `permissoes-telas.test` (escala: gerente sem Movimento e escala 403, com 200) | 🟡 |
@@ -65,15 +65,15 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 |---|---|---|---|---|
 | SEG-01 | Segredos e `dados/` nunca vão para o Git | `.gitignore`; hook `.claude/hooks/segredos.js` | — | ❌ — hook não cobre `config/notificacoes.json`, ver C-09 |
 | SEG-02 | Chave da IA criptografada; só os 4 últimos caracteres voltam | `ia.js` `cifrar`/`situacao` | `ia.test` "chave… nunca devolvida"; `ia.spec` "chave fica em Configurações" | ✅ |
-| SEG-03 | Senhas SMTP/Gmail e token do Telegram nunca voltam (só "tem senha") | `notificacoes.js` `publico`/`publicoLoja` | — | ❌ |
+| SEG-03 | Senhas SMTP/Gmail e token do Telegram nunca voltam (só "tem senha") | `notificacoes.js` `publico`/`publicoLoja` | `seguranca-perfis.test` SEG-03 | ✅ |
 | SEG-04 | Senhas do AppNext, FIXE e Sistema de Pedidos nunca voltam | `admin-api.js` `/estado`; `pedido.js` `acesso()` | — | ❌ — senha do Pedido fica no disco ao excluir loja, ver C-08 |
-| SEG-05 | Token de upload comparado em tempo constante | `server.js` `safeEq` (~370-388) | — | ❌ |
+| SEG-05 | Token de upload comparado em tempo constante | `server.js` `safeEq` (~370-388) | `seguranca-perfis.test` SEG-05 | ✅ |
 | SEG-06 | Senhas com scrypt, conferidas em tempo constante | `config.js` `confereSenhaAsync` | `blind` "scrypt assíncrono em tempo constante" | 🟡 |
 | SEG-07 | Cookie de sessão assinado, httpOnly, sameSite, secure; cai ao trocar senha | `server.js` (~41-62, 351) | `seguranca.test` "Sair continua valendo depois de reiniciar" | 🟡 — atributos do cookie sem teste |
 | SEG-08 | Limite de tentativas no login (e na chave da IA, perguntas, CNPJ) | `server.js` `tooMany`/`falhou` | `seguranca.test` (login por IP+usuário; apresentação com limite por IP; buscas da Lista de espera) | 🟡 — chave da IA e CNPJ sem teste |
-| SEG-09 | Troca de senha: 8-200 caracteres, diferente da atual, derruba outras sessões | `server.js` (~737-772) | — | ❌ |
-| SEG-10 | Cabeçalhos de segurança e CSP restrita | `server.js` (~253-263) | — | ❌ |
-| SEG-11 | Login/sair/trocar senha só da mesma origem | `mesmaOrigemForm` | — | ❌ |
+| SEG-09 | Troca de senha: 8-200 caracteres, diferente da atual, derruba outras sessões | `server.js` (~737-772) | `seguranca-perfis.test` SEG-09 | ✅ |
+| SEG-10 | Cabeçalhos de segurança e CSP restrita | `server.js` (~253-263) | `seguranca-perfis.test` SEG-10 | ✅ |
+| SEG-11 | Login/sair/trocar senha só da mesma origem | `mesmaOrigemForm` | `seguranca-perfis.test` SEG-11 | ✅ |
 | SEG-12 | Toda rota que grava exige `X-Painel: 1` | middlewares e rotas (todas conferidas) | `franqueado-loja.test`, `conferencia-rotas.test`, `push-rotas.test`, `permissoes-telas.test`, `seguranca.test` (sem X-Painel → recusado, em várias rotas) | 🟡 — não há varredura de todas as rotas |
 | SEG-13 | Ações importantes vão para a auditoria | `C.auditar` (dezenas de rotas) | `blind` (só grava/lê uma linha) | 🟡 — faltam algumas ações, ver C-01 |
 | SEG-14 | Apresentação nunca grava nem envia (servidor) | rotas `/api/demo/*`, curinga 404 | `ia.spec`, `reajuste.spec`, `esc` ("nada é salvo") | 🟡 |
@@ -81,7 +81,7 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 | SEG-16 | Dados guardados no aparelho: por pessoa e loja, 7 dias, apagados ao sair/entrar | `main.js` `Guardados`; `login.js` | `guardados.spec` | 🟡 (falta Sair, troca de pessoa, 7 dias) |
 | SEG-17 | Dado de cliente não vai para localStorage/IndexedDB fora das regras do SEG-16 | uso atual conferido | — | ❌ |
 | SEG-18 | Permissão no servidor, não só escondendo na tela | ver PERF | `ia.test` | 🟡 |
-| SEG-19 | E-mails pessoais do dono fora de código, commits e logs | nada automático | — | ❌ |
+| SEG-19 | E-mails pessoais do dono fora de código, commits e logs | nada automático | `seguranca-perfis.test` SEG-19 (arquivos versionados e mensagens de commit; não cobre logs da VPS nem o autor dos commits) | 🟡 |
 
 ## 3. IA (IA)
 
@@ -102,7 +102,7 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 | IA-13 | Erro de rede: espera, tenta uma vez, mensagem em português | `ia.js` `iaApi` | `ia.spec` "conexão que cai" | 🟡 |
 | IA-14 | Histórico por pessoa e loja, sem a lista de clientes | `iaconversas.js` | `ia.test` "histórico de conversas" | ✅ |
 | IA-15 | Clientes só com primeiro nome + inicial | `ia.js` `consultarClientes` | — | ❌ |
-| IA-16 | Auditoria e limite de pedidos da IA | `server.js` | — | ❌ |
+| IA-16 | Auditoria e limite de pedidos da IA | `server.js` | `seguranca-perfis.test` IA-16 | ✅ |
 
 ## 4. NF-e, devolução e notas de entrada (NFE)
 
@@ -111,7 +111,7 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 | NFE-01 | Robô conclui/homologa só depois do teste conferido (total igual, até 2 h) | `nfe.js` `emitir`; `devolucao.js`; robô | `nfe.test` "emitir… só a partir de um teste ok"; `devolucao.test` "emitir só depois de um teste" | 🟡 — venda não exige o total, ver A-06 |
 | NFE-02 | Só admin, franqueado e gerente com Notas fiscais | `lojaNfe`; `lojaDev` | — | ❌ — **furo, ver A-03** |
 | NFE-03 | Toda ação (teste, rascunho, emitir) é auditada | `server.js` | — | ❌ — faltam resultado do robô na devolução e reenvio |
-| NFE-04 | Pedido repetido para a mesma nota devolve 409 | `server.js`; `coletor.py` | — | ❌ |
+| NFE-04 | Pedido repetido para a mesma nota devolve 409 | `server.js`; `coletor.py` | `seguranca-perfis.test` NFE-04 (o painel; o 409 do próprio coletor.py não) | 🟡 |
 | NFE-05 | Sem coletor ligado: erro, nunca fingir que mandou | `server.js` | — | ❌ — devolução responde 200 com erro dentro |
 | NFE-06 | Robô confere itens/preços/total e para sem salvar se não bater | `nextsoft_nfe.py` | `devolucao.test` (só preenchimento) | 🟡 |
 | NFE-07 | `SIMULAR=1` faz tudo menos o clique final | `nextsoft_nfe.py`; `nfe.js` | `nfe.test` "rascunho… lê o resultado" | 🟡 |
@@ -250,14 +250,14 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 |---|---|---|---|---|
 | EQP-01 | Meta do mês: digitada > automática (ano anterior + %) > padrão | `core.js` `metaCalc`; `indicadores.js` `metaMes` | — | ❌ — duas cópias que divergem, ver B-08 |
 | EQP-02 | Meta individual = meta da loja ÷ quem divide (piso de dias com venda, proporcional no mês em andamento; quem volta de férias divide; quem cobriu um dia não diminui a meta dos outros) | `contas.js` `divisoresMeta`, `metasIndividuais`; `rules.js` | `contas.test` META-01…04 | ✅ |
-| EQP-03 | Comissão por categoria e faixa (≥120%, ≥100%, abaixo); modo simples | `rules.js` | — | ❌ |
-| EQP-04 | "Sem meta", "não recebem comissão", "sem vendedor" | `rules.js` | — | ❌ |
+| EQP-03 | Comissão por categoria e faixa (≥120%, ≥100%, abaixo); modo simples | `rules.js` | `comissao-regras.test` EQP-03 | ✅ |
+| EQP-04 | "Sem meta", "não recebem comissão", "sem vendedor" (venda sem vendedor não gera comissão nem premiação, com ou sem rateio, e a linha ganha um ⓘ — decisão do dono, 27/11/2026) | `rules.js` | `comissao-regras.test` EQP-04 | ✅ |
 | EQP-05 | Premiação por TKM, IPA e PMA | `rules.js`; `contas.js` (`MIN_ATEND_PREMIACAO`) | `contas.test` PREM-01 | 🟡 — só o mínimo de atendimentos |
 | EQP-06 | Bônus sobre outros vendedores | `rules.js` | `contas.test` BON-01 | 🟡 — só a faixa do bônus |
-| EQP-07 | Rateio igual do total de comissões | `rules.js` | — | ❌ |
+| EQP-07 | Rateio igual do total de comissões | `rules.js` | `comissao-regras.test` EQP-07 | ✅ |
 | EQP-08 | Meta de hoje = falta do mês ÷ dias abertos que faltam; parte de cada vendedora | `clientes.js` `cartaoMetaDia` | `voltar.spec` "Hoje: meta do dia" (só aparece) | 🟡 |
-| EQP-09 | Férias: datas válidas, até 300 períodos, auditadas | `admin-api.js` | `config-sem-null.spec` (só abre) | ❌ |
-| EQP-10 | Vendedora não recebe escala, equipe nem horas das colegas | `filtrarPorPerfil` | — | ❌ |
+| EQP-09 | Férias: datas válidas, até 300 períodos, auditadas | `admin-api.js` | `comissao-regras.test` EQP-09 (datas que não existem recusadas desde 27/11/2026) | ✅ |
+| EQP-10 | Vendedora não recebe escala, equipe nem horas das colegas | `filtrarPorPerfil` | `comissao-regras.test` EQP-10; `seguranca-perfis.test` EQP-10 | ✅ |
 | EQP-11 | Comissão projetada: a venda projetada de cada pessoa cai na faixa certa (não comissão parcial × fator); premiação e bônus pelas vendas da meta | `contas.js`; `rules.js` | `contas.test` COM-PROJ-01, BON-01 | ✅ |
 | EQP-12 | Regras da loja (piso de dias da meta 1–31, mínimo de atendimentos 0–2000) validadas no servidor | `contas.js` (`PISO_DIAS_META`, `MIN_ATEND_PREMIACAO`); `admin-api.js` | `contas.test` CFG-01 | ✅ |
 | VEND-REGRAS-01 | "Não entram no rateio", "Sem meta individual" e "Não recebem comissão" escolhem entre os vendedores ativos da loja (venda nos últimos 90 dias); nome antigo fica marcado "inativo"; o servidor recusa nome que não é vendedor da loja (aceita os já salvos, os dos modelos e "sem vendedor") | `src/vendregras.js`, `admin-api.js` PUT regras, `config.js` `seletorVendedores` | `vendregras.test`, `vend-regras.spec` | ✅ |
@@ -356,19 +356,19 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 |---|---|---|---|---|
 | PRC-01 | Custo e margem nunca para a vendedora (ver PERF-04) | rotas de estoque | `permissoes-telas.test` "telas de custo" | ✅ |
 | PRC-02 | Inventário: vendedora sem custo nem quantidade do sistema | `inventario.js` | `inventario.test` | 🟡 |
-| PRC-03 | Validade: custo do lote só para quem vê custos | `semCusto` | — | ❌ |
+| PRC-03 | Validade: custo do lote só para quem vê custos | `semCusto` | `seguranca-perfis.test` PRC-03 | ✅ |
 | PRC-05 | "Sincronizar agora" das notas: admin e o franqueado na loja dele | `server.js` | `franqueado-loja.test` "Sincronizar agora (notas de entrada)" | ✅ |
-| PRC-06 | Config. de estoque e classe travada: admin e franqueado | `server.js` | — | ❌ |
-| PRC-07 | Tela Site: só preço de tabela, sem custo | `server.js` | `telas.spec` (abre) | ❌ |
+| PRC-06 | Config. de estoque e classe travada: admin e franqueado | `server.js` | `seguranca-perfis.test` PRC-06 | ✅ |
+| PRC-07 | Tela Site: só preço de tabela, sem custo | `server.js` | `seguranca-perfis.test` PRC-07 | ✅ |
 | PRC-10 | Custo do pacote de chá = gramas × custo do kg + embalagem | `estoque.js` `custo`/`custoCadastro` | `voltar.spec` (indireto) | 🟡 |
 | PRC-11 | Venda casa com o estoque por código, código+gramas, dígito do tamanho ou nome | `estoque.js` `casar` | — | ❌ |
-| PRC-12 | Venda sem custo fica fora da margem e é listada | `estoque.js` | — | ❌ |
-| PRC-13 | Taxas fora do faturamento e da margem | `estoque.js` | — | ❌ |
+| PRC-12 | Venda sem custo fica fora da margem e é listada | `estoque.js` | `margem-resultado.test` PRC-12 | ✅ |
+| PRC-13 | Taxas fora do faturamento e da margem | `estoque.js` | `margem-resultado.test` PRC-13 | ✅ |
 | PRC-14 | Margem bruta = (venda − custo) ÷ venda | `estoque.js`; `precos.js` | `dicas.spec`; `voltar.spec` | 🟡 — "lucro bruto" com duas definições, ver B-07 |
-| PRC-15 | Deduções da margem líquida (comissão, royalties, Simples, maquininha, custos) | `estoque.js` `criarDeducoes` | — | ❌ |
-| PRC-16 | Ponto de equilíbrio | `estoque.js` | `telas.spec` (abre) | ❌ |
-| PRC-17 | Classe oficial (Estrela, Volume, Joia, Peso morto) | `estoque.js` | — | ❌ |
-| PRC-18 | Margem de tabela | `estoque.js` | `telas.spec` (abre) | ❌ |
+| PRC-15 | Deduções da margem líquida (comissão, royalties, Simples, maquininha, custos) | `estoque.js` `criarDeducoes` | `margem-resultado.test` PRC-15 | ✅ |
+| PRC-16 | Ponto de equilíbrio | `estoque.js` | `margem-resultado.test` PRC-16 | ✅ |
+| PRC-17 | Classe oficial (Estrela, Volume, Joia, Peso morto) | `estoque.js` | `margem-resultado.test` PRC-17 | ✅ |
+| PRC-18 | Margem de tabela | `estoque.js` | `margem-resultado.test` PRC-18 | ✅ |
 | PRC-19 | Histórico de custo do estoque só anota mudanças | `src/estoque.js` | — | ❌ |
 | PRC-20 | Compras = notas "Compra" concluídas | `src/estoque.js` | — | ❌ |
 | PRC-21 | Planilha de estoque do AppNext lida corretamente | `src/estoque.js` | `blind` "cadastro, estoque e tabela…" | ✅ |
@@ -402,14 +402,17 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 | Código | Regra | Onde está garantida | Teste | Cobertura |
 |---|---|---|---|---|
 | RES-01 | Resultado do mês (DRE) | `dre.js` | `contas.test` FAT-02 (o mesmo faturamento no Resultado), EQ-01; `telas.spec` (abre) | 🟡 — texto do ⓘ contradiz a conta, ver D-02 |
-| RES-02 | Projeção do mês em andamento | `dre.js` | — | ❌ |
-| RES-03 | Comparação com o ano anterior | `dre.js` | — | ❌ |
+| RES-02 | Projeção do mês em andamento | `dre.js` | `margem-resultado.test` RES-02 | ✅ |
+| RES-03 | Comparação com o ano anterior | `dre.js` | `margem-resultado.test` RES-03 (receita bruta e faturamento; não cada linha da DRE) | 🟡 |
 | RES-04 | Custo na data da venda (notas + fotos do estoque), nunca o custo de hoje no passado; sem histórico, o mais antigo marcado como estimado | `custodata.js`; `dre.js` | `custodata.test` CUSTO-01…03 | ✅ |
 | RES-05 | Rentabilidade: lucro, contribuição, curva ABC, por vendedora | `estoque.js` | `regras.spec`, `voltar.spec` (layout) | 🟡 |
 | RES-06 | Por tamanho de pacote e "qual pacote oferecer" | `estoque.js` | `voltar.spec` (layout) | 🟡 |
-| RES-07 | Margem abaixo da mínima, com o motivo | `estoque.js` | — | ❌ |
-| RES-08 | Lucro da promoção | `estoque.js` | — | ❌ |
-| RES-09 | Custos que mudaram | `estoque.js` | — | ❌ |
+| RES-07 | Margem abaixo da mínima, com o motivo | `estoque.js` | `margem-resultado.test` RES-07 | ✅ |
+| RES-08 | Lucro da promoção | `estoque.js` | `margem-resultado.test` RES-08 | ✅ |
+| PROMO-SIMPLES-01 | Lucro da promoção = venda − Simples − custo, como no Resultado e na Rentabilidade (decisão do dono, 27/11/2026: "os números precisam bater"); o Simples não sai de novo na contribuição | `public/js/estoque.js` (`TS.cartaoLucroPromo`) | `margem-resultado.test` RES-08 | ✅ |
+| PREMIO-CMV-01 | Prêmio da fidelidade / brinde a R$ 0,01: fora do faturamento, mas o custo entra no CMV do Resultado e no total da Rentabilidade (decisão do dono, 27/11/2026: custo dividido com a franquia, que devolve a parte dela no desconto dos royalties ou do pedido); o ⓘ do custo dos produtos mostra quanto | `public/js/dre.js` (`somarLinha`, `premios`), `public/js/estoque.js` | `margem-resultado.test` PREMIO-CMV-01 e PRC-12 | ✅ |
+| PRC-EFEITO-01 | Preços → Custo alterado: coluna "Efeito no período" (cada venda do período × (custo do dia − custo de antes do período)) e o total no herói (decisão do dono, 27/11/2026; veio do quadro "Custos que mudaram") | `public/js/precos.js` | `compras-reajustes.spec` PRC-EFEITO-01 | ✅ |
+| RES-09 | Custos que mudaram: o quadro parado (`cartaoCustos`, nunca chamado) saiu; o efeito em R$ da mudança de custo está em Preços → Custo alterado (PRC-EFEITO-01, decisão do dono 27/11/2026) | `public/js/precos.js` | `compras-reajustes.spec` PRC-EFEITO-01 | ✅ |
 | RES-10 | Ponto de equilíbrio inclui as despesas só deste mês (as mesmas do Resultado) | `contas.js` `pontoEquilibrio`; `estoque.js`; `dre.js` | `contas.test` EQ-01 | ✅ |
 | CXP-02…06 | A pagar, detalhes: vencimento da nota estimado (entrada + prazo, só compra concluída); entrada prevista (dinheiro e Pix no dia, cartão N dias depois sem a taxa; parte em cartão pelos fechamentos de caixa); saldo por semana com aviso; conta paga sai das somas (servidor grava por loja e recusa valor inválido); configuração dos prazos | `src/apagar.js`; `public/js/apagar.js` | `apagar.test` CXP-02…06 | ✅ |
 | CTD-02…05 | Exportação para o contador: vendas por dia pelo faturamento oficial, notas do mês (entrada pela data de entrada; cancelada fora do total), mês sem nada e só mês fechado, planilha .xlsx com as cinco abas | `src/contador.js` | `contador.test` CTD-02…05 | ✅ |
@@ -575,7 +578,7 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 
 | Código | Regra | Onde está garantida | Teste | Cobertura |
 |---|---|---|---|---|
-| ORC-01 | Só admin e franqueado (ver PERF-09) | `lojaOrc` | — | ❌ |
+| ORC-01 | Só admin e franqueado (ver PERF-09) | `lojaOrc` | `seguranca-perfis.test` ORC-01 | ✅ |
 | ORC-02 | Validação e numeração por loja | `orcamentos.js` | `orcamentos.test` | ✅ |
 | ORC-03 | Orçamento aprovado não muda | `orcamentos.js` | `orcamentos.test`; `voltar.spec` | 🟡 — **servidor deixa reabrir, ver A-07** |
 | ORC-04 | Perder exige motivo; só rascunho é excluído | `orcamentos.js` | `orcamentos.test` | ✅ |
@@ -625,7 +628,7 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 | APP-10 | Celular: tabela vira cartão, nada passa da borda | `components.js` | `telas.spec` (26 telas); `voltar.spec` | 🟡 (cartões próprios não conferidos) |
 | APP-11 | Nunca escrever "null" na tela | `.filter(Boolean)` | `telas.spec`; `config-sem-null.spec` | 🟡 — **Pedido no celular, ver A-08** |
 | APP-12 | Apresentação nunca grava (ver SEG-14/15) | `core.js` | vários | 🟡 |
-| APP-13 | Rota que grava exige X-Painel (ver SEG-12) | servidor | — | ❌ |
+| APP-13 | Rota que grava exige X-Painel (ver SEG-12) | servidor | `seguranca-perfis.test` APP-13 | ✅ |
 | APP-14 | Painel instalável: manifesto, ícones (192, 512, 512 maskable com o desenho na área segura, 180 do iPhone, selo 96 de uma cor) e service worker públicos; tags em todas as telas, inclusive login; o Chrome não aponta impedimento para instalar | `public/manifest.webmanifest`, `public/icones/`, `public/sw.js`; `server.js` (rotas públicas); `index.html`, `login.html`, `trocar-senha.html` | `push-rotas.test` (2); `aplicativo.spec` "manifesto e ícones" | ✅ |
 | APP-15 | Service worker só trata push e clique: mostra título, texto e link; só aceita link começando com "/"; mensagem quebrada vira aviso genérico; não guarda página | `public/sw.js` | `aplicativo.spec` "notificação" (entrega pelo CDP); `push.test` | ✅ (o clique na notificação não é simulado) |
 | APP-16 | Web Push sem biblioteca: cifra RFC 8291 (aes128gcm) e VAPID RFC 8292 (JWT ES256); chave da instalação criada uma vez, fora do git, arquivo 600; só a parte pública sai para a tela | `src/webpush.js` | `push.test` (cifra aberta pelo "lado do navegador", vetor do RFC, assinatura); `push-rotas.test` | ✅ — conferido à mão contra `http_ece` e `web-push` em pasta de rascunho |
@@ -737,6 +740,19 @@ Todos os da lista A foram conferidos no código, um por um.
 - **Resultado no celular (23/11/2026):** com a letra mais larga do GitHub, a 1ª coluna de valores do "Mês a mês" ficava 8 px escondida e o DRE-MES-09 clicava fora da vista (pego pelo CLIQUE-VISTA-01). A coluna dos nomes agora quebra a linha no celular (110–140 px). A tabela continua rolando de lado (G-01), mas o mês mais antigo, onde se clica primeiro, fica à vista.
 - **Corrigido junto:** Conferência → "Sobras e faltas de caixa" e Resultado → "Compras × vendas mês a mês" (cabeçalho que quebra a linha, cabem a 1100 px); Configurações → Usuários no celular (cada usuário um cartão, "Editar" ao lado do nome); nota de entrada (a coluna "Lote · validade" com "Incluir na devolução" ficava cortada).
 
+### H. Etapa 1 dos testes que faltavam (dinheiro e permissões, 27/11/2026)
+| # | Achado | Regra | Onde |
+|---|---|---|---|
+| H-01 | ~~O quadro "Custos que mudaram" (`cartaoCustos`) existia mas não era chamado~~ — **decidido pelo dono**: o efeito em R$ foi para Preços → Custo alterado (PRC-EFEITO-01) e o quadro saiu | RES-09 | `estoque.js` (`cartaoCustos`) |
+| H-02 | ~~Férias aceitavam data que não existe (31/02, mês 13)~~ — **corrigido** (27/11/2026) | EQP-09 | `admin-api.js` |
+| H-03 | ~~Emitir de novo a mesma NF-e de venda respondia 400 em vez de 409~~ — **corrigido** (nada saía em dobro) | NFE-04 | `nfe.js`, `server.js` |
+| H-04 | ~~Lucro da promoção: com o lucro de antes negativo, o "subiu/caiu" invertia o sinal~~ — **corrigido** (diferença sobre o valor absoluto) | RES-08 | `estoque.js` (`cartaoLucroPromo`) |
+| H-05 | ~~Projeção do Resultado multiplicava o valor real lançado de um custo em %~~ — **corrigido** (o lançado fica como está) | RES-02 | `dre.js` (`projetar`) |
+| H-06 | ~~Lucro da promoção era venda − custo, sem tirar o Simples~~ — **decidido pelo dono**: tira o Simples, como o Resultado (PROMO-SIMPLES-01) | RES-08 | `estoque.js` |
+| H-07 | ~~Prêmios a R$ 0,01: o custo sumia da Rentabilidade e do Resultado~~ — **decidido pelo dono**: o custo entra no CMV (PREMIO-CMV-01) | PRC-13 | `estoque.js` |
+| H-08 | ~~Com o rateio desligado, a linha SEM VENDEDOR recebia comissão pela taxa "abaixo" e ela entrava no total de comissões do Resultado~~ — **decidido pelo dono (27/11/2026): venda sem vendedor não gera comissão**; corrigido | EQP-04 | `rules.js` |
+| H-09 | O código PERF-17 estava em duas linhas: a de cache e índice das NF-e virou E-46 | — | esta matriz |
+
 ### E. Revisão dos dias 18 e 19/11 (5 revisores por área; corrigido com teste no mesmo PR)
 | Código | Achado | Onde | Situação |
 |---|---|---|---|
@@ -785,7 +801,7 @@ Todos os da lista A foram conferidos no código, um por um.
 | E-43 | Auditoria de BI (contas): faturamento com três definições e atendimento contado em dobro; meta comparada com venda COM Espaço Gourmet; projeção contando o dia em andamento e linear por dia corrido; período personalizado dividido pelo dia de hoje; meta dividida por qualquer pessoa com venda > 0; faixa do bônus em base diferente do "% da meta"; comissão projetada na faixa mínima; equilíbrio sem as despesas pontuais; premiação sem mínimo de atendimentos; comparação de 30 dias | `public/js/contas.js` (`contaFat`, `resumo`, `projecaoMes`, `divisoresMeta`, `pontoEquilibrio`); `rules.js` (piso `pisoDiasMeta`, `premiacao.minAtend`, faixa do bônus, `projFator`); `core.js`; `pages.js`; `inicio.js`; `dre.js`; `estoque.js`; `src/indicadores.js` | ✅ `contas.test` (FAT, ATD, PROJ, META, BON, PREM, COM-PROJ, EQ, CFG); `contas.spec` |
 | E-44 | Auditoria de BI (indicadores que prometiam mais do que mediam): retorno da campanha contava compra do dia do envio e dividia por quem ainda estava no prazo, sem grupo de comparação; classe só relativa à mediana; veredito do reajuste com amostra pequena; custo de hoje em mês passado; recompra com cliente sem prazo completo; perda por ruptura sem teto; compras ÷ vendas do mês parcial pela projeção | `campretorno.js` (st `'c'`, sorteio no servidor em `src/campanhas.js`); `classeprod.js`; `efeitopreco.js`; `custodata.js` (`M.custo`/`M.custoDet`); `recompra.js`; `ruptura.js` `MAX_ACUM`; `comprasvendas.js` | ✅ `campretorno.test`, `classeprod.test`, `efeitopreco.test`, `custodata.test`, `recompra.test`, `ruptura.test`, `comprasvendas.test`, `zapfila.test`; `auditoria-contas.spec` |
 | E-45 | Decisões do dono após a auditoria: (1) campanha que se repete criada antes do grupo de comparação passa a guardar os 10% na próxima lista; (2) limite do pedido (CMV real) pelo custo de HOJE — Resultado e Rentabilidade seguem pelo custo da data; (3) base do valor pago no bônus fica como sempre foi; (4) quem tem férias lançadas no mês divide a meta mesmo abaixo do piso | `src/campanhas.js` `comCompara`; `pedido.js` (`M.custoHoje`); `contas.js` `divisoresMeta({ sempre })`, `rules.js` | ✅ `campretorno.test` CAMP-CMP-03; `contas.test` META-04 |
-| PERF-17 | Índice das NF-e por data da pasta; compras/notas/histórico e contagens com cache por arquivo; apresentação pré-comprimida; limpeza dos envios ao robô (90 dias) | `nfsaida.js` `indiceDe`; `estoque.js` `lerComCache`; `inventario.js` `resumoDe`; `nfe.js`/`inventario.js` `limparEnvios`; `server.js` | ✅ `cache.test`, `dados-comprimidos.spec` (memo da espera e `packCache` sem teste) |
+| E-46 | Índice das NF-e por data da pasta; compras/notas/histórico e contagens com cache por arquivo; apresentação pré-comprimida; limpeza dos envios ao robô (90 dias) | `nfsaida.js` `indiceDe`; `estoque.js` `lerComCache`; `inventario.js` `resumoDe`; `nfe.js`/`inventario.js` `limparEnvios`; `server.js` | ✅ `cache.test`, `dados-comprimidos.spec` (memo da espera e `packCache` sem teste) |
 
 ## Resumo em números
 
@@ -794,23 +810,23 @@ Contado pelas linhas da matriz (`node scripts/matriz.js --resumo`; o guardião c
 <!-- resumo:inicio -->
 | Área | Regras | ✅ | 🟡 | ❌ |
 |---|---|---|---|---|
-| Perfis e permissões (PERF) | 34 | 10 | 17 | 7 |
-| Segurança, segredos, auditoria e apresentação (SEG) | 19 | 1 | 9 | 9 |
-| IA (IA) | 16 | 7 | 6 | 3 |
-| NF-e, devolução e notas de entrada (NFE) | 49 | 34 | 11 | 4 |
+| Perfis e permissões (PERF) | 34 | 13 | 17 | 4 |
+| Segurança, segredos, auditoria e apresentação (SEG) | 19 | 6 | 10 | 3 |
+| IA (IA) | 16 | 8 | 6 | 2 |
+| NF-e, devolução e notas de entrada (NFE) | 49 | 34 | 12 | 3 |
 | Dinheiro com a franquia (FRQ) | 19 | 13 | 6 | 0 |
 | Coletor e robôs (COL) | 7 | 1 | 2 | 4 |
 | Escala, horários, feriados e férias (ESC) | 45 | 20 | 12 | 13 |
-| Equipe, metas e comissão (EQP) | 13 | 4 | 3 | 6 |
+| Equipe, metas e comissão (EQP) | 13 | 9 | 3 | 1 |
 | Estoque, inventário, lotes e pedido (EST) | 83 | 51 | 15 | 17 |
-| Preços, custos e notas de entrada (PRC) | 42 | 15 | 8 | 19 |
-| Resultado e rentabilidade (RES) | 48 | 38 | 5 | 5 |
+| Preços, custos e notas de entrada (PRC) | 42 | 24 | 8 | 10 |
+| Resultado e rentabilidade (RES) | 51 | 45 | 6 | 0 |
 | Vendas e métricas (VEN) | 28 | 13 | 8 | 7 |
 | Clientes, fidelidade, WhatsApp e lista de espera (CLI) | 83 | 69 | 10 | 4 |
-| Orçamento (ORC) | 7 | 5 | 1 | 1 |
+| Orçamento (ORC) | 7 | 6 | 1 | 0 |
 | Checklist, fechamento e avisos (OPE) | 13 | 6 | 3 | 4 |
-| Estrutura do painel e atualização (APP) | 50 | 31 | 13 | 6 |
-| **Total** | **556** | **318 (57%)** | **129 (23%)** | **109 (20%)** |
+| Estrutura do painel e atualização (APP) | 50 | 32 | 13 | 5 |
+| **Total** | **559** | **350 (63%)** | **132 (24%)** | **77 (14%)** |
 <!-- resumo:fim -->
 
 ## Próximas etapas

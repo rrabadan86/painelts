@@ -598,7 +598,8 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
   r.put('/lojas/:id/ferias', lojaPermitida, json, (req, res) => {
     const lista = req.body && req.body.ferias;
     if (!Array.isArray(lista) || lista.length > 300) return res.status(400).json({ erro: 'Lista de férias inválida.' });
-    const DATA = /^\d{4}-\d{2}-\d{2}$/;
+    // data que existe no calendário (31/02 e mês 13 não passam; EQP-09)
+    const DATA = { test: (v) => { if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return false; const d = new Date(v + 'T12:00:00Z'); return !isNaN(d) && d.toISOString().slice(0, 10) === v; } };
     const limpa = [];
     for (const f of lista) {
       const vendedor = semQuebra(f && f.vendedor).toUpperCase().slice(0, 60);

@@ -1937,7 +1937,7 @@ app.post('/api/nfe/emitir', express.json({ limit: '2kb' }), async (req, res) => 
   const loja = lojaNfe(req, res); if (!loja) return;
   if (!COL.ativo()) return res.status(400).json({ erro: 'O coletor não está ligado nesta VPS.' });
   const r = NFE.emitir(loja.id, String((req.body || {}).id || ''), req.user);
-  if (r.erro) return res.status(400).json({ erro: r.erro });
+  if (r.erro) return res.status(r.repetido ? 409 : 400).json({ erro: r.erro }); // pedido repetido para a mesma nota: 409 (NFE-04)
   try {
     const x = await COL.nfe(loja.id, r.ok.id, 'rascunho', req.user);
     if (x.status >= 400) { const erro = (x.json && x.json.erro) || 'O coletor recusou.'; NFE.erro(loja.id, r.ok.id, erro); return res.status(x.status === 409 ? 409 : 400).json({ erro }); }

@@ -254,7 +254,9 @@
       // sem meta individual: recebe a comissão mínima (taxa "abaixo da meta") sobre o que vendeu;
       // em "Não recebem comissão": não recebe comissão nem premiação
       const SC = new Set((rg.semComissao || []).map((x) => String(x).trim().toLowerCase()));
-      const naoRecebe = SC.has(nomeV(v));
+      // venda sem vendedor não gera comissão nem premiação (decisão do dono, 27/11/2026; EQP-04)
+      const semVend = I.semVendedor.has(v);
+      const naoRecebe = SC.has(nomeV(v)) || semVend;
       const comV = (valor, meta, f) => (naoRecebe ? 0 : semMeta(v) ? valor * f.abaixo : comissao(valor, meta, cm.modo, f));
       const cArom = comV(m.arom, metaArom, cm.arom);
       const cPuro = comV(m.puro, metaPuro, cm.puro);
@@ -288,7 +290,7 @@
       }
       todas.push({
         vendedorId: v, vendedor: db.D.vendedor[v] || '(sem nome)', loja,
-        metaInd: mi, total: m.total, semMeta: semMeta(v), naoRecebe,
+        metaInd: mi, total: m.total, semMeta: semMeta(v), naoRecebe, semVendedor: semVend,
         divide: elegiveis.has(v), diasVenda: (diasVenda.get(v) || { size: 0 }).size, atend: ind.cupons, poucosAtend: poucos,
         metaArom, arom: m.arom, cArom, metaPuro, puro: m.puro, cPuro, metaAcess, acess: m.acess, cAcess,
         tkm: ind.tkm, pma: ind.pma, ipa: ind.ipa, premiacao: prem, bonus,
