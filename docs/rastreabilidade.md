@@ -409,7 +409,10 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 | RES-06 | Por tamanho de pacote e "qual pacote oferecer" | `estoque.js` | `voltar.spec` (layout) | 🟡 |
 | RES-07 | Margem abaixo da mínima, com o motivo | `estoque.js` | `margem-resultado.test` RES-07 | ✅ |
 | RES-08 | Lucro da promoção | `estoque.js` | `margem-resultado.test` RES-08 | ✅ |
-| RES-09 | Custos que mudaram | `estoque.js` | — (o quadro `cartaoCustos` não é chamado em tela nenhuma: achado H-01) | ❌ |
+| PROMO-SIMPLES-01 | Lucro da promoção = venda − Simples − custo, como no Resultado e na Rentabilidade (decisão do dono, 27/11/2026: "os números precisam bater"); o Simples não sai de novo na contribuição | `public/js/estoque.js` (`TS.cartaoLucroPromo`) | `margem-resultado.test` RES-08 | ✅ |
+| PREMIO-CMV-01 | Prêmio da fidelidade / brinde a R$ 0,01: fora do faturamento, mas o custo entra no CMV do Resultado e no total da Rentabilidade (decisão do dono, 27/11/2026: custo dividido com a franquia, que devolve a parte dela no desconto dos royalties ou do pedido); o ⓘ do custo dos produtos mostra quanto | `public/js/dre.js` (`somarLinha`, `premios`), `public/js/estoque.js` | `margem-resultado.test` PREMIO-CMV-01 e PRC-12 | ✅ |
+| PRC-EFEITO-01 | Preços → Custo alterado: coluna "Efeito no período" (cada venda do período × (custo do dia − custo de antes do período)) e o total no herói (decisão do dono, 27/11/2026; veio do quadro "Custos que mudaram") | `public/js/precos.js` | `compras-reajustes.spec` PRC-EFEITO-01 | ✅ |
+| RES-09 | Custos que mudaram: o quadro parado (`cartaoCustos`, nunca chamado) saiu; o efeito em R$ da mudança de custo está em Preços → Custo alterado (PRC-EFEITO-01, decisão do dono 27/11/2026) | `public/js/precos.js` | `compras-reajustes.spec` PRC-EFEITO-01 | ✅ |
 | RES-10 | Ponto de equilíbrio inclui as despesas só deste mês (as mesmas do Resultado) | `contas.js` `pontoEquilibrio`; `estoque.js`; `dre.js` | `contas.test` EQ-01 | ✅ |
 | CXP-02…06 | A pagar, detalhes: vencimento da nota estimado (entrada + prazo, só compra concluída); entrada prevista (dinheiro e Pix no dia, cartão N dias depois sem a taxa; parte em cartão pelos fechamentos de caixa); saldo por semana com aviso; conta paga sai das somas (servidor grava por loja e recusa valor inválido); configuração dos prazos | `src/apagar.js`; `public/js/apagar.js` | `apagar.test` CXP-02…06 | ✅ |
 | CTD-02…05 | Exportação para o contador: vendas por dia pelo faturamento oficial, notas do mês (entrada pela data de entrada; cancelada fora do total), mês sem nada e só mês fechado, planilha .xlsx com as cinco abas | `src/contador.js` | `contador.test` CTD-02…05 | ✅ |
@@ -740,13 +743,13 @@ Todos os da lista A foram conferidos no código, um por um.
 ### H. Etapa 1 dos testes que faltavam (dinheiro e permissões, 27/11/2026)
 | # | Achado | Regra | Onde |
 |---|---|---|---|
-| H-01 | O quadro "Custos que mudaram" (`cartaoCustos`) existe mas não é chamado em tela nenhuma: decidir se volta para a tela ou sai do código | RES-09 | `estoque.js` (`cartaoCustos`) |
+| H-01 | ~~O quadro "Custos que mudaram" (`cartaoCustos`) existia mas não era chamado~~ — **decidido pelo dono**: o efeito em R$ foi para Preços → Custo alterado (PRC-EFEITO-01) e o quadro saiu | RES-09 | `estoque.js` (`cartaoCustos`) |
 | H-02 | ~~Férias aceitavam data que não existe (31/02, mês 13)~~ — **corrigido** (27/11/2026) | EQP-09 | `admin-api.js` |
 | H-03 | ~~Emitir de novo a mesma NF-e de venda respondia 400 em vez de 409~~ — **corrigido** (nada saía em dobro) | NFE-04 | `nfe.js`, `server.js` |
 | H-04 | ~~Lucro da promoção: com o lucro de antes negativo, o "subiu/caiu" invertia o sinal~~ — **corrigido** (diferença sobre o valor absoluto) | RES-08 | `estoque.js` (`cartaoLucroPromo`) |
 | H-05 | ~~Projeção do Resultado multiplicava o valor real lançado de um custo em %~~ — **corrigido** (o lançado fica como está) | RES-02 | `dre.js` (`projetar`) |
-| H-06 | Lucro da promoção é venda − custo, sem tirar o Simples (Resultado e Rentabilidade tiram): confirmar com o dono | RES-08 | `estoque.js` |
-| H-07 | Prêmios a R$ 0,01 da fidelidade: o comentário diz que entram no total com o custo real, mas `M.taxa` os tira antes — o custo deles some da Rentabilidade: confirmar com o dono | PRC-13 | `estoque.js` |
+| H-06 | ~~Lucro da promoção era venda − custo, sem tirar o Simples~~ — **decidido pelo dono**: tira o Simples, como o Resultado (PROMO-SIMPLES-01) | RES-08 | `estoque.js` |
+| H-07 | ~~Prêmios a R$ 0,01: o custo sumia da Rentabilidade e do Resultado~~ — **decidido pelo dono**: o custo entra no CMV (PREMIO-CMV-01) | PRC-13 | `estoque.js` |
 | H-08 | ~~Com o rateio desligado, a linha SEM VENDEDOR recebia comissão pela taxa "abaixo" e ela entrava no total de comissões do Resultado~~ — **decidido pelo dono (27/11/2026): venda sem vendedor não gera comissão**; corrigido | EQP-04 | `rules.js` |
 | H-09 | O código PERF-17 estava em duas linhas: a de cache e índice das NF-e virou E-46 | — | esta matriz |
 
@@ -817,13 +820,13 @@ Contado pelas linhas da matriz (`node scripts/matriz.js --resumo`; o guardião c
 | Equipe, metas e comissão (EQP) | 13 | 9 | 3 | 1 |
 | Estoque, inventário, lotes e pedido (EST) | 83 | 51 | 15 | 17 |
 | Preços, custos e notas de entrada (PRC) | 42 | 24 | 8 | 10 |
-| Resultado e rentabilidade (RES) | 48 | 41 | 6 | 1 |
+| Resultado e rentabilidade (RES) | 51 | 45 | 6 | 0 |
 | Vendas e métricas (VEN) | 28 | 13 | 8 | 7 |
 | Clientes, fidelidade, WhatsApp e lista de espera (CLI) | 83 | 69 | 10 | 4 |
 | Orçamento (ORC) | 7 | 6 | 1 | 0 |
 | Checklist, fechamento e avisos (OPE) | 13 | 6 | 3 | 4 |
 | Estrutura do painel e atualização (APP) | 50 | 32 | 13 | 5 |
-| **Total** | **556** | **346 (62%)** | **132 (24%)** | **78 (14%)** |
+| **Total** | **559** | **350 (63%)** | **132 (24%)** | **77 (14%)** |
 <!-- resumo:fim -->
 
 ## Próximas etapas

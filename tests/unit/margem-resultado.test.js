@@ -224,11 +224,12 @@ test('PRC-12: venda sem custo fica fora da margem e é listada com o motivo (ch�
   ]);
   const verde = tabelaDe(sem).rows.find((r) => r.produto === 'Chá Verde');
   assert.strictEqual(verde.granel, true); assert.strictEqual(verde.tamanhos, '2× 50g');
-  // a margem do herói é só das vendas com custo: lucro bruto = 340 − Simples 6% − custo (44 + 40 + 90 + 30)
+  // a margem do herói é só das vendas com custo: lucro bruto = 340 − Simples 6% − custo (44 + 40 + 90 + 30) − o custo do
+  // prêmio a R$ 0,01 (infusor, 20), que entra no total da loja (PREMIO-CMV-01, decisão do dono 27/11/2026)
   const heroi = achar(raiz, (n) => n.tag === 'heroi')[0];
   const lb = heroi.attrs.a[0].find((c) => c.rot === 'Lucro bruto');
-  assert.strictEqual(lb.num, TS.fmt.brl0(115.6)); // 340 − 20,40 − 204 = 115,60
-  assert.match(lb.linhas[0].textContent, /margem de 34,0%/);
+  assert.strictEqual(lb.num, TS.fmt.brl0(95.6)); // 340 − 20,40 − 204 − 20 = 95,60
+  assert.match(lb.linhas[0].textContent, /margem de 28,1%/); // 95,60 ÷ 340
 });
 
 test('PRC-12: com custo em todas as vendas, a lista "Vendas sem custo" não aparece', async () => {
@@ -366,19 +367,20 @@ async function promo(antes, durante, extra = []) {
   return { TS, card };
 }
 test('RES-08: lucro da promoção — lucro bruto por dia antes × durante, veredito e produtos que mais mudaram (taxas fora)', async () => {
-  // antes: 10 infusores a 50 (lucro 300 em 10 dias = 30/dia); durante: 30 com desconto de 15 (venda 1050, custo 600 → 45/dia)
+  // lucro bruto = venda − Simples (6%) − custo, como no Resultado (PROMO-SIMPLES-01, decisão do dono 27/11/2026)
+  // antes: 10 infusores a 50 (500 − 30 − 200 = 270 em 10 dias = 27/dia); durante: 30 a 35 (1050 − 63 − 600 = 387 → 38,7/dia)
   const { card } = await promo([infusor('2026-09-05', 10)], [infusor('2026-10-05', 30, { du: 15 })], [taxaDelivery('2026-10-06', 500)]);
   const corpo = card.kids[0];
   const t = corpo.textContent;
-  assert.match(t, re('A promoção se pagou: o lucro por dia subiu 50% em relação aos 10 dias antes, mesmo com R$ 450 em descontos.'));
+  assert.match(t, re('A promoção se pagou: o lucro por dia subiu 43% em relação aos 10 dias antes, mesmo com R$ 450 em descontos.'));
   assert.match(t, /Ainda não há dias depois da promoção\./);
   const rows = tabelaDe(corpo).rows;
-  assert.deepStrictEqual(js(rows.map((r) => [r.produto, r.antes, r.durante, r.dif])), [['Infusor', 30, 45, 15]]);
+  assert.deepStrictEqual(js(rows.map((r) => [r.produto, r.antes, Math.round(r.durante * 100) / 100, Math.round(r.dif * 100) / 100])), [['Infusor', 27, 38.7, 11.7]]);
   // empate (±3%) e prejuízo
   const { card: c2 } = await promo([infusor('2026-09-05', 10)], [infusor('2026-10-05', 10)]);
   assert.match(c2.kids[0].textContent, /Empate: o lucro por dia ficou praticamente igual/);
   const { card: c3 } = await promo([infusor('2026-09-05', 10)], [infusor('2026-10-05', 10, { du: 20 })]);
-  assert.match(c3.kids[0].textContent, /A promoção não se pagou: o lucro por dia caiu 67%/);
+  assert.match(c3.kids[0].textContent, /A promoção não se pagou: o lucro por dia caiu 70%/);
 });
 
 test('RES-08: lucro antes negativo — subir de −R$ 2,50/dia para +R$ 2,00/dia é melhora, não "não se pagou"', async () => {
@@ -464,4 +466,15 @@ test('RES-03: mês fechado — compara com o mesmo mês inteiro do ano anterior;
   const rb2 = linhaDre(r2, 'Receita bruta');
   assert.strictEqual(rb2.kids[rb2.kids.length - 1].textContent, '—');
   assert.strictEqual(cartao(r2, 'Resultado de out/26').attrs.sub, 'Sem o mesmo mês do ano anterior para comparar');
+});
+
+// PREMIO-CMV-01 (decisão do dono, 27/11/2026): prêmio da fidelidade a R$ 0,01 não é venda, mas o custo dele entra no CMV
+// do Resultado (custo dividido com a franquia: a parte dela volta no desconto dos royalties ou do pedido)
+test('PREMIO-CMV-01: custo do prêmio a R$ 0,01 entra no CMV do Resultado, fora do faturamento', async () => {
+  const TS = painel(OUT, { cfg: CFG });
+  const M = await TS.custosLoja();
+  const out = TS.dreCalcular(M, {}).find((m) => m.ym === '2026-10');
+  perto(out.premios, 20, 'custo do infusor que saiu a R$ 0,01');
+  perto(out.fat, 540, 'o prêmio não entra no faturamento');
+  assert.ok(out.cmv >= 20 && out.cmv - out.custo - (out.fat - out.fatCusto) * (out.custo / out.fatCusto) - 20 < 0.01, 'CMV = custo das vendas (+ estimado) + prêmios');
 });

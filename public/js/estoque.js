@@ -353,13 +353,13 @@
   /** cartão "Lucro da promoção": antes × durante × depois (só admin e franqueado) */
   TS.cartaoLucroPromo = function ({ antes, durante, depois, diasAntes, diasDurante, diasDepois }) {
     const corpo = h('div', null, h('div', { class: 'muted' }, 'Calculando o lucro…'));
-    const card = TS.card('Lucro da promoção', 'Com o custo de cada produto (planilha de estoque do AppNext). Lucro por dia, para comparar períodos de tamanhos diferentes.', corpo);
+    const card = TS.card('Lucro da promoção', 'Com o custo de cada produto (planilha de estoque do AppNext). Lucro bruto = venda − Simples − custo, como no Resultado. Lucro por dia, para comparar períodos de tamanhos diferentes.', corpo);
     TS.custosLoja().then((M) => {
       if (!M) { card.remove(); return; }
       const db = TS.db;
       const DD = M.ded;
       const calc = (idx, dias) => {
-        let vt = 0, custo = 0, comCusto = 0, desc = 0, ded = 0, dedVar = 0;
+        let vt = 0, custo = 0, comCusto = 0, desc = 0, ded = 0, dedVar = 0, imp = 0;
         const prod = new Map();
         for (const i of idx) {
           if (M.taxa(i)) continue;
@@ -367,12 +367,15 @@
           const c = M.custo(i);
           if (c == null) continue;
           comCusto += v; custo += c;
-          if (DD) { const dd = DD.deducoes(i); ded += dd.var + dd.fix; dedVar += dd.var; }
+          // lucro bruto como no Resultado e na Rentabilidade: venda − Simples − custo (PROMO-SIMPLES-01, decisão do dono 27/11/2026)
+          let impL = 0;
+          if (DD) { const dd = DD.deducoes(i); ded += dd.var + dd.fix; dedVar += dd.var; impL = dd.imp || 0; imp += impL; }
           const cs = M.casar(i);
           const k = cs && cs.kg ? cs.it.desc : db.D.descricao[db.desc[i]];
-          const p = prod.get(k) || { vt: 0, lucro: 0 }; p.vt += v; p.lucro += v - c; prod.set(k, p);
+          const p = prod.get(k) || { vt: 0, lucro: 0 }; p.vt += v; p.lucro += v - impL - c; prod.set(k, p);
         }
-        const lucro = comCusto - custo, liq = lucro - ded, contrib = lucro - dedVar;
+        // o Simples já saiu do lucro bruto: não sai de novo nas despesas
+        const lucro = comCusto - imp - custo, liq = lucro - (ded - imp), contrib = lucro - (dedVar - imp);
         return { dias, vt, desc, lucro, liq, contrib, margem: comCusto ? lucro / comCusto : null, margemLiq: comCusto ? liq / comCusto : null, margemContrib: comCusto ? contrib / comCusto : null, contribDia: dias ? contrib / dias : null, lucroDia: dias ? lucro / dias : null, liqDia: dias ? liq / dias : null, vtDia: dias ? vt / dias : null, prod };
       };
       const A = calc(antes, diasAntes), D = calc(durante, diasDurante), P = diasDepois > 0 ? calc(depois, diasDepois) : null;
@@ -502,8 +505,14 @@
     // uma unidade a R$ 0,01 levava a margem do produto a −100.000% e esticava o gráfico.
     const resg = (i) => TS.ehResgate(i) || ((db.qtd[i] || 0) > 0 && (db.vt[i] || 0) / db.qtd[i] < 0.05);
     let nResg = 0, custoResg = 0;
+    const I0 = TS.rules.ids;
     for (const i of base) {
-      if (M.taxa(i)) continue;
+      if (M.taxa(i)) {
+        // prêmio a R$ 0,01 (o M.taxa tira do faturamento): o custo é real e entra no total da loja, como no Resultado
+        // (PREMIO-CMV-01, decisão do dono 27/11/2026: custo dividido com a franquia, que devolve a parte dela nos royalties ou no pedido)
+        if (TS.contas.ehCentavo(db.vu[i]) && !I0.taxaServico.has(db.desc[i])) { const c0 = M.custo(i); if (c0 > 0) { custoTot += c0; custoResg += c0; nResg += db.qtd[i] || 0; } }
+        continue;
+      }
       const vt = db.vt[i] || 0;
       fat += vt;
       const cd = M.custoDet(i), c = cd ? cd.v : null;
@@ -904,42 +913,7 @@
       }));
     }
 
-    // ---------- custos que mudaram no AppNext ----------
-    function cartaoCustos() {
-      const datas = Object.values(historico || {}).flatMap((l) => l.map((x) => x[0]));
-      if (!datas.length) return null;
-      const inicio = datas.sort()[0];
-      const limite = TS.dayToIso(TS.todayDay() - 90);
-      // consumo no período (kg ou unidades do item) para medir o efeito da mudança
-      const consumoItem = new Map();
-      for (const i of base) { if (M.taxa(i)) continue; for (const [it, q] of M.consumo(i)) consumoItem.set(it.cod, (consumoItem.get(it.cod) || 0) + q); }
-      const porCodItem = M.porCod;
-      const linhas = [];
-      for (const [cod, l] of Object.entries(historico)) {
-        if (l.length < 2) continue;
-        const ult = l[l.length - 1];
-        const ref = [...l].reverse().find((x) => x[0] <= limite && x !== ult) || l[0];
-        if (ref === ult || !(ref[1] > 0)) continue;
-        const v = ult[1] / ref[1] - 1;
-        if (Math.abs(v) < 0.03) continue;
-        const it = porCodItem.get(cod);
-        const cons = consumoItem.get(cod) || 0;
-        linhas.push({ cod, item: it ? it.desc : cod, un: it && it.un === 'Kg' ? 'kg' : 'un', antes: ref[1], deData: ref[0], agora: ult[1], ateData: ult[0], v, efeito: cons * (ult[1] - ref[1]) });
-      }
-      linhas.sort((a, b) => Math.abs(b.efeito) - Math.abs(a.efeito) || Math.abs(b.v) - Math.abs(a.v));
-      const sub = `Comparação do custo atual do AppNext com o de ~90 dias atrás (ou o primeiro registrado). O painel guarda o custo a cada planilha de estoque desde ${fmt.date(inicio)}.`;
-      if (!linhas.length) return TS.card('Custos que mudaram', sub, h('p', { class: 'muted' }, 'Nenhum custo mudou 3% ou mais até agora. As mudanças aparecem aqui conforme novas planilhas de estoque chegam.'));
-      return TS.card('Custos que mudaram', sub, TS.table({
-        cols: [
-          { key: 'item', label: 'Item do estoque', align: 'l', sticky: true, wrap: true },
-          { key: 'antes', label: 'Antes', render: (r) => h('span', null, fmt.brl(r.antes), h('small', { class: 'est-tam' }, fmt.date(r.deData))), sortVal: (r) => r.antes },
-          { key: 'agora', label: 'Agora', render: (r) => h('span', null, fmt.brl(r.agora), h('small', { class: 'est-tam' }, fmt.date(r.ateData))), sortVal: (r) => r.agora },
-          { key: 'v', label: 'Variação', fmt: (v) => fmt.delta(v), cls: (r) => (r.v > 0 ? 'neg' : 'pos') },
-          { key: 'efeito', label: 'Efeito no período', title: 'Quanto o custo do que foi vendido no período mudou por causa disso (consumo × diferença de custo). Positivo = margem menor', fmt: (v) => (Math.abs(v) < 0.005 ? '—' : (v > 0 ? '+' : '') + fmt.brl(v)), cls: (r) => (r.efeito > 0 ? 'neg' : r.efeito < 0 ? 'pos' : '') },
-        ],
-        rows: linhas, sortKey: null, maxHeight: '360px', search: 'Buscar item…', searchKeys: ['item'], cls: 'est-t',
-      }));
-    }
+    // "Custos que mudaram" saiu daqui: o efeito em R$ foi para Preços → aba "Custo alterado" (PRC-EFEITO-01, decisão do dono 27/11/2026)
 
     // ---------- reposição: últimos 30 dias da loja (sem os filtros) + sazonalidade do ano passado ----------
     const ent = cfg.entregaDias, cob = cfg.coberturaDias, seg = cfg.segurancaPct ?? 50;

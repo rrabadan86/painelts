@@ -80,3 +80,15 @@ test('Preços: efeito dos reajustes de venda', async ({ page }) => {
   await expect(page.locator('.card-title', { hasText: 'Produtos' })).toBeVisible();
   await semRolagem(page);
 });
+
+// PRC-EFEITO-01 (decisão do dono, 27/11/2026): o "efeito em R$" do antigo quadro "Custos que mudaram" foi para Preços → Custo alterado
+test('PRC-EFEITO-01: Preços → Custo alterado mostra o efeito em R$ de cada mudança de custo no período', async ({ page }) => {
+  await abrir(page, 'precos', 'custo');
+  await page.evaluate(() => TS.aplicarPreset && TS.aplicarPreset('ano'));
+  const card = page.locator('main .card', { has: page.locator('.card-title', { hasText: 'Produtos' }) }).first();
+  await expect(card).toBeVisible({ timeout: 20000 });
+  if (await card.locator('.t-vazio, .lmob-vazio').count()) test.skip(true, 'a apresentação não tem custo alterado neste período');
+  await expect(card).toContainText('Efeito');
+  await semLixo(card);
+  await semRolagem(page);
+});

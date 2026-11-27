@@ -73,7 +73,8 @@
       if (M.taxa(i) || !(db.qtd[i] > 0) || !(db.vu[i] > 0)) continue;
       const nome = db.D.descricao[db.desc[i]];
       let p = prods.get(nome);
-      if (!p) { p = { nome, cat: String(db.D.cat[db.cat[i]] || '').split(',')[0].trim(), semanas: new Map(), ult: i, vt: 0, qtd: 0 }; prods.set(nome, p); }
+      if (!p) { p = { nome, cat: String(db.D.cat[db.cat[i]] || '').split(',')[0].trim(), semanas: new Map(), ult: i, vt: 0, qtd: 0, porDia: new Map() }; prods.set(nome, p); }
+      p.porDia.set(db.day[i], (p.porDia.get(db.day[i]) || 0) + db.qtd[i]); // para o efeito em R$ da mudança de custo (PRC-EFEITO-01)
       const w = semana(db.day[i]);
       const s = p.semanas.get(w) || p.semanas.set(w, new Map()).get(w);
       const k = Math.round(db.vu[i] * 100) / 100;
@@ -120,7 +121,7 @@
         antC = c.v;
       }
       if (!custoEv.length) { const c = custoNoDia(TS.todayDay()); if (c.v != null) custoEv.push({ dia: null, v: c.v, inicio: true, est: true }); }
-      lista.push({ ultDia: db.day[p.ult], semanas: p.semanas, nome: p.nome, cat: p.cat, grp: (db.D.grupo && db.D.grupo[db.grupo[p.ult]]) || '', cod: db.D.cod ? String(db.D.cod[db.cod[p.ult]] ?? '') : '', comp, custoNoDia, custoEm, origemEm, vendaEv, custoEv, vt: p.vt, qtd: p.qtd, kg: comp.some(([it]) => it.un === 'Kg') });
+      lista.push({ porDia: p.porDia, ultDia: db.day[p.ult], semanas: p.semanas, nome: p.nome, cat: p.cat, grp: (db.D.grupo && db.D.grupo[db.grupo[p.ult]]) || '', cod: db.D.cod ? String(db.D.cod[db.cod[p.ult]] ?? '') : '', comp, custoNoDia, custoEm, origemEm, vendaEv, custoEv, vt: p.vt, qtd: p.qtd, kg: comp.some(([it]) => it.un === 'Kg') });
     }
     return { lista, temCompras: !!(compras && Object.keys(compras.itens || {}).length), inicioCusto: Math.min(...[...hist.values()].map((l) => (l.length ? l[0][0] : Infinity))) };
   }
@@ -225,6 +226,14 @@
       // o que saiu no caixa × o cadastro
       r.tabDif = r.tab != null && r.vCx != null && Math.abs(r.tab - r.vCx) >= 0.01 ? r.vCx / r.tab - 1 : null;
       if (r.tabDif != null) r.tabPor = porQueDifere(r, ate);
+      // efeito em R$ da mudança de custo no período (PRC-EFEITO-01, pedido do dono 27/11/2026; era o quadro "Custos que mudaram"):
+      // cada venda do período × (custo do dia − custo de antes do período). Positivo = o custo do que foi vendido ficou maior
+      r.efeito = null;
+      if (r.nC > 0 && r.cAnt != null && r.porDia) {
+        let ef = 0;
+        for (const [d, q] of r.porDia) { if ((de != null && d < de) || d > ate) continue; const c = r.custoNoDia(d).v; if (c != null) ef += q * (c - r.cAnt); }
+        r.efeito = Math.round(ef * 100) / 100;
+      }
     }
     const FIL = {
       todos: ['Todos os itens', () => true],
@@ -240,12 +249,13 @@
     const inicioCusto = Number.isFinite(D.inicioCusto) ? TS.dayToIso(D.inicioCusto) : null;
     const irP = (k, rot) => h('button', { type: 'button', class: 'link-btn est-heroi-conta', onclick: () => { state.precoFil = k; pintar(corpo, D); } }, rot);
     const mC = media(comC.map((r) => r.cVar)), mV = media(comV.map((r) => r.vVar));
+    const efTot = comC.reduce((a, r) => a + (r.efeito || 0), 0);
     const E = D.efeito, julgados = E ? E.bons + E.ruins + E.iguais : 0;
     const heroiPrecos = () => TS.heroi([
       { rot: 'Perderam margem', num: fmt.int(perda.length), estado: perda.length ? 'ruim' : null, dica: 'Margem bruta no fim do período menor que antes dele.',
         linhas: [perda.length ? 'custo subiu mais que a venda' : 'nenhum no período', perda.length ? irP('margem', 'ver quais ›') : null] },
       { rot: 'Custo alterado', num: fmt.int(comC.length), dica: 'Produtos vendidos cujo custo mudou no período (para chá a granel, o custo do pacote: kg × tamanho + embalagem).',
-        linhas: [comC.length ? h('span', null, 'variação média ', h('b', { class: mC > 0 ? 'neg' : 'pos' }, pctTxt(mC))) : 'nenhum no período', comC.length ? irP('custo', 'ver os reajustes de custo ›') : null] },
+        linhas: [comC.length ? h('span', null, 'variação média ', h('b', { class: mC > 0 ? 'neg' : 'pos' }, pctTxt(mC))) : 'nenhum no período', efTot ? h('span', { 'data-efeito': '1' }, 'efeito no período ', h('b', { class: efTot > 0 ? 'neg' : 'pos' }, (efTot > 0 ? '+' : '') + fmt.brl0(efTot))) : null, comC.length ? irP('custo', 'ver os reajustes de custo ›') : null].filter(Boolean) },
       { rot: 'Venda alterada', num: fmt.int(comV.length), dica: 'Preço de tabela praticado nas vendas (sem desconto): conta quando o preço novo se mantém.',
         linhas: [comV.length ? h('span', null, 'variação média ', h('b', null, pctTxt(mV))) : 'nenhum no período', comV.length ? irP('venda', 'ver os reajustes de venda ›') : null] },
     ], { titulo: 'Reajustes no período', extra: h('div', { class: 'prc-heroi-extra' },
@@ -302,10 +312,12 @@
       render: (r) => h('div', { class: 'prc-c' }, h('span', { class: 'prc-c1' }, h('b', null, fmt.brl(r.vCx)), h('span', { class: 'prc-badge ' + (r.tabPor && r.tabPor.tipo === 'parado' ? 'prc-neutro' : 'prc-ruim') }, pctTxt(r.tabDif))), h('small', null, 'do sistema')), sortVal: (r) => (r.tabDif == null ? -99 : Math.abs(r.tabDif)) };
     const cMotivo = { key: 'tabPor', label: 'Motivo provável', align: 'l', wrap: true, title: 'Por que o caixa difere do sistema, olhando as vendas das últimas 4 semanas: "última venda dd/mm" = não vende mais e o preço é antigo; "promoção?" = parte das vendas no preço do sistema e parte em outro; "PDV ≠ cadastro" ou "desde dd/mm" = todas as vendas fora do preço do sistema (um dos dois está desatualizado).',
       render: (r) => (r.tabPor ? h('span', null, h('b', null, r.tabPor.curto), h('small', { class: 'muted efp-det' }, r.tabPor.longo)) : '—'), sortVal: (r) => (r.tabPor ? r.tabPor.tipo : '') };
+    const cEfeito = { key: 'efeito', label: 'Efeito no período', title: 'Quanto o custo do que foi vendido no período mudou por causa do reajuste: cada venda × (custo do dia − custo de antes do período). Vermelho = a loja pagou mais pelo que vendeu (a margem caiu); verde = pagou menos.',
+      cls: (r) => (r.efeito > 0 ? 'neg' : r.efeito < 0 ? 'pos' : ''), fmt: (v) => (v == null ? '—' : (v > 0 ? '+' : '') + fmt.brl(v)) };
     const ehCad = filtro === 'cad';
-    const tab = TS.table({ linhaMob: { nome: 'nome', val: 'difMargem', l2: ['cVar', 'vVar'], l3: ['vAt', 'cx', 'tabPor'] }, // celular em linhas (LMOB-04)
+    const tab = TS.table({ linhaMob: { nome: 'nome', val: 'difMargem', l2: filtro === 'custo' ? ['cVar', 'efeito'] : ['cVar', 'vVar'], l3: ['vAt', 'cx', 'tabPor'] }, // celular em linhas (LMOB-04)
         
-      cols: ehCad ? [cNome, cSistema, cCaixa, cMotivo] : [cNome, cCusto, cPreco, cMargem],
+      cols: ehCad ? [cNome, cSistema, cCaixa, cMotivo] : filtro === 'custo' ? [cNome, cCusto, cEfeito, cPreco, cMargem] : [cNome, cCusto, cPreco, cMargem],
       rows, sortKey: ehCad ? 'cx' : filtro === 'margem' ? 'difMargem' : 'cVar', sortDir: filtro === 'margem' ? 'asc' : 'desc', maxHeight: '640px', search: 'Buscar produto…', searchKeys: ['nome', 'cat', 'grp'], produto: 'nome', cls: 'est-t prc-t', cartao: true,
       empty: 'Nenhum produto neste filtro no período.',
     });

@@ -93,7 +93,6 @@ TS.DICAS = {
   'Produtos por lucro': 'Curva ABC: A = produtos que somam 80% do lucro, B = os próximos 15%, C = o resto.',
   'Lucro por vendedora': 'Margem de contribuição das vendas de cada vendedora. Quem vende mais nem sempre deixa mais lucro.',
   'Kits sugeridos': 'Pares de produtos que saem juntos no mesmo cupom mais do que o acaso explicaria: bons candidatos a kit.',
-  'Custos que mudaram': 'Produtos cujo custo no AppNext mudou no período.',
   // ---------- Preços ----------
   'Custo alterado': 'Produtos vendidos cujo custo mudou no período (chá a granel: custo do pacote = kg × tamanho + embalagem).',
   'Venda alterada': 'Produtos cujo preço praticado mudou no período (o preço novo precisa se manter nas semanas seguintes).',
