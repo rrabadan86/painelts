@@ -267,16 +267,16 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 | Código | Regra | Onde está garantida | Teste | Cobertura |
 |---|---|---|---|---|
 | EST-01 | Estoque em tabela única; busca em todos os produtos | `estoque.js` | `estoque.spec` | ✅ |
-| EST-02 | Quadros do topo filtram a tabela | `estoque.js` | `estoque.spec` (só "parado") | 🟡 |
-| EST-03 | Quanto repor: previsão × (entrega + cobertura) − estoque, com época do ano | `estoque.js` (~841-899) | — | ❌ |
-| EST-04 | Situação: acabou / falta antes da entrega / abaixo do mínimo / pedir / OK | `estoque.js` | — | ❌ |
-| EST-05 | Estoque parado: com saldo e sem venda há N dias | `estoque.js` | `estoque.spec` (etiqueta) | 🟡 |
-| EST-06 | Mínimo sugerido × mínimo do AppNext | `estoque.js` | — | ❌ |
+| EST-02 | Quadros do topo filtram a tabela | `estoque.js` | `estoque-regras.test` EST-02 (conta); `estoque.spec` (clique) | ✅ |
+| EST-03 | Quanto repor: previsão × (entrega + cobertura) − estoque, com época do ano | `estoque.js` (~841-899) | `estoque-regras.test` EST-03 | ✅ |
+| EST-04 | Situação: acabou / falta antes da entrega / abaixo do mínimo / pedir / OK | `estoque.js` | `estoque-regras.test` EST-04 | ✅ |
+| EST-05 | Estoque parado: com saldo e sem venda há N dias | `estoque.js` | `estoque-regras.test` EST-05; `estoque.spec` (etiqueta) | ✅ |
+| EST-06 | Mínimo sugerido × mínimo do AppNext | `estoque.js` | `estoque-regras.test` EST-06 | ✅ |
 | EST-07 | Nota lançada depois da planilha de estoque | `estoque.js` | `estoque.spec` | 🟡 — conta notas que não são de compra |
-| EST-08 | Valor do estoque a custo (só com saldo e custo) | `estoque.js` | — | ❌ |
-| EST-09 | Consumo de saco e etiqueta pelos pacotes vendidos | `estoque.js` `consumo` | — | ❌ |
-| EST-10 | Baixar pedido em CSV | `estoque.js` | — | ❌ |
-| EST-11 | Limites da configuração de estoque | `src/estoque.js` `validarCfg` | — | ❌ |
+| EST-08 | Valor do estoque a custo (só com saldo e custo) | `estoque.js` | `estoque-regras.test` EST-08 | ✅ |
+| EST-09 | Consumo de saco e etiqueta pelos pacotes vendidos | `estoque.js` `consumo` | `estoque-regras.test` EST-09 | ✅ |
+| EST-10 | Baixar pedido em CSV | `estoque.js` | `estoque-regras.test` EST-10 (situação por extenso no CSV desde 27/11/2026) | ✅ |
+| EST-11 | Limites da configuração de estoque | `src/estoque.js` `validarCfg` | `estoque-regras.test` EST-11 | ✅ |
 | EST-20 | Lote e validade só no chá a granel; faixas de validade | `lotes.js` | `lotes.test` (2) | ✅ |
 | EST-21 | Saldo dos lotes pela ordem de entrada | `lotes.js` | `lotes.test` | ✅ |
 | EST-22 | Editar nº do lote e validade | `lotes.js` | `lotes.test` "edição do nº do lote…" | ✅ |
@@ -302,17 +302,17 @@ Arquivos de teste: `tests/unit/*.test.js` (unidade, `node --test`) e `tests/e2e/
 | EST-45 | Sugestão no pedido fica "aguardando entrega" (a estrela continua); valem notas da TSB FRANQUIAS emitidas a partir do dia do pedido; a primeira a entrar no AppNext + as que entrarem até 5 dias depois (pela data de entrada) formam a entrega: produto nelas → "chegou na loja" e a estrela sai; sem ele → "não veio no pedido" e volta; chegou depois em nota da franquia → "chegou" também; sem nota em 30 dias → volta. Recusa do site no carrinho → "não foi possível pedir" e volta. Sem estoque no site é automático; não entrou guarda o motivo; histórico guardado (decisão do dono) | `sugestoes.js` `fechar`/`avaliarNotas`/`resultadoCarrinho`/`visto`; `server.js` (a cada 15 min, ao abrir e no fim do carrinho) | `sugestoes.test` "entrega…" (3), "pedido…"; `sugestoes.spec` | ✅ |
 | EST-46 | Fora de linha: produto indisponível no Sistema de Pedidos há 90+ dias seguidos (ou que saiu do catálogo) vira "Fora de linha · liquidar" no Estoque, sai de "O que repor" e de "Parados" (decisão do dono) | `pedido.js` (servidor) `atualizarDisp`/`foraDeLinha`; `estoque.js` `foraLinhaDe` | `foradelinha.test`; `foradelinha.spec`; `estoque.spec` | ✅ |
 | EST-39 | Cobertura do inventário e aviso de 25 dias | `inventario.js` | `inventario.test`; `regras.spec` | ✅ |
-| EST-40 | Limites do inventário (2.000 itens) | `inventario.js` | — | ❌ |
-| EST-50 | Valor do pedido = % do faturamento (CMV real) | `pedido.js` | — | ❌ |
+| EST-40 | Limites do inventário (2.000 itens) | `inventario.js` | `estoque-regras.test` EST-40 (o limite vale também ao incluir itens, desde 27/11/2026) | ✅ |
+| EST-50 | Valor do pedido = % do faturamento (CMV real) | `pedido.js` | `pedido-regras.test` EST-50 | ✅ |
 | EST-51 | Quantidade a pedir (quilo inteiro, múltiplo do site) | `pedido.js` | — | ❌ — prazo diferente do Estoque, ver D-03 |
-| EST-52 | Prioridades do pedido | `pedido.js` | — | ❌ |
-| EST-53 | Divisão do valor entre grupos | `pedido.js` | — | ❌ |
-| EST-54 | Data comemorativa | `pedido.js` | — | ❌ |
-| EST-55 | Pedido validado no servidor | `src/pedido.js` | — | ❌ |
-| EST-56 | Carrinho no site: código de uso único, nunca finaliza | `src/pedido.js`; `carrinho-site.js` | — | ❌ |
-| EST-57 | Robô e login do Sistema de Pedidos: só admin; senha nunca volta | `server.js`; `src/pedido.js` | — | ❌ |
+| EST-52 | Prioridades do pedido | `pedido.js` | `pedido-regras.test` EST-52 | ✅ |
+| EST-53 | Divisão do valor entre grupos | `pedido.js` | `pedido-regras.test` EST-53 | ✅ |
+| EST-54 | Data comemorativa | `pedido.js` | `pedido-regras.test` EST-54 (data que vira o ano corrigida em 27/11/2026) | ✅ |
+| EST-55 | Pedido validado no servidor | `src/pedido.js` | `pedido-rotas.test` EST-55 | ✅ |
+| EST-56 | Carrinho no site: um código por loja (36 hex, no `#` do endereço, vale 30 min renovado até 3 h; o novo derruba o anterior; excluir o carrinho derruba), lista sem preço, nunca finaliza | `src/pedido.js`; `carrinho-site.js` | `pedido-rotas.test` EST-56 | ✅ |
+| EST-57 | Robô e login do Sistema de Pedidos: admin e franqueado da loja (franqueado = admin das lojas dele); senha nunca volta; remover a loja tira o login de uso | `server.js`; `src/pedido.js` | `pedido-rotas.test` EST-57 | ✅ |
 | EST-58 | Revisão do pedido pela IA: admin e franqueado com Pedido | `server.js` | `ia.spec`; `ia.test` | ✅ |
-| EST-59 | Aviso de validade no pedido | `pedido.js` | — | ❌ |
+| EST-59 | Aviso de validade no pedido | `pedido.js` | `pedido-regras.test` EST-59 | ✅ |
 | EST-PED-TAB-01 | Pedido, tabela de Produtos: mudar uma quantidade não volta para a 1ª página nem troca a ordem (`TS.table` com `estado`); a linha que muda de aba com a alteração fica onde está, marcada, até trocar de aba ou de filtro | `components.js` `TS.table({ estado })`; `pedido.js` (`estTab`, `ficam`) | `pedido-tabela.spec` "2ª página" | ✅ (computador; no celular a lista é em cartões) |
 | EST-PED-GRUPO-01 | Pedido: o grupo mostrado em cada produto é o do AppNext como sai na venda (ex.: CHÁ VERDE AROMATIZADO), nunca a parte do pedido ("Chás a granel"); o filtro "Grupo" usa os mesmos grupos do filtro das Vendas; as partes da proporção ficam no filtro "Parte do pedido"; no celular o subgrupo vai ao lado do código | `grupoprod.js`; `pedido.js` (`grpTxt`, `gpTxt`, `cadastroDasLinhas`) | `pedido-tabela.spec` "colunas novas" | ✅ (apresentação; nomes reais dos grupos a conferir na loja) |
 | EST-PED-GRUPO-02 | Pedido: o filtro "Grupo" lista só grupos que existem no filtro das Vendas (produto sem venda entra pelo grupo do cadastro convertido pela relação que as vendas mostram; o resto é "sem grupo"); produto sem grupo não mostra a parte do pedido; filtro "No site" mostra só o que dá para colocar no carrinho | `grupoprod.js` (`vendasDe`); `pedido.js` (`gpTxt`, `fx.d`) | `grupoprod.test` GRP-05; `pedido-tabela.spec` "colunas novas" | ✅ |
@@ -753,6 +753,17 @@ Todos os da lista A foram conferidos no código, um por um.
 | H-08 | ~~Com o rateio desligado, a linha SEM VENDEDOR recebia comissão pela taxa "abaixo" e ela entrava no total de comissões do Resultado~~ — **decidido pelo dono (27/11/2026): venda sem vendedor não gera comissão**; corrigido | EQP-04 | `rules.js` |
 | H-09 | O código PERF-17 estava em duas linhas: a de cache e índice das NF-e virou E-46 | — | esta matriz |
 
+### I. Etapa 2 dos testes que faltavam (estoque e pedido, 27/11/2026)
+| # | Achado | Regra | Onde |
+|---|---|---|---|
+| I-01 | ~~Remover a loja não tirava de uso o login do Sistema de Pedidos (o arquivo de verdade fica em `dados/_sistema/acesso-pedido`; a remoção renomeava outro caminho): loja recriada com o mesmo id herdava usuário e senha~~ — **corrigido** (segurança) | EST-57 | `admin-api.js`, `pedido.js` (`arqAcesso`) |
+| I-02 | ~~Data comemorativa que vira o ano (ex.: 20/12 a 10/01) pegava a janela do ano seguinte em janeiro~~ — **corrigido** | EST-54 | `public/js/pedido.js` (`proximo`) |
+| I-03 | ~~"+ incluir itens" deixava a contagem do inventário passar de 2.000 itens~~ — **corrigido** | EST-40 | `inventario.js` (`adicionar`) |
+| I-04 | ~~CSV do pedido com a situação em código interno (`falta`, `minimo`)~~ — **corrigido** (texto da tela) | EST-10 | `estoque.js` |
+| I-05 | Produto de revenda que nunca vendeu e está abaixo do mínimo do AppNext aparece ao mesmo tempo em "O que repor" e em "Parados": confirmar com o dono | EST-04, EST-05 | `estoque.js` |
+| I-06 | Configuração do estoque aceita a entrega vazia como 0 dias e não confere se a margem mínima é menor que a alvo | EST-11 | `src/estoque.js` (`validarCfg`) |
+| I-07 | ~~Texto "vencem em lote já vencido" na conta do produto do Pedido~~ — **corrigido** ("estão em lote já vencido") | EST-59 | `public/js/pedido.js` |
+
 ### E. Revisão dos dias 18 e 19/11 (5 revisores por área; corrigido com teste no mesmo PR)
 | Código | Achado | Onde | Situação |
 |---|---|---|---|
@@ -818,7 +829,7 @@ Contado pelas linhas da matriz (`node scripts/matriz.js --resumo`; o guardião c
 | Coletor e robôs (COL) | 7 | 1 | 2 | 4 |
 | Escala, horários, feriados e férias (ESC) | 45 | 20 | 12 | 13 |
 | Equipe, metas e comissão (EQP) | 13 | 9 | 3 | 1 |
-| Estoque, inventário, lotes e pedido (EST) | 83 | 51 | 15 | 17 |
+| Estoque, inventário, lotes e pedido (EST) | 83 | 69 | 13 | 1 |
 | Preços, custos e notas de entrada (PRC) | 42 | 24 | 8 | 10 |
 | Resultado e rentabilidade (RES) | 51 | 45 | 6 | 0 |
 | Vendas e métricas (VEN) | 28 | 13 | 8 | 7 |
@@ -826,7 +837,7 @@ Contado pelas linhas da matriz (`node scripts/matriz.js --resumo`; o guardião c
 | Orçamento (ORC) | 7 | 6 | 1 | 0 |
 | Checklist, fechamento e avisos (OPE) | 13 | 6 | 3 | 4 |
 | Estrutura do painel e atualização (APP) | 50 | 32 | 13 | 5 |
-| **Total** | **559** | **350 (63%)** | **132 (24%)** | **77 (14%)** |
+| **Total** | **559** | **368 (66%)** | **130 (23%)** | **61 (11%)** |
 <!-- resumo:fim -->
 
 ## Próximas etapas

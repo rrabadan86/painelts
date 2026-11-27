@@ -256,8 +256,11 @@ function registrar(app, { dadosLoja, pacoteLimpar, vendedoresDe, rawDe, totaisSe
     try { AG.gravarLoja(id, null); } catch { /* ok */ }
     try { NOTIF.alterarPontual((nc) => { if (nc.lojas) delete nc.lojas[id]; }); } catch { /* ok */ }
     try {
-      const fPed = path.join(C.CONFIG_DIR, 'acesso-pedido', `${id}.json`);
-      if (fs.existsSync(fPed)) fs.renameSync(fPed, `${fPed}.removida-${Date.now()}`);
+      // o login do Sistema de Pedidos sai de uso com a loja: o arquivo de verdade (dados/_sistema/acesso-pedido, o que o coletor lê)
+      // e o local antigo (config/acesso-pedido). Loja recriada com o mesmo id não herda usuário e senha (EST-57)
+      for (const fPed of [require('./pedido').arqAcesso(id), path.join(C.CONFIG_DIR, 'acesso-pedido', `${id}.json`)]) {
+        if (fs.existsSync(fPed)) fs.renameSync(fPed, `${fPed}.removida-${Date.now()}`);
+      }
     } catch { /* ok */ }
     aud(req, 'removeu loja', id, { loja: id, obs: 'dados mantidos na pasta da loja' });
     depois();

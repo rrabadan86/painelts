@@ -307,4 +307,4 @@ function alterarObrig(id, b, por) {
   return { ok: obrigatorios(id), item: o };
 }
 
-module.exports = { confirmarCarrinho, excluirCarrinho, rascunho, salvarRascunho, apagarRascunho, RASCUNHO_DIAS, conjuntos, foraDeLinha, atualizarDisp, FORA_DE_LINHA_DIAS, obrigatorios, alterarObrig, ORIGENS, criarCodigo, lerCodigo, progresso, acesso, gravarAcesso, catalogo, carrinho, gravarEntrada, cfg, validarCfg, validarItens, EVENTOS };
+module.exports = { arqAcesso, confirmarCarrinho, excluirCarrinho, rascunho, salvarRascunho, apagarRascunho, RASCUNHO_DIAS, conjuntos, foraDeLinha, atualizarDisp, FORA_DE_LINHA_DIAS, obrigatorios, alterarObrig, ORIGENS, criarCodigo, lerCodigo, progresso, acesso, gravarAcesso, catalogo, carrinho, gravarEntrada, cfg, validarCfg, validarItens, EVENTOS };
