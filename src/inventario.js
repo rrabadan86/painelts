@@ -177,7 +177,9 @@ function adicionar(id, cid, cods, cat) {
   if (!c) return { erro: 'Contagem não encontrada.' };
   if (c.st !== 'contando') return { erro: 'Só dá para incluir itens enquanto a contagem está aberta.' };
   const tem = new Set(c.itens.map((i) => i.cod));
-  for (const i of escolher(cat, { cods })) if (!tem.has(i.cod)) c.itens.push({ cod: i.cod, desc: i.desc, un: i.un, ...ua(i), grupo: i.grupo, sub: i.sub, tipo: i.tipo, barras: i.barras, sis: i.qtd, custo: i.custo, cont: null, por: null, em: null });
+  const novos = escolher(cat, { cods }).filter((i) => !tem.has(i.cod));
+  if (c.itens.length + novos.length > 2000) return { erro: 'Itens demais numa contagem só (máximo 2.000).' }; // o mesmo limite do criar (EST-40)
+  for (const i of novos) c.itens.push({ cod: i.cod, desc: i.desc, un: i.un, ...ua(i), grupo: i.grupo, sub: i.sub, tipo: i.tipo, barras: i.barras, sis: i.qtd, custo: i.custo, cont: null, por: null, em: null });
   gravar(id, c);
   return { ok: c };
 }

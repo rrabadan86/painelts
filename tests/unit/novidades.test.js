@@ -60,7 +60,10 @@ test('NOV-01: cada um vê só o seu — vendedora não vê o que é da gestão; 
   assert.ok(!todasVend.some((n) => n.tela === 'clientes'));
   const ger = NOV.paraPessoa({ perfil: 'gerente' }, { todas: true, podeTela: (t) => t === 'site' });
   assert.ok(!ger.some((n) => n.tela === 'cupons'), 'gerente sem Cupons não vê a novidade dos cupons');
-  assert.ok(ger.some((n) => n.tela === 'site'));
+  // gerente com a tela Site vê a novidade do Site (pela regra, sem depender de ela estar entre as 12 mais recentes)
+  const nSite = NOV.NOVIDADES.find((n) => n.tela === 'site' && Array.isArray(n.para) && n.para.includes('gerente'));
+  assert.ok(nSite && NOV.valePara(nSite, { perfil: 'gerente' }, (t) => t === 'site'));
+  assert.ok(!NOV.valePara(nSite, { perfil: 'gerente' }, () => false), 'gerente sem a tela Site não vê');
   // já viu a última: nada novo; sem registro: só os últimos dias
   assert.deepStrictEqual(NOV.paraPessoa({ perfil: 'franqueado', novidadesVisto: ult.id }), []);
   const longe = NOV.paraPessoa({ perfil: 'franqueado' }, { hoje: '2030-01-01' });

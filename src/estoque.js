@@ -300,7 +300,9 @@ function cfg(loja) {
 }
 function validarCfg(b) {
   const n = (v, a, z) => { const x = Math.round(+v); return x >= a && x <= z ? x : null; };
-  const out = { entregaDias: n(b.entregaDias, 0, 120), coberturaDias: n(b.coberturaDias, 1, 365), paradoDias: n(b.paradoDias, 7, 730), segurancaPct: n(b.segurancaPct ?? PADRAO.segurancaPct, 0, 300) };
+  const vazio = (v) => v == null || String(v).trim() === '';
+  // prazo de entrega em branco = o padrão (10 dias), nunca 0 sem avisar (EST-11, decisão do dono 27/11/2026)
+  const out = { entregaDias: n(vazio(b.entregaDias) ? PADRAO.entregaDias : b.entregaDias, 0, 120), coberturaDias: n(b.coberturaDias, 1, 365), paradoDias: n(b.paradoDias, 7, 730), segurancaPct: n(b.segurancaPct ?? PADRAO.segurancaPct, 0, 300) };
   if (Object.values(out).some((v) => v == null)) return { erro: 'Confira os números (entrega 0–120 dias, pedido 1–365 dias, parado 7–730 dias, segurança 0–300%).' };
   const pct = (v) => { const x = Math.round(Number(String(v ?? 0).replace(',', '.')) * 100) / 100; return Number.isFinite(x) && x >= 0 && x <= 50 ? x : null; };
   out.simplesPct = pct(b.simplesPct); out.cartaoPct = pct(b.cartaoPct);

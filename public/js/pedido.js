@@ -3,7 +3,7 @@
  * meses fechados). Compra só o que precisa (previsão × (entrega + N dias) − estoque), dividido entre chás a granel,
  * envasados e acessórios na proporção das vendas, priorizando quem deixa mais lucro sem fixos por dia.
  * Data comemorativa: o que vendeu no mesmo período do ano passado × crescimento da loja, + o consumo até lá − estoque.
- * Só admin e franqueado; o robô (carrinho e catálogo) só o admin. */
+ * Tela Pedido: admin, franqueado e gerente com a tela; o robô (carrinho e catálogo) e o login do Sistema de Pedidos: admin e franqueado da loja (EST-57). */
 (function () {
   const { h, fmt, state } = TS;
   const DIA = 86400e3;
@@ -47,8 +47,10 @@
   /** a próxima ocorrência (a que ainda não terminou) e a do ano anterior */
   function proximo(ev, hoje) {
     const ano = +TS.dayToIso(hoje).slice(0, 4);
+    // data que vira o ano (ex.: 20/12 a 10/01): em janeiro, a que está acontecendo começou no ano anterior (EST-54)
+    const jAnt = janela(ev, ano - 1);
     let j = janela(ev, ano), a = ano;
-    if (j[1] < hoje) { a = ano + 1; j = janela(ev, a); }
+    if (jAnt[1] >= hoje) { a = ano - 1; j = jAnt; } else if (j[1] < hoje) { a = ano + 1; j = janela(ev, a); }
     return { atual: j, anterior: janela(ev, a - 1), ano: a };
   }
   /** a data comemorativa que a tela abre quando ninguém escolheu: a PRÓXIMA (a que começa antes, entre as que ainda não
@@ -202,7 +204,7 @@
         conta = `Previsão ${qtdTxt(prev, it)}/dia × (${ent} dias de entrega + ${N} dias até o próximo pedido) = ${qtdTxt(prev * H, it)} − estoque ${qtdTxt(qtd, it)}${txtChega}${it.min && it.min - qtdEf > prev * H - qtdEf ? ` · o mínimo do AppNext pede ${qtdTxt(it.min - qtdEf, it)}` : ''}.`
           + (prior === 3 ? ` Prioridade: ${esp.pedidos} ${esp.pedidos === 1 ? 'cliente esperando' : 'clientes esperando'} na lista de espera.` : prior === 2 ? ' Prioridade: estoque abaixo de 500 g.' : prior === 1 ? ' Prioridade: Estrela com estoque abaixo de 700 g.' : '')
           + (it.un === 'Kg' ? ' Chá a granel só em quilo inteiro.' : '')
-          + (VAL.has(String(it.cod)) ? ` Atenção: ${qtdTxt(VAL.get(String(it.cod)).kg, it)} deste chá vencem em ${VAL.get(String(it.cod)).dias < 0 ? 'lote já vencido' : VAL.get(String(it.cod)).dias + ' dias'}: venda antes de comprar mais.` : '');
+          + (VAL.has(String(it.cod)) ? ` Atenção: ${qtdTxt(VAL.get(String(it.cod)).kg, it)} deste chá ${VAL.get(String(it.cod)).dias < 0 ? 'estão em lote já vencido' : `vencem em ${VAL.get(String(it.cod)).dias} dias`}: venda antes de comprar mais.` : '');
       }
       if (!(precisa > 0)) continue;
       const c = catPorCod.get(String(it.cod));

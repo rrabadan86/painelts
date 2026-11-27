@@ -2577,7 +2577,7 @@ app.post('/api/site/consultar', async (req, res) => {
   res.json(r);
 });
 
-// ---------- pedido sugerido e Sistema de Pedidos da franqueadora (só admin e franqueado; robô só admin) ----------
+// ---------- pedido sugerido e Sistema de Pedidos da franqueadora (tela Pedido; robô e login do site: admin e franqueado da loja, EST-57) ----------
 const PED = require('./src/pedido');
 app.get('/api/pedido', async (req, res) => {
   if (!podeTela(req, 'pedido')) return res.status(403).json({ erro: 'Sem permissão.' });
@@ -3263,7 +3263,7 @@ app.put('/api/pedido/acesso', express.json({ limit: '4kb' }), (req, res) => {
   C.auditar(req.user, b.apagar ? 'removeu o login do Sistema de Pedidos' : 'alterou o login do Sistema de Pedidos', loja.id, { loja: loja.id });
   res.json(PED.acesso(loja.id));
 });
-// carrinho no navegador: gera o código e o link do site (admin e franqueado)
+// carrinho no navegador: gera o código e o link do site (quem tem a tela Pedido)
 app.post('/api/pedido/carrinho', express.json({ limit: '200kb' }), (req, res) => {
   if (req.get('X-Painel') !== '1') return res.status(403).json({ erro: 'Pedido inválido.' });
   if (!podeTela(req, 'pedido')) return res.status(403).json({ erro: 'Sem permissão.' });
